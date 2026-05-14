@@ -128,11 +128,13 @@ class BaseAgent(ABC):
         if self.tool_category:
             self._loaded_categories.add(self.tool_category.value)
         self._loaded_categories.add("support_tool")  # support_tool在步骤7中始终注册
+        logger.info(f"[Phase1] _loaded_categories初始化: {self._loaded_categories}")
         
         # 【Phase 1修复 小健 2026-05-14】初始化IntentClassifier用于Loop阶段动态加载检测
         # 原设计为None导致LLM分类器永不生效，改为实际实例
         from app.services.preprocessing.intent_classifier import IntentClassifier
         self._intent_classifier = IntentClassifier()
+        logger.info(f"[Phase1] _intent_classifier初始化完成: {type(self._intent_classifier).__name__}")
         
         # 【v2.3新增】chunk处理相关属性—所有Agent子类共享
         self.max_consecutive_chunks = MAX_CONSECUTIVE_CHUNKS  # 连续chunk达此阈值时提升为implicit

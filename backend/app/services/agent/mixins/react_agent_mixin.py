@@ -37,11 +37,13 @@ class ReactAgentMixin(ToolLoaderMixin):
         首次调用时触发工具注册（ensure_tools_registered），后续调用跳过。
         """
         # 【Phase 1 小健 2026-05-14】按当前分类+support_tool注册（support_tool含finish，所有Agent必需）
-        from app.services.tools import ensure_tools_registered
+        from app.services.tools import ensure_tools_registered, _registered_categories
         if tool_category:
             ensure_tools_registered(categories=[tool_category.value, "support_tool"])
+            logger.info(f"[Phase1] 按分类注册完成: {_registered_categories}")
         else:
             ensure_tools_registered()
+            logger.info(f"[Phase1] 全量注册完成: {len(_registered_categories)}个分类")
         
         if tool_category:
             self._tools_dict = self.load_tools_by_category(tool_category)
@@ -324,6 +326,7 @@ class ReactAgentMixin(ToolLoaderMixin):
                     "content": f"【已加载工具（完整）】\n{detail_text}\n\n【其他可用工具（概要）】\n{summary_text}"
                 }
                 history_dicts = list(history_dicts) + [tools_msg]
+                logger.info(f"[Phase1] 分级注入: detail={len(detail_text)}字符, summary={len(summary_text)}字符, 已加载分类={loaded}")
             except Exception as e:
                 logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
             
