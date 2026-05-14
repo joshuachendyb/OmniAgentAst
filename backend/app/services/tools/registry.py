@@ -544,6 +544,7 @@ class ToolRegistry:
 
     def get_all_tools_detail(self, priority_category: Optional['ToolCategory'] = None,
                              category_filter: Optional['ToolCategory'] = None,
+                             exclude_categories: Optional[set] = None,
                              expose_to_llm_only: bool = True) -> str:
         """获取工具完整描述（使用场景+示例+返回格式） - 小健 2026-05-14
 
@@ -552,6 +553,7 @@ class ToolRegistry:
         Args:
             priority_category: 优先展示的分类（排在最前）
             category_filter: 只输出指定分类的工具（None=全部）
+            exclude_categories: 排除的分类集合（避免与概要重复）
             expose_to_llm_only: 是否只展示暴露给LLM的工具
 
         Returns:
@@ -567,6 +569,8 @@ class ToolRegistry:
             if expose_to_llm_only and not metadata.expose_to_llm:
                 continue
             if category_filter and metadata.category != category_filter:
+                continue
+            if exclude_categories and metadata.category.value in exclude_categories:
                 continue
             by_category[metadata.category].append((name, metadata))
 
