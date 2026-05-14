@@ -488,6 +488,9 @@ class ToolRegistry:
         【Phase 1优化】精简版，只输出分类名+工具名列表，约1-2K字符。
         原版输出完整description（53K），精简后仅输出工具名。
 
+        【修复 2026-05-14 小健】从注册表+静态目录生成summary，
+        即使工具未注册也能告诉LLM有哪些可用分类。
+
         Args:
             priority_category: 优先展示的分类
             expose_to_llm_only: 是否只展示暴露给LLM的工具
@@ -515,13 +518,19 @@ class ToolRegistry:
             category_order.insert(0, priority_category)
 
         for cat in category_order:
-            if cat not in by_category:
+            if exclude_categories and cat.value in exclude_categories:
                 continue
-            names = by_category[cat]
+            
+            names = by_category.get(cat, [])
             display_name = self.CATEGORY_NAMES.get(cat, cat.value)
-            lines.append(f"【{display_name}】")
-            lines.append(f"  {', '.join(sorted(names))}")
-            lines.append("")
+            
+            if names:
+                lines.append(f"【{display_name}】")
+                lines.append(f"  {', '.join(sorted(names))}")
+                lines.append("")
+            else:
+                lines.append(f"【{display_name}】（按需加载）")
+                lines.append("")
 
         return "\n".join(lines)
 
