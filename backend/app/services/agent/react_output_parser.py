@@ -519,29 +519,11 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
         from app.utils.logger import logger
         logger.debug(f"关键词匹配失败: {e}")
     
-    # ④ 【最低优先级】工具名兜底
-    try:
-        tool_result = _extract_by_known_tools(output)
-        if tool_result:
-            # 【2026-04-28 小沈新增】检测并补充缺失的必需参数
-            tp = tool_result.get("tool_params")
-            if tp:
-                tp = _supplement_missing_params(tool_result["tool_name"], tp, output if isinstance(output, str) else None)
-            return {
-                "type": "action",
-                "thought": tool_result["content"],
-                "content": tool_result["content"],      # 兼容性字段
-                "reasoning": tool_result["content"],    # 兼容性字段
-                "tool_name": tool_result["tool_name"],
-                "tool_params": tp,
-                "response": None,
-                "error": None
-            }
-    except Exception as e:
-        from app.utils.logger import logger
-        logger.debug(f"工具名兜底失败: {e}")
-    
     # 所有解析方法都失败，根据输出长度判断返回implicit或parse_error
+    # 【2026-05-14 小沈】不再使用工具名兜底（_extract_by_known_tools）
+    # prompt已要求"必须使用JSON格式输出"，非JSON文本不应搜工具名。
+    # 之前从"测试一下网络延迟（ping）"中误提取ping作为工具调用，
+    # 导致ping {}→缺host→报错→LLM重试的死循环。
     # 【恢复 2026-04-24 小沈】纯文本无关键词时，长文本返回implicit，短文本返回parse_error
     # =========================================================================
     # 【chunk vs implicit 语义说明 - 小沈 2026-05-14】
