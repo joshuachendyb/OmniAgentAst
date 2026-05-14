@@ -863,20 +863,15 @@ class BaseAgent(ABC):
                         observation_text += f"\n部分数据: {execution_result.get('data')}"
                 else:
                     # 失败状态（error/timeout/permission_denied）：只显示错误摘要，不显示数据
-                    # 【修复 2026-05-15 小健】同一URL连续失败去重，避免LLM重复调用同一失败URL
-                    _skip_duplicate = False
-                    if tool_name == "http_request" and tool_params:
-                        _fail_url = tool_params.get("url", "")
-                        if _fail_url:
-                            if not hasattr(self, '_failed_urls'):
-                                self._failed_urls = {}
-                            _fail_count = self._failed_urls.get(_fail_url, 0) + 1
-                            self._failed_urls[_fail_url] = _fail_count
-                            if _fail_count > 1:
-                                observation_text = f"Observation: {exec_status} - URL已失败{_fail_count}次，跳过重复请求: {_fail_url}"
-                                observation_text += f"\n⚠️ 请换用其他URL或工具，不要重试此地址！"
-                                _skip_duplicate = True
-                    if not _skip_duplicate:
+                    # 【修复 2026-05-15 小健】同一工具+参数组合连续失败去重，避免LLM死循环重试
+                    if not hasattr(self, '_failed_calls'):
+                        self._failed_calls = {}
+                    _call_key = f"{tool_name}|{str(sorted(tool_params.items())) if tool_params else ''}"
+                    _fail_count = self._failed_calls.get(_call_key, 0) + 1
+                    self._failed_calls[_call_key] = _fail_count
+                    if _fail_count > 1:
+                        observation_text = f"Observation: {exec_status} - {tool_name}相同调用已失败{_fail_count}次，不要重复尝试相同操作！"
+                    else:
                         observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
                     # 【修复 2026-05-14 小沈】失败时动态生成替代建议（从当前Agent已注册工具中找）
                     # 【更新 2026-05-15 小健】传入tool_params用于http_request的国内URL提示
