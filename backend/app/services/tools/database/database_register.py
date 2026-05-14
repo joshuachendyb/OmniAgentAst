@@ -3,11 +3,17 @@
 DATABASE Register - Database Tools Registration Point
 
 [Architecture Standard] 2026-04-29 Xiao Shen
+[更新 2026-05-14 小健] 从support_tool移入5个数据库事务工具
 
-[Tool List] (3 tools)
+[Tool List] (8 tools)
 1. query_sql - Execute read-only SQL query
 2. execute_sql - Execute write SQL
 3. get_db_schema - Get database schema
+4. check_db_exists - 检查数据库是否存在（从support_tool移入）
+5. get_table_schema - 获取表结构（从support_tool移入）
+6. begin_transaction - 开始事务（从support_tool移入）
+7. commit_transaction - 提交事务（从support_tool移入）
+8. rollback_transaction - 回滚事务（从support_tool移入）
 
 Created: 2026-04-29
 """
@@ -25,6 +31,22 @@ from app.services.tools.database.database_tools import (
     query_sql,
     execute_sql,
     get_db_schema,
+)
+
+# 【2026-05-14 小健】从support_tool移入的5个数据库事务工具
+from app.services.tools.support_tool.support_tool_schema import (
+    CheckDbExistsInput,
+    GetTableSchemaInput,
+    BeginTransactionInput,
+    CommitTransactionInput,
+    RollbackTransactionInput,
+)
+from app.services.tools.support_tool.support_tool_tools import (
+    check_db_exists,
+    get_table_schema,
+    begin_transaction,
+    commit_transaction,
+    rollback_transaction,
 )
 
 # Tool descriptions（中文，与schema/tools一致）- 小健 2026-05-05修正
@@ -89,6 +111,66 @@ DATABASE_TOOL_DESCRIPTIONS = {
 - 过滤: {"filter_pattern": "user%"}
 - JSON: {"include_details": True, "output_format": "json"}
 - SQLite: {"filter_pattern": "orders%", "connection_type": "sqlite", "db_path": "D:/data/app.db"}""",
+
+    # 【2026-05-14 小健】从support_tool移入
+    "check_db_exists": """检查数据库文件是否存在且可连接。
+
+使用场景：
+- 当用户需要确认数据库是否存在时使用
+- 当用户在操作数据库前需要验证时使用
+
+
+返回数据说明：
+- code: 状态码
+- data: exists(bool), db_type(str)""",
+
+    "get_table_schema": """获取数据库表结构信息。
+
+使用场景：
+- 当用户需要查看表结构时使用
+- 当用户在操作表前需要了解字段信息时使用
+
+
+返回数据说明：
+- code: 状态码
+- data: columns, primary_key等信息""",
+
+    "begin_transaction": """开始数据库事务。
+
+【重要】此工具不需要任何参数，不要传递任何参数！直接调用即可。
+
+使用场景：
+- 当用户需要在数据库操作前开始事务时使用
+- 当用户需要保证数据操作的原子性时使用
+
+使用示例：
+- 正确：{}  # 无参数，直接调用
+- 错误：{"name": "xxx"}  # 不要传任何参数！
+
+返回数据说明：
+- code: 状态码(SUCCESS)
+- data.transaction_id: 事务ID(str)
+- message: 结果消息""",
+
+    "commit_transaction": """提交数据库事务。
+
+使用场景：
+- 当用户需要提交事务使操作生效时使用
+
+返回数据说明：
+- code: 状态码(SUCCESS)
+- data.transaction_id: 事务ID(str)
+- message: 结果消息""",
+
+    "rollback_transaction": """回滚数据库事务。
+
+使用场景：
+- 当用户需要撤销事务中的操作时使用
+
+返回数据说明：
+- code: 状态码(SUCCESS)
+- data.transaction_id: 事务ID(str)
+- message: 结果消息""",
 }
 
 # Model mapping
@@ -96,6 +178,12 @@ DATABASE_TOOL_INPUT_MODELS = {
     "query_sql": QuerySqlInput,
     "execute_sql": ExecuteSqlInput,
     "get_db_schema": GetDbSchemaInput,
+    # 【2026-05-14 小健】从support_tool移入
+    "check_db_exists": CheckDbExistsInput,
+    "get_table_schema": GetTableSchemaInput,
+    "begin_transaction": BeginTransactionInput,
+    "commit_transaction": CommitTransactionInput,
+    "rollback_transaction": RollbackTransactionInput,
 }
 
 # Usage examples
@@ -118,18 +206,31 @@ DATABASE_TOOL_EXAMPLES = {
         {"include_details": True, "output_format": "json"},
         {"filter_pattern": "orders%", "connection_type": "sqlite", "db_path": "D:/data/app.db"},
     ],
+    # 【2026-05-14 小健】从support_tool移入
+    "check_db_exists": [{"db_path": "D:/data/app.db"}],
+    "get_table_schema": [{"db_path": "D:/data/app.db", "table_name": "users"}],
+    "begin_transaction": [{}],
+    "commit_transaction": [{"transaction_id": "abc12345"}],
+    "rollback_transaction": [{"transaction_id": "abc12345"}],
 }
 
 
 def _register_database_tools():
     """
     [2026-04-29 Xiao Shen] Register all database tools per doc 5.1 design
+    [2026-05-14 小健] 从support_tool移入5个数据库事务工具
     Use Pydantic model for auto OpenAI Schema
     """
     tool_methods = {
         "query_sql": query_sql,
         "execute_sql": execute_sql,
         "get_db_schema": get_db_schema,
+        # 【2026-05-14 小健】从support_tool移入
+        "check_db_exists": check_db_exists,
+        "get_table_schema": get_table_schema,
+        "begin_transaction": begin_transaction,
+        "commit_transaction": commit_transaction,
+        "rollback_transaction": rollback_transaction,
     }
 
     for name, method in tool_methods.items():
