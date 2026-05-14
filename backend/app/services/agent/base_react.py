@@ -1006,7 +1006,7 @@ class BaseAgent(ABC):
             # 从tool_registry获取工具描述（取前40字作为简要说明）
             try:
                 from app.services.tools.registry import tool_registry
-                meta = tool_registry._tools.get(name)
+                meta = tool_registry.get_tool(name)
                 desc = meta.description[:40] if meta and meta.description else name
             except Exception:
                 desc = name
