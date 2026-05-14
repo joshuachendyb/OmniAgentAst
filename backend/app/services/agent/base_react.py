@@ -47,7 +47,8 @@ from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_timestamp
 from app.chat_stream.incident_handler import create_incident_data
 from app.utils.prompt_logger import get_prompt_logger
-from app.services.tools.file.file_tools import _current_task_id
+# 【Phase 1修复 小健 2026-05-14】删除模块级import，改为函数内import
+# from app.services.tools.file.file_tools import _current_task_id
 
 # 【步骤2.11】已废弃以下导入，改用StepFactory：
 # from app.chat_stream.error_handler import create_tool_error_result, create_session_error_result, create_error_from_exception
@@ -773,6 +774,8 @@ class BaseAgent(ABC):
                 # 使用 perf_counter 计算工具执行耗时（高精度）
                 start_time = time.perf_counter()
                 logger.info(f"[DEBUG_TOOL_PARAMS] before execute_tool: tool_name={tool_name}, tool_params={tool_params}")
+                # 【Phase 1修复 小健 2026-05-14】函数内import避免触发register
+                from app.services.tools.file.file_tools import _current_task_id
                 _current_task_id.set(task_id)
                 execution_result = await self._execute_tool(tool_name, tool_params)
                 execution_time_ms = int((time.perf_counter() - start_time) * 1000)

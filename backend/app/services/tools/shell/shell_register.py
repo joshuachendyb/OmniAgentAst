@@ -203,10 +203,9 @@ def _register_shell_tools():
 
 
 # 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
-_initialized = False
-if not _initialized:
-    _register_shell_tools()
-    _initialized = True
+_initialized = False  # 守护变量，供显式调用时使用
+
+__all__ = ["_register_shell_tools"]
 
 
 __all__ = [

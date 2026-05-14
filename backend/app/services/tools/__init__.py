@@ -32,24 +32,45 @@ from app.services.tools.tool_config import (
 )
 
 
-# 【Phase 1 小健 2026-05-14】分阶段注册：支持按分类注册，而非一次性全注册
+# 【Phase 1修复 小健 2026-05-14】分阶段注册：删除模块级自动注册，改为显式调用
 _tools_registered = False
 _registered_categories: set = set()
 
+# 注册函数映射：分类名 -> (import函数, 注册函数名)
+# 注意：注册函数在各*_register.py中定义
 _CATEGORY_MODULES = {
-    "file": lambda: __import__("app.services.tools.file", fromlist=["file"]),
-    "time": lambda: __import__("app.services.tools.time", fromlist=["time"]),
-    "shell": lambda: __import__("app.services.tools.shell", fromlist=["shell"]),
-    "network": lambda: __import__("app.services.tools.network", fromlist=["network"]),
-    "environment": lambda: __import__("app.services.tools.environment", fromlist=["environment"]),
-    "system": lambda: __import__("app.services.tools.system", fromlist=["system"]),
-    "database": lambda: __import__("app.services.tools.database", fromlist=["database"]),
-    "desktop": lambda: __import__("app.services.tools.desktop", fromlist=["desktop"]),
-    "data_format": lambda: __import__("app.services.tools.data_format", fromlist=["data_format"]),
-    "code_execution": lambda: __import__("app.services.tools.code_execution", fromlist=["code_execution"]),
-    "document": lambda: __import__("app.services.tools.document", fromlist=["document"]),
-    "support_tool": lambda: __import__("app.services.tools.support_tool", fromlist=["support_tool"]),
+    "file": ("app.services.tools.file", "_register_file_tools"),
+    "time": ("app.services.tools.time", "_register_time_tools"),
+    "shell": ("app.services.tools.shell", "_register_shell_tools"),
+    "network": ("app.services.tools.network", "register_network_tools"),
+    "environment": ("app.services.tools.environment", "_register_env_tools"),
+    "system": ("app.services.tools.system", "_register_system_tools"),
+    "database": ("app.services.tools.database", "_register_database_tools"),
+    "desktop": ("app.services.tools.desktop", "_register_desktop_tools"),
+    "data_format": ("app.services.tools.data_format", "_register_data_format_tools"),
+    "code_execution": ("app.services.tools.code_execution", "_register_code_execution_tools"),
+    "document": ("app.services.tools.document", "_register_document_tools"),
+    "support_tool": ("app.services.tools.support_tool", "_register_support_tool_tools"),
 }
+
+
+def _import_and_register(module_path: str, register_func_name: str) -> None:
+    """导入模块并调用注册函数 - 小健 2026-05-14"""
+    module = __import__(module_path, fromlist=[register_func_name])
+    register_func = getattr(module, register_func_name, None)
+    if register_func:
+        register_func()
+    else:
+        # 如果__init__.py没导出register函数，尝试从register模块获取
+        register_module_name = module_path.rsplit(".", 1)[1] + "_register"
+        register_module_path = f"{module_path}.{register_module_name}"
+        try:
+            register_module = __import__(register_module_path, fromlist=[register_func_name])
+            register_func = getattr(register_module, register_func_name)
+            register_func()
+        except Exception as e:
+            from app.utils.logger import logger
+            logger.warning(f"[Tools] 无法找到注册函数 {register_func_name}: {e}")
 
 
 def ensure_tools_registered(categories: list = None) -> None:
@@ -69,9 +90,9 @@ def ensure_tools_registered(categories: list = None) -> None:
         # 全量注册（兼容旧行为）
         if _tools_registered:
             return
-        for cat_name, import_fn in _CATEGORY_MODULES.items():
+        for cat_name, (module_path, register_func) in _CATEGORY_MODULES.items():
             if cat_name not in _registered_categories:
-                import_fn()
+                _import_and_register(module_path, register_func)
                 _registered_categories.add(cat_name)
         _tools_registered = True
         from app.utils.logger import logger
@@ -83,7 +104,8 @@ def ensure_tools_registered(categories: list = None) -> None:
             if cat_name in _registered_categories:
                 continue
             if cat_name in _CATEGORY_MODULES:
-                _CATEGORY_MODULES[cat_name]()
+                module_path, register_func = _CATEGORY_MODULES[cat_name]
+                _import_and_register(module_path, register_func)
                 _registered_categories.add(cat_name)
                 logger.info(f"[Tools] 按需注册分类: {cat_name}")
         if len(_registered_categories) >= len(_CATEGORY_MODULES):

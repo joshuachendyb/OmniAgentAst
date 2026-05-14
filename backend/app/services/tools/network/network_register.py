@@ -234,8 +234,9 @@ def register_network_tools():
             f"[network_register] 已注册工具: {tool_name}, 使用 Pydantic 模型: {input_model.__name__}, examples: {len(examples)}个"
         )
 
-# 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
-_initialized = False
-if not _initialized:
-    register_network_tools()
-    _initialized = True
+# 【Phase 1修复 小健 2026-05-14】删除模块级注册代码，改为ensure_tools_registered统一调用
+# 原代码：import时自动执行register_network_tools()，破坏按需注册
+# 现在：导出register函数供ensure_tools_registered显式调用
+_initialized = False  # 保留守护变量，供显式调用时使用
+
+__all__ = ["register_network_tools"]

@@ -135,7 +135,8 @@ app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 # 【阶段6更新】cleanup_expired_tasks 改为从 react_sse_wrapper 导入
 import asyncio
 from app.services.react_sse_wrapper import cleanup_expired_tasks
-from app.services.tools.shell.shell_tools import cleanup_background_shells
+# 【Phase 1修复 小健 2026-05-14】删除模块级import，改为函数内import
+# from app.services.tools.shell.shell_tools import cleanup_background_shells
 
 @app.on_event("startup")
 async def startup_event():
@@ -157,6 +158,8 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """应用关闭时清理后台shell进程"""
+    # 【Phase 1修复 小健 2026-05-14】函数内import避免触发register
+    from app.services.tools.shell.shell_tools import cleanup_background_shells
     count = cleanup_background_shells()
     logger.info(f"已清理 {count} 个后台shell进程")
 
