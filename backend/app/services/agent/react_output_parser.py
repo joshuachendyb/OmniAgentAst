@@ -1038,8 +1038,42 @@ def _create_action_result_from_list(data: list) -> Dict[str, Any]:
     
     # 取最后一个有效的dict元素（LLM通常将最终结果放在最后）
     last_item = valid_items[-1]
-    logger.info(f"[parse_react_response] list解析成功，使用最后一个元素")
     
+    # 【2026-05-14 小沈】处理Function Calling格式数组
+    # 如 [{"index":0,"function":{"name":"search_web","arguments":"{\"query\":\"test\"}"}}]
+    # 这种格式的item中没有tool_name字段，需要通过function.name提取
+    if len(valid_items) > 0 and "tool_name" not in valid_items[0] and "function" in valid_items[0]:
+        # 整个数组都是Function Calling格式 → 全部转换
+        converted = []
+        for item in valid_items:
+            if isinstance(item, dict) and "function" in item:
+                func = item["function"]
+                fname = func.get("name", "") if isinstance(func, dict) else ""
+                fargs_str = func.get("arguments", "{}") if isinstance(func, dict) else "{}"
+                try:
+                    import json as _json
+                    fargs = _json.loads(fargs_str) if isinstance(fargs_str, str) else (fargs_str or {})
+                except (_json.JSONDecodeError, TypeError):
+                    fargs = {}
+                converted.append({"name": fname, "args": fargs})
+            else:
+                converted.append(item)
+        
+        last_converted = converted[-1]
+        pending_calls = converted[:-1]
+        
+        logger.info(f"[parse_react_response] list检测到Function Calling格式({len(converted)}个)")
+        last_item = {
+            "tool_name": last_converted["name"],
+            "tool_params": last_converted["args"],
+            "content": last_item.get("content", ""),
+            "thought": last_item.get("thought", last_item.get("content", "")),
+            "reasoning": last_item.get("reasoning", ""),
+        }
+        if pending_calls:
+            last_item["_pending_calls"] = pending_calls
+    
+    logger.info(f"[parse_react_response] list解析成功，使用最后一个元素")
     return _create_action_result_from_dict(last_item)
 
 
