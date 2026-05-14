@@ -1,3 +1,52 @@
+v0.12.33
+
+更新时间: 2026-05-15 06:16:40
+
+更新内容：
+
+## v0.12.32→v0.12.33 变更汇总 - 小健/小沈-2026-05-15
+
+### fix 修复
+
+| commit | 说明 |
+|--------|------|
+| d42cb34b | probe exception method change to text - xiaojian-2026-05-14 |
+| 858d110c | StrategySelector统一使用text而非prompt - xiaojian-2026-05-14 |
+| 3f3ab569 | 锁回httpx==0.26.0+httpcore==1.0.1解决TLS超时-小健/小沈-2026-05-14 |
+| c95c295f | 小健深度检查修复3个问题(适配器判断+docstring+策略显式报错) - xiaojian-2026-05-14 |
+| 6b90a3dc | 小健深度检查capability_detector(缩进修正+docstring恢复) - xiaojian-2026-05-14 |
+| 4ec200d4 | summary显示未注册分类标记按需加载 - xiaojian-2026-05-14 |
+| 3e5cc5f4 | move 5 db tools from support_tool to database category - xiaojian-2026-05-14 |
+| 234a4ba0 | update __init__.py exports for db tool split - xiaojian-2026-05-14 |
+| 0bb13a50 | adapter=None degrades to text strategy instead of RuntimeError - xiaojian-2026-05-15 |
+
+### refactor 重构
+
+| commit | 说明 |
+|--------|------|
+| 42e05526 | 统一策略选择到StrategySelector，fallback集中管理 - xiaojian-2026-05-14 |
+| 669e4b01 | 删除二次选择逻辑，策略只由adapter确定一次 - xiaojian-2026-05-14 |
+| 9baf4854 | 统一配置读取和工具别名管理(tool_aliases.py) - xiaojian-2026-05-14 |
+| df088df0 | routes.py去掉冗余验证+capability_detector 3合1共用client-小沈-2026-05-14 |
+
+### 关键变更说明
+
+#### 1. 策略选择统一重构 (42e05526/669e4b01/858d110c/d42cb34b)
+- **问题**: strategy_method出现"prompt"值，dispatch无匹配分支静默走text
+- **修复**: StrategySelector只返回text/response_format/tools三种值，未知method→RuntimeError
+- **adapter降级**: adapter=None→warning+text降级(不崩溃)，修复c95c295f引入的RuntimeError
+- **效果**: 策略选择集中管理，所有降级统一走StrategySelector.fallback()
+
+#### 2. 按需注册修复 (4ec200d4/3e5cc5f4/234a4ba0)
+- **summary**: 未注册分类显示"（按需加载）"，LLM知道还有其他分类
+- **database工具**: 5个DB事务工具从support_tool移入database分类，函数实现保留在support_tool_tools.py
+- **模块导出**: database/support_tool的__init__.py同步更新导出声明
+
+#### 3. 配置与别名统一 (9baf4854)
+- **config.py**: 新增get_max_steps/get_ai_provider_model/get_log_config统一方法
+- **tool_aliases.py**: 新增分类别名+全局别名+统一resolve入口
+- **效果**: 消除10+处分散配置读取，别名映射集中管理
+
 v0.12.32
 
 更新时间: 2026-05-14 20:07:56
