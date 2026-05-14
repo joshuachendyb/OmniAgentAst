@@ -988,7 +988,30 @@ class BaseAgent(ABC):
                     )
                     self.steps.append(p_obs_step)
                     yield p_obs_step.to_dict()
-                    self._add_observation_to_history(f"Observation: {p_result.get('status', 'success')} - {p_result.get('summary', '')}")
+                    # 【修复 2026-05-15 小健】并行工具observation与主工具逻辑一致：success附data，error附替代建议
+                    p_status = p_result.get('status', 'success')
+                    if p_status == 'success':
+                        p_obs_text = f"Observation: {p_status} - {p_result.get('summary', '')}"
+                        if p_result.get('data'):
+                            p_obs_text += f"\n实际数据: {p_result.get('data')}"
+                    else:
+                        p_obs_text = f"Observation: {p_status} - {p_result.get('summary', '')}"
+                        p_alt_hint = self._build_alternative_tools_hint(p_name, p_params)
+                        if p_alt_hint:
+                            p_obs_text += f"\n{p_alt_hint}"
+                    self._add_observation_to_history(p_obs_text)
+                    # 【修复 2026-05-15 小健】并行工具也记录到prompt日志
+                    try:
+                        from app.utils.prompt_logger import get_prompt_logger
+                        _p_logger = get_prompt_logger()
+                        _p_logger.log_observation(
+                            step_name="工具执行结果",
+                            observation_content=p_obs_text,
+                            tool_name=p_name,
+                            tool_params=p_params
+                        )
+                    except Exception:
+                        pass
         
         except Exception as e:
             # ===== 【步骤2.9+2.11】场景1：未捕获异常 =====
