@@ -575,6 +575,128 @@ def _html_to_markdown(html: str) -> str:
     
     return text.strip()
 
+async def _search_parallel_mcp(query: str, num_results: int) -> Optional[List[dict]]:
+    """Parallel MCP搜索 - 小健 2026-05-16
+    使用 search.parallel.ai 的MCP服务，JSON-RPC协议，无需API Key
+    返回None表示失败（调用方应降级到其他引擎）
+    """
+    payload = {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {
+            "name": "web_search",
+            "arguments": {
+                "objective": query,
+                "search_queries": [query],
+                "session_id": "omniagent-search",
+            }
+        }
+    }
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=10.0)) as c:
+            resp = await c.post(
+                "https://search.parallel.ai/mcp",
+                json=payload,
+                headers={"Accept": "application/json, text/event-stream"}
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            result_text = data.get("result", {}).get("content", [{}])[0].get("text", "")
+            if not result_text or not result_text.startswith("{"):
+                logger.info("[_search_parallel_mcp] 返回数据非JSON")
+                return None
+            parsed = json.loads(result_text)
+            raw_results = parsed.get("results", [])
+        
+        results = []
+        for r in raw_results[:num_results]:
+            url = r.get("url", "")
+            title = r.get("title", "")
+            excerpts = r.get("excerpts", [])
+            snippet = excerpts[0][:300] if excerpts else ""
+            if title and url:
+                results.append({"title": title, "url": url, "snippet": snippet, "source": "Parallel"})
+        
+        if results:
+            return results
+        logger.info("[_search_parallel_mcp] 无搜索结果")
+        return None
+    
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
+        logger.info(f"[_search_parallel_mcp] 失败: {type(e).__name__}")
+        return None
+    except Exception as e:
+        logger.info(f"[_search_parallel_mcp] 异常: {type(e).__name__}")
+        return None
+
+
+async def _search_exa_mcp(query: str, num_results: int) -> Optional[List[dict]]:
+    """Exa MCP搜索 - 小健 2026-05-16
+    使用 mcp.exa.ai 的MCP服务，JSON-RPC协议，无需API Key
+    返回None表示失败（调用方应降级到其他引擎）
+    """
+    payload = {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {
+            "name": "web_search_exa",
+            "arguments": {
+                "query": query,
+                "type": "auto",
+                "numResults": num_results,
+                "livecrawl": "fallback",
+            }
+        }
+    }
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=10.0)) as c:
+            resp = await c.post(
+                "https://mcp.exa.ai/mcp",
+                json=payload,
+                headers={"Accept": "application/json, text/event-stream"}
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            result_text = data.get("result", {}).get("content", [{}])[0].get("text", "")
+            if not result_text:
+                logger.info("[_search_exa_mcp] 返回空数据")
+                return None
+        
+        results = []
+        # Exa返回的是纯文本格式: "Title: xxx\nURL: xxx\nPublished: xxx\nHighlights: xxx"
+        current = {}
+        for line in result_text.split("\n"):
+            line = line.strip()
+            if line.startswith("Title: "):
+                if current.get("title"):
+                    results.append(current)
+                    if len(results) >= num_results:
+                        break
+                current = {"title": line[7:], "url": "", "snippet": ""}
+            elif line.startswith("URL: "):
+                current["url"] = line[5:]
+            elif line.startswith("Highlights:") or (current.get("snippet") == "" and line and not line.startswith("Published") and not line.startswith("Author")):
+                if not current["snippet"]:
+                    current["snippet"] = line[:300]
+        if current.get("title"):
+            results.append(current)
+        
+        formatted = []
+        for r in results[:num_results]:
+            if r.get("title") and r.get("url"):
+                formatted.append({"title": r["title"], "url": r["url"], "snippet": r.get("snippet", "")[:300], "source": "Exa"})
+        
+        if formatted:
+            return formatted
+        logger.info("[_search_exa_mcp] 无搜索结果")
+        return None
+    
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
+        logger.info(f"[_search_exa_mcp] 失败: {type(e).__name__}")
+        return None
+    except Exception as e:
+        logger.info(f"[_search_exa_mcp] 异常: {type(e).__name__}")
+        return None
+
+
 def _decode_bing_redirect_url(url: str) -> str:
     """
     解码Bing ck/a跳转链接，提取真实URL - 小健 2026-05-16
@@ -614,8 +736,9 @@ async def search_web(
 ) -> dict:
     """
     搜索网络获取最新信息 - 小沈 2026-05-02
-    【重构 2026-05-16 小健】去掉DuckDuckGo(国内不可达)，使用Bing中国(cn.bing.com)
-    Bing: 无需API Key，解析HTML获取结果（国内可访问）
+    【重构 2026-05-16 小健】三引擎逐级fallback: Parallel MCP → Exa MCP → Bing中国
+    Parallel/Exa: MCP协议，JSON-RPC，结构化返回，无需API Key
+    Bing: HTML解析，国内可访问，无需API Key
     """
     try:
         if len(query) < 2:
@@ -629,9 +752,21 @@ async def search_web(
         if proxy:
             proxy_config = {"http://": proxy, "https://": proxy}
         
-        # ===== 使用Bing中国搜索 =====
-        results = await _search_bing(query, num_results, language, safe_search, proxy_config)
-        engine_used = "Bing"
+        # ===== 第一引擎：Parallel MCP =====
+        results = await _search_parallel_mcp(query, num_results)
+        engine_used = "Parallel"
+        
+        # ===== 第二引擎：Exa MCP =====
+        if results is None:
+            logger.info("[search_web] Parallel失败，降级到Exa MCP搜索")
+            results = await _search_exa_mcp(query, num_results)
+            engine_used = "Exa"
+        
+        # ===== 第三引擎：Bing中国 =====
+        if results is None:
+            logger.info("[search_web] Exa失败，降级到Bing中国搜索")
+            results = await _search_bing(query, num_results, language, safe_search, proxy_config)
+            engine_used = "Bing"
         
         # 域名过滤
         if allowed_domains:
