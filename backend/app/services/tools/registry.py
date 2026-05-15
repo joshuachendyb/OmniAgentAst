@@ -528,9 +528,6 @@ class ToolRegistry:
                 lines.append(f"【{display_name}】")
                 lines.append(f"  {', '.join(sorted(names))}")
                 lines.append("")
-            else:
-                lines.append(f"【{display_name}】（按需加载）")
-                lines.append("")
 
         return "\n".join(lines)
 

@@ -124,18 +124,13 @@ class BaseAgent(ABC):
         
         # 【Phase1修复】从registry加载工具 - 【修复 2026-05-10 小健】确保先注册再加载
         self._tools_dict = self._load_tools()
-        # 【Phase 1修复 小健 2026-05-14】_loaded_categories初始化应包含当前分类+support_tool
         self._loaded_categories = set()
         if self.tool_category:
             self._loaded_categories.add(self.tool_category.value)
-        self._loaded_categories.add("support_tool")  # support_tool在步骤7中始终注册
-        logger.info(f"[Phase1] _loaded_categories初始化: {self._loaded_categories}")
+        self._loaded_categories.add("support_tool")
         
-        # 【Phase 1修复 小健 2026-05-14】初始化IntentClassifier用于Loop阶段动态加载检测
-        # 原设计为None导致LLM分类器永不生效，改为实际实例
         from app.services.preprocessing.intent_classifier import IntentClassifier
         self._intent_classifier = IntentClassifier()
-        logger.info(f"[Phase1] _intent_classifier初始化完成: {type(self._intent_classifier).__name__}")
         
         # 【v2.3新增】chunk处理相关属性—所有Agent子类共享
         self.max_consecutive_chunks = MAX_CONSECUTIVE_CHUNKS  # 连续chunk达此阈值时提升为implicit
@@ -243,11 +238,8 @@ class BaseAgent(ABC):
         
         logger.info(f"[动态加载] 原因: {reason}，加载意图: {intent_type}")
         
-        # 1. 获取该意图的工具 - 【修复 2026-05-10 小健】确保先注册
+        # 1. 获取该意图的工具（所有工具已全量注册）
         try:
-            # 【Phase 1 小健 2026-05-14】按意图分类注册，而非全量注册
-            from app.services.tools import ensure_tools_registered
-            ensure_tools_registered(categories=[intent_type])
             category = ToolCategory(intent_type)
             new_tools = get_tools_from_registry_by_category(category)
         except ValueError as e:
