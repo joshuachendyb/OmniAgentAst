@@ -833,7 +833,7 @@ class BaseAgent(ABC):
                     if time.time() - cached_time < self._cache_ttl:
                         execution_result = self._executed_cache[cache_key]
                         execution_time_ms = 0
-                        observation_prefix = "[缓存命中: 此命令已执行过，结果未变] "
+                        observation_prefix = "[缓存命中] 此命令已执行过，结果已在上方Observation中。禁止再次调用相同工具+参数！ "
                         cache_hit = True
                         logger.info(f"[Cache] 命中缓存: {cache_key}, 跳过实际执行")
                     else:
@@ -1127,7 +1127,6 @@ class BaseAgent(ABC):
                     self._add_observation_to_history(p_obs_text)
                     # 【修复 2026-05-15 小健】并行工具也记录到prompt日志
                     try:
-                        from app.utils.prompt_logger import get_prompt_logger
                         _p_logger = get_prompt_logger()
                         _p_logger.log_observation(
                             step_name="工具执行结果",

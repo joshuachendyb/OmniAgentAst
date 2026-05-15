@@ -305,8 +305,23 @@ class ReactAgentMixin(ToolLoaderMixin):
         logger.info(f"[LLM Counter] >>> LLM called, count: {self.llm_call_count}")
         
         try:
-            last_message = self.conversation_history[-1]["content"]
-            history_dicts = self.conversation_history[:-1]
+            # 【关键修复 小沈 2026-05-15】正确区分last_message和history_dicts
+            # 原逻辑：无条件取conversation_history[-1]作为last_message(user角色)
+            # 问题：如果最后一条是observation(system角色)，会被错误地以user角色传给LLM
+            # 修复：找到最后一条user消息作为last_message，其余全部作为history_dicts
+            last_user_idx = -1
+            for i in range(len(self.conversation_history) - 1, -1, -1):
+                if self.conversation_history[i].get("role") == "user":
+                    last_user_idx = i
+                    break
+            
+            if last_user_idx >= 0:
+                last_message = self.conversation_history[last_user_idx]["content"]
+                history_dicts = self.conversation_history[:last_user_idx] + self.conversation_history[last_user_idx+1:]
+            else:
+                # 兜底：没有user消息时用最后一条
+                last_message = self.conversation_history[-1]["content"]
+                history_dicts = self.conversation_history[:-1]
             
             # ========== temp_history集成（v2.4新增，小沈2026-05-12）==========
             # 将chunk过程中的临时历史合并到history_dicts，让LLM下一轮能看到chunk输出
@@ -340,11 +355,13 @@ class ReactAgentMixin(ToolLoaderMixin):
             except Exception as e:
                 logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
             
-            # 【方案H 小沈 2026-05-15】注入已执行工具汇总
+            # 【方案H 小沈 2026-05-15】注入已执行工具汇总（强化措辞）
             if hasattr(self, '_executed_tool_summary') and self._executed_tool_summary:
-                progress = "【已执行工具】" + "; ".join(self._executed_tool_summary[-10:])
-                progress_msg = {"role": "system", "content": progress}
-                history_dicts = list(history_dicts) + [progress_msg]
+                done_tools = [s for s in self._executed_tool_summary if '→success' in s]
+                if done_tools:
+                    progress = "【已执行工具(勿重复)】" + "; ".join(done_tools[-8:]) + "\n注意：上述工具已成功执行，结果已在Observation中，禁止再次调用！"
+                    progress_msg = {"role": "system", "content": progress}
+                    history_dicts = list(history_dicts) + [progress_msg]
             
             # ========== debug日志（原file_react独有，小沈2026-05-12合入）==========
             logger.debug(f"[Debug] _call_llm_with_summary - conversation_history长度: {len(self.conversation_history)}")
