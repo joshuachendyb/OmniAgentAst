@@ -317,20 +317,22 @@ class ReactAgentMixin(ToolLoaderMixin):
                 history_dicts = list(history_dicts) + list(self.temp_history)
             
             # 【Phase 1优化 小健 2026-05-14】分级注入：已加载分类Detail + 其他分类Summary(exclude)
-            # 【修复 2026-05-15 小健】只在_loaded_categories变化时注入，避免每轮重复注入相同内容
+            # 【修复 2026-05-15 小健】分类变化时注入并写入conversation_history，避免每轮重复注入
             try:
                 loaded = getattr(self, '_loaded_categories', set())
                 _last_injected_cats = getattr(self, '_last_injected_categories', None)
                 if _last_injected_cats is None or loaded != _last_injected_cats:
                     detail_text = self._get_tools_detail()
                     summary_text = self._get_tools_summary(exclude_categories=loaded)
+                    tools_content = f"【已加载工具（完整）】\n{detail_text}\n\n【其他可用工具（概要）】\n{summary_text}"
                     tools_msg = {
                         "role": "system",
-                        "content": f"【已加载工具（完整）】\n{detail_text}\n\n【其他可用工具（概要）】\n{summary_text}"
+                        "content": tools_content
                     }
-                    history_dicts = list(history_dicts) + [tools_msg]
+                    # 写入conversation_history，后续轮次自动可见，不需要重复注入
+                    self.conversation_history.append(tools_msg)
                     self._last_injected_categories = frozenset(loaded)
-                    logger.info(f"[Phase1] 分级注入: detail={len(detail_text)}字符, summary={len(summary_text)}字符, 已加载分类={loaded}")
+                    logger.info(f"[Phase1] 分级注入(写入history): detail={len(detail_text)}字符, summary={len(summary_text)}字符, 已加载分类={loaded}")
                 else:
                     logger.debug(f"[Phase1] 分级注入跳过: 分类未变化 {loaded}")
             except Exception as e:
