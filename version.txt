@@ -1,3 +1,45 @@
+v0.12.34
+
+更新时间: 2026-05-15 08:43:13
+
+更新内容：
+
+## v0.12.33→v0.12.34 变更汇总 - 小沈-2026-05-15
+
+### feat 新增
+
+| commit | 说明 |
+|--------|------|
+| ae462f12 | add round_number to all PromptLogger entries for analysis - xiaojian-2026-05-15 |
+| 150c9394 | http_request fail hint domestic URL + tools strategy simplified hint - xiaojian-2026-05-15 |
+| 3c1b3af4 | 全量注册+找回27个遗漏工具(gui/data_analysis) - 小沈-2026-05-15 |
+
+### fix 修复
+
+| commit | 说明 |
+|--------|------|
+| 8183cd6a | dedup failed URL + inject schema only on category change - xiaojian-2026-05-15 |
+| 6a809eb1 | generic failed-call dedup (tool+params key), not URL-specific - xiaojian-2026-05-15 |
+| c27a7bb6 | revert: remove wrong _failed_calls dedup - observations are from different rounds, not duplicates - xiaojian-2026-05-15 |
+| 64d9ebc5 | parallel tool observation full data + prompt_logger record - xiaojian-2026-05-15 |
+| 5b4b2e0e | schema inject write to conversation_history, not temp append - xiaojian-2026-05-15 |
+| f0f8e496 | schema cache + inject to history_dicts every round (not conversation_history) - xiaojian-2026-05-15 |
+
+### 关键变更说明
+
+#### 1. 全量注册+找回27个工具 (3c1b3af4)
+- ensure_tools_registered() 忽略categories参数，一次全量注册所有分类
+- 找回gui/gui_helpers/data_analysis共27个遗漏工具（合并时注册函数未被调用链覆盖）
+- data_analysis_register.py 修复重复__all__导致的导出bug
+
+#### 2. Schema注入优化 (5b4b2e0e/f0f8e496)
+- 注入写入conversation_history而非每轮temp append
+- 缓存策略：分类未变化时跳过重复注入
+
+#### 3. failed-call去重修复 (8183cd6a/6a809eb1/c27a7bb6)
+- 通用去重key(tool+params)，非URL-specific
+- 修复错误去重逻辑导致的观察结果遗漏
+
 v0.12.33
 
 更新时间: 2026-05-15 06:16:40
