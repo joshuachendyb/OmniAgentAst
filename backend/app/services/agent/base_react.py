@@ -980,10 +980,8 @@ class BaseAgent(ABC):
                     if _fc >= 3:
                         observation_text += "\n[⚠️ 禁止再尝试此操作！必须使用其他方法或换URL]"
                 # 【方案H 小沈 2026-05-15】已执行工具汇总
+                # 【修复 小沈 2026-05-15】去掉str(data)[:50]乱码预览，完整数据已在Observation中
                 _summary_entry = f"{tool_name}→{exec_status}"
-                if exec_status == 'success':
-                    _data_preview = str(execution_result.get('data', ''))[:50]
-                    _summary_entry += f"(数据: {_data_preview}...)"
                 self._executed_tool_summary.append(_summary_entry)
                 # 【修复 风险5 小健 2026-05-15】限制汇总长度
                 if len(self._executed_tool_summary) > 50:
@@ -1070,12 +1068,7 @@ class BaseAgent(ABC):
                     p_name = pending.get("name", "finish")
                     p_params = pending.get("args", {})
                     logger.info(f"[ReAct] 执行并行工具: {p_name}")
-                    # 【修复 U4 小沈 2026-05-15】并行工具前追加系统记录消息
-                    # 【修复 风险6 小健 2026-05-15】不过滤falsy值(0/False/"")
-                    self.conversation_history.append({
-                        "role": "system",
-                        "content": f"[系统记录: 并行执行] {p_name}({', '.join(f'{k}={v}' for k,v in p_params.items())})"
-                    })
+                    # 【修复 小沈 2026-05-15】删除冗余[系统记录: 并行执行]消息，并行标记合并到observation
                     start_p = time.perf_counter()
                     p_result = await self._execute_tool(p_name, p_params)
                     p_time = int((time.perf_counter() - start_p) * 1000)
@@ -1106,15 +1099,15 @@ class BaseAgent(ABC):
                     # 【修复 2026-05-15 小健】并行工具observation与主工具逻辑一致：success附data，error附替代建议
                     p_status = p_result.get('status', 'success')
                     if p_status == 'success':
-                        p_obs_text = f"Observation: {p_status} - {p_result.get('summary', '')}"
+                        p_obs_text = f"[并行] {p_status} - {p_result.get('summary', '')}"
                         if p_result.get('data'):
                             p_obs_text += f"\n实际数据: {p_result.get('data')}"
                     elif p_status == 'warning':
-                        p_obs_text = f"Observation: {p_status} - {p_result.get('summary', '')}"
+                        p_obs_text = f"[并行] warning - {p_result.get('summary', '')}"
                         if p_result.get('data'):
                             p_obs_text += f"\n实际数据: {p_result.get('data')}"
                     else:
-                        p_obs_text = f"Observation: {p_status} - {p_result.get('summary', '')}"
+                        p_obs_text = f"[并行] {p_status} - {p_result.get('summary', '')}"
                         # 【修复 U17 小沈 2026-05-15】并行工具error也补全异常详情+调用参数
                         p_error_detail = p_result.get('error', '')
                         if p_error_detail and str(p_error_detail) != str(p_result.get('summary', '')):
@@ -1422,8 +1415,10 @@ class BaseAgent(ABC):
                 f"[observation] 轮数={self.llm_call_count}, "
                 f"长度={len(observation)}, 预算={budget}, 无需截断"
             )
-        # 【修复 U5 小沈 2026-05-15】observation加[Observation]前缀增强语义，保持system角色
-        if not observation.startswith("[Observation]"):
+        # 【修复 U5 小沈 2026-05-15】observation统一[Observation]前缀，避免双写
+        if observation.startswith("Observation:"):
+            observation = f"[Observation] {observation[len('Observation:'):].lstrip()}"
+        elif not observation.startswith("[Observation]"):
             observation = f"[Observation] {observation}"
         self.conversation_history.append({"role": "system", "content": observation})  # 【修复 2026-05-13 小沈】M1: 工具执行结果用system角色，避免LLM误认为是用户新输入
         self._trim_history()
