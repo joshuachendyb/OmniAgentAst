@@ -190,16 +190,10 @@ class ReactAgentMixin(ToolLoaderMixin):
         )
     
     def _get_tools_detail(self) -> str:
-        """获取已加载分类工具的完整描述（使用场景+示例+返回格式） - 小健 2026-05-14
-
-        【关键设计】按_loaded_categories输出detail，而非只输出初始分类。
-        动态加载新分类后，_loaded_categories会扩展，下一轮LLM调用会自动
-        包含新分类的完整工具描述。
-
-        例如：NetworkAgent初始化时_loaded_categories={"network"}
-        → 只输出network分类的detail
-        动态加载shell后_loaded_categories={"network","shell"}
-        → 输出network+shell两个分类的detail
+        """获取已加载分类工具的完整描述 - 小健 2026-05-14
+        
+        【重构 小健 2026-05-15】registry返回的单分类detail已自带"=== 分类名 ==="标题，
+        此处只做多分类拼接，不再生成额外标题。
         """
         from app.services.tools.registry import tool_registry, ToolCategory
         parts = []
@@ -299,6 +293,7 @@ class ReactAgentMixin(ToolLoaderMixin):
         
         【2026-05-10 小沈】方案C：text和response策略下注入Schema文本替代G6
         【2026-05-12 小沈】合并file_react独有逻辑：prompt_logger + temp_history + use_function_calling分支
+        【重构 小健 2026-05-15】策略前置：先确定策略再决定是否注入工具文本，FC模式跳过
         """
         self.llm_call_count += 1
         _cls = self.__class__.__name__
@@ -324,36 +319,45 @@ class ReactAgentMixin(ToolLoaderMixin):
                 history_dicts = self.conversation_history[:-1]
             
             # ========== temp_history集成（v2.4新增，小沈2026-05-12）==========
-            # 将chunk过程中的临时历史合并到history_dicts，让LLM下一轮能看到chunk输出
             if hasattr(self, 'temp_history') and self.temp_history:
                 history_dicts = list(history_dicts) + list(self.temp_history)
             
-            # 【Phase 1优化 小健 2026-05-14】分级注入：已加载分类Detail + 其他分类Summary(exclude)
-            # 【修复 2026-05-15 小健】分类变化时重新生成schema缓存，每轮临时注入history_dicts
-            try:
-                loaded = getattr(self, '_loaded_categories', set())
-                _last_injected_cats = getattr(self, '_last_injected_categories', None)
-                if _last_injected_cats is None or loaded != _last_injected_cats:
-                    detail_text = self._get_tools_detail()
-                    summary_text = self._get_tools_summary(exclude_categories=loaded)
-                    self._cached_tools_content = f"【已加载工具（完整）】\n{detail_text}\n\n【其他可用工具（概要）】\n{summary_text}"
-                    self._last_injected_categories = frozenset(loaded)
-                    logger.info(f"[Phase1] 分级注入(重新生成): detail={len(detail_text)}字符, summary={len(summary_text)}字符, 已加载分类={loaded}")
-                # 每轮都注入缓存的schema到history_dicts（临时，不写入conversation_history）
-                _cached = getattr(self, '_cached_tools_content', None)
-                if _cached:
-                    tools_msg = {"role": "system", "content": _cached}
-                    # 【修复 U19 小沈 2026-05-15】system消息插入到所有system消息之后、第一个非system消息之前
-                    insert_pos = 0
-                    for i, msg in enumerate(history_dicts):
-                        if msg.get("role") != "system":
-                            insert_pos = i
-                            break
-                    else:
-                        insert_pos = len(history_dicts)
-                    history_dicts = list(history_dicts[:insert_pos]) + [tools_msg] + list(history_dicts[insert_pos:])
-            except Exception as e:
-                logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
+            # ========== 【重构 小健 2026-05-15】策略前置：先确定策略，再决定是否注入工具文本 ==========
+            # FC模式下LLM已通过API tools参数获得工具定义，无需在system消息中重复注入
+            if not self.adapter:
+                logger.warning(f"[{_cls}] adapter未初始化，降级到text策略")
+                strategy_method = "text"
+            else:
+                strategy = await self.adapter.ensure_capability()
+                strategy_method = strategy.method
+            logger.info(f"[{_cls}] 执行策略: {strategy_method}")
+            self._last_strategy_method = strategy_method
+            
+            # ========== 工具信息注入（仅非FC模式）==========
+            # 【重构 小健 2026-05-15】FC模式跳过文本注入(tools已通过API传递)；非FC模式按需注入，分类不变不重建缓存
+            if strategy_method != "tools":
+                try:
+                    loaded = getattr(self, '_loaded_categories', set())
+                    _last_injected_cats = getattr(self, '_last_injected_categories', None)
+                    if _last_injected_cats is None or loaded != _last_injected_cats:
+                        detail_text = self._get_tools_detail()
+                        summary_text = self._get_tools_summary(exclude_categories=loaded)
+                        self._cached_tools_content = f"【已加载工具（完整）】\n{detail_text}\n\n【其他可用工具（概要）】\n{summary_text}"
+                        self._last_injected_categories = frozenset(loaded)
+                        logger.info(f"[Phase1] 分级注入(重新生成): detail={len(detail_text)}字符, summary={len(summary_text)}字符, 已加载分类={loaded}")
+                    _cached = getattr(self, '_cached_tools_content', None)
+                    if _cached:
+                        tools_msg = {"role": "system", "content": _cached}
+                        insert_pos = 0
+                        for i, msg in enumerate(history_dicts):
+                            if msg.get("role") != "system":
+                                insert_pos = i
+                                break
+                        else:
+                            insert_pos = len(history_dicts)
+                        history_dicts = list(history_dicts[:insert_pos]) + [tools_msg] + list(history_dicts[insert_pos:])
+                except Exception as e:
+                    logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
             
             # 【方案H 小沈 2026-05-15】注入已执行工具汇总（强化措辞）
             if hasattr(self, '_executed_tool_summary') and self._executed_tool_summary:
@@ -363,7 +367,7 @@ class ReactAgentMixin(ToolLoaderMixin):
                     progress_msg = {"role": "system", "content": progress}
                     history_dicts = list(history_dicts) + [progress_msg]
             
-            # ========== debug日志（原file_react独有，小沈2026-05-12合入）==========
+            # ========== debug日志 ==========
             logger.debug(f"[Debug] _call_llm_with_summary - conversation_history长度: {len(self.conversation_history)}")
             logger.debug(f"[Debug] _call_llm_with_summary - history_dicts长度: {len(history_dicts)}")
             for i, h in enumerate(history_dicts):
@@ -371,24 +375,8 @@ class ReactAgentMixin(ToolLoaderMixin):
             logger.debug(f"[Debug] _call_llm_with_summary - last_message长度: {len(last_message)}")
             logger.debug(f"[Debug] _call_llm_with_summary - last_message内容: {last_message[:200]}")
             
-            # ========== 确定策略 + Schema注入（小沈2026-05-12重构）==========
-            # 【重构 2026-05-14 小健】策略只在探测时确定一次，后续直接使用
-            # adapter必须存在，策略由adapter.ensure_capability()唯一确定
-            # 【修复 2026-05-15 小健】adapter=None时降级到text策略，不崩溃
-            # （初始化时llm_client无api_base会设adapter=None+降级纯文本模式）
-            if not self.adapter:
-                logger.warning(f"[{_cls}] adapter未初始化，降级到text策略")
-                strategy_method = "text"
-            else:
-                strategy = await self.adapter.ensure_capability()
-                strategy_method = strategy.method
-            logger.info(f"[{_cls}] 执行策略: {strategy_method}")
-            # 【2026-05-15 小健】保存策略方法供observation的替代提示使用
-            self._last_strategy_method = strategy_method
-            
-            # 方案C：text策略下注入tools Schema文本（tools策略不注入）
-            # 【修复 N3 小沈 2026-05-15】response_format策略下已有enum，不注入schema文本
-            # 【修复 U15 小沈 2026-05-15】缓存schema文本，不每轮重新生成
+            # 方案C：text策略下注入tools Schema文本
+            # 【重构 小健 2026-05-15】合并到上面的工具信息注入block中，统一由strategy_method控制
             if strategy_method == "text":
                 if not hasattr(self, '_cached_schema_text'):
                     self._cached_schema_text = self._tools_to_schema_text()

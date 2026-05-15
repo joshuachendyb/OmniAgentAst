@@ -1155,7 +1155,116 @@ class BaseAgent(ABC):
     
     # ===== 对话历史管理 =====
 
-    MAX_HISTORY_TURNS = 5  # 保留最近 N 轮对话（每轮 = thought + observation）
+    MAX_CONTEXT_CHARS = 80000  # 【重构 小健 2026-05-15】token-aware裁剪：按字符数预算而非消息计数
+
+    def _trim_history(self) -> None:
+        """
+        容量感知的对话历史裁剪 - 小健 2026-05-15 重构
+
+        【原设计缺陷】：
+        1. 硬编码5个工具名做去重 → 新工具永不匹配
+        2. 计数制(30条阈值) → 一条150K字符observation等同一条50字符消息
+        3. "Observation: success"子串匹配 → F2改前缀后全部失效(P0)
+        4. recent[-5:] → 无字符数控制，可能保留5条超长消息撑爆窗口
+
+        【新设计】：
+        - 角色驱动分类: observations统一role=system，用role+前缀识别，不依赖子串
+        - 内容指纹去重: 取content[:200]做指纹，语言无关、工具无关
+        - 容量预算制: MAX_CONTEXT_CHARS=80K，保留顺序 system→user→error_obs→assistant→success_obs
+        - 每类设soft limit防单类占满: error最多5条，assistant最多6条，success最多8条
+        """
+        if len(self.conversation_history) <= 2:
+            return  # 只有system+user，无需裁剪
+
+        system_msg = self.conversation_history[0]
+        user_msg = self.conversation_history[1] if len(self.conversation_history) > 1 else None
+
+        # --- 角色分类 ---
+        error_obs = []
+        success_obs = []
+        assistant_msgs = []
+
+        for msg in self.conversation_history[2:]:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if role == "assistant":
+                assistant_msgs.append(msg)
+            elif self._is_observation_role(msg) or self._is_observation_legacy(content):
+                if self._is_error_obs(content):
+                    error_obs.append(msg)
+                else:
+                    success_obs.append(msg)
+            # 其他消息（如旧格式user/system混合）保留
+
+        # --- 内容指纹去重（语言无关、工具无关）---
+        error_obs = self._dedup_by_fingerprint(error_obs)
+        success_obs = self._dedup_by_fingerprint(success_obs)
+
+        # --- 容量预算制组装 ---
+        rebuilt = [system_msg]
+        if user_msg:
+            rebuilt.append(user_msg)
+
+        budget = self.MAX_CONTEXT_CHARS - self._total_chars(rebuilt)
+
+        # 优先级: error_obs(5) > assistant(6) > success_obs(8)
+        for obs in error_obs[-5:]:
+            self._add_within_budget(rebuilt, obs, budget)
+
+        for msg in assistant_msgs[-6:]:
+            self._add_within_budget(rebuilt, msg, budget)
+
+        for obs in success_obs[-8:]:
+            self._add_within_budget(rebuilt, obs, budget)
+
+        if len(rebuilt) < len(self.conversation_history):
+            logger.info(
+                f"[History] Trim: {len(self.conversation_history)} → {len(rebuilt)} msgs, "
+                f"chars={self._total_chars(rebuilt)}/{self.MAX_CONTEXT_CHARS}"
+            )
+        self.conversation_history = rebuilt
+
+    @staticmethod
+    def _is_observation_role(msg: dict) -> bool:
+        """通过role+前缀识别observation - 小健 2026-05-15"""
+        return msg.get("role") == "system" and msg.get("content", "").startswith("[Observation]")
+
+    @staticmethod
+    def _is_observation_legacy(content: str) -> bool:
+        """向后兼容旧格式observation - 小健 2026-05-15"""
+        return "Observation:" in content and ("exec_status" not in content)
+
+    @staticmethod
+    def _is_error_obs(content: str) -> bool:
+        """判断observation是否失败 - 小健 2026-05-15"""
+        return any(kw in content for kw in ("error", "timeout", "permission_denied", "blocked", "failed"))
+
+    @staticmethod
+    def _dedup_by_fingerprint(obs_list: list) -> list:
+        """内容指纹去重 - 小健 2026-05-15
+        取content前200字符为指纹，相同指纹只保留最后一条（最新）。"""
+        seen = set()
+        result = []
+        for obs in reversed(obs_list):
+            fp = obs["content"][:200]
+            if fp not in seen:
+                seen.add(fp)
+                result.append(obs)
+        result.reverse()
+        return result
+
+    @staticmethod
+    def _total_chars(messages: list) -> int:
+        """计算消息总字符数 - 小健 2026-05-15"""
+        return sum(len(m.get("content", "")) for m in messages)
+
+    @staticmethod
+    def _add_within_budget(target: list, msg: dict, budget: int) -> None:
+        """在预算内追加消息 - 小健 2026-05-15"""
+        chars = len(msg.get("content", ""))
+        budget_used = BaseAgent._total_chars(target)
+        if budget_used + chars <= BaseAgent.MAX_CONTEXT_CHARS:
+            target.append(msg)
 
     def _build_alternative_tools_hint(self, failed_tool: str, tool_params: Optional[dict] = None) -> str:
         """工具执行失败时，从当前Agent已注册工具中动态生成替代建议 - 小沈 2026-05-14

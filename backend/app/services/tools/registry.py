@@ -490,20 +490,17 @@ class ToolRegistry:
         return sorted(required)
 
     def get_all_tools_summary(self, priority_category: Optional['ToolCategory'] = None,
-                              expose_to_llm_only: bool = True,
-                              exclude_categories: Optional[set] = None) -> str:
-        """获取工具概要描述（分类标题+工具名列表） - 小健 2026-05-14
+                               expose_to_llm_only: bool = True,
+                               exclude_categories: Optional[set] = None) -> str:
+        """获取工具概要描述（分类标题+工具名+一句话描述） - 小健 2026-05-15 重构
 
-        【Phase 1优化】精简版，只输出分类名+工具名列表，约1-2K字符。
-        原版输出完整description（53K），精简后仅输出工具名。
-
-        【修复 2026-05-14 小健】从注册表+静态目录生成summary，
-        即使工具未注册也能告诉LLM有哪些可用分类。
+        【重构 小健 2026-05-15】在工具名后追加一句话描述（取description首句，约50字），
+        LLM可以判断是否需要加载该分类。
 
         Args:
             priority_category: 优先展示的分类
             expose_to_llm_only: 是否只展示暴露给LLM的工具
-            exclude_categories: 排除的分类集合（避免与detail重复）
+            exclude_categories: 排除的分类集合
 
         Returns:
             格式化的工具概要字符串
@@ -519,7 +516,7 @@ class ToolRegistry:
                 continue
             if exclude_categories and metadata.category.value in exclude_categories:
                 continue
-            by_category[metadata.category].append(name)
+            by_category[metadata.category].append((name, metadata))
 
         category_order = list(self.CATEGORY_ORDER)
         if priority_category and priority_category in category_order:
@@ -529,22 +526,27 @@ class ToolRegistry:
         for cat in category_order:
             if exclude_categories and cat.value in exclude_categories:
                 continue
-            
-            names = by_category.get(cat, [])
+            items = by_category.get(cat, [])
+            if not items:
+                continue
             display_name = self.CATEGORY_NAMES.get(cat, cat.value)
-            
-            if names:
-                lines.append(f"【{display_name}】")
-                lines.append(f"  {', '.join(sorted(names))}")
-                lines.append("")
+            lines.append(f"【{display_name}】")
+            for name, meta in sorted(items, key=lambda x: x[0]):
+                # 取description首句（到第一个句号）作为一句话概要
+                desc = meta.description.split("。")[0][:80]
+                lines.append(f"  {name}: {desc}")
+            lines.append("")
 
         return "\n".join(lines)
 
     def get_all_tools_detail(self, priority_category: Optional['ToolCategory'] = None,
                              category_filter: Optional['ToolCategory'] = None,
                              exclude_categories: Optional[set] = None,
-                             expose_to_llm_only: bool = True) -> str:
+                              expose_to_llm_only: bool = True) -> str:
         """获取工具完整描述（使用场景+示例+返回格式） - 小健 2026-05-14
+        
+        【修复 小健 2026-05-15】category_filter指定时不再添加"=== 可用工具列表 ==="标题，
+        避免_loaded_categories多分类遍历时重复标题。
 
         与 get_all_tools_summary（概要版）互补，此方法输出每个工具的完整description。
 
@@ -558,7 +560,12 @@ class ToolRegistry:
             格式化的工具完整描述字符串
         """
         lines = []
-        lines.append("=== 可用工具列表（完整）===")
+        # category_filter时用分类名作标题，不放"=== 可用工具列表 ==="避免重复
+        if category_filter:
+            display = self.CATEGORY_NAMES.get(category_filter, category_filter.value)
+            lines.append(f"=== {display} ===")
+        else:
+            lines.append("=== 可用工具列表（完整）===")
         lines.append("")
 
         from collections import defaultdict
