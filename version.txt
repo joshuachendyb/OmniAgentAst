@@ -1,3 +1,37 @@
+v0.12.36
+
+更新时间: 2026-05-15 17:45:00
+
+更新内容：
+
+## v0.12.35→v0.12.36 变更汇总 - 小沈-2026-05-15
+
+### fix 修复
+
+| commit | 说明 |
+|--------|------|
+| 9bbbb104 | P0-删旧版_trim_history(双定义覆盖bug)+日志加强+ping IPv6修复+observation数据过滤 - base_react.py/react_agent_mixin.py/network_tools.py - 小沈-2026-05-15 |
+
+### 关键变更说明
+
+#### 1. P0: _trim_history 双定义覆盖bug (9bbbb104)
+- **问题**: base_react.py中`_trim_history`定义了两次(1160行+1322行)，Python第二个覆盖第一个
+  - 旧版(1322行): 30条计数阈值、硬编码5个工具名、`"Observation: success"`子串匹配(F2改前缀后失效)
+  - 新版(1160行): token-aware 80K预算制、内容指纹去重、role+前缀识别 → **从未被调用**
+- **修复**: 删除旧版(1322-1428行)，新版成为唯一版本，所有token优化真正生效
+- **日志加强**: 裁剪时记录`[History] ✂Trim: msgs/chars/budget`，不裁剪时记录`✓NoTrim`
+- **prompt_logger**: 添加`trim_info`字段记录裁剪前后状态 + 本次LLM调用总字符数
+
+#### 2. ping IPv6 is_reachable判定修复 (network_tools.py:889)
+- **问题**: IPv6 ping输出不含`TTL=`字段，`is_reachable`被判False → `packets_received=0, loss_rate=100%`覆盖正则解析的正确数据
+- **修复**: 补充`loss_match and int(loss_match.group(2)) > 0`判据
+
+#### 3. observation数据过滤优化 (_filter_obs_data)
+- **ping**: 去除`raw_output`(与结构化统计重复，省5K-15K/次)
+- **http_request**: body>2000字符且非JSON时截断(省10K-30K/次)
+
+---
+
 v0.12.35
 
 更新时间: 2026-05-15 13:13:41
