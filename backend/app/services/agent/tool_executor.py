@@ -454,9 +454,12 @@ class ToolExecutor:
                 if _llm: r["llm_data"] = _llm
                 return r
         else:
-            return {
+            r = {
                 "status": "success",
                 "summary": f"Successfully executed {action}",
                 "data": result,
                 "retry_count": 0
             }
+            # 【修复 问题7 小沈 2026-05-15】else分支也透传llm_data
+            if _llm: r["llm_data"] = _llm
+            return r

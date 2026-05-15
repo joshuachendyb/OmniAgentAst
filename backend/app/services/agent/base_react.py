@@ -286,7 +286,8 @@ class BaseAgent(ABC):
         logger.info(f"[动态加载] 已加载{intent_type}分类的{len(new_tool_names)}个工具，下一轮detail将自动包含")
 
         # 3. 刷新FC通道的tools定义（如果已启用）
-        if hasattr(self, 'tools_strategy') and self.tools_strategy is not None:
+        # 【修复 问题2+9 小沈 2026-05-15】增加openai_tools存在性检查
+        if hasattr(self, 'tools_strategy') and self.tools_strategy is not None and hasattr(self, 'openai_tools') and self.openai_tools:
             from app.services.tools.registry import tool_registry
             new_openai_tools = tool_registry.to_openai_tools(category=category)
             self.openai_tools.extend([t for t in new_openai_tools if t not in self.openai_tools])
@@ -294,7 +295,7 @@ class BaseAgent(ABC):
             logger.info(f"[FC刷新] tools定义已更新，当前{len(self.openai_tools)}个")
 
         # 【修复 N1 小沈 2026-05-15】动态加载后同步刷新response_format enum
-        if hasattr(self, 'response_format_strategy') and self.response_format_strategy:
+        if hasattr(self, 'response_format_strategy') and self.response_format_strategy and hasattr(self, 'openai_tools') and self.openai_tools:
             try:
                 tool_names = [t["function"]["name"] for t in self.openai_tools] + ["finish"]
                 self.response_format_strategy.response_format["json_schema"]["schema"]["properties"]["tool_name"]["enum"] = tool_names
@@ -309,96 +310,8 @@ class BaseAgent(ABC):
         logger.info(f"[动态加载] 完成，新增{len(new_tools)}个工具，总计{len(self._tools_dict)}个")
     
     async def _check_and_load_missing_tools(self, observation: str, llm_client=None):
-        """
-        在Observation阶段，检测是否需要新工具（改进版） - 小健 2026-05-14
-        
-        【修复 U7 小沈 2026-05-15】全量注册后动态加载机制多余，直接跳过。
-        所有工具已在ensure_tools_registered()中全量注册，无需在ReAct循环中动态加载。
-        """
-        # 全量注册后不需要动态加载
+        """全量注册后无需动态加载 - 小沈 2026-05-15"""
         return
-        # 【Phase 1 小健 2026-05-14】关键词检测（主方案，快速）
-        trigger_keywords = {
-            "network": ["ping ", "http", "下载", "网络", "url", "curl", "wget", "公网IP", "DNS", "ipify"],
-            "desktop": ["截图", "截屏", "窗口", "鼠标点击", "键盘输入", "UI", "GUI"],
-            "shell": ["执行命令", "npm ", "pip ", "git ", "docker ", "nslookup", "shell", "命令行", "bash"],
-            "database": ["数据库", "SQL", "查询", "SELECT", "INSERT", "sqlite", "mysql"],
-            "environment": ["环境变量", "PATH", "JAVA_HOME", "PYTHONPATH", "Node"],
-            "system": ["系统信息", "CPU", "内存", "磁盘", "进程", "systeminfo"],
-            "file": ["文件", "目录", "读写", "copy", "move", "重命名"],
-            "time": ["时间", "日期", "时区", "timezone"],
-            "data_format": ["JSON", "CSV", "Excel", "格式转换", "解析", "序列化"],
-            "code_execution": ["执行代码", "Python脚本", "运行代码", "代码执行"],
-            "document": ["PDF", "Word", "文档读取", "文档生成", "Markdown"],
-        }
-        # 注意：support_tool（含finish）在初始化时已始终注册，无需触发关键词
-        
-        detected_intent = None
-        for intent, keywords in trigger_keywords.items():
-            if any(kw in observation for kw in keywords):
-                # 否定词检测：避免"不要执行shell"误触发
-                if self._should_trigger_dynamic_load(observation, intent):
-                    detected_intent = intent
-                    break  # 只取第一个匹配的
-        
-        # 如果关键词检测到，直接加载
-        if detected_intent and detected_intent not in self._loaded_categories:
-            self.load_tools_by_intent(
-                detected_intent, 
-                reason=f"关键词检测: {trigger_keywords[detected_intent]}"
-            )
-            return
-        
-        # 【Phase 1修复 小健 2026-05-14】关键词检测不确定时，用LLM分类器（补充）
-        # LLM分类器能理解语义，比关键词更准确，但有延迟和成本
-        if llm_client and self._intent_classifier and not detected_intent:
-            try:
-                from app.services.tools.registry import ToolCategory
-                labels = [cat.value for cat in ToolCategory]
-                
-                result = await self._intent_classifier.classify(observation, labels)
-                new_intent = result.get("intent")
-                confidence = result.get("confidence", 0)
-                
-                # 置信度阈值：0.3，比初始阶段的0.5低，因为Observation可能模糊
-                if (new_intent and new_intent not in self._loaded_categories 
-                        and confidence >= 0.3):
-                    # 否定词检测
-                    if self._should_trigger_dynamic_load(observation, new_intent):
-                        self.load_tools_by_intent(
-                            new_intent, 
-                            reason=f"LLM分类器检测: {new_intent}(置信度{confidence:.2f})"
-                        )
-            except Exception as e:
-                logger.warning(f"[动态加载] LLM分类器失败: {e}")
-    
-    def _should_trigger_dynamic_load(self, observation: str, intent: str) -> bool:
-        """
-        判断是否应该触发动态加载（包含否定词检测）
-        
-        参考：文档4.14节步骤9缺陷7修正
-        避免"不要执行shell"误触发
-        
-        Args:
-            observation: LLM返回的observation内容
-            intent: 检测的意图类型
-        Returns:
-            bool: 是否应该触发动态加载
-        """
-        # 否定词列表（表示否定的词语）
-        negation_words = [
-            "不要", "不需要", "别", "禁止", "不可以", "不能", 
-            "don't", "donot", "cannot", "should not", "not to"
-        ]
-        
-        # 检查observation中是否包含否定词
-        has_negation = any(neg in observation.lower() for neg in negation_words)
-        
-        if has_negation:
-            logger.info(f"[动态加载] 检测到否定词，不触发{intent}工具加载")
-            return False
-        
-        return True
     
     # ===== 核心方法（子类调用）=====
     
@@ -916,19 +829,7 @@ class BaseAgent(ABC):
                             if data.get('entries'):
                                 observation_text += f"\n实际数据: {data.get('entries')}"
                         else:
-                            # 【优化 小沈 2026-05-15】http_request成功时精简headers，减少token消耗
-                            if tool_name == "http_request" and isinstance(data, dict):
-                                _slim_data = dict(data)
-                                headers = _slim_data.get('headers')
-                                if isinstance(headers, dict) and len(headers) > 3:
-                                    _keep = {k: v for k, v in headers.items()
-                                             if k.lower() in ('content-type', 'content-length', 'location')}
-                                    _slim_data['headers'] = _keep or f"({len(headers)} headers omitted)"
-                                    observation_text += f"\n实际数据: {_slim_data}"
-                                else:
-                                    observation_text += f"\n实际数据: {data}"
-                            else:
-                                observation_text += f"\n实际数据: {data}"
+                            observation_text += f"\n实际数据: {data}"
                 elif exec_status == 'warning':
                     # 警告状态：显示警告信息和部分数据
                     observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
@@ -1146,6 +1047,17 @@ class BaseAgent(ABC):
                         if p_alt_hint:
                             p_obs_text += f"\n{p_alt_hint}"
                     self._add_observation_to_history(p_obs_text)
+                    # 【修复 问题4 小沈 2026-05-15】并行工具也更新缓存和失败计数
+                    _pkey = f"{p_name}:{self._params_to_key(p_params)}"
+                    if p_status == 'success':
+                        if not self._is_no_cache_tool(p_name, p_params):
+                            self._executed_cache[_pkey] = p_result
+                            self._cache_timestamps[_pkey] = time.time()
+                        if _pkey in self._failed_attempts:
+                            del self._failed_attempts[_pkey]
+                    elif p_status in ('error', 'timeout', 'permission_denied', 'blocked'):
+                        _fc = self._failed_attempts.get(_pkey, 0) + 1
+                        self._failed_attempts[_pkey] = _fc
                     # 【修复 2026-05-15 小健】并行工具也记录到prompt日志
                     try:
                         _p_logger = get_prompt_logger()
@@ -1292,6 +1204,12 @@ class BaseAgent(ABC):
                 f"(去重{dropped_dup}条)"
             )
         self.conversation_history = rebuilt
+        # 【修复 问题6 小沈 2026-05-15】trim时同步清理过期缓存条目
+        _now = time.time()
+        _expired_keys = [k for k, t in self._cache_timestamps.items() if _now - t > self._cache_ttl]
+        for k in _expired_keys:
+            self._executed_cache.pop(k, None)
+            self._cache_timestamps.pop(k, None)
 
     @staticmethod
     def _is_observation_role(msg: dict) -> bool:
@@ -1332,7 +1250,7 @@ class BaseAgent(ABC):
         """在预算内追加消息，返回是否成功 - 小健 2026-05-15"""
         chars = len(msg.get("content", ""))
         budget_used = BaseAgent._total_chars(target)
-        if budget_used + chars <= BaseAgent.MAX_CONTEXT_CHARS:
+        if budget_used + chars <= budget:
             target.append(msg)
             return True
         return False
