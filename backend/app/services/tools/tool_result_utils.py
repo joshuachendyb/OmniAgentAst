@@ -5,7 +5,7 @@
 原则：
   - 工具自己负责结果格式化（LLM数据+前端数据）
   - 共性截断/格式化逻辑抽到此模块复用
-  - llm_data：精简关键字段给LLM决策
+  - llm_data：≤阈值全给，超阈值截断但保留关键结构
   - data：完整结构化数据给前端渲染
 """
 import json
@@ -13,10 +13,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# 默认截断阈值
-DEFAULT_MAX_OUTPUT_CHARS = 5000   # shell/code执行输出
-DEFAULT_MAX_FILE_CHARS = 3000     # 文件内容
-DEFAULT_MAX_BODY_CHARS = 2000     # HTTP响应体
+# 【修复 小健 2026-05-16】统一阈值原则：≤5K全给不截断，超5K才截断
+DEFAULT_MAX_OUTPUT_CHARS = 5000   # shell/code执行输出（stdout+stderr合计）
+DEFAULT_MAX_FILE_CHARS = 8000     # 文件内容（代码文件常需完整内容才能修改）
 DEFAULT_MAX_DOC_CHARS = 10000     # PDF/DOCX文档
 DEFAULT_MAX_CLIPBOARD_CHARS = 5000
 DEFAULT_MAX_ENV_VALUE_CHARS = 1000
@@ -33,19 +32,33 @@ def truncate_text(text: str, max_chars: int, suffix: str = None) -> tuple:
 
 
 def format_output_for_llm(stdout: str, stderr: str, max_chars: int = DEFAULT_MAX_OUTPUT_CHARS) -> dict:
-    """格式化命令/代码执行输出为llm_data 小沈-2026-05-15"""
+    """格式化命令/代码执行输出为llm_data 小沈-2026-05-15
+    【修复 小健 2026-05-16】不再对半砍stdout/stderr，按实际大小分配额度"""
     result = {}
-    half = max_chars // 2
-    if stdout:
-        txt, tr = truncate_text(stdout, half)
-        result["stdout"] = txt
-        if tr:
-            result["stdout_截断"] = f"原文{len(stdout)}字符"
-    if stderr:
-        txt, tr = truncate_text(stderr, half)
-        result["stderr"] = txt
-        if tr:
-            result["stderr_截断"] = f"原文{len(stderr)}字符"
+    stdout_len = len(stdout) if stdout else 0
+    stderr_len = len(stderr) if stderr else 0
+    total_len = stdout_len + stderr_len
+
+    # 总量不超限，全给
+    if total_len <= max_chars:
+        if stdout:
+            result["stdout"] = stdout
+        if stderr:
+            result["stderr"] = stderr
+    else:
+        # 按实际大小比例分配额度，至少给1K
+        if stdout_len > 0:
+            stdout_budget = max(1000, int(max_chars * stdout_len / total_len))
+            txt, tr = truncate_text(stdout, stdout_budget)
+            result["stdout"] = txt
+            if tr:
+                result["stdout_截断"] = f"原文{stdout_len}字符"
+        if stderr_len > 0:
+            stderr_budget = max(1000, int(max_chars * stderr_len / total_len))
+            txt, tr = truncate_text(stderr, stderr_budget)
+            result["stderr"] = txt
+            if tr:
+                result["stderr_截断"] = f"原文{stderr_len}字符"
     return result if result else {"输出": "(无输出)"}
 
 

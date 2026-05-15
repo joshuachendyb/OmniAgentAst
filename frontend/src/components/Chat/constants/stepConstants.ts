@@ -18,6 +18,7 @@ export const STEP_LABEL_MAP: Record<string, string> = {
   resumed: "恢复",
   interrupted: "中断",
   retrying: "重试",
+  rate_limit: "限流",
   incident: "事件",
 };
 
@@ -33,5 +34,6 @@ export const STEP_ICON_MAP: Record<string, string> = {
   resumed: "▶️",
   interrupted: "⚠️",
   retrying: "🔄",
+  rate_limit: "🚧",
   incident: "⚡",
 };

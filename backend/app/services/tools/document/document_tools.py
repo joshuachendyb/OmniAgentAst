@@ -133,14 +133,13 @@ def read_pdf(
         if extract_tables and tables_data:
             result_data["tables"] = tables_data
 
-        # 【优化 小沈 2026-05-15】llm_data提供精简摘要，完整文本在data中给前端
+        # 【修复 小健 2026-05-16】文档内容全部给LLM，不截断
         full_text = result_data["text"]
-        _text_preview = full_text[:10000]
         _llm = {
             "文件": file_path,
             "页数": f"{page_count}页(读取{len(pages_read)}页)",
             "文本长度": f"{len(full_text)}字符",
-            "内容预览": _text_preview + ("..." if len(full_text) > 10000 else ""),
+            "内容": full_text,
         }
         return {
             "code": "SUCCESS",
@@ -199,13 +198,12 @@ def read_docx(
             result_data["tables"] = tables_data
             result_data["table_count"] = len(tables_data)
         
-        # 【优化 小沈 2026-05-15】llm_data提供精简摘要
-        _text_preview = text[:10000]
+        # 【修复 小健 2026-05-16】文档内容全部给LLM，不截断
         _llm = {
             "文件": file_path,
             "段落数": len(paragraphs),
             "文本长度": f"{len(text)}字符",
-            "内容预览": _text_preview + ("..." if len(text) > 10000 else ""),
+            "内容": text,
         }
         return {
             "code": "SUCCESS",
@@ -477,13 +475,13 @@ def read_pptx(
         if extract_notes and notes_data:
             result_data["notes"] = notes_data
 
-        # 【优化 小沈 2026-05-15】llm_data提供精简摘要
+        # 【修复 小健 2026-05-16】PPT内容全部给LLM，不截断
         _total_text = sum(len(s.get("text", "")) for s in slides_data)
         _llm = {
             "文件": file_path,
             "幻灯片数": len(prs.slides),
             "文本总长度": f"{_total_text}字符",
-            "幻灯片摘要": [{"页码": s["slide_num"], "文本长度": len(s.get("text", "")), "预览": s.get("text", "")[:200]} for s in slides_data],
+            "幻灯片内容": [{"页码": s["slide_num"], "文本": s.get("text", "")} for s in slides_data],
         }
         if extract_notes and notes_data:
             _llm["备注数"] = len(notes_data)

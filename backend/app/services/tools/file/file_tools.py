@@ -1712,12 +1712,13 @@ class FileTools:
                     return base64.b64encode(f.read()).decode('utf-8')
 
             b64_data = await asyncio.to_thread(_read_sync)
-            # 【优化 小沈 2026-05-15】base64对LLM无用，data只返回元信息，原始base64不注入上下文
+            # 【修复 小健 2026-05-16】base64必须放data给前端展示，llm_data只给元信息
             return _to_unified_format({
                 "success": True,
                 "file_name": path.name,
                 "mime_type": mime_type,
                 "file_size": path.stat().st_size,
+                "base64_data": b64_data,
             }, "read_media_file", llm_data={
                 "文件名": path.name,
                 "类型": mime_type,
@@ -1786,14 +1787,23 @@ class FileTools:
 
         results = await asyncio.gather(*[_read_single(fp) for fp in file_paths])
         success_count = sum(1 for r in results if r["success"])
-        # 【优化 小沈 2026-05-15】llm_data提供批量读取摘要
+        # 【修复 小健 2026-05-16】llm_data包含每个文件内容，≤5K全给，>5K给前800字符预览
+        _llm_files = []
+        for r in results:
+            if r["success"]:
+                content = r.get("content", "")
+                if len(content) <= 5000:
+                    _llm_files.append({"路径": r["file_path"], "内容": content})
+                else:
+                    _llm_files.append({"路径": r["file_path"], "内容预览": content[:800], "总长度": f"{len(content)}字符"})
+            else:
+                _llm_files.append({"路径": r["file_path"], "失败": r.get("error", "未知错误")})
         _llm = {
             "总数": f"{len(results)}个文件",
             "成功": f"{success_count}个",
             "失败": f"{len(results) - success_count}个",
+            "文件详情": _llm_files,
         }
-        if success_count <= 10:
-            _llm["文件"] = [r["file_path"] for r in results if r["success"]]
         return _to_unified_format({
             "success": success_count > 0, "results": results, "total": len(results),
             "success_count": success_count, "failed_count": len(results) - success_count,

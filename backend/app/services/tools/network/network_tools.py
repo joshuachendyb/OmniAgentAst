@@ -135,22 +135,31 @@ async def http_request(
                     else:
                         response_body = response.text
 
-                    # 【优化 小沈 2026-05-15】非JSON超长body截断，llm_data给LLM关键摘要
+                    # 【修复 小健 2026-05-16】llm_data给LLM关键数据，≤5K全给，超5K用make_json_safe保留结构
                     _body = response_body
-                    if isinstance(_body, str) and len(_body) > 2000:
+                    _body_json_len = 0
+                    if isinstance(response_body, (dict, list)):
+                        _body_json_len = len(json.dumps(response_body, ensure_ascii=False))
+                    _ct = response.headers.get("content-type", "")
+                    _ct_short = _ct.split(";")[0].strip() if _ct else "unknown"
+
+                    if isinstance(_body, str) and len(_body) > 5000:
                         try:
                             json.loads(_body)
                         except (json.JSONDecodeError, ValueError):
-                            _body = _body[:1500] + f"\n...[截断 {len(_body)-1500} 字符]"
-                    _ct = response.headers.get("content-type", "")
-                    _ct_short = _ct.split(";")[0].strip() if _ct else "unknown"
-                    _body_preview = ""
-                    if isinstance(response_body, dict):
-                        _body_preview = f"JSON({len(json.dumps(response_body, ensure_ascii=False))}字符)"
-                    elif isinstance(response_body, str):
-                        _body_preview = f"文本({len(response_body)}字符)"
-                    elif isinstance(response_body, list):
-                        _body_preview = f"列表({len(response_body)}项)"
+                            _body = _body[:4000] + f"\n...[截断 {len(_body)-4000} 字符]"
+
+                    if isinstance(response_body, dict) and _body_json_len <= 5000:
+                        _llm_body = response_body
+                    elif isinstance(response_body, list) and _body_json_len <= 5000:
+                        _llm_body = response_body
+                    elif isinstance(response_body, str) and len(response_body) <= 5000:
+                        _llm_body = response_body
+                    elif isinstance(response_body, (dict, list)):
+                        from app.services.tools.tool_result_utils import make_json_safe
+                        _llm_body = make_json_safe(response_body, max_depth=4, max_str_len=500)
+                    else:
+                        _llm_body = str(_body)[:4000]
 
                     return {
                         "code": "SUCCESS",
@@ -163,7 +172,7 @@ async def http_request(
                         "llm_data": {
                             "状态码": response.status_code,
                             "内容类型": _ct_short,
-                            "响应体": _body_preview or str(_body)[:200],
+                            "响应体": _llm_body,
                         }
                     }
             except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
@@ -917,18 +926,20 @@ async def ping(
         is_reachable = False
         
         if system == "windows":
-            loss_match = re.search(r"已发送\s*=\s*(\d+).*?已接收\s*=\s*(\d+).*?丢失\s*=\s*(\d+).*?(\d+)%", raw_output, re.DOTALL)
+            # 【修复 小健 2026-05-16】兼容Windows中文/英文ping丢包格式
+            loss_match = re.search(r"(?:已发送|Packets\s*:\s*Sent\s*=\s*)(\d+).*?(?:已接收|Received\s*=\s*)(\d+).*?(?:丢失|Lost\s*=\s*)(\d+).*?(\d+)%", raw_output, re.DOTALL | re.IGNORECASE)
             if loss_match:
                 packets_sent = int(loss_match.group(1))
                 packets_received = int(loss_match.group(2))
                 packets_lost = int(loss_match.group(3))
                 loss_rate = float(loss_match.group(4))
             
-            latency_match = re.search(r"最短\s*=\s*(\d+)ms.*?最长\s*=\s*(\d+)ms.*?平均\s*=\s*(\d+)ms", raw_output, re.DOTALL)
+            # 【修复 小健 2026-05-16】兼容Windows中文/英文ping延迟格式，支持小数
+            latency_match = re.search(r"(?:最短|Minimum)\s*[=:]\s*([\d.]+)\s*ms.*?(?:最长|Maximum)\s*[=:]\s*([\d.]+)\s*ms.*?(?:平均|Average)\s*[=:]\s*([\d.]+)\s*ms", raw_output, re.DOTALL | re.IGNORECASE)
             if latency_match:
-                min_latency = int(latency_match.group(1))
-                max_latency = int(latency_match.group(2))
-                avg_latency = int(latency_match.group(3))
+                min_latency = float(latency_match.group(1))
+                max_latency = float(latency_match.group(2))
+                avg_latency = float(latency_match.group(3))
             
             # 【修复 小健 2026-05-15】IPv6 ping不含"TTL="，用packets_received>0作为补充判定
             if "TTL=" in raw_output or "ttl=" in raw_output.lower() or (loss_match and int(loss_match.group(2)) > 0):
@@ -951,7 +962,18 @@ async def ping(
                 is_reachable = True
         
         if is_reachable:
-            # 【优化 小沈 2026-05-15】raw_output不注入LLM，llm_data提供结构化关键数据
+            # 【修复 小健 2026-05-16】llm_data直接给原始输出，≤5K全给，不再正则解析后重组避免N/A丢失
+            _raw_len = len(raw_output)
+            if _raw_len <= 5000:
+                _llm_ping = {"目标": host, "结果": raw_output.strip()}
+            else:
+                _llm_ping = {
+                    "目标": host,
+                    "发包/收包": f"{packets_sent}/{packets_received}",
+                    "丢包率": f"{loss_rate}%",
+                    "延迟(avg/min/max)": f"{avg_latency}ms / {min_latency}ms / {max_latency}ms" if avg_latency else "N/A",
+                    "原始输出(截断)": raw_output[:3000].strip(),
+                }
             return {
                 "code": "SUCCESS",
                 "data": {
@@ -966,16 +988,7 @@ async def ping(
                     "is_reachable": True,
                 },
                 "message": f"Ping测试成功：{host} 可达，平均延迟 {avg_latency if avg_latency else 'N/A'} ms",
-                "llm_data": {
-                    "目标": host,
-                    "发包/收包": f"{packets_sent}/{packets_received}",
-                    "丢包率": f"{loss_rate}%",
-                    "延迟(avg/min/max)": f"{avg_latency}ms / {min_latency}ms / {max_latency}ms",
-                } if avg_latency else {
-                    "目标": host,
-                    "发包/收包": f"{packets_sent}/{packets_received}",
-                    "丢包率": f"{loss_rate}%",
-                }
+                "llm_data": _llm_ping,
             }
         else:
             return {

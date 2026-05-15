@@ -1401,8 +1401,15 @@ const processSSEData = (
             // 【小查修复2026-03-13】传递wait_time给重试回调
             onRetry?.(rawData.message || "正在重试...", rawData.wait_time);
             break;
+          case "rate_limit":
+            // 【新增 小健 2026-05-16】429限流提示，复用retry回调显示
+            onRetry?.(rawData.message || "API限流，正在退避重试...", rawData.wait_time);
+            break;
           default:
+            // 【修复 小健 2026-05-16】未知incident也显示给用户，不丢弃
             console.warn("[SSE] 未知的incident_value:", statusValue);
+            onRetry?.(rawData.message || `事件: ${statusValue}`, rawData.wait_time);
+            break;
         }
         // 添加timestamp字段
         if (rawData.timestamp) {
