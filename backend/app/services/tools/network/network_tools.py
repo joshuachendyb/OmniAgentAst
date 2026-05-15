@@ -575,6 +575,32 @@ def _html_to_markdown(html: str) -> str:
     
     return text.strip()
 
+def _decode_bing_redirect_url(url: str) -> str:
+    """
+    解码Bing ck/a跳转链接，提取真实URL - 小健 2026-05-16
+    Bing使用 https://www.bing.com/ck/a?!&&p=<hash>&u=<base64_url> 格式的跳转链接
+    """
+    if "bing.com/ck/a" not in url:
+        return url
+    # 尝试从u参数提取base64编码的真实URL
+    u_match = re.search(r'[?&]u=([^&]+)', url)
+    if u_match:
+        try:
+            import base64
+            u_encoded = u_match.group(1)
+            # URL安全的base64
+            u_encoded = u_encoded.replace('-', '+').replace('_', '/')
+            # 补全base64填充
+            padding = 4 - len(u_encoded) % 4
+            if padding != 4:
+                u_encoded += '=' * padding
+            decoded = base64.b64decode(u_encoded).decode('utf-8', errors='replace')
+            if decoded.startswith('http'):
+                return decoded
+        except Exception:
+            pass
+    return url
+
 
 async def search_web(
     query: str,
@@ -615,19 +641,19 @@ async def search_web(
         
         results = results[:num_results]
         
-        # 【优化 小沈 2026-05-15】llm_data精简输出：仅保留title+snippet摘要，过滤跳转链接与冗余HTML
+        # 解码所有结果中的ck/a跳转URL
+        for r in results:
+            r["url"] = _decode_bing_redirect_url(r.get("url", ""))
+            
+        # 整理llm_data展示结果
         llm_results = []
         for r in results:
             raw_url = r.get("url", "")
-            # 过滤bing.com/ck/a跳转链接，提取真实URL或标注来源
-            if "bing.com/ck/a" in raw_url:
-                display_url = f"[Bing跳转] {raw_url[:80]}..."
-            else:
-                display_url = raw_url
+            clean_url = _decode_bing_redirect_url(raw_url)
             llm_results.append({
                 "title": r.get("title", ""),
-                "snippet": r.get("snippet", "")[:300],  # 摘要截断避免过长
-                "url": display_url,
+                "snippet": r.get("snippet", "")[:300],
+                "url": clean_url,
                 "source": r.get("source", ""),
             })
 
