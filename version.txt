@@ -1,10 +1,40 @@
-v0.12.37
+v0.12.38
 
-更新时间: 2026-05-15 19:30:48
+更新时间: 2026-05-16 07:20:00
 
 更新内容：
 
-## v0.12.36→v0.12.37 变更汇总 - 小沈-2026-05-15
+## v0.12.37→v0.12.38 变更汇总 - 小健-2026-05-16
+
+### feat 新增
+
+| commit | 说明 |
+|--------|------|
+| 4ae46ad1 | 搜索:Parallel MCP+Exa MCP三引擎逐级fallback(替代DuckDuckGo+www.bing.com) - 小健-2026-05-16 |
+| 26998e9c | 网页抓取:Cloudflare反爬重试+图片base64附件支持 - 小健-2026-05-16 |
+| 61b3aea5 | 搜索:search_web llm_data精简+network_prompts双引擎/Bing降级+prompt_logger阈值2000 - xiaojian-20260515 |
+
+### fix 修复
+
+| commit | 说明 |
+|--------|------|
+| 993d45f5 | 搜索:去掉DuckDuckGo(国内不可达),改用cn.bing.com - 小健-20260516 |
+| 4cf1ec79 | 搜索:解码Bing ck/a跳转链接为真实URL - 小健-20260516 |
+| b9046cf5 | 解析器:_extract_json_block fallback提取result+thought字段(含实换行符JSON) - 小健-20260515 |
+| cdbe41c1 | 多文件:base_react裁剪修复+data_format/document/file/tool_result_utils工具修复+前端stepConstants/sse - 小健-20260515 |
+| 24866f98 | 批量P0-P2修复:budget参数/openai_tools守卫/死代码清理/并行缓存/注册异常/llm_data分支 - 小沈-20260515 |
+| 431dbff2 | P1修复:lastMsgRoleFix+summary增强key-params+http头精简 - 小沈-20260515 |
+| 49098f60 | 修复:dropped_budget→budget_dropped变量名不一致(NameError) - 小沈-2026-05-15 |
+
+### docs 文档
+
+| commit | 说明 |
+|--------|------|
+| 8f093b8d | 新增:深度代码审查报告v01230+ - xiaojian-20260515 |
+
+---
+
+v0.12.37
 
 ### feat 新增
 
