@@ -886,7 +886,8 @@ async def ping(
                 max_latency = int(latency_match.group(2))
                 avg_latency = int(latency_match.group(3))
             
-            if "TTL=" in raw_output or "ttl=" in raw_output.lower():
+            # 【修复 小健 2026-05-15】IPv6 ping不含"TTL="，用packets_received>0作为补充判定
+            if "TTL=" in raw_output or "ttl=" in raw_output.lower() or (loss_match and int(loss_match.group(2)) > 0):
                 is_reachable = True
         else:
             loss_match = re.search(r"(\d+)\s+packets transmitted.*?(\d+)\s+received.*?(\d+)%\s+packet loss", raw_output, re.DOTALL)

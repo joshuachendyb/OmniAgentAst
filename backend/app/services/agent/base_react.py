@@ -25,6 +25,7 @@ Updated: 小沈 - 2026-04-26
 """
 
 import asyncio
+import json
 import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, AsyncGenerator, Callable
@@ -919,8 +920,9 @@ class BaseAgent(ABC):
                             if data.get('entries'):
                                 observation_text += f"\n实际数据: {data.get('entries')}"
                         else:
-                            # 非截断数据：直接显示
-                            observation_text += f"\n实际数据: {data}"
+                            # 非截断数据：过滤噪声字段后显示 小健-2026-05-15
+                            filtered = self._filter_obs_data(tool_name, data)
+                            observation_text += f"\n实际数据: {filtered}"
                 elif exec_status == 'warning':
                     # 警告状态：显示警告信息和部分数据
                     observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
@@ -1101,11 +1103,13 @@ class BaseAgent(ABC):
                     if p_status == 'success':
                         p_obs_text = f"[并行] {p_status} - {p_result.get('summary', '')}"
                         if p_result.get('data'):
-                            p_obs_text += f"\n实际数据: {p_result.get('data')}"
+                            p_filtered = self._filter_obs_data(p_name, p_result.get('data'))  # 小健-2026-05-15
+                            p_obs_text += f"\n实际数据: {p_filtered}"
                     elif p_status == 'warning':
                         p_obs_text = f"[并行] warning - {p_result.get('summary', '')}"
                         if p_result.get('data'):
-                            p_obs_text += f"\n实际数据: {p_result.get('data')}"
+                            p_filtered = self._filter_obs_data(p_name, p_result.get('data'))  # 小健-2026-05-15
+                            p_obs_text += f"\n实际数据: {p_filtered}"
                     else:
                         p_obs_text = f"[并行] {p_status} - {p_result.get('summary', '')}"
                         # 【修复 U17 小沈 2026-05-15】并行工具error也补全异常详情+调用参数
@@ -1173,8 +1177,16 @@ class BaseAgent(ABC):
         - 容量预算制: MAX_CONTEXT_CHARS=80K，保留顺序 system→user→error_obs→assistant→success_obs
         - 每类设soft limit防单类占满: error最多5条，assistant最多6条，success最多8条
         """
-        if len(self.conversation_history) <= 2:
-            return  # 只有system+user，无需裁剪
+        total_chars_before = self._total_chars(self.conversation_history)
+        total_msgs_before = len(self.conversation_history)
+        
+        if total_msgs_before <= 2:
+            # 只有system+user，无需裁剪 小健-2026-05-15
+            logger.info(
+                f"[History] Skip trim(仅{total_msgs_before}条): "
+                f"chars={total_chars_before}/{self.MAX_CONTEXT_CHARS}"
+            )
+            return
 
         system_msg = self.conversation_history[0]
         user_msg = self.conversation_history[1] if len(self.conversation_history) > 1 else None
@@ -1183,6 +1195,7 @@ class BaseAgent(ABC):
         error_obs = []
         success_obs = []
         assistant_msgs = []
+        other_msgs = []
 
         for msg in self.conversation_history[2:]:
             role = msg.get("role", "")
@@ -1194,33 +1207,65 @@ class BaseAgent(ABC):
                     error_obs.append(msg)
                 else:
                     success_obs.append(msg)
-            # 其他消息（如旧格式user/system混合）保留
+            else:
+                other_msgs.append(msg)
 
         # --- 内容指纹去重（语言无关、工具无关）---
+        duped_success = len(success_obs)
+        duped_error = len(error_obs)
         error_obs = self._dedup_by_fingerprint(error_obs)
         success_obs = self._dedup_by_fingerprint(success_obs)
+        dropped_dup = (duped_success + duped_error) - (len(success_obs) + len(error_obs))
 
         # --- 容量预算制组装 ---
         rebuilt = [system_msg]
         if user_msg:
             rebuilt.append(user_msg)
+        rebuilt.extend(other_msgs)  # 其他消息直接保留
 
         budget = self.MAX_CONTEXT_CHARS - self._total_chars(rebuilt)
 
         # 优先级: error_obs(5) > assistant(6) > success_obs(8)
+        budget_dropped = 0
         for obs in error_obs[-5:]:
-            self._add_within_budget(rebuilt, obs, budget)
+            if not self._add_within_budget(rebuilt, obs, budget):
+                budget_dropped += 1
 
         for msg in assistant_msgs[-6:]:
-            self._add_within_budget(rebuilt, msg, budget)
+            if not self._add_within_budget(rebuilt, msg, budget):
+                budget_dropped += 1
 
         for obs in success_obs[-8:]:
-            self._add_within_budget(rebuilt, obs, budget)
+            if not self._add_within_budget(rebuilt, obs, budget):
+                budget_dropped += 1
 
-        if len(rebuilt) < len(self.conversation_history):
+        total_chars_after = self._total_chars(rebuilt)
+        total_msgs_after = len(rebuilt)
+        trimmed = total_msgs_after < total_msgs_before
+        
+        # 记录裁剪信息到实例，供prompt_logger使用 小健-2026-05-15
+        self._last_trim_info = {
+            "trimmed": trimmed,
+            "msgs_before": total_msgs_before,
+            "msgs_after": total_msgs_after,
+            "chars_before": total_chars_before,
+            "chars_after": total_chars_after,
+            "budget": self.MAX_CONTEXT_CHARS,
+            "dropped_duplicates": dropped_dup,
+            "dropped_by_budget": budget_dropped,
+        }
+        
+        if trimmed:
             logger.info(
-                f"[History] Trim: {len(self.conversation_history)} → {len(rebuilt)} msgs, "
-                f"chars={self._total_chars(rebuilt)}/{self.MAX_CONTEXT_CHARS}"
+                f"[History] ✂Trim: {total_msgs_before}→{total_msgs_after} msgs, "
+                f"chars={total_chars_after}/{self.MAX_CONTEXT_CHARS} "
+                f"(去重{dropped_dup}+预算{dropped_budget})"
+            )
+        else:
+            logger.info(
+                f"[History] ✓NoTrim: {total_msgs_before} msgs, "
+                f"chars={total_chars_after}/{self.MAX_CONTEXT_CHARS} "
+                f"(去重{dropped_dup}条)"
             )
         self.conversation_history = rebuilt
 
@@ -1259,12 +1304,36 @@ class BaseAgent(ABC):
         return sum(len(m.get("content", "")) for m in messages)
 
     @staticmethod
-    def _add_within_budget(target: list, msg: dict, budget: int) -> None:
-        """在预算内追加消息 - 小健 2026-05-15"""
+    def _add_within_budget(target: list, msg: dict, budget: int) -> bool:
+        """在预算内追加消息，返回是否成功 - 小健 2026-05-15"""
         chars = len(msg.get("content", ""))
         budget_used = BaseAgent._total_chars(target)
         if budget_used + chars <= BaseAgent.MAX_CONTEXT_CHARS:
             target.append(msg)
+            return True
+        return False
+
+    @staticmethod
+    def _filter_obs_data(tool_name: str, data) -> dict:
+        """过滤observation中的噪声数据字段 - 小健 2026-05-15
+        对高频大payload工具做针对性裁剪，减少LLM上下文浪费。"""
+        if not isinstance(data, dict):
+            return data
+        # ping: raw_output与结构化统计重复，移除可节省5K-15K字符
+        if tool_name == "ping":
+            filtered = {k: v for k, v in data.items() if k != "raw_output"}
+            return filtered
+        # http_request: body超过2000字符且非JSON时截断 小健-2026-05-15
+        if tool_name == "http_request":
+            filtered = dict(data)
+            body = data.get("body")
+            if isinstance(body, str) and len(body) > 2000:
+                try:
+                    json.loads(body)  # JSON保持完整
+                except (json.JSONDecodeError, TypeError):
+                    filtered["body"] = body[:1500] + f"\n...[截断 {len(body)-1500} 字符]"
+            return filtered
+        return data
 
     def _build_alternative_tools_hint(self, failed_tool: str, tool_params: Optional[dict] = None) -> str:
         """工具执行失败时，从当前Agent已注册工具中动态生成替代建议 - 小沈 2026-05-14
@@ -1318,114 +1387,6 @@ class BaseAgent(ABC):
         if remaining > 0:
             hint += f" 等{len(alternatives)}个"
         return hint
-
-    def _trim_history(self) -> None:
-        """
-        分层保留对话历史
-        - 保留 system message
-        - 保留原始用户消息（任务需求）← 【改进3 2026-05-01 小沈 小健】
-        - 保留所有 observation 消息（工具执行结果）
-        - 保留最近5条消息
-
-        【修复 2026-04-01 小沈】
-        - 问题：关键词匹配可能丢失工具执行结果（如代码、JSON数据）
-        - 修复：直接识别 observation 消息（以 "Observation:" 开头），不再依赖关键词
-
-        【优化 2026-04-16 小沈】
-        - 问题：entries 数据过大导致 API 429 错误
-        - 修复：在 list_directory 中截断 entries（最多 200 项），已从根本上解决超长 observation 问题
-
-        【改进3 2026-05-01 小沈 小健】
-        - 问题：原始user消息在important裁剪时可能被丢弃，导致LLM丢失任务约束（如"10章"）
-        - 修复：显式保留conversation_history[1]（原始user消息），不参与important裁剪
-        - 参考：设计文档 v2.1 §改进3
-        """
-        if len(self.conversation_history) <= 2:
-            return  # 少于 system + user，不需要裁剪
-
-        # 不需要裁剪
-        # 【修复 U2 小沈 2026-05-15】阈值从15提高到30
-        if len(self.conversation_history) <= 30:
-            return
-
-        system_msg = self.conversation_history[0]
-
-        # 【改进3 2026-05-01】显式保留原始用户消息，不参与裁剪
-        # 原始user消息在conversation_history[1]，记录了用户最初的任务需求（如"写10章小说"）
-        original_user_msg = self.conversation_history[1] if len(self.conversation_history) > 1 else None
-
-        recent = self.conversation_history[-5:]
-
-        original_len = len(self.conversation_history)
-
-        # 【修复 U2+U14 小沈 2026-05-15】important分类优化：成功obs>assistant>失败obs
-        success_obs = []
-        error_obs = []
-        assistant_msgs = []
-
-        start_idx = 2 if original_user_msg else 1
-        for msg in self.conversation_history[start_idx:-5]:
-            content = msg.get("content", "")
-            role = msg.get("role", "")
-
-            if role == "assistant":
-                assistant_msgs.append(msg)
-            # 【修复 风险7 小健 2026-05-15】兼容[缓存命中]前缀+U5[Observation]前缀
-            elif "Observation: success" in content:
-                success_obs.append(msg)
-            elif "Observation:" in content and role != "assistant":
-                error_obs.append(msg)
-
-        # 成功observation去重：同一工具+参数只保留最新1条
-        seen_tools = set()
-        deduped_success = []
-        for msg in reversed(success_obs):
-            content = msg.get("content", "")
-            # 去重key：工具名+参数前80字符
-            tool_match = None
-            for _tn in ["execute_shell_command", "http_request", "fetch_webpage", "ping", "port_check"]:
-                if _tn in content:
-                    tool_match = _tn
-                    break
-            if not tool_match:
-                parts = content.replace("Observation: success - ", "").split()
-                tool_match = parts[0] if parts else content[:50]
-            params_start = content.find("(")
-            params_end = content.find(")")
-            if params_start > 0 and params_end > params_start:
-                params_preview = content[params_start:params_end+1][:80]
-            else:
-                params_preview = content[:80]
-            key = f"{tool_match}:{params_preview}"
-            if key not in seen_tools:
-                seen_tools.add(key)
-                deduped_success.append(msg)
-        deduped_success.reverse()
-
-        # 失败observation去重：同一前80字符最多保留2条
-        seen_error_keys = {}
-        deduped_error = []
-        for msg in reversed(error_obs):
-            content = msg.get("content", "")
-            ek = content[:80]
-            seen_error_keys[ek] = seen_error_keys.get(ek, 0) + 1
-            if seen_error_keys[ek] <= 2:
-                deduped_error.append(msg)
-        deduped_error.reverse()
-
-        # 组装important：成功observation(最多8条) > assistant(最多6条) > 失败observation(最多4条)
-        important = deduped_success[-8:] + assistant_msgs[-6:] + deduped_error[-4:]
-
-        # 重建：system + original_user + important + recent
-        rebuilt = [system_msg]
-        if original_user_msg:
-            rebuilt.append(original_user_msg)
-        rebuilt.extend(important)
-        rebuilt.extend(recent)
-
-        self.conversation_history = rebuilt
-
-        logger.info(f"[History] Trimmed from {original_len} to {len(self.conversation_history)} messages (important={len(important)}, recent={len(recent)})")
 
     # ===== 通用方法 =====
 

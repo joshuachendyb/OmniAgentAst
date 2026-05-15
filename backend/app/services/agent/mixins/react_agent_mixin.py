@@ -398,7 +398,9 @@ class ReactAgentMixin(ToolLoaderMixin):
                 call_type=strategy_method or "text",
                 extra_params={
                     "max_steps": self.max_steps,
-                    "use_function_calling": getattr(self, 'use_function_calling', False)
+                    "use_function_calling": getattr(self, 'use_function_calling', False),
+                    "trim_info": getattr(self, '_last_trim_info', None),  # 小健-2026-05-15
+                    "total_chars": sum(len(m.get("content","")) for m in assembled_messages),  # 本次LLM调用总字符数
                 }
             )
             try:
