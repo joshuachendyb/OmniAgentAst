@@ -916,7 +916,19 @@ class BaseAgent(ABC):
                             if data.get('entries'):
                                 observation_text += f"\n实际数据: {data.get('entries')}"
                         else:
-                            observation_text += f"\n实际数据: {data}"
+                            # 【优化 小沈 2026-05-15】http_request成功时精简headers，减少token消耗
+                            if tool_name == "http_request" and isinstance(data, dict):
+                                _slim_data = dict(data)
+                                headers = _slim_data.get('headers')
+                                if isinstance(headers, dict) and len(headers) > 3:
+                                    _keep = {k: v for k, v in headers.items()
+                                             if k.lower() in ('content-type', 'content-length', 'location')}
+                                    _slim_data['headers'] = _keep or f"({len(headers)} headers omitted)"
+                                    observation_text += f"\n实际数据: {_slim_data}"
+                                else:
+                                    observation_text += f"\n实际数据: {data}"
+                            else:
+                                observation_text += f"\n实际数据: {data}"
                 elif exec_status == 'warning':
                     # 警告状态：显示警告信息和部分数据
                     observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
@@ -975,9 +987,24 @@ class BaseAgent(ABC):
                         observation_text += f"\n[此操作已失败{_fc}次]"
                     if _fc >= 3:
                         observation_text += "\n[⚠️ 禁止再尝试此操作！必须使用其他方法或换URL]"
-                # 【方案H 小沈 2026-05-15】已执行工具汇总
-                # 【修复 小沈 2026-05-15】去掉str(data)[:50]乱码预览，完整数据已在Observation中
-                _summary_entry = f"{tool_name}→{exec_status}"
+                # 【方案H 小沈 2026-05-15】已执行工具汇总（增强：含关键参数让LLM知道已获取什么）
+                if tool_name == "http_request" and tool_params:
+                    _url = str(tool_params.get("url", ""))[:60]
+                    _summary_entry = f"http_request({_url})→{exec_status}"
+                elif tool_name == "ping" and tool_params:
+                    _host = str(tool_params.get("host", ""))
+                    _summary_entry = f"ping({_host})→{exec_status}"
+                elif tool_name == "port_check" and tool_params:
+                    _host = str(tool_params.get("host", ""))
+                    _port = tool_params.get("port", "")
+                    _summary_entry = f"port_check({_host}:{_port})→{exec_status}"
+                elif tool_name == "execute_shell_command" and tool_params:
+                    _cmd = str(tool_params.get("command", ""))[:50]
+                    _summary_entry = f"shell({_cmd})→{exec_status}"
+                elif tool_name != "finish":
+                    _summary_entry = f"{tool_name}→{exec_status}"
+                else:
+                    _summary_entry = ""
                 self._executed_tool_summary.append(_summary_entry)
                 # 【修复 风险5 小健 2026-05-15】限制汇总长度
                 if len(self._executed_tool_summary) > 50:
