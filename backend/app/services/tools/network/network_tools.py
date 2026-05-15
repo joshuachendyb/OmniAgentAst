@@ -472,7 +472,42 @@ async def fetch_webpage(
                 proxies=proxy_config
             ) as client:
                 response = await client.get(url, headers=headers)
+                
+                # 【修复 2026-05-16 小健】Cloudflare反爬检测：cf-mitigated → 降级UA重试
+                if response.status_code == 403 and response.headers.get("cf-mitigated") == "challenge":
+                    logger.info(f"[fetch_webpage] Cloudflare挑战检测，降级UA重试: {url}")
+                    simple_headers = dict(headers)
+                    simple_headers["User-Agent"] = "opencode/1.0"
+                    response = await client.get(url, headers=simple_headers)
+                
                 response.raise_for_status()
+                
+                # 【修复 2026-05-16 小健】图片类型 → 返回base64附件
+                content_type = response.headers.get("content-type", "")
+                mime = content_type.split(";")[0].strip().lower() if content_type else ""
+                if mime and (mime.startswith("image/") or mime in ("application/pdf",)):
+                    raw_bytes = response.content
+                    import base64
+                    b64 = base64.b64encode(raw_bytes).decode("ascii")
+                    return {
+                        "code": "SUCCESS",
+                        "data": {
+                            "url": url,
+                            "content": f"[{mime} 文件，大小: {len(raw_bytes)} 字节]",
+                            "format": extract_format,
+                            "content_type": content_type,
+                            "status_code": response.status_code,
+                            "truncated": False,
+                        },
+                        "message": f"成功获取{mime}文件",
+                        "attachment": {
+                            "type": "base64",
+                            "mime": mime,
+                            "data": b64,
+                            "filename": url.split("/")[-1].split("?")[0] or "download"
+                        }
+                    }
+                
                 html_content = response.text
                 content_type = response.headers.get("content-type", "")
             
