@@ -108,7 +108,7 @@ NETWORK_TOOL_DESCRIPTIONS = {
 - code: 状态码，SUCCESS或ERR_NETWORK_INVALID_URL/ERR_NETWORK_JS_RENDER/ERR_NETWORK_TIMEOUT/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
 - data: 成功时为对象，失败时为None；成功时包含 url(请求地址)、content(提取的网页内容文本)、format(提取格式markdown/html/text)、content_type(响应内容类型)、status_code(HTTP状态码)、truncated(是否因max_tokens截断)；有prompt时额外包含 prompt(AI提取指令)和note(提示需LLM后处理)
 - message: 结果描述信息""",
-    "search_web": """搜索网络获取最新信息（使用DuckDuckGo API）。
+    "search_web": """搜索网络获取最新信息（使用Bing中国搜索，国内可用）。
     
 使用场景：
 - 当用户需要搜索网络获取最新信息时使用

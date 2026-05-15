@@ -588,9 +588,7 @@ async def search_web(
 ) -> dict:
     """
     搜索网络获取最新信息 - 小沈 2026-05-02
-    【重构 2026-05-07 小沈】双引擎fallback: DuckDuckGo优先(5s连接超时)，失败降级到Bing
-    
-    DuckDuckGo: 无需API Key，返回结构化JSON
+    【重构 2026-05-16 小健】去掉DuckDuckGo(国内不可达)，使用Bing中国(cn.bing.com)
     Bing: 无需API Key，解析HTML获取结果（国内可访问）
     """
     try:
@@ -605,16 +603,9 @@ async def search_web(
         if proxy:
             proxy_config = {"http://": proxy, "https://": proxy}
         
-        # ===== 第一引擎：DuckDuckGo =====
-        ddg_result = await _search_duckduckgo(query, num_results, time_range, language, safe_search, proxy_config)
-        if ddg_result is not None:
-            results = ddg_result
-            engine_used = "DuckDuckGo"
-        else:
-            # ===== 降级第二引擎：Bing =====
-            logger.info("[search_web] DuckDuckGo失败，降级到Bing搜索")
-            results = await _search_bing(query, num_results, language, safe_search, proxy_config)
-            engine_used = "Bing"
+        # ===== 使用Bing中国搜索 =====
+        results = await _search_bing(query, num_results, language, safe_search, proxy_config)
+        engine_used = "Bing"
         
         # 域名过滤
         if allowed_domains:
@@ -668,96 +659,6 @@ async def search_web(
         }
 
 
-async def _search_duckduckgo(
-    query: str,
-    num_results: int,
-    time_range: str,
-    language: Optional[str],
-    safe_search: str,
-    proxy_config: Optional[dict],
-) -> Optional[List[dict]]:
-    """DuckDuckGo Instant Answer API搜索 - 小沈 2026-05-07
-    返回None表示失败（调用方应降级到其他引擎）
-    """
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-    search_url = "https://api.duckduckgo.com/"
-    
-    time_kl_map = {"d": "us-en", "w": "us-en", "m": "us-en", "y": "us-en", "any": "us-en"}
-    lang_map = {
-        "zh-CN": "zh-cn", "zh": "zh-cn",
-        "en-US": "us-en", "en": "us-en",
-        "ja": "jp-jp", "ja-JP": "jp-jp",
-        "ko": "kr-kr", "ko-KR": "kr-kr",
-        "fr": "fr-fr", "de": "de-de", "es": "es-es",
-        "it": "it-it", "pt": "pt-br", "ru": "ru-ru",
-    }
-    safe_map = {"strict": "1", "moderate": "2", "off": "-1"}
-    
-    params = {"q": query, "format": "json", "no_html": 1, "skip_disambig": 1}
-    if time_range != "any" and time_range in time_kl_map:
-        params["df"] = time_range
-    if language and language in lang_map:
-        params["kl"] = lang_map[language]
-    if safe_search in safe_map:
-        params["kp"] = safe_map[safe_search]
-    
-    try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(5.0, connect=5.0),
-            follow_redirects=True,
-            proxies=proxy_config
-        ) as client:
-            response = await client.get(search_url, params=params, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-        
-        results = []
-        if data.get("AbstractText"):
-            results.append({
-                "title": data.get("Heading", "摘要"),
-                "url": data.get("AbstractURL", ""),
-                "snippet": data.get("AbstractText", ""),
-                "source": "DuckDuckGo Instant Answer"
-            })
-        for topic in data.get("RelatedTopics", [])[:num_results]:
-            if isinstance(topic, dict):
-                if "Text" in topic and "FirstURL" in topic:
-                    results.append({
-                        "title": topic.get("Text", "").split(" - ")[0] if " - " in topic.get("Text", "") else topic.get("Text", ""),
-                        "url": topic.get("FirstURL", ""),
-                        "snippet": topic.get("Text", ""),
-                        "source": "DuckDuckGo"
-                    })
-                elif "Topics" in topic:
-                    for subtopic in topic.get("Topics", []):
-                        if len(results) >= num_results:
-                            break
-                        if "Text" in subtopic and "FirstURL" in subtopic:
-                            results.append({
-                                "title": subtopic.get("Text", "").split(" - ")[0] if " - " in subtopic.get("Text", "") else subtopic.get("Text", ""),
-                                "url": subtopic.get("FirstURL", ""),
-                                "snippet": subtopic.get("Text", ""),
-                                "source": "DuckDuckGo"
-                            })
-        
-        if results:
-            return results
-        logger.info("[_search_duckduckgo] 无搜索结果，返回None触发降级")
-        return None
-    
-    except (httpx.TimeoutException, httpx.ConnectTimeout, httpx.ConnectError) as e:
-        logger.info(f"[_search_duckduckgo] 连接失败: {type(e).__name__}")
-        return None
-    except httpx.HTTPStatusError as e:
-        logger.info(f"[_search_duckduckgo] HTTP错误 {e.response.status_code}")
-        return None
-    except Exception as e:
-        logger.info(f"[_search_duckduckgo] 异常: {type(e).__name__}")
-        return None
-
-
 async def _search_bing(
     query: str,
     num_results: int,
@@ -782,7 +683,7 @@ async def _search_bing(
         follow_redirects=True,
         proxies=proxy_config
     ) as client:
-        response = await client.get("https://www.bing.com/search", params=params, headers=headers)
+        response = await client.get("https://cn.bing.com/search", params=params, headers=headers)
         response.raise_for_status()
         html = response.text
     
