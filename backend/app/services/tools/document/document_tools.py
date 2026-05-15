@@ -473,14 +473,26 @@ def read_pptx(
             "slide_count": len(prs.slides),
             "slides": slides_data,
         }
-        
+
         if extract_notes and notes_data:
             result_data["notes"] = notes_data
+
+        # 【优化 小沈 2026-05-15】llm_data提供精简摘要
+        _total_text = sum(len(s.get("text", "")) for s in slides_data)
+        _llm = {
+            "文件": file_path,
+            "幻灯片数": len(prs.slides),
+            "文本总长度": f"{_total_text}字符",
+            "幻灯片摘要": [{"页码": s["slide_num"], "文本长度": len(s.get("text", "")), "预览": s.get("text", "")[:200]} for s in slides_data],
+        }
+        if extract_notes and notes_data:
+            _llm["备注数"] = len(notes_data)
 
         return {
             "code": "SUCCESS",
             "data": result_data,
-            "message": f"成功读取PPT文件: {file_path}，共 {len(prs.slides)} 页"
+            "message": f"成功读取PPT文件: {file_path}，共 {len(prs.slides)} 页",
+            "llm_data": _llm
         }
     except Exception as e:
         return {

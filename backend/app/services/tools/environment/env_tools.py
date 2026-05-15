@@ -245,11 +245,20 @@ def list_env(prefix: Optional[str] = None, include_system: bool = False) -> dict
         # 转换为列表，截断超长变量值 小沈-2026-05-15
         MAX_VAL = 1000
         env_list = []
+        truncated_count = 0
         for k, v in sorted(env_vars.items()):
             val = str(v)
             if len(val) > MAX_VAL:
                 val = val[:MAX_VAL] + f"...({len(val)}字符)"
+                truncated_count += 1
             env_list.append({"name": k, "value": val})
+
+        # 【优化 小沈 2026-05-15】llm_data精简摘要
+        _llm = {
+            "总数": len(env_list),
+            "截断数": truncated_count,
+            "变量列表": [{"name": e["name"], "value": e["value"][:200] + ("..." if len(e["value"]) > 200 else "")} for e in env_list],
+        }
 
         return {
             "code": "SUCCESS",
@@ -259,7 +268,8 @@ def list_env(prefix: Optional[str] = None, include_system: bool = False) -> dict
                 "prefix": prefix,
                 "include_system": include_system,
             },
-            "message": f"共找到 {len(env_list)} 个环境变量"
+            "message": f"共找到 {len(env_list)} 个环境变量",
+            "llm_data": _llm
         }
 
     except Exception as e:

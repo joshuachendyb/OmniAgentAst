@@ -1407,23 +1407,31 @@ def task_list(
         
         filtered_tasks = []
         for task in tasks:
-            if folder:
+            if filter_name:
                 task_name = task.get("name", "")
-                task_folder = task.get("folder", "")
-                # folder匹配：任务名以folder开头或任务文件夹匹配
-                if not (task_name.startswith(folder) or task_folder.startswith(folder)):
+                if filter_name.lower() not in task_name.lower():
                     continue
-            
-            if state:
+
+            if filter_status != "all":
                 task_status = task.get("status", "")
-                if task_status != state:
+                if task_status != filter_status:
                     continue
-            
+
             filtered_tasks.append(task)
-        
+
         # 【修复 小沈 2026-05-15】应用max_results限制，防止LLM上下文爆满
         limited_tasks = filtered_tasks[:max_results]
-        
+
+        # 【优化 小沈 2026-05-15】llm_data精简摘要
+        _llm = {
+            "任务总数": len(tasks),
+            "过滤后": len(filtered_tasks),
+            "返回数": len(limited_tasks),
+            "任务列表": [{"名称": t.get("name", ""), "状态": t.get("status_desc", t.get("status", ""))} for t in limited_tasks],
+        }
+        if len(filtered_tasks) > max_results:
+            _llm["截断"] = f"共{len(filtered_tasks)}个，仅返回前{max_results}个"
+
         return {
             "code": "SUCCESS",
             "data": {
@@ -1431,9 +1439,9 @@ def task_list(
                 "total": len(limited_tasks),
                 "total_matched": len(tasks),
                 "platform": "Windows",
-                "output_format": output_format,
             },
-            "message": f"找到 {len(tasks)} 个计划任务"
+            "message": f"找到 {len(tasks)} 个计划任务，返回前 {len(limited_tasks)} 个",
+            "llm_data": _llm
         }
     
     except subprocess.TimeoutExpired:
