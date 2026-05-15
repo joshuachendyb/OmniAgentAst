@@ -180,10 +180,10 @@ class PromptLogger:
     
     def log_llm_call(
         self,
-        round_number: int,
-        messages: List[Dict[str, str]],
-        model: str,
-        provider: str,
+        round_number: int = 0,
+        messages: List[Dict[str, str]] = None,
+        model: str = "",
+        provider: str = "",
         call_type: str = "text",
         extra_params: Optional[Dict[str, Any]] = None
     ):
@@ -239,8 +239,8 @@ class PromptLogger:
     
     def log_llm_response(
         self,
-        round_number: int,
-        response_content: str,
+        round_number: int = 0,
+        response_content: str = "",
         response_type: str = "text",
         finish_reason: str = "",
         extra_info: Optional[Dict[str, Any]] = None
@@ -258,6 +258,9 @@ class PromptLogger:
         current_log = self._get_current_log()
         if not current_log:
             return
+        
+        if not isinstance(response_content, str):
+            response_content = str(response_content) if response_content is not None else ""
         
         entry = {
             "轮次": round_number,

@@ -115,6 +115,7 @@ class ReactAgentMixin(ToolLoaderMixin):
                 })
                 self.use_function_calling = True
                 self.openai_tools = openai_tools
+                self._last_strategy_method = None
                 # 【诊断 2026-05-10 小健】adapter初始化成功日志
                 logger.info(
                     f"[{_cls}] _init_llm_strategies 成功: adapter=LLMAdapter, "
@@ -128,7 +129,7 @@ class ReactAgentMixin(ToolLoaderMixin):
                 self.response_format_strategy = None
                 self.use_function_calling = False
                 self.openai_tools = []
-                # 【诊断 2026-05-10 小健】llm_client无api_base，无法初始化adapter
+                self._last_strategy_method = None
                 logger.warning(
                     f"[{_cls}] _init_llm_strategies 跳过adapter: "
                     f"llm_client={_has_client}, self.api_base={_self_api_base} → 降级纯文本模式"
@@ -140,7 +141,8 @@ class ReactAgentMixin(ToolLoaderMixin):
             self.response_format_strategy = None
             self.use_function_calling = False
             self.openai_tools = []
-    
+            self._last_strategy_method = None
+
     def _init_task_tracking(self, enable: bool = True):
         """
         初始化任务执行追踪

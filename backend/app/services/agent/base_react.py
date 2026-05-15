@@ -987,6 +987,10 @@ class BaseAgent(ABC):
                         p_obs_text = f"Observation: {p_status} - {p_result.get('summary', '')}"
                         if p_result.get('data'):
                             p_obs_text += f"\n实际数据: {p_result.get('data')}"
+                    elif p_status == 'warning':
+                        p_obs_text = f"Observation: {p_status} - {p_result.get('summary', '')}"
+                        if p_result.get('data'):
+                            p_obs_text += f"\n实际数据: {p_result.get('data')}"
                     else:
                         p_obs_text = f"Observation: {p_status} - {p_result.get('summary', '')}"
                         p_alt_hint = self._build_alternative_tools_hint(p_name, p_params)
@@ -1033,7 +1037,7 @@ class BaseAgent(ABC):
 
     MAX_HISTORY_TURNS = 5  # 保留最近 N 轮对话（每轮 = thought + observation）
 
-    def _build_alternative_tools_hint(self, failed_tool: str, tool_params: dict = None) -> str:
+    def _build_alternative_tools_hint(self, failed_tool: str, tool_params: Optional[dict] = None) -> str:
         """工具执行失败时，从当前Agent已注册工具中动态生成替代建议 - 小沈 2026-05-14
         【更新 2026-05-15 小健】http_request失败时提示国内替代URL；tools策略下精简提示
         
