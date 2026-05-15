@@ -205,12 +205,15 @@ class BaseAgent(ABC):
     # ===== 可扩展 Hook 方法（子类可覆盖）=====
     
     def _params_to_key(self, params: dict) -> str:
-        """将工具参数转换为可比较的key - 小沈 2026-05-15"""
-        import json
+        """将工具参数转换为可比较的key - 小沈 2026-05-15
+        【修复 风险1 小健 2026-05-15】使用hashlib防碰撞，替代截断
+        """
+        import json, hashlib
         try:
-            return json.dumps(params, sort_keys=True, ensure_ascii=False)[:200]
+            raw = json.dumps(params, sort_keys=True, ensure_ascii=False)
+            return hashlib.md5(raw.encode()).hexdigest()
         except Exception:
-            return str(params)[:200]
+            return hashlib.md5(str(params).encode()).hexdigest()
     
     def _is_no_cache_tool(self, tool_name: str, tool_params: dict) -> bool:
         """判断工具是否不应缓存 - 小沈 2026-05-15"""
@@ -297,6 +300,10 @@ class BaseAgent(ABC):
                 logger.info(f"[FC刷新] response_format enum已更新，当前{len(tool_names)}个工具名")
             except Exception as e:
                 logger.warning(f"[FC刷新] response_format enum更新失败: {e}")
+
+        # 【修复 风险12 小健 2026-05-15】动态加载后清除schema缓存
+        if hasattr(self, '_cached_schema_text'):
+            del self._cached_schema_text
 
         logger.info(f"[动态加载] 完成，新增{len(new_tools)}个工具，总计{len(self._tools_dict)}个")
     
@@ -803,6 +810,9 @@ class BaseAgent(ABC):
                 cache_key = f"{tool_name}:{self._params_to_key(tool_params)}"
                 observation_prefix = ""
                 cache_hit = False
+                # 【修复 风险2 小健 2026-05-15】初始化execution_result防未定义
+                execution_result = None
+                execution_time_ms = 0
                 
                 # 失败拦截：同一操作失败3次后强制跳过
                 fail_key = cache_key
@@ -831,7 +841,7 @@ class BaseAgent(ABC):
                         del self._executed_cache[cache_key]
                         del self._cache_timestamps[cache_key]
                 
-                if not cache_hit and fail_count < 3:
+                if execution_result is None and not cache_hit and fail_count < 3:
                     # 【Phase 1修复 小健 2026-05-14】函数内import避免触发register
                     from app.services.tools.file.file_tools import _current_task_id
                     _current_task_id.set(task_id)
@@ -961,7 +971,7 @@ class BaseAgent(ABC):
                         self._cache_timestamps[_ukey] = time.time()
                     if _ukey in self._failed_attempts:
                         del self._failed_attempts[_ukey]
-                elif exec_status in ('error', 'timeout', 'permission_denied'):
+                elif exec_status in ('error', 'timeout', 'permission_denied', 'blocked'):
                     # 失败：递增计数
                     _fc = self._failed_attempts.get(_ukey, 0) + 1
                     self._failed_attempts[_ukey] = _fc
@@ -975,6 +985,12 @@ class BaseAgent(ABC):
                     _data_preview = str(execution_result.get('data', ''))[:50]
                     _summary_entry += f"(数据: {_data_preview}...)"
                 self._executed_tool_summary.append(_summary_entry)
+                # 【修复 风险5 小健 2026-05-15】限制汇总长度
+                if len(self._executed_tool_summary) > 50:
+                    self._executed_tool_summary = self._executed_tool_summary[-30:]
+                # 【修复 风险3 小健 2026-05-15】限制失败计数器长度
+                if len(self._failed_attempts) > 100:
+                    self._failed_attempts = dict(list(self._failed_attempts.items())[-50:])
                 
                 logger.info(f"[Debug] observation加入history: {observation_text[:100]}...")
                 self._add_observation_to_history(observation_text)
@@ -1055,9 +1071,10 @@ class BaseAgent(ABC):
                     p_params = pending.get("args", {})
                     logger.info(f"[ReAct] 执行并行工具: {p_name}")
                     # 【修复 U4 小沈 2026-05-15】并行工具前追加系统记录消息
+                    # 【修复 风险6 小健 2026-05-15】不过滤falsy值(0/False/"")
                     self.conversation_history.append({
                         "role": "system",
-                        "content": f"[系统记录: 并行执行] {p_name}({', '.join(f'{k}={v}' for k,v in p_params.items() if v)})"
+                        "content": f"[系统记录: 并行执行] {p_name}({', '.join(f'{k}={v}' for k,v in p_params.items())})"
                     })
                     start_p = time.perf_counter()
                     p_result = await self._execute_tool(p_name, p_params)
@@ -1252,9 +1269,10 @@ class BaseAgent(ABC):
 
             if role == "assistant":
                 assistant_msgs.append(msg)
-            elif content.startswith("[Observation] Observation: success") or content.startswith("Observation: success"):
+            # 【修复 风险7 小健 2026-05-15】兼容[缓存命中]前缀+U5[Observation]前缀
+            elif "Observation: success" in content:
                 success_obs.append(msg)
-            elif content.startswith("[Observation] Observation:") or content.startswith("Observation:"):
+            elif "Observation:" in content and role != "assistant":
                 error_obs.append(msg)
 
         # 成功observation去重：同一工具+参数只保留最新1条

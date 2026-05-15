@@ -177,7 +177,7 @@ class BasePrompts(ABC):
         avoid_repeat_rules = """
 【避免重复规则】
 - 同一命令/URL成功后不要重复执行（结果不会变）
-- 同一命令/URL失败2次后必须换工具或换URL，禁止再试同方式
+- 同一命令/URL失败3次后必须换工具或换URL，禁止再试同方式
 - 已获取的信息直接使用，不需要重新获取
 - 失败后优先尝试替代方法，而非反复重试同一方法"""
         parts.append(avoid_repeat_rules)

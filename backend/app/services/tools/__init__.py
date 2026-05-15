@@ -89,9 +89,13 @@ def ensure_tools_registered() -> None:
     from app.utils.logger import logger
     for cat_name, (module_path, register_func) in _CATEGORY_MODULES.items():
         if cat_name not in _registered_categories:
-            _import_and_register(module_path, register_func)
-            _registered_categories.add(cat_name)
-            logger.info(f"[Tools] 全量注册分类: {cat_name}")
+            # 【修复 风险19 小健 2026-05-15】注册失败时不add到_registered_categories
+            try:
+                _import_and_register(module_path, register_func)
+                _registered_categories.add(cat_name)
+                logger.info(f"[Tools] 全量注册分类: {cat_name}")
+            except Exception as e:
+                logger.error(f"[Tools] 注册分类{cat_name}失败: {e}")
     _tools_registered = True
     logger.info(f"[Tools] 全部工具已注册完成，共{len(_registered_categories)}个分类")
 
