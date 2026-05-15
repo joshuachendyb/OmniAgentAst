@@ -615,6 +615,22 @@ async def search_web(
         
         results = results[:num_results]
         
+        # 【优化 小沈 2026-05-15】llm_data精简输出：仅保留title+snippet摘要，过滤跳转链接与冗余HTML
+        llm_results = []
+        for r in results:
+            raw_url = r.get("url", "")
+            # 过滤bing.com/ck/a跳转链接，提取真实URL或标注来源
+            if "bing.com/ck/a" in raw_url:
+                display_url = f"[Bing跳转] {raw_url[:80]}..."
+            else:
+                display_url = raw_url
+            llm_results.append({
+                "title": r.get("title", ""),
+                "snippet": r.get("snippet", "")[:300],  # 摘要截断避免过长
+                "url": display_url,
+                "source": r.get("source", ""),
+            })
+
         return {
             "code": "SUCCESS",
             "data": {
@@ -625,7 +641,13 @@ async def search_web(
                 "time_range": time_range,
                 "language": language,
             },
-            "message": f"找到 {len(results)} 条搜索结果（{engine_used}）"
+            "message": f"找到 {len(results)} 条搜索结果（{engine_used}）",
+            "llm_data": {
+                "搜索引擎": engine_used,
+                "查询词": query,
+                "结果数量": len(results),
+                "搜索结果": llm_results if llm_results else "无相关结果",
+            }
         }
     
     except Exception as e:
