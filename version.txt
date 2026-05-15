@@ -1,3 +1,65 @@
+v0.12.35
+
+更新时间: 2026-05-15 13:13:41
+
+更新内容：
+
+## v0.12.34→v0.12.35 变更汇总 - 小沈/小健-2026-05-15
+
+### feat 新增
+
+| commit | 说明 |
+|--------|------|
+| ffd74815 | ch10-agent-repeat-fixes - xiaoshen-20260515 |
+
+### fix 修复
+
+| commit | 说明 |
+|--------|------|
+| 5a9f5ebd | risk-fix:P1hashlib/P1execInit/P1schemaCache/P2blocked/P2limitGrowth/P2falsyParam/P2obsPrefix/P2prompt3times/P2regFail - xiaojian-2026-05-15 |
+
+### chore 杂项
+
+| commit | 说明 |
+|--------|------|
+| e0a0eab5 | update gitignore for pytest temp and test reports - xiaoshen-20260515 |
+
+### 关键变更说明
+
+#### 1. 第10章19项重构 (ffd74815)
+- **U11(P0)**: error observation补全异常详情+调用参数
+- **U1(P1)**: 工具执行缓存(TTL=60s)，静态命令只执行1次
+- **U13(P1)**: 失败3次强制拦截
+- **U3(P1)**: Prompt注入"避免重复规则"，失败3次必须换方法
+- **U2+U14(P1)**: trim_history阈值15→30，important分类优化
+- **U5(P2)**: observation加[Observation]前缀
+- **U10(P2)**: register重复注册更新input_schema
+- **U8(P2)**: ensure_tools_registered移除categories参数
+- **U6(P2)**: 已执行工具汇总注入LLM
+- **U15(P2)**: Schema注入缓存
+- **N1(P2)**: response_format enum刷新
+- **N3(P3)**: response_format策略下不注入schema
+- **U4(P2)**: pending_calls添加system记录
+- **U9(P3)**: 并行工具step_count递增
+- **U18(P2)**: TextStrategy参数提取改为空dict
+- **U19(P3)**: system消息位置修正
+- **U7(P3)**: 废弃动态加载
+- **N4(P3)**: 去除load_hint
+- **U17(P1)**: 并行工具error observation补全
+
+#### 2. 小健风险修复 (5a9f5ebd)
+- **P1-1**: cache_key截断碰撞→hashlib.md5
+- **P1-2**: execution_result未初始化→加None初始化
+- **P1-12**: schema缓存不失效→动态加载后del
+- **P2-3+5**: _failed_attempts和_executed_tool_summary限长
+- **P2-4**: blocked状态加入失败分支
+- **P2-6**: 并行参数falsy值不再过滤
+- **P2-7**: observation前缀检测用in替代startswith
+- **P2-21**: Prompt失败2次→3次
+- **P2-19**: 注册失败try/except包裹
+
+---
+
 v0.12.34
 
 更新时间: 2026-05-15 08:43:13
