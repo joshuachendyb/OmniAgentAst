@@ -135,14 +135,36 @@ async def http_request(
                     else:
                         response_body = response.text
 
+                    # 【优化 小沈 2026-05-15】非JSON超长body截断，llm_data给LLM关键摘要
+                    _body = response_body
+                    if isinstance(_body, str) and len(_body) > 2000:
+                        try:
+                            json.loads(_body)
+                        except (json.JSONDecodeError, ValueError):
+                            _body = _body[:1500] + f"\n...[截断 {len(_body)-1500} 字符]"
+                    _ct = response.headers.get("content-type", "")
+                    _ct_short = _ct.split(";")[0].strip() if _ct else "unknown"
+                    _body_preview = ""
+                    if isinstance(response_body, dict):
+                        _body_preview = f"JSON({len(json.dumps(response_body, ensure_ascii=False))}字符)"
+                    elif isinstance(response_body, str):
+                        _body_preview = f"文本({len(response_body)}字符)"
+                    elif isinstance(response_body, list):
+                        _body_preview = f"列表({len(response_body)}项)"
+
                     return {
                         "code": "SUCCESS",
                         "data": {
                             "status_code": response.status_code,
                             "headers": dict(response.headers),
-                            "body": response_body,
+                            "body": _body,
                         },
-                        "message": f"请求成功 (HTTP {response.status_code})"
+                        "message": f"请求成功 (HTTP {response.status_code})",
+                        "llm_data": {
+                            "状态码": response.status_code,
+                            "内容类型": _ct_short,
+                            "响应体": _body_preview or str(_body)[:200],
+                        }
                     }
             except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
                 last_exception = e
@@ -907,6 +929,7 @@ async def ping(
                 is_reachable = True
         
         if is_reachable:
+            # 【优化 小沈 2026-05-15】raw_output不注入LLM，llm_data提供结构化关键数据
             return {
                 "code": "SUCCESS",
                 "data": {
@@ -919,9 +942,18 @@ async def ping(
                     "avg_latency": avg_latency,
                     "max_latency": max_latency,
                     "is_reachable": True,
-                    "raw_output": raw_output,
                 },
-                "message": f"Ping测试成功：{host} 可达，平均延迟 {avg_latency if avg_latency else 'N/A'} ms"
+                "message": f"Ping测试成功：{host} 可达，平均延迟 {avg_latency if avg_latency else 'N/A'} ms",
+                "llm_data": {
+                    "目标": host,
+                    "发包/收包": f"{packets_sent}/{packets_received}",
+                    "丢包率": f"{loss_rate}%",
+                    "延迟(avg/min/max)": f"{avg_latency}ms / {min_latency}ms / {max_latency}ms",
+                } if avg_latency else {
+                    "目标": host,
+                    "发包/收包": f"{packets_sent}/{packets_received}",
+                    "丢包率": f"{loss_rate}%",
+                }
             }
         else:
             return {
@@ -936,7 +968,6 @@ async def ping(
                     "avg_latency": None,
                     "max_latency": None,
                     "is_reachable": False,
-                    "raw_output": raw_output,
                 },
                 "message": f"Ping测试失败：{host} 不可达"
             }

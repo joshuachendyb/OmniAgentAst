@@ -384,74 +384,75 @@ class ToolExecutor:
         return params
     
     def _format_result(self, result: Any, action: str) -> Dict[str, Any]:
-        """
-        格式化工具执行结果
-        
-        【2026-04-16 小沈修改】新增 warning 状态判断逻辑
-        
-        Args:
-            result: 原始执行结果
-            action: 工具名称
-        
-        Returns:
-            格式化后的结果
-        """
+        """格式化工具执行结果，透传llm_data供agent注入LLM上下文 小沈-2026-05-15"""
+        _llm = result.get("llm_data") if isinstance(result, dict) else None
         if isinstance(result, dict):
-            # 【2026-04-16 小沈新增】处理工具返回的warning状态
             if result.get("status") == "warning":
-                return {
+                r = {
                     "status": "warning",
                     "summary": result.get("summary", "Warning during execution"),
                     "data": result.get("data"),
                     "retry_count": result.get("retry_count", 0)
                 }
+                if _llm: r["llm_data"] = _llm
+                return r
             elif "status" in result and "summary" in result:
-                return {
+                r = {
                     "status": result.get("status", "success"),
                     "summary": result.get("summary", ""),
                     "data": result.get("data"),
                     "retry_count": result.get("retry_count", 0)
                 }
+                if _llm: r["llm_data"] = _llm
+                return r
             # 【修复 2026-05-01 小沈】先检查code字段（shell工具返回code/data/message格式）
             # 之前只检查success字段，导致execute_command等工具的SUCCESS结果被误判为error
             elif result.get("code") == "SUCCESS":
                 # code=SUCCESS但需区分returncode：0=真正成功，非0=有错误输出
                 data = result.get("data")
                 if isinstance(data, dict) and data.get("returncode", 0) != 0:
-                    return {
+                    r = {
                         "status": "error",
                         "summary": result.get("message", f"Command exited with code {data.get('returncode')}"),
                         "data": result,
                         "retry_count": 0
                     }
                 else:
-                    return {
+                    r = {
                         "status": "success",
                         "summary": result.get("message", f"Successfully executed {action}"),
                         "data": result,
                         "retry_count": 0
                     }
+                if _llm: r["llm_data"] = _llm
+                return r
             elif result.get("code", "").startswith("ERR_"):
-                return {
+                r = {
                     "status": "error",
                     "summary": result.get("message", f"Failed to execute {action}"),
                     "data": result,
                     "retry_count": 0
                 }
+                if _llm: r["llm_data"] = _llm
+                return r
             elif result.get("success", False):
-                return {
+                r = {
                     "status": "success",
                     "summary": result.get("message", f"Successfully executed {action}"),
                     "data": result,
                     "retry_count": 0
                 }
+                if _llm: r["llm_data"] = _llm
+                return r
             else:
-                return {
+                r = {
                     "status": "error",
                     "summary": result.get("error", result.get("message", f"Failed to execute {action}")),
                     "data": result,
                     "retry_count": 0
                 }
+                if _llm: r["llm_data"] = _llm
+                return r
         else:
             return {
                 "status": "success",

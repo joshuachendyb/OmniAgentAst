@@ -75,6 +75,7 @@ from app.services.safety.file.file_safety import OperationType
 from app.utils.visualization import get_visualizer
 from app.utils.logger import logger
 from app.services.tools.tool_meta import get_timeout
+from app.services.tools.tool_result_utils import format_file_content_llm  # 小沈-2026-05-15
 
 # 【重要】延迟导入，避免循环导入问题
 # file_tools.py 在 tools 模块加载时被导入，此时 agent 还未初始化完成
@@ -559,7 +560,9 @@ class FileTools:
                 result["start_line"] = offset
                 result["end_line"] = offset + line_count - 1
 
-            return _to_unified_format(result, "read_text_file")
+            # 【优化 小沈 2026-05-15】llm_data提供精简内容+行数，避免LLM上下文浪费
+            _llm = format_file_content_llm(result_content) if result_content else None
+            return _to_unified_format(result, "read_text_file", llm_data=_llm)
 
         except Exception as e:
             logger.error(f"read_text_file failed: {file_path}: {e}")
@@ -2595,15 +2598,17 @@ def _generate_summary(tool_name: str, result: Any) -> str:
     return "操作完成"
 
 
-def _to_unified_format(result: Dict[str, Any], tool_name: str, retry_count: int = 0) -> Dict[str, Any]:
-    """将工具执行结果转换为统一格式"""
+def _to_unified_format(result: Dict[str, Any], tool_name: str, retry_count: int = 0, llm_data: dict = None) -> Dict[str, Any]:
+    """将工具执行结果转换为统一格式，支持llm_data透传 小沈-2026-05-15"""
     if not isinstance(result, dict):
-        return {
+        r = {
             "status": "error",
             "summary": "执行结果格式错误",
             "data": None,
             "retry_count": retry_count
         }
+        if llm_data: r["llm_data"] = llm_data
+        return r
     
     success = result.get("success")
     if success is True:
@@ -2615,12 +2620,15 @@ def _to_unified_format(result: Dict[str, Any], tool_name: str, retry_count: int 
     
     summary = _generate_summary(tool_name, result)
     
-    return {
+    r = {
         "status": status,
         "summary": summary,
         "data": result,
         "retry_count": retry_count
     }
+    if llm_data:
+        r["llm_data"] = llm_data
+    return r
 
 
 # ============================================================

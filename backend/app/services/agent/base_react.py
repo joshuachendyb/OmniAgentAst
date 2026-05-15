@@ -900,29 +900,23 @@ class BaseAgent(ABC):
                 exec_status = execution_result.get('status', 'unknown')
                 
                 if exec_status == 'success':
-                    # 成功状态：显示完整信息，包括实际数据
                     observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
-                    if execution_result.get('data'):
+                    # llm_data优先：工具自己决定LLM需要什么关键数据 小沈-2026-05-15
+                    llm_data = execution_result.get('llm_data')
+                    if llm_data:
+                        observation_text += "\n" + self._format_llm_data(llm_data)
+                    elif execution_result.get('data'):
                         data = execution_result.get('data')
-                        # 【优化 2026-04-16 小沈】检查是否截断
-                        # 如果是 list_directory 的大目录，会返回 truncated=True
                         if isinstance(data, dict) and data.get('truncated'):
-                            # 大目录截断：显示统计摘要，让 LLM 知道目录规模
-                            # 格式：[目录包含 X 项: Y 目录, Z 文件，显示前 200 项]
                             total = data.get('total', 0)
                             dir_count = data.get('dir_count', 0)
                             file_count = data.get('file_count', 0)
                             display_count = min(total, 200)
-                            truncated_info = f"\n[目录包含 {total} 项: {dir_count} 目录, {file_count} 文件，显示前 {display_count} 项]"
-                            observation_text += truncated_info
-                            # 【修复 2026-04-16 小沈】保留 entries 中的 path 字段
-                            # 原因：LLM 需要 path 来定位文件/目录
+                            observation_text += f"\n[目录包含 {total} 项: {dir_count} 目录, {file_count} 文件，显示前 {display_count} 项]"
                             if data.get('entries'):
                                 observation_text += f"\n实际数据: {data.get('entries')}"
                         else:
-                            # 非截断数据：过滤噪声字段后显示 小健-2026-05-15
-                            filtered = self._filter_obs_data(tool_name, data)
-                            observation_text += f"\n实际数据: {filtered}"
+                            observation_text += f"\n实际数据: {data}"
                 elif exec_status == 'warning':
                     # 警告状态：显示警告信息和部分数据
                     observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
@@ -1100,16 +1094,19 @@ class BaseAgent(ABC):
                     yield p_obs_step.to_dict()
                     # 【修复 2026-05-15 小健】并行工具observation与主工具逻辑一致：success附data，error附替代建议
                     p_status = p_result.get('status', 'success')
+                    p_llm_data = p_result.get('llm_data')  # 工具自己决定LLM需要什么 小沈-2026-05-15
                     if p_status == 'success':
                         p_obs_text = f"[并行] {p_status} - {p_result.get('summary', '')}"
-                        if p_result.get('data'):
-                            p_filtered = self._filter_obs_data(p_name, p_result.get('data'))  # 小健-2026-05-15
-                            p_obs_text += f"\n实际数据: {p_filtered}"
+                        if p_llm_data:
+                            p_obs_text += "\n" + self._format_llm_data(p_llm_data)
+                        elif p_result.get('data'):
+                            p_obs_text += f"\n实际数据: {p_result.get('data')}"
                     elif p_status == 'warning':
                         p_obs_text = f"[并行] warning - {p_result.get('summary', '')}"
-                        if p_result.get('data'):
-                            p_filtered = self._filter_obs_data(p_name, p_result.get('data'))  # 小健-2026-05-15
-                            p_obs_text += f"\n实际数据: {p_filtered}"
+                        if p_llm_data:
+                            p_obs_text += "\n" + self._format_llm_data(p_llm_data)
+                        elif p_result.get('data'):
+                            p_obs_text += f"\n实际数据: {p_result.get('data')}"
                     else:
                         p_obs_text = f"[并行] {p_status} - {p_result.get('summary', '')}"
                         # 【修复 U17 小沈 2026-05-15】并行工具error也补全异常详情+调用参数
@@ -1159,7 +1156,7 @@ class BaseAgent(ABC):
     
     # ===== 对话历史管理 =====
 
-    MAX_CONTEXT_CHARS = 80000  # 【重构 小健 2026-05-15】token-aware裁剪：按字符数预算而非消息计数
+    MAX_CONTEXT_CHARS = 150000  # 统一上下文+单条observation预算上限 小沈-2026-05-15
 
     def _trim_history(self) -> None:
         """
@@ -1314,26 +1311,24 @@ class BaseAgent(ABC):
         return False
 
     @staticmethod
-    def _filter_obs_data(tool_name: str, data) -> dict:
-        """过滤observation中的噪声数据字段 - 小健 2026-05-15
-        对高频大payload工具做针对性裁剪，减少LLM上下文浪费。"""
-        if not isinstance(data, dict):
-            return data
-        # ping: raw_output与结构化统计重复，移除可节省5K-15K字符
-        if tool_name == "ping":
-            filtered = {k: v for k, v in data.items() if k != "raw_output"}
-            return filtered
-        # http_request: body超过2000字符且非JSON时截断 小健-2026-05-15
-        if tool_name == "http_request":
-            filtered = dict(data)
-            body = data.get("body")
-            if isinstance(body, str) and len(body) > 2000:
-                try:
-                    json.loads(body)  # JSON保持完整
-                except (json.JSONDecodeError, TypeError):
-                    filtered["body"] = body[:1500] + f"\n...[截断 {len(body)-1500} 字符]"
-            return filtered
-        return data
+    def _format_llm_data(data) -> str:
+        """将工具llm_data格式化为LLM可读文本 小沈-2026-05-15
+        共性处理：dict→key: value行，list→编号列表，str→原文"""
+        if isinstance(data, dict):
+            lines = []
+            for k, v in data.items():
+                if v is None:
+                    continue
+                if isinstance(v, (list, tuple)):
+                    lines.append(f"  {k}: {', '.join(str(x) for x in v)}")
+                elif isinstance(v, dict):
+                    lines.append(f"  {k}: {json.dumps(v, ensure_ascii=False)}")
+                else:
+                    lines.append(f"  {k}: {v}")
+            return "\n".join(lines)
+        if isinstance(data, (list, tuple)):
+            return "\n".join(f"  {i+1}. {item}" for i, item in enumerate(data))
+        return str(data)
 
     def _build_alternative_tools_hint(self, failed_tool: str, tool_params: Optional[dict] = None) -> str:
         """工具执行失败时，从当前Agent已注册工具中动态生成替代建议 - 小沈 2026-05-14
@@ -1392,20 +1387,15 @@ class BaseAgent(ABC):
 
     # 【升级 2026-05-05 小沈】智能observation截断策略
     # 方案D: 首尾保留+智能摘要 + 动态递减预算
-    CONTEXT_WINDOW_SIZE = 200000  # 上下文窗口大小（字符数，约200K tokens）
-    OBSERVATION_BUDGET_INITIAL = 150000  # 第1轮observation最大长度
-    OBSERVATION_BUDGET_DECAY = 10000  # 每增加1轮，预算减少10K
-    OBSERVATION_BUDGET_MIN = 20000  # 最低预算，不低于20K
-    OBSERVATION_HEAD_RATIO = 0.6  # 头部保留比例（60%给头部，40%给尾部）
-    OBSERVATION_SUMMARY_THRESHOLD = 50000  # 超过此长度时启用智能摘要
+    # 【重构 小沈 2026-05-15】统一使用MAX_CONTEXT_CHARS作为总预算，observation预算从中派生
+    OBSERVATION_BUDGET_DECAY = 10000  # 每增加1轮，observation预算减少10K
+    OBSERVATION_BUDGET_MIN = 20000  # 最低observation预算
+    OBSERVATION_HEAD_RATIO = 0.6
+    OBSERVATION_SUMMARY_THRESHOLD = 50000
 
     def _get_observation_budget(self) -> int:
-        """根据当前轮数动态计算observation可用预算
-
-        策略：初始150K，每轮递减10K，最低20K
-        轮数越多，history越长，留给新observation的空间越小
-        """
-        budget = self.OBSERVATION_BUDGET_INITIAL - (self.llm_call_count * self.OBSERVATION_BUDGET_DECAY)
+        """从MAX_CONTEXT_CHARS派生observation预算，轮数越多给新observation的空间越小 小沈-2026-05-15"""
+        budget = self.MAX_CONTEXT_CHARS - (self.llm_call_count * self.OBSERVATION_BUDGET_DECAY)
         budget = max(budget, self.OBSERVATION_BUDGET_MIN)
         return budget
 

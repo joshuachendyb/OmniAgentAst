@@ -33,6 +33,8 @@ import shutil
 from typing import Optional, Dict, Any
 from datetime import datetime
 
+from app.services.tools.tool_result_utils import format_output_for_llm  # 小沈-2026-05-15
+
 
 # 后台Shell会话管理器 - 小沈 2026-05-02
 _background_shells: Dict[str, Dict[str, Any]] = {}
@@ -159,6 +161,7 @@ def execute_shell_command(
                 message = "命令执行成功（有警告输出）"
             else:
                 message = "命令执行成功"
+            _llm = format_output_for_llm(stdout_str, stderr_str)  # 小沈-2026-05-15
             return {
                 "code": "SUCCESS",
                 "data": {
@@ -166,7 +169,8 @@ def execute_shell_command(
                     "stderr": stderr_str,
                     "returncode": result.returncode
                 },
-                "message": message
+                "message": message,
+                "llm_data": _llm
             }
         else:
             return {

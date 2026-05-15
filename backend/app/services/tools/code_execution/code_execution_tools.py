@@ -40,6 +40,7 @@ from app.services.tools.code_execution.code_execution_schema import (
     ExecutePythonInput,
     ExecuteJavascriptInput,
 )
+from app.services.tools.tool_result_utils import format_output_for_llm  # 小沈-2026-05-15
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,7 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
                     message = "Python代码执行成功（有警告输出）"
                 else:
                     message = "Python代码执行成功"
+                _llm = format_output_for_llm(stdout_str, stderr_str)  # 小沈-2026-05-15
                 return {
                     "code": "SUCCESS",
                     "data": {
@@ -124,7 +126,8 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
                         "stderr": stderr_str,
                         "returncode": result.returncode
                     },
-                    "message": message
+                    "message": message,
+                    "llm_data": _llm
                 }
             else:
                 message = f"Python代码执行失败（退出码{result.returncode}）"
@@ -197,6 +200,7 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
                     message = "JavaScript代码执行成功（有警告输出）"
                 else:
                     message = "JavaScript代码执行成功"
+                _llm = format_output_for_llm(stdout_str, stderr_str)  # 小沈-2026-05-15
                 return {
                     "code": "SUCCESS",
                     "data": {
@@ -204,7 +208,8 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
                         "stderr": stderr_str,
                         "returncode": result.returncode
                     },
-                    "message": message
+                    "message": message,
+                    "llm_data": _llm
                 }
             else:
                 message = f"JavaScript代码执行失败（退出码{result.returncode}）"
