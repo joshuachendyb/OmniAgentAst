@@ -1421,8 +1421,8 @@ def task_list(
             
             filtered_tasks.append(task)
         
-        # 按output_format返回全部或限制
-        limited_tasks = filtered_tasks  # 返回全部，由Agent根据output_format处理
+        # 【修复 小沈 2026-05-15】应用max_results限制，防止LLM上下文爆满
+        limited_tasks = filtered_tasks[:max_results]
         
         return {
             "code": "SUCCESS",

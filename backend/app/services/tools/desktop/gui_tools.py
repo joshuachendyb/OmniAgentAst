@@ -346,9 +346,13 @@ def ocr(image_path: str, language: str = "eng") -> Dict[str, Any]:
 def read_clipboard() -> Dict[str, Any]:
     """读取剪贴板内容 - 按文档9.6节定义"""
     try:
-        import pyperclip  # 修复：正确库名pyperclip - 小沈 2026-05-04
+        import pyperclip
         text = pyperclip.paste()
-        return {"code": "SUCCESS", "data": {"text": text}, "message": "剪贴板读取成功"}
+        # 【优化 小沈 2026-05-15】截断过长内容+llm_data精简
+        _llm = {"内容": text[:5000]}
+        if len(text) > 5000:
+            _llm["截断"] = f"原文{len(text)}字符"
+        return {"code": "SUCCESS", "data": {"text": text}, "message": "剪贴板读取成功", "llm_data": _llm}
     except ImportError:
         try:
             import ctypes
@@ -361,7 +365,10 @@ def read_clipboard() -> Dict[str, Any]:
                 text = ctypes.c_char_p(data).value.decode('gbk') if data else ""
             finally:
                 user32.CloseClipboard()
-            return {"code": "SUCCESS", "data": {"text": text}, "message": "剪贴板读取成功"}
+            _llm = {"内容": text[:5000]}
+            if len(text) > 5000:
+                _llm["截断"] = f"原文{len(text)}字符"
+            return {"code": "SUCCESS", "data": {"text": text}, "message": "剪贴板读取成功", "llm_data": _llm}
         except Exception as e:
             return {"code": "ERR_CLIPBOARD", "data": None, "message": f"读取剪贴板失败: {str(e)}"}
 

@@ -116,7 +116,11 @@ def read_json(file_path: str, encoding: str = "auto_detect", max_depth: int = 10
                 "max_depth": max_depth,
                 "file_path": file_path
             },
-            "message": f"成功读取JSON文件: {file_path}"
+            "message": f"成功读取JSON文件: {file_path}",
+            "llm_data": {  # 小沈-2026-05-15
+                "文件": file_path,
+                "数据摘要": f"{'已截断, ' if truncated else ''}最大深度={max_depth}",
+            }
         }
     except json.JSONDecodeError as e:
         return {

@@ -242,8 +242,14 @@ def list_env(prefix: Optional[str] = None, include_system: bool = False) -> dict
             if prefix is None or name.upper().startswith(prefix.upper()):
                 env_vars[name] = value
 
-        # 转换为列表
-        env_list = [{"name": k, "value": str(v)} for k, v in sorted(env_vars.items())]
+        # 转换为列表，截断超长变量值 小沈-2026-05-15
+        MAX_VAL = 1000
+        env_list = []
+        for k, v in sorted(env_vars.items()):
+            val = str(v)
+            if len(val) > MAX_VAL:
+                val = val[:MAX_VAL] + f"...({len(val)}字符)"
+            env_list.append({"name": k, "value": val})
 
         return {
             "code": "SUCCESS",

@@ -133,10 +133,20 @@ def read_pdf(
         if extract_tables and tables_data:
             result_data["tables"] = tables_data
 
+        # 【优化 小沈 2026-05-15】llm_data提供精简摘要，完整文本在data中给前端
+        full_text = result_data["text"]
+        _text_preview = full_text[:10000]
+        _llm = {
+            "文件": file_path,
+            "页数": f"{page_count}页(读取{len(pages_read)}页)",
+            "文本长度": f"{len(full_text)}字符",
+            "内容预览": _text_preview + ("..." if len(full_text) > 10000 else ""),
+        }
         return {
             "code": "SUCCESS",
             "data": result_data,
-            "message": f"成功读取PDF文件: {file_path}，共读取 {len(pages_read)} 页"
+            "message": f"成功读取PDF文件: {file_path}，共读取 {len(pages_read)} 页",
+            "llm_data": _llm
         }
     except Exception as e:
         return {
@@ -178,7 +188,6 @@ def read_docx(
             "paragraph_count": len(paragraphs),
         }
         
-        # 提取表格
         if extract_tables:
             tables_data = []
             for table in doc.tables:
@@ -190,10 +199,19 @@ def read_docx(
             result_data["tables"] = tables_data
             result_data["table_count"] = len(tables_data)
         
+        # 【优化 小沈 2026-05-15】llm_data提供精简摘要
+        _text_preview = text[:10000]
+        _llm = {
+            "文件": file_path,
+            "段落数": len(paragraphs),
+            "文本长度": f"{len(text)}字符",
+            "内容预览": _text_preview + ("..." if len(text) > 10000 else ""),
+        }
         return {
             "code": "SUCCESS",
             "data": result_data,
-            "message": f"成功读取Word文档: {file_path}，共 {len(paragraphs)} 段"
+            "message": f"成功读取Word文档: {file_path}，共 {len(paragraphs)} 段",
+            "llm_data": _llm
         }
     except Exception as e:
         return {

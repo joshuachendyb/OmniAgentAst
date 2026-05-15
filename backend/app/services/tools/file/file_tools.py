@@ -21,7 +21,7 @@ MCP文件操作工具集 - 重写版本
 
 【分页方案更新】2026-04-03 小沈
 - read_file: 默认读取500行（READ_FILE_DEFAULT_LIMIT = 500）
-- 其他工具: 返回全部数据（DEFAULT_PAGE_SIZE = 999999999）
+- 其他工具: 分页返回（DEFAULT_PAGE_SIZE = 200）
 """
 
 import asyncio
@@ -46,7 +46,7 @@ _current_task_id: ContextVar[Optional[str]] = ContextVar("file_tools_task_id", d
 READ_FILE_DEFAULT_LIMIT = 500
 
 # 其他工具返回全部数据
-DEFAULT_PAGE_SIZE = 999999999  # 远超实际数据量，保证返回全部
+DEFAULT_PAGE_SIZE = 200  # 每页返回数量，防止LLM上下文爆满 小沈-2026-05-15
 
 from pydantic import BaseModel, Field
 
@@ -1712,10 +1712,17 @@ class FileTools:
                     return base64.b64encode(f.read()).decode('utf-8')
 
             b64_data = await asyncio.to_thread(_read_sync)
+            # 【优化 小沈 2026-05-15】base64对LLM无用，data只返回元信息，原始base64不注入上下文
             return _to_unified_format({
-                "success": True, "data": b64_data, "mime_type": mime_type,
-                "file_name": path.name, "file_size": path.stat().st_size,
-            }, "read_media_file")
+                "success": True,
+                "file_name": path.name,
+                "mime_type": mime_type,
+                "file_size": path.stat().st_size,
+            }, "read_media_file", llm_data={
+                "文件名": path.name,
+                "类型": mime_type,
+                "大小": f"{path.stat().st_size:,}字节",
+            })
         except Exception as e:
             logger.error(f"read_media_file failed: {file_path}: {e}")
             return _to_unified_format({
@@ -1779,11 +1786,18 @@ class FileTools:
 
         results = await asyncio.gather(*[_read_single(fp) for fp in file_paths])
         success_count = sum(1 for r in results if r["success"])
-        # 【修复 2026-04-30 小沈】success基于实际结果，不再硬编码True
+        # 【优化 小沈 2026-05-15】llm_data提供批量读取摘要
+        _llm = {
+            "总数": f"{len(results)}个文件",
+            "成功": f"{success_count}个",
+            "失败": f"{len(results) - success_count}个",
+        }
+        if success_count <= 10:
+            _llm["文件"] = [r["file_path"] for r in results if r["success"]]
         return _to_unified_format({
             "success": success_count > 0, "results": results, "total": len(results),
             "success_count": success_count, "failed_count": len(results) - success_count,
-        }, "read_batch_file")
+        }, "read_batch_file", llm_data=_llm)
 
     async def precise_replace_in_file(
         self,
