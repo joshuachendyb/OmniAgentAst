@@ -36,14 +36,9 @@ class ReactAgentMixin(ToolLoaderMixin):
         
         首次调用时触发工具注册（ensure_tools_registered），后续调用跳过。
         """
-        # 【Phase 1 小健 2026-05-14】按当前分类+support_tool注册（support_tool含finish，所有Agent必需）
-        from app.services.tools import ensure_tools_registered, _registered_categories
-        if tool_category:
-            ensure_tools_registered(categories=[tool_category.value, "support_tool"])
-            logger.info(f"[Phase1] 按分类注册完成: {_registered_categories}")
-        else:
-            ensure_tools_registered()
-            logger.info(f"[Phase1] 全量注册完成: {len(_registered_categories)}个分类")
+        # 全量注册所有工具
+        from app.services.tools import ensure_tools_registered
+        ensure_tools_registered()
         
         if tool_category:
             self._tools_dict = self.load_tools_by_category(tool_category)
@@ -317,24 +312,21 @@ class ReactAgentMixin(ToolLoaderMixin):
                 history_dicts = list(history_dicts) + list(self.temp_history)
             
             # 【Phase 1优化 小健 2026-05-14】分级注入：已加载分类Detail + 其他分类Summary(exclude)
-            # 【修复 2026-05-15 小健】分类变化时注入并写入conversation_history，避免每轮重复注入
+            # 【修复 2026-05-15 小健】分类变化时重新生成schema缓存，每轮临时注入history_dicts
             try:
                 loaded = getattr(self, '_loaded_categories', set())
                 _last_injected_cats = getattr(self, '_last_injected_categories', None)
                 if _last_injected_cats is None or loaded != _last_injected_cats:
                     detail_text = self._get_tools_detail()
                     summary_text = self._get_tools_summary(exclude_categories=loaded)
-                    tools_content = f"【已加载工具（完整）】\n{detail_text}\n\n【其他可用工具（概要）】\n{summary_text}"
-                    tools_msg = {
-                        "role": "system",
-                        "content": tools_content
-                    }
-                    # 写入conversation_history，后续轮次自动可见，不需要重复注入
-                    self.conversation_history.append(tools_msg)
+                    self._cached_tools_content = f"【已加载工具（完整）】\n{detail_text}\n\n【其他可用工具（概要）】\n{summary_text}"
                     self._last_injected_categories = frozenset(loaded)
-                    logger.info(f"[Phase1] 分级注入(写入history): detail={len(detail_text)}字符, summary={len(summary_text)}字符, 已加载分类={loaded}")
-                else:
-                    logger.debug(f"[Phase1] 分级注入跳过: 分类未变化 {loaded}")
+                    logger.info(f"[Phase1] 分级注入(重新生成): detail={len(detail_text)}字符, summary={len(summary_text)}字符, 已加载分类={loaded}")
+                # 每轮都注入缓存的schema到history_dicts（临时，不写入conversation_history）
+                _cached = getattr(self, '_cached_tools_content', None)
+                if _cached:
+                    tools_msg = {"role": "system", "content": _cached}
+                    history_dicts = list(history_dicts) + [tools_msg]
             except Exception as e:
                 logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
             
