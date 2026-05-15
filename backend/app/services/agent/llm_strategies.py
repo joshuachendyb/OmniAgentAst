@@ -372,20 +372,9 @@ class TextStrategy(LLMStrategy):
                         break
 
                 if extracted_path:
-                    # 从Pydantic schema获取第一个参数名作为路径参数 - 小健 2026-05-02
-                    try:
-                        from app.services.tools.file.file_register import get_tool_input_models
-                        models = get_tool_input_models()
-                        if tool in models:
-                            schema = models[tool].model_json_schema()
-                            props = list(schema.get("properties", {}).keys())
-                            param_name = props[0] if props else "path"
-                        else:
-                            param_name = "path"
-                    except Exception as e:
-                        logger.warning(f"[TextStrategy] 获取工具{tool}的输入模型失败: {e}")
-                        param_name = "path"
-                    params[param_name] = extracted_path
+                    # 【修复 U18 小沈 2026-05-15】不再用路径赋值给第一个参数
+                    # 兜底匹配到工具名时跳过参数提取，交给工具执行器处理
+                    logger.info(f"[TextStrategy] 兜底匹配到{tool}，跳过参数提取（交给工具执行器处理）")
                 
                 # 2. 查找 text 参数（用于 write_file 等工具）- 小健 2026-05-02 content→text
                 json_match = re.search(r'\{[^}]*"text"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)

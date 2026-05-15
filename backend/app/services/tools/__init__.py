@@ -76,10 +76,10 @@ def _import_and_register(module_path: str, register_func_name: str) -> None:
             logger.warning(f"[Tools] 无法找到注册函数 {register_func_name}: {e}")
 
 
-def ensure_tools_registered(categories: list = None) -> None:
-    """确保工具已注册 - 小健 2026-05-14
-
-    全量注册所有分类的工具，忽略categories参数（一次性注册）。
+def ensure_tools_registered() -> None:
+    """确保所有工具已注册（全量注册） - 小沈 2026-05-15
+    
+    【修复 U8】移除categories参数，明确声明为全量注册。
     """
     global _tools_registered, _registered_categories
 

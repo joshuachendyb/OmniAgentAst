@@ -328,9 +328,23 @@ class ReactAgentMixin(ToolLoaderMixin):
                 _cached = getattr(self, '_cached_tools_content', None)
                 if _cached:
                     tools_msg = {"role": "system", "content": _cached}
-                    history_dicts = list(history_dicts) + [tools_msg]
+                    # 【修复 U19 小沈 2026-05-15】system消息插入到所有system消息之后、第一个非system消息之前
+                    insert_pos = 0
+                    for i, msg in enumerate(history_dicts):
+                        if msg.get("role") != "system":
+                            insert_pos = i
+                            break
+                    else:
+                        insert_pos = len(history_dicts)
+                    history_dicts = list(history_dicts[:insert_pos]) + [tools_msg] + list(history_dicts[insert_pos:])
             except Exception as e:
                 logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
+            
+            # 【方案H 小沈 2026-05-15】注入已执行工具汇总
+            if hasattr(self, '_executed_tool_summary') and self._executed_tool_summary:
+                progress = "【已执行工具】" + "; ".join(self._executed_tool_summary[-10:])
+                progress_msg = {"role": "system", "content": progress}
+                history_dicts = list(history_dicts) + [progress_msg]
             
             # ========== debug日志（原file_react独有，小沈2026-05-12合入）==========
             logger.debug(f"[Debug] _call_llm_with_summary - conversation_history长度: {len(self.conversation_history)}")
@@ -355,9 +369,13 @@ class ReactAgentMixin(ToolLoaderMixin):
             # 【2026-05-15 小健】保存策略方法供observation的替代提示使用
             self._last_strategy_method = strategy_method
             
-            # 方案C：text和response_format策略下注入tools Schema文本（tools策略不注入）
-            if strategy_method in ("text", "response_format"):
-                schema_text = self._tools_to_schema_text()
+            # 方案C：text策略下注入tools Schema文本（tools策略不注入）
+            # 【修复 N3 小沈 2026-05-15】response_format策略下已有enum，不注入schema文本
+            # 【修复 U15 小沈 2026-05-15】缓存schema文本，不每轮重新生成
+            if strategy_method == "text":
+                if not hasattr(self, '_cached_schema_text'):
+                    self._cached_schema_text = self._tools_to_schema_text()
+                schema_text = self._cached_schema_text
                 if schema_text:
                     schema_msg = {"role": "system", "content": schema_text}
                     history_dicts = list(history_dicts) + [schema_msg]

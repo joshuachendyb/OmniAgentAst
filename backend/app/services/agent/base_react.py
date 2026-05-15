@@ -138,6 +138,17 @@ class BaseAgent(ABC):
         
         # 创建工具执行器
         self.executor = None  # 子类应初始化
+        
+        # 【方案B 小沈 2026-05-15】工具执行缓存
+        self._executed_cache: Dict[str, dict] = {}
+        self._cache_ttl: int = 60
+        self._cache_timestamps: Dict[str, float] = {}
+        
+        # 【方案A 小沈 2026-05-15】工具连续失败计数器
+        self._failed_attempts: Dict[str, int] = {}
+        
+        # 【方案H 小沈 2026-05-15】已执行工具汇总
+        self._executed_tool_summary: List[str] = []
     
     def _load_tools(self) -> Dict[str, Callable]:
         """
@@ -147,12 +158,9 @@ class BaseAgent(ABC):
         if not self.tool_category:
             return {}
         
-        # 【Phase 1修复 小健 2026-05-14】按当前分类注册，而非全量注册
+        # 【Phase 1修复 小健 2026-05-14】【修复 U8 小沈 2026-05-15】全量注册，不再传categories
         from app.services.tools import ensure_tools_registered
-        if self.tool_category:
-            ensure_tools_registered(categories=[self.tool_category.value, "support_tool"])
-        else:
-            ensure_tools_registered()
+        ensure_tools_registered()
         
         return get_tools_from_registry_by_category(self.tool_category)
     
@@ -195,6 +203,25 @@ class BaseAgent(ABC):
         pass
     
     # ===== 可扩展 Hook 方法（子类可覆盖）=====
+    
+    def _params_to_key(self, params: dict) -> str:
+        """将工具参数转换为可比较的key - 小沈 2026-05-15"""
+        import json
+        try:
+            return json.dumps(params, sort_keys=True, ensure_ascii=False)[:200]
+        except Exception:
+            return str(params)[:200]
+    
+    def _is_no_cache_tool(self, tool_name: str, tool_params: dict) -> bool:
+        """判断工具是否不应缓存 - 小沈 2026-05-15"""
+        _NO_CACHE_TOOLS = {"ping", "port_check"}
+        if tool_name in _NO_CACHE_TOOLS:
+            return True
+        if tool_name == "execute_shell_command" and tool_params:
+            command = str(tool_params.get("command", "")).lower()
+            if any(kw in command for kw in ["ping", "tracert", "curl", "wget"]):
+                return True
+        return False
     
     def _on_session_init(self, task: str, context: Optional[Dict[str, Any]]):
         """
@@ -250,13 +277,9 @@ class BaseAgent(ABC):
         self._tools_dict.update(new_tools)
         self._loaded_categories.add(intent_type)
 
-        # 【Phase 1 小健 2026-05-14】动态加载后注入提示到conversation_history
-        # 让LLM知道新工具已可用，下一轮的_call_llm_with_summary分级注入会自动
-        # 包含新分类的detail（因为_get_tools_detail按_loaded_categories输出）
+        # 【修复 N4 小沈 2026-05-15】不再注入load_hint，依赖下一轮detail自动包含新分类
         new_tool_names = sorted(new_tools.keys())
-        load_hint = f"【动态加载】已加载{intent_type}分类的{len(new_tool_names)}个工具: {', '.join(new_tool_names)}"
-        self.conversation_history.append({"role": "system", "content": load_hint})
-        logger.info(f"[动态加载] 已注入LLM提示: {load_hint[:100]}")
+        logger.info(f"[动态加载] 已加载{intent_type}分类的{len(new_tool_names)}个工具，下一轮detail将自动包含")
 
         # 3. 刷新FC通道的tools定义（如果已启用）
         if hasattr(self, 'tools_strategy') and self.tools_strategy is not None:
@@ -266,20 +289,26 @@ class BaseAgent(ABC):
             self.tools_strategy.tools = self.openai_tools
             logger.info(f"[FC刷新] tools定义已更新，当前{len(self.openai_tools)}个")
 
+        # 【修复 N1 小沈 2026-05-15】动态加载后同步刷新response_format enum
+        if hasattr(self, 'response_format_strategy') and self.response_format_strategy:
+            try:
+                tool_names = [t["function"]["name"] for t in self.openai_tools] + ["finish"]
+                self.response_format_strategy.response_format["json_schema"]["schema"]["properties"]["tool_name"]["enum"] = tool_names
+                logger.info(f"[FC刷新] response_format enum已更新，当前{len(tool_names)}个工具名")
+            except Exception as e:
+                logger.warning(f"[FC刷新] response_format enum更新失败: {e}")
+
         logger.info(f"[动态加载] 完成，新增{len(new_tools)}个工具，总计{len(self._tools_dict)}个")
     
     async def _check_and_load_missing_tools(self, observation: str, llm_client=None):
         """
         在Observation阶段，检测是否需要新工具（改进版） - 小健 2026-05-14
         
-        【Phase 1修复】优化检测策略：
-        1. 先用关键词检测（快速、低成本）
-        2. 关键词检测不确定时，再用LLM分类器（语义理解，补充）
-        
-        Args:
-            observation: LLM返回的observation内容（工具执行结果）
-            llm_client: LLM客户端（用于LLM分类器）
+        【修复 U7 小沈 2026-05-15】全量注册后动态加载机制多余，直接跳过。
+        所有工具已在ensure_tools_registered()中全量注册，无需在ReAct循环中动态加载。
         """
+        # 全量注册后不需要动态加载
+        return
         # 【Phase 1 小健 2026-05-14】关键词检测（主方案，快速）
         trigger_keywords = {
             "network": ["ping ", "http", "下载", "网络", "url", "curl", "wget", "公网IP", "DNS", "ipify"],
@@ -769,11 +798,45 @@ class BaseAgent(ABC):
                 # 使用 perf_counter 计算工具执行耗时（高精度）
                 start_time = time.perf_counter()
                 logger.info(f"[DEBUG_TOOL_PARAMS] before execute_tool: tool_name={tool_name}, tool_params={tool_params}")
-                # 【Phase 1修复 小健 2026-05-14】函数内import避免触发register
-                from app.services.tools.file.file_tools import _current_task_id
-                _current_task_id.set(task_id)
-                execution_result = await self._execute_tool(tool_name, tool_params)
-                execution_time_ms = int((time.perf_counter() - start_time) * 1000)
+                
+                # 【方案B 小沈 2026-05-15】缓存检查 + 【方案A 小沈 2026-05-15】失败拦截
+                cache_key = f"{tool_name}:{self._params_to_key(tool_params)}"
+                observation_prefix = ""
+                cache_hit = False
+                
+                # 失败拦截：同一操作失败3次后强制跳过
+                fail_key = cache_key
+                fail_count = self._failed_attempts.get(fail_key, 0)
+                if fail_count >= 3:
+                    execution_result = {
+                        "status": "blocked",
+                        "summary": f"已连续失败{fail_count}次，系统强制跳过",
+                        "data": None,
+                        "error": f"{tool_name} 已连续失败{fail_count}次"
+                    }
+                    execution_time_ms = 0
+                    observation_prefix = f"[系统拦截] {tool_name} 已连续失败{fail_count}次，强制跳过执行。请换用其他工具或方法。\n"
+                    logger.info(f"[FailBlock] {tool_name} 已失败{fail_count}次，强制跳过")
+                elif not self._is_no_cache_tool(tool_name, tool_params) and cache_key in self._executed_cache:
+                    # 缓存命中
+                    cached_time = self._cache_timestamps.get(cache_key, 0)
+                    if time.time() - cached_time < self._cache_ttl:
+                        execution_result = self._executed_cache[cache_key]
+                        execution_time_ms = 0
+                        observation_prefix = "[缓存命中: 此命令已执行过，结果未变] "
+                        cache_hit = True
+                        logger.info(f"[Cache] 命中缓存: {cache_key}, 跳过实际执行")
+                    else:
+                        # 缓存过期
+                        del self._executed_cache[cache_key]
+                        del self._cache_timestamps[cache_key]
+                
+                if not cache_hit and fail_count < 3:
+                    # 【Phase 1修复 小健 2026-05-14】函数内import避免触发register
+                    from app.services.tools.file.file_tools import _current_task_id
+                    _current_task_id.set(task_id)
+                    execution_result = await self._execute_tool(tool_name, tool_params)
+                    execution_time_ms = int((time.perf_counter() - start_time) * 1000)
                 
                 # 【工具执行后中断检查】在执行工具后检查是否被中断
                 if task_id and running_tasks:
@@ -854,8 +917,16 @@ class BaseAgent(ABC):
                     if execution_result.get('data'):
                         observation_text += f"\n部分数据: {execution_result.get('data')}"
                 else:
-                    # 失败状态（error/timeout/permission_denied）：只显示错误摘要，不显示数据
+                    # 失败状态（error/timeout/permission_denied）：显示错误摘要+异常详情+失败参数
                     observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
+                    # 【修复 U11 小沈 2026-05-15】补全具体异常原因
+                    error_detail = execution_result.get('error', '')
+                    if error_detail and str(error_detail) != str(execution_result.get('summary', '')):
+                        observation_text += f"\n异常详情: {str(error_detail)[:300]}"
+                    # 补全失败时的工具参数（让LLM知道用了什么参数失败的）
+                    if tool_params:
+                        params_preview = str(tool_params)[:200]
+                        observation_text += f"\n调用参数: {params_preview}"
                     # 【修复 2026-05-14 小沈】失败时动态生成替代建议（从当前Agent已注册工具中找）
                     # 【更新 2026-05-15 小健】传入tool_params用于http_request的国内URL提示
                     alt_hint = self._build_alternative_tools_hint(tool_name, tool_params)
@@ -878,6 +949,33 @@ class BaseAgent(ABC):
                         observation_text += f"\n写入内容摘要({len(written_content)}字符): {content_preview}"
 
                 # 更新消息历史（给LLM通道）
+                # 【方案B 小沈 2026-05-15】缓存命中前缀
+                if observation_prefix:
+                    observation_text = observation_prefix + observation_text
+                # 【方案A 小沈 2026-05-15】失败计数+已执行汇总更新
+                _ukey = f"{tool_name}:{self._params_to_key(tool_params)}"
+                if exec_status == 'success':
+                    # 成功：更新缓存+清除失败计数
+                    if not self._is_no_cache_tool(tool_name, tool_params):
+                        self._executed_cache[_ukey] = execution_result
+                        self._cache_timestamps[_ukey] = time.time()
+                    if _ukey in self._failed_attempts:
+                        del self._failed_attempts[_ukey]
+                elif exec_status in ('error', 'timeout', 'permission_denied'):
+                    # 失败：递增计数
+                    _fc = self._failed_attempts.get(_ukey, 0) + 1
+                    self._failed_attempts[_ukey] = _fc
+                    if _fc >= 2:
+                        observation_text += f"\n[此操作已失败{_fc}次]"
+                    if _fc >= 3:
+                        observation_text += "\n[⚠️ 禁止再尝试此操作！必须使用其他方法或换URL]"
+                # 【方案H 小沈 2026-05-15】已执行工具汇总
+                _summary_entry = f"{tool_name}→{exec_status}"
+                if exec_status == 'success':
+                    _data_preview = str(execution_result.get('data', ''))[:50]
+                    _summary_entry += f"(数据: {_data_preview}...)"
+                self._executed_tool_summary.append(_summary_entry)
+                
                 logger.info(f"[Debug] observation加入history: {observation_text[:100]}...")
                 self._add_observation_to_history(observation_text)
 
@@ -951,9 +1049,16 @@ class BaseAgent(ABC):
                 if pending_calls:
                     logger.info(f"[ReAct] 主工具完成，继续执行 {len(pending_calls)} 个并行工具")
                 for pending in pending_calls:
+                    # 【修复 U9 小沈 2026-05-15】并行工具step_count递增
+                    step_count += 1
                     p_name = pending.get("name", "finish")
                     p_params = pending.get("args", {})
                     logger.info(f"[ReAct] 执行并行工具: {p_name}")
+                    # 【修复 U4 小沈 2026-05-15】并行工具前追加系统记录消息
+                    self.conversation_history.append({
+                        "role": "system",
+                        "content": f"[系统记录: 并行执行] {p_name}({', '.join(f'{k}={v}' for k,v in p_params.items() if v)})"
+                    })
                     start_p = time.perf_counter()
                     p_result = await self._execute_tool(p_name, p_params)
                     p_time = int((time.perf_counter() - start_p) * 1000)
@@ -993,6 +1098,12 @@ class BaseAgent(ABC):
                             p_obs_text += f"\n实际数据: {p_result.get('data')}"
                     else:
                         p_obs_text = f"Observation: {p_status} - {p_result.get('summary', '')}"
+                        # 【修复 U17 小沈 2026-05-15】并行工具error也补全异常详情+调用参数
+                        p_error_detail = p_result.get('error', '')
+                        if p_error_detail and str(p_error_detail) != str(p_result.get('summary', '')):
+                            p_obs_text += f"\n异常详情: {str(p_error_detail)[:300]}"
+                        if p_params:
+                            p_obs_text += f"\n调用参数: {str(p_params)[:200]}"
                         p_alt_hint = self._build_alternative_tools_hint(p_name, p_params)
                         if p_alt_hint:
                             p_obs_text += f"\n{p_alt_hint}"
@@ -1115,7 +1226,8 @@ class BaseAgent(ABC):
             return  # 少于 system + user，不需要裁剪
 
         # 不需要裁剪
-        if len(self.conversation_history) <= 15:
+        # 【修复 U2 小沈 2026-05-15】阈值从15提高到30
+        if len(self.conversation_history) <= 30:
             return
 
         system_msg = self.conversation_history[0]
@@ -1128,22 +1240,62 @@ class BaseAgent(ABC):
 
         original_len = len(self.conversation_history)
 
-        # 从index=2开始遍历（跳过已显式保留的原始user消息）
-        important = []
+        # 【修复 U2+U14 小沈 2026-05-15】important分类优化：成功obs>assistant>失败obs
+        success_obs = []
+        error_obs = []
+        assistant_msgs = []
+
         start_idx = 2 if original_user_msg else 1
         for msg in self.conversation_history[start_idx:-5]:
             content = msg.get("content", "")
             role = msg.get("role", "")
 
-            # 保留条件：
-            # 1. assistant消息（LLM推理过程，保持上下文连贯性）
-            # 2. observation消息（工具执行结果，以 "Observation:" 开头）
-            if role == "assistant" or content.startswith("Observation:"):
-                important.append(msg)
+            if role == "assistant":
+                assistant_msgs.append(msg)
+            elif content.startswith("[Observation] Observation: success") or content.startswith("Observation: success"):
+                success_obs.append(msg)
+            elif content.startswith("[Observation] Observation:") or content.startswith("Observation:"):
+                error_obs.append(msg)
 
-        # 如果重要消息太多，只保留最新的10条
-        if len(important) > 10:
-            important = important[-10:]
+        # 成功observation去重：同一工具+参数只保留最新1条
+        seen_tools = set()
+        deduped_success = []
+        for msg in reversed(success_obs):
+            content = msg.get("content", "")
+            # 去重key：工具名+参数前80字符
+            tool_match = None
+            for _tn in ["execute_shell_command", "http_request", "fetch_webpage", "ping", "port_check"]:
+                if _tn in content:
+                    tool_match = _tn
+                    break
+            if not tool_match:
+                parts = content.replace("Observation: success - ", "").split()
+                tool_match = parts[0] if parts else content[:50]
+            params_start = content.find("(")
+            params_end = content.find(")")
+            if params_start > 0 and params_end > params_start:
+                params_preview = content[params_start:params_end+1][:80]
+            else:
+                params_preview = content[:80]
+            key = f"{tool_match}:{params_preview}"
+            if key not in seen_tools:
+                seen_tools.add(key)
+                deduped_success.append(msg)
+        deduped_success.reverse()
+
+        # 失败observation去重：同一前80字符最多保留2条
+        seen_error_keys = {}
+        deduped_error = []
+        for msg in reversed(error_obs):
+            content = msg.get("content", "")
+            ek = content[:80]
+            seen_error_keys[ek] = seen_error_keys.get(ek, 0) + 1
+            if seen_error_keys[ek] <= 2:
+                deduped_error.append(msg)
+        deduped_error.reverse()
+
+        # 组装important：成功observation(最多8条) > assistant(最多6条) > 失败observation(最多4条)
+        important = deduped_success[-8:] + assistant_msgs[-6:] + deduped_error[-4:]
 
         # 重建：system + original_user + important + recent
         rebuilt = [system_msg]
@@ -1253,6 +1405,9 @@ class BaseAgent(ABC):
                 f"[observation] 轮数={self.llm_call_count}, "
                 f"长度={len(observation)}, 预算={budget}, 无需截断"
             )
+        # 【修复 U5 小沈 2026-05-15】observation加[Observation]前缀增强语义，保持system角色
+        if not observation.startswith("[Observation]"):
+            observation = f"[Observation] {observation}"
         self.conversation_history.append({"role": "system", "content": observation})  # 【修复 2026-05-13 小沈】M1: 工具执行结果用system角色，避免LLM误认为是用户新输入
         self._trim_history()
 

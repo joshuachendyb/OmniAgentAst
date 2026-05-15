@@ -304,6 +304,15 @@ class ToolRegistry:
             metadata.version = version
             metadata.updated_at = datetime.now()
             self._implementations[name] = implementation
+            # 【修复 U10 小沈 2026-05-15】重复注册时也更新schema
+            if input_schema:
+                metadata.input_schema = input_schema
+            if output_schema:
+                metadata.output_schema = output_schema
+            if examples:
+                metadata.examples = examples
+            if category:
+                metadata.category = category
             logger.info(f"Tool updated: {name} (version: {version})")
             return {"status": "success"}
         

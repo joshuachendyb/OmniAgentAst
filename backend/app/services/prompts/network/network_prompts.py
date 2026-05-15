@@ -100,4 +100,12 @@ Remember:
 - URL must include scheme (http:// or https://)
 - For POST/PUT, use body parameter (NOT data/params)
 - Use timeout for operations that may hang
-- If DuckDuckGo search fails, try alternative keywords or simpler queries"""
+- If DuckDuckGo search fails, try alternative keywords or simpler queries
+
+【NETWORK避免重复规则】:
+- 获取公网IP的推荐方法优先级：http_request(httpbin.org/ip) > nslookup > curl
+- 如果http_request到国外URL超时，换用国内URL(如 httpbin.org/ip, myip.ipip.net)
+- ipconfig /all 只需执行1次，结果包含所有内网信息
+- ping测试只需1次，不需要重复ping同一地址
+- Do NOT repeat successful operations - reuse the results
+- If an operation fails twice, try a DIFFERENT approach"""
