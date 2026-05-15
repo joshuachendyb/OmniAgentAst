@@ -1256,7 +1256,7 @@ class BaseAgent(ABC):
             logger.info(
                 f"[History] ✂Trim: {total_msgs_before}→{total_msgs_after} msgs, "
                 f"chars={total_chars_after}/{self.MAX_CONTEXT_CHARS} "
-                f"(去重{dropped_dup}+预算{dropped_budget})"
+                f"(去重{dropped_dup}+预算{budget_dropped})"
             )
         else:
             logger.info(

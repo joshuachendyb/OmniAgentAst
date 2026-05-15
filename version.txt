@@ -1,3 +1,49 @@
+v0.12.37
+
+更新时间: 2026-05-15 19:30:48
+
+更新内容：
+
+## v0.12.36→v0.12.37 变更汇总 - 小沈-2026-05-15
+
+### feat 新增
+
+| commit | 说明 |
+|--------|------|
+| 22c33853 | 架构:工具结果双通道llm_data框架层(base_react/tool_executor/file_tools/tool_result_utils) - 小沈-2026-05-15 |
+| c95515bf | 🟡工具批量加llm_data+截断保护(ping/http/read_text/shell/python/js/media/batch/search) - 小沈-2026-05-15 |
+| 7d5f630c | 🟡剩余工具加llm_data+修task_list未定义变量bug - 小沈-2026-05-15 |
+
+### fix 修复
+
+| commit | 说明 |
+|--------|------|
+| f1c3ed0f | F2统一常量MAX_CONTEXT_CHARS+删除冗余常量+F3修复_add_within_budget返回None - 小沈-2026-05-15 |
+
+### 关键变更说明
+
+#### 1. 工具结果双通道架构 (22c33853/c95515bf/7d5f630c)
+- **data通道**: 给前端，完整结构化数据
+- **llm_data通道**: 给LLM，精简关键数据，防止上下文爆满
+- **框架层**: tool_executor透传llm_data，base_react优先使用llm_data构造observation，_format_llm_data通用格式化(dict→key:value行)
+- **工具层**: 18个高频/大数据工具已适配llm_data或截断保护
+  - network: ping/http_request
+  - shell: execute_shell_command
+  - code_execution: execute_python/execute_javascript
+  - file: read_text_file/read_media_file/read_batch_file/search_files
+  - data_format: read_json
+  - document: read_pdf/read_docx/read_pptx
+  - system: task_list(修folder/state/output_format未定义变量bug)
+  - environment: list_env
+  - desktop: read_clipboard
+
+#### 2. 统一常量+预算修复 (f1c3ed0f)
+- MAX_CONTEXT_CHARS=150000统一上下文上限
+- 删除CONTEXT_WINDOW_SIZE/OBSERVATION_BUDGET_INITIAL冗余常量
+- _add_within_budget返回bool(原返回None导致预算计数失效)
+
+---
+
 v0.12.36
 
 更新时间: 2026-05-15 17:45:00
