@@ -50,7 +50,8 @@ class FileOperationPrompts(BasePrompts):
             details={
                 "系统信息长度": len(system_info),
                 "包含内容": "服务器OS、路径格式、命令格式"
-            }
+            },
+            round_number=1
         )
         
         # 直接字符串拼接，避免f-string解析问题

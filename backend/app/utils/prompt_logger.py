@@ -111,7 +111,8 @@ class PromptLogger:
         step_name: str,
         prompt_content: str,
         source: str = "",
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None,
+        round_number: int = 0
     ):
         """
         记录系统 Prompt 生成过程
@@ -121,6 +122,7 @@ class PromptLogger:
             prompt_content: Prompt 内容
             source: 来源说明（如：system_adapter.py）
             details: 额外详情
+            round_number: LLM调用轮次 【2026-05-15 小健】
         """
         current_log = self._get_current_log()
         if not current_log:
@@ -134,6 +136,8 @@ class PromptLogger:
             "内容长度": len(prompt_content),
             "时间戳": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
+        if round_number > 0:
+            entry["轮次"] = round_number
         
         if details:
             entry["详情"] = details
@@ -143,7 +147,8 @@ class PromptLogger:
     def log_task_prompt(
         self,
         task_content: str,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        round_number: int = 0
     ):
         """
         记录任务 Prompt
@@ -151,6 +156,7 @@ class PromptLogger:
         Args:
             task_content: 任务 Prompt 内容
             context: 额外上下文
+            round_number: LLM调用轮次 【2026-05-15 小健】
         """
         current_log = self._get_current_log()
         if not current_log:
@@ -164,6 +170,8 @@ class PromptLogger:
             "内容长度": len(task_content),
             "时间戳": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
+        if round_number > 0:
+            entry["轮次"] = round_number
         
         if context:
             entry["上下文"] = context
@@ -278,7 +286,8 @@ class PromptLogger:
         step_name: str,
         observation_content: str,
         tool_name: str = "",
-        tool_params: Optional[Dict[str, Any]] = None
+        tool_params: Optional[Dict[str, Any]] = None,
+        round_number: int = 0
     ):
         """
         记录观察结果 Prompt
@@ -288,6 +297,7 @@ class PromptLogger:
             observation_content: 观察结果内容
             tool_name: 工具名称
             tool_params: 工具参数
+            round_number: LLM调用轮次 【2026-05-15 小健】
         """
         current_log = self._get_current_log()
         if not current_log:
@@ -301,6 +311,8 @@ class PromptLogger:
             "内容长度": len(observation_content),
             "时间戳": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
+        if round_number > 0:
+            entry["轮次"] = round_number
         
         if tool_params:
             entry["工具参数"] = tool_params
@@ -311,7 +323,8 @@ class PromptLogger:
         self,
         tool_name: str,
         prompt_content: str,
-        source: str = ""
+        source: str = "",
+        round_number: int = 0
     ):
         """
         记录工具相关的 Prompt
@@ -320,6 +333,7 @@ class PromptLogger:
             tool_name: 工具名称
             prompt_content: Prompt 内容
             source: 来源说明
+            round_number: LLM调用轮次 【2026-05-15 小健】
         """
         current_log = self._get_current_log()
         if not current_log:
@@ -333,6 +347,8 @@ class PromptLogger:
             "内容长度": len(prompt_content),
             "时间戳": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
+        if round_number > 0:
+            entry["轮次"] = round_number
         
         current_log["Prompt组装过程"].append(entry)
     

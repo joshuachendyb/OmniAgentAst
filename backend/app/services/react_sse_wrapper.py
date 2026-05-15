@@ -579,12 +579,14 @@ async def generate_sse_stream(
                 step_name="系统Prompt生成",
                 prompt_content=full_prompt,
                 source=source_name,
-                details={"intent_type": intent_type, "confidence": confidence, "note": "含OUTPUT_FORMAT(含退出规则)+TOOL_CALL_RULES+SAFETY+ROLLBACK"}
+                details={"intent_type": intent_type, "confidence": confidence, "note": "含OUTPUT_FORMAT(含退出规则)+TOOL_CALL_RULES+SAFETY+ROLLBACK"},
+                round_number=1
             )
         # 记录任务 prompt
         prompt_logger.log_task_prompt(
             task_content=user_message,
-            context={"intent_type": intent_type, "confidence": confidence}
+            context={"intent_type": intent_type, "confidence": confidence},
+            round_number=1
         )
     
     # 每次对话开始，重置LLM调用计数器（file/time 等路径由 Agent.llm_call_count 回填 — 小沈-2026-05-10）

@@ -895,7 +895,8 @@ class BaseAgent(ABC):
                     step_name="工具执行结果",
                     observation_content=observation_text,
                     tool_name=tool_name,
-                    tool_params=tool_params
+                    tool_params=tool_params,
+                    round_number=self.llm_call_count
                 )
 
                 # ===== 【步骤2.9】yield observation =====
@@ -1008,7 +1009,8 @@ class BaseAgent(ABC):
                             step_name="工具执行结果",
                             observation_content=p_obs_text,
                             tool_name=p_name,
-                            tool_params=p_params
+                            tool_params=p_params,
+                            round_number=self.llm_call_count
                         )
                     except Exception:
                         pass
