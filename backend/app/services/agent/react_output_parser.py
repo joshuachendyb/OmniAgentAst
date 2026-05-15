@@ -779,6 +779,27 @@ def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
                         result["content"] = content_fixed
                         result["thought"] = content_fixed
         
+        # 【修复 2026-05-15 小健】LLM可能返回"thought"而非"content"，需独立提取
+        if not result.get("thought"):
+            th_start_pattern = r'"thought"\s*:\s*"'
+            th_start_match = re.search(th_start_pattern, json_str)
+            if th_start_match:
+                json_after_th, _ = _extract_json_with_balanced_braces(json_str[th_start_match.start():])
+                if json_after_th:
+                    try:
+                        partial_json = json.loads(json_after_th)
+                        thought_value = partial_json.get("thought", "")
+                        thought_fixed = thought_value.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+                        result["content"] = thought_fixed
+                        result["thought"] = thought_fixed
+                    except:
+                        # 平衡引号算法提取thought值
+                        th_value_match = re.search(r'"thought"\s*:\s*"(.*?)"\s*,', json_str, re.DOTALL)
+                        if th_value_match:
+                            thought_fixed = th_value_match.group(1).encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+                            result["content"] = thought_fixed
+                            result["thought"] = thought_fixed
+        
         # 4. 提取 reasoning（使用平衡括号算法）
         rs_start_pattern = r'"reasoning"\s*:\s*"'
         rs_start_match = re.search(rs_start_pattern, json_str)
@@ -1836,6 +1857,25 @@ def _extract_params_by_regex_from_json_str(json_str: str) -> Optional[Dict[str, 
                     params["content"] = tp_json[value_start:i]
                     break
                 i += 1
+    
+    # 【修复 2026-05-15 小健】添加"result"参数提取（finish命令的tool_params.result）
+    # 【修复 2026-05-15 小健】result可能是长文本，用平衡引号算法提取避免截断
+    result_start = tp_json.find('"result"')
+    if result_start != -1:
+        colon_pos = tp_json.find(':', result_start + len('"result"'))
+        if colon_pos != -1:
+            quote_start = tp_json.find('"', colon_pos)
+            if quote_start != -1:
+                value_start = quote_start + 1
+                i = value_start
+                while i < len(tp_json):
+                    if tp_json[i] == '\\' and i + 1 < len(tp_json):
+                        i += 2
+                        continue
+                    if tp_json[i] == '"':
+                        params["result"] = tp_json[value_start:i]
+                        break
+                    i += 1
     
     # 提取其他常见参数
     other_params = ["dir_path", "source_path", "destination_path", "file_pattern", "pattern", "offset", "limit", "encoding"]
