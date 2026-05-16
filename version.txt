@@ -21,33 +21,14 @@ v0.12.39
 
 ---
 
-## v0.12.38→v0.12.39 变更汇总 - 小沈-2026-05-16
-
-### feat 新增
-
-| commit | 说明 |
-|--------|------|
-| 235097ab | llm_core:数组格式自动检测+per-model缓存(LongCat-Flash-Omni-2603修复) - 小健-20260516 |
-| 328aeb6c | llm_core:LongCat-Omni模型content必须为数组格式[{"type":"text","text":"..."}] - 小健-20260516 |
-
-### fix 修复
-
-| commit | 说明 |
-|--------|------|
-| 82b1cc78 | docs:version.txt更新到v0.12.38 - 小健-20260516 |
-| 26998e9c | feat:fetch_webpage支持Cloudflare重试+图片base64附件 - 小健-20260516 |
-| 4ae46ad1 | feat:network_tools三引擎fallback(Parallel MCP→Exa MCP→cn.bing.com) - 小健-20260516 |
-
----
-
 ## v0.12.37→v0.12.38 变更汇总 - 小健-2026-05-16
 
 ### feat 新增
 
 | commit | 说明 |
 |--------|------|
-| 4ae46ad1 | 搜索:Parallel MCP+Exa MCP三引擎逐级fallback(替代DuckDuckGo+www.bing.com) - 小健-2026-05-16 |
-| 26998e9c | 网页抓取:Cloudflare反爬重试+图片base64附件支持 - 小健-2026-05-16 |
+| 4ae46ad1 | 搜索:Parallel MCP+Exa MCP三引擎逐级fallback(替代DuckDuckGo+www.bing.com) - 小健-20260516 |
+| 26998e9c | 网页抓取:Cloudflare反爬重试+图片base64附件支持 - 小健-20260516 |
 | 61b3aea5 | 搜索:search_web llm_data精简+network_prompts双引擎/Bing降级+prompt_logger阈值2000 - xiaojian-20260515 |
 
 ### fix 修复
