@@ -351,18 +351,12 @@ class BaseAIService:
         
         # 查缓存：之前试过这个模型吗？
         cached_array = self._model_format_cache.get(self.model)
-        if cached_array is not None:
-            formats_to_try = [cached_array]
-        else:
-            formats_to_try = [True, False]  # 先试数组，不行再试字符串
+        
+        # 格式错误重试：最多试两种格式
+        formats_to_try = [True, False] if cached_array is None else [cached_array, not cached_array]
         
         last_error = None
-        for is_array in formats_to_try:
-            if is_array and cached_array is False:
-                continue  # 缓存说不要用数组，跳过
-            if not is_array and cached_array is True:
-                continue  # 缓存说要用数组，跳过
-            
+        for attempt, is_array in enumerate(formats_to_try):
             messages = self._build_messages(message, history, array_format=is_array)
             fmt_label = "数组" if is_array else "字符串"
             logger.info(f"[LLM Request] model={self.model}, format={fmt_label}, messages={len(messages)}")
@@ -386,20 +380,19 @@ class BaseAIService:
                         error_text = error_body.decode("utf-8", errors="ignore")
                         logger.error(f"[chat_stream] HTTP {response.status_code} error: {error_text[:200]}")
                         
-                        # 格式错误？记下来，下次用另一种格式
+                        # 格式错误？尝试另一种格式
                         if _is_format_error(error_text):
-                            self._model_format_cache[self.model] = not is_array  # 切换到另一种格式
-                            if len(formats_to_try) > 1:
-                                last_error = error_text[:200]
-                                continue
+                            self._model_format_cache[self.model] = not is_array
+                            last_error = error_text[:200]
+                            continue  # 试下一种格式
                         
                         yield StreamChunk(content="", model=self.model, is_done=True,
                             stream_error=f"API Error: {response.status_code}, {error_text[:200]}", stream_error_type="api_error")
                         return
                     
-                    # 成功！记住这个模型用数组格式没问题
-                    if is_array and self.model not in self._model_format_cache:
-                        self._model_format_cache[self.model] = True
+                    # 成功！记住这个格式
+                    if self.model not in self._model_format_cache:
+                        self._model_format_cache[self.model] = is_array
                     
                     # 处理流式响应
                     line_iterator = response.aiter_lines()
@@ -501,77 +494,95 @@ class BaseAIService:
         """
         try:
             # 查缓存：之前试过这个模型吗？
-            cached_array = self._model_format_cache.get(self.model, True)  # 默认数组格式
-            messages = self._build_messages(message, history, array_format=cached_array)
+            cached_array = self._model_format_cache.get(self.model)
+            # 格式错误重试：最多试两种格式
+            formats_to_try = [True, False] if cached_array is None else [cached_array, not cached_array]
             
-            request_json = {
-                "model": self.model,
-                "messages": messages
-            }
-            
-            if tools:
-                request_json["tools"] = tools
-                request_json["tool_choice"] = tool_choice
-            
-            logger.info(
-                f"[chat_with_tools] model={self.model}, "
-                f"messages数量={len(messages)}, "
-                f"tools数量={len(tools) if tools else 0}"
-            )
-            
-            # 【小沈优化 2026-04-21】使用后台任务+心跳检查，支持1秒内响应取消
-            request_task = asyncio.ensure_future(
-                self.client.post(
-                    f"{self.api_base}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json=request_json
-                )
-            )
-            
-            try:
-                while not request_task.done():
-                    # 等待1秒或直到任务完成
-                    try:
-                        await asyncio.wait_for(asyncio.shield(request_task), timeout=1.0)
-                    except asyncio.TimeoutError:
-                        # 检查是否被取消
-                        if self._cancelled:
-                            logger.info("[chat_with_tools] 检测到取消，中断请求")
-                            request_task.cancel()
-                            try:
-                                await request_task
-                            except asyncio.CancelledError:
-                                pass
-                            return ChatResponse(
-                                content="",
-                                model=self.model,
-                                provider=self.provider,
-                                error="任务已取消"
-                            )
-                        continue
+            last_error = None
+            for is_array in formats_to_try:
+                messages = self._build_messages(message, history, array_format=is_array)
                 
-                response = await request_task
+                request_json = {
+                    "model": self.model,
+                    "messages": messages
+                }
                 
-            except asyncio.CancelledError:
-                return ChatResponse(
-                    content="",
-                    model=self.model,
-                    provider=self.provider,
-                    error="任务已取消"
+                if tools:
+                    request_json["tools"] = tools
+                    request_json["tool_choice"] = tool_choice
+                
+                fmt_label = "数组" if is_array else "字符串"
+                logger.info(
+                    f"[chat_with_tools] model={self.model}, "
+                    f"format={fmt_label}, "
+                    f"messages数量={len(messages)}, "
+                    f"tools数量={len(tools) if tools else 0}"
                 )
-            
-            if response.status_code != 200:
-                error_text = response.text
-                logger.error(f"[chat_with_tools] API Error: {response.status_code}, {error_text}")
-                return ChatResponse(
-                    content="",
-                    model=self.model,
-                    provider=self.provider,
-                    error=f"API Error: {response.status_code}, {error_text}"
+                
+                # 【小沈优化 2026-04-21】使用后台任务+心跳检查，支持1秒内响应取消
+                request_task = asyncio.ensure_future(
+                    self.client.post(
+                        f"{self.api_base}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json"
+                        },
+                        json=request_json
+                    )
                 )
+                
+                try:
+                    while not request_task.done():
+                        # 等待1秒或直到任务完成
+                        try:
+                            await asyncio.wait_for(asyncio.shield(request_task), timeout=1.0)
+                        except asyncio.TimeoutError:
+                            # 检查是否被取消
+                            if self._cancelled:
+                                logger.info("[chat_with_tools] 检测到取消，中断请求")
+                                request_task.cancel()
+                                try:
+                                    await request_task
+                                except asyncio.CancelledError:
+                                    pass
+                                return ChatResponse(
+                                    content="",
+                                    model=self.model,
+                                    provider=self.provider,
+                                    error="任务已取消"
+                                )
+                            continue
+                    
+                    response = await request_task
+                    
+                except asyncio.CancelledError:
+                    return ChatResponse(
+                        content="",
+                        model=self.model,
+                        provider=self.provider,
+                        error="任务已取消"
+                    )
+                
+                if response.status_code != 200:
+                    error_text = response.text
+                    logger.error(f"[chat_with_tools] API Error: {response.status_code}, {error_text[:200]}")
+                    
+                    # 格式错误？尝试另一种格式
+                    if _is_format_error(error_text):
+                        self._model_format_cache[self.model] = not is_array
+                        last_error = error_text[:200]
+                        continue  # 试下一种格式
+                    
+                    return ChatResponse(
+                        content="",
+                        model=self.model,
+                        provider=self.provider,
+                        error=f"API Error: {response.status_code}, {error_text}"
+                    )
+                
+                # 成功！记住这个格式
+                if self.model not in self._model_format_cache:
+                    self._model_format_cache[self.model] = is_array
             
             data = response.json()
             choices = data.get("choices", [])
@@ -651,51 +662,73 @@ class BaseAIService:
         
         try:
             # 查缓存：之前试过这个模型吗？
-            cached_array = self._model_format_cache.get(self.model, True)  # 默认数组格式
-            messages = self._build_messages(message, history, array_format=cached_array)
+            cached_array = self._model_format_cache.get(self.model)
+            # 格式错误重试：最多试两种格式
+            formats_to_try = [True, False] if cached_array is None else [cached_array, not cached_array]
             
-            request_json = {
-                "model": self.model,
-                "messages": messages,
-                "stream": True
-            }
-            
-            if tools:
-                request_json["tools"] = tools
-                request_json["tool_choice"] = tool_choice
-            
-            logger.info(
-                f"[chat_with_tools_stream] model={self.model}, "
-                f"tools数量={len(tools) if tools else 0}"
-            )
-            
-            async with self.client.stream(
-                "POST",
-                f"{self.api_base}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
-                },
-                json=request_json
-            ) as response:
-                self._current_response = response
+            last_error = None
+            for is_array in formats_to_try:
+                messages = self._build_messages(message, history, array_format=is_array)
                 
-                # 【修复】发送请求后立即检查取消标志，避免延迟
-                if self._cancelled:
-                    logger.info("[chat_with_tools_stream] 请求发送后立即检测到取消")
-                    # 【修复 2026-04-30 小沈】异步流用aclose()
-                    await response.aclose()
-                    yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
-                    return
+                request_json = {
+                    "model": self.model,
+                    "messages": messages,
+                    "stream": True
+                }
                 
-                if response.status_code != 200:
-                    yield StreamChunk(
-                        content="",
-                        model=self.model,
-                        is_done=True,
-                        stream_error=f"API Error: {response.status_code}"
-                    )
-                    return
+                if tools:
+                    request_json["tools"] = tools
+                    request_json["tool_choice"] = tool_choice
+                
+                fmt_label = "数组" if is_array else "字符串"
+                logger.info(
+                    f"[chat_with_tools_stream] model={self.model}, "
+                    f"format={fmt_label}, "
+                    f"tools数量={len(tools) if tools else 0}"
+                )
+                
+                async with self.client.stream(
+                    "POST",
+                    f"{self.api_base}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json=request_json
+                ) as response:
+                    self._current_response = response
+                    
+                    # 【修复】发送请求后立即检查取消标志，避免延迟
+                    if self._cancelled:
+                        logger.info("[chat_with_tools_stream] 请求发送后立即检测到取消")
+                        # 【修复 2026-04-30 小沈】异步流用aclose()
+                        await response.aclose()
+                        yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
+                        return
+                    
+                    if response.status_code != 200:
+                        error_body = await response.aread()
+                        error_text = error_body.decode("utf-8", errors="ignore")
+                        logger.error(f"[chat_with_tools_stream] HTTP {response.status_code} error: {error_text[:200]}")
+                        
+                        # 格式错误？尝试另一种格式
+                        if _is_format_error(error_text):
+                            self._model_format_cache[self.model] = not is_array
+                            last_error = error_text[:200]
+                            continue  # 试下一种格式
+                        
+                        yield StreamChunk(
+                            content="",
+                            model=self.model,
+                            is_done=True,
+                            stream_error=f"API Error: {response.status_code}, {error_text[:200]}",
+                            stream_error_type="api_error"
+                        )
+                        return
+                    
+                    # 成功！记住这个格式
+                    if self.model not in self._model_format_cache:
+                        self._model_format_cache[self.model] = is_array
                 
                 # 【问题2修复】同样使用wait_for定期检查，每1秒超时
                 # 【小沈修复 2026-04-21】修复StreamConsumed错误：使用单个迭代器，避免重复创建
@@ -823,40 +856,58 @@ class BaseAIService:
         """
         try:
             # 查缓存：之前试过这个模型吗？
-            cached_array = self._model_format_cache.get(self.model, True)  # 默认数组格式
-            messages = self._build_messages(message, history, array_format=cached_array)
+            cached_array = self._model_format_cache.get(self.model)
+            # 格式错误重试：最多试两种格式
+            formats_to_try = [True, False] if cached_array is None else [cached_array, not cached_array]
             
-            request_json: Dict[str, Any] = {
-                "model": self.model,
-                "messages": messages
-            }
-            
-            if response_format:
-                request_json["response_format"] = response_format
-            
-            logger.info(
-                f"[chat_with_response_format] model={self.model}, "
-                f"response_format={'provided' if response_format else 'None'}"
-            )
-            
-            response = await self.client.post(
-                f"{self.api_base}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
-                },
-                json=request_json
-            )
-            
-            if response.status_code != 200:
-                error_text = response.text
-                logger.error(f"[chat_with_response_format] API Error: {response.status_code}, {error_text}")
-                return ChatResponse(
-                    content="",
-                    model=self.model,
-                    provider=self.provider,
-                    error=f"API Error: {response.status_code}"
+            last_error = None
+            for is_array in formats_to_try:
+                messages = self._build_messages(message, history, array_format=is_array)
+                
+                request_json: Dict[str, Any] = {
+                    "model": self.model,
+                    "messages": messages
+                }
+                
+                if response_format:
+                    request_json["response_format"] = response_format
+                
+                fmt_label = "数组" if is_array else "字符串"
+                logger.info(
+                    f"[chat_with_response_format] model={self.model}, "
+                    f"format={fmt_label}, "
+                    f"response_format={'provided' if response_format else 'None'}"
                 )
+                
+                response = await self.client.post(
+                    f"{self.api_base}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json=request_json
+                )
+                
+                if response.status_code != 200:
+                    error_text = response.text
+                    logger.error(f"[chat_with_response_format] API Error: {response.status_code}, {error_text[:200]}")
+                    
+                    # 格式错误？尝试另一种格式
+                    if _is_format_error(error_text):
+                        self._model_format_cache[self.model] = not is_array
+                        last_error = error_text[:200]
+                        continue  # 试下一种格式
+                    
+                    return ChatResponse(
+                        content="",
+                        model=self.model,
+                        provider=self.provider,
+                        error=f"API Error: {response.status_code}, {error_text}"
+                    )
+                
+                # 成功！记住这个格式
+                if self.model not in self._model_format_cache:
+                    self._model_format_cache[self.model] = is_array
             
             data = response.json()
             choices = data.get("choices", [])
