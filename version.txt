@@ -1,8 +1,44 @@
-v0.12.38
+v0.12.39
 
-更新时间: 2026-05-16 07:20:00
+更新时间: 2026-05-16 09:57:57
 
 更新内容：
+
+## v0.12.38→v0.12.39 变更汇总 - 小沈-2026-05-16
+
+### fix 修复
+
+| commit | 说明 |
+|--------|------|
+| 3aa52ce7 | llm_core:提取_convert_content和_is_format_error公共函数+修复chat_with_tools等三方法格式缓存+扩展8种格式错误关键词检测 - 小沈-20260516 |
+| (见下方) | network_tools:ping工具主机不可达时也返回llm_data给LLM - 小健-20260516 |
+
+### docs 文档
+
+| commit | 说明 |
+|--------|------|
+| - | llm_core:添加多模态支持TODO注释 - 小健-20260516 |
+
+---
+
+## v0.12.38→v0.12.39 变更汇总 - 小沈-2026-05-16
+
+### feat 新增
+
+| commit | 说明 |
+|--------|------|
+| 235097ab | llm_core:数组格式自动检测+per-model缓存(LongCat-Flash-Omni-2603修复) - 小健-20260516 |
+| 328aeb6c | llm_core:LongCat-Omni模型content必须为数组格式[{"type":"text","text":"..."}] - 小健-20260516 |
+
+### fix 修复
+
+| commit | 说明 |
+|--------|------|
+| 82b1cc78 | docs:version.txt更新到v0.12.38 - 小健-20260516 |
+| 26998e9c | feat:fetch_webpage支持Cloudflare重试+图片base64附件 - 小健-20260516 |
+| 4ae46ad1 | feat:network_tools三引擎fallback(Parallel MCP→Exa MCP→cn.bing.com) - 小健-20260516 |
+
+---
 
 ## v0.12.37→v0.12.38 变更汇总 - 小健-2026-05-16
 
