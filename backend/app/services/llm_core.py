@@ -97,6 +97,7 @@ def _convert_content(content: str, array_format: bool) -> Any:
 def _is_format_error(error_text: str) -> bool:
     """
     检测是否为消息格式错误 - 小健 2026-05-16
+    【小沈 2026-05-16】增加multimodal错误检测
     
     不同LLM provider返回的格式错误关键词不同，此函数统一检测。
     
@@ -133,6 +134,16 @@ def _is_format_error(error_text: str) -> bool:
     if "content must be" in error_lower:
         return True
     if "content should be" in error_lower:
+        return True
+    
+    # 【小沈 2026-05-16】LongCat Omni多模态错误: "multimodal content is not supported"
+    if "multimodal" in error_lower and "not supported" in error_lower:
+        return True
+    if "images" in error_lower and "not supported" in error_lower:
+        return True
+    if "videos" in error_lower and "not supported" in error_lower:
+        return True
+    if "audio" in error_lower and "not supported" in error_lower:
         return True
     
     return False
