@@ -630,20 +630,26 @@ class BaseAgent(ABC):
                     error_msg = parsed.get("error", "Unknown parse error")
                     logger.warning(f"[parse_react_response] 情况4: 解析错误: {error_msg}, 重试次数={self.parse_retry_count}")
                     
-                    # 【修复 小健 2026-05-16】429/限流是网络问题，不是LLM格式错误，不注入history污染上下文
-                    is_rate_limit = "429" in str(error_msg) or "rate_limit" in str(error_msg) or "请求过于频繁" in str(error_msg)
-                    if not is_rate_limit:
-                        # 格式错误：添加提示到历史，引导 LLM 修复
+                    # 【修复 小健 2026-05-16】网络/API错误不注入history，只有LLM格式错误才注入
+                    _err = str(error_msg).lower()
+                    is_network_error = any(kw in _err for kw in [
+                        "429", "rate_limit", "请求过于频繁",
+                        "readerror", "connecttimeout", "connectionerror",
+                        "timeout", "服务调用失败", "api请求",
+                        "502", "503", "504", "network",
+                    ])
+                    if not is_network_error:
+                        # LLM格式错误：添加提示到历史，引导LLM修复
                         self._add_observation_to_history(f"Parse Error: {error_msg}. Please ensure your response follows the ReAct format (Thought -> Action -> Action Input).")
                     else:
-                        logger.info(f"[parse_react_response] 429限流错误，不注入history，直接重试")
-                        # 给前端发限流提示，但不结束loop
-                        rate_limit_data = create_incident_data(
+                        # 网络/API错误：不注入history，给前端提示，直接重试
+                        logger.info(f"[parse_react_response] 网络/API错误，不注入history: {error_msg}")
+                        net_error_data = create_incident_data(
                             incident_value="rate_limit",
-                            message=f"API限流(429)，正在退避重试（第{self.parse_retry_count + 1}次）",
+                            message=f"API暂时不可用，正在重试（第{self.parse_retry_count + 1}次）",
                             step=step_count
                         )
-                        yield rate_limit_data
+                        yield net_error_data
                     
                     # 重试计数器+1
                     self.parse_retry_count += 1

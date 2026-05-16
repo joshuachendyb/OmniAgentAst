@@ -196,12 +196,21 @@ class BaseAIService:
         self._current_response = None
     
     def _build_messages(self, message: str, history: Optional[List[Message]] = None) -> List[Dict]:
-        """构建消息列表"""
+        """构建消息列表 - 小健 2026-05-16 添加LongCat全模态格式支持"""
         messages = []
         if history:
             for msg in history:
-                messages.append(msg.to_dict())
-        messages.append({"role": "user", "content": message})
+                msg_dict = msg.to_dict()
+                # 【修复 2026-05-16 小健】LongCat全模态模型content必须用数组格式
+                if self.provider and "longcat" in self.provider.replace(".", "").lower():
+                    if isinstance(msg_dict.get("content"), str):
+                        msg_dict["content"] = [{"type": "text", "text": msg_dict["content"]}]
+                messages.append(msg_dict)
+        # 当前用户消息
+        user_msg = {"role": "user", "content": message}
+        if self.provider and "longcat" in self.provider.replace(".", "").lower():
+            user_msg["content"] = [{"type": "text", "text": message}]
+        messages.append(user_msg)
         return messages
     
     async def chat(self, message: str, history: Optional[List[Message]] = None) -> ChatResponse:
