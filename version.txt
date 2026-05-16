@@ -61,6 +61,17 @@ v0.12.40
 
 ---
 
+v0.12.38
+
+### feat 新增
+
+| commit | 说明 |
+|--------|------|
+| 235097ab | llm_core:数组格式自动检测+per-model缓存(LongCat-Flash-Omni-2603修复) - 小健-20260516 |
+| 328aeb6c | llm_core:LongCat-Omni模型content必须为数组格式[{"type":"text","text":"..."}] - 小健-20260516 |
+
+---
+
 v0.12.37
 
 ### feat 新增
