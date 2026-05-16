@@ -1088,6 +1088,12 @@ async def ping(
                 "llm_data": _llm_ping,
             }
         else:
+            # 【修复 小健 2026-05-16】不可达时也用raw_output给LLM
+            _raw_len = len(raw_output)
+            if _raw_len <= 5000:
+                _llm_ping_fail = {"目标": host, "结果": raw_output.strip()}
+            else:
+                _llm_ping_fail = {"目标": host, "结果预览": raw_output[:3000].strip()}
             return {
                 "code": "SUCCESS",
                 "data": {
@@ -1101,7 +1107,8 @@ async def ping(
                     "max_latency": None,
                     "is_reachable": False,
                 },
-                "message": f"Ping测试失败：{host} 不可达"
+                "message": f"Ping测试失败：{host} 不可达",
+                "llm_data": _llm_ping_fail,
             }
     
     except Exception as e:

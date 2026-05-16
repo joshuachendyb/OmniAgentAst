@@ -69,8 +69,86 @@ def _convert_xml_tool_call_to_json(content: str) -> Optional[str]:
     return result
 
 
+def _convert_content(content: str, array_format: bool) -> Any:
+    """
+    内容格式转换 - 小健 2026-05-16
+    
+    将字符串内容转换为LLM API所需的格式。
+    
+    Args:
+        content: 原始文本内容
+        array_format: True=数组格式[{"type":"text","text":"..."}], False=字符串格式
+    
+    Returns:
+        数组格式或原始字符串
+    
+    【TODO 多模态支持 小健 2026-05-16】
+    当前仅支持纯文本。后续需扩展为支持图片/视频/音频等多模态内容：
+    - input_image: 图片URL或base64
+    - input_video: 视频URL或base64  
+    - input_audio: 音频URL或base64
+    参考: https://longcat.chat/platform/docs/zh/APIDocs.html#全模态聊天补全
+    """
+    if array_format:
+        return [{"type": "text", "text": content}]
+    return content
+
+
+def _is_format_error(error_text: str) -> bool:
+    """
+    检测是否为消息格式错误 - 小健 2026-05-16
+    
+    不同LLM provider返回的格式错误关键词不同，此函数统一检测。
+    
+    Args:
+        error_text: API返回的错误文本
+    
+    Returns:
+        True=格式错误，需要切换消息格式重试
+    """
+    if not error_text:
+        return False
+    
+    error_lower = error_text.lower()
+    
+    # OpenAI兼容格式错误
+    if "invalid_format" in error_lower:
+        return True
+    if "json format" in error_lower:
+        return True
+    
+    # OpenAI风格: "Invalid 'messages[0].content'"
+    if "invalid" in error_lower and "content" in error_lower:
+        return True
+    if "invalid" in error_lower and "messages" in error_lower:
+        return True
+    
+    # 智谱/其他风格: "messages content format error"
+    if "format" in error_lower and "content" in error_lower:
+        return True
+    if "format" in error_lower and "messages" in error_lower:
+        return True
+    
+    # 某些provider: "content must be string" / "content must be array"
+    if "content must be" in error_lower:
+        return True
+    if "content should be" in error_lower:
+        return True
+    
+    return False
+
+
 class Message:
-    """消息类 - 用于构建 LLM 调用时的消息列表"""
+    """消息类 - 用于构建 LLM 调用时的消息列表
+    
+    【TODO 多模态支持 小健 2026-05-16】
+    当前 content 字段仅支持字符串类型。后续需扩展为 Union[str, List[Dict]] 以支持多模态：
+    - 文本: content = "纯文本" 或 [{"type":"text","text":"..."}]
+    - 图片: content = [{"type":"input_image","input_image":{"type":"url","data":"..."}}]
+    - 视频: content = [{"type":"input_video","input_video":{"type":"url","data":"..."}}]
+    - 音频: content = [{"type":"input_audio","input_audio":{"type":"url","data":"...","format":"wav"}}]
+    参考: https://longcat.chat/platform/docs/zh/APIDocs.html#全模态聊天补全
+    """
     def __init__(self, role: str, content: str):
         self.role = role
         self.content = content
@@ -205,12 +283,9 @@ class BaseAIService:
             for msg in history:
                 msg_dict = msg.to_dict()
                 if array_format and isinstance(msg_dict.get("content"), str):
-                    msg_dict["content"] = [{"type": "text", "text": msg_dict["content"]}]
+                    msg_dict["content"] = _convert_content(msg_dict["content"], True)
                 messages.append(msg_dict)
-        content = message
-        if array_format:
-            content = [{"type": "text", "text": message}]
-        messages.append({"role": "user", "content": content})
+        messages.append({"role": "user", "content": _convert_content(message, array_format)})
         return messages
     
     async def chat(self, message: str, history: Optional[List[Message]] = None) -> ChatResponse:
@@ -301,9 +376,9 @@ class BaseAIService:
                         logger.error(f"[chat_stream] HTTP {response.status_code} error: {error_text[:200]}")
                         
                         # 格式错误？记下来，下次用另一种格式
-                        if "invalid_format" in error_text.lower() or "json format" in error_text.lower():
-                            self._model_format_cache[self.model] = False  # 下次用字符串
-                            if not formats_to_try[-1]:  # 还有下一轮
+                        if _is_format_error(error_text):
+                            self._model_format_cache[self.model] = not is_array  # 切换到另一种格式
+                            if len(formats_to_try) > 1:
                                 last_error = error_text[:200]
                                 continue
                         
@@ -411,9 +486,12 @@ class BaseAIService:
         """发送对话请求（使用 Function Calling）
         
         【小沈优化 2026-04-21】使用后台任务+心跳检查，1秒内响应取消
+        【小健 2026-05-16】使用格式缓存，避免Omni模型400错误
         """
         try:
-            messages = self._build_messages(message, history)
+            # 查缓存：之前试过这个模型吗？
+            cached_array = self._model_format_cache.get(self.model, True)  # 默认数组格式
+            messages = self._build_messages(message, history, array_format=cached_array)
             
             request_json = {
                 "model": self.model,
@@ -554,11 +632,16 @@ class BaseAIService:
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto"
     ) -> AsyncGenerator[StreamChunk, None]:
-        """发送对话请求（使用 Function Calling，流式返回）"""
+        """发送对话请求（使用 Function Calling，流式返回）
+        
+        【小健 2026-05-16】使用格式缓存，避免Omni模型400错误
+        """
         self.reset_cancel()
         
         try:
-            messages = self._build_messages(message, history)
+            # 查缓存：之前试过这个模型吗？
+            cached_array = self._model_format_cache.get(self.model, True)  # 默认数组格式
+            messages = self._build_messages(message, history, array_format=cached_array)
             
             request_json = {
                 "model": self.model,
@@ -723,9 +806,14 @@ class BaseAIService:
         history: Optional[List[Message]] = None,
         response_format: Optional[Dict[str, Any]] = None
     ) -> ChatResponse:
-        """发送对话请求（使用 Structured Outputs response_format）"""
+        """发送对话请求（使用 Structured Outputs response_format）
+        
+        【小健 2026-05-16】使用格式缓存，避免Omni模型400错误
+        """
         try:
-            messages = self._build_messages(message, history)
+            # 查缓存：之前试过这个模型吗？
+            cached_array = self._model_format_cache.get(self.model, True)  # 默认数组格式
+            messages = self._build_messages(message, history, array_format=cached_array)
             
             request_json: Dict[str, Any] = {
                 "model": self.model,
