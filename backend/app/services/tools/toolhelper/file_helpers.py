@@ -61,7 +61,6 @@ import tarfile
 import hashlib
 import mimetypes
 import subprocess
-import send2trash
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any, Tuple
@@ -513,16 +512,18 @@ def move_to_trash(file_path: str) -> Dict[str, Any]:
     """
     移动文件到回收站 - 小沈 2026-05-02
     """
-    try:
-        file_path = os.path.abspath(file_path)
-        
-        if not os.path.exists(file_path):
-            return {"success": False, "error": f"文件不存在: {file_path}"}
-        
-        send2trash.send2trash(file_path)
-        
-        return {"success": True, "path": file_path, "action": "moved_to_trash"}
+    file_path = os.path.abspath(file_path)
     
+    if not os.path.exists(file_path):
+        return {"success": False, "error": f"文件不存在: {file_path}"}
+    
+    try:
+        import send2trash
+        send2trash.send2trash(file_path)
+        return {"success": True, "path": file_path, "action": "moved_to_trash"}
+    except ImportError:
+        logger.warning("send2trash未安装，无法移动到回收站")
+        return {"success": False, "error": "send2trash未安装，请先安装: pip install send2trash"}
     except Exception as e:
         logger.error(f"[move_to_trash] 移动到回收站失败: {e}")
         return {"success": False, "error": str(e)}
