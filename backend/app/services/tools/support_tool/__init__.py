@@ -4,14 +4,17 @@ Support Tool 模块 - 支撑工具（公共函数 + LLM可调用Tool）
 
 【更新 2026-05-14 小健】5个数据库事务工具已移到database分类注册，
 但函数实现仍在本模块(support_tool_tools.py)中作为公共基础设施。
+【更新 2026-05-17 小沈】check_db_exists已迁移到toolhelper/db_helper.py；
+get_table_schema和3个事务函数已弃用，仅保留向后兼容。
 """
 
 from app.services.tools.support_tool.support_tool_register import *
 from app.services.tools.support_tool.support_tool_tools import (
-    # 【2026-05-14 小健】5个数据库工具的LLM注册已移到database_register.py
-    # 但函数实现仍在此处（被其他工具内部调用）
+    # 【2026-05-17 小沈 已弃用-兼容】check_db_exists 实现已迁移到 toolhelper/db_helper.py
     check_db_exists,
+    # 【2026-05-17 小沈 已弃用】请使用 database_tools.get_db_schema(table_name=...) 代替
     get_table_schema,
+    # 【2026-05-17 小沈 已弃用】事务控制工具已从 database 分类移除
     begin_transaction,
     commit_transaction,
     rollback_transaction,

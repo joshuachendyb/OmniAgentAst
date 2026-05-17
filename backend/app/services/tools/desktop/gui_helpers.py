@@ -61,7 +61,8 @@ def get_mouse_position() -> Dict[str, Any]:
         except Exception as e:
             return {"code": "ERR_GET_MOUSE_POSITION", "data": None, "message": f"获取失败: {str(e)}"}
     
-    return {"code": "SUCCESS", "data": {"x": 0, "y": 0}, "message": "无依赖库，返回默认位置 (0, 0)"}
+    # 【2026-05-17 小沈】H1 假数据修正：无依赖库时返回ERR_NO_DEPENDENCY而非假数据(0,0)
+    return {"code": "ERR_NO_DEPENDENCY", "data": None, "message": "无依赖库可用(win32api/pyautogui均未安装)，无法获取鼠标位置"}
 
 
 def check_screen_size() -> Dict[str, Any]:
@@ -86,7 +87,8 @@ def check_screen_size() -> Dict[str, Any]:
         except Exception as e:
             return {"code": "ERR_CHECK_SCREEN_SIZE", "data": None, "message": f"获取失败: {str(e)}"}
     
-    return {"code": "SUCCESS", "data": {"width": 1920, "height": 1080}, "message": "无依赖库，返回默认分辨率 1920x1080"}
+    # 【2026-05-17 小沈】H2 假数据修正：无依赖库时返回ERR_NO_DEPENDENCY而非假数据1920x1080
+    return {"code": "ERR_NO_DEPENDENCY", "data": None, "message": "无依赖库可用(win32api/pyautogui均未安装)，无法获取屏幕分辨率"}
 
 
 def check_window_exists(title: str) -> Dict[str, Any]:
@@ -161,22 +163,18 @@ def check_screen_capture_permission() -> Dict[str, Any]:
         成功：{"code": "SUCCESS", "data": {"has_permission": true/false}, "message": "成功信息"}
         失败：{"code": "ERR_CHECK_PERMISSION", "data": None, "message": "错误信息"}
     """
-    if not WIN32_AVAILABLE:
-        return {"code": "ERR_CHECK_PERMISSION", "data": None, "message": "win32库未安装"}
-    
+    # 【2026-05-17 小沈】H5 假数据修正：Windows截屏权限默认允许，增加实际检查逻辑
     try:
         import ctypes.wintypes
         user32 = ctypes.windll.user32
-        
-        class LASTINPUTINFO(ctypes.Structure):
-            _fields_ = [
-                ("cbSize", ctypes.wintypes.UINT),
-                ("dwTime", ctypes.wintypes.DWORD),
-            ]
-        
-        return {"code": "SUCCESS", "data": {"has_permission": True}, "message": "具有屏幕捕获权限"}
+        # Windows系统：尝试获取桌面DC验证截屏能力
+        hdc = user32.GetDC(0)
+        if hdc:
+            user32.ReleaseDC(0, hdc)
+            return {"code": "SUCCESS", "data": {"has_permission": True}, "message": "Windows系统默认允许屏幕捕获，已验证可获取桌面DC"}
+        return {"code": "SUCCESS", "data": {"has_permission": False}, "message": "无法获取桌面DC，屏幕捕获可能受限"}
     except Exception as e:
-        return {"code": "ERR_CHECK_PERMISSION", "data": {"has_permission": False}, "message": f"检查屏幕捕获权限失败: {str(e)}"}
+        return {"code": "ERR_CHECK_PERMISSION", "data": None, "message": f"检查屏幕捕获权限失败: {str(e)}"}
 
 
 def check_tesseract_available() -> Dict[str, Any]:
@@ -210,16 +208,19 @@ def check_notification_permission() -> Dict[str, Any]:
         成功：{"code": "SUCCESS", "data": {"has_permission": true/false}, "message": "成功信息"}
         失败：{"code": "ERR_CHECK_PERMISSION", "data": None, "message": "错误信息"}
     """
-    if not WIN32_AVAILABLE:
-        return {"code": "ERR_CHECK_PERMISSION", "data": None, "message": "win32库未安装"}
-    
+    # 【2026-05-17 小沈】H5 假数据修正：Windows通知权限检查注册表，而非永远返回True
     try:
-        import win32api
-        import win32con
-        
-        class NOTIFYICONVERSION(ctypes.Structure):
-            _fields_ = []
-        
-        return {"code": "SUCCESS", "data": {"has_permission": True}, "message": "具有通知权限"}
+        import winreg
+        # 检查Windows通知中心是否启用（注册表路径）
+        key_path = r"Software\Microsoft\Windows\CurrentVersion\PushNotifications"
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_READ)
+            value, _ = winreg.QueryValueEx(key, "ToastEnabled")
+            winreg.CloseKey(key)
+            has_permission = bool(value)
+            return {"code": "SUCCESS", "data": {"has_permission": has_permission}, "message": f"通知权限(注册表检查): {'允许' if has_permission else '禁止'}"}
+        except FileNotFoundError:
+            # 注册表项不存在时，Windows默认允许通知
+            return {"code": "SUCCESS", "data": {"has_permission": True}, "message": "通知权限: 注册表项未找到，Windows系统默认允许"}
     except Exception as e:
-        return {"code": "ERR_CHECK_PERMISSION", "data": {"has_permission": False}, "message": f"检查通知权限失败: {str(e)}"}
+        return {"code": "ERR_CHECK_PERMISSION", "data": None, "message": f"检查通知权限失败: {str(e)}"}

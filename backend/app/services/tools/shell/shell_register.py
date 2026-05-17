@@ -11,10 +11,14 @@ Shell Register - Shell工具注册点
 - 从 @register_tool 装饰器注册改为显式注册（tool_registry.register）
 - 按 file_register.py 模式重写
 
-# Shell操作工具（共8个） 小沈-2026-05-05
+【2026-05-17 小健 降级】LLM工具 8→4
+- 降级3个：get_working_directory/change_directory/check_path_exists → 内部函数
+- 合并2个：check_command_available+locate_command → find_command
+
+# Shell操作工具（共4个LLM工具）
 
 创建时间: 2026-04-29
-更新时间: 2026-05-02
+更新时间: 2026-05-17 小健
 """
 
 from app.services.tools.registry import register_tool, ToolCategory, tool_registry
@@ -25,10 +29,8 @@ from app.services.tools.shell.shell_schema import (
     GetWorkingDirectoryInput,
     ChangeDirectoryInput,
     CheckPathExistsInput,
-    CheckCommandAvailableInput,
-    LocateCommandInput,
-    GetShellOutputInput,
-    TerminateShellInput,
+    FindCommandInput,
+    ShellSessionInput,
 )
 
 from app.services.tools.shell.shell_tools import (
@@ -36,10 +38,8 @@ from app.services.tools.shell.shell_tools import (
     get_working_directory,
     change_directory,
     check_path_exists,
-    check_command_available,
-    locate_command,
-    get_shell_output,
-    terminate_shell,
+    find_command,
+    shell_session,
 )
 
 SHELL_TOOL_DESCRIPTIONS = {
@@ -62,63 +62,46 @@ SHELL_TOOL_DESCRIPTIONS = {
 - code: 状态码，SUCCESS/ERR_SHELL_EXEC/ERR_SHELL_TIMEOUT
 - data: 前台模式含stdout(标准输出)、stderr(标准错误)、returncode(退出码)；后台模式含shell_id(会话ID)、is_running(是否运行中)、started_at(启动时间)；失败或超时时data可能为null
 - message: 状态描述信息""",
-    "get_working_directory": """获取当前工作目录的完整路径。
-
-【重要】此工具不需要任何参数，不要传递任何参数！直接调用即可。
+    "find_command": """查找系统命令路径。类似于 which/where 命令。
 
 使用场景：
-- 当用户需要确认当前工作目录时使用
-- 当用户需要获取当前所在路径时使用
-- 当用户需要获取绝对路径时使用
+- 当用户需要确认某个命令（如 python、git、npm）是否已安装时使用
+- 当用户需要查找命令的安装路径时使用
+- 当用户需要查看命令的所有安装位置时使用
+- 当用户需要验证工具链是否正确配置时使用
+
+
+【重要】all_paths=False返回第一个匹配路径（快速），all_paths=True返回全部匹配路径（完整列表）
 
 使用示例：
-- 正确：{}  # 无参数，直接调用
-- 错误：{"path": "xxx"}  # 不要传path参数！
+- 检查Python是否可用：{"command": "python"}
+- 查找Python所有路径：{"command": "python", "all_paths": true}
+- 检查Git：{"command": "git"}
 
 返回数据说明：
-- code: 状态码，SUCCESS/ERR_SHELL_GET_CWD
-- data: 成功时含path(当前工作目录绝对路径)；失败时为null
-- message: 状态描述信息""",
-    "change_directory": "切换当前工作目录到指定路径。\n\n使用场景：\n- 当用户需要切换工作目录时使用\n- 当用户需要在特定目录下执行命令时使用\n- 当用户需要改变当前路径时使用\n\n【重要】切换shell会话的工作目录，后续命令在此目录下执行\n\n使用示例：\n- 切换到D盘：{\"path\": \"D:/\"}\n- 切换到项目目录：{\"path\": \"D:/OmniAgentAs-desk\"}\n\n返回数据说明：\n- code: 状态码，SUCCESS/ERR_SHELL_PATH_NOT_FOUND/ERR_SHELL_PERMISSION/ERR_SHELL_CHANGE_DIR\n- data: 成功时含success(是否成功，true)、path(切换后的工作目录绝对路径)；失败时为null\n- message: 状态描述信息",
-    "check_path_exists": "检查指定的文件或目录是否存在，并返回类型信息。\n\n使用场景：\n- 当用户需要检查文件是否存在时使用\n- 当用户需要确认路径是文件还是目录时使用\n- 当用户需要验证路径有效性时使用\n\n【重要】返回路径是否存在以及类型（file/directory/nonexistent）\n\n使用示例：\n- 检查文件：{\"path\": \"D:/OmniAgentAs-desk/main.py\"}\n- 检查目录：{\"path\": \"D:/OmniAgentAs-desk/src\"}\n\n返回数据说明：\n- code: 状态码，SUCCESS/ERR_SHELL_CHECK_PATH\n- data: 含exists(路径是否存在，bool)、is_file(是否为文件，bool)、is_directory(是否为目录，bool)、path(检查的原始路径)；失败时为null\n- message: 状态描述信息",
-    "check_command_available": "检查系统命令是否可用，类似于 Linux 的 which 命令。\n\n使用场景：\n- 当用户需要确认某个命令（如 python、git、npm）是否已安装时使用\n- 当用户需要查找命令的安装路径时使用\n- 当用户需要验证工具链是否正确配置时使用\n\n【重要】返回命令是否存在以及完整路径\n\n使用示例：\n- 检查Python：{\"command\": \"python\"}\n- 检查Git：{\"command\": \"git\"}\n- 检查npm：{\"command\": \"npm\"}\n\n返回数据说明：\n- code: 状态码，SUCCESS/ERR_SHELL_CHECK_COMMAND\n- data: 含available(命令是否可用，bool)、command(命令名称)、path(命令完整路径，不可用时为null)；失败时为null\n- message: 状态描述信息",
-    "locate_command": "查找命令的所有可能路径，类似于 Windows 的 where 命令或 Linux 的 which -a。\n\n使用场景：\n- 当用户需要查看某个命令的所有安装位置时使用\n- 当用户想要确认使用的是哪个版本的命令时使用\n- 当用户需要选择特定版本的命令时使用\n\n【重要】返回命令的所有可能路径（可能多个）\n\n使用示例：\n- 查找Python：{\"command\": \"python\"}\n- 查找node：{\"command\": \"node\"}\n\n返回数据说明：\n- code: 状态码，SUCCESS/ERR_SHELL_LOCATE_COMMAND\n- data: 含command(命令名称)、paths(所有匹配路径列表)、count(路径数量)；失败时为null\n- message: 状态描述信息",
-    "get_shell_output": """获取后台运行的 shell 命令输出。
+- all_paths=False时：data含available(命令是否可用，bool)、command(命令名称)、path(命令完整路径，不可用时为null)
+- all_paths=True时：data含command(命令名称)、paths(所有匹配路径列表)、count(路径数量)
+- 失败时code=ERR_SHELL_FIND_COMMAND，data=null""",
+    "shell_session": """管理后台Shell会话，读取输出或终止会话。
 
 使用场景：
-- 当用户需要获取后台命令的执行结果时使用
-- 当用户想要检查后台命令是否完成时使用
-- 当用户需要分批获取长命令输出时使用
+- 当用户需要获取后台命令的执行结果时使用（action="output"）
+- 当用户需要终止正在运行的后台命令时使用（action="terminate"）
+- 当用户需要检查后台命令是否完成时使用
 
 
-【重要】返回 shell 命令的 stdout 和 stderr 输出
+【重要】action="output"读取输出（默认），action="terminate"终止会话。后台Shell会话由execute_shell_command(run_in_background=true)创建。
 
 使用示例：
-- 获取输出：{"shell_id": "shell_abc123"}
+- 读取输出：{"shell_id": "shell_abc123"}
 - 过滤输出：{"shell_id": "shell_abc123", "filter": "ERROR|FAIL"}
+- 终止会话：{"shell_id": "shell_abc123", "action": "terminate"}
+- 强制终止：{"shell_id": "shell_abc123", "action": "terminate", "force": true}
 
 返回数据说明：
-- code: 状态码，SUCCESS/ERR_SHELL_NOT_FOUND/ERR_SHELL_NO_PROCESS/ERR_SHELL_FILTER_INVALID/ERR_SHELL_GET_OUTPUT
-- data: 含shell_id(会话ID)、stdout(标准输出文本)、stderr(标准错误文本)、stdout_lines(标准输出行数)、stderr_lines(标准错误行数)、truncated(输出是否被截断，bool)、is_running(进程是否仍在运行，bool)；失败时为null
-- message: 状态描述信息""",
-    "terminate_shell": """终止运行中的后台 shell 会话。
-
-使用场景：
-- 当用户需要终止正在运行的后台命令时使用
-- 当用户想要停止长时间运行的命令时使用
-- 当用户需要清理后台进程时使用
-
-
-【重要】强制终止后台进程，会丢失未读取的输出
-
-使用示例：
-- 终止后台shell：{"shell_id": "shell_abc123"}
-- 强制终止：{"shell_id": "shell_abc123", "force": true}
-
-返回数据说明：
-- code: 状态码，SUCCESS/ERR_SHELL_NOT_FOUND/ERR_SHELL_TERMINATE
-- data: 含shell_id(会话ID)、terminated(是否已终止，bool)、force(是否强制终止，bool)、returncode(进程退出码)、cleanup(是否已清理，bool)、already_stopped(进程是否已自行停止，bool，仅已停止时存在)；失败时为null
-- message: 状态描述信息""",
+- action="output"时：data含shell_id(会话ID)、stdout(标准输出)、stderr(标准错误)、is_running(进程是否仍在运行)等
+- action="terminate"时：data含shell_id(会话ID)、terminated(是否已终止)、force(是否强制)、returncode(退出码)等
+- 失败时data为null""",
 }
 
 SHELL_TOOL_EXAMPLES = {
@@ -127,33 +110,17 @@ SHELL_TOOL_EXAMPLES = {
         {"command": "python --version", "shell_type": "powershell", "timeout": 10000},
         {"command": "npm run dev", "run_in_background": True}
     ],
-    "get_working_directory": [{}],
-    "change_directory": [
-        {"path": "D:/项目代码"},
-        {"path": "C:/Users"}
-    ],
-    "check_path_exists": [
-        {"path": "D:/项目代码"},
-        {"path": "C:/Users/用户名/Documents/config.json"}
-    ],
-    "check_command_available": [
+    "find_command": [
         {"command": "python"},
+        {"command": "python", "all_paths": True},
         {"command": "git"},
         {"command": "npm"}
     ],
-    "locate_command": [
-        {"command": "python"},
-        {"command": "node"}
-    ],
-    "get_shell_output": [
+    "shell_session": [
         {"shell_id": "shell_abc123"},
         {"shell_id": "shell_abc123", "filter": "ERROR|FAIL"},
-        {"shell_id": "shell_abc123", "max_lines": 500, "tail": True}
-    ],
-    "terminate_shell": [
-        {"shell_id": "shell_abc123"},
-        {"shell_id": "shell_abc123", "force": True},
-        {"shell_id": "shell_abc123", "force": True, "cleanup": True}
+        {"shell_id": "shell_abc123", "action": "terminate"},
+        {"shell_id": "shell_abc123", "action": "terminate", "force": True}
     ],
 }
 
@@ -161,6 +128,8 @@ SHELL_TOOL_EXAMPLES = {
 def _register_shell_tools():
     """
     【2026-05-02 小沈】显式注册所有Shell工具
+    【2026-05-17 小沈】8→6，find_command替代check_command_available+locate_command(-1)，
+                        shell_session替代get_shell_output+terminate_shell(-1)
     使用 Pydantic 模型自动生成 OpenAI Schema
     """
     tool_methods = {
@@ -168,10 +137,8 @@ def _register_shell_tools():
         "get_working_directory": get_working_directory,
         "change_directory": change_directory,
         "check_path_exists": check_path_exists,
-        "check_command_available": check_command_available,
-        "locate_command": locate_command,
-        "get_shell_output": get_shell_output,
-        "terminate_shell": terminate_shell,
+        "find_command": find_command,
+        "shell_session": shell_session,
     }
 
     TOOL_INPUT_MODELS = {
@@ -179,10 +146,8 @@ def _register_shell_tools():
         "get_working_directory": GetWorkingDirectoryInput,
         "change_directory": ChangeDirectoryInput,
         "check_path_exists": CheckPathExistsInput,
-        "check_command_available": CheckCommandAvailableInput,
-        "locate_command": LocateCommandInput,
-        "get_shell_output": GetShellOutputInput,
-        "terminate_shell": TerminateShellInput,
+        "find_command": FindCommandInput,
+        "shell_session": ShellSessionInput,
     }
 
     for name, method in tool_methods.items():
@@ -205,16 +170,9 @@ def _register_shell_tools():
 # 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
 _initialized = False  # 守护变量，供显式调用时使用
 
-__all__ = ["_register_shell_tools"]
-
-
 __all__ = [
+    "_register_shell_tools",
     "execute_shell_command",
-    "get_working_directory",
-    "change_directory",
-    "check_path_exists",
-    "check_command_available",
-    "locate_command",
-    "get_shell_output",
-    "terminate_shell",
+    "find_command",
+    "shell_session",
 ]

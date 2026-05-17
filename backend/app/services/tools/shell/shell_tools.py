@@ -11,15 +11,16 @@ Shell 工具函数模块 - Shell命令执行工具
 2. shell_schema.py: Pydantic 模型（输入参数定义）
 3. shell_register.py: 显式注册（description + examples + input_model）
 
-包含：
-- execute_shell_command: 执行Shell命令（支持后台运行）
-- get_working_directory: 获取当前工作目录
-- change_directory: 切换工作目录
-- check_path_exists: 检查路径是否存在
-- check_command_available: 检查命令是否可用
-- locate_command: 查找命令路径
+【2026-05-17 小健】LLM工具: 8→4，降级3个+合并2个
+LLM可见工具（4个）：
+- execute_shell_command: 执行Shell命令（支持后台运行，cwd参数替代change_directory）
+- find_command: 查找命令路径（合并check_command_available+locate_command）
 - get_shell_output: 获取后台shell输出
 - terminate_shell: 终止后台shell
+
+内部辅助函数（不注册LLM）：
+- _get_working_directory: 获取当前工作目录（已降级，execute_shell_command内部使用）
+- _check_path_exists: 检查路径是否存在（已降级，内部工具可用）
 
 Author: 小沈 - 2026-04-29
 """
@@ -200,8 +201,8 @@ def execute_shell_command(
         }
 
 
-def get_working_directory() -> dict:
-    """获取当前工作目录"""
+def _get_working_directory() -> dict:
+    """获取当前工作目录（内部辅助函数，不注册LLM）- 小健 2026-05-17 降级自 get_working_directory"""
     try:
         return {
             "code": "SUCCESS",
@@ -218,40 +219,8 @@ def get_working_directory() -> dict:
         }
 
 
-def change_directory(path: str) -> dict:
-    """切换工作目录"""
-    try:
-        os.chdir(path)
-        return {
-            "code": "SUCCESS",
-            "data": {
-                "success": True,
-                "path": os.getcwd()
-            },
-            "message": f"已切换到目录: {os.getcwd()}"
-        }
-    except FileNotFoundError:
-        return {
-            "code": "ERR_SHELL_PATH_NOT_FOUND",
-            "data": None,
-            "message": f"目录不存在: {path}"
-        }
-    except PermissionError:
-        return {
-            "code": "ERR_SHELL_PERMISSION",
-            "data": None,
-            "message": f"没有权限访问: {path}"
-        }
-    except Exception as e:
-        return {
-            "code": "ERR_SHELL_CHANGE_DIR",
-            "data": None,
-            "message": f"切换目录失败: {str(e)}"
-        }
-
-
-def check_path_exists(path: str) -> dict:
-    """检查路径是否存在"""
+def _check_path_exists(path: str) -> dict:
+    """检查路径是否存在（内部辅助函数，不注册LLM）- 小健 2026-05-17 降级自 check_path_exists"""
     try:
         exists = os.path.exists(path)
         is_file = os.path.isfile(path) if exists else False
@@ -276,107 +245,139 @@ def check_path_exists(path: str) -> dict:
 
 def check_command_available(command: str) -> dict:
     """检查命令是否可用 - 小沈 2026-05-04
-    
-    类似 which 或 where 命令，检查系统命令是否存在且可执行。
+    【2026-05-17 小沈 已弃用】请使用 find_command(command) 代替
     """
-    try:
-        cmd_path = shutil.which(command)
-        available = cmd_path is not None
-        if available:
-            return {
-                "code": "SUCCESS",
-                "data": {
-                    "available": True,
-                    "command": command,
-                    "path": cmd_path,
-                },
-                "message": f"命令 '{command}' 可用，路径: {cmd_path}"
-            }
-        else:
-            return {
-                "code": "SUCCESS",
-                "data": {
-                    "available": False,
-                    "command": command,
-                    "path": None,
-                },
-                "message": f"命令 '{command}' 不可用"
-            }
-    except Exception as e:
-        return {
-            "code": "ERR_SHELL_CHECK_COMMAND",
-            "data": None,
-            "message": f"检查命令失败: {str(e)}"
-        }
+    return find_command(command, all_paths=False)
 
 
 def locate_command(command: str) -> dict:
     """查找命令的所有可能路径 - 小沈 2026-05-04
-    
-    类似于 'where' 命令，列出命令的所有可能位置。
-    Windows 上会查找 PATH 环境变量中的所有目录。
+    【2026-05-17 小沈 已弃用】请使用 find_command(command, all_paths=True) 代替
+    """
+    return find_command(command, all_paths=True)
+
+
+def get_working_directory() -> dict:
+    """获取当前工作目录 - 小沈 2026-05-04"""
+    try:
+        return {
+            "code": "SUCCESS",
+            "data": {"path": os.getcwd()},
+            "message": "成功获取当前工作目录"
+        }
+    except Exception as e:
+        return {
+            "code": "ERR_SHELL_GET_CWD",
+            "data": None,
+            "message": f"获取工作目录失败: {str(e)}"
+        }
+
+
+def change_directory(path: str) -> dict:
+    """切换工作目录 - 小沈 2026-05-04"""
+    try:
+        os.chdir(path)
+        return {
+            "code": "SUCCESS",
+            "data": {"success": True, "path": os.getcwd()},
+            "message": f"已切换目录: {os.getcwd()}"
+        }
+    except FileNotFoundError:
+        return {
+            "code": "ERR_SHELL_PATH_NOT_FOUND",
+            "data": None,
+            "message": f"目录不存在: {path}"
+        }
+    except PermissionError:
+        return {
+            "code": "ERR_SHELL_PERMISSION",
+            "data": None,
+            "message": f"没有权限访问: {path}"
+        }
+    except Exception as e:
+        return {
+            "code": "ERR_SHELL_CHANGE_DIR",
+            "data": None,
+            "message": f"切换目录失败: {str(e)}"
+        }
+
+
+def check_path_exists(path: str) -> dict:
+    """检查路径是否存在 - 小沈 2026-05-04"""
+    try:
+        exists = os.path.exists(path)
+        is_file = os.path.isfile(path) if exists else False
+        is_dir = os.path.isdir(path) if exists else False
+        return {
+            "code": "SUCCESS",
+            "data": {"exists": exists, "is_file": is_file, "is_directory": is_dir, "path": path},
+            "message": "路径存在" if exists else "路径不存在"
+        }
+    except Exception as e:
+        return {
+            "code": "ERR_SHELL_CHECK_PATH",
+            "data": None,
+            "message": f"检查路径失败: {str(e)}"
+        }
+
+
+def find_command(command: str, all_paths: bool = False) -> dict:
+    """查找系统命令路径 - 小沈 2026-05-17
+    【2026-05-17 小沈】合并 check_command_available + locate_command
+
+    Args:
+        command: 要查找的命令名
+        all_paths: False=返回第一个匹配路径(快速,shutil.which), True=返回全部匹配路径(完整,where/which -a)
+
+    Returns:
+        {code, data, message}
     """
     try:
-        # 使用 shutil.which 只能找到第一个，使用 shell 来模拟 where 命令
-        if os.name == 'nt':
-            result = subprocess.run(
-                ['where', command],
-                capture_output=True,
-                text=True,
-                shell=False
-            )
-            if result.returncode == 0:
-                paths = [p.strip() for p in result.stdout.strip().split('\n') if p.strip()]
+        if not all_paths:
+            cmd_path = shutil.which(command)
+            available = cmd_path is not None
+            if available:
                 return {
                     "code": "SUCCESS",
-                    "data": {
-                        "command": command,
-                        "paths": paths,
-                        "count": len(paths),
-                    },
-                    "message": f"找到 {len(paths)} 个路径"
+                    "data": {"available": True, "command": command, "path": cmd_path},
+                    "message": f"命令 '{command}' 可用，路径: {cmd_path}"
                 }
             else:
                 return {
                     "code": "SUCCESS",
-                    "data": {
-                        "command": command,
-                        "paths": [],
-                        "count": 0,
-                    },
+                    "data": {"available": False, "command": command, "path": None},
                     "message": f"命令 '{command}' 不可用"
                 }
         else:
-            # Unix-like 使用 which -a
-            result = subprocess.run(
-                ['which', '-a', command],
-                capture_output=True,
-                text=True
-            )
+            if os.name == 'nt':
+                result = subprocess.run(
+                    ['where', command],
+                    capture_output=True,
+                    text=True,
+                    shell=False
+                )
+            else:
+                result = subprocess.run(
+                    ['which', '-a', command],
+                    capture_output=True,
+                    text=True
+                )
             if result.returncode == 0:
                 paths = [p.strip() for p in result.stdout.strip().split('\n') if p.strip()]
                 return {
                     "code": "SUCCESS",
-                    "data": {
-                        "command": command,
-                        "paths": paths,
-                        "count": len(paths),
-                    },
+                    "data": {"command": command, "paths": paths, "count": len(paths)},
                     "message": f"找到 {len(paths)} 个路径"
                 }
             else:
                 return {
                     "code": "SUCCESS",
-                    "data": {
-                        "command": command,
-                        "paths": [],
-                        "count": 0,
-                    },
+                    "data": {"command": command, "paths": [], "count": 0},
                     "message": f"命令 '{command}' 不可用"
                 }
     except Exception as e:
         return {
-            "code": "ERR_SHELL_LOCATE_COMMAND",
+            "code": "ERR_SHELL_FIND_COMMAND",
             "data": None,
             "message": f"查找命令失败: {str(e)}"
         }
@@ -426,7 +427,9 @@ def get_shell_output(
     max_lines: int = 1000,
     tail: bool = False
 ) -> dict:
-    """获取后台shell命令输出 - 小沈 2026-05-02"""
+    """获取后台shell命令输出 - 小沈 2026-05-02
+    【2026-05-17 小沈 已弃用LLM暴露】请使用 shell_session(action="output") 代替
+    """
     try:
         if shell_id not in _background_shells:
             return {
@@ -503,7 +506,9 @@ def terminate_shell(
     force: bool = False,
     cleanup: bool = True
 ) -> dict:
-    """终止后台shell会话 - 小沈 2026-05-02"""
+    """终止后台shell会话 - 小沈 2026-05-02
+    【2026-05-17 小沈 已弃用LLM暴露】请使用 shell_session(action="terminate") 代替
+    """
     try:
         if shell_id not in _background_shells:
             return {
@@ -602,3 +607,42 @@ def cleanup_background_shells() -> int:
         except Exception:
             pass
     return count
+
+
+def shell_session(
+    shell_id: str,
+    action: str = "output",
+    filter: Optional[str] = None,
+    encoding: Optional[str] = None,
+    max_lines: int = 1000,
+    tail: bool = False,
+    force: bool = False,
+    cleanup: bool = True,
+) -> dict:
+    """后台Shell会话管理 - 小沈 2026-05-17
+    合并 get_shell_output + terminate_shell
+
+    Args:
+        shell_id: 后台Shell会话ID
+        action: 操作类型。output=读取输出, terminate=终止会话
+        filter: 输出过滤正则（action="output"时生效）
+        encoding: 输出编码（action="output"时生效）
+        max_lines: 最大返回行数（action="output"时生效）
+        tail: 只返回最后N行（action="output"时生效）
+        force: 强制终止（action="terminate"时生效）
+        cleanup: 终止后清理资源（action="terminate"时生效）
+
+    Returns:
+        {code, data, message}
+    """
+    if action == "output":
+        return get_shell_output(shell_id, filter=filter, encoding=encoding,
+                                max_lines=max_lines, tail=tail)
+    elif action == "terminate":
+        return terminate_shell(shell_id, force=force, cleanup=cleanup)
+    else:
+        return {
+            "code": "ERR_INVALID_ACTION",
+            "data": None,
+            "message": f"无效的操作类型: {action}，必须是 output 或 terminate"
+        }

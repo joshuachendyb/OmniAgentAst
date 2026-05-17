@@ -239,7 +239,10 @@ def get_window_info(window_title: str) -> Dict[str, Any]:
 
 
 def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
-    """设置窗口状态 - 小沈 2026-04-29, 修正 2026-05-05"""
+    """设置窗口状态 - 小沈 2026-04-29, 修正 2026-05-05
+
+    【2026-05-17 小沈】保留旧实现，供 window_control 内部调用
+    """
     err = _check_platform()
     if err:
         return err
@@ -304,3 +307,121 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
             "data": None,
             "message": f"设置窗口状态失败: {str(e)}"
         }
+
+
+# ========== 统一入口函数（26→10精简方案） ==========
+
+def window_control(
+    window_title: str,
+    action: str,
+    width: Optional[int] = None,
+    height: Optional[int] = None,
+) -> Dict[str, Any]:
+    """统一窗口控制入口 - 小沈 2026-05-17
+
+    合并 set_window_state + focus_window + resize_window
+    action: "focus"|"resize"|"maximize"|"minimize"|"restore"|"topmost"|"unpin"
+    """
+    if action == "focus":
+        from app.services.tools.desktop.gui_tools import focus_window
+        return focus_window(window_title)
+    elif action == "resize":
+        from app.services.tools.desktop.gui_tools import resize_window
+        return resize_window(window_title, width=width, height=height)
+    else:
+        return set_window_state(window_title, action)
+
+
+def mouse_control(
+    action: str,
+    x: Optional[int] = None,
+    y: Optional[int] = None,
+    button: str = "left",
+    click_type: str = "single",
+    duration: float = 0,
+    direction: str = "down",
+    amount: int = 3,
+) -> Dict[str, Any]:
+    """统一鼠标控制入口 - 小沈 2026-05-17
+
+    合并 click + move + scroll
+    action: "click"|"move"|"scroll"|"position"
+    """
+    if action == "click":
+        from app.services.tools.desktop.gui_tools import click
+        return click(x=x, y=y, button=button, click_type=click_type)
+    elif action == "move":
+        from app.services.tools.desktop.gui_tools import move
+        return move(x=x, y=y, duration=duration)
+    elif action == "scroll":
+        from app.services.tools.desktop.gui_tools import scroll
+        return scroll(direction=direction, amount=amount)
+    elif action == "position":
+        from app.services.tools.toolhelper.gui_helper import _get_mouse_position
+        return _get_mouse_position()
+    else:
+        return {"code": "ERR_INVALID_ACTION", "data": None, "message": f"无效的鼠标操作: {action}，支持: click/move/scroll/position"}
+
+
+def keyboard_control(
+    action: str,
+    text_or_keys: str,
+    interval: float = 0,
+) -> Dict[str, Any]:
+    """统一键盘控制入口 - 小沈 2026-05-17
+
+    合并 type_text + shortcut + key_combo
+    action: "type"|"shortcut"|"combo"
+    """
+    if action == "type":
+        from app.services.tools.desktop.gui_tools import type_text
+        return type_text(text=text_or_keys, interval=interval)
+    elif action == "shortcut":
+        from app.services.tools.desktop.gui_tools import shortcut
+        return shortcut(keys=text_or_keys)
+    elif action == "combo":
+        from app.services.tools.desktop.gui_tools import key_combo
+        key_list = [k.strip() for k in text_or_keys.split(",")]
+        return key_combo(keys=key_list)
+    else:
+        return {"code": "ERR_INVALID_ACTION", "data": None, "message": f"无效的键盘操作: {action}，支持: type/shortcut/combo"}
+
+
+def screen_capture(
+    output_path: Optional[str] = None,
+    region: Optional[Dict[str, int]] = None,
+    display: Optional[int] = None,
+) -> Dict[str, Any]:
+    """统一屏幕截图入口 - 小沈 2026-05-17
+
+    合并 screenshot + snapshot
+    优先mss（多显示器），降级pyautogui
+    当指定display参数时使用snapshot（多显示器），否则使用screenshot
+    """
+    if display is not None:
+        from app.services.tools.desktop.gui_tools import snapshot
+        return snapshot(display=display)
+    else:
+        from app.services.tools.desktop.gui_tools import screenshot
+        return screenshot(output_path=output_path, region=region)
+
+
+def clipboard_control(
+    action: str,
+    content: Optional[str] = None,
+) -> Dict[str, Any]:
+    """统一剪贴板控制入口 - 小沈 2026-05-17
+
+    合并 read_clipboard + write_clipboard
+    action: "read"|"write"
+    """
+    if action == "read":
+        from app.services.tools.desktop.gui_tools import read_clipboard
+        return read_clipboard()
+    elif action == "write":
+        if content is None:
+            return {"code": "ERR_MISSING_PARAM", "data": None, "message": "写入剪贴板需要提供content参数"}
+        from app.services.tools.desktop.gui_tools import write_clipboard
+        return write_clipboard(content=content)
+    else:
+        return {"code": "ERR_INVALID_ACTION", "data": None, "message": f"无效的剪贴板操作: {action}，支持: read/write"}

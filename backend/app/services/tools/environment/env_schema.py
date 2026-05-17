@@ -37,18 +37,26 @@ class GetEnvInput(BaseModel):
 
 
 class SetEnvInput(BaseModel):
-    """set_env 工具的输入参数 - 小沈 2026-05-03 增加append_mode参数"""
+    """set_env 工具的输入参数 - 小沈 2026-05-03 增加append_mode参数
+    【2026-05-17 小沈】P1-5: 增加action参数合并delete_env，增加exist_ok幂等参数
+    """
     name: str = Field(
         ..., description="环境变量名称。如 \"MY_VARIABLE\"、\"CONFIG_PATH\"、\"PATH\" 等"
     )
-    value: str = Field(
-        ..., description="环境变量值。任意字符串值"
+    value: Optional[str] = Field(
+        default=None, description="环境变量值。action=\"set\"时必填，action=\"delete\"时忽略。任意字符串值"
     )
     scope: Literal["user", "system", "process"] = Field(
         default="process", description="作用域。可选值：process（仅当前进程）、user（持久化到当前用户）、system（持久化到全局，需管理员权限）。Agent根据语义自动映射。默认为process"
     )
     append_mode: bool = Field(
         default=False, description="追加模式。若 name 为 PATH 或 CLASSPATH，Agent 自动设true。根据OS自动选择分隔符。默认为False"
+    )
+    action: Literal["set", "delete"] = Field(
+        default="set", description="操作类型。\"set\"=设置变量（默认），\"delete\"=删除变量（原delete_env）。Agent根据语义自动映射"
+    )
+    exist_ok: bool = Field(
+        default=True, description="幂等模式。True时若变量已存在且值相同则直接返回成功，False时始终覆盖。默认True"
     )
 
 

@@ -93,21 +93,28 @@ def get_env(name: str, default: Optional[str] = None, scope: str = "process", ex
         }
 
 
-def set_env(name: str, value: str, scope: str = "process", append_mode: bool = False) -> dict:
+def set_env(name: str, value: Optional[str] = None, scope: str = "process",
+            append_mode: bool = False, action: str = "set", exist_ok: bool = True) -> dict:
     """
-    设置环境变量 - 小沈 2026-05-03 增加append_mode支持
+    设置或删除环境变量 - 小沈 2026-05-03 增加append_mode支持
+    【2026-05-17 小沈】P1-5: 合并delete_env（action="delete"），增加exist_ok幂等
 
     注意：
+    - action="set": 设置变量（默认行为）
+    - action="delete": 删除变量（原delete_env逻辑）
     - scope="process": 仅当前进程生效（推荐）
     - scope="user": 需要写入用户环境（需要权限，可能需要重启shell生效）
     - scope="system": 需要管理员权限（写入系统环境，不推荐）
     - append_mode=True: 追加而非覆盖，自动去重和选择分隔符
+    - exist_ok=True: 幂等模式，值已相同则返回成功
 
     Args:
         name: 环境变量名称
-        value: 环境变量值
+        value: 环境变量值（action="set"时必填，action="delete"时忽略）
         scope: 作用域 (process/user/system)
         append_mode: 追加模式（默认False覆盖）
+        action: 操作类型 ("set"|"delete")，默认"set"
+        exist_ok: 幂等模式（默认True）
 
     Returns:
         {code, data, message}
@@ -120,12 +127,50 @@ def set_env(name: str, value: str, scope: str = "process", append_mode: bool = F
                 "message": "环境变量名称不能为空"
             }
 
+        # 【2026-05-17 小沈】action="delete"分支：原delete_env逻辑
+        if action == "delete":
+            if scope == "process":
+                if name in os.environ:
+                    del os.environ[name]
+                    return {"code": "SUCCESS", "data": {"name": name, "deleted": True, "scope": scope},
+                            "message": f"已删除: {name}"}
+                return {"code": "SUCCESS", "data": {"name": name, "deleted": False, "scope": scope},
+                        "message": f"不存在: {name}"}
+
+            import winreg
+            if scope == "user":
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_SET)
+                try:
+                    winreg.DeleteValue(key, name)
+                    if name in os.environ:
+                        del os.environ[name]
+                    return {"code": "SUCCESS", "data": {"name": name, "scope": "user", "deleted": True},
+                            "message": f"已删除: {name}"}
+                except FileNotFoundError:
+                    return {"code": "SUCCESS", "data": {"name": name, "deleted": False, "scope": scope},
+                            "message": f"不存在: {name}"}
+                finally:
+                    winreg.CloseKey(key)
+            else:
+                return {"code": "ERR_ENV_PERMISSION", "data": None, "message": "需要管理员权限"}
+
+        # action="set"分支：原set_env逻辑
         if value is None:
             return {
                 "code": "ERR_ENV_INVALID_VALUE",
                 "data": None,
-                "message": "环境变量值不能为None"
+                "message": "环境变量值不能为None（action='set'时value必填）"
             }
+
+        # 【2026-05-17 小沈】exist_ok幂等增强
+        if exist_ok and value is not None:
+            existing = os.environ.get(name)
+            if existing == value:
+                return {
+                    "code": "SUCCESS",
+                    "data": {"name": name, "value": value, "scope": scope, "append_mode": append_mode, "exist_ok": True},
+                    "message": f"环境变量已存在且值相同: {name}={value[:50]}{'...' if len(value) > 50 else ''}"
+                }
 
         if append_mode:
             existing = os.environ.get(name, "")
@@ -281,7 +326,9 @@ def list_env(prefix: Optional[str] = None, include_system: bool = False) -> dict
         }
 
 def delete_env(name: str, scope: str = "process") -> dict:
-    """删除环境变量 - 小沈 2026-05-04"""
+    """删除环境变量 - 小沈 2026-05-04
+    【2026-05-17 小沈 已弃用】请使用 set_env(name=..., action="delete") 代替
+    """
     try:
         if not name or not name.strip():
             return {"code": "ERR_ENV_INVALID_NAME", "data": None, "message": "名称为空"}
@@ -311,7 +358,9 @@ def delete_env(name: str, scope: str = "process") -> dict:
 
 
 def exists_env(name: str, scope: str = "process") -> dict:
-    """检查环境变量是否存在 - 小沈 2026-05-04"""
+    """检查环境变量是否存在 - 小沈 2026-05-04
+    【2026-05-17 小沈 已弃用】请使用 get_env(name=...) 代替，get_env 已返回 data.exists
+    """
     try:
         if not name or not name.strip():
             return {"code": "ERR_ENV_INVALID_NAME", "data": None, "message": "名称为空"}

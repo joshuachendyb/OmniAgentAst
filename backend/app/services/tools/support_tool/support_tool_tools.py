@@ -30,13 +30,13 @@
 ================================================================================
 二、包含工具（7个）
 ================================================================================
-- check_db_exists: 检查数据库是否存在（公共函数 + LLM Tool）
-- get_table_schema: 获取表结构（公共函数 + LLM Tool）
-- begin_transaction: 开始事务（LLM Tool，用于事务控制）
-- commit_transaction: 提交事务（LLM Tool）
-- rollback_transaction: 回滚事务（LLM Tool）
-- check_network_connectivity: 检查网络连通性（公共函数 + LLM Tool）
-- validate_url: 验证URL格式（公共函数 + LLM Tool）
+- check_db_exists: 检查数据库是否存在（已迁移到 toolhelper/db_helper.py）
+- get_table_schema: 获取表结构（已弃用，请使用 database_tools.get_db_schema）
+- begin_transaction: 开始事务（已弃用）
+- commit_transaction: 提交事务（已弃用）
+- rollback_transaction: 回滚事务（已弃用）
+- check_network_connectivity: 检查网络连通性（已迁移到 toolhelper/network_helper.py）
+- validate_url: 验证URL格式（已迁移到 toolhelper/network_helper.py）
 
 ================================================================================
 三、调用关系示例
@@ -77,23 +77,17 @@ _active_transactions: Dict[str, sqlite3.Connection] = {}
 
 
 def check_db_exists(db_path: str) -> Dict[str, Any]:
-    """检查数据库是否存在 - 小沈 2026-05-02"""
-    path = Path(db_path)
-    if not path.exists():
-        return {"code": "SUCCESS", "data": {"exists": False, "db_type": None, "size": 0}, "message": f"数据库文件不存在: {db_path}"}
-
-    size = path.stat().st_size
-    try:
-        conn = sqlite3.connect(str(path))
-        conn.execute("SELECT 1")
-        conn.close()
-        return {"code": "SUCCESS", "data": {"exists": True, "db_type": "sqlite", "size": size}, "message": f"数据库存在且可连接: {db_path}"}
-    except Exception as e:
-        return {"code": "SUCCESS", "data": {"exists": True, "db_type": "unknown", "size": size, "error": str(e)}, "message": f"数据库文件存在但无法连接: {str(e)}"}
+    """检查数据库是否存在 - 小沈 2026-05-02
+    【2026-05-17 小沈】改为包装器，实际实现已迁移到 toolhelper/db_helper.py
+    """
+    from app.services.tools.toolhelper.db_helper import check_db_exists as _check_db_exists
+    return _check_db_exists(db_path)
 
 
 def get_table_schema(db_path: str, table_name: str) -> Dict[str, Any]:
-    """获取表结构 - 小沈 2026-05-02"""
+    """获取表结构 - 小沈 2026-05-02
+    【2026-05-17 小沈 已弃用】请使用 database_tools.get_db_schema(table_name=...) 代替
+    """
     path = Path(db_path)
     if not path.exists():
         return {"code": "ERR_DB_NOT_FOUND", "data": None, "message": f"数据库文件不存在: {db_path}"}
@@ -133,24 +127,32 @@ def get_table_schema(db_path: str, table_name: str) -> Dict[str, Any]:
 
 
 def begin_transaction() -> Dict[str, Any]:
-    """开始事务 - 小沈 2026-05-02"""
+    """开始事务 - 小沈 2026-05-02
+    【2026-05-17 小沈 已弃用】事务控制工具已从 database 分类移除，不再注册为LLM工具
+    """
     import uuid
     tx_id = str(uuid.uuid4())[:8]
     return {"code": "SUCCESS", "data": {"transaction_id": tx_id}, "message": f"事务已开始: {tx_id}"}
 
 
 def commit_transaction(transaction_id: str) -> Dict[str, Any]:
-    """提交事务 - 小沈 2026-05-02"""
+    """提交事务 - 小沈 2026-05-02
+    【2026-05-17 小沈 已弃用】事务控制工具已从 database 分类移除，不再注册为LLM工具
+    """
     return {"code": "SUCCESS", "data": {"transaction_id": transaction_id}, "message": f"事务已提交: {transaction_id}"}
 
 
 def rollback_transaction(transaction_id: str) -> Dict[str, Any]:
-    """回滚事务 - 小沈 2026-05-02"""
+    """回滚事务 - 小沈 2026-05-02
+    【2026-05-17 小沈 已弃用】事务控制工具已从 database 分类移除，不再注册为LLM工具
+    """
     return {"code": "SUCCESS", "data": {"transaction_id": transaction_id}, "message": f"事务已回滚: {transaction_id}"}
 
 
 def check_network_connectivity() -> Dict[str, Any]:
-    """检查网络连通性 - 小沈 2026-05-02"""
+    """检查网络连通性 - 小沈 2026-05-02
+    【2026-05-17 小沈 已弃用】请使用 toolhelper/network_helper.py _check_network() 代替
+    """
     test_hosts = [
         ("dns.google", 53),
         ("8.8.8.8", 53),
@@ -175,7 +177,9 @@ def check_network_connectivity() -> Dict[str, Any]:
 
 
 def validate_url(url: str) -> Dict[str, Any]:
-    """验证URL格式 - 小沈 2026-05-02"""
+    """验证URL格式 - 小沈 2026-05-02
+    【2026-05-17 小沈 已弃用】请使用 toolhelper/network_helper.py _validate_url(url) 代替
+    """
     try:
         parsed = urlparse(url)
         is_valid = bool(parsed.scheme) and bool(parsed.netloc)

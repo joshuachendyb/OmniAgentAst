@@ -7,7 +7,7 @@ Document Register - 文档读写工具注册点
 - 实际工具实现在 document_tools.py 中
 - 使用 registry.py 的 tool_registry.register() 显式注册
 
-【工具列表】（共8个）
+【工具列表】（共9个）
 1. read_pdf - 读取PDF文件
 2. read_docx - 读取Word文档
 3. read_xlsx - 读取Excel文件
@@ -286,10 +286,9 @@ def _register_document_tools():
 # 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
 _initialized = False  # 守护变量，供显式调用时使用
 
-__all__ = ["_register_document_tools"]
-
-
+# 【修复 2026-05-18 小健】P0双重__all__Bug：合并两个__all__定义，确保_register_document_tools被导出
 __all__ = [
+    "_register_document_tools",
     "read_pdf",
     "read_docx",
     "read_xlsx",

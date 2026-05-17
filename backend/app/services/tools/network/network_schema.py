@@ -72,6 +72,9 @@ class DownloadFileInput(BaseModel):
     resume: bool = Field(
         default=True, description="是否启用断点续传（可选），默认True，文件存在时自动尝试续传"
     )
+    proxy: Optional[str] = Field(
+        default=None, description="代理服务器地址。Agent执行三步走策略：1.优先直连尝试；2.失败则读取环境变量代理重试；3.均失败则报错"
+    )
 
 
 class FetchWebpageInput(BaseModel):
@@ -144,7 +147,9 @@ class PingInput(BaseModel):
 
 
 class PortCheckInput(BaseModel):
-    """port_check 工具的输入参数 - 小沈 2026-05-02"""
+    """port_check 工具的输入参数 - 小沈 2026-05-02
+    【2026-05-17 小沈 已弃用】请使用 NetworkDiagnoseInput 代替
+    """
     host: str = Field(
         ..., description="目标主机地址（必填），可以是域名或IP地址，例如 127.0.0.1 或 localhost"
     )
@@ -156,6 +161,29 @@ class PortCheckInput(BaseModel):
     )
 
 
+class NetworkDiagnoseInput(BaseModel):
+    """network_diagnose 工具的输入参数 - 小沈 2026-05-17
+    合并 ping + port_check
+    """
+    host: str = Field(
+        ..., description="目标主机地址（必填），可以是域名或IP地址，例如 8.8.8.8 或 baidu.com"
+    )
+    mode: str = Field(
+        default="ping",
+        description="诊断模式。ping=ICMP可达性检测(主机级), port=TCP端口检测(服务级)"
+    )
+    port: Optional[int] = Field(
+        default=None,
+        description="目标端口号。mode='port'时必填(范围1-65535)，mode='ping'时忽略"
+    )
+    count: int = Field(
+        default=4, ge=1, le=20, description="ping次数。mode='ping'时生效，默认4次，最大20次"
+    )
+    timeout: int = Field(
+        default=5, ge=1, le=30, description="超时秒数，默认5秒"
+    )
+
+
 __all__ = [
     "HttpRequestInput",
     "DownloadFileInput",
@@ -163,4 +191,5 @@ __all__ = [
     "SearchWebInput",
     "PingInput",
     "PortCheckInput",
+    "NetworkDiagnoseInput",
 ]

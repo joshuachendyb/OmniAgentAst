@@ -12,7 +12,7 @@ Author: 小沈 - 2026-04-29
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional
 
 
 class ExecuteShellCommandInput(BaseModel):
@@ -46,40 +46,65 @@ class ExecuteShellCommandInput(BaseModel):
 
 
 class GetWorkingDirectoryInput(BaseModel):
-    """get_working_directory 工具的输入参数（无参数）"""
+    """get_working_directory 工具的输入参数（无参数）
+    【2026-05-17 小健 已弃用】get_working_directory 已降级为 _get_working_directory 内部函数
+    """
     pass
 
 
 class ChangeDirectoryInput(BaseModel):
-    """change_directory 工具的输入参数"""
+    """change_directory 工具的输入参数
+    【2026-05-17 小健 已弃用】change_directory 已删除，请使用 execute_shell_command 的 cwd 参数替代
+    """
     path: str = Field(
         ..., description="要切换到的目录路径。必填参数"
     )
 
 
 class CheckPathExistsInput(BaseModel):
-    """check_path_exists 工具的输入参数"""
+    """check_path_exists 工具的输入参数
+    【2026-05-17 小健 已弃用】check_path_exists 已降级为 _check_path_exists 内部函数
+    """
     path: str = Field(
         ..., description="要检查的文件或目录路径。必填参数"
     )
 
 
 class CheckCommandAvailableInput(BaseModel):
-    """check_command_available 工具的输入参数"""
+    """check_command_available 工具的输入参数
+    【2026-05-17 小沈 已弃用】请使用 FindCommandInput 代替
+    """
     command: str = Field(
         ..., description="要检查的命令名称，如 python、git、npm"
     )
 
 
 class LocateCommandInput(BaseModel):
-    """locate_command 工具的输入参数"""
+    """locate_command 工具的输入参数
+    【2026-05-17 小沈 已弃用】请使用 FindCommandInput 代替
+    """
     command: str = Field(
         ..., description="要查找的命令名称，如 python、node"
     )
 
 
+class FindCommandInput(BaseModel):
+    """find_command 工具的输入参数 - 小沈 2026-05-17
+    合并 check_command_available + locate_command
+    """
+    command: str = Field(
+        ..., description="要查找的命令名称，如 python、git、npm、node"
+    )
+    all_paths: bool = Field(
+        default=False,
+        description="查找模式。False=返回第一个匹配路径(快速,shutil.which), True=返回全部匹配路径(完整列表,where/which -a)"
+    )
+
+
 class GetShellOutputInput(BaseModel):
-    """get_shell_output 工具的输入参数"""
+    """get_shell_output 工具的输入参数
+    【2026-05-17 小沈 已弃用】请使用 ShellSessionInput 代替
+    """
     shell_id: str = Field(
         ..., description="后台 shell 的 ID，由 execute_shell_command 的 run_in_background=true 时返回"
     )
@@ -98,7 +123,9 @@ class GetShellOutputInput(BaseModel):
 
 
 class TerminateShellInput(BaseModel):
-    """terminate_shell 工具的输入参数"""
+    """terminate_shell 工具的输入参数
+    【2026-05-17 小沈 已弃用】请使用 ShellSessionInput 代替
+    """
     shell_id: str = Field(
         ..., description="要终止的 shell ID。通过 execute_shell_command 的 run_in_background=true 执行命令后获得"
     )
@@ -110,13 +137,41 @@ class TerminateShellInput(BaseModel):
     )
 
 
+class ShellSessionInput(BaseModel):
+    """shell_session 工具的输入参数 - 小沈 2026-05-17
+    合并 get_shell_output + terminate_shell
+    """
+    shell_id: str = Field(
+        ..., description="后台Shell会话ID，由 execute_shell_command 的 run_in_background=true 时返回"
+    )
+    action: Literal["output", "terminate"] = Field(
+        default="output",
+        description="操作类型。output=读取输出, terminate=终止会话"
+    )
+    filter: Optional[str] = Field(
+        default=None, description="输出过滤正则表达式（action=output时生效）。如 'ERROR|FAIL'"
+    )
+    encoding: Optional[str] = Field(
+        default=None, description="输出编码（action=output时生效）。默认utf-8，乱码自动尝试gbk"
+    )
+    max_lines: int = Field(
+        default=1000, ge=1, le=10000, description="最大返回行数（action=output时生效）。默认1000"
+    )
+    tail: bool = Field(
+        default=False, description="只返回最后N行（action=output时生效）"
+    )
+    force: bool = Field(
+        default=False, description="强制终止（action=terminate时生效）。优雅终止失败时Agent自动设true"
+    )
+    cleanup: bool = Field(
+        default=True, description="终止后清理资源（action=terminate时生效）。默认True"
+    )
+
+
 __all__ = [
     "ExecuteShellCommandInput",
-    "GetWorkingDirectoryInput",
-    "ChangeDirectoryInput",
-    "CheckPathExistsInput",
-    "CheckCommandAvailableInput",
-    "LocateCommandInput",
+    "FindCommandInput",
     "GetShellOutputInput",
     "TerminateShellInput",
+    "ShellSessionInput",
 ]

@@ -4,23 +4,25 @@ SYSTEM Register - 系统信息工具注册点
 
 【架构规范】2026-04-29 小沈
 
-【工具列表】（共13个）
+【2026-05-17 小沈】按精简方案13.4节重构：16→10工具
+- 消除 log_message/get_logs（被write_text_file/read_text_file覆盖）
+- service×3 → service_control 统一入口
+- task×3 → task_control 统一入口
+- 保留 get_system_info, net_connections, event_log, list_processes, kill_process
+- 保留 reg_read, reg_write, reg_delete（在reg_register.py注册）
+
+【工具列表】（LLM可见10个，本文件注册7个 + reg_register注册3个）
 1. get_system_info - 获取系统信息
 2. net_connections - 获取网络连接列表
 3. event_log - 获取系统事件日志
 4. list_processes - 列出所有进程
 5. kill_process - 终止指定进程
-6. log_message - 记录日志消息
-7. get_logs - 获取应用日志
-8. service_list - 列出所有服务
-9. service_start - 启动服务
-10. service_stop - 停止服务
-11. task_list - 列出所有计划任务（Windows专用）
-12. task_create - 创建计划任务（Windows专用）
-13. task_delete - 删除计划任务（Windows专用）
+6. service_control - 服务统一控制(start/stop/restart/list)
+7. task_control - 计划任务统一控制(create/delete/list)
++ reg_read, reg_write, reg_delete（reg_register.py注册）
 
 创建时间: 2026-04-29
-更新时间: 2026-05-09
+更新时间: 2026-05-17 小沈 - 16→10工具重构
 """
 
 from app.services.tools.registry import ToolCategory, tool_registry
@@ -32,14 +34,8 @@ from app.services.tools.system.system_schema import (
     EventLogInput,
     ListProcessesInput,
     KillProcessInput,
-    LogMessageInput,
-    GetLogsInput,
-    ServiceListInput,
-    ServiceStartInput,
-    ServiceStopInput,
-    TaskListInput,
-    TaskCreateInput,
-    TaskDeleteInput,
+    ServiceControlInput,
+    TaskControlInput,
 )
 
 from app.services.tools.system.system_tools import (
@@ -48,14 +44,8 @@ from app.services.tools.system.system_tools import (
     event_log,
     list_processes,
     kill_process,
-    log_message,
-    get_logs,
-    service_list,
-    service_start,
-    service_stop,
-    task_list,
-    task_create,
-    task_delete,
+    service_control,
+    task_control,
 )
 
 # 工具描述
@@ -94,7 +84,7 @@ SYSTEM_TOOL_DESCRIPTIONS = {
 
 返回数据说明：
 - code: 状态码，SUCCESS/ERR_SYSTEM_ACCESS_DENIED/ERR_SYSTEM_NET_CONN
-- data: 成功时含connections(连接列表，每项含fd/family/type/local_address/remote_address/status/pid，process_info=true时额外含process_name/process_exe)、total(连接总数)、kind(连接类型)、filter_port(过滤端口)；失败时为null
+- data: 成功时含connections(连接列表)、total(连接总数)、kind(连接类型)、filter_port(过滤端口)；失败时为null
 - message: 状态描述信息""",
     "event_log": """获取系统事件日志（Windows事件查看器/Linux syslog），支持按级别、来源、时间范围过滤。
 
@@ -112,7 +102,7 @@ SYSTEM_TOOL_DESCRIPTIONS = {
 
 返回数据说明：
 - code: 状态码，SUCCESS/ERR_SYSTEM_EVENT_LOG/ERR_SYSTEM_TIMEOUT/ERR_SYSTEM_COMMAND_NOT_FOUND
-- data: 成功时含log_name(日志名称)、events(事件列表，Windows每项含Level/Source Name等字段，Linux每项含timestamp/hostname/syslog_identifier/message/priority)、total(事件数)、level(级别过滤)；失败时为null
+- data: 成功时含log_name/events/total/level；失败时为null
 - message: 状态描述信息""",
     "list_processes": """列出系统所有进程，支持按filter_name/filter_pid过滤，可按CPU/内存占用排序。
 
@@ -130,7 +120,7 @@ SYSTEM_TOOL_DESCRIPTIONS = {
 
 返回数据说明：
 - code: 状态码，SUCCESS/ERR_SYSTEM_PROCESS_LIST
-- data: 成功时含processes(进程列表，每项含pid/name/status/user/cpu_percent/memory_percent/exe/cmdline)、total(返回数量)、total_matched(匹配总数)、sort_by(排序字段)；失败时为null
+- data: 成功时含processes/total/total_matched/sort_by；失败时为null
 - message: 状态描述信息""",
     "kill_process": """终止指定进程(pid必填)，支持优雅终止（SIGTERM）和强制终止（SIGKILL），需谨慎使用。
 
@@ -139,158 +129,52 @@ SYSTEM_TOOL_DESCRIPTIONS = {
 - 当用户需要释放被占用资源时使用
 - 当用户需要强制终止无法正常关闭的进程时使用
 
-【重要】默认优雅终止(SIGTERM)，超时后自动升级为强制终止(SIGKILL)；需要管理员权限终止某些进程
+【重要】默认优雅终止(SIGTERM)，超时后自动升级为强制终止(SIGKILL)；进程已不存在时幂等返回SUCCESS
 
 使用示例：
 - 终止进程：{"pid": 1234}
 - 强制终止：{"pid": 1234, "force": true}
 
 返回数据说明：
-- code: 状态码，SUCCESS/ERR_INVALID_PARAM/ERR_PROCESS_NOT_FOUND/ERR_PERMISSION_DENIED/ERR_SYSTEM_ACCESS_DENIED/ERR_SYSTEM_PROCESS_KILL
-- data: 成功时含killed(已终止列表，每项含process(pid/name/status/exe)、terminate_type(终止方式)、final_status(最终状态))；失败时为null
+- code: 状态码，SUCCESS/ERR_INVALID_PARAM/ERR_PERMISSION_DENIED/ERR_SYSTEM_ACCESS_DENIED/ERR_SYSTEM_PROCESS_KILL
+- data: 成功时含killed(已终止列表)；进程不存在时含idempotent=true；失败时为null
 - message: 状态描述信息""",
-    "log_message": """记录日志消息到指定日志文件或日志系统。
+    "service_control": """服务统一控制入口，通过action参数执行start/stop/restart/list操作。
 
 使用场景：
-- 当用户需要记录操作日志时使用
-- 当用户需要记录审计信息时使用
-- 当用户需要记录调试信息时使用
+- 当用户需要启动、停止、重启或查看系统服务时使用
+- 合并原service_start/service_stop/service_list三个工具
 
-【重要】使用Python内置logging模块；不指定log_file时输出到控制台
+【重要】action必填；start/stop/restart需service_name；list可按state过滤
 
 使用示例：
-- 记录INFO日志：{"message": "用户登录成功"}
-- 记录WARNING日志：{"level": "WARNING", "message": "磁盘空间不足"}
-- 记录到文件：{"message": "系统启动", "log_file": "D:/logs/app.log"}
+- 列出运行中的服务：{"action": "list", "state": "running"}
+- 启动服务：{"action": "start", "service_name": "mysql"}
+- 强制停止服务：{"action": "stop", "service_name": "nginx", "force": true}
+- 重启服务：{"action": "restart", "service_name": "mysql"}
 
 返回数据说明：
-- code: 状态码，SUCCESS/ERROR
-- data: 成功时含level(日志级别)、message(消息内容)、logger_name(记录器名称)、log_file(日志文件路径，null表示控制台)、timestamp(记录时间)；失败时为null
-- message: 状态描述信息""",
-    "get_logs": """读取指定日志文件的内容，支持智能过滤与截断。
+- list: 含services/total/total_matched/platform
+- start: 含service_name/state/action
+- stop: 含service_name/state/action/stop_type
+- restart: 同start（先停后启）""",
+    "task_control": """计划任务统一控制入口，通过action参数执行create/delete/list操作（Windows专用）。
 
 使用场景：
-- 当用户需要查看日志文件内容时使用
-- 当用户需要分析历史日志时使用
-- 当用户需要排查问题查看错误日志时使用
+- 当用户需要管理Windows计划任务时使用
+- 合并原task_create/task_delete/task_list三个工具
 
-【重要】tail_mode启用时从文件末尾读取，此时跳过level/pattern过滤
-
-使用示例：
-- 读取日志文件：{"log_file": "D:/logs/app.log"}
-- 过滤ERROR级别：{"log_file": "D:/logs/app.log", "level": "ERROR", "max_lines": 100}
-- 尾部读取并过滤关键词：{"log_file": "D:/logs/app.log", "pattern": "timeout", "tail_mode": true}
-- 按时间范围过滤：{"log_file": "D:/logs/app.log", "start_time": "2026-01-01", "end_time": "2026-01-02", "output_format": "json"}
-
-返回数据说明：
-- code: 状态码，SUCCESS/ERROR
-- data: 成功时含logs(日志行列表)、total(日志行数)、file(日志文件路径)、tail_mode(是否尾部模式)；文件不存在时为null
-- message: 状态描述信息""",
-    "service_list": """列出系统服务（Windows用sc/Linux用systemctl），支持按名称和状态（running/stopped）过滤。
-
-使用场景：
-- 当用户需要查看系统服务状态时使用
-- 当用户需要查找特定服务时使用
-- 当用户需要检查某个服务是否运行时使用
-
-【重要】Windows用sc query，Linux用systemctl list-units；默认最多返回100条
+【重要】action必填；create需task_name+command+schedule；delete需task_name；list可按state过滤
 
 使用示例：
-- 列出所有服务：{}
-- 查看运行中的服务：{"state": "running"}
-- 按名称过滤：{"name": "mysql", "state": "running"}
+- 列出所有计划任务：{"action": "list"}
+- 创建每日备份任务：{"action": "create", "task_name": "MyBackup", "command": "C:\\scripts\\backup.bat", "schedule": "02:00"}
+- 删除任务：{"action": "delete", "task_name": "MyBackup"}
 
 返回数据说明：
-- code: 状态码，SUCCESS/ERR_SERVICE_LIST/ERR_SERVICE_TIMEOUT/ERR_SERVICE_COMMAND_NOT_FOUND
-- data: 成功时含services(服务列表，每项含name/display_name/state/state_desc)、total(返回数量)、total_matched(匹配总数)、platform(平台)；失败时为null
-- message: 状态描述信息""",
-    "service_start": """启动指定系统服务（Windows用sc/Linux用systemctl），支持超时设置。
-
-使用场景：
-- 当用户需要启动已停止的服务时使用
-- 当用户需要重启服务时使用（先停后启）
-- 当用户需要确保服务处于运行状态时使用
-
-【重要】Windows用sc start，Linux用systemctl start；启动后会自动检查服务状态
-
-使用示例：
-- 启动服务：{"service_name": "mysql"}
-- 启动并等待：{"service_name": "nginx", "wait_for_started": true}
-
-返回数据说明：
-- code: 状态码，SUCCESS/ERR_SERVICE_NOT_FOUND/ERR_SERVICE_START/ERR_SERVICE_TIMEOUT
-- data: 成功时含service_name(服务名称)、state(当前状态running/stopped/unknown)、action(执行动作start/none)；失败时为null
-- message: 状态描述信息""",
-    "service_stop": """停止指定系统服务（Windows用sc/Linux用systemctl），支持优雅停止和强制停止。
-
-使用场景：
-- 当用户需要停止运行中的服务时使用
-- 当用户需要停止异常服务时使用
-- 当用户需要强制停止无法正常停止的服务时使用
-
-【重要】Windows用sc stop，Linux用systemctl stop；force=true时Windows用taskkill强制停止，Linux用systemctl kill
-
-使用示例：
-- 停止服务：{"service_name": "mysql"}
-- 强制停止：{"service_name": "nginx", "force": true}
-- 强制停止并等待：{"service_name": "mysql", "force": true, "wait_for_stopped": true}
-
-返回数据说明：
-- code: 状态码，SUCCESS/ERR_SERVICE_NOT_FOUND/ERR_SERVICE_STOP/ERR_SERVICE_TIMEOUT
-- data: 成功时含service_name(服务名称)、state(当前状态running/stopped/unknown)、action(执行动作stop/none)、stop_type(停止类型优雅停止/强制停止)；失败时为null
-- message: 状态描述信息""",
-    "task_list": """列出所有计划任务（Windows专用，使用schtasks），支持按名称和状态过滤。
-
-使用场景：
-- 当用户需要查看定时任务配置时使用
-- 当用户需要检查计划任务运行状态时使用
-- 当用户需要确认某个计划任务是否存在时使用
-
-【重要】仅支持Windows系统；使用schtasks /query命令
-
-使用示例：
-- 列出所有计划任务：{}
-- 查看运行中的任务：{"state": "running"}
-- 按文件夹过滤：{"folder": "\\Microsoft", "state": "ready"}
-
-返回数据说明：
-- code: 状态码，SUCCESS/ERR_PLATFORM_NOT_SUPPORTED/ERR_TASK_LIST/ERR_TASK_EMPTY/ERR_TASK_TIMEOUT/ERR_TASK_COMMAND_NOT_FOUND
-- data: 成功时含tasks(任务列表，每项含name/next_run/status/status_desc/command)、total(返回数量)、total_matched(匹配总数)、platform(平台Windows)、output_format(输出格式)；失败时为null
-- message: 状态描述信息""",
-    "task_create": """创建计划任务（Windows专用），支持每日/每周/每月调度，可设置启动程序和参数。
-
-使用场景：
-- 当用户需要创建定时备份任务时使用
-- 当用户需要创建定时检查任务时使用
-- 当用户需要创建周期性执行脚本的任务时使用
-
-【重要】仅支持Windows系统；schedule格式：'HH:MM'(每日)、'HH:MM /day N'(每周)、'HH:MM /monthly DD'(每月)
-
-使用示例：
-- 创建每日凌晨2点备份：{"task_name": "MyBackup", "command": "C:\\scripts\\backup.bat", "schedule": "02:00"}
-- 创建每周一9点报告：{"task_name": "WeeklyReport", "command": "python C:\\scripts\\report.py", "schedule": "09:00 /day 1", "start_time": "09:00"}
-
-返回数据说明：
-- code: 状态码，SUCCESS/ERR_PLATFORM_NOT_SUPPORTED/ERR_TASK_CREATE/ERR_TASK_TIMEOUT/ERR_TASK_COMMAND_NOT_FOUND
-- data: 成功时含task_name(任务名称)、command(执行命令)、schedule(调度计划)、description(描述)、user(运行用户)；失败时为null
-- message: 状态描述信息""",
-    "task_delete": """删除计划任务（Windows专用），使用schtasks delete命令，支持强制删除。
-
-使用场景：
-- 当用户需要清理无用的定时任务时使用
-- 当用户需要删除错误的计划任务时使用
-- 当用户需要重新配置计划任务时使用（先删后建）
-
-【重要】仅支持Windows系统；删除前会先查询确认任务存在；/f参数自动强制删除
-
-使用示例：
-- 删除计划任务：{"task_name": "MyBackup"}
-- 删除指定文件夹下的任务：{"task_name": "OldTask", "folder": "\\Microsoft"}
-
-返回数据说明：
-- code: 状态码，SUCCESS/ERR_PLATFORM_NOT_SUPPORTED/ERR_TASK_NOT_FOUND/ERR_TASK_DELETE/ERR_TASK_TIMEOUT/ERR_TASK_COMMAND_NOT_FOUND
-- data: 成功时含task_name(任务全名)、folder(所在文件夹)、delete_type(删除类型普通删除/强制删除)；失败时为null
-- message: 状态描述信息""",
+- list: 含tasks/total/total_matched/platform
+- create: 含task_name/command/schedule/description/user
+- delete: 含task_name/folder/delete_type""",
 }
 
 # 模型映射
@@ -300,14 +184,8 @@ SYSTEM_TOOL_INPUT_MODELS = {
     "event_log": EventLogInput,
     "list_processes": ListProcessesInput,
     "kill_process": KillProcessInput,
-    "log_message": LogMessageInput,
-    "get_logs": GetLogsInput,
-    "service_list": ServiceListInput,
-    "service_start": ServiceStartInput,
-    "service_stop": ServiceStopInput,
-    "task_list": TaskListInput,
-    "task_create": TaskCreateInput,
-    "task_delete": TaskDeleteInput,
+    "service_control": ServiceControlInput,
+    "task_control": TaskControlInput,
 }
 
 # 使用示例
@@ -336,63 +214,32 @@ SYSTEM_TOOL_EXAMPLES = {
         {"pid": 1234},
         {"pid": 1234, "force": True},
     ],
-    "log_message": [
-        {"message": "这是一条测试日志"},
-        {"level": "WARNING", "message": "警告信息"},
-        {"message": "错误信息", "level": "ERROR", "logger_name": "api"},
+    "service_control": [
+        {"action": "list"},
+        {"action": "list", "state": "running"},
+        {"action": "start", "service_name": "mysql"},
+        {"action": "stop", "service_name": "nginx", "force": True},
+        {"action": "restart", "service_name": "mysql"},
     ],
-    "get_logs": [
-        {"log_file": "D:/logs/app.log"},
-        {"log_file": "D:/logs/app.log", "level": "ERROR", "max_lines": 100},
-        {"log_file": "D:/logs/app.log", "pattern": "timeout", "tail_mode": True},
-        {"log_file": "D:/logs/app.log", "start_time": "2026-01-01", "end_time": "2026-01-02", "output_format": "json"},
-    ],
-    "service_list": [
-        {},
-        {"state": "running"},
-        {"name": "mysql", "state": "running"},
-    ],
-    "service_start": [
-        {"service_name": "mysql"},
-        {"service_name": "nginx", "wait_for_started": True},
-    ],
-    "service_stop": [
-        {"service_name": "mysql"},
-        {"service_name": "nginx", "force": True},
-        {"service_name": "mysql", "force": True, "wait_for_stopped": True},
-    ],
-    "task_list": [
-        {},
-        {"state": "running"},
-        {"folder": "\\Microsoft", "state": "ready"},
-    ],
-    "task_create": [
-        {"task_name": "MyBackup", "command": "C:\\scripts\\backup.bat", "schedule": "02:00"},
-        {"task_name": "WeeklyReport", "command": "python C:\\scripts\\report.py", "schedule": "09:00 /day 1", "start_time": "09:00"},
-    ],
-    "task_delete": [
-        {"task_name": "MyBackup"},
-        {"task_name": "OldTask", "folder": "\\Microsoft"},
+    "task_control": [
+        {"action": "list"},
+        {"action": "list", "state": "running"},
+        {"action": "create", "task_name": "MyBackup", "command": "C:\\scripts\\backup.bat", "schedule": "02:00"},
+        {"action": "delete", "task_name": "MyBackup"},
     ],
 }
 
 
 def _register_system_tools():
-    """注册所有系统信息工具"""
+    """注册所有系统信息工具 - 【2026-05-17 小沈】16→10重构：只注册7个（+reg_register注册3个=10个）"""
     tool_methods = {
         "get_system_info": get_system_info,
         "net_connections": net_connections,
         "event_log": event_log,
         "list_processes": list_processes,
         "kill_process": kill_process,
-        "log_message": log_message,
-        "get_logs": get_logs,
-        "service_list": service_list,
-        "service_start": service_start,
-        "service_stop": service_stop,
-        "task_list": task_list,
-        "task_create": task_create,
-        "task_delete": task_delete,
+        "service_control": service_control,
+        "task_control": task_control,
     }
 
     for name, method in tool_methods.items():

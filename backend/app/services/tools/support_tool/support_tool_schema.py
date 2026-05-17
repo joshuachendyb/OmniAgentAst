@@ -13,12 +13,16 @@ from typing import Optional
 
 
 class CheckDbExistsInput(BaseModel):
-    """check_db_exists 工具的输入参数"""
+    """check_db_exists 工具的输入参数
+    【2026-05-17 小沈 已弃用】请使用 toolhelper.db_helper.CheckDbExistsInput 代替
+    """
     db_path: str = Field(..., description="数据库文件路径。如 D:/data/app.db")
 
 
 class GetTableSchemaInput(BaseModel):
-    """get_table_schema 工具的输入参数"""
+    """get_table_schema 工具的输入参数
+    【2026-05-17 小沈 已弃用】请使用 database_tools.get_db_schema(table_name=...) 代替
+    """
     db_path: str = Field(..., description="数据库文件路径")
     table_name: str = Field(..., description="要查询的表名称。如 users、orders - 小健 2026-05-06")
 
@@ -29,17 +33,23 @@ class ValidateUrlInput(BaseModel):
 
 
 class BeginTransactionInput(BaseModel):
-    """begin_transaction 工具的输入参数"""
+    """begin_transaction 工具的输入参数
+    【2026-05-17 小沈 已弃用】事务控制工具已从 database 分类移除
+    """
     # 无参数
 
 
 class CommitTransactionInput(BaseModel):
-    """commit_transaction 工具的输入参数"""
+    """commit_transaction 工具的输入参数
+    【2026-05-17 小沈 已弃用】事务控制工具已从 database 分类移除
+    """
     transaction_id: str = Field(..., description="事务ID，由begin_transaction返回")
 
 
 class RollbackTransactionInput(BaseModel):
-    """rollback_transaction 工具的输入参数"""
+    """rollback_transaction 工具的输入参数
+    【2026-05-17 小沈 已弃用】事务控制工具已从 database 分类移除
+    """
     transaction_id: str = Field(..., description="事务ID，由begin_transaction返回")
 
 

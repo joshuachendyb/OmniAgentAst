@@ -7,6 +7,8 @@ Shell 模块 - Shell命令执行工具
 - shell_tools.py: 具体实现
 - shell_schema.py: Pydantic 模型
 
+【2026-05-17 小健】LLM工具 8→4，降级3个工具
+
 目录结构：
     shell/
     ├── __init__.py           # 本文件，导入 shell_register 触发注册
@@ -15,30 +17,20 @@ Shell 模块 - Shell命令执行工具
     └── shell_schema.py       # Pydantic 模型
 
 创建时间: 2026-04-29
+更新时间: 2026-05-17 小健
 """
 
-# 导入 shell_register 触发注册
 from app.services.tools.shell import shell_register
 from app.services.tools.shell import shell_tools
 
 from app.services.tools.shell.shell_tools import (
     execute_shell_command,
-    get_working_directory,
-    change_directory,
-    check_path_exists,
-    check_command_available,
-    locate_command,
-    get_shell_output,
-    terminate_shell,
+    find_command,
+    shell_session,
 )
 
 __all__ = [
     "execute_shell_command",
-    "get_working_directory",
-    "change_directory",
-    "check_path_exists",
-    "check_command_available",
-    "locate_command",
-    "get_shell_output",
-    "terminate_shell",
+    "find_command",
+    "shell_session",
 ]

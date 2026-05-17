@@ -424,7 +424,6 @@ def list_processes(
     filter_pid: Optional[int] = None,
     user: Optional[str] = None,
     status: Optional[str] = None,
-    limit: int = 100,
     sort_by: str = "pid",
     descending: bool = False,
     max_results: int = 100,
@@ -438,6 +437,8 @@ def list_processes(
     - sort_by: 排序字段（可选），默认pid
     - descending: 降序排序（可选），默认False
     - max_results: 最大返回数（可选），默认100
+    
+    【2026-05-17 小沈】修正S1: 删除limit参数(与max_results重复)
     
     Returns:
         {code, data, message}
@@ -650,30 +651,18 @@ def kill_process(
                 "message": f"已终止 {killed_count} 个名为 {name} 的进程"
             }
     
+    # 【2026-05-17 小沈】修正S6: kill_process幂等化 - NoSuchProcess返回成功而非报错
     except psutil.NoSuchProcess:
         return {
-            "code": "ERR_PROCESS_NOT_FOUND",
-            "data": None,
-            "message": f"进程 {pid} 不存在"
+            "code": "SUCCESS",
+            "data": {"killed": [], "idempotent": True},
+            "message": f"进程 {pid} 已不存在（幂等：视为已终止）"
         }
     except psutil.AccessDenied:
         return {
             "code": "ERR_PERMISSION_DENIED",
             "data": None,
             "message": f"无权限终止进程 {pid}，请尝试使用管理员权限"
-        }
-    
-    except psutil.NoSuchProcess:
-        return {
-            "code": "ERR_PROCESS_NOT_FOUND",
-            "data": None,
-            "message": f"进程 {pid} 不存在"
-        }
-    except psutil.AccessDenied:
-        return {
-            "code": "ERR_SYSTEM_ACCESS_DENIED",
-            "data": None,
-            "message": f"拒绝访问进程 {pid}，需要管理员权限"
         }
     except Exception as e:
         logger.error(f"[kill_process] 终止进程失败: {e}")
@@ -1656,3 +1645,103 @@ def task_delete(
             "data": None,
             "message": f"删除计划任务失败: {str(e)}"
         }
+
+
+# 【2026-05-17 小沈】统一入口函数：service_control - 合并service_start/service_stop/service_list
+def service_control(
+    action: str,
+    service_name: Optional[str] = None,
+    state: str = "all",
+    force: bool = False,
+    wait_for_started: bool = False,
+    wait_for_stopped: bool = False,
+    timeout: int = 30,
+) -> dict:
+    """
+    服务统一控制入口 - 小沈 2026-05-17
+    
+    通过action参数分发到原service_start/service_stop/service_list实现。
+    
+    Args:
+        action: 操作类型，"start"|"stop"|"restart"|"list"
+        service_name: 服务名称（start/stop/restart时必填）
+        state: 状态过滤（list时使用），running/stopped/all，默认all
+        force: 是否强制停止（stop时使用），默认False
+        wait_for_started: 等待启动完成（start时使用），默认False
+        wait_for_stopped: 等待停止完成（stop时使用），默认False
+        timeout: 超时秒数（start/stop时使用），默认30
+    
+    Returns:
+        {code, data, message}
+    """
+    if action == "list":
+        return service_list(name=service_name, state=state)
+    elif action == "start":
+        if not service_name:
+            return {"code": "ERR_INVALID_PARAM", "data": None, "message": "start操作必须提供service_name"}
+        return service_start(service_name=service_name, wait_for_started=wait_for_started, timeout=timeout)
+    elif action == "stop":
+        if not service_name:
+            return {"code": "ERR_INVALID_PARAM", "data": None, "message": "stop操作必须提供service_name"}
+        return service_stop(service_name=service_name, force=force, wait_for_stopped=wait_for_stopped, timeout=timeout)
+    elif action == "restart":
+        if not service_name:
+            return {"code": "ERR_INVALID_PARAM", "data": None, "message": "restart操作必须提供service_name"}
+        stop_result = service_stop(service_name=service_name, force=force, wait_for_stopped=wait_for_stopped, timeout=timeout)
+        if stop_result.get("code") != "SUCCESS":
+            return stop_result
+        return service_start(service_name=service_name, wait_for_started=wait_for_started, timeout=timeout)
+    else:
+        return {"code": "ERR_INVALID_PARAM", "data": None, "message": f"不支持的action: {action}，可选: start/stop/restart/list"}
+
+
+# 【2026-05-17 小沈】统一入口函数：task_control - 合并task_create/task_delete/task_list
+def task_control(
+    action: str,
+    task_name: Optional[str] = None,
+    command: Optional[str] = None,
+    schedule: Optional[str] = None,
+    start_time: Optional[str] = None,
+    start_date: Optional[str] = None,
+    interval: Optional[int] = None,
+    state: str = "all",
+    folder: Optional[str] = None,
+) -> dict:
+    """
+    计划任务统一控制入口 - 小沈 2026-05-17
+    
+    通过action参数分发到原task_create/task_delete/task_list实现。
+    
+    Args:
+        action: 操作类型，"create"|"delete"|"list"
+        task_name: 任务名称（create/delete时必填）
+        command: 执行命令（create时必填）
+        schedule: 计划时间（create时必填），格式'HH:MM'或'HH:MM /day N'或'HH:MM /monthly DD'
+        start_time: 起始时间（create时可选）
+        start_date: 起始日期（create时可选）
+        interval: 重复间隔分钟数（create时可选）
+        state: 状态过滤（list时使用），ready/running/disabled/all，默认all
+        folder: 任务文件夹（delete时可选）
+    
+    Returns:
+        {code, data, message}
+    """
+    if action == "list":
+        return task_list(filter_name=task_name, filter_status=state)
+    elif action == "create":
+        if not task_name or not command or not schedule:
+            return {"code": "ERR_INVALID_PARAM", "data": None, "message": "create操作必须提供task_name、command、schedule"}
+        return task_create(
+            task_name=task_name,
+            command=command,
+            schedule=schedule,
+            start_time=start_time,
+            start_date=start_date,
+            interval=interval,
+        )
+    elif action == "delete":
+        if not task_name:
+            return {"code": "ERR_INVALID_PARAM", "data": None, "message": "delete操作必须提供task_name"}
+        return task_delete(task_name=task_name, folder=folder)
+    else:
+        return {"code": "ERR_INVALID_PARAM", "data": None, "message": f"不支持的action: {action}，可选: create/delete/list"}

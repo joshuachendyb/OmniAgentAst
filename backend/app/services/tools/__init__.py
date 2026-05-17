@@ -44,16 +44,19 @@ _CATEGORY_MODULES = {
     "shell": ("app.services.tools.shell", "_register_shell_tools"),
     "network": ("app.services.tools.network", "register_network_tools"),
     "environment": ("app.services.tools.environment", "_register_env_tools"),
+    "env_check": ("app.services.tools.environment.env_check_register", "_register_env_check_tools"),
     "system": ("app.services.tools.system", "_register_system_tools"),
     "database": ("app.services.tools.database", "_register_database_tools"),
     "desktop": ("app.services.tools.desktop", "_register_desktop_tools"),
-    "desktop_gui": ("app.services.tools.desktop.gui_register", "_register_gui_tools"),
-    "desktop_gui_helpers": ("app.services.tools.desktop.gui_helpers_register", "_register_gui_helpers"),
     "data_format": ("app.services.tools.data_format", "_register_data_format_tools"),
     "code_execution": ("app.services.tools.code_execution", "_register_code_execution_tools"),
     "document": ("app.services.tools.document", "_register_document_tools"),
     "document_data_analysis": ("app.services.tools.document.data_analysis_register", "_register_data_analysis_tools"),
     "support_tool": ("app.services.tools.support_tool", "_register_support_tool_tools"),
+    # 【2026-05-17 小沈】desktop_gui/desktop_gui_helpers 已合并到统一DESKTOP分类（26→10精简）
+    # desktop_gui/desktop_gui_helpers 目录已移除，不再注册
+    # 【2026-05-17 小沈】meta分类：元工具（tool_help/tool_search）
+    "meta": ("app.services.tools.meta", "_register_meta_tools"),
 }
 
 

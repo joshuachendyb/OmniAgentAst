@@ -271,6 +271,7 @@ def get_db_schema(
     connection_string: Optional[str] = None,
     db_path: Optional[str] = None,
     db_name: Optional[str] = None,
+    table_name: Optional[str] = None,
     filter_pattern: Optional[str] = None,
     include_details: bool = False,
     output_format: str = "markdown"
@@ -283,6 +284,7 @@ def get_db_schema(
         connection_string: MySQL/PostgreSQL 连接字符串
         db_path: SQLite 数据库文件路径
         db_name: 数据库名（SQLite 忽略此参数）
+        table_name: 指定表名，仅获取该表结构。与filter_pattern互斥，table_name优先 - 小沈 2026-05-17
         filter_pattern: 表名过滤模式（SQL LIKE 语法）
         include_details: 是否包含详细索引、外键、约束信息
         output_format: 输出格式：markdown(默认)、json、sql_ddl
@@ -312,7 +314,16 @@ def get_db_schema(
         conn = None
         engine = None
         
-        if filter_pattern:
+        # 【2026-05-17 小沈】table_name 参数：指定单表查询，覆盖 filter_pattern
+        if table_name:
+            tables = [t for t in tables if t == table_name]
+            if not tables:
+                return {
+                    "code": "ERR_TABLE_NOT_FOUND",
+                    "data": None,
+                    "message": f"表不存在: {table_name}"
+                }
+        elif filter_pattern:
             tables = [t for t in tables if filter_pattern.replace('%', '').lower() in t.lower()]
         
         if len(tables) > 20:

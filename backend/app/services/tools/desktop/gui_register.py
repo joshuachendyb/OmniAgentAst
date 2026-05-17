@@ -411,62 +411,13 @@ GUI_TOOL_EXAMPLES = {
 
 def _register_gui_tools():
     """
-    【2026-05-02 小沈】显式注册所有GUI工具
-    使用 Pydantic 模型自动生成 OpenAI Schema
+    【2026-05-17 小沈】已迁移到统一DESKTOP分类（26→10精简方案）
+    原GUI工具已合并到 window_control / mouse_control / keyboard_control / screen_capture / clipboard_control
+    保留 screen_record / ocr / send_notification 在统一DESKTOP注册中
+    本函数为空操作，防止旧调用报错
     """
-    tool_methods = {
-        "click": click,
-        "move": move,
-        "scroll": scroll,
-        "type_text": type_text,
-        "shortcut": shortcut,
-        "key_combo": key_combo,
-        "screenshot": screenshot,
-        "snapshot": snapshot,
-        "screen_record": screen_record,
-        "list_windows": list_windows,
-        "focus_window": focus_window,
-        "resize_window": resize_window,
-        "ocr": ocr,
-        "read_clipboard": read_clipboard,
-        "write_clipboard": write_clipboard,
-        "send_notification": send_notification,
-    }
-
-    TOOL_INPUT_MODELS = {
-        "click": ClickInput,
-        "move": MoveInput,
-        "scroll": ScrollInput,
-        "type_text": TypeTextInput,
-        "shortcut": ShortcutInput,
-        "key_combo": KeyComboInput,
-        "screenshot": ScreenshotInput,
-        "snapshot": SnapshotInput,
-        "screen_record": ScreenRecordInput,
-        "list_windows": ListWindowsInput,
-        "focus_window": FocusWindowInput,
-        "resize_window": ResizeWindowInput,
-        "ocr": OcrInput,
-        "read_clipboard": ReadClipboardInput,
-        "write_clipboard": WriteClipboardInput,
-        "send_notification": SendNotificationInput,
-    }
-
-    for name, method in tool_methods.items():
-        desc = GUI_TOOL_DESCRIPTIONS.get(name, "")
-        input_model = TOOL_INPUT_MODELS.get(name)
-        examples = GUI_TOOL_EXAMPLES.get(name, [])
-
-        tool_registry.register(
-            name=name,
-            description=desc,
-            category=ToolCategory.DESKTOP,
-            implementation=method,
-            version="1.0.0",
-            input_model=input_model,
-            examples=examples,
-        )
-        logger.info(f"[gui_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个")
+    from app.utils.logger import logger
+    logger.info("[gui_register] GUI工具已迁移到统一DESKTOP分类，跳过注册")
 
 
 # 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册

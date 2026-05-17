@@ -56,7 +56,9 @@ DANGEROUS_PATTERNS = [
 
 
 def check_python_available() -> Dict[str, Any]:
-    """检查Python环境是否可用 - 小沈 2026-05-02"""
+    """检查Python环境是否可用 - 小沈 2026-05-02
+    【2026-05-17 小沈 已弃用LLM暴露】请使用 toolhelper/exec_helper.py _check_python_available() 代替
+    """
     try:
         version = sys.version
         executable = sys.executable
@@ -78,7 +80,9 @@ def check_python_available() -> Dict[str, Any]:
 
 
 def validate_code_safety(code: str) -> Dict[str, Any]:
-    """验证代码安全性 - 小沈 2026-05-02"""
+    """验证代码安全性 - 小沈 2026-05-02
+    【2026-05-17 小沈 已弃用LLM暴露】请使用 toolhelper/exec_helper.py _validate_code_safety(code) 代替
+    """
     warnings = []
     for pattern, desc in DANGEROUS_PATTERNS:
         if re.search(pattern, code):
@@ -98,7 +102,9 @@ def validate_code_safety(code: str) -> Dict[str, Any]:
 
 
 def check_node_available() -> Dict[str, Any]:
-    """检查Node.js环境是否可用 - 小沈 2026-05-02"""
+    """检查Node.js环境是否可用 - 小沈 2026-05-02
+    【2026-05-17 小沈 已弃用LLM暴露】请使用 toolhelper/exec_helper.py _check_node_available() 代替
+    """
     try:
         result = subprocess.run(
             ["node", "--version"],
@@ -134,7 +140,9 @@ def check_node_available() -> Dict[str, Any]:
 
 
 def check_module_available(module_name: str) -> Dict[str, Any]:
-    """检查Python模块是否已安装 - 小沈 2026-05-02"""
+    """检查Python模块是否已安装 - 小沈 2026-05-02
+    【2026-05-17 小沈 已弃用LLM暴露】请使用 toolhelper/exec_helper.py _check_module_available(module_name) 代替
+    """
     try:
         mod = importlib.import_module(module_name)
         version = getattr(mod, "__version__", "unknown")

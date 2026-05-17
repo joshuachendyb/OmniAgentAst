@@ -11,16 +11,22 @@ Env Check Register - 环境检查工具注册点
 - 从 @register_tool 装饰器注册改为显式注册（tool_registry.register）
 - 按 shell_register.py 模式重写
 
+【2026-05-17 小沈】P1-6: 9→5工具注册
+- 4个检查工具取消LLM暴露，下沉为toolhelper/exec_helper.py内部Helper：
+  - check_python_available → _check_python_available
+  - validate_code_safety → _validate_code_safety
+  - check_node_available → _check_node_available
+  - check_module_available → _check_module_available
+- 保留5个文档验证工具仍为LLM可见（验证外部文件而非内部环境）
+
 创建时间: 2026-05-02
-更新时间: 2026-05-02
+更新时间: 2026-05-17 小沈 P1-6
 """
 
 from app.services.tools.registry import register_tool, ToolCategory, tool_registry
 from app.utils.logger import logger
 
 from app.services.tools.environment.env_check_schema import (
-    ValidateCodeSafetyInput,
-    CheckModuleAvailableInput,
     ValidateCsvFormatInput,
     ValidateChartDataInput,
     CheckPdfReadableInput,
@@ -29,10 +35,6 @@ from app.services.tools.environment.env_check_schema import (
 )
 
 from app.services.tools.environment.env_check_tools import (
-    check_python_available,
-    validate_code_safety,
-    check_node_available,
-    check_module_available,
     validate_csv_format,
     validate_chart_data,
     check_pdf_readable,
@@ -41,54 +43,6 @@ from app.services.tools.environment.env_check_tools import (
 )
 
 ENV_CHECK_TOOL_DESCRIPTIONS = {
-    "check_python_available": """检查Python环境是否可用。
-
-使用场景：
-- 当用户需要确认Python环境是否安装时使用
-- 当用户在执行Python代码前需要验证环境时使用
-
-返回数据说明：
-- code: 状态码(SUCCESS)
-- data.available: Python环境是否可用(bool)
-- data.version: Python版本号(str)
-- data.executable: Python可执行路径(str)
-- message: 结果消息""",
-    "validate_code_safety": """验证代码安全性，防止危险操作。
-
-使用场景：
-- 当用户需要检查代码是否安全时使用
-- 当用户想要在执行代码前进行安全验证时使用
-
-
-返回数据说明：
-- code: 状态码(SUCCESS)
-- data.safe: 代码是否安全(bool)
-- data.warnings: 安全风险列表(list[str])
-- data.warning_count: 风险数量(int)
-- message: 结果消息""",
-    "check_node_available": """检查Node.js环境是否可用。
-
-使用场景：
-- 当用户需要确认Node.js环境是否安装时使用
-- 当用户在执行JavaScript代码前需要验证环境时使用
-
-返回数据说明：
-- code: 状态码(SUCCESS)
-- data.available: Node.js环境是否可用(bool)
-- data.version: Node.js版本号(str)
-- message: 结果消息""",
-    "check_module_available": """检查Python模块是否已安装。
-
-使用场景：
-- 当用户需要确认某个Python模块是否已安装时使用
-- 当用户在导入模块前需要验证是否可用时使用
-
-
-返回数据说明：
-- code: 状态码(SUCCESS)
-- data.available: 模块是否已安装(bool)
-- data.version: 模块版本号(str)
-- message: 结果消息""",
     "validate_csv_format": """验证CSV文件格式是否正确。
 
 使用场景：
@@ -155,10 +109,6 @@ ENV_CHECK_TOOL_DESCRIPTIONS = {
 }
 
 ENV_CHECK_TOOL_EXAMPLES = {
-    "check_python_available": [{}],
-    "validate_code_safety": [{"code": "import os; os.system('dir')"}],
-    "check_node_available": [{}],
-    "check_module_available": [{"module_name": "pandas"}],
     "validate_csv_format": [{"file_path": "D:/data/users.csv"}],
     "validate_chart_data": [{"data": {"labels": ["A", "B"], "values": [10, 20]}}],
     "check_pdf_readable": [{"file_path": "D:/documents/report.pdf"}],
@@ -170,13 +120,10 @@ ENV_CHECK_TOOL_EXAMPLES = {
 def _register_env_check_tools():
     """
     【2026-05-02 小沈】显式注册所有环境检查工具
-    优先使用 Pydantic 模型自动生成 OpenAI Schema，无模型则使用 input_schema
+    【2026-05-17 小沈】P1-6: 9→5，4个检查工具下沉为toolhelper/exec_helper.py
+    只注册5个文档验证工具（validate_csv/chart/check_pdf/docx/xlsx）
     """
     tool_methods = {
-        "check_python_available": check_python_available,
-        "validate_code_safety": validate_code_safety,
-        "check_node_available": check_node_available,
-        "check_module_available": check_module_available,
         "validate_csv_format": validate_csv_format,
         "validate_chart_data": validate_chart_data,
         "check_pdf_readable": check_pdf_readable,
@@ -185,8 +132,6 @@ def _register_env_check_tools():
     }
 
     TOOL_INPUT_MODELS = {
-        "validate_code_safety": ValidateCodeSafetyInput,
-        "check_module_available": CheckModuleAvailableInput,
         "validate_csv_format": ValidateCsvFormatInput,
         "validate_chart_data": ValidateChartDataInput,
         "check_pdf_readable": CheckPdfReadableInput,
@@ -194,55 +139,24 @@ def _register_env_check_tools():
         "check_xlsx_readable": CheckXlsxReadableInput,
     }
 
-    TOOL_INPUT_SCHEMAS = {
-        "check_python_available": {"type": "object", "properties": {}, "required": []},
-        "check_node_available": {"type": "object", "properties": {}, "required": []},
-    }
-
     for name, method in tool_methods.items():
         desc = ENV_CHECK_TOOL_DESCRIPTIONS.get(name, "")
         input_model = TOOL_INPUT_MODELS.get(name)
-        input_schema = TOOL_INPUT_SCHEMAS.get(name)
         examples = ENV_CHECK_TOOL_EXAMPLES.get(name, [])
 
-        if input_model:
-            tool_registry.register(
-                name=name,
-                description=desc,
-                category=ToolCategory.ENVIRONMENT,
-                implementation=method,
-                version="1.0.0",
-                input_model=input_model,
-                examples=examples,
-            )
-            logger.info(f"[env_check_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__}, examples: {len(examples)}个")
-        else:
-            tool_registry.register(
-                name=name,
-                description=desc,
-                category=ToolCategory.ENVIRONMENT,
-                implementation=method,
-                version="1.0.0",
-                input_schema=input_schema,
-                examples=examples,
-            )
-            logger.info(f"[env_check_register] 已注册工具: {name}, 使用 input_schema, examples: {len(examples)}个")
+        tool_registry.register(
+            name=name,
+            description=desc,
+            category=ToolCategory.ENVIRONMENT,
+            implementation=method,
+            version="1.0.0",
+            input_model=input_model,
+            examples=examples,
+        )
+        logger.info(f"[env_check_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__}, examples: {len(examples)}个")
 
 
 # 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
 _initialized = False  # 守护变量，供显式调用时使用
 
 __all__ = ["_register_env_check_tools"]
-
-
-__all__ = [
-    "check_python_available",
-    "validate_code_safety",
-    "check_node_available",
-    "check_module_available",
-    "validate_csv_format",
-    "validate_chart_data",
-    "check_pdf_readable",
-    "check_docx_readable",
-    "check_xlsx_readable",
-]

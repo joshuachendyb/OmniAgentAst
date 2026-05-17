@@ -169,6 +169,7 @@ class ToolCategory(Enum):
     SUPPORT_TOOL = "support_tool" # 支撑工具（公共函数+LLM内部使用，小沈-2026-05-02）
     DATA_FORMAT = "data_format"    # 数据格式（小沈-2026-05-02）
     CODE_EXECUTION = "code_execution" # 代码执行
+    META = "meta"              # 元工具（tool_help/tool_search，小沈-2026-05-17）
 
 
 @dataclass

@@ -7,20 +7,19 @@ Network Register - 网络通信工具注册点
 - 使用 registry.py 的 tool_registry.register() 显式注册
 - 使用 Pydantic 模型注册，自动生成 OpenAI Schema
 
-【工具列表】（共6个）
+【工具列表】（共5个）— 【2026-05-17 小沈】P1: 6→5，ping+port_check→network_diagnose
 1. http_request - 发起HTTP请求
 2. download_file - 下载文件到本地
 3. fetch_webpage - 获取和处理网页内容
 4. search_web - 搜索网络获取最新信息
-5. ping - 执行ping测试（小沈 2026-05-02）
-6. port_check - 检查端口是否开放（小沈 2026-05-02）
+5. network_diagnose - 网络连通性诊断（合并ping+port_check）
 
-【注册说明】
-- 导入 network_register 时自动触发注册
-- 按规范使用 input_model 参数
+已取消注册（向下兼容，函数仍保留）：
+- ping → 合入 network_diagnose(mode="ping")
+- port_check → 合入 network_diagnose(mode="port")
 
 创建时间: 2026-04-29
-更新时间: 2026-05-02
+更新时间: 2026-05-17 小沈
 """
 
 # ============================================================
@@ -35,8 +34,7 @@ from app.services.tools.network.network_schema import (
     DownloadFileInput,
     FetchWebpageInput,
     SearchWebInput,
-    PingInput,
-    PortCheckInput,
+    NetworkDiagnoseInput,
 )
 
 # 导入工具函数
@@ -45,8 +43,7 @@ from app.services.tools.network.network_tools import (
     download_file,
     fetch_webpage,
     search_web,
-    ping,
-    port_check,
+    network_diagnose,
 )
 
 # 工具描述
@@ -129,42 +126,26 @@ NETWORK_TOOL_DESCRIPTIONS = {
 - code: 状态码，SUCCESS或ERR_SEARCH_QUERY_TOO_SHORT/ERR_NETWORK_UNKNOWN
 - data: 成功时为对象，失败时为None；成功时包含 query(搜索关键词)、results(搜索结果列表，每项含title标题/url链接/snippet摘要/source来源引擎)、total(结果总数)、engine(使用的搜索引擎DuckDuckGo或Bing)、time_range(时间范围)、language(语言)
 - message: 结果描述信息""",
-    "ping": """执行ping测试检查主机可达性，返回延迟、丢包率、TTL等网络诊断信息。
+    "network_diagnose": """网络连通性诊断，合并ping和端口检测功能。
 
 使用场景：
-- 当用户需要检查网络连通性时使用
-- 当用户想要测试服务器响应时间时使用
+- 当用户需要检测网络是否连通时使用
+- 当用户需要ping测试主机可达性时使用
+- 当用户需要检查端口是否开放时使用
 - 当用户需要诊断网络问题时使用
 
 
-【重要】返回详细的ping测试结果，包括丢包率、延迟统计（最小/平均/最大）
+【重要】mode="ping"执行ICMP可达性检测(主机级)，mode="port"执行TCP端口检测(服务级)
 
 使用示例：
-- 测试连接：{"host": "google.com"}
-- 指定包数：{"host": "google.com", "count": 6}
+- ping测试：{"host": "8.8.8.8"}
+- 端口检测：{"host": "8.8.8.8", "mode": "port", "port": 53}
+- 多次ping：{"host": "baidu.com", "count": 10}
 
 返回数据说明：
-- code: 状态码，SUCCESS或ERR_NETWORK_INVALID_HOST/ERR_NETWORK_TIMEOUT/ERR_NETWORK_COMMAND_NOT_FOUND/ERR_NETWORK_UNKNOWN
-- data: 成功时为对象，失败时为None；成功时包含 host(目标主机)、packets_sent(发送包数)、packets_received(接收包数)、packets_lost(丢失包数)、loss_rate(丢包率百分比)、min_latency(最小延迟ms)、avg_latency(平均延迟ms)、max_latency(最大延迟ms)、is_reachable(是否可达布尔值)、raw_output(ping命令原始输出)
-- message: 结果描述信息""",
-    "port_check": """检查目标主机的指定端口是否开放，支持socket连接测试。
-
-使用场景：
-- 当用户需要检查端口是否开放时使用
-- 当用户需要测试服务状态时使用
-- 当用户需要进行的端口扫描时使用
-
-
-【重要】返回端口是否开放以及服务识别结果
-
-使用示例：
-- 检查80端口：{"host": "google.com", "port": 80}
-- 检查多个端口需要多次调用
-
-返回数据说明：
-- code: 状态码，SUCCESS或ERR_NETWORK_INVALID_HOST/ERR_NETWORK_INVALID_PORT/ERR_NETWORK_DNS_ERROR/ERR_NETWORK_CONNECTION_ERROR/ERR_NETWORK_UNKNOWN
-- data: 成功时为对象，失败时为None；成功时包含 host(目标主机)、port(端口号)、is_open(是否开放布尔值)、service(服务名称，已知端口返回如SSH/HTTP/HTTPS等，未知返回Unknown)；DNS错误或连接错误时is_open为False、service为None
-- message: 结果描述信息""",
+- mode="ping"时：data包含host(目标主机)、packets_sent/received/lost(包统计)、loss_rate(丢包率)、min/avg/max_latency(延迟ms)、is_reachable(是否可达)
+- mode="port"时：data包含host、port、is_open(是否开放)、service(已知服务名)
+- 失败时data为null""",
 }
 
 # 工具名到实现函数的映射
@@ -173,8 +154,7 @@ NETWORK_TOOL_IMPLEMENTATIONS = {
     "download_file": download_file,
     "fetch_webpage": fetch_webpage,
     "search_web": search_web,
-    "ping": ping,
-    "port_check": port_check,
+    "network_diagnose": network_diagnose,
 }
 
 # 工具名到 Pydantic 模型的映射
@@ -183,8 +163,7 @@ NETWORK_TOOL_INPUT_MODELS = {
     "download_file": DownloadFileInput,
     "fetch_webpage": FetchWebpageInput,
     "search_web": SearchWebInput,
-    "ping": PingInput,
-    "port_check": PortCheckInput,
+    "network_diagnose": NetworkDiagnoseInput,
 }
 
 # 使用示例
@@ -204,13 +183,11 @@ NETWORK_TOOL_EXAMPLES = {
         {"query": "OpenAI function calling", "num_results": 10},
         {"query": "React 19 新特性", "allowed_domains": ["github.com", "react.dev"], "num_results": 5},
     ],
-    "ping": [
-        {"host": "8.8.8.8", "count": 4, "timeout": 5},
-        {"host": "www.baidu.com", "count": 4},
-    ],
-    "port_check": [
-        {"host": "127.0.0.1", "port": 8080, "timeout": 3},
-        {"host": "www.example.com", "port": 443},
+    "network_diagnose": [
+        {"host": "8.8.8.8"},
+        {"host": "8.8.8.8", "mode": "port", "port": 53},
+        {"host": "baidu.com", "count": 10},
+        {"host": "127.0.0.1", "mode": "port", "port": 8000},
     ],
 }
 

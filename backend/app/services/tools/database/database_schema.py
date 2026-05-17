@@ -76,6 +76,10 @@ class GetDbSchemaInput(BaseModel):
         default=None,
         description="目标数据库名称。Agent 自动切换。默认为当前连接数据库"
     )
+    table_name: Optional[str] = Field(
+        default=None,
+        description="指定表名，仅获取该表的结构信息。不传则获取全库所有表的结构。与filter_pattern互斥，table_name优先。可选参数"
+    )
     filter_pattern: Optional[str] = Field(
         default=None,
         description="表名过滤模式，支持 SQL LIKE 语法如 user%。Agent 自动注入 LIKE 过滤。可选参数"

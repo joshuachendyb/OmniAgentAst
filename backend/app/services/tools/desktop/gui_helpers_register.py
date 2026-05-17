@@ -176,44 +176,14 @@ GUI_HELPERS_EXAMPLES = {
 
 
 def _register_gui_helpers():
-    """【2026-05-04 小沈】显式注册所有GUI辅助工具
-    使用 Pydantic 模型自动生成 OpenAI Schema
+    """【2026-05-17 小沈】已迁移到toolhelper/gui_helper.py（26→10精简方案）
+
+    原GUI辅助工具(get_mouse_position等7个)不再作为LLM可见工具注册，
+    已迁移到 toolhelper/gui_helper.py 作为内部辅助函数。
+    本函数为空操作，防止旧调用报错。
     """
-    tool_methods = {
-        "get_mouse_position": get_mouse_position,
-        "check_screen_size": check_screen_size,
-        "check_window_exists": check_window_exists,
-        "get_window_position": get_window_position,
-        "check_screen_capture_permission": check_screen_capture_permission,
-        "check_tesseract_available": check_tesseract_available,
-        "check_notification_permission": check_notification_permission,
-    }
-
-    TOOL_INPUT_MODELS = {
-        "get_mouse_position": GetMousePositionInput,
-        "check_screen_size": CheckScreenSizeInput,
-        "check_window_exists": CheckWindowExistsInput,
-        "get_window_position": GetWindowPositionInput,
-        "check_screen_capture_permission": CheckScreenCapturePermissionInput,
-        "check_tesseract_available": CheckTesseractAvailableInput,
-        "check_notification_permission": CheckNotificationPermissionInput,
-    }
-
-    for name, method in tool_methods.items():
-        desc = GUI_HELPERS_DESCRIPTIONS.get(name, "")
-        input_model = TOOL_INPUT_MODELS.get(name)
-        examples = GUI_HELPERS_EXAMPLES.get(name, [])
-
-        tool_registry.register(
-            name=name,
-            description=desc,
-            category=ToolCategory.DESKTOP,
-            implementation=method,
-            version="1.0.0",
-            input_model=input_model,
-            examples=examples,
-        )
-        logger.info(f"[gui_helpers_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个")
+    from app.utils.logger import logger
+    logger.info("[gui_helpers_register] GUI辅助工具已迁移到toolhelper/gui_helper.py，跳过注册")
 
 
 # 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册

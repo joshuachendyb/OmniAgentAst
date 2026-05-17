@@ -257,7 +257,7 @@ class ToolExecutor:
                     }
                 
                 # 执行工具
-                # 【修复 2026-04-30 小沈】兼容同步工具函数（如execute_command/change_directory）
+                # 【修复 2026-04-30 小沈】兼容同步工具函数（如execute_shell_command/find_command）
                 # 【修复 2026-05-07 小沈】lambda包装的async工具：iscoroutinefunction(lambda)=False，
                 # 需要先调用lambda拿到实际方法再判断是否coroutine
                 # 【修复 2026-05-10 小健】使用tool_meta.get_timeout（精细配置）替代config.get_timeout（YAML default=5秒太小）

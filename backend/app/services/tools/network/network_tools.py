@@ -234,13 +234,14 @@ async def download_file(
     timeout: int = 300,
     chunk_size: int = 8192,
     resume: bool = True,
+    proxy: Optional[str] = None,
 ) -> dict:
     """
-    从URL下载文件到本地路径
+    从URL下载文件到本地路径 - 小健 2026-05-18 添加proxy参数
 
     支持大文件流式下载、断点续传、进度显示。
     自动创建目标目录。
-    支持超时控制和自定义请求头。
+    支持超时控制、自定义请求头和代理。
     """
     try:
         # 验证URL
@@ -277,6 +278,13 @@ async def download_file(
         if headers:
             request_headers.update(headers)
 
+        # 代理配置 - 小健 2026-05-18 添加
+        proxy_config = None
+        if proxy:
+            proxy_config = proxy
+        elif os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY"):
+            proxy_config = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
+
         # 检查是否支持断点续传（根据resume参数和文件是否存在）
         downloaded = 0
         resume_offset = 0
@@ -287,7 +295,8 @@ async def download_file(
 
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(timeout),
-            follow_redirects=True
+            follow_redirects=True,
+            proxy=proxy_config
         ) as client:
             async with client.stream("GET", url, headers=request_headers) as response:
                 # 检查服务器是否支持断点续传
@@ -406,18 +415,15 @@ async def fetch_webpage(
         headers["Accept-Language"] = "en-US,en;q=0.9,zh-CN;q=0.8"
         headers["Accept-Encoding"] = "gzip, deflate"
         
-        proxy_config = None
-        if proxy:
-            proxy_config = {"http://": proxy, "https://": proxy}
-        
         # js_render: 使用Playwright渲染动态页面
         if js_render:
             try:
                 from playwright.async_api import async_playwright
                 
+                # Playwright proxy格式: {"server": "http://proxy:port"} - 小健 2026-05-18 修正
                 browser_config = {
                     "headless": True,
-                    "proxy": proxy_config,
+                    "proxy": {"server": proxy} if proxy else None,
                 }
                 
                 async with async_playwright() as p:
@@ -466,10 +472,11 @@ async def fetch_webpage(
                     "message": f"JS渲染失败: {str(e)}"
                 }
         else:
+            # httpx 0.26.0: proxy参数接受str，proxies已弃用 - 小健 2026-05-18 修正
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(timeout_sec),
                 follow_redirects=True,
-                proxies=proxy_config
+                proxy=proxy
             ) as client:
                 response = await client.get(url, headers=headers)
                 
@@ -610,81 +617,54 @@ def _html_to_markdown(html: str) -> str:
     
     return text.strip()
 
-async def _search_parallel_mcp(query: str, num_results: int) -> Optional[List[dict]]:
-    """Parallel MCP搜索 - 小健 2026-05-16
-    使用 search.parallel.ai 的MCP服务，JSON-RPC协议，无需API Key
-    返回None表示失败（调用方应降级到其他引擎）
+async def _search_mcp_engine(engine: str, query: str, num_results: int) -> Optional[List[dict]]:
+    """MCP搜索引擎统一入口 - 小沈 2026-05-17
+    合并 _search_parallel_mcp + _search_exa_mcp，消除约80行重复代码。
+    
+    Args:
+        engine: "parallel" | "exa"
+        query: 搜索关键词
+        num_results: 结果数量
+    
+    Returns:
+        搜索结果列表或None（失败时）
     """
-    payload = {
-        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-        "params": {
-            "name": "web_search",
-            "arguments": {
-                "objective": query,
-                "search_queries": [query],
+    MCP_CONFIGS = {
+        "parallel": {
+            "url": "https://search.parallel.ai/mcp",
+            "tool_name": "web_search",
+            "build_args": lambda q, n: {
+                "objective": q,
+                "search_queries": [q],
                 "session_id": "omniagent-search",
-            }
-        }
+            },
+        },
+        "exa": {
+            "url": "https://mcp.exa.ai/mcp",
+            "tool_name": "web_search_exa",
+            "build_args": lambda q, n: {
+                "query": q,
+                "type": "auto",
+                "numResults": n,
+                "livecrawl": "fallback",
+            },
+        },
     }
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=10.0)) as c:
-            resp = await c.post(
-                "https://search.parallel.ai/mcp",
-                json=payload,
-                headers={"Accept": "application/json, text/event-stream"}
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            result_text = data.get("result", {}).get("content", [{}])[0].get("text", "")
-            if not result_text or not result_text.startswith("{"):
-                logger.info("[_search_parallel_mcp] 返回数据非JSON")
-                return None
-            parsed = json.loads(result_text)
-            raw_results = parsed.get("results", [])
-        
-        results = []
-        for r in raw_results[:num_results]:
-            url = r.get("url", "")
-            title = r.get("title", "")
-            excerpts = r.get("excerpts", [])
-            snippet = excerpts[0][:300] if excerpts else ""
-            if title and url:
-                results.append({"title": title, "url": url, "snippet": snippet, "source": "Parallel"})
-        
-        if results:
-            return results
-        logger.info("[_search_parallel_mcp] 无搜索结果")
+    config = MCP_CONFIGS.get(engine)
+    if not config:
         return None
     
-    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
-        logger.info(f"[_search_parallel_mcp] 失败: {type(e).__name__}")
-        return None
-    except Exception as e:
-        logger.info(f"[_search_parallel_mcp] 异常: {type(e).__name__}")
-        return None
-
-
-async def _search_exa_mcp(query: str, num_results: int) -> Optional[List[dict]]:
-    """Exa MCP搜索 - 小健 2026-05-16
-    使用 mcp.exa.ai 的MCP服务，JSON-RPC协议，无需API Key
-    返回None表示失败（调用方应降级到其他引擎）
-    """
     payload = {
         "jsonrpc": "2.0", "id": 1, "method": "tools/call",
         "params": {
-            "name": "web_search_exa",
-            "arguments": {
-                "query": query,
-                "type": "auto",
-                "numResults": num_results,
-                "livecrawl": "fallback",
-            }
+            "name": config["tool_name"],
+            "arguments": config["build_args"](query, num_results),
         }
     }
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=10.0)) as c:
             resp = await c.post(
-                "https://mcp.exa.ai/mcp",
+                config["url"],
                 json=payload,
                 headers={"Accept": "application/json, text/event-stream"}
             )
@@ -692,44 +672,75 @@ async def _search_exa_mcp(query: str, num_results: int) -> Optional[List[dict]]:
             data = resp.json()
             result_text = data.get("result", {}).get("content", [{}])[0].get("text", "")
             if not result_text:
-                logger.info("[_search_exa_mcp] 返回空数据")
+                logger.info(f"[_search_mcp_engine:{engine}] 返回空数据")
                 return None
         
-        results = []
-        # Exa返回的是纯文本格式: "Title: xxx\nURL: xxx\nPublished: xxx\nHighlights: xxx"
-        current = {}
-        for line in result_text.split("\n"):
-            line = line.strip()
-            if line.startswith("Title: "):
-                if current.get("title"):
-                    results.append(current)
-                    if len(results) >= num_results:
-                        break
-                current = {"title": line[7:], "url": "", "snippet": ""}
-            elif line.startswith("URL: "):
-                current["url"] = line[5:]
-            elif line.startswith("Highlights:") or (current.get("snippet") == "" and line and not line.startswith("Published") and not line.startswith("Author")):
-                if not current["snippet"]:
-                    current["snippet"] = line[:300]
-        if current.get("title"):
-            results.append(current)
+        if engine == "parallel":
+            if not result_text.startswith("{"):
+                logger.info("[_search_mcp_engine:parallel] 返回数据非JSON")
+                return None
+            parsed = json.loads(result_text)
+            raw_results = parsed.get("results", [])
+            results = []
+            for r in raw_results[:num_results]:
+                url = r.get("url", "")
+                title = r.get("title", "")
+                excerpts = r.get("excerpts", [])
+                snippet = excerpts[0][:300] if excerpts else ""
+                if title and url:
+                    results.append({"title": title, "url": url, "snippet": snippet, "source": "Parallel"})
+            if results:
+                return results
+            logger.info("[_search_mcp_engine:parallel] 无搜索结果")
+            return None
         
-        formatted = []
-        for r in results[:num_results]:
-            if r.get("title") and r.get("url"):
-                formatted.append({"title": r["title"], "url": r["url"], "snippet": r.get("snippet", "")[:300], "source": "Exa"})
-        
-        if formatted:
-            return formatted
-        logger.info("[_search_exa_mcp] 无搜索结果")
-        return None
+        else:  # exa
+            results = []
+            current = {}
+            for line in result_text.split("\n"):
+                line = line.strip()
+                if line.startswith("Title: "):
+                    if current.get("title"):
+                        results.append(current)
+                        if len(results) >= num_results:
+                            break
+                    current = {"title": line[7:], "url": "", "snippet": ""}
+                elif line.startswith("URL: "):
+                    current["url"] = line[5:]
+                elif line.startswith("Highlights:") or (current.get("snippet") == "" and line and not line.startswith("Published") and not line.startswith("Author")):
+                    if not current["snippet"]:
+                        current["snippet"] = line[:300]
+            if current.get("title"):
+                results.append(current)
+            formatted = []
+            for r in results[:num_results]:
+                if r.get("title") and r.get("url"):
+                    formatted.append({"title": r["title"], "url": r["url"], "snippet": r.get("snippet", "")[:300], "source": "Exa"})
+            if formatted:
+                return formatted
+            logger.info("[_search_mcp_engine:exa] 无搜索结果")
+            return None
     
     except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
-        logger.info(f"[_search_exa_mcp] 失败: {type(e).__name__}")
+        logger.info(f"[_search_mcp_engine:{engine}] 失败: {type(e).__name__}")
         return None
     except Exception as e:
-        logger.info(f"[_search_exa_mcp] 异常: {type(e).__name__}")
+        logger.info(f"[_search_mcp_engine:{engine}] 异常: {type(e).__name__}")
         return None
+
+
+async def _search_parallel_mcp(query: str, num_results: int) -> Optional[List[dict]]:
+    """Parallel MCP搜索 - 小健 2026-05-16
+    【2026-05-17 小沈 已弃用】请使用 _search_mcp_engine("parallel", query, num_results) 代替
+    """
+    return await _search_mcp_engine("parallel", query, num_results)
+
+
+async def _search_exa_mcp(query: str, num_results: int) -> Optional[List[dict]]:
+    """Exa MCP搜索 - 小健 2026-05-16
+    【2026-05-17 小沈 已弃用】请使用 _search_mcp_engine("exa", query, num_results) 代替
+    """
+    return await _search_mcp_engine("exa", query, num_results)
 
 
 def _decode_bing_redirect_url(url: str) -> str:
@@ -1267,4 +1278,42 @@ async def port_check(
             "code": "ERR_NETWORK_UNKNOWN",
             "data": None,
             "message": f"端口检查异常: {str(e)}"
+        }
+
+
+async def network_diagnose(
+    host: str,
+    mode: str = "ping",
+    port: Optional[int] = None,
+    count: int = 4,
+    timeout: int = 5,
+) -> dict:
+    """网络连通性诊断 - 小沈 2026-05-17
+    【2026-05-17 小沈】合并 ping + port_check
+
+    Args:
+        host: 目标主机地址（域名或IP）
+        mode: 诊断模式。ping=ICMP可达性检测(主机级), port=TCP端口检测(服务级)
+        port: 目标端口号（mode="port"时必填，mode="ping"时忽略）
+        count: ping次数（mode="ping"时生效，默认4次）
+        timeout: 超时秒数，默认5
+
+    Returns:
+        {code, data, message}
+    """
+    if mode == "ping":
+        return await ping(host=host, count=count, timeout=timeout)
+    elif mode == "port":
+        if port is None:
+            return {
+                "code": "ERR_MISSING_PARAM",
+                "data": None,
+                "message": "mode='port'时port参数必填"
+            }
+        return await port_check(host=host, port=port, timeout=timeout)
+    else:
+        return {
+            "code": "ERR_INVALID_MODE",
+            "data": None,
+            "message": f"无效的诊断模式: {mode}，必须是 ping 或 port"
         }

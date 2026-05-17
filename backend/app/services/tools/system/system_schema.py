@@ -8,23 +8,28 @@ SYSTEM 工具参数 Schema 定义
 职责：
 定义 system 工具的 Pydantic 模型。
 
-工具列表（13个）：
+【2026-05-17 小沈】按精简方案13.4节重构：16→10工具
+- 消除 log_message/get_logs（被write_text_file/read_text_file覆盖）
+- service×3 → service_control 统一入口
+- task×3 → task_control 统一入口
+- 修正S1: ListProcessesInput删除limit(保留max_results)
+- 新增 ServiceControlInput、TaskControlInput
+
+工具列表（10个LLM可见）：
 1. get_system_info - 获取系统信息
 2. net_connections - 获取网络连接列表
 3. event_log - 获取系统事件日志
 4. list_processes - 列出所有进程
 5. kill_process - 终止指定进程
-6. log_message - 记录日志消息
-7. get_logs - 获取日志内容
-8. service_list - 列出系统服务
-9. service_start - 启动系统服务
-10. service_stop - 停止系统服务
-11. task_list - 列出计划任务
-12. task_create - 创建计划任务
-13. task_delete - 删除计划任务
+6. service_control - 服务统一控制(start/stop/restart/list)
+7. task_control - 计划任务统一控制(create/delete/list)
+8. reg_read - 读取注册表键值
+9. reg_write - 写入注册表键值
+10. reg_delete - 删除注册表键值
 
 Author: 小沈 - 2026-04-29
 更新时间: 2026-05-03 小沈 - 修正参数description，准确清晰完整
+更新时间: 2026-05-17 小沈 - 16→10工具重构
 """
 
 from pydantic import BaseModel, Field
@@ -96,7 +101,9 @@ class EventLogInput(BaseModel):
 
 
 class ListProcessesInput(BaseModel):
-    """list_processes 工具的输入参数 - 按文档7.5节定义"""
+    """list_processes 工具的输入参数 - 按文档7.5节定义
+    【2026-05-17 小沈】修正S1: 删除limit参数(与max_results重复)
+    """
     filter_name: Optional[str] = Field(
         default=None,
         description="按进程名过滤（模糊匹配）"
@@ -113,12 +120,6 @@ class ListProcessesInput(BaseModel):
     status: Optional[Literal["running", "sleeping"]] = Field(
         default=None,
         description="状态过滤（可选）。可选值：running（运行中）、sleeping（睡眠）"
-    )
-    limit: int = Field(
-        default=100,
-        ge=1,
-        le=500,
-        description="返回进程数量限制（可选），默认100"
     )
     sort_by: Literal["pid", "name", "cpu", "memory"] = Field(
         default="pid",
@@ -389,4 +390,84 @@ __all__ = [
     "TaskListInput",
     "TaskCreateInput",
     "TaskDeleteInput",
+    "ServiceControlInput",
+    "TaskControlInput",
 ]
+
+
+# 【2026-05-17 小沈】新增：ServiceControlInput - 服务统一控制入口
+class ServiceControlInput(BaseModel):
+    """service_control 工具的输入参数 - 统一服务控制入口
+    合并 service_start/service_stop/service_list，通过action分发
+    """
+    action: Literal["start", "stop", "restart", "list"] = Field(
+        ...,
+        description="操作类型（必填）。可选值：\n- start：启动服务\n- stop：停止服务\n- restart：重启服务（先停后启）\n- list：列出服务"
+    )
+    service_name: Optional[str] = Field(
+        default=None,
+        description="服务名称。start/stop/restart时必填；list时可选（用于名称过滤）。如 MySQL、nginx"
+    )
+    state: Optional[Literal["running", "stopped", "all"]] = Field(
+        default="all",
+        description="服务状态过滤（仅list时使用）。可选值：running、stopped、all（默认）"
+    )
+    force: bool = Field(
+        default=False,
+        description="是否强制停止（仅stop/restart时使用）。默认false。force=true时Windows用taskkill，Linux用systemctl kill"
+    )
+    wait_for_started: bool = Field(
+        default=False,
+        description="等待服务启动完成（仅start/restart时使用）。默认false。true时等待服务真正进入running状态"
+    )
+    wait_for_stopped: bool = Field(
+        default=False,
+        description="等待服务停止完成（仅stop/restart时使用）。默认false。true时等待服务真正停止"
+    )
+    timeout: int = Field(
+        default=30, ge=1, le=300,
+        description="等待服务操作的超时时间（秒）。默认30秒"
+    )
+
+
+# 【2026-05-17 小沈】新增：TaskControlInput - 计划任务统一控制入口
+class TaskControlInput(BaseModel):
+    """task_control 工具的输入参数 - 统一计划任务控制入口
+    合并 task_create/task_delete/task_list，通过action分发
+    """
+    action: Literal["create", "delete", "list"] = Field(
+        ...,
+        description="操作类型（必填）。可选值：\n- create：创建计划任务\n- delete：删除计划任务\n- list：列出计划任务"
+    )
+    task_name: Optional[str] = Field(
+        default=None,
+        description="任务名称。create/delete时必填；list时可选（用于名称过滤）"
+    )
+    command: Optional[str] = Field(
+        default=None,
+        description="要执行的命令或程序路径（仅create时必填）。如 C:\\scripts\\backup.bat"
+    )
+    schedule: Optional[str] = Field(
+        default=None,
+        description="计划执行时间（仅create时必填）。格式：'HH:MM'(每日)、'HH:MM /day N'(每周)、'HH:MM /monthly DD'(每月)"
+    )
+    start_time: Optional[str] = Field(
+        default=None,
+        description="起始时间（仅create时可选）。如 '08:00'"
+    )
+    start_date: Optional[str] = Field(
+        default=None,
+        description="起始日期（仅create时可选）。如 '2026-05-17'"
+    )
+    interval: Optional[int] = Field(
+        default=None,
+        description="重复间隔分钟数（仅create时可选）"
+    )
+    state: Optional[Literal["ready", "running", "disabled", "all"]] = Field(
+        default="all",
+        description="状态过滤（仅list时使用）。可选值：ready、running、disabled、all（默认）"
+    )
+    folder: Optional[str] = Field(
+        default=None,
+        description="任务所在文件夹（仅delete时可选）。不提供时从根目录查找"
+    )
