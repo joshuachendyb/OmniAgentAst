@@ -69,97 +69,8 @@ def _convert_xml_tool_call_to_json(content: str) -> Optional[str]:
     return result
 
 
-def _convert_content(content: str, array_format: bool) -> Any:
-    """
-    内容格式转换 - 小健 2026-05-16
-    
-    将字符串内容转换为LLM API所需的格式。
-    
-    Args:
-        content: 原始文本内容
-        array_format: True=数组格式[{"type":"text","text":"..."}], False=字符串格式
-    
-    Returns:
-        数组格式或原始字符串
-    
-    【TODO 多模态支持 小健 2026-05-16】
-    当前仅支持纯文本。后续需扩展为支持图片/视频/音频等多模态内容：
-    - input_image: 图片URL或base64
-    - input_video: 视频URL或base64  
-    - input_audio: 音频URL或base64
-    参考: https://longcat.chat/platform/docs/zh/APIDocs.html#全模态聊天补全
-    """
-    if array_format:
-        return [{"type": "text", "text": content}]
-    return content
-
-
-def _is_format_error(error_text: str) -> bool:
-    """
-    检测是否为消息格式错误 - 小健 2026-05-16
-    【小沈 2026-05-16】增加multimodal错误检测
-    
-    不同LLM provider返回的格式错误关键词不同，此函数统一检测。
-    
-    Args:
-        error_text: API返回的错误文本
-    
-    Returns:
-        True=格式错误，需要切换消息格式重试
-    """
-    if not error_text:
-        return False
-    
-    error_lower = error_text.lower()
-    
-    # OpenAI兼容格式错误
-    if "invalid_format" in error_lower:
-        return True
-    if "json format" in error_lower:
-        return True
-    
-    # OpenAI风格: "Invalid 'messages[0].content'"
-    if "invalid" in error_lower and "content" in error_lower:
-        return True
-    if "invalid" in error_lower and "messages" in error_lower:
-        return True
-    
-    # 智谱/其他风格: "messages content format error"
-    if "format" in error_lower and "content" in error_lower:
-        return True
-    if "format" in error_lower and "messages" in error_lower:
-        return True
-    
-    # 某些provider: "content must be string" / "content must be array"
-    if "content must be" in error_lower:
-        return True
-    if "content should be" in error_lower:
-        return True
-    
-    # 【小沈 2026-05-16】LongCat Omni多模态错误: "multimodal content is not supported"
-    if "multimodal" in error_lower and "not supported" in error_lower:
-        return True
-    if "images" in error_lower and "not supported" in error_lower:
-        return True
-    if "videos" in error_lower and "not supported" in error_lower:
-        return True
-    if "audio" in error_lower and "not supported" in error_lower:
-        return True
-    
-    return False
-
-
 class Message:
-    """消息类 - 用于构建 LLM 调用时的消息列表
-    
-    【TODO 多模态支持 小健 2026-05-16】
-    当前 content 字段仅支持字符串类型。后续需扩展为 Union[str, List[Dict]] 以支持多模态：
-    - 文本: content = "纯文本" 或 [{"type":"text","text":"..."}]
-    - 图片: content = [{"type":"input_image","input_image":{"type":"url","data":"..."}}]
-    - 视频: content = [{"type":"input_video","input_video":{"type":"url","data":"..."}}]
-    - 音频: content = [{"type":"input_audio","input_audio":{"type":"url","data":"...","format":"wav"}}]
-    参考: https://longcat.chat/platform/docs/zh/APIDocs.html#全模态聊天补全
-    """
+    """消息类 - 用于构建 LLM 调用时的消息列表"""
     def __init__(self, role: str, content: str):
         self.role = role
         self.content = content
@@ -210,9 +121,6 @@ class BaseAIService:
     新增provider只需在配置文件中添加配置，零代码修改！
     """
     
-    # 模型格式缓存：key=model_name, value=True(数组)/False(字符串) - 小健 2026-05-16
-    _model_format_cache: Dict[str, bool] = {}
-
     def __init__(self, api_key: str, model: str, api_base: str, provider: str = "", timeout: int = 60,
                  max_tokens: int = 4096, temperature: float = 0.7, seed: Optional[int] = None):
         self.api_key = api_key
@@ -287,16 +195,13 @@ class BaseAIService:
         self._cancelled = False
         self._current_response = None
     
-    def _build_messages(self, message: str, history: Optional[List[Message]] = None, array_format: bool = True) -> List[Dict]:
-        """构建消息列表 - 小健 2026-05-16 添加数组格式支持(先试数组，失败退回到字符串)"""
+    def _build_messages(self, message: str, history: Optional[List[Message]] = None) -> List[Dict]:
+        """构建消息列表"""
         messages = []
         if history:
             for msg in history:
-                msg_dict = msg.to_dict()
-                if array_format and isinstance(msg_dict.get("content"), str):
-                    msg_dict["content"] = _convert_content(msg_dict["content"], True)
-                messages.append(msg_dict)
-        messages.append({"role": "user", "content": _convert_content(message, array_format)})
+                messages.append(msg.to_dict())
+        messages.append({"role": "user", "content": message})
         return messages
     
     async def chat(self, message: str, history: Optional[List[Message]] = None) -> ChatResponse:
@@ -346,132 +251,229 @@ class BaseAIService:
             return ChatResponse(content="", model=self.model, provider=self.provider, error=str(e))
     
     async def chat_stream(self, message: str, history: Optional[List[Message]] = None) -> AsyncGenerator[StreamChunk, None]:
-        """发送对话请求（流式返回）- 小健 2026-05-16 先试数组格式，记住结果后续复用"""
+        """发送对话请求（流式返回）"""
         self.reset_cancel()
+        messages = self._build_messages(message, history)
         
-        # 查缓存：之前试过这个模型吗？
-        cached_array = self._model_format_cache.get(self.model)
+        logger.info(f"[LLM Request] model={self.model}, messages数量={len(messages)}, 首条消息={messages[0] if messages else '无'}")
         
-        # 格式错误重试：最多试两种格式
-        formats_to_try = [True, False] if cached_array is None else [cached_array, not cached_array]
-        
-        last_error = None
-        for attempt, is_array in enumerate(formats_to_try):
-            messages = self._build_messages(message, history, array_format=is_array)
-            fmt_label = "数组" if is_array else "字符串"
-            logger.info(f"[LLM Request] model={self.model}, format={fmt_label}, messages={len(messages)}")
-            
-            try:
-                async with self.client.stream(
-                    "POST",
-                    f"{self.api_base}/chat/completions",
-                    headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-                    json=self._build_request_body(messages)
-                ) as response:
-                    self._current_response = response
-                    
-                    if self._cancelled:
-                        await response.aclose()
-                        yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
-                        return
-                    
-                    if response.status_code != 200:
+        try:
+            async with self.client.stream(
+                "POST",
+                f"{self.api_base}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                },
+                json=self._build_request_body(messages)
+            ) as response:
+                self._current_response = response
+                
+                # 【修复】发送请求后立即检查取消标志，避免14秒延迟
+                if self._cancelled:
+                    logger.info("[chat_stream] 请求发送后立即检测到取消，中断流式响应")
+                    # 【修复 2026-04-30 小沈】异步流用aclose()，不能用同步close()
+                    await response.aclose()
+                    yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
+                    return
+                
+                if response.status_code != 200:
+                    error_body = ""
+                    try:
                         error_body = await response.aread()
                         error_text = error_body.decode("utf-8", errors="ignore")
-                        logger.error(f"[chat_stream] HTTP {response.status_code} error: {error_text[:200]}")
-                        
-                        # 格式错误？尝试另一种格式
-                        if _is_format_error(error_text):
-                            self._model_format_cache[self.model] = not is_array
-                            last_error = error_text[:200]
-                            continue  # 试下一种格式
-                        
-                        yield StreamChunk(content="", model=self.model, is_done=True,
-                            stream_error=f"API Error: {response.status_code}, {error_text[:200]}", stream_error_type="api_error")
-                        return
-                    
-                    # 成功！记住这个格式
-                    if self.model not in self._model_format_cache:
-                        self._model_format_cache[self.model] = is_array
-                    
-                    # 处理流式响应
-                    line_iterator = response.aiter_lines()
-                    _reasoning_content_total = 0
-                    _content_total = 0
-                    
-                    while True:
+                        logger.error(f"[chat_stream] HTTP {response.status_code} error response: {error_text[:500]}")
                         try:
-                            line = await asyncio.wait_for(line_iterator.__anext__(), timeout=1.0)
-                        except asyncio.TimeoutError:
-                            if self._cancelled:
-                                yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
+                            error_json = json.loads(error_text)
+                            error_msg = error_json.get("error", {}).get("message", "")
+                            if error_msg:
+                                yield StreamChunk(content="", model=self.model, is_done=True, 
+                                    stream_error=f"API Error: {response.status_code}, {error_text}",  # 【修复 2026-04-10】传递完整错误信息
+                                    stream_error_type="api_error")
                                 return
-                            continue
-                        except StopAsyncIteration:
-                            break
-                        
+                        except json.JSONDecodeError:
+                            pass
+                        yield StreamChunk(content="", model=self.model, is_done=True,
+                            stream_error=f"HTTP {response.status_code}: {error_text[:200]}",
+                            stream_error_type="http_error")
+                    except Exception as e:
+                        logger.error(f"[chat_stream] Failed to read error response: {e}")
+                        yield StreamChunk(content="", model=self.model, is_done=True,
+                            stream_error=f"HTTP {response.status_code} error",
+                            stream_error_type="http_error")
+                    return
+                
+                # 【问题2修复】使用wait_for定期检查，每1秒超时检查一次_cancelled标志
+                # 而不是等下一个token（可能30秒）
+                # 【小沈修复 2026-04-21】修复StreamConsumed错误：使用单个迭代器，避免重复创建
+                line_iterator = response.aiter_lines()
+                
+                # 【修复 2026-05-05 小沈】统计reasoning_content和content的接收情况
+                _reasoning_content_total = 0
+                _content_total = 0
+                
+                while True:
+                    try:
+                        line = await asyncio.wait_for(line_iterator.__anext__(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        # 超时了，检查取消标志
                         if self._cancelled:
+                            logger.info("[chat_stream] 检测到取消标志（1秒超时检查），中断流式响应")
                             yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
                             return
-                        if not line or line.strip() == "":
-                            continue
-                        
-                        if line.startswith("data: "):
-                            data_str = line[6:]
-                        elif line.startswith("data:"):
-                            data_str = line[5:]
-                        else:
-                            continue
-                        
-                        if data_str.strip() == "[DONE]":
-                            logger.info(f"[chat_stream] 流结束[DONE], model={self.model}")
-                            yield StreamChunk(content="", model=self.model, is_done=True)
-                            return
-                        
-                        try:
-                            data = json.loads(data_str)
-                            for choice in data.get("choices", []):
-                                delta = choice.get("delta", {})
-                                content = delta.get("content", "") or ""
-                                reasoning = delta.get("reasoning_content", "") or ""
-                                if content:
-                                    _content_total += len(content)
-                                    yield StreamChunk(content=content, model=self.model, is_done=False, is_reasoning=False)
-                                if reasoning:
-                                    _reasoning_content_total += len(reasoning)
-                                    if _reasoning_content_total == len(reasoning):
-                                        logger.info(f"[chat_stream] 首次收到reasoning_content, model={self.model}")
-                                    yield StreamChunk(content=reasoning, model=self.model, is_done=False, is_reasoning=True)
-                        except json.JSONDecodeError:
-                            continue
+                        # 没取消，继续等待
+                        continue
+                    except StopAsyncIteration:
+                        break
                     
-                    logger.info(f"[chat_stream] 流正常结束, model={self.model}")
-                    yield StreamChunk(content="", model=self.model, is_done=True)
-                    return
+                    if self._cancelled:
+                        logger.info("[chat_stream] 检测到取消标志，中断流式响应")
+                        yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
+                        return
+                    if not line or line.strip() == "":
+                        continue
                     
-            except httpx.TimeoutException:
-                yield StreamChunk(content="", model=self.model, is_done=True, stream_error="请求超时，请重试", stream_error_type="timeout_error")
-                return
-            except (httpx.ReadError, httpcore.ReadError):
-                yield StreamChunk(content="", model=self.model, is_done=True, stream_error="读取响应失败，请重试", stream_error_type="read_error")
-                return
-            except (httpx.ConnectError, httpcore.ConnectError):
-                yield StreamChunk(content="", model=self.model, is_done=True, stream_error="连接失败，请检查网络", stream_error_type="connect_error")
-                return
-            except httpx.HTTPStatusError as e:
-                yield StreamChunk(content="", model=self.model, is_done=True, stream_error=f"HTTP {e.response.status_code}: {str(e)[:100]}", stream_error_type="http_error")
-                return
-            except Exception as e:
-                logger.error(f"[chat_stream] 异常: {e}")
-                yield StreamChunk(content="", model=self.model, is_done=True, stream_error=str(e)[:200], stream_error_type="unknown_error")
-                return
-        
-        # 所有格式都试完了
-        yield StreamChunk(content="", model=self.model, is_done=True,
-            stream_error=f"API Error: {last_error}" if last_error else "服务调用失败",
-            stream_error_type="api_error")
-
-
+                    if line.startswith("data: "):
+                        data_str = line[6:]
+                    elif line.startswith("data:"):
+                        data_str = line[5:]
+                    else:
+                        continue
+                    
+                    if data_str.strip() == "[DONE]":
+                        # 【修复 2026-05-05 小沈】日志：记录流结束时的统计信息
+                        logger.info(
+                            f"[chat_stream] 流结束[DONE], model={self.model}, "
+                            f"content_total={_content_total}, "
+                            f"reasoning_content_total={_reasoning_content_total}"
+                        )
+                        yield StreamChunk(content="", model=self.model, is_done=True)
+                        return
+                    
+                    try:
+                        data = json.loads(data_str)
+                        choices = data.get("choices", [])
+                        
+                        if choices:
+                            delta = choices[0].get("delta", {})
+                            content = delta.get("content", "") or ""
+                            # 【修复 2026-05-05 小沈】处理thinking模型的reasoning_content
+                            # thinking模型(如big-pickle, LongCat-Flash-Thinking)在思考阶段
+                            # 将输出放在reasoning_content中，content为空。若不处理，
+                            # chat()聚合后full_content为空，导致"AI服务返回空响应"
+                            reasoning_content = delta.get("reasoning_content", "") or ""
+                            
+                            if content:
+                                _content_total += len(content)
+                                yield StreamChunk(
+                                    content=content,
+                                    model=self.model,
+                                    is_done=False,
+                                    is_reasoning=False
+                                )
+                            
+                            # 【修复 2026-05-05 小沈】reasoning_content也作为content输出
+                            # 对于Agent路径(TextStrategy)，reasoning_content中的内容
+                            # 才是模型实际的"思考+输出"，必须收集到full_content中
+                            if reasoning_content:
+                                _reasoning_content_total += len(reasoning_content)
+                                # 日志：首次收到reasoning_content时记录原始delta信息
+                                if _reasoning_content_total == len(reasoning_content):
+                                    logger.info(
+                                        f"[chat_stream] 首次收到reasoning_content, "
+                                        f"model={self.model}, "
+                                        f"delta_keys={list(delta.keys())}, "
+                                        f"content={content!r}, "
+                                        f"reasoning_content前100={reasoning_content[:100]!r}"
+                                    )
+                                yield StreamChunk(
+                                    content=reasoning_content,
+                                    model=self.model,
+                                    is_done=False,
+                                    is_reasoning=True
+                                )
+                    except json.JSONDecodeError:
+                        continue
+                
+                # 【修复 2026-05-05 小沈】日志：记录流正常结束时的统计信息
+                logger.info(
+                    f"[chat_stream] 流正常结束(迭代器耗尽), model={self.model}, "
+                    f"content_total={_content_total}, "
+                    f"reasoning_content_total={_reasoning_content_total}"
+                )
+                yield StreamChunk(content="", model=self.model, is_done=True)
+                
+        except httpx.TimeoutException:
+            # 【小沈修复 2026-04-01】细化错误分类：超时
+            yield StreamChunk(
+                content="", 
+                model=self.model, 
+                is_done=True,
+                stream_error="请求超时，请重试",
+                stream_error_type="timeout_error"
+            )
+        except (httpx.ReadError, httpcore.ReadError):
+            yield StreamChunk(
+                content="", 
+                model=self.model, 
+                is_done=True,
+                stream_error="读取响应失败，请重试",
+                stream_error_type="read_error"
+            )
+        except (httpx.ConnectError, httpcore.ConnectError):
+            yield StreamChunk(
+                content="", 
+                model=self.model, 
+                is_done=True,
+                stream_error="连接失败，请检查网络",
+                stream_error_type="connect_error"
+            )
+        except (httpx.ProtocolError, httpcore.ProtocolError, httpx.RemoteProtocolError, httpcore.RemoteProtocolError, httpx.LocalProtocolError, httpcore.LocalProtocolError):
+            yield StreamChunk(
+                content="", 
+                model=self.model, 
+                is_done=True,
+                stream_error="协议错误，请重试",
+                stream_error_type="protocol_error"
+            )
+        except (httpx.ProxyError, httpcore.ProxyError):
+            yield StreamChunk(
+                content="", 
+                model=self.model, 
+                is_done=True,
+                stream_error="代理错误，请检查网络配置",
+                stream_error_type="proxy_error"
+            )
+        except (httpx.WriteError, httpcore.WriteError):
+            yield StreamChunk(
+                content="", 
+                model=self.model, 
+                is_done=True,
+                stream_error="发送请求失败",
+                stream_error_type="write_error"
+            )
+        except (httpx.NetworkError, httpcore.NetworkError):
+            yield StreamChunk(
+                content="", 
+                model=self.model, 
+                is_done=True,
+                stream_error="网络错误，请检查网络连接",
+                stream_error_type="network_error"
+            )
+        except Exception as e:
+            import traceback
+            error_type_name = type(e).__name__
+            logger.error(f"[BaseAIService] 流式调用失败：{str(e)}, 异常类型: {error_type_name}, 堆栈: {traceback.format_exc()}")
+            yield StreamChunk(
+                content="", 
+                model=self.model, 
+                is_done=True,
+                stream_error=f"AI 服务调用失败: {error_type_name}",
+                stream_error_type="unknown_error"
+            )
+        finally:
+            self._current_response = None
+    
     async def validate(self) -> bool:
         """验证API Key是否有效 - 已废弃，请使用 init_model_select.py 中的接口实现"""
         raise NotImplementedError("validate() 已废弃，请使用 /api/v1/chat/validate 接口")
@@ -490,99 +492,78 @@ class BaseAIService:
         """发送对话请求（使用 Function Calling）
         
         【小沈优化 2026-04-21】使用后台任务+心跳检查，1秒内响应取消
-        【小健 2026-05-16】使用格式缓存，避免Omni模型400错误
         """
         try:
-            # 查缓存：之前试过这个模型吗？
-            cached_array = self._model_format_cache.get(self.model)
-            # 格式错误重试：最多试两种格式
-            formats_to_try = [True, False] if cached_array is None else [cached_array, not cached_array]
+            messages = self._build_messages(message, history)
             
-            last_error = None
-            for is_array in formats_to_try:
-                messages = self._build_messages(message, history, array_format=is_array)
-                
-                request_json = {
-                    "model": self.model,
-                    "messages": messages
-                }
-                
-                if tools:
-                    request_json["tools"] = tools
-                    request_json["tool_choice"] = tool_choice
-                
-                fmt_label = "数组" if is_array else "字符串"
-                logger.info(
-                    f"[chat_with_tools] model={self.model}, "
-                    f"format={fmt_label}, "
-                    f"messages数量={len(messages)}, "
-                    f"tools数量={len(tools) if tools else 0}"
+            request_json = {
+                "model": self.model,
+                "messages": messages
+            }
+            
+            if tools:
+                request_json["tools"] = tools
+                request_json["tool_choice"] = tool_choice
+            
+            logger.info(
+                f"[chat_with_tools] model={self.model}, "
+                f"messages数量={len(messages)}, "
+                f"tools数量={len(tools) if tools else 0}"
+            )
+            
+            # 【小沈优化 2026-04-21】使用后台任务+心跳检查，支持1秒内响应取消
+            request_task = asyncio.ensure_future(
+                self.client.post(
+                    f"{self.api_base}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json=request_json
                 )
+            )
+            
+            try:
+                while not request_task.done():
+                    # 等待1秒或直到任务完成
+                    try:
+                        await asyncio.wait_for(asyncio.shield(request_task), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        # 检查是否被取消
+                        if self._cancelled:
+                            logger.info("[chat_with_tools] 检测到取消，中断请求")
+                            request_task.cancel()
+                            try:
+                                await request_task
+                            except asyncio.CancelledError:
+                                pass
+                            return ChatResponse(
+                                content="",
+                                model=self.model,
+                                provider=self.provider,
+                                error="任务已取消"
+                            )
+                        continue
                 
-                # 【小沈优化 2026-04-21】使用后台任务+心跳检查，支持1秒内响应取消
-                request_task = asyncio.ensure_future(
-                    self.client.post(
-                        f"{self.api_base}/chat/completions",
-                        headers={
-                            "Authorization": f"Bearer {self.api_key}",
-                            "Content-Type": "application/json"
-                        },
-                        json=request_json
-                    )
+                response = await request_task
+                
+            except asyncio.CancelledError:
+                return ChatResponse(
+                    content="",
+                    model=self.model,
+                    provider=self.provider,
+                    error="任务已取消"
                 )
-                
-                try:
-                    while not request_task.done():
-                        # 等待1秒或直到任务完成
-                        try:
-                            await asyncio.wait_for(asyncio.shield(request_task), timeout=1.0)
-                        except asyncio.TimeoutError:
-                            # 检查是否被取消
-                            if self._cancelled:
-                                logger.info("[chat_with_tools] 检测到取消，中断请求")
-                                request_task.cancel()
-                                try:
-                                    await request_task
-                                except asyncio.CancelledError:
-                                    pass
-                                return ChatResponse(
-                                    content="",
-                                    model=self.model,
-                                    provider=self.provider,
-                                    error="任务已取消"
-                                )
-                            continue
-                    
-                    response = await request_task
-                    
-                except asyncio.CancelledError:
-                    return ChatResponse(
-                        content="",
-                        model=self.model,
-                        provider=self.provider,
-                        error="任务已取消"
-                    )
-                
-                if response.status_code != 200:
-                    error_text = response.text
-                    logger.error(f"[chat_with_tools] API Error: {response.status_code}, {error_text[:200]}")
-                    
-                    # 格式错误？尝试另一种格式
-                    if _is_format_error(error_text):
-                        self._model_format_cache[self.model] = not is_array
-                        last_error = error_text[:200]
-                        continue  # 试下一种格式
-                    
-                    return ChatResponse(
-                        content="",
-                        model=self.model,
-                        provider=self.provider,
-                        error=f"API Error: {response.status_code}, {error_text}"
-                    )
-                
-                # 成功！记住这个格式
-                if self.model not in self._model_format_cache:
-                    self._model_format_cache[self.model] = is_array
+            
+            if response.status_code != 200:
+                error_text = response.text
+                logger.error(f"[chat_with_tools] API Error: {response.status_code}, {error_text}")
+                return ChatResponse(
+                    content="",
+                    model=self.model,
+                    provider=self.provider,
+                    error=f"API Error: {response.status_code}, {error_text}"
+                )
             
             data = response.json()
             choices = data.get("choices", [])
@@ -654,81 +635,54 @@ class BaseAIService:
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto"
     ) -> AsyncGenerator[StreamChunk, None]:
-        """发送对话请求（使用 Function Calling，流式返回）
-        
-        【小健 2026-05-16】使用格式缓存，避免Omni模型400错误
-        """
+        """发送对话请求（使用 Function Calling，流式返回）"""
         self.reset_cancel()
         
         try:
-            # 查缓存：之前试过这个模型吗？
-            cached_array = self._model_format_cache.get(self.model)
-            # 格式错误重试：最多试两种格式
-            formats_to_try = [True, False] if cached_array is None else [cached_array, not cached_array]
+            messages = self._build_messages(message, history)
             
-            last_error = None
-            for is_array in formats_to_try:
-                messages = self._build_messages(message, history, array_format=is_array)
+            request_json = {
+                "model": self.model,
+                "messages": messages,
+                "stream": True
+            }
+            
+            if tools:
+                request_json["tools"] = tools
+                request_json["tool_choice"] = tool_choice
+            
+            logger.info(
+                f"[chat_with_tools_stream] model={self.model}, "
+                f"tools数量={len(tools) if tools else 0}"
+            )
+            
+            async with self.client.stream(
+                "POST",
+                f"{self.api_base}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                },
+                json=request_json
+            ) as response:
+                self._current_response = response
                 
-                request_json = {
-                    "model": self.model,
-                    "messages": messages,
-                    "stream": True
-                }
+                # 【修复】发送请求后立即检查取消标志，避免延迟
+                if self._cancelled:
+                    logger.info("[chat_with_tools_stream] 请求发送后立即检测到取消")
+                    # 【修复 2026-04-30 小沈】异步流用aclose()
+                    await response.aclose()
+                    yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
+                    return
                 
-                if tools:
-                    request_json["tools"] = tools
-                    request_json["tool_choice"] = tool_choice
-                
-                fmt_label = "数组" if is_array else "字符串"
-                logger.info(
-                    f"[chat_with_tools_stream] model={self.model}, "
-                    f"format={fmt_label}, "
-                    f"tools数量={len(tools) if tools else 0}"
-                )
-                
-                async with self.client.stream(
-                    "POST",
-                    f"{self.api_base}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json=request_json
-                ) as response:
-                    self._current_response = response
-                    
-                    # 【修复】发送请求后立即检查取消标志，避免延迟
-                    if self._cancelled:
-                        logger.info("[chat_with_tools_stream] 请求发送后立即检测到取消")
-                        # 【修复 2026-04-30 小沈】异步流用aclose()
-                        await response.aclose()
-                        yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
-                        return
-                    
-                    if response.status_code != 200:
-                        error_body = await response.aread()
-                        error_text = error_body.decode("utf-8", errors="ignore")
-                        logger.error(f"[chat_with_tools_stream] HTTP {response.status_code} error: {error_text[:200]}")
-                        
-                        # 格式错误？尝试另一种格式
-                        if _is_format_error(error_text):
-                            self._model_format_cache[self.model] = not is_array
-                            last_error = error_text[:200]
-                            continue  # 试下一种格式
-                        
-                        yield StreamChunk(
-                            content="",
-                            model=self.model,
-                            is_done=True,
-                            stream_error=f"API Error: {response.status_code}, {error_text[:200]}",
-                            stream_error_type="api_error"
-                        )
-                        return
-                    
-                    # 成功！记住这个格式
-                    if self.model not in self._model_format_cache:
-                        self._model_format_cache[self.model] = is_array
+                if response.status_code != 200:
+                    yield StreamChunk(
+                        content="",
+                        model=self.model,
+                        is_done=True,
+                        stream_error=f"API Error: {response.status_code}"
+                    )
+                    return
                 
                 # 【问题2修复】同样使用wait_for定期检查，每1秒超时
                 # 【小沈修复 2026-04-21】修复StreamConsumed错误：使用单个迭代器，避免重复创建
@@ -850,64 +804,41 @@ class BaseAIService:
         history: Optional[List[Message]] = None,
         response_format: Optional[Dict[str, Any]] = None
     ) -> ChatResponse:
-        """发送对话请求（使用 Structured Outputs response_format）
-        
-        【小健 2026-05-16】使用格式缓存，避免Omni模型400错误
-        """
+        """发送对话请求（使用 Structured Outputs response_format）"""
         try:
-            # 查缓存：之前试过这个模型吗？
-            cached_array = self._model_format_cache.get(self.model)
-            # 格式错误重试：最多试两种格式
-            formats_to_try = [True, False] if cached_array is None else [cached_array, not cached_array]
+            messages = self._build_messages(message, history)
             
-            last_error = None
-            for is_array in formats_to_try:
-                messages = self._build_messages(message, history, array_format=is_array)
-                
-                request_json: Dict[str, Any] = {
-                    "model": self.model,
-                    "messages": messages
-                }
-                
-                if response_format:
-                    request_json["response_format"] = response_format
-                
-                fmt_label = "数组" if is_array else "字符串"
-                logger.info(
-                    f"[chat_with_response_format] model={self.model}, "
-                    f"format={fmt_label}, "
-                    f"response_format={'provided' if response_format else 'None'}"
+            request_json: Dict[str, Any] = {
+                "model": self.model,
+                "messages": messages
+            }
+            
+            if response_format:
+                request_json["response_format"] = response_format
+            
+            logger.info(
+                f"[chat_with_response_format] model={self.model}, "
+                f"response_format={'provided' if response_format else 'None'}"
+            )
+            
+            response = await self.client.post(
+                f"{self.api_base}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                },
+                json=request_json
+            )
+            
+            if response.status_code != 200:
+                error_text = response.text
+                logger.error(f"[chat_with_response_format] API Error: {response.status_code}, {error_text}")
+                return ChatResponse(
+                    content="",
+                    model=self.model,
+                    provider=self.provider,
+                    error=f"API Error: {response.status_code}"
                 )
-                
-                response = await self.client.post(
-                    f"{self.api_base}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json=request_json
-                )
-                
-                if response.status_code != 200:
-                    error_text = response.text
-                    logger.error(f"[chat_with_response_format] API Error: {response.status_code}, {error_text[:200]}")
-                    
-                    # 格式错误？尝试另一种格式
-                    if _is_format_error(error_text):
-                        self._model_format_cache[self.model] = not is_array
-                        last_error = error_text[:200]
-                        continue  # 试下一种格式
-                    
-                    return ChatResponse(
-                        content="",
-                        model=self.model,
-                        provider=self.provider,
-                        error=f"API Error: {response.status_code}, {error_text}"
-                    )
-                
-                # 成功！记住这个格式
-                if self.model not in self._model_format_cache:
-                    self._model_format_cache[self.model] = is_array
             
             data = response.json()
             choices = data.get("choices", [])
