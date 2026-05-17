@@ -4,6 +4,7 @@
 
 【创建时间】2026-05-02 小沈
 【设计依据】按文档第8.3节 Tool 80-82 定义
+【重构 2026-05-18 小健】8个旧函数抽取为内部函数，新增read_document/write_document路由函数
 
 【重要】新函数增加规范 - 小沈 2026-05-04
 新增函数时必须同步修改以下3个文件：
@@ -12,17 +13,15 @@
 3. *_register.py: 显式注册（description + examples + input_model）
 
 包含：
-- read_pdf: 读取PDF文件并提取文本内容
-- read_docx: 读取Word文档并提取文本内容
-- read_xlsx: 读取Excel文件并提取表格数据
-- write_docx: 写入Word文档
-- write_xlsx: 写入Excel文件
-- read_pptx: 读取PPT幻灯片
-- write_pdf: 写入PDF文档
+- _read_pdf / _read_docx / _read_xlsx / _read_pptx: 内部读取函数
+- _write_docx / _write_xlsx / _write_pdf / _write_pptx: 内部写入函数
+- read_document: 统一读取路由（按后缀自动选择解析器）
+- write_document: 统一写入路由（按后缀自动选择写入器）
 - convert_document: 文档格式转换
 
 Author: 小沈 - 2026-05-02
 【新增 2026-05-05 小沈】write_pdf, convert_document
+【重构 2026-05-18 小健】8合2路由重构
 """
 
 import importlib
@@ -30,13 +29,8 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 
 from app.services.tools.document.document_schema import (
-    ReadPdfInput,
-    ReadDocxInput,
-    ReadXlsxInput,
-    WriteDocxInput,
-    WriteXlsxInput,
-    ReadPptxInput,
-    WritePptxInput,
+    ReadDocumentInput,
+    WriteDocumentInput,
 )
 
 
@@ -68,13 +62,17 @@ def _parse_pages(pages_str: str) -> List[int]:
     return sorted(set(result))
 
 
-def read_pdf(
+# ============================================================
+# 内部读取函数（原 read_pdf/read_docx/read_xlsx/read_pptx 逻辑）
+# ============================================================
+
+def _read_pdf(
     file_path: str,
     pages: str = None,
     extract_images: bool = False,
     extract_tables: bool = False
 ) -> Dict[str, Any]:
-    """读取PDF文件并提取文本内容 - 小沈 2026-05-02"""
+    """读取PDF文件并提取文本内容（内部函数） - 小健 2026-05-18"""
     if not _check_module("pdfplumber"):
         return {
             "code": "ERR_NO_PDFPLUMBER",
@@ -113,7 +111,6 @@ def read_pdf(
                 all_text.append(f"--- 第 {page_num} 页 ---\n{text}")
                 pages_read.append(page_num)
                 
-                # 提取表格
                 if extract_tables:
                     tables = page.extract_tables()
                     if tables:
@@ -133,7 +130,6 @@ def read_pdf(
         if extract_tables and tables_data:
             result_data["tables"] = tables_data
 
-        # 【修复 小健 2026-05-16】文档内容全部给LLM，不截断
         full_text = result_data["text"]
         _llm = {
             "文件": file_path,
@@ -155,11 +151,11 @@ def read_pdf(
         }
 
 
-def read_docx(
+def _read_docx(
     file_path: str,
     extract_tables: bool = False
 ) -> Dict[str, Any]:
-    """读取Word文档并提取文本内容 - 小沈 2026-05-02"""
+    """读取Word文档并提取文本内容（内部函数） - 小健 2026-05-18"""
     if not _check_module("docx"):
         return {
             "code": "ERR_NO_DOCX",
@@ -198,7 +194,6 @@ def read_docx(
             result_data["tables"] = tables_data
             result_data["table_count"] = len(tables_data)
         
-        # 【修复 小健 2026-05-16】文档内容全部给LLM，不截断
         _llm = {
             "文件": file_path,
             "段落数": len(paragraphs),
@@ -219,15 +214,13 @@ def read_docx(
         }
 
 
-def read_xlsx(
+def _read_xlsx(
     file_path: str,
     sheet_name: str = None,
     max_rows: int = 1000,
     header: bool = True
 ) -> Dict[str, Any]:
-    """读取Excel文件并提取表格数据 - 小沈 2026-05-02, 修正 2026-05-05
-    【修正】删除未使用的index_col参数；header=False时正确处理首行数据
-    """
+    """读取Excel文件并提取表格数据（内部函数） - 小健 2026-05-18"""
     if not _check_module("openpyxl"):
         return {
             "code": "ERR_NO_OPENPYXL",
@@ -300,128 +293,11 @@ def read_xlsx(
         }
 
 
-def write_docx(
-    file_path: str,
-    content: str = None,
-    paragraphs: list = None,
-    title: str = None,
-    table_data: list = None
-) -> Dict[str, Any]:
-    """写入Word文档 - 小沈 2026-05-04"""
-    if not _check_module("docx"):
-        return {
-            "code": "ERR_NO_DOCX",
-            "data": None,
-            "message": "python-docx库未安装，请先执行: pip install python-docx"
-        }
-
-    try:
-        import docx
-        from docx import Document
-        from docx.shared import Inches, Pt
-
-        doc = Document()
-        
-        # 添加标题
-        if title:
-            doc.add_heading(title, 0)
-        
-        # 添加段落列表
-        if paragraphs:
-            for para in paragraphs:
-                doc.add_paragraph(para)
-        
-        # 添加纯文本内容
-        if content:
-            doc.add_paragraph(content)
-        
-        # 添加表格
-        if table_data:
-            for tbl in table_data:
-                if tbl and len(tbl) > 0:
-                    rows = len(tbl)
-                    cols = len(tbl[0]) if tbl[0] else 0
-                    if rows > 0 and cols > 0:
-                        table = doc.add_table(rows=rows, cols=cols)
-                        for i, row_data in enumerate(tbl):
-                            for j, cell_data in enumerate(row_data):
-                                table.rows[i].cells[j].text = str(cell_data if cell_data is not None else "")
-        
-        # 保存文档
-        path = Path(file_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        doc.save(path)
-        
-        return {
-            "code": "SUCCESS",
-            "data": {"file_path": str(path)},
-            "message": f"成功写入Word文档: {file_path}"
-        }
-    except Exception as e:
-        return {
-            "code": "ERR_WRITE_DOCX",
-            "data": None,
-            "message": f"写入Word文档失败: {str(e)}"
-        }
-
-
-def write_xlsx(
-    file_path: str,
-    data: dict,
-    sheet_name: str = "Sheet1"
-) -> Dict[str, Any]:
-    """写入Excel文件 - 小沈 2026-05-04"""
-    if not _check_module("openpyxl"):
-        return {
-            "code": "ERR_NO_OPENPYXL",
-            "data": None,
-            "message": "openpyxl库未安装，请先执行: pip install openpyxl"
-        }
-
-    try:
-        from openpyxl import Workbook
-        from openpyxl.styles import Font, Alignment
-
-        wb = Workbook()
-        ws = wb.active
-        ws.title = sheet_name
-        
-        # 写入数据
-        if "headers" in data and data["headers"]:
-            headers = data["headers"]
-            for col_idx, header in enumerate(headers, 1):
-                cell = ws.cell(row=1, column=col_idx, value=header)
-                cell.font = Font(bold=True)
-                cell.alignment = Alignment(horizontal="center")
-        
-        if "rows" in data and data["rows"]:
-            for row_idx, row_data in enumerate(data["rows"], 2):
-                for col_idx, cell_data in enumerate(row_data, 1):
-                    ws.cell(row=row_idx, column=col_idx, value=cell_data)
-        
-        # 保存文档
-        path = Path(file_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        wb.save(path)
-        
-        return {
-            "code": "SUCCESS",
-            "data": {"file_path": str(path), "row_count": len(data.get("rows", []))},
-            "message": f"成功写入Excel文件: {file_path}"
-        }
-    except Exception as e:
-        return {
-            "code": "ERR_WRITE_XLSX",
-            "data": None,
-            "message": f"写入Excel文件失败: {str(e)}"
-        }
-
-
-def read_pptx(
+def _read_pptx(
     file_path: str,
     extract_notes: bool = False
 ) -> Dict[str, Any]:
-    """读取PPT幻灯片 - 小沈 2026-05-04"""
+    """读取PPT幻灯片（内部函数） - 小健 2026-05-18"""
     if not _check_module("pptx"):
         return {
             "code": "ERR_NO_PPTX",
@@ -458,7 +334,6 @@ def read_pptx(
                 "text": "\n".join(slide_text)
             })
             
-            # 提取备注
             if extract_notes and slide.has_notes_slide:
                 notes = slide.notes_slide.notes_text_frame.text.strip()
                 if notes:
@@ -475,7 +350,6 @@ def read_pptx(
         if extract_notes and notes_data:
             result_data["notes"] = notes_data
 
-        # 【修复 小健 2026-05-16】PPT内容全部给LLM，不截断
         _total_text = sum(len(s.get("text", "")) for s in slides_data)
         _llm = {
             "文件": file_path,
@@ -500,14 +374,128 @@ def read_pptx(
         }
 
 
-def write_pdf(
+# ============================================================
+# 内部写入函数（原 write_docx/write_xlsx/write_pdf/write_pptx 逻辑）
+# ============================================================
+
+def _write_docx(
+    file_path: str,
+    content: str = None,
+    paragraphs: list = None,
+    title: str = None,
+    table_data: list = None
+) -> Dict[str, Any]:
+    """写入Word文档（内部函数） - 小健 2026-05-18"""
+    if not _check_module("docx"):
+        return {
+            "code": "ERR_NO_DOCX",
+            "data": None,
+            "message": "python-docx库未安装，请先执行: pip install python-docx"
+        }
+
+    try:
+        import docx
+        from docx import Document
+        from docx.shared import Inches, Pt
+
+        doc = Document()
+        
+        if title:
+            doc.add_heading(title, 0)
+        
+        if paragraphs:
+            for para in paragraphs:
+                doc.add_paragraph(para)
+        
+        if content:
+            doc.add_paragraph(content)
+        
+        if table_data:
+            for tbl in table_data:
+                if tbl and len(tbl) > 0:
+                    rows = len(tbl)
+                    cols = len(tbl[0]) if tbl[0] else 0
+                    if rows > 0 and cols > 0:
+                        table = doc.add_table(rows=rows, cols=cols)
+                        for i, row_data in enumerate(tbl):
+                            for j, cell_data in enumerate(row_data):
+                                table.rows[i].cells[j].text = str(cell_data if cell_data is not None else "")
+        
+        path = Path(file_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        doc.save(path)
+        
+        return {
+            "code": "SUCCESS",
+            "data": {"file_path": str(path)},
+            "message": f"成功写入Word文档: {file_path}"
+        }
+    except Exception as e:
+        return {
+            "code": "ERR_WRITE_DOCX",
+            "data": None,
+            "message": f"写入Word文档失败: {str(e)}"
+        }
+
+
+def _write_xlsx(
+    file_path: str,
+    data: dict,
+    sheet_name: str = "Sheet1"
+) -> Dict[str, Any]:
+    """写入Excel文件（内部函数） - 小健 2026-05-18"""
+    if not _check_module("openpyxl"):
+        return {
+            "code": "ERR_NO_OPENPYXL",
+            "data": None,
+            "message": "openpyxl库未安装，请先执行: pip install openpyxl"
+        }
+
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, Alignment
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = sheet_name
+        
+        if "headers" in data and data["headers"]:
+            headers = data["headers"]
+            for col_idx, header in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col_idx, value=header)
+                cell.font = Font(bold=True)
+                cell.alignment = Alignment(horizontal="center")
+        
+        if "rows" in data and data["rows"]:
+            for row_idx, row_data in enumerate(data["rows"], 2):
+                for col_idx, cell_data in enumerate(row_data, 1):
+                    ws.cell(row=row_idx, column=col_idx, value=cell_data)
+        
+        path = Path(file_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        wb.save(path)
+        
+        return {
+            "code": "SUCCESS",
+            "data": {"file_path": str(path), "row_count": len(data.get("rows", []))},
+            "message": f"成功写入Excel文件: {file_path}"
+        }
+    except Exception as e:
+        return {
+            "code": "ERR_WRITE_XLSX",
+            "data": None,
+            "message": f"写入Excel文件失败: {str(e)}"
+        }
+
+
+def _write_pdf(
     file_path: str,
     title: str = None,
     content: str = None,
     paragraphs: list = None,
     table_data: list = None
 ) -> Dict[str, Any]:
-    """写入PDF文档 - 小沈 2026-05-05"""
+    """写入PDF文档（内部函数） - 小健 2026-05-18"""
     if not _check_module("reportlab"):
         return {
             "code": "ERR_NO_REPORTLAB",
@@ -594,6 +582,135 @@ def write_pdf(
             "data": None,
             "message": f"写入PDF文档失败: {str(e)}"
         }
+
+
+def _write_pptx(
+    file_path: str,
+    title: str = None,
+    slides: list = None
+) -> Dict[str, Any]:
+    """写入PPT幻灯片（内部函数） - 小健 2026-05-18"""
+    if not _check_module("pptx"):
+        return {
+            "code": "ERR_NO_PPTX",
+            "data": None,
+            "message": "python-pptx库未安装，请先执行: pip install python-pptx"
+        }
+    
+    try:
+        from pptx import Presentation
+        from pptx.util import Inches, Pt
+        
+        prs = Presentation()
+        
+        if title:
+            title_slide_layout = prs.slide_layouts[0]
+            slide = prs.slides.add_slide(title_slide_layout)
+            title_shape = slide.shapes.title
+            title_shape.text = title
+        
+        if slides:
+            for slide_data in slides:
+                slide_title = slide_data.get("title", "幻灯片")
+                content = slide_data.get("content", "")
+                
+                content_layout = prs.slide_layouts[1]
+                slide = prs.slides.add_slide(content_layout)
+                
+                if slide.shapes.title:
+                    slide.shapes.title.text = slide_title
+                
+                for shape in slide.shapes:
+                    if shape.has_text_frame and not shape.text_frame.text.strip():
+                        text_frame = shape.text_frame
+                        text_frame.clear()
+                        p = text_frame.paragraphs[0]
+                        p.text = content
+                        p.font.size = Pt(18)
+                        break
+        
+        path = Path(file_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        prs.save(path)
+        
+        return {
+            "code": "SUCCESS",
+            "data": {"file_path": str(path), "slide_count": len(prs.slides)},
+            "message": f"成功写入PPT文件: {file_path}，共 {len(prs.slides)} 页"
+        }
+    except Exception as e:
+        return {
+            "code": "ERR_WRITE_PPTX",
+            "data": None,
+            "message": f"写入PPT文件失败: {str(e)}"
+        }
+
+
+# ============================================================
+# 路由函数 — LLM调用的统一入口
+# ============================================================
+
+def read_document(
+    file_path: str,
+    pages: Optional[str] = None,
+    extract_tables: bool = False,
+    extract_images: bool = False,
+    extract_notes: bool = False,
+    sheet_name: Optional[str] = None,
+    max_rows: int = 1000,
+    header: bool = True,
+) -> Dict[str, Any]:
+    """读取文档内容 — 小健 2026-05-18
+    合并 read_pdf + read_docx + read_pptx + read_xlsx
+    按文件后缀自动路由到对应解析器
+    """
+    path = Path(file_path)
+    suffix = path.suffix.lower()
+    
+    if suffix == ".pdf":
+        return _read_pdf(file_path, pages=pages, extract_tables=extract_tables, extract_images=extract_images)
+    elif suffix == ".docx":
+        return _read_docx(file_path, extract_tables=extract_tables)
+    elif suffix == ".pptx":
+        return _read_pptx(file_path, extract_notes=extract_notes)
+    elif suffix in (".xlsx", ".xls"):
+        return _read_xlsx(file_path, sheet_name=sheet_name, max_rows=max_rows, header=header)
+    else:
+        return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
+                "message": f"不支持的格式: {suffix}。支持: .pdf/.docx/.xlsx/.xls/.pptx"}
+
+
+def write_document(
+    file_path: str,
+    content: Optional[str] = None,
+    paragraphs: Optional[List[str]] = None,
+    title: Optional[str] = None,
+    table_data: Optional[List] = None,
+    data: Optional[Dict[str, Any]] = None,
+    sheet_name: str = "Sheet1",
+    slides: Optional[List[Dict]] = None,
+) -> Dict[str, Any]:
+    """写入文档 — 小健 2026-05-18
+    合并 write_docx + write_xlsx + write_pdf + write_pptx
+    按文件后缀自动路由到对应写入器
+    """
+    path = Path(file_path)
+    suffix = path.suffix.lower()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    
+    if suffix == ".docx":
+        return _write_docx(file_path, content=content, paragraphs=paragraphs, title=title, table_data=table_data)
+    elif suffix == ".xlsx":
+        if data is None:
+            data = {"headers": [], "rows": []}
+        return _write_xlsx(file_path, data=data, sheet_name=sheet_name)
+    elif suffix == ".pdf":
+        return _write_pdf(file_path, title=title, content=content, paragraphs=paragraphs, table_data=table_data)
+    elif suffix == ".pptx":
+        return _write_pptx(file_path, title=title, slides=slides)
+    else:
+        return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
+                "message": f"不支持的输出格式: {suffix}。支持: .docx/.xlsx/.pdf/.pptx"}
 
 
 def convert_document(
@@ -696,73 +813,4 @@ def convert_document(
             "code": "ERR_CONVERT_DOCUMENT",
             "data": None,
             "message": f"文档转换失败: {str(e)}"
-        }
-
-
-def write_pptx(
-    file_path: str,
-    title: str = None,
-    slides: list = None
-) -> Dict[str, Any]:
-    """写入PPT幻灯片 - 小沈 2026-05-05"""
-    if not _check_module("pptx"):
-        return {
-            "code": "ERR_NO_PPTX",
-            "data": None,
-            "message": "python-pptx库未安装，请先执行: pip install python-pptx"
-        }
-    
-    try:
-        from pptx import Presentation
-        from pptx.util import Inches, Pt
-        
-        # 创建演示文稿
-        prs = Presentation()
-        
-        # 添加标题页
-        if title:
-            title_slide_layout = prs.slide_layouts[0]  # 标题布局
-            slide = prs.slides.add_slide(title_slide_layout)
-            title_shape = slide.shapes.title
-            title_shape.text = title
-        
-        # 添加内容幻灯片
-        if slides:
-            for slide_data in slides:
-                slide_title = slide_data.get("title", "幻灯片")
-                content = slide_data.get("content", "")
-                
-                # 使用标题和内容布局
-                content_layout = prs.slide_layouts[1]
-                slide = prs.slides.add_slide(content_layout)
-                
-                # 设置标题
-                if slide.shapes.title:
-                    slide.shapes.title.text = slide_title
-                
-                # 设置内容
-                for shape in slide.shapes:
-                    if shape.has_text_frame and not shape.text_frame.text.strip():
-                        text_frame = shape.text_frame
-                        text_frame.clear()
-                        p = text_frame.paragraphs[0]
-                        p.text = content
-                        p.font.size = Pt(18)
-                        break
-        
-        # 保存文件
-        path = Path(file_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        prs.save(path)
-        
-        return {
-            "code": "SUCCESS",
-            "data": {"file_path": str(path), "slide_count": len(prs.slides)},
-            "message": f"成功写入PPT文件: {file_path}，共 {len(prs.slides)} 页"
-        }
-    except Exception as e:
-        return {
-            "code": "ERR_WRITE_PPTX",
-            "data": None,
-            "message": f"写入PPT文件失败: {str(e)}"
         }

@@ -7,22 +7,25 @@ Document Register - 文档读写工具注册点
 - 实际工具实现在 document_tools.py 中
 - 使用 registry.py 的 tool_registry.register() 显式注册
 
-【工具列表】（共9个）
-1. read_pdf - 读取PDF文件
-2. read_docx - 读取Word文档
-3. read_xlsx - 读取Excel文件
-4. write_docx - 写入Word文档
-5. write_xlsx - 写入Excel文件
-6. read_pptx - 读取PPT幻灯片
-7. write_pdf - 写入PDF文档
-8. convert_document - 文档格式转换
+【重构 2026-05-18 小健】
+- 8个旧工具合并为 read_document + write_document
+- analyze_data/filter_data/generate_chart 从 data_analysis_register 迁入
+- 共6个LLM工具
+
+【工具列表】（共6个）
+1. read_document - 统一读取文档（按后缀路由）
+2. write_document - 统一写入文档（按后缀路由）
+3. convert_document - 文档格式转换
+4. analyze_data - 对数据集进行统计分析（迁入）
+5. filter_data - 按条件筛选/过滤数据（迁入）
+6. generate_chart - 生成数据可视化图表（迁入）
 
 【注册说明】
 - 使用 Pydantic 模型注册，自动生成 OpenAI Schema
 - 导入 document_register 时自动触发注册
 
 创建时间: 2026-05-02
-更新时间: 2026-05-04
+更新时间: 2026-05-18 小健
 """
 
 import logging
@@ -30,137 +33,65 @@ from app.services.tools.registry import ToolCategory, tool_registry
 from app.utils.logger import logger
 
 from app.services.tools.document.document_schema import (
-    ReadPdfInput,
-    ReadDocxInput,
-    ReadXlsxInput,
-    WriteDocxInput,
-    WriteXlsxInput,
-    ReadPptxInput,
-    WritePdfInput,
-    WritePptxInput,
+    ReadDocumentInput,
+    WriteDocumentInput,
     ConvertDocumentInput,
 )
 
 from app.services.tools.document.document_tools import (
-    read_pdf,
-    read_docx,
-    read_xlsx,
-    write_docx,
-    write_xlsx,
-    read_pptx,
-    write_pdf,
+    read_document,
+    write_document,
     convert_document,
-    write_pptx,
+)
+
+from app.services.tools.document.data_analysis_schema import (
+    AnalyzeDataInput,
+    FilterDataInput,
+    GenerateChartInput,
+)
+
+from app.services.tools.document.data_analysis_tools import (
+    analyze_data,
+    filter_data,
+    generate_chart,
 )
 
 DESCRIPTIONS = {
-    "read_pdf": """读取 PDF 文件并提取文本内容。
+    "read_document": """统一读取文档内容，按文件后缀自动路由到对应解析器（PDF/DOCX/XLSX/PPTX）。
 
 【使用场景】
-- 当用户需要读取 PDF 文档内容时使用
-- 当用户想要从 PDF 中提取文字信息时使用
-- 当用户需要分析 PDF 文档内容时使用
-- 当用户需要提取 PDF 中的表格数据时使用
+- 当用户需要读取任意格式文档内容时使用
+- Agent无需判断文件格式，工具自动按后缀选择解析器
+- 支持提取表格、图片、演讲备注等
 
+【支持的格式】
+- .pdf → PDF解析（支持页码范围、提取表格/图片）
+- .docx → Word解析（支持提取表格）
+- .xlsx/.xls → Excel解析（支持指定工作表、最大行数）
+- .pptx → PPT解析（支持提取演讲备注）
 
 【返回数据】
-- code: SUCCESS / ERR_READ_PDF / ERR_NO_PDFPLUMBER
-- data: { text, page_count, pages_read, tables? }
-- message: 操作结果消息
+- code: SUCCESS / ERR_FILE_NOT_FOUND / ERR_UNSUPPORTED_FORMAT
+- data: 文档内容（格式因文件类型而异）
+- message: 操作结果消息""",
 
-【依赖库】pdfplumber（pip install pdfplumber）""",
-
-    "read_docx": """读取 Word 文档并提取文本内容。
+    "write_document": """统一写入文档，按文件后缀自动路由到对应写入器（DOCX/XLSX/PDF/PPTX）。
 
 【使用场景】
-- 当用户需要读取 Word 文档内容时使用
-- 当用户想要从 Word 文档中提取文字信息时使用
-- 当用户需要分析 Word 文档内容时使用
-- 当用户需要提取 Word 文档中的表格时使用
+- 当用户需要生成任意格式文档时使用
+- Agent无需判断输出格式，工具自动按后缀选择写入器
+- 支持标题、段落、表格、幻灯片等
 
-
-【返回数据】
-- code: SUCCESS / ERR_READ_DOCX / ERR_NO_DOCX
-- data: { text, paragraph_count, tables?, table_count? }
-- message: 操作结果消息
-
-【依赖库】python-docx（pip install python-docx）""",
-
-    "read_xlsx": """读取 Excel 文件并提取表格数据。
-
-【使用场景】
-- 当用户需要读取 Excel 表格数据时使用
-- 当用户想要从 Excel 中提取数据进行分析时使用
-- 当用户需要查看 Excel 文件内容时使用
-- 当用户需要读取指定工作表时使用
-
+【支持的格式】
+- .docx → Word写入（支持标题、段落、表格）
+- .xlsx → Excel写入（支持表头+行数据）
+- .pdf → PDF写入（支持标题、段落、表格）
+- .pptx → PPT写入（支持标题、幻灯片列表）
 
 【返回数据】
-- code: SUCCESS / ERR_READ_XLSX / ERR_NO_OPENPYXL
-- data: { headers, rows, row_count, sheet_names }
-- message: 操作结果消息
-
-【依赖库】openpyxl（pip install openpyxl）""",
-
-    "write_docx": """写入 Word 文档。
-
-【使用场景】
-- 当用户需要生成 Word 报告时使用
-- 当用户需要导出文档时使用
-- 当用户需要创建带表格的文档时使用
-
-
-【返回数据】
-- code: SUCCESS / ERR_WRITE_DOCX / ERR_NO_DOCX
+- code: SUCCESS / ERR_UNSUPPORTED_FORMAT
 - data: { file_path }
-- message: 操作结果消息
-
-【依赖库】python-docx（pip install python-docx）""",
-
-    "write_xlsx": """写入 Excel 文件。
-
-【使用场景】
-- 当用户需要生成 Excel 报表时使用
-- 当用户需要导出数据为 Excel 时使用
-- 当用户需要创建带表头的数据表时使用
-
-
-【返回数据】
-- code: SUCCESS / ERR_WRITE_XLSX / ERR_NO_OPENPYXL
-- data: { file_path, row_count }
-- message: 操作结果消息
-
-【依赖库】openpyxl（pip install openpyxl）""",
-
-    "read_pptx": """读取 PPT 幻灯片。
-
-【使用场景】
-- 当用户需要读取 PPT 内容时使用
-- 当用户需要提取 PPT 文字时使用
-- 当用户需要提取演讲备注时使用
-
-
-【返回数据】
-- code: SUCCESS / ERR_READ_PPTX / ERR_NO_PPTX
-- data: { slide_count, slides: [{ slide_num, text }], notes? }
-- message: 操作结果消息
-
-【依赖库】python-pptx（pip install python-pptx）""",
-
-    "write_pdf": """写入 PDF 文档，支持标题、段落、表格。
-
-【使用场景】
-- 当用户需要生成PDF报告时使用
-- 当用户需要导出为PDF格式时使用
-- 当用户需要创建包含表格的PDF文档时使用
-
-
-【返回数据】
-- code: SUCCESS / ERR_WRITE_PDF / ERR_NO_REPORTLAB
-- data: { file_path }
-- message: 操作结果消息
-
-【依赖库】reportlab（pip install reportlab）""",
+- message: 操作结果消息""",
 
     "convert_document": """文档格式转换（docx/xlsx/pptx → PDF）。
  
@@ -176,92 +107,106 @@ DESCRIPTIONS = {
 - message: 操作结果消息
  
 【重要】需要安装LibreOffice（https://www.libreoffice.org/download/）""",
-    "write_pptx": """写入 PPT 幻灯片。
- 
-【使用场景】
-- 当用户需要生成PPT演示文稿时使用
-- 当用户需要创建幻灯片时使用
-- 当用户需要导出PPT文件时使用
- 
- 
-【返回数据】
-- code: SUCCESS / ERR_WRITE_PPTX / ERR_NO_PPTX
-- data: { file_path, slide_count }
-- message: 操作结果消息
- 
-【依赖库】python-pptx（pip install python-pptx）""",
+
+    "analyze_data": """对数据集进行统计分析，返回描述性统计信息。
+
+使用场景：
+- 当用户需要对数据进行统计分析时使用
+- 当用户想要获取数据的均值、总和、最大值、最小值等统计信息时使用
+- 当用户需要进行数据分组分析时使用
+
+
+【重要】需要安装 pandas 库
+
+返回数据说明：
+- code: 状态码（SUCCESS/ERR_ANALYZE_DATA/ERR_NO_PANDAS）
+- data: 统计分析结果（包含row_count、columns、statistics/grouped_statistics等）
+- message: 操作结果消息""",
+
+    "filter_data": """按条件筛选/过滤数据，支持多条件组合。
+
+使用场景：
+- 当用户说"筛选年龄大于30的记录"时使用
+- 当用户说"找出销售额前10的产品"时使用
+- 当用户说"只看北京的数据"时使用
+- 当用户需要按条件过滤数据时使用
+
+
+返回数据说明：
+- code: 状态码（SUCCESS/ERR_FILTER_DATA）
+- data: 包含columns、rows、row_count、original_count、filtered_count
+- message: 操作结果消息""",
+
+    "generate_chart": """使用 matplotlib 生成数据可视化图表。
+
+使用场景：
+- 当用户需要将数据可视化展示时使用
+- 当用户想要生成柱状图、折线图、饼图等图表时使用
+- 当用户需要生成报告中的图表时使用
+
+
+【重要】需要安装 matplotlib 库（pip install matplotlib）
+
+返回数据说明：
+- code: 状态码（SUCCESS/ERR_GENERATE_CHART/ERR_NO_MATPLOTLIB）
+- data: 输出图片路径
+- message: 操作结果消息""",
 }
 
 EXAMPLES = {
-    "read_pdf": [
+    "read_document": [
         {"file_path": "D:/documents/report.pdf"},
-        {"file_path": "D:/documents/report.pdf", "pages": "1-3"},
-        {"file_path": "D:/documents/report.pdf", "pages": "1,3,5", "extract_tables": True},
-    ],
-    "read_docx": [
-        {"file_path": "D:/documents/report.docx"},
+        {"file_path": "D:/documents/report.pdf", "pages": "1-3", "extract_tables": True},
         {"file_path": "D:/documents/report.docx", "extract_tables": True},
-    ],
-    "read_xlsx": [
-        {"file_path": "D:/data/report.xlsx"},
-        {"file_path": "D:/data/report.xlsx", "sheet_name": "Sheet2"},
-        {"file_path": "D:/data/report.xlsx", "max_rows": 100, "header": True},
-    ],
-    "write_docx": [
-        {"file_path": "D:/output/report.docx", "title": "测试报告", "content": "这是测试内容"},
-        {"file_path": "D:/output/report.docx", "paragraphs": ["第一段内容", "第二段内容"]},
-        {"file_path": "D:/output/table.docx", "table_data": [["Name", "Age"], ["张三", "25"], ["李四", "30"]]},
-    ],
-    "write_xlsx": [
-        {"file_path": "D:/output/data.xlsx", "data": {"headers": ["姓名", "年龄"], "rows": [["张三", 25], ["李四", 30]]}},
-        {"file_path": "D:/output/sales.xlsx", "data": {"headers": ["产品", "销量"], "rows": [["A", 100], ["B", 200]]}, "sheet_name": "销售数据"},
-    ],
-    "read_pptx": [
-        {"file_path": "D:/documents/presentation.pptx"},
+        {"file_path": "D:/data/sales.xlsx", "sheet_name": "Sheet2", "max_rows": 100},
         {"file_path": "D:/documents/presentation.pptx", "extract_notes": True},
     ],
-    "write_pdf": [
+    "write_document": [
+        {"file_path": "D:/output/report.docx", "title": "测试报告", "content": "这是测试内容"},
+        {"file_path": "D:/output/data.xlsx", "data": {"headers": ["姓名", "年龄"], "rows": [["张三", 25], ["李四", 30]]}},
         {"file_path": "D:/output/report.pdf", "title": "测试报告", "content": "这是报告内容"},
-        {"file_path": "D:/output/data.pdf", "paragraphs": ["第一段", "第二段"]},
-        {"file_path": "D:/output/table.pdf", "title": "数据表", "table_data": [["Name", "Age"], ["张三", "25"], ["李四", "30"]]},
+        {"file_path": "D:/output/presentation.pptx", "title": "项目汇报"},
+        {"file_path": "D:/output/slides.pptx", "title": "季度总结", "slides": [{"title": "业绩概览", "content": "本季度销售额增长20%"}]},
     ],
     "convert_document": [
         {"input_path": "D:/documents/report.docx", "output_format": "pdf"},
         {"input_path": "D:/data/sales.xlsx", "output_format": "pdf", "output_path": "D:/output/sales.pdf"},
     ],
-    "write_pptx": [
-        {"file_path": "D:/output/presentation.pptx", "title": "项目汇报"},
-        {"file_path": "D:/output/slides.pptx", "title": "季度总结", "slides": [{"title": "业绩概览", "content": "本季度销售额增长20%"}]},
+    "analyze_data": [
+        {"data": [{"name": "A", "value": 10}, {"name": "B", "value": 20}]},
+        {"data": "D:/data/users.csv", "operations": ["mean", "max"]},
+    ],
+    "filter_data": [
+        {"data": [{"name": "A", "age": 25}, {"name": "B", "age": 35}], "conditions": [{"column": "age", "operator": "gt", "value": 30}]},
+        {"data": "D:/data/users.csv", "conditions": [{"column": "city", "operator": "eq", "value": "北京"}], "sort_by": "age", "top_n": 10},
+    ],
+    "generate_chart": [
+        {"data": {"labels": ["A", "B"], "values": [10, 20]}, "chart_type": "bar", "title": "销售统计"},
+        {"data": {"labels": ["1月", "2月"], "values": [100, 200]}, "chart_type": "line", "output_path": "D:/output/chart.png"},
     ],
 }
 
 TOOL_INPUT_MODELS = {
-    "read_pdf": ReadPdfInput,
-    "read_docx": ReadDocxInput,
-    "read_xlsx": ReadXlsxInput,
-    "write_docx": WriteDocxInput,
-    "write_xlsx": WriteXlsxInput,
-    "read_pptx": ReadPptxInput,
-    "write_pdf": WritePdfInput,
-    "write_pptx": WritePptxInput,
+    "read_document": ReadDocumentInput,
+    "write_document": WriteDocumentInput,
     "convert_document": ConvertDocumentInput,
+    "analyze_data": AnalyzeDataInput,
+    "filter_data": FilterDataInput,
+    "generate_chart": GenerateChartInput,
 }
 
 TOOL_IMPLEMENTATIONS = {
-    "read_pdf": read_pdf,
-    "read_docx": read_docx,
-    "read_xlsx": read_xlsx,
-    "write_docx": write_docx,
-    "write_xlsx": write_xlsx,
-    "read_pptx": read_pptx,
-    "write_pdf": write_pdf,
-    "write_pptx": write_pptx,
+    "read_document": read_document,
+    "write_document": write_document,
     "convert_document": convert_document,
+    "analyze_data": analyze_data,
+    "filter_data": filter_data,
+    "generate_chart": generate_chart,
 }
 
 
 def _register_document_tools():
-    """注册所有文档读写工具 - 小沈 2026-05-02"""
+    """注册所有文档读写工具 — 小健 2026-05-18 共6个LLM工具"""
     for name, func in TOOL_IMPLEMENTATIONS.items():
         desc = DESCRIPTIONS.get(name, "")
         input_model = TOOL_INPUT_MODELS.get(name)
@@ -283,19 +228,14 @@ def _register_document_tools():
         )
 
 
-# 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
-_initialized = False  # 守护变量，供显式调用时使用
+_initialized = False
 
-# 【修复 2026-05-18 小健】P0双重__all__Bug：合并两个__all__定义，确保_register_document_tools被导出
 __all__ = [
     "_register_document_tools",
-    "read_pdf",
-    "read_docx",
-    "read_xlsx",
-    "write_docx",
-    "write_xlsx",
-    "read_pptx",
-    "write_pdf",
-    "write_pptx",
+    "read_document",
+    "write_document",
     "convert_document",
+    "analyze_data",
+    "filter_data",
+    "generate_chart",
 ]

@@ -4,6 +4,7 @@ Document 工具参数 Schema 定义
 
 【创建时间】2026-05-02 小沈
 【设计依据】按文档第8.3节 Tool 80-82 定义
+【重构 2026-05-18 小健】新增 ReadDocumentInput/WriteDocumentInput，旧Schema标注弃用
 
 职责：
 定义 document 分类的工具参数 Pydantic 模型。
@@ -12,11 +13,45 @@ Author: 小沈 - 2026-05-02
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, Any
+from typing import Optional, Any, List, Dict
 
+
+class ReadDocumentInput(BaseModel):
+    """read_document 工具的输入参数 — 小健 2026-05-18
+    合并 read_pdf + read_docx + read_pptx + read_xlsx
+    """
+    file_path: str = Field(..., description="文档路径。支持 .pdf/.docx/.xlsx/.xls/.pptx。Agent无需判断格式，工具按后缀自动选择解析器")
+    pages: Optional[str] = Field(default=None, description="PDF页码范围（如'1-3,5'，仅PDF有效）")
+    extract_tables: bool = Field(default=False, description="是否提取表格（PDF/DOCX有效）")
+    extract_images: bool = Field(default=False, description="是否提取图片（仅PDF有效）")
+    extract_notes: bool = Field(default=False, description="是否提取演讲备注（仅PPTX有效）")
+    sheet_name: Optional[str] = Field(default=None, description="Excel工作表名（仅XLSX有效）")
+    max_rows: int = Field(default=1000, ge=1, le=10000, description="最大读取行数（仅XLSX有效）")
+    header: bool = Field(default=True, description="第一行是否为表头（仅XLSX有效）")
+
+
+class WriteDocumentInput(BaseModel):
+    """write_document 工具的输入参数 — 小健 2026-05-18
+    合并 write_docx + write_xlsx + write_pdf + write_pptx
+    """
+    file_path: str = Field(..., description="输出路径。支持 .docx/.xlsx/.pdf/.pptx")
+    content: Optional[str] = Field(default=None, description="正文内容（DOCX/PDF有效）")
+    paragraphs: Optional[List[str]] = Field(default=None, description="段落列表（DOCX/PDF有效）")
+    title: Optional[str] = Field(default=None, description="文档标题（DOCX/PDF/PPTX有效）")
+    table_data: Optional[List] = Field(default=None, description="表格数据二维数组（DOCX/PDF有效）")
+    data: Optional[Dict[str, Any]] = Field(default=None, description="Excel数据{headers, rows}（XLSX有效）")
+    sheet_name: str = Field(default="Sheet1", description="Excel工作表名（XLSX有效）")
+    slides: Optional[List[Dict[str, str]]] = Field(default=None, description="PPT幻灯片列表（PPTX有效）")
+
+
+# ============================================================
+# 旧Schema（保留，标注弃用）— 小健 2026-05-18
+# ============================================================
 
 class ReadPdfInput(BaseModel):
-    """read_pdf 工具的输入参数（Tool 80）"""
+    """【已弃用】请使用 ReadDocumentInput 代替 - 小健 2026-05-18
+    read_pdf 工具的输入参数（Tool 80）
+    """
     file_path: str = Field(
         ...,
         description="PDF 文件路径。如 D:/documents/report.pdf"
@@ -36,7 +71,9 @@ class ReadPdfInput(BaseModel):
 
 
 class ReadDocxInput(BaseModel):
-    """read_docx 工具的输入参数（Tool 81）"""
+    """【已弃用】请使用 ReadDocumentInput 代替 - 小健 2026-05-18
+    read_docx 工具的输入参数（Tool 81）
+    """
     file_path: str = Field(
         ...,
         description="Word 文件路径。如 D:/documents/report.docx"
@@ -48,7 +85,9 @@ class ReadDocxInput(BaseModel):
 
 
 class ReadXlsxInput(BaseModel):
-    """read_xlsx 工具的输入参数（Tool 82）"""
+    """【已弃用】请使用 ReadDocumentInput 代替 - 小健 2026-05-18
+    read_xlsx 工具的输入参数（Tool 82）
+    """
     file_path: str = Field(
         ...,
         description="Excel 文件路径。如 D:/data/report.xlsx"
@@ -68,7 +107,9 @@ class ReadXlsxInput(BaseModel):
 
 
 class WriteDocxInput(BaseModel):
-    """write_docx 工具的输入参数 - 小沈 2026-05-04"""
+    """【已弃用】请使用 WriteDocumentInput 代替 - 小健 2026-05-18
+    write_docx 工具的输入参数 - 小沈 2026-05-04
+    """
     file_path: str = Field(
         ...,
         description="输出文件路径。如 D:/output/report.docx"
@@ -92,7 +133,9 @@ class WriteDocxInput(BaseModel):
 
 
 class WriteXlsxInput(BaseModel):
-    """write_xlsx 工具的输入参数 - 小沈 2026-05-04"""
+    """【已弃用】请使用 WriteDocumentInput 代替 - 小健 2026-05-18
+    write_xlsx 工具的输入参数 - 小沈 2026-05-04
+    """
     file_path: str = Field(
         ...,
         description="输出文件路径。如 D:/output/data.xlsx"
@@ -108,7 +151,9 @@ class WriteXlsxInput(BaseModel):
 
 
 class ReadPptxInput(BaseModel):
-    """read_pptx 工具的输入参数 - 小沈 2026-05-04"""
+    """【已弃用】请使用 ReadDocumentInput 代替 - 小健 2026-05-18
+    read_pptx 工具的输入参数 - 小沈 2026-05-04
+    """
     file_path: str = Field(
         ...,
         description="PPT 文件路径。如 D:/documents/presentation.pptx"
@@ -120,7 +165,9 @@ class ReadPptxInput(BaseModel):
 
 
 class WritePdfInput(BaseModel):
-    """write_pdf 工具的输入参数 - 小沈 2026-05-05"""
+    """【已弃用】请使用 WriteDocumentInput 代替 - 小健 2026-05-18
+    write_pdf 工具的输入参数 - 小沈 2026-05-05
+    """
     file_path: str = Field(
         ...,
         description="输出PDF文件路径。如 D:/output/report.pdf"
@@ -160,7 +207,9 @@ class ConvertDocumentInput(BaseModel):
 
 
 class WritePptxInput(BaseModel):
-    """write_pptx 工具的输入参数 - 小沈 2026-05-05"""
+    """【已弃用】请使用 WriteDocumentInput 代替 - 小健 2026-05-18
+    write_pptx 工具的输入参数 - 小沈 2026-05-05
+    """
     file_path: str = Field(
         ...,
         description="输出PPT文件路径。如 D:/output/presentation.pptx"

@@ -51,7 +51,7 @@ _CATEGORY_MODULES = {
     "data_format": ("app.services.tools.data_format", "_register_data_format_tools"),
     "code_execution": ("app.services.tools.code_execution", "_register_code_execution_tools"),
     "document": ("app.services.tools.document", "_register_document_tools"),
-    "document_data_analysis": ("app.services.tools.document.data_analysis_register", "_register_data_analysis_tools"),
+    # 【废弃 2026-05-18 小健】document_data_analysis已合并到document分类
     "support_tool": ("app.services.tools.support_tool", "_register_support_tool_tools"),
     # 【2026-05-17 小沈】desktop_gui/desktop_gui_helpers 已合并到统一DESKTOP分类（26→10精简）
     # desktop_gui/desktop_gui_helpers 目录已移除，不再注册
