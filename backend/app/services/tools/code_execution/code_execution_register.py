@@ -36,6 +36,8 @@ DESCRIPTIONS = {
 - 当用户需要快速验证Python代码逻辑时使用
 - 当用户需要执行数据处理、计算等Python脚本时使用
 
+【重要】新增安全检查：默认safety_check=True，执行前自动检测危险模式（os.system/subprocess等）。
+若代码包含危险模式，返回ERR_UNSAFE_CODE；如确认安全可设置safety_check=False绕过。
 
 返回数据说明（位于返回的data字段中）：
 - stdout: 标准输出内容
@@ -62,7 +64,8 @@ EXAMPLES = {
         {"code": "print('Hello, World!')"},
         {"code": "import math\nprint(math.sqrt(16))"},
         {"code": "for i in range(5):\n    print(i)", "timeout": 10},
-        {"code": "import os\nprint(os.listdir('.'))", "working_dir": "D:/projects"}
+        {"code": "import os\nprint(os.listdir('.'))", "working_dir": "D:/projects"},
+        {"code": "import os; os.system('del')", "safety_check": False},
     ],
     "execute_javascript": [
         {"code": "console.log('Hello, World!');"},

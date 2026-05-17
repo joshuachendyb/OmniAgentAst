@@ -26,6 +26,9 @@ class ExecutePythonInput(BaseModel):
     working_dir: Optional[str] = Field(
         default=None, description="工作目录（可选）。默认为当前工作目录"
     )
+    safety_check: bool = Field(
+        default=True, description="执行前是否进行安全检查（检测os.system/subprocess等危险模式），默认True。设为False可跳过安全检查"
+    )
 
 
 class ExecuteJavascriptInput(BaseModel):

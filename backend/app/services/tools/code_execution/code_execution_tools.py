@@ -88,14 +88,25 @@ def _get_utf8_env():
     return env
 
 
-def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = None) -> dict:
-    """执行Python代码 - 小沈 2026-05-02, 修正 2026-05-05(空字符串working_dir), 修正 2026-05-06(中文编码)"""
+def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = None, safety_check: bool = True) -> dict:
+    """执行Python代码 - 小沈 2026-05-02, 修正 2026-05-05(空字符串working_dir), 修正 2026-05-06(中文编码)
+    【2026-05-17 小沈】增加safety_check参数，P12组合复用：自动调用_validate_code_safety进行安全检查"""
     if working_dir is not None and not os.path.isdir(working_dir):
         return {
             "code": "ERR_EXEC_INVALID_DIR",
             "data": None,
             "message": f"工作目录不存在: {working_dir}"
         }
+    # P12: 执行前自动调用安全检查（不暴露给LLM）
+    if safety_check:
+        from app.services.tools.toolhelper.exec_helper import _validate_code_safety
+        warnings = _validate_code_safety(code)
+        if warnings:
+            return {
+                "code": "ERR_UNSAFE_CODE",
+                "data": {"warnings": warnings},
+                "message": f"代码存在安全风险: {', '.join(warnings)}，如确认安全可设置 safety_check=False"
+            }
     try:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
             f.write(code)
