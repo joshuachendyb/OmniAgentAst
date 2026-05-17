@@ -1,3 +1,26 @@
+v0.13.2
+
+更新时间: 2026-05-18 06:36:11
+
+更新内容：
+
+## v0.13.1→v0.13.2 变更汇总 - 小沈-2026-05-18
+
+### feat 功能实施
+
+| commit | 说明 |
+|--------|------|
+| 0c9311e4 | Shell 8→4降级实施 + Desktop三分类合一 + database 8→3(事务stub消除) + environment 5→3 + system service/task合并 + support_tool取消 + network proxy统一 + toolhelper层提取(shell_helper/db_helper/gui_helper/exec_helper/network_helper) + document_register.py P0双重__all__Bug修复 + 工具精简方案文档v1.13修正(小健审查10问题修正6个+北京老陈指正后.doc/.xls双引擎降级设计) - 小沈-2026-05-18 |
+
+### fix Bug修复
+
+| commit | 说明 |
+|--------|------|
+| 0c9311e4 | tool_executor: 去重execute_shell_command的working_directory切换逻辑 - 小沈-2026-05-18 |
+| 0c9311e4 | document_register.py: P0双重__all__Bug修复(第289+292行两个__all__定义互相覆盖) - 小沈-2026-05-18 |
+
+---
+
 v0.13.1
 
 更新时间: 2026-05-17 22:43:51
@@ -10,10 +33,22 @@ v0.13.1
 
 | commit | 说明 |
 |--------|------|
-| xxxxxxxx | code_execution: 增加safety_check参数(P12组合复用)，execute_python自动调用_validate_code_safety进行安全检查 - 小沈-20260517 |
-| xxxxxxxx | meta: 新增pipeline工具(13.12节)，支持多工具管道编排执行 - 小沈-20260517 |
+| c89ea01a | code_execution: 增加safety_check参数(P12组合复用)，execute_python自动调用_validate_code_safety进行安全检查 - 小沈-20260517 |
+| c89ea01a | meta: 新增pipeline工具(13.12节)，支持多工具管道编排执行 - 小沈-20260517 |
+
+### fix Bug修复
+
+| commit | 说明 |
+|--------|------|
+| 9aa9e2ee | send2trash从顶层import改为函数内延迟import - 修复未安装时导入崩溃 - 小健-2026-05-17 |
 
 ---
+
+v0.13.0
+
+更新时间: 2026-05-17 19:14:39
+
+更新内容：
 
 ## v0.12.40→v0.13.0 变更汇总 - 小健-2026-05-17
 
