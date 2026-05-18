@@ -15,19 +15,9 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 
 
-class ExecutePythonInput(BaseModel):
-    """execute_python 工具的输入参数 - 小沈 2026-05-02"""
-    code: str = Field(..., description="要执行的Python代码（字符串）")
-    timeout: int = Field(default=30, ge=1, le=300, description="超时时间（秒），默认30秒，最大300秒")
-    working_dir: Optional[str] = Field(default=None, description="工作目录（可选）")
-    safety_check: bool = Field(default=True, description="执行前安全检查（检测os.system/subprocess等危险模式），默认True")
-
-
-class ExecuteJavascriptInput(BaseModel):
-    """execute_javascript 工具的输入参数 - 小沈 2026-05-02"""
-    code: str = Field(..., description="要执行的JavaScript代码（字符串）")
-    timeout: int = Field(default=30, ge=1, le=300, description="超时时间（秒），默认30秒，最大300秒")
-    working_dir: Optional[str] = Field(default=None, description="工作目录（可选）")
+# 【2026-05-19 小沈】ExecutePythonInput/ExecuteJavascriptInput 已迁移至
+# code_execution_schema.py，此处不再重复定义，避免Schema分歧。
+# shell_register.py 显式从 code_execution_schema.py import 这两个类。
 
 
 class ExecuteShellCommandInput(BaseModel):
@@ -106,8 +96,6 @@ class ShellSessionInput(BaseModel):
 
 __all__ = [
     "ExecuteShellCommandInput",
-    "ExecutePythonInput",
-    "ExecuteJavascriptInput",
     "FindCommandInput",
     "ShellSessionInput",
 ]
