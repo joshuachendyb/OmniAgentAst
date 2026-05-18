@@ -10,7 +10,7 @@ from typing import Any, Optional, Dict, List
 
 from app.services.agent.base_react import BaseAgent, DEFAULT_MAX_STEPS
 from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin
-from app.services.prompts.code_execution.code_execution_prompts import CodeExecutionPrompts
+from app.services.prompts.shell.code_execution_prompts import CodeExecutionPrompts
 from app.services.tools.registry import ToolCategory
 from app.utils.logger import logger
 
