@@ -663,13 +663,14 @@ def read_document(
     """读取文档内容 — 小健 2026-05-18
     合并 read_pdf + read_docx + read_pptx + read_xlsx
     按文件后缀自动路由到对应解析器
+    支持 .doc 后缀（通过 win32com 降级处理）
     """
     path = Path(file_path)
     suffix = path.suffix.lower()
     
     if suffix == ".pdf":
         return _read_pdf(file_path, pages=pages, extract_tables=extract_tables, extract_images=extract_images)
-    elif suffix == ".docx":
+    elif suffix in (".docx", ".doc"):
         return _read_docx(file_path, extract_tables=extract_tables)
     elif suffix == ".pptx":
         return _read_pptx(file_path, extract_notes=extract_notes)
@@ -677,7 +678,7 @@ def read_document(
         return _read_xlsx(file_path, sheet_name=sheet_name, max_rows=max_rows, header=header)
     else:
         return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
-                "message": f"不支持的格式: {suffix}。支持: .pdf/.docx/.xlsx/.xls/.pptx"}
+                "message": f"不支持的格式: {suffix}。支持: .pdf/.doc/.docx/.xlsx/.xls/.pptx"}
 
 
 def write_document(
@@ -814,3 +815,11 @@ def convert_document(
             "data": None,
             "message": f"文档转换失败: {str(e)}"
         }
+
+
+# === 公开接口定义 — 小健 2026-05-18 ===
+__all__ = [
+    "read_document",
+    "write_document",
+    "convert_document",
+]
