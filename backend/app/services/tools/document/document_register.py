@@ -60,13 +60,12 @@ from app.services.tools.document.data_analysis_tools import (
     generate_chart,
 )
 
-# 【2026-05-18 小沈】Database工具（从database模块迁入注册）
-from app.services.tools.database.database_schema import (
+from app.services.tools.document.database_schema import (
     QuerySqlInput,
     ExecuteSqlInput,
     GetDbSchemaInput,
 )
-from app.services.tools.database.database_tools import (
+from app.services.tools.document.database_tools import (
     query_sql,
     execute_sql,
     get_db_schema,
