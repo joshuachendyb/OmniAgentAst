@@ -156,187 +156,9 @@ class KillProcessInput(BaseModel):
     )
 
 
-class ServiceListInput(BaseModel):
-    """service_list 工具的输入参数 - 小沈 2026-05-03 修正
-    
-    按文档7.6节参数定义：
-    - name: 服务名称过滤（可选）
-    - state: 状态过滤（可选），running/stopped/all
-    - output_format: 输出格式（可选），json/table
-    """
-    name: Optional[str] = Field(
-        default=None,
-        description="服务名称过滤（可选）。如 MySQL、nginx。Agent 根据 query 语义自动提取服务名关键词进行模糊匹配"
-    )
-    state: Optional[Literal["running", "stopped", "all"]] = Field(
-        default="all",
-        description="服务状态过滤（可选）。可选值：running（运行中）、stopped（已停止）、all（全部）。Agent 根据 query 语义自动映射，如问运行中的服务自动映射为 running。默认为all"
-    )
-    output_format: Literal["json", "table"] = Field(
-        default="json",
-        description="输出格式（可选）。可选值：json（结构化数据）、table（人类可读表格）。Agent 根据下游需求自动切换，如需人类阅读则切换为 table。默认为json"
-    )
-
-
-class ServiceStartInput(BaseModel):
-    """service_start 工具的输入参数 - 小沈 2026-05-03, 小健 2026-05-06 补timeout"""
-    service_name: str = Field(
-        ...,
-        description="要启动的服务名称（必填）。如 MySQL、nginx。必填由 LLM 提供，可通过 service_list 查询可用服务"
-    )
-    wait_for_started: bool = Field(
-        default=True,
-        description="等待服务启动完成（可选）。默认 true。Agent 等待服务真正进入运行状态后再返回，确保启动成功。若设为 false 则立即返回"
-    )
-    timeout: int = Field(
-        default=30, ge=1, le=300,
-        description="等待服务启动的超时时间（秒）。默认30秒 - 小健 2026-05-06"
-    )
-
-
-class ServiceStopInput(BaseModel):
-    """service_stop 工具的输入参数 - 小沈 2026-05-03 修正
-    
-    按文档7.6节参数定义：
-    - service_name: 服务名称（必填）
-    - force: 强制停止（可选），默认 false
-    - wait_for_stopped: 等待停止（可选），默认 true
-    """
-    service_name: str = Field(
-        ...,
-        description="要停止的服务名称（必填）。如 MySQL、nginx。必填由 LLM 提供，可通过 service_list 查询可用服务"
-    )
-    force: bool = Field(
-        default=False,
-        description="是否强制停止服务（可选）。默认 false。false：优雅停止，发送停止信号等待清理；true：强制立即终止。若服务无响应，Agent 自动设 force 为 true"
-    )
-    wait_for_stopped: bool = Field(
-        default=True,
-        description="等待服务停止完成（可选）。默认 true。Agent 等待服务真正停止后再返回，确保停止成功。若设为 false 则立即返回"
-    )
-    timeout: int = Field(
-        default=30, ge=1, le=300,
-        description="等待服务停止的超时时间（秒）。默认30秒 - 小健 2026-05-06"
-    )
-
-
-class TaskListInput(BaseModel):
-    """task_list 工具的输入参数 - 按文档7.7节定义
-    
-    按文档7.7节参数定义：
-    - filter_name: 任务名过滤（可选）
-    - filter_status: 状态过滤（可选），ready/running/disabled/all
-    - max_results: 最大返回数（可选），默认100
-    """
-    filter_name: Optional[str] = Field(
-        default=None,
-        description="按计划任务名模糊匹配过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。例如填写\"backup\"会匹配所有名称包含backup的任务。"
-    )
-    filter_status: Optional[Literal["ready", "running", "disabled", "all"]] = Field(
-        default="all",
-        description="按任务状态过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为all。可选值含义：\n- ready：已就绪待执行的任务\n- running：正在运行的任务\n- disabled：已禁用的任务\n- all：所有任务（默认）"
-    )
-    max_results: int = Field(
-        default=100,
-        ge=1,
-        le=500,
-        description="最大返回的任务数。必填为LLM给出，当LLM未明确指定时Agent智能补全为100。用于限制返回结果数量，避免输出过多。"
-    )
-
-
-class TaskCreateInput(BaseModel):
-    """task_create 工具的输入参数 - 按文档7.7节定义
-    
-    按文档7.7节参数定义：
-    - task_name: 任务名称（必填）
-    - command: 命令（必填）
-    - schedule: 计划时间（必填）
-    - description: 任务描述（可选）
-    - user: 运行用户（可选）
-    - start_in: 起始目录（可选）
-    """
-    task_name: str = Field(
-        ...,
-        description="计划任务的名称（必填）。用于标识和后续管理任务，不能与现有任务重名。必填由 LLM 提供。"
-    )
-    command: str = Field(
-        ...,
-        description="要执行的命令或程序路径（必填）。可以是命令行或完整路径的可执行文件。必填由 LLM 提供。"
-    )
-    schedule: str = Field(
-        ...,
-        description="计划执行时间（必填）。格式说明：\n- 每日：\"HH:MM\"，例如\"08:00\"表示每天早上8点执行\n- 每周：\"HH:MM /day D\"，例如\"08:00 /day 1\"表示每周一早上8点执行，1-7代表周日到周六\n- 每月：\"HH:MM /monthly DD\"，例如\"08:00 /monthly 1\"表示每月1号早上8点执行\n必填由 LLM 提供。"
-    )
-    description: Optional[str] = Field(
-        default=None,
-        description="任务描述，用于说明任务的用途。可选，不提供时Agent智能补全为null。"
-    )
-    user: Optional[str] = Field(
-        default=None,
-        description="运行任务的用户账户。必填为LLM给出，当LLM未明确指定时Agent智能补全为null（默认使用当前用户）。需要指定具有相应权限的用户。"
-    )
-    start_in: Optional[str] = Field(
-        default=None,
-        description="任务执行的起始目录。可选，不提供时Agent智能补全为null。指定命令执行时的工作目录。"
-    )
-    start_time: Optional[str] = Field(
-        default=None,
-        description="起始时间（可选）。如 '08:00'。不提供时使用schedule中的时间 - 小健 2026-05-06"
-    )
-    start_date: Optional[str] = Field(
-        default=None,
-        description="起始日期（可选）。如 '2026-05-06'。不提供时使用当前日期 - 小健 2026-05-06"
-    )
-    interval: Optional[int] = Field(
-        default=None,
-        description="重复间隔（分钟，可选）。不提供时使用schedule中的间隔 - 小健 2026-05-06"
-    )
-
-
-class TaskDeleteInput(BaseModel):
-    """task_delete 工具的输入参数 - 按文档7.7节定义, 小健 2026-05-06 补folder
-    
-    按文档7.7节参数定义：
-    - task_name: 任务名称（必填）
-    - force: 强制删除（可选），默认false
-    """
-    task_name: str = Field(
-        ...,
-        description="要删除的计划任务名称（必填）。可通过 task_list 工具查询现有的任务名称。必填由 LLM 提供。"
-    )
-    force: bool = Field(
-        default=False,
-        description="是否强制删除（即使任务正在运行）。必填为LLM给出，当LLM未明确指定时Agent智能补全为false。\n- false：仅删除已停止的任务（默认）\n- true：强制删除，包括正在运行的任务"
-    )
-    folder: Optional[str] = Field(
-        default=None,
-        description="任务所在文件夹（可选）。不提供时从根目录查找 - 小健 2026-05-06"
-    )
-
-
-__all__ = [
-    "GetSystemInfoInput",
-    "NetConnectionsInput",
-    "EventLogInput",
-    "ListProcessesInput",
-    "KillProcessInput",
-    "ServiceListInput",
-    "ServiceStartInput",
-    "ServiceStopInput",
-    "TaskListInput",
-    "TaskCreateInput",
-    "TaskDeleteInput",
-    "ServiceControlInput",
-    "TaskControlInput",
-    "GetEnvInput",
-    "SetEnvInput",
-    "ListEnvInput",
-    "ValidateCsvFormatInput",
-    "ValidateChartDataInput",
-    "CheckPdfReadableInput",
-    "CheckDocxReadableInput",
-    "CheckXlsxReadableInput",
-]
+# 【2026-05-18 小健】已废弃Schema已删除：
+# ServiceListInput/ServiceStartInput/ServiceStopInput → 合并入 ServiceControlInput
+# TaskListInput/TaskCreateInput/TaskDeleteInput → 合并入 TaskControlInput
 
 
 # 【2026-05-17 小沈】新增：ServiceControlInput - 服务统一控制入口
@@ -466,3 +288,22 @@ class CheckDocxReadableInput(BaseModel):
 class CheckXlsxReadableInput(BaseModel):
     """check_xlsx_readable 工具的输入参数（Tool 91）"""
     file_path: str = Field(..., description="Excel文件路径。如 D:/data/report.xlsx")
+
+
+__all__ = [
+    "GetSystemInfoInput",
+    "NetConnectionsInput",
+    "EventLogInput",
+    "ListProcessesInput",
+    "KillProcessInput",
+    "ServiceControlInput",
+    "TaskControlInput",
+    "GetEnvInput",
+    "SetEnvInput",
+    "ListEnvInput",
+    "ValidateCsvFormatInput",
+    "ValidateChartDataInput",
+    "CheckPdfReadableInput",
+    "CheckDocxReadableInput",
+    "CheckXlsxReadableInput",
+]
