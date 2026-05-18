@@ -14,7 +14,7 @@ Author: 小沈 - 2026-04-26
 """
 
 # 必须先导入触发工具注册 - 导入整个模块
-import app.services.tools.time.time_tools as _
+import app.services.tools.meta.time_tools as _
 
 from typing import Any, Optional, Dict
 
@@ -24,7 +24,7 @@ from app.services.tools.registry import ToolCategory
 from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.llm_strategies import TextStrategy
 from app.services.agent.llm_adapter import LLMAdapter
-from app.services.prompts.time import TimePrompts
+from app.services.prompts.meta import TimePrompts
 from app.utils.logger import logger
 
 
