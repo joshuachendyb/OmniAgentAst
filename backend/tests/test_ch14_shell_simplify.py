@@ -64,21 +64,21 @@ class TestFindCommand:
         result = find_command("python")
         assert "available" in result["data"]
 
-    def test_check_command_available_delegates_to_find_command(self):
-        """check_command_available应委托给find_command(all_paths=False)"""
-        from app.services.tools.shell.shell_tools import check_command_available, find_command
-        r1 = check_command_available("python")
-        r2 = find_command("python", all_paths=False)
-        assert r1["code"] == r2["code"]
-        assert r1["data"]["available"] == r2["data"]["available"]
+    def test_find_command_all_paths_false_matches_shutil_which(self):
+        """find_command(all_paths=False)等价于原check_command_available(shutil.which) - 小健 2026-05-18"""
+        from app.services.tools.shell.shell_tools import find_command
+        import shutil
+        result = find_command("python", all_paths=False)
+        expected_available = shutil.which("python") is not None
+        assert result["data"]["available"] == expected_available
 
-    def test_locate_command_delegates_to_find_command(self):
-        """locate_command应委托给find_command(all_paths=True)"""
-        from app.services.tools.shell.shell_tools import locate_command, find_command
-        r1 = locate_command("python")
-        r2 = find_command("python", all_paths=True)
-        assert r1["code"] == r2["code"]
-        assert r1["data"]["count"] == r2["data"]["count"]
+    def test_find_command_all_paths_true_returns_list(self):
+        """find_command(all_paths=True)应返回路径列表(原locate_command) - 小健 2026-05-18"""
+        from app.services.tools.shell.shell_tools import find_command
+        result = find_command("python", all_paths=True)
+        assert "paths" in result["data"]
+        assert "count" in result["data"]
+        assert isinstance(result["data"]["paths"], list)
 
 
 class TestShellRegisterAllExport:
@@ -105,7 +105,7 @@ class TestShellRegisterAllExport:
     def test_register_all_exact_contents(self):
         """shell_register.__all__必须精确包含新合并工具，不含旧工具"""
         from app.services.tools.shell import shell_register
-        expected = ["_register_shell_tools", "execute_shell_command", "find_command", "shell_session"]
+        expected = ["_register_shell_tools", "execute_shell_command", "find_command", "shell_session", "execute_python", "execute_javascript"]
         assert shell_register.__all__ == expected, (
             f"shell_register.__all__={shell_register.__all__}, 期望={expected}"
         )
@@ -116,10 +116,10 @@ class TestShellRegisterAllExport:
         assert "get_shell_output" not in shell_register.__all__, "get_shell_output已合并，不应在__all__中"
         assert "terminate_shell" not in shell_register.__all__, "terminate_shell已合并，不应在__all__中"
 
-    def test_register_only_3_llm_tools(self):
-        """shell_register只注册3个LLM工具描述（execute_shell_command/find_command/shell_session）"""
+    def test_register_only_5_llm_tools(self):
+        """shell_register只注册5个LLM工具描述 - 小健 2026-05-18"""
         from app.services.tools.shell.shell_register import SHELL_TOOL_DESCRIPTIONS
-        expected_keys = {"execute_shell_command", "find_command", "shell_session"}
+        expected_keys = {"execute_shell_command", "find_command", "shell_session", "execute_python", "execute_javascript"}
         assert set(SHELL_TOOL_DESCRIPTIONS.keys()) == expected_keys, (
             f"LLM工具描述={set(SHELL_TOOL_DESCRIPTIONS.keys())}, 期望={expected_keys}"
         )
@@ -258,28 +258,6 @@ class TestDemotedTools:
         assert result["code"] == "SUCCESS"
         assert result["data"]["exists"] is False
 
-    def test_get_working_directory_still_callable(self):
-        """原get_working_directory仍可调用（兼容保留在shell_tools.py）"""
-        from app.services.tools.shell.shell_tools import get_working_directory
-        result = get_working_directory()
-        assert result["code"] == "SUCCESS"
-
-    def test_change_directory_still_callable(self):
-        """原change_directory仍可调用（兼容保留在shell_tools.py）"""
-        from app.services.tools.shell.shell_tools import change_directory
-        original_cwd = os.getcwd()
-        try:
-            result = change_directory(original_cwd)
-            assert result["code"] == "SUCCESS"
-        finally:
-            os.chdir(original_cwd)
-
-    def test_check_path_exists_still_callable(self):
-        """原check_path_exists仍可调用（兼容保留在shell_tools.py）"""
-        from app.services.tools.shell.shell_tools import check_path_exists
-        result = check_path_exists(".")
-        assert result["code"] == "SUCCESS"
-
     def test_demoted_tools_not_in_llm_descriptions(self):
         """降级工具不应出现在LLM工具描述中"""
         from app.services.tools.shell.shell_register import SHELL_TOOL_DESCRIPTIONS
@@ -287,14 +265,28 @@ class TestDemotedTools:
         assert "change_directory" not in SHELL_TOOL_DESCRIPTIONS
         assert "check_path_exists" not in SHELL_TOOL_DESCRIPTIONS
 
-    def test_demoted_schemas_marked_deprecated(self):
-        """降级Schema应标注已弃用"""
-        from app.services.tools.shell.shell_schema import (
-            GetWorkingDirectoryInput, ChangeDirectoryInput, CheckPathExistsInput
-        )
-        assert "弃用" in GetWorkingDirectoryInput.__doc__
-        assert "弃用" in ChangeDirectoryInput.__doc__
-        assert "弃用" in CheckPathExistsInput.__doc__
+    def test_demoted_old_functions_removed(self):
+        """旧LLM函数已从shell_tools.py删除 - 小健 2026-05-18"""
+        import app.services.tools.shell.shell_tools as mod
+        assert not hasattr(mod, "get_working_directory"), "get_working_directory应已删除"
+        assert not hasattr(mod, "change_directory"), "change_directory应已删除"
+        assert not hasattr(mod, "check_path_exists"), "check_path_exists应已删除"
+
+    def test_demoted_internal_functions_exist(self):
+        """降级后的内部函数应存在 - 小健 2026-05-18"""
+        import app.services.tools.shell.shell_tools as mod
+        assert hasattr(mod, "_get_working_directory"), "_get_working_directory应存在"
+        assert hasattr(mod, "_check_path_exists"), "_check_path_exists应存在"
+
+    def test_demoted_schemas_not_in_register(self):
+        """降级Schema不应在注册表源码中引用 - 小健 2026-05-18"""
+        from app.services.tools.shell import shell_register
+        source = shell_register.__file__
+        import pathlib
+        content = pathlib.Path(source).read_text(encoding="utf-8")
+        assert "GetWorkingDirectoryInput" not in content
+        assert "ChangeDirectoryInput" not in content
+        assert "CheckPathExistsInput" not in content
 
 
 class TestShellHelperMigration:
@@ -334,7 +326,7 @@ class TestShellInitPyAllStrict:
     def test_init_all_exact_contents(self):
         """shell/__init__.py的__all__必须精确包含新工具"""
         from app.services.tools import shell
-        expected = ["execute_shell_command", "find_command", "shell_session"]
+        expected = ["execute_shell_command", "find_command", "shell_session", "execute_python", "execute_javascript"]
         assert shell.__all__ == expected, (
             f"shell/__init__.py __all__={shell.__all__}, 期望={expected}"
         )
@@ -379,16 +371,15 @@ class TestShellSchemaConsistency:
         assert "force" in fields
         assert "cleanup" in fields
 
-    def test_deprecated_schemas_still_importable(self):
-        """弃用的Schema仍应可导入（向下兼容）"""
-        from app.services.tools.shell.shell_schema import (
-            CheckCommandAvailableInput, LocateCommandInput,
-            GetShellOutputInput, TerminateShellInput
-        )
-        assert CheckCommandAvailableInput is not None
-        assert LocateCommandInput is not None
-        assert GetShellOutputInput is not None
-        assert TerminateShellInput is not None
+    def test_deprecated_schemas_removed(self):
+        """旧Schema已删除，新Schema替代 - 小健 2026-05-18"""
+        import app.services.tools.shell.shell_schema as mod
+        assert not hasattr(mod, "CheckCommandAvailableInput"), "CheckCommandAvailableInput应已删除"
+        assert not hasattr(mod, "LocateCommandInput"), "LocateCommandInput应已删除"
+        assert not hasattr(mod, "GetShellOutputInput"), "GetShellOutputInput应已删除"
+        assert not hasattr(mod, "TerminateShellInput"), "TerminateShellInput应已删除"
+        assert hasattr(mod, "FindCommandInput"), "FindCommandInput应存在"
+        assert hasattr(mod, "ShellSessionInput"), "ShellSessionInput应存在"
 
 
 if __name__ == "__main__":
