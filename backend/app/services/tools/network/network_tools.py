@@ -1257,7 +1257,7 @@ async def port_check(
 
 async def network_diagnose(
     host: str,
-    mode: str = "ping",
+    mode: Literal["ping", "port"] = "ping",
     port: Optional[int] = None,
     count: int = 4,
     timeout: int = 5,
