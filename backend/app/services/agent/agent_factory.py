@@ -11,7 +11,7 @@ AgentFactory - Agent工厂类
 """
 from typing import Dict, Any, Optional, Type, List
 from app.services.agent.base_react import BaseAgent, DEFAULT_MAX_STEPS
-from app.services.tools.registry import ToolCategory
+from app.services.tools.registry import ToolCategory, INTENT_TO_CATEGORY
 
 
 class AgentFactory:
@@ -122,10 +122,11 @@ try:
 except ImportError as e:
     print(f"[AgentFactory] FileReactAgent: {e}")
 
-# TimeReactAgent
+# TimeReactAgent → 兼容旧意图名time - 【2026-05-18 小沈】time→meta
 try:
     from app.services.agent.time_react import TimeReactAgent
-    from app.services.tools.registry import ToolCategory
+    if 'meta' not in AgentFactory._AGENTS:
+        AgentFactory.register('meta', TimeReactAgent, ToolCategory.META)
     AgentFactory.register('time', TimeReactAgent, ToolCategory.META)
 except ImportError as e:
     print(f"[AgentFactory] TimeReactAgent: {e}")
@@ -157,10 +158,11 @@ try:
 except ImportError as e:
     print(f"[AgentFactory] DesktopReactAgent: {e}")
 
-# DatabaseReactAgent
+# DatabaseReactAgent → 兼容旧意图名database - 【2026-05-18 小沈】database→document
 try:
     from app.services.agent.database_react import DatabaseReactAgent
-    from app.services.tools.registry import ToolCategory
+    if 'document' not in AgentFactory._AGENTS:
+        AgentFactory.register('document', DatabaseReactAgent, ToolCategory.DOCUMENT)
     AgentFactory.register('database', DatabaseReactAgent, ToolCategory.DOCUMENT)
 except ImportError as e:
     print(f"[AgentFactory] DatabaseReactAgent: {e}")
@@ -181,10 +183,11 @@ try:
 except ImportError as e:
     print(f"[AgentFactory] DocumentReactAgent: {e}")
 
-# CodeExecutionReactAgent
+# CodeExecutionReactAgent → 兼容旧意图名code_execution - 【2026-05-18 小沈】code_execution→shell
 try:
     from app.services.agent.code_execution_react import CodeExecutionReactAgent
-    from app.services.tools.registry import ToolCategory
+    if 'shell' not in AgentFactory._AGENTS:
+        AgentFactory.register('shell', CodeExecutionReactAgent, ToolCategory.SHELL)
     AgentFactory.register('code_execution', CodeExecutionReactAgent, ToolCategory.SHELL)
 except ImportError as e:
     print(f"[AgentFactory] CodeExecutionReactAgent: {e}")
