@@ -63,14 +63,15 @@ INTENT_CLASSIFIER_CONFIG = _load_qiniu_config()
 _INTENT_DEFINITIONS = {
     "file": "文件操作，包括查看目录、浏览文件、打开磁盘(C盘/D盘/E盘)、打开文件夹、列出文件、读取/保存/删除/复制/移动文件等",
     "shell": "命令执行，包括运行npm/pip/git/docker等命令行工具、执行脚本、编译代码、运行程序等",
-    "time": "时间日期，包括查询当前时间、格式化日期、计算时间差、设置定时器、时区转换、检查周末/假日等",
+    "meta": "时间日期和元信息，包括查询当前时间、格式化日期、计算时间差、设置定时器、时区转换、检查周末/假日等",
     "network": "网络操作，包括ping/curl/wget/ssh等网络工具、端口扫描、HTTP请求、API调用、下载文件、FTP操作等",
     "desktop": "桌面操作，包括截图、截屏、窗口管理、打开应用程序、模拟按键、鼠标点击等",
-    "environment": "环境变量，包括查看/设置PATH、HOME、TEMP等系统环境变量、系统变量配置等",  # 【修复 2026-05-13 小沈】H3: env→environment，匹配ToolCategory.ENVIRONMENT.value
-    "system": "系统信息，包括查询CPU/内存/磁盘/进程/服务等系统资源、系统配置查看等",
-    "database": "数据库操作，包括SQL查询、select/insert/update/delete等数据库命令、表结构操作等",
-    "document": "文档读写，包括读取/创建/编辑docx、pdf、txt、md等文档文件、报告、笔记等",
-    "code_execution": "代码执行，包括运行python脚本、编译代码、执行程序、代码测试等",
+    "system": "系统信息和环境变量，包括查询CPU/内存/磁盘/进程/服务等系统资源、查看/设置PATH/HOME/TEMP等环境变量",
+    "document": "文档读写和数据库，包括读取/创建/编辑docx、pdf、txt、md等文档文件、SQL查询、数据库操作等",
+    "time": "（已合并到meta）时间日期操作",
+    "environment": "（已合并到system）环境变量操作",
+    "database": "（已合并到document）数据库操作",
+    "code_execution": "（已合并到shell）代码执行操作",
 }
 
 
