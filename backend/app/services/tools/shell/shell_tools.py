@@ -15,12 +15,14 @@ Shell 工具函数模块 - Shell命令执行工具
 LLM可见工具（4个）：
 - execute_shell_command: 执行Shell命令（支持后台运行，cwd参数替代change_directory）
 - find_command: 查找命令路径（合并check_command_available+locate_command）
-- get_shell_output: 获取后台shell输出
-- terminate_shell: 终止后台shell
+- shell_session: 后台Shell会话管理（合并get_shell_output+terminate_shell）
 
 内部辅助函数（不注册LLM）：
 - _get_working_directory: 获取当前工作目录（已降级，execute_shell_command内部使用）
 - _check_path_exists: 检查路径是否存在（已降级，内部工具可用）
+- _check_shell_injection: Shell注入安全检查
+- _read_stream_nonblocking: 非阻塞流读取
+- cleanup_background_shells: 批量终止后台Shell
 
 Author: 小沈 - 2026-04-29
 """
@@ -242,70 +244,6 @@ def _check_path_exists(path: str) -> dict:
             "message": f"检查路径失败: {str(e)}"
         }
 
-def get_working_directory() -> dict:
-    """获取当前工作目录 - 小沈 2026-05-04"""
-    try:
-        return {
-            "code": "SUCCESS",
-            "data": {"path": os.getcwd()},
-            "message": "成功获取当前工作目录"
-        }
-    except Exception as e:
-        return {
-            "code": "ERR_SHELL_GET_CWD",
-            "data": None,
-            "message": f"获取工作目录失败: {str(e)}"
-        }
-
-
-def change_directory(path: str) -> dict:
-    """切换工作目录 - 小沈 2026-05-04"""
-    try:
-        os.chdir(path)
-        return {
-            "code": "SUCCESS",
-            "data": {"success": True, "path": os.getcwd()},
-            "message": f"已切换目录: {os.getcwd()}"
-        }
-    except FileNotFoundError:
-        return {
-            "code": "ERR_SHELL_PATH_NOT_FOUND",
-            "data": None,
-            "message": f"目录不存在: {path}"
-        }
-    except PermissionError:
-        return {
-            "code": "ERR_SHELL_PERMISSION",
-            "data": None,
-            "message": f"没有权限访问: {path}"
-        }
-    except Exception as e:
-        return {
-            "code": "ERR_SHELL_CHANGE_DIR",
-            "data": None,
-            "message": f"切换目录失败: {str(e)}"
-        }
-
-
-def check_path_exists(path: str) -> dict:
-    """检查路径是否存在 - 小沈 2026-05-04"""
-    try:
-        exists = os.path.exists(path)
-        is_file = os.path.isfile(path) if exists else False
-        is_dir = os.path.isdir(path) if exists else False
-        return {
-            "code": "SUCCESS",
-            "data": {"exists": exists, "is_file": is_file, "is_directory": is_dir, "path": path},
-            "message": "路径存在" if exists else "路径不存在"
-        }
-    except Exception as e:
-        return {
-            "code": "ERR_SHELL_CHECK_PATH",
-            "data": None,
-            "message": f"检查路径失败: {str(e)}"
-        }
-
-
 def find_command(command: str, all_paths: bool = False) -> dict:
     """查找系统命令路径 - 小沈 2026-05-17
     【2026-05-17 小沈】合并 check_command_available + locate_command
@@ -453,10 +391,71 @@ def shell_session(
         {code, data, message}
     """
     if action == "output":
-        return get_shell_output(shell_id, filter=filter, encoding=encoding,
-                                max_lines=max_lines, tail=tail)
+        shell_info = _background_shells.get(shell_id)
+        if not shell_info:
+            return {"code": "ERR_SHELL_NOT_FOUND", "data": None, "message": f"后台Shell会话不存在: {shell_id}"}
+        process = shell_info.get("process")
+        if not process:
+            return {"code": "ERR_SHELL_NOT_FOUND", "data": None, "message": f"后台Shell会话无进程: {shell_id}"}
+        use_encoding = encoding or "utf-8"
+        stdout_str = _read_stream_nonblocking(process.stdout, use_encoding)
+        stderr_str = _read_stream_nonblocking(process.stderr, use_encoding)
+        is_running = process.poll() is None
+        if filter:
+            import re as _re
+            try:
+                pattern = _re.compile(filter)
+                stdout_lines = [l for l in stdout_str.splitlines() if pattern.search(l)]
+                stderr_lines = [l for l in stderr_str.splitlines() if pattern.search(l)]
+                stdout_str = "\n".join(stdout_lines)
+                stderr_str = "\n".join(stderr_lines)
+            except Exception:
+                pass
+        stdout_lines = stdout_str.splitlines()
+        if tail:
+            stdout_lines = stdout_lines[-max_lines:]
+        else:
+            stdout_lines = stdout_lines[:max_lines]
+        stdout_str = "\n".join(stdout_lines)
+        return {
+            "code": "SUCCESS",
+            "data": {"shell_id": shell_id, "stdout": stdout_str, "stderr": stderr_str, "is_running": is_running},
+            "message": "后台命令输出" if is_running else "后台命令已结束"
+        }
     elif action == "terminate":
-        return terminate_shell(shell_id, force=force, cleanup=cleanup)
+        shell_info = _background_shells.get(shell_id)
+        if not shell_info:
+            return {"code": "ERR_SHELL_NOT_FOUND", "data": None, "message": f"后台Shell会话不存在: {shell_id}"}
+        process = shell_info.get("process")
+        if not process:
+            if cleanup:
+                _background_shells.pop(shell_id, None)
+            return {"code": "SUCCESS", "data": {"shell_id": shell_id, "terminated": True, "force": force, "returncode": None}, "message": "会话已无进程"}
+        terminated = False
+        returncode = None
+        try:
+            if force:
+                process.kill()
+            else:
+                process.terminate()
+            process.wait(timeout=5)
+            terminated = True
+            returncode = process.returncode
+        except Exception:
+            try:
+                process.kill()
+                process.wait(timeout=3)
+                terminated = True
+                returncode = process.returncode
+            except Exception:
+                pass
+        if cleanup:
+            _background_shells.pop(shell_id, None)
+        return {
+            "code": "SUCCESS",
+            "data": {"shell_id": shell_id, "terminated": terminated, "force": force, "returncode": returncode},
+            "message": "已终止后台命令" if terminated else "终止失败"
+        }
     else:
         return {
             "code": "ERR_INVALID_ACTION",
