@@ -39,7 +39,7 @@ def _check_pyautogui() -> bool:
 
 # ========== 鼠标操作 ==========
 
-def click(
+def _click(
     x: int = None,
     y: int = None,
     button: str = "left",
@@ -57,7 +57,7 @@ def click(
         return {"code": "ERR_CLICK", "data": None, "message": f"点击失败: {str(e)}"}
 
 
-def move(x: int, y: int, duration: float = 0) -> Dict[str, Any]:
+def _move(x: int, y: int, duration: float = 0) -> Dict[str, Any]:
     """移动鼠标到指定位置 - 小沈 2026-05-02"""
     if not _check_pyautogui():
         return {"code": "ERR_NO_PYAUTOGUI", "data": None, "message": "pyautogui库未安装"}
@@ -69,7 +69,7 @@ def move(x: int, y: int, duration: float = 0) -> Dict[str, Any]:
         return {"code": "ERR_MOVE", "data": None, "message": f"移动失败: {str(e)}"}
 
 
-def scroll(direction: str, amount: int = 3) -> Dict[str, Any]:
+def _scroll(direction: str, amount: int = 3) -> Dict[str, Any]:
     """模拟鼠标滚轮滚动 - 小沈 2026-05-02"""
     if not _check_pyautogui():
         return {"code": "ERR_NO_PYAUTOGUI", "data": None, "message": "pyautogui库未安装"}
@@ -84,7 +84,7 @@ def scroll(direction: str, amount: int = 3) -> Dict[str, Any]:
 
 # ========== 键盘操作 ==========
 
-def type_text(text: str, interval: float = 0) -> Dict[str, Any]:
+def _type_text(text: str, interval: float = 0) -> Dict[str, Any]:
     """模拟键盘输入文本 - 小沈 2026-05-02"""
     if not _check_pyautogui():
         return {"code": "ERR_NO_PYAUTOGUI", "data": None, "message": "pyautogui库未安装"}
@@ -100,7 +100,7 @@ def type_text(text: str, interval: float = 0) -> Dict[str, Any]:
         return {"code": "ERR_TYPE_TEXT", "data": None, "message": f"输入文本失败: {str(e)}"}
 
 
-def shortcut(keys: str) -> Dict[str, Any]:
+def _shortcut(keys: str) -> Dict[str, Any]:
     """执行键盘快捷键组合 - 小沈 2026-05-02"""
     if not _check_pyautogui():
         return {"code": "ERR_NO_PYAUTOGUI", "data": None, "message": "pyautogui库未安装"}
@@ -113,7 +113,7 @@ def shortcut(keys: str) -> Dict[str, Any]:
         return {"code": "ERR_SHORTCUT", "data": None, "message": f"快捷键执行失败: {str(e)}"}
 
 
-def key_combo(keys: List[str], action: str = "press") -> Dict[str, Any]:
+def _key_combo(keys: List[str], action: str = "press") -> Dict[str, Any]:
     """按住多个键后释放 - 小沈 2026-05-02"""
     if not _check_pyautogui():
         return {"code": "ERR_NO_PYAUTOGUI", "data": None, "message": "pyautogui库未安装"}
@@ -134,7 +134,7 @@ def key_combo(keys: List[str], action: str = "press") -> Dict[str, Any]:
 
 # ========== 屏幕操作 ==========
 
-def screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[str, Any]:
+def _screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[str, Any]:
     """截取屏幕截图 - 小沈 2026-05-02"""
     try:
         import pyautogui
@@ -158,7 +158,7 @@ def screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[s
         return {"code": "ERR_SCREENSHOT", "data": None, "message": f"截图失败: {str(e)}"}
 
 
-def snapshot(display: int = 1) -> Dict[str, Any]:
+def _snapshot(display: int = 1) -> Dict[str, Any]:
     """获取完整桌面状态快照 - 小沈 2026-05-02"""
     try:
         import mss
@@ -261,7 +261,7 @@ def list_windows(filter: str = None) -> Dict[str, Any]:
         return {"code": "ERR_LIST_WINDOWS", "data": None, "message": f"获取窗口列表失败: {str(e)}"}
 
 
-def focus_window(title: str) -> Dict[str, Any]:
+def _focus_window(title: str) -> Dict[str, Any]:
     """聚焦指定窗口 - 小沈 2026-05-02"""
     try:
         import win32gui
@@ -287,7 +287,7 @@ def focus_window(title: str) -> Dict[str, Any]:
         return {"code": "ERR_FOCUS_WINDOW", "data": None, "message": f"聚焦窗口失败: {str(e)}"}
 
 
-def resize_window(title: str, width: int = None, height: int = None) -> Dict[str, Any]:
+def _resize_window(title: str, width: int = None, height: int = None) -> Dict[str, Any]:
     """调整窗口大小 - 小沈 2026-05-02"""
     try:
         import win32gui
@@ -343,7 +343,7 @@ def ocr(image_path: str, language: str = "eng") -> Dict[str, Any]:
 
 # ========== 剪贴板操作（Tool 105-106）==========
 
-def read_clipboard() -> Dict[str, Any]:
+def _read_clipboard() -> Dict[str, Any]:
     """读取剪贴板内容 - 按文档9.6节定义"""
     try:
         import pyperclip
@@ -373,7 +373,7 @@ def read_clipboard() -> Dict[str, Any]:
             return {"code": "ERR_CLIPBOARD", "data": None, "message": f"读取剪贴板失败: {str(e)}"}
 
 
-def write_clipboard(content: str) -> Dict[str, Any]:
+def _write_clipboard(content: str) -> Dict[str, Any]:
     """写入内容到剪贴板 - 按文档9.6节定义"""
     try:
         import pyperclip  # 修复：正确库名pyperclip - 小沈 2026-05-04
