@@ -8,14 +8,12 @@ SYSTEM 工具参数 Schema 定义
 职责：
 定义 system 工具的 Pydantic 模型。
 
-【2026-05-17 小沈】按精简方案13.4节重构：16→10工具
-- 消除 log_message/get_logs（被write_text_file/read_text_file覆盖）
-- service×3 → service_control 统一入口
-- task×3 → task_control 统一入口
-- 修正S1: ListProcessesInput删除limit(保留max_results)
-- 新增 ServiceControlInput、TaskControlInput
+【2026-05-18 小沈】继续精简：10→7工具
+- list_env合入get_env(action="list")
+- reg_read/reg_write/reg_delete合入registry_control(action路由)
+- Env_Check 5个验证工具降级为document内部helper(§13.3.4)
 
-工具列表（10个LLM可见）：
+工具列表（7个LLM可见 + 3个Environment迁入 + 1个Registry迁入）：
 1. get_system_info - 获取系统信息
 2. net_connections - 获取网络连接列表
 3. event_log - 获取系统事件日志
@@ -23,9 +21,9 @@ SYSTEM 工具参数 Schema 定义
 5. kill_process - 终止指定进程
 6. service_control - 服务统一控制(start/stop/restart/list)
 7. task_control - 计划任务统一控制(create/delete/list)
-8. reg_read - 读取注册表键值
-9. reg_write - 写入注册表键值
-10. reg_delete - 删除注册表键值
+8. get_env - 获取/列出环境变量(action=get/list)
+9. set_env - 设置/删除环境变量(action=set/delete)
+10. registry_control - 注册表统一控制(action=read/write/delete)
 
 Author: 小沈 - 2026-04-29
 更新时间: 2026-05-03 小沈 - 修正参数description，准确清晰完整
@@ -241,11 +239,14 @@ class TaskControlInput(BaseModel):
 
 # 【2026-05-18 小沈】新增：Environment 工具 Schema（从environment模块迁入）
 class GetEnvInput(BaseModel):
-    """get_env 工具的输入参数"""
-    name: str = Field(..., description="环境变量名称。如 \"PATH\"、\"HOME\"、\"USER\"、\"JAVA_HOME\" 等")
+    """get_env 工具的输入参数（2026-05-18 小沈：合并list_env，action="get"|"list"）"""
+    name: Optional[str] = Field(default=None, description="环境变量名称（action=\"get\"时必填）。如 \"PATH\"、\"HOME\"、\"USER\"、\"JAVA_HOME\" 等")
     default: Optional[str] = Field(default=None, description="默认值（可选）。如果指定的环境变量不存在，则返回此默认值")
     scope: Literal["process", "user", "system"] = Field(default="process", description="作用域。可选值：process（仅当前进程）、user（当前用户持久化）、system（全局持久化，需管理员权限）。Agent根据query语义自动映射。默认为process")
     expand_vars: bool = Field(default=True, description="是否展开值中的嵌套变量（如 %JAVA_HOME%\\bin 或 $HOME/.local）。默认 true（返回绝对路径）。展开失败时保留原始字符串")
+    action: Literal["get", "list"] = Field(default="get", description="操作类型。\"get\"=获取单个变量（默认），\"list\"=列出所有变量（原list_env）。Agent根据语义自动映射")
+    prefix: Optional[str] = Field(default=None, description="环境变量名前缀过滤（仅action=\"list\"有效）。例如 PY、JAVA")
+    include_system: bool = Field(default=False, description="是否包含系统级环境变量（仅action=\"list\"有效），默认为False（仅用户级）")
 
 
 class SetEnvInput(BaseModel):
@@ -258,38 +259,6 @@ class SetEnvInput(BaseModel):
     exist_ok: bool = Field(default=True, description="幂等模式。True时若变量已存在且值相同则直接返回成功，False时始终覆盖。默认True")
 
 
-class ListEnvInput(BaseModel):
-    """list_env 工具的输入参数"""
-    prefix: Optional[str] = Field(default=None, description="环境变量名前缀过滤（可选），例如 PY、JAVA")
-    include_system: bool = Field(default=False, description="是否包含系统级环境变量，默认为False（仅用户级）")
-
-
-# 【2026-05-18 小沈】新增：Env Check 工具 Schema（从env_check模块迁入）
-class ValidateCsvFormatInput(BaseModel):
-    """validate_csv_format 工具的输入参数（Tool 87）"""
-    file_path: str = Field(..., description="CSV文件路径。如 D:/data/users.csv")
-
-
-class ValidateChartDataInput(BaseModel):
-    """validate_chart_data 工具的输入参数（Tool 88）"""
-    data: Dict[str, Any] = Field(..., description="图表数据（JSON格式）。检查是否包含必要的 labels 和 values 字段")
-
-
-class CheckPdfReadableInput(BaseModel):
-    """check_pdf_readable 工具的输入参数（Tool 89）"""
-    file_path: str = Field(..., description="PDF文件路径。如 D:/documents/report.pdf")
-
-
-class CheckDocxReadableInput(BaseModel):
-    """check_docx_readable 工具的输入参数（Tool 90）"""
-    file_path: str = Field(..., description="Word文件路径。如 D:/documents/report.docx")
-
-
-class CheckXlsxReadableInput(BaseModel):
-    """check_xlsx_readable 工具的输入参数（Tool 91）"""
-    file_path: str = Field(..., description="Excel文件路径。如 D:/data/report.xlsx")
-
-
 __all__ = [
     "GetSystemInfoInput",
     "NetConnectionsInput",
@@ -300,10 +269,4 @@ __all__ = [
     "TaskControlInput",
     "GetEnvInput",
     "SetEnvInput",
-    "ListEnvInput",
-    "ValidateCsvFormatInput",
-    "ValidateChartDataInput",
-    "CheckPdfReadableInput",
-    "CheckDocxReadableInput",
-    "CheckXlsxReadableInput",
 ]
