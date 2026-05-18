@@ -126,7 +126,7 @@ except ImportError as e:
 try:
     from app.services.agent.time_react import TimeReactAgent
     from app.services.tools.registry import ToolCategory
-    AgentFactory.register('time', TimeReactAgent, ToolCategory.TIME)
+    AgentFactory.register('time', TimeReactAgent, ToolCategory.META)
 except ImportError as e:
     print(f"[AgentFactory] TimeReactAgent: {e}")
 
@@ -161,7 +161,7 @@ except ImportError as e:
 try:
     from app.services.agent.database_react import DatabaseReactAgent
     from app.services.tools.registry import ToolCategory
-    AgentFactory.register('database', DatabaseReactAgent, ToolCategory.DATABASE)
+    AgentFactory.register('database', DatabaseReactAgent, ToolCategory.DOCUMENT)
 except ImportError as e:
     print(f"[AgentFactory] DatabaseReactAgent: {e}")
 
@@ -185,6 +185,6 @@ except ImportError as e:
 try:
     from app.services.agent.code_execution_react import CodeExecutionReactAgent
     from app.services.tools.registry import ToolCategory
-    AgentFactory.register('code_execution', CodeExecutionReactAgent, ToolCategory.CODE_EXECUTION)
+    AgentFactory.register('code_execution', CodeExecutionReactAgent, ToolCategory.SHELL)
 except ImportError as e:
     print(f"[AgentFactory] CodeExecutionReactAgent: {e}")

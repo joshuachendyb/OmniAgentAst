@@ -30,7 +30,7 @@ class CodeExecutionReactAgent(ReactAgentMixin, BaseAgent):
         if not task_id:
             raise ValueError("task_id is required for code execution tracking")
         
-        effective_category = tool_category or ToolCategory.CODE_EXECUTION
+        effective_category = tool_category or ToolCategory.SHELL
         
         super().__init__(
             llm_client=llm_client,
@@ -73,3 +73,4 @@ class CodeExecutionReactAgent(ReactAgentMixin, BaseAgent):
         """
         logger.warning(f"[CodeExecutionReactAgent] Code execution cannot be rolled back. Manually check execution results.")
         return False  # Correct return value (Defect 4 fix)
+

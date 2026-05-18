@@ -252,7 +252,7 @@ def _register_data_format_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.DATA_FORMAT,
+            category=ToolCategory.DOCUMENT,
             implementation=implementation,
             version="1.0.0",
             input_model=input_model,

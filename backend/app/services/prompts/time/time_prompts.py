@@ -111,7 +111,7 @@ Example 3 - 任务完成:
 
     def get_parameter_reminder(self) -> str:
         from app.services.tools.registry import tool_registry, ToolCategory
-        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.TIME)
+        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.META)
         forbidden = (
             "\n\nFORBIDDEN parameter names - DO NOT use:\n"
             "- ❌ amount / value (correct: delta)\n"
@@ -132,3 +132,4 @@ Please help me complete this time/date task. Follow these steps:
 
     def get_safety_reminder(self) -> str:
         return "⚠️ Time Safety: timer_clear only affects timers created in current session. Do NOT clear system timers."
+

@@ -51,7 +51,7 @@ class TimeReactAgent(ReactAgentMixin, BaseAgent):
             max_steps: 最大步数
             candidates: 候选意图列表，用于跨分类工具访问
         """
-        effective_category = tool_category or ToolCategory.TIME
+        effective_category = tool_category or ToolCategory.META
         
         super().__init__(
             llm_client=llm_client,

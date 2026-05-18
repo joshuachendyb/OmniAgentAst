@@ -44,7 +44,7 @@ Example 2 - 任务完成:
 
     def get_parameter_reminder(self) -> str:
         from app.services.tools.registry import tool_registry, ToolCategory
-        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.CODE_EXECUTION)
+        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.SHELL)
         forbidden = (
             "\n\nFORBIDDEN parameter names - DO NOT use:\n"
             "- ❌ script / source / python_code / js_code (correct: code)"
@@ -58,3 +58,4 @@ Please help me execute this code. Follow these steps:
 1. First, analyze the code or language needed
 2. Execute the code using the appropriate tool
 3. Provide the execution result"""
+

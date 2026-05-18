@@ -128,7 +128,7 @@ class BaseAgent(ABC):
         self._loaded_categories = set()
         if self.tool_category:
             self._loaded_categories.add(self.tool_category.value)
-        self._loaded_categories.add("support_tool")
+        # self._loaded_categories.add("support_tool")  # support_tool已废弃，不再预加载
         
         from app.services.preprocessing.intent_classifier import IntentClassifier
         self._intent_classifier = IntentClassifier()

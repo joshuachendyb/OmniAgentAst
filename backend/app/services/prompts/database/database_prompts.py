@@ -81,7 +81,7 @@ Example 4: Task completed
     
     def get_parameter_reminder(self) -> str:
         from app.services.tools.registry import tool_registry, ToolCategory
-        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.DATABASE)
+        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.DOCUMENT)
         forbidden = (
             "\n\nFORBIDDEN parameter names - DO NOT use:\n"
             "- ❌ query (correct: sql)\n"
@@ -103,3 +103,4 @@ Please help me complete this database task. Follow these steps:
 1. Use query_sql with SELECT to preview data before UPDATE/DELETE
 2. Always include WHERE clause for UPDATE/DELETE operations
 3. If transaction fails, report the error and suggest manual ROLLBACK"""
+

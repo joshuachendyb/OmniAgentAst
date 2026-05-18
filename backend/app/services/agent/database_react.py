@@ -30,7 +30,7 @@ class DatabaseReactAgent(ReactAgentMixin, BaseAgent):
         if not task_id:
             raise ValueError("task_id is required for database operation tracking")
         
-        effective_category = tool_category or ToolCategory.DATABASE
+        effective_category = tool_category or ToolCategory.DOCUMENT
         
         super().__init__(
             llm_client=llm_client,
@@ -73,3 +73,4 @@ class DatabaseReactAgent(ReactAgentMixin, BaseAgent):
         """
         logger.warning(f"[DatabaseReactAgent] 数据库操作无法回滚，已执行SQL不会撤销。请手动检查数据状态。")
         return False  # ✅ 更准确的返回值（缺陷4修正）
+

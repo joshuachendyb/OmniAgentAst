@@ -97,7 +97,7 @@ ACTION_DEFINITIONS = {
         "compatibility": {
             ToolCategory.FILE: 1.5,
             ToolCategory.DOCUMENT: 1.5,
-            ToolCategory.DATABASE: 1.2,
+            ToolCategory.DOCUMENT: 1.2,
             ToolCategory.SYSTEM: 0.8,
             ToolCategory.NETWORK: 0.5,
             ToolCategory.DESKTOP: 0.5,
@@ -108,14 +108,14 @@ ACTION_DEFINITIONS = {
         "compatibility": {
             ToolCategory.FILE: 1.5,
             ToolCategory.DOCUMENT: 1.5,
-            ToolCategory.DATABASE: 1.0,
+            ToolCategory.DOCUMENT: 1.0,
         }
     },
     "delete": {
         "keywords": ['rm', 'del', 'delete', 'remove', '删除', '清除', '移除'],
         "compatibility": {
             ToolCategory.FILE: 1.5,
-            ToolCategory.DATABASE: 1.2,
+            ToolCategory.DOCUMENT: 1.2,
             ToolCategory.DESKTOP: 0.5,
         }
     },
@@ -123,15 +123,15 @@ ACTION_DEFINITIONS = {
         "keywords": ['run', 'exec', 'execute', '运行', '执行', '启动', '编译'],
         "compatibility": {
             ToolCategory.SHELL: 1.5,
-            ToolCategory.CODE_EXECUTION: 1.5,
+            ToolCategory.SHELL: 1.5,
         }
     },
     "query": {
         "keywords": ['select', 'query', 'search', 'find', 'grep', '查询', '搜索', '查找'],
         "compatibility": {
-            ToolCategory.DATABASE: 1.5,
+            ToolCategory.DOCUMENT: 1.5,
             ToolCategory.SYSTEM: 1.0,
-            ToolCategory.TIME: 0.8,
+            ToolCategory.META: 0.8,
             ToolCategory.FILE: 1.0,
         }
     },
@@ -146,7 +146,7 @@ ACTION_DEFINITIONS = {
     "configure": {
         "keywords": ['set', 'config', 'change', '修改', '设置', '配置', '调整'],
         "compatibility": {
-            ToolCategory.ENVIRONMENT: 1.5,
+            ToolCategory.SYSTEM: 1.5,
             ToolCategory.SYSTEM: 1.2,
             ToolCategory.DESKTOP: 1.0,
             ToolCategory.NETWORK: 1.0,
@@ -168,14 +168,14 @@ ACTION_DEFINITIONS = {
 TYPE_CATEGORY_MAP = {
     "FILE": ToolCategory.FILE,
     "SHELL": ToolCategory.SHELL,
-    "TIME": ToolCategory.TIME,
+    "TIME": ToolCategory.META,
     "NETWORK": ToolCategory.NETWORK,
     "DESKTOP": ToolCategory.DESKTOP,
-    "ENV": ToolCategory.ENVIRONMENT,
+    "ENV": ToolCategory.SYSTEM,
     "SYSTEM": ToolCategory.SYSTEM,
-    "DATABASE": ToolCategory.DATABASE,
+    "DATABASE": ToolCategory.DOCUMENT,
     "DOCUMENT": ToolCategory.DOCUMENT,
-    "CODE_EXECUTION": ToolCategory.CODE_EXECUTION,
+    "CODE_EXECUTION": ToolCategory.SHELL,
 }
 
 
@@ -323,3 +323,4 @@ __all__ = [
     'detect_intent_v2',
     'CRSS_CONFIDENCE_THRESHOLD',
 ]
+
