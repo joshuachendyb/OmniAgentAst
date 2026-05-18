@@ -150,7 +150,7 @@ def _register_database_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.DATABASE,
+            category=ToolCategory.DOCUMENT,
             implementation=method,
             version="1.0.0",
             input_model=input_model,
