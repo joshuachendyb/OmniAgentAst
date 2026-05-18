@@ -7,20 +7,23 @@
        从 network/network_tools.py 迁移 _html_to_markdown 和 _decode_bing_redirect_url
        这些函数作为内部Helper，不注册到tool_registry，仅供Agent内部代码调用
 
-包含函数（4个）：
+包含函数（6个）：
 - _check_network: 检查网络连通性（内部Helper）
 - _validate_url: 验证URL格式（内部Helper）
 - _html_to_markdown: 简易HTML转Markdown（内部Helper）- 小沈 2026-05-17
 - _decode_bing_redirect_url: 解码Bing跳转URL（内部Helper）- 小沈 2026-05-17
+- well_known_ports: 常用端口映射表（内部常量）- 小健 2026-05-18
+- _create_http_client: 统一创建httpx.AsyncClient（内部Helper）- 小健 2026-05-18
 
 Author: 小沈 - 2026-05-17
 """
 
 import base64
+import os
 import re
 import socket
 import time
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from urllib.parse import urlparse
 
 
@@ -96,6 +99,8 @@ __all__ = [
     "_validate_url",
     "_html_to_markdown",
     "_decode_bing_redirect_url",
+    "well_known_ports",
+    "_create_http_client",
 ]
 
 
@@ -156,3 +161,68 @@ def _decode_bing_redirect_url(url: str) -> str:
         except Exception:
             pass
     return url
+
+
+well_known_ports = {
+    20: "FTP-Data(数据端口)",
+    21: "FTP-Control(控制端口)",
+    22: "SSH",
+    23: "Telnet",
+    25: "SMTP",
+    53: "DNS",
+    80: "HTTP",
+    110: "POP3",
+    143: "IMAP",
+    443: "HTTPS",
+    465: "SMTPS",
+    587: "SMTP-MSA",
+    993: "IMAPS",
+    995: "POP3S",
+    1433: "MSSQL",
+    1521: "Oracle",
+    3306: "MySQL",
+    3389: "RDP",
+    5432: "PostgreSQL",
+    5900: "VNC",
+    6379: "Redis",
+    8080: "HTTP-Proxy",
+    8443: "HTTPS-Alt",
+    27017: "MongoDB",
+}
+"""常用端口映射表 - 小健 2026-05-18 从 network_tools.py 下沉"""
+
+
+async def _create_http_client(
+    timeout_sec: float = 30.0,
+    proxy: Optional[str] = None,
+    verify_ssl: bool = True,
+    follow_redirects: bool = True,
+) -> Any:
+    """统一创建httpx.AsyncClient - 小健 2026-05-18
+
+    消除 http_request/download_file/fetch_webpage 三处重复的客户端创建代码。
+    统一代理配置（HTTP_PROXY/HTTPS_PROXY环境变量）、超时、SSL验证。
+
+    Args:
+        timeout_sec: 超时秒数，默认30
+        proxy: 代理地址。None时从环境变量HTTPS_PROXY/HTTP_PROXY读取
+        verify_ssl: 是否验证SSL证书，默认True
+        follow_redirects: 是否跟随重定向，默认True
+
+    Returns:
+        httpx.AsyncClient 实例（需由调用方 async with 使用）
+    """
+    import httpx
+
+    proxy_url = proxy or os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
+
+    limits = httpx.Limits(max_connections=100, max_keepalive_connections=20)
+    timeout = httpx.Timeout(timeout_sec, connect=timeout_sec)
+
+    return httpx.AsyncClient(
+        verify=verify_ssl,
+        timeout=timeout,
+        limits=limits,
+        follow_redirects=follow_redirects,
+        proxy=proxy_url if proxy_url else None,
+    )
