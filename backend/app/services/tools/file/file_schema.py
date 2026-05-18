@@ -179,8 +179,9 @@ class ListDirectoryInput(BaseModel):
     - format="tree": JSON树结构（原get_directory_tree）
     - 始终返回statistics统计信息（原file_statistics）
     """
-    dir_path: str = Field(
-        description="目录的完整路径（必须是绝对路径，如 D:/项目代码）"
+    dir_path: Optional[str] = Field(
+        default=".",
+        description="目录路径，默认当前目录。推荐使用绝对路径如 D:/项目代码"
     )
     format: str = Field(
         default="list",

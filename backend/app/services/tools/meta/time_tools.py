@@ -150,6 +150,12 @@ def _time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None)
         elif isinstance(timestamp, str):
             # 尝试解析字符串
             dt = _parse_datetime_string(timestamp)
+            if dt is None:
+                return {
+                    "code": "ERR_TIME_FORMAT",
+                    "data": None,
+                    "message": f"无法解析时间字符串: {timestamp}"
+                }
         elif isinstance(timestamp, datetime):
             dt = timestamp.astimezone() if timestamp.tzinfo else timestamp.astimezone()
         else:

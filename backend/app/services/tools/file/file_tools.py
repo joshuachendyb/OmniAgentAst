@@ -758,7 +758,7 @@ class FileTools:
     
     async def list_directory(
         self,
-        dir_path: str,
+        dir_path: Optional[str] = ".",
         format: str = "list",
         recursive: bool = False,
         max_depth: int = 10,
@@ -1234,8 +1234,8 @@ class FileTools:
                 "matches": []
             }, "search_files")
         
-        search_path = Path(search_dir)
-        
+        search_path = Path(os.path.expanduser(search_dir))
+
         try:
             if not search_path.exists():
                 return _to_unified_format({
