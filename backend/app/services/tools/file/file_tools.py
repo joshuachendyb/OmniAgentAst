@@ -51,24 +51,17 @@ DEFAULT_PAGE_SIZE = 200  # 每页返回数量，防止LLM上下文爆满 小沈-
 from pydantic import BaseModel, Field
 
 from app.services.tools.file.file_schema import (
-    ReadTextFileInput,
+    ReadFileInput,
     WriteTextFileInput,
     ListDirectoryInput,
-    DeleteFileInput,
-    MoveFileInput,
     SearchFilesInput,
-    GenerateReportInput,
-    CopyFileInput,
-    CreateDirectoryInput,
-    GetFileInfoInput,
-    CompareFilesInput,
-    BatchRenameInput,
-    CompressFilesInput,
-    FileMonitorInput,
-    FileStatisticsInput,
-    FileChecksumInput,
-    ExtractArchiveInput,
-    GetFileHashInput,
+    ReadMediaFileInput,
+    GrepFileContentInput,
+    EditFileInput,
+    FileOperationInput,
+    ArchiveToolInput,
+    RenameFileInput,
+    DataFileFormatInput,
 )
 
 from app.services.safety.file.file_safety import OperationType
@@ -406,7 +399,7 @@ class FileTools:
         except Exception as e:
             return False, f"路径验证失败: {str(e)}"
     
-    async def read_text_file(
+    async def _read_text_file(
         self,
         file_path: str,
         head: Optional[int] = None,
@@ -754,7 +747,7 @@ class FileTools:
                 "operation_id": None
             }, "write_text_file")
 
-    async def write_file(self, file_path: str, text: str, encoding: str = "utf-8",
+    async def _write_file(self, file_path: str, text: str, encoding: str = "utf-8",
                          append: bool = False, create_parents: bool = True,
                          unescape: bool = True) -> Dict[str, Any]:
         """write_file兼容别名 - 小健 2026-05-02"""
@@ -766,18 +759,40 @@ class FileTools:
     async def list_directory(
         self,
         dir_path: str,
+        format: str = "list",
         recursive: bool = False,
         max_depth: int = 10,
         page_token: Optional[str] = None,
         sortBy: str = "name",
         include_hidden: bool = False,
+        exclude_patterns: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """列出目录内容（含大小/排序/统计） - 小沈 2026-05-01"""
-        # 【修复 2026-05-01 小沈】参数校验
+        """列出目录内容（统一入口）— 小沈 2026-05-18
+        
+        P11统一入口：合并 list_directory + get_directory_tree + file_statistics
+        - format="list": 扁平列表（原list_directory）
+        - format="tree": JSON树结构（原get_directory_tree）
+        - 始终返回statistics统计信息（P15全面化）
+        
+        P17校验：format只能是"list"或"tree"
+        """
+        # P17 format校验
+        if format not in ("list", "tree"):
+            return _to_unified_format({"success": False, "error": f"format只支持'list'或'tree'，当前值: '{format}'"}, "list_directory")
+        
         if max_depth < 1:
             return _to_unified_format({"success": False, "error": f"max_depth必须>=1，当前值: {max_depth}", "entries": []}, "list_directory")
-        if sortBy not in ("name", "size"):
-            return _to_unified_format({"success": False, "error": f"sortBy只支持'name'或'size'，当前值: '{sortBy}'", "entries": []}, "list_directory")
+        if sortBy not in ("name", "size", "mtime"):
+            return _to_unified_format({"success": False, "error": f"sortBy只支持'name'/'size'/'mtime'，当前值: '{sortBy}'", "entries": []}, "list_directory")
+        
+        # format="tree" 分支：委托 get_directory_tree 逻辑 — 小沈 2026-05-18
+        if format == "tree":
+            tree_result = await self._get_directory_tree(
+                dir_path=dir_path,
+                excludePatterns=exclude_patterns,
+                max_depth=max_depth,
+            )
+            return tree_result
 
         # 验证路径合法性
         is_valid, error_msg = self._validate_path(dir_path)
@@ -826,6 +841,8 @@ class FileTools:
                 nonlocal _list_timed_out
                 entries = []
                 stats = {"total_size": 0, "dir_count": 0, "file_count": 0}
+                ext_counter: Dict[str, int] = {}
+                size_bins = {"<1KB": 0, "1KB-10KB": 0, "10KB-100KB": 0, "100KB-1MB": 0, ">1MB": 0}
 
                 if recursive:
                     def _scan_recursive(current_path: Path, current_depth: int):
@@ -860,6 +877,19 @@ class FileTools:
                                     else:
                                         stats["total_size"] += st.st_size
                                         stats["file_count"] += 1
+                                        ext = item.suffix.lower().lstrip('.') if item.suffix else ''
+                                        ext_counter[ext] = ext_counter.get(ext, 0) + 1
+                                        sz = st.st_size
+                                        if sz < 1024:
+                                            size_bins["<1KB"] += 1
+                                        elif sz < 10240:
+                                            size_bins["1KB-10KB"] += 1
+                                        elif sz < 102400:
+                                            size_bins["10KB-100KB"] += 1
+                                        elif sz < 1048576:
+                                            size_bins["100KB-1MB"] += 1
+                                        else:
+                                            size_bins[">1MB"] += 1
                                 except (PermissionError, OSError):
                                     continue
                         except (PermissionError, OSError):
@@ -885,12 +915,25 @@ class FileTools:
                             else:
                                 stats["total_size"] += st.st_size
                                 stats["file_count"] += 1
+                                ext = item.suffix.lower().lstrip('.') if item.suffix else ''
+                                ext_counter[ext] = ext_counter.get(ext, 0) + 1
+                                sz = st.st_size
+                                if sz < 1024:
+                                    size_bins["<1KB"] += 1
+                                elif sz < 10240:
+                                    size_bins["1KB-10KB"] += 1
+                                elif sz < 102400:
+                                    size_bins["10KB-100KB"] += 1
+                                elif sz < 1048576:
+                                    size_bins["100KB-1MB"] += 1
+                                else:
+                                    size_bins[">1MB"] += 1
                         except (PermissionError, OSError):
                             continue
 
-                return entries, stats["total_size"], stats["dir_count"], stats["file_count"]
+                return entries, stats["total_size"], stats["dir_count"], stats["file_count"], ext_counter, size_bins
 
-            all_entries, total_size, dir_count, file_count = await asyncio.to_thread(_list_sync)
+            all_entries, total_size, dir_count, file_count, file_types, size_distribution = await asyncio.to_thread(_list_sync)
 
             # 排序：目录优先，然后按sortBy
             if sortBy == "size":
@@ -909,6 +952,7 @@ class FileTools:
             statistics = {
                 "total_size": total_size, "dir_count": dir_count,
                 "file_count": file_count, "sort_by": sortBy,
+                "file_types": file_types, "size_distribution": size_distribution,
             }
 
             if total > MAX_DISPLAY_ENTRIES:
@@ -949,7 +993,7 @@ class FileTools:
                 "entries": []
             }, "list_directory")
     
-    async def delete_file(
+    async def _delete_file(
         self,
         file_path: str,
         recursive: bool = False,
@@ -1064,7 +1108,7 @@ class FileTools:
                 "operation_id": None
             }, "delete_file")
     
-    async def move_file(
+    async def _move_file(
         self,
         source_path: str,
         destination_path: str,
@@ -1352,52 +1396,7 @@ class FileTools:
                 "matches": []
             }, "search_files")
     
-    async def generate_report(self, output_dir: Optional[str] = None) -> Dict[str, Any]:
-        """生成操作报告"""
-        # 【修复P5】验证输出目录路径
-        if output_dir:
-            is_valid, error_msg = self._validate_path(output_dir)
-            if not is_valid:
-                return _to_unified_format({
-                    "success": False,
-                    "error": error_msg,
-                    "reports": {}
-                }, "generate_report")
-        
-        if not self.task_id:
-            self.task_id = _current_task_id.get(None)
-        if not self.task_id:
-            return _to_unified_format({
-                "success": False,
-                "error": "No active task",
-                "reports": {}
-            }, "generate_report")
-        
-        try:
-            output_path = Path(output_dir) if output_dir else None
-            task_id = self.task_id or ""
-            
-            def _generate_sync():
-                return self.visualizer.generate_all_reports(task_id, output_path)
-            
-            reports = await asyncio.to_thread(_generate_sync)
-            report_paths = {k: str(v) for k, v in reports.items()}
-            
-            return _to_unified_format({
-                "success": True,
-                "task_id": self.task_id,
-                "reports": report_paths
-            }, "generate_report")
-            
-        except Exception as e:
-            logger.error(f"Failed to generate report: {e}")
-            return _to_unified_format({
-                "success": False,
-                "error": str(e),
-                "reports": {}
-            }, "generate_report")
-
-    async def copy_file(
+    async def _copy_file(
         self,
         source_path: str,
         destination_path: str,
@@ -1406,7 +1405,7 @@ class FileTools:
         preserve_metadata: bool = True,
     ) -> Dict[str, Any]:
         """复制文件或目录 - 小健 2026-05-02 增加preserve_metadata"""
-        from app.services.tools.file.copy_file import copy_file_impl
+        from app.services.tools.toolhelper.file_helpers import copy_file_impl
         
         return await copy_file_impl(
             source_path=source_path,
@@ -1423,37 +1422,13 @@ class FileTools:
             get_next_sequence_func=self._get_next_sequence,
         )
 
-    async def create_directory(
-        self,
-        dir_path: str,
-        parents: bool = True,
-        exist_ok: bool = True,
-    ) -> Dict[str, Any]:
-        from app.services.tools.file.create_directory import create_directory_impl
-        
-        if not self.task_id:
-            self.task_id = _current_task_id.get(None)
-        
-        return await create_directory_impl(
-            dir_path=dir_path,
-            parents=parents,
-            exist_ok=exist_ok,
-            validate_path_func=self._validate_path,
-            safety_service=self.safety,
-            task_id=self.task_id,
-            record_operation_func=self.safety.record_operation,
-            execute_with_safety_func=self.safety.execute_with_safety,
-            to_unified_format_func=_to_unified_format,
-            get_next_sequence_func=self._get_next_sequence,
-        )
-
-    async def get_file_info(
+    async def _get_file_info(
         self,
         file_path: str,
         follow_symlinks: bool = True,
     ) -> Dict[str, Any]:
         """获取文件信息 - 小健 2026-05-02 增加follow_symlinks"""
-        from app.services.tools.file.get_file_info import get_file_info_impl
+        from app.services.tools.toolhelper.file_helpers import get_file_info_impl
         
         return await get_file_info_impl(
             file_path=file_path,
@@ -1462,31 +1437,7 @@ class FileTools:
             follow_symlinks=follow_symlinks,
         )
 
-    async def compare_files(
-        self,
-        file_path1: str,
-        file_path2: str,
-        algorithm: str = "content",
-        chunk_size: int = 8192,
-    ) -> Dict[str, Any]:
-        """比较两个文件"""
-        from app.services.tools.file.compare_files import compare_files_impl
-        
-        return await compare_files_impl(
-            file_path1=file_path1,
-            file_path2=file_path2,
-            algorithm=algorithm,
-            chunk_size=chunk_size,
-            validate_path_func=self._validate_path,
-            safety_service=self.safety,
-            task_id=self.task_id,
-            record_operation_func=self.safety.record_operation,
-            execute_with_safety_func=self.safety.execute_with_safety,
-            to_unified_format_func=_to_unified_format,
-            get_next_sequence_func=self._get_next_sequence,
-        )
-
-    async def batch_rename(
+    async def _batch_rename(
         self,
         directory: str,
         pattern: str,
@@ -1496,7 +1447,7 @@ class FileTools:
         conflict_strategy: str = "skip",
     ) -> Dict[str, Any]:
         """批量重命名文件"""
-        from app.services.tools.file.batch_rename import batch_rename_impl
+        from app.services.tools.toolhelper.file_helpers import batch_rename_impl
         
         return await batch_rename_impl(
             directory=directory,
@@ -1514,7 +1465,7 @@ class FileTools:
             get_next_sequence_func=self._get_next_sequence,
         )
 
-    async def compress_files(
+    async def _compress_files(
         self,
         source_path: str,
         output_path: str,
@@ -1526,7 +1477,7 @@ class FileTools:
         split_size: Optional[int] = None,
     ) -> Dict[str, Any]:
         """压缩文件或目录"""
-        from app.services.tools.file.compress_files import compress_files_impl
+        from app.services.tools.toolhelper.file_helpers import compress_files_impl
         
         return await compress_files_impl(
             source_path=source_path,
@@ -1546,7 +1497,7 @@ class FileTools:
             get_next_sequence_func=self._get_next_sequence,
         )
 
-    async def extract_archive(
+    async def _extract_archive(
         self,
         archive_path: str,
         output_dir: Optional[str] = None,
@@ -1565,7 +1516,7 @@ class FileTools:
             preserve_permissions=preserve_permissions,
         )
 
-    async def get_file_hash(
+    async def _get_file_hash(
         self,
         file_path: str,
         algorithm: str = "sha256",
@@ -1582,36 +1533,7 @@ class FileTools:
             timeout=timeout,
         )
 
-    async def file_monitor(
-        self,
-        directory: str,
-        event_types: List[str] = None,
-        recursive: bool = True,
-        filters: Optional[Dict[str, Any]] = None,
-        duration: Optional[int] = None,
-    ) -> Dict[str, Any]:
-        """监控文件系统变化"""
-        from app.services.tools.file.file_monitor import file_monitor_impl
-        
-        if event_types is None:
-            event_types = ["created", "modified", "deleted", "renamed"]
-        
-        return await file_monitor_impl(
-            directory=directory,
-            event_types=event_types,
-            recursive=recursive,
-            filters=filters,
-            duration=duration,
-            validate_path_func=self._validate_path,
-            safety_service=self.safety,
-            task_id=self.task_id,
-            record_operation_func=self.safety.record_operation,
-            execute_with_safety_func=self.safety.execute_with_safety,
-            to_unified_format_func=_to_unified_format,
-            get_next_sequence_func=self._get_next_sequence,
-        )
-
-    async def file_statistics(
+    async def _file_statistics(
         self,
         directory: str,
         recursive: bool = True,
@@ -1620,7 +1542,7 @@ class FileTools:
         output_format: str = "json",
     ) -> Dict[str, Any]:
         """统计文件系统信息"""
-        from app.services.tools.file.file_statistics import file_statistics_impl
+        from app.services.tools.toolhelper.file_helpers import file_statistics_impl
         
         return await file_statistics_impl(
             directory=directory,
@@ -1637,7 +1559,7 @@ class FileTools:
             get_next_sequence_func=self._get_next_sequence,
         )
 
-    async def file_checksum(
+    async def _file_checksum(
         self,
         file_path: str,
         algorithm: str = "sha256",
@@ -1646,7 +1568,7 @@ class FileTools:
         timeout: int = 30000,
     ) -> Dict[str, Any]:
         """计算文件校验和"""
-        from app.services.tools.file.file_checksum import file_checksum_impl
+        from app.services.tools.toolhelper.file_helpers import file_checksum_impl
         
         return await file_checksum_impl(
             file_path=file_path,
@@ -1730,7 +1652,7 @@ class FileTools:
                 "success": False, "error": str(e), "data": None, "mime_type": None
             }, "read_media_file")
 
-    async def read_batch_file(
+    async def _read_batch_file(
         self,
         file_paths: List[str],
     ) -> Dict[str, Any]:
@@ -1809,7 +1731,7 @@ class FileTools:
             "success_count": success_count, "failed_count": len(results) - success_count,
         }, "read_batch_file", llm_data=_llm)
 
-    async def precise_replace_in_file(
+    async def _precise_replace_in_file(
         self,
         file_path: str,
         old_string: str,
@@ -1952,14 +1874,14 @@ class FileTools:
                 "success": False, "error": str(e), "replaced_count": 0
             }, "precise_replace_in_file")
 
-    async def edit_file(
+    async def _apply_edits(
         self,
         file_path: str,
         edits: List[Dict[str, str]],
         dryRun: bool = False,
         encoding: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """高级编辑文件，支持多处编辑和预览 - 小沈 2026-05-01"""
+        """高级编辑文件，支持多处编辑和预览（内部方法） - 小沈 2026-05-01"""
         try:
             is_valid, error_msg = self._validate_path(file_path)
             if not is_valid:
@@ -2090,56 +2012,6 @@ class FileTools:
             return _to_unified_format({
                 "success": False, "error": str(e), "applied_edits": 0, "preview": None
             }, "edit_text_file")
-
-    async def rename_file(
-        self,
-        file_path: str,
-        new_name: str,
-    ) -> Dict[str, Any]:
-        """重命名文件或目录（仅同目录改名）- 小沈 2026-05-02
-        
-        注意：内部通过 move_file 实现，但对外保持独立语义。
-        - rename_file: 仅同目录改名（语义明确）
-        - move_file: 跨目录移动+改名（功能更强）
-        
-        用户说"重命名"用此工具，说"移动"用 move_file。
-        """
-        # 计算新路径（同目录改名）
-        src = Path(file_path)
-        
-        # 参数校验
-        if "/" in new_name or "\\" in new_name:
-            return _to_unified_format({
-                "success": False, 
-                "error": "新名称不能包含路径分隔符（rename_file仅支持同目录改名）。如需跨目录移动请使用move_file。", 
-                "new_path": None
-            }, "rename_file")
-        
-        dst = src.parent / new_name
-        
-        # 内部调用 move_file 实现
-        result = await self.move_file(
-            source_path=file_path,
-            destination_path=str(dst),
-            overwrite=False
-        )
-        
-        # 转换返回格式（保持rename_file的语义）
-        if result.get("success"):
-            return _to_unified_format({
-                "success": True,
-                "new_path": str(dst),
-                "old_path": str(src),
-                "old_name": src.name,
-                "new_name": new_name,
-                "operation_id": result.get("operation_id"),
-            }, "rename_file")
-        else:
-            return _to_unified_format({
-                "success": False,
-                "error": result.get("error"),
-                "new_path": None
-            }, "rename_file")
 
     async def grep_file_content(
         self,
@@ -2289,7 +2161,7 @@ class FileTools:
                 "success": False, "error": str(e), "matches": []
             }, "grep_file_content")
 
-    async def get_directory_tree(
+    async def _get_directory_tree(
         self,
         dir_path: str,
         excludePatterns: Optional[List[str]] = None,
@@ -2366,31 +2238,503 @@ class FileTools:
             return _to_unified_format({
                 "success": False, "error": str(e), "tree": None
             }, "get_directory_tree")
-
-    async def list_allowed_directories(self) -> Dict[str, Any]:
-        """列出允许访问的目录"""
+    
+    # ============================================================
+    # 第九部分：精简合并工具（v2.0）— 小沈 2026-05-18
+    # ============================================================
+    
+    async def read_file(
+        self,
+        file_path: Optional[str] = None,
+        file_paths: Optional[List[str]] = None,
+        head: Optional[int] = None,
+        tail: Optional[int] = None,
+        offset: Optional[int] = None,
+        limit: Optional[int] = None,
+        encoding: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        读取文本文件（统一入口）— 小沈 2026-05-18
+        
+        P11统一入口：合并 read_text_file + read_batch_file
+        - file_path: 读取单个文件，支持 head/tail/offset/limit 分页
+        - file_paths: 批量读取多个文件，每个文件返回完整内容
+        
+        P17互斥校验：file_path 和 file_paths 不能同时传入
+        P15返回值全面化：单文件返回content/encoding/file_size/total_lines；批量返回results列表
+        """
+        # P17互斥校验
+        if file_path and file_paths:
+            return _to_unified_format({
+                "success": False,
+                "error": "file_path和file_paths不能同时使用（P17互斥校验）"
+            }, "read_file")
+        
+        if not file_path and not file_paths:
+            return _to_unified_format({
+                "success": False,
+                "error": "file_path或file_paths至少填一个"
+            }, "read_file")
+        
+        # 单文件模式：调用read_text_file逻辑
+        if file_path:
+            return await self._read_text_file(
+                file_path=file_path,
+                head=head,
+                tail=tail,
+                offset=offset,
+                limit=limit,
+                encoding=encoding
+            )
+        
+        # 批量模式：调用read_batch_file逻辑
+        else:
+            return await self._read_batch_file(file_paths=file_paths)
+    
+    async def edit_file(
+        self,
+        file_path: str,
+        old_string: Optional[str] = None,
+        new_string: Optional[str] = None,
+        edits: Optional[List[Dict]] = None,
+        replace_all: bool = False,
+        ignore_case: bool = False,
+        dry_run: bool = False,
+        encoding: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        编辑文本文件（统一入口）— 小沈 2026-05-18
+        
+        P11统一入口：合并 precise_replace_in_file + edit_text_file
+        - old_string+new_string: 单处精确替换（原precise_replace）
+        - edits: 多处结构化编辑（原edit_text_file）
+        
+        P17互斥校验：old_string 和 edits 不能同时传入
+        P16幂等性：dry_run=True时只预览不修改，多次调用结果一致
+        """
+        # P17互斥校验
+        if old_string and edits:
+            return _to_unified_format({
+                "success": False,
+                "error": "old_string和edits不能同时使用（P17互斥校验）"
+            }, "edit_file")
+        
+        if not old_string and not edits:
+            return _to_unified_format({
+                "success": False,
+                "error": "old_string或edits至少填一个"
+            }, "edit_file")
+        
+        # 单处替换模式：调用precise_replace_in_file逻辑
+        if old_string:
+            return await self._precise_replace_in_file(
+                file_path=file_path,
+                old_string=old_string,
+                new_string=new_string or "",
+                replace_all=replace_all,
+                ignore_case=ignore_case,
+                encoding=encoding
+            )
+        
+        # 多处编辑模式：调用edit_text_file逻辑
+        else:
+            return await self._apply_edits(
+                file_path=file_path,
+                edits=edits,
+                dryRun=dry_run,
+                encoding=encoding
+            )
+    
+    async def rename_file(
+        self,
+        path: Optional[str] = None,
+        new_name: Optional[str] = None,
+        directory: Optional[str] = None,
+        pattern: Optional[str] = None,
+        replacement: Optional[str] = None,
+        preview: bool = False,
+        use_regex: bool = True,
+        recursive: bool = False,
+        conflict_strategy: str = "skip",
+    ) -> Dict[str, Any]:
+        """
+        重命名文件（统一入口）— 小沈 2026-05-18
+        
+        P11统一入口：合并 rename_file + batch_rename
+        - path+new_name: 单文件重命名
+        - directory+pattern+replacement: 批量正则重命名
+        
+        P17互斥校验：path和directory不能同时传入
+        P16幂等性：单文件rename，如果new_name与原名称相同，返回SUCCESS（无需操作）
+        """
+        # 批量模式：直接调用batch_rename
+        if directory:
+            # P17互斥校验
+            if path:
+                return _to_unified_format({
+                    "success": False,
+                    "error": "path(单文件)和directory(批量)不能同时使用（P17互斥校验）"
+                }, "rename_file")
+            
+            # P17必填参数校验
+            if not pattern:
+                return _to_unified_format({
+                    "success": False,
+                    "error": "批量模式需要提供pattern"
+                }, "rename_file")
+            
+            if not replacement:
+                return _to_unified_format({
+                    "success": False,
+                    "error": "批量模式需要提供replacement"
+                }, "rename_file")
+            
+            return await self._batch_rename(
+                directory=directory,
+                pattern=pattern,
+                replacement=replacement,
+                recursive=recursive,
+                preview=preview,
+                conflict_strategy=conflict_strategy
+            )
+        
+        # 单文件模式：调用原有rename_file逻辑（第2094行的实现）
+        else:
+            # P17必填参数校验
+            if not path:
+                return _to_unified_format({
+                    "success": False,
+                    "error": "path或directory至少填一个"
+                }, "rename_file")
+            
+            if not new_name:
+                return _to_unified_format({
+                    "success": False,
+                    "error": "单文件模式需要提供new_name"
+                }, "rename_file")
+            
+            # 计算新路径（同目录改名）
+            src = Path(path)
+            
+            if src.name == new_name:
+                return _to_unified_format({"success": True, "new_path": str(src), "old_path": str(src), "message": "新名称与原名相同(P16幂等)"}, "rename_file")
+            
+            if "/" in new_name or "\\" in new_name:
+                return _to_unified_format({
+                    "success": False, 
+                    "error": "新名称不能包含路径分隔符（rename_file仅支持同目录改名）。如需跨目录移动请使用move_file。", 
+                    "new_path": None
+                }, "rename_file")
+            
+            dst = src.parent / new_name
+            
+            # 调用move_file实现
+            return await self._move_file(
+                source_path=path,
+                destination_path=str(dst),
+                overwrite=False
+            )
+    
+    async def archive_tool(
+        self,
+        action: str,
+        source_path: Optional[str] = None,
+        output_path: Optional[str] = None,
+        archive_path: Optional[str] = None,
+        output_dir: Optional[str] = None,
+        format: str = "zip",
+        compression_level: int = 6,
+        password: Optional[str] = None,
+        overwrite: bool = False,
+        exclude_patterns: Optional[List[str]] = None,
+        preserve_permissions: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        压缩/解压工具（统一入口）— 小沈 2026-05-18
+        
+        P11统一入口：合并 compress_files + extract_archive
+        - action="compress": 压缩文件/目录
+        - action="extract": 解压压缩包
+        
+        P17互斥校验：action只能是"compress"或"extract"
+        P17必填参数校验：compress模式需要source_path+output_path，extract模式需要archive_path
+        """
+        # P17互斥校验
+        if action not in ("compress", "extract"):
+            return _to_unified_format({
+                "success": False,
+                "error": f"不支持的action: {action}，可选: compress/extract"
+            }, "archive_tool")
+        
+        # P17按action校验必填参数
+        if action == "compress":
+            if not source_path:
+                return _to_unified_format({
+                    "success": False,
+                    "error": "compress模式需要提供source_path"
+                }, "archive_tool")
+            if not output_path:
+                return _to_unified_format({
+                    "success": False,
+                    "error": "compress模式需要提供output_path"
+                }, "archive_tool")
+            
+            return await self._compress_files(
+                source_path=source_path,
+                output_path=output_path,
+                format=format,
+                exclude_patterns=exclude_patterns,
+                compression_level=compression_level,
+                overwrite=overwrite,
+                password=password
+            )
+        
+        elif action == "extract":
+            if not archive_path:
+                return _to_unified_format({
+                    "success": False,
+                    "error": "extract模式需要提供archive_path"
+                }, "archive_tool")
+            
+            result = await self._extract_archive(
+                archive_path=archive_path,
+                output_dir=output_dir,
+                overwrite=overwrite,
+                password=password,
+                preserve_permissions=preserve_permissions
+            )
+            # 确保返回统一格式
+            if "data" not in result:
+                return _to_unified_format(result, "extract_archive")
+            return result
+    
+    async def file_operation(
+        self,
+        action: str,
+        source: str,
+        destination: Optional[str] = None,
+        recursive: bool = False,
+        overwrite: bool = False,
+        force: bool = False,
+        preserve_metadata: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        文件操作统一入口 — 小沈 2026-05-18
+        
+        P11统一入口：合并 move_file + copy_file + delete_file
+        - action="move": 移动文件/目录（原子操作 shutil.move，同盘瞬间完成）
+        - action="copy": 复制文件/目录（shutil.copy2，preserve_metadata=True保留时间戳/权限）
+        - action="delete": 删除文件/目录（默认send2trash放入回收站，force=True永久删除）
+        
+        P17互斥校验：action只能是"move"/"copy"/"delete"
+        P17必填参数校验：move/copy需要destination，delete不需要
+        P16幂等性：
+          - delete: 文件已不存在→返回SUCCESS
+          - move: 源和目标相同→返回SUCCESS
+          - copy: 源和目标相同且内容一致→返回SUCCESS
+        P15返回值全面化：返回action/source/destination/deleted_path/bytes_transferred/checksum
+        """
+        # P17互斥校验
+        if action not in ("move", "copy", "delete"):
+            return _to_unified_format({
+                "success": False,
+                "error": f"不支持的action: {action}，可选: move/copy/delete"
+            }, "file_operation")
+        
+        # P17按action校验必填参数
+        if action in ("move", "copy"):
+            if not destination:
+                return _to_unified_format({
+                    "success": False,
+                    "error": f"{action}模式需要提供destination"
+                }, "file_operation")
+            
+            if action == "move":
+                if os.path.abspath(source) == os.path.abspath(destination):
+                    return _to_unified_format({"success": True, "action": "move", "source": source, "destination": destination, "message": "源和目标相同(P16幂等)"}, "file_operation")
+                return await self._move_file(
+                    source_path=source,
+                    destination_path=destination,
+                    overwrite=overwrite
+                )
+            else:  # copy
+                if os.path.abspath(source) == os.path.abspath(destination):
+                    return _to_unified_format({"success": True, "action": "copy", "source": source, "destination": destination, "message": "源和目标相同(P16幂等)"}, "file_operation")
+                return await self._copy_file(
+                    source_path=source,
+                    destination_path=destination,
+                    recursive=recursive,
+                    overwrite=overwrite,
+                    preserve_metadata=preserve_metadata
+                )
+        
+        elif action == "delete":
+            src_path = Path(source)
+            if not src_path.exists():
+                return _to_unified_format({"success": True, "action": "delete", "source": source, "message": "文件已不存在(P16幂等)"}, "file_operation")
+            return await self._delete_file(
+                file_path=source,
+                recursive=recursive,
+                force=force
+            )
+    
+    async def data_file_format(
+        self,
+        action: str = "read",
+        file_path: Optional[str] = None,
+        format: Optional[str] = None,
+        data: Optional[Any] = None,
+        encoding: str = "utf-8",
+        indent: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        结构化配置格式统一入口 — 小沈 2026-05-18
+        
+        归入File分类（不是data_format分类），与read_file/write_text_file同类。
+        注意：CSV/Excel属于Document分类，不在本工具范围内。
+        
+        P11统一入口：合并 read_json/write_json/parse_yaml/write_yaml/parse_toml/write_toml/parse_ini/parse_xml/parse_properties
+        - action="read": 读取配置文件
+        - action="write": 写入配置文件
+        
+        P17互斥校验：action只能是"read"或"write"
+        P17必填参数校验：write模式需要data参数
+        """
+        from app.services.tools.data_format import data_format_tools as df_tools
+        
+        # P17互斥校验
+        if action not in ("read", "write"):
+            return _to_unified_format({
+                "success": False,
+                "error": f"不支持的action: {action}，可选: read/write"
+            }, "data_file_format")
+        
+        # 自动检测格式
+        if not file_path:
+            return _to_unified_format({
+                "success": False,
+                "error": "file_path是必填参数"
+            }, "data_file_format")
+        
+        detected_format = format
+        if not detected_format:
+            ext = os.path.splitext(file_path)[1].lower()
+            format_map = {
+                ".json": "json",
+                ".yaml": "yaml",
+                ".yml": "yaml",
+                ".toml": "toml",
+                ".ini": "ini",
+                ".cfg": "ini",
+                ".xml": "xml",
+                ".properties": "properties",
+            }
+            detected_format = format_map.get(ext)
+            if not detected_format:
+                return _to_unified_format({
+                    "success": False,
+                    "error": f"无法识别文件格式: {file_path}，请通过format参数指定"
+                }, "data_file_format")
+        
+        # 调用对应格式工具
         try:
-            dirs = []
-            for p in self.allowed_paths:
-                p_obj = Path(p)
-                try:
-                    exists = p_obj.exists()
-                    dirs.append({
-                        "path": str(p_obj.resolve()),
-                        "exists": exists,
-                        "type": "directory" if exists and p_obj.is_dir() else "unknown",
-                    })
-                except Exception:
-                    dirs.append({"path": str(p), "exists": False, "type": "unknown"})
-
+            if detected_format == "json":
+                if action == "read":
+                    result = df_tools.read_json(file_path=file_path, encoding=encoding)
+                else:
+                    if data is None:
+                        return _to_unified_format({
+                            "success": False,
+                            "error": "write模式需要提供data参数"
+                        }, "data_file_format")
+                    result = df_tools.write_json(
+                        file_path=file_path,
+                        data=data,
+                        encoding=encoding,
+                        indent=indent or 2
+                    )
+            
+            elif detected_format == "yaml":
+                if action == "read":
+                    result = df_tools.parse_yaml(file_path=file_path, encoding=encoding)
+                else:
+                    if data is None:
+                        return _to_unified_format({
+                            "success": False,
+                            "error": "write模式需要提供data参数"
+                        }, "data_file_format")
+                    result = df_tools.write_yaml(
+                        file_path=file_path,
+                        data=data,
+                        encoding=encoding,
+                        indent=indent
+                    )
+            
+            elif detected_format == "toml":
+                if action == "read":
+                    result = df_tools.parse_toml(file_path=file_path, encoding=encoding)
+                else:
+                    if data is None:
+                        return _to_unified_format({
+                            "success": False,
+                            "error": "write模式需要提供data参数"
+                        }, "data_file_format")
+                    result = df_tools.write_toml(file_path=file_path, data=data, encoding=encoding)
+            
+            elif detected_format == "ini":
+                if action == "read":
+                    result = df_tools.parse_ini(file_path=file_path, encoding=encoding)
+                else:
+                    return _to_unified_format({
+                        "success": False,
+                        "error": "INI格式暂不支持写入（parse_ini仅有读取功能）"
+                    }, "data_file_format")
+            
+            elif detected_format == "xml":
+                if action == "read":
+                    result = df_tools.parse_xml(file_path=file_path, encoding=encoding)
+                else:
+                    return _to_unified_format({
+                        "success": False,
+                        "error": "XML格式暂不支持写入（parse_xml仅有读取功能）"
+                    }, "data_file_format")
+            
+            elif detected_format == "properties":
+                if action == "read":
+                    result = df_tools.parse_properties(file_path=file_path, encoding=encoding)
+                else:
+                    return _to_unified_format({
+                        "success": False,
+                        "error": "Properties格式暂不支持写入（parse_properties仅有读取功能）"
+                    }, "data_file_format")
+            
+            else:
+                return _to_unified_format({
+                    "success": False,
+                    "error": f"不支持的格式: {detected_format}"
+                }, "data_file_format")
+            
+            # 统一返回格式转换
+            if result.get("code") == "ERR_READ_JSON" or result.get("code") == "ERR_WRITE_JSON":
+                return _to_unified_format({
+                    "success": False,
+                    "error": result.get("message", "未知错误")
+                }, "data_file_format")
+            
             return _to_unified_format({
-                "success": True, "directories": dirs, "total": len(dirs),
-            }, "list_allowed_directories")
+                "success": True,
+                "data": result.get("data", result),
+                "format": detected_format,
+                "file_path": file_path,
+                "action": action
+            }, "data_file_format")
+        
         except Exception as e:
-            logger.error(f"list_allowed_directories failed: {e}")
+            logger.error(f"[data_file_format] 执行失败: {e}")
             return _to_unified_format({
-                "success": False, "error": str(e), "directories": []
-            }, "list_allowed_directories")
+                "success": False,
+                "error": str(e)
+            }, "data_file_format")
 
 
 # ============================================================
