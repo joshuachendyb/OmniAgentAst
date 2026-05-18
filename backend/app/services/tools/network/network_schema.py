@@ -134,7 +134,9 @@ class SearchWebInput(BaseModel):
 
 
 class PingInput(BaseModel):
-    """ping 工具的输入参数 - 小沈 2026-05-02"""
+    """ping 工具的输入参数 - 小沈 2026-05-02
+    【2026-05-17 小沈 已弃用】请使用 NetworkDiagnoseInput 代替
+    """
     host: str = Field(
         ..., description="目标主机地址（必填），可以是域名或IP地址，例如 8.8.8.8 或 www.baidu.com"
     )
@@ -168,7 +170,7 @@ class NetworkDiagnoseInput(BaseModel):
     host: str = Field(
         ..., description="目标主机地址（必填），可以是域名或IP地址，例如 8.8.8.8 或 baidu.com"
     )
-    mode: str = Field(
+    mode: Literal["ping", "port"] = Field(
         default="ping",
         description="诊断模式。ping=ICMP可达性检测(主机级), port=TCP端口检测(服务级)"
     )
