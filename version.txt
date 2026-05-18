@@ -1,3 +1,27 @@
+v0.13.4
+
+更新时间: 2026-05-18 11:18:32
+
+更新内容：
+
+## v0.13.3→v0.13.4 变更汇总 - 小沈-2026-05-18
+
+### feat 新增
+
+| commit | 说明 |
+|--------|------|
+| d4bd76c0 | ch16-time-simplify: 16旧函数→7新工具(get_time/time_add/time_diff/check_date/timezone_convert/timer)+P0 direction=any+P1 time_convert合入get_time+双重__all__修复 - 小沈-20260518 |
+| 4e78b1a6 | ch15-document缺陷修复: P1添加__all__定义+P2添加.doc后缀支持 - 小健-20260518 |
+| 4ab28904 | ch15-document增加CSV/TSV支持: read_document支持.csv/.tsv后缀+use_pandas参数+_read_csv_stdlib内部函数 - 小健-20260518 |
+
+### docs 文档
+
+| commit | 说明 |
+|--------|------|
+| (本地) | 工具精简方案v1.26: §18.4.11新增旧函数删除实施计划(38个/6分类/2.5h)，北京老陈审查修正实施计划缺失 - 小沈-2026-05-18 |
+
+---
+
 v0.13.3
 
 更新时间: 2026-05-18 08:20:45
