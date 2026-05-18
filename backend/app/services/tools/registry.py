@@ -175,6 +175,7 @@ class ToolMetadata:
     output_schema: Dict[str, Any] = field(default_factory=dict)
     examples: List[Dict[str, Any]] = field(default_factory=list)
     expose_to_llm: bool = True
+    next_actions: Dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
     
@@ -234,12 +235,12 @@ class ToolRegistry:
         implementation: Callable,
         version: str = "1.0.0",
         dependencies: Optional[List[str]] = None,
-        # 【小健 2026-04-29】按文档5.1规范：新增工具必须通过此参数传入Pydantic模型类，自动生成OpenAI Schema，禁止手动编写input_schema字典
         input_model: Optional[Type[BaseModel]] = None,
         input_schema: Optional[Dict] = None,
         output_schema: Optional[Dict] = None,
         examples: Optional[List[Dict]] = None,
         expose_to_llm: bool = True,
+        next_actions: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         注册工具
@@ -318,6 +319,7 @@ class ToolRegistry:
             output_schema=output_schema or {},
             examples=examples or [],
             expose_to_llm=expose_to_llm,
+            next_actions=next_actions or {},
         )
         
         # 注册工具
