@@ -7,47 +7,60 @@ Time Register - 时间工具注册点
 - time_tools.py: 工具函数实现（无装饰器）
 - time_schema.py: Pydantic 模型
 
-【2026-05-02 小沈重构】
-- 从 @register_tool 装饰器注册改为显式注册（tool_registry.register）
-- 按 shell_register.py 模式重写
+【2026-05-18 小沈重构】16→7精简
+- 注册7个精简工具：get_time, time_add, time_diff, check_date, timezone_convert, timer
+- 修复双重__all__问题
+- 旧工具通过委托函数仍可调用（P9向下兼容）
 
 创建时间: 2026-04-26
-更新时间: 2026-05-02
+更新时间: 2026-05-18
 """
 
 from app.services.tools.registry import register_tool, ToolCategory, tool_registry
 from app.utils.logger import logger
 
 from app.services.tools.time.time_schema import (
+    # 新Schema（7个）
+    GetTimeInput,
+    TimeAddInput,
+    TimeDiffInput,
+    CheckDateInput,
+    TimezoneConvertInput,
+    TimerInput,
+    # 旧Schema（向下兼容）
     TimeNowInput,
     TimeFormatInput,
-    TimeDiffInput,
     TimerSetInput,
     TimerClearInput,
     TimeUtcToLocalInput,
     TimeLocalToUtcInput,
     TimeIsWeekendInput,
     TimeIsHolidayInput,
-    TimeAddInput,
-    TimerListInput,
     TimeCompareInput,
     TimeToTimestampInput,
     TimestampToTimeInput,
     TimeIsWorkdayInput,
     TimeNextNWorkdayInput,
+    TimerListInput,
 )
 
 from app.services.tools.time.time_tools import (
+    # 新公开函数（7个）
+    get_time,
+    time_add,
+    time_diff,
+    check_date,
+    timezone_convert,
+    timer,
+    # 旧委托函数（向下兼容）
     get_current_time,
     time_format,
-    time_diff,
     timer_set,
     timer_clear,
     time_utc_to_local,
     time_local_to_utc,
     time_is_weekend,
     time_is_holiday,
-    time_add,
     timer_list,
     time_compare,
     time_to_timestamp,
@@ -56,55 +69,84 @@ from app.services.tools.time.time_tools import (
     time_next_n_workday,
 )
 
+# ===========================================================
+# 7个精简工具的描述 — 小沈 2026-05-18
+# ===========================================================
+
 TIME_TOOL_DESCRIPTIONS = {
-    "get_current_time": """获取当前系统时间，支持时区、格式和本地化设置。
+    "get_time": """获取/格式化时间（统一入口），支持4种操作：now=获取当前时间，format=格式化时间，to_timestamp=转时间戳，from_timestamp=时间戳转时间。
 
 使用场景：
-- 当用户需要获取当前时间时使用
-- 当用户想要以特定格式显示时间时使用
-- 当用户需要进行时间相关的计算时使用
+- 当用户问"现在几点"、"当前时间"时使用action=now
+- 当用户问"格式化这个时间"时使用action=format
+- 当用户问"这个时间的时间戳是多少"时使用action=to_timestamp
+- 当用户问"这个时间戳是什么时候"时使用action=from_timestamp
 
-
-【重要】返回格式化后的当前时间字符串
+参数说明：
+- action: 操作类型（now/format/to_timestamp/from_timestamp），默认now
+- time_value: 时间值（format/to_timestamp/from_timestamp时必填）
+- format: 输出格式，如 %Y-%m-%d %H:%M:%S
+- timezone: 时区（now时有效），如 Asia/Shanghai
+- locale: 本地化语言（now时有效），如 zh_CN
+- unit: 时间戳单位（to_timestamp时有效）：seconds/milliseconds/microseconds
+- target_tz: 目标时区（from_timestamp时有效）
 
 返回数据说明：
-- iso: ISO格式时间（如2026-04-26T10:30:00+08:00）
-- timestamp: Unix时间戳（秒）
-- format: 默认格式时间（如2026-04-26 10:30:00）
-- timezone: 时区（如+0800）
-- weekday: 星期几（如Saturday）
-- isoweekday: ISO星期几（1=Monday, 7=Sunday）
-- locale: 本地化语言标识""",
-    "time_format": """格式化时间戳或日期字符串为指定格式。
+- action=now: iso, timestamp, format, timezone, weekday, isoweekday, locale
+- action=format: formatted, iso, timestamp, pattern_used
+- action=to_timestamp: 时间戳数值
+- action=from_timestamp: datetime, isoformat, timestamp, timezone""",
+
+    "time_add": """时间加减计算：在基准时间上增加/减少偏移量，增强版支持weekday/isoweekday返回。
 
 使用场景：
-- 当用户问"这个文件什么时候改的？用中文显示"时使用此工具
-- 当用户问"把当前时间格式化成YYYY年MM月DD日"时使用此工具
-- 当用户需要将时间戳转换为可读格式时使用
-- 当用户指定特定日期格式时使用
+- 当用户问"当前时间+3天"、"下个月今天"时使用
+- 当用户说"30分钟后提醒"需要计算目标时间时使用
+- 当用户需要计算未来或过去时间时使用
+- 当用户问"100天后是几号"时使用
 
+参数说明：
+- delta: 偏移量（正数=增加，负数=减少），必填
+- start: 基准时间，默认当前时间
+- unit: 偏移单位（days/hours/minutes/seconds/months），默认days
 
 返回数据说明：
-- formatted: 格式化后的字符串
+- result_time: 计算后的时间字符串
 - iso: ISO格式时间
 - timestamp: Unix时间戳
-- pattern_used: 实际使用的格式""",
-    "time_diff": """计算两个时间之间的差值，返回人性化描述。
+- tz: 时区
+- unit_used: 实际使用的单位
+- delta_used: 实际使用的偏移量
+- weekday: 星期几（英文）
+- isoweekday: ISO星期几（1=Monday, 7=Sunday）
+
+注意：
+- months单位使用relativedelta精确计算
+- unit支持：days（天）、hours（小时）、minutes（分钟）、seconds（秒）、months（月）""",
+
+    "time_diff": """计算时间差值（增强版），替代time_diff+time_compare，新增is_after/is_before/is_equal/diff_seconds_signed字段。
 
 使用场景：
-- 当用户问"我上次问这个是什么时候？"时使用此工具
-- 当用户问"这个文件多久前修改的？"时使用此工具
-- 当用户问"距离 deadline 还有多长时间？"时使用此工具
-- 当用户想要知道两个时间点之间相差多久时使用
+- 当用户问"距离 deadline 还有多长时间？"时使用
+- 当用户问"这个文件多久前修改的？"时使用
+- 当用户问"哪个时间更早"时使用
+- 当用户问"是否已经过了某个时间"时使用
 
+参数说明：
+- start: 开始时间，必填
+- end: 结束时间，默认当前时间
 
 返回数据说明：
 - humanized: 人性化描述（如"3小时前"、"2天后"）
-- seconds: 总秒数
+- seconds: 总秒数（绝对值）
 - minutes: 总分钟数
 - hours: 总小时数
 - days: 总天数
-- is_future: 是否在未来（True=未来，False=过去）
+- is_future: 是否在未来
+- is_after: end是否在start之后（True=end更晚）
+- is_before: end是否在start之前（True=end更早）
+- is_equal: 两个时间是否相等
+- diff_seconds_signed: 有符号差值（正=end更晚，负=end更早）
 
 人性化规则：
 - < 60秒：刚刚
@@ -113,328 +155,154 @@ TIME_TOOL_DESCRIPTIONS = {
 - < 30天：X天前/后
 - < 12个月：X个月前/后
 - 否则：X年前/后""",
-    "timer_set": """设置定时器，在指定延迟后执行回调。
+
+    "check_date": """日期综合检查（四合一），统一入口检查周末/节假日/工作日/下N个工作日，一次性返回全部日历属性。
 
 使用场景：
-- 当用户说"3分钟后提醒我"时使用此工具
-- 当用户说"10分钟后执行这个任务"时使用此工具
-- 当用户需要定时执行某个动作时使用
-- 当用户设置提醒或定时任务时使用
+- 当用户问"明天是周末吗？"时使用check_type=weekend
+- 当用户问"明天是假期吗？"时使用check_type=holiday
+- 当用户问"明天是工作日吗"时使用check_type=workday
+- 当用户问"下个工作日是几号"时使用check_type=next_workday
 
+参数说明：
+- date: 日期值，默认当前日期
+- check_type: 检查类型（weekend/holiday/workday/next_workday），默认workday
+- n: 第N个工作日（next_workday时有效），默认1
 
-返回数据说明：
-- timer_id: 定时器ID（如timer_1_1234567890）
-- delay: 实际设置的延迟（秒）
-- trigger_at: 触发时间（ISO格式）
+返回数据说明（P15全面返回）：
+- date: 日期（ISO格式）
+- weekday: 星期几（英文）
+- isoweekday: ISO星期几（1=Monday, 7=Sunday）
+- is_weekend: 是否为周末
+- is_holiday: 是否为节假日
+- holiday_name: 节假日名称
+- is_workday: 是否为工作日
+- next_workdays: 下N个工作日列表（next_workday时）
+- next_workday_first: 第1个工作日（next_workday时）
 
-注意：
-- 定时器在后台运行，使用asyncio
-- 回调函数通过字符串描述实现""",
-    "timer_clear": """清除（取消）已设置的定时器。
+支持节日列表：
+    公历节日（14个+清明节）：元旦(1.1)、情人节(2.14)...
+    农历节日（9个）：春节、元宵节、端午节、七夕节、中秋节...""",
 
-使用场景：
-- 当用户说"取消那个定时器"时使用此工具
-- 当用户想要取消之前设置的提醒时使用
-- 当用户取消定时任务时使用
-
-
-返回数据说明：
-- timer_id: 被清除的定时器ID
-- cancelled: 是否成功取消（True=成功）
-
-注意：
-- 如果定时器已经触发，返回cancelled=False""",
-    "time_utc_to_local": """将UTC时间转换为本地时间或指定时区时间。
+    "timezone_convert": """时区转换（三方向），统一入口支持utc_to_local/local_to_utc/any三种方向，any方向可一次完成任意源→目标转换。
 
 使用场景：
-- 当用户需要将UTC时间转换为本地时间时使用此工具
-- 当用户在不同时区间转换时间时使用
+- 当用户需要将UTC时间转换为本地时间时使用direction=utc_to_local
+- 当用户需要将本地时间转换为UTC时间时使用direction=local_to_utc
+- 当用户需要将任意时区转换到另一时区时使用direction=any
 - 当用户处理跨国时间问题时使用
-- 当用户指定目标时区时使用
 
+参数说明：
+- time_value: 时间值，必填
+- direction: 转换方向（utc_to_local/local_to_utc/any），默认utc_to_local
+- tz: 时区（utc_to_local时为目标时区，local_to_utc时为源时区）
+- source_tz: 源时区（any时必填）
+- target_tz: 目标时区（any时必填）
 
 返回数据说明：
-- utc_time: 原始UTC时间
-- local_time: 转换后的本地时间
-- target_tz: 目标时区
+- direction=utc_to_local: local_time, timezone, utc_original
+- direction=local_to_utc: utc_time, iso, timestamp
+- direction=any: 两次转换的组合结果
 
 常用时区：
 - +08:00 或 Asia/Shanghai（北京时间）
 - +00:00 或 UTC（世界协调时间）
 - -05:00 或 America/New_York（纽约时间）
 - +09:00 或 Asia/Tokyo（东京时间）""",
-    "time_local_to_utc": """将本地时间或指定时区时间转换为UTC时间。
+
+    "timer": """定时器管理（三合一），统一入口支持set/clear/list三种操作。
 
 使用场景：
-- 当用户需要将本地时间转换为UTC时间时使用此工具
-- 当用户在跨国协作中需要统一到UTC时间时使用
-- 当用户需要提交UTC时间给系统时使用
-- 当用户指定源时区时使用
+- 当用户说"3分钟后提醒我"时使用action=set
+- 当用户说"取消那个定时器"时使用action=clear
+- 当用户问"有哪些定时器"时使用action=list
 
-
-返回数据说明：
-- utc_time: 转换后的UTC时间
-- source_tz: 源时区
-
-常用时区：参考time_utc_to_local""",
-    "time_is_weekend": """检查给定日期是否为周末（周六或周日）。
-
-使用场景：
-- 当用户问"明天是周末吗？"时使用此工具
-- 当用户问"这个日期是周末吗？"时使用此工具
-- 当用户需要判断是否可以安排周末活动时使用
-- 当用户想要知道某天是否需要上班时使用
-
+参数说明：
+- action: 操作类型（set/clear/list），必填
+- delay: 延迟秒数（set时必填，1~86400）
+- callback: 提醒内容（set时必填）
+- callback_data: 回调附加数据（set时可选）
+- timer_id: 定时器ID（clear时必填）
+- limit: 返回数量限制（list时有效），默认10
 
 返回数据说明：
-- is_weekend: 是否为周末（True=是周末，False=不是周末）
-- date: 输入的日期
-- weekday: 星期几（英文）
-- isoweekday: ISO星期几（1=Monday, 7=Sunday）
+- action=set: timer_id, delay, trigger_at, message
+- action=clear: timer_id, cancelled
+- action=list: 定时器列表
 
 注意：
-- 周六和周日被认为是周末
-- 使用ISO标准：Monday=1, Tuesday=2, ..., Sunday=7""",
-    "time_is_holiday": """检查给定日期是否为假日（支持公历+农历节日，共24个节日）。
-    
-使用场景：
-    - 当用户问"明天是假期吗？"时使用此工具
-    - 当用户问"这个日期是法定节假日吗？"时使用此工具
-    - 当用户需要安排假期活动时使用
-    - 当用户想要知道某天是否放假时使用
-    
-    
-返回数据说明：
-    - is_holiday: 是否为假日（True=是假日，False=不是假日）
-    - date: 输入的日期
-    - holiday_name: 假日名称
-    
-支持节日列表：
-    公历节日（14个）：元旦(1.1)、情人节(2.14)、妇女节(3.8)、植树节(3.12)、
-    愚人节(4.1)、劳动节(5.1)、青年节(5.4)、儿童节(6.1)、建党节(7.1)、
-    建军节(8.1)、教师节(9.10)、国庆节(10.1)、平安夜(12.24)、圣诞节(12.25)
-    清明节(4月4或5日，按年查表)
-    
-    农历节日（9个）：春节(正月初一)、元宵节(正月十五)、端午节(五月初五)、
-    七夕节(七月初七)、中元节(七月十五)、中秋节(八月十五)、重阳节(九月初九)、
-    腊八节(十二月初八)、除夕(十二月三十)""",
-    
-    "time_add": """时间加减计算：在基准时间上增加/减少偏移量。
-    
-使用场景：
-    - 当用户问"当前时间+3天"、"下个月今天"时使用此工具
-    - 当用户说"30分钟后提醒"需要计算目标时间时使用
-    - 当用户需要计算未来或过去时间时使用
-    - 当用户问"100天后是几号"时使用此工具
-    
-    
-返回数据说明：
-    - result_time: 计算后的时间字符串（默认格式）
-    - iso: ISO格式时间
-    - timestamp: Unix时间戳
-    - tz: 时区
-    - unit_used: 实际使用的单位
-    - delta_used: 实际使用的偏移量
-    
-注意：
-    - months单位按30天简化计算
-    - unit支持：days（天）、hours（小时）、minutes（分钟）、seconds（秒）、months（月）""",
-    "timer_list": """列出所有已设置的定时器。
-    
-使用场景：
-    - 当用户问"有哪些定时器"时使用此工具
-    - 当用户需要查看已设置的提醒时使用
-    - 当用户管理定时任务时使用
-    
-    
-返回数据说明：
-    - timers: 定时器列表，每个包含 timer_id, delay, callback, set_at
-    - count: 定时器数量
-    
-注意：
-    - 返回当前所有活跃的定时器""",
-    "time_compare": """比较两个时间的前后关系。
-    
-使用场景：
-    - 当用户问"哪个时间更早"时使用此工具
-    - 当用户需要判断时间先后时使用
-    - 当用户问"是否已经过了某个时间"时使用
-    
-    
-返回数据说明：
-    - result: 比较结果（-1=time1更早，0=相等，1=time1更晚）
-    - time1: 第一个时间的格式化字符串
-    - time2: 第二个时间的格式化字符串
-    - humanized: 人性化描述（如"time1比time2早3小时"）
-    
-注意：
-    - 支持多种时间格式输入""",
-    "time_to_timestamp": """将日期时间字符串转换为Unix时间戳。
-    
-使用场景：
-    - 当用户需要将日期转换为时间戳时使用此工具
-    - 当用户问"这个时间的时间戳是多少"时使用
-    - 当用户需要存储时间戳格式时使用
-    
-    
-返回数据说明：
-    - timestamp: Unix时间戳（秒）
-    - time_str: 原始输入字符串
-    - formatted: 格式化后的标准时间字符串
-    
-注意：
-    - 自动识别常见日期格式""",
-    "timestamp_to_time": """将Unix时间戳转换为可读时间字符串。
-    
-使用场景：
-    - 当用户需要将时间戳转换为日期时使用此工具
-    - 当用户看到时间戳问"这是什么时候"时使用
-    - 当用户需要人性化显示时间戳时使用
-    
-    
-返回数据说明：
-    - time_str: 格式化后的时间字符串
-    - timestamp: 原始时间戳
-    - iso: ISO格式时间
-    
-注意：
-    - format支持标准strftime格式""",
-    "time_is_workday": """检查给定日期是否为工作日（周一至周五）。
-    
-使用场景：
-    - 当用户问"明天是工作日吗"时使用此工具
-    - 当用户需要判断是否可以安排工作活动时使用
-    - 当用户问"这天要不要上班"时使用
-    
-    
-返回数据说明：
-    - is_workday: 是否为工作日（True=工作日，False=非工作日）
-    - date: 输入的日期
-    - weekday: 星期几（英文）
-    - isoweekday: ISO星期几（1=Monday, 7=Sunday）
-    
-注意：
-    - 周一至周五为工作日，周六周日为非工作日""",
-    "time_next_n_workday": """计算从指定日期开始的第N个工作日。
-    
-使用场景：
-    - 当用户问"下个工作日是几号"时使用此工具
-    - 当用户需要计算N个工作日后的日期时使用
-    - 当用户安排工作计划时使用
-    
-    
-返回数据说明：
-    - result_date: 计算结果日期字符串
-    - start_date: 起始日期
-    - n: 工作日数量
-    - weekdays_only: 仅计算周一至周五
-    
-注意：
-    - 跳过周末，仅计算工作日""",
+- 定时器在后台运行，使用asyncio
+- set操作幂等（P16）""",
 }
 
+
 TIME_TOOL_EXAMPLES = {
-    "get_current_time": [
-        {},
-        {"timezone": "Asia/Shanghai"},
-        {"timezone": "America/New_York", "format": "%Y-%m-%d %H:%M:%S"},
+    "get_time": [
+        {"action": "now"},
+        {"action": "now", "timezone": "Asia/Shanghai"},
+        {"action": "now", "timezone": "America/New_York", "format": "%Y-%m-%d %H:%M:%S"},
+        {"action": "format", "time_value": 1777103094},
+        {"action": "format", "time_value": "2026-04-25", "format": "%Y年%m月%d日"},
+        {"action": "to_timestamp", "time_value": "2026-05-05 14:30:00"},
+        {"action": "from_timestamp", "time_value": 1777103094},
     ],
-    "time_format": [
-        {},
-        {"timestamp": 1777103094},
-        {"timestamp": None, "pattern": "%Y年%m月%d日"},
-        {"timestamp": "2026-04-25", "pattern": "%Y/%m/%d"}
+    "time_add": [
+        {"delta": 3, "start": "2026-05-04", "unit": "days"},
+        {"delta": 2, "start": 1777103094, "unit": "hours"},
+        {"delta": -30, "start": "2026-05-04 12:00:00", "unit": "minutes"},
     ],
     "time_diff": [
         {"start": 1777103094},
         {"start": "2026-04-25", "end": None},
         {"start": "2026-01-01", "end": "2026-04-25"}
     ],
-    "timer_set": [
-        {"delay": 180, "callback": "提醒用户喝水"},
-        {"delay": 600, "callback": "执行备份", "callback_data": {"file": "D:/backup"}},
-        {"delay": 3600, "callback": "发送报告邮件"}
+    "check_date": [
+        {"check_type": "workday"},
+        {"check_type": "weekend", "date": "2026-04-26"},
+        {"check_type": "holiday", "date": "2026-10-01"},
+        {"check_type": "next_workday", "n": 3},
     ],
-    "timer_clear": [
-        {"timer_id": "timer_1_1234567890"},
-        {"timer_id": "timer_2_1234567890"}
+    "timezone_convert": [
+        {"time_value": "2026-04-25T12:00:00Z", "direction": "utc_to_local"},
+        {"time_value": 1777103094, "direction": "utc_to_local", "tz": "+08:00"},
+        {"time_value": "2026-04-25 20:00:00", "direction": "local_to_utc"},
+        {"time_value": "2026-04-25 20:00:00", "direction": "any", "source_tz": "Asia/Shanghai", "target_tz": "America/New_York"},
     ],
-    "time_utc_to_local": [
-        {"utc_time": "2026-04-25T12:00:00Z"},
-        {"utc_time": 1777103094, "target_tz": "+08:00"},
-        {"utc_time": "2026-04-25T12:00:00Z", "target_tz": "Asia/Shanghai"}
-    ],
-    "time_local_to_utc": [
-        {"local_time": "2026-04-25 20:00:00"},
-        {"local_time": "2026-04-25T20:00:00", "source_tz": "+08:00"},
-        {"local_time": "2026-04-25 20:00:00", "source_tz": "Asia/Shanghai"}
-    ],
-    "time_is_weekend": [
-        {},
-        {"date": "2026-04-25"},
-        {"date": "2026-04-26"},
-        {"date": 1777103094}
-    ],
-    "time_is_holiday": [
-        {},
-        {"date": "2026-01-01"},
-        {"date": "2026-10-01"},
-        {"date": "2026-04-05"}
-    ],
-    "time_add": [
-        {"start": "2026-05-04", "delta": 3, "unit": "days"},
-        {"start": 1777103094, "delta": 2, "unit": "hours"},
-        {"start": "2026-05-04 12:00:00", "delta": -30, "unit": "minutes"},
+    "timer": [
+        {"action": "set", "delay": 180, "callback": "提醒用户喝水"},
+        {"action": "set", "delay": 600, "callback": "执行备份", "callback_data": {"file": "D:/backup"}},
+        {"action": "clear", "timer_id": "timer_1_1234567890"},
+        {"action": "list"},
     ],
 }
 
 
 def _register_time_tools():
     """
-    【2026-05-02 小沈】显式注册所有Time工具
+    【2026-05-18 小沈】注册7个精简Time工具
     使用 Pydantic 模型自动生成 OpenAI Schema
     """
     tool_methods = {
-        "get_current_time": get_current_time,
-        "time_format": time_format,
-        "time_diff": time_diff,
-        "timer_set": timer_set,
-        "timer_clear": timer_clear,
-        "time_utc_to_local": time_utc_to_local,
-        "time_local_to_utc": time_local_to_utc,
-        "time_is_weekend": time_is_weekend,
-        "time_is_holiday": time_is_holiday,
+        "get_time": get_time,
         "time_add": time_add,
-        "timer_list": timer_list,
-        "time_compare": time_compare,
-        "time_to_timestamp": time_to_timestamp,
-        "timestamp_to_time": timestamp_to_time,
-        "time_is_workday": time_is_workday,
-        "time_next_n_workday": time_next_n_workday,
+        "time_diff": time_diff,
+        "check_date": check_date,
+        "timezone_convert": timezone_convert,
+        "timer": timer,
     }
 
     TOOL_INPUT_MODELS = {
-        "get_current_time": TimeNowInput,
-        "time_format": TimeFormatInput,
-        "time_diff": TimeDiffInput,
-        "timer_set": TimerSetInput,
-        "timer_clear": TimerClearInput,
-        "time_utc_to_local": TimeUtcToLocalInput,
-        "time_local_to_utc": TimeLocalToUtcInput,
-        "time_is_weekend": TimeIsWeekendInput,
-        "time_is_holiday": TimeIsHolidayInput,
+        "get_time": GetTimeInput,
         "time_add": TimeAddInput,
-        "timer_list": TimerListInput,
-        "time_compare": TimeCompareInput,
-        "time_to_timestamp": TimeToTimestampInput,
-        "timestamp_to_time": TimestampToTimeInput,
-        "time_is_workday": TimeIsWorkdayInput,
-        "time_next_n_workday": TimeNextNWorkdayInput,
+        "time_diff": TimeDiffInput,
+        "check_date": CheckDateInput,
+        "timezone_convert": TimezoneConvertInput,
+        "timer": TimerInput,
     }
 
     for name, method in tool_methods.items():
-        desc = TIME_TOOL_DESCRIPTIONS.get(name, "")
-        input_model = TOOL_INPUT_MODELS.get(name)
+        desc = TIME_TOOL_DESCRIPTIONS.get(name, f"Time tool: {name}")
+        input_model = TOOL_INPUT_MODELS[name]
         examples = TIME_TOOL_EXAMPLES.get(name, [])
 
         tool_registry.register(
@@ -442,34 +310,14 @@ def _register_time_tools():
             description=desc,
             category=ToolCategory.TIME,
             implementation=method,
-            version="1.0.0",
+            version="2.0.0",
             input_model=input_model,
             examples=examples,
         )
-        logger.info(f"[time_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个")
+        logger.info(f"[time_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__}, examples: {len(examples)}个")
 
 
 # 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
 _initialized = False  # 守护变量，供显式调用时使用
 
 __all__ = ["_register_time_tools"]
-
-
-__all__ = [
-    "get_current_time",
-    "time_format",
-    "time_diff",
-    "timer_set",
-    "timer_clear",
-    "time_utc_to_local",
-    "time_local_to_utc",
-    "time_is_weekend",
-    "time_is_holiday",
-    "time_add",
-    "timer_list",
-    "time_compare",
-    "time_to_timestamp",
-    "timestamp_to_time",
-    "time_is_workday",
-    "time_next_n_workday",
-]
