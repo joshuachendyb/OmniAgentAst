@@ -1,3 +1,57 @@
+v0.13.7
+
+更新时间: 2026-05-19 06:05:09
+
+更新内容：
+
+## v0.13.6→v0.13.7 变更汇总 - 小沈-2026-05-19
+
+### fix 工具架构一致性检查修复
+
+| commit | 说明 |
+|--------|------|
+| 543b1fd8 | fix: reg_tools.py 参数顺序调整 - 小沈-2026-05-19 |
+| 6cde86e7 | fix: 修复prompts __init__.py导出 - shell加CodeExecutionPrompts document加DatabasePrompts - 小沈-2026-05-19 |
+| 0d31a078 | refactor: 规范命名 register_network_tools → _register_network_tools 统一下划线前缀 - 小沈-2026-05-19 |
+| d5e738df | refactor: 删除data_analysis_schema中孤立的ReadCsvDataframeInput和ReadExcelDataframeInput - 小沈-2026-05-19 |
+| 54cad1b1 | refactor: 清理重复Schema - shell_schema删除未使用的ExecutePython/JSInput; env_schema标记弃用 - 小沈-2026-05-19 |
+| 5abecf86 | chore: 删除gui_tools.py中重复的list_windows死代码 - 小沈-2026-05-19 |
+| 3ca66b3b | chore: 删除废弃的data_analysis_register.py空壳 - 小沈-2026-05-19 |
+
+### feat 新增功能
+
+| commit | 说明 |
+|--------|------|
+| 55dae9dc | feat: 新增 prompts/meta/meta_prompts.py 覆盖 tool_help/tool_search/pipeline - 小沈-2026-05-19 |
+| 51edd335 | feat: 新增 toolhelper/data_format_helper.py - 小沈-2026-05-18 |
+
+### chore Git跟踪清理
+
+| commit | 说明 |
+|--------|------|
+| f3cf1892 | fix: .gitignore完善TEST和test目录匹配规则 - 小沈-2026-05-18 |
+| a6ea482b | chore: 更新.gitignore排除测试文件 - 小沈-2026-05-18 |
+| 7610f1c1 | chore: untrack frontend test - xs-2026-05-18 |
+| (约90个) | 取消跟踪: backend/tests/, frontend/tests/, tools/latex-test/, .planning/, reports/test_task/ 等test*文件 |
+
+### 关键变更说明
+
+#### 1. 工具架构4部分一致性检查
+- 检查7分类(FILE/SHELL/NETWORK/SYSTEM/DOCUMENT/DESKTOP/META)共67个LLM可见工具
+- 每个工具要求4部分对齐：function实现 → schema定义 → register注册 → prompt描述
+- 修复prompts导出缺失、重复Schema清理、命名规范化
+
+#### 2. 新增meta_prompts.py
+- 位置：prompts/meta/meta_prompts.py
+- 覆盖：tool_help/tool_search/pipeline三个工具的prompt描述
+
+#### 3. Git跟踪清理
+- 更新.gitignore匹配规则，完善TEST/test目录排除
+- 取消跟踪约90个test*文件（backend/tests/, frontend/tests/, tools/latex-test/等）
+- 测试脚本移至backend/tests/utils/（gitignored by backend/tests/ rule）
+
+---
+
 v0.13.6
 
 更新时间: 2026-05-18 21:08:14
