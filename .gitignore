@@ -22,9 +22,16 @@ env/
 Thumbs.db
 
 # Test files
-test_*.py
+test_*
 *.test.py
 backend/tests/
+frontend/tests/
+frontend/src/test/
+frontend/src/components/**/*Test*
+tools/latex-test/
+.planning/**/TESTING.md
+.planning/**/TEST-*.md
+reports/test_task/
 
 # Backup files
 *.backup
