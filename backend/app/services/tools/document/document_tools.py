@@ -25,6 +25,7 @@ Author: 小沈 - 2026-05-02
 """
 
 import importlib
+import csv
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
@@ -41,6 +42,218 @@ def _check_module(module_name: str) -> bool:
         return True
     except ImportError:
         return False
+
+
+def _check_pandas() -> bool:
+    """检查pandas是否可用 - 小沈 2026-05-18"""
+    try:
+        importlib.import_module("pandas")
+        return True
+    except ImportError:
+        return False
+
+
+def _check_openpyxl() -> bool:
+    """检查openpyxl是否可用 - 小沈 2026-05-18"""
+    try:
+        importlib.import_module("openpyxl")
+        return True
+    except ImportError:
+        return False
+
+
+def _check_pdf_readable(file_path: str) -> Dict[str, Any]:
+    """检查PDF文件是否可读（内部helper） - 小沈 2026-05-18，从env_check_tools.py迁入"""
+    path = Path(file_path)
+    if not path.exists():
+        return {"code": "ERR_READ_PDF", "data": None, "message": f"文件不存在: {file_path}"}
+    try:
+        import pdfplumber
+        with pdfplumber.open(path) as pdf:
+            page_count = len(pdf.pages)
+        return {"code": "SUCCESS", "data": {"readable": True, "page_count": page_count},
+                "message": f"PDF文件可读，共 {page_count} 页"}
+    except ImportError:
+        return {"code": "ERR_NO_PDFPLUMBER", "data": None,
+                "message": "pdfplumber库未安装，请先执行: pip install pdfplumber"}
+    except Exception as e:
+        return {"code": "ERR_READ_PDF", "data": None, "message": f"PDF文件不可读: {str(e)}"}
+
+
+def _check_docx_readable(file_path: str) -> Dict[str, Any]:
+    """检查Word文件是否可读（内部helper） - 小沈 2026-05-18，从env_check_tools.py迁入"""
+    path = Path(file_path)
+    if not path.exists():
+        return {"code": "ERR_READ_DOCX", "data": None, "message": f"文件不存在: {file_path}"}
+    try:
+        import docx
+        doc = docx.Document(path)
+        para_count = len(doc.paragraphs)
+        return {"code": "SUCCESS", "data": {"readable": True, "paragraph_count": para_count},
+                "message": f"Word文件可读，共 {para_count} 段"}
+    except ImportError:
+        return {"code": "ERR_NO_DOCX", "data": None,
+                "message": "python-docx库未安装，请先执行: pip install python-docx"}
+    except Exception as e:
+        return {"code": "ERR_READ_DOCX", "data": None, "message": f"Word文件不可读: {str(e)}"}
+
+
+def _check_xlsx_readable(file_path: str) -> Dict[str, Any]:
+    """检查Excel文件是否可读（内部helper） - 小沈 2026-05-18，从env_check_tools.py迁入"""
+    path = Path(file_path)
+    if not path.exists():
+        return {"code": "ERR_READ_XLSX", "data": None, "message": f"文件不存在: {file_path}"}
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(path, read_only=True)
+        sheet_names = wb.sheetnames
+        wb.close()
+        return {"code": "SUCCESS", "data": {"readable": True, "sheet_names": sheet_names},
+                "message": f"Excel文件可读，共 {len(sheet_names)} 个工作表"}
+    except ImportError:
+        return {"code": "ERR_NO_OPENPYXL", "data": None,
+                "message": "openpyxl库未安装，请先执行: pip install openpyxl"}
+    except Exception as e:
+        return {"code": "ERR_READ_XLSX", "data": None, "message": f"Excel文件不可读: {str(e)}"}
+
+
+def _validate_csv_format(file_path: str) -> Dict[str, Any]:
+    """验证CSV文件格式（内部helper） - 小沈 2026-05-18，从env_check_tools.py迁入"""
+    path = Path(file_path)
+    if not path.exists():
+        return {"code": "ERR_READ_CSV", "data": None, "message": f"文件不存在: {file_path}"}
+    if not path.suffix.lower() in (".csv", ".tsv", ".txt"):
+        return {"code": "ERR_READ_CSV", "data": None, "message": "文件扩展名不是CSV格式"}
+
+    errors = []
+    try:
+        with open(path, "r", encoding="utf-8", newline="") as f:
+            reader = csv.reader(f)
+            row_count = 0
+            col_count = None
+            for i, row in enumerate(reader):
+                row_count += 1
+                if col_count is None:
+                    col_count = len(row)
+                elif len(row) != col_count:
+                    if len(row) != 0:
+                        errors.append(f"第{i+1}行列数不一致: 期望{col_count}列，实际{len(row)}列")
+                if row_count > 1000:
+                    break
+    except UnicodeDecodeError:
+        try:
+            with open(path, "r", encoding="gbk", newline="") as f:
+                reader = csv.reader(f)
+                row_count = 0
+                for _ in reader:
+                    row_count += 1
+                    if row_count > 1000:
+                        break
+        except Exception as e:
+            errors.append(f"文件编码错误: {str(e)}")
+    except Exception as e:
+        errors.append(f"文件读取错误: {str(e)}")
+
+    is_valid = len(errors) == 0
+    if is_valid:
+        return {"code": "SUCCESS", "data": {"valid": True}, "message": "CSV格式正确"}
+    else:
+        return {"code": "ERR_READ_CSV", "data": {"valid": False, "errors": errors},
+                "message": f"CSV格式有 {len(errors)} 个问题"}
+
+
+def _validate_chart_data(data: Dict[str, Any]) -> Dict[str, Any]:
+    """验证图表数据格式（内部helper） - 小沈 2026-05-18，从env_check_tools.py迁入"""
+    errors = []
+    if not isinstance(data, dict):
+        errors.append("data必须是字典类型")
+    else:
+        if "labels" not in data:
+            errors.append("缺少labels字段")
+        elif not isinstance(data["labels"], list):
+            errors.append("labels必须是数组类型")
+        if "values" not in data:
+            errors.append("缺少values字段")
+        elif not isinstance(data["values"], list):
+            errors.append("values必须是数组类型")
+        if "labels" in data and "values" in data:
+            if isinstance(data["labels"], list) and isinstance(data["values"], list):
+                if len(data["labels"]) != len(data["values"]):
+                    errors.append(f"labels和values长度不一致: labels={len(data['labels'])}, values={len(data['values'])}")
+    is_valid = len(errors) == 0
+    if is_valid:
+        return {"code": "SUCCESS", "data": {"valid": True}, "message": "图表数据格式正确"}
+    else:
+        return {"code": "ERR_GENERATE_CHART", "data": {"valid": False, "errors": errors},
+                "message": f"图表数据格式有 {len(errors)} 个问题"}
+
+
+def _serialize_pandas_rows(df) -> List[Any]:
+    """将DataFrame行数据序列化为JSON安全格式 - 小沈 2026-05-18"""
+    import pandas as pd
+    rows = df.values.tolist()
+    serialized_rows = []
+    for row in rows:
+        serialized_row = []
+        for val in row:
+            if pd.isna(val):
+                serialized_row.append(None)
+            elif hasattr(val, 'item'):
+                serialized_row.append(val.item())
+            else:
+                serialized_row.append(val)
+        serialized_rows.append(serialized_row)
+    return serialized_rows
+
+
+def _read_csv_pandas(
+    file_path: str,
+    encoding: str = "utf-8",
+    delimiter: str = ",",
+    has_header: bool = True,
+    max_rows: int = 1000,
+) -> Dict[str, Any]:
+    """使用pandas读取CSV文件 - 小沈 2026-05-18（从data_analysis迁入）"""
+    if not _check_pandas():
+        return {"code": "ERR_NO_PANDAS", "data": None, "message": "pandas库未安装，请先执行: pip install pandas"}
+    try:
+        import pandas as pd
+        path = Path(file_path)
+        if not path.exists():
+            return {"code": "ERR_READ_CSV_DATAFRAME", "data": None, "message": f"文件不存在: {file_path}"}
+        header = 0 if has_header else None
+        df = pd.read_csv(path, encoding=encoding, delimiter=delimiter, header=header, nrows=max_rows)
+        columns = df.columns.tolist()
+        serialized_rows = _serialize_pandas_rows(df)
+        dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
+        return {"code": "SUCCESS", "data": {"columns": columns, "rows": serialized_rows, "row_count": len(serialized_rows), "dtypes": dtypes}, "message": f"成功读取CSV文件: {file_path}，共 {len(serialized_rows)} 行数据"}
+    except Exception as e:
+        return {"code": "ERR_READ_CSV_DATAFRAME", "data": None, "message": f"读取CSV文件失败: {str(e)}"}
+
+
+def _read_excel_pandas(
+    file_path: str,
+    sheet_name: Optional[str] = None,
+    max_rows: int = 1000,
+) -> Dict[str, Any]:
+    """使用pandas读取Excel文件 - 小沈 2026-05-18（从data_analysis迁入）"""
+    if not _check_pandas():
+        return {"code": "ERR_NO_PANDAS", "data": None, "message": "pandas库未安装，请先执行: pip install pandas openpyxl"}
+    if not _check_openpyxl():
+        return {"code": "ERR_NO_OPENPYXL", "data": None, "message": "openpyxl库未安装，请先执行: pip install openpyxl"}
+    try:
+        import pandas as pd
+        path = Path(file_path)
+        if not path.exists():
+            return {"code": "ERR_READ_EXCEL_DATAFRAME", "data": None, "message": f"文件不存在: {file_path}"}
+        df = pd.read_excel(path, sheet_name=sheet_name if sheet_name else 0, nrows=max_rows, engine="openpyxl")
+        columns = df.columns.tolist()
+        serialized_rows = _serialize_pandas_rows(df)
+        dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
+        actual_sheet = sheet_name if sheet_name else "Sheet1"
+        return {"code": "SUCCESS", "data": {"columns": columns, "rows": serialized_rows, "row_count": len(serialized_rows), "dtypes": dtypes, "sheet_name": actual_sheet}, "message": f"成功读取Excel文件: {file_path}，共 {len(serialized_rows)} 行数据"}
+    except Exception as e:
+        return {"code": "ERR_READ_EXCEL_DATAFRAME", "data": None, "message": f"读取Excel文件失败: {str(e)}"}
 
 
 def _parse_pages(pages_str: str) -> List[int]:
@@ -759,39 +972,30 @@ def read_document(
     suffix = path.suffix.lower()
     
     if suffix == ".pdf":
+        check = _check_pdf_readable(file_path)
+        if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
+            return check
         return _read_pdf(file_path, pages=pages, extract_tables=extract_tables, extract_images=extract_images)
     elif suffix in (".docx", ".doc"):
+        check = _check_docx_readable(file_path)
+        if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
+            return check
         return _read_docx(file_path, extract_tables=extract_tables)
     elif suffix == ".pptx":
         return _read_pptx(file_path, extract_notes=extract_notes)
     elif suffix in (".xlsx", ".xls"):
-        # Excel处理 — 小沈 2026-05-18
+        check = _check_xlsx_readable(file_path)
+        if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
+            return check
         if use_pandas:
-            # 使用pandas读取（调用data_analysis的read_excel_dataframe逻辑）
-            from app.services.tools.document.data_analysis_tools import read_excel_dataframe
-            return read_excel_dataframe(
-                file_path=file_path,
-                sheet_name=sheet_name,
-                max_rows=max_rows
-            )
+            return _read_excel_pandas(file_path=file_path, sheet_name=sheet_name, max_rows=max_rows)
         else:
-            # 使用openpyxl读取
             return _read_xlsx(file_path, sheet_name=sheet_name, max_rows=max_rows, header=header)
     elif suffix in (".csv", ".tsv"):
-        # CSV/TSV处理 — 小沈 2026-05-18
         actual_delimiter = "\t" if suffix == ".tsv" else (delimiter or ",")
         if use_pandas:
-            # 使用pandas读取（调用data_analysis的read_csv_dataframe逻辑）
-            from app.services.tools.document.data_analysis_tools import read_csv_dataframe
-            return read_csv_dataframe(
-                file_path=file_path,
-                encoding=encoding,
-                delimiter=actual_delimiter,
-                has_header=header,
-                max_rows=max_rows
-            )
+            return _read_csv_pandas(file_path=file_path, encoding=encoding, delimiter=actual_delimiter, has_header=header, max_rows=max_rows)
         else:
-            # 使用标准库csv读取
             return _read_csv_stdlib(file_path, encoding=encoding, delimiter=actual_delimiter, has_header=header, max_rows=max_rows)
     else:
         return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
