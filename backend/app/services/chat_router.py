@@ -123,12 +123,9 @@ async def route_with_fallback(user_input: str) -> Dict:
         intent_str = llm_result.get("intent", "")
         llm_confidence = float(llm_result.get("confidence", 0.5))
 
-        # 将LLM返回的字符串转为ToolCategory
-        intent_enum = None
-        for cat in ToolCategory:
-            if cat.value == intent_str:
-                intent_enum = cat
-                break
+        # 将LLM返回的字符串转为ToolCategory（支持新旧意图名） - 【2026-05-18 小沈】
+        from app.services.tools.registry import resolve_category
+        intent_enum = resolve_category(intent_str)
 
         result.update({
             "intent": intent_enum,
