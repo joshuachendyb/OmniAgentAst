@@ -34,6 +34,13 @@ from datetime import datetime, timedelta, timezone;
 from typing import Dict, Any, Optional, Callable, Awaitable, List, Union;
 import re;
 from app.utils.logger import logger;
+from app.services.tools.toolhelper.date_helper import (
+    parse_datetime_any as _parse_datetime_any,
+    parse_datetime_string as _parse_datetime_string,
+    is_holiday as _is_holiday,
+    calc_next_n_workday as _calc_next_n_workday,
+    resolve_timezone as _resolve_timezone,
+);
 
 
 # 定时器存储;
@@ -47,128 +54,7 @@ _timer_events: List[Dict[str, Any]] = [];  # 存储触发事件
 # 内部辅助函数
 # ===========================================================
 
-def _is_holiday(date_obj) -> bool:
-    """判断日期是否为假日（布尔值）- 小沈 2026-05-05 抽取公共函数
 
-    Args:
-        date_obj: datetime.date 或 datetime 对象
-    Returns:
-        bool: 是否为假日
-    """
-    try:
-        dt = date_obj if hasattr(date_obj, 'month') else None
-        if dt is None:
-            return False
-
-        month_day = (dt.month, dt.day)
-        year = dt.year
-
-        solar_holidays = {
-            (1, 1), (2, 14), (3, 8), (3, 12), (4, 1),
-            (5, 1), (5, 4), (6, 1), (7, 1), (8, 1),
-            (9, 10), (10, 1), (12, 24), (12, 25),
-        }
-
-        qingming_dates = {
-            2024: (4, 4), 2025: (4, 4), 2026: (4, 5),
-            2027: (4, 5), 2028: (4, 4), 2029: (4, 5), 2030: (4, 5),
-            2031: (4, 5), 2032: (4, 4), 2033: (4, 4), 2034: (4, 5), 2035: (4, 5),
-        }
-        qingming = qingming_dates.get(year, (4, 5))
-
-        if month_day in solar_holidays or month_day == qingming:
-            return True
-
-        try:
-            from lunarcalendar import Converter
-            solar_date = dt.date() if hasattr(dt, 'date') else dt
-            lunar = Converter.Solar2Lunar(solar_date)
-            lunar_month_day = (lunar.month, lunar.day)
-            lunar_holidays = {
-                (1, 1), (1, 15), (5, 5), (7, 7), (7, 15),
-                (8, 15), (9, 9), (12, 8), (12, 30),
-            }
-            return lunar_month_day in lunar_holidays
-        except Exception:
-            return False
-    except Exception:
-        return False
-
-
-def _parse_datetime_any(value: Any) -> Optional[datetime]:
-    """尝试解析各种格式的时间值为datetime对象 — 小沈 2026-05-18"""
-    try:
-        if isinstance(value, datetime):
-            return value.astimezone() if value.tzinfo else value.astimezone()
-        elif isinstance(value, (int, float)):
-            return datetime.fromtimestamp(value, tz=timezone.utc).astimezone()
-        elif isinstance(value, str):
-            return _parse_datetime_string(value)
-        else:
-            return None
-    except Exception:
-        return None
-
-
-def _parse_datetime_string(date_str: str) -> Optional[datetime]:
-    """解析日期字符串，支持多种格式 — 小沈 2026-05-18"""
-    try:
-        date_str = date_str.strip();
-
-        # 方法1：尝试ISO格式（带冒号时区）
-        try:
-            s = re.sub(r'([+-]\d{2}):(\d{2})$', r'\1\2', date_str)
-            if s != date_str:
-                return datetime.fromisoformat(s)
-        except ValueError:
-            pass;
-
-        # 方法2：尝试直接ISO格式
-        try:
-            return datetime.fromisoformat(date_str)
-        except ValueError:
-            pass;
-
-        # 方法3：尝试常见格式
-        formats = [
-            "%Y-%m-%d %H:%M:%S",
-            "%Y-%m-%d",
-            "%Y/%m/%d %H:%M:%S",
-            "%Y/%m/%d",
-            "%Y年%m月%d日 %H:%M:%S",
-            "%Y年%m月%d日",
-            "%Y-%m-%dT%H:%M:%S",
-            "%Y-%m-%dT%H:%M:%S.%f",
-            "%Y-%m-%dT%H:%M:%S%z",
-            "%Y-%m-%dT%H:%M:%S.%f%z",
-        ]
-
-        for fmt in formats:
-            try:
-                dt = datetime.strptime(date_str, fmt)
-                return dt.astimezone()
-            except ValueError:
-                continue;
-
-        # 方法4：尝试提取数字
-        numbers = re.findall(r'\d+', date_str)
-        if len(numbers) >= 3:
-            try:
-                year = int(numbers[0])
-                month = int(numbers[1])
-                day = int(numbers[2])
-                hour = int(numbers[3]) if len(numbers) > 3 else 0;
-                minute = int(numbers[4]) if len(numbers) > 4 else 0;
-                second = int(numbers[5]) if len(numbers) > 5 else 0;
-
-                dt = datetime(year, month, day, hour, minute, second)
-                return dt.astimezone()
-            except Exception:
-                pass
-
-        return None
-    except Exception:
-        return None
 
 
 # ===========================================================
@@ -637,145 +523,6 @@ def _time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict
         }
 
 
-def _time_is_weekend(date: Optional[Any] = None) -> Dict[str, Any]:
-    """检查给定日期是否为周末 — 小沈 2026-05-18"""
-    try:
-        # 解析日期
-        if date is None:
-            dt = datetime.now().astimezone()
-        else:
-            dt = _parse_datetime_any(date)
-            if dt is None:
-                return {
-                    "code": "ERR_TIME_IS_WEEKEND",
-                    "data": None,
-                    "message": f"无法解析日期: {date}"
-                }
-
-        isoweekday = dt.isoweekday()  # 1=Monday, 7=Sunday;
-        is_weekend = isoweekday >= 6  # Saturday or Sunday;
-
-        # 构造消息
-        if is_weekend:
-            if isoweekday == 6:
-                msg = "今天是周六，休息日"
-            else:
-                msg = "今天是周日，休息日"
-        else:
-            msg = f"今天是{dt.strftime('%A')}，工作日"
-
-        return {
-            "code": "SUCCESS",
-            "data": {
-                "is_weekend": is_weekend,
-                "weekday": dt.strftime("%A"),
-                "isoweekday": isoweekday,
-                "date": dt.strftime("%Y-%m-%d")
-            },
-            "message": msg
-        }
-    except Exception as e:
-        return {
-            "code": "ERR_TIME_IS_WEEKEND",
-            "data": None,
-            "message": f"检查周末失败: {str(e)}"
-        }
-
-
-def _time_is_holiday(date: Optional[Any] = None) -> Dict[str, Any]:
-    """检查给定日期是否为假日（支持公历+农历节日） — 小沈 2026-05-18"""
-    try:
-        if date is None:
-            dt = datetime.now().astimezone()
-        else:
-            dt = _parse_datetime_any(date)
-            if dt is None:
-                return {
-                    "code": "ERR_TIME_IS_HOLIDAY",
-                    "data": None,
-                    "message": f"无法解析日期: {date}"
-                }
-
-        month_day = (dt.month, dt.day)
-        year = dt.year
-
-        # ===== 公历固定节日 =====
-        solar_holidays = {
-            (1, 1): "元旦",
-            (2, 14): "情人节",
-            (3, 8): "妇女节",
-            (3, 12): "植树节",
-            (4, 1): "愚人节",
-            (5, 1): "劳动节",
-            (5, 4): "青年节",
-            (6, 1): "儿童节",
-            (7, 1): "建党节",
-            (8, 1): "建军节",
-            (9, 10): "教师节",
-            (10, 1): "国庆节",
-            (12, 24): "平安夜",
-            (12, 25): "圣诞节",
-        }
-
-        # 清明节：查表法（2024-2035年）
-        qingming_dates = {
-            2024: (4, 4), 2025: (4, 4), 2026: (4, 5),
-            2027: (4, 5), 2028: (4, 4), 2029: (4, 5), 2030: (4, 5),
-            2031: (4, 5), 2032: (4, 4), 2033: (4, 4), 2034: (4, 5), 2035: (4, 5),
-        }
-        qingming = qingming_dates.get(year, (4, 5))
-
-        holiday_name = solar_holidays.get(month_day)
-        if month_day == qingming:
-            holiday_name = "清明节"
-
-        # ===== 农历节日（lunarcalendar库）=====
-        if holiday_name is None:
-            try:
-                from lunarcalendar import Converter
-                solar_date = dt.date() if hasattr(dt, 'date') else dt
-                lunar = Converter.Solar2Lunar(solar_date)
-                lunar_month_day = (lunar.month, lunar.day)
-
-                lunar_holidays = {
-                    (1, 1): "春节（农历正月初一）",
-                    (1, 15): "元宵节（农历正月十五）",
-                    (5, 5): "端午节（农历五月初五）",
-                    (7, 7): "七夕节（农历七月初七）",
-                    (7, 15): "中元节（农历七月十五）",
-                    (8, 15): "中秋节（农历八月十五）",
-                    (9, 9): "重阳节（农历九月初九）",
-                    (12, 8): "腊八节（农历十二月初八）",
-                    (12, 30): "除夕（农历十二月三十）",
-                }
-                holiday_name = lunar_holidays.get(lunar_month_day)
-            except Exception as e:
-                logger.warning(f"[_time_is_holiday] 农历转换失败: {e}")
-
-        is_holiday = holiday_name is not None
-
-        if is_holiday:
-            msg = f"{dt.strftime('%Y-%m-%d')}是{holiday_name}，节假日"
-        else:
-            msg = f"{dt.strftime('%Y-%m-%d')}不是节假日"
-
-        return {
-            "code": "SUCCESS",
-            "data": {
-                "is_holiday": is_holiday,
-                "holiday_name": holiday_name,
-                "date": dt.strftime("%Y-%m-%d")
-            },
-            "message": msg
-        }
-    except Exception as e:
-        return {
-            "code": "ERR_TIME_IS_HOLIDAY",
-            "data": None,
-            "message": f"检查假日失败: {str(e)}"
-        }
-
-
 def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, Any]:
     """时间加减计算 — 小健 2026-05-06 delta必填前置,start可选对齐Schema"""
     try:
@@ -875,72 +622,6 @@ def _timer_list(limit: int = 10) -> Dict[str, Any]:
         }
 
 
-def _time_compare(time1: Any, time2: Any, unit: str = "days") -> Dict[str, Any]:
-    """时间比较：比较两个时间的大小和差值 — 小沈 2026-05-18"""
-    try:
-        # 解析两个时间
-        dt1 = _parse_datetime_any(time1)
-        dt2 = _parse_datetime_any(time2)
-
-        if dt1 is None:
-            return {
-                "code": "ERR_TIME_COMPARE",
-                "data": None,
-                "message": f"无法解析time1: {time1}"
-            }
-
-        if dt2 is None:
-            return {
-                "code": "ERR_TIME_COMPARE",
-                "data": None,
-                "message": f"无法解析time2: {time2}"
-            }
-
-        # 确保时区一致
-        if dt1.tzinfo is None:
-            dt1 = dt1.replace(tzinfo=timezone.utc).astimezone()
-        if dt2.tzinfo is None:
-            dt2 = dt2.replace(tzinfo=timezone.utc).astimezone()
-
-        # 计算差值
-        diff = dt1 - dt2
-
-        # 根据单位返回差值
-        diff_value = {
-            "days": diff.days,
-            "hours": diff.total_seconds() / 3600,
-            "minutes": diff.total_seconds() / 60,
-            "seconds": diff.total_seconds(),
-        }.get(unit, diff.days)
-
-        # 比较结果
-        if diff.total_seconds() > 0:
-            compare_result = "gt"  # time1 > time2
-        elif diff.total_seconds() < 0:
-            compare_result = "lt"  # time1 < time2
-        else:
-            compare_result = "eq"  # time1 == time2
-
-        return {
-            "code": "SUCCESS",
-            "data": {
-                "result": compare_result,
-                "diff_seconds": diff.total_seconds(),
-                "diff_value": diff_value,
-                "diff_unit": unit,
-                "time1": dt1.isoformat(),
-                "time2": dt2.isoformat(),
-            },
-            "message": f"time1 {compare_result} time2"
-        }
-    except Exception as e:
-        return {
-            "code": "ERR_TIME_COMPARE",
-            "data": None,
-            "message": f"时间比较失败: {str(e)}"
-        }
-
-
 def _time_to_timestamp(time: Any, unit: str = "seconds") -> Dict[str, Any]:
     """时间转时间戳：将时间转换为Unix时间戳 — 小沈 2026-05-18"""
     try:
@@ -1025,84 +706,16 @@ def _timestamp_to_time(timestamp: Union[int, float], target_tz: str = "+08:00") 
         }
 
 
-def _time_is_workday(date: Optional[Union[int, float, str]] = None) -> Dict[str, Any]:
-    """工作日判断：判断日期是否为工作日（周一到周五） — 小沈 2026-05-18"""
-    try:
-        # 解析日期
-        dt = _parse_datetime_any(date) if date else datetime.now().astimezone()
-
-        if dt is None:
-            return {
-                "code": "ERR_TIME_IS_WORKDAY",
-                "data": None,
-                "message": f"无法解析date: {date}"
-            }
-
-        # 判断是否为周末（周六=5，周日=6）
-        weekday = dt.weekday()
-        is_weekend = weekday >= 5
-
-        # 判断是否为假日
-        is_holiday_result = _is_holiday(dt.date())
-
-        # 工作日 = 非周末且非假日
-        is_workday = not is_weekend and not is_holiday_result
-
-        return {
-            "code": "SUCCESS",
-            "data": is_workday,
-            "message": "工作日" if is_workday else "非工作日"
-        }
-    except Exception as e:
-        return {
-            "code": "ERR_TIME_IS_WORKDAY",
-            "data": None,
-            "message": f"工作日判断失败: {str(e)}"
-        }
-
-
 def _time_next_n_workday(start: Optional[Union[int, float, str]] = None, n: int = 1) -> Dict[str, Any]:
     """下N个工作日：计算从起始日期往后第N个工作日的日期 — 小沈 2026-05-18"""
     try:
-        # 解析起始日期
         dt = _parse_datetime_any(start) if start else datetime.now().astimezone()
-
         if dt is None:
-            return {
-                "code": "ERR_TIME_NEXT_N_WORKDAY",
-                "data": None,
-                "message": f"无法解析start: {start}"
-            }
-
-        # 从下一天开始查找
-        current_date = dt.date() + timedelta(days=1)
-        found_count = 0
-        result_dates = []
-
-        while found_count < n:
-            # 判断是否为工作日
-            weekday = current_date.weekday()
-            is_weekend = weekday >= 5
-            is_holiday = _is_holiday(current_date)
-            is_workday = not is_weekend and not is_holiday
-
-            if is_workday:
-                result_dates.append(current_date.isoformat())
-                found_count += 1
-
-            current_date += timedelta(days=1)
-
-        return {
-            "code": "SUCCESS",
-            "data": result_dates,
-            "message": f"第{n}个工作日: {result_dates[0] if result_dates else None}"
-        }
+            return {"code": "ERR_TIME_NEXT_N_WORKDAY", "data": None, "message": f"无法解析start: {start}"}
+        result_dates = _calc_next_n_workday(dt.date(), n)
+        return {"code": "SUCCESS", "data": result_dates, "message": f"第{n}个工作日: {result_dates[0] if result_dates else None}"}
     except Exception as e:
-        return {
-            "code": "ERR_TIME_NEXT_N_WORKDAY",
-            "data": None,
-            "message": f"计算失败: {str(e)}"
-        }
+        return {"code": "ERR_TIME_NEXT_N_WORKDAY", "data": None, "message": f"计算失败: {str(e)}"}
 
 
 # ===========================================================
@@ -1208,15 +821,7 @@ def check_date(
         date_obj = dt.date()
         isoweekday = dt.isoweekday()
         is_weekend = isoweekday >= 6
-        is_holiday_result = _is_holiday(date_obj)
-        # _is_holiday返回bool
-        is_hol = is_holiday_result
-        # 获取holiday_name：复用_time_is_holiday的逻辑
-        holiday_name = None
-        if is_hol:
-            hol_result = _time_is_holiday(date)
-            if hol_result["code"] == "SUCCESS" and hol_result["data"]:
-                holiday_name = hol_result["data"].get("holiday_name")
+        is_hol, holiday_name = _is_holiday(date_obj)
         is_workday = not is_weekend and not is_hol
 
         result_data = {
@@ -1230,11 +835,9 @@ def check_date(
         }
 
         if check_type == "next_workday":
-            # 使用内部函数计算
-            next_result = _time_next_n_workday(start=date, n=n)
-            if next_result["code"] == "SUCCESS":
-                result_data["next_workdays"] = next_result["data"]
-                result_data["next_workday_first"] = next_result["data"][0] if next_result["data"] else None
+            next_workdays = _calc_next_n_workday(date_obj, n)
+            result_data["next_workdays"] = next_workdays
+            result_data["next_workday_first"] = next_workdays[0] if next_workdays else None
             msg = f"第{n}个工作日: {result_data.get('next_workday_first', '无')}"
         elif check_type == "weekend":
             msg = "周末" if is_weekend else "非周末"
