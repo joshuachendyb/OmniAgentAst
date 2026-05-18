@@ -73,7 +73,7 @@ from app.services.tools.database.database_tools import (
 )
 
 DESCRIPTIONS = {
-    "read_document": """统一读取文档内容，按文件后缀自动路由到对应解析器（PDF/DOCX/XLSX/PPTX）。
+    "read_document": """统一读取文档内容，按文件后缀自动路由到对应解析器（PDF/DOCX/XLSX/PPTX/CSV/TSV）。
 
 【使用场景】
 - 当用户需要读取任意格式文档内容时使用
@@ -82,9 +82,14 @@ DESCRIPTIONS = {
 
 【支持的格式】
 - .pdf → PDF解析（支持页码范围、提取表格/图片）
-- .docx → Word解析（支持提取表格）
+- .docx/.doc → Word解析（支持提取表格）
 - .xlsx/.xls → Excel解析（支持指定工作表、最大行数）
 - .pptx → PPT解析（支持提取演讲备注）
+- .csv/.tsv → CSV解析（支持分隔符、编码、use_pandas返回dtypes）
+
+【use_pandas参数】
+- False（默认）：使用标准库/openpyxl，快速轻量
+- True：使用pandas，返回dtypes等元数据，适合数据分析
 
 【返回数据】
 - code: SUCCESS / ERR_FILE_NOT_FOUND / ERR_UNSUPPORTED_FORMAT
@@ -167,6 +172,52 @@ DESCRIPTIONS = {
 - code: 状态码（SUCCESS/ERR_GENERATE_CHART/ERR_NO_MATPLOTLIB）
 - data: 输出图片路径
 - message: 操作结果消息""",
+
+    # 【2026-05-18 小沈】Database工具描述（从database_register迁入）
+    "query_sql": """执行只读SQL查询（SELECT/SHOW/DESCRIBE），返回结果集。
+
+【使用场景】
+- 当用户需要查询数据库数据时使用
+- 当用户需要分析表数据时使用
+- 当需要执行只读操作时使用
+
+
+【重要】强制只读，写操作返回错误。超时自动触发EXPLAIN分析。
+
+【返回数据】
+- code: SUCCESS / ERR_READ_ONLY_VIOLATION / ERR_DB_CONNECTION / ERR_SQL_EXEC
+- data: { columns, rows, total }
+- message: 操作结果消息""",
+
+    "execute_sql": """执行写操作SQL（INSERT/UPDATE/DELETE/DDL）。
+
+【使用场景】
+- 当用户需要修改数据库数据时使用
+- 当用户需要执行CREATE TABLE等DDL时使用
+- 当需要执行写操作时使用
+
+
+【重要】仅支持单语句自动提交。高风险操作（DROP/TRUNCATE）自动拦截。
+
+【返回数据】
+- code: SUCCESS / WARNING / ERR_DB_CONNECTION / ERR_SQL_EXEC / ERR_EXEC_FAILED
+- data: { affected_rows, sql }
+- message: 操作结果消息""",
+
+    "get_db_schema": """获取数据库结构元数据，包括表名、字段、类型、索引、外键。
+
+【使用场景】
+- 当用户需要查看数据库表结构时使用
+- 当用户需要理解表设计时
+- 当用户需要生成DDL时使用
+
+
+【重要】include_details=true时最多返回20个表，防止上下文爆炸。
+
+【返回数据】
+- code: SUCCESS / ERR_DB_CONNECTION / ERR_SQL_EXEC / ERR_SCHEMA_FAILED
+- data: { tables: [{name, columns, indexes}], total }
+- message: 操作结果消息""",
 }
 
 EXAMPLES = {
@@ -241,7 +292,7 @@ TOOL_IMPLEMENTATIONS = {
 
 
 def _register_document_tools():
-    """注册所有文档读写工具 — 小健 2026-05-18 共6个LLM工具"""
+    """注册所有文档读写工具 — 小健 2026-05-18 共9个LLM工具（含Database迁入）"""
     for name, func in TOOL_IMPLEMENTATIONS.items():
         desc = DESCRIPTIONS.get(name, "")
         input_model = TOOL_INPUT_MODELS.get(name)
@@ -262,8 +313,6 @@ def _register_document_tools():
             f"examples: {len(examples)}个"
         )
 
-
-_initialized = False
 
 __all__ = [
     "_register_document_tools",
