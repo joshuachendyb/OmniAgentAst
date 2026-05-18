@@ -13,9 +13,10 @@ REGISTRY 工具函数模块 - Windows注册表操作工具
 3. *_register.py: 显式注册（description + examples + input_model）
 
 包含：
-- reg_read: 读取注册表键值
-- reg_write: 写入注册表键值
-- reg_delete: 删除注册表键值
+- registry_control: 注册表统一控制入口（action="read"|"write"|"delete"）
+- reg_read: 读取注册表键值（内部函数）
+- reg_write: 写入注册表键值（内部函数）
+- reg_delete: 删除注册表键值（内部函数）
 
 返回格式：统一 {code, data, message} 格式
 
@@ -368,3 +369,57 @@ def reg_delete(key_path: str, value_name: Optional[str] = None, backup_before_de
         error_msg = f"删除注册表失败: {str(e)}"
         logger.error(f"[reg_delete] {error_msg}")
         return {"code": "ERR_REG_DELETE_FAILED", "data": None, "message": error_msg}
+
+
+def registry_control(
+    action: str = "read",
+    key_path: str = None,
+    value_name: Optional[str] = None,
+    value: Optional[str] = None,
+    value_type: str = "auto_detect",
+    hive: str = "HKCU",
+    output_format: str = "auto",
+    backup_before_write: bool = True,
+    backup_before_delete: bool = True,
+    dry_run: bool = False,
+    recursive: bool = False,
+) -> dict:
+    """注册表统一控制入口 - 小沈 2026-05-18
+    合并 reg_read + reg_write + reg_delete，通过action参数路由
+    【2026-05-18 小沈】P11统一入口+P2相似整合
+
+    Args:
+        action: 操作类型 "read"|"write"|"delete"，默认"read"
+        key_path: 注册表键路径（必填）
+        value_name: 值名称（read/delete时可选，write时必填）
+        value: 值数据（仅write时使用）
+        value_type: 值类型（仅write时使用），默认auto_detect
+        hive: 根键，默认HKCU
+        output_format: 输出格式（仅read时使用），默认auto
+        backup_before_write: 写入前备份（仅write时使用），默认True
+        backup_before_delete: 删除前备份（仅delete时使用），默认True
+        dry_run: 预演模式（仅write时使用），默认False
+        recursive: 递归删除（仅delete时使用），默认False
+
+    Returns:
+        {code, data, message}
+    """
+    if not key_path:
+        return {"code": "ERR_REG_INVALID_PARAM", "data": None, "message": "key_path不能为空"}
+
+    if action == "read":
+        return reg_read(key_path=key_path, value_name=value_name, hive=hive, output_format=output_format)
+    elif action == "write":
+        if not value_name:
+            return {"code": "ERR_REG_INVALID_PARAM", "data": None, "message": "action='write'时value_name必填"}
+        if value is None:
+            return {"code": "ERR_REG_INVALID_PARAM", "data": None, "message": "action='write'时value必填"}
+        return reg_write(key_path=key_path, value_name=value_name, value=value,
+                        value_type=value_type, backup_before_write=backup_before_write,
+                        dry_run=dry_run, hive=hive)
+    elif action == "delete":
+        return reg_delete(key_path=key_path, value_name=value_name,
+                         backup_before_delete=backup_before_delete, recursive=recursive, hive=hive)
+    else:
+        return {"code": "ERR_REG_INVALID_PARAM", "data": None,
+                "message": f"无效的action: {action}，支持: read/write/delete"}
