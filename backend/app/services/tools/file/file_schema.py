@@ -313,6 +313,14 @@ class GrepFileContentInput(BaseModel):
         default=True,
         description="是否显示行号，默认True"
     )
+    multiline: bool = Field(
+        default=False,
+        description="是否启用多行匹配模式，默认False"
+    )
+    page_token: Optional[str] = Field(
+        default=None,
+        description="分页令牌，用于获取下一页结果"
+    )
 
 
 # ============================================================
