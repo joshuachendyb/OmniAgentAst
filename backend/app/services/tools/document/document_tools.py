@@ -293,6 +293,58 @@ def _read_xlsx(
         }
 
 
+def _read_csv_stdlib(
+    file_path: str,
+    encoding: str = "utf-8",
+    delimiter: str = ",",
+    has_header: bool = True,
+    max_rows: int = 1000
+) -> Dict[str, Any]:
+    """使用标准库csv读取CSV文件（内部函数）— 小健 2026-05-18"""
+    import csv
+    
+    try:
+        path = Path(file_path)
+        if not path.exists():
+            return {
+                "code": "ERR_READ_CSV",
+                "data": None,
+                "message": f"文件不存在: {file_path}"
+            }
+        
+        rows = []
+        columns = []
+        with open(path, "r", encoding=encoding, newline="") as f:
+            reader = csv.reader(f, delimiter=delimiter)
+            for i, row in enumerate(reader):
+                if i >= max_rows:
+                    break
+                if i == 0:
+                    if has_header:
+                        columns = row
+                    else:
+                        columns = [f"col_{j}" for j in range(len(row))]
+                        rows.append(row)
+                else:
+                    rows.append(row)
+        
+        return {
+            "code": "SUCCESS",
+            "data": {
+                "columns": columns,
+                "rows": rows,
+                "row_count": len(rows),
+            },
+            "message": f"成功读取CSV文件: {file_path}，共 {len(rows)} 行数据"
+        }
+    except Exception as e:
+        return {
+            "code": "ERR_READ_CSV",
+            "data": None,
+            "message": f"读取CSV文件失败: {str(e)}"
+        }
+
+
 def _read_pptx(
     file_path: str,
     extract_notes: bool = False
@@ -659,11 +711,15 @@ def read_document(
     sheet_name: Optional[str] = None,
     max_rows: int = 1000,
     header: bool = True,
+    use_pandas: bool = False,
+    encoding: str = "utf-8",
+    delimiter: str = ",",
 ) -> Dict[str, Any]:
     """读取文档内容 — 小健 2026-05-18
-    合并 read_pdf + read_docx + read_pptx + read_xlsx
+    合并 read_pdf + read_docx + read_pptx + read_xlsx + read_csv
     按文件后缀自动路由到对应解析器
     支持 .doc 后缀（通过 win32com 降级处理）
+    支持 .csv/.tsv 后缀（use_pandas=True时使用pandas，否则使用标准库csv）
     """
     path = Path(file_path)
     suffix = path.suffix.lower()
@@ -676,9 +732,25 @@ def read_document(
         return _read_pptx(file_path, extract_notes=extract_notes)
     elif suffix in (".xlsx", ".xls"):
         return _read_xlsx(file_path, sheet_name=sheet_name, max_rows=max_rows, header=header)
+    elif suffix in (".csv", ".tsv"):
+        # CSV/TSV处理 — 小健 2026-05-18
+        actual_delimiter = "\t" if suffix == ".tsv" else delimiter
+        if use_pandas:
+            # 使用pandas读取（调用data_analysis的read_csv_dataframe逻辑）
+            from app.services.tools.document.data_analysis_tools import read_csv_dataframe
+            return read_csv_dataframe(
+                file_path=file_path,
+                encoding=encoding,
+                delimiter=actual_delimiter,
+                has_header=header,
+                max_rows=max_rows
+            )
+        else:
+            # 使用标准库csv读取
+            return _read_csv_stdlib(file_path, encoding=encoding, delimiter=actual_delimiter, has_header=header, max_rows=max_rows)
     else:
         return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
-                "message": f"不支持的格式: {suffix}。支持: .pdf/.doc/.docx/.xlsx/.xls/.pptx"}
+                "message": f"不支持的格式: {suffix}。支持: .pdf/.doc/.docx/.xlsx/.xls/.pptx/.csv/.tsv"}
 
 
 def write_document(

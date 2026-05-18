@@ -18,16 +18,19 @@ from typing import Optional, Any, List, Dict
 
 class ReadDocumentInput(BaseModel):
     """read_document 工具的输入参数 — 小健 2026-05-18
-    合并 read_pdf + read_docx + read_pptx + read_xlsx
+    合并 read_pdf + read_docx + read_pptx + read_xlsx + read_csv
     """
-    file_path: str = Field(..., description="文档路径。支持 .pdf/.docx/.xlsx/.xls/.pptx。Agent无需判断格式，工具按后缀自动选择解析器")
+    file_path: str = Field(..., description="文档路径。支持 .pdf/.doc/.docx/.xlsx/.xls/.pptx/.csv/.tsv。Agent无需判断格式，工具按后缀自动选择解析器")
     pages: Optional[str] = Field(default=None, description="PDF页码范围（如'1-3,5'，仅PDF有效）")
     extract_tables: bool = Field(default=False, description="是否提取表格（PDF/DOCX有效）")
     extract_images: bool = Field(default=False, description="是否提取图片（仅PDF有效）")
     extract_notes: bool = Field(default=False, description="是否提取演讲备注（仅PPTX有效）")
     sheet_name: Optional[str] = Field(default=None, description="Excel工作表名（仅XLSX有效）")
-    max_rows: int = Field(default=1000, ge=1, le=10000, description="最大读取行数（仅XLSX有效）")
-    header: bool = Field(default=True, description="第一行是否为表头（仅XLSX有效）")
+    max_rows: int = Field(default=1000, ge=1, le=10000, description="最大读取行数（XLSX/CSV有效）")
+    header: bool = Field(default=True, description="第一行是否为表头（XLSX/CSV有效）")
+    use_pandas: bool = Field(default=False, description="是否使用pandas读取CSV（True返回DataFrame含dtypes，False使用标准库csv）")
+    encoding: str = Field(default="utf-8", description="文件编码（仅CSV有效）")
+    delimiter: str = Field(default=",", description="CSV分隔符（仅CSV有效，TSV自动使用制表符）")
 
 
 class WriteDocumentInput(BaseModel):
