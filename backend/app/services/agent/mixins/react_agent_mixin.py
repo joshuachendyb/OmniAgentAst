@@ -194,20 +194,23 @@ class ReactAgentMixin(ToolLoaderMixin):
         
         【重构 小健 2026-05-15】registry返回的单分类detail已自带"=== 分类名 ==="标题，
         此处只做多分类拼接，不再生成额外标题。
+        【2026-05-18 小沈】使用resolve_category支持新旧分类名
         """
-        from app.services.tools.registry import tool_registry, ToolCategory
+        from app.services.tools.registry import tool_registry, resolve_category
         parts = []
         loaded_cats = getattr(self, '_loaded_categories', set())
         for cat_name in sorted(loaded_cats):
+            category = resolve_category(cat_name)
+            if not category:
+                continue
             try:
-                category = ToolCategory(cat_name)
                 detail = tool_registry.get_all_tools_detail(
                     priority_category=category,
                     category_filter=category
                 )
                 if detail.strip():
                     parts.append(detail)
-            except (ValueError, Exception):
+            except Exception:
                 continue
         return "\n\n".join(parts) if parts else ""
     
