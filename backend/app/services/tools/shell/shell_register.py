@@ -26,9 +26,6 @@ from app.utils.logger import logger
 
 from app.services.tools.shell.shell_schema import (
     ExecuteShellCommandInput,
-    GetWorkingDirectoryInput,
-    ChangeDirectoryInput,
-    CheckPathExistsInput,
     FindCommandInput,
     ShellSessionInput,
     ExecutePythonInput,
@@ -37,9 +34,6 @@ from app.services.tools.shell.shell_schema import (
 
 from app.services.tools.shell.shell_tools import (
     execute_shell_command,
-    get_working_directory,
-    change_directory,
-    check_path_exists,
     find_command,
     shell_session,
 )
@@ -158,15 +152,13 @@ SHELL_TOOL_EXAMPLES = {
 def _register_shell_tools():
     """
     【2026-05-02 小沈】显式注册所有Shell工具
-    【2026-05-17 小沈】8→6，find_command替代check_command_available+locate_command(-1)，
+    【2026-05-17 小沈】8→5，find_command替代check_command_available+locate_command(-1)，
                         shell_session替代get_shell_output+terminate_shell(-1)
+    【2026-05-18 小健】5→5，降级3个工具(get_working_directory/change_directory/check_path_exists)不再注册LLM
     使用 Pydantic 模型自动生成 OpenAI Schema
     """
     tool_methods = {
         "execute_shell_command": execute_shell_command,
-        "get_working_directory": get_working_directory,
-        "change_directory": change_directory,
-        "check_path_exists": check_path_exists,
         "find_command": find_command,
         "shell_session": shell_session,
         "execute_python": execute_python,
@@ -175,9 +167,6 @@ def _register_shell_tools():
 
     TOOL_INPUT_MODELS = {
         "execute_shell_command": ExecuteShellCommandInput,
-        "get_working_directory": GetWorkingDirectoryInput,
-        "change_directory": ChangeDirectoryInput,
-        "check_path_exists": CheckPathExistsInput,
         "find_command": FindCommandInput,
         "shell_session": ShellSessionInput,
         "execute_python": ExecutePythonInput,
