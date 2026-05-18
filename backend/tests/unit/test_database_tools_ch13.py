@@ -208,15 +208,19 @@ class TestGetDbSchema:
 # TestEliminated — 验证已消除的工具
 # ============================================================
 class TestEliminated:
-    """验证 check_db_exists/get_table_schema/begin/commit/rollback 已消除"""
+    """验证已消除的工具不再注册为LLM工具（兼容包装器仍可导入但不再注册）"""
 
-    def test_check_db_exists_not_importable(self):
-        with pytest.raises(ImportError):
-            from app.services.tools.support_tool.support_tool_tools import check_db_exists  # noqa
+    def test_check_db_exists_not_registered(self):
+        """check_db_exists保留兼容包装器但不再注册为LLM工具"""
+        from app.services.tools.support_tool.support_tool_tools import check_db_exists  # noqa
+        from app.services.tools.registry import tool_registry
+        assert "check_db_exists" not in tool_registry._tools
 
-    def test_get_table_schema_not_importable(self):
-        with pytest.raises(ImportError):
-            from app.services.tools.support_tool.support_tool_tools import get_table_schema  # noqa
+    def test_get_table_schema_not_registered(self):
+        """get_table_schema保留兼容包装器但不再注册为LLM工具"""
+        from app.services.tools.support_tool.support_tool_tools import get_table_schema  # noqa
+        from app.services.tools.registry import tool_registry
+        assert "get_table_schema" not in tool_registry._tools
 
     def test_begin_transaction_not_importable(self):
         with pytest.raises(ImportError):
