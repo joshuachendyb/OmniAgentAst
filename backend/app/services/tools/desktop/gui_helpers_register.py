@@ -190,14 +190,3 @@ def _register_gui_helpers():
 _initialized = False  # 守护变量，供显式调用时使用
 
 __all__ = ["_register_gui_helpers"]
-
-
-__all__ = [
-    "get_mouse_position",
-    "check_screen_size",
-    "check_window_exists",
-    "get_window_position",
-    "check_screen_capture_permission",
-    "check_tesseract_available",
-    "check_notification_permission",
-]
