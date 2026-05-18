@@ -40,7 +40,7 @@ class ExecuteShellCommandInput(BaseModel):
         description="执行环境。可选值：powershell、cmd。由 Agent 根据命令特征智能判断：默认 powershell，若执行报错且疑似语法错误（如包含 %VAR%），Agent 自动切换 cmd 重试"
     )
     timeout: int = Field(
-        default=300000, ge=1000, le=600000, description="超时毫秒数，默认300000（5分钟），最大600000（10分钟）。Agent 根据命令类型智能调整：简单命令 30s，编译/安装 300s - 小沈 2026-05-03"
+        default=30000, ge=1000, le=600000, description="超时毫秒数，默认30000（30秒），最大600000（10分钟）。Agent 根据命令类型智能调整：简单命令 30s，编译/安装 300s - 小健 2026-05-18"
     )
     run_in_background: bool = Field(
         default=False,
@@ -57,25 +57,6 @@ class ExecuteShellCommandInput(BaseModel):
     )
     run_as_admin: bool = Field(
         default=False, description="是否请求管理员权限。当前版本标记意图，实际执行受限于当前进程权限。Agent对安装软件等高权限操作自动设为True。默认为False"
-    )
-
-
-class GetWorkingDirectoryInput(BaseModel):
-    """get_working_directory 工具的输入参数（无参数）- 小沈 2026-05-04"""
-    pass
-
-
-class ChangeDirectoryInput(BaseModel):
-    """change_directory 工具的输入参数 - 小沈 2026-05-04"""
-    path: str = Field(
-        ..., description="要切换到的目录路径"
-    )
-
-
-class CheckPathExistsInput(BaseModel):
-    """check_path_exists 工具的输入参数 - 小沈 2026-05-04"""
-    path: str = Field(
-        ..., description="要检查的文件或目录路径"
     )
 
 
@@ -127,9 +108,6 @@ __all__ = [
     "ExecuteShellCommandInput",
     "ExecutePythonInput",
     "ExecuteJavascriptInput",
-    "GetWorkingDirectoryInput",
-    "ChangeDirectoryInput",
-    "CheckPathExistsInput",
     "FindCommandInput",
     "ShellSessionInput",
 ]
