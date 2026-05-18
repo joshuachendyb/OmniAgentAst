@@ -12,23 +12,12 @@
 3. *_register.py: 显式注册（description + examples + input_model）
 
 包含：
-- read_csv_dataframe: 使用pandas读取CSV文件并返回DataFrame格式数据
 - generate_chart: 使用matplotlib生成数据可视化图表
 - analyze_data: 对数据集进行统计分析
-- read_excel_dataframe: 使用pandas读取Excel文件并返回DataFrame格式数据
 - filter_data: 按条件筛选/过滤数据
 
 Author: 小沈 - 2026-05-02
-【新增 2026-05-05 小沈】read_excel_dataframe, filter_data
-【修正 2026-05-05 小沈】小健检查发现的问题：
-1. matplotlib fig 未用 try/finally，savefig异常时fig泄漏
-2. filter_data 缺 openpyxl 检查
-3. 饼图单色改为自动多色配色
-4. filter_data 条件列不存在时加警告
-5. analyze_data 加 encoding/max_rows 参数
-6. usecols 类型注解修正为 Optional[List[str]]
-7. read_excel_dataframe sheet_name 返回实际名
-8. 条件中 operator 不存在时加警告
+【2026-05-18 小沈】删除read_csv_dataframe/read_excel_dataframe，逻辑已迁入document_tools.py
 """
 
 import os
@@ -88,67 +77,6 @@ def _serialize_rows(df) -> List[List[Any]]:
     return serialized_rows
 
 
-def read_csv_dataframe(
-    file_path: str,
-    encoding: str = "utf-8",
-    delimiter: str = ",",
-    has_header: bool = True,
-    max_rows: int = 1000,
-    usecols: Optional[List[str]] = None,
-    skip_rows: int = 0
-) -> Dict[str, Any]:
-    """使用pandas读取CSV文件返回DataFrame格式数据 - 小沈 2026-05-02, 修正 2026-05-05"""
-    if not _check_pandas():
-        return {
-            "code": "ERR_NO_PANDAS",
-            "data": None,
-            "message": "pandas库未安装，请先执行: pip install pandas"
-        }
-
-    try:
-        import pandas as pd
-
-        path = Path(file_path)
-        if not path.exists():
-            return {
-                "code": "ERR_READ_CSV_DATAFRAME",
-                "data": None,
-                "message": f"文件不存在: {file_path}"
-            }
-
-        header = 0 if has_header else None
-        df = pd.read_csv(
-            path,
-            encoding=encoding,
-            delimiter=delimiter,
-            header=header,
-            nrows=max_rows,
-            usecols=usecols,
-            skiprows=skip_rows
-        )
-
-        columns = df.columns.tolist()
-        serialized_rows = _serialize_rows(df)
-        dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
-
-        return {
-            "code": "SUCCESS",
-            "data": {
-                "columns": columns,
-                "rows": serialized_rows,
-                "row_count": len(serialized_rows),
-                "dtypes": dtypes,
-            },
-            "message": f"成功读取CSV文件: {file_path}，共 {len(serialized_rows)} 行数据"
-        }
-    except Exception as e:
-        return {
-            "code": "ERR_READ_CSV_DATAFRAME",
-            "data": None,
-            "message": f"读取CSV文件失败: {str(e)}"
-        }
-
-
 def generate_chart(
     data: Dict[str, Any],
     chart_type: str = "bar",
@@ -161,6 +89,11 @@ def generate_chart(
     color: Optional[str] = None
 ) -> Dict[str, Any]:
     """使用matplotlib生成数据可视化图表 - 小沈 2026-05-02, 修正 2026-05-05"""
+    from app.services.tools.document.document_tools import _validate_chart_data
+    validation = _validate_chart_data(data)
+    if validation["code"] != "SUCCESS" or not validation["data"].get("valid", False):
+        return validation
+
     if not _check_matplotlib():
         return {
             "code": "ERR_NO_MATPLOTLIB",
@@ -354,73 +287,6 @@ def analyze_data(
             "code": "ERR_ANALYZE_DATA",
             "data": None,
             "message": f"数据分析失败: {str(e)}"
-        }
-
-
-def read_excel_dataframe(
-    file_path: str,
-    sheet_name: Optional[str] = None,
-    max_rows: int = 1000,
-    usecols: Optional[List[str]] = None,
-    skip_rows: int = 0
-) -> Dict[str, Any]:
-    """使用pandas读取Excel文件返回DataFrame格式数据 - 小沈 2026-05-05, 修正 2026-05-05"""
-    if not _check_pandas():
-        return {
-            "code": "ERR_NO_PANDAS",
-            "data": None,
-            "message": "pandas库未安装，请先执行: pip install pandas openpyxl"
-        }
-
-    if not _check_openpyxl():
-        return {
-            "code": "ERR_NO_OPENPYXL",
-            "data": None,
-            "message": "openpyxl库未安装，请先执行: pip install openpyxl"
-        }
-
-    try:
-        import pandas as pd
-
-        path = Path(file_path)
-        if not path.exists():
-            return {
-                "code": "ERR_READ_EXCEL_DATAFRAME",
-                "data": None,
-                "message": f"文件不存在: {file_path}"
-            }
-
-        df = pd.read_excel(
-            path,
-            sheet_name=sheet_name if sheet_name else 0,
-            nrows=max_rows,
-            usecols=usecols,
-            skiprows=skip_rows,
-            engine="openpyxl"
-        )
-
-        columns = df.columns.tolist()
-        serialized_rows = _serialize_rows(df)
-        dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
-
-        actual_sheet = sheet_name if sheet_name else "Sheet1"
-
-        return {
-            "code": "SUCCESS",
-            "data": {
-                "columns": columns,
-                "rows": serialized_rows,
-                "row_count": len(serialized_rows),
-                "dtypes": dtypes,
-                "sheet_name": actual_sheet,
-            },
-            "message": f"成功读取Excel文件: {file_path}，共 {len(serialized_rows)} 行数据"
-        }
-    except Exception as e:
-        return {
-            "code": "ERR_READ_EXCEL_DATAFRAME",
-            "data": None,
-            "message": f"读取Excel文件失败: {str(e)}"
         }
 
 
