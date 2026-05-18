@@ -323,11 +323,11 @@ def window_control(
     action: "focus"|"resize"|"maximize"|"minimize"|"restore"|"topmost"|"unpin"
     """
     if action == "focus":
-        from app.services.tools.desktop.gui_tools import focus_window
-        return focus_window(window_title)
+        from app.services.tools.desktop.gui_tools import _focus_window
+        return _focus_window(window_title)
     elif action == "resize":
-        from app.services.tools.desktop.gui_tools import resize_window
-        return resize_window(window_title, width=width, height=height)
+        from app.services.tools.desktop.gui_tools import _resize_window
+        return _resize_window(window_title, width=width, height=height)
     else:
         return set_window_state(window_title, action)
 
@@ -348,14 +348,14 @@ def mouse_control(
     action: "click"|"move"|"scroll"|"position"
     """
     if action == "click":
-        from app.services.tools.desktop.gui_tools import click
-        return click(x=x, y=y, button=button, click_type=click_type)
+        from app.services.tools.desktop.gui_tools import _click
+        return _click(x=x, y=y, button=button, click_type=click_type)
     elif action == "move":
-        from app.services.tools.desktop.gui_tools import move
-        return move(x=x, y=y, duration=duration)
+        from app.services.tools.desktop.gui_tools import _move
+        return _move(x=x, y=y, duration=duration)
     elif action == "scroll":
-        from app.services.tools.desktop.gui_tools import scroll
-        return scroll(direction=direction, amount=amount)
+        from app.services.tools.desktop.gui_tools import _scroll
+        return _scroll(direction=direction, amount=amount)
     elif action == "position":
         from app.services.tools.toolhelper.gui_helper import _get_mouse_position
         return _get_mouse_position()
@@ -374,15 +374,15 @@ def keyboard_control(
     action: "type"|"shortcut"|"combo"
     """
     if action == "type":
-        from app.services.tools.desktop.gui_tools import type_text
-        return type_text(text=text_or_keys, interval=interval)
+        from app.services.tools.desktop.gui_tools import _type_text
+        return _type_text(text=text_or_keys, interval=interval)
     elif action == "shortcut":
-        from app.services.tools.desktop.gui_tools import shortcut
-        return shortcut(keys=text_or_keys)
+        from app.services.tools.desktop.gui_tools import _shortcut
+        return _shortcut(keys=text_or_keys)
     elif action == "combo":
-        from app.services.tools.desktop.gui_tools import key_combo
+        from app.services.tools.desktop.gui_tools import _key_combo
         key_list = [k.strip() for k in text_or_keys.split(",")]
-        return key_combo(keys=key_list)
+        return _key_combo(keys=key_list)
     else:
         return {"code": "ERR_INVALID_ACTION", "data": None, "message": f"无效的键盘操作: {action}，支持: type/shortcut/combo"}
 
@@ -399,11 +399,11 @@ def screen_capture(
     当指定display参数时使用snapshot（多显示器），否则使用screenshot
     """
     if display is not None:
-        from app.services.tools.desktop.gui_tools import snapshot
-        return snapshot(display=display)
+        from app.services.tools.desktop.gui_tools import _snapshot
+        return _snapshot(display=display)
     else:
-        from app.services.tools.desktop.gui_tools import screenshot
-        return screenshot(output_path=output_path, region=region)
+        from app.services.tools.desktop.gui_tools import _screenshot
+        return _screenshot(output_path=output_path, region=region)
 
 
 def clipboard_control(
@@ -416,12 +416,12 @@ def clipboard_control(
     action: "read"|"write"
     """
     if action == "read":
-        from app.services.tools.desktop.gui_tools import read_clipboard
-        return read_clipboard()
+        from app.services.tools.desktop.gui_tools import _read_clipboard
+        return _read_clipboard()
     elif action == "write":
         if content is None:
             return {"code": "ERR_MISSING_PARAM", "data": None, "message": "写入剪贴板需要提供content参数"}
-        from app.services.tools.desktop.gui_tools import write_clipboard
-        return write_clipboard(content=content)
+        from app.services.tools.desktop.gui_tools import _write_clipboard
+        return _write_clipboard(content=content)
     else:
         return {"code": "ERR_INVALID_ACTION", "data": None, "message": f"无效的剪贴板操作: {action}，支持: read/write"}
