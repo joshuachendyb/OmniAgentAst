@@ -44,19 +44,6 @@ class GetWindowInfoInput(BaseModel):
     )
 
 
-class SetWindowStateInput(BaseModel):
-    """set_window_state 工具的输入参数 - 设置窗口状态 - 小沈 2026-05-05修正action为Literal
-
-    【2026-05-17 小沈】保留旧Schema供向下兼容，不再注册到LLM
-    """
-    window_title: str = Field(
-        description="窗口标题（精确匹配或模糊匹配）"
-    )
-    action: Literal["maximize", "minimize", "restore", "topmost", "unpin"] = Field(
-        description="窗口操作：maximize(最大化)、minimize(最小化)、restore(还原)、topmost(置顶)、unpin(取消置顶)"
-    )
-
-
 # ========== 统一入口Schema（26→10精简方案） - 小沈 2026-05-17 ==========
 
 class WindowControlInput(BaseModel):
