@@ -276,7 +276,7 @@ def _register_time_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.META,
+            category=ToolCategory.TIME,
             implementation=method,
             version="2.0.0",
             input_model=input_model,
