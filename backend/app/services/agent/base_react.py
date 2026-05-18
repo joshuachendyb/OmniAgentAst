@@ -261,7 +261,7 @@ class BaseAgent(ABC):
         参考：文档4.14节步骤9代码示例
         
         Args:
-            intent_type: 意图类型（file/time/shell/network等）
+            intent_type: 意图类型（file/meta/shell/network等，也兼容旧名time/database等）
             reason: 加载原因（用于日志）
         """
         if intent_type in self._loaded_categories:
@@ -269,17 +269,17 @@ class BaseAgent(ABC):
         
         logger.info(f"[动态加载] 原因: {reason}，加载意图: {intent_type}")
         
-        # 1. 获取该意图的工具（所有工具已全量注册）
-        try:
-            category = ToolCategory(intent_type)
-            new_tools = get_tools_from_registry_by_category(category)
-        except ValueError as e:
-            logger.warning(f"[动态加载] 意图'{intent_type}'无对应工具分类: {e}")
+        # 1. 获取该意图的工具（支持新旧意图名） - 【2026-05-18 小沈】
+        from app.services.tools.registry import resolve_category
+        category = resolve_category(intent_type)
+        if not category:
+            logger.warning(f"[动态加载] 意图'{intent_type}'无对应工具分类")
             return
+        new_tools = get_tools_from_registry_by_category(category)
         
         # 2. 添加到_tools_dict
         self._tools_dict.update(new_tools)
-        self._loaded_categories.add(intent_type)
+        self._loaded_categories.add(category.value)
 
         # 【修复 N4 小沈 2026-05-15】不再注入load_hint，依赖下一轮detail自动包含新分类
         new_tool_names = sorted(new_tools.keys())
