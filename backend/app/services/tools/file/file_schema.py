@@ -1,41 +1,104 @@
 # -*- coding: utf-8 -*-
 """
-File Intent 工具参数 Schema 定义
+File 工具参数 Schema 定义 — 精简版 v2.0
 
 【创建时间】2026-03-21 小沈
-【设计依据】多意图处理架构设计-小沈-2026-03-20.md (v2.18) - 12.2节
+【精简时间】2026-05-18 小沈 — 第17章工具精简：26→11
 
 职责：
-定义 file 意图的7个工具的参数 Pydantic 模型，作为独立的 Schema 定义文件。
-其他模块（如 file_tools.py、react_schema.py）从这里导入模型使用。
+定义 file 分类的11个工具的参数 Pydantic 模型。
 
-各意图的 Schema 文件统一放在 tools/{intent}/ 目录下：
-- tools/file/file_schema.py  → file 意图的工具参数 Schema
-- tools/network/network_schema.py → network 意图的工具参数 Schema（待实现）
-- tools/desktop/desktop_schema.py → desktop 意图的工具参数 Schema（待实现）
+11个工具清单（F1-F11）：
+F1  read_file          — 合并read_text_file + read_batch_file
+F2  write_text_file    — 写文本文件
+F3  read_media_file    — 读媒体文件
+F4  edit_file          — 合并precise_replace_in_file + edit_text_file
+F5  list_directory     — 合并list_directory + get_directory_tree + file_statistics
+F6  search_files       — 搜索文件名
+F7  grep_file_content  — 搜索文件内容
+F8  rename_file        — 合并rename_file + batch_rename
+F9  archive_tool       — 合并compress_files + extract_archive
+F10 file_operation     — 合并move_file + copy_file + delete_file
+F11 data_file_format   — 合并json/yaml/toml/ini/xml/properties
 
 Author: 小沈 - 2026-03-21
+更新: 小沈 - 2026-05-18 精简为11个工具
 """
 
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal
 
 
-class WriteTextFileInput(BaseModel):
-    """write_text_file 工具的输入参数 - 小健 2026-05-03 增加编码自动检测+OOM保护"""
-    file_path: str = Field(
-        description="文件的完整路径（必须是绝对路径）"
+# ============================================================
+# F1: read_file — 合并read_text_file + read_batch_file
+# ============================================================
+
+class ReadFileInput(BaseModel):
+    """read_file 统一入口 — 小沈 2026-05-18
+
+    合并 read_text_file + read_batch_file
+    - file_path: 读取单个文件，支持 head/tail/offset/limit 分页
+    - file_paths: 批量读取多个文件，每个文件返回完整内容
+
+    P17互斥校验：file_path 和 file_paths 不能同时传入
+    """
+    file_path: Optional[str] = Field(
+        default=None,
+        description="单文件路径（与file_paths互斥，二选一）"
     )
-    text: str = Field(
-        description="要写入文件的文本内容"
+    file_paths: Optional[List[str]] = Field(
+        default=None,
+        description="批量文件路径列表（与file_path互斥，二选一）"
+    )
+    head: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=1000000,
+        description="读取前N行（仅单文件模式，不能与tail/offset同时使用）"
+    )
+    tail: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=1000000,
+        description="读取后N行（仅单文件模式，不能与head/offset同时使用）"
+    )
+    offset: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=10000000,
+        description="起始行号，1-indexed（仅单文件模式，不能与head/tail同时使用，配合limit分页读取）"
+    )
+    limit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=1000000,
+        description="最大读取行数（仅单文件模式，配合offset分页读取）"
     )
     encoding: Optional[str] = Field(
         default=None,
-        description="文件编码。追加时检测已有文件编码，新建时默认为utf-8。也可指定gbk/gb2312等。可选参数"
+        description="文件编码，默认utf-8。读取失败时自动尝试gbk/gb2312/utf-8-sig"
+    )
+
+
+# ============================================================
+# F2: write_text_file — 写文本文件
+# ============================================================
+
+class WriteTextFileInput(BaseModel):
+    """write_text_file 工具的输入参数"""
+    file_path: str = Field(
+        description="文件的完整路径（必须是绝对路径，支持中文路径）"
+    )
+    text: str = Field(
+        description="要写入文件的文本内容（必须是实际内容，禁止传入思考/计划/状态描述）"
+    )
+    encoding: Optional[str] = Field(
+        default=None,
+        description="文件编码。追加时检测已有文件编码，新建时默认为utf-8。也可指定gbk/gb2312等"
     )
     append: bool = Field(
         default=False,
-        description="是否追加写入。True=追加，False=覆盖。对.log文件Agent可自动设为True。默认为False"
+        description="是否追加写入。True=追加，False=覆盖。对.log文件Agent可自动设为True"
     )
     create_parents: bool = Field(
         default=True,
@@ -47,579 +110,410 @@ class WriteTextFileInput(BaseModel):
     )
 
 
+# ============================================================
+# F3: read_media_file — 读媒体文件
+# ============================================================
+
+class ReadMediaFileInput(BaseModel):
+    """read_media_file 工具的输入参数"""
+    file_path: str = Field(
+        description="媒体文件的完整路径，支持图片（JPG/PNG/GIF/BMP/WebP）和音频（MP3/WAV/OGG/M4A）格式"
+    )
+
+
+# ============================================================
+# F4: edit_file — 合并precise_replace_in_file + edit_text_file
+# ============================================================
+
+class EditFileInput(BaseModel):
+    """edit_file 统一入口 — 小沈 2026-05-18
+
+    合并 precise_replace_in_file + edit_text_file
+    - old_string+new_string: 单处精确替换
+    - edits: 多处结构化编辑
+
+    P17互斥校验：old_string 和 edits 不能同时传入
+    """
+    file_path: str = Field(
+        description="目标文件的绝对路径（仅支持文本文件，二进制文件将被拒绝）"
+    )
+    old_string: Optional[str] = Field(
+        default=None,
+        description="待替换的旧字符串（与edits互斥，二选一）"
+    )
+    new_string: Optional[str] = Field(
+        default=None,
+        description="替换的新字符串（配合old_string使用）"
+    )
+    edits: Optional[List[Dict]] = Field(
+        default=None,
+        description="多处编辑列表，每项含oldText和newText（与old_string互斥，二选一）"
+    )
+    replace_all: bool = Field(
+        default=False,
+        description="是否替换所有匹配项（仅old_string模式有效），默认False只替换第一个"
+    )
+    ignore_case: bool = Field(
+        default=False,
+        description="是否忽略大小写（仅old_string模式有效），默认False"
+    )
+    dry_run: bool = Field(
+        default=False,
+        description="预览模式，True=只预览不修改（P16幂等性），默认False"
+    )
+    encoding: Optional[str] = Field(
+        default=None,
+        description="文件编码，默认utf-8"
+    )
+
+
+# ============================================================
+# F5: list_directory — 合并list_directory + get_directory_tree + file_statistics
+# ============================================================
+
 class ListDirectoryInput(BaseModel):
-    """list_directory 工具的输入参数"""
+    """list_directory 统一入口 — 小沈 2026-05-18
+
+    合并 list_directory + get_directory_tree + file_statistics
+    - format="list": 扁平列表（原list_directory）
+    - format="tree": JSON树结构（原get_directory_tree）
+    - 始终返回statistics统计信息（原file_statistics）
+    """
     dir_path: str = Field(
         description="目录的完整路径（必须是绝对路径，如 D:/项目代码）"
     )
+    format: str = Field(
+        default="list",
+        description="输出格式：list（扁平列表）或 tree（JSON树结构），默认list"
+    )
     recursive: bool = Field(
         default=False,
-        description="是否递归列出所有子目录，默认为False（不递归）"
+        description="是否递归列出所有子目录，默认False"
     )
     max_depth: int = Field(
         default=10,
         ge=1,
         le=50,
-        description="最大递归深度，仅当recursive=True时有效。默认为10"
+        description="最大递归深度，仅当recursive=True时有效，默认10"
+    )
+    sortBy: str = Field(
+        default="name",
+        description="排序方式：name（按名称）/ size（按大小）/ mtime（按修改时间），默认name"
+    )
+    include_hidden: bool = Field(
+        default=False,
+        description="是否显示隐藏文件（以.开头的文件），默认False"
+    )
+    exclude_patterns: Optional[List[str]] = Field(
+        default=None,
+        description="排除模式列表，如 ['node_modules', '__pycache__', '.git']"
     )
     page_token: Optional[str] = Field(
         default=None,
         description="分页令牌（base64编码的位置偏移量），用于获取后续页面结果"
     )
-    sortBy: str = Field(
-        default="name",
-        description="排序方式。可选值：name（按名称字母排序）、size（按文件大小排序）。默认为name"
-    )
-    include_hidden: bool = Field(
-        default=False,
-        description="是否显示隐藏文件（以.开头的文件），默认为False"
-    )
 
 
-class DeleteFileInput(BaseModel):
-    """delete_file 工具的输入参数 - 小健 2026-05-03 默认回收站+force永久删除"""
-    file_path: str = Field(
-        description="要删除的文件或目录的完整路径"
-    )
-    recursive: bool = Field(
-        default=False,
-        description="是否递归删除目录（目录非空时需要设为True）"
-    )
-    force: bool = Field(
-        default=False,
-        description="是否强制永久删除（不放入回收站），设为True则永久删除不可恢复。默认为False"
-    )
-
-
-class MoveFileInput(BaseModel):
-    """move_file 工具的输入参数 - 小健 2026-05-02 增加overwrite"""
-    source_path: str = Field(
-        description="源文件或目录的完整路径，必须是已存在的文件或目录"
-    )
-    destination_path: str = Field(
-        description="目标路径（可以是新文件名或新目录位置）。如果目标目录不存在会自动创建"
-    )
-    overwrite: bool = Field(
-        default=False,
-        description="是否覆盖已存在的目标文件，默认为False（不覆盖，目标存在时报错）。Agent智能判断防误覆盖"
-    )
-
+# ============================================================
+# F6: search_files — 搜索文件名
+# ============================================================
 
 class SearchFilesInput(BaseModel):
-    """search_files 工具的输入参数 - 小健 2026-05-03 参数名统一为pattern/search_dir"""
+    """search_files 工具的输入参数"""
     pattern: str = Field(
-        description="文件名匹配模式，支持glob风格通配符（* 匹配任意字符，? 匹配单个字符）和中文文件名搜索。常用模式：\"*.txt\"、\"测试*\"、\"**/*.py\""
+        description="文件名匹配模式，支持glob通配符（* ? **）和中文文件名。如 \"*.py\"、\"**/*.ts\"、\"config*\""
     )
     search_dir: str = Field(
         default="~",
-        description="搜索的起始目录（绝对路径），默认为用户主目录。支持中文目录名（如 D:/项目/源码）"
+        description="搜索的起始目录（绝对路径），默认用户主目录。支持中文目录名"
     )
     recursive: bool = Field(
         default=True,
-        description="是否递归搜索子目录，默认为True"
+        description="是否递归搜索子目录，默认True"
     )
     max_depth: int = Field(
         default=100000,
         ge=1,
-        description="最大递归深度，仅当recursive=True时有效，默认为100000"
+        description="最大递归深度，仅当recursive=True时有效，默认100000"
     )
     excludePatterns: Optional[List[str]] = Field(
         default=None,
-        description="排除模式数组，符合排除模式的目录/文件不会包含在结果中。如 ['node_modules', '.git', '__pycache__']"
+        description="排除模式数组，如 ['node_modules', '.git', '__pycache__']"
     )
     ignore_case: bool = Field(
         default=True,
-        description="是否忽略大小写匹配文件名，默认为True（Windows风格）。设为False则大小写敏感"
+        description="是否忽略大小写，默认True（Windows风格）"
     )
     type: Optional[str] = Field(
         default=None,
-        description="搜索类型过滤：file=只返回文件，directory=只返回目录，不设则全部返回。可选参数"
+        description="搜索类型过滤：file=只返回文件，directory=只返回目录，不设则全部返回"
     )
     sortBy: Optional[str] = Field(
         default="name",
-        description="排序方式。可选值：name（按名称字母）、size（按大小）、mtime（按修改时间）。默认为name"
+        description="排序方式：name/size/mtime，默认name"
     )
     page_token: Optional[str] = Field(
         default=None,
-        description="分页令牌（位置编码），用于获取下一页结果"
+        description="分页令牌，用于获取下一页结果"
     )
 
 
-class GenerateReportInput(BaseModel):
-    """generate_report 工具的输入参数"""
-    output_dir: Optional[str] = Field(
-        default=None,
-        description="报告输出目录。可选参数，使用默认目录"
-    )
-
-
-class CopyFileInput(BaseModel):
-    """copy_file 工具的输入参数 - 小健 2026-05-02 增强"""
-    source_path: str = Field(
-        description="源文件或目录的完整路径（必须是绝对路径）"
-    )
-    destination_path: str = Field(
-        description="目标路径（可以是新文件名或新目录位置）"
-    )
-    recursive: bool = Field(
-        default=False,
-        description="是否递归复制目录，仅当源路径是目录时有效，默认为False"
-    )
-    overwrite: bool = Field(
-        default=False,
-        description="是否覆盖已存在的目标文件，默认为False（不覆盖）"
-    )
-    preserve_metadata: bool = Field(
-        default=True,
-        description="是否保留文件元数据（修改时间、访问时间等），默认为True。若用户意图是'备份'，Agent自动设True；若仅需内容不需元数据可设False"
-    )
-
-
-class CreateDirectoryInput(BaseModel):
-    """create_directory 工具的输入参数"""
-    dir_path: str = Field(
-        description="要创建的目录的完整路径（必须是绝对路径）"
-    )
-    parents: bool = Field(
-        default=True,
-        description="是否创建父目录，默认为True（如果父目录不存在则创建）"
-    )
-    exist_ok: bool = Field(
-        default=True,
-        description="如果目录已存在是否报错，默认为True（不报错，静默成功）。设为False则目录已存在时报错"
-    )
-
-
-class GetFileInfoInput(BaseModel):
-    """get_file_info 工具的输入参数 - 小健 2026-05-02 增加follow_symlinks"""
-    file_path: str = Field(
-        description="文件或目录的完整路径（必须是绝对路径），支持中文路径"
-    )
-    follow_symlinks: bool = Field(
-        default=True,
-        description="是否跟随符号链接获取真实文件信息，默认为True。设为False则获取链接文件本身的信息"
-    )
-
-
-class CompareFilesInput(BaseModel):
-    """compare_files 工具的输入参数"""
-    file_path1: str = Field(
-        description="第一个文件的完整路径（必须是绝对路径）"
-    )
-    file_path2: str = Field(
-        description="第二个文件的完整路径（必须是绝对路径）"
-    )
-    algorithm: str = Field(
-        default="content",
-        description="比较算法：content=内容比较、size=大小比较、mtime=修改时间比较。默认为content",
-        pattern="^(content|size|mtime)$"
-    )
-    chunk_size: int = Field(
-        default=8192,
-        ge=1024,
-        le=1048576,
-        description="分块大小（字节），用于大文件比较。默认为8192"
-    )
-
-
-class BatchRenameInput(BaseModel):
-    """batch_rename 工具的输入参数"""
-    directory: str = Field(
-        description="目标目录的完整路径（必须是绝对路径）"
-    )
-    pattern: str = Field(
-        description="匹配模式（支持正则表达式）"
-    )
-    replacement: str = Field(
-        description="替换字符串"
-    )
-    recursive: bool = Field(
-        default=False,
-        description="是否递归处理子目录，默认为False"
-    )
-    preview: bool = Field(
-        default=False,
-        description="是否只预览不执行，默认为False"
-    )
-    conflict_strategy: Literal["skip", "overwrite", "rename"] = Field(
-        default="skip",
-        description="冲突处理策略：skip（跳过）、overwrite（覆盖）、rename（自动重命名），默认为skip"
-    )
-
-
-class CompressFilesInput(BaseModel):
-    """compress_files 工具的输入参数 - 小沈 2026-05-03 修正"""
-    source_path: str = Field(
-        ...,
-        description="要压缩的文件或目录路径（必填）。必须是已存在的文件或目录。"
-    )
-    output_path: str = Field(
-        ...,
-        description="输出压缩文件路径（必填）。若是无后缀，Agent自动补全.zip后缀。"
-    )
-    format: Literal["zip", "tar.gz"] = Field(
-        default="zip",
-        description="压缩格式。可选值：zip（ZIP格式）、tar.gz（tar.gz格式）。Agent从output_path后缀自动推断。默认为zip"
-    )
-    exclude_patterns: Optional[List[str]] = Field(
-        default=None,
-        description="排除的文件/目录模式数组。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。Agent仅扫描根目录特征文件（如package.json）自动注入排除列表（如node_modules），绝不深度遍历。"
-    )
-    compression_level: int = Field(
-        default=6,
-        ge=0,
-        le=9,
-        description="压缩级别（0-9）。0=不压缩，1-5=快速，6=平衡，7-9=最高压缩。源目录>1GB时Agent限制不超过6。默认为6"
-    )
-    overwrite: bool = Field(
-        default=False,
-        description="是否覆盖已存在的目标文件。false=不覆盖（目标存在时报错），true=覆盖。Agent自动比对哈希。默认为False"
-    )
-    password: Optional[str] = Field(
-        default=None,
-        description="压缩密码，仅ZIP格式支持密码保护。可选参数"
-    )
-    split_size: Optional[int] = Field(
-        default=None,
-        ge=1024,
-        description="分卷大小（字节）。用于大文件分卷压缩，便于网络传输。含义：\n- None=不分卷（默认）\n- 数值=分卷大小，例如1048576（1MB）。默认为不分卷"
-    )
-
-
-class ExtractArchiveInput(BaseModel):
-    """extract_archive 工具的输入参数 - 小沈 2026-05-04"""
-    archive_path: str = Field(
-        ...,
-        description="压缩文件路径（必填）。必须是已存在的压缩文件，支持 zip、tar、gz 格式"
-    )
-    output_dir: Optional[str] = Field(
-        default=None,
-        description="解压目标目录（可选）。默认为自动创建与压缩包同名（去后缀）的隔离文件夹"
-    )
-    overwrite: bool = Field(
-        default=False,
-        description="是否覆盖已存在的文件。若冲突Agent自动跳过并返回冲突清单。默认为False"
-    )
-    password: Optional[str] = Field(
-        default=None,
-        description="解压密码（可选）。Agent 从安全上下文获取，若密码错误仅提示错误"
-    )
-    preserve_permissions: bool = Field(
-        default=True,
-        description="是否保留文件权限，跨平台自动适配。默认为True"
-    )
-
-
-class GetFileHashInput(BaseModel):
-    """get_file_hash 工具的输入参数 - 小沈 2026-05-04"""
-    file_path: str = Field(
-        ...,
-        description="文件路径（必填）。必须是要计算哈希的文件"
-    )
-    algorithm: Literal["md5", "sha1", "sha256", "sha512"] = Field(
-        default="sha256",
-        description="哈希算法。可选值：md5、sha1、sha256、sha512。默认为sha256"
-    )
-    verify_against: Optional[str] = Field(
-        default=None,
-        description="比对哈希值（可选）。若提供，Agent 自动计算并比对，返回 verified: true/false"
-    )
-    timeout: int = Field(
-        default=30000,
-        ge=1000,
-        le=600000,
-        description="超时毫秒数。默认为30000（30秒）"
-    )
-
-
-class FileMonitorInput(BaseModel):
-    """file_monitor 工具的输入参数"""
-    directory: str = Field(
-        description="监控目录的完整路径（必须是绝对路径）"
-    )
-    event_types: List[str] = Field(
-        default=["created", "modified", "deleted", "renamed"],
-        description="监控事件类型列表。可选值：created、modified、deleted、renamed。默认为全部四种"
-    )
-    recursive: bool = Field(
-        default=True,
-        description="是否递归监控子目录，默认为True"
-    )
-    filters: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="过滤条件字典，支持file_type、min_size、max_size、modified_after等字段"
-    )
-    duration: Optional[int] = Field(
-        default=None,
-        ge=1,
-        description="监控持续时间（秒）。默认为持续监控直到手动停止"
-    )
-
-
-class FileStatisticsInput(BaseModel):
-    """file_statistics 工具的输入参数"""
-    directory: str = Field(
-        description="统计目录的完整路径（必须是绝对路径）"
-    )
-    recursive: bool = Field(
-        default=True,
-        description="是否递归统计子目录，默认为True"
-    )
-    max_depth: int = Field(
-        default=100000,
-        ge=1,
-        description="最大递归深度，默认为100000"
-    )
-    filters: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="过滤条件字典，支持file_type、min_size、max_size等字段"
-    )
-    output_format: str = Field(
-        default="json",
-        description="输出格式：json、csv、text，默认为json"
-    )
-
-
-class ReadTextFileInput(BaseModel):
-    """read_text_file 工具的输入参数 - 小沈 2026-05-02 增加 offset/limit"""
-    file_path: str = Field(
-        description="文件的完整路径，必须是绝对路径，支持中文路径（如 D:/文档/测试.txt）"
-    )
-    head: Optional[int] = Field(
-        default=None,
-        ge=1,
-        le=1000000,
-        description="读取文件的前 N 行，不能与 tail/offset 参数同时使用。若 LLM 没给，Agent 检查文件大小：超大文件(>10MB日志)自动设 head=100 避免内存溢出；小代码文件则不设，读全部"
-    )
-    tail: Optional[int] = Field(
-        default=None,
-        ge=1,
-        le=1000000,
-        description="读取文件的后 N 行，不能与 head/offset 参数同时使用。若文件是 .log 结尾且 LLM 没给 head，Agent 推测用户想看最新动态，自动设 tail=50"
-    )
-    offset: Optional[int] = Field(
-        default=None,
-        ge=1,
-        le=10000000,
-        description="起始行号（从1开始），不能与 head/tail 参数同时使用。用于分页读取，配合 limit 使用从中间位置开始读取"
-    )
-    limit: Optional[int] = Field(
-        default=None,
-        ge=1,
-        le=1000000,
-        description="最大读取行数，配合 offset 使用进行分页读取。若只设置 limit 而不设置 offset，则从头读取 limit 行（等同于 head）"
-    )
-    encoding: Optional[str] = Field(
-        default=None,
-        description="文件编码。读取失败时Agent自动尝试gbk/gb2312。常见值：utf-8、gbk、gb2312、utf-8-sig。可选参数"
-    )
-
-
-class ReadMediaFileInput(BaseModel):
-    """read_media_file 工具的输入参数"""
-    file_path: str = Field(
-        description="媒体文件的完整路径，必须是绝对路径，支持图片（JPG、PNG、GIF、BMP、WebP）和音频（MP3、WAV、OGG、M4A）格式"
-    )
-
-
-class ReadBatchFileInput(BaseModel):
-    """read_batch_file 工具的输入参数"""
-    file_paths: List[str] = Field(
-        description="文件路径数组，每个元素必须是文件的完整绝对路径，支持中文路径。数组长度建议不超过100个文件"
-    )
-
-
-class PreciseReplaceInFileInput(BaseModel):
-    """precise_replace_in_file 工具的输入参数"""
-    file_path: str = Field(
-        description="文件的绝对路径，支持中文路径（如 D:/项目/代码/main.py）"
-    )
-    old_string: str = Field(
-        description="要替换的精确文本，支持中文。必须是文件中确实存在的文本，进行精确匹配（非正则表达式）"
-    )
-    new_string: str = Field(
-        description="替换后的文本，支持中文。用于替换 old_string 的内容"
-    )
-    replace_all: bool = Field(
-        default=False,
-        description="是否替换所有匹配项。设置为 true 时替换文件中所有匹配的 old_string，设置为 false 时只替换第一个匹配项"
-    )
-    ignore_case: bool = Field(
-        default=False,
-        description="是否忽略大小写。由 Agent 根据上下文智能判断"
-    )
-    encoding: Optional[str] = Field(
-        default=None,
-        description="文件编码。由 Agent 根据文件内容自动检测。常见值：utf-8、gbk、gb2312"
-    )
-
-
-class EditTextFileInput(BaseModel):
-    """edit_file 工具的输入参数"""
-    file_path: str = Field(
-        description="要编辑的文件路径，支持中文路径"
-    )
-    edits: List[Dict[str, str]] = Field(
-        description="编辑操作数组，每个元素包含 oldText（要替换的文本）和 newText（替换后的文本），支持同时执行多个编辑操作"
-    )
-    dryRun: bool = Field(
-        default=False,
-        description="预览模式。设置为 true 时只返回修改后的内容预览，不实际修改文件；设置为 false 时执行实际修改"
-    )
-    encoding: Optional[str] = Field(
-        default=None,
-        description="文件编码。可选参数，由 Agent 根据文件内容自动检测。常见值：utf-8、gbk、gb2312"
-    )
-
-
-class RenameFileInput(BaseModel):
-    """rename_file 工具的输入参数"""
-    file_path: str = Field(
-        description="当前文件或目录的路径。必须是已存在的文件或目录"
-    )
-    new_name: str = Field(
-        description="新的文件名或目录名。不能包含路径分隔符，只输入文件名或目录名"
-    )
-
+# ============================================================
+# F7: grep_file_content — 搜索文件内容
+# ============================================================
 
 class GrepFileContentInput(BaseModel):
     """grep_file_content 工具的输入参数"""
     pattern: str = Field(
-        description="正则表达式搜索模式，支持中文内容搜索。常用示例：搜索\"函数定义\"或\"class.*方法\""
+        description="正则表达式搜索模式，支持中文内容搜索。如 \"def read_file\" 或 \"class.*Component\""
     )
     search_dir: Optional[str] = Field(
         default=None,
-        description="搜索路径。必须是绝对路径，支持中文目录名。默认为当前目录"
+        description="搜索路径（绝对路径），默认当前目录"
     )
     output_mode: Optional[str] = Field(
         default=None,
-        description="输出模式。可选值：content（显示匹配行的内容）、files_with_matches（只显示包含匹配的文件名）、count（显示每个文件的匹配数量）"
+        description="输出模式：content（显示匹配行内容）/ files_with_matches（只显示文件名）/ count（显示匹配数量）"
     )
     glob: Optional[str] = Field(
         default=None,
-        description="文件类型过滤，使用 glob 通配符。例如：\"*.ts\" 只搜索 TS 文件，\"*.{js,py}\" 搜索 JS 和 Python 文件"
+        description="文件类型过滤（glob通配符），如 \"*.py\"、\"*.{js,ts}\""
     )
     type: Optional[str] = Field(
         default=None,
-        description="语言类型，简化 glob 匹配。常用值：js（JavaScript）、py（Python）、rust、html、json 等"
+        description="语言类型简化匹配，如 js/py/rust/html/json"
     )
     after_lines: Optional[int] = Field(
         default=None,
         ge=0,
         le=1000,
-        description="匹配行之后额外显示的行数，用于查看后续上下文"
+        description="匹配行后显示N行（after context）"
     )
     before_lines: Optional[int] = Field(
         default=None,
         ge=0,
         le=1000,
-        description="匹配行之前额外显示的行数，用于查看前面上下文"
+        description="匹配行前显示N行（before context）"
     )
     context_lines: Optional[int] = Field(
         default=None,
         ge=0,
         le=500,
-        description="匹配行前后各显示的行数，同时设置 before 和 after，用于查看完整上下文"
+        description="匹配行上下各显示N行（context）"
     )
     ignore_case: bool = Field(
         default=False,
-        description="搜索时是否忽略大小写。true=忽略大小写。默认为False"
-    )
-    show_line_no: bool = Field(
-        default=False,
-        description="是否在输出中显示行号。默认为False"
-    )
-    multiline: bool = Field(
-        default=False,
-        description="启用多行匹配模式，允许正则中的.匹配换行符。默认为False"
+        description="是否忽略大小写，默认False"
     )
     head_limit: Optional[int] = Field(
         default=None,
-        ge=1,
-        le=100000,
-        description="限制返回的匹配结果数量，用于大文件搜索避免输出过多"
+        description="最大返回结果数"
     )
-    page_token: Optional[str] = Field(
+    show_line_no: bool = Field(
+        default=True,
+        description="是否显示行号，默认True"
+    )
+
+
+# ============================================================
+# F8: rename_file — 合并rename_file + batch_rename
+# ============================================================
+
+class RenameFileInput(BaseModel):
+    """rename_file 统一入口 — 小沈 2026-05-18
+
+    合并 rename_file + batch_rename
+    - path+new_name: 单文件重命名
+    - directory+pattern+replacement: 批量正则重命名
+
+    P17互斥校验：path 和 directory 不能同时传入
+    """
+    path: Optional[str] = Field(
         default=None,
-        description="分页令牌（位置编码），用于获取下一页结果"
+        description="单文件/目录路径（与directory互斥，二选一）"
     )
-
-
-
-class GetDirectoryTreeInput(BaseModel):
-    """get_directory_tree 工具的输入参数"""
-    dir_path: str = Field(
-        description="起始目录，必须是绝对路径，支持中文目录名"
-    )
-    excludePatterns: Optional[List[str]] = Field(
+    new_name: Optional[str] = Field(
         default=None,
-        description="排除模式数组，符合排除模式的目录不会包含在结果中。格式为 glob 通配符，如 [\"node_modules\", \"__pycache__\", \"*.pyc\"]"
+        description="新名称，不含路径分隔符（单文件模式必填）"
     )
-    max_depth: Optional[int] = Field(
+    directory: Optional[str] = Field(
         default=None,
-        ge=1,
-        le=100,
-        description="最大递归深度。可选参数，由 Agent 根据系统资源和目录规模动态设置。若未设置则默认无限制。"
+        description="批量重命名的目录（与path互斥，二选一）"
+    )
+    pattern: Optional[str] = Field(
+        default=None,
+        description="匹配正则表达式（批量模式必填）"
+    )
+    replacement: Optional[str] = Field(
+        default=None,
+        description="替换字符串，支持反向引用如 \\1（批量模式必填）"
+    )
+    preview: bool = Field(
+        default=False,
+        description="预览模式（批量模式建议先preview=True确认后再执行），默认False"
+    )
+    use_regex: bool = Field(
+        default=True,
+        description="是否使用正则匹配，默认True"
+    )
+    recursive: bool = Field(
+        default=False,
+        description="是否递归子目录（批量模式），默认False"
+    )
+    conflict_strategy: str = Field(
+        default="skip",
+        description="冲突处理策略：skip（跳过）/ overwrite（覆盖）/ append_number（自动编号），默认skip"
     )
 
 
-class ListAllowedDirectoriesInput(BaseModel):
-    """list_allowed_directories 工具的输入参数"""
-    pass
+# ============================================================
+# F9: archive_tool — 合并compress_files + extract_archive
+# ============================================================
+
+class ArchiveToolInput(BaseModel):
+    """archive_tool 统一入口 — 小沈 2026-05-18
+
+    合并 compress_files + extract_archive
+    - action="compress": 压缩文件/目录
+    - action="extract": 解压压缩包
+    """
+    action: str = Field(
+        description="操作类型：compress（压缩）或 extract（解压）"
+    )
+    source_path: Optional[str] = Field(
+        default=None,
+        description="compress模式：源文件/目录路径（必填）"
+    )
+    output_path: Optional[str] = Field(
+        default=None,
+        description="compress模式：输出压缩包路径（必填）"
+    )
+    archive_path: Optional[str] = Field(
+        default=None,
+        description="extract模式：压缩包路径（必填）"
+    )
+    output_dir: Optional[str] = Field(
+        default=None,
+        description="extract模式：解压目标目录（可选，默认自动创建同名目录）"
+    )
+    format: str = Field(
+        default="zip",
+        description="压缩格式：zip/tar/tar.gz/tar.bz2，默认zip"
+    )
+    compression_level: int = Field(
+        default=6,
+        ge=0,
+        le=9,
+        description="压缩级别0-9（0=不压缩，6=平衡，9=最高），默认6"
+    )
+    password: Optional[str] = Field(
+        default=None,
+        description="加密/解密密码（仅ZIP格式支持），可选"
+    )
+    overwrite: bool = Field(
+        default=False,
+        description="是否覆盖已存在文件，默认False"
+    )
+    exclude_patterns: Optional[List[str]] = Field(
+        default=None,
+        description="compress模式：排除的文件/目录模式列表，如 ['node_modules', '__pycache__']"
+    )
+    preserve_permissions: bool = Field(
+        default=True,
+        description="extract模式：是否保留文件权限，默认True"
+    )
 
 
-class FileChecksumInput(BaseModel):
-    """file_checksum 工具的输入参数"""
+# ============================================================
+# F10: file_operation — 合并move_file + copy_file + delete_file
+# ============================================================
+
+class FileOperationInput(BaseModel):
+    """file_operation 统一入口 — 小沈 2026-05-18
+
+    合并 move_file + copy_file + delete_file
+    - action="move": 移动文件/目录
+    - action="copy": 复制文件/目录
+    - action="delete": 删除文件/目录
+    """
+    action: str = Field(
+        description="操作类型：move（移动）/ copy（复制）/ delete（删除）"
+    )
+    source: str = Field(
+        description="源路径（move/copy: 源文件路径；delete: 要删除的路径）"
+    )
+    destination: Optional[str] = Field(
+        default=None,
+        description="目标路径（move/copy必填，delete不填）"
+    )
+    recursive: bool = Field(
+        default=False,
+        description="是否递归操作（copy目录/delete非空目录时需True），默认False"
+    )
+    overwrite: bool = Field(
+        default=False,
+        description="是否覆盖目标文件（move/copy有效），默认False"
+    )
+    force: bool = Field(
+        default=False,
+        description="delete模式：跳过回收站永久删除；move/copy模式：跳过确认。默认False"
+    )
+    preserve_metadata: bool = Field(
+        default=True,
+        description="copy模式：是否保留文件元数据（修改时间/访问时间等），默认True"
+    )
+
+
+# ============================================================
+# F11: data_file_format — 合并json/yaml/toml/ini/xml/properties
+# ============================================================
+
+class DataFileFormatInput(BaseModel):
+    """data_file_format 统一入口 — 小沈 2026-05-18
+
+    统一结构化配置格式（json/yaml/toml/ini/xml/properties）
+    归入File分类（不是data_format分类）
+    注意：CSV/Excel属于Document分类，不在本工具范围内
+    """
+    action: str = Field(
+        default="read",
+        description="操作类型：read（读取）或 write（写入）"
+    )
     file_path: str = Field(
-        ...,
-        description="要计算哈希的文件路径（必填）。必须是已存在的文件。"
+        description="文件路径（必须是绝对路径）"
     )
-    algorithm: Literal["md5", "sha1", "sha256", "sha512"] = Field(
-        default="sha256",
-        description="哈希算法。可选值：md5、sha1、sha256、sha512。默认为sha256。除非用户明确指令，当LLM未明确指定时Agent智能补全为sha256。可选值含义：\n- md5：128位，快速但有碰撞风险（默认不推荐）\n- sha1：160位，安全性中等\n- sha256：256位，安全可靠（默认推荐）\n- sha512：512位，最安全但速度最慢\n除非用户明确指令\"快速校验\"或文件>5GB，否则绝不降级为md5。"
-    )
-    verify_hash: Optional[str] = Field(
+    format: Optional[str] = Field(
         default=None,
-        description="验证哈希值（可选）。若提供此参数，Agent自动比对并返回verified状态。"
+        description="强制指定格式：json/yaml/toml/ini/xml/properties。不填则根据文件扩展名自动检测"
     )
-    chunk_size: int = Field(
-        default=65536,
-        ge=1024,
-        le=1048576,
-        description="分块大小（字节）。必填为LLM给出，当LLM未明确指定时Agent智能补全为65536。用于大文件流式计算，避免内存溢出。\n- 建议值：65536（64KB）\n- 大文件（>1GB）：可设为131072或更大"
+    data: Optional[Any] = Field(
+        default=None,
+        description="write模式：要写入的数据（必填）。read模式不填"
     )
-    timeout: int = Field(
-        default=30000,
-        ge=5000,
-        description="超时毫秒数。Agent根据文件大小动态调整（1GB→60000, 5GB→120000）。默认为30000"
+    encoding: str = Field(
+        default="utf-8",
+        description="文件编码，默认utf-8"
+    )
+    indent: Optional[int] = Field(
+        default=None,
+        description="JSON/YAML写入时格式化缩进空格数，可选"
     )
 
+
+# ============================================================
+# __all__ — 11个工具的Schema导出
+# ============================================================
 
 __all__ = [
+    "ReadFileInput",
     "WriteTextFileInput",
-    "ListDirectoryInput",
-    "DeleteFileInput",
-    "MoveFileInput",
-    "SearchFilesInput",
-    "GenerateReportInput",
-    "CopyFileInput",
-    "CreateDirectoryInput",
-    "GetFileInfoInput",
-    "CompareFilesInput",
-    "BatchRenameInput",
-    "CompressFilesInput",
-    "ExtractArchiveInput",
-    "GetFileHashInput",
-    "FileMonitorInput",
-    "FileStatisticsInput",
-    "FileChecksumInput",
-    "ReadTextFileInput",
     "ReadMediaFileInput",
-    "ReadBatchFileInput",
-    "PreciseReplaceInFileInput",
-    "EditTextFileInput",
-    "RenameFileInput",
+    "EditFileInput",
+    "ListDirectoryInput",
+    "SearchFilesInput",
     "GrepFileContentInput",
-    "GetDirectoryTreeInput",
-    "ListAllowedDirectoriesInput",
+    "RenameFileInput",
+    "ArchiveToolInput",
+    "FileOperationInput",
+    "DataFileFormatInput",
 ]
