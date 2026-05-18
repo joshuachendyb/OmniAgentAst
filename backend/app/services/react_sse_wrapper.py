@@ -552,8 +552,8 @@ async def generate_sse_stream(
         if intent_type in ("", "generic", "chat"):
             prompts_instance = None
             source_name = "通用意图：无系统Prompt"
-        elif intent_type == "time":
-            from app.services.prompts.time import TimePrompts
+        elif intent_type == "time" or intent_type == "meta":
+            from app.services.prompts.meta import TimePrompts
             prompts_instance = TimePrompts()
             source_name = "time_prompts.py"
         elif intent_type == "shell":
