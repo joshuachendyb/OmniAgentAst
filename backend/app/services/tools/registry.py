@@ -162,6 +162,36 @@ class ToolCategory(Enum):
     META = "meta"              # 元工具 + 时间日期
 
 
+INTENT_TO_CATEGORY: Dict[str, "ToolCategory"] = {
+    "file": ToolCategory.FILE,
+    "shell": ToolCategory.SHELL,
+    "network": ToolCategory.NETWORK,
+    "system": ToolCategory.SYSTEM,
+    "desktop": ToolCategory.DESKTOP,
+    "document": ToolCategory.DOCUMENT,
+    "meta": ToolCategory.META,
+    "time": ToolCategory.META,
+    "environment": ToolCategory.SYSTEM,
+    "env": ToolCategory.SYSTEM,
+    "database": ToolCategory.DOCUMENT,
+    "code_execution": ToolCategory.SHELL,
+    "data_format": ToolCategory.FILE,
+    "data_analysis": ToolCategory.DOCUMENT,
+    "support_tool": ToolCategory.META,
+}
+
+
+def resolve_category(intent_type: str) -> Optional["ToolCategory"]:
+    """意图类型→ToolCategory解析，支持新旧意图名 - 【2026-05-18 小沈】"""
+    cat = INTENT_TO_CATEGORY.get(intent_type)
+    if cat:
+        return cat
+    try:
+        return ToolCategory(intent_type)
+    except ValueError:
+        return None
+
+
 @dataclass
 class ToolMetadata:
     """工具元数据"""
@@ -841,8 +871,7 @@ def get_tools_from_file_registry() -> Dict[str, Callable]:
 
 # 已知file工具名列表（统一命名）
 _FILE_TOOL_NAMES = [
-    "read_file", "write_file", "list_directory", "delete_file", "move_file",
-    "grep_file_content", "search_files", "generate_report", "copy_file",
-    "create_directory", "get_file_info", "compare_files", "batch_rename",
-    "compress_files", "file_monitor", "file_statistics", "file_checksum"
+    "read_file", "write_text_file", "read_media_file", "edit_file",
+    "list_directory", "search_files", "grep_file_content", "rename_file",
+    "archive_tool", "file_operation", "data_file_format"
 ]
