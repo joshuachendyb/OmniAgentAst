@@ -82,6 +82,69 @@ META_TOOL_DESCRIPTIONS = {
 - completed_steps: 完成步骤数
 - results: 每步执行结果(含code/message/data)
 - 当某步失败时(若stop_on_error=True)返回ERR_PIPELINE_STOPPED""",
+    # 【2026-05-19 小沈】Time工具description
+    "get_time": """获取当前时间、格式化时间、时间戳转换。
+
+使用场景：
+- 获取当前时间（action="now"）
+- 格式化时间字符串（action="format"）
+- 时间戳→时间字符串（action="from_timestamp"）
+- 时间字符串→时间戳（action="to_timestamp"）
+
+返回数据说明：
+- time: 时间字符串
+- timestamp: Unix时间戳（秒）""",
+    "time_add": """时间加减运算。
+
+使用场景：
+- 计算N天/小时/分钟后的时间
+- 计算N天/小时/分钟前的时间（delta传负数）
+
+返回数据说明：
+- result: 计算后的时间字符串
+- delta: 偏移量
+- unit: 偏移单位""",
+    "time_diff": """计算两个时间之间的差值。
+
+使用场景：
+- 计算两个日期相差几天/小时/分钟
+- 计算距某时间还有多久
+
+返回数据说明：
+- diff: 差值
+- unit: 差值单位""",
+    "check_date": """日期综合检查。
+
+使用场景：
+- 判断是否为周末（check_type="weekend"）
+- 判断是否为节假日（check_type="holiday"）
+- 判断是否为工作日（check_type="workday"）
+- 计算下N个工作日（check_type="next_workday"）
+
+返回数据说明：
+- result: 检查结果
+- check_type: 检查类型""",
+    "timezone_convert": """时区转换。
+
+使用场景：
+- UTC转本地时间（direction="utc_to_local"）
+- 本地转UTC（direction="local_to_utc"）
+- 任意时区转换（direction="any"）
+
+返回数据说明：
+- result: 转换后的时间字符串
+- source_tz: 源时区
+- target_tz: 目标时区""",
+    "timer": """定时器管理。
+
+使用场景：
+- 设置定时提醒（action="set"）
+- 清除定时器（action="clear"）
+- 列出所有定时器（action="list"）
+
+返回数据说明：
+- timer_id: 定时器ID
+- status: 定时器状态""",
 }
 
 META_TOOL_EXAMPLES = {
@@ -99,22 +162,22 @@ META_TOOL_EXAMPLES = {
         {"steps": '[{"tool":"get_current_time","params":{}}]', "stop_on_error": True},
         {"steps": '[{"tool":"read_csv","params":{"file_path":"data.csv"}},{"tool":"analyze_data","params":{}}]'},
     ],
-    # 【2026-05-18 小沈】Time工具示例
+    # 【2026-05-19 小沈】Time工具示例，参数名与time_schema.py对齐
     "get_time": [
         {"action": "now"},
-        {"action": "to_timestamp", "datetime_str": "2026-05-18 10:00:00"},
+        {"action": "to_timestamp", "time_value": "2026-05-18 10:00:00"},
     ],
     "time_add": [
-        {"datetime_str": "2026-05-18 10:00:00", "days": 7},
+        {"start": "2026-05-18 10:00:00", "delta": 7, "unit": "days"},
     ],
     "time_diff": [
-        {"start_time": "2026-05-01", "end_time": "2026-05-18"},
+        {"start": "2026-05-01", "end": "2026-05-18"},
     ],
     "check_date": [
-        {"datetime_str": "2026-05-18", "check_type": "weekend"},
+        {"date": "2026-05-18", "check_type": "weekend"},
     ],
     "timezone_convert": [
-        {"datetime_str": "2026-05-18 10:00:00", "from_tz": "Asia/Shanghai", "to_tz": "UTC"},
+        {"time_value": "2026-05-18 10:00:00", "direction": "any", "source_tz": "Asia/Shanghai", "target_tz": "UTC"},
     ],
     "timer": [
         {"action": "set", "delay": 180, "callback": "提醒用户喝水"},
