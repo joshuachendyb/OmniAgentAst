@@ -4,14 +4,13 @@ SYSTEM Register - 系统信息工具注册点
 
 【架构规范】2026-04-29 小沈
 
-【2026-05-17 小沈】按精简方案13.4节重构：16→10工具
-- 消除 log_message/get_logs（被write_text_file/read_text_file覆盖）
-- service×3 → service_control 统一入口
-- task×3 → task_control 统一入口
+【2026-05-18 小沈】继续精简：list_env合入get_env，reg×3合入registry_control
 - 保留 get_system_info, net_connections, event_log, list_processes, kill_process
-- 保留 reg_read, reg_write, reg_delete（在reg_register.py注册）
+- 保留 service_control, task_control
+- 保留 get_env(action=get/list), set_env(action=set/delete)
+- registry_control(action=read/write/delete)在reg_register.py注册
 
-【工具列表】（LLM可见10个，本文件注册7个 + reg_register注册3个）
+【工具列表】（LLM可见10个，本文件注册7个 + reg_register注册1个 + env迁入2个）
 1. get_system_info - 获取系统信息
 2. net_connections - 获取网络连接列表
 3. event_log - 获取系统事件日志
@@ -39,12 +38,6 @@ from app.services.tools.system.system_schema import (
     # 【2026-05-18 小沈】Environment工具Schema（从environment模块迁入）
     GetEnvInput,
     SetEnvInput,
-    ListEnvInput,
-    ValidateCsvFormatInput,
-    ValidateChartDataInput,
-    CheckPdfReadableInput,
-    CheckDocxReadableInput,
-    CheckXlsxReadableInput,
 )
 
 from app.services.tools.system.system_tools import (
@@ -57,18 +50,9 @@ from app.services.tools.system.system_tools import (
     task_control,
 )
 
-# 【2026-05-18 小沈】环境变量工具（从environment模块迁入注册）
-from app.services.tools.environment.env_tools import (
+from app.services.tools.system.env_tools import (
     get_env,
     set_env,
-    list_env,
-)
-from app.services.tools.environment.env_check_tools import (
-    validate_csv_format,
-    validate_chart_data,
-    check_pdf_readable,
-    check_docx_readable,
-    check_xlsx_readable,
 )
 
 # 工具描述
@@ -211,12 +195,6 @@ SYSTEM_TOOL_INPUT_MODELS = {
     "task_control": TaskControlInput,
     "get_env": GetEnvInput,
     "set_env": SetEnvInput,
-    "list_env": ListEnvInput,
-    "validate_csv_format": ValidateCsvFormatInput,
-    "validate_chart_data": ValidateChartDataInput,
-    "check_pdf_readable": CheckPdfReadableInput,
-    "check_docx_readable": CheckDocxReadableInput,
-    "check_xlsx_readable": CheckXlsxReadableInput,
 }
 
 # 使用示例
@@ -262,29 +240,12 @@ SYSTEM_TOOL_EXAMPLES = {
     "get_env": [
         {"name": "PATH"},
         {"name": "JAVA_HOME", "default": "not set"},
+        {"action": "list"},
+        {"action": "list", "prefix": "PY"},
     ],
     "set_env": [
         {"name": "MY_VAR", "value": "hello"},
         {"name": "PATH", "value": "C:\\tools", "append_mode": True},
-    ],
-    "list_env": [
-        {},
-        {"prefix": "PY"},
-    ],
-    "validate_csv_format": [
-        {"file_path": "D:/data/users.csv"},
-    ],
-    "validate_chart_data": [
-        {"data": {"labels": ["A", "B"], "values": [1, 2]}},
-    ],
-    "check_pdf_readable": [
-        {"file_path": "D:/documents/report.pdf"},
-    ],
-    "check_docx_readable": [
-        {"file_path": "D:/documents/report.docx"},
-    ],
-    "check_xlsx_readable": [
-        {"file_path": "D:/data/report.xlsx"},
     ],
 }
 
@@ -302,12 +263,6 @@ def _register_system_tools():
         # 【2026-05-18 小沈】Environment工具（从environment模块迁入注册）
         "get_env": get_env,
         "set_env": set_env,
-        "list_env": list_env,
-        "validate_csv_format": validate_csv_format,
-        "validate_chart_data": validate_chart_data,
-        "check_pdf_readable": check_pdf_readable,
-        "check_docx_readable": check_docx_readable,
-        "check_xlsx_readable": check_xlsx_readable,
     }
 
     for name, method in tool_methods.items():
@@ -329,6 +284,10 @@ def _register_system_tools():
             f"使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, "
             f"examples: {len(examples)}个"
         )
+
+    # 【修复 2026-05-18 小沈】调用reg_register注册reg_read/reg_write/reg_delete
+    from app.services.tools.system.reg_register import _register_registry_tools
+    _register_registry_tools()
 
 
 # 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
