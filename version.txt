@@ -1,3 +1,39 @@
+v0.13.5
+
+更新时间: 2026-05-18 12:23:30
+
+更新内容：
+
+## v0.13.4→v0.13.5 变更汇总 - 小沈-2026-05-18
+
+### perf 第18章实施: 分类合并+注册器更新+系统链路更新
+
+| commit | 说明 |
+|--------|------|
+| d6730678 | Phase1: 旧24函数删除(code_exec→shell Plan A) - 小沈-2026-05-18 |
+| 72a81257 | Phase2 Plan B: Environment→System(env/env_check迁入system_register) - 小沈-2026-05-18 |
+| d513d9e4 | Phase2 Plan C: Time→Meta(time_register改META) - 小沈-2026-05-18 |
+| 944fbae9 | Phase2 Plan D: Database→Document(database_register改DOCUMENT) - 小沈-2026-05-18 |
+| 5e1f86f8 | Phase3: 注册器全局更新(ToolCategory 13→7/ORDER 12→7/NAMES 12→7/_MODULES 14→7) - 小沈-2026-05-18 |
+| 8daa2d9c | Phase4: 系统链路更新(crss_scorer/agent_factory/react/prompts/safety旧分类改新分类) - 小沈-2026-05-18 |
+
+### 关键变更说明
+
+#### 1. 分类从13→7
+| 旧分类 | 新分类 |
+|--------|--------|
+| TIME | → META |
+| ENVIRONMENT | → SYSTEM |
+| DATABASE | → DOCUMENT |
+| CODE_EXECUTION | → SHELL |
+| DATA_FORMAT | → DOCUMENT |
+| SUPPORT_TOOL | 废弃 |
+
+#### 2. 最终7分类
+file(11)/shell(含code_exec,8)/network(6)/system(含env,18)/desktop(10)/document(含database+data_format,9)/meta(含time,9) 注册模块14→7 工具总数87
+
+---
+
 v0.13.4
 
 更新时间: 2026-05-18 11:18:32
