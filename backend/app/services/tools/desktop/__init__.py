@@ -5,7 +5,6 @@ from app.services.tools.desktop.desktop_register import *
 from app.services.tools.desktop.desktop_tools import (
     list_windows,
     get_window_info,
-    set_window_state,
     window_control,
     mouse_control,
     keyboard_control,
@@ -16,7 +15,6 @@ from app.services.tools.desktop.desktop_tools import (
 __all__ = [
     "list_windows",
     "get_window_info",
-    "set_window_state",
     "window_control",
     "mouse_control",
     "keyboard_control",
