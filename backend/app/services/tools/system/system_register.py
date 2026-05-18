@@ -182,6 +182,37 @@ SYSTEM_TOOL_DESCRIPTIONS = {
 - list: 含tasks/total/total_matched/platform
 - create: 含task_name/command/schedule/description/user
 - delete: 含task_name/folder/delete_type""",
+    # 【2026-05-19 小沈】Environment工具description
+    "get_env": """获取/列出环境变量，通过action参数执行get/list操作。
+
+使用场景：
+- 获取单个环境变量值（action="get"或默认）
+- 列出所有环境变量（action="list"），支持按前缀过滤
+- 查看PATH/JAVA_HOME等常用环境变量
+
+使用示例：
+- 获取PATH：{"name": "PATH"}
+- 列出所有：{"action": "list"}
+- 按前缀过滤：{"action": "list", "prefix": "PY"}
+
+返回数据说明：
+- get: 含name/value/scope
+- list: 含envs/total/prefix""",
+    "set_env": """设置/删除环境变量，通过action参数执行set/delete操作。
+
+使用场景：
+- 设置环境变量（action="set"或默认）
+- 删除环境变量（action="delete"）
+- 追加PATH等变量（append_mode=True）
+
+使用示例：
+- 设置变量：{"name": "MY_VAR", "value": "hello"}
+- 追加PATH：{"name": "PATH", "value": "C:\\tools", "append_mode": True}
+- 删除变量：{"name": "MY_VAR", "action": "delete"}
+
+返回数据说明：
+- set: 含name/value/scope/append_mode
+- delete: 含name/scope""",
 }
 
 # 模型映射
