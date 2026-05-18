@@ -241,28 +241,13 @@ TOOL_IMPLEMENTATIONS = {
 
 def _register_data_format_tools():
     """
-    显式注册所有数据格式工具 - 小沈 2026-05-02
-    使用 tool_registry.register() 逐一注册
+    【已禁用 v2.0】data_format分类已取消，10个工具合并为data_file_format归入File分类 — 小沈 2026-05-18
+    
+    此函数保留为空函数，防止外部调用时报错。
+    旧工具通过 file_register.py 的 data_file_format 统一入口注册。
     """
-    for name, implementation in TOOL_IMPLEMENTATIONS.items():
-        desc = DESCRIPTIONS.get(name, "")
-        input_model = TOOL_INPUT_MODELS.get(name)
-        examples = EXAMPLES.get(name, [])
-
-        tool_registry.register(
-            name=name,
-            description=desc,
-            category=ToolCategory.DOCUMENT,
-            implementation=implementation,
-            version="1.0.0",
-            input_model=input_model,
-            examples=examples
-        )
-        logger.info(
-            f"[data_format_register] 已注册工具: {name}, "
-            f"Pydantic模型: {input_model.__name__ if input_model else 'None'}, "
-            f"examples: {len(examples)}个"
-        )
+    from app.utils.logger import logger
+    logger.info("[data_format_register] data_format分类已取消(v2.0)，工具已归入File分类的data_file_format")
 
 
 # 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
