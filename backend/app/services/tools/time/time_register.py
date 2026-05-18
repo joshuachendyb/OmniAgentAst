@@ -20,53 +20,21 @@ from app.services.tools.registry import register_tool, ToolCategory, tool_regist
 from app.utils.logger import logger
 
 from app.services.tools.time.time_schema import (
-    # 新Schema（7个）
     GetTimeInput,
     TimeAddInput,
     TimeDiffInput,
     CheckDateInput,
     TimezoneConvertInput,
     TimerInput,
-    # 旧Schema（向下兼容）
-    TimeNowInput,
-    TimeFormatInput,
-    TimerSetInput,
-    TimerClearInput,
-    TimeUtcToLocalInput,
-    TimeLocalToUtcInput,
-    TimeIsWeekendInput,
-    TimeIsHolidayInput,
-    TimeCompareInput,
-    TimeToTimestampInput,
-    TimestampToTimeInput,
-    TimeIsWorkdayInput,
-    TimeNextNWorkdayInput,
-    TimerListInput,
 )
 
 from app.services.tools.time.time_tools import (
-    # 新公开函数（7个）
     get_time,
     time_add,
     time_diff,
     check_date,
     timezone_convert,
     timer,
-    # 旧委托函数（向下兼容）
-    get_current_time,
-    time_format,
-    timer_set,
-    timer_clear,
-    time_utc_to_local,
-    time_local_to_utc,
-    time_is_weekend,
-    time_is_holiday,
-    timer_list,
-    time_compare,
-    time_to_timestamp,
-    timestamp_to_time,
-    time_is_workday,
-    time_next_n_workday,
 )
 
 # ===========================================================
@@ -308,7 +276,7 @@ def _register_time_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.TIME,
+            category=ToolCategory.META,
             implementation=method,
             version="2.0.0",
             input_model=input_model,
