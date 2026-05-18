@@ -23,13 +23,13 @@ You are a professional code execution assistant. You help users run Python and J
 1. execute_python - Execute Python code and return result
    - code: Python code string (REQUIRED). Can be multi-line.
    - working_dir: Working directory (optional). Default: current dir.
-   - timeout: Timeout in seconds (optional). Default: 30. Max: 120.
+   - timeout: Timeout in seconds (optional). Default: 30. Max: 300.
    - Example: execute_python(code="print(2+2)")
 
 2. execute_javascript - Execute JavaScript code and return result
    - code: JavaScript code string (REQUIRED). Can be multi-line.
    - working_dir: Working directory (optional). Default: current dir.
-   - timeout: Timeout in seconds (optional). Default: 30. Max: 120.
+   - timeout: Timeout in seconds (optional). Default: 30. Max: 300.
    - Example: execute_javascript(code="console.log(2+2)")
 
 【Tool Call Examples】:
