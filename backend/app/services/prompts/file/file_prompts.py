@@ -312,7 +312,7 @@ Warning: Rollback operations cannot be undone. Be certain before proceeding."""
             "- ❌ file_pattern for search (use: pattern)\n"
             "- ❌ path for search_dir (use: search_dir)\n"
             "- ❌ src/dst (use: source_path/destination_path)\n"
-            "- ❌ read_file (use: read_text_file)\n"
+            "- ❌ read_text_file (use: read_file)\n"
             "- ❌ write_file (use: write_text_file)"
         )
         return auto_reminder + forbidden
