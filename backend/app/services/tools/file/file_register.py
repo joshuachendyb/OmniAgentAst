@@ -257,25 +257,6 @@ TOOL_INPUT_MODELS = {
 
 
 # ============================================================
-# next_actions 表（含跨分类）— 小沈 2026-05-18
-# ============================================================
-
-FILE_TOOL_NEXT_ACTIONS = {
-    "read_file": {"same": ["edit_file", "grep_file_content"], "cross": ["analyze_data"]},
-    "write_text_file": {"same": ["read_file"], "cross": []},
-    "read_media_file": {"same": [], "cross": ["convert_document"]},
-    "edit_file": {"same": ["read_file"], "cross": ["execute_python"]},
-    "list_directory": {"same": ["search_files"], "cross": []},
-    "search_files": {"same": ["read_file"], "cross": []},
-    "grep_file_content": {"same": ["read_file", "edit_file"], "cross": []},
-    "rename_file": {"same": ["read_file"], "cross": []},
-    "archive_tool": {"same": ["archive_tool", "read_file"], "cross": []},
-    "file_operation": {"same": ["read_file", "list_directory"], "cross": []},
-    "data_file_format": {"same": ["edit_file", "read_file"], "cross": ["execute_python"]},
-}
-
-
-# ============================================================
 # 注册函数
 # ============================================================
 
@@ -309,7 +290,6 @@ def _register_file_tools():
         desc = FILE_TOOL_DESCRIPTIONS.get(name, "")
         input_model = TOOL_INPUT_MODELS.get(name)
         examples = FILE_TOOL_EXAMPLES.get(name, [])
-        next_actions = FILE_TOOL_NEXT_ACTIONS.get(name, {})
 
         tool_registry.register(
             name=name,
@@ -319,7 +299,6 @@ def _register_file_tools():
             version="2.0.0",
             input_model=input_model,
             examples=examples,
-            next_actions=next_actions,
         )
 
         logger.info(
