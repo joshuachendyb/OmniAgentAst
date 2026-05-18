@@ -194,7 +194,7 @@ NETWORK_TOOL_EXAMPLES = {
 # ============================================================
 # 注册网络工具（按架构规范）
 # ============================================================
-def register_network_tools():
+def _register_network_tools():
     """注册所有网络工具"""
     for tool_name in NETWORK_TOOL_DESCRIPTIONS:
         input_model = NETWORK_TOOL_INPUT_MODELS[tool_name]
@@ -216,4 +216,4 @@ def register_network_tools():
 # 现在：导出register函数供ensure_tools_registered显式调用
 _initialized = False  # 保留守护变量，供显式调用时使用
 
-__all__ = ["register_network_tools"]
+__all__ = ["_register_network_tools"]

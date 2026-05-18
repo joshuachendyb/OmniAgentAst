@@ -41,7 +41,7 @@ _registered_categories: set = set()
 _CATEGORY_MODULES = {
     "file": ("app.services.tools.file", "_register_file_tools"),
     "shell": ("app.services.tools.shell", "_register_shell_tools"),
-    "network": ("app.services.tools.network", "register_network_tools"),
+    "network": ("app.services.tools.network", "_register_network_tools"),
     "system": ("app.services.tools.system", "_register_system_tools"),
     "desktop": ("app.services.tools.desktop", "_register_desktop_tools"),
     "document": ("app.services.tools.document", "_register_document_tools"),
