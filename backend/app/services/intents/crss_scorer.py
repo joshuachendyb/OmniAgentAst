@@ -96,7 +96,6 @@ ACTION_DEFINITIONS = {
         "keywords": ['cat', 'ls', 'type', 'dir', '读取', '查看', '列出', '打开'],
         "compatibility": {
             ToolCategory.FILE: 1.5,
-            ToolCategory.DOCUMENT: 1.5,
             ToolCategory.DOCUMENT: 1.2,
             ToolCategory.SYSTEM: 0.8,
             ToolCategory.NETWORK: 0.5,
@@ -107,7 +106,6 @@ ACTION_DEFINITIONS = {
         "keywords": ['create', 'mkdir', 'touch', '新建', '创建', '新增', '添加'],
         "compatibility": {
             ToolCategory.FILE: 1.5,
-            ToolCategory.DOCUMENT: 1.5,
             ToolCategory.DOCUMENT: 1.0,
         }
     },
@@ -122,7 +120,6 @@ ACTION_DEFINITIONS = {
     "execute": {
         "keywords": ['run', 'exec', 'execute', '运行', '执行', '启动', '编译'],
         "compatibility": {
-            ToolCategory.SHELL: 1.5,
             ToolCategory.SHELL: 1.5,
         }
     },
@@ -146,7 +143,6 @@ ACTION_DEFINITIONS = {
     "configure": {
         "keywords": ['set', 'config', 'change', '修改', '设置', '配置', '调整'],
         "compatibility": {
-            ToolCategory.SYSTEM: 1.5,
             ToolCategory.SYSTEM: 1.2,
             ToolCategory.DESKTOP: 1.0,
             ToolCategory.NETWORK: 1.0,
