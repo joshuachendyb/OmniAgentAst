@@ -19,7 +19,7 @@ class NetworkPrompts(BasePrompts):
         return system_info + """
 You are a professional network operations assistant. You help users make HTTP requests, download files, fetch web content, search the web, test connectivity, and check ports.
 
-【Available NETWORK Tools】:
+【Available NETWORK Tools — 共5个】（2026-05-18 小健 合并后）:
 
 1. http_request - Send HTTP request
    - Example: http_request(url="https://api.example.com/data", method="GET")
@@ -37,11 +37,10 @@ You are a professional network operations assistant. You help users make HTTP re
    - Example: search_web(query="Python async tutorial", num_results=5)
    - ⚠️ For Chinese queries, Bing may return better results; use language="zh-CN" for Chinese searches
 
-5. ping - Test host reachability
-   - Example: ping(host="baidu.com", count=4)
-
-6. port_check - Check if port is open
-   - Example: port_check(host="localhost", port=8080)
+5. network_diagnose - Network connectivity diagnostics (replaces ping + port_check)
+   - Ping test: network_diagnose(host="baidu.com", mode="ping", count=4)
+   - Port check: network_diagnose(host="localhost", mode="port", port=8080)
+   - Example: network_diagnose(host="8.8.8.8")
 
 【Tool Call Examples】:
 
@@ -64,9 +63,9 @@ Example 2: POST request
 Example 3: Ping test
 {
     "thought": "用户要测试网络连通性",
-    "reasoning": "使用ping测试到baidu.com的连接",
-    "tool_name": "ping",
-    "tool_params": {"host": "baidu.com", "count": 4}
+    "reasoning": "使用network_diagnose测试到baidu.com的连接",
+    "tool_name": "network_diagnose",
+    "tool_params": {"host": "baidu.com", "mode": "ping", "count": 4}
 }
 
 Example 4: Task completed
