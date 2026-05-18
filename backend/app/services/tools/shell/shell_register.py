@@ -28,6 +28,9 @@ from app.services.tools.shell.shell_schema import (
     ExecuteShellCommandInput,
     FindCommandInput,
     ShellSessionInput,
+)
+
+from app.services.tools.shell.code_execution_schema import (
     ExecutePythonInput,
     ExecuteJavascriptInput,
 )
@@ -38,7 +41,7 @@ from app.services.tools.shell.shell_tools import (
     shell_session,
 )
 
-from app.services.tools.code_execution.code_execution_tools import (
+from app.services.tools.shell.code_execution_tools import (
     execute_python,
     execute_javascript,
 )
