@@ -424,12 +424,3 @@ def _register_gui_tools():
 _initialized = False  # 守护变量，供显式调用时使用
 
 __all__ = ["_register_gui_tools"]
-
-
-__all__ = [
-    "click", "move", "scroll",
-    "type_text", "shortcut", "key_combo",
-    "screenshot", "snapshot", "screen_record",
-    "list_windows", "focus_window", "resize_window",
-    "ocr", "read_clipboard", "write_clipboard", "send_notification",
-]
