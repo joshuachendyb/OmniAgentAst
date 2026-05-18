@@ -181,7 +181,23 @@ def pipeline(steps: str, stop_on_error: bool = True) -> Dict[str, Any]:
             }
 
         try:
-            result = metadata.func(**params)
+            # 获取工具实现函数
+            impl = tool_registry.get_implementation(tool_name)
+            if not impl:
+                return {
+                    "code": "ERR_TOOL_IMPL_NOT_FOUND",
+                    "data": None,
+                    "message": f"步骤{i+1}: 工具 '{tool_name}' 无法获取实现"
+                }
+            
+            # 检查是否是异步函数
+            import inspect
+            if inspect.iscoroutinefunction(impl):
+                import asyncio
+                result = asyncio.run(impl(**params))
+            else:
+                result = impl(**params)
+            
             results.append({
                 "step": i + 1,
                 "tool": tool_name,

@@ -67,3 +67,101 @@ async def echo(request: EchoRequest):
         received=request.message,
         timestamp=datetime.utcnow().isoformat()
     )
+
+
+class ToolExecuteRequest(BaseModel):
+    tool_name: str
+    params: dict = {}
+
+
+class ToolExecuteResponse(BaseModel):
+    tool_name: str
+    success: bool
+    result: dict = {}
+    error: str = ""
+
+
+@router.post("/tool/execute", response_model=ToolExecuteResponse)
+async def execute_tool(request: ToolExecuteRequest):
+    """
+    直接执行工具的测试接口
+    用法: POST /api/v1/tool/execute
+    Body: {"tool_name": "read_file", "params": {"path": "app/main.py"}}
+    """
+    from app.services.tools import ensure_tools_registered, tool_registry
+    import asyncio
+    import inspect
+    
+    # 确保工具已注册
+    ensure_tools_registered()
+    
+    tool_name = request.tool_name
+    params = request.params
+    
+    # 获取工具实现
+    impl = tool_registry.get_implementation(tool_name)
+    
+    if impl is None:
+        return ToolExecuteResponse(
+            tool_name=tool_name,
+            success=False,
+            error=f"Tool '{tool_name}' not found or not registered"
+        )
+    
+    try:
+        # 检查是否异步函数
+        if inspect.iscoroutinefunction(impl):
+            result = await impl(**params)
+        else:
+            # 同步函数放到线程池执行，避免阻塞
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, lambda: impl(**params))
+        
+        # 处理返回结果
+        if asyncio.iscoroutine(result):
+            result = await result
+            
+        return ToolExecuteResponse(
+            tool_name=tool_name,
+            success=True,
+            result=result if isinstance(result, dict) else {"output": str(result)}
+        )
+    except Exception as e:
+        return ToolExecuteResponse(
+            tool_name=tool_name,
+            success=False,
+            error=str(e)
+        )
+
+
+@router.get("/tool/list")
+async def list_tools():
+    """
+    获取所有已注册的工具列表
+    """
+    from app.services.tools import ensure_tools_registered, tool_registry
+    
+    ensure_tools_registered()
+    
+    tools = tool_registry.to_openai_tools()
+    
+    tool_list = []
+    for t in tools:
+        func = t.get('function', {})
+        name = func.get('name', '')
+        desc = func.get('description', '')
+        params = func.get('parameters', {})
+        required = params.get('required', [])
+        props = list(params.get('properties', {}).keys())
+        
+        tool_list.append({
+            "name": name,
+            "description": desc[:100] if desc else "",
+            "required_params": required,
+            "optional_params": props
+        })
+    
+    return {
+        "total": len(tool_list),
+        "tools": tool_list
+    }
