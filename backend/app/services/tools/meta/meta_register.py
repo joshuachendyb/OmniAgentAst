@@ -22,8 +22,7 @@ from app.services.tools.meta.meta_tools import (
     pipeline,
 )
 
-# 【2026-05-18 小沈】Time工具（从time模块迁入注册）
-from app.services.tools.time.time_tools import (
+from app.services.tools.meta.time_tools import (
     get_time,
     time_add,
     time_diff,
@@ -31,7 +30,7 @@ from app.services.tools.time.time_tools import (
     timezone_convert,
     timer,
 )
-from app.services.tools.time.time_schema import (
+from app.services.tools.meta.time_schema import (
     GetTimeInput,
     TimeAddInput,
     TimeDiffInput,
