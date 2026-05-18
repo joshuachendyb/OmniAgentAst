@@ -18,36 +18,9 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Dict, Any, List, Union, Tuple
 
 
-class ReadCsvDataframeInput(BaseModel):
-    """read_csv_dataframe 工具的输入参数（Tool 77）"""
-    file_path: str = Field(
-        ...,
-        description="CSV 文件路径。如 D:/data/users.csv"
-    )
-    encoding: Optional[str] = Field(
-        default="utf-8",
-        description="文件编码。Agent根据文件来源自动判断，中文文件→gbk。支持utf-8-sig（带BOM）。默认为utf-8"
-    )
-    delimiter: Optional[str] = Field(
-        default=",",
-        description="分隔符。Agent根据文件内容自动检测（CSV→逗号，TSV→制表符）。默认为,"
-    )
-    has_header: Optional[bool] = Field(
-        default=True,
-        description="是否有表头（可选）。Agent分析第一行是否为表头，自动判断"
-    )
-    max_rows: Optional[int] = Field(
-        default=1000,
-        description="最大读取行数。Agent根据文件大小自动调整（大文件500，小文件2000）。默认为1000"
-    )
-    usecols: Optional[List[str]] = Field(
-        default=None,
-        description="选择列（可选）。指定要读取的列名列表，如 [\"name\", \"age\", \"score\"]"
-    )
-    skip_rows: Optional[int] = Field(
-        default=0,
-        description="跳过行数（可选）。跳过文件开头的N行"
-    )
+# 【2026-05-19 小沈】ReadCsvDataframeInput 已删除
+# read_csv_dataframe 工具已迁入 document_tools.py（read_document统一入口）
+# 保留 GenerateChartInput 及以下活跃 Schema
 
 
 class GenerateChartInput(BaseModel):
@@ -141,28 +114,8 @@ class AnalyzeDataInput(BaseModel):
     )
 
 
-class ReadExcelDataframeInput(BaseModel):
-    """read_excel_dataframe 工具的输入参数 - 小沈 2026-05-05"""
-    file_path: str = Field(
-        ...,
-        description="Excel 文件路径。如 D:/data/sales.xlsx"
-    )
-    sheet_name: Optional[str] = Field(
-        default=None,
-        description="工作表名称。默认为第一个工作表"
-    )
-    max_rows: Optional[int] = Field(
-        default=1000,
-        description="最大读取行数。默认为1000"
-    )
-    usecols: Optional[List[str]] = Field(
-        default=None,
-        description="选择列（可选）。如 [\"name\", \"age\", \"score\"]"
-    )
-    skip_rows: Optional[int] = Field(
-        default=0,
-        description="跳过行数。默认为0"
-    )
+# 【2026-05-19 小沈】ReadExcelDataframeInput 已删除
+# read_excel_dataframe 工具已迁入 document_tools.py（read_document统一入口）
 
 
 class FilterDataInput(BaseModel):
