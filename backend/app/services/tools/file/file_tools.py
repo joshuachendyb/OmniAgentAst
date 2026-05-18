@@ -2580,8 +2580,8 @@ class FileTools:
     
     async def data_file_format(
         self,
+        file_path: str,
         action: str = "read",
-        file_path: Optional[str] = None,
         format: Optional[str] = None,
         data: Optional[Any] = None,
         encoding: str = "utf-8",
