@@ -501,9 +501,9 @@ async def _timer_clear(timer_id: str) -> Dict[str, Any]:
     try:
         if timer_id not in _timers:
             return {
-                "code": "ERR_TIMER_CLEAR",
-                "data": None,
-                "message": f"定时器不存在: {timer_id}"
+                "code": "SUCCESS",
+                "data": {"timer_id": timer_id, "cancelled": False},
+                "message": f"定时器 {timer_id} 已触发或不存在，无需取消"
             }
 
         # 取消定时器
@@ -808,8 +808,11 @@ def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, 
         elif unit == "seconds":
             new_dt = start_dt + timedelta(seconds=delta)
         elif unit == "months":
-            # 月份计算（简化版：按30天计算）
-            new_dt = start_dt + timedelta(days=delta * 30)
+            try:
+                from dateutil.relativedelta import relativedelta
+                new_dt = start_dt + relativedelta(months=int(delta))
+            except ImportError:
+                new_dt = start_dt + timedelta(days=delta * 30)
         else:
             return {
                 "code": "ERR_TIME_ADD",
