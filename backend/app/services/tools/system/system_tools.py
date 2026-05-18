@@ -673,7 +673,7 @@ def kill_process(
         }
 
 
-def log_message(
+def _log_message(
     message: str,
     level: str = "INFO",
     logger_name: str = "root",
@@ -738,7 +738,7 @@ def log_message(
         }
 
 
-def get_logs(
+def _get_logs(
     log_file: str,
     level: Optional[str] = "WARNING",
     start_time: Optional[str] = None,
@@ -826,7 +826,7 @@ def get_logs(
         }
 
 
-def service_list(
+def _service_list(
     name: Optional[str] = None,
     state: str = "all",
     output_format: str = "json",
@@ -1025,7 +1025,7 @@ def _linux_service_list(
         }
 
 
-def service_start(
+def _service_start(
     service_name: str,
     wait_for_started: bool = True,
     timeout: int = 30,
@@ -1166,7 +1166,7 @@ def _linux_service_start(service_name: str, timeout: int) -> dict:
         }
 
 
-def service_stop(
+def _service_stop(
     service_name: str,
     force: bool = False,
     wait_for_stopped: bool = True,
@@ -1323,7 +1323,7 @@ def _linux_service_stop(service_name: str, force: bool, timeout: int) -> dict:
         }
 
 
-def task_list(
+def _task_list(
     filter_name: Optional[str] = None,
     filter_status: str = "all",
     max_results: int = 100,
@@ -1454,7 +1454,7 @@ def task_list(
         }
 
 
-def task_create(
+def _task_create(
     task_name: str,
     command: str,
     schedule: str,
@@ -1562,7 +1562,7 @@ def task_create(
         }
 
 
-def task_delete(
+def _task_delete(
     task_name: str,
     force: bool = False,
     folder: Optional[str] = None,
@@ -1675,22 +1675,22 @@ def service_control(
         {code, data, message}
     """
     if action == "list":
-        return service_list(name=service_name, state=state)
+        return _service_list(name=service_name, state=state)
     elif action == "start":
         if not service_name:
             return {"code": "ERR_INVALID_PARAM", "data": None, "message": "start操作必须提供service_name"}
-        return service_start(service_name=service_name, wait_for_started=wait_for_started, timeout=timeout)
+        return _service_start(service_name=service_name, wait_for_started=wait_for_started, timeout=timeout)
     elif action == "stop":
         if not service_name:
             return {"code": "ERR_INVALID_PARAM", "data": None, "message": "stop操作必须提供service_name"}
-        return service_stop(service_name=service_name, force=force, wait_for_stopped=wait_for_stopped, timeout=timeout)
+        return _service_stop(service_name=service_name, force=force, wait_for_stopped=wait_for_stopped, timeout=timeout)
     elif action == "restart":
         if not service_name:
             return {"code": "ERR_INVALID_PARAM", "data": None, "message": "restart操作必须提供service_name"}
-        stop_result = service_stop(service_name=service_name, force=force, wait_for_stopped=wait_for_stopped, timeout=timeout)
+        stop_result = _service_stop(service_name=service_name, force=force, wait_for_stopped=wait_for_stopped, timeout=timeout)
         if stop_result.get("code") != "SUCCESS":
             return stop_result
-        return service_start(service_name=service_name, wait_for_started=wait_for_started, timeout=timeout)
+        return _service_start(service_name=service_name, wait_for_started=wait_for_started, timeout=timeout)
     else:
         return {"code": "ERR_INVALID_PARAM", "data": None, "message": f"不支持的action: {action}，可选: start/stop/restart/list"}
 
@@ -1727,11 +1727,11 @@ def task_control(
         {code, data, message}
     """
     if action == "list":
-        return task_list(filter_name=task_name, filter_status=state)
+        return _task_list(filter_name=task_name, filter_status=state)
     elif action == "create":
         if not task_name or not command or not schedule:
             return {"code": "ERR_INVALID_PARAM", "data": None, "message": "create操作必须提供task_name、command、schedule"}
-        return task_create(
+        return _task_create(
             task_name=task_name,
             command=command,
             schedule=schedule,
@@ -1742,6 +1742,6 @@ def task_control(
     elif action == "delete":
         if not task_name:
             return {"code": "ERR_INVALID_PARAM", "data": None, "message": "delete操作必须提供task_name"}
-        return task_delete(task_name=task_name, folder=folder)
+        return _task_delete(task_name=task_name, folder=folder)
     else:
         return {"code": "ERR_INVALID_PARAM", "data": None, "message": f"不支持的action: {action}，可选: create/delete/list"}
