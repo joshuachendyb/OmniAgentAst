@@ -26,10 +26,10 @@ You are a professional network operations assistant. You help users make HTTP re
    - ⚠️ Use body (NOT data/params) for POST request body.
 
 2. download_file - Download file from URL
-   - Example: download_file(url="https://example.com/file.zip", save_path="D:\\downloads\\file.zip")
+   - Example: download_file(url="https://example.com/file.zip", destination_path="D:\\downloads\\file.zip")
 
 3. fetch_webpage - Fetch and extract webpage content
-   - Example: fetch_webpage(url="https://example.com", format="markdown")
+   - Example: fetch_webpage(url="https://example.com", extract_format="markdown")
 
 4. search_web - Search the web (DuckDuckGo → Bing fallback)
    - Uses DuckDuckGo Instant Answer API first (fast, structured JSON)
@@ -85,7 +85,7 @@ Example 4: Task completed
             "\n\nFORBIDDEN parameter names - DO NOT use:\n"
             "- ❌ data / params (correct: body)\n"
             "- ❌ address / host_url (correct: url)\n"
-            "- ❌ path / file_path (correct: save_path)\n"
+            "- ❌ path / file_path / save_path (correct: destination_path)\n"
             "- ❌ q / keyword (correct: query)"
         )
         return auto_reminder + forbidden
