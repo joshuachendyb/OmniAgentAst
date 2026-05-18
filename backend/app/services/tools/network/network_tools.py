@@ -953,7 +953,7 @@ async def _search_bing(
     return results
 
 
-async def ping(
+async def _ping(
     host: str,
     count: int = 4,
     timeout: int = 5,
@@ -1132,7 +1132,7 @@ async def ping(
         }
 
 
-async def port_check(
+async def _port_check(
     host: str,
     port: int,
     timeout: int = 3,
@@ -1276,7 +1276,7 @@ async def network_diagnose(
         {code, data, message}
     """
     if mode == "ping":
-        return await ping(host=host, count=count, timeout=timeout)
+        return await _ping(host=host, count=count, timeout=timeout)
     elif mode == "port":
         if port is None:
             return {
@@ -1284,7 +1284,7 @@ async def network_diagnose(
                 "data": None,
                 "message": "mode='port'时port参数必填"
             }
-        return await port_check(host=host, port=port, timeout=timeout)
+        return await _port_check(host=host, port=port, timeout=timeout)
     else:
         return {
             "code": "ERR_INVALID_MODE",
