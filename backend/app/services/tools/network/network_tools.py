@@ -39,6 +39,7 @@ from urllib.parse import urlencode, urlparse, urlunparse
 
 import httpx
 from app.utils.logger import logger
+from app.services.tools.toolhelper.network_helper import well_known_ports  # 小健 2026-05-18
 
 
 async def http_request(
@@ -1174,33 +1175,6 @@ async def port_check(
             }
         
         host = host.strip()
-        
-        well_known_ports = {
-            20: "FTP-Data(数据端口)",
-            21: "FTP-Control(控制端口)",
-            22: "SSH",
-            23: "Telnet",
-            25: "SMTP",
-            53: "DNS",
-            80: "HTTP",
-            110: "POP3",
-            143: "IMAP",
-            443: "HTTPS",
-            465: "SMTPS",
-            587: "SMTP-MSA",
-            993: "IMAPS",
-            995: "POP3S",
-            1433: "MSSQL",
-            1521: "Oracle",
-            3306: "MySQL",
-            3389: "RDP",
-            5432: "PostgreSQL",
-            5900: "VNC",
-            6379: "Redis",
-            8080: "HTTP-Proxy",
-            8443: "HTTPS-Alt",
-            27017: "MongoDB",
-        }
         
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
