@@ -71,6 +71,8 @@ from app.services.tools.toolhelper.shell_helper import (
 )
 
 from app.services.tools.toolhelper.network_helper import (
+    _check_network,
+    _validate_url,
     _html_to_markdown,
     _decode_bing_redirect_url,
 )
@@ -138,6 +140,8 @@ __all__ = [
     "_check_module_available",
     "_check_shell_injection",
     "_read_stream_nonblocking",
+    "_check_network",
+    "_validate_url",
     "_html_to_markdown",
     "_decode_bing_redirect_url",
     "select_hasher",
