@@ -31,6 +31,8 @@ from app.services.tools.shell.shell_schema import (
     CheckPathExistsInput,
     FindCommandInput,
     ShellSessionInput,
+    ExecutePythonInput,
+    ExecuteJavascriptInput,
 )
 
 from app.services.tools.shell.shell_tools import (
@@ -40,6 +42,11 @@ from app.services.tools.shell.shell_tools import (
     check_path_exists,
     find_command,
     shell_session,
+)
+
+from app.services.tools.code_execution.code_execution_tools import (
+    execute_python,
+    execute_javascript,
 )
 
 SHELL_TOOL_DESCRIPTIONS = {
@@ -82,6 +89,19 @@ SHELL_TOOL_DESCRIPTIONS = {
 - all_paths=False时：data含available(命令是否可用，bool)、command(命令名称)、path(命令完整路径，不可用时为null)
 - all_paths=True时：data含command(命令名称)、paths(所有匹配路径列表)、count(路径数量)
 - 失败时code=ERR_SHELL_FIND_COMMAND，data=null""",
+    "execute_python": """执行Python代码并返回结果。支持安全检查。
+使用场景：
+- 当用户需要运行Python代码片段时使用
+- 当用户需要快速验证Python代码逻辑时使用
+- 当用户需要执行数据处理、计算等Python脚本时使用
+
+返回数据说明：data含stdout(标准输出)、stderr(标准错误)、returncode(返回码)""",
+    "execute_javascript": """执行JavaScript代码并返回结果。
+使用场景：
+- 当用户需要运行JavaScript代码片段时使用
+- 当用户需要快速验证JavaScript代码逻辑时使用
+
+返回数据说明：data含stdout(标准输出)、stderr(标准错误)、returncode(返回码)""",
     "shell_session": """管理后台Shell会话，读取输出或终止会话。
 
 使用场景：
@@ -122,6 +142,16 @@ SHELL_TOOL_EXAMPLES = {
         {"shell_id": "shell_abc123", "action": "terminate"},
         {"shell_id": "shell_abc123", "action": "terminate", "force": True}
     ],
+    "execute_python": [
+        {"code": "print('Hello, World!')"},
+        {"code": "import math\nprint(math.sqrt(16))"},
+        {"code": "for i in range(5):\n    print(i)", "timeout": 10},
+    ],
+    "execute_javascript": [
+        {"code": "console.log('Hello, World!');"},
+        {"code": "const result = Math.sqrt(16);\nconsole.log(result);"},
+        {"code": "for(let i=0; i<5; i++) {\n  console.log(i);\n}", "timeout": 10},
+    ],
 }
 
 
@@ -139,6 +169,8 @@ def _register_shell_tools():
         "check_path_exists": check_path_exists,
         "find_command": find_command,
         "shell_session": shell_session,
+        "execute_python": execute_python,
+        "execute_javascript": execute_javascript,
     }
 
     TOOL_INPUT_MODELS = {
@@ -148,6 +180,8 @@ def _register_shell_tools():
         "check_path_exists": CheckPathExistsInput,
         "find_command": FindCommandInput,
         "shell_session": ShellSessionInput,
+        "execute_python": ExecutePythonInput,
+        "execute_javascript": ExecuteJavascriptInput,
     }
 
     for name, method in tool_methods.items():
@@ -175,4 +209,6 @@ __all__ = [
     "execute_shell_command",
     "find_command",
     "shell_session",
+    "execute_python",
+    "execute_javascript",
 ]

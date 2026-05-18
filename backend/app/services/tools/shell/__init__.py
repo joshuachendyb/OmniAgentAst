@@ -28,9 +28,15 @@ from app.services.tools.shell.shell_tools import (
     find_command,
     shell_session,
 )
+from app.services.tools.code_execution.code_execution_tools import (
+    execute_python,
+    execute_javascript,
+)
 
 __all__ = [
     "execute_shell_command",
     "find_command",
     "shell_session",
+    "execute_python",
+    "execute_javascript",
 ]
