@@ -239,27 +239,8 @@ def screen_record(duration: int, output_path: str = None, fps: int = 15) -> Dict
 
 
 # ========== 窗口操作 ==========
-
-def list_windows(filter: str = None) -> Dict[str, Any]:
-    """获取所有打开的窗口列表 - 小沈 2026-05-02"""
-    try:
-        import win32gui
-    except ImportError:
-        return {"code": "ERR_NO_WIN32GUI", "data": None, "message": "需要安装 pywin32 库: pip install pywin32"}
-    try:
-        windows = []
-        def _enum_cb(hwnd, _):
-            if win32gui.IsWindowVisible(hwnd):
-                title = win32gui.GetWindowText(hwnd)
-                if title:
-                    if filter is None or filter.lower() in title.lower():
-                        windows.append({"hwnd": hwnd, "title": title})
-            return True
-        win32gui.EnumWindows(_enum_cb, None)
-        return {"code": "SUCCESS", "data": {"windows": windows, "count": len(windows)}, "message": f"找到 {len(windows)} 个窗口"}
-    except Exception as e:
-        return {"code": "ERR_LIST_WINDOWS", "data": None, "message": f"获取窗口列表失败: {str(e)}"}
-
+# 【2026-05-19 小沈】list_windows 已删除（desktop_tools.py 中有权威实现）
+# gui_tools.py 只保留 screen_record / ocr / send_notification
 
 def _focus_window(title: str) -> Dict[str, Any]:
     """聚焦指定窗口 - 小沈 2026-05-02"""
