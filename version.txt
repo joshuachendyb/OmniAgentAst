@@ -1,3 +1,75 @@
+v0.13.6
+
+更新时间: 2026-05-18 21:08:14
+
+更新内容：
+
+## v0.13.5→v0.13.6 变更汇总 - 小沈-2026-05-18
+
+### refactor 第18章收尾: 剩余12个register/schema/tools文件提交清理 + P13 date_helper提取 + Prompt同步更新
+
+| commit | 说明 |
+|--------|------|
+| f1ffd18b | time_register.py更新时间注册适配 - 小沈-2026-05-18 |
+| 2bcdf5f2 | system_schema.py更新系统Schema - 小沈-2026-05-18 |
+| 9d9b8bb0 | shell_schema.py更新Shell Schema - 小沈-2026-05-18 |
+| e5f88149 | network_tools.py更新网络工具实现 - 小沈-2026-05-18 |
+| 358e5e26 | network_schema.py更新网络Schema - 小沈-2026-05-18 |
+| 84dc5570 | document_tools.py更新文档工具实现 - 小沈-2026-05-18 |
+| 83df8aa7 | document_schema.py更新文档Schema - 小沈-2026-05-18 |
+| c2e3a827 | document_register.py更新文档注册适配 - 小沈-2026-05-18 |
+| 9eb8b729 | data_analysis_register.py更新注册适配DOCUMENT - 小沈-2026-05-18 |
+| ae920453 | desktop/__init__.py更新桌面模块导出 - 小沈-2026-05-18 |
+| f3bab3b5 | code_execution_schema.py更新Schema架构 - 小沈-2026-05-18 |
+| 912210a6 | code_execution_register.py更新注册适配META分类 - 小沈-2026-05-18 |
+| 2d4248c9 | system_schema.py合并环境Schema到系统分类 - 小沈-2026-05-18 |
+| c917b830 | env_tools.py合并到system分类 - 小沈-2026-05-18 |
+| 6fa0b465 | gui_register.py更新GUI注册模块 - 小沈-2026-05-18 |
+| ea7ae66d | gui_helpers_register.py更新GUI辅助注册 - 小沈-2026-05-18 |
+
+### feat P13 date_helper提取 + Prompt同步
+
+| commit | 说明 |
+|--------|------|
+| 53b0a960 | date_helper.py新增日期时间通用解析Helper - 小沈-2026-05-18 |
+| f69564eb | time_tools.py提取5函数到date_helper+返回类型修正 - 小沈-2026-05-18 |
+| bc2051b1 | toolhelper/__init__.py新增date_helper导入 - 小沈-2026-05-18 |
+| d13c81b6 | toolhelper/__init__.py修复残留变更 - 小沈-2026-05-18 |
+
+### fix 第16章小健检查修复
+
+| commit | 说明 |
+|--------|------|
+| 24f675bd | time_tools.py修复months精度+time_clear幂等性 - 小沈-2026-05-18 |
+| ad093526 | time_schema.py修正locale描述仅now有效 - 小沈-2026-05-18 |
+
+### refactor Prompts同步更新
+
+| commit | 说明 |
+|--------|------|
+| 804b92ba | time_prompts.py更新时间提示词 - 小沈-2026-05-18 |
+| 5c5e21d9 | shell_prompts.py更新Shell提示词 - 小沈-2026-05-18 |
+| 1b048022 | network_prompts.py更新网络提示词 - 小沈-2026-05-18 |
+| 07bef66f | document_prompts.py更新文档提示词 - 小沈-2026-05-18 |
+
+### 关键变更说明
+
+#### 1. P13 date_helper提取
+- 创建`toolhelper/date_helper.py`，5个函数(parse_datetime_any/string/is_holiday/calc_next_n_workday/resolve_timezone)
+- time_tools.py删412行旧代码改为import
+- is_holiday返回(bool, Optional[str])，calc_next_n_workday返回list[str]
+
+#### 2. 第16章小健检查修复
+- months精度: 优先dateutil.relativedelta，不可用时降级到30天近似
+- timer_clear幂等性: 空timer列表不报错返回{cleared:0, remaining:0}
+- locale描述: 修正Schema描述"仅action=now有效"
+
+#### 3. 第18章收尾: 剩余12文件逐文件独立commit提交清理
+- 包括desktop/code_execution/document/network/shell/system/time等分类注册器、Schema、工具文件
+- 所有文件通过pytest验证后独立commit，工作区干净
+
+---
+
 v0.13.5
 
 更新时间: 2026-05-18 12:23:30
