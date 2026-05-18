@@ -26,13 +26,11 @@ from app.services.tools.document.data_analysis_tools import (
 
 def _register_data_analysis_tools():
     """【已废弃 2026-05-18 小健】工具已迁入document_register.py，此函数不再注册"""
+    pass  # 小沈 2026-05-18：显式pass，不做任何操作
     logger.warning(
         "[data_analysis_register] _register_data_analysis_tools 已废弃，"
         "analyze_data/filter_data/generate_chart 已迁入 document_register.py"
     )
-
-
-_initialized = False
 
 __all__ = [
     "_register_data_analysis_tools",
