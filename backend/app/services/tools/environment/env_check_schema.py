@@ -12,22 +12,6 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 
 
-class ValidateCodeSafetyInput(BaseModel):
-    """validate_code_safety 工具的输入参数（Tool 84）"""
-    code: str = Field(
-        ...,
-        description="要验证的代码。检查是否存在危险操作，如系统调用、文件删除、网络请求等"
-    )
-
-
-class CheckModuleAvailableInput(BaseModel):
-    """check_module_available 工具的输入参数（Tool 86）"""
-    module_name: str = Field(
-        ...,
-        description="模块名称。如 pandas、numpy、matplotlib"
-    )
-
-
 class ValidateCsvFormatInput(BaseModel):
     """validate_csv_format 工具的输入参数（Tool 87）"""
     file_path: str = Field(
@@ -69,8 +53,6 @@ class CheckXlsxReadableInput(BaseModel):
 
 
 __all__ = [
-    "ValidateCodeSafetyInput",
-    "CheckModuleAvailableInput",
     "ValidateCsvFormatInput",
     "ValidateChartDataInput",
     "CheckPdfReadableInput",

@@ -36,6 +36,15 @@ from app.services.tools.system.system_schema import (
     KillProcessInput,
     ServiceControlInput,
     TaskControlInput,
+    # 【2026-05-18 小沈】Environment工具Schema（从environment模块迁入）
+    GetEnvInput,
+    SetEnvInput,
+    ListEnvInput,
+    ValidateCsvFormatInput,
+    ValidateChartDataInput,
+    CheckPdfReadableInput,
+    CheckDocxReadableInput,
+    CheckXlsxReadableInput,
 )
 
 from app.services.tools.system.system_tools import (
@@ -46,6 +55,20 @@ from app.services.tools.system.system_tools import (
     kill_process,
     service_control,
     task_control,
+)
+
+# 【2026-05-18 小沈】环境变量工具（从environment模块迁入注册）
+from app.services.tools.environment.env_tools import (
+    get_env,
+    set_env,
+    list_env,
+)
+from app.services.tools.environment.env_check_tools import (
+    validate_csv_format,
+    validate_chart_data,
+    check_pdf_readable,
+    check_docx_readable,
+    check_xlsx_readable,
 )
 
 # 工具描述
@@ -186,6 +209,14 @@ SYSTEM_TOOL_INPUT_MODELS = {
     "kill_process": KillProcessInput,
     "service_control": ServiceControlInput,
     "task_control": TaskControlInput,
+    "get_env": GetEnvInput,
+    "set_env": SetEnvInput,
+    "list_env": ListEnvInput,
+    "validate_csv_format": ValidateCsvFormatInput,
+    "validate_chart_data": ValidateChartDataInput,
+    "check_pdf_readable": CheckPdfReadableInput,
+    "check_docx_readable": CheckDocxReadableInput,
+    "check_xlsx_readable": CheckXlsxReadableInput,
 }
 
 # 使用示例
@@ -227,11 +258,39 @@ SYSTEM_TOOL_EXAMPLES = {
         {"action": "create", "task_name": "MyBackup", "command": "C:\\scripts\\backup.bat", "schedule": "02:00"},
         {"action": "delete", "task_name": "MyBackup"},
     ],
+    # 【2026-05-18 小沈】Environment工具示例
+    "get_env": [
+        {"name": "PATH"},
+        {"name": "JAVA_HOME", "default": "not set"},
+    ],
+    "set_env": [
+        {"name": "MY_VAR", "value": "hello"},
+        {"name": "PATH", "value": "C:\\tools", "append_mode": True},
+    ],
+    "list_env": [
+        {},
+        {"prefix": "PY"},
+    ],
+    "validate_csv_format": [
+        {"file_path": "D:/data/users.csv"},
+    ],
+    "validate_chart_data": [
+        {"data": {"labels": ["A", "B"], "values": [1, 2]}},
+    ],
+    "check_pdf_readable": [
+        {"file_path": "D:/documents/report.pdf"},
+    ],
+    "check_docx_readable": [
+        {"file_path": "D:/documents/report.docx"},
+    ],
+    "check_xlsx_readable": [
+        {"file_path": "D:/data/report.xlsx"},
+    ],
 }
 
 
 def _register_system_tools():
-    """注册所有系统信息工具 - 【2026-05-17 小沈】16→10重构：只注册7个（+reg_register注册3个=10个）"""
+    """注册所有系统信息工具 - 【2026-05-18 小沈】含Environment迁入工具"""
     tool_methods = {
         "get_system_info": get_system_info,
         "net_connections": net_connections,
@@ -240,6 +299,15 @@ def _register_system_tools():
         "kill_process": kill_process,
         "service_control": service_control,
         "task_control": task_control,
+        # 【2026-05-18 小沈】Environment工具（从environment模块迁入注册）
+        "get_env": get_env,
+        "set_env": set_env,
+        "list_env": list_env,
+        "validate_csv_format": validate_csv_format,
+        "validate_chart_data": validate_chart_data,
+        "check_pdf_readable": check_pdf_readable,
+        "check_docx_readable": check_docx_readable,
+        "check_xlsx_readable": check_xlsx_readable,
     }
 
     for name, method in tool_methods.items():
