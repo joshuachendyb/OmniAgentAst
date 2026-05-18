@@ -72,7 +72,9 @@ def _read_pdf(
     extract_images: bool = False,
     extract_tables: bool = False
 ) -> Dict[str, Any]:
-    """读取PDF文件并提取文本内容（内部函数） - 小健 2026-05-18"""
+    """读取PDF文件并提取文本内容（内部函数） - 小健 2026-05-18
+    【2026-05-18 小沈】增加extract_images图片提取功能
+    """
     if not _check_module("pdfplumber"):
         return {
             "code": "ERR_NO_PDFPLUMBER",
@@ -95,6 +97,7 @@ def _read_pdf(
         page_count = 0
         pages_read = []
         tables_data = []
+        images_data = []
 
         with pdfplumber.open(path) as pdf:
             page_count = len(pdf.pages)
@@ -120,6 +123,21 @@ def _read_pdf(
                                 "table_idx": idx,
                                 "data": table
                             })
+                
+                if extract_images:
+                    images = page.images
+                    if images:
+                        for idx, img in enumerate(images):
+                            images_data.append({
+                                "page": page_num,
+                                "image_idx": idx,
+                                "x0": float(img.get("x0", 0)),
+                                "y0": float(img.get("y0", 0)),
+                                "x1": float(img.get("x1", 0)),
+                                "y1": float(img.get("y1", 0)),
+                                "width": float(img.get("width", 0)),
+                                "height": float(img.get("height", 0)),
+                            })
 
         result_data = {
             "text": "\n\n".join(all_text),
@@ -129,6 +147,11 @@ def _read_pdf(
         
         if extract_tables and tables_data:
             result_data["tables"] = tables_data
+            result_data["table_count"] = len(tables_data)
+        
+        if extract_images and images_data:
+            result_data["images"] = images_data
+            result_data["image_count"] = len(images_data)
 
         full_text = result_data["text"]
         _llm = {
@@ -137,10 +160,21 @@ def _read_pdf(
             "文本长度": f"{len(full_text)}字符",
             "内容": full_text,
         }
+        if extract_tables and tables_data:
+            _llm["表格数"] = len(tables_data)
+        if extract_images and images_data:
+            _llm["图片数"] = len(images_data)
+        
+        msg = f"成功读取PDF文件: {file_path}，共读取 {len(pages_read)} 页"
+        if extract_tables and tables_data:
+            msg += f"，{len(tables_data)} 个表格"
+        if extract_images and images_data:
+            msg += f"，{len(images_data)} 张图片"
+        
         return {
             "code": "SUCCESS",
             "data": result_data,
-            "message": f"成功读取PDF文件: {file_path}，共读取 {len(pages_read)} 页",
+            "message": msg,
             "llm_data": _llm
         }
     except Exception as e:
@@ -713,7 +747,7 @@ def read_document(
     header: bool = True,
     use_pandas: bool = False,
     encoding: str = "utf-8",
-    delimiter: str = ",",
+    delimiter: Optional[str] = None,
 ) -> Dict[str, Any]:
     """读取文档内容 — 小健 2026-05-18
     合并 read_pdf + read_docx + read_pptx + read_xlsx + read_csv
@@ -731,10 +765,21 @@ def read_document(
     elif suffix == ".pptx":
         return _read_pptx(file_path, extract_notes=extract_notes)
     elif suffix in (".xlsx", ".xls"):
-        return _read_xlsx(file_path, sheet_name=sheet_name, max_rows=max_rows, header=header)
+        # Excel处理 — 小沈 2026-05-18
+        if use_pandas:
+            # 使用pandas读取（调用data_analysis的read_excel_dataframe逻辑）
+            from app.services.tools.document.data_analysis_tools import read_excel_dataframe
+            return read_excel_dataframe(
+                file_path=file_path,
+                sheet_name=sheet_name,
+                max_rows=max_rows
+            )
+        else:
+            # 使用openpyxl读取
+            return _read_xlsx(file_path, sheet_name=sheet_name, max_rows=max_rows, header=header)
     elif suffix in (".csv", ".tsv"):
-        # CSV/TSV处理 — 小健 2026-05-18
-        actual_delimiter = "\t" if suffix == ".tsv" else delimiter
+        # CSV/TSV处理 — 小沈 2026-05-18
+        actual_delimiter = "\t" if suffix == ".tsv" else (delimiter or ",")
         if use_pandas:
             # 使用pandas读取（调用data_analysis的read_csv_dataframe逻辑）
             from app.services.tools.document.data_analysis_tools import read_csv_dataframe
