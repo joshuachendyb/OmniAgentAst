@@ -113,9 +113,3 @@ _initialized = False  # 守护变量，供显式调用时使用
 
 __all__ = ["_register_code_execution_tools"]
 
-
-__all__ = [
-    "execute_python",
-    "execute_javascript",
-]
-
