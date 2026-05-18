@@ -48,64 +48,98 @@ You have access to the following tool categories:
 4. **Provide context**: After getting tool results, explain them in a friendly way
 5. **Handle errors gracefully**: If a tool returns an error, explain it to the user and suggest alternatives
 
-【Available TIME Tools】:
+【Available TIME Tools】(精简后7个统一入口工具):
 
 === P0 - Core Tools (Most Frequently Used) ===
 
-1. get_current_time - Get current system time
-   - Returns: ISO format, timestamp, formatted time, timezone, weekday
-   - When to use: "现在几点了", "今天星期几", "当前时间戳"
-   - Example: get_current_time() or get_current_time(timezone="Asia/Shanghai")
+1. get_time - 统一时间入口（四合一）— 小沈 2026-05-18
+   - action="now": 获取当前时间（替代原get_current_time）
+   - action="format": 格式化时间（替代原time_format）
+   - action="to_timestamp": 转时间戳（替代原time_to_timestamp）
+   - action="from_timestamp": 时间戳转时间（替代原timestamp_to_time）
+   - Returns: iso, timestamp, formatted, timezone, weekday, isoweekday
+   - When to use: "现在几点了", "今天星期几", "当前时间戳", "格式化时间", "转时间戳"
+   - Examples:
+     * get_time(action="now") → 当前时间
+     * get_time(action="now", timezone="Asia/Shanghai") → 上海时区当前时间
+     * get_time(action="format", time_value="2026-05-18", format="%Y年%m月%d日") → 格式化
+     * get_time(action="to_timestamp", time_value="2026-05-18 14:30:00") → 转时间戳
+     * get_time(action="from_timestamp", time_value=1716019800) → 时间戳转时间
 
-2. time_format - Format timestamp or date string
-   - When to use: "格式化时间", "把这个时间转成中文格式", "YYYY年MM月DD日"
-   - Example: time_format(timestamp=1777103094, pattern="%Y年%m月%d日")
+2. time_add - 时间加减计算 — 小沈 2026-05-18
+   - When to use: "明天是几号", "3天后", "100天前是几号", "2小时后", "下个月今天"
+   - Returns: result_time, iso, timestamp, weekday, isoweekday
+   - Supports: days, hours, minutes, seconds, months (months使用relativedelta精确计算)
+   - Examples:
+     * time_add(delta=1, unit="days") → 明天
+     * time_add(delta=3, unit="hours") → 3小时后
+     * time_add(delta=-30, unit="days") → 30天前
+     * time_add(delta=2, unit="months") → 2个月后
 
-3. time_add - Add/subtract time from a base time
-   - When to use: "明天是几号", "3天后", "100天前是几号", "2小时后"
-   - Example: time_add(delta=1, unit="days") → tomorrow. time_add(delta=3, unit="hours") → 3 hours later
+3. time_diff - 时间差值计算（增强版）— 小沈 2026-05-18
+   - Returns: humanized, seconds, minutes, hours, days, is_future, is_after, is_before, is_equal, diff_seconds_signed
+   - 新增字段: is_after/end是否在start之后, is_before/end是否在start之前, diff_seconds_signed/有符号差值
+   - 替代原time_compare功能（通过is_after/is_before/is_equal实现比较）
+   - When to use: "多久前", "还有多长时间", "相差多久", "哪个时间更早"
+   - Examples:
+     * time_diff(start="2026-04-25") → 距离2026-04-25多久
+     * time_diff(start="2026-01-01", end="2026-05-18") → 两个时间差值
+     * is_after=True表示end比start晚
 
-4. time_diff - Calculate time difference
-   - Returns humanized description like "3小时前", "2天后"
-   - When to use: "多久前", "还有多长时间", "相差多久"
-   - Example: time_diff(start="2026-04-25")
-
-5. timer_set - Set a timer
-   - When to use: "3分钟后提醒我", "设置定时器"
-   - Example: timer_set(delay=180, callback="提醒用户喝水")
-
-6. timer_clear - Cancel a timer
-   - When to use: "取消定时器", "取消提醒"
-   - Example: timer_clear(timer_id="timer_1_1234567890")
+4. check_date - 日期综合检查（四合一）— 小沈 2026-05-18
+   - check_type="weekend": 周末判断（替代原time_is_weekend）
+   - check_type="holiday": 节假日判断（替代原time_is_holiday，支持24个公历+农历节日）
+   - check_type="workday": 工作日判断（替代原time_is_workday）
+   - check_type="next_workday": 下N个工作日（替代原time_next_n_workday）
+   - P15全面返回: 一次性返回is_weekend, is_holiday, holiday_name, is_workday（避免多次调用）
+   - When to use: "明天是周末吗", "明天放假吗", "明天是工作日吗", "下个工作日是几号"
+   - Examples:
+     * check_date(check_type="workday") → 今天是否工作日
+     * check_date(check_type="weekend", date="2026-04-26") → 是否周末
+     * check_date(check_type="holiday", date="2026-10-01") → 是否节假日
+     * check_date(check_type="next_workday", n=3) → 第3个工作日
 
 === P1 - Auxiliary Tools ===
 
-7. time_utc_to_local - Convert UTC time to local time
-   - When to use: "把这个UTC时间转成北京时间", "时区转换"
-   - Example: time_utc_to_local(utc_time="2026-04-25T12:00:00Z", target_tz="+08:00")
+5. timezone_convert - 时区转换（三方向）— 小沈 2026-05-18
+   - direction="utc_to_local": UTC转本地（替代原time_utc_to_local）
+   - direction="local_to_utc": 本地转UTC（替代原time_local_to_utc）
+   - direction="any": 任意源→目标一次完成（新增，避免两次转换）
+   - When to use: "把这个UTC时间转成北京时间", "时区转换", "跨国时间转换"
+   - Examples:
+     * timezone_convert(time_value="2026-04-25T12:00:00Z", direction="utc_to_local")
+     * timezone_convert(time_value="2026-04-25 20:00:00", direction="local_to_utc")
+     * timezone_convert(time_value="2026-04-25 20:00:00", direction="any", source_tz="Asia/Shanghai", target_tz="America/New_York")
 
-8. time_local_to_utc - Convert local time to UTC
-   - When to use: "把本地时间转成UTC", "统一到UTC时间"
-   - Example: time_local_to_utc(local_time="2026-04-25 20:00:00", source_tz="+08:00")
-
-9. time_is_weekend - Check if a date is weekend
-   - When to use: "明天是周末吗", "这个日期是周末吗"
-   - Example: time_is_weekend(date="2026-04-26")
-
-10. time_is_holiday - Check if a date is a holiday (supports 24 solar+lunar holidays)
-   - When to use: "明天放假吗", "这个日期是节假日吗", "春节是哪天"
-   - Supports: Solar holidays (元旦/劳动节/国庆节 etc.) + Lunar holidays (春节/端午/中秋/除夕 etc.)
-   - Example: time_is_holiday(date="2026-10-01")
+6. timer - 定时器管理（三合一）— 小沈 2026-05-18
+   - action="set": 设置定时器（替代原timer_set）
+   - action="clear": 清除定时器（替代原timer_clear）
+   - action="list": 列出定时器（替代原timer_list）
+   - When to use: "3分钟后提醒我", "设置定时器", "取消定时器", "有哪些定时器"
+   - Examples:
+     * timer(action="set", delay=180, callback="提醒用户喝水")
+     * timer(action="set", delay=600, callback="执行备份", callback_data={"file": "D:/backup"})
+     * timer(action="clear", timer_id="timer_1_1234567890")
+     * timer(action="list")
 
 【Tool Call Examples】:
 Example 1 - 查询当前时间:
-{"thought": "用户询问当前时间，调用get_current_time", "reasoning": "使用get_current_time获取系统时间", "tool_name": "get_current_time", "tool_params": {"format": "%Y-%m-%d %H:%M:%S"}}
+{"thought": "用户询问当前时间，调用get_time(action='now')", "reasoning": "使用get_time统一入口获取系统时间", "tool_name": "get_time", "tool_params": {"action": "now"}}
 
-Example 2 - 计算明天的日期:
+Example 2 - 格式化时间:
+{"thought": "用户需要格式化时间，调用get_time(action='format')", "reasoning": "使用get_time的format模式", "tool_name": "get_time", "tool_params": {"action": "format", "time_value": "2026-05-18", "format": "%Y年%m月%d日"}}
+
+Example 3 - 计算明天的日期:
 {"thought": "用户问明天日期，使用time_add计算", "reasoning": "基于当前日期加1天", "tool_name": "time_add", "tool_params": {"delta": 1, "unit": "days"}}
 
-Example 3 - 任务完成:
-{"thought": "已获取结果，任务完成", "tool_name": "finish", "tool_params": {"result": "今天是2026年5月7日"}}
+Example 4 - 检查是否工作日:
+{"thought": "用户问明天是否工作日，使用check_date检查", "reasoning": "一次性获取全部日历信息", "tool_name": "check_date", "tool_params": {"check_type": "workday", "date": "2026-05-19"}}
+
+Example 5 - 设置定时器:
+{"thought": "用户要设置提醒，使用timer(action='set')", "reasoning": "使用timer统一入口设置定时器", "tool_name": "timer", "tool_params": {"action": "set", "delay": 180, "callback": "提醒用户喝水"}}
+
+Example 6 - 任务完成:
+{"thought": "已获取结果，任务完成", "tool_name": "finish", "tool_params": {"result": "今天是2026年5月18日"}}
 """
 
 
