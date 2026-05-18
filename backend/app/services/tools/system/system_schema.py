@@ -156,68 +156,6 @@ class KillProcessInput(BaseModel):
     )
 
 
-class LogMessageInput(BaseModel):
-    """log_message 工具的输入参数 - 按文档7.3节定义"""
-    message: str = Field(
-        ...,
-        description="日志消息内容（必填）"
-    )
-    level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
-        default="INFO",
-        description="日志级别（可选），默认INFO。可选值：DEBUG、INFO、WARNING、ERROR、CRITICAL"
-    )
-    logger_name: str = Field(
-        default="root",
-        description="日志记录器名称（可选），默认root"
-    )
-    log_file: Optional[str] = Field(
-        default=None,
-        description="日志文件路径（可选），默认null输出到控制台"
-    )
-
-
-class GetLogsInput(BaseModel):
-    """get_logs 工具的输入参数 - 按文档7.3节定义"""
-    log_file: str = Field(
-        ...,
-        description="日志文件路径（必填）"
-    )
-    level: Optional[Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]] = Field(
-        default="WARNING",
-        description="日志级别过滤（可选），默认WARNING"
-    )
-    start_time: Optional[str] = Field(
-        default=None,
-        description="起始时间（可选），Agent自动解析自然语言时间"
-    )
-    end_time: Optional[str] = Field(
-        default=None,
-        description="结束时间（可选），默认当前时间"
-    )
-    log_format: str = Field(
-        default="auto_detect",
-        description="时间格式（可选），默认auto_detect"
-    )
-    max_lines: int = Field(
-        default=200,
-        ge=1,
-        le=1000,
-        description="最大返回行数（可选），默认200"
-    )
-    tail_mode: bool = Field(
-        default=False,
-        description="尾部读取模式（可选），默认false"
-    )
-    pattern: Optional[str] = Field(
-        default=None,
-        description="关键词过滤（可选）"
-    )
-    output_format: str = Field(
-        default="table",
-        description="输出格式（可选），默认table，可选json"
-    )
-
-
 class ServiceListInput(BaseModel):
     """service_list 工具的输入参数 - 小沈 2026-05-03 修正
     
@@ -382,8 +320,6 @@ __all__ = [
     "EventLogInput",
     "ListProcessesInput",
     "KillProcessInput",
-    "LogMessageInput",
-    "GetLogsInput",
     "ServiceListInput",
     "ServiceStartInput",
     "ServiceStopInput",
