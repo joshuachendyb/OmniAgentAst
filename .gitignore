@@ -27,10 +27,10 @@ test_*
 backend/tests/
 frontend/tests/
 frontend/src/test/
+frontend/src/tests/
 frontend/src/components/**/*Test*
 tools/latex-test/
-.planning/**/TESTING.md
-.planning/**/TEST-*.md
+.planning/**/*TEST*
 reports/test_task/
 
 # Backup files
