@@ -25,9 +25,9 @@ class ReadDocumentInput(BaseModel):
     sheet_name: Optional[str] = Field(default=None, description="Excel工作表名（仅XLSX有效）")
     max_rows: int = Field(default=1000, ge=1, le=10000, description="最大读取行数（XLSX/CSV有效）")
     header: bool = Field(default=True, description="第一行是否为表头（XLSX/CSV有效）")
-    use_pandas: bool = Field(default=False, description="是否使用pandas读取CSV")
+    use_pandas: bool = Field(default=False, description="是否使用pandas读取CSV/Excel（True=返回dtypes等元数据）")
     encoding: str = Field(default="utf-8", description="文件编码（仅CSV有效）")
-    delimiter: str = Field(default=",", description="CSV分隔符（仅CSV有效）")
+    delimiter: Optional[str] = Field(default=None, description="CSV分隔符（仅CSV有效，None=自动选择逗号）")
 
 
 class WriteDocumentInput(BaseModel):
