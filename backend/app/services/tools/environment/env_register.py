@@ -141,7 +141,7 @@ def _register_env_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.ENVIRONMENT,
+            category=ToolCategory.SYSTEM,
             implementation=method,
             version="1.0.0",
             input_model=input_model,
@@ -158,3 +158,4 @@ def _register_env_tools():
 _initialized = False  # 守护变量，供显式调用时使用
 
 __all__ = ["_register_env_tools"]
+

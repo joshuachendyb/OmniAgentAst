@@ -11,14 +11,18 @@ Document Register - 文档读写工具注册点
 - 8个旧工具合并为 read_document + write_document
 - analyze_data/filter_data/generate_chart 从 data_analysis_register 迁入
 - 共6个LLM工具
+【2026-05-18 小沈】Database工具迁入（query_sql/execute_sql/get_db_schema）
 
-【工具列表】（共6个）
+【工具列表】（共9个）
 1. read_document - 统一读取文档（按后缀路由）
 2. write_document - 统一写入文档（按后缀路由）
 3. convert_document - 文档格式转换
 4. analyze_data - 对数据集进行统计分析（迁入）
 5. filter_data - 按条件筛选/过滤数据（迁入）
 6. generate_chart - 生成数据可视化图表（迁入）
+7. query_sql - 执行只读SQL查询（迁入）
+8. execute_sql - 执行写操作SQL（迁入）
+9. get_db_schema - 获取数据库结构元数据（迁入）
 
 【注册说明】
 - 使用 Pydantic 模型注册，自动生成 OpenAI Schema
@@ -54,6 +58,18 @@ from app.services.tools.document.data_analysis_tools import (
     analyze_data,
     filter_data,
     generate_chart,
+)
+
+# 【2026-05-18 小沈】Database工具（从database模块迁入注册）
+from app.services.tools.database.database_schema import (
+    QuerySqlInput,
+    ExecuteSqlInput,
+    GetDbSchemaInput,
+)
+from app.services.tools.database.database_tools import (
+    query_sql,
+    execute_sql,
+    get_db_schema,
 )
 
 DESCRIPTIONS = {
@@ -184,6 +200,19 @@ EXAMPLES = {
         {"data": {"labels": ["A", "B"], "values": [10, 20]}, "chart_type": "bar", "title": "销售统计"},
         {"data": {"labels": ["1月", "2月"], "values": [100, 200]}, "chart_type": "line", "output_path": "D:/output/chart.png"},
     ],
+    # 【2026-05-18 小沈】Database工具示例
+    "query_sql": [
+        {"sql": "SELECT * FROM users LIMIT 10"},
+        {"sql": "SELECT * FROM users", "connection_type": "sqlite", "db_path": "D:/data/app.db"},
+    ],
+    "execute_sql": [
+        {"sql": "INSERT INTO logs (msg) VALUES ('test')"},
+        {"sql": "DELETE FROM temp_data WHERE created_at < '2024-01-01'", "dry_run": True},
+    ],
+    "get_db_schema": [
+        {"filter_pattern": "user%"},
+        {"table_name": "users"},
+    ],
 }
 
 TOOL_INPUT_MODELS = {
@@ -193,6 +222,9 @@ TOOL_INPUT_MODELS = {
     "analyze_data": AnalyzeDataInput,
     "filter_data": FilterDataInput,
     "generate_chart": GenerateChartInput,
+    "query_sql": QuerySqlInput,
+    "execute_sql": ExecuteSqlInput,
+    "get_db_schema": GetDbSchemaInput,
 }
 
 TOOL_IMPLEMENTATIONS = {
@@ -202,6 +234,9 @@ TOOL_IMPLEMENTATIONS = {
     "analyze_data": analyze_data,
     "filter_data": filter_data,
     "generate_chart": generate_chart,
+    "query_sql": query_sql,
+    "execute_sql": execute_sql,
+    "get_db_schema": get_db_schema,
 }
 
 
@@ -238,4 +273,7 @@ __all__ = [
     "analyze_data",
     "filter_data",
     "generate_chart",
+    "query_sql",
+    "execute_sql",
+    "get_db_schema",
 ]

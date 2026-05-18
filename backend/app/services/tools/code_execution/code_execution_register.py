@@ -99,7 +99,7 @@ def _register_code_execution_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.CODE_EXECUTION,
+            category=ToolCategory.SHELL,
             implementation=method,
             version="1.0.0",
             input_model=input_model,
@@ -118,3 +118,4 @@ __all__ = [
     "execute_python",
     "execute_javascript",
 ]
+

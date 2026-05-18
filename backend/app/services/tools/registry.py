@@ -149,27 +149,17 @@ def _fix_schema_types(schema: Dict[str, Any]) -> Dict[str, Any]:
 
 class ToolCategory(Enum):
     """
-    工具分类枚举
-    
-    【更新】2026-05-05 小沈（彻底废弃旧枚举值）
-    - FILE, TIME, SHELL, NETWORK, ENVIRONMENT, SYSTEM, DATABASE, DESKTOP
-    - DOCUMENT, SUPPORT_TOOL, DATA_FORMAT, CODE_EXECUTION
-    - 已废弃: DATA_ANALYSIS, GUI, ENV_CHECK, REGISTRY_TOOLS（彻底删除）
+    工具分类枚举 - 【2026-05-18 小沈】精简方案：13→7分类
+    废弃分类：TIME→META, ENVIRONMENT→SYSTEM, DATABASE→DOCUMENT,
+             CODE_EXECUTION→SHELL, DATA_FORMAT(废弃), SUPPORT_TOOL(废弃)
     """
     FILE = "file"
-    TIME = "time"           # 时间/日期
-    SHELL = "shell"         # Shell命令执行
+    SHELL = "shell"         # Shell命令执行 + 代码执行
     NETWORK = "network"     # 网络通信
-    ENVIRONMENT = "environment"  # 环境管理
-    SYSTEM = "system"        # 系统信息
-    DATABASE = "database"      # 数据库访问
+    SYSTEM = "system"        # 系统信息 + 环境管理
     DESKTOP = "desktop"     # 桌面功能
-    # 2026-05-02新增：
-    DOCUMENT = "document"      # 文档读写
-    SUPPORT_TOOL = "support_tool" # 支撑工具（公共函数+LLM内部使用，小沈-2026-05-02）
-    DATA_FORMAT = "data_format"    # 数据格式（小沈-2026-05-02）
-    CODE_EXECUTION = "code_execution" # 代码执行
-    META = "meta"              # 元工具（tool_help/tool_search，小沈-2026-05-17）
+    DOCUMENT = "document"      # 文档读写 + 数据库
+    META = "meta"              # 元工具 + 时间日期
 
 
 @dataclass
@@ -214,27 +204,21 @@ class ToolRegistry:
         registry.register(name="xxx", description="...", category=ToolCategory.FILE, implementation=func)
     """
     
-    # 【Phase 1 小健 2026-05-14】类级常量：分类顺序和中文名，一处定义全局引用
+    # 【Phase 3 小沈 2026-05-18】精简方案：7分类
     CATEGORY_ORDER = [
-        ToolCategory.FILE, ToolCategory.SHELL, ToolCategory.TIME,
-        ToolCategory.ENVIRONMENT, ToolCategory.SYSTEM, ToolCategory.NETWORK,
-        ToolCategory.DATABASE, ToolCategory.DESKTOP, ToolCategory.DATA_FORMAT,
-        ToolCategory.CODE_EXECUTION, ToolCategory.DOCUMENT, ToolCategory.SUPPORT_TOOL,
+        ToolCategory.FILE, ToolCategory.SHELL, ToolCategory.NETWORK,
+        ToolCategory.SYSTEM, ToolCategory.DESKTOP, ToolCategory.DOCUMENT,
+        ToolCategory.META,
     ]
 
     CATEGORY_NAMES = {
         ToolCategory.FILE: "文件操作工具",
-        ToolCategory.SHELL: "Shell命令工具",
-        ToolCategory.TIME: "时间日期工具",
-        ToolCategory.ENVIRONMENT: "环境变量工具",
-        ToolCategory.SYSTEM: "系统信息工具",
+        ToolCategory.SHELL: "Shell/代码执行工具",
         ToolCategory.NETWORK: "网络通信工具",
-        ToolCategory.DATABASE: "数据库工具",
+        ToolCategory.SYSTEM: "系统/环境工具",
         ToolCategory.DESKTOP: "桌面工具",
-        ToolCategory.DATA_FORMAT: "数据格式工具",
-        ToolCategory.CODE_EXECUTION: "代码执行工具",
-        ToolCategory.DOCUMENT: "文档读写工具",
-        ToolCategory.SUPPORT_TOOL: "支撑工具(公共函数)",
+        ToolCategory.DOCUMENT: "文档/数据库工具",
+        ToolCategory.META: "元/时间工具",
     }
 
     def __init__(self):

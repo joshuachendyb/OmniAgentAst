@@ -22,6 +22,24 @@ from app.services.tools.meta.meta_tools import (
     pipeline,
 )
 
+# 【2026-05-18 小沈】Time工具（从time模块迁入注册）
+from app.services.tools.time.time_tools import (
+    get_time,
+    time_add,
+    time_diff,
+    check_date,
+    timezone_convert,
+    timer,
+)
+from app.services.tools.time.time_schema import (
+    GetTimeInput,
+    TimeAddInput,
+    TimeDiffInput,
+    CheckDateInput,
+    TimezoneConvertInput,
+    TimerInput,
+)
+
 
 META_TOOL_DESCRIPTIONS = {
     "tool_help": """查询指定工具的详细用法信息。
@@ -82,23 +100,56 @@ META_TOOL_EXAMPLES = {
         {"steps": '[{"tool":"get_current_time","params":{}}]', "stop_on_error": True},
         {"steps": '[{"tool":"read_csv","params":{"file_path":"data.csv"}},{"tool":"analyze_data","params":{}}]'},
     ],
+    # 【2026-05-18 小沈】Time工具示例
+    "get_time": [
+        {"action": "now"},
+        {"action": "to_timestamp", "datetime_str": "2026-05-18 10:00:00"},
+    ],
+    "time_add": [
+        {"datetime_str": "2026-05-18 10:00:00", "days": 7},
+    ],
+    "time_diff": [
+        {"start_time": "2026-05-01", "end_time": "2026-05-18"},
+    ],
+    "check_date": [
+        {"datetime_str": "2026-05-18", "check_type": "weekend"},
+    ],
+    "timezone_convert": [
+        {"datetime_str": "2026-05-18 10:00:00", "from_tz": "Asia/Shanghai", "to_tz": "UTC"},
+    ],
+    "timer": [
+        {"action": "set", "delay": 180, "callback": "提醒用户喝水"},
+        {"action": "list"},
+    ],
 }
 
 
 def _register_meta_tools():
     """
-    【2026-05-17 小沈】注册所有Meta工具
+    【2026-05-18 小沈】注册所有Meta工具（含Time迁入工具）
     """
     tool_methods = {
         "tool_help": tool_help,
         "tool_search": tool_search,
         "pipeline": pipeline,
+        "get_time": get_time,
+        "time_add": time_add,
+        "time_diff": time_diff,
+        "check_date": check_date,
+        "timezone_convert": timezone_convert,
+        "timer": timer,
     }
 
     TOOL_INPUT_MODELS = {
         "tool_help": ToolHelpInput,
         "tool_search": ToolSearchInput,
         "pipeline": PipelineInput,
+        "get_time": GetTimeInput,
+        "time_add": TimeAddInput,
+        "time_diff": TimeDiffInput,
+        "check_date": CheckDateInput,
+        "timezone_convert": TimezoneConvertInput,
+        "timer": TimerInput,
     }
 
     for name, method in tool_methods.items():

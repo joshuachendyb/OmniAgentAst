@@ -36,26 +36,15 @@ from app.services.tools.tool_config import (
 _tools_registered = False
 _registered_categories: set = set()
 
-# 注册函数映射：分类名 -> (import函数, 注册函数名)
-# 注意：注册函数在各*_register.py中定义
+# 【Phase 3 小沈 2026-05-18】精简方案：14→7注册模块
+# 废弃分类的注册函数仍保留在原目录中（兼容导入），不再通过此表调用
 _CATEGORY_MODULES = {
     "file": ("app.services.tools.file", "_register_file_tools"),
-    "time": ("app.services.tools.time", "_register_time_tools"),
     "shell": ("app.services.tools.shell", "_register_shell_tools"),
     "network": ("app.services.tools.network", "register_network_tools"),
-    "environment": ("app.services.tools.environment", "_register_env_tools"),
-    "env_check": ("app.services.tools.environment.env_check_register", "_register_env_check_tools"),
     "system": ("app.services.tools.system", "_register_system_tools"),
-    "database": ("app.services.tools.database", "_register_database_tools"),
     "desktop": ("app.services.tools.desktop", "_register_desktop_tools"),
-    "data_format": ("app.services.tools.data_format", "_register_data_format_tools"),
-    "code_execution": ("app.services.tools.code_execution", "_register_code_execution_tools"),
     "document": ("app.services.tools.document", "_register_document_tools"),
-    # 【废弃 2026-05-18 小健】document_data_analysis已合并到document分类
-    "support_tool": ("app.services.tools.support_tool", "_register_support_tool_tools"),
-    # 【2026-05-17 小沈】desktop_gui/desktop_gui_helpers 已合并到统一DESKTOP分类（26→10精简）
-    # desktop_gui/desktop_gui_helpers 目录已移除，不再注册
-    # 【2026-05-17 小沈】meta分类：元工具（tool_help/tool_search）
     "meta": ("app.services.tools.meta", "_register_meta_tools"),
 }
 
