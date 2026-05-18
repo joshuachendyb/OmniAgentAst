@@ -46,7 +46,7 @@ class TestRegisterImports:
         assert data_format_register is not None
     
     def test_support_tool_register_import(self):
-        """support_tool可导入"""
+        """support_tool兼容包装器可导入（已废弃，注册函数为空操作）"""
         from app.services.tools.support_tool import support_tool_register
         assert support_tool_register is not None
 
