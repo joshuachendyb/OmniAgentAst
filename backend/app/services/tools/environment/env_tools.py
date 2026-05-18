@@ -152,7 +152,13 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
                 finally:
                     winreg.CloseKey(key)
             else:
-                return {"code": "ERR_ENV_PERMISSION", "data": None, "message": "需要管理员权限"}
+                # 【2026-05-18 小沈】system scope delete降级为process（与set行为一致）
+                if name in os.environ:
+                    del os.environ[name]
+                    return {"code": "SUCCESS", "data": {"name": name, "deleted": True, "scope": "system→process(降级)"},
+                            "message": f"已删除(降级为process): {name}"}
+                return {"code": "SUCCESS", "data": {"name": name, "deleted": False, "scope": "system→process(降级)"},
+                        "message": f"不存在(降级为process): {name}"}
 
         # action="set"分支：原set_env逻辑
         if value is None:
