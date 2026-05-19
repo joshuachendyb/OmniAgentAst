@@ -242,9 +242,9 @@ def event_log(
         start_time = datetime.now() - time_delta
         
         if platform.system() == "Windows":
-            return _get_windows_event_log(log_name, max_events, level, source, start_time, event_id)
+            return _get_windows_event_log(log_name, max_events, level, source, start_time)
         else:
-            return _get_linux_event_log(log_name, max_events, level, source, start_time, event_id)
+            return _get_linux_event_log(log_name, max_events, level, source, start_time)
     
     except Exception as e:
         logger.error(f"[event_log] 获取事件日志失败: {e}")
@@ -261,7 +261,6 @@ def _get_windows_event_log(
     level: str,
     source: Optional[str],
     start_time: datetime,
-    event_id: Optional[List[int]],
 ) -> dict:
     """Windows事件日志获取"""
     try:
@@ -359,7 +358,6 @@ def _get_linux_event_log(
     level: str,
     source: Optional[str],
     start_time: datetime,
-    event_id: Optional[List[int]],
 ) -> dict:
     """Linux事件日志获取（journalctl）"""
     try:
@@ -1687,7 +1685,7 @@ def _task_delete(
 
 # 【2026-05-17 小沈】统一入口函数：service_control - 合并service_start/service_stop/service_list
 def service_control(
-    action: str,
+    action: Literal["start", "stop", "restart", "list"],
     service_name: Optional[str] = None,
     state: str = "all",
     force: bool = False,
@@ -1739,7 +1737,7 @@ def service_control(
 
 # 【2026-05-17 小沈】统一入口函数：task_control - 合并task_create/task_delete/task_list
 def task_control(
-    action: str,
+    action: Literal["create", "delete", "list"],
     task_name: Optional[str] = None,
     command: Optional[str] = None,
     schedule: Optional[str] = None,

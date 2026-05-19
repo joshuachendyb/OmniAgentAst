@@ -389,7 +389,7 @@ def reg_delete(key_path: str, value_name: Optional[str] = None, backup_before_de
 
 def registry_control(
     key_path: str,
-    action: str = "read",
+    action: Literal["read", "write", "delete"],
     value_name: Optional[str] = None,
     value: Optional[str] = None,
     value_type: str = "auto_detect",

@@ -103,6 +103,9 @@ def get_env(name: Optional[str] = None, default: Optional[str] = None, scope: st
             return {"code": "ERR_ENV_LIST", "data": None, "message": f"列出环境变量失败: {str(e)}"}
 
     # action="get"分支：原get_env逻辑
+    if action == "get" and not name:
+        return {"code": "ERR_ENV_INVALID_NAME", "data": None, "message": "action='get'时name参数必填"}
+    
     try:
         value = None
 
