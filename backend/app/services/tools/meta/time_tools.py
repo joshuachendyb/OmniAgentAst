@@ -772,17 +772,15 @@ def get_time(
     """获取/格式化时间 — 小沈 2026-05-19 参数精简7→5(砍locale+unit)
     P11统一入口: action="now"|"format"|"to_timestamp"|"from_timestamp"
     """
-    locale = None  # 已从Schema移除
-    unit = None  # 已从Schema移除
     try:
         if action == "now":
-            result = _get_current_time(timezone=timezone, format=format, locale=locale)
+            result = _get_current_time(timezone=timezone, format=format)
         elif action == "format":
             result = _time_format(timestamp=time_value, pattern=format)
         elif action == "to_timestamp":
             if time_value is None:
                 return {"code": "ERR_TIME_FORMAT", "data": None, "message": "action='to_timestamp'时time_value必填"}
-            result = _time_to_timestamp(time=time_value, unit=unit or "seconds")
+            result = _time_to_timestamp(time=time_value, unit="seconds")
         elif action == "from_timestamp":
             if time_value is None:
                 return {"code": "ERR_TIME_FORMAT", "data": None, "message": "action='from_timestamp'时time_value必填"}
