@@ -365,7 +365,11 @@ async def _timer_set(delay: float, callback: str, callback_data: Optional[Dict[s
                 logger.error(f"[Timer {timer_id}] 回调执行失败: {cb_err}")
 
         # 设置定时器
-        loop = asyncio.get_event_loop();
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
         timer_handle = loop.call_later(delay, lambda: asyncio.ensure_future(_timer_callback()));
 
         # 保存定时器
@@ -497,7 +501,10 @@ def _time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict
                 import pytz
                 try:
                     tz = pytz.timezone(source_tz)
-                    local_dt = local_dt.replace(tzinfo=tz)
+                    if local_dt.tzinfo is None:
+                        local_dt = tz.localize(local_dt)
+                    else:
+                        local_dt = local_dt.astimezone(tz)
                 except Exception:
                     # 失败再尝试±HH:MM格式
                     if re.match(r'^[+-]\d{2}:\d{2}$', source_tz):
@@ -700,8 +707,21 @@ def _timestamp_to_time(timestamp: Union[int, float], target_tz: str = "+08:00") 
 
         # 解析目标时区
         try:
-            import zoneinfo
-            tz = zoneinfo.ZoneInfo(target_tz) if target_tz else timezone.utc
+            if re.match(r'^[+-]\d{2}:\d{2}$', target_tz):
+                sign = -1 if target_tz[0] == '-' else 1
+                offset_hours = int(target_tz[1:3])
+                offset_minutes = int(target_tz[4:6])
+                tz = timezone(timedelta(hours=sign*offset_hours, minutes=sign*offset_minutes))
+            else:
+                try:
+                    import zoneinfo
+                    tz = zoneinfo.ZoneInfo(target_tz)
+                except Exception:
+                    try:
+                        import pytz
+                        tz = pytz.timezone(target_tz)
+                    except Exception:
+                        tz = timezone.utc
         except Exception:
             tz = timezone.utc
 

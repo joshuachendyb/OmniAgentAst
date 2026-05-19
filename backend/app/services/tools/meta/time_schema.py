@@ -129,6 +129,8 @@ class TimerInput(BaseModel):
     )
     delay: Optional[float] = Field(
         default=None,
+        ge=1,
+        le=86400,
         description="延迟秒数（action=set时必填，1~86400即最长24小时）"
     )
     callback: Optional[str] = Field(

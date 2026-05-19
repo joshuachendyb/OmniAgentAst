@@ -149,7 +149,7 @@ META_TOOL_DESCRIPTIONS = {
 
 META_TOOL_EXAMPLES = {
     "tool_help": [
-        {"tool_name": "get_current_time"},
+        {"tool_name": "get_time"},
         {"tool_name": "read_csv"},
         {"tool_name": "search_files"},
     ],
@@ -159,7 +159,7 @@ META_TOOL_EXAMPLES = {
         {"query": "时间格式化"},
     ],
     "pipeline": [
-        {"steps": '[{"tool":"get_current_time","params":{}}]', "stop_on_error": True},
+        {"steps": '[{"tool":"get_time","params":{"action":"now"}}]', "stop_on_error": True},
         {"steps": '[{"tool":"read_csv","params":{"file_path":"data.csv"}},{"tool":"analyze_data","params":{}}]'},
     ],
     # 【2026-05-19 小沈】Time工具示例，参数名与time_schema.py对齐

@@ -8,6 +8,8 @@ Meta 工具实现 - tool_help / tool_search
 """
 
 import json
+import inspect
+import asyncio
 from typing import Dict, Any, List
 
 from app.services.tools.registry import tool_registry
@@ -30,7 +32,7 @@ def tool_help(tool_name: str) -> Dict[str, Any]:
         available = list(tool_registry._tools.keys())
         similar = [n for n in available if tool_name.lower() in n.lower()]
         return {
-            "code": 404,
+            "code": "ERR_TOOL_NOT_FOUND",
             "data": None,
             "message": f"工具 '{tool_name}' 不存在。",
             "similar_names": similar[:10],
@@ -58,7 +60,7 @@ def tool_help(tool_name: str) -> Dict[str, Any]:
         "author": metadata.author,
     }
 
-    return {"code": 200, "data": result, "message": "success", "next_actions": build_next_actions([
+    return {"code": "SUCCESS", "data": result, "message": "success", "next_actions": build_next_actions([
         ("tool_search", "按关键词搜索其他工具", "需要模糊查找工具时"),
     ])}
 
@@ -75,6 +77,13 @@ def tool_search(query: str) -> Dict[str, Any]:
     """
     query_lower = query.lower()
     query_words = query_lower.split()
+
+    if not query.strip():
+        return {
+            "code": "ERR_EMPTY_QUERY",
+            "data": None,
+            "message": "搜索关键词不能为空，请提供描述性关键词"
+        }
 
     all_tools = tool_registry._tools
     scored: List[Dict[str, Any]] = []
@@ -105,7 +114,7 @@ def tool_search(query: str) -> Dict[str, Any]:
     top_results = scored[:20]
 
     return {
-        "code": 200,
+        "code": "SUCCESS",
         "data": {
             "query": query,
             "matches": top_results,
@@ -149,7 +158,7 @@ def pipeline(steps: str, stop_on_error: bool = True) -> Dict[str, Any]:
             "message": f"steps必须是JSON数组格式，当前类型: {type(steps_list).__name__}"
         }
 
-    context = {}
+    context: Dict[str, Any] = {}
     results = []
 
     for i, step in enumerate(steps_list):
@@ -187,6 +196,19 @@ def pipeline(steps: str, stop_on_error: bool = True) -> Dict[str, Any]:
             }
 
         try:
+            # 【修复 2026-05-19 小沈】前一步输出注入后一步params
+            if context:
+                impl_sig = set()
+                try:
+                    impl_func = tool_registry.get_implementation(tool_name)
+                    if impl_func:
+                        impl_sig = set(inspect.signature(impl_func).parameters.keys())
+                except Exception:
+                    pass
+                for k, v in context.items():
+                    if k not in params and (not impl_sig or k in impl_sig):
+                        params[k] = v
+
             # 获取工具实现函数
             impl = tool_registry.get_implementation(tool_name)
             if not impl:
@@ -196,11 +218,15 @@ def pipeline(steps: str, stop_on_error: bool = True) -> Dict[str, Any]:
                     "message": f"步骤{i+1}: 工具 '{tool_name}' 无法获取实现"
                 }
             
-            # 检查是否是异步函数
-            import inspect
+            # 【修复 2026-05-19 小沈】import提到module level
             if inspect.iscoroutinefunction(impl):
-                import asyncio
-                result = asyncio.run(impl(**params))
+                try:
+                    loop = asyncio.get_running_loop()
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        result = pool.submit(asyncio.run, impl(**params)).result()
+                except RuntimeError:
+                    result = asyncio.run(impl(**params))
             else:
                 result = impl(**params)
             
@@ -225,7 +251,12 @@ def pipeline(steps: str, stop_on_error: bool = True) -> Dict[str, Any]:
                     "message": f"管道已在步骤{i+1}({tool_name})停止，失败原因: {result.get('message')}"
                 }
 
-            context[f"step_{i+1}"] = result.get("data")
+            # 【修复 2026-05-19 小沈】展平result data到context供后续步骤注入
+            step_data = result.get("data")
+            if isinstance(step_data, dict):
+                for k, v in step_data.items():
+                    if k not in context:
+                        context[k] = v
 
         except TypeError as e:
             return {
