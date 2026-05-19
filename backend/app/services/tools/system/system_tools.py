@@ -1690,8 +1690,6 @@ def service_control(
     state: str = "all",
     force: bool = False,
     timeout: int = 30,
-    wait_for_started: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
-    wait_for_stopped: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
 ) -> dict:
     """
     服务统一控制入口 - 小沈 2026-05-17
@@ -1703,8 +1701,6 @@ def service_control(
         service_name: 服务名称（start/stop/restart时必填）
         state: 状态过滤（list时使用），running/stopped/all，默认all
         force: 是否强制停止（stop时使用），默认False
-        wait_for_started: 等待启动完成（start时使用），默认False
-        wait_for_stopped: 等待停止完成（stop时使用），默认False
         timeout: 超时秒数（start/stop时使用），默认30
     
     Returns:
@@ -1715,18 +1711,18 @@ def service_control(
     elif action == "start":
         if not service_name:
             return {"code": "ERR_INVALID_PARAM", "data": None, "message": "start操作必须提供service_name"}
-        result = _service_start(service_name=service_name, wait_for_started=wait_for_started, timeout=timeout)
+        result = _service_start(service_name=service_name, wait_for_started=False, timeout=timeout)
     elif action == "stop":
         if not service_name:
             return {"code": "ERR_INVALID_PARAM", "data": None, "message": "stop操作必须提供service_name"}
-        result = _service_stop(service_name=service_name, force=force, wait_for_stopped=wait_for_stopped, timeout=timeout)
+        result = _service_stop(service_name=service_name, force=force, wait_for_stopped=False, timeout=timeout)
     elif action == "restart":
         if not service_name:
             return {"code": "ERR_INVALID_PARAM", "data": None, "message": "restart操作必须提供service_name"}
-        stop_result = _service_stop(service_name=service_name, force=force, wait_for_stopped=wait_for_stopped, timeout=timeout)
+        stop_result = _service_stop(service_name=service_name, force=force, wait_for_stopped=False, timeout=timeout)
         if stop_result.get("code") != "SUCCESS":
             return stop_result
-        result = _service_start(service_name=service_name, wait_for_started=wait_for_started, timeout=timeout)
+        result = _service_start(service_name=service_name, wait_for_started=False, timeout=timeout)
     else:
         return {"code": "ERR_INVALID_PARAM", "data": None, "message": f"不支持的action: {action}，可选: start/stop/restart/list"}
 
@@ -1744,8 +1740,6 @@ def task_control(
     start_time: Optional[str] = None,
     interval: Optional[int] = None,
     state: str = "all",
-    start_date: Optional[str] = None,  # 已从Schema移除 - 小沈 2026-05-19
-    folder: Optional[str] = None,  # 已从Schema移除 - 小沈 2026-05-19
 ) -> dict:
     """
     计划任务统一控制入口 - 小沈 2026-05-17
@@ -1758,10 +1752,8 @@ def task_control(
         command: 执行命令（create时必填）
         schedule: 计划时间（create时必填），格式'HH:MM'或'HH:MM /day N'或'HH:MM /monthly DD'
         start_time: 起始时间（create时可选）
-        start_date: 起始日期（create时可选）
         interval: 重复间隔分钟数（create时可选）
         state: 状态过滤（list时使用），ready/running/disabled/all，默认all
-        folder: 任务文件夹（delete时可选）
     
     Returns:
         {code, data, message}
@@ -1776,13 +1768,13 @@ def task_control(
             command=command,
             schedule=schedule,
             start_time=start_time,
-            start_date=start_date,
+            start_date=None,  # 已从Schema移除，硬编码为None
             interval=interval,
         )
     elif action == "delete":
         if not task_name:
             return {"code": "ERR_INVALID_PARAM", "data": None, "message": "delete操作必须提供task_name"}
-        result = _task_delete(task_name=task_name, folder=folder)
+        result = _task_delete(task_name=task_name, folder=None)  # folder已从Schema移除，硬编码为None
     else:
         return {"code": "ERR_INVALID_PARAM", "data": None, "message": f"不支持的action: {action}，可选: create/delete/list"}
 

@@ -31,8 +31,6 @@ from app.services.tools.tool_result_utils import build_next_actions  # 小沈 20
 def get_env(name: Optional[str] = None, scope: str = "process",
             expand_vars: bool = True, action: str = "get",
             prefix: Optional[str] = None,
-            default: Optional[str] = None,  # 已从Schema移除 - 小沈 2026-05-19
-            include_system: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
             ) -> dict:
     """
     获取或列出环境变量 - 小沈 2026-05-03 | 2026-05-18 合并list_env
@@ -40,12 +38,10 @@ def get_env(name: Optional[str] = None, scope: str = "process",
 
     Args:
         name: 环境变量名称（action="get"时必填）
-        default: 默认值（可选）
         scope: 作用域 (process/user/system)
         expand_vars: 是否展开嵌套变量
         action: 操作类型 ("get"|"list")，默认"get"
         prefix: 环境变量名前缀过滤（仅action="list"有效）
-        include_system: 是否包含系统级环境变量（仅action="list"有效）
 
     Returns:
         {code, data, message}
@@ -57,26 +53,7 @@ def get_env(name: Optional[str] = None, scope: str = "process",
     if action == "list":
         try:
             env_vars = {}
-            if include_system:
-                try:
-                    import winreg
-                    system_vars = []
-                    key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment", 0, winreg.KEY_READ)
-                    try:
-                        i = 0
-                        while True:
-                            n, v, _ = winreg.EnumValue(key, i)
-                            system_vars.append((n, v))
-                            i += 1
-                    except OSError:
-                        pass
-                    finally:
-                        winreg.CloseKey(key)
-                    for n, v in system_vars:
-                        if prefix is None or n.upper().startswith(prefix.upper()):
-                            env_vars[n] = v
-                except Exception as e:
-                    logger.warning(f"[get_env] 读取系统环境变量失败: {e}")
+            # include_system 已从Schema移除，默认False，不读取注册表系统级变量
             for n, v in os.environ.items():
                 if prefix is None or n.upper().startswith(prefix.upper()):
                     env_vars[n] = v
@@ -96,7 +73,7 @@ def get_env(name: Optional[str] = None, scope: str = "process",
             }
             return {
                 "code": "SUCCESS",
-                "data": {"count": len(env_list), "variables": env_list, "prefix": prefix, "include_system": include_system},
+                "data": {"count": len(env_list), "variables": env_list, "prefix": prefix},
                 "message": f"共找到 {len(env_list)} 个环境变量",
                 "llm_data": _llm,
                 "next_actions": build_next_actions([("set_env", "设置环境变量", "需要修改环境变量时")])
@@ -134,7 +111,6 @@ def get_env(name: Optional[str] = None, scope: str = "process",
                 value = os.environ.get(name)
 
         if value is not None:
-            original_value = value
             if expand_vars and isinstance(value, str):
                 try:
                     expanded = os.path.expandvars(value)
@@ -150,8 +126,8 @@ def get_env(name: Optional[str] = None, scope: str = "process",
         else:
             return {
                 "code": "SUCCESS",
-                "data": {"name": name, "value": default, "exists": False, "scope": scope, "expanded": expand_vars},
-                "message": f"环境变量 {name} 不存在（作用域: {scope}），返回默认值",
+                "data": {"name": name, "value": None, "exists": False, "scope": scope, "expanded": expand_vars},
+                "message": f"环境变量 {name} 不存在（作用域: {scope}）",
                 "next_actions": build_next_actions([("set_env", "设置环境变量", "需要修改环境变量时")])
             }
     except Exception as e:
@@ -165,7 +141,6 @@ def get_env(name: Optional[str] = None, scope: str = "process",
 
 def set_env(name: str, value: Optional[str] = None, scope: str = "process",
             append_mode: bool = False, action: str = "set",
-            exist_ok: bool = True,  # 已从Schema移除 - 小沈 2026-05-19
             ) -> dict:
     """
     设置或删除环境变量 - 小沈 2026-05-03 增加append_mode支持
@@ -178,7 +153,6 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
     - scope="user": 需要写入用户环境（需要权限，可能需要重启shell生效）
     - scope="system": 需要管理员权限（写入系统环境，不推荐）
     - append_mode=True: 追加而非覆盖，自动去重和选择分隔符
-    - exist_ok=True: 幂等模式，值已相同则返回成功
 
     Args:
         name: 环境变量名称
@@ -186,7 +160,6 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
         scope: 作用域 (process/user/system)
         append_mode: 追加模式（默认False覆盖）
         action: 操作类型 ("set"|"delete")，默认"set"
-        exist_ok: 幂等模式（默认True）
 
     Returns:
         {code, data, message}
@@ -249,9 +222,9 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
                 "message": "环境变量值不能为None（action='set'时value必填）"
             }
 
-        # 【2026-05-17 小沈】exist_ok幂等增强
+        # 【2026-05-17 小沈】exist_ok幂等增强（硬编码为True，已从Schema移除）
         # 小健 2026-05-19: scope=user/system时需从注册表读取当前值,而非os.environ
-        if exist_ok and value is not None:
+        if value is not None:
             if scope == "process":
                 existing = os.environ.get(name)
             else:
@@ -272,7 +245,7 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
             if existing == value:
                 return {
                     "code": "SUCCESS",
-                    "data": {"name": name, "value": value, "scope": scope, "append_mode": append_mode, "exist_ok": True},
+                    "data": {"name": name, "value": value, "scope": scope, "append_mode": append_mode},
                     "message": f"环境变量已存在且值相同: {name}={value[:50]}{'...' if len(value) > 50 else ''}",
                     "next_actions": build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])
                 }
