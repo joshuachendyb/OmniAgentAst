@@ -784,6 +784,7 @@ class FileTools:
         page_token: Optional[str] = None,
         sortBy: str = "name",
         include_hidden: bool = False,
+        exclude_patterns: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """列出目录内容 — 小沈 2026-05-19 精简参数(8→7)
         P11统一入口：list/tree/statistics三合一
@@ -1270,7 +1271,8 @@ class FileTools:
         max_depth: int = 50,
         ignore_case: bool = True,
         type: Optional[Literal["file", "directory"]] = None,
-        page_token: Optional[str] = None
+        page_token: Optional[str] = None,
+        exclude_patterns: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """搜索文件名 — 小沈 2026-05-19 精简参数(9→7)"""
         # 验证搜索路径
@@ -1305,6 +1307,7 @@ class FileTools:
             _deadline = time.monotonic() + get_timeout("search_files") - 2  # 预留2秒给外围asyncio
             
             _pagination_info = {}
+            excludePatterns = exclude_patterns  # 小沈 2026-05-19: 恢复默认值，内部嵌套使用camelCase
             def _search_sync():
                 all_matches = []
                 seen_files = set()
@@ -2457,8 +2460,11 @@ class FileTools:
         directory: Optional[str] = None,
         pattern: Optional[str] = None,
         replacement: Optional[str] = None,
+        recursive: bool = False,
+        preview: bool = False,
+        conflict_strategy: Literal["skip", "overwrite", "append_number"] = "skip",
     ) -> Dict[str, Any]:
-        """重命名文件 — 小沈 2026-05-19 精简参数(9→6)"""
+        """重命名文件 — 小沈 2026-05-19 精简参数(9→6)，小健 2026-05-19 补充batch模式缺失参数"""
         # mode分发
         if mode == "batch":
             if not directory:
