@@ -1403,7 +1403,9 @@ class FileTools:
                 "page_size": DEFAULT_PAGE_SIZE,
                 "next_page_token": next_page_token,
                 "has_more": has_more
-            }, "search_files")
+            }, "search_files", next_actions=[
+                ("read_file", "读取找到的文件", "需要查看内容时"),
+            ])
             
         except Exception as e:
             logger.error(f"Failed to search files: {e}")
@@ -2396,20 +2398,20 @@ class FileTools:
                 return _to_unified_format({
                     "success": False,
                     "error": "path(单文件)和directory(批量)不能同时使用（P17互斥校验）"
-                }, "rename_file")
+                }, "rename_file", next_actions=[("read_file", "验证重命名结果", "需要确认时")])
             
             # P17必填参数校验
             if not pattern:
                 return _to_unified_format({
                     "success": False,
                     "error": "批量模式需要提供pattern"
-                }, "rename_file")
+                }, "rename_file", next_actions=[("read_file", "验证重命名结果", "需要确认时")])
             
             if not replacement:
                 return _to_unified_format({
                     "success": False,
                     "error": "批量模式需要提供replacement"
-                }, "rename_file")
+                }, "rename_file", next_actions=[("read_file", "验证重命名结果", "需要确认时")])
             
             return await self._batch_rename(
                 directory=directory,
@@ -2427,26 +2429,26 @@ class FileTools:
                 return _to_unified_format({
                     "success": False,
                     "error": "path或directory至少填一个"
-                }, "rename_file")
+                }, "rename_file", next_actions=[("read_file", "验证重命名结果", "需要确认时")])
             
             if not new_name:
                 return _to_unified_format({
                     "success": False,
                     "error": "单文件模式需要提供new_name"
-                }, "rename_file")
+                }, "rename_file", next_actions=[("read_file", "验证重命名结果", "需要确认时")])
             
             # 计算新路径（同目录改名）
             src = Path(path)
             
             if src.name == new_name:
-                return _to_unified_format({"success": True, "new_path": str(src), "old_path": str(src), "message": "新名称与原名相同(P16幂等)"}, "rename_file")
+                return _to_unified_format({"success": True, "new_path": str(src), "old_path": str(src), "message": "新名称与原名相同(P16幂等)"}, "rename_file", next_actions=[("read_file", "验证重命名结果", "需要确认时")])
             
             if "/" in new_name or "\\" in new_name:
                 return _to_unified_format({
                     "success": False, 
                     "error": "新名称不能包含路径分隔符（rename_file仅支持同目录改名）。如需跨目录移动请使用move_file。", 
                     "new_path": None
-                }, "rename_file")
+                }, "rename_file", next_actions=[("read_file", "验证重命名结果", "需要确认时")])
             
             dst = src.parent / new_name
             
@@ -2573,7 +2575,9 @@ class FileTools:
             
             if action == "move":
                 if os.path.abspath(source) == os.path.abspath(destination):
-                    return _to_unified_format({"success": True, "action": "move", "source": source, "destination": destination, "message": "源和目标相同(P16幂等)"}, "file_operation")
+                    return _to_unified_format({"success": True, "action": "move", "source": source, "destination": destination, "message": "源和目标相同(P16幂等)"}, "file_operation", next_actions=[
+                        ("read_file", "验证操作结果", "需要确认时"),
+                    ])
                 return await self._move_file(
                     source_path=source,
                     destination_path=destination,
@@ -2581,7 +2585,9 @@ class FileTools:
                 )
             else:  # copy
                 if os.path.abspath(source) == os.path.abspath(destination):
-                    return _to_unified_format({"success": True, "action": "copy", "source": source, "destination": destination, "message": "源和目标相同(P16幂等)"}, "file_operation")
+                    return _to_unified_format({"success": True, "action": "copy", "source": source, "destination": destination, "message": "源和目标相同(P16幂等)"}, "file_operation", next_actions=[
+                        ("read_file", "验证操作结果", "需要确认时"),
+                    ])
                 return await self._copy_file(
                     source_path=source,
                     destination_path=destination,
@@ -2593,7 +2599,9 @@ class FileTools:
         elif action == "delete":
             src_path = Path(source)
             if not src_path.exists():
-                return _to_unified_format({"success": True, "action": "delete", "source": source, "message": "文件已不存在(P16幂等)"}, "file_operation")
+                return _to_unified_format({"success": True, "action": "delete", "source": source, "message": "文件已不存在(P16幂等)"}, "file_operation", next_actions=[
+                    ("read_file", "验证操作结果", "需要确认时"),
+                ])
             return await self._delete_file(
                 file_path=source,
                 recursive=recursive,
@@ -2749,7 +2757,9 @@ class FileTools:
                 "format": detected_format,
                 "file_path": file_path,
                 "action": action
-            }, "data_file_format")
+            }, "data_file_format", next_actions=[
+                ("edit_file", "编辑格式化文件", "需要修改时"),
+            ])
         
         except Exception as e:
             logger.error(f"[data_file_format] 执行失败: {e}")
