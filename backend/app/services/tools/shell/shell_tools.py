@@ -69,7 +69,6 @@ def execute_shell_command(
 ) -> dict:
     """执行Shell命令 — 小沈 2026-05-19 精简参数(8→6)"""
     encoding = None  # 小沈 2026-05-19: 已从Schema移除，实现自动回退utf-8→gbk
-    run_as_admin = False  # 小沈 2026-05-19: 已从Schema移除，仅标记意图无法实际提权
     # 小健 2026-05-19: shell_type校验 — 非法值明确报错而非静默默认
     if shell_type not in ("powershell", "cmd", None):
         return {
@@ -85,6 +84,15 @@ def execute_shell_command(
             "data": None,
             "message": "command不能为空"
         }
+    
+    # cwd存在性校验
+    if cwd is not None and not os.path.isdir(cwd):
+        return {
+            "code": -1,
+            "data": None,
+            "message": f"工作目录不存在: {cwd}"
+        }
+    
     timeout_sec = timeout / 1000.0
     
     env = None
@@ -97,13 +105,6 @@ def execute_shell_command(
     else:
         # 【修复 小沈 2026-05-19】动态查找powershell路径，避免硬编码路径失效
         executable = shutil.which("powershell.exe") or shutil.which("pwsh.exe") or "powershell.exe"
-    
-    # run_as_admin: 标记但 subprocess 不支持提权，实际执行受限于当前进程权限
-    # 如果需要提权，需要使用 ctypes.win32api 或其他方式
-    if run_as_admin:
-        if env is None:
-            env = os.environ.copy()
-        env["_RUN_AS_ADMIN"] = "1"
     
     # encoding: 使用指定的编码或默认 utf-8
     use_encoding = encoding if encoding else "utf-8"
