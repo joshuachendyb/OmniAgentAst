@@ -112,8 +112,9 @@ def query_sql(
             return {"code": "ERR_DB_CONNECTION", "data": None, "message": conn_error}
         
         if connection_type in ("mysql", "postgresql"):
+            from sqlalchemy import text
             engine = conn.engine
-            result = conn.execute(sql)
+            result = conn.execute(text(sql))
             rows = result.fetchall()
             columns = list(result.keys()) if hasattr(result, 'keys') else []
             results = [dict(zip(columns, row)) for row in rows]
@@ -200,6 +201,11 @@ def execute_sql(
         DANGEROUS_PATTERN = re.compile(r'\b(DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b', re.IGNORECASE)
         dangerous_matches = DANGEROUS_PATTERN.findall(sql)
         
+        # 小健 2026-05-19: 检测DELETE/UPDATE无WHERE子句
+        no_where_pattern = re.compile(r'\b(DELETE|UPDATE)\b.*?(?!.*\bWHERE\b)', re.IGNORECASE | re.DOTALL)
+        if re.match(r'\s*(DELETE|UPDATE)\s', sql_upper) and 'WHERE' not in sql_upper:
+            dangerous_matches.append('NO_WHERE')
+        
         if dangerous_matches and not dry_run:
             return {
                 "code": "WARNING",
@@ -229,8 +235,9 @@ def execute_sql(
             return {"code": "ERR_DB_CONNECTION", "data": None, "message": conn_error}
         
         if connection_type in ("mysql", "postgresql"):
+            from sqlalchemy import text
             engine = conn.engine
-            result = conn.execute(sql)
+            result = conn.execute(text(sql))
             conn.commit()
             affected_rows = result.rowcount
         else:
@@ -340,7 +347,9 @@ def get_db_schema(
                 }
         elif filter_pattern:
             import fnmatch
-            tables = [t for t in tables if fnmatch.fnmatch(t.lower(), filter_pattern.lower())]
+            # 小健 2026-05-19: SQL LIKE用%通配，fnmatch用*，自动转换
+            fnmatch_pattern = filter_pattern.replace("%", "*").replace("_", "?")
+            tables = [t for t in tables if fnmatch.fnmatch(t.lower(), fnmatch_pattern.lower())]
         
         if len(tables) > 20:
             tables = tables[:20]

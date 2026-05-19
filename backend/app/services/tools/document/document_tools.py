@@ -568,19 +568,34 @@ def _read_csv_stdlib(
         
         rows = []
         columns = []
-        with open(path, "r", encoding=encoding, newline="") as f:
-            reader = csv.reader(f, delimiter=delimiter)
-            for i, row in enumerate(reader):
-                if i >= max_rows:
-                    break
-                if i == 0:
-                    if has_header:
-                        columns = row
-                    else:
-                        columns = [f"col_{j}" for j in range(len(row))]
-                        rows.append(row)
-                else:
-                    rows.append(row)
+        # 小健 2026-05-19: 多编码尝试回退(utf-8→gbk→gb2312→latin-1)
+        encodings_to_try = [encoding, "gbk", "gb2312", "latin-1"] if encoding == "utf-8" else [encoding, "utf-8", "latin-1"]
+        read_ok = False
+        for enc in encodings_to_try:
+            try:
+                with open(path, "r", encoding=enc, newline="") as f:
+                    reader = csv.reader(f, delimiter=delimiter)
+                    for i, row in enumerate(reader):
+                        if i >= max_rows:
+                            break
+                        if i == 0:
+                            if has_header:
+                                columns = row
+                            else:
+                                columns = [f"col_{j}" for j in range(len(row))]
+                                rows.append(row)
+                        else:
+                            rows.append(row)
+                read_ok = True
+                break
+            except UnicodeDecodeError:
+                continue
+        if not read_ok:
+            return {
+                "code": "ERR_READ_CSV",
+                "data": None,
+                "message": f"读取CSV文件失败: 编码不匹配(尝试了{encodings_to_try})"
+            }
         
         return {
             "code": "SUCCESS",
@@ -993,7 +1008,7 @@ def read_document(
         result = _read_docx(file_path, extract_tables=extract_tables)
     elif suffix == ".doc":
         return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
-                "message": "旧版.doc格式不受支持，python-docx库仅支持.docx格式。请将文件另存为.docx后重试"}
+                "message": "旧版.doc格式不受支持。建议：先用convert_document转为PDF，再用read_document读取PDF"}
     elif suffix == ".pptx":
         result = _read_pptx(file_path, extract_notes=extract_notes)
     elif suffix == ".xlsx":
@@ -1006,7 +1021,7 @@ def read_document(
             result = _read_xlsx(file_path, sheet_name=sheet_name, max_rows=max_rows, header=header)
     elif suffix == ".xls":
         return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
-                "message": "旧版.xls格式不受支持，openpyxl库仅支持.xlsx格式。请将文件另存为.xlsx后重试"}
+                "message": "旧版.xls格式不受支持。建议：先用convert_document转为PDF，再用read_document读取PDF"}
     elif suffix in (".csv", ".tsv"):
         actual_delimiter = "\t" if suffix == ".tsv" else (delimiter or ",")
         if use_pandas:

@@ -133,7 +133,7 @@ def generate_chart(
 
         fig, ax = plt.subplots(figsize=figure_size if figure_size else (10, 6))
 
-        chart_type_lower = chart_type.lower() if chart_type else "bar"
+        chart_type_lower = chart_type  # 小健 2026-05-19: Schema Literal已保证非空小写
 
         try:
             if chart_type_lower == "pie":
@@ -222,7 +222,13 @@ def analyze_data(
             read_kwargs = {"encoding": encoding}
             if max_rows is not None:
                 read_kwargs["nrows"] = max_rows
-            df = pd.read_csv(data, **read_kwargs)
+            # 小健 2026-05-19: 识别xlsx后缀
+            if data.endswith('.xlsx') or data.endswith('.xls'):
+                if not _check_openpyxl():
+                    return {"code": "ERR_NO_OPENPYXL", "data": None, "message": "openpyxl库未安装，请先执行: pip install openpyxl"}
+                df = pd.read_excel(data, engine="openpyxl", **({k: v for k, v in read_kwargs.items() if k == 'nrows'}))
+            else:
+                df = pd.read_csv(data, **read_kwargs)
         elif isinstance(data, list):
             df = pd.DataFrame(data)
         else:
