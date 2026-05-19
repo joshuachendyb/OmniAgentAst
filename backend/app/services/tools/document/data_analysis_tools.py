@@ -94,9 +94,9 @@ def generate_chart(
     x_label: Optional[str] = None,
     y_label: Optional[str] = None,
     output_path: Optional[str] = None,
-    figure_size: Optional[Tuple[float, float]] = None,
-    rotation: int = 0,
-    color: Optional[str] = None
+    figure_size: Optional[Tuple[float, float]] = None,  # 已从Schema移除 - 小沈 2026-05-19
+    rotation: int = 0,  # 已从Schema移除 - 小沈 2026-05-19
+    color: Optional[str] = None  # 已从Schema移除 - 小沈 2026-05-19
 ) -> Dict[str, Any]:
     """使用matplotlib生成数据可视化图表 - 小沈 2026-05-02, 修正 2026-05-05"""
     from app.services.tools.document.document_tools import _validate_chart_data
@@ -189,10 +189,10 @@ def analyze_data(
     operations: Optional[List[str]] = None,
     group_by: Optional[str] = None,
     sort_by: Optional[str] = None,
-    sort_ascending: bool = True,
     top_n: Optional[int] = None,
-    encoding: str = "utf-8",
-    max_rows: Optional[int] = None
+    max_rows: Optional[int] = None,
+    sort_ascending: bool = True,  # 已从Schema移除 - 小沈 2026-05-19
+    encoding: str = "utf-8"  # 已从Schema移除 - 小沈 2026-05-19
 ) -> Dict[str, Any]:
     """对数据集进行统计分析 - 小沈 2026-05-02, 修正 2026-05-05
     【新增参数】encoding: 文件编码(默认utf-8); max_rows: 最大读取行数(默认None=全部)
@@ -323,11 +323,11 @@ def filter_data(
     data: Union[str, List[Dict[str, Any]]],
     conditions: List[Dict[str, Any]],
     select_columns: Optional[List[str]] = None,
-    encoding: str = "utf-8",
     max_rows: Optional[int] = None,
     sort_by: Optional[str] = None,
-    sort_ascending: bool = True,
-    top_n: Optional[int] = None
+    top_n: Optional[int] = None,
+    encoding: str = "utf-8",  # 已从Schema移除 - 小沈 2026-05-19
+    sort_ascending: bool = True  # 已从Schema移除 - 小沈 2026-05-19
 ) -> Dict[str, Any]:
     """按条件筛选/过滤数据 - 小沈 2026-05-05, 修正 2026-05-05"""
     if not _check_pandas():

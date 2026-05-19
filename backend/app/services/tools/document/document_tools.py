@@ -978,14 +978,14 @@ def read_document(
     file_path: str,
     pages: Optional[str] = None,
     extract_tables: bool = False,
-    extract_images: bool = False,
-    extract_notes: bool = False,
     sheet_name: Optional[str] = None,
     max_rows: int = 1000,
     header: bool = True,
-    use_pandas: bool = False,
     encoding: str = "utf-8",
     delimiter: Optional[str] = None,
+    extract_images: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
+    extract_notes: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
+    use_pandas: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
 ) -> Dict[str, Any]:
     """读取文档内容 — 小健 2026-05-18
     合并 read_pdf + read_docx + read_pptx + read_xlsx + read_csv

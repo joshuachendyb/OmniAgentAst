@@ -77,7 +77,7 @@ def query_sql(
     db_path: Optional[str] = None,
     limit: int = 50,
     timeout: int = 15000,
-    output_format: Literal["table", "json"] = "table"
+    output_format: Literal["table", "json"] = "table"  # 已从Schema移除 - 小沈 2026-05-19
 ) -> Dict[str, Any]:
     """
     执行只读SQL查询
@@ -175,7 +175,7 @@ def execute_sql(
     db_path: Optional[str] = None,
     dry_run: bool = False,
     timeout: int = 30000,
-    affected_rows_check: bool = True
+    affected_rows_check: bool = True  # 已从Schema移除 - 小沈 2026-05-19
 ) -> Dict[str, Any]:
     """
     执行写操作SQL
@@ -295,8 +295,8 @@ def get_db_schema(
     db_name: Optional[str] = None,
     table_name: Optional[str] = None,
     filter_pattern: Optional[str] = None,
-    include_details: bool = False,
-    output_format: Literal["markdown", "json", "sql_ddl"] = "markdown"
+    include_details: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
+    output_format: Literal["markdown", "json", "sql_ddl"] = "markdown"  # 已从Schema移除 - 小沈 2026-05-19
 ) -> Dict[str, Any]:
     """
     获取数据库表结构
