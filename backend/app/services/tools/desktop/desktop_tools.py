@@ -351,14 +351,15 @@ def mouse_control(
     button: Literal["left", "right", "middle"] = "left",
     direction: Literal["up", "down"] = "down",
     amount: int = 3,
-    click_type: Literal["single", "double"] = "single",  # 已从Schema移除 - 小沈 2026-05-19
-    duration: float = 0,  # 已从Schema移除 - 小沈 2026-05-19
 ) -> Dict[str, Any]:
     """统一鼠标控制入口 - 小沈 2026-05-17
 
     合并 click + move + scroll
     action: "click"|"move"|"scroll"|"position"
     """
+    # 已从Schema移除的参数，用局部变量保留默认值
+    click_type: Literal["single", "double"] = "single"
+    duration: float = 0
     if action == "click":
         from app.services.tools.desktop.gui_tools import _click
         result = _click(x=x, y=y, button=button, click_type=click_type)

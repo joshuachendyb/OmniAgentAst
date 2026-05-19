@@ -395,10 +395,6 @@ def registry_control(
     value_type: str = "auto_detect",
     hive: str = "HKCU",
     recursive: bool = False,
-    output_format: str = "auto",  # 已从Schema移除 - 小沈 2026-05-19
-    backup_before_write: bool = True,  # 已从Schema移除 - 小沈 2026-05-19
-    backup_before_delete: bool = True,  # 已从Schema移除 - 小沈 2026-05-19
-    dry_run: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
 ) -> dict:
     """注册表统一控制入口 - 小沈 2026-05-19 参数精简11→7
     合并 reg_read + reg_write + reg_delete，通过action参数路由
@@ -417,6 +413,11 @@ def registry_control(
     Returns:
         {code, data, message}
     """
+    # 已从Schema移除的参数，用局部变量保留默认值
+    output_format: str = "auto"
+    backup_before_write: bool = True
+    backup_before_delete: bool = True
+    dry_run: bool = False
     if not key_path:
         return {"code": "ERR_REG_INVALID_PARAM", "data": None, "message": "key_path不能为空"}
 

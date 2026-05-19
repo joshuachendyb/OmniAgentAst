@@ -128,7 +128,6 @@ def net_connections(
     state: Optional[str] = None,
     process_info: bool = False,
     filter_port: Optional[int] = None,
-    resolve_dns: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
 ) -> dict:
     """
     获取网络连接列表 - 小沈 2026-05-02
@@ -136,6 +135,8 @@ def net_connections(
     使用psutil获取网络连接信息。
     支持按类型、状态、端口过滤。
     """
+    # 已从Schema移除的参数，用局部变量保留默认值
+    resolve_dns: bool = False
     try:
         # 小健 2026-05-19: tcp/udp应包含inet4+inet6
         conn_kind_map = {
@@ -224,13 +225,14 @@ def event_log(
     level: str = "error",
     source: Optional[str] = None,
     time_range: str = "1h",
-    event_id: Optional[List[int]] = None,  # 已从Schema移除 - 小沈 2026-05-19
 ) -> dict:
     """
     获取系统事件日志 - 小沈 2026-05-02
     
     Windows使用wevtutil命令，Linux使用journalctl。
     """
+    # 已从Schema移除的参数，用局部变量保留默认值
+    event_id: Optional[List[int]] = None
     try:
         time_map = {
             "10m": timedelta(minutes=10),
@@ -439,8 +441,6 @@ def list_processes(
     user: Optional[str] = None,
     sort_by: str = "pid",
     max_results: int = 100,
-    status: Optional[str] = None,  # 已从Schema移除 - 小沈 2026-05-19
-    descending: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
 ) -> dict:
     """
     列出所有进程 - 小健 2026-05-06 补user/status/limit对齐Schema
@@ -457,6 +457,9 @@ def list_processes(
     Returns:
         {code, data, message}
     """
+    # 已从Schema移除的参数，用局部变量保留默认值
+    status: Optional[str] = None
+    descending: bool = False
     try:
         processes = []
         
