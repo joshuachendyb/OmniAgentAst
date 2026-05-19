@@ -14,7 +14,7 @@ Updated: 小沈 - 2026-05-18
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, Union, Literal
 
 
 # ===========================================================
@@ -23,7 +23,7 @@ from typing import Optional, Dict, Any, Union
 
 class GetTimeInput(BaseModel):
     """get_time统一入口Schema — 小沈 2026-05-18"""
-    action: str = Field(
+    action: Literal["now", "format", "to_timestamp", "from_timestamp"] = Field(
         default="now",
         description="操作类型：now=获取当前时间，format=格式化时间，to_timestamp=转时间戳，from_timestamp=时间戳转时间。默认为now"
     )
@@ -63,7 +63,7 @@ class TimeAddInput(BaseModel):
         default=None,
         description="基准时间。支持：int/float=Unix时间戳(秒)，str=日期字符串。默认为当前时间"
     )
-    unit: str = Field(
+    unit: Literal["days", "hours", "minutes", "seconds", "months"] = Field(
         default="days",
         description="偏移单位：days(天)、hours(小时)、minutes(分钟)、seconds(秒)、months(月)。默认为days"
     )
@@ -87,7 +87,7 @@ class CheckDateInput(BaseModel):
         default=None,
         description="日期值，支持：int/float=Unix时间戳(秒)，str=日期字符串。默认为当前日期"
     )
-    check_type: str = Field(
+    check_type: Literal["weekend", "holiday", "workday", "next_workday"] = Field(
         default="workday",
         description="检查类型：weekend=周末判断，holiday=节假日判断，workday=工作日判断，next_workday=下N个工作日。默认为workday"
     )
@@ -103,7 +103,7 @@ class TimezoneConvertInput(BaseModel):
         ...,
         description="时间值。支持：int/float=Unix时间戳(秒)，str=日期字符串。必填参数"
     )
-    direction: str = Field(
+    direction: Literal["utc_to_local", "local_to_utc", "any"] = Field(
         default="utc_to_local",
         description="转换方向：utc_to_local=UTC转本地，local_to_utc=本地转UTC，any=任意源→目标。默认为utc_to_local"
     )
@@ -123,7 +123,7 @@ class TimezoneConvertInput(BaseModel):
 
 class TimerInput(BaseModel):
     """timer定时器管理Schema — 小沈 2026-05-18"""
-    action: str = Field(
+    action: Literal["set", "clear", "list"] = Field(
         ...,
         description="操作类型：set=设置定时器，clear=清除定时器，list=列出定时器。必填参数"
     )
