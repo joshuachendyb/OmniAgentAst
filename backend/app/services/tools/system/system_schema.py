@@ -48,7 +48,7 @@ class GetSystemInfoInput(BaseModel):
     """get_system_info 工具的输入参数 - 小沈 2026-05-03 修正"""
     info_type: Optional[Literal["basic", "cpu", "memory", "disk", "network", "all"]] = Field(
         default="all",
-        description="要获取的系统信息类型。必填为LLM给出，当LLM未明确指定时Agent智能补全为all。可选值含义：\n- basic：操作系统名称、版本、主机名、架构等基础信息\n- cpu：处理器型号、核心数、频率、使用率等CPU信息\n- memory：总内存、可用内存、使用率等内存信息\n- disk：各磁盘总空间、可用空间、使用率等磁盘信息\n- network：网络接口名称、IP地址、MAC地址等网络信息\n- all：以上全部信息（默认）"
+        description="要获取的系统信息类型，默认all。basic=OS/主机名/架构等，cpu=核心数/频率/使用率，memory=总量/可用/使用率，disk=各分区空间/使用率，network=接口名/IP/MAC，all=以上全部"
     )
 
 
@@ -56,21 +56,21 @@ class NetConnectionsInput(BaseModel):
     """net_connections 工具的输入参数 - 小沈 2026-05-19 参数精简5→4(砍resolve_dns暂未生效)"""
     kind: Literal["inet", "tcp", "udp"] = Field(
         default="inet",
-        description="网络连接的类型。必填为LLM给出，当LLM未明确指定时Agent智能补全为inet。可选值含义：\n- inet：TCP和UDP连接（默认）\n- tcp：仅TCP连接\n- udp：仅UDP连接"
+        description="连接类型：inet=TCP+UDP(默认)，tcp=仅TCP，udp=仅UDP"
     )
     state: Optional[Literal["established", "listen", "time_wait", "close_wait"]] = Field(
         default=None,
-        description="连接状态过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为null（返回所有状态）。常见取值：\n- established：已建立的连接\n- listen：监听中的端口\n- time_wait：等待中的连接\n- close_wait：关闭等待中的连接"
+        description="连接状态过滤，不设则返回所有状态。established=已建立，listen=监听中，time_wait=等待中，close_wait=关闭等待"
     )
     process_info: bool = Field(
         default=False,
-        description="是否获取占用端口的进程信息（进程名和PID）。必填为LLM给出，当LLM未明确指定时Agent智能补全为false。若用户问\"哪个程序占用端口\"，Agent自动设为true。"
+        description="是否获取关联进程信息（进程名和PID），默认False"
     )
     filter_port: Optional[int] = Field(
         default=None,
         ge=1,
         le=65535,
-        description="过滤指定端口号，只返回与该端口相关的连接。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。Agent自动从用户query中提取��口号填入，例如用户问\"占用8080端口的进程\"时Agent自动填入8080。"
+        description="过滤指定端口号(1-65535)，只返回与该端口相关的连接"
     )
 
 
@@ -78,25 +78,25 @@ class EventLogInput(BaseModel):
     """event_log 工具的输入参数 - 小沈 2026-05-19 参数精简6→5(砍event_id暂未生效)"""
     log_name: Literal["Application", "System", "Security"] = Field(
         default="System",
-        description="要读取的日志名称。必填为LLM给出，当LLM未明确指定时Agent智能补全为System。可选值：System(系统日志)、Application(应用日志)、Security(安全日志)"
+        description="日志名称，默认System。System=系统日志，Application=应用日志，Security=安全日志"
     )
     max_events: int = Field(
         default=50,
         ge=1,
         le=1000,
-        description="最大返回的事件数。必填为LLM给出，当LLM未明确指定时Agent智能补全为50。"
+        description="最大返回事件数，默认50"
     )
     level: Optional[Literal["critical", "error", "warning", "info"]] = Field(
         default="error",
-        description="日志级别过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为error。可选值：critical/error(默认)/warning/info"
+        description="日志级别过滤，默认error。可选critical/error/warning/info"
     )
     source: Optional[str] = Field(
         default=None,
-        description="事件来源/应用名过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。"
+        description="事件来源/应用名过滤，可选"
     )
     time_range: Literal["10m", "1h", "24h", "7d"] = Field(
         default="1h",
-        description="时间范围过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为1h。可选值：10m/1h(默认)/24h/7d"
+        description="时间范围过滤，默认1h。可选10m/1h/24h/7d"
     )
 
 
