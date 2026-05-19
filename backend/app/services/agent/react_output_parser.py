@@ -82,37 +82,168 @@ def _get_all_tool_names():
 # 步骤1.1：定义parse_react_response函数签名
 # =============================================================================
 
-def parse_react_response(output: str) -> Dict[str, Any]:
+# =============================================================================
+# 解析器链 - 统一入口（重构于 2026-05-19 小沈）
+# 设计原则：每个handler独立处理一种输入格式，返回结果或None
+# 添加新格式 = 写新handler → 插入_HANDLERS列表
+# =============================================================================
+
+def _process_json_result(data: Dict, output: str) -> Optional[Dict[str, Any]]:
     """
-    统一解析器入口函数
+    共享逻辑：处理已解析的JSON dict（消除标准JSON和非标准JSON路径的重复代码）
     
-    处理LLM的所有ReAct输出格式，返回统一结构字典
-    通过type字段区分：action/answer/implicit/thought_only
+    此函数被 _handle_standard_json 和 _handle_non_standard_json 共同使用，
+    处理 type=parse_error/answer/chunk、tool_name(新格式)、action(旧格式) 等分支。
+    如果data不匹配任何已知模式，返回None交给后续handler。
     
-    Args:
-        output: LLM原始响应文本
-        
-    Returns:
-        统一格式字典，包含type/thought/tool_name/tool_params/response字段
-        补充兼容性字段content/reasoning确保与base_react.py平滑迁移
-        
-    设计依据: LlamaIndex ReActOutputParser.parse() 统一入口设计思想
+    作者: 小沈 2026-05-19
     """
-    # 【2026-04-28 小沈修复】在函数开头处理 dict 输入
-    # 如果传入的是 dict（而非 JSON 字符串），直接解析并返回
+    # 显式type优先判断（避免被tool_name误判为action）
+    explicit_type = data.get("type")
+    if explicit_type == "parse_error":
+        return _build_parse_error_result(data)
+    if explicit_type == "answer":
+        return _build_answer_result(data)
+    if explicit_type == "chunk":
+        return _build_chunk_result(data)
+    
+    # 新字段格式 (tool_name)
+    if "tool_name" in data:
+        return _build_action_from_new_format(data, output)
+    
+    # 旧字段格式 (action/action_input)
+    if "action" in data:
+        return _build_action_from_old_format(data)
+    
+    # 无匹配模式 → 交给下一个handler
+    return None
+
+
+def _build_parse_error_result(data: Dict) -> Dict[str, Any]:
+    """构造 parse_error 类型结果"""
+    return {
+        "type": "parse_error",
+        "error": data.get("error", "LLM返回解析错误"),
+        "thought": data.get("content", data.get("thought", "")),
+        "content": data.get("content", ""),
+        "reasoning": data.get("reasoning", ""),
+        "tool_name": None,
+        "tool_params": None,
+        "response": data.get("content", "")
+    }
+
+
+def _build_answer_result(data: Dict) -> Dict[str, Any]:
+    """构造 answer 类型结果"""
+    return {
+        "type": "answer",
+        "thought": data.get("thought", ""),
+        "content": data.get("content", ""),
+        "reasoning": data.get("reasoning", ""),
+        "tool_name": None,
+        "tool_params": None,
+        "response": data.get("response", data.get("content", ""))
+    }
+
+
+def _build_chunk_result(data: Dict) -> Dict[str, Any]:
+    """构造 chunk 类型结果"""
+    return {
+        "type": "chunk",
+        "thought": data.get("thought", ""),
+        "content": data.get("content", ""),
+        "reasoning": data.get("reasoning", ""),
+        "tool_name": None,
+        "tool_params": None,
+        "response": data.get("response", data.get("content", "")),
+        "error": None
+    }
+
+
+def _build_action_from_new_format(data: Dict, output: str) -> Dict[str, Any]:
+    """从新格式JSON构造action/answer结果（tool_name/tool_params）"""
+    tool_name = data["tool_name"]
+    is_finish = tool_name == "finish"
+    
+    # response处理：finish类型从tool_params.result获取
+    if is_finish and data.get("tool_params", {}).get("result"):
+        response = data["tool_params"]["result"]
+    else:
+        response = data.get("response", "")
+    
+    processed_tool_params = None if is_finish else _filter_tool_params(
+        _normalize_tool_params_content(data.get("tool_params", data.get("args", {})))
+    )
+    if not is_finish and processed_tool_params:
+        processed_tool_params = _supplement_missing_params(
+            tool_name, processed_tool_params, output if isinstance(output, str) else None
+        )
+    
+    result = {
+        "type": "answer" if is_finish else "action",
+        "thought": data.get("content", data.get("thought", "")),
+        "content": data.get("content", data.get("thought", "")),
+        "reasoning": data.get("reasoning", ""),
+        "tool_name": None if is_finish else tool_name,
+        "tool_params": processed_tool_params,
+        "response": response
+    }
+    if "_pending_calls" in data:
+        result["_pending_calls"] = data["_pending_calls"]
+    return result
+
+
+def _build_action_from_old_format(data: Dict) -> Dict[str, Any]:
+    """从旧格式JSON构造action/answer结果（action/action_input）"""
+    action_name = data["action"]
+    is_finish = action_name == "finish"
+    
+    if is_finish and data.get("action_input", {}).get("result"):
+        response = data["action_input"]["result"]
+    else:
+        response = ""
+    
+    tool_params = data.get("action_input", data.get("args", {}))
+    result = {
+        "type": "answer" if is_finish else "action",
+        "thought": data.get("thought", ""),
+        "content": data.get("thought", ""),
+        "reasoning": data.get("reasoning", ""),
+        "tool_name": None if is_finish else action_name,
+        "tool_params": None if is_finish else _filter_tool_params(
+            _normalize_tool_params_content(tool_params)
+        ),
+        "response": response
+    }
+    if "_pending_calls" in data:
+        result["_pending_calls"] = data["_pending_calls"]
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Handler #1: dict 输入
+# ---------------------------------------------------------------------------
+def _handle_dict_input(output) -> Optional[Dict[str, Any]]:
     if isinstance(output, dict):
         logger.info(f"[parse_react_response] 检测到dict输入，直接解析")
         return _create_action_result_from_dict(output)
-    
-    # 【2026-04-28 小沈新增】处理 list 输入（数组）
-    # LLM可能返回JSON数组，如：[{"tool_name": "xxx", ...}]
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Handler #2: list 输入
+# ---------------------------------------------------------------------------
+def _handle_list_input(output) -> Optional[Dict[str, Any]]:
     if isinstance(output, list):
         logger.info(f"[parse_react_response] 检测到list输入，解析数组")
         return _create_action_result_from_list(output)
-    
-    # 【2026-04-28 小沈新增】处理 JSON 数组字符串
-    # LLM可能返回JSON数组字符串，如：'[{"tool_name": "xxx", ...}]'
-    # 需要先解析为list，再调用list处理函数
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Handler #3: JSON数组字符串 (以'['开头)
+# ---------------------------------------------------------------------------
+def _handle_json_array_string(output) -> Optional[Dict[str, Any]]:
     if isinstance(output, str) and output.strip().startswith("["):
         try:
             parsed_list = json.loads(output)
@@ -120,11 +251,14 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                 logger.info(f"[parse_react_response] 检测到JSON数组字符串，解析为list处理")
                 return _create_action_result_from_list(parsed_list)
         except (json.JSONDecodeError, TypeError):
-            pass  # 不是有效的JSON数组，继续其他处理
-    
-    output_length = len(output) if isinstance(output, str) else 0
-    logger.info(f"[parse_react_response] 调用新统一解析器, output长度: {output_length}")
-    
+            pass
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Handler #4: 空值/非字符串输入
+# ---------------------------------------------------------------------------
+def _handle_empty_input(output) -> Optional[Dict[str, Any]]:
     if not output or not isinstance(output, str):
         thought = "(Implicit) Empty response"
         return {
@@ -137,200 +271,69 @@ def parse_react_response(output: str) -> Dict[str, Any]:
             "tool_params": None,
             "response": ""
         }
-    
-    # 【兼容 2026-04-16 小沈】预检查：如果输入是已格式化的JSON字典
-    # 包含tool_name/tool_params或action/action_input字段，直接返回解析结果
-    # 用途：兼容旧测试用例和直接传入JSON dict的场景
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Handler #5: 标准JSON (json.loads)
+# ---------------------------------------------------------------------------
+def _handle_standard_json(output) -> Optional[Dict[str, Any]]:
+    if not isinstance(output, str):
+        return None
     try:
-        # 此时output已保证不是dict（上层已处理dict），直接JSON解析
         data = json.loads(output)
-        
-        if isinstance(data, dict):
-            # 【修复 2026-05-11 小健】先检查parse_error/answer等显式type，避免误判为action
-            explicit_type = data.get("type")
-            if explicit_type == "parse_error":
-                return {
-                    "type": "parse_error",
-                    "error": data.get("error", "LLM返回解析错误"),
-                    "thought": data.get("content", data.get("thought", "")),
-                    "content": data.get("content", ""),
-                    "reasoning": data.get("reasoning", ""),
-                    "tool_name": None,
-                    "tool_params": None,
-                    "response": data.get("content", "")
-                }
-            if explicit_type == "answer":
-                return {
-                    "type": "answer",
-                    "thought": data.get("thought", ""),
-                    "content": data.get("content", ""),
-                    "reasoning": data.get("reasoning", ""),
-                    "tool_name": None,
-                    "tool_params": None,
-                    "response": data.get("response", data.get("content", ""))
-                }
-            # 【修复 2026-05-13 小沈】H1: 添加chunk类型显式处理，避免被误判为action
-            if explicit_type == "chunk":
-                return {
-                    "type": "chunk",
-                    "thought": data.get("thought", ""),
-                    "content": data.get("content", ""),
-                    "reasoning": data.get("reasoning", ""),
-                    "tool_name": None,
-                    "tool_params": None,
-                    "response": data.get("response", data.get("content", "")),
-                    "error": None
-                }
-            
-            # 新字段格式
-            if "tool_name" in data:
-                tool_name = data["tool_name"]
-                is_finish = tool_name == "finish"
-                
-                # response处理：finish类型从tool_params.result获取
-                if is_finish and data.get("tool_params", {}).get("result"):
-                    response = data["tool_params"]["result"]
-                else:
-                    response = data.get("response", "")
-                
-                # 【2026-04-28 小沈新增】检测必需参数是否完整
-                processed_tool_params = None if is_finish else _filter_tool_params(_normalize_tool_params_content(data.get("tool_params", data.get("args", {}))))
-                if not is_finish and processed_tool_params:
-                    processed_tool_params = _supplement_missing_params(tool_name, processed_tool_params, output if isinstance(output, str) else None)
-                
-                result = {
-                    "type": "answer" if is_finish else "action",
-                    "thought": data.get("content", data.get("thought", "")),
-                    "content": data.get("content", data.get("thought", "")),
-                    "reasoning": data.get("reasoning", ""),
-                    "tool_name": None if is_finish else tool_name,
-                    "tool_params": processed_tool_params,
-                    "response": response
-                }
-                # 【2026-05-14 小沈】透传并行工具调用信息
-                if "_pending_calls" in data:
-                    result["_pending_calls"] = data["_pending_calls"]
-                return result
-            # 旧字段格式（action/action_input → tool_name/tool_params）
-            if "action" in data:
-                action_name = data["action"]
-                is_finish = action_name == "finish"
-                
-                # response处理：finish类型从action_input.result获取
-                if is_finish and data.get("action_input", {}).get("result"):
-                    response = data["action_input"]["result"]
-                else:
-                    response = ""
-                
-                logger.info(f"[parse_react_response] JSON预解析命中(旧格式), type=action/answer")
-                # 【2026-04-28 小沈修复】支持args字段，并过滤非参数字段
-                tool_params = data.get("action_input", data.get("args", {}))
-                result = {
-                    "type": "answer" if is_finish else "action",
-                    "thought": data.get("thought", ""),
-                    "content": data.get("thought", ""),
-                    "reasoning": data.get("reasoning", ""),
-                    "tool_name": None if is_finish else action_name,
-                    "tool_params": None if is_finish else _filter_tool_params(_normalize_tool_params_content(tool_params)),
-                    "response": response
-                }
-                if "_pending_calls" in data:
-                    result["_pending_calls"] = data["_pending_calls"]
-                return result
     except (json.JSONDecodeError, TypeError):
-        pass  # 不是JSON格式，继续走关键词匹配流程
+        return None
     
-    # 【2026-04-28 小沈新增】尝试解析非标准JSON（单引号）
-    # 标准JSON解析失败后，尝试解析单引号JSON
+    if not isinstance(data, dict):
+        return None
+    
+    result = _process_json_result(data, output)
+    if result is not None:
+        return result
+    # data是dict但无匹配模式 → 交给后续handler
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Handler #6: 非标准JSON (单引号)
+# ---------------------------------------------------------------------------
+def _handle_non_standard_json(output) -> Optional[Dict[str, Any]]:
+    if not isinstance(output, str):
+        return None
     non_std_data = _try_parse_non_standard_json(output)
-    if non_std_data and isinstance(non_std_data, dict):
-        # 【修复 2026-05-13 小沈】非标准JSON路径补全显式type判断，与标准JSON路径一致
-        _explicit_type = non_std_data.get("type")
-        if _explicit_type == "chunk":
-            logger.info("[parse_react_response] 非标准JSON type=chunk")
-            return {
-                "type": "chunk",
-                "thought": non_std_data.get("thought", ""),
-                "content": non_std_data.get("content", ""),
-                "reasoning": non_std_data.get("reasoning", ""),
-                "tool_name": None,
-                "tool_params": None,
-                "response": non_std_data.get("response", non_std_data.get("content", "")),
-                "error": None
-            }
-        if _explicit_type == "answer":
-            logger.info("[parse_react_response] 非标准JSON type=answer")
-            return {
-                "type": "answer",
-                "thought": non_std_data.get("thought", ""),
-                "content": non_std_data.get("content", ""),
-                "reasoning": non_std_data.get("reasoning", ""),
-                "tool_name": None,
-                "tool_params": None,
-                "response": non_std_data.get("response", non_std_data.get("content", ""))
-            }
-        if _explicit_type == "parse_error":
-            logger.info("[parse_react_response] 非标准JSON type=parse_error")
-            return {
-                "type": "parse_error",
-                "error": non_std_data.get("error", "非标准JSON解析错误"),
-                "thought": non_std_data.get("content", non_std_data.get("thought", "")),
-                "content": non_std_data.get("content", ""),
-                "reasoning": non_std_data.get("reasoning", ""),
-                "tool_name": None,
-                "tool_params": None,
-                "response": non_std_data.get("content", "")
-            }
-        if "tool_name" in non_std_data:
-            tool_name = non_std_data["tool_name"]
-            is_finish = tool_name == "finish"
-            # 【2026-04-28 小沈修复】支持args字段
-            tool_params = non_std_data.get("tool_params", non_std_data.get("args", {}))
-            
-            # 标准化tool_params中的content字段类型
-            if isinstance(tool_params, dict):
-                tool_params = _normalize_tool_params_content(tool_params)
-                # 【2026-04-28 小沈新增】过滤非参数字段
-                tool_params = _filter_tool_params(tool_params)
-                # 【2026-04-28 小沈新增】检测并补充缺失的必需参数
-                if not is_finish and tool_params:
-                    tool_params = _supplement_missing_params(tool_name, tool_params, output if isinstance(output, str) else None)
-            
-            logger.info(f"[parse_react_response] 非标准JSON解析成功")
-            result = {
-                "type": "answer" if is_finish else "action",
-                "thought": non_std_data.get("content", non_std_data.get("thought", "")),
-                "content": non_std_data.get("content", non_std_data.get("thought", "")),
-                "reasoning": non_std_data.get("reasoning", ""),
-                "tool_name": None if is_finish else tool_name,
-                "tool_params": None if is_finish else tool_params,
-                "response": ""
-            }
-            if "_pending_calls" in non_std_data:
-                result["_pending_calls"] = non_std_data["_pending_calls"]
-            return result
+    if not non_std_data or not isinstance(non_std_data, dict):
+        return None
     
-    # 【新增 2026-04-24 小沈】JSON预解析失败后，尝试从混合文本中提取JSON块
-    # 解决混合文本+JSON（情况③/⑤）的解析问题：LLM返回"思考文本+JSON"格式时正确提取
+    # _process_json_result 与标准JSON路径完全相同
+    result = _process_json_result(non_std_data, output)
+    if result is not None:
+        # 补充非标准JSON路径特有的内容字段处理
+        if result.get("type") == "parse_error" and "error" in result:
+            result["error"] = non_std_data.get("error", result["error"])
+        logger.info(f"[parse_react_response] 非标准JSON解析成功")
+        return result
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Handler #7: 混合文本中提取JSON块 + 不完整JSON检测
+# ---------------------------------------------------------------------------
+def _handle_mixed_text_json(output) -> Optional[Dict[str, Any]]:
+    """
+    处理从混合文本中提取JSON的场景，包括不完整JSON检测。
+    当前代码 lines 313-437 的逻辑整体迁移。
+    作者: 小沈 2026-05-19
+    """
+    if not isinstance(output, str):
+        return None
+    
     json_data = _extract_json_block(output)
     
-    # 【新增 2026-04-26 小沈】检测不完整JSON格式
-    # 问题来源：日志 app_2026-04-25.log 23:23:43 LLM原始返回被截断
-    # 原始文本: {"thought": "用户想查看D盘的目录情况，我需要使用list_directory工具来列出D盘
-    # 解析器误将thought值中的"list_directory"识别为可执行action
-    #
-    # 修复逻辑：
-    # 1. 如果json_data为空（JSON提取失败）
-    # 2. 且原始文本匹配 {"thought": "xxx" 格式（不完整JSON）
-    # 3. 则返回implicit类型，不误识别为action
-    #
-    # 测试用例:
-    #   输入: {"thought": "用户想查看D盘的目录情况，我需要使用list_directory工具来列出D盘"
-    #   修复前: type=action, tool_name=list_directory  (误识别)
-    #   修复后: type=implicit, tool_name=None, thought=原始文本 (正确)
+    # 不完整JSON检测
     if not json_data:
         if re.match(r'^\s*\{\s*"thought":\s*"', output):
-            # 【修复 2026-05-10 小健】不完整JSON先走正则兜底，可能能提取出tool调用
+            # 不完整JSON先走正则兜底，可能能提取出tool调用
             regex_recovered = _try_regex_tool_call_fallback(output)
             if regex_recovered:
                 logger.info("[parse_react_response] 不完整JSON但正则兜底提取到tool调用，跳过implicit")
@@ -347,104 +350,161 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                 "response": thought_text,
                 "error": None
             }
+        return None  # 无JSON块 → 交给后续handler
     
-    if json_data and isinstance(json_data, dict):
-        # 提取前面的文本（JSON之前的部分）作为content
-        # 找到第一个'{'的位置，前面的文本就是content
-        json_start = output.find('{')
-        if json_start != -1:
-            prefix_text = output[:json_start].strip()
-        else:
-            prefix_text = ""
-        
-        # 获取tool_name并检查是否为finish
-        tool_name = json_data.get("tool_name")
-        tool_params = json_data.get("tool_params", {})
-        
-        # 确保tool_params是字典
-        if not isinstance(tool_params, dict):
-            tool_params = {}
-        
-        # 如果是finish类型
-        if tool_name == "finish":
-            logger.info("[parse_react_response] 混合文本中提取到finish JSON")
-            result_text = tool_params.get("result", "") if tool_params else ""
+    if not isinstance(json_data, dict):
+        return None
+    
+    # 提取前缀文本
+    json_start = output.find('{')
+    prefix_text = output[:json_start].strip() if json_start != -1 else ""
+    
+    tool_name = json_data.get("tool_name")
+    tool_params = json_data.get("tool_params", {})
+    if not isinstance(tool_params, dict):
+        tool_params = {}
+    
+    # finish 类型
+    if tool_name == "finish":
+        logger.info("[parse_react_response] 混合文本中提取到finish JSON")
+        result_text = tool_params.get("result", "") if tool_params else ""
+        return {
+            "type": "answer",
+            "thought": json_data.get("thought", ""),
+            "content": result_text or prefix_text,
+            "reasoning": json_data.get("reasoning", ""),
+            "tool_name": None,
+            "tool_params": None,
+            "response": result_text or prefix_text,
+            "error": None
+        }
+    
+    # tool_name action (非finish)
+    if tool_name:
+        logger.info("[parse_react_response] 混合文本中提取到JSON，走JSON处理流程")
+        extracted_content = json_data.get("content", "")
+        if not extracted_content:
+            extracted_content = prefix_text
+        if tool_params:
+            tool_params = _supplement_missing_params(
+                tool_name, tool_params, output if isinstance(output, str) else None
+            )
+        return {
+            "type": "action",
+            "thought": json_data.get("thought", ""),
+            "content": extracted_content,
+            "reasoning": json_data.get("reasoning", ""),
+            "tool_name": tool_name,
+            "tool_params": tool_params,
+            "response": None,
+            "error": None
+        }
+    
+    # 无tool_name但有content/reasoning → implicit
+    if "content" in json_data or "reasoning" in json_data:
+        has_action_keyword = re.search(r'\bAction\s*:', output, re.IGNORECASE)
+        has_answer_keyword = re.search(r'\bAnswer\s*:', output, re.IGNORECASE)
+        if not has_action_keyword and not has_answer_keyword:
+            logger.info("[parse_react_response] 检测到无tool_name的JSON，提取content/reasoning字段")
+            content_value = json_data.get("content", "")
+            reasoning_value = json_data.get("reasoning", "")
+            if isinstance(content_value, str) and content_value.startswith("{"):
+                try:
+                    parsed_content = json.loads(content_value)
+                    if isinstance(parsed_content, dict):
+                        content_value = parsed_content.get("content", content_value)
+                except (json.JSONDecodeError, TypeError):
+                    pass
             return {
-                "type": "answer",
-                "thought": json_data.get("thought", ""),
-                "content": result_text or prefix_text,
-                "reasoning": json_data.get("reasoning", ""),
+                "type": "implicit",
+                "thought": prefix_text or content_value,
+                "content": content_value,
+                "reasoning": reasoning_value,
                 "tool_name": None,
                 "tool_params": None,
-                "response": result_text or prefix_text,
+                "response": content_value,
                 "error": None
             }
-        
-        # 其他情况（有tool_name且不是finish）
-        if tool_name:
-            logger.info("[parse_react_response] 混合文本中提取到JSON，走JSON处理流程")
-            # 【2026-04-28 小沈修复】优先使用json_data中的content字段，而不是prefix_text
-            extracted_content = json_data.get("content", "")
-            # 如果json_data中没有content字段，才使用prefix_text
-            if not extracted_content:
-                extracted_content = prefix_text
-            # 【2026-04-28 小沈新增】检测并补充缺失的必需参数
-            if tool_params:
-                tool_params = _supplement_missing_params(tool_name, tool_params, output if isinstance(output, str) else None)
-            return {
-                "type": "action",
-                "thought": json_data.get("thought", ""),
-                "content": extracted_content,
-                "reasoning": json_data.get("reasoning", ""),
-                "tool_name": tool_name,
-                "tool_params": tool_params,
-                "response": None,
-                "error": None
-            }
-        # 2026-05-02 小强新增：处理无tool_name但有content/reasoning的JSON
-        # LLM可能返回 {"content": "xxx", "reasoning": "yyy"} 格式（缺少tool_name）
-        # 此时应该正确提取content和reasoning字段，而不是把整个JSON当作字符串
-        # 
-        # 但要排除情况：JSON是Action Input的参数值而非顶层结构
-        # 判断依据：JSON前面有Action/Answer关键词则走关键词匹配
-        if "content" in json_data or "reasoning" in json_data:
-            # 检查是否前面有Action/Answer关键词
-            has_action_keyword = re.search(r'\bAction\s*:', output, re.IGNORECASE)
-            has_answer_keyword = re.search(r'\bAnswer\s*:', output, re.IGNORECASE)
-            if not has_action_keyword and not has_answer_keyword:
-                logger.info("[parse_react_response] 检测到无tool_name的JSON，提取content/reasoning字段")
-                content_value = json_data.get("content", "")
-                reasoning_value = json_data.get("reasoning", "")
-                # content和reasoning可能是嵌套的JSON字符串，需要尝试解析
-                if isinstance(content_value, str) and content_value.startswith("{"):
-                    try:
-                        parsed_content = json.loads(content_value)
-                        if isinstance(parsed_content, dict):
-                            content_value = parsed_content.get("content", content_value)
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-                # 【修复 2026-05-14 小沈】无tool_name的完整JSON应返回implicit，不是chunk
-                # 此路径已过完整JSON解析，不是流式片段，LLM已经说完了
-                return {
-                    "type": "implicit",
-                    "thought": prefix_text or content_value,
-                    "content": content_value,
-                    "reasoning": reasoning_value,
-                    "tool_name": None,
-                    "tool_params": None,
-                    "response": content_value,
-                    "error": None
-                }
     
-    # 【新增 2026-05-10 小沈】关键词兜底前：正则恢复末尾 tool 调用（恶意/破损 JSON 之后的最后一道 structured 解析）
+    return None  # 无匹配 → 交给后续handler
+
+
+# ---------------------------------------------------------------------------
+# Handler #8: 正则兜底
+# ---------------------------------------------------------------------------
+def _handle_regex_fallback(output) -> Optional[Dict[str, Any]]:
+    if not isinstance(output, str):
+        return None
     regex_recovered = _try_regex_tool_call_fallback(output)
     if regex_recovered:
         logger.info("[parse_react_response] 正则兜底提取到 tool 调用，跳过关键词匹配")
         return _add_reasoning_warning(regex_recovered)
+    return None
 
-    # 步骤1.2：四种情况判断逻辑
+
+# ---------------------------------------------------------------------------
+# Handler #9: 关键词匹配（最终兜底）
+# ---------------------------------------------------------------------------
+def _handle_keyword_match(output) -> Optional[Dict[str, Any]]:
     logger.info(f"[parse_react_response] 走关键词匹配流程")
-    return _determine_parse_type(output)
+    return _determine_parse_type(output) if isinstance(output, str) else None
+
+
+# ---------------------------------------------------------------------------
+# 解析器链配置：按优先级顺序排列
+# ---------------------------------------------------------------------------
+_HANDLERS = [
+    _handle_dict_input,          # 1: dict → action/implicit
+    _handle_list_input,          # 2: list → action
+    _handle_json_array_string,   # 3: "[...]" → 解析为list
+    _handle_empty_input,         # 4: None/空/非字符串 → parse_error
+    _handle_standard_json,       # 5: json.loads → 各种type
+    _handle_non_standard_json,   # 6: 单引号JSON → 各种type
+    _handle_mixed_text_json,     # 7: 混合文本提取JSON + 不完整JSON
+    _handle_regex_fallback,      # 8: 正则兜底提取工具调用
+    _handle_keyword_match,       # 9: 关键词匹配(_determine_parse_type)
+]
+
+
+def parse_react_response(output: str) -> Dict[str, Any]:
+    """
+    统一解析器入口函数 - 解析器链模式（重构于 2026-05-19 小沈）
+    
+    处理LLM的所有ReAct输出格式，返回统一结构字典。
+    通过type字段区分：action/answer/implicit/thought_only/parse_error/chunk
+    
+    架构：9个handler按优先级顺序尝试，每个返回结果或None（交给下一个）。
+    添加新LLM格式 = 写新handler → 插入_HANDLERS列表 → 零风险。
+    
+    Args:
+        output: LLM原始响应文本（可为str/dict/list）
+        
+    Returns:
+        统一格式字典，包含type/thought/tool_name/tool_params/response/content/reasoning字段
+        
+    设计依据: LlamaIndex ReActOutputParser.parse() + 解析器链(Chain of Responsibility)模式
+    """
+    # 日志记录（迁移自旧代码 lines 125-126）
+    output_length = len(output) if isinstance(output, str) else 0
+    logger.info(f"[parse_react_response] 解析器链开始, output长度: {output_length}")
+    
+    for handler in _HANDLERS:
+        result = handler(output)
+        if result is not None:
+            return result
+    
+    # 理论上不可达（最后一个handler _handle_keyword_match 总是返回结果）
+    logger.error("[parse_react_response] 所有handler返回None，解析器链异常")
+    return {
+        "type": "parse_error",
+        "error": "Parser chain exhausted",
+        "thought": "(Implicit) Internal error",
+        "content": "",
+        "reasoning": "",
+        "tool_name": None,
+        "tool_params": None,
+        "response": ""
+    }
 
 
 # =============================================================================
