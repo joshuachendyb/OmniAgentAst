@@ -2711,6 +2711,13 @@ class FileTools:
                 "error": "file_path是必填参数"
             }, "data_file_format")
         
+        is_valid, error_msg = self._validate_path(file_path)
+        if not is_valid:
+            return _to_unified_format({
+                "success": False,
+                "error": error_msg
+            }, "data_file_format")
+        
         detected_format = format
         if not detected_format:
             ext = os.path.splitext(file_path)[1].lower()
@@ -2816,12 +2823,20 @@ class FileTools:
                     "error": result.get("message", "未知错误")
                 }, "data_file_format")
             
+            bytes_written = None
+            if action == "write":
+                try:
+                    bytes_written = os.path.getsize(file_path)
+                except Exception:
+                    pass
+            
             return _to_unified_format({
                 "success": True,
                 "data": result.get("data", result),
                 "format": detected_format,
                 "file_path": file_path,
-                "action": action
+                "action": action,
+                "bytes_written": bytes_written
             }, "data_file_format", next_actions=[
                 ("edit_file", "编辑格式化文件", "需要修改时"),
             ])
@@ -2973,8 +2988,10 @@ def _generate_summary(tool_name: str, result: Any) -> str:
         if action == "read":
             return f"成功读取{fmt}配置文件：{file_path}"
         elif action == "write":
-            bytes_written = result.get("bytes_written", 0)
-            return f"成功写入{fmt}配置文件：{file_path}，{bytes_written} 字节"
+            bytes_written = result.get("bytes_written")
+            if bytes_written is not None:
+                return f"成功写入{fmt}配置文件：{file_path}，{bytes_written} 字节"
+            return f"成功写入{fmt}配置文件：{file_path}"
         return "配置文件操作完成"
 
     return "操作完成"
