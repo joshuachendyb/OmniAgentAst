@@ -92,6 +92,12 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
     """执行Python代码 - 小沈 2026-05-02, 修正 2026-05-05(空字符串working_dir), 修正 2026-05-06(中文编码)
     【2026-05-17 小沈】增加safety_check参数，P12组合复用：自动调用_validate_code_safety进行安全检查
     【2026-05-18 小沈】P16幂等性：working_dir不存在时自动创建(makedirs exist_ok=True)"""
+    if not code or not code.strip():
+        return {
+            "code": "ERR_EXEC_EMPTY_CODE",
+            "data": None,
+            "message": "code不能为空，请提供要执行的Python代码"
+        }
     if working_dir is not None and not os.path.isdir(working_dir):
         try:
             os.makedirs(working_dir, exist_ok=True)
@@ -194,6 +200,12 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
 def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] = None, safety_check: bool = True) -> dict:
     """执行JavaScript代码 - 小沈 2026-05-02, 小健 2026-05-19 增加safety_check+UTF-8环境
     【2026-05-18 小沈】P16幂等性：working_dir不存在时自动创建(makedirs exist_ok=True)"""
+    if not code or not code.strip():
+        return {
+            "code": "ERR_EXEC_EMPTY_CODE",
+            "data": None,
+            "message": "code不能为空，请提供要执行的JavaScript代码"
+        }
     # 小健 2026-05-19: JavaScript安全检查
     if safety_check:
         js_dangerous_patterns = [
