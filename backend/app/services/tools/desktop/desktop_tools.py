@@ -27,7 +27,7 @@ DESKTOP Tools - 桌面工具实现（窗口管理）
 """
 
 import platform
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 from app.utils.logger import logger
 from app.services.tools.tool_result_utils import build_next_actions  # 小沈 2026-05-19
 
@@ -319,7 +319,7 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
 
 def window_control(
     window_title: str,
-    action: str,
+    action: Literal["focus", "resize", "maximize", "minimize", "restore", "topmost", "unpin"],
     width: Optional[int] = None,
     height: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -345,13 +345,13 @@ def window_control(
 
 
 def mouse_control(
-    action: str,
+    action: Literal["click", "move", "scroll", "position"],
     x: Optional[int] = None,
     y: Optional[int] = None,
-    button: str = "left",
-    click_type: str = "single",
+    button: Literal["left", "right", "middle"] = "left",
+    click_type: Literal["single", "double"] = "single",
     duration: float = 0,
-    direction: str = "down",
+    direction: Literal["up", "down"] = "down",
     amount: int = 3,
 ) -> Dict[str, Any]:
     """统一鼠标控制入口 - 小沈 2026-05-17
@@ -381,7 +381,7 @@ def mouse_control(
 
 
 def keyboard_control(
-    action: str,
+    action: Literal["type", "shortcut", "combo"],
     text_or_keys: str,
     interval: float = 0,
 ) -> Dict[str, Any]:
@@ -436,7 +436,7 @@ def screen_capture(
 
 
 def clipboard_control(
-    action: str,
+    action: Literal["read", "write"],
     content: Optional[str] = None,
 ) -> Dict[str, Any]:
     """统一剪贴板控制入口 - 小沈 2026-05-17

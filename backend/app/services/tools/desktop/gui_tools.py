@@ -198,7 +198,7 @@ def _snapshot(display: int = 1) -> Dict[str, Any]:
         return {"code": "ERR_SNAPSHOT", "data": None, "message": f"快照失败: {str(e)}"}
 
 
-def screen_record(duration: int, output_path: str = None, fps: int = 15) -> Dict[str, Any]:
+def screen_record(duration: int, output_path: Optional[str] = None, fps: int = 15) -> Dict[str, Any]:
     """录制屏幕视频 - 小沈 2026-05-02"""
     try:
         import mss
