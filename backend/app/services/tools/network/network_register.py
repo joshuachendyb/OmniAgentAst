@@ -67,16 +67,22 @@ NETWORK_TOOL_DESCRIPTIONS = {
 - code: 状态码，SUCCESS或ERR_NETWORK_INVALID_PARAM/ERR_NETWORK_INVALID_URL/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_TIMEOUT/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
 - data: 成功时为对象，失败时为None；成功时包含 status_code(HTTP状态码)、headers(响应头字典)、body(响应体，JSON自动解析为对象，否则为文本字符串)；HTTP错误时包含 status_code和body
 - message: 结果描述信息""",
-    "download_file": """从 URL 下载文件到本地，支持大文件流式下载、断点续传、进度显示。
+    "download_file": """从 URL 下载文件到本地，支持大文件流式下载。
 
 使用场景：
 - 当用户需要下载文件时使用
 - 当用户想要下载图片、视频、安装包等文件时使用
 - 当用户需要指定保存路径时使用
-- 当下载中断后需要续传时使用（自动检测已下载部分）
+
+参数说明：
+- url：下载文件URL，必填
+- destination_path：保存完整路径，必填
+- headers：请求头（认证下载时使用）
+- timeout：下载超时毫秒数，默认300000(5分钟)
+- proxy：代理地址，不设则尝试环境变量
 
 
-【重要】返回下载结果，包含文件路径、下载大小、是否断点续传、进度百分比
+【重要】返回下载结果，包含文件路径、下载大小、进度百分比
 
 使用示例：
 - 简单下载：{"url": "https://example.com/file.zip", "destination_path": "D:/Downloads/file.zip"}
