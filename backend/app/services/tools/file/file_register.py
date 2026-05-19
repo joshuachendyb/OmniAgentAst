@@ -52,17 +52,19 @@ FILE_TOOL_DESCRIPTIONS = {
 
 使用场景：
 - file_path: 读取单个文件，支持head/tail/offset/limit分页
-- file_paths: 批量读取多个文件
+- file_paths: 批量读取多个文件（⚠️ 不支持head/tail/offset/limit，始终读取完整内容）
 
 【重要】P17互斥校验：file_path和file_paths不能同时传入
 
 使用示例：
 - 单文件：{"file_path": "D:/test.txt"}
+- 单文件取前10行：{"file_path": "D:/test.txt", "head": 10}
+- 单文件分页：{"file_path": "D:/test.txt", "offset": 5, "limit": 10}
 - 批量：{"file_paths": ["D:/a.txt", "D:/b.txt"]}
-- 分页：{"file_path": "D:/test.txt", "head": 10}
 
 返回数据说明：
-- data.success/data.content(单文件)/data.results(批量)/data.encoding/data.file_size""",
+- 单文件：data.content/data.total_lines/data.line_count/data.encoding/data.file_size
+- 批量：data.results/data.success_count/data.failed_count""",
 
     "write_text_file": """写入或追加文本文件内容，支持中文、编码自动检测、追加模式。仅支持文本文件。
 
