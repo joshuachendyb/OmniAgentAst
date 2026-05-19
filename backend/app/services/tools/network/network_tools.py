@@ -787,7 +787,6 @@ async def search_web(
     allowed_domains: Optional[List[str]] = None,
     blocked_domains: Optional[List[str]] = None,
     num_results: int = 10,
-    time_range: str = "any",
     language: Optional[str] = None,
     safe_search: str = "moderate",
     proxy: Optional[str] = None,
@@ -798,11 +797,6 @@ async def search_web(
     Parallel/Exa: MCP协议，JSON-RPC，结构化返回，无需API Key
     Bing: HTML解析，国内可访问，无需API Key
     """
-    # 【2026-05-19 小沈】time_range参数说明：Parallel/Exa/Bing搜索引擎API均不支持
-    # 标准的时间范围过滤参数，该参数由Schema保留供LLM语义解析，但当前搜索引擎
-    # 实现不支持按时间过滤，因此代码中不处理time_range。如需启用，需接入支持
-    # 时间过滤的搜索API（如Google Custom Search）。
-    
     try:
         if len(query) < 2:
             return {
@@ -866,7 +860,6 @@ async def search_web(
                 "results": results,
                 "total": len(results),
                 "engine": engine_used,
-                "time_range": time_range,
                 "language": language,
             },
             "message": f"找到 {len(results)} 条搜索结果（{engine_used}）",

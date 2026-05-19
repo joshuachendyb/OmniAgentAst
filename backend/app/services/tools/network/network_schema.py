@@ -119,9 +119,6 @@ class SearchWebInput(BaseModel):
     num_results: int = Field(
         default=10, ge=1, le=50, description="返回结果数量。默认10。概览类意图设5，深度调研类意图设20"
     )
-    time_range: Literal["any", "d", "w", "m", "y"] = Field(
-        default="any", description="时间范围。可选值：any（不限）、d（一天内）、w（一周内）、m（一月内）、y（一年内）。默认为any"
-    )
     language: Optional[str] = Field(
         default=None, description="搜索语言。默认匹配当前会话语言。Agent根据query语种自动切换"
     )

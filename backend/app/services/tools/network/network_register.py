@@ -119,12 +119,11 @@ NETWORK_TOOL_DESCRIPTIONS = {
 使用示例：
 - 简单搜索：{"query": "OpenAI function calling"}
 - 限定域名：{"query": "React 19 新特性", "allowed_domains": ["github.com", "react.dev"]}
-- 时间范围：{"query": "AI news", "time_range": "d"}
 - 限结果数：{"query": "AI paper 2025", "num_results": 15}
 
 返回数据说明：
 - code: 状态码，SUCCESS或ERR_SEARCH_QUERY_TOO_SHORT/ERR_NETWORK_UNKNOWN
-- data: 成功时为对象，失败时为None；成功时包含 query(搜索关键词)、results(搜索结果列表，每项含title标题/url链接/snippet摘要/source来源引擎)、total(结果总数)、engine(使用的搜索引擎DuckDuckGo或Bing)、time_range(时间范围)、language(语言)
+- data: 成功时为对象，失败时为None；成功时包含 query(搜索关键词)、results(搜索结果列表，每项含title标题/url链接/snippet摘要/source来源引擎)、total(结果总数)、engine(使用的搜索引擎DuckDuckGo或Bing)、language(语言)
 - message: 结果描述信息""",
     "network_diagnose": """网络连通性诊断，合并ping和端口检测功能。
 
