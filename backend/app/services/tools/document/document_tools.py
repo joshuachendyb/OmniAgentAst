@@ -26,7 +26,7 @@ Author: 小沈 - 2026-05-02
 
 import importlib
 import csv
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Literal
 from pathlib import Path
 
 from app.services.tools.document.document_schema import (
@@ -986,14 +986,17 @@ def read_document(
         if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
             return check
         result = _read_pdf(file_path, pages=pages, extract_tables=extract_tables, extract_images=extract_images)
-    elif suffix in (".docx", ".doc"):
+    elif suffix == ".docx":
         check = _check_docx_readable(file_path)
         if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
             return check
         result = _read_docx(file_path, extract_tables=extract_tables)
+    elif suffix == ".doc":
+        return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
+                "message": "旧版.doc格式不受支持，python-docx库仅支持.docx格式。请将文件另存为.docx后重试"}
     elif suffix == ".pptx":
         result = _read_pptx(file_path, extract_notes=extract_notes)
-    elif suffix in (".xlsx", ".xls"):
+    elif suffix == ".xlsx":
         check = _check_xlsx_readable(file_path)
         if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
             return check
@@ -1001,6 +1004,9 @@ def read_document(
             result = _read_excel_pandas(file_path=file_path, sheet_name=sheet_name, max_rows=max_rows)
         else:
             result = _read_xlsx(file_path, sheet_name=sheet_name, max_rows=max_rows, header=header)
+    elif suffix == ".xls":
+        return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
+                "message": "旧版.xls格式不受支持，openpyxl库仅支持.xlsx格式。请将文件另存为.xlsx后重试"}
     elif suffix in (".csv", ".tsv"):
         actual_delimiter = "\t" if suffix == ".tsv" else (delimiter or ",")
         if use_pandas:
@@ -1009,7 +1015,7 @@ def read_document(
             result = _read_csv_stdlib(file_path, encoding=encoding, delimiter=actual_delimiter, has_header=header, max_rows=max_rows)
     else:
         return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
-                "message": f"不支持的格式: {suffix}。支持: .pdf/.doc/.docx/.xlsx/.xls/.pptx/.csv/.tsv"}
+                "message": f"不支持的格式: {suffix}。支持: .pdf/.docx/.xlsx/.pptx/.csv/.tsv"}
     
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([
@@ -1022,13 +1028,13 @@ def read_document(
             if suffix == ".pdf":
                 result["capabilities_used"] = ["pdfplumber"]
                 result["capabilities_missing"] = ["pytesseract"]
-            elif suffix in (".docx", ".doc"):
+            elif suffix == ".docx":
                 result["capabilities_used"] = ["python-docx"]
             elif suffix == ".pptx":
                 result["capabilities_used"] = ["python-pptx"]
             elif suffix in (".csv", ".tsv"):
                 result["capabilities_used"] = result.get("capabilities_used", ["csv(stdlib)"])
-            elif suffix in (".xlsx", ".xls"):
+            elif suffix == ".xlsx":
                 result["capabilities_used"] = ["openpyxl"]
                 result["capabilities_missing"] = ["pandas"]
     return result
@@ -1075,8 +1081,8 @@ def write_document(
 
 def convert_document(
     input_path: str,
-    output_format: str = "pdf",
-    output_path: str = None
+    output_format: Literal["pdf"] = "pdf",
+    output_path: Optional[str] = None
 ) -> Dict[str, Any]:
     """文档格式转换 - 小健 2026-05-06 output_format改可选对齐Schema"""
     try:

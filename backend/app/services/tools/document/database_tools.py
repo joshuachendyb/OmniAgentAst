@@ -23,7 +23,7 @@ DATABASE Tools - 数据库工具实现
 
 import re
 import sqlite3
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Literal
 from app.utils.logger import logger
 from app.services.tools.tool_result_utils import build_next_actions
 
@@ -72,12 +72,12 @@ def _close_connection(conn, engine=None):
 
 def query_sql(
     sql: str,
-    connection_type: str = "sqlite",
+    connection_type: Literal["sqlite", "mysql", "postgresql"] = "sqlite",
     connection_string: Optional[str] = None,
     db_path: Optional[str] = None,
     limit: int = 50,
     timeout: int = 15000,
-    output_format: str = "table"
+    output_format: Literal["table", "json"] = "table"
 ) -> Dict[str, Any]:
     """
     执行只读SQL查询
@@ -169,7 +169,7 @@ def query_sql(
 
 def execute_sql(
     sql: str,
-    connection_type: str = "sqlite",
+    connection_type: Literal["sqlite", "mysql", "postgresql"] = "sqlite",
     connection_string: Optional[str] = None,
     db_path: Optional[str] = None,
     dry_run: bool = False,
@@ -282,14 +282,14 @@ def execute_sql(
 
 
 def get_db_schema(
-    connection_type: str = "sqlite",
+    connection_type: Literal["sqlite", "mysql", "postgresql"] = "sqlite",
     connection_string: Optional[str] = None,
     db_path: Optional[str] = None,
     db_name: Optional[str] = None,
     table_name: Optional[str] = None,
     filter_pattern: Optional[str] = None,
     include_details: bool = False,
-    output_format: str = "markdown"
+    output_format: Literal["markdown", "json", "sql_ddl"] = "markdown"
 ) -> Dict[str, Any]:
     """
     获取数据库表结构

@@ -25,7 +25,7 @@ import json
 import tempfile
 import importlib
 import logging
-from typing import Dict, Any, List, Union, Optional
+from typing import Dict, Any, List, Union, Optional, Literal, Tuple
 from pathlib import Path
 from datetime import datetime
 from app.services.tools.tool_result_utils import build_next_actions
@@ -89,12 +89,12 @@ def _serialize_rows(df) -> List[List[Any]]:
 
 def generate_chart(
     data: Dict[str, Any],
-    chart_type: str = "bar",
+    chart_type: Literal["bar", "line", "pie", "scatter"] = "bar",
     title: Optional[str] = None,
     x_label: Optional[str] = None,
     y_label: Optional[str] = None,
     output_path: Optional[str] = None,
-    figure_size: Optional[tuple] = None,
+    figure_size: Optional[Tuple[float, float]] = None,
     rotation: int = 0,
     color: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -317,6 +317,8 @@ def filter_data(
     data: Union[str, List[Dict[str, Any]]],
     conditions: List[Dict[str, Any]],
     select_columns: Optional[List[str]] = None,
+    encoding: str = "utf-8",
+    max_rows: Optional[int] = None,
     sort_by: Optional[str] = None,
     sort_ascending: bool = True,
     top_n: Optional[int] = None
@@ -342,17 +344,17 @@ def filter_data(
                     "data": None,
                     "message": f"文件不存在: {data}"
                 }
-            if data.endswith(('.xlsx', '.xls')):
+            if data.endswith('.xlsx'):
                 if not _check_openpyxl():
                     return {
                         "code": "ERR_NO_OPENPYXL",
                         "data": None,
                         "message": "openpyxl库未安装，请先执行: pip install openpyxl"
                     }
-                df = pd.read_excel(data, engine="openpyxl" if data.endswith('.xlsx') else None)
+                df = pd.read_excel(data, engine="openpyxl" if data.endswith('.xlsx') else None, nrows=max_rows)
                 _used_openpyxl = True
             else:
-                df = pd.read_csv(data)
+                df = pd.read_csv(data, encoding=encoding, nrows=max_rows)
         elif isinstance(data, list):
             df = pd.DataFrame(data)
         else:

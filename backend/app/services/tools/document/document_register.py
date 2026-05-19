@@ -81,8 +81,8 @@ DESCRIPTIONS = {
 
 【支持的格式】
 - .pdf → PDF解析（支持页码范围、提取表格/图片）
-- .docx/.doc → Word解析（支持提取表格）
-- .xlsx/.xls → Excel解析（支持指定工作表、最大行数）
+- .docx → Word解析（支持提取表格）
+- .xlsx → Excel解析（支持指定工作表、最大行数）
 - .pptx → PPT解析（支持提取演讲备注）
 - .csv/.tsv → CSV解析（支持分隔符、编码、use_pandas返回dtypes）
 
