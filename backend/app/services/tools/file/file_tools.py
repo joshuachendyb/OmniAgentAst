@@ -34,7 +34,7 @@ import threading
 import time
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Any, Dict, List, Optional, get_type_hints
+from typing import Any, Dict, List, Literal, Optional, get_type_hints
 
 _current_task_id: ContextVar[Optional[str]] = ContextVar("file_tools_task_id", default=None)
 
@@ -777,7 +777,7 @@ class FileTools:
     
     async def list_directory(
         self,
-        dir_path: Optional[str] = ".",
+        dir_path: str,
         format: str = "list",
         recursive: bool = False,
         max_depth: int = 10,
@@ -2439,6 +2439,7 @@ class FileTools:
     
     async def rename_file(
         self,
+        mode: Literal["single", "batch"] = "single",
         path: Optional[str] = None,
         new_name: Optional[str] = None,
         directory: Optional[str] = None,
@@ -2449,36 +2450,32 @@ class FileTools:
         conflict_strategy: str = "skip",
     ) -> Dict[str, Any]:
         """
-        重命名文件（统一入口）— 小沈 2026-05-18, 小健 2026-05-19 移除use_regex死参数
+        重命名文件（统一入口）— 小沈 2026-05-18
+        【小沈 2026-05-19】新增mode参数消除LLM对参数组混淆
         
         P11统一入口：合并 rename_file + batch_rename
-        - path+new_name: 单文件重命名
-        - directory+pattern+replacement: 批量正则重命名
+        - mode="single": path+new_name 单文件重命名
+        - mode="batch": directory+pattern+replacement 批量正则重命名
         
-        P17互斥校验：path和directory不能同时传入
         P16幂等性：单文件rename，如果new_name与原名称相同，返回SUCCESS（无需操作）
         """
-        # 批量模式：直接调用batch_rename
-        if directory:
-            # P17互斥校验
-            if path:
+        # mode分发
+        if mode == "batch":
+            if not directory:
                 return _to_unified_format({
                     "success": False,
-                    "error": "path(单文件)和directory(批量)不能同时使用（P17互斥校验）"
-                }, "rename_file", next_actions=[("read_file", "验证重命名结果", "需要确认时")])
-            
-            # P17必填参数校验
+                    "error": "批量模式(mode=batch)需要提供directory参数"
+                }, "rename_file")
             if not pattern:
                 return _to_unified_format({
                     "success": False,
-                    "error": "批量模式需要提供pattern"
-                }, "rename_file", next_actions=[("read_file", "验证重命名结果", "需要确认时")])
-            
+                    "error": "批量模式(mode=batch)需要提供pattern参数"
+                }, "rename_file")
             if not replacement:
                 return _to_unified_format({
                     "success": False,
-                    "error": "批量模式需要提供replacement"
-                }, "rename_file", next_actions=[("read_file", "验证重命名结果", "需要确认时")])
+                    "error": "批量模式(mode=batch)需要提供replacement参数"
+                }, "rename_file")
             
             return await self._batch_rename(
                 directory=directory,
@@ -2489,50 +2486,48 @@ class FileTools:
                 conflict_strategy=conflict_strategy
             )
         
-        # 单文件模式：调用原有rename_file逻辑（第2094行的实现）
-        else:
-            # P17必填参数校验
-            if not path:
-                return _to_unified_format({
-                    "success": False,
-                    "error": "path或directory至少填一个"
-                }, "rename_file", next_actions=[("read_file", "验证重命名结果", "需要确认时")])
-            
-            if not new_name:
-                return _to_unified_format({
-                    "success": False,
-                    "error": "单文件模式需要提供new_name"
-                }, "rename_file", next_actions=[("read_file", "验证重命名结果", "需要确认时")])
-            
-            # 小健 2026-05-19: Windows非法字符校验
-            _illegal_chars = set('<>:"|?*')
-            if os.name == 'nt' and any(c in _illegal_chars for c in new_name):
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"新名称包含Windows非法字符: {set(c for c in new_name if c in _illegal_chars)}"
-                }, "rename_file", next_actions=[("read_file", "验证重命名结果", "需要确认时")])
-            
-            # 计算新路径（同目录改名）
-            src = Path(path)
-            
-            if src.name == new_name:
-                return _to_unified_format({"success": True, "new_path": str(src), "old_path": str(src), "message": "新名称与原名相同(P16幂等)"}, "rename_file", next_actions=[("read_file", "验证重命名结果", "需要确认时")])
-            
-            if "/" in new_name or "\\" in new_name:
-                return _to_unified_format({
-                    "success": False, 
-                    "error": "新名称不能包含路径分隔符（rename_file仅支持同目录改名）。如需跨目录移动请使用move_file。", 
-                    "new_path": None
-                }, "rename_file", next_actions=[("read_file", "验证重命名结果", "需要确认时")])
-            
-            dst = src.parent / new_name
-            
-            # 调用move_file实现
-            return await self._move_file(
-                source_path=path,
-                destination_path=str(dst),
-                overwrite=False
-            )
+        # mode="single" (默认)
+        if not path:
+            return _to_unified_format({
+                "success": False,
+                "error": "单文件模式(mode=single)需要提供path参数"
+            }, "rename_file")
+        
+        if not new_name:
+            return _to_unified_format({
+                "success": False,
+                "error": "单文件模式(mode=single)需要提供new_name参数"
+            }, "rename_file")
+        
+        # 小健 2026-05-19: Windows非法字符校验
+        _illegal_chars = set('<>:"|?*')
+        if os.name == 'nt' and any(c in _illegal_chars for c in new_name):
+            return _to_unified_format({
+                "success": False,
+                "error": f"新名称包含Windows非法字符: {set(c for c in new_name if c in _illegal_chars)}"
+            }, "rename_file")
+        
+        # 计算新路径（同目录改名）
+        src = Path(path)
+        
+        if src.name == new_name:
+            return _to_unified_format({"success": True, "new_path": str(src), "old_path": str(src), "message": "新名称与原名相同(P16幂等)"}, "rename_file")
+        
+        if "/" in new_name or "\\" in new_name:
+            return _to_unified_format({
+                "success": False, 
+                "error": "新名称不能包含路径分隔符（rename_file仅支持同目录改名）。如需跨目录移动请使用move_file。", 
+                "new_path": None
+            }, "rename_file")
+        
+        dst = src.parent / new_name
+        
+        # 调用move_file实现
+        return await self._move_file(
+            source_path=path,
+            destination_path=str(dst),
+            overwrite=False
+        )
     
     async def archive_tool(
         self,

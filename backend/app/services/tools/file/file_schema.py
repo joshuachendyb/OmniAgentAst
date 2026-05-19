@@ -179,9 +179,8 @@ class ListDirectoryInput(BaseModel):
     - format="tree": JSON树结构（原get_directory_tree）
     - 始终返回statistics统计信息（原file_statistics）
     """
-    dir_path: Optional[str] = Field(
-        default=".",
-        description="目录路径。默认当前工作目录（即服务端运行目录，不确定时推荐明确指定绝对路径如 D:/项目代码）"
+    dir_path: str = Field(
+        description="目录路径（绝对路径，必填）。如 D:/项目代码"
     )
     format: Literal["list", "tree"] = Field(
         default="list",
@@ -332,30 +331,34 @@ class RenameFileInput(BaseModel):
     """rename_file 统一入口 — 小沈 2026-05-18
 
     合并 rename_file + batch_rename
-    - path+new_name: 单文件重命名
-    - directory+pattern+replacement: 批量正则重命名
+    - mode="single": path+new_name 单文件重命名
+    - mode="batch": directory+pattern+replacement 批量正则重命名
 
-    P17互斥校验：path 和 directory 不能同时传入
+    【小沈 2026-05-19】新增mode参数消除LLM对参数组混淆
     """
+    mode: Literal["single", "batch"] = Field(
+        default="single",
+        description="重命名模式：single=单文件重命名(path+new_name)，batch=批量正则重命名(directory+pattern+replacement)"
+    )
     path: Optional[str] = Field(
         default=None,
-        description="单文件/目录路径（与directory互斥，二选一）"
+        description="单文件/目录路径（仅mode=single时使用）"
     )
     new_name: Optional[str] = Field(
         default=None,
-        description="新名称，不含路径分隔符（单文件模式必填）"
+        description="新名称，不含路径分隔符（仅mode=single时必填）"
     )
     directory: Optional[str] = Field(
         default=None,
-        description="批量重命名的目录（与path互斥，二选一）"
+        description="批量重命名的目录（仅mode=batch时使用）"
     )
     pattern: Optional[str] = Field(
         default=None,
-        description="匹配正则表达式（批量模式必填）"
+        description="匹配正则表达式（仅mode=batch时必填）"
     )
     replacement: Optional[str] = Field(
         default=None,
-        description="替换字符串，支持反向引用如 \\1（批量模式必填）"
+        description="替换字符串，支持反向引用如 \\1（仅mode=batch时必填）"
     )
     preview: bool = Field(
         default=False,
@@ -449,7 +452,7 @@ class FileOperationInput(BaseModel):
     )
     destination: Optional[str] = Field(
         default=None,
-        description="目标路径（move/copy必填，delete不填）"
+        description="目标路径。move和copy时必须填写（⚠️ delete模式不填），delete时自动忽略此参数"
     )
     recursive: bool = Field(
         default=False,

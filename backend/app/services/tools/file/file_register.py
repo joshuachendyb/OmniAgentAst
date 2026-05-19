@@ -141,15 +141,14 @@ FILE_TOOL_DESCRIPTIONS = {
 
     "rename_file": """重命名文件（统一入口）- 合并rename_file + batch_rename功能。
 
-使用场景：
-- path+new_name: 单文件重命名
-- directory+pattern+replacement: 批量正则重命名
-
-【重要】P17互斥校验：path和directory不能同时传入
+使用模式（必须指定mode）：
+- mode="single": 单文件重命名，使用 path + new_name 参数
+- mode="batch": 批量正则重命名，使用 directory + pattern + replacement 参数
 
 使用示例：
-- 单文件：{"path": "D:/old.txt", "new_name": "new.txt"}
-- 批量预览：{"directory": "D:/files", "pattern": "file_(\\\\d+).txt", "replacement": "renamed_\\\\1.txt", "preview": true}
+- 单文件：{"mode": "single", "path": "D:/old.txt", "new_name": "new.txt"}
+- 批量：{"mode": "batch", "directory": "D:/files", "pattern": "file_(\\\\d+).txt", "replacement": "renamed_\\\\1.txt"}
+- 批量预览：{"mode": "batch", "directory": "D:/files", "pattern": "file_(\\\\d+).txt", "replacement": "renamed_\\\\1.txt", "preview": true}
 
 返回数据说明：
 - data.success/data.new_path(单文件)/data.operations(批量)""",
