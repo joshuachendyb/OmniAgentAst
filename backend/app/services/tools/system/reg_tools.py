@@ -76,24 +76,35 @@ def _parse_key_path(key_path: str, hive: str = "HKCU") -> tuple:
 
 
 def _backup_registry(root_key: str, sub_key: str, session_id: str) -> str:
-    """备份注册表键到临时文件"""
+    """备份注册表键到临时文件 - 小健 2026-05-19 实现真实备份(原为空壳)
+    使用Windows reg export命令导出注册表键到.reg文件
+    """
     backup_key = f"{root_key}\\{sub_key}"
     if backup_key in _registry_session_backup:
         return _registry_session_backup[backup_key]
     
-    # 创建备份文件
     backup_dir = tempfile.gettempdir()
     backup_file = os.path.join(backup_dir, f"reg_backup_{session_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.reg")
     
     try:
-        hkey = ROOT_KEY_MAP.get(root_key)
-        if hkey:
-            # 导出注册表（简化版：仅记录键路径）
+        import subprocess
+        export_key = f"{root_key}\\{sub_key}"
+        result = subprocess.run(
+            ["reg", "export", export_key, backup_file, "/y"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0 and os.path.exists(backup_file):
             _registry_session_backup[backup_key] = backup_file
-            logger.info(f"[registry] 备份键: {backup_key}")
-            return backup_file
+            logger.info(f"[registry] 备份成功: {backup_key} -> {backup_file}")
+        else:
+            logger.warning(f"[registry] reg export失败(返回码{result.returncode}): {result.stderr.strip()}")
+            _registry_session_backup[backup_key] = backup_file
+    except FileNotFoundError:
+        logger.warning("[registry] reg命令不存在，跳过备份")
+        _registry_session_backup[backup_key] = backup_file
     except Exception as e:
         logger.warning(f"[registry] 备份失败: {e}")
+        _registry_session_backup[backup_key] = backup_file
     
     return backup_file
 
@@ -244,6 +255,10 @@ def reg_write(key_path: str, value_name: str, value: str, value_type: str = "aut
         converted_value = value
         if actual_value_type == "REG_DWORD":
             converted_value = int(value)
+        elif actual_value_type == "REG_QWORD":
+            converted_value = int(value)
+        elif actual_value_type == "REG_EXPAND_SZ":
+            converted_value = value
         elif actual_value_type == "REG_BINARY":
             if isinstance(value, str):
                 converted_value = bytes.fromhex(value.replace(" ", ""))

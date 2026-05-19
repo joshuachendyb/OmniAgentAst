@@ -54,7 +54,7 @@ class NetConnectionsInput(BaseModel):
     )
     resolve_dns: bool = Field(
         default=False,
-        description="是否对IP地址进行反向DNS解析，将IP地址解析为域名。必填为LLM给出，当LLM未明确指定时Agent智能补全为false。开启后仅对ESTABLISHED状态的前10个IP进行解析，单IP超时2秒自动跳过，防止阻塞。"
+        description="【暂未生效】是否对IP地址进行反向DNS解析。当前版本此参数不生效，保留待后续实现。默认false"
     )
     process_info: bool = Field(
         default=False,
@@ -94,7 +94,7 @@ class EventLogInput(BaseModel):
     )
     event_id: Optional[List[int]] = Field(
         default=None,
-        description="事件ID数组过滤，只返回指定ID的事件。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。支持数组格式例如[4625,4771]。Agent自动解析用户query中的事件ID进行联合过滤。"
+        description="【暂未生效】事件ID数组过滤。当前版本此参数不生效，保留待后续实现。"
     )
 
 
@@ -113,11 +113,11 @@ class ListProcessesInput(BaseModel):
     )
     user: Optional[str] = Field(
         default=None,
-        description="用户名过滤（可选）。如 Administrator"
+        description="用户名过滤（模糊匹配）"
     )
     status: Optional[Literal["running", "sleeping"]] = Field(
         default=None,
-        description="状态过滤（可选）。可选值：running（运行中）、sleeping（睡眠）"
+        description="状态过滤（模糊匹配）"
     )
     sort_by: Literal["pid", "name", "cpu", "memory"] = Field(
         default="pid",

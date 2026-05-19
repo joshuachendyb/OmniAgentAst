@@ -137,10 +137,11 @@ def net_connections(
     支持按类型、状态、端口过滤。
     """
     try:
+        # 小健 2026-05-19: tcp/udp应包含inet4+inet6
         conn_kind_map = {
             "inet": "inet",
-            "tcp": "inet4",
-            "udp": "inet4",
+            "tcp": "inet",
+            "udp": "inet",
         }
         
         connections = psutil.net_connections(kind=conn_kind_map.get(kind, "inet"))
@@ -272,8 +273,18 @@ def _get_windows_event_log(
         }
         win_level = level_map.get(level, "Error")
         
+        # 小健 2026-05-19: 构造XPath查询含时间过滤
+        start_time_str = start_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        query_parts = [f"TimeCreated/@SystemTime >= '{start_time_str}'"]
+        if level and level != "info":
+            level_values = {"critical": "1", "error": "2", "warning": "3"}
+            if level in level_values:
+                query_parts.append(f"Level = {level_values[level]}")
+        xpath_query = " and ".join(query_parts)
+        
         cmd = [
             "wevtutil", "qe", log_name,
+            f"/q:*[System[{xpath_query}]]",
             "/c:%d" % max_events,
             "/rd:true",
             "/f:text"
@@ -465,6 +476,17 @@ def list_processes(
                     if proc_info.get('pid') != filter_pid:
                         continue
                 
+                # 小健 2026-05-19: 补user/status过滤(原标注暂未生效但数据已有)
+                if user:
+                    proc_user = proc_info.get('username', '') or ''
+                    if user.lower() not in proc_user.lower():
+                        continue
+                
+                if status:
+                    proc_status = proc_info.get('status', '') or ''
+                    if status.lower() not in proc_status.lower():
+                        continue
+                
                 cpu_percent = proc_info.get('cpu_percent') or 0.0
                 memory_percent = proc_info.get('memory_percent') or 0.0
                 
@@ -542,7 +564,7 @@ def kill_process(
         return {
             "code": "ERR_INVALID_PARAM",
             "data": None,
-            "message": "请提供 pid 或 name 参数"
+            "message": "pid必须为正整数"  # 小健 2026-05-19: 修正错误信息(函数无name参数)
         }
     
     try:
@@ -593,71 +615,7 @@ def kill_process(
                 "next_actions": build_next_actions([("list_processes", "验证进程已终止", "需要确认终止结果时")])
             }
         
-        # 注：按名称批量终止功能已移除（函数签名无name参数）- 小沈 2026-05-05
-        else:
-            # 按名称批量终止
-            killed_count = 0
-            failed_count = 0
-            failed_list = []
-            
-            for proc in psutil.process_iter(['pid', 'name', 'status', 'exe']):
-                try:
-                    proc_name = proc.info.get('name', '')
-                    if name.lower() in proc_name.lower():
-                        proc_info = {
-                            "pid": proc.pid,
-                            "name": proc_name,
-                            "status": proc.info.get('status', 'N/A'),
-                            "exe": proc.info.get('exe', 'N/A'),
-                        }
-                        
-                        if force:
-                            proc.kill()
-                            terminate_type = "强制终止(SIGKILL)"
-                        else:
-                            proc.terminate()
-                            terminate_type = "正常终止(SIGTERM)"
-                        
-                        try:
-                            proc.wait(timeout=timeout)
-                            final_status = "已终止"
-                        except psutil.TimeoutExpired:
-                            if not force:
-                                proc.kill()
-                                try:
-                                    proc.wait(timeout=timeout)
-                                    final_status = "已强制终止"
-                                except psutil.TimeoutExpired:
-                                    final_status = "终止超时"
-                            else:
-                                final_status = "终止超时"
-                        
-                        killed_list.append({
-                            "process": proc_info,
-                            "terminate_type": terminate_type,
-                            "final_status": final_status,
-                        })
-                        killed_count += 1
-                
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                    continue
-            
-            if killed_count == 0:
-                return {
-                    "code": "ERR_PROCESS_NOT_FOUND",
-                    "data": None,
-                    "message": f"未找到名为 {name} 的进程"
-                }
-            
-            return {
-                "code": "SUCCESS",
-                "data": {
-                    "killed": killed_list,
-                    "total_killed": killed_count,
-                },
-                "message": f"已终止 {killed_count} 个名为 {name} 的进程",
-                "next_actions": build_next_actions([("list_processes", "验证进程已终止", "需要确认终止结果时")])
-            }
+        # 小健 2026-05-19: 删除按名称批量终止的死代码分支(pid是必填int, else永远不可达, 且引用未定义name变量)
     
     # 【2026-05-17 小沈】修正S6: kill_process幂等化 - NoSuchProcess返回成功而非报错
     except psutil.NoSuchProcess:
@@ -1053,9 +1011,9 @@ def _service_start(
     """
     try:
         if platform.system() == "Windows":
-            return _windows_service_start(service_name, timeout)
+            return _windows_service_start(service_name, timeout, wait_for_started)
         else:
-            return _linux_service_start(service_name, timeout)
+            return _linux_service_start(service_name, timeout, wait_for_started)
     
     except Exception as e:
         logger.error(f"[service_start] 启动服务失败: {e}")
@@ -1066,8 +1024,8 @@ def _service_start(
         }
 
 
-def _windows_service_start(service_name: str, timeout: int) -> dict:
-    """Windows服务启动"""
+def _windows_service_start(service_name: str, timeout: int, wait_for_started: bool = False) -> dict:
+    """Windows服务启动 - 小健 2026-05-19 补wait_for_started等待逻辑"""
     try:
         query_cmd = ["sc", "query", service_name]
         query_result = subprocess.run(query_cmd, capture_output=True, text=True, timeout=10)
@@ -1107,19 +1065,35 @@ def _windows_service_start(service_name: str, timeout: int) -> dict:
             }
         
         import time
-        time.sleep(2)
-        
-        check_cmd = ["sc", "query", service_name]
-        check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
-        
-        final_state = "unknown"
-        for line in check_result.stdout.splitlines():
-            if line.strip().startswith("STATE:"):
-                if "RUNNING" in line:
-                    final_state = "running"
-                elif "STOPPED" in line:
-                    final_state = "stopped"
-                break
+        if wait_for_started:
+            deadline = time.time() + timeout
+            final_state = "unknown"
+            while time.time() < deadline:
+                time.sleep(1)
+                check_cmd = ["sc", "query", service_name]
+                check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+                for line in check_result.stdout.splitlines():
+                    if line.strip().startswith("STATE:"):
+                        if "RUNNING" in line:
+                            final_state = "running"
+                        elif "STOPPED" in line:
+                            final_state = "stopped"
+                        break
+                if final_state == "running":
+                    break
+        else:
+            time.sleep(2)
+            check_cmd = ["sc", "query", service_name]
+            check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+            
+            final_state = "unknown"
+            for line in check_result.stdout.splitlines():
+                if line.strip().startswith("STATE:"):
+                    if "RUNNING" in line:
+                        final_state = "running"
+                    elif "STOPPED" in line:
+                        final_state = "stopped"
+                    break
         
         return {
             "code": "SUCCESS",
@@ -1139,8 +1113,8 @@ def _windows_service_start(service_name: str, timeout: int) -> dict:
         }
 
 
-def _linux_service_start(service_name: str, timeout: int) -> dict:
-    """Linux服务启动"""
+def _linux_service_start(service_name: str, timeout: int, wait_for_started: bool = False) -> dict:
+    """Linux服务启动 - 小健 2026-05-19 补wait_for_started等待逻辑"""
     try:
         start_cmd = ["systemctl", "start", service_name]
         start_result = subprocess.run(start_cmd, capture_output=True, text=True, timeout=timeout)
@@ -1152,10 +1126,22 @@ def _linux_service_start(service_name: str, timeout: int) -> dict:
                 "message": f"启动服务失败: {start_result.stderr.strip()}"
             }
         
-        check_cmd = ["systemctl", "is-active", service_name]
-        check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
-        
-        final_state = check_result.stdout.strip()
+        import time
+        if wait_for_started:
+            deadline = time.time() + timeout
+            final_state = "unknown"
+            while time.time() < deadline:
+                time.sleep(1)
+                check_cmd = ["systemctl", "is-active", service_name]
+                check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+                final_state = check_result.stdout.strip()
+                if final_state == "active":
+                    final_state = "running"
+                    break
+        else:
+            check_cmd = ["systemctl", "is-active", service_name]
+            check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+            final_state = check_result.stdout.strip()
         
         return {
             "code": "SUCCESS",
@@ -1196,9 +1182,9 @@ def _service_stop(
     """
     try:
         if platform.system() == "Windows":
-            return _windows_service_stop(service_name, force, timeout)
+            return _windows_service_stop(service_name, force, timeout, wait_for_stopped)
         else:
-            return _linux_service_stop(service_name, force, timeout)
+            return _linux_service_stop(service_name, force, timeout, wait_for_stopped)
     
     except Exception as e:
         logger.error(f"[service_stop] 停止服务失败: {e}")
@@ -1209,8 +1195,8 @@ def _service_stop(
         }
 
 
-def _windows_service_stop(service_name: str, force: bool, timeout: int) -> dict:
-    """Windows服务停止"""
+def _windows_service_stop(service_name: str, force: bool, timeout: int, wait_for_stopped: bool = False) -> dict:
+    """Windows服务停止 - 小健 2026-05-19 补wait_for_stopped等待逻辑"""
     try:
         query_cmd = ["sc", "query", service_name]
         query_result = subprocess.run(query_cmd, capture_output=True, text=True, timeout=10)
@@ -1254,19 +1240,35 @@ def _windows_service_stop(service_name: str, force: bool, timeout: int) -> dict:
             }
         
         import time
-        time.sleep(2)
-        
-        check_cmd = ["sc", "query", service_name]
-        check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
-        
-        final_state = "unknown"
-        for line in check_result.stdout.splitlines():
-            if line.strip().startswith("STATE:"):
-                if "RUNNING" in line:
-                    final_state = "running"
-                elif "STOPPED" in line:
-                    final_state = "stopped"
-                break
+        if wait_for_stopped:
+            deadline = time.time() + timeout
+            final_state = "unknown"
+            while time.time() < deadline:
+                time.sleep(1)
+                check_cmd = ["sc", "query", service_name]
+                check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+                for line in check_result.stdout.splitlines():
+                    if line.strip().startswith("STATE:"):
+                        if "STOPPED" in line:
+                            final_state = "stopped"
+                        elif "RUNNING" in line:
+                            final_state = "running"
+                        break
+                if final_state == "stopped":
+                    break
+        else:
+            time.sleep(2)
+            check_cmd = ["sc", "query", service_name]
+            check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+            
+            final_state = "unknown"
+            for line in check_result.stdout.splitlines():
+                if line.strip().startswith("STATE:"):
+                    if "RUNNING" in line:
+                        final_state = "running"
+                    elif "STOPPED" in line:
+                        final_state = "stopped"
+                    break
         
         stop_type = "强制停止" if force else "优雅停止"
         
@@ -1289,8 +1291,8 @@ def _windows_service_stop(service_name: str, force: bool, timeout: int) -> dict:
         }
 
 
-def _linux_service_stop(service_name: str, force: bool, timeout: int) -> dict:
-    """Linux服务停止"""
+def _linux_service_stop(service_name: str, force: bool, timeout: int, wait_for_stopped: bool = False) -> dict:
+    """Linux服务停止 - 小健 2026-05-19 补wait_for_stopped等待逻辑"""
     try:
         stop_cmd = ["systemctl", "stop", service_name]
         stop_result = subprocess.run(stop_cmd, capture_output=True, text=True, timeout=timeout)
@@ -1306,10 +1308,22 @@ def _linux_service_stop(service_name: str, force: bool, timeout: int) -> dict:
                 "message": f"停止服务失败: {stop_result.stderr.strip()}"
             }
         
-        check_cmd = ["systemctl", "is-active", service_name]
-        check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
-        
-        final_state = check_result.stdout.strip()
+        import time
+        if wait_for_stopped:
+            deadline = time.time() + timeout
+            final_state = "unknown"
+            while time.time() < deadline:
+                time.sleep(1)
+                check_cmd = ["systemctl", "is-active", service_name]
+                check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+                final_state = check_result.stdout.strip()
+                if final_state in ("inactive", "failed"):
+                    final_state = "stopped"
+                    break
+        else:
+            check_cmd = ["systemctl", "is-active", service_name]
+            check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+            final_state = check_result.stdout.strip()
         
         stop_type = "强制停止" if force else "优雅停止"
         
@@ -1502,21 +1516,30 @@ def _task_create(
         
         cmd = ["schtasks", "/create", "/tn", task_name, "/tr", command]
         
+        # 小健 2026-05-19: 修正schedule解析避免重复/sc参数
         schedule_parts = schedule.split()
         time_part = schedule_parts[0]
-        cmd.extend(["/sc", "daily", "/st", time_part])
         
+        # 先确定schedule type和对应参数
+        sc_type = "daily"
+        sc_extra = []
         if len(schedule_parts) > 1:
             if "/day" in schedule_parts:
                 day_idx = schedule_parts.index("/day")
                 if day_idx + 1 < len(schedule_parts):
                     day_num = schedule_parts[day_idx + 1]
-                    cmd.extend(["/sc", "weekly", "/d", f"MON,TUE,WED,THU,FRI,SAT,SUN".split(",")[int(day_num)-1] if day_num.isdigit() else day_num])
+                    sc_type = "weekly"
+                    day_name = "MON,TUE,WED,THU,FRI,SAT,SUN".split(",")[int(day_num)-1] if day_num.isdigit() else day_num
+                    sc_extra = ["/d", day_name]
             elif "/monthly" in schedule_parts:
                 monthly_idx = schedule_parts.index("/monthly")
                 if monthly_idx + 1 < len(schedule_parts):
                     day_num = schedule_parts[monthly_idx + 1]
-                    cmd.extend(["/sc", "monthly", "/d", day_num])
+                    sc_type = "monthly"
+                    sc_extra = ["/d", day_num]
+        
+        cmd.extend(["/sc", sc_type, "/st", time_part])
+        cmd.extend(sc_extra)
         
         if description:
             cmd.extend(["/d", description])
@@ -1525,7 +1548,13 @@ def _task_create(
             cmd.extend(["/ru", user])
         
         if start_time:
-            cmd.extend(["/sd", start_time])
+            cmd.extend(["/st", start_time])  # 小健 2026-05-19: /sd是Start Date, /st才是Start Time
+        
+        if start_date:
+            cmd.extend(["/sd", start_date])  # 小健 2026-05-19: 补充start_date参数(原为死参数)
+        
+        if interval and interval > 0:
+            cmd.extend(["/ri", str(interval)])  # 小健 2026-05-19: 补充interval参数(原为死参数)
         
         cmd.append("/f")
         

@@ -48,6 +48,9 @@ def get_env(name: Optional[str] = None, default: Optional[str] = None, scope: st
         {code, data, message}
     """
     # 【2026-05-18 小沈】action="list"分支：原list_env逻辑
+    # 小健 2026-05-19: action值校验
+    if action not in ("get", "list"):
+        return {"code": "ERR_ENV_INVALID_ACTION", "data": None, "message": f"无效的action: {action}，支持: get/list"}
     if action == "list":
         try:
             env_vars = {}
@@ -189,6 +192,9 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
             }
 
         # 【2026-05-17 小沈】action="delete"分支：原delete_env逻辑
+        # 小健 2026-05-19: action值校验
+        if action not in ("set", "delete"):
+            return {"code": "ERR_ENV_INVALID_ACTION", "data": None, "message": f"无效的action: {action}，支持: set/delete"}
         if action == "delete":
             if scope == "process":
                 if name in os.environ:
@@ -236,8 +242,25 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
             }
 
         # 【2026-05-17 小沈】exist_ok幂等增强
+        # 小健 2026-05-19: scope=user/system时需从注册表读取当前值,而非os.environ
         if exist_ok and value is not None:
-            existing = os.environ.get(name)
+            if scope == "process":
+                existing = os.environ.get(name)
+            else:
+                existing = None
+                try:
+                    import winreg
+                    hive = winreg.HKEY_CURRENT_USER if scope == "user" else winreg.HKEY_LOCAL_MACHINE
+                    reg_path = r"Environment" if scope == "user" else r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+                    key = winreg.OpenKey(hive, reg_path, 0, winreg.KEY_READ)
+                    try:
+                        existing, _ = winreg.QueryValueEx(key, name)
+                    except FileNotFoundError:
+                        existing = None
+                    finally:
+                        winreg.CloseKey(key)
+                except Exception:
+                    existing = os.environ.get(name)
             if existing == value:
                 return {
                     "code": "SUCCESS",

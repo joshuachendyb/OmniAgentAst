@@ -34,8 +34,8 @@ class RegistryControlInput(BaseModel):
     value: Optional[str] = Field(
         default=None, description="值数据。仅action=\"write\"时使用"
     )
-    value_type: Literal["auto_detect", "REG_SZ", "REG_DWORD", "REG_BINARY", "REG_MULTI_SZ"] = Field(
-        default="auto_detect", description="值类型。仅action=\"write\"时使用。默认auto_detect"
+    value_type: Literal["auto_detect", "REG_SZ", "REG_EXPAND_SZ", "REG_DWORD", "REG_QWORD", "REG_BINARY", "REG_MULTI_SZ"] = Field(
+        default="auto_detect", description="值类型。仅action=\"write\"时使用。默认auto_detect。REG_EXPAND_SZ=可扩展字符串(含%VAR%)，REG_QWORD=64位整数"
     )
     hive: Literal["HKCU", "HKLM", "HKCR", "HKU", "HKCC"] = Field(
         default="HKCU", description="注册表根键。默认HKCU"
