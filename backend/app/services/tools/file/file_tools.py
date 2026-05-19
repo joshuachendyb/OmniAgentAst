@@ -2968,25 +2968,15 @@ def _generate_summary(tool_name: str, result: Any) -> str:
 
 _TOOL_NEXT_ACTIONS = {
     "read_file": [("edit_file", "编辑文件", "需要修改内容时"), ("grep_file_content", "搜索文件内容", "需要查找特定内容时")],
-    "read_text_file": [("edit_file", "编辑文件", "需要修改内容时"), ("grep_file_content", "搜索文件内容", "需要查找特定内容时")],
     "write_text_file": [("read_file", "验证写入结果", "需要确认内容时")],
     "read_media_file": [],
     "edit_file": [("read_file", "验证修改结果", "需要确认修改时")],
-    "precise_replace_in_file": [("read_file", "验证修改结果", "需要确认修改时")],
-    "edit_text_file": [("read_file", "验证修改结果", "需要确认修改时")],
     "list_directory": [("search_files", "搜索文件", "需要查找特定文件时"), ("read_file", "读取文件", "需要查看文件内容时")],
-    "get_directory_tree": [("search_files", "搜索文件", "需要查找特定文件时"), ("read_file", "读取文件", "需要查看文件内容时")],
     "search_files": [("read_file", "读取找到的文件", "需要查看内容时")],
     "grep_file_content": [("read_file", "读取匹配行上下文", "需要查看完整内容时"), ("edit_file", "编辑匹配内容", "需要修改时")],
     "rename_file": [("read_file", "验证重命名结果", "需要确认时")],
-    "batch_rename": [("read_file", "验证重命名结果", "需要确认时")],
     "archive_tool": [("archive_tool", "继续压缩/解压", "需要其他操作时")],
-    "compress_files": [("archive_tool", "继续压缩/解压", "需要其他操作时")],
-    "extract_archive": [("archive_tool", "继续压缩/解压", "需要其他操作时")],
     "file_operation": [("read_file", "验证操作结果", "需要确认时")],
-    "move_file": [("read_file", "验证操作结果", "需要确认时")],
-    "copy_file": [("read_file", "验证操作结果", "需要确认时")],
-    "delete_file": [("read_file", "验证操作结果", "需要确认时")],
     "data_file_format": [("edit_file", "编辑格式化文件", "需要修改时")],
 }
 
