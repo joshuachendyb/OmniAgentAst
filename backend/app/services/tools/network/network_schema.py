@@ -21,10 +21,10 @@ class HttpRequestInput(BaseModel):
         ..., description="请求的目标URL，如 https://api.example.com/data"
     )
     method: Literal["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"] = Field(
-        default="GET", description="HTTP方法，默认GET。Agent根据用户意图智能推演"
+        default="GET", description="HTTP方法，默认GET"
     )
     headers: Optional[Dict[str, str]] = Field(
-        default=None, description="请求头。Agent优先自动注入Authorization，LLM传入仅作补充"
+        default=None, description="请求头字典，如 {\"Authorization\": \"Bearer token\", \"Content-Type\": \"application/json\"}"
     )
     params: Optional[Dict[str, str]] = Field(
         default=None, description="URL查询参数，如 {\"page\": 1, \"limit\": 20}"
@@ -36,10 +36,10 @@ class HttpRequestInput(BaseModel):
         default=30000, ge=1000, le=600000, description="超时毫秒数，默认30000(30秒)"
     )
     proxy: Optional[str] = Field(
-        default=None, description="代理服务器地址。Agent三步走：1.直连 2.环境变量代理 3.报错"
+        default=None, description="代理服务器地址，如 http://127.0.0.1:7890。不设则尝试环境变量HTTPS_PROXY/HTTP_PROXY"
     )
     retry: int = Field(
-        default=3, ge=0, le=10, description="重试次数，默认3。Agent执行指数退避重试(针对429/5xx)"
+        default=3, ge=0, le=10, description="重试次数，默认3。仅对429/5xx自动指数退避重试，其他错误码不重试"
     )
 
 
@@ -58,7 +58,7 @@ class DownloadFileInput(BaseModel):
         default=300000, ge=1000, le=3600000, description="下载超时毫秒数，默认300000(5分钟)"
     )
     proxy: Optional[str] = Field(
-        default=None, description="代理服务器地址。Agent三步走：1.直连 2.环境变量代理 3.报错"
+        default=None, description="代理服务器地址，如 http://127.0.0.1:7890。不设则尝试环境变量HTTPS_PROXY/HTTP_PROXY"
     )
 
 
@@ -83,7 +83,7 @@ class FetchWebpageInput(BaseModel):
         default=8000, ge=500, le=32000, description="最大返回Token数，默认8000"
     )
     proxy: Optional[str] = Field(
-        default=None, description="代理服务器地址。Agent三步走：1.直连 2.环境变量代理 3.报错"
+        default=None, description="代理服务器地址，如 http://127.0.0.1:7890。不设则尝试环境变量HTTPS_PROXY/HTTP_PROXY"
     )
 
 
@@ -96,13 +96,13 @@ class SearchWebInput(BaseModel):
         default=None, description="仅搜索这些域名，如 [\"docs.python.org\"]"
     )
     blocked_domains: Optional[List[str]] = Field(
-        default=None, description="排除这些域名。Agent维护全局黑名单默认自动注入"
+        default=None, description="排除这些域名，如 [\"ads.example.com\"]。结果中不会包含这些域名的链接"
     )
     num_results: int = Field(
         default=10, ge=1, le=50, description="返回结果数量，默认10"
     )
     proxy: Optional[str] = Field(
-        default=None, description="代理服务器地址。Agent三步走：1.直连 2.环境变量代理 3.报错"
+        default=None, description="代理服务器地址，如 http://127.0.0.1:7890。不设则尝试环境变量HTTPS_PROXY/HTTP_PROXY"
     )
 
 
