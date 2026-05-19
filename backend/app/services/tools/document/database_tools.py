@@ -324,7 +324,8 @@ def get_db_schema(
                     "message": f"表不存在: {table_name}"
                 }
         elif filter_pattern:
-            tables = [t for t in tables if filter_pattern.replace('%', '').lower() in t.lower()]
+            import fnmatch
+            tables = [t for t in tables if fnmatch.fnmatch(t.lower(), filter_pattern.lower())]
         
         if len(tables) > 20:
             tables = tables[:20]
