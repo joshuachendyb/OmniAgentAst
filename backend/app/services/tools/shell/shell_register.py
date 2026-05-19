@@ -152,6 +152,14 @@ SHELL_TOOL_EXAMPLES = {
 }
 
 
+TOOL_INPUT_MODELS = {
+    "execute_shell_command": ExecuteShellCommandInput,
+    "find_command": FindCommandInput,
+    "shell_session": ShellSessionInput,
+    "execute_python": ExecutePythonInput,
+    "execute_javascript": ExecuteJavascriptInput,
+}
+
 def _register_shell_tools():
     """
     【2026-05-02 小沈】显式注册所有Shell工具
@@ -166,14 +174,6 @@ def _register_shell_tools():
         "shell_session": shell_session,
         "execute_python": execute_python,
         "execute_javascript": execute_javascript,
-    }
-
-    TOOL_INPUT_MODELS = {
-        "execute_shell_command": ExecuteShellCommandInput,
-        "find_command": FindCommandInput,
-        "shell_session": ShellSessionInput,
-        "execute_python": ExecutePythonInput,
-        "execute_javascript": ExecuteJavascriptInput,
     }
 
     for name, method in tool_methods.items():

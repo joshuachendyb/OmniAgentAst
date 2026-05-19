@@ -193,8 +193,8 @@ FILE_TOOL_DESCRIPTIONS = {
 
 FILE_TOOL_EXAMPLES = {
     "read_file": [
-        {"file_path": "D:/project/main.py"},
-        {"file_path": "D:/project/main.py", "head": 10},
+        {"file_paths": ["D:/project/main.py"]},
+        {"file_paths": ["D:/project/main.py"], "head": 10},
         {"file_paths": ["D:/a.txt", "D:/b.txt"]},
     ],
     "write_text_file": [

@@ -876,6 +876,8 @@ class FileTools:
 
             def _list_sync():
                 nonlocal _list_timed_out
+                import fnmatch
+                _exclude = exclude_patterns or []
                 entries = []
                 stats = {"total_size": 0, "dir_count": 0, "file_count": 0}
                 ext_counter: Dict[str, int] = {}
@@ -896,6 +898,8 @@ class FileTools:
                                     return
                                 try:
                                     if not include_hidden and item.name.startswith('.'):
+                                        continue
+                                    if any(fnmatch.fnmatch(item.name, p) for p in _exclude):
                                         continue
                                     st = item.stat()
                                     is_dir = item.is_dir()
@@ -938,6 +942,8 @@ class FileTools:
                         try:
                             if not include_hidden and item.name.startswith('.'):
                                 continue
+                            if any(fnmatch.fnmatch(item.name, p) for p in _exclude):
+                                continue
                             st = item.stat()
                             is_dir = item.is_dir()
                             entries.append({
@@ -976,7 +982,7 @@ class FileTools:
             if sortBy == "size":
                 all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x.get("size") or 0), reverse=True)
             elif sortBy == "mtime":
-                all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x.get("modified_time", "")), reverse=True)
+                all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x.get("mtime", 0)), reverse=True)
             else:
                 all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x["name"].lower()))
 
@@ -1266,13 +1272,13 @@ class FileTools:
     async def search_files(
         self,
         pattern: str,
-        search_dir: str = "~",
+        search_dir: str,
         recursive: bool = True,
-        max_depth: int = 100000,
+        max_depth: int = 50,
         excludePatterns: Optional[List[str]] = None,
         ignore_case: bool = True,
-        type: Optional[str] = None,
-        sortBy: Optional[str] = None,
+        type: Optional[Literal["file", "directory"]] = None,
+        sortBy: Optional[Literal["name", "size", "mtime"]] = "name",
         page_token: Optional[str] = None
     ) -> Dict[str, Any]:
         """搜索文件名（按文件名匹配）- 小健 2026-05-03 参数名统一为pattern/search_dir"""
@@ -1307,9 +1313,8 @@ class FileTools:
             # 【修复 2026-05-10 小健】加入超时自检：os.walk循环中检查耗时，超时提前返回已有结果
             _deadline = time.monotonic() + get_timeout("search_files") - 2  # 预留2秒给外围asyncio
             
+            _pagination_info = {}
             def _search_sync():
-                import os
-                
                 all_matches = []
                 seen_files = set()
                 start_offset = decode_page_token(page_token) if page_token else 0
@@ -1365,6 +1370,8 @@ class FileTools:
                     for filename in files:
                         if type == "directory":
                             continue
+                        if any(fnmatch.fnmatch(filename, pat) for pat in excludePatterns or []):
+                            continue
                         matched = fnmatch.fnmatch(filename, pattern) if ignore_case else fnmatch.fnmatchcase(filename, pattern)
                         if not matched:
                             continue
@@ -1386,8 +1393,10 @@ class FileTools:
                         
                         # 【修复P16】指定具体异常
                         try:
-                            size = file_path.stat().st_size
+                            st = file_path.stat()
+                            size = st.st_size
                         except (PermissionError, OSError):
+                            st = None
                             size = 0
                         
                         all_matches.append({
@@ -1395,13 +1404,15 @@ class FileTools:
                             "path": file_str,
                             "size": size,
                             "type": "file",
-                            "mtime": file_path.stat().st_mtime if sortBy == "mtime" else None
+                            "mtime": st.st_mtime if st is not None and sortBy == "mtime" else None
                         })
                 
+                _pagination_info['start_offset'] = start_offset
                 return all_matches
             
             # 执行搜索
             all_matches = await asyncio.to_thread(_search_sync)
+            start_offset = _pagination_info.get('start_offset', 0)
             
             # 【新增 2026-05-02 小沈】排序支持（覆盖glob_files功能）
             if sortBy == "mtime":
@@ -1426,7 +1437,8 @@ class FileTools:
                 total_pages = (total + DEFAULT_PAGE_SIZE - 1) // DEFAULT_PAGE_SIZE
                 page_matches = all_matches[:DEFAULT_PAGE_SIZE]
                 has_more = True
-                next_page_token = encode_page_token(DEFAULT_PAGE_SIZE) if has_more else None
+                next_offset = start_offset + DEFAULT_PAGE_SIZE
+                next_page_token = encode_page_token(next_offset) if has_more else None
             else:
                 # 结果少，一次返回
                 page_matches = all_matches
@@ -1505,7 +1517,7 @@ class FileTools:
         replacement: str,
         recursive: bool = False,
         preview: bool = False,
-        conflict_strategy: str = "skip",
+        conflict_strategy: Literal["skip", "overwrite", "append_number"] = "skip",
     ) -> Dict[str, Any]:
         """批量重命名文件"""
         from app.services.tools.toolhelper.file_helpers import batch_rename_impl
@@ -2095,7 +2107,7 @@ class FileTools:
         self,
         pattern: str,
         search_dir: Optional[str] = None,
-        output_mode: Optional[str] = None,
+        output_mode: Optional[Literal["content", "files_with_matches", "count"]] = None,
         glob: Optional[str] = None,
         type: Optional[str] = None,
         after_lines: Optional[int] = None,
@@ -2438,7 +2450,7 @@ class FileTools:
         replacement: Optional[str] = None,
         preview: bool = False,
         recursive: bool = False,
-        conflict_strategy: str = "skip",
+        conflict_strategy: Literal["skip", "overwrite", "append_number"] = "skip",
     ) -> Dict[str, Any]:
         """
         重命名文件（统一入口）— 小沈 2026-05-18
@@ -2522,7 +2534,7 @@ class FileTools:
     
     async def archive_tool(
         self,
-        action: str,
+        action: Literal["compress", "extract"],
         source_path: Optional[str] = None,
         output_path: Optional[str] = None,
         archive_path: Optional[str] = None,
@@ -2595,7 +2607,7 @@ class FileTools:
     
     async def file_operation(
         self,
-        action: str,
+        action: Literal["move", "copy", "delete"],
         source: str,
         destination: Optional[str] = None,
         recursive: bool = False,
@@ -2672,8 +2684,8 @@ class FileTools:
     async def data_file_format(
         self,
         file_path: str,
-        action: str = "read",
-        format: Optional[str] = None,
+        action: Literal["read", "write"] = "read",
+        format: Optional[Literal["json", "yaml", "toml", "ini", "xml", "properties"]] = None,
         data: Optional[Any] = None,
         encoding: str = "utf-8",
         indent: Optional[int] = None,
