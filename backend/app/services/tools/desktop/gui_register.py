@@ -21,40 +21,14 @@ from app.services.tools.registry import tool_registry, ToolCategory
 from app.utils.logger import logger
 
 from app.services.tools.desktop.gui_schema import (
-    ClickInput,
-    MoveInput,
-    ScrollInput,
-    TypeTextInput,
-    ShortcutInput,
-    KeyComboInput,
-    ScreenshotInput,
-    SnapshotInput,
     ScreenRecordInput,
-    FocusWindowInput,
-    ResizeWindowInput,
     OcrInput,
-    ListWindowsInput,
-    ReadClipboardInput,
-    WriteClipboardInput,
     SendNotificationInput,
 )
 
 from app.services.tools.desktop.gui_tools import (
-    click,
-    move,
-    scroll,
-    type_text,
-    shortcut,
-    key_combo,
-    screenshot,
-    snapshot,
     screen_record,
-    list_windows,
-    focus_window,
-    resize_window,
     ocr,
-    read_clipboard,
-    write_clipboard,
     send_notification,
 )
 
