@@ -2,7 +2,7 @@
 # DATABASE Schema - Database Tools Pydantic Models
 # 最后更新: 2026-05-08 小沈 小健 — 全部description改为中文 + "默认为X"格式
 
-from typing import Optional
+from typing import Optional, Literal
 from pydantic import BaseModel, Field
 
 
@@ -20,11 +20,11 @@ class QuerySqlInput(BaseModel):
         default=15000, ge=1000, le=120000,
         description="超时毫秒数。超时或超过5秒时 Agent 自动触发 EXPLAIN。默认为15000（15秒）"
     )
-    output_format: str = Field(
+    output_format: Literal["table", "json"] = Field(
         default="table",
         description="输出格式。可选值：table（人类可读表格）、json（结构化数据）。Agent 自动切换。默认为table"
     )
-    connection_type: str = Field(
+    connection_type: Literal["sqlite", "mysql", "postgresql"] = Field(
         default="sqlite",
         description="数据库类型。可选值：sqlite、mysql、postgresql。Agent 从 connection_string 自动检测。默认为sqlite"
     )
@@ -56,7 +56,7 @@ class ExecuteSqlInput(BaseModel):
         default=True,
         description="受影响行数检查。仅当影响行数超过10000且未经用户确认时阻塞。默认为True"
     )
-    connection_type: str = Field(
+    connection_type: Literal["sqlite", "mysql", "postgresql"] = Field(
         default="sqlite",
         description="数据库类型。可选值：sqlite、mysql、postgresql。Agent 自动检测。默认为sqlite"
     )
@@ -88,11 +88,11 @@ class GetDbSchemaInput(BaseModel):
         default=False,
         description="是否包含索引/外键/约束等详细信息。最多返回20张表防上下文爆炸。默认为False"
     )
-    output_format: str = Field(
+    output_format: Literal["markdown", "json", "sql_ddl"] = Field(
         default="markdown",
         description="输出格式。可选值：markdown、json、sql_ddl。Agent 自动切换。默认为markdown"
     )
-    connection_type: str = Field(
+    connection_type: Literal["sqlite", "mysql", "postgresql"] = Field(
         default="sqlite",
         description="数据库类型。可选值：sqlite、mysql、postgresql。Agent 自动检测。默认为sqlite"
     )
