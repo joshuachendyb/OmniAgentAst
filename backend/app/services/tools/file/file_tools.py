@@ -629,7 +629,7 @@ class FileTools:
                     "content": None
                 }, "write_text_file")
         if unescape:
-            content = content.replace("\\n", "\n").replace("\\\"", "\"").replace("\\\\", "\\")
+            content = content.replace("\\\\", "\\").replace("\\n", "\n").replace("\\\"", "\"")
         
         validation_error = self._validate_content_format(file_path, content)
         if validation_error:
@@ -952,6 +952,8 @@ class FileTools:
             # 排序：目录优先，然后按sortBy
             if sortBy == "size":
                 all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x.get("size") or 0), reverse=True)
+            elif sortBy == "mtime":
+                all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x.get("modified_time", "")), reverse=True)
             else:
                 all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x["name"].lower()))
 
@@ -1773,9 +1775,10 @@ class FileTools:
         new_string: str,
         replace_all: bool = False,
         ignore_case: bool = False,
+        dry_run: bool = False,
         encoding: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """精确替换文件中的字符串"""
+        """精确替换文件中的字符串 — 小健 2026-05-19 增加dry_run支持"""
         # 【修复 2026-04-30 小沈】空old_string拒绝：content.replace("", x)会在每个字符间插入，导致内容爆炸
         if not old_string:
             return _to_unified_format({
@@ -1864,6 +1867,15 @@ class FileTools:
                         new_content = content[:idx] + new_string + content[idx + len(old_string):]
                         count = 1
 
+                replace_result['count'] = count
+                replace_result['used_enc'] = used_enc
+                replace_result['name'] = path.name
+
+                if dry_run:
+                    replace_result['preview'] = True
+                    replace_result['diff_info'] = f"将替换 {count} 处匹配: '{old_string[:50]}' -> '{new_string[:50]}'"
+                    return True
+
                 # 【修复 2026-04-30 小沈】原子写入：先写临时文件再重命名（与write_file对齐）
                 import tempfile
                 import os
@@ -1893,11 +1905,15 @@ class FileTools:
                 operation_func=_replace_sync
             )
             if success:
-                return _to_unified_format({
+                result_data = {
                     "success": True, "replaced_count": replace_result['count'], "encoding": replace_result['used_enc'],
                     "file_path": str(path), "file_name": replace_result['name'],
                     "operation_id": operation_id,
-                }, "edit_file", next_actions=[
+                }
+                if replace_result.get('preview'):
+                    result_data['preview'] = True
+                    result_data['diff_info'] = replace_result.get('diff_info', '')
+                return _to_unified_format(result_data, "edit_file", next_actions=[
                     ("read_file", "验证修改结果", "需要确认修改时"),
                 ])
             else:
@@ -2061,7 +2077,7 @@ class FileTools:
         before_lines: Optional[int] = None,
         context_lines: Optional[int] = None,
         ignore_case: bool = False,
-        show_line_no: bool = False,
+        show_line_no: bool = True,
         multiline: bool = False,
         head_limit: Optional[int] = None,
         page_token: Optional[str] = None,
@@ -2373,6 +2389,7 @@ class FileTools:
                 new_string=new_string or "",
                 replace_all=replace_all,
                 ignore_case=ignore_case,
+                dry_run=dry_run,
                 encoding=encoding
             )
         
@@ -2393,12 +2410,11 @@ class FileTools:
         pattern: Optional[str] = None,
         replacement: Optional[str] = None,
         preview: bool = False,
-        use_regex: bool = True,
         recursive: bool = False,
         conflict_strategy: str = "skip",
     ) -> Dict[str, Any]:
         """
-        重命名文件（统一入口）— 小沈 2026-05-18
+        重命名文件（统一入口）— 小沈 2026-05-18, 小健 2026-05-19 移除use_regex死参数
         
         P11统一入口：合并 rename_file + batch_rename
         - path+new_name: 单文件重命名

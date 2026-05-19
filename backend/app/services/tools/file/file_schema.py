@@ -183,7 +183,7 @@ class ListDirectoryInput(BaseModel):
         default=".",
         description="目录路径，默认当前目录。推荐使用绝对路径如 D:/项目代码"
     )
-    format: str = Field(
+    format: Literal["list", "tree"] = Field(
         default="list",
         description="输出格式：list（扁平列表）或 tree（JSON树结构），默认list"
     )
@@ -197,7 +197,7 @@ class ListDirectoryInput(BaseModel):
         le=50,
         description="最大递归深度，仅当recursive=True时有效，默认10"
     )
-    sortBy: str = Field(
+    sortBy: Literal["name", "size", "mtime"] = Field(
         default="name",
         description="排序方式：name（按名称）/ size（按大小）/ mtime（按修改时间），默认name"
     )
@@ -245,11 +245,11 @@ class SearchFilesInput(BaseModel):
         default=True,
         description="是否忽略大小写，默认True（Windows风格）"
     )
-    type: Optional[str] = Field(
+    type: Optional[Literal["file", "directory"]] = Field(
         default=None,
         description="搜索类型过滤：file=只返回文件，directory=只返回目录，不设则全部返回"
     )
-    sortBy: Optional[str] = Field(
+    sortBy: Optional[Literal["name", "size", "mtime"]] = Field(
         default="name",
         description="排序方式：name/size/mtime，默认name"
     )
@@ -272,7 +272,7 @@ class GrepFileContentInput(BaseModel):
         default=None,
         description="搜索路径（绝对路径），默认当前目录"
     )
-    output_mode: Optional[str] = Field(
+    output_mode: Optional[Literal["content", "files_with_matches", "count"]] = Field(
         default=None,
         description="输出模式：content（显示匹配行内容）/ files_with_matches（只显示文件名）/ count（显示匹配数量）"
     )
@@ -361,15 +361,11 @@ class RenameFileInput(BaseModel):
         default=False,
         description="预览模式（批量模式建议先preview=True确认后再执行），默认False"
     )
-    use_regex: bool = Field(
-        default=True,
-        description="是否使用正则匹配，默认True"
-    )
     recursive: bool = Field(
         default=False,
         description="是否递归子目录（批量模式），默认False"
     )
-    conflict_strategy: str = Field(
+    conflict_strategy: Literal["skip", "overwrite", "append_number"] = Field(
         default="skip",
         description="冲突处理策略：skip（跳过）/ overwrite（覆盖）/ append_number（自动编号），默认skip"
     )
@@ -386,7 +382,7 @@ class ArchiveToolInput(BaseModel):
     - action="compress": 压缩文件/目录
     - action="extract": 解压压缩包
     """
-    action: str = Field(
+    action: Literal["compress", "extract"] = Field(
         description="操作类型：compress（压缩）或 extract（解压）"
     )
     source_path: Optional[str] = Field(
@@ -405,7 +401,7 @@ class ArchiveToolInput(BaseModel):
         default=None,
         description="extract模式：解压目标目录（可选，默认自动创建同名目录）"
     )
-    format: str = Field(
+    format: Literal["zip", "tar", "tar.gz", "tar.bz2"] = Field(
         default="zip",
         description="压缩格式：zip/tar/tar.gz/tar.bz2，默认zip"
     )
@@ -445,7 +441,7 @@ class FileOperationInput(BaseModel):
     - action="copy": 复制文件/目录
     - action="delete": 删除文件/目录
     """
-    action: str = Field(
+    action: Literal["move", "copy", "delete"] = Field(
         description="操作类型：move（移动）/ copy（复制）/ delete（删除）"
     )
     source: str = Field(
@@ -484,14 +480,14 @@ class DataFileFormatInput(BaseModel):
     归入File分类（不是data_format分类）
     注意：CSV/Excel属于Document分类，不在本工具范围内
     """
-    action: str = Field(
+    action: Literal["read", "write"] = Field(
         default="read",
         description="操作类型：read（读取）或 write（写入）"
     )
     file_path: str = Field(
         description="文件路径（必须是绝对路径）"
     )
-    format: Optional[str] = Field(
+    format: Optional[Literal["json", "yaml", "toml", "ini", "xml", "properties"]] = Field(
         default=None,
         description="强制指定格式：json/yaml/toml/ini/xml/properties。不填则根据文件扩展名自动检测"
     )
