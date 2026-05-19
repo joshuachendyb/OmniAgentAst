@@ -924,7 +924,7 @@ async def timer(
     action: str,
     delay: Optional[float] = None,
     callback: Optional[str] = None,
-    callback_data: Optional[Dict] = None,
+    callback_data: Optional[Dict[str, Any]] = None,
     timer_id: Optional[str] = None,
     limit: int = 10,
 ) -> Dict[str, Any]:
