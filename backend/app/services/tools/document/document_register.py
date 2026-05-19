@@ -109,10 +109,17 @@ DESCRIPTIONS = {
 - data: { file_path }
 - message: 操作结果消息""",
 
-    "convert_document": """文档格式转换（docx/xlsx/pptx → PDF）。
+    "convert_document": """文档格式转换（Word/Excel/PPT → PDF）。
  
+【支持格式】
+- .docx/.doc → PDF（Word文档）
+- .xlsx/.xls → PDF（Excel表格）
+- .pptx/.ppt → PDF（PPT演示文稿）
+- .odt → PDF（OpenDocument文本）
+- .ods → PDF（OpenDocument表格）
+
 【使用场景】
-- 当用户需要将Word/Excel/PPT转换为PDF时使用
+- 当用户需要将文档转换为PDF时使用
 - 当用户说"把这个docx转成pdf"时使用
 - 当用户需要分享不可编辑的文档时使用
  

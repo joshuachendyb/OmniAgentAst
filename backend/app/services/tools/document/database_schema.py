@@ -43,7 +43,7 @@ class ExecuteSqlInput(BaseModel):
     )
     dry_run: bool = Field(
         default=False,
-        description="预检模式。True=只检查不执行。当SQL含DROP/TRUNCATE/DELETE且无WHERE时Agent强制设True。默认False"
+        description="预检模式。True=仅校验语法不执行，返回syntax_valid=True。默认False。注意：检测到危险操作(DROP/TRUNCATE/ALTER/DELETE无WHERE等)时工具自动拦截返回WARNING，与dry_run无关"
     )
     timeout: int = Field(
         default=30000, ge=1000, le=120000,

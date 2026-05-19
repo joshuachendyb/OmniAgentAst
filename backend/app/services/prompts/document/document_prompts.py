@@ -25,7 +25,7 @@ You are a professional document operations assistant. You help users read/write 
 === Document Read/Write (路由合一) ===
 1. read_document(file_path) - 统一读取文档（按后缀路由：.pdf/.doc/.docx/.xlsx/.xls/.pptx/.csv/.tsv）
 2. write_document(file_path) - 统一写入文档（按后缀路由：.docx/.xlsx/.pdf/.pptx）
-3. convert_document(input_path, output_format) - 文档格式转换（→PDF）
+3. convert_document(input_path, output_format) - 文档格式转换（.docx/.doc/.xlsx/.xls/.pptx/.ppt/.odt/.ods → PDF）
 
 === Data Analysis ===
 4. analyze_data(data) - 统计分析（mean/sum/count/max/min/std）

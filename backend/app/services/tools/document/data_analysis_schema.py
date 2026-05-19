@@ -27,7 +27,7 @@ class GenerateChartInput(BaseModel):
     )
     chart_type: Optional[Literal["bar", "line", "pie", "scatter"]] = Field(
         default="bar",
-        description="图表类型。Agent根据数据特征自动判断。可选值：bar/line/pie/scatter。默认为bar"
+        description="图表类型。可选值：bar(柱状图)/line(折线图)/pie(饼图)/scatter(散点图)。默认为bar"
     )
     title: Optional[str] = Field(
         default=None,
@@ -35,15 +35,15 @@ class GenerateChartInput(BaseModel):
     )
     x_label: Optional[str] = Field(
         default=None,
-        description="X轴标签（可选）。Agent从数据列名推断"
+        description="X轴标签（可选）。不传则不显示X轴标签，pie图表忽略此参数"
     )
     y_label: Optional[str] = Field(
         default=None,
-        description="Y轴标签（可选）。Agent从数据列名推断"
+        description="Y轴标签（可选）。不传则不显示Y轴标签，pie图表忽略此参数"
     )
     output_path: Optional[str] = Field(
         default=None,
-        description="输出图片路径（可选）。Agent根据上下文自动生成"
+        description="输出图片路径（可选）。不传则自动生成临时路径如<temp>/chart_<时间戳>.png"
     )
 
 
