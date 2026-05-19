@@ -35,14 +35,14 @@ class ListWindowsInput(BaseModel):
     )
     filter_title: Optional[str] = Field(
         default=None,
-        description="按窗口标题过滤（支持模糊匹配）"
+        description="按窗口标题过滤（大小写不敏感的模糊匹配）"
     )
 
 
 class GetWindowInfoInput(BaseModel):
     """get_window_info 工具的输入参数 - 获取窗口详细信息"""
     window_title: str = Field(
-        description="窗口标题（精确匹配或模糊匹配）"
+        description="窗口标题（大小写不敏感的模糊匹配）"
     )
 
 
@@ -51,33 +51,33 @@ class GetWindowInfoInput(BaseModel):
 class WindowControlInput(BaseModel):
     """window_control 工具的输入参数 - 统一窗口控制 - 小沈 2026-05-17"""
     window_title: str = Field(
-        description="窗口标题（精确匹配或模糊匹配）"
+        description="窗口标题（大小写不敏感的模糊匹配）"
     )
     action: Literal["focus", "resize", "maximize", "minimize", "restore", "topmost", "unpin"] = Field(
         description="窗口操作：focus(聚焦)、resize(调整大小)、maximize(最大化)、minimize(最小化)、restore(还原)、topmost(置顶)、unpin(取消置顶)"
     )
     width: Optional[int] = Field(
         default=None,
-        description="窗口宽度（仅resize时使用），单位为像素"
+        description="窗口宽度（仅resize时使用），单位为像素。不传则保持原宽度"
     )
     height: Optional[int] = Field(
         default=None,
-        description="窗口高度（仅resize时使用），单位为像素"
+        description="窗口高度（仅resize时使用），单位为像素。不传则保持原高度"
     )
 
 
 class MouseControlInput(BaseModel):
     """mouse_control 工具的输入参数 - 小沈 2026-05-19 参数精简8→6(砍duration+click_type)"""
     action: Literal["click", "move", "scroll", "position"] = Field(
-        description="鼠标操作：click(点击)、move(移动)、scroll(滚动)、position(获取位置)"
+        description="鼠标操作：click(单击)、move(移动)、scroll(滚动)、position(获取位置)。注意：click仅支持单击"
     )
     x: Optional[int] = Field(
         default=None,
-        description="X坐标（click/move时使用）"
+        description="X坐标（click/move时使用）。click不传则在当前鼠标位置点击"
     )
     y: Optional[int] = Field(
         default=None,
-        description="Y坐标（click/move时使用）"
+        description="Y坐标（click/move时使用）。click不传则在当前鼠标位置点击"
     )
     button: Optional[Literal["left", "right", "middle"]] = Field(
         default="left",
@@ -101,9 +101,9 @@ class KeyboardControlInput(BaseModel):
     text_or_keys: str = Field(
         description="输入内容：type时为文本，shortcut时为快捷键如ctrl+c，combo时为逗号分隔的键如ctrl,shift,esc"
     )
-    interval: Optional[float] = Field(
+    interval: float = Field(
         default=0,
-        description="每个字符间隔（type时使用），单位秒，默认0"
+        description="每个字符间隔（type时使用），单位秒，默认0。注意：仅对ASCII字符有效，非ASCII字符使用write()不支持间隔"
     )
 
 
@@ -111,15 +111,15 @@ class ScreenCaptureInput(BaseModel):
     """screen_capture 工具的输入参数 - 统一屏幕截图 - 小沈 2026-05-17"""
     output_path: Optional[str] = Field(
         default=None,
-        description="输出文件路径（可选），不指定则自动生成"
+        description="输出文件路径（可选）。不传则保存到系统临时目录如<temp>/screenshot_<时间戳>.png"
     )
     region: Optional[Dict[str, int]] = Field(
         default=None,
-        description="截取区域（可选），如 {\"x\": 0, \"y\": 0, \"width\": 800, \"height\": 600}"
+        description="截取区域（可选）。Dict键：x(默认0)/y(默认0)/width(默认800)/height(默认600)"
     )
     display: Optional[int] = Field(
         default=None,
-        description="显示器编号（可选），主显示器=1，第二显示器=2。指定此参数时使用多显示器快照模式"
+        description="显示器编号（可选），1=主显示器，2=第二显示器。指定display时，region和output_path参数将被忽略"
     )
 
 
@@ -130,5 +130,5 @@ class ClipboardControlInput(BaseModel):
     )
     content: Optional[str] = Field(
         default=None,
-        description="写入内容（仅write时使用）"
+        description="写入内容（action=write时必填，不传则返回ERR_MISSING_PARAM）"
     )
