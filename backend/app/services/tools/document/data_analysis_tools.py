@@ -94,9 +94,6 @@ def generate_chart(
     x_label: Optional[str] = None,
     y_label: Optional[str] = None,
     output_path: Optional[str] = None,
-    figure_size: Optional[Tuple[float, float]] = None,  # 已从Schema移除 - 小沈 2026-05-19
-    rotation: int = 0,  # 已从Schema移除 - 小沈 2026-05-19
-    color: Optional[str] = None  # 已从Schema移除 - 小沈 2026-05-19
 ) -> Dict[str, Any]:
     """使用matplotlib生成数据可视化图表 - 小沈 2026-05-02, 修正 2026-05-05"""
     from app.services.tools.document.document_tools import _validate_chart_data
@@ -131,29 +128,21 @@ def generate_chart(
             temp_dir = tempfile.gettempdir()
             output_path = os.path.join(temp_dir, f"chart_{timestamp}.png")
 
-        fig, ax = plt.subplots(figsize=figure_size if figure_size else (10, 6))
+        fig, ax = plt.subplots(figsize=(10, 6))
 
         chart_type_lower = chart_type  # 小健 2026-05-19: Schema Literal已保证非空小写
 
         try:
             if chart_type_lower == "pie":
-                if color:
-                    cmap = plt.get_cmap("Set3")
-                    chart_colors = [cmap(i / max(len(values), 1)) for i in range(len(values))]
-                else:
-                    chart_colors = None
-                ax.pie(values, labels=labels, autopct="%1.1f%%", colors=chart_colors)
+                ax.pie(values, labels=labels, autopct="%1.1f%%")
             elif chart_type_lower == "bar":
-                ax.bar(labels, values, color=color)
+                ax.bar(labels, values)
             elif chart_type_lower == "line":
-                ax.plot(labels, values, marker="o", color=color)
+                ax.plot(labels, values, marker="o")
             elif chart_type_lower == "scatter":
-                ax.scatter(labels, values, c=color)
+                ax.scatter(labels, values)
             else:
-                ax.bar(labels, values, color=color)
-
-            if rotation and chart_type_lower != "pie":
-                plt.xticks(rotation=rotation)
+                ax.bar(labels, values)
 
             if title:
                 ax.set_title(title)
@@ -191,8 +180,6 @@ def analyze_data(
     sort_by: Optional[str] = None,
     top_n: Optional[int] = None,
     max_rows: Optional[int] = None,
-    sort_ascending: bool = True,  # 已从Schema移除 - 小沈 2026-05-19
-    encoding: str = "utf-8"  # 已从Schema移除 - 小沈 2026-05-19
 ) -> Dict[str, Any]:
     """对数据集进行统计分析 - 小沈 2026-05-02, 修正 2026-05-05
     【新增参数】encoding: 文件编码(默认utf-8); max_rows: 最大读取行数(默认None=全部)
@@ -219,7 +206,7 @@ def analyze_data(
                     "data": None,
                     "message": f"文件不存在: {data}"
                 }
-            read_kwargs = {"encoding": encoding}
+            read_kwargs = {}
             if max_rows is not None:
                 read_kwargs["nrows"] = max_rows
             # 小健 2026-05-19: 识别xlsx后缀
@@ -254,7 +241,7 @@ def analyze_data(
         result = {"total_count": total_count, "columns": df.columns.tolist()}
 
         if sort_by and sort_by in df.columns:
-            df = df.sort_values(by=sort_by, ascending=sort_ascending)
+            df = df.sort_values(by=sort_by, ascending=True)
 
         if top_n and top_n > 0:
             df = df.head(top_n)
@@ -326,8 +313,6 @@ def filter_data(
     max_rows: Optional[int] = None,
     sort_by: Optional[str] = None,
     top_n: Optional[int] = None,
-    encoding: str = "utf-8",  # 已从Schema移除 - 小沈 2026-05-19
-    sort_ascending: bool = True  # 已从Schema移除 - 小沈 2026-05-19
 ) -> Dict[str, Any]:
     """按条件筛选/过滤数据 - 小沈 2026-05-05, 修正 2026-05-05"""
     if not _check_pandas():
@@ -360,7 +345,7 @@ def filter_data(
                 df = pd.read_excel(data, engine="openpyxl" if data.endswith('.xlsx') else None, nrows=max_rows)
                 _used_openpyxl = True
             else:
-                df = pd.read_csv(data, encoding=encoding, nrows=max_rows)
+                df = pd.read_csv(data, nrows=max_rows)
         elif isinstance(data, list):
             df = pd.DataFrame(data)
         else:
@@ -424,7 +409,7 @@ def filter_data(
                 filtered_df = filtered_df[available_cols]
 
         if sort_by and sort_by in filtered_df.columns:
-            filtered_df = filtered_df.sort_values(by=sort_by, ascending=sort_ascending)
+            filtered_df = filtered_df.sort_values(by=sort_by, ascending=True)
 
         if top_n and top_n > 0:
             filtered_df = filtered_df.head(top_n)

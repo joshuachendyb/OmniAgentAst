@@ -77,7 +77,6 @@ def query_sql(
     db_path: Optional[str] = None,
     limit: int = 50,
     timeout: int = 15000,
-    output_format: Literal["table", "json"] = "table"  # 已从Schema移除 - 小沈 2026-05-19
 ) -> Dict[str, Any]:
     """
     执行只读SQL查询
@@ -129,36 +128,22 @@ def query_sql(
         if limit > 0 and len(results) > limit:
             results = results[:limit]
         
-        if output_format == "json":
-            return {
-                "code": "SUCCESS",
-                "data": {
-                    "columns": columns,
-                    "rows": results,
-                    "total": len(results)
-                },
-                "message": f"查询成功，返回 {len(results)} 行数据",
-                "next_actions": build_next_actions([
-                    ("execute_sql", "执行写操作SQL", "需要修改数据时"),
-                    ("get_db_schema", "查看表结构", "需要了解其他表时"),
-                ])
-            }
-        else:
-            table_str = _format_table(columns, results)
-            return {
-                "code": "SUCCESS",
-                "data": {
-                    "columns": columns,
-                    "rows": results,
-                    "total": len(results),
-                    "table": table_str
-                },
-                "message": f"查询成功，返回 {len(results)} 行数据",
-                "next_actions": build_next_actions([
-                    ("execute_sql", "执行写操作SQL", "需要修改数据时"),
-                    ("get_db_schema", "查看表结构", "需要了解其他表时"),
-                ])
-            }
+        # output_format 已从Schema移除，固定使用table格式
+        table_str = _format_table(columns, results)
+        return {
+            "code": "SUCCESS",
+            "data": {
+                "columns": columns,
+                "rows": results,
+                "total": len(results),
+                "table": table_str
+            },
+            "message": f"查询成功，返回 {len(results)} 行数据",
+            "next_actions": build_next_actions([
+                ("execute_sql", "执行写操作SQL", "需要修改数据时"),
+                ("get_db_schema", "查看表结构", "需要了解其他表时"),
+            ])
+        }
             
     except sqlite3.Error as e:
         return {"code": "ERR_SQL_EXEC", "data": None, "message": f"SQL执行错误: {str(e)}"}
@@ -175,7 +160,6 @@ def execute_sql(
     db_path: Optional[str] = None,
     dry_run: bool = False,
     timeout: int = 30000,
-    affected_rows_check: bool = True  # 已从Schema移除 - 小沈 2026-05-19
 ) -> Dict[str, Any]:
     """
     执行写操作SQL
@@ -245,7 +229,8 @@ def execute_sql(
             cursor.execute(sql)
             affected_rows = cursor.rowcount
             
-            if affected_rows_check and affected_rows > 10000:
+            # affected_rows_check 已从Schema移除，固定启用>10000行保护
+            if affected_rows > 10000:
                 conn.rollback()
                 return {
                     "code": "WARNING",
@@ -295,8 +280,6 @@ def get_db_schema(
     db_name: Optional[str] = None,
     table_name: Optional[str] = None,
     filter_pattern: Optional[str] = None,
-    include_details: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
-    output_format: Literal["markdown", "json", "sql_ddl"] = "markdown"  # 已从Schema移除 - 小沈 2026-05-19
 ) -> Dict[str, Any]:
     """
     获取数据库表结构
@@ -391,81 +374,46 @@ def get_db_schema(
             
             table_info = {"name": table_name, "columns": columns}
             
-            if include_details:
-                if connection_type in ("mysql", "postgresql"):
-                    from sqlalchemy import text as sa_text2
-                    idx_result = conn.execute(
-                        sa_text2("SELECT index_name, non_unique FROM information_schema.statistics WHERE table_name = :table_name GROUP BY index_name, non_unique"),
-                        {"table_name": table_name}
-                    )
-                    indexes = []
-                    for idx in idx_result.fetchall():
-                        indexes.append({"name": idx[0], "unique": not bool(idx[1])})
-                    table_info["indexes"] = indexes
-                else:
-                    cursor.execute(f"PRAGMA index_list('{table_name}')")
-                    indexes = []
-                    for idx in cursor.fetchall():
-                        indexes.append({"name": idx[1], "unique": bool(idx[2])})
-                    table_info["indexes"] = indexes
+            # include_details 已从Schema移除，固定获取索引信息
+            if connection_type in ("mysql", "postgresql"):
+                from sqlalchemy import text as sa_text2
+                idx_result = conn.execute(
+                    sa_text2("SELECT index_name, non_unique FROM information_schema.statistics WHERE table_name = :table_name GROUP BY index_name, non_unique"),
+                    {"table_name": table_name}
+                )
+                indexes = []
+                for idx in idx_result.fetchall():
+                    indexes.append({"name": idx[0], "unique": not bool(idx[1])})
+                table_info["indexes"] = indexes
+            else:
+                cursor.execute(f"PRAGMA index_list('{table_name}')")
+                indexes = []
+                for idx in cursor.fetchall():
+                    indexes.append({"name": idx[1], "unique": bool(idx[2])})
+                table_info["indexes"] = indexes
             
             schema_info.append(table_info)
         
         _close_connection(conn, engine)
         
-        if output_format == "json":
-            return {
-                "code": "SUCCESS",
-                "data": {"tables": schema_info, "total": len(schema_info)},
-                "message": f"获取成功，共 {len(schema_info)} 个表",
-                "next_actions": build_next_actions([
-                    ("query_sql", "查询表数据", "需要查看数据时"),
-                ])
-            }
-        elif output_format == "sql_ddl":
-            ddl_list = []
-            for table in schema_info:
-                ddl = f"CREATE TABLE {table['name']} (\n"
-                col_defs = []
-                for col in table["columns"]:
-                    col_def = f"  {col['name']} {col['type']}"
-                    if col.get("pk"):
-                        col_def += " PRIMARY KEY"
-                    if not col.get("nullable"):
-                        col_def += " NOT NULL"
-                    if col.get("default"):
-                        col_def += f" DEFAULT {col['default']}"
-                    col_defs.append(col_def)
-                ddl += ",\n".join(col_defs)
-                ddl += "\n);"
-                ddl_list.append(ddl)
-            
-            return {
-                "code": "SUCCESS",
-                "data": {"ddl": ddl_list, "total": len(ddl_list)},
-                "message": f"生成成功，共 {len(ddl_list)} 个表 DDL",
-                "next_actions": build_next_actions([
-                    ("query_sql", "查询表数据", "需要查看数据时"),
-                ])
-            }
-        else:
-            md = f"## 数据库结构 (共 {len(schema_info)} 个表)\n\n"
-            for table in schema_info:
-                md += f"### {table['name']}\n\n"
-                md += "| 字段名 | 类型 | 可空 | 主键 | 默认值 |\n"
-                md += "|--------|------|------|------|--------|\n"
-                for col in table["columns"]:
-                    md += f"| {col['name']} | {col['type']} | {'否' if col.get('nullable') else '是'} | {'是' if col.get('pk') else '否'} | {col.get('default') or '-'} |\n"
-                md += "\n"
-            
-            return {
-                "code": "SUCCESS",
-                "data": {"tables": schema_info, "total": len(schema_info), "markdown": md},
-                "message": f"获取成功，共 {len(schema_info)} 个表",
-                "next_actions": build_next_actions([
-                    ("query_sql", "查询表数据", "需要查看数据时"),
-                ])
-            }
+        # output_format 已从Schema移除，固定使用markdown格式
+        md = f"## 数据库结构 (共 {len(schema_info)} 个表)\n\n"
+        for table in schema_info:
+            md += f"### {table['name']}\n\n"
+            md += "| 字段名 | 类型 | 可空 | 主键 | 默认值 |\n"
+            md += "|--------|------|------|------|--------|\n"
+            for col in table["columns"]:
+                md += f"| {col['name']} | {col['type']} | {'否' if col.get('nullable') else '是'} | {'是' if col.get('pk') else '否'} | {col.get('default') or '-'} |\n"
+            md += "\n"
+        
+        return {
+            "code": "SUCCESS",
+            "data": {"tables": schema_info, "total": len(schema_info), "markdown": md},
+            "message": f"获取成功，共 {len(schema_info)} 个表",
+            "next_actions": build_next_actions([
+                ("query_sql", "查询表数据", "需要查看数据时"),
+            ])
+        }
             
     except sqlite3.Error as e:
         return {"code": "ERR_SQL_EXEC", "data": None, "message": f"获取数据库结构失败: {str(e)}"}

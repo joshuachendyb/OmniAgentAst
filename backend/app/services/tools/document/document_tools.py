@@ -983,9 +983,6 @@ def read_document(
     header: bool = True,
     encoding: str = "utf-8",
     delimiter: Optional[str] = None,
-    extract_images: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
-    extract_notes: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
-    use_pandas: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
 ) -> Dict[str, Any]:
     """读取文档内容 — 小健 2026-05-18
     合并 read_pdf + read_docx + read_pptx + read_xlsx + read_csv
@@ -1000,7 +997,7 @@ def read_document(
         check = _check_pdf_readable(file_path)
         if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
             return check
-        result = _read_pdf(file_path, pages=pages, extract_tables=extract_tables, extract_images=extract_images)
+        result = _read_pdf(file_path, pages=pages, extract_tables=extract_tables)
     elif suffix == ".docx":
         check = _check_docx_readable(file_path)
         if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
@@ -1010,24 +1007,18 @@ def read_document(
         return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
                 "message": "旧版.doc格式不受支持。建议：先用convert_document转为PDF，再用read_document读取PDF"}
     elif suffix == ".pptx":
-        result = _read_pptx(file_path, extract_notes=extract_notes)
+        result = _read_pptx(file_path)
     elif suffix == ".xlsx":
         check = _check_xlsx_readable(file_path)
         if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
             return check
-        if use_pandas:
-            result = _read_excel_pandas(file_path=file_path, sheet_name=sheet_name, max_rows=max_rows)
-        else:
-            result = _read_xlsx(file_path, sheet_name=sheet_name, max_rows=max_rows, header=header)
+        result = _read_xlsx(file_path, sheet_name=sheet_name, max_rows=max_rows, header=header)
     elif suffix == ".xls":
         return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
                 "message": "旧版.xls格式不受支持。建议：先用convert_document转为PDF，再用read_document读取PDF"}
     elif suffix in (".csv", ".tsv"):
         actual_delimiter = "\t" if suffix == ".tsv" else (delimiter or ",")
-        if use_pandas:
-            result = _read_csv_pandas(file_path=file_path, encoding=encoding, delimiter=actual_delimiter, has_header=header, max_rows=max_rows)
-        else:
-            result = _read_csv_stdlib(file_path, encoding=encoding, delimiter=actual_delimiter, has_header=header, max_rows=max_rows)
+        result = _read_csv_stdlib(file_path, encoding=encoding, delimiter=actual_delimiter, has_header=header, max_rows=max_rows)
     else:
         return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
                 "message": f"不支持的格式: {suffix}。支持: .pdf/.docx/.xlsx/.pptx/.csv/.tsv"}
