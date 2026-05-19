@@ -788,7 +788,6 @@ class FileTools:
         """列出目录内容 — 小沈 2026-05-19 精简参数(8→7)
         P11统一入口：list/tree/statistics三合一
         """
-        exclude_patterns = None  # 小沈 2026-05-19: 已从Schema移除，内部默认None
         # P17 format校验
         if format not in ("list", "tree"):
             return _to_unified_format({"success": False, "error": f"format只支持'list'或'tree'，当前值: '{format}'"}, "list_directory")
@@ -1274,8 +1273,6 @@ class FileTools:
         page_token: Optional[str] = None
     ) -> Dict[str, Any]:
         """搜索文件名 — 小沈 2026-05-19 精简参数(9→7)"""
-        excludePatterns = None  # 小沈 2026-05-19: 已从Schema移除
-        sortBy = "name"  # 小沈 2026-05-19: 已从Schema移除，默认按名称排序
         # 验证搜索路径
         is_valid, error_msg = self._validate_path(search_dir)
         if not is_valid:
@@ -2462,9 +2459,6 @@ class FileTools:
         replacement: Optional[str] = None,
     ) -> Dict[str, Any]:
         """重命名文件 — 小沈 2026-05-19 精简参数(9→6)"""
-        preview = False  # 小沈 2026-05-19: 已从Schema移除
-        recursive = False
-        conflict_strategy = "skip"
         # mode分发
         if mode == "batch":
             if not directory:
