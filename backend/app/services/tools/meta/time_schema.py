@@ -43,7 +43,7 @@ class GetTimeInput(BaseModel):
         default=None,
         description="本地化语言，如 zh_CN、en_US。仅action=now时有效，用于格式化weekday等本地化文本。默认为当前会话语言"
     )
-    unit: Optional[str] = Field(
+    unit: Optional[Literal["seconds", "milliseconds", "microseconds"]] = Field(
         default=None,
         description="时间戳单位（action=to_timestamp时有效）：seconds/milliseconds/microseconds。默认为seconds"
     )

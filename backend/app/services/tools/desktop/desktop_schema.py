@@ -77,11 +77,11 @@ class MouseControlInput(BaseModel):
         default=None,
         description="Y坐标（click/move时使用）"
     )
-    button: Optional[str] = Field(
+    button: Optional[Literal["left", "right", "middle"]] = Field(
         default="left",
         description="鼠标按钮（click时使用）：left/right/middle，默认left"
     )
-    click_type: Optional[str] = Field(
+    click_type: Optional[Literal["single", "double"]] = Field(
         default="single",
         description="点击类型（click时使用）：single/double，默认single"
     )
@@ -89,7 +89,7 @@ class MouseControlInput(BaseModel):
         default=0,
         description="移动持续时间（move时使用），单位秒，默认0"
     )
-    direction: Optional[str] = Field(
+    direction: Optional[Literal["up", "down"]] = Field(
         default="down",
         description="滚动方向（scroll时使用）：up/down，默认down"
     )

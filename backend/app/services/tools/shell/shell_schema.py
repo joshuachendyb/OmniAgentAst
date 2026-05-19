@@ -25,7 +25,7 @@ class ExecuteShellCommandInput(BaseModel):
     command: str = Field(
         ..., description="要执行的命令。如 \"dir\"、\"ls -la\"、\"python script.py\" 等"
     )
-    shell_type: Optional[str] = Field(
+    shell_type: Optional[Literal["powershell", "cmd"]] = Field(
         default="powershell",
         description="执行环境。可选值：powershell、cmd。由 Agent 根据命令特征智能判断：默认 powershell，若执行报错且疑似语法错误（如包含 %VAR%），Agent 自动切换 cmd 重试"
     )

@@ -48,7 +48,7 @@ class NetConnectionsInput(BaseModel):
         default="inet",
         description="网络连接的类型。必填为LLM给出，当LLM未明确指定时Agent智能补全为inet。可选值含义：\n- inet：TCP和UDP连接（默认）\n- tcp：仅TCP连接\n- 仅UDP连接"
     )
-    state: Optional[str] = Field(
+    state: Optional[Literal["established", "listen", "time_wait", "close_wait"]] = Field(
         default=None,
         description="连接状态过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为null（返回所有状态）。常见取值：\n- established：已建立的连接（用户问\"谁连着我\"时Agent自动设为此值）\n- listen：监听中的端口（用户问\"开了哪些服务\"时Agent自动设为此值）\n- time_wait：等待中的连接\n- close_wait：关闭等待中的连接"
     )
@@ -70,7 +70,7 @@ class NetConnectionsInput(BaseModel):
 
 class EventLogInput(BaseModel):
     """event_log 工具的输入参数 - 小沈 2026-05-03 修正"""
-    log_name: str = Field(
+    log_name: Literal["Application", "System", "Security"] = Field(
         default="System",
         description="要读取的日志名称（Windows事件查看器日志分类）。必填为LLM给出，当LLM未明确指定时Agent智能补全为System。可选值含义：\n- System：系统日志，记录系统组件事件（默认）\n- Application：应用程序日志，记录应用程序事件\n- Security：安全日志，记录登录审计等信息\n用户问\"软件崩溃\"时Agent自动切为Application；问\"登录失败\"时Agent自动切为Security。"
     )
@@ -88,7 +88,7 @@ class EventLogInput(BaseModel):
         default=None,
         description="事件来源/应用名过滤，只返回指定来源的事件。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。Agent自动从用户query中提取应用名填入，例如用户问\"Windows Update错误\"时Agent自动填入\"Windows Update\"。"
     )
-    time_range: str = Field(
+    time_range: Literal["10m", "1h", "24h", "7d"] = Field(
         default="1h",
         description="时间范围过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为1h。支持格式：\n- 10m：最近10分钟\n- 1h：最近1小时（默认）\n- 24h：最近24小时\n- 7d：最近7天\nAgent语义映射自然语言到标准格式，例如用户说\"今天\"自动映射为24h。"
     )
