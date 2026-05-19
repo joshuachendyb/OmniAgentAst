@@ -48,21 +48,15 @@ async def http_request(
     method: str = "GET",
     headers: Optional[Dict[str, str]] = None,
     params: Optional[Dict[str, str]] = None,
-    body: Optional[Any] = None,
     json_body: Optional[Dict[str, Any]] = None,
     timeout: int = 30000,
-    verify_ssl: bool = True,
     proxy: Optional[str] = None,
     retry: int = 3,
-    follow_redirects: bool = True,
 ) -> dict:
-    """
-    发起HTTP请求 - 小沈 2026-05-03 补齐参数+timeout改毫秒
-
-    支持 GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS 方法。
-    支持自定义请求头、查询参数、请求体。
-    支持超时控制、SSL验证、代理、重试和重定向跟随。
-    """
+    """发起HTTP请求 — 小沈 2026-05-19 精简参数(11→8)"""
+    body = None  # 小沈 2026-05-19: 已从Schema移除，用json_body替代
+    verify_ssl = True  # 小沈 2026-05-19: 已从Schema移除，默认验证SSL
+    follow_redirects = True  # 小沈 2026-05-19: 已从Schema移除，默认跟随重定向
     # 参数校验
     if retry < 0 or retry > 10:
         return {
@@ -234,18 +228,12 @@ async def download_file(
     url: str,
     destination_path: str,
     headers: Optional[Dict[str, str]] = None,
-    timeout: int = 300000,  # 小健 2026-05-19 统一为毫秒
-    chunk_size: int = 8192,
-    resume: bool = True,
+    timeout: int = 300000,
     proxy: Optional[str] = None,
 ) -> dict:
-    """
-    从URL下载文件到本地路径 - 小健 2026-05-18 添加proxy参数
-
-    支持大文件流式下载、断点续传、进度显示。
-    自动创建目标目录。
-    支持超时控制、自定义请求头和代理。
-    """
+    """从URL下载文件 — 小沈 2026-05-19 精简参数(7→5)"""
+    chunk_size = 8192  # 小沈 2026-05-19: 已从Schema移除
+    resume = True  # 小沈 2026-05-19: 已从Schema移除，默认启用断点续传
     try:
         # 验证URL
         parsed = urlparse(url)
@@ -390,16 +378,10 @@ async def fetch_webpage(
     js_render: bool = False,
     timeout: int = 30000,
     max_tokens: int = 8000,
-    user_agent: Optional[str] = None,
     proxy: Optional[str] = None,
 ) -> dict:
-    """
-    获取和处理网页内容 - 小沈 2026-05-04 添加Playwright JS渲染支持
-    
-    支持静态抓取和JS渲染（Playwright）。
-    支持多种输出格式：markdown、html、text。
-    支持AI提取指令（prompt）。
-    """
+    """获取网页内容 — 小沈 2026-05-19 精简参数(8→7)"""
+    user_agent = None  # 小沈 2026-05-19: 已从Schema移除，自动注入随机UA
     timeout_sec = timeout / 1000.0
     
     try:
@@ -787,16 +769,11 @@ async def search_web(
     allowed_domains: Optional[List[str]] = None,
     blocked_domains: Optional[List[str]] = None,
     num_results: int = 10,
-    language: Optional[str] = None,
-    safe_search: str = "moderate",
     proxy: Optional[str] = None,
 ) -> dict:
-    """
-    搜索网络获取最新信息 - 小沈 2026-05-02
-    【重构 2026-05-16 小健】三引擎逐级fallback: Parallel MCP → Exa MCP → Bing中国
-    Parallel/Exa: MCP协议，JSON-RPC，结构化返回，无需API Key
-    Bing: HTML解析，国内可访问，无需API Key
-    """
+    """搜索网络 — 小沈 2026-05-19 精简参数(7→5)"""
+    language = None  # 小沈 2026-05-19: 已从Schema移除，Agent根据query语种自动切换
+    safe_search = "moderate"  # 小沈 2026-05-19: 已从Schema移除
     try:
         if len(query) < 2:
             return {

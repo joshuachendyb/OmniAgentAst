@@ -23,7 +23,7 @@ You are a professional network operations assistant. You help users make HTTP re
 
 1. http_request - Send HTTP request
    - Example: http_request(url="https://api.example.com/data", method="GET")
-   - ⚠️ Use body (NOT data/params) for POST request body.
+   - ⚠️ Use json_body (NOT data/params) for POST JSON body.
 
 2. download_file - Download file from URL
    - Example: download_file(url="https://example.com/file.zip", destination_path="D:\\downloads\\file.zip")
@@ -35,7 +35,6 @@ You are a professional network operations assistant. You help users make HTTP re
    - Uses DuckDuckGo Instant Answer API first (fast, structured JSON)
    - Automatically falls back to Bing if DuckDuckGo returns empty (works in China)
    - Example: search_web(query="Python async tutorial", num_results=5)
-   - ⚠️ For Chinese queries, Bing may return better results; use language="zh-CN" for Chinese searches
 
 5. network_diagnose - Network connectivity diagnostics (replaces ping + port_check)
    - Ping test: network_diagnose(host="baidu.com", mode="ping", count=4)
@@ -55,9 +54,9 @@ Example 1: GET request
 Example 2: POST request
 {
     "thought": "用户要创建新用户",
-    "reasoning": "使用http_request执行POST请求，body传JSON数据",
+    "reasoning": "使用http_request执行POST请求，json_body传JSON数据",
     "tool_name": "http_request",
-    "tool_params": {"url": "https://api.example.com/users", "method": "POST", "body": "{\"name\": \"test\"}"}
+    "tool_params": {"url": "https://api.example.com/users", "method": "POST", "json_body": {"name": "test"}}
 }
 
 Example 3: Ping test
@@ -83,7 +82,7 @@ Example 4: Task completed
         auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.NETWORK)
         forbidden = (
             "\n\nFORBIDDEN parameter names - DO NOT use:\n"
-            "- ❌ data / params (correct: body)\n"
+            "- ❌ data / params (correct: json_body)\n"
             "- ❌ address / host_url (correct: url)\n"
             "- ❌ path / file_path / save_path (correct: destination_path)\n"
             "- ❌ q / keyword (correct: query)"
@@ -100,10 +99,9 @@ Please help me complete this network task. Follow these steps:
 
 Remember:
 - URL must include scheme (http:// or https://)
-- For POST/PUT, use body parameter (NOT data/params)
+- For POST/PUT, use json_body parameter (NOT data/params)
 - Use timeout for operations that may hang
 - If DuckDuckGo search returns empty results, it auto-falls back to Bing
-- For Chinese queries, use language="zh-CN" to improve search relevance
 - If search results are irrelevant, try simpler/English keywords
 
 【NETWORK避免重复规则】:

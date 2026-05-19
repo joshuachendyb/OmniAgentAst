@@ -81,7 +81,6 @@ NETWORK_TOOL_DESCRIPTIONS = {
 使用示例：
 - 简单下载：{"url": "https://example.com/file.zip", "destination_path": "D:/Downloads/file.zip"}
 - 带认证下载：{"url": "https://private.com/file.zip", "destination_path": "D:/Downloads/file.zip", "headers": {"Authorization": "Bearer token"}}
-- 禁止续传：{"url": "https://example.com/file.zip", "destination_path": "D:/Downloads/file.zip", "resume": false}
 
 返回数据说明：
 - code: 状态码，SUCCESS或ERR_NETWORK_INVALID_URL/ERR_NETWORK_INVALID_PATH/ERR_NETWORK_CREATE_DIR/ERR_NETWORK_WRITE_FILE/ERR_NETWORK_TIMEOUT/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
