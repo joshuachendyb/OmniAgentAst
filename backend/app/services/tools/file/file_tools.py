@@ -784,17 +784,11 @@ class FileTools:
         page_token: Optional[str] = None,
         sortBy: str = "name",
         include_hidden: bool = False,
-        exclude_patterns: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """列出目录内容（统一入口）— 小沈 2026-05-18
-        
-        P11统一入口：合并 list_directory + get_directory_tree + file_statistics
-        - format="list": 扁平列表（原list_directory）
-        - format="tree": JSON树结构（原get_directory_tree）
-        - 始终返回statistics统计信息（P15全面化）
-        
-        P17校验：format只能是"list"或"tree"
+        """列出目录内容 — 小沈 2026-05-19 精简参数(8→7)
+        P11统一入口：list/tree/statistics三合一
         """
+        exclude_patterns = None  # 小沈 2026-05-19: 已从Schema移除，内部默认None
         # P17 format校验
         if format not in ("list", "tree"):
             return _to_unified_format({"success": False, "error": f"format只支持'list'或'tree'，当前值: '{format}'"}, "list_directory")
@@ -1275,13 +1269,13 @@ class FileTools:
         search_dir: str,
         recursive: bool = True,
         max_depth: int = 50,
-        excludePatterns: Optional[List[str]] = None,
         ignore_case: bool = True,
         type: Optional[Literal["file", "directory"]] = None,
-        sortBy: Optional[Literal["name", "size", "mtime"]] = "name",
         page_token: Optional[str] = None
     ) -> Dict[str, Any]:
-        """搜索文件名（按文件名匹配）- 小健 2026-05-03 参数名统一为pattern/search_dir"""
+        """搜索文件名 — 小沈 2026-05-19 精简参数(9→7)"""
+        excludePatterns = None  # 小沈 2026-05-19: 已从Schema移除
+        sortBy = "name"  # 小沈 2026-05-19: 已从Schema移除，默认按名称排序
         # 验证搜索路径
         is_valid, error_msg = self._validate_path(search_dir)
         if not is_valid:
@@ -2109,17 +2103,23 @@ class FileTools:
         search_dir: Optional[str] = None,
         output_mode: Optional[Literal["content", "files_with_matches", "count"]] = None,
         glob: Optional[str] = None,
-        type: Optional[str] = None,
-        after_lines: Optional[int] = None,
-        before_lines: Optional[int] = None,
-        context_lines: Optional[int] = None,
+        context: Optional[Dict[str, int]] = None,
         ignore_case: bool = True,
-        show_line_no: bool = True,
         multiline: bool = False,
         head_limit: Optional[int] = None,
         page_token: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """基于正则的内容搜索，支持分页 - 小健 2026-05-02 添加page_token"""
+        """基于正则的内容搜索 — 小沈 2026-05-19 精简参数(13→9)"""
+        # 从context对象解构上下文行数 — 小沈 2026-05-19
+        after_lines = None
+        before_lines = None
+        context_lines = None
+        if context:
+            after_lines = context.get("after")
+            before_lines = context.get("before")
+            context_lines = context.get("around")
+        show_line_no = True  # 小沈 2026-05-19: 永远显示行号
+        type = None  # 小沈 2026-05-19: 已从Schema移除，glob更明确
         try:
             search_path = Path(search_dir).resolve() if search_dir else Path.cwd().resolve()
             is_valid, error_msg = self._validate_path(str(search_path))
@@ -2553,50 +2553,40 @@ class FileTools:
     async def archive_tool(
         self,
         action: Literal["compress", "extract"],
-        source_path: Optional[str] = None,
-        output_path: Optional[str] = None,
-        archive_path: Optional[str] = None,
-        output_dir: Optional[str] = None,
+        source: Optional[str] = None,
+        destination: Optional[str] = None,
         format: str = "zip",
         compression_level: int = 6,
         password: Optional[str] = None,
         overwrite: bool = False,
         exclude_patterns: Optional[List[str]] = None,
-        preserve_permissions: bool = True,
     ) -> Dict[str, Any]:
         """
-        压缩/解压工具（统一入口）— 小沈 2026-05-18
-        
-        P11统一入口：合并 compress_files + extract_archive
-        - action="compress": 压缩文件/目录
-        - action="extract": 解压压缩包
-        
-        P17互斥校验：action只能是"compress"或"extract"
-        P17必填参数校验：compress模式需要source_path+output_path，extract模式需要archive_path
+        压缩/解压工具 — 小沈 2026-05-19 精简参数(11→8)
+        - action="compress": source=源路径, destination=输出压缩包路径
+        - action="extract": source=压缩包路径, destination=解压目标目录(可选)
         """
-        # P17互斥校验
         if action not in ("compress", "extract"):
             return _to_unified_format({
                 "success": False,
                 "error": f"不支持的action: {action}，可选: compress/extract"
             }, "archive_tool")
         
-        # P17按action校验必填参数
         if action == "compress":
-            if not source_path:
+            if not source:
                 return _to_unified_format({
                     "success": False,
-                    "error": "compress模式需要提供source_path"
+                    "error": "compress模式需要提供source"
                 }, "archive_tool")
-            if not output_path:
+            if not destination:
                 return _to_unified_format({
                     "success": False,
-                    "error": "compress模式需要提供output_path"
+                    "error": "compress模式需要提供destination"
                 }, "archive_tool")
             
             return await self._compress_files(
-                source_path=source_path,
-                output_path=output_path,
+                source_path=source,
+                output_path=destination,
                 format=format,
                 exclude_patterns=exclude_patterns,
                 compression_level=compression_level,
@@ -2605,20 +2595,19 @@ class FileTools:
             )
         
         elif action == "extract":
-            if not archive_path:
+            if not source:
                 return _to_unified_format({
                     "success": False,
-                    "error": "extract模式需要提供archive_path"
+                    "error": "extract模式需要提供source"
                 }, "archive_tool")
             
             result = await self._extract_archive(
-                archive_path=archive_path,
-                output_dir=output_dir,
+                archive_path=source,
+                output_dir=destination,
                 overwrite=overwrite,
                 password=password,
-                preserve_permissions=preserve_permissions
+                preserve_permissions=True
             )
-            # 确保返回统一格式
             if "data" not in result:
                 return _to_unified_format(result, "archive_tool")
             return result

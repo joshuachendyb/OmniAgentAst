@@ -224,8 +224,8 @@ FILE_TOOL_EXAMPLES = {
         {"directory": "D:/files", "pattern": "file_(\\\\d+).txt", "replacement": "renamed_\\\\1.txt", "preview": True},
     ],
     "archive_tool": [
-        {"action": "compress", "source_path": "D:/project", "output_path": "D:/backup.zip"},
-        {"action": "extract", "archive_path": "D:/backup.zip", "output_dir": "D:/extracted"},
+        {"action": "compress", "source": "D:/project", "destination": "D:/backup.zip"},
+        {"action": "extract", "source": "D:/backup.zip", "destination": "D:/extracted"},
     ],
     "file_operation": [
         {"action": "move", "source": "D:/a.txt", "destination": "E:/b.txt"},

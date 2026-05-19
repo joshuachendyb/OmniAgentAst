@@ -169,7 +169,7 @@ class EditFileInput(BaseModel):
 # ============================================================
 
 class ListDirectoryInput(BaseModel):
-    """list_directory 统一入口 — 小沈 2026-05-18
+    """list_directory 统一入口 — 小沈 2026-05-19 精简8→7参数
 
     合并 list_directory + get_directory_tree + file_statistics
     - format="list": 扁平列表（原list_directory）
@@ -195,19 +195,15 @@ class ListDirectoryInput(BaseModel):
     )
     sortBy: Literal["name", "size", "mtime"] = Field(
         default="name",
-        description="排序方式：name（按名称）/ size（按大小）/ mtime（按修改时间），默认name"
+        description="排序方式：name/size/mtime，默认name"
     )
     include_hidden: bool = Field(
         default=False,
         description="是否显示隐藏文件（以.开头的文件），默认False"
     )
-    exclude_patterns: Optional[List[str]] = Field(
-        default=None,
-        description="排除模式列表，如 ['node_modules', '__pycache__', '.git']"
-    )
     page_token: Optional[str] = Field(
         default=None,
-        description="分页令牌（base64编码的位置偏移量），用于获取后续页面结果"
+        description="分页令牌，用于获取后续页面结果"
     )
 
 
@@ -216,12 +212,12 @@ class ListDirectoryInput(BaseModel):
 # ============================================================
 
 class SearchFilesInput(BaseModel):
-    """search_files 工具的输入参数"""
+    """search_files 工具的输入参数 — 小沈 2026-05-19 精简9→7参数"""
     pattern: str = Field(
         description="文件名匹配模式，支持glob通配符（* ? **）和中文文件名。如 \"*.py\"、\"**/*.ts\"、\"config*\""
     )
     search_dir: str = Field(
-        description="搜索的起始目录（绝对路径，必填）。支持中文目录名，如 D:/项目代码"
+        description="搜索的起始目录（绝对路径，必填）。如 D:/项目代码"
     )
     recursive: bool = Field(
         default=True,
@@ -233,21 +229,13 @@ class SearchFilesInput(BaseModel):
         le=1000,
         description="最大递归深度，仅当recursive=True时有效，默认50"
     )
-    excludePatterns: Optional[List[str]] = Field(
-        default=None,
-        description="排除模式数组，如 ['node_modules', '.git', '__pycache__']"
-    )
     ignore_case: bool = Field(
         default=True,
-        description="是否忽略大小写，默认True（Windows风格）"
+        description="是否忽略大小写，默认True"
     )
     type: Optional[Literal["file", "directory"]] = Field(
         default=None,
         description="搜索类型过滤：file=只返回文件，directory=只返回目录，不设则全部返回"
-    )
-    sortBy: Optional[Literal["name", "size", "mtime"]] = Field(
-        default="name",
-        description="排序方式：name/size/mtime，默认name"
     )
     page_token: Optional[str] = Field(
         default=None,
@@ -260,7 +248,7 @@ class SearchFilesInput(BaseModel):
 # ============================================================
 
 class GrepFileContentInput(BaseModel):
-    """grep_file_content 工具的输入参数"""
+    """grep_file_content 工具的输入参数 — 小沈 2026-05-19 精简13→9参数"""
     pattern: str = Field(
         description="正则表达式搜索模式，支持中文内容搜索。如 \"def read_file\" 或 \"class.*Component\""
     )
@@ -274,41 +262,19 @@ class GrepFileContentInput(BaseModel):
     )
     glob: Optional[str] = Field(
         default=None,
-        description="文件扩展名过滤（glob通配符，优先级高于type），如 \"*.py\"、\"*.{js,ts}\"。与type二选一即可"
+        description="文件过滤（glob通配符），如 \"*.py\"、\"*.{js,ts}\""
     )
-    type: Optional[str] = Field(
+    context: Optional[Dict[str, int]] = Field(
         default=None,
-        description="语言类型快捷过滤（如js/py/rust/html/json），不指定扩展名时用。优先使用glob精确过滤"
-    )
-    after_lines: Optional[int] = Field(
-        default=None,
-        ge=0,
-        le=1000,
-        description="匹配行后显示N行（after context）"
-    )
-    before_lines: Optional[int] = Field(
-        default=None,
-        ge=0,
-        le=1000,
-        description="匹配行前显示N行（before context）"
-    )
-    context_lines: Optional[int] = Field(
-        default=None,
-        ge=0,
-        le=500,
-        description="匹配行上下各显示N行（context）"
+        description="上下文行数（可选）：{\"after\":N}匹配后N行, {\"before\":N}匹配前N行, {\"around\":N}上下各N行。如 {\"around\":3}"
     )
     ignore_case: bool = Field(
         default=True,
-        description="是否忽略大小写，默认True（搜索时自动忽略大小写）"
+        description="是否忽略大小写，默认True"
     )
     head_limit: Optional[int] = Field(
         default=None,
         description="最大返回结果数"
-    )
-    show_line_no: bool = Field(
-        default=True,
-        description="是否显示行号，默认True"
     )
     multiline: bool = Field(
         default=False,
@@ -376,30 +342,22 @@ class RenameFileInput(BaseModel):
 # ============================================================
 
 class ArchiveToolInput(BaseModel):
-    """archive_tool 统一入口 — 小沈 2026-05-18
+    """archive_tool 统一入口 — 小沈 2026-05-19 精简11→8参数
 
     合并 compress_files + extract_archive
-    - action="compress": 压缩文件/目录
-    - action="extract": 解压压缩包
+    - action="compress": source=源路径, destination=输出压缩包路径
+    - action="extract": source=压缩包路径, destination=解压目标目录(可选)
     """
     action: Literal["compress", "extract"] = Field(
         description="操作类型：compress（压缩）或 extract（解压）"
     )
-    source_path: Optional[str] = Field(
+    source: Optional[str] = Field(
         default=None,
-        description="compress模式：源文件/目录路径（必填）"
+        description="源路径。compress=要压缩的文件/目录路径(必填)；extract=压缩包路径(必填)"
     )
-    output_path: Optional[str] = Field(
+    destination: Optional[str] = Field(
         default=None,
-        description="compress模式：输出压缩包路径（必填）"
-    )
-    archive_path: Optional[str] = Field(
-        default=None,
-        description="extract模式：压缩包路径（必填）"
-    )
-    output_dir: Optional[str] = Field(
-        default=None,
-        description="extract模式：解压目标目录（可选，默认自动创建同名目录）"
+        description="目标路径。compress=输出压缩包路径(必填)；extract=解压目标目录(可选，默认自动创建同名目录)"
     )
     format: Literal["zip", "tar", "tar.gz", "tar.bz2"] = Field(
         default="zip",
@@ -422,10 +380,6 @@ class ArchiveToolInput(BaseModel):
     exclude_patterns: Optional[List[str]] = Field(
         default=None,
         description="compress模式：排除的文件/目录模式列表，如 ['node_modules', '__pycache__']"
-    )
-    preserve_permissions: bool = Field(
-        default=True,
-        description="extract模式：是否保留文件权限，默认True"
     )
 
 
