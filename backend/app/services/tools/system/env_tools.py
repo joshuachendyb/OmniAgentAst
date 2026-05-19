@@ -28,9 +28,12 @@ from app.utils.logger import logger
 from app.services.tools.tool_result_utils import build_next_actions  # 小沈 2026-05-19
 
 
-def get_env(name: Optional[str] = None, default: Optional[str] = None, scope: str = "process",
+def get_env(name: Optional[str] = None, scope: str = "process",
             expand_vars: bool = True, action: str = "get",
-            prefix: Optional[str] = None, include_system: bool = False) -> dict:
+            prefix: Optional[str] = None,
+            default: Optional[str] = None,  # 已从Schema移除 - 小沈 2026-05-19
+            include_system: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
+            ) -> dict:
     """
     获取或列出环境变量 - 小沈 2026-05-03 | 2026-05-18 合并list_env
     【2026-05-18 小沈】P2: 合并list_env（action="list"），减少LLM工具数
@@ -161,7 +164,9 @@ def get_env(name: Optional[str] = None, default: Optional[str] = None, scope: st
 
 
 def set_env(name: str, value: Optional[str] = None, scope: str = "process",
-            append_mode: bool = False, action: str = "set", exist_ok: bool = True) -> dict:
+            append_mode: bool = False, action: str = "set",
+            exist_ok: bool = True,  # 已从Schema移除 - 小沈 2026-05-19
+            ) -> dict:
     """
     设置或删除环境变量 - 小沈 2026-05-03 增加append_mode支持
     【2026-05-17 小沈】P1-5: 合并delete_env（action="delete"），增加exist_ok幂等

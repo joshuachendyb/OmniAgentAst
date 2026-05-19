@@ -267,10 +267,9 @@ SYSTEM_TOOL_EXAMPLES = {
         {"action": "create", "task_name": "MyBackup", "command": "C:\\scripts\\backup.bat", "schedule": "02:00"},
         {"action": "delete", "task_name": "MyBackup"},
     ],
-    # 【2026-05-18 小沈】Environment工具示例
+    # 【2026-05-19 小沈】Environment工具示例（已精简：砍default/include_system/exist_ok）
     "get_env": [
         {"name": "PATH"},
-        {"name": "JAVA_HOME", "default": "not set"},
         {"action": "list"},
         {"action": "list", "prefix": "PY"},
     ],

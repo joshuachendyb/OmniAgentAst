@@ -51,9 +51,9 @@ REGISTRY_TOOL_EXAMPLES = {
         {"action": "read", "key_path": "Software\\Microsoft\\Windows\\CurrentVersion", "value_name": "ProductName"},
         {"action": "read", "key_path": "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders", "value_name": "Desktop", "hive": "HKCU"},
         {"action": "write", "key_path": "Software\\MyTestApp", "value_name": "TestValue", "value": "Hello World", "value_type": "REG_SZ"},
-        {"action": "write", "key_path": "Software\\MyTestApp", "value_name": "TestNumber", "value": "12345", "value_type": "REG_DWORD", "backup_before_write": True},
+        {"action": "write", "key_path": "Software\\MyTestApp", "value_name": "TestNumber", "value": "12345", "value_type": "REG_DWORD"},
         {"action": "delete", "key_path": "Software\\MyTestApp", "value_name": "TestValue"},
-        {"action": "delete", "key_path": "Software\\TempTest", "recursive": True, "backup_before_delete": True},
+        {"action": "delete", "key_path": "Software\\TempTest", "recursive": True},
     ],
 }
 

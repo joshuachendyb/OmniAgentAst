@@ -126,9 +126,9 @@ def get_system_info(info_type: str = "all") -> dict:
 def net_connections(
     kind: str = "inet",
     state: Optional[str] = None,
-    resolve_dns: bool = False,
     process_info: bool = False,
     filter_port: Optional[int] = None,
+    resolve_dns: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
 ) -> dict:
     """
     获取网络连接列表 - 小沈 2026-05-02
@@ -224,7 +224,7 @@ def event_log(
     level: str = "error",
     source: Optional[str] = None,
     time_range: str = "1h",
-    event_id: Optional[List[int]] = None,
+    event_id: Optional[List[int]] = None,  # 已从Schema移除 - 小沈 2026-05-19
 ) -> dict:
     """
     获取系统事件日志 - 小沈 2026-05-02
@@ -437,10 +437,10 @@ def list_processes(
     filter_name: Optional[str] = None,
     filter_pid: Optional[int] = None,
     user: Optional[str] = None,
-    status: Optional[str] = None,
     sort_by: str = "pid",
-    descending: bool = False,
     max_results: int = 100,
+    status: Optional[str] = None,  # 已从Schema移除 - 小沈 2026-05-19
+    descending: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
 ) -> dict:
     """
     列出所有进程 - 小健 2026-05-06 补user/status/limit对齐Schema
@@ -1689,9 +1689,9 @@ def service_control(
     service_name: Optional[str] = None,
     state: str = "all",
     force: bool = False,
-    wait_for_started: bool = False,
-    wait_for_stopped: bool = False,
     timeout: int = 30,
+    wait_for_started: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
+    wait_for_stopped: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
 ) -> dict:
     """
     服务统一控制入口 - 小沈 2026-05-17
@@ -1742,10 +1742,10 @@ def task_control(
     command: Optional[str] = None,
     schedule: Optional[str] = None,
     start_time: Optional[str] = None,
-    start_date: Optional[str] = None,
     interval: Optional[int] = None,
     state: str = "all",
-    folder: Optional[str] = None,
+    start_date: Optional[str] = None,  # 已从Schema移除 - 小沈 2026-05-19
+    folder: Optional[str] = None,  # 已从Schema移除 - 小沈 2026-05-19
 ) -> dict:
     """
     计划任务统一控制入口 - 小沈 2026-05-17

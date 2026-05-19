@@ -4,6 +4,7 @@ REGISTRY 工具参数 Schema 定义
 
 【创建时间】2026-05-02 小沈
 【2026-05-19 小沈】删除旧RegReadInput/RegWriteInput/RegDeleteInput(已合入RegistryControlInput)
+【2026-05-19 小沈】参数精简：11→7，砍output_format/backup_before_write/backup_before_delete/dry_run
 
 职责：
 定义 registry 工具的 Pydantic 模型。
@@ -19,8 +20,9 @@ from typing import Optional, Literal
 
 
 class RegistryControlInput(BaseModel):
-    """registry_control 工具的输入参数 - 小沈 2026-05-18
+    """registry_control 工具的输入参数 - 小沈 2026-05-19 参数精简11→7
     合并 reg_read + reg_write + reg_delete，通过action路由
+    【2026-05-19 小沈】砍掉4参数：output_format(默认auto够用)、backup_before_write/delete(默认True安全)、dry_run(低频)
     """
     key_path: str = Field(
         ..., description="注册表键路径。如 Software\\Microsoft\\Windows\\CurrentVersion。若含根键前缀则自动忽略 hive 参数"
@@ -39,18 +41,6 @@ class RegistryControlInput(BaseModel):
     )
     hive: Literal["HKCU", "HKLM", "HKCR", "HKU", "HKCC"] = Field(
         default="HKCU", description="注册表根键。默认HKCU"
-    )
-    output_format: Literal["auto", "raw", "hex"] = Field(
-        default="auto", description="输出格式。仅action=\"read\"时使用。默认auto"
-    )
-    backup_before_write: bool = Field(
-        default=True, description="写入前备份。仅action=\"write\"时使用。默认True"
-    )
-    backup_before_delete: bool = Field(
-        default=True, description="删除前备份。仅action=\"delete\"时使用。默认True"
-    )
-    dry_run: bool = Field(
-        default=False, description="预演模式。仅action=\"write\"时使用。默认False"
     )
     recursive: bool = Field(
         default=False, description="递归删除子键。仅action=\"delete\"时使用。默认False"

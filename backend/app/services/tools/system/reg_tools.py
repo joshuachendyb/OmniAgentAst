@@ -394,15 +394,16 @@ def registry_control(
     value: Optional[str] = None,
     value_type: str = "auto_detect",
     hive: str = "HKCU",
-    output_format: str = "auto",
-    backup_before_write: bool = True,
-    backup_before_delete: bool = True,
-    dry_run: bool = False,
     recursive: bool = False,
+    output_format: str = "auto",  # 已从Schema移除 - 小沈 2026-05-19
+    backup_before_write: bool = True,  # 已从Schema移除 - 小沈 2026-05-19
+    backup_before_delete: bool = True,  # 已从Schema移除 - 小沈 2026-05-19
+    dry_run: bool = False,  # 已从Schema移除 - 小沈 2026-05-19
 ) -> dict:
-    """注册表统一控制入口 - 小沈 2026-05-18
+    """注册表统一控制入口 - 小沈 2026-05-19 参数精简11→7
     合并 reg_read + reg_write + reg_delete，通过action参数路由
     【2026-05-18 小沈】P11统一入口+P2相似整合
+    【2026-05-19 小沈】砍4参数：output_format/backup_before_write/backup_before_delete/dry_run
 
     Args:
         action: 操作类型 "read"|"write"|"delete"，默认"read"
@@ -411,10 +412,6 @@ def registry_control(
         value: 值数据（仅write时使用）
         value_type: 值类型（仅write时使用），默认auto_detect
         hive: 根键，默认HKCU
-        output_format: 输出格式（仅read时使用），默认auto
-        backup_before_write: 写入前备份（仅write时使用），默认True
-        backup_before_delete: 删除前备份（仅delete时使用），默认True
-        dry_run: 预演模式（仅write时使用），默认False
         recursive: 递归删除（仅delete时使用），默认False
 
     Returns:
