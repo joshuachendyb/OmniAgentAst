@@ -64,7 +64,7 @@ class DownloadFileInput(BaseModel):
         default=None, description="请求头字典，例如 {\"Authorization\": \"Bearer token\"}"
     )
     timeout: int = Field(
-        default=300, ge=1, le=3600, description="下载超时时间（秒），默认为300秒，最大3600秒"
+        default=300000, ge=1000, le=3600000, description="下载超时毫秒数，默认300000（5分钟），最大3600000（1小时）。小健 2026-05-19 统一为毫秒单位(与http_request/fetch_webpage一致)"
     )
     chunk_size: int = Field(
         default=8192, ge=1024, le=1048576, description="下载分块大小（字节），默认8192字节"
@@ -146,6 +146,7 @@ class NetworkDiagnoseInput(BaseModel):
     )
     port: Optional[int] = Field(
         default=None,
+        ge=1, le=65535,
         description="目标端口号。mode='port'时必填(范围1-65535)，mode='ping'时忽略"
     )
     count: int = Field(

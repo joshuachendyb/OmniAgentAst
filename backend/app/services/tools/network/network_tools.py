@@ -234,7 +234,7 @@ async def download_file(
     url: str,
     destination_path: str,
     headers: Optional[Dict[str, str]] = None,
-    timeout: int = 300,
+    timeout: int = 300000,  # 小健 2026-05-19 统一为毫秒
     chunk_size: int = 8192,
     resume: bool = True,
     proxy: Optional[str] = None,
@@ -297,7 +297,7 @@ async def download_file(
                 request_headers["Range"] = f"bytes={resume_offset}-"
 
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout),
+            timeout=httpx.Timeout(timeout / 1000.0, connect=timeout / 1000.0 / 3),  # 小健 2026-05-19: 毫秒转秒+添加connect超时
             follow_redirects=True,
             proxy=proxy_config
         ) as client:
@@ -821,8 +821,12 @@ async def search_web(
         # ===== 第三引擎：Bing中国 =====
         if results is None:
             logger.info("[search_web] Exa失败，降级到Bing中国搜索")
-            results = await _search_bing(query, num_results, language, safe_search, proxy_config)
-            engine_used = "Bing"
+            try:  # 小健 2026-05-19: 包裹try/except, Bing网络错误不应导致整个search_web崩溃
+                results = await _search_bing(query, num_results, language, safe_search, proxy)
+                engine_used = "Bing"
+            except Exception as e:
+                logger.warning(f"[search_web] Bing搜索也失败: {e}")
+                results = []
         
         # 域名过滤
         if allowed_domains:
@@ -882,9 +886,9 @@ async def _search_bing(
     num_results: int,
     language: Optional[str],
     safe_search: str,
-    proxy_config: Optional[dict],
+    proxy_config: Optional[str] = None,  # 小健 2026-05-19: dict→str(httpx proxy参数用字符串)
 ) -> List[dict]:
-    """Bing搜索（HTML解析）- 小沈 2026-05-07, 更新 2026-05-13
+    """Bing搜索（HTML解析）- 小沈 2026-05-07, 小健 2026-05-19 proxy_config改字符串
     国内可访问，无需API Key，解析搜索结果页HTML
     """
     headers = {
@@ -899,7 +903,7 @@ async def _search_bing(
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(15.0, connect=8.0),
         follow_redirects=True,
-        proxies=proxy_config
+        proxy=proxy_config  # 小健 2026-05-19: proxies→proxy(httpx 0.26.0已弃用proxies)
     ) as client:
         response = await client.get("https://cn.bing.com/search", params=params, headers=headers)
         response.raise_for_status()

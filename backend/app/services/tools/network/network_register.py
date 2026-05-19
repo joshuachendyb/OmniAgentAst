@@ -169,11 +169,11 @@ NETWORK_TOOL_INPUT_MODELS = {
 # 使用示例
 NETWORK_TOOL_EXAMPLES = {
     "http_request": [
-        {"url": "https://api.github.com/repos/python/cpython", "method": "GET", "timeout": 10},
-        {"url": "https://httpbin.org/post", "method": "POST", "json_body": {"name": "test", "value": 123}, "timeout": 30},
+        {"url": "https://api.github.com/repos/python/cpython", "method": "GET", "timeout": 10000},
+        {"url": "https://httpbin.org/post", "method": "POST", "json_body": {"name": "test", "value": 123}, "timeout": 30000},
     ],
     "download_file": [
-        {"url": "https://github.com/python/cpython/archive/refs/heads/main.zip", "destination_path": "D:/Downloads/cpython-main.zip", "timeout": 300},
+        {"url": "https://github.com/python/cpython/archive/refs/heads/main.zip", "destination_path": "D:/Downloads/cpython-main.zip", "timeout": 300000},
     ],
     "fetch_webpage": [
         {"url": "https://example.com", "extract_format": "markdown"},
