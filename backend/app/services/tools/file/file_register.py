@@ -88,16 +88,17 @@ FILE_TOOL_DESCRIPTIONS = {
 返回数据说明：
 - data.success/data.data(Base64)/data.mime_type/data.file_size""",
 
-    "edit_file": """编辑文本文件（统一入口）- 合并precise_replace_in_file + edit_text_file功能。
+    "edit_file": """编辑文本文件 — 支持单处替换和多处编辑。
 
 使用场景：
 - old_string+new_string: 单处精确替换
 - edits: 多处结构化编辑
 
-【重要】P17互斥校验：old_string和edits不能同时传入
+【重要】old_string和edits不能同时传入
 
 使用示例：
 - 单处替换：{"file_path": "D:/main.py", "old_string": "def old():", "new_string": "def new():"}
+- 替换所有：{"file_path": "D:/main.py", "old_string": "old_var", "new_string": "new_var", "replace_all": true}
 - 多处编辑：{"file_path": "D:/main.py", "edits": [{"oldText": "old", "newText": "new"}]}
 - 预览：{"file_path": "D:/main.py", "old_string": "x=1", "new_string": "x=2", "dry_run": true}
 
@@ -123,7 +124,7 @@ FILE_TOOL_DESCRIPTIONS = {
 
 使用示例：
 - 搜索Python文件：{"pattern": "**/*.py", "search_dir": "D:/project"}
-- 排除node_modules：{"pattern": "**/*.js", "search_dir": "D:/project", "excludePatterns": ["node_modules"]}
+- 只搜目录：{"pattern": "src", "search_dir": "D:/project", "type": "directory"}
 
 返回数据说明：
 - data.success/data.matches/data.total/data.has_more""",
@@ -133,29 +134,29 @@ FILE_TOOL_DESCRIPTIONS = {
 使用示例：
 - 简单搜索：{"pattern": "def read_file", "search_dir": "D:/backend"}
 - 搜索TS文件：{"pattern": "class.*Component", "search_dir": "D:/frontend", "glob": "*.tsx"}
+- 带上下文：{"pattern": "TODO", "search_dir": "D:/src", "context": {"around": 3}}
 
 返回数据说明：
 - data.success/data.matches/data.total_files/data.total_matches""",
 
-    "rename_file": """重命名文件（统一入口）- 合并rename_file + batch_rename功能。
+    "rename_file": """重命名文件 — 支持单文件和批量重命名。
 
-使用模式（必须指定mode）：
-- mode="single": 单文件重命名，使用 path + new_name 参数
-- mode="batch": 批量正则重命名，使用 directory + pattern + replacement 参数
+使用模式：
+- mode="single": 单文件重命名，需path + new_name
+- mode="batch": 批量正则重命名，需directory + pattern + replacement
 
 使用示例：
 - 单文件：{"mode": "single", "path": "D:/old.txt", "new_name": "new.txt"}
 - 批量：{"mode": "batch", "directory": "D:/files", "pattern": "file_(\\\\d+).txt", "replacement": "renamed_\\\\1.txt"}
-- 批量预览：{"mode": "batch", "directory": "D:/files", "pattern": "file_(\\\\d+).txt", "replacement": "renamed_\\\\1.txt", "preview": true}
 
 返回数据说明：
 - data.success/data.new_path(单文件)/data.operations(批量)""",
 
-    "archive_tool": """压缩/解压工具（统一入口）- 合并compress_files + extract_archive功能。
+    "archive_tool": """压缩/解压工具 — 支持zip/tar/tar.gz/tar.bz2格式。
 
 使用示例：
-- 压缩：{"action": "compress", "source_path": "D:/project", "output_path": "D:/backup.zip"}
-- 解压：{"action": "extract", "archive_path": "D:/backup.zip", "output_dir": "D:/extracted"}
+- 压缩：{"action": "compress", "source": "D:/project", "destination": "D:/backup.zip"}
+- 解压：{"action": "extract", "source": "D:/backup.zip", "destination": "D:/extracted"}
 
 返回数据说明：
 - data.success/data.compressed_size(压缩)/data.extracted_files(解压)""",
@@ -218,10 +219,11 @@ FILE_TOOL_EXAMPLES = {
     ],
     "grep_file_content": [
         {"pattern": "def read_file", "search_dir": "D:/backend"},
+        {"pattern": "TODO", "search_dir": "D:/src", "context": {"around": 3}},
     ],
     "rename_file": [
         {"path": "D:/old.txt", "new_name": "new.txt"},
-        {"directory": "D:/files", "pattern": "file_(\\\\d+).txt", "replacement": "renamed_\\\\1.txt", "preview": True},
+        {"mode": "batch", "directory": "D:/files", "pattern": "file_(\\\\d+).txt", "replacement": "renamed_\\\\1.txt"},
     ],
     "archive_tool": [
         {"action": "compress", "source": "D:/project", "destination": "D:/backup.zip"},

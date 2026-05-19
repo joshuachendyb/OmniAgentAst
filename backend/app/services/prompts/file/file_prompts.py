@@ -65,13 +65,12 @@ You have access to the following 11 tools:
 
 Available Tools (F1-F11):
 
-F1. read_file(file_path=None, file_paths=None, head=None, tail=None, offset=None, limit=None, encoding=None)
+F1. read_file(file_paths, head=None, tail=None, offset=None, limit=None, encoding=None)
    Read text file(s) - unified entry. Supports single file with head/tail/offset/limit, or batch read.
-   - file_path: Single file path (MUTUALLY EXCLUSIVE with file_paths)
-   - file_paths: List of file paths for batch read (MUTUALLY EXCLUSIVE with file_path)
+   - file_paths: List of file paths. 1 path=single file(pagination supported), multiple=batch read
    - head/tail/offset/limit: Pagination for single file mode only
    - encoding: File encoding, default utf-8
-   Example (single): {"file_path": "C:/config.json", "offset": 1, "limit": 100}
+   Example (single): {"file_paths": ["C:/config.json"], "offset": 1, "limit": 100}
    Example (batch): {"file_paths": ["C:/file1.txt", "C:/file2.txt"]}
 
 F2. write_text_file(file_path, text, encoding=None, append=False, create_parents=True, unescape=True)
@@ -87,7 +86,7 @@ F3. read_media_file(file_path)
    - file_path: Media file path (JPG/PNG/GIF/MP3/WAV etc.)
    Example: {"file_path": "D:/screenshot.png"}
 
-F4. edit_file(file_path, old_string=None, new_string=None, edits=None, replace_all=False, ignore_case=False, dry_run=False, encoding=None)
+F4. edit_file(file_path, old_string=None, new_string=None, edits=None, replace_all=False, dry_run=False, encoding=None)
    Edit text file - unified entry. MUTUALLY EXCLUSIVE: old_string OR edits (not both).
    - old_string+new_string: Single precise replacement
    - edits: Array of {oldText, newText} for multi-edit (MUTUALLY EXCLUSIVE with old_string)
@@ -95,43 +94,43 @@ F4. edit_file(file_path, old_string=None, new_string=None, edits=None, replace_a
    Example (single): {"file_path": "D:/main.py", "old_string": "def old():", "new_string": "def new():"}
    Example (multi): {"file_path": "D:/main.py", "edits": [{"oldText": "old", "newText": "new"}]}
 
-F5. list_directory(dir_path, format="list", recursive=False, max_depth=10, sortBy="name", include_hidden=False, exclude_patterns=None, page_token=None)
-   List directory contents - unified entry. format="list" returns flat list, format="tree" returns JSON tree. Always includes statistics.
+F5. list_directory(dir_path, format="list", recursive=False, max_depth=10, sortBy="name", include_hidden=False, page_token=None)
+   List directory contents. format="list" returns flat list, format="tree" returns JSON tree. Always includes statistics.
    - dir_path: Directory path
    - format: "list" or "tree", default "list"
    - recursive: List subdirectories, default False
    Example: {"dir_path": "D:/project", "recursive": true}
    Example (tree): {"dir_path": "D:/project", "format": "tree"}
 
-F6. search_files(pattern, search_dir="~", recursive=True, max_depth=100000, excludePatterns=None, ignore_case=True, type=None, sortBy="name", page_token=None)
+F6. search_files(pattern, search_dir, recursive=True, max_depth=50, ignore_case=True, type=None, page_token=None)
    Search files by name pattern (glob supported, Chinese filenames supported).
    - pattern: File name pattern (e.g., "**/*.py", "config*") (REQUIRED)
    - search_dir: Starting directory (REQUIRED)
    Example: {"pattern": "**/*.py", "search_dir": "D:/project"}
 
-F7. grep_file_content(pattern, search_dir=None, output_mode=None, glob=None, type=None, after_lines=None, before_lines=None, context_lines=None, ignore_case=False, head_limit=None, show_line_no=True)
+F7. grep_file_content(pattern, search_dir=None, output_mode=None, glob=None, context=None, ignore_case=True, head_limit=None, multiline=False, page_token=None)
    Search files by content pattern (regex supported, Chinese supported).
    - pattern: Regex search pattern (REQUIRED)
    - search_dir: Starting directory, default current dir
    - glob: File name filter (e.g., "*.py")
-   Example: {"pattern": "TODO", "search_dir": "D:/project", "glob": "*.py", "ignore_case": true}
+   - context: Context lines, e.g. {"around": 3} or {"after": 2, "before": 1}
+   Example: {"pattern": "TODO", "search_dir": "D:/project", "glob": "*.py"}
+   Example (context): {"pattern": "def main", "search_dir": "D:/src", "context": {"around": 3}}
 
-F8. rename_file(path=None, new_name=None, directory=None, pattern=None, replacement=None, preview=False, use_regex=True, recursive=False, conflict_strategy="skip")
-   Rename file(s) - unified entry. MUTUALLY EXCLUSIVE: path OR directory.
-   - path+new_name: Single file rename
-   - directory+pattern+replacement: Batch regex rename (MUTUALLY EXCLUSIVE with path)
-   - preview: Preview batch rename without executing, default False
-   - conflict_strategy: "skip"/"overwrite"/"append_number", default "skip"
-   Example (single): {"path": "C:/old.txt", "new_name": "new.txt"}
-   Example (batch): {"directory": "D:/project", "pattern": "file_(\\\\d+).txt", "replacement": "renamed_\\\\1.txt"}
+F8. rename_file(mode="single", path=None, new_name=None, directory=None, pattern=None, replacement=None)
+   Rename file(s). mode="single" for single file, mode="batch" for batch regex rename.
+   - mode="single": path + new_name (single file rename)
+   - mode="batch": directory + pattern + replacement (batch regex rename)
+   Example (single): {"mode": "single", "path": "C:/old.txt", "new_name": "new.txt"}
+   Example (batch): {"mode": "batch", "directory": "D:/project", "pattern": "file_(\\\\d+).txt", "replacement": "renamed_\\\\1.txt"}
 
-F9. archive_tool(action, source_path=None, output_path=None, archive_path=None, output_dir=None, format="zip", compression_level=6, password=None, overwrite=False, exclude_patterns=None, preserve_permissions=True)
-   Compress/extract archives - unified entry. action: "compress" or "extract".
+F9. archive_tool(action, source=None, destination=None, format="zip", compression_level=6, password=None, overwrite=False, exclude_patterns=None)
+   Compress/extract archives. action: "compress" or "extract".
    - action: "compress" or "extract" (REQUIRED)
-   - compress needs: source_path + output_path
-   - extract needs: archive_path (output_dir optional)
-   Example (compress): {"action": "compress", "source_path": "D:/project", "output_path": "D:/backup.zip"}
-   Example (extract): {"action": "extract", "archive_path": "D:/backup.zip", "output_dir": "D:/extracted"}
+   - compress needs: source + destination
+   - extract needs: source (destination optional)
+   Example (compress): {"action": "compress", "source": "D:/project", "destination": "D:/backup.zip"}
+   Example (extract): {"action": "extract", "source": "D:/backup.zip", "destination": "D:/extracted"}
 
 F10. file_operation(action, source, destination=None, recursive=False, overwrite=False, force=False, preserve_metadata=True)
    File operations - unified entry for move/copy/delete.
@@ -158,7 +157,7 @@ Example 1: List directory
 {"thought": "查看D盘根目录文件", "reasoning": "调用list_directory", "tool_name": "list_directory", "tool_params": {"dir_path": "D:/"}}
 
 Example 2: Read file
-{"thought": "读取配置文件", "reasoning": "调用read_file单文件模式", "tool_name": "read_file", "tool_params": {"file_path": "C:/config.json"}}
+{"thought": "读取配置文件", "reasoning": "调用read_file单文件模式", "tool_name": "read_file", "tool_params": {"file_paths": ["C:/config.json"]}}
 
 Example 3: Read multiple files
 {"thought": "批量读取", "reasoning": "调用read_file批量模式", "tool_name": "read_file", "tool_params": {"file_paths": ["C:/a.txt", "C:/b.txt"]}}
@@ -179,7 +178,7 @@ Example 8: Delete file
 {"thought": "删除文件", "reasoning": "调用file_operation删除", "tool_name": "file_operation", "tool_params": {"action": "delete", "source": "C:/temp.txt"}}
 
 Example 9: Compress
-{"thought": "压缩目录", "reasoning": "调用archive_tool压缩", "tool_name": "archive_tool", "tool_params": {"action": "compress", "source_path": "D:/project", "output_path": "D:/backup.zip"}}
+{"thought": "压缩目录", "reasoning": "调用archive_tool压缩", "tool_name": "archive_tool", "tool_params": {"action": "compress", "source": "D:/project", "destination": "D:/backup.zip"}}
 
 Example 10: Read JSON
 {"thought": "读取JSON配置", "reasoning": "调用data_file_format", "tool_name": "data_file_format", "tool_params": {"action": "read", "file_path": "D:/config.json"}}
@@ -196,10 +195,10 @@ Example 13: Task completed
 
 
 【⚠️ P17互斥参数规则 - 极其重要】:
-- read_file: file_path 和 file_paths 不能同时使用
+- read_file: file_paths传1个路径=单文件, 传多个=批量
 - edit_file: old_string 和 edits 不能同时使用
 - rename_file: path 和 directory 不能同时使用
-- archive_tool: compress模式需要source_path+output_path，extract模式需要archive_path
+- archive_tool: compress模式需要source+destination，extract模式需要source
 - file_operation: move/copy需要destination，delete不需要
 
 【⚠️ write_text_file text规则 - 极其重要】:
@@ -311,7 +310,7 @@ Warning: Rollback operations cannot be undone. Be certain before proceeding."""
             "- ❌ content for write (use: text)\n"
             "- ❌ file_pattern for search (use: pattern)\n"
             "- ❌ path for search_dir (use: search_dir)\n"
-            "- ❌ src/dst (use: source_path/destination_path)\n"
+            "- ❌ src/dst (use: source/destination)\n"
             "- ❌ read_text_file (use: read_file)\n"
             "- ❌ write_file (use: write_text_file)"
         )
