@@ -168,12 +168,14 @@ def generate_chart(
         finally:
             plt.close(fig)
 
-        return {
+        result = {
             "code": "SUCCESS",
             "data": output_path,
             "message": f"成功生成{chart_type_lower}图表: {output_path}",
-            "next_actions": build_next_actions([])
+            "next_actions": build_next_actions([]),
+            "capabilities_used": ["matplotlib"]
         }
+        return result
     except Exception as e:
         return {
             "code": "ERR_GENERATE_CHART",
@@ -327,6 +329,8 @@ def filter_data(
             "message": "pandas库未安装，请先执行: pip install pandas"
         }
 
+    _used_openpyxl = False
+
     try:
         import pandas as pd
 
@@ -346,6 +350,7 @@ def filter_data(
                         "message": "openpyxl库未安装，请先执行: pip install openpyxl"
                     }
                 df = pd.read_excel(data, engine="openpyxl" if data.endswith('.xlsx') else None)
+                _used_openpyxl = True
             else:
                 df = pd.read_csv(data)
         elif isinstance(data, list):
@@ -434,15 +439,20 @@ def filter_data(
         if warnings:
             message += f" | 警告: {'; '.join(warnings)}"
 
-        return {
+        capabilities_used = ["pandas"]
+        if _used_openpyxl:
+            capabilities_used.append("openpyxl")
+        result = {
             "code": "SUCCESS",
             "data": result_data,
             "message": message,
             "next_actions": build_next_actions([
                 ("analyze_data", "统计分析", "需要对筛选结果统计时"),
                 ("generate_chart", "生成图表", "需要可视化时"),
-            ])
+            ]),
+            "capabilities_used": capabilities_used
         }
+        return result
     except Exception as e:
         return {
             "code": "ERR_FILTER_DATA",

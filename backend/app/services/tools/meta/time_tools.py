@@ -552,6 +552,7 @@ def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, 
 
         # 2. 根据单位计算新时间
         unit = unit.lower()
+        months_used_dateutil = False  # 小沈 2026-05-19: 追踪months计算使用的库
 
         if unit == "days":
             new_dt = start_dt + timedelta(days=delta)
@@ -565,6 +566,7 @@ def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, 
             try:
                 from dateutil.relativedelta import relativedelta
                 new_dt = start_dt + relativedelta(months=int(delta))
+                months_used_dateutil = True  # 小沈 2026-05-19
             except ImportError:
                 new_dt = start_dt + timedelta(days=delta * 30)
         else:
@@ -574,17 +576,24 @@ def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, 
                 "message": f"不支持的单位: {unit}，可选: days/hours/minutes/seconds/months"
             }
 
-        # 3. 格式化返回
+        # 3. 格式化返回 — 小沈 2026-05-19: 增加capabilities_used追踪
+        result_data = {
+            "result_time": new_dt.strftime("%Y-%m-%d %H:%M:%S"),
+            "iso": new_dt.isoformat(),
+            "timestamp": int(new_dt.timestamp()),
+            "tz": new_dt.strftime("%z").replace(":", ""),
+            "unit_used": unit,
+            "delta_used": delta,
+        }
+        if unit == "months":
+            if months_used_dateutil:
+                result_data["capabilities_used"] = ["dateutil"]
+            else:
+                result_data["capabilities_used"] = ["stdlib"]
+                result_data["capabilities_missing"] = ["dateutil"]
         return {
             "code": "SUCCESS",
-            "data": {
-                "result_time": new_dt.strftime("%Y-%m-%d %H:%M:%S"),
-                "iso": new_dt.isoformat(),
-                "timestamp": int(new_dt.timestamp()),
-                "tz": new_dt.strftime("%z").replace(":", ""),
-                "unit_used": unit,
-                "delta_used": delta,
-            },
+            "data": result_data,
             "message": f"成功计算时间（{delta} {unit}后）"
         }
 

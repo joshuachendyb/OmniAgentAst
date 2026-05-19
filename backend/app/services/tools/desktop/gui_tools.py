@@ -54,7 +54,7 @@ def _click(
         import pyautogui
         clicks = 2 if click_type == "double" else 1
         pyautogui.click(x=x, y=y, button=button, clicks=clicks)
-        return {"code": "SUCCESS", "data": {"x": x, "y": y, "button": button, "click_type": click_type}, "message": f"点击完成: ({x}, {y}) {button} {click_type}"}
+        return {"code": "SUCCESS", "data": {"x": x, "y": y, "button": button, "click_type": click_type}, "message": f"点击完成: ({x}, {y}) {button} {click_type}", "capabilities_used": ["pyautogui"]}
     except Exception as e:
         return {"code": "ERR_CLICK", "data": None, "message": f"点击失败: {str(e)}"}
 
@@ -66,7 +66,7 @@ def _move(x: int, y: int, duration: float = 0) -> Dict[str, Any]:
     try:
         import pyautogui
         pyautogui.moveTo(x, y, duration=duration)
-        return {"code": "SUCCESS", "data": {"x": x, "y": y}, "message": f"鼠标移动到: ({x}, {y})"}
+        return {"code": "SUCCESS", "data": {"x": x, "y": y}, "message": f"鼠标移动到: ({x}, {y})", "capabilities_used": ["pyautogui"]}
     except Exception as e:
         return {"code": "ERR_MOVE", "data": None, "message": f"移动失败: {str(e)}"}
 
@@ -79,7 +79,7 @@ def _scroll(direction: str, amount: int = 3) -> Dict[str, Any]:
         import pyautogui
         scroll_amount = -amount if direction == "down" else amount
         pyautogui.scroll(scroll_amount)
-        return {"code": "SUCCESS", "data": {"direction": direction, "amount": amount}, "message": f"滚动完成: {direction} {amount}单位"}
+        return {"code": "SUCCESS", "data": {"direction": direction, "amount": amount}, "message": f"滚动完成: {direction} {amount}单位", "capabilities_used": ["pyautogui"]}
     except Exception as e:
         return {"code": "ERR_SCROLL", "data": None, "message": f"滚动失败: {str(e)}"}
 
@@ -97,7 +97,7 @@ def _type_text(text: str, interval: float = 0) -> Dict[str, Any]:
             pyautogui.typewrite(text, interval=interval)
         else:
             pyautogui.write(text)
-        return {"code": "SUCCESS", "data": {"text_length": len(text)}, "message": f"输入文本完成: {len(text)}个字符"}
+        return {"code": "SUCCESS", "data": {"text_length": len(text)}, "message": f"输入文本完成: {len(text)}个字符", "capabilities_used": ["pyautogui"]}
     except Exception as e:
         return {"code": "ERR_TYPE_TEXT", "data": None, "message": f"输入文本失败: {str(e)}"}
 
@@ -110,7 +110,7 @@ def _shortcut(keys: str) -> Dict[str, Any]:
         import pyautogui
         key_list = [k.strip() for k in keys.split("+")]
         pyautogui.hotkey(*key_list)
-        return {"code": "SUCCESS", "data": {"keys": keys}, "message": f"快捷键执行完成: {keys}"}
+        return {"code": "SUCCESS", "data": {"keys": keys}, "message": f"快捷键执行完成: {keys}", "capabilities_used": ["pyautogui"]}
     except Exception as e:
         return {"code": "ERR_SHORTCUT", "data": None, "message": f"快捷键执行失败: {str(e)}"}
 
@@ -129,7 +129,7 @@ def _key_combo(keys: List[str], action: str = "press") -> Dict[str, Any]:
         elif action == "release":
             for key in keys:
                 pyautogui.keyUp(key)
-        return {"code": "SUCCESS", "data": {"keys": keys, "action": action}, "message": f"按键操作完成: {keys} {action}"}
+        return {"code": "SUCCESS", "data": {"keys": keys, "action": action}, "message": f"按键操作完成: {keys} {action}", "capabilities_used": ["pyautogui"]}
     except Exception as e:
         return {"code": "ERR_KEY_COMBO", "data": None, "message": f"按键操作失败: {str(e)}"}
 
@@ -268,7 +268,7 @@ def _focus_window(title: str) -> Dict[str, Any]:
 
         if target_hwnd:
             win32gui.SetForegroundWindow(target_hwnd)
-            return {"code": "SUCCESS", "data": {"title": title, "hwnd": target_hwnd}, "message": f"窗口已聚焦: {title}"}
+            return {"code": "SUCCESS", "data": {"title": title, "hwnd": target_hwnd}, "message": f"窗口已聚焦: {title}", "capabilities_used": ["win32gui"]}
         else:
             return {"code": "ERR_WINDOW_NOT_FOUND", "data": None, "message": f"未找到窗口: {title}"}
     except Exception as e:
@@ -303,7 +303,7 @@ def _resize_window(title: str, width: int = None, height: int = None) -> Dict[st
         new_height = height if height else curr_height
 
         win32gui.MoveWindow(target_hwnd, left, top, new_width, new_height, True)
-        return {"code": "SUCCESS", "data": {"title": title, "width": new_width, "height": new_height}, "message": f"窗口大小调整完成: {new_width}x{new_height}"}
+        return {"code": "SUCCESS", "data": {"title": title, "width": new_width, "height": new_height}, "message": f"窗口大小调整完成: {new_width}x{new_height}", "capabilities_used": ["win32gui"]}
     except Exception as e:
         return {"code": "ERR_RESIZE_WINDOW", "data": None, "message": f"调整窗口大小失败: {str(e)}"}
 
@@ -343,7 +343,7 @@ def _read_clipboard() -> Dict[str, Any]:
         _llm = {"内容": text[:5000]}
         if len(text) > 5000:
             _llm["截断"] = f"原文{len(text)}字符"
-        return {"code": "SUCCESS", "data": {"text": text}, "message": "剪贴板读取成功", "llm_data": _llm}
+        return {"code": "SUCCESS", "data": {"text": text}, "message": "剪贴板读取成功", "llm_data": _llm, "capabilities_used": ["pyperclip"]}
     except ImportError:
         try:
             import ctypes
@@ -359,7 +359,7 @@ def _read_clipboard() -> Dict[str, Any]:
             _llm = {"内容": text[:5000]}
             if len(text) > 5000:
                 _llm["截断"] = f"原文{len(text)}字符"
-            return {"code": "SUCCESS", "data": {"text": text}, "message": "剪贴板读取成功", "llm_data": _llm}
+            return {"code": "SUCCESS", "data": {"text": text}, "message": "剪贴板读取成功", "llm_data": _llm, "capabilities_used": ["win32.clipboard"], "capabilities_missing": ["pyperclip"]}
         except Exception as e:
             return {"code": "ERR_CLIPBOARD", "data": None, "message": f"读取剪贴板失败: {str(e)}"}
 
@@ -369,7 +369,7 @@ def _write_clipboard(content: str) -> Dict[str, Any]:
     try:
         import pyperclip  # 修复：正确库名pyperclip - 小沈 2026-05-04
         pyperclip.copy(content)
-        return {"code": "SUCCESS", "data": {"content": content}, "message": "剪贴板写入成功"}
+        return {"code": "SUCCESS", "data": {"content": content}, "message": "剪贴板写入成功", "capabilities_used": ["pyperclip"]}
     except ImportError:
         try:
             import ctypes
@@ -389,7 +389,7 @@ def _write_clipboard(content: str) -> Dict[str, Any]:
                 user32.EmptyClipboard()
                 user32.SetClipboardData(CF_TEXT, h_mem)
                 user32.CloseClipboard()
-                return {"code": "SUCCESS", "data": {"content": content}, "message": "剪贴板写入成功"}
+                return {"code": "SUCCESS", "data": {"content": content}, "message": "剪贴板写入成功", "capabilities_used": ["win32.clipboard"], "capabilities_missing": ["pyperclip"]}
             else:
                 kernel32.GlobalFree(h_mem)
                 return {"code": "ERR_CLIPBOARD", "data": None, "message": "内存锁定失败"}
@@ -406,6 +406,6 @@ def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, 
         toaster = ToastNotifier()
         toaster.show_toast(title, message, duration=duration)
         return {"code": "SUCCESS", "data": {"title": title, "message": message, "duration": duration}, "message": "通知发送成功",
-                "next_actions": build_next_actions([])}
+                "next_actions": build_next_actions([]), "capabilities_used": ["win10toast"]}
     except ImportError:
         return {"code": "ERR_NO_WIN10TOAST", "data": None, "message": "需要安装 win10toast 库: pip install win10toast"}

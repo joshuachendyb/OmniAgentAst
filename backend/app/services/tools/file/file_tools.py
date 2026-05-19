@@ -560,7 +560,10 @@ class FileTools:
             # 如果使用了非显式指定的编码（即自动检测），标记编码检测能力
             if encoding is None and used_encoding and used_encoding != "utf-8":
                 result["capabilities_used"] = ["编码自动检测"]
-            
+
+            # 【新增 2026-05-19 小沈】文件IO能力标记
+            result["capabilities_used"] = result.get("capabilities_used", []) + ["文件IO"]
+
             return _to_unified_format(result, "read_file", llm_data=_llm, next_actions=[
                 ("edit_file", "编辑文件", "需要修改内容时"),
                 ("grep_file_content", "搜索文件内容", "需要查找特定内容时"),
@@ -1053,7 +1056,8 @@ class FileTools:
                 sequence_number=self._get_next_sequence()
             )
             
-            # 定义删除操作
+            # 定义删除操作 - 小沈 2026-05-19 追踪删除方式
+            deletion_info = {}  # 可变容器追踪删除方式: "send2trash" 或 "permanent"
             def _delete_sync():
                 if force:
                     # force=True: 永久删除（不放入回收站）
@@ -1072,6 +1076,7 @@ class FileTools:
                     try:
                         import send2trash
                         send2trash.send2trash(str(path))
+                        deletion_info["method"] = "send2trash"
                         return True
                     except ImportError:
                         # send2trash未安装时回退到永久删除
@@ -1083,6 +1088,7 @@ class FileTools:
                                 path.rmdir()
                         else:
                             path.unlink()
+                        deletion_info["method"] = "permanent"
                         return True
                     except Exception as e:
                         # send2trash失败时回退到永久删除
@@ -1094,6 +1100,7 @@ class FileTools:
                                 path.rmdir()
                         else:
                             path.unlink()
+                        deletion_info["method"] = "permanent"
                         return True
             
             success = await asyncio.to_thread(
@@ -1104,12 +1111,21 @@ class FileTools:
             
             if success:
                 delete_mode = "永久删除" if force else "放入回收站"
-                return _to_unified_format({
+                result = {
                     "success": True,
                     "operation_id": operation_id,
                     "deleted_path": str(path),
                     "message": f"文件已{delete_mode}: {file_path}"
-                }, "file_operation")
+                }
+                # 【新增 2026-05-19 小沈】追踪删除能力
+                if not force:
+                    method = deletion_info.get("method", "send2trash")
+                    if method == "send2trash":
+                        result["capabilities_used"] = ["send2trash"]
+                    else:
+                        result["capabilities_used"] = ["os.remove"]
+                        result["capabilities_missing"] = ["send2trash"]
+                return _to_unified_format(result, "file_operation")
             else:
                 return _to_unified_format({
                     "success": False,

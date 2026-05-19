@@ -86,7 +86,8 @@ def read_json(file_path: str, encoding: str = "auto_detect", max_depth: int = 10
             "data": data,
             "metadata": {"truncated": truncated, "max_depth": max_depth, "file_path": file_path},
             "message": f"成功读取JSON文件: {file_path}",
-            "llm_data": {"文件": file_path, "数据": data, "已截断": truncated}
+            "llm_data": {"文件": file_path, "数据": data, "已截断": truncated},
+            "capabilities_used": ["json(stdlib)"]
         }
     except json.JSONDecodeError as e:
         return {"code": "ERR_READ_JSON", "data": None, "message": f"JSON解析失败: {str(e)}"}
@@ -112,7 +113,7 @@ def write_json(file_path: str, data: Union[Dict[str, Any], List[Any]], encoding:
             path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding=encoding) as f:
             json.dump(data, f, indent=indent, ensure_ascii=ensure_ascii)
-        return {"code": "SUCCESS", "data": {"file_path": file_path, "backup_created": backup_created}, "message": f"成功写入JSON文件: {file_path}"}
+        return {"code": "SUCCESS", "data": {"file_path": file_path, "backup_created": backup_created}, "message": f"成功写入JSON文件: {file_path}", "capabilities_used": ["json(stdlib)"]}
     except Exception as e:
         return {"code": "ERR_WRITE_JSON", "data": None, "message": f"写入JSON文件失败: {str(e)}"}
 
@@ -179,7 +180,7 @@ def parse_yaml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
             return {"code": "ERR_PARSE_YAML", "data": None, "message": f"文件不存在: {file_path}"}
         with open(path, "r", encoding=encoding) as f:
             data = yaml.safe_load(f)
-        return {"code": "SUCCESS", "data": data, "message": f"成功读取YAML文件: {file_path}"}
+        return {"code": "SUCCESS", "data": data, "message": f"成功读取YAML文件: {file_path}", "capabilities_used": ["PyYAML"]}
     except ImportError:
         return {"code": "ERR_NO_PYYAML", "data": None, "message": "PyYAML库未安装，请先执行: pip install pyyaml"}
     except Exception as e:
@@ -194,7 +195,7 @@ def write_yaml(file_path: str, data: Any, encoding: str = "utf-8", indent: int =
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding=encoding) as f:
             yaml.safe_dump(data, f, allow_unicode=True, indent=indent)
-        return {"code": "SUCCESS", "data": {"file_path": file_path}, "message": f"成功写入YAML文件: {file_path}"}
+        return {"code": "SUCCESS", "data": {"file_path": file_path}, "message": f"成功写入YAML文件: {file_path}", "capabilities_used": ["PyYAML"]}
     except ImportError:
         return {"code": "ERR_NO_PYYAML", "data": None, "message": "PyYAML库未安装，请先执行: pip install pyyaml"}
     except Exception as e:
@@ -210,7 +211,7 @@ def parse_toml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
             return {"code": "ERR_PARSE_TOML", "data": None, "message": f"文件不存在: {file_path}"}
         with open(path, "rb") as f:
             data = tomli.load(f)
-        return {"code": "SUCCESS", "data": data, "message": f"成功读取TOML文件: {file_path}"}
+        return {"code": "SUCCESS", "data": data, "message": f"成功读取TOML文件: {file_path}", "capabilities_used": ["tomli"]}
     except ImportError:
         return {"code": "ERR_NO_TOMLI", "data": None, "message": "tomli库未安装，请先执行: pip install tomli"}
     except Exception as e:
@@ -225,7 +226,7 @@ def write_toml(file_path: str, data: Dict[str, Any], encoding: str = "utf-8") ->
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "wb") as f:
             tomli_w.dump(data, f)
-        return {"code": "SUCCESS", "data": {"file_path": file_path}, "message": f"成功写入TOML文件: {file_path}"}
+        return {"code": "SUCCESS", "data": {"file_path": file_path}, "message": f"成功写入TOML文件: {file_path}", "capabilities_used": ["tomli_w"]}
     except ImportError:
         return {"code": "ERR_NO_TOMLI_W", "data": None, "message": "tomli_w库未安装，请先执行: pip install tomli-w"}
     except Exception as e:
@@ -275,7 +276,7 @@ def parse_xml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
             return result
 
         data = {root.tag: elem_to_dict(root)}
-        return {"code": "SUCCESS", "data": data, "message": f"成功读取XML文件: {file_path}"}
+        return {"code": "SUCCESS", "data": data, "message": f"成功读取XML文件: {file_path}", "capabilities_used": ["xml(stdlib)"]}
     except Exception as e:
         return {"code": "ERR_PARSE_XML", "data": None, "message": f"读取XML失败: {str(e)}"}
 

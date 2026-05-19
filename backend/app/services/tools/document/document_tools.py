@@ -227,7 +227,7 @@ def _read_csv_pandas(
         columns = df.columns.tolist()
         serialized_rows = _serialize_pandas_rows(df)
         dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
-        return {"code": "SUCCESS", "data": {"columns": columns, "rows": serialized_rows, "row_count": len(serialized_rows), "dtypes": dtypes}, "message": f"成功读取CSV文件: {file_path}，共 {len(serialized_rows)} 行数据"}
+        return {"code": "SUCCESS", "data": {"columns": columns, "rows": serialized_rows, "row_count": len(serialized_rows), "dtypes": dtypes}, "message": f"成功读取CSV文件: {file_path}，共 {len(serialized_rows)} 行数据", "capabilities_used": ["pandas", "csv"]}
     except Exception as e:
         return {"code": "ERR_READ_CSV_DATAFRAME", "data": None, "message": f"读取CSV文件失败: {str(e)}"}
 
@@ -455,7 +455,8 @@ def _read_docx(
             "data": result_data,
             "message": f"成功读取Word文档: {file_path}，共 {len(paragraphs)} 段",
             "llm_data": _llm,
-            "capabilities_used": ["python-docx"]
+            "capabilities_used": ["python-docx"],
+            "capabilities_missing": ["pandas"]
         }
     except Exception as e:
         return {
@@ -588,7 +589,8 @@ def _read_csv_stdlib(
                 "rows": rows,
                 "row_count": len(rows),
             },
-            "message": f"成功读取CSV文件: {file_path}，共 {len(rows)} 行数据"
+            "message": f"成功读取CSV文件: {file_path}，共 {len(rows)} 行数据",
+            "capabilities_used": ["csv(stdlib)"]
         }
     except Exception as e:
         return {
@@ -670,7 +672,8 @@ def _read_pptx(
             "data": result_data,
             "message": f"成功读取PPT文件: {file_path}，共 {len(prs.slides)} 页",
             "llm_data": _llm,
-            "capabilities_used": ["python-pptx"]
+            "capabilities_used": ["python-pptx"],
+            "capabilities_missing": ["pandas"]
         }
     except Exception as e:
         return {
@@ -1023,6 +1026,8 @@ def read_document(
                 result["capabilities_used"] = ["python-docx"]
             elif suffix == ".pptx":
                 result["capabilities_used"] = ["python-pptx"]
+            elif suffix in (".csv", ".tsv"):
+                result["capabilities_used"] = result.get("capabilities_used", ["csv(stdlib)"])
             elif suffix in (".xlsx", ".xls"):
                 result["capabilities_used"] = ["openpyxl"]
                 result["capabilities_missing"] = ["pandas"]
@@ -1162,6 +1167,7 @@ def convert_document(
             "code": "SUCCESS",
             "data": {"input_path": str(src), "output_path": output_path},
             "message": f"成功转换: {src_ext} → .pdf",
+            "capabilities_used": ["LibreOffice"],
             "next_actions": build_next_actions([
                 ("read_document", "读取转换后文件", "需要查看结果时"),
             ])

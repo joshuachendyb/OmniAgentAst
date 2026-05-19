@@ -166,6 +166,7 @@ def list_windows(
                 "total": len(windows)
             },
             "message": f"共找到 {len(windows)} 个窗口",
+            "capabilities_used": ["win32gui"],
             "next_actions": build_next_actions([("get_window_info", "获取窗口详情", "需要查看特定窗口信息时"), ("window_control", "控制窗口", "需要操作窗口时")])
         }
 
@@ -229,6 +230,7 @@ def get_window_info(window_title: str) -> Dict[str, Any]:
             "code": "SUCCESS",
             "data": info,
             "message": msg,
+            "capabilities_used": ["win32gui"],
             "next_actions": build_next_actions([("window_control", "控制该窗口", "需要操作窗口时")])
         }
 
@@ -337,6 +339,8 @@ def window_control(
 
     if result.get("code") == "SUCCESS" and "next_actions" not in result:
         result["next_actions"] = build_next_actions([("get_window_info", "确认窗口状态", "需要验证操作结果时")])
+    if result.get("code") == "SUCCESS":
+        result["capabilities_used"] = ["win32gui", "pyautogui"]
     return result
 
 
@@ -372,6 +376,7 @@ def mouse_control(
 
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([("screen_capture", "截图查看效果", "需要确认操作结果时")])
+        result["capabilities_used"] = ["pyautogui"]
     return result
 
 
@@ -400,6 +405,7 @@ def keyboard_control(
 
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([("screen_capture", "截图查看效果", "需要确认操作结果时")])
+        result["capabilities_used"] = ["pyautogui"]
     return result
 
 

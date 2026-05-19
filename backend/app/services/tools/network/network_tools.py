@@ -462,6 +462,7 @@ async def fetch_webpage(
                         truncated = False
                     
                     content_type = "text/html"
+                    capabilities_used = ["playwright"]
                     
             except ImportError:
                 return {
@@ -517,6 +518,7 @@ async def fetch_webpage(
                             "data": b64,
                             "filename": url.split("/")[-1].split("?")[0] or "download"
                         },
+                        "capabilities_used": ["httpx"],
                         "next_actions": build_next_actions([("search_web", "搜索更多网页", "需要搜索更多信息时")])
                     }
                 
@@ -542,6 +544,7 @@ async def fetch_webpage(
                 truncated = False
             
             status_code = response.status_code
+            capabilities_used = ["httpx"]
         
         result_data = {
             "url": url,
@@ -560,6 +563,7 @@ async def fetch_webpage(
             "code": "SUCCESS",
             "data": result_data,
             "message": f"成功获取网页内容（{extract_format}格式）" + ("（已截断）" if truncated else ""),
+            "capabilities_used": capabilities_used,
             "next_actions": build_next_actions([("search_web", "搜索更多网页", "需要搜索更多信息时")])
         }
     
