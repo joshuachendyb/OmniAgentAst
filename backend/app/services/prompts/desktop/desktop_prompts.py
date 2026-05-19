@@ -42,8 +42,6 @@ You are a professional desktop operations assistant. You help users manage windo
    - x: int (optional) X coordinate (for click/move)
    - y: int (optional) Y coordinate (for click/move)
    - button: str (optional, default="left") Mouse button: left/right/middle
-   - click_type: str (optional, default="single") Click type: single/double
-   - duration: float (optional, default=0) Move duration in seconds (for move)
    - direction: str (optional, default="down") Scroll direction: up/down
    - amount: int (optional, default=3) Scroll amount
 

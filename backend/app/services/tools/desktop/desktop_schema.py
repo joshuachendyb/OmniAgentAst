@@ -16,6 +16,8 @@ DESKTOP Schema - 桌面工具 Pydantic 模型
 9. ocr - OCR识别
 10. send_notification - 发送通知
 
+【2026-05-19 小沈】参数精简：MouseControlInput 8→6(砍duration+click_type)
+
 创建时间: 2026-04-29
 【修正 2026-05-05 小沈】SetWindowStateInput.action 改为 Literal 约束
 【2026-05-17 小沈】新增统一入口Schema（WindowControlInput等5个）
@@ -65,7 +67,7 @@ class WindowControlInput(BaseModel):
 
 
 class MouseControlInput(BaseModel):
-    """mouse_control 工具的输入参数 - 统一鼠标控制 - 小沈 2026-05-17"""
+    """mouse_control 工具的输入参数 - 小沈 2026-05-19 参数精简8→6(砍duration+click_type)"""
     action: Literal["click", "move", "scroll", "position"] = Field(
         description="鼠标操作：click(点击)、move(移动)、scroll(滚动)、position(获取位置)"
     )
@@ -80,14 +82,6 @@ class MouseControlInput(BaseModel):
     button: Optional[Literal["left", "right", "middle"]] = Field(
         default="left",
         description="鼠标按钮（click时使用）：left/right/middle，默认left"
-    )
-    click_type: Optional[Literal["single", "double"]] = Field(
-        default="single",
-        description="点击类型（click时使用）：single/double，默认single"
-    )
-    duration: Optional[float] = Field(
-        default=0,
-        description="移动持续时间（move时使用），单位秒，默认0"
     )
     direction: Optional[Literal["up", "down"]] = Field(
         default="down",

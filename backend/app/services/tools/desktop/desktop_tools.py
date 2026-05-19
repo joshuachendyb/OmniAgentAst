@@ -349,10 +349,10 @@ def mouse_control(
     x: Optional[int] = None,
     y: Optional[int] = None,
     button: Literal["left", "right", "middle"] = "left",
-    click_type: Literal["single", "double"] = "single",
-    duration: float = 0,
     direction: Literal["up", "down"] = "down",
     amount: int = 3,
+    click_type: Literal["single", "double"] = "single",  # 已从Schema移除 - 小沈 2026-05-19
+    duration: float = 0,  # 已从Schema移除 - 小沈 2026-05-19
 ) -> Dict[str, Any]:
     """统一鼠标控制入口 - 小沈 2026-05-17
 

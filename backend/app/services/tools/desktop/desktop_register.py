@@ -112,8 +112,8 @@ DESKTOP_TOOL_DESCRIPTIONS = {
     "mouse_control": """统一鼠标控制。合并了 click + move + scroll + get_mouse_position。
 
 【使用场景】
-- 点击（action="click"，可指定x/y/button/click_type）
-- 移动（action="move"，需指定x/y，可选duration）
+- 点击（action="click"，可指定x/y/button）
+- 移动（action="move"，需指定x/y）
 - 滚动（action="scroll"，可指定direction/amount）
 - 获取鼠标位置（action="position"）
 
@@ -121,9 +121,8 @@ DESKTOP_TOOL_DESCRIPTIONS = {
 
 【示例】
 - 单击: {"action": "click", "x": 500, "y": 300}
-- 双击: {"action": "click", "x": 500, "y": 300, "click_type": "double"}
+- 右击: {"action": "click", "x": 500, "y": 300, "button": "right"}
 - 移动: {"action": "move", "x": 500, "y": 300}
-- 平滑移动: {"action": "move", "x": 500, "y": 300, "duration": 1.5}
 - 滚动: {"action": "scroll", "direction": "down", "amount": 3}
 - 获取位置: {"action": "position"}""",
 
@@ -235,9 +234,8 @@ DESKTOP_TOOL_EXAMPLES = {
     ],
     "mouse_control": [
         {"action": "click", "x": 500, "y": 300},
-        {"action": "click", "x": 500, "y": 300, "click_type": "double"},
+        {"action": "click", "x": 500, "y": 300, "button": "right"},
         {"action": "move", "x": 500, "y": 300},
-        {"action": "move", "x": 500, "y": 300, "duration": 1.5},
         {"action": "scroll", "direction": "down"},
         {"action": "position"},
     ],
