@@ -279,11 +279,11 @@ class GrepFileContentInput(BaseModel):
     )
     glob: Optional[str] = Field(
         default=None,
-        description="文件类型过滤（glob通配符），如 \"*.py\"、\"*.{js,ts}\""
+        description="文件扩展名过滤（glob通配符，优先级高于type），如 \"*.py\"、\"*.{js,ts}\"。与type二选一即可"
     )
     type: Optional[str] = Field(
         default=None,
-        description="语言类型简化匹配，如 js/py/rust/html/json"
+        description="语言类型快捷过滤（如js/py/rust/html/json），不指定扩展名时用。优先使用glob精确过滤"
     )
     after_lines: Optional[int] = Field(
         default=None,
