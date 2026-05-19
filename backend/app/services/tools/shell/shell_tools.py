@@ -95,7 +95,8 @@ def execute_shell_command(
     if shell_type == "cmd":
         executable = None  # shell=True时使用COMSPEC默认cmd.exe - 小沈 2026-05-06
     else:
-        executable = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+        # 【修复 小沈 2026-05-19】动态查找powershell路径，避免硬编码路径失效
+        executable = shutil.which("powershell.exe") or shutil.which("pwsh.exe") or "powershell.exe"
     
     # run_as_admin: 标记但 subprocess 不支持提权，实际执行受限于当前进程权限
     # 如果需要提权，需要使用 ctypes.win32api 或其他方式
@@ -430,6 +431,9 @@ def shell_session(
         stdout_str = _read_stream_nonblocking(process.stdout, use_encoding)
         stderr_str = _read_stream_nonblocking(process.stderr, use_encoding)
         is_running = process.poll() is None
+        # 【修复 小沈 2026-05-19】进程已退出时自动清理，防止内存泄漏
+        if not is_running:
+            _background_shells.pop(shell_id, None)
         if filter:
             import re as _re
             try:
