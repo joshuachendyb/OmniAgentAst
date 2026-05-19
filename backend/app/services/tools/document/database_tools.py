@@ -25,6 +25,7 @@ import re
 import sqlite3
 from typing import Any, Dict, List, Optional, Union
 from app.utils.logger import logger
+from app.services.tools.tool_result_utils import build_next_actions
 
 
 def _get_connection(connection_type: str, connection_string: Optional[str], db_path: Optional[str], timeout: int = 30000):
@@ -135,7 +136,11 @@ def query_sql(
                     "rows": results,
                     "total": len(results)
                 },
-                "message": f"查询成功，返回 {len(results)} 行数据"
+                "message": f"查询成功，返回 {len(results)} 行数据",
+                "next_actions": build_next_actions([
+                    ("execute_sql", "执行写操作SQL", "需要修改数据时"),
+                    ("get_db_schema", "查看表结构", "需要了解其他表时"),
+                ])
             }
         else:
             table_str = _format_table(columns, results)
@@ -147,7 +152,11 @@ def query_sql(
                     "total": len(results),
                     "table": table_str
                 },
-                "message": f"查询成功，返回 {len(results)} 行数据"
+                "message": f"查询成功，返回 {len(results)} 行数据",
+                "next_actions": build_next_actions([
+                    ("execute_sql", "执行写操作SQL", "需要修改数据时"),
+                    ("get_db_schema", "查看表结构", "需要了解其他表时"),
+                ])
             }
             
     except sqlite3.Error as e:
@@ -209,7 +218,10 @@ def execute_sql(
                     "dry_run": True,
                     "syntax_valid": True
                 },
-                "message": "预演模式：语法验证通过，实际未执行"
+                "message": "预演模式：语法验证通过，实际未执行",
+                "next_actions": build_next_actions([
+                    ("query_sql", "查询验证结果", "需要确认修改结果时"),
+                ])
             }
         
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
@@ -245,7 +257,10 @@ def execute_sql(
                 "affected_rows": affected_rows,
                 "sql": sql
             },
-            "message": f"执行成功，影响行数: {affected_rows}"
+            "message": f"执行成功，影响行数: {affected_rows}",
+            "next_actions": build_next_actions([
+                ("query_sql", "查询验证结果", "需要确认修改结果时"),
+            ])
         }
         
     except sqlite3.Error as e:
@@ -393,7 +408,10 @@ def get_db_schema(
             return {
                 "code": "SUCCESS",
                 "data": {"tables": schema_info, "total": len(schema_info)},
-                "message": f"获取成功，共 {len(schema_info)} 个表"
+                "message": f"获取成功，共 {len(schema_info)} 个表",
+                "next_actions": build_next_actions([
+                    ("query_sql", "查询表数据", "需要查看数据时"),
+                ])
             }
         elif output_format == "sql_ddl":
             ddl_list = []
@@ -416,7 +434,10 @@ def get_db_schema(
             return {
                 "code": "SUCCESS",
                 "data": {"ddl": ddl_list, "total": len(ddl_list)},
-                "message": f"生成成功，共 {len(ddl_list)} 个表 DDL"
+                "message": f"生成成功，共 {len(ddl_list)} 个表 DDL",
+                "next_actions": build_next_actions([
+                    ("query_sql", "查询表数据", "需要查看数据时"),
+                ])
             }
         else:
             md = f"## 数据库结构 (共 {len(schema_info)} 个表)\n\n"
@@ -431,7 +452,10 @@ def get_db_schema(
             return {
                 "code": "SUCCESS",
                 "data": {"tables": schema_info, "total": len(schema_info), "markdown": md},
-                "message": f"获取成功，共 {len(schema_info)} 个表"
+                "message": f"获取成功，共 {len(schema_info)} 个表",
+                "next_actions": build_next_actions([
+                    ("query_sql", "查询表数据", "需要查看数据时"),
+                ])
             }
             
     except sqlite3.Error as e:

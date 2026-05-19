@@ -68,7 +68,7 @@ from app.services.safety.file.file_safety import OperationType
 from app.utils.visualization import get_visualizer
 from app.utils.logger import logger
 from app.services.tools.tool_meta import get_timeout
-from app.services.tools.tool_result_utils import format_file_content_llm  # 小沈-2026-05-15
+from app.services.tools.tool_result_utils import format_file_content_llm, build_next_actions  # 小沈-2026-05-15
 
 # 【重要】延迟导入，避免循环导入问题
 # file_tools.py 在 tools 模块加载时被导入，此时 agent 还未初始化完成
@@ -2966,8 +2966,33 @@ def _generate_summary(tool_name: str, result: Any) -> str:
     return "操作完成"
 
 
+_TOOL_NEXT_ACTIONS = {
+    "read_file": [("edit_file", "编辑文件", "需要修改内容时"), ("grep_file_content", "搜索文件内容", "需要查找特定内容时")],
+    "read_text_file": [("edit_file", "编辑文件", "需要修改内容时"), ("grep_file_content", "搜索文件内容", "需要查找特定内容时")],
+    "write_text_file": [("read_file", "验证写入结果", "需要确认内容时")],
+    "read_media_file": [],
+    "edit_file": [("read_file", "验证修改结果", "需要确认修改时")],
+    "precise_replace_in_file": [("read_file", "验证修改结果", "需要确认修改时")],
+    "edit_text_file": [("read_file", "验证修改结果", "需要确认修改时")],
+    "list_directory": [("search_files", "搜索文件", "需要查找特定文件时"), ("read_file", "读取文件", "需要查看文件内容时")],
+    "get_directory_tree": [("search_files", "搜索文件", "需要查找特定文件时"), ("read_file", "读取文件", "需要查看文件内容时")],
+    "search_files": [("read_file", "读取找到的文件", "需要查看内容时")],
+    "grep_file_content": [("read_file", "读取匹配行上下文", "需要查看完整内容时"), ("edit_file", "编辑匹配内容", "需要修改时")],
+    "rename_file": [("read_file", "验证重命名结果", "需要确认时")],
+    "batch_rename": [("read_file", "验证重命名结果", "需要确认时")],
+    "archive_tool": [("archive_tool", "继续压缩/解压", "需要其他操作时")],
+    "compress_files": [("archive_tool", "继续压缩/解压", "需要其他操作时")],
+    "extract_archive": [("archive_tool", "继续压缩/解压", "需要其他操作时")],
+    "file_operation": [("read_file", "验证操作结果", "需要确认时")],
+    "move_file": [("read_file", "验证操作结果", "需要确认时")],
+    "copy_file": [("read_file", "验证操作结果", "需要确认时")],
+    "delete_file": [("read_file", "验证操作结果", "需要确认时")],
+    "data_file_format": [("edit_file", "编辑格式化文件", "需要修改时")],
+}
+
+
 def _to_unified_format(result: Dict[str, Any], tool_name: str, retry_count: int = 0, llm_data: dict = None) -> Dict[str, Any]:
-    """将工具执行结果转换为统一格式，支持llm_data透传 小沈-2026-05-15"""
+    """将工具执行结果转换为统一格式，支持llm_data透传和next_actions注入 小沈-2026-05-15, next_actions-2026-05-19"""
     if not isinstance(result, dict):
         r = {
             "status": "error",
@@ -2996,6 +3021,10 @@ def _to_unified_format(result: Dict[str, Any], tool_name: str, retry_count: int 
     }
     if llm_data:
         r["llm_data"] = llm_data
+    if status == "success":
+        na_list = _TOOL_NEXT_ACTIONS.get(tool_name)
+        if na_list is not None:
+            r["next_actions"] = build_next_actions(na_list)
     return r
 
 

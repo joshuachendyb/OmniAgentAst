@@ -33,6 +33,7 @@ from app.services.tools.document.document_schema import (
     ReadDocumentInput,
     WriteDocumentInput,
 )
+from app.services.tools.tool_result_utils import build_next_actions
 
 
 def _check_module(module_name: str) -> bool:
@@ -975,31 +976,39 @@ def read_document(
         check = _check_pdf_readable(file_path)
         if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
             return check
-        return _read_pdf(file_path, pages=pages, extract_tables=extract_tables, extract_images=extract_images)
+        result = _read_pdf(file_path, pages=pages, extract_tables=extract_tables, extract_images=extract_images)
     elif suffix in (".docx", ".doc"):
         check = _check_docx_readable(file_path)
         if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
             return check
-        return _read_docx(file_path, extract_tables=extract_tables)
+        result = _read_docx(file_path, extract_tables=extract_tables)
     elif suffix == ".pptx":
-        return _read_pptx(file_path, extract_notes=extract_notes)
+        result = _read_pptx(file_path, extract_notes=extract_notes)
     elif suffix in (".xlsx", ".xls"):
         check = _check_xlsx_readable(file_path)
         if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
             return check
         if use_pandas:
-            return _read_excel_pandas(file_path=file_path, sheet_name=sheet_name, max_rows=max_rows)
+            result = _read_excel_pandas(file_path=file_path, sheet_name=sheet_name, max_rows=max_rows)
         else:
-            return _read_xlsx(file_path, sheet_name=sheet_name, max_rows=max_rows, header=header)
+            result = _read_xlsx(file_path, sheet_name=sheet_name, max_rows=max_rows, header=header)
     elif suffix in (".csv", ".tsv"):
         actual_delimiter = "\t" if suffix == ".tsv" else (delimiter or ",")
         if use_pandas:
-            return _read_csv_pandas(file_path=file_path, encoding=encoding, delimiter=actual_delimiter, has_header=header, max_rows=max_rows)
+            result = _read_csv_pandas(file_path=file_path, encoding=encoding, delimiter=actual_delimiter, has_header=header, max_rows=max_rows)
         else:
-            return _read_csv_stdlib(file_path, encoding=encoding, delimiter=actual_delimiter, has_header=header, max_rows=max_rows)
+            result = _read_csv_stdlib(file_path, encoding=encoding, delimiter=actual_delimiter, has_header=header, max_rows=max_rows)
     else:
         return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
                 "message": f"不支持的格式: {suffix}。支持: .pdf/.doc/.docx/.xlsx/.xls/.pptx/.csv/.tsv"}
+    
+    if result.get("code") == "SUCCESS":
+        result["next_actions"] = build_next_actions([
+            ("write_document", "修改文档", "需要编辑文档时"),
+            ("convert_document", "转换格式", "需要转PDF/DOCX时"),
+            ("analyze_data", "分析数据", "读取的是数据文件时"),
+        ])
+    return result
 
 
 def write_document(
@@ -1021,18 +1030,24 @@ def write_document(
     path.parent.mkdir(parents=True, exist_ok=True)
     
     if suffix == ".docx":
-        return _write_docx(file_path, content=content, paragraphs=paragraphs, title=title, table_data=table_data)
+        result = _write_docx(file_path, content=content, paragraphs=paragraphs, title=title, table_data=table_data)
     elif suffix == ".xlsx":
         if data is None:
             data = {"headers": [], "rows": []}
-        return _write_xlsx(file_path, data=data, sheet_name=sheet_name)
+        result = _write_xlsx(file_path, data=data, sheet_name=sheet_name)
     elif suffix == ".pdf":
-        return _write_pdf(file_path, title=title, content=content, paragraphs=paragraphs, table_data=table_data)
+        result = _write_pdf(file_path, title=title, content=content, paragraphs=paragraphs, table_data=table_data)
     elif suffix == ".pptx":
-        return _write_pptx(file_path, title=title, slides=slides)
+        result = _write_pptx(file_path, title=title, slides=slides)
     else:
         return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
                 "message": f"不支持的输出格式: {suffix}。支持: .docx/.xlsx/.pdf/.pptx"}
+    
+    if result.get("code") == "SUCCESS":
+        result["next_actions"] = build_next_actions([
+            ("read_document", "验证写入结果", "需要确认内容时"),
+        ])
+    return result
 
 
 def convert_document(
@@ -1128,7 +1143,10 @@ def convert_document(
         return {
             "code": "SUCCESS",
             "data": {"input_path": str(src), "output_path": output_path},
-            "message": f"成功转换: {src_ext} → .pdf"
+            "message": f"成功转换: {src_ext} → .pdf",
+            "next_actions": build_next_actions([
+                ("read_document", "读取转换后文件", "需要查看结果时"),
+            ])
         }
     except Exception as e:
         return {

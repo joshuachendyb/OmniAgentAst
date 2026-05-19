@@ -28,6 +28,7 @@ import logging
 from typing import Dict, Any, List, Union, Optional
 from pathlib import Path
 from datetime import datetime
+from app.services.tools.tool_result_utils import build_next_actions
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +162,8 @@ def generate_chart(
         return {
             "code": "SUCCESS",
             "data": output_path,
-            "message": f"成功生成{chart_type_lower}图表: {output_path}"
+            "message": f"成功生成{chart_type_lower}图表: {output_path}",
+            "next_actions": build_next_actions([])
         }
     except Exception as e:
         return {
@@ -225,7 +227,11 @@ def analyze_data(
             return {
                 "code": "SUCCESS",
                 "data": {"row_count": total_count, "columns": df.columns.tolist(), "statistics": {}},
-                "message": "数据中无数值列，无法进行统计计算"
+                "message": "数据中无数值列，无法进行统计计算",
+                "next_actions": build_next_actions([
+                    ("filter_data", "筛选数据", "需要按条件过滤时"),
+                    ("generate_chart", "生成图表", "需要可视化时"),
+                ])
             }
 
         result = {"total_count": total_count, "columns": df.columns.tolist()}
@@ -280,7 +286,11 @@ def analyze_data(
         return {
             "code": "SUCCESS",
             "data": result,
-            "message": f"成功分析数据，共 {len(df)} 行，{len(numeric_cols)} 个数值列"
+            "message": f"成功分析数据，共 {len(df)} 行，{len(numeric_cols)} 个数值列",
+            "next_actions": build_next_actions([
+                ("filter_data", "筛选数据", "需要按条件过滤时"),
+                ("generate_chart", "生成图表", "需要可视化时"),
+            ])
         }
     except Exception as e:
         return {
@@ -416,7 +426,11 @@ def filter_data(
         return {
             "code": "SUCCESS",
             "data": result_data,
-            "message": message
+            "message": message,
+            "next_actions": build_next_actions([
+                ("analyze_data", "统计分析", "需要对筛选结果统计时"),
+                ("generate_chart", "生成图表", "需要可视化时"),
+            ])
         }
     except Exception as e:
         return {
