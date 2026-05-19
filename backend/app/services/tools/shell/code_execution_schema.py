@@ -32,7 +32,7 @@ class ExecutePythonInput(BaseModel):
 
 
 class ExecuteJavascriptInput(BaseModel):
-    """execute_javascript 工具的输入参数"""
+    """execute_javascript 工具的输入参数 — 小健 2026-05-19 增加safety_check"""
     code: str = Field(
         ..., description="要执行的JavaScript代码（字符串），必填参数"
     )
@@ -41,6 +41,9 @@ class ExecuteJavascriptInput(BaseModel):
     )
     working_dir: Optional[str] = Field(
         default=None, description="工作目录（可选）。默认为当前工作目录。目录不存在时自动创建"
+    )
+    safety_check: bool = Field(
+        default=True, description="执行前是否进行安全检查（检测require('child_process')/eval等危险模式），默认True。设为False可跳过安全检查"
     )
 
 

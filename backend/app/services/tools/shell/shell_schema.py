@@ -39,7 +39,7 @@ class ExecuteShellCommandInput(BaseModel):
     cwd: Optional[str] = Field(
         default=None, description="工作目录。由 Agent 根据上下文智能设置当前项目目录"
     )
-    encoding: Optional[str] = Field(
+    encoding: Optional[Literal["utf-8", "gbk", "gb2312", "latin-1"]] = Field(
         default=None, description="命令输出编码。可选值：utf-8、gbk、gb2312、latin-1。自动尝试回退到gbk。默认为utf-8"
     )
     env_vars: Optional[dict] = Field(

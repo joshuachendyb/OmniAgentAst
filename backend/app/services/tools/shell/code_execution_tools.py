@@ -191,9 +191,26 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
         }
 
 
-def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] = None) -> dict:
-    """执行JavaScript代码 - 小沈 2026-05-02, 修正 2026-05-05(空字符串working_dir), 修正 2026-05-06(中文编码)
+def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] = None, safety_check: bool = True) -> dict:
+    """执行JavaScript代码 - 小沈 2026-05-02, 小健 2026-05-19 增加safety_check+UTF-8环境
     【2026-05-18 小沈】P16幂等性：working_dir不存在时自动创建(makedirs exist_ok=True)"""
+    # 小健 2026-05-19: JavaScript安全检查
+    if safety_check:
+        js_dangerous_patterns = [
+            (r'require\s*\(\s*["\']child_process["\']\s*\)', 'require("child_process") - 可能执行系统命令'),
+            (r'require\s*\(\s*["\']fs["\']\s*\)', 'require("fs") - 可能操作文件系统'),
+            (r'process\.exit\s*\(', 'process.exit() - 可能终止进程'),
+            (r'eval\s*\(', 'eval() - 可能执行任意代码'),
+        ]
+        import re as re_mod
+        for pattern, desc in js_dangerous_patterns:
+            if re_mod.search(pattern, code):
+                return {
+                    "code": "ERR_UNSAFE_CODE",
+                    "data": None,
+                    "message": f"安全检查: 检测到危险模式 {desc}，如需执行请设置safety_check=False"
+                }
+    
     if working_dir is not None and not os.path.isdir(working_dir):
         try:
             os.makedirs(working_dir, exist_ok=True)
@@ -209,11 +226,13 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
             temp_file = f.name
 
         try:
+            # 小健 2026-05-19: 传入UTF-8环境变量(与execute_python一致)
             result = subprocess.run(
                 ['node', temp_file],
                 capture_output=True,
                 cwd=working_dir,
-                timeout=timeout
+                timeout=timeout,
+                env=_get_utf8_env()
             )
 
             stdout_str = _safe_decode(result.stdout)

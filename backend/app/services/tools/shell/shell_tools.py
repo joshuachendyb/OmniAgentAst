@@ -37,6 +37,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 
 from app.services.tools.tool_result_utils import format_output_for_llm, build_next_actions  # 小沈-2026-05-15, 小沈-2026-05-19
+from app.utils.logger import logger  # 小健-2026-05-19 修复BUG-001: logger未导入
 
 
 # 后台Shell会话管理器 - 小沈 2026-05-02
@@ -61,14 +62,29 @@ def _check_shell_injection(command: str) -> Optional[str]:
 def execute_shell_command(
     command: str,
     shell_type: Optional[str] = "powershell",
-    timeout: int = 30000,  # 【修复 2026-05-14 小沈】300s→30s，curl等网络命令5分钟超时导致服务卡死
+    timeout: int = 30000,
     run_in_background: bool = False,
     cwd: Optional[str] = None,
     encoding: Optional[str] = None,
     env_vars: Optional[dict] = None,
     run_as_admin: bool = False
 ) -> dict:
-    """执行Shell命令 - 小沈 2026-05-04 正确实现encoding参数"""
+    """执行Shell命令 - 小沈 2026-05-04, 小健 2026-05-19 增加shell_type校验"""
+    # 小健 2026-05-19: shell_type校验 — 非法值明确报错而非静默默认
+    if shell_type not in ("powershell", "cmd", None):
+        return {
+            "code": -1,
+            "data": None,
+            "message": f"shell_type仅支持powershell/cmd，当前值: '{shell_type}'"
+        }
+    
+    # 小健 2026-05-19: command空值校验
+    if not command or not command.strip():
+        return {
+            "code": -1,
+            "data": None,
+            "message": "command不能为空"
+        }
     timeout_sec = timeout / 1000.0
     
     env = None
@@ -436,8 +452,8 @@ def shell_session(
             "message": "后台命令输出" if is_running else "后台命令已结束",
             "next_actions": build_next_actions([
                 ("shell_session", "继续读取输出", "进程仍在运行需要持续监控时", {"shell_id": shell_id, "action": "output"}),
-                ("shell_session", "终止后台命令", "需要停止后台进程时", {"shell_id": shell_id, "action": "terminate"}),
-            ]) if is_running else []
+                ("shell_session", "终止后台命令", "需要停止后台进程或清理会话时", {"shell_id": shell_id, "action": "terminate"}),
+            ])  # 小健 2026-05-19: 无论进程是否运行都提供terminate(清理会话防止内存泄漏)
         }
     elif action == "terminate":
         shell_info = _background_shells.get(shell_id)
