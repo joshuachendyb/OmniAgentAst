@@ -127,14 +127,13 @@ META_TOOL_DESCRIPTIONS = {
     "timezone_convert": """时区转换。
 
 使用场景：
-- UTC转本地时间（direction="utc_to_local"）
-- 本地转UTC（direction="local_to_utc"）
-- 任意时区转换（direction="any"）
+- UTC转本地时间（direction="utc_to_local"，tz=目标时区）
+- 本地转UTC（direction="local_to_utc"，tz=源时区）
+- 任意源时区转本地（direction="any"，tz=源时区）
 
 返回数据说明：
 - result: 转换后的时间字符串
-- source_tz: 源时区
-- target_tz: 目标时区""",
+- tz: 时区""",
     "timer": """定时器管理。
 
 使用场景：
@@ -177,7 +176,8 @@ META_TOOL_EXAMPLES = {
         {"date": "2026-05-18", "check_type": "weekend"},
     ],
     "timezone_convert": [
-        {"time_value": "2026-05-18 10:00:00", "direction": "any", "source_tz": "Asia/Shanghai", "target_tz": "UTC"},
+        {"time_value": "2026-05-18 10:00:00", "direction": "utc_to_local", "tz": "Asia/Shanghai"},
+        {"time_value": "2026-05-18 10:00:00", "direction": "any", "tz": "Asia/Shanghai"},
     ],
     "timer": [
         {"action": "set", "delay": 180, "callback": "提醒用户喝水"},

@@ -52,7 +52,7 @@ You have access to the following tool categories:
 
 === P0 - Core Tools (Most Frequently Used) ===
 
-1. get_time - 统一时间入口（四合一）— 小沈 2026-05-18
+1. get_time - 统一时间入口（四合一）— 小沈 2026-05-19
    - action="now": 获取当前时间（替代原get_current_time）
    - action="format": 格式化时间（替代原time_format）
    - action="to_timestamp": 转时间戳（替代原time_to_timestamp）
@@ -101,24 +101,23 @@ You have access to the following tool categories:
 
 === P1 - Auxiliary Tools ===
 
-5. timezone_convert - 时区转换（三方向）— 小沈 2026-05-18
-   - direction="utc_to_local": UTC转本地（替代原time_utc_to_local）
-   - direction="local_to_utc": 本地转UTC（替代原time_local_to_utc）
-   - direction="any": 任意源→目标一次完成（新增，避免两次转换）
+5. timezone_convert - 时区转换（三方向）— 小沈 2026-05-19
+   - direction="utc_to_local": UTC转本地（tz=目标时区）
+   - direction="local_to_utc": 本地转UTC（tz=源时区）
+   - direction="any": 任意源时区→本地（tz=源时区）
    - When to use: "把这个UTC时间转成北京时间", "时区转换", "跨国时间转换"
    - Examples:
-     * timezone_convert(time_value="2026-04-25T12:00:00Z", direction="utc_to_local")
-     * timezone_convert(time_value="2026-04-25 20:00:00", direction="local_to_utc")
-     * timezone_convert(time_value="2026-04-25 20:00:00", direction="any", source_tz="Asia/Shanghai", target_tz="America/New_York")
+     * timezone_convert(time_value="2026-04-25T12:00:00Z", direction="utc_to_local", tz="Asia/Shanghai")
+     * timezone_convert(time_value="2026-04-25 20:00:00", direction="local_to_utc", tz="Asia/Shanghai")
+     * timezone_convert(time_value="2026-04-25 20:00:00", direction="any", tz="Asia/Shanghai")
 
-6. timer - 定时器管理（三合一）— 小沈 2026-05-18
+6. timer - 定时器管理（三合一）— 小沈 2026-05-19
    - action="set": 设置定时器（替代原timer_set）
    - action="clear": 清除定时器（替代原timer_clear）
    - action="list": 列出定时器（替代原timer_list）
    - When to use: "3分钟后提醒我", "设置定时器", "取消定时器", "有哪些定时器"
    - Examples:
      * timer(action="set", delay=180, callback="提醒用户喝水")
-     * timer(action="set", delay=600, callback="执行备份", callback_data={"file": "D:/backup"})
      * timer(action="clear", timer_id="timer_1_1234567890")
      * timer(action="list")
 

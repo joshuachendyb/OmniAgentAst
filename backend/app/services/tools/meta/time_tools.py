@@ -767,13 +767,13 @@ def get_time(
     time_value: Optional[Union[int, float, str]] = None,
     format: Optional[str] = None,
     timezone: Optional[str] = None,
-    locale: Optional[str] = None,
-    unit: Optional[Literal["seconds", "milliseconds", "microseconds"]] = None,
     target_tz: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """获取/格式化时间 — 小沈 2026-05-18
+    """获取/格式化时间 — 小沈 2026-05-19 参数精简7→5(砍locale+unit)
     P11统一入口: action="now"|"format"|"to_timestamp"|"from_timestamp"
     """
+    locale = None  # 已从Schema移除
+    unit = None  # 已从Schema移除
     try:
         if action == "now":
             result = _get_current_time(timezone=timezone, format=format, locale=locale)
@@ -917,25 +917,26 @@ def timezone_convert(
     time_value: Union[int, float, str],
     direction: Literal["utc_to_local", "local_to_utc", "any"] = "utc_to_local",
     tz: Optional[str] = None,
-    source_tz: Optional[str] = None,
-    target_tz: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """时区转换 — 小沈 2026-05-18
+    """时区转换 — 小沈 2026-05-19 参数精简5→3(砍source_tz+target_tz)
     P11统一入口: direction="utc_to_local"|"local_to_utc"|"any"
+    direction=any时tz为源时区，目标为本地时区
     """
+    source_tz = None  # 已从Schema移除
+    target_tz = None  # 已从Schema移除
     try:
         if direction == "utc_to_local":
             result = _time_utc_to_local(utc_time=time_value, target_tz=tz)
         elif direction == "local_to_utc":
             result = _time_local_to_utc(local_time=time_value, source_tz=tz)
         elif direction == "any":
-            if not source_tz or not target_tz:
-                return {"code": "ERR_TIME_TZ", "data": None, "message": "direction='any'时source_tz和target_tz均必填"}
-            utc_result = _time_local_to_utc(local_time=time_value, source_tz=source_tz)
+            if not tz:
+                return {"code": "ERR_TIME_TZ", "data": None, "message": "direction='any'时tz(源时区)必填"}
+            utc_result = _time_local_to_utc(local_time=time_value, source_tz=tz)
             if utc_result["code"] != "SUCCESS":
                 return utc_result
             utc_str = utc_result["data"].get("iso", utc_result["data"].get("utc_time", ""))
-            result = _time_utc_to_local(utc_time=utc_str, target_tz=target_tz)
+            result = _time_utc_to_local(utc_time=utc_str, target_tz=None)
         else:
             return {"code": "ERR_INVALID_DIRECTION", "data": None, "message": f"不支持的direction: {direction}，可选: utc_to_local/local_to_utc/any"}
 
@@ -953,13 +954,13 @@ async def timer(
     action: Literal["set", "clear", "list"],
     delay: Optional[float] = None,
     callback: Optional[str] = None,
-    callback_data: Optional[Dict[str, Any]] = None,
     timer_id: Optional[str] = None,
-    limit: int = 10,
 ) -> Dict[str, Any]:
-    """定时器管理 — 小沈 2026-05-18
+    """定时器管理 — 小沈 2026-05-19 参数精简6→4(砍callback_data+limit)
     P11统一入口: action="set"|"clear"|"list"
     """
+    callback_data = None  # 已从Schema移除
+    limit = 10  # 已从Schema移除，默认10
     try:
         if action == "set":
             if delay is None or delay <= 0:

@@ -4,13 +4,16 @@ Time Intent 工具参数 Schema 定义
 
 【创建时间】2026-04-29 小沈
 【最后更新】2026-05-18 小沈 — 16→7精简：新增7个统一入口Schema，旧Schema标注弃用
+【2026-05-19 小沈】参数精简：
+- GetTimeInput: 7→5(砍locale+unit)
+- TimezoneConvertInput: 5→3(砍source_tz+target_tz)
+- TimerInput: 6→4(砍callback_data+limit)
 
 职责：
 定义 time 意图的工具参数 Pydantic 模型，作为独立的 Schema 定义文件。
-其他模块（如 time_tools.py、react_schema.py）从这里导入模型使用。
 
 Author: 小沈 - 2026-04-29
-Updated: 小沈 - 2026-05-18
+Updated: 小沈 2026-05-19
 """
 
 from pydantic import BaseModel, Field
@@ -22,7 +25,7 @@ from typing import Optional, Dict, Any, Union, Literal
 # ===========================================================
 
 class GetTimeInput(BaseModel):
-    """get_time统一入口Schema — 小沈 2026-05-18"""
+    """get_time统一入口Schema — 小沈 2026-05-19 参数精简7→5(砍locale+unit)"""
     action: Literal["now", "format", "to_timestamp", "from_timestamp"] = Field(
         default="now",
         description="操作类型：now=获取当前时间，format=格式化时间，to_timestamp=转时间戳，from_timestamp=时间戳转时间。默认为now"
@@ -38,14 +41,6 @@ class GetTimeInput(BaseModel):
     timezone: Optional[str] = Field(
         default=None,
         description="时区（action=now时有效），如 Asia/Shanghai、America/New_York。默认为系统时区"
-    )
-    locale: Optional[str] = Field(
-        default=None,
-        description="本地化语言，如 zh_CN、en_US。仅action=now时有效，用于格式化weekday等本地化文本。默认为当前会话语言"
-    )
-    unit: Optional[Literal["seconds", "milliseconds", "microseconds"]] = Field(
-        default=None,
-        description="时间戳单位（action=to_timestamp时有效）：seconds/milliseconds/microseconds。默认为seconds"
     )
     target_tz: Optional[str] = Field(
         default=None,
@@ -98,7 +93,7 @@ class CheckDateInput(BaseModel):
 
 
 class TimezoneConvertInput(BaseModel):
-    """timezone_convert时区转换Schema — 小沈 2026-05-18"""
+    """timezone_convert时区转换Schema — 小沈 2026-05-19 参数精简5→3(砍source_tz+target_tz)"""
     time_value: Union[int, float, str] = Field(
         ...,
         description="时间值。支持：int/float=Unix时间戳(秒)，str=日期字符串。必填参数"
@@ -109,20 +104,12 @@ class TimezoneConvertInput(BaseModel):
     )
     tz: Optional[str] = Field(
         default=None,
-        description="时区（direction=utc_to_local时为目标时区，local_to_utc时为源时区）。默认为本地时区"
-    )
-    source_tz: Optional[str] = Field(
-        default=None,
-        description="源时区（direction=any时必填）"
-    )
-    target_tz: Optional[str] = Field(
-        default=None,
-        description="目标时区（direction=any时必填）"
+        description="时区。direction=utc_to_local时为目标时区，local_to_utc时为源时区，any时为源时区。默认为本地时区"
     )
 
 
 class TimerInput(BaseModel):
-    """timer定时器管理Schema — 小沈 2026-05-18"""
+    """timer定时器管理Schema — 小沈 2026-05-19 参数精简6→4(砍callback_data+limit)"""
     action: Literal["set", "clear", "list"] = Field(
         ...,
         description="操作类型：set=设置定时器，clear=清除定时器，list=列出定时器。必填参数"
@@ -137,16 +124,8 @@ class TimerInput(BaseModel):
         default=None,
         description="定时器触发时的提醒内容（action=set时必填）"
     )
-    callback_data: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="回调附加数据（action=set时可选）"
-    )
     timer_id: Optional[str] = Field(
         default=None,
         description="定时器ID（action=clear时必填）"
-    )
-    limit: int = Field(
-        default=10,
-        description="返回数量限制（action=list时有效）。默认为10"
     )
 
