@@ -1,3 +1,66 @@
+v0.13.8
+
+更新时间: 2026-05-19 10:22:44
+
+更新内容：
+
+## v0.13.7→v0.13.8 变更汇总 - 小沈-2026-05-19
+
+### fix Schema与实现一致性修复（59工具交叉验证）
+
+| commit | 说明 |
+|--------|------|
+| ea5a5efd | fix: network_tools.py修复fetch_webpage变量名proxy_config→proxy - 小沈-2026-05-19 |
+| 10a156b9 | fix: time_schema.py修复5个字段Literal约束 - 小沈-2026-05-19 |
+| a84561d8 | fix: time_tools.py修复timer回调参数类型 - 小沈-2026-05-19 |
+| e9539ac9 | fix: document_schema.py修复convert_document的output_format Literal - 小沈-2026-05-19 |
+| fe49b076 | fix: data_analysis_schema.py修复chart_type Literal+新增filter_data参数encoding/max_rows - 小沈-2026-05-19 |
+| 85e5b76b | fix: database_schema.py修复5个字段Literal约束 - 小沈-2026-05-19 |
+| 178862e7 | fix: database_tools.py修复filter_pattern使用fnmatch实现LIKE匹配 - 小沈-2026-05-19 |
+| 2b35dd0c | fix: 修复data_analysis和database工具的部分函数 - 小沈-2026-05-19 |
+| 97830f5a | fix: 修复2个测试文件的导入和断言错误 - 小沈-2026-05-19 |
+| 5cb13b06 | fix: file_tools.py清理废弃工具的next_actions映射 - 小沈-2026-05-19 |
+
+### feat P15 next_actions运行时动态注入
+
+| commit | 说明 |
+|--------|------|
+| b6ebb949 | feat: P15 next_actions运行时动态注入(meta分类9工具) - 小沈-2026-05-19 |
+| 1bfd372d | feat: P15 next_actions注入shell分类5工具 - 小沈-2026-05-19 |
+| f3a1d709 | feat: P15 next_actions注入network+system+desktop分类26工具 - 小沈-2026-05-19 |
+
+### docs 文档更新
+
+| commit | 说明 |
+|--------|------|
+| 4ecd18ed | docs: 更新工具分类设计文档+工作流程规范 - 小沈-2026-05-19 |
+| 2fc2d4bb | docs: 更新Tool分类与函数设计分析说明文档 - 小沈-2026-05-19 |
+
+### 关键变更说明
+
+#### 1. Schema与实现一致性交叉验证
+- 59个工具逐个检查Schema定义与实际实现代码
+- 修复13处确认问题：
+  - P1: network_tools.py fetch_webpage变量名proxy_config→proxy（运行时bug）
+  - P2 Literal: time_schema.py(5字段)、document_schema.py(1)、data_analysis_schema.py(1)、database_schema.py(5)
+  - P2 function: data_analysis_schema.py filter_data新增encoding/max_rows参数、database_tools.py filter_pattern改用fnmatch
+  - P3: time_tools.py timer回调参数类型修复
+- 测试文件修复：test_score_intents.py导入路径、test_document_tools.py断言预期
+
+#### 2. P15 next_actions运行时动态注入
+- meta分类9工具：get_time/time_add/check_date/timezone_convert/timer/tool_help/tool_search/pipeline/get_system_info
+- shell分类5工具：execute_shell_command/execute_python/execute_javascript/run_js_snippet/check_command_available
+- network分类6工具：search_web/fetch_webpage/ping/http_request/get_external_ip/check_network_connectivity
+- system分类18工具：list_processes/kill_process/get_system_info/get_disk_usage等
+- desktop分类10工具：read_clipboard/screenshot/send_notification等
+
+#### 3. next_actions设计说明
+- 每个工具的next_actions定义后续推荐工具（名称+用途+触发条件）
+- 运行时动态注入已加载分类的工具详情，未加载分类仅显示摘要
+- 帮助LLM理解工具使用后应继续什么操作
+
+---
+
 v0.13.7
 
 更新时间: 2026-05-19 06:05:09
