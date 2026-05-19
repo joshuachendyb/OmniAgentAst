@@ -117,7 +117,7 @@ class WriteTextFileInput(BaseModel):
 class ReadMediaFileInput(BaseModel):
     """read_media_file 工具的输入参数"""
     file_path: str = Field(
-        description="媒体文件的完整路径，支持图片（JPG/PNG/GIF/BMP/WebP）和音频（MP3/WAV/OGG/M4A）格式"
+        description="媒体文件的完整路径，支持图片(JPG/PNG/GIF/BMP/WebP/SVG/ICO/TIFF)和音频(MP3/WAV/OGG/M4A/FLAC/AAC)及视频(MP4/AVI/MOV/MKV)格式"
     )
 
 
@@ -145,7 +145,7 @@ class EditFileInput(BaseModel):
         default=None,
         description="替换的新字符串（配合old_string使用）"
     )
-    edits: Optional[List[Dict]] = Field(
+    edits: Optional[List[Dict[str, str]]] = Field(
         default=None,
         description="多处编辑列表，每项含oldText和newText（与old_string互斥，二选一）"
     )
@@ -233,9 +233,10 @@ class SearchFilesInput(BaseModel):
         description="是否递归搜索子目录，默认True"
     )
     max_depth: int = Field(
-        default=100000,
+        default=50,
         ge=1,
-        description="最大递归深度，仅当recursive=True时有效，默认100000"
+        le=1000,
+        description="最大递归深度，仅当recursive=True时有效，默认50"
     )
     excludePatterns: Optional[List[str]] = Field(
         default=None,
@@ -479,6 +480,7 @@ class DataFileFormatInput(BaseModel):
     统一结构化配置格式（json/yaml/toml/ini/xml/properties）
     归入File分类（不是data_format分类）
     注意：CSV/Excel属于Document分类，不在本工具范围内
+    限制：write模式仅支持json/yaml/toml，ini/xml/properties暂不支持写入
     """
     action: Literal["read", "write"] = Field(
         default="read",

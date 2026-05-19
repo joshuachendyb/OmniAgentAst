@@ -91,7 +91,7 @@ MAX_SEARCH_FILE_SIZE = 10 * 1024 * 1024  # 搜索/单个文件读取上限：10M
 # 【新增 2026-05-02 小沈】二进制文件保护：禁止的后缀列表
 BINARY_EXTENSIONS = {
     # 图片
-    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.ico', '.svg', '.tiff', '.tif',
+    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.ico', '.tiff', '.tif',
     # 音视频
     '.mp3', '.mp4', '.wav', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.m4a', '.ogg',
     # 压缩包
@@ -524,7 +524,8 @@ class FileTools:
             elif offset is not None:
                 # offset/limit: 分页读取（从第offset行开始读取limit行）
                 start_idx = max(0, offset - 1)
-                end_idx = start_idx + limit if limit else total_lines
+                effective_limit = limit if limit else READ_FILE_DEFAULT_LIMIT
+                end_idx = start_idx + effective_limit
                 selected_lines = lines[start_idx:end_idx]
             else:
                 # 无参数：读取全部
@@ -616,8 +617,7 @@ class FileTools:
             for fw, hw in fullwidth_map.items():
                 content = content.replace(fw, hw)
             if content != original_content:
-                import logging
-                logging.getLogger(__name__).info(f"write_text_file: 自动将全角标点替换为半角标点({file_path})")
+                logger.info(f"write_text_file: 自动将全角标点替换为半角标点({file_path})，如需保留全角请在中文注释中使用")
 
         if content:
             from app.services.tools.toolhelper.content_quality import check_content_quality
@@ -678,10 +678,10 @@ class FileTools:
         if not append and path.exists() and path.is_file():
             old_size = path.stat().st_size
             new_size = len(content.encode(encoding))
-            # 【修正 2026-05-06 小沈】数据保护：缩小95%以上且非空内容才拦截
-            # 原阈值10%过严，清空文件(空字符串)和大幅精简是合法场景
-            # 豁免条件：新内容为空（有意清空）或缩小比例<95%
-            if old_size > 1024 and new_size > 0 and new_size < old_size * 0.05:
+            # 【修正 2026-05-19 小健】数据保护：缩小80%以上且非空内容才拦截
+            # 原阈值95%过严，重构代码等合法场景经常缩小80%+
+            # 豁免条件：新内容为空（有意清空）或缩小比例<80%
+            if old_size > 1024 and new_size > 0 and new_size < old_size * 0.20:
                 return _to_unified_format({
                     "success": False,
                     "error": f"数据保护：新内容({new_size}字节)远小于原始内容({old_size}字节，缩小{100-int(new_size/max(old_size,1)*100)}%)，可能覆盖数据。如确认覆盖，请使用precise_replace_in_file或在text中传入完整内容。",
@@ -806,6 +806,24 @@ class FileTools:
                 excludePatterns=exclude_patterns,
                 max_depth=max_depth,
             )
+            # 小健 2026-05-19: tree模式补充statistics统计信息
+            if tree_result.get("status") == "success" and "data" in tree_result:
+                tree_data = tree_result["data"]
+                if isinstance(tree_data, dict) and "tree" in tree_data:
+                    tree_obj = tree_data["tree"]
+                    def _count_tree(node: dict) -> tuple:
+                        files = dirs = total_size = 0
+                        if node.get("type") == "file":
+                            files = 1
+                            total_size = node.get("size", 0)
+                        elif node.get("type") == "directory":
+                            dirs = 1
+                        for child in node.get("children", []):
+                            cf, cd, cs = _count_tree(child)
+                            files += cf; dirs += cd; total_size += cs
+                        return files, dirs, total_size
+                    f, d, s = _count_tree(tree_obj)
+                    tree_data["statistics"] = {"file_count": f, "dir_count": d, "total_size": s}
             return tree_result
 
         # 验证路径合法性
@@ -1044,9 +1062,10 @@ class FileTools:
         
         try:
             if not path.exists():
+                # 小健 2026-05-19: P16幂等性 — 文件不存在时返回SUCCESS（与外层file_operation一致）
                 return _to_unified_format({
-                    "success": False,
-                    "error": f"File not found: {file_path}",
+                    "success": True,
+                    "message": f"文件不存在，无需删除(P16幂等): {file_path}",
                     "operation_id": None
                 }, "file_operation")
             
@@ -1511,7 +1530,6 @@ class FileTools:
         compression_level: int = 6,
         overwrite: bool = False,
         password: Optional[str] = None,
-        split_size: Optional[int] = None,
     ) -> Dict[str, Any]:
         """压缩文件或目录"""
         from app.services.tools.toolhelper.file_helpers import compress_files_impl
@@ -1524,7 +1542,6 @@ class FileTools:
             compression_level=compression_level,
             overwrite=overwrite,
             password=password,
-            split_size=split_size,
             validate_path_func=self._validate_path,
             safety_service=self.safety,
             task_id=self.task_id,
@@ -1931,10 +1948,10 @@ class FileTools:
         self,
         file_path: str,
         edits: List[Dict[str, str]],
-        dryRun: bool = False,
+        dry_run: bool = False,
         encoding: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """高级编辑文件，支持多处编辑和预览（内部方法） - 小沈 2026-05-01"""
+        """高级编辑文件，支持多处编辑和预览（内部方法） - 小沈 2026-05-01, 小健 2026-05-19 参数名dryRun→dry_run"""
         try:
             is_valid, error_msg = self._validate_path(file_path)
             if not is_valid:
@@ -2014,7 +2031,7 @@ class FileTools:
                     results.append({"index": i, "success": True, "old_text": old_text[:50], "new_text": new_text[:50]})
 
                 applied = sum(1 for r in results if r["success"])
-                if not dryRun and applied > 0:
+                if not dry_run and applied > 0:
                     # 【修复 2026-05-01 小沈】原子写入：先写临时文件再重命名（与write_file对齐）
                     import tempfile
                     import os
@@ -2036,8 +2053,8 @@ class FileTools:
                 edit_result['applied_edits'] = applied
                 edit_result['total_edits'] = len(edits)
                 edit_result['results'] = results
-                edit_result['preview'] = modified if dryRun else None
-                edit_result['dry_run'] = dryRun
+                edit_result['preview'] = modified if dry_run else None
+                edit_result['dry_run'] = dry_run
                 edit_result['used_enc'] = used_enc
                 return True
 
@@ -2144,8 +2161,18 @@ class FileTools:
                         except OSError:
                             continue
                         try:
-                            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
-                                lines = f.readlines()
+                            # 小健 2026-05-19: 多编码尝试，支持gbk等中文编码文件
+                            lines = None
+                            for _enc in ('utf-8', 'gbk', 'gb2312', 'utf-8-sig'):
+                                try:
+                                    with open(file_path, 'r', encoding=_enc, errors='strict') as f:
+                                        lines = f.readlines()
+                                    break
+                                except (UnicodeDecodeError, UnicodeError):
+                                    continue
+                            if lines is None:
+                                with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                                    lines = f.readlines()
                         except Exception:
                             continue
 
@@ -2398,7 +2425,7 @@ class FileTools:
             return await self._apply_edits(
                 file_path=file_path,
                 edits=edits,
-                dryRun=dry_run,
+                dry_run=dry_run,
                 encoding=encoding
             )
     
@@ -2467,6 +2494,14 @@ class FileTools:
                 return _to_unified_format({
                     "success": False,
                     "error": "单文件模式需要提供new_name"
+                }, "rename_file", next_actions=[("read_file", "验证重命名结果", "需要确认时")])
+            
+            # 小健 2026-05-19: Windows非法字符校验
+            _illegal_chars = set('<>:"|?*')
+            if os.name == 'nt' and any(c in _illegal_chars for c in new_name):
+                return _to_unified_format({
+                    "success": False,
+                    "error": f"新名称包含Windows非法字符: {set(c for c in new_name if c in _illegal_chars)}"
                 }, "rename_file", next_actions=[("read_file", "验证重命名结果", "需要确认时")])
             
             # 计算新路径（同目录改名）
