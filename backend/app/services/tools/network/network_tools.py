@@ -54,9 +54,6 @@ async def http_request(
     retry: int = 3,
 ) -> dict:
     """发起HTTP请求 — 小沈 2026-05-19 精简参数(11→8)"""
-    body = None  # 小沈 2026-05-19: 已从Schema移除，用json_body替代
-    verify_ssl = True  # 小沈 2026-05-19: 已从Schema移除，默认验证SSL
-    follow_redirects = True  # 小沈 2026-05-19: 已从Schema移除，默认跟随重定向
     # 参数校验
     if retry < 0 or retry > 10:
         return {
@@ -101,8 +98,8 @@ async def http_request(
             try:
                 async with httpx.AsyncClient(
                     timeout=httpx.Timeout(timeout_sec),
-                    follow_redirects=follow_redirects,
-                    verify=verify_ssl,
+                    follow_redirects=True,
+                    verify=True,
                     proxy=proxy_config,
                 ) as client:
                     method_upper = method.upper()
@@ -115,8 +112,6 @@ async def http_request(
                     if method_upper in ("POST", "PUT", "PATCH"):
                         if json_body is not None:
                             request_kwargs["json"] = json_body
-                        elif body is not None:
-                            request_kwargs["content"] = body.encode("utf-8") if isinstance(body, str) else body
 
                     response = await client.request(method_upper, **request_kwargs)
                     response.raise_for_status()
@@ -232,8 +227,6 @@ async def download_file(
     proxy: Optional[str] = None,
 ) -> dict:
     """从URL下载文件 — 小沈 2026-05-19 精简参数(7→5)"""
-    chunk_size = 8192  # 小沈 2026-05-19: 已从Schema移除
-    resume = True  # 小沈 2026-05-19: 已从Schema移除，默认启用断点续传
     try:
         # 验证URL
         parsed = urlparse(url)
@@ -381,7 +374,6 @@ async def fetch_webpage(
     proxy: Optional[str] = None,
 ) -> dict:
     """获取网页内容 — 小沈 2026-05-19 精简参数(8→7)"""
-    user_agent = None  # 小沈 2026-05-19: 已从Schema移除，自动注入随机UA
     timeout_sec = timeout / 1000.0
     
     try:
@@ -393,11 +385,9 @@ async def fetch_webpage(
                 "message": f"无效的URL: {url}"
             }
         
-        headers = {}
-        if user_agent:
-            headers["User-Agent"] = user_agent
-        else:
-            headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        }
         headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         headers["Accept-Language"] = "en-US,en;q=0.9,zh-CN;q=0.8"
         headers["Accept-Encoding"] = "gzip, deflate"
@@ -772,8 +762,6 @@ async def search_web(
     proxy: Optional[str] = None,
 ) -> dict:
     """搜索网络 — 小沈 2026-05-19 精简参数(7→5)"""
-    language = None  # 小沈 2026-05-19: 已从Schema移除，Agent根据query语种自动切换
-    safe_search = "moderate"  # 小沈 2026-05-19: 已从Schema移除
     try:
         if len(query) < 2:
             return {
@@ -800,7 +788,7 @@ async def search_web(
         if results is None:
             logger.info("[search_web] Exa失败，降级到Bing中国搜索")
             try:  # 小健 2026-05-19: 包裹try/except, Bing网络错误不应导致整个search_web崩溃
-                results = await _search_bing(query, num_results, language, safe_search, proxy)
+                results = await _search_bing(query, num_results, proxy)
                 engine_used = "Bing"
             except Exception as e:
                 logger.warning(f"[search_web] Bing搜索也失败: {e}")
@@ -837,7 +825,6 @@ async def search_web(
                 "results": results,
                 "total": len(results),
                 "engine": engine_used,
-                "language": language,
             },
             "message": f"找到 {len(results)} 条搜索结果（{engine_used}）",
             "llm_data": {
@@ -861,9 +848,7 @@ async def search_web(
 async def _search_bing(
     query: str,
     num_results: int,
-    language: Optional[str],
-    safe_search: str,
-    proxy_config: Optional[str] = None,  # 小健 2026-05-19: dict→str(httpx proxy参数用字符串)
+    proxy_config: Optional[str] = None,
 ) -> List[dict]:
     """Bing搜索（HTML解析）- 小沈 2026-05-07, 小健 2026-05-19 proxy_config改字符串
     国内可访问，无需API Key，解析搜索结果页HTML
@@ -872,10 +857,6 @@ async def _search_bing(
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     }
     params = {"q": query, "count": num_results}
-    if language == "zh-CN" or language == "zh":
-        params["setlang"] = "zh-CN"
-    if safe_search == "strict":
-        params["safe"] = "strict"
     
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(15.0, connect=8.0),
