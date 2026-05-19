@@ -40,6 +40,7 @@ from urllib.parse import urlencode, urlparse, urlunparse
 import httpx
 from app.utils.logger import logger
 from app.services.tools.toolhelper.network_helper import well_known_ports  # 小健 2026-05-18
+from app.services.tools.tool_result_utils import build_next_actions  # 小沈 2026-05-19
 
 
 async def http_request(
@@ -174,7 +175,8 @@ async def http_request(
                             "状态码": response.status_code,
                             "内容类型": _ct_short,
                             "响应体": _llm_body,
-                        }
+                        },
+                        "next_actions": build_next_actions([("http_request", "继续发送请求", "需要发送更多请求时")])
                     }
             except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
                 last_exception = e
@@ -349,7 +351,8 @@ async def download_file(
                         "progress_percent": progress_percent,
                         "content_type": content_type,
                     },
-                    "message": f"文件下载成功 ({downloaded}/{total_size} 字节, {progress_percent}%)：保存到 {dest_path}"
+                    "message": f"文件下载成功 ({downloaded}/{total_size} 字节, {progress_percent}%)：保存到 {dest_path}",
+                    "next_actions": build_next_actions([("read_file", "读取下载的文件", "需要查看下载内容时")])
                 }
 
     except httpx.TimeoutException:
@@ -431,7 +434,7 @@ async def fetch_webpage(
                     browser = await p.chromium.launch(**browser_config)
                     page = await browser.new_page()
                     
-                    if proxy_config:
+                    if proxy:
                         await page.set_default_timeout(timeout_sec * 1000)
                     
                     await page.goto(url, wait_until="networkidle", timeout=timeout_sec * 1000)
@@ -513,7 +516,8 @@ async def fetch_webpage(
                             "mime": mime,
                             "data": b64,
                             "filename": url.split("/")[-1].split("?")[0] or "download"
-                        }
+                        },
+                        "next_actions": build_next_actions([("search_web", "搜索更多网页", "需要搜索更多信息时")])
                     }
                 
                 html_content = response.text
@@ -555,7 +559,8 @@ async def fetch_webpage(
         return {
             "code": "SUCCESS",
             "data": result_data,
-            "message": f"成功获取网页内容（{extract_format}格式）" + ("（已截断）" if truncated else "")
+            "message": f"成功获取网页内容（{extract_format}格式）" + ("（已截断）" if truncated else ""),
+            "next_actions": build_next_actions([("search_web", "搜索更多网页", "需要搜索更多信息时")])
         }
     
     except httpx.TimeoutException:
@@ -855,7 +860,8 @@ async def search_web(
                 "查询词": query,
                 "结果数量": len(results),
                 "搜索结果": llm_results if llm_results else "无相关结果",
-            }
+            },
+            "next_actions": build_next_actions([("fetch_webpage", "打开搜索结果链接", "需要查看某个搜索结果的详细内容时")])
         }
     
     except Exception as e:
@@ -1276,7 +1282,7 @@ async def network_diagnose(
         {code, data, message}
     """
     if mode == "ping":
-        return await _ping(host=host, count=count, timeout=timeout)
+        result = await _ping(host=host, count=count, timeout=timeout)
     elif mode == "port":
         if port is None:
             return {
@@ -1284,10 +1290,14 @@ async def network_diagnose(
                 "data": None,
                 "message": "mode='port'时port参数必填"
             }
-        return await _port_check(host=host, port=port, timeout=timeout)
+        result = await _port_check(host=host, port=port, timeout=timeout)
     else:
         return {
             "code": "ERR_INVALID_MODE",
             "data": None,
             "message": f"无效的诊断模式: {mode}，必须是 ping 或 port"
         }
+
+    if result.get("code") == "SUCCESS":
+        result["next_actions"] = build_next_actions([("network_diagnose", "深入诊断", "需要切换ping/port模式进一步检测时")])
+    return result
