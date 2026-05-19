@@ -2336,8 +2336,7 @@ class FileTools:
     
     async def read_file(
         self,
-        file_path: Optional[str] = None,
-        file_paths: Optional[List[str]] = None,
+        file_paths: List[str],
         head: Optional[int] = None,
         tail: Optional[int] = None,
         offset: Optional[int] = None,
@@ -2346,31 +2345,24 @@ class FileTools:
     ) -> Dict[str, Any]:
         """
         读取文本文件（统一入口）— 小沈 2026-05-18
+        【小沈 2026-05-19】合并file_path+file_paths→file_paths
         
         P11统一入口：合并 read_text_file + read_batch_file
-        - file_path: 读取单个文件，支持 head/tail/offset/limit 分页
-        - file_paths: 批量读取多个文件，每个文件返回完整内容
+        - 传1个路径：单文件模式，支持 head/tail/offset/limit 分页
+        - 传多个路径：批量模式，每个文件返回完整内容
         
-        P17互斥校验：file_path 和 file_paths 不能同时传入
         P15返回值全面化：单文件返回content/encoding/file_size/total_lines；批量返回results列表
         """
-        # P17互斥校验
-        if file_path and file_paths:
+        if not file_paths:
             return _to_unified_format({
                 "success": False,
-                "error": "file_path和file_paths不能同时使用（P17互斥校验）"
+                "error": "file_paths不能为空，至少提供1个文件路径"
             }, "read_file")
         
-        if not file_path and not file_paths:
-            return _to_unified_format({
-                "success": False,
-                "error": "file_path或file_paths至少填一个"
-            }, "read_file")
-        
-        # 单文件模式：调用read_text_file逻辑
-        if file_path:
+        # 单文件模式
+        if len(file_paths) == 1:
             return await self._read_text_file(
-                file_path=file_path,
+                file_path=file_paths[0],
                 head=head,
                 tail=tail,
                 offset=offset,
@@ -2378,9 +2370,8 @@ class FileTools:
                 encoding=encoding
             )
         
-        # 批量模式：调用read_batch_file逻辑
-        else:
-            return await self._read_batch_file(file_paths=file_paths)
+        # 批量模式：忽略行控制参数
+        return await self._read_batch_file(file_paths=file_paths)
     
     async def edit_file(
         self,

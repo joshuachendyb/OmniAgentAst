@@ -50,16 +50,14 @@ from app.utils.logger import logger
 FILE_TOOL_DESCRIPTIONS = {
     "read_file": """读取文本文件（统一入口）- 合并read_text_file + read_batch_file功能。
 
-使用场景：
-- file_path: 读取单个文件，支持head/tail/offset/limit分页
-- file_paths: 批量读取多个文件（⚠️ 不支持head/tail/offset/limit，始终读取完整内容）
-
-【重要】P17互斥校验：file_path和file_paths不能同时传入
+使用方式：
+- file_paths传入1个路径：单文件读取，支持head/tail/offset/limit分页
+- file_paths传入多个路径：批量读取，每个文件返回完整内容
 
 使用示例：
-- 单文件：{"file_path": "D:/test.txt"}
-- 单文件取前10行：{"file_path": "D:/test.txt", "head": 10}
-- 单文件分页：{"file_path": "D:/test.txt", "offset": 5, "limit": 10}
+- 单文件：{"file_paths": ["D:/test.txt"]}
+- 单文件取前10行：{"file_paths": ["D:/test.txt"], "head": 10}
+- 单文件分页：{"file_paths": ["D:/test.txt"], "offset": 5, "limit": 10}
 - 批量：{"file_paths": ["D:/a.txt", "D:/b.txt"]}
 
 返回数据说明：

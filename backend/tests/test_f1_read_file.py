@@ -37,7 +37,7 @@ async def test_read_file_single_full():
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
     path = _make_file("line1\nline2\nline3\n")
-    result = await ft.read_file(file_path=path)
+    result = await ft.read_file(file_paths=[path])
     data = _ok(result)
     assert data["success"] is True, f"失败: {data.get('error')}"
     assert data["content"] == "line1\nline2\nline3\n"
@@ -51,7 +51,7 @@ async def test_read_file_single_head():
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
     path = _make_file("a\nb\nc\nd\ne\n")
-    result = await ft.read_file(file_path=path, head=2)
+    result = await ft.read_file(file_paths=[path], head=2)
     data = _ok(result)
     assert data["success"] is True
     assert data["line_count"] == 2
@@ -64,7 +64,7 @@ async def test_read_file_single_tail():
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
     path = _make_file("a\nb\nc\nd\ne\n")
-    result = await ft.read_file(file_path=path, tail=2)
+    result = await ft.read_file(file_paths=[path], tail=2)
     data = _ok(result)
     assert data["success"] is True
     assert data["line_count"] == 2
@@ -76,7 +76,7 @@ async def test_read_file_single_offset_limit():
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
     path = _make_file("L1\nL2\nL3\nL4\nL5\n")
-    result = await ft.read_file(file_path=path, offset=2, limit=2)
+    result = await ft.read_file(file_paths=[path], offset=2, limit=2)
     data = _ok(result)
     assert data["success"] is True
     assert data["line_count"] == 2
@@ -95,7 +95,7 @@ async def test_read_file_utf8():
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
     path = _make_file("你好世界\nHello World\n")
-    result = await ft.read_file(file_path=path)
+    result = await ft.read_file(file_paths=[path])
     data = _ok(result)
     assert data["success"] is True
     assert "你好世界" in data["content"]
@@ -107,7 +107,7 @@ async def test_read_file_gbk_auto_detect():
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
     path = _make_gbk_file("你好世界\nGBK测试\n")
-    result = await ft.read_file(file_path=path)
+    result = await ft.read_file(file_paths=[path])
     data = _ok(result)
     assert data["success"] is True
     assert "你好世界" in data["content"]
@@ -120,7 +120,7 @@ async def test_read_file_specified_encoding():
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
     path = _make_gbk_file("GBK内容\n")
-    result = await ft.read_file(file_path=path, encoding="gbk")
+    result = await ft.read_file(file_paths=[path], encoding="gbk")
     data = _ok(result)
     assert data["success"] is True
     assert "GBK内容" in data["content"]
@@ -135,7 +135,7 @@ async def test_read_file_not_found():
     """F1-008: 文件不存在"""
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
-    result = await ft.read_file(file_path="Z:/nonexistent_file_xyz.txt")
+    result = await ft.read_file(file_paths=["Z:/nonexistent_file_xyz.txt"])
     data = _ok(result)
     assert data["success"] is False
     assert data.get("content") is None
@@ -148,7 +148,7 @@ async def test_read_file_binary():
     ft = FileTools()
     path = Path(tempfile.mktemp(suffix=".png"))
     path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
-    result = await ft.read_file(file_path=str(path))
+    result = await ft.read_file(file_paths=[str(path)])
     data = _ok(result)
     assert data["success"] is False
 
@@ -159,7 +159,7 @@ async def test_read_file_path_not_file():
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
     dirpath = tempfile.mkdtemp()
-    result = await ft.read_file(file_path=dirpath)
+    result = await ft.read_file(file_paths=[dirpath])
     data = _ok(result)
     assert data["success"] is False
 
@@ -169,15 +169,14 @@ async def test_read_file_path_not_file():
 # ============================================================
 
 @pytest.mark.asyncio
-async def test_read_file_mutual_exclusion_path_and_paths():
-    """F1-011: file_path和file_paths互斥"""
+async def test_read_file_empty_paths():
+    """F1-011: file_paths空列表被拒绝"""
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
-    path = _make_file("test\n")
-    result = await ft.read_file(file_path=path, file_paths=[path])
+    result = await ft.read_file(file_paths=[])
     data = _ok(result)
     assert data["success"] is False
-    assert "互斥" in data.get("error", "")
+    assert "为空" in data.get("error", "") or "至少" in data.get("error", "")
 
 
 @pytest.mark.asyncio
@@ -186,7 +185,7 @@ async def test_read_file_mutual_exclusion_head_and_tail():
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
     path = _make_file("a\nb\nc\n")
-    result = await ft.read_file(file_path=path, head=1, tail=1)
+    result = await ft.read_file(file_paths=[path], head=1, tail=1)
     data = _ok(result)
     assert data["success"] is False
 
@@ -197,17 +196,17 @@ async def test_read_file_mutual_exclusion_head_and_offset():
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
     path = _make_file("a\nb\nc\n")
-    result = await ft.read_file(file_path=path, head=1, offset=1)
+    result = await ft.read_file(file_paths=[path], head=1, offset=1)
     data = _ok(result)
     assert data["success"] is False
 
 
 @pytest.mark.asyncio
 async def test_read_file_neither_path_nor_paths():
-    """F1-014: 至少传入一个路径"""
+    """F1-014: file_paths为空列表被拒绝"""
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
-    result = await ft.read_file()
+    result = await ft.read_file(file_paths=[])
     data = _ok(result)
     assert data["success"] is False
 
@@ -232,7 +231,7 @@ async def test_read_file_batch_multiple():
 
 @pytest.mark.asyncio
 async def test_read_file_batch_empty_list():
-    """F1-016: 批量读取空列表"""
+    """F1-016: 空列表被拒绝"""
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
     result = await ft.read_file(file_paths=[])
@@ -250,7 +249,7 @@ async def test_read_file_empty_file():
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
     path = _make_file("")
-    result = await ft.read_file(file_path=path)
+    result = await ft.read_file(file_paths=[path])
     data = _ok(result)
     assert data["success"] is True
 
@@ -261,7 +260,7 @@ async def test_read_file_head_exceeds_lines():
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
     path = _make_file("a\nb\n")
-    result = await ft.read_file(file_path=path, head=100)
+    result = await ft.read_file(file_paths=[path], head=100)
     data = _ok(result)
     assert data["success"] is True
     assert data["line_count"] == 2
@@ -273,7 +272,7 @@ async def test_read_file_tail_exceeds_lines():
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
     path = _make_file("a\nb\n")
-    result = await ft.read_file(file_path=path, tail=100)
+    result = await ft.read_file(file_paths=[path], tail=100)
     data = _ok(result)
     assert data["success"] is True
     assert data["line_count"] == 2
@@ -285,7 +284,7 @@ async def test_read_file_offset_exceeds_lines():
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
     path = _make_file("a\nb\n")
-    result = await ft.read_file(file_path=path, offset=100)
+    result = await ft.read_file(file_paths=[path], offset=100)
     data = _ok(result)
     assert data["success"] is True
     assert data["line_count"] == 0
@@ -297,7 +296,7 @@ async def test_read_file_capabilities():
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
     path = _make_file("test\n")
-    result = await ft.read_file(file_path=path)
+    result = await ft.read_file(file_paths=[path])
     data = _ok(result)
     assert "capabilities_used" in data
     assert "文件IO" in data["capabilities_used"]
@@ -309,6 +308,6 @@ async def test_read_file_next_actions():
     from app.services.tools.file.file_tools import FileTools
     ft = FileTools()
     path = _make_file("test\n")
-    result = await ft.read_file(file_path=path)
+    result = await ft.read_file(file_paths=[path])
     assert result["status"] == "success"
     assert "next_actions" in result

@@ -35,20 +35,17 @@ from typing import Optional, List, Dict, Any, Literal
 
 class ReadFileInput(BaseModel):
     """read_file 统一入口 — 小沈 2026-05-18
-
+    
     合并 read_text_file + read_batch_file
-    - file_path: 读取单个文件，支持 head/tail/offset/limit 分页
-    - file_paths: 批量读取多个文件，每个文件返回完整内容
-
-    P17互斥校验：file_path 和 file_paths 不能同时传入
+    - 传入1个路径：单文件模式，支持 head/tail/offset/limit 分页
+    - 传入多个路径：批量模式，每个文件返回完整内容
+    
+    【小沈 2026-05-19】合并file_path+file_paths→file_paths，消除LLM双参数混淆
     """
-    file_path: Optional[str] = Field(
-        default=None,
-        description="单文件路径（与file_paths互斥，二选一）"
-    )
-    file_paths: Optional[List[str]] = Field(
-        default=None,
-        description="批量文件路径列表（与file_path互斥，二选一）"
+    file_paths: List[str] = Field(
+        min_length=1,
+        max_length=100,
+        description="文件路径列表。传1个路径=单文件模式(支持head/tail/offset/limit分页)；传多个=批量模式(读取完整内容)"
     )
     head: Optional[int] = Field(
         default=None,
