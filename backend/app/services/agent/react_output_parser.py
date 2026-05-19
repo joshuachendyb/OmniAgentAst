@@ -160,6 +160,30 @@ def _build_chunk_result(data: Dict) -> Dict[str, Any]:
     }
 
 
+def _process_tool_params(tool_params, tool_name=None, raw_output=None):
+    """
+    统一工具参数处理管道: normalize → filter → supplement
+    
+    消除标准JSON、非标准JSON、混合文本JSON、_determine_parse_type 
+    四条路径中 tool_params 处理步骤不一致的问题（缺陷2修复）。
+    
+    作者: 小沈 2026-05-19
+    """
+    if not isinstance(tool_params, dict):
+        return tool_params
+    
+    tool_params = _normalize_tool_params_content(tool_params)
+    tool_params = _filter_tool_params(tool_params)
+    
+    if tool_name and tool_name != "finish" and tool_params:
+        tool_params = _supplement_missing_params(
+            tool_name, tool_params,
+            raw_output if isinstance(raw_output, str) else None
+        )
+    
+    return tool_params
+
+
 def _build_action_from_new_format(data: Dict, output: str) -> Dict[str, Any]:
     """从新格式JSON构造action/answer结果（tool_name/tool_params）"""
     tool_name = data["tool_name"]
@@ -171,13 +195,10 @@ def _build_action_from_new_format(data: Dict, output: str) -> Dict[str, Any]:
     else:
         response = data.get("response", "")
     
-    processed_tool_params = None if is_finish else _filter_tool_params(
-        _normalize_tool_params_content(data.get("tool_params", data.get("args", {})))
+    raw_params = data.get("tool_params", data.get("args", {}))
+    processed_tool_params = None if is_finish else _process_tool_params(
+        raw_params, tool_name, output
     )
-    if not is_finish and processed_tool_params:
-        processed_tool_params = _supplement_missing_params(
-            tool_name, processed_tool_params, output if isinstance(output, str) else None
-        )
     
     result = {
         "type": "answer" if is_finish else "action",
@@ -309,8 +330,8 @@ def _handle_non_standard_json(output) -> Optional[Dict[str, Any]]:
     result = _process_json_result(non_std_data, output)
     if result is not None:
         # 补充非标准JSON路径特有的内容字段处理
-        if result.get("type") == "parse_error" and "error" in result:
-            result["error"] = non_std_data.get("error", result["error"])
+        if result.get("type") == "parse_error":
+            result["error"] = non_std_data.get("error", "非标准JSON解析错误")
         logger.info(f"[parse_react_response] 非标准JSON解析成功")
         return result
     return None
@@ -386,9 +407,7 @@ def _handle_mixed_text_json(output) -> Optional[Dict[str, Any]]:
         if not extracted_content:
             extracted_content = prefix_text
         if tool_params:
-            tool_params = _supplement_missing_params(
-                tool_name, tool_params, output if isinstance(output, str) else None
-            )
+            tool_params = _process_tool_params(tool_params, tool_name, output)
         return {
             "type": "action",
             "thought": json_data.get("thought", ""),
@@ -514,12 +533,12 @@ def parse_react_response(output: str) -> Dict[str, Any]:
 def _determine_parse_type(output: str) -> Dict[str, Any]:
     """
     【2026-04-18小沈优化】判断LLM输出类型并调用对应解析函数
+    【2026-05-19小沈】移除重复的纯JSON块检测（已在handler #7处理），精简为3优先级
     
     调整后的优先级顺序：
     ① ```包裹检测 - 最高优先级
-    ② 纯JSON块检测 - 第二优先级  
-    ③ 关键词匹配 - 第三优先级
-    ④ 工具名兜底 - 最低优先级
+    ② 关键词匹配 - 第二优先级
+    ③ 长度兜底 - 最低优先级（≥5字符→implicit，<5→parse_error）
     
     【新增】统一的异常处理机制
     """
@@ -544,16 +563,9 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
         from app.utils.logger import logger
         logger.debug(f"```包裹JSON解析失败: {e}")
     
-    # ② 【第二优先级】纯JSON块检测（无```包裹）
-    try:
-        json_data = _extract_json_block(output)
-        if json_data and "tool_name" in json_data:
-            return _create_action_result(json_data, output)
-    except Exception as e:
-        from app.utils.logger import logger
-        logger.debug(f"纯JSON块检测失败: {e}")
-    
-    # ③ 【第三优先级】关键词匹配（传统ReAct格式）
+    # ② 【第二优先级】关键词匹配（传统ReAct格式）
+    # 注：纯JSON块检测已由解析器链 handler #7 (_handle_mixed_text_json) 处理，
+    # 此处不再重复调用 _extract_json_block（缺陷3修复 小沈 2026-05-19）
     try:
         # 定位关键词位置
         thought_match = re.search(REACT_KEYWORDS["thought"], output, re.IGNORECASE)
@@ -998,6 +1010,15 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
             "tool_params": None,
             "response": ""
         }
+    
+    # 显式type优先判断（缺陷4修复 小沈 2026-05-19）
+    explicit_type = data.get("type")
+    if explicit_type == "parse_error":
+        return _build_parse_error_result(data)
+    if explicit_type == "answer":
+        return _build_answer_result(data)
+    if explicit_type == "chunk":
+        return _build_chunk_result(data)
     
     tool_name = data.get("tool_name")
     # 【2026-04-28 小沈修复】支持args字段（LLM可能返回args而非tool_params）
@@ -1545,9 +1566,9 @@ def _create_action_result(parsed: Dict, original_output: str) -> Dict[str, Any]:
     # 【2026-04-28 小沈修复】支持args字段（LLM可能返回args而非tool_params）
     tool_params = parsed.get("tool_params", parsed.get("params", parsed.get("action_input", parsed.get("args", {}))))
     
-    # 【2026-04-28 小沈新增】过滤tool_params中的非参数字段
+    # 统一工具参数处理管道（缺陷2修复 小沈 2026-05-19）
     if isinstance(tool_params, dict):
-        tool_params = _filter_tool_params(tool_params)
+        tool_params = _process_tool_params(tool_params, tool_name, original_output)
     
     # 【2026-04-23 小沈修复】当 tool_name 为 None/null 时，检查 content 是否表明任务完成
     if tool_name is None:
@@ -1586,12 +1607,8 @@ def _create_action_result(parsed: Dict, original_output: str) -> Dict[str, Any]:
             "error": None
         }
     
-    # action类型
-    # 【2026-04-28 小沈新增】检测并补充缺失的必需参数
-    # 【改进7 2026-05-01 小沈 小健】添加reasoning验证
+    # action类型（tool_params已在_process_tool_params中统一处理 小沈 2026-05-19）
     final_tool_params = tool_params
-    if final_tool_params:
-        final_tool_params = _supplement_missing_params(tool_name, final_tool_params, original_output if isinstance(original_output, str) else None)
     result = {
         "type": "action",
         "thought": parsed.get("thought", ""),
