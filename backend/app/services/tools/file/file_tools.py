@@ -561,7 +561,10 @@ class FileTools:
             if encoding is None and used_encoding and used_encoding != "utf-8":
                 result["capabilities_used"] = ["编码自动检测"]
             
-            return _to_unified_format(result, "read_file", llm_data=_llm)
+            return _to_unified_format(result, "read_file", llm_data=_llm, next_actions=[
+                ("edit_file", "编辑文件", "需要修改内容时"),
+                ("grep_file_content", "搜索文件内容", "需要查找特定内容时"),
+            ])
 
         except Exception as e:
             logger.error(f"read_text_file failed: {file_path}: {e}")
@@ -737,7 +740,9 @@ class FileTools:
                     "operation_id": operation_id,
                     "file_path": str(path),
                     "bytes_written": len(content.encode(encoding))
-                }, "write_text_file")
+                }, "write_text_file", next_actions=[
+                    ("read_file", "验证写入结果", "需要确认内容时"),
+                ])
             else:
                 return _to_unified_format({
                     "success": False,
@@ -980,7 +985,10 @@ class FileTools:
                     "file_count": file_count,
                     "statistics": statistics,
                     "next_page_token": encode_page_token(start_offset + MAX_DISPLAY_ENTRIES) if start_offset + MAX_DISPLAY_ENTRIES < total else None
-                }, "list_directory")
+                }, "list_directory", next_actions=[
+                    ("search_files", "搜索文件", "需要查找特定文件时"),
+                    ("read_file", "读取文件", "需要查看文件内容时"),
+                ])
 
             return _to_unified_format({
                 "success": True,
@@ -989,7 +997,10 @@ class FileTools:
                 "directory": str(path),
                 "statistics": statistics,
                 "next_page_token": None
-            }, "list_directory")
+            }, "list_directory", next_actions=[
+                ("search_files", "搜索文件", "需要查找特定文件时"),
+                ("read_file", "读取文件", "需要查看文件内容时"),
+            ])
 
         except Exception as e:
             logger.error(f"Failed to list directory {dir_path}: {e}")
@@ -1868,7 +1879,9 @@ class FileTools:
                     "success": True, "replaced_count": replace_result['count'], "encoding": replace_result['used_enc'],
                     "file_path": str(path), "file_name": replace_result['name'],
                     "operation_id": operation_id,
-                }, "edit_file")
+                }, "edit_file", next_actions=[
+                    ("read_file", "验证修改结果", "需要确认修改时"),
+                ])
             else:
                 return _to_unified_format({
                     "success": False, "error": "Failed to replace in file",
@@ -2160,7 +2173,10 @@ class FileTools:
                 "total_matches": total_matches, "pattern": pattern,
                 "search_dir": str(search_path), "output_mode": output_mode or "content",
                 "has_more": has_more, "next_page_token": next_page_token,
-            }, "grep_file_content")
+            }, "grep_file_content", next_actions=[
+                ("read_file", "读取匹配行上下文", "需要查看完整内容时"),
+                ("edit_file", "编辑匹配内容", "需要修改时"),
+            ])
         except Exception as e:
             logger.error(f"grep_file_content failed: {e}")
             return _to_unified_format({
@@ -2889,23 +2905,8 @@ def _generate_summary(tool_name: str, result: Any) -> str:
     return "操作完成"
 
 
-_TOOL_NEXT_ACTIONS = {
-    "read_file": [("edit_file", "编辑文件", "需要修改内容时"), ("grep_file_content", "搜索文件内容", "需要查找特定内容时")],
-    "write_text_file": [("read_file", "验证写入结果", "需要确认内容时")],
-    "read_media_file": [],
-    "edit_file": [("read_file", "验证修改结果", "需要确认修改时")],
-    "list_directory": [("search_files", "搜索文件", "需要查找特定文件时"), ("read_file", "读取文件", "需要查看文件内容时")],
-    "search_files": [("read_file", "读取找到的文件", "需要查看内容时")],
-    "grep_file_content": [("read_file", "读取匹配行上下文", "需要查看完整内容时"), ("edit_file", "编辑匹配内容", "需要修改时")],
-    "rename_file": [("read_file", "验证重命名结果", "需要确认时")],
-    "archive_tool": [("archive_tool", "继续压缩/解压", "需要其他操作时")],
-    "file_operation": [("read_file", "验证操作结果", "需要确认时")],
-    "data_file_format": [("edit_file", "编辑格式化文件", "需要修改时")],
-}
-
-
-def _to_unified_format(result: Dict[str, Any], tool_name: str, retry_count: int = 0, llm_data: dict = None) -> Dict[str, Any]:
-    """将工具执行结果转换为统一格式，支持llm_data透传和next_actions注入 小沈-2026-05-15, next_actions-2026-05-19, capabilities-2026-05-19"""
+def _to_unified_format(result: Dict[str, Any], tool_name: str, retry_count: int = 0, llm_data: dict = None, next_actions: list = None) -> Dict[str, Any]:
+    """将工具执行结果转换为统一格式，支持llm_data/next_actions/capabilities透传 小沈-2026-05-19"""
     if not isinstance(result, dict):
         r = {
             "status": "error",
@@ -2934,11 +2935,9 @@ def _to_unified_format(result: Dict[str, Any], tool_name: str, retry_count: int 
     }
     if llm_data:
         r["llm_data"] = llm_data
+    if status == "success" and next_actions is not None:
+        r["next_actions"] = build_next_actions(next_actions)
     if status == "success":
-        na_list = _TOOL_NEXT_ACTIONS.get(tool_name)
-        if na_list is not None:
-            r["next_actions"] = build_next_actions(na_list)
-        # 透传 capabilities_used 和 capabilities_missing - 小沈 2026-05-19
         if "capabilities_used" in result:
             r["capabilities_used"] = result["capabilities_used"]
         if "capabilities_missing" in result:
