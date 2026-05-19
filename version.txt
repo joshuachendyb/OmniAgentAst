@@ -1,20 +1,74 @@
 v0.13.9
 
-更新时间: 2026-05-19 15:19:02
+更新时间: 2026-05-19 15:20:00
 
 更新内容：
 
 ## v0.13.8→v0.13.9 变更汇总 - 小沈-2026-05-19
 
-### fix finish时result字段嵌套标准化
+### feat 动态next_actions注入（P15能力状态提示）
 
 | commit | 说明 |
 |--------|------|
-| (本次) | fix: react_output_parser.py 修复finish时result字段嵌套问题 - 小沈-2026-05-19 |
+| a748aec7 | feat: P15 capabilities_used/missing能力状态提示 - 小沈-2026-05-19 |
+| 704d1e59 | fix: file_tools.py改为动态注入next_actions - 小沈-2026-05-19 |
+| f6bbb8df | fix: file_tools修复47处旧工具名传错致next_actions失效+清理18个死分支 - 小沈-2026-05-19 |
 
-- `_normalize_tool_params_content`: 统一处理 `content` 和 `result` 字段，数字/布尔/list/dict 均转为字符串
-- `_build_action_from_new_format` finish分支: 增加 `result` 字段标准化（修复之前仅标准化content但finish时processed_tool_params=None导致绕过的漏洞）
-- 新增 `TestFinishResultNormalization` 6个测试：string/dict/list/number/bool/None 全覆盖
+### refactor 解析器链重构 + Schema类型约束
+
+| commit | 说明 |
+|--------|------|
+| 56ea6a0e | refactor: parse_react_response解析器链重构-消除重复代码-小沈-2026-05-19 |
+| 8db4d776 | fix: 解析器链4缺陷修复-统一tool_params处理+补type检查+去重+修错误消息-小沈-2026-05-19 |
+| 1758aae5 | fix: react_output_parser.py 修复finish时result字段嵌套问题 - 小沈-2026-05-19 |
+| 781dd70c | refactor: 4个Schema文件8处str→Literal类型约束 - 小沈-2026-05-19 |
+
+### fix FILE/SHELL/NETWORK/SYSTEM分类tool缺陷修复
+
+| commit | 说明 |
+|--------|------|
+| 442de572 | fix: FILE分类tool代码缺陷修复(6项P0/P1) - 小健-2026-05-19 |
+| 7006436c | fix: FILE分类tool中低级缺陷修复(12项) - 小健-2026-05-19 |
+| 8dc7eb48 | fix: F1 read_file编码自动检测Bug - 小沈-2026-05-19 |
+| 22d16eb9 | fix: SHELL分类tool代码缺陷修复(6项CRITICAL/HIGH) - 小健-2026-05-19 |
+| 86a367b8 | fix: NETWORK分类tool代码缺陷修复(3项CRITICAL+4项HIGH) - 小健-2026-05-19 |
+| f44c1349 | fix(system): SYSTEM分类10个tool深度修复 - 小健-2026-05-19 |
+
+### fix LLM友好性改进（参数描述优化）
+
+| commit | 说明 |
+|--------|------|
+| 1e0b4dc6 | fix: LLM视角6项参数改进 - 小沈-2026-05-19 |
+| 26bea9d1 | fix: LLM友好性3项改进 - 小沈-2026-05-19 |
+| 04ada5fe | fix: F1 read_file描述明确标注批量模式不支持分页 - 小沈-2026-05-19 |
+| f99c8be6 | refactor: F1 read_file合并file_path+file_paths→file_paths(List[str]) - 小沈-2026-05-19 |
+| 227f229f | fix: S1 execute_shell_command 2项深度分析修复 - 小沈-2026-05-19 |
+| 575c4cc6 | fix: S3 shell_session tail参数描述明确配合max_lines使用 - 小沈-2026-05-19 |
+
+### docs 文档同步
+
+| commit | 说明 |
+|--------|------|
+| dd6024fd | docs: F1 read_file参数描述修正 - 小沈-2026-05-19 |
+| 4c996cfd | docs: F2 write_text_file encoding描述修正 - 小沈-2026-05-19 |
+| 61d3fa41 | docs: F7 grep_file_content描述修正 - 小沈-2026-05-19 |
+| 2f1ab986 | docs: 同步文档 - 小沈-2026-05-19 |
+
+### test 补充测试用例（共~120个）
+
+| commit | 说明 |
+|--------|------|
+| 9363ae2b | test: F2 write_text_file 8个深度测试全部通过 - 小沈-2026-05-19 |
+| 71b84554 | test: F3 read_media_file 5个测试全部通过 - 小沈-2026-05-19 |
+| d9fb846f | test: F4 edit_file 6个测试全部通过 - 小沈-2026-05-19 |
+| 30e858d0 | test: F5-F8 共13个测试全部通过 - 小沈-2026-05-19 |
+| 18548d98 | test: F9-F11 共13个测试全部通过 - 小沈-2026-05-19 |
+| 1efe34bc | test: FILE分类补充29个测试用例覆盖修复点 - 小健-2026-05-19 |
+| 5c8e265c | test: S1 execute_shell_command 7个测试全部通过 - 小沈-2026-05-19 |
+| 365d0d97 | test: S2 find_command 3个测试全部通过 - 小沈-2026-05-19 |
+| 9fc3d39e | test: S3 shell_session 3个测试全部通过 - 小沈-2026-05-19 |
+| bf705196 | test: S4-S5 共9个测试全部通过 - 小沈-2026-05-19 |
+| 894cee7d | feat: 全量35个降级点补充capabilities_used/capabilities_missing - 小沈-2026-05-19 |
 
 ---
 
