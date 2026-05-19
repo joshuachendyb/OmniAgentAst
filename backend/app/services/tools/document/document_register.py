@@ -77,18 +77,14 @@ DESCRIPTIONS = {
 【使用场景】
 - 当用户需要读取任意格式文档内容时使用
 - Agent无需判断文件格式，工具自动按后缀选择解析器
-- 支持提取表格、图片、演讲备注等
+- 支持提取表格等
 
 【支持的格式】
-- .pdf → PDF解析（支持页码范围、提取表格/图片）
+- .pdf → PDF解析（支持页码范围、提取表格）
 - .docx → Word解析（支持提取表格）
 - .xlsx → Excel解析（支持指定工作表、最大行数）
-- .pptx → PPT解析（支持提取演讲备注）
-- .csv/.tsv → CSV解析（支持分隔符、编码、use_pandas返回dtypes）
-
-【use_pandas参数】
-- False（默认）：使用标准库/openpyxl，快速轻量
-- True：使用pandas，返回dtypes等元数据，适合数据分析
+- .pptx → PPT解析
+- .csv/.tsv → CSV解析（支持分隔符、编码）
 
 【返回数据】
 - code: SUCCESS / ERR_FILE_NOT_FOUND / ERR_UNSUPPORTED_FORMAT
@@ -210,9 +206,6 @@ DESCRIPTIONS = {
 - 当用户需要理解表设计时
 - 当用户需要生成DDL时使用
 
-
-【重要】include_details=true时最多返回20个表，防止上下文爆炸。
-
 【返回数据】
 - code: SUCCESS / ERR_DB_CONNECTION / ERR_SQL_EXEC / ERR_SCHEMA_FAILED
 - data: { tables: [{name, columns, indexes}], total }
@@ -225,7 +218,7 @@ EXAMPLES = {
         {"file_path": "D:/documents/report.pdf", "pages": "1-3", "extract_tables": True},
         {"file_path": "D:/documents/report.docx", "extract_tables": True},
         {"file_path": "D:/data/sales.xlsx", "sheet_name": "Sheet2", "max_rows": 100},
-        {"file_path": "D:/documents/presentation.pptx", "extract_notes": True},
+        {"file_path": "D:/documents/presentation.pptx"},
     ],
     "write_document": [
         {"file_path": "D:/output/report.docx", "title": "测试报告", "content": "这是测试内容"},

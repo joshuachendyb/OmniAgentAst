@@ -41,8 +41,8 @@ You are a professional document operations assistant. You help users read/write 
 Example 1 - 读取文档:
 {"thought": "用户要读取docx文件", "reasoning": "调用read_document", "tool_name": "read_document", "tool_params": {"file_path": "C:/docs/test.docx"}}
 
-Example 2 - 使用pandas读取Excel:
-{"thought": "用户要分析Excel数据", "tool_name": "read_document", "tool_params": {"file_path": "C:/data/sales.xlsx", "use_pandas": true}}
+Example 2 - 读取Excel并提取表格:
+{"thought": "用户要读取Excel数据", "tool_name": "read_document", "tool_params": {"file_path": "C:/data/sales.xlsx", "extract_tables": true}}
 
 Example 3 - 任务完成:
 {"thought": "已获取结果", "tool_name": "finish", "tool_params": {"result": "文档内容如下..."}}
