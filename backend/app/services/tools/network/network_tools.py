@@ -225,10 +225,11 @@ async def download_file(
     headers: Optional[Dict[str, str]] = None,
     timeout: int = 300000,
     proxy: Optional[str] = None,
-    resume: bool = False,
-    chunk_size: int = 8192,
 ) -> dict:
     """从URL下载文件 — 小沈 2026-05-19 精简参数(7→5)"""
+    # 已从Schema移除的参数，用局部变量保留默认值
+    resume = False
+    chunk_size = 8192
     try:
         # 验证URL
         parsed = urlparse(url)

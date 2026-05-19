@@ -2460,11 +2460,12 @@ class FileTools:
         directory: Optional[str] = None,
         pattern: Optional[str] = None,
         replacement: Optional[str] = None,
-        recursive: bool = False,
-        preview: bool = False,
-        conflict_strategy: Literal["skip", "overwrite", "append_number"] = "skip",
     ) -> Dict[str, Any]:
         """重命名文件 — 小沈 2026-05-19 精简参数(9→6)，小健 2026-05-19 补充batch模式缺失参数"""
+        # 已从Schema移除的参数，用局部变量保留默认值
+        recursive = False
+        preview = False
+        conflict_strategy: Literal["skip", "overwrite", "append_number"] = "skip"
         # mode分发
         if mode == "batch":
             if not directory:
