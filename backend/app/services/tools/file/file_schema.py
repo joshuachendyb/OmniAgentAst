@@ -181,7 +181,7 @@ class ListDirectoryInput(BaseModel):
     """
     dir_path: Optional[str] = Field(
         default=".",
-        description="目录路径，默认当前目录。推荐使用绝对路径如 D:/项目代码"
+        description="目录路径。默认当前工作目录（即服务端运行目录，不确定时推荐明确指定绝对路径如 D:/项目代码）"
     )
     format: Literal["list", "tree"] = Field(
         default="list",
@@ -225,8 +225,7 @@ class SearchFilesInput(BaseModel):
         description="文件名匹配模式，支持glob通配符（* ? **）和中文文件名。如 \"*.py\"、\"**/*.ts\"、\"config*\""
     )
     search_dir: str = Field(
-        default="~",
-        description="搜索的起始目录（绝对路径），默认用户主目录。支持中文目录名"
+        description="搜索的起始目录（绝对路径，必填）。支持中文目录名，如 D:/项目代码"
     )
     recursive: bool = Field(
         default=True,

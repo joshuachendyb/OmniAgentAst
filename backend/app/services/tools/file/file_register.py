@@ -121,7 +121,7 @@ FILE_TOOL_DESCRIPTIONS = {
 返回数据说明：
 - data.success/data.entries(list)/data.tree(tree)/data.statistics(统计)""",
 
-    "search_files": """递归搜索匹配模式的文件/目录，支持中文文件名。
+    "search_files": """递归搜索匹配模式的文件/目录，支持中文文件名。search_dir为必填项。
 
 使用示例：
 - 搜索Python文件：{"pattern": "**/*.py", "search_dir": "D:/project"}
@@ -174,13 +174,16 @@ FILE_TOOL_DESCRIPTIONS = {
 返回数据说明：
 - data.success/data.action/data.source/data.destination""",
 
-    "data_file_format": """结构化配置格式统一入口 - 合并json/yaml/toml/ini/xml/properties处理。
+    "data_file_format": """读取/修改 JSON、YAML、TOML、INI、XML、Properties 等结构化配置文件 — 统一入口。
 
-归入File分类。CSV/Excel属于Document分类。
+当你需要解析配置文件、修改配置项、读取JSON数据时使用此工具。
+⚠️ CSV/Excel 使用 Document 分类的 read_document，不在此工具范围。
 
 使用示例：
 - 读JSON：{"action": "read", "file_path": "D:/config.json"}
-- 写YAML：{"action": "write", "file_path": "D:/config.yaml", "data": {"key": "value"}}
+- 写JSON：{"action": "write", "file_path": "D:/config.json", "data": {"key": "value"}}
+- 读YAML：{"action": "read", "file_path": "D:/config.yaml"}
+- 写TOML：{"action": "write", "file_path": "D:/config.toml", "data": {"section": {"k": "v"}}}
 
 返回数据说明：
 - data.success/data.data(读取)/data.format/data.bytes_written(写入)""",
