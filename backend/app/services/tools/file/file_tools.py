@@ -2410,20 +2410,14 @@ class FileTools:
         new_string: Optional[str] = None,
         edits: Optional[List[Dict]] = None,
         replace_all: bool = False,
-        ignore_case: bool = False,
         dry_run: bool = False,
         encoding: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        编辑文本文件（统一入口）— 小沈 2026-05-18
-        
-        P11统一入口：合并 precise_replace_in_file + edit_text_file
-        - old_string+new_string: 单处精确替换（原precise_replace）
-        - edits: 多处结构化编辑（原edit_text_file）
-        
-        P17互斥校验：old_string 和 edits 不能同时传入
-        P16幂等性：dry_run=True时只预览不修改，多次调用结果一致
+        编辑文本文件 — 小沈 2026-05-19 精简参数(8→7)
+        P17互斥：old_string和edits不能同时传入
         """
+        ignore_case = False  # 小沈 2026-05-19: 已从Schema移除，默认False
         # P17互斥校验
         if old_string and edits:
             return _to_unified_format({
@@ -2466,20 +2460,11 @@ class FileTools:
         directory: Optional[str] = None,
         pattern: Optional[str] = None,
         replacement: Optional[str] = None,
-        preview: bool = False,
-        recursive: bool = False,
-        conflict_strategy: Literal["skip", "overwrite", "append_number"] = "skip",
     ) -> Dict[str, Any]:
-        """
-        重命名文件（统一入口）— 小沈 2026-05-18
-        【小沈 2026-05-19】新增mode参数消除LLM对参数组混淆
-        
-        P11统一入口：合并 rename_file + batch_rename
-        - mode="single": path+new_name 单文件重命名
-        - mode="batch": directory+pattern+replacement 批量正则重命名
-        
-        P16幂等性：单文件rename，如果new_name与原名称相同，返回SUCCESS（无需操作）
-        """
+        """重命名文件 — 小沈 2026-05-19 精简参数(9→6)"""
+        preview = False  # 小沈 2026-05-19: 已从Schema移除
+        recursive = False
+        conflict_strategy = "skip"
         # mode分发
         if mode == "batch":
             if not directory:

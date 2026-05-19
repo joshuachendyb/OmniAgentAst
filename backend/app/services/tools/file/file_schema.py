@@ -123,7 +123,7 @@ class ReadMediaFileInput(BaseModel):
 # ============================================================
 
 class EditFileInput(BaseModel):
-    """edit_file 统一入口 — 小沈 2026-05-18
+    """edit_file 统一入口 — 小沈 2026-05-19 精简8→7参数
 
     合并 precise_replace_in_file + edit_text_file
     - old_string+new_string: 单处精确替换
@@ -150,13 +150,9 @@ class EditFileInput(BaseModel):
         default=False,
         description="是否替换所有匹配项（仅old_string模式有效），默认False只替换第一个"
     )
-    ignore_case: bool = Field(
-        default=False,
-        description="是否忽略大小写（仅old_string模式有效），默认False"
-    )
     dry_run: bool = Field(
         default=False,
-        description="预览模式，True=只预览不修改（P16幂等性），默认False"
+        description="预览模式，True=只预览不修改，默认False"
     )
     encoding: Optional[str] = Field(
         default=None,
@@ -291,49 +287,34 @@ class GrepFileContentInput(BaseModel):
 # ============================================================
 
 class RenameFileInput(BaseModel):
-    """rename_file 统一入口 — 小沈 2026-05-18
+    """rename_file — 小沈 2026-05-19 精简9→6参数
 
-    合并 rename_file + batch_rename
     - mode="single": path+new_name 单文件重命名
     - mode="batch": directory+pattern+replacement 批量正则重命名
-
-    【小沈 2026-05-19】新增mode参数消除LLM对参数组混淆
     """
     mode: Literal["single", "batch"] = Field(
         default="single",
-        description="重命名模式：single=单文件重命名(path+new_name)，batch=批量正则重命名(directory+pattern+replacement)"
+        description="模式：single=单文件(path+new_name)，batch=批量(directory+pattern+replacement)"
     )
     path: Optional[str] = Field(
         default=None,
-        description="单文件/目录路径（仅mode=single时使用）"
+        description="单文件路径（mode=single时必填）"
     )
     new_name: Optional[str] = Field(
         default=None,
-        description="新名称，不含路径分隔符（仅mode=single时必填）"
+        description="新名称（mode=single时必填）"
     )
     directory: Optional[str] = Field(
         default=None,
-        description="批量重命名的目录（仅mode=batch时使用）"
+        description="批量重命名的目录（mode=batch时必填）"
     )
     pattern: Optional[str] = Field(
         default=None,
-        description="匹配正则表达式（仅mode=batch时必填）"
+        description="匹配正则表达式（mode=batch时必填）"
     )
     replacement: Optional[str] = Field(
         default=None,
-        description="替换字符串，支持反向引用如 \\1（仅mode=batch时必填）"
-    )
-    preview: bool = Field(
-        default=False,
-        description="预览模式（批量模式建议先preview=True确认后再执行），默认False"
-    )
-    recursive: bool = Field(
-        default=False,
-        description="是否递归子目录（批量模式），默认False"
-    )
-    conflict_strategy: Literal["skip", "overwrite", "append_number"] = Field(
-        default="skip",
-        description="冲突处理策略：skip（跳过）/ overwrite（覆盖）/ append_number（自动编号），默认skip"
+        description="替换字符串，支持反向引用如 \\1（mode=batch时必填）"
     )
 
 
