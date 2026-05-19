@@ -28,6 +28,8 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 from datetime import datetime
 
+from app.services.tools.tool_result_utils import build_next_actions  # 小沈 2026-05-19
+
 
 def _check_pyautogui() -> bool:
     try:
@@ -233,7 +235,8 @@ def screen_record(duration: int, output_path: str = None, fps: int = 15) -> Dict
 
             imageio.mimwrite(output_path, frames, fps=fps)
 
-        return {"code": "SUCCESS", "data": {"output_path": output_path, "duration": duration, "fps": fps}, "message": f"录制完成: {output_path}"}
+        return {"code": "SUCCESS", "data": {"output_path": output_path, "duration": duration, "fps": fps}, "message": f"录制完成: {output_path}",
+                "next_actions": build_next_actions([])}
     except Exception as e:
         return {"code": "ERR_SCREEN_RECORD", "data": None, "message": f"录制失败: {str(e)}"}
 
@@ -317,7 +320,8 @@ def ocr(image_path: str, language: str = "eng") -> Dict[str, Any]:
 
         img = Image.open(image_path)
         text = pytesseract.image_to_string(img, lang=language)
-        return {"code": "SUCCESS", "data": {"text": text, "language": language, "char_count": len(text)}, "message": f"OCR识别完成: {len(text)}个字符"}
+        return {"code": "SUCCESS", "data": {"text": text, "language": language, "char_count": len(text)}, "message": f"OCR识别完成: {len(text)}个字符",
+                "next_actions": build_next_actions([("screen_capture", "重新截图", "需要识别其他区域时")])}
     except Exception as e:
         return {"code": "ERR_OCR", "data": None, "message": f"OCR识别失败: {str(e)}"}
 
@@ -395,6 +399,7 @@ def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, 
         from win10toast import ToastNotifier
         toaster = ToastNotifier()
         toaster.show_toast(title, message, duration=duration)
-        return {"code": "SUCCESS", "data": {"title": title, "message": message, "duration": duration}, "message": "通知发送成功"}
+        return {"code": "SUCCESS", "data": {"title": title, "message": message, "duration": duration}, "message": "通知发送成功",
+                "next_actions": build_next_actions([])}
     except ImportError:
         return {"code": "ERR_NO_WIN10TOAST", "data": None, "message": "需要安装 win10toast 库: pip install win10toast"}

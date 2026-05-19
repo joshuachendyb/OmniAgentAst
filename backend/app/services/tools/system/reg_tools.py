@@ -30,6 +30,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 
 from app.utils.logger import logger
+from app.services.tools.tool_result_utils import build_next_actions  # 小沈 2026-05-19
 
 
 # 文档定义的参数映射：简称 -> Windows注册表常量
@@ -408,18 +409,22 @@ def registry_control(
         return {"code": "ERR_REG_INVALID_PARAM", "data": None, "message": "key_path不能为空"}
 
     if action == "read":
-        return reg_read(key_path=key_path, value_name=value_name, hive=hive, output_format=output_format)
+        result = reg_read(key_path=key_path, value_name=value_name, hive=hive, output_format=output_format)
     elif action == "write":
         if not value_name:
             return {"code": "ERR_REG_INVALID_PARAM", "data": None, "message": "action='write'时value_name必填"}
         if value is None:
             return {"code": "ERR_REG_INVALID_PARAM", "data": None, "message": "action='write'时value必填"}
-        return reg_write(key_path=key_path, value_name=value_name, value=value,
+        result = reg_write(key_path=key_path, value_name=value_name, value=value,
                         value_type=value_type, backup_before_write=backup_before_write,
                         dry_run=dry_run, hive=hive)
     elif action == "delete":
-        return reg_delete(key_path=key_path, value_name=value_name,
+        result = reg_delete(key_path=key_path, value_name=value_name,
                          backup_before_delete=backup_before_delete, recursive=recursive, hive=hive)
     else:
         return {"code": "ERR_REG_INVALID_PARAM", "data": None,
                 "message": f"无效的action: {action}，支持: read/write/delete"}
+
+    if result.get("code") == "SUCCESS":
+        result["next_actions"] = build_next_actions([("registry_control", "验证注册表操作", "需要确认操作结果时")])
+    return result

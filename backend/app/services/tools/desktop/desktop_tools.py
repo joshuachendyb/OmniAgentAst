@@ -29,6 +29,7 @@ DESKTOP Tools - 桌面工具实现（窗口管理）
 import platform
 from typing import Any, Dict, List, Optional
 from app.utils.logger import logger
+from app.services.tools.tool_result_utils import build_next_actions  # 小沈 2026-05-19
 
 _HAS_WIN32 = False
 _win32gui = None
@@ -164,7 +165,8 @@ def list_windows(
                 "windows": windows,
                 "total": len(windows)
             },
-            "message": f"共找到 {len(windows)} 个窗口"
+            "message": f"共找到 {len(windows)} 个窗口",
+            "next_actions": build_next_actions([("get_window_info", "获取窗口详情", "需要查看特定窗口信息时"), ("window_control", "控制窗口", "需要操作窗口时")])
         }
 
     except Exception as e:
@@ -226,7 +228,8 @@ def get_window_info(window_title: str) -> Dict[str, Any]:
         return {
             "code": "SUCCESS",
             "data": info,
-            "message": msg
+            "message": msg,
+            "next_actions": build_next_actions([("window_control", "控制该窗口", "需要操作窗口时")])
         }
 
     except Exception as e:
@@ -297,7 +300,8 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
                 "hwnd": hwnd,
                 "matched_count": len(matched_hwnds),
             },
-            "message": msg
+            "message": msg,
+            "next_actions": build_next_actions([("get_window_info", "确认窗口状态", "需要验证操作结果时")])
         }
 
     except Exception as e:
@@ -324,12 +328,16 @@ def window_control(
     """
     if action == "focus":
         from app.services.tools.desktop.gui_tools import _focus_window
-        return _focus_window(window_title)
+        result = _focus_window(window_title)
     elif action == "resize":
         from app.services.tools.desktop.gui_tools import _resize_window
-        return _resize_window(window_title, width=width, height=height)
+        result = _resize_window(window_title, width=width, height=height)
     else:
-        return set_window_state(window_title, action)
+        result = set_window_state(window_title, action)
+
+    if result.get("code") == "SUCCESS" and "next_actions" not in result:
+        result["next_actions"] = build_next_actions([("get_window_info", "确认窗口状态", "需要验证操作结果时")])
+    return result
 
 
 def mouse_control(
@@ -349,18 +357,22 @@ def mouse_control(
     """
     if action == "click":
         from app.services.tools.desktop.gui_tools import _click
-        return _click(x=x, y=y, button=button, click_type=click_type)
+        result = _click(x=x, y=y, button=button, click_type=click_type)
     elif action == "move":
         from app.services.tools.desktop.gui_tools import _move
-        return _move(x=x, y=y, duration=duration)
+        result = _move(x=x, y=y, duration=duration)
     elif action == "scroll":
         from app.services.tools.desktop.gui_tools import _scroll
-        return _scroll(direction=direction, amount=amount)
+        result = _scroll(direction=direction, amount=amount)
     elif action == "position":
         from app.services.tools.toolhelper.gui_helper import _get_mouse_position
-        return _get_mouse_position()
+        result = _get_mouse_position()
     else:
         return {"code": "ERR_INVALID_ACTION", "data": None, "message": f"无效的鼠标操作: {action}，支持: click/move/scroll/position"}
+
+    if result.get("code") == "SUCCESS":
+        result["next_actions"] = build_next_actions([("screen_capture", "截图查看效果", "需要确认操作结果时")])
+    return result
 
 
 def keyboard_control(
@@ -375,16 +387,20 @@ def keyboard_control(
     """
     if action == "type":
         from app.services.tools.desktop.gui_tools import _type_text
-        return _type_text(text=text_or_keys, interval=interval)
+        result = _type_text(text=text_or_keys, interval=interval)
     elif action == "shortcut":
         from app.services.tools.desktop.gui_tools import _shortcut
-        return _shortcut(keys=text_or_keys)
+        result = _shortcut(keys=text_or_keys)
     elif action == "combo":
         from app.services.tools.desktop.gui_tools import _key_combo
         key_list = [k.strip() for k in text_or_keys.split(",")]
-        return _key_combo(keys=key_list)
+        result = _key_combo(keys=key_list)
     else:
         return {"code": "ERR_INVALID_ACTION", "data": None, "message": f"无效的键盘操作: {action}，支持: type/shortcut/combo"}
+
+    if result.get("code") == "SUCCESS":
+        result["next_actions"] = build_next_actions([("screen_capture", "截图查看效果", "需要确认操作结果时")])
+    return result
 
 
 def screen_capture(
@@ -400,10 +416,14 @@ def screen_capture(
     """
     if display is not None:
         from app.services.tools.desktop.gui_tools import _snapshot
-        return _snapshot(display=display)
+        result = _snapshot(display=display)
     else:
         from app.services.tools.desktop.gui_tools import _screenshot
-        return _screenshot(output_path=output_path, region=region)
+        result = _screenshot(output_path=output_path, region=region)
+
+    if result.get("code") == "SUCCESS":
+        result["next_actions"] = build_next_actions([("ocr", "识别截图文字", "需要提取文字时")])
+    return result
 
 
 def clipboard_control(
@@ -417,11 +437,15 @@ def clipboard_control(
     """
     if action == "read":
         from app.services.tools.desktop.gui_tools import _read_clipboard
-        return _read_clipboard()
+        result = _read_clipboard()
     elif action == "write":
         if content is None:
             return {"code": "ERR_MISSING_PARAM", "data": None, "message": "写入剪贴板需要提供content参数"}
         from app.services.tools.desktop.gui_tools import _write_clipboard
-        return _write_clipboard(content=content)
+        result = _write_clipboard(content=content)
     else:
         return {"code": "ERR_INVALID_ACTION", "data": None, "message": f"无效的剪贴板操作: {action}，支持: read/write"}
+
+    if result.get("code") == "SUCCESS":
+        result["next_actions"] = build_next_actions([("clipboard_control", "验证剪贴板", "需要确认操作结果时")])
+    return result

@@ -31,6 +31,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from app.utils.logger import logger
+from app.services.tools.tool_result_utils import build_next_actions  # 小沈 2026-05-19
 
 
 def get_system_info(info_type: str = "all") -> dict:
@@ -109,7 +110,8 @@ def get_system_info(info_type: str = "all") -> dict:
         return {
             "code": "SUCCESS",
             "data": data,
-            "message": f"成功获取系统信息 ({info_type})"
+            "message": f"成功获取系统信息 ({info_type})",
+            "next_actions": build_next_actions([("list_processes", "查看进程详情", "需要进一步排查时"), ("net_connections", "查看网络连接", "需要排查网络时")])
         }
 
     except Exception as e:
@@ -196,7 +198,8 @@ def net_connections(
                 "kind": kind,
                 "filter_port": filter_port,
             },
-            "message": f"找到 {len(results)} 个网络连接"
+            "message": f"找到 {len(results)} 个网络连接",
+            "next_actions": build_next_actions([("get_system_info", "查看系统总览", "需要更多系统信息时")])
         }
     
     except psutil.AccessDenied:
@@ -321,7 +324,8 @@ def _get_windows_event_log(
                 "total": len(filtered_events[:max_events]),
                 "level": level,
             },
-            "message": f"找到 {len(filtered_events[:max_events])} 条事件日志"
+            "message": f"找到 {len(filtered_events[:max_events])} 条事件日志",
+            "next_actions": build_next_actions([("get_system_info", "查看系统状态", "需要关联系统信息时")])
         }
     
     except subprocess.TimeoutExpired:
@@ -402,7 +406,8 @@ def _get_linux_event_log(
                 "total": len(events[:max_events]),
                 "level": level,
             },
-            "message": f"找到 {len(events[:max_events])} 条事件日志"
+            "message": f"找到 {len(events[:max_events])} 条事件日志",
+            "next_actions": build_next_actions([("get_system_info", "查看系统状态", "需要关联系统信息时")])
         }
     
     except subprocess.TimeoutExpired:
@@ -501,7 +506,8 @@ def list_processes(
                 "total_matched": len(processes),
                 "sort_by": sort_by,
             },
-            "message": f"找到 {len(processes)} 个进程，返回前 {len(limited_processes)} 个"
+            "message": f"找到 {len(processes)} 个进程，返回前 {len(limited_processes)} 个",
+            "next_actions": build_next_actions([("kill_process", "终止进程", "需要结束某个进程时"), ("get_system_info", "查看系统总览", "需要更多系统信息时")])
         }
     
     except Exception as e:
@@ -583,7 +589,8 @@ def kill_process(
             return {
                 "code": "SUCCESS",
                 "data": {"killed": killed_list},
-                "message": f"进程 {pid} ({proc_info['name']}) {final_status}"
+                "message": f"进程 {pid} ({proc_info['name']}) {final_status}",
+                "next_actions": build_next_actions([("list_processes", "验证进程已终止", "需要确认终止结果时")])
             }
         
         # 注：按名称批量终止功能已移除（函数签名无name参数）- 小沈 2026-05-05
@@ -648,7 +655,8 @@ def kill_process(
                     "killed": killed_list,
                     "total_killed": killed_count,
                 },
-                "message": f"已终止 {killed_count} 个名为 {name} 的进程"
+                "message": f"已终止 {killed_count} 个名为 {name} 的进程",
+                "next_actions": build_next_actions([("list_processes", "验证进程已终止", "需要确认终止结果时")])
             }
     
     # 【2026-05-17 小沈】修正S6: kill_process幂等化 - NoSuchProcess返回成功而非报错
@@ -656,7 +664,8 @@ def kill_process(
         return {
             "code": "SUCCESS",
             "data": {"killed": [], "idempotent": True},
-            "message": f"进程 {pid} 已不存在（幂等：视为已终止）"
+            "message": f"进程 {pid} 已不存在（幂等：视为已终止）",
+            "next_actions": build_next_actions([("list_processes", "验证进程已终止", "需要确认终止结果时")])
         }
     except psutil.AccessDenied:
         return {
@@ -1675,24 +1684,28 @@ def service_control(
         {code, data, message}
     """
     if action == "list":
-        return _service_list(name=service_name, state=state)
+        result = _service_list(name=service_name, state=state)
     elif action == "start":
         if not service_name:
             return {"code": "ERR_INVALID_PARAM", "data": None, "message": "start操作必须提供service_name"}
-        return _service_start(service_name=service_name, wait_for_started=wait_for_started, timeout=timeout)
+        result = _service_start(service_name=service_name, wait_for_started=wait_for_started, timeout=timeout)
     elif action == "stop":
         if not service_name:
             return {"code": "ERR_INVALID_PARAM", "data": None, "message": "stop操作必须提供service_name"}
-        return _service_stop(service_name=service_name, force=force, wait_for_stopped=wait_for_stopped, timeout=timeout)
+        result = _service_stop(service_name=service_name, force=force, wait_for_stopped=wait_for_stopped, timeout=timeout)
     elif action == "restart":
         if not service_name:
             return {"code": "ERR_INVALID_PARAM", "data": None, "message": "restart操作必须提供service_name"}
         stop_result = _service_stop(service_name=service_name, force=force, wait_for_stopped=wait_for_stopped, timeout=timeout)
         if stop_result.get("code") != "SUCCESS":
             return stop_result
-        return _service_start(service_name=service_name, wait_for_started=wait_for_started, timeout=timeout)
+        result = _service_start(service_name=service_name, wait_for_started=wait_for_started, timeout=timeout)
     else:
         return {"code": "ERR_INVALID_PARAM", "data": None, "message": f"不支持的action: {action}，可选: start/stop/restart/list"}
+
+    if result.get("code") == "SUCCESS":
+        result["next_actions"] = build_next_actions([("service_control", "验证服务状态", "需要确认操作结果时", {"action": "list"})])
+    return result
 
 
 # 【2026-05-17 小沈】统一入口函数：task_control - 合并task_create/task_delete/task_list
@@ -1727,11 +1740,11 @@ def task_control(
         {code, data, message}
     """
     if action == "list":
-        return _task_list(filter_name=task_name, filter_status=state)
+        result = _task_list(filter_name=task_name, filter_status=state)
     elif action == "create":
         if not task_name or not command or not schedule:
             return {"code": "ERR_INVALID_PARAM", "data": None, "message": "create操作必须提供task_name、command、schedule"}
-        return _task_create(
+        result = _task_create(
             task_name=task_name,
             command=command,
             schedule=schedule,
@@ -1742,6 +1755,10 @@ def task_control(
     elif action == "delete":
         if not task_name:
             return {"code": "ERR_INVALID_PARAM", "data": None, "message": "delete操作必须提供task_name"}
-        return _task_delete(task_name=task_name, folder=folder)
+        result = _task_delete(task_name=task_name, folder=folder)
     else:
         return {"code": "ERR_INVALID_PARAM", "data": None, "message": f"不支持的action: {action}，可选: create/delete/list"}
+
+    if result.get("code") == "SUCCESS":
+        result["next_actions"] = build_next_actions([("task_control", "验证任务状态", "需要确认操作结果时", {"action": "list"})])
+    return result
