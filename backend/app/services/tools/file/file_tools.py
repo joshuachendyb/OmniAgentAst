@@ -498,6 +498,11 @@ class FileTools:
                         with open(path, 'r', encoding=e, errors='replace') as f:
                             return f.read()
                     content = await asyncio.to_thread(_read_sync)
+                    # 【修复 小沈 2026-05-19】自动检测模式下utf-8因errors='replace'不会抛异常，
+                    # 但会产生\uFFFD替换字符。检测到替换字符时继续尝试下一个编码。
+                    if encoding is None and '\ufffd' in content:
+                        content = None
+                        continue
                     used_encoding = enc
                     break
                 except Exception:
@@ -1754,6 +1759,9 @@ class FileTools:
                                 with open(path, 'r', encoding=e, errors='replace') as f:
                                     return f.read()
                             content = await asyncio.to_thread(_read_with)
+                            # 【修复 小沈 2026-05-19】同_read_text_file：errors='replace'导致utf-8不抛异常
+                            if '\ufffd' in content:
+                                continue
                             return {"file_path": fp, "success": True, "content": content, "encoding": enc, "file_size": path.stat().st_size}
                         except Exception:
                             continue
