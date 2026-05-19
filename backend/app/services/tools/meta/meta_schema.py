@@ -21,7 +21,7 @@ class ToolSearchInput(BaseModel):
 
 class PipelineInput(BaseModel):
     """pipeline 工具的输入参数 - 小沈 2026-05-17"""
-    steps: str = Field(..., description='JSON格式的工具执行步骤列表。如 [{"tool":"read_csv","params":{"file_path":"data.csv"}}]')
+    steps: str = Field(..., description='JSON格式工具步骤数组。每个元素: {"tool":"工具名"(必填), "params":{参数字典}(可选)}。前一步输出data自动注入后一步params。如 [{"tool":"read_csv","params":{"file_path":"data.csv"}},{"tool":"analyze_data","params":{}}]')
     stop_on_error: bool = Field(default=True, description="某步失败时是否停止管道")
 
 

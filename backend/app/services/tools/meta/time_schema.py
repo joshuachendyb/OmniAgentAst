@@ -32,11 +32,11 @@ class GetTimeInput(BaseModel):
     )
     time_value: Optional[Union[int, float, str]] = Field(
         default=None,
-        description="时间值（action=format/to_timestamp/from_timestamp时必填）。支持：int/float=Unix时间戳(秒)，str=日期字符串"
+        description="时间值。支持：int/float=Unix时间戳(秒)，str=日期字符串。action=to_timestamp/from_timestamp时必填，action=format时不传则使用当前时间，action=now时忽略"
     )
     format: Optional[str] = Field(
         default=None,
-        description="输出格式字符串，如 %Y-%m-%d %H:%M:%S。默认为 %Y-%m-%d %H:%M:%S"
+        description="Python strftime格式字符串，如 %Y-%m-%d %H:%M:%S。默认为 %Y-%m-%d %H:%M:%S。action=now/format时生效"
     )
     timezone: Optional[str] = Field(
         default=None,
@@ -60,7 +60,7 @@ class TimeAddInput(BaseModel):
     )
     unit: Literal["days", "hours", "minutes", "seconds", "months"] = Field(
         default="days",
-        description="偏移单位：days(天)、hours(小时)、minutes(分钟)、seconds(秒)、months(月)。默认为days"
+        description="偏移单位：days(天)、hours(小时)、minutes(分钟)、seconds(秒)、months(月，使用dateutil.relativedelta，失败回退days*30)。默认为days"
     )
 
 
@@ -104,7 +104,7 @@ class TimezoneConvertInput(BaseModel):
     )
     tz: Optional[str] = Field(
         default=None,
-        description="时区。direction=utc_to_local时为目标时区，local_to_utc时为源时区，any时为源时区。默认为本地时区"
+        description="时区，支持IANA名(如Asia/Shanghai)或UTC偏移(如+08:00)。direction=utc_to_local时为目标时区，local_to_utc时为源时区，any时必填(源时区)。默认为本地时区"
     )
 
 
@@ -122,7 +122,7 @@ class TimerInput(BaseModel):
     )
     callback: Optional[str] = Field(
         default=None,
-        description="定时器触发时的提醒内容（action=set时必填）"
+        description="定时器触发内容（action=set时必填）。支持三种模式：文本消息(记录日志)、URL(httpx回调)、其他内容"
     )
     timer_id: Optional[str] = Field(
         default=None,

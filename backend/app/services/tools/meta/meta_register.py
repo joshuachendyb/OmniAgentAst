@@ -75,12 +75,14 @@ META_TOOL_DESCRIPTIONS = {
 - 当需要"先A→再B→如果失败则C"的执行链时使用
 - 当需要减少ReAct循环中的推理步数时使用
 
-【重要】steps参数为JSON格式的数组，每个元素包含tool(工具名)和params(参数字典)
+【重要】
+- steps参数为JSON格式的数组，每个元素包含tool(工具名,必填)和params(参数字典,可选)
+- 前一步的输出data会自动注入后一步的params中（核心特性）
 
 返回数据说明：
 - total_steps: 总步骤数
 - completed_steps: 完成步骤数
-- results: 每步执行结果(含code/message/data)
+- results: 每步执行结果(含step/tool/code/message/data)
 - 当某步失败时(若stop_on_error=True)返回ERR_PIPELINE_STOPPED""",
     # 【2026-05-19 小沈】Time工具description
     "get_time": """获取当前时间、格式化时间、时间戳转换。
@@ -92,8 +94,12 @@ META_TOOL_DESCRIPTIONS = {
 - 时间字符串→时间戳（action="to_timestamp"）
 
 返回数据说明：
-- time: 时间字符串
-- timestamp: Unix时间戳（秒）""",
+- iso: ISO格式时间字符串
+- timestamp: Unix时间戳（秒）
+- format/formatted: 格式化后的时间字符串
+- timezone: 时区信息
+- weekday: 星期名称
+- isoweckday: ISO星期编号(1=周一,7=周日)""",
     "time_add": """时间加减运算。
 
 使用场景：
@@ -101,9 +107,14 @@ META_TOOL_DESCRIPTIONS = {
 - 计算N天/小时/分钟前的时间（delta传负数）
 
 返回数据说明：
-- result: 计算后的时间字符串
-- delta: 偏移量
-- unit: 偏移单位""",
+- result_time: 计算后的时间字符串
+- iso: ISO格式时间
+- timestamp: Unix时间戳
+- tz: 时区
+- unit_used: 实际使用的偏移单位
+- delta_used: 实际使用的偏移量
+- weekday: 星期名称
+- isoweckday: ISO星期编号""",
     "time_diff": """计算两个时间之间的差值。
 
 使用场景：
@@ -111,8 +122,11 @@ META_TOOL_DESCRIPTIONS = {
 - 计算距某时间还有多久
 
 返回数据说明：
-- diff: 差值
-- unit: 差值单位""",
+- humanized: 人类可读的差值描述
+- seconds/minutes/hours/days: 各单位的差值
+- is_future: 目标时间是否在未来
+- is_after/is_before/is_equal: 比较结果
+- diff_seconds_signed: 带符号的秒数差值""",
     "check_date": """日期综合检查。
 
 使用场景：
@@ -121,29 +135,37 @@ META_TOOL_DESCRIPTIONS = {
 - 判断是否为工作日（check_type="workday"）
 - 计算下N个工作日（check_type="next_workday"）
 
-返回数据说明：
-- result: 检查结果
-- check_type: 检查类型""",
+返回数据说明（P15全面返回模式）：
+- date/weekday/isoweckday: 日期及星期信息
+- is_weekend: 是否周末
+- is_holiday: 是否节假日
+- holiday_name: 节假日名称（如有）
+- is_workday: 是否工作日
+- next_workdays/next_workday_first: 下N个工作日（check_type=next_workday时）""",
     "timezone_convert": """时区转换。
 
 使用场景：
 - UTC转本地时间（direction="utc_to_local"，tz=目标时区）
 - 本地转UTC（direction="local_to_utc"，tz=源时区）
-- 任意源时区转本地（direction="any"，tz=源时区）
+- 任意源时区转本地（direction="any"，tz=源时区，此时tz必填）
 
-返回数据说明：
-- result: 转换后的时间字符串
-- tz: 时区""",
+返回数据说明（因direction不同而不同）：
+- utc_to_local: local_time, timezone, utc_original
+- local_to_utc: utc_time, iso, timestamp
+- any: 目标时区的时间, iso, timestamp""",
     "timer": """定时器管理。
 
 使用场景：
-- 设置定时提醒（action="set"）
-- 清除定时器（action="clear"）
+- 设置定时提醒（action="set"，delay和callback必填）
+- 清除定时器（action="clear"，timer_id必填）
 - 列出所有定时器（action="list"）
 
-返回数据说明：
-- timer_id: 定时器ID
-- status: 定时器状态""",
+返回数据说明（因action不同而不同）：
+- set: timer_id, delay, trigger_at, message
+- clear: timer_id, cancelled
+- list: 定时器数组
+
+【callback说明】支持三种模式：文本消息(记录日志)、URL(httpx回调)、其他内容""",
 }
 
 META_TOOL_EXAMPLES = {
