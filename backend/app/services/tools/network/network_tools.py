@@ -302,6 +302,7 @@ async def download_file(
             proxy=proxy_config
         ) as client:
             async with client.stream("GET", url, headers=request_headers) as response:
+                response.raise_for_status()
                 # 检查服务器是否支持断点续传
                 is_resume = response.status_code == 206
                 if is_resume:
@@ -359,7 +360,7 @@ async def download_file(
         return {
             "code": "ERR_NETWORK_TIMEOUT",
             "data": None,
-            "message": f"下载超时（{timeout}秒）：{url}"
+            "message": f"下载超时（{timeout/1000}秒）：{url}"
         }
     except httpx.HTTPStatusError as e:
         return {
