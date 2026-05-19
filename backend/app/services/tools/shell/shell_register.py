@@ -53,9 +53,17 @@ SHELL_TOOL_DESCRIPTIONS = {
 - 执行系统命令、脚本、程序
 - 后台运行服务(npm run dev等)
 
+参数说明：
+- shell_type：powershell(默认)或cmd
+- timeout：超时毫秒数，默认30000(30秒)，最大600000(10分钟)
+- run_in_background：后台运行，长期服务设为true
+- cwd：工作目录，不设则使用系统当前目录
+- env_vars：额外环境变量字典，与系统环境变量合并
+
 使用示例：
 - 执行dir命令：{"command": "dir"}
 - 后台运行：{"command": "npm run dev", "run_in_background": true}
+- 指定工作目录：{"command": "pytest", "cwd": "D:/project/tests"}
 
 返回数据说明：
 - 前台模式：data含stdout/stderr/returncode
@@ -80,33 +88,50 @@ SHELL_TOOL_DESCRIPTIONS = {
 - all_paths=False时：data含available(命令是否可用，bool)、command(命令名称)、path(命令完整路径，不可用时为null)
 - all_paths=True时：data含command(命令名称)、paths(所有匹配路径列表)、count(路径数量)
 - 失败时code=ERR_SHELL_FIND_COMMAND，data=null""",
-    "execute_python": """执行Python代码并返回结果。支持安全检查。
+    "execute_python": """执行Python代码并返回结果。
+
 使用场景：
-- 当用户需要运行Python代码片段时使用
-- 当用户需要快速验证Python代码逻辑时使用
-- 当用户需要执行数据处理、计算等Python脚本时使用
+- 运行Python代码片段、快速验证逻辑、数据处理计算
+
+参数说明：
+- code：Python代码字符串，必填，可多行
+- timeout：超时秒数，默认30，最大300
+- working_dir：工作目录，不设则当前目录，不存在时自动创建
+- safety_check：安全检查(检测os.system/subprocess等危险模式)，默认True
 
 返回数据说明：data含stdout(标准输出)、stderr(标准错误)、returncode(返回码)""",
-    "execute_javascript": """执行JavaScript代码并返回结果。
+    "execute_javascript": """执行JavaScript代码并返回结果。需要Node.js环境。
+
 使用场景：
-- 当用户需要运行JavaScript代码片段时使用
-- 当用户需要快速验证JavaScript代码逻辑时使用
+- 运行JavaScript代码片段、快速验证逻辑
+
+参数说明：
+- code：JavaScript代码字符串，必填，可多行
+- timeout：超时秒数，默认30，最大300
+- working_dir：工作目录，不设则当前目录，不存在时自动创建
+- safety_check：安全检查(检测child_process/fs/eval等危险模式)，默认True
 
 返回数据说明：data含stdout(标准输出)、stderr(标准错误)、returncode(返回码)""",
     "shell_session": """管理后台Shell会话：读取输出或终止会话。
 
 使用场景：
-- action="output"：读取后台命令输出（默认）
+- action="output"：读取后台命令输出（默认），返回尾部最新输出
 - action="terminate"：终止后台会话
+
+参数说明：
+- filter：输出过滤正则（action=output时生效），如 "ERROR|FAIL"
+- max_lines：最大返回行数（action=output时生效），默认1000
+- force：强制终止（action=terminate时生效），优雅终止失败时设true
 
 使用示例：
 - 读取输出：{"shell_id": "shell_abc123"}
 - 过滤输出：{"shell_id": "shell_abc123", "filter": "ERROR|FAIL"}
 - 终止会话：{"shell_id": "shell_abc123", "action": "terminate"}
+- 强制终止：{"shell_id": "shell_abc123", "action": "terminate", "force": true}
 
 返回数据说明：
 - action=output时：data含shell_id/stdout/stderr/is_running
-- action=terminate时：data含shell_id/terminated/returncode""",
+- action=terminate时：data含shell_id/terminated/force/returncode""",
 }
 
 SHELL_TOOL_EXAMPLES = {

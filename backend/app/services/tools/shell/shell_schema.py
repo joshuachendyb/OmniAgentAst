@@ -27,7 +27,7 @@ class ExecuteShellCommandInput(BaseModel):
     )
     shell_type: Optional[Literal["powershell", "cmd"]] = Field(
         default="powershell",
-        description="执行环境：powershell(默认)或cmd。Agent根据命令特征智能判断"
+        description="执行环境：powershell(默认)或cmd。Windows系统推荐powershell"
     )
     timeout: int = Field(
         default=30000, ge=1000, le=600000, description="超时毫秒数，默认30000(30秒)，最大600000(10分钟)"
@@ -40,7 +40,7 @@ class ExecuteShellCommandInput(BaseModel):
         default=None, description="工作目录。Agent根据上下文智能设置"
     )
     env_vars: Optional[dict] = Field(
-        default=None, description="环境变量对象。Agent根据命令类型自动注入(如 PYTHONIOENCODING=utf-8)"
+        default=None, description="额外环境变量字典，将与系统环境变量合并。如 {\"PYTHONIOENCODING\": \"utf-8\", \"NODE_ENV\": \"production\"}"
     )
 
 

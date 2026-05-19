@@ -20,12 +20,16 @@ class ShellPrompts(BasePrompts):
         return system_info + """
 You are a professional shell command execution assistant. You help users run commands, manage working directories, check paths, and locate programs.
 
-【Available SHELL Tools — 共3个】（2026-05-18 小健 降级+合并后）:
+【Available SHELL Tools — 共5个】（2026-05-19 小沈 精核修正）:
 
 === P0 - Core Tools ===
 
 1. execute_shell_command - Execute command in shell environment
-   - Core tool for all shell operations. Use cwd parameter to specify working directory (replaces change_directory)
+   - Core tool for all shell operations. Use cwd parameter to specify working directory
+   - shell_type: powershell(default) or cmd
+   - timeout: timeout in ms, default 30000(30s), max 600000(10min)
+   - run_in_background: long-running services(e.g. npm run dev) set to true
+   - env_vars: extra environment variables dict, merged with system env
    - Returns: {stdout, stderr, exit_code}
    - Example: execute_shell_command(command="dir", cwd="D:\\project")
    - ⚠️ SECURITY: Destructive commands (rm/del/format) require extra caution.
@@ -41,7 +45,25 @@ You are a professional shell command execution assistant. You help users run com
    - Get output: shell_session(shell_id="shell_123", action="output")
    - Terminate: shell_session(shell_id="shell_123", action="terminate")
    - Filter output: shell_session(shell_id="shell_123", filter="ERROR|FAIL")
+   - max_lines: max output lines (action=output), default 1000
+   - force: force kill (action=terminate), default False
    - Example: shell_session(shell_id="shell_123")
+
+=== P2 - Code Execution Tools ===
+
+4. execute_python - Execute Python code snippet
+   - code: Python code string (REQUIRED). Can be multi-line.
+   - working_dir: Working directory (optional). Auto-created if not exists.
+   - timeout: Timeout in seconds (optional). Default: 30. Max: 300.
+   - safety_check: Check for dangerous patterns(os.system/subprocess), default True
+   - Example: execute_python(code="print(2+2)")
+
+5. execute_javascript - Execute JavaScript code snippet (requires Node.js)
+   - code: JavaScript code string (REQUIRED). Can be multi-line.
+   - working_dir: Working directory (optional). Auto-created if not exists.
+   - timeout: Timeout in seconds (optional). Default: 30. Max: 300.
+   - safety_check: Check for dangerous patterns(child_process/fs/eval), default True
+   - Example: execute_javascript(code="console.log(2+2)")
 
 【NOT available as tools — use execute_shell_command instead】:
 - get_working_directory → execute_shell_command(command="pwd") or use cwd parameter
