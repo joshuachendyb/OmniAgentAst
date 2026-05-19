@@ -68,7 +68,6 @@ def execute_shell_command(
     env_vars: Optional[dict] = None,
 ) -> dict:
     """执行Shell命令 — 小沈 2026-05-19 精简参数(8→6)"""
-    encoding = None  # 小沈 2026-05-19: 已从Schema移除，实现自动回退utf-8→gbk
     # 小健 2026-05-19: shell_type校验 — 非法值明确报错而非静默默认
     if shell_type not in ("powershell", "cmd", None):
         return {
@@ -105,9 +104,6 @@ def execute_shell_command(
     else:
         # 【修复 小沈 2026-05-19】动态查找powershell路径，避免硬编码路径失效
         executable = shutil.which("powershell.exe") or shutil.which("pwsh.exe") or "powershell.exe"
-    
-    # encoding: 使用指定的编码或默认 utf-8
-    use_encoding = encoding if encoding else "utf-8"
     
     try:
         injection_error = _check_shell_injection(command)
@@ -165,7 +161,7 @@ def execute_shell_command(
         stdout_str = ""
         stderr_str = ""
         try:
-            stdout_str = result.stdout.decode(use_encoding) if result.stdout else ""
+            stdout_str = result.stdout.decode("utf-8") if result.stdout else ""
         except (UnicodeDecodeError, AttributeError):
             try:
                 stdout_str = result.stdout.decode("utf-8") if result.stdout else ""
@@ -173,7 +169,7 @@ def execute_shell_command(
                 stdout_str = result.stdout.decode("gbk") if result.stdout else ""
         
         try:
-            stderr_str = result.stderr.decode(use_encoding) if result.stderr else ""
+            stderr_str = result.stderr.decode("utf-8") if result.stderr else ""
         except (UnicodeDecodeError, AttributeError):
             try:
                 stderr_str = result.stderr.decode("utf-8") if result.stderr else ""
@@ -403,9 +399,6 @@ def shell_session(
     force: bool = False,
 ) -> dict:
     """后台Shell会话管理 — 小沈 2026-05-19 精简参数(8→5)"""
-    encoding = None  # 小沈 2026-05-19: 已从Schema移除，实现自动回退
-    tail = True  # 小沈 2026-05-19: 已从Schema移除，默认返回尾部最新输出
-    cleanup = True  # 小沈 2026-05-19: 已从Schema移除，默认终止后清理
     if action == "output":
         shell_info = _background_shells.get(shell_id)
         if not shell_info:
@@ -413,9 +406,8 @@ def shell_session(
         process = shell_info.get("process")
         if not process:
             return {"code": "ERR_SHELL_NOT_FOUND", "data": None, "message": f"后台Shell会话无进程: {shell_id}"}
-        use_encoding = encoding or "utf-8"
-        stdout_str = _read_stream_nonblocking(process.stdout, use_encoding)
-        stderr_str = _read_stream_nonblocking(process.stderr, use_encoding)
+        stdout_str = _read_stream_nonblocking(process.stdout, "utf-8")
+        stderr_str = _read_stream_nonblocking(process.stderr, "utf-8")
         is_running = process.poll() is None
         # 【修复 小沈 2026-05-19】进程已退出时自动清理，防止内存泄漏
         if not is_running:
@@ -431,10 +423,7 @@ def shell_session(
             except Exception:
                 pass
         stdout_lines = stdout_str.splitlines()
-        if tail:
-            stdout_lines = stdout_lines[-max_lines:]
-        else:
-            stdout_lines = stdout_lines[:max_lines]
+        stdout_lines = stdout_lines[-max_lines:]
         stdout_str = "\n".join(stdout_lines)
         return {
             "code": "SUCCESS",
@@ -451,8 +440,7 @@ def shell_session(
             return {"code": "ERR_SHELL_NOT_FOUND", "data": None, "message": f"后台Shell会话不存在: {shell_id}"}
         process = shell_info.get("process")
         if not process:
-            if cleanup:
-                _background_shells.pop(shell_id, None)
+            _background_shells.pop(shell_id, None)
             return {"code": "SUCCESS", "data": {"shell_id": shell_id, "terminated": True, "force": force, "returncode": None}, "message": "会话已无进程", "next_actions": build_next_actions([
                 ("execute_shell_command", "启动新的后台命令", "需要执行新的命令时"),
             ])}
@@ -474,8 +462,7 @@ def shell_session(
                 returncode = process.returncode
             except Exception:
                 pass
-        if cleanup:
-            _background_shells.pop(shell_id, None)
+        _background_shells.pop(shell_id, None)
         return {
             "code": "SUCCESS",
             "data": {"shell_id": shell_id, "terminated": terminated, "force": force, "returncode": returncode},
