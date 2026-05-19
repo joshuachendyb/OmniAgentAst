@@ -31,7 +31,7 @@ Author: 小沈 - 2026-04-25;
 import asyncio;
 import json;
 from datetime import datetime, timedelta, timezone;
-from typing import Dict, Any, Optional, Callable, Awaitable, List, Union;
+from typing import Dict, Any, Optional, Callable, Awaitable, List, Union, Literal;
 import re;
 from app.utils.logger import logger;
 from app.services.tools.tool_result_utils import build_next_actions;
@@ -743,12 +743,12 @@ def _time_next_n_workday(start: Optional[Union[int, float, str]] = None, n: int 
 # ===========================================================
 
 def get_time(
-    action: str = "now",
-    time_value: Optional[Any] = None,
+    action: Literal["now", "format", "to_timestamp", "from_timestamp"] = "now",
+    time_value: Optional[Union[int, float, str]] = None,
     format: Optional[str] = None,
     timezone: Optional[str] = None,
     locale: Optional[str] = None,
-    unit: Optional[str] = None,
+    unit: Optional[Literal["seconds", "milliseconds", "microseconds"]] = None,
     target_tz: Optional[str] = None,
 ) -> Dict[str, Any]:
     """获取/格式化时间 — 小沈 2026-05-18
@@ -781,7 +781,7 @@ def get_time(
         return {"code": "ERR_TIME", "data": None, "message": f"处理失败: {str(e)}"}
 
 
-def time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, Any]:
+def time_add(delta: float, start: Optional[Union[int, float, str]] = None, unit: Literal["days", "hours", "minutes", "seconds", "months"] = "days") -> Dict[str, Any]:
     """时间加减计算 — 小沈 2026-05-18
     P17增强: months用relativedelta精确计算 + 返回值增加weekday/isoweekday
     """
@@ -806,7 +806,7 @@ def time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, A
     return result
 
 
-def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
+def time_diff(start: Union[int, float, str], end: Optional[Union[int, float, str]] = None) -> Dict[str, Any]:
     """计算时间差值 — 小沈 2026-05-18
     P15增强: 新增is_after/is_before/is_equal/diff_seconds_signed，替代time_compare
     """
@@ -842,8 +842,8 @@ def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
 
 
 def check_date(
-    date: Optional[Any] = None,
-    check_type: str = "workday",
+    date: Optional[Union[int, float, str]] = None,
+    check_type: Literal["weekend", "holiday", "workday", "next_workday"] = "workday",
     n: int = 1,
 ) -> Dict[str, Any]:
     """日期综合检查 — 小沈 2026-05-18
@@ -894,8 +894,8 @@ def check_date(
 
 
 def timezone_convert(
-    time_value: Any,
-    direction: str = "utc_to_local",
+    time_value: Union[int, float, str],
+    direction: Literal["utc_to_local", "local_to_utc", "any"] = "utc_to_local",
     tz: Optional[str] = None,
     source_tz: Optional[str] = None,
     target_tz: Optional[str] = None,
@@ -930,7 +930,7 @@ def timezone_convert(
 
 
 async def timer(
-    action: str,
+    action: Literal["set", "clear", "list"],
     delay: Optional[float] = None,
     callback: Optional[str] = None,
     callback_data: Optional[Dict[str, Any]] = None,
