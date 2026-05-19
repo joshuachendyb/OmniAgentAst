@@ -299,8 +299,8 @@ class GrepFileContentInput(BaseModel):
         description="匹配行上下各显示N行（context）"
     )
     ignore_case: bool = Field(
-        default=False,
-        description="是否忽略大小写，默认False"
+        default=True,
+        description="是否忽略大小写，默认True（搜索时自动忽略大小写）"
     )
     head_limit: Optional[int] = Field(
         default=None,

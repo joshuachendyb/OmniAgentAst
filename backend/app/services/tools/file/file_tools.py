@@ -2113,7 +2113,7 @@ class FileTools:
         after_lines: Optional[int] = None,
         before_lines: Optional[int] = None,
         context_lines: Optional[int] = None,
-        ignore_case: bool = False,
+        ignore_case: bool = True,
         show_line_no: bool = True,
         multiline: bool = False,
         head_limit: Optional[int] = None,
@@ -2140,7 +2140,13 @@ class FileTools:
                 "md": "*.md", "xml": "*.xml", "c": "*.c", "cpp": "*.cpp",
                 "h": "*.h", "rust": "*.rs",
             }
-            file_glob = glob or (type_ext_map.get(type) if type else None)
+            file_glob = glob
+            if not file_glob and type:
+                file_glob = type_ext_map.get(type)
+                if file_glob is None:
+                    return _to_unified_format({
+                        "success": False, "error": f"不支持的语言类型: '{type}'，可用: {', '.join(sorted(type_ext_map.keys()))}", "matches": []
+                    }, "grep_file_content")
 
             # 【修复 2026-05-10 小健】超时自检：os.walk循环中检查耗时，超时提前返回已有结果
             _grep_deadline = time.monotonic() + get_timeout("grep_file_content") - 2
@@ -2197,31 +2203,43 @@ class FileTools:
                             continue
 
                         file_matches = []
-                        for line_no, line in enumerate(lines, 1):
-                            m = regex.search(line)
-                            if m:
+                        if multiline:
+                            content = ''.join(lines)
+                            for m in regex.finditer(content):
                                 match_count += 1
-                                entry = {
+                                line_no = content[:m.start()].count('\n') + 1
+                                file_matches.append({
                                     "line": line_no if show_line_no else None,
-                                    "content": line.rstrip('\n\r'),
-                                }
-                                if context_lines or after_lines:
-                                    after = after_lines or context_lines or 0
-                                    after_content = []
-                                    for i in range(1, after + 1):
-                                        if line_no - 1 + i < len(lines):
-                                            after_content.append(lines[line_no - 1 + i].rstrip('\n\r'))
-                                    entry["after"] = after_content if after_content else None
-                                if context_lines or before_lines:
-                                    before = before_lines or context_lines or 0
-                                    before_content = []
-                                    for i in range(1, before + 1):
-                                        if line_no - 1 - i >= 0:
-                                            before_content.insert(0, lines[line_no - 1 - i].rstrip('\n\r'))
-                                    entry["before"] = before_content if before_content else None
-                                file_matches.append(entry)
+                                    "content": m.group(),
+                                })
                                 if head_limit is not None and match_count >= head_limit:
                                     break
+                        else:
+                            for line_no, line in enumerate(lines, 1):
+                                m = regex.search(line)
+                                if m:
+                                    match_count += 1
+                                    entry = {
+                                        "line": line_no if show_line_no else None,
+                                        "content": line.rstrip('\n\r'),
+                                    }
+                                    if context_lines or after_lines:
+                                        after = after_lines or context_lines or 0
+                                        after_content = []
+                                        for i in range(1, after + 1):
+                                            if line_no - 1 + i < len(lines):
+                                                after_content.append(lines[line_no - 1 + i].rstrip('\n\r'))
+                                        entry["after"] = after_content if after_content else None
+                                    if context_lines or before_lines:
+                                        before = before_lines or context_lines or 0
+                                        before_content = []
+                                        for i in range(1, before + 1):
+                                            if line_no - 1 - i >= 0:
+                                                before_content.insert(0, lines[line_no - 1 - i].rstrip('\n\r'))
+                                        entry["before"] = before_content if before_content else None
+                                    file_matches.append(entry)
+                                    if head_limit is not None and match_count >= head_limit:
+                                        break
 
                         if file_matches:
                             if output_mode == "count":
