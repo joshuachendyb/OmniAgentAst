@@ -628,7 +628,7 @@ def _html_to_markdown(html: str) -> str:
     
     return text.strip()
 
-async def _search_mcp_engine(engine: str, query: str, num_results: int) -> Optional[List[dict]]:
+async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: Optional[str] = None) -> Optional[List[dict]]:
     """MCP搜索引擎统一入口 - 小沈 2026-05-17
     合并 _search_parallel_mcp + _search_exa_mcp，消除约80行重复代码。
     
@@ -636,6 +636,7 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int) -> Optio
         engine: "parallel" | "exa"
         query: 搜索关键词
         num_results: 结果数量
+        proxy: 代理服务器地址（小沈 2026-05-19 修复：新增proxy参数）
     
     Returns:
         搜索结果列表或None（失败时）
@@ -673,7 +674,7 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int) -> Optio
         }
     }
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=10.0)) as c:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=10.0), proxy=proxy) as c:
             resp = await c.post(
                 config["url"],
                 json=payload,
@@ -740,18 +741,18 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int) -> Optio
         return None
 
 
-async def _search_parallel_mcp(query: str, num_results: int) -> Optional[List[dict]]:
+async def _search_parallel_mcp(query: str, num_results: int, proxy: Optional[str] = None) -> Optional[List[dict]]:
     """Parallel MCP搜索 - 小健 2026-05-16
-    【2026-05-17 小沈 已弃用】请使用 _search_mcp_engine("parallel", query, num_results) 代替
+    【2026-05-17 小沈 已弃用】请使用 _search_mcp_engine("parallel", query, num_results, proxy) 代替
     """
-    return await _search_mcp_engine("parallel", query, num_results)
+    return await _search_mcp_engine("parallel", query, num_results, proxy)
 
 
-async def _search_exa_mcp(query: str, num_results: int) -> Optional[List[dict]]:
+async def _search_exa_mcp(query: str, num_results: int, proxy: Optional[str] = None) -> Optional[List[dict]]:
     """Exa MCP搜索 - 小健 2026-05-16
-    【2026-05-17 小沈 已弃用】请使用 _search_mcp_engine("exa", query, num_results) 代替
+    【2026-05-17 小沈 已弃用】请使用 _search_mcp_engine("exa", query, num_results, proxy) 代替
     """
-    return await _search_mcp_engine("exa", query, num_results)
+    return await _search_mcp_engine("exa", query, num_results, proxy)
 
 
 def _decode_bing_redirect_url(url: str) -> str:
@@ -797,6 +798,11 @@ async def search_web(
     Parallel/Exa: MCP协议，JSON-RPC，结构化返回，无需API Key
     Bing: HTML解析，国内可访问，无需API Key
     """
+    # 【2026-05-19 小沈】time_range参数说明：Parallel/Exa/Bing搜索引擎API均不支持
+    # 标准的时间范围过滤参数，该参数由Schema保留供LLM语义解析，但当前搜索引擎
+    # 实现不支持按时间过滤，因此代码中不处理time_range。如需启用，需接入支持
+    # 时间过滤的搜索API（如Google Custom Search）。
+    
     try:
         if len(query) < 2:
             return {
@@ -808,15 +814,15 @@ async def search_web(
         proxy_config = None
         if proxy:
             proxy_config = {"http://": proxy, "https://": proxy}
-        
-        # ===== 第一引擎：Parallel MCP =====
-        results = await _search_parallel_mcp(query, num_results)
+    
+    # ===== 第一引擎：Parallel MCP =====
+        results = await _search_parallel_mcp(query, num_results, proxy)
         engine_used = "Parallel"
         
         # ===== 第二引擎：Exa MCP =====
         if results is None:
             logger.info("[search_web] Parallel失败，降级到Exa MCP搜索")
-            results = await _search_exa_mcp(query, num_results)
+            results = await _search_exa_mcp(query, num_results, proxy)
             engine_used = "Exa"
         
         # ===== 第三引擎：Bing中国 =====
