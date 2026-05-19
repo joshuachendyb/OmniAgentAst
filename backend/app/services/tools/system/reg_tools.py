@@ -26,7 +26,7 @@ Author: 小沈 - 2026-05-02
 import winreg
 import os
 import tempfile
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Literal
 from datetime import datetime
 
 from app.utils.logger import logger

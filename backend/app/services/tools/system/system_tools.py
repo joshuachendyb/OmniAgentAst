@@ -26,7 +26,7 @@ import socket
 import subprocess
 import re
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Literal
 from datetime import datetime, timedelta
 from pathlib import Path
 
