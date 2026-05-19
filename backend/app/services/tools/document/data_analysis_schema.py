@@ -15,7 +15,7 @@ Author: 小沈 - 2026-05-02
 """
 
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, Dict, Any, List, Union, Tuple
+from typing import Optional, Dict, Any, List, Union, Tuple, Literal
 
 
 # 【2026-05-19 小沈】ReadCsvDataframeInput 已删除
@@ -31,7 +31,7 @@ class GenerateChartInput(BaseModel):
         ...,
         description="图表数据（JSON 格式）。如 {\"labels\": [\"A\", \"B\", \"C\"], \"values\": [10, 20, 30]}"
     )
-    chart_type: Optional[str] = Field(
+    chart_type: Optional[Literal["bar", "line", "pie", "scatter"]] = Field(
         default="bar",
         description="图表类型。Agent根据数据特征自动判断（趋势→line，比例→pie）。可选值：bar/line/pie/scatter。默认为bar"
     )
@@ -127,6 +127,14 @@ class FilterDataInput(BaseModel):
     conditions: List[Dict[str, Any]] = Field(
         ...,
         description="筛选条件列表。每个条件: {\"column\": \"列名\", \"operator\": \"操作符\", \"value\": 值}。操作符: eq(=), ne(!=), gt(>), gte(>=), lt(<), lte(<=), in(在列表中), contains(包含文本), not_contains(不包含文本)"
+    )
+    encoding: Optional[str] = Field(
+        default="utf-8",
+        description="文件编码（data为文件路径时有效）。可选值：utf-8、gbk、gb2312。默认为utf-8"
+    )
+    max_rows: Optional[int] = Field(
+        default=None,
+        description="最大读取行数（data为文件路径时有效）。None=全部读取。默认None"
     )
     select_columns: Optional[List[str]] = Field(
         default=None,
