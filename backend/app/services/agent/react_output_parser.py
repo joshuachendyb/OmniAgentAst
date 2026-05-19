@@ -190,8 +190,17 @@ def _build_action_from_new_format(data: Dict, output: str) -> Dict[str, Any]:
     is_finish = tool_name == "finish"
     
     # response处理：finish类型从tool_params.result获取
+    # 【修复 2026-05-19 小沈】result字段标准化：数字/布尔/list/dict→字符串
     if is_finish and data.get("tool_params", {}).get("result"):
-        response = data["tool_params"]["result"]
+        raw_result = data["tool_params"]["result"]
+        if isinstance(raw_result, (int, float)):
+            response = str(raw_result)
+        elif isinstance(raw_result, bool):
+            response = str(raw_result)
+        elif isinstance(raw_result, (list, dict)):
+            response = json.dumps(raw_result, ensure_ascii=False)
+        else:
+            response = raw_result
     else:
         response = data.get("response", "")
     
@@ -1181,8 +1190,12 @@ def _create_action_result_from_list(data: list) -> Dict[str, Any]:
 
 def _normalize_tool_params_content(tool_params: Dict) -> Dict:
     """
-    【2026-04-28 小沈新增】标准化tool_params中的content字段类型
-    确保content字段始终为字符串，处理数字、布尔值等类型
+    【2026-04-28 小沈新增】标准化tool_params中的content和result字段类型
+    确保content/result字段始终为字符串，处理数字、布尔值、嵌套dict/list等类型
+    
+    修复finish时result字段嵌套问题（小沈 2026-05-19）:
+    LLM可能返回 {"tool_name": "finish", "tool_params": {"result": {"status": "ok"}}}
+    此时result是dict，需要转为JSON字符串，否则下游FinalStep收到dict会出问题。
     
     Args:
         tool_params: 原始tool_params字典
@@ -1196,21 +1209,22 @@ def _normalize_tool_params_content(tool_params: Dict) -> Dict:
     # 复制一份避免修改原始数据
     normalized = dict(tool_params)
     
-    # 检查content字段
-    if "content" in normalized:
-        content_value = normalized["content"]
-        
-        # 数字类型转换为字符串
-        if isinstance(content_value, (int, float)):
-            normalized["content"] = str(content_value)
-        # 布尔类型转换为字符串
-        elif isinstance(content_value, bool):
-            normalized["content"] = str(content_value)
-        # 列表/字典类型转换为JSON字符串
-        elif isinstance(content_value, (list, dict)):
-            normalized["content"] = json.dumps(content_value, ensure_ascii=False)
-        # None保留为None，不做转换
-        # 字符串保持不变
+    # 统一处理字段：content 和 result 做相同的类型标准化
+    for field_name in ("content", "result"):
+        if field_name in normalized:
+            field_value = normalized[field_name]
+            
+            # 数字类型转换为字符串
+            if isinstance(field_value, (int, float)):
+                normalized[field_name] = str(field_value)
+            # 布尔类型转换为字符串
+            elif isinstance(field_value, bool):
+                normalized[field_name] = str(field_value)
+            # 列表/字典类型转换为JSON字符串
+            elif isinstance(field_value, (list, dict)):
+                normalized[field_name] = json.dumps(field_value, ensure_ascii=False)
+            # None保留为None，不做转换
+            # 字符串保持不变
     
     return normalized
 

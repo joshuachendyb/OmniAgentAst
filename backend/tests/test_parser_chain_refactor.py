@@ -316,3 +316,64 @@ class TestEdgeCases:
         """空list输入 → 交给_create_action_result_from_list处理"""
         r = parse_react_response([])
         assert r is not None
+
+
+class TestFinishResultNormalization:
+    """finish时result字段嵌套标准化（小沈 2026-05-19修复）"""
+
+    def test_finish_result_is_string(self):
+        """result是字符串 → 保持不变"""
+        r = parse_react_response(json.dumps({
+            "tool_name": "finish",
+            "tool_params": {"result": "最终答案"}
+        }))
+        assert r["type"] == "answer"
+        assert r["response"] == "最终答案"
+
+    def test_finish_result_is_dict(self):
+        """result是dict → 转为JSON字符串"""
+        r = parse_react_response(json.dumps({
+            "tool_name": "finish",
+            "tool_params": {"result": {"status": "ok", "data": "value"}}
+        }))
+        assert r["type"] == "answer"
+        assert isinstance(r["response"], str)
+        assert '"status": "ok"' in r["response"]
+
+    def test_finish_result_is_list(self):
+        """result是list → 转为JSON字符串"""
+        r = parse_react_response(json.dumps({
+            "tool_name": "finish",
+            "tool_params": {"result": [1, 2, 3]}
+        }))
+        assert r["type"] == "answer"
+        assert isinstance(r["response"], str)
+        assert "[1, 2, 3]" in r["response"]
+
+    def test_finish_result_is_number(self):
+        """result是数字 → 转为字符串"""
+        r = parse_react_response(json.dumps({
+            "tool_name": "finish",
+            "tool_params": {"result": 42}
+        }))
+        assert r["type"] == "answer"
+        assert r["response"] == "42"
+
+    def test_finish_result_is_bool(self):
+        """result是布尔 → 转为字符串"""
+        r = parse_react_response(json.dumps({
+            "tool_name": "finish",
+            "tool_params": {"result": True}
+        }))
+        assert r["type"] == "answer"
+        assert r["response"] == "True"
+
+    def test_finish_result_is_none(self):
+        """result是None → 保留为None（不崩溃）"""
+        r = parse_react_response(json.dumps({
+            "tool_name": "finish",
+            "tool_params": {"result": None}
+        }))
+        assert r["type"] == "answer"
+        # None不处理，response可能为空或其他逻辑结果
+        assert r["response"] is None or r["response"] == ""
