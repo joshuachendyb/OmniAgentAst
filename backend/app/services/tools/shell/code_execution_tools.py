@@ -146,7 +146,8 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
                     "next_actions": build_next_actions([
                         ("write_text_file", "将输出结果保存到文件", "需要持久化保存代码输出时"),
                         ("execute_python", "继续执行后续代码", "需要运行更多Python代码时"),
-                    ])
+                    ]),
+                    "capabilities_used": ["python"]
                 }
             else:
                 message = f"Python代码执行失败（退出码{result.returncode}）"
@@ -236,7 +237,8 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
                     "next_actions": build_next_actions([
                         ("write_text_file", "将输出结果保存到文件", "需要持久化保存代码输出时"),
                         ("execute_javascript", "继续执行后续代码", "需要运行更多JavaScript代码时"),
-                    ])
+                    ]),
+                    "capabilities_used": ["node.js"]
                 }
             else:
                 message = f"JavaScript代码执行失败（退出码{result.returncode}）"

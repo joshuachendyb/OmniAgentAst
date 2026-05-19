@@ -60,6 +60,15 @@ def _check_openpyxl() -> bool:
         return False
 
 
+def _check_numpy() -> bool:
+    """检查numpy是否可用 - 小沈 2026-05-19"""
+    try:
+        importlib.import_module("numpy")
+        return True
+    except ImportError:
+        return False
+
+
 def _serialize_rows(df) -> List[List[Any]]:
     """将DataFrame行数据序列化为JSON安全格式 - 小沈 2026-05-05"""
     import pandas as pd
@@ -290,7 +299,9 @@ def analyze_data(
             "next_actions": build_next_actions([
                 ("filter_data", "筛选数据", "需要按条件过滤时"),
                 ("generate_chart", "生成图表", "需要可视化时"),
-            ])
+            ]),
+            "capabilities_used": ["pandas", "基础统计"],
+            "capabilities_missing": [] if _check_numpy() else ["numpy"]
         }
     except Exception as e:
         return {

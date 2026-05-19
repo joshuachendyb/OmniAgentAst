@@ -389,7 +389,9 @@ def _read_pdf(
             "code": "SUCCESS",
             "data": result_data,
             "message": msg,
-            "llm_data": _llm
+            "llm_data": _llm,
+            "capabilities_used": ["pdfplumber"],
+            "capabilities_missing": ["pytesseract"]
         }
     except Exception as e:
         return {
@@ -452,7 +454,8 @@ def _read_docx(
             "code": "SUCCESS",
             "data": result_data,
             "message": f"成功读取Word文档: {file_path}，共 {len(paragraphs)} 段",
-            "llm_data": _llm
+            "llm_data": _llm,
+            "capabilities_used": ["python-docx"]
         }
     except Exception as e:
         return {
@@ -531,7 +534,9 @@ def _read_xlsx(
                 "row_count": row_count,
                 "sheet_names": sheet_names,
             },
-            "message": f"成功读取Excel文件: {file_path}，工作表: {ws.title}，共 {row_count} 行数据"
+            "message": f"成功读取Excel文件: {file_path}，工作表: {ws.title}，共 {row_count} 行数据",
+            "capabilities_used": ["openpyxl"],
+            "capabilities_missing": ["pandas"]
         }
     except Exception as e:
         return {
@@ -664,7 +669,8 @@ def _read_pptx(
             "code": "SUCCESS",
             "data": result_data,
             "message": f"成功读取PPT文件: {file_path}，共 {len(prs.slides)} 页",
-            "llm_data": _llm
+            "llm_data": _llm,
+            "capabilities_used": ["python-pptx"]
         }
     except Exception as e:
         return {
@@ -1008,6 +1014,18 @@ def read_document(
             ("convert_document", "转换格式", "需要转PDF/DOCX时"),
             ("analyze_data", "分析数据", "读取的是数据文件时"),
         ])
+        # 透传内部函数的capabilities字段 - 小沈 2026-05-19
+        if "capabilities_used" not in result:
+            if suffix == ".pdf":
+                result["capabilities_used"] = ["pdfplumber"]
+                result["capabilities_missing"] = ["pytesseract"]
+            elif suffix in (".docx", ".doc"):
+                result["capabilities_used"] = ["python-docx"]
+            elif suffix == ".pptx":
+                result["capabilities_used"] = ["python-pptx"]
+            elif suffix in (".xlsx", ".xls"):
+                result["capabilities_used"] = ["openpyxl"]
+                result["capabilities_missing"] = ["pandas"]
     return result
 
 

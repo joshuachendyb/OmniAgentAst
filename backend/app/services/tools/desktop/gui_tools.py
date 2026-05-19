@@ -155,7 +155,8 @@ def _screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[
 
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         img.save(output_path)
-        return {"code": "SUCCESS", "data": output_path, "message": f"截图保存到: {output_path}"}
+        return {"code": "SUCCESS", "data": output_path, "message": f"截图保存到: {output_path}",
+                "capabilities_used": ["pyautogui"]}
     except Exception as e:
         return {"code": "ERR_SCREENSHOT", "data": None, "message": f"截图失败: {str(e)}"}
 
@@ -171,7 +172,8 @@ def _snapshot(display: int = 1) -> Dict[str, Any]:
             output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
             img = pyautogui.screenshot()
             img.save(output_path)
-            return {"code": "SUCCESS", "data": {"image_path": output_path, "display": display}, "message": f"快照保存到: {output_path}"}
+            return {"code": "SUCCESS", "data": {"image_path": output_path, "display": display}, "message": f"快照保存到: {output_path}",
+                    "capabilities_used": ["pyautogui"], "capabilities_missing": ["mss"]}
         except ImportError:
             return {"code": "ERR_NO_SCREENSHOT_LIB", "data": None, "message": "需要安装 mss 或 pyautogui 库"}
     try:
@@ -190,7 +192,8 @@ def _snapshot(display: int = 1) -> Dict[str, Any]:
             from PIL import Image
             pil_img = Image.frombytes("RGB", img.size, img.bgra, "raw", "BGRX")
             pil_img.save(output_path)
-        return {"code": "SUCCESS", "data": {"image_path": output_path, "display": display, "monitors": len(monitors) - 1}, "message": f"快照保存到: {output_path}"}
+        return {"code": "SUCCESS", "data": {"image_path": output_path, "display": display, "monitors": len(monitors) - 1}, "message": f"快照保存到: {output_path}",
+                "capabilities_used": ["mss", "PIL"]}
     except Exception as e:
         return {"code": "ERR_SNAPSHOT", "data": None, "message": f"快照失败: {str(e)}"}
 
@@ -236,7 +239,8 @@ def screen_record(duration: int, output_path: str = None, fps: int = 15) -> Dict
             imageio.mimwrite(output_path, frames, fps=fps)
 
         return {"code": "SUCCESS", "data": {"output_path": output_path, "duration": duration, "fps": fps}, "message": f"录制完成: {output_path}",
-                "next_actions": build_next_actions([])}
+                "next_actions": build_next_actions([]),
+                "capabilities_used": ["mss", "PIL", "numpy", "imageio"]}
     except Exception as e:
         return {"code": "ERR_SCREEN_RECORD", "data": None, "message": f"录制失败: {str(e)}"}
 
@@ -312,7 +316,8 @@ def ocr(image_path: str, language: str = "eng") -> Dict[str, Any]:
         import pytesseract
         from PIL import Image
     except ImportError:
-        return {"code": "ERR_NO_TESSERACT", "data": None, "message": "需要安装 pytesseract 和 PIL 库: pip install pytesseract Pillow"}
+        return {"code": "ERR_NO_TESSERACT", "data": None, "message": "需要安装 pytesseract 和 PIL 库: pip install pytesseract Pillow",
+                "capabilities_missing": ["pytesseract"]}
     try:
         path = Path(image_path)
         if not path.exists():
@@ -321,7 +326,8 @@ def ocr(image_path: str, language: str = "eng") -> Dict[str, Any]:
         img = Image.open(image_path)
         text = pytesseract.image_to_string(img, lang=language)
         return {"code": "SUCCESS", "data": {"text": text, "language": language, "char_count": len(text)}, "message": f"OCR识别完成: {len(text)}个字符",
-                "next_actions": build_next_actions([("screen_capture", "重新截图", "需要识别其他区域时")])}
+                "next_actions": build_next_actions([("screen_capture", "重新截图", "需要识别其他区域时")]),
+                "capabilities_used": ["pytesseract", "PIL"]}
     except Exception as e:
         return {"code": "ERR_OCR", "data": None, "message": f"OCR识别失败: {str(e)}"}
 

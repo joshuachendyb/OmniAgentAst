@@ -424,17 +424,17 @@ class FileTools:
                     "success": False,
                     "error": f"{binary_reason}。请使用 read_media_file 工具读取媒体文件（图片/音频/视频）。",
                     "content": None
-                }, "read_text_file")
+                }, "read_file")
             
             # 【修复 2026-05-01 小沈】参数校验
             if head is not None and head < 1:
-                return _to_unified_format({"success": False, "error": f"head必须>=1，当前值: {head}", "content": None}, "read_text_file")
+                return _to_unified_format({"success": False, "error": f"head必须>=1，当前值: {head}", "content": None}, "read_file")
             if tail is not None and tail < 1:
-                return _to_unified_format({"success": False, "error": f"tail必须>=1，当前值: {tail}", "content": None}, "read_text_file")
+                return _to_unified_format({"success": False, "error": f"tail必须>=1，当前值: {tail}", "content": None}, "read_file")
             if offset is not None and offset < 1:
-                return _to_unified_format({"success": False, "error": f"offset必须>=1，当前值: {offset}", "content": None}, "read_text_file")
+                return _to_unified_format({"success": False, "error": f"offset必须>=1，当前值: {offset}", "content": None}, "read_file")
             if limit is not None and limit < 1:
-                return _to_unified_format({"success": False, "error": f"limit必须>=1，当前值: {limit}", "content": None}, "read_text_file")
+                return _to_unified_format({"success": False, "error": f"limit必须>=1，当前值: {limit}", "content": None}, "read_file")
             
             # 验证参数不能同时使用
             if head is not None and tail is not None:
@@ -442,14 +442,14 @@ class FileTools:
                     "success": False,
                     "error": "head 和 tail 参数不能同时使用，请只使用其中一个",
                     "content": None
-                }, "read_text_file")
+                }, "read_file")
             
             if (head is not None or tail is not None) and (offset is not None or limit is not None):
                 return _to_unified_format({
                     "success": False,
                     "error": "head/tail 与 offset/limit 不能同时使用。head/tail用于快捷读取首尾，offset/limit用于分页读取",
                     "content": None
-                }, "read_text_file")
+                }, "read_file")
 
             # 验证路径合法性
             is_valid, error_msg = self._validate_path(file_path)
@@ -458,7 +458,7 @@ class FileTools:
                     "success": False,
                     "error": error_msg,
                     "content": None
-                }, "read_text_file")
+                }, "read_file")
 
             path = Path(file_path)
             if not path.exists():
@@ -466,14 +466,14 @@ class FileTools:
                     "success": False,
                     "error": f"文件不存在: {file_path}",
                     "content": None
-                }, "read_text_file")
+                }, "read_file")
 
             if not path.is_file():
                 return _to_unified_format({
                     "success": False,
                     "error": f"路径不是文件: {file_path}",
                     "content": None
-                }, "read_text_file")
+                }, "read_file")
 
             # 尝试编码读取
             encodings_to_try = [encoding, "utf-8", "gbk", "gb2312", "utf-8-sig"] if encoding else ["utf-8", "gbk", "gb2312", "utf-8-sig"]
@@ -485,7 +485,7 @@ class FileTools:
                     "success": False,
                     "error": f"文件过大({file_size}字节)，超过读取上限{MAX_READ_SIZE}字节({MAX_READ_SIZE//1024//1024}MB)。请使用head/tail参数分段读取。",
                     "content": None
-                }, "read_text_file")
+                }, "read_file")
             
             content = None
             used_encoding = None
@@ -508,7 +508,7 @@ class FileTools:
                     "success": False,
                     "error": f"无法读取文件: {file_path}，已尝试编码: {encodings_to_try}",
                     "content": None
-                }, "read_text_file")
+                }, "read_file")
 
             lines = content.splitlines(keepends=True)
             total_lines = len(lines)
@@ -555,7 +555,13 @@ class FileTools:
 
             # 【优化 小沈 2026-05-15】llm_data提供精简内容+行数，避免LLM上下文浪费
             _llm = format_file_content_llm(result_content) if result_content else None
-            return _to_unified_format(result, "read_text_file", llm_data=_llm)
+            
+            # 【新增 2026-05-19 小沈】编码检测成功时标记capabilities - 小沈 2026-05-19
+            # 如果使用了非显式指定的编码（即自动检测），标记编码检测能力
+            if encoding is None and used_encoding and used_encoding != "utf-8":
+                result["capabilities_used"] = ["编码自动检测"]
+            
+            return _to_unified_format(result, "read_file", llm_data=_llm)
 
         except Exception as e:
             logger.error(f"read_text_file failed: {file_path}: {e}")
@@ -563,7 +569,7 @@ class FileTools:
                 "success": False,
                 "error": str(e),
                 "content": None
-            }, "read_text_file")
+            }, "read_file")
     
     async def write_text_file(
         self,
@@ -1007,7 +1013,7 @@ class FileTools:
                 "success": False,
                 "error": error_msg,
                 "operation_id": None
-            }, "delete_file")
+            }, "file_operation")
         
         if not self.task_id:
             self.task_id = _current_task_id.get(None)
@@ -1016,7 +1022,7 @@ class FileTools:
                 "success": False,
                 "error": "No active task",
                 "operation_id": None
-            }, "delete_file")
+            }, "file_operation")
         
         path = Path(file_path)
         
@@ -1026,7 +1032,7 @@ class FileTools:
                     "success": False,
                     "error": f"File not found: {file_path}",
                     "operation_id": None
-                }, "delete_file")
+                }, "file_operation")
             
             # 记录操作
             operation_id = self.safety.record_operation(
@@ -1092,13 +1098,13 @@ class FileTools:
                     "operation_id": operation_id,
                     "deleted_path": str(path),
                     "message": f"文件已{delete_mode}: {file_path}"
-                }, "delete_file")
+                }, "file_operation")
             else:
                 return _to_unified_format({
                     "success": False,
                     "error": "Failed to delete file",
                     "operation_id": operation_id
-                }, "delete_file")
+                }, "file_operation")
                 
         except Exception as e:
             logger.error(f"Failed to delete {file_path}: {e}")
@@ -1106,7 +1112,7 @@ class FileTools:
                 "success": False,
                 "error": str(e),
                 "operation_id": None
-            }, "delete_file")
+            }, "file_operation")
     
     async def _move_file(
         self,
@@ -1122,7 +1128,7 @@ class FileTools:
                 "success": False,
                 "error": f"源路径{error_msg_src}",
                 "operation_id": None
-            }, "move_file")
+            }, "file_operation")
         
         # 验证目标路径
         is_valid_dst, error_msg_dst = self._validate_path(destination_path)
@@ -1131,7 +1137,7 @@ class FileTools:
                 "success": False,
                 "error": f"目标路径{error_msg_dst}",
                 "operation_id": None
-            }, "move_file")
+            }, "file_operation")
         
         if not self.task_id:
             self.task_id = _current_task_id.get(None)
@@ -1140,7 +1146,7 @@ class FileTools:
                 "success": False,
                 "error": "No active task",
                 "operation_id": None
-            }, "move_file")
+            }, "file_operation")
         
         src = Path(source_path)
         dst = Path(destination_path)
@@ -1151,7 +1157,7 @@ class FileTools:
                     "success": False,
                     "error": f"Source not found: {source_path}",
                     "operation_id": None
-                }, "move_file")
+                }, "file_operation")
             
             # 记录操作
             operation_id = self.safety.record_operation(
@@ -1188,13 +1194,13 @@ class FileTools:
                     "source": str(src),
                     "destination": str(dst),
                     "message": f"Moved: {src.name} -> {dst}"
-                }, "move_file")
+                }, "file_operation")
             else:
                 return _to_unified_format({
                     "success": False,
                     "error": "Failed to move file",
                     "operation_id": operation_id
-                }, "move_file")
+                }, "file_operation")
                 
         except Exception as e:
             logger.error(f"Failed to move {source_path} -> {destination_path}: {e}")
@@ -1202,7 +1208,7 @@ class FileTools:
                 "success": False,
                 "error": str(e),
                 "operation_id": None
-            }, "move_file")
+            }, "file_operation")
     
     async def search_files(
         self,
@@ -1660,13 +1666,13 @@ class FileTools:
         if not file_paths:
             return _to_unified_format({
                 "success": False, "error": "文件路径列表为空", "results": []
-            }, "read_batch_file")
+            }, "read_file")
 
         # 【修复 2026-05-01 小沈】OOM防护：批量文件数上限
         if len(file_paths) > MAX_BATCH_FILE_COUNT:
             return _to_unified_format({
                 "success": False, "error": f"批量读取文件数({len(file_paths)})超过上限{MAX_BATCH_FILE_COUNT}，请分批读取", "results": []
-            }, "read_batch_file")
+            }, "read_file")
 
         # 【修复 2026-05-01 小沈】B1: 添加Semaphore并发限制，防止大量文件并发读取耗尽文件句柄
         semaphore = asyncio.Semaphore(20)
@@ -1729,7 +1735,7 @@ class FileTools:
         return _to_unified_format({
             "success": success_count > 0, "results": results, "total": len(results),
             "success_count": success_count, "failed_count": len(results) - success_count,
-        }, "read_batch_file", llm_data=_llm)
+        }, "read_file", llm_data=_llm)
 
     async def _precise_replace_in_file(
         self,
@@ -1745,7 +1751,7 @@ class FileTools:
         if not old_string:
             return _to_unified_format({
                 "success": False, "error": "old_string不能为空，空字符串替换会导致内容爆炸", "replaced_count": 0
-            }, "precise_replace_in_file")
+            }, "edit_file")
         
         # 【修复 2026-04-30 小沈】添加task_id检查（与write_file对齐）
         if not self.task_id:
@@ -1753,33 +1759,33 @@ class FileTools:
         if not self.task_id:
             return _to_unified_format({
                 "success": False, "error": "No active task", "replaced_count": 0
-            }, "precise_replace_in_file")
+            }, "edit_file")
         
         # 【小健 2026-05-02】【修复 2026-05-02 小沈】二进制文件保护：仅支持文本文件编辑
         is_binary, binary_reason = _is_binary_file(file_path)
         if is_binary:
             return _to_unified_format({
                 "success": False, "error": f"{binary_reason}。请使用对应的专业工具操作二进制文件。", "replaced_count": 0
-            }, "precise_replace_in_file")
+            }, "edit_file")
         
         try:
             is_valid, error_msg = self._validate_path(file_path)
             if not is_valid:
                 return _to_unified_format({
                     "success": False, "error": error_msg, "replaced_count": 0
-                }, "precise_replace_in_file")
+                }, "edit_file")
 
             path = Path(file_path)
             if not path.exists():
                 return _to_unified_format({
                     "success": False, "error": f"文件不存在: {file_path}", "replaced_count": 0
-                }, "precise_replace_in_file")
+                }, "edit_file")
 
             # 【修复 2026-05-01 小沈】OOM防护：预检文件大小
             if path.stat().st_size > MAX_READ_SIZE:
                 return _to_unified_format({
                     "success": False, "error": f"文件过大({path.stat().st_size}字节)，超过替换上限{MAX_READ_SIZE//1024//1024}MB", "replaced_count": 0
-                }, "precise_replace_in_file")
+                }, "edit_file")
 
             # 【修复 2026-04-30 小沈】添加safety记录（与write_file对齐）
             operation_id = self.safety.record_operation(
@@ -1862,17 +1868,17 @@ class FileTools:
                     "success": True, "replaced_count": replace_result['count'], "encoding": replace_result['used_enc'],
                     "file_path": str(path), "file_name": replace_result['name'],
                     "operation_id": operation_id,
-                }, "precise_replace_in_file")
+                }, "edit_file")
             else:
                 return _to_unified_format({
                     "success": False, "error": "Failed to replace in file",
                     "replaced_count": 0, "operation_id": operation_id
-                }, "precise_replace_in_file")
+                }, "edit_file")
         except Exception as e:
             logger.error(f"precise_replace_in_file failed: {file_path}: {e}")
             return _to_unified_format({
                 "success": False, "error": str(e), "replaced_count": 0
-            }, "precise_replace_in_file")
+            }, "edit_file")
 
     async def _apply_edits(
         self,
@@ -1887,7 +1893,7 @@ class FileTools:
             if not is_valid:
                 return _to_unified_format({
                     "success": False, "error": error_msg, "applied_edits": 0, "preview": None
-                }, "edit_text_file")
+                }, "edit_file")
 
             # 【修复 2026-05-01 小沈】添加task_id检查（与write_file对齐）
             if not self.task_id:
@@ -1895,26 +1901,26 @@ class FileTools:
             if not self.task_id:
                 return _to_unified_format({
                     "success": False, "error": "No active task", "applied_edits": 0, "preview": None
-                }, "edit_text_file")
+                }, "edit_file")
 
             # 【小健 2026-05-02】【修复 2026-05-02 小沈】二进制文件保护：仅支持文本文件编辑
             is_binary, binary_reason = _is_binary_file(file_path)
             if is_binary:
                 return _to_unified_format({
                     "success": False, "error": f"{binary_reason}。请使用对应的专业工具操作二进制文件。", "applied_edits": 0, "preview": None
-                }, "edit_text_file")
+                }, "edit_file")
 
             path = Path(file_path)
             if not path.exists():
                 return _to_unified_format({
                     "success": False, "error": f"文件不存在: {file_path}", "applied_edits": 0, "preview": None
-                }, "edit_text_file")
+                }, "edit_file")
 
             # 【修复 2026-05-01 小沈】OOM防护：预检文件大小
             if path.stat().st_size > MAX_READ_SIZE:
                 return _to_unified_format({
                     "success": False, "error": f"文件过大({path.stat().st_size}字节)，超过编辑上限{MAX_READ_SIZE//1024//1024}MB", "applied_edits": 0, "preview": None
-                }, "edit_text_file")
+                }, "edit_file")
 
             # 【修复 2026-05-01 小沈】添加safety记录（与precise_replace_in_file对齐）
             operation_id = self.safety.record_operation(
@@ -2001,17 +2007,17 @@ class FileTools:
                     "results": edit_result['results'], "preview": edit_result['preview'],
                     "dry_run": edit_result['dry_run'], "encoding": edit_result['used_enc'],
                     "operation_id": operation_id,
-                }, "edit_text_file")
+                }, "edit_file")
             else:
                 return _to_unified_format({
                     "success": False, "error": "Failed to edit file",
                     "applied_edits": 0, "operation_id": operation_id
-                }, "edit_text_file")
+                }, "edit_file")
         except Exception as e:
             logger.error(f"edit_file failed: {file_path}: {e}")
             return _to_unified_format({
                 "success": False, "error": str(e), "applied_edits": 0, "preview": None
-            }, "edit_text_file")
+            }, "edit_file")
 
     async def grep_file_content(
         self,
@@ -2173,17 +2179,17 @@ class FileTools:
             if not is_valid:
                 return _to_unified_format({
                     "success": False, "error": error_msg, "tree": None
-                }, "get_directory_tree")
+                }, "list_directory")
 
             path = Path(dir_path)
             if not path.exists():
                 return _to_unified_format({
                     "success": False, "error": f"目录不存在: {dir_path}", "tree": None
-                }, "get_directory_tree")
+                }, "list_directory")
             if not path.is_dir():
                 return _to_unified_format({
                     "success": False, "error": f"不是目录: {dir_path}", "tree": None
-                }, "get_directory_tree")
+                }, "list_directory")
 
             # 【修复 2026-05-01 小沈】默认max_depth防止无限递归
             effective_max_depth = max_depth if max_depth is not None else 10
@@ -2232,12 +2238,12 @@ class FileTools:
             tree = tree or {"name": path.name, "type": "directory", "children": []}
             return _to_unified_format({
                 "success": True, "tree": tree, "root": str(path),
-            }, "get_directory_tree")
+            }, "list_directory")
         except Exception as e:
             logger.error(f"get_directory_tree failed: {dir_path}: {e}")
             return _to_unified_format({
                 "success": False, "error": str(e), "tree": None
-            }, "get_directory_tree")
+            }, "list_directory")
     
     # ============================================================
     # 第九部分：精简合并工具（v2.0）— 小沈 2026-05-18
@@ -2505,7 +2511,7 @@ class FileTools:
             )
             # 确保返回统一格式
             if "data" not in result:
-                return _to_unified_format(result, "extract_archive")
+                return _to_unified_format(result, "archive_tool")
             return result
     
     async def file_operation(
@@ -2751,17 +2757,56 @@ def get_file_tools(task_id: Optional[str] = None) -> FileTools:
 # ============================================================
 
 def _generate_summary(tool_name: str, result: Any) -> str:
-    """生成人类可读的结果摘要 - 小健 2026-05-11 清理遗留死代码分支(read_file/glob_files)"""
+    """生成人类可读的结果摘要 - 小沈 2026-05-19 清理死代码18→11，补5个缺失分支，修复重复分支"""
     if not isinstance(result, dict):
         return "操作完成"
-    
-    if tool_name == "write_text_file":
+
+    # --- F1: read_file --- 小沈 2026-05-19
+    if tool_name == "read_file":
+        if result.get("success") is False:
+            return f"读取失败：{result.get('error', '未知错误')}"
+        total_lines = result.get("total_lines")
+        if total_lines is not None:
+            line_count = result.get("line_count", 0)
+            return f"成功读取文件：{line_count}/{total_lines} 行"
+        success_count = result.get("success_count", 0)
+        failed_count = result.get("failed_count", 0)
+        total = result.get("total", 0)
+        return f"批量读取完成：成功 {success_count}/{total} 个，失败 {failed_count} 个"
+
+    # --- F2: write_text_file ---
+    elif tool_name == "write_text_file":
         if result.get("success") is False:
             return f"写入失败：{result.get('error', '未知错误')}"
         bytes_written = result.get("bytes_written", 0)
         file_path = result.get("file_path", "")
         return f"成功写入文件 {file_path}，共 {bytes_written} 字节"
-    
+
+    # --- F3: read_media_file ---
+    elif tool_name == "read_media_file":
+        if result.get("success") is False:
+            return f"读取媒体失败：{result.get('error', '未知错误')}"
+        mime = result.get("mime_type", "未知")
+        size = result.get("file_size", 0)
+        return f"成功读取媒体文件：{mime}，{size:,} 字节"
+
+    # --- F4: edit_file --- 小沈 2026-05-19
+    elif tool_name == "edit_file":
+        if result.get("success") is False:
+            return f"编辑失败：{result.get('error', '未知错误')}"
+        replaced_count = result.get("replaced_count")
+        if replaced_count is not None:
+            return f"成功替换 {replaced_count} 处文本"
+        applied = result.get("applied_edits")
+        total = result.get("total_edits")
+        if applied is not None and total is not None:
+            dry = result.get("dry_run", False)
+            if dry:
+                return f"预览模式：{applied}/{total} 处编辑将生效"
+            return f"成功应用 {applied}/{total} 处编辑"
+        return "编辑完成"
+
+    # --- F5: list_directory ---
     elif tool_name == "list_directory":
         if result.get("success") is False:
             return f"列出目录失败：{result.get('error', '未知错误')}"
@@ -2774,195 +2819,73 @@ def _generate_summary(tool_name: str, result: Any) -> str:
             return f"列出目录：{dir_count} 个目录，{file_count} 个文件，总大小 {size_str} 字节"
         total = result.get("total", 0)
         return f"成功读取目录，共 {total} 个项目"
-    
-    elif tool_name == "delete_file":
-        if result.get("success") is False:
-            return f"删除失败：{result.get('error', '未知错误')}"
-        deleted_path = result.get("deleted_path", "")
-        return f"成功删除 {deleted_path}（已备份到回收站）"
-    
-    elif tool_name == "move_file":
-        if result.get("success") is False:
-            return f"移动失败：{result.get('error', '未知错误')}"
-        source = result.get("source", "")
-        destination = result.get("destination", "")
-        return f"成功移动文件：{source} -> {destination}"
-    
-    elif tool_name == "grep_file_content":
-        if result.get("success") is False:
-            return f"搜索内容失败：{result.get('error', '未知错误')}"
-        # 【修复 2026-05-01 小沈】B5: 字段名files_matched不存在，实际字段是total
-        files_matched = result.get("total", result.get("files_matched", 0))
-        total_matches = result.get("total_matches", 0)
-        return f"搜索内容完成，找到 {files_matched} 个文件，共 {total_matches} 处匹配"
-    
-    # 【修复 2026-05-01 小沈】C1: search_files添加专属summary分支
+
+    # --- F6: search_files ---
     elif tool_name == "search_files":
         if result.get("success") is False:
             return f"搜索文件失败：{result.get('error', '未知错误')}"
         total = result.get("total", 0)
         return f"搜索完成，找到 {total} 个匹配文件"
-    
-    elif tool_name == "generate_report":
+
+    # --- F7: grep_file_content ---
+    elif tool_name == "grep_file_content":
         if result.get("success") is False:
-            return f"生成报告失败：{result.get('error', '未知错误')}"
-        reports = result.get("reports", {})
-        return f"成功生成 {len(reports)} 个报告"
-    
-    elif tool_name == "copy_file":
-        if result.get("success") is False:
-            return f"复制失败：{result.get('error', '未知错误')}"
-        source = result.get("source", "")
-        destination = result.get("destination", "")
-        return f"成功复制文件：{source} -> {destination}"
-    
-    elif tool_name == "create_directory":
-        if result.get("success") is False:
-            return f"创建目录失败：{result.get('error', '未知错误')}"
-        dir_path = result.get("dir_path", "")
-        return f"成功创建目录：{dir_path}"
-    
-    elif tool_name == "get_file_info":
-        if result.get("success") is False:
-            return f"获取文件信息失败：{result.get('error', '未知错误')}"
-        file_path = result.get("file_path", "")
-        return f"成功获取文件信息：{file_path}"
-    
-    elif tool_name == "compare_files":
-        if result.get("success") is False:
-            return f"文件比较失败：{result.get('error', '未知错误')}"
-        identical = result.get("identical", False)
-        size_match = result.get("size_match", False)
-        if identical:
-            return "文件内容完全相同"
-        elif size_match:
-            return "文件大小相同但内容不同"
-        else:
-            return "文件大小不同"
-    
-    elif tool_name == "batch_rename":
-        if result.get("success") is False:
-            return f"批量重命名失败：{result.get('error', '未知错误')}"
-        total_files = result.get("total_files", 0)
-        renamed_files = result.get("renamed_files", 0)
-        preview = result.get("preview_mode", False)
-        if preview:
-            return f"预览模式：计划重命名 {renamed_files}/{total_files} 个文件"
-        else:
-            return f"成功重命名 {renamed_files}/{total_files} 个文件"
-    
-    elif tool_name == "compress_files":
-        if result.get("success") is False:
-            return f"压缩失败：{result.get('error', '未知错误')}"
-        source = result.get("source_path", "")
-        destination = result.get("destination_path", "")
-        compression_ratio = result.get("compression_ratio", 0)
-        return f"成功压缩：{source} -> {destination}，压缩率：{compression_ratio:.2%}"
-    
-    elif tool_name == "file_monitor":
-        if result.get("success") is False:
-            return f"文件监控失败：{result.get('error', '未知错误')}"
-        events_count = result.get("events_count", 0)
-        duration = result.get("duration", 0)
-        return f"监控完成：检测到 {events_count} 个事件，持续 {duration} 秒"
-    
-    elif tool_name == "file_statistics":
-        if result.get("success") is False:
-            return f"文件统计失败：{result.get('error', '未知错误')}"
-        total_files = result.get("total_files", 0)
-        total_size = result.get("total_size", 0)
-        return f"统计完成：共 {total_files} 个文件，总大小 {total_size:,} 字节"
-    
-    elif tool_name == "file_checksum":
-        if result.get("success") is False:
-            return f"校验和计算失败：{result.get('error', '未知错误')}"
-        algorithm = result.get("algorithm", "")
-        checksum = result.get("checksum", "")
-        verification = result.get("verification_result")
-        if verification is not None:
-            if verification:
-                return f"{algorithm.upper()} 校验和验证通过：{checksum[:16]}..."
-            else:
-                return f"{algorithm.upper()} 校验和验证失败"
-        else:
-            return f"{algorithm.upper()} 校验和：{checksum[:16]}..."
-    
-    elif tool_name == "read_text_file":
-        if result.get("success") is False:
-            return f"读取失败：{result.get('error', '未知错误')}"
-        line_count = result.get("line_count", 0)
-        total_lines = result.get("total_lines", 0)
-        return f"成功读取文件：{line_count}/{total_lines} 行"
-    
-    elif tool_name == "read_media_file":
-        if result.get("success") is False:
-            return f"读取失败：{result.get('error', '未知错误')}"
-        mime = result.get("mime_type", "未知")
-        size = result.get("file_size", 0)
-        return f"成功读取媒体文件：{mime}，{size:,} 字节"
-    
-    elif tool_name == "read_batch_file":
-        if result.get("success") is False:
-            return f"批量读取失败：{result.get('error', '未知错误')}"
-        success_count = result.get("success_count", 0)
-        failed_count = result.get("failed_count", 0)
-        return f"批量读取完成：成功 {success_count} 个，失败 {failed_count} 个"
-    
-    elif tool_name == "precise_replace_in_file":
-        if result.get("success") is False:
-            return f"替换失败：{result.get('error', '未知错误')}"
-        count = result.get("replaced_count", 0)
-        return f"成功替换 {count} 处文本"
-    
-    elif tool_name == "edit_text_file":
-        if result.get("success") is False:
-            return f"编辑失败：{result.get('error', '未知错误')}"
-        applied = result.get("applied_edits", 0)
-        total = result.get("total_edits", 0)
-        dry = result.get("dry_run", False)
-        if dry:
-            return f"预览模式：{applied}/{total} 处编辑将生效"
-        return f"成功应用 {applied}/{total} 处编辑"
-    
+            return f"搜索内容失败：{result.get('error', '未知错误')}"
+        files_matched = result.get("total", result.get("files_matched", 0))
+        total_matches = result.get("total_matches", 0)
+        return f"搜索内容完成，找到 {files_matched} 个文件，共 {total_matches} 处匹配"
+
+    # --- F8: rename_file ---
     elif tool_name == "rename_file":
         if result.get("success") is False:
             return f"重命名失败：{result.get('error', '未知错误')}"
         old = result.get("old_name", "")
         new = result.get("new_name", "")
         return f"成功重命名：{old} -> {new}"
-    
-    elif tool_name == "grep_file_content":
-        if result.get("success") is False:
-            return f"搜索失败：{result.get('error', '未知错误')}"
-        total_files = result.get("total_files", 0)
-        total_matches = result.get("total_matches", 0)
-        return f"搜索完成：{total_files} 个文件，{total_matches} 处匹配"
 
-    elif tool_name == "get_directory_tree":
+    # --- F9: archive_tool --- 小沈 2026-05-19
+    elif tool_name == "archive_tool":
         if result.get("success") is False:
-            return f"获取目录树失败：{result.get('error', '未知错误')}"
-        return f"成功获取目录树结构"
-    
-    elif tool_name == "list_allowed_directories":
+            return f"压缩/解压失败：{result.get('error', '未知错误')}"
+        compressed_size = result.get("compressed_size")
+        extracted_files = result.get("extracted_files")
+        if compressed_size is not None:
+            return f"成功压缩，大小：{compressed_size:,} 字节"
+        elif extracted_files is not None:
+            return f"成功解压，共 {extracted_files} 个文件"
+        return "压缩/解压完成"
+
+    # --- F10: file_operation --- 小沈 2026-05-19
+    elif tool_name == "file_operation":
         if result.get("success") is False:
-            return f"获取允许目录失败：{result.get('error', '未知错误')}"
-        total = result.get("total", 0)
-        return f"列出 {total} 个允许访问的目录"
-    
-    elif tool_name == "extract_archive":
+            return f"文件操作失败：{result.get('error', '未知错误')}"
+        action = result.get("action", "")
+        source = result.get("source", "")
+        if action == "move":
+            destination = result.get("destination", "")
+            return f"成功移动：{source} -> {destination}"
+        elif action == "copy":
+            destination = result.get("destination", "")
+            return f"成功复制：{source} -> {destination}"
+        elif action == "delete":
+            deleted_path = result.get("deleted_path", source)
+            return f"成功删除：{deleted_path}"
+        return "文件操作完成"
+
+    # --- F11: data_file_format --- 小沈 2026-05-19
+    elif tool_name == "data_file_format":
         if result.get("success") is False:
-            return f"解压失败：{result.get('error', '未知错误')}"
-        output_dir = result.get("output_dir", "")
-        extracted = result.get("extracted_files", 0)
-        return f"成功解压到 {output_dir}，共 {extracted} 个文件"
-    
-    elif tool_name == "get_file_hash":
-        if result.get("success") is False:
-            return f"哈希计算失败：{result.get('error', '未知错误')}"
-        algorithm = result.get("algorithm", "sha256")
-        file_size = result.get("file_size", 0)
-        return f"成功计算 {algorithm.upper()} 哈希，文件大小 {file_size:,} 字节"
-    
+            return f"配置文件操作失败：{result.get('error', '未知错误')}"
+        action = result.get("action", "")
+        file_path = result.get("file_path", "")
+        fmt = result.get("format", "")
+        if action == "read":
+            return f"成功读取{fmt}配置文件：{file_path}"
+        elif action == "write":
+            bytes_written = result.get("bytes_written", 0)
+            return f"成功写入{fmt}配置文件：{file_path}，{bytes_written} 字节"
+        return "配置文件操作完成"
+
     return "操作完成"
 
 
@@ -2982,7 +2905,7 @@ _TOOL_NEXT_ACTIONS = {
 
 
 def _to_unified_format(result: Dict[str, Any], tool_name: str, retry_count: int = 0, llm_data: dict = None) -> Dict[str, Any]:
-    """将工具执行结果转换为统一格式，支持llm_data透传和next_actions注入 小沈-2026-05-15, next_actions-2026-05-19"""
+    """将工具执行结果转换为统一格式，支持llm_data透传和next_actions注入 小沈-2026-05-15, next_actions-2026-05-19, capabilities-2026-05-19"""
     if not isinstance(result, dict):
         r = {
             "status": "error",
@@ -3015,6 +2938,11 @@ def _to_unified_format(result: Dict[str, Any], tool_name: str, retry_count: int 
         na_list = _TOOL_NEXT_ACTIONS.get(tool_name)
         if na_list is not None:
             r["next_actions"] = build_next_actions(na_list)
+        # 透传 capabilities_used 和 capabilities_missing - 小沈 2026-05-19
+        if "capabilities_used" in result:
+            r["capabilities_used"] = result["capabilities_used"]
+        if "capabilities_missing" in result:
+            r["capabilities_missing"] = result["capabilities_missing"]
     return r
 
 

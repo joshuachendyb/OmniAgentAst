@@ -423,6 +423,9 @@ def screen_capture(
 
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([("ocr", "识别截图文字", "需要提取文字时")])
+        # 透传gui_tools中的capabilities字段 - 小沈 2026-05-19
+        if "capabilities_used" not in result:
+            result["capabilities_used"] = ["pyautogui"]
     return result
 
 
