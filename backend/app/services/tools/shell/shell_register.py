@@ -47,25 +47,19 @@ from app.services.tools.shell.code_execution_tools import (
 )
 
 SHELL_TOOL_DESCRIPTIONS = {
-    "execute_shell_command": """在指定 shell 环境中执行命令。Windows 原生默认 PowerShell，可选 CMD；bash 需额外安装（未来扩展）。
+    "execute_shell_command": """在指定 shell 环境中执行命令。Windows默认PowerShell，可选CMD。
 
 使用场景：
-- 当用户需要执行系统命令时使用
-- 当用户想要运行命令行工具时使用
-- 当用户需要执行脚本或程序时使用
-
-
-【重要】返回命令的 stdout、stderr 和退出码
+- 执行系统命令、脚本、程序
+- 后台运行服务(npm run dev等)
 
 使用示例：
 - 执行dir命令：{"command": "dir"}
-- 执行Python脚本：{"command": "python script.py", "shell_type": "powershell"}
 - 后台运行：{"command": "npm run dev", "run_in_background": true}
 
 返回数据说明：
-- code: 状态码，SUCCESS/ERR_SHELL_EXEC/ERR_SHELL_TIMEOUT
-- data: 前台模式含stdout(标准输出)、stderr(标准错误)、returncode(退出码)；后台模式含shell_id(会话ID)、is_running(是否运行中)、started_at(启动时间)；失败或超时时data可能为null
-- message: 状态描述信息""",
+- 前台模式：data含stdout/stderr/returncode
+- 后台模式：data含shell_id/is_running/started_at""",
     "find_command": """查找系统命令路径。类似于 which/where 命令。
 
 使用场景：
@@ -99,26 +93,20 @@ SHELL_TOOL_DESCRIPTIONS = {
 - 当用户需要快速验证JavaScript代码逻辑时使用
 
 返回数据说明：data含stdout(标准输出)、stderr(标准错误)、returncode(返回码)""",
-    "shell_session": """管理后台Shell会话，读取输出或终止会话。
+    "shell_session": """管理后台Shell会话：读取输出或终止会话。
 
 使用场景：
-- 当用户需要获取后台命令的执行结果时使用（action="output"）
-- 当用户需要终止正在运行的后台命令时使用（action="terminate"）
-- 当用户需要检查后台命令是否完成时使用
-
-
-【重要】action="output"读取输出（默认），action="terminate"终止会话。后台Shell会话由execute_shell_command(run_in_background=true)创建。
+- action="output"：读取后台命令输出（默认）
+- action="terminate"：终止后台会话
 
 使用示例：
 - 读取输出：{"shell_id": "shell_abc123"}
 - 过滤输出：{"shell_id": "shell_abc123", "filter": "ERROR|FAIL"}
 - 终止会话：{"shell_id": "shell_abc123", "action": "terminate"}
-- 强制终止：{"shell_id": "shell_abc123", "action": "terminate", "force": true}
 
 返回数据说明：
-- action="output"时：data含shell_id(会话ID)、stdout(标准输出)、stderr(标准错误)、is_running(进程是否仍在运行)等
-- action="terminate"时：data含shell_id(会话ID)、terminated(是否已终止)、force(是否强制)、returncode(退出码)等
-- 失败时data为null""",
+- action=output时：data含shell_id/stdout/stderr/is_running
+- action=terminate时：data含shell_id/terminated/returncode""",
 }
 
 SHELL_TOOL_EXAMPLES = {

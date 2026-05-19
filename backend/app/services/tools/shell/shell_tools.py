@@ -65,11 +65,11 @@ def execute_shell_command(
     timeout: int = 30000,
     run_in_background: bool = False,
     cwd: Optional[str] = None,
-    encoding: Optional[str] = None,
     env_vars: Optional[dict] = None,
-    run_as_admin: bool = False
 ) -> dict:
-    """执行Shell命令 - 小沈 2026-05-04, 小健 2026-05-19 增加shell_type校验"""
+    """执行Shell命令 — 小沈 2026-05-19 精简参数(8→6)"""
+    encoding = None  # 小沈 2026-05-19: 已从Schema移除，实现自动回退utf-8→gbk
+    run_as_admin = False  # 小沈 2026-05-19: 已从Schema移除，仅标记意图无法实际提权
     # 小健 2026-05-19: shell_type校验 — 非法值明确报错而非静默默认
     if shell_type not in ("powershell", "cmd", None):
         return {
@@ -398,28 +398,13 @@ def shell_session(
     shell_id: str,
     action: str = "output",
     filter: Optional[str] = None,
-    encoding: Optional[str] = None,
     max_lines: int = 1000,
-    tail: bool = False,
     force: bool = False,
-    cleanup: bool = True,
 ) -> dict:
-    """后台Shell会话管理 - 小沈 2026-05-17
-    合并 get_shell_output + terminate_shell
-
-    Args:
-        shell_id: 后台Shell会话ID
-        action: 操作类型。output=读取输出, terminate=终止会话
-        filter: 输出过滤正则（action="output"时生效）
-        encoding: 输出编码（action="output"时生效）
-        max_lines: 最大返回行数（action="output"时生效）
-        tail: 只返回最后N行（action="output"时生效）
-        force: 强制终止（action="terminate"时生效）
-        cleanup: 终止后清理资源（action="terminate"时生效）
-
-    Returns:
-        {code, data, message}
-    """
+    """后台Shell会话管理 — 小沈 2026-05-19 精简参数(8→5)"""
+    encoding = None  # 小沈 2026-05-19: 已从Schema移除，实现自动回退
+    tail = True  # 小沈 2026-05-19: 已从Schema移除，默认返回尾部最新输出
+    cleanup = True  # 小沈 2026-05-19: 已从Schema移除，默认终止后清理
     if action == "output":
         shell_info = _background_shells.get(shell_id)
         if not shell_info:
