@@ -82,8 +82,8 @@ F2. write_text_file(file_path, text, encoding=None, append=False, create_parents
    Example (append): {"file_path": "D:/app.log", "text": "new line\\n", "append": true}
 
 F3. read_media_file(file_path)
-   Read image or audio file, returns Base64 encoded data and MIME type.
-   - file_path: Media file path (JPG/PNG/GIF/MP3/WAV etc.)
+   Read image, audio, video, or PDF file, returns Base64 encoded data and MIME type.
+   - file_path: Media file path (JPG/PNG/GIF/BMP/WebP/SVG/MP3/WAV/MP4/AVI/MKV/PDF etc.)
    Example: {"file_path": "D:/screenshot.png"}
 
 F4. edit_file(file_path, old_string=None, new_string=None, edits=None, replace_all=False, dry_run=False, encoding=None)
@@ -137,16 +137,19 @@ F10. file_operation(action, source, destination=None, recursive=False, overwrite
    - action: "move" | "copy" | "delete" (REQUIRED)
    - source: Source path (REQUIRED)
    - destination: Target path (REQUIRED for move/copy, NOT for delete)
-   - force: For delete: permanent (skip recycle bin); default False
+   - force: For delete only: True=permanent delete(skip recycle bin), False=use recycle bin; default False
+   - preserve_metadata: For copy only: preserve file timestamps/metadata; default True
    Example (move): {"action": "move", "source": "C:/old.txt", "destination": "D:/new.txt"}
    Example (delete): {"action": "delete", "source": "C:/temp.txt"}
+   Example (permanent delete dir): {"action": "delete", "source": "C:/temp", "recursive": true, "force": true}
 
 F11. data_file_format(action="read", file_path, format=None, data=None, encoding="utf-8", indent=None)
    Read/write structured data files (JSON/YAML/TOML/INI/XML/Properties). Unified entry.
    - action: "read" or "write" (REQUIRED)
    - file_path: File path (REQUIRED)
-   - data: Data to write (REQUIRED for write)
+   - data: Data to write (REQUIRED for write). For JSON/YAML/TOML: pass dict or list. INI/XML/Properties do NOT support write.
    - format: Force format (optional, auto-detect from extension if not specified)
+   - indent: JSON write indentation spaces (default 2). YAML/TOML do NOT support indent.
    Example (read): {"action": "read", "file_path": "D:/config.json"}
    Example (write): {"action": "write", "file_path": "D:/config.yaml", "data": {"key": "value"}}
 

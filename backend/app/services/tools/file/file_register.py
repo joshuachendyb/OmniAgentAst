@@ -79,11 +79,12 @@ FILE_TOOL_DESCRIPTIONS = {
 返回数据说明：
 - data.success/data.file_path/data.bytes_written/data.encoding""",
 
-    "read_media_file": """读取图片或音频文件，返回Base64编码数据和MIME类型。
+    "read_media_file": """读取图片、音频、视频或PDF文件，返回Base64编码数据和MIME类型。
 
 使用示例：
 - 读取图片：{"file_path": "D:/screenshot.png"}
 - 读取音频：{"file_path": "D:/notification.mp3"}
+- 读取PDF：{"file_path": "D:/report.pdf"}
 
 返回数据说明：
 - data.success/data.data(Base64)/data.mime_type/data.file_size""",
@@ -142,7 +143,7 @@ FILE_TOOL_DESCRIPTIONS = {
     "rename_file": """重命名文件 — 支持单文件和批量重命名。
 
 使用模式：
-- mode="single": 单文件重命名，需path + new_name
+- mode="single": 单文件重命名，需path + new_name（new_name仅文件名，不能含路径分隔符）
 - mode="batch": 批量正则重命名，需directory + pattern + replacement
 
 使用示例：
@@ -169,6 +170,10 @@ FILE_TOOL_DESCRIPTIONS = {
 - 删除：{"action": "delete", "source": "D:/temp.txt"}
 - 永久删除目录：{"action": "delete", "source": "D:/temp", "recursive": true, "force": true}
 
+参数说明：
+- force：仅delete模式有效，True=跳过回收站永久删除，False=放入回收站
+- preserve_metadata：仅copy模式有效，True=保留文件元数据（修改时间等）
+
 返回数据说明：
 - data.success/data.action/data.source/data.destination""",
 
@@ -176,12 +181,17 @@ FILE_TOOL_DESCRIPTIONS = {
 
 当你需要解析配置文件、修改配置项、读取JSON数据时使用此工具。
 ⚠️ CSV/Excel 使用 Document 分类的 read_document，不在此工具范围。
+⚠️ write模式仅支持JSON/YAML/TOML，INI/XML/Properties暂不支持写入。
 
 使用示例：
 - 读JSON：{"action": "read", "file_path": "D:/config.json"}
 - 写JSON：{"action": "write", "file_path": "D:/config.json", "data": {"key": "value"}}
 - 读YAML：{"action": "read", "file_path": "D:/config.yaml"}
 - 写TOML：{"action": "write", "file_path": "D:/config.toml", "data": {"section": {"k": "v"}}}
+
+参数说明：
+- data：write模式必填，JSON/YAML/TOML传dict或list
+- indent：仅JSON写入有效，格式化缩进空格数（默认2）
 
 返回数据说明：
 - data.success/data.data(读取)/data.format/data.bytes_written(写入)""",

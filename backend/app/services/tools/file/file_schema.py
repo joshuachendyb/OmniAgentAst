@@ -114,7 +114,7 @@ class WriteTextFileInput(BaseModel):
 class ReadMediaFileInput(BaseModel):
     """read_media_file 工具的输入参数"""
     file_path: str = Field(
-        description="媒体文件的完整路径，支持图片(JPG/PNG/GIF/BMP/WebP/SVG/ICO/TIFF)和音频(MP3/WAV/OGG/M4A/FLAC/AAC)及视频(MP4/AVI/MOV/MKV)格式"
+        description="媒体文件的完整路径。支持图片(JPG/PNG/GIF/BMP/WebP/SVG/ICO/TIFF)、音频(MP3/WAV/OGG/M4A/FLAC/AAC)、视频(MP4/AVI/MOV/MKV)和PDF格式。返回Base64编码数据"
     )
 
 
@@ -254,7 +254,7 @@ class GrepFileContentInput(BaseModel):
     )
     output_mode: Optional[Literal["content", "files_with_matches", "count"]] = Field(
         default=None,
-        description="输出模式：content（显示匹配行内容）/ files_with_matches（只显示文件名）/ count（显示匹配数量）"
+        description="输出模式，默认content。content=显示匹配行内容，files_with_matches=只返回匹配的文件名列表，count=只返回每个文件的匹配数量"
     )
     glob: Optional[str] = Field(
         default=None,
@@ -270,7 +270,7 @@ class GrepFileContentInput(BaseModel):
     )
     head_limit: Optional[int] = Field(
         default=None,
-        description="最大返回结果数"
+        description="限制返回的最大匹配行数，避免结果过多。不设则返回全部"
     )
     multiline: bool = Field(
         default=False,
@@ -302,7 +302,7 @@ class RenameFileInput(BaseModel):
     )
     new_name: Optional[str] = Field(
         default=None,
-        description="新名称（mode=single时必填）"
+        description="新文件名（mode=single时必填）。仅文件名，不能含路径分隔符(/或\\)，不能含Windows非法字符(<>:\"|?*)"
     )
     directory: Optional[str] = Field(
         default=None,
@@ -396,7 +396,7 @@ class FileOperationInput(BaseModel):
     )
     force: bool = Field(
         default=False,
-        description="delete模式：跳过回收站永久删除；move/copy模式：跳过确认。默认False"
+        description="仅delete模式有效：True=跳过回收站永久删除，False=放入回收站。默认False"
     )
     preserve_metadata: bool = Field(
         default=True,
@@ -429,7 +429,7 @@ class DataFileFormatInput(BaseModel):
     )
     data: Optional[Any] = Field(
         default=None,
-        description="write模式：要写入的数据（必填）。read模式不填"
+        description="write模式要写入的数据（必填）。类型取决于格式：JSON/YAML/TOML传dict或list，INI/XML/Properties暂不支持写入。read模式不填"
     )
     encoding: str = Field(
         default="utf-8",
@@ -437,7 +437,7 @@ class DataFileFormatInput(BaseModel):
     )
     indent: Optional[int] = Field(
         default=None,
-        description="JSON/YAML写入时格式化缩进空格数，可选"
+        description="JSON写入时的格式化缩进空格数（默认2），可选。YAML/TOML不支持此参数"
     )
 
 
