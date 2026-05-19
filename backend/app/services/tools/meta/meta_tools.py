@@ -11,6 +11,7 @@ import json
 from typing import Dict, Any, List
 
 from app.services.tools.registry import tool_registry
+from app.services.tools.tool_result_utils import build_next_actions
 from app.utils.logger import logger
 
 
@@ -57,7 +58,9 @@ def tool_help(tool_name: str) -> Dict[str, Any]:
         "author": metadata.author,
     }
 
-    return {"code": 200, "data": result, "message": "success"}
+    return {"code": 200, "data": result, "message": "success", "next_actions": build_next_actions([
+        ("tool_search", "按关键词搜索其他工具", "需要模糊查找工具时"),
+    ])}
 
 
 def tool_search(query: str) -> Dict[str, Any]:
@@ -110,6 +113,9 @@ def tool_search(query: str) -> Dict[str, Any]:
             "total_tools": len(all_tools),
         },
         "message": f"找到 {len(scored)} 个相关工具，返回前 {len(top_results)} 个",
+        "next_actions": build_next_actions([
+            ("tool_help", "查看匹配工具的详细用法", "需要了解具体工具参数时"),
+        ]),
     }
 
 
@@ -241,7 +247,10 @@ def pipeline(steps: str, stop_on_error: bool = True) -> Dict[str, Any]:
             "completed_steps": len(results),
             "results": results,
         },
-        "message": f"管道执行完成: {len(results)}/{len(steps_list)} 个步骤"
+        "message": f"管道执行完成: {len(results)}/{len(steps_list)} 个步骤",
+        "next_actions": build_next_actions([
+            ("tool_search", "查找可用的工具", "需要编排新管道时"),
+        ]),
     }
 
 

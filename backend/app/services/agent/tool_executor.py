@@ -384,8 +384,9 @@ class ToolExecutor:
         return params
     
     def _format_result(self, result: Any, action: str) -> Dict[str, Any]:
-        """格式化工具执行结果，透传llm_data供agent注入LLM上下文 小沈-2026-05-15"""
+        """格式化工具执行结果，透传llm_data+next_actions供agent注入LLM上下文 小沈-2026-05-15"""
         _llm = result.get("llm_data") if isinstance(result, dict) else None
+        _na = result.get("next_actions") if isinstance(result, dict) else None
         if isinstance(result, dict):
             if result.get("status") == "warning":
                 r = {
@@ -395,6 +396,7 @@ class ToolExecutor:
                     "retry_count": result.get("retry_count", 0)
                 }
                 if _llm: r["llm_data"] = _llm
+                if _na: r["next_actions"] = _na
                 return r
             elif "status" in result and "summary" in result:
                 r = {
@@ -404,11 +406,9 @@ class ToolExecutor:
                     "retry_count": result.get("retry_count", 0)
                 }
                 if _llm: r["llm_data"] = _llm
+                if _na: r["next_actions"] = _na
                 return r
-            # 【修复 2026-05-01 小沈】先检查code字段（shell工具返回code/data/message格式）
-            # 之前只检查success字段，导致execute_command等工具的SUCCESS结果被误判为error
             elif result.get("code") == "SUCCESS":
-                # code=SUCCESS但需区分returncode：0=真正成功，非0=有错误输出
                 data = result.get("data")
                 if isinstance(data, dict) and data.get("returncode", 0) != 0:
                     r = {
@@ -425,6 +425,7 @@ class ToolExecutor:
                         "retry_count": 0
                     }
                 if _llm: r["llm_data"] = _llm
+                if _na and r.get("status") == "success": r["next_actions"] = _na
                 return r
             elif result.get("code", "").startswith("ERR_"):
                 r = {
@@ -443,6 +444,7 @@ class ToolExecutor:
                     "retry_count": 0
                 }
                 if _llm: r["llm_data"] = _llm
+                if _na: r["next_actions"] = _na
                 return r
             else:
                 r = {
@@ -460,6 +462,5 @@ class ToolExecutor:
                 "data": result,
                 "retry_count": 0
             }
-            # 【修复 问题7 小沈 2026-05-15】else分支也透传llm_data
             if _llm: r["llm_data"] = _llm
             return r

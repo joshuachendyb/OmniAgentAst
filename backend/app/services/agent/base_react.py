@@ -870,6 +870,25 @@ class BaseAgent(ABC):
                     if alt_hint:
                         observation_text += f"\n{alt_hint}"
                 
+                # 【P15 小沈 2026-05-19】next_actions: 工具返回值自解释，引导LLM下一步
+                next_actions = execution_result.get('next_actions')
+                if next_actions and isinstance(next_actions, list):
+                    na_lines = ["\n推荐下一步操作:"]
+                    for i, na in enumerate(next_actions[:5], 1):
+                        tool = na.get('tool', '')
+                        desc = na.get('description', '')
+                        when = na.get('when', '')
+                        params = na.get('params')
+                        line = f"  {i}. {tool}"
+                        if desc:
+                            line += f" - {desc}"
+                        if when:
+                            line += f"（{when}）"
+                        if params:
+                            line += f" 参数建议: {params}"
+                        na_lines.append(line)
+                    observation_text += "\n".join(na_lines)
+
                 # 【改进2 2026-05-01 小沈 小健】agent层独立内容质量检测
                 # 给LLM通道：在observation_text中附加质量警告和content摘要
                 if tool_name == "write_file" and exec_status == 'success':
