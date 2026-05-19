@@ -84,7 +84,7 @@ class ShellSessionInput(BaseModel):
         default=1000, ge=1, le=10000, description="最大返回行数（action=output时生效）。默认1000"
     )
     tail: bool = Field(
-        default=False, description="只返回最后N行（action=output时生效）"
+        default=False, description="只返回最后N行（配合max_lines使用。True=取尾部max_lines行，False=取头部max_lines行）。默认False取头部"
     )
     force: bool = Field(
         default=False, description="强制终止（action=terminate时生效）。优雅终止失败时Agent自动设true"
