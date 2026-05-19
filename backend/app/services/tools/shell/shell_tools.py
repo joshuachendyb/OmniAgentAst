@@ -36,7 +36,7 @@ import shutil
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-from app.services.tools.tool_result_utils import format_output_for_llm  # 小沈-2026-05-15
+from app.services.tools.tool_result_utils import format_output_for_llm, build_next_actions  # 小沈-2026-05-15, 小沈-2026-05-19
 
 
 # 后台Shell会话管理器 - 小沈 2026-05-02
@@ -126,7 +126,10 @@ def execute_shell_command(
                     "is_running": True,
                     "started_at": datetime.now().isoformat()
                 },
-                "message": f"命令已在后台启动，shell_id: {shell_id}"
+                "message": f"命令已在后台启动，shell_id: {shell_id}",
+                "next_actions": build_next_actions([
+                    ("shell_session", "读取后台命令输出", "需要查看命令执行结果时", {"shell_id": shell_id, "action": "output"}),
+                ])
             }
         
         # 不使用 text=True，手动处理编码
@@ -173,7 +176,11 @@ def execute_shell_command(
                     "returncode": result.returncode
                 },
                 "message": message,
-                "llm_data": _llm
+                "llm_data": _llm,
+                "next_actions": build_next_actions([
+                    ("execute_shell_command", "继续执行后续命令", "需要执行更多命令时"),
+                    ("find_command", "查找命令路径", "需要确认命令是否存在时"),
+                ])
             }
         else:
             return {
@@ -263,7 +270,10 @@ def find_command(command: str, all_paths: bool = False) -> dict:
                 return {
                     "code": "SUCCESS",
                     "data": {"available": True, "command": command, "path": cmd_path},
-                    "message": f"命令 '{command}' 可用，路径: {cmd_path}"
+                    "message": f"命令 '{command}' 可用，路径: {cmd_path}",
+                    "next_actions": build_next_actions([
+                        ("execute_shell_command", "执行该命令", "确认命令可用后需要执行时", {"command": command}),
+                    ])
                 }
             else:
                 return {
@@ -290,7 +300,10 @@ def find_command(command: str, all_paths: bool = False) -> dict:
                 return {
                     "code": "SUCCESS",
                     "data": {"command": command, "paths": paths, "count": len(paths)},
-                    "message": f"找到 {len(paths)} 个路径"
+                    "message": f"找到 {len(paths)} 个路径",
+                    "next_actions": build_next_actions([
+                        ("execute_shell_command", "执行该命令", "确认命令可用后需要执行时", {"command": command}),
+                    ])
                 }
             else:
                 return {
@@ -420,7 +433,11 @@ def shell_session(
         return {
             "code": "SUCCESS",
             "data": {"shell_id": shell_id, "stdout": stdout_str, "stderr": stderr_str, "is_running": is_running},
-            "message": "后台命令输出" if is_running else "后台命令已结束"
+            "message": "后台命令输出" if is_running else "后台命令已结束",
+            "next_actions": build_next_actions([
+                ("shell_session", "继续读取输出", "进程仍在运行需要持续监控时", {"shell_id": shell_id, "action": "output"}),
+                ("shell_session", "终止后台命令", "需要停止后台进程时", {"shell_id": shell_id, "action": "terminate"}),
+            ]) if is_running else []
         }
     elif action == "terminate":
         shell_info = _background_shells.get(shell_id)
@@ -430,7 +447,9 @@ def shell_session(
         if not process:
             if cleanup:
                 _background_shells.pop(shell_id, None)
-            return {"code": "SUCCESS", "data": {"shell_id": shell_id, "terminated": True, "force": force, "returncode": None}, "message": "会话已无进程"}
+            return {"code": "SUCCESS", "data": {"shell_id": shell_id, "terminated": True, "force": force, "returncode": None}, "message": "会话已无进程", "next_actions": build_next_actions([
+                ("execute_shell_command", "启动新的后台命令", "需要执行新的命令时"),
+            ])}
         terminated = False
         returncode = None
         try:
@@ -454,7 +473,12 @@ def shell_session(
         return {
             "code": "SUCCESS",
             "data": {"shell_id": shell_id, "terminated": terminated, "force": force, "returncode": returncode},
-            "message": "已终止后台命令" if terminated else "终止失败"
+            "message": "已终止后台命令" if terminated else "终止失败",
+            "next_actions": build_next_actions([
+                ("execute_shell_command", "启动新的后台命令", "需要执行新的命令时"),
+            ]) if terminated else build_next_actions([
+                ("shell_session", "强制终止", "普通终止失败需要强制终止时", {"shell_id": shell_id, "action": "terminate", "force": True}),
+            ])
         }
     else:
         return {

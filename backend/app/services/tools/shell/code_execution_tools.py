@@ -40,7 +40,7 @@ from app.services.tools.shell.code_execution_schema import (
     ExecutePythonInput,
     ExecuteJavascriptInput,
 )
-from app.services.tools.tool_result_utils import format_output_for_llm  # 小沈-2026-05-15
+from app.services.tools.tool_result_utils import format_output_for_llm, build_next_actions  # 小沈-2026-05-15, 小沈-2026-05-19
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +142,11 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
                         "returncode": result.returncode
                     },
                     "message": message,
-                    "llm_data": _llm
+                    "llm_data": _llm,
+                    "next_actions": build_next_actions([
+                        ("write_text_file", "将输出结果保存到文件", "需要持久化保存代码输出时"),
+                        ("execute_python", "继续执行后续代码", "需要运行更多Python代码时"),
+                    ])
                 }
             else:
                 message = f"Python代码执行失败（退出码{result.returncode}）"
@@ -228,7 +232,11 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
                         "returncode": result.returncode
                     },
                     "message": message,
-                    "llm_data": _llm
+                    "llm_data": _llm,
+                    "next_actions": build_next_actions([
+                        ("write_text_file", "将输出结果保存到文件", "需要持久化保存代码输出时"),
+                        ("execute_javascript", "继续执行后续代码", "需要运行更多JavaScript代码时"),
+                    ])
                 }
             else:
                 message = f"JavaScript代码执行失败（退出码{result.returncode}）"
