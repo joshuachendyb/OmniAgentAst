@@ -28,7 +28,7 @@ import importlib
 import csv
 import os
 import tempfile
-from typing import Dict, Any, List, Optional, Literal
+from typing import Dict, Any, List, Optional, Literal, Union
 from pathlib import Path
 
 from app.services.tools.document.document_schema import (
@@ -1064,9 +1064,21 @@ def read_document(
     elif suffix in (".csv", ".tsv"):
         actual_delimiter = "\t" if suffix == ".tsv" else (delimiter or ",")
         result = _read_csv_stdlib(file_path, encoding=encoding, delimiter=actual_delimiter, has_header=header, max_rows=max_rows)
+    elif suffix == ".json":
+        try:
+            with open(file_path, 'r', encoding=encoding) as f:
+                json_data = json.load(f)
+            if isinstance(json_data, list) and len(json_data) > 0 and isinstance(json_data[0], dict):
+                columns = list(json_data[0].keys())
+                rows = [[item.get(c) for c in columns] for item in json_data[:max_rows]]
+                result = {"code": "SUCCESS", "data": {"format": "json_table", "columns": columns, "rows": rows, "row_count": len(rows)}, "message": f"读取JSON文件成功: {file_path}"}
+            else:
+                result = {"code": "SUCCESS", "data": {"format": "json", "content": json_data}, "message": f"读取JSON文件成功: {file_path}"}
+        except Exception as e:
+            result = {"code": "ERR_READ_JSON", "data": None, "message": f"读取JSON文件失败: {str(e)}"}
     else:
         return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
-                "message": f"不支持的格式: {suffix}。支持: .pdf/.docx/.xlsx/.pptx/.csv/.tsv"}
+                "message": f"不支持的格式: {suffix}。支持: .pdf/.docx/.xlsx/.pptx/.csv/.tsv/.json"}
     
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([
@@ -1097,7 +1109,7 @@ def write_document(
     paragraphs: Optional[List[str]] = None,
     title: Optional[str] = None,
     table_data: Optional[List] = None,
-    data: Optional[Dict[str, Any]] = None,
+    data: Optional[Union[Dict[str, Any], List]] = None,
     sheet_name: str = "Sheet1",
     slides: Optional[List[Dict]] = None,
 ) -> Dict[str, Any]:
@@ -1114,6 +1126,20 @@ def write_document(
     elif suffix == ".xlsx":
         if data is None:
             data = {"headers": [], "rows": []}
+        elif isinstance(data, list):
+            if len(data) > 0 and isinstance(data[0], list):
+                first_row = data[0]
+                data = {"headers": first_row, "rows": data[1:]}
+            elif len(data) > 0 and isinstance(data[0], dict):
+                headers = list(data[0].keys())
+                rows = [list(row.values()) for row in data]
+                data = {"headers": headers, "rows": rows}
+            else:
+                data = {"headers": [], "rows": data}
+        elif isinstance(data, dict) and "headers" not in data and "rows" not in data:
+            headers = list(data.keys())
+            rows = [list(data.values())]
+            data = {"headers": headers, "rows": rows}
         result = _write_xlsx(file_path, data=data, sheet_name=sheet_name)
     elif suffix == ".pdf":
         result = _write_pdf(file_path, title=title, content=content, paragraphs=paragraphs, table_data=table_data)
