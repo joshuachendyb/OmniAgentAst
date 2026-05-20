@@ -61,12 +61,6 @@ async def http_request(
             "data": None,
             "message": f"重试次数必须在0-10之间，当前值：{retry}"
         }
-    if timeout < 1000 or timeout > 600000:
-        return {
-            "code": "ERR_NETWORK_INVALID_PARAM",
-            "data": None,
-            "message": f"超时时间必须在1000-600000毫秒之间，当前值：{timeout}"
-        }
     
     timeout_sec = timeout / 1000.0
     
