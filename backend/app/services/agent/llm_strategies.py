@@ -755,6 +755,8 @@ class ResponseFormatStrategy(LLMStrategy):
                 
                 content = json.dumps(formatted, ensure_ascii=False)
                 logger.info(f"[Agent] response_format parsed: tool_name={tool_name}")
+                # 【修复 小沈 2026-05-20】原代码此处缺少 return，导致成功解析后隐式返回 None
+                return content
                 
             except json.JSONDecodeError as e:
                 logger.error(f"[Agent] Failed to parse response_format JSON: {e}, content={content}")
