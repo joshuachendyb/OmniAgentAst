@@ -143,11 +143,11 @@ FILE_TOOL_DESCRIPTIONS = {
     "rename_file": """重命名文件 — 支持单文件和批量重命名。
 
 使用模式：
-- mode="single": 单文件重命名，需path + new_name（new_name仅文件名，不能含路径分隔符）
+- mode="single": 单文件重命名，需file_path + new_name（new_name仅文件名，不能含路径分隔符）
 - mode="batch": 批量正则重命名，需directory + pattern + replacement
 
 使用示例：
-- 单文件：{"mode": "single", "path": "D:/old.txt", "new_name": "new.txt"}
+- 单文件：{"mode": "single", "file_path": "D:/old.txt", "new_name": "new.txt"}
 - 批量：{"mode": "batch", "directory": "D:/files", "pattern": "file_(\\\\d+).txt", "replacement": "renamed_\\\\1.txt"}
 
 返回数据说明：
@@ -232,7 +232,7 @@ FILE_TOOL_EXAMPLES = {
         {"pattern": "TODO", "search_dir": "D:/src", "context": {"around": 3}},
     ],
     "rename_file": [
-        {"path": "D:/old.txt", "new_name": "new.txt"},
+        {"file_path": "D:/old.txt", "new_name": "new.txt"},
         {"mode": "batch", "directory": "D:/files", "pattern": "file_(\\\\d+).txt", "replacement": "renamed_\\\\1.txt"},
     ],
     "archive_tool": [

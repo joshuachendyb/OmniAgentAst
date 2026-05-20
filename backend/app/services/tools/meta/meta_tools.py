@@ -177,13 +177,26 @@ def pipeline(steps: str, stop_on_error: bool = True) -> Dict[str, Any]:
         执行结果，包含steps(步骤数)和results(每步结果)
     """
     try:
-        steps_list = json.loads(steps)
+        if isinstance(steps, (list, dict)):
+            steps_list = steps
+        else:
+            steps_list = json.loads(steps)
     except json.JSONDecodeError as e:
         return {
             "code": "ERR_INVALID_JSON",
             "data": None,
             "llm_data": None,
             "message": f"steps参数不是有效的JSON格式: {str(e)}，请检查JSON语法",
+            "next_actions": build_next_actions([
+                ("tool_help", "查看pipeline用法", "不确定steps格式时", {"tool_name": "pipeline"}),
+            ]),
+        }
+    except TypeError as e:
+        return {
+            "code": "ERR_INVALID_JSON",
+            "data": None,
+            "llm_data": None,
+            "message": f"steps参数类型错误: {str(e)}，需要JSON字符串或列表",
             "next_actions": build_next_actions([
                 ("tool_help", "查看pipeline用法", "不确定steps格式时", {"tool_name": "pipeline"}),
             ]),

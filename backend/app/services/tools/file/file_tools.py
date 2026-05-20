@@ -684,16 +684,22 @@ class FileTools:
                     "content": None
                 }, "write_text_file")
         
+        if not self.task_id:
+            self.task_id = _current_task_id.get(None)
+        if not self.task_id:
+            return _to_unified_format({
+                "success": False,
+                "error": "No active task",
+                "operation_id": None
+            }, "write_text_file")
+        
         try:
-            if self.task_id:
-                operation_id = self.safety.record_operation(
-                    task_id=self.task_id,
-                    operation_type=OperationType.CREATE,
-                    destination_path=path,
-                    sequence_number=self._get_next_sequence()
-                )
-            else:
-                operation_id = None
+            operation_id = self.safety.record_operation(
+                task_id=self.task_id,
+                operation_type=OperationType.CREATE,
+                destination_path=path,
+                sequence_number=self._get_next_sequence()
+            )
             
             def _write_sync():
                 import tempfile
@@ -1065,15 +1071,22 @@ class FileTools:
                     "operation_id": None
                 }, "file_operation")
             
-            if self.task_id:
-                operation_id = self.safety.record_operation(
-                    task_id=self.task_id,
-                    operation_type=OperationType.DELETE,
-                    source_path=path,
-                    sequence_number=self._get_next_sequence()
-                )
-            else:
-                operation_id = None
+            if not self.task_id:
+                self.task_id = _current_task_id.get(None)
+            if not self.task_id:
+                return _to_unified_format({
+                    "success": False,
+                    "error": "No active task",
+                    "operation_id": None
+                }, "file_operation")
+            
+            # 记录操作
+            operation_id = self.safety.record_operation(
+                task_id=self.task_id,
+                operation_type=OperationType.DELETE,
+                source_path=path,
+                sequence_number=self._get_next_sequence()
+            )
             
             # 定义删除操作 - 小沈 2026-05-19 追踪删除方式
             deletion_info = {}  # 可变容器追踪删除方式: "send2trash" 或 "permanent"
@@ -1196,16 +1209,23 @@ class FileTools:
                     "operation_id": None
                 }, "file_operation")
             
-            if self.task_id:
-                operation_id = self.safety.record_operation(
-                    task_id=self.task_id,
-                    operation_type=OperationType.MOVE,
-                    source_path=src,
-                    destination_path=dst,
-                    sequence_number=self._get_next_sequence()
-                )
-            else:
-                operation_id = None
+            if not self.task_id:
+                self.task_id = _current_task_id.get(None)
+            if not self.task_id:
+                return _to_unified_format({
+                    "success": False,
+                    "error": "No active task",
+                    "operation_id": None
+                }, "file_operation")
+            
+            # 记录操作
+            operation_id = self.safety.record_operation(
+                task_id=self.task_id,
+                operation_type=OperationType.MOVE,
+                source_path=src,
+                destination_path=dst,
+                sequence_number=self._get_next_sequence()
+            )
             
             # 定义移动操作
             def _move_sync():
@@ -2466,7 +2486,7 @@ class FileTools:
     async def rename_file(
         self,
         mode: Literal["single", "batch"] = "single",
-        path: Optional[str] = None,
+        file_path: Optional[str] = None,
         new_name: Optional[str] = None,
         directory: Optional[str] = None,
         pattern: Optional[str] = None,
@@ -2505,10 +2525,10 @@ class FileTools:
             )
         
         # mode="single" (默认)
-        if not path:
+        if not file_path:
             return _to_unified_format({
                 "success": False,
-                "error": "单文件模式(mode=single)需要提供path参数"
+                "error": "单文件模式(mode=single)需要提供file_path参数"
             }, "rename_file")
         
         if not new_name:
@@ -2526,7 +2546,7 @@ class FileTools:
             }, "rename_file")
         
         # 计算新路径（同目录改名）
-        src = Path(path)
+        src = Path(file_path)
         
         if src.name == new_name:
             return _to_unified_format({"success": True, "new_path": str(src), "old_path": str(src), "message": "新名称与原名相同(P16幂等)"}, "rename_file")
@@ -2542,7 +2562,7 @@ class FileTools:
         
         # 调用move_file实现
         return await self._move_file(
-            source_path=path,
+            source_path=file_path,
             destination_path=str(dst),
             overwrite=False
         )
@@ -3022,33 +3042,41 @@ def _generate_summary(tool_name: str, result: Any) -> str:
 
 def _to_unified_format(result: Dict[str, Any], tool_name: str, retry_count: int = 0, llm_data: dict = None, next_actions: list = None) -> Dict[str, Any]:
     """将工具执行结果转换为统一格式，支持llm_data/next_actions/capabilities透传 小沈-2026-05-19
-    【2026-05-20 小沈】data通道加1M截断保护(truncate_data_for_frontend)"""
+    【2026-05-20 小沈】data通道加1M截断保护(truncate_data_for_frontend)
+    【2026-05-21 小健】统一返回{code,data,message}格式，与其他工具一致；保留status/summary向后兼容"""
     if not isinstance(result, dict):
         r = {
+            "code": "ERROR",
             "status": "error",
             "summary": "执行结果格式错误",
             "data": None,
+            "message": "执行结果格式错误",
             "retry_count": retry_count
         }
         if llm_data: r["llm_data"] = llm_data
         return r
-    
+
     success = result.get("success")
     if success is True:
         status = "success"
+        code = "SUCCESS"
     elif success is False:
         status = "error"
+        code = "ERROR"
     else:
         status = "success"
-    
+        code = "SUCCESS"
+
     summary = _generate_summary(tool_name, result)
-    
+
     safe_data = truncate_data_for_frontend(result)
-    
+
     r = {
+        "code": code,
         "status": status,
         "summary": summary,
         "data": safe_data,
+        "message": summary,
         "retry_count": retry_count
     }
     if llm_data:

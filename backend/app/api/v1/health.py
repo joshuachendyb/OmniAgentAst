@@ -97,29 +97,8 @@ async def execute_tool(request: ToolExecuteRequest):
     ensure_tools_registered()
     
     tool_name = request.tool_name
-    # 【修复 小健 2026-05-21】兼容parameters和params字段, parameters优先
+    # 兼容parameters和params字段, parameters优先 - 小健 2026-05-21
     params = request.parameters if request.parameters else request.params
-    
-    # 【修复 小健 2026-05-21】Pydantic Schema参数名映射到函数签名
-    _TOOL_PARAM_MAP = {
-        "read_file": {"path": "file_paths"},
-        "list_directory": {"path": "dir_path"},
-        "search_files": {"path": "search_dir"},
-        "network_diagnose": {"target": "host"},
-        "read_document": {"path": "file_path"},
-        "write_document": {"path": "file_path"},
-        "convert_document": {"path": "file_path"},
-        "analyze_data": {"path": "file_path"},
-        "filter_data": {"path": "file_path"},
-        "generate_chart": {"path": "file_path"},
-    }
-    _aliases = _TOOL_PARAM_MAP.get(tool_name, {})
-    mapped_params = {}
-    for k, v in params.items():
-        mapped_params[_aliases.get(k, k)] = v
-    if "file_paths" in mapped_params and not isinstance(mapped_params["file_paths"], list):
-        mapped_params["file_paths"] = [mapped_params["file_paths"]]
-    params = mapped_params
     
     # 获取工具实现
     impl = tool_registry.get_implementation(tool_name)
@@ -132,20 +111,22 @@ async def execute_tool(request: ToolExecuteRequest):
         )
     
     try:
+        # 与Agent调用链保持一致：设置_current_task_id ContextVar
+        # Agent在react_sse_wrapper.py:525生成task_id，在base_react.py:793设置ContextVar
         from app.services.tools.file.file_tools import _current_task_id
         import uuid as _uuid
-        _task_id = f"api_{_uuid.uuid4().hex[:8]}"
-        _current_task_id.set(_task_id)
+        _api_task_id = str(_uuid.uuid4())
+        _current_task_id.set(_api_task_id)
         
         if inspect.iscoroutinefunction(impl):
             result = await impl(**params)
         else:
             loop = asyncio.get_event_loop()
-            _tid = _current_task_id.get()
-            def _run_with_context():
-                _current_task_id.set(_tid)
+            _captured_task_id = _current_task_id.get()
+            def _run_with_task_context():
+                _current_task_id.set(_captured_task_id)
                 return impl(**params)
-            result = await loop.run_in_executor(None, _run_with_context)
+            result = await loop.run_in_executor(None, _run_with_task_context)
         
         # 处理返回结果
         if asyncio.iscoroutine(result):

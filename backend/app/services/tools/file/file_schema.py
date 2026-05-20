@@ -289,14 +289,14 @@ class GrepFileContentInput(BaseModel):
 class RenameFileInput(BaseModel):
     """rename_file — 小沈 2026-05-19 精简9→6参数
 
-    - mode="single": path+new_name 单文件重命名
+    - mode="single": file_path+new_name 单文件重命名
     - mode="batch": directory+pattern+replacement 批量正则重命名
     """
     mode: Literal["single", "batch"] = Field(
         default="single",
-        description="模式：single=单文件(path+new_name)，batch=批量(directory+pattern+replacement)"
+        description="模式：single=单文件(file_path+new_name)，batch=批量(directory+pattern+replacement)"
     )
-    path: Optional[str] = Field(
+    file_path: Optional[str] = Field(
         default=None,
         description="单文件路径（mode=single时必填）"
     )
