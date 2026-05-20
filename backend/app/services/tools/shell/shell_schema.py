@@ -30,7 +30,7 @@ class ExecuteShellCommandInput(BaseModel):
         description="执行环境：powershell(默认)或cmd。Windows系统推荐powershell"
     )
     timeout: int = Field(
-        default=30000, ge=1000, le=600000, description="超时毫秒数，默认30000(30秒)，最大600000(10分钟)"
+        default=30000, ge=1, le=600000, description="超时毫秒数，默认30000(30秒)。最小1毫秒，最大600000(10分钟)"
     )
     run_in_background: bool = Field(
         default=False,
