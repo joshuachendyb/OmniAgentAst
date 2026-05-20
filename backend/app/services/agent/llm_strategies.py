@@ -75,6 +75,9 @@ class TextStrategy(LLMStrategy):
     # P4: 从注册中心动态获取工具名 - 小健 2026-05-02
     from app.services.agent.react_output_parser import _get_all_tool_names
     
+    MAX_RETRIES = 3
+    RETRY_DELAY = 2.0
+    
     async def call(
         self,
         llm_client: Callable,
@@ -84,25 +87,31 @@ class TextStrategy(LLMStrategy):
         **kwargs
     ) -> str:
         """
-        调用 LLM（文本模式）
-        
-        Args:
-            llm_client: LLM 客户端函数
-            message: 当前消息
-            history_dicts: 历史消息（字典格式）
-            conversation_history: 对话历史（用于追加）
-        
-        Returns:
-            响应文本（JSON 格式）
+        调用 LLM（文本模式），含429指数退避重试 - 小健 2026-05-21
         """
-        # 【诊断 2026-05-10 小健】TextStrategy实际被调用
         logger.info(f"[TextStrategy] call() 被调用, model={getattr(llm_client, 'model', '?')}")
         history_messages = dict_list_to_messages(history_dicts)
         
-        response = await llm_client(
-            message=message,
-            history=history_messages
-        )
+        response = None
+        for attempt in range(self.MAX_RETRIES):
+            response = await llm_client(
+                message=message,
+                history=history_messages
+            )
+            error_info = None
+            if hasattr(response, 'error') and response.error:
+                error_info = response.error
+            if error_info and ("429" in str(error_info) or "Rate limit" in str(error_info) or "请求过于频繁" in str(error_info)):
+                if attempt < self.MAX_RETRIES - 1:
+                    retry_delay = self.RETRY_DELAY * (2 ** attempt)
+                    logger.warning(f"[TextStrategy] 429限流 (第{attempt+1}/{self.MAX_RETRIES}次), {retry_delay:.0f}s后重试...")
+                    import asyncio
+                    await asyncio.sleep(retry_delay)
+                    continue
+                else:
+                    logger.error(f"[TextStrategy] 429限流持续{self.MAX_RETRIES}次, 放弃重试")
+                    break
+            break
         
         error_info = None
         if hasattr(response, 'error') and response.error:
