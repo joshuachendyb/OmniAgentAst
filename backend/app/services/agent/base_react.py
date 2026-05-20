@@ -651,6 +651,13 @@ class BaseAgent(ABC):
                     else:
                         # 网络/API错误：不注入history，给前端提示，直接重试
                         logger.info(f"[parse_react_response] 网络/API错误，不注入history: {error_msg}")
+                        # 【修复 小健 2026-05-21】429等网络错误添加指数退避等待
+                        _is_429 = "429" in _err or "rate_limit" in _err or "请求过于频繁" in _err
+                        if _is_429:
+                            _retry_delay = 2.0 * (2 ** self.parse_retry_count)
+                            logger.warning(f"[parse_react_response] 429限流, 等待{_retry_delay:.0f}s后重试 (第{self.parse_retry_count+1}次)")
+                            import asyncio as _asyncio
+                            await _asyncio.sleep(_retry_delay)
                         net_error_data = create_incident_data(
                             incident_value="rate_limit",
                             message=f"API暂时不可用，正在重试（第{self.parse_retry_count + 1}次）",
