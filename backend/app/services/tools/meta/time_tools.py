@@ -34,7 +34,7 @@ from datetime import datetime, timedelta, timezone;
 from typing import Dict, Any, Optional, Callable, Awaitable, List, Union, Literal;
 import re;
 from app.utils.logger import logger;
-from app.services.tools.tool_result_utils import build_next_actions;
+from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend;
 from app.services.tools.toolhelper.date_helper import (
     parse_datetime_any as _parse_datetime_any,
     parse_datetime_string as _parse_datetime_string,
@@ -110,6 +110,11 @@ def _get_current_time(
                 "isoweekday": now.isoweekday(),
                 "locale": locale
             },
+            "llm_data": {
+                "iso": now.isoformat(),
+                "format": formatted,
+                "weekday": now.strftime("%A"),
+            },
             "message": "成功获取当前时间"
         }
     except Exception as e:
@@ -128,13 +133,22 @@ def _get_current_time(
                     "isoweekday": now.isoweekday(),
                     "locale": locale
                 },
+                "llm_data": {
+                    "iso": now.isoformat(),
+                    "format": formatted,
+                    "weekday": now.strftime("%A"),
+                },
                 "message": "成功获取当前时间（使用默认时区）"
             }
         except Exception as e2:
             return {
                 "code": "ERR_TIME_NOW",
                 "data": None,
-                "message": f"获取当前时间失败: {str(e2)}"
+                "llm_data": None,
+                "message": f"获取当前时间失败: {str(e2)}",
+                "next_actions": build_next_actions([
+                    ("get_time", "重试获取时间", "需要重新获取时间时"),
+                ]),
             }
 
 
@@ -155,7 +169,11 @@ def _time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None)
                 return {
                     "code": "ERR_TIME_FORMAT",
                     "data": None,
-                    "message": f"无法解析时间字符串: {timestamp}"
+                    "llm_data": None,
+                    "message": f"无法解析时间字符串: {timestamp}",
+                    "next_actions": build_next_actions([
+                        ("get_time", "获取当前时间", "解析失败时获取当前时间"),
+                    ]),
                 }
         elif isinstance(timestamp, datetime):
             dt = timestamp.astimezone() if timestamp.tzinfo else timestamp.astimezone()
@@ -163,7 +181,11 @@ def _time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None)
             return {
                 "code": "ERR_TIME_FORMAT",
                 "data": None,
-                "message": f"不支持的时间戳类型: {type(timestamp)}"
+                "llm_data": None,
+                "message": f"不支持的时间戳类型: {type(timestamp)}",
+                "next_actions": build_next_actions([
+                    ("get_time", "获取当前时间", "类型不支持时获取当前时间"),
+                ]),
             }
 
         # 2. 确定格式字符串
@@ -183,13 +205,18 @@ def _time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None)
                 "timestamp": unix_timestamp,
                 "pattern_used": pattern
             },
+            "llm_data": {"formatted": formatted, "iso": iso_format},
             "message": "成功格式化时间"
         }
     except Exception as e:
         return {
             "code": "ERR_TIME_FORMAT",
             "data": None,
-            "message": f"格式化时间失败: {str(e)}"
+            "llm_data": None,
+            "message": f"格式化时间失败: {str(e)}",
+            "next_actions": build_next_actions([
+                ("get_time", "获取当前时间", "格式化失败时获取当前时间"),
+            ]),
         }
 
 
@@ -202,7 +229,9 @@ def _time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
             return {
                 "code": "ERR_TIME_DIFF",
                 "data": None,
-                "message": f"无法解析开始时间: {start} (类型: {type(start).__name__})"
+                "llm_data": None,
+                "message": f"无法解析开始时间: {start} (类型: {type(start).__name__})",
+                "next_actions": build_next_actions([("get_time", "获取当前时间", "时间解析失败时")]),
             }
         # 确保是offset-aware
         if start_dt.tzinfo is None:
@@ -217,7 +246,9 @@ def _time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
                 return {
                     "code": "ERR_TIME_DIFF",
                     "data": None,
-                    "message": f"无法解析结束时间: {end} (类型: {type(end).__name__})"
+                    "llm_data": None,
+                    "message": f"无法解析结束时间: {end} (类型: {type(end).__name__})",
+                    "next_actions": build_next_actions([("get_time", "获取当前时间", "时间解析失败时")]),
                 }
             # 确保是offset-aware
             if end_dt.tzinfo is None:
@@ -264,13 +295,18 @@ def _time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
                 "days": days,
                 "is_future": is_future
             },
+            "llm_data": {"humanized": humanized, "seconds": seconds, "days": round(days, 2), "is_future": is_future},
             "message": "成功计算时间差"
         }
     except Exception as e:
         return {
             "code": "ERR_TIME_DIFF",
             "data": None,
-            "message": f"计算时间差失败: {str(e)}"
+            "llm_data": None,
+            "message": f"计算时间差失败: {str(e)}",
+            "next_actions": build_next_actions([
+                ("get_time", "获取当前时间", "时间解析失败时"),
+            ]),
         }
 
 
@@ -282,14 +318,18 @@ async def _timer_set(delay: float, callback: str, callback_data: Optional[Dict[s
             return {
                 "code": "ERR_TIMER_SET",
                 "data": None,
-                "message": "延迟时间必须大于0"
+                "llm_data": None,
+                "message": "延迟时间必须大于0",
+                "next_actions": build_next_actions([("timer", "重试设置定时器", "需要重新设置时")]),
             }
 
         if delay > 86400:  # 超过1天
             return {
                 "code": "ERR_TIMER_SET",
                 "data": None,
-                "message": "延迟时间不能超过24小时"
+                "llm_data": None,
+                "message": "延迟时间不能超过24小时",
+                "next_actions": build_next_actions([("timer", "重试设置定时器", "需要缩短延迟时间时")]),
             }
 
         # 生成定时器ID
@@ -383,13 +423,18 @@ async def _timer_set(delay: float, callback: str, callback_data: Optional[Dict[s
                 "trigger_at": trigger_at.strftime("%Y-%m-%d %H:%M:%S"),
                 "message": f"定时器已设置，{int(delay/60)}分钟后提醒"
             },
+            "llm_data": {"timer_id": timer_id, "trigger_at": trigger_at.strftime("%Y-%m-%d %H:%M:%S")},
             "message": "定时器设置成功"
         }
     except Exception as e:
         return {
             "code": "ERR_TIMER_SET",
             "data": None,
-            "message": f"设置定时器失败: {str(e)}"
+            "llm_data": None,
+            "message": f"设置定时器失败: {str(e)}",
+            "next_actions": build_next_actions([
+                ("timer", "重试设置定时器", "需要重新设置时"),
+            ]),
         }
 
 
@@ -400,6 +445,7 @@ async def _timer_clear(timer_id: str) -> Dict[str, Any]:
             return {
                 "code": "SUCCESS",
                 "data": {"timer_id": timer_id, "cancelled": False},
+                "llm_data": {"timer_id": timer_id, "cancelled": False},
                 "message": f"定时器 {timer_id} 已触发或不存在，无需取消"
             }
 
@@ -416,13 +462,18 @@ async def _timer_clear(timer_id: str) -> Dict[str, Any]:
                 "timer_id": timer_id,
                 "cancelled": True
             },
+            "llm_data": {"timer_id": timer_id, "cancelled": True},
             "message": "定时器已取消"
         }
     except Exception as e:
         return {
             "code": "ERR_TIMER_CLEAR",
             "data": None,
-            "message": f"清除定时器失败: {str(e)}"
+            "llm_data": None,
+            "message": f"清除定时器失败: {str(e)}",
+            "next_actions": build_next_actions([
+                ("timer", "列出定时器", "需要查看现有定时器时", {"action": "list"}),
+            ]),
         }
 
 
@@ -435,7 +486,9 @@ def _time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[s
             return {
                 "code": "ERR_TIME_UTC_TO_LOCAL",
                 "data": None,
-                "message": f"无法解析UTC时间: {utc_time}"
+                "llm_data": None,
+                "message": f"无法解析UTC时间: {utc_time}",
+                "next_actions": build_next_actions([("timezone_convert", "重试时区转换", "需要重新转换时")]),
             }
 
         # 确保是UTC时间
@@ -471,15 +524,20 @@ def _time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[s
             "data": {
                 "local_time": local_dt.strftime("%Y-%m-%d %H:%M:%S"),
                 "timezone": local_dt.strftime("%z").replace(":", ""),
-                "utc_original": utc_dt.isoformat()  # 返回UTC的ISO格式
+                "utc_original": utc_dt.isoformat()
             },
+            "llm_data": {"local_time": local_dt.strftime("%Y-%m-%d %H:%M:%S"), "timezone": local_dt.strftime("%z").replace(":", "")},
             "message": "成功转换时区"
         }
     except Exception as e:
         return {
             "code": "ERR_TIME_UTC_TO_LOCAL",
             "data": None,
-            "message": f"时区转换失败: {str(e)}"
+            "llm_data": None,
+            "message": f"时区转换失败: {str(e)}",
+            "next_actions": build_next_actions([
+                ("timezone_convert", "重试时区转换", "需要重新转换时"),
+            ]),
         }
 
 
@@ -492,7 +550,9 @@ def _time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict
             return {
                 "code": "ERR_TIME_LOCAL_TO_UTC",
                 "data": None,
-                "message": f"无法解析本地时间: {local_time}"
+                "llm_data": None,
+                "message": f"无法解析本地时间: {local_time}",
+                "next_actions": build_next_actions([("timezone_convert", "重试时区转换", "需要重新转换时")]),
             }
 
         # 设置源时区
@@ -527,13 +587,18 @@ def _time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict
                 "iso": utc_dt.isoformat(),
                 "timestamp": int(utc_dt.timestamp())
             },
+            "llm_data": {"utc_time": utc_dt.strftime("%Y-%m-%d %H:%M:%S"), "iso": utc_dt.isoformat()},
             "message": "成功转换为UTC时间"
         }
     except Exception as e:
         return {
             "code": "ERR_TIME_LOCAL_TO_UTC",
             "data": None,
-            "message": f"时区转换失败: {str(e)}"
+            "llm_data": None,
+            "message": f"时区转换失败: {str(e)}",
+            "next_actions": build_next_actions([
+                ("timezone_convert", "重试时区转换", "需要重新转换时"),
+            ]),
         }
 
 
@@ -550,7 +615,9 @@ def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, 
                 return {
                     "code": "ERR_TIME_ADD",
                     "data": None,
-                    "message": f"无法解析基准时间: {start}"
+                    "llm_data": None,
+                    "message": f"无法解析基准时间: {start}",
+                    "next_actions": build_next_actions([("get_time", "获取当前时间", "基准时间解析失败时")]),
                 }
 
         # 确保是offset-aware
@@ -580,7 +647,9 @@ def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, 
             return {
                 "code": "ERR_TIME_ADD",
                 "data": None,
-                "message": f"不支持的单位: {unit}，可选: days/hours/minutes/seconds/months"
+                "llm_data": None,
+                "message": f"不支持的单位: {unit}，可选: days/hours/minutes/seconds/months",
+                "next_actions": build_next_actions([("tool_help", "查看time_add用法", "不确定unit时", {"tool_name": "time_add"})]),
             }
 
         # 3. 格式化返回 — 小沈 2026-05-19: 增加capabilities_used追踪
@@ -601,6 +670,7 @@ def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, 
         return {
             "code": "SUCCESS",
             "data": result_data,
+            "llm_data": {"result_time": result_data["result_time"], "iso": result_data["iso"], "unit_used": unit},
             "message": f"成功计算时间（{delta} {unit}后）"
         }
 
@@ -608,7 +678,11 @@ def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, 
         return {
             "code": "ERR_TIME_ADD",
             "data": None,
-            "message": f"时间加减失败: {str(e)}"
+            "llm_data": None,
+            "message": f"时间加减失败: {str(e)}",
+            "next_actions": build_next_actions([
+                ("get_time", "获取当前时间", "计算失败时获取当前时间"),
+            ]),
         }
 
 
@@ -635,13 +709,18 @@ def _timer_list(limit: int = 10) -> Dict[str, Any]:
         return {
             "code": "SUCCESS",
             "data": timers,
+            "llm_data": {"count": len(timers), "ids": [t["timer_id"] for t in timers[:5]]},
             "message": f"共{len(timers)}个定时器"
         }
     except Exception as e:
         return {
             "code": "ERR_TIMER_LIST",
             "data": None,
-            "message": f"获取定时器列表失败: {str(e)}"
+            "llm_data": None,
+            "message": f"获取定时器列表失败: {str(e)}",
+            "next_actions": build_next_actions([
+                ("timer", "重试定时器操作", "需要重新操作时"),
+            ]),
         }
 
 
@@ -655,7 +734,9 @@ def _time_to_timestamp(time: Any, unit: str = "seconds") -> Dict[str, Any]:
             return {
                 "code": "ERR_TIME_TO_TIMESTAMP",
                 "data": None,
-                "message": f"无法解析time: {time}"
+                "llm_data": None,
+                "message": f"无法解析time: {time}",
+                "next_actions": build_next_actions([("get_time", "获取当前时间戳", "解析失败时获取当前时间")]),
             }
 
         # 确保是offset-aware
@@ -682,13 +763,18 @@ def _time_to_timestamp(time: Any, unit: str = "seconds") -> Dict[str, Any]:
                 "unit": unit,
                 "iso": dt.isoformat(),
             },
+            "llm_data": {"timestamp": ts_value, "unit": unit},
             "message": f"时间戳: {ts_value} ({unit})"
         }
     except Exception as e:
         return {
             "code": "ERR_TIME_TO_TIMESTAMP",
             "data": None,
-            "message": f"时间转换失败: {str(e)}"
+            "llm_data": None,
+            "message": f"时间转换失败: {str(e)}",
+            "next_actions": build_next_actions([
+                ("get_time", "获取当前时间戳", "转换失败时获取当前时间"),
+            ]),
         }
 
 
@@ -702,7 +788,9 @@ def _timestamp_to_time(timestamp: Union[int, float], target_tz: str = "+08:00") 
             return {
                 "code": "ERR_TIMESTAMP_TO_TIME",
                 "data": None,
-                "message": f"无法解析timestamp: {timestamp}"
+                "llm_data": None,
+                "message": f"无法解析timestamp: {timestamp}",
+                "next_actions": build_next_actions([("get_time", "获取当前时间", "时间戳解析失败时")]),
             }
 
         # 解析目标时区
@@ -736,13 +824,18 @@ def _timestamp_to_time(timestamp: Union[int, float], target_tz: str = "+08:00") 
                 "timestamp": ts,
                 "timezone": target_tz,
             },
+            "llm_data": {"datetime": dt.strftime("%Y-%m-%d %H:%M:%S"), "timezone": target_tz},
             "message": f"时间: {dt.strftime('%Y-%m-%d %H:%M:%S')}"
         }
     except Exception as e:
         return {
             "code": "ERR_TIMESTAMP_TO_TIME",
             "data": None,
-            "message": f"时间戳转换失败: {str(e)}"
+            "llm_data": None,
+            "message": f"时间戳转换失败: {str(e)}",
+            "next_actions": build_next_actions([
+                ("get_time", "获取当前时间", "转换失败时获取当前时间"),
+            ]),
         }
 
 
@@ -751,11 +844,11 @@ def _time_next_n_workday(start: Optional[Union[int, float, str]] = None, n: int 
     try:
         dt = _parse_datetime_any(start) if start else datetime.now().astimezone()
         if dt is None:
-            return {"code": "ERR_TIME_NEXT_N_WORKDAY", "data": None, "message": f"无法解析start: {start}"}
+            return {"code": "ERR_TIME_NEXT_N_WORKDAY", "data": None, "llm_data": None, "message": f"无法解析start: {start}", "next_actions": build_next_actions([("check_date", "检查日期", "需要重新检查日期时")])}
         result_dates = _calc_next_n_workday(dt.date(), n)
-        return {"code": "SUCCESS", "data": result_dates, "message": f"第{n}个工作日: {result_dates[0] if result_dates else None}"}
+        return {"code": "SUCCESS", "data": result_dates, "llm_data": {"next_workday": result_dates[0] if result_dates else None, "n": n}, "message": f"第{n}个工作日: {result_dates[0] if result_dates else None}"}
     except Exception as e:
-        return {"code": "ERR_TIME_NEXT_N_WORKDAY", "data": None, "message": f"计算失败: {str(e)}"}
+        return {"code": "ERR_TIME_NEXT_N_WORKDAY", "data": None, "llm_data": None, "message": f"计算失败: {str(e)}", "next_actions": build_next_actions([("check_date", "检查日期", "需要重新检查日期时")])}
 
 
 # ===========================================================
@@ -779,14 +872,14 @@ def get_time(
             result = _time_format(timestamp=time_value, pattern=format)
         elif action == "to_timestamp":
             if time_value is None:
-                return {"code": "ERR_TIME_FORMAT", "data": None, "message": "action='to_timestamp'时time_value必填"}
+                return {"code": "ERR_TIME_FORMAT", "data": None, "llm_data": None, "message": "action='to_timestamp'时time_value必填", "next_actions": build_next_actions([("get_time", "获取当前时间", "time_value缺失时")])}
             result = _time_to_timestamp(time=time_value, unit="seconds")
         elif action == "from_timestamp":
             if time_value is None:
-                return {"code": "ERR_TIME_FORMAT", "data": None, "message": "action='from_timestamp'时time_value必填"}
+                return {"code": "ERR_TIME_FORMAT", "data": None, "llm_data": None, "message": "action='from_timestamp'时time_value必填", "next_actions": build_next_actions([("get_time", "获取当前时间", "time_value缺失时")])}
             result = _timestamp_to_time(timestamp=time_value, target_tz=target_tz)
         else:
-            return {"code": "ERR_INVALID_ACTION", "data": None, "message": f"不支持的action: {action}，可选: now/format/to_timestamp/from_timestamp"}
+            return {"code": "ERR_INVALID_ACTION", "data": None, "llm_data": None, "message": f"不支持的action: {action}，可选: now/format/to_timestamp/from_timestamp", "next_actions": build_next_actions([("tool_help", "查看get_time用法", "不确定action时", {"tool_name": "get_time"})])}
 
         if result.get("code") == "SUCCESS":
             result["next_actions"] = build_next_actions([
@@ -796,7 +889,7 @@ def get_time(
             ])
         return result
     except Exception as e:
-        return {"code": "ERR_TIME", "data": None, "message": f"处理失败: {str(e)}"}
+        return {"code": "ERR_TIME", "data": None, "llm_data": None, "message": f"处理失败: {str(e)}", "next_actions": build_next_actions([("get_time", "重试获取时间", "需要重新获取时")])}
 
 
 def time_add(delta: float, start: Optional[Union[int, float, str]] = None, unit: Literal["days", "hours", "minutes", "seconds", "months"] = "days") -> Dict[str, Any]:
@@ -805,6 +898,8 @@ def time_add(delta: float, start: Optional[Union[int, float, str]] = None, unit:
     """
     result = _time_add(delta=delta, start=start, unit=unit)
     if result["code"] != "SUCCESS":
+        if "next_actions" not in result:
+            result["next_actions"] = build_next_actions([("get_time", "获取当前时间", "计算失败时")])
         return result
 
     # 增加weekday/isoweekday字段（P15一致）
@@ -830,6 +925,8 @@ def time_diff(start: Union[int, float, str], end: Optional[Union[int, float, str
     """
     result = _time_diff(start=start, end=end)
     if result["code"] != "SUCCESS":
+        if "next_actions" not in result:
+            result["next_actions"] = build_next_actions([("get_time", "获取当前时间", "时间解析失败时")])
         return result
 
     # 从_time_diff的结果中提取信息，增加time_compare功能
@@ -871,7 +968,7 @@ def check_date(
     try:
         dt = _parse_datetime_any(date) if date else datetime.now().astimezone()
         if dt is None:
-            return {"code": "ERR_TIME_DATE", "data": None, "message": f"无法解析日期: {date}"}
+            return {"code": "ERR_TIME_DATE", "data": None, "llm_data": None, "message": f"无法解析日期: {date}", "next_actions": build_next_actions([("check_date", "重试日期检查", "日期格式错误时")])}
 
         date_obj = dt.date()
         isoweekday = dt.isoweekday()
@@ -901,14 +998,14 @@ def check_date(
         elif check_type == "workday":
             msg = "工作日" if is_workday else f"非工作日（{'周末' if is_weekend else '节假日：' + str(holiday_name)}）"
         else:
-            return {"code": "ERR_INVALID_CHECK_TYPE", "data": None, "message": f"不支持的check_type: {check_type}，可选: weekend/holiday/workday/next_workday"}
+            return {"code": "ERR_INVALID_CHECK_TYPE", "data": None, "llm_data": None, "message": f"不支持的check_type: {check_type}，可选: weekend/holiday/workday/next_workday", "next_actions": build_next_actions([("tool_help", "查看check_date用法", "不确定check_type时", {"tool_name": "check_date"})])}
 
-        return {"code": "SUCCESS", "data": result_data, "message": msg, "next_actions": build_next_actions([
+        return {"code": "SUCCESS", "data": result_data, "llm_data": {"date": result_data["date"], "is_weekend": is_weekend, "is_holiday": is_hol, "is_workday": is_workday, "holiday_name": holiday_name}, "message": msg, "next_actions": build_next_actions([
             ("time_add", "计算下一个工作日偏移", "需要排程计算时"),
             ("check_date", "检查其他日期属性", "需要判断其他日期时"),
         ])}
     except Exception as e:
-        return {"code": "ERR_TIME_DATE", "data": None, "message": f"检查失败: {str(e)}"}
+        return {"code": "ERR_TIME_DATE", "data": None, "llm_data": None, "message": f"检查失败: {str(e)}", "next_actions": build_next_actions([("check_date", "重试日期检查", "需要重新检查时")])}
 
 
 def timezone_convert(
@@ -929,14 +1026,14 @@ def timezone_convert(
             result = _time_local_to_utc(local_time=time_value, source_tz=tz)
         elif direction == "any":
             if not tz:
-                return {"code": "ERR_TIME_TZ", "data": None, "message": "direction='any'时tz(源时区)必填"}
+                return {"code": "ERR_TIME_TZ", "data": None, "llm_data": None, "message": "direction='any'时tz(源时区)必填", "next_actions": build_next_actions([("timezone_convert", "重试时区转换", "需要指定时区时")])}
             utc_result = _time_local_to_utc(local_time=time_value, source_tz=tz)
             if utc_result["code"] != "SUCCESS":
                 return utc_result
             utc_str = utc_result["data"].get("iso", utc_result["data"].get("utc_time", ""))
             result = _time_utc_to_local(utc_time=utc_str, target_tz=None)
         else:
-            return {"code": "ERR_INVALID_DIRECTION", "data": None, "message": f"不支持的direction: {direction}，可选: utc_to_local/local_to_utc/any"}
+            return {"code": "ERR_INVALID_DIRECTION", "data": None, "llm_data": None, "message": f"不支持的direction: {direction}，可选: utc_to_local/local_to_utc/any", "next_actions": build_next_actions([("tool_help", "查看timezone_convert用法", "不确定direction时", {"tool_name": "timezone_convert"})])}
 
         if result.get("code") == "SUCCESS":
             result["next_actions"] = build_next_actions([
@@ -945,7 +1042,7 @@ def timezone_convert(
             ])
         return result
     except Exception as e:
-        return {"code": "ERR_TIME_TZ", "data": None, "message": f"时区转换失败: {str(e)}"}
+        return {"code": "ERR_TIME_TZ", "data": None, "llm_data": None, "message": f"时区转换失败: {str(e)}", "next_actions": build_next_actions([("timezone_convert", "重试时区转换", "需要重新转换时")])}
 
 
 async def timer(
@@ -962,18 +1059,18 @@ async def timer(
     try:
         if action == "set":
             if delay is None or delay <= 0:
-                return {"code": "ERR_TIMER_PARAM", "data": None, "message": "delay必须大于0"}
+                return {"code": "ERR_TIMER_PARAM", "data": None, "llm_data": None, "message": "delay必须大于0", "next_actions": build_next_actions([("timer", "重试设置定时器", "需要重新设置时")])}
             if not callback:
-                return {"code": "ERR_TIMER_PARAM", "data": None, "message": "callback必填"}
+                return {"code": "ERR_TIMER_PARAM", "data": None, "llm_data": None, "message": "callback必填", "next_actions": build_next_actions([("timer", "重试设置定时器", "需要重新设置时")])}
             result = await _timer_set(delay=delay, callback=callback, callback_data=callback_data)
         elif action == "clear":
             if not timer_id:
-                return {"code": "ERR_TIMER_PARAM", "data": None, "message": "timer_id必填"}
+                return {"code": "ERR_TIMER_PARAM", "data": None, "llm_data": None, "message": "timer_id必填", "next_actions": build_next_actions([("timer", "列出定时器", "需要查看现有定时器时", {"action": "list"})])}
             result = await _timer_clear(timer_id=timer_id)
         elif action == "list":
             result = _timer_list(limit=limit)
         else:
-            return {"code": "ERR_INVALID_ACTION", "data": None, "message": f"不支持的action: {action}，可选: set/clear/list"}
+            return {"code": "ERR_INVALID_ACTION", "data": None, "llm_data": None, "message": f"不支持的action: {action}，可选: set/clear/list", "next_actions": build_next_actions([("tool_help", "查看timer用法", "不确定action时", {"tool_name": "timer"})])}
 
         if isinstance(result, dict) and result.get("code") == "SUCCESS":
             result["next_actions"] = build_next_actions([
@@ -981,6 +1078,6 @@ async def timer(
             ])
         return result
     except Exception as e:
-        return {"code": "ERR_TIMER", "data": None, "message": f"定时器操作失败: {str(e)}"}
+        return {"code": "ERR_TIMER", "data": None, "llm_data": None, "message": f"定时器操作失败: {str(e)}", "next_actions": build_next_actions([("timer", "重试定时器操作", "需要重新操作时")])}
 
 
