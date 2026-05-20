@@ -870,7 +870,7 @@ class FileTools:
             def _list_sync():
                 nonlocal _list_timed_out
                 import fnmatch
-                _exclude = exclude_patterns or []
+                _exclude = []  # exclude_patterns已从参数中移除 - 小健 2026-05-20
                 entries = []
                 stats = {"total_size": 0, "dir_count": 0, "file_count": 0}
                 ext_counter: Dict[str, int] = {}

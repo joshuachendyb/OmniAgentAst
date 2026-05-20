@@ -248,8 +248,8 @@ class ToolRegistry:
         ToolCategory.NETWORK: "网络通信工具",
         ToolCategory.SYSTEM: "系统/环境工具",
         ToolCategory.DESKTOP: "桌面工具",
-        ToolCategory.DOCUMENT: "文档/数据库工具",
-        ToolCategory.META: "元/时间工具",
+        ToolCategory.DOCUMENT: "文档(含数据分析与数据库)工具",
+        ToolCategory.META: "时间/元工具",
     }
 
     def __init__(self):
