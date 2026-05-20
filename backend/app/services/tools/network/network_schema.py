@@ -126,7 +126,7 @@ class NetworkDiagnoseInput(BaseModel):
         default=4, ge=1, le=20, description="ping次数。mode='ping'时生效，默认4次，最大20次"
     )
     timeout: int = Field(
-        default=5, ge=1, le=30, description="超时秒数，默认5秒"
+        default=5, ge=1, le=30, description="超时时间（秒），默认5秒，最长30秒。mode='ping'时每个ping包的等待时间，mode='port'时每次TCP连接的超时"
     )
 
 

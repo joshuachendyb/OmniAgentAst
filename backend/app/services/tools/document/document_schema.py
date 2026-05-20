@@ -35,7 +35,7 @@ class WriteDocumentInput(BaseModel):
     paragraphs: Optional[List[str]] = Field(default=None, description="段落列表（DOCX/PDF有效）")
     title: Optional[str] = Field(default=None, description="文档标题（DOCX/PDF/PPTX有效）")
     table_data: Optional[List] = Field(default=None, description="表格数据二维数组（DOCX/PDF有效）")
-    data: Optional[Dict[str, Any]] = Field(default=None, description="Excel数据{headers, rows}（XLSX有效）")
+    data: Optional[Dict[str, Any]] = Field(default=None, description="写入的数据。XLSX格式: {\"headers\": [\"列1\",\"列2\"], \"rows\": [[\"a\",\"b\"]]}；DOCX格式: {\"title\": \"标题\", \"content\": [{\"type\": \"paragraph\", \"text\": \"段落内容\"}]}；PDF暂不支持写入")
     sheet_name: str = Field(default="Sheet1", description="Excel工作表名（XLSX有效）")
     slides: Optional[List[Dict[str, str]]] = Field(default=None, description="PPT幻灯片列表（PPTX有效）")
 
@@ -44,4 +44,4 @@ class ConvertDocumentInput(BaseModel):
     """convert_document 工具的输入参数 - 小沈 2026-05-05"""
     input_path: str = Field(..., description="输入文件路径。支持.docx/.doc/.xlsx/.xls/.pptx/.ppt/.odt/.ods格式")
     output_format: Literal["pdf"] = Field(default="pdf", description="目标格式。可选值：pdf")
-    output_path: Optional[str] = Field(default=None, description="输出文件路径")
+    output_path: Optional[str] = Field(default=None, description="输出文件保存路径，含文件名和扩展名。如 D:/output.pdf。不填则自动在原文件同目录生成同名文件，扩展名为目标格式")

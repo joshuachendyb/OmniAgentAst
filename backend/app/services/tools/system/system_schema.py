@@ -109,7 +109,7 @@ class ListProcessesInput(BaseModel):
     filter_pid: Optional[int] = Field(
         default=None,
         ge=1,
-        description="按PID过滤"
+        description="按进程PID精确过滤。只返回PID等于此值的进程信息。不填或填None则返回所有进程"
     )
     user: Optional[str] = Field(
         default=None,

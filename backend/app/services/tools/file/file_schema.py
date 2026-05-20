@@ -26,7 +26,7 @@ Author: 小沈 - 2026-03-21
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any, Literal
+from typing import Optional, List, Dict, Any, Literal, Union
 
 
 # ============================================================
@@ -427,9 +427,9 @@ class DataFileFormatInput(BaseModel):
         default=None,
         description="强制指定格式：json/yaml/toml/ini/xml/properties。不填则根据文件扩展名自动检测"
     )
-    data: Optional[Any] = Field(
+    data: Optional[Union[dict, list]] = Field(
         default=None,
-        description="write模式要写入的数据（必填）。类型取决于格式：JSON/YAML/TOML传dict或list，INI/XML/Properties暂不支持写入。read模式不填"
+        description="write模式要写入的数据。JSON/YAML/TOML格式传dict或list，Properties传dict。INI/XML暂不支持写入。read模式不填此字段"
     )
     encoding: str = Field(
         default="utf-8",

@@ -31,7 +31,7 @@ class GenerateChartInput(BaseModel):
     )
     title: Optional[str] = Field(
         default=None,
-        description="图表标题（可选）"
+        description="图表标题，显示在图的正上方。建议使用能概括数据内容的简短标题，不填则不显示标题"
     )
     x_label: Optional[str] = Field(
         default=None,
@@ -59,15 +59,15 @@ class AnalyzeDataInput(BaseModel):
     )
     group_by: Optional[str] = Field(
         default=None,
-        description="分组字段（可选）"
+        description="分组统计的列名。按该列的值对数据进行分组，对每组分别统计。不填则对所有数据整体统计"
     )
     sort_by: Optional[str] = Field(
         default=None,
-        description="排序字段（可选）"
+        description="排序的列名。按此列的值对结果升序排列。需搭配 top_n 使用以只获取前N条。不填则不排序"
     )
     top_n: Optional[int] = Field(
         default=None,
-        description="返回前N条（可选）"
+        description="只返回排序后的前N条结果。需搭配 sort_by 指定排序列。不填则返回全部结果"
     )
     max_rows: Optional[int] = Field(
         default=None,
@@ -95,9 +95,9 @@ class FilterDataInput(BaseModel):
     )
     sort_by: Optional[str] = Field(
         default=None,
-        description="排序字段（可选）"
+        description="排序的列名。按此列的值对结果升序排列。需搭配 top_n 使用以只获取前N条。不填则不排序"
     )
     top_n: Optional[int] = Field(
         default=None,
-        description="返回前N条（可选）"
+        description="只返回排序后的前N条结果。需搭配 sort_by 指定排序列。不填则返回全部结果"
     )

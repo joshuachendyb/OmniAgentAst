@@ -21,7 +21,7 @@ class ScreenRecordInput(BaseModel):
     """screen_record 工具的输入参数"""
     duration: int = Field(..., ge=1, le=300, description="录制时长，单位为秒，最大300秒（5分钟）")  # 小健 2026-05-19: 加上限防OOM
     output_path: Optional[str] = Field(default=None, description="输出文件路径（可选）。不传则保存到系统临时目录如<temp>/screen_record_<时间戳>.mp4")
-    fps: int = Field(default=15, ge=1, le=60, description="帧率。默认为15")  # 小健 2026-05-19: 加范围约束
+    fps: int = Field(default=15, ge=1, le=60, description="录制帧率（每秒采集的画面帧数）。帧率越高视频越流畅但文件体积越大。默认15帧/秒，范围1-60")  # 小健 2026-05-19: 加范围约束
 
 
 class OcrInput(BaseModel):
