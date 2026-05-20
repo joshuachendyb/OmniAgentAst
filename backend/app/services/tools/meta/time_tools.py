@@ -877,7 +877,7 @@ def get_time(
         elif action == "from_timestamp":
             if time_value is None:
                 return {"code": "ERR_TIME_FORMAT", "data": None, "llm_data": None, "message": "action='from_timestamp'时time_value必填", "next_actions": build_next_actions([("get_time", "获取当前时间", "time_value缺失时")])}
-            result = _timestamp_to_time(timestamp=time_value, target_tz=target_tz)
+            result = _timestamp_to_time(timestamp=time_value, target_tz=target_tz or "+08:00")
         else:
             return {"code": "ERR_INVALID_ACTION", "data": None, "llm_data": None, "message": f"不支持的action: {action}，可选: now/format/to_timestamp/from_timestamp", "next_actions": build_next_actions([("tool_help", "查看get_time用法", "不确定action时", {"tool_name": "get_time"})])}
 
