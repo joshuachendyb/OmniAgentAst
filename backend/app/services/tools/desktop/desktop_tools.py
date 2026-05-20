@@ -29,7 +29,7 @@ DESKTOP Tools - 桌面工具实现（窗口管理）
 import platform
 from typing import Any, Dict, List, Optional, Literal
 from app.utils.logger import logger
-from app.services.tools.tool_result_utils import build_next_actions  # 小沈 2026-05-19
+from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
 
 _HAS_WIN32 = False
 _win32gui = None
@@ -161,11 +161,15 @@ def list_windows(
 
         return {
             "code": "SUCCESS",
-            "data": {
+            "data": truncate_data_for_frontend({
                 "windows": windows,
                 "total": len(windows)
-            },
+            }),
             "message": f"共找到 {len(windows)} 个窗口",
+            "llm_data": {
+                "总数": len(windows),
+                "窗口预览": [{"title": w.get("title","")[:40], "state": w.get("state","")} for w in windows[:20]]
+            },
             "capabilities_used": ["win32gui"],
             "next_actions": build_next_actions([("get_window_info", "获取窗口详情", "需要查看特定窗口信息时"), ("window_control", "控制窗口", "需要操作窗口时")])
         }

@@ -28,7 +28,7 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 from datetime import datetime
 
-from app.services.tools.tool_result_utils import build_next_actions  # 小沈 2026-05-19
+from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, truncate_text  # 小沈 2026-05-20
 
 
 def _check_pyautogui() -> bool:
@@ -325,7 +325,11 @@ def ocr(image_path: str, language: str = "eng") -> Dict[str, Any]:
 
         img = Image.open(image_path)
         text = pytesseract.image_to_string(img, lang=language)
-        return {"code": "SUCCESS", "data": {"text": text, "language": language, "char_count": len(text)}, "message": f"OCR识别完成: {len(text)}个字符",
+        _llm_text = text[:5000]
+        if len(text) > 5000:
+            _llm_text += f"...(原文{len(text)}字符)"
+        return {"code": "SUCCESS", "data": truncate_data_for_frontend({"text": text, "language": language, "char_count": len(text)}), "message": f"OCR识别完成: {len(text)}个字符",
+                "llm_data": {"字符数": len(text), "语言": language, "文本预览": _llm_text},
                 "next_actions": build_next_actions([("screen_capture", "重新截图", "需要识别其他区域时")]),
                 "capabilities_used": ["pytesseract", "PIL"]}
     except Exception as e:
@@ -343,7 +347,7 @@ def _read_clipboard() -> Dict[str, Any]:
         _llm = {"内容": text[:5000]}
         if len(text) > 5000:
             _llm["截断"] = f"原文{len(text)}字符"
-        return {"code": "SUCCESS", "data": {"text": text}, "message": "剪贴板读取成功", "llm_data": _llm, "capabilities_used": ["pyperclip"]}
+        return {"code": "SUCCESS", "data": truncate_data_for_frontend({"text": text}), "message": "剪贴板读取成功", "llm_data": _llm, "capabilities_used": ["pyperclip"]}
     except ImportError:
         try:
             import ctypes
@@ -369,7 +373,7 @@ def _write_clipboard(content: str) -> Dict[str, Any]:
     try:
         import pyperclip  # 修复：正确库名pyperclip - 小沈 2026-05-04
         pyperclip.copy(content)
-        return {"code": "SUCCESS", "data": {"content": content}, "message": "剪贴板写入成功", "capabilities_used": ["pyperclip"]}
+        return {"code": "SUCCESS", "data": truncate_data_for_frontend({"content": content}), "message": "剪贴板写入成功", "capabilities_used": ["pyperclip"]}
     except ImportError:
         try:
             import ctypes
