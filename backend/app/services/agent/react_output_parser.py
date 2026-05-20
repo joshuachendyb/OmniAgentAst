@@ -50,6 +50,38 @@ def _add_reasoning_warning(result: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # =============================================================================
+# 【修复A2+A3 2026-05-20 小健】finish result 类型标准化共享函数
+# =============================================================================
+
+def _normalize_result_to_str(raw_result) -> str:
+    """
+    将finish的result字段标准化为字符串类型
+
+    解决旧格式路径和混合文本路径中result字段缺类型标准化的问题(A2+A3)。
+    新格式路径(_build_action_from_new_format)已有此逻辑，此函数提取为共享实现。
+
+    标准化规则:
+    - int/float → str(value)
+    - bool → str(value)  注意: bool检查必须在int/float之前(isinstance(True, int)为True)
+    - list/dict → json.dumps(value, ensure_ascii=False)
+    - str → 原值返回
+    - None/其他 → 空字符串
+
+    作者: 小健 2026-05-20
+    """
+    if isinstance(raw_result, bool):
+        return str(raw_result)
+    elif isinstance(raw_result, (int, float)):
+        return str(raw_result)
+    elif isinstance(raw_result, (list, dict)):
+        return json.dumps(raw_result, ensure_ascii=False)
+    elif isinstance(raw_result, str):
+        return raw_result
+    else:
+        return ""
+
+
+# =============================================================================
 # 步骤1.1：定义REACT_KEYWORDS中英文关键词映射表
 # =============================================================================
 
@@ -113,7 +145,7 @@ def _process_json_result(data: Dict, output: str) -> Optional[Dict[str, Any]]:
     
     # 旧字段格式 (action/action_input)
     if "action" in data:
-        return _build_action_from_old_format(data)
+        return _build_action_from_old_format(data, output)
     
     # 无匹配模式 → 交给下一个handler
     return None
@@ -193,14 +225,7 @@ def _build_action_from_new_format(data: Dict, output: str) -> Dict[str, Any]:
     # 【修复 2026-05-19 小沈】result字段标准化：数字/布尔/list/dict→字符串
     if is_finish and data.get("tool_params", {}).get("result"):
         raw_result = data["tool_params"]["result"]
-        if isinstance(raw_result, (int, float)):
-            response = str(raw_result)
-        elif isinstance(raw_result, bool):
-            response = str(raw_result)
-        elif isinstance(raw_result, (list, dict)):
-            response = json.dumps(raw_result, ensure_ascii=False)
-        else:
-            response = raw_result
+        response = _normalize_result_to_str(raw_result)
     else:
         response = data.get("response", "")
     
@@ -223,26 +248,32 @@ def _build_action_from_new_format(data: Dict, output: str) -> Dict[str, Any]:
     return result
 
 
-def _build_action_from_old_format(data: Dict) -> Dict[str, Any]:
-    """从旧格式JSON构造action/answer结果（action/action_input）"""
+def _build_action_from_old_format(data: Dict, output: str = "") -> Dict[str, Any]:
+    """从旧格式JSON构造action/answer结果（action/action_input）
+
+    【修复A2 2026-05-20 小健】finish result 使用 _normalize_result_to_str 标准化
+    【修复A1 2026-05-20 小健】tool_params 使用 _process_tool_params 统一管道
+    """
     action_name = data["action"]
     is_finish = action_name == "finish"
-    
+
     if is_finish and data.get("action_input", {}).get("result"):
-        response = data["action_input"]["result"]
+        raw_result = data["action_input"]["result"]
+        response = _normalize_result_to_str(raw_result)
     else:
         response = ""
-    
-    tool_params = data.get("action_input", data.get("args", {}))
+
+    raw_params = data.get("action_input", data.get("args", {}))
+    processed_tool_params = None if is_finish else _process_tool_params(
+        raw_params, action_name, output
+    )
     result = {
         "type": "answer" if is_finish else "action",
         "thought": data.get("thought", ""),
         "content": data.get("thought", ""),
         "reasoning": data.get("reasoning", ""),
         "tool_name": None if is_finish else action_name,
-        "tool_params": None if is_finish else _filter_tool_params(
-            _normalize_tool_params_content(tool_params)
-        ),
+        "tool_params": processed_tool_params,
         "response": response
     }
     if "_pending_calls" in data:
@@ -395,9 +426,11 @@ def _handle_mixed_text_json(output) -> Optional[Dict[str, Any]]:
         tool_params = {}
     
     # finish 类型
+    # 【修复A3 2026-05-20 小健】result 使用 _normalize_result_to_str 标准化
     if tool_name == "finish":
         logger.info("[parse_react_response] 混合文本中提取到finish JSON")
-        result_text = tool_params.get("result", "") if tool_params else ""
+        raw_result = tool_params.get("result") if tool_params else None
+        result_text = _normalize_result_to_str(raw_result) if raw_result is not None else ""
         return {
             "type": "answer",
             "thought": json_data.get("thought", ""),
@@ -1031,24 +1064,21 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
     
     tool_name = data.get("tool_name")
     # 【2026-04-28 小沈修复】支持args字段（LLM可能返回args而非tool_params）
-    tool_params = data.get("tool_params", data.get("args", {}))
+    raw_params = data.get("tool_params", data.get("args", {}))
     # 【2026-04-28 小沈修复】thought字段独立获取，不被content字段覆盖
     thought = data.get("thought", "")
     content = data.get("content", thought)
     reasoning = data.get("reasoning", "")
-    
-    # 【2026-04-28 小沈新增】标准化tool_params中的content字段类型
-    # 处理数字、布尔值等非字符串类型
-    if isinstance(tool_params, dict):
-        tool_params = _normalize_tool_params_content(tool_params)
-    
-    # 【2026-04-28 小沈新增】过滤tool_params中的非参数字段（如reasoning、thought等）
-    if isinstance(tool_params, dict):
-        tool_params = _filter_tool_params(tool_params)
-    
+
+    # 【修复A4 2026-05-20 小健】使用 _process_tool_params 统一管道替换 inline 三步
+    # 同时修复 raw_output=None 的参数补充能力不足问题
+    tool_params = _process_tool_params(raw_params, tool_name, None)
+
     # finish 类型处理
+    # 【修复A4 2026-05-20 小健】finish result 使用 _normalize_result_to_str 标准化
     if tool_name == "finish":
-        result_text = tool_params.get("result", "") if isinstance(tool_params, dict) else ""
+        raw_result = tool_params.get("result") if isinstance(tool_params, dict) else None
+        result_text = _normalize_result_to_str(raw_result) if raw_result is not None else ""
         return {
             "type": "answer",
             "thought": content,
@@ -1081,19 +1111,16 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
         return _add_reasoning_warning(result)
 
     # action 类型
-    # 【2026-04-28 小沈修复】thought字段独立获取，不被content字段覆盖
-    # 【2026-04-28 小沈新增】检测并补充缺失的必需参数
+    # 【修复A4 2026-05-20 小健】tool_params 已由 _process_tool_params 完整处理
+    # (normalize → filter → supplement)，无需再次 supplement
     # 【改进7 2026-05-01 小沈 小健】添加reasoning验证
-    final_tool_params = tool_params if tool_params is not None else None
-    if final_tool_params:
-        final_tool_params = _supplement_missing_params(tool_name, final_tool_params, None)
     result = {
         "type": "action",
         "thought": thought,
         "content": content,
         "reasoning": reasoning,
         "tool_name": tool_name,
-        "tool_params": final_tool_params,
+        "tool_params": tool_params,
         "response": None,
         "error": None
     }
