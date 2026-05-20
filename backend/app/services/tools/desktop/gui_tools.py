@@ -155,7 +155,7 @@ def _screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[
 
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         img.save(output_path)
-        return {"code": "SUCCESS", "data": output_path, "message": f"截图保存到: {output_path}",
+        return {"code": "SUCCESS", "data": {"image_path": output_path}, "message": f"截图保存到: {output_path}",
                 "capabilities_used": ["pyautogui"]}
     except Exception as e:
         return {"code": "ERR_SCREENSHOT", "data": None, "message": f"截图失败: {str(e)}"}
