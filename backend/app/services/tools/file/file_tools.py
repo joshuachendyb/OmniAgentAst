@@ -652,15 +652,6 @@ class FileTools:
                 "content": None
             }, "write_text_file")
         
-        if not self.task_id:
-            self.task_id = _current_task_id.get(None)
-        if not self.task_id:
-            return _to_unified_format({
-                "success": False,
-                "error": "No active task",
-                "operation_id": None
-            }, "write_text_file")
-        
         path = Path(file_path)
         
         # 【小健 2026-05-03】编码自动检测：encoding=None时自动检测
@@ -694,12 +685,15 @@ class FileTools:
                 }, "write_text_file")
         
         try:
-            operation_id = self.safety.record_operation(
-                task_id=self.task_id,
-                operation_type=OperationType.CREATE,
-                destination_path=path,
-                sequence_number=self._get_next_sequence()
-            )
+            if self.task_id:
+                operation_id = self.safety.record_operation(
+                    task_id=self.task_id,
+                    operation_type=OperationType.CREATE,
+                    destination_path=path,
+                    sequence_number=self._get_next_sequence()
+                )
+            else:
+                operation_id = None
             
             def _write_sync():
                 import tempfile
@@ -1060,15 +1054,6 @@ class FileTools:
                 "operation_id": None
             }, "file_operation")
         
-        if not self.task_id:
-            self.task_id = _current_task_id.get(None)
-        if not self.task_id:
-            return _to_unified_format({
-                "success": False,
-                "error": "No active task",
-                "operation_id": None
-            }, "file_operation")
-        
         path = Path(file_path)
         
         try:
@@ -1080,13 +1065,15 @@ class FileTools:
                     "operation_id": None
                 }, "file_operation")
             
-            # 记录操作
-            operation_id = self.safety.record_operation(
-                task_id=self.task_id,
-                operation_type=OperationType.DELETE,
-                source_path=path,
-                sequence_number=self._get_next_sequence()
-            )
+            if self.task_id:
+                operation_id = self.safety.record_operation(
+                    task_id=self.task_id,
+                    operation_type=OperationType.DELETE,
+                    source_path=path,
+                    sequence_number=self._get_next_sequence()
+                )
+            else:
+                operation_id = None
             
             # 定义删除操作 - 小沈 2026-05-19 追踪删除方式
             deletion_info = {}  # 可变容器追踪删除方式: "send2trash" 或 "permanent"
@@ -1198,15 +1185,6 @@ class FileTools:
                 "operation_id": None
             }, "file_operation")
         
-        if not self.task_id:
-            self.task_id = _current_task_id.get(None)
-        if not self.task_id:
-            return _to_unified_format({
-                "success": False,
-                "error": "No active task",
-                "operation_id": None
-            }, "file_operation")
-        
         src = Path(source_path)
         dst = Path(destination_path)
         
@@ -1218,14 +1196,16 @@ class FileTools:
                     "operation_id": None
                 }, "file_operation")
             
-            # 记录操作
-            operation_id = self.safety.record_operation(
-                task_id=self.task_id,
-                operation_type=OperationType.MOVE,
-                source_path=src,
-                destination_path=dst,
-                sequence_number=self._get_next_sequence()
-            )
+            if self.task_id:
+                operation_id = self.safety.record_operation(
+                    task_id=self.task_id,
+                    operation_type=OperationType.MOVE,
+                    source_path=src,
+                    destination_path=dst,
+                    sequence_number=self._get_next_sequence()
+                )
+            else:
+                operation_id = None
             
             # 定义移动操作
             def _move_sync():
