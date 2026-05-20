@@ -380,6 +380,13 @@ def filter_data(
             operator = cond.get("operator", "eq")
             value = cond.get("value")
 
+            if not column:
+                return {
+                    "code": "ERR_FILTER_DATA",
+                    "data": None,
+                    "message": f"条件缺少column字段: {cond}。每个条件必须指定column"
+                }
+
             if column not in df.columns:
                 warnings.append(f"列'{column}'不存在，已跳过")
                 continue
