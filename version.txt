@@ -17,6 +17,21 @@ v0.13.10
 2. `network_tools.py:787-789` - 删除search_web中从未引用的proxy_config死代码(dict定义)
 3. `shell_tools.py:163-177` - 修复execute_shell_command编码冗余: 去除重复utf-8重试，直接fallback到gbk
 
+### refactor Schema精简警告注释更新 + 文档重命名
+
+| commit | 说明 |
+|--------|------|
+| 22ac4a88 | refactor: 更新6个工具文件Schema精简警告注释+重命名Prompt分析文档+升级v0.13.10 - 小沈-2026-05-20 |
+
+**变更详情**:
+1. `desktop_tools.py` - 更新desktop_control参数精简警告注释
+2. `document_schema.py` - 更新document参数精简警告注释
+3. `file_tools.py` - 更新ignore_case/type参数精简警告注释
+4. `time_tools.py` - 更新time参数精简警告注释
+5. `reg_tools.py` - 更新registry_control参数精简警告注释
+6. `system_tools.py` - 更新system参数精简警告注释
+7. 文档重命名: `Time类Prompt参数命名问题分析` → `系统的Prompt优劣势分析`
+
 ---
 
 v0.13.9
