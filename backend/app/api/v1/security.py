@@ -20,9 +20,12 @@ class SecurityCheckRequest(BaseModel):
 
 
 class SecurityCheckData(BaseModel):
-    """安全检查数据"""
+    """安全检查数据 - 统一格式 小健 2026-05-21"""
     score: int = Field(..., description="风险分数：0-10分，整数")
     message: str = Field(..., description="用户可见的提示信息")
+    is_safe: bool = Field(True, description="是否安全")
+    risk_level: str = Field("safe", description="风险等级: safe/low/medium/high/critical")
+    blocked: bool = Field(False, description="是否被拦截")
 
 
 class SecurityCheckResponse(BaseModel):
@@ -53,17 +56,29 @@ async def check_security(request: SecurityCheckRequest):
     ```
     """
     try:
-        # 使用CRSS评分系统计算风险分数
         score = calculate_risk_score(request.command)
-        
-        # 获取用户提示信息
         message = get_risk_message(score, request.command)
+        
+        # 统一格式 - 小健 2026-05-21
+        if score <= 3:
+            is_safe, risk_level, blocked = True, "safe", False
+        elif score <= 5:
+            is_safe, risk_level, blocked = True, "low", False
+        elif score <= 7:
+            is_safe, risk_level, blocked = False, "medium", False
+        elif score <= 9:
+            is_safe, risk_level, blocked = False, "high", True
+        else:
+            is_safe, risk_level, blocked = False, "critical", True
         
         return SecurityCheckResponse(
             success=True,
             data=SecurityCheckData(
                 score=score,
-                message=message
+                message=message,
+                is_safe=is_safe,
+                risk_level=risk_level,
+                blocked=blocked
             ),
             error=None
         )
