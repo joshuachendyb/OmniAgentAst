@@ -33,7 +33,7 @@ class HttpRequestInput(BaseModel):
         default=None, description="JSON请求体(POST/PUT/PATCH时使用)，自动设Content-Type为application/json"
     )
     timeout: int = Field(
-        default=30000, ge=1000, le=600000, description="超时毫秒数，默认30000(30秒)"
+        default=30000, ge=1, le=600000, description="超时毫秒数，默认30000(30秒)。最小1毫秒，最大600000(10分钟)"
     )
     proxy: Optional[str] = Field(
         default=None, description="代理服务器地址，如 http://127.0.0.1:7890。不设则尝试环境变量HTTPS_PROXY/HTTP_PROXY"
