@@ -157,24 +157,18 @@ def execute_shell_command(
             executable=executable
         )
         
-        # 手动解码，处理编码问题
+        # 手动解码，处理编码问题（先UTF-8，失败后尝试GBK）
         stdout_str = ""
         stderr_str = ""
         try:
             stdout_str = result.stdout.decode("utf-8") if result.stdout else ""
         except (UnicodeDecodeError, AttributeError):
-            try:
-                stdout_str = result.stdout.decode("utf-8") if result.stdout else ""
-            except (UnicodeDecodeError, AttributeError):
-                stdout_str = result.stdout.decode("gbk") if result.stdout else ""
+            stdout_str = result.stdout.decode("gbk") if result.stdout else ""
         
         try:
             stderr_str = result.stderr.decode("utf-8") if result.stderr else ""
         except (UnicodeDecodeError, AttributeError):
-            try:
-                stderr_str = result.stderr.decode("utf-8") if result.stderr else ""
-            except (UnicodeDecodeError, AttributeError):
-                stderr_str = result.stderr.decode("gbk") if result.stderr else ""
+            stderr_str = result.stderr.decode("gbk") if result.stderr else ""
         
         if result.returncode == 0:
             if stderr_str and stderr_str.strip():

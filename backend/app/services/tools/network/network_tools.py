@@ -558,7 +558,7 @@ async def fetch_webpage(
         return {
             "code": "ERR_NETWORK_TIMEOUT",
             "data": None,
-            "message": f"获取网页超时（{timeout}秒）：{url}"
+            "message": f"获取网页超时（{timeout_sec:.1f}秒）：{url}"
         }
     except httpx.HTTPStatusError as e:
         return {
@@ -784,10 +784,6 @@ async def search_web(
                 "message": "搜索查询至少需要2个字符"
             }
         
-        proxy_config = None
-        if proxy:
-            proxy_config = {"http://": proxy, "https://": proxy}
-    
     # ===== 第一引擎：Parallel MCP =====
         results = await _search_parallel_mcp(query, num_results, proxy)
         engine_used = "Parallel"
