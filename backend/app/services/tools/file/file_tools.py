@@ -68,7 +68,7 @@ from app.services.safety.file.file_safety import OperationType
 from app.utils.visualization import get_visualizer
 from app.utils.logger import logger
 from app.services.tools.tool_meta import get_timeout
-from app.services.tools.tool_result_utils import format_file_content_llm, format_output_for_llm, build_next_actions, truncate_data_for_frontend, truncate_text, DEFAULT_MAX_FILE_CHARS  # 小沈-2026-05-15, 2026-05-20增加截断安全
+from app.services.tools.tool_result_utils import format_file_content_llm, format_output_for_llm, build_next_actions, truncate_data_for_frontend, truncate_text, make_json_safe, DEFAULT_MAX_FILE_CHARS  # 小沈-2026-05-15, 2026-05-20增加截断安全, 2026-05-21小健修复make_json_safe缺失
 
 # 【重要】延迟导入，避免循环导入问题
 # file_tools.py 在 tools 模块加载时被导入，此时 agent 还未初始化完成
@@ -1281,7 +1281,9 @@ class FileTools:
     ) -> Dict[str, Any]:
         """搜索文件名 — 小沈 2026-05-19 精简参数(9→7)
         【FIX 2026-05-20 小健】exclude_patterns已从参数中删除（schema已精简）
+        【FIX 2026-05-21 小健】sortBy未定义bug修复（schema精简时遗漏了内部引用）
         """
+        sortBy = "name"
         # 验证搜索路径
         is_valid, error_msg = self._validate_path(search_dir)
         if not is_valid:
