@@ -1062,6 +1062,13 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
     if explicit_type == "chunk":
         return _build_chunk_result(data)
     
+    # 【修复 2026-05-21 小健】支持旧格式action字段
+    # 当dict含action但不含tool_name时，委托给_build_action_from_old_format处理
+    # 否则_create_action_result_from_dict会因tool_name为空降级为implicit（bug）
+    if "action" in data and "tool_name" not in data:
+        output = json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+        return _build_action_from_old_format(data, output)
+
     tool_name = data.get("tool_name")
     # 【2026-04-28 小沈修复】支持args字段（LLM可能返回args而非tool_params）
     raw_params = data.get("tool_params", data.get("args", {}))
