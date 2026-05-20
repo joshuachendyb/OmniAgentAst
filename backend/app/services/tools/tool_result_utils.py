@@ -13,12 +13,16 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# 【修复 小健 2026-05-16】统一阈值原则：≤5K全给不截断，超5K才截断
+# 【截断安全阈值】小沈 2026-05-20 — 集中管理，方便后续调整
+# LLM通道: 给LLM的精简数据，严格控制上下文占用
 DEFAULT_MAX_OUTPUT_CHARS = 5000   # shell/code执行输出（stdout+stderr合计）
 DEFAULT_MAX_FILE_CHARS = 8000     # 文件内容（代码文件常需完整内容才能修改）
 DEFAULT_MAX_DOC_CHARS = 10000     # PDF/DOCX文档
 DEFAULT_MAX_CLIPBOARD_CHARS = 5000
 DEFAULT_MAX_ENV_VALUE_CHARS = 1000
+# DATA通道: 给前端的结构化数据，1M上限防OOM
+DEFAULT_MAX_DATA_CHARS = 1000000  # data字段总字符上限(1M)
+DEFAULT_MAX_LIST_ITEMS = 10000    # data中列表项上限
 
 
 def truncate_text(text: str, max_chars: int, suffix: str = None) -> tuple:
@@ -84,6 +88,47 @@ def make_json_safe(data, max_depth: int = 5, max_str_len: int = 500):
         return [make_json_safe(x, max_depth - 1, max_str_len) for x in data]
     if isinstance(data, str) and len(data) > max_str_len:
         return data[:max_str_len] + f"...({len(data)}字符)"
+    return data
+
+
+def truncate_data_for_frontend(data: dict, max_chars: int = DEFAULT_MAX_DATA_CHARS) -> dict:
+    """DATA通道截断安全函数 - 小沈 2026-05-20
+    
+    原则：前端需要完整结构化数据，但1M上限防OOM
+    - 不超限 → 原样返回
+    - 超限 → 递归截断大文本字段，标注原文长度
+    """
+    try:
+        json_str = json.dumps(data, ensure_ascii=False)
+        if len(json_str) <= max_chars:
+            return data
+    except (TypeError, ValueError):
+        return data
+    
+    return _truncate_data_recursive(data, max_chars)
+
+
+def _truncate_data_recursive(data, budget: int) -> dict:
+    """递归截断data中的大文本字段 - 小沈 2026-05-20"""
+    if isinstance(data, dict):
+        result = {}
+        for k, v in data.items():
+            if isinstance(v, str) and len(v) > budget // max(len(data), 1):
+                per_field_budget = budget // max(len(data), 1)
+                truncated, was_truncated = truncate_text(v, per_field_budget)
+                result[k] = truncated
+                if was_truncated:
+                    result[f"{k}_原文长度"] = f"{len(v)}字符"
+            elif isinstance(v, list) and len(v) > DEFAULT_MAX_LIST_ITEMS:
+                result[k] = v[:DEFAULT_MAX_LIST_ITEMS]
+                result[f"{k}_总项数"] = len(v)
+            else:
+                result[k] = _truncate_data_recursive(v, budget) if isinstance(v, (dict, list)) else v
+        return result
+    elif isinstance(data, list):
+        if len(data) > DEFAULT_MAX_LIST_ITEMS:
+            return data[:DEFAULT_MAX_LIST_ITEMS]
+        return [_truncate_data_recursive(item, budget) if isinstance(item, (dict, list)) else item for item in data]
     return data
 
 

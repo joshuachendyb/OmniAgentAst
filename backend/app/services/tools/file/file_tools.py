@@ -68,7 +68,7 @@ from app.services.safety.file.file_safety import OperationType
 from app.utils.visualization import get_visualizer
 from app.utils.logger import logger
 from app.services.tools.tool_meta import get_timeout
-from app.services.tools.tool_result_utils import format_file_content_llm, build_next_actions  # 小沈-2026-05-15
+from app.services.tools.tool_result_utils import format_file_content_llm, format_output_for_llm, build_next_actions, truncate_data_for_frontend, truncate_text, DEFAULT_MAX_FILE_CHARS  # 小沈-2026-05-15, 2026-05-20增加截断安全
 
 # 【重要】延迟导入，避免循环导入问题
 # file_tools.py 在 tools 模块加载时被导入，此时 agent 还未初始化完成
@@ -1013,7 +1013,11 @@ class FileTools:
                     "file_count": file_count,
                     "statistics": statistics,
                     "next_page_token": encode_page_token(start_offset + MAX_DISPLAY_ENTRIES) if start_offset + MAX_DISPLAY_ENTRIES < total else None
-                }, "list_directory", next_actions=[
+                }, "list_directory", llm_data={
+                    "目录": str(path), "总数": total, "目录数": dir_count, "文件数": file_count,
+                    "条目预览": [e.get("name","") for e in display_entries[:30]],
+                    "截断": True
+                }, next_actions=[
                     ("search_files", "搜索文件", "需要查找特定文件时"),
                     ("read_file", "读取文件", "需要查看文件内容时"),
                 ])
@@ -1025,7 +1029,10 @@ class FileTools:
                 "directory": str(path),
                 "statistics": statistics,
                 "next_page_token": None
-            }, "list_directory", next_actions=[
+            }, "list_directory", llm_data={
+                "目录": str(path), "总数": total,
+                "条目预览": [e.get("name","") for e in all_entries[:30]]
+            }, next_actions=[
                 ("search_files", "搜索文件", "需要查找特定文件时"),
                 ("read_file", "读取文件", "需要查看文件内容时"),
             ])
@@ -1451,7 +1458,11 @@ class FileTools:
                 "page_size": DEFAULT_PAGE_SIZE,
                 "next_page_token": next_page_token,
                 "has_more": has_more
-            }, "search_files", next_actions=[
+            }, "search_files", llm_data={
+                "模式": pattern, "搜索目录": str(search_path), "匹配数": total,
+                "文件预览": [m.get("path","") if isinstance(m,dict) else str(m) for m in page_matches[:20]],
+                "has_more": has_more
+            }, next_actions=[
                 ("read_file", "读取找到的文件", "需要查看内容时"),
             ])
             
@@ -2272,7 +2283,12 @@ class FileTools:
                 "total_matches": total_matches, "pattern": pattern,
                 "search_dir": str(search_path), "output_mode": output_mode or "content",
                 "has_more": has_more, "next_page_token": next_page_token,
-            }, "grep_file_content", next_actions=[
+            }, "grep_file_content", llm_data={
+                "模式": pattern, "搜索目录": str(search_path),
+                "匹配文件数": total, "匹配行数": total_matches,
+                "预览": make_json_safe(page_results[:10], max_str_len=200),
+                "has_more": has_more
+            }, next_actions=[
                 ("read_file", "读取匹配行上下文", "需要查看完整内容时"),
                 ("edit_file", "编辑匹配内容", "需要修改时"),
             ])
@@ -2353,7 +2369,13 @@ class FileTools:
             tree = tree or {"name": path.name, "type": "directory", "children": []}
             return _to_unified_format({
                 "success": True, "tree": tree, "root": str(path),
-            }, "list_directory")
+            }, "list_directory", llm_data={
+                "目录": str(path), "树形结构根节点": tree.get("name",""),
+                "子项数": len(tree.get("children",[]))
+            }, next_actions=[
+                ("search_files", "搜索文件", "需要查找特定文件时"),
+                ("read_file", "读取文件", "需要查看文件内容时"),
+            ])
         except Exception as e:
             logger.error(f"get_directory_tree failed: {dir_path}: {e}")
             return _to_unified_format({
@@ -2831,14 +2853,25 @@ class FileTools:
                 except Exception:
                     pass
             
+            result_data = result.get("data", result)
+            _llm = None
+            if action == "read":
+                _llm = {"格式": detected_format, "文件": file_path, "动作": "read"}
+                if isinstance(result_data, dict):
+                    _llm["键"] = list(result_data.keys())[:30]
+                    _llm["顶层项数"] = len(result_data)
+                elif isinstance(result_data, list):
+                    _llm["项数"] = len(result_data)
+                    _llm["预览"] = make_json_safe(result_data[:5], max_str_len=200)
+            
             return _to_unified_format({
                 "success": True,
-                "data": result.get("data", result),
+                "data": result_data,
                 "format": detected_format,
                 "file_path": file_path,
                 "action": action,
                 "bytes_written": bytes_written
-            }, "data_file_format", next_actions=[
+            }, "data_file_format", llm_data=_llm, next_actions=[
                 ("edit_file", "编辑格式化文件", "需要修改时"),
             ])
         
@@ -2999,7 +3032,8 @@ def _generate_summary(tool_name: str, result: Any) -> str:
 
 
 def _to_unified_format(result: Dict[str, Any], tool_name: str, retry_count: int = 0, llm_data: dict = None, next_actions: list = None) -> Dict[str, Any]:
-    """将工具执行结果转换为统一格式，支持llm_data/next_actions/capabilities透传 小沈-2026-05-19"""
+    """将工具执行结果转换为统一格式，支持llm_data/next_actions/capabilities透传 小沈-2026-05-19
+    【2026-05-20 小沈】data通道加1M截断保护(truncate_data_for_frontend)"""
     if not isinstance(result, dict):
         r = {
             "status": "error",
@@ -3020,10 +3054,12 @@ def _to_unified_format(result: Dict[str, Any], tool_name: str, retry_count: int 
     
     summary = _generate_summary(tool_name, result)
     
+    safe_data = truncate_data_for_frontend(result)
+    
     r = {
         "status": status,
         "summary": summary,
-        "data": result,
+        "data": safe_data,
         "retry_count": retry_count
     }
     if llm_data:
