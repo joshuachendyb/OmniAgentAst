@@ -26,6 +26,8 @@ Author: 小沈 - 2026-05-02
 
 import importlib
 import csv
+import os
+import tempfile
 from typing import Dict, Any, List, Optional, Literal
 from pathlib import Path
 
@@ -615,6 +617,33 @@ def _read_csv_stdlib(
         }
 
 
+def _auto_convert_to_pdf(input_path: str, suffix: str) -> Optional[str]:
+    """自动将旧版Office格式转换为PDF，返回PDF路径或None"""
+    try:
+        tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+        pdf_path = tmp.name
+        tmp.close()
+        result = convert_document(input_path, output_path=pdf_path)
+        if result.get("code") != "SUCCESS":
+            try:
+                os.unlink(pdf_path)
+            except:
+                pass
+            return None
+        return pdf_path
+    except Exception:
+        return None
+
+
+def _cleanup_temp_pdf(pdf_path: str) -> None:
+    """清理临时PDF文件"""
+    try:
+        if os.path.isfile(pdf_path):
+            os.unlink(pdf_path)
+    except:
+        pass
+
+
 def _read_pptx(
     file_path: str,
     extract_notes: bool = False
@@ -1004,8 +1033,16 @@ def read_document(
             return check
         result = _read_docx(file_path, extract_tables=extract_tables)
     elif suffix == ".doc":
-        return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
-                "message": "旧版.doc格式不受支持。建议：先用convert_document转为PDF，再用read_document读取PDF"}
+        # 【自动转换 .doc/.xls 2026-05-20 小健】自动调用convert_document转PDF后读取
+        pdf_path = _auto_convert_to_pdf(file_path, suffix)
+        if pdf_path is None:
+            return {"code": "ERR_CONVERT_FAILED", "data": None,
+                    "message": f"自动转换{suffix}为PDF失败，请手动使用convert_document工具"}
+        check = _check_pdf_readable(pdf_path)
+        if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
+            return check
+        result = _read_pdf(pdf_path, pages=pages, extract_tables=extract_tables)
+        _cleanup_temp_pdf(pdf_path)
     elif suffix == ".pptx":
         result = _read_pptx(file_path)
     elif suffix == ".xlsx":
@@ -1014,8 +1051,16 @@ def read_document(
             return check
         result = _read_xlsx(file_path, sheet_name=sheet_name, max_rows=max_rows, header=header)
     elif suffix == ".xls":
-        return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
-                "message": "旧版.xls格式不受支持。建议：先用convert_document转为PDF，再用read_document读取PDF"}
+        # 【自动转换 .doc/.xls 2026-05-20 小健】自动调用convert_document转PDF后读取
+        pdf_path = _auto_convert_to_pdf(file_path, suffix)
+        if pdf_path is None:
+            return {"code": "ERR_CONVERT_FAILED", "data": None,
+                    "message": f"自动转换{suffix}为PDF失败，请手动使用convert_document工具"}
+        check = _check_pdf_readable(pdf_path)
+        if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
+            return check
+        result = _read_pdf(pdf_path, pages=pages, extract_tables=extract_tables)
+        _cleanup_temp_pdf(pdf_path)
     elif suffix in (".csv", ".tsv"):
         actual_delimiter = "\t" if suffix == ".tsv" else (delimiter or ",")
         result = _read_csv_stdlib(file_path, encoding=encoding, delimiter=actual_delimiter, has_header=header, max_rows=max_rows)

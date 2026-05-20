@@ -72,7 +72,7 @@ from app.services.tools.document.database_tools import (
 )
 
 DESCRIPTIONS = {
-    "read_document": """统一读取文档内容，按文件后缀自动路由到对应解析器（PDF/DOCX/XLSX/PPTX/CSV/TSV）。
+    "read_document": """统一读取文档内容，按文件后缀自动路由到对应解析器（PDF/DOCX/XLSX/PPTX/CSV/TSV）。旧版 .doc/.xls 自动转换为PDF后读取（需安装LibreOffice）。
 
 【使用场景】
 - 当用户需要读取任意格式文档内容时使用

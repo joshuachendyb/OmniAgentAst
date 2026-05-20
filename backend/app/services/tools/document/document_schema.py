@@ -18,7 +18,7 @@ from typing import Optional, Any, List, Dict, Literal
 
 class ReadDocumentInput(BaseModel):
     """read_document 工具的输入参数 — 小沈 2026-05-19 参数精简11→8(砍extract_images+extract_notes+use_pandas)"""
-    file_path: str = Field(..., description="文档路径。支持 .pdf/.docx/.xlsx/.pptx/.csv/.tsv（注意：不支持旧版.doc/.xls格式）")
+    file_path: str = Field(..., description="文档路径。支持 .pdf/.docx/.xlsx/.pptx/.csv/.tsv；旧版 .doc/.xls 自动转换为PDF后读取（需安装LibreOffice）")
     pages: Optional[str] = Field(default=None, description="PDF页码范围（如'1-3,5'，仅PDF有效）")
     extract_tables: bool = Field(default=False, description="是否提取表格（PDF/DOCX有效）")
     sheet_name: Optional[str] = Field(default=None, description="Excel工作表名（仅XLSX有效）")
