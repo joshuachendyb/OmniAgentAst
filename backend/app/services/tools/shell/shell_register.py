@@ -92,6 +92,7 @@ SHELL_TOOL_DESCRIPTIONS = {
 
 使用场景：
 - 运行Python代码片段、快速验证逻辑、数据处理计算
+- ⚠️ 比 execute_shell_command python -c "..." 更安全：内置安全检查拦截危险操作
 
 参数说明：
 - code：Python代码字符串，必填，可多行
@@ -104,6 +105,7 @@ SHELL_TOOL_DESCRIPTIONS = {
 
 使用场景：
 - 运行JavaScript代码片段、快速验证逻辑
+- ⚠️ 比 execute_shell_command node -e "..." 更安全：内置安全检查拦截危险操作
 
 参数说明：
 - code：JavaScript代码字符串，必填，可多行

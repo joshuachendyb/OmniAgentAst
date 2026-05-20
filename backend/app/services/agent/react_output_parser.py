@@ -2171,9 +2171,10 @@ def _parse_action(
             "response": None
         }
 
-    # 【2026-04-28 小沈新增】检测并补充缺失的必需参数
+    # 【修复A5 2026-05-20 小健】使用 _process_tool_params 统一管道替换仅 supplement
+    # 从 "仅 supplement" 升级为 "normalize + filter + supplement 完整链路"
     final_tool_params = tool_params or {}
-    final_tool_params = _supplement_missing_params(tool_name, final_tool_params, None)
+    final_tool_params = _process_tool_params(final_tool_params, tool_name, output)
     return {
         "type": "action",
         "thought": thought,

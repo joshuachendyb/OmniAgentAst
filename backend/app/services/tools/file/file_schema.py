@@ -114,7 +114,7 @@ class WriteTextFileInput(BaseModel):
 class ReadMediaFileInput(BaseModel):
     """read_media_file 工具的输入参数"""
     file_path: str = Field(
-        description="媒体文件的完整路径。支持图片(JPG/PNG/GIF/BMP/WebP/SVG/ICO/TIFF)、音频(MP3/WAV/OGG/M4A/FLAC/AAC)、视频(MP4/AVI/MOV/MKV)和PDF格式。返回Base64编码数据"
+        description="媒体文件的完整路径。支持图片(JPG/PNG/GIF/BMP/WebP/SVG/ICO/TIFF)、音频(MP3/WAV/OGG/M4A/FLAC/AAC)、视频(MP4/AVI/MOV/MKV)。返回Base64编码数据"
     )
 
 

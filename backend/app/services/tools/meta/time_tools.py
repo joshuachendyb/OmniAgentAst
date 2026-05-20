@@ -885,7 +885,7 @@ def get_time(
             result["next_actions"] = build_next_actions([
                 ("time_add", "计算偏移后的时间", "需要计算N天后/前的时间时"),
                 ("time_diff", "计算两个时间的差值", "需要计算时间间隔时"),
-                ("check_date", "检查日期属性", "需要判断是否工作日/节假日时"),
+                ("query_calendar", "检查日期属性", "需要判断是否工作日/节假日时"),
             ])
         return result
     except Exception as e:
@@ -914,7 +914,7 @@ def time_add(delta: float, start: Optional[Union[int, float, str]] = None, unit:
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([
             ("time_diff", "验证偏移间隔", "需要确认间隔是否正确时"),
-            ("check_date", "检查结果日期属性", "需要判断是否工作日/节假日时"),
+            ("query_calendar", "检查结果日期属性", "需要判断是否工作日/节假日时"),
         ])
     return result
 
@@ -956,7 +956,7 @@ def time_diff(start: Union[int, float, str], end: Optional[Union[int, float, str
     return result
 
 
-def check_date(
+def query_calendar(
     date: Optional[Union[int, float, str]] = None,
     check_type: Literal["weekend", "holiday", "workday", "next_workday"] = "workday",
     n: int = 1,
@@ -1002,7 +1002,7 @@ def check_date(
 
         return {"code": "SUCCESS", "data": result_data, "llm_data": {"date": result_data["date"], "is_weekend": is_weekend, "is_holiday": is_hol, "is_workday": is_workday, "holiday_name": holiday_name}, "message": msg, "next_actions": build_next_actions([
             ("time_add", "计算下一个工作日偏移", "需要排程计算时"),
-            ("check_date", "检查其他日期属性", "需要判断其他日期时"),
+            ("query_calendar", "检查其他日期属性", "需要判断其他日期时"),
         ])}
     except Exception as e:
         return {"code": "ERR_TIME_DATE", "data": None, "llm_data": None, "message": f"检查失败: {str(e)}", "next_actions": build_next_actions([("check_date", "重试日期检查", "需要重新检查时")])}

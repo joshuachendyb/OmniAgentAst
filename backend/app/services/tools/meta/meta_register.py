@@ -26,7 +26,7 @@ from app.services.tools.meta.time_tools import (
     get_time,
     time_add,
     time_diff,
-    check_date,
+    query_calendar,
     timezone_convert,
     timer,
 )
@@ -34,7 +34,7 @@ from app.services.tools.meta.time_schema import (
     GetTimeInput,
     TimeAddInput,
     TimeDiffInput,
-    CheckDateInput,
+    QueryCalendarInput,
     TimezoneConvertInput,
     TimerInput,
 )
@@ -127,7 +127,7 @@ META_TOOL_DESCRIPTIONS = {
 - is_future: 目标时间是否在未来
 - is_after/is_before/is_equal: 比较结果
 - diff_seconds_signed: 带符号的秒数差值""",
-    "check_date": """日期综合检查。
+    "query_calendar": """日期综合检查。
 
 使用场景：
 - 判断是否为周末（check_type="weekend"）
@@ -194,7 +194,7 @@ META_TOOL_EXAMPLES = {
     "time_diff": [
         {"start": "2026-05-01", "end": "2026-05-18"},
     ],
-    "check_date": [
+    "query_calendar": [
         {"date": "2026-05-18", "check_type": "weekend"},
     ],
     "timezone_convert": [
@@ -219,7 +219,7 @@ def _register_meta_tools():
         "get_time": get_time,
         "time_add": time_add,
         "time_diff": time_diff,
-        "check_date": check_date,
+        "query_calendar": query_calendar,
         "timezone_convert": timezone_convert,
         "timer": timer,
     }
@@ -231,7 +231,7 @@ def _register_meta_tools():
         "get_time": GetTimeInput,
         "time_add": TimeAddInput,
         "time_diff": TimeDiffInput,
-        "check_date": CheckDateInput,
+        "query_calendar": QueryCalendarInput,
         "timezone_convert": TimezoneConvertInput,
         "timer": TimerInput,
     }

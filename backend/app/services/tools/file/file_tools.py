@@ -1691,6 +1691,13 @@ class FileTools:
                 }, "read_media_file")
 
             suffix = path.suffix.lower()
+            # 【FIX1 2026-05-20 小健】PDF引导到 read_document
+            if suffix == '.pdf':
+                return _to_unified_format({
+                    "success": False, "error": f"PDF文件请使用 read_document 工具读取，read_media_file 不支持PDF",
+                    "data": None, "mime_type": None
+                }, "read_media_file")
+
             mime_map = {
                 ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
                 ".gif": "image/gif", ".bmp": "image/bmp", ".webp": "image/webp",
@@ -1701,7 +1708,7 @@ class FileTools:
                 ".wma": "audio/x-ms-wma", ".mid": "audio/midi", ".midi": "audio/midi",
                 ".mp4": "video/mp4", ".avi": "video/x-msvideo", ".mov": "video/quicktime",
                 ".mkv": "video/x-matroska", ".webm": "video/webm", ".wmv": "video/x-ms-wmv",
-                ".pdf": "application/pdf",
+                # .pdf 已移除，PDF文件请使用 read_document 工具
             }
             mime_type = mime_map.get(suffix, "application/octet-stream")
 

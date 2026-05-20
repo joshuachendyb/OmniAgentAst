@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
 """
+@deprecated 2026-05-20 小健
+此文件属于 parsers/ 策略模式模块（2026-04-19设计），当前未被使用。
+请使用 react_output_parser.py 的解析器链（_HANDLERS）替代。
+详情见：doc-5月优化/parse_react_response解析器链重构设计-小沈-2026-05-19.md
+
 隐式回答解析器 - 6.2.2补充
 
 根据文档6.2.2设计

@@ -10,7 +10,7 @@ from app.services.tools.meta.time_tools import (
     get_time,
     time_add,
     time_diff,
-    check_date,
+    query_calendar,
     timezone_convert,
     timer,
 )
@@ -20,7 +20,7 @@ __all__ = [
     "get_time",
     "time_add",
     "time_diff",
-    "check_date",
+    "query_calendar",
     "timezone_convert",
     "timer",
 ]

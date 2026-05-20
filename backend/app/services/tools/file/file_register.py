@@ -79,7 +79,7 @@ FILE_TOOL_DESCRIPTIONS = {
 返回数据说明：
 - data.success/data.file_path/data.bytes_written/data.encoding""",
 
-    "read_media_file": """读取图片、音频、视频或PDF文件，返回Base64编码数据和MIME类型。
+    "read_media_file": """读取图片、音频、视频文件，返回Base64编码数据和MIME类型。PDF文件请使用 read_document 工具。
 
 使用示例：
 - 读取图片：{"file_path": "D:/screenshot.png"}

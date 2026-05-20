@@ -27,7 +27,7 @@ class ExecutePythonInput(BaseModel):
         default=None, description="工作目录（可选）。默认为当前工作目录。目录不存在时自动创建"
     )
     safety_check: bool = Field(
-        default=True, description="执行前是否进行安全检查（检测os.system/subprocess等危险模式），默认True。设为False可跳过安全检查"
+        default=True, description="执行前是否进行安全检查（检测os.system/subprocess等危险模式），默认True。设为False可跳过安全检查。\n⚠️ 比 execute_shell_command python -c \"...\" 更安全：内置安全检查会拦截危险操作"
     )
 
 
@@ -43,7 +43,7 @@ class ExecuteJavascriptInput(BaseModel):
         default=None, description="工作目录（可选）。默认为当前工作目录。目录不存在时自动创建"
     )
     safety_check: bool = Field(
-        default=True, description="执行前是否进行安全检查（检测require('child_process')/eval等危险模式），默认True。设为False可跳过安全检查"
+        default=True, description="执行前是否进行安全检查（检测require('child_process')/eval等危险模式），默认True。设为False可跳过安全检查。\n⚠️ 比 execute_shell_command node -e \"...\" 更安全：内置安全检查会拦截危险操作"
     )
 
 

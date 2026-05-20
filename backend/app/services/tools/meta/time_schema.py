@@ -76,8 +76,8 @@ class TimeDiffInput(BaseModel):
     )
 
 
-class CheckDateInput(BaseModel):
-    """check_date日期综合检查Schema — 小沈 2026-05-18"""
+class QueryCalendarInput(BaseModel):
+    """query_calendar日期综合检查Schema — 小沈 2026-05-18"""
     date: Optional[Union[int, float, str]] = Field(
         default=None,
         description="日期值，支持：int/float=Unix时间戳(秒)，str=日期字符串。默认为当前日期"
