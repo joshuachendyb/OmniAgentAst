@@ -2130,7 +2130,7 @@ class FileTools:
             before_lines = context.get("before")
             context_lines = context.get("around")
         show_line_no = True  # 小沈 2026-05-19: 永远显示行号
-        type = None  # 小沈 2026-05-19: 已从Schema移除，glob更明确
+        type = None  # ⚠️ 警告: 已从Schema移除，用glob替代，后续视需求决定是否恢复
         try:
             search_path = Path(search_dir).resolve() if search_dir else Path.cwd().resolve()
             is_valid, error_msg = self._validate_path(str(search_path))
@@ -2439,7 +2439,7 @@ class FileTools:
         编辑文本文件 — 小沈 2026-05-19 精简参数(8→7)
         P17互斥：old_string和edits不能同时传入
         """
-        ignore_case = False  # 小沈 2026-05-19: 已从Schema移除，默认False
+        ignore_case = False  # ⚠️ 警告: 已从Schema移除，硬编码默认False，后续视需求决定是否恢复
         # P17互斥校验
         if old_string and edits:
             return _to_unified_format({
@@ -2484,7 +2484,7 @@ class FileTools:
         replacement: Optional[str] = None,
     ) -> Dict[str, Any]:
         """重命名文件 — 小沈 2026-05-19 精简参数(9→6)，小健 2026-05-19 补充batch模式缺失参数"""
-        # 已从Schema移除的参数，用局部变量保留默认值
+        # ⚠️ 警告: 以下参数已从Schema移除，硬编码默认值，后续视需求决定是否恢复
         recursive = False
         preview = False
         conflict_strategy: Literal["skip", "overwrite", "append_number"] = "skip"

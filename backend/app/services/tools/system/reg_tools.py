@@ -413,7 +413,7 @@ def registry_control(
     Returns:
         {code, data, message}
     """
-    # 已从Schema移除的参数，用局部变量保留默认值
+    # ⚠️ 警告: 以下参数已从Schema移除，硬编码默认值，后续视需求决定是否恢复
     output_format: str = "auto"
     backup_before_write: bool = True
     backup_before_delete: bool = True

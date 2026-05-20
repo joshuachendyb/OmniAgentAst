@@ -920,8 +920,8 @@ def timezone_convert(
     P11统一入口: direction="utc_to_local"|"local_to_utc"|"any"
     direction=any时tz为源时区，目标为本地时区
     """
-    source_tz = None  # 已从Schema移除
-    target_tz = None  # 已从Schema移除
+    source_tz = None  # ⚠️ 警告: 已从Schema移除，未使用，后续视需求决定是否恢复
+    target_tz = None  # ⚠️ 警告: 已从Schema移除，未使用，后续视需求决定是否恢复
     try:
         if direction == "utc_to_local":
             result = _time_utc_to_local(utc_time=time_value, target_tz=tz)
@@ -957,8 +957,8 @@ async def timer(
     """定时器管理 — 小沈 2026-05-19 参数精简6→4(砍callback_data+limit)
     P11统一入口: action="set"|"clear"|"list"
     """
-    callback_data = None  # 已从Schema移除
-    limit = 10  # 已从Schema移除，默认10
+    callback_data = None  # ⚠️ 警告: 已从Schema移除，硬编码默认值，后续视需求决定是否恢复
+    limit = 10  # ⚠️ 警告: 已从Schema移除，硬编码默认值，后续视需求决定是否恢复
     try:
         if action == "set":
             if delay is None or delay <= 0:

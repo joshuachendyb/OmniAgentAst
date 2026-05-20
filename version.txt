@@ -1,3 +1,24 @@
+v0.13.10
+
+更新时间: 2026-05-20 11:46:34
+
+更新内容：
+
+## v0.13.9→v0.13.10 变更汇总 - 小沈-2026-05-20
+
+### fix 三个低风险代码瑕疵修正
+
+| commit | 说明 |
+|--------|------|
+| 214c8eec | fix: 修正fetch_webpage超时显示单位、删除search_web死代码、修复shell编码冗余 - 小沈-2026-05-20 |
+
+**修正详情**:
+1. `network_tools.py:561` - fetch_webpage超时消息: `{timeout}秒`(毫秒值) → `{timeout_sec:.1f}秒`(正确秒值)
+2. `network_tools.py:787-789` - 删除search_web中从未引用的proxy_config死代码(dict定义)
+3. `shell_tools.py:163-177` - 修复execute_shell_command编码冗余: 去除重复utf-8重试，直接fallback到gbk
+
+---
+
 v0.13.9
 
 更新时间: 2026-05-19 15:20:00

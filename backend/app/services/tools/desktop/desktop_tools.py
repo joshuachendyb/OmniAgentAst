@@ -357,7 +357,7 @@ def mouse_control(
     合并 click + move + scroll
     action: "click"|"move"|"scroll"|"position"
     """
-    # 已从Schema移除的参数，用局部变量保留默认值
+    # ⚠️ 警告: 以下参数已从Schema移除，硬编码默认值，后续视需求决定是否恢复
     click_type: Literal["single", "double"] = "single"
     duration: float = 0
     if action == "click":

@@ -31,7 +31,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from app.utils.logger import logger
-from app.services.tools.tool_result_utils import build_next_actions  # 小沈 2026-05-19
+from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
 
 
 def get_system_info(info_type: str = "all") -> dict:
@@ -135,7 +135,7 @@ def net_connections(
     使用psutil获取网络连接信息。
     支持按类型、状态、端口过滤。
     """
-    # 已从Schema移除的参数，用局部变量保留默认值
+    # ⚠️ 警告: 以下参数已从Schema移除，硬编码默认值，后续视需求决定是否恢复
     resolve_dns: bool = False
     try:
         # 小健 2026-05-19: tcp/udp应包含inet4+inet6
@@ -194,13 +194,17 @@ def net_connections(
         
         return {
             "code": "SUCCESS",
-            "data": {
+            "data": truncate_data_for_frontend({
                 "connections": results,
                 "total": len(results),
                 "kind": kind,
                 "filter_port": filter_port,
-            },
+            }),
             "message": f"找到 {len(results)} 个网络连接",
+            "llm_data": {
+                "总数": len(results), "类型": kind,
+                "连接预览": make_json_safe(results[:20], max_str_len=100)
+            },
             "next_actions": build_next_actions([("get_system_info", "查看系统总览", "需要更多系统信息时")])
         }
     
@@ -208,7 +212,7 @@ def net_connections(
         return {
             "code": "ERR_SYSTEM_ACCESS_DENIED",
             "data": None,
-            "message": "需要管理员权限获取网络连接信息"
+            "message": "需要管理员权限获取网络连接信息，请以管理员身份运行"
         }
     except Exception as e:
         logger.error(f"[net_connections] 获取网络连接失败: {e}")
@@ -231,7 +235,7 @@ def event_log(
     
     Windows使用wevtutil命令，Linux使用journalctl。
     """
-    # 已从Schema移除的参数，用局部变量保留默认值
+    # ⚠️ 警告: 以下参数已从Schema移除，硬编码默认值，后续视需求决定是否恢复
     event_id: Optional[List[int]] = None
     try:
         time_map = {
@@ -328,15 +332,20 @@ def _get_windows_event_log(
             
             filtered_events.append(evt)
         
+        _events = filtered_events[:max_events]
         return {
             "code": "SUCCESS",
-            "data": {
+            "data": truncate_data_for_frontend({
                 "log_name": log_name,
-                "events": filtered_events[:max_events],
-                "total": len(filtered_events[:max_events]),
+                "events": _events,
+                "total": len(_events),
                 "level": level,
+            }),
+            "message": f"找到 {len(_events)} 条事件日志",
+            "llm_data": {
+                "日志源": log_name, "条数": len(_events), "级别": level,
+                "事件预览": make_json_safe(_events[:10], max_str_len=200)
             },
-            "message": f"找到 {len(filtered_events[:max_events])} 条事件日志",
             "next_actions": build_next_actions([("get_system_info", "查看系统状态", "需要关联系统信息时")])
         }
     
@@ -457,7 +466,7 @@ def list_processes(
     Returns:
         {code, data, message}
     """
-    # 已从Schema移除的参数，用局部变量保留默认值
+    # ⚠️ 警告: 以下参数已从Schema移除，硬编码默认值，后续视需求决定是否恢复
     status: Optional[str] = None
     descending: bool = False
     try:
@@ -523,13 +532,17 @@ def list_processes(
         
         return {
             "code": "SUCCESS",
-            "data": {
+            "data": truncate_data_for_frontend({
                 "processes": limited_processes,
                 "total": len(limited_processes),
                 "total_matched": len(processes),
                 "sort_by": sort_by,
-            },
+            }),
             "message": f"找到 {len(processes)} 个进程，返回前 {len(limited_processes)} 个",
+            "llm_data": {
+                "总数": len(processes), "返回数": len(limited_processes), "排序": sort_by,
+                "进程预览": [{"pid": p.get("pid"), "name": p.get("name","")[:30], "cpu": p.get("cpu_percent"), "mem": p.get("memory_percent")} for p in limited_processes[:20]]
+            },
             "next_actions": build_next_actions([("kill_process", "终止进程", "需要结束某个进程时"), ("get_system_info", "查看系统总览", "需要更多系统信息时")])
         }
     
@@ -886,13 +899,17 @@ def _windows_service_list(
         
         return {
             "code": "SUCCESS",
-            "data": {
+            "data": truncate_data_for_frontend({
                 "services": limited_services,
                 "total": len(limited_services),
                 "total_matched": len(filtered_services),
                 "platform": "Windows",
-            },
-            "message": f"找到 {len(filtered_services)} 个服务，返回前 {len(limited_services)} 个"
+            }),
+            "message": f"找到 {len(filtered_services)} 个服务，返回前 {len(limited_services)} 个",
+            "llm_data": {
+                "总数": len(filtered_services), "返回数": len(limited_services),
+                "服务预览": [{"name": s.get("name","")[:30], "state": s.get("state","")} for s in limited_services[:20]]
+            }
         }
     
     except subprocess.TimeoutExpired:
@@ -970,13 +987,17 @@ def _linux_service_list(
         
         return {
             "code": "SUCCESS",
-            "data": {
+            "data": truncate_data_for_frontend({
                 "services": limited_services,
                 "total": len(limited_services),
                 "total_matched": len(filtered_services),
                 "platform": "Linux",
-            },
-            "message": f"找到 {len(filtered_services)} 个服务，返回前 {len(limited_services)} 个"
+            }),
+            "message": f"找到 {len(filtered_services)} 个服务，返回前 {len(limited_services)} 个",
+            "llm_data": {
+                "总数": len(filtered_services), "返回数": len(limited_services),
+                "服务预览": [{"name": s.get("name","")[:30], "state": s.get("state","")} for s in limited_services[:20]]
+            }
         }
     
     except subprocess.TimeoutExpired:

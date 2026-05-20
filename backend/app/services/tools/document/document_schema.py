@@ -42,6 +42,6 @@ class WriteDocumentInput(BaseModel):
 
 class ConvertDocumentInput(BaseModel):
     """convert_document 工具的输入参数 - 小沈 2026-05-05"""
-    input_path: str = Field(..., description="输入文件路径")
+    input_path: str = Field(..., description="输入文件路径。支持.docx/.doc/.xlsx/.xls/.pptx/.ppt/.odt/.ods格式")
     output_format: Literal["pdf"] = Field(default="pdf", description="目标格式。可选值：pdf")
     output_path: Optional[str] = Field(default=None, description="输出文件路径")
