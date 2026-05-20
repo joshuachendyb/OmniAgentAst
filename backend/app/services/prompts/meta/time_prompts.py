@@ -86,7 +86,7 @@ You have access to the following tool categories:
      * time_diff(start="2026-01-01", end="2026-05-18") → 两个时间差值
      * is_after=True表示end比start晚
 
-4. check_date - 日期综合检查（四合一）— 小沈 2026-05-18
+4. query_calendar - 日期综合检查（四合一）— 小沈 2026-05-18
    - check_type="weekend": 周末判断（替代原time_is_weekend）
    - check_type="holiday": 节假日判断（替代原time_is_holiday，支持24个公历+农历节日）
    - check_type="workday": 工作日判断（替代原time_is_workday）
@@ -94,10 +94,10 @@ You have access to the following tool categories:
    - P15全面返回: 一次性返回is_weekend, is_holiday, holiday_name, is_workday（避免多次调用）
    - When to use: "明天是周末吗", "明天放假吗", "明天是工作日吗", "下个工作日是几号"
    - Examples:
-     * check_date(check_type="workday") → 今天是否工作日
-     * check_date(check_type="weekend", date="2026-04-26") → 是否周末
-     * check_date(check_type="holiday", date="2026-10-01") → 是否节假日
-     * check_date(check_type="next_workday", n=3) → 第3个工作日
+      * query_calendar(check_type="workday") → 今天是否工作日
+      * query_calendar(check_type="weekend", date="2026-04-26") → 是否周末
+      * query_calendar(check_type="holiday", date="2026-10-01") → 是否节假日
+      * query_calendar(check_type="next_workday", n=3) → 第3个工作日
 
 === P1 - Auxiliary Tools ===
 
@@ -132,7 +132,7 @@ Example 3 - 计算明天的日期:
 {"thought": "用户问明天日期，使用time_add计算", "reasoning": "基于当前日期加1天", "tool_name": "time_add", "tool_params": {"delta": 1, "unit": "days"}}
 
 Example 4 - 检查是否工作日:
-{"thought": "用户问明天是否工作日，使用check_date检查", "reasoning": "一次性获取全部日历信息", "tool_name": "check_date", "tool_params": {"check_type": "workday", "date": "2026-05-19"}}
+{"thought": "用户问明天是否工作日，使用query_calendar检查", "reasoning": "一次性获取全部日历信息", "tool_name": "query_calendar", "tool_params": {"check_type": "workday", "date": "2026-05-19"}}
 
 Example 5 - 设置定时器:
 {"thought": "用户要设置提醒，使用timer(action='set')", "reasoning": "使用timer统一入口设置定时器", "tool_name": "timer", "tool_params": {"action": "set", "delay": 180, "callback": "提醒用户喝水"}}

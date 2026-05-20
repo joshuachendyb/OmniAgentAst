@@ -12,14 +12,14 @@
 
 【2026-05-18 小沈重构】16→7精简
 - 16个公开函数改为内部函数（加下划线前缀）
-- 新增7个公开函数：get_time, time_add, time_diff, check_date, timezone_convert, timer
+- 新增7个公开函数：get_time, time_add, time_diff, query_calendar, timezone_convert, timer
 - 旧函数委托保留（P9向下兼容）
 
 包含（重构后7个公开工具）：
 - get_time: 统一入口(action=now/format/to_timestamp/from_timestamp)
 - time_add: 时间加减（增强：months用relativedelta + weekday/isoweekday）
 - time_diff: 时间差值（增强：is_after/is_before/is_equal/diff_seconds_signed）
-- check_date: 日期综合检查(check_type=weekend/holiday/workday/next_workday)
+- query_calendar: 日期综合检查(check_type=weekend/holiday/workday/next_workday)
 - timezone_convert: 时区转换(direction=utc_to_local/local_to_utc/any)
 - timer: 定时器管理(action=set/clear/list)
 
@@ -844,11 +844,11 @@ def _time_next_n_workday(start: Optional[Union[int, float, str]] = None, n: int 
     try:
         dt = _parse_datetime_any(start) if start else datetime.now().astimezone()
         if dt is None:
-            return {"code": "ERR_TIME_NEXT_N_WORKDAY", "data": None, "llm_data": None, "message": f"无法解析start: {start}", "next_actions": build_next_actions([("check_date", "检查日期", "需要重新检查日期时")])}
+            return {"code": "ERR_TIME_NEXT_N_WORKDAY", "data": None, "llm_data": None, "message": f"无法解析start: {start}", "next_actions": build_next_actions([("query_calendar", "检查日期", "需要重新检查日期时")])}
         result_dates = _calc_next_n_workday(dt.date(), n)
         return {"code": "SUCCESS", "data": result_dates, "llm_data": {"next_workday": result_dates[0] if result_dates else None, "n": n}, "message": f"第{n}个工作日: {result_dates[0] if result_dates else None}"}
     except Exception as e:
-        return {"code": "ERR_TIME_NEXT_N_WORKDAY", "data": None, "llm_data": None, "message": f"计算失败: {str(e)}", "next_actions": build_next_actions([("check_date", "检查日期", "需要重新检查日期时")])}
+        return {"code": "ERR_TIME_NEXT_N_WORKDAY", "data": None, "llm_data": None, "message": f"计算失败: {str(e)}", "next_actions": build_next_actions([("query_calendar", "检查日期", "需要重新检查日期时")])}
 
 
 # ===========================================================
@@ -968,7 +968,7 @@ def query_calendar(
     try:
         dt = _parse_datetime_any(date) if date else datetime.now().astimezone()
         if dt is None:
-            return {"code": "ERR_TIME_DATE", "data": None, "llm_data": None, "message": f"无法解析日期: {date}", "next_actions": build_next_actions([("check_date", "重试日期检查", "日期格式错误时")])}
+            return {"code": "ERR_TIME_DATE", "data": None, "llm_data": None, "message": f"无法解析日期: {date}", "next_actions": build_next_actions([("query_calendar", "重试日期检查", "日期格式错误时")])}
 
         date_obj = dt.date()
         isoweekday = dt.isoweekday()
@@ -998,14 +998,14 @@ def query_calendar(
         elif check_type == "workday":
             msg = "工作日" if is_workday else f"非工作日（{'周末' if is_weekend else '节假日：' + str(holiday_name)}）"
         else:
-            return {"code": "ERR_INVALID_CHECK_TYPE", "data": None, "llm_data": None, "message": f"不支持的check_type: {check_type}，可选: weekend/holiday/workday/next_workday", "next_actions": build_next_actions([("tool_help", "查看check_date用法", "不确定check_type时", {"tool_name": "check_date"})])}
+            return {"code": "ERR_INVALID_CHECK_TYPE", "data": None, "llm_data": None, "message": f"不支持的check_type: {check_type}，可选: weekend/holiday/workday/next_workday", "next_actions": build_next_actions([("tool_help", "查看query_calendar用法", "不确定check_type时", {"tool_name": "query_calendar"})])}
 
         return {"code": "SUCCESS", "data": result_data, "llm_data": {"date": result_data["date"], "is_weekend": is_weekend, "is_holiday": is_hol, "is_workday": is_workday, "holiday_name": holiday_name}, "message": msg, "next_actions": build_next_actions([
             ("time_add", "计算下一个工作日偏移", "需要排程计算时"),
             ("query_calendar", "检查其他日期属性", "需要判断其他日期时"),
         ])}
     except Exception as e:
-        return {"code": "ERR_TIME_DATE", "data": None, "llm_data": None, "message": f"检查失败: {str(e)}", "next_actions": build_next_actions([("check_date", "重试日期检查", "需要重新检查时")])}
+        return {"code": "ERR_TIME_DATE", "data": None, "llm_data": None, "message": f"检查失败: {str(e)}", "next_actions": build_next_actions([("query_calendar", "重试日期检查", "需要重新检查时")])}
 
 
 def timezone_convert(
