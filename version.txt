@@ -1,97 +1,32 @@
-v0.13.14
-
-更新时间: 2026-05-20 21:52:58
-
-更新内容：
-
-## v0.13.13→v0.13.14 变更汇总 - 小沈-2026-05-20
-
-### fix 修正README工具数量135→59
-
-| commit | 说明 |
-|--------|------|
-| 5a88152c | fix: 修正README工具数量135→59+补充分类实际数量 - README.md-小沈-2026-05-20 |
-
-**修正详情**（实际运行统计）:
-- file: 11, shell: 5, network: 5, system: 10, desktop: 10, document: 9, meta: 9
-- 合计: **59个**（非135个）
-
----
-
-v0.13.13
-
-更新内容：
-
-## v0.13.12→v0.13.13 变更汇总 - 小沈-2026-05-20
-
-### docs README全面重写对齐实际架构
-
-| commit | 说明 |
-|--------|------|
-| d3fdc484 | docs: 全面重写README对齐实际架构现状 - README.md-小沈-2026-05-20 |
-
-**修正的错误内容**:
-1. Agent体系：GenericReactAgent/AgentRegistry不存在 → 改为实际9个Agent子类+AgentFactory
-2. 工具分类：12个分类 → 实际7个ToolCategory
-3. 工具注册架构：14个目录 → 实际8个目录
-4. 架构图：混淆现状与规划 → 改为当前实际架构
-5. 项目结构：doc-5月优化/ → doc-agent2.0/
-6. 版本历史：最新v0.13.0 → v0.13.13
-7. Footer版本：v0.13.0 → v0.13.13
-
----
-
-v0.13.12
-
-更新时间: 2026-05-20 21:45:12
-
-更新内容：
-
-## v0.13.11→v0.13.12 变更汇总 - 小沈-2026-05-20
-
-### docs README版本修正+doc文件整理
-
-| commit | 说明 |
-|--------|------|
-| 768db6d6 | docs: 修正README版本至v0.13.11+整理doc文件+react_output_parser修改 - README.md+doc整理-小沈-2026-05-20 |
-
-**变更详情**:
-1. `README.md` - 版本号 v0.13.0 → v0.13.11（对齐最新tag）
-2. `doc-5月优化/` → `doc-agent2.0/` - 11份Agent架构设计文档迁移至新目录
-3. `doc-5月优化/` - 新增 parse_react_response解析器重设计文档
-4. `backend/app/services/agent/react_output_parser.py` - 修改
-
----
-
 v0.13.11
 
-更新时间: 2026-05-20 21:39:38
+更新时间: 2026-05-20 22:05:22
 
 更新内容：
 
 ## v0.13.10→v0.13.11 变更汇总 - 小沈-2026-05-20
 
-### docs 架构重构设计文档（3个commit）
+### docs 架构重构设计文档 + README全面修正 + 测试文件整理（8个commit）
 
 | commit | 说明 |
 |--------|------|
+| f10dbf7c | docs: 升级version.txt至v0.13.14+补充工具数量修正说明 - version.txt-小沈-2026-05-20 |
+| 5a88152c | fix: 修正README工具数量135→59+补充分类实际数量 - README.md-小沈-2026-05-20 |
+| d3fdc484 | docs: 全面重写README对齐实际架构现状 - README.md-小沈-2026-05-20 |
+| 768db6d6 | docs: 修正README版本至v0.13.11+整理doc文件+react_output_parser修改 - README.md+doc整理-小沈-2026-05-20 |
+| 7e350c32 | docs: 升级version.txt至v0.13.11+补充3个commit变更说明 - version.txt-小沈-2026-05-20 |
 | 3ad830b4 | docs: 更新README至v0.13.0+整理测试文件+新增方案C架构文档 - README.md+test文件移动-小沈-2026-05-20 |
 | 7aaa3d97 | docs: 新增方案C融合架构重构方案及多份设计对比分析文档 - 小沈-2026-05-20 |
 | 60e87f55 | docs,feat: 更新Agent架构重构方案文档及Prompt优化代码 - base_react.py+llm_strategies.py+设计文档-小沈-2026-05-20 |
 
 **变更详情**:
-1. `README.md` - 更新至v0.13.0：工具数112→135、新增Agent体系章节、更新架构图、新增方案C规划说明
-2. `doc-5月优化/` - 新增7份设计文档：
-   - Agent融合架构重构方案-方案C（1376行，完整可实施设计）
-   - Agent与意图分类架构重构方案
-   - Agent高级调度与安全防护架构重构方案
-   - 综合方案-Agent自治+工具安全+反应式监控
-   - 三个方案对比分析
-   - 系统的Prompt传递机制分析（大幅更新）
-   - Agent架构总览重构方案
+1. `README.md` - 全面重写：工具数修正为59个、7个ToolCategory、9个Agent子类+AgentFactory实际架构、版本历史更新至v0.13.11
+2. `doc-agent2.0/` - 新增12份设计文档（方案A/B/C对比分析、Agent架构重构、Prompt传递机制等）
 3. `backend/` - 测试文件整理：11个测试文件从根目录移至`tests/data/`和`tools/`
 4. `base_react.py` - +7行 Prompt优化
 5. `llm_strategies.py` - +2行 Prompt优化
+6. `react_output_parser.py` - 修改
+7. 工具数量修正：实际运行统计59个（file:11, shell:5, network:5, system:10, desktop:10, document:9, meta:9）
 
 ---
 
