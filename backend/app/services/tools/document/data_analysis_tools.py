@@ -28,7 +28,7 @@ import logging
 from typing import Dict, Any, List, Union, Optional, Literal, Tuple
 from pathlib import Path
 from datetime import datetime
-from app.services.tools.tool_result_utils import build_next_actions
+from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe
 
 logger = logging.getLogger(__name__)
 
@@ -289,8 +289,13 @@ def analyze_data(
 
         return {
             "code": "SUCCESS",
-            "data": result,
+            "data": truncate_data_for_frontend(result),
             "message": f"成功分析数据，共 {len(df)} 行，{len(numeric_cols)} 个数值列",
+            "llm_data": {
+                "总行数": len(df), "数值列数": len(numeric_cols),
+                "列": list(result.get("columns", {}).keys())[:20] if isinstance(result.get("columns"), dict) else [],
+                "统计摘要": make_json_safe(result.get("statistics", {}), max_str_len=200)
+            },
             "next_actions": build_next_actions([
                 ("filter_data", "筛选数据", "需要按条件过滤时"),
                 ("generate_chart", "生成图表", "需要可视化时"),
@@ -437,8 +442,13 @@ def filter_data(
             capabilities_used.append("openpyxl")
         result = {
             "code": "SUCCESS",
-            "data": result_data,
+            "data": truncate_data_for_frontend(result_data),
             "message": message,
+            "llm_data": {
+                "筛选前": result_data.get("original_count",0), "筛选后": result_data.get("filtered_count",0),
+                "列": result_data.get("columns",[])[:20],
+                "行预览": make_json_safe(result_data.get("rows",[])[:5], max_str_len=150)
+            },
             "next_actions": build_next_actions([
                 ("analyze_data", "统计分析", "需要对筛选结果统计时"),
                 ("generate_chart", "生成图表", "需要可视化时"),

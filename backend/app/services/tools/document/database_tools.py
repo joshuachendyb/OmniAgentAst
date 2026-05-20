@@ -25,7 +25,7 @@ import re
 import sqlite3
 from typing import Any, Dict, List, Optional, Union, Literal
 from app.utils.logger import logger
-from app.services.tools.tool_result_utils import build_next_actions
+from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe
 
 
 def _get_connection(connection_type: str, connection_string: Optional[str], db_path: Optional[str], timeout: int = 30000):
@@ -132,13 +132,17 @@ def query_sql(
         table_str = _format_table(columns, results)
         return {
             "code": "SUCCESS",
-            "data": {
+            "data": truncate_data_for_frontend({
                 "columns": columns,
                 "rows": results,
                 "total": len(results),
                 "table": table_str
-            },
+            }),
             "message": f"查询成功，返回 {len(results)} 行数据",
+            "llm_data": {
+                "列": columns, "行数": len(results),
+                "行预览": make_json_safe(results[:10], max_str_len=150)
+            },
             "next_actions": build_next_actions([
                 ("execute_sql", "执行写操作SQL", "需要修改数据时"),
                 ("get_db_schema", "查看表结构", "需要了解其他表时"),
@@ -197,7 +201,11 @@ def execute_sql(
                     "detected": dangerous_matches,
                     "suggestion": "检测到危险操作，建议使用 dry_run=true 先验证"
                 },
-                "message": f"警告：检测到危险操作 {dangerous_matches}，已拦截执行"
+                "message": f"警告：检测到危险操作 {dangerous_matches}，已拦截执行。可使用dry_run=true预演",
+                "next_actions": build_next_actions([
+                    ("execute_sql", "dry_run预演", "需要预检SQL时", {"dry_run": True}),
+                    ("query_sql", "查询数据", "需要先查看数据时"),
+                ])
             }
         
         if dry_run:
