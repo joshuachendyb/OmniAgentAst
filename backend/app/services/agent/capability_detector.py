@@ -154,6 +154,9 @@ class CapabilityDetector:
                     "stream": False
                 }
             )
+            if response.status_code == 429:
+                logger.warning(f"[CapabilityDetector] _probe_response_format: HTTP 429限流, 假设支持(乐观默认) - 小健 2026-05-21")
+                return {"works": True, "reason": "429限流,使用乐观默认"}
             if response.status_code != 200:
                 return {"works": False, "reason": f"HTTP {response.status_code}"}
             content_length = response.headers.get("content-length", "0")
@@ -211,6 +214,9 @@ class CapabilityDetector:
                 }
             )
             logger.info(f"[CapabilityDetector] _probe_tools: HTTP {response.status_code}")
+            if response.status_code == 429:
+                logger.warning(f"[CapabilityDetector] _probe_tools: HTTP 429限流, 假设支持tools(乐观默认) - 小健 2026-05-21")
+                return {"works": True, "reason": "429限流,使用乐观默认"}
             if response.status_code != 200:
                 return {"works": False, "reason": f"HTTP {response.status_code}"}
             content_type = response.headers.get("content-type", "")
