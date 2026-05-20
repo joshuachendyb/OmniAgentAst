@@ -784,10 +784,10 @@ class FileTools:
         page_token: Optional[str] = None,
         sortBy: str = "name",
         include_hidden: bool = False,
-        exclude_patterns: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """列出目录内容 — 小沈 2026-05-19 精简参数(8→7)
         P11统一入口：list/tree/statistics三合一
+        【FIX 2026-05-20 小健】exclude_patterns已从参数中删除（schema已精简）
         """
         # P17 format校验
         if format not in ("list", "tree"):
@@ -802,7 +802,6 @@ class FileTools:
         if format == "tree":
             tree_result = await self._get_directory_tree(
                 dir_path=dir_path,
-                excludePatterns=exclude_patterns,
                 max_depth=max_depth,
             )
             # 小健 2026-05-19: tree模式补充statistics统计信息
@@ -1279,9 +1278,10 @@ class FileTools:
         ignore_case: bool = True,
         type: Optional[Literal["file", "directory"]] = None,
         page_token: Optional[str] = None,
-        exclude_patterns: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """搜索文件名 — 小沈 2026-05-19 精简参数(9→7)"""
+        """搜索文件名 — 小沈 2026-05-19 精简参数(9→7)
+        【FIX 2026-05-20 小健】exclude_patterns已从参数中删除（schema已精简）
+        """
         # 验证搜索路径
         is_valid, error_msg = self._validate_path(search_dir)
         if not is_valid:
@@ -1314,7 +1314,7 @@ class FileTools:
             _deadline = time.monotonic() + get_timeout("search_files") - 2  # 预留2秒给外围asyncio
             
             _pagination_info = {}
-            excludePatterns = exclude_patterns  # 小沈 2026-05-19: 恢复默认值，内部嵌套使用camelCase
+            excludePatterns = None  # 【FIX 2026-05-20 小健】exclude_patterns已从参数中删除
             def _search_sync():
                 all_matches = []
                 seen_files = set()

@@ -28,7 +28,7 @@ class RegistryControlInput(BaseModel):
         ..., description="注册表键路径。如 Software\\Microsoft\\Windows\\CurrentVersion。若含根键前缀则自动忽略 hive 参数"
     )
     action: Literal["read", "write", "delete"] = Field(
-        default="read", description="操作类型：read=读取(默认)，write=写入，delete=删除"
+        ..., description="操作类型：read=读取，write=写入，delete=删除【FIX 2026-05-20 小健】函数签名要求必填，对齐为必填"
     )
     value_name: Optional[str] = Field(
         default=None, description="值名称。action=\"write\"时必填；action=\"read\"/\"delete\"时可选（不填则读取/删除默认值或整个键）"
