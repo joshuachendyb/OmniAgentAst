@@ -36,7 +36,7 @@ import shutil
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-from app.services.tools.tool_result_utils import format_output_for_llm, build_next_actions  # 小沈-2026-05-15, 小沈-2026-05-19
+from app.services.tools.tool_result_utils import format_output_for_llm, build_next_actions, truncate_data_for_frontend  # 小沈-2026-05-15, 小沈-2026-05-20
 from app.utils.logger import logger  # 小健-2026-05-19 修复BUG-001: logger未导入
 
 
@@ -71,7 +71,7 @@ def execute_shell_command(
     # 小健 2026-05-19: shell_type校验 — 非法值明确报错而非静默默认
     if shell_type not in ("powershell", "cmd", None):
         return {
-            "code": -1,
+            "code": "ERR_INVALID_PARAM",
             "data": None,
             "message": f"shell_type仅支持powershell/cmd，当前值: '{shell_type}'"
         }
@@ -79,7 +79,7 @@ def execute_shell_command(
     # 小健 2026-05-19: command空值校验
     if not command or not command.strip():
         return {
-            "code": -1,
+            "code": "ERR_EMPTY_PARAM",
             "data": None,
             "message": "command不能为空"
         }
@@ -87,9 +87,9 @@ def execute_shell_command(
     # cwd存在性校验
     if cwd is not None and not os.path.isdir(cwd):
         return {
-            "code": -1,
+            "code": "ERR_INVALID_PARAM",
             "data": None,
-            "message": f"工作目录不存在: {cwd}"
+            "message": f"工作目录不存在: {cwd}，请检查路径是否正确"
         }
     
     timeout_sec = timeout / 1000.0
@@ -184,11 +184,11 @@ def execute_shell_command(
             _llm = format_output_for_llm(stdout_str, stderr_str)  # 小沈-2026-05-15
             return {
                 "code": "SUCCESS",
-                "data": {
+                "data": truncate_data_for_frontend({
                     "stdout": stdout_str,
                     "stderr": stderr_str,
                     "returncode": result.returncode
-                },
+                }),
                 "message": message,
                 "llm_data": _llm,
                 "next_actions": build_next_actions([
@@ -197,14 +197,20 @@ def execute_shell_command(
                 ])
             }
         else:
+            _llm = format_output_for_llm(stdout_str, stderr_str)
             return {
                 "code": "ERR_SHELL_EXEC",
-                "data": {
+                "data": truncate_data_for_frontend({
                     "stdout": stdout_str,
                     "stderr": stderr_str,
                     "returncode": result.returncode
-                },
-                "message": f"命令执行失败（退出码{result.returncode}）"
+                }),
+                "message": f"命令执行失败（退出码{result.returncode}），请检查命令语法和参数",
+                "llm_data": _llm,
+                "next_actions": build_next_actions([
+                    ("execute_shell_command", "重新执行命令", "修改命令后重试时"),
+                    ("find_command", "查找命令路径", "需要确认命令是否存在时"),
+                ])
             }
     except subprocess.TimeoutExpired as e:
         return {
@@ -214,13 +220,16 @@ def execute_shell_command(
                 "stderr": f"命令执行超时（{timeout}毫秒）",
                 "returncode": -1
             },
-            "message": f"命令执行超时（{timeout}毫秒）"
+            "message": f"命令执行超时（{timeout}毫秒），可增大timeout参数重试",
+            "next_actions": build_next_actions([
+                ("execute_shell_command", "增大超时重试", "需要更长时间执行时"),
+            ])
         }
     except Exception as e:
         return {
-            "code": "ERR_SHELL_EXEC",
+            "code": "ERR_SHELL_EXCEPTION",
             "data": None,
-            "message": f"命令执行失败: {str(e)}"
+            "message": f"命令执行异常: {str(e)}"
         }
 
 
@@ -427,8 +436,9 @@ def shell_session(
         stdout_str = "\n".join(stdout_lines)
         return {
             "code": "SUCCESS",
-            "data": {"shell_id": shell_id, "stdout": stdout_str, "stderr": stderr_str, "is_running": is_running},
+            "data": truncate_data_for_frontend({"shell_id": shell_id, "stdout": stdout_str, "stderr": stderr_str, "is_running": is_running}),
             "message": "后台命令输出" if is_running else "后台命令已结束",
+            "llm_data": format_output_for_llm(stdout_str, stderr_str),
             "next_actions": build_next_actions([
                 ("shell_session", "继续读取输出", "进程仍在运行需要持续监控时", {"shell_id": shell_id, "action": "output"}),
                 ("shell_session", "终止后台命令", "需要停止后台进程或清理会话时", {"shell_id": shell_id, "action": "terminate"}),

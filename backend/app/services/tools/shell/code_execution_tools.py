@@ -40,7 +40,7 @@ from app.services.tools.shell.code_execution_schema import (
     ExecutePythonInput,
     ExecuteJavascriptInput,
 )
-from app.services.tools.tool_result_utils import format_output_for_llm, build_next_actions  # 小沈-2026-05-15, 小沈-2026-05-19
+from app.services.tools.tool_result_utils import format_output_for_llm, build_next_actions, truncate_data_for_frontend  # 小沈-2026-05-15, 小沈-2026-05-20
 
 logger = logging.getLogger(__name__)
 
@@ -142,11 +142,11 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
                 _llm = format_output_for_llm(stdout_str, stderr_str)  # 小沈-2026-05-15
                 return {
                     "code": "SUCCESS",
-                    "data": {
+                    "data": truncate_data_for_frontend({
                         "stdout": stdout_str,
                         "stderr": stderr_str,
                         "returncode": result.returncode
-                    },
+                    }),
                     "message": message,
                     "llm_data": _llm,
                     "next_actions": build_next_actions([
@@ -156,26 +156,37 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
                     "capabilities_used": ["python"]
                 }
             else:
-                message = f"Python代码执行失败（退出码{result.returncode}）"
+                message = f"Python代码执行失败（退出码{result.returncode}），请检查代码语法和逻辑"
+                _llm = format_output_for_llm(stdout_str, stderr_str)
                 return {
                     "code": "ERR_EXEC_FAILED",
-                    "data": {
+                    "data": truncate_data_for_frontend({
                         "stdout": stdout_str,
                         "stderr": stderr_str,
                         "returncode": result.returncode
-                    },
-                    "message": message
+                    }),
+                    "message": message,
+                    "llm_data": _llm,
+                    "next_actions": build_next_actions([
+                        ("execute_python", "修改代码重试", "需要修正代码后重新执行时"),
+                    ])
                 }
 
         except subprocess.TimeoutExpired as e:
+            _partial_stdout = _safe_decode(e.stdout)
+            _partial_stderr = _safe_decode(e.stderr)
             return {
                 "code": "ERR_EXEC_TIMEOUT",
-                "data": {
-                    "stdout": _safe_decode(e.stdout),
-                    "stderr": _safe_decode(e.stderr),
+                "data": truncate_data_for_frontend({
+                    "stdout": _partial_stdout,
+                    "stderr": _partial_stderr,
                     "returncode": -1
-                },
-                "message": f"Python代码执行超时（{timeout}秒）"
+                }),
+                "message": f"Python代码执行超时（{timeout}秒），可增大timeout或优化代码性能",
+                "llm_data": format_output_for_llm(_partial_stdout, _partial_stderr),
+                "next_actions": build_next_actions([
+                    ("execute_python", "增大超时重试", "需要更长时间执行时"),
+                ])
             }
         finally:
             try:
@@ -258,11 +269,11 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
                 _llm = format_output_for_llm(stdout_str, stderr_str)  # 小沈-2026-05-15
                 return {
                     "code": "SUCCESS",
-                    "data": {
+                    "data": truncate_data_for_frontend({
                         "stdout": stdout_str,
                         "stderr": stderr_str,
                         "returncode": result.returncode
-                    },
+                    }),
                     "message": message,
                     "llm_data": _llm,
                     "next_actions": build_next_actions([
@@ -272,26 +283,37 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
                     "capabilities_used": ["node.js"]
                 }
             else:
-                message = f"JavaScript代码执行失败（退出码{result.returncode}）"
+                message = f"JavaScript代码执行失败（退出码{result.returncode}），请检查代码语法"
+                _llm = format_output_for_llm(stdout_str, stderr_str)
                 return {
                     "code": "ERR_EXEC_FAILED",
-                    "data": {
+                    "data": truncate_data_for_frontend({
                         "stdout": stdout_str,
                         "stderr": stderr_str,
                         "returncode": result.returncode
-                    },
-                    "message": message
+                    }),
+                    "message": message,
+                    "llm_data": _llm,
+                    "next_actions": build_next_actions([
+                        ("execute_javascript", "修改代码重试", "需要修正代码后重新执行时"),
+                    ])
                 }
 
         except subprocess.TimeoutExpired as e:
+            _partial_stdout = _safe_decode(e.stdout)
+            _partial_stderr = _safe_decode(e.stderr)
             return {
                 "code": "ERR_EXEC_TIMEOUT",
-                "data": {
-                    "stdout": _safe_decode(e.stdout),
-                    "stderr": _safe_decode(e.stderr),
+                "data": truncate_data_for_frontend({
+                    "stdout": _partial_stdout,
+                    "stderr": _partial_stderr,
                     "returncode": -1
-                },
-                "message": f"JavaScript代码执行超时（{timeout}秒）"
+                }),
+                "message": f"JavaScript代码执行超时（{timeout}秒），可增大timeout或优化代码性能",
+                "llm_data": format_output_for_llm(_partial_stdout, _partial_stderr),
+                "next_actions": build_next_actions([
+                    ("execute_javascript", "增大超时重试", "需要更长时间执行时"),
+                ])
             }
         finally:
             try:
