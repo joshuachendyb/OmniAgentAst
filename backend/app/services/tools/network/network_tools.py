@@ -40,7 +40,7 @@ from urllib.parse import urlencode, urlparse, urlunparse
 import httpx
 from app.utils.logger import logger
 from app.services.tools.toolhelper.network_helper import well_known_ports  # 小健 2026-05-18
-from app.services.tools.tool_result_utils import build_next_actions  # 小沈 2026-05-19
+from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
 
 
 async def http_request(
@@ -154,18 +154,19 @@ async def http_request(
 
                     return {
                         "code": "SUCCESS",
-                        "data": {
+                        "data": truncate_data_for_frontend({
                             "status_code": response.status_code,
                             "headers": dict(response.headers),
                             "body": _body,
-                        },
+                        }),
                         "message": f"请求成功 (HTTP {response.status_code})",
                         "llm_data": {
                             "状态码": response.status_code,
                             "内容类型": _ct_short,
                             "响应体": _llm_body,
                         },
-                        "next_actions": build_next_actions([("http_request", "继续发送请求", "需要发送更多请求时")])
+                        "next_actions": build_next_actions([("http_request", "继续发送请求", "需要发送更多请求时")]),
+                        "capabilities_used": ["httpx"]
                     }
             except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
                 last_exception = e
@@ -227,7 +228,7 @@ async def download_file(
     proxy: Optional[str] = None,
 ) -> dict:
     """从URL下载文件 — 小沈 2026-05-19 精简参数(7→5)"""
-    # 已从Schema移除的参数，用局部变量保留默认值
+    # ⚠️ 警告: 以下参数已从Schema移除，硬编码默认值，后续视需求决定是否恢复
     resume = False
     chunk_size = 8192
     try:
@@ -337,7 +338,9 @@ async def download_file(
                         "content_type": content_type,
                     },
                     "message": f"文件下载成功 ({downloaded}/{total_size} 字节, {progress_percent}%)：保存到 {dest_path}",
-                    "next_actions": build_next_actions([("read_file", "读取下载的文件", "需要查看下载内容时")])
+                    "llm_data": {"路径": dest_path, "大小": downloaded, "类型": content_type},
+                    "next_actions": build_next_actions([("read_file", "读取下载的文件", "需要查看下载内容时")]),
+                    "capabilities_used": ["httpx"]
                 }
 
     except httpx.TimeoutException:
@@ -535,10 +538,18 @@ async def fetch_webpage(
             result_data["prompt"] = prompt
             result_data["note"] = "AI提取功能需要LLM后处理"
         
+        _content_for_llm = result_data.get("content", "")
+        if isinstance(_content_for_llm, str) and len(_content_for_llm) > 5000:
+            _content_for_llm = _content_for_llm[:5000] + f"...(原文{len(_content_for_llm)}字符)"
+        
         return {
             "code": "SUCCESS",
-            "data": result_data,
+            "data": truncate_data_for_frontend(result_data),
             "message": f"成功获取网页内容（{extract_format}格式）" + ("（已截断）" if truncated else ""),
+            "llm_data": {
+                "URL": url, "格式": extract_format, "状态码": result_data.get("status_code"),
+                "内容预览": _content_for_llm, "截断": truncated
+            },
             "capabilities_used": capabilities_used,
             "next_actions": build_next_actions([("search_web", "搜索更多网页", "需要搜索更多信息时")])
         }
@@ -836,7 +847,8 @@ async def search_web(
                 "结果数量": len(results),
                 "搜索结果": llm_results if llm_results else "无相关结果",
             },
-            "next_actions": build_next_actions([("fetch_webpage", "打开搜索结果链接", "需要查看某个搜索结果的详细内容时")])
+            "next_actions": build_next_actions([("fetch_webpage", "打开搜索结果链接", "需要查看某个搜索结果的详细内容时")]),
+            "capabilities_used": [engine_used]
         }
     
     except Exception as e:
@@ -1171,7 +1183,8 @@ async def _port_check(
                         "is_open": True,
                         "service": service,
                     },
-                    "message": f"端口 {port} ({service}) 开放：{host}:{port}"
+                    "message": f"端口 {port} ({service}) 开放：{host}:{port}",
+                    "llm_data": {"主机": host, "端口": port, "开放": True, "服务": service}
                 }
             else:
                 sock.close()
@@ -1184,7 +1197,8 @@ async def _port_check(
                         "is_open": False,
                         "service": well_known_ports.get(port, "Unknown"),
                     },
-                    "message": f"端口 {port} 关闭：{host}:{port}"
+                    "message": f"端口 {port} 关闭：{host}:{port}，请检查服务是否启动或防火墙设置",
+                    "llm_data": {"主机": host, "端口": port, "开放": False}
                 }
         
         except socket.gaierror as e:
