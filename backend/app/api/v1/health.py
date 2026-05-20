@@ -157,10 +157,22 @@ async def execute_tool(request: ToolExecuteRequest):
             result=result if isinstance(result, dict) else {"output": str(result)}
         )
     except Exception as e:
+        # 【修复 小健 2026-05-21】参数错误友好提示
+        err_msg = str(e)
+        if "missing" in err_msg and "required positional argument" in err_msg:
+            import re as _re
+            match = _re.search(r"missing \d+ required positional argument[s]?:\s*(.+)", err_msg)
+            missing_params = match.group(1) if match else "未知参数"
+            err_msg = f"缺少必填参数: {missing_params}。请参考tool/list获取{tool_name}的inputSchema"
+        elif "missing 1 required positional argument" in err_msg:
+            import re as _re
+            match = _re.search(r"(\w+)\(\) missing \d+ required positional argument[s]?:\s*'?(\w+)'?", err_msg)
+            if match:
+                err_msg = f"工具{match.group(1)}缺少必填参数'{match.group(2)}'"
         return ToolExecuteResponse(
             tool_name=tool_name,
             success=False,
-            error=str(e)
+            error=err_msg
         )
 
 
