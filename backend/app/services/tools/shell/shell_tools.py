@@ -146,31 +146,54 @@ def execute_shell_command(
                 ])
             }
         
-        # 不使用 text=True，手动处理编码
-        result = subprocess.run(
+        proc = subprocess.Popen(
             command,
             shell=True,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             cwd=cwd,
-            timeout=timeout_sec,
             env=env,
             executable=executable
         )
+        timed_out = False
+        try:
+            stdout_bytes, stderr_bytes = proc.communicate(timeout=timeout_sec)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            proc.kill()
+            try:
+                stdout_bytes, stderr_bytes = proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                stdout_bytes, stderr_bytes = b"", b""
         
         # 手动解码，处理编码问题（先UTF-8，失败后尝试GBK）
         stdout_str = ""
         stderr_str = ""
         try:
-            stdout_str = result.stdout.decode("utf-8") if result.stdout else ""
+            stdout_str = stdout_bytes.decode("utf-8") if stdout_bytes else ""
         except (UnicodeDecodeError, AttributeError):
-            stdout_str = result.stdout.decode("gbk") if result.stdout else ""
+            stdout_str = stdout_bytes.decode("gbk") if stdout_bytes else ""
         
         try:
-            stderr_str = result.stderr.decode("utf-8") if result.stderr else ""
+            stderr_str = stderr_bytes.decode("utf-8") if stderr_bytes else ""
         except (UnicodeDecodeError, AttributeError):
-            stderr_str = result.stderr.decode("gbk") if result.stderr else ""
+            stderr_str = stderr_bytes.decode("gbk") if stderr_bytes else ""
         
-        if result.returncode == 0:
+        returncode = proc.returncode if proc.returncode is not None else -1
+        if timed_out:
+            return {
+                "code": "ERR_SHELL_TIMEOUT",
+                "data": {
+                    "stdout": stdout_str,
+                    "stderr": stderr_str,
+                    "returncode": returncode
+                },
+                "message": f"命令执行超时（{timeout}毫秒），可增大timeout参数重试",
+                "next_actions": build_next_actions([
+                    ("execute_shell_command", "增大超时重试", "需要更长时间执行时"),
+                ])
+            }
+        if returncode == 0:
             if stderr_str and stderr_str.strip():
                 message = "命令执行成功（有警告输出）"
             else:
@@ -181,7 +204,7 @@ def execute_shell_command(
                 "data": truncate_data_for_frontend({
                     "stdout": stdout_str,
                     "stderr": stderr_str,
-                    "returncode": result.returncode
+                    "returncode": returncode
                 }),
                 "message": message,
                 "llm_data": _llm,
@@ -197,28 +220,15 @@ def execute_shell_command(
                 "data": truncate_data_for_frontend({
                     "stdout": stdout_str,
                     "stderr": stderr_str,
-                    "returncode": result.returncode
+                    "returncode": returncode
                 }),
-                "message": f"命令执行失败（退出码{result.returncode}），请检查命令语法和参数",
+                "message": f"命令执行失败（退出码{returncode}），请检查命令语法和参数",
                 "llm_data": _llm,
                 "next_actions": build_next_actions([
                     ("execute_shell_command", "重新执行命令", "修改命令后重试时"),
                     ("find_command", "查找命令路径", "需要确认命令是否存在时"),
                 ])
             }
-    except subprocess.TimeoutExpired as e:
-        return {
-            "code": "ERR_SHELL_TIMEOUT",
-            "data": {
-                "stdout": "",
-                "stderr": f"命令执行超时（{timeout}毫秒）",
-                "returncode": -1
-            },
-            "message": f"命令执行超时（{timeout}毫秒），可增大timeout参数重试",
-            "next_actions": build_next_actions([
-                ("execute_shell_command", "增大超时重试", "需要更长时间执行时"),
-            ])
-        }
     except Exception as e:
         return {
             "code": "ERR_SHELL_EXCEPTION",
