@@ -1149,51 +1149,32 @@ class FileTools:
         【FIX 2026-05-21 小健】sortBy未定义bug修复（schema精简时遗漏了内部引用）
         """
         sortBy = "name"
-        # 验证搜索路径
         is_valid, error_msg = self._validate_path(search_dir)
         if not is_valid:
-            return _to_unified_format({
-                "success": False,
-                "error": error_msg,
-                "matches": []
-            }, "search_files")
-        
-        # 验证 pattern 不为空
+            return {"code": "ERR_PATH_INVALID", "data": None, "message": error_msg}
+
         if not pattern or not pattern.strip():
-            return _to_unified_format({
-                "success": False,
-                "error": "文件名匹配模式不能为空，请提供有效的文件名模式",
-                "matches": []
-            }, "search_files")
-        
+            return {"code": "ERR_PARAM_INVALID", "data": None, "message": "文件名匹配模式不能为空，请提供有效的文件名模式"}
+
         search_path = Path(os.path.expanduser(search_dir))
 
         try:
             if not search_path.exists():
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"Path not found: {search_dir}",
-                    "matches": []
-                }, "search_files")
-            
-            # 搜索文件名 - 支持循环搜索获取全部结果
-            # 【修复 2026-05-10 小健】加入超时自检：os.walk循环中检查耗时，超时提前返回已有结果
-            _deadline = time.monotonic() + get_timeout("search_files") - 2  # 预留2秒给外围asyncio
-            
+                return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"搜索目录不存在: {search_dir}"}
+
+            _deadline = time.monotonic() + get_timeout("search_files") - 2
+
             _pagination_info = {}
-            excludePatterns = None  # 【FIX 2026-05-20 小健】exclude_patterns已从参数中删除
+            excludePatterns = None
             def _search_sync():
                 all_matches = []
                 seen_files = set()
                 start_offset = decode_page_token(page_token) if page_token else 0
                 seen_count = 0
-                
-                # 单次遍历（P4修复：去掉while True循环）
+
                 import fnmatch
-                
-                # 逐步遍历目录
+
                 for root, dirs, files in os.walk(search_path):
-                    # 【修复 2026-05-10 小健】超时自检：接近deadline时提前返回
                     if time.monotonic() > _deadline:
                         logger.warning(f"[search_files] 超时自检触发，已遍历{seen_count}条，提前返回{len(all_matches)}个匹配")
                         break
@@ -1205,10 +1186,10 @@ class FileTools:
                         if depth >= max_depth:
                             dirs.clear()
                             continue
-                    
+
                     if excludePatterns:
                         dirs[:] = [d for d in dirs if not any(fnmatch.fnmatch(d, pat) for pat in excludePatterns)]
-                    
+
                     for dirname in dirs:
                         if type == "file":
                             continue
@@ -1243,30 +1224,27 @@ class FileTools:
                         matched = fnmatch.fnmatch(filename, pattern) if ignore_case else fnmatch.fnmatchcase(filename, pattern)
                         if not matched:
                             continue
-                        
+
                         file_path = Path(root) / filename
                         file_str = str(file_path.relative_to(search_path))
-                        
-                        # 跳过已存在的
+
                         if file_str in seen_files:
                             continue
-                        
+
                         seen_count += 1
-                        
-                        # 位置偏移跳过
+
                         if seen_count <= start_offset:
                             seen_files.add(file_str)
                             continue
                         seen_files.add(file_str)
-                        
-                        # 【修复P16】指定具体异常
+
                         try:
                             st = file_path.stat()
                             size = st.st_size
                         except (PermissionError, OSError):
                             st = None
                             size = 0
-                        
+
                         all_matches.append({
                             "name": filename,
                             "path": file_str,
@@ -1274,72 +1252,61 @@ class FileTools:
                             "type": "file",
                             "mtime": st.st_mtime if st is not None and sortBy == "mtime" else None
                         })
-                
+
                 _pagination_info['start_offset'] = start_offset
                 return all_matches
-            
-            # 执行搜索
+
             all_matches = await asyncio.to_thread(_search_sync)
             start_offset = _pagination_info.get('start_offset', 0)
-            
-            # 【新增 2026-05-02 小沈】排序支持（覆盖glob_files功能）
+
             if sortBy == "mtime":
-                # 按修改时间降序（最新的在前）
                 all_matches.sort(key=lambda x: x.get("mtime", 0) or 0, reverse=True)
             elif sortBy == "name":
-                # 按名称升序
                 all_matches.sort(key=lambda x: x.get("name", ""))
             elif sortBy == "size":
-                # 按大小降序
                 all_matches.sort(key=lambda x: x.get("size", 0) or 0, reverse=True)
-            
-            # 搜索完成后，根据结果数量决定如何返回前端
+
             total = len(all_matches)
-            
-            # 【调试】记录搜索结果数量
+
             logger.info(f"[search_files] 搜索完成: pattern={pattern}, search_dir={search_dir}, total={total}, matches数量={len(all_matches)}")
-            
-            # 前端分页配置（使用全局统一常量）
+
             if total > DEFAULT_PAGE_SIZE:
-                # 结果多，分页返回
                 total_pages = (total + DEFAULT_PAGE_SIZE - 1) // DEFAULT_PAGE_SIZE
                 page_matches = all_matches[:DEFAULT_PAGE_SIZE]
                 has_more = True
                 next_offset = start_offset + DEFAULT_PAGE_SIZE
                 next_page_token = encode_page_token(next_offset) if has_more else None
             else:
-                # 结果少，一次返回
                 page_matches = all_matches
                 total_pages = 1
                 has_more = False
                 next_page_token = None
-            
-            return _to_unified_format({
-                "success": True,
-                "pattern": pattern,
-                "search_dir": str(search_path),
-                "matches": page_matches,
-                "total": total,
-                "page": 1,
-                "total_pages": total_pages,
-                "page_size": DEFAULT_PAGE_SIZE,
-                "next_page_token": next_page_token,
-                "has_more": has_more
-            }, "search_files", llm_data={
-                "模式": pattern, "搜索目录": str(search_path), "匹配数": total,
-                "文件预览": [m.get("path","") if isinstance(m,dict) else str(m) for m in page_matches[:20]],
-                "has_more": has_more
-            }, next_actions=[
-                ("read_file", "读取找到的文件", "需要查看内容时"),
-            ])
-            
+
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "pattern": pattern,
+                    "search_dir": str(search_path),
+                    "matches": page_matches,
+                    "total": total,
+                    "page": 1,
+                    "total_pages": total_pages,
+                    "page_size": DEFAULT_PAGE_SIZE,
+                    "next_page_token": next_page_token,
+                    "has_more": has_more,
+                },
+                "message": f"搜索完成，共{total}个匹配",
+                "llm_data": {
+                    "模式": pattern, "搜索目录": str(search_path), "匹配数": total,
+                    "文件预览": [m.get("path","") if isinstance(m,dict) else str(m) for m in page_matches[:20]],
+                    "has_more": has_more,
+                },
+                "next_actions": [("read_file", "读取找到的文件", "需要查看内容时")],
+            }
+
         except Exception as e:
             logger.error(f"Failed to search files: {e}")
-            return _to_unified_format({
-                "success": False,
-                "error": str(e),
-                "matches": []
-            }, "search_files")
+            return {"code": "ERR_FILE_SEARCH_FAILED", "data": None, "message": str(e)}
     
     async def _copy_file(
         self,
