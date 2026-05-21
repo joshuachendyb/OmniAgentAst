@@ -1247,26 +1247,6 @@ class BaseAgent(ABC):
             return True
         return False
 
-    @staticmethod
-    def _format_llm_data(data) -> str:
-        """将工具llm_data格式化为LLM可读文本 小沈-2026-05-15
-        共性处理：dict→key: value行，list→编号列表，str→原文"""
-        if isinstance(data, dict):
-            lines = []
-            for k, v in data.items():
-                if v is None:
-                    continue
-                if isinstance(v, (list, tuple)):
-                    lines.append(f"  {k}: {', '.join(str(x) for x in v)}")
-                elif isinstance(v, dict):
-                    lines.append(f"  {k}: {json.dumps(v, ensure_ascii=False)}")
-                else:
-                    lines.append(f"  {k}: {v}")
-            return "\n".join(lines)
-        if isinstance(data, (list, tuple)):
-            return "\n".join(f"  {i+1}. {item}" for i, item in enumerate(data))
-        return str(data)
-
     def _build_alternative_tools_hint(self, failed_tool: str, tool_params: Optional[dict] = None) -> str:
         """工具执行失败时，从当前Agent已注册工具中动态生成替代建议 - 小沈 2026-05-14
         【更新 2026-05-15 小健】http_request失败时提示国内替代URL；tools策略下精简提示
@@ -1321,106 +1301,6 @@ class BaseAgent(ABC):
         return hint
 
     # ===== 通用方法 =====
-
-    # 【升级 2026-05-05 小沈】智能observation截断策略
-    # 方案D: 首尾保留+智能摘要 + 动态递减预算
-    # 【重构 小沈 2026-05-15】统一使用MAX_CONTEXT_CHARS作为总预算，observation预算从中派生
-    OBSERVATION_BUDGET_DECAY = 10000  # 每增加1轮，observation预算减少10K
-    OBSERVATION_BUDGET_MIN = 20000  # 最低observation预算
-    OBSERVATION_HEAD_RATIO = 0.6
-    OBSERVATION_SUMMARY_THRESHOLD = 50000
-
-    def _get_observation_budget(self) -> int:
-        """从MAX_CONTEXT_CHARS派生observation预算，轮数越多给新observation的空间越小 小沈-2026-05-15"""
-        budget = self.MAX_CONTEXT_CHARS - (self.llm_call_count * self.OBSERVATION_BUDGET_DECAY)
-        budget = max(budget, self.OBSERVATION_BUDGET_MIN)
-        return budget
-
-    @staticmethod
-    def _smart_truncate(content: str, budget: int, head_ratio: float = 0.6) -> str:
-        """智能截断：首尾保留 + 中间摘要
-
-        策略：
-        1. 内容在预算内 → 原样返回
-        2. 内容超预算但<摘要阈值 → 首部保留budget，末尾附截断提示
-        3. 内容超摘要阈值 → 首部保留head_ratio*budget，
-           尾部保留(1-head_ratio)*budget，中间替换为摘要
-
-        Args:
-            content: 原始内容
-            budget: 本次允许的最大字符数
-            head_ratio: 头部保留比例，默认0.6
-
-        Returns:
-            截断后的内容
-        """
-        original_len = len(content)
-
-        if original_len <= budget:
-            return content
-
-        head_size = int(budget * head_ratio)
-        tail_size = budget - head_size
-
-        # 计算中间省略了多少
-        middle_len = original_len - head_size - tail_size
-
-        # 估算省略的行数
-        head_part = content[:head_size]
-        tail_part = content[-tail_size:]
-        total_lines = content.count('\n') + 1
-        head_lines = head_part.count('\n') + 1
-        tail_lines = tail_part.count('\n') + 1
-        omitted_lines = total_lines - head_lines - tail_lines
-
-        # 构建摘要
-        if omitted_lines > 0:
-            summary = f"\n\n... [省略 {middle_len} 字符, 约 {omitted_lines} 行] ...\n\n"
-        else:
-            summary = f"\n\n... [省略 {middle_len} 字符] ...\n\n"
-
-        truncated = head_part + summary + tail_part
-        return truncated
-
-    def _add_observation_to_history(self, observation: str) -> None:
-        """添加观察结果到对话历史
-
-        【升级 2026-05-05 小沈】智能截断策略：
-        - 动态预算：第1轮150K，每轮递减10K，最低20K
-        - 首尾保留：保留头部（结构/开头信息）+ 尾部（结果/错误信息）
-        - 中间摘要：省略部分用字符数+行数摘要替代
-        - 上下文保护：总observation不超过上下文窗口
-        """
-        budget = self._get_observation_budget()
-
-        if len(observation) > budget:
-            truncated = self._smart_truncate(
-                observation,
-                budget=budget,
-                head_ratio=self.OBSERVATION_HEAD_RATIO
-            )
-            logger.warning(
-                f"[智能截断] 轮数={self.llm_call_count}, "
-                f"原始长度={len(observation)}, "
-                f"预算={budget}, "
-                f"截断后={len(truncated)}, "
-                f"策略=首尾保留(头{int(self.OBSERVATION_HEAD_RATIO*100)}%+尾{int((1-self.OBSERVATION_HEAD_RATIO)*100)}%)"
-            )
-            observation = truncated
-        else:
-            logger.info(
-                f"[observation] 轮数={self.llm_call_count}, "
-                f"长度={len(observation)}, 预算={budget}, 无需截断"
-            )
-        # 【修复 U5 小沈 2026-05-15】observation统一[Observation]前缀，避免双写
-        if observation.startswith("Observation:"):
-            observation = f"[Observation] {observation[len('Observation:'):].lstrip()}"
-        elif not observation.startswith("[Observation]"):
-            observation = f"[Observation] {observation}"
-        self.message_builder.add_observation(observation, self.llm_call_count)
-
-
-    # ========== 【改进2 2026-05-01 小沈 小健】agent层独立内容质量检测 ==========
 
     def _check_write_content_quality(self, tool_params: dict, data: dict) -> str:
         """
