@@ -196,7 +196,7 @@ def execute_sql(
         
         if dangerous_matches and not dry_run:
             return {
-                "code": "WARNING",
+                "code": "WARNING_DB_SAFETY",
                 "data": {
                     "detected": dangerous_matches,
                     "suggestion": "检测到危险操作，建议使用 dry_run=true 先验证"
@@ -241,7 +241,7 @@ def execute_sql(
             if affected_rows > 10000:
                 conn.rollback()
                 return {
-                    "code": "WARNING",
+                    "code": "WARNING_DB_SAFETY",
                     "data": {
                         "affected_rows": affected_rows,
                         "action": "rollback"
