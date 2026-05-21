@@ -94,7 +94,7 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
     【2026-05-18 小沈】P16幂等性：working_dir不存在时自动创建(makedirs exist_ok=True)"""
     if not code or not code.strip():
         return {
-            "code": "ERR_EXEC_EMPTY_CODE",
+            "code": "ERR_SHELL_EXEC_EMPTY_CODE",
             "data": None,
             "message": "code不能为空，请提供要执行的Python代码"
         }
@@ -103,7 +103,7 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
             os.makedirs(working_dir, exist_ok=True)
         except OSError as e:
             return {
-                "code": "ERR_EXEC_INVALID_DIR",
+                "code": "ERR_SHELL_EXEC_INVALID_DIR",
                 "data": None,
                 "message": f"工作目录创建失败: {working_dir}, 错误: {e}"
             }
@@ -196,7 +196,7 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
 
     except FileNotFoundError:
         return {
-            "code": "ERR_EXEC_PYTHON_NOT_FOUND",
+            "code": "ERR_SHELL_EXEC_PYTHON_NOT_FOUND",
             "data": None,
             "message": "未找到Python环境，请确认Python已安装且在PATH中"
         }
@@ -213,7 +213,7 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
     【2026-05-18 小沈】P16幂等性：working_dir不存在时自动创建(makedirs exist_ok=True)"""
     if not code or not code.strip():
         return {
-            "code": "ERR_EXEC_EMPTY_CODE",
+            "code": "ERR_SHELL_EXEC_EMPTY_CODE",
             "data": None,
             "message": "code不能为空，请提供要执行的JavaScript代码"
         }
@@ -239,7 +239,7 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
             os.makedirs(working_dir, exist_ok=True)
         except OSError as e:
             return {
-                "code": "ERR_EXEC_INVALID_DIR",
+                "code": "ERR_SHELL_EXEC_INVALID_DIR",
                 "data": None,
                 "message": f"工作目录创建失败: {working_dir}, 错误: {e}"
             }
@@ -323,7 +323,7 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
 
     except FileNotFoundError:
         return {
-            "code": "ERR_EXEC_NODE_NOT_FOUND",
+            "code": "ERR_SHELL_EXEC_NODE_NOT_FOUND",
             "data": None,
             "message": "未找到Node.js环境，请先安装Node.js"
         }
