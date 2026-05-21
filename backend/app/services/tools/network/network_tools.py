@@ -68,7 +68,7 @@ async def http_request(
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
             return {
-                "code": "ERR_NETWORK_INVALID_URL",
+                "code": "ERR_NET_INVALID_URL",
                 "data": None,
                 "message": f"无效的URL: {url}，URL必须包含协议和域名（如 https://api.example.com/data）"
             }
@@ -208,7 +208,7 @@ async def http_request(
     except Exception as e:
         logger.error(f"[http_request] 未知错误: {e}")
         return {
-            "code": "ERR_NETWORK_UNKNOWN",
+            "code": "ERR_NET_UNKNOWN",
             "data": None,
             "message": f"请求异常: {str(e)}"
         }
@@ -230,7 +230,7 @@ async def download_file(
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
             return {
-                "code": "ERR_NETWORK_INVALID_URL",
+                "code": "ERR_NET_INVALID_URL",
                 "data": None,
                 "message": f"无效的URL: {url}，URL必须包含协议和域名"
             }
@@ -358,7 +358,7 @@ async def download_file(
     except Exception as e:
         logger.error(f"[download_file] 未知错误: {e}")
         return {
-            "code": "ERR_NETWORK_UNKNOWN",
+            "code": "ERR_NET_UNKNOWN",
             "data": None,
             "message": f"下载异常: {str(e)}"
         }
@@ -380,7 +380,7 @@ async def fetch_webpage(
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
             return {
-                "code": "ERR_NETWORK_INVALID_URL",
+                "code": "ERR_NET_INVALID_URL",
                 "data": None,
                 "message": f"无效的URL: {url}"
             }
@@ -569,7 +569,7 @@ async def fetch_webpage(
     except Exception as e:
         logger.error(f"[fetch_webpage] 未知错误: {e}")
         return {
-            "code": "ERR_NETWORK_UNKNOWN",
+            "code": "ERR_NET_UNKNOWN",
             "data": None,
             "message": f"获取网页异常: {str(e)}"
         }
@@ -844,7 +844,7 @@ async def search_web(
     except Exception as e:
         logger.error(f"[search_web] 未知错误: {e}")
         return {
-            "code": "ERR_NETWORK_UNKNOWN",
+            "code": "ERR_NET_UNKNOWN",
             "data": None,
             "message": f"搜索异常: {str(e)}"
         }
@@ -997,7 +997,7 @@ async def _ping(
             }
         except FileNotFoundError:
             return {
-                "code": "ERR_NETWORK_COMMAND_NOT_FOUND",
+                "code": "ERR_SHELL_COMMAND_NOT_FOUND",
                 "data": None,
                 "message": "系统ping命令不可用"
             }
@@ -1103,7 +1103,7 @@ async def _ping(
     except Exception as e:
         logger.error(f"[ping] 未知错误: {e}")
         return {
-            "code": "ERR_NETWORK_UNKNOWN",
+            "code": "ERR_NET_UNKNOWN",
             "data": None,
             "message": f"Ping测试异常: {str(e)}"
         }
@@ -1228,7 +1228,7 @@ async def _port_check(
     except Exception as e:
         logger.error(f"[port_check] 未知错误: {e}")
         return {
-            "code": "ERR_NETWORK_UNKNOWN",
+            "code": "ERR_NET_UNKNOWN",
             "data": None,
             "message": f"端口检查异常: {str(e)}"
         }
