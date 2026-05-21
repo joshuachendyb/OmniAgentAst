@@ -1,3 +1,16 @@
+v0.13.12
+
+更新时间: 2026-05-21 15:10:00
+
+更新内容：
+- refactor: 18个文件工具函数全部完成返回格式统一(124处_to_unified_format)
+- _read_text_file/data_file_format/write_text_file/list_directory 已完成
+- _precise_replace_in_file/_apply_edits/rename_file/_move_file 已完成
+- read_media_file/_delete_file/search_files/grep_file_content 已完成
+- _get_directory_tree/archive_tool/file_operation 已完成
+- _read_batch_file/edit_file/read_file 已完成
+- 本地测试同步更新，424 passed 0 failed
+
 v0.13.11
 
 更新时间: 2026-05-20 22:05:22
