@@ -167,7 +167,7 @@ def _time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None)
             dt = _parse_datetime_string(timestamp)
             if dt is None:
                 return {
-                    "code": "ERR_TIME_FORMAT",
+                    "code": "ERR_META_TIME_FORMAT",
                     "data": None,
                     "llm_data": None,
                     "message": f"无法解析时间字符串: {timestamp}",
@@ -179,7 +179,7 @@ def _time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None)
             dt = timestamp.astimezone() if timestamp.tzinfo else timestamp.astimezone()
         else:
             return {
-                "code": "ERR_TIME_FORMAT",
+                "code": "ERR_META_TIME_FORMAT",
                 "data": None,
                 "llm_data": None,
                 "message": f"不支持的时间戳类型: {type(timestamp)}",
@@ -210,7 +210,7 @@ def _time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None)
         }
     except Exception as e:
         return {
-            "code": "ERR_TIME_FORMAT",
+            "code": "ERR_META_TIME_FORMAT",
             "data": None,
             "llm_data": None,
             "message": f"格式化时间失败: {str(e)}",
@@ -484,7 +484,7 @@ def _time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[s
         utc_dt = _parse_datetime_any(utc_time)
         if utc_dt is None:
             return {
-                "code": "ERR_TIME_UTC_TO_LOCAL",
+                "code": "ERR_META_TIME_CONVERT",
                 "data": None,
                 "llm_data": None,
                 "message": f"无法解析UTC时间: {utc_time}",
@@ -531,7 +531,7 @@ def _time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[s
         }
     except Exception as e:
         return {
-            "code": "ERR_TIME_UTC_TO_LOCAL",
+            "code": "ERR_META_TIME_CONVERT",
             "data": None,
             "llm_data": None,
             "message": f"时区转换失败: {str(e)}",
@@ -548,7 +548,7 @@ def _time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict
         local_dt = _parse_datetime_any(local_time)
         if local_dt is None:
             return {
-                "code": "ERR_TIME_LOCAL_TO_UTC",
+                "code": "ERR_META_TIME_CONVERT",
                 "data": None,
                 "llm_data": None,
                 "message": f"无法解析本地时间: {local_time}",
@@ -592,7 +592,7 @@ def _time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict
         }
     except Exception as e:
         return {
-            "code": "ERR_TIME_LOCAL_TO_UTC",
+            "code": "ERR_META_TIME_CONVERT",
             "data": None,
             "llm_data": None,
             "message": f"时区转换失败: {str(e)}",
@@ -844,11 +844,11 @@ def _time_next_n_workday(start: Optional[Union[int, float, str]] = None, n: int 
     try:
         dt = _parse_datetime_any(start) if start else datetime.now().astimezone()
         if dt is None:
-            return {"code": "ERR_TIME_NEXT_N_WORKDAY", "data": None, "llm_data": None, "message": f"无法解析start: {start}", "next_actions": build_next_actions([("query_calendar", "检查日期", "需要重新检查日期时")])}
+            return {"code": "ERR_META_CALENDAR_NEXT_N_WORKDAY", "data": None, "llm_data": None, "message": f"无法解析start: {start}", "next_actions": build_next_actions([("query_calendar", "检查日期", "需要重新检查日期时")])}
         result_dates = _calc_next_n_workday(dt.date(), n)
         return {"code": "SUCCESS", "data": result_dates, "llm_data": {"next_workday": result_dates[0] if result_dates else None, "n": n}, "message": f"第{n}个工作日: {result_dates[0] if result_dates else None}"}
     except Exception as e:
-        return {"code": "ERR_TIME_NEXT_N_WORKDAY", "data": None, "llm_data": None, "message": f"计算失败: {str(e)}", "next_actions": build_next_actions([("query_calendar", "检查日期", "需要重新检查日期时")])}
+        return {"code": "ERR_META_CALENDAR_NEXT_N_WORKDAY", "data": None, "llm_data": None, "message": f"计算失败: {str(e)}", "next_actions": build_next_actions([("query_calendar", "检查日期", "需要重新检查日期时")])}
 
 
 # ===========================================================
@@ -872,11 +872,11 @@ def get_time(
             result = _time_format(timestamp=time_value, pattern=format)
         elif action == "to_timestamp":
             if time_value is None:
-                return {"code": "ERR_TIME_FORMAT", "data": None, "llm_data": None, "message": "action='to_timestamp'时time_value必填", "next_actions": build_next_actions([("get_time", "获取当前时间", "time_value缺失时")])}
+                return {"code": "ERR_META_TIME_FORMAT", "data": None, "llm_data": None, "message": "action='to_timestamp'时time_value必填", "next_actions": build_next_actions([("get_time", "获取当前时间", "time_value缺失时")])}
             result = _time_to_timestamp(time=time_value, unit="seconds")
         elif action == "from_timestamp":
             if time_value is None:
-                return {"code": "ERR_TIME_FORMAT", "data": None, "llm_data": None, "message": "action='from_timestamp'时time_value必填", "next_actions": build_next_actions([("get_time", "获取当前时间", "time_value缺失时")])}
+                return {"code": "ERR_META_TIME_FORMAT", "data": None, "llm_data": None, "message": "action='from_timestamp'时time_value必填", "next_actions": build_next_actions([("get_time", "获取当前时间", "time_value缺失时")])}
             result = _timestamp_to_time(timestamp=time_value, target_tz=target_tz or "+08:00")
         else:
             return {"code": "ERR_INVALID_ACTION", "data": None, "llm_data": None, "message": f"不支持的action: {action}，可选: now/format/to_timestamp/from_timestamp", "next_actions": build_next_actions([("tool_help", "查看get_time用法", "不确定action时", {"tool_name": "get_time"})])}
@@ -889,7 +889,7 @@ def get_time(
             ])
         return result
     except Exception as e:
-        return {"code": "ERR_TIME_FORMAT", "data": None, "llm_data": None, "message": f"处理失败: {str(e)}", "next_actions": build_next_actions([("get_time", "重试获取时间", "需要重新获取时")])}
+        return {"code": "ERR_META_TIME_FORMAT", "data": None, "llm_data": None, "message": f"处理失败: {str(e)}", "next_actions": build_next_actions([("get_time", "重试获取时间", "需要重新获取时")])}
 
 
 def time_add(delta: float, start: Optional[Union[int, float, str]] = None, unit: Literal["days", "hours", "minutes", "seconds", "months"] = "days") -> Dict[str, Any]:
@@ -998,7 +998,7 @@ def query_calendar(
         elif check_type == "workday":
             msg = "工作日" if is_workday else f"非工作日（{'周末' if is_weekend else '节假日：' + str(holiday_name)}）"
         else:
-            return {"code": "ERR_INVALID_CHECK_TYPE", "data": None, "llm_data": None, "message": f"不支持的check_type: {check_type}，可选: weekend/holiday/workday/next_workday", "next_actions": build_next_actions([("tool_help", "查看query_calendar用法", "不确定check_type时", {"tool_name": "query_calendar"})])}
+            return {"code": "ERR_META_INVALID_CHECK_TYPE", "data": None, "llm_data": None, "message": f"不支持的check_type: {check_type}，可选: weekend/holiday/workday/next_workday", "next_actions": build_next_actions([("tool_help", "查看query_calendar用法", "不确定check_type时", {"tool_name": "query_calendar"})])}
 
         return {"code": "SUCCESS", "data": result_data, "llm_data": {"date": result_data["date"], "is_weekend": is_weekend, "is_holiday": is_hol, "is_workday": is_workday, "holiday_name": holiday_name}, "message": msg, "next_actions": build_next_actions([
             ("time_add", "计算下一个工作日偏移", "需要排程计算时"),
