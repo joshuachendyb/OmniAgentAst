@@ -1330,7 +1330,6 @@ class FileTools:
             task_id=self.task_id,
             record_operation_func=self.safety.record_operation,
             execute_with_safety_func=self.safety.execute_with_safety,
-            to_unified_format_func=_to_unified_format,
             get_next_sequence_func=self._get_next_sequence,
         )
 
@@ -1345,7 +1344,6 @@ class FileTools:
         return await get_file_info_impl(
             file_path=file_path,
             validate_path_func=self._validate_path,
-            to_unified_format_func=_to_unified_format,
             follow_symlinks=follow_symlinks,
         )
 
@@ -1373,7 +1371,6 @@ class FileTools:
             task_id=self.task_id,
             record_operation_func=self.safety.record_operation,
             execute_with_safety_func=self.safety.execute_with_safety,
-            to_unified_format_func=_to_unified_format,
             get_next_sequence_func=self._get_next_sequence,
         )
 
@@ -1403,7 +1400,6 @@ class FileTools:
             task_id=self.task_id,
             record_operation_func=self.safety.record_operation,
             execute_with_safety_func=self.safety.execute_with_safety,
-            to_unified_format_func=_to_unified_format,
             get_next_sequence_func=self._get_next_sequence,
         )
 
@@ -1465,7 +1461,6 @@ class FileTools:
             task_id=self.task_id,
             record_operation_func=self.safety.record_operation,
             execute_with_safety_func=self.safety.execute_with_safety,
-            to_unified_format_func=_to_unified_format,
             get_next_sequence_func=self._get_next_sequence,
         )
 
@@ -1491,7 +1486,6 @@ class FileTools:
             task_id=self.task_id,
             record_operation_func=self.safety.record_operation,
             execute_with_safety_func=self.safety.execute_with_safety,
-            to_unified_format_func=_to_unified_format,
             get_next_sequence_func=self._get_next_sequence,
         )
 
@@ -1562,15 +1556,11 @@ class FileTools:
     ) -> Dict[str, Any]:
         """同时读取多个文本文件 - 小沈 2026-05-01"""
         if not file_paths:
-            return _to_unified_format({
-                "success": False, "error": "文件路径列表为空", "results": []
-            }, "read_file")
+            return {"code": "ERR_PARAM_INVALID", "data": None, "message": "文件路径列表为空"}
 
         # 【修复 2026-05-01 小沈】OOM防护：批量文件数上限
         if len(file_paths) > MAX_BATCH_FILE_COUNT:
-            return _to_unified_format({
-                "success": False, "error": f"批量读取文件数({len(file_paths)})超过上限{MAX_BATCH_FILE_COUNT}，请分批读取", "results": []
-            }, "read_file")
+            return {"code": "ERR_PARAM_INVALID", "data": None, "message": f"批量读取文件数({len(file_paths)})超过上限{MAX_BATCH_FILE_COUNT}，请分批读取"}
 
         # 【修复 2026-05-01 小沈】B1: 添加Semaphore并发限制，防止大量文件并发读取耗尽文件句柄
         semaphore = asyncio.Semaphore(20)
@@ -1633,10 +1623,17 @@ class FileTools:
             "失败": f"{len(results) - success_count}个",
             "文件详情": _llm_files,
         }
-        return _to_unified_format({
-            "success": success_count > 0, "results": results, "total": len(results),
-            "success_count": success_count, "failed_count": len(results) - success_count,
-        }, "read_file", llm_data=_llm)
+        return {
+            "code": "SUCCESS",
+            "data": {
+                "results": results,
+                "total": len(results),
+                "success_count": success_count,
+                "failed_count": len(results) - success_count,
+            },
+            "message": f"批量读取完成: 成功{success_count}个, 失败{len(results) - success_count}个",
+            "llm_data": _llm,
+        }
 
     async def _precise_replace_in_file(
         self,
@@ -2197,10 +2194,7 @@ class FileTools:
         P15返回值全面化：单文件返回content/encoding/file_size/total_lines；批量返回results列表
         """
         if not file_paths:
-            return _to_unified_format({
-                "success": False,
-                "error": "file_paths不能为空，至少提供1个文件路径"
-            }, "read_file")
+            return {"code": "ERR_PARAM_INVALID", "data": None, "message": "file_paths不能为空，至少提供1个文件路径"}
         
         # 单文件模式
         if len(file_paths) == 1:
@@ -2233,16 +2227,10 @@ class FileTools:
         ignore_case = False  # ⚠️ 警告: 已从Schema移除，硬编码默认False，后续视需求决定是否恢复
         # P17互斥校验
         if old_string and edits:
-            return _to_unified_format({
-                "success": False,
-                "error": "old_string和edits不能同时使用（P17互斥校验）"
-            }, "edit_file")
-        
+            return {"code": "ERR_PARAM_INVALID", "data": None, "message": "old_string和edits不能同时使用（P17互斥校验）"}
+
         if not old_string and not edits:
-            return _to_unified_format({
-                "success": False,
-                "error": "old_string或edits至少填一个"
-            }, "edit_file")
+            return {"code": "ERR_PARAM_INVALID", "data": None, "message": "old_string或edits至少填一个"}
         
         # 单处替换模式：调用precise_replace_in_file逻辑
         if old_string:
@@ -2343,23 +2331,14 @@ class FileTools:
         - action="extract": source=压缩包路径, destination=解压目标目录(可选)
         """
         if action not in ("compress", "extract"):
-            return _to_unified_format({
-                "success": False,
-                "error": f"不支持的action: {action}，可选: compress/extract"
-            }, "archive_tool")
-        
+            return {"code": "ERR_PARAM_INVALID", "data": None, "message": f"不支持的action: {action}，可选: compress/extract"}
+
         if action == "compress":
             if not source:
-                return _to_unified_format({
-                    "success": False,
-                    "error": "compress模式需要提供source"
-                }, "archive_tool")
+                return {"code": "ERR_PARAM_INVALID", "data": None, "message": "compress模式需要提供source"}
             if not destination:
-                return _to_unified_format({
-                    "success": False,
-                    "error": "compress模式需要提供destination"
-                }, "archive_tool")
-            
+                return {"code": "ERR_PARAM_INVALID", "data": None, "message": "compress模式需要提供destination"}
+
             return await self._compress_files(
                 source_path=source,
                 output_path=destination,
@@ -2369,14 +2348,11 @@ class FileTools:
                 overwrite=overwrite,
                 password=password
             )
-        
+
         elif action == "extract":
             if not source:
-                return _to_unified_format({
-                    "success": False,
-                    "error": "extract模式需要提供source"
-                }, "archive_tool")
-            
+                return {"code": "ERR_PARAM_INVALID", "data": None, "message": "extract模式需要提供source"}
+
             result = await self._extract_archive(
                 archive_path=source,
                 output_dir=destination,
@@ -2385,7 +2361,7 @@ class FileTools:
                 preserve_permissions=True
             )
             if "data" not in result:
-                return _to_unified_format(result, "archive_tool")
+                return {"code": "ERROR", "data": None, "message": result.get("message", "解压失败")}
             return result
     
     async def file_operation(
@@ -2416,24 +2392,16 @@ class FileTools:
         """
         # P17互斥校验
         if action not in ("move", "copy", "delete"):
-            return _to_unified_format({
-                "success": False,
-                "error": f"不支持的action: {action}，可选: move/copy/delete"
-            }, "file_operation")
-        
+            return {"code": "ERR_PARAM_INVALID", "data": None, "message": f"不支持的action: {action}，可选: move/copy/delete"}
+
         # P17按action校验必填参数
         if action in ("move", "copy"):
             if not destination:
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"{action}模式需要提供destination"
-                }, "file_operation")
-            
+                return {"code": "ERR_PARAM_INVALID", "data": None, "message": f"{action}模式需要提供destination"}
+
             if action == "move":
                 if os.path.abspath(source) == os.path.abspath(destination):
-                    return _to_unified_format({"success": True, "action": "move", "source": source, "destination": destination, "message": "源和目标相同(P16幂等)"}, "file_operation", next_actions=[
-                        ("read_file", "验证操作结果", "需要确认时"),
-                    ])
+                    return {"code": "SUCCESS", "data": {"action": "move", "source": source, "destination": destination}, "message": "源和目标相同(P16幂等)", "next_actions": build_next_actions([("read_file", "验证操作结果", "需要确认时")])}
                 return await self._move_file(
                     source_path=source,
                     destination_path=destination,
@@ -2441,9 +2409,7 @@ class FileTools:
                 )
             else:  # copy
                 if os.path.abspath(source) == os.path.abspath(destination):
-                    return _to_unified_format({"success": True, "action": "copy", "source": source, "destination": destination, "message": "源和目标相同(P16幂等)"}, "file_operation", next_actions=[
-                        ("read_file", "验证操作结果", "需要确认时"),
-                    ])
+                    return {"code": "SUCCESS", "data": {"action": "copy", "source": source, "destination": destination}, "message": "源和目标相同(P16幂等)", "next_actions": build_next_actions([("read_file", "验证操作结果", "需要确认时")])}
                 return await self._copy_file(
                     source_path=source,
                     destination_path=destination,
@@ -2451,13 +2417,11 @@ class FileTools:
                     overwrite=overwrite,
                     preserve_metadata=preserve_metadata
                 )
-        
+
         elif action == "delete":
             src_path = Path(source)
             if not src_path.exists():
-                return _to_unified_format({"success": True, "action": "delete", "source": source, "message": "文件已不存在(P16幂等)"}, "file_operation", next_actions=[
-                    ("read_file", "验证操作结果", "需要确认时"),
-                ])
+                return {"code": "SUCCESS", "data": {"action": "delete", "source": source}, "message": "文件已不存在(P16幂等)", "next_actions": build_next_actions([("read_file", "验证操作结果", "需要确认时")])}
             return await self._delete_file(
                 file_path=source,
                 recursive=recursive,
@@ -2601,167 +2565,12 @@ class FileTools:
                 },
                 "message": f"已{action} {detected_format.upper()}格式文件: {file_path}",
                 "llm_data": _llm,
-                "next_actions": [("edit_file", "编辑格式化文件", "需要修改时")],
+                "next_actions": build_next_actions([("edit_file", "编辑格式化文件", "需要修改时")]),
             }
 
         except Exception as e:
             logger.error(f"[data_file_format] 执行失败: {e}")
             return {"code": "ERR_DATA_FORMAT_FAILED", "data": None, "message": str(e)}
-        
-        # 自动检测格式
-        if not file_path:
-            return _to_unified_format({
-                "success": False,
-                "error": "file_path是必填参数"
-            }, "data_file_format")
-        
-        is_valid, error_msg = self._validate_path(file_path)
-        if not is_valid:
-            return _to_unified_format({
-                "success": False,
-                "error": error_msg
-            }, "data_file_format")
-        
-        detected_format = format
-        if not detected_format:
-            ext = os.path.splitext(file_path)[1].lower()
-            format_map = {
-                ".json": "json",
-                ".yaml": "yaml",
-                ".yml": "yaml",
-                ".toml": "toml",
-                ".ini": "ini",
-                ".cfg": "ini",
-                ".xml": "xml",
-                ".properties": "properties",
-            }
-            detected_format = format_map.get(ext)
-            if not detected_format:
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"无法识别文件格式: {file_path}，请通过format参数指定"
-                }, "data_file_format")
-        
-        # 调用对应格式工具
-        try:
-            if detected_format == "json":
-                if action == "read":
-                    result = df_tools.read_json(file_path=file_path, encoding=encoding)
-                else:
-                    if data is None:
-                        return _to_unified_format({
-                            "success": False,
-                            "error": "write模式需要提供data参数"
-                        }, "data_file_format")
-                    result = df_tools.write_json(
-                        file_path=file_path,
-                        data=data,
-                        encoding=encoding,
-                        indent=indent or 2
-                    )
-            
-            elif detected_format == "yaml":
-                if action == "read":
-                    result = df_tools.parse_yaml(file_path=file_path, encoding=encoding)
-                else:
-                    if data is None:
-                        return _to_unified_format({
-                            "success": False,
-                            "error": "write模式需要提供data参数"
-                        }, "data_file_format")
-                    result = df_tools.write_yaml(
-                        file_path=file_path,
-                        data=data,
-                        encoding=encoding,
-                        indent=indent
-                    )
-            
-            elif detected_format == "toml":
-                if action == "read":
-                    result = df_tools.parse_toml(file_path=file_path, encoding=encoding)
-                else:
-                    if data is None:
-                        return _to_unified_format({
-                            "success": False,
-                            "error": "write模式需要提供data参数"
-                        }, "data_file_format")
-                    result = df_tools.write_toml(file_path=file_path, data=data, encoding=encoding)
-            
-            elif detected_format == "ini":
-                if action == "read":
-                    result = df_tools.parse_ini(file_path=file_path, encoding=encoding)
-                else:
-                    return _to_unified_format({
-                        "success": False,
-                        "error": "INI格式暂不支持写入（parse_ini仅有读取功能）"
-                    }, "data_file_format")
-            
-            elif detected_format == "xml":
-                if action == "read":
-                    result = df_tools.parse_xml(file_path=file_path, encoding=encoding)
-                else:
-                    return _to_unified_format({
-                        "success": False,
-                        "error": "XML格式暂不支持写入（parse_xml仅有读取功能）"
-                    }, "data_file_format")
-            
-            elif detected_format == "properties":
-                if action == "read":
-                    result = df_tools.parse_properties(file_path=file_path, encoding=encoding)
-                else:
-                    return _to_unified_format({
-                        "success": False,
-                        "error": "Properties格式暂不支持写入（parse_properties仅有读取功能）"
-                    }, "data_file_format")
-            
-            else:
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"不支持的格式: {detected_format}"
-                }, "data_file_format")
-            
-            # 统一返回格式转换
-            if result.get("code") == "ERR_READ_JSON" or result.get("code") == "ERR_WRITE_JSON":
-                return _to_unified_format({
-                    "success": False,
-                    "error": result.get("message", "未知错误")
-                }, "data_file_format")
-            
-            bytes_written = None
-            if action == "write":
-                try:
-                    bytes_written = os.path.getsize(file_path)
-                except Exception:
-                    pass
-            
-            result_data = result.get("data", result)
-            _llm = None
-            if action == "read":
-                _llm = {"格式": detected_format, "文件": file_path, "动作": "read"}
-                if isinstance(result_data, dict):
-                    _llm["键"] = list(result_data.keys())[:30]
-                    _llm["顶层项数"] = len(result_data)
-                elif isinstance(result_data, list):
-                    _llm["项数"] = len(result_data)
-                    _llm["预览"] = make_json_safe(result_data[:5], max_str_len=200)
-            
-            return _to_unified_format({
-                "success": True,
-                "data": result_data,
-                "format": detected_format,
-                "file_path": file_path,
-                "action": action,
-                "bytes_written": bytes_written
-            }, "data_file_format", llm_data=_llm, next_actions=[
-                ("edit_file", "编辑格式化文件", "需要修改时"),
-            ])
-        
-        except Exception as e:
-            logger.error(f"[data_file_format] 执行失败: {e}")
-            return _to_unified_format({
-                "success": False,
-                "error": str(e)
-            }, "data_file_format")
 
 
 # ============================================================
@@ -2774,197 +2583,7 @@ def get_file_tools(task_id: Optional[str] = None) -> FileTools:
 
 
 # ============================================================
-# 第八部分：统一返回格式辅助函数
-# ============================================================
-
-def _generate_summary(tool_name: str, result: Any) -> str:
-    """生成人类可读的结果摘要 - 小沈 2026-05-19 清理死代码18→11，补5个缺失分支，修复重复分支"""
-    if not isinstance(result, dict):
-        return "操作完成"
-
-    # --- F1: read_file --- 小沈 2026-05-19
-    if tool_name == "read_file":
-        if result.get("success") is False:
-            return f"读取失败：{result.get('error', '未知错误')}"
-        total_lines = result.get("total_lines")
-        if total_lines is not None:
-            line_count = result.get("line_count", 0)
-            return f"成功读取文件：{line_count}/{total_lines} 行"
-        success_count = result.get("success_count", 0)
-        failed_count = result.get("failed_count", 0)
-        total = result.get("total", 0)
-        return f"批量读取完成：成功 {success_count}/{total} 个，失败 {failed_count} 个"
-
-    # --- F2: write_text_file ---
-    elif tool_name == "write_text_file":
-        if result.get("success") is False:
-            return f"写入失败：{result.get('error', '未知错误')}"
-        bytes_written = result.get("bytes_written", 0)
-        file_path = result.get("file_path", "")
-        return f"成功写入文件 {file_path}，共 {bytes_written} 字节"
-
-    # --- F3: read_media_file ---
-    elif tool_name == "read_media_file":
-        if result.get("success") is False:
-            return f"读取媒体失败：{result.get('error', '未知错误')}"
-        mime = result.get("mime_type", "未知")
-        size = result.get("file_size", 0)
-        return f"成功读取媒体文件：{mime}，{size:,} 字节"
-
-    # --- F4: edit_file --- 小沈 2026-05-19
-    elif tool_name == "edit_file":
-        if result.get("success") is False:
-            return f"编辑失败：{result.get('error', '未知错误')}"
-        replaced_count = result.get("replaced_count")
-        if replaced_count is not None:
-            return f"成功替换 {replaced_count} 处文本"
-        applied = result.get("applied_edits")
-        total = result.get("total_edits")
-        if applied is not None and total is not None:
-            dry = result.get("dry_run", False)
-            if dry:
-                return f"预览模式：{applied}/{total} 处编辑将生效"
-            return f"成功应用 {applied}/{total} 处编辑"
-        return "编辑完成"
-
-    # --- F5: list_directory ---
-    elif tool_name == "list_directory":
-        if result.get("success") is False:
-            return f"列出目录失败：{result.get('error', '未知错误')}"
-        stats = result.get("statistics", {})
-        if stats:
-            total_size = stats.get("total_size", 0)
-            dir_count = stats.get("dir_count", 0)
-            file_count = stats.get("file_count", 0)
-            size_str = f"{total_size:,}" if total_size < 1073741824 else f"{total_size / 1073741824:.2f} GB"
-            return f"列出目录：{dir_count} 个目录，{file_count} 个文件，总大小 {size_str} 字节"
-        total = result.get("total", 0)
-        return f"成功读取目录，共 {total} 个项目"
-
-    # --- F6: search_files ---
-    elif tool_name == "search_files":
-        if result.get("success") is False:
-            return f"搜索文件失败：{result.get('error', '未知错误')}"
-        total = result.get("total", 0)
-        return f"搜索完成，找到 {total} 个匹配文件"
-
-    # --- F7: grep_file_content ---
-    elif tool_name == "grep_file_content":
-        if result.get("success") is False:
-            return f"搜索内容失败：{result.get('error', '未知错误')}"
-        files_matched = result.get("total", result.get("files_matched", 0))
-        total_matches = result.get("total_matches", 0)
-        return f"搜索内容完成，找到 {files_matched} 个文件，共 {total_matches} 处匹配"
-
-    # --- F8: rename_file ---
-    elif tool_name == "rename_file":
-        if result.get("success") is False:
-            return f"重命名失败：{result.get('error', '未知错误')}"
-        old = result.get("old_name", "")
-        new = result.get("new_name", "")
-        return f"成功重命名：{old} -> {new}"
-
-    # --- F9: archive_tool --- 小沈 2026-05-19
-    elif tool_name == "archive_tool":
-        if result.get("success") is False:
-            return f"压缩/解压失败：{result.get('error', '未知错误')}"
-        compressed_size = result.get("compressed_size")
-        extracted_files = result.get("extracted_files")
-        if compressed_size is not None:
-            return f"成功压缩，大小：{compressed_size:,} 字节"
-        elif extracted_files is not None:
-            return f"成功解压，共 {extracted_files} 个文件"
-        return "压缩/解压完成"
-
-    # --- F10: file_operation --- 小沈 2026-05-19
-    elif tool_name == "file_operation":
-        if result.get("success") is False:
-            return f"文件操作失败：{result.get('error', '未知错误')}"
-        action = result.get("action", "")
-        source = result.get("source", "")
-        if action == "move":
-            destination = result.get("destination", "")
-            return f"成功移动：{source} -> {destination}"
-        elif action == "copy":
-            destination = result.get("destination", "")
-            return f"成功复制：{source} -> {destination}"
-        elif action == "delete":
-            deleted_path = result.get("deleted_path", source)
-            return f"成功删除：{deleted_path}"
-        return "文件操作完成"
-
-    # --- F11: data_file_format --- 小沈 2026-05-19
-    elif tool_name == "data_file_format":
-        if result.get("success") is False:
-            return f"配置文件操作失败：{result.get('error', '未知错误')}"
-        action = result.get("action", "")
-        file_path = result.get("file_path", "")
-        fmt = result.get("format", "")
-        if action == "read":
-            return f"成功读取{fmt}配置文件：{file_path}"
-        elif action == "write":
-            bytes_written = result.get("bytes_written")
-            if bytes_written is not None:
-                return f"成功写入{fmt}配置文件：{file_path}，{bytes_written} 字节"
-            return f"成功写入{fmt}配置文件：{file_path}"
-        return "配置文件操作完成"
-
-    return "操作完成"
-
-
-def _to_unified_format(result: Dict[str, Any], tool_name: str, retry_count: int = 0, llm_data: dict = None, next_actions: list = None) -> Dict[str, Any]:
-    """将工具执行结果转换为统一格式，支持llm_data/next_actions/capabilities透传 小沈-2026-05-19
-    【2026-05-20 小沈】data通道加1M截断保护(truncate_data_for_frontend)
-    【2026-05-21 小健】统一返回{code,data,message}格式，与其他工具一致；保留status/summary向后兼容"""
-    if not isinstance(result, dict):
-        r = {
-            "code": "ERROR",
-            "status": "error",
-            "summary": "执行结果格式错误",
-            "data": None,
-            "message": "执行结果格式错误",
-            "retry_count": retry_count
-        }
-        if llm_data: r["llm_data"] = llm_data
-        return r
-
-    success = result.get("success")
-    if success is True:
-        status = "success"
-        code = "SUCCESS"
-    elif success is False:
-        status = "error"
-        code = "ERROR"
-    else:
-        status = "success"
-        code = "SUCCESS"
-
-    summary = _generate_summary(tool_name, result)
-
-    safe_data = truncate_data_for_frontend(result)
-
-    r = {
-        "code": code,
-        "status": status,
-        "summary": summary,
-        "data": safe_data,
-        "message": summary,
-        "retry_count": retry_count
-    }
-    if llm_data:
-        r["llm_data"] = llm_data
-    if status == "success" and next_actions is not None:
-        r["next_actions"] = build_next_actions(next_actions)
-    if status == "success":
-        if "capabilities_used" in result:
-            r["capabilities_used"] = result["capabilities_used"]
-        if "capabilities_missing" in result:
-            r["capabilities_missing"] = result["capabilities_missing"]
-    return r
-
-
-# ============================================================
-# 第九部分：分页支持函数
+# 第八部分：分页支持函数（原第九部分）
 # ============================================================
 
 def encode_page_token(offset: int) -> str:

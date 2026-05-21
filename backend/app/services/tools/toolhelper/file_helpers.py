@@ -881,11 +881,10 @@ async def batch_rename_impl(
     task_id: Optional[str] = None,
     record_operation_func=None,
     execute_with_safety_func=None,
-    to_unified_format_func=None,
     get_next_sequence_func=None,
 ) -> Dict[str, Any]:
     """
-    batch_rename工具的实现函数
+    batch_rename工具的实现函数 - 格式统一 - 小沈 2026-05-21
     
     Args:
         directory: 目标目录路径
@@ -899,7 +898,6 @@ async def batch_rename_impl(
         task_id: 任务ID
         record_operation_func: 记录操作函数
         execute_with_safety_func: 安全执行函数
-        to_unified_format_func: 统一格式转换函数
         get_next_sequence_func: 获取下一个序列号函数
     
     Returns:
@@ -909,35 +907,19 @@ async def batch_rename_impl(
     
     is_valid, error_msg = validate_path_func(directory)
     if not is_valid:
-        return to_unified_format_func({
-            "success": False,
-            "error": f"目录路径验证失败: {error_msg}",
-            "operation_id": None
-        }, "batch_rename")
+        return {"code": "ERR_PATH_INVALID", "data": None, "message": f"目录路径验证失败: {error_msg}"}
     
     if not task_id:
-        return to_unified_format_func({
-            "success": False,
-            "error": "No active task",
-            "operation_id": None
-        }, "batch_rename")
+        return {"code": "ERR_NO_TASK", "data": None, "message": "No active task"}
     
     dir_path = Path(directory)
     
     try:
         if not dir_path.exists():
-            return to_unified_format_func({
-                "success": False,
-                "error": f"目录不存在: {directory}",
-                "operation_id": None
-            }, "batch_rename")
+            return {"code": "ERR_DIR_NOT_FOUND", "data": None, "message": f"目录不存在: {directory}"}
         
         if not dir_path.is_dir():
-            return to_unified_format_func({
-                "success": False,
-                "error": f"路径不是目录: {directory}",
-                "operation_id": None
-            }, "batch_rename")
+            return {"code": "ERR_PATH_NOT_DIR", "data": None, "message": f"路径不是目录: {directory}"}
         
         try:
             regex = re.compile(pattern)
@@ -1102,18 +1084,10 @@ async def batch_rename_impl(
             "operations": operations
         }
         
-        return to_unified_format_func({
-            "success": True,
-            "operation_id": None if preview else (operations[0]["operation_id"] if operations and len(operations) > 0 else None),
-            **result
-        }, "batch_rename")
+        return {"code": "SUCCESS", "data": result, "message": "批量重命名预览" if preview else f"批量重命名完成: {renamed_count}个文件已重命名"}
             
     except Exception as e:
-        return to_unified_format_func({
-            "success": False,
-            "error": str(e),
-            "operation_id": None
-        }, "batch_rename")
+        return {"code": "ERR_RENAME_FAILED", "data": None, "message": f"批量重命名失败: {str(e)}"}
 
 
 async def compress_files_impl(
@@ -1130,11 +1104,10 @@ async def compress_files_impl(
     task_id: Optional[str] = None,
     record_operation_func=None,
     execute_with_safety_func=None,
-    to_unified_format_func=None,
     get_next_sequence_func=None,
 ) -> Dict[str, Any]:
     """
-    compress_files工具的实现函数 - 小沈 2026-05-03 修正
+    compress_files工具的实现函数 - 小沈 2026-05-03 修正; 格式统一 - 小沈 2026-05-21
     
     Args:
         source_path: 源文件或目录路径（必填）
@@ -1150,7 +1123,6 @@ async def compress_files_impl(
         task_id: 任务ID
         record_operation_func: 记录操作函数
         execute_with_safety_func: 安全执行函数
-        to_unified_format_func: 统一格式转换函数
         get_next_sequence_func: 获取下一个序列号函数
     
     Returns:
@@ -1160,67 +1132,35 @@ async def compress_files_impl(
     
     is_valid_src, error_msg_src = validate_path_func(source_path)
     if not is_valid_src:
-        return to_unified_format_func({
-            "success": False,
-            "error": f"源路径验证失败: {error_msg_src}",
-            "operation_id": None
-        }, "compress_files")
+        return {"code": "ERR_PATH_INVALID", "data": None, "message": f"源路径验证失败: {error_msg_src}"}
     
     destination_path = output_path
     
     is_valid_dst, error_msg_dst = validate_path_func(destination_path)
     if not is_valid_dst:
-        return to_unified_format_func({
-            "success": False,
-            "error": f"目标路径验证失败: {error_msg_dst}",
-            "operation_id": None
-        }, "compress_files")
+        return {"code": "ERR_PATH_INVALID", "data": None, "message": f"目标路径验证失败: {error_msg_dst}"}
     
     if not overwrite and os.path.exists(destination_path):
-        return to_unified_format_func({
-            "success": False,
-            "error": f"目标文件已存在: {destination_path}，可设置overwrite=true覆盖",
-            "operation_id": None
-        }, "compress_files")
+        return {"code": "ERR_FILE_EXISTS", "data": None, "message": f"目标文件已存在: {destination_path}，可设置overwrite=true覆盖"}
     
     if not task_id:
-        return to_unified_format_func({
-            "success": False,
-            "error": "No active task",
-            "operation_id": None
-        }, "compress_files")
+        return {"code": "ERR_NO_TASK", "data": None, "message": "No active task"}
     
     if format not in ["zip", "tar.gz"]:
-        return to_unified_format_func({
-            "success": False,
-            "error": f"不支持的压缩格式: {format}，支持格式: zip, tar.gz",
-            "operation_id": None
-        }, "compress_files")
+        return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None, "message": f"不支持的压缩格式: {format}，支持格式: zip, tar.gz"}
     
     if not 0 <= compression_level <= 9:
-        return to_unified_format_func({
-            "success": False,
-            "error": f"无效的压缩级别: {compression_level}，必须是0-9之间的整数",
-            "operation_id": None
-        }, "compress_files")
+        return {"code": "ERR_INVALID_PARAM", "data": None, "message": f"无效的压缩级别: {compression_level}，必须是0-9之间的整数"}
     
     source = Path(source_path)
     destination = Path(output_path)
     
     try:
         if not source.exists():
-            return to_unified_format_func({
-                "success": False,
-                "error": f"源路径不存在: {source_path}",
-                "operation_id": None
-            }, "compress_files")
+            return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"源路径不存在: {source_path}"}
         
         if destination.exists() and not overwrite:
-            return to_unified_format_func({
-                "success": False,
-                "error": f"目标文件已存在: {output_path}，可设置overwrite=true覆盖",
-                "operation_id": None
-            }, "compress_files")
+            return {"code": "ERR_FILE_EXISTS", "data": None, "message": f"目标文件已存在: {output_path}，可设置overwrite=true覆盖"}
         
         destination.parent.mkdir(parents=True, exist_ok=True)
         
@@ -1333,24 +1273,12 @@ async def compress_files_impl(
         )
         
         if result:
-            return to_unified_format_func({
-                "success": True,
-                "operation_id": operation_id,
-                **result
-            }, "compress_files")
+            return {"code": "SUCCESS", "data": {"operation_id": operation_id, **result}, "message": f"压缩完成: {result.get('file_count', 0)}个文件"}
         else:
-            return to_unified_format_func({
-                "success": False,
-                "error": "压缩失败",
-                "operation_id": operation_id
-            }, "compress_files")
+            return {"code": "ERR_COMPRESS_FAILED", "data": None, "message": "压缩失败"}
             
     except Exception as e:
-        return to_unified_format_func({
-            "success": False,
-            "error": str(e),
-            "operation_id": None
-        }, "compress_files")
+        return {"code": "ERR_COMPRESS_FAILED", "data": None, "message": f"压缩失败: {str(e)}"}
 
 
 def _split_zip_file(zip_path: Path, split_size: int) -> List[Path]:
@@ -1395,12 +1323,11 @@ async def copy_file_impl(
     task_id: Optional[str],
     record_operation_func,
     execute_with_safety_func,
-    to_unified_format_func,
     get_next_sequence_func,
     preserve_metadata: bool = True,
 ) -> Dict[str, Any]:
     """
-    copy_file工具的实现函数 - 小健 2026-05-02 增加preserve_metadata
+    copy_file工具的实现函数 - 小健 2026-05-02 增加preserve_metadata; 格式统一 - 小沈 2026-05-21
     
     Args:
         source_path: 源文件或目录路径
@@ -1413,7 +1340,6 @@ async def copy_file_impl(
         task_id: 任务ID
         record_operation_func: 记录操作函数
         execute_with_safety_func: 安全执行函数
-        to_unified_format_func: 统一格式转换函数
         get_next_sequence_func: 获取下一个序列号函数
     
     Returns:
@@ -1423,44 +1349,24 @@ async def copy_file_impl(
     
     is_valid_src, error_msg_src = validate_path_func(source_path)
     if not is_valid_src:
-        return to_unified_format_func({
-            "success": False,
-            "error": f"源路径{error_msg_src}",
-            "operation_id": None
-        }, "copy_file")
+        return {"code": "ERR_PATH_INVALID", "data": None, "message": f"源路径{error_msg_src}"}
     
     is_valid_dst, error_msg_dst = validate_path_func(destination_path)
     if not is_valid_dst:
-        return to_unified_format_func({
-            "success": False,
-            "error": f"目标路径{error_msg_dst}",
-            "operation_id": None
-        }, "copy_file")
+        return {"code": "ERR_PATH_INVALID", "data": None, "message": f"目标路径{error_msg_dst}"}
     
     if not task_id:
-        return to_unified_format_func({
-            "success": False,
-            "error": "No active task",
-            "operation_id": None
-        }, "copy_file")
+        return {"code": "ERR_NO_TASK", "data": None, "message": "No active task"}
     
     src = Path(source_path)
     dst = Path(destination_path)
     
     try:
         if not src.exists():
-            return to_unified_format_func({
-                "success": False,
-                "error": f"Source not found: {source_path}",
-                "operation_id": None
-            }, "copy_file")
+            return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"Source not found: {source_path}"}
         
         if dst.exists() and not overwrite:
-            return to_unified_format_func({
-                "success": False,
-                "error": f"目标路径已存在: {dst}，复制操作已取消。请设置overwrite=True或指定其他路径。",
-                "operation_id": None
-            }, "copy_file")
+            return {"code": "ERR_FILE_EXISTS", "data": None, "message": f"目标路径已存在: {dst}，复制操作已取消。请设置overwrite=True或指定其他路径。"}
         
         operation_id = record_operation_func(
             task_id=task_id,
@@ -1496,26 +1402,12 @@ async def copy_file_impl(
         )
         
         if success:
-            return to_unified_format_func({
-                "success": True,
-                "operation_id": operation_id,
-                "source": str(src),
-                "destination": str(dst),
-                "message": f"Copied: {src.name} -> {dst}"
-            }, "copy_file")
+            return {"code": "SUCCESS", "data": {"operation_id": operation_id, "source": str(src), "destination": str(dst)}, "message": f"Copied: {src.name} -> {dst}"}
         else:
-            return to_unified_format_func({
-                "success": False,
-                "error": "Failed to copy file",
-                "operation_id": operation_id
-            }, "copy_file")
+            return {"code": "ERR_COPY_FAILED", "data": None, "message": "Failed to copy file"}
             
     except Exception as e:
-        return to_unified_format_func({
-            "success": False,
-            "error": str(e),
-            "operation_id": None
-        }, "copy_file")
+        return {"code": "ERR_COPY_FAILED", "data": None, "message": str(e)}
 
 
 async def file_statistics_impl(
@@ -1529,11 +1421,10 @@ async def file_statistics_impl(
     task_id: Optional[str] = None,
     record_operation_func=None,
     execute_with_safety_func=None,
-    to_unified_format_func=None,
     get_next_sequence_func=None,
 ) -> Dict[str, Any]:
     """
-    file_statistics工具的实现函数
+    file_statistics工具的实现函数 - 格式统一 - 小沈 2026-05-21
     
     Args:
         directory: 统计目录路径
@@ -1546,7 +1437,6 @@ async def file_statistics_impl(
         task_id: 任务ID
         record_operation_func: 记录操作函数
         execute_with_safety_func: 安全执行函数
-        to_unified_format_func: 统一格式转换函数
         get_next_sequence_func: 获取下一个序列号函数
     
     Returns:
@@ -1556,42 +1446,22 @@ async def file_statistics_impl(
     
     is_valid, error_msg = validate_path_func(directory)
     if not is_valid:
-        return to_unified_format_func({
-            "success": False,
-            "error": f"目录路径验证失败: {error_msg}",
-            "operation_id": None
-        }, "file_statistics")
+        return {"code": "ERR_PATH_INVALID", "data": None, "message": f"目录路径验证失败: {error_msg}"}
     
     if not task_id:
-        return to_unified_format_func({
-            "success": False,
-            "error": "No active task",
-            "operation_id": None
-        }, "file_statistics")
+        return {"code": "ERR_NO_TASK", "data": None, "message": "No active task"}
     
     if output_format not in ["json", "csv", "text"]:
-        return to_unified_format_func({
-            "success": False,
-            "error": f"不支持的输出格式: {output_format}，支持格式: json, csv, text",
-            "operation_id": None
-        }, "file_statistics")
+        return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None, "message": f"不支持的输出格式: {output_format}，支持格式: json, csv, text"}
     
     dir_path = Path(directory)
     
     try:
         if not dir_path.exists():
-            return to_unified_format_func({
-                "success": False,
-                "error": f"目录不存在: {directory}",
-                "operation_id": None
-            }, "file_statistics")
+            return {"code": "ERR_DIR_NOT_FOUND", "data": None, "message": f"目录不存在: {directory}"}
         
         if not dir_path.is_dir():
-            return to_unified_format_func({
-                "success": False,
-                "error": f"路径不是目录: {directory}",
-                "operation_id": None
-            }, "file_statistics")
+            return {"code": "ERR_PATH_NOT_DIR", "data": None, "message": f"路径不是目录: {directory}"}
         
         operation_id = record_operation_func(
             task_id=task_id,
@@ -1811,24 +1681,12 @@ async def file_statistics_impl(
         )
         
         if result:
-            return to_unified_format_func({
-                "success": True,
-                "operation_id": operation_id,
-                **result
-            }, "file_statistics")
+            return {"code": "SUCCESS", "data": {"operation_id": operation_id, **result}, "message": f"文件统计完成: {result.get('total_files', 0)}个文件, {result.get('total_directories', 0)}个目录"}
         else:
-            return to_unified_format_func({
-                "success": False,
-                "error": "文件统计失败",
-                "operation_id": operation_id
-            }, "file_statistics")
+            return {"code": "ERR_STATISTICS_FAILED", "data": None, "message": "文件统计失败"}
             
     except Exception as e:
-        return to_unified_format_func({
-            "success": False,
-            "error": str(e),
-            "operation_id": None
-        }, "file_statistics")
+        return {"code": "ERR_STATISTICS_FAILED", "data": None, "message": f"文件统计失败: {str(e)}"}
 
 
 def _apply_filters(path: Path, filters: Optional[Dict[str, Any]]) -> bool:
@@ -1904,11 +1762,10 @@ async def file_checksum_impl(
     task_id: Optional[str] = None,
     record_operation_func=None,
     execute_with_safety_func=None,
-    to_unified_format_func=None,
     get_next_sequence_func=None,
 ) -> Dict[str, Any]:
     """
-    file_checksum工具的实现函数 - 小沈 2026-05-03 修正
+    file_checksum工具的实现函数 - 小沈 2026-05-03 修正; 格式统一 - 小沈 2026-05-21
     
     Args:
         file_path: 要计算哈希的文件路径（必填）
@@ -1921,60 +1778,35 @@ async def file_checksum_impl(
         task_id: 任务ID
         record_operation_func: 记录操作函数
         execute_with_safety_func: 安全执行函数
-        to_unified_format_func: 统一格式转换函数
         get_next_sequence_func: 获取下一个序列号函数
     
     Returns:
-        统一格式的结果字典：{ success, operation_id, algorithm, checksum, file_size, verified }
+        统一格式的结果字典：{ code, data, message }
     """
     from app.services.safety.file.file_safety import OperationType
     
     is_valid, error_msg = validate_path_func(file_path)
     if not is_valid:
-        return to_unified_format_func({
-            "success": False,
-            "error": f"文件路径验证失败: {error_msg}",
-            "operation_id": None
-        }, "file_checksum")
+        return {"code": "ERR_PATH_INVALID", "data": None, "message": f"文件路径验证失败: {error_msg}"}
     
     if not task_id:
-        return to_unified_format_func({
-            "success": False,
-            "error": "No active task",
-            "operation_id": None
-        }, "file_checksum")
+        return {"code": "ERR_NO_TASK", "data": None, "message": "No active task"}
     
     supported_algorithms = ["md5", "sha1", "sha256", "sha512"]
     if algorithm.lower() not in supported_algorithms:
-        return to_unified_format_func({
-            "success": False,
-            "error": f"不支持的哈希算法: {algorithm}，支持算法: {', '.join(supported_algorithms)}",
-            "operation_id": None
-        }, "file_checksum")
+        return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None, "message": f"不支持的哈希算法: {algorithm}，支持算法: {', '.join(supported_algorithms)}"}
     
     if chunk_size < 1024 or chunk_size > 1048576:
-        return to_unified_format_func({
-            "success": False,
-            "error": f"无效的分块大小: {chunk_size}，必须在1024到1048576之间",
-            "operation_id": None
-        }, "file_checksum")
+        return {"code": "ERR_INVALID_PARAM", "data": None, "message": f"无效的分块大小: {chunk_size}，必须在1024到1048576之间"}
     
     path = Path(file_path)
     
     try:
         if not path.exists():
-            return to_unified_format_func({
-                "success": False,
-                "error": f"文件不存在: {file_path}",
-                "operation_id": None
-            }, "file_checksum")
+            return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"文件不存在: {file_path}"}
         
         if not path.is_file():
-            return to_unified_format_func({
-                "success": False,
-                "error": f"路径不是文件: {file_path}",
-                "operation_id": None
-            }, "file_checksum")
+            return {"code": "ERR_PATH_NOT_FILE", "data": None, "message": f"路径不是文件: {file_path}"}
         
         operation_id = record_operation_func(
             task_id=task_id,
@@ -2043,39 +1875,22 @@ async def file_checksum_impl(
         )
         
         if result:
-            final_result = {
-                "success": True,
-                "operation_id": operation_id,
-                **result
-            }
-            
+            data = {"operation_id": operation_id, **result}
             if verify_hash is not None:
                 if result["verification_result"]:
-                    final_result["verification_status"] = "passed"
-                    final_result["message"] = f"哈希验证通过: {algorithm.upper()} 匹配"
+                    msg = f"哈希验证通过: {algorithm.upper()} 匹配"
                 else:
-                    final_result["verification_status"] = "failed"
-                    final_result["message"] = f"哈希验证失败: {algorithm.upper()} 不匹配"
-                    final_result["expected_hash"] = verify_hash
-                    final_result["actual_hash"] = result["checksum"]
+                    msg = f"哈希验证失败: {algorithm.upper()} 不匹配"
+                    data["expected_hash"] = verify_hash
+                    data["actual_hash"] = result["checksum"]
             else:
-                final_result["verification_status"] = "not_verified"
-                final_result["message"] = f"哈希计算完成: {algorithm.upper()}"
-            
-            return to_unified_format_func(final_result, "file_checksum")
+                msg = f"哈希计算完成: {algorithm.upper()}"
+            return {"code": "SUCCESS", "data": data, "message": msg}
         else:
-            return to_unified_format_func({
-                "success": False,
-                "error": "哈希计算失败",
-                "operation_id": operation_id
-            }, "file_checksum")
+            return {"code": "ERR_CHECKSUM_FAILED", "data": None, "message": "哈希计算失败"}
             
     except Exception as e:
-        return to_unified_format_func({
-            "success": False,
-            "error": str(e),
-            "operation_id": None
-        }, "file_checksum")
+        return {"code": "ERR_CHECKSUM_FAILED", "data": None, "message": f"哈希计算失败: {str(e)}"}
 
 
 def _calculate_hash_for_multiple_files(
@@ -2173,25 +1988,18 @@ def _calculate_hash_for_multiple_files(
 async def get_file_info_impl(
     file_path: str,
     validate_path_func,
-    to_unified_format_func,
     follow_symlinks: bool = True,
 ) -> Dict[str, Any]:
-    """获取文件信息 - 小健 2026-05-02 增加follow_symlinks"""
+    """获取文件信息 - 小健 2026-05-02 增加follow_symlinks; 格式统一 - 小沈 2026-05-21"""
     is_valid, error_msg = validate_path_func(file_path)
     if not is_valid:
-        return to_unified_format_func({
-            "success": False,
-            "error": error_msg
-        }, "get_file_info")
+        return {"code": "ERR_PATH_INVALID", "data": None, "message": error_msg}
     
     path = Path(file_path)
     
     try:
         if not path.exists():
-            return to_unified_format_func({
-                "success": False,
-                "error": f"File not found: {file_path}"
-            }, "get_file_info")
+            return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"File not found: {file_path}"}
         
         def _get_info_sync():
             stat = path.stat(follow_symlinks=follow_symlinks)
@@ -2244,13 +2052,7 @@ async def get_file_info_impl(
         
         info = await asyncio.to_thread(_get_info_sync)
         
-        return to_unified_format_func({
-            "success": True,
-            "info": info
-        }, "get_file_info")
+        return {"code": "SUCCESS", "data": {"info": info}, "message": "获取文件信息成功"}
         
     except Exception as e:
-        return to_unified_format_func({
-            "success": False,
-            "error": str(e)
-        }, "get_file_info")
+        return {"code": "ERR_FILE_INFO", "data": None, "message": f"获取文件信息失败: {str(e)}"}
