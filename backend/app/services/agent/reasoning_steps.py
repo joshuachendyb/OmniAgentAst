@@ -854,14 +854,23 @@ class StepFactory:
         Returns:
             ActionToolStep实例
         """
+        # code→status 映射 — 小沈 2026-05-21
+        _code = execution_result.get("code", "SUCCESS")
+        if _code == "SUCCESS":
+            _status = "warning" if execution_result.get("warning") else "success"
+        elif _code.startswith("WARNING_"):
+            _status = "warning"
+        else:
+            _status = "error"
+        
         return ActionToolStep(
             step=step,
             tool_name=tool_name,
             tool_params=tool_params or {},
-            execution_status=execution_result.get("status", "success"),
-            summary=execution_result.get("summary", ""),
+            execution_status=_status,
+            summary=execution_result.get("message", ""),
             execution_result=execution_result.get("data"),
-            error_message=execution_result.get("error", ""),
+            error_message="",
             action_retry_count=execution_result.get("retry_count", 0),
             execution_time_ms=execution_time_ms
         )
