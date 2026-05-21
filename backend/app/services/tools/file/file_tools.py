@@ -557,20 +557,12 @@ class FileTools:
         # 【新增 2026-05-02 小沈】二进制文件保护（最关键，防止破坏二进制文件）
         is_binary, binary_reason = _is_binary_file(file_path)
         if is_binary:
-            return _to_unified_format({
-                "success": False,
-                "error": f"{binary_reason}。write_text_file 仅支持文本文件，禁止写入二进制文件。",
-                "content": None
-            }, "write_text_file")
+            return {"code": "ERR_BINARY_FILE", "data": None, "message": f"{binary_reason}。write_text_file 仅支持文本文件，禁止写入二进制文件。"}
         
         # 【小健 2026-05-03】OOM保护：写入内容超过10MB时拒绝
         content = text
         if content and len(content.encode(encoding or 'utf-8')) > MAX_READ_SIZE:
-            return _to_unified_format({
-                "success": False,
-                "error": f"内容过大({len(content.encode(encoding or 'utf-8'))}字节)，超过写入上限{MAX_READ_SIZE//1024//1024}MB。请分批写入或使用其他方式处理大文件。",
-                "content": None
-            }, "write_text_file")
+            return {"code": "ERR_FILE_TOO_LARGE", "data": None, "message": f"内容过大({len(content.encode(encoding or 'utf-8'))}字节)，超过写入上限{MAX_READ_SIZE//1024//1024}MB。请分批写入或使用其他方式处理大文件。"}
 
         path_preview = Path(file_path)
         if path_preview.suffix.lower() == '.py' and content:
@@ -589,29 +581,17 @@ class FileTools:
             from app.services.tools.toolhelper.content_quality import check_content_quality
             quality_result = check_content_quality(content=content, file_path=file_path)
             if quality_result.get("is_thought_leak"):
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"内容保护：{quality_result['warning']}",
-                    "content": None
-                }, "write_text_file")
+                return {"code": "ERR_CONTENT_BLOCKED", "data": None, "message": f"内容保护：{quality_result['warning']}"}
         if unescape:
             content = content.replace("\\\\", "\\").replace("\\n", "\n").replace("\\\"", "\"")
         
         validation_error = self._validate_content_format(file_path, content)
         if validation_error:
-            return _to_unified_format({
-                "success": False,
-                "error": validation_error,
-                "content": None
-            }, "write_text_file")
+            return {"code": "ERR_CONTENT_INVALID", "data": None, "message": validation_error}
         
         is_valid, error_msg = self._validate_path(file_path)
         if not is_valid:
-            return _to_unified_format({
-                "success": False,
-                "error": error_msg,
-                "content": None
-            }, "write_text_file")
+            return {"code": "ERR_PATH_INVALID", "data": None, "message": error_msg}
         
         path = Path(file_path)
         
@@ -639,20 +619,12 @@ class FileTools:
             # 原阈值95%过严，重构代码等合法场景经常缩小80%+
             # 豁免条件：新内容为空（有意清空）或缩小比例<80%
             if old_size > 1024 and new_size > 0 and new_size < old_size * 0.20:
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"数据保护：新内容({new_size}字节)远小于原始内容({old_size}字节，缩小{100-int(new_size/max(old_size,1)*100)}%)，可能覆盖数据。如确认覆盖，请使用precise_replace_in_file或在text中传入完整内容。",
-                    "content": None
-                }, "write_text_file")
+                return {"code": "ERR_DATA_PROTECTION", "data": None, "message": f"数据保护：新内容({new_size}字节)远小于原始内容({old_size}字节，缩小{100-int(new_size/max(old_size,1)*100)}%)，可能覆盖数据。如确认覆盖，请使用precise_replace_in_file或在text中传入完整内容。"}
         
         if not self.task_id:
             self.task_id = _current_task_id.get(None)
         if not self.task_id:
-            return _to_unified_format({
-                "success": False,
-                "error": "No active task",
-                "operation_id": None
-            }, "write_text_file")
+            return {"code": "ERR_NO_ACTIVE_TASK", "data": None, "message": "当前没有活跃任务ID，请先创建一个任务"}
         
         try:
             operation_id = self.safety.record_operation(
@@ -704,28 +676,20 @@ class FileTools:
             )
             
             if success:
-                return _to_unified_format({
-                    "success": True,
-                    "operation_id": operation_id,
-                    "file_path": str(path),
-                    "bytes_written": len(content.encode(encoding))
-                }, "write_text_file", next_actions=[
-                    ("read_file", "验证写入结果", "需要确认内容时"),
-                ])
+                return {
+                    "code": "SUCCESS",
+                    "data": {"operation_id": operation_id, "file_path": str(path), "bytes_written": len(content.encode(encoding))},
+                    "message": f"写入文件成功: {path} ({len(content.encode(encoding))}字节)",
+                    "next_actions": [
+                        ("read_file", "验证写入结果", "需要确认内容时"),
+                    ]
+                }
             else:
-                return _to_unified_format({
-                    "success": False,
-                    "error": "Failed to write file",
-                    "operation_id": operation_id
-                }, "write_text_file")
-                
+                return {"code": "ERR_FILE_WRITE_FAILED", "data": None, "message": "写入文件失败，safety拦截"}
+
         except Exception as e:
             logger.error(f"Failed to write file {file_path}: {e}")
-            return _to_unified_format({
-                "success": False,
-                "error": str(e),
-                "operation_id": None
-            }, "write_text_file")
+            return {"code": "ERR_FILE_WRITE_FAILED", "data": None, "message": str(e)}
 
     async def _write_file(self, file_path: str, text: str, encoding: str = "utf-8",
                          append: bool = False, create_parents: bool = True,
