@@ -716,12 +716,12 @@ class FileTools:
         """
         # P17 format校验
         if format not in ("list", "tree"):
-            return _to_unified_format({"success": False, "error": f"format只支持'list'或'tree'，当前值: '{format}'"}, "list_directory")
-        
+            return {"code": "ERR_PARAM_INVALID", "data": None, "message": f"format只支持'list'或'tree'，当前值: '{format}'"}
+
         if max_depth < 1:
-            return _to_unified_format({"success": False, "error": f"max_depth必须>=1，当前值: {max_depth}", "entries": []}, "list_directory")
+            return {"code": "ERR_PARAM_INVALID", "data": None, "message": f"max_depth必须>=1，当前值: {max_depth}"}
         if sortBy not in ("name", "size", "mtime"):
-            return _to_unified_format({"success": False, "error": f"sortBy只支持'name'/'size'/'mtime'，当前值: '{sortBy}'", "entries": []}, "list_directory")
+            return {"code": "ERR_PARAM_INVALID", "data": None, "message": f"sortBy只支持'name'/'size'/'mtime'，当前值: '{sortBy}'"}
         
         # format="tree" 分支：委托 get_directory_tree 逻辑 — 小沈 2026-05-18
         if format == "tree":
@@ -752,11 +752,7 @@ class FileTools:
         # 验证路径合法性
         is_valid, error_msg = self._validate_path(dir_path)
         if not is_valid:
-            return _to_unified_format({
-                "success": False,
-                "error": error_msg,
-                "entries": []
-            }, "list_directory")
+            return {"code": "ERR_PATH_INVALID", "data": None, "message": error_msg}
 
         path = Path(dir_path)
 
@@ -766,26 +762,14 @@ class FileTools:
             try:
                 start_offset = decode_page_token(page_token)
             except Exception as e:
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"Invalid page token: {e}",
-                    "entries": []
-                }, "list_directory")
+                return {"code": "ERR_PARAM_INVALID", "data": None, "message": f"Invalid page token: {e}"}
 
         try:
             if not path.exists():
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"Directory not found: {dir_path}",
-                    "entries": []
-                }, "list_directory")
+                return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"Directory not found: {dir_path}"}
 
             if not path.is_dir():
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"Not a directory: {dir_path}",
-                    "entries": []
-                }, "list_directory")
+                return {"code": "ERR_PATH_NOT_DIR", "data": None, "message": f"Not a directory: {dir_path}"}
 
             # 异步执行目录遍历
             # 【修复 2026-05-10 小健】超时自检：递归遍历大目录时主动退出
@@ -927,47 +911,46 @@ class FileTools:
                     f"displayed={MAX_DISPLAY_ENTRIES}"
                 )
 
-                return _to_unified_format({
-                    "success": True,
-                    "entries": display_entries,
-                    "total": total,
-                    "directory": str(path),
-                    "truncated": True,
-                    "dir_count": dir_count,
-                    "file_count": file_count,
-                    "statistics": statistics,
-                    "next_page_token": encode_page_token(start_offset + MAX_DISPLAY_ENTRIES) if start_offset + MAX_DISPLAY_ENTRIES < total else None
-                }, "list_directory", llm_data={
-                    "目录": str(path), "总数": total, "目录数": dir_count, "文件数": file_count,
-                    "条目预览": [e.get("name","") for e in display_entries[:30]],
-                    "截断": True
-                }, next_actions=[
+                return {
+                    "code": "SUCCESS",
+                    "data": {
+                        "entries": display_entries, "total": total, "directory": str(path),
+                        "truncated": True, "dir_count": dir_count, "file_count": file_count,
+                        "statistics": statistics,
+                        "next_page_token": encode_page_token(start_offset + MAX_DISPLAY_ENTRIES) if start_offset + MAX_DISPLAY_ENTRIES < total else None
+                    },
+                    "message": f"列出目录成功: {path} ({total}项，已截断显示前{MAX_DISPLAY_ENTRIES}项)",
+                    "llm_data": {
+                        "目录": str(path), "总数": total, "目录数": dir_count, "文件数": file_count,
+                        "条目预览": [e.get("name","") for e in display_entries[:30]],
+                        "截断": True
+                    },
+                    "next_actions": [
+                        ("search_files", "搜索文件", "需要查找特定文件时"),
+                        ("read_file", "读取文件", "需要查看文件内容时"),
+                    ]
+                }
+
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "entries": all_entries, "total": total, "directory": str(path),
+                    "statistics": statistics, "next_page_token": None
+                },
+                "message": f"列出目录成功: {path} ({total}项)",
+                "llm_data": {
+                    "目录": str(path), "总数": total,
+                    "条目预览": [e.get("name","") for e in all_entries[:30]]
+                },
+                "next_actions": [
                     ("search_files", "搜索文件", "需要查找特定文件时"),
                     ("read_file", "读取文件", "需要查看文件内容时"),
-                ])
-
-            return _to_unified_format({
-                "success": True,
-                "entries": all_entries,
-                "total": total,
-                "directory": str(path),
-                "statistics": statistics,
-                "next_page_token": None
-            }, "list_directory", llm_data={
-                "目录": str(path), "总数": total,
-                "条目预览": [e.get("name","") for e in all_entries[:30]]
-            }, next_actions=[
-                ("search_files", "搜索文件", "需要查找特定文件时"),
-                ("read_file", "读取文件", "需要查看文件内容时"),
-            ])
+                ]
+            }
 
         except Exception as e:
             logger.error(f"Failed to list directory {dir_path}: {e}")
-            return _to_unified_format({
-                "success": False,
-                "error": str(e),
-                "entries": []
-            }, "list_directory")
+            return {"code": "ERR_LIST_DIR_FAILED", "data": None, "message": str(e)}
     
     async def _delete_file(
         self,
