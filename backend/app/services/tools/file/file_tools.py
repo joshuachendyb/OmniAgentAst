@@ -1928,14 +1928,10 @@ class FileTools:
             search_path = Path(search_dir).resolve() if search_dir else Path.cwd().resolve()
             is_valid, error_msg = self._validate_path(str(search_path))
             if not is_valid:
-                return _to_unified_format({
-                    "success": False, "error": error_msg, "matches": []
-                }, "grep_file_content")
+                return {"code": "ERR_PATH_INVALID", "data": None, "message": error_msg}
 
             if not pattern:
-                return _to_unified_format({
-                    "success": False, "error": "搜索模式不能为空", "matches": []
-                }, "grep_file_content")
+                return {"code": "ERR_PARAM_INVALID", "data": None, "message": "搜索模式不能为空"}
 
             type_ext_map = {
                 "js": "*.js", "ts": "*.ts", "tsx": "*.tsx", "jsx": "*.jsx",
@@ -1948,9 +1944,7 @@ class FileTools:
             if not file_glob and type:
                 file_glob = type_ext_map.get(type)
                 if file_glob is None:
-                    return _to_unified_format({
-                        "success": False, "error": f"不支持的语言类型: '{type}'，可用: {', '.join(sorted(type_ext_map.keys()))}", "matches": []
-                    }, "grep_file_content")
+                    return {"code": "ERR_PARAM_INVALID", "data": None, "message": f"不支持的语言类型: '{type}'，可用: {', '.join(sorted(type_ext_map.keys()))}"}
 
             # 【修复 2026-05-10 小健】超时自检：os.walk循环中检查耗时，超时提前返回已有结果
             _grep_deadline = time.monotonic() + get_timeout("grep_file_content") - 2
@@ -2071,25 +2065,33 @@ class FileTools:
                 has_more = False
                 next_page_token = None
 
-            return _to_unified_format({
-                "success": True, "matches": page_results, "total_files": total,
-                "total_matches": total_matches, "pattern": pattern,
-                "search_dir": str(search_path), "output_mode": output_mode or "content",
-                "has_more": has_more, "next_page_token": next_page_token,
-            }, "grep_file_content", llm_data={
-                "模式": pattern, "搜索目录": str(search_path),
-                "匹配文件数": total, "匹配行数": total_matches,
-                "预览": make_json_safe(page_results[:10], max_str_len=200),
-                "has_more": has_more
-            }, next_actions=[
-                ("read_file", "读取匹配行上下文", "需要查看完整内容时"),
-                ("edit_file", "编辑匹配内容", "需要修改时"),
-            ])
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "matches": page_results,
+                    "total_files": total,
+                    "total_matches": total_matches,
+                    "pattern": pattern,
+                    "search_dir": str(search_path),
+                    "output_mode": output_mode or "content",
+                    "has_more": has_more,
+                    "next_page_token": next_page_token,
+                },
+                "message": f"搜索完成，匹配{total_matches}行，涉及{total}个文件",
+                "llm_data": {
+                    "模式": pattern, "搜索目录": str(search_path),
+                    "匹配文件数": total, "匹配行数": total_matches,
+                    "预览": make_json_safe(page_results[:10], max_str_len=200),
+                    "has_more": has_more,
+                },
+                "next_actions": [
+                    ("read_file", "读取匹配行上下文", "需要查看完整内容时"),
+                    ("edit_file", "编辑匹配内容", "需要修改时"),
+                ],
+            }
         except Exception as e:
             logger.error(f"grep_file_content failed: {e}")
-            return _to_unified_format({
-                "success": False, "error": str(e), "matches": []
-            }, "grep_file_content")
+            return {"code": "ERR_FILE_SEARCH_FAILED", "data": None, "message": str(e)}
 
     async def _get_directory_tree(
         self,
