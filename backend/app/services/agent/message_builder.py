@@ -387,6 +387,41 @@ class MessageBuilder:
         return ""
 
     # =========================================================================
+    # 第七组：Schema 文本生成（从 react_agent_mixin.py 搬入）
+    # =========================================================================
+
+    @staticmethod
+    def build_schema_text(openai_tools: List[Dict]) -> str:
+        """将openai_tools转换为文本格式（方案C）— 迁入自 react_agent_mixin.py L252-292
+        小沈 2026-05-21
+        """
+        if not openai_tools:
+            return ""
+        lines = ["【Tools Schema参考（仅作参考，实际调用仍以JSON格式返回）】:"]
+        for tool in openai_tools:
+            func = tool.get("function", {})
+            name = func.get("name", "")
+            params = func.get("parameters", {})
+            properties = params.get("properties", {})
+            required = params.get("required", [])
+            if not properties:
+                lines.append(f"{name}: 无参数")
+                continue
+            params_list = []
+            for pname, pinfo in properties.items():
+                ptype = pinfo.get("type", "any")
+                pdefault = pinfo.get("default")
+                is_required = pname in required
+                if pdefault is not None:
+                    params_list.append(f"{pname}({ptype}, default={pdefault})")
+                elif is_required:
+                    params_list.append(f"{pname}({ptype}, required)")
+                else:
+                    params_list.append(f"{pname}({ptype}, optional)")
+            lines.append(f"{name}: {', '.join(params_list)}")
+        return "\n".join(lines)
+
+    # =========================================================================
     # 第六组：observation 截断辅助（从 base_react.py 搬入）
     # =========================================================================
 

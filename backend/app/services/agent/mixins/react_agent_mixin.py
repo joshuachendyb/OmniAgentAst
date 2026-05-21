@@ -249,180 +249,120 @@ class ReactAgentMixin(ToolLoaderMixin):
     
     # ===== LLM调用 =====
     
-    def _tools_to_schema_text(self) -> str:
-        """将openai_tools转换为文本格式（方案C）- 小沈 2026-05-10
-        
-        直接复用tools结构，转换为LLM可读的文本格式。
-        替代G6（get_parameter_reminder），只在text和response策略下使用。
-        
-        Returns:
-            Schema文本（如："timer_set: delay(number, required), callback(string, required)"）
-        """
-        if not hasattr(self, 'openai_tools') or not self.openai_tools:
-            return ""
-        
-        lines = ["【Tools Schema参考（仅作参考，实际调用仍以JSON格式返回）】:"]
-        
-        for tool in self.openai_tools:
-            func = tool.get("function", {})
-            name = func.get("name", "")
-            params = func.get("parameters", {})
-            properties = params.get("properties", {})
-            required = params.get("required", [])
-            
-            if not properties:
-                lines.append(f"{name}: 无参数")
-                continue
-            
-            params_list = []
-            for pname, pinfo in properties.items():
-                ptype = pinfo.get("type", "any")
-                pdefault = pinfo.get("default")
-                is_required = pname in required
-                
-                if pdefault is not None:
-                    params_list.append(f"{pname}({ptype}, default={pdefault})")
-                elif is_required:
-                    params_list.append(f"{pname}({ptype}, required)")
-                else:
-                    params_list.append(f"{pname}({ptype}, optional)")
-            
-            lines.append(f"{name}: {', '.join(params_list)}")
-        
-        return "\n".join(lines)
-    
     async def _call_llm_with_summary(self) -> str:
-        """LLM调用统一入口（含工具概要注入+方案C Schema注入+adapter策略选择+prompt_logger+temp_history）
-        
-        【2026-05-10 小沈】方案C：text和response策略下注入Schema文本替代G6
-        【2026-05-12 小沈】合并file_react独有逻辑：prompt_logger + temp_history + use_function_calling分支
-        【重构 小健 2026-05-15】策略前置：先确定策略再决定是否注入工具文本，FC模式跳过
-        """
+        """LLM调用统一入口 — 小沈 2026-05-21 简化版"""
         self.llm_call_count += 1
+        mb = self.message_builder
+        last_message, history_dicts = mb.split_history_for_llm()
+        history_dicts = mb.merge_temp_history(history_dicts)
+        strategy_method = await self._select_strategy()
+        history_dicts = self._inject_tools(history_dicts, strategy_method)
+        history_dicts = mb.inject_executed_summary(history_dicts, self._executed_tool_summary)
+        if strategy_method == "text":
+            history_dicts = self._inject_schema(history_dicts)
+        assembled = mb.assemble_messages(history_dicts, last_message)
+        self._log_prompt(assembled, strategy_method)
+        response = await self._dispatch_strategy(strategy_method, last_message, history_dicts)
+        self._log_response(response)
+        return response
+
+    async def _select_strategy(self) -> str:
+        """策略选择+降级 — 小沈 2026-05-21"""
         _cls = self.__class__.__name__
-        logger.info(f"[LLM Counter] >>> LLM called, count: {self.llm_call_count}")
-        
-        try:
-            # 委托MessageBuilder拆分+temp_history合并
-            last_message, history_dicts = self.message_builder.split_history_for_llm()
-            history_dicts = self.message_builder.merge_temp_history(history_dicts)
-            
-            # ========== 【重构 小健 2026-05-15】策略前置：先确定策略，再决定是否注入工具文本 ==========
-            # FC模式下LLM已通过API tools参数获得工具定义，无需在system消息中重复注入
-            if not self.adapter:
-                logger.warning(f"[{_cls}] adapter未初始化，降级到text策略")
-                strategy_method = "text"
-            else:
-                strategy = await self.adapter.ensure_capability()
-                strategy_method = strategy.method
-            logger.info(f"[{_cls}] 执行策略: {strategy_method}")
-            self._last_strategy_method = strategy_method
-            
-            # ========== 工具信息注入（仅非FC模式）==========
-            if strategy_method != "tools":
-                try:
-                    loaded = getattr(self, '_loaded_categories', set())
-                    _last_injected_cats = getattr(self, '_last_injected_categories', None)
-                    if _last_injected_cats is None or loaded != _last_injected_cats:
-                        detail_text = self._get_tools_detail()
-                        summary_text = self._get_tools_summary(exclude_categories=loaded)
-                        self._cached_tools_content = f"【已加载工具（完整）】\n{detail_text}\n\n【其他可用工具（概要）】\n{summary_text}"
-                        self._last_injected_categories = frozenset(loaded)
-                        logger.info(f"[Phase1] 分级注入(重新生成): detail={len(detail_text)}字符, summary={len(summary_text)}字符, 已加载分类={loaded}")
-                    _cached = getattr(self, '_cached_tools_content', None)
-                    if _cached:
-                        history_dicts = self.message_builder.inject_tools_info(history_dicts, _cached)
-                except Exception as e:
-                    logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
-            
-            # 注入已执行工具汇总
-            history_dicts = self.message_builder.inject_executed_summary(
-                history_dicts, self._executed_tool_summary)
-            
-            # ========== debug日志 ==========
-            logger.debug(f"[Debug] _call_llm_with_summary - conversation_history长度: {len(self.message_builder.conversation_history)}")
-            logger.debug(f"[Debug] _call_llm_with_summary - history_dicts长度: {len(history_dicts)}")
-            for i, h in enumerate(history_dicts):
-                logger.debug(f"[Debug] history[{i}] role={h.get('role')}, content长度={len(h.get('content', ''))}")
-            logger.debug(f"[Debug] _call_llm_with_summary - last_message长度: {len(last_message)}")
-            logger.debug(f"[Debug] _call_llm_with_summary - last_message内容: {last_message[:200]}")
-            
-            # 方案C：text策略下注入tools Schema文本
-            if strategy_method == "text":
-                if not hasattr(self, '_cached_schema_text'):
-                    self._cached_schema_text = self._tools_to_schema_text()
-                schema_text = self._cached_schema_text
-                if schema_text:
-                    history_dicts = self.message_builder.inject_schema_text(history_dicts, schema_text)
-                    logger.info(f"[{_cls}] 注入工具Schema ({strategy_method}模式)")
-            
-            # 组装最终messages
-            assembled_messages = self.message_builder.assemble_messages(history_dicts, last_message)
-            
-            # ========== prompt_logger: 调用前记录 ==========
-            prompt_logger = get_prompt_logger()
-            prompt_logger.log_llm_call(
-                round_number=self.llm_call_count,
-                messages=assembled_messages,
-                model=getattr(self, 'model', 'unknown'),
-                provider=getattr(self, 'provider', 'unknown'),
-                call_type=strategy_method or "text",
-                extra_params={
-                    "max_steps": self.max_steps,
-                    "use_function_calling": getattr(self, 'use_function_calling', False),
-                    "trim_info": getattr(self, '_last_trim_info', None),  # 小健-2026-05-15
-                    "total_chars": sum(len(m.get("content","")) for m in assembled_messages),  # 本次LLM调用总字符数
-                }
-            )
+        if not self.adapter:
+            logger.warning(f"[{_cls}] adapter未初始化，降级到text策略")
+            return "text"
+        strategy = await self.adapter.ensure_capability()
+        return strategy.method
+
+    def _inject_tools(self, history_dicts, strategy_method):
+        """工具信息注入（含缓存） — 小沈 2026-05-21"""
+        if strategy_method != "tools":
             try:
-                prompt_logger.save()
+                loaded = getattr(self, '_loaded_categories', set())
+                _last = getattr(self, '_last_injected_categories', None)
+                if _last is None or loaded != _last:
+                    detail = self._get_tools_detail()
+                    summary = self._get_tools_summary(exclude_categories=loaded)
+                    self._cached_tools_content = f"【已加载工具（完整）】\n{detail}\n\n【其他可用工具（概要）】\n{summary}"
+                    self._last_injected_categories = frozenset(loaded)
+                _cached = getattr(self, '_cached_tools_content', None)
+                if _cached:
+                    history_dicts = self.message_builder.inject_tools_info(history_dicts, _cached)
             except Exception as e:
-                logger.warning(f"Failed to save prompt log: {e}")
-            
-            # ========== 执行策略调用LLM ==========
-            response = None
-            if strategy_method == "text":
-                response = await self.text_strategy.call(
-                    llm_client=self.llm_client, message=last_message,
-                    history_dicts=history_dicts, conversation_history=self.message_builder.conversation_history)
-            elif strategy_method == "response_format":
-                if not self.response_format_strategy:
-                    raise RuntimeError(f"[{_cls}] strategy=response_format 但 response_format_strategy未初始化")
-                response = await self.response_format_strategy.call(
-                    llm_client=self.llm_client, message=last_message,
-                    history_dicts=history_dicts, conversation_history=self.message_builder.conversation_history)
-            elif strategy_method == "tools":
-                if not self.tools_strategy:
-                    raise RuntimeError(f"[{_cls}] strategy=tools 但 tools_strategy未初始化")
-                if getattr(self, 'openai_tools', None):
-                    self.tools_strategy.tools = self.openai_tools
-                response = await self.tools_strategy.call(
-                    llm_client=self.llm_client, message=last_message,
-                    history_dicts=history_dicts, conversation_history=self.message_builder.conversation_history)
-            else:
-                raise RuntimeError(f"[{_cls}] 未知的strategy_method={strategy_method}")
-            
-            # ========== prompt_logger: 调用后记录（原file_react独有，小沈2026-05-12合入）==========
-            response_type = "text"
-            if response:
-                if "action_tool" in response:
-                    response_type = "action_tool"
-                elif "thought" in response:
-                    response_type = "thought"
-                elif "observation" in response:
-                    response_type = "observation"
-            prompt_logger.log_llm_response(
-                round_number=self.llm_call_count,
-                response_content=response,
-                response_type=response_type,
-                finish_reason="stop"
-            )
-            
-            return response
-            
+                logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
+        return history_dicts
+
+    def _inject_schema(self, history_dicts):
+        """Schema文本注入 — 小沈 2026-05-21"""
+        if not hasattr(self, '_cached_schema_text'):
+            self._cached_schema_text = self.message_builder.build_schema_text(getattr(self, 'openai_tools', []))
+        if self._cached_schema_text:
+            history_dicts = self.message_builder.inject_schema_text(history_dicts, self._cached_schema_text)
+        return history_dicts
+
+    def _log_prompt(self, assembled_messages, strategy_method):
+        """prompt_logger调用前记录 — 小沈 2026-05-21"""
+        prompt_logger = get_prompt_logger()
+        prompt_logger.log_llm_call(
+            round_number=self.llm_call_count,
+            messages=assembled_messages,
+            model=getattr(self, 'model', 'unknown'),
+            provider=getattr(self, 'provider', 'unknown'),
+            call_type=strategy_method or "text",
+            extra_params={
+                "max_steps": self.max_steps,
+                "use_function_calling": getattr(self, 'use_function_calling', False),
+                "trim_info": getattr(self, '_last_trim_info', None),
+                "total_chars": sum(len(m.get("content","")) for m in assembled_messages),
+            }
+        )
+        try:
+            prompt_logger.save()
         except Exception as e:
-            logger.error(f"[{_cls}] LLM client error: {e}")
-            raise
+            logger.warning(f"Failed to save prompt log: {e}")
+
+    async def _dispatch_strategy(self, strategy_method, last_message, history_dicts):
+        """策略分派调用LLM — 小沈 2026-05-21"""
+        _cls = self.__class__.__name__
+        if strategy_method == "text":
+            return await self.text_strategy.call(
+                llm_client=self.llm_client, message=last_message,
+                history_dicts=history_dicts, conversation_history=self.message_builder.conversation_history)
+        elif strategy_method == "response_format":
+            if not self.response_format_strategy:
+                raise RuntimeError(f"[{_cls}] strategy=response_format 但 response_format_strategy未初始化")
+            return await self.response_format_strategy.call(
+                llm_client=self.llm_client, message=last_message,
+                history_dicts=history_dicts, conversation_history=self.message_builder.conversation_history)
+        elif strategy_method == "tools":
+            if not self.tools_strategy:
+                raise RuntimeError(f"[{_cls}] strategy=tools 但 tools_strategy未初始化")
+            if getattr(self, 'openai_tools', None):
+                self.tools_strategy.tools = self.openai_tools
+            return await self.tools_strategy.call(
+                llm_client=self.llm_client, message=last_message,
+                history_dicts=history_dicts, conversation_history=self.message_builder.conversation_history)
+        else:
+            raise RuntimeError(f"[{_cls}] 未知的strategy_method={strategy_method}")
+
+    def _log_response(self, response):
+        """prompt_logger调用后记录 — 小沈 2026-05-21"""
+        response_type = "text"
+        if response:
+            if "action_tool" in response:
+                response_type = "action_tool"
+            elif "thought" in response:
+                response_type = "thought"
+            elif "observation" in response:
+                response_type = "observation"
+        prompt_logger = get_prompt_logger()
+        prompt_logger.log_llm_response(
+            round_number=self.llm_call_count,
+            response_content=response,
+            response_type=response_type,
+            finish_reason="stop"
+        )
     
     # ===== 任务追踪管理 =====
     
