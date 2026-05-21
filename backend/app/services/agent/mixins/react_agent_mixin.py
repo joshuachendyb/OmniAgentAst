@@ -257,7 +257,9 @@ class ReactAgentMixin(ToolLoaderMixin):
         history_dicts = mb.merge_temp_history(history_dicts)
         strategy_method = await self._select_strategy()
         history_dicts = self._inject_tools(history_dicts, strategy_method)
-        history_dicts = mb.inject_executed_summary(history_dicts, self._executed_tool_summary)
+        # safety: 兼容 message_builder 可能还没有 _executed_tool_summary 的场景
+        _ets = getattr(mb, '_executed_tool_summary', [])
+        history_dicts = mb.inject_executed_summary(history_dicts, _ets)
         if strategy_method == "text":
             history_dicts = self._inject_schema(history_dicts)
         assembled = mb.assemble_messages(history_dicts, last_message)
