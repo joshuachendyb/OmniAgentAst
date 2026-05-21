@@ -49,7 +49,7 @@ def get_env(name: Optional[str] = None, scope: str = "process",
     # 【2026-05-18 小沈】action="list"分支：原list_env逻辑
     # 小健 2026-05-19: action值校验
     if action not in ("get", "list"):
-        return {"code": "ERR_ENV_INVALID_ACTION", "data": None, "message": f"无效的action: {action}，支持: get/list"}
+        return {"code": "ERR_SYS_ENV_INVALID_ACTION", "data": None, "message": f"无效的action: {action}，支持: get/list"}
     if action == "list":
         try:
             env_vars = {}
@@ -80,11 +80,11 @@ def get_env(name: Optional[str] = None, scope: str = "process",
             }
         except Exception as e:
             logger.error(f"[get_env] 列出环境变量失败: {e}")
-            return {"code": "ERR_ENV_LIST", "data": None, "message": f"列出环境变量失败: {str(e)}"}
+            return {"code": "ERR_SYS_ENV_LIST", "data": None, "message": f"列出环境变量失败: {str(e)}"}
 
     # action="get"分支：原get_env逻辑
     if action == "get" and not name:
-        return {"code": "ERR_ENV_INVALID_NAME", "data": None, "message": "action='get'时name参数必填"}
+        return {"code": "ERR_SYS_ENV_INVALID_NAME", "data": None, "message": "action='get'时name参数必填"}
     
     try:
         value = None
@@ -133,7 +133,7 @@ def get_env(name: Optional[str] = None, scope: str = "process",
     except Exception as e:
         logger.error(f"[get_env] 获取环境变量失败: {e}")
         return {
-            "code": "ERR_ENV_GET",
+            "code": "ERR_SYS_ENV_GET",
             "data": None,
             "message": f"获取环境变量失败: {str(e)}"
         }
@@ -167,7 +167,7 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
     try:
         if not name or not name.strip():
             return {
-                "code": "ERR_ENV_INVALID_NAME",
+                "code": "ERR_SYS_ENV_INVALID_NAME",
                 "data": None,
                 "message": "环境变量名称不能为空"
             }
@@ -175,7 +175,7 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
         # 【2026-05-17 小沈】action="delete"分支：原delete_env逻辑
         # 小健 2026-05-19: action值校验
         if action not in ("set", "delete"):
-            return {"code": "ERR_ENV_INVALID_ACTION", "data": None, "message": f"无效的action: {action}，支持: set/delete"}
+            return {"code": "ERR_SYS_ENV_INVALID_ACTION", "data": None, "message": f"无效的action: {action}，支持: set/delete"}
         if action == "delete":
             if scope == "process":
                 if name in os.environ:
@@ -217,7 +217,7 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
         # action="set"分支：原set_env逻辑
         if value is None:
             return {
-                "code": "ERR_ENV_INVALID_VALUE",
+                "code": "ERR_SYS_ENV_INVALID_VALUE",
                 "data": None,
                 "message": "环境变量值不能为None（action='set'时value必填）"
             }
@@ -311,7 +311,7 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
 
         else:
             return {
-                "code": "ERR_ENV_INVALID_SCOPE",
+                "code": "ERR_SYS_ENV_INVALID_SCOPE",
                 "data": None,
                 "message": f"无效的作用域: {scope}，必须是 process/user/system 之一"
             }
@@ -319,7 +319,7 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
     except Exception as e:
         logger.error(f"[set_env] 设置环境变量失败: {e}")
         return {
-            "code": "ERR_ENV_SET",
+            "code": "ERR_SYS_ENV_SET",
             "data": None,
             "message": f"设置环境变量失败: {str(e)}"
         }
