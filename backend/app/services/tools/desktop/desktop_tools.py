@@ -54,13 +54,13 @@ def _check_platform() -> Optional[Dict[str, Any]]:
     """检查平台和依赖是否可用 - 小沈 2026-05-05"""
     if platform.system() != "Windows":
         return {
-            "code": "ERR_NOT_WINDOWS",
+            "code": "ERR_DESKTOP_NOT_WINDOWS",
             "data": None,
             "message": "此功能仅支持 Windows 系统"
         }
     if not _HAS_WIN32:
         return {
-            "code": "ERR_NO_PYWIN32",
+            "code": "ERR_DESKTOP_NO_PYWIN32",
             "data": None,
             "message": "pywin32库未安装，请先执行: pip install pywin32"
         }
@@ -241,7 +241,7 @@ def get_window_info(window_title: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"get_window_info error: {e}")
         return {
-            "code": "ERR_GET_WINDOW_INFO",
+            "code": "ERR_DESKTOP_GET_WINDOW_INFO",
             "data": None,
             "message": f"获取窗口信息失败: {str(e)}"
         }
