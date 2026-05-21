@@ -814,8 +814,9 @@ class BaseAgent(ABC):
                 # 【步骤2.9】根据执行结果构建 action_tool
                 
                 # 【步骤2.9】统一执行结果字典格式（供StepFactory使用）
+                _code = execution_result.get("code", "SUCCESS")
                 execution_result_dict = {
-                    "status": "success" if execution_result.get("code") == "SUCCESS" else "error",
+                    "status": "success" if _code == "SUCCESS" and not execution_result.get("warning") else ("warning" if _code.startswith("WARNING_") or execution_result.get("warning") else "error"),
                     "summary": execution_result.get("message", ""),
                     "data": execution_result.get("data"),
                     "retry_count": execution_result.get("retry_count", 0)
@@ -1007,8 +1008,9 @@ class BaseAgent(ABC):
                     p_result = await self._execute_tool(p_name, p_params)
                     p_time = int((time.perf_counter() - start_p) * 1000)
                     
+                    _p_code = p_result.get("code", "SUCCESS")
                     p_result_dict = {
-                        "status": "success" if p_result.get("code") == "SUCCESS" else "error",
+                        "status": "success" if _p_code == "SUCCESS" and not p_result.get("warning") else ("warning" if _p_code.startswith("WARNING_") or p_result.get("warning") else "error"),
                         "summary": p_result.get("message", ""),
                         "data": p_result.get("data"),
                         "retry_count": p_result.get("retry_count", 0),
