@@ -416,13 +416,13 @@ class ReactAgentMixin(ToolLoaderMixin):
             if strategy_method == "text":
                 response = await self.text_strategy.call(
                     llm_client=self.llm_client, message=last_message,
-                    history_dicts=history_dicts, conversation_history=self.conversation_history)
+                    history_dicts=history_dicts, conversation_history=self.message_builder.conversation_history)
             elif strategy_method == "response_format":
                 if not self.response_format_strategy:
                     raise RuntimeError(f"[{_cls}] strategy=response_format 但 response_format_strategy未初始化")
                 response = await self.response_format_strategy.call(
                     llm_client=self.llm_client, message=last_message,
-                    history_dicts=history_dicts, conversation_history=self.conversation_history)
+                    history_dicts=history_dicts, conversation_history=self.message_builder.conversation_history)
             elif strategy_method == "tools":
                 if not self.tools_strategy:
                     raise RuntimeError(f"[{_cls}] strategy=tools 但 tools_strategy未初始化")
@@ -430,7 +430,7 @@ class ReactAgentMixin(ToolLoaderMixin):
                     self.tools_strategy.tools = self.openai_tools
                 response = await self.tools_strategy.call(
                     llm_client=self.llm_client, message=last_message,
-                    history_dicts=history_dicts, conversation_history=self.conversation_history)
+                    history_dicts=history_dicts, conversation_history=self.message_builder.conversation_history)
             else:
                 raise RuntimeError(f"[{_cls}] 未知的strategy_method={strategy_method}")
             
