@@ -1697,45 +1697,29 @@ class FileTools:
         """精确替换文件中的字符串 — 小健 2026-05-19 增加dry_run支持"""
         # 【修复 2026-04-30 小沈】空old_string拒绝：content.replace("", x)会在每个字符间插入，导致内容爆炸
         if not old_string:
-            return _to_unified_format({
-                "success": False, "error": "old_string不能为空，空字符串替换会导致内容爆炸", "replaced_count": 0
-            }, "edit_file")
-        
-        # 【修复 2026-04-30 小沈】添加task_id检查（与write_file对齐）
+            return {"code": "ERR_PARAM_INVALID", "data": None, "message": "old_string不能为空，空字符串替换会导致内容爆炸"}
+
         if not self.task_id:
             self.task_id = _current_task_id.get(None)
         if not self.task_id:
-            return _to_unified_format({
-                "success": False, "error": "No active task", "replaced_count": 0
-            }, "edit_file")
-        
-        # 【小健 2026-05-02】【修复 2026-05-02 小沈】二进制文件保护：仅支持文本文件编辑
+            return {"code": "ERR_NO_ACTIVE_TASK", "data": None, "message": "当前没有活跃任务ID，请先创建一个任务"}
+
         is_binary, binary_reason = _is_binary_file(file_path)
         if is_binary:
-            return _to_unified_format({
-                "success": False, "error": f"{binary_reason}。请使用对应的专业工具操作二进制文件。", "replaced_count": 0
-            }, "edit_file")
-        
+            return {"code": "ERR_BINARY_FILE", "data": None, "message": f"{binary_reason}。请使用对应的专业工具操作二进制文件。"}
+
         try:
             is_valid, error_msg = self._validate_path(file_path)
             if not is_valid:
-                return _to_unified_format({
-                    "success": False, "error": error_msg, "replaced_count": 0
-                }, "edit_file")
+                return {"code": "ERR_PATH_INVALID", "data": None, "message": error_msg}
 
             path = Path(file_path)
             if not path.exists():
-                return _to_unified_format({
-                    "success": False, "error": f"文件不存在: {file_path}", "replaced_count": 0
-                }, "edit_file")
+                return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"文件不存在: {file_path}"}
 
-            # 【修复 2026-05-01 小沈】OOM防护：预检文件大小
             if path.stat().st_size > MAX_READ_SIZE:
-                return _to_unified_format({
-                    "success": False, "error": f"文件过大({path.stat().st_size}字节)，超过替换上限{MAX_READ_SIZE//1024//1024}MB", "replaced_count": 0
-                }, "edit_file")
+                return {"code": "ERR_FILE_TOO_LARGE", "data": None, "message": f"文件过大({path.stat().st_size}字节)，超过替换上限{MAX_READ_SIZE//1024//1024}MB"}
 
-            # 【修复 2026-04-30 小沈】添加safety记录（与write_file对齐）
             operation_id = self.safety.record_operation(
                 task_id=self.task_id,
                 operation_type=OperationType.MODIFY,
@@ -1745,7 +1729,6 @@ class FileTools:
 
             encodings_to_try = [encoding, "utf-8", "gbk", "gb2312", "utf-8-sig"] if encoding else ["utf-8", "gbk", "gb2312", "utf-8-sig"]
 
-            # 【修复 2026-05-01 小沈】闭包变量存结果，_replace_sync返回True给execute_with_safety
             replace_result = {}
 
             def _replace_sync() -> bool:
@@ -1792,7 +1775,6 @@ class FileTools:
                     replace_result['diff_info'] = f"将替换 {count} 处匹配: '{old_string[:50]}' -> '{new_string[:50]}'"
                     return True
 
-                # 【修复 2026-04-30 小沈】原子写入：先写临时文件再重命名（与write_file对齐）
                 import tempfile
                 import os
                 with tempfile.NamedTemporaryFile(
@@ -1821,27 +1803,27 @@ class FileTools:
                 operation_func=_replace_sync
             )
             if success:
-                result_data = {
-                    "success": True, "replaced_count": replace_result['count'], "encoding": replace_result['used_enc'],
-                    "file_path": str(path), "file_name": replace_result['name'],
+                data = {
+                    "replaced_count": replace_result['count'],
+                    "encoding": replace_result['used_enc'],
+                    "file_path": str(path),
+                    "file_name": replace_result['name'],
                     "operation_id": operation_id,
                 }
                 if replace_result.get('preview'):
-                    result_data['preview'] = True
-                    result_data['diff_info'] = replace_result.get('diff_info', '')
-                return _to_unified_format(result_data, "edit_file", next_actions=[
-                    ("read_file", "验证修改结果", "需要确认修改时"),
-                ])
-            else:
-                return _to_unified_format({
-                    "success": False, "error": "Failed to replace in file",
-                    "replaced_count": 0, "operation_id": operation_id
-                }, "edit_file")
+                    data["preview"] = True
+                    data["diff_info"] = replace_result.get('diff_info', '')
+                return {
+                    "code": "SUCCESS",
+                    "data": data,
+                    "message": f"已替换 {replace_result['count']} 处匹配",
+                    "next_actions": [("read_file", "验证修改结果", "需要确认修改时")],
+                }
+            return {"code": "ERR_FILE_REPLACE_FAILED", "data": None, "message": "文件替换失败，safety拦截"}
+
         except Exception as e:
             logger.error(f"precise_replace_in_file failed: {file_path}: {e}")
-            return _to_unified_format({
-                "success": False, "error": str(e), "replaced_count": 0
-            }, "edit_file")
+            return {"code": "ERR_FILE_REPLACE_FAILED", "data": None, "message": str(e)}
 
     async def _apply_edits(
         self,
