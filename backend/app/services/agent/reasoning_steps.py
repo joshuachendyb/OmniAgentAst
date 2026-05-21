@@ -21,6 +21,8 @@ Date: 2026-04-15
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List, Callable
 
+from app.services.agent.tool_result_formatter import extract_status
+
 
 def create_timestamp() -> int:
     """
@@ -854,14 +856,8 @@ class StepFactory:
         Returns:
             ActionToolStep实例
         """
-        # code→status 映射 — 小沈 2026-05-21
-        _code = execution_result.get("code", "SUCCESS")
-        if _code == "SUCCESS":
-            _status = "warning" if execution_result.get("warning") else "success"
-        elif _code.startswith("WARNING_"):
-            _status = "warning"
-        else:
-            _status = "error"
+        # code→status 映射 — 小沈 2026-05-21, 小健 2026-05-21 改用extract_status
+        _status = extract_status(execution_result)
         
         return ActionToolStep(
             step=step,
