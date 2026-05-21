@@ -357,7 +357,7 @@ def _get_windows_event_log(
         }
     except FileNotFoundError:
         return {
-            "code": "ERR_SYSTEM_COMMAND_NOT_FOUND",
+            "code": "ERR_SHELL_COMMAND_NOT_FOUND",
             "data": None,
             "message": "wevtutil命令不存在"
         }
@@ -438,7 +438,7 @@ def _get_linux_event_log(
         }
     except FileNotFoundError:
         return {
-            "code": "ERR_SYSTEM_COMMAND_NOT_FOUND",
+            "code": "ERR_SHELL_COMMAND_NOT_FOUND",
             "data": None,
             "message": "journalctl命令不存在"
         }
@@ -576,7 +576,7 @@ def kill_process(
     # 参数验证
     if pid is None or pid <= 0:
         return {
-            "code": "ERR_INVALID_PARAM",
+            "code": "ERR_PARAMETER_INVALID",
             "data": None,
             "message": "pid必须为正整数"  # 小健 2026-05-19: 修正错误信息(函数无name参数)
         }
@@ -914,13 +914,13 @@ def _windows_service_list(
     
     except subprocess.TimeoutExpired:
         return {
-            "code": "ERR_SERVICE_TIMEOUT",
+            "code": "ERR_SHELL_TIMEOUT",
             "data": None,
             "message": "获取服务列表超时"
         }
     except FileNotFoundError:
         return {
-            "code": "ERR_SERVICE_COMMAND_NOT_FOUND",
+            "code": "ERR_SHELL_COMMAND_NOT_FOUND",
             "data": None,
             "message": "sc命令不存在"
         }
@@ -1002,13 +1002,13 @@ def _linux_service_list(
     
     except subprocess.TimeoutExpired:
         return {
-            "code": "ERR_SERVICE_TIMEOUT",
+            "code": "ERR_SHELL_TIMEOUT",
             "data": None,
             "message": "获取服务列表超时"
         }
     except FileNotFoundError:
         return {
-            "code": "ERR_SERVICE_COMMAND_NOT_FOUND",
+            "code": "ERR_SHELL_COMMAND_NOT_FOUND",
             "data": None,
             "message": "systemctl命令不存在"
         }
@@ -1129,7 +1129,7 @@ def _windows_service_start(service_name: str, timeout: int, wait_for_started: bo
     
     except subprocess.TimeoutExpired:
         return {
-            "code": "ERR_SERVICE_TIMEOUT",
+            "code": "ERR_SHELL_TIMEOUT",
             "data": None,
             "message": f"启动服务 {service_name} 超时"
         }
@@ -1177,7 +1177,7 @@ def _linux_service_start(service_name: str, timeout: int, wait_for_started: bool
     
     except subprocess.TimeoutExpired:
         return {
-            "code": "ERR_SERVICE_TIMEOUT",
+            "code": "ERR_SHELL_TIMEOUT",
             "data": None,
             "message": f"启动服务 {service_name} 超时"
         }
@@ -1307,7 +1307,7 @@ def _windows_service_stop(service_name: str, force: bool, timeout: int, wait_for
     
     except subprocess.TimeoutExpired:
         return {
-            "code": "ERR_SERVICE_TIMEOUT",
+            "code": "ERR_SHELL_TIMEOUT",
             "data": None,
             "message": f"停止服务 {service_name} 超时"
         }
@@ -1362,7 +1362,7 @@ def _linux_service_stop(service_name: str, force: bool, timeout: int, wait_for_s
     
     except subprocess.TimeoutExpired:
         return {
-            "code": "ERR_SERVICE_TIMEOUT",
+            "code": "ERR_SHELL_TIMEOUT",
             "data": None,
             "message": f"停止服务 {service_name} 超时"
         }
@@ -1389,7 +1389,7 @@ def _task_list(
     try:
         if platform.system() != "Windows":
             return {
-                "code": "ERR_PLATFORM_NOT_SUPPORTED",
+                "code": "ERR_DESKTOP_PLATFORM_NOT_SUPPORTED",
                 "data": None,
                 "message": "task_list 仅支持Windows系统"
             }
@@ -1480,13 +1480,13 @@ def _task_list(
     
     except subprocess.TimeoutExpired:
         return {
-            "code": "ERR_TASK_TIMEOUT",
+            "code": "ERR_SHELL_TIMEOUT",
             "data": None,
             "message": "获取计划任务列表超时"
         }
     except FileNotFoundError:
         return {
-            "code": "ERR_TASK_COMMAND_NOT_FOUND",
+            "code": "ERR_SHELL_COMMAND_NOT_FOUND",
             "data": None,
             "message": "schtasks命令不存在"
         }
@@ -1531,7 +1531,7 @@ def _task_create(
     try:
         if platform.system() != "Windows":
             return {
-                "code": "ERR_PLATFORM_NOT_SUPPORTED",
+                "code": "ERR_DESKTOP_PLATFORM_NOT_SUPPORTED",
                 "data": None,
                 "message": "task_create 仅支持Windows系统"
             }
@@ -1603,13 +1603,13 @@ def _task_create(
     
     except subprocess.TimeoutExpired:
         return {
-            "code": "ERR_TASK_TIMEOUT",
+            "code": "ERR_SHELL_TIMEOUT",
             "data": None,
             "message": "创建计划任务超时"
         }
     except FileNotFoundError:
         return {
-            "code": "ERR_TASK_COMMAND_NOT_FOUND",
+            "code": "ERR_SHELL_COMMAND_NOT_FOUND",
             "data": None,
             "message": "schtasks命令不存在"
         }
@@ -1642,7 +1642,7 @@ def _task_delete(
     try:
         if platform.system() != "Windows":
             return {
-                "code": "ERR_PLATFORM_NOT_SUPPORTED",
+                "code": "ERR_DESKTOP_PLATFORM_NOT_SUPPORTED",
                 "data": None,
                 "message": "task_delete 仅支持Windows系统"
             }
@@ -1688,13 +1688,13 @@ def _task_delete(
     
     except subprocess.TimeoutExpired:
         return {
-            "code": "ERR_TASK_TIMEOUT",
+            "code": "ERR_SHELL_TIMEOUT",
             "data": None,
             "message": "删除计划任务超时"
         }
     except FileNotFoundError:
         return {
-            "code": "ERR_TASK_COMMAND_NOT_FOUND",
+            "code": "ERR_SHELL_COMMAND_NOT_FOUND",
             "data": None,
             "message": "schtasks命令不存在"
         }
@@ -1734,21 +1734,21 @@ def service_control(
         result = _service_list(name=service_name, state=state)
     elif action == "start":
         if not service_name:
-            return {"code": "ERR_INVALID_PARAM", "data": None, "message": "start操作必须提供service_name"}
+            return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": "start操作必须提供service_name"}
         result = _service_start(service_name=service_name, wait_for_started=False, timeout=timeout)
     elif action == "stop":
         if not service_name:
-            return {"code": "ERR_INVALID_PARAM", "data": None, "message": "stop操作必须提供service_name"}
+            return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": "stop操作必须提供service_name"}
         result = _service_stop(service_name=service_name, force=force, wait_for_stopped=False, timeout=timeout)
     elif action == "restart":
         if not service_name:
-            return {"code": "ERR_INVALID_PARAM", "data": None, "message": "restart操作必须提供service_name"}
+            return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": "restart操作必须提供service_name"}
         stop_result = _service_stop(service_name=service_name, force=force, wait_for_stopped=False, timeout=timeout)
         if stop_result.get("code") != "SUCCESS":
             return stop_result
         result = _service_start(service_name=service_name, wait_for_started=False, timeout=timeout)
     else:
-        return {"code": "ERR_INVALID_PARAM", "data": None, "message": f"不支持的action: {action}，可选: start/stop/restart/list"}
+        return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": f"不支持的action: {action}，可选: start/stop/restart/list"}
 
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([("service_control", "验证服务状态", "需要确认操作结果时", {"action": "list"})])
@@ -1786,7 +1786,7 @@ def task_control(
         result = _task_list(filter_name=task_name, filter_status=state)
     elif action == "create":
         if not task_name or not command or not schedule:
-            return {"code": "ERR_INVALID_PARAM", "data": None, "message": "create操作必须提供task_name、command、schedule"}
+            return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": "create操作必须提供task_name、command、schedule"}
         result = _task_create(
             task_name=task_name,
             command=command,
@@ -1797,10 +1797,10 @@ def task_control(
         )
     elif action == "delete":
         if not task_name:
-            return {"code": "ERR_INVALID_PARAM", "data": None, "message": "delete操作必须提供task_name"}
+            return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": "delete操作必须提供task_name"}
         result = _task_delete(task_name=task_name, folder=None)  # folder已从Schema移除，硬编码为None
     else:
-        return {"code": "ERR_INVALID_PARAM", "data": None, "message": f"不支持的action: {action}，可选: create/delete/list"}
+        return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": f"不支持的action: {action}，可选: create/delete/list"}
 
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([("task_control", "验证任务状态", "需要确认操作结果时", {"action": "list"})])
