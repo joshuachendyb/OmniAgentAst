@@ -2319,28 +2319,18 @@ class FileTools:
         replacement: Optional[str] = None,
     ) -> Dict[str, Any]:
         """重命名文件 — 小沈 2026-05-19 精简参数(9→6)，小健 2026-05-19 补充batch模式缺失参数"""
-        # ⚠️ 警告: 以下参数已从Schema移除，硬编码默认值，后续视需求决定是否恢复
         recursive = False
         preview = False
         conflict_strategy: Literal["skip", "overwrite", "append_number"] = "skip"
         # mode分发
         if mode == "batch":
             if not directory:
-                return _to_unified_format({
-                    "success": False,
-                    "error": "批量模式(mode=batch)需要提供directory参数"
-                }, "rename_file")
+                return {"code": "ERR_PARAM_INVALID", "data": None, "message": "批量模式(mode=batch)需要提供directory参数"}
             if not pattern:
-                return _to_unified_format({
-                    "success": False,
-                    "error": "批量模式(mode=batch)需要提供pattern参数"
-                }, "rename_file")
+                return {"code": "ERR_PARAM_INVALID", "data": None, "message": "批量模式(mode=batch)需要提供pattern参数"}
             if not replacement:
-                return _to_unified_format({
-                    "success": False,
-                    "error": "批量模式(mode=batch)需要提供replacement参数"
-                }, "rename_file")
-            
+                return {"code": "ERR_PARAM_INVALID", "data": None, "message": "批量模式(mode=batch)需要提供replacement参数"}
+
             return await self._batch_rename(
                 directory=directory,
                 pattern=pattern,
@@ -2349,43 +2339,30 @@ class FileTools:
                 preview=preview,
                 conflict_strategy=conflict_strategy
             )
-        
+
         # mode="single" (默认)
         if not file_path:
-            return _to_unified_format({
-                "success": False,
-                "error": "单文件模式(mode=single)需要提供file_path参数"
-            }, "rename_file")
-        
+            return {"code": "ERR_PARAM_INVALID", "data": None, "message": "单文件模式(mode=single)需要提供file_path参数"}
+
         if not new_name:
-            return _to_unified_format({
-                "success": False,
-                "error": "单文件模式(mode=single)需要提供new_name参数"
-            }, "rename_file")
-        
+            return {"code": "ERR_PARAM_INVALID", "data": None, "message": "单文件模式(mode=single)需要提供new_name参数"}
+
         # 小健 2026-05-19: Windows非法字符校验
         _illegal_chars = set('<>:"|?*')
         if os.name == 'nt' and any(c in _illegal_chars for c in new_name):
-            return _to_unified_format({
-                "success": False,
-                "error": f"新名称包含Windows非法字符: {set(c for c in new_name if c in _illegal_chars)}"
-            }, "rename_file")
-        
+            return {"code": "ERR_PARAM_INVALID", "data": None, "message": f"新名称包含Windows非法字符: {set(c for c in new_name if c in _illegal_chars)}"}
+
         # 计算新路径（同目录改名）
         src = Path(file_path)
-        
+
         if src.name == new_name:
-            return _to_unified_format({"success": True, "new_path": str(src), "old_path": str(src), "message": "新名称与原名相同(P16幂等)"}, "rename_file")
-        
+            return {"code": "SUCCESS", "data": {"new_path": str(src), "old_path": str(src)}, "message": "新名称与原名相同(P16幂等)"}
+
         if "/" in new_name or "\\" in new_name:
-            return _to_unified_format({
-                "success": False, 
-                "error": "新名称不能包含路径分隔符（rename_file仅支持同目录改名）。如需跨目录移动请使用move_file。", 
-                "new_path": None
-            }, "rename_file")
-        
+            return {"code": "ERR_PARAM_INVALID", "data": None, "message": "新名称不能包含路径分隔符（rename_file仅支持同目录改名）。如需跨目录移动请使用move_file。"}
+
         dst = src.parent / new_name
-        
+
         # 调用move_file实现
         return await self._move_file(
             source_path=file_path,
