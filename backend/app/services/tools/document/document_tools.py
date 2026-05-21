@@ -70,7 +70,7 @@ def _check_pdf_readable(file_path: str) -> Dict[str, Any]:
     """检查PDF文件是否可读（内部helper） - 小沈 2026-05-18，从env_check_tools.py迁入"""
     path = Path(file_path)
     if not path.exists():
-        return {"code": "ERR_READ_PDF", "data": None, "message": f"文件不存在: {file_path}"}
+        return {"code": "ERR_DOC_READ_PDF", "data": None, "message": f"文件不存在: {file_path}"}
     try:
         import pdfplumber
         with pdfplumber.open(path) as pdf:
@@ -81,14 +81,14 @@ def _check_pdf_readable(file_path: str) -> Dict[str, Any]:
         return {"code": "ERR_NO_PDFPLUMBER", "data": None,
                 "message": "pdfplumber库未安装，请先执行: pip install pdfplumber"}
     except Exception as e:
-        return {"code": "ERR_READ_PDF", "data": None, "message": f"PDF文件不可读: {str(e)}"}
+        return {"code": "ERR_DOC_READ_PDF", "data": None, "message": f"PDF文件不可读: {str(e)}"}
 
 
 def _check_docx_readable(file_path: str) -> Dict[str, Any]:
     """检查Word文件是否可读（内部helper） - 小沈 2026-05-18，从env_check_tools.py迁入"""
     path = Path(file_path)
     if not path.exists():
-        return {"code": "ERR_READ_DOCX", "data": None, "message": f"文件不存在: {file_path}"}
+        return {"code": "ERR_DOC_READ_DOCX", "data": None, "message": f"文件不存在: {file_path}"}
     try:
         import docx
         doc = docx.Document(path)
@@ -99,14 +99,14 @@ def _check_docx_readable(file_path: str) -> Dict[str, Any]:
         return {"code": "ERR_NO_DOCX", "data": None,
                 "message": "python-docx库未安装，请先执行: pip install python-docx"}
     except Exception as e:
-        return {"code": "ERR_READ_DOCX", "data": None, "message": f"Word文件不可读: {str(e)}"}
+        return {"code": "ERR_DOC_READ_DOCX", "data": None, "message": f"Word文件不可读: {str(e)}"}
 
 
 def _check_xlsx_readable(file_path: str) -> Dict[str, Any]:
     """检查Excel文件是否可读（内部helper） - 小沈 2026-05-18，从env_check_tools.py迁入"""
     path = Path(file_path)
     if not path.exists():
-        return {"code": "ERR_READ_XLSX", "data": None, "message": f"文件不存在: {file_path}"}
+        return {"code": "ERR_DOC_READ_XLSX", "data": None, "message": f"文件不存在: {file_path}"}
     try:
         from openpyxl import load_workbook
         wb = load_workbook(path, read_only=True)
@@ -115,19 +115,19 @@ def _check_xlsx_readable(file_path: str) -> Dict[str, Any]:
         return {"code": "SUCCESS", "data": {"readable": True, "sheet_names": sheet_names},
                 "message": f"Excel文件可读，共 {len(sheet_names)} 个工作表"}
     except ImportError:
-        return {"code": "ERR_NO_OPENPYXL", "data": None,
+        return {"code": "ERR_DOC_NO_OPENPYXL", "data": None,
                 "message": "openpyxl库未安装，请先执行: pip install openpyxl"}
     except Exception as e:
-        return {"code": "ERR_READ_XLSX", "data": None, "message": f"Excel文件不可读: {str(e)}"}
+        return {"code": "ERR_DOC_READ_XLSX", "data": None, "message": f"Excel文件不可读: {str(e)}"}
 
 
 def _validate_csv_format(file_path: str) -> Dict[str, Any]:
     """验证CSV文件格式（内部helper） - 小沈 2026-05-18，从env_check_tools.py迁入"""
     path = Path(file_path)
     if not path.exists():
-        return {"code": "ERR_READ_CSV", "data": None, "message": f"文件不存在: {file_path}"}
+        return {"code": "ERR_DOC_READ_CSV", "data": None, "message": f"文件不存在: {file_path}"}
     if not path.suffix.lower() in (".csv", ".tsv", ".txt"):
-        return {"code": "ERR_READ_CSV", "data": None, "message": "文件扩展名不是CSV格式"}
+        return {"code": "ERR_DOC_READ_CSV", "data": None, "message": "文件扩展名不是CSV格式"}
 
     errors = []
     try:
@@ -162,7 +162,7 @@ def _validate_csv_format(file_path: str) -> Dict[str, Any]:
     if is_valid:
         return {"code": "SUCCESS", "data": {"valid": True}, "message": "CSV格式正确"}
     else:
-        return {"code": "ERR_READ_CSV", "data": {"valid": False, "errors": errors},
+        return {"code": "ERR_DOC_READ_CSV", "data": {"valid": False, "errors": errors},
                 "message": f"CSV格式有 {len(errors)} 个问题"}
 
 
@@ -188,7 +188,7 @@ def _validate_chart_data(data: Dict[str, Any]) -> Dict[str, Any]:
     if is_valid:
         return {"code": "SUCCESS", "data": {"valid": True}, "message": "图表数据格式正确"}
     else:
-        return {"code": "ERR_CHART_GENERATE", "data": {"valid": False, "errors": errors},
+        return {"code": "ERR_DOC_CHART_GENERATE", "data": {"valid": False, "errors": errors},
                 "message": f"图表数据格式有 {len(errors)} 个问题"}
 
 
@@ -244,7 +244,7 @@ def _read_excel_pandas(
     if not _check_pandas():
         return {"code": "ERR_NO_PANDAS", "data": None, "message": "pandas库未安装，请先执行: pip install pandas openpyxl"}
     if not _check_openpyxl():
-        return {"code": "ERR_NO_OPENPYXL", "data": None, "message": "openpyxl库未安装，请先执行: pip install openpyxl"}
+        return {"code": "ERR_DOC_NO_OPENPYXL", "data": None, "message": "openpyxl库未安装，请先执行: pip install openpyxl"}
     try:
         import pandas as pd
         path = Path(file_path)
@@ -305,7 +305,7 @@ def _read_pdf(
         path = Path(file_path)
         if not path.exists():
             return {
-                "code": "ERR_READ_PDF",
+                "code": "ERR_DOC_READ_PDF",
                 "data": None,
                 "message": f"文件不存在: {file_path}"
             }
@@ -398,7 +398,7 @@ def _read_pdf(
         }
     except Exception as e:
         return {
-            "code": "ERR_READ_PDF",
+            "code": "ERR_DOC_READ_PDF",
             "data": None,
             "message": f"读取PDF文件失败: {str(e)}"
         }
@@ -422,7 +422,7 @@ def _read_docx(
         path = Path(file_path)
         if not path.exists():
             return {
-                "code": "ERR_READ_DOCX",
+                "code": "ERR_DOC_READ_DOCX",
                 "data": None,
                 "message": f"文件不存在: {file_path}"
             }
@@ -463,7 +463,7 @@ def _read_docx(
         }
     except Exception as e:
         return {
-            "code": "ERR_READ_DOCX",
+            "code": "ERR_DOC_READ_DOCX",
             "data": None,
             "message": f"读取Word文档失败: {str(e)}"
         }
@@ -478,7 +478,7 @@ def _read_xlsx(
     """读取Excel文件并提取表格数据（内部函数） - 小健 2026-05-18"""
     if not _check_module("openpyxl"):
         return {
-            "code": "ERR_NO_OPENPYXL",
+            "code": "ERR_DOC_NO_OPENPYXL",
             "data": None,
             "message": "openpyxl库未安装，请先执行: pip install openpyxl"
         }
@@ -489,7 +489,7 @@ def _read_xlsx(
         path = Path(file_path)
         if not path.exists():
             return {
-                "code": "ERR_READ_XLSX",
+                "code": "ERR_DOC_READ_XLSX",
                 "data": None,
                 "message": f"文件不存在: {file_path}"
             }
@@ -501,7 +501,7 @@ def _read_xlsx(
             if sheet_name not in sheet_names:
                 wb.close()
                 return {
-                    "code": "ERR_READ_XLSX",
+                    "code": "ERR_DOC_READ_XLSX",
                     "data": None,
                     "message": f"工作表不存在: {sheet_name}，可用工作表: {sheet_names}"
                 }
@@ -544,7 +544,7 @@ def _read_xlsx(
         }
     except Exception as e:
         return {
-            "code": "ERR_READ_XLSX",
+            "code": "ERR_DOC_READ_XLSX",
             "data": None,
             "message": f"读取Excel文件失败: {str(e)}"
         }
@@ -564,7 +564,7 @@ def _read_csv_stdlib(
         path = Path(file_path)
         if not path.exists():
             return {
-                "code": "ERR_READ_CSV",
+                "code": "ERR_DOC_READ_CSV",
                 "data": None,
                 "message": f"文件不存在: {file_path}"
             }
@@ -595,7 +595,7 @@ def _read_csv_stdlib(
                 continue
         if not read_ok:
             return {
-                "code": "ERR_READ_CSV",
+                "code": "ERR_DOC_READ_CSV",
                 "data": None,
                 "message": f"读取CSV文件失败: 编码不匹配(尝试了{encodings_to_try})"
             }
@@ -612,7 +612,7 @@ def _read_csv_stdlib(
         }
     except Exception as e:
         return {
-            "code": "ERR_READ_CSV",
+            "code": "ERR_DOC_READ_CSV",
             "data": None,
             "message": f"读取CSV文件失败: {str(e)}"
         }
@@ -800,7 +800,7 @@ def _write_xlsx(
     """写入Excel文件（内部函数） - 小健 2026-05-18"""
     if not _check_module("openpyxl"):
         return {
-            "code": "ERR_NO_OPENPYXL",
+            "code": "ERR_DOC_NO_OPENPYXL",
             "data": None,
             "message": "openpyxl库未安装，请先执行: pip install openpyxl"
         }
@@ -1037,7 +1037,7 @@ def read_document(
         # 【自动转换 .doc/.xls 2026-05-20 小健】自动调用convert_document转PDF后读取
         pdf_path = _auto_convert_to_pdf(file_path, suffix)
         if pdf_path is None:
-            return {"code": "ERR_CONVERT_FAILED", "data": None,
+            return {"code": "ERR_DOC_CONVERT_FAILED", "data": None,
                     "message": f"自动转换{suffix}为PDF失败，请手动使用convert_document工具"}
         check = _check_pdf_readable(pdf_path)
         if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
@@ -1055,7 +1055,7 @@ def read_document(
         # 【自动转换 .doc/.xls 2026-05-20 小健】自动调用convert_document转PDF后读取
         pdf_path = _auto_convert_to_pdf(file_path, suffix)
         if pdf_path is None:
-            return {"code": "ERR_CONVERT_FAILED", "data": None,
+            return {"code": "ERR_DOC_CONVERT_FAILED", "data": None,
                     "message": f"自动转换{suffix}为PDF失败，请手动使用convert_document工具"}
         check = _check_pdf_readable(pdf_path)
         if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
@@ -1076,9 +1076,9 @@ def read_document(
             else:
                 result = {"code": "SUCCESS", "data": {"format": "json", "content": json_data}, "message": f"读取JSON文件成功: {file_path}"}
         except Exception as e:
-            result = {"code": "ERR_READ_JSON", "data": None, "message": f"读取JSON文件失败: {str(e)}"}
+            result = {"code": "ERR_DOC_READ_JSON", "data": None, "message": f"读取JSON文件失败: {str(e)}"}
     else:
-        return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
+        return {"code": "ERR_DOC_UNSUPPORTED_FORMAT", "data": None,
                 "message": f"不支持的格式: {suffix}。支持: .pdf/.docx/.xlsx/.pptx/.csv/.tsv/.json"}
     
     if result.get("code") == "SUCCESS":
@@ -1147,7 +1147,7 @@ def write_document(
     elif suffix == ".pptx":
         result = _write_pptx(file_path, title=title, slides=slides)
     else:
-        return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None,
+        return {"code": "ERR_DOC_UNSUPPORTED_FORMAT", "data": None,
                 "message": f"不支持的输出格式: {suffix}。支持: .docx/.xlsx/.pdf/.pptx"}
     
     if result.get("code") == "SUCCESS":
@@ -1167,7 +1167,7 @@ def convert_document(
         src = Path(input_path)
         if not src.exists():
             return {
-                "code": "ERR_CONVERT_FAILED",
+                "code": "ERR_DOC_CONVERT_FAILED",
                 "data": None,
                 "message": f"文件不存在: {input_path}"
             }
@@ -1177,14 +1177,14 @@ def convert_document(
         
         if src_ext not in supported_inputs:
             return {
-                "code": "ERR_CONVERT_FAILED",
+                "code": "ERR_DOC_CONVERT_FAILED",
                 "data": None,
                 "message": f"不支持的输入格式: {src_ext}，支持: {supported_inputs}"
             }
         
         if output_format.lower() != 'pdf':
             return {
-                "code": "ERR_CONVERT_FAILED",
+                "code": "ERR_DOC_CONVERT_FAILED",
                 "data": None,
                 "message": f"当前仅支持转换为PDF格式"
             }
@@ -1230,7 +1230,7 @@ def convert_document(
         
         if result.returncode != 0:
             return {
-                "code": "ERR_CONVERT_FAILED",
+                "code": "ERR_DOC_CONVERT_FAILED",
                 "data": None,
                 "message": f"LibreOffice转换失败: {result.stderr}"
             }
@@ -1238,7 +1238,7 @@ def convert_document(
         expected_pdf = Path(out_dir) / src.with_suffix('.pdf').name
         if not expected_pdf.exists():
             return {
-                "code": "ERR_CONVERT_FAILED",
+                "code": "ERR_DOC_CONVERT_FAILED",
                 "data": None,
                 "message": "转换后PDF文件未生成"
             }
@@ -1258,7 +1258,7 @@ def convert_document(
         }
     except Exception as e:
         return {
-            "code": "ERR_CONVERT_FAILED",
+            "code": "ERR_DOC_CONVERT_FAILED",
             "data": None,
             "message": f"文档转换失败: {str(e)}"
         }
