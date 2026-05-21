@@ -1836,38 +1836,24 @@ class FileTools:
         try:
             is_valid, error_msg = self._validate_path(file_path)
             if not is_valid:
-                return _to_unified_format({
-                    "success": False, "error": error_msg, "applied_edits": 0, "preview": None
-                }, "edit_file")
+                return {"code": "ERR_PATH_INVALID", "data": None, "message": error_msg}
 
-            # 【修复 2026-05-01 小沈】添加task_id检查（与write_file对齐）
             if not self.task_id:
                 self.task_id = _current_task_id.get(None)
             if not self.task_id:
-                return _to_unified_format({
-                    "success": False, "error": "No active task", "applied_edits": 0, "preview": None
-                }, "edit_file")
+                return {"code": "ERR_NO_ACTIVE_TASK", "data": None, "message": "当前没有活跃任务ID，请先创建一个任务"}
 
-            # 【小健 2026-05-02】【修复 2026-05-02 小沈】二进制文件保护：仅支持文本文件编辑
             is_binary, binary_reason = _is_binary_file(file_path)
             if is_binary:
-                return _to_unified_format({
-                    "success": False, "error": f"{binary_reason}。请使用对应的专业工具操作二进制文件。", "applied_edits": 0, "preview": None
-                }, "edit_file")
+                return {"code": "ERR_BINARY_FILE", "data": None, "message": f"{binary_reason}。请使用对应的专业工具操作二进制文件。"}
 
             path = Path(file_path)
             if not path.exists():
-                return _to_unified_format({
-                    "success": False, "error": f"文件不存在: {file_path}", "applied_edits": 0, "preview": None
-                }, "edit_file")
+                return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"文件不存在: {file_path}"}
 
-            # 【修复 2026-05-01 小沈】OOM防护：预检文件大小
             if path.stat().st_size > MAX_READ_SIZE:
-                return _to_unified_format({
-                    "success": False, "error": f"文件过大({path.stat().st_size}字节)，超过编辑上限{MAX_READ_SIZE//1024//1024}MB", "applied_edits": 0, "preview": None
-                }, "edit_file")
+                return {"code": "ERR_FILE_TOO_LARGE", "data": None, "message": f"文件过大({path.stat().st_size}字节)，超过编辑上限{MAX_READ_SIZE//1024//1024}MB"}
 
-            # 【修复 2026-05-01 小沈】添加safety记录（与precise_replace_in_file对齐）
             operation_id = self.safety.record_operation(
                 task_id=self.task_id,
                 operation_type=OperationType.MODIFY,
@@ -1877,7 +1863,6 @@ class FileTools:
 
             encodings_to_try = [encoding, "utf-8", "gbk", "gb2312", "utf-8-sig"] if encoding else ["utf-8", "gbk", "gb2312", "utf-8-sig"]
 
-            # 【修复 2026-05-01 小沈】闭包变量存结果，_edit_sync返回True给execute_with_safety
             edit_result = {}
 
             def _edit_sync() -> bool:
@@ -1913,7 +1898,6 @@ class FileTools:
 
                 applied = sum(1 for r in results if r["success"])
                 if not dry_run and applied > 0:
-                    # 【修复 2026-05-01 小沈】原子写入：先写临时文件再重命名（与write_file对齐）
                     import tempfile
                     import os
                     with tempfile.NamedTemporaryFile(
@@ -1945,24 +1929,23 @@ class FileTools:
                 operation_func=_edit_sync
             )
             if success:
-                # 【修复 2026-05-01 小沈】applied_edits=0时success应为False（如oldText全为空）
-                edit_success = edit_result['applied_edits'] > 0
-                return _to_unified_format({
-                    "success": edit_success, "applied_edits": edit_result['applied_edits'], "total_edits": edit_result['total_edits'],
-                    "results": edit_result['results'], "preview": edit_result['preview'],
-                    "dry_run": edit_result['dry_run'], "encoding": edit_result['used_enc'],
-                    "operation_id": operation_id,
-                }, "edit_file")
-            else:
-                return _to_unified_format({
-                    "success": False, "error": "Failed to edit file",
-                    "applied_edits": 0, "operation_id": operation_id
-                }, "edit_file")
+                return {
+                    "code": "SUCCESS",
+                    "data": {
+                        "applied_edits": edit_result['applied_edits'],
+                        "total_edits": edit_result['total_edits'],
+                        "results": edit_result['results'],
+                        "preview": edit_result['preview'],
+                        "dry_run": edit_result['dry_run'],
+                        "encoding": edit_result['used_enc'],
+                        "operation_id": operation_id,
+                    },
+                    "message": f"已应用 {edit_result['applied_edits']}/{edit_result['total_edits']} 处编辑"
+                }
+            return {"code": "ERR_FILE_EDIT_FAILED", "data": None, "message": "文件编辑失败，safety拦截"}
         except Exception as e:
             logger.error(f"edit_file failed: {file_path}: {e}")
-            return _to_unified_format({
-                "success": False, "error": str(e), "applied_edits": 0, "preview": None
-            }, "edit_file")
+            return {"code": "ERR_FILE_EDIT_FAILED", "data": None, "message": str(e)}
 
     async def grep_file_content(
         self,
