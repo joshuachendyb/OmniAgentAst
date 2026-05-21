@@ -687,20 +687,20 @@ class FileTools:
         if not self.task_id:
             self.task_id = _current_task_id.get(None)
         if not self.task_id:
-            return _to_unified_format({
-                "success": False,
-                "error": "No active task",
-                "operation_id": None
-            }, "write_text_file")
-        
-        try:
+            # 【修复 小健 2026-05-21】正式运行缺少task_id是错误，记录WARNING日志后跳过操作记录继续执行
+            import traceback as _tb
+            _caller_stack = ''.join(_tb.format_stack()[-4:-1])
+            logger.warning(f"[file_tools.write_text_file] task_id缺失! 操作记录将被跳过。调用栈:\n{_caller_stack}")
+            operation_id = None
+        else:
             operation_id = self.safety.record_operation(
                 task_id=self.task_id,
                 operation_type=OperationType.CREATE,
                 destination_path=path,
                 sequence_number=self._get_next_sequence()
             )
-            
+        
+        try:
             def _write_sync():
                 import tempfile
                 import os
@@ -1074,19 +1074,18 @@ class FileTools:
             if not self.task_id:
                 self.task_id = _current_task_id.get(None)
             if not self.task_id:
-                return _to_unified_format({
-                    "success": False,
-                    "error": "No active task",
-                    "operation_id": None
-                }, "file_operation")
-            
-            # 记录操作
-            operation_id = self.safety.record_operation(
-                task_id=self.task_id,
-                operation_type=OperationType.DELETE,
-                source_path=path,
-                sequence_number=self._get_next_sequence()
-            )
+                # 【修复 小健 2026-05-21】正式运行缺少task_id是错误，记录WARNING日志后跳过操作记录继续执行
+                import traceback as _tb
+                _caller_stack = ''.join(_tb.format_stack()[-4:-1])
+                logger.warning(f"[file_tools.file_operation.delete] task_id缺失! 操作记录将被跳过。调用栈:\n{_caller_stack}")
+                operation_id = None
+            else:
+                operation_id = self.safety.record_operation(
+                    task_id=self.task_id,
+                    operation_type=OperationType.DELETE,
+                    source_path=path,
+                    sequence_number=self._get_next_sequence()
+                )
             
             # 定义删除操作 - 小沈 2026-05-19 追踪删除方式
             deletion_info = {}  # 可变容器追踪删除方式: "send2trash" 或 "permanent"
@@ -1212,20 +1211,19 @@ class FileTools:
             if not self.task_id:
                 self.task_id = _current_task_id.get(None)
             if not self.task_id:
-                return _to_unified_format({
-                    "success": False,
-                    "error": "No active task",
-                    "operation_id": None
-                }, "file_operation")
-            
-            # 记录操作
-            operation_id = self.safety.record_operation(
-                task_id=self.task_id,
-                operation_type=OperationType.MOVE,
-                source_path=src,
-                destination_path=dst,
-                sequence_number=self._get_next_sequence()
-            )
+                # 【修复 小健 2026-05-21】正式运行缺少task_id是错误，记录WARNING日志后跳过操作记录继续执行
+                import traceback as _tb
+                _caller_stack = ''.join(_tb.format_stack()[-4:-1])
+                logger.warning(f"[file_tools.file_operation.move] task_id缺失! 操作记录将被跳过。调用栈:\n{_caller_stack}")
+                operation_id = None
+            else:
+                operation_id = self.safety.record_operation(
+                    task_id=self.task_id,
+                    operation_type=OperationType.MOVE,
+                    source_path=src,
+                    destination_path=dst,
+                    sequence_number=self._get_next_sequence()
+                )
             
             # 定义移动操作
             def _move_sync():
@@ -1837,12 +1835,13 @@ class FileTools:
             }, "edit_file")
         
         # 【修复 2026-04-30 小沈】添加task_id检查（与write_file对齐）
+        # 【修复 2026-05-21 小健】正式运行缺少task_id是错误，记录WARNING日志后跳过操作记录继续执行
         if not self.task_id:
             self.task_id = _current_task_id.get(None)
         if not self.task_id:
-            return _to_unified_format({
-                "success": False, "error": "No active task", "replaced_count": 0
-            }, "edit_file")
+            import traceback as _tb
+            _caller_stack = ''.join(_tb.format_stack()[-4:-1])
+            logger.warning(f"[file_tools.edit_file] task_id缺失! 操作记录将被跳过。调用栈:\n{_caller_stack}")
         
         # 【小健 2026-05-02】【修复 2026-05-02 小沈】二进制文件保护：仅支持文本文件编辑
         is_binary, binary_reason = _is_binary_file(file_path)
@@ -1994,12 +1993,13 @@ class FileTools:
                 }, "edit_file")
 
             # 【修复 2026-05-01 小沈】添加task_id检查（与write_file对齐）
+            # 【修复 2026-05-21 小健】正式运行缺少task_id是错误，记录WARNING日志后跳过操作记录继续执行
             if not self.task_id:
                 self.task_id = _current_task_id.get(None)
             if not self.task_id:
-                return _to_unified_format({
-                    "success": False, "error": "No active task", "applied_edits": 0, "preview": None
-                }, "edit_file")
+                import traceback as _tb
+                _caller_stack = ''.join(_tb.format_stack()[-4:-1])
+                logger.warning(f"[file_tools.edit_file.batch] task_id缺失! 操作记录将被跳过。调用栈:\n{_caller_stack}")
 
             # 【小健 2026-05-02】【修复 2026-05-02 小沈】二进制文件保护：仅支持文本文件编辑
             is_binary, binary_reason = _is_binary_file(file_path)
