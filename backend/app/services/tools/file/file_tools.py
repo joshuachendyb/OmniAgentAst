@@ -1536,34 +1536,21 @@ class FileTools:
         try:
             is_valid, error_msg = self._validate_path(file_path)
             if not is_valid:
-                return _to_unified_format({
-                    "success": False, "error": error_msg, "data": None, "mime_type": None
-                }, "read_media_file")
+                return {"code": "ERR_PATH_INVALID", "data": None, "message": error_msg}
 
             path = Path(file_path)
             if not path.exists():
-                return _to_unified_format({
-                    "success": False, "error": f"文件不存在: {file_path}", "data": None, "mime_type": None
-                }, "read_media_file")
+                return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"文件不存在: {file_path}"}
             if not path.is_file():
-                return _to_unified_format({
-                    "success": False, "error": f"路径不是文件: {file_path}", "data": None, "mime_type": None
-                }, "read_media_file")
+                return {"code": "ERR_PATH_NOT_FILE", "data": None, "message": f"路径不是文件: {file_path}"}
 
-            # 【修复 2026-05-01 小沈】OOM防护：预检媒体文件大小（base64膨胀约33%）
             file_size = path.stat().st_size
             if file_size > MAX_MEDIA_READ_SIZE:
-                return _to_unified_format({
-                    "success": False, "error": f"媒体文件过大({file_size}字节)，超过读取上限{MAX_MEDIA_READ_SIZE//1024//1024}MB", "data": None, "mime_type": None
-                }, "read_media_file")
+                return {"code": "ERR_FILE_TOO_LARGE", "data": None, "message": f"媒体文件过大({file_size}字节)，超过读取上限{MAX_MEDIA_READ_SIZE//1024//1024}MB"}
 
             suffix = path.suffix.lower()
-            # 【FIX1 2026-05-20 小健】PDF引导到 read_document
             if suffix == '.pdf':
-                return _to_unified_format({
-                    "success": False, "error": f"PDF文件请使用 read_document 工具读取，read_media_file 不支持PDF",
-                    "data": None, "mime_type": None
-                }, "read_media_file")
+                return {"code": "ERR_FORMAT_NOT_SUPPORTED", "data": None, "message": "PDF文件请使用 read_document 工具读取，read_media_file 不支持PDF"}
 
             mime_map = {
                 ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
@@ -1575,7 +1562,6 @@ class FileTools:
                 ".wma": "audio/x-ms-wma", ".mid": "audio/midi", ".midi": "audio/midi",
                 ".mp4": "video/mp4", ".avi": "video/x-msvideo", ".mov": "video/quicktime",
                 ".mkv": "video/x-matroska", ".webm": "video/webm", ".wmv": "video/x-ms-wmv",
-                # .pdf 已移除，PDF文件请使用 read_document 工具
             }
             mime_type = mime_map.get(suffix, "application/octet-stream")
 
@@ -1584,23 +1570,24 @@ class FileTools:
                     return base64.b64encode(f.read()).decode('utf-8')
 
             b64_data = await asyncio.to_thread(_read_sync)
-            # 【修复 小健 2026-05-16】base64必须放data给前端展示，llm_data只给元信息
-            return _to_unified_format({
-                "success": True,
-                "file_name": path.name,
-                "mime_type": mime_type,
-                "file_size": path.stat().st_size,
-                "base64_data": b64_data,
-            }, "read_media_file", llm_data={
-                "文件名": path.name,
-                "类型": mime_type,
-                "大小": f"{path.stat().st_size:,}字节",
-            })
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "file_name": path.name,
+                    "mime_type": mime_type,
+                    "file_size": path.stat().st_size,
+                    "base64_data": b64_data,
+                },
+                "message": f"已读取媒体文件: {path.name}",
+                "llm_data": {
+                    "文件名": path.name,
+                    "类型": mime_type,
+                    "大小": f"{path.stat().st_size:,}字节",
+                },
+            }
         except Exception as e:
             logger.error(f"read_media_file failed: {file_path}: {e}")
-            return _to_unified_format({
-                "success": False, "error": str(e), "data": None, "mime_type": None
-            }, "read_media_file")
+            return {"code": "ERR_FILE_READ_FAILED", "data": None, "message": str(e)}
 
     async def _read_batch_file(
         self,
