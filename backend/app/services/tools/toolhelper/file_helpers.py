@@ -910,16 +910,16 @@ async def batch_rename_impl(
         return {"code": "ERR_PATH_INVALID", "data": None, "message": f"目录路径验证失败: {error_msg}"}
     
     if not task_id:
-        return {"code": "ERR_NO_TASK", "data": None, "message": "No active task"}
+        return {"code": "ERR_META_NO_TASK", "data": None, "message": "No active task"}
     
     dir_path = Path(directory)
     
     try:
         if not dir_path.exists():
-            return {"code": "ERR_DIR_NOT_FOUND", "data": None, "message": f"目录不存在: {directory}"}
+            return {"code": "ERR_FILE_DIRECTORY_NOT_FOUND", "data": None, "message": f"目录不存在: {directory}"}
         
         if not dir_path.is_dir():
-            return {"code": "ERR_PATH_NOT_DIR", "data": None, "message": f"路径不是目录: {directory}"}
+            return {"code": "ERR_FILE_PATH_NOT_DIR", "data": None, "message": f"路径不是目录: {directory}"}
         
         try:
             regex = re.compile(pattern)
@@ -1144,13 +1144,13 @@ async def compress_files_impl(
         return {"code": "ERR_FILE_EXISTS", "data": None, "message": f"目标文件已存在: {destination_path}，可设置overwrite=true覆盖"}
     
     if not task_id:
-        return {"code": "ERR_NO_TASK", "data": None, "message": "No active task"}
+        return {"code": "ERR_META_NO_TASK", "data": None, "message": "No active task"}
     
     if format not in ["zip", "tar.gz"]:
-        return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None, "message": f"不支持的压缩格式: {format}，支持格式: zip, tar.gz"}
+        return {"code": "ERR_DOC_UNSUPPORTED_FORMAT", "data": None, "message": f"不支持的压缩格式: {format}，支持格式: zip, tar.gz"}
     
     if not 0 <= compression_level <= 9:
-        return {"code": "ERR_INVALID_PARAM", "data": None, "message": f"无效的压缩级别: {compression_level}，必须是0-9之间的整数"}
+        return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": f"无效的压缩级别: {compression_level}，必须是0-9之间的整数"}
     
     source = Path(source_path)
     destination = Path(output_path)
@@ -1275,10 +1275,10 @@ async def compress_files_impl(
         if result:
             return {"code": "SUCCESS", "data": {"operation_id": operation_id, **result}, "message": f"压缩完成: {result.get('file_count', 0)}个文件"}
         else:
-            return {"code": "ERR_COMPRESS_FAILED", "data": None, "message": "压缩失败"}
+            return {"code": "ERR_FILE_COMPRESS_FAILED", "data": None, "message": "压缩失败"}
             
     except Exception as e:
-        return {"code": "ERR_COMPRESS_FAILED", "data": None, "message": f"压缩失败: {str(e)}"}
+        return {"code": "ERR_FILE_COMPRESS_FAILED", "data": None, "message": f"压缩失败: {str(e)}"}
 
 
 def _split_zip_file(zip_path: Path, split_size: int) -> List[Path]:
@@ -1356,7 +1356,7 @@ async def copy_file_impl(
         return {"code": "ERR_PATH_INVALID", "data": None, "message": f"目标路径{error_msg_dst}"}
     
     if not task_id:
-        return {"code": "ERR_NO_TASK", "data": None, "message": "No active task"}
+        return {"code": "ERR_META_NO_TASK", "data": None, "message": "No active task"}
     
     src = Path(source_path)
     dst = Path(destination_path)
@@ -1404,10 +1404,10 @@ async def copy_file_impl(
         if success:
             return {"code": "SUCCESS", "data": {"operation_id": operation_id, "source": str(src), "destination": str(dst)}, "message": f"Copied: {src.name} -> {dst}"}
         else:
-            return {"code": "ERR_COPY_FAILED", "data": None, "message": "Failed to copy file"}
+            return {"code": "ERR_FILE_COPY_FAILED", "data": None, "message": "Failed to copy file"}
             
     except Exception as e:
-        return {"code": "ERR_COPY_FAILED", "data": None, "message": str(e)}
+        return {"code": "ERR_FILE_COPY_FAILED", "data": None, "message": str(e)}
 
 
 async def file_statistics_impl(
@@ -1449,19 +1449,19 @@ async def file_statistics_impl(
         return {"code": "ERR_PATH_INVALID", "data": None, "message": f"目录路径验证失败: {error_msg}"}
     
     if not task_id:
-        return {"code": "ERR_NO_TASK", "data": None, "message": "No active task"}
+        return {"code": "ERR_META_NO_TASK", "data": None, "message": "No active task"}
     
     if output_format not in ["json", "csv", "text"]:
-        return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None, "message": f"不支持的输出格式: {output_format}，支持格式: json, csv, text"}
+        return {"code": "ERR_DOC_UNSUPPORTED_FORMAT", "data": None, "message": f"不支持的输出格式: {output_format}，支持格式: json, csv, text"}
     
     dir_path = Path(directory)
     
     try:
         if not dir_path.exists():
-            return {"code": "ERR_DIR_NOT_FOUND", "data": None, "message": f"目录不存在: {directory}"}
+            return {"code": "ERR_FILE_DIRECTORY_NOT_FOUND", "data": None, "message": f"目录不存在: {directory}"}
         
         if not dir_path.is_dir():
-            return {"code": "ERR_PATH_NOT_DIR", "data": None, "message": f"路径不是目录: {directory}"}
+            return {"code": "ERR_FILE_PATH_NOT_DIR", "data": None, "message": f"路径不是目录: {directory}"}
         
         operation_id = record_operation_func(
             task_id=task_id,
@@ -1790,14 +1790,14 @@ async def file_checksum_impl(
         return {"code": "ERR_PATH_INVALID", "data": None, "message": f"文件路径验证失败: {error_msg}"}
     
     if not task_id:
-        return {"code": "ERR_NO_TASK", "data": None, "message": "No active task"}
+        return {"code": "ERR_META_NO_TASK", "data": None, "message": "No active task"}
     
     supported_algorithms = ["md5", "sha1", "sha256", "sha512"]
     if algorithm.lower() not in supported_algorithms:
-        return {"code": "ERR_UNSUPPORTED_FORMAT", "data": None, "message": f"不支持的哈希算法: {algorithm}，支持算法: {', '.join(supported_algorithms)}"}
+        return {"code": "ERR_DOC_UNSUPPORTED_FORMAT", "data": None, "message": f"不支持的哈希算法: {algorithm}，支持算法: {', '.join(supported_algorithms)}"}
     
     if chunk_size < 1024 or chunk_size > 1048576:
-        return {"code": "ERR_INVALID_PARAM", "data": None, "message": f"无效的分块大小: {chunk_size}，必须在1024到1048576之间"}
+        return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": f"无效的分块大小: {chunk_size}，必须在1024到1048576之间"}
     
     path = Path(file_path)
     
@@ -1887,10 +1887,10 @@ async def file_checksum_impl(
                 msg = f"哈希计算完成: {algorithm.upper()}"
             return {"code": "SUCCESS", "data": data, "message": msg}
         else:
-            return {"code": "ERR_CHECKSUM_FAILED", "data": None, "message": "哈希计算失败"}
+            return {"code": "ERR_FILE_CHECKSUM_FAILED", "data": None, "message": "哈希计算失败"}
             
     except Exception as e:
-        return {"code": "ERR_CHECKSUM_FAILED", "data": None, "message": f"哈希计算失败: {str(e)}"}
+        return {"code": "ERR_FILE_CHECKSUM_FAILED", "data": None, "message": f"哈希计算失败: {str(e)}"}
 
 
 def _calculate_hash_for_multiple_files(
