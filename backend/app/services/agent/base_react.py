@@ -651,7 +651,7 @@ class BaseAgent(ABC):
                     ])
                     if not is_network_error:
                         # LLM格式错误：添加提示到历史，引导LLM修复
-                        self._add_observation_to_history(f"Parse Error: {error_msg}. Please ensure your response follows the ReAct format (Thought -> Action -> Action Input).")
+                        self.message_builder.add_observation(f"Parse Error: {error_msg}. Please ensure your response follows the ReAct format (Thought -> Action -> Action Input).")
                     else:
                         # 网络/API错误：不注入history，给前端提示，直接重试
                         logger.info(f"[parse_react_response] 网络/API错误，不注入history: {error_msg}")
@@ -929,7 +929,7 @@ class BaseAgent(ABC):
                     self._failed_attempts = dict(list(self._failed_attempts.items())[-50:])
                 
                 logger.info(f"[Debug] observation加入history: {observation_text[:100]}...")
-                self._add_observation_to_history(observation_text)
+                self.message_builder.add_observation(observation_text, self.llm_call_count)
 
                 # 记录观察结果到prompt日志
                 prompt_logger = get_prompt_logger()
@@ -1037,7 +1037,7 @@ class BaseAgent(ABC):
                     yield p_obs_step.to_dict()
                     # 并行工具observation — 小沈 2026-05-21 使用_format_llm_observation
                     p_obs_text = _format_llm_observation(p_result)
-                    self._add_observation_to_history(f"[并行] {p_obs_text}")
+                    self.message_builder.add_observation(f"[并行] {p_obs_text}", self.llm_call_count)
                     # 【修复 问题4 小沈 2026-05-15】并行工具也更新缓存和失败计数
                     _pkey = f"{p_name}:{self._params_to_key(p_params)}"
                     p_code = p_result.get("code", "SUCCESS")
