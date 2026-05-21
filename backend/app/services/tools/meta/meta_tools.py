@@ -101,7 +101,7 @@ def tool_search(query: str) -> Dict[str, Any]:
 
     if not query.strip():
         return {
-            "code": "ERR_EMPTY_QUERY",
+            "code": "ERR_DOC_QUERY_EMPTY",
             "data": None,
             "llm_data": None,
             "message": "搜索关键词不能为空，请提供描述性关键词",
@@ -282,7 +282,7 @@ def pipeline(steps: str, stop_on_error: bool = True) -> Dict[str, Any]:
             impl = tool_registry.get_implementation(tool_name)
             if not impl:
                 return {
-                    "code": "ERR_TOOL_IMPL_NOT_FOUND",
+                    "code": "ERR_META_TOOL_IMPL_NOT_FOUND",
                     "data": None,
                     "llm_data": {"failed_step": i + 1, "tool": tool_name},
                     "message": f"步骤{i+1}: 工具 '{tool_name}' 无法获取实现，请检查工具是否正确注册",
