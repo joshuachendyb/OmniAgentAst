@@ -970,6 +970,7 @@ class BaseAgent(ABC):
         except Exception as e:
             # ===== 【步骤2.9+2.11】场景1：未捕获异常 =====
             # 【步骤2.11】废弃create_error_from_exception，使用StepFactory.create_error_step
+            import traceback; traceback.print_exc()
             logger.error(f"Agent run_stream error: {e}", exc_info=True)
             
             # 【步骤2.9】使用StepFactory创建ErrorStep
