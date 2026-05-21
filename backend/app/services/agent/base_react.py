@@ -32,7 +32,6 @@ from typing import Any, Dict, List, Optional, AsyncGenerator, Callable
 
 from app.services.agent.types import AgentStatus
 from app.services.agent.react_output_parser import parse_react_response
-from app.services.agent.tool_result_formatter import _format_llm_observation
 from app.services.agent.message_builder import MessageBuilder
 from app.services.agent.reasoning_steps import (
     StepFactory,
@@ -109,7 +108,6 @@ class BaseAgent(ABC):
         
         # 【步骤2.10】步骤历史管理：使用ReasoningStep类型
         self.steps: List[ReasoningStep] = []
-        self.conversation_history: List[Dict[str, str]] = []
         self.message_builder = MessageBuilder(max_context_chars=self.MAX_CONTEXT_CHARS)
         self.status = AgentStatus.IDLE
         self.llm_call_count = 0
@@ -138,21 +136,24 @@ class BaseAgent(ABC):
         
         # 【v2.3新增】chunk处理相关属性—所有Agent子类共享
         self.max_consecutive_chunks = MAX_CONSECUTIVE_CHUNKS  # 连续chunk达此阈值时提升为implicit
+        # self.temp_history 已迁入 MessageBuilder，此处保留向后兼容属性
         self.temp_history: List[Dict[str, str]] = []  # 临时历史，用于chunk过程中LLM参考
         
         # 创建工具执行器
         self.executor = None  # 子类应初始化
         
-        # 【方案B 小沈 2026-05-15】工具执行缓存
-        self._executed_cache: Dict[str, dict] = {}
-        self._cache_ttl: int = 60
-        self._cache_timestamps: Dict[str, float] = {}
-        
-        # 【方案A 小沈 2026-05-15】工具连续失败计数器
-        self._failed_attempts: Dict[str, int] = {}
-        
-        # 【方案H 小沈 2026-05-15】已执行工具汇总
-        self._executed_tool_summary: List[str] = []
+        # 【2026-05-21 小沈】缓存/失败计数/汇总已迁入MessageBuilder，此处删除
+        # 原: _executed_cache, _cache_ttl, _cache_timestamps, _failed_attempts, _executed_tool_summary
+    
+    @property
+    def conversation_history(self) -> List[Dict[str, str]]:
+        """@property透传至MessageBuilder — 小沈 2026-05-21"""
+        return self.message_builder.conversation_history
+    
+    @conversation_history.setter
+    def conversation_history(self, value: List[Dict[str, str]]) -> None:
+        """@property setter — 小沈 2026-05-21"""
+        self.message_builder.conversation_history = value
     
     def _load_tools(self) -> Dict[str, Callable]:
         """
@@ -208,27 +209,7 @@ class BaseAgent(ABC):
     
     # ===== 可扩展 Hook 方法（子类可覆盖）=====
     
-    def _params_to_key(self, params: dict) -> str:
-        """将工具参数转换为可比较的key - 小沈 2026-05-15
-        【修复 风险1 小健 2026-05-15】使用hashlib防碰撞，替代截断
-        """
-        import json, hashlib
-        try:
-            raw = json.dumps(params, sort_keys=True, ensure_ascii=False)
-            return hashlib.md5(raw.encode()).hexdigest()
-        except Exception:
-            return hashlib.md5(str(params).encode()).hexdigest()
-    
-    def _is_no_cache_tool(self, tool_name: str, tool_params: dict) -> bool:
-        """判断工具是否不应缓存 - 小沈 2026-05-15"""
-        _NO_CACHE_TOOLS = {"ping", "port_check"}
-        if tool_name in _NO_CACHE_TOOLS:
-            return True
-        if tool_name == "execute_shell_command" and tool_params:
-            command = str(tool_params.get("command", "")).lower()
-            if any(kw in command for kw in ["ping", "tracert", "curl", "wget"]):
-                return True
-        return False
+    # 【2026-05-21 小沈】_params_to_key和_is_no_cache_tool已迁入MessageBuilder
     
     def _on_session_init(self, task: str, context: Optional[Dict[str, Any]]):
         """
@@ -512,9 +493,9 @@ class BaseAgent(ABC):
                     consecutive_chunk_count += 1
                     
                     # 追加到临时历史（供下一轮LLM参考）
-                    self.temp_history.append({"role": "assistant", "content": chunk_content})
-                    if len(self.temp_history) > 10:
-                        self.temp_history = self.temp_history[-10:]
+                    self.message_builder.temp_history.append({"role": "assistant", "content": chunk_content})
+                    if len(self.message_builder.temp_history) > 10:
+                        self.message_builder.temp_history = self.message_builder.temp_history[-10:]
                     
                     # yield chunk步骤给前端（is_reasoning默认False，非流式场景无法从chunk元数据获取）
                     chunk_step = StepFactory.create_chunk_step(
@@ -629,8 +610,8 @@ class BaseAgent(ABC):
                     
                     self.message_builder.add_assistant(response)
                     
-                    # 【修复D2】调用_trim_history防止历史无限增长
-                    self._trim_history()
+                    # 【修复D2】调用message_builder.trim_history防止历史无限增长
+                    self.message_builder.trim_history()
                     
                     continue  # 继续下一轮循环
                 
@@ -757,39 +738,9 @@ class BaseAgent(ABC):
                 logger.info(f"[DEBUG_TOOL_PARAMS] before execute_tool: tool_name={tool_name}, tool_params={tool_params}")
                 
                 # 【方案B 小沈 2026-05-15】缓存检查 + 【方案A 小沈 2026-05-15】失败拦截
-                cache_key = f"{tool_name}:{self._params_to_key(tool_params)}"
-                observation_prefix = ""
-                cache_hit = False
-                # 【修复 风险2 小健 2026-05-15】初始化execution_result防未定义
-                execution_result = None
+                execution_result, observation_prefix, cache_hit, fail_count = self.message_builder.check_cache_or_block(
+                    tool_name, tool_params)
                 execution_time_ms = 0
-                
-                # 失败拦截：同一操作失败3次后强制跳过
-                fail_key = cache_key
-                fail_count = self._failed_attempts.get(fail_key, 0)
-                if fail_count >= 3:
-                    execution_result = {
-                        "status": "blocked",
-                        "summary": f"已连续失败{fail_count}次，系统强制跳过",
-                        "data": None,
-                        "error": f"{tool_name} 已连续失败{fail_count}次"
-                    }
-                    execution_time_ms = 0
-                    observation_prefix = f"[系统拦截] {tool_name} 已连续失败{fail_count}次，强制跳过执行。请换用其他工具或方法。\n"
-                    logger.info(f"[FailBlock] {tool_name} 已失败{fail_count}次，强制跳过")
-                elif not self._is_no_cache_tool(tool_name, tool_params) and cache_key in self._executed_cache:
-                    # 缓存命中
-                    cached_time = self._cache_timestamps.get(cache_key, 0)
-                    if time.time() - cached_time < self._cache_ttl:
-                        execution_result = self._executed_cache[cache_key]
-                        execution_time_ms = 0
-                        observation_prefix = "[缓存命中] 此命令已执行过，结果已在上方Observation中。禁止再次调用相同工具+参数！ "
-                        cache_hit = True
-                        logger.info(f"[Cache] 命中缓存: {cache_key}, 跳过实际执行")
-                    else:
-                        # 缓存过期
-                        del self._executed_cache[cache_key]
-                        del self._cache_timestamps[cache_key]
                 
                 if execution_result is None and not cache_hit and fail_count < 3:
                     # 【Phase 1修复 小健 2026-05-14】函数内import避免触发register
@@ -845,7 +796,7 @@ class BaseAgent(ABC):
                 self.message_builder.add_assistant(response)
                 
                 # ========== Observation 阶段（主工具的结果）==========
-                observation_text = _format_llm_observation(execution_result)
+                observation_text = self.message_builder.build_observation_text(execution_result)
                 
                 # 【P15 小沈 2026-05-19】next_actions: 工具返回值自解释，引导LLM下一步
                 next_actions = execution_result.get('next_actions')
@@ -881,52 +832,14 @@ class BaseAgent(ABC):
                             content_preview += "..."
                         observation_text += f"\n写入内容摘要({len(written_content)}字符): {content_preview}"
 
-                # 更新消息历史（给LLM通道）
                 # 【方案B 小沈 2026-05-15】缓存命中前缀
                 if observation_prefix:
                     observation_text = observation_prefix + observation_text
                 # 【方案A 小沈 2026-05-15】失败计数+已执行汇总更新
-                _ukey = f"{tool_name}:{self._params_to_key(tool_params)}"
-                if exec_status == 'success':
-                    # 成功：更新缓存+清除失败计数
-                    if not self._is_no_cache_tool(tool_name, tool_params):
-                        self._executed_cache[_ukey] = execution_result
-                        self._cache_timestamps[_ukey] = time.time()
-                    if _ukey in self._failed_attempts:
-                        del self._failed_attempts[_ukey]
-                elif exec_status in ('error', 'timeout', 'permission_denied', 'blocked'):
-                    # 失败：递增计数
-                    _fc = self._failed_attempts.get(_ukey, 0) + 1
-                    self._failed_attempts[_ukey] = _fc
-                    if _fc >= 2:
-                        observation_text += f"\n[此操作已失败{_fc}次]"
-                    if _fc >= 3:
-                        observation_text += "\n[⚠️ 禁止再尝试此操作！必须使用其他方法或换URL]"
-                # 【方案H 小沈 2026-05-15】已执行工具汇总（增强：含关键参数让LLM知道已获取什么）
-                if tool_name == "http_request" and tool_params:
-                    _url = str(tool_params.get("url", ""))[:60]
-                    _summary_entry = f"http_request({_url})→{exec_status}"
-                elif tool_name == "ping" and tool_params:
-                    _host = str(tool_params.get("host", ""))
-                    _summary_entry = f"ping({_host})→{exec_status}"
-                elif tool_name == "port_check" and tool_params:
-                    _host = str(tool_params.get("host", ""))
-                    _port = tool_params.get("port", "")
-                    _summary_entry = f"port_check({_host}:{_port})→{exec_status}"
-                elif tool_name == "execute_shell_command" and tool_params:
-                    _cmd = str(tool_params.get("command", ""))[:50]
-                    _summary_entry = f"shell({_cmd})→{exec_status}"
-                elif tool_name != "finish":
-                    _summary_entry = f"{tool_name}→{exec_status}"
-                else:
-                    _summary_entry = ""
-                self._executed_tool_summary.append(_summary_entry)
-                # 【修复 风险5 小健 2026-05-15】限制汇总长度
-                if len(self._executed_tool_summary) > 50:
-                    self._executed_tool_summary = self._executed_tool_summary[-30:]
-                # 【修复 风险3 小健 2026-05-15】限制失败计数器长度
-                if len(self._failed_attempts) > 100:
-                    self._failed_attempts = dict(list(self._failed_attempts.items())[-50:])
+                fail_warning = self.message_builder.update_execution_cache(
+                    tool_name, tool_params, execution_result, exec_status)
+                if fail_warning:
+                    observation_text += fail_warning
                 
                 logger.info(f"[Debug] observation加入history: {observation_text[:100]}...")
                 self.message_builder.add_observation(observation_text, self.llm_call_count)
@@ -994,7 +907,7 @@ class BaseAgent(ABC):
                     self._on_after_loop()
                     return
 
-                self._trim_history()
+                self.message_builder.trim_history()
                 
                 # 【2026-05-14 小沈】在主干工具完成后再执行并行工具调用（成对显示）
                 pending_calls = parsed.get("_pending_calls", [])
@@ -1035,21 +948,13 @@ class BaseAgent(ABC):
                     )
                     self.steps.append(p_obs_step)
                     yield p_obs_step.to_dict()
-                    # 并行工具observation — 小沈 2026-05-21 使用_format_llm_observation
-                    p_obs_text = _format_llm_observation(p_result)
+                    # 并行工具observation — 小沈 2026-05-21 统一使用message_builder
+                    p_obs_text = self.message_builder.build_observation_text(p_result)
                     self.message_builder.add_observation(f"[并行] {p_obs_text}", self.llm_call_count)
                     # 【修复 问题4 小沈 2026-05-15】并行工具也更新缓存和失败计数
-                    _pkey = f"{p_name}:{self._params_to_key(p_params)}"
                     p_code = p_result.get("code", "SUCCESS")
-                    if p_code == "SUCCESS":
-                        if not self._is_no_cache_tool(p_name, p_params):
-                            self._executed_cache[_pkey] = p_result
-                            self._cache_timestamps[_pkey] = time.time()
-                        if _pkey in self._failed_attempts:
-                            del self._failed_attempts[_pkey]
-                    elif p_code.startswith("ERR_"):
-                        _fc = self._failed_attempts.get(_pkey, 0) + 1
-                        self._failed_attempts[_pkey] = _fc
+                    p_status = "success" if p_code == "SUCCESS" else "error"
+                    self.message_builder.update_execution_cache(p_name, p_params, p_result, p_status)
                     # 【修复 2026-05-15 小健】并行工具也记录到prompt日志
                     try:
                         _p_logger = get_prompt_logger()
@@ -1088,164 +993,7 @@ class BaseAgent(ABC):
     # ===== 对话历史管理 =====
 
     MAX_CONTEXT_CHARS = 150000  # 统一上下文+单条observation预算上限 小沈-2026-05-15
-
-    def _trim_history(self) -> None:
-        """
-        容量感知的对话历史裁剪 - 小健 2026-05-15 重构
-
-        【原设计缺陷】：
-        1. 硬编码5个工具名做去重 → 新工具永不匹配
-        2. 计数制(30条阈值) → 一条150K字符observation等同一条50字符消息
-        3. "Observation: success"子串匹配 → F2改前缀后全部失效(P0)
-        4. recent[-5:] → 无字符数控制，可能保留5条超长消息撑爆窗口
-
-        【新设计】：
-        - 角色驱动分类: observations统一role=system，用role+前缀识别，不依赖子串
-        - 内容指纹去重: 取content[:200]做指纹，语言无关、工具无关
-        - 容量预算制: MAX_CONTEXT_CHARS=80K，保留顺序 system→user→error_obs→assistant→success_obs
-        - 每类设soft limit防单类占满: error最多5条，assistant最多6条，success最多8条
-        """
-        total_chars_before = self._total_chars(self.conversation_history)
-        total_msgs_before = len(self.conversation_history)
-        
-        if total_msgs_before <= 2:
-            # 只有system+user，无需裁剪 小健-2026-05-15
-            logger.info(
-                f"[History] Skip trim(仅{total_msgs_before}条): "
-                f"chars={total_chars_before}/{self.MAX_CONTEXT_CHARS}"
-            )
-            return
-
-        system_msg = self.conversation_history[0]
-        user_msg = self.conversation_history[1] if len(self.conversation_history) > 1 else None
-
-        # --- 角色分类 ---
-        error_obs = []
-        success_obs = []
-        assistant_msgs = []
-        other_msgs = []
-
-        for msg in self.conversation_history[2:]:
-            role = msg.get("role", "")
-            content = msg.get("content", "")
-            if role == "assistant":
-                assistant_msgs.append(msg)
-            elif self._is_observation_role(msg) or self._is_observation_legacy(content):
-                if self._is_error_obs(content):
-                    error_obs.append(msg)
-                else:
-                    success_obs.append(msg)
-            else:
-                other_msgs.append(msg)
-
-        # --- 内容指纹去重（语言无关、工具无关）---
-        duped_success = len(success_obs)
-        duped_error = len(error_obs)
-        error_obs = self._dedup_by_fingerprint(error_obs)
-        success_obs = self._dedup_by_fingerprint(success_obs)
-        dropped_dup = (duped_success + duped_error) - (len(success_obs) + len(error_obs))
-
-        # --- 容量预算制组装 ---
-        rebuilt = [system_msg]
-        if user_msg:
-            rebuilt.append(user_msg)
-        rebuilt.extend(other_msgs)  # 其他消息直接保留
-
-        budget = self.MAX_CONTEXT_CHARS - self._total_chars(rebuilt)
-
-        # 优先级: error_obs(5) > assistant(6) > success_obs(8)
-        budget_dropped = 0
-        for obs in error_obs[-5:]:
-            if not self._add_within_budget(rebuilt, obs, budget):
-                budget_dropped += 1
-
-        for msg in assistant_msgs[-6:]:
-            if not self._add_within_budget(rebuilt, msg, budget):
-                budget_dropped += 1
-
-        for obs in success_obs[-8:]:
-            if not self._add_within_budget(rebuilt, obs, budget):
-                budget_dropped += 1
-
-        total_chars_after = self._total_chars(rebuilt)
-        total_msgs_after = len(rebuilt)
-        trimmed = total_msgs_after < total_msgs_before
-        
-        # 记录裁剪信息到实例，供prompt_logger使用 小健-2026-05-15
-        self._last_trim_info = {
-            "trimmed": trimmed,
-            "msgs_before": total_msgs_before,
-            "msgs_after": total_msgs_after,
-            "chars_before": total_chars_before,
-            "chars_after": total_chars_after,
-            "budget": self.MAX_CONTEXT_CHARS,
-            "dropped_duplicates": dropped_dup,
-            "dropped_by_budget": budget_dropped,
-        }
-        
-        if trimmed:
-            logger.info(
-                f"[History] ✂Trim: {total_msgs_before}→{total_msgs_after} msgs, "
-                f"chars={total_chars_after}/{self.MAX_CONTEXT_CHARS} "
-                f"(去重{dropped_dup}+预算{budget_dropped})"
-            )
-        else:
-            logger.info(
-                f"[History] ✓NoTrim: {total_msgs_before} msgs, "
-                f"chars={total_chars_after}/{self.MAX_CONTEXT_CHARS} "
-                f"(去重{dropped_dup}条)"
-            )
-        self.conversation_history = rebuilt
-        # 【修复 问题6 小沈 2026-05-15】trim时同步清理过期缓存条目
-        _now = time.time()
-        _expired_keys = [k for k, t in self._cache_timestamps.items() if _now - t > self._cache_ttl]
-        for k in _expired_keys:
-            self._executed_cache.pop(k, None)
-            self._cache_timestamps.pop(k, None)
-
-    @staticmethod
-    def _is_observation_role(msg: dict) -> bool:
-        """通过role+前缀识别observation - 小健 2026-05-15"""
-        return msg.get("role") == "system" and msg.get("content", "").startswith("[Observation]")
-
-    @staticmethod
-    def _is_observation_legacy(content: str) -> bool:
-        """向后兼容旧格式observation - 小健 2026-05-15"""
-        return "Observation:" in content and ("exec_status" not in content)
-
-    @staticmethod
-    def _is_error_obs(content: str) -> bool:
-        """判断observation是否失败 - 小健 2026-05-15"""
-        return any(kw in content for kw in ("error", "timeout", "permission_denied", "blocked", "failed"))
-
-    @staticmethod
-    def _dedup_by_fingerprint(obs_list: list) -> list:
-        """内容指纹去重 - 小健 2026-05-15
-        取content前200字符为指纹，相同指纹只保留最后一条（最新）。"""
-        seen = set()
-        result = []
-        for obs in reversed(obs_list):
-            fp = obs["content"][:200]
-            if fp not in seen:
-                seen.add(fp)
-                result.append(obs)
-        result.reverse()
-        return result
-
-    @staticmethod
-    def _total_chars(messages: list) -> int:
-        """计算消息总字符数 - 小健 2026-05-15"""
-        return sum(len(m.get("content", "")) for m in messages)
-
-    @staticmethod
-    def _add_within_budget(target: list, msg: dict, budget: int) -> bool:
-        """在预算内追加消息，返回是否成功 - 小健 2026-05-15"""
-        chars = len(msg.get("content", ""))
-        budget_used = BaseAgent._total_chars(target)
-        if budget_used + chars <= budget:
-            target.append(msg)
-            return True
-        return False
+    # 【2026-05-21 小沈】_trim_history及6个辅助方法已迁入MessageBuilder，此处删除
 
     def _build_alternative_tools_hint(self, failed_tool: str, tool_params: Optional[dict] = None) -> str:
         """工具执行失败时，从当前Agent已注册工具中动态生成替代建议 - 小沈 2026-05-14

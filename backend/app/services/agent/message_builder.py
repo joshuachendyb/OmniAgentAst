@@ -21,6 +21,7 @@ MessageBuilder 实例生命周期必须与 Agent 实例强绑定，
 
 import json
 import hashlib
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -284,6 +285,106 @@ class MessageBuilder:
         """参数 → MD5 key — 替代 base_react.py L208-217"""
         param_str = json.dumps(params, sort_keys=True, ensure_ascii=False)
         return hashlib.md5(param_str.encode()).hexdigest()
+
+    @staticmethod
+    def _is_no_cache_tool(tool_name: str, tool_params: dict) -> bool:
+        """判断工具是否不应缓存 — 小沈 2026-05-21"""
+        _NO_CACHE_TOOLS = {"ping", "port_check"}
+        if tool_name in _NO_CACHE_TOOLS:
+            return True
+        if tool_name == "execute_shell_command" and tool_params:
+            command = str(tool_params.get("command", "")).lower()
+            if any(kw in command for kw in ["ping", "tracert", "curl", "wget"]):
+                return True
+        return False
+
+    def check_cache_or_block(self, tool_name: str, tool_params: dict) -> tuple:
+        """缓存检查+失败拦截 — 整合 base_react.py L768-801
+        返回: (execution_result, observation_prefix, cache_hit, fail_count)
+        """
+        cache_key = f"{tool_name}:{self._params_to_key(tool_params)}"
+        observation_prefix = ""
+        cache_hit = False
+        execution_result = None
+        fail_count = self._failed_attempts.get(cache_key, 0)
+        
+        # 失败拦截
+        if fail_count >= 3:
+            execution_result = {
+                "code": "ERR_BLOCKED",
+                "message": f"已连续失败{fail_count}次，系统强制跳过",
+                "data": None,
+                "error": f"{tool_name} 已连续失败{fail_count}次"
+            }
+            observation_prefix = f"[系统拦截] {tool_name} 已连续失败{fail_count}次，强制跳过执行。请换用其他工具或方法。\n"
+            return execution_result, observation_prefix, cache_hit, fail_count
+        
+        # 缓存检查
+        if not self._is_no_cache_tool(tool_name, tool_params) and cache_key in self._executed_cache:
+            cached_time = self._cache_timestamps.get(cache_key, 0)
+            if time.time() - cached_time < self._cache_ttl:
+                execution_result = self._executed_cache[cache_key]
+                observation_prefix = "[缓存命中] 此命令已执行过，结果已在上方Observation中。禁止再次调用相同工具+参数！ "
+                cache_hit = True
+            else:
+                del self._executed_cache[cache_key]
+                del self._cache_timestamps[cache_key]
+        
+        return execution_result, observation_prefix, cache_hit, fail_count
+
+    def update_execution_cache(self, tool_name: str, tool_params: dict, execution_result: dict, exec_status: str) -> str:
+        """更新缓存+失败计数+汇总 — 整合 base_react.py L898-936
+        返回: observation附加文本（失败警告）
+        """
+        cache_key = f"{tool_name}:{self._params_to_key(tool_params)}"
+        extra_text = ""
+        
+        if exec_status == 'success':
+            if not self._is_no_cache_tool(tool_name, tool_params):
+                self._executed_cache[cache_key] = execution_result
+                self._cache_timestamps[cache_key] = time.time()
+            if cache_key in self._failed_attempts:
+                del self._failed_attempts[cache_key]
+        elif exec_status in ('error', 'timeout', 'permission_denied', 'blocked'):
+            _fc = self._failed_attempts.get(cache_key, 0) + 1
+            self._failed_attempts[cache_key] = _fc
+            if _fc >= 2:
+                extra_text += f"\n[此操作已失败{_fc}次]"
+            if _fc >= 3:
+                extra_text += "\n[⚠️ 禁止再尝试此操作！必须使用其他方法或换URL]"
+        
+        # 已执行工具汇总
+        summary_entry = self.build_summary_entry(tool_name, tool_params, exec_status)
+        if summary_entry:
+            self._executed_tool_summary.append(summary_entry)
+            if len(self._executed_tool_summary) > 50:
+                self._executed_tool_summary = self._executed_tool_summary[-30:]
+        
+        # 限制失败计数器长度
+        if len(self._failed_attempts) > 100:
+            self._failed_attempts = dict(list(self._failed_attempts.items())[-50:])
+        
+        return extra_text
+
+    @staticmethod
+    def build_summary_entry(tool_name: str, tool_params: dict, exec_status: str) -> str:
+        """构建汇总条目 — 整合 base_react.py L915-931"""
+        if tool_name == "http_request" and tool_params:
+            _url = str(tool_params.get("url", ""))[:60]
+            return f"http_request({_url})→{exec_status}"
+        elif tool_name == "ping" and tool_params:
+            _host = str(tool_params.get("host", ""))
+            return f"ping({_host})→{exec_status}"
+        elif tool_name == "port_check" and tool_params:
+            _host = str(tool_params.get("host", ""))
+            _port = tool_params.get("port", "")
+            return f"port_check({_host}:{_port})→{exec_status}"
+        elif tool_name == "execute_shell_command" and tool_params:
+            _cmd = str(tool_params.get("command", ""))[:50]
+            return f"shell({_cmd})→{exec_status}"
+        elif tool_name != "finish":
+            return f"{tool_name}→{exec_status}"
+        return ""
 
     # =========================================================================
     # 第六组：observation 截断辅助（从 base_react.py 搬入）

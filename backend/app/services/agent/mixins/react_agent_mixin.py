@@ -319,7 +319,6 @@ class ReactAgentMixin(ToolLoaderMixin):
             self._last_strategy_method = strategy_method
             
             # ========== 工具信息注入（仅非FC模式）==========
-            # 【重构 小健 2026-05-15】FC模式跳过文本注入(tools已通过API传递)；非FC模式按需注入，分类不变不重建缓存
             if strategy_method != "tools":
                 try:
                     loaded = getattr(self, '_loaded_categories', set())
@@ -332,25 +331,13 @@ class ReactAgentMixin(ToolLoaderMixin):
                         logger.info(f"[Phase1] 分级注入(重新生成): detail={len(detail_text)}字符, summary={len(summary_text)}字符, 已加载分类={loaded}")
                     _cached = getattr(self, '_cached_tools_content', None)
                     if _cached:
-                        tools_msg = {"role": "system", "content": _cached}
-                        insert_pos = 0
-                        for i, msg in enumerate(history_dicts):
-                            if msg.get("role") != "system":
-                                insert_pos = i
-                                break
-                        else:
-                            insert_pos = len(history_dicts)
-                        history_dicts = list(history_dicts[:insert_pos]) + [tools_msg] + list(history_dicts[insert_pos:])
+                        history_dicts = self.message_builder.inject_tools_info(history_dicts, _cached)
                 except Exception as e:
                     logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
             
-            # 【方案H 小沈 2026-05-15】注入已执行工具汇总（强化措辞）
-            if hasattr(self, '_executed_tool_summary') and self._executed_tool_summary:
-                done_tools = [s for s in self._executed_tool_summary if '→success' in s]
-                if done_tools:
-                    progress = "【已执行工具(勿重复)】" + "; ".join(done_tools[-8:]) + "\n注意：上述工具已成功执行，结果已在Observation中，禁止再次调用！"
-                    progress_msg = {"role": "system", "content": progress}
-                    history_dicts = list(history_dicts) + [progress_msg]
+            # 注入已执行工具汇总
+            history_dicts = self.message_builder.inject_executed_summary(
+                history_dicts, self._executed_tool_summary)
             
             # ========== debug日志 ==========
             logger.debug(f"[Debug] _call_llm_with_summary - conversation_history长度: {len(self.message_builder.conversation_history)}")
@@ -361,20 +348,19 @@ class ReactAgentMixin(ToolLoaderMixin):
             logger.debug(f"[Debug] _call_llm_with_summary - last_message内容: {last_message[:200]}")
             
             # 方案C：text策略下注入tools Schema文本
-            # 【重构 小健 2026-05-15】合并到上面的工具信息注入block中，统一由strategy_method控制
             if strategy_method == "text":
                 if not hasattr(self, '_cached_schema_text'):
                     self._cached_schema_text = self._tools_to_schema_text()
                 schema_text = self._cached_schema_text
                 if schema_text:
-                    schema_msg = {"role": "system", "content": schema_text}
-                    history_dicts = list(history_dicts) + [schema_msg]
+                    history_dicts = self.message_builder.inject_schema_text(history_dicts, schema_text)
                     logger.info(f"[{_cls}] 注入工具Schema ({strategy_method}模式)")
             
-            # ========== prompt_logger: 调用前记录（小沈2026-05-12修正）==========
-            # 必须在prompt完整组装后记录，包含：temp_history + 工具概要 + Schema注入
+            # 组装最终messages
+            assembled_messages = self.message_builder.assemble_messages(history_dicts, last_message)
+            
+            # ========== prompt_logger: 调用前记录 ==========
             prompt_logger = get_prompt_logger()
-            assembled_messages = list(history_dicts) + [{"role": "user", "content": last_message}]
             prompt_logger.log_llm_call(
                 round_number=self.llm_call_count,
                 messages=assembled_messages,
