@@ -768,8 +768,10 @@ class BaseAgent(ABC):
                 
                 # 【步骤2.9】统一执行结果字典格式（供StepFactory使用）
                 _code = execution_result.get("code", "SUCCESS")
+                _status = "success" if _code == "SUCCESS" and not execution_result.get("warning") else ("warning" if _code.startswith("WARNING_") or execution_result.get("warning") else "error")
+                exec_status = _status
                 execution_result_dict = {
-                    "status": "success" if _code == "SUCCESS" and not execution_result.get("warning") else ("warning" if _code.startswith("WARNING_") or execution_result.get("warning") else "error"),
+                    "status": _status,
                     "summary": execution_result.get("message", ""),
                     "data": execution_result.get("data"),
                     "retry_count": execution_result.get("retry_count", 0)
@@ -802,17 +804,22 @@ class BaseAgent(ABC):
                 if next_actions and isinstance(next_actions, list):
                     na_lines = ["\n推荐下一步操作:"]
                     for i, na in enumerate(next_actions[:5], 1):
-                        tool = na.get('tool', '')
-                        desc = na.get('description', '')
-                        when = na.get('when', '')
-                        params = na.get('params')
-                        line = f"  {i}. {tool}"
-                        if desc:
-                            line += f" - {desc}"
-                        if when:
-                            line += f"（{when}）"
-                        if params:
-                            line += f" 参数建议: {params}"
+                        if isinstance(na, dict):
+                            tool = na.get('tool', '')
+                            desc = na.get('description', '')
+                            when = na.get('when', '')
+                            params = na.get('params')
+                            line = f"  {i}. {tool}"
+                            if desc:
+                                line += f" - {desc}"
+                            if when:
+                                line += f"（{when}）"
+                            if params:
+                                line += f" 参数建议: {params}"
+                        elif isinstance(na, tuple) and len(na) >= 2:
+                            line = f"  {i}. {na[0]} - {na[1]}"
+                        else:
+                            line = f"  {i}. {na}"
                         na_lines.append(line)
                     observation_text += "\n".join(na_lines)
 

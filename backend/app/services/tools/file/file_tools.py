@@ -534,10 +534,10 @@ class FileTools:
                 "data": _data,
                 "message": f"读取文件成功: {file_path} ({line_count}/{total_lines}行, {file_size}字节, 编码:{used_encoding})",
                 "llm_data": _llm,
-                "next_actions": [
+                "next_actions": build_next_actions([
                     ("edit_file", "编辑文件", "需要修改内容时"),
                     ("grep_file_content", "搜索文件内容", "需要查找特定内容时"),
-                ]
+                ])
             }
 
         except Exception as e:
@@ -680,9 +680,9 @@ class FileTools:
                     "code": "SUCCESS",
                     "data": {"operation_id": operation_id, "file_path": str(path), "bytes_written": len(content.encode(encoding))},
                     "message": f"写入文件成功: {path} ({len(content.encode(encoding))}字节)",
-                    "next_actions": [
+                    "next_actions": build_next_actions([
                         ("read_file", "验证写入结果", "需要确认内容时"),
-                    ]
+                    ])
                 }
             else:
                 return {"code": "ERR_FILE_WRITE_FAILED", "data": None, "message": "写入文件失败，safety拦截"}
@@ -925,10 +925,10 @@ class FileTools:
                         "条目预览": [e.get("name","") for e in display_entries[:30]],
                         "截断": True
                     },
-                    "next_actions": [
+                    "next_actions": build_next_actions([
                         ("search_files", "搜索文件", "需要查找特定文件时"),
                         ("read_file", "读取文件", "需要查看文件内容时"),
-                    ]
+                    ])
                 }
 
             return {
@@ -942,10 +942,10 @@ class FileTools:
                     "目录": str(path), "总数": total,
                     "条目预览": [e.get("name","") for e in all_entries[:30]]
                 },
-                "next_actions": [
+                "next_actions": build_next_actions([
                     ("search_files", "搜索文件", "需要查找特定文件时"),
                     ("read_file", "读取文件", "需要查看文件内容时"),
-                ]
+                ])
             }
 
         except Exception as e:
@@ -1301,7 +1301,7 @@ class FileTools:
                     "文件预览": [m.get("path","") if isinstance(m,dict) else str(m) for m in page_matches[:20]],
                     "has_more": has_more,
                 },
-                "next_actions": [("read_file", "读取找到的文件", "需要查看内容时")],
+                "next_actions": build_next_actions([("read_file", "读取找到的文件", "需要查看内容时")]),
             }
 
         except Exception as e:
@@ -1768,7 +1768,7 @@ class FileTools:
                     "code": "SUCCESS",
                     "data": data,
                     "message": f"已替换 {replace_result['count']} 处匹配",
-                    "next_actions": [("read_file", "验证修改结果", "需要确认修改时")],
+                    "next_actions": build_next_actions([("read_file", "验证修改结果", "需要确认修改时")]),
                 }
             return {"code": "ERR_FILE_REPLACE_FAILED", "data": None, "message": "文件替换失败，safety拦截"}
 
@@ -2081,14 +2081,22 @@ class FileTools:
                     "预览": make_json_safe(page_results[:10], max_str_len=200),
                     "has_more": has_more,
                 },
-                "next_actions": [
+                "next_actions": build_next_actions([
                     ("read_file", "读取匹配行上下文", "需要查看完整内容时"),
                     ("edit_file", "编辑匹配内容", "需要修改时"),
-                ],
+                ]),
             }
         except Exception as e:
-            logger.error(f"grep_file_content failed: {e}")
-            return {"code": "ERR_FILE_SEARCH_FAILED", "data": None, "message": str(e)}
+
+            return {"code": "ERR_FILE_CONTENT_SEARCH_FAILED", "data": None, "message": str(e)}
+
+    async def get_directory_tree(self, dir_path: str) -> Dict[str, Any]:
+        """获取目录树（委托给 _get_directory_tree 实现）
+        
+        规范：§11.10 浏览器禁止执行write、chmod等shell操作
+        通过 path_utils.validate_and_normalize 实现安全路径检查
+        """
+        return await self._get_directory_tree(dir_path)
 
     async def _get_directory_tree(
         self,
@@ -2161,10 +2169,10 @@ class FileTools:
                     "目录": str(path), "树形结构根节点": tree.get("name",""),
                     "子项数": len(tree.get("children",[]))
                 },
-                "next_actions": [
+                "next_actions": build_next_actions([
                     ("search_files", "搜索文件", "需要查找特定文件时"),
                     ("read_file", "读取文件", "需要查看文件内容时"),
-                ]
+                ])
             }
         except Exception as e:
             logger.error(f"get_directory_tree failed: {dir_path}: {e}")
