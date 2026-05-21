@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional, AsyncGenerator, Callable
 
 from app.services.agent.types import AgentStatus
 from app.services.agent.react_output_parser import parse_react_response
+from app.services.agent.tool_result_formatter import _format_llm_observation
 from app.services.agent.reasoning_steps import (
     StepFactory,
     ReasoningStep,
@@ -814,10 +815,9 @@ class BaseAgent(ABC):
                 
                 # 【步骤2.9】统一执行结果字典格式（供StepFactory使用）
                 execution_result_dict = {
-                    "status": execution_result.get("status", "success"),
-                    "summary": execution_result.get("summary", ""),
+                    "status": "success" if execution_result.get("code") == "SUCCESS" else "error",
+                    "summary": execution_result.get("message", ""),
                     "data": execution_result.get("data"),
-                    "error": execution_result.get("error", ""),
                     "retry_count": execution_result.get("retry_count", 0)
                 }
 
@@ -841,48 +841,7 @@ class BaseAgent(ABC):
                 self.conversation_history.append({"role": "assistant", "content": response})
                 
                 # ========== Observation 阶段（主工具的结果）==========
-                # 区分不同 execution_status 生成 observation_text（给 LLM 历史）
-                exec_status = execution_result.get('status', 'unknown')
-                
-                if exec_status == 'success':
-                    observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
-                    # llm_data优先：工具自己决定LLM需要什么关键数据 小沈-2026-05-15
-                    llm_data = execution_result.get('llm_data')
-                    if llm_data:
-                        observation_text += "\n" + self._format_llm_data(llm_data)
-                    elif execution_result.get('data'):
-                        data = execution_result.get('data')
-                        if isinstance(data, dict) and data.get('truncated'):
-                            total = data.get('total', 0)
-                            dir_count = data.get('dir_count', 0)
-                            file_count = data.get('file_count', 0)
-                            display_count = min(total, 200)
-                            observation_text += f"\n[目录包含 {total} 项: {dir_count} 目录, {file_count} 文件，显示前 {display_count} 项]"
-                            if data.get('entries'):
-                                observation_text += f"\n实际数据: {data.get('entries')}"
-                        else:
-                            observation_text += f"\n实际数据: {data}"
-                elif exec_status == 'warning':
-                    # 警告状态：显示警告信息和部分数据
-                    observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
-                    if execution_result.get('data'):
-                        observation_text += f"\n部分数据: {execution_result.get('data')}"
-                else:
-                    # 失败状态（error/timeout/permission_denied）：显示错误摘要+异常详情+失败参数
-                    observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
-                    # 【修复 U11 小沈 2026-05-15】补全具体异常原因
-                    error_detail = execution_result.get('error', '')
-                    if error_detail and str(error_detail) != str(execution_result.get('summary', '')):
-                        observation_text += f"\n异常详情: {str(error_detail)[:300]}"
-                    # 补全失败时的工具参数（让LLM知道用了什么参数失败的）
-                    if tool_params:
-                        params_preview = str(tool_params)[:200]
-                        observation_text += f"\n调用参数: {params_preview}"
-                    # 【修复 2026-05-14 小沈】失败时动态生成替代建议（从当前Agent已注册工具中找）
-                    # 【更新 2026-05-15 小健】传入tool_params用于http_request的国内URL提示
-                    alt_hint = self._build_alternative_tools_hint(tool_name, tool_params)
-                    if alt_hint:
-                        observation_text += f"\n{alt_hint}"
+                observation_text = _format_llm_observation(execution_result)
                 
                 # 【P15 小沈 2026-05-19】next_actions: 工具返回值自解释，引导LLM下一步
                 next_actions = execution_result.get('next_actions')
@@ -1049,10 +1008,10 @@ class BaseAgent(ABC):
                     p_time = int((time.perf_counter() - start_p) * 1000)
                     
                     p_result_dict = {
-                        "status": p_result.get("status", "success"),
-                        "summary": p_result.get("summary", ""),
+                        "status": "success" if p_result.get("code") == "SUCCESS" else "error",
+                        "summary": p_result.get("message", ""),
                         "data": p_result.get("data"),
-                        "error": p_result.get("error", ""),
+                        "retry_count": p_result.get("retry_count", 0),
                     }
                     
                     # action_tool + observation 成对yield
@@ -1071,42 +1030,19 @@ class BaseAgent(ABC):
                     )
                     self.steps.append(p_obs_step)
                     yield p_obs_step.to_dict()
-                    # 【修复 2026-05-15 小健】并行工具observation与主工具逻辑一致：success附data，error附替代建议
-                    p_status = p_result.get('status', 'success')
-                    p_llm_data = p_result.get('llm_data')  # 工具自己决定LLM需要什么 小沈-2026-05-15
-                    if p_status == 'success':
-                        p_obs_text = f"[并行] {p_status} - {p_result.get('summary', '')}"
-                        if p_llm_data:
-                            p_obs_text += "\n" + self._format_llm_data(p_llm_data)
-                        elif p_result.get('data'):
-                            p_obs_text += f"\n实际数据: {p_result.get('data')}"
-                    elif p_status == 'warning':
-                        p_obs_text = f"[并行] warning - {p_result.get('summary', '')}"
-                        if p_llm_data:
-                            p_obs_text += "\n" + self._format_llm_data(p_llm_data)
-                        elif p_result.get('data'):
-                            p_obs_text += f"\n实际数据: {p_result.get('data')}"
-                    else:
-                        p_obs_text = f"[并行] {p_status} - {p_result.get('summary', '')}"
-                        # 【修复 U17 小沈 2026-05-15】并行工具error也补全异常详情+调用参数
-                        p_error_detail = p_result.get('error', '')
-                        if p_error_detail and str(p_error_detail) != str(p_result.get('summary', '')):
-                            p_obs_text += f"\n异常详情: {str(p_error_detail)[:300]}"
-                        if p_params:
-                            p_obs_text += f"\n调用参数: {str(p_params)[:200]}"
-                        p_alt_hint = self._build_alternative_tools_hint(p_name, p_params)
-                        if p_alt_hint:
-                            p_obs_text += f"\n{p_alt_hint}"
-                    self._add_observation_to_history(p_obs_text)
+                    # 并行工具observation — 小沈 2026-05-21 使用_format_llm_observation
+                    p_obs_text = _format_llm_observation(p_result)
+                    self._add_observation_to_history(f"[并行] {p_obs_text}")
                     # 【修复 问题4 小沈 2026-05-15】并行工具也更新缓存和失败计数
                     _pkey = f"{p_name}:{self._params_to_key(p_params)}"
-                    if p_status == 'success':
+                    p_code = p_result.get("code", "SUCCESS")
+                    if p_code == "SUCCESS":
                         if not self._is_no_cache_tool(p_name, p_params):
                             self._executed_cache[_pkey] = p_result
                             self._cache_timestamps[_pkey] = time.time()
                         if _pkey in self._failed_attempts:
                             del self._failed_attempts[_pkey]
-                    elif p_status in ('error', 'timeout', 'permission_denied', 'blocked'):
+                    elif p_code.startswith("ERR_"):
                         _fc = self._failed_attempts.get(_pkey, 0) + 1
                         self._failed_attempts[_pkey] = _fc
                     # 【修复 2026-05-15 小健】并行工具也记录到prompt日志
