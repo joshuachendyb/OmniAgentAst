@@ -45,24 +45,24 @@ def get_mouse_position() -> Dict[str, Any]:
 
     返回格式：
         成功：{"code": "SUCCESS", "data": {"x": x, "y": y}, "message": "获取成功"}
-        失败：{"code": "ERR_GET_MOUSE_POSITION", "data": None, "message": "错误信息"}
+        失败：{"code": "ERR_DESKTOP_GET_MOUSE_POSITION", "data": None, "message": "错误信息"}
     """
     if WIN32_AVAILABLE:
         try:
             point = win32api.GetCursorPos()
             return {"code": "SUCCESS", "data": {"x": point[0], "y": point[1]}, "message": f"鼠标位置: ({point[0]}, {point[1]})"}
         except Exception as e:
-            return {"code": "ERR_GET_MOUSE_POSITION", "data": None, "message": f"获取失败: {str(e)}"}
+            return {"code": "ERR_DESKTOP_GET_MOUSE_POSITION", "data": None, "message": f"获取失败: {str(e)}"}
     
     if PYAUTOGUI_AVAILABLE:
         try:
             x, y = pyautogui.position()
             return {"code": "SUCCESS", "data": {"x": x, "y": y}, "message": f"鼠标位置: ({x}, {y})"}
         except Exception as e:
-            return {"code": "ERR_GET_MOUSE_POSITION", "data": None, "message": f"获取失败: {str(e)}"}
+            return {"code": "ERR_DESKTOP_GET_MOUSE_POSITION", "data": None, "message": f"获取失败: {str(e)}"}
     
     # 【2026-05-17 小沈】H1 假数据修正：无依赖库时返回ERR_NO_DEPENDENCY而非假数据(0,0)
-    return {"code": "ERR_NO_DEPENDENCY", "data": None, "message": "无依赖库可用(win32api/pyautogui均未安装)，无法获取鼠标位置"}
+    return {"code": "ERR_DESKTOP_NO_DEPENDENCY", "data": None, "message": "无依赖库可用(win32api/pyautogui均未安装)，无法获取鼠标位置"}
 
 
 def check_screen_size() -> Dict[str, Any]:
@@ -70,7 +70,7 @@ def check_screen_size() -> Dict[str, Any]:
 
     返回格式：
         成功：{"code": "SUCCESS", "data": {...}, "message": "成功信息"}
-        失败：{"code": "ERR_CHECK_SCREEN_SIZE", "data": None, "message": "错误信息"}
+        失败：{"code": "ERR_DESKTOP_CHECK_SCREEN_SIZE", "data": None, "message": "错误信息"}
     """
     if WIN32_AVAILABLE:
         try:
@@ -78,17 +78,17 @@ def check_screen_size() -> Dict[str, Any]:
             height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
             return {"code": "SUCCESS", "data": {"width": width, "height": height}, "message": f"屏幕分辨率: {width}x{height}"}
         except Exception as e:
-            return {"code": "ERR_CHECK_SCREEN_SIZE", "data": None, "message": f"获取失败: {str(e)}"}
+            return {"code": "ERR_DESKTOP_CHECK_SCREEN_SIZE", "data": None, "message": f"获取失败: {str(e)}"}
     
     if PYAUTOGUI_AVAILABLE:
         try:
             size = pyautogui.size()
             return {"code": "SUCCESS", "data": {"width": size.width, "height": size.height}, "message": f"屏幕分辨率: {size.width}x{size.height}"}
         except Exception as e:
-            return {"code": "ERR_CHECK_SCREEN_SIZE", "data": None, "message": f"获取失败: {str(e)}"}
+            return {"code": "ERR_DESKTOP_CHECK_SCREEN_SIZE", "data": None, "message": f"获取失败: {str(e)}"}
     
     # 【2026-05-17 小沈】H2 假数据修正：无依赖库时返回ERR_NO_DEPENDENCY而非假数据1920x1080
-    return {"code": "ERR_NO_DEPENDENCY", "data": None, "message": "无依赖库可用(win32api/pyautogui均未安装)，无法获取屏幕分辨率"}
+    return {"code": "ERR_DESKTOP_NO_DEPENDENCY", "data": None, "message": "无依赖库可用(win32api/pyautogui均未安装)，无法获取屏幕分辨率"}
 
 
 def check_window_exists(title: str) -> Dict[str, Any]:
@@ -96,10 +96,10 @@ def check_window_exists(title: str) -> Dict[str, Any]:
 
     返回格式：
         成功：{"code": "SUCCESS", "data": {"exists": true/false}, "message": "成功信息"}
-        失败：{"code": "ERR_CHECK_WINDOW", "data": None, "message": "错误信息"}
+        失败：{"code": "ERR_DESKTOP_CHECK_WINDOW", "data": None, "message": "错误信息"}
     """
     if not WIN32_AVAILABLE:
-        return {"code": "ERR_CHECK_WINDOW", "data": None, "message": "win32库未安装"}
+        return {"code": "ERR_DESKTOP_CHECK_WINDOW", "data": None, "message": "win32库未安装"}
     
     def find_window(handle: int, data: Dict) -> bool:
         try:
@@ -115,7 +115,7 @@ def check_window_exists(title: str) -> Dict[str, Any]:
     try:
         win32gui.EnumWindows(lambda h, d: find_window(h, d) or None, result)
     except Exception as e:
-        return {"code": "ERR_CHECK_WINDOW", "data": None, "message": f"检查失败: {str(e)}"}
+        return {"code": "ERR_DESKTOP_CHECK_WINDOW", "data": None, "message": f"检查失败: {str(e)}"}
     
     exists = result.get("found", False)
     return {"code": "SUCCESS", "data": {"exists": exists}, "message": f"窗口 '{title}' {'存在' if exists else '不存在'}"}
@@ -126,10 +126,10 @@ def get_window_position(title: str) -> Dict[str, Any]:
 
     返回格式：
         成功：{"code": "SUCCESS", "data": {"x": x, "y": y, "width": w, "height": h}, "message": "成功信息"}
-        失败：{"code": "ERR_GET_WINDOW_POSITION", "data": None, "message": "错误信息"}
+        失败：{"code": "ERR_DESKTOP_GET_WINDOW_POSITION", "data": None, "message": "错误信息"}
     """
     if not WIN32_AVAILABLE:
-        return {"code": "ERR_GET_WINDOW_POSITION", "data": None, "message": "win32库未安装"}
+        return {"code": "ERR_DESKTOP_GET_WINDOW_POSITION", "data": None, "message": "win32库未安装"}
     
     def find_window(handle: int, data: Dict) -> bool:
         try:
@@ -149,11 +149,11 @@ def get_window_position(title: str) -> Dict[str, Any]:
     try:
         win32gui.EnumWindows(lambda h, d: find_window(h, d) or None, result)
     except Exception as e:
-        return {"code": "ERR_GET_WINDOW_POSITION", "data": None, "message": f"获取失败: {str(e)}"}
+        return {"code": "ERR_DESKTOP_GET_WINDOW_POSITION", "data": None, "message": f"获取失败: {str(e)}"}
     
     if result:
         return {"code": "SUCCESS", "data": result, "message": f"窗口位置: ({result['x']}, {result['y']}) 大小: {result['width']}x{result['height']}"}
-    return {"code": "ERR_GET_WINDOW_POSITION", "data": None, "message": f"窗口 '{title}' 未找到"}
+    return {"code": "ERR_DESKTOP_GET_WINDOW_POSITION", "data": None, "message": f"窗口 '{title}' 未找到"}
 
 
 def check_screen_capture_permission() -> Dict[str, Any]:
@@ -161,7 +161,7 @@ def check_screen_capture_permission() -> Dict[str, Any]:
 
     返回格式：
         成功：{"code": "SUCCESS", "data": {"has_permission": true/false}, "message": "成功信息"}
-        失败：{"code": "ERR_CHECK_PERMISSION", "data": None, "message": "错误信息"}
+        失败：{"code": "ERR_FILE_CHECK_PERMISSION", "data": None, "message": "错误信息"}
     """
     # 【2026-05-17 小沈】H5 假数据修正：Windows截屏权限默认允许，增加实际检查逻辑
     try:
@@ -174,7 +174,7 @@ def check_screen_capture_permission() -> Dict[str, Any]:
             return {"code": "SUCCESS", "data": {"has_permission": True}, "message": "Windows系统默认允许屏幕捕获，已验证可获取桌面DC"}
         return {"code": "SUCCESS", "data": {"has_permission": False}, "message": "无法获取桌面DC，屏幕捕获可能受限"}
     except Exception as e:
-        return {"code": "ERR_CHECK_PERMISSION", "data": None, "message": f"检查屏幕捕获权限失败: {str(e)}"}
+        return {"code": "ERR_FILE_CHECK_PERMISSION", "data": None, "message": f"检查屏幕捕获权限失败: {str(e)}"}
 
 
 def check_tesseract_available() -> Dict[str, Any]:
@@ -182,7 +182,7 @@ def check_tesseract_available() -> Dict[str, Any]:
 
     返回格式：
         成功：{"code": "SUCCESS", "data": {"is_available": true/false}, "message": "成功信息"}
-        失败：{"code": "ERR_CHECK_TESSERACT", "data": None, "message": "错误信息"}
+        失败：{"code": "ERR_DESKTOP_CHECK_TESSERACT", "data": None, "message": "错误信息"}
     """
     try:
         result = subprocess.run(
@@ -198,7 +198,7 @@ def check_tesseract_available() -> Dict[str, Any]:
     except FileNotFoundError:
         return {"code": "SUCCESS", "data": {"is_available": False}, "message": "Tesseract OCR 未安装"}
     except Exception as e:
-        return {"code": "ERR_CHECK_TESSERACT", "data": None, "message": f"检查失败: {str(e)}"}
+        return {"code": "ERR_DESKTOP_CHECK_TESSERACT", "data": None, "message": f"检查失败: {str(e)}"}
 
 
 def check_notification_permission() -> Dict[str, Any]:
@@ -206,7 +206,7 @@ def check_notification_permission() -> Dict[str, Any]:
 
     返回格式：
         成功：{"code": "SUCCESS", "data": {"has_permission": true/false}, "message": "成功信息"}
-        失败：{"code": "ERR_CHECK_PERMISSION", "data": None, "message": "错误信息"}
+        失败：{"code": "ERR_FILE_CHECK_PERMISSION", "data": None, "message": "错误信息"}
     """
     # 【2026-05-17 小沈】H5 假数据修正：Windows通知权限检查注册表，而非永远返回True
     try:
@@ -223,4 +223,4 @@ def check_notification_permission() -> Dict[str, Any]:
             # 注册表项不存在时，Windows默认允许通知
             return {"code": "SUCCESS", "data": {"has_permission": True}, "message": "通知权限: 注册表项未找到，Windows系统默认允许"}
     except Exception as e:
-        return {"code": "ERR_CHECK_PERMISSION", "data": None, "message": f"检查通知权限失败: {str(e)}"}
+        return {"code": "ERR_FILE_CHECK_PERMISSION", "data": None, "message": f"检查通知权限失败: {str(e)}"}
