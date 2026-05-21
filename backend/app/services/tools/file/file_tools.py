@@ -962,32 +962,19 @@ class FileTools:
         # 验证路径合法性
         is_valid, error_msg = self._validate_path(file_path)
         if not is_valid:
-            return _to_unified_format({
-                "success": False,
-                "error": error_msg,
-                "operation_id": None
-            }, "file_operation")
+            return {"code": "ERR_PATH_INVALID", "data": None, "message": error_msg}
         
         path = Path(file_path)
         
         try:
             if not path.exists():
-                # 小健 2026-05-19: P16幂等性 — 文件不存在时返回SUCCESS（与外层file_operation一致）
-                return _to_unified_format({
-                    "success": True,
-                    "message": f"文件不存在，无需删除(P16幂等): {file_path}",
-                    "operation_id": None
-                }, "file_operation")
+                return {"code": "SUCCESS", "data": None, "message": f"文件不存在，无需删除(P16幂等): {file_path}"}
             
             if not self.task_id:
                 self.task_id = _current_task_id.get(None)
             if not self.task_id:
-                return _to_unified_format({
-                    "success": False,
-                    "error": "No active task",
-                    "operation_id": None
-                }, "file_operation")
-            
+                return {"code": "ERR_NO_ACTIVE_TASK", "data": None, "message": "当前没有活跃任务ID，请先创建一个任务"}
+
             operation_id = self.safety.record_operation(
                 task_id=self.task_id,
                 operation_type=OperationType.DELETE,
@@ -1050,35 +1037,30 @@ class FileTools:
             
             if success:
                 delete_mode = "永久删除" if force else "放入回收站"
-                result = {
-                    "success": True,
+                data = {
                     "operation_id": operation_id,
                     "deleted_path": str(path),
-                    "message": f"文件已{delete_mode}: {file_path}"
                 }
-                # 【新增 2026-05-19 小沈】追踪删除能力
+                caps = []
                 if not force:
                     method = deletion_info.get("method", "send2trash")
                     if method == "send2trash":
-                        result["capabilities_used"] = ["send2trash"]
+                        caps = ["send2trash"]
                     else:
-                        result["capabilities_used"] = ["os.remove"]
-                        result["capabilities_missing"] = ["send2trash"]
-                return _to_unified_format(result, "file_operation")
+                        caps = ["os.remove"]
+                        data["capabilities_missing"] = ["send2trash"]
+                data["capabilities_used"] = caps
+                return {
+                    "code": "SUCCESS",
+                    "data": data,
+                    "message": f"文件已{delete_mode}: {file_path}"
+                }
             else:
-                return _to_unified_format({
-                    "success": False,
-                    "error": "Failed to delete file",
-                    "operation_id": operation_id
-                }, "file_operation")
-                
+                return {"code": "ERR_FILE_DELETE_FAILED", "data": None, "message": "删除文件失败，safety拦截"}
+
         except Exception as e:
             logger.error(f"Failed to delete {file_path}: {e}")
-            return _to_unified_format({
-                "success": False,
-                "error": str(e),
-                "operation_id": None
-            }, "file_operation")
+            return {"code": "ERR_FILE_DELETE_FAILED", "data": None, "message": str(e)}
     
     async def _move_file(
         self,
@@ -1090,41 +1072,25 @@ class FileTools:
         # 验证源路径
         is_valid_src, error_msg_src = self._validate_path(source_path)
         if not is_valid_src:
-            return _to_unified_format({
-                "success": False,
-                "error": f"源路径{error_msg_src}",
-                "operation_id": None
-            }, "file_operation")
-        
+            return {"code": "ERR_PATH_INVALID", "data": None, "message": f"源路径{error_msg_src}"}
+
         # 验证目标路径
         is_valid_dst, error_msg_dst = self._validate_path(destination_path)
         if not is_valid_dst:
-            return _to_unified_format({
-                "success": False,
-                "error": f"目标路径{error_msg_dst}",
-                "operation_id": None
-            }, "file_operation")
+            return {"code": "ERR_PATH_INVALID", "data": None, "message": f"目标路径{error_msg_dst}"}
         
         src = Path(source_path)
         dst = Path(destination_path)
         
         try:
             if not src.exists():
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"Source not found: {source_path}",
-                    "operation_id": None
-                }, "file_operation")
+                return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"源文件不存在: {source_path}"}
             
             if not self.task_id:
                 self.task_id = _current_task_id.get(None)
             if not self.task_id:
-                return _to_unified_format({
-                    "success": False,
-                    "error": "No active task",
-                    "operation_id": None
-                }, "file_operation")
-            
+                return {"code": "ERR_NO_ACTIVE_TASK", "data": None, "message": "当前没有活跃任务ID，请先创建一个任务"}
+
             operation_id = self.safety.record_operation(
                 task_id=self.task_id,
                 operation_type=OperationType.MOVE,
@@ -1151,29 +1117,22 @@ class FileTools:
                 operation_id=operation_id,
                 operation_func=_move_sync
             )
-            
+
             if success:
-                return _to_unified_format({
-                    "success": True,
-                    "operation_id": operation_id,
-                    "source": str(src),
-                    "destination": str(dst),
-                    "message": f"Moved: {src.name} -> {dst}"
-                }, "file_operation")
-            else:
-                return _to_unified_format({
-                    "success": False,
-                    "error": "Failed to move file",
-                    "operation_id": operation_id
-                }, "file_operation")
-                
+                return {
+                    "code": "SUCCESS",
+                    "data": {
+                        "operation_id": operation_id,
+                        "source": str(src),
+                        "destination": str(dst),
+                    },
+                    "message": f"已移动: {src.name} -> {dst}"
+                }
+            return {"code": "ERR_FILE_MOVE_FAILED", "data": None, "message": "移动文件失败"}
+
         except Exception as e:
             logger.error(f"Failed to move {source_path} -> {destination_path}: {e}")
-            return _to_unified_format({
-                "success": False,
-                "error": str(e),
-                "operation_id": None
-            }, "file_operation")
+            return {"code": "ERR_FILE_MOVE_FAILED", "data": None, "message": str(e)}
     
     async def search_files(
         self,
