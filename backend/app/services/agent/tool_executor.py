@@ -14,6 +14,12 @@ from typing import Any, Callable, Dict, List, Optional
 
 from app.utils.logger import logger
 
+# 工具结果格式化 — 小沈 2026-05-21
+from app.services.agent.tool_result_formatter import (
+    _format_llm_observation,
+    _format_frontend_event,
+)
+
 # 【步骤7】T2: 从ToolConfig加载超时和别名
 from app.services.tools.tool_config import (
     get_tool_config,
@@ -167,9 +173,9 @@ class ToolExecutor:
         deprecation_msg = is_deprecated_tool(action)
         if deprecation_msg:
             return {
-                "status": "error",
-                "summary": f"工具 '{action}' 已废弃: {deprecation_msg}",
+                "code": "ERR_TOOL_DEPRECATED",
                 "data": None,
+                "message": f"工具 '{action}' 已废弃: {deprecation_msg}",
                 "retry_count": 0
             }
         
@@ -182,14 +188,9 @@ class ToolExecutor:
         
         if action == "finish":
             return {
-                "status": "success",
-                "summary": "Task completed",
-                "result": {
-                    "operation_type": "finish",
-                    "message": action_input.get("result", "Task completed"),
-                    "data": action_input
-                },
+                "code": "SUCCESS",
                 "data": action_input.get("result"),
+                "message": action_input.get("result", "Task completed"),
                 "retry_count": 0
             }
         
@@ -205,9 +206,9 @@ class ToolExecutor:
                 self.available_tools[action] = impl
                 return await self._execute_with_retry(action, action_input)
             return {
-                "status": "error",
-                "summary": f"Unknown tool: {action}. Available tools: {list(self.available_tools.keys())}",
+                "code": "ERR_TOOL_NOT_FOUND",
                 "data": None,
+                "message": f"Unknown tool: {action}. Available tools: {list(self.available_tools.keys())}",
                 "retry_count": 0
             }
         
@@ -250,9 +251,9 @@ class ToolExecutor:
                 if missing:
                     logger.warning(f"[参数验证] action={action} 缺少必需参数: {missing}")
                     return {
-                        "status": "error",
-                        "summary": f"Missing required parameter(s): {', '.join(missing)}",
+                        "code": "ERR_MISSING_PARAM",
                         "data": None,
+                        "message": f"Missing required parameter(s): {', '.join(missing)}",
                         "retry_count": 0
                     }
                 
@@ -296,7 +297,7 @@ class ToolExecutor:
                         # 纯同步工具：线程池已执行完，直接返回结果
                         result = call_result
                 
-                return self._format_result(result, action)
+                return result
             
             except Exception as e:
                 last_error = e
@@ -312,9 +313,9 @@ class ToolExecutor:
                 # 检查是否可重试
                 if not error_type.is_retryable:
                     return {
-                        "status": error_type.to_status,
-                        "summary": f"{error_type.description}: {str(e)[:200]}",
+                        "code": f"ERR_{error_type.value.upper()}",
                         "data": None,
+                        "message": f"{error_type.description}: {str(e)[:200]}",
                         "retry_count": attempt_count - 1,
                         "metadata": {"error_type": error_type.value}
                     }
@@ -323,9 +324,9 @@ class ToolExecutor:
                 if attempt_count >= retry_policy.max_retries:
                     logger.error(f"[重试] action={action} 超过最大重试次数{retry_policy.max_retries}")
                     return {
-                        "status": error_type.to_status,
-                        "summary": f"{error_type.description}: {str(e)[:200]}",
+                        "code": f"ERR_{error_type.value.upper()}",
                         "data": None,
+                        "message": f"{error_type.description}: {str(e)[:200]}",
                         "retry_count": attempt_count,
                         "metadata": {"error_type": error_type.value}
                     }
@@ -337,9 +338,9 @@ class ToolExecutor:
         
         # 返回最后的错误
         return {
-            "status": "error",
-            "summary": str(last_error)[:200] if last_error else "Unknown error",
+            "code": "ERR_UNKNOWN",
             "data": None,
+            "message": str(last_error)[:200] if last_error else "Unknown error",
             "retry_count": attempt_count
         }
     
@@ -383,84 +384,3 @@ class ToolExecutor:
         
         return params
     
-    def _format_result(self, result: Any, action: str) -> Dict[str, Any]:
-        """格式化工具执行结果，透传llm_data+next_actions供agent注入LLM上下文 小沈-2026-05-15"""
-        _llm = result.get("llm_data") if isinstance(result, dict) else None
-        _na = result.get("next_actions") if isinstance(result, dict) else None
-        if isinstance(result, dict):
-            if result.get("status") == "warning":
-                r = {
-                    "status": "warning",
-                    "summary": result.get("summary", "Warning during execution"),
-                    "data": result.get("data"),
-                    "retry_count": result.get("retry_count", 0)
-                }
-                if _llm: r["llm_data"] = _llm
-                if _na: r["next_actions"] = _na
-                return r
-            elif "status" in result and "summary" in result:
-                r = {
-                    "status": result.get("status", "success"),
-                    "summary": result.get("summary", ""),
-                    "data": result.get("data"),
-                    "retry_count": result.get("retry_count", 0)
-                }
-                if _llm: r["llm_data"] = _llm
-                if _na: r["next_actions"] = _na
-                return r
-            elif result.get("code") == "SUCCESS":
-                data = result.get("data")
-                if isinstance(data, dict) and data.get("returncode", 0) != 0:
-                    r = {
-                        "status": "error",
-                        "summary": result.get("message", f"Command exited with code {data.get('returncode')}"),
-                        "data": result,
-                        "retry_count": 0
-                    }
-                else:
-                    r = {
-                        "status": "success",
-                        "summary": result.get("message", f"Successfully executed {action}"),
-                        "data": result,
-                        "retry_count": 0
-                    }
-                if _llm: r["llm_data"] = _llm
-                if _na and r.get("status") == "success": r["next_actions"] = _na
-                return r
-            elif result.get("code", "").startswith("ERR_"):
-                r = {
-                    "status": "error",
-                    "summary": result.get("message", f"Failed to execute {action}"),
-                    "data": result,
-                    "retry_count": 0
-                }
-                if _llm: r["llm_data"] = _llm
-                return r
-            elif result.get("success", False):
-                r = {
-                    "status": "success",
-                    "summary": result.get("message", f"Successfully executed {action}"),
-                    "data": result,
-                    "retry_count": 0
-                }
-                if _llm: r["llm_data"] = _llm
-                if _na: r["next_actions"] = _na
-                return r
-            else:
-                r = {
-                    "status": "error",
-                    "summary": result.get("error", result.get("message", f"Failed to execute {action}")),
-                    "data": result,
-                    "retry_count": 0
-                }
-                if _llm: r["llm_data"] = _llm
-                return r
-        else:
-            r = {
-                "status": "success",
-                "summary": f"Successfully executed {action}",
-                "data": result,
-                "retry_count": 0
-            }
-            if _llm: r["llm_data"] = _llm
-            return r
