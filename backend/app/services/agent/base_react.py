@@ -33,6 +33,7 @@ from typing import Any, Dict, List, Optional, AsyncGenerator, Callable
 from app.services.agent.types import AgentStatus
 from app.services.agent.react_output_parser import parse_react_response
 from app.services.agent.tool_result_formatter import _format_llm_observation
+from app.services.agent.message_builder import MessageBuilder
 from app.services.agent.reasoning_steps import (
     StepFactory,
     ReasoningStep,
@@ -109,6 +110,7 @@ class BaseAgent(ABC):
         # 【步骤2.10】步骤历史管理：使用ReasoningStep类型
         self.steps: List[ReasoningStep] = []
         self.conversation_history: List[Dict[str, str]] = []
+        self.message_builder = MessageBuilder(max_context_chars=self.MAX_CONTEXT_CHARS)
         self.status = AgentStatus.IDLE
         self.llm_call_count = 0
         self._lock = asyncio.Lock()
@@ -353,7 +355,8 @@ class BaseAgent(ABC):
         """
         # 初始化状态
         self.steps = []
-        self.conversation_history = []
+        self.message_builder.reset_per_run()
+        self.conversation_history = self.message_builder.conversation_history
         self.status = AgentStatus.THINKING
         self.llm_call_count = 0
         
@@ -373,8 +376,8 @@ class BaseAgent(ABC):
         self._on_before_loop(sys_prompt, task_prompt, context)
         
         # 添加到对话历史
-        self.conversation_history.append({"role": "system", "content": sys_prompt})
-        self.conversation_history.append({"role": "user", "content": task_prompt})
+        self.message_builder.init_history(sys_prompt, task_prompt)
+        self.conversation_history = self.message_builder.conversation_history
         
         step_count = 0
         # chunk处理相关变量
@@ -525,7 +528,7 @@ class BaseAgent(ABC):
                         logger.info(f"[ReAct] 无工具Agent，第一个chunk即为最终回答，退出循环")
                         self.temp_history.clear()
                         if chunk_buffer:
-                            self.conversation_history.append({"role": "assistant", "content": chunk_buffer})
+                            self.message_builder.add_assistant(chunk_buffer)
                         final_step = StepFactory.create_final_step(
                             step=step_count, response=chunk_buffer, thought=""
                         )
@@ -540,7 +543,7 @@ class BaseAgent(ABC):
                         logger.info(f"[ReAct] 连续chunk达到{self.max_consecutive_chunks}次，提升为implicit")
                         self.temp_history.clear()
                         if chunk_buffer:
-                            self.conversation_history.append({"role": "assistant", "content": chunk_buffer})
+                            self.message_builder.add_assistant(chunk_buffer)
                         final_step = StepFactory.create_final_step(
                             step=step_count, response=chunk_buffer, thought=""
                         )
@@ -565,7 +568,7 @@ class BaseAgent(ABC):
                     # flush chunk_buffer到正式会话历史
                     if chunk_buffer:
                         self.temp_history.clear()
-                        self.conversation_history.append({"role": "assistant", "content": chunk_buffer})
+                        self.message_builder.add_assistant(chunk_buffer)
                         chunk_buffer = ""
                         consecutive_chunk_count = 0
                     
@@ -624,7 +627,7 @@ class BaseAgent(ABC):
                     # yield Step字典
                     yield thought_step.to_dict()
                     
-                    self.conversation_history.append({"role": "assistant", "content": response})
+                    self.message_builder.add_assistant(response)
                     
                     # 【修复D2】调用_trim_history防止历史无限增长
                     self._trim_history()
@@ -703,7 +706,7 @@ class BaseAgent(ABC):
                 # flush chunk_buffer到正式会话历史（工具执行前保存LLM已输出的文本）
                 if chunk_buffer:
                     self.temp_history.clear()
-                    self.conversation_history.append({"role": "assistant", "content": chunk_buffer})
+                    self.message_builder.add_assistant(chunk_buffer)
                     chunk_buffer = ""
                     consecutive_chunk_count = 0
 
@@ -839,7 +842,7 @@ class BaseAgent(ABC):
                 
                 # 【修正 2026-04-17 小沈】按照设计文档15.2.0.4执行顺序
                 # 步骤5：response 应该在 action_tool 之后再加入 conversation_history
-                self.conversation_history.append({"role": "assistant", "content": response})
+                self.message_builder.add_assistant(response)
                 
                 # ========== Observation 阶段（主工具的结果）==========
                 observation_text = _format_llm_observation(execution_result)
@@ -1414,8 +1417,8 @@ class BaseAgent(ABC):
             observation = f"[Observation] {observation[len('Observation:'):].lstrip()}"
         elif not observation.startswith("[Observation]"):
             observation = f"[Observation] {observation}"
-        self.conversation_history.append({"role": "system", "content": observation})  # 【修复 2026-05-13 小沈】M1: 工具执行结果用system角色，避免LLM误认为是用户新输入
-        self._trim_history()
+        self.message_builder.add_observation(observation, self.llm_call_count)
+
 
     # ========== 【改进2 2026-05-01 小沈 小健】agent层独立内容质量检测 ==========
 
