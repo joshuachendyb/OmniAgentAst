@@ -56,7 +56,7 @@ def _click(
         pyautogui.click(x=x, y=y, button=button, clicks=clicks)
         return {"code": "SUCCESS", "data": {"x": x, "y": y, "button": button, "click_type": click_type}, "message": f"点击完成: ({x}, {y}) {button} {click_type}", "capabilities_used": ["pyautogui"]}
     except Exception as e:
-        return {"code": "ERR_CLICK", "data": None, "message": f"点击失败: {str(e)}"}
+        return {"code": "ERR_DESKTOP_MOUSE_CLICK", "data": None, "message": f"点击失败: {str(e)}"}
 
 
 def _move(x: int, y: int, duration: float = 0) -> Dict[str, Any]:
@@ -68,7 +68,7 @@ def _move(x: int, y: int, duration: float = 0) -> Dict[str, Any]:
         pyautogui.moveTo(x, y, duration=duration)
         return {"code": "SUCCESS", "data": {"x": x, "y": y}, "message": f"鼠标移动到: ({x}, {y})", "capabilities_used": ["pyautogui"]}
     except Exception as e:
-        return {"code": "ERR_MOVE", "data": None, "message": f"移动失败: {str(e)}"}
+        return {"code": "ERR_FILE_MOVE_FAILED", "data": None, "message": f"移动失败: {str(e)}"}
 
 
 def _scroll(direction: str, amount: int = 3) -> Dict[str, Any]:
@@ -81,7 +81,7 @@ def _scroll(direction: str, amount: int = 3) -> Dict[str, Any]:
         pyautogui.scroll(scroll_amount)
         return {"code": "SUCCESS", "data": {"direction": direction, "amount": amount}, "message": f"滚动完成: {direction} {amount}单位", "capabilities_used": ["pyautogui"]}
     except Exception as e:
-        return {"code": "ERR_DESKTOP_SCROLL", "data": None, "message": f"滚动失败: {str(e)}"}
+        return {"code": "ERR_DESKTOP_MOUSE_SCROLL", "data": None, "message": f"滚动失败: {str(e)}"}
 
 
 # ========== 键盘操作 ==========
@@ -365,7 +365,7 @@ def _read_clipboard() -> Dict[str, Any]:
                 _llm["截断"] = f"原文{len(text)}字符"
             return {"code": "SUCCESS", "data": {"text": text}, "message": "剪贴板读取成功", "llm_data": _llm, "capabilities_used": ["win32.clipboard"], "capabilities_missing": ["pyperclip"]}
         except Exception as e:
-            return {"code": "ERR_CLIPBOARD", "data": None, "message": f"读取剪贴板失败: {str(e)}"}
+            return {"code": "ERR_DESKTOP_CLIPBOARD", "data": None, "message": f"读取剪贴板失败: {str(e)}"}
 
 
 def _write_clipboard(content: str) -> Dict[str, Any]:
@@ -384,7 +384,7 @@ def _write_clipboard(content: str) -> Dict[str, Any]:
             text_bytes = content.encode('gbk') + b'\0'
             h_mem = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(text_bytes))
             if h_mem == 0:
-                return {"code": "ERR_CLIPBOARD", "data": None, "message": "内存分配失败"}
+                return {"code": "ERR_DESKTOP_CLIPBOARD", "data": None, "message": "内存分配失败"}
             p_mem = kernel32.GlobalLock(h_mem)
             if p_mem:
                 ctypes.memmove(p_mem, text_bytes, len(text_bytes))
@@ -396,9 +396,9 @@ def _write_clipboard(content: str) -> Dict[str, Any]:
                 return {"code": "SUCCESS", "data": {"content": content}, "message": "剪贴板写入成功", "capabilities_used": ["win32.clipboard"], "capabilities_missing": ["pyperclip"]}
             else:
                 kernel32.GlobalFree(h_mem)
-                return {"code": "ERR_CLIPBOARD", "data": None, "message": "内存锁定失败"}
+                return {"code": "ERR_DESKTOP_CLIPBOARD", "data": None, "message": "内存锁定失败"}
         except Exception as e:
-            return {"code": "ERR_CLIPBOARD", "data": None, "message": f"写入剪贴板失败: {str(e)}"}
+            return {"code": "ERR_DESKTOP_CLIPBOARD", "data": None, "message": f"写入剪贴板失败: {str(e)}"}
 
 
 # ========== 通知操作（Tool 107）==========
