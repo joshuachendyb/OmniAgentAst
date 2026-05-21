@@ -419,7 +419,7 @@ class FileTools:
             # 【新增 2026-05-02 小沈】二进制文件保护
             is_binary, binary_reason = _is_binary_file(file_path)
             if is_binary:
-                return {"code": "ERR_BINARY_FILE", "data": None, "message": f"{binary_reason}。请使用 read_media_file 工具读取媒体文件（图片/音频/视频）。"}
+                return {"code": "ERR_FILE_READ_BINARY_FILE", "data": None, "message": f"{binary_reason}。请使用 read_media_file 工具读取媒体文件（图片/音频/视频）。"}
             
             # 【修复 2026-05-01 小沈】参数校验（4合1压缩）
             for _name, _val in [("head", head), ("tail", tail), ("offset", offset), ("limit", limit)]:
@@ -451,7 +451,7 @@ class FileTools:
 
             # 【修复 2026-05-01 小沈】OOM防护：预检文件大小
             if file_size > MAX_READ_SIZE:
-                return {"code": "ERR_FILE_TOO_LARGE", "data": None, "message": f"文件过大({file_size}字节)，超过读取上限{MAX_READ_SIZE}字节({MAX_READ_SIZE//1024//1024}MB)。请使用head/tail参数分段读取。"}
+                return {"code": "ERR_FILE_READ_TOO_LARGE", "data": None, "message": f"文件过大({file_size}字节)，超过读取上限{MAX_READ_SIZE}字节({MAX_READ_SIZE//1024//1024}MB)。请使用head/tail参数分段读取。"}
 
             content = None
             used_encoding = None
@@ -557,12 +557,12 @@ class FileTools:
         # 【新增 2026-05-02 小沈】二进制文件保护（最关键，防止破坏二进制文件）
         is_binary, binary_reason = _is_binary_file(file_path)
         if is_binary:
-            return {"code": "ERR_BINARY_FILE", "data": None, "message": f"{binary_reason}。write_text_file 仅支持文本文件，禁止写入二进制文件。"}
+            return {"code": "ERR_FILE_READ_BINARY_FILE", "data": None, "message": f"{binary_reason}。write_text_file 仅支持文本文件，禁止写入二进制文件。"}
         
         # 【小健 2026-05-03】OOM保护：写入内容超过10MB时拒绝
         content = text
         if content and len(content.encode(encoding or 'utf-8')) > MAX_READ_SIZE:
-            return {"code": "ERR_FILE_TOO_LARGE", "data": None, "message": f"内容过大({len(content.encode(encoding or 'utf-8'))}字节)，超过写入上限{MAX_READ_SIZE//1024//1024}MB。请分批写入或使用其他方式处理大文件。"}
+            return {"code": "ERR_FILE_READ_TOO_LARGE", "data": None, "message": f"内容过大({len(content.encode(encoding or 'utf-8'))}字节)，超过写入上限{MAX_READ_SIZE//1024//1024}MB。请分批写入或使用其他方式处理大文件。"}
 
         path_preview = Path(file_path)
         if path_preview.suffix.lower() == '.py' and content:
@@ -581,13 +581,13 @@ class FileTools:
             from app.services.tools.toolhelper.content_quality import check_content_quality
             quality_result = check_content_quality(content=content, file_path=file_path)
             if quality_result.get("is_thought_leak"):
-                return {"code": "ERR_CONTENT_BLOCKED", "data": None, "message": f"内容保护：{quality_result['warning']}"}
+                return {"code": "ERR_FILE_CONTENT_BLOCKED", "data": None, "message": f"内容保护：{quality_result['warning']}"}
         if unescape:
             content = content.replace("\\\\", "\\").replace("\\n", "\n").replace("\\\"", "\"")
         
         validation_error = self._validate_content_format(file_path, content)
         if validation_error:
-            return {"code": "ERR_CONTENT_INVALID", "data": None, "message": validation_error}
+            return {"code": "ERR_FILE_CONTENT_INVALID", "data": None, "message": validation_error}
         
         is_valid, error_msg = self._validate_path(file_path)
         if not is_valid:
@@ -619,12 +619,12 @@ class FileTools:
             # 原阈值95%过严，重构代码等合法场景经常缩小80%+
             # 豁免条件：新内容为空（有意清空）或缩小比例<80%
             if old_size > 1024 and new_size > 0 and new_size < old_size * 0.20:
-                return {"code": "ERR_DATA_PROTECTION", "data": None, "message": f"数据保护：新内容({new_size}字节)远小于原始内容({old_size}字节，缩小{100-int(new_size/max(old_size,1)*100)}%)，可能覆盖数据。如确认覆盖，请使用precise_replace_in_file或在text中传入完整内容。"}
+                return {"code": "ERR_FILE_DATA_PROTECTION", "data": None, "message": f"数据保护：新内容({new_size}字节)远小于原始内容({old_size}字节，缩小{100-int(new_size/max(old_size,1)*100)}%)，可能覆盖数据。如确认覆盖，请使用precise_replace_in_file或在text中传入完整内容。"}
         
         if not self.task_id:
             self.task_id = _current_task_id.get(None)
         if not self.task_id:
-            return {"code": "ERR_NO_ACTIVE_TASK", "data": None, "message": "当前没有活跃任务ID，请先创建一个任务"}
+            return {"code": "ERR_META_NO_ACTIVE_TASK", "data": None, "message": "当前没有活跃任务ID，请先创建一个任务"}
         
         try:
             operation_id = self.safety.record_operation(
@@ -769,7 +769,7 @@ class FileTools:
                 return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"Directory not found: {dir_path}"}
 
             if not path.is_dir():
-                return {"code": "ERR_PATH_NOT_DIR", "data": None, "message": f"Not a directory: {dir_path}"}
+                return {"code": "ERR_FILE_PATH_NOT_DIR", "data": None, "message": f"Not a directory: {dir_path}"}
 
             # 异步执行目录遍历
             # 【修复 2026-05-10 小健】超时自检：递归遍历大目录时主动退出
@@ -950,7 +950,7 @@ class FileTools:
 
         except Exception as e:
             logger.error(f"Failed to list directory {dir_path}: {e}")
-            return {"code": "ERR_LIST_DIR_FAILED", "data": None, "message": str(e)}
+            return {"code": "ERR_FILE_LIST_DIR_FAILED", "data": None, "message": str(e)}
     
     async def _delete_file(
         self,
@@ -973,7 +973,7 @@ class FileTools:
             if not self.task_id:
                 self.task_id = _current_task_id.get(None)
             if not self.task_id:
-                return {"code": "ERR_NO_ACTIVE_TASK", "data": None, "message": "当前没有活跃任务ID，请先创建一个任务"}
+                return {"code": "ERR_META_NO_ACTIVE_TASK", "data": None, "message": "当前没有活跃任务ID，请先创建一个任务"}
 
             operation_id = self.safety.record_operation(
                 task_id=self.task_id,
@@ -1089,7 +1089,7 @@ class FileTools:
             if not self.task_id:
                 self.task_id = _current_task_id.get(None)
             if not self.task_id:
-                return {"code": "ERR_NO_ACTIVE_TASK", "data": None, "message": "当前没有活跃任务ID，请先创建一个任务"}
+                return {"code": "ERR_META_NO_ACTIVE_TASK", "data": None, "message": "当前没有活跃任务ID，请先创建一个任务"}
 
             operation_id = self.safety.record_operation(
                 task_id=self.task_id,
@@ -1507,11 +1507,11 @@ class FileTools:
 
             file_size = path.stat().st_size
             if file_size > MAX_MEDIA_READ_SIZE:
-                return {"code": "ERR_FILE_TOO_LARGE", "data": None, "message": f"媒体文件过大({file_size}字节)，超过读取上限{MAX_MEDIA_READ_SIZE//1024//1024}MB"}
+                return {"code": "ERR_FILE_READ_TOO_LARGE", "data": None, "message": f"媒体文件过大({file_size}字节)，超过读取上限{MAX_MEDIA_READ_SIZE//1024//1024}MB"}
 
             suffix = path.suffix.lower()
             if suffix == '.pdf':
-                return {"code": "ERR_FORMAT_NOT_SUPPORTED", "data": None, "message": "PDF文件请使用 read_document 工具读取，read_media_file 不支持PDF"}
+                return {"code": "ERR_DOC_FORMAT_NOT_SUPPORTED", "data": None, "message": "PDF文件请使用 read_document 工具读取，read_media_file 不支持PDF"}
 
             mime_map = {
                 ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
@@ -1653,11 +1653,11 @@ class FileTools:
         if not self.task_id:
             self.task_id = _current_task_id.get(None)
         if not self.task_id:
-            return {"code": "ERR_NO_ACTIVE_TASK", "data": None, "message": "当前没有活跃任务ID，请先创建一个任务"}
+            return {"code": "ERR_META_NO_ACTIVE_TASK", "data": None, "message": "当前没有活跃任务ID，请先创建一个任务"}
 
         is_binary, binary_reason = _is_binary_file(file_path)
         if is_binary:
-            return {"code": "ERR_BINARY_FILE", "data": None, "message": f"{binary_reason}。请使用对应的专业工具操作二进制文件。"}
+            return {"code": "ERR_FILE_READ_BINARY_FILE", "data": None, "message": f"{binary_reason}。请使用对应的专业工具操作二进制文件。"}
 
         try:
             is_valid, error_msg = self._validate_path(file_path)
@@ -1669,7 +1669,7 @@ class FileTools:
                 return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"文件不存在: {file_path}"}
 
             if path.stat().st_size > MAX_READ_SIZE:
-                return {"code": "ERR_FILE_TOO_LARGE", "data": None, "message": f"文件过大({path.stat().st_size}字节)，超过替换上限{MAX_READ_SIZE//1024//1024}MB"}
+                return {"code": "ERR_FILE_READ_TOO_LARGE", "data": None, "message": f"文件过大({path.stat().st_size}字节)，超过替换上限{MAX_READ_SIZE//1024//1024}MB"}
 
             operation_id = self.safety.record_operation(
                 task_id=self.task_id,
@@ -1792,18 +1792,18 @@ class FileTools:
             if not self.task_id:
                 self.task_id = _current_task_id.get(None)
             if not self.task_id:
-                return {"code": "ERR_NO_ACTIVE_TASK", "data": None, "message": "当前没有活跃任务ID，请先创建一个任务"}
+                return {"code": "ERR_META_NO_ACTIVE_TASK", "data": None, "message": "当前没有活跃任务ID，请先创建一个任务"}
 
             is_binary, binary_reason = _is_binary_file(file_path)
             if is_binary:
-                return {"code": "ERR_BINARY_FILE", "data": None, "message": f"{binary_reason}。请使用对应的专业工具操作二进制文件。"}
+                return {"code": "ERR_FILE_READ_BINARY_FILE", "data": None, "message": f"{binary_reason}。请使用对应的专业工具操作二进制文件。"}
 
             path = Path(file_path)
             if not path.exists():
                 return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"文件不存在: {file_path}"}
 
             if path.stat().st_size > MAX_READ_SIZE:
-                return {"code": "ERR_FILE_TOO_LARGE", "data": None, "message": f"文件过大({path.stat().st_size}字节)，超过编辑上限{MAX_READ_SIZE//1024//1024}MB"}
+                return {"code": "ERR_FILE_READ_TOO_LARGE", "data": None, "message": f"文件过大({path.stat().st_size}字节)，超过编辑上限{MAX_READ_SIZE//1024//1024}MB"}
 
             operation_id = self.safety.record_operation(
                 task_id=self.task_id,
@@ -2104,9 +2104,9 @@ class FileTools:
 
             path = Path(dir_path)
             if not path.exists():
-                return {"code": "ERR_DIR_NOT_FOUND", "data": None, "message": f"目录不存在: {dir_path}"}
+                return {"code": "ERR_FILE_DIRECTORY_NOT_FOUND", "data": None, "message": f"目录不存在: {dir_path}"}
             if not path.is_dir():
-                return {"code": "ERR_PATH_NOT_DIR", "data": None, "message": f"不是目录: {dir_path}"}
+                return {"code": "ERR_FILE_PATH_NOT_DIR", "data": None, "message": f"不是目录: {dir_path}"}
 
             # 【修复 2026-05-01 小沈】默认max_depth防止无限递归
             effective_max_depth = max_depth if max_depth is not None else 10
@@ -2168,7 +2168,7 @@ class FileTools:
             }
         except Exception as e:
             logger.error(f"get_directory_tree failed: {dir_path}: {e}")
-            return {"code": "ERR_LIST_DIR_FAILED", "data": None, "message": str(e)}
+            return {"code": "ERR_FILE_LIST_DIR_FAILED", "data": None, "message": str(e)}
     
     # ============================================================
     # 第九部分：精简合并工具（v2.0）— 小沈 2026-05-18
@@ -2478,12 +2478,12 @@ class FileTools:
             }
             detected_format = format_map.get(ext)
             if not detected_format:
-                return {"code": "ERR_FORMAT_NOT_DETECTED", "data": None, "message": f"无法识别文件格式: {file_path}，请通过format参数指定"}
+                return {"code": "ERR_DOC_FORMAT_NOT_DETECTED", "data": None, "message": f"无法识别文件格式: {file_path}，请通过format参数指定"}
 
         # write模式前置校验（提取自各格式分支）
         if action == "write":
             if detected_format in ("ini", "xml", "properties"):
-                return {"code": "ERR_FORMAT_NOT_SUPPORTED", "data": None, "message": f"{detected_format.upper()}格式暂不支持写入"}
+                return {"code": "ERR_DOC_FORMAT_NOT_SUPPORTED", "data": None, "message": f"{detected_format.upper()}格式暂不支持写入"}
             if data is None:
                 return {"code": "ERR_PARAM_INVALID", "data": None, "message": "write模式需要提供data参数"}
 
@@ -2534,7 +2534,7 @@ class FileTools:
             # 统一返回格式转换
             helper_code = result.get("code", "")
             if helper_code.startswith("ERR_"):
-                return {"code": "ERR_DATA_FORMAT_FAILED", "data": None, "message": result.get("message", "未知错误")}
+                return {"code": "ERR_DOC_DATA_FORMAT_FAILED", "data": None, "message": result.get("message", "未知错误")}
 
             bytes_written = None
             if action == "write":
@@ -2570,7 +2570,7 @@ class FileTools:
 
         except Exception as e:
             logger.error(f"[data_file_format] 执行失败: {e}")
-            return {"code": "ERR_DATA_FORMAT_FAILED", "data": None, "message": str(e)}
+            return {"code": "ERR_DOC_DATA_FORMAT_FAILED", "data": None, "message": str(e)}
 
 
 # ============================================================
