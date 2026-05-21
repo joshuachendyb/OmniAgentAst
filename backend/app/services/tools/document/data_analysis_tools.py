@@ -118,7 +118,7 @@ def generate_chart(
 
         if not labels or not values:
             return {
-                "code": "ERR_CHART_GENERATE",
+                "code": "ERR_DOC_CHART_GENERATE",
                 "data": None,
                 "message": "数据格式错误，需要包含 labels 和 values 字段"
             }
@@ -167,7 +167,7 @@ def generate_chart(
         return result
     except Exception as e:
         return {
-            "code": "ERR_CHART_GENERATE",
+            "code": "ERR_DOC_CHART_GENERATE",
             "data": None,
             "message": f"生成图表失败: {str(e)}"
         }
@@ -202,7 +202,7 @@ def analyze_data(
             path = Path(data)
             if not path.exists():
                 return {
-                    "code": "ERR_ANALYZE_DATA",
+                    "code": "ERR_DOC_ANALYZE_DATA",
                     "data": None,
                     "message": f"文件不存在: {data}"
                 }
@@ -212,7 +212,7 @@ def analyze_data(
             # 小健 2026-05-19: 识别xlsx后缀
             if data.endswith('.xlsx') or data.endswith('.xls'):
                 if not _check_openpyxl():
-                    return {"code": "ERR_NO_OPENPYXL", "data": None, "message": "openpyxl库未安装，请先执行: pip install openpyxl"}
+                    return {"code": "ERR_DOC_NO_OPENPYXL", "data": None, "message": "openpyxl库未安装，请先执行: pip install openpyxl"}
                 df = pd.read_excel(data, engine="openpyxl", **({k: v for k, v in read_kwargs.items() if k == 'nrows'}))
             else:
                 df = pd.read_csv(data, **read_kwargs)
@@ -220,7 +220,7 @@ def analyze_data(
             df = pd.DataFrame(data)
         else:
             return {
-                "code": "ERR_ANALYZE_DATA",
+                "code": "ERR_DOC_ANALYZE_DATA",
                 "data": None,
                 "message": "data参数必须是CSV文件路径或数据数组"
             }
@@ -305,7 +305,7 @@ def analyze_data(
         }
     except Exception as e:
         return {
-            "code": "ERR_ANALYZE_DATA",
+            "code": "ERR_DOC_ANALYZE_DATA",
             "data": None,
             "message": f"数据分析失败: {str(e)}"
         }
@@ -343,7 +343,7 @@ def filter_data(
             if data.endswith('.xlsx'):
                 if not _check_openpyxl():
                     return {
-                        "code": "ERR_NO_OPENPYXL",
+                        "code": "ERR_DOC_NO_OPENPYXL",
                         "data": None,
                         "message": "openpyxl库未安装，请先执行: pip install openpyxl"
                     }
