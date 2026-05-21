@@ -303,27 +303,9 @@ class ReactAgentMixin(ToolLoaderMixin):
         logger.info(f"[LLM Counter] >>> LLM called, count: {self.llm_call_count}")
         
         try:
-            # 【关键修复 小沈 2026-05-15】正确区分last_message和history_dicts
-            # 原逻辑：无条件取conversation_history[-1]作为last_message(user角色)
-            # 问题：如果最后一条是observation(system角色)，会被错误地以user角色传给LLM
-            # 修复：找到最后一条user消息作为last_message，其余全部作为history_dicts
-            last_user_idx = -1
-            for i in range(len(self.conversation_history) - 1, -1, -1):
-                if self.conversation_history[i].get("role") == "user":
-                    last_user_idx = i
-                    break
-            
-            if last_user_idx >= 0:
-                last_message = self.conversation_history[last_user_idx]["content"]
-                history_dicts = self.conversation_history[:last_user_idx] + self.conversation_history[last_user_idx+1:]
-            else:
-                # 兜底：没有user消息时用最后一条
-                last_message = self.conversation_history[-1]["content"]
-                history_dicts = self.conversation_history[:-1]
-            
-            # ========== temp_history集成（v2.4新增，小沈2026-05-12）==========
-            if hasattr(self, 'temp_history') and self.temp_history:
-                history_dicts = list(history_dicts) + list(self.temp_history)
+            # 委托MessageBuilder拆分+temp_history合并
+            last_message, history_dicts = self.message_builder.split_history_for_llm()
+            history_dicts = self.message_builder.merge_temp_history(history_dicts)
             
             # ========== 【重构 小健 2026-05-15】策略前置：先确定策略，再决定是否注入工具文本 ==========
             # FC模式下LLM已通过API tools参数获得工具定义，无需在system消息中重复注入
@@ -371,7 +353,7 @@ class ReactAgentMixin(ToolLoaderMixin):
                     history_dicts = list(history_dicts) + [progress_msg]
             
             # ========== debug日志 ==========
-            logger.debug(f"[Debug] _call_llm_with_summary - conversation_history长度: {len(self.conversation_history)}")
+            logger.debug(f"[Debug] _call_llm_with_summary - conversation_history长度: {len(self.message_builder.conversation_history)}")
             logger.debug(f"[Debug] _call_llm_with_summary - history_dicts长度: {len(history_dicts)}")
             for i, h in enumerate(history_dicts):
                 logger.debug(f"[Debug] history[{i}] role={h.get('role')}, content长度={len(h.get('content', ''))}")
