@@ -101,7 +101,7 @@ def check_windows_platform() -> Optional[Dict[str, Any]]:
     """
     if platform.system() != "Windows":
         return {
-            "code": "ERR_NOT_WINDOWS",
+            "code": "ERR_DESKTOP_NOT_WINDOWS",
             "data": None,
             "message": "此功能仅支持 Windows 系统"
         }
