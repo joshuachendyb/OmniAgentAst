@@ -133,7 +133,7 @@ def reg_read(key_path: str, value_name: Optional[str] = None, hive: str = "HKCU"
         hkey = ROOT_KEY_MAP.get(full_root_key)
         
         if hkey is None:
-            return {"code": "ERR_REG_INVALID_ROOT_KEY", "data": None, "message": f"无效的根键: {full_root_key}"}
+            return {"code": "ERR_SYS_REG_INVALID_ROOT_KEY", "data": None, "message": f"无效的根键: {full_root_key}"}
 
         with winreg.OpenKey(hkey, sub_key, 0, winreg.KEY_READ) as key:
             value, reg_type = winreg.QueryValueEx(key, value_name)
@@ -168,7 +168,7 @@ def reg_read(key_path: str, value_name: Optional[str] = None, hive: str = "HKCU"
     except FileNotFoundError:
         error_msg = f"注册表键或值不存在: {key_path}"
         logger.warning(f"[reg_read] {error_msg}")
-        return {"code": "ERR_REG_KEY_NOT_FOUND", "data": None, "message": error_msg}
+        return {"code": "ERR_SYS_REG_KEY_NOT_FOUND", "data": None, "message": error_msg}
     except PermissionError:
         error_msg = f"权限不足，无法访问: {key_path}"
         logger.error(f"[reg_read] {error_msg}")
@@ -208,14 +208,14 @@ def reg_write(key_path: str, value_name: str, value: str, value_type: str = "aut
     if dry_run:
         hkey = ROOT_KEY_MAP.get(full_root_key)
         if hkey is None:
-            return {"code": "ERR_REG_INVALID_ROOT_KEY", "data": None, "message": f"无效的根键: {full_root_key}"}
+            return {"code": "ERR_SYS_REG_INVALID_ROOT_KEY", "data": None, "message": f"无效的根键: {full_root_key}"}
         
         try:
             with winreg.OpenKey(hkey, sub_key, 0, winreg.KEY_READ):
                 pass
             return {"code": "SUCCESS", "data": {"key_path": key_path, "dry_run": True}, "message": "dry_run模式：键路径有效，可以写入"}
         except FileNotFoundError:
-            return {"code": "ERR_REG_KEY_NOT_FOUND", "data": None, "message": f"键路径不存在: {key_path}"}
+            return {"code": "ERR_SYS_REG_KEY_NOT_FOUND", "data": None, "message": f"键路径不存在: {key_path}"}
         except Exception as e:
             return {"code": "ERR_REG_VALIDATE_FAILED", "data": None, "message": f"校验失败: {str(e)}"}
     
@@ -227,7 +227,7 @@ def reg_write(key_path: str, value_name: str, value: str, value_type: str = "aut
         hkey = ROOT_KEY_MAP.get(full_root_key)
         
         if hkey is None:
-            return {"code": "ERR_REG_INVALID_ROOT_KEY", "data": None, "message": f"无效的根键: {full_root_key}"}
+            return {"code": "ERR_SYS_REG_INVALID_ROOT_KEY", "data": None, "message": f"无效的根键: {full_root_key}"}
 
         # 类型映射
         type_map = {
@@ -314,7 +314,7 @@ def reg_delete(key_path: str, value_name: Optional[str] = None, backup_before_de
         hkey = ROOT_KEY_MAP.get(full_root_key)
         
         if hkey is None:
-            return {"code": "ERR_REG_INVALID_ROOT_KEY", "data": None, "message": f"无效的根键: {full_root_key}"}
+            return {"code": "ERR_SYS_REG_INVALID_ROOT_KEY", "data": None, "message": f"无效的根键: {full_root_key}"}
 
         # 备份
         if backup_before_delete:
@@ -346,7 +346,7 @@ def reg_delete(key_path: str, value_name: Optional[str] = None, backup_before_de
                         except OSError:
                             pass
                         if i > 0:
-                            return {"code": "ERR_REG_KEY_NOT_EMPTY", "data": None, "message": f"键不为空（{i}个子键），使用 recursive=True 强制删除"}
+                            return {"code": "ERR_SYS_REG_KEY_NOT_EMPTY", "data": None, "message": f"键不为空（{i}个子键），使用 recursive=True 强制删除"}
                 except FileNotFoundError:
                     pass
             
@@ -355,7 +355,7 @@ def reg_delete(key_path: str, value_name: Optional[str] = None, backup_before_de
             key_name = sub_key.split("\\")[-1]
             
             if not parent_key:
-                return {"code": "ERR_REG_CANNOT_DELETE_ROOT", "data": None, "message": "不能直接删除根键下的子键"}
+                return {"code": "ERR_SYS_REG_CANNOT_DELETE_ROOT", "data": None, "message": "不能直接删除根键下的子键"}
 
             with winreg.OpenKey(hkey, parent_key, 0, winreg.KEY_SET_VALUE) as key:
                 winreg.DeleteKey(key, key_name)
@@ -372,7 +372,7 @@ def reg_delete(key_path: str, value_name: Optional[str] = None, backup_before_de
     except FileNotFoundError:
         error_msg = f"注册表键或值不存在: {key_path}"
         logger.warning(f"[reg_delete] {error_msg}")
-        return {"code": "ERR_REG_KEY_NOT_FOUND", "data": None, "message": error_msg}
+        return {"code": "ERR_SYS_REG_KEY_NOT_FOUND", "data": None, "message": error_msg}
     except PermissionError:
         error_msg = f"权限不足，无法删除: {key_path}"
         logger.error(f"[reg_delete] {error_msg}")
