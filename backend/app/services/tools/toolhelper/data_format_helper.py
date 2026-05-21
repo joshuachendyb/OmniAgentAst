@@ -33,7 +33,7 @@ def read_json(file_path: str, encoding: str = "auto_detect", max_depth: int = 10
     try:
         path = Path(file_path)
         if not path.exists():
-            return {"code": "ERR_READ_JSON", "data": None, "message": f"文件不存在: {file_path}"}
+            return {"code": "ERR_DOC_READ_JSON", "data": None, "message": f"文件不存在: {file_path}"}
 
         actual_encoding = "utf-8"
         if encoding == "auto_detect":
@@ -90,9 +90,9 @@ def read_json(file_path: str, encoding: str = "auto_detect", max_depth: int = 10
             "capabilities_used": ["json(stdlib)"]
         }
     except json.JSONDecodeError as e:
-        return {"code": "ERR_READ_JSON", "data": None, "message": f"JSON解析失败: {str(e)}"}
+        return {"code": "ERR_DOC_READ_JSON", "data": None, "message": f"JSON解析失败: {str(e)}"}
     except Exception as e:
-        return {"code": "ERR_READ_JSON", "data": None, "message": f"读取JSON文件失败: {str(e)}"}
+        return {"code": "ERR_DOC_READ_JSON", "data": None, "message": f"读取JSON文件失败: {str(e)}"}
 
 
 def write_json(file_path: str, data: Union[Dict[str, Any], List[Any]], encoding: str = "utf-8", indent: int = 2, ensure_ascii: bool = False, backup_before_write: bool = True, create_parents: bool = True) -> Dict[str, Any]:
