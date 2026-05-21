@@ -49,6 +49,7 @@ from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_timestamp
 from app.chat_stream.incident_handler import create_incident_data
 from app.utils.prompt_logger import get_prompt_logger
+from app.services.agent.tool_result_formatter import extract_status
 # 【Phase 1修复 小健 2026-05-14】删除模块级import，改为函数内import
 # from app.services.tools.file.file_tools import _current_task_id
 
@@ -767,8 +768,7 @@ class BaseAgent(ABC):
                 # 【步骤2.9】根据执行结果构建 action_tool
                 
                 # 【步骤2.9】统一执行结果字典格式（供StepFactory使用）
-                _code = execution_result.get("code", "SUCCESS")
-                _status = "success" if _code == "SUCCESS" and not execution_result.get("warning") else ("warning" if _code.startswith("WARNING_") or execution_result.get("warning") else "error")
+                _status = extract_status(execution_result)
                 exec_status = _status
                 execution_result_dict = {
                     "status": _status,
