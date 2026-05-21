@@ -1,3 +1,29 @@
+v0.13.15
+
+更新时间: 2026-05-21 16:25:00
+
+更新内容：
+- feat: 补全第2步重构 - _tools_to_schema_text迁入MessageBuilder.build_schema_text()
+- feat: _call_llm_with_summary从146行简化为12行，提取6个独立方法（_select_strategy/_inject_tools/_inject_schema/_log_prompt/_dispatch_strategy/_log_response）
+- 删除mixin中旧_tools_to_schema_text方法（41行）
+- 测试验证：217 passed，无回归
+
+v0.13.14
+
+更新时间: 2026-05-21 16:10:00
+
+更新内容：
+- feat: 补全MessageBuilder重构（消除双重trim+@property透传+统一observation构建+缓存迁入）
+- 第1步：消除base_react.py双重_trim_history（L633/L997改为message_builder.trim_history）
+- 第1步：conversation_history改为@property透传（L359/L380）
+- 第1步：observation构建统一为message_builder.build_observation_text（L848/L1040）
+- 第1步：temp_history改为message_builder.temp_history（L515）
+- 第1步：删除base_react.py重复的_trim_history及6个辅助方法（减少约160行）
+- 第2步：_call_llm_with_summary简化（工具注入/Schema注入/汇总注入/assemble改为message_builder方法）
+- 第3步：缓存/计数管理迁入message_builder（check_cache_or_block/update_execution_cache/build_summary_entry）
+- 第3步：删除base_react.py中_params_to_key/_is_no_cache_tool方法及缓存初始化
+- 测试验证：13 passed，无回归
+
 v0.13.13
 
 更新时间: 2026-05-21 15:16:13

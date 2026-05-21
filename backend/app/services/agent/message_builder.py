@@ -224,6 +224,13 @@ class MessageBuilder:
         【优化-延迟裁剪机制 — 小沈 2026-05-20】：
         估算当前总字符长度，仅当超过 MAX_CONTEXT_CHARS 的 80% 时触发裁剪，
         否则直接跳过。
+
+        【已知局限 — 小沈 2026-05-21】：
+        本方法只移除 role=system 且内容含 [Observation] 标记的 observation 消息。
+        system/user/assistant 三类消息不会被删除。因此若 conversation_history
+        中不含 observation，即使超过80%阈值也不会真正裁剪。后续如需增强可考虑：
+        1. 对 assistant 消息按时间倒序裁剪
+        2. 合并相邻短消息
         """
         total = self._total_chars(self.conversation_history)
         if total < self.MAX_CONTEXT_CHARS * 0.8:

@@ -819,12 +819,12 @@ def _timestamp_to_time(timestamp: Union[int, float], target_tz: str = "+08:00") 
         return {
             "code": "SUCCESS",
             "data": {
-                "datetime": dt.strftime("%Y-%m-%d %H:%M:%S"),
-                "isoformat": dt.isoformat(),
+                "iso": dt.isoformat(),
                 "timestamp": ts,
                 "timezone": target_tz,
+                "format": dt.strftime("%Y-%m-%d %H:%M:%S"),
             },
-            "llm_data": {"datetime": dt.strftime("%Y-%m-%d %H:%M:%S"), "timezone": target_tz},
+            "llm_data": {"iso": dt.isoformat(), "format": dt.strftime("%Y-%m-%d %H:%M:%S"), "timezone": target_tz},
             "message": f"时间: {dt.strftime('%Y-%m-%d %H:%M:%S')}"
         }
     except Exception as e:

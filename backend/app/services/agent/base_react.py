@@ -287,16 +287,15 @@ class BaseAgent(ABC):
             except Exception as e:
                 logger.warning(f"[FC刷新] response_format enum更新失败: {e}")
 
-        # 【修复 风险12 小健 2026-05-15】动态加载后清除schema缓存
-        # 【修复 小沈 2026-05-20】原代码只清除了 _cached_schema_text，遗漏了
-        #   _cached_tools_content 和 _last_injected_categories，导致下一轮 LLM 调用
-        #   仍使用旧的工具描述缓存，新加载的工具不会出现在 prompt 中
+        # 【2026-05-21 小沈】统一使用message_builder.invalidate_cache()清除全部缓存
+        self.message_builder.invalidate_cache()
+        # mixin自身的缓存也需清除
         if hasattr(self, '_cached_schema_text'):
-            del self._cached_schema_text
+            delattr(self, '_cached_schema_text')
         if hasattr(self, '_cached_tools_content'):
-            del self._cached_tools_content
+            delattr(self, '_cached_tools_content')
         if hasattr(self, '_last_injected_categories'):
-            del self._last_injected_categories
+            delattr(self, '_last_injected_categories')
 
         logger.info(f"[动态加载] 完成，新增{len(new_tools)}个工具，总计{len(self._tools_dict)}个")
     
