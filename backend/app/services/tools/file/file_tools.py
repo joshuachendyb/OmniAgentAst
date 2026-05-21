@@ -730,7 +730,7 @@ class FileTools:
                 max_depth=max_depth,
             )
             # 小健 2026-05-19: tree模式补充statistics统计信息
-            if tree_result.get("status") == "success" and "data" in tree_result:
+            if tree_result.get("code") == "SUCCESS" and "data" in tree_result:
                 tree_data = tree_result["data"]
                 if isinstance(tree_data, dict) and "tree" in tree_data:
                     tree_obj = tree_data["tree"]
@@ -2182,19 +2182,13 @@ class FileTools:
         try:
             is_valid, error_msg = self._validate_path(dir_path)
             if not is_valid:
-                return _to_unified_format({
-                    "success": False, "error": error_msg, "tree": None
-                }, "list_directory")
+                return {"code": "ERR_PATH_INVALID", "data": None, "message": error_msg}
 
             path = Path(dir_path)
             if not path.exists():
-                return _to_unified_format({
-                    "success": False, "error": f"目录不存在: {dir_path}", "tree": None
-                }, "list_directory")
+                return {"code": "ERR_DIR_NOT_FOUND", "data": None, "message": f"目录不存在: {dir_path}"}
             if not path.is_dir():
-                return _to_unified_format({
-                    "success": False, "error": f"不是目录: {dir_path}", "tree": None
-                }, "list_directory")
+                return {"code": "ERR_PATH_NOT_DIR", "data": None, "message": f"不是目录: {dir_path}"}
 
             # 【修复 2026-05-01 小沈】默认max_depth防止无限递归
             effective_max_depth = max_depth if max_depth is not None else 10
@@ -2241,20 +2235,22 @@ class FileTools:
 
             tree = await asyncio.to_thread(_build_tree, path)
             tree = tree or {"name": path.name, "type": "directory", "children": []}
-            return _to_unified_format({
-                "success": True, "tree": tree, "root": str(path),
-            }, "list_directory", llm_data={
-                "目录": str(path), "树形结构根节点": tree.get("name",""),
-                "子项数": len(tree.get("children",[]))
-            }, next_actions=[
-                ("search_files", "搜索文件", "需要查找特定文件时"),
-                ("read_file", "读取文件", "需要查看文件内容时"),
-            ])
+            return {
+                "code": "SUCCESS",
+                "data": {"tree": tree, "root": str(path)},
+                "message": f"已获取目录树: {dir_path}",
+                "llm_data": {
+                    "目录": str(path), "树形结构根节点": tree.get("name",""),
+                    "子项数": len(tree.get("children",[]))
+                },
+                "next_actions": [
+                    ("search_files", "搜索文件", "需要查找特定文件时"),
+                    ("read_file", "读取文件", "需要查看文件内容时"),
+                ]
+            }
         except Exception as e:
             logger.error(f"get_directory_tree failed: {dir_path}: {e}")
-            return _to_unified_format({
-                "success": False, "error": str(e), "tree": None
-            }, "list_directory")
+            return {"code": "ERR_LIST_DIR_FAILED", "data": None, "message": str(e)}
     
     # ============================================================
     # 第九部分：精简合并工具（v2.0）— 小沈 2026-05-18
