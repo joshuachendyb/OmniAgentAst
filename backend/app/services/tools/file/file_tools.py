@@ -2592,10 +2592,123 @@ class FileTools:
         
         # P17互斥校验
         if action not in ("read", "write"):
-            return _to_unified_format({
-                "success": False,
-                "error": f"不支持的action: {action}，可选: read/write"
-            }, "data_file_format")
+            return {"code": "ERR_PARAM_INVALID", "data": None, "message": f"不支持的action: {action}，可选: read/write"}
+
+        if not file_path:
+            return {"code": "ERR_PARAM_INVALID", "data": None, "message": "file_path是必填参数"}
+
+        is_valid, error_msg = self._validate_path(file_path)
+        if not is_valid:
+            return {"code": "ERR_PATH_INVALID", "data": None, "message": error_msg}
+
+        detected_format = format
+        if not detected_format:
+            ext = os.path.splitext(file_path)[1].lower()
+            format_map = {
+                ".json": "json",
+                ".yaml": "yaml",
+                ".yml": "yaml",
+                ".toml": "toml",
+                ".ini": "ini",
+                ".cfg": "ini",
+                ".xml": "xml",
+                ".properties": "properties",
+            }
+            detected_format = format_map.get(ext)
+            if not detected_format:
+                return {"code": "ERR_FORMAT_NOT_DETECTED", "data": None, "message": f"无法识别文件格式: {file_path}，请通过format参数指定"}
+
+        # write模式前置校验（提取自各格式分支）
+        if action == "write":
+            if detected_format in ("ini", "xml", "properties"):
+                return {"code": "ERR_FORMAT_NOT_SUPPORTED", "data": None, "message": f"{detected_format.upper()}格式暂不支持写入"}
+            if data is None:
+                return {"code": "ERR_PARAM_INVALID", "data": None, "message": "write模式需要提供data参数"}
+
+        from app.services.tools.toolhelper import data_format_helper as df_tools
+
+        # 调用对应格式工具
+        try:
+            if detected_format == "json":
+                if action == "read":
+                    result = df_tools.read_json(file_path=file_path, encoding=encoding)
+                else:
+                    result = df_tools.write_json(
+                        file_path=file_path,
+                        data=data,
+                        encoding=encoding,
+                        indent=indent or 2
+                    )
+
+            elif detected_format == "yaml":
+                if action == "read":
+                    result = df_tools.parse_yaml(file_path=file_path, encoding=encoding)
+                else:
+                    result = df_tools.write_yaml(
+                        file_path=file_path,
+                        data=data,
+                        encoding=encoding,
+                        indent=indent
+                    )
+
+            elif detected_format == "toml":
+                if action == "read":
+                    result = df_tools.parse_toml(file_path=file_path, encoding=encoding)
+                else:
+                    result = df_tools.write_toml(file_path=file_path, data=data, encoding=encoding)
+
+            elif detected_format == "ini":
+                result = df_tools.parse_ini(file_path=file_path, encoding=encoding)
+
+            elif detected_format == "xml":
+                result = df_tools.parse_xml(file_path=file_path, encoding=encoding)
+
+            elif detected_format == "properties":
+                result = df_tools.parse_properties(file_path=file_path, encoding=encoding)
+
+            else:
+                return {"code": "ERR_PARAM_INVALID", "data": None, "message": f"不支持的格式: {detected_format}"}
+
+            # 统一返回格式转换
+            helper_code = result.get("code", "")
+            if helper_code.startswith("ERR_"):
+                return {"code": "ERR_DATA_FORMAT_FAILED", "data": None, "message": result.get("message", "未知错误")}
+
+            bytes_written = None
+            if action == "write":
+                try:
+                    bytes_written = os.path.getsize(file_path)
+                except Exception:
+                    pass
+
+            result_data = result.get("data", result)
+            _llm = None
+            if action == "read":
+                _llm = {"格式": detected_format, "文件": file_path, "动作": "read"}
+                if isinstance(result_data, dict):
+                    _llm["键"] = list(result_data.keys())[:30]
+                    _llm["顶层项数"] = len(result_data)
+                elif isinstance(result_data, list):
+                    _llm["项数"] = len(result_data)
+                    _llm["预览"] = make_json_safe(result_data[:5], max_str_len=200)
+
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "data": result_data,
+                    "format": detected_format,
+                    "file_path": file_path,
+                    "action": action,
+                    "bytes_written": bytes_written,
+                },
+                "message": f"已{action} {detected_format.upper()}格式文件: {file_path}",
+                "llm_data": _llm,
+                "next_actions": [("edit_file", "编辑格式化文件", "需要修改时")],
+            }
+
+        except Exception as e:
+            logger.error(f"[data_file_format] 执行失败: {e}")
+            return {"code": "ERR_DATA_FORMAT_FAILED", "data": None, "message": str(e)}
         
         # 自动检测格式
         if not file_path:
