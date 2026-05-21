@@ -32,11 +32,10 @@ import re
 import shutil
 import threading
 import time
-from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, get_type_hints
 
-_current_task_id: ContextVar[Optional[str]] = ContextVar("file_tools_task_id", default=None)
+from app.services.context_vars import _current_task_id
 
 # 【修改】移除分页限制，2026-04-03 小沈
 # 原因：后端必须返回全部真实数据，前端自己控制显示方式（分页/滚动）

@@ -113,7 +113,7 @@ async def execute_tool(request: ToolExecuteRequest):
     try:
         # 与Agent调用链保持一致：设置_current_task_id ContextVar
         # Agent在react_sse_wrapper.py:525生成task_id，在base_react.py:793设置ContextVar
-        from app.services.tools.file.file_tools import _current_task_id
+        from app.services.context_vars import _current_task_id
         import uuid as _uuid
         _api_task_id = str(_uuid.uuid4())
         _current_task_id.set(_api_task_id)

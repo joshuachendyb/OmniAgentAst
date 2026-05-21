@@ -789,7 +789,7 @@ class BaseAgent(ABC):
                 
                 if execution_result is None and not cache_hit and fail_count < 3:
                     # 【Phase 1修复 小健 2026-05-14】函数内import避免触发register
-                    from app.services.tools.file.file_tools import _current_task_id
+                    from app.services.context_vars import _current_task_id
                     _current_task_id.set(task_id)
                     execution_result = await self._execute_tool(tool_name, tool_params)
                     execution_time_ms = int((time.perf_counter() - start_time) * 1000)
