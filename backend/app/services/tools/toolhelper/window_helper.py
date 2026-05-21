@@ -46,13 +46,13 @@ def check_win32_platform() -> Optional[Dict[str, Any]]:
     """
     if platform.system() != "Windows":
         return {
-            "code": "ERR_NOT_WINDOWS",
+            "code": "ERR_DESKTOP_NOT_WINDOWS",
             "data": None,
             "message": "此功能仅支持 Windows 系统"
         }
     if not _HAS_WIN32:
         return {
-            "code": "ERR_NO_PYWIN32",
+            "code": "ERR_DESKTOP_NO_PYWIN32",
             "data": None,
             "message": "pywin32库未安装，请先执行: pip install pywin32"
         }
