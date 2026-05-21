@@ -12,7 +12,7 @@
 """
 
 import json
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 SUCCESS_CODE = "SUCCESS"
 
@@ -48,13 +48,41 @@ def _safe_truncate(data: Any, limit: int) -> Any:
     return data
 
 
+def _format_next_actions(result: dict, text: str) -> str:
+    """将next_actions格式化为文本追加到observation — 小健 2026-05-22"""
+    next_actions = result.get('next_actions')
+    if not next_actions or not isinstance(next_actions, list):
+        return text
+    na_lines = ["\n推荐下一步操作:"]
+    for i, na in enumerate(next_actions[:5], 1):
+        if isinstance(na, dict):
+            tool = na.get('tool', '')
+            desc = na.get('description', '')
+            when = na.get('when', '')
+            params = na.get('params')
+            line = f"  {i}. {tool}"
+            if desc:
+                line += f" - {desc}"
+            if when:
+                line += f"（{when}）"
+            if params:
+                line += f" 参数建议: {params}"
+        elif isinstance(na, tuple) and len(na) >= 2:
+            line = f"  {i}. {na[0]} - {na[1]}"
+        else:
+            line = f"  {i}. {na}"
+        na_lines.append(line)
+    return text + "\n".join(na_lines)
+
+
 def _format_llm_observation(result: dict) -> str:
     """
     格式化工具结果为LLM observation文本 — 小沈 2026-05-21
+    更新 2026-05-22 小健：合入next_actions拼接逻辑（从base_react.py搬入）
     工具通过 llm_data 自行控制给LLM的数据量，格式化层不做业务截断
     """
     code = result.get("code", "SUCCESS")
-    LLM_SAFE_LIMIT = 100_000  # 仅防 json.dumps OOM，非业务截断
+    LLM_SAFE_LIMIT = 100_000
 
     if code == "SUCCESS":
         display_data = result.get("llm_data") or result.get("data")
@@ -65,6 +93,7 @@ def _format_llm_observation(result: dict) -> str:
             if isinstance(display_data, (dict, list)):
                 display_data = _safe_truncate(display_data, LLM_SAFE_LIMIT)
             text += f"\n数据: {json.dumps(display_data, ensure_ascii=False)}"
+        text = _format_next_actions(result, text)
         return text
 
     elif code.startswith("WARNING_"):
@@ -74,6 +103,7 @@ def _format_llm_observation(result: dict) -> str:
             if isinstance(data, (dict, list)):
                 data = _safe_truncate(data, LLM_SAFE_LIMIT)
             text += f"\n部分数据: {json.dumps(data, ensure_ascii=False)}"
+        text = _format_next_actions(result, text)
         return text
 
     else:  # ERR_*
@@ -94,4 +124,6 @@ def _format_frontend_event(result: dict) -> dict:
         event["warning"] = result["warning"]
     if result.get("next_actions"):
         event["next_actions"] = result["next_actions"]
+    if result.get("attachment"):
+        event["attachment"] = result["attachment"]
     return event

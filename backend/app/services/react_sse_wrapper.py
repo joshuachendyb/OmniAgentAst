@@ -281,9 +281,6 @@ async def _run_agent_sse_stream(
         intent_type=intent_type,
         llm_client=llm_client,
         task_id=task_id,
-        api_base=ai_service.api_base,
-        api_key=ai_service.api_key,
-        model=ai_service.model,
         candidates=candidates
     )
     

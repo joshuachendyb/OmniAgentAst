@@ -29,6 +29,7 @@ from typing import Dict, Any, List, Union, Optional, Literal, Tuple
 from pathlib import Path
 from datetime import datetime
 from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe
+from app.services.tools._response import build_success, build_error
 
 logger = logging.getLogger(__name__)
 
@@ -102,11 +103,7 @@ def generate_chart(
         return validation
 
     if not _check_matplotlib():
-        return {
-            "code": "ERR_NO_MATPLOTLIB",
-            "data": None,
-            "message": "matplotlib库未安装，请先执行: pip install matplotlib"
-        }
+        return build_error("ERR_NO_MATPLOTLIB", "matplotlib库未安装，请先执行: pip install matplotlib")
 
     try:
         import matplotlib
@@ -117,11 +114,7 @@ def generate_chart(
         values = data.get("values", [])
 
         if not labels or not values:
-            return {
-                "code": "ERR_DOC_CHART_GENERATE",
-                "data": None,
-                "message": "数据格式错误，需要包含 labels 和 values 字段"
-            }
+            return build_error("ERR_DOC_CHART_GENERATE", "数据格式错误，需要包含 labels 和 values 字段")
 
         if output_path is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -157,20 +150,14 @@ def generate_chart(
         finally:
             plt.close(fig)
 
-        result = {
-            "code": "SUCCESS",
-            "data": output_path,
-            "message": f"成功生成{chart_type_lower}图表: {output_path}",
-            "next_actions": build_next_actions([]),
-            "capabilities_used": ["matplotlib"]
-        }
+        result = build_success(
+            output_path,
+            f"成功生成{chart_type_lower}图表: {output_path}",
+            next_actions=build_next_actions([])
+        )
         return result
     except Exception as e:
-        return {
-            "code": "ERR_DOC_CHART_GENERATE",
-            "data": None,
-            "message": f"生成图表失败: {str(e)}"
-        }
+        return build_error("ERR_DOC_CHART_GENERATE", f"生成图表失败: {str(e)}")
 
 
 def analyze_data(
@@ -185,11 +172,7 @@ def analyze_data(
     【新增参数】encoding: 文件编码(默认utf-8); max_rows: 最大读取行数(默认None=全部)
     """
     if not _check_pandas():
-        return {
-            "code": "ERR_NO_PANDAS",
-            "data": None,
-            "message": "pandas库未安装，请先执行: pip install pandas"
-        }
+        return build_error("ERR_NO_PANDAS", "pandas库未安装，请先执行: pip install pandas")
 
     try:
         import pandas as pd
@@ -201,42 +184,33 @@ def analyze_data(
         if isinstance(data, str):
             path = Path(data)
             if not path.exists():
-                return {
-                    "code": "ERR_DOC_ANALYZE_DATA",
-                    "data": None,
-                    "message": f"文件不存在: {data}"
-                }
+                return build_error("ERR_DOC_ANALYZE_DATA", f"文件不存在: {data}")
             read_kwargs = {}
             if max_rows is not None:
                 read_kwargs["nrows"] = max_rows
             # 小健 2026-05-19: 识别xlsx后缀
             if data.endswith('.xlsx') or data.endswith('.xls'):
                 if not _check_openpyxl():
-                    return {"code": "ERR_DOC_NO_OPENPYXL", "data": None, "message": "openpyxl库未安装，请先执行: pip install openpyxl"}
+                    return build_error("ERR_DOC_NO_OPENPYXL", "openpyxl库未安装，请先执行: pip install openpyxl")
                 df = pd.read_excel(data, engine="openpyxl", **({k: v for k, v in read_kwargs.items() if k == 'nrows'}))
             else:
                 df = pd.read_csv(data, **read_kwargs)
         elif isinstance(data, list):
             df = pd.DataFrame(data)
         else:
-            return {
-                "code": "ERR_DOC_ANALYZE_DATA",
-                "data": None,
-                "message": "data参数必须是CSV文件路径或数据数组"
-            }
+            return build_error("ERR_DOC_ANALYZE_DATA", "data参数必须是CSV文件路径或数据数组")
 
         total_count = len(df)
         numeric_cols = df.select_dtypes(include="number").columns.tolist()
         if not numeric_cols:
-            return {
-                "code": "SUCCESS",
-                "data": {"row_count": total_count, "columns": df.columns.tolist(), "statistics": {}},
-                "message": "数据中无数值列，无法进行统计计算",
-                "next_actions": build_next_actions([
+            return build_success(
+                {"row_count": total_count, "columns": df.columns.tolist(), "statistics": {}},
+                "数据中无数值列，无法进行统计计算",
+                next_actions=build_next_actions([
                     ("filter_data", "筛选数据", "需要按条件过滤时"),
                     ("generate_chart", "生成图表", "需要可视化时"),
                 ])
-            }
+            )
 
         result = {"total_count": total_count, "columns": df.columns.tolist()}
 
@@ -287,28 +261,21 @@ def analyze_data(
                         statistics[op] = None
             result["statistics"] = statistics
 
-        return {
-            "code": "SUCCESS",
-            "data": truncate_data_for_frontend(result),
-            "message": f"成功分析数据，共 {len(df)} 行，{len(numeric_cols)} 个数值列",
-            "llm_data": {
+        return build_success(
+            truncate_data_for_frontend(result),
+            f"成功分析数据，共 {len(df)} 行，{len(numeric_cols)} 个数值列",
+            llm_data={
                 "总行数": len(df), "数值列数": len(numeric_cols),
                 "列": list(result.get("columns", {}).keys())[:20] if isinstance(result.get("columns"), dict) else [],
                 "统计摘要": make_json_safe(result.get("statistics", {}), max_str_len=200)
             },
-            "next_actions": build_next_actions([
+            next_actions=build_next_actions([
                 ("filter_data", "筛选数据", "需要按条件过滤时"),
                 ("generate_chart", "生成图表", "需要可视化时"),
-            ]),
-            "capabilities_used": ["pandas", "基础统计"],
-            "capabilities_missing": [] if _check_numpy() else ["numpy"]
-        }
+            ])
+        )
     except Exception as e:
-        return {
-            "code": "ERR_DOC_ANALYZE_DATA",
-            "data": None,
-            "message": f"数据分析失败: {str(e)}"
-        }
+        return build_error("ERR_DOC_ANALYZE_DATA", f"数据分析失败: {str(e)}")
 
 
 def filter_data(
@@ -321,11 +288,7 @@ def filter_data(
 ) -> Dict[str, Any]:
     """按条件筛选/过滤数据 - 小沈 2026-05-05, 修正 2026-05-05"""
     if not _check_pandas():
-        return {
-            "code": "ERR_NO_PANDAS",
-            "data": None,
-            "message": "pandas库未安装，请先执行: pip install pandas"
-        }
+        return build_error("ERR_NO_PANDAS", "pandas库未安装，请先执行: pip install pandas")
 
     _used_openpyxl = False
 
@@ -335,18 +298,10 @@ def filter_data(
         if isinstance(data, str):
             path = Path(data)
             if not path.exists():
-                return {
-                    "code": "ERR_FILTER_INVALID",
-                    "data": None,
-                    "message": f"文件不存在: {data}"
-                }
+                return build_error("ERR_FILTER_INVALID", f"文件不存在: {data}")
             if data.endswith('.xlsx'):
                 if not _check_openpyxl():
-                    return {
-                        "code": "ERR_DOC_NO_OPENPYXL",
-                        "data": None,
-                        "message": "openpyxl库未安装，请先执行: pip install openpyxl"
-                    }
+                    return build_error("ERR_DOC_NO_OPENPYXL", "openpyxl库未安装，请先执行: pip install openpyxl")
                 df = pd.read_excel(data, engine="openpyxl" if data.endswith('.xlsx') else None, nrows=max_rows)
                 _used_openpyxl = True
             else:
@@ -354,11 +309,7 @@ def filter_data(
         elif isinstance(data, list):
             df = pd.DataFrame(data)
         else:
-            return {
-                "code": "ERR_FILTER_INVALID",
-                "data": None,
-                "message": "data参数必须是文件路径或数据数组"
-            }
+            return build_error("ERR_FILTER_INVALID", "data参数必须是文件路径或数据数组")
 
         original_count = len(df)
 
@@ -381,11 +332,7 @@ def filter_data(
             value = cond.get("value")
 
             if not column:
-                return {
-                    "code": "ERR_FILTER_INVALID",
-                    "data": None,
-                    "message": f"条件缺少column字段: {cond}。每个条件必须指定column"
-                }
+                return build_error("ERR_FILTER_INVALID", f"条件缺少column字段: {cond}。每个条件必须指定column")
 
             if column not in df.columns:
                 warnings.append(f"列'{column}'不存在，已跳过")
@@ -444,28 +391,19 @@ def filter_data(
         if warnings:
             message += f" | 警告: {'; '.join(warnings)}"
 
-        capabilities_used = ["pandas"]
-        if _used_openpyxl:
-            capabilities_used.append("openpyxl")
-        result = {
-            "code": "SUCCESS",
-            "data": truncate_data_for_frontend(result_data),
-            "message": message,
-            "llm_data": {
+        result = build_success(
+            truncate_data_for_frontend(result_data),
+            message,
+            llm_data={
                 "筛选前": result_data.get("original_count",0), "筛选后": result_data.get("filtered_count",0),
                 "列": result_data.get("columns",[])[:20],
                 "行预览": make_json_safe(result_data.get("rows",[])[:5], max_str_len=150)
             },
-            "next_actions": build_next_actions([
+            next_actions=build_next_actions([
                 ("analyze_data", "统计分析", "需要对筛选结果统计时"),
                 ("generate_chart", "生成图表", "需要可视化时"),
-            ]),
-            "capabilities_used": capabilities_used
-        }
+            ])
+        )
         return result
     except Exception as e:
-        return {
-            "code": "ERR_FILTER_INVALID",
-            "data": None,
-            "message": f"数据筛选失败: {str(e)}"
-        }
+        return build_error("ERR_FILTER_INVALID", f"数据筛选失败: {str(e)}")

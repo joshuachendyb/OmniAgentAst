@@ -26,6 +26,7 @@ from typing import Optional, Dict, Any, List
 
 from app.utils.logger import logger
 from app.services.tools.tool_result_utils import build_next_actions  # 小沈 2026-05-19
+from app.services.tools._response import build_success, build_error
 
 
 def get_env(name: Optional[str] = None, scope: str = "process",
@@ -49,7 +50,7 @@ def get_env(name: Optional[str] = None, scope: str = "process",
     # 【2026-05-18 小沈】action="list"分支：原list_env逻辑
     # 小健 2026-05-19: action值校验
     if action not in ("get", "list"):
-        return {"code": "ERR_SYS_ENV_INVALID_ACTION", "data": None, "message": f"无效的action: {action}，支持: get/list"}
+        return build_error("ERR_SYS_ENV_INVALID_ACTION", f"无效的action: {action}，支持: get/list")
     if action == "list":
         try:
             env_vars = {}
@@ -71,20 +72,19 @@ def get_env(name: Optional[str] = None, scope: str = "process",
                 "截断数": truncated_count,
                 "变量列表": [{"name": e["name"], "value": e["value"][:200] + ("..." if len(e["value"]) > 200 else "")} for e in env_list],
             }
-            return {
-                "code": "SUCCESS",
-                "data": {"count": len(env_list), "variables": env_list, "prefix": prefix},
-                "message": f"共找到 {len(env_list)} 个环境变量",
-                "llm_data": _llm,
-                "next_actions": build_next_actions([("set_env", "设置环境变量", "需要修改环境变量时")])
-            }
+            return build_success(
+                {"count": len(env_list), "variables": env_list, "prefix": prefix},
+                f"共找到 {len(env_list)} 个环境变量",
+                llm_data=_llm,
+                next_actions=build_next_actions([("set_env", "设置环境变量", "需要修改环境变量时")])
+            )
         except Exception as e:
             logger.error(f"[get_env] 列出环境变量失败: {e}")
-            return {"code": "ERR_SYS_ENV_LIST", "data": None, "message": f"列出环境变量失败: {str(e)}"}
+            return build_error("ERR_SYS_ENV_LIST", f"列出环境变量失败: {str(e)}")
 
     # action="get"分支：原get_env逻辑
     if action == "get" and not name:
-        return {"code": "ERR_SYS_ENV_INVALID_NAME", "data": None, "message": "action='get'时name参数必填"}
+        return build_error("ERR_SYS_ENV_INVALID_NAME", "action='get'时name参数必填")
     
     try:
         value = None
@@ -117,26 +117,20 @@ def get_env(name: Optional[str] = None, scope: str = "process",
                     value = expanded
                 except Exception:
                     pass
-            return {
-                "code": "SUCCESS",
-                "data": {"name": name, "value": value, "exists": True, "scope": scope, "expanded": expand_vars},
-                "message": f"成功获取环境变量 {name}（作用域: {scope}）",
-                "next_actions": build_next_actions([("set_env", "设置环境变量", "需要修改环境变量时")])
-            }
+            return build_success(
+                {"name": name, "value": value, "exists": True, "scope": scope, "expanded": expand_vars},
+                f"成功获取环境变量 {name}（作用域: {scope}）",
+                next_actions=build_next_actions([("set_env", "设置环境变量", "需要修改环境变量时")])
+            )
         else:
-            return {
-                "code": "SUCCESS",
-                "data": {"name": name, "value": None, "exists": False, "scope": scope, "expanded": expand_vars},
-                "message": f"环境变量 {name} 不存在（作用域: {scope}）",
-                "next_actions": build_next_actions([("set_env", "设置环境变量", "需要修改环境变量时")])
-            }
+            return build_success(
+                {"name": name, "value": None, "exists": False, "scope": scope, "expanded": expand_vars},
+                f"环境变量 {name} 不存在（作用域: {scope}）",
+                next_actions=build_next_actions([("set_env", "设置环境变量", "需要修改环境变量时")])
+            )
     except Exception as e:
         logger.error(f"[get_env] 获取环境变量失败: {e}")
-        return {
-            "code": "ERR_SYS_ENV_GET",
-            "data": None,
-            "message": f"获取环境变量失败: {str(e)}"
-        }
+        return build_error("ERR_SYS_ENV_GET", f"获取环境变量失败: {str(e)}")
 
 
 def set_env(name: str, value: Optional[str] = None, scope: str = "process",
@@ -166,26 +160,22 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
     """
     try:
         if not name or not name.strip():
-            return {
-                "code": "ERR_SYS_ENV_INVALID_NAME",
-                "data": None,
-                "message": "环境变量名称不能为空"
-            }
+            return build_error("ERR_SYS_ENV_INVALID_NAME", "环境变量名称不能为空")
 
         # 【2026-05-17 小沈】action="delete"分支：原delete_env逻辑
         # 小健 2026-05-19: action值校验
         if action not in ("set", "delete"):
-            return {"code": "ERR_SYS_ENV_INVALID_ACTION", "data": None, "message": f"无效的action: {action}，支持: set/delete"}
+            return build_error("ERR_SYS_ENV_INVALID_ACTION", f"无效的action: {action}，支持: set/delete")
         if action == "delete":
             if scope == "process":
                 if name in os.environ:
                     del os.environ[name]
-                    return {"code": "SUCCESS", "data": {"name": name, "deleted": True, "scope": scope},
-                            "message": f"已删除: {name}",
-                            "next_actions": build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])}
-                return {"code": "SUCCESS", "data": {"name": name, "deleted": False, "scope": scope},
-                        "message": f"不存在: {name}",
-                        "next_actions": build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])}
+                    return build_success({"name": name, "deleted": True, "scope": scope},
+                            f"已删除: {name}",
+                            next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")]))
+                return build_success({"name": name, "deleted": False, "scope": scope},
+                        f"不存在: {name}",
+                        next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")]))
 
             import winreg
             if scope == "user":
@@ -194,33 +184,29 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
                     winreg.DeleteValue(key, name)
                     if name in os.environ:
                         del os.environ[name]
-                    return {"code": "SUCCESS", "data": {"name": name, "scope": "user", "deleted": True},
-                            "message": f"已删除: {name}",
-                            "next_actions": build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])}
+                    return build_success({"name": name, "scope": "user", "deleted": True},
+                            f"已删除: {name}",
+                            next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")]))
                 except FileNotFoundError:
-                    return {"code": "SUCCESS", "data": {"name": name, "deleted": False, "scope": scope},
-                            "message": f"不存在: {name}",
-                            "next_actions": build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])}
+                    return build_success({"name": name, "deleted": False, "scope": scope},
+                            f"不存在: {name}",
+                            next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")]))
                 finally:
                     winreg.CloseKey(key)
             else:
                 # 【2026-05-18 小沈】system scope delete降级为process（与set行为一致）
                 if name in os.environ:
                     del os.environ[name]
-                    return {"code": "SUCCESS", "data": {"name": name, "deleted": True, "scope": "system→process(降级)"},
-                            "message": f"已删除(降级为process): {name}",
-                            "next_actions": build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])}
-                return {"code": "SUCCESS", "data": {"name": name, "deleted": False, "scope": "system→process(降级)"},
-                        "message": f"不存在(降级为process): {name}",
-                        "next_actions": build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])}
+                    return build_success({"name": name, "deleted": True, "scope": "system→process(降级)"},
+                            f"已删除(降级为process): {name}",
+                            next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")]))
+                return build_success({"name": name, "deleted": False, "scope": "system→process(降级)"},
+                        f"不存在(降级为process): {name}",
+                        next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")]))
 
         # action="set"分支：原set_env逻辑
         if value is None:
-            return {
-                "code": "ERR_SYS_ENV_INVALID_VALUE",
-                "data": None,
-                "message": "环境变量值不能为None（action='set'时value必填）"
-            }
+            return build_error("ERR_SYS_ENV_INVALID_VALUE", "环境变量值不能为None（action='set'时value必填）")
 
         # 【2026-05-17 小沈】exist_ok幂等增强（硬编码为True，已从Schema移除）
         # 小健 2026-05-19: scope=user/system时需从注册表读取当前值,而非os.environ
@@ -243,12 +229,11 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
                 except Exception:
                     existing = os.environ.get(name)
             if existing == value:
-                return {
-                    "code": "SUCCESS",
-                    "data": {"name": name, "value": value, "scope": scope, "append_mode": append_mode},
-                    "message": f"环境变量已存在且值相同: {name}={value[:50]}{'...' if len(value) > 50 else ''}",
-                    "next_actions": build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])
-                }
+                return build_success(
+                    {"name": name, "value": value, "scope": scope, "append_mode": append_mode},
+                    f"环境变量已存在且值相同: {name}={value[:50]}{'...' if len(value) > 50 else ''}",
+                    next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])
+                )
 
         if append_mode:
             existing = os.environ.get(name, "")
@@ -266,12 +251,11 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
 
         if scope == "process":
             os.environ[name] = effective_value
-            return {
-                "code": "SUCCESS",
-                "data": {"name": name, "value": effective_value, "scope": scope, "append_mode": append_mode},
-                "message": f"已设置环境变量（当前进程）: {name}={effective_value}",
-                "next_actions": build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])
-            }
+            return build_success(
+                {"name": name, "value": effective_value, "scope": scope, "append_mode": append_mode},
+                f"已设置环境变量（当前进程）: {name}={effective_value}",
+                next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])
+            )
 
         elif scope == "user":
             import subprocess
@@ -283,45 +267,34 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
             )
             if result.returncode == 0:
                 os.environ[name] = effective_value
-                return {
-                    "code": "SUCCESS",
-                    "data": {"name": name, "value": effective_value, "scope": scope, "append_mode": append_mode},
-                    "message": f"已设置环境变量（用户级）: {name}={effective_value}，需要重启终端生效",
-                    "next_actions": build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])
-                }
+                return build_success(
+                    {"name": name, "value": effective_value, "scope": scope, "append_mode": append_mode},
+                    f"已设置环境变量（用户级）: {name}={effective_value}，需要重启终端生效",
+                    next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])
+                )
             else:
                 logger.warning(f"[set_env] setx失败，降级为process: {result.stderr}")
                 os.environ[name] = effective_value
-                return {
-                    "code": "SUCCESS",
-                    "data": {"name": name, "value": effective_value, "scope": "process", "append_mode": append_mode},
-                    "message": f"设置用户环境变量失败，已降级为进程级: {name}={effective_value}",
-                    "next_actions": build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])
-                }
+                return build_success(
+                    {"name": name, "value": effective_value, "scope": "process", "append_mode": append_mode},
+                    f"设置用户环境变量失败，已降级为进程级: {name}={effective_value}",
+                    next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])
+                )
 
         elif scope == "system":
             logger.warning("[set_env] system scope需管理员权限，降级为process")
             os.environ[name] = effective_value
-            return {
-                "code": "SUCCESS",
-                "data": {"name": name, "value": effective_value, "scope": "process", "append_mode": append_mode},
-                "message": f"系统级需管理员权限，已降级为进程级: {name}={effective_value}",
-                "next_actions": build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])
-            }
+            return build_success(
+                {"name": name, "value": effective_value, "scope": "process", "append_mode": append_mode},
+                f"系统级需管理员权限，已降级为进程级: {name}={effective_value}",
+                next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])
+            )
 
         else:
-            return {
-                "code": "ERR_SYS_ENV_INVALID_SCOPE",
-                "data": None,
-                "message": f"无效的作用域: {scope}，必须是 process/user/system 之一"
-            }
+            return build_error("ERR_SYS_ENV_INVALID_SCOPE", f"无效的作用域: {scope}，必须是 process/user/system 之一")
 
     except Exception as e:
         logger.error(f"[set_env] 设置环境变量失败: {e}")
-        return {
-            "code": "ERR_SYS_ENV_SET",
-            "data": None,
-            "message": f"设置环境变量失败: {str(e)}"
-        }
+        return build_error("ERR_SYS_ENV_SET", f"设置环境变量失败: {str(e)}")
 
 

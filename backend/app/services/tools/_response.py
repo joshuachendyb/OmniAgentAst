@@ -46,6 +46,7 @@ _OPTIONAL_FIELDS = {
     "next_actions": None,
     "retry_count": 0,
     "return_direct": False,
+    "attachment": None,
 }
 
 
@@ -57,6 +58,7 @@ def build_success(
     next_actions: Optional[List[Dict[str, str]]] = None,
     retry_count: int = 0,
     return_direct: bool = False,
+    attachment: Optional[Dict[str, Any]] = None,
     **extra: Any,
 ) -> Dict[str, Any]:
     """构建成功响应
@@ -69,6 +71,7 @@ def build_success(
         next_actions: 可选推荐后续操作列表
         retry_count: 可选重试次数(默认0不写入)
         return_direct: 可选是否直接返回前端(默认False不写入)
+        attachment: 可选二进制附件(base64图片/文件等，前端渲染)
         **extra: 未来扩展字段，自动追加到结果中
 
     Returns:
@@ -80,10 +83,9 @@ def build_success(
         "message": message,
     }
 
-    # 可选字段：仅非默认值时写入
     _add_optionals(result, warning=warning, llm_data=llm_data,
                    next_actions=next_actions, retry_count=retry_count,
-                   return_direct=return_direct)
+                   return_direct=return_direct, attachment=attachment)
 
     # 扩展字段：直接追加
     result.update(extra)
@@ -98,6 +100,7 @@ def build_error(
     warning: Optional[str] = None,
     llm_data: Optional[Dict[str, Any]] = None,
     next_actions: Optional[List[Dict[str, str]]] = None,
+    attachment: Optional[Dict[str, Any]] = None,
     **extra: Any,
 ) -> Dict[str, Any]:
     """构建错误响应
@@ -109,6 +112,7 @@ def build_error(
         warning: 可选附加警告
         llm_data: 可选给LLM的错误摘要
         next_actions: 可选推荐恢复操作
+        attachment: 可选二进制附件
         **extra: 未来扩展字段
 
     Returns:
@@ -121,7 +125,7 @@ def build_error(
     }
 
     _add_optionals(result, warning=warning, llm_data=llm_data,
-                   next_actions=next_actions)
+                   next_actions=next_actions, attachment=attachment)
 
     result.update(extra)
 
@@ -134,6 +138,7 @@ def build_warning(
     data: Any = None,
     llm_data: Optional[Dict[str, Any]] = None,
     next_actions: Optional[List[Dict[str, str]]] = None,
+    attachment: Optional[Dict[str, Any]] = None,
     **extra: Any,
 ) -> Dict[str, Any]:
     """构建警告响应(部分成功/有风险)
@@ -146,6 +151,7 @@ def build_warning(
         data: 部分成功的数据
         llm_data: 可选给LLM的数据
         next_actions: 可选推荐操作
+        attachment: 可选二进制附件
         **extra: 未来扩展字段
 
     Returns:
@@ -157,7 +163,8 @@ def build_warning(
         "message": message,
     }
 
-    _add_optionals(result, llm_data=llm_data, next_actions=next_actions)
+    _add_optionals(result, llm_data=llm_data, next_actions=next_actions,
+                   attachment=attachment)
 
     result.update(extra)
 

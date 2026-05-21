@@ -21,7 +21,7 @@ Date: 2026-04-15
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List, Callable
 
-from app.services.agent.tool_result_formatter import extract_status
+
 
 
 def create_timestamp() -> int:
@@ -856,15 +856,18 @@ class StepFactory:
         Returns:
             ActionToolStep实例
         """
-        # code→status 映射 — 小沈 2026-05-21, 小健 2026-05-21 改用extract_status
-        _status = extract_status(execution_result)
+        # 【已修复 2026-05-21 小沈】
+        # 原 bug：execution_result_dict 没有 "code" 键（只有 "status" 键），
+        # extract_status() 始终返回 "success" 默认值。
+        # 修正：直接使用 execution_result_dict["status"]（由 caller 已计算好）
+        _status = execution_result.get("status", "success")
         
         return ActionToolStep(
             step=step,
             tool_name=tool_name,
             tool_params=tool_params or {},
             execution_status=_status,
-            summary=execution_result.get("message", ""),
+            summary=execution_result.get("summary", ""),
             execution_result=execution_result.get("data"),
             error_message="",
             action_retry_count=execution_result.get("retry_count", 0),

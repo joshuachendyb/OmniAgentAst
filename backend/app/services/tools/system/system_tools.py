@@ -31,7 +31,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from app.utils.logger import logger
-from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
+from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe
+from app.services.tools._response import build_success, build_error  # 小沈 2026-05-20
 
 
 def get_system_info(info_type: str = "all") -> dict:
@@ -107,20 +108,11 @@ def get_system_info(info_type: str = "all") -> dict:
                 "packets_recv": net_io.packets_recv,
             }
 
-        return {
-            "code": "SUCCESS",
-            "data": data,
-            "message": f"成功获取系统信息 ({info_type})",
-            "next_actions": build_next_actions([("list_processes", "查看进程详情", "需要进一步排查时"), ("net_connections", "查看网络连接", "需要排查网络时")])
-        }
+        return build_success(data, f"成功获取系统信息 ({info_type})", next_actions=build_next_actions([("list_processes", "查看进程详情", "需要进一步排查时"), ("net_connections", "查看网络连接", "需要排查网络时")]))
 
     except Exception as e:
         logger.error(f"[get_system_info] 获取系统信息失败: {e}")
-        return {
-            "code": "ERR_SYSTEM_INFO",
-            "data": None,
-            "message": f"获取系统信息失败: {str(e)}"
-        }
+        return build_error("ERR_SYSTEM_INFO", f"获取系统信息失败: {str(e)}")
 
 
 def net_connections(
@@ -192,35 +184,21 @@ def net_connections(
             
             results.append(conn_info)
         
-        return {
-            "code": "SUCCESS",
-            "data": truncate_data_for_frontend({
+        return build_success(truncate_data_for_frontend({
                 "connections": results,
                 "total": len(results),
                 "kind": kind,
                 "filter_port": filter_port,
-            }),
-            "message": f"找到 {len(results)} 个网络连接",
-            "llm_data": {
+            }), f"找到 {len(results)} 个网络连接", llm_data={
                 "总数": len(results), "类型": kind,
                 "连接预览": make_json_safe(results[:20], max_str_len=100)
-            },
-            "next_actions": build_next_actions([("get_system_info", "查看系统总览", "需要更多系统信息时")])
-        }
+            }, next_actions=build_next_actions([("get_system_info", "查看系统总览", "需要更多系统信息时")]))
     
     except psutil.AccessDenied:
-        return {
-            "code": "ERR_PERMISSION_DENIED",
-            "data": None,
-            "message": "需要管理员权限获取网络连接信息，请以管理员身份运行"
-        }
+        return build_error("ERR_PERMISSION_DENIED", "需要管理员权限获取网络连接信息，请以管理员身份运行")
     except Exception as e:
         logger.error(f"[net_connections] 获取网络连接失败: {e}")
-        return {
-            "code": "ERR_SYSTEM_NET_CONN",
-            "data": None,
-            "message": f"获取网络连接失败: {str(e)}"
-        }
+        return build_error("ERR_SYSTEM_NET_CONN", f"获取网络连接失败: {str(e)}")
 
 
 def event_log(
@@ -254,11 +232,7 @@ def event_log(
     
     except Exception as e:
         logger.error(f"[event_log] 获取事件日志失败: {e}")
-        return {
-            "code": "ERR_SYSTEM_EVENT_LOG",
-            "data": None,
-            "message": f"获取事件日志失败: {str(e)}"
-        }
+        return build_error("ERR_SYSTEM_EVENT_LOG", f"获取事件日志失败: {str(e)}")
 
 
 def _get_windows_event_log(
@@ -298,11 +272,7 @@ def _get_windows_event_log(
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         
         if result.returncode != 0:
-            return {
-                "code": "ERR_SYSTEM_EVENT_LOG",
-                "data": None,
-                "message": f"获取事件日志失败: {result.stderr}"
-            }
+            return build_error("ERR_SYSTEM_EVENT_LOG", f"获取事件日志失败: {result.stderr}")
         
         events = []
         current_event = {}
@@ -333,34 +303,20 @@ def _get_windows_event_log(
             filtered_events.append(evt)
         
         _events = filtered_events[:max_events]
-        return {
-            "code": "SUCCESS",
-            "data": truncate_data_for_frontend({
+        return build_success(truncate_data_for_frontend({
                 "log_name": log_name,
                 "events": _events,
                 "total": len(_events),
                 "level": level,
-            }),
-            "message": f"找到 {len(_events)} 条事件日志",
-            "llm_data": {
+            }), f"找到 {len(_events)} 条事件日志", llm_data={
                 "日志源": log_name, "条数": len(_events), "级别": level,
                 "事件预览": make_json_safe(_events[:10], max_str_len=200)
-            },
-            "next_actions": build_next_actions([("get_system_info", "查看系统状态", "需要关联系统信息时")])
-        }
+            }, next_actions=build_next_actions([("get_system_info", "查看系统状态", "需要关联系统信息时")]))
     
     except subprocess.TimeoutExpired:
-        return {
-            "code": "ERR_SYSTEM_TIMEOUT",
-            "data": None,
-            "message": "获取事件日志超时"
-        }
+        return build_error("ERR_SYSTEM_TIMEOUT", "获取事件日志超时")
     except FileNotFoundError:
-        return {
-            "code": "ERR_SHELL_COMMAND_NOT_FOUND",
-            "data": None,
-            "message": "wevtutil命令不存在"
-        }
+        return build_error("ERR_SHELL_COMMAND_NOT_FOUND", "wevtutil命令不存在")
 
 
 def _get_linux_event_log(
@@ -395,11 +351,7 @@ def _get_linux_event_log(
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         
         if result.returncode != 0:
-            return {
-                "code": "ERR_SYSTEM_EVENT_LOG",
-                "data": None,
-                "message": f"获取事件日志失败: {result.stderr}"
-            }
+            return build_error("ERR_SYSTEM_EVENT_LOG", f"获取事件日志失败: {result.stderr}")
         
         import json as json_module
         events = []
@@ -418,30 +370,17 @@ def _get_linux_event_log(
                 except json_module.JSONDecodeError:
                     continue
         
-        return {
-            "code": "SUCCESS",
-            "data": {
+        return build_success({
                 "log_name": log_name,
                 "events": events[:max_events],
                 "total": len(events[:max_events]),
                 "level": level,
-            },
-            "message": f"找到 {len(events[:max_events])} 条事件日志",
-            "next_actions": build_next_actions([("get_system_info", "查看系统状态", "需要关联系统信息时")])
-        }
+            }, f"找到 {len(events[:max_events])} 条事件日志", next_actions=build_next_actions([("get_system_info", "查看系统状态", "需要关联系统信息时")]))
     
     except subprocess.TimeoutExpired:
-        return {
-            "code": "ERR_SYSTEM_TIMEOUT",
-            "data": None,
-            "message": "获取事件日志超时"
-        }
+        return build_error("ERR_SYSTEM_TIMEOUT", "获取事件日志超时")
     except FileNotFoundError:
-        return {
-            "code": "ERR_SHELL_COMMAND_NOT_FOUND",
-            "data": None,
-            "message": "journalctl命令不存在"
-        }
+        return build_error("ERR_SHELL_COMMAND_NOT_FOUND", "journalctl命令不存在")
 
 
 def list_processes(
@@ -530,29 +469,19 @@ def list_processes(
         
         limited_processes = processes[:max_results]
         
-        return {
-            "code": "SUCCESS",
-            "data": truncate_data_for_frontend({
+        return build_success(truncate_data_for_frontend({
                 "processes": limited_processes,
                 "total": len(limited_processes),
                 "total_matched": len(processes),
                 "sort_by": sort_by,
-            }),
-            "message": f"找到 {len(processes)} 个进程，返回前 {len(limited_processes)} 个",
-            "llm_data": {
+            }), f"找到 {len(processes)} 个进程，返回前 {len(limited_processes)} 个", llm_data={
                 "总数": len(processes), "返回数": len(limited_processes), "排序": sort_by,
                 "进程预览": [{"pid": p.get("pid"), "name": p.get("name","")[:30], "cpu": p.get("cpu_percent"), "mem": p.get("memory_percent")} for p in limited_processes[:20]]
-            },
-            "next_actions": build_next_actions([("kill_process", "终止进程", "需要结束某个进程时"), ("get_system_info", "查看系统总览", "需要更多系统信息时")])
-        }
+            }, next_actions=build_next_actions([("kill_process", "终止进程", "需要结束某个进程时"), ("get_system_info", "查看系统总览", "需要更多系统信息时")]))
     
     except Exception as e:
         logger.error(f"[list_processes] 获取进程列表失败: {e}")
-        return {
-            "code": "ERR_SYSTEM_PROCESS_LIST",
-            "data": None,
-            "message": f"获取进程列表失败: {str(e)}"
-        }
+        return build_error("ERR_SYSTEM_PROCESS_LIST", f"获取进程列表失败: {str(e)}")
 
 
 def kill_process(
@@ -575,11 +504,8 @@ def kill_process(
     """
     # 参数验证
     if pid is None or pid <= 0:
-        return {
-            "code": "ERR_PARAMETER_INVALID",
-            "data": None,
-            "message": "pid必须为正整数"  # 小健 2026-05-19: 修正错误信息(函数无name参数)
-        }
+        # 小健 2026-05-19: 修正错误信息(函数无name参数)
+        return build_error("ERR_PARAMETER_INVALID", "pid必须为正整数")
     
     try:
         killed_list = []
@@ -622,36 +548,18 @@ def kill_process(
                 "final_status": final_status,
             })
             
-            return {
-                "code": "SUCCESS",
-                "data": {"killed": killed_list},
-                "message": f"进程 {pid} ({proc_info['name']}) {final_status}",
-                "next_actions": build_next_actions([("list_processes", "验证进程已终止", "需要确认终止结果时")])
-            }
+            return build_success({"killed": killed_list}, f"进程 {pid} ({proc_info['name']}) {final_status}", next_actions=build_next_actions([("list_processes", "验证进程已终止", "需要确认终止结果时")]))
         
         # 小健 2026-05-19: 删除按名称批量终止的死代码分支(pid是必填int, else永远不可达, 且引用未定义name变量)
     
     # 【2026-05-17 小沈】修正S6: kill_process幂等化 - NoSuchProcess返回成功而非报错
     except psutil.NoSuchProcess:
-        return {
-            "code": "SUCCESS",
-            "data": {"killed": [], "idempotent": True},
-            "message": f"进程 {pid} 已不存在（幂等：视为已终止）",
-            "next_actions": build_next_actions([("list_processes", "验证进程已终止", "需要确认终止结果时")])
-        }
+        return build_success({"killed": [], "idempotent": True}, f"进程 {pid} 已不存在（幂等：视为已终止）", next_actions=build_next_actions([("list_processes", "验证进程已终止", "需要确认终止结果时")]))
     except psutil.AccessDenied:
-        return {
-            "code": "ERR_PERMISSION_DENIED",
-            "data": None,
-            "message": f"无权限终止进程 {pid}，请尝试使用管理员权限"
-        }
+        return build_error("ERR_PERMISSION_DENIED", f"无权限终止进程 {pid}，请尝试使用管理员权限")
     except Exception as e:
         logger.error(f"[kill_process] 终止进程失败: {e}")
-        return {
-            "code": "ERR_SYSTEM_PROCESS_KILL",
-            "data": None,
-            "message": f"终止进程 {pid} 失败: {str(e)}"
-        }
+        return build_error("ERR_SYSTEM_PROCESS_KILL", f"终止进程 {pid} 失败: {str(e)}")
 
 
 def _log_message(
@@ -699,24 +607,16 @@ def _log_message(
         
         log_logger.log(log_level, message)
         
-        return {
-            "code": "SUCCESS",
-            "data": {
+        return build_success({
                 "level": level,
                 "message": message,
                 "logger_name": logger_name,
                 "log_file": log_file,
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            },
-            "message": f"日志记录成功 [{level.upper()}] [{logger_name}] {message}"
-        }
+            }, f"日志记录成功 [{level.upper()}] [{logger_name}] {message}")
     
     except Exception as e:
-        return {
-            "code": "ERROR",
-            "data": None,
-            "message": f"记录日志失败: {str(e)}"
-        }
+        return build_error("ERROR", f"记录日志失败: {str(e)}")
 
 
 def _get_logs(
@@ -753,11 +653,7 @@ def _get_logs(
         log_path = Path(log_file)
         
         if not log_path.exists():
-            return {
-                "code": "ERROR",
-                "data": None,
-                "message": f"日志文件不存在: {log_file}"
-            }
+            return build_error("ERROR", f"日志文件不存在: {log_file}")
         
         logs = []
         with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -787,24 +683,16 @@ def _get_logs(
         if tail_mode:
             logs = logs[-max_lines:] if len(logs) > max_lines else logs
         
-        return {
-            "code": "SUCCESS",
-            "data": {
+        return build_success({
                 "logs": logs,
                 "total": len(logs),
                 "file": log_file,
                 "tail_mode": tail_mode,
-            },
-            "message": f"获取到 {len(logs)} 条日志记录"
-        }
+            }, f"获取到 {len(logs)} 条日志记录")
     
     except Exception as e:
         logger.error(f"[get_logs] 获取日志失败: {e}")
-        return {
-            "code": "ERROR",
-            "data": None,
-            "message": f"获取日志失败: {str(e)}"
-        }
+        return build_error("ERROR", f"获取日志失败: {str(e)}")
 
 
 def _service_list(
@@ -830,11 +718,7 @@ def _service_list(
     
     except Exception as e:
         logger.error(f"[service_list] 获取服务列表失败: {e}")
-        return {
-            "code": "ERR_SERVICE_LIST",
-            "data": None,
-            "message": f"获取服务列表失败: {str(e)}"
-        }
+        return build_error("ERR_SERVICE_LIST", f"获取服务列表失败: {str(e)}")
 
 
 def _windows_service_list(
@@ -848,11 +732,7 @@ def _windows_service_list(
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         
         if result.returncode != 0:
-            return {
-                "code": "ERR_SERVICE_LIST",
-                "data": None,
-                "message": f"获取服务列表失败: {result.stderr}"
-            }
+            return build_error("ERR_SERVICE_LIST", f"获取服务列表失败: {result.stderr}")
         
         services = []
         current_service = {}
@@ -897,33 +777,20 @@ def _windows_service_list(
         
         limited_services = filtered_services[:max_results]
         
-        return {
-            "code": "SUCCESS",
-            "data": truncate_data_for_frontend({
+        return build_success(truncate_data_for_frontend({
                 "services": limited_services,
                 "total": len(limited_services),
                 "total_matched": len(filtered_services),
                 "platform": "Windows",
-            }),
-            "message": f"找到 {len(filtered_services)} 个服务，返回前 {len(limited_services)} 个",
-            "llm_data": {
+            }), f"找到 {len(filtered_services)} 个服务，返回前 {len(limited_services)} 个", llm_data={
                 "总数": len(filtered_services), "返回数": len(limited_services),
                 "服务预览": [{"name": s.get("name","")[:30], "state": s.get("state","")} for s in limited_services[:20]]
-            }
-        }
+            })
     
     except subprocess.TimeoutExpired:
-        return {
-            "code": "ERR_SHELL_TIMEOUT",
-            "data": None,
-            "message": "获取服务列表超时"
-        }
+        return build_error("ERR_SHELL_TIMEOUT", "获取服务列表超时")
     except FileNotFoundError:
-        return {
-            "code": "ERR_SHELL_COMMAND_NOT_FOUND",
-            "data": None,
-            "message": "sc命令不存在"
-        }
+        return build_error("ERR_SHELL_COMMAND_NOT_FOUND", "sc命令不存在")
 
 
 def _linux_service_list(
@@ -937,11 +804,7 @@ def _linux_service_list(
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         
         if result.returncode != 0:
-            return {
-                "code": "ERR_SERVICE_LIST",
-                "data": None,
-                "message": f"获取服务列表失败: {result.stderr}"
-            }
+            return build_error("ERR_SERVICE_LIST", f"获取服务列表失败: {result.stderr}")
         
         services = []
         lines = result.stdout.splitlines()
@@ -985,33 +848,20 @@ def _linux_service_list(
         
         limited_services = filtered_services[:max_results]
         
-        return {
-            "code": "SUCCESS",
-            "data": truncate_data_for_frontend({
+        return build_success(truncate_data_for_frontend({
                 "services": limited_services,
                 "total": len(limited_services),
                 "total_matched": len(filtered_services),
                 "platform": "Linux",
-            }),
-            "message": f"找到 {len(filtered_services)} 个服务，返回前 {len(limited_services)} 个",
-            "llm_data": {
+            }), f"找到 {len(filtered_services)} 个服务，返回前 {len(limited_services)} 个", llm_data={
                 "总数": len(filtered_services), "返回数": len(limited_services),
                 "服务预览": [{"name": s.get("name","")[:30], "state": s.get("state","")} for s in limited_services[:20]]
-            }
-        }
+            })
     
     except subprocess.TimeoutExpired:
-        return {
-            "code": "ERR_SHELL_TIMEOUT",
-            "data": None,
-            "message": "获取服务列表超时"
-        }
+        return build_error("ERR_SHELL_TIMEOUT", "获取服务列表超时")
     except FileNotFoundError:
-        return {
-            "code": "ERR_SHELL_COMMAND_NOT_FOUND",
-            "data": None,
-            "message": "systemctl命令不存在"
-        }
+        return build_error("ERR_SHELL_COMMAND_NOT_FOUND", "systemctl命令不存在")
 
 
 def _service_start(
@@ -1039,11 +889,7 @@ def _service_start(
     
     except Exception as e:
         logger.error(f"[service_start] 启动服务失败: {e}")
-        return {
-            "code": "ERR_SERVICE_START",
-            "data": None,
-            "message": f"启动服务失败: {str(e)}"
-        }
+        return build_error("ERR_SERVICE_START", f"启动服务失败: {str(e)}")
 
 
 def _windows_service_start(service_name: str, timeout: int, wait_for_started: bool = False) -> dict:
@@ -1053,11 +899,7 @@ def _windows_service_start(service_name: str, timeout: int, wait_for_started: bo
         query_result = subprocess.run(query_cmd, capture_output=True, text=True, timeout=10)
         
         if query_result.returncode != 0:
-            return {
-                "code": "ERR_SERVICE_NOT_FOUND",
-                "data": None,
-                "message": f"服务 {service_name} 不存在"
-            }
+            return build_error("ERR_SERVICE_NOT_FOUND", f"服务 {service_name} 不存在")
         
         current_state = ""
         for line in query_result.stdout.splitlines():
@@ -1066,25 +908,17 @@ def _windows_service_start(service_name: str, timeout: int, wait_for_started: bo
                 break
         
         if "RUNNING" in current_state:
-            return {
-                "code": "SUCCESS",
-                "data": {
+            return build_success({
                     "service_name": service_name,
                     "state": "running",
                     "action": "none",
-                },
-                "message": f"服务 {service_name} 已经在运行中"
-            }
+                }, f"服务 {service_name} 已经在运行中")
         
         start_cmd = ["sc", "start", service_name]
         start_result = subprocess.run(start_cmd, capture_output=True, text=True, timeout=timeout)
         
         if start_result.returncode != 0:
-            return {
-                "code": "ERR_SERVICE_START",
-                "data": None,
-                "message": f"启动服务失败: {start_result.stderr.strip() or start_result.stdout.strip()}"
-            }
+            return build_error("ERR_SERVICE_START", f"启动服务失败: {start_result.stderr.strip() or start_result.stdout.strip()}")
         
         import time
         if wait_for_started:
@@ -1117,22 +951,14 @@ def _windows_service_start(service_name: str, timeout: int, wait_for_started: bo
                         final_state = "stopped"
                     break
         
-        return {
-            "code": "SUCCESS",
-            "data": {
+        return build_success({
                 "service_name": service_name,
                 "state": final_state,
                 "action": "start",
-            },
-            "message": f"服务 {service_name} 启动命令已执行，当前状态: {final_state}"
-        }
+            }, f"服务 {service_name} 启动命令已执行，当前状态: {final_state}")
     
     except subprocess.TimeoutExpired:
-        return {
-            "code": "ERR_SHELL_TIMEOUT",
-            "data": None,
-            "message": f"启动服务 {service_name} 超时"
-        }
+        return build_error("ERR_SHELL_TIMEOUT", f"启动服务 {service_name} 超时")
 
 
 def _linux_service_start(service_name: str, timeout: int, wait_for_started: bool = False) -> dict:
@@ -1142,11 +968,7 @@ def _linux_service_start(service_name: str, timeout: int, wait_for_started: bool
         start_result = subprocess.run(start_cmd, capture_output=True, text=True, timeout=timeout)
         
         if start_result.returncode != 0:
-            return {
-                "code": "ERR_SERVICE_START",
-                "data": None,
-                "message": f"启动服务失败: {start_result.stderr.strip()}"
-            }
+            return build_error("ERR_SERVICE_START", f"启动服务失败: {start_result.stderr.strip()}")
         
         import time
         if wait_for_started:
@@ -1165,22 +987,14 @@ def _linux_service_start(service_name: str, timeout: int, wait_for_started: bool
             check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
             final_state = check_result.stdout.strip()
         
-        return {
-            "code": "SUCCESS",
-            "data": {
+        return build_success({
                 "service_name": service_name,
                 "state": final_state,
                 "action": "start",
-            },
-            "message": f"服务 {service_name} 启动命令已执行，当前状态: {final_state}"
-        }
+            }, f"服务 {service_name} 启动命令已执行，当前状态: {final_state}")
     
     except subprocess.TimeoutExpired:
-        return {
-            "code": "ERR_SHELL_TIMEOUT",
-            "data": None,
-            "message": f"启动服务 {service_name} 超时"
-        }
+        return build_error("ERR_SHELL_TIMEOUT", f"启动服务 {service_name} 超时")
 
 
 def _service_stop(
@@ -1210,11 +1024,7 @@ def _service_stop(
     
     except Exception as e:
         logger.error(f"[service_stop] 停止服务失败: {e}")
-        return {
-            "code": "ERR_SERVICE_STOP",
-            "data": None,
-            "message": f"停止服务失败: {str(e)}"
-        }
+        return build_error("ERR_SERVICE_STOP", f"停止服务失败: {str(e)}")
 
 
 def _windows_service_stop(service_name: str, force: bool, timeout: int, wait_for_stopped: bool = False) -> dict:
@@ -1224,11 +1034,7 @@ def _windows_service_stop(service_name: str, force: bool, timeout: int, wait_for
         query_result = subprocess.run(query_cmd, capture_output=True, text=True, timeout=10)
         
         if query_result.returncode != 0:
-            return {
-                "code": "ERR_SERVICE_NOT_FOUND",
-                "data": None,
-                "message": f"服务 {service_name} 不存在"
-            }
+            return build_error("ERR_SERVICE_NOT_FOUND", f"服务 {service_name} 不存在")
         
         current_state = ""
         for line in query_result.stdout.splitlines():
@@ -1237,15 +1043,11 @@ def _windows_service_stop(service_name: str, force: bool, timeout: int, wait_for
                 break
         
         if "STOPPED" in current_state:
-            return {
-                "code": "SUCCESS",
-                "data": {
+            return build_success({
                     "service_name": service_name,
                     "state": "stopped",
                     "action": "none",
-                },
-                "message": f"服务 {service_name} 已经停止"
-            }
+                }, f"服务 {service_name} 已经停止")
         
         stop_cmd = ["sc", "stop", service_name]
         stop_result = subprocess.run(stop_cmd, capture_output=True, text=True, timeout=timeout)
@@ -1255,11 +1057,7 @@ def _windows_service_stop(service_name: str, force: bool, timeout: int, wait_for
                 taskkill_cmd = ["taskkill", "/F", "/IM", f"{service_name}.exe"]
                 subprocess.run(taskkill_cmd, capture_output=True, text=True, timeout=10)
             
-            return {
-                "code": "ERR_SERVICE_STOP",
-                "data": None,
-                "message": f"停止服务失败: {stop_result.stderr.strip() or stop_result.stdout.strip()}"
-            }
+            return build_error("ERR_SERVICE_STOP", f"停止服务失败: {stop_result.stderr.strip() or stop_result.stdout.strip()}")
         
         import time
         if wait_for_stopped:
@@ -1294,23 +1092,15 @@ def _windows_service_stop(service_name: str, force: bool, timeout: int, wait_for
         
         stop_type = "强制停止" if force else "优雅停止"
         
-        return {
-            "code": "SUCCESS",
-            "data": {
+        return build_success({
                 "service_name": service_name,
                 "state": final_state,
                 "action": "stop",
                 "stop_type": stop_type,
-            },
-            "message": f"服务 {service_name} 停止命令已执行（{stop_type}），当前状态: {final_state}"
-        }
+            }, f"服务 {service_name} 停止命令已执行（{stop_type}），当前状态: {final_state}")
     
     except subprocess.TimeoutExpired:
-        return {
-            "code": "ERR_SHELL_TIMEOUT",
-            "data": None,
-            "message": f"停止服务 {service_name} 超时"
-        }
+        return build_error("ERR_SHELL_TIMEOUT", f"停止服务 {service_name} 超时")
 
 
 def _linux_service_stop(service_name: str, force: bool, timeout: int, wait_for_stopped: bool = False) -> dict:
@@ -1324,11 +1114,7 @@ def _linux_service_stop(service_name: str, force: bool, timeout: int, wait_for_s
                 kill_cmd = ["systemctl", "kill", service_name]
                 subprocess.run(kill_cmd, capture_output=True, text=True, timeout=10)
             
-            return {
-                "code": "ERR_SERVICE_STOP",
-                "data": None,
-                "message": f"停止服务失败: {stop_result.stderr.strip()}"
-            }
+            return build_error("ERR_SERVICE_STOP", f"停止服务失败: {stop_result.stderr.strip()}")
         
         import time
         if wait_for_stopped:
@@ -1349,23 +1135,15 @@ def _linux_service_stop(service_name: str, force: bool, timeout: int, wait_for_s
         
         stop_type = "强制停止" if force else "优雅停止"
         
-        return {
-            "code": "SUCCESS",
-            "data": {
+        return build_success({
                 "service_name": service_name,
                 "state": final_state,
                 "action": "stop",
                 "stop_type": stop_type,
-            },
-            "message": f"服务 {service_name} 停止命令已执行（{stop_type}），当前状态: {final_state}"
-        }
+            }, f"服务 {service_name} 停止命令已执行（{stop_type}），当前状态: {final_state}")
     
     except subprocess.TimeoutExpired:
-        return {
-            "code": "ERR_SHELL_TIMEOUT",
-            "data": None,
-            "message": f"停止服务 {service_name} 超时"
-        }
+        return build_error("ERR_SHELL_TIMEOUT", f"停止服务 {service_name} 超时")
 
 
 def _task_list(
@@ -1388,28 +1166,16 @@ def _task_list(
     """
     try:
         if platform.system() != "Windows":
-            return {
-                "code": "ERR_DESKTOP_PLATFORM_NOT_SUPPORTED",
-                "data": None,
-                "message": "task_list 仅支持Windows系统"
-            }
+            return build_error("ERR_DESKTOP_PLATFORM_NOT_SUPPORTED", "task_list 仅支持Windows系统")
         
         cmd = ["schtasks", "/query", "/fo", "list", "/v"]
         result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=30)
         
         if result.returncode != 0:
-            return {
-                "code": "ERR_TASK_LIST",
-                "data": None,
-                "message": f"获取计划任务列表失败: {result.stderr}"
-            }
+            return build_error("ERR_TASK_LIST", f"获取计划任务列表失败: {result.stderr}")
         
         if not result.stdout:
-            return {
-                "code": "ERR_TASK_EMPTY",
-                "data": None,
-                "message": "计划任务列表为空"
-            }
+            return build_error("ERR_TASK_EMPTY", "计划任务列表为空")
         
         tasks = []
         current_task = {}
@@ -1466,37 +1232,20 @@ def _task_list(
         if len(filtered_tasks) > max_results:
             _llm["截断"] = f"共{len(filtered_tasks)}个，仅返回前{max_results}个"
 
-        return {
-            "code": "SUCCESS",
-            "data": {
+        return build_success({
                 "tasks": limited_tasks,
                 "total": len(limited_tasks),
                 "total_matched": len(tasks),
                 "platform": "Windows",
-            },
-            "message": f"找到 {len(tasks)} 个计划任务，返回前 {len(limited_tasks)} 个",
-            "llm_data": _llm
-        }
+            }, f"找到 {len(tasks)} 个计划任务，返回前 {len(limited_tasks)} 个", llm_data=_llm)
     
     except subprocess.TimeoutExpired:
-        return {
-            "code": "ERR_SHELL_TIMEOUT",
-            "data": None,
-            "message": "获取计划任务列表超时"
-        }
+        return build_error("ERR_SHELL_TIMEOUT", "获取计划任务列表超时")
     except FileNotFoundError:
-        return {
-            "code": "ERR_SHELL_COMMAND_NOT_FOUND",
-            "data": None,
-            "message": "schtasks命令不存在"
-        }
+        return build_error("ERR_SHELL_COMMAND_NOT_FOUND", "schtasks命令不存在")
     except Exception as e:
         logger.error(f"[task_list] 获取计划任务列表失败: {e}")
-        return {
-            "code": "ERR_TASK_LIST",
-            "data": None,
-            "message": f"获取计划任务列表失败: {str(e)}"
-        }
+        return build_error("ERR_TASK_LIST", f"获取计划任务列表失败: {str(e)}")
 
 
 def _task_create(
@@ -1530,11 +1279,7 @@ def _task_create(
     """
     try:
         if platform.system() != "Windows":
-            return {
-                "code": "ERR_DESKTOP_PLATFORM_NOT_SUPPORTED",
-                "data": None,
-                "message": "task_create 仅支持Windows系统"
-            }
+            return build_error("ERR_DESKTOP_PLATFORM_NOT_SUPPORTED", "task_create 仅支持Windows系统")
         
         cmd = ["schtasks", "/create", "/tn", task_name, "/tr", command]
         
@@ -1583,43 +1328,23 @@ def _task_create(
         result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=30)
         
         if result.returncode != 0:
-            return {
-                "code": "ERR_TASK_CREATE",
-                "data": None,
-                "message": f"创建计划任务失败: {result.stderr.strip() or result.stdout.strip()}"
-            }
+            return build_error("ERR_TASK_CREATE", f"创建计划任务失败: {result.stderr.strip() or result.stdout.strip()}")
         
-        return {
-            "code": "SUCCESS",
-            "data": {
+        return build_success({
                 "task_name": task_name,
                 "command": command,
                 "schedule": schedule,
                 "description": description,
                 "user": user,
-            },
-            "message": f"计划任务 {task_name} 创建成功"
-        }
+            }, f"计划任务 {task_name} 创建成功")
     
     except subprocess.TimeoutExpired:
-        return {
-            "code": "ERR_SHELL_TIMEOUT",
-            "data": None,
-            "message": "创建计划任务超时"
-        }
+        return build_error("ERR_SHELL_TIMEOUT", "创建计划任务超时")
     except FileNotFoundError:
-        return {
-            "code": "ERR_SHELL_COMMAND_NOT_FOUND",
-            "data": None,
-            "message": "schtasks命令不存在"
-        }
+        return build_error("ERR_SHELL_COMMAND_NOT_FOUND", "schtasks命令不存在")
     except Exception as e:
         logger.error(f"[task_create] 创建计划任务失败: {e}")
-        return {
-            "code": "ERR_TASK_CREATE",
-            "data": None,
-            "message": f"创建计划任务失败: {str(e)}"
-        }
+        return build_error("ERR_TASK_CREATE", f"创建计划任务失败: {str(e)}")
 
 
 def _task_delete(
@@ -1641,11 +1366,7 @@ def _task_delete(
     """
     try:
         if platform.system() != "Windows":
-            return {
-                "code": "ERR_DESKTOP_PLATFORM_NOT_SUPPORTED",
-                "data": None,
-                "message": "task_delete 仅支持Windows系统"
-            }
+            return build_error("ERR_DESKTOP_PLATFORM_NOT_SUPPORTED", "task_delete 仅支持Windows系统")
         
         # 处理完整的任务名（folder + task_name）
         full_task_name = task_name
@@ -1657,54 +1378,30 @@ def _task_delete(
         query_result = subprocess.run(query_cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=10)
         
         if query_result.returncode != 0:
-            return {
-                "code": "ERR_TASK_NOT_FOUND",
-                "data": None,
-                "message": f"计划任务 {full_task_name} 不存在"
-            }
+            return build_error("ERR_TASK_NOT_FOUND", f"计划任务 {full_task_name} 不存在")
         
         cmd = ["schtasks", "/delete", "/tn", full_task_name, "/f"]
         
         result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=30)
         
         if result.returncode != 0:
-            return {
-                "code": "ERR_TASK_DELETE",
-                "data": None,
-                "message": f"删除计划任务失败: {result.stderr.strip() or result.stdout.strip()}"
-            }
+            return build_error("ERR_TASK_DELETE", f"删除计划任务失败: {result.stderr.strip() or result.stdout.strip()}")
         
         delete_type = f"强制删除（{folder}）" if folder else "普通删除"
         
-        return {
-            "code": "SUCCESS",
-            "data": {
+        return build_success({
                 "task_name": full_task_name,
                 "folder": folder,
                 "delete_type": delete_type,
-            },
-            "message": f"计划任务 {full_task_name} 已删除"
-        }
+            }, f"计划任务 {full_task_name} 已删除")
     
     except subprocess.TimeoutExpired:
-        return {
-            "code": "ERR_SHELL_TIMEOUT",
-            "data": None,
-            "message": "删除计划任务超时"
-        }
+        return build_error("ERR_SHELL_TIMEOUT", "删除计划任务超时")
     except FileNotFoundError:
-        return {
-            "code": "ERR_SHELL_COMMAND_NOT_FOUND",
-            "data": None,
-            "message": "schtasks命令不存在"
-        }
+        return build_error("ERR_SHELL_COMMAND_NOT_FOUND", "schtasks命令不存在")
     except Exception as e:
         logger.error(f"[task_delete] 删除计划任务失败: {e}")
-        return {
-            "code": "ERR_TASK_DELETE",
-            "data": None,
-            "message": f"删除计划任务失败: {str(e)}"
-        }
+        return build_error("ERR_TASK_DELETE", f"删除计划任务失败: {str(e)}")
 
 
 # 【2026-05-17 小沈】统一入口函数：service_control - 合并service_start/service_stop/service_list
@@ -1734,21 +1431,21 @@ def service_control(
         result = _service_list(name=service_name, state=state)
     elif action == "start":
         if not service_name:
-            return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": "start操作必须提供service_name"}
+            return build_error("ERR_PARAMETER_INVALID", "start操作必须提供service_name")
         result = _service_start(service_name=service_name, wait_for_started=False, timeout=timeout)
     elif action == "stop":
         if not service_name:
-            return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": "stop操作必须提供service_name"}
+            return build_error("ERR_PARAMETER_INVALID", "stop操作必须提供service_name")
         result = _service_stop(service_name=service_name, force=force, wait_for_stopped=False, timeout=timeout)
     elif action == "restart":
         if not service_name:
-            return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": "restart操作必须提供service_name"}
+            return build_error("ERR_PARAMETER_INVALID", "restart操作必须提供service_name")
         stop_result = _service_stop(service_name=service_name, force=force, wait_for_stopped=False, timeout=timeout)
         if stop_result.get("code") != "SUCCESS":
             return stop_result
         result = _service_start(service_name=service_name, wait_for_started=False, timeout=timeout)
     else:
-        return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": f"不支持的action: {action}，可选: start/stop/restart/list"}
+        return build_error("ERR_PARAMETER_INVALID", f"不支持的action: {action}，可选: start/stop/restart/list")
 
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([("service_control", "验证服务状态", "需要确认操作结果时", {"action": "list"})])
@@ -1786,7 +1483,7 @@ def task_control(
         result = _task_list(filter_name=task_name, filter_status=state)
     elif action == "create":
         if not task_name or not command or not schedule:
-            return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": "create操作必须提供task_name、command、schedule"}
+            return build_error("ERR_PARAMETER_INVALID", "create操作必须提供task_name、command、schedule")
         result = _task_create(
             task_name=task_name,
             command=command,
@@ -1797,10 +1494,10 @@ def task_control(
         )
     elif action == "delete":
         if not task_name:
-            return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": "delete操作必须提供task_name"}
+            return build_error("ERR_PARAMETER_INVALID", "delete操作必须提供task_name")
         result = _task_delete(task_name=task_name, folder=None)  # folder已从Schema移除，硬编码为None
     else:
-        return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": f"不支持的action: {action}，可选: create/delete/list"}
+        return build_error("ERR_PARAMETER_INVALID", f"不支持的action: {action}，可选: create/delete/list")
 
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([("task_control", "验证任务状态", "需要确认操作结果时", {"action": "list"})])

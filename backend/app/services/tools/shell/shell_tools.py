@@ -38,6 +38,7 @@ from datetime import datetime
 
 from app.services.tools.tool_result_utils import format_output_for_llm, build_next_actions, truncate_data_for_frontend
 from app.utils.logger import logger  # 小健-2026-05-19 修复BUG-001: logger未导入
+from app.services.tools._response import build_success, build_error
 
 
 # 后台Shell会话管理器 - 小沈 2026-05-02
@@ -70,27 +71,15 @@ def execute_shell_command(
     """执行Shell命令 — 小沈 2026-05-19 精简参数(8→6)"""
     # 小健 2026-05-19: shell_type校验 — 非法值明确报错而非静默默认
     if shell_type not in ("powershell", "cmd", None):
-        return {
-            "code": "ERR_PARAMETER_INVALID",
-            "data": None,
-            "message": f"shell_type仅支持powershell/cmd，当前值: '{shell_type}'"
-        }
+        return build_error("ERR_PARAMETER_INVALID", f"shell_type仅支持powershell/cmd，当前值: '{shell_type}'")
     
     # 小健 2026-05-19: command空值校验
     if not command or not command.strip():
-        return {
-            "code": "ERR_PARAMETER_EMPTY",
-            "data": None,
-            "message": "command不能为空"
-        }
+        return build_error("ERR_PARAMETER_EMPTY", "command不能为空")
     
     # cwd存在性校验
     if cwd is not None and not os.path.isdir(cwd):
-        return {
-            "code": "ERR_PARAMETER_INVALID",
-            "data": None,
-            "message": f"工作目录不存在: {cwd}，请检查路径是否正确"
-        }
+        return build_error("ERR_PARAMETER_INVALID", f"工作目录不存在: {cwd}，请检查路径是否正确")
     
     timeout_sec = timeout / 1000.0
     
@@ -109,11 +98,7 @@ def execute_shell_command(
         injection_error = _check_shell_injection(command)
         if injection_error:
             logger.warning(f"[Shell安全] 拦截高风险命令: {command[:200]}")
-            return {
-                "code": "ERR_SHELL_INJECTION",
-                "data": None,
-                "message": injection_error
-            }
+            return build_error("ERR_SHELL_INJECTION", injection_error)
         
         if run_in_background:
             shell_id = f"shell_{uuid.uuid4().hex[:8]}"
@@ -133,18 +118,17 @@ def execute_shell_command(
                 "shell_type": shell_type,
                 "cwd": cwd
             }
-            return {
-                "code": "SUCCESS",
-                "data": {
+            return build_success(
+                {
                     "shell_id": shell_id,
                     "is_running": True,
                     "started_at": datetime.now().isoformat()
                 },
-                "message": f"命令已在后台启动，shell_id: {shell_id}",
-                "next_actions": build_next_actions([
+                f"命令已在后台启动，shell_id: {shell_id}",
+                next_actions=build_next_actions([
                     ("shell_session", "读取后台命令输出", "需要查看命令执行结果时", {"shell_id": shell_id, "action": "output"}),
                 ])
-            }
+            )
         
         proc = subprocess.Popen(
             command,
@@ -181,78 +165,63 @@ def execute_shell_command(
         
         returncode = proc.returncode if proc.returncode is not None else -1
         if timed_out:
-            return {
-                "code": "ERR_SHELL_TIMEOUT",
-                "data": {
+            return build_error(
+                "ERR_SHELL_TIMEOUT",
+                f"命令执行超时（{timeout}毫秒），可增大timeout参数重试",
+                data={
                     "stdout": stdout_str,
                     "stderr": stderr_str,
                     "returncode": returncode
                 },
-                "message": f"命令执行超时（{timeout}毫秒），可增大timeout参数重试",
-                "next_actions": build_next_actions([
+                next_actions=build_next_actions([
                     ("execute_shell_command", "增大超时重试", "需要更长时间执行时"),
                 ])
-            }
+            )
         if returncode == 0:
             if stderr_str and stderr_str.strip():
                 message = "命令执行成功（有警告输出）"
             else:
                 message = "命令执行成功"
             _llm = format_output_for_llm(stdout_str, stderr_str)  # 小沈-2026-05-15
-            return {
-                "code": "SUCCESS",
-                "data": truncate_data_for_frontend({
+            return build_success(
+                truncate_data_for_frontend({
                     "stdout": stdout_str,
                     "stderr": stderr_str,
                     "returncode": returncode
                 }),
-                "message": message,
-                "llm_data": _llm,
-                "next_actions": build_next_actions([
+                message,
+                llm_data=_llm,
+                next_actions=build_next_actions([
                     ("execute_shell_command", "继续执行后续命令", "需要执行更多命令时"),
                     ("find_command", "查找命令路径", "需要确认命令是否存在时"),
                 ])
-            }
+            )
         else:
             _llm = format_output_for_llm(stdout_str, stderr_str)
-            return {
-                "code": "ERR_SHELL_EXEC",
-                "data": truncate_data_for_frontend({
+            return build_error(
+                "ERR_SHELL_EXEC",
+                f"命令执行失败（退出码{returncode}），请检查命令语法和参数",
+                data=truncate_data_for_frontend({
                     "stdout": stdout_str,
                     "stderr": stderr_str,
                     "returncode": returncode
                 }),
-                "message": f"命令执行失败（退出码{returncode}），请检查命令语法和参数",
-                "llm_data": _llm,
-                "next_actions": build_next_actions([
+                llm_data=_llm,
+                next_actions=build_next_actions([
                     ("execute_shell_command", "重新执行命令", "修改命令后重试时"),
                     ("find_command", "查找命令路径", "需要确认命令是否存在时"),
                 ])
-            }
+            )
     except Exception as e:
-        return {
-            "code": "ERR_SHELL_EXCEPTION",
-            "data": None,
-            "message": f"命令执行异常: {str(e)}"
-        }
+        return build_error("ERR_SHELL_EXCEPTION", f"命令执行异常: {str(e)}")
 
 
 def _get_working_directory() -> dict:
     """获取当前工作目录（内部辅助函数，不注册LLM）- 小健 2026-05-17 降级自 get_working_directory"""
     try:
-        return {
-            "code": "SUCCESS",
-            "data": {
-                "path": os.getcwd()
-            },
-            "message": "成功获取当前工作目录"
-        }
+        return build_success({"path": os.getcwd()}, "成功获取当前工作目录")
     except Exception as e:
-        return {
-            "code": "ERR_SHELL_GET_CWD",
-            "data": None,
-            "message": f"获取工作目录失败: {str(e)}"
-        }
+        return build_error("ERR_SHELL_GET_CWD", f"获取工作目录失败: {str(e)}")
 
 
 def _check_path_exists(path: str) -> dict:
@@ -261,22 +230,12 @@ def _check_path_exists(path: str) -> dict:
         exists = os.path.exists(path)
         is_file = os.path.isfile(path) if exists else False
         is_dir = os.path.isdir(path) if exists else False
-        return {
-            "code": "SUCCESS",
-            "data": {
-                "exists": exists,
-                "is_file": is_file,
-                "is_directory": is_dir,
-                "path": path
-            },
-            "message": "路径存在" if exists else "路径不存在"
-        }
+        return build_success(
+            {"exists": exists, "is_file": is_file, "is_directory": is_dir, "path": path},
+            "路径存在" if exists else "路径不存在"
+        )
     except Exception as e:
-        return {
-            "code": "ERR_SHELL_CHECK_PATH",
-            "data": None,
-            "message": f"检查路径失败: {str(e)}"
-        }
+        return build_error("ERR_SHELL_CHECK_PATH", f"检查路径失败: {str(e)}")
 
 def find_command(command: str, all_paths: bool = False) -> dict:
     """查找系统命令路径 - 小沈 2026-05-17
@@ -294,20 +253,18 @@ def find_command(command: str, all_paths: bool = False) -> dict:
             cmd_path = shutil.which(command)
             available = cmd_path is not None
             if available:
-                return {
-                    "code": "SUCCESS",
-                    "data": {"available": True, "command": command, "path": cmd_path},
-                    "message": f"命令 '{command}' 可用，路径: {cmd_path}",
-                    "next_actions": build_next_actions([
+                return build_success(
+                    {"available": True, "command": command, "path": cmd_path},
+                    f"命令 '{command}' 可用，路径: {cmd_path}",
+                    next_actions=build_next_actions([
                         ("execute_shell_command", "执行该命令", "确认命令可用后需要执行时", {"command": command}),
                     ])
-                }
+                )
             else:
-                return {
-                    "code": "SUCCESS",
-                    "data": {"available": False, "command": command, "path": None},
-                    "message": f"命令 '{command}' 不可用"
-                }
+                return build_success(
+                    {"available": False, "command": command, "path": None},
+                    f"命令 '{command}' 不可用"
+                )
         else:
             if os.name == 'nt':
                 result = subprocess.run(
@@ -324,26 +281,20 @@ def find_command(command: str, all_paths: bool = False) -> dict:
                 )
             if result.returncode == 0:
                 paths = [p.strip() for p in result.stdout.strip().split('\n') if p.strip()]
-                return {
-                    "code": "SUCCESS",
-                    "data": {"command": command, "paths": paths, "count": len(paths)},
-                    "message": f"找到 {len(paths)} 个路径",
-                    "next_actions": build_next_actions([
+                return build_success(
+                    {"command": command, "paths": paths, "count": len(paths)},
+                    f"找到 {len(paths)} 个路径",
+                    next_actions=build_next_actions([
                         ("execute_shell_command", "执行该命令", "确认命令可用后需要执行时", {"command": command}),
                     ])
-                }
+                )
             else:
-                return {
-                    "code": "SUCCESS",
-                    "data": {"command": command, "paths": [], "count": 0},
-                    "message": f"命令 '{command}' 不可用"
-                }
+                return build_success(
+                    {"command": command, "paths": [], "count": 0},
+                    f"命令 '{command}' 不可用"
+                )
     except Exception as e:
-        return {
-            "code": "ERR_SHELL_FIND_COMMAND",
-            "data": None,
-            "message": f"查找命令失败: {str(e)}"
-        }
+        return build_error("ERR_SHELL_FIND_COMMAND", f"查找命令失败: {str(e)}")
 
 
 def _read_stream_nonblocking(stream, encoding: str = "utf-8") -> str:
@@ -415,10 +366,10 @@ def shell_session(
     if action == "output":
         shell_info = _background_shells.get(shell_id)
         if not shell_info:
-            return {"code": "ERR_SHELL_NOT_FOUND", "data": None, "message": f"后台Shell会话不存在: {shell_id}"}
+            return build_error("ERR_SHELL_NOT_FOUND", f"后台Shell会话不存在: {shell_id}")
         process = shell_info.get("process")
         if not process:
-            return {"code": "ERR_SHELL_NOT_FOUND", "data": None, "message": f"后台Shell会话无进程: {shell_id}"}
+            return build_error("ERR_SHELL_NOT_FOUND", f"后台Shell会话无进程: {shell_id}")
         stdout_str = _read_stream_nonblocking(process.stdout, "utf-8")
         stderr_str = _read_stream_nonblocking(process.stderr, "utf-8")
         is_running = process.poll() is None
@@ -438,26 +389,25 @@ def shell_session(
         stdout_lines = stdout_str.splitlines()
         stdout_lines = stdout_lines[-max_lines:]
         stdout_str = "\n".join(stdout_lines)
-        return {
-            "code": "SUCCESS",
-            "data": truncate_data_for_frontend({"shell_id": shell_id, "stdout": stdout_str, "stderr": stderr_str, "is_running": is_running}),
-            "message": "后台命令输出" if is_running else "后台命令已结束",
-            "llm_data": format_output_for_llm(stdout_str, stderr_str),
-            "next_actions": build_next_actions([
+        return build_success(
+            truncate_data_for_frontend({"shell_id": shell_id, "stdout": stdout_str, "stderr": stderr_str, "is_running": is_running}),
+            "后台命令输出" if is_running else "后台命令已结束",
+            llm_data=format_output_for_llm(stdout_str, stderr_str),
+            next_actions=build_next_actions([
                 ("shell_session", "继续读取输出", "进程仍在运行需要持续监控时", {"shell_id": shell_id, "action": "output"}),
                 ("shell_session", "终止后台命令", "需要停止后台进程或清理会话时", {"shell_id": shell_id, "action": "terminate"}),
             ])  # 小健 2026-05-19: 无论进程是否运行都提供terminate(清理会话防止内存泄漏)
-        }
+        )
     elif action == "terminate":
         shell_info = _background_shells.get(shell_id)
         if not shell_info:
-            return {"code": "ERR_SHELL_NOT_FOUND", "data": None, "message": f"后台Shell会话不存在: {shell_id}"}
+            return build_error("ERR_SHELL_NOT_FOUND", f"后台Shell会话不存在: {shell_id}")
         process = shell_info.get("process")
         if not process:
             _background_shells.pop(shell_id, None)
-            return {"code": "SUCCESS", "data": {"shell_id": shell_id, "terminated": True, "force": force, "returncode": None}, "message": "会话已无进程", "next_actions": build_next_actions([
+            return build_success({"shell_id": shell_id, "terminated": True, "force": force, "returncode": None}, "会话已无进程", next_actions=build_next_actions([
                 ("execute_shell_command", "启动新的后台命令", "需要执行新的命令时"),
-            ])}
+            ]))
         terminated = False
         returncode = None
         try:
@@ -477,19 +427,14 @@ def shell_session(
             except Exception:
                 pass
         _background_shells.pop(shell_id, None)
-        return {
-            "code": "SUCCESS",
-            "data": {"shell_id": shell_id, "terminated": terminated, "force": force, "returncode": returncode},
-            "message": "已终止后台命令" if terminated else "终止失败",
-            "next_actions": build_next_actions([
+        return build_success(
+            {"shell_id": shell_id, "terminated": terminated, "force": force, "returncode": returncode},
+            "已终止后台命令" if terminated else "终止失败",
+            next_actions=build_next_actions([
                 ("execute_shell_command", "启动新的后台命令", "需要执行新的命令时"),
             ]) if terminated else build_next_actions([
                 ("shell_session", "强制终止", "普通终止失败需要强制终止时", {"shell_id": shell_id, "action": "terminate", "force": True}),
             ])
-        }
+        )
     else:
-        return {
-            "code": "ERR_INVALID_ACTION",
-            "data": None,
-            "message": f"无效的操作类型: {action}，必须是 output 或 terminate"
-        }
+        return build_error("ERR_INVALID_ACTION", f"无效的操作类型: {action}，必须是 output 或 terminate")

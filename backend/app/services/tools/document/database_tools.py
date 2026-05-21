@@ -26,6 +26,7 @@ import sqlite3
 from typing import Any, Dict, List, Optional, Union, Literal
 from app.utils.logger import logger
 from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe
+from app.services.tools._response import build_success, build_error, build_warning
 
 
 def _get_connection(connection_type: str, connection_string: Optional[str], db_path: Optional[str], timeout: int = 30000):
@@ -100,15 +101,11 @@ def query_sql(
         sql_upper = sql.strip().upper()
         
         if not sql_upper.startswith(("SELECT", "SHOW", "DESCRIBE", "PRAGMA", "WITH", "EXPLAIN")):
-            return {
-                "code": "ERR_READ_ONLY_VIOLATION",
-                "data": None,
-                "message": f"错误：只允许 SELECT/SHOW/DESCRIBE 等只读操作，当前语句以 {sql.split()[0] if sql.split() else '未知'} 开头"
-            }
+            return build_error("ERR_READ_ONLY_VIOLATION", f"错误：只允许 SELECT/SHOW/DESCRIBE 等只读操作，当前语句以 {sql.split()[0] if sql.split() else '未知'} 开头")
         
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
-            return {"code": "ERR_DB_CONNECTION", "data": None, "message": conn_error}
+            return build_error("ERR_DB_CONNECTION", conn_error)
         
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
@@ -130,29 +127,28 @@ def query_sql(
         
         # output_format 已从Schema移除，固定使用table格式
         table_str = _format_table(columns, results)
-        return {
-            "code": "SUCCESS",
-            "data": truncate_data_for_frontend({
+        return build_success(
+            truncate_data_for_frontend({
                 "columns": columns,
                 "rows": results,
                 "total": len(results),
                 "table": table_str
             }),
-            "message": f"查询成功，返回 {len(results)} 行数据",
-            "llm_data": {
+            f"查询成功，返回 {len(results)} 行数据",
+            llm_data={
                 "列": columns, "行数": len(results),
                 "行预览": make_json_safe(results[:10], max_str_len=150)
             },
-            "next_actions": build_next_actions([
+            next_actions=build_next_actions([
                 ("execute_sql", "执行写操作SQL", "需要修改数据时"),
                 ("get_db_schema", "查看表结构", "需要了解其他表时"),
             ])
-        }
+        )
             
     except sqlite3.Error as e:
-        return {"code": "ERR_SQL_EXEC", "data": None, "message": f"SQL执行错误: {str(e)}"}
+        return build_error("ERR_SQL_EXEC", f"SQL执行错误: {str(e)}")
     except Exception as e:
-        return {"code": "ERR_QUERY_FAILED", "data": None, "message": f"执行失败: {str(e)}"}
+        return build_error("ERR_QUERY_FAILED", f"执行失败: {str(e)}")
     finally:
         _close_connection(conn, engine)
 
@@ -195,36 +191,35 @@ def execute_sql(
             dangerous_matches.append('NO_WHERE')
         
         if dangerous_matches and not dry_run:
-            return {
-                "code": "WARNING_DB_SAFETY",
-                "data": {
+            return build_warning(
+                "WARNING_DB_SAFETY",
+                f"警告：检测到危险操作 {dangerous_matches}，已拦截执行。可使用dry_run=true预演",
+                data={
                     "detected": dangerous_matches,
                     "suggestion": "检测到危险操作，建议使用 dry_run=true 先验证"
                 },
-                "message": f"警告：检测到危险操作 {dangerous_matches}，已拦截执行。可使用dry_run=true预演",
-                "next_actions": build_next_actions([
+                next_actions=build_next_actions([
                     ("execute_sql", "dry_run预演", "需要预检SQL时", {"dry_run": True}),
                     ("query_sql", "查询数据", "需要先查看数据时"),
                 ])
-            }
+            )
         
         if dry_run:
-            return {
-                "code": "SUCCESS",
-                "data": {
+            return build_success(
+                {
                     "sql": sql,
                     "dry_run": True,
                     "syntax_valid": True
                 },
-                "message": "预演模式：语法验证通过，实际未执行",
-                "next_actions": build_next_actions([
+                "预演模式：语法验证通过，实际未执行",
+                next_actions=build_next_actions([
                     ("query_sql", "查询验证结果", "需要确认修改结果时"),
                 ])
-            }
+            )
         
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
-            return {"code": "ERR_DB_CONNECTION", "data": None, "message": conn_error}
+            return build_error("ERR_DB_CONNECTION", conn_error)
         
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
@@ -240,28 +235,27 @@ def execute_sql(
             # affected_rows_check 已从Schema移除，固定启用>10000行保护
             if affected_rows > 10000:
                 conn.rollback()
-                return {
-                    "code": "WARNING_DB_SAFETY",
-                    "data": {
+                return build_warning(
+                    "WARNING_DB_SAFETY",
+                    f"警告：影响行数 {affected_rows} > 10000，已自动回滚",
+                    data={
                         "affected_rows": affected_rows,
                         "action": "rollback"
-                    },
-                    "message": f"警告：影响行数 {affected_rows} > 10000，已自动回滚"
-                }
+                    }
+                )
             
             conn.commit()
         
-        return {
-            "code": "SUCCESS",
-            "data": {
+        return build_success(
+            {
                 "affected_rows": affected_rows,
                 "sql": sql
             },
-            "message": f"执行成功，影响行数: {affected_rows}",
-            "next_actions": build_next_actions([
+            f"执行成功，影响行数: {affected_rows}",
+            next_actions=build_next_actions([
                 ("query_sql", "查询验证结果", "需要确认修改结果时"),
             ])
-        }
+        )
         
     except sqlite3.Error as e:
         if conn:
@@ -269,14 +263,14 @@ def execute_sql(
                 conn.rollback()
             except Exception:
                 pass
-        return {"code": "ERR_SQL_EXEC", "data": None, "message": f"SQL执行错误: {str(e)}"}
+        return build_error("ERR_SQL_EXEC", f"SQL执行错误: {str(e)}")
     except Exception as e:
         if conn:
             try:
                 conn.rollback()
             except Exception:
                 pass
-        return {"code": "ERR_EXEC_FAILED", "data": None, "message": f"执行失败: {str(e)}"}
+        return build_error("ERR_EXEC_FAILED", f"执行失败: {str(e)}")
     finally:
         _close_connection(conn, engine)
 
@@ -311,7 +305,7 @@ def get_db_schema(
     try:
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path)
         if conn is None:
-            return {"code": "ERR_DB_CONNECTION", "data": None, "message": conn_error}
+            return build_error("ERR_DB_CONNECTION", conn_error)
         
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
@@ -331,11 +325,7 @@ def get_db_schema(
         if table_name:
             tables = [t for t in tables if t == table_name]
             if not tables:
-                return {
-                    "code": "ERR_DOC_DB_TABLE_NOT_FOUND",
-                    "data": None,
-                    "message": f"表不存在: {table_name}"
-                }
+                return build_error("ERR_DOC_DB_TABLE_NOT_FOUND", f"表不存在: {table_name}")
         elif filter_pattern:
             import fnmatch
             # 小健 2026-05-19: SQL LIKE用%通配，fnmatch用*，自动转换
@@ -349,7 +339,7 @@ def get_db_schema(
         
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path)
         if conn is None:
-            return {"code": "ERR_DB_CONNECTION", "data": None, "message": conn_error}
+            return build_error("ERR_DB_CONNECTION", conn_error)
         
         for table_name in tables:
             if connection_type in ("mysql", "postgresql"):
@@ -414,19 +404,18 @@ def get_db_schema(
                 md += f"| {col['name']} | {col['type']} | {'否' if col.get('nullable') else '是'} | {'是' if col.get('pk') else '否'} | {col.get('default') or '-'} |\n"
             md += "\n"
         
-        return {
-            "code": "SUCCESS",
-            "data": {"tables": schema_info, "total": len(schema_info), "markdown": md},
-            "message": f"获取成功，共 {len(schema_info)} 个表",
-            "next_actions": build_next_actions([
+        return build_success(
+            {"tables": schema_info, "total": len(schema_info), "markdown": md},
+            f"获取成功，共 {len(schema_info)} 个表",
+            next_actions=build_next_actions([
                 ("query_sql", "查询表数据", "需要查看数据时"),
             ])
-        }
+        )
             
     except sqlite3.Error as e:
-        return {"code": "ERR_SQL_EXEC", "data": None, "message": f"获取数据库结构失败: {str(e)}"}
+        return build_error("ERR_SQL_EXEC", f"获取数据库结构失败: {str(e)}")
     except Exception as e:
-        return {"code": "ERR_SCHEMA_FAILED", "data": None, "message": f"执行失败: {str(e)}"}
+        return build_error("ERR_SCHEMA_FAILED", f"执行失败: {str(e)}")
     finally:
         _close_connection(conn, engine)
 

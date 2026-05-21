@@ -24,6 +24,8 @@ import hashlib
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.services.agent.tool_result_formatter import _format_llm_observation
+
 
 class MessageBuilder:
     """Prompt/Message组装的统一入口"""
@@ -104,31 +106,12 @@ class MessageBuilder:
 
     @staticmethod
     def build_observation_text(execution_result: dict) -> str:
-        """根据工具执行结果构建observation文本 — 替代base_react.py L831-910
-        
-        工具层统一返回 {code, data, message} 格式后，observation构建简化为：
-          - SUCCESS → message + （llm_data优先于data）
-          - WARNING_ → message + 部分数据
-          - ERR_*   → [code] + message
-        """
-        code = execution_result.get("code", "SUCCESS")
-        message = execution_result.get("message", "")
-        display_data = execution_result.get("llm_data") or execution_result.get("data")
+        """根据工具执行结果构建observation文本 — 统一委托_format_llm_observation
 
-        if code == "SUCCESS":
-            text = f"Observation: success - {message}"
-            if execution_result.get("warning"):
-                text += f"\n⚠ 警告: {execution_result['warning']}"
-            if display_data:
-                text += f"\n数据: {json.dumps(display_data, ensure_ascii=False)}"
-            return text
-        elif code.startswith("WARNING_"):
-            text = f"Observation: warning - {message}"
-            if display_data:
-                text += f"\n部分数据: {json.dumps(display_data, ensure_ascii=False)}"
-            return text
-        else:  # ERR_*
-            return f"Observation: error [{code}] - {message}"
+        小健 2026-05-22：原手写逻辑已合入 _format_llm_observation（含next_actions），
+        此方法保留作为兼容入口。
+        """
+        return _format_llm_observation(execution_result)
 
     # =========================================================================
     # 第三组：每轮 LLM 调用的消息组装（从 _call_llm_with_summary 拆出）

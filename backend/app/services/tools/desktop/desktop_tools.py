@@ -30,6 +30,7 @@ import platform
 from typing import Any, Dict, List, Optional, Literal
 from app.utils.logger import logger
 from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
+from app.services.tools._response import build_success, build_error
 
 _HAS_WIN32 = False
 _win32gui = None
@@ -53,17 +54,9 @@ if platform.system() == "Windows":
 def _check_platform() -> Optional[Dict[str, Any]]:
     """检查平台和依赖是否可用 - 小沈 2026-05-05"""
     if platform.system() != "Windows":
-        return {
-            "code": "ERR_DESKTOP_NOT_WINDOWS",
-            "data": None,
-            "message": "此功能仅支持 Windows 系统"
-        }
+        return build_error("ERR_DESKTOP_NOT_WINDOWS", "此功能仅支持 Windows 系统")
     if not _HAS_WIN32:
-        return {
-            "code": "ERR_DESKTOP_NO_PYWIN32",
-            "data": None,
-            "message": "pywin32库未安装，请先执行: pip install pywin32"
-        }
+        return build_error("ERR_DESKTOP_NO_PYWIN32", "pywin32库未安装，请先执行: pip install pywin32")
     return None
 
 
@@ -159,28 +152,22 @@ def list_windows(
         if filter_title:
             windows = [w for w in windows if filter_title.lower() in w["title"].lower()]
 
-        return {
-            "code": "SUCCESS",
-            "data": truncate_data_for_frontend({
+        return build_success(
+            truncate_data_for_frontend({
                 "windows": windows,
                 "total": len(windows)
             }),
-            "message": f"共找到 {len(windows)} 个窗口",
-            "llm_data": {
+            f"共找到 {len(windows)} 个窗口",
+            llm_data={
                 "总数": len(windows),
                 "窗口预览": [{"title": w.get("title","")[:40], "state": w.get("state","")} for w in windows[:20]]
             },
-            "capabilities_used": ["win32gui"],
-            "next_actions": build_next_actions([("get_window_info", "获取窗口详情", "需要查看特定窗口信息时"), ("window_control", "控制窗口", "需要操作窗口时")])
-        }
+            next_actions=build_next_actions([("get_window_info", "获取窗口详情", "需要查看特定窗口信息时"), ("window_control", "控制窗口", "需要操作窗口时")])
+        )
 
     except Exception as e:
         logger.error(f"list_windows error: {e}")
-        return {
-            "code": "ERR_LIST_WINDOWS",
-            "data": None,
-            "message": f"获取窗口列表失败: {str(e)}"
-        }
+        return build_error("ERR_LIST_WINDOWS", f"获取窗口列表失败: {str(e)}")
 
 
 def get_window_info(window_title: str) -> Dict[str, Any]:
@@ -193,11 +180,7 @@ def get_window_info(window_title: str) -> Dict[str, Any]:
         matched_hwnds = _find_windows_by_title(window_title)
 
         if not matched_hwnds:
-            return {
-                "code": "ERR_WINDOW_NOT_FOUND",
-                "data": None,
-                "message": f"未找到窗口: {window_title}"
-            }
+            return build_error("ERR_WINDOW_NOT_FOUND", f"未找到窗口: {window_title}")
 
         hwnd = matched_hwnds[0]
         title = _win32gui.GetWindowText(hwnd)
@@ -230,21 +213,15 @@ def get_window_info(window_title: str) -> Dict[str, Any]:
         if len(matched_hwnds) > 1:
             msg += f"（共匹配到 {len(matched_hwnds)} 个窗口，返回第一个）"
 
-        return {
-            "code": "SUCCESS",
-            "data": info,
-            "message": msg,
-            "capabilities_used": ["win32gui"],
-            "next_actions": build_next_actions([("window_control", "控制该窗口", "需要操作窗口时")])
-        }
+        return build_success(
+            info,
+            msg,
+            next_actions=build_next_actions([("window_control", "控制该窗口", "需要操作窗口时")])
+        )
 
     except Exception as e:
         logger.error(f"get_window_info error: {e}")
-        return {
-            "code": "ERR_DESKTOP_GET_WINDOW_INFO",
-            "data": None,
-            "message": f"获取窗口信息失败: {str(e)}"
-        }
+        return build_error("ERR_DESKTOP_GET_WINDOW_INFO", f"获取窗口信息失败: {str(e)}")
 
 
 def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
@@ -259,20 +236,12 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
     try:
         valid_actions = ["maximize", "minimize", "restore", "topmost", "unpin"]
         if action not in valid_actions:
-            return {
-                "code": "ERR_INVALID_ACTION",
-                "data": None,
-                "message": f"无效的操作: {action}，支持的操作为: {valid_actions}"
-            }
+            return build_error("ERR_INVALID_ACTION", f"无效的操作: {action}，支持的操作为: {valid_actions}")
 
         matched_hwnds = _find_windows_by_title(window_title)
 
         if not matched_hwnds:
-            return {
-                "code": "ERR_WINDOW_NOT_FOUND",
-                "data": None,
-                "message": f"未找到窗口: {window_title}"
-            }
+            return build_error("ERR_WINDOW_NOT_FOUND", f"未找到窗口: {window_title}")
 
         hwnd = matched_hwnds[0]
         title = _win32gui.GetWindowText(hwnd)
@@ -298,25 +267,20 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
         if len(matched_hwnds) > 1:
             msg += f"（共匹配到 {len(matched_hwnds)} 个窗口，操作了第一个）"
 
-        return {
-            "code": "SUCCESS",
-            "data": {
+        return build_success(
+            {
                 "window_title": title,
                 "action": action,
                 "hwnd": hwnd,
                 "matched_count": len(matched_hwnds),
             },
-            "message": msg,
-            "next_actions": build_next_actions([("get_window_info", "确认窗口状态", "需要验证操作结果时")])
-        }
+            msg,
+            next_actions=build_next_actions([("get_window_info", "确认窗口状态", "需要验证操作结果时")])
+        )
 
     except Exception as e:
         logger.error(f"set_window_state error: {e}")
-        return {
-            "code": "ERR_WINDOW_SET_STATE",
-            "data": None,
-            "message": f"设置窗口状态失败: {str(e)}"
-        }
+        return build_error("ERR_WINDOW_SET_STATE", f"设置窗口状态失败: {str(e)}")
 
 
 # ========== 统一入口函数（26→10精简方案） ==========
@@ -343,8 +307,6 @@ def window_control(
 
     if result.get("code") == "SUCCESS" and "next_actions" not in result:
         result["next_actions"] = build_next_actions([("get_window_info", "确认窗口状态", "需要验证操作结果时")])
-    if result.get("code") == "SUCCESS":
-        result["capabilities_used"] = ["win32gui", "pyautogui"]
     return result
 
 
@@ -377,11 +339,10 @@ def mouse_control(
         from app.services.tools.toolhelper.gui_helper import _get_mouse_position
         result = _get_mouse_position()
     else:
-        return {"code": "ERR_INVALID_ACTION", "data": None, "message": f"无效的鼠标操作: {action}，支持: click/move/scroll/position"}
+        return build_error("ERR_INVALID_ACTION", f"无效的鼠标操作: {action}，支持: click/move/scroll/position")
 
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([("screen_capture", "截图查看效果", "需要确认操作结果时")])
-        result["capabilities_used"] = ["pyautogui"]
     return result
 
 
@@ -406,11 +367,10 @@ def keyboard_control(
         key_list = [k.strip() for k in text_or_keys.split(",")]
         result = _key_combo(keys=key_list)
     else:
-        return {"code": "ERR_INVALID_ACTION", "data": None, "message": f"无效的键盘操作: {action}，支持: type/shortcut/combo"}
+        return build_error("ERR_INVALID_ACTION", f"无效的键盘操作: {action}，支持: type/shortcut/combo")
 
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([("screen_capture", "截图查看效果", "需要确认操作结果时")])
-        result["capabilities_used"] = ["pyautogui"]
     return result
 
 
@@ -434,9 +394,6 @@ def screen_capture(
 
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([("ocr", "识别截图文字", "需要提取文字时")])
-        # 透传gui_tools中的capabilities字段 - 小沈 2026-05-19
-        if "capabilities_used" not in result:
-            result["capabilities_used"] = ["pyautogui"]
     return result
 
 
@@ -454,11 +411,11 @@ def clipboard_control(
         result = _read_clipboard()
     elif action == "write":
         if content is None:
-            return {"code": "ERR_MISSING_PARAM", "data": None, "message": "写入剪贴板需要提供content参数"}
+            return build_error("ERR_MISSING_PARAM", "写入剪贴板需要提供content参数")
         from app.services.tools.desktop.gui_tools import _write_clipboard
         result = _write_clipboard(content=content)
     else:
-        return {"code": "ERR_INVALID_ACTION", "data": None, "message": f"无效的剪贴板操作: {action}，支持: read/write"}
+        return build_error("ERR_INVALID_ACTION", f"无效的剪贴板操作: {action}，支持: read/write")
 
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([("clipboard_control", "验证剪贴板", "需要确认操作结果时")])

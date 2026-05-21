@@ -60,9 +60,9 @@ class ReactAgentMixin(ToolLoaderMixin):
         # 不在 self.llm_client 上，之前检查 self.llm_client.api_base 永远 False
         _cls = self.__class__.__name__
         _has_client = self.llm_client is not None
-        _self_api_base = getattr(self, 'api_base', None)
-        _self_api_key = getattr(self, 'api_key', None)
-        _self_model = getattr(self, 'model', None)
+        _self_api_base = getattr(self, 'api_base', None) or (getattr(self.llm_client, 'api_base', None) if _has_client else None)
+        _self_api_key = getattr(self, 'api_key', None) or (getattr(self.llm_client, 'api_key', None) if _has_client else None)
+        _self_model = getattr(self, 'model', None) or (getattr(self.llm_client, 'model', None) if _has_client else None)
         _client_api_base = getattr(self.llm_client, 'api_base', None) if _has_client else None
         logger.info(
             f"[{_cls}] _init_llm_strategies 诊断: llm_client={_has_client}, "

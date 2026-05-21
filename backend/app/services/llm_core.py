@@ -150,6 +150,10 @@ class BaseAIService:
         self._cancelled = False
         self._current_response: Optional[httpx.Response] = None
 
+    async def __call__(self, message: str, history: Optional[List[Message]] = None) -> "ChatResponse":
+        """使BaseAIService可调用，兼容策略层直接调用 llm_client(msg, history) 的约定 - 小沈 2026-05-21"""
+        return await self.chat(message, history)
+
     def _build_request_body(self, messages: List[Dict]) -> Dict:
         """
         构建LLM API请求体

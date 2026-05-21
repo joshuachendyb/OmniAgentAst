@@ -41,6 +41,7 @@ from app.services.tools.shell.code_execution_schema import (
     ExecuteJavascriptInput,
 )
 from app.services.tools.tool_result_utils import format_output_for_llm, build_next_actions, truncate_data_for_frontend  # 小沈-2026-05-15, 小沈-2026-05-20
+from app.services.tools._response import build_success, build_error
 
 logger = logging.getLogger(__name__)
 
@@ -93,30 +94,18 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
     【2026-05-17 小沈】增加safety_check参数，P12组合复用：自动调用_validate_code_safety进行安全检查
     【2026-05-18 小沈】P16幂等性：working_dir不存在时自动创建(makedirs exist_ok=True)"""
     if not code or not code.strip():
-        return {
-            "code": "ERR_SHELL_EXEC_EMPTY_CODE",
-            "data": None,
-            "message": "code不能为空，请提供要执行的Python代码"
-        }
+        return build_error("ERR_SHELL_EXEC_EMPTY_CODE", "code不能为空，请提供要执行的Python代码")
     if working_dir is not None and not os.path.isdir(working_dir):
         try:
             os.makedirs(working_dir, exist_ok=True)
         except OSError as e:
-            return {
-                "code": "ERR_SHELL_EXEC_INVALID_DIR",
-                "data": None,
-                "message": f"工作目录创建失败: {working_dir}, 错误: {e}"
-            }
+            return build_error("ERR_SHELL_EXEC_INVALID_DIR", f"工作目录创建失败: {working_dir}, 错误: {e}")
     # P12: 执行前自动调用安全检查（不暴露给LLM）
     if safety_check:
         from app.services.tools.toolhelper.exec_helper import _validate_code_safety
         warnings = _validate_code_safety(code)
         if warnings:
-            return {
-                "code": "ERR_UNSAFE_CODE",
-                "data": {"warnings": warnings},
-                "message": f"代码存在安全风险: {', '.join(warnings)}，如确认安全可设置 safety_check=False"
-            }
+            return build_error("ERR_UNSAFE_CODE", f"代码存在安全风险: {', '.join(warnings)}，如确认安全可设置 safety_check=False", data={"warnings": warnings})
     try:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
             f.write(code)
@@ -140,54 +129,52 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
                 else:
                     message = "Python代码执行成功"
                 _llm = format_output_for_llm(stdout_str, stderr_str)  # 小沈-2026-05-15
-                return {
-                    "code": "SUCCESS",
-                    "data": truncate_data_for_frontend({
+                return build_success(
+                    truncate_data_for_frontend({
                         "stdout": stdout_str,
                         "stderr": stderr_str,
                         "returncode": result.returncode
                     }),
-                    "message": message,
-                    "llm_data": _llm,
-                    "next_actions": build_next_actions([
+                    message,
+                    llm_data=_llm,
+                    next_actions=build_next_actions([
                         ("write_text_file", "将输出结果保存到文件", "需要持久化保存代码输出时"),
                         ("execute_python", "继续执行后续代码", "需要运行更多Python代码时"),
-                    ]),
-                    "capabilities_used": ["python"]
-                }
+                    ])
+                )
             else:
                 message = f"Python代码执行失败（退出码{result.returncode}），请检查代码语法和逻辑"
                 _llm = format_output_for_llm(stdout_str, stderr_str)
-                return {
-                    "code": "ERR_EXEC_FAILED",
-                    "data": truncate_data_for_frontend({
+                return build_error(
+                    "ERR_EXEC_FAILED",
+                    message,
+                    data=truncate_data_for_frontend({
                         "stdout": stdout_str,
                         "stderr": stderr_str,
                         "returncode": result.returncode
                     }),
-                    "message": message,
-                    "llm_data": _llm,
-                    "next_actions": build_next_actions([
+                    llm_data=_llm,
+                    next_actions=build_next_actions([
                         ("execute_python", "修改代码重试", "需要修正代码后重新执行时"),
                     ])
-                }
+                )
 
         except subprocess.TimeoutExpired as e:
             _partial_stdout = _safe_decode(e.stdout)
             _partial_stderr = _safe_decode(e.stderr)
-            return {
-                "code": "ERR_EXEC_TIMEOUT",
-                "data": truncate_data_for_frontend({
+            return build_error(
+                "ERR_EXEC_TIMEOUT",
+                f"Python代码执行超时（{timeout}秒），可增大timeout或优化代码性能",
+                data=truncate_data_for_frontend({
                     "stdout": _partial_stdout,
                     "stderr": _partial_stderr,
                     "returncode": -1
                 }),
-                "message": f"Python代码执行超时（{timeout}秒），可增大timeout或优化代码性能",
-                "llm_data": format_output_for_llm(_partial_stdout, _partial_stderr),
-                "next_actions": build_next_actions([
+                llm_data=format_output_for_llm(_partial_stdout, _partial_stderr),
+                next_actions=build_next_actions([
                     ("execute_python", "增大超时重试", "需要更长时间执行时"),
                 ])
-            }
+            )
         finally:
             try:
                 os.unlink(temp_file)
@@ -195,28 +182,16 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
                 logger.warning(f"删除临时文件失败: {temp_file}, 错误: {e}")
 
     except FileNotFoundError:
-        return {
-            "code": "ERR_SHELL_EXEC_PYTHON_NOT_FOUND",
-            "data": None,
-            "message": "未找到Python环境，请确认Python已安装且在PATH中"
-        }
+        return build_error("ERR_SHELL_EXEC_PYTHON_NOT_FOUND", "未找到Python环境，请确认Python已安装且在PATH中")
     except Exception as e:
-        return {
-            "code": "ERR_EXEC_PYTHON",
-            "data": None,
-            "message": f"Python代码执行失败: {str(e)}"
-        }
+        return build_error("ERR_EXEC_PYTHON", f"Python代码执行失败: {str(e)}")
 
 
 def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] = None, safety_check: bool = True) -> dict:
     """执行JavaScript代码 - 小沈 2026-05-02, 小健 2026-05-19 增加safety_check+UTF-8环境
     【2026-05-18 小沈】P16幂等性：working_dir不存在时自动创建(makedirs exist_ok=True)"""
     if not code or not code.strip():
-        return {
-            "code": "ERR_SHELL_EXEC_EMPTY_CODE",
-            "data": None,
-            "message": "code不能为空，请提供要执行的JavaScript代码"
-        }
+        return build_error("ERR_SHELL_EXEC_EMPTY_CODE", "code不能为空，请提供要执行的JavaScript代码")
     # 小健 2026-05-19: JavaScript安全检查
     if safety_check:
         js_dangerous_patterns = [
@@ -228,21 +203,13 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
         import re as re_mod
         for pattern, desc in js_dangerous_patterns:
             if re_mod.search(pattern, code):
-                return {
-                    "code": "ERR_UNSAFE_CODE",
-                    "data": None,
-                    "message": f"安全检查: 检测到危险模式 {desc}，如需执行请设置safety_check=False"
-                }
+                return build_error("ERR_UNSAFE_CODE", f"安全检查: 检测到危险模式 {desc}，如需执行请设置safety_check=False")
     
     if working_dir is not None and not os.path.isdir(working_dir):
         try:
             os.makedirs(working_dir, exist_ok=True)
         except OSError as e:
-            return {
-                "code": "ERR_SHELL_EXEC_INVALID_DIR",
-                "data": None,
-                "message": f"工作目录创建失败: {working_dir}, 错误: {e}"
-            }
+            return build_error("ERR_SHELL_EXEC_INVALID_DIR", f"工作目录创建失败: {working_dir}, 错误: {e}")
     try:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False, encoding='utf-8') as f:
             f.write(code)
@@ -267,54 +234,52 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
                 else:
                     message = "JavaScript代码执行成功"
                 _llm = format_output_for_llm(stdout_str, stderr_str)  # 小沈-2026-05-15
-                return {
-                    "code": "SUCCESS",
-                    "data": truncate_data_for_frontend({
+                return build_success(
+                    truncate_data_for_frontend({
                         "stdout": stdout_str,
                         "stderr": stderr_str,
                         "returncode": result.returncode
                     }),
-                    "message": message,
-                    "llm_data": _llm,
-                    "next_actions": build_next_actions([
+                    message,
+                    llm_data=_llm,
+                    next_actions=build_next_actions([
                         ("write_text_file", "将输出结果保存到文件", "需要持久化保存代码输出时"),
                         ("execute_javascript", "继续执行后续代码", "需要运行更多JavaScript代码时"),
-                    ]),
-                    "capabilities_used": ["node.js"]
-                }
+                    ])
+                )
             else:
                 message = f"JavaScript代码执行失败（退出码{result.returncode}），请检查代码语法"
                 _llm = format_output_for_llm(stdout_str, stderr_str)
-                return {
-                    "code": "ERR_EXEC_FAILED",
-                    "data": truncate_data_for_frontend({
+                return build_error(
+                    "ERR_EXEC_FAILED",
+                    message,
+                    data=truncate_data_for_frontend({
                         "stdout": stdout_str,
                         "stderr": stderr_str,
                         "returncode": result.returncode
                     }),
-                    "message": message,
-                    "llm_data": _llm,
-                    "next_actions": build_next_actions([
+                    llm_data=_llm,
+                    next_actions=build_next_actions([
                         ("execute_javascript", "修改代码重试", "需要修正代码后重新执行时"),
                     ])
-                }
+                )
 
         except subprocess.TimeoutExpired as e:
             _partial_stdout = _safe_decode(e.stdout)
             _partial_stderr = _safe_decode(e.stderr)
-            return {
-                "code": "ERR_EXEC_TIMEOUT",
-                "data": truncate_data_for_frontend({
+            return build_error(
+                "ERR_EXEC_TIMEOUT",
+                f"JavaScript代码执行超时（{timeout}秒），可增大timeout或优化代码性能",
+                data=truncate_data_for_frontend({
                     "stdout": _partial_stdout,
                     "stderr": _partial_stderr,
                     "returncode": -1
                 }),
-                "message": f"JavaScript代码执行超时（{timeout}秒），可增大timeout或优化代码性能",
-                "llm_data": format_output_for_llm(_partial_stdout, _partial_stderr),
-                "next_actions": build_next_actions([
+                llm_data=format_output_for_llm(_partial_stdout, _partial_stderr),
+                next_actions=build_next_actions([
                     ("execute_javascript", "增大超时重试", "需要更长时间执行时"),
                 ])
-            }
+            )
         finally:
             try:
                 os.unlink(temp_file)
@@ -322,14 +287,6 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
                 logger.warning(f"删除临时文件失败: {temp_file}, 错误: {e}")
 
     except FileNotFoundError:
-        return {
-            "code": "ERR_SHELL_EXEC_NODE_NOT_FOUND",
-            "data": None,
-            "message": "未找到Node.js环境，请先安装Node.js"
-        }
+        return build_error("ERR_SHELL_EXEC_NODE_NOT_FOUND", "未找到Node.js环境，请先安装Node.js")
     except Exception as e:
-        return {
-            "code": "ERR_EXEC_JS",
-            "data": None,
-            "message": f"JavaScript代码执行失败: {str(e)}"
-        }
+        return build_error("ERR_EXEC_JS", f"JavaScript代码执行失败: {str(e)}")

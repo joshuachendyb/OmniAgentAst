@@ -41,6 +41,7 @@ import httpx
 from app.utils.logger import logger
 from app.services.tools.toolhelper.network_helper import well_known_ports  # 小健 2026-05-18
 from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
+from app.services.tools._response import build_success, build_error
 
 
 async def http_request(
@@ -56,22 +57,14 @@ async def http_request(
     """发起HTTP请求 — 小沈 2026-05-19 精简参数(11→8)"""
     # 参数校验
     if retry < 0 or retry > 10:
-        return {
-            "code": "ERR_NETWORK_INVALID_PARAM",
-            "data": None,
-            "message": f"重试次数必须在0-10之间，当前值：{retry}"
-        }
+        return build_error("ERR_NETWORK_INVALID_PARAM", f"重试次数必须在0-10之间，当前值：{retry}")
     
     timeout_sec = timeout / 1000.0
     
     try:
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
-            return {
-                "code": "ERR_NET_INVALID_URL",
-                "data": None,
-                "message": f"无效的URL: {url}，URL必须包含协议和域名（如 https://api.example.com/data）"
-            }
+            return build_error("ERR_NET_INVALID_URL", f"无效的URL: {url}，URL必须包含协议和域名（如 https://api.example.com/data）")
 
         if params:
             query_string = urlencode(params, doseq=True)
@@ -146,22 +139,20 @@ async def http_request(
                     else:
                         _llm_body = str(_body)[:4000]
 
-                    return {
-                        "code": "SUCCESS",
-                        "data": truncate_data_for_frontend({
+                    return build_success(
+                        truncate_data_for_frontend({
                             "status_code": response.status_code,
                             "headers": dict(response.headers),
                             "body": _body,
                         }),
-                        "message": f"请求成功 (HTTP {response.status_code})",
-                        "llm_data": {
+                        f"请求成功 (HTTP {response.status_code})",
+                        llm_data={
                             "状态码": response.status_code,
                             "内容类型": _ct_short,
                             "响应体": _llm_body,
                         },
-                        "next_actions": build_next_actions([("http_request", "继续发送请求", "需要发送更多请求时")]),
-                        "capabilities_used": ["httpx"]
-                    }
+                        next_actions=build_next_actions([("http_request", "继续发送请求", "需要发送更多请求时")]),
+                    )
             except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
                 last_exception = e
                 if isinstance(e, httpx.HTTPStatusError) and e.response.status_code not in (429, 500, 502, 503, 504):
@@ -169,14 +160,14 @@ async def http_request(
                         error_body = e.response.text
                     except Exception:
                         error_body = None
-                    return {
-                        "code": "ERR_NETWORK_HTTP_ERROR",
-                        "data": {
+                    return build_error(
+                        "ERR_NETWORK_HTTP_ERROR",
+                        f"HTTP请求失败 (HTTP {e.response.status_code})：{url}",
+                        data={
                             "status_code": e.response.status_code,
                             "body": error_body,
                         },
-                        "message": f"HTTP请求失败 (HTTP {e.response.status_code})：{url}"
-                    }
+                    )
                 if attempt < retry:
                     import asyncio
                     await asyncio.sleep(0.5 * (2 ** attempt))
@@ -184,34 +175,22 @@ async def http_request(
                 break
 
         if isinstance(last_exception, httpx.TimeoutException):
-            return {
-                "code": "ERR_NETWORK_TIMEOUT",
-                "data": None,
-                "message": f"请求超时（{timeout}毫秒）：{url}"
-            }
+            return build_error("ERR_NETWORK_TIMEOUT", f"请求超时（{timeout}毫秒）：{url}")
         elif isinstance(last_exception, httpx.HTTPStatusError):
-            return {
-                "code": "ERR_NETWORK_HTTP_ERROR",
-                "data": {
+            return build_error(
+                "ERR_NETWORK_HTTP_ERROR",
+                f"HTTP请求失败（重试{retry}次后）：{url}",
+                data={
                     "status_code": last_exception.response.status_code,
                     "body": last_exception.response.text if hasattr(last_exception.response, 'text') else None,
                 },
-                "message": f"HTTP请求失败（重试{retry}次后）：{url}"
-            }
+            )
         else:
-            return {
-                "code": "ERR_NETWORK_REQUEST_ERROR",
-                "data": None,
-                "message": f"网络请求失败（重试{retry}次后）：{str(last_exception)}"
-            }
+            return build_error("ERR_NETWORK_REQUEST_ERROR", f"网络请求失败（重试{retry}次后）：{str(last_exception)}")
 
     except Exception as e:
         logger.error(f"[http_request] 未知错误: {e}")
-        return {
-            "code": "ERR_NET_UNKNOWN",
-            "data": None,
-            "message": f"请求异常: {str(e)}"
-        }
+        return build_error("ERR_NET_UNKNOWN", f"请求异常: {str(e)}")
 
 
 async def download_file(
@@ -229,31 +208,19 @@ async def download_file(
         # 验证URL
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
-            return {
-                "code": "ERR_NET_INVALID_URL",
-                "data": None,
-                "message": f"无效的URL: {url}，URL必须包含协议和域名"
-            }
+            return build_error("ERR_NET_INVALID_URL", f"无效的URL: {url}，URL必须包含协议和域名")
 
         # 验证目标路径
         dest_path = os.path.abspath(destination_path)
         dest_dir = os.path.dirname(dest_path)
         if not dest_dir:
-            return {
-                "code": "ERR_NETWORK_INVALID_PATH",
-                "data": None,
-                "message": f"无效的目标路径: {destination_path}，路径必须包含目录"
-            }
+            return build_error("ERR_NETWORK_INVALID_PATH", f"无效的目标路径: {destination_path}，路径必须包含目录")
 
         # 创建目标目录
         try:
             os.makedirs(dest_dir, exist_ok=True)
         except (PermissionError, OSError) as e:
-            return {
-                "code": "ERR_NETWORK_CREATE_DIR",
-                "data": None,
-                "message": f"无法创建目录 {dest_dir}: {str(e)}"
-            }
+            return build_error("ERR_NETWORK_CREATE_DIR", f"无法创建目录 {dest_dir}: {str(e)}")
 
         # 构建请求头
         request_headers = {}
@@ -316,52 +283,30 @@ async def download_file(
                             os.remove(dest_path)
                     except OSError:
                         pass
-                    return {
-                        "code": "ERR_NETWORK_WRITE_FILE",
-                        "data": None,
-                        "message": f"写入文件失败 {dest_path}: {str(e)}"
-                    }
+                    return build_error("ERR_NETWORK_WRITE_FILE", f"写入文件失败 {dest_path}: {str(e)}")
 
-                return {
-                    "code": "SUCCESS",
-                    "data": {
+                return build_success(
+                    {
                         "file_path": dest_path,
                         "file_size": downloaded,
                         "total_size": total_size,
                         "progress_percent": progress_percent,
                         "content_type": content_type,
                     },
-                    "message": f"文件下载成功 ({downloaded}/{total_size} 字节, {progress_percent}%)：保存到 {dest_path}",
-                    "llm_data": {"路径": dest_path, "大小": downloaded, "类型": content_type},
-                    "next_actions": build_next_actions([("read_file", "读取下载的文件", "需要查看下载内容时")]),
-                    "capabilities_used": ["httpx"]
-                }
+                    f"文件下载成功 ({downloaded}/{total_size} 字节, {progress_percent}%)：保存到 {dest_path}",
+                    llm_data={"路径": dest_path, "大小": downloaded, "类型": content_type},
+                    next_actions=build_next_actions([("read_file", "读取下载的文件", "需要查看下载内容时")]),
+                )
 
     except httpx.TimeoutException:
-        return {
-            "code": "ERR_NETWORK_TIMEOUT",
-            "data": None,
-            "message": f"下载超时（{timeout/1000}秒）：{url}"
-        }
+        return build_error("ERR_NETWORK_TIMEOUT", f"下载超时（{timeout/1000}秒）：{url}")
     except httpx.HTTPStatusError as e:
-        return {
-            "code": "ERR_NETWORK_HTTP_ERROR",
-            "data": None,
-            "message": f"下载失败 (HTTP {e.response.status_code})：{url}"
-        }
+        return build_error("ERR_NETWORK_HTTP_ERROR", f"下载失败 (HTTP {e.response.status_code})：{url}")
     except httpx.RequestError as e:
-        return {
-            "code": "ERR_NETWORK_REQUEST_ERROR",
-            "data": None,
-            "message": f"网络请求失败：{str(e)}"
-        }
+        return build_error("ERR_NETWORK_REQUEST_ERROR", f"网络请求失败：{str(e)}")
     except Exception as e:
         logger.error(f"[download_file] 未知错误: {e}")
-        return {
-            "code": "ERR_NET_UNKNOWN",
-            "data": None,
-            "message": f"下载异常: {str(e)}"
-        }
+        return build_error("ERR_NET_UNKNOWN", f"下载异常: {str(e)}")
 
 
 async def fetch_webpage(
@@ -379,11 +324,7 @@ async def fetch_webpage(
     try:
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
-            return {
-                "code": "ERR_NET_INVALID_URL",
-                "data": None,
-                "message": f"无效的URL: {url}"
-            }
+            return build_error("ERR_NET_INVALID_URL", f"无效的URL: {url}")
         
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -435,20 +376,11 @@ async def fetch_webpage(
                         truncated = False
                     
                     content_type = "text/html"
-                    capabilities_used = ["playwright"]
                     
             except ImportError:
-                return {
-                    "code": "ERR_NETWORK_JS_RENDER",
-                    "data": None,
-                    "message": "js_render需要安装Playwright: pip install playwright && playwright install chromium"
-                }
+                return build_error("ERR_NETWORK_JS_RENDER", "js_render需要安装Playwright: pip install playwright && playwright install chromium")
             except Exception as e:
-                return {
-                    "code": "ERR_NETWORK_JS_RENDER",
-                    "data": None,
-                    "message": f"JS渲染失败: {str(e)}"
-                }
+                return build_error("ERR_NETWORK_JS_RENDER", f"JS渲染失败: {str(e)}")
         else:
             # httpx 0.26.0: proxy参数接受str，proxies已弃用 - 小健 2026-05-18 修正
             async with httpx.AsyncClient(
@@ -474,9 +406,8 @@ async def fetch_webpage(
                     raw_bytes = response.content
                     import base64
                     b64 = base64.b64encode(raw_bytes).decode("ascii")
-                    return {
-                        "code": "SUCCESS",
-                        "data": {
+                    return build_success(
+                        {
                             "url": url,
                             "content": f"[{mime} 文件，大小: {len(raw_bytes)} 字节]",
                             "format": extract_format,
@@ -484,16 +415,15 @@ async def fetch_webpage(
                             "status_code": response.status_code,
                             "truncated": False,
                         },
-                        "message": f"成功获取{mime}文件",
-                        "attachment": {
+                        f"成功获取{mime}文件",
+                        attachment={
                             "type": "base64",
                             "mime": mime,
                             "data": b64,
                             "filename": url.split("/")[-1].split("?")[0] or "download"
                         },
-                        "capabilities_used": ["httpx"],
-                        "next_actions": build_next_actions([("search_web", "搜索更多网页", "需要搜索更多信息时")])
-                    }
+                        next_actions=build_next_actions([("search_web", "搜索更多网页", "需要搜索更多信息时")]),
+                    )
                 
                 html_content = response.text
                 content_type = response.headers.get("content-type", "")
@@ -517,7 +447,6 @@ async def fetch_webpage(
                 truncated = False
             
             status_code = response.status_code
-            capabilities_used = ["httpx"]
         
         result_data = {
             "url": url,
@@ -536,43 +465,25 @@ async def fetch_webpage(
         if isinstance(_content_for_llm, str) and len(_content_for_llm) > 5000:
             _content_for_llm = _content_for_llm[:5000] + f"...(原文{len(_content_for_llm)}字符)"
         
-        return {
-            "code": "SUCCESS",
-            "data": truncate_data_for_frontend(result_data),
-            "message": f"成功获取网页内容（{extract_format}格式）" + ("（已截断）" if truncated else ""),
-            "llm_data": {
+        return build_success(
+            truncate_data_for_frontend(result_data),
+            f"成功获取网页内容（{extract_format}格式）" + ("（已截断）" if truncated else ""),
+            llm_data={
                 "URL": url, "格式": extract_format, "状态码": result_data.get("status_code"),
                 "内容预览": _content_for_llm, "截断": truncated
             },
-            "capabilities_used": capabilities_used,
-            "next_actions": build_next_actions([("search_web", "搜索更多网页", "需要搜索更多信息时")])
-        }
+            next_actions=build_next_actions([("search_web", "搜索更多网页", "需要搜索更多信息时")]),
+        )
     
     except httpx.TimeoutException:
-        return {
-            "code": "ERR_NETWORK_TIMEOUT",
-            "data": None,
-            "message": f"获取网页超时（{timeout_sec:.1f}秒）：{url}"
-        }
+        return build_error("ERR_NETWORK_TIMEOUT", f"获取网页超时（{timeout_sec:.1f}秒）：{url}")
     except httpx.HTTPStatusError as e:
-        return {
-            "code": "ERR_NETWORK_HTTP_ERROR",
-            "data": None,
-            "message": f"获取网页失败 (HTTP {e.response.status_code})：{url}"
-        }
+        return build_error("ERR_NETWORK_HTTP_ERROR", f"获取网页失败 (HTTP {e.response.status_code})：{url}")
     except httpx.RequestError as e:
-        return {
-            "code": "ERR_NETWORK_REQUEST_ERROR",
-            "data": None,
-            "message": f"网络请求失败：{str(e)}"
-        }
+        return build_error("ERR_NETWORK_REQUEST_ERROR", f"网络请求失败：{str(e)}")
     except Exception as e:
         logger.error(f"[fetch_webpage] 未知错误: {e}")
-        return {
-            "code": "ERR_NET_UNKNOWN",
-            "data": None,
-            "message": f"获取网页异常: {str(e)}"
-        }
+        return build_error("ERR_NET_UNKNOWN", f"获取网页异常: {str(e)}")
 
 
 def _html_to_markdown(html: str) -> str:
@@ -772,11 +683,7 @@ async def search_web(
     """搜索网络 — 小沈 2026-05-19 精简参数(7→5)"""
     try:
         if len(query) < 2:
-            return {
-                "code": "ERR_PARAM_INVALID",
-                "data": None,
-                "message": "搜索查询至少需要2个字符"
-            }
+            return build_error("ERR_PARAM_INVALID", "搜索查询至少需要2个字符")
         
     # ===== 第一引擎：Parallel MCP =====
         results = await _search_parallel_mcp(query, num_results, proxy)
@@ -822,32 +729,26 @@ async def search_web(
                 "source": r.get("source", ""),
             })
 
-        return {
-            "code": "SUCCESS",
-            "data": {
+        return build_success(
+            {
                 "query": query,
                 "results": results,
                 "total": len(results),
                 "engine": engine_used,
             },
-            "message": f"找到 {len(results)} 条搜索结果（{engine_used}）",
-            "llm_data": {
+            f"找到 {len(results)} 条搜索结果（{engine_used}）",
+            llm_data={
                 "搜索引擎": engine_used,
                 "查询词": query,
                 "结果数量": len(results),
                 "搜索结果": llm_results if llm_results else "无相关结果",
             },
-            "next_actions": build_next_actions([("fetch_webpage", "打开搜索结果链接", "需要查看某个搜索结果的详细内容时")]),
-            "capabilities_used": [engine_used]
-        }
+            next_actions=build_next_actions([("fetch_webpage", "打开搜索结果链接", "需要查看某个搜索结果的详细内容时")]),
+        )
     
     except Exception as e:
         logger.error(f"[search_web] 未知错误: {e}")
-        return {
-            "code": "ERR_NET_UNKNOWN",
-            "data": None,
-            "message": f"搜索异常: {str(e)}"
-        }
+        return build_error("ERR_NET_UNKNOWN", f"搜索异常: {str(e)}")
 
 
 async def _search_bing(
@@ -966,11 +867,7 @@ async def _ping(
     """
     try:
         if not host or len(host.strip()) == 0:
-            return {
-                "code": "ERR_NETWORK_INVALID_HOST",
-                "data": None,
-                "message": "目标主机地址不能为空"
-            }
+            return build_error("ERR_NETWORK_INVALID_HOST", "目标主机地址不能为空")
         
         host = host.strip()
         
@@ -990,17 +887,9 @@ async def _ping(
             )
             raw_output = result.stdout
         except subprocess.TimeoutExpired:
-            return {
-                "code": "ERR_NETWORK_TIMEOUT",
-                "data": None,
-                "message": f"Ping命令执行超时（{count * timeout + 10}秒）"
-            }
+            return build_error("ERR_NETWORK_TIMEOUT", f"Ping命令执行超时（{count * timeout + 10}秒）")
         except FileNotFoundError:
-            return {
-                "code": "ERR_SHELL_COMMAND_NOT_FOUND",
-                "data": None,
-                "message": "系统ping命令不可用"
-            }
+            return build_error("ERR_SHELL_COMMAND_NOT_FOUND", "系统ping命令不可用")
         
         packets_sent = count
         packets_received = 0
@@ -1060,9 +949,8 @@ async def _ping(
                     "延迟(avg/min/max)": f"{avg_latency}ms / {min_latency}ms / {max_latency}ms" if avg_latency else "N/A",
                     "原始输出(截断)": raw_output[:3000].strip(),
                 }
-            return {
-                "code": "SUCCESS",
-                "data": {
+            return build_success(
+                {
                     "host": host,
                     "packets_sent": packets_sent,
                     "packets_received": packets_received,
@@ -1073,9 +961,9 @@ async def _ping(
                     "max_latency": max_latency,
                     "is_reachable": True,
                 },
-                "message": f"Ping测试成功：{host} 可达，平均延迟 {avg_latency if avg_latency else 'N/A'} ms",
-                "llm_data": _llm_ping,
-            }
+                f"Ping测试成功：{host} 可达，平均延迟 {avg_latency if avg_latency else 'N/A'} ms",
+                llm_data=_llm_ping,
+            )
         else:
             # 【修复 小健 2026-05-16】不可达时也用raw_output给LLM
             _raw_len = len(raw_output)
@@ -1083,9 +971,8 @@ async def _ping(
                 _llm_ping_fail = {"目标": host, "结果": raw_output.strip()}
             else:
                 _llm_ping_fail = {"目标": host, "结果预览": raw_output[:3000].strip()}
-            return {
-                "code": "SUCCESS",
-                "data": {
+            return build_success(
+                {
                     "host": host,
                     "packets_sent": packets_sent,
                     "packets_received": 0,
@@ -1096,17 +983,13 @@ async def _ping(
                     "max_latency": None,
                     "is_reachable": False,
                 },
-                "message": f"Ping测试失败：{host} 不可达",
-                "llm_data": _llm_ping_fail,
-            }
+                f"Ping测试失败：{host} 不可达",
+                llm_data=_llm_ping_fail,
+            )
     
     except Exception as e:
         logger.error(f"[ping] 未知错误: {e}")
-        return {
-            "code": "ERR_NET_UNKNOWN",
-            "data": None,
-            "message": f"Ping测试异常: {str(e)}"
-        }
+        return build_error("ERR_NET_UNKNOWN", f"Ping测试异常: {str(e)}")
 
 
 async def _port_check(
@@ -1138,18 +1021,10 @@ async def _port_check(
     """
     try:
         if not host or len(host.strip()) == 0:
-            return {
-                "code": "ERR_NETWORK_INVALID_HOST",
-                "data": None,
-                "message": "目标主机地址不能为空"
-            }
+            return build_error("ERR_NETWORK_INVALID_HOST", "目标主机地址不能为空")
         
         if port < 1 or port > 65535:
-            return {
-                "code": "ERR_NETWORK_INVALID_PORT",
-                "data": None,
-                "message": f"端口号无效：{port}，必须在 1-65535 范围内"
-            }
+            return build_error("ERR_NETWORK_INVALID_PORT", f"端口号无效：{port}，必须在 1-65535 范围内")
         
         host = host.strip()
         
@@ -1165,73 +1040,66 @@ async def _port_check(
                 
                 service = well_known_ports.get(port, "Unknown")
                 
-                return {
-                    "code": "SUCCESS",
-                    "data": {
+                return build_success(
+                    {
                         "host": host,
                         "port": port,
                         "is_open": True,
                         "service": service,
                     },
-                    "message": f"端口 {port} ({service}) 开放：{host}:{port}",
-                    "llm_data": {"主机": host, "端口": port, "开放": True, "服务": service}
-                }
+                    f"端口 {port} ({service}) 开放：{host}:{port}",
+                    llm_data={"主机": host, "端口": port, "开放": True, "服务": service},
+                )
             else:
                 sock.close()
                 
-                return {
-                    "code": "SUCCESS",
-                    "data": {
+                return build_success(
+                    {
                         "host": host,
                         "port": port,
                         "is_open": False,
                         "service": well_known_ports.get(port, "Unknown"),
                     },
-                    "message": f"端口 {port} 关闭：{host}:{port}，请检查服务是否启动或防火墙设置",
-                    "llm_data": {"主机": host, "端口": port, "开放": False}
-                }
+                    f"端口 {port} 关闭：{host}:{port}，请检查服务是否启动或防火墙设置",
+                    llm_data={"主机": host, "端口": port, "开放": False},
+                )
         
         except socket.gaierror as e:
-            return {
-                "code": "ERR_NETWORK_DNS_ERROR",
-                "data": {
+            return build_error(
+                "ERR_NETWORK_DNS_ERROR",
+                f"DNS解析失败：{host} ({str(e)})",
+                data={
                     "host": host,
                     "port": port,
                     "is_open": False,
                     "service": None,
                 },
-                "message": f"DNS解析失败：{host} ({str(e)})"
-            }
+            )
         except socket.timeout:
-            return {
-                "code": "SUCCESS",
-                "data": {
+            return build_success(
+                {
                     "host": host,
                     "port": port,
                     "is_open": False,
                     "service": well_known_ports.get(port, "Unknown"),
                 },
-                "message": f"端口 {port} 连接超时：{host}:{port}"
-            }
+                f"端口 {port} 连接超时：{host}:{port}",
+            )
         except OSError as e:
-            return {
-                "code": "ERR_NETWORK_CONNECTION_ERROR",
-                "data": {
+            return build_error(
+                "ERR_NETWORK_CONNECTION_ERROR",
+                f"连接失败：{str(e)}",
+                data={
                     "host": host,
                     "port": port,
                     "is_open": False,
                     "service": None,
                 },
-                "message": f"连接失败：{str(e)}"
-            }
+            )
     
     except Exception as e:
         logger.error(f"[port_check] 未知错误: {e}")
-        return {
-            "code": "ERR_NET_UNKNOWN",
-            "data": None,
-            "message": f"端口检查异常: {str(e)}"
-        }
+        return build_error("ERR_NET_UNKNOWN", f"端口检查异常: {str(e)}")
 
 
 async def network_diagnose(
@@ -1258,18 +1126,10 @@ async def network_diagnose(
         result = await _ping(host=host, count=count, timeout=timeout)
     elif mode == "port":
         if port is None:
-            return {
-                "code": "ERR_MISSING_PARAM",
-                "data": None,
-                "message": "mode='port'时port参数必填"
-            }
+            return build_error("ERR_MISSING_PARAM", "mode='port'时port参数必填")
         result = await _port_check(host=host, port=port, timeout=timeout)
     else:
-        return {
-            "code": "ERR_INVALID_MODE",
-            "data": None,
-            "message": f"无效的诊断模式: {mode}，必须是 ping 或 port"
-        }
+        return build_error("ERR_INVALID_MODE", f"无效的诊断模式: {mode}，必须是 ping 或 port")
 
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([("network_diagnose", "深入诊断", "需要切换ping/port模式进一步检测时")])
