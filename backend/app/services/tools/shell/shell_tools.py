@@ -36,7 +36,7 @@ import shutil
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-from app.services.tools.tool_result_utils import format_output_for_llm, build_next_actions, truncate_data_for_frontend  # 小沈-2026-05-15, 小沈-2026-05-20
+from app.services.tools.tool_result_utils import format_output_for_llm, build_next_actions, truncate_data_for_frontend
 from app.utils.logger import logger  # 小健-2026-05-19 修复BUG-001: logger未导入
 
 
@@ -71,7 +71,7 @@ def execute_shell_command(
     # 小健 2026-05-19: shell_type校验 — 非法值明确报错而非静默默认
     if shell_type not in ("powershell", "cmd", None):
         return {
-            "code": "ERR_INVALID_PARAM",
+            "code": "ERR_PARAMETER_INVALID",
             "data": None,
             "message": f"shell_type仅支持powershell/cmd，当前值: '{shell_type}'"
         }
@@ -79,7 +79,7 @@ def execute_shell_command(
     # 小健 2026-05-19: command空值校验
     if not command or not command.strip():
         return {
-            "code": "ERR_EMPTY_PARAM",
+            "code": "ERR_PARAMETER_EMPTY",
             "data": None,
             "message": "command不能为空"
         }
@@ -87,7 +87,7 @@ def execute_shell_command(
     # cwd存在性校验
     if cwd is not None and not os.path.isdir(cwd):
         return {
-            "code": "ERR_INVALID_PARAM",
+            "code": "ERR_PARAMETER_INVALID",
             "data": None,
             "message": f"工作目录不存在: {cwd}，请检查路径是否正确"
         }
