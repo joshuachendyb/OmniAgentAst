@@ -14,6 +14,27 @@
 import json
 from typing import Any, Dict
 
+SUCCESS_CODE = "SUCCESS"
+
+
+def extract_status(result: dict) -> str:
+    """从工具统一返回格式提取Agent消费的status字段 — 小健 2026-05-21
+
+    映射规则:
+      SUCCESS        → "success"
+      WARNING_*      → "warning"
+      ERR_* / 其他   → "error"
+
+    注意: 历史兼容 — 如果result里有warning字段且code=SUCCESS，也视为warning
+    """
+    code = result.get("code", SUCCESS_CODE)
+    if code == SUCCESS_CODE:
+        return "warning" if result.get("warning") else "success"
+    elif code.startswith("WARNING_"):
+        return "warning"
+    else:
+        return "error"
+
 
 def _safe_truncate(data: Any, limit: int) -> Any:
     """安全截断：仅防 json.dumps OOM，非业务截断 — 小沈 2026-05-21"""
