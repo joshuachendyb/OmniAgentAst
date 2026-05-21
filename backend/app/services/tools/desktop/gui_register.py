@@ -84,7 +84,7 @@ GUI_TOOL_DESCRIPTIONS = {
 - 向上滚动10单位：{"direction": "up", "amount": 10}
 
 返回数据说明：
-- code: 状态码，成功为"SUCCESS"，库缺失为"ERR_NO_PYAUTOGUI"，操作失败为"ERR_SCROLL"
+- code: 状态码，成功为"SUCCESS"，库缺失为"ERR_NO_PYAUTOGUI"，操作失败为"ERR_DESKTOP_SCROLL"
 - data: 成功时为{"direction": str, "amount": int}（滚动方向和单位数），失败时为null
 - message: 状态描述信息""",
     "type_text": """模拟键盘输入文本。
@@ -102,7 +102,7 @@ GUI_TOOL_DESCRIPTIONS = {
 - 模拟打字：{"text": "Hello", "interval": 0.1}
 
 返回数据说明：
-- code: 状态码，成功为"SUCCESS"，库缺失为"ERR_NO_PYAUTOGUI"，操作失败为"ERR_TYPE_TEXT"
+- code: 状态码，成功为"SUCCESS"，库缺失为"ERR_NO_PYAUTOGUI"，操作失败为"ERR_KEYBOARD_TYPE"
 - data: 成功时为{"text_length": int}（已输入的字符数），失败时为null
 - message: 状态描述信息""",
     "shortcut": """执行键盘快捷键组合。
@@ -120,7 +120,7 @@ GUI_TOOL_DESCRIPTIONS = {
 - 切换窗口：{"keys": "alt+tab"}
 
 返回数据说明：
-- code: 状态码，成功为"SUCCESS"，库缺失为"ERR_NO_PYAUTOGUI"，操作失败为"ERR_SHORTCUT"
+- code: 状态码，成功为"SUCCESS"，库缺失为"ERR_NO_PYAUTOGUI"，操作失败为"ERR_KEYBOARD_SHORTCUT"
 - data: 成功时为{"keys": str}（执行的快捷键组合），失败时为null
 - message: 状态描述信息""",
     "key_combo": """按住多个键后释放。
@@ -174,7 +174,7 @@ GUI_TOOL_DESCRIPTIONS = {
 - 获取第二显示器：{"display": 2}
 
 返回数据说明：
-- code: 状态码，成功为"SUCCESS"，库缺失为"ERR_NO_SCREENSHOT_LIB"，操作失败为"ERR_SNAPSHOT"
+- code: 状态码，成功为"SUCCESS"，库缺失为"ERR_NO_SCREENSHOT_LIB"，操作失败为"ERR_SCREEN_SNAPSHOT"
 - data: 成功时为{"image_path": str, "display": int}或{"image_path": str, "display": int, "monitors": int}（快照路径、显示器编号、显示器数量），失败时为null
 - message: 状态描述信息""",
     "screen_record": """录制屏幕视频。
@@ -244,7 +244,7 @@ GUI_TOOL_DESCRIPTIONS = {
 - 调整窗口：{"title": "Chrome", "width": 1920, "height": 1080}
 
 返回数据说明：
-- code: 状态码，成功为"SUCCESS"，库缺失为"ERR_NO_WIN32GUI"，窗口未找到为"ERR_WINDOW_NOT_FOUND"，操作失败为"ERR_RESIZE_WINDOW"
+- code: 状态码，成功为"SUCCESS"，库缺失为"ERR_NO_WIN32GUI"，窗口未找到为"ERR_WINDOW_NOT_FOUND"，操作失败为"ERR_WINDOW_RESIZE"
 - data: 成功时为{"title": str, "width": int, "height": int}（窗口标题和调整后的宽高），失败时为null
 - message: 状态描述信息""",
     "ocr": """从图片中识别文字。

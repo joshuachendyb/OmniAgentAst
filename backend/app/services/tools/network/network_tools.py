@@ -773,7 +773,7 @@ async def search_web(
     try:
         if len(query) < 2:
             return {
-                "code": "ERR_SEARCH_QUERY_TOO_SHORT",
+                "code": "ERR_PARAM_INVALID",
                 "data": None,
                 "message": "搜索查询至少需要2个字符"
             }

@@ -187,7 +187,7 @@ def _validate_chart_data(data: Dict[str, Any]) -> Dict[str, Any]:
     if is_valid:
         return {"code": "SUCCESS", "data": {"valid": True}, "message": "图表数据格式正确"}
     else:
-        return {"code": "ERR_GENERATE_CHART", "data": {"valid": False, "errors": errors},
+        return {"code": "ERR_CHART_GENERATE", "data": {"valid": False, "errors": errors},
                 "message": f"图表数据格式有 {len(errors)} 个问题"}
 
 
@@ -1166,7 +1166,7 @@ def convert_document(
         src = Path(input_path)
         if not src.exists():
             return {
-                "code": "ERR_CONVERT_DOCUMENT",
+                "code": "ERR_CONVERT_FAILED",
                 "data": None,
                 "message": f"文件不存在: {input_path}"
             }
@@ -1176,14 +1176,14 @@ def convert_document(
         
         if src_ext not in supported_inputs:
             return {
-                "code": "ERR_CONVERT_DOCUMENT",
+                "code": "ERR_CONVERT_FAILED",
                 "data": None,
                 "message": f"不支持的输入格式: {src_ext}，支持: {supported_inputs}"
             }
         
         if output_format.lower() != 'pdf':
             return {
-                "code": "ERR_CONVERT_DOCUMENT",
+                "code": "ERR_CONVERT_FAILED",
                 "data": None,
                 "message": f"当前仅支持转换为PDF格式"
             }
@@ -1229,7 +1229,7 @@ def convert_document(
         
         if result.returncode != 0:
             return {
-                "code": "ERR_CONVERT_DOCUMENT",
+                "code": "ERR_CONVERT_FAILED",
                 "data": None,
                 "message": f"LibreOffice转换失败: {result.stderr}"
             }
@@ -1237,7 +1237,7 @@ def convert_document(
         expected_pdf = Path(out_dir) / src.with_suffix('.pdf').name
         if not expected_pdf.exists():
             return {
-                "code": "ERR_CONVERT_DOCUMENT",
+                "code": "ERR_CONVERT_FAILED",
                 "data": None,
                 "message": "转换后PDF文件未生成"
             }
@@ -1257,7 +1257,7 @@ def convert_document(
         }
     except Exception as e:
         return {
-            "code": "ERR_CONVERT_DOCUMENT",
+            "code": "ERR_CONVERT_FAILED",
             "data": None,
             "message": f"文档转换失败: {str(e)}"
         }

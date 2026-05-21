@@ -210,7 +210,7 @@ def net_connections(
     
     except psutil.AccessDenied:
         return {
-            "code": "ERR_SYSTEM_ACCESS_DENIED",
+            "code": "ERR_PERMISSION_DENIED",
             "data": None,
             "message": "需要管理员权限获取网络连接信息，请以管理员身份运行"
         }

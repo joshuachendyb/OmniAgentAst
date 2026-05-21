@@ -332,7 +332,7 @@ def get_db_schema(
             tables = [t for t in tables if t == table_name]
             if not tables:
                 return {
-                    "code": "ERR_TABLE_NOT_FOUND",
+                    "code": "ERR_DB_TABLE_NOT_FOUND",
                     "data": None,
                     "message": f"表不存在: {table_name}"
                 }

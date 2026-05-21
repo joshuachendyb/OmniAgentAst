@@ -889,7 +889,7 @@ def get_time(
             ])
         return result
     except Exception as e:
-        return {"code": "ERR_TIME", "data": None, "llm_data": None, "message": f"处理失败: {str(e)}", "next_actions": build_next_actions([("get_time", "重试获取时间", "需要重新获取时")])}
+        return {"code": "ERR_TIME_FORMAT", "data": None, "llm_data": None, "message": f"处理失败: {str(e)}", "next_actions": build_next_actions([("get_time", "重试获取时间", "需要重新获取时")])}
 
 
 def time_add(delta: float, start: Optional[Union[int, float, str]] = None, unit: Literal["days", "hours", "minutes", "seconds", "months"] = "days") -> Dict[str, Any]:
@@ -1078,6 +1078,6 @@ async def timer(
             ])
         return result
     except Exception as e:
-        return {"code": "ERR_TIMER", "data": None, "llm_data": None, "message": f"定时器操作失败: {str(e)}", "next_actions": build_next_actions([("timer", "重试定时器操作", "需要重新操作时")])}
+        return {"code": "ERR_TIMER_SET", "data": None, "llm_data": None, "message": f"定时器操作失败: {str(e)}", "next_actions": build_next_actions([("timer", "重试定时器操作", "需要重新操作时")])}
 
 

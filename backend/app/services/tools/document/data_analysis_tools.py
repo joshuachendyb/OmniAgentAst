@@ -118,7 +118,7 @@ def generate_chart(
 
         if not labels or not values:
             return {
-                "code": "ERR_GENERATE_CHART",
+                "code": "ERR_CHART_GENERATE",
                 "data": None,
                 "message": "数据格式错误，需要包含 labels 和 values 字段"
             }
@@ -167,7 +167,7 @@ def generate_chart(
         return result
     except Exception as e:
         return {
-            "code": "ERR_GENERATE_CHART",
+            "code": "ERR_CHART_GENERATE",
             "data": None,
             "message": f"生成图表失败: {str(e)}"
         }
@@ -336,7 +336,7 @@ def filter_data(
             path = Path(data)
             if not path.exists():
                 return {
-                    "code": "ERR_FILTER_DATA",
+                    "code": "ERR_FILTER_INVALID",
                     "data": None,
                     "message": f"文件不存在: {data}"
                 }
@@ -355,7 +355,7 @@ def filter_data(
             df = pd.DataFrame(data)
         else:
             return {
-                "code": "ERR_FILTER_DATA",
+                "code": "ERR_FILTER_INVALID",
                 "data": None,
                 "message": "data参数必须是文件路径或数据数组"
             }
@@ -382,7 +382,7 @@ def filter_data(
 
             if not column:
                 return {
-                    "code": "ERR_FILTER_DATA",
+                    "code": "ERR_FILTER_INVALID",
                     "data": None,
                     "message": f"条件缺少column字段: {cond}。每个条件必须指定column"
                 }
@@ -465,7 +465,7 @@ def filter_data(
         return result
     except Exception as e:
         return {
-            "code": "ERR_FILTER_DATA",
+            "code": "ERR_FILTER_INVALID",
             "data": None,
             "message": f"数据筛选失败: {str(e)}"
         }

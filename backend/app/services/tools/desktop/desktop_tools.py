@@ -313,7 +313,7 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"set_window_state error: {e}")
         return {
-            "code": "ERR_SET_WINDOW_STATE",
+            "code": "ERR_WINDOW_SET_STATE",
             "data": None,
             "message": f"设置窗口状态失败: {str(e)}"
         }

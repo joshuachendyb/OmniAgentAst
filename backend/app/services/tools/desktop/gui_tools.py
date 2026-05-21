@@ -81,7 +81,7 @@ def _scroll(direction: str, amount: int = 3) -> Dict[str, Any]:
         pyautogui.scroll(scroll_amount)
         return {"code": "SUCCESS", "data": {"direction": direction, "amount": amount}, "message": f"滚动完成: {direction} {amount}单位", "capabilities_used": ["pyautogui"]}
     except Exception as e:
-        return {"code": "ERR_SCROLL", "data": None, "message": f"滚动失败: {str(e)}"}
+        return {"code": "ERR_DESKTOP_SCROLL", "data": None, "message": f"滚动失败: {str(e)}"}
 
 
 # ========== 键盘操作 ==========
@@ -99,7 +99,7 @@ def _type_text(text: str, interval: float = 0) -> Dict[str, Any]:
             pyautogui.write(text)
         return {"code": "SUCCESS", "data": {"text_length": len(text)}, "message": f"输入文本完成: {len(text)}个字符", "capabilities_used": ["pyautogui"]}
     except Exception as e:
-        return {"code": "ERR_TYPE_TEXT", "data": None, "message": f"输入文本失败: {str(e)}"}
+        return {"code": "ERR_KEYBOARD_TYPE", "data": None, "message": f"输入文本失败: {str(e)}"}
 
 
 def _shortcut(keys: str) -> Dict[str, Any]:
@@ -112,7 +112,7 @@ def _shortcut(keys: str) -> Dict[str, Any]:
         pyautogui.hotkey(*key_list)
         return {"code": "SUCCESS", "data": {"keys": keys}, "message": f"快捷键执行完成: {keys}", "capabilities_used": ["pyautogui"]}
     except Exception as e:
-        return {"code": "ERR_SHORTCUT", "data": None, "message": f"快捷键执行失败: {str(e)}"}
+        return {"code": "ERR_KEYBOARD_SHORTCUT", "data": None, "message": f"快捷键执行失败: {str(e)}"}
 
 
 def _key_combo(keys: List[str], action: str = "press") -> Dict[str, Any]:
@@ -195,7 +195,7 @@ def _snapshot(display: int = 1) -> Dict[str, Any]:
         return {"code": "SUCCESS", "data": {"image_path": output_path, "display": display, "monitors": len(monitors) - 1}, "message": f"快照保存到: {output_path}",
                 "capabilities_used": ["mss", "PIL"]}
     except Exception as e:
-        return {"code": "ERR_SNAPSHOT", "data": None, "message": f"快照失败: {str(e)}"}
+        return {"code": "ERR_SCREEN_SNAPSHOT", "data": None, "message": f"快照失败: {str(e)}"}
 
 
 def screen_record(duration: int, output_path: Optional[str] = None, fps: int = 15) -> Dict[str, Any]:
@@ -305,7 +305,7 @@ def _resize_window(title: str, width: int = None, height: int = None) -> Dict[st
         win32gui.MoveWindow(target_hwnd, left, top, new_width, new_height, True)
         return {"code": "SUCCESS", "data": {"title": title, "width": new_width, "height": new_height}, "message": f"窗口大小调整完成: {new_width}x{new_height}", "capabilities_used": ["win32gui"]}
     except Exception as e:
-        return {"code": "ERR_RESIZE_WINDOW", "data": None, "message": f"调整窗口大小失败: {str(e)}"}
+        return {"code": "ERR_WINDOW_RESIZE", "data": None, "message": f"调整窗口大小失败: {str(e)}"}
 
 
 # ========== OCR操作 ==========

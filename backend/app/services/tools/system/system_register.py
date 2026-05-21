@@ -90,7 +90,7 @@ SYSTEM_TOOL_DESCRIPTIONS = {
 - 查看端口8080的连接：{"filter_port": 8080, "process_info": true}
 
 返回数据说明：
-- code: 状态码，SUCCESS/ERR_SYSTEM_ACCESS_DENIED/ERR_SYSTEM_NET_CONN
+- code: 状态码，SUCCESS/ERR_PERMISSION_DENIED/ERR_SYSTEM_NET_CONN
 - data: 成功时含connections(连接列表)、total(连接总数)、kind(连接类型)、filter_port(过滤端口)；失败时为null
 - message: 状态描述信息""",
     "event_log": """获取系统事件日志（Windows事件查看器/Linux syslog），支持按级别、来源、时间范围过滤。
@@ -143,7 +143,7 @@ SYSTEM_TOOL_DESCRIPTIONS = {
 - 强制终止：{"pid": 1234, "force": true}
 
 返回数据说明：
-- code: 状态码，SUCCESS/ERR_INVALID_PARAM/ERR_PERMISSION_DENIED/ERR_SYSTEM_ACCESS_DENIED/ERR_SYSTEM_PROCESS_KILL
+- code: 状态码，SUCCESS/ERR_INVALID_PARAM/ERR_PERMISSION_DENIED/ERR_PERMISSION_DENIED/ERR_SYSTEM_PROCESS_KILL
 - data: 成功时含killed(已终止列表)；进程不存在时含idempotent=true；失败时为null
 - message: 状态描述信息""",
     "service_control": """服务统一控制入口，通过action参数执行start/stop/restart/list操作。

@@ -125,7 +125,7 @@ DESCRIPTIONS = {
  
  
 【返回数据】
-- code: SUCCESS / ERR_CONVERT_DOCUMENT / ERR_NO_LIBREOFFICE
+- code: SUCCESS / ERR_CONVERT_FAILED / ERR_NO_LIBREOFFICE
 - data: { input_path, output_path }
 - message: 操作结果消息
  
@@ -156,7 +156,7 @@ DESCRIPTIONS = {
 
 
 返回数据说明：
-- code: 状态码（SUCCESS/ERR_FILTER_DATA）
+- code: 状态码（SUCCESS/ERR_FILTER_INVALID）
 - data: 包含columns、rows、row_count、original_count、filtered_count
 - message: 操作结果消息""",
 
@@ -171,7 +171,7 @@ DESCRIPTIONS = {
 【重要】需要安装 matplotlib 库（pip install matplotlib）
 
 返回数据说明：
-- code: 状态码（SUCCESS/ERR_GENERATE_CHART/ERR_NO_MATPLOTLIB）
+- code: 状态码（SUCCESS/ERR_CHART_GENERATE/ERR_NO_MATPLOTLIB）
 - data: 输出图片路径
 - message: 操作结果消息""",
 

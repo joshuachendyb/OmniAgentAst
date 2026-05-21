@@ -329,7 +329,7 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
         }
     except Exception as e:
         return {
-            "code": "ERR_EXEC_JAVASCRIPT",
+            "code": "ERR_EXEC_JS",
             "data": None,
             "message": f"JavaScript代码执行失败: {str(e)}"
         }
