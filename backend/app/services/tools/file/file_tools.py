@@ -1838,16 +1838,16 @@ class FileTools:
                     old_text = edit.get("oldText", "")
                     new_text = edit.get("newText", "")
                     if not old_text:
-                        results.append({"index": i, "success": False, "error": "oldText 为空"})
+                        results.append({"index": i, "ok": False, "reason": "oldText 为空"})
                         continue
                     idx = modified.find(old_text)
                     if idx == -1:
-                        results.append({"index": i, "success": False, "error": f"未找到匹配文本: {old_text[:50]}"})
+                        results.append({"index": i, "ok": False, "reason": f"未找到匹配文本: {old_text[:50]}"})
                         continue
                     modified = modified[:idx] + new_text + modified[idx + len(old_text):]
-                    results.append({"index": i, "success": True, "old_text": old_text[:50], "new_text": new_text[:50]})
+                    results.append({"index": i, "ok": True, "old_text": old_text[:50], "new_text": new_text[:50]})
 
-                applied = sum(1 for r in results if r["success"])
+                applied = sum(1 for r in results if r["ok"])
                 if not dry_run and applied > 0:
                     import tempfile
                     import os
