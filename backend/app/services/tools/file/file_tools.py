@@ -419,73 +419,40 @@ class FileTools:
             # 【新增 2026-05-02 小沈】二进制文件保护
             is_binary, binary_reason = _is_binary_file(file_path)
             if is_binary:
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"{binary_reason}。请使用 read_media_file 工具读取媒体文件（图片/音频/视频）。",
-                    "content": None
-                }, "read_file")
+                return {"code": "ERR_BINARY_FILE", "data": None, "message": f"{binary_reason}。请使用 read_media_file 工具读取媒体文件（图片/音频/视频）。"}
             
-            # 【修复 2026-05-01 小沈】参数校验
-            if head is not None and head < 1:
-                return _to_unified_format({"success": False, "error": f"head必须>=1，当前值: {head}", "content": None}, "read_file")
-            if tail is not None and tail < 1:
-                return _to_unified_format({"success": False, "error": f"tail必须>=1，当前值: {tail}", "content": None}, "read_file")
-            if offset is not None and offset < 1:
-                return _to_unified_format({"success": False, "error": f"offset必须>=1，当前值: {offset}", "content": None}, "read_file")
-            if limit is not None and limit < 1:
-                return _to_unified_format({"success": False, "error": f"limit必须>=1，当前值: {limit}", "content": None}, "read_file")
-            
+            # 【修复 2026-05-01 小沈】参数校验（4合1压缩）
+            for _name, _val in [("head", head), ("tail", tail), ("offset", offset), ("limit", limit)]:
+                if _val is not None and _val < 1:
+                    return {"code": "ERR_PARAM_INVALID", "data": None, "message": f"{_name}必须>=1，当前值: {_val}"}
+
             # 验证参数不能同时使用
             if head is not None and tail is not None:
-                return _to_unified_format({
-                    "success": False,
-                    "error": "head 和 tail 参数不能同时使用，请只使用其中一个",
-                    "content": None
-                }, "read_file")
-            
+                return {"code": "ERR_PARAM_CONFLICT", "data": None, "message": "head 和 tail 参数不能同时使用，请只使用其中一个"}
+
             if (head is not None or tail is not None) and (offset is not None or limit is not None):
-                return _to_unified_format({
-                    "success": False,
-                    "error": "head/tail 与 offset/limit 不能同时使用。head/tail用于快捷读取首尾，offset/limit用于分页读取",
-                    "content": None
-                }, "read_file")
+                return {"code": "ERR_PARAM_CONFLICT", "data": None, "message": "head/tail 与 offset/limit 不能同时使用。head/tail用于快捷读取首尾，offset/limit用于分页读取"}
 
             # 验证路径合法性
             is_valid, error_msg = self._validate_path(file_path)
             if not is_valid:
-                return _to_unified_format({
-                    "success": False,
-                    "error": error_msg,
-                    "content": None
-                }, "read_file")
+                return {"code": "ERR_PATH_INVALID", "data": None, "message": error_msg}
 
             path = Path(file_path)
             if not path.exists():
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"文件不存在: {file_path}",
-                    "content": None
-                }, "read_file")
+                return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"文件不存在: {file_path}"}
 
             if not path.is_file():
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"路径不是文件: {file_path}",
-                    "content": None
-                }, "read_file")
+                return {"code": "ERR_PATH_NOT_FILE", "data": None, "message": f"路径不是文件: {file_path}"}
 
             # 尝试编码读取
             encodings_to_try = [encoding, "utf-8", "gbk", "gb2312", "utf-8-sig"] if encoding else ["utf-8", "gbk", "gb2312", "utf-8-sig"]
             file_size = path.stat().st_size
-            
+
             # 【修复 2026-05-01 小沈】OOM防护：预检文件大小
             if file_size > MAX_READ_SIZE:
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"文件过大({file_size}字节)，超过读取上限{MAX_READ_SIZE}字节({MAX_READ_SIZE//1024//1024}MB)。请使用head/tail参数分段读取。",
-                    "content": None
-                }, "read_file")
-            
+                return {"code": "ERR_FILE_TOO_LARGE", "data": None, "message": f"文件过大({file_size}字节)，超过读取上限{MAX_READ_SIZE}字节({MAX_READ_SIZE//1024//1024}MB)。请使用head/tail参数分段读取。"}
+
             content = None
             used_encoding = None
 
@@ -508,11 +475,7 @@ class FileTools:
                     continue
 
             if content is None:
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"无法读取文件: {file_path}，已尝试编码: {encodings_to_try}",
-                    "content": None
-                }, "read_file")
+                return {"code": "ERR_FILE_READ_FAILED", "data": None, "message": f"无法读取文件: {file_path}，已尝试编码: {encodings_to_try}"}
 
             lines = content.splitlines(keepends=True)
             total_lines = len(lines)
@@ -538,49 +501,48 @@ class FileTools:
             result_content = "".join(selected_lines)
             line_count = len(selected_lines)
 
-            # 返回结果（根据参数类型返回不同字段）
-            result = {
-                "success": True,
+            # 构造成功返回数据
+            _data = {
                 "content": result_content,
                 "total_lines": total_lines,
                 "line_count": line_count,
                 "encoding": used_encoding,
                 "file_size": file_size,
             }
-            
+
             if head is not None:
-                result["head"] = head
+                _data["head"] = head
             elif tail is not None:
-                result["tail"] = tail
+                _data["tail"] = tail
             elif offset is not None:
-                result["offset"] = offset
-                result["limit"] = limit
-                result["start_line"] = offset
-                result["end_line"] = offset + line_count - 1
+                _data["offset"] = offset
+                _data["limit"] = limit
+                _data["start_line"] = offset
+                _data["end_line"] = offset + line_count - 1
 
             # 【优化 小沈 2026-05-15】llm_data提供精简内容+行数，避免LLM上下文浪费
             _llm = format_file_content_llm(result_content) if result_content else None
-            
-            # 【新增 2026-05-19 小沈】编码检测成功时标记capabilities - 小沈 2026-05-19
-            # 如果使用了非显式指定的编码（即自动检测），标记编码检测能力
+
+            # 【新增 2026-05-19 小沈】能力标记
+            _caps = ["文件IO"]
             if encoding is None and used_encoding and used_encoding != "utf-8":
-                result["capabilities_used"] = ["编码自动检测"]
+                _caps.append("编码自动检测")
+            _data["capabilities_used"] = _caps
 
-            # 【新增 2026-05-19 小沈】文件IO能力标记
-            result["capabilities_used"] = result.get("capabilities_used", []) + ["文件IO"]
-
-            return _to_unified_format(result, "read_file", llm_data=_llm, next_actions=[
-                ("edit_file", "编辑文件", "需要修改内容时"),
-                ("grep_file_content", "搜索文件内容", "需要查找特定内容时"),
-            ])
+            return {
+                "code": "SUCCESS",
+                "data": _data,
+                "message": f"读取文件成功: {file_path} ({line_count}/{total_lines}行, {file_size}字节, 编码:{used_encoding})",
+                "llm_data": _llm,
+                "next_actions": [
+                    ("edit_file", "编辑文件", "需要修改内容时"),
+                    ("grep_file_content", "搜索文件内容", "需要查找特定内容时"),
+                ]
+            }
 
         except Exception as e:
             logger.error(f"read_text_file failed: {file_path}: {e}")
-            return _to_unified_format({
-                "success": False,
-                "error": str(e),
-                "content": None
-            }, "read_file")
+            return {"code": "ERR_FILE_READ_FAILED", "data": None, "message": str(e)}
     
     async def write_text_file(
         self,
