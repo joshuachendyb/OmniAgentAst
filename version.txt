@@ -1,3 +1,18 @@
+v0.13.13
+
+更新时间: 2026-05-21 15:16:13
+
+更新内容：
+- fix: 工具返回格式统一全部完成(Steps 1-5)
+- Step 1: file_tools.py 18函数+6helper删除_to_unified_format
+- Step 2: 15个不规范code补齐(database_tools.py WARNING→WARNING_DB_SAFETY)
+- Step 3: tool_executor.py删除_format_result+新建tool_result_formatter.py
+- Step 4: base_react.py适配新格式+warning标志处理
+- Step 5: StepFactory code→status映射完成
+- 验证清单Section 7全部完成(v2.6)
+- 恢复误改的内部业务字段success/error
+- 本地测试: 424 passed, 293 skipped
+
 v0.13.12
 
 更新时间: 2026-05-21 15:10:00
