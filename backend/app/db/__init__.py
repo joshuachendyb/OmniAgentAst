@@ -12,6 +12,7 @@ from app.db.config import (
     ensure_db_dir,
 )
 from app.db.chat_db import get_connection as get_chat_connection, init_database as init_chat_database
+from app.db.operations_db import get_connection as get_operations_connection, init_database as init_operations_database
 
 __all__ = [
     # 配置
@@ -23,4 +24,7 @@ __all__ = [
     # 聊天数据库
     "get_chat_connection",
     "init_chat_database",
+    # 操作数据库
+    "get_operations_connection",
+    "init_operations_database",
 ]

@@ -136,6 +136,7 @@ export const Colors = {
     PRIMARY: '#ffffff', // 主背景 - 白色
     SECONDARY: '#fafafa', // 次要背景 - 极浅灰
     TERTIARY: '#f5f5f5', // 第三背景 - 浅灰
+    LIGHT: '#fafafa', // 浅背景（别名）
   },
   // 边框颜色（3种浅色）
   BORDER: {
@@ -143,7 +144,8 @@ export const Colors = {
     DEFAULT: '#d9d9d9', // 中边框
     STRONG: '#bfbfbf', // 深边框（仍是浅色）
   },
-  // 功能颜色（4种）
+  // 功能颜色（5种）
+  PRIMARY: '#1890ff', // 主色调 - 蓝色
   SUCCESS: '#52c41a', // 成功状态 - 绿色
   ERROR: '#ff4d4f', // 错误状态 - 红色
   WARNING: '#d97706', // 警告/思考状态 - 橙色

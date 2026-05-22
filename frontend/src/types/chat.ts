@@ -86,7 +86,13 @@ export interface ObservationData {
   execution_status?: string; // 执行状态（可选）
   error_message?: string; // 错误信息（可选）
   warning?: string; // 警告信息（可选）
-  next_actions?: string[]; // 推荐操作（可选）
+  next_actions?: Array<{
+    // 推荐操作（可选）
+    tool: string; // 工具名称
+    description: string; // 操作描述
+    when?: string; // 触发条件
+    params?: Record<string, unknown>; // 建议参数
+  }>;
   attachment?: unknown; // 附件（可选）
 }
 

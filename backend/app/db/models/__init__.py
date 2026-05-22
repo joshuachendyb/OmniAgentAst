@@ -13,8 +13,11 @@ from app.db.models.chat_models import (
     BatchTitleResponse,
     MessageResponse,
 )
+from app.db.models.operation_enums import OperationType, OperationStatus
+from app.db.models.operation_models import OperationRecord, SessionRecord
 
 __all__ = [
+    # 聊天模型
     "Session",
     "Message",
     "SessionCreate",
@@ -22,4 +25,10 @@ __all__ = [
     "SessionListResponse",
     "BatchTitleResponse",
     "MessageResponse",
+    # 操作枚举
+    "OperationType",
+    "OperationStatus",
+    # 操作模型
+    "OperationRecord",
+    "SessionRecord",
 ]

@@ -4,12 +4,19 @@
  * 使用系统样式常量
  */
 import React from 'react';
-import { Button, Space } from 'antd';
+import { Button, Space, Tooltip } from 'antd';
 import { Spacing, Colors, FontSize, Radius } from '@/utils/stepStyles';
 
+interface NextAction {
+  tool: string;
+  description: string;
+  when?: string;
+  params?: Record<string, unknown>;
+}
+
 interface NextActionsProps {
-  actions?: string[];
-  onActionClick?: (action: string) => void;
+  actions?: NextAction[];
+  onActionClick?: (action: NextAction) => void;
 }
 
 export const NextActions: React.FC<NextActionsProps> = ({
@@ -20,22 +27,49 @@ export const NextActions: React.FC<NextActionsProps> = ({
 
   return (
     <div style={{ marginTop: Spacing.SM }}>
+      <div
+        style={{
+          fontSize: FontSize.XS,
+          color: Colors.TEXT.TERTIARY,
+          marginBottom: Spacing.XS,
+        }}
+      >
+        💡 推荐下一步：
+      </div>
       <Space size={Spacing.XS} wrap>
         {actions.map((action, idx) => (
-          <Button
+          <Tooltip
             key={idx}
-            size="small"
-            type="text"
-            onClick={() => onActionClick?.(action)}
-            style={{
-              fontSize: FontSize.XS,
-              color: Colors.PRIMARY,
-              borderRadius: Radius.SM,
-              padding: `${Spacing.XXS}px ${Spacing.XS}px`,
-            }}
+            title={
+              <div>
+                <div>{action.description}</div>
+                {action.when && (
+                  <div
+                    style={{
+                      color: Colors.TEXT.TERTIARY,
+                      fontSize: FontSize.XS,
+                    }}
+                  >
+                    适用：{action.when}
+                  </div>
+                )}
+              </div>
+            }
           >
-            {action}
-          </Button>
+            <Button
+              size="small"
+              type="text"
+              onClick={() => onActionClick?.(action)}
+              style={{
+                fontSize: FontSize.XS,
+                color: Colors.PRIMARY,
+                borderRadius: Radius.SM,
+                padding: `${Spacing.XXS}px ${Spacing.XS}px`,
+              }}
+            >
+              {action.tool}
+            </Button>
+          </Tooltip>
         ))}
       </Space>
     </div>
