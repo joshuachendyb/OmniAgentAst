@@ -59,8 +59,17 @@ from sqlite3 import Connection, Cursor
 
 router = APIRouter()
 
-# 数据库路径
-DB_PATH = Path.home() / ".omniagent" / "chat_history.db"
+# 【小沈重构 2026-05-22】数据库配置迁移至 app/db/
+from app.db.chat_db import get_connection
+from app.db.models.chat_models import (
+    Session,
+    Message,
+    SessionCreate,
+    SessionResponse,
+    SessionListResponse,
+    BatchTitleResponse,
+    MessageResponse,
+)
 
 
 def get_utc_timestamp() -> str:
@@ -153,156 +162,6 @@ def _convert_to_utc(time_value) -> str:
         return get_utc_timestamp()
 
 
-def _get_db_connection():
-    """获取数据库连接"""
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    # 【M18修复 2026-05-13 小沈】启用WAL模式+忙等待超时，解决并发写入"database is locked"错误
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
-    return conn
-
-
-def _init_database():
-    """初始化数据库表"""
-    conn = _get_db_connection()
-    cursor = conn.cursor()
-    
-    # 创建会话表
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS chat_sessions (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            message_count INTEGER DEFAULT 0,
-            is_deleted BOOLEAN DEFAULT FALSE,
-            is_valid BOOLEAN DEFAULT FALSE,
-            title_locked BOOLEAN DEFAULT FALSE,
-            title_updated_at TIMESTAMP,
-            version INTEGER DEFAULT 1
-        )
-    ''')
-    # 注意：现在所有会话都已具有 is_valid 字段，无需额外的检查或更新操作
-    
-    # 创建消息表
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS chat_messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
-            execution_steps TEXT,
-            display_name TEXT
-        )
-    ''')
-    
-    # 【小沈添加 2026-03-03】添加 display_name 字段（如果不存在）
-    try:
-        cursor.execute('SELECT display_name FROM chat_messages LIMIT 1')
-    except:
-        cursor.execute('ALTER TABLE chat_messages ADD COLUMN display_name TEXT')
-        conn.commit()
-        print("数据库已添加 display_name 字段")
-    
-    # 【小沈添加 2026-03-24】添加客户端信息字段（如果不存在）
-    for field in ['client_os', 'browser', 'device', 'network']:
-        try:
-            cursor.execute(f'SELECT {field} FROM chat_messages LIMIT 1')
-        except:
-            cursor.execute(f'ALTER TABLE chat_messages ADD COLUMN {field} TEXT')
-            conn.commit()
-            print(f"数据库已添加 {field} 字段")
-    
-    # 创建标题历史表（P2-中优先级）
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS chat_session_title_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            title TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_by TEXT,
-            change_reason TEXT,
-            FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
-        )
-    ''')
-    
-    # 创建索引
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_updated ON chat_sessions(updated_at DESC)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_deleted ON chat_sessions(is_deleted)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_session ON chat_messages(session_id)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON chat_messages(timestamp)')
-    
-    conn.commit()
-    conn.close()
-
-
-# 初始化数据库
-_init_database()
-
-
-# ============== 数据模型 ==============
-
-class Session(BaseModel):
-    """会话模型"""
-    id: str = Field(..., description="会话ID")
-    title: str = Field(..., description="会话标题")
-    created_at: str = Field(..., description="创建时间")
-    updated_at: str = Field(..., description="更新时间")
-    message_count: int = Field(0, description="消息数量")
-
-
-class Message(BaseModel):
-    """消息模型"""
-    id: Optional[int] = Field(None, description="消息ID")
-    session_id: str = Field(..., description="会话ID")
-    role: str = Field(..., description="角色: user/assistant/system")
-    content: str = Field(..., description="消息内容")
-    timestamp: str = Field(..., description="时间戳")
-    execution_steps: Optional[str] = Field(None, description="执行步骤JSON")
-
-
-class SessionCreate(BaseModel):
-    """创建会话请求"""
-    title: Optional[str] = Field(None, description="会话标题（可选，不提供则自动生成）")
-    is_valid: Optional[bool] = Field(False, description="是否为有效会话（前端用户创建时传入True；测试代码不传默认为False）")
-
-
-class SessionResponse(BaseModel):
-    """会话响应"""
-    session_id: str = Field(..., description="会话ID")
-    title: str = Field(..., description="会话标题")
-    created_at: str = Field(..., description="创建时间")
-    updated_at: str = Field(..., description="更新时间")
-    message_count: int = Field(..., description="消息数量")
-    is_valid: Optional[bool] = Field(None, description="是否为有效会话")
-
-
-class SessionListResponse(BaseModel):
-    """会话列表响应"""
-    total: int = Field(..., description="总会话数")
-    page: int = Field(..., description="当前页码")
-    page_size: int = Field(..., description="每页数量")
-    sessions: list[SessionResponse] = Field(..., description="会话列表")
-
-class BatchTitleResponse(BaseModel):
-    """批量获取会话标题响应（12.1.3节）"""
-    sessions: list[dict] = Field(..., description="会话标题信息列表")
-
-
-class MessageResponse(BaseModel):
-    """消息响应"""
-    id: int = Field(..., description="消息 ID")
-    session_id: str = Field(..., description="会话 ID")
-    role: str = Field(..., description="角色")
-    content: str = Field(..., description="消息内容")
-    timestamp: int = Field(..., description="时间戳（毫秒，int类型）")  # 【修复 2026-04-01 小沈】从str改为int
-    execution_steps: Optional[list] = Field(None, description="执行步骤（数组格式）")
-    display_name: Optional[str] = Field(None, description="模型显示名称（记录消息收发时使用的模型）")
-
-
 # ============== API接口 ==============
 
 @router.post("/sessions", response_model=SessionResponse)
@@ -331,7 +190,7 @@ async def create_session(session_create: Optional[SessionCreate] = None):
         # 如果没有提供标题，自动生成
         title = session_create.title if session_create and session_create.title else f"新会话 {datetime.now().strftime('%Y-%m-%d %H:%M')}"
         
-        conn = _get_db_connection()
+        conn = get_connection()
         cursor = conn.cursor()
         
         # P0风险缓解：检查数据库字段是否存在（向后兼容）
@@ -417,7 +276,7 @@ async def list_sessions(
         SessionListResponse: 会话列表（包含分页信息）
     """
     try:
-        conn = _get_db_connection()
+        conn = get_connection()
         cursor = conn.cursor()
         
         # 先获取总数
@@ -562,7 +421,7 @@ async def get_session_messages(session_id: str):
         dict: 包含session_id, title, title_locked, title_source, title_updated_at和messages的对象
     """
     try:
-        conn = _get_db_connection()
+        conn = get_connection()
         cursor = conn.cursor()
         
         # P0风险缓解：检查数据库字段是否存在（向后兼容）
@@ -723,7 +582,7 @@ async def save_message(session_id: str, message: MessageCreate):
         dict: 保存结果
     """
     try:
-        conn = _get_db_connection()
+        conn = get_connection()
         cursor = conn.cursor()
         
         # P0风险缓解：检查数据库字段是否存在（向后兼容）
@@ -916,7 +775,7 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
         dict: 保存结果
     """
     try:
-        conn = _get_db_connection()
+        conn = get_connection()
         cursor = conn.cursor()
         
         # 检查会话是否存在
@@ -1171,7 +1030,7 @@ async def update_session(session_id: str, update_data: SessionUpdate):
     conn = None
     cursor = None
     try:
-        conn = _get_db_connection()
+        conn = get_connection()
         cursor = conn.cursor()
         
         # ⭐ 修复P0-问题2：显式开启事务
@@ -1351,7 +1210,7 @@ async def delete_session(session_id: str):
     conn = None
     cursor = None
     try:
-        conn = _get_db_connection()
+        conn = get_connection()
         cursor = conn.cursor()
         
         # 验证会话存在
@@ -1440,7 +1299,7 @@ async def get_session_titles_batch(
         if len(id_list) > 100:
             raise HTTPException(status_code=400, detail="最多一次查询100个会话")
         
-        conn = _get_db_connection()
+        conn = get_connection()
         cursor = conn.cursor()
         
         # P0风险缓解：检查数据库字段是否存在
