@@ -12,6 +12,7 @@
 
 | 版本 | 时间 | 作者 | 更新内容 |
 |------|------|------|---------|
+| v1.1 | 2026-05-22 11:31:34 | 小健 | 基于真实代码现状修正：工具数量(60-65个)、Semantic Router统一模型、P18安全等级、check_and_execute统一入口、SessionTrust Set实现、ToolObserver查询+热力图、YAML灰度配置 |
 | v1.0 | 2026-05-22 09:59:55 | 小健 | 初始版本，综合10份方案最优设计融合 |
 
 ---
@@ -25,7 +26,7 @@
 | 全Agent自包含激进方案 | LLM自评估安全、极简架构、ToolExecutionGuard兜底 | 部分采纳：安全理念+兜底机制 |
 | 三大核心管线完美重构方案 | PipelineContext数据载体、双层安全、BLOCK真中断 | **完整采纳**：数据流设计+双层安全 |
 | 两个方案对比分析与融合建议 | Semantic Router优于统一Agent、HITL优于自动化、4层安全、Observer不可或缺 | **完整采纳**：安全分层+对比结论 |
-| 三合一方案对齐分析 | 三维度正交、P11 action级安全、P12工具间调用旁路风险、Phase路线图 | **完整采纳**：正交实施+安全细化 |
+| 三合一方案对齐分析 | 三维度正交、P11 action级安全、P12工具间调用旁路风险、Phase路线图 | **已实施**：P11/P12/P14/P15已落地；采纳action级安全+P18安全等级声明 |
 | 预处理管线重构方案 | TextCorrectorV2、IntentDetectorV2、SafetyAnalyzerV2 | **完整采纳**：管线三步设计 |
 | Agent高级调度与安全防护架构重构方案 | Function Calling替代CRSS、HITL SSE暂停恢复、Session Trust | **完整采纳**：路由+安全交互 |
 | Agent架构根本性重构方案 | 范式C语义发现、Tool Relevance Scoring、UnifiedReactAgent、53%代码缩减 | **完整采纳**：核心架构范式 |
@@ -187,15 +188,40 @@ class PipelineContext:
 | 准确率 | 中(关键词匹配无法处理语义变体) | 高(LLM理解自然语言) | 两个方案对比分析 |
 | 扩展性 | 差(新增意图需改代码) | 优(新增意图只需注册描述) | Agent与意图分类方案 |
 | Chat识别 | 无(未匹配fallback到network) | 有(启发式+LLM识别闲聊) | 预处理管线方案 |
-| 延迟 | <1ms | ~500ms(轻量模型) | Agent融合方案 |
+| 延迟 | <1ms | ~500ms(统一模型Function Calling) | Agent融合方案 |
 
 ### 3.2 语义路由实现
 
 ```python
+# 始终加载的分类（如META工具帮助、时间查询等）
+ALWAYS_LOAD_CATEGORIES = [ToolCategory.META]
+
+# 路由失败时的默认兜底分类
+FALLBACK_CATEGORIES = [
+    ToolCategory.FILE,
+    ToolCategory.SHELL,
+    ToolCategory.NETWORK,
+    ToolCategory.SYSTEM,
+    ToolCategory.DOCUMENT,
+]
+
+
 class SemanticRouter:
     """语义路由器 — 基于LLM Function Calling的工具类别推荐器"""
     
-    async def recommend_categories(self, user_input: str) -> List[ToolCategory]:
+    async def recommend_categories(
+        self, 
+        user_input: str,
+        intent_type: Optional[str] = None
+    ) -> List[ToolCategory]:
+        """
+        推荐工具分类。
+        
+        如果外部已指定intent_type（兼容现有路由逻辑），直接映射为分类，
+        跳过LLM路由以节省延迟。
+        """
+        if intent_type:
+            return self._intent_to_categories(intent_type)
         # 从IntentRegistry获取所有激活意图的描述
         intents = intent_registry.active_intents()
         
@@ -219,17 +245,37 @@ class SemanticRouter:
             }
         }]
         
-        # 调用轻量LLM(非主模型，TTFT<0.5s)
+        # 使用统一模型Function Calling进行路由（temperature=0.1降低随机性）
         response = await llm_client.chat(
             messages=[{"role": "user", "content": user_input}],
             tools=tools,
             tool_choice={"type": "function", "function": {"name": "select_tool_categories"}},
+            temperature=0.1,
             max_tokens=100,
         )
         
         # 解析结果
-        selected = json.loads(response.tool_calls[0].function.arguments).get("categories", [])
-        return [ToolCategory(s) for s in selected] + [ToolCategory.META]  # META始终加载
+        if response.tool_calls:
+            selected = json.loads(response.tool_calls[0].function.arguments).get("categories", [])
+            return [ToolCategory(s) for s in selected] + ALWAYS_LOAD_CATEGORIES
+        
+        # 无tool_calls时兜底：返回默认分类
+        return FALLBACK_CATEGORIES
+    
+    def _intent_to_categories(self, intent_type: str) -> List[ToolCategory]:
+        """意图→分类映射（兼容现有AgentFactory路由逻辑）"""
+        INTENT_CATEGORY_MAP = {
+            "file": [ToolCategory.FILE],
+            "shell": [ToolCategory.SHELL],
+            "network": [ToolCategory.NETWORK],
+            "desktop": [ToolCategory.DESKTOP],
+            "system": [ToolCategory.SYSTEM],
+            "document": [ToolCategory.DOCUMENT],
+            "meta": [ToolCategory.META],
+            "time": [ToolCategory.META],
+            "chat": [],
+        }
+        return INTENT_CATEGORY_MAP.get(intent_type, FALLBACK_CATEGORIES)
 ```
 
 ### 3.3 Chat意图识别
@@ -598,31 +644,49 @@ SAFETY_POLICY = {
 }
 ```
 
-### 6.3 135个工具安全分级预估
+### 6.3 当前60-65个工具安全分级预估
 
-| 分类 | READ_ONLY | SAFE | DESTRUCTIVE | DANGEROUS | 合计 |
-|------|-----------|------|-------------|-----------|------|
-| FILE | read_file, list_directory, search_files | create_file, copy_file, move_file | delete_file, clear_file, overwrite_file | - | ~20 |
-| SHELL | - | - | - | execute_shell_command, execute_python, execute_js | ~5 |
-| NETWORK | http_get, download_file | http_post, http_put | - | - | ~10 |
-| DESKTOP | get_screen_info, get_window_list | set_clipboard, take_screenshot | close_window, kill_process | - | ~15 |
-| SYSTEM | get_system_info, get_process_list | set_env, start_service | - | modify_registry, kill_process_force | ~15 |
-| DOCUMENT | read_pdf, read_docx, read_excel | convert_format, create_chart | - | execute_sql | ~25 |
-| META | get_time, search_tools, get_tool_help | set_timer | - | - | ~10 |
-| **合计** | **~55** | **~45** | **~20** | **~15** | **~135** |
+| 分类 | 工具数 | READ_ONLY | SAFE | DESTRUCTIVE | DANGEROUS |
+|------|--------|-----------|------|-------------|-----------|
+| FILE | 11 | read_file, list_directory, search_files | create_file, copy_file, move_file | delete_file(统一入口内) | - |
+| SHELL | 5 | - | - | - | execute_shell_command, execute_python, execute_js |
+| NETWORK | 5 | http_get, download_file | http_post, http_put | - | - |
+| SYSTEM | 10 | get_system_info, list_processes | set_env, service_control | - | kill_process, registry_control |
+| DESKTOP | 10+ | get_window_info, screen_capture | set_clipboard, take_screenshot | close_window, kill_process | - |
+| DOCUMENT | 9 | read_document, analyze_data | convert_document, generate_chart | - | execute_sql |
+| META | 10 | get_time, tool_search | set_timer | - | - |
+| **合计** | **~60-65** | **~25** | **~25** | **~5** | **~10** |
 
-### 6.4 统一入口工具的Action级安全
+### 6.4 P18: 工具注册时声明安全等级
 
-**问题**：P11统一入口工具(如file_control)整体标记为DESTRUCTIVE会导致copy也弹窗，标记为SAFE会导致delete不弹窗。（来源：三合一方案对齐分析）
+当前工具注册无 `safety_level` 字段，需扩展 `ToolMetadata` 和 `@register_tool` 装饰器：
 
-**解决方案**：
+```python
+# backend/app/services/tools/tool_meta.py
+
+class ToolSafetyLevel(Enum):
+    READ_ONLY = "read_only"       # 纯读取，无副作用
+    SAFE = "safe"                 # 可逆或无害
+    DESTRUCTIVE = "destructive"   # 破坏性，不可逆
+    DANGEROUS = "dangerous"       # 危险，可能影响系统
+
+# ToolMetadata新增字段
+@dataclass
+class ToolMetadata:
+    # ...原有字段...
+    safety_level: Union[ToolSafetyLevel, Dict[str, ToolSafetyLevel]] = ToolSafetyLevel.SAFE
+    needs_confirmation: Union[bool, Dict[str, bool]] = False
+```
+
+### 6.5 统一入口工具的Action级安全
+
+P11统一入口（如 `file_control`）通过参数区分操作，需支持action级安全：
 
 ```python
 @register_tool(
     name="file_control",
-    description="文件操作：复制/移动/删除/重命名",
     category=ToolCategory.FILE,
-    safety_level={                          # action级别的安全等级
+    safety_level={
         "copy": ToolSafetyLevel.SAFE,
         "move": ToolSafetyLevel.SAFE,
         "rename": ToolSafetyLevel.SAFE,
@@ -634,75 +698,191 @@ SAFETY_POLICY = {
 )
 ```
 
-### 6.5 HITL SSE暂停恢复流
+**解析逻辑**：`ToolSafetyLayer._resolve_safety_level()` 检查 `safety_level` 是字典还是枚举，字典时按 `params["action"]` 取对应等级。
+
+### 6.6 ToolSafetyLayer: `check_and_execute` 统一入口
+
+当前 `ToolExecutor` 无统一安全检查，各工具分散自检。新设计封装为单一入口：
 
 ```python
-# 交互流程
-ToolExecutor检测到DANGEROUS工具
-    ↓
-挂起ReAct循环
-    ↓
-SSE发送 AUTHORIZATION_REQUIRED 事件
-    ↓
-前端弹安全确认框（展示工具名+风险说明+参数）
-    ↓
-用户选择：
-    ├─ 【允许执行】→ 恢复循环，执行工具
-    ├─ 【拒绝】→ 恢复循环，返回"用户拒绝"
-    ├─ 【本会话信任】→ 恢复循环，5分钟内同类操作免确认
-    └─ 【超时60秒】→ 自动拒绝
+class ToolSafetyLayer:
+    """工具安全层 — 分级安全 + HITL授权 + 审计记录"""
+    
+    def __init__(self, session_trust_manager=None, observer=None):
+        self._session_trust = session_trust_manager or SessionTrustManager()
+        self._observer = observer or ToolObserver()
+    
+    async def check_and_execute(
+        self,
+        tool_name: str,
+        params: dict,
+        tool_func: Callable,
+        session_id: str,
+    ) -> Dict[str, Any]:
+        """
+        统一入口：检查安全等级 → HITL确认 → 执行 → 审计记录
+        调用方只需一行代码，无需关心内部复杂流程。
+        """
+        # 1. 解析安全等级（支持action级）
+        tool_meta = tool_registry.get_tool(tool_name)
+        safety_level = self._resolve_safety_level(tool_meta, params)
+        
+        # 2. 检查是否需要HITL
+        behavior = SAFETY_BEHAVIOR[safety_level]
+        if not behavior.get("auto_approve", True):
+            if self._session_trust.is_trusted(session_id, tool_name, params):
+                pass  # Session Trust放行
+            else:
+                auth_result = await self._request_authorization(tool_name, params)
+                if not auth_result.approved:
+                    return build_error("ERR_USER_REJECTED", "用户拒绝执行")
+                if auth_result.trust_session:
+                    self._session_trust.add_trust(session_id, tool_name, params)
+        
+        # 3. 执行工具
+        result = await tool_func(**params)
+        
+        # 4. 记录审计
+        if behavior.get("log", True):
+            self._observer.record(tool_name, params, result, safety_level, session_id)
+        
+        return result
+    
+    def _resolve_safety_level(self, tool_meta, params) -> ToolSafetyLevel:
+        """解析安全等级：支持枚举或字典(action级)"""
+        safety_level = tool_meta.safety_level
+        if isinstance(safety_level, dict):
+            action = params.get("action", "")
+            return safety_level.get(action, ToolSafetyLevel.SAFE)
+        return safety_level or ToolSafetyLevel.SAFE
+    
+    async def _request_authorization(self, tool_name: str, params: dict):
+        """SSE暂停 → 发送授权事件 → 等待用户响应 → 超时60秒自动拒绝"""
+        # 挂起ReAct循环，发送 AUTHORIZATION_REQUIRED SSE事件
+        # 等待前端 /confirm 接口回调
+        # 60秒超时自动拒绝
+        ...
 ```
 
-### 6.6 Session Trust机制
+### 6.7 Session Trust机制（Set实现）
 
 ```python
 class SessionTrustManager:
-    """会话信任管理器 — 降低HITL弹窗频率"""
+    """会话信任管理 — 同会话同类操作免重复确认"""
     
-    def grant_trust(self, task_id: str, tool: str, ttl: int = 300):
-        """用户选择"本会话信任"后授予"""
-        self._trust_map[task_id][tool] = time.time() + ttl
+    def __init__(self, trust_ttl: int = 300):
+        self._trust_store: Dict[str, Set[str]] = {}
+        self._trust_ttl = trust_ttl
     
-    def is_trusted(self, task_id: str, tool: str) -> bool:
-        """检查是否已信任，过期自动失效"""
-        return time.time() < self._trust_map.get(task_id, {}).get(tool, 0)
+    def is_trusted(self, session_id: str, tool_name: str, params: dict) -> bool:
+        """检查是否已信任。信任粒度：tool_name:action"""
+        trust_key = self._make_trust_key(tool_name, params)
+        session_trusts = self._trust_store.get(session_id, set())
+        return trust_key in session_trusts
+    
+    def add_trust(self, session_id: str, tool_name: str, params: dict):
+        """用户选择'本会话信任'后授予"""
+        trust_key = self._make_trust_key(tool_name, params)
+        if session_id not in self._trust_store:
+            self._trust_store[session_id] = set()
+        self._trust_store[session_id].add(trust_key)
+        # TODO: TTL清理（可配定时器或惰性清理）
+    
+    def _make_trust_key(self, tool_name: str, params: dict) -> str:
+        """信任键：只到action级别，不包含全部参数"""
+        action = params.get("action", "")
+        return f"{tool_name}:{action}"
 ```
 
-### 6.7 ToolObserver设计
+### 6.8 ToolObserver设计（全量审计 + 查询 + 热力图）
 
 ```python
+@dataclass
+class ToolCallRecord:
+    timestamp: datetime
+    session_id: str
+    agent_name: str
+    tool_name: str
+    params: dict
+    result: Dict[str, Any]
+    safety_level: str
+    execution_time_ms: int
+    approved_by_user: bool
+
+
 class ToolObserver:
-    """反应式观察者 — 全量审计+异常检测"""
+    """反应式观察者 — 全量审计 + 异常检测 + 反馈闭环"""
     
-    def record(self, tool_name: str, status: str, detail: Any, result: str = ""):
+    def __init__(self, window_size: int = 1000, anomaly_threshold: int = 10):
+        self._records: deque = deque(maxlen=window_size)
+        self._anomaly_threshold = anomaly_threshold
+        self._lock = threading.Lock()
+    
+    def record(self, tool_name: str, params: dict, result: Dict[str, Any],
+               safety_level: str, session_id: str = "", 
+               execution_time_ms: int = 0, approved_by_user: bool = False):
         """记录一次工具调用"""
-        self._records.append({
-            "timestamp": time.time(),
-            "task_id": self.task_id,
-            "tool": tool_name,
-            "status": status,  # executed/blocked/pending_confirm/safety_passed
-            "detail": str(detail)[:200],
-            "result": str(result)[:500],
-        })
+        record = ToolCallRecord(
+            timestamp=datetime.now(),
+            session_id=session_id,
+            tool_name=tool_name,
+            params=params,
+            result=result,
+            safety_level=safety_level,
+            execution_time_ms=execution_time_ms,
+            approved_by_user=approved_by_user,
+        )
+        with self._lock:
+            self._records.append(record)
+        self._check_anomaly(record)
     
-    def _check_anomaly(self, tool_name: str):
-        """滑动窗口异常检测"""
-        # 1分钟内delete_file>10次 → 自动暂停
-        # 连续HITL拒绝5次 → 暂停并询问意图
-        recent = [t for t in self._pattern_window[tool_name] if t >= time.time() - 60]
-        if len(recent) > self._thresholds[tool_name].max_per_minute:
-            self._paused = True
-            logger.warning(f"[Observer] 异常检测: {tool_name} 1分钟{len(recent)}次 → 自动暂停")
+    def _check_anomaly(self, record: ToolCallRecord):
+        """滑动窗口异常检测：1分钟内DANGEROUS/DESTRUCTIVE工具调用超阈值→自动暂停"""
+        if record.safety_level in ("dangerous", "destructive"):
+            recent_count = sum(
+                1 for r in self._records
+                if r.tool_name == record.tool_name
+                and (datetime.now() - r.timestamp).total_seconds() < 60
+            )
+            if recent_count >= self._anomaly_threshold:
+                logger.warning(f"[Observer] 异常: {record.tool_name} 1分钟{recent_count}次 → 自动暂停")
+                self._paused = True
+    
+    def query(self, session_id=None, tool_name=None, 
+              start_time=None, end_time=None) -> List[ToolCallRecord]:
+        """审计查询接口 — 支持多维度过滤"""
+        with self._lock:
+            results = list(self._records)
+        if session_id:
+            results = [r for r in results if r.session_id == session_id]
+        if tool_name:
+            results = [r for r in results if r.tool_name == tool_name]
+        if start_time:
+            results = [r for r in results if r.timestamp >= start_time]
+        if end_time:
+            results = [r for r in results if r.timestamp <= end_time]
+        return results
+    
+    def get_usage_heatmap(self) -> Dict[str, int]:
+        """工具使用热力图 — 识别僵尸工具，指导精简"""
+        heatmap = {}
+        with self._lock:
+            for record in self._records:
+                heatmap[record.tool_name] = heatmap.get(record.tool_name, 0) + 1
+        return heatmap
 ```
 
-### 6.8 为什么废弃command_security黑名单
+### 6.9 command_security现状与处置
 
-**两个方案对比分析**的明确结论：
-- LLM可通过变量拼接(`rm -rf $(echo -e "/")`)、Base64编码等方式绕过黑名单
-- HITL做最终决策后，黑名单是多余的，保留反而产生"已检查"的错觉
-- ToolExecutionGuard在工具执行层做参数检查，比用户输入层黑名单更精准
+**当前现状**：`command_security.py`（962行）仍在使用，但存在本质缺陷：
+- 仅检查**用户输入文本**，不检查**工具调用级**安全
+- 黑名单可被变量拼接、Base64编码绕过
+- AgentFactory中`shell`键被`CodeExecutionReactAgent`覆盖，`document`键被覆盖
 
-**处置**：保留`check_command_safety`函数但移至`ToolSafetyLayer`中作为**参数检查工具**，不作为独立防线。
+**处置**：
+1. `ToolSafetyLayer` 替代其为**统一工具执行前安全检查**
+2. 保留 `check_command_safety()` 函数，移至 `ToolSafetyLayer` 内作为**参数检查工具**（针对shell/code类工具的参数级检测）
+3. 不将其作为独立防线，而是纵深防御中的一环
 
 ---
 
@@ -726,7 +906,7 @@ class ToolObserver:
 | `agent/database_react.py` | GenericReactAgent替代 | Agent与意图分类方案 |
 | `agent/code_execution_react.py` | GenericReactAgent替代 | Agent与意图分类方案 |
 | `agent/parsers/` | 已废弃，用react_output_parser.py | AGENTS.md |
-| `safety/command_security.py` | 黑名单被HITL替代 | 两个方案对比分析 |
+| `services/command_security.py` | 用户输入层黑名单被ToolSafetyLayer替代 | 两个方案对比分析 |
 | `tools/desktop/gui_register.py`死代码 | GUI描述400行已不使用 | Agent与意图分类方案 |
 
 ### 7.2 保留文件
@@ -748,7 +928,7 @@ class ToolObserver:
 | 模块 | 重构前 | 重构后 | 变化 | 来源 |
 |------|--------|--------|------|------|
 | Agent子类 | 9文件×50行=450行 | 1文件=300行 | **-150行** | Agent根本性重构方案 |
-| AgentFactory | 1文件=180行 | 删除 | **-180行** | Agent根本性重构方案 |
+| AgentFactory | 1文件=193行（有键覆盖bug） | 删除 | **-193行** | Agent根本性重构方案 |
 | Prompt类 | 10文件×200行=2000行 | 动态组合=400行 | **-1600行** | Agent根本性重构方案 |
 | CRSS评分器 | 1文件=350行 | 删除 | **-350行** | Agent根本性重构方案 |
 | PreprocessingPipeline | 1文件=48行 | 删除 | **-48行** | Agent根本性重构方案 |
@@ -810,24 +990,42 @@ Phase 10(全量回归测试)
 
 ### 8.3 Phase 6 灰度迁移策略（关键！）
 
-**Feature Flag控制**：
+**YAML多组件独立配置**（每个组件可单独开关，出问题只回退单个组件）：
 
-```python
-# config.py 或环境变量
-USE_NEW_ROUTING = os.getenv("USE_NEW_ROUTING", "false").lower() == "true"
+```yaml
+# config/agent.yaml
 
-class ChatRouter:
-    async def route(self, user_input, ...):
-        if USE_NEW_ROUTING:
-            return await self._route_new(user_input, ...)   # 新架构
-        else:
-            return await self._route_legacy(user_input, ...) # 旧架构兜底
+architecture:
+  use_semantic_router: true      # false则回退到CRSS
+  use_agent_registry: true       # false则回退到AgentFactory
+  use_tool_safety_layer: true    # false则跳过安全检查
+  use_tool_observer: true        # false则不记录审计
+  
+  hitl:
+    enabled: true
+    session_trust_ttl: 300       # Session Trust有效期（秒）
+    suspend_timeout: 60          # 挂起超时（秒）
+  
+  semantic_router:
+    temperature: 0.1
+    fallback_categories: ["file", "shell", "network", "system", "document"]
 ```
 
+**回退路径**：
+
+| 组件 | 回退方式 |
+|------|---------|
+| Semantic Router | `use_semantic_router: false` → 使用CRSS |
+| AgentRegistry | `use_agent_registry: false` → 使用AgentFactory |
+| HITL | `hitl.enabled: false` → 所有工具自动放行 |
+| ToolObserver | `use_tool_observer: false` → 不记录审计 |
+
 **灰度步骤**：
-1. 部署后 `USE_NEW_ROUTING=false`（默认走旧架构）
-2. 内部测试1周无问题 → 改为 `true`
-3. 运行2周无问题 → Phase 9删除旧代码
+1. 部署后全部开关为 `false`（默认走旧架构）
+2. Phase 0-2完成后 → `use_agent_registry: true`（内部测试Agent层）
+3. Phase 3-4完成后 → `use_semantic_router: true`（测试路由层）
+4. Phase 5完成后 → `use_tool_safety_layer: true`（测试安全层）
+5. 全部运行2周无问题 → Phase 9删除旧代码
 
 ### 8.4 回归测试重点
 
@@ -852,7 +1050,7 @@ class ChatRouter:
 
 | 风险 | 影响 | 概率 | 缓解措施 | 来源 |
 |------|------|------|---------|------|
-| Function Calling路由延迟高(~500ms) | 用户感知首响变慢 | 中 | 使用轻量模型+max_tokens=100+5秒内存缓存 | Agent高级调度方案 |
+| Function Calling路由延迟高(~500ms) | 用户感知首响变慢 | 中 | 统一模型+temperature=0.1+max_tokens=100+5秒内存缓存 | Agent高级调度方案 |
 | HITL频繁弹窗打断心流 | 用户体验差 | 高 | Session Trust(同会话免重复)+DANGEROUS仅占~15个工具 | 两个方案对比分析 |
 | 前后端交互卡死 | 挂起期间网络闪断 | 低 | 60秒超时自动拒绝+死锁检测 | Agent高级调度方案 |
 | Semantic Router路由错误 | 给错工具集→任务失败 | 中 | 低置信度走FALLBACK_CATEGORIES+动态扩展兜底 | Agent根本性重构方案 |
@@ -862,7 +1060,7 @@ class ChatRouter:
 | 缓存导致数据陈旧 | 文件/网络状态变化但缓存命中 | 低 | TTL=60秒+ping/curl不缓存+shell命令参数级判断 | 重复执行分析 |
 | 观察system→user角色导致LLM误认 | 将observation当用户输入 | 中 | 加[Tool Result]前缀+测试环境验证 | 重复执行分析 |
 | 意图注册表单点故障 | registry为空全系统不可用 | 低 | 兜底：回退到硬编码默认定义 | Agent与意图分类方案 |
-| P12工具间调用绕过安全 | Helper层危险操作无检查 | 中 | Helper层内部对危险操作也做规则检查 | 三合一方案对齐分析 |
+| Helper层危险操作 | toolhelper内部调用绕过安全检查 | 中 | Helper层内部对危险操作也做规则检查 | 三合一方案对齐分析 |
 | 并行调用异常检测不准确 | 误判正常批量操作为异常 | 低 | 阈值可调(10次/分钟)+手动恢复 | Agent融合方案 |
 
 ---
@@ -890,7 +1088,7 @@ class ChatRouter:
 | 代码行数 | ~4700行 | **~3100行** | **-34%** | 综合估算 |
 | 安全层数 | 1层(黑名单) | **4层纵深** | +300% | 两个方案对比分析 |
 | 意图路由方式 | CRSS正则 | **Function Calling** | 准确率↑ | Agent高级调度方案 |
-| 路由延迟 | <1ms | **~500ms** | 可接受 | Agent融合方案 |
+| 路由延迟 | <1ms(CRSS) | **~500ms** | 统一模型Function Calling，TTFT可接受 | Agent融合方案 |
 | 重复执行步数 | 54步 | **6-8步** | **-85%** | 重复执行分析 |
 | 上下文窗口浪费 | 477KB/9轮 | **~50KB/9轮** | **-90%** | 重复执行分析 |
 | Token消耗 | 高 | **-70%** | 大幅节省 | 重复执行分析 |
@@ -903,7 +1101,7 @@ class ChatRouter:
 | 指标 | 目标 | 验证方式 |
 |------|------|---------|
 | 意图识别准确率 | ≥90% | 100条测试集对比Semantic Router vs CRSS |
-| DANGEROUS工具拦截率 | 100% | 安全测试集(15个DANGEROUS工具全部触发HITL) |
+| DANGEROUS工具拦截率 | 100% | 安全测试集(~10个DANGEROUS工具全部触发HITL) |
 | 重复执行消除率 | ≥85% | 同54步场景复测 |
 | 系统可用性 | ≥99% | 7天连续运行无崩溃 |
 | 新增意图零代码 | 是 | 新增1个意图分类，验证不改代码 |
