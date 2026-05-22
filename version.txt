@@ -1,3 +1,15 @@
+v0.13.18
+
+更新时间: 2026-05-22 09:21:34
+
+更新内容：
+- fix: execution_result_dict补传9字段(code/warning/attachment/next_actions/return_direct/error_message)
+- fix: return_direct分支改用json.dumps替代str()，补上message/summary
+- feat: ObservationStep新增结构化字段(code/warning/attachment/next_actions/summary/error_message)
+- refactor: sse_formatter action_tool只传执行摘要，observation传完整详细信息
+- refactor: react_sse_wrapper透传observation新字段
+- docs: 设计文档§12.3标记全部11个问题已解决
+
 v0.13.17
 
 更新时间: 2026-05-22 06:36:23
