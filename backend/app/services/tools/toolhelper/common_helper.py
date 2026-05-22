@@ -15,10 +15,22 @@
 Author: 小沈 - 2026-05-18
 """
 
+import importlib
 import os
 import platform
 import subprocess
 from typing import Any, Dict, Optional, Tuple
+
+
+def _check_module(module_name: str) -> bool:
+    """统一检查Python模块是否已安装 — 小沈 2026-05-18
+    合并 document_tools._check_module + data_analysis_tools._check_pandas/_check_matplotlib/_check_openpyxl/_check_numpy
+    """
+    try:
+        importlib.import_module(module_name)
+        return True
+    except ImportError:
+        return False
 
 
 def truncate_value(
@@ -159,6 +171,7 @@ def run_windows_command(
 
 
 __all__ = [
+    "_check_module",
     "truncate_value",
     "safe_path_join",
     "check_windows_platform",
