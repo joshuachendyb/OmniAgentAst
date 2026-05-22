@@ -14,10 +14,12 @@ from uuid import uuid4
 import tempfile
 import platform
 
-from app.models.file_operations import (
-    OperationRecord, SessionRecord, OperationType, OperationStatus,
-    OperationRecordORM
-)
+# 【小沈重构 2026-05-22】数据库配置迁移至 app/db/
+from app.db.operations_db import get_connection
+from app.db.config import OPERATIONS_DB_PATH
+from app.db.models.operation_enums import OperationType, OperationStatus
+from app.db.models.operation_models import OperationRecord, SessionRecord
+from app.db.models.operation_orm import OperationRecordORM
 from app.utils.logger import logger
 
 
@@ -25,8 +27,6 @@ class FileSafetyConfig:
     """文件安全配置"""
     # 回收站路径
     RECYCLE_BIN_PATH: Path = Path.home() / ".omniagent" / "recycle_bin"
-    # 数据库路径
-    DB_PATH: Path = Path.home() / ".omniagent" / "operations.db"
     # 备份保留天数
     BACKUP_RETENTION_DAYS: int = 30
     # 报告输出路径
@@ -56,9 +56,7 @@ class FileOperationSafety:
     def __init__(self):
         self.config = FileSafetyConfig()
         self.config.ensure_directories()
-        self._init_database()
-        # 【修复-波次1】移除未使用的_connection属性
-        # 所有方法都使用_get_connection()创建新连接，不需要保存连接引用
+        # 【小沈重构 2026-05-22】数据库初始化已由 app.db.operations_db 模块级调用
     
     def close(self):
         """
@@ -68,88 +66,6 @@ class FileOperationSafety:
         虽然当前实现每次操作都创建新连接，但为了未来扩展和完整性保留此方法
         """
         logger.info("FileOperationSafety resources cleaned up")
-        
-    def _init_database(self):
-        """初始化SQLite数据库"""
-        conn = None
-        try:
-            conn = sqlite3.connect(str(self.config.DB_PATH))
-            cursor = conn.cursor()
-            
-            # 创建操作记录表
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS file_operations (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    operation_id TEXT UNIQUE NOT NULL,
-                    task_id TEXT NOT NULL,
-                    operation_type TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending',
-                    source_path TEXT,
-                    destination_path TEXT,
-                    backup_path TEXT,
-                    backup_expires_at TIMESTAMP,
-                    file_size INTEGER,
-                    file_hash TEXT,
-                    is_directory BOOLEAN DEFAULT 0,
-                    file_extension TEXT,
-                    duration_ms INTEGER,
-                    space_impact_bytes INTEGER,
-                    metadata TEXT DEFAULT '{}',
-                    error_message TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    executed_at TIMESTAMP,
-                    rolled_back_at TIMESTAMP,
-                    sequence_number INTEGER DEFAULT 0
-                )
-            ''')
-            
-            # 创建会话记录表
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS file_operation_sessions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    task_id TEXT UNIQUE NOT NULL,
-                    agent_id TEXT NOT NULL,
-                    task_description TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending',
-                    total_operations INTEGER DEFAULT 0,
-                    success_count INTEGER DEFAULT 0,
-                    failed_count INTEGER DEFAULT 0,
-                    rolled_back_count INTEGER DEFAULT 0,
-                    report_generated BOOLEAN DEFAULT 0,
-                    report_path TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    completed_at TIMESTAMP
-                )
-            ''')
-            
-            # 创建索引
-            cursor.execute('''
-                CREATE INDEX IF NOT EXISTS idx_operations_session 
-                ON file_operations(task_id)
-            ''')
-            cursor.execute('''
-                CREATE INDEX IF NOT EXISTS idx_operations_created 
-                ON file_operations(created_at)
-            ''')
-            
-            conn.commit()
-            logger.info("File operation database initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize database: {e}")
-            raise
-        finally:
-            # 【修复问题8：数据库连接未关闭】
-            # 确保连接总是被关闭，即使在异常情况下
-            if conn:
-                conn.close()
-    
-    def _get_connection(self) -> sqlite3.Connection:
-        """获取数据库连接（线程安全）"""
-        conn = sqlite3.connect(str(self.config.DB_PATH))
-        # 【M18修复 2026-05-13 小沈】启用WAL模式+忙等待超时，解决并发写入"database is locked"错误
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        return conn
     
     def _compute_file_hash(self, file_path: Path) -> str:
         """计算文件哈希（SHA-256）"""
@@ -230,7 +146,7 @@ class FileOperationSafety:
         # 【修复-添加finally块确保资源释放】
         conn = None
         try:
-            conn = self._get_connection()
+            conn = get_connection()
             cursor = conn.cursor()
             
             cursor.execute('''
@@ -280,7 +196,7 @@ class FileOperationSafety:
         Returns:
             是否执行成功
         """
-        conn = self._get_connection()
+        conn = get_connection()
         cursor = conn.cursor()
         
         try:
@@ -409,7 +325,7 @@ class FileOperationSafety:
         """
         conn = None
         try:
-            conn = self._get_connection()
+            conn = get_connection()
             cursor = conn.cursor()
         
             cursor.execute('''
@@ -494,7 +410,7 @@ class FileOperationSafety:
         """
         conn = None
         try:
-            conn = self._get_connection()
+            conn = get_connection()
             cursor = conn.cursor()
             cursor.execute(
                 'SELECT task_id FROM file_operations WHERE operation_id = ?',
@@ -521,7 +437,7 @@ class FileOperationSafety:
         """
         conn = None
         try:
-            conn = self._get_connection()
+            conn = get_connection()
             cursor = conn.cursor()
             
             result = {
@@ -583,7 +499,7 @@ class FileOperationSafety:
         Returns:
             操作记录列表
         """
-        conn = self._get_connection()
+        conn = get_connection()
         cursor = conn.cursor()
         
         try:
@@ -639,7 +555,7 @@ class FileOperationSafety:
         Returns:
             操作记录，不存在返回None
         """
-        conn = self._get_connection()
+        conn = get_connection()
         cursor = conn.cursor()
         
         try:
@@ -688,7 +604,7 @@ class FileOperationSafety:
         Returns:
             清理的文件数量
         """
-        conn = self._get_connection()
+        conn = get_connection()
         cursor = conn.cursor()
         count = 0
         
