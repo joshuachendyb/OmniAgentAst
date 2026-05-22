@@ -12,8 +12,7 @@ Code Execution 工具函数模块 - 代码执行工具
 3. *_register.py: 显式注册（description + examples + input_model）
 
 包含：
-- execute_python: 执行Python代码
-- execute_javascript: 执行JavaScript代码
+- execute_code: 统一代码执行（python/javascript）
 
 【2026-05-05 小沈修正】小健检查发现的问题：
 1. 非零退出码返回SUCCESS的逻辑错误 → returncode!=0时返回ERR_EXEC_FAILED
@@ -24,8 +23,11 @@ Code Execution 工具函数模块 - 代码执行工具
 【2026-05-06 小沈修正】深度测试发现的缺陷：
 1. #1 working_dir空字符串校验漏洞 → is not None 判断
 2. #2/#3 Windows中文编码问题 → 去掉text=True，手动UTF-8解码stdout/stderr，
-   同时传PYTHONUTF8=1+PYTHONIOENCODING=utf-8环境变量
+    同时传PYTHONUTF8=1+PYTHONIOENCODING=utf-8环境变量
 3. #6 TimeoutExpired的stdout/stderr可能是bytes → 安全解码函数
+
+【2026-05-22 小健】合并execute_python+execute_javascript→execute_code；
+next_actions 中旧工具名改为 execute_code + language 参数
 
 Author: 小沈 - 2026-05-02
 """
@@ -163,7 +165,7 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
                     llm_data=_llm,
                     next_actions=build_next_actions([
                         ("write_text_file", "将输出结果保存到文件", "需要持久化保存代码输出时"),
-                        ("execute_python", "继续执行后续代码", "需要运行更多Python代码时"),
+                        ("execute_code", "继续执行后续代码", "需要运行更多Python代码时", {"language": "python"}),
                     ])
                 )
             else:
@@ -179,7 +181,7 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
                     }),
                     llm_data=_llm,
                     next_actions=build_next_actions([
-                        ("execute_python", "修改代码重试", "需要修正代码后重新执行时"),
+                        ("execute_code", "修改代码重试", "需要修正代码后重新执行时", {"language": "python"}),
                         ("tool_search", "搜索可用的代码辅助工具", "需要查找其他工具帮助诊断问题时"),
                     ])
                 )
@@ -197,7 +199,7 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
                 }),
                 llm_data=format_output_for_llm(_partial_stdout, _partial_stderr),
                 next_actions=build_next_actions([
-                    ("execute_python", "增大超时重试", "需要更长时间执行时"),
+                    ("execute_code", "增大超时重试", "需要更长时间执行时", {"language": "python"}),
                     ("tool_search", "搜索可用的代码辅助工具", "需要查找其他工具帮助诊断问题时"),
                 ])
             )
@@ -270,7 +272,7 @@ def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str]
                     llm_data=_llm,
                     next_actions=build_next_actions([
                         ("write_text_file", "将输出结果保存到文件", "需要持久化保存代码输出时"),
-                        ("execute_javascript", "继续执行后续代码", "需要运行更多JavaScript代码时"),
+                        ("execute_code", "继续执行后续代码", "需要运行更多JavaScript代码时", {"language": "javascript"}),
                     ])
                 )
             else:
@@ -286,7 +288,7 @@ def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str]
                     }),
                     llm_data=_llm,
                     next_actions=build_next_actions([
-                        ("execute_javascript", "修改代码重试", "需要修正代码后重新执行时"),
+                        ("execute_code", "修改代码重试", "需要修正代码后重新执行时", {"language": "javascript"}),
                         ("tool_search", "搜索可用的代码辅助工具", "需要查找其他工具帮助诊断问题时"),
                     ])
                 )
@@ -304,7 +306,7 @@ def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str]
                 }),
                 llm_data=format_output_for_llm(_partial_stdout, _partial_stderr),
                 next_actions=build_next_actions([
-                    ("execute_javascript", "增大超时重试", "需要更长时间执行时"),
+                    ("execute_code", "增大超时重试", "需要更长时间执行时", {"language": "javascript"}),
                     ("tool_search", "搜索可用的代码辅助工具", "需要查找其他工具帮助诊断问题时"),
                 ])
             )
