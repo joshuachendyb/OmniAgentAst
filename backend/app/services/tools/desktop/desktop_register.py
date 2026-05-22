@@ -55,100 +55,100 @@ from app.services.tools.desktop.gui_schema import (
 )
 
 DESKTOP_TOOL_DESCRIPTIONS = {
-    "window_info": """统一窗口信息查询。合并了 list_windows + get_window_info。
+    "window_info": """统一窗口信息查询 - 合并list_windows + get_window_info功能。
 
 【使用场景】
 - 列出所有窗口（action="list"，可选 include_minimized/filter_title 筛选）
 - 获取单个窗口的详细信息（action="info"，需指定 window_title）
 
-【返回数据】
-- action=list: code SUCCESS, data: { windows: [{hwnd, title, state, position}], total }
-- action=info: code SUCCESS, data: { hwnd, title, class_name, state, position, process_id, is_visible, is_enabled }
+【使用示例】【常用名转换说明】
+- 列出窗口/list_windows → window_info(action="list")
+- 含最小化 → window_info(action="list", include_minimized=true)
+- 过滤窗口 → window_info(action="list", filter_title="Chrome")
+- 窗口详情/get_window_info → window_info(action="info", window_title="Chrome")
 
-【示例】
-- 列出所有窗口: {"action": "list"}
-- 列含最小化: {"action": "list", "include_minimized": True}
-- 过滤窗口: {"action": "list", "filter_title": "Chrome"}
-- 查看窗口详情: {"action": "info", "window_title": "Chrome"}""",
+【返回数据说明】
+- list: data.windows(窗口列表)/data.total
+- info: data.hwnd/data.title/data.class_name/data.state/data.position/data.process_id""",
 
-    "window_control": """统一窗口控制。合并了 set_window_state + focus_window + resize_window。
-
-【使用场景】
-- 聚焦窗口（action="focus"）
-- 调整窗口大小（action="resize"，需指定width/height）
-- 最大化窗口（action="maximize"）
-- 最小化窗口（action="minimize"）
-- 还原窗口（action="restore"）
-- 置顶窗口（action="topmost"）
-- 取消置顶（action="unpin"）
-
-【返回数据】
-- code: SUCCESS / ERR_INVALID_ACTION / ERR_WINDOW_NOT_FOUND
-- data: { window_title, action, hwnd }
-
-【示例】
-- 聚焦: {"window_title": "Chrome", "action": "focus"}
-- 最大化: {"window_title": "Notepad", "action": "maximize"}
-- 调整大小: {"window_title": "Chrome", "action": "resize", "width": 1920, "height": 1080}
-- 置顶: {"window_title": "Calculator", "action": "topmost"}""",
-
-    "mouse_control": """统一鼠标控制。合并了 click + move + scroll + get_mouse_position。
+    "window_control": """统一窗口控制 - 合并set_window_state + focus_window + resize_window功能。
 
 【使用场景】
-- 点击（action="click"，可指定x/y/button）
-- 移动（action="move"，需指定x/y）
-- 滚动（action="scroll"，可指定direction/amount）
-- 获取鼠标位置（action="position"）
+- 聚焦/最大化/最小化/还原/置顶/取消置顶/调整大小
+
+【使用示例】【常用名转换说明】
+- 聚焦/focus_window → window_control(action="focus", window_title="Chrome")
+- 最大化/set_window_state → window_control(action="maximize", window_title="Notepad")
+- 最小化 → window_control(action="minimize", window_title="Notepad")
+- 还原 → window_control(action="restore", window_title="Notepad")
+- 调整大小/resize_window → window_control(action="resize", window_title="Chrome", width=1920, height=1080)
+- 置顶 → window_control(action="topmost", window_title="Calculator")
+- 取消置顶 → window_control(action="unpin", window_title="Calculator")
+
+【返回数据说明】
+- data.window_title/data.action/data.hwnd""",
+
+    "mouse_control": """统一鼠标控制 - 合并click + move + scroll + get_mouse_position功能。
+
+【使用场景】
+- 点击（action="click"）/ 移动（action="move"）/ 滚动（action="scroll"）/ 获取位置（action="position"）
 
 【重要】需要安装 pyautogui 库
 
-【示例】
-- 单击: {"action": "click", "x": 500, "y": 300}
-- 右击: {"action": "click", "x": 500, "y": 300, "button": "right"}
-- 移动: {"action": "move", "x": 500, "y": 300}
-- 滚动: {"action": "scroll", "direction": "down", "amount": 3}
-- 获取位置: {"action": "position"}""",
+【使用示例】【常用名转换说明】
+- 单击/click → mouse_control(action="click", x=500, y=300)
+- 右击 → mouse_control(action="click", x=500, y=300, button="right")
+- 移动/move → mouse_control(action="move", x=500, y=300)
+- 滚动/scroll → mouse_control(action="scroll", direction="down", amount=3)
+- 获取位置/get_mouse_position → mouse_control(action="position")
 
-    "keyboard_control": """统一键盘控制。合并了 type_text + shortcut + key_combo。
+【返回数据说明】
+- data.success/data.action/data.position""",
+
+    "keyboard_control": """统一键盘控制 - 合并type_text + shortcut + key_combo功能。
 
 【使用场景】
-- 输入文本（action="type"，text_or_keys为要输入的文本）
-- 快捷键（action="shortcut"，text_or_keys为快捷键如ctrl+c）
-- 组合键（action="combo"，text_or_keys为逗号分隔的键如ctrl,shift,esc）
+- 输入文本（action="type"）/ 快捷键（action="shortcut"）/ 组合键（action="combo"）
 
 【重要】需要安装 pyautogui 库
 
-【示例】
-- 输入文本: {"action": "type", "text_or_keys": "Hello World"}
-- 模拟打字: {"action": "type", "text_or_keys": "Hello", "interval": 0.1}
-- 复制: {"action": "shortcut", "text_or_keys": "ctrl+c"}
-- 切换窗口: {"action": "shortcut", "text_or_keys": "alt+tab"}
-- 组合键: {"action": "combo", "text_or_keys": "ctrl,shift,esc"}""",
+【使用示例】【常用名转换说明】
+- 输入文本/type_text → keyboard_control(action="type", text_or_keys="Hello World")
+- 模拟打字 → keyboard_control(action="type", text_or_keys="Hello", interval=0.1)
+- 快捷键/shortcut → keyboard_control(action="shortcut", text_or_keys="ctrl+c")
+- 组合键/key_combo → keyboard_control(action="combo", text_or_keys="ctrl,shift,esc")
 
-    "screen_capture": """统一屏幕截图。合并了 screenshot + snapshot。
+【返回数据说明】
+- data.success/data.action""",
+
+    "screen_capture": """统一屏幕截图 - 合并screenshot + snapshot功能。
 
 【使用场景】
-- 截取全屏（不指定region和display）
-- 截取区域（指定region）
-- 多显示器快照（指定display，1=主显示器，2=副显示器）
+- 截取全屏 / 截取区域 / 多显示器快照
 
 【重要】优先使用mss库（多显示器），降级pyautogui
 
-【示例】
-- 截取全屏: {}
-- 截取区域: {"region": {"x": 0, "y": 0, "width": 800, "height": 600}}
-- 多显示器: {"display": 2}
-- 指定路径: {"output_path": "D:/output/screenshot.png"}""",
+【使用示例】【常用名转换说明】
+- 截取全屏/screenshot → screen_capture()
+- 截取区域/snapshot → screen_capture(region={"x":0,"y":0,"width":800,"height":600})
+- 多显示器 → screen_capture(display=2)
+- 指定路径 → screen_capture(output_path="D:/output/screenshot.png")
 
-    "clipboard_control": """统一剪贴板控制。合并了 read_clipboard + write_clipboard。
+【返回数据说明】
+- data.success/data.image_path/data.width/data.height""",
+
+    "clipboard_control": """统一剪贴板控制 - 合并read_clipboard + write_clipboard功能。
 
 【使用场景】
-- 读取剪贴板（action="read"）
-- 写入剪贴板（action="write"，需指定content）
+- 读取剪贴板（action="read"）/ 写入剪贴板（action="write"）
 
-【示例】
-- 读取: {"action": "read"}
-- 写入: {"action": "write", "content": "Hello World"}""",
+【使用示例】【常用名转换说明】
+- 读取/read_clipboard → clipboard_control(action="read")
+- 写入/write_clipboard → clipboard_control(action="write", content="Hello World")
+
+【返回数据说明】
+- read: data.content
+- write: data.success""",
 
     "screen_record": """录制屏幕视频。
 
