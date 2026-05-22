@@ -134,7 +134,7 @@ def tool_search(query: str) -> Dict[str, Any]:
             })
 
     scored.sort(key=lambda x: x["score"], reverse=True)
-    top_results = scored[:20]
+    top_results = scored[:10]
 
     data = truncate_data_for_frontend({
         "query": query,
@@ -159,9 +159,32 @@ def tool_search(query: str) -> Dict[str, Any]:
     )
 
 
-def pipeline(steps: str, stop_on_error: bool = True) -> Dict[str, Any]:
+def _timeout_error(step_idx: int, tool_name: str, timeout_val: int,
+                   done_results: list, orig_steps: str, orig_stop: bool) -> Dict[str, Any]:
+    """pipeline步骤超时错误 - 小沈 2026-05-22"""
+    error_data = truncate_data_for_frontend({
+        "step": step_idx + 1,
+        "tool": tool_name,
+        "timeout": timeout_val,
+        "results": done_results,
+    })
+    return build_error(
+        "ERR_PIPELINE_TIMEOUT",
+        f"步骤{step_idx + 1}({tool_name})执行超时（{timeout_val}秒），请增大timeout_per_step或简化操作",
+        data=error_data,
+        llm_data={"failed_step": step_idx + 1, "tool": tool_name, "timeout": timeout_val,
+                   "completed_steps": len(done_results)},
+        next_actions=build_next_actions([
+            ("pipeline", "增大超时重试", "需要更长时间执行时",
+             {"steps": orig_steps, "stop_on_error": orig_stop,
+              "timeout_per_step": timeout_val * 2}),
+        ]),
+    )
+
+
+def pipeline(steps: str, stop_on_error: bool = True, timeout_per_step: int = 60) -> Dict[str, Any]:
     """
-    定义工具执行管道 - 小沈 2026-05-17
+    定义工具执行管道 - 小沈 2026-05-17, 2026-05-22 新增timeout_per_step
 
     将多个工具按顺序编排执行，前一步的输出自动成为后一步的输入。
 
@@ -169,6 +192,7 @@ def pipeline(steps: str, stop_on_error: bool = True) -> Dict[str, Any]:
         steps: JSON格式的工具执行步骤列表。如
             '[{"tool":"read_csv","params":{"file_path":"data.csv"}},{"tool":"analyze_data","params":{}}]'
         stop_on_error: 某步失败时是否停止管道，默认True
+        timeout_per_step: 每步执行超时时间（秒），超时则报错停止管道，默认60秒
 
     Returns:
         执行结果，包含steps(步骤数)和results(每步结果)
@@ -283,11 +307,20 @@ def pipeline(steps: str, stop_on_error: bool = True) -> Dict[str, Any]:
                     loop = asyncio.get_running_loop()
                     import concurrent.futures
                     with concurrent.futures.ThreadPoolExecutor() as pool:
-                        result = pool.submit(asyncio.run, impl(**params)).result()
+                        future = pool.submit(asyncio.run, impl(**params))
+                        result = future.result(timeout=timeout_per_step)
+                except concurrent.futures.TimeoutError:
+                    return _timeout_error(i, tool_name, timeout_per_step, results, steps, stop_on_error)
                 except RuntimeError:
                     result = asyncio.run(impl(**params))
             else:
-                result = impl(**params)
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(impl, **params)
+                    try:
+                        result = future.result(timeout=timeout_per_step)
+                    except concurrent.futures.TimeoutError:
+                        return _timeout_error(i, tool_name, timeout_per_step, results, steps, stop_on_error)
             
             step_data = result.get("data")
             step_llm_data = result.get("llm_data")

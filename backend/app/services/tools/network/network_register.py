@@ -64,7 +64,7 @@ NETWORK_TOOL_DESCRIPTIONS = {
 - 带重试：{"url": "https://api.example.com/users", "retry": 5}
 
 返回数据说明：
-- code: 状态码，SUCCESS或ERR_NETWORK_INVALID_PARAM/ERR_NETWORK_INVALID_URL/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_TIMEOUT/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
+- code: 状态码，SUCCESS或ERR_NETWORK_INVALID_PARAM/ERR_INVALID_URL/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_TIMEOUT/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
 - data: 成功时为对象，失败时为None；成功时包含 status_code(HTTP状态码)、headers(响应头字典)、body(响应体，JSON自动解析为对象，否则为文本字符串)；HTTP错误时包含 status_code和body
 - message: 结果描述信息""",
     "download_file": """从 URL 下载文件到本地，支持大文件流式下载。
@@ -89,7 +89,7 @@ NETWORK_TOOL_DESCRIPTIONS = {
 - 带认证下载：{"url": "https://private.com/file.zip", "destination_path": "D:/Downloads/file.zip", "headers": {"Authorization": "Bearer token"}}
 
 返回数据说明：
-- code: 状态码，SUCCESS或ERR_NETWORK_INVALID_URL/ERR_NETWORK_INVALID_PATH/ERR_NETWORK_CREATE_DIR/ERR_NETWORK_WRITE_FILE/ERR_NETWORK_TIMEOUT/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
+- code: 状态码，SUCCESS或ERR_INVALID_URL/ERR_NETWORK_INVALID_PATH/ERR_NETWORK_CREATE_DIR/ERR_NETWORK_WRITE_FILE/ERR_NETWORK_TIMEOUT/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
 - data: 成功时为对象，失败时为None；成功时包含 file_path(文件绝对路径)、file_size(本次下载字节数)、total_size(文件总字节数)、progress_percent(进度百分比0-100)、content_type(内容类型)
 - message: 结果描述信息""",
     "fetch_webpage": """获取和处理网页内容，支持多种格式提取和智能内容提取。
@@ -107,7 +107,7 @@ NETWORK_TOOL_DESCRIPTIONS = {
 - JS渲染：{"url": "https://example.com", "js_render": true}
 
 返回数据说明：
-- code: 状态码，SUCCESS或ERR_NETWORK_INVALID_URL/ERR_NETWORK_JS_RENDER/ERR_NETWORK_TIMEOUT/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
+- code: 状态码，SUCCESS或ERR_INVALID_URL/ERR_NETWORK_JS_RENDER/ERR_NETWORK_TIMEOUT/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
 - data: 成功时为对象，失败时为None；成功时包含 url(请求地址)、content(提取的网页内容文本)、format(提取格式markdown/html/text)、content_type(响应内容类型)、status_code(HTTP状态码)、truncated(是否因max_tokens截断)；有prompt时额外包含 prompt(AI提取指令)和note(提示需LLM后处理)
 - message: 结果描述信息""",
     "search_web": """搜索网络获取最新信息（使用Bing中国搜索，国内可用）。

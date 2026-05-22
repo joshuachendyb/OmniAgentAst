@@ -557,11 +557,13 @@ class ObservationStep(ToolMixin, ReasoningStep):
         base_dict = ReasoningStep.to_dict(self)
         
         # 【改造 2026-05-22 小沈】observation改为JSON对象，符合第13章设计方案
+        # 【修复 2026-05-22 小资】summary为空时使用error_message或默认值，避免前端渲染失败
+        summary_text = self._observation or self._summary or self._error_message or "执行完成"
         observation_obj = {
-            "summary": self._observation or self._summary or "",
-            "tool_name": self._tool_name,
+            "summary": summary_text,
+            "tool_name": self._tool_name or "unknown",
             "tool_params": self._tool_params or {},
-            "return_direct": self._return_direct,
+            "return_direct": self._return_direct or False,
         }
         
         if self._execution_status:

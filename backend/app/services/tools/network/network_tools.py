@@ -62,10 +62,17 @@ async def http_request(
     timeout_sec = timeout / 1000.0
     
     try:
-        parsed = urlparse(url)
-        if not parsed.scheme or not parsed.netloc:
-            return build_error("ERR_NET_INVALID_URL", f"无效的URL: {url}，URL必须包含协议和域名（如 https://api.example.com/data）")
+        from app.services.tools.toolhelper.network_helper import _validate_url, _check_network
 
+        url_info = _validate_url(url)
+        if not url_info["data"]["valid"]:
+            return build_error("ERR_INVALID_URL", f"URL格式无效: {url}，URL必须包含协议和域名（如 https://api.example.com/data）")
+
+        net_info = _check_network()
+        if not net_info["data"]["connected"]:
+            return build_error("ERR_NETWORK_DOWN", "网络不可用，无法发送请求")
+
+        parsed = urlparse(url)
         if params:
             query_string = urlencode(params, doseq=True)
             url = urlunparse(parsed._replace(query=query_string))
@@ -205,10 +212,15 @@ async def download_file(
     resume = False
     chunk_size = 8192
     try:
-        # 验证URL
-        parsed = urlparse(url)
-        if not parsed.scheme or not parsed.netloc:
-            return build_error("ERR_NET_INVALID_URL", f"无效的URL: {url}，URL必须包含协议和域名")
+        from app.services.tools.toolhelper.network_helper import _validate_url, _check_network
+
+        url_info = _validate_url(url)
+        if not url_info["data"]["valid"]:
+            return build_error("ERR_INVALID_URL", f"URL格式无效: {url}，URL必须包含协议和域名")
+
+        net_info = _check_network()
+        if not net_info["data"]["connected"]:
+            return build_error("ERR_NETWORK_DOWN", "网络不可用，无法发送请求")
 
         # 验证目标路径
         dest_path = os.path.abspath(destination_path)
@@ -322,10 +334,16 @@ async def fetch_webpage(
     timeout_sec = timeout / 1000.0
     
     try:
-        parsed = urlparse(url)
-        if not parsed.scheme or not parsed.netloc:
-            return build_error("ERR_NET_INVALID_URL", f"无效的URL: {url}")
-        
+        from app.services.tools.toolhelper.network_helper import _validate_url, _check_network
+
+        url_info = _validate_url(url)
+        if not url_info["data"]["valid"]:
+            return build_error("ERR_INVALID_URL", f"URL格式无效: {url}")
+
+        net_info = _check_network()
+        if not net_info["data"]["connected"]:
+            return build_error("ERR_NETWORK_DOWN", "网络不可用，无法发送请求")
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         }

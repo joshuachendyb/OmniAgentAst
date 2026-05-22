@@ -177,7 +177,6 @@ INTENT_TO_CATEGORY: Dict[str, "ToolCategory"] = {
     "code_execution": ToolCategory.SHELL,
     "data_format": ToolCategory.FILE,
     "data_analysis": ToolCategory.DOCUMENT,
-    "support_tool": ToolCategory.META,
 }
 
 

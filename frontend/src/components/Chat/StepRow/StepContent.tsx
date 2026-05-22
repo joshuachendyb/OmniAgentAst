@@ -136,42 +136,47 @@ const StepContent: React.FC<StepContentProps> = ({
       {step.type === 'observation' &&
         (() => {
           // 【改造 2026-05-22 小沈】使用统一渲染组件
+          // 【修复 2026-05-22 小资】一次性安全解构，添加完整性验证
           const obsStep = step as ExecutionStep & {
-            observation?:
-              | {
-                  summary: string;
-                  tool_name: string;
-                  tool_params: Record<string, unknown>;
-                  return_direct: boolean;
-                  warning?: string;
-                  next_actions?: string[];
-                }
-              | string;
+            observation?: unknown;
             code?: string;
           };
 
-          // 兼容两种格式
+          // 兼容两种格式，正确处理null（typeof null === 'object'）
           const isObjFormat =
-            obsStep.observation && typeof obsStep.observation === 'object';
-          const summary = isObjFormat
-            ? (obsStep.observation as { summary: string }).summary
-            : String(obsStep.observation || '');
-          const toolName = isObjFormat
-            ? (obsStep.observation as { tool_name: string }).tool_name
-            : (step as ExecutionStep & Record<string, unknown>).tool_name;
-          const toolParams = isObjFormat
-            ? (obsStep.observation as { tool_params: Record<string, unknown> })
-                .tool_params
-            : step.tool_params;
-          const returnDirect = isObjFormat
-            ? (obsStep.observation as { return_direct: boolean }).return_direct
-            : (step as ExecutionStep & Record<string, unknown>).return_direct;
-          const warning = isObjFormat
-            ? (obsStep.observation as { warning?: string }).warning
-            : undefined;
-          const nextActions = isObjFormat
-            ? (obsStep.observation as { next_actions?: string[] }).next_actions
-            : undefined;
+            obsStep.observation !== null &&
+            obsStep.observation !== undefined &&
+            typeof obsStep.observation === 'object';
+
+          // 一次性安全解构所有字段
+          const obsData = isObjFormat
+            ? (obsStep.observation as Partial<{
+                summary: string;
+                tool_name: string;
+                tool_params: Record<string, unknown>;
+                return_direct: boolean;
+                warning?: string;
+                error_message?: string;
+                next_actions?: Array<{
+                  tool: string;
+                  description: string;
+                  when?: string;
+                }>;
+              }>)
+            : null;
+
+          const summary =
+            obsData?.summary ??
+            (typeof obsStep.observation === 'string'
+              ? obsStep.observation
+              : '');
+          const toolName = obsData?.tool_name ?? step.tool_name ?? '';
+          const toolParams = obsData?.tool_params ?? step.tool_params ?? {};
+          const returnDirect =
+            obsData?.return_direct ?? step.return_direct ?? false;
+          const warning = obsData?.warning;
+          const errorMessage = obsData?.error_message;
+          const nextActions = obsData?.next_actions;
           const code = obsStep.code;
 
           if (!summary && !toolName) return null;
@@ -206,9 +211,16 @@ const StepContent: React.FC<StepContentProps> = ({
                   </span>
                 )}
               </div>
-              <div style={{ marginTop: Spacing.XS }}>
-                <SmartContentRenderer content={summary} maxLines={5} />
-              </div>
+              {/* 优先显示error_message（红色），否则显示summary */}
+              {errorMessage ? (
+                <div style={{ marginTop: Spacing.XS, color: Colors.ERROR }}>
+                  ❌ {errorMessage}
+                </div>
+              ) : (
+                <div style={{ marginTop: Spacing.XS }}>
+                  <SmartContentRenderer content={summary} maxLines={5} />
+                </div>
+              )}
               <WarningBox warning={warning} />
               <NextActions actions={nextActions} />
             </div>

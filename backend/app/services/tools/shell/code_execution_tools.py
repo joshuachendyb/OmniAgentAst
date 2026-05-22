@@ -156,6 +156,7 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
                     llm_data=_llm,
                     next_actions=build_next_actions([
                         ("execute_python", "修改代码重试", "需要修正代码后重新执行时"),
+                        ("tool_search", "搜索可用的代码辅助工具", "需要查找其他工具帮助诊断问题时"),
                     ])
                 )
 
@@ -173,6 +174,7 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
                 llm_data=format_output_for_llm(_partial_stdout, _partial_stderr),
                 next_actions=build_next_actions([
                     ("execute_python", "增大超时重试", "需要更长时间执行时"),
+                    ("tool_search", "搜索可用的代码辅助工具", "需要查找其他工具帮助诊断问题时"),
                 ])
             )
         finally:
@@ -261,6 +263,7 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
                     llm_data=_llm,
                     next_actions=build_next_actions([
                         ("execute_javascript", "修改代码重试", "需要修正代码后重新执行时"),
+                        ("tool_search", "搜索可用的代码辅助工具", "需要查找其他工具帮助诊断问题时"),
                     ])
                 )
 
@@ -278,6 +281,7 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
                 llm_data=format_output_for_llm(_partial_stdout, _partial_stderr),
                 next_actions=build_next_actions([
                     ("execute_javascript", "增大超时重试", "需要更长时间执行时"),
+                    ("tool_search", "搜索可用的代码辅助工具", "需要查找其他工具帮助诊断问题时"),
                 ])
             )
         finally:

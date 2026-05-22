@@ -1497,10 +1497,15 @@ const processSSEData = (
         step.timestamp = rawData.timestamp || Date.now();
         step.code = rawData.code; // 状态码（SUCCESS/ERROR/WARNING）
 
-        // 【兼容层】支持两种格式
-        if (rawData.observation && typeof rawData.observation === 'object') {
+        // 【兼容层 2026-05-22 小资】支持两种格式，添加完整性验证
+        // 先检查null（typeof null === 'object'是历史bug）
+        if (
+          rawData.observation !== null &&
+          rawData.observation !== undefined &&
+          typeof rawData.observation === 'object'
+        ) {
           // 新格式：observation是JSON对象
-          const obsData = rawData.observation as {
+          const obsData = rawData.observation as Partial<{
             summary: string;
             tool_name: string;
             tool_params: Record<string, unknown>;
@@ -1508,26 +1513,28 @@ const processSSEData = (
             execution_status?: string;
             error_message?: string;
             warning?: string;
-            next_actions?: string[];
-          };
+            next_actions?: unknown[];
+          }>;
+          // 字段完整性验证，提供默认值
           step.observation = obsData;
-          step.tool_name = obsData.tool_name;
-          step.tool_params = obsData.tool_params;
-          step.return_direct = obsData.return_direct;
-          step.summary = obsData.summary;
-          step.execution_status = obsData.execution_status as
-            | 'success'
-            | 'error'
-            | 'warning';
+          step.tool_name = obsData.tool_name ?? '';
+          step.tool_params = obsData.tool_params ?? {};
+          step.return_direct = obsData.return_direct ?? false;
+          step.summary = obsData.summary ?? '';
+          step.execution_status =
+            (obsData.execution_status as 'success' | 'error' | 'warning') ??
+            undefined;
           step.error_message = obsData.error_message;
-          step.content = obsData.summary; // content用于显示
+          step.content = obsData.summary ?? ''; // content用于显示
         } else {
-          // 旧格式：observation是字符串（向后兼容）
-          step.observation = rawData.observation || '';
-          step.tool_name = rawData.tool_name || '';
-          step.tool_params = rawData.tool_params || {};
-          step.return_direct = rawData.return_direct;
-          step.content = rawData.observation || '';
+          // 旧格式：observation是字符串或null/undefined（向后兼容）
+          const obsStr =
+            rawData.observation != null ? String(rawData.observation) : '';
+          step.observation = obsStr;
+          step.tool_name = rawData.tool_name ?? '';
+          step.tool_params = rawData.tool_params ?? {};
+          step.return_direct = rawData.return_direct ?? false;
+          step.content = obsStr;
         }
 
         setExecutionSteps((prev) => {

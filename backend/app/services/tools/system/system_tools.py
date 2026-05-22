@@ -11,8 +11,11 @@ SYSTEM 工具函数模块 - 系统信息工具
 - event_log: 获取系统事件日志
 - list_processes: 列出所有进程
 - kill_process: 终止指定进程
-- log_message: 记录日志消息
-- get_logs: 获取应用日志
+- service_control: 服务统一控制（合并service_start/stop/list）
+- task_control: 计划任务统一控制（合并task_create/delete/list）
+- get_env: 获取/列出环境变量
+- set_env: 设置/删除环境变量
+- registry_control: 注册表控制
 
 返回格式：统一 {code, data, message} 格式
 

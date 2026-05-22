@@ -34,22 +34,22 @@ class TestN1ParamValidation:
 
     @pytest.mark.asyncio
     async def test_url_missing_scheme(self):
-        """URL缺少协议 → ERR_NETWORK_INVALID_URL"""
+        """URL缺少协议 → ERR_INVALID_URL"""
         result = await http_request("example.com/api")
-        assert result["code"] == "ERR_NETWORK_INVALID_URL"
+        assert result["code"] == "ERR_INVALID_URL"
         assert "协议" in result["message"]
 
     @pytest.mark.asyncio
     async def test_url_missing_netloc(self):
-        """URL缺少域名 → ERR_NETWORK_INVALID_URL"""
+        """URL缺少域名 → ERR_INVALID_URL"""
         result = await http_request("https:///path")
-        assert result["code"] == "ERR_NETWORK_INVALID_URL"
+        assert result["code"] == "ERR_INVALID_URL"
 
     @pytest.mark.asyncio
     async def test_url_empty(self):
-        """空URL → ERR_NETWORK_INVALID_URL"""
+        """空URL → ERR_INVALID_URL"""
         result = await http_request("")
-        assert result["code"] == "ERR_NETWORK_INVALID_URL"
+        assert result["code"] == "ERR_INVALID_URL"
 
     @pytest.mark.asyncio
     async def test_retry_negative(self):
