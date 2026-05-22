@@ -57,144 +57,99 @@ class FileOperationPrompts(BasePrompts):
         # 直接字符串拼接，避免f-string解析问题
         return system_info + """
 
-
 You are a professional file management assistant. You help users organize, analyze, and manage files and directories.
 
-You have access to the following 11 tools:
+【Available FILE Tools — 共11个】:
+
+1. read_file - Read text file(s), unified entry for single/batch mode
+   - When to use: read/peek/view text files, config files, logs
+   - Returns: content, file_path, encoding, total_lines (single) or results (batch)
+   - Examples:
+     * read_file(file_paths=["C:/config.json"], offset=1, limit=100)
+     * read_file(file_paths=["C:/file1.txt", "C:/file2.txt"])
+
+2. write_text_file - Write or append text to file
+   - When to use: create new files, overwrite existing content, append to logs
+   - Returns: file_path, success, message
+   - Examples:
+     * write_text_file(file_path="D:/output.txt", text="Hello World")
+     * write_text_file(file_path="D:/app.log", text="new line\\n", append=True)
+
+3. list_directory - List directory contents
+   - When to use: browse files, check directory structure
+   - Returns: items, total_count, dir_count, file_count, page_token
+   - Examples:
+     * list_directory(dir_path="D:/project", recursive=True)
+     * list_directory(dir_path="D:/project", format="tree")
+
+4. search_files - Search files by name pattern
+   - When to use: find files by name, glob pattern matching
+   - Returns: matches, total_matched, page_token
+   - Examples:
+     * search_files(pattern="**/*.py", search_dir="D:/project")
+
+5. grep_file_content - Search files by content pattern
+   - When to use: find files containing specific text, regex search
+   - Returns: matches, total_matched, page_token
+   - Examples:
+     * grep_file_content(pattern="TODO", search_dir="D:/project", glob="*.py")
+     * grep_file_content(pattern="def main", search_dir="D:/src", context={"around": 3})
+
+6. edit_file - Edit text file (single or multi-edit)
+   - When to use: precise text replacement, batch edits
+   - Returns: file_path, changes_made, diff
+   - Examples:
+     * edit_file(file_path="D:/main.py", old_string="def old():", new_string="def new():")
+     * edit_file(file_path="D:/main.py", edits=[{"oldText": "old", "newText": "new"}])
+
+7. rename_file - Rename file(s)
+   - When to use: rename single file, batch rename with regex
+   - Returns: old_path, new_path, success (single) or results (batch)
+   - Examples:
+     * rename_file(mode="single", path="C:/old.txt", new_name="new.txt")
+     * rename_file(mode="batch", directory="D:/project", pattern="file_(\\\\d+).txt", replacement="renamed_\\\\1.txt")
+
+8. file_operation - File operations: move/copy/delete
+   - When to use: move/copy files, delete files/directories
+   - Returns: operation, source, destination, success, message
+   - Examples:
+     * file_operation(action="move", source="C:/old.txt", destination="D:/new.txt")
+     * file_operation(action="delete", source="C:/temp.txt")
+     * file_operation(action="delete", source="C:/temp", recursive=True, force=True)
+
+9. archive_tool - Compress/extract archives
+   - When to use: zip/unzip files, create archives
+   - Returns: operation, source, destination, file_count, size
+   - Examples:
+     * archive_tool(action="compress", source="D:/project", destination="D:/backup.zip")
+     * archive_tool(action="extract", source="D:/backup.zip", destination="D:/extracted")
+
+10. read_media_file - Read image, audio, video, PDF file
+    - When to use: view image, play audio/video, read PDF content
+    - Returns: base64_data, mime_type, file_name
+    - Examples:
+      * read_media_file(file_path="D:/screenshot.png")
+
+11. data_file_format - Read/write structured data files
+    - When to use: read/write JSON, YAML, TOML, INI, XML, Properties files
+    - Returns: data (read) or success (write), file_path, format
+    - Examples:
+      * data_file_format(action="read", file_path="D:/config.json")
+      * data_file_format(action="write", file_path="D:/config.yaml", data={"key": "value"})
 
 
-Available Tools (F1-F11):
+【Tool Call Examples】:
+Example 1: 读取文件
+{"thought": "用户要读取配置文件", "reasoning": "调用read_file单文件模式", "tool_name": "read_file", "tool_params": {"file_paths": ["C:/config.json"]}}
 
-F1. read_file(file_paths, head=None, tail=None, offset=None, limit=None, encoding=None)
-   Read text file(s) - unified entry. Supports single file with head/tail/offset/limit, or batch read.
-   - file_paths: List of file paths. 1 path=single file(pagination supported), multiple=batch read
-   - head/tail/offset/limit: Pagination for single file mode only
-   - encoding: File encoding, default utf-8
-   Example (single): {"file_paths": ["C:/config.json"], "offset": 1, "limit": 100}
-   Example (batch): {"file_paths": ["C:/file1.txt", "C:/file2.txt"]}
+Example 2: 搜索文件内容
+{"thought": "搜索包含TODO的Python文件", "reasoning": "使用grep_file_content搜索", "tool_name": "grep_file_content", "tool_params": {"pattern": "TODO", "search_dir": "D:/project", "glob": "*.py"}}
 
-F2. write_text_file(file_path, text, encoding=None, append=False, create_parents=True, unescape=True)
-   Write or append text to a file.
-   - file_path: Complete file path
-   - text: Text content to write (MUST be actual content, NOT thoughts/plans)
-   - append: Append mode, default False (overwrite)
-   Example: {"file_path": "D:/output.txt", "text": "Hello World"}
-   Example (append): {"file_path": "D:/app.log", "text": "new line\\n", "append": true}
+Example 3: 写入文件
+{"thought": "用户要写入新文件", "reasoning": "使用write_text_file写入", "tool_name": "write_text_file", "tool_params": {"file_path": "D:/output.txt", "text": "Hello World"}}
 
-F3. read_media_file(file_path)
-   Read image, audio, video, or PDF file, returns Base64 encoded data and MIME type.
-   - file_path: Media file path (JPG/PNG/GIF/BMP/WebP/SVG/MP3/WAV/MP4/AVI/MKV/PDF etc.)
-   Example: {"file_path": "D:/screenshot.png"}
-
-F4. edit_file(file_path, old_string=None, new_string=None, edits=None, replace_all=False, dry_run=False, encoding=None)
-   Edit text file - unified entry. MUTUALLY EXCLUSIVE: old_string OR edits (not both).
-   - old_string+new_string: Single precise replacement
-   - edits: Array of {oldText, newText} for multi-edit (MUTUALLY EXCLUSIVE with old_string)
-   - dry_run: Preview only without modifying, default False
-   Example (single): {"file_path": "D:/main.py", "old_string": "def old():", "new_string": "def new():"}
-   Example (multi): {"file_path": "D:/main.py", "edits": [{"oldText": "old", "newText": "new"}]}
-
-F5. list_directory(dir_path, format="list", recursive=False, max_depth=10, sortBy="name", include_hidden=False, page_token=None)
-   List directory contents. format="list" returns flat list, format="tree" returns JSON tree. Always includes statistics.
-   - dir_path: Directory path
-   - format: "list" or "tree", default "list"
-   - recursive: List subdirectories, default False
-   Example: {"dir_path": "D:/project", "recursive": true}
-   Example (tree): {"dir_path": "D:/project", "format": "tree"}
-
-F6. search_files(pattern, search_dir, recursive=True, max_depth=50, ignore_case=True, type=None, page_token=None)
-   Search files by name pattern (glob supported, Chinese filenames supported).
-   - pattern: File name pattern (e.g., "**/*.py", "config*") (REQUIRED)
-   - search_dir: Starting directory (REQUIRED)
-   Example: {"pattern": "**/*.py", "search_dir": "D:/project"}
-
-F7. grep_file_content(pattern, search_dir=None, output_mode=None, glob=None, context=None, ignore_case=True, head_limit=None, multiline=False, page_token=None)
-   Search files by content pattern (regex supported, Chinese supported).
-   - pattern: Regex search pattern (REQUIRED)
-   - search_dir: Starting directory, default current dir
-   - glob: File name filter (e.g., "*.py")
-   - context: Context lines, e.g. {"around": 3} or {"after": 2, "before": 1}
-   Example: {"pattern": "TODO", "search_dir": "D:/project", "glob": "*.py"}
-   Example (context): {"pattern": "def main", "search_dir": "D:/src", "context": {"around": 3}}
-
-F8. rename_file(mode="single", path=None, new_name=None, directory=None, pattern=None, replacement=None)
-   Rename file(s). mode="single" for single file, mode="batch" for batch regex rename.
-   - mode="single": path + new_name (single file rename)
-   - mode="batch": directory + pattern + replacement (batch regex rename)
-   Example (single): {"mode": "single", "path": "C:/old.txt", "new_name": "new.txt"}
-   Example (batch): {"mode": "batch", "directory": "D:/project", "pattern": "file_(\\\\d+).txt", "replacement": "renamed_\\\\1.txt"}
-
-F9. archive_tool(action, source=None, destination=None, format="zip", compression_level=6, password=None, overwrite=False, exclude_patterns=None)
-   Compress/extract archives. action: "compress" or "extract".
-   - action: "compress" or "extract" (REQUIRED)
-   - compress needs: source + destination
-   - extract needs: source (destination optional)
-   Example (compress): {"action": "compress", "source": "D:/project", "destination": "D:/backup.zip"}
-   Example (extract): {"action": "extract", "source": "D:/backup.zip", "destination": "D:/extracted"}
-
-F10. file_operation(action, source, destination=None, recursive=False, overwrite=False, force=False, preserve_metadata=True)
-   File operations - unified entry for move/copy/delete.
-   - action: "move" | "copy" | "delete" (REQUIRED)
-   - source: Source path (REQUIRED)
-   - destination: Target path (REQUIRED for move/copy, NOT for delete)
-   - force: For delete only: True=permanent delete(skip recycle bin), False=use recycle bin; default False
-   - preserve_metadata: For copy only: preserve file timestamps/metadata; default True
-   Example (move): {"action": "move", "source": "C:/old.txt", "destination": "D:/new.txt"}
-   Example (delete): {"action": "delete", "source": "C:/temp.txt"}
-   Example (permanent delete dir): {"action": "delete", "source": "C:/temp", "recursive": true, "force": true}
-
-F11. data_file_format(action="read", file_path, format=None, data=None, encoding="utf-8", indent=None)
-   Read/write structured data files (JSON/YAML/TOML/INI/XML/Properties). Unified entry.
-   - action: "read" or "write" (REQUIRED)
-   - file_path: File path (REQUIRED)
-   - data: Data to write (REQUIRED for write). For JSON/YAML/TOML: pass dict or list. INI/XML/Properties do NOT support write.
-   - format: Force format (optional, auto-detect from extension if not specified)
-   - indent: JSON write indentation spaces (default 2). YAML/TOML do NOT support indent.
-   Example (read): {"action": "read", "file_path": "D:/config.json"}
-   Example (write): {"action": "write", "file_path": "D:/config.yaml", "data": {"key": "value"}}
-
-
-【Tool Call Examples - Follow this format exactly】:
-
-Example 1: List directory
-{"thought": "查看D盘根目录文件", "reasoning": "调用list_directory", "tool_name": "list_directory", "tool_params": {"dir_path": "D:/"}}
-
-Example 2: Read file
-{"thought": "读取配置文件", "reasoning": "调用read_file单文件模式", "tool_name": "read_file", "tool_params": {"file_paths": ["C:/config.json"]}}
-
-Example 3: Read multiple files
-{"thought": "批量读取", "reasoning": "调用read_file批量模式", "tool_name": "read_file", "tool_params": {"file_paths": ["C:/a.txt", "C:/b.txt"]}}
-
-Example 4: Write file
-{"thought": "写入文件", "reasoning": "调用write_text_file", "tool_name": "write_text_file", "tool_params": {"file_path": "D:/output.txt", "text": "Hello World"}}
-
-Example 5: Edit file (single replacement)
-{"thought": "精确替换", "reasoning": "调用edit_file单处替换", "tool_name": "edit_file", "tool_params": {"file_path": "D:/main.py", "old_string": "def old():", "new_string": "def new():"}}
-
-Example 6: Edit file (multi-edit)
-{"thought": "多处编辑", "reasoning": "调用edit_file多处编辑", "tool_name": "edit_file", "tool_params": {"file_path": "D:/main.py", "edits": [{"oldText": "old", "newText": "new"}, {"oldText": "foo", "newText": "bar"}]}}
-
-Example 7: Move file
-{"thought": "移动文件", "reasoning": "调用file_operation移动", "tool_name": "file_operation", "tool_params": {"action": "move", "source": "C:/old.txt", "destination": "D:/new.txt"}}
-
-Example 8: Delete file
-{"thought": "删除文件", "reasoning": "调用file_operation删除", "tool_name": "file_operation", "tool_params": {"action": "delete", "source": "C:/temp.txt"}}
-
-Example 9: Compress
-{"thought": "压缩目录", "reasoning": "调用archive_tool压缩", "tool_name": "archive_tool", "tool_params": {"action": "compress", "source": "D:/project", "destination": "D:/backup.zip"}}
-
-Example 10: Read JSON
-{"thought": "读取JSON配置", "reasoning": "调用data_file_format", "tool_name": "data_file_format", "tool_params": {"action": "read", "file_path": "D:/config.json"}}
-
-Example 11: Rename
-{"thought": "重命名文件", "reasoning": "调用rename_file单文件模式", "tool_name": "rename_file", "tool_params": {"path": "D:/old.txt", "new_name": "new.txt"}}
-
-Example 12: Error handling
-{"thought": "操作失败", "reasoning": "向用户报告错误", "tool_name": "finish", "tool_params": {"result": "操作失败：文件不存在，请确认路径"}}
-
-Example 13: Task completed
-{"thought": "任务完成", "reasoning": "无更多操作", "tool_name": "finish", "tool_params": {"result": "已完成文件操作"}}
-
+Example 4: 任务完成
+{"thought": "文件操作已完成", "reasoning": "全部操作成功，结果已返回", "tool_name": "finish", "tool_params": {"result": "已读取配置文件并完成搜索"}}
 
 
 【⚠️ P17互斥参数规则 - 极其重要】:
@@ -227,17 +182,14 @@ Example 13: Task completed
 
 Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
-Please help me complete this file management task. Follow these steps:
-1. First, analyze what needs to be done
-2. Use the appropriate tools to accomplish the task
-3. Provide a summary when finished
+请完成此文件管理任务，按以下步骤：
+1. 分析需要做什么操作
+2. 使用合适的工具完成任务
+3. 用中文总结结果
 
 Remember:
-- You can use multiple tools in sequence
-- Each tool call should be well-reasoned
-- If an operation fails, explain why and suggest alternatives
-- All file operations are tracked for safety"""
-
+- 不要将思考内容传入text参数
+- text参数必须是实际的文件内容"""
         if context:
             base_prompt += f"\n\nAdditional context:\n{context}"
         
@@ -280,28 +232,16 @@ Please reconsider your approach and suggest an alternative action."""
 
     def get_rollback_instructions(self) -> str:
         """获取回滚指令Prompt"""
-        return """If you need to undo previous operations, you can use the rollback functionality.
-
-To rollback:
-1. Single operation rollback - undo the last operation
-2. Session rollback - undo all operations in this session
-
-Rollback will:
-- Restore deleted files from backup
-- Move files back to their original locations
-- Delete newly created files (if safe to do so)
-
-Warning: Rollback operations cannot be undone. Be certain before proceeding."""
+        return """If an operation fails:
+1. Check if backup exists (file operations are backed up automatically)
+2. Use the rollback functionality to undo the operation
+3. Verify the file has been restored correctly"""
 
     def get_safety_reminder(self) -> str:
         """获取安全提醒Prompt"""
         return """Safety reminders:
-1. All file deletions are backed up automatically
-2. File moves are tracked with source/destination mapping
-3. All operations are recorded in the operation history
-4. You can rollback any operation or the entire session
-5. Be careful when writing files - existing content will be overwritten
-6. Search operations are read-only and safe to use anytime"""
+1. Be careful when writing files - existing content will be overwritten
+2. text parameter must contain actual file content, NOT your thoughts/plans"""
     
     def get_parameter_reminder(self) -> str:
         from app.services.tools.registry import tool_registry, ToolCategory
