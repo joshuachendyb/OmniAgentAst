@@ -1,3 +1,15 @@
+v0.13.23
+
+更新时间: 2026-05-22 18:00:00
+
+更新内容：
+- feat: 实施工具返回格式统一设计方案-阶段0+1+2+3（第13章设计方案）
+- 阶段0: 添加Spacing/BorderWidth/Radius样式常量，替换魔法数字
+- 阶段1: 后端ObservationStep.to_dict()改为observation JSON对象
+- 阶段2: 前端类型定义+SSE解析兼容层
+- 阶段3: 6个统一渲染组件（StatusIcon/ToolInfo/WarningBox/NextActions/SmartContentRenderer/GenericResultRenderer）
+- 遵循UX规范：系统颜色常量、禁止硬编码、禁止到处框框色块
+
 v0.13.22
 
 更新时间: 2026-05-22 15:30:00
