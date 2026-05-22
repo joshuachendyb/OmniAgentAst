@@ -101,11 +101,18 @@ def query_sql(
         sql_upper = sql.strip().upper()
         
         if not sql_upper.startswith(("SELECT", "SHOW", "DESCRIBE", "PRAGMA", "WITH", "EXPLAIN")):
-            return build_error("ERR_READ_ONLY_VIOLATION", f"错误：只允许 SELECT/SHOW/DESCRIBE 等只读操作，当前语句以 {sql.split()[0] if sql.split() else '未知'} 开头")
+            return build_error("ERR_READ_ONLY_VIOLATION", f"错误：只允许 SELECT/SHOW/DESCRIBE 等只读操作，当前语句以 {sql.split()[0] if sql.split() else '未知'} 开头",
+                next_actions=build_next_actions([
+                    ("execute_sql", "执行写操作", "需要修改数据时"),
+                    ("get_db_schema", "查看表结构", "确认字段名时"),
+                ]))
         
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
-            return build_error("ERR_DB_CONNECTION", conn_error)
+            return build_error("ERR_DB_CONNECTION", conn_error,
+                next_actions=build_next_actions([
+                    ("tool_help", "查看query_sql参数", "检查连接参数时", {"tool_name": "query_sql"}),
+                ]))
         
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
@@ -146,9 +153,17 @@ def query_sql(
         )
             
     except sqlite3.Error as e:
-        return build_error("ERR_SQL_EXEC", f"SQL执行错误: {str(e)}")
+        return build_error("ERR_SQL_EXEC", f"SQL执行错误: {str(e)}",
+            next_actions=build_next_actions([
+                ("get_db_schema", "查看表结构", "确认字段名是否正确时"),
+                ("tool_help", "查看query_sql用法", "检查SQL语法时", {"tool_name": "query_sql"}),
+            ]))
     except Exception as e:
-        return build_error("ERR_QUERY_FAILED", f"执行失败: {str(e)}")
+        return build_error("ERR_QUERY_FAILED", f"执行失败: {str(e)}",
+            next_actions=build_next_actions([
+                ("get_db_schema", "查看表结构", "确认表是否存在时"),
+                ("tool_help", "查看query_sql用法", "检查参数时", {"tool_name": "query_sql"}),
+            ]))
     finally:
         _close_connection(conn, engine)
 
@@ -219,7 +234,10 @@ def execute_sql(
         
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
-            return build_error("ERR_DB_CONNECTION", conn_error)
+            return build_error("ERR_DB_CONNECTION", conn_error,
+                next_actions=build_next_actions([
+                    ("tool_help", "查看execute_sql参数", "检查连接参数时", {"tool_name": "execute_sql"}),
+                ]))
         
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
@@ -263,14 +281,22 @@ def execute_sql(
                 conn.rollback()
             except Exception:
                 pass
-        return build_error("ERR_SQL_EXEC", f"SQL执行错误: {str(e)}")
+        return build_error("ERR_SQL_EXEC", f"SQL执行错误: {str(e)}",
+            next_actions=build_next_actions([
+                ("get_db_schema", "查看表结构", "确认字段名是否正确时"),
+                ("tool_help", "查看execute_sql用法", "检查SQL语法时", {"tool_name": "execute_sql"}),
+            ]))
     except Exception as e:
         if conn:
             try:
                 conn.rollback()
             except Exception:
                 pass
-        return build_error("ERR_EXEC_FAILED", f"执行失败: {str(e)}")
+        return build_error("ERR_EXEC_FAILED", f"执行失败: {str(e)}",
+            next_actions=build_next_actions([
+                ("get_db_schema", "查看表结构", "确认表是否存在时"),
+                ("tool_help", "查看execute_sql用法", "检查参数时", {"tool_name": "execute_sql"}),
+            ]))
     finally:
         _close_connection(conn, engine)
 
@@ -305,7 +331,10 @@ def get_db_schema(
     try:
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path)
         if conn is None:
-            return build_error("ERR_DB_CONNECTION", conn_error)
+            return build_error("ERR_DB_CONNECTION", conn_error,
+                next_actions=build_next_actions([
+                    ("tool_help", "查看get_db_schema参数", "检查连接参数时", {"tool_name": "get_db_schema"}),
+                ]))
         
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
@@ -325,7 +354,11 @@ def get_db_schema(
         if table_name:
             tables = [t for t in tables if t == table_name]
             if not tables:
-                return build_error("ERR_DOC_DB_TABLE_NOT_FOUND", f"表不存在: {table_name}")
+                return build_error("ERR_DOC_DB_TABLE_NOT_FOUND", f"表不存在: {table_name}",
+                    next_actions=build_next_actions([
+                        ("get_db_schema", "列出所有表", "确认正确的表名时", {"connection_type": connection_type}),
+                        ("query_sql", "查询表列表", "查看所有可用表时", {"sql": "SELECT name FROM sqlite_master WHERE type='table'"}),
+                    ]))
         elif filter_pattern:
             import fnmatch
             # 小健 2026-05-19: SQL LIKE用%通配，fnmatch用*，自动转换
@@ -339,7 +372,10 @@ def get_db_schema(
         
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path)
         if conn is None:
-            return build_error("ERR_DB_CONNECTION", conn_error)
+            return build_error("ERR_DB_CONNECTION", conn_error,
+                next_actions=build_next_actions([
+                    ("tool_help", "查看get_db_schema参数", "检查连接参数时", {"tool_name": "get_db_schema"}),
+                ]))
         
         for table_name in tables:
             if connection_type in ("mysql", "postgresql"):
@@ -413,9 +449,17 @@ def get_db_schema(
         )
             
     except sqlite3.Error as e:
-        return build_error("ERR_SQL_EXEC", f"获取数据库结构失败: {str(e)}")
+        return build_error("ERR_SQL_EXEC", f"获取数据库结构失败: {str(e)}",
+            next_actions=build_next_actions([
+                ("query_sql", "尝试查询", "确认数据库可访问时", {"sql": "SELECT 1"}),
+                ("tool_help", "查看get_db_schema用法", "检查参数时", {"tool_name": "get_db_schema"}),
+            ]))
     except Exception as e:
-        return build_error("ERR_SCHEMA_FAILED", f"执行失败: {str(e)}")
+        return build_error("ERR_SCHEMA_FAILED", f"执行失败: {str(e)}",
+            next_actions=build_next_actions([
+                ("query_sql", "尝试查询", "确认数据库可访问时", {"sql": "SELECT 1"}),
+                ("tool_help", "查看get_db_schema用法", "检查参数时", {"tool_name": "get_db_schema"}),
+            ]))
     finally:
         _close_connection(conn, engine)
 
