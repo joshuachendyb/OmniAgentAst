@@ -24,7 +24,6 @@ Author: 小沈 - 2026-05-02
 【重构 2026-05-18 小健】8合2路由重构
 """
 
-import importlib
 import csv
 import json
 import os
@@ -38,33 +37,8 @@ from app.services.tools.document.document_schema import (
 )
 from app.services.tools.tool_result_utils import build_next_actions
 from app.services.tools._response import build_success, build_error, build_warning
-
-
-def _check_module(module_name: str) -> bool:
-    """检查模块是否可用 - 小沈 2026-05-02"""
-    try:
-        importlib.import_module(module_name)
-        return True
-    except ImportError:
-        return False
-
-
-def _check_pandas() -> bool:
-    """检查pandas是否可用 - 小沈 2026-05-18"""
-    try:
-        importlib.import_module("pandas")
-        return True
-    except ImportError:
-        return False
-
-
-def _check_openpyxl() -> bool:
-    """检查openpyxl是否可用 - 小沈 2026-05-18"""
-    try:
-        importlib.import_module("openpyxl")
-        return True
-    except ImportError:
-        return False
+from app.services.tools.toolhelper.common_helper import _check_module
+from app.services.tools.toolhelper.data_helper import _serialize_rows
 
 
 def _check_pdf_readable(file_path: str) -> Dict[str, Any]:
@@ -193,24 +167,6 @@ def _validate_chart_data(data: Dict[str, Any]) -> Dict[str, Any]:
                 data={"valid": False, "errors": errors})
 
 
-def _serialize_pandas_rows(df) -> List[Any]:
-    """将DataFrame行数据序列化为JSON安全格式 - 小沈 2026-05-18"""
-    import pandas as pd
-    rows = df.values.tolist()
-    serialized_rows = []
-    for row in rows:
-        serialized_row = []
-        for val in row:
-            if pd.isna(val):
-                serialized_row.append(None)
-            elif hasattr(val, 'item'):
-                serialized_row.append(val.item())
-            else:
-                serialized_row.append(val)
-        serialized_rows.append(serialized_row)
-    return serialized_rows
-
-
 def _read_csv_pandas(
     file_path: str,
     encoding: str = "utf-8",
@@ -219,7 +175,7 @@ def _read_csv_pandas(
     max_rows: int = 1000,
 ) -> Dict[str, Any]:
     """使用pandas读取CSV文件 - 小沈 2026-05-18（从data_analysis迁入）"""
-    if not _check_pandas():
+    if not _check_module("pandas"):
         return build_error("ERR_NO_PANDAS", "pandas库未安装，请先执行: pip install pandas")
     try:
         import pandas as pd
@@ -229,7 +185,7 @@ def _read_csv_pandas(
         header = 0 if has_header else None
         df = pd.read_csv(path, encoding=encoding, delimiter=delimiter, header=header, nrows=max_rows)
         columns = df.columns.tolist()
-        serialized_rows = _serialize_pandas_rows(df)
+        serialized_rows = _serialize_rows(df)
         dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
         return build_success({"columns": columns, "rows": serialized_rows, "row_count": len(serialized_rows), "dtypes": dtypes}, f"成功读取CSV文件: {file_path}，共 {len(serialized_rows)} 行数据")
     except Exception as e:
@@ -242,9 +198,9 @@ def _read_excel_pandas(
     max_rows: int = 1000,
 ) -> Dict[str, Any]:
     """使用pandas读取Excel文件 - 小沈 2026-05-18（从data_analysis迁入）"""
-    if not _check_pandas():
+    if not _check_module("pandas"):
         return build_error("ERR_NO_PANDAS", "pandas库未安装，请先执行: pip install pandas openpyxl")
-    if not _check_openpyxl():
+    if not _check_module("openpyxl"):
         return build_error("ERR_DOC_NO_OPENPYXL", "openpyxl库未安装，请先执行: pip install openpyxl")
     try:
         import pandas as pd
@@ -253,7 +209,7 @@ def _read_excel_pandas(
             return build_error("ERR_READ_EXCEL_DATAFRAME", f"文件不存在: {file_path}")
         df = pd.read_excel(path, sheet_name=sheet_name if sheet_name else 0, nrows=max_rows, engine="openpyxl")
         columns = df.columns.tolist()
-        serialized_rows = _serialize_pandas_rows(df)
+        serialized_rows = _serialize_rows(df)
         dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
         actual_sheet = sheet_name if sheet_name else "Sheet1"
         return build_success({"columns": columns, "rows": serialized_rows, "row_count": len(serialized_rows), "dtypes": dtypes, "sheet_name": actual_sheet}, f"成功读取Excel文件: {file_path}，共 {len(serialized_rows)} 行数据")
