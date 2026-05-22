@@ -1,24 +1,7 @@
 # -*- coding: utf-8 -*-
-"""
-Tools/File 模块 - 文件操作工具集
+"""Tools/File 模块 - 文件操作工具集"""
 
-【迁移说明】
-本目录是从 agent/tools.py 迁移而来
-迁移时间：2026-03-21
-
-Author: 小沈 - 2026-03-21
-"""
-
-from app.services.tools.file.file_schema import (
-    ReadFileInput,
-    WriteFileInput,
-    ListDirectoryInput,
-    DeleteFileInput,
-    MoveFileInput,
-    SearchFileContentInput,
-    SearchFilesByNameInput,
-    GenerateReportInput,
-)
+from app.services.tools.file.file_register import *
 from app.services.tools.file.file_tools import (
     # 常量
     PAGE_SIZE,
@@ -28,37 +11,25 @@ from app.services.tools.file.file_tools import (
     # 类
     FileTools,
     ToolDefinition,
-    # 装饰器
-    register_tool,
-    # 模型
-    ReadFileInput,
-    WriteFileInput,
-    ListDirectoryInput,
-    DeleteFileInput,
-    MoveFileInput,
-    SearchFileContentInput,
-    SearchFilesByNameInput,
-    GenerateReportInput,
     # 工具函数
-    get_registered_tools,
-    get_tool,
     encode_page_token,
     decode_page_token,
-    _to_unified_format,
-    _generate_summary,
     get_file_tools,
 )
 
 __all__ = [
     # Schema模型
     "ReadFileInput",
-    "WriteFileInput",
+    "WriteTextFileInput",
     "ListDirectoryInput",
-    "DeleteFileInput",
-    "MoveFileInput",
-    "SearchFileContentInput",
-    "SearchFilesByNameInput",
-    "GenerateReportInput",
+    "SearchFilesInput",
+    "ReadMediaFileInput",
+    "GrepFileContentInput",
+    "EditFileInput",
+    "FileOperationInput",
+    "ArchiveToolInput",
+    "RenameFileInput",
+    "DataFileFormatInput",
     # 常量
     "PAGE_SIZE",
     "MAX_PAGE_SIZE",
@@ -67,14 +38,8 @@ __all__ = [
     # 类
     "FileTools",
     "ToolDefinition",
-    # 装饰器
-    "register_tool",
     # 工具函数
-    "get_registered_tools",
-    "get_tool",
     "encode_page_token",
     "decode_page_token",
-    "_to_unified_format",
-    "_generate_summary",
     "get_file_tools",
 ]

@@ -1,0 +1,17 @@
+# -*- coding: utf-8 -*-
+# 工具配置文件 - 小健
+# T2: 配置外部化
+
+tools:
+  timeouts:
+    read_file: 10
+    write_file: 10
+    default: 60
+
+  aliases:
+    read_file:
+      path: file_path
+      file: file_path
+    write_file:
+      path: file_path
+      content: content

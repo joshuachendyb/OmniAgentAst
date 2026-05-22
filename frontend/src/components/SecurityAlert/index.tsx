@@ -11,8 +11,8 @@
  */
 
 import React from 'react';
-import { Alert, Space, Typography, Tag } from 'antd';
-import { StopOutlined, WarningOutlined } from '@ant-design/icons';
+import { Alert, Space, Typography, Tag, Button } from 'antd';
+import { StopOutlined, WarningOutlined, CheckOutlined } from '@ant-design/icons';
 
 const { Text, Title } = Typography;
 
@@ -26,6 +26,8 @@ interface SecurityAlertProps {
   score: number;
   /** 提示信息 */
   message: string;
+  /** 关闭警告的回调 - 小强 2026-04-20 */
+  onClose?: () => void;
 }
 
 /**
@@ -46,6 +48,7 @@ export const SecurityAlert: React.FC<SecurityAlertProps> = ({
   command,
   score,
   message,
+  onClose,
 }) => {
   return (
     <Alert
@@ -107,6 +110,18 @@ export const SecurityAlert: React.FC<SecurityAlertProps> = ({
           <Text type="secondary" style={{ fontSize: 12 }}>
             💡 系统已自动阻止此危险操作，如需执行请联系管理员。
           </Text>
+
+          {/* 【小强 2026-04-20】关闭按钮 */}
+          {onClose && (
+            <Button
+              type="primary"
+              icon={<CheckOutlined />}
+              onClick={onClose}
+              style={{ marginTop: 8, width: '100%' }}
+            >
+              我知道了
+            </Button>
+          )}
         </Space>
       }
     />

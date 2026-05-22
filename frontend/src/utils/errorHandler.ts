@@ -648,18 +648,20 @@ setInterval(clearExpiredErrors, ERROR_DEDUP_WINDOW);
  * @param error 错误对象
  * @returns 是否静默处理
  */
-export function isSilentError(error: any): boolean {
+export function isSilentError(error: unknown): boolean {
   if (!error) return false;
 
-  if (error.name === "AbortError") {
+  const err = error as { name?: string; message?: string };
+
+  if (err.name === "AbortError") {
     return true;
   }
 
-  if (error.message?.includes("canceled") || error.message?.includes("Cancelled")) {
+  if (err.message?.includes("canceled") || err.message?.includes("Cancelled")) {
     return true;
   }
 
-  if (error.message?.includes("组件已卸载") || error.message?.includes("component unmounted")) {
+  if (err.message?.includes("组件已卸载") || err.message?.includes("component unmounted")) {
     return true;
   }
 
@@ -732,21 +734,29 @@ export function showSuccess(msg: string = "操作成功"): void {
  * @param error 错误对象
  * @returns 错误类型
  */
-export function classifyError(error: any): ErrorType {
+export function classifyError(error: unknown): ErrorType {
   if (!error) {
     return ErrorType.UNKNOWN;
   }
 
-  if (error.name === "AbortError") {
+  const err = error as { 
+    name?: string; 
+    message?: string; 
+    response?: { status?: number };
+    error_type?: string;
+    code?: string;
+  };
+
+  if (err.name === "AbortError") {
     return ErrorType.REQUEST_ABORT;
   }
 
-  if (error.message?.includes("组件已卸载") || error.message?.includes("component unmounted")) {
+  if (err.message?.includes("组件已卸载") || err.message?.includes("component unmounted")) {
     return ErrorType.COMPONENT_UNMOUNTED;
   }
 
-  if (error.response?.status) {
-    const status = error.response.status;
+  if (err.response?.status) {
+    const status = err.response.status;
     switch (status) {
       case 401:
         return ErrorType.AUTH_401;
@@ -767,8 +777,8 @@ export function classifyError(error: any): ErrorType {
     }
   }
 
-  if (error.message) {
-    const msg = error.message.toLowerCase();
+  if (err.message) {
+    const msg = err.message.toLowerCase();
     if (msg.includes("connection refused") || msg.includes("err_connection_refused")) {
       return ErrorType.CONNECTION_REFUSED;
     }
@@ -789,8 +799,8 @@ export function classifyError(error: any): ErrorType {
     }
   }
 
-  if (error.error_type) {
-    switch (error.error_type) {
+  if (err.error_type) {
+    switch (err.error_type) {
       case "empty_response":
         return ErrorType.BACKEND_ERROR;
       case "timeout":
@@ -802,7 +812,7 @@ export function classifyError(error: any): ErrorType {
     }
   }
 
-  if (error.code === "ECONNABORTED") {
+  if (err.code === "ECONNABORTED") {
     return ErrorType.REQUEST_TIMEOUT;
   }
 
@@ -837,7 +847,7 @@ export interface ErrorContext {
  * @param context 错误上下文
  * @returns 处理结果
  */
-export function handleError(error: any, context: ErrorContext = {}): ActionResult {
+export function handleError(error: unknown, context: ErrorContext = {}): ActionResult {
   if (isSilentError(error)) {
     return { handled: true };
   }
@@ -894,7 +904,7 @@ export function handleError(error: any, context: ErrorContext = {}): ActionResul
  * @param options 选项
  */
 export function handleApiError(
-  error: any,
+error: unknown,
   options?: {
     onRetry?: () => void;
     showError?: boolean;
@@ -954,7 +964,7 @@ export interface SSEErrorContext {
  * @param error SSE错误对象
  * @param context SSE错误上下文
  */
-export function handleSSEError(error: any, context: SSEErrorContext): ActionResult {
+export function handleSSEError(error: unknown, context: SSEErrorContext): ActionResult {
   if (isSilentError(error)) {
     return { handled: true };
   }

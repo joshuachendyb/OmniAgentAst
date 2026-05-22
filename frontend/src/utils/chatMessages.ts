@@ -106,8 +106,9 @@ export const showCachedInfo = (content: string = "已暂存到本地") => {
 /**
  * 409版本冲突处理
  */
-export const handleConflictError = (error: any): boolean => {
-  if (error?.response?.status === 409) {
+export const handleConflictError = (error: unknown): boolean => {
+  const errObj = error as { response?: { status: number } };
+  if (errObj?.response?.status === 409) {
     showConflictError();
     return true;
   }
@@ -119,7 +120,7 @@ export const handleConflictError = (error: any): boolean => {
  */
 export const handleSaveErrorWithCache = async (
   currentSessionId: string,
-  data: any,
+  data: unknown,
   dataType: "message" | "title",
   errorMsg: string = "保存失败"
 ) => {
@@ -127,10 +128,10 @@ export const handleSaveErrorWithCache = async (
   
   try {
     const cacheKey = `unsaved_${dataType}_${currentSessionId}`;
-    const cached = JSON.parse(localStorage.getItem(cacheKey) || "[]");
+    const cached: Array<Record<string, unknown>> = JSON.parse(localStorage.getItem(cacheKey) || "[]");
     
     // 避免重复缓存
-    const exists = cached.some((item: any) => {
+    const exists = cached.some((item) => {
       if (dataType === "message") {
         return item.assistant === data;
       }
@@ -139,7 +140,7 @@ export const handleSaveErrorWithCache = async (
     
     if (!exists) {
       cached.push({
-        ...data,
+        ...(data as Record<string, unknown>),
         timestamp: Date.now(),
       });
       localStorage.setItem(cacheKey, JSON.stringify(cached));

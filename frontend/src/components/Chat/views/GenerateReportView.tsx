@@ -39,12 +39,12 @@ const GenerateReportView: React.FC<GenerateReportViewProps> = ({ data, isExpande
 
   if (reportEntries.length === 0) {
     return (
-      <div style={{ 
-        color: Colors.TEXT.TERTIARY, 
-        fontStyle: "italic",
-        fontSize: FontSize.TERTIARY,
-      }}>
-        📊 无报告数据
+<div style={{ 
+          color: Colors.TEXT.TERTIARY, 
+          fontStyle: "italic",
+          fontSize: FontSize.TERTIARY,
+        }}>
+        无报告数据
       </div>
     );
   }

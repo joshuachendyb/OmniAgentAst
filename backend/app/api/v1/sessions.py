@@ -12,6 +12,8 @@
 # key: session_id, value: user_message_id 或 assistant_message_id
 _user_message_ids: dict = {}
 _assistant_message_ids: dict = {}
+import threading
+_message_ids_lock = threading.Lock()
 
 import sqlite3
 import uuid
@@ -156,6 +158,9 @@ def _get_db_connection():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
+    # 【M18修复 2026-05-13 小沈】启用WAL模式+忙等待超时，解决并发写入"database is locked"错误
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 
@@ -770,7 +775,8 @@ async def save_message(session_id: str, message: MessageCreate):
         
         # 【新增 2026-03-16】保存用户消息ID到内存字典，用于生成AI消息ID
         if message.role == 'user':
-            _user_message_ids[session_id] = message_id
+            with _message_ids_lock:
+                _user_message_ids[session_id] = message_id
             logger.info(f"[保存用户消息ID] message_id={message_id}, session_id={session_id}")
         
         # 计算新的消息计数
@@ -951,7 +957,8 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
         if user_message_id:
             expected_assistant_id = user_message_id + 1
             # 存入字典（更新为最新的）
-            _assistant_message_ids[session_id] = expected_assistant_id
+            with _message_ids_lock:
+                _assistant_message_ids[session_id] = expected_assistant_id
             logger.info(f"[重新计算AI消息ID] user_message_id={user_message_id}, assistant_message_id={expected_assistant_id}")
             # 检查消息是否已存在
             cursor.execute('SELECT id, role FROM chat_messages WHERE id = ?', (expected_assistant_id,))
@@ -974,7 +981,8 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
             if user_message_id:
                 expected_assistant_id = user_message_id + 1
                 # 存入字典
-                _assistant_message_ids[session_id] = expected_assistant_id
+                with _message_ids_lock:
+                    _assistant_message_ids[session_id] = expected_assistant_id
                 logger.info(f"[计算AI消息ID] user_message_id={user_message_id}, assistant_message_id={expected_assistant_id}")
             else:
                 # 内存没有查数据库
@@ -988,7 +996,8 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
                 
                 if last_user_msg:
                     expected_assistant_id = last_user_msg['id'] + 1
-                    _assistant_message_ids[session_id] = expected_assistant_id
+                    with _message_ids_lock:
+                        _assistant_message_ids[session_id] = expected_assistant_id
                     logger.info(f"[基于数据库] user_msg_id={last_user_msg['id']}, assistant_msg_id={expected_assistant_id}")
                 else:
                     expected_assistant_id = 1

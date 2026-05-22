@@ -9,7 +9,7 @@
  */
 
 import React from "react";
-import { CheckCircleOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, SendOutlined, DownloadOutlined, InboxOutlined } from "@ant-design/icons";
 
 interface MoveFileViewProps {
   data: {
@@ -28,14 +28,15 @@ const MoveFileView: React.FC<MoveFileViewProps> = ({ data }) => {
   if (!source && !destination && !message) {
     return (
       <div style={{ color: "#888", fontStyle: "italic" }}>
-        📦 移动结果为空
+        <InboxOutlined style={{ marginRight: 6 }} />
+        移动结果为空
       </div>
     );
   }
 
   // 移动成功样式
   const moveStyle = {
-    background: "linear-gradient(135deg, #e6f7ff 0%, #f5f5f5 100%)",
+    background: "#e6f7ff",
     border: "1px solid #91d5ff",
     borderRadius: 8,
     padding: "12px 16px",
@@ -56,7 +57,7 @@ const MoveFileView: React.FC<MoveFileViewProps> = ({ data }) => {
       {/* 源路径 */}
       {source && (
         <div style={{ marginTop: 8 }}>
-          <span style={{ color: "#666" }}>📤 源路径：</span>
+          <span style={{ color: "#666" }}><SendOutlined style={{ marginRight: 4 }} /> 源路径：</span>
           <code
             style={{
               background: "#f5f5f5",
@@ -74,7 +75,7 @@ const MoveFileView: React.FC<MoveFileViewProps> = ({ data }) => {
       {/* 目标路径 */}
       {destination && (
         <div style={{ marginTop: 8 }}>
-          <span style={{ color: "#666" }}>📥 目标路径：</span>
+          <span style={{ color: "#666" }}><DownloadOutlined style={{ marginRight: 4 }} /> 目标路径：</span>
           <code
             style={{
               background: "#f5f5f5",

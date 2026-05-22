@@ -62,23 +62,30 @@ class LLMAdapter:
             SelectedStrategy: 选中的策略
         """
         if self._strategy is None:
-            logger.info(f"[LLMAdapter] 开始探测模型能力: model={self.model}")
+            # 【优化 2026-05-11 小健】紧凑格式：开始探测
+            logger.info(f"[适配器] 开始探测: model={self.model}")
             
             # 探测能力
-            result = await self._detector.detect()
+            try:
+                result = await self._detector.detect()
+            except Exception as e:
+                # 【重构 2026-05-14 小健】统一走StrategySelector.fallback()
+                logger.error(f"[适配器] 探测异常: {e}", exc_info=True)
+                self._strategy = StrategySelector.fallback(f"探测异常: {e}")
+                return self._strategy
             
             if result.success:
                 self._feature = result.feature
                 self._strategy = StrategySelector.select(self._feature)
-                logger.info(f"[LLMAdapter] 探测成功: method={self._strategy.method}, description={self._strategy.description}")
-            else:
-                # 探测失败，默认降级
-                logger.warning(f"[LLMAdapter] 探测失败: {result.error}")
-                self._strategy = SelectedStrategy(
-                    method="prompt",
-                    capability=LLMCapability.NONE,
-                    description=f"探测失败: {result.error}"
+                # 【优化 2026-05-11 小健】紧凑格式：策略选择结果
+                logger.info(
+                    f"[适配器] 策略选择:\n"
+                    f"  └─ 最终策略: {self._strategy.method} ({self._strategy.description})"
                 )
+            else:
+                # 【重构 2026-05-14 小健】统一走StrategySelector.fallback()
+                logger.warning(f"[适配器] 探测失败: error={result.error}")
+                self._strategy = StrategySelector.fallback(f"探测失败: {result.error}")
         
         return self._strategy
     

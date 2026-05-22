@@ -16,11 +16,57 @@ LLM 核心模块 - 提供通用的 LLM API 调用能力
 """
 
 import json
+import re
+import asyncio
 import httpx
 import httpcore
 from typing import List, Dict, Optional, AsyncGenerator, Any
 
 from app.utils.logger import logger
+
+
+def _convert_xml_tool_call_to_json(content: str) -> Optional[str]:
+    """
+    通用XML工具调用转JSON
+    
+    某些模型（如LongCat）返回XML格式工具调用而不是标准OpenAI tool_calls。
+    格式: <XXX_tool_call>TOOL_NAME\\n<XXX_arg_key>k</XXX_arg_key>\\n<XXX_arg_value>v</XXX_arg_value>\\n</XXX_tool_call>
+    
+    此函数通用检测任意前缀的XML工具调用标签并转为标准JSON格式。
+    
+    Returns:
+        转换后的JSON字符串，如果无匹配返回None
+    """
+    if not content or '<' not in content or '_tool_call>' not in content:
+        return None
+    
+    # 匹配 <任意前缀_tool_call>TOOL_NAME
+    m = re.search(r'<(\w+)_tool_call>\s*(\w+)', content)
+    if not m:
+        return None
+    
+    prefix = m.group(1)   # 如: longcat
+    tool_name = m.group(2)  # 如: search_web
+    
+    # 匹配 <prefix_arg_key>KEY</prefix_arg_key> 和 <prefix_arg_value>VALUE</prefix_arg_value> 对
+    arg_keys = re.findall(rf'<{prefix}_arg_key>([^<]+)</{prefix}_arg_key>', content)
+    arg_values = re.findall(rf'<{prefix}_arg_value>([^<]*)</{prefix}_arg_value>', content)
+    
+    if not arg_keys:
+        return None
+    
+    # 构建标准JSON格式
+    tool_params = {}
+    for i, key in enumerate(arg_keys):
+        val = arg_values[i] if i < len(arg_values) else ''
+        tool_params[key.strip()] = val.strip()
+    
+    result = json.dumps({
+        "tool_name": tool_name,
+        "tool_params": tool_params
+    }, ensure_ascii=False)
+    
+    return result
 
 
 class Message:
@@ -35,12 +81,14 @@ class Message:
 
 class ChatResponse:
     """聊天响应类 - 非流式响应"""
-    def __init__(self, content: str, model: str, provider: str = "", error: Optional[str] = None):
+    def __init__(self, content: str, model: str, provider: str = "", error: Optional[str] = None,
+                 reasoning: Optional[str] = None):
         self.content = content
         self.model = model
         self.provider = provider
         self.error = error
         self.success = error is None
+        self.reasoning = reasoning or ""
 
 
 class StreamChunk:
@@ -73,11 +121,15 @@ class BaseAIService:
     新增provider只需在配置文件中添加配置，零代码修改！
     """
     
-    def __init__(self, api_key: str, model: str, api_base: str, provider: str = "", timeout: int = 60):
+    def __init__(self, api_key: str, model: str, api_base: str, provider: str = "", timeout: int = 60,
+                 max_tokens: int = 4096, temperature: float = 0.7, seed: Optional[int] = None):
         self.api_key = api_key
         self.model = model
         self.api_base = api_base
         self.provider = provider
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.seed = seed
         
         try:
             timeout_value = float(timeout) if timeout else 60.0
@@ -87,7 +139,7 @@ class BaseAIService:
         
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(
-                connect=10.0,
+                connect=30.0,  # 【2026-05-14 小健/小沈】httpx 0.26.0→0.28.1后TLS偶发超时，10→30
                 read=None,
                 write=10.0,
                 pool=10.0,
@@ -97,6 +149,31 @@ class BaseAIService:
         
         self._cancelled = False
         self._current_response: Optional[httpx.Response] = None
+
+    async def __call__(self, message: str, history: Optional[List[Message]] = None) -> "ChatResponse":
+        """使BaseAIService可调用，兼容策略层直接调用 llm_client(msg, history) 的约定 - 小沈 2026-05-21"""
+        return await self.chat(message, history)
+
+    def _build_request_body(self, messages: List[Dict]) -> Dict:
+        """
+        构建LLM API请求体
+
+        【改进8 2026-05-01 小沈 小健】添加max_tokens/temperature/seed参数
+
+        Returns:
+            包含model/messages/stream/参数的请求体字典
+        """
+        body = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
+        }
+        # seed可选，None时不传（避免不支持seed的API报错）
+        if self.seed is not None:
+            body["seed"] = self.seed
+        return body
     
     def cancel(self):
         """强制取消当前请求"""
@@ -104,7 +181,15 @@ class BaseAIService:
         self._cancelled = True
         if self._current_response:
             try:
-                self._current_response.close()
+                # 【修复 2026-04-30 小沈】异步流用aclose()，不能用同步close()
+                if hasattr(self._current_response, 'aclose'):
+                    import asyncio
+                    try:
+                        asyncio.get_event_loop().run_until_complete(self._current_response.aclose())
+                    except RuntimeError:
+                        pass
+                else:
+                    self._current_response.close()
                 logger.info("[BaseAIService.cancel] HTTP响应已强制关闭")
             except Exception as e:
                 logger.error(f"[BaseAIService.cancel] 关闭响应失败: {e}")
@@ -124,21 +209,49 @@ class BaseAIService:
         return messages
     
     async def chat(self, message: str, history: Optional[List[Message]] = None) -> ChatResponse:
-        """发送对话请求（一次性返回）"""
+        """发送对话请求（一次性返回）
+        
+        【修复 2026-05-05 小沈】添加reasoning_content聚合日志，
+        便于诊断thinking模型空响应问题
+        """
         try:
             full_content = ""
+            full_reasoning = ""
+            has_non_reasoning_content = False
             stream_error = None
             async for chunk in self.chat_stream(message, history):
                 if chunk.content:
-                    full_content += chunk.content
+                    if getattr(chunk, "is_reasoning", False):
+                        # reasoning_content: 收集到reasoning字段，不合并到content
+                        full_reasoning += chunk.content
+                    else:
+                        # 普通content: 正常收集
+                        full_content += chunk.content
+                        has_non_reasoning_content = True
+                # 【修复 2026-05-05 小沈】记录explicit reasoning字段
+                if chunk.reasoning:
+                    full_reasoning += chunk.reasoning
                 if chunk.stream_error:
                     stream_error = chunk.stream_error
                 if chunk.is_done:
                     break
+            # 【2026-05-13 小沈】fallback：如果没有非推理内容，用推理内容代替（thinking模型）
+            if not has_non_reasoning_content and full_reasoning:
+                full_content = full_reasoning
+                logger.info(f"[chat] 无普通content，使用reasoning_content作为fallback")
+            # 【修复 2026-05-05 小沈】日志：记录聚合结果，便于诊断空响应
+            logger.info(
+                f"[chat] 聚合结果, model={self.model}, "
+                f"full_content长度={len(full_content)}, "
+                f"full_reasoning长度={len(full_reasoning)}, "
+                f"has_error={stream_error is not None}"
+            )
             if stream_error:
                 return ChatResponse(content="", model=self.model, provider=self.provider, error=stream_error)
-            return ChatResponse(content=full_content, model=self.model, provider=self.provider)
+            return ChatResponse(content=full_content, model=self.model, provider=self.provider,
+                                reasoning=full_reasoning)
         except Exception as e:
+            logger.error(f"[chat] 异常: {e}")
             return ChatResponse(content="", model=self.model, provider=self.provider, error=str(e))
     
     async def chat_stream(self, message: str, history: Optional[List[Message]] = None) -> AsyncGenerator[StreamChunk, None]:
@@ -156,13 +269,17 @@ class BaseAIService:
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json"
                 },
-                json={
-                    "model": self.model,
-                    "messages": messages,
-                    "stream": True
-                }
+                json=self._build_request_body(messages)
             ) as response:
                 self._current_response = response
+                
+                # 【修复】发送请求后立即检查取消标志，避免14秒延迟
+                if self._cancelled:
+                    logger.info("[chat_stream] 请求发送后立即检测到取消，中断流式响应")
+                    # 【修复 2026-04-30 小沈】异步流用aclose()，不能用同步close()
+                    await response.aclose()
+                    yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
+                    return
                 
                 if response.status_code != 200:
                     error_body = ""
@@ -190,7 +307,29 @@ class BaseAIService:
                             stream_error_type="http_error")
                     return
                 
-                async for line in response.aiter_lines():
+                # 【问题2修复】使用wait_for定期检查，每1秒超时检查一次_cancelled标志
+                # 而不是等下一个token（可能30秒）
+                # 【小沈修复 2026-04-21】修复StreamConsumed错误：使用单个迭代器，避免重复创建
+                line_iterator = response.aiter_lines()
+                
+                # 【修复 2026-05-05 小沈】统计reasoning_content和content的接收情况
+                _reasoning_content_total = 0
+                _content_total = 0
+                
+                while True:
+                    try:
+                        line = await asyncio.wait_for(line_iterator.__anext__(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        # 超时了，检查取消标志
+                        if self._cancelled:
+                            logger.info("[chat_stream] 检测到取消标志（1秒超时检查），中断流式响应")
+                            yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
+                            return
+                        # 没取消，继续等待
+                        continue
+                    except StopAsyncIteration:
+                        break
+                    
                     if self._cancelled:
                         logger.info("[chat_stream] 检测到取消标志，中断流式响应")
                         yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
@@ -206,52 +345,66 @@ class BaseAIService:
                         continue
                     
                     if data_str.strip() == "[DONE]":
+                        # 【修复 2026-05-05 小沈】日志：记录流结束时的统计信息
+                        logger.info(
+                            f"[chat_stream] 流结束[DONE], model={self.model}, "
+                            f"content_total={_content_total}, "
+                            f"reasoning_content_total={_reasoning_content_total}"
+                        )
                         yield StreamChunk(content="", model=self.model, is_done=True)
                         return
                     
                     try:
                         data = json.loads(data_str)
                         choices = data.get("choices", [])
+                        
                         if choices:
                             delta = choices[0].get("delta", {})
-                            content_val = delta.get("content", "") or ""
-                            reasoning_val = delta.get("reasoning_content") or delta.get("reasoning") or ""
-                            finish_reason = choices[0].get("finish_reason", "")
-                            # 每个chunk都打印，太频繁，注释掉
-                            # logger.info(f"[LLM Response] content长度={len(content_val)}, reasoning长度={len(reasoning_val)}, finish_reason={finish_reason}")
+                            content = delta.get("content", "") or ""
+                            # 【修复 2026-05-05 小沈】处理thinking模型的reasoning_content
+                            # thinking模型(如big-pickle, LongCat-Flash-Thinking)在思考阶段
+                            # 将输出放在reasoning_content中，content为空。若不处理，
+                            # chat()聚合后full_content为空，导致"AI服务返回空响应"
+                            reasoning_content = delta.get("reasoning_content", "") or ""
                             
-                            content = delta.get("content", "")
-                            reasoning_content = (
-                                delta.get("reasoning_content") or 
-                                delta.get("reasoning") or 
-                                delta.get("thought") or
-                                ""
-                            )
-                            
-                            finish_reason = choices[0].get("finish_reason", "")
-                            
-                            if reasoning_content:
-                                yield StreamChunk(
-                                    content=reasoning_content, 
-                                    model=self.model, 
-                                    is_done=False,
-                                    reasoning="",
-                                    is_reasoning=True
-                                )
                             if content:
+                                _content_total += len(content)
                                 yield StreamChunk(
-                                    content=content, 
-                                    model=self.model, 
+                                    content=content,
+                                    model=self.model,
                                     is_done=False,
-                                    reasoning="",
                                     is_reasoning=False
                                 )
-                        else:
-                            logger.warning("[AI Response] WARNING: choices is empty!")
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"[AI Response] JSON解析失败: {e}, data_str={data_str[:200]}")
+                            
+                            # 【修复 2026-05-05 小沈】reasoning_content也作为content输出
+                            # 对于Agent路径(TextStrategy)，reasoning_content中的内容
+                            # 才是模型实际的"思考+输出"，必须收集到full_content中
+                            if reasoning_content:
+                                _reasoning_content_total += len(reasoning_content)
+                                # 日志：首次收到reasoning_content时记录原始delta信息
+                                if _reasoning_content_total == len(reasoning_content):
+                                    logger.info(
+                                        f"[chat_stream] 首次收到reasoning_content, "
+                                        f"model={self.model}, "
+                                        f"delta_keys={list(delta.keys())}, "
+                                        f"content={content!r}, "
+                                        f"reasoning_content前100={reasoning_content[:100]!r}"
+                                    )
+                                yield StreamChunk(
+                                    content=reasoning_content,
+                                    model=self.model,
+                                    is_done=False,
+                                    is_reasoning=True
+                                )
+                    except json.JSONDecodeError:
                         continue
                 
+                # 【修复 2026-05-05 小沈】日志：记录流正常结束时的统计信息
+                logger.info(
+                    f"[chat_stream] 流正常结束(迭代器耗尽), model={self.model}, "
+                    f"content_total={_content_total}, "
+                    f"reasoning_content_total={_reasoning_content_total}"
+                )
                 yield StreamChunk(content="", model=self.model, is_done=True)
                 
         except httpx.TimeoutException:
@@ -340,7 +493,10 @@ class BaseAIService:
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto"
     ) -> ChatResponse:
-        """发送对话请求（使用 Function Calling）"""
+        """发送对话请求（使用 Function Calling）
+        
+        【小沈优化 2026-04-21】使用后台任务+心跳检查，1秒内响应取消
+        """
         try:
             messages = self._build_messages(message, history)
             
@@ -359,14 +515,49 @@ class BaseAIService:
                 f"tools数量={len(tools) if tools else 0}"
             )
             
-            response = await self.client.post(
-                f"{self.api_base}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
-                },
-                json=request_json
+            # 【小沈优化 2026-04-21】使用后台任务+心跳检查，支持1秒内响应取消
+            request_task = asyncio.ensure_future(
+                self.client.post(
+                    f"{self.api_base}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json=request_json
+                )
             )
+            
+            try:
+                while not request_task.done():
+                    # 等待1秒或直到任务完成
+                    try:
+                        await asyncio.wait_for(asyncio.shield(request_task), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        # 检查是否被取消
+                        if self._cancelled:
+                            logger.info("[chat_with_tools] 检测到取消，中断请求")
+                            request_task.cancel()
+                            try:
+                                await request_task
+                            except asyncio.CancelledError:
+                                pass
+                            return ChatResponse(
+                                content="",
+                                model=self.model,
+                                provider=self.provider,
+                                error="任务已取消"
+                            )
+                        continue
+                
+                response = await request_task
+                
+            except asyncio.CancelledError:
+                return ChatResponse(
+                    content="",
+                    model=self.model,
+                    provider=self.provider,
+                    error="任务已取消"
+                )
             
             if response.status_code != 200:
                 error_text = response.text
@@ -375,7 +566,7 @@ class BaseAIService:
                     content="",
                     model=self.model,
                     provider=self.provider,
-                    error=f"API Error: {response.status_code}, {error_text}"  # 【修复 2026-04-10】传递完整错误信息
+                    error=f"API Error: {response.status_code}, {error_text}"
                 )
             
             data = response.json()
@@ -408,6 +599,17 @@ class BaseAIService:
                             provider=self.provider,
                             error="Failed to parse tool_calls"
                         )
+                
+                # 【通用XML工具调用检测 2026-05-13 小沈】某些模型（如LongCat）返回XML格式工具调用
+                # 格式: <XXX_tool_call>TOOL_NAME\n<XXX_arg_key>k</XXX_arg_key>\n<XXX_arg_value>v</XXX_arg_value>\n</XXX_tool_call>
+                xml_converted = _convert_xml_tool_call_to_json(content)
+                if xml_converted:
+                    logger.info(f"[chat_with_tools] 检测到XML工具调用格式，已转为JSON: {xml_converted}")
+                    return ChatResponse(
+                        content=xml_converted,
+                        model=self.model,
+                        provider=self.provider
+                    )
                 
                 return ChatResponse(
                     content=content,
@@ -469,6 +671,14 @@ class BaseAIService:
             ) as response:
                 self._current_response = response
                 
+                # 【修复】发送请求后立即检查取消标志，避免延迟
+                if self._cancelled:
+                    logger.info("[chat_with_tools_stream] 请求发送后立即检测到取消")
+                    # 【修复 2026-04-30 小沈】异步流用aclose()
+                    await response.aclose()
+                    yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
+                    return
+                
                 if response.status_code != 200:
                     yield StreamChunk(
                         content="",
@@ -478,7 +688,32 @@ class BaseAIService:
                     )
                     return
                 
-                async for line in response.aiter_lines():
+                # 【问题2修复】同样使用wait_for定期检查，每1秒超时
+                # 【小沈修复 2026-04-21】修复StreamConsumed错误：使用单个迭代器，避免重复创建
+                line_iterator = response.aiter_lines()
+                
+                # 【修复 2026-05-05 小沈】统计reasoning_content和content的接收情况
+                _reasoning_content_total = 0
+                _content_total = 0
+                
+                while True:
+                    try:
+                        line = await asyncio.wait_for(line_iterator.__anext__(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        if self._cancelled:
+                            logger.info("[chat_with_tools_stream] Cancelled (1s timeout check)")
+                            yield StreamChunk(
+                                content="",
+                                model=self.model,
+                                is_done=True,
+                                stream_error="任务已取消",
+                                stream_error_type="cancelled"
+                            )
+                            return
+                        continue
+                    except StopAsyncIteration:
+                        break
+                    
                     if self._cancelled:
                         logger.info("[chat_with_tools_stream] Cancelled")
                         yield StreamChunk(
@@ -501,6 +736,12 @@ class BaseAIService:
                         continue
                     
                     if data_str.strip() == "[DONE]":
+                        # 【修复 2026-05-05 小沈】日志：记录流结束时的统计信息
+                        logger.info(
+                            f"[chat_with_tools_stream] 流结束[DONE], model={self.model}, "
+                            f"content_total={_content_total}, "
+                            f"reasoning_content_total={_reasoning_content_total}"
+                        )
                         yield StreamChunk(content="", model=self.model, is_done=True)
                         return
                     
@@ -511,17 +752,42 @@ class BaseAIService:
                         if choices:
                             delta = choices[0].get("delta", {})
                             content = delta.get("content", "") or ""
+                            # 【修复 2026-05-05 小沈】处理thinking模型的reasoning_content
+                            reasoning_content = delta.get("reasoning_content", "") or ""
                             
                             if content:
+                                _content_total += len(content)
                                 yield StreamChunk(
                                     content=content,
                                     model=self.model,
                                     is_done=False,
                                     is_reasoning=False
                                 )
+                            
+                            # 【修复 2026-05-05 小沈】reasoning_content也作为content输出
+                            if reasoning_content:
+                                _reasoning_content_total += len(reasoning_content)
+                                if _reasoning_content_total == len(reasoning_content):
+                                    logger.info(
+                                        f"[chat_with_tools_stream] 首次收到reasoning_content, "
+                                        f"model={self.model}, "
+                                        f"delta_keys={list(delta.keys())}"
+                                    )
+                                yield StreamChunk(
+                                    content=reasoning_content,
+                                    model=self.model,
+                                    is_done=False,
+                                    is_reasoning=True
+                                )
                     except json.JSONDecodeError:
                         continue
                 
+                # 【修复 2026-05-05 小沈】日志：记录流正常结束时的统计信息
+                logger.info(
+                    f"[chat_with_tools_stream] 流正常结束(迭代器耗尽), model={self.model}, "
+                    f"content_total={_content_total}, "
+                    f"reasoning_content_total={_reasoning_content_total}"
+                )
                 yield StreamChunk(content="", model=self.model, is_done=True)
                 
         except Exception as e:

@@ -54,7 +54,7 @@ export interface ThoughtMessage {
   thought?: string;    // LLM的思考过程（来自JSON的thought字段）
   reasoning?: string;  // LLM的分析推理（来自JSON的reasoning字段）
   tool_name?: string;  // 工具名称（统一使用 tool_name）
-  tool_params?: Record<string, any>;  // 工具参数（统一使用 tool_params）
+  tool_params?: Record<string, unknown>;  // 工具参数（统一使用 tool_params）
 }
 
 /**
@@ -66,10 +66,10 @@ export interface ActionToolMessage {
   type: 'action_tool';
   step: number;
   tool_name: string;
-  tool_params: Record<string, any>;
+  tool_params: Record<string, unknown>;
   execution_status: 'success' | 'error' | 'warning';
   summary: string;
-  execution_result?: Record<string, any> | null;  // 【修改2026-04-15】raw_data → execution_result
+  execution_result?: Record<string, unknown> | null;  // 【修改2026-04-15】raw_data → execution_result
   execution_time_ms?: number;  // 【新增2026-04-15】
   action_retry_count: number;
 }
@@ -237,7 +237,7 @@ export interface ChatRequest {
 /**
  * API响应基础类型
  */
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   success: boolean;
   message?: string;
   data?: T;
@@ -256,7 +256,7 @@ export interface TaskControlResponse {
  */
 export interface NextPageResponse {
   success: boolean;
-  data?: any;
+  data?: unknown;
   next_page_token?: string;
   has_more: boolean;
 }
@@ -275,6 +275,8 @@ export interface Message extends ChatMessage {
   executionSteps?: ExecutionStep[];
   isStreaming?: boolean;
   isError?: boolean;
+  // 【小沈修复2026-04-23】P0-1: 添加发送状态，用于显示发送失败标识
+  sendStatus?: 'sending' | 'sent' | 'failed';
   // 错误相关字段（与API文档对齐）
   // 【小沈修改2026-04-15】删除errorCode，添加errorRecoverable和errorContext
   // 【小沈修改2026-04-16】删除errorDetails/errorStack/errorRetryable，后端已删除这些字段

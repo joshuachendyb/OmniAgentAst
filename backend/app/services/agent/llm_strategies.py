@@ -47,14 +47,17 @@ class LLMStrategy(ABC):
         """
         pass
     
-    def _make_result(self, content: str, tool_name: str, tool_params: dict, reasoning: Any = None) -> str:
-        """构建返回结果（基类方法，供子类使用）"""
-        return json.dumps({
+    def _make_result(self, content: str, tool_name: str, tool_params: dict, reasoning: Any = None, response: str = "") -> str:
+        """构建返回结果（基类方法，供子类使用）- 小沈2026-05-07加response字段"""
+        result = {
             "content": content,
             "tool_name": tool_name,
             "tool_params": tool_params,
             "reasoning": reasoning
-        }, ensure_ascii=False)
+        }
+        if response:
+            result["response"] = response
+        return json.dumps(result, ensure_ascii=False)
 
 
 class TextStrategy(LLMStrategy):
@@ -69,11 +72,11 @@ class TextStrategy(LLMStrategy):
     - 方案A: ToolParser._extract_from_text() 支持中文提取
     - 方案B: 工具名保底匹配
     """
+    # P4: 从注册中心动态获取工具名 - 小健 2026-05-02
+    from app.services.agent.react_output_parser import _get_all_tool_names
     
-    KNOWN_TOOLS = [
-        "list_directory", "read_file", "write_file", "delete_file",
-        "move_file", "search_files", "search_file_content", "generate_report"
-    ]
+    MAX_RETRIES = 3
+    RETRY_DELAY = 2.0
     
     async def call(
         self,
@@ -84,23 +87,31 @@ class TextStrategy(LLMStrategy):
         **kwargs
     ) -> str:
         """
-        调用 LLM（文本模式）
-        
-        Args:
-            llm_client: LLM 客户端函数
-            message: 当前消息
-            history_dicts: 历史消息（字典格式）
-            conversation_history: 对话历史（用于追加）
-        
-        Returns:
-            响应文本（JSON 格式）
+        调用 LLM（文本模式），含429指数退避重试 - 小健 2026-05-21
         """
+        logger.info(f"[TextStrategy] call() 被调用, model={getattr(llm_client, 'model', '?')}")
         history_messages = dict_list_to_messages(history_dicts)
         
-        response = await llm_client(
-            message=message,
-            history=history_messages
-        )
+        response = None
+        for attempt in range(self.MAX_RETRIES):
+            response = await llm_client(
+                message=message,
+                history=history_messages
+            )
+            error_info = None
+            if hasattr(response, 'error') and response.error:
+                error_info = response.error
+            if error_info and ("429" in str(error_info) or "Rate limit" in str(error_info) or "请求过于频繁" in str(error_info)):
+                if attempt < self.MAX_RETRIES - 1:
+                    retry_delay = self.RETRY_DELAY * (2 ** attempt)
+                    logger.warning(f"[TextStrategy] 429限流 (第{attempt+1}/{self.MAX_RETRIES}次), {retry_delay:.0f}s后重试...")
+                    import asyncio
+                    await asyncio.sleep(retry_delay)
+                    continue
+                else:
+                    logger.error(f"[TextStrategy] 429限流持续{self.MAX_RETRIES}次, 放弃重试")
+                    break
+            break
         
         error_info = None
         if hasattr(response, 'error') and response.error:
@@ -113,7 +124,12 @@ class TextStrategy(LLMStrategy):
             content = response.get("content", str(response))
         else:
             content = str(response)
+        # 【2026-05-13 小沈】提取模型的推理内容(reasoning_content/thinking)
+        response_reasoning = getattr(response, 'reasoning', '') or ''
         
+        logger.info(f"[LLM Response Raw (text)] content长度: {len(content) if isinstance(content, str) else '非字符串'}")
+        logger.info(f"[LLM Response Raw (text)] content类型: {type(content)}")
+        logger.info(f"[LLM Response Raw (text)] content前200字符: {str(content)[:200] if content else '空'}")
         logger.info(f"[LLM Response Raw (text)] content={content}")
         
         # ===== 情况0: 空内容 =====
@@ -136,20 +152,111 @@ class TextStrategy(LLMStrategy):
                 tool_params={"result": f"⚠️ {user_message}"}
             )
         
-        # ===== 方案C: 尝试 ToolParser.parse_response() =====
-        from app.services.agent.tool_parser import ToolParser
+        # ===== P1: 使用 parse_react_response（第一层解析）=====
+        # 【多层次解析架构说明】
+        # 每层解析后，根据 type 类型决定处理方式：
+        #   - answer: 直接返回 finish，退出循环
+        #   - implicit: 直接返回 finish，退出循环（base_react.py 会识别并退出）
+        #   - thought_only / parse_error: 继续下一层解析
+        #   - action: 检查 tool_name 和 tool_params 是否都有值
+        #       - 都有值: 直接返回，执行工具
+        #       - 缺失任一: 继续下一层解析
+        #
+        # 解析层级：
+        #   第一层: parse_react_response（JSON预解析 + 四级降级策略）
+        #   第二层: _extract_by_known_tools（从原始文本提取工具名）
+        #   第三层: 兜底返回 finish
+        from app.services.agent.react_output_parser import parse_react_response
+        logger.info(f"[DEBUG] 传给parse前 - content长度: {len(content) if isinstance(content, str) else '非字符串'}, content类型: {type(content)}")
         try:
-            parsed = ToolParser.parse_response(content)
-            tool_name = parsed.get("tool_name", "finish")
-            thought = parsed.get("content", "")
-            tool_params = parsed.get("tool_params", {})
-            reasoning = parsed.get("reasoning")
-            logger.info(f"[TextStrategy] ToolParser success: tool_name={tool_name}")
-            return self._make_result(content=thought, tool_name=tool_name, tool_params=tool_params, reasoning=reasoning)
+            parsed = parse_react_response(content)
+            parsed_type = parsed.get("type")
+            logger.info(f"[TextStrategy] parse_react_response success: type={parsed_type}")
+            
+            # 【第一层解析结果处理】
+            # answer: 直接返回 finish，退出循环
+            if parsed_type == "answer":
+                logger.info(f"[TextStrategy] type=answer, 直接返回finish")
+                _response = parsed.get("response", "")
+                if not _response or not _response.strip():
+                    _response = parsed.get("content", "")
+                return self._make_result(
+                    content=parsed.get("content", ""),
+                    tool_name="finish",
+                    tool_params={"result": _response},
+                    reasoning=parsed.get("reasoning"),
+                    response=_response
+                )
+            
+            # chunk: 返回chunk类型数据，由ReAct循环判断是否提升为implicit
+            if parsed_type == "chunk":
+                logger.info(f"[TextStrategy] type=chunk, 返回chunk数据等待ReAct循环判断")
+                chunk_data = {
+                    "type": "chunk",
+                    "content": parsed.get("content", ""),
+                    "thought": parsed.get("thought", ""),
+                    "reasoning": parsed.get("reasoning", ""),
+                    "tool_name": None,
+                    "tool_params": None,
+                    "response": parsed.get("content", ""),
+                    "error": None
+                }
+                # 【2026-05-13 小沈】注入模型的推理内容，用于SSE事件传给前端
+                if response_reasoning:
+                    chunk_data["_thinking"] = response_reasoning
+                    chunk_data["is_reasoning"] = True
+                return json.dumps(chunk_data, ensure_ascii=False)
+            
+            # implicit（兼容保留）：直接返回 finish，退出循环
+            if parsed_type == "implicit":
+                logger.info(f"[TextStrategy] type=implicit, 直接返回finish")
+                _response = parsed.get("response", "")
+                if not _response or not _response.strip():
+                    _response = parsed.get("content", "")
+                return self._make_result(
+                    content=parsed.get("content", ""),
+                    tool_name="finish",
+                    tool_params={"result": _response},
+                    reasoning=parsed.get("reasoning"),
+                    response=_response
+                )
+            
+            # thought_only / parse_error: 继续下一层解析
+            # 【说明】这些类型在 base_react.py 中需要继续循环或重试
+            if parsed_type in ("thought_only", "parse_error"):
+                logger.info(f"[TextStrategy] type={parsed_type}, 继续下一层解析")
+            
+            # action: 检查 tool_name 和 tool_params 是否完整
+            # 【完全成功条件】tool_name 有值 且 tool_params 有值 → 直接返回
+            # 【部分成功条件】tool_name 或 tool_params 缺失 → 继续下一层解析
+            if parsed_type == "action":
+                tool_name = parsed.get("tool_name")
+                raw_tool_params = parsed.get("tool_params")
+                # 【修复 2026-05-07 小沈】区分tool_params的两种"空"：
+                #   {} → 合法，无参数工具（如list_allowed_directories），直接返回
+                #   None → 解析失败，没拿到参数，需要fallback
+                tool_params = raw_tool_params if raw_tool_params is not None else {}
+                
+                # 完全成功：tool_name有值 且 tool_params不是None（解析器成功提取了参数信息）
+                if tool_name and raw_tool_params is not None:
+                    logger.info(f"[TextStrategy] type=action, tool_name和tool_params都有值，直接返回")
+                    return self._make_result(
+                        content=parsed.get("content", ""),
+                        tool_name=tool_name,
+                        tool_params=tool_params,
+                        reasoning=parsed.get("reasoning")
+                    )
+                
+                # 部分成功：tool_name 或 tool_params 缺失，继续下一层解析
+                logger.info(f"[TextStrategy] type=action 但 tool_name={tool_name}, tool_params={bool(tool_params)}，继续下一层解析")
+            
         except ValueError:
-            pass  # ToolParser 无法解析，继续方案A/B
+            pass  # parse_react_response 解析失败（异常），继续方案A/B
         
-        # ===== 方案B: 工具名保底匹配 =====
+        # ===== 方案B: 工具名保底匹配（第二层解析）=====
+        # 【说明】从原始文本 content 中查找已知工具名
+        # 如果找到，返回 tool_name 和简化的 tool_params
+        # 如果没找到，触发兜底错误处理
         tool_result = self._extract_by_known_tools(content)
         if tool_result:
             logger.info(f"[TextStrategy] Tool match found: {tool_result['tool_name']}")
@@ -159,9 +266,21 @@ class TextStrategy(LLMStrategy):
                 tool_params=tool_result.get("tool_params", {})
             )
         
-        # ===== 无法提取工具调用，返回 finish =====
-        logger.info(f"[TextStrategy] No action extracted, returning finish with full content")
-        return self._make_result(content=content, tool_name="finish", tool_params={})
+        # ===== 所有解析层都失败，兜底返回 parse_error（第三层）=====
+        # 【说明】
+        #   - 第一层 parse_react_response 返回了非 answer/implicit 类型
+        #   - 且 type=action 但 tool_name 或 tool_params 缺失
+        #   - 第二层 _extract_by_known_tools 也没找到工具名
+        #   - 所有解析层都失败，返回 parse_error 让 base_react.py 处理
+        logger.info(f"[TextStrategy] 所有解析层都失败，返回 parse_error")
+        return json.dumps({
+            "type": "parse_error",
+            "error": "无法从 LLM 响应中提取工具调用（tool_name 或 tool_params 缺失）",
+            "content": content,
+            "tool_name": None,
+            "tool_params": None,
+            "reasoning": None
+        }, ensure_ascii=False)
     
     # ===== 方案A：分级错误信息 =====
     ERROR_HINTS = {
@@ -231,32 +350,68 @@ class TextStrategy(LLMStrategy):
         【方案B】通过已知工具名匹配提取 action
         
         当 ToolParser 无法解析时，尝试在 content 中查找已知工具名
+        【2026-04-28 小沈增强】提取更完整的参数，包括 path, content 等
         """
         import re
+        # 【修复 2026-05-05 小沈】方法内局部导入，避免reload后NameError
+        from app.services.agent.react_output_parser import _get_all_tool_names
         
         content_lower = content.lower()
         
-        for tool in self.KNOWN_TOOLS:
+        for tool in _get_all_tool_names():
             # 查找工具名出现位置
             pattern = rf'\b{re.escape(tool)}\b'
             if re.search(pattern, content_lower, re.IGNORECASE):
                 logger.info(f"[TextStrategy] Found known tool: {tool}")
                 
-                # 尝试提取参数（简化版：查找引号内的内容）
+                # 尝试提取参数（增强版：提取多种参数）
                 params = {}
                 
-                # 查找路径参数
+                # 1. 【修复 2026-05-01 小沈 小健】查找 path 参数（根据工具类型使用正确的参数名）
                 path_patterns = [
-                    r'["\']?([A-Za-z]:\\[^"\'\s]+)["\']?',  # Windows 路径 C:\path
-                    r'["\']?(/[^\s"\'<>]+)["\']?',  # Unix 路径 /path
-                    r'["\']?([^"\'\s]+)["\']?',  # 一般字符串
+                    r'["\']?([A-Za-z]:\\[^"\'\s,}]+)["\']?',  # Windows 路径 C:\path
+                    r'["\']?(/[^\s"\'<>,}]+)["\']?',  # Unix 路径 /path
                 ]
-                
+
+                extracted_path = None
                 for p in path_patterns:
                     matches = re.findall(p, content)
                     if matches:
-                        params["path"] = matches[0]
+                        extracted_path = matches[0]
                         break
+
+                if extracted_path:
+                    # 【修复 U18 小沈 2026-05-15】不再用路径赋值给第一个参数
+                    # 兜底匹配到工具名时跳过参数提取，交给工具执行器处理
+                    logger.info(f"[TextStrategy] 兜底匹配到{tool}，跳过参数提取（交给工具执行器处理）")
+                
+                # 2. 查找 text 参数（用于 write_file 等工具）- 小健 2026-05-02 content→text
+                json_match = re.search(r'\{[^}]*"text"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
+                if json_match:
+                    params["text"] = json_match.group(1)
+                else:
+                    # 备用：从 content 标签中提取
+                    content_match = re.search(r'["\']?content["\']?\s*:\s*"([^"]*)"', content, re.DOTALL)
+                    if content_match:
+                        params["content"] = content_match.group(1)
+                
+                # 3. 查找其他常见参数
+                # file_name
+                fn_match = re.search(r'["\']?file_name["\']?\s*:\s*"([^"]*)"', content)
+                if fn_match:
+                    params["file_name"] = fn_match.group(1)
+                
+                # search_query
+                sq_match = re.search(r'["\']?search_query["\']?\s*:\s*"([^"]*)"', content)
+                if sq_match:
+                    params["search_query"] = sq_match.group(1)
+                
+                # keyword
+                kw_match = re.search(r'["\']?keyword["\']?\s*:\s*"([^"]*)"', content)
+                if kw_match:
+                    params["keyword"] = kw_match.group(1)
+                
+                logger.info(f"[TextStrategy] Extracted params: {list(params.keys())}")
                 
                 return {
                     "tool_name": tool,
@@ -307,6 +462,8 @@ class ToolsStrategy(LLMStrategy):
         Returns:
             格式化的响应文本
         """
+        # 【诊断 2026-05-10 小健】ToolsStrategy实际被调用
+        logger.info(f"[ToolsStrategy] call() 被调用, model={getattr(llm_client, 'model', '?')}, tools_count={len(self.tools)}")
         import asyncio
         
         history_messages = dict_list_to_messages(history_dicts)
@@ -367,18 +524,41 @@ class ToolsStrategy(LLMStrategy):
                     try:
                         tool_calls = json.loads(response.content)
                         
-                        if isinstance(tool_calls, list) and len(tool_calls) > 0:
-                            content = self._format_tool_calls(tool_calls)
-                            logger.info(f"[Function Calling] Received tool_calls: {len(tool_calls)} calls")
-                            return content
+                        if isinstance(tool_calls, list):
+                            if len(tool_calls) > 0:
+                                # 有工具调用
+                                content = self._format_tool_calls(tool_calls)
+                                logger.info(f"[Function Calling] Received tool_calls: {len(tool_calls)} calls")
+                                return content
+                            else:
+                                # 空数组 → 转换为finish退出 - 2026-05-10 小沈
+                                logger.info("[Function Calling] Empty tool_calls, convert to finish")
+                                return json.dumps({
+                                    "thought": "任务完成",
+                                    "tool_name": "finish",
+                                    "tool_params": {}
+                                }, ensure_ascii=False)
                         else:
+                            # 非数组格式
                             content = response.content
-                            logger.info(f"[Function Calling] LLM returned text (no tool call): {content}")
+                            logger.info(f"[Function Calling] Non-list response: {content[:200]}")
                             return content
                             
                     except (json.JSONDecodeError, TypeError) as e:
+                        # 【修复 2026-05-11 小健】json.loads失败后先尝试_extract_json_block提取JSON片段
+                        # 混合文本(如"前言文字\n\n{JSON}")的json.loads必然失败
+                        # 但_extract_json_block能从中提取出JSON对象
+                        from app.services.agent.react_output_parser import _extract_json_block
+                        extracted = _extract_json_block(response.content)
+                        if extracted and isinstance(extracted, dict):
+                            if "tool_name" in extracted:
+                                content = json.dumps(extracted, ensure_ascii=False)
+                                logger.info(f"[Function Calling] JSON解析失败但_extract_json_block提取成功: tool_name={extracted.get('tool_name')}")
+                                return content
+                        
+                        # _extract_json_block也失败，交给下游parse_react_response
                         content = response.content
-                        logger.info(f"[Function Calling] Non-JSON response: {content}")
+                        logger.info(f"[Function Calling] JSON解析失败，content交给下游解析器: {content[:200]}")
                         return content
                 else:
                     # 空响应，重试
@@ -400,18 +580,20 @@ class ToolsStrategy(LLMStrategy):
                 else:
                     break
         
-        # 【修复 2026-04-11 小沈】统一错误处理：不应该降级到 TextStrategy，应该调用 error_handler 统一处理
+        # 【修复 2026-04-24 小沈】所有重试失败，返回parse_error让上层处理
         if last_error:
-            # 调用统一的错误处理函数
             error_type = resolve_http_error_type(last_error) if last_error else None
             error_code, error_message = get_stream_error_info(error_type, original_message=last_error)
-            logger.error(f"[Function Calling] 错误统一处理: error_type={error_type}, error_message={error_message}")
-            # 返回统一格式的错误响应
-            return self._make_result(
-                content=f"[错误] {error_message}",
-                tool_name="finish",
-                tool_params={"result": f"[错误] {error_message}"}
-            )
+            logger.error(f"[Function Calling] 所有重试失败，返回parse_error: {error_message}")
+            # 返回parse_error类型，符合统一解析架构要求（指令：解析失败回退返回parse_error）
+            return json.dumps({
+                "type": "parse_error",
+                "error": error_message,
+                "content": f"[错误] {error_message}",
+                "tool_name": None,
+                "tool_params": None,
+                "reasoning": None
+            }, ensure_ascii=False)
         
         # 没有错误但走到了这里，说明是意外情况，仍降级到 TextStrategy
         logger.warning(f"[Function Calling] Falling back to TextStrategy (no error, unexpected)")
@@ -452,7 +634,7 @@ class ToolsStrategy(LLMStrategy):
                 "tool_params": args
             }
         else:
-            # 多个工具调用（合并为一个）
+            # 多个工具调用（执行第一个，其余放入_pending_calls依次执行）
             calls_info = []
             for call in tool_calls:
                 func = call.get("function", {})
@@ -466,12 +648,13 @@ class ToolsStrategy(LLMStrategy):
                 
                 calls_info.append({"name": func_name, "args": args})
             
-            # 取第一个工具调用作为主要操作
             first_call = calls_info[0]
+            remaining = calls_info[1:]
             formatted = {
                 "thought": f"Calling {len(tool_calls)} tools: {[c['name'] for c in calls_info]}",
                 "tool_name": first_call["name"],
-                "tool_params": first_call["args"]
+                "tool_params": first_call["args"],
+                "_pending_calls": remaining
             }
         
         return json.dumps(formatted, ensure_ascii=False)
@@ -528,6 +711,9 @@ class ResponseFormatStrategy(LLMStrategy):
         Returns:
             格式化的 JSON 字符串
         """
+        # 【诊断 2026-05-10 小健】ResponseFormatStrategy实际被调用
+        _schema_name = self.response_format.get("json_schema", {}).get("name", "?") if isinstance(self.response_format, dict) else "?"
+        logger.info(f"[ResponseFormatStrategy] call() 被调用, model={getattr(llm_client, 'model', '?')}, schema_name={_schema_name}")
         try:
             history_messages = dict_list_to_messages(history_dicts)
             
@@ -540,8 +726,17 @@ class ResponseFormatStrategy(LLMStrategy):
             
             # 处理响应
             if hasattr(response, 'error') and response.error:
-                logger.error(f"[Agent] response_format error: {response.error}")
-                raise Exception(response.error)
+                error_msg = str(response.error)
+                logger.error(f"[Agent] response_format error: {error_msg}")
+                # 【修复 2026-04-24 小沈】解析失败返回parse_error，符合统一架构
+                return json.dumps({
+                    "type": "parse_error",
+                    "error": error_msg,
+                    "content": f"[错误] {error_msg}",
+                    "tool_name": None,
+                    "tool_params": None,
+                    "reasoning": None
+                }, ensure_ascii=False)
             
             if hasattr(response, 'content'):
                 content = response.content
@@ -569,10 +764,20 @@ class ResponseFormatStrategy(LLMStrategy):
                 
                 content = json.dumps(formatted, ensure_ascii=False)
                 logger.info(f"[Agent] response_format parsed: tool_name={tool_name}")
+                # 【修复 小沈 2026-05-20】原代码此处缺少 return，导致成功解析后隐式返回 None
+                return content
                 
             except json.JSONDecodeError as e:
                 logger.error(f"[Agent] Failed to parse response_format JSON: {e}, content={content}")
-                raise Exception(f"Invalid JSON from LLM: {content}")
+                # 【修复 2026-04-24 小沈】解析失败返回parse_error，符合统一架构
+                return json.dumps({
+                    "type": "parse_error",
+                    "error": f"Invalid JSON from LLM: {content[:200]}",
+                    "content": content[:200],
+                    "tool_name": None,
+                    "tool_params": None,
+                    "reasoning": None
+                }, ensure_ascii=False)
             
             
         except Exception as e:

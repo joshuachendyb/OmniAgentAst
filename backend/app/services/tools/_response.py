@@ -1,0 +1,211 @@
+"""
+统一工具返回结构定义 — 小健 2026-05-21
+
+设计原则:
+  1. 必填字段(code/data/message)始终写入，可选字段仅非默认值时写入
+  2. build_success/build_error是
+  3. 扩展性：通过**extra_kwargs支持未来新增字段，无需改签名
+  4. 向后兼容：所有工具返回的都是普通dict，消费端无需改动
+
+字段规范:
+  必填(3个): code, data, message
+  可选(5个): warning, llm_data, next_actions, retry_count, return_direct
+  扩展: 任何**extra字段自动追加，未来新增字段无需改此文件
+
+使用示例:
+  # 最简成功
+  return build_success({"path": fp}, f"写入成功: {fp}")
+
+  # 带llm_data
+  return build_success(data, msg, llm_data={"摘要": "..."})
+
+  # 带next_actions
+  return build_success(data, msg, next_actions=build_next_actions([...]))
+
+  # 错误
+  return build_error("ERR_FILE_NOT_FOUND", f"文件不存在: {fp}")
+
+  # 警告(成功但有风险)
+  return build_success(data, msg, warning="文件较大，内容已截断")
+
+  # 未来扩展(无需改此文件)
+  return build_success(data, msg, new_field_2027="...")
+"""
+from typing import Any, Dict, Optional, List
+
+SUCCESS_CODE = "SUCCESS"
+
+# 必填字段 — 始终写入
+_REQUIRED_FIELDS = ("code", "data", "message")
+
+# 可选字段 — 仅非默认值时写入
+# 格式: (字段名, 默认值)
+_OPTIONAL_FIELDS = {
+    "warning": None,
+    "llm_data": None,
+    "next_actions": None,
+    "retry_count": 0,
+    "return_direct": False,
+    "attachment": None,
+}
+
+
+def build_success(
+    data: Any,
+    message: str = "操作成功",
+    warning: Optional[str] = None,
+    llm_data: Optional[Dict[str, Any]] = None,
+    next_actions: Optional[List[Dict[str, str]]] = None,
+    retry_count: int = 0,
+    return_direct: bool = False,
+    attachment: Optional[Dict[str, Any]] = None,
+    **extra: Any,
+) -> Dict[str, Any]:
+    """构建成功响应
+
+    Args:
+        data: 结构化返回数据(给前端)
+        message: 人类可读的结果描述
+        warning: 可选警告信息(成功但有风险时)
+        llm_data: 可选给LLM的精简数据(控制上下文占用)
+        next_actions: 可选推荐后续操作列表
+        retry_count: 可选重试次数(默认0不写入)
+        return_direct: 可选是否直接返回前端(默认False不写入)
+        attachment: 可选二进制附件(base64图片/文件等，前端渲染)
+        **extra: 未来扩展字段，自动追加到结果中
+
+    Returns:
+        统一格式的dict
+    """
+    result: Dict[str, Any] = {
+        "code": SUCCESS_CODE,
+        "data": data,
+        "message": message,
+    }
+
+    _add_optionals(result, warning=warning, llm_data=llm_data,
+                   next_actions=next_actions, retry_count=retry_count,
+                   return_direct=return_direct, attachment=attachment)
+
+    # 扩展字段：直接追加
+    result.update(extra)
+
+    return result
+
+
+def build_error(
+    code: str,
+    message: str,
+    data: Any = None,
+    warning: Optional[str] = None,
+    llm_data: Optional[Dict[str, Any]] = None,
+    next_actions: Optional[List[Dict[str, str]]] = None,
+    attachment: Optional[Dict[str, Any]] = None,
+    **extra: Any,
+) -> Dict[str, Any]:
+    """构建错误响应
+
+    Args:
+        code: 错误码，必须符合三段式: ERR_MODULE_OPERATION_DETAIL
+        message: 错误描述
+        data: 可选附加错误数据(如校验详情)
+        warning: 可选附加警告
+        llm_data: 可选给LLM的错误摘要
+        next_actions: 可选推荐恢复操作
+        attachment: 可选二进制附件
+        **extra: 未来扩展字段
+
+    Returns:
+        统一格式的dict
+    """
+    result: Dict[str, Any] = {
+        "code": code,
+        "data": data,
+        "message": message,
+    }
+
+    _add_optionals(result, warning=warning, llm_data=llm_data,
+                   next_actions=next_actions, attachment=attachment)
+
+    result.update(extra)
+
+    return result
+
+
+def build_warning(
+    code: str,
+    message: str,
+    data: Any = None,
+    llm_data: Optional[Dict[str, Any]] = None,
+    next_actions: Optional[List[Dict[str, str]]] = None,
+    attachment: Optional[Dict[str, Any]] = None,
+    **extra: Any,
+) -> Dict[str, Any]:
+    """构建警告响应(部分成功/有风险)
+
+    警告code以WARNING_开头，Agent视为成功但需注意
+
+    Args:
+        code: 警告码，以WARNING_开头
+        message: 警告描述
+        data: 部分成功的数据
+        llm_data: 可选给LLM的数据
+        next_actions: 可选推荐操作
+        attachment: 可选二进制附件
+        **extra: 未来扩展字段
+
+    Returns:
+        统一格式的dict
+    """
+    result: Dict[str, Any] = {
+        "code": code,
+        "data": data,
+        "message": message,
+    }
+
+    _add_optionals(result, llm_data=llm_data, next_actions=next_actions,
+                   attachment=attachment)
+
+    result.update(extra)
+
+    return result
+
+
+def _add_optionals(result: Dict[str, Any], **kwargs: Any) -> None:
+    """仅写入非默认值的可选字段 — 内部函数"""
+    for field_name, default_value in _OPTIONAL_FIELDS.items():
+        if field_name in kwargs:
+            value = kwargs[field_name]
+            if value != default_value:
+                result[field_name] = value
+
+
+def is_success(result: Dict[str, Any]) -> bool:
+    """判断返回是否成功"""
+    code = result.get("code", "")
+    return code == SUCCESS_CODE or code.startswith("WARNING_")
+
+
+def is_error(result: Dict[str, Any]) -> bool:
+    """判断返回是否失败"""
+    code = result.get("code", "")
+    return code.startswith("ERR_")
+
+
+def extract_status(result: Dict[str, Any]) -> str:
+    """从统一格式提取Agent消费的status字段
+
+    Agent消费: status/summary/data/error/llm_data/next_actions
+    """
+    code = result.get("code", SUCCESS_CODE)
+    if code == SUCCESS_CODE:
+        status = "success"
+    elif code.startswith("WARNING_"):
+        status = "warning"
+    else:
+        status = "error"
+
+    return status
+
+
+

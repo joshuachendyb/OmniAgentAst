@@ -42,6 +42,7 @@ def format_thought_sse(
     step: int,
     content: str,
     reasoning: str = '',
+    thought: str = '',
     tool_name: str = '',
     tool_params: Optional[Dict] = None
 ) -> str:
@@ -52,14 +53,17 @@ def format_thought_sse(
         step: 步骤编号
         content: 思考内容
         reasoning: 推理过程
+        thought: 详细思考过程
         tool_name: 目标工具
         tool_params: 工具参数
 
     Returns:
         SSE 格式字符串
     """
+    # 【修复 2026-05-05 小沈】SSE输出增加thought字段
     return format_sse_event('thought', step, {
         'content': content,
+        'thought': thought,
         'reasoning': reasoning,
         'tool_name': tool_name,
         'tool_params': tool_params or {}
@@ -71,72 +75,65 @@ def format_action_tool_sse(
     tool_name: str,
     tool_params: Optional[Dict] = None,
     execution_status: str = 'success',
-    summary: str = '',
-    execution_result: Any = None,  # raw_data替换为execution_result
-    error_message: str = '',  # 新增参数
-    execution_time_ms: int = 0,  # 新增参数
-    action_retry_count: int = 0
+    execution_result: Any = None,
+    execution_time_ms: int = 0,
+    action_retry_count: int = 0,
 ) -> str:
     """
-    格式化 action_tool 事件
-
-    Args:
-        step: 步骤编号
-        tool_name: 工具名称
-        tool_params: 工具参数字典
-        execution_status: 执行状态 (success/failed/error)
-        summary: 执行摘要
-        execution_result: 执行结果数据（替换原raw_data）
-        error_message: 错误消息（新增）
-        execution_time_ms: 执行耗时（新增）
-        action_retry_count: 重试次数
-
-    Returns:
-        SSE 格式字符串
+    格式化 action_tool 事件 — 只传执行结果摘要（status/data/耗时/重试）
+    summary/error_message 由 observation 事件传递，不在此出现
     """
     return format_sse_event('action_tool', step, {
         'tool_name': tool_name,
         'tool_params': tool_params or {},
         'execution_status': execution_status,
-        'summary': summary,
-        'execution_result': execution_result,  # 替换raw_data
-        'error_message': error_message,  # 新增字段
-        'execution_time_ms': execution_time_ms,  # 新增字段
-        'action_retry_count': action_retry_count
+        'execution_result': execution_result,
+        'execution_time_ms': execution_time_ms,
+        'action_retry_count': action_retry_count,
     })
 
 
 def format_observation_sse(
     step: int,
-    observation: str = '',  # content替换为observation
+    observation: str = '',
     tool_name: str = '',
-    tool_params: Optional[Dict] = None,  # 新增参数
-    return_direct: bool = False,  # 新增参数
+    tool_params: Optional[Dict] = None,
+    return_direct: bool = False,
+    execution_status: str = '',
+    code: str = '',
+    warning: Optional[str] = None,
+    attachment: Any = None,
+    next_actions: Optional[list] = None,
+    summary: str = '',
+    error_message: str = '',
     timestamp: str = ''
 ) -> str:
     """
-    格式化 observation 事件
-
-    Args:
-        step: 步骤编号
-        observation: 观察结果内容（替换原content）
-        tool_name: 工具名称
-        tool_params: 工具参数（新增）
-        return_direct: 是否直接返回（新增）
-        timestamp: 时间戳
-
-    Returns:
-        SSE 格式字符串
+    格式化 observation 事件 — 传详细信息（code/warning/next_actions/attachment/summary/error_message）
+    业务数据（data）由 action_tool 事件传递，不重复
     """
-    return format_sse_event('observation', step, {
-        'type': 'observation',
-        'step': step,
-        'timestamp': timestamp,
+    d = {
         'tool_name': tool_name,
-        'tool_params': tool_params or {},  # 新增字段
-        'observation': observation,  # content替换为observation
-        'return_direct': return_direct  # 新增字段
-    })
+        'tool_params': tool_params or {},
+        'observation': observation,
+        'return_direct': return_direct,
+        'timestamp': timestamp,
+    }
+    if execution_status:
+        d['execution_status'] = execution_status
+    if code:
+        d['code'] = code
+    if warning:
+        d['warning'] = warning
+    if attachment is not None:
+        d['attachment'] = attachment
+    if next_actions:
+        d['next_actions'] = next_actions
+    if summary:
+        d['summary'] = summary
+    if error_message:
+        d['error_message'] = error_message
+    return format_sse_event('observation', step, d)
 
 
 __all__ = [

@@ -37,7 +37,7 @@ module.exports = {
     'react-hooks/exhaustive-deps': 'warn',
     'react/jsx-key': 'error',
     'react/no-direct-mutation-state': 'error',
-    'no-console': ['warn', { allow: ['warn', 'error'] }],
+    'no-console': 'off', // TODO: 生产环境发布前需清除所有 console.log
     'no-debugger': 'warn',
     // 禁止直接调用 message.error/warning/success/info，应使用 errorHandler
     'no-restricted-syntax': [

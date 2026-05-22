@@ -92,7 +92,7 @@ export interface ExecutionStep {
   // 【小新重构2026-03-09】thought类型需要的字段
   // 【小健建议2026-03-23】明确用途：LLM思考后决定的下一步动作
   tool_name?: string;        // 【thought类型】LLM思考后决定的下一步动作
-  tool_params?: Record<string, any>; // 【thought类型】LLM思考后决定的参数
+  tool_params?: Record<string, unknown>; // 【thought类型】LLM思考后决定的参数
   
   // === 保留字段（不变）===
   
@@ -101,13 +101,13 @@ export interface ExecutionStep {
   step?: number;
   thought?: string;
   action?: string;  // 兼容旧字段
-  observation?: any;
+  observation?: unknown;
   result?: string;
   
   // === 【小新重构】type=action_tool 新字段（与thought类型共用tool_name/tool_params）===
   execution_status?: 'success' | 'error' | 'warning'; // 执行状态（新）
   summary?: string;             // 执行摘要（新）
-  execution_result?: Record<string, any> | null; // 执行结果 【修改2026-04-15】raw_data → execution_result
+  execution_result?: Record<string, unknown> | null; // 执行结果 【修改2026-04-15】raw_data → execution_result
   execution_time_ms?: number;   // 执行耗时 【新增2026-04-15】
   action_retry_count?: number;  // 重试次数（新）
   
@@ -118,7 +118,7 @@ export interface ExecutionStep {
   // tool_name 已在上面 action_tool 字段定义（第97行），此处不再重复
 
   // === type=action 旧字段（兼容） ===
-  action_input?: Record<string, any>;  // 工具调用参数（旧）
+  action_input?: Record<string, unknown>;  // 工具调用参数（旧）
   
   // === type=chunk/final/start 字段 ===
   model?: string;         // AI模型
@@ -194,10 +194,11 @@ export interface ReconnectConfig {
 export interface UseSSEReturn {
   isConnected: boolean;
   isReceiving: boolean;
+  setIsReceiving?: (value: boolean) => void;  // 【方案3】暴露setter用于中断时立即更新状态
   executionSteps: ExecutionStep[];
   currentResponse: string;
   sendMessage: (content: string, sessionId?: string) => void;
-  disconnect: (manualDisconnect?: boolean) => void;
+  disconnect: (manualDisconnect?: boolean, clearStorage?: boolean, onDisconnect?: () => void) => void;
   clearSteps: () => void;
   serverTaskId?: string | null;
   setServerTaskId?: (taskId: string | null) => void;
@@ -232,9 +233,9 @@ type SSEErrorType = "idle_timeout" | "request_timeout" | "network" | "server" | 
  * 【小强修复 2026-04-09】细分超时类型
  * 【小强修复 2026-04-11】增加 connection_refused 和 http_500，映射到统一ErrorType
  */
-const classifyError = (error: any): SSEErrorType => {
+const classifyError = (error: unknown): SSEErrorType => {
   // 使用errorHandler的分类结果进行映射
-  const unifiedType = errorHandlerHandleSSE(error, { reconnectAttempts: 0 }).errorType;
+  const unifiedType = errorHandlerHandleSSE(error as Error, { reconnectAttempts: 0 }).errorType;
   
   // 映射到SSE本地错误类型
   switch (unifiedType) {
@@ -280,7 +281,7 @@ interface ErrorConfig {
  * 【小强修复 2026-04-11】重构：使用errorHandler.handleSSEError
  */
 const handleSSEError = (params: {
-  error: any;
+  error: unknown;
   errorType: SSEErrorType;
   reconnectAttempts: number;
   reconnectConfig: ReconnectConfig;
@@ -307,7 +308,7 @@ const handleSSEError = (params: {
   } = params;
 
   // 使用统一错误处理中心
-  const result = errorHandlerHandleSSE(error, {
+  const result = errorHandlerHandleSSE(error as Error, {
     reconnectAttempts,
     maxRetries: reconnectConfig.maxAttempts,
     onReconnect: () => {
@@ -431,6 +432,7 @@ export const useSSE = (
   const [reconnectStatus, setReconnectStatus] = useState<"idle" | "connecting" | "reconnecting" | "failed">("idle");
 
   const eventSourceRef = useRef<EventSource | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);  // 【修复 2026-05-11 小健】fetch AbortController ref，disconnect时可abort
   const responseBufferRef = useRef("");
   const isProcessingRef = useRef(false);
   const [serverTaskId, setServerTaskId] = useState<string | null>(null);
@@ -491,6 +493,7 @@ export const useSSE = (
   }, [config.sessionId]);
 
   // 清空 sessionStorage 的辅助函数
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const clearStepsFromStorage = useCallback(() => {
     const storageKey = `${SSE_STORAGE_KEY}_${config.sessionId}`;
     sessionStorage.removeItem(storageKey);
@@ -500,8 +503,9 @@ export const useSSE = (
    * 断开连接
    * @param manualDisconnect - 是否是手动中断（手动中断不允许重连）
    * @param clearStorage - 是否清空 sessionStorage（重连时设为 false，保留数据）
+   * @param onDisconnect - 断开后的回调函数【方案2增强】
    */
-  const disconnect = useCallback((manualDisconnect: boolean = false, clearStorage: boolean = true) => {
+  const disconnect = useCallback((manualDisconnect: boolean = false, clearStorage: boolean = true, onDisconnect?: () => void) => {
     // 清空 sessionStorage 备份（除非重连时明确指定不清空）
     if (clearStorage) {
       clearStepsFromStorage();
@@ -510,6 +514,15 @@ export const useSSE = (
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
+
+    // 【修复 2026-05-11 小健】abort正在进行的fetch请求，防止旧流与新流并行
+    if (abortControllerRef.current) {
+      try {
+        abortControllerRef.current.abort();
+      } catch (_e) { /* ignore */ }
+      abortControllerRef.current = null;
+    }
+
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
@@ -528,6 +541,12 @@ export const useSSE = (
         reconnectConfigRef.current.enabled = true;
       }, 3000);
     }
+    
+    // 【方案2新增】调用断开回调
+    if (onDisconnect) {
+      onDisconnect();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
    /**
@@ -551,15 +570,21 @@ export const useSSE = (
     clearStepsFromStorage();
   }, [clearStepsFromStorage]);
 
-  /**
-    * 内部发送消息函数（用于重连）
-    * 【小强修复 2026-04-09】重连时使用软清理，保留已收到的 steps
-    */
-  const sendMessageInternal = async (content: string, sessionId?: string) => {
+/**
+     * 内部发送消息函数（用于重连）
+     * 【小强修复 2026-04-09】重连时使用软清理，保留已收到的 steps
+     */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const sendMessageInternal = async (content: string, sessionId?: string) => {
     const connectStartTime = new Date().toLocaleTimeString();
     console.log(`[SSE] [连接建立] 时间=${connectStartTime}`);
     disconnect(false, false);  // 重连时：非手动断开 + 不清空 sessionStorage
-    softClearSteps();  // 软清理：保留 steps，只清理运行时状态
+    // 小沈修复 2026-04-21：新请求时清空 steps，重连时保留 steps
+    if (reconnectAttemptsRef.current > 0) {
+      softClearSteps();  // 重连：保留 steps，只清理运行时状态
+    } else {
+      clearSteps();  // 新请求：完全清空 steps
+    }
 
     // 【小强添加 2026-03-18】重置性能指标并记录开始时间
     requestStartTimeRef.current = Date.now();
@@ -578,6 +603,7 @@ export const useSSE = (
         ? `${config.baseURL}/chat/stream/v2`
         : `${config.baseURL}/chat/stream`;
       const controller = new AbortController();
+      abortControllerRef.current = controller;  // 【修复 2026-05-11 小健】保存到ref，disconnect时可abort
       const timeoutId = setTimeout(() => controller.abort(), 60000);
 
       const response = await fetch(url, {
@@ -688,8 +714,10 @@ export const useSSE = (
       // 成功，重置重连状态
       setReconnectStatus("idle");
       reconnectAttemptsRef.current = 0;
-    } catch (error: any) {
+      abortControllerRef.current = null;  // 【修复 2026-05-11 小健】请求完成清理ref
+    } catch (error: unknown) {
       console.error("[SSE] 请求错误:", error);
+      abortControllerRef.current = null;  // 【修复 2026-05-11 小健】请求失败清理ref
       
       // 使用统一的错误处理中心
       handleSSEError({
@@ -773,11 +801,14 @@ export const useSSE = (
       pendingMessageRef.current = { content, sessionId };
       reconnectAttemptsRef.current = 0;
       
-      await sendMessageInternal(content, sessionId);
-
-      // 请求结束后重置
-      isProcessingRef.current = false;
+      try {
+        await sendMessageInternal(content, sessionId);
+      } finally {
+        // 【修复 2026-05-11 小健】用finally保证重置，防止异常时isProcessingRef永远true
+        isProcessingRef.current = false;
+      }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [config, disconnect, clearSteps, onStep, onChunk, onComplete, onError, onRetry]
   );
 
@@ -798,6 +829,7 @@ export const useSSE = (
   return {
     isConnected,
     isReceiving,
+    setIsReceiving,  // 【方案3】暴露setter用于中断时立即更新状态
     executionSteps,
     currentResponse,
     sendMessage,
@@ -833,7 +865,7 @@ const processSSEData = (
     responseBufferRef: React.MutableRefObject<string>;
     setIsReceiving: React.Dispatch<React.SetStateAction<boolean>>;
     setIsConnected: React.Dispatch<React.SetStateAction<boolean>>;
-    disconnect: (manualDisconnect?: boolean) => void;
+    disconnect: (manualDisconnect?: boolean, clearStorage?: boolean, onDisconnect?: () => void) => void;
     setServerTaskId?: (taskId: string) => void;
   },
   _isProcessingRef: React.MutableRefObject<boolean>
@@ -1324,7 +1356,11 @@ const processSSEData = (
         const stepNum = rawData.step || 1;
         console.log(`%c[STEP] [type=incident] [incident_type=${statusValue}] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`, 'color: red; font-weight: bold;');
         const statusMessage = rawData.message || "";
-        step.type = statusValue as ExecutionStep["type"];
+        // 【小沈修复 2026-04-24】保持type为incident，通过incident_value区分具体类型
+        // 后端发送格式: type="incident", incident_value="interrupted/paused/resumed/retrying"
+        // 前端需要保持这个格式，不能直接把type改成具体类型，否则会影响后续判断
+        step.type = "incident";
+        step.incident_value = statusValue;
         step.content = statusMessage;
         
         // 统一调用onStep（所有incident类型都需要添加到executionSteps）
@@ -1350,7 +1386,8 @@ const processSSEData = (
           case "interrupted":
             // 【小强修复 2026-04-10】添加 onShowSteps?.(true)，确保中断时步骤列表显示
             onShowSteps?.(true);
-            onComplete?.(responseBufferRef.current, undefined);
+            // 【小沈修复 2026-04-27】必须传当前的steps，否则前端的16个steps会丢失
+            onComplete?.(responseBufferRef.current, undefined, handlers.executionStepsRef.current);
             setIsReceiving(false);
             setIsConnected(false);
             break;
@@ -1364,16 +1401,23 @@ const processSSEData = (
             // 【小查修复2026-03-13】传递wait_time给重试回调
             onRetry?.(rawData.message || "正在重试...", rawData.wait_time);
             break;
+          case "rate_limit":
+            // 【新增 小健 2026-05-16】429限流提示，复用retry回调显示
+            onRetry?.(rawData.message || "API限流，正在退避重试...", rawData.wait_time);
+            break;
           default:
+            // 【修复 小健 2026-05-16】未知incident也显示给用户，不丢弃
             console.warn("[SSE] 未知的incident_value:", statusValue);
+            onRetry?.(rawData.message || `事件: ${statusValue}`, rawData.wait_time);
+            break;
         }
         // 添加timestamp字段
         if (rawData.timestamp) {
-          (step as any).timestamp = rawData.timestamp;
+          step.timestamp = rawData.timestamp as number;
         }
         // 【小查修复2026-03-13】添加wait_time字段（仅retrying使用）
         if (rawData.wait_time !== undefined) {
-          (step as any).wait_time = rawData.wait_time;
+          step.wait_time = rawData.wait_time;
         }
         break;
       }

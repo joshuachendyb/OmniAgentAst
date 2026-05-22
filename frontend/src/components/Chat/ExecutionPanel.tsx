@@ -48,30 +48,22 @@ import type { ExecutionStep } from "../../utils/sse";
 
 const { Text } = Typography;
 
-// 长文本折叠组件
+// ============================================================
+// 2026-04-28 小强修改
+// 原因：北京老陈要求step的result不截断，完全显示
+// 变更：移除200字符截断和"展开更多"按钮，完整显示result
+// ============================================================
 const CollapsibleResult: React.FC<{
   result: string;
   index: number;
   copyToClipboard: (text: string, index: number) => void;
   copiedIndex: number | null;
 }> = ({ result, index: _index, copyToClipboard: _copyToClipboard, copiedIndex: _copiedIndex }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const displayText = isExpanded ? result : result.substring(0, 200);
-
+  // 北京老陈要求：不截断，完全显示
   return (
     <div className="step-result">
       <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-        {displayText}
-        {result.length > 200 && (
-          <Button
-            type="link"
-            size="small"
-            onClick={() => setIsExpanded(!isExpanded)}
-            style={{ padding: 0, height: "auto", fontSize: 10 }}
-          >
-            {isExpanded ? "收起" : `...展开更多 (${result.length}字符)`}
-          </Button>
-        )}
+        {result}
       </pre>
     </div>
   );
@@ -456,6 +448,80 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                 </div>
               </div>
             );
+
+          // 【问题5修复】incident类型渲染：根据incident_value分发到具体渲染
+          case "incident": {
+            const incidentValue = (step as ExecutionStep & Record<string, unknown>).incident_value as string;
+            const incidentMessage = step.content || (step as ExecutionStep & Record<string, unknown>).message || '';
+            switch (incidentValue) {
+              case "interrupted":
+                return (
+                  <div className="step-item">
+                    <div style={{
+                      borderLeft: "2px solid #ffbb96",
+                      padding: "6px 8px",
+                      borderRadius: 4,
+                      marginTop: 8,
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                    }}>
+                      <Tag color="warning">⚠️ 中断</Tag>
+                      <Typography.Text type="secondary">{incidentMessage || '任务已中断'}</Typography.Text>
+                    </div>
+                  </div>
+                );
+              case "paused":
+                return (
+                  <div className="step-item">
+                    <div style={{
+                      borderLeft: "2px solid #d9d9d9",
+                      padding: "6px 8px",
+                      borderRadius: 4,
+                      marginTop: 8,
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                    }}>
+                      <Tag color="default">⏸️ 暂停</Tag>
+                      <Typography.Text type="secondary">{incidentMessage || '任务已暂停'}</Typography.Text>
+                    </div>
+                  </div>
+                );
+              case "resumed":
+                return (
+                  <div className="step-item">
+                    <div style={{
+                      borderLeft: "2px solid #52c41a",
+                      padding: "6px 8px",
+                      borderRadius: 4,
+                      marginTop: 8,
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                    }}>
+                      <Tag color="success">▶️ 恢复</Tag>
+                      <Typography.Text type="secondary">{incidentMessage || '任务已恢复'}</Typography.Text>
+                    </div>
+                  </div>
+                );
+              case "retrying":
+                return (
+                  <div className="step-item">
+                    <div style={{
+                      borderLeft: "2px solid #1890ff",
+                      padding: "6px 8px",
+                      borderRadius: 4,
+                      marginTop: 8,
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                    }}>
+                      <Tag color="processing">🔄 重试</Tag>
+                      <Typography.Text type="secondary">{incidentMessage || '正在重试...'}</Typography.Text>
+                    </div>
+                  </div>
+                );
+              default:
+                return null;
+            }
+          }
 
           case "error":
             return (

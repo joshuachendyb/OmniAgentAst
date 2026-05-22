@@ -1,209 +1,168 @@
-# AGENTS.md - OmniAgentAs-desk Development Guide
+# AGENTS.md - OmniAgentAs-desk
 
-**Project**: OmniAgentAs-desk  
-**Type**: Full-stack web application (React + FastAPI)  
-**Version**: v0.8.92
+**Version**: v0.13.11 | **Project**: Full-stack (React+FastAPI) AI agent desktop
+
+> Global rules (roles, timestamps, commit format, versioning, doc style) are in `C:\Users\chend\.config\opencode\AGENTS.md` (auto-loaded).
+> This file contains **project-specific** info only.
 
 ---
 
-## 1. Project Structure
+## System & Platform
+
+- **OS**: Windows only. Use PowerShell. No Linux/macOS commands.
+- **Shell**: PowerShell 7+. Use `Select-String` instead of `grep`.
+- **Python**: 3.13 at `E:\Appsw\python31311\`
+
+---
+
+## Commands
+
+### Backend (workdir=`backend/`)
+
+```bash
+python -m uvicorn app.main:app --reload          # dev server (port 8000)
+pytest                                            # all tests
+pytest -x --tb=short                              # fast fail
+pytest -k test_name                               # match by name
+```
+
+### Frontend (workdir=`frontend/`)
+
+```bash
+npm run dev          # Vite dev server (port 5173)
+npm run test         # Vitest
+npm run test -- --run <name>  # single test
+npm run lint         # ESLint
+npm run format:check # Prettier
+npm run check        # lint + format:check (run before commit)
+npm run test:e2e     # Playwright
+```
+
+---
+
+## Architecture (Current)
+
+### Backend: `backend/app/main.py` → FastAPI
+
+**Request flow**: `chat_router.py` → CRSS regex scoring (stage 1) → LLM classifier fallback (stage 2) → `AgentFactory.create(intent_type)` → Agent subclasses → ReAct loop → SSE
+
+**Agent system** (`backend/app/services/agent/`):
+- `base_react.py` — `BaseAgent(ABC)` (ReAct loop core)
+- `mixins/react_agent_mixin.py` — `ReactAgentMixin` (tool loading, step management)
+- **Agent subclasses**: inherit `ReactAgentMixin, BaseAgent`; each differs in Prompt + Category
+- `agent_factory.py` — intent_type → Agent class mapping
+- `react_output_parser.py` — LLM response parsing chain
+- `parsers/` — **@deprecated**. Use `react_output_parser.py` instead.
+- `strategy_selector.py` — LLM strategy: `text` / `response_format` / `tools`
+
+**Tool registry** (`backend/app/services/tools/`):
+- `registry.py` — `ToolRegistry` singleton, `ToolCategory` enum
+- `__init__.py` — `ensure_tools_registered()` loads all tools
+- Categories: `file`, `shell`, `network`, `system`, `desktop`, `document`, `meta`
+- Merged categories: TIME→META, ENVIRONMENT→SYSTEM, DATABASE→DOCUMENT, CODE_EXECUTION→SHELL
+- Each `{category}/` has: `{category}_register.py`, `{category}_tools.py`, `{category}_schema.py` (+ optional extras)
+
+**Safety**: `command_security.py` (at `services/`, not `safety/`) — blacklist-based command safety check
+
+**Prompt logging**: `backend/logs/prompt-logs/`
+
+### Frontend: `frontend/src/main.tsx` → Vite+React
+
+- `src/pages/` — page components
+- `src/stores/` — state stores
+- `src/services/` — API layer
+- `src/utils/` — formatters, step rendering, SSE handling
+
+---
+
+## Project Structure
 
 ```
 OmniAgentAs-desk/
-├── backend/           # Python FastAPI backend
-│   ├── app/          # Application code
-│   │   ├── api/v1/   # API endpoints
-│   │   ├── services/  # Business logic
-│   │   └── utils/    # Utilities
-│   ├── tests/        # Backend tests (pytest)
-│   └── requirements.txt
-├── frontend/         # React + TypeScript frontend
-│   ├── src/         # Source code
-│   │   ├── components/
-│   │   ├── pages/
+├── backend/
+│   ├── app/
+│   │   ├── api/v1/             # REST endpoints
+│   │   ├── main.py             # FastAPI entrypoint
+│   │   ├── config.py           # YAML+env config loader
+│   │   ├── models/             # SQLAlchemy + Pydantic
 │   │   ├── services/
+│   │   │   ├── agent/          # Agent subclasses, base_react, mixins/, types/
+│   │   │   ├── tools/          # Tool categories
+│   │   │   ├── preprocessing/  # Intent classifier
+│   │   │   ├── intents/        # Intent definitions + CRSS scorer
+│   │   │   ├── safety/         # Safety checks (placeholder)
+│   │   │   └── llm_core.py     # LLM client
 │   │   └── utils/
-│   ├── tests/        # Frontend tests
+│   ├── tests/                  # pytest
+│   ├── tools/                  # test/debug scripts
+│   └── chat_app.db             # SQLite
+├── frontend/
+│   ├── src/
 │   └── package.json
-└── config/           # Configuration files
+├── config/                     # YAML configs
+├── doc-agent2.0/               # Agent 2.0 redesign docs
+├── doc/                        # system design docs
+├── notes/                      # debug notes
+├── version.txt                 # append-only version history
+└── AGENTS.md
 ```
 
 ---
 
-## 2. Commands
+## Key Dependencies
 
-### Frontend (TypeScript/React)
+| Layer | Tech | Notes |
+|-------|------|-------|
+| Backend | FastAPI, Uvicorn, SQLAlchemy, aiosqlite | SQLite `chat_app.db` |
+| | **httpx==0.26.0, httpcore==1.0.1** | **LOCKED** — 0.28.1 breaks TLS |
+| | Pydantic v2 | Tool schemas |
+| Frontend | React 18, TypeScript 5, Vite | |
+| | Ant Design 5, Axios, React Router | |
+| | Vitest, Playwright, ESLint, Prettier | |
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start development server |
-| `npm run build` | Build for production |
-| `npm run test` | Run unit tests (Vitest) |
-| `npm run test:watch` | Run tests in watch mode |
-| `npm run test:coverage` | Run tests with coverage |
-| `npm run lint` | Run ESLint |
-| `npm run lint:fix` | Auto-fix ESLint issues |
-| `npm run format` | Format code with Prettier |
-| `npm run format:check` | Check code formatting |
-| `npm run test:e2e` | Run Playwright E2E tests |
-| `npm run test:e2e:ui` | Run E2E tests with UI |
-
-**Run a single test**:
-```bash
-npm run test -- --run <test-name>
-# Example: npm run test -- --run MessageItem
-```
-
-### Backend (Python/FastAPI)
-
-| Command | Description |
-|---------|-------------|
-| `python -m uvicorn app.main:app --reload` | Start dev server |
-| `pytest` | Run all tests |
-| `pytest -v` | Run tests verbose |
-| `pytest tests/test_adapter.py` | Run specific test file |
-| `pytest -k test_name` | Run tests matching pattern |
-| `pytest --cov=app` | Run with coverage |
-
-**Run a single test**:
-```bash
-pytest tests/test_adapter.py::test_function_name -v
-```
+**Server URLs**: Backend `http://127.0.0.1:8000` | API docs `http://127.0.0.1:8000/docs` | Frontend `http://localhost:5173`
 
 ---
 
-## 3. Code Style Guidelines
+## Known Pitfalls
 
-### TypeScript/React (Frontend)
+| Pitfall | Detail |
+|---------|--------|
+| **httpx version lock** | `httpx==0.26.0` + `httpcore==1.0.1` required. Don't upgrade. |
+| **Duplicate `__all__`** | Register files may have 2 `__all__` defs (second overwrites first). |
+| **`parsers/` is deprecated** | All files in `agent/parsers/` marked @deprecated. Use `react_output_parser.py` chain instead. |
+| **Tool impl vs registration** | Functions in `{cat}_tools.py`, registration in `{cat}_register.py`. Don't confuse them. |
+| **`_loaded_categories`** | Per-agent set for tool loading. Initialized to `{current_category, support_tool}`. |
+| **`check_date` renamed to `query_calendar`** | Old name no longer exists. |
 
-**Naming Conventions**:
-- Components: PascalCase (`ChatContainer`, `MessageItem`)
-- Functions/variables: camelCase (`getMessages`, `userName`)
-- Constants: UPPER_SNAKE_CASE
-- Files: kebab-case (`my-component.tsx`)
+---
 
-**Imports**:
-- Order: external → internal → relative
-- Use absolute imports from `@/` alias
+## Git Workflow
+
+```bash
+# Commit format: <type>: <description> - <签名>-<日期>
+# types: feat/fix/refactor/perf/test/docs
+
+# Tag (PATCH only without asking):
+# 1. Insert commit summary into version.txt (project root, append at top)
+# 2. git tag v{major}.{minor}.{patch+1}
+```
+
+`version.txt` is append-only, oldest at bottom.
+
+---
+
+## Code Conventions
+
+### Python
+- snake_case functions/vars, PascalCase classes, UPPER_SNAKE_CASE constants
+- Type hints required; use `Optional[X]` (not `X | None`)
+- Tools return `{code, data, message}` structured responses
+- Comments: must include author + date
+
+### TypeScript/React
+- PascalCase components, camelCase functions/vars
+- kebab-case filenames (`my-component.tsx`)
 - No default exports for components
-
-**TypeScript**:
-- Always use explicit types for function parameters and return values
-- Avoid `any`, use `unknown` if needed
-- Use interfaces for object shapes
-
-**React**:
-- Use functional components with hooks
-- Use `useCallback`/`useMemo` for optimization
-- Never mutate state directly
-- Add keys to lists
-
-**Formatting**:
-- Use Prettier (2 spaces, single quotes)
-- ESLint will catch most issues
-
-### Python (Backend)
-
-**Naming**:
-- Functions/variables: snake_case (`get_messages`, `user_name`)
-- Classes: PascalCase (`MessageHandler`, `AgentService`)
-- Constants: UPPER_SNAKE_CASE
-
-**Imports**:
-- Order: stdlib → third-party → local
-- Use absolute imports within package
-
-**Type Hints**:
-- Always use type hints for function parameters and returns
-- Use `Optional[X]` instead of `X | None`
-
-**Error Handling**:
-- Use custom exceptions for business logic
-- Always log errors with appropriate level
-- Return meaningful error messages to API callers
-
----
-
-## 4. Git Commit Rules
-
-**Format**: `type: description`
-
-**Types**:
-- `feat`: New feature
-- `fix`: Bug fix
-- `refactor`: Code refactoring
-- `perf`: Performance improvement
-- `test`: Test changes
-- `docs`: Documentation
-
-**Example**:
-```
-feat: add session management API - 小沈-2026-03-13
-fix: resolve message display issue - 小新-2026-03-13
-```
-
----
-
-## 5. Key Dependencies
-
-### Frontend
-- React 18, TypeScript 5
-- Ant Design 5, Axios, React Router 7
-- Vitest, Playwright (testing)
-- ESLint, Prettier
-
-### Backend
-- FastAPI, Uvicorn
-- SQLAlchemy, aiosqlite
-- Pydantic, httpx
-- pytest (testing)
-
----
-
-## 6. GSD Workflow (Recommended)
-
-### About GSD
-GSD (Get Shit Done) is a meta-prompting, context engineering and spec-driven development system that prevents "context rot" - the quality degradation that happens when AI context windows get filled.
-
-**Documentation**: https://github.com/gsd-build/get-shit-done  
-**Installed Version**: 1.34.2
-
-### Workflow Commands
-
-| Command | Description |
-|---------|-------------|
-| `/gsd-new-project` | Initialize new project with research + requirements + roadmap |
-| `/gsd-map-codebase` | Analyze existing codebase before adding features |
-| `/gsd-discuss-phase N` | Capture implementation decisions before planning |
-| `/gsd-plan-phase N` | Research + create atomic task plans for a phase |
-| `/gsd-execute-phase N` | Execute all plans with fresh context per task |
-| `/gsd-verify-work N` | Manual user acceptance testing |
-| `/gsd-quick` | Quick mode for ad-hoc tasks |
-| `/gsd-next` | Auto-detect and run next step |
-| `/gsd-help` | Show all commands |
-
-### When to Use GSD
-
-| Scenario | Recommended Command |
-|----------|---------------------|
-| New feature development | `/gsd-discuss-phase` → `/gsd-plan-phase` → `/gsd-execute-phase` |
-| Bug fix | `/gsd-debug` or `/gsd-quick` |
-| Code analysis | `/gsd-scan` or `/gsd-map-codebase` |
-| Quick task | `/gsd-quick` |
-
-### Benefits
-
-- **Fresh context per task**: Each task gets 200k tokens, no accumulated garbage
-- **Atomic commits**: Every task gets its own commit, easy to bisect/revert
-- **Wave execution**: Independent plans run in parallel, dependent plans wait
-- **Quality gates**: Plan checker + verifier ensure requirements are met
-
----
-
-## 7. Notes
-
-- Backend runs on `http://127.0.0.1:8000`
-- Frontend runs on `http://localhost:5173`
-- API docs at `http://127.0.0.1:8000/docs`
-- Database: SQLite (`backend/chat_app.db`)
-- Use `npm run check` before committing
+- Use `@/` alias for absolute imports
+- Run `npm run check` before commit

@@ -38,15 +38,113 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.services.preprocessing.pipeline import PreprocessingPipeline
-from app.services.agent.file_react import FileReactAgent
 from app.services import AIServiceFactory
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_step_counter
 from app.chat_stream.error_handler import create_error_response
+from app.services.agent.base_react import DEFAULT_MAX_STEPS
+from app.services.tools.registry import ToolCategory
+
+# 【2026-05-01 小沈】从独立模块导入CRSS评分功能
+from app.services.intents.crss_scorer import (
+    detect_intent_v2,
+    CRSS_CONFIDENCE_THRESHOLD,
+)
 
 
-# 意图标签列表（用于 PreprocessingPipeline）
-INTENT_LABELS = ["chat", "file", "network", "desktop"]
+# 【修复 2026-04-30 小沈】CRSS置信度阈值：归一化评分 >= 此值认为意图可信
+# CRSS评分经 1 - 2^(-raw) 归一化到 [0, 1)，0.3 对应原始分约 0.5
+# 【2026-05-01 小沈】已移至独立模块 app/services/intents/crss_scorer.py
+
+
+# ================================================================================
+# route_with_fallback - 两阶段意图路由（设计文档v1.5 3.1.2节）
+# 阶段1: CRSS快速匹配 → 阶段2: LLM语义分类（兜底）
+# 小沈 - 2026-04-30
+# ================================================================================
+
+async def route_with_fallback(user_input: str) -> Dict:
+    """
+    两阶段意图路由：CRSS快速匹配 + LLM兜底
+
+    阶段1: 调用 detect_intent_v2 进行CRSS规则匹配
+      - 匹配成功且唯一 → 直接返回，不调LLM
+    阶段2: 无匹配或模糊匹配 → 调用 LLM 语义分类
+
+    Args:
+        user_input: 用户输入
+
+    Returns:
+        dict: {
+            "intent": ToolCategory,       # 最终意图
+            "candidates": List[ToolCategory],  # 所有候选
+            "confidence": float,           # 置信度
+            "original": str,               # 原始输入
+            "corrected": str,              # 矫正后文本（LLM兜底时）
+            "all_intents": dict,           # 所有意图置信度
+            "source": str,                 # "crss" 或 "llm"
+        }
+    """
+    # ===== 阶段1: CRSS快速匹配 =====
+    primary, candidates, confidence = detect_intent_v2(user_input)
+
+    result = {
+        "intent": primary,
+        "candidates": candidates,
+        "confidence": confidence,
+        "original": user_input,
+        "corrected": user_input,
+        "all_intents": {},
+        "source": "crss",
+    }
+
+    # CRSS匹配成功（加权评分后有明确主意图）
+    if primary is not None and confidence >= CRSS_CONFIDENCE_THRESHOLD:
+        logger.info(
+            f"[RouteFallback] CRSS阶段1 → intent={primary.value}, "
+            f"conf={confidence}, candidates={[c.value for c in candidates]}"
+        )
+        return result
+
+    # ===== 阶段2: LLM语义分类（兜底）=====
+    logger.info(
+        f"[RouteFallback] CRSS无匹配或模糊，进入LLM兜底阶段2. "
+        f"primary={primary}, candidates={candidates}"
+    )
+
+    try:
+        from app.services.preprocessing.intent_classifier import classify_intent
+
+        # 准备提示标签（所有ToolCategory，不再含chat——所有请求走ReAct循环）
+        intent_labels = [c.value for c in ToolCategory]
+
+        llm_result = await classify_intent(user_input, intent_labels)
+
+        intent_str = llm_result.get("intent", "")
+        llm_confidence = float(llm_result.get("confidence", 0.5))
+
+        # 将LLM返回的字符串转为ToolCategory（支持新旧意图名） - 【2026-05-18 小沈】
+        from app.services.tools.registry import resolve_category
+        intent_enum = resolve_category(intent_str)
+
+        result.update({
+            "intent": intent_enum,
+            "candidates": [intent_enum] if intent_enum else [],
+            "confidence": llm_confidence,
+            "corrected": llm_result.get("corrected", user_input),
+            "all_intents": llm_result.get("all_intents", {}),
+            "source": "llm",
+        })
+
+        logger.info(
+            f"[RouteFallback] LLM阶段2 → intent={intent_str}({intent_enum}), "
+            f"conf={llm_confidence}, corrected='{result['corrected']}'"
+        )
+    except Exception as e:
+        logger.warning(f"[RouteFallback] LLM兜底失败: {e}，使用CRSS结果")
+        # LLM失败时，保持CRSS结果
+
+    return result
 
 
 # ==================== FastAPI 路由定义 ====================
@@ -151,7 +249,7 @@ class ChatRouter:
         request: Optional[ChatRequest] = None,
         context: Optional[Dict[str, Any]] = None,
         system_prompt: Optional[str] = None,
-        max_steps: int = 100,
+        max_steps: int = DEFAULT_MAX_STEPS,
         ai_service: Optional[Any] = None  # 【新增】接收外部传入的 ai_service
     ) -> AsyncGenerator[str, None]:
         """
@@ -173,19 +271,34 @@ class ChatRouter:
             SSE 格式字符串
         """
         # ===== 步骤1: 预处理 =====
-        intent_result = await self.preprocessing.process(
+        # 【修改 2026-04-30 小沈】意图检测使用两阶段 route_with_fallback
+        # 预处理只做纯文本处理，意图检测在步骤2
+        # 【修复 2026-04-30 小沈】移除废弃的 intent_labels 参数和死变量 intent_result
+        await self.preprocessing.process(
             user_input=user_input,
-            intent_labels=INTENT_LABELS,
             session_id=session_id
         )
         
-        # ===== 步骤2: 意图检测 =====
-        intent_type = intent_result.get("intent", "chat")
-        confidence = intent_result.get("confidence", 0.0)
+        # ===== 步骤2: 意图检测（两阶段：CRSS + LLM兜底）=====
+        # 【修改 2026-04-30 小沈】使用两阶段意图路由
+        # 阶段1：CRSS规则快速匹配 → 阶段2：LLM语义分类（兜底）
+        intent_info = await route_with_fallback(user_input)
+        intent_type_value = intent_info["intent"]
+        confidence = intent_info["confidence"]
+        
+        # 【新增 2026-04-30 小沈】从 intent_info 提取 candidates 列表
+        candidates_values = intent_info.get("candidates", [])
+        candidates_list = [c.value for c in candidates_values if c]  # 【修复 2026-04-30 小沈】简化：if c 已过滤None，else "" 不可达
+        
+        # 【2026-05-13 小沈】不再有chat分类，未匹配的intent走network→有search_web工具可用
+        # 这样像"今天天气怎么样"等无匹配的实时信息查询可以走网络搜索
+        intent_type = intent_type_value.value if intent_type_value else "network"
         
         logger.info(
-            f"[ChatRouter] intent_type={intent_type}, confidence={confidence:.4f}, "
-            f"original='{user_input}', corrected='{intent_result.get('corrected', '')}'"
+            f"[ChatRouter] 两阶段意图检测 → intent_type={intent_type}({intent_type_value}), "
+            f"confidence={confidence:.4f}, source={intent_info['source']}, "
+            f"candidates={candidates_list}, "
+            f"original='{user_input}', corrected='{intent_info['corrected']}'"
         )
         
         # ===== 步骤3: 初始化 =====
@@ -202,17 +315,17 @@ class ChatRouter:
         # next_step: 步骤计数器（使用统一函数）
         next_step = create_step_counter()
         
-        # running_tasks: 任务字典
-        running_tasks: Dict[str, Any] = {}
-        
         # current_execution_steps: 执行步骤列表
         current_execution_steps: List[Dict] = []
         
-        # running_tasks_lock: 任务锁
-        running_tasks_lock = asyncio.Lock()
+        # 【问题1修复】使用 react_sse_wrapper 模块级全局变量，确保 cancel_task 能找到任务
+        from app.services.react_sse_wrapper import running_tasks, running_tasks_lock
+        # 运行期间保持引用，防止被垃圾回收
+        _running_tasks_ref = running_tasks
+        _running_tasks_lock_ref = running_tasks_lock
         
         # ===== 步骤4: 安全检测 =====
-        from app.services.shell_security import check_command_safety
+        from app.services.command_security import check_command_safety
         security_check_result = check_command_safety(user_input)
         
         # 如果被阻止，记录警告但继续执行
@@ -251,119 +364,31 @@ class ChatRouter:
             )
             return
         
-        # ===== 步骤6: 根据意图类型分发 =====
-        # 简单对话（chat 且 confidence >= 0.3）：在 router 里调用 chat_stream_query
-        # 动作意图（file/network/desktop 或 confidence < 0.3）：调用 react_sse_wrapper
+        # ===== 步骤6: 统一走ReAct循环 =====
+        # 【2026-05-13 小沈】删除chat/chat_stream_query分流，所有意图统一走react_sse_wrapper
+        # 未匹配的intent走network，有search_web等工具可用
         
-        # display_name 用于 chat_stream_query
-        display_name = f"{ai_service.provider} ({ai_service.model})"
+        logger.info(f"[ChatRouter] 意图分发 (type={intent_type}, conf={confidence:.2f}, candidates={candidates_list})，统一走react_sse_wrapper")
+        from app.services.react_sse_wrapper import generate_sse_stream
         
-        if intent_type == "chat" and confidence >= 0.3:
-            # 简单对话：直接调用 chat_stream_query
-            logger.info(f"[ChatRouter] 简单对话意图，分发到 chat_stream_query")
-            async for event in self._handle_chat_operation(
-                request=request,
-                user_input=user_input,
-                ai_service=ai_service,
-                task_id=task_id,
-                session_id=session_id,
-                current_execution_steps=current_execution_steps,
-                running_tasks=running_tasks,
-                running_tasks_lock=running_tasks_lock,
-                next_step=next_step,
-                display_name=display_name
-            ):
-                yield event
-        else:
-            # 动作意图：调用 react_sse_wrapper 处理
-            logger.info(f"[ChatRouter] 动作意图 (type={intent_type}, conf={confidence:.2f})，分发到 react_sse_wrapper")
-            from app.services.react_sse_wrapper import generate_sse_stream
-            
-            # 准备 messages 列表
-            messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
-            
-            async for event in generate_sse_stream(
-                messages=messages,
-                intent_type=intent_type,
-                confidence=confidence,
-                provider=provider,
-                model=model,
-                task_id=task_id,
-                session_id=session_id,
-                ai_service=ai_service,
-                next_step=next_step,
-                running_tasks=running_tasks,
-                running_tasks_lock=running_tasks_lock,
-                current_execution_steps=current_execution_steps
-            ):
-                yield event
-
-    async def _handle_chat_operation(
-        self,
-        request: Optional[ChatRequest],
-        user_input: str,
-        ai_service: Any,
-        task_id: str,
-        session_id: str,
-        current_execution_steps: List[Dict],
-        running_tasks: Dict[str, Any],
-        running_tasks_lock: asyncio.Lock,
-        next_step: Callable,
-        display_name: str
-    ) -> AsyncGenerator[str, None]:
-        """处理简单对话意图"""
-        try:
-            from app.chat_stream.chat_stream_query import chat_stream_query
-            
-            # 修复：如果 request 为 None，创建一个只包含当前消息的请求对象
-            if request is None:
-                request = ChatRequest(
-                    messages=[ChatMessage(role="user", content=user_input)],
-                    session_id=session_id
-                )
-            
-            # 准备 chat_stream_query 需要的参数
-            llm_call_count = 0
-            current_content = ""
-            last_is_reasoning = None
-            last_message = user_input
-            
-            # 包装 save_execution_steps_to_db 函数
-            from app.chat_stream.message_saver import save_execution_steps_to_db
-            async def wrapped_save_steps(execution_steps, content=None):
-                await save_execution_steps_to_db(session_id, execution_steps, content)
-            
-            # 包装 add_step_and_save 函数
-            from app.chat_stream.message_saver import add_step_and_save
-            async def wrapped_add_step(step, content=None):
-                await add_step_and_save(current_execution_steps, step, session_id, content)
-            
-            async for event in chat_stream_query(
-                request=request,
-                ai_service=ai_service,
-                task_id=task_id,
-                llm_call_count=llm_call_count,
-                current_execution_steps=current_execution_steps,
-                current_content=current_content,
-                last_is_reasoning=last_is_reasoning,
-                last_message=last_message,
-                running_tasks=running_tasks,
-                running_tasks_lock=running_tasks_lock,
-                next_step=next_step,
-                display_name=display_name,
-                session_id=session_id,
-                save_execution_steps_to_db=wrapped_save_steps,
-                add_step_and_save=wrapped_add_step
-            ):
-                yield event
-                
-        except Exception as e:
-            logger.error(f"[ChatRouter] Chat operation failed: {e}", exc_info=True)
-            yield self._create_error_sse(
-                error_type="router_error",
-                error_message=f"对话执行失败: {str(e)}",
-                step=next_step()
-            )
+        messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
+        
+        async for event in generate_sse_stream(
+            messages=messages,
+            intent_type=intent_type,
+            confidence=confidence,
+            candidates=candidates_list,
+            provider=provider,
+            model=model,
+            task_id=task_id,
+            session_id=session_id,
+            ai_service=ai_service,
+            next_step=next_step,
+            running_tasks=running_tasks,
+            running_tasks_lock=running_tasks_lock,
+            current_execution_steps=current_execution_steps
+        ):
+            yield event
 
     def _create_error_sse(self, error_type: str, error_message: str, step: int) -> str:
         """创建错误 SSE 响应"""

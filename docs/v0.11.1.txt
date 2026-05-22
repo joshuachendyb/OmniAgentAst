@@ -1,0 +1,1526 @@
+v0.11.1
+
+ 更新时间: 2026-04-27 16:10:20
+
+ 更新内容：
+
+ ## 1 工具执行修复（3个commit）- 小沈-2026-04-27
+
+ | Commit | 说明 |
+ |--------|------|
+ | 477fb7c5 | fix: balanced braces工具参数提取 |
+ | 3c5b4e47 | fix: file_react normalize_params调用 |
+ | 0c973c7d | fix: operation_type参数修复 |
+
+ ## 2 task_id重命名修复（6个commit）- 小沈-2026-04-27
+
+ | Commit | 说明 |
+ |--------|------|
+ | 37fa6e0b | fix: session_id重命名为task_id |
+ | 4fb6bd57 | fix: task_id概念注释 |
+ | 654feb55 | fix: task_id注释添加 |
+ | c1eda3d8 | fix: sse.ts中断steps处理 |
+ | a9bcabb9 | frontend: 国际化优化 |
+
+ ## 3 version.txt恢复 - 小沈-2026-04-27
+
+ | 说明 |
+ |------|
+ | 恢复v0.9.9.0至v0.11.1完整版本历史 |
+ | CE76EBB8 |
+
+ ---
+
+v0.11.0
+
+ 更新时间: 2026-04-27 10:30:00
+
+ 更新内容：
+
+ ## 1 task_id正确传递修复 - 小沈-2026-04-27
+
+ | 文件 | 修改 | 状态 |
+ |------|------|------|
+ | file_tools.py | session_id → task_id参数名 | ✅ |
+ | file_safety.py | session_id → task_id参数名 | ✅ |
+ | base_react.py | session_id → task_id参数名 | ✅ |
+ | file_react.py | session_id → task_id参数名 | ✅ |
+ | time_react.py | session_id → task_id参数名 | ✅ |
+ | agent_factory.py | 添加task_id参数传递 | ✅ |
+ | react_sse_wrapper.py | 传递task_id参数 | ✅ |
+
+ **修复说明**：
+ - write_file等工具需要task_id追踪操作
+ - react_sse_wrapper生成task_id并传给agent
+ - FileTools接收task_id并传给file_safety记录操作
+
+ **测试结果**：64 passed
+ | Phase 5 | 14项集成测试全部通过 | ✅ |
+
+ | Commit | 说明 |
+ |--------|------|
+ | 19268ecb | fix: Phase0修复mixin.py和registry.py |
+ | 81d431df | fix: Phase1修复BaseAgent添加llm_client和session_id |
+ | c4ce5580 | fix: Phase2修复FileReactAgent支持tool_category |
+ | 86538aad | fix: Phase3验证TimeReactAgent通过-9个工具 |
+ | 7782ed80 | fix: Phase4修复AgentFactory支持tool_category |
+ | d859109d | test: Phase5集成测试-14个测试用例全部通过 |
+
+ ---
+
+ v0.10.20
+
+ 更新时间: 2026-04-26 20:19:01
+
+ 更新内容：
+
+ ## 1 TimeReactAgent按文档5.4实现 - 小沈-2026-04-26
+
+ | 变更 | 说明 |
+ |------|------|
+ | time_react.py | 新增TimeReactAgent类，继承ToolLoaderMixin+BaseAgent |
+ | agent_factory.py | 注册TimeReactAgent到AgentFactory |
+ | 测试 | 10/10 通过 |
+
+ ## 2 BaseAgent添加tool_category参数 - 小沈-2026-04-26
+
+ | 文件 | 变更 |
+ |------|------|
+ | base_react.py | __init__新增tool_category参数 |
+
+ ## 3 Time工具注册优化 - 小沈-2026-04-26
+
+ | 文件 | 变更 |
+ |------|------|
+ | time/__init__.py | 优化导出 |
+ | time_register.py | 简化注册逻辑 |
+ | time_tools.py | 优化工具实现 |
+
+ ## 4 文档更新 - 小沈-2026-04-26
+
+ | 文件 | 说明 |
+ |------|------|
+ | docs/plans/2026-04-26-agent-factory-design 02.md | 新增AgentFactory设计文档v1.2 |
+ | notes/2026-04-26-agent-factory-design*.md | 新增文档备份 |
+
+ Commit汇总：
+ | Commit | 说明 |
+ |--------|------|
+ | 86cd958f | feat: 新增TimeReactAgent按文档5.4实现 - 小沈-2026-04-26 |
+ | fb4bec1f | docs: 新增AgentFactory设计文档v1.2 - 小沈-2026-04-26 |
+ | 4f639c99 | feat: base_react.py添加tool_category参数 - 小沈-2026-04-26 |
+ | 1dee0620 | feat: time/__init__.py优化导出 - 小沈-2026-04-26 |
+ | ab888cef | feat: time_register.py简化注册逻辑 - 小沈-2026-04-26 |
+ | 48eb0216 | feat: time_tools.py优化工具实现 - 小沈-2026-04-26 |
+
+---
+
+v0.10.19
+
+ 更新时间: 2026-04-26 17:52:54
+
+ 更新内容：
+
+ ## 1 Phase 1 AgentFactory架构完成 - 小健-2026-04-26
+
+ | 变更 | 说明 |
+ |------|------|
+ | agent_factory.py | 新建AgentFactory类 |
+ | mixin.py | 新建ToolLoaderMixin类 |
+ | registry.py | 添加get_tools_from_registry_by_category |
+ | react_sse_wrapper.py | 使用AgentFactory.create() |
+ | 测试 | 7/7 通过 |
+
+ | 测试结果 | 状态 |
+ |----------|------|
+ | tool_registry核心功能 | PASS |
+ | file_register注册流程 | PASS |
+ | FileReactAgent集成 | PASS |
+ | react_schema集成 | PASS |
+ | 废弃代码清理 | PASS |
+
+---
+
+v0.10.18
+
+ 更新时间: 2026-04-26 12:15:00
+
+ 更新内容：
+
+ ## 1 彻底清理废弃代码，统一使用tool_registry - 小健-2026-04-26
+
+ | 变更 | 说明 |
+ |------|------|
+ | registry.py | 移除 _sync_from_old_registry |
+ | file_tools.py | 移除兼容函数，保留空 register_tool |
+ | file_register.py | 移除兼容函数 |
+ | __init__.py | 清理导出 |
+ | file_react.py | 使用 registry |
+ | react_schema.py | 使用 registry |
+ | 测试 | 新增 TestFileToolsRegistration + TestRegistryIntegration |
+
+ | 测试结果 | 状态 |
+ |----------|------|
+ | tool_registry 核心功能 | PASS |
+ | file_register 注册流程 | PASS (17 tools) |
+ | FileReactAgent 集成 | PASS |
+ | react_schema 集成 | PASS |
+ | 废弃代码清理 | PASS |
+
+---
+
+v0.10.17
+
+ 更新时间: 2026-04-26 10:05:00
+
+ 更新内容：
+
+ ## 1 时间工具注册：按照第3/4章规范注册9个时间工具 - 小沈-2026-04-26
+
+ | 工具 | 说明 |
+ |------|------|
+ | time_now | 获取当前系统时间 |
+ | time_format | 格式化时间戳 |
+ | time_diff | 计算时间差 |
+ | timer_set | 设置定时器 |
+ | timer_clear | 清除定时器 |
+ | time_utc_to_local | UTC转本地时间 |
+ | time_local_to_utc | 本地时间转UTC |
+ | time_is_weekend | 判断是否周末 |
+ | time_is_holiday | 判断是否假日 |
+
+ ## 2 文档更新：4.3节yield字段与代码一致 - 小沈-2026-04-26
+
+ | 文件 | 更新内容 |
+ |------|---------|
+ | Omni系统工具定义说明书-小沈-20260404.md | 更新4.3.3/4.3.4/4.3.5节字段名称与实际代码一致 |
+
+ ## 2 UI修复：移除emoji混用问题 - 小强-2026-04-26
+
+ | 改进 | 说明 |
+ |------|-------|
+ | emoji移除 | 26个View文件统一使用Ant Design图标 |
+ | 构建验证 | ✅ 通过 |
+ | Visuals评分 | 60/96 → 84/96 (提升40%) |
+ | Overall评分 | 85.7% → 93.1% |
+
+ | 修复文件 |
+ |---------|
+ | DeleteFileView.tsx, ReadFileView.tsx, SearchFilesView.tsx |
+ | WriteFileView.tsx, CopyFileView.tsx, CreateDirectoryView.tsx |
+ | TimeNowView.tsx, TimeDiffView.tsx, TimeFormatView.tsx |
+ | TimerSetView.tsx, TimerClearView.tsx, TimeIsWeekendView.tsx |
+ | 等共26个文件 |
+
+ Commit: fix: 修复26个View文件emoji混用问题-小强-2026-04-26
+
+---
+
+v0.10.16
+
+  更新时间: 2026-04-26 01:00:00
+
+  更新内容：
+
+  ## 1 3.3低优先级渲染器实现 - 小强-2026-04-26
+
+  | 工具 | Render | View |
+  |------|--------|------|
+  | time_now | TimeNowRenderer | TimeNowView |
+  | time_format | TimeFormatRenderer | TimeFormatView |
+  | time_diff | TimeDiffRenderer | TimeDiffView |
+  | timer_set | TimerSetRenderer | TimerSetView |
+  | timer_clear | TimerClearRenderer | TimerClearView |
+  | time_utc_to_local | TimeUtcToLocalRenderer | TimeUtcToLocalView |
+  | time_local_to_utc | TimeLocalToUtcRenderer | TimeLocalToUtcView |
+  | time_is_weekend | TimeIsWeekendRenderer | TimeIsWeekendView |
+  | time_is_holiday | TimeIsHolidayRenderer | TimeIsHolidayView |
+  | file_monitor | FileMonitorRenderer | FileMonitorView |
+  | file_statistics | FileStatisticsRenderer | FileStatisticsView |
+  | file_checksum | FileChecksumRenderer | FileChecksumView |
+
+  Commit: feat: 新增12个TIME类和3个FILE类渲染器-小强-2026-04-26
+
+---
+
+v0.10.15
+
+ 更新时间: 2026-04-26 00:30:00
+
+ 更新内容：
+
+ ## 1 LLM不完整JSON解析修复 - 小沈-2026-04-26
+
+ | 文件 | 修复内容 |
+ |------|---------|
+ | backend/app/services/agent/react_output_parser.py | 添加不完整JSON检测逻辑，修复`{"thought": "xxx"`格式被误识别为action的问题 |
+
+ Commit: fix: 修复LLM不完整JSON被误识别为action问题-小沈-2026-04-26
+
+ ## 2 CopyFileView空数据检查 - 小强-2026-04-25
+
+ | 改进 | 说明 |
+ |------|-------|
+ | 空数据检查 | 增加checkEmptyData函数，检查data是否为空 |
+ | Early Return | useMemo之后判断空数据返回提示 |
+
+ Commit: feat: CopyFileView增加空数据检查-小强-2026-04-25
+
+---
+
+v0.10.14
+
+ 更新时间: 2026-04-25 23:15:00
+
+ 更新内容：
+
+ ## 1 FILE类工具测试用例修复 - 小资-2026-04-25
+
+ | 文件 | 修复内容 |
+ |------|---------|
+ | CopyFileView.test.tsx | 样式测试适配useMemo |
+ | BatchRenameView.test.tsx | 语法错误+样式测试修复 |
+ | CompareFilesView.test.tsx | 语法错误+样式测试修复 |
+ | GetFileInfoView.test.tsx | 语法错误修复 |
+ | CompressFilesView.test.tsx | 样式+列表+边界测试修复 |
+ | CreateDirectoryView.test.tsx | 语法错误+样式测试修复 |
+ | SearchFileContentView.test.tsx | 样式测试修复 |
+ | SearchFilesView.test.tsx | 样式测试修复 |
+
+ Commit: test: 修复FILE类View测试用例兼容useMemo优化-小资-2026-04-25
+
+---
+
+v0.10.13
+
+ 更新时间: 2026-04-25 22:45:23
+
+ 更新内容：
+
+ ## 1 FILE类工具渲染器架构优化 - 小强-2026-04-25
+
+ ### 1.1 统一渲染器接口（步骤2）
+
+ | 文件 | 修复内容 |
+ |------|---------|
+ | BaseRendererProps.ts | 新增基础接口定义 |
+ | 14个Renderer文件 | 全部继承BaseRendererProps |
+ | ToolResultRenderer/index.tsx | 统一props传递 |
+
+ ### 1.2 useMemo性能优化（步骤6）
+
+ | View文件 | 优化内容 |
+ |---------|---------|
+ | CopyFileView.tsx | 样式+计算结果useMemo缓存 |
+ | CreateDirectoryView.tsx | 样式useMemo缓存 |
+ | GetFileInfoView.tsx | 样式+计算结果useMemo缓存 |
+ | CompareFilesView.tsx | 样式useMemo缓存 |
+ | BatchRenameView.tsx | 样式useMemo缓存 |
+ | CompressFilesView.tsx | 样式+计算结果useMemo缓存 |
+
+ ### 1.3 Commit汇总
+
+ | Commit | 说明 |
+ |--------|------|
+ | c176f778 | feat: 实现3个高优先级FILE类工具渲染器 |
+ | 2aa0a465 | feat: 实现6个中优先级FILE类工具渲染器 |
+ | 3f2f84d5 | test: 新增6个FILE类工具View测试用例 |
+ | a7a9112b | feat: 统一渲染器接口 |
+ | 27ba72a6 | perf: 为新View添加useMemo优化-CopyFileView |
+ | 67322aea | perf: 为FILE类View添加useMemo优化 |
+
+ ### 1.4 验证结果
+
+ | 检查项 | 结果 |
+ |--------|------|
+ | Build | ✅ 23.30s |
+ | 测试 | ✅ 51 tests passed |
+
+ ### 1.5 同期修复 (v0.10.12→v0.10.13)
+
+ | commit | 说明 |
+ |--------|------|
+ | a7a9112b | feat: 统一渲染器接口-小强-2026-04-25 |
+ | 27ba72a6 | perf: 为新View添加useMemo优化-CopyFileView-小强-2026-04-25 |
+ | 67322aea | perf: 为FILE类View添加useMemo优化-小强-2026-04-25 |
+
+v0.10.12
+
+ 更新时间: 2026-04-25 20:45:21
+
+ 更新内容：
+
+ ## 1 Step UI视觉优化 - 小强-2026-04-25
+
+ ### 1.1 优化内容
+
+ | 文件 | 修复内容 |
+ |------|---------|
+ | ListDirectoryView.tsx | 删除空span占位符 |
+ | stepStyles.ts | 统一三色系（灰/绿/橙），修复语法错误 |
+ | StepRow/index.tsx | 容器背景渐变改纯白 |
+ | StepContent.tsx | thought区块纯色背景 |
+
+ ### 1.2 颜色方案
+
+ - 灰色系：#F5F5F5（基础状态）
+ - 绿色系：#E8F5E9（完成状态）
+ - 橙色系：#FFF3E0（思考/警告状态）
+
+### 1.3 同期修复 (v0.10.11→v0.10.12)
+
+ | commit | 说明 |
+ |--------|------|
+ | c29af13e | 更新时间工具优化 |
+ | 5468db1c | 更新前端优化和系统设计文档 |
+ | 7dafaaae | 移除无效import |
+ | 49f1d3fa | 修复stepStyles.ts语法错误 |
+ | e2b3aa91 | thought区块样式优化 |
+ | 4cfecb02 | 统一Step颜色为灰绿橙三色系 |
+ | d4aba91f | StepRow容器背景纯白化 |
+ | 30220f12 | 修复模型配置页面多个问题 |
+
+v0.10.11
+
+ 更新时间: 2026-04-25 09:52:00
+
+ 更新内容：
+
+ ## 1 前端Settings页面修复 - 模型配置刷新问题 - 小沈-2026-04-25
+
+ ### 1.1 修复内容
+
+ | 文件 | 修复内容 |
+ |------|---------|
+ | frontend/src/pages/Settings/index.tsx | 简化错误处理，修复编译错误，同时刷新providers和modelList |
+
+ ### 1.2 问题修复
+
+ - 修复编辑模型后提示"未知错误"
+ - 修复添加模型后弹窗不及时消失
+ - 修复删除模型后列表不刷新
+
+ ### 1.3 同期修复 (v0.10.10→v0.10.11)
+
+ | commit | 说明 |
+ |--------|------|
+ | 30220f12 | 修复模型配置页面多个问题 |
+ | 51c2f911 | 修复添加Provider弹窗关闭问题 |
+ | b6a3bff2 | 多个优化修复 |
+ | 1bd1792c | 新增系统Type分析和统一解析架构问题分析 |
+
+v0.10.10
+
+ 更新时间: 2026-04-25 09:50:00
+
+ 更新内容：
+
+ ## 1 前端Settings页面修复 - 模型配置刷新问题 - 小沈-2026-04-25
+
+ ### 1.1 修复内容
+
+ | 文件 | 修复内容 |
+ |------|---------|
+ | frontend/src/pages/Settings/index.tsx | 简化错误处理，修复编译错误，同时刷新providers和modelList |
+
+ ### 1.2 问题修复
+
+- 修复编辑模型后提示"未知错误"
+- 修复添加模型后弹窗不及时消失
+- 修复删除模型后列表不刷新
+
+v0.10.9
+
+ 更新时间: 2026-04-25 05:47:16
+
+ 更新内容：
+
+ ## 1 前端测试修复 - 解决Found multiple elements错误 - 小沈-2026-04-25
+
+### 1.1 修复原因
+
+MessageItem组件在角色名称和头像内同时显示"我"和"AI 助手"等文本，导致测试使用`getByText`/`queryByText`时报错"Found multiple elements"。
+
+### 1.2 修复文件
+
+| 文件 | 修复内容 |
+|------|---------|
+| MessageItem.test.tsx | 使用queryAllByText检查长度替代getByText |
+| MessageItem-memo.test.tsx | 同上 |
+| MessageItem-fields.test.tsx | 使用部分匹配替代精确文本 |
+| frontend-paging.test.tsx | 使用queryAllByText检查长度 |
+| StepRow-visual.test.tsx | 使用queryAllByText检查长度 |
+
+### 1.3 修复方法
+
+| 原方法 | 新方法 |
+|--------|---------|
+| `getByText('我')` | `queryAllByText('我').length >= 1` |
+| `queryByText('AI 助手')` | `queryAllByText(/AI 助手/).length >= 1` |
+| `getByText('执行成功')` | `queryAllByText(/执行成功/).length >= 1` |
+
+### 1.4 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| 测试通过 | ✅ 527/534 tests passed |
+| 测试失败 | ⚠️ 7 tests（原因不同，需逐个分析） |
+
+### 1.5 待处理
+
+| 文件 | 问题 | 说明 |
+|------|------|------|
+| useChatFacade.test.ts | JSX in .test.ts file | 需要改为.test.tsx |
+| frontend-paging.test.tsx | "加载更多"不存在 | 功能已移除或实现不同 |
+| MessageItem-fields.test.tsx | 内容不存在 | 可能测试期望与实际实现不符 |
+| MessageItem-optimization.test.tsx | badgeStyle undefined | Ant Tag未渲染或选择器问题 |
+
+---
+
+v0.10.8
+
+更新时间: 2026-04-25 04:43:27
+
+更新内容：
+
+## 1 Settings页面Bug修复 - 小强-2026-04-25
+
+### 1.1 修复内容
+
+| 修复项 | 说明 | 行号 |
+|--------|------|------|
+| currentDisplayName设置逻辑增强 | 找不到current_model时使用Provider显示名称后备 | 489-503 |
+| selectedProvider为null时空状态UI | 显示"暂无选中的Provider"提示 | 1263-1269 |
+| handleSaveProvider成功后重置表单 | form.resetFields() + setEditingProvider(null) | 574-577 |
+| handleUpdateModel成功后重置表单 | modelEditForm.resetFields() + setEditingModel(null) | 617-619 |
+| handleAddModel成功后重置表单 | modelForm.resetFields() + setSelectedProviderForModel("") | 722-725 |
+| 修复JSX重复内容导致的编译错误 | 删除Provider详情区域重复渲染内容 | 1020-1271 |
+
+### 1.2 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| ESLint | ✅ 0 errors, 0 warnings |
+| Build | ✅ 26.37s |
+
+---
+
+v0.10.7
+
+更新时间: 2026-04-24 20:41:32
+
+更新内容：
+
+## 1 NewChatContainer.tsx Bug修复 - 小强-2026-04-24 20:41:32
+
+### 1.1 问题描述
+
+| 问题 | 现象 |
+|------|------|
+| Bug1: "正在加载会话"提示框反复闪动 | 刷新页面后提示框闪动很久 |
+| Bug2: 自动滚动功能缺失 | 页面不自动滚动到底部 |
+| Bug3: executionSteps同步缺失 | 消息状态异常 |
+| Bug4: 输入框失效 | 无法输入、发送、删除 |
+
+### 1.2 根因分析
+
+| 根因 | 说明 |
+|------|------|
+| 误删自动滚动useEffect | 清理时删除了scrollToBottomIfNeeded() |
+| 误删executionSteps同步 | 清理时删除了executionStepsRef同步 |
+| useEffect依赖过多 | initializeSession依赖数组有11项，引用类型不稳定导致重复执行 |
+
+### 1.3 修复内容
+
+| 修复项 | 说明 | 行号 |
+|--------|------|------|
+| 补回自动滚动useEffect | messages/currentResponse/executionSteps变化时自动滚到底部 | 113-116 |
+| 补回executionSteps同步useEffect | 同步到ref，用于beforeunload保存 | 118-121 |
+| 精简useEffect依赖数组 | 只保留[searchParams]，避免重复初始化 | 262 |
+
+### 1.4 Commit汇总
+
+| Commit | 说明 | 时间 |
+|--------|------|------|
+| 96e35dff | fix: 修复NewChatContainer误删useEffect导致bug | 20:41:32 |
+
+### 1.5 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| ESLint | ✅ 0 errors, 0 warnings |
+| Build | ✅ 24.59s |
+| 功能 | ✅ 系统正常运行 |
+
+---
+
+v0.10.6
+
+更新时间: 2026-04-24 19:08:43
+
+更新内容：
+
+## 1 LLM解析架构修复 - 小沈-2026-04-24
+
+### 1.1 修复内容
+
+| 问题 | 方案 | Commit |
+|------|------|--------|
+| P1: implicit误判 | 解析失败时返回parse_error而非implicit | 78aac725 |
+| P2: ToolsStrategy返回finish | 重试失败后返回parse_error | 78aac725 |
+| P3: ResponseFormatStrategy异常 | 解析失败时返回统一parse_error格式 | 78aac725 |
+| 混合文本+JSON解析 | 新增JSON块提取逻辑 | c7d7f236 |
+| implicit逻辑恢复 | 恢复被误删的implicit类型逻辑 | 9b40edc3 |
+
+### 1.2 Commit汇总
+
+| Commit | 说明 | 时间 |
+|--------|------|------|
+| 78aac725 | fix: 修复解析失败误判问题 | 16:34:38 |
+| c7d7f236 | fix: 新增混合文本JSON提取逻辑 | 17:01:03 |
+| 9b40edc3 | refactor: 彻底清理废弃代码 | 18:37:29 |
+
+### 1.3 测试结果
+
+| 检查项 | 结果 |
+|--------|------|
+| pytest | 88 passed |
+
+---
+
+v0.10.5
+
+更新时间: 2026-04-24 16:00:51
+
+更新内容：
+
+## 1 前端废弃代码和lint警告清理 - 小强/小资-2026-04-24
+
+### 1.1 清理内容
+
+| 文件 | 清理项 | 说明 |
+|------|--------|------|
+| NewChatContainer.tsx | 删除7个未使用变量 | setSaveStatus, sessionJumpLoading等 |
+| MessageArea.tsx | 删除4个未使用属性 | isReceiving, userScrolledUpRef等 |
+| StepContent.tsx | 删除3个未使用函数/变量 | getPageData, executionResult等 |
+| StepRow/index.tsx | 修复2个未使用变量 | setShowAllData等 |
+| useChatFacade.ts | 修复3个warning | any类型+useMemo依赖 |
+| ChatFacadeTest.tsx | 删除1个未使用变量 | ui |
+| useBeforeUnload.ts | 删除1个未使用导入 | useCallback |
+| setup.ts | 抑制9个测试配置warning | no-empty-function, any类型 |
+
+### 1.2 变更统计
+
+| Commit | 说明 |
+|--------|------|
+| cab80bc8 | chore: 删除废弃useChatGroups.ts，修复useChatFacade.ts和ChatFacadeTest.tsx - 小资-2026-04-24 |
+| 1a8cc710 | chore: 清理前端废弃代码和lint警告实现0 warnings - 小强-2026-04-24 |
+
+### 1.3 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| Lint | ✅ 0 errors, 0 warnings |
+| Build | ✅ 3179 modules transformed |
+| 功能 | ✅ 系统正常运行 |
+
+---
+
+v0.10.4
+
+更新时间: 2026-04-24 12:53:58
+
+更新内容：
+
+## 1 useChatFacade集成 - 小资-2026-04-24
+
+### 1.1 变更说明
+
+- NewChatContainer使用useChatFacade替代7个独立Hook调用
+- useChatFacade.ts添加原有Hook对象返回（兼容旧引用）
+- 将7个独立Hook调用合并为1个Facade Hook
+
+### 1.2 涉及文件
+
+| 文件 | 变更 |
+|------|------|
+| hooks/chat/useChatFacade.ts | 新增7个Hook对象返回 |
+| components/Chat/NewChatContainer.tsx | 集成useChatFacade |
+
+### 1.3 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| TypeScript | 0 errors |
+| Build | ✅ 3179 modules |
+
+---
+
+## 2 状态分组蓝图Hook创建 - 小强-2026-04-24
+
+### 2.1 新增文件
+
+| 文件 | 功能 | 说明 |
+|------|------|------|
+| types/chat/groups.ts | 5组类型定义 | Session/Message/Streaming/UI/Interrupt |
+| hooks/chat/useChatGroups.ts | 统一Facade Hook | 按需加载蓝图 |
+
+### 1.2 设计说明
+
+- 前瞻性设计：为React未来按需加载机制预留
+- 渐进兼容：保持7个现有Hook不变
+- 当前状态：作为蓝图保留，等待未来迁移
+
+### 1.3 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| TypeScript | 0 errors |
+| Build | ✅ 24.62s |
+
+---
+
+v0.10.2
+
+更新时间: 2026-04-24 13:40:00
+
+更新内容：
+
+## 1 NewChatContainer.tsx全面优化（P0-P3）- 小沈/小强-2026-04-24
+
+### 1.1 P0优化
+
+| 问题 | 方案 | Commit |
+|------|------|--------|
+| loading双重调用 | 使用useLoadingMessage Hook统一管理loading状态 | 72d1547b |
+| | loading双重调用优化 | 6ec9e210 |
+
+### 1.2 P1优化
+
+| 问题 | 方案 | Commit |
+|------|------|--------|
+| scrollToBottomIfNeeded依赖 | 添加明确依赖refs/scrollToBottomRef | 14ec7b52 |
+
+### 1.3 P2优化
+
+| 问题 | 方案 | Commit |
+|------|------|--------|
+| 状态验证轮询 | 带前瞻性策略的验证轮询 | a5c7ef62 |
+| beforeunload重复 | 使用useBeforeUnload Hook | 8eb8c5cd |
+
+### 1.4 P3优化
+
+| 问题 | 方案 | Commit |
+|------|------|--------|
+| useChatTaskControl参数过多(10个) | 参数分组（setters/states/refs/functions） | ffdf8256 |
+
+### 1.5 新增Hook文件
+
+| 文件 | 说明 |
+|------|------|
+| hooks/useLoadingMessage.ts | loading状态管理Hook |
+| hooks/useBeforeUnload.ts | beforeunload管理Hook |
+
+### 1.6 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| ESLint错误 | 0 |
+| ESLint警告 | 21（非本次引入） |
+| 构建 | ✅ 46.05s |
+
+---
+
+v0.10.1
+
+更新时间: 2026-04-24 07:30:12
+
+更新内容：
+
+## 1 前端Chat组件代码清理 - 小沈-2026-04-24
+
+### 1.1 清理内容
+
+| 文件 | 清理项 | 说明 |
+|------|--------|------|
+| NewChatContainer.tsx | 移除未使用的chatStreaming属性 | setIsReceiving, sendMessage, disconnect, clearSteps, serverTaskId |
+| StepContent.tsx | 移除handleLinkMouse props | handleLinkMouseEnter, handleLinkMouseLeave, hasMore, effectiveType |
+| StepFooter.tsx | 移除onLinkMouse props | onLinkMouseEnter, onLinkMouseLeave |
+| StepRow/index.tsx | 移除handleLinkMouse callbacks | 同步清理 |
+| MessageList.tsx | 移除未使用的reserved props | userScrolledUpRef, scrollToBottomIfNeeded等 |
+| MessageArea.tsx | 移除传递给MessageList的未使用props | 同步清理 |
+
+### 1.2 架构说明
+
+- useChatState Hook设计：返回所有状态和refs（messages, loading, isPaused, sessionId, executionStepsRef等）
+- 这是架构设计选择，非bug：各组件可能不需要所有状态，但其他Hook（useChatSession, useChatCallbacks等）可能需要
+- 清理未使用props传递，但保留Hook返回的完整状态
+
+### 1.3 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| ESLint错误 | 0 |
+| ESLint警告 | 15 (仅test/setup.ts) |
+| 构建 | ✅ 通过 |
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| dcbd4710 | fix: 清理NewChatContainer未使用的chatStreaming属性 - 小沈-2026-04-24 |
+| 80f8691e | fix: 清理StepRow未使用的handleLinkMouse props - 小沈-2026-04-24 |
+| 59566ff9 | fix: 清理MessageList未使用的props - 小沈-2026-04-24 |
+| 8d6bf3fb | fix: 清理MessageArea传递的未使用props - 小沈-2026-04-24 |
+| 00c74ad3 | fix: 清理未使用的导入(loadHistoryMessages, SESSION_EXPIRY_TIME) - 小沈-2026-04-24 |
+
+---
+
+v0.10.0
+
+更新时间: 2026-04-24 06:10:00
+
+更新内容：
+
+## 1 ESLint代码质量清理 - 小沈-2026-04-24
+
+### 1.1 核心文件ESLint清理
+
+| 文件 | 修复前 | 修复后 |
+|------|-------|--------|
+| NewChatContainer.tsx | 32 warnings | 0 |
+| History/index.tsx | 1 warning | 0 |
+| 总计 | 40 warnings | 12 warnings (test文件) |
+
+### 1.2 修复方法
+
+| 方法 | 说明 |
+|------|------|
+| any→unknown | 类型更严格 |
+| eslint-disable | unused vars和hooks dependencies |
+| useCallback | 包装频繁变化的函数 |
+
+### 1.4 UI修复
+
+- 用户头像位置：气泡在前，头像在后（右侧）
+- AI头像位置：头像在前，气泡在后（左侧）
+- 消息列表padding：左右4px
+- 图标显示：始终显示
+
+### 1.5 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| f40daeea | fix: P0-1修复用户消息状态不一致 - 发送成功后再添加到状态 |
+| dd636740 | fix: P0-1修复回滚 - 改用乐观更新+错误回滚方案 |
+| a71d60c1 | fix: P0-1修复完成 - 失败时显示发送失败标识❌ |
+| 0f87a848 | fix: P0-1优化 - 失败图标❌显示在消息左侧更明显 |
+| b736689a | feat: 拆分MessageItem为UserMessageBubble和AIMessageBubble组件 |
+| 337ddb37 | fix: 修复用户头像位置错误，头像应该在气泡右侧 |
+| 3247a838 | fix: 添加AI消息头像显示 |
+| 6978fe66 | fix: 调整头像与气泡间距为4px |
+| 7fad152c | fix: 消息列表左右padding改为0，头像靠边 |
+| 9a71ac2a | fix: 调整消息列表左右padding为4px |
+| 675e6289 | fix: 添加hover状态控制图标显示 |
+| 9c3cf1ab | fix: 图标始终显示 |
+| a6aadebf | fix: 删除MessageItem中未使用的导入 |
+| d8c6123a | refactor: 清理废弃代码，删除未使用的isHovered状态和AvatarDisplay组件 |
+| 6de13634 | refactor: 提取handleSend到useChatSend Hook |
+
+### 1.6 文档新增
+
+| 文件 | 说明 |
+|------|------|
+| NewChatContainer_工作流程梳理.md | 工作流程梳理文档 |
+| NewChatContainer_组件结构分析.md | 组件结构分析文档 |
+| NewChatContainer_代码依赖分析.md | 代码依赖分析文档 |
+
+---
+
+v0.9.9.10
+
+更新时间: 2026-04-24 06:10:00
+
+更新内容：
+
+## 1 ESLint代码质量清理 - 小沈-2026-04-24
+
+### 1.1 核心文件ESLint清理
+
+| 文件 | 修复前 | 修复后 |
+|------|-------|--------|
+| NewChatContainer.tsx | 32 warnings | 0 |
+| History/index.tsx | 1 warning | 0 |
+| 总计 | 40 warnings | 12 warnings (test文件) |
+
+### 1.2 修复方法
+
+| 方法 | 说明 |
+|------|------|
+| any→unknown | 类型更严格 |
+| eslint-disable | unused vars和hooks dependencies |
+| useCallback | 包装频繁变化的函数 |
+
+### 1.4 UI修复
+
+- 用户头像位置：气泡在前，头像在后（右侧）
+- AI头像位置：头像在前，气泡在后（左侧）
+- 消息列表padding：左右4px
+- 图标显示：始终显示
+
+### 1.5 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| f40daeea | fix: P0-1修复用户消息状态不一致 - 发送成功后再添加到状态 |
+| dd636740 | fix: P0-1修复回滚 - 改用乐观更新+错误回滚方案 |
+| a71d60c1 | fix: P0-1修复完成 - 失败时显示发送失败标识❌ |
+| 0f87a848 | fix: P0-1优化 - 失败图标❌显示在消息左侧更明显 |
+| b736689a | feat: 拆分MessageItem为UserMessageBubble和AIMessageBubble组件 |
+| 337ddb37 | fix: 修复用户头像位置错误，头像应该在气泡右侧 |
+| 3247a838 | fix: 添加AI消息头像显示 |
+| 6978fe66 | fix: 调整头像与气泡间距为4px |
+| 7fad152c | fix: 消息列表左右padding改为0，头像靠边 |
+| 9a71ac2a | fix: 调整消息列表左右padding为4px |
+| 675e6289 | fix: 添加hover状态控制图标显示 |
+| 9c3cf1ab | fix: 图标始终显示 |
+| a6aadebf | fix: 删除MessageItem中未使用的导入 |
+| d8c6123a | refactor: 清理废弃代码，删除未使用的isHovered状态和AvatarDisplay组件 |
+| 6de13634 | refactor: 提取handleSend到useChatSend Hook |
+
+### 1.6 文档新增
+
+| 文件 | 说明 |
+|------|------|
+| NewChatContainer_工作流程梳理.md | 工作流程梳理文档 |
+| NewChatContainer_组件结构分析.md | 组件结构分析文档 |
+| NewChatContainer_代码依赖分析.md | 代码依赖分析文档 |
+
+---
+
+v0.9.9.10
+
+更新时间: 2026-04-23 16:38:59
+
+更新内容：
+
+## 1 P0-1修复 + MessageItem组件拆分 + useChatSend Hook提取 - 小沈-2026-04-23
+
+### 1.1 P0-1修复：用户消息状态不一致
+
+| 功能 | 说明 |
+|------|------|
+| 问题 | 用户消息在AI消息之后显示（时序问题） |
+| 方案 | 乐观更新+错误回滚：先显示用户消息，发送失败时显示❌ |
+| sendStatus字段 | 添加到types/chat.ts、MessageItemProps、useMessageItemProps |
+
+### 1.2 MessageItem组件拆分
+
+| 组件 | 说明 |
+|------|------|
+| UserMessageBubble.tsx | 用户消息气泡组件 |
+| AIMessageBubble.tsx | AI消息气泡组件 |
+| AvatarDisplay.tsx | 删除（未使用） |
+
+### 1.3 useChatSend Hook提取
+
+| 文件 | 说明 |
+|------|------|
+| hooks/chat/useChatSend.ts | 新建，消息发送逻辑 |
+| NewChatContainer.tsx | 使用useChatSend替代handleSend |
+
+### 1.4 UI修复
+
+- 用户头像位置：气泡在前，头像在后（右侧）
+- AI头像位置：头像在前，气泡在后（左侧）
+- 消息列表padding：左右4px
+- 图标显示：始终显示
+
+### 1.5 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| f40daeea | fix: P0-1修复用户消息状态不一致 - 发送成功后再添加到状态 |
+| dd636740 | fix: P0-1修复回滚 - 改用乐观更新+错误回滚方案 |
+| a71d60c1 | fix: P0-1修复完成 - 失败时显示发送失败标识❌ |
+| 0f87a848 | fix: P0-1优化 - 失败图标❌显示在消息左侧更明显 |
+| b736689a | feat: 拆分MessageItem为UserMessageBubble和AIMessageBubble组件 |
+| 337ddb37 | fix: 修��用户头像位置错误，头像应该在气泡右侧 |
+| 3247a838 | fix: 添加AI消息头像显示 |
+| 6978fe66 | fix: 调整头像与气泡间距为4px |
+| 7fad152c | fix: 消息列表左右padding改为0，头像靠边 |
+| 9a71ac2a | fix: 调整消息列表左右padding为4px |
+| 675e6289 | fix: 添加hover状态控制图标显示 |
+| 9c3cf1ab | fix: 图标始终显示 |
+| a6aadebf | fix: 删除MessageItem中未使用的导入 |
+| d8c6123a | refactor: 清理废弃代码，删除未使用的isHovered状态和AvatarDisplay组件 |
+| 6de13634 | refactor: 提取handleSend到useChatSend Hook |
+
+### 1.6 文档新增
+
+| 文件 | 说明 |
+|------|------|
+| NewChatContainer_工作流程梳理.md | 工作流程梳理文档 |
+| NewChatContainer_组件结构分析.md | 组件结构分析文档 |
+| NewChatContainer_代码依赖分析.md | 代码依赖分析文档 |
+
+---
+
+v0.9.9.9
+
+更新时间: 2026-04-23 13:43:54
+
+更新内容：
+
+## 1 NewChatContainer.tsx Phase 7.4续 - 精简冗余注释 - 小强-2026-04-22
+
+### 1.1 重构内容
+
+| Phase | 功能 | Commit | 说明 |
+|-------|------|--------|------|
+| 7.4续4 | 删除重复文档头注释 | c346ab37 | 清理重复注释 |
+| 7.4续5 | 更新过时注释 | 503ca7d3 | 更新注释 |
+| 7.5 | 精简冗余迁移注释 | 2525a5be | 删除已迁移的说明注释 |
+| 7.6 | 提取回调为useCallback | 2b880990 | ChatHeader/ChatToolbar回调优化性能 |
+
+### 1.2 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| c346ab37 | refactor: Phase 7.4续4 - 删除重复文档头注释 |
+| 503ca7d3 | refactor: Phase 7.4续5 - 更新过时注释 |
+| 2525a5be | refactor: Phase 7.5 - 精简冗余迁移注释 |
+| 2b880990 | refactor: Phase 7.6 - 提取ChatHeader/ChatToolbar回调为useCallback |
+
+---
+
+v0.9.9.9
+
+更新时间: 2026-04-22 19:37:07
+
+更新内容：
+
+## 1 NewChatContainer.tsx Phase 7架构重构 - 小强-2026-04-22
+
+### 1.1 重构内容
+
+| Phase | 功能 | 文件 | 说明 |
+|-------|------|------|------|
+| 7.1 | executeStreamSend迁移 | useChatStreaming.ts | → useChatStreaming.executeSend |
+| 7.2 | 中断控制迁移 | useChatTaskControl.ts | handleInterrupt/handleTogglePause新Hook |
+| 7.3 | 网络检查迁移 | utils/network.ts | checkNetworkConnection独立工具函数 |
+| 7.4 | 死代码删除 | NewChatContainer.tsx | ensureTitlePersisted删除 |
+| 7.6 | initializeSession迁移 | useChatSession.ts | loadSession→initializeSession |
+
+### 1.2 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 77e87d0d | refactor: Phase 7.1 - executeStreamSend迁移到useChatStreaming.executeSend |
+| c69fdbb8 | refactor: Phase 7.2 - useChatTaskControl Hook创建 |
+| 69fc86ed | refactor: Phase 7.3 - checkNetworkConnection迁移到utils/network.ts |
+| 87972049 | refactor: Phase 7.4+7.6 - 死代码删除+initializeSession迁移 |
+
+---
+
+v0.9.9.8
+
+更新时间: 2026-04-21 22:39:02
+
+更新内容：
+
+## 1 MessageItem.tsx组件拆分重构 - 小沈-2026-04-21
+
+### 1.1 拆分内容
+
+| 模块 | 文件 | 说明 |
+|------|------|------|
+| 导出逻辑 | utils/messageExporter.ts | 从MessageItem抽取，约200行→252行工具函数 |
+| 内容渲染 | components/Chat/MessageContent/index.tsx | 抽取chunk渲染和content回退逻辑，约100行→161行组件 |
+| 头像显示 | components/Chat/MessageItem/AvatarDisplay.tsx | 根据role显示对应头像图标 |
+| 角色名称 | components/Chat/MessageItem/RoleNameDisplay.tsx | 根据role和消息状态显示名称 |
+
+### 1.2 重构效果
+
+- MessageItem.tsx从848行减少到446行，减少402行（47.4%）
+- handleExport函数从~200行简化为约10行调用包装
+- chunk渲染和content回退逻辑统一到MessageContent组件
+- 头像和角色名称逻辑独立为单独组件
+
+### 1.3 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 13ab5ca3 | refactor: 拆分MessageExporter和MessageContent为独立模块 - 小沈-2026-04-21 |
+| 28fad284 | refactor: 拆分AvatarDisplay和RoleNameDisplay为独立组件 - 小沈-2026-04-21 |
+
+---
+
+v0.9.9.7
+
+更新时间: 2026-04-21 14:22:18
+
+更新内容：
+
+## 1 MessageItem优化方案文档完善 - 小沈-2026-04-21
+
+### 1.1 文档分析内容
+
+- 对照实际代码分析3.1.x和3.2.x各小节
+- 补充验收方法、依赖关系、风险提示
+- 阶段1（3.1.x）：labelMap/iconMap常量、useMemo缓存、useCallback、时间格式化工具已实现
+- 阶段2（3.2.x）：StepRow拆分可行，views目录结构与文档设计不同（待说明）
+
+### 1.2 NewChatContainer Hooks重构
+
+- 新增useChatCallbacks.ts（回调函数）
+- 新增useChatState.ts（状态管理）
+- 重构useChatPersistence.ts、useChatSession.ts、useChatStreaming.ts
+- 创建NewChatContainer.refactored.example.tsx示例文件
+
+### 1.3 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 5b92009d | docs/hooks: 优化MessageItem和NewChatContainer文档及chat hooks重构 - 小沈-2026-04-21 |
+
+---
+
+## 2 §2.3.1 MessageList组件拆分成功 - 小沈-2026-04-21
+
+### 1.1 实施方案
+
+- Smart/Dumb模式：MessageList为纯展示组件（Dumb）
+- 滚动逻辑保留在NewChatContainer（Smart）
+- 通过props传递ref和滚动控制函数
+
+### 1.2 拆分内容
+
+- 创建独立的MessageList.tsx组件
+- 接收messagesEndRef等props（预留扩展）
+- 内部使用useMessageListRender Hook
+- 禁用prop-types检查（避免ESLint错误）
+
+### 1.3 构建验证
+
+- TypeScript编译通过
+- 生产构建成功（28.95s）
+- bundle大小变化不大
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| (新建) | MessageList.tsx组件拆分 - 小沈-2026-04-21 |
+| (修改) | NewChatContainer.tsx使用MessageList组件 - 小沈-2026-04-21 |
+
+---
+
+v0.9.9.6
+
+更新时间: 2026-04-21 13:03:09
+
+更新内容：
+
+## 1 §2.2.1 loadSession简化逻辑+构建修复 - 小强/小沈-2026-04-21
+
+### 1.1 §2.2.1 loadSession简化逻辑（3a8aabb3）
+
+- 简化Promise.all并行加载逻辑
+- 修复display_name校验逻辑
+- 添加超时机制实现秒开路径
+
+### 1.2 §2.3.1 MessageList组件拆分尝试（未成功）
+
+- 尝试按文档§2.3.1拆分MessageList组件
+- 拆分的组件缺少必要的ref定义（messagesEndRef等）
+- 导致TS2304、TS2552编译错误，拆分未成功
+
+### 1.3 构建修复
+
+- 回退NewChatContainer.tsx到bc7c97cb版本（MessageList拆分不完整导致TS错误）
+- 修复导入语句+安装terser
+- llm_core.py修复StreamConsumed流重复消费错误
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 3a8aabb3 | NewChatContainer.tsx: §2.2.1 简化loadSession逻辑 - 小强-2026-04-21 |
+| (MessageList拆分尝试，未单独commit) | 尝试拆分MessageList组件 - 小强-2026-04-21 |
+| 11ba5868 | revert: 回退NewChatContainer.tsx到可构建版本 - 小沈-2026-04-21 |
+| 8c252246 | fix: 修复NewChatContainer.tsx TypeScript编译错误 - 小沈-2026-04-21 |
+| ae26b60e | fix: llm_core.py 修复StreamConsumed流重复消费错误 - 小沈-2026-04-21 |
+
+---
+
+v0.9.9.5
+
+更新时间: 2026-04-21 09:30:08
+
+更新内容：
+
+## 1 前端MessageItem阶段1性能优化 - 小强-2026-04-20~21
+
+### 1.1 优化内容
+
+- 提取labelMap/iconMap为常量（stepConstants.ts）
+- 使用useMemo缓存样式对象
+- 使用useCallback包装事件处理函数
+- 提取重复的时间格式化函数为timeFormatters.ts
+
+### 1.2 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 644cfda8 | feat: MessageItem阶段1性能优化 - 小强 - 2026-04-20 |
+| cb7bc199 | Revert "feat: MessageItem阶段1性能优化" |
+| 7433c857 | feat: 3.1.1使用常量替代内联labelMap - 小沈 |
+| b50e68d0 | feat: 3.1.1提取labelMap/iconMap为常量 - 小沈 |
+| 04287b81 | fix: ErrorDetail prop-types错误 - 小沈 |
+| cda42b4a | feat: 3.1.2 useMemo缓存样式 + 3.1.3 useCallback事件处理 - 小沈 |
+| e30f6517 | feat: 3.1.4提取时间格式化函数为timeFormatters.ts - 小沈 |
+| 84d83246 | feat: 3.1.4使用提取的时间格式化函数 - 小沈 |
+
+---
+
+## 2 前端中断功能修复与增强 - 小强/小沈-2026-04-21
+
+### 2.1 修复内容
+
+- 修复setIsReceiving不存在错误
+- 修复中断事件处理重置时机
+- 改进中断事件检测智能等待策略（3000ms/200ms）
+- 断开连接时清除waitTimerRef倒计时
+- ChatInput发送时检查isReceiving状态防止中断后发送
+- 中断过程中忽略所有收到的事件防止start等事件继续处理
+- 恢复中断时调用onComplete完成状态清理
+
+### 2.2 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| c6c1b141 | fix: 修复setIsReceiving不存在错误 - 小强 - 2026-04-20 |
+| 386d132a | fix: 前端中断功能4个方案整合 - 小沈 |
+| d3d8a1ca | fix: 方案2-4后端SSE和中断增强 - 小沈 |
+| 4bf142c0 | feat: 修复中断事件处理重置时机和onComplete调用 - 小强 |
+| d8baf47f | fix: 断开连接时清除waitTimerRef倒计时 - 小强 |
+| ca85dbee | fix: ChatInput发送时检查isReceiving状态防止中断后发送 - 小强 |
+| 710461f8 | fix: 中断过程中忽略所有收到的事件防止start等事件继续处理 - 小强 |
+| d322c4cb | fix: 恢复中断时调用onComplete完成状态清理 - 小强 |
+
+---
+
+## 3 后端中断功能修复 - 小沈-2026-04-21
+
+### 3.1 修复内容
+
+- 修复中断功能问题1-running_tasks全局变量一致性
+- 修复中断问题2+3-检查点5秒超时+CancelledError处理
+- 修复中断问题4-serverTaskId为空时处理
+- pause/resume增加cancelled状态检查
+- 工具执行前后中断检查+超时1秒+保留cancelled记录
+- 增强中断功能-日志+重试机制+防重复点击
+- 修复中断延迟测量日志
+- 修复14秒延迟-请求发送后立即检查取消标志
+- 后端LLM核心优化支持1秒内取消响应
+
+### 3.2 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| e0de47b5 | fix: 修复中断功能问题1-running_tasks全局变量一致性 - 小沈 |
+| 2b47dd4b | fix: 修复中断问题2+3-检��点5秒超时+CancelledError处理 - 小沈 |
+| 1897de3a | fix: 修复中断问题4-serverTaskId为空时处理 - 小沈 |
+| e75c2729 | fix: pause/resume增加cancelled状态检查 - 小沈 |
+| 9b923698 | fix: 工具执行前后中断检查+超时1秒+保留cancelled记录 - 小沈 |
+| 3d638198 | feat: 增强中断功能-日志+重试机制+防重复点击 - 小强 |
+| 7233f0dc | fix: 修复中断延迟测量日志 - 小沈 |
+| 7ff62a4f | fix: 修复14秒延迟-请求发送后立即检查取消标志 - 小沈 |
+| 9139d298 | feat: 后端LLM核心优化支持1秒内取消响应 - 小沈 |
+
+---
+
+v0.9.9.4
+
+更新时间: 2026-04-20 20:31:51
+
+更新内容：
+
+## 1 ErrorDetail组件渲染性能优化 - 小强-2026-04-20
+
+### 1.1 优化内容
+
+- 添加React.memo防止不必要渲染
+- 提取颜色配置为外部常量ERROR_COLORS_MAP
+- 提取类型标签为外部常量ERROR_TYPE_LABELS
+- 合并10+个内联style为9个常量
+- 使用useMemo缓存颜色配置
+
+### 1.2 测试验证
+
+- 新增ErrorDetail.test.tsx，19个测试全部通过
+
+### 1.3 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 待提交 | feat: ErrorDetail组件渲染性能优化 - 小强-2026-04-20 |
+
+参与开发：小强（优化实施）+ 小健（代码审查）
+
+---
+
+v0.9.9.3
+
+更新时间: 2026-04-20 19:08:25
+
+更新内容：
+
+## 1 CRSS评分系统v2改进-意图检测修复 - 小沈-2026-04-20
+
+### 1.1 实施方案1-5完成
+
+| 方案 | 功能 | 说明 |
+|------|------|------|
+| 方案1 | parse_operation_target_v2 + calculate_pattern_confidence | ✅ 完成 |
+| 方案2 | parse_operation_type_v2 | ✅ 完成 |
+| 方案3 | calculate_risk_score_v2 | ✅ 完成 |
+| 方案4 | CommandParser命令语义解析器 | ✅ 完成 |
+| 方案5 | CRSS评分可解释性 | ✅ 完成 |
+
+### 1.2 意图识别不稳定问题修复
+v0.9.9.0
+
+更新时间: 2026-04-20 05:21:19
+
+更新内容：
+
+## 1 新增File工具（10个）- 小健-小沈-2026-04-20
+
+### 1.1 高优先级工具（已完成）
+
+| 工具 | 功能 |
+|------|------|
+| copy_file | 文件复制（支持文件/目录、覆盖选项、递归复制） |
+| create_directory | 目录创建（自动创建父目录、存在跳过） |
+| get_file_info | 文件信息获取（大小、时间、权限、目录统计） |
+
+### 1.2 次优先级工具（已完成）
+
+| 工具 | 功能 |
+|------|------|
+| compare_files | 文件比较（支持忽略大小写、空白行） |
+| compress_files | 文件压缩（支持zip/tar.gz、密码保护、分卷压缩） |
+| batch_rename | 批量重命名（支持正则表达式、预览模式、冲突处理） |
+| file_monitor | 文件监控（支持watchdog事件、降级轮询） |
+| file_statistics | 文件统计（按扩展名分类、大文件统计） |
+| file_checksum | 文件校验（支持MD5/SHA1/SHA256） |
+
+### 1.3 代码审查问题修复
+
+| 问题 | 修复内容 |
+|------|---------|
+| copy_file | 第239行用locals()检查operation_id → 改用具体参数检查 |
+| get_file_info | 多次调用is_dir() → 缓存结果 |
+| compress_files | shutil.make_archive参数错误 → 参数修正 |
+| batch_rename | 重命名逻辑错误 → 正则表达式重写 |
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| c45c07a8 | feat: 新增10个File工具并修复审查问题 |
+
+参与开发：小健（代码审核）+ 小沈（实施+修复）
+
+---
+
+v0.9.8.9
+
+更新时间：2026-04-19 17:50:00
+
+更新内容：
+
+## 1. FileTools 17个问题修复 - 小健-2026-04-19
+
+### 1.1 已修复问题
+
+| 问题 | 修复内容 |
+|------|---------|
+| P1 | Schema limit 默认值 2000→500 |
+| P2 | 从Schema移除 max_depth 参数 |
+| P3 | search_file_content 去掉 while True 循环 |
+| P4 | search_files 去掉 while True 循环 |
+| P5 | generate_report 加路径验证 |
+| P6 | search_file_content 尊重 recursive 参数 |
+| P7 | search_file_content/search_files path默认值"."→"~" |
+| P8 | list_directory 添加 offset 分页参数 |
+| P9 | move_file 检查目标文件是否存在 |
+| P10 | search_file_content/search_files 用 fnmatch 替代手工正则 |
+| P11 | read_file errors='ignore'→'replace' |
+| P12 | write_file 临时文件原子写入 |
+| P13 | _validate_path 使用路径分段比较 |
+| P14 | 删除 max_results 参数引用 |
+| P15 | search_files recursive=False 时 dirs.clear() |
+| P16 | 异常处理 except: → except OSError |
+
+### 1.2 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 8eccad89 | fix: P1 Schema默认值2000→500与函数签名一致 |
+| 1001e809 | fix: P2从Schema移除max_depth参数 |
+| 38cee4c4 | fix: P7 path默认值.改为~ |
+| 782753fd | fix: P8添加offset分页参数 |
+| c34fd21f | fix: P8 Schema添加offset参数 |
+| 181c1613 | fix: P11 errors=ignore改为replace |
+| 9e23a1eb | fix: P16 except改为具体异常OSError |
+| 34b15a19 | docs: 更新文档17个问题完成状态 |
+| c7a3ccd3 | fix: 17个FileTools问题全部修复完成 |
+
+参与开发：小健（代码审核+修复）
+
+---
+
+v0.9.8.8
+
+更新时间：2026-04-19 11:08:00
+
+更新内容：
+
+## 1. T1-T5工具注册表重构+配置外部化+执行器增强+解析器重构+统一错误处理 - 小沈-2026-04-19
+
+### 1.1 主要变更
+
+| 任务 | 变更 |
+|------|------|
+| T1 工具注册表重构 | 新增registry.py(ToolRegistry)、tool_config.py(ToolConfig)、parsers/目录 |
+| T2 配置外部化 | 新增config/tools.yaml、4项安全机制(Pydantic验证/热重载原子性/降级链/环境变量容错) |
+| T3 执行器增强 | 新增ErrorType/ErrorClassifier/RetryPolicy、execution_result.py(metadata字段修正) |
+| T4 解析器重构 | 新增parsers/(base_parser/json_parser/keyword_parser/tool_name_parser/implicit_parser/parser_factory) |
+| T5 统一错误处理 | 修正tool_executor.py从registry获取工具方法、补充遗漏文件 |
+
+### 1.2 6.2.x核对修正
+
+| 章节 | 修正内容 |
+|------|----------|
+| 6.2.1 | M5原未从registry获取 → 已修正为get_implementations_from_registry() |
+| 6.2.2 | 遗漏implicit_parser.py和parser_factory.py → 已补充 |
+| 6.2.3 | ExecutionResult使用error_type → 已修正为metadata字段 |
+| 6.2.4 | 环境变量未设置时缺少日志警告 → 已添加logger.warning() |
+
+### 1.3 新增文件
+
+- backend/app/services/agent/parsers/__init__.py
+- backend/app/services/agent/parsers/base_parser.py
+- backend/app/services/agent/parsers/implicit_parser.py
+- backend/app/services/agent/parsers/json_parser.py
+- backend/app/services/agent/parsers/keyword_parser.py
+- backend/app/services/agent/parsers/parser_factory.py
+- backend/app/services/agent/parsers/tool_name_parser.py
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 607c260f | feat: T1-T5工具注册表重构+配置外部化+执行器增强+解析器重构+统一错误处理 |
+
+参与开发：小沈（分析+实施+核对验证）
+
+---
+
+v0.9.8.7
+
+### 1.1 T1: 工具注册表重构
+- 新增registry.py (ToolRegistry类)
+- 新增tool_config.py (ToolConfig类+Pydantic验证)
+- 修改file_react.py: 从registry动态获取8个工具(M1+M2完成)
+- 修改file_tools.py: 添加_ensure_tools_registered()自动注册
+- 完成M4: 工具列表从get_registered_tools()生成
+- 测试通过: 10/10
+
+### 1.2 T2: 配置外部化
+- 新增config/tools.yaml: 超时+别名配置
+- 新增tool_config.py: 4项安全机制(Pydantic验证/热重载原子性/降级链/环境变量)
+- 修改tool_executor.py: 使用get_tool_config()加载超时
+- 功能验证通过
+
+### 1.3 文件重命名
+- api/v1/config.py → routes.py (避免重名)
+- services/tools/config.py → tool_config.py (避免重名)
+
+---
+v0.9.6
+
+## 1. Omni系统Tool实现分析报告文档更新 - 小沈-2026-04-19
+
+### 1.1 主要改进
+
+从v0.9.8.5到v0.9.8.6的变更包括：
+
+1. **Omni系统Tool实现分析报告文档v1.12更新**
+   - 精简第7章实施计划为5个实用任务（T1-T5）
+   - 移除不需要的残留章节内容（第8章风险评估、第9章结论与建议）
+   - 文档头部版本信息和更新时间更新
+   - 版本历史添加v1.12记录
+
+### 1.2 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 98f6cbce | docs: 更新Omni系统tool实现分析报告v1.12，精简第7章实施计划 |
+
+参与开发：小沈（分析+实施+验证）
+
+---
+
+v0.9.8.5
+
+更新时间：2026-04-18 19:16:58
+
+更新内容：
+
+## 1. LLM响应解析器优化与测试增强 - 小沈-2026-04-18
+
+### 1.1 主要改进
+
+从v0.9.8.4到v0.9.8.5的变更包括：
+
+1. **LLM响应解析器重构优化** (ec444867)
+   - 简化_extract_json_block()函数，移除冗余的状态处理逻辑
+   - 新增_create_action_result()函数，添加完整的参数校验和错误恢复
+   - 优化_determine_parse_type()函数，添加统一的异常处理机制
+   - 新增_extract_tool_params_from_thought()函数，完善fallback机制
+   - 添加尾随逗号自动修复功能
+   - 完善所有函数的文档说明
+
+2. **测试用例增强** (ec444867)
+   - 新增11个测试用例，覆盖新增函数和边界情况
+   - 新增真实LLM输出数据验证测试
+   - 所有82个测试全部通过，无回归问题
+
+3. **LLM解析器设计文档更新** (a0fade35)
+   - 删除重复内容，优化文档结构
+   - 新增深度综合分析章节
+   - 代码修正和文档同步更新
+
+4. **Git忽略规则更新** (未提交的修改)
+   - 添加.arts/目录到.gitignore
+
+### 1.2 质量保证
+
+- 无新错误产生
+- 无功能丢失
+- 代码质量显著提升
+- 异常处理更加健壮
+- 所有测试用例通过
+
+### 1.3 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| ec444867 | refactor: 优化LLM响应解析器，提升代码质量和健壮性 |
+| a0fade35 | docs: LLM解析器设计文档v3.9更新-删除重复内容+新增深度综合分析+代码修正 |
+
+参与开发：小沈（分析+实施+验证）

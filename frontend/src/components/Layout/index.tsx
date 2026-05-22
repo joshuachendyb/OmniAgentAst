@@ -103,6 +103,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     validationResult,
     initializeApp,
     refreshAll,
+    refreshServiceStatus,
     refreshAfterModelChange,
     refreshModelList: appRefreshModelList,  // 获取AppContext的refreshModelList
     isInitialized,
@@ -179,6 +180,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       });
       // 不在骨架屏显示错误，由errorHandler统一处理
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isInitialized, skeletonState.visible, initError]);
 
   // 【新增】骨架屏重试函数 - 用于加载失败时重试
@@ -298,9 +300,10 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       // 替代之前错误的setServiceStatus手动调用和分散的refreshModelList/refreshSessionCount
       await refreshAfterModelChange();
       console.log("[切换模型] 刷新完成, serviceStatus:", serviceStatus);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } }; message?: string };
       console.error("[切换模型] 失败:", error);
-      handleError({ message: error?.response?.data?.detail || error?.message || "切换模型失败", error_type: ErrorType.SWITCH_MODEL_FAILED });
+      handleError({ message: err?.response?.data?.detail || err?.message || "切换模型失败", error_type: ErrorType.SWITCH_MODEL_FAILED });
     }
   };
 
@@ -313,15 +316,20 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     await appRefreshModelList();
   };
 
-  // 手动检查服务 - 使用AppContext刷新数据
+  // 手动检查服务
   const handleCheckService = async () => {
     setCheckingStatus(true);
-    setIsManualRefreshing(true);  // 设置手动刷新标志
     try {
-      await refreshAll();
+      const status = await refreshServiceStatus();
+      if (status && status.success) {
+        showMessage(ErrorType.INFO, `${status.provider} (${status.model}) 服务连接正常`);
+      } else {
+        showMessage(ErrorType.WARNING, `${status?.provider || "未知"} (${status?.model || "未知"}) 验证失败: ${status?.message || "请检查配置"}`);
+      }
+    } catch {
+      showMessage(ErrorType.WARNING, "服务验证失败，请检查网络连接");
     } finally {
       setCheckingStatus(false);
-      setIsManualRefreshing(false);  // 重置手动刷新标志
     }
   };
 
@@ -329,6 +337,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   // 【2026-04-08修复】页面加载不调用服务检查，与会话加载无关
   useEffect(() => {
     initializeApp();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
@@ -605,9 +614,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
               const currentModel = modelList.find(m => m.current_model === true);
               
               if (serviceStatus && !serviceStatus.success) {
-                // ❌ 失败时，显示配置文件中的模型名称（错误信息通过弹框显示）
                 return (
-                  <Tag color="error" onClick={handleCheckService} style={{ cursor: "pointer" }}>
+                  <Tag color="error" style={{ cursor: "pointer" }} onClick={checkingStatus ? undefined : handleCheckService}>
                     <CheckCircleOutlined /> {serviceStatus.provider}{" "}
                     {serviceStatus.model && `(${serviceStatus.model})`}
                     <span style={{ marginLeft: 8, fontSize: 12 }}>(已失效)</span>
@@ -619,7 +627,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                   ? (serviceStatus.status === "warning" ? "warning" : "success") 
                   : "default";
                 return (
-                  <Tag color={tagColor} onClick={handleCheckService} style={{ cursor: "pointer" }}>
+                  <Tag color={tagColor} onClick={checkingStatus ? undefined : handleCheckService} style={{ cursor: "pointer" }}>
                     <CheckCircleOutlined /> {currentModel.provider}{" "}
                     ({currentModel.model})
                     {serviceStatus?.status === "warning" && <span style={{ marginLeft: 4, fontSize: 11 }}>⚠️</span>}
@@ -628,7 +636,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                 );
               } else {
                 return (
-                  <Tag color="error" onClick={handleCheckService} style={{ cursor: "pointer" }}>
+                  <Tag color="error" onClick={checkingStatus ? undefined : handleCheckService} style={{ cursor: "pointer" }}>
                     未配置 (点击检查)
                   </Tag>
                 );
@@ -684,6 +692,7 @@ onChange={handleModelChange}
               icon={<ReloadOutlined />}
               onClick={handleCheckService}
               loading={checkingStatus}
+              disabled={checkingStatus}
               size="small"
             >
               检查服务

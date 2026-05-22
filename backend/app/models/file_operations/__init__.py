@@ -16,6 +16,12 @@ class OperationType(str, Enum):
     COPY = "copy"              # 复制文件/目录
     RENAME = "rename"          # 重命名文件/目录
     MODIFY = "modify"          # 修改文件内容
+    COMPARE = "compare"        # 比较文件
+    BATCH_RENAME = "batch_rename"  # 批量重命名
+    COMPRESS = "compress"      # 压缩文件
+    MONITOR = "monitor"        # 监控文件
+    STATISTICS = "statistics"  # 统计文件
+    CHECKSUM = "checksum"      # 计算校验和
 
 
 class OperationStatus(str, Enum):
@@ -35,7 +41,7 @@ class OperationRecord(BaseModel):
     # 基本信息
     id: Optional[int] = Field(default=None, description="数据库自增ID")
     operation_id: str = Field(..., description="唯一操作标识符 (UUID)")
-    session_id: str = Field(..., description="所属会话ID")
+    task_id: str = Field(..., description="任务执行ID")
     
     # 操作信息
     operation_type: OperationType = Field(..., description="操作类型")
@@ -75,7 +81,7 @@ class OperationRecord(BaseModel):
         json_schema_extra = {
             "example": {
                 "operation_id": "op-123e4567-e89b-12d3-a456-426614174000",
-                "session_id": "sess-abc-123",
+                "task_id": "task-abc-123",
                 "operation_type": "move",
                 "status": "success",
                 "source_path": "C:\\Users\\test\\file.txt",
@@ -93,7 +99,7 @@ class SessionRecord(BaseModel):
     记录一次完整的文件操作会话，包含多个操作记录
     """
     id: Optional[int] = Field(default=None, description="数据库自增ID")
-    session_id: str = Field(..., description="唯一会话标识符 (UUID)")
+    task_id: str = Field(..., description="任务执行ID (UUID)")
     
     # 会话信息
     agent_id: str = Field(..., description="执行操作的Agent ID")
@@ -119,7 +125,7 @@ class SessionRecord(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "session_id": "sess-abc-123",
+                "task_id": "task-abc-123",
                 "agent_id": "file-organizer",
                 "task_description": "整理桌面文件",
                 "status": "success",
@@ -140,10 +146,10 @@ Base = declarative_base()
 class OperationRecordORM(Base):
     """操作记录数据库表"""
     __tablename__ = 'file_operations'
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     operation_id = Column(String(36), unique=True, nullable=False, index=True)
-    session_id = Column(String(36), nullable=False, index=True)
+    task_id = Column(String(36), nullable=False, index=True)
     operation_type = Column(String(20), nullable=False)
     status = Column(String(20), nullable=False, default='pending')
     
@@ -176,56 +182,7 @@ class OperationRecordORM(Base):
         return OperationRecord(
             id=self.id,
             operation_id=self.operation_id,
-            session_id=self.session_id,
-            operation_type=OperationType(self.operation_type),
-            status=OperationStatus(self.status),
-            source_path=self.source_path,
-            destination_path=self.destination_path,
-            backup_path=self.backup_path,
-            backup_expires_at=self.backup_expires_at,
-            file_size=self.file_size,
-            file_hash=self.file_hash,
-            is_directory=self.is_directory,
-            file_extension=self.file_extension,
-            duration_ms=self.duration_ms,
-            space_impact_bytes=self.space_impact_bytes,
-            metadata=json.loads(self.operation_metadata) if self.operation_metadata else {},
-            error_message=self.error_message,
-            created_at=self.created_at,
-            executed_at=self.executed_at,
-            rolled_back_at=self.rolled_back_at,
-            sequence_number=self.sequence_number
-        )
-
-
-class SessionRecordORM(Base):
-    """会话记录数据库表"""
-    __tablename__ = 'file_operation_sessions'
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String(36), unique=True, nullable=False, index=True)
-    
-    agent_id = Column(String(100), nullable=False)
-    task_description = Column(Text, nullable=False)
-    
-    status = Column(String(20), nullable=False, default='pending')
-    
-    total_operations = Column(Integer, default=0)
-    success_count = Column(Integer, default=0)
-    failed_count = Column(Integer, default=0)
-    rolled_back_count = Column(Integer, default=0)
-    
-    report_generated = Column(Boolean, default=False)
-    report_path = Column(Text, nullable=True)
-    
-    created_at = Column(DateTime, default=func.now())
-    completed_at = Column(DateTime, nullable=True)
-    
-    def to_pydantic(self) -> SessionRecord:
-        """转换为Pydantic模型"""
-        return SessionRecord(
-            id=self.id,
-            session_id=self.session_id,
+            task_id=self.task_id,
             agent_id=self.agent_id,
             task_description=self.task_description,
             status=OperationStatus(self.status),

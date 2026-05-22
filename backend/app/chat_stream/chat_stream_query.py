@@ -16,7 +16,9 @@ from app.services.llm_core import Message
 from app.utils.retry_controller import RetryController
 from app.utils.idle_timeout import IdleTimeoutIterator, IdleTimeoutError
 from app.chat_stream.chat_helpers import create_timestamp, create_final_response
-from app.chat_stream.error_handler import create_session_error_result, create_error_response
+from app.chat_stream.error_handler import create_error_response
+from app.services.agent.reasoning_steps import StepFactory
+from app.chat_stream.sse_formatter import format_sse_event
 from app.chat_stream.incident_handler import (
     create_incident_data,
     check_and_yield_if_paused,
@@ -185,13 +187,14 @@ async def chat_stream_query(
                 
                 # 只处理有内容的chunk
                 if chunk.content:
-                    chunk_data = {
-                        'type': 'chunk', 
-                        'step': next_step(),  # 添加step字段
-                        'timestamp': create_timestamp(),
-                        'content': chunk.content,
-                        'is_reasoning': current_is_reasoning
-                    }
+                    # 【改造 2026-04-17 小沈】使用 StepFactory 统一封装 ChunkStep
+                    chunk_step = StepFactory.create_chunk_step(
+                        step=next_step(),
+                        content=chunk.content,
+                        is_reasoning=current_is_reasoning
+                    )
+                    chunk_data = chunk_step.to_dict()
+                    
                     current_execution_steps.append(chunk_data)
                     
                     has_received_content = True
@@ -301,38 +304,38 @@ async def chat_stream_query(
                     )
                     
                     # 保存error步骤到数据库
-                    error_step = create_error_step(
+                    # 【改造 2026-04-17 小沈】使用 StepFactory 统一封装 ErrorStep
+                    error_step_obj = StepFactory.create_error_step(
+                        step=error_step_value,
                         error_type='empty_response',
                         error_message=error_message,
-                        step_num=error_step_value,
                         model=ai_service.model,
                         provider=ai_service.provider,
                         recoverable=True,
-                        context={"step": error_step_value, "model": ai_service.model, "provider": ai_service.provider, "thought_content": ""},
                         retry_after=3
                     )
-                    await add_step_and_save(error_step, f"错误: {error_message}")
+                    error_step_dict = error_step_obj.to_dict()
+                    await add_step_and_save(error_step_dict, f"错误: {error_message}")
                     return  # 直接返回，不再发送final步骤
     
     # 【重试机制】重试循环结束，检查最终结果
     if not ai_call_successful:
         logger.error(f"[AI Call] 重试失败，ai_call_successful={ai_call_successful}")
         
-        # 【小沈重构 2026-04-10】使用统一的错误处理函数
-        # 统一解析错误码、组装错误信息、创建error_response和error_step
+        # 【改造 2026-04-17 小沈】使用StepFactory统一Step封装
+        # 错误解析逻辑保留，只替换Step创建部分
         error_step_value = next_step()
-        error_response, error_step = create_session_error_result(
-            original_error=last_error,
-            error_step_type=last_error_type,
-            step_num=error_step_value,
+        error_step_obj = StepFactory.create_error_step(
+            step=error_step_value,
+            error_type=last_error_type or "retry_failed",
+            error_message=last_error or "模型未能生成有效回复，请尝试更换问题或稍后重试",
+            recoverable=True,
             model=ai_service.model,
             provider=ai_service.provider,
-            display_name=display_name,
-            chat_timeout=chat_timeout,
-            max_retries=max_retries,
-            retryable=True,
             retry_after=3
         )
+        error_step_dict = error_step_obj.to_dict()
+        error_response = format_sse_event('error', error_step_value, error_step_dict)
         
         # 记录日志
         if last_error:
@@ -344,7 +347,7 @@ async def chat_stream_query(
         yield error_response
         
         # 保存到数据库
-        await add_step_and_save(error_step, f"错误: {error_step['error_message']}")
+        await add_step_and_save(error_step_dict, f"错误: {error_step_dict['error_message']}")
         
         return  # 直接返回，不再发送final步骤
     
@@ -369,17 +372,21 @@ async def chat_stream_query(
     # ═══════════════════════════════════════════════════════════════════════════════
     
     # 先添加final步骤到数组，再保存
-    # 【小沈修复 2026-03-23】只调用一次 next_step()，避免 final 步骤的 step 多 1
+    # 【改造 2026-04-17 小沈】使用 StepFactory 统一封装 FinalStep
     final_step_value = next_step()
-    final_step = {
-        'type': 'final',
-        'step': final_step_value,
-        'content': full_content,
+    final_step_obj = StepFactory.create_final_step(
+        step=final_step_value,
+        response=full_content
+    )
+    final_step_dict = final_step_obj.to_dict()
+    
+    # 补充数据库需要的额外字段
+    final_step_dict.update({
         'model': ai_service.model,
-        'provider': ai_service.provider,
-        'timestamp': create_timestamp()
-    }
-    current_execution_steps.append(final_step)
+        'provider': ai_service.provider
+    })
+    
+    current_execution_steps.append(final_step_dict)
     
     # final前强制保存一次，确保所有steps都写入数据库
     # logger.info(f"[Step final] 💾 final前强制保存: {len(current_execution_steps)} steps")

@@ -25,11 +25,7 @@ ReAct Agent Structured Outputs 实现 - Function Calling Schema 生成器
 import json
 from typing import Any, Dict, List, Optional
 
-from app.services.tools.file.file_tools import (
-    FileTools,
-    get_registered_tools,
-    get_tool,
-)
+from app.services.tools.registry import tool_registry
 
 
 def get_tools_schema_for_function_calling() -> List[Dict[str, Any]]:
@@ -64,7 +60,7 @@ def get_tools_schema_for_function_calling() -> List[Dict[str, Any]]:
         ...
     ]
     """
-    tools = get_registered_tools()
+    tools = tool_registry.list_tools(expose_to_llm_only=True)
     
     openai_tools = []
     for tool in tools:
@@ -100,6 +96,10 @@ def get_tools_schema_for_function_calling() -> List[Dict[str, Any]]:
         
         openai_tools.append(openai_tool)
     
+    # ===== 添加 finish 工具（2026-04-23 小沈修复）=====
+    # finish 不是真正的工具调用，而是用于结束 ReAct 循环
+    openai_tools.append(get_finish_tool_schema())
+    
     return openai_tools
 
 
@@ -107,8 +107,9 @@ def _process_description(description: str) -> str:
     """
     处理工具描述，提取关键信息
     
-    移除 FORBIDDEN 规则（LLM 无法看到 Function Calling 的描述），
-    但保留参数约束说明
+    【G3修复】2026-05-09 小沈
+    只移除 FORBIDDEN 规则和示例行，保留【重要】【注意】【警告】等关键提示。
+    原逻辑无差别跳过所有带【重要】【注意】【警告】的行，导致重要约束丢失。
     """
     if not description:
         return ""
@@ -116,17 +117,10 @@ def _process_description(description: str) -> str:
     lines = description.split("\n")
     processed_lines = []
     
-    skip_patterns = [
-        "【重要】必须使用",
-        "错误示例:",
-        "正确示例:",
-        "FORBIDDEN",
-        "【注意】",
-        "【警告】"
-    ]
-    
     for line in lines:
-        if any(pattern in line for pattern in skip_patterns):
+        if "FORBIDDEN" in line:
+            continue
+        if line.strip().startswith("错误示例:") or line.strip().startswith("正确示例:"):
             continue
         processed_lines.append(line)
     
@@ -157,14 +151,8 @@ def _clean_properties(properties: Dict[str, Any]) -> Dict[str, Any]:
         
         if "description" in param_schema:
             desc = param_schema["description"]
-            if "【重要】" in desc:
-                important_parts = [p for p in desc.split("\n") if "【重要】" in p]
-                if important_parts:
-                    clean_param["description"] = important_parts[0].replace("【重要】", "").strip()
-                else:
-                    clean_param["description"] = desc.split("\n")[0]
-            else:
-                clean_param["description"] = desc.split("\n")[0].strip()
+            if desc:
+                clean_param["description"] = desc.replace("\n", " ").replace("\r", "").strip()
         
         if "enum" in param_schema:
             clean_param["enum"] = param_schema["enum"]
@@ -182,6 +170,9 @@ def _clean_properties(properties: Dict[str, Any]) -> Dict[str, Any]:
     return cleaned
 
 
+_TYPE_ORDER = ["string", "integer", "number", "boolean", "object", "array", "null"]
+
+
 def _extract_type(param_schema: Dict[str, Any]) -> Optional[str]:
     """
     从 JSON Schema 中提取类型信息
@@ -190,6 +181,11 @@ def _extract_type(param_schema: Dict[str, Any]) -> Optional[str]:
     1. 直接的 type 字段: {"type": "string"}
     2. anyOf 格式: {"anyOf": [{"type": "string"}, {"type": "null"}]}
     3. oneOf 格式: {"oneOf": [{"type": "string"}, {"type": "null"}]}
+    
+    【G1修复】2026-05-09 小沈
+    Union类型不再简化为单一类型，用逗号拼接保留所有类型信息。
+    例: anyOf:[integer,number,string,null] → "integer,number,string"
+    与registry.py的_fix_schema_types()保持一致。
     """
     if "type" in param_schema:
         return param_schema["type"]
@@ -198,35 +194,25 @@ def _extract_type(param_schema: Dict[str, Any]) -> Optional[str]:
         types = set()
         for item in param_schema["anyOf"]:
             if isinstance(item, dict) and "type" in item:
-                types.add(item["type"])
-        
-        if "string" in types:
-            return "string"
-        if "boolean" in types:
-            return "boolean"
-        if "integer" in types:
-            return "integer"
-        if "number" in types:
-            return "number"
-        if "object" in types:
-            return "object"
-        if "array" in types:
-            return "array"
+                t = item["type"]
+                if t != "null":
+                    types.add(t)
+        if types:
+            sorted_types = sorted(types, key=lambda x: _TYPE_ORDER.index(x) if x in _TYPE_ORDER else 99)
+            return ",".join(sorted_types)
+        return "string"
     
     if "oneOf" in param_schema:
         types = set()
         for item in param_schema["oneOf"]:
             if isinstance(item, dict) and "type" in item:
-                types.add(item["type"])
-        
-        if "string" in types:
-            return "string"
-        if "boolean" in types:
-            return "boolean"
-        if "integer" in types:
-            return "integer"
-        if "number" in types:
-            return "number"
+                t = item["type"]
+                if t != "null":
+                    types.add(t)
+        if types:
+            sorted_types = sorted(types, key=lambda x: _TYPE_ORDER.index(x) if x in _TYPE_ORDER else 99)
+            return ",".join(sorted_types)
+        return "string"
     
     return None
 
@@ -329,7 +315,7 @@ def get_available_tools() -> List[str]:
     Returns:
         工具名称列表
     """
-    tools = get_registered_tools()
+    tools = tool_registry.list_tools(expose_to_llm_only=True)
     return [tool.get("name", "") for tool in tools if tool.get("name")]
 
 
@@ -369,8 +355,174 @@ __all__ = [
     "validate_tool_call",
     "get_available_tools",
     "get_finish_tool_schema",
+    "get_tools_schema_for_intent_distribution",
+    "get_tools_schema_for_categories",
     "_process_description",
     "_clean_properties",
     "_extract_type",
     "_generate_example_hints",
 ]
+
+
+def get_tools_schema_for_categories(categories: List[Any]) -> List[Dict[str, Any]]:
+    """
+    根据分类列表获取工具Schema
+    
+    【步骤9】用于动态加载工具时的Schema生成
+    
+    Args:
+        categories: ToolCategory分类列表
+        
+    Returns:
+        OpenAI格式的tools Schema列表
+    """
+    from app.services.tools.registry import get_tools_from_registry_by_category
+    
+    openai_tools = []
+    
+    for category in categories:
+        # get_tools_from_registry_by_category返回 Dict[str, Callable]
+        tools_dict: Dict[str, Callable] = get_tools_from_registry_by_category(category)
+        
+        # 从metadata获取详细信息（registry存储了工具元数据）
+        tool_list = tool_registry.list_tools(category=category, include_metadata=True)
+        tool_metadata = {t["name"]: t for t in tool_list if isinstance(t, dict)}
+        
+        for name, func in tools_dict.items():
+            # 获取metadata
+            meta = tool_metadata.get(name, {})
+            description = meta.get("description", "") or ""
+            input_schema = meta.get("input_schema", {})
+            examples = meta.get("input_examples", [])
+            
+            processed_description = _process_description(description)
+            properties = input_schema.get("properties", {})
+            required = input_schema.get("required", [])
+            cleaned_properties = _clean_properties(properties)
+            
+            openai_tool = {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": processed_description,
+                    "parameters": {
+                        "type": "object",
+                        "properties": cleaned_properties,
+                        "required": required if required else []
+                    }
+                }
+            }
+            
+            if examples:
+                example_hints = _generate_example_hints(name, examples)
+                if example_hints:
+                    openai_tool["function"]["description"] += f"\n\n{example_hints}"
+            
+            openai_tools.append(openai_tool)
+    
+    # 添加 finish 工具
+    openai_tools.append(get_finish_tool_schema())
+    
+    return openai_tools
+
+
+def get_tools_schema_for_intent_distribution(
+    intent_dist: Dict[str, float],
+    top_n: int = 2,
+    conf_threshold: float = 0.3,
+    brief_threshold: float = 0.1
+) -> tuple[List[Dict[str, Any]], str]:
+    """
+    根据意图置信度分布，返回混合Schema（高置信度详细，其他简要）
+    
+    【步骤8】实现文档4.14节缺陷2修正：置信度阈值无降级策略
+    
+    Args:
+        intent_dist: 意图置信度分布 {"file": 0.85, "time": 0.60, "shell": 0.15}
+        top_n: 前N个高置信度意图给详细Schema（默认2）
+        conf_threshold: 置信度阈值，低于此值的不加载详细Schema（默认0.3）
+        brief_threshold: 简要清单阈值，高于此值的低置信度意图列入简要清单（默认0.1）
+    
+    Returns:
+        (openai_tools, brief_tools_hint): 详细Schema列表 + 简要清单提示
+    
+    设计说明：
+    1. 高置信度（>=conf_threshold）：完整详细Schema（Pydantic模型）
+    2. 低置信度（>=brief_threshold）：只给简要清单，不加载详细Schema
+    3. 极低置信度（<brief_threshold）：完全忽略
+    4. 所有工具置信度都低于阈值：降级返回通用工具清单
+    """
+    from app.services.tools.registry import tool_registry
+    from app.services.tools.registry import ToolCategory
+    
+    # 1. 排序意图
+    sorted_intents = sorted(intent_dist.items(), key=lambda x: x[1], reverse=True)
+    
+    openai_tools = []
+    loaded_categories = set()
+    brief_intents = []
+    
+    # 2. 高置信度意图：详细Schema（阈值0.3）
+    for intent, score in sorted_intents[:top_n]:
+        if score < conf_threshold:
+            # 低于阈值的跳过详细Schema，加入简要清单（如果>=brief_threshold）
+            if score >= brief_threshold:
+                brief_intents.append(f"- {intent}类工具（置信度{score:.2f}）")
+            continue
+        
+        try:
+            category = ToolCategory(intent)
+            tools = tool_registry.get_tools(category)
+            for tool in tools:
+                schema = _build_detailed_schema(tool)
+                openai_tools.append(schema)
+            loaded_categories.add(intent)
+        except ValueError:
+            logger.warning(f"[Schema] 意图'{intent}'无对应工具分类，跳过")
+    
+    # 3. 低置信度意图：只给简要清单（阈值0.1）
+    for intent, score in sorted_intents[top_n:]:
+        if score >= brief_threshold:
+            brief_intents.append(f"- {intent}类工具（置信度{score:.2f}）")
+    
+    # 4. 构建简要清单提示
+    brief_tools_hint = ""
+    if brief_intents:
+        brief_tools_hint = "\n【可用但未加载详细说明的工具】\n"
+        brief_tools_hint += "\n".join(brief_intents)
+        brief_tools_hint += "\n如需使用，请说明需求，我将动态加载。"
+    
+    # 5. 全部置信度低于阈值：降级返回通用工具清单
+    if not openai_tools:
+        logger.warning(f"[Schema] 所有意图置信度<{conf_threshold}，降级为通用工具清单")
+        return get_tools_schema_for_function_calling()[:10], "【通用工具清单】置信度过低，仅提供基础工具"
+    
+    return openai_tools, brief_tools_hint
+
+
+def _build_detailed_schema(tool: Any) -> Dict[str, Any]:
+    """构建详细Schema（Pydantic模型）"""
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.input_schema
+        }
+    }
+
+
+def _build_brief_schema(tool: Any, score: float) -> Dict[str, Any]:
+    """构建简要Schema（用于低置信度意图）"""
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": f"【简要】{tool.description[:50]}... 置信度: {score:.2f}",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    }

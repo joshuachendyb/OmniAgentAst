@@ -325,8 +325,7 @@ class AIServiceFactory:
     
     @classmethod
     def get_service(cls, config_path: Optional[str] = None) -> BaseAIService:
-        """获取AI服务实例 - 直接读取配置文件"""
-        # ⭐ 修复：每次调用都重新加载配置，确保获取最新配置
+        """获取AI服务实例 - 带缓存，仅配置变化时重建"""
         from app.config import get_config as get_config_instance
         config = get_config_instance()
         config.reload()
@@ -334,11 +333,9 @@ class AIServiceFactory:
         
         ai_config = raw_config.get("ai", {})
         
-        # 直接使用配置文件的 provider 和 model，不 fallback
         final_provider = ai_config.get('provider', '')
         final_model = ai_config.get('model', '')
         
-        # 验证配置是否有效，无效则报错
         if not final_provider:
             raise ValueError("配置文件缺少 ai.provider，请检查 config.yaml")
         if not final_model:
@@ -349,6 +346,10 @@ class AIServiceFactory:
             raise ValueError(f"provider {final_provider} 缺少 models 配置")
         if final_model not in ai_config[final_provider].get('models', []):
             raise ValueError(f"model {final_model} 不在 provider {final_provider} 的 models 列表中")
+        
+        # ⭐ 缓存检查：如果 provider/model 没变且实例存在，复用
+        if cls._instance is not None and cls._current_provider == final_provider and cls._instance.model == final_model:
+            return cls._instance
         
         cls._current_provider = final_provider
         
@@ -362,15 +363,19 @@ class AIServiceFactory:
             raise ValueError(f"provider {final_provider} 的配置为空，请检查 config.yaml")
         
         cls._instance = BaseAIService(
-            api_key=provider_config.get("api_key", ""),
+            api_key=(provider_config.get("api_key") or "").strip(),
             model=final_model,
-            api_base=provider_config.get("api_base", "https://api.openai.com/v1"),
-            provider=final_provider,  # 新增：传递provider
-            timeout=provider_config.get("timeout", 30)
+            api_base=(provider_config.get("api_base") or "https://api.openai.com/v1").strip(),
+            provider=final_provider,
+            timeout=provider_config.get("timeout", 30),
+            # 【改进8 2026-05-01 小沈 小健】LLM调用参数
+            max_tokens=provider_config.get("max_tokens", 4096),
+            temperature=float(provider_config.get("temperature", 0.7)),
+            seed=provider_config.get("seed", None),
         )
-        
+
         return cls._instance
-    
+
     @classmethod
     def switch_provider(cls, provider: str, config_path: Optional[str] = None):
         """【废弃】切换AI提供商 - 请使用updateConfig同时更新provider和model"""
@@ -466,11 +471,15 @@ class AIServiceFactory:
                 provider_config = {}
             
             cls._instance = BaseAIService(
-                api_key=provider_config.get("api_key", ""),
+                api_key=(provider_config.get("api_key") or "").strip(),  # trim 空格
                 model=final_model,
-                api_base=provider_config.get("api_base", "https://api.openai.com/v1"),
+                api_base=(provider_config.get("api_base") or "https://api.openai.com/v1").strip(),
                 provider=final_provider,
-                timeout=provider_config.get("timeout", 30)
+                timeout=provider_config.get("timeout", 30),
+                # 【改进8 2026-05-01 小沈 小健】LLM调用参数
+                max_tokens=provider_config.get("max_tokens", 4096),
+                temperature=float(provider_config.get("temperature", 0.7)),
+                seed=provider_config.get("seed", None),
             )
             
             return cls._instance

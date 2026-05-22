@@ -28,7 +28,7 @@
  * @since 2026-02-22
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Card,
   Button,
@@ -66,7 +66,7 @@ import {
   FileTextOutlined,
   CheckOutlined,
 } from "@ant-design/icons";
-import { configApi, chatApi } from "../../services/api";
+import { configApi, chatApi, SecurityConfig } from "../../services/api";
 import type { ProviderInfo } from "../../services/api";
 import HealthCheck from "../../components/HealthCheck";
 import { handleError, showSuccess, showMessage, ErrorType } from "../../utils/errorHandler";
@@ -92,9 +92,11 @@ const GlobalConfigArea: React.FC<{
   currentDisplayName: string;
   onDisplayNameChange: (option: ModelOption) => void;
 }> = ({ modelList, currentDisplayName, onDisplayNameChange }) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [configPath, setConfigPath] = useState<any>(null);
   const [configContent] = useState<string>("");
   const [showConfigModal, setShowConfigModal] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [validationResult, setValidationResult] = useState<any>(null);
   const [validating, setValidating] = useState(false);
 
@@ -429,7 +431,7 @@ const ProviderList: React.FC<{
  * @author 小新
  * @update 2026-02-26 重构：提取子组件
  */
-const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = true }) => {
+const ProviderSettings: React.FC<{ shouldLoad?: boolean; forceRefresh?: boolean }> = ({ shouldLoad = true, forceRefresh }) => {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [currentProvider, setCurrentProvider] = useState<string>("");
   // 模型列表（从 getModelList API 获取，包含 display_name）
@@ -439,9 +441,11 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
     null
   );
   const [loading, setLoading] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [validationResult] = useState<any>(null);
   const [validationModalVisible, setValidationModalVisible] = useState(false);
-  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editProviderModalVisible, setEditProviderModalVisible] = useState(false);
+  const [editModelModalVisible, setEditModelModalVisible] = useState(false);
   const [addModelModalVisible, setAddModelModalVisible] = useState(false);
   const [addProviderModalVisible, setAddProviderModalVisible] = useState(false);
   const [editingProvider, setEditingProvider] = useState<ProviderInfo | null>(
@@ -468,7 +472,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
   };
 
   // 加载配置
-  const loadConfig = async () => {
+  const loadConfig = useCallback(async () => {
     setLoading(true);
     try {
       // 获取完整配置
@@ -484,9 +488,19 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       setModelList(modelData.models);
 
       // 设置当前显示名称
-      const currentModelOption = modelData.models.find((m) => m.current_model);
+      const currentModelOption = modelData.models.find((m: ModelOption) => m.current_model);
       if (currentModelOption) {
         setCurrentDisplayName(currentModelOption.display_name);
+      } else {
+        // 如果找不到current_model，使用当前Provider的显示名称作为后备
+        const currentProviderInfo = providerList.find((p: ProviderInfo) => p.name === data.current_provider);
+        if (currentProviderInfo && currentProviderInfo.display_name) {
+          setCurrentDisplayName(currentProviderInfo.display_name + " (默认)");
+        } else if (data.current_provider) {
+          setCurrentDisplayName(data.current_provider);
+        } else {
+          setCurrentDisplayName("未设置");
+        }
       }
 
       // 设置当前选中的Provider为当前使用的Provider或第一个Provider
@@ -500,7 +514,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   // 加载配置文件路径
   // 打开配置文件所在目录（在 GlobalConfigArea 组件中实现）
@@ -508,26 +522,26 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
   // 选择Provider
   const onSelectProvider = (provider: ProviderInfo) => {
     setSelectedProvider(provider);
+    setCurrentProvider(provider.name); // 同时更新currentProvider以更新列表高亮
   };
 
-  // 加载配置时同时进行验证
-  const handleLoadWithValidation = async () => {
+  // 加载配置
+  useEffect(() => {
+    // ⭐ 老杨修复：按需加载 - 只在shouldLoad为true时加载
+    if (shouldLoad && !forceRefresh) {
+      loadConfig();
+    }
+  }, [shouldLoad, forceRefresh, loadConfig]);
+
+  // 手动重新加载并验证（由按钮触发，不是自动）
+  const handleReload = useCallback(async () => {
     await loadConfig();
-    
-    // 验证AI服务可用性（触发后端备份清理）
     try {
       await chatApi.validateService();
     } catch (error) {
       console.warn("AI服务验证失败:", error);
     }
-  };
-
-  useEffect(() => {
-    // ⭐ 老杨修复：按需加载 - 只在shouldLoad为true时加载
-    if (shouldLoad) {
-      handleLoadWithValidation();
-    }
-  }, [shouldLoad]);
+  }, [loadConfig]);
 
   // 编辑Provider
   const handleEditProvider = (provider: ProviderInfo) => {
@@ -538,27 +552,33 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       timeout: provider.timeout,
       max_retries: provider.max_retries,
     });
-    setEditModalVisible(true);
+    setEditProviderModalVisible(true);
   };
 
   // 保存Provider编辑
-  const handleSaveProvider = async (values: any) => {
+  const handleSaveProvider = async (values: Record<string, unknown>) => {
     try {
-      await configApi.updateProvider(editingProvider!.name, values);
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      await configApi.updateProvider(editingProvider!.name, values as Record<string, unknown>);
 
-      // 刷新配置
-      loadConfig();
+      // ✅ 同时刷新providers和modelList，避免部分刷新导致状态不一致
+      const data = await configApi.getFullConfig();
+      setProviders(Object.values(data.providers));
+      setCurrentProvider(data.current_provider);
+      const modelData = await configApi.getModelList();
+      setModelList(modelData.models);
 
-      // 验证服务可用性
-      try {
-        await chatApi.validateService();
-      } catch (e) {
-        console.warn("验证服务失败:", e);
-      }
-
-      showSuccess("Provider配置已更新");
-      setEditModalVisible(false);
+      // 先关闭弹窗，再显示成功提示（避免状态冲突）
+      setEditProviderModalVisible(false);
+      form.resetFields();
+      setEditingProvider(null);
+      
+      // 延迟显示成功提示，确保弹窗已关闭
+      setTimeout(() => {
+        showSuccess("Provider配置已更新");
+      }, 150);
     } catch (error) {
+      console.error("更新Provider失败:", error);
       handleError("更新失败");
     }
   };
@@ -572,8 +592,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       loadConfig();
 
       showSuccess("Provider已删除");
-    } catch (error: any) {
-      handleError(error.response?.data?.detail || "删除失败");
+    } catch (error) {
+      const err = error as { response?: { data?: { detail?: string } } };
+      handleError(err?.response?.data?.detail || "删除失败");
     }
   };
 
@@ -583,24 +604,37 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
 
   const handleEditModel = async (providerName: string, modelName: string) => {
     setEditingModel({ provider: providerName, model: modelName });
-    modelEditForm.setFieldsValue({ model: modelName });
-    setEditModalVisible(true);
+modelEditForm.setFieldsValue({ model: modelName });
+    setEditModelModalVisible(true);
   };
 
   const handleUpdateModel = async (values: { model: string }) => {
     if (!editingModel) return;
     try {
-      await configApi.updateModel(editingModel.provider, editingModel.model, values.model);
+      // 清理输入：移除多余空白字符
+      const cleanModelName = values.model.trim().replace(/\s+/g, " ");
+      await configApi.updateModel(editingModel.provider, editingModel.model, cleanModelName);
 
-      // 刷新配置
-      loadConfig();
+      // ✅ 同时刷新providers和modelList
+      const data = await configApi.getFullConfig();
+      setProviders(Object.values(data.providers));
+      const modelData = await configApi.getModelList();
+      setModelList(modelData.models);
+      
+      // 更新当前选中的Provider数据，确保模型列表同步更新
+      const providerArray = Object.values(data.providers) as ProviderInfo[];
+      const updatedProvider = providerArray.find((p) => p.name === editingModel.provider);
+      if (updatedProvider) {
+        setSelectedProvider(updatedProvider);
+      }
 
       showSuccess("模型已更新");
-      setEditModalVisible(false);
+      setEditModelModalVisible(false);
       setEditingModel(null);
       modelEditForm.resetFields();
-    } catch (error: any) {
-      handleError(error.response?.data?.detail || "更新失败");
+    } catch (error: unknown) {
+      console.error("更新模型失败:", error);
+      handleError("更新失败");
     }
   };
 
@@ -609,17 +643,29 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
     try {
       await configApi.deleteModel(providerName, modelName);
 
-      // 刷新配置
-      loadConfig();
+      // ✅ 同时刷新providers和modelList，避免状态不一致
+      const data = await configApi.getFullConfig();
+      setProviders(Object.values(data.providers));
+      const modelData = await configApi.getModelList();
+      setModelList(modelData.models);
+      
+      // 更新当前选中的Provider数据，确保模型列表同步更新
+      const providerArray = Object.values(data.providers) as ProviderInfo[];
+      const updatedProvider = providerArray.find((p) => p.name === providerName);
+      if (updatedProvider) {
+        setSelectedProvider(updatedProvider);
+      }
+      console.log("删除模型后刷新列表:", modelData.models);
 
       showSuccess("模型已删除");
-    } catch (error: any) {
-      handleError(error.response?.data?.detail || "删除失败");
+    } catch (error: unknown) {
+      console.error("删除模型失败:", error);
+      handleError("删除失败");
     }
   };
 
   // 批量删除模型（并发优化，支持取消）
-  const handleBatchDeleteModels = async (
+const handleBatchDeleteModels = async (
     providerName: string,
     models: string[]
   ) => {
@@ -643,36 +689,55 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
           });
           setDeleteProgress({ current: index + 1, total: models.length });
           return { success: true, model: modelName };
-        } catch (error: any) {
-          // 如果是取消错误
-          if (error.name === "AbortError" || controller.signal.aborted) {
+        } catch (error) {
+          const err = error as { name?: string };
+          if (err?.name === "AbortError" || controller.signal.aborted) {
             return { success: false, model: modelName, cancelled: true };
           }
-          setDeleteProgress({ current: index + 1, total: models.length });
-          return { success: false, model: modelName, error };
+          throw error;
         }
       });
 
       const results = await Promise.all(deletePromises);
       const successCount = results.filter((r) => r.success).length;
-      const failCount = results.filter(
-        (r) => !r.success && !r.cancelled
-      ).length;
+      const failCount = results.filter((r) => !r.success && !r.cancelled).length;
       const cancelledCount = results.filter((r) => r.cancelled).length;
 
-      if (controller.signal.aborted) {
-        handleError({ message: `批量删除已取消：${successCount} 成功，${cancelledCount} 未执行`, error_type: ErrorType.WARNING });
-      } else if (failCount === 0) {
-        showSuccess(`批量删除完成：${successCount} 个模型`);
-      } else {
-        handleError({ message: `批量删除完成：${successCount} 成功，${failCount} 失败`, error_type: ErrorType.WARNING });
+      // ✅ 同时刷新providers和modelList
+      const data = await configApi.getFullConfig();
+      setProviders(Object.values(data.providers));
+      const modelData = await configApi.getModelList();
+      setModelList(modelData.models);
+      
+      // 更新当前选中的Provider数据，确保模型列表同步更新
+      const providerArray = Object.values(data.providers) as ProviderInfo[];
+      const updatedProvider = providerArray.find((p) => p.name === providerName);
+      if (updatedProvider) {
+        setSelectedProvider(updatedProvider);
       }
 
       setSelectedModels(new Set());
-      loadConfig();
-    } catch (error: any) {
-      if (error.name === "AbortError") {
-        handleError({ message: "批量删除已取消", error_type: ErrorType.WARNING });
+
+      if (cancelledCount > 0) {
+        handleError({
+          message: `批量删除已取消：${successCount} 成功，${cancelledCount} 未执行`,
+          error_type: ErrorType.WARNING,
+        });
+      } else if (failCount > 0) {
+        handleError({
+          message: `批量删除完成：${successCount} 成功，${failCount} 失败`,
+          error_type: ErrorType.WARNING,
+        });
+      } else {
+        showSuccess(`成功删除 ${successCount} 个模型`);
+      }
+    } catch (error) {
+      const err = error as { name?: string };
+      if (err?.name === "AbortError") {
+        handleError({
+          message: "批量删除已取消",
+          error_type: ErrorType.WARNING,
+        });
       } else {
         handleError("批量删除失败");
       }
@@ -683,57 +748,70 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
     }
   };
 
-  // 添加模型
+// 添加模型
   const handleAddModel = async (values: { model: string }) => {
     try {
-      await configApi.addModel(selectedProviderForModel, values);
+      // 清理输入：移除多余空白字符，换行符等
+      const cleanModelName = values.model.trim().replace(/\s+/g, " ");
+      const result = await configApi.addModel(selectedProviderForModel, { model: cleanModelName });
+      console.log("添加模型结果:", result);
 
-      // 刷新配置
-      loadConfig();
-
-      // 验证服务可用性
-      try {
-        await chatApi.validateService();
-      } catch (e) {
-        console.warn("验证服务失败:", e);
-      }
-
-      showSuccess("模型已添加");
+      // ✅ 先关闭弹窗，避免延迟
       setAddModelModalVisible(false);
       modelForm.resetFields();
-    } catch (error: any) {
-      handleError(error.response?.data?.detail || "添加失败");
+      setSelectedProviderForModel("");
+
+      // ✅ 同时刷新providers和modelList
+      const data = await configApi.getFullConfig();
+      setProviders(Object.values(data.providers));
+      const modelData = await configApi.getModelList();
+      setModelList(modelData.models);
+      
+      // 更新当前选中的Provider数据，确保模型列表同步更新
+      const providerName = selectedProviderForModel || selectedProvider?.name;
+      const providerArray = Object.values(data.providers) as ProviderInfo[];
+      const updatedProvider = providerArray.find((p) => p.name === providerName);
+      if (updatedProvider) {
+        setSelectedProvider(updatedProvider);
+      }
+      console.log("添加模型后刷新列表:", modelData.models);
+
+      showSuccess("模型已添加");
+    } catch (error: unknown) {
+      console.error("添加模型失败:", error);
+      handleError("添加失败");
     }
   };
 
   // 添加Provider
-  const handleAddProvider = async (values: any) => {
+  const handleAddProvider = async (values: Record<string, unknown>) => {
     try {
       await configApi.addProvider({
-        name: values.name,
-        api_base: values.api_base,
-        api_key: values.api_key || "",
-        model: values.model || "",
-        models: values.model ? [values.model] : [],
-        timeout: values.timeout || 60,
-        max_retries: values.max_retries || 3,
+        name: values.name as string,
+        api_base: values.api_base as string,
+        api_key: (values.api_key as string) || "",
+        model: (values.model as string) || "",
+        models: values.model ? [values.model as string] : [],
+        timeout: (values.timeout as number) || 60,
+        max_retries: (values.max_retries as number) || 3,
       });
 
-      // 刷新配置
-      loadConfig();
+      // ✅ 同时刷新providers和modelList
+      const data = await configApi.getFullConfig();
+      setProviders(Object.values(data.providers));
+      setCurrentProvider(data.current_provider);
+      const modelData = await configApi.getModelList();
+      setModelList(modelData.models);
 
-      // 验证服务可用性
-      try {
-        await chatApi.validateService();
-      } catch (e) {
-        console.warn("验证服务失败:", e);
-      }
-
-      showSuccess("Provider已添加");
+      // 关闭弹窗并清理表单
       setAddProviderModalVisible(false);
-      providerForm.resetFields();
-    } catch (error: any) {
-      handleError(error.response?.data?.detail || "添加失败");
+      setTimeout(() => {
+        providerForm.resetFields();
+        showSuccess("Provider已添加");
+      }, 100);
+    } catch (error) {
+      const err = error as { response?: { data?: { detail?: string } } };
+      handleError(err?.response?.data?.detail || "添加失败");
     }
   };
 
@@ -765,14 +843,6 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
 
       // 刷新配置
       loadConfig();
-
-      // 验证服务可用性（触发后端备份删除/恢复机制）
-      try {
-        await chatApi.validateService();
-      } catch (e) {
-        // 验证失败不影响切换成功提示
-        console.warn("服务验证失败:", e);
-      }
 
       showSuccess(`已切换到 ${option.display_name}`);
     } catch (error) {
@@ -852,7 +922,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
           </Button>,
           <Button
             key="revalidate"
-            onClick={handleLoadWithValidation}
+            onClick={handleReload}
             loading={loading}
           >
             重新验证
@@ -1015,17 +1085,14 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
         </Col>
 
         {/* 右侧Provider详细信息 */}
-        <Col xs={24} md={11}>
-          <div style={{  }}>
+        <Col xs={24} md={12}>
           {selectedProvider ? (
             <div>
               <Typography.Title level={5} style={{ marginBottom: 24 }}>
                 <Space style={{ width: "100%", justifyContent: "space-between" }}>
                   {/* 左侧: 标题内容 */}
                   <Space>
-                    <ApiOutlined />
-                    配置详情：
-                    {getProviderDisplayName(selectedProvider.name, providers)}
+                    配置详情:{getProviderDisplayName(selectedProvider.name, providers)}
                     <Tag color="blue">{selectedProvider.name}</Tag>
                     {selectedProvider.name === currentProvider && (
                       <Tag icon={<CheckCircleOutlined />} color="success">
@@ -1064,7 +1131,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
 
               <Card size="small">
                 {/* Provider基本信息 */}
-                <Row gutter={[16, 8]} style={{ marginBottom: 16,  }}>
+                <Row gutter={[16, 8]} style={{ marginBottom: 16 }}>
                   <Col span={24}>
                     <Text type="secondary">API地址：</Text>
                     <Text code>{selectedProvider.api_base}</Text>
@@ -1074,9 +1141,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
                       <Text type="secondary">API密钥：</Text>
                       <Text>
                         {selectedProvider.api_key
-                          ? showApiKey[selectedProvider.name]
-                            ? selectedProvider.api_key
-                            : "******" + selectedProvider.api_key.slice(-4)
+                          ? (showApiKey[selectedProvider.name]
+                              ? selectedProvider.api_key
+                              : `******${selectedProvider.api_key.slice(-4)}`)
                           : "未设置"}
                       </Text>
                       {selectedProvider.api_key && (
@@ -1095,6 +1162,14 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
                           }
                         />
                       )}
+                    </Space>
+                  </Col>
+                  <Col span={24}>
+                    <Space size="large">
+                      <Text type="secondary">超时时间：</Text>
+                      <Text>{selectedProvider.timeout || 60} 秒</Text>
+                      <Text type="secondary">最大重试：</Text>
+                      <Text>{selectedProvider.max_retries || 3} 次</Text>
                     </Space>
                   </Col>
                   <Col span={24}>
@@ -1142,7 +1217,11 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
 
                   {/* 模型卡片列表 */}
                   <div
-                    style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                    }}
                   >
                     {selectedProvider.models.map((model) => {
                       const isActive = model === selectedProvider.model;
@@ -1217,9 +1296,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
                                 <Button
                                   type="text"
                                   size="small"
-                                  danger
                                   icon={<DeleteOutlined />}
-                                  onClick={(e) => e.stopPropagation()}
+                                  danger
+                                  onClick={(e) => e?.stopPropagation()}
                                 >
                                   删除
                                 </Button>
@@ -1230,35 +1309,17 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
                       );
                     })}
                   </div>
-
-                  {/* 批量删除进度指示器 */}
-                  {deleteProgress.total > 0 && (
-                    <div style={{ marginTop: 8 }}>
-                      <Progress
-                        percent={Math.round(
-                          (deleteProgress.current / deleteProgress.total) * 100
-                        )}
-                        status="active"
-                        format={() =>
-                          `${deleteProgress.current}/${deleteProgress.total}`
-                        }
-                      />
-                    </div>
-                  )}
                 </div>
-
               </Card>
             </div>
           ) : (
-            <Alert
-              message="请选择一个Provider"
-              description="在左侧列表中点击选择一个Provider以查看详细配置"
-              type="info"
-              showIcon
-              style={{ marginBottom: 16,  }}
-            />
+            <div style={{ padding: 40, textAlign: 'center' }}>
+              <Typography.Title level={5} type="secondary">
+                <ApiOutlined /> 暂无选中的Provider
+              </Typography.Title>
+              <p>请从左侧列表选择Provider，或添加新的Provider</p>
+            </div>
           )}
-          </div>
         </Col>
       </Row>
 
@@ -1307,17 +1368,20 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       </Modal>
 
       {/* 编辑Provider弹框 */}
-      <Modal
-        title={`编辑 ${getProviderDisplayName(
-          editingProvider?.name || "",
-          providers
-        )} 配置`}
-        open={editModalVisible}
-        onCancel={() => setEditModalVisible(false)}
-        footer={null}
-        width={600}
-      >
-        <Form form={form} layout="vertical" onFinish={handleSaveProvider}>
+       <Modal
+         title={`编辑 ${getProviderDisplayName(
+           editingProvider?.name || "",
+           providers
+         )} 配置`}
+         open={editProviderModalVisible}
+         onCancel={() => {
+           setEditProviderModalVisible(false);
+           form.resetFields();
+         }}
+         footer={null}
+         width={600}
+       >
+         <Form form={form} layout="vertical" onFinish={handleSaveProvider}>
           <Form.Item
             label="API地址"
             name="api_base"
@@ -1348,7 +1412,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
               <Button type="primary" htmlType="submit">
                 保存
               </Button>
-              <Button onClick={() => setEditModalVisible(false)}>取消</Button>
+              <Button onClick={() => setEditProviderModalVisible(false)}>取消</Button>
             </Space>
           </Form.Item>
         </Form>
@@ -1387,17 +1451,17 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       </Modal>
 
       {/* 编辑模型弹框 */}
-      <Modal
-        title="编辑模型"
-        open={editModalVisible}
-        onCancel={() => {
-          setEditModalVisible(false);
-          setEditingModel(null);
-          modelEditForm.resetFields();
-        }}
-        footer={null}
-      >
-        <Form form={modelEditForm} layout="vertical" onFinish={handleUpdateModel}>
+       <Modal
+         title="编辑模型"
+         open={editModelModalVisible}
+         onCancel={() => {
+           setEditModelModalVisible(false);
+           setEditingModel(null);
+           modelEditForm.resetFields();
+         }}
+         footer={null}
+       >
+         <Form form={modelEditForm} layout="vertical" onFinish={handleUpdateModel}>
           <Form.Item
             label="模型名称"
             name="model"
@@ -1411,7 +1475,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
               <Button type="primary" htmlType="submit">
                 保存
               </Button>
-              <Button onClick={() => setEditModalVisible(false)}>
+              <Button onClick={() => setEditModelModalVisible(false)}>
                 取消
               </Button>
             </Space>
@@ -1423,12 +1487,14 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       <Modal
         title="添加新Provider"
         open={addProviderModalVisible}
+        destroyOnClose
         onCancel={() => {
           setAddProviderModalVisible(false);
           providerForm.resetFields();
         }}
         footer={null}
         width={600}
+        maskClosable={false}
       >
         <Form
           form={providerForm}
@@ -1496,6 +1562,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
  * 安全设置页面组件
  */
 const SecuritySettings: React.FC = () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [securityConfig, setSecurityConfig] = useState<any>({});
   const [securityForm] = Form.useForm();
   const [savingSecurity, setSavingSecurity] = useState(false);
@@ -1523,9 +1590,10 @@ const SecuritySettings: React.FC = () => {
 
   useEffect(() => {
     loadSecurityConfig();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSaveSecurityConfig = async (values: any) => {
+  const handleSaveSecurityConfig = async (values: SecurityConfig) => {
     setSavingSecurity(true);
     try {
       const currentConfig = await configApi.getConfig();
@@ -1772,14 +1840,12 @@ const SecuritySettings: React.FC = () => {
  */
 const Settings: React.FC = () => {
   // 注意：React 18 自动批处理状态更新，无需手动优化
-  // 多个 setState 调用会自动合并为一次重渲染
   const [activeKey, setActiveKey] = useState("model");
   const [isDirty, setIsDirty] = useState(false);
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
   const [pendingKey, setPendingKey] = useState<string>("");
-  // ⭐ 老杨修复：按需加载 - 跟踪已加载的Tab
-  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set(["model"])); // 默认"model"已加载
-  // ⭐ 删除未使用的状态变量：configFilePath, fixingConfig, fixProgress, showFixModal
+  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set(["model"]));
+  // 多个 setState 调用会自动合并为一次重渲染
 
   /**
    * 加载配置信息（只读，不备份）

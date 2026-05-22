@@ -59,126 +59,127 @@ class CapabilityDetector:
         result = LLMProbeResult(success=False, feature=LLMFeature())
         
         try:
-            logger.info(f"[CapabilityDetector] 开始探测模型: {self.model}")
-            
-            # 【修复P1-004】Step 1: 探测 tools（优先级最高）
-            tools_result = await self._probe_tools()
-            result.tools_tested = True
-            result.tools_works = tools_result["works"]
-            logger.info(f"[CapabilityDetector] tools探测结果: works={tools_result['works']}, reason={tools_result.get('reason', 'N/A')}")
-            
-            # 【修复P1-004】Step 2: 探测 response_format（记录能力，策略选择由StrategySelector决定）
-            rf_result = await self._probe_response_format()
-            result.response_format_tested = True
-            result.response_format_works = rf_result["works"]
-            logger.info(f"[CapabilityDetector] response_format探测结果: works={rf_result['works']}, reason={rf_result.get('reason', 'N/A')}")
-            
-            # Step 3: 探测 reasoning 特征
-            reasoning_result = await self._probe_reasoning()
-            logger.info(f"[CapabilityDetector] reasoning探测结果: has_reasoning={reasoning_result['has_reasoning']}")
-            
-            # Step 4: 构建能力特征
-            capability = LLMCapability.NONE
-            if result.response_format_works:
-                capability |= LLMCapability.RESPONSE_FORMAT
-            if result.tools_works:
-                capability |= LLMCapability.TOOLS
-            if reasoning_result["has_reasoning"]:
-                capability |= LLMCapability.REASONING
-            
-            feature = LLMFeature(
-                capability=capability,
-                supports_response_format=result.response_format_works,
-                supports_tools=result.tools_works,
-                supports_reasoning=reasoning_result["has_reasoning"],
-                uses_reasoning_content=reasoning_result["uses_reasoning_content"],
-                uses_outer_content=reasoning_result["uses_outer_content"],
-                detection_method="auto"
-            )
-            
-            result.success = True
-            result.feature = feature
-            
-            # 缓存结果
-            self._capability_cache = feature
-            
-            logger.info(f"[CapabilityDetector] 探测完成: supports_tools={feature.supports_tools}, supports_response_format={feature.supports_response_format}")
-            
-            return result
+            # 【2026-05-14 小沈】共用client，避免3次独立创建
+            async with httpx.AsyncClient(timeout=30) as client:
+                logger.info(f"[探测] 模型: {self.model}")
+                
+                # Step 1: 探测 tools（优先级最高）
+                tools_result = await self._probe_tools(client)
+                result.tools_tested = True
+                result.tools_works = tools_result["works"]
+                tools_icon = "✅" if tools_result["works"] else "❌"
+                tools_detail = tools_result.get('reason', 'OK') if tools_result["works"] else tools_result.get('reason', 'N/A')
+                
+                # Step 2: 探测 response_format
+                rf_result = await self._probe_response_format(client)
+                result.response_format_tested = True
+                result.response_format_works = rf_result["works"]
+                rf_icon = "✅" if rf_result["works"] else "❌"
+                rf_detail = rf_result.get('reason', 'OK') if rf_result["works"] else rf_result.get('reason', '不支持')
+                
+                # Step 3: 探测 reasoning 特征
+                reasoning_result = await self._probe_reasoning(client)
+                reasoning_icon = "✅" if reasoning_result["has_reasoning"] else "❌"
+                reasoning_detail = "有reasoning_content" if reasoning_result["has_reasoning"] else "无"
+                
+                # Step 4: 构建能力特征
+                capability = LLMCapability.NONE
+                if result.response_format_works:
+                    capability |= LLMCapability.RESPONSE_FORMAT
+                if result.tools_works:
+                    capability |= LLMCapability.TOOLS
+                if reasoning_result["has_reasoning"]:
+                    capability |= LLMCapability.REASONING
+                
+                feature = LLMFeature(
+                    capability=capability,
+                    supports_response_format=result.response_format_works,
+                    supports_tools=result.tools_works,
+                    supports_reasoning=reasoning_result["has_reasoning"],
+                    uses_reasoning_content=reasoning_result["uses_reasoning_content"],
+                    uses_outer_content=reasoning_result["uses_outer_content"],
+                    detection_method="auto"
+                )
+                
+                result.success = True
+                result.feature = feature
+                
+                # 缓存结果
+                self._capability_cache = feature
+                
+                # 【优化 2026-05-11 小健】紧凑格式：探测结果汇总
+                logger.info(
+                    f"[探测] 结果:\n"
+                    f"  ├─ tools: {tools_icon} {'支持' if tools_result['works'] else '不支持'} ({tools_detail})\n"
+                    f"  ├─ response_format: {rf_icon} {'支持' if rf_result['works'] else '不支持'} ({rf_detail})\n"
+                    f"  └─ reasoning: {reasoning_icon} {'支持' if reasoning_result['has_reasoning'] else '不支持'} ({reasoning_detail})"
+                )
+                
+                return result
             
         except Exception as e:
             logger.error(f"[CapabilityDetector] 探测异常: {e}")
             result.error = str(e)
             return result
     
-    async def _probe_response_format(self) -> dict:
+    async def _probe_response_format(self, client: httpx.AsyncClient) -> dict:
         """
         探测 response_format 支持
         
-        【修复P0-003】根据 LongCat 特征检测：response_format 会返回空响应
-        - 如果 content 为空或 content-length 为 0 → 不支持 response_format
-        - 如果返回有效 JSON → 支持 response_format
+        检测逻辑：
+        - HTTP非200 → 不支持
+        - 空响应 → 不支持（LongCat特征）
+        - 空content → 不支持
+        - 非JSON → 不支持
+        - 有效JSON → 支持
         """
         schema = {
             "type": "json_object",
             "json_schema": {
                 "type": "object",
-                "properties": {
-                    "response": {"type": "string"}
-                }
+                "properties": {"response": {"type": "string"}}
             }
         }
-        
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                response = await client.post(
-                    f"{self.api_base}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": self.model,
-                        "messages": [{"role": "user", "content": "Say hello and respond with JSON"}],
-                        "response_format": schema,
-                        "stream": False
-                    }
-                )
-                
-                # 【修复P0-003】检查 HTTP 状态码
-                if response.status_code != 200:
-                    return {"works": False, "reason": f"HTTP {response.status_code}"}
-                
-                # 【修复P0-003】检测空响应（LongCat 特征：response_format 返回空）
-                content_length = response.headers.get("content-length", "0")
-                if content_length == "0":
-                    return {"works": False, "reason": "Empty response - model does not support response_format"}
-                
-                data = response.json()
-                message = data.get("choices", [{}])[0].get("message", {})
-                content = message.get("content", "")
-                
-                # 【修复P0-003】检测空 content
-                if not content or len(content.strip()) == 0:
-                    return {"works": False, "reason": "Empty content - model does not support response_format"}
-                
-                # 【修复P0-003】验证是否返回有效 JSON
-                try:
-                    parsed = json.loads(content)
-                    # 有效 JSON → 支持 response_format
-                    return {"works": True, "parsed": parsed}
-                except json.JSONDecodeError:
-                    # 返回非 JSON → 不支持 response_format
-                    return {"works": False, "reason": "Invalid JSON - model does not support response_format"}
-                    
+            response = await client.post(
+                f"{self.api_base}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": "Say hello and respond with JSON"}],
+                    "response_format": schema,
+                    "stream": False
+                }
+            )
+            if response.status_code == 429:
+                logger.warning(f"[CapabilityDetector] _probe_response_format: HTTP 429限流, 假设支持(乐观默认) - 小健 2026-05-21")
+                return {"works": True, "reason": "429限流,使用乐观默认"}
+            if response.status_code != 200:
+                return {"works": False, "reason": f"HTTP {response.status_code}"}
+            content_length = response.headers.get("content-length", "0")
+            if content_length == "0":
+                return {"works": False, "reason": "Empty response - model does not support response_format"}
+            data = response.json()
+            message = data.get("choices", [{}])[0].get("message", {})
+            content = message.get("content", "")
+            if not content or len(content.strip()) == 0:
+                return {"works": False, "reason": "Empty content - model does not support response_format"}
+            try:
+                parsed = json.loads(content)
+                return {"works": True, "parsed": parsed}
+            except json.JSONDecodeError:
+                return {"works": False, "reason": "Invalid JSON - model does not support response_format"}
         except Exception as e:
             return {"works": False, "reason": str(e)}
     
-    async def _probe_tools(self) -> dict:
+    async def _probe_tools(self, client: httpx.AsyncClient) -> dict:
         """
-        探测 tools 支持
+        探测 tools（Function Calling）支持
         
-        发送一个带 tools 的请求，检查是否返回 tool_calls
+        发送带tools的请求，检查是否返回tool_calls
         """
         tools = [
             {
@@ -196,95 +197,77 @@ class CapabilityDetector:
                 }
             }
         ]
-        
         logger.info(f"[CapabilityDetector] _probe_tools: model={self.model}, api_base={self.api_base}")
-        
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                response = await client.post(
-                    f"{self.api_base}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": self.model,
-                        "messages": [{"role": "user", "content": "Please call the test_tool function with any parameter"}],
-                        "tools": tools,
-                        "tool_choice": "auto",
-                        "stream": False
-                    }
-                )
-                
-                logger.info(f"[CapabilityDetector] _probe_tools: HTTP {response.status_code}")
-                
-                if response.status_code != 200:
-                    return {"works": False, "reason": f"HTTP {response.status_code}"}
-                
-                # 【新增修复】检测非JSON响应（如HTML错误页面）
-                content_type = response.headers.get("content-type", "")
-                if "application/json" not in content_type:
-                    preview = response.text[:200] if response.text else "empty"
-                    logger.warning(f"[CapabilityDetector] _probe_tools: Non-JSON response, content_type={content_type}, preview={preview}")
-                    return {"works": False, "reason": f"Non-JSON response: {content_type}"}
-                
-                data = response.json()
-                logger.info(f"[CapabilityDetector] _probe_tools: response data keys = {list(data.keys())}")
-                
-                message = data.get("choices", [{}])[0].get("message", {})
-                logger.info(f"[CapabilityDetector] _probe_tools: message keys = {list(message.keys())}")
-                
-                # 检查是否有 tool_calls
-                tool_calls = message.get("tool_calls", [])
-                if tool_calls:
-                    logger.info(f"[CapabilityDetector] _probe_tools: tool_calls found = {len(tool_calls)}")
-                    return {"works": True, "tool_calls": tool_calls}
-                logger.info(f"[CapabilityDetector] _probe_tools: No tool_calls in response, content preview = {str(message.get('content', ''))[:200]}")
-                return {"works": False, "reason": "No tool_calls returned"}
-                
+            response = await client.post(
+                f"{self.api_base}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": "Please call the test_tool function with any parameter"}],
+                    "tools": tools,
+                    "tool_choice": "auto",
+                    "stream": False
+                }
+            )
+            logger.info(f"[CapabilityDetector] _probe_tools: HTTP {response.status_code}")
+            if response.status_code == 429:
+                logger.warning(f"[CapabilityDetector] _probe_tools: HTTP 429限流, 假设支持tools(乐观默认) - 小健 2026-05-21")
+                return {"works": True, "reason": "429限流,使用乐观默认"}
+            if response.status_code != 200:
+                return {"works": False, "reason": f"HTTP {response.status_code}"}
+            content_type = response.headers.get("content-type", "")
+            if "application/json" not in content_type:
+                preview = response.text[:200] if response.text else "empty"
+                logger.warning(f"[CapabilityDetector] _probe_tools: Non-JSON response, content_type={content_type}, preview={preview}")
+                return {"works": False, "reason": f"Non-JSON response: {content_type}"}
+            data = response.json()
+            logger.info(f"[CapabilityDetector] _probe_tools: response data keys = {list(data.keys())}")
+            message = data.get("choices", [{}])[0].get("message", {})
+            logger.info(f"[CapabilityDetector] _probe_tools: message keys = {list(message.keys())}")
+            tool_calls = message.get("tool_calls", [])
+            if tool_calls:
+                logger.info(f"[CapabilityDetector] _probe_tools: tool_calls found = {len(tool_calls)}")
+                return {"works": True, "tool_calls": tool_calls}
+            logger.info(f"[CapabilityDetector] _probe_tools: No tool_calls in response, content preview = {str(message.get('content', ''))[:200]}")
+            return {"works": False, "reason": "No tool_calls returned"}
         except Exception as e:
-            logger.error(f"[CapabilityDetector] _probe_tools: exception = {e}")
+            logger.error(f"[CapabilityDetector] _probe_tools: exception = {e}", exc_info=True)
             return {"works": False, "reason": str(e)}
     
-    async def _probe_reasoning(self) -> dict:
+    async def _probe_reasoning(self, client: httpx.AsyncClient) -> dict:
         """
         探测 reasoning 特征
         
-        检查响应中是否使用 reasoning_content 字段
+        检查响应中是否使用reasoning_content字段
         """
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                response = await client.post(
-                    f"{self.api_base}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": self.model,
-                        "messages": [{"role": "user", "content": "What is 2+2?"}],
-                        "stream": False
-                    }
-                )
-                
-                if response.status_code != 200:
-                    return {"has_reasoning": False, "uses_reasoning_content": False, "uses_outer_content": False}
-                
-                data = response.json()
-                message = data.get("choices", [{}])[0].get("message", {})
-                
-                # 检查 reasoning_content 字段
-                has_reasoning = "reasoning_content" in message
-                
-                # 检查外层 content 字段
-                has_outer_content = "content" in message and message.get("content")
-                
-                return {
-                    "has_reasoning": has_reasoning,
-                    "uses_reasoning_content": has_reasoning,
-                    "uses_outer_content": has_outer_content
+            response = await client.post(
+                f"{self.api_base}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": "What is 2+2?"}],
+                    "stream": False
                 }
-                
+            )
+            if response.status_code != 200:
+                return {"has_reasoning": False, "uses_reasoning_content": False, "uses_outer_content": False}
+            data = response.json()
+            message = data.get("choices", [{}])[0].get("message", {})
+            has_reasoning = "reasoning_content" in message
+            has_outer_content = "content" in message and message.get("content")
+            return {
+                "has_reasoning": has_reasoning,
+                "uses_reasoning_content": has_reasoning,
+                "uses_outer_content": has_outer_content
+            }
         except Exception:
             return {"has_reasoning": False, "uses_reasoning_content": False, "uses_outer_content": False}
 

@@ -21,9 +21,34 @@ env/
 .DS_Store
 Thumbs.db
 
-# Test files
-test_*.py
+# Test files - comprehensive patterns for all test-related files
+test_*
 *.test.py
+**/test/
+**/tests/
+**/Test/
+**/__tests__/
+**/*.test.*
+**/*.tests.*
+**/*Test.*
+**/*test.*
+**/testing/
+**/TestResults/
+**/test-reports/
+**/.test/
+**/temp_test/
+**/temp_glob_test/
+tools/latex-test/
+.planning/**/TEST-*
+.planning/**/test_*
+.planning/**/*TEST*
+.planning/**/*test*
+.planning/**/TESTING*
+reports/test_task/*.txt
+backend/tests/
+frontend/tests/
+frontend/src/test/
+frontend/src/tests/
 
 # Backup files
 *.backup
@@ -81,4 +106,19 @@ nul
 
 # Database files
 *.db
-!file_operations.db
+backend/chat_app.db
+backend/data/sessions.db
+backend/data/file_operations.db
+
+# Arts
+.arts/
+
+# Claude
+.claude/
+
+# Pytest temp
+pytest-of-*/
+backend/pytest-of-*/
+json_backup/
+backend/json_backup/
+reports/test_task/*.txt

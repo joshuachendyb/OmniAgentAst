@@ -16,7 +16,9 @@ import {
   FolderOutlined,
   FileOutlined,
   SearchOutlined,
+  InboxOutlined,
 } from "@ant-design/icons";
+import type { AntdTreeNodeAttribute } from "antd/lib/tree";
 
 const { DirectoryTree } = Tree;
 
@@ -49,12 +51,32 @@ interface ListDirectoryViewProps {
     path?: string;
   };
   isExpanded?: boolean;
-  onToggle?: () => void;  // 【小强添加 2026-03-24】折叠切换回调
+  onToggle?: () => void;
 }
 
 /**
  * 将扁平的 entries 数组转换为树形结构（供 Tree 组件使用）
  */
+
+/** 将后端 tree 格式的嵌套节点转换为扁平的 entries 数组 */
+function flattenTreeToEntries(
+  node: { name?: string; type?: string; children?: any[]; size?: number },
+  rootPath: string,
+  parentPath: string = ""
+): Entry[] {
+  const result: Entry[] = [];
+  const currentPath = parentPath ? `${parentPath}/${node.name || ""}` : `${rootPath}/${node.name || ""}`;
+  if (node.name && node.type) {
+    result.push({ name: node.name, path: currentPath, type: node.type, size: node.size ?? 0 });
+  }
+  if (node.children) {
+    for (const child of node.children) {
+      result.push(...flattenTreeToEntries(child, rootPath, node.name ? currentPath : parentPath));
+    }
+  }
+  return result;
+}
+
 function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
   if (!entries || entries.length === 0) {
     return [];
@@ -291,7 +313,7 @@ interface VirtualFileListProps {
 
 const VirtualFileList: React.FC<VirtualFileListProps> = ({ filteredEntries }) => {
   const fileListBackground = {
-    background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
+    background: "#f6ffed",
     border: "1px solid #b7eb8f",
     borderRadius: 8,
     padding: "10px 14px",
@@ -299,7 +321,6 @@ const VirtualFileList: React.FC<VirtualFileListProps> = ({ filteredEntries }) =>
     fontSize: "0.9em",
     lineHeight: 1.8,
     whiteSpace: "pre-wrap",
-    boxShadow: "inset 0 1px 2px rgba(0,0,0,0.05)",
   };
 
   return (
@@ -359,7 +380,15 @@ function formatFileSize(bytes: number): string {
  * 【小强修复 2026-03-25】递归模式搜索：匹配到子节点时父节点链也要显示
  */
 const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams, isExpanded = true, onToggle }) => {
-  const { entries = [], total = 0, directory = "" } = data;
+  const { entries: rawEntries, total: rawTotal = 0, directory = "", tree, root } = data;
+  // 兼容 tree 格式：tree → flatten → entries
+  const entries = useMemo(() => {
+    if (rawEntries) return rawEntries;
+    if (tree) return flattenTreeToEntries(tree, root || "");
+    return [];
+  }, [rawEntries, tree, root]);
+  const dirPath = directory || root || "";
+  const total = rawTotal || entries.length;
 
   // 【小强修复 2026-03-24】使用 toolParams 判断递归模式（从 step 传入，非从 data）
   const isRecursive = toolParams?.recursive === true;
@@ -372,8 +401,8 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
 
   // 计算树形数据
   const treeData = useMemo(
-    () => convertEntriesToTree(entries, directory),
-    [entries, directory]
+    () => convertEntriesToTree(entries, dirPath),
+    [entries, dirPath]
   );
 
   // 【小强新增 2026-03-25】计算需要展开的父节点路径（递归模式搜索用）
@@ -468,7 +497,7 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
 
   // 文件列表背景样式
   const fileListBackground = {
-    background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
+    background: "#f6ffed",
     border: "1px solid #b7eb8f",
     borderRadius: 8,
     padding: "10px 14px",
@@ -478,7 +507,6 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
     whiteSpace: "pre-wrap",
     maxHeight: 300,
     overflow: "auto",
-    boxShadow: "inset 0 1px 2px rgba(0,0,0,0.05)",
   };
 
   // 过滤后的文件列表（用于非递归模式）
@@ -497,13 +525,14 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
   if (entries.length === 0) {
     return (
       <div style={{ color: "#888", fontStyle: "italic" }}>
-        📂 目录为空
+        <InboxOutlined style={{ marginRight: 6 }} />
+        目录为空
       </div>
     );
   }
 
   // 【小强修改 2026-03-24】目录信息行：始终显示，包含文件数量和折叠按钮
-  const directoryInfo = directory && (
+  const directoryInfo = dirPath && (
     <div
       style={{
         display: 'flex',
@@ -520,8 +549,8 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
       onClick={onToggle}
     >
       <div>
-        <span style={{ marginRight: 8 }}>📂 {directory}</span>
-        {isRecursive ? "🌲 目录树" : "📁 文件列表"}
+        <span style={{ marginRight: 8 }}><FolderOutlined style={{ marginRight: 4 }} /> {dirPath}</span>
+        {isRecursive ? "目录树" : "文件列表"}
         ({total}个)
         {/* 【小强新增 2026-03-25】显示搜索匹配数量 */}
         {searchText && filteredEntries.length !== total && (
@@ -577,13 +606,14 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
                   background: "transparent",
                   fontSize: 13,
                 }}
-                icon={({ data }: any) => {
+                icon={(props: AntdTreeNodeAttribute) => {
                   // 优先使用isLeaf属性判断
-                  if (data.isLeaf === true) {
+                  if (props.isLeaf === true) {
                     return <FileOutlined style={{ color: "#1890ff" }} />;
                   }
                   // 如果isLeaf为false或未定义，则判断是否有children
-                  if (data.children && data.children.length > 0) {
+                  const children = props.children as unknown[];
+                  if (children && Array.isArray(children) && children.length > 0) {
                     return <FolderOutlined style={{ color: "#faad14" }} />;
                   }
                   // 如果没有children，可能是文件
@@ -594,29 +624,6 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
           ) : (
             /* 非递归模式：虚拟列表 - List自身管理滚动，外层div不限制 */
             <VirtualFileList filteredEntries={filteredEntries} />
-          )}
-
-          {/* 总数信息 - 也根据 isExpanded 控制 */}
-          {total > 0 && (
-            <div
-              style={{
-                marginTop: 8,
-                fontSize: 12,
-                color: "#666",
-              }}
-            >
-              <span
-                style={{
-                  background: "#e6f7ff",
-                  padding: "2px 8px",
-                  borderRadius: 4,
-                  color: "#1890ff",
-                  fontWeight: 500,
-                }}
-              >
-                {/* 【小沈删除 2026-03-30】用户要求删除"📊 共 XX 个项目" */}
-              </span>
-            </div>
           )}
         </>
       )}

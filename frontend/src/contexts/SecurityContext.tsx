@@ -117,8 +117,8 @@ export const SecurityProvider: React.FC<{ children: ReactNode }> = ({
         }
 
         return result;
-      } catch (err: any) {
-        const errorMsg = err?.message || '安全检查请求失败';
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : '安全检查请求失败';
         setError(errorMsg);
 
         const errorResult: SecurityCheckResponse = {

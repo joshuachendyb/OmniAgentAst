@@ -9,6 +9,7 @@
  */
 
 import React from "react";
+import { FileTextOutlined, FileOutlined, BarChartOutlined } from "@ant-design/icons";
 
 interface ReadFileViewProps {
   data: {
@@ -28,7 +29,8 @@ const ReadFileView: React.FC<ReadFileViewProps> = ({ data }) => {
   if (!content) {
     return (
       <div style={{ color: "#888", fontStyle: "italic" }}>
-        📄 文件为空
+        <FileTextOutlined style={{ marginRight: 8 }} />
+        文件为空
       </div>
     );
   }
@@ -65,7 +67,7 @@ const ReadFileView: React.FC<ReadFileViewProps> = ({ data }) => {
       {/* 文件路径信息 */}
       {file_path && (
         <div style={fileInfoStyle}>
-          📄 文件：{file_path}
+          <FileOutlined style={{ marginRight: 8 }} /> 文件：{file_path}
         </div>
       )}
 
@@ -113,7 +115,7 @@ const ReadFileView: React.FC<ReadFileViewProps> = ({ data }) => {
               fontWeight: 500,
             }}
           >
-            📊 共 {total_lines} 行
+            <BarChartOutlined style={{ marginRight: 4 }} /> 共 {total_lines} 行
           </span>
         </div>
       )}

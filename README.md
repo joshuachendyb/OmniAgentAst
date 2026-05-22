@@ -1,440 +1,323 @@
-# OmniAgentAs-desk 桌面版智能助手
-**铁规** 收到用的批评的时候必须主动背诵专家戒律
-**版本**: v0.4.9 (2026-02-26)  
-**状态**: 生产就绪（已完成全面测试和质量保证）  
-**最后更新**: 2026-02-26 20:51:45
+# OmniAgentAs-desk
+
+> AI智能体桌面应用 - 基于 ReAct 架构的全栈 Web 应用（React + FastAPI）
+
+**版本**: v0.13.11 | **更新时间**: 2026-05-20 21:45:12 | **作者**: 北京老陈团队
 
 ---
 
-## 📋 项目概述
+## 一、项目概述
 
-OmniAgentAs-desk 是一个桌面版智能助手应用程序，提供以下核心功能：
+OmniAgentAs-desk 是一个基于 **ReAct (Reasoning + Acting)** 架构的智能助手桌面应用，具备以下核心能力：
 
-- **智能对话**: 支持多轮对话和上下文理解
-- **文件操作**: 安全的文件读取、写入和操作能力
-- **会话管理**: 完整的会话历史记录和搜索功能
-- **多AI提供商支持**: 可配置的AI服务提供商（OpenCode、智谱AI等）
-- **安全监控**: 实时监控、错误跟踪和性能指标收集
+| 能力 | 说明 |
+|------|------|
+| **59个工具函数** | 覆盖文件、系统、网络、Shell、文档、桌面、元工具等7个分类 |
+| **ReAct推理引擎** | thought → action → observation 循环推理 |
+| **AgentFactory分发** | 按意图类型分发到9个专用Agent子类 |
+| **多AI Provider** | OpenCode、智谱AI、DeepSeek、Kimi等 OpenAI兼容API |
+| **流式响应** | SSE实时推送，推理过程即时可见 |
+| **会话管理** | 历史记录、搜索、标题自动生成、跨会话切换 |
+| **安全防护** | OOM防护、符号链接防护、代码安全验证、数据保护、路径白名单 |
 
-## 🚀 快速开始
+---
 
-### 系统要求
+## 二、技术架构
 
-- **Python**: 3.11 或更高版本
-- **Node.js**: 18.x 或更高版本
-- **操作系统**: Windows 10/11, macOS 10.15+, Linux
+### 2.1 技术栈
 
-### 安装步骤
+| 层级 | 技术 | 版本 |
+|------|------|------|
+| **后端** | Python / FastAPI / Uvicorn | 3.13 / 0.109.0 / 0.27.0 |
+| **前端** | React / TypeScript / Vite / Ant Design | 18 / 5 / — / 5 |
+| **LLM集成** | 多Provider适配层（OpenAI兼容API） | — |
+| **数据库** | SQLite (aiosqlite + SQLAlchemy) | — |
+| **测试** | pytest / Vitest / Playwright | — |
 
-#### 1. 克隆项目
-```bash
-git clone <repository-url>
-cd OmniAgentAs-desk
+### 2.2 当前架构图
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      前端 (React + Vite)                     │
+│  ┌─────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────┐ │
+│  │  Chat   │  │  Settings  │  │  Session   │  │  Mark   │ │
+│  │   UI    │  │    UI      │  │    UI      │  │   down  │ │
+│  └────┬────┘  └──────┬──────┘  └──────┬──────┘  └────┬────┘ │
+│       └────────────┴─────────────┴────────────┘         │
+│                         │ SSE 流式                        │
+└─────────────────────────┬───────────────────────────────┘
+                          │
+┌─────────────────────────┴───────────────────────────────┐
+│                     后端 (FastAPI)                        │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐       │
+│  │ ChatRouter  │  │ 意图识别    │  │ ReAct Loop  │       │
+│  │   路由层    │  │CRSS+LLM兜底 │  │   执行层    │       │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘       │
+│         │               │              │               │
+│  ┌──────┴──────┐  ┌──────┴──────┐  ┌──────┴──────┐       │
+│  │AgentFactory │  │   Tools    │  │  Safety    │       │
+│  │ 9个Agent类  │  │  59个工具  │  │ 安全检查   │       │
+│  └─────────────┘  └─────────────┘  └─────────────┘       │
+└─────────────────────────────────────────────────────────┘
 ```
 
-#### 2. 后端安装
-```bash
-# 进入后端目录
-cd backend
+---
 
-# 创建虚拟环境（推荐）
-python -m venv venv
+## 三、工具体系（59个）
 
-# Windows 激活虚拟环境
-venv\Scripts\activate
+### 3.1 工具分类（7个ToolCategory）
 
-# Linux/macOS 激活虚拟环境
-source venv/bin/activate
+| 分类 | 说明 |
+|------|------|
+| **FILE** (file) | 11 | 文件读写、搜索、编辑、归档等 |
+| **SHELL** (shell) | 5 | Shell命令执行、Python/JS代码执行 |
+| **NETWORK** (network) | 5 | HTTP请求、下载、网页抓取、网络诊断 |
+| **SYSTEM** (system) | 10 | 系统信息查询、进程管理、服务控制、环境变量 |
+| **DESKTOP** (desktop) | 10 | 窗口管理、截屏、OCR、剪贴板、通知 |
+| **DOCUMENT** (document) | 9 | PDF/Word/Excel读取、格式转换、SQL查询、图表生成 |
+| **META** (meta) | 9 | 工具帮助、工具搜索、时间日期、定时器 |
 
-# 安装依赖
-pip install -r requirements.txt
+> **注**：TIME已合并到META，ENVIRONMENT已合并到SYSTEM，DATABASE已合并到DOCUMENT，CODE_EXECUTION已合并到SHELL。
+
+### 3.2 工具注册架构
+
+```
+backend/app/services/tools/
+├── registry.py              # 统一注册表 + ToolCategory枚举（7分类）
+├── __init__.py              # 总入口（导入触发注册）
+├── tool_aliases.py          # 工具别名映射
+├── tool_config.py           # 工具配置
+├── tool_meta.py             # 工具元数据
+├── tool_result_utils.py     # 工具结果工具函数
+├── toolhelper/              # 工具辅助
+├── file/                    # 文件操作
+├── shell/                   # Shell命令
+├── network/                 # 网络通信
+├── desktop/                 # 桌面操作
+├── system/                  # 系统信息
+├── document/                # 文档处理
+└── meta/                    # 元工具
 ```
 
-#### 3. 前端安装
-```bash
-# 返回项目根目录
-cd ..
-
-# 进入前端目录
-cd frontend
-
-# 安装依赖
-npm install
-# 或使用 pnpm（推荐）
-pnpm install
+每个分类目录结构：
+```
+{category}/
+├── __init__.py              # 导入触发注册
+├── {category}_schema.py     # Pydantic 参数模型
+├── {category}_register.py   # 注册点
+└── {category}_tools.py      # 具体实现
 ```
 
-#### 4. 配置设置
-```bash
-# 返回项目根目录
-cd ..
+---
 
-# 复制配置文件模板
-cp config/config.yaml.example config/config.yaml
+## 四、Agent体系
 
-# 编辑配置文件
-# 使用文本编辑器打开 config/config.yaml 并填入您的API密钥
+### 4.1 当前架构（9个Agent子类）
+
+```
+BaseAgent(ABC)                 ← ReAct循环核心
+ReactAgentMixin                ← 公用逻辑混入
+        ↓ MRO
+FileReactAgent                 ← 有实质差异（session/rollback/alias）
+TimeReactAgent                 ← 有实质差异（noop rollback）
+ShellReactAgent                ← 仅Prompt+Category
+NetworkReactAgent              ← 仅Prompt+Category
+DesktopReactAgent              ← 仅Prompt+Category
+SystemReactAgent               ← 仅Prompt+Category
+DocumentReactAgent             ← 仅Prompt+Category
+DatabaseReactAgent             ← 仅Prompt+Category（=DOCUMENT）
+CodeExecutionReactAgent        ← 仅Prompt+Category（=SHELL）
 ```
 
-## ⚙️ 配置说明
+### 4.2 AgentFactory
 
-### 配置文件结构
-配置文件位于 `config/config.yaml`，主要包含以下部分：
-
-```yaml
-# AI服务配置
-ai:
-  model: kimi-k2.5-free
-  provider: opencode  # 当前使用的提供商
-  
-  # OpenCode 配置
-  opencode:
-    api_base: https://opencode.ai/zen/v1
-    api_key: sk_xxx...  # 替换为您的API密钥
-    models:
-      - minimax-m2.5-free
-      - kimi-k2.5-free
-    timeout: 120
-
-  # 智谱AI配置
-  zhipuai:
-    api_base: https://open.bigmodel.cn/api/paas/v4
-    api_key: xxx...  # 替换为您的API密钥
-    models:
-      - glm-4-flash
-      - glm-4-plus
-    timeout: 90
-
-# 文件操作配置
-file_operations:
-  workspace_dir: "./workspace"  # 文件操作的工作目录
-  safe_mode: true              # 安全模式（禁止删除操作）
-  max_file_size: 10           # 最大文件大小（MB）
-
-# 日志配置
-logging:
-  level: INFO                 # 日志级别
-  file: logs/app.log          # 日志文件路径
-  max_size: 10MB              # 日志文件最大大小
-  backup_count: 5             # 备份文件数量
-```
-## 数据库目录
-C:\Users\40968\.omniagent
-"C:\Users\40968\.omniagent\chat_history.db"
-"C:\Users\40968\.omniagent\operations.db"
-
-## 🏃 运行应用
-
-### 开发模式
-
-#### 1. 启动后端服务
-```bash
-# 后端目录
-cd backend
-
-# 激活虚拟环境（如果未激活）
-venv\Scripts\activate  # Windows
-source venv/bin/activate  # Linux/macOS
-
-# 启动FastAPI开发服务器
-python -m app.main
-# 或使用uvicorn
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```python
+AgentFactory.create(intent_type, llm_client, task_id, ...)
+├── "file"         → FileReactAgent
+├── "time"/"meta"  → TimeReactAgent
+├── "shell"        → ShellReactAgent
+├── "network"      → NetworkReactAgent
+├── "desktop"      → DesktopReactAgent
+├── "system"       → SystemReactAgent
+├── "document"     → DocumentReactAgent
+├── "database"     → DatabaseReactAgent
+└── "code_execution" → CodeExecutionReactAgent
 ```
 
-后端将在 `http://localhost:8000` 启动，并提供以下端点：
-- `http://localhost:8000/` - 根目录
-- `http://localhost:8000/docs` - Swagger UI API文档
-- `http://localhost:8000/redoc` - ReDoc API文档
+### 4.3 规划中重构（Agent 2.0）
 
-#### 2. 启动前端应用
-```bash
-# 前端目录
-cd frontend
+当前Agent体系存在同质化问题（7个Agent代码结构完全相同），已设计重构方案：
 
-# 启动Vite开发服务器
-npm run dev
-# 或
-pnpm dev
-```
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| AgentRegistry | 设计中 | 替代AgentFactory，统一管理意图→Agent映射 |
+| GenericReactAgent | 设计中 | 替代7个同质Agent，Profile配置化驱动 |
+| SemanticRouter | 设计中 | LLM语义路由，替代CRSS正则匹配 |
+| ToolSafetyLayer | 设计中 | 工具声明式安全分级 |
+| ToolObserver | 设计中 | 全量审计日志 + 异常检测 |
+| HITL | 设计中 | DANGEROUS工具人机协同确认 |
 
-前端将在 `http://localhost:5173` 启动（默认端口）。
+详细方案见 `doc-agent2.0/` 目录下的设计文档。
 
-#### 3. 访问应用
-打开浏览器访问 `http://localhost:5173` 开始使用。
+---
 
-### 生产模式
-
-#### 1. 构建前端
-```bash
-cd frontend
-npm run build
-# 或
-pnpm build
-```
-
-构建产物将生成在 `frontend/dist` 目录。
-
-#### 2. 配置生产环境
-```bash
-# 修改后端配置以使用静态文件
-# 编辑 backend/app/main.py 中的静态文件路径
-```
-
-#### 3. 启动生产服务器
-```bash
-cd backend
-# 使用生产服务器
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
-```
-
-## 📊 API 文档
-
-### 核心API端点
-
-#### 健康检查
-```
-GET /api/v1/health
-```
-响应示例：
-```json
-{
-  "status": "healthy",
-  "timestamp": "2026-02-26T20:51:45Z",
-  "version": "0.4.9"
-}
-```
-
-#### 会话管理
-```
-POST /api/v1/sessions - 创建新会话
-GET /api/v1/sessions - 获取会话列表（支持分页和搜索）
-GET /api/v1/sessions/{session_id}/messages - 获取会话消息
-PATCH /api/v1/sessions/{session_id}/title - 更新会话标题
-```
-
-#### 聊天接口
-```
-POST /api/v1/chat/completion - 发送消息并获取AI回复
-GET /api/v1/chat/execution/{session_id}/stream - 流式执行消息
-```
-
-#### 配置管理
-```
-GET /api/v1/config - 获取当前配置
-POST /api/v1/config - 更新配置
-GET /api/v1/config/providers - 获取可用提供商列表
-```
-
-#### 监控指标
-```
-GET /api/v1/metrics - 获取系统监控指标
-GET /api/v1/metrics/health - 获取健康检查详细指标
-GET /api/v1/metrics/errors - 获取错误统计
-```
-
-### OpenAPI/Swagger文档
-启动后端服务后，访问以下地址查看完整的API文档：
-- `http://localhost:8000/docs` - 交互式Swagger UI
-- `http://localhost:8000/redoc` - ReDoc文档
-
-## 🧪 测试
-
-### 后端测试
-```bash
-cd backend
-# 运行单元测试
-pytest tests/
-
-# 运行语法检查
-flake8 app/
-
-# 运行静态分析
-pylint app/
-```
-
-### 前端测试
-```bash
-cd frontend
-# 运行单元测试
-npm test
-# 或
-pnpm test
-
-# 运行E2E测试（需要先启动后端服务）
-npm run test:e2e
-# 或
-pnpm test:e2e
-```
-
-### 集成测试
-```bash
-# 运行完整的集成测试
-cd backend
-pytest tests/test_integration.py
-```
-
-## 🛠️ 监控与日志
-
-### 监控系统
-系统内置了完整的监控系统，提供：
-- **实时指标**: 请求数、响应时间、错误率
-- **错误跟踪**: 详细的错误分类和统计
-- **性能监控**: API端点性能分析
-- **健康检查**: 系统健康状态监控
-
-访问 `http://localhost:8000/api/v1/metrics` 查看监控数据。
-
-### 日志系统
-日志文件位于 `logs/app.log`，支持：
-- **多级别日志**: DEBUG, INFO, WARNING, ERROR
-- **日志轮转**: 自动分割和备份
-- **结构化日志**: 包含上下文信息的结构化日志
-
-### 错误分析
-使用内置的错误分析工具：
-```bash
-cd backend
-python log_analyzer.py
-```
-
-这将生成详细的错误分析报告。
-
-## 🔧 故障排除
-
-### 常见问题
-
-#### 1. 后端启动失败
-- **检查Python版本**: 确保Python >= 3.11
-- **检查依赖**: 运行 `pip install -r requirements.txt`
-- **检查端口**: 确保端口8000未被占用
-
-#### 2. 前端启动失败
-- **检查Node.js版本**: 确保Node.js >= 18.x
-- **检查依赖**: 运行 `npm install` 或 `pnpm install`
-- **清除缓存**: 删除 `node_modules` 和 `package-lock.json` 后重新安装
-
-#### 3. API连接失败
-- **检查后端服务**: 确保后端在 `http://localhost:8000` 运行
-- **检查CORS配置**: 确保后端CORS配置正确
-- **检查API密钥**: 确保 `config/config.yaml` 中的API密钥有效
-
-#### 4. 数据库问题
-```bash
-# 重置数据库（开发环境）
-cd backend
-python -c "import os; os.remove(os.path.expanduser('~/.omniagent/chat_history.db')) if os.path.exists(os.path.expanduser('~/.omniagent/chat_history.db')) else None"
-```
-
-### 调试模式
-启用调试模式获取更多信息：
-```yaml
-# config/config.yaml
-logging:
-  level: DEBUG
-```
-
-## 📈 部署指南
-
-### Docker部署（推荐）
-```dockerfile
-# Dockerfile 示例
-FROM python:3.11-slim
-
-# 设置工作目录
-WORKDIR /app
-
-# 复制后端代码
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY backend/ .
-
-# 复制前端构建产物
-COPY frontend/dist ./frontend/dist
-
-# 暴露端口
-EXPOSE 8000
-
-# 启动命令
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-### 手动部署
-1. 在服务器上安装Python 3.11+和Node.js 18+
-2. 按照"安装步骤"配置环境
-3. 构建前端：`cd frontend && npm run build`
-4. 配置生产环境变量
-5. 使用进程管理工具（如systemd、pm2）管理服务
-
-### 环境变量
-| 变量名 | 默认值 | 说明 |
-|--------|--------|------|
-| `OMNIAGENT_ENV` | `development` | 运行环境（development/production） |
-| `OMNIAGENT_DB_PATH` | `~/.omniagent/chat_history.db` | 数据库路径 |
-| `OMNIAGENT_LOG_LEVEL` | `INFO` | 日志级别 |
-| `OMNIAGENT_API_HOST` | `0.0.0.0` | API服务器监听地址 |
-| `OMNIAGENT_API_PORT` | `8000` | API服务器端口 |
-
-## 📁 项目结构
+## 五、项目结构
 
 ```
 OmniAgentAs-desk/
-├── backend/                    # 后端服务
-│   ├── app/                   # 应用代码
-│   │   ├── api/v1/           # API路由
-│   │   ├── services/         # 业务逻辑服务
-│   │   ├── utils/            # 工具函数
-│   │   └── main.py           # 应用入口
-│   ├── tests/                # 测试代码
-│   └── requirements.txt      # Python依赖
-├── frontend/                  # 前端应用
-│   ├── src/                  # 源代码
-│   ├── public/               # 静态资源
-│   ├── tests/                # 前端测试
-│   └── package.json          # Node.js依赖
-├── config/                   # 配置文件
-│   ├── config.yaml          # 主配置文件
-│   └── config.yaml.example  # 配置模板
-├── doc/                      # 文档
-├── logs/                     # 日志文件（自动生成）
-└── workspace/                # 文件操作工作区（自动生成）
+├── backend/                    # Python FastAPI 后端
+│   ├── app/
+│   │   ├── api/v1/             # API 端点
+│   │   ├── services/
+│   │   │   ├── agent/          # Agent体系（base_react, 9个子类, mixins/）
+│   │   │   ├── tools/          # 工具函数（7个分类，59个工具）
+│   │   │   ├── preprocessing/  # 意图分类
+│   │   │   ├── intents/        # 意图定义
+│   │   │   ├── safety/         # 安全检查
+│   │   │   └── llm_core.py     # LLM客户端
+│   │   └── utils/
+│   ├── tests/                  # 后端测试（pytest）
+│   ├── tools/                  # 测试与调试脚本
+│   └── requirements.txt
+├── frontend/                   # React + TypeScript 前端
+│   ├── src/
+│   │   ├── components/         # UI 组件
+│   │   ├── pages/              # 页面
+│   │   ├── services/           # API 服务
+│   │   └── utils/              # 工具函数
+│   ├── tests/                  # 前端测试
+│   └── package.json
+├── config/                     # 配置文件
+├── doc-agent2.0/               # Agent 2.0架构重构设计文档
+├── doc/                        # 系统设计文档
+├── notes/                      # 调试笔记
+├── version.txt                 # 版本变更记录
+└── AGENTS.md                   # 开发规范
 ```
-
-## 🔄 更新日志
-
-### v0.4.9 (2026-02-26)
-- 前端问题修复和优化
-- 后端配置管理优化
-- 移除所有硬编码的provider名称
-- 添加完整的AI模型验证逻辑
-- 优化错误信息显示
-
-### v0.4.8 (2026-02-25)
-- 修复validate_config逻辑缺陷
-- 重构配置验证代码
-- 统一Fallback逻辑
-- 增强错误处理
-
-### 历史版本
-查看 `version.txt` 获取完整的版本历史。
-
-## 🤝 贡献指南
-
-请参考 `CONTRIBUTING.md` 文件了解如何贡献代码。
-
-## 📄 许可证
-
-本项目采用 MIT 许可证。详见 `LICENSE` 文件。
-
-## 🆘 技术支持
-
-- **问题报告**: 在GitHub Issues中报告问题
-- **文档**: 查看 `doc/` 目录中的详细文档
-- **API文档**: 访问运行中的 `/docs` 端点
 
 ---
 
-**最后更新**: 2026-02-26 20:51:45  
-**版本**: v0.4.9  
-**状态**: ✅ 生产就绪
+## 六、快速开始
+
+### 6.1 环境要求
+
+| 依赖 | 版本 |
+|------|------|
+| Python | ≥ 3.11 |
+| Node.js | ≥ 18.x |
+| npm | ≥ 9.0 |
+
+### 6.2 安装与运行
+
+```bash
+# 1. 后端
+cd backend
+pip install -r requirements.txt
+python -m uvicorn app.main:app --reload --port 8000
+
+# 2. 前端
+cd frontend
+npm install
+npm run dev
+```
+
+后端: `http://127.0.0.1:8000` | API文档: `http://127.0.0.1:8000/docs` | 前端: `http://localhost:5173`
+
+### 6.3 可选依赖（二级工具）
+
+```bash
+# 数据分析
+pip install pandas matplotlib
+
+# 文档读写
+pip install pdfplumber python-docx openpyxl
+
+# GUI操作
+pip install pyautogui pywin32 pytesseract Pillow
+
+# 屏幕录制
+pip install mss imageio imageio-ffmpeg numpy
+```
+
+---
+
+## 七、开发命令
+
+### 后端
+
+| 命令 | 说明 |
+|------|------|
+| `python -m uvicorn app.main:app --reload` | 启动开发服务器 |
+| `pytest` | 运行全部测试 |
+| `pytest tests/test_xxx.py -v` | 运行指定测试文件 |
+| `pytest -k test_name -v` | 按名称匹配运行测试 |
+| `pytest --cov=app` | 测试并生成覆盖率 |
+
+### 前端
+
+| 命令 | 说明 |
+|------|------|
+| `npm run dev` | 启动开发服务器 |
+| `npm run build` | 生产构建 |
+| `npm run test` | 运行单元测试 |
+| `npm run test:coverage` | 测试覆盖率 |
+| `npm run lint` | ESLint 检查 |
+| `npm run lint:fix` | 自动修复 ESLint 问题 |
+| `npm run format` | Prettier 格式化 |
+| `npm run test:e2e` | Playwright E2E 测试 |
+
+---
+
+## 八、数据库
+
+| 数据库 | 路径 |
+|--------|------|
+| 聊天历史 | `backend/chat_app.db` |
+
+---
+
+## 九、版本历史
+
+| 版本 | 日期 | 主要变更 |
+|------|------|---------|
+| **v0.13.11** | 2026-05-20 | Agent架构重构设计文档（方案A/B/C对比分析）；README全面更新；测试文件整理 |
+| **v0.13.10** | 2026-05-20 | 修正3个低风险代码瑕疵；Schema精简警告注释更新 |
+| **v0.13.9** | 2026-05-20 | 修复DOCUMENT/DESKTOP分类三通道输出问题；META分类9个tool输出修复 |
+| **v0.13.0** | 2026-05-18 | ToolCategory从13类精简为7类；TIME→META/ENVIRONMENT→SYSTEM/DATABASE→DOCUMENT/CODE_EXECUTION→SHELL合并 |
+| v0.12.5 | 2026-05-02 | 新增5个二级Tool分类(35个工具): data_analysis, document, env_check, gui, db_helper |
+| v0.12.4 | 2026-05-01 | 修复16项Bug；新增跨分类工具支持/CRSS独立模块/Shell会话管理/网络工具 |
+| v0.12.3 | 2026-04-30 | 跨分类工具访问设计与实现；CRSS评分关键词补充；LLM多意图返回 |
+| v0.12.2 | 2026-04-29 | Pydantic Schema注册规范化；ToolCategory枚举扩展；新增Tool 15个 |
+| v0.9.8 | 2026-04 | LLM响应解析器重构；ReAct Loop统一解析器；测试91个用例 |
+| v0.9.0 | 2026-03 | ReAct架构正式上线；SSE流式响应；7个文件操作工具 |
+
+详细变更记录见 `version.txt`
+
+---
+
+## 十、故障排除
+
+| 问题 | 解决方案 |
+|------|---------|
+| 后端启动失败 | 检查 Python ≥ 3.11，端口8000是否被占用 |
+| 前端启动失败 | 检查 Node.js ≥ 18，清除 node_modules 后重装 |
+| API连接失败 | 检查 config.yaml 中的 API 密钥是否有效 |
+| 二级工具不可用 | 安装对应依赖库（见6.3节可选依赖） |
+
+---
+
+## 十一、团队成员
+
+| 角色 | 名称 | 职责 |
+|------|------|------|
+| 产品负责人 | 北京老陈 | 需求决策、质量把控 |
+| 后端开发 | 小沈 | 架构设计、后端实现、工具开发 |
+| 后端审查 | 小健 | 代码审查、测试、风险分析 |
+| 前端开发 | 小强 | 前端实现、UI/UE设计 |
+| 前端审查 | 小资 | 前端代码检查、测试 |
+| 风险分析 | 老杨 | 安全审查、疑难诊断 |
+| 需求分析 | 小许 | 需求文档、规格说明 |
+
+---
+
+**许可**: 内部项目 | **最后更新**: 2026-05-20 21:45:12 | **版本**: v0.13.11

@@ -16,7 +16,7 @@ import platform
 
 from app.models.file_operations import (
     OperationRecord, SessionRecord, OperationType, OperationStatus,
-    OperationRecordORM, SessionRecordORM
+    OperationRecordORM
 )
 from app.utils.logger import logger
 
@@ -81,7 +81,7 @@ class FileOperationSafety:
                 CREATE TABLE IF NOT EXISTS file_operations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     operation_id TEXT UNIQUE NOT NULL,
-                    session_id TEXT NOT NULL,
+                    task_id TEXT NOT NULL,
                     operation_type TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'pending',
                     source_path TEXT,
@@ -107,7 +107,7 @@ class FileOperationSafety:
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS file_operation_sessions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id TEXT UNIQUE NOT NULL,
+                    task_id TEXT UNIQUE NOT NULL,
                     agent_id TEXT NOT NULL,
                     task_description TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'pending',
@@ -125,7 +125,7 @@ class FileOperationSafety:
             # 创建索引
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_operations_session 
-                ON file_operations(session_id)
+                ON file_operations(task_id)
             ''')
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_operations_created 
@@ -145,7 +145,11 @@ class FileOperationSafety:
     
     def _get_connection(self) -> sqlite3.Connection:
         """获取数据库连接（线程安全）"""
-        return sqlite3.connect(str(self.config.DB_PATH))
+        conn = sqlite3.connect(str(self.config.DB_PATH))
+        # 【M18修复 2026-05-13 小沈】启用WAL模式+忙等待超时，解决并发写入"database is locked"错误
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        return conn
     
     def _compute_file_hash(self, file_path: Path) -> str:
         """计算文件哈希（SHA-256）"""
@@ -190,8 +194,10 @@ class FileOperationSafety:
     
     def record_operation(
         self,
-        session_id: str,
-        operation_type: OperationType,
+        # 【重要】task_id 用于操作追踪和回退，【禁止】使用 session_id
+        # session_id 专用于会话场景，操作追踪必须用 task_id
+        task_id: str,
+        operation_type: Optional[str] = None,
         source_path: Optional[Path] = None,
         destination_path: Optional[Path] = None,
         sequence_number: int = 0,
@@ -201,7 +207,7 @@ class FileOperationSafety:
         记录文件操作（执行前）
         
         Args:
-            session_id: 会话ID
+            task_id: 任务ID（操作追踪和回退用）
             operation_type: 操作类型
             source_path: 源路径
             destination_path: 目标路径
@@ -229,11 +235,11 @@ class FileOperationSafety:
             
             cursor.execute('''
                 INSERT INTO file_operations 
-                (operation_id, session_id, operation_type, status, source_path, 
+                (operation_id, task_id, operation_type, status, source_path, 
                  destination_path, sequence_number, file_size, space_impact_bytes, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                operation_id, session_id, operation_type.value, 
+                operation_id, task_id, operation_type.value, 
                 OperationStatus.PENDING.value,
                 str(source_path) if source_path else None,
                 str(destination_path) if destination_path else None,
@@ -476,39 +482,39 @@ class FileOperationSafety:
             if conn:
                 conn.close()
     
-    def get_operation_session_id(self, operation_id: str) -> Optional[str]:
+    def get_operation_task_id(self, operation_id: str) -> Optional[str]:
         """
-        获取操作对应的session_id
+        获取操作对应的task_id
         
         Args:
             operation_id: 操作ID
             
         Returns:
-            session_id，如果操作不存在返回None
+            task_id，如果操作不存在返回None
         """
         conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute(
-                'SELECT session_id FROM file_operations WHERE operation_id = ?',
+                'SELECT task_id FROM file_operations WHERE operation_id = ?',
                 (operation_id,)
             )
             row = cursor.fetchone()
             return row[0] if row else None
         except Exception as e:
-            logger.error(f"Failed to get session_id for operation {operation_id}: {e}")
+            logger.error(f"Failed to get task_id for operation {operation_id}: {e}")
             return None
         finally:
             if conn:
                 conn.close()
     
-    def rollback_session(self, session_id: str) -> Dict[str, Any]:
+    def rollback_session(self, task_id: str) -> Dict[str, Any]:
         """
         回滚整个会话的所有操作（按逆序）
         
         Args:
-            session_id: 会话ID
+            task_id: 会话ID
             
         Returns:
             回滚结果统计
@@ -519,7 +525,7 @@ class FileOperationSafety:
             cursor = conn.cursor()
             
             result = {
-                "session_id": session_id,
+                "task_id": task_id,
                 "total": 0,
                 "success": 0,
                 "failed": 0,
@@ -530,9 +536,9 @@ class FileOperationSafety:
             cursor.execute('''
                 SELECT operation_id, operation_type, source_path, destination_path
                 FROM file_operations 
-                WHERE session_id = ? AND status = ?
+                WHERE task_id = ? AND status = ?
                 ORDER BY sequence_number DESC
-            ''', (session_id, OperationStatus.SUCCESS.value))
+            ''', (task_id, OperationStatus.SUCCESS.value))
             
             operations = cursor.fetchall()
             result["total"] = len(operations)
@@ -554,25 +560,25 @@ class FileOperationSafety:
             cursor.execute('''
                 UPDATE file_operation_sessions 
                 SET rolled_back_count = ?, status = ?
-                WHERE session_id = ?
-            ''', (result["success"], OperationStatus.ROLLBACK.value, session_id))
+                WHERE task_id = ?
+            ''', (result["success"], OperationStatus.ROLLBACK.value, task_id))
             conn.commit()
             
-            logger.info(f"Session rollback completed: {session_id} - {result['success']}/{result['total']} succeeded")
+            logger.info(f"Session rollback completed: {task_id} - {result['success']}/{result['total']} succeeded")
             return result
             
         except Exception as e:
-            logger.error(f"Failed to rollback session {session_id}: {e}")
+            logger.error(f"Failed to rollback session {task_id}: {e}")
             return result
         finally:
             conn.close()
     
-    def get_session_operations(self, session_id: str) -> List[OperationRecord]:
+    def get_session_operations(self, task_id: str) -> List[OperationRecord]:
         """
         获取会话的所有操作记录
         
         Args:
-            session_id: 会话ID
+            task_id: 会话ID
             
         Returns:
             操作记录列表
@@ -583,9 +589,9 @@ class FileOperationSafety:
         try:
             cursor.execute('''
                 SELECT * FROM file_operations 
-                WHERE session_id = ?
+                WHERE task_id = ?
                 ORDER BY sequence_number ASC
-            ''', (session_id,))
+            ''', (task_id,))
             
             rows = cursor.fetchall()
             operations = []
@@ -593,7 +599,7 @@ class FileOperationSafety:
             for row in rows:
                 op = OperationRecord(
                     operation_id=row[1],
-                    session_id=row[2],
+                    task_id=row[2],
                     operation_type=OperationType(row[3]),
                     status=OperationStatus(row[4]),
                     source_path=row[5],
@@ -648,7 +654,7 @@ class FileOperationSafety:
             
             return OperationRecord(
                 operation_id=row[1],
-                session_id=row[2],
+                task_id=row[2],
                 operation_type=OperationType(row[3]),
                 status=OperationStatus(row[4]),
                 source_path=row[5],

@@ -3,10 +3,16 @@ LLM 策略选择器实现
 
 【创建时间】2026-03-20 11:23:15 小强
 【参考】Structured-Outputs-自适应兼容方案-小沈-2026-03-20.md 3.3节
+【重构】2026-05-14 小健 - 统一策略选择，所有降级走fallback()
 
 功能：
 1. StrategySelector 类 - 根据 LLM 能力自动选择最佳策略
 2. SelectedStrategy 数据类 - 选中的策略
+
+设计原则：
+- 策略选择集中在StrategySelector，其他模块只调用不创建
+- 所有降级场景统一走fallback()方法
+- method值只有三种：tools / response_format / text
 """
 
 from dataclasses import dataclass
@@ -16,7 +22,7 @@ from app.services.agent.capability import LLMCapability, LLMFeature
 
 class StrategySelector:
     """
-    策略选择器
+    策略选择器 - 单一职责：所有策略选择集中在这里
     
     根据 LLM 能力自动选择最佳策略
     """
@@ -26,33 +32,52 @@ class StrategySelector:
         """
         根据能力选择最佳策略
         
+        策略优先级：tools > response_format > text
+        - tools: Function Calling，LLM通过API调用工具（约50个模型支持）
+        - response_format: 结构化输出，LLM返回JSON格式（约45个模型支持）
+        - text: 纯文本模式，工具Schema注入Prompt（所有模型支持）
+        
+        【注意】reasoning是附加能力，不影响策略选择
+        - reasoning=True表示模型有思考链（如DeepSeek的reasoning_content）
+        - 可以与任何策略组合使用
+        
         Args:
             feature: LLM 能力特征
         
         Returns:
             SelectedStrategy: 选中的策略
         """
-        # ✅ 优先级修正：tools > response_format > prompt
-        # 原因：根据实测，tools 模式支持约50个模型，response_format 约45个
-        
         if feature.supports_tools:
             return SelectedStrategy(
                 method="tools",
                 capability=LLMCapability.TOOLS,
-                description="使用 tools/function_calling（支持最广，约50个模型）"
+                description="Function Calling（约50个模型支持）"
             )
         
         if feature.supports_response_format:
             return SelectedStrategy(
                 method="response_format",
                 capability=LLMCapability.RESPONSE_FORMAT,
-                description="使用 response_format（约45个模型）"
+                description="结构化输出（约45个模型支持）"
             )
         
+        return StrategySelector.fallback("无高级能力，使用纯文本模式")
+    
+    @staticmethod
+    def fallback(reason: str) -> "SelectedStrategy":
+        """
+        统一降级策略 - 所有降级场景必须调用此方法
+        
+        Args:
+            reason: 降级原因（如：探测异常、探测失败、无高级能力）
+        
+        Returns:
+            SelectedStrategy: text策略
+        """
         return SelectedStrategy(
-            method="prompt",
+            method="text",
             capability=LLMCapability.NONE,
-            description="降级到 Prompt 方式（所有模型都支持）"
+            description=f"降级为text模式: {reason}"
         )
 
 
@@ -61,7 +86,7 @@ class SelectedStrategy:
     """
     选中的策略
     """
-    method: str  # "response_format", "tools", "prompt"
+    method: str  # "response_format", "tools", "text"
     capability: LLMCapability
     description: str
 

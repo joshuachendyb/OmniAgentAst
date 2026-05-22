@@ -11,7 +11,9 @@ from pathlib import Path
 # from app.api.v1 import health, chat_non_stream, chat2, init_model_select, file_operations, config, sessions, security, execution, metrics
 # 【阶段6废弃端点但保留代码】chat2.py 已移至 backup/chat2.py
 # cleanup_expired_tasks 已迁移到 react_sse_wrapper.py
-from app.api.v1 import health, init_model_select, file_operations, config, sessions, security, execution, metrics
+from app.api.v1 import health, init_model_select, operation_history, routes, sessions, security, execution, metrics
+# 兼容导入
+config = routes
 # chat_stream 暂时禁用，使用 chat_router 替代
 from app.utils.logger import logger
 from app.utils.monitoring import setup_monitoring
@@ -56,10 +58,10 @@ app = FastAPI(
 
 print("OmniAgentAst Backend v" + app_version + " started")
 
-# CORS配置
+# CORS配置 - 显式指定前端源，避免通配符与credentials冲突
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -122,7 +124,7 @@ from app.services.chat_router import router as chat_router_router, task_router
 app.include_router(chat_router_router, prefix="/api/v1", tags=["chat"])
 app.include_router(task_router, prefix="/api/v1", tags=["chat"])
 app.include_router(init_model_select.router, prefix="/api/v1", tags=["chat"])
-app.include_router(file_operations.router, prefix="/api/v1", tags=["file-operations"])
+app.include_router(operation_history.router, prefix="/api/v1", tags=["operation-history"])
 app.include_router(config.router, prefix="/api/v1", tags=["config"])
 app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 app.include_router(security.router, prefix="/api/v1", tags=["security"])
@@ -133,6 +135,8 @@ app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 # 【阶段6更新】cleanup_expired_tasks 改为从 react_sse_wrapper 导入
 import asyncio
 from app.services.react_sse_wrapper import cleanup_expired_tasks
+# 【Phase 1修复 小健 2026-05-14】删除模块级import，改为函数内import
+# from app.services.tools.shell.shell_tools import cleanup_background_shells
 
 @app.on_event("startup")
 async def startup_event():
@@ -149,6 +153,15 @@ async def startup_event():
     # 启动后台任务
     asyncio.create_task(cleanup_task())
     logger.info("后台清理任务已启动")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时清理后台shell进程"""
+    # 【Phase 1修复 小健 2026-05-14】函数内import避免触发register
+    from app.services.tools.shell.shell_tools import cleanup_background_shells
+    count = cleanup_background_shells()
+    logger.info(f"已清理 {count} 个后台shell进程")
 
 
 @app.get("/")
