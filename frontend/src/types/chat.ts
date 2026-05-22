@@ -1,15 +1,15 @@
 /**
  * 流式API响应类型定义
- * 
+ *
  * 用于定义ReAct流式API返回的8种消息类型
  * 与后端第9章设计文档完全对应
- * 
+ *
  * @author 小新
  * @version 1.0.0
  * @since 2026-03-09
  */
 
-import type { ExecutionStep } from "../utils/sse";
+import type { ExecutionStep } from '../utils/sse';
 
 // ============================================================
 // 安全检查相关类型
@@ -51,10 +51,10 @@ export interface ThoughtMessage {
   type: 'thought';
   step: number;
   content: string;
-  thought?: string;    // LLM的思考过程（来自JSON的thought字段）
-  reasoning?: string;  // LLM的分析推理（来自JSON的reasoning字段）
-  tool_name?: string;  // 工具名称（统一使用 tool_name）
-  tool_params?: Record<string, unknown>;  // 工具参数（统一使用 tool_params）
+  thought?: string; // LLM的思考过程（来自JSON的thought字段）
+  reasoning?: string; // LLM的分析推理（来自JSON的reasoning字段）
+  tool_name?: string; // 工具名称（统一使用 tool_name）
+  tool_params?: Record<string, unknown>; // 工具参数（统一使用 tool_params）
 }
 
 /**
@@ -69,8 +69,8 @@ export interface ActionToolMessage {
   tool_params: Record<string, unknown>;
   execution_status: 'success' | 'error' | 'warning';
   summary: string;
-  execution_result?: Record<string, unknown> | null;  // 【修改2026-04-15】raw_data → execution_result
-  execution_time_ms?: number;  // 【新增2026-04-15】
+  execution_result?: Record<string, unknown> | null; // 【修改2026-04-15】raw_data → execution_result
+  execution_time_ms?: number; // 【新增2026-04-15】
   action_retry_count: number;
 }
 
@@ -79,15 +79,15 @@ export interface ActionToolMessage {
  * observation字段改为JSON对象，包含完整执行信息
  */
 export interface ObservationData {
-  summary: string;                              // 执行摘要（必填）
-  tool_name: string;                            // 工具名称（必填）
-  tool_params: Record<string, unknown>;         // 工具参数（必填）
-  return_direct: boolean;                       // 是否直接返回（必填）
-  execution_status?: string;                    // 执行状态（可选）
-  error_message?: string;                       // 错误信息（可选）
-  warning?: string;                             // 警告信息（可选）
-  next_actions?: string[];                      // 推荐操作（可选）
-  attachment?: unknown;                         // 附件（可选）
+  summary: string; // 执行摘要（必填）
+  tool_name: string; // 工具名称（必填）
+  tool_params: Record<string, unknown>; // 工具参数（必填）
+  return_direct: boolean; // 是否直接返回（必填）
+  execution_status?: string; // 执行状态（可选）
+  error_message?: string; // 错误信息（可选）
+  warning?: string; // 警告信息（可选）
+  next_actions?: string[]; // 推荐操作（可选）
+  attachment?: unknown; // 附件（可选）
 }
 
 /**
@@ -100,10 +100,10 @@ export interface ObservationMessage {
   type: 'observation';
   step: number;
   timestamp: number;
-  observation: ObservationData;  // observation JSON对象
-  code?: string;                 // 状态码（SUCCESS/ERROR/WARNING）
-  content?: string;              // 【废弃】保留向后兼容，使用observation.summary
-  tool_name?: string;            // 【废弃】保留向后兼容，使用observation.tool_name
+  observation: ObservationData; // observation JSON对象
+  code?: string; // 状态码（SUCCESS/ERROR/WARNING）
+  content?: string; // 【废弃】保留向后兼容，使用observation.summary
+  tool_name?: string; // 【废弃】保留向后兼容，使用observation.tool_name
 }
 
 /**
@@ -133,17 +133,18 @@ export interface FinalMessage {
  */
 export interface ErrorMessage {
   type: 'error';
-  error_type: string;       // 必填
-  error_message: string;   // 必填 【修改2026-04-15】message → error_message
-  timestamp: string;       // 必填
-  model?: string;         // 可选
-  provider?: string;      // 可选
-  details?: string;       // 可选
-  stack?: string;         // 可选
-  retryable?: boolean;    // 可选
-  retry_after?: number;   // 可选
-  recoverable?: boolean;  // 可选 【新增2026-04-15】
-  context?: {             // 可选 【新增2026-04-15】
+  error_type: string; // 必填
+  error_message: string; // 必填 【修改2026-04-15】message → error_message
+  timestamp: string; // 必填
+  model?: string; // 可选
+  provider?: string; // 可选
+  details?: string; // 可选
+  stack?: string; // 可选
+  retryable?: boolean; // 可选
+  retry_after?: number; // 可选
+  recoverable?: boolean; // 可选 【新增2026-04-15】
+  context?: {
+    // 可选 【新增2026-04-15】
     step?: number;
     model?: string;
     provider?: string;
@@ -166,8 +167,8 @@ export interface StatusMessage {
   type: 'incident';
   incident_value: StatusValue;
   message: string;
-  timestamp: string;       // 必填，时间戳
-  wait_time?: number;    // 仅 retrying 时可选，重试等待秒数
+  timestamp: string; // 必填，时间戳
+  wait_time?: number; // 仅 retrying 时可选，重试等待秒数
 }
 
 // ============================================================
@@ -177,14 +178,14 @@ export interface StatusMessage {
 /**
  * 流式消息联合类型 - 所有可能的响应类型
  */
-export type StreamMessage = 
-  | StartMessage 
-  | ThoughtMessage 
-  | ActionToolMessage 
-  | ObservationMessage 
-  | ChunkMessage 
-  | FinalMessage 
-  | ErrorMessage 
+export type StreamMessage =
+  | StartMessage
+  | ThoughtMessage
+  | ActionToolMessage
+  | ObservationMessage
+  | ChunkMessage
+  | FinalMessage
+  | ErrorMessage
   | StatusMessage;
 
 // ============================================================
@@ -202,11 +203,15 @@ export function isThoughtMessage(msg: StreamMessage): msg is ThoughtMessage {
   return msg.type === 'thought';
 }
 
-export function isActionToolMessage(msg: StreamMessage): msg is ActionToolMessage {
+export function isActionToolMessage(
+  msg: StreamMessage
+): msg is ActionToolMessage {
   return msg.type === 'action_tool';
 }
 
-export function isObservationMessage(msg: StreamMessage): msg is ObservationMessage {
+export function isObservationMessage(
+  msg: StreamMessage
+): msg is ObservationMessage {
   return msg.type === 'observation';
 }
 
@@ -297,17 +302,18 @@ export interface Message extends ChatMessage {
   // 错误相关字段（与API文档对齐）
   // 【小沈修改2026-04-15】删除errorCode，添加errorRecoverable和errorContext
   // 【小沈修改2026-04-16】删除errorDetails/errorStack/errorRetryable，后端已删除这些字段
-  errorMessage?: string;     // error_message - 错误消息内容
-  errorType?: string;        // error_type
-  errorTimestamp?: string;   // timestamp
+  errorMessage?: string; // error_message - 错误消息内容
+  errorType?: string; // error_type
+  errorTimestamp?: string; // timestamp
   errorRecoverable?: boolean; // recoverable 【新增2026-04-15】
-  errorContext?: {           // context 【新增2026-04-15】
+  errorContext?: {
+    // context 【新增2026-04-15】
     step?: number;
     model?: string;
     provider?: string;
     thought_content?: string;
   };
-  errorRetryAfter?: number;  // retry_after
+  errorRetryAfter?: number; // retry_after
   model?: string;
   provider?: string;
   display_name?: string;
