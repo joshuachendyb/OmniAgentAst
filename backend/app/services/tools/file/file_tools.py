@@ -2541,9 +2541,12 @@ class FileTools:
         target_dir: Optional[str] = None,
         dry_run: bool = True,
         max_files: int = 500,
+        exist_ok: bool = True,
     ) -> Dict[str, Any]:
         """批量处理文件 — 小沈 2026-05-22
         对匹配glob模式的所有文件执行同一操作。
+
+        更新: 小沈 2026-05-22 — M2修复：加回exist_ok参数
         """
         if max_files < 1 or max_files > 10000:
             return build_error("ERR_PARAM_INVALID", f"max_files必须在1-10000之间，当前值：{max_files}")
@@ -2571,7 +2574,7 @@ class FileTools:
                     ("batch_process", "确认执行以上操作", "预览结果符合预期时",
                      {"source_pattern": source_pattern, "action": action,
                       "target_pattern": target_pattern, "target_dir": target_dir,
-                      "dry_run": False, "max_files": max_files}),
+                      "dry_run": False, "max_files": max_files, "exist_ok": exist_ok}),
                 ]),
             )
 
@@ -2591,7 +2594,7 @@ class FileTools:
                 elif action == "copy":
                     if not target_dir:
                         return build_error("ERR_PARAM_MISSING", "copy操作需要指定target_dir")
-                    os.makedirs(target_dir, exist_ok=True)
+                    os.makedirs(target_dir, exist_ok=exist_ok)
                     dest = os.path.join(target_dir, os.path.basename(f))
                     shutil.copy2(f, dest)
                 else:
