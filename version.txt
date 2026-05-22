@@ -1,3 +1,11 @@
+v0.13.20
+
+更新时间: 2026-05-22 11:43:58
+
+更新内容：
+- docs: Agent2.3设计文档v1.1更新：基于真实代码现状修正（工具数量60-65、P11/P12/P14/P15已实施标注、Semantic Router统一模型）
+- docs: 吸收Agent2.5精华：P18安全等级声明、check_and_execute统一入口、SessionTrust Set实现、ToolObserver查询+热力图、YAML灰度配置
+
 v0.13.19
 
 更新时间: 2026-05-22 10:37:31
