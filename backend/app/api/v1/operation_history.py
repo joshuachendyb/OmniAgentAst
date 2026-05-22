@@ -8,7 +8,9 @@ from typing import List, Optional, Dict, Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.models.file_operations import OperationRecord, OperationType, OperationStatus
+# 【小沈重构 2026-05-22】数据库配置迁移至 app/db/
+from app.db.models.operation_models import OperationRecord
+from app.db.models.operation_enums import OperationType, OperationStatus
 from app.utils.visualization import get_visualizer
 from app.utils.logger import logger
 

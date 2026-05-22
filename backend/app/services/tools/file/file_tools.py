@@ -65,7 +65,8 @@ from app.services.tools.file.file_schema import (
     DataFileFormatInput,
 )
 
-from app.services.safety.file.file_safety import OperationType
+# 【小沈重构 2026-05-22】数据库配置迁移至 app/db/
+from app.db.models.operation_enums import OperationType
 from app.utils.visualization import get_visualizer
 from app.utils.logger import logger
 from app.services.tools.tool_meta import get_timeout

@@ -903,7 +903,7 @@ async def batch_rename_impl(
     Returns:
         统一格式的结果字典
     """
-    from app.services.safety.file.file_safety import OperationType
+    from app.db.models.operation_enums import OperationType
     
     is_valid, error_msg = validate_path_func(directory)
     if not is_valid:

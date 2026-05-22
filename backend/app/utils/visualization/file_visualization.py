@@ -11,6 +11,8 @@ from dataclasses import dataclass, asdict
 import textwrap
 
 from app.services.safety.file.file_safety import FileSafetyConfig
+# 【小沈重构 2026-05-22】数据库配置迁移至 app/db/
+from app.db.operations_db import get_connection as get_operations_connection
 from app.utils.logger import logger
 
 
@@ -51,11 +53,12 @@ class FileOperationVisualizer:
     """
     
     def __init__(self):
-        self.config = FileSafetyConfig()
+        # 【小沈重构 2026-05-22】不再需要 FileSafetyConfig 的 DB_PATH
+        pass
     
     def _get_connection(self) -> sqlite3.Connection:
         """获取数据库连接"""
-        return sqlite3.connect(str(self.config.DB_PATH))
+        return get_operations_connection()
     
     def generate_text_report(self, task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
         """
