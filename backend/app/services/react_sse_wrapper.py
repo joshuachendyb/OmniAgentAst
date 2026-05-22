@@ -120,19 +120,24 @@ def _format_sse_event(event: Dict[str, Any], step: int, model: str, provider: st
             tool_name=event.get('tool_name', ''),
             tool_params=event.get('tool_params', {}),
             execution_status=event.get('execution_status', 'success'),
-            summary=event.get('summary', ''),
-            execution_result=event.get('execution_result'),  # 【15.7修改】raw_data替换为execution_result
-            error_message=event.get('error_message', ''),  # 【15.7新增】
-            execution_time_ms=event.get('execution_time_ms', 0),  # 【15.7新增】
-            action_retry_count=event.get('action_retry_count', 0)
+            execution_result=event.get('execution_result'),
+            execution_time_ms=event.get('execution_time_ms', 0),
+            action_retry_count=event.get('action_retry_count', 0),
         )
     elif event_type == 'observation':
         return format_observation_sse(
             step=step,
-            observation=event.get('observation', ''),  # 【15.7修改】content替换为observation
+            observation=event.get('observation', ''),
             tool_name=event.get('tool_name', ''),
-            tool_params=event.get('tool_params', {}),  # 【15.7新增】
-            return_direct=event.get('return_direct', False),  # 【15.7新增】
+            tool_params=event.get('tool_params', {}),
+            return_direct=event.get('return_direct', False),
+            execution_status=event.get('execution_status', ''),
+            code=event.get('code', ''),
+            warning=event.get('warning'),
+            attachment=event.get('attachment'),
+            next_actions=event.get('next_actions'),
+            summary=event.get('summary', ''),
+            error_message=event.get('error_message', ''),
             timestamp=event.get('timestamp', '')
         )
     elif event_type == 'final':
