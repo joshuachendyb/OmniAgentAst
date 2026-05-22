@@ -272,7 +272,7 @@ pip install mss imageio imageio-ffmpeg numpy
 
 | 数据库 | 路径 |
 |--------|------|
-| 聊天历史 | `backend/chat_app.db` |
+| 聊天历史 | `~/.omniagent/chat_history.db` |
 
 ---
 

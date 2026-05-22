@@ -95,7 +95,7 @@ OmniAgentAs-desk/
 │   │   └── utils/
 │   ├── tests/                  # pytest
 │   ├── tools/                  # test/debug scripts
-│   └── chat_app.db             # SQLite
+│   └── ~/.omniagent/           # SQLite DBs (chat_history.db, operations.db)
 ├── frontend/
 │   ├── src/
 │   └── package.json
@@ -113,7 +113,7 @@ OmniAgentAs-desk/
 
 | Layer | Tech | Notes |
 |-------|------|-------|
-| Backend | FastAPI, Uvicorn, SQLAlchemy, aiosqlite | SQLite `chat_app.db` |
+| Backend | FastAPI, Uvicorn, SQLAlchemy, aiosqlite | SQLite `~/.omniagent/chat_history.db` |
 | | **httpx==0.26.0, httpcore==1.0.1** | **LOCKED** — 0.28.1 breaks TLS |
 | | Pydantic v2 | Tool schemas |
 | Frontend | React 18, TypeScript 5, Vite | |
