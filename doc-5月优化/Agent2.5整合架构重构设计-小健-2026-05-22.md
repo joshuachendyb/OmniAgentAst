@@ -12,6 +12,8 @@
 
 | 版本 | 时间 | 作者 | 更新内容 |
 |------|------|------|---------|
+| v1.3 | 2026-05-23 | 小沈 | 删除"风险分析与缓解"整章(废话)，解决方案写入对应章节：§3.5路由缓存、§3.6分级降级、§3.7动态扩展、§4.5角色融合、§6.8并发安全+误判处理、§6.9 Helper安全、§2.6 chat_router映射、SessionTrust参数维度、_request_authorization容错；新增§九未解决问题(2项) |
+| v1.2 | 2026-05-23 | 小沈 | 审查修正：Agent子类9个(非7个)、CRSS关键词175+、command_security 962行4级分级(非简单黑名单)、前端SSE 1649行(非简单EventSource)、intent_classifier与Semantic Router关系厘清、PipelineContext与chat_router对齐、SessionTrust参数维度、ToolSafetyLayer迁移command_security、trim_history字符数阈值、实施路线工期修正、回滚策略、并发安全 |
 | v1.1 | 2026-05-22 11:31:34 | 小健 | 基于真实代码现状修正：工具数量(60-65个)、Semantic Router统一模型、P18安全等级、check_and_execute统一入口、SessionTrust Set实现、ToolObserver查询+热力图、YAML灰度配置 |
 | v1.0 | 2026-05-22 09:59:55 | 小健 | 初始版本，综合10份方案最优设计融合 |
 
@@ -176,6 +178,21 @@ class PipelineContext:
         return self.corrected_input if self.corrected_input else self.raw_input
 ```
 
+### 2.6 chat_router 6步→4步映射
+
+当前`chat_router.route()`的6步流程与PipelineContext 4步的映射：
+
+| 当前6步 | 新4步(PipelineContext) | 变化 |
+|---------|----------------------|------|
+| 步骤1: 预处理(PreprocessingPipeline.process) | Phase 0: 矫正(TextCorrectorV2) | PreprocessingPipeline空壳→TextCorrectorV2 |
+| 步骤2: 意图检测(route_with_fallback: CRSS+LLM) | Phase 1: 语义路由(Semantic Router+intent_classifier兜底) | CRSS→Function Calling，intent_classifier保留为阶段2 |
+| 步骤3: 初始化(task_id/ai_service/next_step) | Phase 2: Agent创建(AgentRegistry+AgentProfile) | AgentFactory→AgentRegistry |
+| 步骤4: 安全检测(check_command_safety) | Phase 3: 工具执行安全(ToolSafetyLayer.check_and_execute) | command_security→ToolSafetyLayer分级 |
+| 步骤5: start步骤(send_start_step) | (合并到Phase 2) | 不再独立步骤 |
+| 步骤6: Agent分发(generate_sse_stream) | Phase 3: ReAct循环(GenericReactAgent) | 统一Agent |
+
+**chat_router.route()改造**：将6步顺序执行重构为PipelineContext驱动的4步管线，每步读写PipelineContext。
+
 ---
 
 ## 三、Phase 1: 语义路由层 (Semantic Router)
@@ -184,7 +201,7 @@ class PipelineContext:
 
 | 维度 | CRSS正则 | Function Calling语义路由 | 来源 |
 |------|---------|-------------------------|------|
-| 维护成本 | 高(50+条关键词需手动维护) | 低(意图描述即路由依据) | Agent高级调度方案 |
+| 维护成本 | 高(175+条关键词[TYPE 120+ACTION 55]需手动维护) | 低(意图描述即路由依据) | Agent高级调度方案 + 小沈审查v1.2 |
 | 准确率 | 中(关键词匹配无法处理语义变体) | 高(LLM理解自然语言) | 两个方案对比分析 |
 | 扩展性 | 差(新增意图需改代码) | 优(新增意图只需注册描述) | Agent与意图分类方案 |
 | Chat识别 | 无(未匹配fallback到network) | 有(启发式+LLM识别闲聊) | 预处理管线方案 |
@@ -305,7 +322,12 @@ def _is_likely_chat(self, text: str) -> bool:
 
 ```python
 class IntentRegistry:
-    """意图定义注册表 — 所有组件统一从此读取"""
+    """意图定义注册表 — 所有组件统一从此读取
+    
+    启动安全：
+    - 惰性加载：首次访问时ensure_intents_registered()，避免循环依赖(IntentRegistry↔Agent)
+    - 单点故障兜底：registry为空时回退到硬编码默认定义(_DEFAULT_INTENTS)
+    """
     
     def register(self, definition: IntentDefinition): ...
     def get(self, intent_type: str) -> Optional[IntentDefinition]: ...
@@ -326,19 +348,95 @@ class IntentRegistry:
 | document | DOCUMENT | GenericReactAgent | DocumentPrompts |
 | meta | META | TimeReactAgent(保留) | TimePrompts |
 
+### 3.5 路由延迟优化
+
+Function Calling路由延迟~500ms(CRSS<1ms)，优化措施：
+- 统一模型 + temperature=0.1 + max_tokens=100
+- 5秒LRU内存缓存（相似query命中跳过LLM调用）
+- 相似度匹配：对已缓存的(query→categories)，用编辑距离/余弦相似度判断是否复用
+
+```python
+# 路由缓存
+_router_cache: Dict[str, Tuple[List[ToolCategory], float]] = {}  # query→(categories, timestamp)
+_ROUTER_CACHE_TTL = 5  # 秒
+
+async def recommend_categories(self, user_input: str, ...) -> List[ToolCategory]:
+    # 缓存命中
+    cache_key = user_input.strip().lower()
+    if cache_key in self._router_cache:
+        cached_cats, ts = self._router_cache[cache_key]
+        if time.time() - ts < self._ROUTER_CACHE_TTL:
+            return cached_cats
+    # ...LLM调用...
+    self._router_cache[cache_key] = (result, time.time())
+    return result
+```
+
+### 3.6 路由失败分级降级策略
+
+Router失败时不直接加载全量FALLBACK_CATEGORIES(5分类=58工具→Prompt膨胀)，而是分级降级：
+
+```python
+# 分级fallback
+FALLBACK_TIER_1 = [ToolCategory.FILE, ToolCategory.SHELL]  # 最常用2分类≈16工具
+FALLBACK_TIER_2 = FALLBACK_TIER_1 + [ToolCategory.NETWORK, ToolCategory.SYSTEM]  # 4分类≈36工具
+FALLBACK_TIER_3 = FALLBACK_TIER_2 + [ToolCategory.DOCUMENT, ToolCategory.DESKTOP]  # 全量≈58工具
+
+async def recommend_categories(self, user_input: str, ...) -> List[ToolCategory]:
+    try:
+        result = await self._llm_route(user_input)
+        if result and self._is_high_confidence(result):
+            return result  # 高置信度：直接用
+        elif result:
+            return result + ALWAYS_LOAD_CATEGORIES  # 低置信度：用但加兜底
+    except Exception:
+        pass
+    
+    # LLM路由失败：分级降级
+    # Tier1：最近一次成功缓存
+    cached = self._get_recent_success_cache()
+    if cached:
+        return cached
+    # Tier2：最常用分类
+    return FALLBACK_TIER_1 + ALWAYS_LOAD_CATEGORIES
+```
+
+### 3.7 工具动态扩展机制
+
+当LLM在ReAct循环中请求未加载的工具时，自动加载：
+
+```python
+# 在GenericReactAgent的ReAct循环中
+async def _check_and_load_missing_tools(self, tool_calls: List[dict]) -> None:
+    """LLM请求未加载工具时，动态加载对应分类"""
+    for tc in tool_calls:
+        tool_name = tc.function.name
+        if tool_name not in self._tools_dict:
+            # 从ToolRegistry查找工具所属分类
+            tool_meta = tool_registry.get_tool(tool_name)
+            if tool_meta and tool_meta.category not in self._loaded_categories:
+                await self.load_tools_by_intent([tool_meta.category])
+                # 刷新Prompt：追加新分类的工具描述
+                self.prompts = self._build_dynamic_prompts(self._loaded_categories)
+                # 安全检查：新加载工具受ToolSafetyLevel约束
+```
+
+当前`base_react.py`中`_check_and_load_missing_tools()`已空实现（全量注册策略），
+重构后改为按需加载，此方法恢复实现。
+
 ---
 
 ## 四、Phase 2: Agent架构 (GenericReactAgent + AgentProfile)
 
 ### 4.1 为什么统一Agent
 
-**当前9个Agent分析**：7个代码结构完全相同，差异仅为ToolCategory + Prompt类（来源：Agent与意图分类方案）。
+**当前9个Agent分析**：6个极简同质(73-76行) + TimeReactAgent(98行,rollback=True) + FileReactAgent(385行,独立session/rollback/alias/Hook) + CodeExecutionReactAgent(76行,shell兼容别名)（来源：小沈审查v1.2）。
 
 | Agent | 代码行数 | 实质差异 | 处置 |
 |-------|---------|---------|------|
-| FileReactAgent | 386 | rollback/session/alias/Hook | **保留独立子类** |
-| TimeReactAgent | 60 | rollback=True/无normalize/无task_id | **保留独立子类** |
-| Shell/Network/Desktop/System/Document/Database/CodeExecution | 45-50 | 仅Prompt+Category | **删除，用GenericReactAgent替代** |
+| FileReactAgent | 385 | rollback/session/alias/Hook + 冗余_get_llm_response_text/with_tools | **保留独立子类** |
+| TimeReactAgent | 98 | rollback=True/无normalize/无task_id | **保留独立子类** |
+| Shell/Network/Desktop/System/Document/Database/CodeExecution | 73-76 | 仅Prompt+Category+rollback日志文本 | **删除，用GenericReactAgent替代** |
 
 ### 4.2 AgentProfile配置化
 
@@ -410,6 +508,43 @@ def _build_dynamic_prompts(self, categories: List[ToolCategory]) -> str:
     return "\n\n".join(parts)
 ```
 
+### 4.5 多分类角色融合策略
+
+当Semantic Router推荐多个分类(如FILE+DOCUMENT)时，各分类的Prompt角色定义会冲突
+（"file assistant" vs "document assistant"无法共存）。解决策略：
+
+**主分类角色 + 辅助分类能力描述**：
+
+```python
+def _build_role_section(self, categories: List[ToolCategory]) -> str:
+    primary = categories[0]  # Router推荐的第一个为主分类
+    secondary = categories[1:]  # 其余为辅助分类
+    
+    # 主分类：完整角色定义
+    role_text = ROLE_DEFINITIONS[primary]  # e.g. "You are a professional file management assistant"
+    
+    # 辅助分类：仅追加能力描述(不含角色定义)
+    if secondary:
+        capabilities = []
+        for cat in secondary:
+            capabilities.append(CAPABILITY_DESCRIPTIONS[cat])
+            # e.g. "You also have document processing capabilities (read/convert/analyze documents)"
+        role_text += "\n\nAdditional capabilities:\n" + "\n".join(f"- {c}" for c in capabilities)
+    
+    return role_text
+
+# 能力描述模板(非角色定义，避免冲突)
+CAPABILITY_DESCRIPTIONS = {
+    ToolCategory.FILE: "File operations (read/write/list/search/copy/move/delete files and directories)",
+    ToolCategory.SHELL: "Command execution (run shell commands, Python/JS scripts)",
+    ToolCategory.NETWORK: "Network operations (HTTP requests, downloads, connectivity checks)",
+    ToolCategory.SYSTEM: "System information (CPU/memory/process/environment/service management)",
+    ToolCategory.DESKTOP: "Desktop interaction (windows, screenshots, clipboard, automation)",
+    ToolCategory.DOCUMENT: "Document processing (read/convert/analyze documents, charts, SQL queries)",
+    ToolCategory.META: "Meta tools (time queries, timer, tool search and help)",
+}
+```
+
 ---
 
 ## 五、Phase 3: ReAct循环优化 (重复执行消除)
@@ -455,6 +590,11 @@ self._cache_timestamps: Dict[str, float] = {}
 # 不缓存的工具(结果动态变化)
 _NO_CACHE_TOOLS = {"ping", "port_check"}
 _NO_CACHE_COMMANDS = ["ping", "tracert", "curl", "wget"]  # execute_shell_command参数级
+
+# 缓存数据陈旧防护：
+# - TTL=60秒自动过期
+# - ping/curl/wget等网络命令不缓存(结果随网络状态变化)
+# - shell命令参数级判断：含_NO_CACHE_COMMANDs中的命令不缓存
 
 # 工具执行前检查缓存
 cache_key = f"{tool_name}:{self._params_to_key(tool_params)}"
@@ -655,7 +795,7 @@ SAFETY_POLICY = {
 | DESKTOP | 10+ | get_window_info, screen_capture | set_clipboard, take_screenshot | close_window, kill_process | - |
 | DOCUMENT | 9 | read_document, analyze_data | convert_document, generate_chart | - | execute_sql |
 | META | 10 | get_time, tool_search | set_timer | - | - |
-| **合计** | **~60-65** | **~25** | **~25** | **~5** | **~10** |
+| **合计** | **~58** | **~25** | **~25** | **~5** | **~10** |
 
 ### 6.4 P18: 工具注册时声明安全等级
 
@@ -757,7 +897,14 @@ class ToolSafetyLayer:
         return safety_level or ToolSafetyLevel.SAFE
     
     async def _request_authorization(self, tool_name: str, params: dict):
-        """SSE暂停 → 发送授权事件 → 等待用户响应 → 超时60秒自动拒绝"""
+        """SSE暂停 → 发送授权事件 → 等待用户响应 → 超时60秒自动拒绝
+        
+        容错设计：
+        - 60秒超时自动拒绝（防挂起期间网络闪断导致永久阻塞）
+        - 后端检测前端是否监听：无监听时走fallback_mode(block而非放行)
+        - Phase 5→7缺口期：fallback_mode=block，DANGEROUS/DESTRUCTIVE自动拦截
+        - Phase 7完成后：fallback_mode=prompt，正常交互弹窗
+        """
         # 挂起ReAct循环，发送 AUTHORIZATION_REQUIRED SSE事件
         # 等待前端 /confirm 接口回调
         # 60秒超时自动拒绝
@@ -768,7 +915,13 @@ class ToolSafetyLayer:
 
 ```python
 class SessionTrustManager:
-    """会话信任管理 — 同会话同类操作免重复确认"""
+    """会话信任管理 — 同会话同类操作免重复确认
+    
+    解决HITL频繁弹窗打断心流问题：
+    - DANGEROUS工具仅~15个，大部分场景不会触发
+    - 触发后用户选择"本会话信任"→同类操作免重复
+    - 信任粒度：tool_name:action + 参数关键维度(见_make_trust_key)
+    """
     
     def __init__(self, trust_ttl: int = 300):
         self._trust_store: Dict[str, Set[str]] = {}
@@ -789,12 +942,51 @@ class SessionTrustManager:
         # TODO: TTL清理（可配定时器或惰性清理）
     
     def _make_trust_key(self, tool_name: str, params: dict) -> str:
-        """信任键：只到action级别，不包含全部参数"""
+        """信任键：tool_name:action + 参数关键维度
+        
+        小沈审查v1.2：对shell/code类工具需加入参数关键维度，
+        否则信任file_control:delete意味着同会话任何delete都免确认，
+        信任execute_shell_command意味着任何shell命令都免确认——风险过大。
+        """
         action = params.get("action", "")
+        # 参数关键维度：仅对高风险工具加入参数摘要
+        PARAM_DIMENSION_TOOLS = {"execute_shell_command", "execute_python", "execute_js", "file_control"}
+        if tool_name in PARAM_DIMENSION_TOOLS:
+            # shell类：取command/python_code/js_code的前20字符作为摘要
+            for key in ("command", "python_code", "js_code"):
+                if key in params:
+                    param_hint = str(params[key])[:20]
+                    return f"{tool_name}:{action}:{param_hint}"
+            # file_control：取target_path的目录部分
+            if "target_path" in params:
+                import os
+                dir_part = os.path.dirname(str(params["target_path"]))
+                return f"{tool_name}:{action}:{dir_part}"
         return f"{tool_name}:{action}"
 ```
 
 ### 6.8 ToolObserver设计（全量审计 + 查询 + 热力图）
+
+**并发安全**：使用`asyncio.Lock`（非threading.Lock），适配FastAPI async事件循环。
+
+**异常检测误判处理**：
+- 阈值可配置：`anomaly_threshold`默认10次/分钟，可通过agent.yaml调整
+- 暂停后需**手动恢复**（前端展示警告+恢复按钮），防止自动恢复掩盖风险
+- 批量正常操作（如批量删除临时文件）可临时调高阈值
+
+### 6.9 Helper层安全约束
+
+工具Helper层内部调用（如file_helper调用os.remove）可能绕过ToolSafetyLayer。
+解决：Helper层内部对危险操作也做规则检查——在Helper入口添加轻量级安全断言：
+
+```python
+# 在file_helper.py等Helper入口
+def _assert_safe_operation(operation: str, target: str):
+    """Helper层安全断言——防止绕过ToolSafetyLayer"""
+    # 检查危险操作+关键目录
+    if operation in ("remove", "rmtree") and any(d in target for d in SYSTEM_CRITICAL_DIRS):
+        raise SecurityViolationError(f"Helper层拒绝: 禁止对系统关键目录执行{operation}")
+```
 
 ```python
 @dataclass
@@ -874,15 +1066,17 @@ class ToolObserver:
 
 ### 6.9 command_security现状与处置
 
-**当前现状**：`command_security.py`（962行）仍在使用，但存在本质缺陷：
-- 仅检查**用户输入文本**，不检查**工具调用级**安全
+**当前现状**：`command_security.py`（962行）仍在使用，存在以下特点与局限：
+- 已有**4级风险分级**(safe/medium/high/critical) + CRSS权重评分(0-10分) + 危险命令黑名单(180+条) + 系统关键目录检查
+- 仅检查**用户输入文本**，不检查**工具调用级**安全（ToolMetadata无safety_level字段，58个工具全未标注安全等级）
 - 黑名单可被变量拼接、Base64编码绕过
-- AgentFactory中`shell`键被`CodeExecutionReactAgent`覆盖，`document`键被覆盖
+- AgentFactory中键覆盖逻辑已在2026-05-22显式修复并注释（小沈审查v1.2确认）
 
 **处置**：
 1. `ToolSafetyLayer` 替代其为**统一工具执行前安全检查**
-2. 保留 `check_command_safety()` 函数，移至 `ToolSafetyLayer` 内作为**参数检查工具**（针对shell/code类工具的参数级检测）
+2. **迁移**（非删除）`command_security.py`核心逻辑至 `ToolSafetyLayer`：保留黑名单检查(`check_command_safety`)作为参数级检测、CRSS权重评分映射为ToolSafetyLevel、5→4级分级对齐
 3. 不将其作为独立防线，而是纵深防御中的一环
+4. Phase 0需新增ToolMetadata.safety_level字段并补标58个工具的安全等级（小沈审查v1.2：2天紧张但可行，建议优先标注DANGEROUS/DESTRUCTIVE约15个）
 
 ---
 
@@ -904,9 +1098,9 @@ class ToolObserver:
 | `agent/system_react.py` | GenericReactAgent替代 | Agent与意图分类方案 |
 | `agent/document_react.py` | GenericReactAgent替代 | Agent与意图分类方案 |
 | `agent/database_react.py` | GenericReactAgent替代 | Agent与意图分类方案 |
-| `agent/code_execution_react.py` | GenericReactAgent替代 | Agent与意图分类方案 |
+| `agent/code_execution_react.py` | GenericReactAgent替代(shell兼容别名) | 小沈审查v1.2补充 |
 | `agent/parsers/` | 已废弃，用react_output_parser.py | AGENTS.md |
-| `services/command_security.py` | 用户输入层黑名单被ToolSafetyLayer替代 | 两个方案对比分析 |
+| `services/command_security.py` | 核心逻辑迁移至ToolSafetyLayer后删除(962行→保留参数检查约100行) | 两个方案对比分析 + 小沈审查v1.2 |
 | `tools/desktop/gui_register.py`死代码 | GUI描述400行已不使用 | Agent与意图分类方案 |
 
 ### 7.2 保留文件
@@ -922,6 +1116,7 @@ class ToolObserver:
 | `tools/registry.py` | 工具注册表 | 扩展ToolMetadata(安全字段) |
 | `tools/_response.py` | 工具返回格式 | **完全保留** |
 | `agent/react_output_parser.py` | LLM输出解析 | **完全保留** |
+| `preprocessing/intent_classifier.py`中`classify_intent`函数 | LLM兜底分类(被chat_router.route_with_fallback直接调用) | **保留函数**，删除IntentClassifier类 |
 
 ### 7.3 代码量变化预估
 
@@ -949,43 +1144,43 @@ class ToolObserver:
 
 | 阶段 | 内容 | 风险 | 工时 | 依赖 | 可验证 |
 |------|------|------|------|------|--------|
-| **Phase 0** | 测试基线清理+工具安全分级标注 | 低 | 2天 | 无 | ✅ |
-| **Phase 1** | IntentRegistry + AgentProfile + AgentRegistry | 低 | 2天 | Phase 0 | ✅ |
-| **Phase 2** | GenericReactAgent + 动态Prompt组合 | 中 | 2天 | Phase 1 | ✅ |
-| **Phase 3** | TextCorrectorV2 + PipelineContext | 低 | 1天 | Phase 1 | ✅ |
-| **Phase 4** | Semantic Router(Function Calling) | 中 | 1.5天 | Phase 1 | ✅ |
-| **Phase 5** | ToolSafetyLayer + ToolObserver + HITL后端 | 中 | 2天 | Phase 0 | ✅ |
-| **Phase 6** | ChatRouter改造 + 新旧架构切换 | **高** | 1.5天 | Phase 2,3,4,5 | ✅ |
-| **Phase 7** | 前端HITL集成(SSE事件+确认弹窗) | **高** | 2天 | Phase 6 | ✅ |
-| **Phase 8** | 重复执行消除(A+B+C+D+E+F) | 中 | 2天 | Phase 6 | ✅ |
-| **Phase 9** | 删除7个同质Agent + 死代码清理 | 中 | 1天 | Phase 7验证通过 | ✅ |
-| **Phase 10** | 全量回归测试 + 安全测试 + 性能测试 | 低 | 2天 | Phase 9 | ✅ |
-| **总计** | | | **~17天** | | |
+| **Phase 0** | 测试基线清理 + ToolMetadata新增safety_level字段 + 58工具安全分级标注(优先DANGEROUS/DESTRUCTIVE约15个) | 低 | 2.5天 | 无 | ✅ |
+| **Phase 1** | IntentRegistry单一真相源 + AgentProfile配置化 + AgentRegistry(替代AgentFactory) | 低 | 2天 | Phase 0 | ✅ |
+| **Phase 2** | GenericReactAgent + 动态Prompt组合(含多分类角色融合策略) | 中 | 2天 | Phase 1 | ✅ |
+| **Phase 3** | TextCorrectorV2 + PipelineContext + chat_router 6步流程对齐(当前6步→新4步映射) | 中 | 1.5天 | Phase 1 | ✅ |
+| **Phase 4** | Semantic Router(Function Calling) + 明确与intent_classifier关系(Semantic Router替代CRSS阶段1，intent_classifier保留为阶段2兜底) | 中 | 1.5天 | Phase 1, Phase 3 | ✅ |
+| **Phase 5** | ToolSafetyLayer(迁移command_security核心逻辑) + ToolObserver(改用asyncio.Lock) + HITL后端 | 中 | 2天 | Phase 0 | ✅ |
+| **Phase 6** | ChatRouter改造 + 新旧架构切换(Feature Flag灰度) | **高** | 2天 | Phase 2,3,4,5 | ✅ |
+| **Phase 7** | 前端HITL集成(SSE 1649行useSSE事件扩展+确认弹窗+授权API) | **高** | 3天 | Phase 6 | ✅ |
+| **Phase 8** | 重复执行消除(A+B+C+D+E+F) + trim_history字符数阈值优化(当前150K字符/80%触发/70%裁剪) | 中 | 2天 | Phase 6 | ✅ |
+| **Phase 9** | 删除7个同质Agent + 死代码清理 + git tag标记回滚点 | 中 | 1天 | Phase 7验证通过 | ✅ |
+| **Phase 10** | 全量回归测试 + 安全测试 + 性能测试 + httpx版本锁兼容验证 | 低 | 2天 | Phase 9 | ✅ |
+| **总计** | | | **~21.5天** | | |
 
 ### 8.2 阶段依赖关系
 
 ```
-Phase 0(测试基线+安全分级)
+Phase 0(测试基线+安全分级标注+safety_level字段)
     ↓
 Phase 1(IntentRegistry+AgentProfile+AgentRegistry) ──┐
     ↓                                                  │
-Phase 2(GenericReactAgent) ────────────────────────────┤
+Phase 2(GenericReactAgent+动态Prompt+多分类角色融合) ──┤
     ↓                                                  │
-Phase 3(TextCorrectorV2+PipelineContext) ──────────────┤
+Phase 3(TextCorrectorV2+PipelineContext+chat_router对齐)┤
     ↓                                                  │
-Phase 4(SemanticRouter) ───────────────────────────────┤
+Phase 4(SemanticRouter+intent_classifier关系厘清) ─────┤
     ↓                                                  │
-Phase 5(ToolSafetyLayer+ToolObserver+HITL后端) ────────┘
+Phase 5(ToolSafetyLayer迁移+ToolObserver+HITL后端) ────┘
     ↓
-Phase 6(ChatRouter改造 ── Feature Flag灰度切换)
+Phase 6(ChatRouter改造+Feature Flag灰度切换)
     ↓
-Phase 7(前端HITL集成)
+Phase 7(前端HITL集成+useSSE事件扩展+确认弹窗)
     ↓
-Phase 8(重复执行消除A~F)
+Phase 8(重复执行消除A~F+trim_history优化)
     ↓
-Phase 9(删除死代码)
+Phase 9(删除7同质Agent+死代码清理+git tag回滚点)
     ↓
-Phase 10(全量回归测试)
+Phase 10(全量回归+安全+性能+httpx兼容验证)
 ```
 
 ### 8.3 Phase 6 灰度迁移策略（关键！）
@@ -1048,23 +1243,14 @@ architecture:
 
 ---
 
-## 九、风险分析与缓解
+## 九、未解决问题
 
-| 风险 | 影响 | 概率 | 缓解措施 | 来源 |
-|------|------|------|---------|------|
-| Function Calling路由延迟高(~500ms) | 用户感知首响变慢 | 中 | 统一模型+temperature=0.1+max_tokens=100+5秒内存缓存 | Agent高级调度方案 |
-| HITL频繁弹窗打断心流 | 用户体验差 | 高 | Session Trust(同会话免重复)+DANGEROUS仅占~15个工具 | 两个方案对比分析 |
-| 前后端交互卡死 | 挂起期间网络闪断 | 低 | 60秒超时自动拒绝+死锁检测 | Agent高级调度方案 |
-| Semantic Router路由错误 | 给错工具集→任务失败 | 中 | 低置信度走FALLBACK_CATEGORIES+动态扩展兜底 | Agent根本性重构方案 |
-| ToolScorer筛选遗漏关键工具 | LLM无法完成任务 | 低 | Top-K=15(当前最大分类11)+动态加载+tool_search兜底 | Agent根本性重构方案 |
-| 统一Agent无法覆盖未预见差异 | 某些Agent行为异常 | 低 | 保留File/Time独立子类扩展点 | Agent与意图分类方案 |
-| 循环依赖(IntentRegistry↔Agent) | 启动崩溃 | 低 | 惰性加载+启动时ensure_intents_registered() | Agent与意图分类方案 |
-| 缓存导致数据陈旧 | 文件/网络状态变化但缓存命中 | 低 | TTL=60秒+ping/curl不缓存+shell命令参数级判断 | 重复执行分析 |
-| 观察system→user角色导致LLM误认 | 将observation当用户输入 | 中 | 加[Tool Result]前缀+测试环境验证 | 重复执行分析 |
-| 意图注册表单点故障 | registry为空全系统不可用 | 低 | 兜底：回退到硬编码默认定义 | Agent与意图分类方案 |
-| Helper层危险操作 | toolhelper内部调用绕过安全检查 | 中 | Helper层内部对危险操作也做规则检查 | 三合一方案对齐分析 |
-| 并行调用异常检测不准确 | 误判正常批量操作为异常 | 低 | 阈值可调(10次/分钟)+手动恢复 | Agent融合方案 |
-| **HITL时序缺口(Phase 5→Phase 7)** | **Phase 5实现HITL后端但Phase 7才做前端，中间HITL无交互界面可用。若`hitl.enabled: true`则请求挂起60秒超时自动拒绝(慢)；若`hitl.enabled: false`则所有危险操作自动放行(不安全)** | **高** | ①配置`fallback_mode: block`，Phase 5→7期间DANGEROUS/DESTRUCTIVE自动拦截(安全)；②后端实现fallback检测：无前端监听时走block而非放行；③Phase 7完成后切`fallback_mode: prompt`恢复正常交互。详见§8.3 | 小沈审查发现 |
+以下问题当前设计无法解决，需在实施过程中持续关注：
+
+| 问题 | 为何无法现在解决 | 处置 |
+|------|----------------|------|
+| 方案G(Observation角色system→user)对LLM理解的影响 | 不同LLM对user/tool角色理解差异大，需在**实际使用的模型**上A/B测试验证 | Phase 8实施方案G时做对比测试，如果LLM误将observation当用户输入则**放弃此方案**，保留role=system |
+| threading.Lock→asyncio.Lock的旧代码迁移 | AIServiceFactory/sessions/file_tools的threading.Lock迁移涉及运行时行为变化 | Phase 9统一迁移，迁移前需并发测试验证 |
 
 ---
 
@@ -1072,12 +1258,13 @@ architecture:
 
 | 改造项 | 说明 | 工作量 | 来源 |
 |--------|------|--------|------|
-| SSE事件解析 | 新增`authorization_required`事件处理 | 0.5天 | Agent融合方案 |
+| SSE事件扩展 | 在useSSE(1649行)中新增`authorization_required`事件类型处理，需侵入核心事件循环(switch-case 12种事件) | 1天 | Agent融合方案 + 小沈审查v1.2 |
 | 安全确认弹窗组件 | 展示工具名+风险说明+参数(脱敏)+允许/拒绝/本会话信任 | 1天 | Agent融合方案 |
 | 授权API调用 | POST `/api/v1/authorization`回传用户选择 | 0.5天 | Agent融合方案 |
 | 超时处理 | 60秒无操作自动拒绝，更新UI | 0.5天 | Agent融合方案 |
 | Session Trust复选框 | "本次会话信任此操作" | 0.5天 | Agent融合方案 |
 | 异常暂停提示 | Observer触发暂停时展示警告+手动恢复按钮 | 0.5天 | Agent融合方案 |
+| **合计** | | **4天**(设计原估3.5天，useSSE侵入复杂度+0.5天) | |
 
 ---
 
@@ -1088,8 +1275,8 @@ architecture:
 | 指标 | 当前(v0.13.x) | 重构后 | 改善 | 来源 |
 |------|--------------|--------|------|------|
 | Agent子类数 | 9 | **1(+2特殊)** | -78% | Agent与意图分类方案 |
-| 代码行数 | ~4700行 | **~3100行** | **-34%** | 综合估算 |
-| 安全层数 | 1层(黑名单) | **4层纵深** | +300% | 两个方案对比分析 |
+| 实施工期 | ~21.5天 | | | 小沈审查v1.2修正(原17天) |
+| 安全层数 | 1层(4级风险command_security) | **4层纵深** | 工具级安全替代命令级安全 | 两个方案对比分析 + 小沈审查v1.2 |
 | 意图路由方式 | CRSS正则 | **Function Calling** | 准确率↑ | Agent高级调度方案 |
 | 路由延迟 | <1ms(CRSS) | **~500ms** | 统一模型Function Calling，TTFT可接受 | Agent融合方案 |
 | 重复执行步数 | 54步 | **6-8步** | **-85%** | 重复执行分析 |
@@ -1144,7 +1331,8 @@ architecture:
 
 ---
 
-**文档完成时间**: 2026-05-22 09:59:55  
+**文档完成时间**: 2026-05-23  
 **编写人**: 小健  
-**审核人**: 待北京老陈审核  
-**下一步**: 北京老陈确认方案后，按Phase 0→10顺序实施
+**审查人**: 小沈(v1.2审查修正)  
+**审核状态**: 小沈v1.2审查完成，待北京老陈终审  
+**下一步**: 北京老陈确认方案后，按Phase 0→10顺序分阶段实施，每阶段验收通过后进入下一阶段
