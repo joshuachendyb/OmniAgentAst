@@ -569,7 +569,7 @@ async def rollback_operations(request: RollbackRequest):
             
             # 获取操作信息用于响应
             operations = []
-            session_id = safety.get_operation_session_id(request.operation_id) or "unknown"
+            session_id = safety.get_operation_task_id(request.operation_id) or "unknown"
             
             if success:
                 operations.append({
