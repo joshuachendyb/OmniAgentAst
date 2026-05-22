@@ -14,12 +14,14 @@ from app.services.tools.meta.meta_schema import (
     ToolHelpInput,
     ToolSearchInput,
     PipelineInput,
+    BatchProcessInput,
 )
 
 from app.services.tools.meta.meta_tools import (
     tool_help,
     tool_search,
     pipeline,
+    batch_process,
 )
 
 from app.services.tools.meta.time_tools import (
@@ -153,6 +155,19 @@ META_TOOL_DESCRIPTIONS = {
 - utc_to_local: local_time, timezone, utc_original
 - local_to_utc: utc_time, iso, timestamp
 - any: 目标时区的时间, iso, timestamp""",
+    "batch_process": """批量处理文件：按glob模式匹配文件，执行rename/delete/copy操作。
+默认dry_run=True预览保护，确认后执行。
+
+使用场景：
+- "把所有.txt改成.md"：batch_process(source_pattern="*.txt", action="rename", target_pattern="*.md")
+- "清空所有.log临时文件"：batch_process(source_pattern="logs/*.log", action="delete", dry_run=False)
+- "把所有备份文件拷贝到归档目录"：batch_process(source_pattern="backup/*.bak", action="copy", target_dir="D:/archive/")
+
+参数说明：
+- source_pattern：glob匹配模式，支持**递归匹配
+- max_files：安全上限，默认500，防误操作
+- dry_run：默认True预览，False才实际执行
+""",
     "timer": """定时器管理。
 
 使用场景：
@@ -201,6 +216,10 @@ META_TOOL_EXAMPLES = {
         {"time_value": "2026-05-18 10:00:00", "direction": "utc_to_local", "tz": "Asia/Shanghai"},
         {"time_value": "2026-05-18 10:00:00", "direction": "any", "tz": "Asia/Shanghai"},
     ],
+    "batch_process": [
+        {"source_pattern": "*.txt", "action": "rename", "target_pattern": "*.md", "dry_run": True},
+        {"source_pattern": "logs/*.log", "action": "delete", "dry_run": False, "max_files": 100},
+    ],
     "timer": [
         {"action": "set", "delay": 180, "callback": "提醒用户喝水"},
         {"action": "list"},
@@ -216,6 +235,7 @@ def _register_meta_tools():
         "tool_help": tool_help,
         "tool_search": tool_search,
         "pipeline": pipeline,
+        "batch_process": batch_process,
         "get_time": get_time,
         "time_add": time_add,
         "time_diff": time_diff,
@@ -228,6 +248,7 @@ def _register_meta_tools():
         "tool_help": ToolHelpInput,
         "tool_search": ToolSearchInput,
         "pipeline": PipelineInput,
+        "batch_process": BatchProcessInput,
         "get_time": GetTimeInput,
         "time_add": TimeAddInput,
         "time_diff": TimeDiffInput,

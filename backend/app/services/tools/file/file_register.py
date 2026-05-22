@@ -5,7 +5,7 @@ File Register - 文件工具注册点（精简版 v2.0）
 【架构规范】2026-04-26 小沈
 【精简时间】2026-05-18 小沈 — 第17章工具精简：26→11
 
-12个工具清单（F1-F12）：
+11个工具清单（F1-F11）：
 F1  read_file          — 合并read_text_file + read_batch_file
 F2  write_text_file    — 写文本文件
 F3  read_media_file    — 读媒体文件
@@ -17,7 +17,7 @@ F8  rename_file        — 合并rename_file + batch_rename
 F9  archive_tool       — 合并compress_files + extract_archive
 F10 file_operation     — 合并move_file + copy_file + delete_file
 F11 data_file_format   — 合并json/yaml/toml/ini/xml/properties
-F12 batch_process      — 批量文件处理（rename/delete/copy）
+
 
 创建时间: 2026-04-26
 精简时间: 2026-05-18
@@ -27,7 +27,6 @@ import logging
 
 from app.services.tools.file.file_schema import (
     ArchiveToolInput,
-    BatchProcessInput,
     DataFileFormatInput,
     EditFileInput,
     FileOperationInput,
@@ -181,35 +180,22 @@ FILE_TOOL_DESCRIPTIONS = {
 
     "data_file_format": """读取/修改 JSON、YAML、TOML、INI、XML、Properties 等结构化配置文件 — 统一入口。
 
-当你需要解析配置文件、修改配置项、读取JSON数据时使用此工具。
-⚠️ CSV/Excel 使用 Document 分类的 read_document，不在此工具范围。
-⚠️ write模式仅支持JSON/YAML/TOML，INI/XML/Properties暂不支持写入。
+    当你需要解析配置文件、修改配置项、读取JSON数据时使用此工具。
+    ⚠️ CSV/Excel 使用 Document 分类的 read_document，不在此工具范围。
+    ⚠️ write模式仅支持JSON/YAML/TOML，INI/XML/Properties暂不支持写入。
 
-使用示例：
-- 读JSON：{"action": "read", "file_path": "D:/config.json"}
-- 写JSON：{"action": "write", "file_path": "D:/config.json", "data": {"key": "value"}}
-- 读YAML：{"action": "read", "file_path": "D:/config.yaml"}
-- 写TOML：{"action": "write", "file_path": "D:/config.toml", "data": {"section": {"k": "v"}}}
+    使用示例：
+    - 读JSON：{"action": "read", "file_path": "D:/config.json"}
+    - 写JSON：{"action": "write", "file_path": "D:/config.json", "data": {"key": "value"}}
+    - 读YAML：{"action": "read", "file_path": "D:/config.yaml"}
+    - 写TOML：{"action": "write", "file_path": "D:/config.toml", "data": {"section": {"k": "v"}}}
+    
+    参数说明：
+    - data：write模式必填，JSON/YAML/TOML传dict或list
+    - indent：仅JSON写入有效，格式化缩进空格数（默认2）
 
-参数说明：
-- data：write模式必填，JSON/YAML/TOML传dict或list
-- indent：仅JSON写入有效，格式化缩进空格数（默认2）
-
-返回数据说明：
-- data.success/data.data(读取)/data.format/data.bytes_written(写入)""",
-    "batch_process": """批量处理文件：按glob模式匹配文件，执行rename/delete/copy操作。
-默认dry_run=True预览保护，确认后执行。
-
-使用场景：
-- "把所有.txt改成.md"：batch_process(source_pattern="*.txt", action="rename", target_pattern="*.md")
-- "清空所有.log临时文件"：batch_process(source_pattern="logs/*.log", action="delete", dry_run=False)
-- "把所有备份文件拷贝到归档目录"：batch_process(source_pattern="backup/*.bak", action="copy", target_dir="D:/archive/")
-
-参数说明：
-- source_pattern：glob匹配模式，支持**递归匹配
-- max_files：安全上限，默认500，防误操作
-- dry_run：默认True预览，False才实际执行
-""",
+    返回数据说明：
+    - data.success/data.data(读取)/data.format/data.bytes_written(写入)""",
 }
 
 
@@ -263,10 +249,6 @@ FILE_TOOL_EXAMPLES = {
         {"action": "read", "file_path": "D:/config.json"},
         {"action": "write", "file_path": "D:/config.yaml", "data": {"key": "value"}},
     ],
-    "batch_process": [
-        {"source_pattern": "*.txt", "action": "rename", "target_pattern": "*.md", "dry_run": True},
-        {"source_pattern": "logs/*.log", "action": "delete", "dry_run": False, "max_files": 100},
-    ],
 }
 
 
@@ -286,7 +268,6 @@ TOOL_INPUT_MODELS = {
     "archive_tool": ArchiveToolInput,
     "file_operation": FileOperationInput,
     "data_file_format": DataFileFormatInput,
-    "batch_process": BatchProcessInput,
 }
 
 
@@ -318,7 +299,6 @@ def _register_file_tools():
         "archive_tool": lambda **kw: _get_ft().archive_tool(**kw),
         "file_operation": lambda **kw: _get_ft().file_operation(**kw),
         "data_file_format": lambda **kw: _get_ft().data_file_format(**kw),
-        "batch_process": lambda **kw: _get_ft().batch_process(**kw),
     }
 
     for name, method in tool_methods.items():
