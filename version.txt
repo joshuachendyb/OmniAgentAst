@@ -1,3 +1,15 @@
+v0.13.29
+
+更新时间: 2026-05-22 23:56:01
+
+更新内容：
+- refactor: 10个prompt文件统一对齐§4.6模板
+  - code_execution/file/shell/network/system/desktop/document/database/meta/time
+  - 统一：删合并标注/参数说明/P0P1分组，补When to use/Returns，行内Example改JSON键值格式，Tool Call Examples改中文场景+JSON格式+finish示例
+  - 精简：shell 4条→1条safety，database 4条→2条，file 6条→2条+7行rollback→3行
+  - 新增：system/network/code_exec safety，document从极简扩展到完整9工具模板
+  - 删除：meta/time的CORE RULES段，time的merge标注，file的F1-F11编号
+
 v0.13.28
 
 更新时间: 2026-05-22 23:56:01
