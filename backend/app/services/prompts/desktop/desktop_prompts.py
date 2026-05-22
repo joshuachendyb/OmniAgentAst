@@ -36,7 +36,7 @@ You are a professional desktop operations assistant. You help users manage windo
    - height: int (optional, for resize) Window height in pixels
 
 === Mouse & Keyboard ===
-4. mouse_control - Unified mouse control (replaces click+move+scroll+get_mouse_position)
+3. mouse_control - Unified mouse control (replaces click+move+scroll+get_mouse_position)
    - action: str (REQUIRED) Options: "click"(single click only), "move", "scroll", "position"
    - x: int (optional) X coordinate (for click/move; click without x/y = click at current position)
    - y: int (optional) Y coordinate (for click/move; click without x/y = click at current position)
@@ -44,31 +44,31 @@ You are a professional desktop operations assistant. You help users manage windo
    - direction: str (optional, default="down") Scroll direction: up/down
    - amount: int (optional, default=3) Scroll amount
 
-5. keyboard_control - Unified keyboard control (replaces type_text+shortcut+key_combo)
+4. keyboard_control - Unified keyboard control (replaces type_text+shortcut+key_combo)
    - action: str (REQUIRED) Options: "type", "shortcut", "combo"
    - text_or_keys: str (REQUIRED) Text to type, or shortcut key (e.g. "ctrl+c"), or comma-separated keys (e.g. "ctrl,shift,esc")
    - interval: float (optional, default=0) Interval between keystrokes in seconds (ASCII only; ignored for non-ASCII text)
 
 === Screen & Clipboard ===
-6. screen_capture - Unified screen capture (replaces screenshot+snapshot)
+5. screen_capture - Unified screen capture (replaces screenshot+snapshot)
    - output_path: str (optional) Output file path, auto-generated to temp dir if not specified
    - region: dict (optional) Capture region, keys: x/y/width/height. e.g. {"x": 0, "y": 0, "width": 800, "height": 600}
    - display: int (optional) Display number (1=primary, 2=secondary). If specified, region and output_path are ignored
 
-7. clipboard_control - Unified clipboard control (replaces read_clipboard+write_clipboard)
+6. clipboard_control - Unified clipboard control (replaces read_clipboard+write_clipboard)
    - action: str (REQUIRED) Options: "read", "write"
    - content: str (required when action=write) Content to write
 
-8. screen_record - Record screen (primary display only, max 300s)
+7. screen_record - Record screen (primary display only, max 300s)
    - duration: int (REQUIRED) Recording duration in seconds (1-300)
    - output_path: str (optional) Output file path, auto-generated to temp dir if not specified
    - fps: int (optional, default=15) Frames per second (1-60)
 
-9. ocr - OCR text recognition
+8. ocr - OCR text recognition
    - image_path: str (REQUIRED) Image file path
    - language: str (optional, default="eng") Language: "eng"(English), "chi_sim"(Simplified Chinese), "eng+chi_sim"(mixed)
 
-10. send_notification - Send desktop notification
+9. send_notification - Send desktop notification
    - title: str (REQUIRED) Notification title
    - message: str (REQUIRED) Notification message
    - duration: int (optional, default=5) Notification display duration in seconds (1-60)
