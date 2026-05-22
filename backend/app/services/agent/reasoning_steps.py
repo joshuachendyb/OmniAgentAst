@@ -555,26 +555,30 @@ class ObservationStep(ToolMixin, ReasoningStep):
     
     def to_dict(self) -> Dict[str, Any]:
         base_dict = ReasoningStep.to_dict(self)
-        d = {
-            "observation": self._observation,
-            "return_direct": self._return_direct,
+        
+        # 【改造 2026-05-22 小沈】observation改为JSON对象，符合第13章设计方案
+        observation_obj = {
+            "summary": self._observation or self._summary or "",
             "tool_name": self._tool_name,
-            "tool_params": self._tool_params,
+            "tool_params": self._tool_params or {},
+            "return_direct": self._return_direct,
         }
+        
         if self._execution_status:
-            d["execution_status"] = self._execution_status
+            observation_obj["execution_status"] = self._execution_status
+        if self._error_message:
+            observation_obj["error_message"] = self._error_message
+        if self._warning:
+            observation_obj["warning"] = self._warning
+        if self._next_actions:
+            observation_obj["next_actions"] = self._next_actions
+        if self._attachment is not None:
+            observation_obj["attachment"] = self._attachment
+        
+        d = {"observation": observation_obj}
         if self._code:
             d["code"] = self._code
-        if self._warning:
-            d["warning"] = self._warning
-        if self._attachment is not None:
-            d["attachment"] = self._attachment
-        if self._next_actions:
-            d["next_actions"] = self._next_actions
-        if self._summary:
-            d["summary"] = self._summary
-        if self._error_message:
-            d["error_message"] = self._error_message
+        
         base_dict.update(d)
         return base_dict
 

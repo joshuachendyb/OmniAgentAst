@@ -101,8 +101,9 @@ export interface ExecutionStep {
   step?: number;
   thought?: string;
   action?: string;  // 兼容旧字段
-  observation?: unknown;
+  observation?: unknown;  // 【改造2026-05-22】ObservationData对象或字符串（向后兼容）
   result?: string;
+  code?: string;  // 【新增2026-05-22】状态码（SUCCESS/ERROR/WARNING）
   
   // === 【小新重构】type=action_tool 新字段（与thought类型共用tool_name/tool_params）===
   execution_status?: 'success' | 'error' | 'warning'; // 执行状态（新）
@@ -1317,19 +1318,44 @@ const processSSEData = (
       }
 
       // 【小沈修复 2026-04-11】新增：observation类型处理
+      // 【小沈改造 2026-05-22】支持observation为JSON对象（第13章设计方案）
       case "observation": {
         const stepNum = rawData.step || 1;
         console.log(`%c[STEP] [type=observation] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`, 'color: red; font-weight: bold;');
         
-        // 【小沈修改2026-04-16】使用后端字段存储，不再用content中转
         step.step = rawData.step || 1;
         step.timestamp = rawData.timestamp || Date.now();
-        step.tool_name = rawData.tool_name || "";
-        step.tool_params = rawData.tool_params || {};
-        step.return_direct = rawData.return_direct;
-        // 观察内容存储在observation字段
-        step.observation = rawData.observation || "";
-        step.content = rawData.observation || "";  // 兼容旧代码
+        step.code = rawData.code;  // 状态码（SUCCESS/ERROR/WARNING）
+        
+        // 【兼容层】支持两种格式
+        if (rawData.observation && typeof rawData.observation === 'object') {
+          // 新格式：observation是JSON对象
+          const obsData = rawData.observation as {
+            summary: string;
+            tool_name: string;
+            tool_params: Record<string, unknown>;
+            return_direct: boolean;
+            execution_status?: string;
+            error_message?: string;
+            warning?: string;
+            next_actions?: string[];
+          };
+          step.observation = obsData;
+          step.tool_name = obsData.tool_name;
+          step.tool_params = obsData.tool_params;
+          step.return_direct = obsData.return_direct;
+          step.summary = obsData.summary;
+          step.execution_status = obsData.execution_status as 'success' | 'error' | 'warning';
+          step.error_message = obsData.error_message;
+          step.content = obsData.summary;  // content用于显示
+        } else {
+          // 旧格式：observation是字符串（向后兼容）
+          step.observation = rawData.observation || "";
+          step.tool_name = rawData.tool_name || "";
+          step.tool_params = rawData.tool_params || {};
+          step.return_direct = rawData.return_direct;
+          step.content = rawData.observation || "";
+        }
         
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];

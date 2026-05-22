@@ -99,6 +99,29 @@ export const FontWeight = {
   LIGHT: 300,           // 辅助文字
 } as const;
 
+// 间距常量 - 小强 2026-05-22
+export const Spacing = {
+  XS: 4,    // 极小间距
+  SM: 6,    // 小间距（标准）
+  MD: 8,    // 中间距
+  LG: 12,   // 大间距
+  XL: 16,   // 超大间距
+} as const;
+
+// 边框宽度常量 - 小强 2026-05-22
+export const BorderWidth = {
+  THIN: 1,      // 细边框
+  DEFAULT: 1,   // 默认边框
+  THICK: 2,     // 粗边框
+} as const;
+
+// 圆角常量 - 小强 2026-05-22
+export const Radius = {
+  SM: 4,        // 小圆角
+  DEFAULT: 6,   // 默认圆角
+  LG: 8,        // 大圆角
+} as const;
+
 // 颜色常量 - 9种浅色方案精简版
 // 设计原则：3种色系×3种深浅=9种浅色，绝对不用深色，禁止到处框框色块
 export const Colors = {
@@ -272,17 +295,17 @@ export const getStepStyle = (stepType: StepType | string, isPrimary: boolean = t
   const scheme = (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) || colorSchemes.start;
   
   return {
-    borderRadius: 8,
-    padding: "6px",
-    marginTop: 6,
+    borderRadius: Radius.LG,
+    padding: `${Spacing.SM}px`,
+    marginTop: Spacing.SM,
     fontSize: isPrimary ? FontSize.SECONDARY : FontSize.TERTIARY,
     lineHeight: 1.8,
     background: scheme.bg1,
-    border: `1px solid ${scheme.border}`,
+    border: `${BorderWidth.THIN}px solid ${scheme.border}`,
     color: scheme.text,
     display: 'flex' as const,
     flexDirection: 'column' as const,
-    gap: '1px',
+    gap: `${BorderWidth.THIN}px`,
   };
 };
 
@@ -298,7 +321,7 @@ export const getStepTitleStyle = (stepType: StepType | string) => {
     fontWeight: FontWeight.BOLD,
     color: scheme.text,
     fontSize: FontSize.SECONDARY,
-    marginBottom: 4,
+    marginBottom: Spacing.XS,
   };
 };
 
@@ -346,7 +369,7 @@ export const getStepLabelStyle = (stepType: StepType | string) => {
   return {
     display: 'inline-flex' as const,
     alignItems: 'center' as const,
-    gap: 4,
+    gap: Spacing.XS,
     padding: '2px 0',     // 取消背景色块后精简padding
     borderRadius: 0,      // 取消圆角
     backgroundColor: 'transparent', // 无背景
@@ -373,12 +396,12 @@ export const getStepBadgeStyle = (
   
   if (variant === 'outline') {
     return {
-      padding: '4px 10px',
-      borderRadius: 6,
+      padding: `${Spacing.XS}px ${Spacing.MD}px`,
+      borderRadius: Radius.DEFAULT,
       fontSize: FontSize.TERTIARY,
       fontWeight: FontWeight.BOLD,
       color: color,
-      border: '1.5px solid ' + color,
+      border: `${BorderWidth.THIN}px solid ${color}`,
       backgroundColor: 'transparent',
     };
   }
@@ -394,7 +417,7 @@ export const getStepBadgeStyle = (
     border: 'none',
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 4,
+    gap: Spacing.XS,
   };
 };
 
@@ -407,11 +430,11 @@ export const getStepDetailStyle = (stepType: StepType | string) => {
   const scheme = (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) || colorSchemes.start;
   
   return {
-    marginTop: 6,
-    padding: '6px 10px',
-    borderRadius: 4,
+    marginTop: Spacing.SM,
+    padding: `${Spacing.SM}px ${Spacing.MD}px`,
+    borderRadius: Radius.SM,
     backgroundColor: `${scheme.bg1}20`, // 20% opacity
-    border: `1px solid ${scheme.border}`,
+    border: `${BorderWidth.THIN}px solid ${scheme.border}`,
     fontSize: FontSize.CODE,
     fontFamily: "Consolas, Monaco, 'Courier New', monospace",
     color: Colors.TEXT.TERTIARY,
@@ -434,16 +457,16 @@ export const getTimestampStyle = (stepType: StepType): React.CSSProperties => {
   
   return {
     marginLeft: "auto",              // 靠右对齐
-    padding: '3px 10px',             // 增加内边距
-    borderRadius: 6,                 // 圆角
+    padding: `${Spacing.XS - 1}px ${Spacing.MD}px`,             // 增加内边距
+    borderRadius: Radius.DEFAULT,                 // 圆角
     backgroundColor: scheme.bg1,     // 步骤类型的浅色背景（保持各类型特色）
     // 【小强修复 2026-04-14】去掉边框，更简洁
-    color: '#595959',                // 统一浅灰色字体，符合9种浅色方案
+    color: Colors.TEXT.PRIMARY,                // 统一浅灰色字体，符合9种浅色方案
     fontSize: FontSize.TERTIARY,     // 12px
     fontWeight: FontWeight.BOLD,     // 加粗
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 4,
+    gap: Spacing.XS,
     boxShadow: '0 1px 2px rgba(0,0,0,0.05)',  // 轻微阴影
   };
 };
@@ -466,11 +489,11 @@ export const getNextStepStyle = (stepType: StepType): React.CSSProperties => {
   };
   
   return {
-    marginTop: 6,
-    padding: '6px 10px',
-    borderRadius: 4,
+    marginTop: Spacing.SM,
+    padding: `${Spacing.SM}px ${Spacing.MD}px`,
+    borderRadius: Radius.SM,
     backgroundColor: hexToRgba(scheme.bg1, 0.19),  // 约30%透明度
-    border: `1px solid ${hexToRgba(scheme.border, 0.25)}`,  // 约40%透明度
+    border: `${BorderWidth.THIN}px solid ${hexToRgba(scheme.border, 0.25)}`,  // 约40%透明度
     fontSize: FontSize.TERTIARY,
     color: scheme.text,
     fontWeight: FontWeight.MEDIUM,
@@ -487,14 +510,14 @@ export const getStatusBadgeStyle = (status: 'success' | 'error'): React.CSSPrope
   return {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 4,
-    padding: '2px 8px',
-    borderRadius: 4,
+    gap: Spacing.XS,
+    padding: `2px ${Spacing.SM}px`,
+    borderRadius: Radius.SM,
     backgroundColor: isSuccess ? '#f6ffed' : '#fff1f0',
-    color: isSuccess ? '#52c41a' : '#ff4d4f',
+    color: isSuccess ? Colors.SUCCESS : Colors.ERROR,
     fontSize: FontSize.TERTIARY,
     fontWeight: FontWeight.MEDIUM,
-    border: `1px solid ${isSuccess ? '#b7eb8f' : '#ffa39e'}`,
+    border: `${BorderWidth.THIN}px solid ${isSuccess ? '#b7eb8f' : '#ffa39e'}`,
   };
 };
 
@@ -506,14 +529,14 @@ export const getFinishedBadgeStyle = (): React.CSSProperties => {
   return {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 4,
-    padding: '4px 12px',
-    borderRadius: 6,
+    gap: Spacing.XS,
+    padding: `${Spacing.XS}px ${Spacing.LG}px`,
+    borderRadius: Radius.DEFAULT,
     backgroundColor: '#f6ffed',
-    color: '#52c41a',
+    color: Colors.SUCCESS,
     fontSize: FontSize.TERTIARY,
     fontWeight: FontWeight.BOLD,
-    border: '1px solid #b7eb8f',
+    border: `${BorderWidth.THIN}px solid #b7eb8f`,
     boxShadow: '0 2px 4px rgba(82,196,26,0.1)',
   };
 };

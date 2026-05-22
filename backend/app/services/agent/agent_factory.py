@@ -176,10 +176,18 @@ except ImportError as e:
     print(f"[AgentFactory] SystemReactAgent: {e}")
 
 # DocumentReactAgent
+# 【注意】行164-166已将'document'注册为DatabaseReactAgent作为兼容别名
+# 此处覆盖为DocumentReactAgent（新规范名），是设计意图，不是bug - 小沈 2026-05-22
 try:
     from app.services.agent.document_react import DocumentReactAgent
     from app.services.tools.registry import ToolCategory
-    AgentFactory.register('document', DocumentReactAgent, ToolCategory.DOCUMENT)
+    if 'document' not in AgentFactory._AGENTS:
+        AgentFactory.register('document', DocumentReactAgent, ToolCategory.DOCUMENT)
+    else:
+        # 覆盖旧兼容别名，确保新规范名的Agent正确 - 小沈 2026-05-22
+        AgentFactory._AGENTS['document'] = DocumentReactAgent
+        from app.services.tools.registry import ToolCategory
+        AgentFactory._TOOL_CATEGORIES['document'] = ToolCategory.DOCUMENT
 except ImportError as e:
     print(f"[AgentFactory] DocumentReactAgent: {e}")
 

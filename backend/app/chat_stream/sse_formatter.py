@@ -95,44 +95,27 @@ def format_action_tool_sse(
 
 def format_observation_sse(
     step: int,
-    observation: str = '',
-    tool_name: str = '',
-    tool_params: Optional[Dict] = None,
-    return_direct: bool = False,
-    execution_status: str = '',
+    observation: Dict[str, Any],
     code: str = '',
-    warning: Optional[str] = None,
-    attachment: Any = None,
-    next_actions: Optional[list] = None,
-    summary: str = '',
-    error_message: str = '',
     timestamp: str = ''
 ) -> str:
     """
-    格式化 observation 事件 — 传详细信息（code/warning/next_actions/attachment/summary/error_message）
-    业务数据（data）由 action_tool 事件传递，不重复
+    格式化 observation 事件 — observation为JSON对象（第13章设计方案）
+    
+    Args:
+        step: 步骤编号
+        observation: observation JSON对象，包含 summary/tool_name/tool_params/return_direct等
+        code: 状态码（SUCCESS/ERROR/WARNING）
+        timestamp: 时间戳
+    
+    Returns:
+        SSE 格式字符串
     """
-    d = {
-        'tool_name': tool_name,
-        'tool_params': tool_params or {},
-        'observation': observation,
-        'return_direct': return_direct,
-        'timestamp': timestamp,
-    }
-    if execution_status:
-        d['execution_status'] = execution_status
+    d = {'observation': observation}
     if code:
         d['code'] = code
-    if warning:
-        d['warning'] = warning
-    if attachment is not None:
-        d['attachment'] = attachment
-    if next_actions:
-        d['next_actions'] = next_actions
-    if summary:
-        d['summary'] = summary
-    if error_message:
-        d['error_message'] = error_message
+    if timestamp:
+        d['timestamp'] = timestamp
     return format_sse_event('observation', step, d)
 
 

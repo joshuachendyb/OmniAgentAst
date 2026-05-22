@@ -1003,6 +1003,7 @@ architecture:
   
   hitl:
     enabled: true
+    fallback_mode: prompt        # prompt=正常交互弹窗 block=Phase5→7缺口期自动拦截(安全降级)
     session_trust_ttl: 300       # Session Trust有效期（秒）
     suspend_timeout: 60          # 挂起超时（秒）
   
@@ -1017,15 +1018,16 @@ architecture:
 |------|---------|
 | Semantic Router | `use_semantic_router: false` → 使用CRSS |
 | AgentRegistry | `use_agent_registry: false` → 使用AgentFactory |
-| HITL | `hitl.enabled: false` → 所有工具自动放行 |
+| HITL | `hitl.enabled: false` → 所有工具自动放行。**安全降级**：Phase 5→7缺口期设`fallback_mode: block`→DANGEROUS/DESTRUCTIVE自动拦截 |
 | ToolObserver | `use_tool_observer: false` → 不记录审计 |
 
 **灰度步骤**：
 1. 部署后全部开关为 `false`（默认走旧架构）
 2. Phase 0-2完成后 → `use_agent_registry: true`（内部测试Agent层）
 3. Phase 3-4完成后 → `use_semantic_router: true`（测试路由层）
-4. Phase 5完成后 → `use_tool_safety_layer: true`（测试安全层）
-5. 全部运行2周无问题 → Phase 9删除旧代码
+4. **Phase 5完成后** → `use_tool_safety_layer: true` + **`hitl.fallback_mode: block`**（安全层上线，DANGEROUS自动拦截，前端未就绪前不走交互弹窗——安全降级）
+5. **Phase 7完成后** → `hitl.fallback_mode: prompt`（切换到正常HITL交互弹窗）
+6. 全部运行2周无问题 → Phase 9删除旧代码
 
 ### 8.4 回归测试重点
 
@@ -1062,6 +1064,7 @@ architecture:
 | 意图注册表单点故障 | registry为空全系统不可用 | 低 | 兜底：回退到硬编码默认定义 | Agent与意图分类方案 |
 | Helper层危险操作 | toolhelper内部调用绕过安全检查 | 中 | Helper层内部对危险操作也做规则检查 | 三合一方案对齐分析 |
 | 并行调用异常检测不准确 | 误判正常批量操作为异常 | 低 | 阈值可调(10次/分钟)+手动恢复 | Agent融合方案 |
+| **HITL时序缺口(Phase 5→Phase 7)** | **Phase 5实现HITL后端但Phase 7才做前端，中间HITL无交互界面可用。若`hitl.enabled: true`则请求挂起60秒超时自动拒绝(慢)；若`hitl.enabled: false`则所有危险操作自动放行(不安全)** | **高** | ①配置`fallback_mode: block`，Phase 5→7期间DANGEROUS/DESTRUCTIVE自动拦截(安全)；②后端实现fallback检测：无前端监听时走block而非放行；③Phase 7完成后切`fallback_mode: prompt`恢复正常交互。详见§8.3 | 小沈审查发现 |
 
 ---
 

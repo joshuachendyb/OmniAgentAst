@@ -127,17 +127,8 @@ def _format_sse_event(event: Dict[str, Any], step: int, model: str, provider: st
     elif event_type == 'observation':
         return format_observation_sse(
             step=step,
-            observation=event.get('observation', ''),
-            tool_name=event.get('tool_name', ''),
-            tool_params=event.get('tool_params', {}),
-            return_direct=event.get('return_direct', False),
-            execution_status=event.get('execution_status', ''),
+            observation=event.get('observation', {}),
             code=event.get('code', ''),
-            warning=event.get('warning'),
-            attachment=event.get('attachment'),
-            next_actions=event.get('next_actions'),
-            summary=event.get('summary', ''),
-            error_message=event.get('error_message', ''),
             timestamp=event.get('timestamp', '')
         )
     elif event_type == 'final':
