@@ -5,17 +5,16 @@ DESKTOP Register - 桌面工具注册点（26→10精简方案）
 【架构规范】2026-04-29 小沈
 【2026-05-17 小沈】26→10精简：统一注册10个LLM可见工具
 
-【工具列表】统一DESKTOP工具（10个LLM可见）
-1. list_windows - 列出所有窗口
-2. get_window_info - 获取窗口详细信息
-3. window_control - 统一窗口控制（合并set_window_state+focus_window+resize_window）
-4. mouse_control - 统一鼠标控制（合并click+move+scroll）
-5. keyboard_control - 统一键盘控制（合并type_text+shortcut+key_combo）
-6. screen_capture - 统一屏幕截图（合并screenshot+snapshot）
-7. clipboard_control - 统一剪贴板控制（合并read_clipboard+write_clipboard）
-8. screen_record - 录制屏幕
-9. ocr - OCR识别
-10. send_notification - 发送通知
+【工具列表】统一DESKTOP工具（10→9精简，Ch19）- 小沈 2026-05-22
+1. window_info - 窗口信息查询（合并list_windows+get_window_info）
+2. window_control - 统一窗口控制（合并set_window_state+focus_window+resize_window）
+3. mouse_control - 统一鼠标控制（合并click+move+scroll）
+4. keyboard_control - 统一键盘控制（合并type_text+shortcut+key_combo）
+5. screen_capture - 统一屏幕截图（合并screenshot+snapshot）
+6. clipboard_control - 统一剪贴板控制（合并read_clipboard+write_clipboard）
+7. screen_record - 录制屏幕
+8. ocr - OCR识别
+9. send_notification - 发送通知
 
 创建时间: 2026-04-29
 更新时间: 2026-05-17
@@ -26,8 +25,7 @@ from app.services.tools.registry import ToolCategory, tool_registry
 from app.utils.logger import logger
 
 from app.services.tools.desktop.desktop_schema import (
-    ListWindowsInput,
-    GetWindowInfoInput,
+    WindowInfoInput,
     WindowControlInput,
     MouseControlInput,
     KeyboardControlInput,
@@ -36,8 +34,7 @@ from app.services.tools.desktop.desktop_schema import (
 )
 
 from app.services.tools.desktop.desktop_tools import (
-    list_windows,
-    get_window_info,
+    window_info,
     window_control,
     mouse_control,
     keyboard_control,
@@ -58,35 +55,21 @@ from app.services.tools.desktop.gui_schema import (
 )
 
 DESKTOP_TOOL_DESCRIPTIONS = {
-    "list_windows": """列出当前所有窗口。
+    "window_info": """统一窗口信息查询。合并了 list_windows + get_window_info。
 
 【使用场景】
-- 查看所有打开的窗口
-- 查找特定窗口
-- 筛选窗口列表
+- 列出所有窗口（action="list"，可选 include_minimized/filter_title 筛选）
+- 获取单个窗口的详细信息（action="info"，需指定 window_title）
 
 【返回数据】
-- code: SUCCESS / ERR_LIST_WINDOWS
-- data: { windows: [{hwnd, title, state, position}], total }
+- action=list: code SUCCESS, data: { windows: [{hwnd, title, state, position}], total }
+- action=info: code SUCCESS, data: { hwnd, title, class_name, state, position, process_id, is_visible, is_enabled }
 
 【示例】
-- 所有窗口: {}
-- 包含最小化: {"include_minimized": True}
-- 过滤标题: {"filter_title": "Chrome"}""",
-
-    "get_window_info": """获取指定窗口的详细信息。
-
-【使用场景】
-- 获取窗口属性
-- 定位窗口位置
-- 查看窗口状态
-
-【返回数据】
-- code: SUCCESS / ERR_WINDOW_NOT_FOUND
-- data: { hwnd, title, class_name, state, position, process_id, is_visible, is_enabled }
-
-【示例】
-- 获取窗口: {"window_title": "Chrome"}""",
+- 列出所有窗口: {"action": "list"}
+- 列含最小化: {"action": "list", "include_minimized": True}
+- 过滤窗口: {"action": "list", "filter_title": "Chrome"}
+- 查看窗口详情: {"action": "info", "window_title": "Chrome"}""",
 
     "window_control": """统一窗口控制。合并了 set_window_state + focus_window + resize_window。
 
@@ -205,8 +188,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
 }
 
 DESKTOP_TOOL_INPUT_MODELS = {
-    "list_windows": ListWindowsInput,
-    "get_window_info": GetWindowInfoInput,
+    "window_info": WindowInfoInput,
     "window_control": WindowControlInput,
     "mouse_control": MouseControlInput,
     "keyboard_control": KeyboardControlInput,
@@ -218,13 +200,11 @@ DESKTOP_TOOL_INPUT_MODELS = {
 }
 
 DESKTOP_TOOL_EXAMPLES = {
-    "list_windows": [
-        {},
-        {"include_minimized": True},
-        {"filter_title": "Chrome"},
-    ],
-    "get_window_info": [
-        {"window_title": "Chrome"},
+    "window_info": [
+        {"action": "list"},
+        {"action": "list", "include_minimized": True},
+        {"action": "list", "filter_title": "Chrome"},
+        {"action": "info", "window_title": "Chrome"},
     ],
     "window_control": [
         {"window_title": "Chrome", "action": "focus"},
@@ -276,8 +256,7 @@ def _register_desktop_tools():
     使用 Pydantic 模型自动生成 OpenAI Schema
     """
     tool_methods = {
-        "list_windows": list_windows,
-        "get_window_info": get_window_info,
+        "window_info": window_info,
         "window_control": window_control,
         "mouse_control": mouse_control,
         "keyboard_control": keyboard_control,
