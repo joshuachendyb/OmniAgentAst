@@ -11,9 +11,12 @@ DESKTOP Tools - 桌面工具实现（窗口管理）
 3. *_register.py: 显式注册（description + examples + input_model）
 
 【工具列表】窗口管理工具
-1. list_windows - 列出所有窗口
-2. get_window_info - 获取窗口详细信息
-3. set_window_state - 设置窗口状态（最大化/最小化/还原/置顶）
+1. window_info - 窗口信息查询（合并list_windows+get_window_info）
+2. window_control - 统一窗口控制（合并set_window_state+focus_window+resize_window）
+3. mouse_control - 统一鼠标控制
+4. keyboard_control - 统一键盘控制
+5. screen_capture - 统一屏幕截图
+6. clipboard_control - 统一剪贴板控制
 
 创建时间: 2026-04-29
 【修正 2026-05-05 小沈】小健检查发现的问题：
@@ -31,6 +34,7 @@ from typing import Any, Dict, List, Optional, Literal
 from app.utils.logger import logger
 from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
 from app.services.tools._response import build_success, build_error
+from app.services.tools.toolhelper.window_helper import check_win32_platform, get_window_rect, get_window_state, find_windows_by_title  # 小沈 2026-05-22
 
 _HAS_WIN32 = False
 _win32gui = None
@@ -51,47 +55,6 @@ if platform.system() == "Windows":
         logger.warning("pywin32未安装，桌面工具将不可用。请执行: pip install pywin32")
 
 
-def _check_platform() -> Optional[Dict[str, Any]]:
-    """检查平台和依赖是否可用 - 小沈 2026-05-05"""
-    if platform.system() != "Windows":
-        return build_error("ERR_DESKTOP_NOT_WINDOWS", "此功能仅支持 Windows 系统")
-    if not _HAS_WIN32:
-        return build_error("ERR_DESKTOP_NO_PYWIN32", "pywin32库未安装，请先执行: pip install pywin32")
-    return None
-
-
-def _get_window_rect(hwnd: int) -> Optional[Dict[str, int]]:
-    """获取窗口位置和大小 - 小沈 2026-05-05修正"""
-    try:
-        rect = _win32gui.GetWindowRect(hwnd)
-        return {
-            "left": rect[0],
-            "top": rect[1],
-            "right": rect[2],
-            "bottom": rect[3],
-            "width": rect[2] - rect[0],
-            "height": rect[3] - rect[1]
-        }
-    except Exception:
-        return None
-
-
-def _get_window_state(hwnd: int) -> str:
-    """获取窗口状态 - 小沈 2026-05-05修正"""
-    try:
-        if not _win32gui.IsWindowVisible(hwnd):
-            return "minimized"
-        placement = _win32gui.GetWindowPlacement(hwnd)
-        if placement[1] == _win32con.SW_SHOWMAXIMIZED:
-            return "maximized"
-        elif placement[1] == _win32con.SW_SHOWMINIMIZED:
-            return "minimized"
-        else:
-            return "normal"
-    except Exception:
-        return "unknown"
-
-
 def _enum_windows_callback(hwnd: int, windows: List[Dict]) -> bool:
     """枚举窗口回调函数 - 小沈 2026-05-05修正"""
     try:
@@ -102,8 +65,8 @@ def _enum_windows_callback(hwnd: int, windows: List[Dict]) -> bool:
         if not title:
             return True
 
-        rect = _get_window_rect(hwnd)
-        state = _get_window_state(hwnd)
+        rect = get_window_rect(hwnd)
+        state = get_window_state(hwnd)
 
         windows.append({
             "hwnd": hwnd,
@@ -116,112 +79,82 @@ def _enum_windows_callback(hwnd: int, windows: List[Dict]) -> bool:
     return True
 
 
-def _find_windows_by_title(window_title: str) -> List[int]:
-    """按标题模糊匹配查找窗口句柄列表 - 小沈 2026-05-05"""
-    windows = []
-
-    def callback(hwnd: int, _: List) -> bool:
-        try:
-            title = _win32gui.GetWindowText(hwnd)
-            if title and window_title.lower() in title.lower():
-                windows.append(hwnd)
-        except Exception:
-            pass
-        return True
-
-    _win32gui.EnumWindows(callback, [])
-    return windows
-
-
-def list_windows(
+def window_info(
+    action: str = "list",
+    window_title: Optional[str] = None,
     include_minimized: bool = False,
-    filter_title: Optional[str] = None
+    filter_title: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """列出所有窗口 - 小沈 2026-04-29, 修正 2026-05-05"""
-    err = _check_platform()
+    """统一窗口信息查询 - 小沈 2026-05-22 合并list_windows+get_window_info"""
+    err = check_win32_platform()
     if err:
         return err
 
-    try:
-        windows = []
-        _win32gui.EnumWindows(_enum_windows_callback, windows)
-
-        if not include_minimized:
-            windows = [w for w in windows if w["state"] != "minimized"]
-
-        if filter_title:
-            windows = [w for w in windows if filter_title.lower() in w["title"].lower()]
-
-        return build_success(
-            truncate_data_for_frontend({
-                "windows": windows,
-                "total": len(windows)
-            }),
-            f"共找到 {len(windows)} 个窗口",
-            llm_data={
-                "总数": len(windows),
-                "窗口预览": [{"title": w.get("title","")[:40], "state": w.get("state","")} for w in windows[:20]]
-            },
-            next_actions=build_next_actions([("get_window_info", "获取窗口详情", "需要查看特定窗口信息时"), ("window_control", "控制窗口", "需要操作窗口时")])
-        )
-
-    except Exception as e:
-        logger.error(f"list_windows error: {e}")
-        return build_error("ERR_LIST_WINDOWS", f"获取窗口列表失败: {str(e)}")
-
-
-def get_window_info(window_title: str) -> Dict[str, Any]:
-    """获取窗口详细信息 - 小沈 2026-04-29, 修正 2026-05-05"""
-    err = _check_platform()
-    if err:
-        return err
-
-    try:
-        matched_hwnds = _find_windows_by_title(window_title)
-
-        if not matched_hwnds:
-            return build_error("ERR_WINDOW_NOT_FOUND", f"未找到窗口: {window_title}")
-
-        hwnd = matched_hwnds[0]
-        title = _win32gui.GetWindowText(hwnd)
-        rect = _get_window_rect(hwnd)
-        state = _get_window_state(hwnd)
-
+    if action == "list":
         try:
-            class_name = _win32gui.GetClassName(hwnd)
-        except Exception:
-            class_name = "Unknown"
+            windows = []
+            _win32gui.EnumWindows(_enum_windows_callback, windows)
+            if not include_minimized:
+                windows = [w for w in windows if w["state"] != "minimized"]
+            if filter_title:
+                windows = [w for w in windows if filter_title.lower() in w["title"].lower()]
 
+            return build_success(
+                truncate_data_for_frontend({"windows": windows, "total": len(windows)}),
+                f"共找到 {len(windows)} 个窗口",
+                llm_data={
+                    "总数": len(windows),
+                    "窗口预览": [{"title": w.get("title","")[:40], "state": w.get("state","")} for w in windows[:20]]
+                },
+                next_actions=build_next_actions([("window_info", "查询窗口详情", "需要查看特定窗口信息时", {"action": "info", "window_title": "窗口标题"}), ("window_control", "控制窗口", "需要操作窗口时")])
+            )
+        except Exception as e:
+            logger.error(f"window_info list error: {e}")
+            return build_error("ERR_WINDOW_LIST", f"获取窗口列表失败: {str(e)}")
+
+    elif action == "info":
+        if not window_title:
+            return build_error("ERR_PARAM_INVALID", "action=info时必须提供window_title参数",
+                next_actions=build_next_actions([("window_info", "列出所有窗口", "查看可用窗口", {"action": "list"})]))
         try:
-            process_id = _win32api.GetWindowThreadProcessId(hwnd)[0]
-        except Exception:
-            process_id = 0
+            matched_hwnds = find_windows_by_title(window_title)
+            if not matched_hwnds:
+                return build_error("ERR_WINDOW_NOT_FOUND", f"未找到窗口: {window_title}",
+                    next_actions=build_next_actions([("window_info", "列出所有窗口", "查看当前打开的窗口", {"action": "list"})]))
 
-        info = {
-            "hwnd": hwnd,
-            "title": title,
-            "class_name": class_name,
-            "state": state,
-            "position": rect,
-            "process_id": process_id,
-            "is_visible": _win32gui.IsWindowVisible(hwnd),
-            "is_enabled": _win32gui.IsWindowEnabled(hwnd),
-            "matched_count": len(matched_hwnds),
-        }
+            hwnd = matched_hwnds[0]
+            title = _win32gui.GetWindowText(hwnd)
+            rect = get_window_rect(hwnd)
+            state = get_window_state(hwnd)
 
-        msg = f"获取窗口信息成功: {title}"
-        if len(matched_hwnds) > 1:
-            msg += f"（共匹配到 {len(matched_hwnds)} 个窗口，返回第一个）"
+            try:
+                class_name = _win32gui.GetClassName(hwnd)
+            except Exception:
+                class_name = "Unknown"
+            try:
+                process_id = _win32api.GetWindowThreadProcessId(hwnd)[0]
+            except Exception:
+                process_id = 0
 
-        return build_success(
-            info,
-            msg,
-            next_actions=build_next_actions([("window_control", "控制该窗口", "需要操作窗口时")])
-        )
+            info = {
+                "hwnd": hwnd, "title": title, "class_name": class_name,
+                "state": state, "position": rect, "process_id": process_id,
+                "is_visible": _win32gui.IsWindowVisible(hwnd),
+                "is_enabled": _win32gui.IsWindowEnabled(hwnd),
+                "matched_count": len(matched_hwnds),
+            }
+            msg = f"获取窗口信息成功: {title}"
+            if len(matched_hwnds) > 1:
+                msg += f"（共匹配到 {len(matched_hwnds)} 个窗口，返回第一个）"
+            return build_success(info, msg,
+                next_actions=build_next_actions([("window_control", "控制该窗口", "需要操作窗口时")]))
+        except Exception as e:
+            logger.error(f"window_info info error: {e}")
+            return build_error("ERR_DESKTOP_GET_WINDOW_INFO", f"获取窗口信息失败: {str(e)}")
 
-    except Exception as e:
-        logger.error(f"get_window_info error: {e}")
-        return build_error("ERR_DESKTOP_GET_WINDOW_INFO", f"获取窗口信息失败: {str(e)}")
+    else:
+        return build_error("ERR_INVALID_ACTION", f"不支持的action: {action}，可选: list/info",
+            next_actions=build_next_actions([("window_info", "查看用法", "确认参数", {"action": "list"})]))
 
 
 def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
@@ -229,7 +162,7 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
 
     【2026-05-17 小沈】保留旧实现，供 window_control 内部调用
     """
-    err = _check_platform()
+    err = check_win32_platform()
     if err:
         return err
 
@@ -238,7 +171,7 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
         if action not in valid_actions:
             return build_error("ERR_INVALID_ACTION", f"无效的操作: {action}，支持的操作为: {valid_actions}")
 
-        matched_hwnds = _find_windows_by_title(window_title)
+        matched_hwnds = find_windows_by_title(window_title)
 
         if not matched_hwnds:
             return build_error("ERR_WINDOW_NOT_FOUND", f"未找到窗口: {window_title}")
@@ -275,7 +208,7 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
                 "matched_count": len(matched_hwnds),
             },
             msg,
-            next_actions=build_next_actions([("get_window_info", "确认窗口状态", "需要验证操作结果时")])
+            next_actions=build_next_actions([("window_info", "确认窗口状态", "需要验证操作结果时", {"action": "info", "window_title": title})])
         )
 
     except Exception as e:
@@ -306,10 +239,10 @@ def window_control(
         result = set_window_state(window_title, action)
 
     if result.get("code") == "SUCCESS" and "next_actions" not in result:
-        result["next_actions"] = build_next_actions([("get_window_info", "确认窗口状态", "需要验证操作结果时")])
+        result["next_actions"] = build_next_actions([("window_info", "确认窗口状态", "需要验证操作结果时", {"action": "info", "window_title": window_title})])
     elif result.get("code") != "SUCCESS" and "next_actions" not in result:
         result["next_actions"] = build_next_actions([
-            ("list_windows", "查看当前窗口列表", "确认窗口名称是否正确时"),
+            ("window_info", "查看当前窗口列表", "确认窗口名称是否正确时", {"action": "list"}),
             ("tool_help", "查看window_control用法", "不确定参数时", {"tool_name": "window_control"}),
         ])
     return result

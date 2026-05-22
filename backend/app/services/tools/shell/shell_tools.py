@@ -30,7 +30,6 @@ Author: 小沈 - 2026-04-29
 import os
 import subprocess
 import signal
-import re
 import uuid
 import shutil
 from typing import Optional, Dict, Any
@@ -39,25 +38,11 @@ from datetime import datetime
 from app.services.tools.tool_result_utils import format_output_for_llm, build_next_actions, truncate_data_for_frontend
 from app.utils.logger import logger  # 小健-2026-05-19 修复BUG-001: logger未导入
 from app.services.tools._response import build_success, build_error
+from app.services.tools.toolhelper.shell_helper import _check_shell_injection, _read_stream_nonblocking
 
 
 # 后台Shell会话管理器 - 小沈 2026-05-02
 _background_shells: Dict[str, Dict[str, Any]] = {}
-
-# 高风险shell注入模式 - 小健 2026-05-13 补充安全验证
-SHELL_INJECTION_PATTERNS = [
-    (r'\$\(', '子shell执行 $()'),
-    (r'`[^`]*`', '命令替换反引号'),
-]
-
-def _check_shell_injection(command: str) -> Optional[str]:
-    """检查shell命令注入风险，返回错误描述或None - 小健 2026-05-13"""
-    if not command or not command.strip():
-        return None
-    for pattern, desc in SHELL_INJECTION_PATTERNS:
-        if re.search(pattern, command):
-            return f"检测到高风险shell注入模式: {desc}"
-    return None
 
 
 def execute_shell_command(
@@ -296,42 +281,6 @@ def find_command(command: str, all_paths: bool = False) -> dict:
     except Exception as e:
         return build_error("ERR_SHELL_FIND_COMMAND", f"查找命令失败: {str(e)}")
 
-
-def _read_stream_nonblocking(stream, encoding: str = "utf-8") -> str:
-    """非阻塞读取子进程输出流 - 小沈 2026-05-05
-    
-    如果进程已结束，读取全部输出；
-    如果进程仍在运行，读取当前可用的输出而不阻塞。
-    """
-    if stream is None:
-        return ""
-    
-    import io
-    try:
-        if hasattr(stream, 'read1'):
-            bytes_data = b""
-            while True:
-                chunk = stream.read1(4096)
-                if not chunk:
-                    break
-                bytes_data += chunk
-        else:
-            bytes_data = stream.read()
-    except (IOError, OSError):
-        return ""
-    
-    if not bytes_data:
-        return ""
-    
-    try:
-        return bytes_data.decode(encoding)
-    except UnicodeDecodeError:
-        for fallback_enc in ["utf-8", "gbk", "gb2312", "latin-1"]:
-            try:
-                return bytes_data.decode(fallback_enc)
-            except UnicodeDecodeError:
-                continue
-        return bytes_data.decode("latin-1")
 
 def cleanup_background_shells() -> int:
     """终止所有后台shell进程（服务器关闭时调用）- 小健 2026-05-13"""

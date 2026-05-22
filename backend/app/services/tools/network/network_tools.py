@@ -39,7 +39,7 @@ from urllib.parse import urlencode, urlparse, urlunparse
 
 import httpx
 from app.utils.logger import logger
-from app.services.tools.toolhelper.network_helper import well_known_ports  # 小健 2026-05-18
+from app.services.tools.toolhelper.network_helper import well_known_ports, _html_to_markdown, _decode_bing_redirect_url  # 小健 2026-05-18
 from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
 from app.services.tools._response import build_success, build_error
 
@@ -504,38 +504,7 @@ async def fetch_webpage(
         return build_error("ERR_NET_UNKNOWN", f"获取网页异常: {str(e)}")
 
 
-def _html_to_markdown(html: str) -> str:
-    """简单的HTML转Markdown - 小沈 2026-05-02"""
-    text = html
-    text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL|re.IGNORECASE)
-    text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL|re.IGNORECASE)
-    text = re.sub(r'<head[^>]*>.*?</head>', '', text, flags=re.DOTALL|re.IGNORECASE)
-    text = re.sub(r'<nav[^>]*>.*?</nav>', '', text, flags=re.DOTALL|re.IGNORECASE)
-    text = re.sub(r'<footer[^>]*>.*?</footer>', '', text, flags=re.DOTALL|re.IGNORECASE)
-    
-    text = re.sub(r'<h1[^>]*>(.*?)</h1>', r'# \1\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<h2[^>]*>(.*?)</h2>', r'## \1\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<h3[^>]*>(.*?)</h3>', r'### \1\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<h4[^>]*>(.*?)</h4>', r'#### \1\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<h5[^>]*>(.*?)</h5>', r'##### \1\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<h6[^>]*>(.*?)</h6>', r'###### \1\n', text, flags=re.IGNORECASE)
-    
-    text = re.sub(r'<strong[^>]*>(.*?)</strong>', r'**\1**', text, flags=re.IGNORECASE)
-    text = re.sub(r'<b[^>]*>(.*?)</b>', r'**\1**', text, flags=re.IGNORECASE)
-    text = re.sub(r'<em[^>]*>(.*?)</em>', r'*\1*', text, flags=re.IGNORECASE)
-    text = re.sub(r'<i[^>]*>(.*?)</i>', r'*\1*', text, flags=re.IGNORECASE)
-    
-    text = re.sub(r'<a[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', r'[\2](\1)', text, flags=re.IGNORECASE)
-    
-    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<p[^>]*>(.*?)</p>', r'\1\n\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<li[^>]*>(.*?)</li>', r'- \1\n', text, flags=re.IGNORECASE)
-    
-    text = re.sub(r'<[^>]+>', ' ', text)
-    text = re.sub(r'\s+', ' ', text)
-    text = re.sub(r'\n\s*\n', '\n\n', text)
-    
-    return text.strip()
+
 
 async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: Optional[str] = None) -> Optional[List[dict]]:
     """MCP搜索引擎统一入口 - 小沈 2026-05-17
@@ -662,33 +631,6 @@ async def _search_exa_mcp(query: str, num_results: int, proxy: Optional[str] = N
     【2026-05-17 小沈 已弃用】请使用 _search_mcp_engine("exa", query, num_results, proxy) 代替
     """
     return await _search_mcp_engine("exa", query, num_results, proxy)
-
-
-def _decode_bing_redirect_url(url: str) -> str:
-    """
-    解码Bing ck/a跳转链接，提取真实URL - 小健 2026-05-16
-    Bing使用 https://www.bing.com/ck/a?!&&p=<hash>&u=<base64_url> 格式的跳转链接
-    """
-    if "bing.com/ck/a" not in url:
-        return url
-    # 尝试从u参数提取base64编码的真实URL
-    u_match = re.search(r'[?&]u=([^&]+)', url)
-    if u_match:
-        try:
-            import base64
-            u_encoded = u_match.group(1)
-            # URL安全的base64
-            u_encoded = u_encoded.replace('-', '+').replace('_', '/')
-            # 补全base64填充
-            padding = 4 - len(u_encoded) % 4
-            if padding != 4:
-                u_encoded += '=' * padding
-            decoded = base64.b64decode(u_encoded).decode('utf-8', errors='replace')
-            if decoded.startswith('http'):
-                return decoded
-        except Exception:
-            pass
-    return url
 
 
 async def search_web(

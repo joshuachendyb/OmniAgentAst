@@ -2461,9 +2461,9 @@ class FileTools:
         try:
             if detected_format == "json":
                 if action == "read":
-                    result = df_tools.read_json(file_path=file_path, encoding=encoding)
+                    result = df_tools._read_json(file_path=file_path, encoding=encoding)
                 else:
-                    result = df_tools.write_json(
+                    result = df_tools._write_json(
                         file_path=file_path,
                         data=data,
                         encoding=encoding,
@@ -2472,9 +2472,9 @@ class FileTools:
 
             elif detected_format == "yaml":
                 if action == "read":
-                    result = df_tools.parse_yaml(file_path=file_path, encoding=encoding)
+                    result = df_tools._parse_yaml(file_path=file_path, encoding=encoding)
                 else:
-                    result = df_tools.write_yaml(
+                    result = df_tools._write_yaml(
                         file_path=file_path,
                         data=data,
                         encoding=encoding,
@@ -2483,18 +2483,18 @@ class FileTools:
 
             elif detected_format == "toml":
                 if action == "read":
-                    result = df_tools.parse_toml(file_path=file_path, encoding=encoding)
+                    result = df_tools._parse_toml(file_path=file_path, encoding=encoding)
                 else:
-                    result = df_tools.write_toml(file_path=file_path, data=data, encoding=encoding)
+                    result = df_tools._write_toml(file_path=file_path, data=data, encoding=encoding)
 
             elif detected_format == "ini":
-                result = df_tools.parse_ini(file_path=file_path, encoding=encoding)
+                result = df_tools._parse_ini(file_path=file_path, encoding=encoding)
 
             elif detected_format == "xml":
-                result = df_tools.parse_xml(file_path=file_path, encoding=encoding)
+                result = df_tools._parse_xml(file_path=file_path, encoding=encoding)
 
             elif detected_format == "properties":
-                result = df_tools.parse_properties(file_path=file_path, encoding=encoding)
+                result = df_tools._parse_properties(file_path=file_path, encoding=encoding)
 
             else:
                 return build_error("ERR_PARAM_INVALID", f"不支持的格式: {detected_format}")

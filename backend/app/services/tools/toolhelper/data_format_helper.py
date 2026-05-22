@@ -30,7 +30,7 @@ from app.services.tools._response import build_success, build_error
 logger = logging.getLogger(__name__)
 
 
-def read_json(file_path: str, encoding: str = "auto_detect", max_depth: int = 10) -> Dict[str, Any]:
+def _read_json(file_path: str, encoding: str = "auto_detect", max_depth: int = 10) -> Dict[str, Any]:
     """读取JSON文件内容 - 小沈 2026-05-03, 修正 2026-05-05"""
     try:
         path = Path(file_path)
@@ -95,7 +95,7 @@ def read_json(file_path: str, encoding: str = "auto_detect", max_depth: int = 10
         return build_error("ERR_DOC_READ_JSON", f"读取JSON文件失败: {str(e)}")
 
 
-def write_json(file_path: str, data: Union[Dict[str, Any], List[Any]], encoding: str = "utf-8", indent: int = 2, ensure_ascii: bool = False, backup_before_write: bool = True, create_parents: bool = True) -> Dict[str, Any]:
+def _write_json(file_path: str, data: Union[Dict[str, Any], List[Any]], encoding: str = "utf-8", indent: int = 2, ensure_ascii: bool = False, backup_before_write: bool = True, create_parents: bool = True) -> Dict[str, Any]:
     """写入数据到JSON文件 - 小沈 2026-05-03, 修正 2026-05-05"""
     import shutil
     from datetime import datetime
@@ -118,7 +118,7 @@ def write_json(file_path: str, data: Union[Dict[str, Any], List[Any]], encoding:
         return build_error("ERR_WRITE_JSON", f"写入JSON文件失败: {str(e)}")
 
 
-def read_csv_basic(file_path: str, encoding: str = "auto_detect", delimiter: str = "auto_detect", has_header: bool = True, max_rows: int = 500, skip_blank_lines: bool = True) -> Dict[str, Any]:
+def _read_csv_basic(file_path: str, encoding: str = "auto_detect", delimiter: str = "auto_detect", has_header: bool = True, max_rows: int = 500, skip_blank_lines: bool = True) -> Dict[str, Any]:
     """读取CSV文件内容（基础版）- 小沈 2026-05-03, 修正 2026-05-05"""
     try:
         path = Path(file_path)
@@ -171,7 +171,7 @@ def read_csv_basic(file_path: str, encoding: str = "auto_detect", delimiter: str
         return build_error("ERR_READ_CSV_BASIC", f"读取CSV文件失败: {str(e)}")
 
 
-def parse_yaml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
+def _parse_yaml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
     """读取YAML文件内容 - 小沈 2026-05-04"""
     try:
         import yaml
@@ -187,7 +187,7 @@ def parse_yaml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
         return build_error("ERR_PARSE_YAML", f"读取YAML失败: {str(e)}")
 
 
-def write_yaml(file_path: str, data: Any, encoding: str = "utf-8", indent: int = 2) -> Dict[str, Any]:
+def _write_yaml(file_path: str, data: Any, encoding: str = "utf-8", indent: int = 2) -> Dict[str, Any]:
     """写入数据到YAML文件 - 小沈 2026-05-04"""
     try:
         import yaml
@@ -202,7 +202,7 @@ def write_yaml(file_path: str, data: Any, encoding: str = "utf-8", indent: int =
         return build_error("ERR_WRITE_YAML", f"写入YAML失败: {str(e)}")
 
 
-def parse_toml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
+def _parse_toml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
     """读取TOML文件内容 - 小沈 2026-05-04"""
     try:
         import tomli
@@ -218,7 +218,7 @@ def parse_toml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
         return build_error("ERR_PARSE_TOML", f"读取TOML失败: {str(e)}")
 
 
-def write_toml(file_path: str, data: Dict[str, Any], encoding: str = "utf-8") -> Dict[str, Any]:
+def _write_toml(file_path: str, data: Dict[str, Any], encoding: str = "utf-8") -> Dict[str, Any]:
     """写入数据到TOML文件 - 小沈 2026-05-04, 修正 2026-05-05"""
     try:
         import tomli_w
@@ -233,7 +233,7 @@ def write_toml(file_path: str, data: Dict[str, Any], encoding: str = "utf-8") ->
         return build_error("ERR_WRITE_TOML", f"写入TOML失败: {str(e)}")
 
 
-def parse_ini(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
+def _parse_ini(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
     """读取INI配置文件 - 小沈 2026-05-04"""
     try:
         import configparser
@@ -250,7 +250,7 @@ def parse_ini(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
         return build_error("ERR_PARSE_INI", f"读取INI失败: {str(e)}")
 
 
-def parse_xml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
+def _parse_xml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
     """读取XML文件内容 - 小沈 2026-05-04"""
     try:
         import xml.etree.ElementTree as ET
@@ -281,7 +281,7 @@ def parse_xml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
         return build_error("ERR_PARSE_XML", f"读取XML失败: {str(e)}")
 
 
-def parse_properties(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
+def _parse_properties(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
     """读取Java Properties文件 - 小沈 2026-05-04, 修正 2026-05-05"""
     try:
         path = Path(file_path)

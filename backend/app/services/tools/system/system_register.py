@@ -57,24 +57,16 @@ from app.services.tools.system.env_tools import (
 
 # 工具描述
 SYSTEM_TOOL_DESCRIPTIONS = {
-    "get_system_info": """获取系统完整信息，包括操作系统、CPU、内存、磁盘、网络接口等硬件和系统配置信息。
+    "get_system_info": """获取系统信息 - 合并get_cpu_info + get_memory_info + get_disk_info + get_network_info功能。
 
-使用场景：
-- 当用户需要查看系统配置信息时使用
-- 当用户需要诊断系统问题（如CPU占用、内存不足、磁盘空间）时使用
-- 当用户需要了解系统硬件规格（CPU核数、内存容量、磁盘分区）时使用
+【常用名转换实例】
+- 全部信息 → get_system_info(info_type="all")
+- CPU信息/get_cpu_info → get_system_info(info_type="cpu")
+- 内存信息/get_memory_info → get_system_info(info_type="memory")
+- 磁盘空间/get_disk_usage → get_system_info(info_type="disk")
+- 网络信息/get_network_info → get_system_info(info_type="network")
 
-【重要】返回按info_type分类的系统信息，all类型返回全部
-
-使用示例：
-- 获取全部信息：{"info_type": "all"}
-- 仅获取CPU：{"info_type": "cpu"}
-- 仅获取内存：{"info_type": "memory"}
-
-返回数据说明：
-- code: 状态码，SUCCESS/ERR_SYSTEM_INFO
-- data: 成功时含basic(platform/architecture/hostname/python_version等)、cpu(physical_cores/logical_cores/current_frequency_mhz/cpu_usage_percent等)、memory(total_gb/available_gb/used_gb/percent)、disk(设备列表含device/mountpoint/filesystem/total_gb/used_gb/free_gb/percent)、network(bytes_sent_mb/bytes_recv_mb/packets_sent/packets_recv)；按info_type返回对应子集；失败时为null
-- message: 状态描述信息""",
+返回：data.basic/data.cpu/data.memory/data.disk/data.network""",
     "net_connections": """获取网络连接列表，支持按类型（TCP/UDP）、状态（ESTABLISHED/LISTEN）、端口过滤，可获取关联进程信息。
 
 使用场景：
@@ -146,14 +138,17 @@ SYSTEM_TOOL_DESCRIPTIONS = {
 - code: 状态码，SUCCESS/ERR_INVALID_PARAM/ERR_PERMISSION_DENIED/ERR_PERMISSION_DENIED/ERR_SYSTEM_PROCESS_KILL
 - data: 成功时含killed(已终止列表)；进程不存在时含idempotent=true；失败时为null
 - message: 状态描述信息""",
-    "service_control": """服务统一控制入口，通过action参数执行start/stop/restart/list操作。
+    "service_control": """系统服务控制 - 合并service_start + service_stop + service_restart + service_list功能。
 
-使用场景：
-- 当用户需要启动、停止、重启或查看系统服务时使用
-- 合并原service_start/service_stop/service_list三个工具
+【常用名转换实例】
+- 列出服务/service_list → service_control(action="list")
+- 过滤运行中 → service_control(action="list", state="running")
+- 启动服务/service_start → service_control(action="start", service_name="mysql")
+- 停止服务/service_stop → service_control(action="stop", service_name="nginx")
+- 重启服务/service_restart → service_control(action="restart", service_name="apache")
+- 强制停止 → service_control(action="stop", service_name="nginx", force=true)
 
-【重要】action必填；start/stop/restart需service_name；list可按state过滤
-
+返回：data.services/data.action/data.service_name""",
 使用示例：
 - 列出运行中的服务：{"action": "list", "state": "running"}
 - 启动服务：{"action": "start", "service_name": "mysql"}
