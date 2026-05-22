@@ -6,7 +6,7 @@ Author: 小沈 - 2026-05-22
 """
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from app.db.models.operation_enums import OperationType, OperationStatus
 
 
@@ -54,8 +54,8 @@ class OperationRecord(BaseModel):
     # 顺序信息（用于批量回滚）
     sequence_number: int = Field(default=0, description="会话内操作顺序号")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "operation_id": "op-123e4567-e89b-12d3-a456-426614174000",
                 "task_id": "task-abc-123",
@@ -68,6 +68,7 @@ class OperationRecord(BaseModel):
                 "sequence_number": 1
             }
         }
+    )
 
 
 class SessionRecord(BaseModel):
@@ -99,8 +100,8 @@ class SessionRecord(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now, description="会话开始时间")
     completed_at: Optional[datetime] = Field(default=None, description="会话完成时间")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "task_id": "task-abc-123",
                 "agent_id": "file-organizer",
@@ -110,3 +111,4 @@ class SessionRecord(BaseModel):
                 "success_count": 5
             }
         }
+    )
