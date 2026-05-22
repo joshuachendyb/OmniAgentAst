@@ -5,6 +5,8 @@ CodeExecutionPrompts - 代码执行 Prompt模板
 P3优先级：
 
 Author: 小健 - 2026-05-06"""
+from datetime import datetime
+
 from app.services.prompts.BasePromptTemplate import BasePrompts
 from app.services.prompts.middle import get_system_prompt as get_system_info
 from app.utils.logger import logger
@@ -18,27 +20,24 @@ class CodeExecutionPrompts(BasePrompts):
         return system_info + """
 You are a professional code execution assistant. You help users run Python and JavaScript code snippets safely.
 
-【Available CODE EXECUTION Tools】:
+【Available CODE EXECUTION Tools — 共1个】:
 
 1. execute_code - Execute code (Python or JavaScript) and return result
-   - code: Code string (REQUIRED). Can be multi-line.
-   - language: "python"(default) or "javascript"
-   - working_dir: Working directory (optional). Auto-created if not exists. Default: current dir.
-   - timeout: Timeout in seconds (optional). Default: 30. Max: 300.
-   - safety_check: Check dangerous patterns, default True. Set False to skip.
-   - Example: execute_code(code="print(2+2)")
-   - Example: execute_code(code="console.log(2+2)", language="javascript")
+   - When to use: users want to run Python/JS code, test expressions, process data
+   - Returns: output, error, exit_code, execution_time
+   - Examples:
+     * execute_code(code="print(2+2)")
+     * execute_code(code="console.log(2+2)", language="javascript")
 
 【Tool Call Examples】:
-Example 1 - 执行Python代码:
-{"thought": "用户要执行代码", "reasoning": "调用execute_code", "tool_name": "execute_code", "tool_params": {"code": "print('hello')"}}
+Example 1: 执行Python代码
+{"thought": "用户要执行Python代码", "reasoning": "调用execute_code", "tool_name": "execute_code", "tool_params": {"code": "print('hello')"}}
 
-Example 2 - 执行JS代码:
-{"thought": "用户要执行JS代码", "reasoning": "调用execute_code", "tool_name": "execute_code", "tool_params": {"code": "console.log('hello')", "language": "javascript"}}
+Example 2: 执行JavaScript代码
+{"thought": "用户要执行JS", "reasoning": "调用execute_code", "tool_name": "execute_code", "tool_params": {"code": "console.log('hello')", "language": "javascript"}}
 
-Example 2 - 任务完成:
-{"thought": "已执行完毕", "tool_name": "finish", "tool_params": {"result": "代码执行结果..."}}
-
+Example 3: 任务完成
+{"thought": "已执行完毕", "reasoning": "结果已返回", "tool_name": "finish", "tool_params": {"result": "代码执行结果..."}}
 """
     
 
@@ -54,8 +53,13 @@ Example 2 - 任务完成:
     def get_task_prompt(self, task: str) -> str:
         return f"""Task: {task}
 
-Please help me execute this code. Follow these steps:
-1. First, analyze the code or language needed
-2. Execute the code using the appropriate tool
-3. Provide the execution result"""
+Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+请完成此代码执行任务，按以下步骤：
+1. 分析代码和所需语言
+2. 使用执行代码工具运行
+3. 用中文提供执行结果"""
+
+    def get_safety_reminder(self) -> str:
+        return "⚠️ Code Execution Safety: Do NOT execute destructive commands (delete/format/system modify). Use timeout to prevent hanging."
 
