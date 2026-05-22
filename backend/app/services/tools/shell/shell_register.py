@@ -15,10 +15,7 @@ Shell Register - Shell工具注册点
 - 降级3个：get_working_directory/change_directory/check_path_exists → 内部函数
 - 合并2个：check_command_available+locate_command → find_command
 
-# Shell操作工具（共4个LLM工具）
-
-创建时间: 2026-04-29
-更新时间: 2026-05-17 小健
+# Shell操作工具（共4个LLM工具 — 2026-05-22 小沈 5→4）
 """
 
 from app.services.tools.registry import register_tool, ToolCategory, tool_registry
@@ -31,8 +28,7 @@ from app.services.tools.shell.shell_schema import (
 )
 
 from app.services.tools.shell.code_execution_schema import (
-    ExecutePythonInput,
-    ExecuteJavascriptInput,
+    ExecuteCodeInput,
 )
 
 from app.services.tools.shell.shell_tools import (
@@ -42,8 +38,7 @@ from app.services.tools.shell.shell_tools import (
 )
 
 from app.services.tools.shell.code_execution_tools import (
-    execute_python,
-    execute_javascript,
+    execute_code,
 )
 
 SHELL_TOOL_DESCRIPTIONS = {
@@ -88,30 +83,19 @@ SHELL_TOOL_DESCRIPTIONS = {
 - all_paths=False时：data含available(命令是否可用，bool)、command(命令名称)、path(命令完整路径，不可用时为null)
 - all_paths=True时：data含command(命令名称)、paths(所有匹配路径列表)、count(路径数量)
 - 失败时code=ERR_SHELL_FIND_COMMAND，data=null""",
-    "execute_python": """执行Python代码并返回结果。
+    "execute_code": """执行代码（Python或JavaScript）并返回结果。
 
 使用场景：
-- 运行Python代码片段、快速验证逻辑、数据处理计算
-- ⚠️ 比 execute_shell_command python -c "..." 更安全：内置安全检查拦截危险操作
+- 运行代码片段、快速验证逻辑、数据处理计算
+- 支持python和javascript两种语言
+- ⚠️ 比 shell命令直接执行更安全：内置安全检查拦截危险操作
 
 参数说明：
-- code：Python代码字符串，必填，可多行
+- code：代码字符串，必填，可多行
+- language：语言类型，python(默认)或javascript
 - timeout：超时秒数，默认30，最大300
 - working_dir：工作目录，不设则当前目录，不存在时自动创建
-- safety_check：安全检查(检测os.system/subprocess等危险模式)，默认True
-
-返回数据说明：data含stdout(标准输出)、stderr(标准错误)、returncode(返回码)""",
-    "execute_javascript": """执行JavaScript代码并返回结果。需要Node.js环境。
-
-使用场景：
-- 运行JavaScript代码片段、快速验证逻辑
-- ⚠️ 比 execute_shell_command node -e "..." 更安全：内置安全检查拦截危险操作
-
-参数说明：
-- code：JavaScript代码字符串，必填，可多行
-- timeout：超时秒数，默认30，最大300
-- working_dir：工作目录，不设则当前目录，不存在时自动创建
-- safety_check：安全检查(检测child_process/fs/eval等危险模式)，默认True
+- safety_check：安全检查，默认True
 
 返回数据说明：data含stdout(标准输出)、stderr(标准错误)、returncode(返回码)""",
     "shell_session": """管理后台Shell会话：读取输出或终止会话。
@@ -154,15 +138,10 @@ SHELL_TOOL_EXAMPLES = {
         {"shell_id": "shell_abc123", "action": "terminate"},
         {"shell_id": "shell_abc123", "action": "terminate", "force": True}
     ],
-    "execute_python": [
+    "execute_code": [
         {"code": "print('Hello, World!')"},
+        {"code": "console.log('Hello');", "language": "javascript"},
         {"code": "import math\nprint(math.sqrt(16))"},
-        {"code": "for i in range(5):\n    print(i)", "timeout": 10},
-    ],
-    "execute_javascript": [
-        {"code": "console.log('Hello, World!');"},
-        {"code": "const result = Math.sqrt(16);\nconsole.log(result);"},
-        {"code": "for(let i=0; i<5; i++) {\n  console.log(i);\n}", "timeout": 10},
     ],
 }
 
@@ -171,8 +150,7 @@ TOOL_INPUT_MODELS = {
     "execute_shell_command": ExecuteShellCommandInput,
     "find_command": FindCommandInput,
     "shell_session": ShellSessionInput,
-    "execute_python": ExecutePythonInput,
-    "execute_javascript": ExecuteJavascriptInput,
+    "execute_code": ExecuteCodeInput,
 }
 
 def _register_shell_tools():
@@ -180,15 +158,14 @@ def _register_shell_tools():
     【2026-05-02 小沈】显式注册所有Shell工具
     【2026-05-17 小沈】8→5，find_command替代check_command_available+locate_command(-1)，
                         shell_session替代get_shell_output+terminate_shell(-1)
-    【2026-05-18 小健】5→5，降级3个工具(get_working_directory/change_directory/check_path_exists)不再注册LLM
+    【2026-05-22 小沈】5→4，合并execute_python+execute_javascript→execute_code
     使用 Pydantic 模型自动生成 OpenAI Schema
     """
     tool_methods = {
         "execute_shell_command": execute_shell_command,
         "find_command": find_command,
         "shell_session": shell_session,
-        "execute_python": execute_python,
-        "execute_javascript": execute_javascript,
+        "execute_code": execute_code,
     }
 
     for name, method in tool_methods.items():
@@ -216,6 +193,5 @@ __all__ = [
     "execute_shell_command",
     "find_command",
     "shell_session",
-    "execute_python",
-    "execute_javascript",
+    "execute_code",
 ]

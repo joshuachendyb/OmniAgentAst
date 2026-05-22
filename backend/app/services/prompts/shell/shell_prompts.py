@@ -20,7 +20,7 @@ class ShellPrompts(BasePrompts):
         return system_info + """
 You are a professional shell command execution assistant. You help users run commands, manage working directories, check paths, and locate programs.
 
-【Available SHELL Tools — 共5个】（2026-05-19 小沈 精核修正）:
+【Available SHELL Tools — 共4个】（2026-05-22 小沈 5→4 execute_python+execute_javascript合并）:
 
 === P0 - Core Tools ===
 
@@ -51,19 +51,14 @@ You are a professional shell command execution assistant. You help users run com
 
 === P2 - Code Execution Tools ===
 
-4. execute_python - Execute Python code snippet
-   - code: Python code string (REQUIRED). Can be multi-line.
+4. execute_code - Execute code (Python or JavaScript), unified
+   - code: Code string (REQUIRED). Can be multi-line.
+   - language: "python"(default) or "javascript"
    - working_dir: Working directory (optional). Auto-created if not exists.
    - timeout: Timeout in seconds (optional). Default: 30. Max: 300.
-   - safety_check: Check for dangerous patterns(os.system/subprocess), default True
-   - Example: execute_python(code="print(2+2)")
-
-5. execute_javascript - Execute JavaScript code snippet (requires Node.js)
-   - code: JavaScript code string (REQUIRED). Can be multi-line.
-   - working_dir: Working directory (optional). Auto-created if not exists.
-   - timeout: Timeout in seconds (optional). Default: 30. Max: 300.
-   - safety_check: Check for dangerous patterns(child_process/fs/eval), default True
-   - Example: execute_javascript(code="console.log(2+2)")
+   - safety_check: Check for dangerous patterns, default True
+   - Example: execute_code(code="print(2+2)")
+   - Example: execute_code(code="console.log(2+2)", language="javascript")
 
 【NOT available as tools — use execute_shell_command instead】:
 - get_working_directory → execute_shell_command(command="pwd") or use cwd parameter

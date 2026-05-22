@@ -37,8 +37,7 @@ import logging
 from typing import Optional
 
 from app.services.tools.shell.code_execution_schema import (
-    ExecutePythonInput,
-    ExecuteJavascriptInput,
+    ExecuteCodeInput,
 )
 from app.services.tools.tool_result_utils import format_output_for_llm, build_next_actions, truncate_data_for_frontend  # 小沈-2026-05-15, 小沈-2026-05-20
 from app.services.tools._response import build_success, build_error
@@ -89,7 +88,32 @@ def _get_utf8_env():
     return env
 
 
-def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = None, safety_check: bool = True) -> dict:
+def execute_code(
+    code: str,
+    language: str = "python",
+    timeout: int = 30,
+    working_dir: Optional[str] = None,
+    safety_check: bool = True,
+) -> dict:
+    """统一代码执行入口 - 小沈 2026-05-22 合并execute_python+execute_javascript
+
+    Args:
+        code: 要执行的代码字符串
+        language: 语言类型，"python"或"javascript"，默认"python"
+        timeout: 超时秒数(1-300)，默认30
+        working_dir: 工作目录（可选），不存在时自动创建
+        safety_check: 是否安全检查，默认True
+    """
+    if language == "python":
+        return _execute_python(code=code, timeout=timeout, working_dir=working_dir, safety_check=safety_check)
+    elif language == "javascript":
+        return _execute_javascript(code=code, timeout=timeout, working_dir=working_dir, safety_check=safety_check)
+    else:
+        return build_error("ERR_PARAM_INVALID", f"不支持的语言: {language}，可选: python/javascript",
+            next_actions=build_next_actions([("tool_help", "查看execute_code参数", "确认可用语言", {"tool_name": "execute_code"})]))
+
+
+def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = None, safety_check: bool = True) -> dict:
     """执行Python代码 - 小沈 2026-05-02, 修正 2026-05-05(空字符串working_dir), 修正 2026-05-06(中文编码)
     【2026-05-17 小沈】增加safety_check参数，P12组合复用：自动调用_validate_code_safety进行安全检查
     【2026-05-18 小沈】P16幂等性：working_dir不存在时自动创建(makedirs exist_ok=True)"""
@@ -189,7 +213,7 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
         return build_error("ERR_EXEC_PYTHON", f"Python代码执行失败: {str(e)}")
 
 
-def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] = None, safety_check: bool = True) -> dict:
+def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] = None, safety_check: bool = True) -> dict:
     """执行JavaScript代码 - 小沈 2026-05-02, 小健 2026-05-19 增加safety_check+UTF-8环境
     【2026-05-18 小沈】P16幂等性：working_dir不存在时自动创建(makedirs exist_ok=True)"""
     if not code or not code.strip():

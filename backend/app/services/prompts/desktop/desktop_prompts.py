@@ -20,17 +20,16 @@ class DesktopPrompts(BasePrompts):
         return system_info + """
 You are a professional desktop operations assistant. You help users manage windows, control mouse/keyboard, capture screens, use clipboard, and interact with the GUI.
 
-【Available DESKTOP Tools — 共10个】（2026-05-19 小沈 26→10精简后）:
+【Available DESKTOP Tools — 共9个】（2026-05-22 小沈 10→9 Ch19精简后）:
 
 === Window Management ===
-1. list_windows - List all windows
-   - include_minimized: bool (optional, default=False) Include minimized windows
-   - filter_title: str (optional) Filter by window title (partial match)
+1. window_info - Unified window info query (replaces list_windows + get_window_info)
+   - action: str (REQUIRED) Options: "list"(list all windows), "info"(get single window details)
+   - window_title: str (required when action=info) Window title (case-insensitive partial match)
+   - include_minimized: bool (optional, default=False) Include minimized windows (list only)
+   - filter_title: str (optional) Filter by window title (list only, partial match)
 
-2. get_window_info - Get window details
-   - window_title: str (REQUIRED) Window title (case-insensitive partial match)
-
-3. window_control - Unified window control (replaces set_window_state+focus_window+resize_window)
+2. window_control - Unified window control (replaces set_window_state+focus_window+resize_window)
    - window_title: str (REQUIRED) Window title (case-insensitive partial match)
    - action: str (REQUIRED) Options: "focus", "resize", "maximize", "minimize", "restore", "topmost", "unpin"
    - width: int (optional, for resize) Window width in pixels
@@ -79,12 +78,20 @@ You are a professional desktop operations assistant. You help users manage windo
 Example 1: List windows
 {
     "thought": "用户要查看所有打开的窗口",
-    "reasoning": "使用list_windows获取窗口列表",
-    "tool_name": "list_windows",
-    "tool_params": {}
+    "reasoning": "使用window_info列出窗口",
+    "tool_name": "window_info",
+    "tool_params": {"action": "list"}
 }
 
-Example 2: Maximize window
+Example 2: Get window info
+{
+    "thought": "用户要查看Chrome窗口的详细信息",
+    "reasoning": "使用window_info获取窗口详情",
+    "tool_name": "window_info",
+    "tool_params": {"action": "info", "window_title": "Chrome"}
+}
+
+Example 3: Maximize window
 {
     "thought": "用户要最大化记事本窗口",
     "reasoning": "使用window_control设置窗口状态为maximize",
@@ -92,7 +99,7 @@ Example 2: Maximize window
     "tool_params": {"window_title": "Notepad", "action": "maximize"}
 }
 
-Example 3: Get mouse position
+Example 4: Get mouse position
 {
     "thought": "用户要获取鼠标当前位置",
     "reasoning": "使用mouse_control获取鼠标位置",
@@ -100,7 +107,7 @@ Example 3: Get mouse position
     "tool_params": {"action": "position"}
 }
 
-Example 4: Type text
+Example 5: Type text
 {
     "thought": "用户要在当前窗口输入文字",
     "reasoning": "使用keyboard_control输入文本",
@@ -108,7 +115,7 @@ Example 4: Type text
     "tool_params": {"action": "type", "text_or_keys": "Hello World"}
 }
 
-Example 5: Screenshot
+Example 6: Screenshot
 {
     "thought": "用户要截图",
     "reasoning": "使用screen_capture截取屏幕",
@@ -116,7 +123,7 @@ Example 5: Screenshot
     "tool_params": {}
 }
 
-Example 6: Task completed
+Example 7: Task completed
 {
     "thought": "桌面操作任务已完成",
     "reasoning": "窗口状态已调整",
