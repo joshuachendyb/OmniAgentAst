@@ -1,3 +1,11 @@
+v0.13.21
+
+更新时间: 2026-05-22 11:50:24
+
+更新内容：
+- docs: 移动agent2.0设计文档到doc-5月优化目录+filter-repo清除config.yaml历史
+- fix: filter-repo彻底删除config.yaml（含API key）从全部历史
+
 v0.13.20
 
 更新时间: 2026-05-22 11:43:58
