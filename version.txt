@@ -1,3 +1,14 @@
+v0.13.26
+
+更新时间: 2026-05-22 20:00:00
+
+更新内容：
+- fix: 修复代码核查发现的3个问题
+- next_actions类型定义：string[] → 对象数组{tool, description, when, params}
+- Colors.PRIMARY常量添加 + BG.LIGHT别名
+- NextActions组件支持显示详细信息（Tooltip）
+- 全部问题修复完成，代码实施完全符合设计方案
+
 v0.13.24
 
 更新时间: 2026-05-22 19:00:00
