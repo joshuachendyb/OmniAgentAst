@@ -2328,7 +2328,7 @@ class FileTools:
                 preserve_permissions=True
             )
             if "data" not in result:
-                return build_error("ERROR", result.get("message", "解压失败"))
+                return build_error("ERR_FILE_EXTRACT", result.get("message", "解压失败"))
             return result
     
     async def file_operation(
