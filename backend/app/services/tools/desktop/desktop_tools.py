@@ -307,6 +307,11 @@ def window_control(
 
     if result.get("code") == "SUCCESS" and "next_actions" not in result:
         result["next_actions"] = build_next_actions([("get_window_info", "确认窗口状态", "需要验证操作结果时")])
+    elif result.get("code") != "SUCCESS" and "next_actions" not in result:
+        result["next_actions"] = build_next_actions([
+            ("list_windows", "查看当前窗口列表", "确认窗口名称是否正确时"),
+            ("tool_help", "查看window_control用法", "不确定参数时", {"tool_name": "window_control"}),
+        ])
     return result
 
 
@@ -339,10 +344,16 @@ def mouse_control(
         from app.services.tools.toolhelper.gui_helper import _get_mouse_position
         result = _get_mouse_position()
     else:
-        return build_error("ERR_INVALID_ACTION", f"无效的鼠标操作: {action}，支持: click/move/scroll/position")
+        return build_error("ERR_INVALID_ACTION", f"无效的鼠标操作: {action}，支持: click/move/scroll/position",
+            next_actions=build_next_actions([("tool_help", "查看mouse_control参数", "确认可用操作时")]))
 
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([("screen_capture", "截图查看效果", "需要确认操作结果时")])
+    elif "next_actions" not in result:
+        result["next_actions"] = build_next_actions([
+            ("tool_help", "查看mouse_control用法", "不确定参数时", {"tool_name": "mouse_control"}),
+            ("screen_capture", "查看当前鼠标位置", "需要确认坐标时"),
+        ])
     return result
 
 
@@ -367,10 +378,15 @@ def keyboard_control(
         key_list = [k.strip() for k in text_or_keys.split(",")]
         result = _key_combo(keys=key_list)
     else:
-        return build_error("ERR_INVALID_ACTION", f"无效的键盘操作: {action}，支持: type/shortcut/combo")
+        return build_error("ERR_INVALID_ACTION", f"无效的键盘操作: {action}，支持: type/shortcut/combo",
+            next_actions=build_next_actions([("tool_help", "查看keyboard_control参数", "确认可用操作时")]))
 
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([("screen_capture", "截图查看效果", "需要确认操作结果时")])
+    elif "next_actions" not in result:
+        result["next_actions"] = build_next_actions([
+            ("tool_help", "查看keyboard_control用法", "不确定参数时", {"tool_name": "keyboard_control"}),
+        ])
     return result
 
 
@@ -394,6 +410,10 @@ def screen_capture(
 
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([("ocr", "识别截图文字", "需要提取文字时")])
+    elif "next_actions" not in result:
+        result["next_actions"] = build_next_actions([
+            ("tool_help", "查看screen_capture用法", "不确定参数时", {"tool_name": "screen_capture"}),
+        ])
     return result
 
 
@@ -411,12 +431,18 @@ def clipboard_control(
         result = _read_clipboard()
     elif action == "write":
         if content is None:
-            return build_error("ERR_MISSING_PARAM", "写入剪贴板需要提供content参数")
+            return build_error("ERR_MISSING_PARAM", "写入剪贴板需要提供content参数",
+                next_actions=build_next_actions([("tool_help", "查看clipboard_control参数", "确认用法时")]))
         from app.services.tools.desktop.gui_tools import _write_clipboard
         result = _write_clipboard(content=content)
     else:
-        return build_error("ERR_INVALID_ACTION", f"无效的剪贴板操作: {action}，支持: read/write")
+        return build_error("ERR_INVALID_ACTION", f"无效的剪贴板操作: {action}，支持: read/write",
+            next_actions=build_next_actions([("tool_help", "查看clipboard_control参数", "确认可用操作时")]))
 
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([("clipboard_control", "验证剪贴板", "需要确认操作结果时")])
+    elif "next_actions" not in result:
+        result["next_actions"] = build_next_actions([
+            ("tool_help", "查看clipboard_control用法", "不确定参数时", {"tool_name": "clipboard_control"}),
+        ])
     return result
