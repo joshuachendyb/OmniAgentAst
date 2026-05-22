@@ -12,6 +12,7 @@
 
 | 版本 | 时间 | 作者 | 更新内容 |
 |------|------|------|---------|
+| v1.4 | 2026-05-23 | 小沈 | 补充三个核心决策的硬核论证：§4.1统一Agent(业界先验OpenAI/AutoGPT/Dify均为1个+硬核收益数据)、§2.2矫正必要性(下游规则精确匹配=安全漏洞+方案对比表)、§3.3闲聊检测(无检测代价+业界做法+性价比分析) |
 | v1.3 | 2026-05-23 | 小沈 | 删除"风险分析与缓解"整章(废话)，解决方案写入对应章节：§3.5路由缓存、§3.6分级降级、§3.7动态扩展、§4.5角色融合、§6.8并发安全+误判处理、§6.9 Helper安全、§2.6 chat_router映射、SessionTrust参数维度、_request_authorization容错；新增§九未解决问题(2项) |
 | v1.2 | 2026-05-23 | 小沈 | 审查修正：Agent子类9个(非7个)、CRSS关键词175+、command_security 962行4级分级(非简单黑名单)、前端SSE 1649行(非简单EventSource)、intent_classifier与Semantic Router关系厘清、PipelineContext与chat_router对齐、SessionTrust参数维度、ToolSafetyLayer迁移command_security、trim_history字符数阈值、实施路线工期修正、回滚策略、并发安全 |
 | v1.1 | 2026-05-22 11:31:34 | 小健 | 基于真实代码现状修正：工具数量(60-65个)、Semantic Router统一模型、P18安全等级、check_and_execute统一入口、SessionTrust Set实现、ToolObserver查询+热力图、YAML灰度配置 |
@@ -109,11 +110,29 @@
 
 综合**三大核心管线完美重构方案**、**预处理管线重构方案**、**Agent架构根本性重构方案**的矫正设计。
 
-### 2.2 为什么保留矫正层
+### 2.2 为什么必须矫正
 
-- LLM虽能理解"删处"= "删除"，但**安全检测层(黑名单)不能**——黑名单是正则匹配，错别字导致漏检
-- 矫正后的文本供后续**所有步骤使用**(语义路由、安全检测、Agent执行)
-- 规则级矫正零延迟(<1ms)，不增加LLM调用开销
+**核心原因：下游规则系统是精确匹配，错别字=安全漏洞/路由失败**。
+
+| 场景 | 无矫正 | 有矫正 | 原因 |
+|------|--------|--------|------|
+| "帮我删处文件" | 黑名单匹配"删处"→**漏检**→执行删除 | 矫正"删除"→黑名单命中→**拦截** | 黑名单只认"删除" |
+| "格试化D盘" | CRSS匹配"格试化"→无匹配→fallback network | 矫正"格式化"→CRSS命中FILE→**正确路由** | CRSS只认"格式化" |
+| "你好" | 无影响 | 无影响 | LLM自然理解闲聊 |
+
+LLM自己能理解错别字，但command_security黑名单(180+条)和CRSS(175+关键词)都是**精确匹配**，矫正不是帮LLM理解，是**让规则系统生效**。
+
+**当前现状**：`PreprocessingPipeline.process()`仅做`strip()`，等于裸奔。
+
+**方案对比**：
+
+| 方案 | 延迟 | 安全覆盖 | 可行性 |
+|------|------|---------|--------|
+| **L1规则矫正** | <1ms | 高(安全关键词优先) | ✅ 唯一满足"零延迟+精确匹配+安全覆盖" |
+| SymSpell对称删除 | <1ms | 高 | 中文支持弱 |
+| LLM重写 | ~200ms | 中(可能漏改安全关键词) | 延迟不可接受 |
+| Embedding匹配 | ~50ms | **低**(黑名单无法用向量匹配) | 安全层用不了 |
+| 不做矫正 | 0 | **0** | 安全漏洞 |
 
 ### 2.3 矫正策略两级
 
@@ -297,11 +316,17 @@ class SemanticRouter:
 
 ### 3.3 Chat意图识别
 
-**三层fallback机制**：
+**没有闲聊检测的代价**："你好"→CRSS无匹配→LLM兜底→加载network工具→LLM用网络工具搜"你好"→浪费1次LLM调用+5工具加载+53KB工具描述Token+延迟~3s。
 
-1. **Semantic Router高置信度** → 正常路由
-2. **低置信度或空结果** → Chat启发式检测(关键词匹配+长度+危险词否定)
-3. **仍无法判断** → 默认chat意图(纯对话，不搜索网络)
+**业界做法**：Rasa(ResponseSelector组件)、Dialogflow(Small Talk预构建Agent)都有专用闲聊组件。2023+LLM时代趋向零样本分类(准确率>95%)。Dify/Coze靠条件分支节点实现。
+
+**我们的方案：启发式+LLM fallback，性价比最优**：
+
+| 层级 | 方法 | 延迟 | 覆盖场景 |
+|------|------|------|---------|
+| 1 | Semantic Router高置信度 | ~500ms | 明确业务意图 |
+| 2 | Chat启发式(关键词+长度+危险词否定) | <1ms | 80%闲聊(你好/谢谢/什么是) |
+| 3 | 默认chat意图(纯对话，不加载工具) | 0 | 兜底 |
 
 ```python
 # Chat启发式检测
@@ -430,7 +455,17 @@ async def _check_and_load_missing_tools(self, tool_calls: List[dict]) -> None:
 
 ### 4.1 为什么统一Agent
 
-**当前9个Agent分析**：6个极简同质(73-76行) + TimeReactAgent(98行,rollback=True) + FileReactAgent(385行,独立session/rollback/alias/Hook) + CodeExecutionReactAgent(76行,shell兼容别名)（来源：小沈审查v1.2）。
+**业界先验**：OpenAI Assistants API(1个Assistant=instructions+tools配置化)、AutoGPT(单Agent+全量工具)、LangChain Agent(单Agent+LLM自选)、Dify/Coze(1个Bot+插件配置)。多Agent框架(CrewAI/MetaGPT)的每个Agent有**本质不同行为逻辑**(产品经理写PRD≠工程师写代码)，非仅Prompt+Category差异。
+
+**当前9个Agent分析**：6个极简同质(73-76行，ReAct循环+工具执行+Observation逻辑字面级相同，仅Prompt类+ToolCategory不同) + TimeReactAgent(98行,rollback=True) + FileReactAgent(385行,独立session/rollback/alias/Hook) + CodeExecutionReactAgent(76行,shell兼容别名)。
+
+**统一1个的硬核收益**：
+- 删除7个同质Agent文件(-532行) + 7个Prompt类(-1400行→动态组合400行) + AgentFactory(-201行)
+- 新增意图**零代码改动**(当前6+处→0处，仅YAML配置)
+- 跨分类操作天然支持("下载并读取"当前需2个Agent串行，1个Agent直接加载FILE+DOCUMENT工具)
+- OpenAI Assistants API已验证此模式：1个Assistant+tools配置化，LLM通过function calling自选工具
+
+**不能多几个的前提**：Agent间有本质行为差异。当前7个没有。若未来出现真正不同执行逻辑(如流式生成Agent≠批量批处理Agent)，再新增——那是新需求，不是保留当前伪多Agent。
 
 | Agent | 代码行数 | 实质差异 | 处置 |
 |-------|---------|---------|------|
