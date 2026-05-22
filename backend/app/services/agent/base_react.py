@@ -774,7 +774,13 @@ class BaseAgent(ABC):
                     "status": _status,
                     "summary": execution_result.get("message", ""),
                     "data": execution_result.get("data"),
-                    "retry_count": execution_result.get("retry_count", 0)
+                    "retry_count": execution_result.get("retry_count", 0),
+                    "code": execution_result.get("code", "SUCCESS"),
+                    "warning": execution_result.get("warning"),
+                    "attachment": execution_result.get("attachment"),
+                    "next_actions": execution_result.get("next_actions"),
+                    "return_direct": execution_result.get("return_direct", False),
+                    "error_message": execution_result.get("error_message", ""),
                 }
 
                 # 【步骤2.9】使用StepFactory创建ActionToolStep
@@ -838,7 +844,7 @@ class BaseAgent(ABC):
 
                 # ===== 【步骤2.9】yield observation =====
                 # 【改进2 2026-05-01】给前端通道也附加质量警告
-                display_summary = execution_result.get('summary', '')
+                display_summary = execution_result.get('message', '')
                 if tool_name == "write_file" and exec_status == 'success':
                     data_dict = execution_result.get('data', {}) or {}
                     quality_warning = self._check_write_content_quality(tool_params, data_dict)
@@ -848,6 +854,7 @@ class BaseAgent(ABC):
                 # 使用带警告的display_result创建ObservationStep（给前端）
                 display_result = dict(execution_result)
                 display_result['summary'] = display_summary
+                display_result.setdefault('error_message', '')
 
                 observation_step = StepFactory.create_observation_step(
                     step=step_count,
@@ -876,10 +883,17 @@ class BaseAgent(ABC):
                 
                 # 【步骤3.6】核心设计: observation_step.is_done() 决定是否直接结束任务
                 if observation_step.is_done():
-                    # return_direct 时生成 FinalStep 并退出
+                    _result_data = execution_result.get("data")
+                    try:
+                        _response_text = json.dumps(_result_data, ensure_ascii=False) if _result_data is not None else ""
+                    except (TypeError, ValueError):
+                        _response_text = str(_result_data)
+                    _msg = execution_result.get("message", "")
+                    if _msg:
+                        _response_text = _msg + "\n" + _response_text
                     final_step = StepFactory.create_final_step(
                         step=step_count,
-                        response=str(execution_result.get("data", "")),
+                        response=_response_text,
                         thought="工具执行要求直接返回结果",
                         model=getattr(self, 'model', None),
                         provider=getattr(self, 'provider', None)
@@ -912,6 +926,12 @@ class BaseAgent(ABC):
                         "summary": p_result.get("message", ""),
                         "data": p_result.get("data"),
                         "retry_count": p_result.get("retry_count", 0),
+                        "code": _p_code,
+                        "warning": p_result.get("warning"),
+                        "attachment": p_result.get("attachment"),
+                        "next_actions": p_result.get("next_actions"),
+                        "return_direct": p_result.get("return_direct", False),
+                        "error_message": p_result.get("error_message", ""),
                     }
                     
                     # action_tool + observation 成对yield
