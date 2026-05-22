@@ -179,10 +179,6 @@ FILE_TOOL_DESCRIPTIONS = {
 - action="copy"：复制文件（备份）
 - action="delete"：删除文件（可放回收站）
 
-参数说明：
-- force：仅delete模式有效，True=跳过回收站永久删除，False=放入回收站
-- preserve_metadata：仅copy模式有效，True=保留文件元数据（修改时间等）
-
 使用示例：【常用名转换说明】
 - 移动/move_file → file_operation(action="move", source="D:/a.txt", destination="E:/b.txt")
 - 复制/copy_file → file_operation(action="copy", source="D:/a.txt", destination="D:/backup/a.txt")
@@ -207,10 +203,6 @@ FILE_TOOL_DESCRIPTIONS = {
 - 写YAML/write_yaml → data_file_format(action="write", file_path="D:/config.yaml", data={"key":"value"})
 - 读TOML → data_file_format(action="read", file_path="D:/config.toml")
 - 读INI/read_config → data_file_format(action="read", file_path="D:/config.ini")
-
-参数说明：
-- data：write模式必填，JSON/YAML/TOML传dict或list
-- indent：仅JSON写入有效，格式化缩进空格数（默认2）
 
 返回数据说明：
 - data.success/data.data(读取)/data.format/data.bytes_written(写入)""",

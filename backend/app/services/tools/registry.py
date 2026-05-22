@@ -652,20 +652,23 @@ class ToolRegistry:
             return "default=" + str(val)
         return ""
 
-    def generate_param_reminder(self, category: Optional['ToolCategory'] = None) -> str:
+    def generate_param_reminder(self, category: Optional['ToolCategory'] = None, style: str = "code") -> str:
         """
         从 input_schema 自动生成 Parameter Reminder 文本 - 小沈 2026-05-09
-        
+
         参数信息完全来自 Pydantic 模型：
         - 参数名：properties 的 key
         - 参数类型：properties[field].type
         - 必填/可选：是否在 required 数组中
         - 默认值：properties[field].default（跳过 None）
-        
+
         Args:
             category: 工具分类，None=全部
+            style: "code"=函数签名风格(推荐), "text"=自然语言风格(兼容)
         """
-        lines = ["Parameter Reminder (auto-generated from Pydantic):", ""]
+        TYPE_MAP = {"integer": "int", "number": "number", "string": "str", "boolean": "bool", "object": "dict", "array": "list"}
+        header = "Parameter Reminder (auto-generated from Pydantic):" if style == "text" else "Available Functions (auto-generated):"
+        lines = [header, ""]
         for name, meta in sorted(self._tools.items(), key=lambda x: x[0]):
             if not meta.expose_to_llm:
                 continue
@@ -678,16 +681,43 @@ class ToolRegistry:
             required_set = set(schema.get("required", []))
             param_parts = []
             for pname, pinfo in schema.get("properties", {}).items():
-                ptype = pinfo.get("type", "any")
+                ptype = pinfo.get("type")
+                if ptype is None:
+                    if "anyOf" in pinfo:
+                        type_set = set()
+                        for item in pinfo["anyOf"]:
+                            if isinstance(item, dict) and "type" in item and item["type"] != "null":
+                                type_set.add(item["type"])
+                        ptype = "/".join(sorted(type_set)) if type_set else "any"
+                    elif "oneOf" in pinfo:
+                        type_set = set()
+                        for item in pinfo["oneOf"]:
+                            if isinstance(item, dict) and "type" in item and item["type"] != "null":
+                                type_set.add(item["type"])
+                        ptype = "/".join(sorted(type_set)) if type_set else "any"
+                    else:
+                        ptype = "any"
                 req_str = "required" if pname in required_set else "optional"
                 default_str = self._format_default(pinfo.get("default"))
-                if default_str:
-                    param_parts.append("{}({}, {}, {})".format(pname, req_str, ptype, default_str))
+
+                if style == "code":
+                    short_type = "/".join(TYPE_MAP.get(t.strip(), t.strip()) for t in ptype.split("/"))
+                    optional_mark = "" if pname in required_set else "?"
+                    default_expr = ""
+                    if default_str:
+                        default_expr = "=" + default_str.split("=", 1)[1]
+                    param_parts.append(f"{pname}{optional_mark}: {short_type}{default_expr}")
                 else:
-                    param_parts.append("{}({}, {})".format(pname, req_str, ptype))
+                    if default_str:
+                        param_parts.append("{}({}, {}, {})".format(pname, req_str, ptype, default_str))
+                    else:
+                        param_parts.append("{}({}, {})".format(pname, req_str, ptype))
             
             if param_parts:
-                lines.append("- " + name + ": " + ", ".join(param_parts))
+                if style == "code":
+                    lines.append(f"def {name}({', '.join(param_parts)})")
+                else:
+                    lines.append("- " + name + ": " + ", ".join(param_parts))
         
         return "\n".join(lines)
 

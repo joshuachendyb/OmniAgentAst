@@ -48,13 +48,6 @@ SHELL_TOOL_DESCRIPTIONS = {
 - 执行系统命令、脚本、程序
 - 后台运行服务(npm run dev等)
 
-【参数说明】
-- shell_type：powershell(默认)或cmd
-- timeout：超时毫秒数，默认30000(30秒)，最大600000(10分钟)
-- run_in_background：后台运行，长期服务设为true
-- cwd：工作目录，不设则使用系统当前目录
-- env_vars：额外环境变量字典，与系统环境变量合并
-
 【使用示例】
 - 执行dir命令：execute_shell_command(command="dir")
 - 后台运行：execute_shell_command(command="npm run dev", run_in_background=true)
@@ -89,13 +82,6 @@ SHELL_TOOL_DESCRIPTIONS = {
 - 支持python和javascript两种语言
 - ⚠️ 比 shell命令直接执行更安全：内置安全检查拦截危险操作
 
-【参数说明】
-- code：代码字符串，必填，可多行
-- language：语言类型，python(默认)或javascript
-- timeout：超时秒数，默认30，最大300
-- working_dir：工作目录，不设则当前目录，不存在时自动创建
-- safety_check：安全检查，默认True
-
 【使用示例】【常用名转换说明】
 - Python/execute_python → execute_code(code="print('Hello, World!')")
 - JavaScript/execute_javascript → execute_code(code="console.log('Hello');", language="javascript")
@@ -108,11 +94,6 @@ SHELL_TOOL_DESCRIPTIONS = {
 【使用场景】
 - action="output"：读取后台命令输出（默认），返回尾部最新输出
 - action="terminate"：终止后台会话
-
-【参数说明】
-- filter：输出过滤正则（action=output时生效），如 "ERROR|FAIL"
-- max_lines：最大返回行数（action=output时生效），默认1000
-- force：强制终止（action=terminate时生效），优雅终止失败时设true
 
 【使用示例】【常用名转换说明】
 - 读取输出/get_shell_output → shell_session(shell_id="shell_abc123")

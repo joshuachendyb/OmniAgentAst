@@ -303,6 +303,20 @@ class ReactAgentMixin(ToolLoaderMixin):
             history_dicts = self.message_builder.inject_schema_text(history_dicts, self._cached_schema_text)
         return history_dicts
 
+    def _try_json_object_fallback(self) -> bool:
+        """兜底：text策略下试json_object — 小沈 2026-05-23
+        策略选择器可能因探测失败而降级为text，但模型的_capability_cache
+        实际标记了supports_response_format=True，此时试一次json_object。
+        注意：capability只区分"是否支持response_format"，不区分
+        json_object/json_schema，若模型只支持后者会试失败（被except兜回text）。
+        """
+        if not self.adapter or not self.response_format_strategy:
+            return False
+        cap = getattr(self.adapter, '_capability_cache', None)
+        if cap is None:
+            return False
+        return getattr(cap, 'supports_response_format', False)
+
     def _log_prompt(self, assembled_messages, strategy_method):
         """prompt_logger调用前记录 — 小沈 2026-05-21"""
         prompt_logger = get_prompt_logger()
@@ -328,6 +342,13 @@ class ReactAgentMixin(ToolLoaderMixin):
         """策略分派调用LLM — 小沈 2026-05-21"""
         _cls = self.__class__.__name__
         if strategy_method == "text":
+            if self._try_json_object_fallback():
+                try:
+                    return await self.response_format_strategy.call(
+                        llm_client=self.llm_client, message=last_message,
+                        history_dicts=history_dicts, conversation_history=self.message_builder.conversation_history)
+                except Exception as e:
+                    logger.warning(f"[{_cls}] json_object兜底失败，回退text: {e}")
             return await self.text_strategy.call(
                 llm_client=self.llm_client, message=last_message,
                 history_dicts=history_dicts, conversation_history=self.message_builder.conversation_history)

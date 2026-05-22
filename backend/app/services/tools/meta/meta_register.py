@@ -194,11 +194,6 @@ META_TOOL_DESCRIPTIONS = {
 - "清空所有.log临时文件"：批量删除
 - "把所有备份文件拷贝到归档目录"：批量复制
 
-【参数说明】
-- source_pattern：glob匹配模式，支持**递归匹配
-- max_files：安全上限，默认500，防误操作
-- dry_run：默认True预览，False才实际执行
-
 【使用示例】【常用名转换说明】
 - 重命名/batch_rename → batch_process(source_pattern="*.txt", action="rename", target_pattern="*.md")
 - 删除/batch_delete → batch_process(source_pattern="logs/*.log", action="delete", dry_run=false)
