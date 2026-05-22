@@ -12,6 +12,7 @@
 
 | 版本 | 时间 | 作者 | 更新内容 |
 |------|------|------|---------|
+| v1.5 | 2026-05-23 | 小沈 | 补全所有伪代码：IntentRegistry完整实现(IntentDefinition+默认意图+兼容别名+惰性初始化)、SemanticRouter完整类(LLM调用+缓存+降级)、ToolMetadata完整字段(12个原有+2个新增)、_request_authorization完整实现(fallback_mode+SSE事件+asyncio.wait_for超时+参数脱敏+AuthorizationResult)、SessionTrust TTL惰性清理 |
 | v1.4 | 2026-05-23 | 小沈 | 补充三个核心决策的硬核论证：§4.1统一Agent(业界先验OpenAI/AutoGPT/Dify均为1个+硬核收益数据)、§2.2矫正必要性(下游规则精确匹配=安全漏洞+方案对比表)、§3.3闲聊检测(无检测代价+业界做法+性价比分析) |
 | v1.3 | 2026-05-23 | 小沈 | 删除"风险分析与缓解"整章(废话)，解决方案写入对应章节：§3.5路由缓存、§3.6分级降级、§3.7动态扩展、§4.5角色融合、§6.8并发安全+误判处理、§6.9 Helper安全、§2.6 chat_router映射、SessionTrust参数维度、_request_authorization容错；新增§九未解决问题(2项) |
 | v1.2 | 2026-05-23 | 小沈 | 审查修正：Agent子类9个(非7个)、CRSS关键词175+、command_security 962行4级分级(非简单黑名单)、前端SSE 1649行(非简单EventSource)、intent_classifier与Semantic Router关系厘清、PipelineContext与chat_router对齐、SessionTrust参数维度、ToolSafetyLayer迁移command_security、trim_history字符数阈值、实施路线工期修正、回滚策略、并发安全 |
@@ -346,19 +347,82 @@ def _is_likely_chat(self, text: str) -> bool:
 ### 3.4 IntentRegistry单一真相源
 
 ```python
+@dataclass
+class IntentDefinition:
+    """意图定义"""
+    intent_type: str
+    description: str
+    category: ToolCategory
+    keywords: List[str] = field(default_factory=list)
+    active: bool = True
+    compatible_aliases: List[str] = field(default_factory=list)
+
+_DEFAULT_INTENTS = [
+    IntentDefinition("file", "文件操作：读写、搜索、复制、移动、删除", ToolCategory.FILE,
+                     keywords=["文件", "目录", "读取", "写入", "复制", "删除"]),
+    IntentDefinition("shell", "命令执行：Shell命令、脚本运行", ToolCategory.SHELL,
+                     keywords=["命令", "终端", "脚本", "运行"]),
+    IntentDefinition("network", "网络操作：HTTP请求、下载、连接检测", ToolCategory.NETWORK,
+                     keywords=["网络", "请求", "下载", "IP", "端口"]),
+    IntentDefinition("desktop", "桌面交互：窗口、截图、剪贴板", ToolCategory.DESKTOP,
+                     keywords=["截图", "窗口", "点击", "桌面"]),
+    IntentDefinition("system", "系统信息：CPU、内存、进程、环境", ToolCategory.SYSTEM,
+                     keywords=["系统", "CPU", "内存", "进程", "服务"]),
+    IntentDefinition("document", "文档处理：读取、转换、分析文档", ToolCategory.DOCUMENT,
+                     keywords=["文档", "PDF", "Excel", "转换"]),
+    IntentDefinition("meta", "元工具：时间查询、工具搜索、帮助", ToolCategory.META,
+                     keywords=["时间", "日期", "帮助", "搜索工具"],
+                     compatible_aliases=["time"]),
+]
+
 class IntentRegistry:
     """意图定义注册表 — 所有组件统一从此读取
-    
+
     启动安全：
     - 惰性加载：首次访问时ensure_intents_registered()，避免循环依赖(IntentRegistry↔Agent)
     - 单点故障兜底：registry为空时回退到硬编码默认定义(_DEFAULT_INTENTS)
     """
-    
-    def register(self, definition: IntentDefinition): ...
-    def get(self, intent_type: str) -> Optional[IntentDefinition]: ...
-    def active_intents(self) -> List[IntentDefinition]: ...
-    def crss_type_keywords(self) -> Dict: ...  # 兼容旧CRSS
-    def intent_labels(self) -> List[str]: ...  # 供LLM分类器
+
+    _instance: Optional["IntentRegistry"] = None
+    _initialized: bool = False
+
+    def __init__(self):
+        self._intents: Dict[str, IntentDefinition] = {}
+        self._alias_map: Dict[str, str] = {}
+
+    @classmethod
+    def instance(cls) -> "IntentRegistry":
+        if cls._instance is None:
+            cls._instance = cls()
+        if not cls._initialized:
+            cls._instance._ensure_initialized()
+        return cls._instance
+
+    def _ensure_initialized(self):
+        if not self._intents:
+            for definition in _DEFAULT_INTENTS:
+                self.register(definition)
+            IntentRegistry._initialized = True
+
+    def register(self, definition: IntentDefinition):
+        self._intents[definition.intent_type] = definition
+        for alias in definition.compatible_aliases:
+            self._alias_map[alias] = definition.intent_type
+
+    def get(self, intent_type: str) -> Optional[IntentDefinition]:
+        real_type = self._alias_map.get(intent_type, intent_type)
+        return self._intents.get(real_type)
+
+    def active_intents(self) -> List[IntentDefinition]:
+        return [d for d in self._intents.values() if d.active]
+
+    def crss_type_keywords(self) -> Dict[str, List[str]]:
+        return {d.intent_type: d.keywords for d in self.active_intents()}
+
+    def intent_labels(self) -> List[str]:
+        return [d.intent_type for d in self.active_intents()]
+
+intent_registry = IntentRegistry.instance()
 ```
 
 **7个活跃意图 + 4个废弃兼容映射**（来源：Agent与意图分类方案）：
@@ -381,20 +445,78 @@ Function Calling路由延迟~500ms(CRSS<1ms)，优化措施：
 - 相似度匹配：对已缓存的(query→categories)，用编辑距离/余弦相似度判断是否复用
 
 ```python
-# 路由缓存
-_router_cache: Dict[str, Tuple[List[ToolCategory], float]] = {}  # query→(categories, timestamp)
-_ROUTER_CACHE_TTL = 5  # 秒
+class SemanticRouter:
+    """语义路由器 — 基于LLM Function Calling的工具类别推荐器"""
 
-async def recommend_categories(self, user_input: str, ...) -> List[ToolCategory]:
-    # 缓存命中
-    cache_key = user_input.strip().lower()
-    if cache_key in self._router_cache:
-        cached_cats, ts = self._router_cache[cache_key]
-        if time.time() - ts < self._ROUTER_CACHE_TTL:
-            return cached_cats
-    # ...LLM调用...
-    self._router_cache[cache_key] = (result, time.time())
-    return result
+    def __init__(self, llm_client, cache_ttl: int = 5):
+        self._llm_client = llm_client
+        self._router_cache: Dict[str, Tuple[List[ToolCategory], float]] = {}
+        self._cache_ttl = cache_ttl
+
+    async def recommend_categories(
+        self, user_input: str, intent_type: Optional[str] = None
+    ) -> List[ToolCategory]:
+        if intent_type:
+            return self._intent_to_categories(intent_type)
+
+        cache_key = user_input.strip().lower()
+        if cache_key in self._router_cache:
+            cached_cats, ts = self._router_cache[cache_key]
+            if time.time() - ts < self._cache_ttl:
+                return cached_cats
+
+        intents = intent_registry.active_intents()
+        tools = [{
+            "type": "function",
+            "function": {
+                "name": "select_tool_categories",
+                "description": "根据用户请求选择需要使用的工具分类",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "categories": {
+                            "type": "array",
+                            "items": {"type": "string", "enum": [i.intent_type for i in intents]},
+                            "description": f"分类能力：{ {i.intent_type: i.description for i in intents} }"
+                        },
+                        "confidence": {
+                            "type": "number",
+                            "description": "置信度0-1"
+                        }
+                    },
+                    "required": ["categories", "confidence"]
+                }
+            }
+        }]
+
+        response = await self._llm_client.chat(
+            messages=[{"role": "user", "content": user_input}],
+            tools=tools,
+            tool_choice={"type": "function", "function": {"name": "select_tool_categories"}},
+            temperature=0.1,
+            max_tokens=100,
+        )
+
+        if response.tool_calls:
+            args = json.loads(response.tool_calls[0].function.arguments)
+            selected = args.get("categories", [])
+            result = [ToolCategory(s) for s in selected] + ALWAYS_LOAD_CATEGORIES
+            self._router_cache[cache_key] = (result, time.time())
+            return result
+
+        return FALLBACK_TIER_1 + ALWAYS_LOAD_CATEGORIES
+
+    def _intent_to_categories(self, intent_type: str) -> List[ToolCategory]:
+        INTENT_CATEGORY_MAP = {
+            "file": [ToolCategory.FILE], "shell": [ToolCategory.SHELL],
+            "network": [ToolCategory.NETWORK], "desktop": [ToolCategory.DESKTOP],
+            "system": [ToolCategory.SYSTEM], "document": [ToolCategory.DOCUMENT],
+            "meta": [ToolCategory.META], "time": [ToolCategory.META], "chat": [],
+        }
+        return INTENT_CATEGORY_MAP.get(intent_type, FALLBACK_TIER_1 + ALWAYS_LOAD_CATEGORIES)
+
+    def _is_high_confidence(self, result: List[ToolCategory]) -> bool:
+        return len(result) >= 1 and result != FALLBACK_TIER_1 + ALWAYS_LOAD_CATEGORIES
 ```
 
 ### 3.6 路由失败分级降级策略
@@ -402,28 +524,34 @@ async def recommend_categories(self, user_input: str, ...) -> List[ToolCategory]
 Router失败时不直接加载全量FALLBACK_CATEGORIES(5分类=58工具→Prompt膨胀)，而是分级降级：
 
 ```python
-# 分级fallback
-FALLBACK_TIER_1 = [ToolCategory.FILE, ToolCategory.SHELL]  # 最常用2分类≈16工具
-FALLBACK_TIER_2 = FALLBACK_TIER_1 + [ToolCategory.NETWORK, ToolCategory.SYSTEM]  # 4分类≈36工具
-FALLBACK_TIER_3 = FALLBACK_TIER_2 + [ToolCategory.DOCUMENT, ToolCategory.DESKTOP]  # 全量≈58工具
+FALLBACK_TIER_1 = [ToolCategory.FILE, ToolCategory.SHELL]
+FALLBACK_TIER_2 = FALLBACK_TIER_1 + [ToolCategory.NETWORK, ToolCategory.SYSTEM]
+FALLBACK_TIER_3 = FALLBACK_TIER_2 + [ToolCategory.DOCUMENT, ToolCategory.DESKTOP]
 
-async def recommend_categories(self, user_input: str, ...) -> List[ToolCategory]:
-    try:
-        result = await self._llm_route(user_input)
-        if result and self._is_high_confidence(result):
-            return result  # 高置信度：直接用
-        elif result:
-            return result + ALWAYS_LOAD_CATEGORIES  # 低置信度：用但加兜底
-    except Exception:
-        pass
-    
-    # LLM路由失败：分级降级
-    # Tier1：最近一次成功缓存
-    cached = self._get_recent_success_cache()
-    if cached:
-        return cached
-    # Tier2：最常用分类
-    return FALLBACK_TIER_1 + ALWAYS_LOAD_CATEGORIES
+class SemanticRouterWithFallback(SemanticRouter):
+    """带分级降级的语义路由器"""
+
+    def __init__(self, llm_client, cache_ttl: int = 5):
+        super().__init__(llm_client, cache_ttl)
+        self._recent_success_cache: Optional[List[ToolCategory]] = None
+
+    async def recommend_categories_with_fallback(
+        self, user_input: str, intent_type: Optional[str] = None
+    ) -> List[ToolCategory]:
+        try:
+            result = await self.recommend_categories(user_input, intent_type)
+            if result and self._is_high_confidence(result):
+                self._recent_success_cache = result
+                return result
+            elif result:
+                return list(set(result + ALWAYS_LOAD_CATEGORIES))
+        except Exception:
+            pass
+
+        if self._recent_success_cache:
+            return self._recent_success_cache + ALWAYS_LOAD_CATEGORIES
+
+        return FALLBACK_TIER_1 + ALWAYS_LOAD_CATEGORIES
 ```
 
 ### 3.7 工具动态扩展机制
@@ -848,7 +976,20 @@ class ToolSafetyLevel(Enum):
 # ToolMetadata新增字段
 @dataclass
 class ToolMetadata:
-    # ...原有字段...
+    """工具元数据"""
+    name: str
+    description: str
+    category: ToolCategory
+    version: str = "1.0.0"
+    author: str = ""
+    dependencies: List[str] = field(default_factory=list)
+    input_schema: Dict[str, Any] = field(default_factory=dict)
+    output_schema: Dict[str, Any] = field(default_factory=dict)
+    examples: List[Dict[str, Any]] = field(default_factory=list)
+    expose_to_llm: bool = True
+    next_actions: Dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
     safety_level: Union[ToolSafetyLevel, Dict[str, ToolSafetyLevel]] = ToolSafetyLevel.SAFE
     needs_confirmation: Union[bool, Dict[str, bool]] = False
 ```
@@ -906,7 +1047,7 @@ class ToolSafetyLayer:
         behavior = SAFETY_BEHAVIOR[safety_level]
         if not behavior.get("auto_approve", True):
             if self._session_trust.is_trusted(session_id, tool_name, params):
-                pass  # Session Trust放行
+                logger.info(f"[HITL] Session Trust放行: {tool_name}")
             else:
                 auth_result = await self._request_authorization(tool_name, params)
                 if not auth_result.approved:
@@ -931,19 +1072,73 @@ class ToolSafetyLayer:
             return safety_level.get(action, ToolSafetyLevel.SAFE)
         return safety_level or ToolSafetyLevel.SAFE
     
-    async def _request_authorization(self, tool_name: str, params: dict):
+    async def _request_authorization(self, tool_name: str, params: dict) -> "AuthorizationResult":
         """SSE暂停 → 发送授权事件 → 等待用户响应 → 超时60秒自动拒绝
-        
+
         容错设计：
         - 60秒超时自动拒绝（防挂起期间网络闪断导致永久阻塞）
         - 后端检测前端是否监听：无监听时走fallback_mode(block而非放行)
         - Phase 5→7缺口期：fallback_mode=block，DANGEROUS/DESTRUCTIVE自动拦截
         - Phase 7完成后：fallback_mode=prompt，正常交互弹窗
         """
-        # 挂起ReAct循环，发送 AUTHORIZATION_REQUIRED SSE事件
-        # 等待前端 /confirm 接口回调
-        # 60秒超时自动拒绝
-        ...
+        from app.config import get_config
+        config = get_config()
+        fallback_mode = config.get("architecture.hitl.fallback_mode", "prompt")
+
+        if fallback_mode == "block":
+            logger.warning(f"[HITL] fallback_mode=block, 自动拦截: {tool_name}")
+            return AuthorizationResult(approved=False, trust_session=False, reason="auto_blocked")
+
+        auth_event = {
+            "type": "authorization_required",
+            "tool_name": tool_name,
+            "params": self._desensitize_params(params),
+            "risk_description": SAFETY_BEHAVIOR.get(
+                self._resolve_safety_level(tool_registry.get_tool(tool_name), params),
+                {}
+            ).get("risk_description", ""),
+            "timestamp": datetime.now().isoformat(),
+        }
+
+        if self._sse_emitter:
+            await self._sse_emitter(auth_event)
+
+        try:
+            result = await asyncio.wait_for(
+                self._wait_for_confirmation(tool_name),
+                timeout=config.get("architecture.hitl.suspend_timeout", 60)
+            )
+            return result
+        except asyncio.TimeoutError:
+            logger.warning(f"[HITL] 超时自动拒绝: {tool_name}")
+            return AuthorizationResult(approved=False, trust_session=False, reason="timeout")
+
+    def _desensitize_params(self, params: dict) -> dict:
+        """参数脱敏：隐藏敏感字段值"""
+        SENSITIVE_KEYS = {"password", "token", "secret", "api_key", "credential"}
+        return {
+            k: "***" if any(s in k.lower() for s in SENSITIVE_KEYS) else v
+            for k, v in params.items()
+        }
+
+    async def _wait_for_confirmation(self, tool_name: str) -> "AuthorizationResult":
+        """等待前端/confirm接口回调"""
+        future = asyncio.get_event_loop().create_future()
+        self._pending_authorizations[tool_name] = future
+        return await future
+
+    def resolve_authorization(self, tool_name: str, approved: bool, trust_session: bool):
+        """前端回调/confirm时调用，解除挂起"""
+        future = self._pending_authorizations.pop(tool_name, None)
+        if future and not future.done():
+            future.set_result(AuthorizationResult(approved=approved, trust_session=trust_session))
+
+
+@dataclass
+class AuthorizationResult:
+    approved: bool
+    trust_session: bool
+    reason: str = ""
 ```
 
 ### 6.7 Session Trust机制（Set实现）
@@ -960,10 +1155,12 @@ class SessionTrustManager:
     
     def __init__(self, trust_ttl: int = 300):
         self._trust_store: Dict[str, Set[str]] = {}
+        self._trust_timestamps: Dict[str, float] = {}
         self._trust_ttl = trust_ttl
     
     def is_trusted(self, session_id: str, tool_name: str, params: dict) -> bool:
-        """检查是否已信任。信任粒度：tool_name:action"""
+        """检查是否已信任。TTL过期则清除"""
+        self._cleanup_expired(session_id)
         trust_key = self._make_trust_key(tool_name, params)
         session_trusts = self._trust_store.get(session_id, set())
         return trust_key in session_trusts
@@ -974,7 +1171,14 @@ class SessionTrustManager:
         if session_id not in self._trust_store:
             self._trust_store[session_id] = set()
         self._trust_store[session_id].add(trust_key)
-        # TODO: TTL清理（可配定时器或惰性清理）
+        self._trust_timestamps[session_id] = time.time()
+
+    def _cleanup_expired(self, session_id: str):
+        """惰性清理：TTL过期的会话信任全量清除"""
+        last_ts = self._trust_timestamps.get(session_id, 0)
+        if last_ts and (time.time() - last_ts) > self._trust_ttl:
+            self._trust_store.pop(session_id, None)
+            self._trust_timestamps.pop(session_id, None)
     
     def _make_trust_key(self, tool_name: str, params: dict) -> str:
         """信任键：tool_name:action + 参数关键维度
