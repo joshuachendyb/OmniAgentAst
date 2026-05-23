@@ -671,7 +671,7 @@ export const useSSE = (
         : `${config.baseURL}/chat/stream`;
       const controller = new AbortController();
       abortControllerRef.current = controller; // 【修复 2026-05-11 小健】保存到ref，disconnect时可abort
-      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      const timeoutId = setTimeout(() => controller.abort(), 180000); // 180s超时，qwen2.5:1.5b CPU首次推理约2分钟
 
       const response = await fetch(url, {
         method: 'POST',
