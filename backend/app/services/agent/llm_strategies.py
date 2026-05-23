@@ -15,13 +15,39 @@ from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional
 from datetime import datetime
 
-from app.services.agent.adapter import dict_list_to_messages
 from app.utils.logger import logger
 from app.chat_stream.error_handler import resolve_http_error_type, get_stream_error_info
 
 
 class LLMStrategy(ABC):
     """LLM 调用策略基类"""
+    
+    MAX_RETRIES = 3
+    RETRY_DELAY = 2.0
+    
+    @staticmethod
+    def _is_rate_limit_error(error: Any) -> bool:
+        """统一429/限流判断 — 合并3个子类的不同条件"""
+        s = str(error)
+        return any(k in s for k in ("429", "1305", "Rate limit", "请求过于频繁"))
+    
+    async def _call_with_rate_limit_retry(self, coro_factory, max_retries: int = 3, retry_delay: float = 2.0):
+        """429指数退避重试通用实现 — coro_factory是返回协程的可调用对象"""
+        import asyncio
+        for attempt in range(max_retries):
+            response = await coro_factory()
+            error_info = getattr(response, 'error', None)
+            if error_info and self._is_rate_limit_error(error_info):
+                if attempt < max_retries - 1:
+                    delay = retry_delay * (2 ** attempt)
+                    logger.warning(f"[429重试] 第{attempt+1}/{max_retries}次, {delay:.0f}s后重试, error={error_info}")
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    logger.error(f"[429重试] 持续{max_retries}次限流, 放弃")
+                    break
+            return response
+        return response
     
     @abstractmethod
     async def call(
@@ -86,32 +112,12 @@ class TextStrategy(LLMStrategy):
         conversation_history: List[Dict[str, str]],
         **kwargs
     ) -> str:
-        """
-        调用 LLM（文本模式），含429指数退避重试 - 小健 2026-05-21
-        """
+        """调用 LLM（文本模式），含429指数退避重试"""
         logger.info(f"[TextStrategy] call() 被调用, model={getattr(llm_client, 'model', '?')}")
-        history_messages = dict_list_to_messages(history_dicts)
         
-        response = None
-        for attempt in range(self.MAX_RETRIES):
-            response = await llm_client(
-                message=message,
-                history=history_messages
-            )
-            error_info = None
-            if hasattr(response, 'error') and response.error:
-                error_info = response.error
-            if error_info and ("429" in str(error_info) or "Rate limit" in str(error_info) or "请求过于频繁" in str(error_info)):
-                if attempt < self.MAX_RETRIES - 1:
-                    retry_delay = self.RETRY_DELAY * (2 ** attempt)
-                    logger.warning(f"[TextStrategy] 429限流 (第{attempt+1}/{self.MAX_RETRIES}次), {retry_delay:.0f}s后重试...")
-                    import asyncio
-                    await asyncio.sleep(retry_delay)
-                    continue
-                else:
-                    logger.error(f"[TextStrategy] 429限流持续{self.MAX_RETRIES}次, 放弃重试")
-                    break
-            break
+        response = await self._call_with_rate_limit_retry(
+            lambda: llm_client(message=message, history=history_dicts)
+        )
         
         error_info = None
         if hasattr(response, 'error') and response.error:
@@ -466,8 +472,6 @@ class ToolsStrategy(LLMStrategy):
         logger.info(f"[ToolsStrategy] call() 被调用, model={getattr(llm_client, 'model', '?')}, tools_count={len(self.tools)}")
         import asyncio
         
-        history_messages = dict_list_to_messages(history_dicts)
-        
         # 检查 llm_client 是否有 chat_with_tools 方法
         if not hasattr(llm_client, 'chat_with_tools'):
             logger.warning("[Function Calling] llm_client has no chat_with_tools method, falling back to text mode")
@@ -486,7 +490,7 @@ class ToolsStrategy(LLMStrategy):
             try:
                 response = await llm_client.chat_with_tools(
                     message=message,
-                    history=history_messages,
+                    history=history_dicts,
                     tools=self.tools
                 )
                 
@@ -495,8 +499,7 @@ class ToolsStrategy(LLMStrategy):
                     error_msg = response.error
                     last_error = error_msg
                     
-                    # 检查是否是限流错误，使用指数退避
-                    if "429" in str(error_msg) or "1305" in str(error_msg):
+                    if self._is_rate_limit_error(error_msg):
                         if attempt < self.MAX_RETRIES - 1:
                             # 指数退避: 2, 4, 8 秒递增
                             retry_delay = self.RETRY_DELAY * (2 ** attempt)
@@ -715,12 +718,9 @@ class ResponseFormatStrategy(LLMStrategy):
         _schema_name = self.response_format.get("json_schema", {}).get("name", "?") if isinstance(self.response_format, dict) else "?"
         logger.info(f"[ResponseFormatStrategy] call() 被调用, model={getattr(llm_client, 'model', '?')}, schema_name={_schema_name}")
         try:
-            history_messages = dict_list_to_messages(history_dicts)
-            
-            # 调用 LLM（使用 chat_with_response_format 方法）
             response = await llm_client.chat_with_response_format(
                 message=message,
-                history=history_messages,
+                history=history_dicts,
                 response_format=self.response_format
             )
             

@@ -23,7 +23,6 @@ from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin  # „ÄêÊ≠
 from app.services.tools.registry import ToolCategory
 from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.llm_strategies import TextStrategy
-from app.services.agent.llm_adapter import LLMAdapter
 from app.services.prompts.meta import TimePrompts
 from app.utils.logger import logger
 

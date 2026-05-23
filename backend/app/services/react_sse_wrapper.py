@@ -32,7 +32,6 @@ import uuid
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 from app.services import AIServiceFactory
-from app.services.llm_core import Message
 from app.services.command_security import check_command_safety
 from app.config import get_config
 from app.utils.logger import logger
@@ -688,7 +687,7 @@ async def generate_sse_stream(
         history = []
         if len(messages) > 1:
             for msg in messages[:-1]:
-                history.append(Message(role=msg["role"], content=msg["content"]))
+                history.append({"role": msg["role"], "content": msg["content"]})
         
         # 检查中断
         is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock)

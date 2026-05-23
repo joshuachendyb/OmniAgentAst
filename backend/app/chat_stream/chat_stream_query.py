@@ -12,7 +12,6 @@ import json
 import asyncio
 from typing import List, Dict, Optional, Any, Callable, AsyncGenerator
 
-from app.services.llm_core import Message
 from app.utils.retry_controller import RetryController
 from app.utils.idle_timeout import IdleTimeoutIterator, IdleTimeoutError
 from app.chat_stream.chat_helpers import create_timestamp, create_final_response
@@ -86,7 +85,7 @@ async def chat_stream_query(
     history = []
     if len(request.messages) > 1:
         for msg in request.messages[:-1]:
-            history.append(Message(role=msg.role, content=msg.content))
+            history.append({"role": msg.role, "content": msg.content})
     
     # 统一的空闲超时和重试机制
     # 空闲超时由 IdleTimeoutIterator 实时检测，重试次数由 RetryController 管理

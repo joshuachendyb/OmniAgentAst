@@ -199,16 +199,15 @@ class BaseAIService:
         self._cancelled = False
         self._current_response = None
     
-    def _build_messages(self, message: str, history: Optional[List[Message]] = None) -> List[Dict]:
-        """构建消息列表"""
+    def _build_messages(self, message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
+        """构建消息列表 — 直接接收List[Dict]，消除Dict→Message→Dict往返转换"""
         messages = []
         if history:
-            for msg in history:
-                messages.append(msg.to_dict())
+            messages.extend(history)
         messages.append({"role": "user", "content": message})
         return messages
     
-    async def chat(self, message: str, history: Optional[List[Message]] = None) -> ChatResponse:
+    async def chat(self, message: str, history: Optional[List[Dict]] = None) -> ChatResponse:
         """发送对话请求（一次性返回）
         
         【修复 2026-05-05 小沈】添加reasoning_content聚合日志，
@@ -489,7 +488,7 @@ class BaseAIService:
     async def chat_with_tools(
         self,
         message: str,
-        history: Optional[List[Message]] = None,
+        history: Optional[List[Dict]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto"
     ) -> ChatResponse:
@@ -636,7 +635,7 @@ class BaseAIService:
     async def chat_with_tools_stream(
         self,
         message: str,
-        history: Optional[List[Message]] = None,
+        history: Optional[List[Dict]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto"
     ) -> AsyncGenerator[StreamChunk, None]:
@@ -806,7 +805,7 @@ class BaseAIService:
     async def chat_with_response_format(
         self,
         message: str,
-        history: Optional[List[Message]] = None,
+        history: Optional[List[Dict]] = None,
         response_format: Optional[Dict[str, Any]] = None
     ) -> ChatResponse:
         """发送对话请求（使用 Structured Outputs response_format）"""
