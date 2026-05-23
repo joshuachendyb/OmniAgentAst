@@ -37,7 +37,6 @@ class MessageBuilder:
     def __init__(self, max_context_chars: int = 150000):
         self.conversation_history: List[Dict[str, Any]] = []
         self.temp_history: List[Dict[str, Any]] = []
-        self._executed_tool_summary: List[str] = []
         self.MAX_CONTEXT_CHARS = max_context_chars
         # Schema/工具内容缓存
         self._cached_schema_text: Optional[str] = None
@@ -150,19 +149,6 @@ class MessageBuilder:
         else:
             insert_pos = len(history_dicts)
         return list(history_dicts[:insert_pos]) + [tools_msg] + list(history_dicts[insert_pos:])
-
-    @staticmethod
-    def inject_executed_summary(
-        history_dicts: List[Dict[str, Any]],
-        executed_tool_summary: List[str]
-    ) -> List[Dict[str, Any]]:
-        """注入已执行工具汇总 — 替代 react_agent_mixin.py L365-371"""
-        done_tools = [s for s in executed_tool_summary if '→success' in s]
-        if not done_tools:
-            return history_dicts
-        progress = ("【已执行工具(勿重复)】" + "; ".join(done_tools[-8:])
-                   + "\n注意：上述工具已成功执行，结果已在Observation中，禁止再次调用！")
-        return list(history_dicts) + [{"role": "system", "content": progress}]
 
     @staticmethod
     def inject_schema_text(

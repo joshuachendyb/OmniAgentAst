@@ -212,8 +212,6 @@ class ReactAgentMixin(ToolLoaderMixin):
             logger.info(f"[{self.__class__.__name__}] 策略确定: {self._strategy}")
 
         messages = self._inject_tools_hint(messages, self._strategy)
-        _ets = getattr(mb, '_executed_tool_summary', [])
-        messages = mb.inject_executed_summary(messages, _ets)
         if self._strategy == "text":
             messages = self._inject_schema(messages)
         self._log_prompt(messages, self._strategy)

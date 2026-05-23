@@ -143,8 +143,6 @@ class BaseAgent(ABC):
         # 创建工具执行器
         self.executor = None  # 子类应初始化
         
-        # 【2026-05-21 小沈】缓存/失败计数/汇总已迁入MessageBuilder，此处删除
-        # 原: _executed_cache, _cache_ttl, _cache_timestamps, _failed_attempts, _executed_tool_summary
     
     @property
     def conversation_history(self) -> List[Dict[str, str]]:
@@ -209,8 +207,6 @@ class BaseAgent(ABC):
         pass
     
     # ===== 可扩展 Hook 方法（子类可覆盖）=====
-    
-    # 【2026-05-21 小沈】_params_to_key和_is_no_cache_tool已迁入MessageBuilder
     
     def _on_session_init(self, task: str, context: Optional[Dict[str, Any]]):
         """
