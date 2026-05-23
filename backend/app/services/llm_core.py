@@ -105,6 +105,43 @@ class StreamChunk:
         self.is_reasoning = is_reasoning
 
 
+class _StreamRetryContext:
+    """流式请求429重试上下文管理器 — 在传输层统一处理限流"""
+
+    def __init__(self, service, url, headers, json_body, max_retries=3, retry_delay=2.0):
+        self.service = service
+        self.url = url
+        self.headers = headers
+        self.json_body = json_body
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        self._response_ctx = None
+
+    async def __aenter__(self):
+        import asyncio
+        for attempt in range(self.max_retries):
+            self._response_ctx = self.service.client.stream(
+                "POST", self.url, headers=self.headers, json=self.json_body
+            )
+            response = await self._response_ctx.__aenter__()
+            if self.service._is_rate_limit_status(response.status_code):
+                await self._response_ctx.__aexit__(None, None, None)
+                if attempt < self.max_retries - 1:
+                    delay = self.retry_delay * (2 ** attempt)
+                    logger.warning(f"[429重试] 流式HTTP {response.status_code}, 第{attempt+1}/{self.max_retries}次, {delay:.0f}s后重试")
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    logger.error(f"[429重试] 流式HTTP {response.status_code}, 持续{self.max_retries}次, 放弃")
+                    return response
+            return response
+        return response
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self._response_ctx:
+            return await self._response_ctx.__aexit__(exc_type, exc_val, exc_tb)
+
+
 class BaseAIService:
     """
     通用AI服务 - 一个类支持所有OpenAI兼容API
@@ -199,6 +236,34 @@ class BaseAIService:
         self._cancelled = False
         self._current_response = None
     
+    def _is_rate_limit_status(self, status_code: int) -> bool:
+        """判断HTTP状态码是否为限流"""
+        return status_code == 429 or status_code == 1305
+    
+    async def _post_with_retry(self, url: str, headers: dict, json_body: dict, max_retries: int = 3, retry_delay: float = 2.0):
+        """带429指数退避重试的POST请求 — 在传输层统一处理限流"""
+        import asyncio
+        for attempt in range(max_retries):
+            response = await self.client.post(url, headers=headers, json=json_body)
+            if self._is_rate_limit_status(response.status_code):
+                if attempt < max_retries - 1:
+                    delay = retry_delay * (2 ** attempt)
+                    logger.warning(f"[429重试] HTTP {response.status_code}, 第{attempt+1}/{max_retries}次, {delay:.0f}s后重试")
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    logger.error(f"[429重试] HTTP {response.status_code}, 持续{max_retries}次, 放弃")
+            return response
+        return response
+    
+    def _stream_with_retry(self, url: str, headers: dict, json_body: dict, max_retries: int = 3, retry_delay: float = 2.0):
+        """带429指数退避重试的流式请求上下文管理器
+        
+        用法: async with self._stream_with_retry(url, headers, body) as response:
+        429时自动重试，非429直接返回response上下文。
+        """
+        return _StreamRetryContext(self, url, headers, json_body, max_retries, retry_delay)
+    
     def _build_messages(self, message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
         """构建消息列表
         
@@ -268,14 +333,13 @@ class BaseAIService:
         logger.info(f"[LLM Request] model={self.model}, messages数量={len(messages)}, 首条消息={messages[0] if messages else '无'}")
         
         try:
-            async with self.client.stream(
-                "POST",
+            async with self._stream_with_retry(
                 f"{self.api_base}/chat/completions",
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json"
                 },
-                json=self._build_request_body(messages)
+                json_body=self._build_request_body(messages)
             ) as response:
                 self._current_response = response
                 
@@ -524,13 +588,13 @@ class BaseAIService:
             
             # 【小沈优化 2026-04-21】使用后台任务+心跳检查，支持1秒内响应取消
             request_task = asyncio.ensure_future(
-                self.client.post(
+                self._post_with_retry(
                     f"{self.api_base}/chat/completions",
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json"
                     },
-                    json=request_json
+                    json_body=request_json
                 )
             )
             
@@ -667,14 +731,13 @@ class BaseAIService:
                 f"tools数量={len(tools) if tools else 0}"
             )
             
-            async with self.client.stream(
-                "POST",
+            async with self._stream_with_retry(
                 f"{self.api_base}/chat/completions",
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json"
                 },
-                json=request_json
+                json_body=request_json
             ) as response:
                 self._current_response = response
                 
@@ -832,13 +895,13 @@ class BaseAIService:
                 f"response_format={'provided' if response_format else 'None'}"
             )
             
-            response = await self.client.post(
+            response = await self._post_with_retry(
                 f"{self.api_base}/chat/completions",
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json"
                 },
-                json=request_json
+                json_body=request_json
             )
             
             if response.status_code != 200:

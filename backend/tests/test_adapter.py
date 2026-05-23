@@ -488,7 +488,6 @@ class TestThreeStrategiesEndToEnd:
         from app.services.agent.llm_strategies import TextStrategy
         strategy = TextStrategy()
         assert strategy is not None
-        assert strategy.MAX_RETRIES == 3
 
     def test_tools_strategy_constructs_and_returns_json(self):
         """ToolsStrategy 可构造并返回合法 JSON"""
