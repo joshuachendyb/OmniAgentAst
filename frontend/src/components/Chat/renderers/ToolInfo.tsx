@@ -48,7 +48,7 @@ export const ToolInfo: React.FC<ToolInfoProps> = ({
       <Text
         strong
         style={{
-          fontSize: FontSize.SM,
+          fontSize: FontSize.SECONDARY,
           fontWeight: FontWeight.MEDIUM,
           color: Colors.TEXT.PRIMARY,
         }}
@@ -57,13 +57,13 @@ export const ToolInfo: React.FC<ToolInfoProps> = ({
       </Text>
       {paramEntries.length > 0 && (
         <>
-          <Text style={{ color: Colors.TEXT.SECONDARY, fontSize: FontSize.XS }}>
+          <Text style={{ color: Colors.TEXT.SECONDARY, fontSize: FontSize.TERTIARY }}>
             (
           </Text>
           {paramEntries.map(([key, value], idx) => (
             <React.Fragment key={key}>
               <Text
-                style={{ color: Colors.TEXT.SECONDARY, fontSize: FontSize.XS }}
+                style={{ color: Colors.TEXT.SECONDARY, fontSize: FontSize.TERTIARY }}
               >
                 {key}=
               </Text>
@@ -71,7 +71,7 @@ export const ToolInfo: React.FC<ToolInfoProps> = ({
                 style={{
                   margin: 0,
                   padding: '0 4px',
-                  fontSize: FontSize.XS,
+                  fontSize: FontSize.TERTIARY,
                   lineHeight: '18px',
                   background: Colors.BG.LIGHT,
                   border: 'none',
@@ -83,7 +83,7 @@ export const ToolInfo: React.FC<ToolInfoProps> = ({
                 <Text
                   style={{
                     color: Colors.TEXT.SECONDARY,
-                    fontSize: FontSize.XS,
+                    fontSize: FontSize.TERTIARY,
                   }}
                 >
                   ,{' '}
@@ -91,7 +91,7 @@ export const ToolInfo: React.FC<ToolInfoProps> = ({
               )}
             </React.Fragment>
           ))}
-          <Text style={{ color: Colors.TEXT.SECONDARY, fontSize: FontSize.XS }}>
+          <Text style={{ color: Colors.TEXT.SECONDARY, fontSize: FontSize.TERTIARY }}>
             )
           </Text>
         </>

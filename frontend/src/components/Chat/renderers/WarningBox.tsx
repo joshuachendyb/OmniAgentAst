@@ -29,10 +29,10 @@ export const WarningBox: React.FC<WarningBoxProps> = ({ warning }) => {
       }}
     >
       <WarningOutlined
-        style={{ color: Colors.WARNING, fontSize: FontSize.SM, marginTop: 2 }}
+        style={{ color: Colors.WARNING, fontSize: FontSize.SECONDARY, marginTop: 2 }}
       />
       <Text
-        style={{ color: Colors.TEXT.SECONDARY, fontSize: FontSize.SM, flex: 1 }}
+        style={{ color: Colors.TEXT.SECONDARY, fontSize: FontSize.SECONDARY, flex: 1 }}
       >
         {warning}
       </Text>

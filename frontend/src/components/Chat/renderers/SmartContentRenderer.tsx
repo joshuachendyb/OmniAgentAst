@@ -40,7 +40,7 @@ const renderString = (str: string, maxLines?: number): React.ReactNode => {
           padding: Spacing.SM,
           background: Colors.BG.LIGHT,
           borderRadius: Radius.SM,
-          fontSize: FontSize.XS,
+          fontSize: FontSize.TERTIARY,
           overflow: 'auto',
           maxHeight: maxLines ? `${maxLines * 20}px` : undefined,
         }}
@@ -54,7 +54,7 @@ const renderString = (str: string, maxLines?: number): React.ReactNode => {
     <Paragraph
       style={{
         margin: 0,
-        fontSize: FontSize.SM,
+        fontSize: FontSize.SECONDARY,
         color: Colors.TEXT.PRIMARY,
       }}
       ellipsis={maxLines ? { rows: maxLines, expandable: true } : false}
@@ -74,7 +74,7 @@ const renderObject = (obj: unknown): React.ReactNode => {
           padding: Spacing.SM,
           background: Colors.BG.LIGHT,
           borderRadius: Radius.SM,
-          fontSize: FontSize.XS,
+          fontSize: FontSize.TERTIARY,
           overflow: 'auto',
           maxHeight: '300px',
         }}

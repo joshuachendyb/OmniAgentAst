@@ -202,7 +202,7 @@ const StepContent: React.FC<StepContentProps> = ({
                 {returnDirect && (
                   <span
                     style={{
-                      fontSize: FontSize.XS,
+                      fontSize: FontSize.SMALL,
                       color: Colors.SUCCESS,
                       fontWeight: FontWeight.MEDIUM,
                     }}

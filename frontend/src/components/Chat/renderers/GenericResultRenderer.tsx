@@ -49,18 +49,18 @@ const renderValue = (value: unknown, depth = 0): React.ReactNode => {
     if (value.length > 100) {
       return (
         <Paragraph
-          style={{ margin: 0, fontSize: FontSize.SM }}
+          style={{ margin: 0, fontSize: FontSize.SECONDARY }}
           ellipsis={{ rows: 2, expandable: true }}
         >
           {value}
         </Paragraph>
       );
     }
-    return <Text style={{ fontSize: FontSize.SM }}>{value}</Text>;
+    return <Text style={{ fontSize: FontSize.SECONDARY }}>{value}</Text>;
   }
 
   if (typeof value === 'number' || typeof value === 'boolean') {
-    return <Text style={{ fontSize: FontSize.SM }}>{String(value)}</Text>;
+    return <Text style={{ fontSize: FontSize.SECONDARY }}>{String(value)}</Text>;
   }
 
   if (Array.isArray(value)) {
@@ -69,7 +69,7 @@ const renderValue = (value: unknown, depth = 0): React.ReactNode => {
       return (
         <div style={{ display: 'flex', gap: Spacing.XS, flexWrap: 'wrap' }}>
           {value.map((v, i) => (
-            <Tag key={i} style={{ margin: 0, fontSize: FontSize.XS }}>
+            <Tag key={i} style={{ margin: 0, fontSize: FontSize.TERTIARY }}>
               {String(v)}
             </Tag>
           ))}
@@ -105,7 +105,7 @@ const renderValue = (value: unknown, depth = 0): React.ReactNode => {
       return (
         <div style={{ display: 'flex', gap: Spacing.SM, flexWrap: 'wrap' }}>
           {entries.map(([k, v]) => (
-            <Text key={k} style={{ fontSize: FontSize.SM }}>
+            <Text key={k} style={{ fontSize: FontSize.SECONDARY }}>
               <Text type="secondary">{k}:</Text> {renderValue(v, depth + 1)}
             </Text>
           ))}
@@ -117,7 +117,7 @@ const renderValue = (value: unknown, depth = 0): React.ReactNode => {
       <Descriptions
         size="small"
         column={1}
-        style={{ fontSize: FontSize.SM }}
+        style={{ fontSize: FontSize.SECONDARY }}
         items={entries.map(([key, val]) => ({
           key,
           label: key,
@@ -127,7 +127,7 @@ const renderValue = (value: unknown, depth = 0): React.ReactNode => {
     );
   }
 
-  return <Text style={{ fontSize: FontSize.SM }}>{String(value)}</Text>;
+  return <Text style={{ fontSize: FontSize.SECONDARY }}>{String(value)}</Text>;
 };
 
 export const GenericResultRenderer: React.FC<GenericResultRendererProps> = ({
@@ -144,7 +144,7 @@ export const GenericResultRenderer: React.FC<GenericResultRendererProps> = ({
           style={{
             display: 'block',
             marginBottom: Spacing.XS,
-            fontSize: FontSize.SM,
+            fontSize: FontSize.SECONDARY,
             color: Colors.TEXT.PRIMARY,
           }}
         >

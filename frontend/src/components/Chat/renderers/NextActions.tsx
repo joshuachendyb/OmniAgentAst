@@ -29,7 +29,7 @@ export const NextActions: React.FC<NextActionsProps> = ({
     <div style={{ marginTop: Spacing.SM }}>
       <div
         style={{
-          fontSize: FontSize.XS,
+          fontSize: FontSize.TERTIARY,
           color: Colors.TEXT.TERTIARY,
           marginBottom: Spacing.XS,
         }}
@@ -47,7 +47,7 @@ export const NextActions: React.FC<NextActionsProps> = ({
                   <div
                     style={{
                       color: Colors.TEXT.TERTIARY,
-                      fontSize: FontSize.XS,
+                      fontSize: FontSize.TERTIARY,
                     }}
                   >
                     适用：{action.when}
@@ -61,10 +61,10 @@ export const NextActions: React.FC<NextActionsProps> = ({
               type="text"
               onClick={() => onActionClick?.(action)}
               style={{
-                fontSize: FontSize.XS,
+                fontSize: FontSize.TERTIARY,
                 color: Colors.PRIMARY,
                 borderRadius: Radius.SM,
-                padding: `${Spacing.XXS}px ${Spacing.XS}px`,
+                padding: `${Spacing.XS}px ${Spacing.XS}px`,
               }}
             >
               {action.tool}
