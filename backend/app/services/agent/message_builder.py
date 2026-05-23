@@ -117,32 +117,16 @@ class MessageBuilder:
     # 第三组：每轮 LLM 调用的消息组装（从 _call_llm_with_summary 拆出）
     # =========================================================================
 
-    def split_history_for_llm(self) -> Tuple[str, List[Dict[str, Any]]]:
-        """将conversation_history拆分为last_message和history_dicts
-        
-        替代 react_agent_mixin.py L310-322
+    def prepare_messages_for_llm(self) -> List[Dict[str, Any]]:
+        """准备发给LLM的完整消息列表 — 合并原split+merge+assemble
+
+        不再拆出last_message再拼回，整个history作为一个List[Dict]贯穿流程。
+        注入点（tools/summary/schema）在第一个非system消息前或末尾操作。
         """
-        last_user_idx = -1
-        for i in range(len(self.conversation_history) - 1, -1, -1):
-            if self.conversation_history[i].get("role") == "user":
-                last_user_idx = i
-                break
-
-        if last_user_idx >= 0:
-            last_message = self.conversation_history[last_user_idx]["content"]
-            history_dicts = (self.conversation_history[:last_user_idx]
-                           + self.conversation_history[last_user_idx + 1:])
-        else:
-            last_message = self.conversation_history[-1]["content"]
-            history_dicts = self.conversation_history[:-1]
-
-        return last_message, history_dicts
-
-    def merge_temp_history(self, history_dicts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """合并temp_history — 替代 react_agent_mixin.py L324-326"""
+        messages = list(self.conversation_history)
         if self.temp_history:
-            return list(history_dicts) + list(self.temp_history)
-        return history_dicts
+            messages = messages + list(self.temp_history)
+        return messages
 
     @staticmethod
     def inject_tools_info(
@@ -188,14 +172,6 @@ class MessageBuilder:
         if not schema_text:
             return history_dicts
         return list(history_dicts) + [{"role": "system", "content": schema_text}]
-
-    @staticmethod
-    def assemble_messages(
-        history_dicts: List[Dict[str, Any]],
-        last_message: str
-    ) -> List[Dict[str, Any]]:
-        """组装最终发给LLM的messages — 替代 react_agent_mixin.py L394-395"""
-        return list(history_dicts) + [{"role": "user", "content": last_message}]
 
     # =========================================================================
     # 第四组：历史裁剪（从 base_react.py 搬入）

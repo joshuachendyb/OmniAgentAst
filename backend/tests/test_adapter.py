@@ -473,10 +473,13 @@ class TestThreeStrategiesEndToEnd:
         mock_client = self._make_mock_llm(
             content=f'{{"thought":"思考","tool_name":"finish","tool_params":{{"result":"done"}}}}'
         )
+        messages = [
+            {"role": "system", "content": "你是助手"},
+            {"role": "user", "content": "当前问题"},
+        ]
         return await strategy.call(
             llm_client=mock_client,
-            message="当前问题",
-            history_dicts=[{"role": "system", "content": "你是助手"}],
+            messages=messages,
             conversation_history=[{"role": "system", "content": "你是助手"}],
         )
 
@@ -556,8 +559,7 @@ class TestThreeStrategiesEndToEnd:
 
         result = await strategy.call(
             llm_client=MockClientWithTools(),
-            message="搜索测试",
-            history_dicts=[{"role": "system", "content": "sys"}],
+            messages=[{"role": "system", "content": "sys"}, {"role": "user", "content": "搜索测试"}],
             conversation_history=[{"role": "system", "content": "sys"}],
         )
         parsed = json.loads(result)
@@ -584,8 +586,7 @@ class TestThreeStrategiesEndToEnd:
 
         result = await strategy.call(
             llm_client=MockClientWithRF(),
-            message="当前问题",
-            history_dicts=[{"role": "system", "content": "sys"}],
+            messages=[{"role": "system", "content": "sys"}, {"role": "user", "content": "当前问题"}],
             conversation_history=[{"role": "system", "content": "sys"}],
         )
         parsed = json.loads(result)
@@ -612,8 +613,7 @@ class TestThreeStrategiesEndToEnd:
         strategy = TextStrategy()
         result = await strategy.call(
             llm_client=MockLLMEmpty(),
-            message="",
-            history_dicts=[],
+            messages=[],
             conversation_history=[],
         )
         parsed = json.loads(result)
@@ -640,8 +640,7 @@ class TestThreeStrategiesEndToEnd:
         strategy = ToolsStrategy(tools=[{"type": "function", "function": {"name": "test"}}])
         result = await strategy.call(
             llm_client=MockLLMNoTools(),
-            message="测试",
-            history_dicts=[],
+            messages=[{"role": "user", "content": "测试"}],
             conversation_history=[],
         )
         parsed = json.loads(result)
@@ -668,8 +667,7 @@ class TestThreeStrategiesEndToEnd:
         strategy = ResponseFormatStrategy()
         result = await strategy.call(
             llm_client=MockLLMError(),
-            message="测试",
-            history_dicts=[],
+            messages=[{"role": "user", "content": "测试"}],
             conversation_history=[],
         )
         parsed = json.loads(result)

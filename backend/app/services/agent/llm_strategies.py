@@ -53,24 +53,11 @@ class LLMStrategy(ABC):
     async def call(
         self,
         llm_client: Callable,
-        message: str,
-        history_dicts: List[Dict[str, str]],
+        messages: List[Dict[str, str]],
         conversation_history: List[Dict[str, str]],
         **kwargs
     ) -> str:
-        """
-        调用 LLM
-        
-        Args:
-            llm_client: LLM 客户端函数
-            message: 当前消息
-            history_dicts: 历史消息（字典格式）
-            conversation_history: 对话历史（用于追加）
-            **kwargs: 其他参数
-        
-        Returns:
-            LLM 响应内容（字符串）
-        """
+        """调用 LLM — messages是完整的消息列表（含system/user/assistant/tool）"""
         pass
     
     def _make_result(self, content: str, tool_name: str, tool_params: dict, reasoning: Any = None, response: str = "") -> str:
@@ -107,8 +94,7 @@ class TextStrategy(LLMStrategy):
     async def call(
         self,
         llm_client: Callable,
-        message: str,
-        history_dicts: List[Dict[str, str]],
+        messages: List[Dict[str, str]],
         conversation_history: List[Dict[str, str]],
         **kwargs
     ) -> str:
@@ -116,7 +102,7 @@ class TextStrategy(LLMStrategy):
         logger.info(f"[TextStrategy] call() 被调用, model={getattr(llm_client, 'model', '?')}")
         
         response = await self._call_with_rate_limit_retry(
-            lambda: llm_client(message=message, history=history_dicts)
+            lambda: llm_client(message="", history=messages)
         )
         
         error_info = None
@@ -451,35 +437,20 @@ class ToolsStrategy(LLMStrategy):
     async def call(
         self,
         llm_client: Callable,
-        message: str,
-        history_dicts: List[Dict[str, str]],
+        messages: List[Dict[str, str]],
         conversation_history: List[Dict[str, str]],
         **kwargs
     ) -> str:
-        """
-        调用 LLM（Function Calling 模式）
-        
-        Args:
-            llm_client: LLM 客户端函数
-            message: 当前消息
-            history_dicts: 历史消息
-            conversation_history: 对话历史
-        
-        Returns:
-            格式化的响应文本
-        """
-        # 【诊断 2026-05-10 小健】ToolsStrategy实际被调用
+        """调用 LLM（Function Calling 模式）"""
         logger.info(f"[ToolsStrategy] call() 被调用, model={getattr(llm_client, 'model', '?')}, tools_count={len(self.tools)}")
         import asyncio
         
-        # 检查 llm_client 是否有 chat_with_tools 方法
         if not hasattr(llm_client, 'chat_with_tools'):
             logger.warning("[Function Calling] llm_client has no chat_with_tools method, falling back to text mode")
             text_strategy = TextStrategy()
             return await text_strategy.call(
                 llm_client=llm_client,
-                message=message,
-                history_dicts=history_dicts,
+                messages=messages,
                 conversation_history=conversation_history,
                 **kwargs
             )
@@ -489,8 +460,8 @@ class ToolsStrategy(LLMStrategy):
         for attempt in range(self.MAX_RETRIES):
             try:
                 response = await llm_client.chat_with_tools(
-                    message=message,
-                    history=history_dicts,
+                    message="",
+                    history=messages,
                     tools=self.tools
                 )
                 
@@ -697,30 +668,17 @@ class ResponseFormatStrategy(LLMStrategy):
     async def call(
         self,
         llm_client: Callable,
-        message: str,
-        history_dicts: List[Dict[str, str]],
+        messages: List[Dict[str, str]],
         conversation_history: List[Dict[str, str]],
         **kwargs
     ) -> str:
-        """
-        调用 LLM（JSON Schema 模式）
-        
-        Args:
-            llm_client: LLM 客户端函数
-            message: 当前消息
-            history_dicts: 历史消息
-            conversation_history: 对话历史
-        
-        Returns:
-            格式化的 JSON 字符串
-        """
-        # 【诊断 2026-05-10 小健】ResponseFormatStrategy实际被调用
+        """调用 LLM（JSON Schema 模式）"""
         _schema_name = self.response_format.get("json_schema", {}).get("name", "?") if isinstance(self.response_format, dict) else "?"
         logger.info(f"[ResponseFormatStrategy] call() 被调用, model={getattr(llm_client, 'model', '?')}, schema_name={_schema_name}")
         try:
             response = await llm_client.chat_with_response_format(
-                message=message,
-                history=history_dicts,
+                message="",
+                history=messages,
                 response_format=self.response_format
             )
             

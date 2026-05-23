@@ -200,7 +200,14 @@ class BaseAIService:
         self._current_response = None
     
     def _build_messages(self, message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
-        """构建消息列表 — 直接接收List[Dict]，消除Dict→Message→Dict往返转换"""
+        """构建消息列表
+        
+        支持两种模式：
+        1. 传统模式：message=用户消息, history=历史 → 拼接 history + [user message]
+        2. 直接模式：message="", history=完整messages → 直接返回 history（跳过拼接）
+        """
+        if not message and history:
+            return list(history)
         messages = []
         if history:
             messages.extend(history)

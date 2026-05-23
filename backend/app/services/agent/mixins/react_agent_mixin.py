@@ -250,21 +250,18 @@ class ReactAgentMixin(ToolLoaderMixin):
     # ===== LLM调用 =====
     
     async def _call_llm_with_summary(self) -> str:
-        """LLM调用统一入口 — 小沈 2026-05-21 简化版"""
+        """LLM调用统一入口 — 简化版，消息列表不再拆出last_message再拼回"""
         self.llm_call_count += 1
         mb = self.message_builder
-        last_message, history_dicts = mb.split_history_for_llm()
-        history_dicts = mb.merge_temp_history(history_dicts)
+        messages = mb.prepare_messages_for_llm()
         strategy_method = await self._select_strategy()
-        history_dicts = self._inject_tools(history_dicts, strategy_method)
-        # safety: 兼容 message_builder 可能还没有 _executed_tool_summary 的场景
+        messages = self._inject_tools(messages, strategy_method)
         _ets = getattr(mb, '_executed_tool_summary', [])
-        history_dicts = mb.inject_executed_summary(history_dicts, _ets)
+        messages = mb.inject_executed_summary(messages, _ets)
         if strategy_method == "text":
-            history_dicts = self._inject_schema(history_dicts)
-        assembled = mb.assemble_messages(history_dicts, last_message)
-        self._log_prompt(assembled, strategy_method)
-        response = await self._dispatch_strategy(strategy_method, last_message, history_dicts)
+            messages = self._inject_schema(messages)
+        self._log_prompt(messages, strategy_method)
+        response = await self._dispatch_strategy(strategy_method, messages)
         self._log_response(response)
         return response
 
@@ -338,34 +335,35 @@ class ReactAgentMixin(ToolLoaderMixin):
         except Exception as e:
             logger.warning(f"Failed to save prompt log: {e}")
 
-    async def _dispatch_strategy(self, strategy_method, last_message, history_dicts):
-        """策略分派调用LLM — 小沈 2026-05-21"""
+    async def _dispatch_strategy(self, strategy_method, messages):
+        """策略分派调用LLM — 直接传完整messages"""
         _cls = self.__class__.__name__
+        conv_history = self.message_builder.conversation_history
         if strategy_method == "text":
             if self._try_json_object_fallback():
                 try:
                     return await self.response_format_strategy.call(
-                        llm_client=self.llm_client, message=last_message,
-                        history_dicts=history_dicts, conversation_history=self.message_builder.conversation_history)
+                        llm_client=self.llm_client, messages=messages,
+                        conversation_history=conv_history)
                 except Exception as e:
                     logger.warning(f"[{_cls}] json_object兜底失败，回退text: {e}")
             return await self.text_strategy.call(
-                llm_client=self.llm_client, message=last_message,
-                history_dicts=history_dicts, conversation_history=self.message_builder.conversation_history)
+                llm_client=self.llm_client, messages=messages,
+                conversation_history=conv_history)
         elif strategy_method == "response_format":
             if not self.response_format_strategy:
                 raise RuntimeError(f"[{_cls}] strategy=response_format 但 response_format_strategy未初始化")
             return await self.response_format_strategy.call(
-                llm_client=self.llm_client, message=last_message,
-                history_dicts=history_dicts, conversation_history=self.message_builder.conversation_history)
+                llm_client=self.llm_client, messages=messages,
+                conversation_history=conv_history)
         elif strategy_method == "tools":
             if not self.tools_strategy:
                 raise RuntimeError(f"[{_cls}] strategy=tools 但 tools_strategy未初始化")
             if getattr(self, 'openai_tools', None):
                 self.tools_strategy.tools = self.openai_tools
             return await self.tools_strategy.call(
-                llm_client=self.llm_client, message=last_message,
-                history_dicts=history_dicts, conversation_history=self.message_builder.conversation_history)
+                llm_client=self.llm_client, messages=messages,
+                conversation_history=conv_history)
         else:
             raise RuntimeError(f"[{_cls}] 未知的strategy_method={strategy_method}")
 
