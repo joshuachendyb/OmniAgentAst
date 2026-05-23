@@ -673,7 +673,7 @@ async def generate_sse_stream(
         # 【阶段6】根据 intent_type 分发到不同 Agent
         session_id = session_id or str(uuid.uuid4())
         
-        llm_client = LLMClientWrapper(ai_service)
+        llm_client = ai_service
         
         # 分发逻辑
         # 【2026-05-13 小沈】改为try AgentFactory + 兜底通用Agent（不再限4个意图，不报"not_implemented"）
