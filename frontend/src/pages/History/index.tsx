@@ -137,9 +137,12 @@ const HistoryPage: React.FC = () => {
       showSuccess("会话已删除");
       const currentPage = paginationRef.current.current;
       const currentKeyword = keywordRef.current;
-      await loadSessions(currentPage, currentKeyword);
-      if (sessions.length === 1 && currentPage > 1) {
+      const response = await sessionApi.listSessions(currentPage, pagination.pageSize, currentKeyword, undefined);
+      if (response.sessions.length === 0 && currentPage > 1) {
         loadSessions(currentPage - 1, currentKeyword);
+      } else {
+        setSessions(response.sessions);
+        setPagination(prev => ({ ...prev, current: currentPage, total: response.total }));
       }
     } catch (error) {
       handleError("删除会话失败");
@@ -167,7 +170,7 @@ const HistoryPage: React.FC = () => {
         handleError({ message: `删除完成：${successCount} 成功，${failCount} 失败`, error_type: ErrorType.WARNING });
       }
       setSelectedSessions(new Set());
-      loadSessions(pagination.current, keyword);
+      loadSessions(paginationRef.current.current, keywordRef.current);
     } catch (error) {
       handleError("批量删除会话失败");
       console.error("批量删除会话失败:", error);
@@ -240,6 +243,7 @@ const HistoryPage: React.FC = () => {
   const handleResume = async (sessionId: string) => {
     console.log("🔄 准备跳转到会话:", sessionId);
     setLoadingSessionId(sessionId);
+    const timer = setTimeout(() => setLoadingSessionId(null), 5000);
     try {
       navigate(`/?session_id=${sessionId}`, { replace: true });
       console.log("✅ 跳转成功:", sessionId);
@@ -247,6 +251,8 @@ const HistoryPage: React.FC = () => {
       console.error("❌ 跳转失败:", error);
       handleError("跳转失败");
       setLoadingSessionId(null);
+    } finally {
+      clearTimeout(timer);
     }
   };
 
@@ -368,8 +374,8 @@ const HistoryPage: React.FC = () => {
                     size="small"
                     style={{
                       height: "100%",
-                      opacity: session.is_valid ? 1 : 0.5,
-                      backgroundColor: session.is_valid ? "#fff" : "#f5f5f5",
+                      opacity: session.is_valid === false ? 0.5 : 1,
+                      backgroundColor: session.is_valid === false ? "#f5f5f5" : "#fff",
                       transition: "all 0.3s ease",
                     }}
                     actions={[
@@ -430,9 +436,9 @@ const HistoryPage: React.FC = () => {
                     <div style={{ padding: "0 10px" }}>
                       <Card.Meta
                         title={
-                          <Tooltip title={session.title}>
+                          <Tooltip title={session.title || '未命名会话'}>
                             <Text strong ellipsis style={{ maxWidth: 200 }}>
-                              {session.title}
+                              {session.title || '未命名会话'}
                             </Text>
                           </Tooltip>
                         }
