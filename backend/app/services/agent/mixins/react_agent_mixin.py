@@ -227,13 +227,10 @@ class ReactAgentMixin(ToolLoaderMixin):
         return response
 
     async def _select_strategy(self) -> str:
-        """策略选择+降级 — 小沈 2026-05-21"""
-        _cls = self.__class__.__name__
+        """策略选择: 探测FC支持 → tools/text"""
         if not self.adapter:
-            logger.warning(f"[{_cls}] adapter未初始化，降级到text策略")
             return "text"
-        strategy = await self.adapter.ensure_capability()
-        return strategy.method
+        return await self.adapter.ensure_capability()
 
     def _inject_tools(self, history_dicts, strategy_method):
         """工具信息注入（含缓存） — 小沈 2026-05-21"""

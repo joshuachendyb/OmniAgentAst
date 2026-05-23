@@ -1,98 +1,74 @@
 """
-LLM 适配器统一入口实现
+LLM适配器 — 探测+策略选择合一
 
-功能：
-1. LLMAdapter 类 - 统一管理 LLM 能力探测和策略选择
+逻辑：发一个带tools参数的请求，模型返回tool_calls → tools，否则 → text
+缓存探测结果，不重复探测。
 """
 
+import json
+import httpx
 from typing import Optional
 
-from app.services.agent.capability import LLMFeature, LLMCapability
-from app.services.agent.capability_detector import CapabilityDetector
-from app.services.agent.strategy_selector import StrategySelector, SelectedStrategy
 from app.utils.logger import logger
 
 
 class LLMAdapter:
-    """
-    LLM 适配器
+    """探测LLM是否支持FC，决定用tools还是text策略"""
     
-    统一管理 LLM 能力探测和策略选择
-    """
-    
-    def __init__(
-        self,
-        api_base: str,
-        api_key: str,
-        model: str,
-        auto_detect: bool = True
-    ):
+    def __init__(self, api_base: str, api_key: str, model: str):
         self.api_base = api_base
         self.api_key = api_key
         self.model = model
-        
-        # 能力探测器
-        self._detector = CapabilityDetector(api_base, api_key, model)
-        
-        # 自动探测
-        if auto_detect:
-            # 延迟探测，在首次调用时触发
-            self._feature: Optional[LLMFeature] = None
-            self._strategy: Optional[SelectedStrategy] = None
-        else:
-            self._feature = None
-            self._strategy = None
+        self._strategy: Optional[str] = None
+        self._capability_cache = None
     
-    async def ensure_capability(self) -> SelectedStrategy:
-        """
-        确保能力已探测，返回选中的策略
+    async def ensure_capability(self) -> str:
+        """探测并返回策略: tools 或 text"""
+        if self._strategy is not None:
+            return self._strategy
         
-        Returns:
-            SelectedStrategy: 选中的策略
-        """
-        if self._strategy is None:
-            # 【优化 2026-05-11 小健】紧凑格式：开始探测
-            logger.info(f"[适配器] 开始探测: model={self.model}")
-            
-            # 探测能力
-            try:
-                result = await self._detector.detect()
-            except Exception as e:
-                # 【重构 2026-05-14 小健】统一走StrategySelector.fallback()
-                logger.error(f"[适配器] 探测异常: {e}", exc_info=True)
-                self._strategy = StrategySelector.fallback(f"探测异常: {e}")
-                return self._strategy
-            
-            if result.success:
-                self._feature = result.feature
-                self._strategy = StrategySelector.select(self._feature)
-                # 【优化 2026-05-11 小健】紧凑格式：策略选择结果
-                logger.info(
-                    f"[适配器] 策略选择:\n"
-                    f"  └─ 最终策略: {self._strategy.method} ({self._strategy.description})"
-                )
-            else:
-                # 【重构 2026-05-14 小健】统一走StrategySelector.fallback()
-                logger.warning(f"[适配器] 探测失败: error={result.error}")
-                self._strategy = StrategySelector.fallback(f"探测失败: {result.error}")
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                result = await self._probe_tools(client)
+                if result["works"]:
+                    self._strategy = "tools"
+                    self._capability_cache = type('Cap', (), {'supports_tools': True, 'supports_response_format': False})()
+                    logger.info(f"[适配器] model={self.model} → tools (FC支持)")
+                else:
+                    self._strategy = "text"
+                    self._capability_cache = type('Cap', (), {'supports_tools': False, 'supports_response_format': False})()
+                    logger.info(f"[适配器] model={self.model} → text (FC不支持: {result.get('reason', 'N/A')})")
+        except Exception as e:
+            logger.error(f"[适配器] 探测异常: {e}")
+            self._strategy = "text"
+            self._capability_cache = None
         
         return self._strategy
     
-    @property
-    def feature(self) -> Optional[LLMFeature]:
-        """获取能力特征"""
-        return self._feature
-    
-    @property
-    def strategy(self) -> Optional[SelectedStrategy]:
-        """获取选中策略"""
-        return self._strategy
+    async def _probe_tools(self, client: httpx.AsyncClient) -> dict:
+        """发一个带tools的请求，看返回有没有tool_calls"""
+        tools = [{"type": "function", "function": {"name": "test_tool", "description": "A test tool", "parameters": {"type": "object", "properties": {"param": {"type": "string", "description": "test"}}, "required": ["param"]}}}]
+        try:
+            response = await client.post(
+                f"{self.api_base}/chat/completions",
+                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+                json={"model": self.model, "messages": [{"role": "user", "content": "Call test_tool"}], "tools": tools, "tool_choice": "auto", "stream": False}
+            )
+            if response.status_code == 429:
+                return {"works": True, "reason": "429限流,乐观默认支持"}
+            if response.status_code != 200:
+                return {"works": False, "reason": f"HTTP {response.status_code}"}
+            data = response.json()
+            tool_calls = data.get("choices", [{}])[0].get("message", {}).get("tool_calls", [])
+            if tool_calls:
+                return {"works": True, "tool_calls": tool_calls}
+            return {"works": False, "reason": "No tool_calls returned"}
+        except Exception as e:
+            return {"works": False, "reason": str(e)}
     
     @property
     def method(self) -> str:
-        """获取当前使用的方法"""
-        return self._strategy.method if self._strategy else "unknown"
+        return self._strategy or "unknown"
 
 
-# 导出
 __all__ = ["LLMAdapter"]
