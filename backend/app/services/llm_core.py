@@ -647,6 +647,7 @@ class BaseAIService:
                 )
             else:
                 content = msg.get("content", "")
+                reasoning = msg.get("reasoning", "") or ""
                 if not content:
                     finish_reason = choices[0].get("finish_reason", "")
                     if finish_reason == "tool_calls":
@@ -656,6 +657,10 @@ class BaseAIService:
                             provider=self.provider,
                             error="Failed to parse tool_calls"
                         )
+                    # 【2026-05-23 小沈】reasoning fallback：content为空时用reasoning兜底
+                    if reasoning:
+                        content = reasoning
+                        logger.info(f"[chat_with_tools] content为空，使用reasoning作为fallback")
                 
                 # 【通用XML工具调用检测 2026-05-13 小沈】某些模型（如LongCat）返回XML格式工具调用
                 # 格式: <XXX_tool_call>TOOL_NAME\n<XXX_arg_key>k</XXX_arg_key>\n<XXX_arg_value>v</XXX_arg_value>\n</XXX_tool_call>
@@ -671,7 +676,8 @@ class BaseAIService:
                 return ChatResponse(
                     content=content,
                     model=self.model,
-                    provider=self.provider
+                    provider=self.provider,
+                    reasoning=reasoning
                 )
                 
         except Exception as e:

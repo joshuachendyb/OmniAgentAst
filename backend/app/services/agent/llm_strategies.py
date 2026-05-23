@@ -2,10 +2,11 @@
 """
 LLM 调用策略模块
 
-实现策略模式，支持三种 LLM 调用方式：
+两种策略：
 1. TextStrategy：文本模式，直接返回响应文本
 2. ToolsStrategy：Function Calling 模式，通过 tools Schema 约束
-3. ResponseFormatStrategy：JSON Schema 模式，通过 response_format 约束
+
+策略在首次LLM调用时确定，后续不再变化。
 
 Author: 小沈 - 2026-03-21
 """

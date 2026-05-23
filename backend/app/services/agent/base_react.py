@@ -842,7 +842,7 @@ class BaseAgent(ABC):
                 logger.info(f"[Debug] observation加入history: {observation_text[:100]}...")
                 # FC协议注入：tools策略下用assistant(tool_calls)+tool(tool_call_id)，text策略用role:system
                 fc_context = None
-                if getattr(self, '_last_strategy_method', None) == "tools":
+                if getattr(self, '_strategy', None) == "tools":
                     _chat_response = getattr(self.llm_client, '_last_chat_response', None)
                     if _chat_response and getattr(_chat_response, 'tool_calls', None):
                         tc = _chat_response.tool_calls[0]
@@ -1042,7 +1042,7 @@ class BaseAgent(ABC):
             return ""
         
         # 【2026-05-15 小健】tools策略下LLM已有tools定义，只做精简提示
-        strategy_method = getattr(self, '_last_strategy_method', None)
+        strategy_method = getattr(self, '_strategy', None)
         if strategy_method == "tools":
             return "⚠️ 工具执行失败，请尝试其他可用工具，不要重复调用同一失败操作。"
         

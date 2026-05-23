@@ -48,61 +48,52 @@ class ReactAgentMixin(ToolLoaderMixin):
         logger.info(f"[{self.__class__.__name__}] 加载工具: {len(self._tools_dict)}个")
     
     def _init_llm_strategies(self):
-        """初始化LLM调用策略 - 小沈 2026-05-09
-        
-        FC通道启用：adapter初始化+异常降级。
-        如果llm_client有api_base属性，尝试初始化LLMAdapter和ToolsStrategy；
-        初始化失败则降级到纯文本模式。
+        """初始化LLM调用策略 - 小健 2026-05-23
+
+        创建策略对象和adapter，策略在首次LLM调用时懒确定并缓存。
         """
         self.text_strategy = TextStrategy()
-        
-        # 【诊断+修复 2026-05-10 小健】api_base/api_key/model 在 self 上（kwargs setattr），
-        # 不在 self.llm_client 上，之前检查 self.llm_client.api_base 永远 False
+        self._strategy = None
+
         _cls = self.__class__.__name__
         _has_client = self.llm_client is not None
         _self_api_base = getattr(self, 'api_base', None) or (getattr(self.llm_client, 'api_base', None) if _has_client else None)
         _self_api_key = getattr(self, 'api_key', None) or (getattr(self.llm_client, 'api_key', None) if _has_client else None)
         _self_model = getattr(self, 'model', None) or (getattr(self.llm_client, 'model', None) if _has_client else None)
-        _client_api_base = getattr(self.llm_client, 'api_base', None) if _has_client else None
         logger.info(
-            f"[{_cls}] _init_llm_strategies 诊断: llm_client={_has_client}, "
-            f"self.api_base={_self_api_base}, self.model={_self_model}, "
-            f"llm_client.api_base={_client_api_base}"
+            f"[{_cls}] _init_llm_strategies: llm_client={_has_client}, "
+            f"api_base={_self_api_base}, model={_self_model}"
         )
-        
+
         try:
             from app.services.tools.registry import tool_registry
-            
-            # 【修复 2026-05-10 小健】从 self 上取 api_base/api_key/model，
-            # 这些由 base_react.__init__ 通过 kwargs setattr 到 self 上
+
             if self.llm_client and _self_api_base:
                 self.adapter = LLMAdapter(
                     api_base=_self_api_base,
                     api_key=_self_api_key,
                     model=_self_model,
-                    auto_detect=False
                 )
-                
+
                 openai_tools = tool_registry.to_openai_tools(self.tool_category)
                 self.tools_strategy = ToolsStrategy(tools=openai_tools)
                 self.use_function_calling = True
                 self.openai_tools = openai_tools
-                self._last_strategy_method = None
-                logger.info(f"[{_cls}] _init_llm_strategies 成功: tools={len(openai_tools)}, use_function_calling=True")
+                logger.info(f"[{_cls}] _init_llm_strategies 成功: tools={len(openai_tools)}, use_function_calling=True, 策略待首次调用确定")
             else:
                 self.adapter = None
                 self.tools_strategy = None
                 self.use_function_calling = False
                 self.openai_tools = []
-                self._last_strategy_method = None
-                logger.warning(f"[{_cls}] _init_llm_strategies 跳过adapter: 降级纯文本模式")
+                self._strategy = "text"
+                logger.warning(f"[{_cls}] _init_llm_strategies 跳过adapter: 直接text模式")
         except Exception as e:
             logger.warning(f"[{_cls}] LLM策略初始化失败，降级到文本模式: {e}")
             self.adapter = None
             self.tools_strategy = None
             self.use_function_calling = False
             self.openai_tools = []
-            self._last_strategy_method = None
+            self._strategy = "text"
 
     def _init_task_tracking(self, enable: bool = True):
         """
@@ -211,27 +202,24 @@ class ReactAgentMixin(ToolLoaderMixin):
     # ===== LLM调用 =====
     
     async def _call_llm_with_summary(self) -> str:
-        """LLM调用统一入口"""
+        """LLM调用统一入口 — 策略在首次调用时确定，后续直接用缓存"""
         self.llm_call_count += 1
         mb = self.message_builder
         messages = mb.prepare_messages_for_llm()
-        strategy_method = await self._select_strategy()
-        self._last_strategy_method = strategy_method
-        messages = self._inject_tools(messages, strategy_method)
+
+        if self._strategy is None:
+            self._strategy = await self.adapter.ensure_capability()
+            logger.info(f"[{self.__class__.__name__}] 策略确定: {self._strategy}")
+
+        messages = self._inject_tools(messages, self._strategy)
         _ets = getattr(mb, '_executed_tool_summary', [])
         messages = mb.inject_executed_summary(messages, _ets)
-        if strategy_method == "text":
+        if self._strategy == "text":
             messages = self._inject_schema(messages)
-        self._log_prompt(messages, strategy_method)
-        response = await self._dispatch_strategy(strategy_method, messages)
+        self._log_prompt(messages, self._strategy)
+        response = await self._dispatch_strategy(self._strategy, messages)
         self._log_response(response)
         return response
-
-    async def _select_strategy(self) -> str:
-        """策略选择: 探测FC支持 → tools/text"""
-        if not self.adapter:
-            return "text"
-        return await self.adapter.ensure_capability()
 
     def _inject_tools(self, history_dicts, strategy_method):
         """工具信息注入（含缓存） — 小沈 2026-05-21"""
