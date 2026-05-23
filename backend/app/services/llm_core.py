@@ -72,13 +72,14 @@ def _convert_xml_tool_call_to_json(content: str) -> Optional[str]:
 class ChatResponse:
     """聊天响应类 - 非流式响应"""
     def __init__(self, content: str, model: str, provider: str = "", error: Optional[str] = None,
-                 reasoning: Optional[str] = None):
+                 reasoning: Optional[str] = None, tool_calls: Optional[List[Dict]] = None):
         self.content = content
         self.model = model
         self.provider = provider
         self.error = error
         self.success = error is None
         self.reasoning = reasoning or ""
+        self.tool_calls = tool_calls or []
 
 
 class StreamChunk:
@@ -642,7 +643,8 @@ class BaseAIService:
                 return ChatResponse(
                     content=json.dumps(tool_calls, ensure_ascii=False),
                     model=self.model,
-                    provider=self.provider
+                    provider=self.provider,
+                    tool_calls=tool_calls
                 )
             else:
                 content = msg.get("content", "")

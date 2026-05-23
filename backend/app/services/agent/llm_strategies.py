@@ -425,6 +425,8 @@ class ToolsStrategy(LLMStrategy):
                 history=messages,
                 tools=self.tools
             )
+            # 保存原始response供FC协议注入使用
+            llm_client._last_chat_response = response
             
             if hasattr(response, 'error') and response.error:
                 error_msg = response.error

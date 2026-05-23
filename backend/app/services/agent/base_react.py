@@ -840,7 +840,14 @@ class BaseAgent(ABC):
                     observation_text += fail_warning
                 
                 logger.info(f"[Debug] observation加入history: {observation_text[:100]}...")
-                self.message_builder.add_observation(observation_text, self.llm_call_count)
+                # FC协议注入：tools策略下用assistant(tool_calls)+tool(tool_call_id)，text策略用role:system
+                fc_context = None
+                if getattr(self, '_last_strategy_method', None) == "tools":
+                    _chat_response = getattr(self.llm_client, '_last_chat_response', None)
+                    if _chat_response and getattr(_chat_response, 'tool_calls', None):
+                        tc = _chat_response.tool_calls[0]
+                        fc_context = {"tool_calls": _chat_response.tool_calls, "tool_call_id": tc.get("id", "")}
+                self.message_builder.add_observation(observation_text, self.llm_call_count, fc_context=fc_context)
 
                 # 记录观察结果到prompt日志
                 prompt_logger = get_prompt_logger()

@@ -211,11 +211,12 @@ class ReactAgentMixin(ToolLoaderMixin):
     # ===== LLM调用 =====
     
     async def _call_llm_with_summary(self) -> str:
-        """LLM调用统一入口 — 简化版，消息列表不再拆出last_message再拼回"""
+        """LLM调用统一入口"""
         self.llm_call_count += 1
         mb = self.message_builder
         messages = mb.prepare_messages_for_llm()
         strategy_method = await self._select_strategy()
+        self._last_strategy_method = strategy_method
         messages = self._inject_tools(messages, strategy_method)
         _ets = getattr(mb, '_executed_tool_summary', [])
         messages = mb.inject_executed_summary(messages, _ets)

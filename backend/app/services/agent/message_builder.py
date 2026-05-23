@@ -72,19 +72,25 @@ class MessageBuilder:
         """
         self.conversation_history.append({"role": "assistant", "content": content})
 
-    def add_observation(self, observation_text: str, llm_call_count: int = 0) -> None:
-        """追加observation消息（role=system）— 替代_add_observation_to_history
+    def add_observation(self, observation_text: str, llm_call_count: int = 0, fc_context: Optional[Dict] = None) -> None:
+        """追加observation消息 — 含智能截断 + [Observation]前缀归一化 + trim
         
-        含智能截断 + [Observation]前缀归一化 + trim。
+        fc_context: ToolsStrategy下FC协议上下文，含tool_calls和tool_call_id。
+        有fc_context时按OpenAI FC协议注入assistant(tool_calls)+tool(tool_call_id)，
+        模型能识别"工具已被处理"，不会重复调用。
         """
-        # 智能截断
         budget = self._get_observation_budget(llm_call_count)
         if len(observation_text) > budget:
             observation_text = self._smart_truncate(observation_text, budget=budget)
-        # 统一[Observation]前缀
         observation_text = self._normalize_observation_prefix(observation_text)
-        # 追加
-        self.conversation_history.append({"role": "system", "content": observation_text})
+        
+        if fc_context and fc_context.get("tool_calls"):
+            tool_calls = fc_context["tool_calls"]
+            tool_call_id = fc_context.get("tool_call_id", "")
+            self.conversation_history.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
+            self.conversation_history.append({"role": "tool", "content": observation_text, "tool_call_id": tool_call_id})
+        else:
+            self.conversation_history.append({"role": "system", "content": observation_text})
         self.trim_history()
 
     def add_parse_error(self, error_msg: str) -> None:
@@ -228,6 +234,8 @@ class MessageBuilder:
             obs_list.pop(0)
 
         rebuilt = system_msgs + obs_list + assistant_msgs
+        # FC协议配对裁剪：role:tool必须有对应role:assistant(tool_calls)，反之亦然
+        rebuilt = self._trim_fc_pairs(rebuilt)
         # 确保至少有 system + user
         if len(rebuilt) >= 2:
             self.conversation_history = rebuilt
@@ -423,9 +431,49 @@ class MessageBuilder:
 
     @staticmethod
     def _is_observation_role(msg: Dict) -> bool:
-        """判断消息是否为observation — 替代 base_react.py L1252-1254"""
+        """判断消息是否为observation — 替代 base_react.py L1252-1254
+
+        两种形式：
+        1. text策略: role=system + content含[Observation]
+        2. tools策略(FC协议): role=tool + tool_call_id（与assistant(tool_calls)配对）
+        """
+        if msg.get("role") == "tool" and msg.get("tool_call_id"):
+            return True
         content = msg.get("content", "")
         return msg.get("role") == "system" and ("[Observation]" in content or "Observation:" in content)
+
+    @staticmethod
+    def _trim_fc_pairs(messages: List[Dict]) -> List[Dict]:
+        """FC协议配对裁剪：确保role:tool与role:assistant(tool_calls)一一对应
+
+        裁剪后如果role:tool的tool_call_id没有对应assistant的tool_calls，
+        或者assistant的tool_calls没有对应role:tool的tool_call_id，
+        则双方都移除（OpenAI要求严格配对）。
+        """
+        valid_tool_call_ids = set()
+        for msg in messages:
+            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                for tc in msg["tool_calls"]:
+                    tid = tc.get("id")
+                    if tid:
+                        valid_tool_call_ids.add(tid)
+        valid_tool_response_ids = set()
+        for msg in messages:
+            if msg.get("role") == "tool" and msg.get("tool_call_id"):
+                valid_tool_response_ids.add(msg["tool_call_id"])
+        paired_ids = valid_tool_call_ids & valid_tool_response_ids
+        result = []
+        for msg in messages:
+            role = msg.get("role", "")
+            if role == "tool" and msg.get("tool_call_id"):
+                if msg["tool_call_id"] in paired_ids:
+                    result.append(msg)
+            elif role == "assistant" and msg.get("tool_calls"):
+                if any(tc.get("id") in paired_ids for tc in msg["tool_calls"]):
+                    result.append(msg)
+            else:
+                result.append(msg)
+        return result
 
     @staticmethod
     def _is_error_obs(content: str) -> bool:
