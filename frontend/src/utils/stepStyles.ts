@@ -78,6 +78,7 @@ interface ColorScheme {
 }
 
 // 字体大小规范
+// ⚠️ 警告：修改或重命名属性前，请搜索 renderers/ 目录下所有引用（如 FontSize.SM/XS/XXS 过去已被误用过），务必同步更新，否则编译报错（历史教训 2026-05-23）
 export const FontSize = {
   // 主要内容字体
   PRIMARY: 14, // 主标题、重要信息（final、error主要内容）
@@ -100,6 +101,7 @@ export const FontWeight = {
 } as const;
 
 // 间距常量 - 小强 2026-05-22
+// ⚠️ 警告：修改或重命名属性前，请搜索 renderers/ 目录下所有引用，务必同步更新（历史教训 2026-05-23）
 export const Spacing = {
   XS: 4, // 极小间距
   SM: 6, // 小间距（标准）
