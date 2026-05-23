@@ -1,3 +1,29 @@
+v0.13.31
+
+更新时间: 2026-05-23 13:55:11
+
+更新内容：
+- docs: Ollama云API 39个模型测试结果记录 (2026-05-23 14:00:53)
+- fix: api.ts恢复readConfigFile函数并修复格式 (2026-05-23 13:59:42)
+- refactor: Settings设置页抽出4个子组件+types类型定义 (2026-05-23 13:59:42)
+- docs: 问题分析-工具调用死循环分析文档 (2026-05-23 13:51:52)
+- feat: routes.py新增GET /config/read接口读取配置文件 (2026-05-23 13:51:48)
+- perf: intent_classifier.py从七牛deepseek-v3.1切换到ollama cloud gemma3:4b提速37倍 (2026-05-23 13:51:43)
+- fix: llm_core.py chat_with_tools缺少reset_cancel导致后续调用被取消 (2026-05-23 13:51:38)
+- fix: App.tsx BrowserRouter禁用startTransition根治导航延迟 (2026-05-23 10:07:49)
+- fix: 会话页切换保持存活（display:none避免SSE重连） (2026-05-23 09:47:28)
+- fix: React Router v7导航延迟修复（App.tsx+Layout/index.tsx） (2026-05-23 09:39:27)
+- fix: SSE超时从60秒改为180秒，适配CPU推理慢（qwen2.5:1.5b约2分钟） (2026-05-23 08:25:15)
+- docs: 更新全链路E2E集成测试方案 (2026-05-23 08:20:30)
+- fix: 修复 ListDirectoryView 缺少 tree/root 字段类型定义 (2026-05-23 08:20:05)
+- fix: 修复 renderers 中 FontSize/Spacing 不存在属性（XS/SM/XXS） (2026-05-23 08:20:01)
+- fix: stepStyles.ts 添加防删注释防止常量改名不同步 (2026-05-23 08:19:56)
+- fix: 修复 @/ 路径别名配置缺失导致前端500错误 (2026-05-23 08:19:51)
+- docs: Agent2.5设计文档v1.5 补全所有伪代码 (2026-05-23 01:42:18)
+- docs: Agent2.5设计文档v1.4 核心决策硬核论证 (2026-05-23 01:30:50)
+- docs: Ollama部署说明更新 + 全链路E2E集成测试方案 (2026-05-23 01:17:08)
+- docs: Agent2.5设计文档v1.3小沈审查修正 (2026-05-23 01:15:48)
+
 v0.13.30
 
 更新时间: 2026-05-23 00:31:32
