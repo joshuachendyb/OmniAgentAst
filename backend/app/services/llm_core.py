@@ -497,6 +497,7 @@ class BaseAIService:
         
         【小沈优化 2026-04-21】使用后台任务+心跳检查，1秒内响应取消
         """
+        self.reset_cancel()
         try:
             messages = self._build_messages(message, history)
             
