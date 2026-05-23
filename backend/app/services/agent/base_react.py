@@ -279,15 +279,6 @@ class BaseAgent(ABC):
             self.tools_strategy.tools = self.openai_tools
             logger.info(f"[FC刷新] tools定义已更新，当前{len(self.openai_tools)}个")
 
-        # 【修复 N1 小沈 2026-05-15】动态加载后同步刷新response_format enum
-        if hasattr(self, 'response_format_strategy') and self.response_format_strategy and hasattr(self, 'openai_tools') and self.openai_tools:
-            try:
-                tool_names = [t["function"]["name"] for t in self.openai_tools] + ["finish"]
-                self.response_format_strategy.response_format["json_schema"]["schema"]["properties"]["tool_name"]["enum"] = tool_names
-                logger.info(f"[FC刷新] response_format enum已更新，当前{len(tool_names)}个工具名")
-            except Exception as e:
-                logger.warning(f"[FC刷新] response_format enum更新失败: {e}")
-
         # 【2026-05-21 小沈】统一使用message_builder.invalidate_cache()清除全部缓存
         self.message_builder.invalidate_cache()
         # mixin自身的缓存也需清除

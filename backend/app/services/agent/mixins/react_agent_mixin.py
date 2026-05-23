@@ -10,7 +10,7 @@ Updated: 小沈 - 2026-05-12 (合并file_react独有逻辑: prompt_logger+temp_h
 """
 from typing import Dict, Any, List, Optional, Tuple
 from app.services.agent.tool_executor import ToolExecutor
-from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy, ResponseFormatStrategy
+from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy
 from app.services.agent.llm_adapter import LLMAdapter
 from app.services.tools.mixin import ToolLoaderMixin
 from app.services.tools.registry import ToolCategory
@@ -85,60 +85,21 @@ class ReactAgentMixin(ToolLoaderMixin):
                 
                 openai_tools = tool_registry.to_openai_tools(self.tool_category)
                 self.tools_strategy = ToolsStrategy(tools=openai_tools)
-                # 【三策略适配 2026-05-09】传入工具枚举的response_format schema
-                # 【2026-05-10 小沈】enum追加"finish"，确保LLM知道finish也是合法tool_name
-                # 见文档第14章: 让response_format下LLM也知道有哪些工具可选
-                tool_names = [t["function"]["name"] for t in openai_tools] + ["finish"]
-                self.response_format_strategy = ResponseFormatStrategy(response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "execute_tool",
-                        "strict": True,
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "thought": {"type": "string", "description": "分析当前状态和下一步决策"},
-                                "reasoning": {"type": "string", "description": "为什么选这个工具、参数如何确定"},
-                                "tool_name": {
-                                    "type": "string",
-                                    "enum": tool_names,
-                                    "description": "工具名称，可选值：" + ", ".join(tool_names)
-                                },
-                                "tool_params": {
-                                    "type": "object",
-                                    "description": "工具参数。各工具的参数名和类型见Tools Schema参考"
-                                }
-                            },
-                            "required": ["thought", "reasoning", "tool_name", "tool_params"]
-                        }
-                    }
-                })
                 self.use_function_calling = True
                 self.openai_tools = openai_tools
                 self._last_strategy_method = None
-                # 【诊断 2026-05-10 小健】adapter初始化成功日志
-                logger.info(
-                    f"[{_cls}] _init_llm_strategies 成功: adapter=LLMAdapter, "
-                    f"tools_strategy=ToolsStrategy({len(openai_tools)}tools), "
-                    f"response_format_strategy=ResponseFormatStrategy(strict=True), "
-                    f"use_function_calling=True"
-                )
+                logger.info(f"[{_cls}] _init_llm_strategies 成功: tools={len(openai_tools)}, use_function_calling=True")
             else:
                 self.adapter = None
                 self.tools_strategy = None
-                self.response_format_strategy = None
                 self.use_function_calling = False
                 self.openai_tools = []
                 self._last_strategy_method = None
-                logger.warning(
-                    f"[{_cls}] _init_llm_strategies 跳过adapter: "
-                    f"llm_client={_has_client}, self.api_base={_self_api_base} → 降级纯文本模式"
-                )
+                logger.warning(f"[{_cls}] _init_llm_strategies 跳过adapter: 降级纯文本模式")
         except Exception as e:
             logger.warning(f"[{_cls}] LLM策略初始化失败，降级到文本模式: {e}")
             self.adapter = None
             self.tools_strategy = None
-            self.response_format_strategy = None
             self.use_function_calling = False
             self.openai_tools = []
             self._last_strategy_method = None
@@ -300,20 +261,6 @@ class ReactAgentMixin(ToolLoaderMixin):
             history_dicts = self.message_builder.inject_schema_text(history_dicts, self._cached_schema_text)
         return history_dicts
 
-    def _try_json_object_fallback(self) -> bool:
-        """兜底：text策略下试json_object — 小沈 2026-05-23
-        策略选择器可能因探测失败而降级为text，但模型的_capability_cache
-        实际标记了supports_response_format=True，此时试一次json_object。
-        注意：capability只区分"是否支持response_format"，不区分
-        json_object/json_schema，若模型只支持后者会试失败（被except兜回text）。
-        """
-        if not self.adapter or not self.response_format_strategy:
-            return False
-        cap = getattr(self.adapter, '_capability_cache', None)
-        if cap is None:
-            return False
-        return getattr(cap, 'supports_response_format', False)
-
     def _log_prompt(self, assembled_messages, strategy_method):
         """prompt_logger调用前记录 — 小沈 2026-05-21"""
         prompt_logger = get_prompt_logger()
@@ -336,27 +283,10 @@ class ReactAgentMixin(ToolLoaderMixin):
             logger.warning(f"Failed to save prompt log: {e}")
 
     async def _dispatch_strategy(self, strategy_method, messages):
-        """策略分派调用LLM — 直接传完整messages"""
+        """策略分派 — 只有text和tools两种"""
         _cls = self.__class__.__name__
         conv_history = self.message_builder.conversation_history
-        if strategy_method == "text":
-            if self._try_json_object_fallback():
-                try:
-                    return await self.response_format_strategy.call(
-                        llm_client=self.llm_client, messages=messages,
-                        conversation_history=conv_history)
-                except Exception as e:
-                    logger.warning(f"[{_cls}] json_object兜底失败，回退text: {e}")
-            return await self.text_strategy.call(
-                llm_client=self.llm_client, messages=messages,
-                conversation_history=conv_history)
-        elif strategy_method == "response_format":
-            if not self.response_format_strategy:
-                raise RuntimeError(f"[{_cls}] strategy=response_format 但 response_format_strategy未初始化")
-            return await self.response_format_strategy.call(
-                llm_client=self.llm_client, messages=messages,
-                conversation_history=conv_history)
-        elif strategy_method == "tools":
+        if strategy_method == "tools":
             if not self.tools_strategy:
                 raise RuntimeError(f"[{_cls}] strategy=tools 但 tools_strategy未初始化")
             if getattr(self, 'openai_tools', None):
@@ -365,7 +295,9 @@ class ReactAgentMixin(ToolLoaderMixin):
                 llm_client=self.llm_client, messages=messages,
                 conversation_history=conv_history)
         else:
-            raise RuntimeError(f"[{_cls}] 未知的strategy_method={strategy_method}")
+            return await self.text_strategy.call(
+                llm_client=self.llm_client, messages=messages,
+                conversation_history=conv_history)
 
     def _log_response(self, response):
         """prompt_logger调用后记录 — 小沈 2026-05-21"""

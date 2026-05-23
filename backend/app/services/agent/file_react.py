@@ -22,7 +22,7 @@ from typing import Dict, Any, List, Optional, AsyncGenerator, Callable
 from app.services.agent.base_react import BaseAgent, DEFAULT_MAX_STEPS
 from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.types import Step, AgentResult, AgentStatus
-from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy, ResponseFormatStrategy
+from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy
 from app.services.prompts.file.file_prompts import FileOperationPrompts
 from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin  # 【步骤5改用ReactAgentMixin】
 from app.services.tools.registry import ToolCategory
