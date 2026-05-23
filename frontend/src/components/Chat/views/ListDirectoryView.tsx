@@ -45,6 +45,8 @@ interface ListDirectoryViewProps {
     total?: number;
     has_more?: boolean;
     directory?: string;
+    tree?: { name?: string; type?: string; children?: any[]; size?: number };
+    root?: string;
   };
   toolParams?: {
     recursive?: boolean;
@@ -67,7 +69,7 @@ function flattenTreeToEntries(
   const result: Entry[] = [];
   const currentPath = parentPath ? `${parentPath}/${node.name || ""}` : `${rootPath}/${node.name || ""}`;
   if (node.name && node.type) {
-    result.push({ name: node.name, path: currentPath, type: node.type, size: node.size ?? 0 });
+    result.push({ name: node.name, path: currentPath, type: node.type as Entry['type'], size: node.size ?? 0 });
   }
   if (node.children) {
     for (const child of node.children) {
