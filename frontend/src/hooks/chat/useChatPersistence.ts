@@ -277,6 +277,22 @@ export const useChatPersistence = (
         return null;
       }
       
+      // 完整状态：验证sessionId后端有效性，防止缓存指向已删除的session
+      if (data.sessionId) {
+        try {
+          const verifyResult = await loadHistoryMessages(data.sessionId);
+          if (!verifyResult) {
+            console.warn("🔴 缓存中的sessionId后端不存在，清除缓存:", data.sessionId);
+            sessionStorage.removeItem(STORAGE_KEY);
+            return null;
+          }
+        } catch (verifyError) {
+          console.warn("🔴 验证sessionId有效性失败，清除缓存:", verifyError);
+          sessionStorage.removeItem(STORAGE_KEY);
+          return null;
+        }
+      }
+      
       // 完整状态
       return {
         messages: data.messages || [],

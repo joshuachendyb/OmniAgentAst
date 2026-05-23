@@ -682,7 +682,6 @@ export const useSSE = (
         body: JSON.stringify({
           messages: [{ role: 'user', content: content }],
           stream: true,
-          task_id: undefined,
           session_id: sessionId || undefined,
         }),
         signal: controller.signal,

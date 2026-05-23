@@ -364,6 +364,8 @@ class BaseAgent(ABC):
         # chunk处理相关变量
         chunk_buffer = ""
         consecutive_chunk_count = 0
+        consecutive_cache_hit_count = 0
+        MAX_CONSECUTIVE_CACHE_HIT = 2
         # 超时机制
         # ===== 场景1：未捕获异常 (try...except包裹整个循环) =====
         try:
@@ -741,6 +743,23 @@ class BaseAgent(ABC):
                 execution_result, observation_prefix, cache_hit, fail_count = self.message_builder.check_cache_or_block(
                     tool_name, tool_params)
                 execution_time_ms = 0
+                
+                if cache_hit:
+                    consecutive_cache_hit_count += 1
+                    logger.warning(f"[CacheHitLoop] 连续缓存命中 {consecutive_cache_hit_count} 次, tool={tool_name}")
+                    if consecutive_cache_hit_count >= MAX_CONSECUTIVE_CACHE_HIT:
+                        logger.warning(f"[CacheHitLoop] 连续缓存命中达 {MAX_CONSECUTIVE_CACHE_HIT} 次，强制finish打断死循环")
+                        final_step = StepFactory.create_final_step(
+                            step=step_count,
+                            response=f"工具 {tool_name} 已成功执行，结果已在上方。无需重复调用。",
+                            thought="检测到重复调用同一工具，自动结束任务"
+                        )
+                        self.steps.append(final_step)
+                        yield final_step.to_dict()
+                        self._on_after_loop()
+                        return
+                else:
+                    consecutive_cache_hit_count = 0
                 
                 if execution_result is None and not cache_hit and fail_count < 3:
                     # 【Phase 1修复 小健 2026-05-14】函数内import避免触发register

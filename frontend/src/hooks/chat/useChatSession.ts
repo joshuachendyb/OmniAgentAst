@@ -247,8 +247,8 @@ export const useChatSession = (
           isLoadingHistoryRef.current = false;
           return { loaded: true, fromCache: false, hasUrlSession: true };
         } else {
-          // URL会话没有消息，清理状态
-          console.warn("🔴 URL会话没有消息，清理状态并跳过加载:", urlSessionId);
+          // URL会话没有消息（可能已被删除/404），清理状态+URL参数
+          console.warn("🔴 URL会话不存在，清除URL参数和状态:", urlSessionId);
           setSessionId(null);
           currentSessionIdRef.current = null;
           setMessages([]);
@@ -256,11 +256,12 @@ export const useChatSession = (
           setSessionVersion(1);
           setTitleLocked(false);
           setLastSavedTitle("新会话");
+          window.history.replaceState({}, "", "/");
           
           onLoadingEnd();
           onRenderEnd();
           isLoadingHistoryRef.current = false;
-          return { loaded: false, fromCache: false, hasUrlSession: true };
+          return { loaded: false, fromCache: false, hasUrlSession: false };
         }
       } catch (error) {
         console.warn("加载URL会话失败:", error);
