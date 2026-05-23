@@ -131,7 +131,7 @@ async def chat_stream_query(
             # 【小沈修复】使用 IdleTimeoutIterator 包装流式迭代器，实现实时空闲超时检测
             # 超时时间从配置读取
             idle_timeout_stream = IdleTimeoutIterator(
-                ai_service.chat_stream(message=last_message, history=history),
+                ai_service.chat_stream(message="", history=history),
                 timeout_seconds=float(chat_timeout),
                 name=f"AI-Stream-{retry_attempt + 1}"
             )

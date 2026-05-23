@@ -47,45 +47,6 @@ from app.services.intents.crss_scorer import CRSS_CONFIDENCE_THRESHOLD  # 【修
 
 
 # ============================================================
-# LLMClientWrapper - 统一 LLM 客户端接口
-# ============================================================
-
-class LLMClientWrapper:
-    """
-    LLM 客户端包装器，提供统一的接口
-    
-    修复 P6/P7 问题：llm_client 缺少 chat_with_tools 和 chat_with_response_format 方法
-    """
-    
-    def __init__(self, ai_service):
-        self.ai_service = ai_service
-        # 【修复 2026-05-10 小健】透传ai_service属性，供strategy日志诊断使用
-        self.model = getattr(ai_service, 'model', None)
-        self.api_base = getattr(ai_service, 'api_base', None)
-        self.api_key = getattr(ai_service, 'api_key', None)
-        self.provider = getattr(ai_service, 'provider', None)
-    
-    async def chat(self, message, history=None):
-        """基础聊天方法"""
-        return await self.ai_service.chat(message, history)
-    
-    async def chat_with_tools(self, message, history, tools):
-        """带工具调用的聊天方法"""
-        return await self.ai_service.chat_with_tools(message, history, tools)
-    
-    async def chat_with_response_format(self, message, history, response_format):
-        """带响应格式的聊天方法"""
-        return await self.ai_service.chat_with_response_format(message, history, response_format)
-    
-    async def __call__(self, message, history=None):
-        """使对象可被调用（实现 Callable 接口）
-        
-        用于兼容 llm_strategies.py 中 llm_client() 的调用方式
-        """
-        return await self.chat(message, history)
-
-
-# ============================================================
 # SSE 格式化函数
 # ============================================================
 

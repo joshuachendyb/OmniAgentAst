@@ -69,16 +69,6 @@ def _convert_xml_tool_call_to_json(content: str) -> Optional[str]:
     return result
 
 
-class Message:
-    """消息类 - 用于构建 LLM 调用时的消息列表"""
-    def __init__(self, role: str, content: str):
-        self.role = role
-        self.content = content
-    
-    def to_dict(self) -> Dict[str, str]:
-        return {"role": self.role, "content": self.content}
-
-
 class ChatResponse:
     """聊天响应类 - 非流式响应"""
     def __init__(self, content: str, model: str, provider: str = "", error: Optional[str] = None,
@@ -187,8 +177,8 @@ class BaseAIService:
         self._cancelled = False
         self._current_response: Optional[httpx.Response] = None
 
-    async def __call__(self, message: str, history: Optional[List[Message]] = None) -> "ChatResponse":
-        """使BaseAIService可调用，兼容策略层直接调用 llm_client(msg, history) 的约定 - 小沈 2026-05-21"""
+    async def __call__(self, message: str, history: Optional[List[Dict]] = None) -> "ChatResponse":
+        """使BaseAIService可调用，兼容策略层直接调用 llm_client(msg, history) 的约定"""
         return await self.chat(message, history)
 
     def _build_request_body(self, messages: List[Dict]) -> Dict:
@@ -265,12 +255,7 @@ class BaseAIService:
         return _StreamRetryContext(self, url, headers, json_body, max_retries, retry_delay)
     
     def _build_messages(self, message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
-        """构建消息列表
-        
-        支持两种模式：
-        1. 传统模式：message=用户消息, history=历史 → 拼接 history + [user message]
-        2. 直接模式：message="", history=完整messages → 直接返回 history（跳过拼接）
-        """
+        """构建消息列表 — message为空时直接返回history，否则拼接"""
         if not message and history:
             return list(history)
         messages = []
@@ -325,7 +310,7 @@ class BaseAIService:
             logger.error(f"[chat] 异常: {e}")
             return ChatResponse(content="", model=self.model, provider=self.provider, error=str(e))
     
-    async def chat_stream(self, message: str, history: Optional[List[Message]] = None) -> AsyncGenerator[StreamChunk, None]:
+    async def chat_stream(self, message: str, history: Optional[List[Dict]] = None) -> AsyncGenerator[StreamChunk, None]:
         """发送对话请求（流式返回）"""
         self.reset_cancel()
         messages = self._build_messages(message, history)
