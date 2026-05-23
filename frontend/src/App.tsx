@@ -42,29 +42,23 @@ const LazyLoadingFallback: React.FC = () => (
  *
  * 功能：根据当前路由渲染不同页面，并传递activeKey给Layout
  * Phase 2 P2 优化：使用 Suspense 包装懒加载路由
- * 【小强修复 2026-05-23】会话页用 display:none 保持存活，避免切换时重新初始化（API+Hook+SSE重连）
  *
  * @author 小新
  */
 const RouterContent: React.FC = () => {
   const location = useLocation();
-  const isChatPage = location.pathname === '/' || !['/history', '/settings'].includes(location.pathname);
 
   return (
     <AppLayout activeKey={location.pathname}>
-      {/* 会话页始终挂载，切走时 display:none 保持状态不丢失 */}
-      <div style={{ display: isChatPage ? 'contents' : 'none' }}>
-        <NewChatContainer />
-      </div>
-      {/* 非会话页用路由懒加载，切走时正常 unmount */}
-      {!isChatPage && (
-        <Suspense fallback={<LazyLoadingFallback />}>
-          <Routes>
-            <Route path="/history" element={<HistoryPage />} />
-            <Route path="/settings" element={<Settings />} />
-          </Routes>
-        </Suspense>
-      )}
+      <Suspense fallback={<LazyLoadingFallback />}>
+        <Routes>
+          <Route path="/" element={<NewChatContainer />} />
+          <Route path="/history" element={<HistoryPage />} />
+          <Route path="/settings" element={<Settings />} />
+          {/* 默认重定向到首页 */}
+          <Route path="*" element={<NewChatContainer />} />
+        </Routes>
+      </Suspense>
     </AppLayout>
   );
 };

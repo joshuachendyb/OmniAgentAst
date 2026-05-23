@@ -11,7 +11,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { flushSync } from "react-dom";
 import {
   Layout,
   Menu,
@@ -417,12 +416,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       }
       return;
     }
-    // 【小强修复 2026-05-23】React Router v7 默认用 startTransition 导致导航延迟不渲染
-    // 根治方案：BrowserRouter 传 unstable_useTransitions={false} 禁用过渡
-    // 此处 flushSync 作为额外保障，确保同步冲刷状态更新
-    flushSync(() => {
-      navigate(key);
-    });
+    // 使用React Router导航到对应页面
+    navigate(key);
     // 移动端点击后关闭抽屉
     if (isMobile) {
       setDrawerVisible(false);
