@@ -615,7 +615,7 @@ async def validate_config(request: ConfigValidateRequest):
             if current_model_models and len(current_model_models) > 0:
                 model_name = current_model_models[0]
         
-        # 配置已保存，FC能力在首次LLM调用时由 llm_adapter.ensure_capability 自动探测
+        # 配置已保存，FC能力在首次LLM调用时由 llm_adapter.detect_strategy 自动探测
         logger.info(f"配置已保存: provider={request.provider}, model={model_name}")
         return ConfigValidateResponse(
             valid=True,

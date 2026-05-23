@@ -85,8 +85,8 @@ class TimeReactAgent(ReactAgentMixin, BaseAgent):
         return self.prompts.get_task_prompt(task)
     
     async def _get_llm_response(self) -> str:
-        """获取LLM响应 - 小沈2026-05-06统一走Mixin的_call_llm_with_summary"""
-        return await self._call_llm_with_summary()
+        """获取LLM响应 - 委托Mixin._call_llm"""
+        return await self._call_llm()
     
     async def _execute_tool(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """执行工具"""

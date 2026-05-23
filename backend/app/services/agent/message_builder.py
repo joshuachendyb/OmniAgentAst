@@ -15,7 +15,7 @@ MessageBuilder 实例生命周期必须与 Agent 实例强绑定，
 严禁全局共享单例，防止多会话并发状态污染。
 
 【19.8 修正 — 小沈 2026-05-21】：
-- add_assistant() 不自动调 trim_history()，由 _call_llm_with_summary 统一调度
+- add_assistant() 不自动调 trim_history()，由 _call_llm 统一调度
 - build_observation_text() 设计为 @staticmethod，不依赖实例状态
 """
 
@@ -68,7 +68,7 @@ class MessageBuilder:
     def add_assistant(self, content: str) -> None:
         """追加assistant消息 — 替代8处散落的append
         
-        【19.8修正】不自动调 trim_history()，由 _call_llm_with_summary 统一调度。
+        【19.8修正】不自动调 trim_history()，由 _call_llm 统一调度。
         """
         self.conversation_history.append({"role": "assistant", "content": content})
 
@@ -120,7 +120,7 @@ class MessageBuilder:
         return _format_llm_observation(execution_result)
 
     # =========================================================================
-    # 第三组：每轮 LLM 调用的消息组装（从 _call_llm_with_summary 拆出）
+    # 第三组：每轮 LLM 调用的消息组装（从 _call_llm 拆出）
     # =========================================================================
 
     def prepare_messages_for_llm(self) -> List[Dict[str, Any]]:

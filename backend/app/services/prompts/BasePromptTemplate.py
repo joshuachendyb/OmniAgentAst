@@ -117,7 +117,7 @@ class BasePrompts(ABC):
         pass
 
     def get_available_tools_prompt(self) -> str:
-        """获取可用工具列表描述（已废弃：工具概要由_call_llm_with_summary动态注入）"""
+        """获取可用工具列表描述（已废弃：工具概要由_call_llm动态注入）"""
         return ""
 
     def get_task_prompt(self, task: str) -> str:

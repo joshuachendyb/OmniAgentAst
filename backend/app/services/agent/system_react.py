@@ -58,7 +58,7 @@ class SystemReactAgent(ReactAgentMixin, BaseAgent):
         return self.prompts.get_task_prompt(task)
     
     async def _get_llm_response(self) -> str:
-        return await self._call_llm_with_summary()
+        return await self._call_llm()
     
     async def _execute_tool(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
         normalized_params = self.executor._normalize_params(action, params)

@@ -201,17 +201,17 @@ class ReactAgentMixin(ToolLoaderMixin):
     
     # ===== LLM调用 =====
     
-    async def _call_llm_with_summary(self) -> str:
+    async def _call_llm(self) -> str:
         """LLM调用统一入口 — 策略在首次调用时确定，后续直接用缓存"""
         self.llm_call_count += 1
         mb = self.message_builder
         messages = mb.prepare_messages_for_llm()
 
         if self._strategy is None:
-            self._strategy = await self.adapter.ensure_capability()
+            self._strategy = await self.adapter.detect_strategy()
             logger.info(f"[{self.__class__.__name__}] 策略确定: {self._strategy}")
 
-        messages = self._inject_tools(messages, self._strategy)
+        messages = self._inject_tools_hint(messages, self._strategy)
         _ets = getattr(mb, '_executed_tool_summary', [])
         messages = mb.inject_executed_summary(messages, _ets)
         if self._strategy == "text":
@@ -221,8 +221,8 @@ class ReactAgentMixin(ToolLoaderMixin):
         self._log_response(response)
         return response
 
-    def _inject_tools(self, history_dicts, strategy_method):
-        """工具信息注入（含缓存） — 小沈 2026-05-21"""
+    def _inject_tools_hint(self, history_dicts, strategy_method):
+        """工具提示注入（含缓存） — text策略时注入工具描述，tools策略时不注入"""
         if strategy_method != "tools":
             try:
                 loaded = getattr(self, '_loaded_categories', set())

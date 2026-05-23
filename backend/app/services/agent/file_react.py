@@ -103,13 +103,13 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
     # ========== 抽象方法实现 ==========
     
     # ========== _get_llm_response：委托Mixin统一实现 ==========
-    # 【2026-05-12 小沈】删除独立_get_llm_response，改为委托ReactAgentMixin._call_llm_with_summary()
+    # 【2026-05-12 小沈】删除独立_get_llm_response，改为委托ReactAgentMixin._call_llm()
     # 原独立实现的prompt_logger/debug日志/use_function_calling分支已合入Mixin
     # file_react现在获得：方案C Schema注入 + temp_history集成 + 统一维护
     
     async def _get_llm_response(self) -> str:
         """获取 LLM 响应（委托Mixin统一入口）- 小沈2026-05-12"""
-        return await self._call_llm_with_summary()
+        return await self._call_llm()
     
     async def _get_llm_response_text(
         self,
