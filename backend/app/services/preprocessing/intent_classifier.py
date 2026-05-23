@@ -3,17 +3,17 @@
 意图检测模块
 
 阶段2: LLM语义分类器（设计文档 v1.5 §3.1.2）
-使用 LLM（七牛 deepseek-v3.1）进行意图分类，返回完整置信度分布。
+使用 LLM（ollama cloud gemma3:4b）进行意图分类，返回完整置信度分布。
 Author: 小沈 - 2026-03-27
-Updated: 小沈 - 2026-04-30（支持多意图置信度分布）
+Updated: 小沈 - 2026-05-23（七牛 deepseek-v3.1 → ollama cloud gemma3:4b，快37倍）
 
 注意：意图分类的 LLM 调用独立于此文件，不与主流程的 BaseAIService 混淆
 
 ====================================================================
-为什么硬编码使用七牛的 deepseek-v3.1？
+为什么使用 ollama cloud 的 gemma3:4b？
 ====================================================================
-1. 意图分类是一个轻量级的辅助功能，不需要使用主聊天的大模型
-2. deepseek-v3.1 是一个性价比很高的模型，适合快速分类任务
+1. 意图分类是轻量级辅助功能，不需要大模型
+2. gemma3:4b 实测 1.5s，比七牛 deepseek-v3.1（55.8s）快37倍
 3. 独立配置可以避免意图分类失败时影响主聊天功能
 4. 这样设计可以让意图分类的配置与主聊天配置解耦
 ====================================================================
@@ -28,8 +28,8 @@ from typing import Any, Optional, List, Dict
 # 【修复 2026-04-20 小沈】意图分类器使用固定模型，不受用户切换AI影响
 # 问题原因：之前从config读取qiniu.models[0]，切换AI会导致意图分类器模型变化
 
-def _load_qiniu_config() -> dict:
-    """从配置文件加载七牛 API 配置"""
+def _load_intent_config() -> dict:
+    """从配置文件加载 ollama cloud API 配置（用于意图分类）"""
     import yaml
     backend_dir = os.path.dirname(os.path.abspath(__file__))
     backend_dir = os.path.dirname(os.path.dirname(backend_dir))
@@ -39,24 +39,22 @@ def _load_qiniu_config() -> dict:
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
-        qiniu_config = config.get("ai", {}).get("qiniu", {})
-        qiniu_models = qiniu_config.get("models", ["deepseek-v3.1"])
+        oc_config = config.get("ai", {}).get("ollamacloud", {})
         return {
-            "api_base": qiniu_config.get("api_base", "https://api.qnaigc.com/v1"),
-            "api_key": qiniu_config.get("api_key", ""),
-            # 【L18修复 2026-05-13 小沈】从config读取model列表，取第一个作为fallback模型
-            "model": qiniu_models[0] if qiniu_models else "deepseek-v3.1",
-            "timeout": qiniu_config.get("timeout", 90)
+            "api_base": oc_config.get("api_base", "https://ollama.com/v1"),
+            "api_key": oc_config.get("api_key", ""),
+            "model": "gemma3:4b",  # 固定用小模型，1.5s 响应
+            "timeout": oc_config.get("timeout", 60)
         }
     except Exception:
         return {
-            "api_base": "https://api.qnaigc.com/v1",
+            "api_base": "https://ollama.com/v1",
             "api_key": "",
-            "model": "deepseek-v3.1",
-            "timeout": 90
+            "model": "gemma3:4b",
+            "timeout": 60
         }
 
-INTENT_CLASSIFIER_CONFIG = _load_qiniu_config()
+INTENT_CLASSIFIER_CONFIG = _load_intent_config()
 
 # ============== 意图定义（从labels动态生成）==============
 
@@ -130,7 +128,7 @@ async def classify_intent(
         labels: 候选意图标签列表，如 ["file", "network", "chat"]
         api_key: API 密钥（可选，默认从配置文件读取）
         api_base: API 地址（可选，默认从配置文件读取）
-        model: 模型名称（可选，默认用配置：deepseek-v3.1）
+        model: 模型名称（可选，默认用配置：gemma3:4b）
 
     Returns:
         {
