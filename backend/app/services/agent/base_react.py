@@ -355,8 +355,6 @@ class BaseAgent(ABC):
         # chunk处理相关变量
         chunk_buffer = ""
         consecutive_chunk_count = 0
-        consecutive_cache_hit_count = 0
-        MAX_CONSECUTIVE_CACHE_HIT = 2
         # 超时机制
         # ===== 场景1：未捕获异常 (try...except包裹整个循环) =====
         try:
@@ -730,34 +728,11 @@ class BaseAgent(ABC):
                 start_time = time.perf_counter()
                 logger.info(f"[DEBUG_TOOL_PARAMS] before execute_tool: tool_name={tool_name}, tool_params={tool_params}")
                 
-                # 【方案B 小沈 2026-05-15】缓存检查 + 【方案A 小沈 2026-05-15】失败拦截
-                execution_result, observation_prefix, cache_hit, fail_count = self.message_builder.check_cache_or_block(
-                    tool_name, tool_params)
                 execution_time_ms = 0
-                
-                if cache_hit:
-                    consecutive_cache_hit_count += 1
-                    logger.warning(f"[CacheHitLoop] 连续缓存命中 {consecutive_cache_hit_count} 次, tool={tool_name}")
-                    if consecutive_cache_hit_count >= MAX_CONSECUTIVE_CACHE_HIT:
-                        logger.warning(f"[CacheHitLoop] 连续缓存命中达 {MAX_CONSECUTIVE_CACHE_HIT} 次，强制finish打断死循环")
-                        final_step = StepFactory.create_final_step(
-                            step=step_count,
-                            response=f"工具 {tool_name} 已成功执行，结果已在上方。无需重复调用。",
-                            thought="检测到重复调用同一工具，自动结束任务"
-                        )
-                        self.steps.append(final_step)
-                        yield final_step.to_dict()
-                        self._on_after_loop()
-                        return
-                else:
-                    consecutive_cache_hit_count = 0
-                
-                if execution_result is None and not cache_hit and fail_count < 3:
-                    # 【Phase 1修复 小健 2026-05-14】函数内import避免触发register
-                    from app.services.context_vars import _current_task_id
-                    _current_task_id.set(task_id)
-                    execution_result = await self._execute_tool(tool_name, tool_params)
-                    execution_time_ms = int((time.perf_counter() - start_time) * 1000)
+                from app.services.context_vars import _current_task_id
+                _current_task_id.set(task_id)
+                execution_result = await self._execute_tool(tool_name, tool_params)
+                execution_time_ms = int((time.perf_counter() - start_time) * 1000)
                 
                 # 【工具执行后中断检查】在执行工具后检查是否被中断
                 if task_id and running_tasks:
@@ -815,30 +790,6 @@ class BaseAgent(ABC):
                 # ========== Observation 阶段（主工具的结果）==========
                 observation_text = self.message_builder.build_observation_text(execution_result)
                 
-                # 【改进2 2026-05-01 小沈 小健】agent层独立内容质量检测
-                # 给LLM通道：在observation_text中附加质量警告和content摘要
-                if tool_name == "write_file" and exec_status == 'success':
-                    data_dict = execution_result.get('data', {}) or {}
-                    quality_warning = self._check_write_content_quality(tool_params, data_dict)
-                    if quality_warning:
-                        observation_text += f"\n⚠️ 内容质量警告: {quality_warning}"
-                    # 附加content摘要供LLM自查
-                    written_content = tool_params.get("content", "")
-                    if written_content:
-                        content_preview = written_content[:200]
-                        if len(written_content) > 200:
-                            content_preview += "..."
-                        observation_text += f"\n写入内容摘要({len(written_content)}字符): {content_preview}"
-
-                # 【方案B 小沈 2026-05-15】缓存命中前缀
-                if observation_prefix:
-                    observation_text = observation_prefix + observation_text
-                # 【方案A 小沈 2026-05-15】失败计数+已执行汇总更新
-                fail_warning = self.message_builder.update_execution_cache(
-                    tool_name, tool_params, execution_result, exec_status)
-                if fail_warning:
-                    observation_text += fail_warning
-                
                 logger.info(f"[Debug] observation加入history: {observation_text[:100]}...")
                 # FC协议注入：tools策略下用assistant(tool_calls)+tool(tool_call_id)，text策略用role:system
                 fc_context = None
@@ -860,15 +811,7 @@ class BaseAgent(ABC):
                 )
 
                 # ===== 【步骤2.9】yield observation =====
-                # 【改进2 2026-05-01】给前端通道也附加质量警告
                 display_summary = execution_result.get('message', '')
-                if tool_name == "write_file" and exec_status == 'success':
-                    data_dict = execution_result.get('data', {}) or {}
-                    quality_warning = self._check_write_content_quality(tool_params, data_dict)
-                    if quality_warning:
-                        display_summary += f"\n⚠️ {quality_warning}"
-
-                # 使用带警告的display_result创建ObservationStep（给前端）
                 display_result = dict(execution_result)
                 display_result['summary'] = display_summary
                 display_result.setdefault('error_message', '')
@@ -970,11 +913,7 @@ class BaseAgent(ABC):
                     # 并行工具observation — 小沈 2026-05-21 统一使用message_builder
                     p_obs_text = self.message_builder.build_observation_text(p_result)
                     self.message_builder.add_observation(f"[并行] {p_obs_text}", self.llm_call_count)
-                    # 【修复 问题4 小沈 2026-05-15】并行工具也更新缓存和失败计数
-                    p_code = p_result.get("code", "SUCCESS")
-                    p_status = "success" if p_code == "SUCCESS" else "error"
-                    self.message_builder.update_execution_cache(p_name, p_params, p_result, p_status)
-                    # 【修复 2026-05-15 小健】并行工具也记录到prompt日志
+                    # 并行工具也记录到prompt日志
                     try:
                         _p_logger = get_prompt_logger()
                         _p_logger.log_observation(
@@ -1069,51 +1008,3 @@ class BaseAgent(ABC):
         return hint
 
     # ===== 通用方法 =====
-
-    def _check_write_content_quality(self, tool_params: dict, data: dict) -> str:
-        """
-        agent层独立检查write_file写入内容的质量。
-
-        与改进1（工具层）不同，此方法在Observation阶段执行，检测结果通过
-        两条Observation通道（给LLM + 给前端）传递。即使工具层漏检（如精确
-        关键词未命中），agent层仍能发现并警告LLM和前端用户。
-
-        使用共享的 content_quality.check_content_quality 方法，检测逻辑
-        与工具层完全一致。
-
-        另外独立检查 bytes_written 极小（<256字节），提示可能输出不完整。
-
-        Args:
-            tool_params: LLM返回的tool_params字典（含content, file_path等）
-            data: 工具执行返回的data字典（含bytes_written等）
-
-        Returns:
-            警告信息字符串（空字符串表示无问题）
-        """
-        bytes_written = 0
-        if isinstance(data, dict):
-            bytes_written = data.get("bytes_written", 0)
-
-        written_content = tool_params.get("content", "")
-        file_path = tool_params.get("file_path", "")
-        warnings = []
-
-        # 使用共享的自我指涉检测方法
-        if written_content:
-            from app.services.tools.toolhelper.content_quality import check_content_quality
-            quality_result = check_content_quality(content=written_content, file_path=file_path)
-            if quality_result.get("is_thought_leak"):
-                warnings.append(
-                    f"内容疑似思维泄漏：写入内容中{int(quality_result['self_ref_rate']*100)}%"
-                    f"为自我指涉描述，不是实际的文件内容。"
-                    f"请在content参数中传入真正的文件内容，而非你的思考过程。"
-                )
-
-        # 检查bytes_written极小（<256字节），可能不是期望的完整内容
-        if 0 < bytes_written < 256:
-            warnings.append(
-                f"写入内容过小：仅{bytes_written}字节，"
-                f"请确认是否已将完整内容写入content参数。"
-            )
-
-        return "；".join(warnings)
