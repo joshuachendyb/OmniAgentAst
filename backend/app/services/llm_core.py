@@ -2,7 +2,6 @@
 LLM 核心模块 - 提供通用的 LLM API 调用能力
 
 包含：
-- Message: 消息类
 - ChatResponse: 非流式响应类
 - StreamChunk: 流式响应片段类
 - BaseAIService: 通用AI服务（支持所有OpenAI兼容API）

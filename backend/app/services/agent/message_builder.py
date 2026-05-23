@@ -444,11 +444,11 @@ class MessageBuilder:
 
     @staticmethod
     def _trim_fc_pairs(messages: List[Dict]) -> List[Dict]:
-        """FC协议配对裁剪：确保role:tool与role:assistant(tool_calls)一一对应
+        """FC协议配对裁剪：确保role:tool与role:assistant(tool_calls)严格配对
 
-        裁剪后如果role:tool的tool_call_id没有对应assistant的tool_calls，
-        或者assistant的tool_calls没有对应role:tool的tool_call_id，
-        则双方都移除（OpenAI要求严格配对）。
+        OpenAI要求：assistant消息中每个tool_call.id都必须有对应role:tool(tool_call_id)，
+        role:tool的tool_call_id也必须有对应assistant(tool_calls)。
+        任一端缺失则双方都移除。
         """
         valid_tool_call_ids = set()
         for msg in messages:
@@ -469,7 +469,7 @@ class MessageBuilder:
                 if msg["tool_call_id"] in paired_ids:
                     result.append(msg)
             elif role == "assistant" and msg.get("tool_calls"):
-                if any(tc.get("id") in paired_ids for tc in msg["tool_calls"]):
+                if all(tc.get("id") in paired_ids for tc in msg["tool_calls"] if tc.get("id")):
                     result.append(msg)
             else:
                 result.append(msg)
@@ -482,10 +482,17 @@ class MessageBuilder:
 
     @staticmethod
     def _dedup_by_fingerprint(obs_list: List[Dict]) -> List[Dict]:
-        """基于指纹去重observation — 替代 base_react.py L1267-1278"""
+        """基于指纹去重observation — 替代 base_react.py L1267-1278
+
+        FC协议消息(role:tool+tool_call_id)不参与去重：
+        同工具重复调用时content可能相同但tool_call_id不同，去重会断裂配对。
+        """
         seen = set()
         result = []
         for obs in obs_list:
+            if obs.get("role") == "tool" and obs.get("tool_call_id"):
+                result.append(obs)
+                continue
             content = obs.get("content", "")
             fp = hashlib.md5(content.encode()).hexdigest()[:16]
             if fp not in seen:
