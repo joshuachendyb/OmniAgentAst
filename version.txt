@@ -1,3 +1,46 @@
+v0.13.32
+
+更新时间: 2026-05-23 22:11:18
+
+更新内容：
+
+## v0.13.31→v0.13.32 变更汇总 - 小沈-2026-05-23
+
+### refactor 消息流程重构+策略简化+缓存删除（10个commit）
+
+| commit | 说明 |
+|--------|------|
+| 91573dca | refactor: agent消息流程重构(消Dict往返转换+429重试统一+死代码归档) - 小沈-2026-05-23 |
+| cd6e8bd0 | refactor: 消息构建流程简化(split+assemble→prepare_messages_for_llm) - 小沈-2026-05-23 |
+| 50d33ce2 | refactor: 429重试下沉到llm_core传输层，Strategy层彻底消除重试逻辑 - 小沈-2026-05-23 |
+| 135440e2 | refactor: 删除Message类+清空adapter.py+删除LLMClientWrapper - 小沈-2026-05-23 |
+| 04e907e1 | refactor: 删除ResponseFormatStrategy，只保留text和tools两种策略 - 小沈-2026-05-23 |
+| ec577f93 | refactor: 探测+选择3层合并为llm_adapter.py一个文件 - 小沈-2026-05-23 |
+| 6563d2fd | refactor: FC协议合规注入 — tools策略下observation用assistant(tool_calls)+tool(tool_call_id) - 小沈-2026-05-23 |
+| 3fe8727d | refactor: 策略选择从每轮探测改为首次懒确定+缓存 - 小沈-2026-05-23 |
+| ea580576 | refactor: 3个名不副实函数重命名 + 清理llm_adapter残留 - 小沈-2026-05-23 |
+| acf8733e | refactor: 删除工具执行缓存+失败拦截+write_file质量检测（-90行） - 小沈-2026-05-23 |
+
+### fix 修复（6个commit）
+
+| commit | 说明 |
+|--------|------|
+| fcc0c0b6 | fix: 历史页优化(useRef防闭包陷阱+批量删除并行+无效会话禁用) - 小沈-2026-05-23 |
+| 7cf48129 | fix: 历史页修复6项bug(删除后退页/闭包旧值/is_valid不一致/ref统一/loading超时/title空值) - 小沈-2026-05-23 |
+| 667e09b9 | fix: 修复工具调用死循环+session404+清除无效task_id - 小沈-2026-05-23 |
+| 41285075 | fix: 删除LLMClientWrapper残留引用，直接用ai_service - 小沈-2026-05-23 |
+| 9fc3ad29 | fix: 小健审查修复3个FC协议bug - 小沈-2026-05-23 |
+| 07edb920 | fix: 小健审查修复 — 清理残留引用(注释+_executed_tool_summary+inject_executed_summary) - 小沈-2026-05-23 |
+
+### docs 文档更新（2个commit）
+
+| commit | 说明 |
+|--------|------|
+| 9262b07e | docs: 更新流程分析文档（策略选择懒确定+FC协议注入） - 小沈-2026-05-23 |
+| 138820b8 | docs: 修正流程文档行号与代码一致 - 小沈-2026-05-23 |
+
+---
+
 v0.13.31
 
 更新时间: 2026-05-23 13:55:11
