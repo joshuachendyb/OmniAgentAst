@@ -371,5 +371,14 @@ class MessageBuilder:
 
     @staticmethod
     def _total_chars(messages: List[Dict]) -> int:
-        """计算消息列表总字符数 — 替代 base_react.py L1281-1283"""
-        return sum(len(msg.get("content", "")) for msg in messages)
+        """计算消息列表总字符数 — 替代 base_react.py L1281-1283
+
+        FC模式下assistant消息content可为None（tool_calls协议），
+        msg.get("content", "")在key存在但值为None时返回None而非默认值，
+        len(None)会TypeError。必须显式处理None。
+        """
+        total = 0
+        for msg in messages:
+            content = msg.get("content")
+            total += len(content) if content is not None else 0
+        return total
