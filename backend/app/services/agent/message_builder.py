@@ -291,21 +291,33 @@ class MessageBuilder:
             head_ratio = MessageBuilder.OBSERVATION_HEAD_RATIO
         if len(content) <= budget:
             return content
+        # 【修复 小健 2026-05-24】P2-12: budget极小时确保返回不超预算
+        OMISSION_TEXT_LEN = 50
+        if budget <= OMISSION_TEXT_LEN + 10:
+            return content[:budget]
         head_budget = int(budget * head_ratio)
-        tail_budget = budget - head_budget - 50
+        tail_budget = budget - head_budget - OMISSION_TEXT_LEN
         head = content[:head_budget]
         tail = content[-tail_budget:] if tail_budget > 0 else ""
-        return f"{head}\n... [中间省略 {len(content) - budget} 字符] ...\n{tail}"
+        result = f"{head}\n... [中间省略 {len(content) - budget} 字符] ...\n{tail}"
+        # 【修复 小健 2026-05-24】P2-12: 硬截断确保不超预算
+        if len(result) > budget:
+            result = result[:budget]
+        return result
 
     @staticmethod
     def _normalize_observation_prefix(text: str) -> str:
         """确保observation文本以 [Observation] 开头 — 替代 base_react.py 前缀处理"""
+        # 【修复 小健 2026-05-24】P1-7: 防止双重[Observation]前缀
         if text.startswith("[Observation]"):
             return text
-        # 去掉已有的 Observation: 前缀变体
         for prefix in ["Observation:", "observation:"]:
             if text.startswith(prefix):
                 text = text[len(prefix):].strip()
+                break
+        # 去掉前缀后再次检查，避免双重
+        if text.startswith("[Observation]"):
+            return text
         return f"[Observation] {text}"
 
     @staticmethod
