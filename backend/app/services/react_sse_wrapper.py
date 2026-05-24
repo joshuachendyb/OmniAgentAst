@@ -261,8 +261,10 @@ async def _run_agent_sse_stream(
                     await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
                     break
             
-            # SSE 格式化 - 使用event自带step编号，与Agent内部计数一致
-            sse_data = _format_sse_event(event, next_step(), ai_service.model, ai_service.provider)
+            # SSE 格式化 - 【修复 小健 2026-05-24】P2-14: 优先使用event自带的step编号，避免与Agent内部不同步
+            event_step = event.get('step') if isinstance(event, dict) else None
+            sse_step = event_step if event_step is not None else next_step()
+            sse_data = _format_sse_event(event, sse_step, ai_service.model, ai_service.provider)
             if sse_data:
                 if sse_data.startswith("data: "):
                     step_data = json.loads(sse_data[6:])
