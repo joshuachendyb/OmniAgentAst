@@ -50,7 +50,7 @@ from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_timestamp
 from app.chat_stream.incident_handler import create_incident_data
 from app.utils.prompt_logger import get_prompt_logger
-from app.services.agent.tool_result_formatter import extract_status
+from app.services.agent.tool_result_formatter import extract_status, build_execution_result_dict
 # 【Phase 1修复 小健 2026-05-14】删除模块级import，改为函数内import
 # from app.services.tools.file.file_tools import _current_task_id
 
@@ -613,17 +613,9 @@ class BaseAgent(ABC):
                     logger.warning(f"[parse_react_response] 情况4: 解析错误: {error_msg}, 重试次数={self.parse_retry_count}")
                     
                     # 【修复 小健 2026-05-16】网络/API错误不注入history，只有LLM格式错误才注入
-                    _err = str(error_msg).lower()
-                    _error_type = None
-                    try:
-                        from app.chat_stream.error_handler import resolve_http_error_type
-                        _error_type = resolve_http_error_type(error_msg)
-                    except Exception:
-                        pass
-                    is_network_error = _error_type is not None and (
-                        _error_type.startswith("api_error_") and _error_type != "api_error_400"
-                        or _error_type in ("network", "connect", "protocol", "timeout")
-                    )
+                    from app.chat_stream.error_handler import is_network_or_api_error
+                    is_network_error, _error_type = is_network_or_api_error(error_msg)
+                    
                     if not is_network_error:
                         # LLM格式错误：添加提示到历史，引导LLM修复
                         self.message_builder.add_observation(f"Parse Error: {error_msg}. Please ensure your response follows the ReAct format (Thought -> Action -> Action Input).")
@@ -631,18 +623,15 @@ class BaseAgent(ABC):
                         # 网络/API错误：不注入history，给前端提示，直接重试
                         logger.info(f"[parse_react_response] 网络/API错误，不注入history: {error_msg}")
                         # 【修复 小健 2026-05-21】429等网络错误添加指数退避等待
-                        _is_429 = _error_type == "api_error_429"
-                        if _is_429:
+                        if _error_type == "api_error_429":
                             _retry_delay = 2.0 * (2 ** self.parse_retry_count)
                             logger.warning(f"[parse_react_response] 429限流, 等待{_retry_delay:.0f}s后重试 (第{self.parse_retry_count+1}次)")
-                            import asyncio as _asyncio
-                            await _asyncio.sleep(_retry_delay)
-                        net_error_data = create_incident_data(
+                            await asyncio.sleep(_retry_delay)
+                        yield create_incident_data(
                             incident_value="rate_limit",
                             message=f"API暂时不可用，正在重试（第{self.parse_retry_count + 1}次）",
                             step=step_count
                         )
-                        yield net_error_data
                     
                     # 重试计数器+1
                     self.parse_retry_count += 1
@@ -739,7 +728,7 @@ class BaseAgent(ABC):
                 # 【步骤2.9】根据执行结果构建 action_tool
                 
                 # 【步骤2.9】统一执行结果字典格式（供StepFactory使用）
-                execution_result_dict = self._build_execution_result_dict(execution_result)
+                execution_result_dict = build_execution_result_dict(execution_result)
                 exec_status = execution_result_dict["status"]
 
                 # 【步骤2.9】使用StepFactory创建ActionToolStep
@@ -764,7 +753,7 @@ class BaseAgent(ABC):
                 # ========== Observation 阶段（主工具的结果）==========
                 # 【修复 小健 2026-05-24】P1-3: 补全AgentStatus状态机
                 self.status = AgentStatus.OBSERVING
-                observation_text = self.message_builder.build_observation_text(execution_result)
+                observation_text = self.message_builder.build_observation_text(execution_result, tool_name=tool_name, tool_params=tool_params)
                 
                 logger.info(f"[Debug] observation加入history: {observation_text[:100]}...")
                 # FC协议注入：tools策略下用assistant(tool_calls)+tool(tool_call_id)，text策略用role:system
@@ -839,92 +828,10 @@ class BaseAgent(ABC):
                 pending_calls = parsed.get("_pending_calls", [])
                 if pending_calls:
                     logger.info(f"[ReAct] 主工具完成，继续执行 {len(pending_calls)} 个并行工具")
-                for pending in pending_calls:
-                    step_count += 1
-                    p_name = pending.get("name", "finish")
-                    p_params = pending.get("args", {})
-                    logger.info(f"[ReAct] 执行并行工具: {p_name}")
-                    # 【修复 小沈 2026-05-24】并行工具中断检查
-                    if self._check_interrupt(step_count, running_tasks):
-                        logger.info(f"[Interrupt] 任务 {task_id} 在并行工具执行前被取消")
-                        break
-                    # 【修复 小沈 2026-05-24】并行工具异常保护
-                    try:
-                        start_p = time.perf_counter()
-                        p_result = await self._execute_tool(p_name, p_params)
-                        if p_result is None:
-                            p_result = {"code": -1, "message": f"并行工具 {p_name} 返回None", "data": None}
-                        p_time = int((time.perf_counter() - start_p) * 1000)
-                    
-                        p_result_dict = self._build_execution_result_dict(p_result)
-                    
-                        p_action_step = StepFactory.create_action_tool_step(
-                            step=step_count, tool_name=p_name, tool_params=p_params,
-                            execution_result=p_result_dict,
-                            execution_time_ms=p_time
-                        )
-                        yield self._emit_step(p_action_step)
-                    
-                        p_obs_step = StepFactory.create_observation_step(
-                            step=step_count, tool_name=p_name, tool_params=p_params,
-                            execution_result=p_result_dict,
-                            return_direct=False
-                        )
-                        yield self._emit_step(p_obs_step)
-                        p_obs_text = self.message_builder.build_observation_text(p_result)
-                        _fc_handled = False
-                        if getattr(self, '_strategy', None) == "tools":
-                            _fc_resp = getattr(self, '_last_fc_raw_response', None)
-                            if _fc_resp and getattr(_fc_resp, 'tool_calls', None):
-                                _p_tc_id = None
-                                for _tc in _fc_resp.tool_calls:
-                                    _fn_name = getattr(_tc, 'function', None)
-                                    if _fn_name and getattr(_fn_name, 'name', '') == p_name:
-                                        _p_tc_id = getattr(_tc, 'id', '')
-                                        break
-                                    elif isinstance(_tc, dict) and _tc.get("function", {}).get("name", "") == p_name:
-                                        _p_tc_id = _tc.get("id", "")
-                                        break
-                                if _p_tc_id:
-                                    _budget = self.message_builder._get_observation_budget(self.llm_call_count)
-                                    _text = p_obs_text
-                                    if len(_text) > _budget:
-                                        _text = self.message_builder._smart_truncate(_text, budget=_budget)
-                                    _text = self.message_builder._normalize_observation_prefix(_text)
-                                    self.message_builder.conversation_history.append({
-                                        "role": "tool", "content": _text,
-                                        "tool_call_id": _p_tc_id
-                                    })
-                                    self.message_builder.trim_history()
-                                    _fc_handled = True
-                        if not _fc_handled:
-                            self.message_builder.add_observation(f"[并行] {p_obs_text}", self.llm_call_count)
-                        try:
-                            _p_logger = get_prompt_logger()
-                            _p_logger.log_observation(
-                                step_name="工具执行结果",
-                                observation_content=p_obs_text,
-                                tool_name=p_name,
-                                tool_params=p_params,
-                                round_number=self.llm_call_count
-                            )
-                        except Exception:
-                            pass
-                    except Exception as _p_err:
-                        logger.warning(f"[ReAct] 并行工具 {p_name} 执行异常: {_p_err}")
-                        _p_err_dict = {"status": "error", "summary": str(_p_err), "data": None, "code": -1,
-                                       "retry_count": 0, "warning": None, "attachment": None,
-                                       "next_actions": None, "return_direct": False, "error_message": str(_p_err)}
-                        p_action_step = StepFactory.create_action_tool_step(
-                            step=step_count, tool_name=p_name, tool_params=p_params,
-                            execution_result=_p_err_dict, execution_time_ms=0
-                        )
-                        yield self._emit_step(p_action_step)
-                        p_obs_step = StepFactory.create_observation_step(
-                            step=step_count, tool_name=p_name, tool_params=p_params,
-                            execution_result=_p_err_dict, return_direct=False
-                        )
-                        yield self._emit_step(p_obs_step)
+                async for _pd in self._execute_pending_calls(
+                    pending_calls, step_count, running_tasks, task_id
+                ):
+                    yield _pd
         
         except Exception as e:
             # ===== 【步骤2.9+2.11】场景1：未捕获异常 =====
@@ -990,22 +897,105 @@ class BaseAgent(ABC):
             )
         return None
 
-    @staticmethod
-    def _build_execution_result_dict(execution_result: Dict[str, Any]) -> Dict[str, Any]:
-        """从工具返回结果构建统一格式dict（供StepFactory使用）— 小健 2026-05-24
+    async def _execute_pending_calls(
+        self,
+        pending_calls: List[Dict[str, Any]],
+        step_count: int,
+        running_tasks: Optional[Dict[str, Any]],
+        task_id: Optional[str]
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """执行并行工具调用列表 — 小健 2026-05-24
         
-        统一主工具和并行工具的execution_result_dict构建逻辑。
+        在主工具Observation完成后执行附带的pending_calls。
+        每个调用产出action_tool+observation两个步骤。
+        被中断时提前终止（break），不抛异常。
         """
-        _status = extract_status(execution_result)
-        return {
-            "status": _status,
-            "summary": execution_result.get("message", ""),
-            "data": execution_result.get("data"),
-            "retry_count": execution_result.get("retry_count", 0),
-            "code": execution_result.get("code", "SUCCESS"),
-            "warning": execution_result.get("warning"),
-            "attachment": execution_result.get("attachment"),
-            "next_actions": execution_result.get("next_actions"),
-            "return_direct": execution_result.get("return_direct", False),
-            "error_message": execution_result.get("error_message", ""),
-        }
+        for pending in pending_calls:
+            step_count += 1
+            p_name = pending.get("name", "finish")
+            p_params = pending.get("args", {})
+            logger.info(f"[ReAct] 执行并行工具: {p_name}")
+            
+            if self._check_interrupt(step_count, running_tasks):
+                logger.info(f"[Interrupt] 任务 {task_id} 在并行工具执行前被取消")
+                break
+            
+            try:
+                start_p = time.perf_counter()
+                p_result = await self._execute_tool(p_name, p_params)
+                if p_result is None:
+                    p_result = {"code": -1, "message": f"并行工具 {p_name} 返回None", "data": None}
+                p_time = int((time.perf_counter() - start_p) * 1000)
+                
+                p_result_dict = build_execution_result_dict(p_result)
+                
+                p_action_step = StepFactory.create_action_tool_step(
+                    step=step_count, tool_name=p_name, tool_params=p_params,
+                    execution_result=p_result_dict,
+                    execution_time_ms=p_time
+                )
+                yield self._emit_step(p_action_step)
+                
+                p_obs_step = StepFactory.create_observation_step(
+                    step=step_count, tool_name=p_name, tool_params=p_params,
+                    execution_result=p_result_dict,
+                    return_direct=False
+                )
+                yield self._emit_step(p_obs_step)
+                
+                p_obs_text = self.message_builder.build_observation_text(p_result, tool_name=p_name, tool_params=p_params)
+                _fc_handled = False
+                if getattr(self, '_strategy', None) == "tools":
+                    _fc_resp = getattr(self, '_last_fc_raw_response', None)
+                    if _fc_resp and getattr(_fc_resp, 'tool_calls', None):
+                        _p_tc_id = None
+                        for _tc in _fc_resp.tool_calls:
+                            _fn_name = getattr(_tc, 'function', None)
+                            if _fn_name and getattr(_fn_name, 'name', '') == p_name:
+                                _p_tc_id = getattr(_tc, 'id', '')
+                                break
+                            elif isinstance(_tc, dict) and _tc.get("function", {}).get("name", "") == p_name:
+                                _p_tc_id = _tc.get("id", "")
+                                break
+                        if _p_tc_id:
+                            _budget = self.message_builder._get_observation_budget(self.llm_call_count)
+                            _text = p_obs_text
+                            if len(_text) > _budget:
+                                _text = self.message_builder._smart_truncate(_text, budget=_budget)
+                            _text = self.message_builder._normalize_observation_prefix(_text)
+                            self.message_builder.conversation_history.append({
+                                "role": "tool", "content": _text,
+                                "tool_call_id": _p_tc_id
+                            })
+                            self.message_builder.trim_history()
+                            _fc_handled = True
+                if not _fc_handled:
+                    self.message_builder.add_observation(f"[并行] {p_obs_text}", self.llm_call_count)
+                try:
+                    _p_logger = get_prompt_logger()
+                    _p_logger.log_observation(
+                        step_name="工具执行结果",
+                        observation_content=p_obs_text,
+                        tool_name=p_name,
+                        tool_params=p_params,
+                        round_number=self.llm_call_count
+                    )
+                except Exception:
+                    pass
+            except Exception as _p_err:
+                logger.warning(f"[ReAct] 并行工具 {p_name} 执行异常: {_p_err}")
+                _p_err_dict = {"status": "error", "summary": str(_p_err), "data": None, "code": -1,
+                               "retry_count": 0, "warning": None, "attachment": None,
+                               "next_actions": None, "return_direct": False, "error_message": str(_p_err)}
+                p_action_step = StepFactory.create_action_tool_step(
+                    step=step_count, tool_name=p_name, tool_params=p_params,
+                    execution_result=_p_err_dict, execution_time_ms=0
+                )
+                yield self._emit_step(p_action_step)
+                p_obs_step = StepFactory.create_observation_step(
+                    step=step_count, tool_name=p_name, tool_params=p_params,
+                    execution_result=_p_err_dict, return_direct=False
+                )
+                yield self._emit_step(p_obs_step)
+
+
