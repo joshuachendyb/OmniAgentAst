@@ -520,6 +520,14 @@ class ToolRegistry:
         required = set(input_schema.get("required", []))
         return sorted(required)
 
+    def list_all_tools(self) -> Dict[str, Callable]:
+        """获取所有工具实现
+        
+        Returns:
+            工具名到实现的映射字典
+        """
+        return self._implementations.copy()
+    
     def get_all_tools_summary(self, priority_category: Optional['ToolCategory'] = None,
                                expose_to_llm_only: bool = True,
                                exclude_categories: Optional[set] = None) -> str:
