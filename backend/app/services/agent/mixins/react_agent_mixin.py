@@ -263,6 +263,15 @@ class ReactAgentMixin(ToolLoaderMixin):
     def _log_prompt(self, assembled_messages, strategy_method):
         """prompt_logger调用前记录 — 小沈 2026-05-21"""
         prompt_logger = get_prompt_logger()
+        # 【修复 小健 2026-05-24】P2-13: FC协议下tool_calls字符数也计入总量
+        total_chars = 0
+        for m in assembled_messages:
+            total_chars += len(m.get("content") or "")
+            for tc in (m.get("tool_calls") or []):
+                if isinstance(tc, dict):
+                    total_chars += len(str(tc))
+                else:
+                    total_chars += len(str(vars(tc))) if hasattr(tc, '__dict__') else len(str(tc))
         prompt_logger.log_llm_call(
             round_number=self.llm_call_count,
             messages=assembled_messages,
@@ -273,7 +282,7 @@ class ReactAgentMixin(ToolLoaderMixin):
                 "max_steps": self.max_steps,
                 "use_function_calling": getattr(self, 'use_function_calling', False),
                 "trim_info": getattr(self, '_last_trim_info', None),
-                "total_chars": sum(len(m.get("content") or "") for m in assembled_messages),
+                "total_chars": total_chars,
             }
         )
         try:
