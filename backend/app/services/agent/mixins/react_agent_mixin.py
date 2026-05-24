@@ -54,6 +54,7 @@ class ReactAgentMixin(ToolLoaderMixin):
         """
         self.text_strategy = TextStrategy()
         self._strategy = None
+        self._strategy_probe_count = 0  # 重新探测计数器 — 小沈 2026-05-24
 
         _cls = self.__class__.__name__
         _has_client = self.llm_client is not None
@@ -86,7 +87,8 @@ class ReactAgentMixin(ToolLoaderMixin):
                 self.use_function_calling = False
                 self.openai_tools = []
                 self._strategy = "text"
-                logger.warning(f"[{_cls}] _init_llm_strategies 跳过adapter: 直接text模式")
+                _reason = "llm_client is None" if not self.llm_client else "api_base为空"
+                logger.warning(f"[{_cls}] _init_llm_strategies 跳过adapter({_reason}): 直接text模式")
         except Exception as e:
             logger.warning(f"[{_cls}] LLM策略初始化失败，降级到文本模式: {e}")
             self.adapter = None
@@ -208,8 +210,21 @@ class ReactAgentMixin(ToolLoaderMixin):
         messages = mb.prepare_messages_for_llm()
 
         if self._strategy is None:
-            self._strategy = await self.adapter.detect_strategy()
+            if self.adapter is not None:
+                self._strategy = await self.adapter.detect_strategy()
+            else:
+                self._strategy = "text"
+                logger.warning(f"[{self.__class__.__name__}] adapter为None, 降级到text策略")
             logger.info(f"[{self.__class__.__name__}] 策略确定: {self._strategy}")
+        elif self._strategy == "text" and self.adapter:
+            # STRAT-001: 首次探测失败永久降级text → 每10次重新探测一次
+            self._strategy_probe_count += 1
+            if self._strategy_probe_count >= 10:
+                self._strategy_probe_count = 0
+                _new = await self.adapter.detect_strategy()
+                if _new != self._strategy:
+                    logger.info(f"[{self.__class__.__name__}] 策略已升级: text→{_new}")
+                    self._strategy = _new
 
         messages = self._inject_tools_hint(messages, self._strategy)
         if self._strategy == "text":
