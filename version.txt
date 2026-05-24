@@ -1,3 +1,39 @@
+v0.13.36
+
+更新时间: 2026-05-24 19:33:00
+
+更新内容：
+
+## v0.13.35→v0.13.36 变更汇总 - 小健-2026-05-24
+
+### fix 代码审查修复（7项）
+
+| commit | 说明 |
+|--------|------|
+| 9347b3e8 | fix: command_security.py - 删除重复calculate_confidence定义(P0双定义覆盖bug) - 小健-2026-05-24 |
+| 45afaf87 | refactor: react_output_parser.py - 删除7处重复import(re/logger)消除冗余 - 小健-2026-05-24 |
+| 99abd257 | fix: health.py - execute_tool判空改为is not None(避免list当作falsy) - 小健-2026-05-24 |
+| ca81a354 | fix: error_handler.py - 修复重复502检测+补充bad gateway小写匹配 - 小健-2026-05-24 |
+| 30b12093 | fix: retry_policy.py - is_retryable检查改用ErrorType枚举 - 小健-2026-05-24 |
+| 1330ea9c | fix: session.py - task_id去掉重复task-前缀 - 小健-2026-05-24 |
+| 1fd07d64 | fix: react_schema.py - 添加缺失的logger导入 - 小健-2026-05-24 |
+| ba74fe2a | fix: tool_executor.py - 删除重复RetryPolicy+延迟导入retry_policy - 小健-2026-05-24 |
+
+### feat 新功能（1项）
+
+| commit | 说明 |
+|--------|------|
+| 520d9c93 | feat: registry.py - 新增list_all_tools()公开方法 - 小健-2026-05-24 |
+
+### docs 文档（1项）
+
+| commit | 说明 |
+|--------|------|
+| cba041f7 | docs: 后端代码审查报告-修正版(8项修复明细) - 小健-2026-05-24 |
+| 9ebd1e82 | docs: file_helpers.py - batch_rename_impl添加函数结构注释 - 小健-2026-05-24 |
+
+---
+
 v0.13.35
 
 更新时间: 2026-05-24 19:13:00
