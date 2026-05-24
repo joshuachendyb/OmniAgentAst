@@ -13,6 +13,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
 from app.utils.logger import logger
+from app.constants import DEFAULT_RETRYABLE_ERRORS
 
 # 工具结果格式化 — 小沈 2026-05-21
 from app.services.agent.tool_result_formatter import (
@@ -120,7 +121,7 @@ class RetryPolicy:
         """
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
-        self.retryable_errors = retryable_errors or ["timeout", "network_error"]
+        self.retryable_errors = retryable_errors or DEFAULT_RETRYABLE_ERRORS
 
 
 # 工具超时配置 - 从tool_meta.py统一导入 - 小健 2026-05-02
