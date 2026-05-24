@@ -17,6 +17,24 @@ from typing import Any, Dict, List, Optional
 SUCCESS_CODE = "SUCCESS"
 
 
+def _get_failure_hint(tool_name: str, tool_params: Optional[dict] = None) -> str:
+    """工具执行失败时获取替代建议 — 小健 2026-05-24
+
+    优先从tool_registry获取工具自定义提示，
+    无自定义提示时返回通用重试建议。
+    """
+    try:
+        from app.services.tools.registry import tool_registry
+        meta = tool_registry.get_tool(tool_name)
+        if meta and hasattr(meta, 'get_failure_hint'):
+            hint = meta.get_failure_hint(tool_params)
+            if hint:
+                return hint
+    except Exception:
+        pass
+    return "请尝试其他可用工具，不要重复调用同一失败操作。"
+
+
 def extract_status(result: dict) -> str:
     """从工具统一返回格式提取Agent消费的status字段 — 小健 2026-05-21
 
@@ -112,6 +130,13 @@ def _format_llm_observation(result: dict) -> str:
 
     else:  # ERR_*
         text = f"Observation: error [{code}] - {result.get('message', '')}"
+        tool_name = result.get("tool_name")
+        tool_params = result.get("tool_params")
+        if tool_name:
+            hint = _get_failure_hint(tool_name, tool_params)
+            if hint:
+                text += f"\n{hint}"
+        text = _format_next_actions(result, text)
         return text
 
 
