@@ -98,7 +98,7 @@ async def execute_tool(request: ToolExecuteRequest):
     
     tool_name = request.tool_name
     # 兼容parameters和params字段, parameters优先 - 小健 2026-05-21
-    params = request.parameters if request.parameters else request.params
+    params = request.parameters if request.parameters is not None else request.params
     
     # 获取工具实现
     impl = tool_registry.get_implementation(tool_name)
