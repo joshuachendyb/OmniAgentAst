@@ -111,3 +111,60 @@ API_ERROR_502 = "api_error_502"
 API_ERROR_503 = "api_error_503"
 API_ERROR_504 = "api_error_504"
 API_ERROR_524 = "api_error_524"
+
+# ============================================================
+# 6. HTTP状态码 → 错误类型 映射表
+# ============================================================
+
+HTTP_STATUS_TO_ERROR_TYPE = {
+    HTTP_RATE_LIMIT: API_ERROR_429,
+    HTTP_SERVICE_UNAVAILABLE: API_ERROR_503,
+    HTTP_TIMEOUT_BROKEN: API_ERROR_524,
+    HTTP_INTERNAL_ERROR: API_ERROR_500,
+    HTTP_BAD_GATEWAY: API_ERROR_502,
+    HTTP_GATEWAY_TIMEOUT: API_ERROR_504,
+    HTTP_UNAUTHORIZED: API_ERROR_401,
+    HTTP_FORBIDDEN: API_ERROR_403,
+    HTTP_BAD_REQUEST: API_ERROR_400,
+}
+
+# ============================================================
+# 7. 错误类型 → (错误分类, 用户消息) 映射表
+# 遵循 doc-react步骤/Omni－后端系统错误分类处理的设计方案-小沈-2026-04-10.md
+# ============================================================
+
+ERROR_TYPE_MAP = {
+    "idle_timeout": ("timeout", "请求超时：AI模型30秒内未返回任何内容，已重试3次，请更换问题或稍后重试"),
+    "timeout_error": ("timeout", "请求超时，请重试"),
+    "read_error": ("server", "读取响应失败，请重试"),
+    "connect_error": ("connect", "连接失败，请检查网络"),
+    "protocol_error": ("protocol", "协议错误，请重试"),
+    "proxy_error": ("protocol", "代理错误，请检查网络配置"),
+    "write_error": ("server", "发送请求失败"),
+    "network_error": ("network", "网络错误，请检查网络连接"),
+    API_ERROR_503: ("api_error", "AI服务渠道不可用 (errorcode=503)，请检查API配置或更换模型"),
+    API_ERROR_524: ("api_error", "AI服务已超载 (errorcode=524)，请更换模型或稍后重试"),
+    API_ERROR_429: ("api_error", "API请求过于频繁 (errorcode=429)，请稍后再试或更换模型"),
+    API_ERROR_401: ("security", "API认证失败 (errorcode=401)，请检查API密钥配置"),
+    API_ERROR_403: ("security", "API访问被拒绝 (errorcode=403)，请检查API权限配置"),
+    API_ERROR_400: ("validation", "API请求参数错误 (errorcode=400)，请检查输入内容"),
+    API_ERROR_500: ("server", "AI服务内部错误 (errorcode=500)，请稍后重试或更换模型"),
+    API_ERROR_502: ("server", "AI服务网关错误 (errorcode=502)，请稍后重试"),
+    API_ERROR_504: ("timeout", "AI服务响应超时 (errorcode=504)，请稍后重试"),
+    "unknown": ("server", "AI服务暂无响应，请稍后重试"),
+    "empty_response": ("server", "AI服务返回空响应，请稍后重试"),
+}
+
+# ============================================================
+# 8. httpx异常类型 → ERROR_TYPE_MAP键名 映射表
+# ============================================================
+
+HTTPX_EXCEPTION_TO_ERROR_KEY = {
+    "ConnectError": "connect_error",
+    "ProtocolError": "protocol_error",
+    "ProxyError": "proxy_error",
+    "TimeoutException": "timeout_error",
+    "ReadError": "read_error",
+    "WriteError": "write_error",
+    "NetworkError": "network_error",
+}
