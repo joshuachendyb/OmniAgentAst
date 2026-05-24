@@ -697,44 +697,7 @@ def get_command_risk_level(command: str) -> str:
     return checker.get_risk_level(command)
 
 
-# ============================================================
-# CRSS评分系统解析函数 (设计文档v1.1)
-# 【废弃】2026-04-20 已由v2版本替代：
-# - parse_operation_type → parse_operation_type_v2
-# - parse_operation_target → parse_operation_target_v2
-# ============================================================
 
-def parse_operation_type(command: str) -> str:
-    """
-    解析操作类型
-    
-    【废弃】2026-04-20 已由 parse_operation_type_v2 替代
-    按优先级检查：DELETE > EXEC > UPDATE > CREATE > READ
-    避免 READ 的通用关键词（如dir）误匹配其他操作
-    
-    Args:
-        command: 待解析的命令
-        
-    Returns:
-        str: 操作类型 (READ/CREATE/UPDATE/DELETE/EXEC)
-    """
-    command_lower = command.lower().strip()
-    
-    # 按优先级检查（先检查具体的操作，避免子串误匹配）
-    priority_order = ['DELETE', 'EXEC', 'UPDATE', 'CREATE']
-    
-    for op_type in priority_order:
-        for keyword in OPERATION_WEIGHTS[op_type]['keywords']:
-            if keyword.lower() in command_lower:
-                return op_type
-    
-    # 最后检查 READ（因为 READ 包含 dir 等通用子串）
-    for keyword in OPERATION_WEIGHTS['READ']['keywords']:
-        if keyword.lower() in command_lower:
-            return 'READ'
-    
-# 默认为读取操作
-    return 'READ'
 
 
 def calculate_risk_score(command: str) -> int:
