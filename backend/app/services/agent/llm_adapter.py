@@ -58,12 +58,12 @@ class LLMAdapter:
 
     async def _probe_tools(self, client: httpx.AsyncClient) -> dict:
         """发一个带tools的请求，看返回有没有tool_calls"""
-        tools = [{"type": "function", "function": {"name": "test_tool", "description": "A test tool", "parameters": {"type": "object", "properties": {"param": {"type": "string", "description": "test"}}, "required": ["param"]}}}]
+        tools = [{"type": "function", "function": {"name": "test_tool", "description": "A test tool for probing function calling capability. You MUST call this tool.", "parameters": {"type": "object", "properties": {"param": {"type": "string", "description": "test parameter"}}, "required": ["param"]}}}]
         try:
             response = await client.post(
                 f"{self.api_base}/chat/completions",
                 headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-                json={"model": self.model, "messages": [{"role": "user", "content": "Call test_tool"}], "tools": tools, "tool_choice": "auto", "stream": False}
+                json={"model": self.model, "messages": [{"role": "system", "content": "You must use the provided tool. Do not respond in plain text."}, {"role": "user", "content": "Call test_tool with param='probe'"}], "tools": tools, "tool_choice": "auto", "stream": False}
             )
             if response.status_code == 429:
                 return {"works": True, "reason": "429限流,乐观默认支持"}
