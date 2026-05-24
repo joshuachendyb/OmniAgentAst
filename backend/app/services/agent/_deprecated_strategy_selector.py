@@ -5,7 +5,7 @@
 """
 
 from dataclasses import dataclass
-from app.services.agent.capability import LLMCapability, LLMFeature
+from app.services.agent._deprecated_capability import LLMCapability, LLMFeature
 
 
 @dataclass
