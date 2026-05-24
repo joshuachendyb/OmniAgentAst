@@ -839,8 +839,6 @@ async def cancel_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
         else:
             logger.warning(f"[TaskControl] 任务 {task_id} 不在running_tasks中，可能已结束")
             return {"success": False, "message": f"任务 {task_id} 不存在", "task_status": "not_found"}
-    
-    return {"success": True, "message": f"任务 {task_id} 已中断", "task_status": "cancelled"}
 
 
 async def pause_task(task_id: str, session_id: Optional[str] = None) -> Dict[str, Any]:
