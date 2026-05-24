@@ -118,11 +118,21 @@ class MessageBuilder:
 
         不再拆出last_message再拼回，整个history作为一个List[Dict]贯穿流程。
         注入点（tools/summary/schema）在第一个非system消息前或末尾操作。
+
+        MSG-001 小沈 2026-05-24: temp_history加入字符容量限制，从最旧开始移除
         """
         messages = list(self.conversation_history)
         if self.temp_history:
             messages = messages + list(self.temp_history)
+        # temp_history容量保护：总字符超50000时从最旧截断
+        self._cap_temp_history()
         return messages
+
+    def _cap_temp_history(self):
+        """对temp_history加字符容量限制（最多50000字符），从最旧条目开始截断"""
+        TEMP_HISTORY_CHAR_LIMIT = 50000
+        while self._total_chars(self.temp_history) > TEMP_HISTORY_CHAR_LIMIT and len(self.temp_history) > 1:
+            self.temp_history.pop(0)
 
     @staticmethod
     def inject_tools_info(
@@ -302,11 +312,12 @@ class MessageBuilder:
     def _is_observation_role(msg: Dict) -> bool:
         """判断消息是否为observation — 替代 base_react.py L1252-1254
 
-        两种形式：
+        三种形式：
         1. text策略: role=system + content含[Observation]
-        2. tools策略(FC协议): role=tool + tool_call_id（与assistant(tool_calls)配对）
+        2. tools策略(FC协议): role=tool（与assistant(tool_calls)配对）
+           MSG-003 小沈 2026-05-24: 不再校验tool_call_id，空tool_call_id也被识别
         """
-        if msg.get("role") == "tool" and msg.get("tool_call_id"):
+        if msg.get("role") == "tool":
             return True
         content = msg.get("content", "")
         return msg.get("role") == "system" and ("[Observation]" in content or "Observation:" in content)
