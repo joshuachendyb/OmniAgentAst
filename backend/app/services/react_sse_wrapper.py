@@ -718,8 +718,8 @@ async def generate_sse_stream(
         current_execution_steps.append(interrupted_step)
         try:
             await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
-        except Exception:
-            pass
+        except Exception as _save_err:
+            logger.warning(f"[SSE] CancelledError后保存失败(可忽略): {_save_err}")
         
         try:
             interrupted_data = create_incident_data('interrupted', '客户端断开连接，任务中断')
