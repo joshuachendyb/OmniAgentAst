@@ -73,7 +73,7 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, RollbackMixin, BaseAge
             logger.info(f"[UniversalAgent._execute_tool] alias: {original_action} → {action}")
         
         normalized_params = self.executor._normalize_params(action, params)
-        return await self.executor.execute(original_action, normalized_params)
+        return await self.executor.execute(action, normalized_params)
     
     def _get_system_prompt(self) -> str:
         return self._build_system_prompt(self.config.category_display_name)
