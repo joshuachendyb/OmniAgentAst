@@ -31,7 +31,7 @@ class FileSafetyConfig:
     # 报告输出路径
     # 【小沈修改 2026-03-25】Debug阶段改为项目目录下，方便查看
     # 生产环境可改为 Path.home() / ".omniagent" / "reports"
-    PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent.parent  # 项目根目录
+    PROJECT_ROOT = Path(__file__).resolve().parents[5]  # 项目根目录
     REPORT_PATH: Path = PROJECT_ROOT / "reports"
     
     @classmethod
@@ -76,6 +76,32 @@ class FileOperationSafety:
             return sha256_hash.hexdigest()
         except Exception:
             return ""
+    
+    @staticmethod
+    def _row_to_operation_record(row) -> OperationRecord:
+        """将SQLite行转换为OperationRecord - 小健 2026-05-24"""
+        return OperationRecord(
+            operation_id=row[1],
+            task_id=row[2],
+            operation_type=OperationType(row[3]),
+            status=OperationStatus(row[4]),
+            source_path=row[5],
+            destination_path=row[6],
+            backup_path=row[7],
+            backup_expires_at=row[8],
+            file_size=row[9],
+            file_hash=row[10],
+            is_directory=bool(row[11]),
+            file_extension=row[12],
+            duration_ms=row[13],
+            space_impact_bytes=row[14],
+            metadata=json.loads(row[15]) if row[15] else {},
+            error_message=row[16],
+            created_at=row[17],
+            executed_at=row[18],
+            rolled_back_at=row[19],
+            sequence_number=row[20]
+        )
     
     def _backup_to_recycle_bin(self, source_path: Path) -> Optional[Path]:
         """
@@ -509,33 +535,7 @@ class FileOperationSafety:
             ''', (task_id,))
             
             rows = cursor.fetchall()
-            operations = []
-            
-            for row in rows:
-                op = OperationRecord(
-                    operation_id=row[1],
-                    task_id=row[2],
-                    operation_type=OperationType(row[3]),
-                    status=OperationStatus(row[4]),
-                    source_path=row[5],
-                    destination_path=row[6],
-                    backup_path=row[7],
-                    backup_expires_at=row[8],
-                    file_size=row[9],
-                    file_hash=row[10],
-                    is_directory=bool(row[11]),
-                    file_extension=row[12],
-                    duration_ms=row[13],
-                    space_impact_bytes=row[14],
-                    metadata=json.loads(row[15]) if row[15] else {},
-                    error_message=row[16],
-                    created_at=row[17],
-                    executed_at=row[18],
-                    rolled_back_at=row[19],
-                    sequence_number=row[20]
-                )
-                operations.append(op)
-            
+            operations = [self._row_to_operation_record(row) for row in rows]
             return operations
             
         except Exception as e:
@@ -567,28 +567,7 @@ class FileOperationSafety:
             if not row:
                 return None
             
-            return OperationRecord(
-                operation_id=row[1],
-                task_id=row[2],
-                operation_type=OperationType(row[3]),
-                status=OperationStatus(row[4]),
-                source_path=row[5],
-                destination_path=row[6],
-                backup_path=row[7],
-                backup_expires_at=row[8],
-                file_size=row[9],
-                file_hash=row[10],
-                is_directory=bool(row[11]),
-                file_extension=row[12],
-                duration_ms=row[13],
-                space_impact_bytes=row[14],
-                metadata=json.loads(row[15]) if row[15] else {},
-                error_message=row[16],
-                created_at=row[17],
-                executed_at=row[18],
-                rolled_back_at=row[19],
-                sequence_number=row[20]
-            )
+            return self._row_to_operation_record(row)
             
         except Exception as e:
             logger.error(f"Failed to get operation {operation_id}: {e}")
