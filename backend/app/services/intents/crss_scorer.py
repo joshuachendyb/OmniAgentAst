@@ -16,15 +16,12 @@ from typing import Dict, List, Optional, Tuple
 
 from app.services.tools.registry import ToolCategory
 
+from app.constants import CRSS_DANGEROUS_COMMAND_BONUS, CRSS_ACTION_MODULATION_FACTOR, CRSS_ACTION_INFERENCE_WEIGHT
+
 logger = logging.getLogger(__name__)
 
 # 置信度阈值
 CRSS_CONFIDENCE_THRESHOLD = 0.3
-
-# CRSS评分常量
-CRSS_DANGEROUS_COMMAND_BONUS = 3.0  # 危险命令额外加分
-CRSS_ACTION_MODULATION_FACTOR = 0.3  # 动作兼容调制因子
-CRSS_ACTION_INFERENCE_WEIGHT = 0.5  # 动作推类型权重
 
 
 def _ascii_word_boundary_match(keyword: str, text: str) -> bool:

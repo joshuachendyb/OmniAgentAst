@@ -158,6 +158,14 @@ ERROR_TYPE_MAP = {
 # 8. httpx异常类型 → ERROR_TYPE_MAP键名 映射表
 # ============================================================
 
+# ============================================================
+# 9. CRSS评分常量
+# ============================================================
+
+CRSS_DANGEROUS_COMMAND_BONUS = 3.0  # 危险命令额外加分
+CRSS_ACTION_MODULATION_FACTOR = 0.3  # 动作兼容调制因子
+CRSS_ACTION_INFERENCE_WEIGHT = 0.5  # 动作推类型权重
+
 HTTPX_EXCEPTION_TO_ERROR_KEY = {
     "ConnectError": "connect_error",
     "ProtocolError": "protocol_error",
