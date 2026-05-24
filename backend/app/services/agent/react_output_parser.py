@@ -1295,11 +1295,11 @@ def _normalize_tool_params_content(tool_params: Dict) -> Dict:
         if field_name in normalized:
             field_value = normalized[field_name]
             
-            # 数字类型转换为字符串
-            if isinstance(field_value, (int, float)):
+            # 布尔类型必须在int之前检查（bool是int子类）
+            if isinstance(field_value, bool):
                 normalized[field_name] = str(field_value)
-            # 布尔类型转换为字符串
-            elif isinstance(field_value, bool):
+            # 数字类型转换为字符串
+            elif isinstance(field_value, (int, float)):
                 normalized[field_name] = str(field_value)
             # 列表/字典类型转换为JSON字符串
             elif isinstance(field_value, (list, dict)):
