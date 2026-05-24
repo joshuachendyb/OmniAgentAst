@@ -402,7 +402,7 @@ class ToolParser:
             error_type = "empty_response"
         elif "json" in error_msg.lower() or "decode" in error_msg.lower():
             error_type = "json_parse_error"
-        elif "429" in llm_response or "1305" in llm_response or "rate limit" in llm_response.lower():
+        elif "429" in llm_response or "1305" in llm_response or "rate limit" in llm_response.lower() or "rate_limit" in llm_response.lower():
             error_type = "api_limit"
         elif response_length > 10000:
             error_type = "data_too_large"
