@@ -468,11 +468,9 @@ async def generate_sse_stream(
     if candidates is None:
         candidates = []
     
-    # 如果没传入，使用默认值
-    if running_tasks is None:
-        running_tasks = {}
-    if running_tasks_lock is None:
-        running_tasks_lock = asyncio.Lock()
+    # 强制要求传入 running_tasks / running_tasks_lock，避免与模块级 cancel_task 使用不同 dict
+    if running_tasks is None or running_tasks_lock is None:
+        raise ValueError("running_tasks and running_tasks_lock must be provided")
     if current_execution_steps is None:
         current_execution_steps = []
     if next_step is None:
