@@ -40,10 +40,12 @@ def _load_intent_config() -> dict:
         with open(config_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         oc_config = config.get("ai", {}).get("ollamacloud", {})
+        oc_models = oc_config.get("models", [])
+        fallback_model = oc_models[0] if oc_models else "gemma3:4b"
         return {
             "api_base": oc_config.get("api_base", "https://ollama.com/v1"),
             "api_key": oc_config.get("api_key", ""),
-            "model": "gemma3:4b",  # 固定用小模型，1.5s 响应
+            "model": oc_config.get("intent_model", fallback_model),
             "timeout": oc_config.get("timeout", 60)
         }
     except Exception:
