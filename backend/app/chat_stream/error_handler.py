@@ -11,6 +11,7 @@ import json
 from typing import Dict, Any, Optional
 
 from app.chat_stream.chat_helpers import create_timestamp
+from app.constants import ERROR_TYPE_MAP
 
 
 def create_error_step(
@@ -277,9 +278,6 @@ def get_function_call_error_info(error: Exception) -> Dict[str, Any]:
         }
 
 
-from app.constants import ERROR_TYPE_MAP as ERROR_TYPE_MAP
-
-
 def classify_error(error_type: str, error_message: str = "") -> tuple[str, str]:
     """
     根据错误类型分类，获取用户友好的错误信息
@@ -418,8 +416,12 @@ def is_network_or_api_error(error_message: str) -> tuple[bool, Optional[str]]:
     
     用于parse_error分支决策：网络错误不注入history（重试即可），
     非网络错误注入history引导LLM修复格式。
+    解析异常时静默降级为(False, None)，与原loop内联try/except行为一致。
     """
-    error_type = resolve_http_error_type(error_message)
+    try:
+        error_type = resolve_http_error_type(error_message)
+    except Exception:
+        return (False, None)
     if error_type is None:
         return (False, None)
     is_network = (
