@@ -28,7 +28,7 @@ class RollbackMixin:
             
             if step_number is None:
                 result = await self.executor.execute('rollback_session', {'task_id': self.task_id})
-                success = result.get("success", 0) > 0
+                success = result.get("status") == "success"
             else:
                 steps_to_rollback = [s for s in self.steps if s.step_number > step_number]
                 
@@ -41,7 +41,8 @@ class RollbackMixin:
                     result_data = observation.get("result", {}) if isinstance(observation, dict) else {}
                     operation_id = result_data.get("operation_id")
                     if operation_id:
-                        step_success = await self.executor.execute('rollback_operation', {'operation_id': operation_id})
+                        step_result = await self.executor.execute('rollback_operation', {'operation_id': operation_id})
+                        step_success = step_result.get("status") == "success" if isinstance(step_result, dict) else bool(step_result)
                         success = success and step_success
                     else:
                         raise ValueError(f"No operation_id found for step {step.step_number}")
