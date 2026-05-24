@@ -21,6 +21,11 @@ logger = logging.getLogger(__name__)
 # 置信度阈值
 CRSS_CONFIDENCE_THRESHOLD = 0.3
 
+# CRSS评分常量
+CRSS_DANGEROUS_COMMAND_BONUS = 3.0  # 危险命令额外加分
+CRSS_ACTION_MODULATION_FACTOR = 0.3  # 动作兼容调制因子
+CRSS_ACTION_INFERENCE_WEIGHT = 0.5  # 动作推类型权重
+
 
 def _ascii_word_boundary_match(keyword: str, text: str) -> bool:
     pattern = f'(?<![a-zA-Z0-9_]){re.escape(keyword)}(?![a-zA-Z0-9_])'
@@ -234,8 +239,8 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
         from app.services.command_security import DANGEROUS_COMMANDS
         for dangerous in DANGEROUS_COMMANDS:
             if dangerous.lower() in command_lower:
-                logger.info(f"[CRSS] 危险命令 → SHELL +3.0: '{dangerous}'")
-                type_raw[ToolCategory.SYSTEM] = type_raw.get(ToolCategory.SYSTEM, 0) + 3.0
+                logger.info(f"[CRSS] 危险命令 → SHELL +{CRSS_DANGEROUS_COMMAND_BONUS}: '{dangerous}'")
+                type_raw[ToolCategory.SYSTEM] = type_raw.get(ToolCategory.SYSTEM, 0) + CRSS_DANGEROUS_COMMAND_BONUS
                 break
     except ImportError:
         pass
@@ -271,14 +276,14 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
             for action_name, action_score in action_scores.items():
                 action_def = ACTION_DEFINITIONS[action_name]
                 compat = action_def["compatibility"].get(cat, 0.3)
-                final_raw[cat] += type_score * compat * 0.3  # 动作调制
+                final_raw[cat] += type_score * compat * CRSS_ACTION_MODULATION_FACTOR  # 动作调制
     elif action_scores:
         # 无类型分 → 用动作反推类型
         for action_name, action_score in action_scores.items():
             defn = ACTION_DEFINITIONS[action_name]
             for cat, compat in defn["compatibility"].items():
                 if compat >= 1.0:
-                    final_raw[cat] = final_raw.get(cat, 0) + action_score * 0.5
+                    final_raw[cat] = final_raw.get(cat, 0) + action_score * CRSS_ACTION_INFERENCE_WEIGHT
         if final_raw:
             logger.info(f"[CRSS] 无类型匹配，动作推断类型: {[c.value for c in final_raw.keys()]}")
 
