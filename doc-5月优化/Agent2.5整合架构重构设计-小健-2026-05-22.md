@@ -12,6 +12,7 @@
 
 | 版本 | 时间 | 作者 | 更新内容 |
 |------|------|------|---------|
+| v1.7 | 2026-05-23 | 小沈 | 删除所有已实现内容的详细说明(只留一句存档引用)：§4整体标记已完成、删除清单去掉9个已完成Agent项、保留文件去掉已完成项、实施路线去掉Phase1/2/9(21.5天→16天)、依赖图重绘 |
 | v1.6 | 2026-05-23 | 小沈 | 对照最新代码逐一核对更新：Agent架构已完成(9→2类+配置注册表)、AgentFactory已重写(86行)、command_security 946行168条、ToolMetadata 14字段、工具分布file=11/system=24/network=5/desktop=9/document=9、Phase1/2/9已完成、砍PipelineContext、SSE 1648行 |
 | v1.5 | 2026-05-23 | 小沈 | 补全所有伪代码：IntentRegistry完整实现(IntentDefinition+默认意图+兼容别名+惰性初始化)、SemanticRouter完整类(LLM调用+缓存+降级)、ToolMetadata完整字段(12个原有+2个新增)、_request_authorization完整实现(fallback_mode+SSE事件+asyncio.wait_for超时+参数脱敏+AuthorizationResult)、SessionTrust TTL惰性清理 |
 | v1.4 | 2026-05-23 | 小沈 | 补充三个核心决策的硬核论证：§4.1统一Agent(业界先验OpenAI/AutoGPT/Dify均为1个+硬核收益数据)、§2.2矫正必要性(下游规则精确匹配=安全漏洞+方案对比表)、§3.3闲聊检测(无检测代价+业界做法+性价比分析) |
@@ -1333,10 +1334,6 @@ class ToolObserver:
 |------|---------|------|
 | `agent/base_react.py` | ReAct循环核心 | 微调(添加缓存/失败计数/trim优化) |
 | `agent/mixins/react_agent_mixin.py` | 工具加载+策略+会话管理 | 微调(添加轮次判断/精简工具概要) |
-| `agent/mixins/rollback_mixin.py` | 回滚逻辑(File从子类提取) | **新增** |
-| `agent/universal_react.py` | 统一Agent(替代7个同质Agent) | **已完成** |
-| `agent/desktop_react.py` | 桌面Agent(rollback=False特殊) | **已完成** |
-| `agent/agent_config.py` | AgentConfig+AGENT_REGISTRY声明式注册 | **已完成** |
 | `agent/message_builder.py` | 消息构建核心 | **完全保留** |
 | `agent/step_factory.py` | 步骤工厂 | **完全保留** |
 | `tools/registry.py` | 工具注册表 | 扩展ToolMetadata(安全字段) |
@@ -1368,43 +1365,36 @@ class ToolObserver:
 
 ### 8.1 阶段总览
 
-| 阶段 | 内容 | 风险 | 工时 | 依赖 | 可验证 | 状态 |
-|------|------|------|------|------|--------|------|
-| **Phase 0** | 测试基线清理 + ToolMetadata新增safety_level字段 + 58工具安全分级标注(优先DANGEROUS/DESTRUCTIVE约15个) | 低 | 2.5天 | 无 | ✅ | 待实施 |
-| **Phase 1** | IntentRegistry单一真相源 + AgentProfile配置化 + AgentRegistry(替代AgentFactory) | 低 | 2天 | Phase 0 | ✅ | **已完成**(AgentConfig+AGENT_REGISTRY) |
-| **Phase 2** | GenericReactAgent + 动态Prompt组合(含多分类角色融合策略) | 中 | 2天 | Phase 1 | ✅ | **已完成**(UniversalReactAgent 197行) |
-| **Phase 3** | TextCorrectorV2 + chat_router 6步流程对齐(当前6步→新4步函数调用，不引入PipelineContext) | 中 | 1天 | Phase 1 | ✅ | 待实施 |
-| **Phase 4** | Semantic Router(Function Calling) + 明确与intent_classifier关系(Semantic Router替代CRSS阶段1，intent_classifier保留为阶段2兜底) | 中 | 1.5天 | Phase 1, Phase 3 | ✅ | 待实施 |
-| **Phase 5** | ToolSafetyLayer(迁移command_security核心逻辑) + ToolObserver(改用asyncio.Lock) + HITL后端 | 中 | 2天 | Phase 0 | ✅ | 待实施 |
-| **Phase 6** | ChatRouter改造 + 新旧架构切换(Feature Flag灰度) | **高** | 2天 | Phase 2,3,4,5 | ✅ | 待实施 |
-| **Phase 7** | 前端HITL集成(SSE 1648行useSSE事件扩展+确认弹窗+授权API) | **高** | 3天 | Phase 6 | ✅ | 待实施 |
-| **Phase 8** | 重复执行消除(A+B+C+D+E+F) + trim_history字符数阈值优化(当前150K字符/80%触发/70%裁剪) | 中 | 2天 | Phase 6 | ✅ | 待实施 |
-| **Phase 9** | 删除7个同质Agent + 死代码清理 + git tag标记回滚点 | 中 | 1天 | Phase 7验证通过 | ✅ | **已完成**(7个Agent已删除) |
-| **Phase 10** | 全量回归测试 + 安全测试 + 性能测试 + httpx版本锁兼容验证 | 低 | 2天 | Phase 9 | ✅ | 待实施 |
-| **总计** | | | **~21.5天** | | | 已完成3/11 |
+| 阶段 | 内容 | 风险 | 工时 | 依赖 | 可验证 |
+|------|------|------|------|------|--------|
+| **Phase 0** | ToolMetadata新增safety_level字段 + 58工具安全分级标注(优先DANGEROUS/DESTRUCTIVE约15个) | 低 | 2.5天 | 无 | ✅ |
+| **Phase 3** | TextCorrectorV2 + chat_router 6步流程对齐(当前6步→新4步函数调用) | 中 | 1天 | Phase 0 | ✅ |
+| **Phase 4** | Semantic Router(Function Calling) + 明确与intent_classifier关系(Semantic Router替代CRSS阶段1，intent_classifier保留为阶段2兜底) | 中 | 1.5天 | Phase 3 | ✅ |
+| **Phase 5** | ToolSafetyLayer(迁移command_security核心逻辑) + ToolObserver(改用asyncio.Lock) + HITL后端 | 中 | 2天 | Phase 0 | ✅ |
+| **Phase 6** | ChatRouter改造 + 新旧架构切换(Feature Flag灰度) | **高** | 2天 | Phase 3,4,5 | ✅ |
+| **Phase 7** | 前端HITL集成(SSE 1648行useSSE事件扩展+确认弹窗+授权API) | **高** | 3天 | Phase 6 | ✅ |
+| **Phase 8** | 重复执行消除(A+B+C+D+E+F) + trim_history字符数阈值优化(当前150K字符/80%触发/70%裁剪) | 中 | 2天 | Phase 6 | ✅ |
+| **Phase 10** | 全量回归测试 + 安全测试 + 性能测试 + httpx版本锁兼容验证 | 低 | 2天 | Phase 8 | ✅ |
+| **总计** | | | **~16天** | | |
+
+> Phase 1/2/9(Agent统一+AgentFactory重写+旧代码清理)已实施完成，从路线图中移除。
 
 ### 8.2 阶段依赖关系
 
 ```
-Phase 0(测试基线+安全分级标注+safety_level字段)
+Phase 0(安全分级标注+safety_level字段) ──┐
+    ↓                                     │
+Phase 3(TextCorrectorV2+chat_router对齐) ─┤
+    ↓                                     │
+Phase 4(SemanticRouter+intent_classifier) ┤
+    ↓                                     │
+Phase 5(ToolSafetyLayer+ToolObserver+HITL)┘
     ↓
-Phase 1(IntentRegistry+AgentProfile+AgentRegistry) ──┐
-    ↓                                                  │
-Phase 2(GenericReactAgent+动态Prompt+多分类角色融合) ──┤
-    ↓                                                  │
-Phase 3(TextCorrectorV2+PipelineContext+chat_router对齐)┤
-    ↓                                                  │
-Phase 4(SemanticRouter+intent_classifier关系厘清) ─────┤
-    ↓                                                  │
-Phase 5(ToolSafetyLayer迁移+ToolObserver+HITL后端) ────┘
+Phase 6(ChatRouter改造+Feature Flag灰度)
     ↓
-Phase 6(ChatRouter改造+Feature Flag灰度切换)
-    ↓
-Phase 7(前端HITL集成+useSSE事件扩展+确认弹窗)
+Phase 7(前端HITL+useSSE事件扩展+确认弹窗)
     ↓
 Phase 8(重复执行消除A~F+trim_history优化)
-    ↓
-Phase 9(删除7同质Agent+死代码清理+git tag回滚点)
     ↓
 Phase 10(全量回归+安全+性能+httpx兼容验证)
 ```
