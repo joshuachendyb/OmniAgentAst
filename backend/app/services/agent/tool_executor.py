@@ -120,7 +120,7 @@ class RetryPolicy:
         """
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
-        self.retryable_errors = retryable_errors or ["timeout"]
+        self.retryable_errors = retryable_errors or ["timeout", "network_error"]
 
 
 # 工具超时配置 - 从tool_meta.py统一导入 - 小健 2026-05-02
