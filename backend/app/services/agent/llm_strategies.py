@@ -467,7 +467,10 @@ class ToolsStrategy(LLMStrategy):
                 except (json.JSONDecodeError, TypeError) as e:
                     from app.services.agent.react_output_parser import _extract_json_block
                     extracted = _extract_json_block(response.content)
-                    if extracted and isinstance(extracted, dict) and "tool_name" in extracted:
+                    if extracted and isinstance(extracted, dict) and ("tool_name" in extracted or ("name" in extracted and "arguments" in extracted)):
+                        if "name" in extracted and "tool_name" not in extracted:
+                            extracted["tool_name"] = extracted["name"]
+                            extracted["tool_params"] = extracted.get("arguments", {})
                         content = json.dumps(extracted, ensure_ascii=False)
                         logger.info(f"[Function Calling] JSON解析失败但_extract_json_block提取成功: tool_name={extracted.get('tool_name')}")
                         return content
