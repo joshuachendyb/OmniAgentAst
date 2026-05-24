@@ -464,7 +464,7 @@ class BaseAgent(ABC):
                 
                 # ===== 先获取 parsed 结果 =====
                 thought_content = parsed.get("content", "")
-                tool_name = parsed.get("tool_name", parsed.get("action_tool", "finish"))
+                tool_name = parsed.get("tool_name") or parsed.get("action_tool") or "finish"
                 tool_params = parsed.get("tool_params", parsed.get("params", {}))
                 
                 # ===== chunk类型处理（流式中间文本片段，非完成信号）=====
@@ -663,6 +663,36 @@ class BaseAgent(ABC):
                     continue
                 
                 # ===== 【步骤2.9】情况1：工具调用（Action）=====
+                # 【修复 小健 2026-05-24】空工具名保护：type=action但tool_name无效时视为parse_error
+                _valid_tool_names = {"finish"} 
+                try:
+                    from app.services.tools.registry import ToolRegistry
+                    _valid_tool_names = {t.name for t in ToolRegistry.instance().list_tools()} | {"finish"}
+                except Exception:
+                    pass
+                if not tool_name or (tool_name not in _valid_tool_names and tool_name == "finish" and parsed.get("tool_name") is None and parsed.get("action_tool") is None):
+                    logger.warning(f"[parse_react_response] 空工具名或无效工具名: tool_name={tool_name!r}, parsed_type={parsed['type']}, 视为parse_error")
+                    parsed = {"type": "parse_error", "error": f"LLM返回无效工具名: {tool_name!r}"}
+                    self.parse_retry_count += 1
+                    if self.parse_retry_count >= self.max_parse_retries:
+                        error_step = StepFactory.create_error_step(
+                            step=step_count,
+                            error_type="parse_error",
+                            error_message=f"LLM反复返回无效工具名（已重试{self.max_parse_retries}次）",
+                            recoverable=False
+                        )
+                        self.steps.append(error_step)
+                        yield error_step.to_dict()
+                        self._on_after_loop()
+                        return
+                    retrying_data = create_incident_data(
+                        incident_value="retrying",
+                        message=f"LLM返回无效工具名，正在重试（第{self.parse_retry_count}次）",
+                        step=step_count
+                    )
+                    yield retrying_data
+                    continue
+
                 logger.info(f"[parse_react_response] 情况1: type=action, tool={tool_name}")
                 # 获取thought和reasoning字段
                 thought = parsed.get("thought", "")
