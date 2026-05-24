@@ -143,6 +143,10 @@ def _process_json_result(data: Dict, output: str) -> Optional[Dict[str, Any]]:
     if "tool_name" in data:
         return _build_action_from_new_format(data, output)
     
+    # OpenAI function calling 格式 (name + arguments)
+    if "name" in data and ("arguments" in data or "args" in data):
+        return _build_action_from_fc_format(data, output)
+    
     # 旧字段格式 (action/action_input)
     if "action" in data:
         return _build_action_from_old_format(data, output)
@@ -214,6 +218,49 @@ def _process_tool_params(tool_params, tool_name=None, raw_output=None):
         )
     
     return tool_params
+
+
+def _build_action_from_fc_format(data: Dict, output: str) -> Dict[str, Any]:
+    """
+    从OpenAI function calling格式构造action结果
+    
+    LLM在text策略下可能幻觉输出FC格式: {"name": "xxx", "arguments": {...}}
+    将其转换为标准ReAct action格式。
+    
+    小健 2026-05-24
+    """
+    tool_name = data["name"]
+    is_finish = tool_name == "finish"
+    
+    raw_args = data.get("arguments", data.get("args", {}))
+    if isinstance(raw_args, str):
+        try:
+            raw_args = json.loads(raw_args)
+        except (json.JSONDecodeError, TypeError):
+            raw_args = {}
+    if not isinstance(raw_args, dict):
+        raw_args = {}
+    
+    if is_finish and raw_args.get("result"):
+        raw_result = raw_args["result"]
+        response = _normalize_result_to_str(raw_result)
+    else:
+        response = ""
+    
+    processed_params = None if is_finish else _process_tool_params(raw_args, tool_name, output)
+    
+    result = {
+        "type": "answer" if is_finish else "action",
+        "thought": data.get("thought", ""),
+        "content": data.get("thought", ""),
+        "reasoning": data.get("reasoning", ""),
+        "tool_name": None if is_finish else tool_name,
+        "tool_params": processed_params,
+        "response": response,
+    }
+    
+    logger.info(f"[parse_react_response] FC格式转换: name={tool_name} → type={result['type']}")
+    return _add_reasoning_warning(result)
 
 
 def _build_action_from_new_format(data: Dict, output: str) -> Dict[str, Any]:
