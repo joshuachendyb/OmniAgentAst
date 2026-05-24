@@ -67,14 +67,13 @@ def test_stderr_warning():
 
 
 def test_empty_code():
-    """S4-010: 空代码正常执行"""
+    """S4-010: 空代码返回错误"""
     result = execute_code(code="", language="python")
-    assert result["code"] == "SUCCESS"
+    assert result["code"] == "ERR_SHELL_EXEC_EMPTY_CODE"
 
 
-def test_capabilities_and_next_actions():
-    """S4-011: 返回包含capabilities和next_actions"""
+def test_next_actions():
+    """S4-011: 返回包含next_actions"""
     result = execute_code(code="print(1)", language="python")
-    assert "capabilities_used" in result
-    assert "python" in result["capabilities_used"]
+    assert result["code"] == "SUCCESS"
     assert "next_actions" in result

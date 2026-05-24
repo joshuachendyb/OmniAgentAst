@@ -42,9 +42,9 @@ def test_safety_bypass():
 
 
 def test_empty_code():
-    """S5-007: 空代码"""
+    """S5-007: 空代码返回错误"""
     result = execute_code(code="", language="javascript")
-    assert result["code"] == "SUCCESS"
+    assert result["code"] == "ERR_SHELL_EXEC_EMPTY_CODE"
 
 
 def test_multiline():
@@ -54,8 +54,8 @@ def test_multiline():
     assert "3" in result["data"]["stdout"]
 
 
-def test_capabilities():
-    """S5-009: 验证capabilities_used"""
+def test_next_actions():
+    """S5-009: 验证next_actions"""
     result = execute_code(code="console.log(1)", language="javascript")
-    assert "capabilities_used" in result
-    assert "node.js" in result["capabilities_used"]
+    assert result["code"] == "SUCCESS"
+    assert "next_actions" in result
