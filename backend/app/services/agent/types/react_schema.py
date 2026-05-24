@@ -26,6 +26,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 from app.services.tools.registry import tool_registry
+from app.utils.logger import logger
 
 
 def get_tools_schema_for_function_calling() -> List[Dict[str, Any]]:
