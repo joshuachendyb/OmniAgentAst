@@ -167,7 +167,7 @@ class BaseAIService:
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(
                 connect=30.0,  # 【2026-05-14 小健/小沈】httpx 0.26.0→0.28.1后TLS偶发超时，10→30
-                read=None,
+                read=self.timeout,  # 【LLM-006 小沈 2026-05-24】read=None → self.timeout(60s)，防止无限等待
                 write=10.0,
                 pool=10.0,
             ),
@@ -606,6 +606,14 @@ class BaseAIService:
                         continue
                 
                 response = await request_task
+                
+                # 【LLM-004 小沈 2026-05-24】请求完成后、处理响应前检查取消标志
+                # 消除最后1秒心跳窗口期内的取消延迟
+                if self._cancelled:
+                    logger.info("[chat_with_tools] 请求完成后检测到取消，丢弃响应")
+                    return ChatResponse(
+                        content="", model=self.model, provider=self.provider, error="任务已取消"
+                    )
                 
             except asyncio.CancelledError:
                 return ChatResponse(
