@@ -1,8 +1,22 @@
-v0.13.33
+v0.13.34
 
-更新时间: 2026-05-24 17:38:50
+更新时间: 2026-05-24 18:40:34
 
 更新内容：
+
+## v0.13.33→v0.13.34 变更汇总 - 小健-2026-05-24
+
+### chore 死代码清理（删除989行）
+
+16个文件变更，删除11个文件：
+- `parsers/` 7文件(454行) — 自创建以来从未被外部import的孤立策略模式实现
+- `_deprecated_capability.py` / `_deprecated_capability_detector.py` / `_deprecated_strategy_selector.py` (376行) — 功能已合并到llm_adapter.py，无逻辑丢失
+- `operation_orm.py` (73行) — 注释自认"未使用"的ORM死代码
+- `routes.py:cleanup_all_backups()` (35行) — 从未被调用的注释级功能
+- `agent_factory.py:register()` / `_AGENTS` / `_TOOL_CATEGORIES` (18行) — 旧工厂设计残留，只写入未读取
+- `react_schema.py:_build_brief_schema()` (14行) — 定义后从未调用
+- `session_base.py:clear_stats_cache()` (4行) — 定义后从未调用
+- `file_safety.py` 中 `operation_orm.OperationRecordORM` 无用import (1行)
 
 ## v0.13.32→v0.13.33 变更汇总 - 小健-2026-05-24
 
