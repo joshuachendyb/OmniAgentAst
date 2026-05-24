@@ -75,10 +75,11 @@ class MessageBuilder:
             observation_text = self._smart_truncate(observation_text, budget=budget)
         observation_text = self._normalize_observation_prefix(observation_text)
         
-        if fc_context and fc_context.get("tool_calls"):
-            tool_calls = fc_context["tool_calls"]
-            tool_call_id = fc_context.get("tool_call_id", "")
-            self.conversation_history.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
+        if fc_context and fc_context.get("tool_call_id"):
+            tool_call_id = fc_context["tool_call_id"]
+            tool_calls = fc_context.get("tool_calls")
+            if tool_calls:
+                self.conversation_history.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
             self.conversation_history.append({"role": "tool", "content": observation_text, "tool_call_id": tool_call_id})
         else:
             self.conversation_history.append({"role": "system", "content": observation_text})
