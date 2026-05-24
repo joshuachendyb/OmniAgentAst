@@ -137,12 +137,17 @@ class ToolConfig:
         """
         timeouts = self._config.get("tools", {}).get("timeouts", {})
         
-        # 查找工具特定超时
+        # 查找YAML配置的特定超时
         if tool_name in timeouts:
             return timeouts[tool_name]
         
-        # 返回默认超时
-        return timeouts.get("default", self.DEFAULT_TIMEOUT)
+        # YAML中有default则用它
+        if "default" in timeouts:
+            return timeouts["default"]
+        
+        # 回退到tool_meta硬编码超时表
+        from app.services.tools.tool_meta import TOOL_TIMEOUTS
+        return TOOL_TIMEOUTS.get(tool_name, TOOL_TIMEOUTS["default"])
     
     def get_aliases(self, tool_name: str) -> Optional[Dict[str, str]]:
         """
