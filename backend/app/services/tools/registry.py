@@ -150,31 +150,34 @@ def _fix_schema_types(schema: Dict[str, Any]) -> Dict[str, Any]:
 class ToolCategory(Enum):
     """
     工具分类枚举 - 【2026-05-18 小沈】精简方案：13→7分类
-    废弃分类：TIME→META, ENVIRONMENT→SYSTEM, DATABASE→DOCUMENT,
-             CODE_EXECUTION→SHELL, DATA_FORMAT(废弃), SUPPORT_TOOL(废弃)
+    实际注册映射(与INTENT_TO_CATEGORY同步):
+      SHELL/META工具→注册到SYSTEM, TIME→SYSTEM, ENVIRONMENT→SYSTEM,
+      DATABASE→DOCUMENT, CODE_EXECUTION→SYSTEM, DATA_FORMAT→FILE
+    注意: SHELL和META枚举值保留用于INTENT_TO_CATEGORY兼容, 但无工具直接注册到它们
+    【2026-05-24 小沈】修正INTENT_TO_CATEGORY映射与实际注册一致
     """
     FILE = "file"
-    SHELL = "shell"         # Shell命令执行 + 代码执行
+    SHELL = "shell"         # Shell命令执行 + 代码执行 (实际注册到SYSTEM)
     NETWORK = "network"     # 网络通信
-    SYSTEM = "system"        # 系统信息 + 环境管理
+    SYSTEM = "system"        # 系统信息 + 环境管理 + Shell + Meta/时间
     DESKTOP = "desktop"     # 桌面功能
     DOCUMENT = "document"      # 文档读写 + 数据库
-    META = "meta"              # 元工具 + 时间日期
+    META = "meta"              # 元工具 + 时间日期 (实际注册到SYSTEM)
 
 
 INTENT_TO_CATEGORY: Dict[str, "ToolCategory"] = {
     "file": ToolCategory.FILE,
-    "shell": ToolCategory.SHELL,
+    "shell": ToolCategory.SYSTEM,
     "network": ToolCategory.NETWORK,
     "system": ToolCategory.SYSTEM,
     "desktop": ToolCategory.DESKTOP,
     "document": ToolCategory.DOCUMENT,
-    "meta": ToolCategory.META,
-    "time": ToolCategory.META,
+    "meta": ToolCategory.SYSTEM,
+    "time": ToolCategory.SYSTEM,
     "environment": ToolCategory.SYSTEM,
     "env": ToolCategory.SYSTEM,
     "database": ToolCategory.DOCUMENT,
-    "code_execution": ToolCategory.SHELL,
+    "code_execution": ToolCategory.SYSTEM,
     "data_format": ToolCategory.FILE,
     "data_analysis": ToolCategory.DOCUMENT,
 }
