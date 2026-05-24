@@ -275,6 +275,7 @@ async def list_sessions(
     Returns:
         SessionListResponse: 会话列表（包含分页信息）
     """
+    conn = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -353,7 +354,6 @@ async def list_sessions(
                 )
         
         rows = cursor.fetchall()
-        conn.close()
         
         # 优化：批量转换时间戳，减少函数调用开销
         # 对于大量数据，这样可以显著提高性能
@@ -404,6 +404,12 @@ async def list_sessions(
     except Exception as e:
         logger.error(f"获取会话列表失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取会话列表失败: {str(e)}")
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 @router.get("/sessions/{session_id}/messages")
@@ -420,6 +426,7 @@ async def get_session_messages(session_id: str):
     Returns:
         dict: 包含session_id, title, title_locked, title_source, title_updated_at和messages的对象
     """
+    conn = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -452,7 +459,6 @@ async def get_session_messages(session_id: str):
         session = cursor.fetchone()
         
         if not session:
-            conn.close()
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
         
         # 获取消息（添加 display_name 字段）
@@ -465,7 +471,6 @@ async def get_session_messages(session_id: str):
         )
         
         rows = cursor.fetchall()
-        conn.close()
         
         # 解析 execution_steps JSON字符串为数组
         # 【重要 2026-04-01 小沈】execution_steps中的timestamp是int类型
@@ -537,6 +542,12 @@ async def get_session_messages(session_id: str):
     except Exception as e:
         logger.error(f"获取会话消息失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取会话消息失败: {str(e)}")
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 
@@ -581,6 +592,7 @@ async def save_message(session_id: str, message: MessageCreate):
     Returns:
         dict: 保存结果
     """
+    conn = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -611,7 +623,6 @@ async def save_message(session_id: str, message: MessageCreate):
         session = cursor.fetchone()
         
         if not session:
-            conn.close()
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
         
         # 【小沈修复 2026-03-31】使用毫秒时间戳
@@ -709,7 +720,6 @@ async def save_message(session_id: str, message: MessageCreate):
         
         # 提交事务
         conn.commit()
-        conn.close()
         
         logger.info(f"保存消息成功: session_id={session_id}, message_id={message_id}, "
                    f"role={message.role}, message_count={new_message_count}, "
@@ -727,6 +737,12 @@ async def save_message(session_id: str, message: MessageCreate):
     except Exception as e:
         logger.error(f"保存消息失败: {e}")
         raise HTTPException(status_code=500, detail=f"保存消息失败: {str(e)}")
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 class ExecutionStepsUpdate(BaseModel):
@@ -774,6 +790,7 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
     Returns:
         dict: 保存结果
     """
+    conn = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -786,7 +803,6 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
         session = cursor.fetchone()
         
         if not session:
-            conn.close()
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
         
         # 查找该会话的最后一条assistant消息（用于更新 execution_steps 和 content）
@@ -876,6 +892,21 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
             else:
                 should_create_new = True
                 logger.info(f"[新建] ID={expected_assistant_id}不存在，创建assistant消息: session_id={session_id}")
+        
+        # 【小健修复 2026-05-24】ID被占用时，查找下一个可用ID，避免UNIQUE constraint冲突
+        # 根因：当expected_assistant_id已被user消息占用时，should_create_new=True但仍用冲突ID做INSERT
+        if should_create_new:
+            cursor.execute('SELECT id FROM chat_messages WHERE id = ?', (expected_assistant_id,))
+            if cursor.fetchone():
+                cursor.execute(
+                    '''SELECT id FROM chat_messages WHERE session_id = ? ORDER BY id DESC LIMIT 1''',
+                    (session_id,)
+                )
+                max_msg = cursor.fetchone()
+                expected_assistant_id = (max_msg['id'] + 1) if max_msg else 1
+                with _message_ids_lock:
+                    _assistant_message_ids[session_id] = expected_assistant_id
+                logger.info(f"[ID冲突解决] 重新分配assistant_message_id={expected_assistant_id}")
         
         # ⭐ 【重要修复 2026-03-16】从execution_steps的start步骤提取metadata
         metadata = {'model': None, 'provider': None, 'display_name': None}
@@ -986,7 +1017,6 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
         
         # 提交事务
         conn.commit()
-        conn.close()
         
         logger.info(f"保存执行步骤成功: session_id={session_id}, message_id={last_message['id']}, "
                    f"is_new={is_new_message}, has_content={update_data.content is not None}")
@@ -1002,6 +1032,12 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
     except Exception as e:
         logger.error(f"保存执行步骤失败: {e}")
         raise HTTPException(status_code=500, detail=f"保存执行步骤失败: {str(e)}")
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 @router.put("/sessions/{session_id}")
@@ -1299,6 +1335,7 @@ async def get_session_titles_batch(
         if len(id_list) > 100:
             raise HTTPException(status_code=400, detail="最多一次查询100个会话")
         
+        conn = None
         conn = get_connection()
         cursor = conn.cursor()
         
@@ -1329,7 +1366,6 @@ async def get_session_titles_batch(
             )
         
         rows = cursor.fetchall()
-        conn.close()
         
         # 构建响应
         sessions = []
@@ -1350,3 +1386,9 @@ async def get_session_titles_batch(
     except Exception as e:
         logger.error(f"批量获取会话标题失败: {e}")
         raise HTTPException(status_code=500, detail=f"批量获取会话标题失败: {str(e)}")
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
