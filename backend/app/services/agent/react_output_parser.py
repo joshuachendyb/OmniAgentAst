@@ -648,8 +648,6 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
                 if "tool_name" in json_data:
                     return _create_action_result(json_data, output)
     except Exception as e:
-        # 记录日志，继续尝试下一个优先级
-        from app.utils.logger import logger
         logger.debug(f"```包裹JSON解析失败: {e}")
     
     # ② 【第二优先级】关键词匹配（传统ReAct格式）
@@ -677,7 +675,6 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
         if thought_match:
             return _parse_thought_only(output, thought_match)
     except Exception as e:
-        from app.utils.logger import logger
         logger.debug(f"关键词匹配失败: {e}")
     
     # 所有解析方法都失败，根据输出长度判断返回implicit或parse_error
@@ -786,8 +783,6 @@ def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
     """
     if not content:
         return None
-    
-    import re  # 确保re可用
     
     content = content.strip()
     
@@ -1195,8 +1190,6 @@ def _create_action_result_from_list(data: list) -> Dict[str, Any]:
     Returns:
         统一格式的结果字典
     """
-    from app.utils.logger import logger
-    
     # 空数组处理
     if not data:
         logger.info(f"[parse_react_response] list为空，返回parse_error")
@@ -1343,7 +1336,6 @@ def _filter_tool_params(tool_params: Dict) -> Dict:
     # 注意：content字段是许多工具的有效参数（如write_file），不应该被过滤
     # 过滤逻辑：只保留看起来像真正参数的字段名（字母/数字/下划线组成）
     # 同时过滤掉以--开头的参数名（[TOOL_CALL]格式的参数）
-    import re
     param_name_pattern = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
     
     # 【2026-04-28 小沈新增】驼峰转下划线映射表
@@ -1475,7 +1467,6 @@ def _supplement_missing_params(tool_name: str, tool_params: Dict, original_outpu
                 return tool_params
             
             # 【改进】正则支持转义引号（\" 或 \'）
-            import re
             patterns = [
                 r'"content"\s*:\s*"((?:[^\"\\]|\\.)*)"',  # 支持转义双引号
                 r"'content'\s*:\s*'((?:[^'\\]|\\.)*)'",  # 支持转义单引号
@@ -1499,7 +1490,6 @@ def _supplement_missing_params(tool_name: str, tool_params: Dict, original_outpu
         first_line = content.split('\n')[0].strip() if content else ""
         inferred_path = None
         if first_line and len(first_line) < 100:
-            import re
             title_match = re.match(r'^([^:：]+)', first_line)
             if title_match:
                 title = title_match.group(1).strip()
@@ -1518,7 +1508,6 @@ def _supplement_missing_params(tool_name: str, tool_params: Dict, original_outpu
     if tool_name == "read_file" and "file_path" not in tool_params and "content" in tool_params:
         content = tool_params.get("content", "")
         # 从content中尝试提取文件名
-        import re
         # 匹配可能的小说文件名或路径
         match = re.search(r'([A-Za-z]:[/\\]|/)[^/\\:*?"<>|]+\.txt', content)
         if match:
@@ -1891,7 +1880,6 @@ def _extract_tool_params_from_text(content: str, tool_start_pos: int) -> Optiona
         return None
     
     # 使用平衡括号算法提取完整的tool_params对象
-    from .react_output_parser import _extract_json_with_balanced_braces
     json_start = tp_match.start()
     json_text, _ = _extract_json_with_balanced_braces(search_text[json_start:])
     
@@ -2323,7 +2311,6 @@ def _parse_action_input(input_section: str) -> Dict[str, Any]:
         return {}
     
     # 记录原始输入用于错误分析
-    from app.utils.logger import logger
     # ==========================================================================
     # 【基于14.0分析修正】第0级: Markdown代码块去除（在_parse_action_input内处理）
     # 原建议位置：parse_react_response() 入口 ❌
