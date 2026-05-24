@@ -88,7 +88,6 @@ DATA_TOO_LARGE_THRESHOLD = 10000
 # 5. 错误类型常量
 # ============================================================
 
-ERROR_TYPE_PARSE_ERROR = "parse_error"
 ERROR_TYPE_NETWORK_ERROR = "network_error"
 ERROR_TYPE_TIMEOUT = "timeout"
 ERROR_TYPE_IDLE_TIMEOUT = "idle_timeout"
