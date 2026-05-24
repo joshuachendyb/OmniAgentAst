@@ -413,6 +413,22 @@ def resolve_http_error_type(error_message: str) -> Optional[str]:
     return None
 
 
+def is_network_or_api_error(error_message: str) -> tuple[bool, Optional[str]]:
+    """判断错误是否为网络/API错误，返回(is_network, error_type) — 小健 2026-05-24
+    
+    用于parse_error分支决策：网络错误不注入history（重试即可），
+    非网络错误注入history引导LLM修复格式。
+    """
+    error_type = resolve_http_error_type(error_message)
+    if error_type is None:
+        return (False, None)
+    is_network = (
+        error_type.startswith("api_error_") and error_type != "api_error_400"
+        or error_type in ("network", "connect", "protocol", "timeout")
+    )
+    return (is_network, error_type)
+
+
 def create_session_error_result(
     original_error: Optional[str],
     error_step_type: str,
