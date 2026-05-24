@@ -12,6 +12,7 @@
 
 | 版本 | 时间 | 作者 | 更新内容 |
 |------|------|------|---------|
+| v1.6 | 2026-05-23 | 小沈 | 对照最新代码逐一核对更新：Agent架构已完成(9→2类+配置注册表)、AgentFactory已重写(86行)、command_security 946行168条、ToolMetadata 14字段、工具分布file=11/system=24/network=5/desktop=9/document=9、Phase1/2/9已完成、砍PipelineContext、SSE 1648行 |
 | v1.5 | 2026-05-23 | 小沈 | 补全所有伪代码：IntentRegistry完整实现(IntentDefinition+默认意图+兼容别名+惰性初始化)、SemanticRouter完整类(LLM调用+缓存+降级)、ToolMetadata完整字段(12个原有+2个新增)、_request_authorization完整实现(fallback_mode+SSE事件+asyncio.wait_for超时+参数脱敏+AuthorizationResult)、SessionTrust TTL惰性清理 |
 | v1.4 | 2026-05-23 | 小沈 | 补充三个核心决策的硬核论证：§4.1统一Agent(业界先验OpenAI/AutoGPT/Dify均为1个+硬核收益数据)、§2.2矫正必要性(下游规则精确匹配=安全漏洞+方案对比表)、§3.3闲聊检测(无检测代价+业界做法+性价比分析) |
 | v1.3 | 2026-05-23 | 小沈 | 删除"风险分析与缓解"整章(废话)，解决方案写入对应章节：§3.5路由缓存、§3.6分级降级、§3.7动态扩展、§4.5角色融合、§6.8并发安全+误判处理、§6.9 Helper安全、§2.6 chat_router映射、SessionTrust参数维度、_request_authorization容错；新增§九未解决问题(2项) |
@@ -585,21 +586,28 @@ async def _check_and_load_missing_tools(self, tool_calls: List[dict]) -> None:
 
 **业界先验**：OpenAI Assistants API(1个Assistant=instructions+tools配置化)、AutoGPT(单Agent+全量工具)、LangChain Agent(单Agent+LLM自选)、Dify/Coze(1个Bot+插件配置)。多Agent框架(CrewAI/MetaGPT)的每个Agent有**本质不同行为逻辑**(产品经理写PRD≠工程师写代码)，非仅Prompt+Category差异。
 
-**当前9个Agent分析**：6个极简同质(73-76行，ReAct循环+工具执行+Observation逻辑字面级相同，仅Prompt类+ToolCategory不同) + TimeReactAgent(98行,rollback=True) + FileReactAgent(385行,独立session/rollback/alias/Hook) + CodeExecutionReactAgent(76行,shell兼容别名)。
+**【已完成】代码现状(v0.13.x)**：9个Agent子类已重构为2个类+声明式配置注册表：
+- `UniversalReactAgent`(universal_react.py, 197行) — 配置驱动通用Agent，替代原7个同质Agent
+- `DesktopReactAgent`(desktop_react.py, 76行) — 独立Agent(rollback=False特殊行为)
+- `AgentConfig` + `AGENT_REGISTRY`(agent_config.py) — 声明式配置注册表，5项(file/system/network/document/desktop)
+- FileReactAgent → rollback迁移至RollbackMixin，session/alias迁移至UniversalReactAgent，冗余方法已删除
+- TimeReactAgent → time映射为system别名，rollback_enabled=False
+- CodeExecutionReactAgent → code_execution映射为system别名
+- 旧9个子类文件已删除，__init__.py的__getattr__重定向兼容
+- AgentFactory已重写为86行声明式配置版本(resolve_agent_config)，旧键覆盖bug因重写不存在
 
-**统一1个的硬核收益**：
-- 删除7个同质Agent文件(-532行) + 7个Prompt类(-1400行→动态组合400行) + AgentFactory(-201行)
-- 新增意图**零代码改动**(当前6+处→0处，仅YAML配置)
-- 跨分类操作天然支持("下载并读取"当前需2个Agent串行，1个Agent直接加载FILE+DOCUMENT工具)
-- OpenAI Assistants API已验证此模式：1个Assistant+tools配置化，LLM通过function calling自选工具
+**统一1个的硬核收益**（已实现）：
+- 删除7个同质Agent文件 + 7个Prompt类 → 动态组合
+- AgentFactory重写(201行→86行)
+- 新增意图**零代码改动**(仅YAML配置)
+- 跨分类操作天然支持
 
-**不能多几个的前提**：Agent间有本质行为差异。当前7个没有。若未来出现真正不同执行逻辑(如流式生成Agent≠批量批处理Agent)，再新增——那是新需求，不是保留当前伪多Agent。
-
-| Agent | 代码行数 | 实质差异 | 处置 |
-|-------|---------|---------|------|
-| FileReactAgent | 385 | rollback/session/alias/Hook + 冗余_get_llm_response_text/with_tools | **保留独立子类** |
-| TimeReactAgent | 98 | rollback=True/无normalize/无task_id | **保留独立子类** |
-| Shell/Network/Desktop/System/Document/Database/CodeExecution | 73-76 | 仅Prompt+Category+rollback日志文本 | **删除，用GenericReactAgent替代** |
+| Agent | 代码行数 | 实质差异 | 处置 | 状态 |
+|-------|---------|---------|------|------|
+| FileReactAgent | 385 | rollback/session/alias/Hook | →UniversalReactAgent+RollbackMixin | **已完成** |
+| TimeReactAgent | 98 | rollback=True/无normalize | →system别名 | **已完成** |
+| DesktopReactAgent | 76 | rollback=False特殊 | 保留独立子类 | **已完成** |
+| Shell/Network/System/Document/Database/CodeExecution | 73-76 | 仅Prompt+Category | →UniversalReactAgent+AgentConfig | **已完成** |
 
 ### 4.2 AgentProfile配置化
 
@@ -992,6 +1000,10 @@ class ToolMetadata:
     updated_at: datetime = field(default_factory=datetime.now)
     safety_level: Union[ToolSafetyLevel, Dict[str, ToolSafetyLevel]] = ToolSafetyLevel.SAFE
     needs_confirmation: Union[bool, Dict[str, bool]] = False
+
+# 当前已有14个字段(name/description/category/version/author/dependencies/
+# input_schema/output_schema/examples/expose_to_llm/next_actions/failure_hint_fn/
+# created_at/updated_at)，新增safety_level+needs_confirmation=16个
 ```
 
 ### 6.5 统一入口工具的Action级安全
@@ -1305,17 +1317,19 @@ class ToolObserver:
 
 ### 6.9 command_security现状与处置
 
-**当前现状**：`command_security.py`（962行）仍在使用，存在以下特点与局限：
-- 已有**4级风险分级**(safe/medium/high/critical) + CRSS权重评分(0-10分) + 危险命令黑名单(180+条) + 系统关键目录检查
+**当前现状**：`command_security.py`（946行）仍在使用，存在以下特点与局限：
+- 已有**4级风险分级**(safe/medium/high/critical) + CRSS权重评分(0-10分) + 危险命令黑名单(168条) + 系统关键目录检查
 - 仅检查**用户输入文本**，不检查**工具调用级**安全（ToolMetadata无safety_level字段，58个工具全未标注安全等级）
 - 黑名单可被变量拼接、Base64编码绕过
-- AgentFactory中键覆盖逻辑已在2026-05-22显式修复并注释（小沈审查v1.2确认）
+- AgentFactory已重写为86行声明式配置版本，旧键覆盖bug因重写不存在（小沈审查v1.2确认）
 
 **处置**：
 1. `ToolSafetyLayer` 替代其为**统一工具执行前安全检查**
-2. **迁移**（非删除）`command_security.py`核心逻辑至 `ToolSafetyLayer`：保留黑名单检查(`check_command_safety`)作为参数级检测、CRSS权重评分映射为ToolSafetyLevel、5→4级分级对齐
+2. **迁移**（非删除）`command_security.py`核心逻辑至 `ToolSafetyLayer`：保留黑名单检查(`check_command_safety`)作为参数级检测、CRSS权重评分映射为ToolSafetyLevel、4级分级对齐
 3. 不将其作为独立防线，而是纵深防御中的一环
 4. Phase 0需新增ToolMetadata.safety_level字段并补标58个工具的安全等级（小沈审查v1.2：2天紧张但可行，建议优先标注DANGEROUS/DESTRUCTIVE约15个）
+
+**工具实际分布**：file=11, system=24, network=5, desktop=9, document=9, 合计58个（system含原shell/system/meta/time工具）
 
 ---
 
@@ -1323,24 +1337,26 @@ class ToolObserver:
 
 ### 7.1 删除文件
 
-| 文件/目录 | 删除理由 | 来源 |
-|-----------|---------|------|
-| `preprocessing/pipeline.py` | 空壳，仅strip | 三大管线方案 |
-| `preprocessing/corrector.py` | TextCorrectorV2替代 | 预处理管线方案 |
-| `preprocessing/intent_classifier.py`中`IntentClassifier`类 | 死代码，只保留`classify_intent`函数 | Agent与意图分类方案 |
-| `intents/crss_scorer.py` | Semantic Router替代 | Agent高级调度方案 |
-| `intents/definitions/file/` | 工具列表过时，被IntentDefinition替代 | Agent与意图分类方案 |
-| `agent/agent_factory.py` | AgentRegistry替代 | Agent与意图分类方案 |
-| `agent/shell_react.py` | GenericReactAgent替代 | Agent与意图分类方案 |
-| `agent/network_react.py` | GenericReactAgent替代 | Agent与意图分类方案 |
-| `agent/desktop_react.py` | GenericReactAgent替代 | Agent与意图分类方案 |
-| `agent/system_react.py` | GenericReactAgent替代 | Agent与意图分类方案 |
-| `agent/document_react.py` | GenericReactAgent替代 | Agent与意图分类方案 |
-| `agent/database_react.py` | GenericReactAgent替代 | Agent与意图分类方案 |
-| `agent/code_execution_react.py` | GenericReactAgent替代(shell兼容别名) | 小沈审查v1.2补充 |
-| `agent/parsers/` | 已废弃，用react_output_parser.py | AGENTS.md |
-| `services/command_security.py` | 核心逻辑迁移至ToolSafetyLayer后删除(962行→保留参数检查约100行) | 两个方案对比分析 + 小沈审查v1.2 |
-| `tools/desktop/gui_register.py`死代码 | GUI描述400行已不使用 | Agent与意图分类方案 |
+| 文件/目录 | 删除理由 | 来源 | 状态 |
+|-----------|---------|------|------|
+| `preprocessing/pipeline.py` | 空壳，仅strip | 三大管线方案 | 待实施 |
+| `preprocessing/corrector.py` | TextCorrectorV2替代 | 预处理管线方案 | 待实施 |
+| `preprocessing/intent_classifier.py`中`IntentClassifier`类 | 死代码，只保留`classify_intent`函数 | Agent与意图分类方案 | 待实施 |
+| `intents/crss_scorer.py` | Semantic Router替代 | Agent高级调度方案 | 待实施 |
+| `intents/definitions/file/` | 工具列表过时，被IntentDefinition替代 | Agent与意图分类方案 | 待实施 |
+| `agent/agent_factory.py` | AgentRegistry替代 | Agent与意图分类方案 | **已完成**(重写为86行配置版) |
+| `agent/shell_react.py` | GenericReactAgent替代 | Agent与意图分类方案 | **已完成** |
+| `agent/network_react.py` | GenericReactAgent替代 | Agent与意图分类方案 | **已完成** |
+| `agent/desktop_react.py` | GenericReactAgent替代 | Agent与意图分类方案 | **已完成**(保留独立子类) |
+| `agent/system_react.py` | GenericReactAgent替代 | Agent与意图分类方案 | **已完成** |
+| `agent/document_react.py` | GenericReactAgent替代 | Agent与意图分类方案 | **已完成** |
+| `agent/database_react.py` | GenericReactAgent替代 | Agent与意图分类方案 | **已完成** |
+| `agent/code_execution_react.py` | GenericReactAgent替代(shell兼容别名) | 小沈审查v1.2补充 | **已完成** |
+| `agent/file_react.py` | →UniversalReactAgent+RollbackMixin | 小沈审查v1.6 | **已完成** |
+| `agent/time_react.py` | →system别名 | 小沈审查v1.6 | **已完成** |
+| `agent/parsers/` | 已废弃，用react_output_parser.py | AGENTS.md | 待实施 |
+| `services/command_security.py` | 核心逻辑迁移至ToolSafetyLayer后删除(946行→保留参数检查约100行) | 两个方案对比分析 + 小沈审查v1.2 | 待实施 |
+| `tools/desktop/gui_register.py`死代码 | GUI描述400行已不使用 | Agent与意图分类方案 | 待实施 |
 
 ### 7.2 保留文件
 
@@ -1348,10 +1364,12 @@ class ToolObserver:
 |------|---------|------|
 | `agent/base_react.py` | ReAct循环核心 | 微调(添加缓存/失败计数/trim优化) |
 | `agent/mixins/react_agent_mixin.py` | 工具加载+策略+会话管理 | 微调(添加轮次判断/精简工具概要) |
+| `agent/mixins/rollback_mixin.py` | 回滚逻辑(File从子类提取) | **新增** |
+| `agent/universal_react.py` | 统一Agent(替代7个同质Agent) | **已完成** |
+| `agent/desktop_react.py` | 桌面Agent(rollback=False特殊) | **已完成** |
+| `agent/agent_config.py` | AgentConfig+AGENT_REGISTRY声明式注册 | **已完成** |
 | `agent/message_builder.py` | 消息构建核心 | **完全保留** |
 | `agent/step_factory.py` | 步骤工厂 | **完全保留** |
-| `agent/file_react.py` | 有实质差异(rollback/session/alias) | **保留独立子类** |
-| `agent/time_react.py` | 有实质差异(rollback=True/无normalize) | **保留独立子类** |
 | `tools/registry.py` | 工具注册表 | 扩展ToolMetadata(安全字段) |
 | `tools/_response.py` | 工具返回格式 | **完全保留** |
 | `agent/react_output_parser.py` | LLM输出解析 | **完全保留** |
@@ -1381,20 +1399,20 @@ class ToolObserver:
 
 ### 8.1 阶段总览
 
-| 阶段 | 内容 | 风险 | 工时 | 依赖 | 可验证 |
-|------|------|------|------|------|--------|
-| **Phase 0** | 测试基线清理 + ToolMetadata新增safety_level字段 + 58工具安全分级标注(优先DANGEROUS/DESTRUCTIVE约15个) | 低 | 2.5天 | 无 | ✅ |
-| **Phase 1** | IntentRegistry单一真相源 + AgentProfile配置化 + AgentRegistry(替代AgentFactory) | 低 | 2天 | Phase 0 | ✅ |
-| **Phase 2** | GenericReactAgent + 动态Prompt组合(含多分类角色融合策略) | 中 | 2天 | Phase 1 | ✅ |
-| **Phase 3** | TextCorrectorV2 + PipelineContext + chat_router 6步流程对齐(当前6步→新4步映射) | 中 | 1.5天 | Phase 1 | ✅ |
-| **Phase 4** | Semantic Router(Function Calling) + 明确与intent_classifier关系(Semantic Router替代CRSS阶段1，intent_classifier保留为阶段2兜底) | 中 | 1.5天 | Phase 1, Phase 3 | ✅ |
-| **Phase 5** | ToolSafetyLayer(迁移command_security核心逻辑) + ToolObserver(改用asyncio.Lock) + HITL后端 | 中 | 2天 | Phase 0 | ✅ |
-| **Phase 6** | ChatRouter改造 + 新旧架构切换(Feature Flag灰度) | **高** | 2天 | Phase 2,3,4,5 | ✅ |
-| **Phase 7** | 前端HITL集成(SSE 1649行useSSE事件扩展+确认弹窗+授权API) | **高** | 3天 | Phase 6 | ✅ |
-| **Phase 8** | 重复执行消除(A+B+C+D+E+F) + trim_history字符数阈值优化(当前150K字符/80%触发/70%裁剪) | 中 | 2天 | Phase 6 | ✅ |
-| **Phase 9** | 删除7个同质Agent + 死代码清理 + git tag标记回滚点 | 中 | 1天 | Phase 7验证通过 | ✅ |
-| **Phase 10** | 全量回归测试 + 安全测试 + 性能测试 + httpx版本锁兼容验证 | 低 | 2天 | Phase 9 | ✅ |
-| **总计** | | | **~21.5天** | | |
+| 阶段 | 内容 | 风险 | 工时 | 依赖 | 可验证 | 状态 |
+|------|------|------|------|------|--------|------|
+| **Phase 0** | 测试基线清理 + ToolMetadata新增safety_level字段 + 58工具安全分级标注(优先DANGEROUS/DESTRUCTIVE约15个) | 低 | 2.5天 | 无 | ✅ | 待实施 |
+| **Phase 1** | IntentRegistry单一真相源 + AgentProfile配置化 + AgentRegistry(替代AgentFactory) | 低 | 2天 | Phase 0 | ✅ | **已完成**(AgentConfig+AGENT_REGISTRY) |
+| **Phase 2** | GenericReactAgent + 动态Prompt组合(含多分类角色融合策略) | 中 | 2天 | Phase 1 | ✅ | **已完成**(UniversalReactAgent 197行) |
+| **Phase 3** | TextCorrectorV2 + chat_router 6步流程对齐(当前6步→新4步函数调用，不引入PipelineContext) | 中 | 1天 | Phase 1 | ✅ | 待实施 |
+| **Phase 4** | Semantic Router(Function Calling) + 明确与intent_classifier关系(Semantic Router替代CRSS阶段1，intent_classifier保留为阶段2兜底) | 中 | 1.5天 | Phase 1, Phase 3 | ✅ | 待实施 |
+| **Phase 5** | ToolSafetyLayer(迁移command_security核心逻辑) + ToolObserver(改用asyncio.Lock) + HITL后端 | 中 | 2天 | Phase 0 | ✅ | 待实施 |
+| **Phase 6** | ChatRouter改造 + 新旧架构切换(Feature Flag灰度) | **高** | 2天 | Phase 2,3,4,5 | ✅ | 待实施 |
+| **Phase 7** | 前端HITL集成(SSE 1648行useSSE事件扩展+确认弹窗+授权API) | **高** | 3天 | Phase 6 | ✅ | 待实施 |
+| **Phase 8** | 重复执行消除(A+B+C+D+E+F) + trim_history字符数阈值优化(当前150K字符/80%触发/70%裁剪) | 中 | 2天 | Phase 6 | ✅ | 待实施 |
+| **Phase 9** | 删除7个同质Agent + 死代码清理 + git tag标记回滚点 | 中 | 1天 | Phase 7验证通过 | ✅ | **已完成**(7个Agent已删除) |
+| **Phase 10** | 全量回归测试 + 安全测试 + 性能测试 + httpx版本锁兼容验证 | 低 | 2天 | Phase 9 | ✅ | 待实施 |
+| **总计** | | | **~21.5天** | | | 已完成3/11 |
 
 ### 8.2 阶段依赖关系
 
