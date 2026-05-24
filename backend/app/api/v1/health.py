@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel
 from pathlib import Path
 
@@ -54,7 +54,7 @@ async def health_check():
     """
     return HealthResponse(
         status="healthy",
-        timestamp=datetime.utcnow().isoformat(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
         version=get_version()  # 【修复-波次5】使用统一版本号
     )
 
@@ -65,7 +65,7 @@ async def echo(request: EchoRequest):
     """
     return EchoResponse(
         received=request.message,
-        timestamp=datetime.utcnow().isoformat()
+        timestamp=datetime.now(timezone.utc).isoformat()
     )
 
 
