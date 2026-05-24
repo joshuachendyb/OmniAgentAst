@@ -146,20 +146,10 @@ def get_function_call_error_info(error: Exception) -> Dict[str, Any]:
     except ImportError:
         pass
     
-    # httpx 异常类型映射到 ERROR_TYPE_MAP 键名
-    httpx_type_map = {
-        'ConnectError': 'connect_error',
-        'ProtocolError': 'protocol_error',
-        'ProxyError': 'proxy_error',
-        'TimeoutException': 'timeout_error',
-        'ReadError': 'read_error',
-        'WriteError': 'write_error',
-        'NetworkError': 'network_error',
-    }
-    
-    # 如果是 httpx 异常，使用 ERROR_TYPE_MAP
-    if error_type in httpx_type_map:
-        map_key = httpx_type_map[error_type]
+    from app.constants import HTTPX_EXCEPTION_TO_ERROR_KEY
+
+    if error_type in HTTPX_EXCEPTION_TO_ERROR_KEY:
+        map_key = HTTPX_EXCEPTION_TO_ERROR_KEY[error_type]
         if map_key in ERROR_TYPE_MAP:
             error_code, error_message = ERROR_TYPE_MAP[map_key]
             return {
@@ -287,30 +277,7 @@ def get_function_call_error_info(error: Exception) -> Dict[str, Any]:
         }
 
 
-# 错误类型映射表（用于重试失败后的错误分类）
-ERROR_TYPE_MAP = {
-    'idle_timeout': ('timeout', '请求超时：AI模型30秒内未返回任何内容，已重试3次，请更换问题或稍后重试'),
-    'timeout_error': ('timeout', '请求超时，请重试'),
-    'read_error': ('server', '读取响应失败，请重试'),
-    'connect_error': ('connect', '连接失败，请检查网络'),
-    'protocol_error': ('protocol', '协议错误，请重试'),
-    'proxy_error': ('protocol', '代理错误，请检查网络配置'),
-    'write_error': ('server', '发送请求失败'),
-    'network_error': ('network', '网络错误，请检查网络连接'),
-    # 【新增 2026-04-09 小沈】HTTP错误码映射
-    'api_error_503': ('api_error', 'AI服务渠道不可用 (errorcode=503)，请检查API配置或更换模型'),
-    'api_error_524': ('api_error', 'AI服务已超载 (errorcode=524)，请更换模型或稍后重试'),
-    'api_error_429': ('api_error', 'API请求过于频繁 (errorcode=429)，请稍后再试或更换模型'),
-    'api_error_401': ('security', 'API认证失败 (errorcode=401)，请检查API密钥配置'),
-    'api_error_403': ('security', 'API访问被拒绝 (errorcode=403)，请检查API权限配置'),
-    'api_error_400': ('validation', 'API请求参数错误 (errorcode=400)，请检查输入内容'),
-    'api_error_500': ('server', 'AI服务内部错误 (errorcode=500)，请稍后重试或更换模型'),
-    'api_error_502': ('server', 'AI服务网关错误 (errorcode=502)，请稍后重试'),
-    'api_error_504': ('timeout', 'AI服务响应超时 (errorcode=504)，请稍后重试'),
-    # 【新增 2026-04-01】LLM 返回空内容或未知错误
-    'unknown': ('server', 'AI服务暂无响应，请稍后重试'),
-    'empty_response': ('server', 'AI服务返回空响应，请稍后重试'),
-}
+from app.constants import ERROR_TYPE_MAP as ERROR_TYPE_MAP
 
 
 def classify_error(error_type: str, error_message: str = "") -> tuple[str, str]:
@@ -422,31 +389,26 @@ def resolve_http_error_type(error_message: str) -> Optional[str]:
     """
     从错误消息字符串中解析并返回 HTTP 错误类型标识
     
-    【重构 小健 2026-05-24】用结构化映射表+正则提取替换硬编码字符串匹配
+    【重构 小健 2026-05-24】统一引用 constants.HTTP_STATUS_TO_ERROR_TYPE 映射表
     """
     if not error_message:
         return None
     
-    from app.constants import API_ERROR_PREFIX
-    _STATUS_TO_ERROR = {
-        429: "api_error_429", 503: "api_error_503", 524: "api_error_524",
-        500: "api_error_500", 502: "api_error_502", 504: "api_error_504",
-        401: "api_error_401", 403: "api_error_403", 400: "api_error_400",
-    }
+    from app.constants import HTTP_STATUS_TO_ERROR_TYPE, API_ERROR_429, API_ERROR_401, API_ERROR_403
     
     import re
     for match in re.finditer(r'\b(\d{3})\b', error_message):
         code = int(match.group(1))
-        if code in _STATUS_TO_ERROR:
-            return _STATUS_TO_ERROR[code]
+        if code in HTTP_STATUS_TO_ERROR_TYPE:
+            return HTTP_STATUS_TO_ERROR_TYPE[code]
     
     msg_lower = error_message.lower()
     if "rate limit" in msg_lower or "too many requests" in msg_lower or "limit_error" in msg_lower:
-        return "api_error_429"
+        return API_ERROR_429
     if "auth" in msg_lower or "unauthorized" in msg_lower:
-        return "api_error_401"
+        return API_ERROR_401
     if "forbidden" in msg_lower:
-        return "api_error_403"
+        return API_ERROR_403
     
     return None
 
