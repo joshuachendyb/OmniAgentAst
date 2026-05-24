@@ -277,8 +277,6 @@ class BaseAgent(ABC):
             self.tools_strategy.tools = self.openai_tools
             logger.info(f"[FC刷新] tools定义已更新，当前{len(self.openai_tools)}个")
 
-        # 【2026-05-21 小沈】统一使用message_builder.invalidate_cache()清除全部缓存
-        self.message_builder.invalidate_cache()
         # 【修复 小健 2026-05-24】P2-9: 用try/except替代hasattr+delattr，消除TOCTOU风险
         for _attr in ('_cached_schema_text', '_cached_tools_content', '_last_injected_categories'):
             try:
