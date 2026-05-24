@@ -22,7 +22,7 @@ def parse_datetime_any(value: Any) -> Optional[datetime]:
     """通用时间解析：支持datetime/int/float/str → datetime（带时区）"""
     try:
         if isinstance(value, datetime):
-            return value.astimezone() if value.tzinfo else value.astimezone()
+            return value.astimezone()
         elif isinstance(value, (int, float)):
             return datetime.fromtimestamp(value, tz=timezone.utc).astimezone()
         elif isinstance(value, str):
