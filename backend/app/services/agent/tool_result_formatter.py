@@ -48,7 +48,7 @@ def extract_status(result: dict) -> str:
     code = result.get("code", SUCCESS_CODE)
     if code == SUCCESS_CODE:
         return "warning" if result.get("warning") else "success"
-    elif code.startswith("WARNING_"):
+    elif isinstance(code, str) and code.startswith("WARNING_"):
         return "warning"
     else:
         return "error"
