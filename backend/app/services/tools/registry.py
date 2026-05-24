@@ -208,6 +208,7 @@ class ToolMetadata:
     examples: List[Dict[str, Any]] = field(default_factory=list)
     expose_to_llm: bool = True
     next_actions: Dict[str, Any] = field(default_factory=dict)
+    failure_hint_fn: Optional[Callable] = None
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
     
@@ -220,6 +221,15 @@ class ToolMetadata:
             self.created_at = datetime.now()
         if self.updated_at is None:
             self.updated_at = self.created_at
+
+    def get_failure_hint(self, tool_params: Optional[dict] = None) -> str:
+        """获取工具失败时的替代建议 — 小健 2026-05-24"""
+        if self.failure_hint_fn:
+            try:
+                return self.failure_hint_fn(tool_params)
+            except Exception:
+                pass
+        return ""
 
 
 class ToolRegistry:
@@ -273,6 +283,7 @@ class ToolRegistry:
         examples: Optional[List[Dict]] = None,
         expose_to_llm: bool = True,
         next_actions: Optional[Dict[str, Any]] = None,
+        failure_hint_fn: Optional[Callable] = None,
     ) -> Dict[str, Any]:
         """
         注册工具
@@ -352,6 +363,7 @@ class ToolRegistry:
             examples=examples or [],
             expose_to_llm=expose_to_llm,
             next_actions=next_actions or {},
+            failure_hint_fn=failure_hint_fn,
         )
         
         # 注册工具
