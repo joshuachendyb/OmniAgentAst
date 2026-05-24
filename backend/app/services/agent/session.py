@@ -64,7 +64,7 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
         Returns:
             task_id: 任务唯一标识符
         """
-        task_id = f"task-{self._generate_task_id()}"
+        task_id = self._generate_task_id()
         
         conn = None
         try:
