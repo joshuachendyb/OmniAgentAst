@@ -39,6 +39,7 @@ from urllib.parse import urlencode, urlparse, urlunparse
 
 import httpx
 from app.utils.logger import logger
+from app.constants import RETRYABLE_HTTP_STATUS_CODES, BROWSER_USER_AGENT, DEFAULT_MAX_OUTPUT_CHARS, DEFAULT_MAX_DOC_CHARS
 from app.services.tools.toolhelper.network_helper import well_known_ports, _html_to_markdown, _decode_bing_redirect_url  # 小健 2026-05-18
 from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
 from app.services.tools._response import build_success, build_error
@@ -162,7 +163,7 @@ async def http_request(
                     )
             except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
                 last_exception = e
-                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code not in (429, 500, 502, 503, 504):
+                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code not in RETRYABLE_HTTP_STATUS_CODES:
                     try:
                         error_body = e.response.text
                     except Exception:
@@ -345,7 +346,7 @@ async def fetch_webpage(
             return build_error("ERR_NETWORK_DOWN", "网络不可用，无法发送请求")
 
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "User-Agent": BROWSER_USER_AGENT,
         }
         headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         headers["Accept-Language"] = "en-US,en;q=0.9,zh-CN;q=0.8"
@@ -412,7 +413,7 @@ async def fetch_webpage(
                 if response.status_code == 403 and response.headers.get("cf-mitigated") == "challenge":
                     logger.info(f"[fetch_webpage] Cloudflare挑战检测，降级UA重试: {url}")
                     simple_headers = dict(headers)
-                    simple_headers["User-Agent"] = "opencode/1.0"
+                    simple_headers["User-Agent"] = BROWSER_USER_AGENT
                     response = await client.get(url, headers=simple_headers)
                 
                 response.raise_for_status()
@@ -720,7 +721,7 @@ async def _search_bing(
     国内可访问，无需API Key，解析搜索结果页HTML
     """
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "User-Agent": BROWSER_USER_AGENT,
     }
     params = {"q": query, "count": num_results}
     
