@@ -243,26 +243,6 @@ class TestInjectToolsInfo:
         assert result[-1] == {"role": "system", "content": "【工具】info"}
 
 
-class TestInjectExecutedSummary:
-    """inject_executed_summary() 测试"""
-
-    def test_inject_successful_tools(self):
-        """只注入成功的工具"""
-        history = [{"role": "system", "content": "sys"}]
-        summary = ["search_web→success", "read_file→success"]
-        result = MessageBuilder.inject_executed_summary(history, summary)
-        assert len(result) == 2
-        assert "已执行工具" in result[1]["content"]
-        assert "search_web" in result[1]["content"]
-
-    def test_inject_no_success_tools(self):
-        """没有成功的工具时不注入"""
-        history = [{"role": "system", "content": "sys"}]
-        summary = ["search_web→failed"]
-        result = MessageBuilder.inject_executed_summary(history, summary)
-        assert len(result) == 1  # 未追加
-
-
 class TestInjectSchemaText:
     """inject_schema_text() 测试"""
 
@@ -320,61 +300,23 @@ class TestTrimHistory:
 
 
 # =============================================================================
-# 第五组：缓存管理 — 检查点6 小沈 2026-05-21
+# 第五组：缓存管理（移除）— 2026-05-24 小沈
 # =============================================================================
+# 缓存责任已从 MessageBuilder 迁移至 ReactAgentMixin（agent实例属性）。
+# MessageBuilder 中原有的 _cached_schema_text / _cached_tools_content /
+# _last_injected_categories 三个字段仅为声明但从未被任何读操作使用，
+# 属于死代码，已删除。
+#
+# invalidate_cache() 保留为 no-op 以兼容 base_react.py 的调用点，
+# mixin层的缓存由 base_react.py load_tools_by_intent() 中的 delattr 管理。
 
 class TestCacheManagement:
-    """invalidate_cache() 测试 — 19.6检查点6"""
+    """invalidate_cache() 测试 — 缓存已移至mixin层，MessageBuilder自身无缓存"""
 
-    def test_cache_fields_initialized_none(self):
-        """【结构完整性】__init__ 后三个缓存字段应为 None（删字段会暴露）"""
+    def test_invalidate_cache_is_noop(self):
+        """【兼容性】invalidate_cache() 可安全调用"""
         mb = MessageBuilder()
-        # 如果以下任一 AttributeError，说明 __init__ 中删了该字段
-        assert mb._cached_schema_text is None
-        assert mb._cached_tools_content is None
-        assert mb._last_injected_categories is None
-
-    def test_cache_fields_not_present_throws_attribute_error(self):
-        """【防御】确认 _cached_schema_text 不是动态创建，是真的在 __init__ 中定义的"""
-        mb = MessageBuilder()
-        # 如果从来没有设置过，再检查一次值
-        # 如果字段不在 __init__ 中，直接访问不会报错（Python创建），
-        # 但 hasattr + 值检查可以判断是否被正确初始化
-        assert "_cached_schema_text" in dir(mb), \
-            "_cached_schema_text 不在 __init__ 中，如被删除！"
-        assert "_cached_tools_content" in dir(mb), \
-            "_cached_tools_content 不在 __init__ 中，如被删除！"
-        assert "_last_injected_categories" in dir(mb), \
-            "_last_injected_categories 不在 __init__ 中，如被删除！"
-
-    def test_invalidate_cache_clears_all_cached_fields(self):
-        """invalidate_cache() 应清空三个缓存字段"""
-        mb = MessageBuilder()
-        # 先确认初始状态是 None（验证 __init__ 正确）
-        assert mb._cached_schema_text is None
-        assert mb._cached_tools_content is None
-        assert mb._last_injected_categories is None
-        # 再填充缓存
-        mb._cached_schema_text = "schema"
-        mb._cached_tools_content = "tools"
-        mb._last_injected_categories = {"file"}
-        # 最后验证 invalidate_cache() 清空行为
-        mb.invalidate_cache()
-        assert mb._cached_schema_text is None
-        assert mb._cached_tools_content is None
-        assert mb._last_injected_categories is None
-
-    def test_invalidate_cache_does_not_affect_execution_cache(self):
-        """清空 schema 缓存不应影响执行结果缓存"""
-        mb = MessageBuilder()
-        # 先确认初始状态（验证 __init__ 正确）
-        assert isinstance(mb._executed_cache, dict)
-        assert isinstance(mb._failed_attempts, dict)
-        mb._executed_cache["read_file:abc"] = {"code": "SUCCESS"}
-        mb._failed_attempts["ping:xyz"] = 2
-        mb.invalidate_cache()
-        assert mb._executed_cache["read_file:abc"]["code"] == "SUCCESS"
-        assert mb._failed_attempts["ping:xyz"] == 2
+        mb.invalidate_cache()  # 不应抛出异常
 
     def test_invalidate_cache_idempotent(self):
         """多次调用 invalidate_cache() 不应报错"""
@@ -465,17 +407,12 @@ class TestResetPerRun:
     def test_init_has_all_state_fields(self):
         """【结构完整性】__init__ 后所有状态字段应存在且类型正确"""
         mb = MessageBuilder()
-        assert isinstance(mb._executed_cache, dict)
-        assert isinstance(mb._cache_timestamps, dict)
-        assert isinstance(mb._failed_attempts, dict)
-        assert isinstance(mb._executed_tool_summary, list)
-        assert mb._cached_schema_text is None
-        assert mb._cached_tools_content is None
-        assert mb._last_injected_categories is None
         # temp_history 应是 list
         assert isinstance(mb.temp_history, list)
         # conversation_history 应是 list
         assert isinstance(mb.conversation_history, list)
+        # MAX_CONTEXT_CHARS 应是 int
+        assert isinstance(mb.MAX_CONTEXT_CHARS, int)
 
     def test_reset_clears_conversation_history(self):
         """reset_per_run 应清空 conversation_history"""
@@ -494,44 +431,15 @@ class TestResetPerRun:
         mb.reset_per_run()
         assert mb.temp_history == []
 
-    def test_reset_preserves_executed_cache(self):
-        """reset_per_run 应保留已执行工具缓存"""
+    def test_reset_clears_only_run_state(self):
+        """reset_per_run 仅清空 conversation_history 和 temp_history，其他不变"""
         mb = MessageBuilder()
-        # 先确认初始 dict 存在（验证 __init__）
-        assert isinstance(mb._executed_cache, dict)
-        assert isinstance(mb._cache_timestamps, dict)
-        mb._executed_cache["search_web:abc"] = {"code": "SUCCESS"}
-        mb._cache_timestamps["search_web:abc"] = 12345.0
+        mb.init_history("sys", "task")
+        mb.add_assistant("思考")
+        mb.add_observation("结果", llm_call_count=1)
+        mb.temp_history.append({"role": "assistant", "content": "temp"})
+        assert len(mb.conversation_history) > 0
+        assert len(mb.temp_history) > 0
         mb.reset_per_run()
-        assert mb._executed_cache["search_web:abc"]["code"] == "SUCCESS"
-        assert mb._cache_timestamps["search_web:abc"] == 12345.0
-
-    def test_reset_preserves_failed_attempts(self):
-        """reset_per_run 应保留失败计数（跨会话）"""
-        mb = MessageBuilder()
-        assert isinstance(mb._failed_attempts, dict)
-        mb._failed_attempts["ping:xyz"] = 3
-        mb.reset_per_run()
-        assert mb._failed_attempts["ping:xyz"] == 3
-
-    def test_reset_preserves_executed_tool_summary(self):
-        """reset_per_run 应保留已执行工具汇总"""
-        mb = MessageBuilder()
-        assert isinstance(mb._executed_tool_summary, list)
-        mb._executed_tool_summary.append("read_file→success")
-        mb.reset_per_run()
-        assert "read_file→success" in mb._executed_tool_summary
-
-    def test_reset_preserves_schema_cache(self):
-        """reset_per_run 应保留 Schema/工具内容缓存"""
-        mb = MessageBuilder()
-        assert mb._cached_schema_text is None
-        assert mb._cached_tools_content is None
-        assert mb._last_injected_categories is None
-        mb._cached_schema_text = "schema"
-        mb._cached_tools_content = "tools"
-        mb._last_injected_categories = {"file"}
-        mb.reset_per_run()
-        assert mb._cached_schema_text == "schema"
-        assert mb._cached_tools_content == "tools"
-        assert mb._last_injected_categories == {"file"}
+        assert mb.conversation_history == []
+        assert mb.temp_history == []

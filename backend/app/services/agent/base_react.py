@@ -494,7 +494,7 @@ class BaseAgent(ABC):
                     # 无工具Agent（chat）：第一个chunk直接作为最终回答，不循环
                     if self.tool_category is None:
                         logger.info(f"[ReAct] 无工具Agent，第一个chunk即为最终回答，退出循环")
-                        self.temp_history.clear()
+                        self.message_builder.temp_history.clear()
                         if chunk_buffer:
                             self.message_builder.add_assistant(chunk_buffer)
                         final_step = StepFactory.create_final_step(
@@ -509,7 +509,7 @@ class BaseAgent(ABC):
                     # 阈值意义：连续N次chunk（无tool_call），说明LLM在重复生成，应结束
                     if consecutive_chunk_count >= self.max_consecutive_chunks:
                         logger.info(f"[ReAct] 连续chunk达到{self.max_consecutive_chunks}次，提升为implicit")
-                        self.temp_history.clear()
+                        self.message_builder.temp_history.clear()
                         if chunk_buffer:
                             self.message_builder.add_assistant(chunk_buffer)
                         final_step = StepFactory.create_final_step(
@@ -535,7 +535,7 @@ class BaseAgent(ABC):
                     
                     # flush chunk_buffer到正式会话历史
                     if chunk_buffer:
-                        self.temp_history.clear()
+                        self.message_builder.temp_history.clear()
                         self.message_builder.add_assistant(chunk_buffer)
                         chunk_buffer = ""
                         consecutive_chunk_count = 0
@@ -673,7 +673,7 @@ class BaseAgent(ABC):
                 
                 # flush chunk_buffer到正式会话历史（工具执行前保存LLM已输出的文本）
                 if chunk_buffer:
-                    self.temp_history.clear()
+                    self.message_builder.temp_history.clear()
                     self.message_builder.add_assistant(chunk_buffer)
                     chunk_buffer = ""
                     consecutive_chunk_count = 0
@@ -790,7 +790,7 @@ class BaseAgent(ABC):
                 # FC协议注入：tools策略下用assistant(tool_calls)+tool(tool_call_id)，text策略用role:system
                 fc_context = None
                 if getattr(self, '_strategy', None) == "tools":
-                    _chat_response = getattr(self.llm_client, '_last_chat_response', None)
+                    _chat_response = getattr(self, '_last_fc_raw_response', None)
                     if _chat_response and getattr(_chat_response, 'tool_calls', None):
                         tc = _chat_response.tool_calls[0]
                         fc_context = {"tool_calls": _chat_response.tool_calls, "tool_call_id": tc.get("id", "")}
@@ -906,9 +906,32 @@ class BaseAgent(ABC):
                     )
                     self.steps.append(p_obs_step)
                     yield p_obs_step.to_dict()
-                    # 并行工具observation — 小沈 2026-05-21 统一使用message_builder
+                    # 并行工具observation — 小沈 2026-05-24 修复FC协议格式
                     p_obs_text = self.message_builder.build_observation_text(p_result)
-                    self.message_builder.add_observation(f"[并行] {p_obs_text}", self.llm_call_count)
+                    _fc_handled = False
+                    if getattr(self, '_strategy', None) == "tools":
+                        _fc_resp = getattr(self, '_last_fc_raw_response', None)
+                        if _fc_resp and getattr(_fc_resp, 'tool_calls', None):
+                            _p_tc_id = None
+                            for _tc in _fc_resp.tool_calls:
+                                if _tc.get("function", {}).get("name", "") == p_name:
+                                    _p_tc_id = _tc.get("id", "")
+                                    break
+                            if _p_tc_id:
+                                _budget = self.message_builder._get_observation_budget(self.llm_call_count)
+                                _text = p_obs_text
+                                if len(_text) > _budget:
+                                    _text = self.message_builder._smart_truncate(_text, budget=_budget)
+                                _text = self.message_builder._normalize_observation_prefix(_text)
+                                # 不重新加assistant(tool_calls)—已在主工具observation时加入
+                                self.message_builder.conversation_history.append({
+                                    "role": "tool", "content": _text,
+                                    "tool_call_id": _p_tc_id
+                                })
+                                self.message_builder.trim_history()
+                                _fc_handled = True
+                    if not _fc_handled:
+                        self.message_builder.add_observation(f"[并行] {p_obs_text}", self.llm_call_count)
                     # 并行工具也记录到prompt日志
                     try:
                         _p_logger = get_prompt_logger()

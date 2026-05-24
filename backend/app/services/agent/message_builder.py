@@ -38,10 +38,6 @@ class MessageBuilder:
         self.conversation_history: List[Dict[str, Any]] = []
         self.temp_history: List[Dict[str, Any]] = []
         self.MAX_CONTEXT_CHARS = max_context_chars
-        # Schema/工具内容缓存
-        self._cached_schema_text: Optional[str] = None
-        self._cached_tools_content: Optional[str] = None
-        self._last_injected_categories: Optional[Any] = None
 
     def reset_per_run(self) -> None:
         """每次 run_stream 仅重置 conversation_history，缓存和计数保留跨会话"""
@@ -230,10 +226,8 @@ class MessageBuilder:
     # =========================================================================
 
     def invalidate_cache(self) -> None:
-        """清空 Schema/工具内容缓存"""
-        self._cached_schema_text = None
-        self._cached_tools_content = None
-        self._last_injected_categories = None
+        """清空 Schema/工具内容缓存 — message_builder层无缓存，委托给mixin层"""
+        pass
 
     # =========================================================================
     # 第七组：Schema 文本生成（从 react_agent_mixin.py 搬入）

@@ -275,10 +275,14 @@ class ReactAgentMixin(ToolLoaderMixin):
                 raise RuntimeError(f"[{_cls}] strategy=tools 但 tools_strategy未初始化")
             if getattr(self, 'openai_tools', None):
                 self.tools_strategy.tools = self.openai_tools
-            return await self.tools_strategy.call(
+            response = await self.tools_strategy.call(
                 llm_client=self.llm_client, messages=messages,
                 conversation_history=conv_history)
+            # 保存原始FC响应供FC协议注入使用（替代llm_client._last_chat_response）
+            self._last_fc_raw_response = getattr(self.llm_client, '_last_chat_response', None)
+            return response
         else:
+            self._last_fc_raw_response = None
             return await self.text_strategy.call(
                 llm_client=self.llm_client, messages=messages,
                 conversation_history=conv_history)

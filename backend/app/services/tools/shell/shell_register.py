@@ -162,7 +162,7 @@ def _register_shell_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.SHELL,
+            category=ToolCategory.SYSTEM,
             implementation=method,
             version="1.0.0",
             input_model=input_model,

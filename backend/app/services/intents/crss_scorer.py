@@ -53,7 +53,7 @@ TYPE_KEYWORDS: Dict[str, Dict] = {
         "keywords": [r'\bping\b', r'\bcurl\b', r'\bwget\b', r'\bssh\b',
                      r'\bhttp\b', r'\bhttps\b', r'\bftp\b', r'\bsocket\b'],
         "chinese_keywords": ['网络', '端口', '下载', '请求', 'API',
-                             'IP', 'IP地址', 'DNS', '公网IP', '网关', 'WIFI', 'WiFi']  # 【修复 2026-05-14 小沈】补充IP/DNS/WIFI等高频词
+                             'IP', 'IP地址', 'DNS', '公网IP', '网关', 'WIFI', 'WiFi']
     },
     "DESKTOP": {
         "keywords": [r'\bscreenshot\b', r'\bcapture\b',
@@ -120,7 +120,7 @@ ACTION_DEFINITIONS = {
     "execute": {
         "keywords": ['run', 'exec', 'execute', '运行', '执行', '启动', '编译'],
         "compatibility": {
-            ToolCategory.SHELL: 1.5,
+            ToolCategory.SYSTEM: 1.5,
         }
     },
     "query": {
@@ -128,7 +128,6 @@ ACTION_DEFINITIONS = {
         "compatibility": {
             ToolCategory.DOCUMENT: 1.5,
             ToolCategory.SYSTEM: 1.0,
-            ToolCategory.META: 0.8,
             ToolCategory.FILE: 1.0,
         }
     },
@@ -163,15 +162,15 @@ ACTION_DEFINITIONS = {
 
 TYPE_CATEGORY_MAP = {
     "FILE": ToolCategory.FILE,
-    "SHELL": ToolCategory.SHELL,
-    "TIME": ToolCategory.META,
+    "SHELL": ToolCategory.SYSTEM,
+    "TIME": ToolCategory.SYSTEM,
     "NETWORK": ToolCategory.NETWORK,
     "DESKTOP": ToolCategory.DESKTOP,
     "ENV": ToolCategory.SYSTEM,
     "SYSTEM": ToolCategory.SYSTEM,
     "DATABASE": ToolCategory.DOCUMENT,
     "DOCUMENT": ToolCategory.DOCUMENT,
-    "CODE_EXECUTION": ToolCategory.SHELL,
+    "CODE_EXECUTION": ToolCategory.SYSTEM,
 }
 
 
@@ -224,7 +223,7 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
         for dangerous in DANGEROUS_COMMANDS:
             if dangerous.lower() in command_lower:
                 logger.info(f"[CRSS] 危险命令 → SHELL +3.0: '{dangerous}'")
-                type_raw[ToolCategory.SHELL] = type_raw.get(ToolCategory.SHELL, 0) + 3.0
+                type_raw[ToolCategory.SYSTEM] = type_raw.get(ToolCategory.SYSTEM, 0) + 3.0
                 break
     except ImportError:
         pass

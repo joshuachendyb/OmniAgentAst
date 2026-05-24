@@ -305,7 +305,7 @@ def _register_meta_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.META,
+            category=ToolCategory.SYSTEM,
             implementation=method,
             version="1.0.0",
             input_model=input_model,

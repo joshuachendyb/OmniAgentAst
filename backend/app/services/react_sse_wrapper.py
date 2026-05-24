@@ -500,31 +500,20 @@ async def generate_sse_stream(
             user_message_id=str(ai_message_id),
             session_id=session_id or task_id
         )
-        # 记录系统 prompt（根据 intent_type 动态选择对应的 prompt 类）
-        # 【修复 2026-05-07 小沈】完善intent_type→Prompt类映射，处理chat意图
+        # 【改造 2026-05-23 小强】使用 agent_config 统一解析 intent→prompt 映射
         if intent_type in ("", "generic", "chat"):
             prompts_instance = None
             source_name = "通用意图：无系统Prompt"
-        elif intent_type == "time" or intent_type == "meta":
-            from app.services.prompts.meta import TimePrompts
-            prompts_instance = TimePrompts()
-            source_name = "time_prompts.py"
-        elif intent_type == "shell":
-            from app.services.prompts.shell import ShellPrompts
-            prompts_instance = ShellPrompts()
-            source_name = "shell_prompts.py"
-        elif intent_type == "network":
-            from app.services.prompts.network import NetworkPrompts
-            prompts_instance = NetworkPrompts()
-            source_name = "network_prompts.py"
-        elif intent_type == "desktop":
-            from app.services.prompts.desktop import DesktopPrompts
-            prompts_instance = DesktopPrompts()
-            source_name = "desktop_prompts.py"
         else:
-            from app.services.prompts.file import FileOperationPrompts
-            prompts_instance = FileOperationPrompts()
-            source_name = "file_prompts.py"
+            try:
+                from app.services.agent.agent_config import resolve_agent_config
+                config = resolve_agent_config(intent_type)
+                prompts_instance = config.prompt_class()
+                source_name = config.prompt_module.split('.')[-1] + ".py"
+            except (ValueError, ImportError):
+                from app.services.prompts.file import FileOperationPrompts
+                prompts_instance = FileOperationPrompts()
+                source_name = "file_prompts.py"
         
         if prompts_instance and intent_type not in ("", "generic"):
             full_prompt = prompts_instance.build_full_system_prompt()

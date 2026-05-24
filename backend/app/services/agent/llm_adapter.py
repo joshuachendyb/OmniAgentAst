@@ -22,24 +22,39 @@ class LLMAdapter:
         self._strategy: Optional[str] = None
 
     async def detect_strategy(self) -> str:
-        """探测并返回策略: tools 或 text（首次探测后缓存）"""
+        """探测并返回策略: tools 或 text（首次探测后缓存，瞬态失败重试）"""
         if self._strategy is not None:
             return self._strategy
 
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                result = await self._probe_tools(client)
-                if result["works"]:
-                    self._strategy = "tools"
-                    logger.info(f"[适配器] model={self.model} → tools (FC支持)")
-                else:
+        import asyncio
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    result = await self._probe_tools(client)
+                    if result["works"]:
+                        self._strategy = "tools"
+                        logger.info(f"[适配器] model={self.model} → tools (FC支持)")
+                        return self._strategy
+                    _reason = result.get("reason", "")
+                    # 429/超时/连接类错误可重试
+                    if "429" in _reason or "timeout" in _reason.lower() or "connect" in _reason.lower():
+                        if attempt < 2:
+                            _delay = 2.0 * (2 ** attempt)
+                            logger.warning(f"[适配器] 探测瞬态失败({_reason}), {_delay:.0f}s后重试 (第{attempt+1}次)")
+                            await asyncio.sleep(_delay)
+                            continue
                     self._strategy = "text"
-                    logger.info(f"[适配器] model={self.model} → text (FC不支持: {result.get('reason', 'N/A')})")
-        except Exception as e:
-            logger.error(f"[适配器] 探测异常: {e}")
-            self._strategy = "text"
-
-        return self._strategy
+                    logger.info(f"[适配器] model={self.model} → text (FC不支持: {_reason})")
+                    return self._strategy
+            except Exception as e:
+                logger.warning(f"[适配器] 探测异常(第{attempt+1}次): {e}")
+                if attempt < 2:
+                    _delay = 2.0 * (2 ** attempt)
+                    await asyncio.sleep(_delay)
+                    continue
+                logger.error(f"[适配器] 探测最终失败: {e}")
+                self._strategy = "text"
+                return self._strategy
 
     async def _probe_tools(self, client: httpx.AsyncClient) -> dict:
         """发一个带tools的请求，看返回有没有tool_calls"""

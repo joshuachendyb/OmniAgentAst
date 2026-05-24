@@ -67,9 +67,9 @@ class DesktopReactAgent(ReactAgentMixin, BaseAgent):
     async def rollback(self, step_number=None) -> bool:
         """
         桌面操作无法回滚
-        
+
         Returns:
             False - 表示回滚不可用，而非回滚失败
         """
-        logger.warning(f"[DesktopReactAgent] 桌面操作无法回滚，已执行操作不会撤销。请手动检查系统状态。")
-        return False  # ✅ 更准确的返回值（缺陷4修正）
+        logger.warning(f"[DesktopReactAgent] 桌面操作无法回滚，已执行操作不会撤销。")
+        return False
