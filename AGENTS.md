@@ -1,9 +1,31 @@
 # AGENTS.md - OmniAgentAs-desk
 
-**Version**: v0.13.11 | **Project**: Full-stack (React+FastAPI) AI agent desktop
+**Version**: v0.13.33 | **Project**: Full-stack (React+FastAPI) AI agent desktop
 
 > Global rules (roles, timestamps, commit format, versioning, doc style) are in `C:\Users\chend\.config\opencode\AGENTS.md` (auto-loaded).
 > This file contains **project-specific** info only.
+
+---
+
+## 编码铁规（必须遵守）
+
+**生效时间**: 2026-05-24 18:05:46 | **适用范围**: 所有代码文件
+**更新人**: 北京老陈
+
+### DRY — Don't Repeat Yourself
+相同的逻辑不得出现两遍。重复代码必须抽取为函数/类/常量/工具方法，一处定义多处引用。
+
+### KISS — Keep It Simple, Stupid
+保持简单。能用简单方案不用复杂方案，不提前引入模式/抽象/框架。
+
+### SLAP — Single Level of Abstraction Principle
+同一函数内代码的抽象层次必须一致。一个函数只做一件事，不混入高层逻辑和底层实现细节。
+
+### SRP — Single Responsibility Principle
+一个类/模块/函数只负责一个职责。职责不同必须拆分，不得混在一起。
+
+### 违反后果
+上述铁规是必须遵守的编码纪律。违反者代码被打回重写，直到符合原则为止。
 
 ---
 
@@ -150,9 +172,7 @@ OmniAgentAs-desk/
 
 `version.txt` is append-only, oldest at bottom.
 
----
-
-## Code Conventions
+---## Code Conventions
 
 ### Python
 - snake_case functions/vars, PascalCase classes, UPPER_SNAKE_CASE constants
