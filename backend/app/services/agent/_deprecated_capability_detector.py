@@ -15,7 +15,7 @@ import json
 import httpx
 from typing import Optional
 
-from app.services.agent.capability import LLMFeature, LLMProbeResult, LLMCapability
+from app.services.agent._deprecated_capability import LLMFeature, LLMProbeResult, LLMCapability
 from app.utils.logger import logger
 
 
