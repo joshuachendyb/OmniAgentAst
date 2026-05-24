@@ -1,8 +1,70 @@
-v0.13.32
+v0.13.33
 
-更新时间: 2026-05-23 22:11:18
+更新时间: 2026-05-24 17:38:50
 
 更新内容：
+
+## v0.13.32→v0.13.33 变更汇总 - 小健-2026-05-24
+
+### fix 代码深度审查问题修复（13个commit）
+
+| commit | 说明 |
+|--------|------|
+| 64ecb4f3 | fix: base_react.py - step_counter注入Agent替换独立step_count，start→Agent全程一条线计数 - 小沈-2026-05-24 |
+| 17cca41b | fix: react_sse_wrapper.py - 传递step_counter给Agent+generic流步号改用event.step - 小沈-2026-05-24 |
+| 57e681ff | fix: tool_result_formatter.py - _format_llm_observation增加tool_name/tool_params参数使failure hint真正生效(原result.get永远为None) - 小健-2026-05-24 |
+| 48e0777b | fix: message_builder.py - build_observation_text增加tool_name/tool_params参数透传 - 小健-2026-05-24 |
+| b298733a | fix: base_react.py - build_execution_result_dict/error类型提取/build_observation_text传tool_name - 小健-2026-05-24 |
+| c1f465b0 | fix: base_react.py - 移除tool_name'或finish'兜底使无效工具名检查能捕获空工具名 - 小健-2026-05-24 |
+| f87de810 | fix: error_handler.py - 提取is_network_or_api_error消除内联重复 - 小健-2026-05-24 |
+| 09cc3ac3 | fix: tool_result_formatter.py - extract_status数字code防崩溃 - 小健-2026-05-24 |
+| 062028e6 | fix: tool_executor.py - RetryPolicy默认retryable_errors添加network_error - 小健-2026-05-24 |
+| 65ef1546 | fix: tool_parser.py - rate_limit检测补充下划线写法 - 小健-2026-05-24 |
+| 524ddd54 | fix: BasePromptTemplate.py - prompt示例tool_name从通用描述改为实际工具名 - 小健-2026-05-24 |
+| 623432e5 | fix: intent_classifier.py - intent_model从配置读取替代硬编码gemma3:4b - 小健-2026-05-24 |
+| b4996fc5 | fix: tool_executor.py - retryable_errors接入实际重试决策逻辑(原死代码从未生效) - 小健-2026-05-24 |
+| e3e453f3 | fix: error_handler.py - import ERROR_TYPE_MAP移到文件顶部 - 小健-2026-05-24 |
+
+### refactor 常量迁移+代码提取（8个commit）
+
+| commit | 说明 |
+|--------|------|
+| f4734480 | feat: constants.py - 新增全局常量文件 - 小健-2026-05-24 |
+| 83981ef9 | feat: constants.py - 新增3张映射表 - 小健-2026-05-24 |
+| bb29dad6 | feat: registry.py - ToolMetadata新增failure_hint_fn字段 - 小健-2026-05-24 |
+| 2c64a7d2 | feat: network_register.py - http_request注册failure_hint_fn - 小健-2026-05-24 |
+| dc807b35 | feat: tool_result_formatter.py - 工具失败时从registry获取替代建议提示 - 小健-2026-05-24 |
+| c75d251f | refactor: llm_core.py - timeout硬编码改为引用常量 - 小健-2026-05-24 |
+| 7cb6cdff | refactor: tool_executor.py - retryable_errors默认值改为引用常量 - 小健-2026-05-24 |
+| 9cdc1b00 | refactor: retry_policy.py - retryable_errors默认值改为引用常量 - 小健-2026-05-24 |
+| 26456c42 | refactor: message_builder.py - 硬编码常量提取到constants.py - 小健-2026-05-24 |
+| 65e26c32 | refactor: base_react.py - 提取_build_execution_result_dict等消除多段重复 - 小健-2026-05-24 |
+| 3d672570 | refactor: base_react.py - 提取_emit_step等消除中断检查/错误退出重复 - 小健-2026-05-24 |
+| 71fd8252 | refactor: error_handler.py - 映射表统一引用constants.py - 小健-2026-05-24 |
+| f3a33f02 | refactor: error_handler.py - resolve_http_error_type改用结构化映射表 - 小健-2026-05-24 |
+| aebc5850 | refactor: network_tools.py - 硬编码提取到constants.py - 小健-2026-05-24 |
+
+### test 测试改造（2个commit）
+
+| commit | 说明 |
+|--------|------|
+| 9380b838 | test: test_s5_deep.py - execute_javascript→execute_code统一接口 - 小健-2026-05-24 |
+| 752d04c1 | test: test_s4_deep.py - execute_python→execute_code统一接口 - 小健-2026-05-24 |
+| 315d49e7 | fix: test_s4_deep.py/test_s5_deep.py - 空代码断言修正+capabilities_used→next_actions - 小健-2026-05-24 |
+
+### docs 文档（8个commit）
+
+| commit | 说明 |
+|--------|------|
+| ee4b03a7 | docs: Agent系统后端核心流程设计实现与问题分析 - 小沈-2026-05-24 |
+| ac0674aa | docs: react-消息构建重构代码深度分析报告 - 小沈-2026-05-24 |
+| d3d17ec2 | docs: Agent实现机制深度分析文档 - 小沈-2026-05-24 |
+| ec65614e | docs: Agent系统后端设计实现说明 - 小沈-2026-05-24 |
+| 54519708 | docs: Agent架构重构设计说明文档 - 小沈-2026-05-24 |
+| 7e2de318 | docs: 深度代码审查问题清单 - 小沈-2026-05-24 |
+| a7766394 | docs: E2E-FSI测试规范 - 小沈-2026-05-24 |
+| 8588736b | docs: E2E-FSI测试规范v1.1+Bug#9/#10记录 - 小沈-2026-05-24 |
+| ce06621e | docs: 服务器运行时错误分析报告 - 小沈-2026-05-24 |
 
 ## v0.13.31→v0.13.32 变更汇总 - 小沈-2026-05-23
 
