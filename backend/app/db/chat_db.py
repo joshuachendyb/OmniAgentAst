@@ -62,7 +62,7 @@ def init_database():
     # 【小沈添加 2026-03-03】添加 display_name 字段（如果不存在）
     try:
         cursor.execute('SELECT display_name FROM chat_messages LIMIT 1')
-    except:
+    except Exception:
         cursor.execute('ALTER TABLE chat_messages ADD COLUMN display_name TEXT')
         conn.commit()
         print("数据库已添加 display_name 字段")
@@ -71,7 +71,7 @@ def init_database():
     for field in ['client_os', 'browser', 'device', 'network']:
         try:
             cursor.execute(f'SELECT {field} FROM chat_messages LIMIT 1')
-        except:
+        except Exception:
             cursor.execute(f'ALTER TABLE chat_messages ADD COLUMN {field} TEXT')
             conn.commit()
             print(f"数据库已添加 {field} 字段")
