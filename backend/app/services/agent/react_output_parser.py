@@ -1760,102 +1760,6 @@ def _extract_tool_params_from_thought(thought: str, tool_name: str = None) -> Di
     return {}
 
 
-# =============================================================================
-# 【P0-必须新增】步骤1.2.1：实现工具名兜底匹配函数
-# =============================================================================
-
-def _extract_by_known_tools(content: str) -> Optional[Dict[str, Any]]:
-    """
-    【P0-必须新增】通过已知工具名匹配提取action
-    
-    来源：llm_strategies.py _extract_by_known_tools() (行229-267)
-    调用位置：_determine_parse_type() 入口处作为pre-check
-    
-    当关键词定位失败时，尝试在content中查找已知工具名作为兜底。
-    这是系统鲁棒性的关键保障，必须在关键词定位之前执行。
-    
-    【2026-04-28 小沈修复】增强参数提取逻辑：
-    1. 先尝试从tool_params JSON块中提取完整参数（包括content字段）
-    2. 再使用正确的参数名（file_path而非path）
-    3. 最后才使用简单的正则提取作为兜底
-    
-    Args:
-        content: LLM响应文本
-        
-    Returns:
-        工具信息字典（成功）或None（失败）
-        {
-            "tool_name": str,       # 匹配到的工具名
-            "content": str,         # 原始文本作为thought
-            "tool_params": dict     # 提取的参数（完整版）
-        }
-    """
-    content_lower = content.lower()
-    
-    for tool in _get_all_tool_names():
-        # 查找工具名出现位置（单词边界匹配）
-        pattern = rf'\b{re.escape(tool)}\b'
-        tool_match = re.search(pattern, content_lower, re.IGNORECASE)
-        if not tool_match:
-            continue
-            
-        # 【2026-04-28 小沈新增】尝试提取完整的tool_params JSON块
-        params = _extract_tool_params_from_text(content, tool_match.start())
-        
-        if params:
-            return {
-                "tool_name": tool,
-                "content": content,
-                "tool_params": params
-            }
-        
-        # 如果上面失败，使用简单的路径提取作为兜底，但使用正确的参数名
-        params = {}
-        
-        # 根据工具类型选择正确的参数名
-        path_param_name = "file_path" if tool in ["read_file", "write_file", "delete_file"] else "path"
-        
-        # 【2026-04-28 小沈修复】同时添加path作为别名，保持向后兼容
-        also_add_path_alias = tool in ["read_file", "write_file", "delete_file"]
-        
-        # 查找路径参数（Windows/Unix路径）
-        path_patterns = [
-            r'["\']?([A-Za-z]:\\[^"\'\s]+)["\']?',  # Windows路径 C:\path
-            r'["\']?(/[^\s"\'<>]+)["\']?',          # Unix路径 /path
-        ]
-        
-        for p in path_patterns:
-            matches = re.findall(p, content)
-            if matches:
-                params[path_param_name] = matches[0]
-                # 同时添加path别名以保持向后兼容
-                if also_add_path_alias:
-                    params["path"] = matches[0]
-                break
-        
-        # 【2026-05-14 小沈修复】参数为空时检查是否为自然语言提及
-        # 如果没有提取到任何参数，检查工具名是否被括号包裹
-        # 如"测试一下网络延迟（ping）"中的ping是自然语言引用，不是工具调用
-        if not params:
-            start = tool_match.start()
-            end = tool_match.end()
-            if start > 0 and end < len(content):
-                before_char = content[start - 1]
-                after_char = content[end]
-                if before_char in ('(', '（') and after_char in (')', '）'):
-                    continue  # 括号内提及 → 跳过，继续搜索下一个工具名
-        
-        # 【2026-04-28 小沈修复】即使没有找到路径参数，只要找到了工具名就返回
-        # 这确保 "I will list_directory the files" 这种情况也能正确匹配
-        return {
-            "tool_name": tool,
-            "content": content,
-            "tool_params": params
-        }
-    
-    return None
-
-
 def _extract_tool_params_from_text(content: str, tool_start_pos: int) -> Optional[Dict[str, Any]]:
     """
     【2026-04-28 小沈新增】从文本中提取tool_params JSON块
@@ -2519,7 +2423,6 @@ __all__ = [
     "_parse_answer",
     "_parse_action_input",
     "_parse_thought_only",  # 【新增】14.5节要求的独立函数
-    "_extract_by_known_tools",  # 【P0新增】工具名兜底匹配
     "_extract_json_block",  # 【2026-04-18小沈新增】纯JSON块提取
     "_extract_json_with_balanced_braces",
     "_extract_key_value_pairs",
