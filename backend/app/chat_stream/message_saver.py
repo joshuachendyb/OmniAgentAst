@@ -23,6 +23,7 @@ from typing import List, Dict, Optional, Callable, Any, Set
 from app.chat_stream.chat_helpers import create_timestamp
 
 _INVALID_SESSION_IDS: Set[str] = set()
+_INVALID_SESSION_IDS_MAX = 500  # 容量上限，防止无限增长 — 小健 2026-05-24
 
 
 def mark_session_valid(session_id: str) -> None:
@@ -84,8 +85,9 @@ async def save_execution_steps_to_db(
     except Exception as e:
         from app.utils.logger import logger
         if "会话不存在" in str(e) or "404" in str(e):
-            _INVALID_SESSION_IDS.add(session_id)
-            logger.warning(f"[Save] 会话不存在，已标记跳过: session_id={session_id}")
+            if len(_INVALID_SESSION_IDS) < _INVALID_SESSION_IDS_MAX:
+                _INVALID_SESSION_IDS.add(session_id)
+            logger.warning(f"[Save] 会话不存在，已标记跳过: session_id={session_id}, 缓存大小={len(_INVALID_SESSION_IDS)}")
         else:
             logger.error(f"[Save] 保存失败: {e}", exc_info=True)
 
