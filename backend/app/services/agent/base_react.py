@@ -51,6 +51,7 @@ from app.chat_stream.chat_helpers import create_timestamp
 from app.chat_stream.incident_handler import create_incident_data
 from app.utils.prompt_logger import get_prompt_logger
 from app.services.agent.tool_result_formatter import extract_status, build_execution_result_dict
+from app.services.agent.mixins.tool_step_mixin import ToolStepMixin, _ToolStepOutcome
 # 【Phase 1修复 小健 2026-05-14】删除模块级import，改为函数内import
 # from app.services.tools.file.file_tools import _current_task_id
 
@@ -703,19 +704,19 @@ class BaseAgent(ABC):
                     self._on_after_loop()
                     return
                 
-                # 使用 perf_counter 计算工具执行耗时（高精度）
-                start_time = time.perf_counter()
-                logger.info(f"[DEBUG_TOOL_PARAMS] before execute_tool: tool_name={tool_name}, tool_params={tool_params}")
+                # 【重构 小健 2026-05-24】统一工具执行：委托给 _execute_tool_step
+                outcome = await self._execute_tool_step(
+                    tool_name, tool_params, step_count, is_primary=True
+                )
+                yield outcome.action_step_dict
                 
-                execution_time_ms = 0
-                from app.services.context_vars import _current_task_id
-                # 【修复 小健 2026-05-24】P2-6: task_id可能为None，设为空字符串避免ContextVar存None
-                _current_task_id.set(task_id or "")
-                execution_result = await self._execute_tool(tool_name, tool_params)
-                if execution_result is None:
-                    execution_result = {"code": -1, "message": f"工具 {tool_name} 返回None", "data": None}
-                    logger.warning(f"[execute_tool] _execute_tool返回None: tool_name={tool_name}")
-                execution_time_ms = int((time.perf_counter() - start_time) * 1000)
+                # 【修正 2026-04-17 小沈】按照设计文档15.2.0.4执行顺序
+                # 步骤5：response 应该在 action_tool 之后再加入 conversation_history
+                # 【修复 小健 2026-05-24】P1-1: chunk_buffer已在上方flush到历史，
+                # 此处再add_assistant(response)会重复注入chunk内容，跳过
+                # 对于无chunk的场景(parsed直接是action)，response未被注入，需要注入
+                if not chunk_buffer_was_flushed:
+                    self.message_builder.add_assistant(response)
                 
                 # 【工具执行后中断检查】在执行工具后检查是否被中断
                 _int = self._check_interrupt(step_count, running_tasks)
@@ -725,88 +726,31 @@ class BaseAgent(ABC):
                     self._on_after_loop()
                     return
                 
-                # 【步骤2.9】根据执行结果构建 action_tool
-                
-                # 【步骤2.9】统一执行结果字典格式（供StepFactory使用）
-                execution_result_dict = build_execution_result_dict(execution_result)
-                exec_status = execution_result_dict["status"]
-
-                # 【步骤2.9】使用StepFactory创建ActionToolStep
-                action_step = StepFactory.create_action_tool_step(
-                    step=step_count,
-                    tool_name=tool_name,
-                    tool_params=tool_params,
-                    execution_result=execution_result_dict,
-                    execution_time_ms=execution_time_ms
-                )
-
-                yield self._emit_step(action_step)
-                
-                # 【修正 2026-04-17 小沈】按照设计文档15.2.0.4执行顺序
-                # 步骤5：response 应该在 action_tool 之后再加入 conversation_history
-                # 【修复 小健 2026-05-24】P1-1: chunk_buffer已在行712-716 flush到历史，
-                # 此处再add_assistant(response)会重复注入chunk内容，跳过
-                # 对于无chunk的场景(parsed直接是action)，response未被注入，需要注入
-                if not chunk_buffer_was_flushed:
-                    self.message_builder.add_assistant(response)
-                
-                # ========== Observation 阶段（主工具的结果）==========
+                # ========== Observation 阶段 ==========
                 # 【修复 小健 2026-05-24】P1-3: 补全AgentStatus状态机
                 self.status = AgentStatus.OBSERVING
-                observation_text = self.message_builder.build_observation_text(execution_result, tool_name=tool_name, tool_params=tool_params)
-                
-                logger.info(f"[Debug] observation加入history: {observation_text[:100]}...")
-                # FC协议注入：tools策略下用assistant(tool_calls)+tool(tool_call_id)，text策略用role:system
-                fc_context = None
-                if getattr(self, '_strategy', None) == "tools":
-                    _chat_response = getattr(self, '_last_fc_raw_response', None)
-                    if _chat_response and getattr(_chat_response, 'tool_calls', None):
-                        tc = _chat_response.tool_calls[0]
-                        # 【修复 小健 2026-05-24】P2-7: tc可能是pydantic model，无.get()方法
-                        _tc_id = getattr(tc, 'id', None) or (tc.get("id", "") if isinstance(tc, dict) else "")
-                        fc_context = {"tool_calls": _chat_response.tool_calls, "tool_call_id": _tc_id}
-                self.message_builder.add_observation(observation_text, self.llm_call_count, fc_context=fc_context)
+                logger.info(f"[Debug] observation加入history: {outcome.observation_text[:100]}...")
 
-                # 记录观察结果到prompt日志
-                prompt_logger = get_prompt_logger()
-                prompt_logger.log_observation(
-                    step_name="工具执行结果",
-                    observation_content=observation_text,
-                    tool_name=tool_name,
-                    tool_params=tool_params,
-                    round_number=self.llm_call_count
+                # add_observation 在 add_assistant 之后执行（设计文档15.2.0.4顺序）
+                self.message_builder.add_observation(
+                    outcome.obs_inject_text, self.llm_call_count,
+                    fc_context=outcome.obs_fc_context
                 )
 
-                # ===== 【步骤2.9】yield observation =====
-                # 【修复 小健 2026-05-24】P1-4: 统一前端yield和steps记录使用同一份execution_result
-                display_summary = execution_result.get('message', '')
-                display_result = dict(execution_result)
-                display_result['summary'] = display_summary
-                display_result.setdefault('error_message', '')
-
-                observation_step = StepFactory.create_observation_step(
-                    step=step_count,
-                    tool_name=tool_name,
-                    tool_params=tool_params,
-                    execution_result=display_result,
-                    return_direct=execution_result.get("return_direct", False)
-                )
-
-                yield self._emit_step(observation_step)
+                yield outcome.observation_step_dict
                 
                 # 【步骤9】检查是否需要动态加载新工具
                 # 在Observation之后、下一轮LLM调用前检查
-                # observation_text 是行712-744构建的observation内容
-                await self._check_and_load_missing_tools(observation_text, self.llm_client)
+                await self._check_and_load_missing_tools(outcome.observation_text, self.llm_client)
                 
-                # 【步骤3.6】核心设计: observation_step.is_done() 决定是否直接结束任务
-                if observation_step.is_done():
-                    _result_data = execution_result.get("data")
+                # 【步骤3.6】核心设计: outcome.is_done() 决定是否直接结束任务
+                if outcome.is_done:
+                    _result_data = outcome.execution_result.get("data")
                     try:
                         _response_text = json.dumps(_result_data, ensure_ascii=False) if _result_data is not None else ""
                     except (TypeError, ValueError):
                         _response_text = str(_result_data)
-                    _msg = execution_result.get("message", "")
+                    _msg = outcome.execution_result.get("message", "")
                     if _msg:
                         _response_text = _msg + "\n" + _response_text
                     final_step = StepFactory.create_final_step(
@@ -817,7 +761,6 @@ class BaseAgent(ABC):
                         provider=getattr(self, 'provider', None)
                     )
                     yield self._emit_step(final_step)
-                    # 【修复 小健 2026-05-24】P1-3: return_direct完成设置COMPLETED
                     self.status = AgentStatus.COMPLETED
                     self._on_after_loop()
                     return
@@ -832,6 +775,9 @@ class BaseAgent(ABC):
                     pending_calls, step_count, running_tasks, task_id
                 ):
                     yield _pd
+                # 【修复 小健 2026-05-24】F1: 同步pending执行后的step_count
+                if hasattr(self, '_pending_step_count'):
+                    step_count = self._pending_step_count
         
         except Exception as e:
             # ===== 【步骤2.9+2.11】场景1：未捕获异常 =====
@@ -904,98 +850,33 @@ class BaseAgent(ABC):
         running_tasks: Optional[Dict[str, Any]],
         task_id: Optional[str]
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """执行并行工具调用列表 — 小健 2026-05-24
-        
+        """编排并行工具调用列表 — 小健 2026-05-24
+
         在主工具Observation完成后执行附带的pending_calls。
-        每个调用产出action_tool+observation两个步骤。
-        被中断时提前终止（break），不抛异常。
+        每个调用委托给 _execute_tool_step(is_primary=False)，
+        本方法仅负责step递增、中断检查和yield转发。
+        返回更新后的step_count供调用方同步。
         """
         for pending in pending_calls:
             step_count += 1
             p_name = pending.get("name", "finish")
             p_params = pending.get("args", {})
             logger.info(f"[ReAct] 执行并行工具: {p_name}")
-            
+
             if self._check_interrupt(step_count, running_tasks):
                 logger.info(f"[Interrupt] 任务 {task_id} 在并行工具执行前被取消")
                 break
-            
-            try:
-                start_p = time.perf_counter()
-                p_result = await self._execute_tool(p_name, p_params)
-                if p_result is None:
-                    p_result = {"code": -1, "message": f"并行工具 {p_name} 返回None", "data": None}
-                p_time = int((time.perf_counter() - start_p) * 1000)
-                
-                p_result_dict = build_execution_result_dict(p_result)
-                
-                p_action_step = StepFactory.create_action_tool_step(
-                    step=step_count, tool_name=p_name, tool_params=p_params,
-                    execution_result=p_result_dict,
-                    execution_time_ms=p_time
-                )
-                yield self._emit_step(p_action_step)
-                
-                p_obs_step = StepFactory.create_observation_step(
-                    step=step_count, tool_name=p_name, tool_params=p_params,
-                    execution_result=p_result_dict,
-                    return_direct=False
-                )
-                yield self._emit_step(p_obs_step)
-                
-                p_obs_text = self.message_builder.build_observation_text(p_result, tool_name=p_name, tool_params=p_params)
-                _fc_handled = False
-                if getattr(self, '_strategy', None) == "tools":
-                    _fc_resp = getattr(self, '_last_fc_raw_response', None)
-                    if _fc_resp and getattr(_fc_resp, 'tool_calls', None):
-                        _p_tc_id = None
-                        for _tc in _fc_resp.tool_calls:
-                            _fn_name = getattr(_tc, 'function', None)
-                            if _fn_name and getattr(_fn_name, 'name', '') == p_name:
-                                _p_tc_id = getattr(_tc, 'id', '')
-                                break
-                            elif isinstance(_tc, dict) and _tc.get("function", {}).get("name", "") == p_name:
-                                _p_tc_id = _tc.get("id", "")
-                                break
-                        if _p_tc_id:
-                            _budget = self.message_builder._get_observation_budget(self.llm_call_count)
-                            _text = p_obs_text
-                            if len(_text) > _budget:
-                                _text = self.message_builder._smart_truncate(_text, budget=_budget)
-                            _text = self.message_builder._normalize_observation_prefix(_text)
-                            self.message_builder.conversation_history.append({
-                                "role": "tool", "content": _text,
-                                "tool_call_id": _p_tc_id
-                            })
-                            self.message_builder.trim_history()
-                            _fc_handled = True
-                if not _fc_handled:
-                    self.message_builder.add_observation(f"[并行] {p_obs_text}", self.llm_call_count)
-                try:
-                    _p_logger = get_prompt_logger()
-                    _p_logger.log_observation(
-                        step_name="工具执行结果",
-                        observation_content=p_obs_text,
-                        tool_name=p_name,
-                        tool_params=p_params,
-                        round_number=self.llm_call_count
-                    )
-                except Exception:
-                    pass
-            except Exception as _p_err:
-                logger.warning(f"[ReAct] 并行工具 {p_name} 执行异常: {_p_err}")
-                _p_err_dict = {"status": "error", "summary": str(_p_err), "data": None, "code": -1,
-                               "retry_count": 0, "warning": None, "attachment": None,
-                               "next_actions": None, "return_direct": False, "error_message": str(_p_err)}
-                p_action_step = StepFactory.create_action_tool_step(
-                    step=step_count, tool_name=p_name, tool_params=p_params,
-                    execution_result=_p_err_dict, execution_time_ms=0
-                )
-                yield self._emit_step(p_action_step)
-                p_obs_step = StepFactory.create_observation_step(
-                    step=step_count, tool_name=p_name, tool_params=p_params,
-                    execution_result=_p_err_dict, return_direct=False
-                )
-                yield self._emit_step(p_obs_step)
+
+            outcome = await self._execute_tool_step(
+                p_name, p_params, step_count, is_primary=False
+            )
+            yield outcome.action_step_dict
+            self.message_builder.add_observation(
+                outcome.obs_inject_text, self.llm_call_count,
+                fc_context=outcome.obs_fc_context
+            )
+            yield outcome.observation_step_dict
+
+        self._pending_step_count = step_count
 
 

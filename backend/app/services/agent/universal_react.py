@@ -13,13 +13,14 @@ from typing import Dict, Any, List, Optional, AsyncGenerator
 from app.services.agent.base_react import BaseAgent, DEFAULT_MAX_STEPS
 from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin
 from app.services.agent.mixins.rollback_mixin import RollbackMixin
+from app.services.agent.mixins.tool_step_mixin import ToolStepMixin
 from app.services.agent.agent_config import AgentConfig
 from app.services.agent.types import AgentResult
 from app.services.tools.registry import ToolCategory
 from app.utils.logger import logger
 
 
-class UniversalReactAgent(ReactAgentMixin, RollbackMixin, BaseAgent):
+class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, RollbackMixin, BaseAgent):
     """配置驱动的通用 ReAct Agent"""
     
     def __init__(
