@@ -71,6 +71,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Tuple, List
 import logging
+from app.services.tools.toolhelper.hash_helper import select_hasher
 
 logger = logging.getLogger(__name__)
 
@@ -282,17 +283,9 @@ def get_file_hash(
         if not os.path.isfile(file_path):
             return {"success": False, "error": f"不是文件: {file_path}"}
         
-        algorithm = algorithm.lower()
-        
-        if algorithm == "md5":
-            hasher = hashlib.md5()
-        elif algorithm == "sha1":
-            hasher = hashlib.sha1()
-        elif algorithm == "sha256":
-            hasher = hashlib.sha256()
-        elif algorithm == "sha512":
-            hasher = hashlib.sha512()
-        else:
+        try:
+            hasher = select_hasher(algorithm)
+        except ValueError:
             return {"success": False, "error": f"不支持的算法: {algorithm}"}
         
         chunk_size = 65536
@@ -1832,17 +1825,7 @@ async def file_checksum_impl(
             try:
                 file_size = path.stat().st_size
                 
-                algorithm_lower = algorithm.lower()
-                if algorithm_lower == "md5":
-                    hash_obj = hashlib.md5()
-                elif algorithm_lower == "sha1":
-                    hash_obj = hashlib.sha1()
-                elif algorithm_lower == "sha256":
-                    hash_obj = hashlib.sha256()
-                elif algorithm_lower == "sha512":
-                    hash_obj = hashlib.sha512()
-                else:
-                    raise ValueError(f"不支持的哈希算法: {algorithm}")
+                hash_obj = select_hasher(algorithm)
                 
                 with open(path, 'rb') as f:
                     while True:
@@ -1940,17 +1923,7 @@ def _calculate_hash_for_multiple_files(
             file_size = path.stat().st_size
             total_size += file_size
             
-            algorithm_lower = algorithm.lower()
-            if algorithm_lower == "md5":
-                hash_obj = hashlib.md5()
-            elif algorithm_lower == "sha1":
-                hash_obj = hashlib.sha1()
-            elif algorithm_lower == "sha256":
-                hash_obj = hashlib.sha256()
-            elif algorithm_lower == "sha512":
-                hash_obj = hashlib.sha512()
-            else:
-                raise ValueError(f"不支持的哈希算法: {algorithm}")
+            hash_obj = select_hasher(algorithm)
             
             with open(path, 'rb') as f:
                 while True:
