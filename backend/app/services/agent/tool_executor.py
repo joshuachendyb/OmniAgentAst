@@ -101,29 +101,6 @@ class ErrorClassifier:
         else:
             return ErrorType.UNKNOWN
 
-
-class RetryPolicy:
-    """重试策略（精简版：无熔断器）"""
-    
-    def __init__(
-        self,
-        max_retries: int = 3,
-        backoff_factor: float = 2.0,
-        retryable_errors: Optional[List[str]] = None
-    ):
-        """
-        初始化重试策略
-        
-        Args:
-            max_retries: 最大重试次数
-            backoff_factor: 退避因子
-            retryable_errors: 可重试错误列表
-        """
-        self.max_retries = max_retries
-        self.backoff_factor = backoff_factor
-        self.retryable_errors = retryable_errors or DEFAULT_RETRYABLE_ERRORS
-
-
 # 工具超时配置 - 从tool_meta.py统一导入 - 小健 2026-05-02
 from app.services.tools.tool_meta import TOOL_TIMEOUTS, get_timeout
 
@@ -224,6 +201,9 @@ class ToolExecutor:
         """
         步骤5：修改_execute_with_retry()，使用ErrorClassifier统一分类
         """
+        # 延迟导入避免循环依赖 - 小健 2026-05-24
+        from app.services.agent.retry_policy import RetryPolicy
+        
         tool = self.available_tools[action]
         config = get_tool_config()
         retry_policy = RetryPolicy(
