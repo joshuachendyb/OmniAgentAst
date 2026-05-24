@@ -1,3 +1,26 @@
+v0.13.37
+
+更新时间: 2026-05-24 20:50:00
+
+更新内容：
+
+## v0.13.36→v0.13.37 变更汇总 - 小沈-2026-05-24
+
+### fix 第5章代码审查修复（8个commit）
+
+| commit | 说明 |
+|--------|------|
+| d611ed22 | fix: file_helpers.py 3处哈希算法if/elif→select_hasher()消除4次重复 - 小沈-2026-05-24 |
+| 17f9ec1d | refactor: file_helpers.py 删除dead_code _calculate_hash_for_multiple_files(零调用) - 小沈-2026-05-24 |
+| 4ab2b71a | refactor: file_helpers.py get_file_info_impl委托get_file_metadata消除30行重复 - 小沈-2026-05-24 |
+| 573ece39 | fix: file_safety.py 6级.parent链替换为resolve().parents[5] - 小沈-2026-05-24 |
+| 03ec66dd | refactor: common_helper.py _check_module委托exec_helper._check_module_available消除importlib重复 - 小沈-2026-05-24 |
+| 06b95212 | fix: tool_config.py get_timeout回退到tool_meta.TOOL_TIMEOUTS统一超时来源 - 小沈-2026-05-24 |
+| bb70e3ba | refactor: gui_helper.py _find_window_by_title→window_helper.find_windows_by_title消除实现重复 - 小沈-2026-05-24 |
+| 59d88d58 | fix: __init__.py 移除_find_window_by_title导出(已移至window_helper) - 小沈-2026-05-24 |
+
+---
+
 v0.13.36
 
 更新时间: 2026-05-24 19:33:00
