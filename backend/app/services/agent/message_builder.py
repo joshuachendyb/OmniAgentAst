@@ -102,13 +102,14 @@ class MessageBuilder:
     # =========================================================================
 
     @staticmethod
-    def build_observation_text(execution_result: dict) -> str:
+    def build_observation_text(execution_result: dict, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
         """根据工具执行结果构建observation文本 — 统一委托_format_llm_observation
 
         小健 2026-05-22：原手写逻辑已合入 _format_llm_observation（含next_actions），
         此方法保留作为兼容入口。
+        更新 2026-05-24 小健：增加 tool_name/tool_params 参数供 failure hint 使用
         """
-        return _format_llm_observation(execution_result)
+        return _format_llm_observation(execution_result, tool_name, tool_params)
 
     # =========================================================================
     # 第三组：每轮 LLM 调用的消息组装（从 _call_llm 拆出）
