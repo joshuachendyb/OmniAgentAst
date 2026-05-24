@@ -285,17 +285,18 @@ class ToolExecutor:
                 if inspect.iscoroutinefunction(tool):
                     result = await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
                 else:
-                    # 【2026-05-14 小沈】统一走to_thread，不在主线程直接执行
-                    call_result = await asyncio.wait_for(
-                        asyncio.to_thread(lambda: tool(**normalized_input)),
-                        timeout=timeout
-                    )
-                    if inspect.iscoroutine(call_result):
-                        # lambda包装的async工具：返回值是coroutine，await执行
-                        result = await asyncio.wait_for(call_result, timeout=timeout)
+                    # 【修复 小健 2026-05-24】P1-8: 区分真同步工具和返回coroutine的async工具
+                    # 对于返回coroutine的工具，直接await而非走to_thread
+                    _sync_call = tool(**normalized_input)
+                    if inspect.iscoroutine(_sync_call):
+                        # 返回coroutine的async工具（iscoroutinefunction=False但返回coroutine）
+                        result = await asyncio.wait_for(_sync_call, timeout=timeout)
                     else:
-                        # 纯同步工具：线程池已执行完，直接返回结果
-                        result = call_result
+                        # 真同步工具：走to_thread避免阻塞事件循环
+                        result = await asyncio.wait_for(
+                            asyncio.to_thread(lambda: _sync_call),
+                            timeout=timeout
+                        )
                 
                 return result
             
@@ -316,6 +317,7 @@ class ToolExecutor:
                         "code": f"ERR_{error_type.value.upper()}",
                         "data": None,
                         "message": f"{error_type.description}: {str(e)[:200]}",
+                        # 【修复 小健 2026-05-24】P2-17: retry_count统一为重试次数(不含首次尝试)
                         "retry_count": attempt_count - 1,
                         "metadata": {"error_type": error_type.value}
                     }
@@ -327,7 +329,7 @@ class ToolExecutor:
                         "code": f"ERR_{error_type.value.upper()}",
                         "data": None,
                         "message": f"{error_type.description}: {str(e)[:200]}",
-                        "retry_count": attempt_count,
+                        "retry_count": attempt_count - 1,
                         "metadata": {"error_type": error_type.value}
                     }
                 
