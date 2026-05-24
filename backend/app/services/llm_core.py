@@ -24,6 +24,18 @@ from typing import List, Dict, Optional, AsyncGenerator, Any
 from app.utils.logger import logger
 from app.constants import RATE_LIMIT_STATUS_CODES, DEFAULT_CONNECT_TIMEOUT, DEFAULT_WRITE_TIMEOUT, DEFAULT_POOL_TIMEOUT, DEFAULT_PROBE_TIMEOUT, LLM_MAX_CONNECTIONS, LLM_MAX_KEEPALIVE, DEFAULT_LLM_TIMEOUT
 
+# 7组httpx/httpcore异常→错误类型/消息映射（代替7个相同模式except块）
+_ERROR_TYPE_MAP = [
+    (httpx.TimeoutException, "timeout_error", "请求超时，请重试"),
+    ((httpx.ReadError, httpcore.ReadError), "read_error", "读取响应失败，请重试"),
+    ((httpx.ConnectError, httpcore.ConnectError), "connect_error", "连接失败，请检查网络"),
+    ((httpx.ProtocolError, httpx.RemoteProtocolError, httpx.LocalProtocolError,
+      httpcore.ProtocolError, httpcore.RemoteProtocolError, httpcore.LocalProtocolError), "protocol_error", "协议错误，请重试"),
+    ((httpx.ProxyError, httpcore.ProxyError), "proxy_error", "代理错误，请检查网络配置"),
+    ((httpx.WriteError, httpcore.WriteError), "write_error", "发送请求失败"),
+    ((httpx.NetworkError, httpcore.NetworkError), "network_error", "网络错误，请检查网络连接"),
+]
+
 
 def _convert_xml_tool_call_to_json(content: str) -> Optional[str]:
     """
@@ -304,6 +316,61 @@ class BaseAIService:
                     msg["content"] = ""
         return messages
 
+    async def _parse_sse_lines(self, response, model: str) -> AsyncGenerator[StreamChunk, None]:
+        """共享SSE解析循环 — 消除chat_stream/chat_with_tools_stream之间~80行重复"""
+        line_iterator = response.aiter_lines()
+        _reasoning_content_total = 0
+        _content_total = 0
+
+        while True:
+            try:
+                line = await asyncio.wait_for(line_iterator.__anext__(), timeout=1.0)
+            except asyncio.TimeoutError:
+                if self._cancelled:
+                    yield StreamChunk(content="", model=model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
+                    return
+                continue
+            except StopAsyncIteration:
+                break
+
+            if self._cancelled:
+                yield StreamChunk(content="", model=model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
+                return
+
+            if not line or line.strip() == "":
+                continue
+
+            if line.startswith("data: "):
+                data_str = line[6:]
+            elif line.startswith("data:"):
+                data_str = line[5:]
+            else:
+                continue
+
+            if data_str.strip() == "[DONE]":
+                yield StreamChunk(content="", model=model, is_done=True)
+                return
+
+            try:
+                data = json.loads(data_str)
+                choices = data.get("choices", [])
+                if choices:
+                    delta = choices[0].get("delta", {})
+                    content = delta.get("content", "") or ""
+                    reasoning_content = delta.get("reasoning_content", "") or ""
+
+                    if content:
+                        _content_total += len(content)
+                        yield StreamChunk(content=content, model=model, is_done=False, is_reasoning=False)
+
+                    if reasoning_content:
+                        _reasoning_content_total += len(reasoning_content)
+                        yield StreamChunk(content=reasoning_content, model=model, is_done=False, is_reasoning=True)
+            except json.JSONDecodeError:
+                continue
+
+        yield StreamChunk(content="", model=model, is_done=True)
+
     def _build_messages(self, message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
         """构建消息列表 — message为空时直接返回history，否则拼接"""
         if not message and history:
@@ -415,174 +482,21 @@ class BaseAIService:
                             stream_error_type="http_error")
                     return
                 
-                # 【问题2修复】使用wait_for定期检查，每1秒超时检查一次_cancelled标志
-                # 而不是等下一个token（可能30秒）
-                # 【小沈修复 2026-04-21】修复StreamConsumed错误：使用单个迭代器，避免重复创建
-                line_iterator = response.aiter_lines()
+                async for chunk in self._parse_sse_lines(response, self.model):
+                    yield chunk
                 
-                # 【修复 2026-05-05 小沈】统计reasoning_content和content的接收情况
-                _reasoning_content_total = 0
-                _content_total = 0
-                
-                while True:
-                    try:
-                        line = await asyncio.wait_for(line_iterator.__anext__(), timeout=1.0)
-                    except asyncio.TimeoutError:
-                        # 超时了，检查取消标志
-                        if self._cancelled:
-                            logger.info("[chat_stream] 检测到取消标志（1秒超时检查），中断流式响应")
-                            yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
-                            return
-                        # 没取消，继续等待
-                        continue
-                    except StopAsyncIteration:
-                        break
-                    
-                    if self._cancelled:
-                        logger.info("[chat_stream] 检测到取消标志，中断流式响应")
-                        yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
-                        return
-                    if not line or line.strip() == "":
-                        continue
-                    
-                    if line.startswith("data: "):
-                        data_str = line[6:]
-                    elif line.startswith("data:"):
-                        data_str = line[5:]
-                    else:
-                        continue
-                    
-                    if data_str.strip() == "[DONE]":
-                        # 【修复 2026-05-05 小沈】日志：记录流结束时的统计信息
-                        logger.info(
-                            f"[chat_stream] 流结束[DONE], model={self.model}, "
-                            f"content_total={_content_total}, "
-                            f"reasoning_content_total={_reasoning_content_total}"
-                        )
-                        yield StreamChunk(content="", model=self.model, is_done=True)
-                        return
-                    
-                    try:
-                        data = json.loads(data_str)
-                        choices = data.get("choices", [])
-                        
-                        if choices:
-                            delta = choices[0].get("delta", {})
-                            content = delta.get("content", "") or ""
-                            # 【修复 2026-05-05 小沈】处理thinking模型的reasoning_content
-                            # thinking模型(如big-pickle, LongCat-Flash-Thinking)在思考阶段
-                            # 将输出放在reasoning_content中，content为空。若不处理，
-                            # chat()聚合后full_content为空，导致"AI服务返回空响应"
-                            reasoning_content = delta.get("reasoning_content", "") or ""
-                            
-                            if content:
-                                _content_total += len(content)
-                                yield StreamChunk(
-                                    content=content,
-                                    model=self.model,
-                                    is_done=False,
-                                    is_reasoning=False
-                                )
-                            
-                            # 【修复 2026-05-05 小沈】reasoning_content也作为content输出
-                            # 对于Agent路径(TextStrategy)，reasoning_content中的内容
-                            # 才是模型实际的"思考+输出"，必须收集到full_content中
-                            if reasoning_content:
-                                _reasoning_content_total += len(reasoning_content)
-                                # 日志：首次收到reasoning_content时记录原始delta信息
-                                if _reasoning_content_total == len(reasoning_content):
-                                    logger.info(
-                                        f"[chat_stream] 首次收到reasoning_content, "
-                                        f"model={self.model}, "
-                                        f"delta_keys={list(delta.keys())}, "
-                                        f"content={content!r}, "
-                                        f"reasoning_content前100={reasoning_content[:100]!r}"
-                                    )
-                                yield StreamChunk(
-                                    content=reasoning_content,
-                                    model=self.model,
-                                    is_done=False,
-                                    is_reasoning=True
-                                )
-                    except json.JSONDecodeError:
-                        continue
-                
-                # 【修复 2026-05-05 小沈】日志：记录流正常结束时的统计信息
-                logger.info(
-                    f"[chat_stream] 流正常结束(迭代器耗尽), model={self.model}, "
-                    f"content_total={_content_total}, "
-                    f"reasoning_content_total={_reasoning_content_total}"
-                )
-                yield StreamChunk(content="", model=self.model, is_done=True)
-                
-        except httpx.TimeoutException:
-            # 【小沈修复 2026-04-01】细化错误分类：超时
-            yield StreamChunk(
-                content="", 
-                model=self.model, 
-                is_done=True,
-                stream_error="请求超时，请重试",
-                stream_error_type="timeout_error"
-            )
-        except (httpx.ReadError, httpcore.ReadError):
-            yield StreamChunk(
-                content="", 
-                model=self.model, 
-                is_done=True,
-                stream_error="读取响应失败，请重试",
-                stream_error_type="read_error"
-            )
-        except (httpx.ConnectError, httpcore.ConnectError):
-            yield StreamChunk(
-                content="", 
-                model=self.model, 
-                is_done=True,
-                stream_error="连接失败，请检查网络",
-                stream_error_type="connect_error"
-            )
-        except (httpx.ProtocolError, httpcore.ProtocolError, httpx.RemoteProtocolError, httpcore.RemoteProtocolError, httpx.LocalProtocolError, httpcore.LocalProtocolError):
-            yield StreamChunk(
-                content="", 
-                model=self.model, 
-                is_done=True,
-                stream_error="协议错误，请重试",
-                stream_error_type="protocol_error"
-            )
-        except (httpx.ProxyError, httpcore.ProxyError):
-            yield StreamChunk(
-                content="", 
-                model=self.model, 
-                is_done=True,
-                stream_error="代理错误，请检查网络配置",
-                stream_error_type="proxy_error"
-            )
-        except (httpx.WriteError, httpcore.WriteError):
-            yield StreamChunk(
-                content="", 
-                model=self.model, 
-                is_done=True,
-                stream_error="发送请求失败",
-                stream_error_type="write_error"
-            )
-        except (httpx.NetworkError, httpcore.NetworkError):
-            yield StreamChunk(
-                content="", 
-                model=self.model, 
-                is_done=True,
-                stream_error="网络错误，请检查网络连接",
-                stream_error_type="network_error"
-            )
         except Exception as e:
-            import traceback
-            error_type_name = type(e).__name__
-            logger.error(f"[BaseAIService] 流式调用失败：{str(e)}, 异常类型: {error_type_name}, 堆栈: {traceback.format_exc()}")
-            yield StreamChunk(
-                content="", 
-                model=self.model, 
-                is_done=True,
-                stream_error=f"AI 服务调用失败: {error_type_name}",
-                stream_error_type="unknown_error"
-            )
+            error_type = "unknown_error"
+            error_msg = f"AI 服务调用失败: {type(e).__name__}"
+            for exc_tuple, etype, emsg in _ERROR_TYPE_MAP:
+                if isinstance(e, exc_tuple):
+                    error_type = etype
+                    error_msg = emsg
+                    break
+            if error_type == "unknown_error":
+                import traceback
+                logger.error(f"[BaseAIService] 流式调用失败：{str(e)}, 异常类型: {type(e).__name__}, 堆栈: {traceback.format_exc()}")
+            yield StreamChunk(content="", model=self.model, is_done=True, stream_error=error_msg, stream_error_type=error_type)
         finally:
             self._current_response = None
     
@@ -817,117 +731,21 @@ class BaseAIService:
                     )
                     return
                 
-                # 【问题2修复】同样使用wait_for定期检查，每1秒超时
-                # 【小沈修复 2026-04-21】修复StreamConsumed错误：使用单个迭代器，避免重复创建
-                line_iterator = response.aiter_lines()
-                
-                # 【修复 2026-05-05 小沈】统计reasoning_content和content的接收情况
-                _reasoning_content_total = 0
-                _content_total = 0
-                
-                while True:
-                    try:
-                        line = await asyncio.wait_for(line_iterator.__anext__(), timeout=1.0)
-                    except asyncio.TimeoutError:
-                        if self._cancelled:
-                            logger.info("[chat_with_tools_stream] Cancelled (1s timeout check)")
-                            yield StreamChunk(
-                                content="",
-                                model=self.model,
-                                is_done=True,
-                                stream_error="任务已取消",
-                                stream_error_type="cancelled"
-                            )
-                            return
-                        continue
-                    except StopAsyncIteration:
-                        break
-                    
-                    if self._cancelled:
-                        logger.info("[chat_with_tools_stream] Cancelled")
-                        yield StreamChunk(
-                            content="",
-                            model=self.model,
-                            is_done=True,
-                            stream_error="任务已取消",
-                            stream_error_type="cancelled"
-                        )
-                        return
-                    
-                    if not line or line.strip() == "":
-                        continue
-                    
-                    if line.startswith("data: "):
-                        data_str = line[6:]
-                    elif line.startswith("data:"):
-                        data_str = line[5:]
-                    else:
-                        continue
-                    
-                    if data_str.strip() == "[DONE]":
-                        # 【修复 2026-05-05 小沈】日志：记录流结束时的统计信息
-                        logger.info(
-                            f"[chat_with_tools_stream] 流结束[DONE], model={self.model}, "
-                            f"content_total={_content_total}, "
-                            f"reasoning_content_total={_reasoning_content_total}"
-                        )
-                        yield StreamChunk(content="", model=self.model, is_done=True)
-                        return
-                    
-                    try:
-                        data = json.loads(data_str)
-                        choices = data.get("choices", [])
-                        
-                        if choices:
-                            delta = choices[0].get("delta", {})
-                            content = delta.get("content", "") or ""
-                            # 【修复 2026-05-05 小沈】处理thinking模型的reasoning_content
-                            reasoning_content = delta.get("reasoning_content", "") or ""
-                            
-                            if content:
-                                _content_total += len(content)
-                                yield StreamChunk(
-                                    content=content,
-                                    model=self.model,
-                                    is_done=False,
-                                    is_reasoning=False
-                                )
-                            
-                            # 【修复 2026-05-05 小沈】reasoning_content也作为content输出
-                            if reasoning_content:
-                                _reasoning_content_total += len(reasoning_content)
-                                if _reasoning_content_total == len(reasoning_content):
-                                    logger.info(
-                                        f"[chat_with_tools_stream] 首次收到reasoning_content, "
-                                        f"model={self.model}, "
-                                        f"delta_keys={list(delta.keys())}"
-                                    )
-                                yield StreamChunk(
-                                    content=reasoning_content,
-                                    model=self.model,
-                                    is_done=False,
-                                    is_reasoning=True
-                                )
-                    except json.JSONDecodeError:
-                        continue
-                
-                # 【修复 2026-05-05 小沈】日志：记录流正常结束时的统计信息
-                logger.info(
-                    f"[chat_with_tools_stream] 流正常结束(迭代器耗尽), model={self.model}, "
-                    f"content_total={_content_total}, "
-                    f"reasoning_content_total={_reasoning_content_total}"
-                )
-                yield StreamChunk(content="", model=self.model, is_done=True)
+                async for chunk in self._parse_sse_lines(response, self.model):
+                    yield chunk
                 
         except Exception as e:
-            import traceback
-            logger.error(f"[chat_with_tools_stream] Error: {e}")
-            yield StreamChunk(
-                content="",
-                model=self.model,
-                is_done=True,
-                stream_error=str(e)
-            )
+            error_type = "unknown_error"
+            error_msg = str(e)
+            for exc_tuple, etype, emsg in _ERROR_TYPE_MAP:
+                if isinstance(e, exc_tuple):
+                    error_type = etype
+                    error_msg = emsg
+                    break
+            if error_type == "unknown_error":
+                import traceback
+                logger.error(f"[chat_with_tools_stream] Error: {e}")
+            yield StreamChunk(content="", model=self.model, is_done=True, stream_error=error_msg, stream_error_type=error_type)
         finally:
             self._current_response = None
 
