@@ -43,6 +43,7 @@ from app.services.agent.reasoning_steps import (
     ErrorStep,
 )
 from app.services.tools.registry import ToolCategory, get_tools_from_registry_by_category
+from app.constants import MAX_CONTEXT_CHARS
 # 【修复 小健 2026-05-24】P2-1: 删除重复导入AgentStatus
 from app.services.preprocessing.intent_classifier import IntentClassifier  # 【步骤9】意图分类器
 from app.utils.logger import logger
@@ -358,41 +359,24 @@ class BaseAgent(ABC):
             while True:
                 # ===== 场景3：每次循环开始检查最大步数 =====
                 if step_count >= max_steps:
-                    # 【步骤3.2】直接ErrorStep→return
-                    error_step = StepFactory.create_error_step(
-                        step=step_count,
-                        error_type="max_steps_exceeded",
-                        error_message=f"已达到最大迭代次数 {max_steps}",
-                        recoverable=False
-                    )
-                    self.steps.append(error_step)
-                    yield error_step.to_dict()
+                    yield self._exit_with_error(step_count, "max_steps_exceeded", f"已达到最大迭代次数 {max_steps}")
                     self._on_after_loop()
                     return
 
                 step_count = step_counter() if step_counter else (step_count + 1)
                 
                 # =====【中断检查】每次循环开始检查任务是否被取消 - 小欧-2026-04-21 =====
-                if task_id and running_tasks:
-                    # 直接检查 cancelled 标志（非线程安全但可接受，因为只是检查布尔值）
-                    task_data = running_tasks.get(task_id, {})
-                    is_cancelled = task_data.get("cancelled", False)
-                    # 【时间测量】计算时间差
-                    cancel_request_time = task_data.get("cancel_request_time")
-                    if cancel_request_time:
-                        time_diff = (time.time() - cancel_request_time) * 1000
-                        logger.info(f"[InterruptCheck] 任务 {task_id} 延迟: {time_diff:.0f}ms")
-                    if is_cancelled:
-                        logger.info(f"[Interrupt] 任务 {task_id} 被取消，发送 interrupted 事件")
-                        # 【问题2修复】使用create_incident_data替代裸字典，保证Step封装统一性
-                        interrupted_data = create_incident_data(
-                            incident_value="interrupted",
-                            message="用户取消了任务",
-                            step=step_count
-                        )
-                        yield interrupted_data
-                        self._on_after_loop()
-                        return
+                _int = self._check_interrupt(step_count, running_tasks)
+                if _int:
+                    # 【时间测量】计算取消延迟
+                    if task_id and running_tasks:
+                        _crt = running_tasks.get(task_id, {}).get("cancel_request_time")
+                        if _crt:
+                            logger.info(f"[InterruptCheck] 任务 {task_id} 延迟: {(time.time() - _crt) * 1000:.0f}ms")
+                    logger.info(f"[Interrupt] 任务 {task_id} 被取消，发送 interrupted 事件")
+                    yield _int
+                    self._on_after_loop()
+                    return
                 
                 # ===== 调用LLM =====
                 self.status = AgentStatus.THINKING
@@ -403,18 +387,12 @@ class BaseAgent(ABC):
                 # =====【LLM返回后中断检查】2026-05-13 小沈 =====
                 # ai_service.cancel()取消了HTTP请求，LLM可能返回错误/空。
                 # 在进入重试逻辑之前检查cancelled标志，避免把取消当成可重试的错误
-                if task_id and running_tasks:
-                    task_data = running_tasks.get(task_id, {})
-                    if task_data.get("cancelled", False):
-                        logger.info(f"[Interrupt] 任务 {task_id} LLM返回后被取消，立即中断")
-                        interrupted_data = create_incident_data(
-                            incident_value="interrupted",
-                            message="用户取消了任务",
-                            step=step_count
-                        )
-                        yield interrupted_data
-                        self._on_after_loop()
-                        return
+                _int = self._check_interrupt(step_count, running_tasks)
+                if _int:
+                    logger.info(f"[Interrupt] 任务 {task_id} LLM返回后被取消，立即中断")
+                    yield _int
+                    self._on_after_loop()
+                    return
                 
                 # ===== 场景2：LLM返回空响应 =====
                 if not response:
@@ -460,14 +438,7 @@ class BaseAgent(ABC):
                         else:
                             logger.warning("[空响应] 历史已很短无法截断，直接报错")
                     # 重试次数用尽或历史太短，报错退出
-                    error_step = StepFactory.create_error_step(
-                        step=step_count,
-                        error_type="empty_response",
-                        error_message=f"AI服务返回空响应（已重试{self.empty_response_retry_count}次）",
-                        recoverable=False
-                    )
-                    self.steps.append(error_step)
-                    yield error_step.to_dict()
+                    yield self._exit_with_error(step_count, "empty_response", f"AI服务返回空响应（已重试{self.empty_response_retry_count}次）")
                     self._on_after_loop()
                     return
                 
@@ -503,8 +474,7 @@ class BaseAgent(ABC):
                     chunk_step = StepFactory.create_chunk_step(
                         step=step_count, content=chunk_content
                     )
-                    self.steps.append(chunk_step)
-                    yield chunk_step.to_dict()
+                    yield self._emit_step(chunk_step)
                     
                     # 无工具Agent（chat）：第一个chunk直接作为最终回答，不循环
                     if self.tool_category is None:
@@ -517,8 +487,7 @@ class BaseAgent(ABC):
                         final_step = StepFactory.create_final_step(
                             step=step_count, response=chunk_buffer, thought=""
                         )
-                        self.steps.append(final_step)
-                        yield final_step.to_dict()
+                        yield self._emit_step(final_step)
                         self._on_after_loop()
                         return
                     
@@ -532,8 +501,7 @@ class BaseAgent(ABC):
                         final_step = StepFactory.create_final_step(
                             step=step_count, response=chunk_buffer, thought=""
                         )
-                        self.steps.append(final_step)
-                        yield final_step.to_dict()
+                        yield self._emit_step(final_step)
                         self._on_after_loop()
                         return
                     
@@ -577,8 +545,7 @@ class BaseAgent(ABC):
                         model=getattr(self, 'model', None),
                         provider=getattr(self, 'provider', None)
                     )
-                    self.steps.append(final_step)
-                    yield final_step.to_dict()
+                    yield self._emit_step(final_step)
                     
                     # 【修复 小健 2026-05-24】P1-3: 正常完成设置COMPLETED
                     self.status = AgentStatus.COMPLETED
@@ -607,11 +574,7 @@ class BaseAgent(ABC):
                         reasoning=parsed.get("reasoning", "")
                     )
                     
-                    # 【步骤2.10】记录步骤历史
-                    self.steps.append(thought_step)
-                    
-                    # yield Step字典
-                    yield thought_step.to_dict()
+                    yield self._emit_step(thought_step)
                     
                     # 【修复 小健 2026-05-24】P2-3: 注入结构化thought而非原始LLM文本
                     self.message_builder.add_assistant(_thought_val)
@@ -669,14 +632,7 @@ class BaseAgent(ABC):
                     
                     # 【步骤3.3】重试次数 >= 3？直接ErrorStep→return
                     if self.parse_retry_count >= self.max_parse_retries:
-                        error_step = StepFactory.create_error_step(
-                            step=step_count,
-                            error_type="parse_error",
-                            error_message=f"解析失败: {error_msg}（已重试{self.max_parse_retries}次）",
-                            recoverable=False
-                        )
-                        self.steps.append(error_step)
-                        yield error_step.to_dict()
+                        yield self._exit_with_error(step_count, "parse_error", f"解析失败: {error_msg}（已重试{self.max_parse_retries}次）")
                         self._on_after_loop()
                         return
                     # 【问题3修复】重试前发送retrying事件，让前端显示重试提示
@@ -706,14 +662,7 @@ class BaseAgent(ABC):
                     parsed = {"type": "parse_error", "error": f"LLM返回无效工具名: {tool_name!r}"}
                     self.parse_retry_count += 1
                     if self.parse_retry_count >= self.max_parse_retries:
-                        error_step = StepFactory.create_error_step(
-                            step=step_count,
-                            error_type="parse_error",
-                            error_message=f"LLM反复返回无效工具名（已重试{self.max_parse_retries}次）",
-                            recoverable=False
-                        )
-                        self.steps.append(error_step)
-                        yield error_step.to_dict()
+                        yield self._exit_with_error(step_count, "parse_error", f"LLM反复返回无效工具名（已重试{self.max_parse_retries}次）")
                         self._on_after_loop()
                         return
                     retrying_data = create_incident_data(
@@ -769,20 +718,12 @@ class BaseAgent(ABC):
                 self.status = AgentStatus.EXECUTING
                 
                 # 【工具执行前中断检查】在执行工具前检查是否被中断
-                if task_id and running_tasks:
-                    is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
-                    logger.info(f"[InterruptCheck] 任务 {task_id} 工具执行前取消状态: {is_cancelled}")
-                    if is_cancelled:
-                        logger.info(f"[Interrupt] 任务 {task_id} 被取消，工具执行前中断")
-                        # 【问题2修复】使用create_incident_data替代裸字典
-                        interrupted_data = create_incident_data(
-                            incident_value="interrupted",
-                            message="用户取消了任务",
-                            step=step_count
-                        )
-                        yield interrupted_data
-                        self._on_after_loop()
-                        return
+                _int = self._check_interrupt(step_count, running_tasks)
+                if _int:
+                    logger.info(f"[Interrupt] 任务 {task_id} 被取消，工具执行前中断")
+                    yield _int
+                    self._on_after_loop()
+                    return
                 
                 # 使用 perf_counter 计算工具执行耗时（高精度）
                 start_time = time.perf_counter()
@@ -799,20 +740,12 @@ class BaseAgent(ABC):
                 execution_time_ms = int((time.perf_counter() - start_time) * 1000)
                 
                 # 【工具执行后中断检查】在执行工具后检查是否被中断
-                if task_id and running_tasks:
-                    is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
-                    logger.info(f"[InterruptCheck] 任务 {task_id} 工具执行后取消状态: {is_cancelled}")
-                    if is_cancelled:
-                        logger.info(f"[Interrupt] 任务 {task_id} 被取消，工具执行后中断")
-                        # 【问题2修复】使用create_incident_data替代裸字典
-                        interrupted_data = create_incident_data(
-                            incident_value="interrupted",
-                            message="用户取消了任务",
-                            step=step_count
-                        )
-                        yield interrupted_data
-                        self._on_after_loop()
-                        return
+                _int = self._check_interrupt(step_count, running_tasks)
+                if _int:
+                    logger.info(f"[Interrupt] 任务 {task_id} 被取消，工具执行后中断")
+                    yield _int
+                    self._on_after_loop()
+                    return
                 
                 # 【步骤2.9】根据执行结果构建 action_tool
                 
@@ -944,7 +877,7 @@ class BaseAgent(ABC):
                     p_params = pending.get("args", {})
                     logger.info(f"[ReAct] 执行并行工具: {p_name}")
                     # 【修复 小沈 2026-05-24】并行工具中断检查
-                    if task_id and running_tasks and running_tasks.get(task_id, {}).get("cancelled", False):
+                    if self._check_interrupt(step_count, running_tasks):
                         logger.info(f"[Interrupt] 任务 {task_id} 在并行工具执行前被取消")
                         break
                     # 【修复 小沈 2026-05-24】并行工具异常保护
@@ -1045,85 +978,62 @@ class BaseAgent(ABC):
             # ===== 【步骤2.9+2.11】场景1：未捕获异常 =====
             # 【步骤2.11】废弃create_error_from_exception，使用StepFactory.create_error_step
             # 【修复 小健 2026-05-24】P1-3: 异常退出设置FAILED
-            self.status = AgentStatus.FAILED
             # 【修复 小健 2026-05-24】P2-5: 异常退出清理temp_history
             self.message_builder.temp_history.clear()
             import traceback; traceback.print_exc()
             logger.error(f"Agent run_stream error: {e}", exc_info=True)
             
-            # 【步骤2.9】使用StepFactory创建ErrorStep
-            error_step = StepFactory.create_error_step(
-                step=step_count,
-                error_type="unhandled_exception",
-                error_message=str(e),
-                recoverable=False
-            )
-            
-            # 【步骤2.10】记录步骤历史
-            self.steps.append(error_step)
-            
-            # yield Step字典
-            yield error_step.to_dict()
+            yield self._exit_with_error(step_count, "unhandled_exception", str(e))
             
             self._on_after_loop()
             return
     
     # ===== 对话历史管理 =====
 
-    MAX_CONTEXT_CHARS = 150000  # 统一上下文+单条observation预算上限 小沈-2026-05-15
-    # 【2026-05-21 小沈】_trim_history及6个辅助方法已迁入MessageBuilder，此处删除
-
-    def _build_alternative_tools_hint(self, failed_tool: str, tool_params: Optional[dict] = None) -> str:
-        """工具执行失败时，从当前Agent已注册工具中动态生成替代建议 - 小沈 2026-05-14
-        【更新 2026-05-15 小健】http_request失败时提示国内替代URL；tools策略下精简提示
-        
-        Args:
-            failed_tool: 失败的工具名称
-            tool_params: 失败时的工具参数（用于提取URL等上下文）
-            
-        Returns:
-            替代建议文本
-        """
-        # 【2026-05-15 小健】http_request失败时，提示国内替代URL
-        if failed_tool == "http_request" and tool_params:
-            failed_url = tool_params.get("url", "")
-            hint = "⚠️ 网络请求失败。如果是访问国外服务超时，请换用国内可达的替代地址：\n"
-            hint += "  - 查公网IP → 用 https://httpbin.org/ip 或 https://myip.ipip.net\n"
-            hint += "  - 查IP详情 → 用 https://ipapi.co/json/ 或 https://ip.sb/api/\n"
-            hint += "  - DNS查询 → 用 https://dns.alidns.com/resolve?name=域名&type=A\n"
-            hint += "  - 网络连通 → 用 ping 测试国内域名(如 baidu.com)\n"
-            hint += f"  失败URL: {failed_url}\n"
-            hint += "请勿重复请求同一失败URL！"
-            return hint
-        
-        if not hasattr(self, '_tools_dict') or not self._tools_dict:
-            return ""
-        
-        # 【2026-05-15 小健】tools策略下LLM已有tools定义，只做精简提示
-        strategy_method = getattr(self, '_strategy', None)
-        if strategy_method == "tools":
-            return "⚠️ 工具执行失败，请尝试其他可用工具，不要重复调用同一失败操作。"
-        
-        alternatives = []
-        for name in self._tools_dict:
-            if name == failed_tool or name in ("finish",):
-                continue
-            try:
-                from app.services.tools.registry import tool_registry
-                meta = tool_registry.get_tool(name)
-                desc = meta.description[:40] if meta and meta.description else name
-            except Exception:
-                desc = name
-            alternatives.append(f"{name}({desc})")
-        
-        if not alternatives:
-            return ""
-        
-        listed = ", ".join(alternatives[:3])
-        remaining = len(alternatives) - 3
-        hint = f"其他可用工具: {listed}"
-        if remaining > 0:
-            hint += f" 等{len(alternatives)}个"
-        return hint
+    MAX_CONTEXT_CHARS = MAX_CONTEXT_CHARS  # from app.constants — 小健 2026-05-24
 
     # ===== 通用方法 =====
+
+    def _emit_step(self, step) -> dict:
+        """记录步骤并返回yield用的dict — 小健 2026-05-24
+        
+        统一 self.steps.append(step) + step.to_dict() 两步操作。
+        调用方: step_dict = self._emit_step(step); yield step_dict
+        """
+        self.steps.append(step)
+        return step.to_dict()
+
+    def _exit_with_error(self, step_count: int, error_type: str, error_message: str, recoverable: bool = False) -> dict:
+        """创建error_step并返回yield用的dict，同时设置FAILED状态 — 小健 2026-05-24
+        
+        统一 error_step创建 + append + status设置。
+        调用方: yield self._exit_with_error(...); self._on_after_loop(); return
+        """
+        self.status = AgentStatus.FAILED
+        error_step = StepFactory.create_error_step(
+            step=step_count,
+            error_type=error_type,
+            error_message=error_message,
+            recoverable=recoverable
+        )
+        return self._emit_step(error_step)
+
+    def _check_interrupt(self, step_count: int, running_tasks: Optional[Dict[str, Any]] = None) -> Optional[dict]:
+        """检查任务是否被中断，若中断返回interrupted_data的dict — 小健 2026-05-24
+        
+        统一4处中断检查逻辑。直接读取cancelled标志（非线程安全但可接受，
+        因为只是检查布尔值，与loop中现有模式一致）。
+        调用方: _int = self._check_interrupt(step_count, running_tasks); 
+               if _int: yield _int; self._on_after_loop(); return
+        """
+        task_id = getattr(self, '_task_id', None) or getattr(self, 'task_id', None)
+        if not task_id or not running_tasks:
+            return None
+        task_data = running_tasks.get(task_id, {})
+        if task_data.get("cancelled", False):
+            return create_incident_data(
+                incident_value='interrupted',
+                message='用户取消了任务',
+                step=step_count
+            )
+        return None
