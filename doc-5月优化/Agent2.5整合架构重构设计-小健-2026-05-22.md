@@ -580,34 +580,13 @@ async def _check_and_load_missing_tools(self, tool_calls: List[dict]) -> None:
 
 ---
 
-## 四、Phase 2: Agent架构 (GenericReactAgent + AgentProfile)
+## 四、Phase 2: Agent架构 — 【已完成，本章保留仅作设计依据参考】
+
+> Agent统一重构已实施完成：UniversalReactAgent(197行)+DesktopReactAgent(76行)+AgentConfig声明式注册表，AgentFactory重写为86行配置版。以下内容仅作设计依据存档。
 
 ### 4.1 为什么统一Agent
 
-**业界先验**：OpenAI Assistants API(1个Assistant=instructions+tools配置化)、AutoGPT(单Agent+全量工具)、LangChain Agent(单Agent+LLM自选)、Dify/Coze(1个Bot+插件配置)。多Agent框架(CrewAI/MetaGPT)的每个Agent有**本质不同行为逻辑**(产品经理写PRD≠工程师写代码)，非仅Prompt+Category差异。
-
-**【已完成】代码现状(v0.13.x)**：9个Agent子类已重构为2个类+声明式配置注册表：
-- `UniversalReactAgent`(universal_react.py, 197行) — 配置驱动通用Agent，替代原7个同质Agent
-- `DesktopReactAgent`(desktop_react.py, 76行) — 独立Agent(rollback=False特殊行为)
-- `AgentConfig` + `AGENT_REGISTRY`(agent_config.py) — 声明式配置注册表，5项(file/system/network/document/desktop)
-- FileReactAgent → rollback迁移至RollbackMixin，session/alias迁移至UniversalReactAgent，冗余方法已删除
-- TimeReactAgent → time映射为system别名，rollback_enabled=False
-- CodeExecutionReactAgent → code_execution映射为system别名
-- 旧9个子类文件已删除，__init__.py的__getattr__重定向兼容
-- AgentFactory已重写为86行声明式配置版本(resolve_agent_config)，旧键覆盖bug因重写不存在
-
-**统一1个的硬核收益**（已实现）：
-- 删除7个同质Agent文件 + 7个Prompt类 → 动态组合
-- AgentFactory重写(201行→86行)
-- 新增意图**零代码改动**(仅YAML配置)
-- 跨分类操作天然支持
-
-| Agent | 代码行数 | 实质差异 | 处置 | 状态 |
-|-------|---------|---------|------|------|
-| FileReactAgent | 385 | rollback/session/alias/Hook | →UniversalReactAgent+RollbackMixin | **已完成** |
-| TimeReactAgent | 98 | rollback=True/无normalize | →system别名 | **已完成** |
-| DesktopReactAgent | 76 | rollback=False特殊 | 保留独立子类 | **已完成** |
-| Shell/Network/System/Document/Database/CodeExecution | 73-76 | 仅Prompt+Category | →UniversalReactAgent+AgentConfig | **已完成** |
+**业界先验**：OpenAI Assistants API(1个Assistant=instructions+tools配置化)、AutoGPT(单Agent+全量工具)、LangChain Agent(单Agent+LLM自选)、Dify/Coze(1个Bot+插件配置)。
 
 ### 4.2 AgentProfile配置化
 
@@ -1337,26 +1316,16 @@ class ToolObserver:
 
 ### 7.1 删除文件
 
-| 文件/目录 | 删除理由 | 来源 | 状态 |
-|-----------|---------|------|------|
-| `preprocessing/pipeline.py` | 空壳，仅strip | 三大管线方案 | 待实施 |
-| `preprocessing/corrector.py` | TextCorrectorV2替代 | 预处理管线方案 | 待实施 |
-| `preprocessing/intent_classifier.py`中`IntentClassifier`类 | 死代码，只保留`classify_intent`函数 | Agent与意图分类方案 | 待实施 |
-| `intents/crss_scorer.py` | Semantic Router替代 | Agent高级调度方案 | 待实施 |
-| `intents/definitions/file/` | 工具列表过时，被IntentDefinition替代 | Agent与意图分类方案 | 待实施 |
-| `agent/agent_factory.py` | AgentRegistry替代 | Agent与意图分类方案 | **已完成**(重写为86行配置版) |
-| `agent/shell_react.py` | GenericReactAgent替代 | Agent与意图分类方案 | **已完成** |
-| `agent/network_react.py` | GenericReactAgent替代 | Agent与意图分类方案 | **已完成** |
-| `agent/desktop_react.py` | GenericReactAgent替代 | Agent与意图分类方案 | **已完成**(保留独立子类) |
-| `agent/system_react.py` | GenericReactAgent替代 | Agent与意图分类方案 | **已完成** |
-| `agent/document_react.py` | GenericReactAgent替代 | Agent与意图分类方案 | **已完成** |
-| `agent/database_react.py` | GenericReactAgent替代 | Agent与意图分类方案 | **已完成** |
-| `agent/code_execution_react.py` | GenericReactAgent替代(shell兼容别名) | 小沈审查v1.2补充 | **已完成** |
-| `agent/file_react.py` | →UniversalReactAgent+RollbackMixin | 小沈审查v1.6 | **已完成** |
-| `agent/time_react.py` | →system别名 | 小沈审查v1.6 | **已完成** |
-| `agent/parsers/` | 已废弃，用react_output_parser.py | AGENTS.md | 待实施 |
-| `services/command_security.py` | 核心逻辑迁移至ToolSafetyLayer后删除(946行→保留参数检查约100行) | 两个方案对比分析 + 小沈审查v1.2 | 待实施 |
-| `tools/desktop/gui_register.py`死代码 | GUI描述400行已不使用 | Agent与意图分类方案 | 待实施 |
+| 文件/目录 | 删除理由 | 来源 |
+|-----------|---------|------|
+| `preprocessing/pipeline.py` | 空壳，仅strip | 三大管线方案 |
+| `preprocessing/corrector.py` | TextCorrectorV2替代 | 预处理管线方案 |
+| `preprocessing/intent_classifier.py`中`IntentClassifier`类 | 死代码，只保留`classify_intent`函数 | Agent与意图分类方案 |
+| `intents/crss_scorer.py` | Semantic Router替代 | Agent高级调度方案 |
+| `intents/definitions/file/` | 工具列表过时，被IntentDefinition替代 | Agent与意图分类方案 |
+| `agent/parsers/` | 已废弃，用react_output_parser.py | AGENTS.md |
+| `services/command_security.py` | 核心逻辑迁移至ToolSafetyLayer后删除(946行→保留参数检查约100行) | 两个方案对比分析 + 小沈审查v1.2 |
+| `tools/desktop/gui_register.py`死代码 | GUI描述400行已不使用 | Agent与意图分类方案 |
 
 ### 7.2 保留文件
 
