@@ -1,3 +1,41 @@
+v0.13.35
+
+更新时间: 2026-05-24 19:13:00
+
+更新内容：
+
+## v0.13.34→v0.13.35 变更汇总 - 小健-2026-05-24
+
+### feat ToolStepMixin工具执行SRP提取（2个commit）
+
+| commit | 说明 |
+|--------|------|
+| 6ad8845d | feat: tool_step_mixin.py - 工具步骤编排混入类(SRP分离,从base_react.py迁入_execute_tool_step/+_resolve_fc_context/+_ToolStepOutcome) - 小健-2026-05-24 |
+| c57194fa | refactor: base_react.py/desktop_react.py/universal_react.py - 工具执行提取到ToolStepMixin(主循环-185行,主工具/并行工具统一_execute_tool_step) - 小健-2026-05-24 |
+
+### fix 3项缺陷修复（3个commit）
+
+| commit | 说明 |
+|--------|------|
+| 13af8bc9 | fix: message_builder.py - FC协议观察注入改用tool_call_id检查(避免tool_calls为空时false trigger) - 小健-2026-05-24 |
+| 5d28566c | fix: message_saver.py - _INVALID_SESSION_IDS加500上限防止无限增长内存泄漏 - 小健-2026-05-24 |
+| 279c0e95 | fix: react_sse_wrapper.py - CancelledError后保存异常改用logger.warning(原bare except丢失上下文) - 小健-2026-05-24 |
+
+### refactor 硬编码提取为常量（1个commit）
+
+| commit | 说明 |
+|--------|------|
+| ea08d700 | refactor: intent_classifier.py - 硬编码默认值提取为常量+使用DEFAULT_LLM_TIMEOUT替代60 - 小健-2026-05-24 |
+
+### docs 文档（2个commit）
+
+| commit | 说明 |
+|--------|------|
+| 4247eb77 | docs: AGENTS.md - 新增编码铁规章节(DRY/KISS/SLAP/SRP)+版本号更新v0.13.11→v0.13.33 - 小健-2026-05-24 |
+| 0969f527 | docs: 后端代码审查报告-138文件全景(DRY/KISS/SLAP/SRP逐文件评估+P0-P3问题清单+死代码分析) - 小健-2026-05-24 |
+
+---
+
 v0.13.34
 
 更新时间: 2026-05-24 18:40:34
