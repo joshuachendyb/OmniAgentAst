@@ -94,24 +94,30 @@ class TextStrategy(LLMStrategy):
         logger.info(f"[LLM Response Raw (text)] content={content}")
         
         # ===== 情况0: 空内容 =====
+        # 【LLM-001 小沈 2026-05-24】空内容/错误返回parse_error而非finish，
+        # 让base_react.py进入重试逻辑，而非当作正常完成
         if not content:
             logger.warning("[LLM Response] Warning: LLM returned empty content!")
-            # 如果有错误信息，生成更详细的错误提示
             if error_info:
                 error_hint = self._format_error_hint(error_info)
                 logger.warning(f"[LLM Response] Error hint: {error_hint}")
-                return self._make_result(
-                    content=f"[错误] {error_hint}",
-                    tool_name="finish",
-                    tool_params={"result": f"[错误] {error_hint}"}
-                )
-            # 没有具体错误信息时，使用统一的 empty_response 错误提示
+                return json.dumps({
+                    "type": "parse_error",
+                    "error": error_hint,
+                    "content": "",
+                    "tool_name": None,
+                    "tool_params": None,
+                    "reasoning": None
+                }, ensure_ascii=False)
             _, user_message = get_stream_error_info('empty_response')
-            return self._make_result(
-                content=f"⚠️ {user_message}",
-                tool_name="finish",
-                tool_params={"result": f"⚠️ {user_message}"}
-            )
+            return json.dumps({
+                "type": "parse_error",
+                "error": user_message,
+                "content": "",
+                "tool_name": None,
+                "tool_params": None,
+                "reasoning": None
+            }, ensure_ascii=False)
         
         # ===== P1: 使用 parse_react_response（第一层解析）=====
         # 【多层次解析架构说明】
@@ -394,12 +400,38 @@ class ToolsStrategy(LLMStrategy):
     def __init__(self, tools: Optional[List[Dict[str, Any]]] = None):
         """
         初始化 Function Calling 策略
-        
+
         Args:
             tools: 工具定义列表，格式参考 OpenAI tools 规范
         """
         self.tools = tools or []
-    
+
+    def _inject_tools_into_messages(self, messages: List[Dict]) -> List[Dict]:
+        """将tools定义作为文本注入到messages中（fallback到text模式时使用）— 小沈 2026-05-24"""
+        if not self.tools:
+            return messages
+        lines = ["【可用工具】"]
+        for t in self.tools:
+            func = t.get("function", {})
+            name = func.get("name", "")
+            desc = func.get("description", "")
+            params = func.get("parameters", {})
+            props = params.get("properties", {})
+            required = params.get("required", [])
+            param_strs = []
+            for pname, pinfo in props.items():
+                ptype = pinfo.get("type", "any")
+                pdesc = pinfo.get("description", "")
+                req = "(必填)" if pname in required else "(可选)"
+                param_strs.append(f"  - {pname}({ptype}){req}: {pdesc}" if pdesc else f"  - {pname}({ptype}){req}")
+            lines.append(f"- {name}: {desc}")
+            if param_strs:
+                lines.extend(param_strs)
+        if len(lines) <= 1:
+            return messages
+        tools_text = "\n".join(lines)
+        return [{"role": "system", "content": tools_text}] + list(messages)
+
     async def call(
         self,
         llm_client: Callable,
@@ -413,6 +445,10 @@ class ToolsStrategy(LLMStrategy):
         if not hasattr(llm_client, 'chat_with_tools'):
             logger.warning("[Function Calling] llm_client has no chat_with_tools method, falling back to text mode")
             text_strategy = TextStrategy()
+            # LLM-002: fallback前将tools定义注入到messages中 — 小沈 2026-05-24
+            if self.tools:
+                messages = self._inject_tools_into_messages(messages)
+                logger.info(f"[Function Calling] fallback前注入{len(self.tools)}个工具描述到messages")
             return await text_strategy.call(
                 llm_client=llm_client,
                 messages=messages,
@@ -480,6 +516,10 @@ class ToolsStrategy(LLMStrategy):
             else:
                 logger.warning("[Function Calling] Empty response, falling back to text mode")
                 text_strategy = TextStrategy()
+                # LLM-002: fallback前将tools定义注入到messages中 — 小沈 2026-05-24
+                if self.tools:
+                    messages = self._inject_tools_into_messages(messages)
+                    logger.info(f"[Function Calling] 空响应fallback前注入{len(self.tools)}个工具描述到messages")
                 return await text_strategy.call(
                     llm_client=llm_client, messages=messages,
                     conversation_history=conversation_history, **kwargs
