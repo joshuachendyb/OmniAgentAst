@@ -372,7 +372,13 @@ async def update_config(config_update: ConfigUpdate):
         # 【修正】更新AI模型 - 只更新顶层ai.model
         # 如果只传了ai_model没传ai_provider，使用当前配置的provider
         if config_update.ai_model:
-            provider = config_update.ai_provider or config_data.get('ai', {}).get('provider', 'zhipuai')
+            _ai_cfg = config_data.get('ai', {})
+            provider = config_update.ai_provider or _ai_cfg.get('provider')
+            if not provider:
+                for _k, _v in _ai_cfg.items():
+                    if isinstance(_v, dict) and _v.get('models'):
+                        provider = _k
+                        break
             if provider in config_data['ai']:
                 # 【修正】只更新顶层 ai.model
                 config_data['ai']['model'] = config_update.ai_model
