@@ -43,7 +43,7 @@ from app.services.agent.reasoning_steps import (
     ErrorStep,
 )
 from app.services.tools.registry import ToolCategory, get_tools_from_registry_by_category
-from app.services.agent.types import AgentStatus
+# 【修复 小健 2026-05-24】P2-1: 删除重复导入AgentStatus
 from app.services.preprocessing.intent_classifier import IntentClassifier  # 【步骤9】意图分类器
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_timestamp
@@ -125,8 +125,8 @@ class BaseAgent(ABC):
         self.empty_response_retry_count = 0  # 空响应重试计数器
         self.max_empty_response_retries = 2  # 空响应最大重试次数（截断历史后重试）
         
-        # 【Phase1修复】从registry加载工具 - 【修复 2026-05-10 小健】确保先注册再加载
-        self._tools_dict = self._load_tools()
+        # 【修复 小健 2026-05-24】P2-8: _load_tools移到子类_init_tools_and_executor统一调用，避免重复初始化
+        self._tools_dict = {}
         self._loaded_categories = set()
         if self.tool_category:
             self._loaded_categories.add(self.tool_category.value)
@@ -277,13 +277,12 @@ class BaseAgent(ABC):
 
         # 【2026-05-21 小沈】统一使用message_builder.invalidate_cache()清除全部缓存
         self.message_builder.invalidate_cache()
-        # mixin自身的缓存也需清除
-        if hasattr(self, '_cached_schema_text'):
-            delattr(self, '_cached_schema_text')
-        if hasattr(self, '_cached_tools_content'):
-            delattr(self, '_cached_tools_content')
-        if hasattr(self, '_last_injected_categories'):
-            delattr(self, '_last_injected_categories')
+        # 【修复 小健 2026-05-24】P2-9: 用try/except替代hasattr+delattr，消除TOCTOU风险
+        for _attr in ('_cached_schema_text', '_cached_tools_content', '_last_injected_categories'):
+            try:
+                delattr(self, _attr)
+            except AttributeError:
+                pass
 
         logger.info(f"[动态加载] 完成，新增{len(new_tools)}个工具，总计{len(self._tools_dict)}个")
     
@@ -324,6 +323,7 @@ class BaseAgent(ABC):
         # 初始化状态
         self.steps = []
         self.message_builder.reset_per_run()
+        # conversation_history是message_builder.conversation_history的引用别名
         self.conversation_history = self.message_builder.conversation_history
         self.status = AgentStatus.THINKING
         self.llm_call_count = 0
@@ -418,6 +418,8 @@ class BaseAgent(ABC):
                 # ===== 场景2：LLM返回空响应 =====
                 if not response:
                     self.empty_response_retry_count += 1
+                    # 【修复 小健 2026-05-24】P2-10: 空响应重试时重置parse_retry_count
+                    self.parse_retry_count = 0
                     logger.error(
                         f"[空响应] LLM返回空响应 (第{self.empty_response_retry_count}次重试), "
                         f"history长度={len(self.conversation_history)}"
@@ -426,11 +428,23 @@ class BaseAgent(ABC):
                     if self.empty_response_retry_count <= self.max_empty_response_retries:
                         # 【修复 2026-05-05 小沈】截断历史重试
                         original_len = len(self.conversation_history)
+                        # 【修复 小健 2026-05-24】P1-2: [:2]+[-2:]在短列表时产生重复条目
                         if original_len > 4:
-                            # 保留system prompt(前2条) + 最近2条，删除中间的
-                            kept = self.conversation_history[:2] + self.conversation_history[-2:]
+                            kept_head = self.conversation_history[:2]
+                            kept_tail = self.conversation_history[-2:]
+                            kept = kept_head + kept_tail
+                            seen_ids = set()
+                            deduped = []
+                            for item in kept:
+                                item_id = id(item)
+                                if item_id not in seen_ids:
+                                    seen_ids.add(item_id)
+                                    deduped.append(item)
+                            kept = deduped
                             removed_len = original_len - len(kept)
                             self.conversation_history = kept
+                            # 【修复 小健 2026-05-24】同步message_builder引用，避免断裂
+                            self.message_builder.conversation_history = kept
                             logger.warning(
                                 f"[空响应截断历史] 从{original_len}条截断到{len(kept)}条, "
                                 f"移除{removed_len}条中间历史, 准备重试"
@@ -497,6 +511,8 @@ class BaseAgent(ABC):
                         self.message_builder.temp_history.clear()
                         if chunk_buffer:
                             self.message_builder.add_assistant(chunk_buffer)
+                        # 【修复 小健 2026-05-24】P2-4: final步骤使用递增step_count
+                        step_count += 1
                         final_step = StepFactory.create_final_step(
                             step=step_count, response=chunk_buffer, thought=""
                         )
@@ -563,8 +579,9 @@ class BaseAgent(ABC):
                     self.steps.append(final_step)
                     yield final_step.to_dict()
                     
+                    # 【修复 小健 2026-05-24】P1-3: 正常完成设置COMPLETED
+                    self.status = AgentStatus.COMPLETED
                     self._on_after_loop()
-                    # FinalStep.is_done() 必然为 True，无需检查直接return
                     return
                 
                 # 【新增】thought_only类型：纯思考分支，继续下一轮循环
@@ -595,7 +612,8 @@ class BaseAgent(ABC):
                     # yield Step字典
                     yield thought_step.to_dict()
                     
-                    self.message_builder.add_assistant(response)
+                    # 【修复 小健 2026-05-24】P2-3: 注入结构化thought而非原始LLM文本
+                    self.message_builder.add_assistant(_thought_val)
                     
                     # 【修复D2】调用message_builder.trim_history防止历史无限增长
                     self.message_builder.trim_history()
@@ -710,11 +728,14 @@ class BaseAgent(ABC):
                 self.parse_retry_count = 0
                 
                 # flush chunk_buffer到正式会话历史（工具执行前保存LLM已输出的文本）
+                chunk_buffer_was_flushed = bool(chunk_buffer)
                 if chunk_buffer:
                     self.message_builder.temp_history.clear()
                     self.message_builder.add_assistant(chunk_buffer)
                     chunk_buffer = ""
                     consecutive_chunk_count = 0
+                else:
+                    chunk_buffer_was_flushed = False
 
                 # 【步骤2.9】使用StepFactory创建ThoughtStep
                 # 【修复 2026-05-05 小沈】thought去重拼接：thought和thought_content相同则不拼
@@ -764,7 +785,8 @@ class BaseAgent(ABC):
                 
                 execution_time_ms = 0
                 from app.services.context_vars import _current_task_id
-                _current_task_id.set(task_id)
+                # 【修复 小健 2026-05-24】P2-6: task_id可能为None，设为空字符串避免ContextVar存None
+                _current_task_id.set(task_id or "")
                 execution_result = await self._execute_tool(tool_name, tool_params)
                 if execution_result is None:
                     execution_result = {"code": -1, "message": f"工具 {tool_name} 返回None", "data": None}
@@ -822,9 +844,15 @@ class BaseAgent(ABC):
                 
                 # 【修正 2026-04-17 小沈】按照设计文档15.2.0.4执行顺序
                 # 步骤5：response 应该在 action_tool 之后再加入 conversation_history
-                self.message_builder.add_assistant(response)
+                # 【修复 小健 2026-05-24】P1-1: chunk_buffer已在行712-716 flush到历史，
+                # 此处再add_assistant(response)会重复注入chunk内容，跳过
+                # 对于无chunk的场景(parsed直接是action)，response未被注入，需要注入
+                if not chunk_buffer_was_flushed:
+                    self.message_builder.add_assistant(response)
                 
                 # ========== Observation 阶段（主工具的结果）==========
+                # 【修复 小健 2026-05-24】P1-3: 补全AgentStatus状态机
+                self.status = AgentStatus.OBSERVING
                 observation_text = self.message_builder.build_observation_text(execution_result)
                 
                 logger.info(f"[Debug] observation加入history: {observation_text[:100]}...")
@@ -834,7 +862,9 @@ class BaseAgent(ABC):
                     _chat_response = getattr(self, '_last_fc_raw_response', None)
                     if _chat_response and getattr(_chat_response, 'tool_calls', None):
                         tc = _chat_response.tool_calls[0]
-                        fc_context = {"tool_calls": _chat_response.tool_calls, "tool_call_id": tc.get("id", "")}
+                        # 【修复 小健 2026-05-24】P2-7: tc可能是pydantic model，无.get()方法
+                        _tc_id = getattr(tc, 'id', None) or (tc.get("id", "") if isinstance(tc, dict) else "")
+                        fc_context = {"tool_calls": _chat_response.tool_calls, "tool_call_id": _tc_id}
                 self.message_builder.add_observation(observation_text, self.llm_call_count, fc_context=fc_context)
 
                 # 记录观察结果到prompt日志
@@ -848,6 +878,7 @@ class BaseAgent(ABC):
                 )
 
                 # ===== 【步骤2.9】yield observation =====
+                # 【修复 小健 2026-05-24】P1-4: 统一前端yield和steps记录使用同一份execution_result
                 display_summary = execution_result.get('message', '')
                 display_result = dict(execution_result)
                 display_result['summary'] = display_summary
@@ -861,14 +892,8 @@ class BaseAgent(ABC):
                     return_direct=execution_result.get("return_direct", False)
                 )
 
-                # 【步骤2.10】记录步骤历史（用原始execution_result，不含警告，避免重复）
-                self.steps.append(StepFactory.create_observation_step(
-                    step=step_count,
-                    tool_name=tool_name,
-                    tool_params=tool_params,
-                    execution_result=execution_result,
-                    return_direct=execution_result.get("return_direct", False)
-                ))
+                # 【步骤2.10】记录步骤历史（统一使用display_result，数据一致）
+                self.steps.append(observation_step)
 
                 # yield带警告的版本给前端
                 yield observation_step.to_dict()
@@ -897,6 +922,8 @@ class BaseAgent(ABC):
                     )
                     self.steps.append(final_step)
                     yield final_step.to_dict()
+                    # 【修复 小健 2026-05-24】P1-3: return_direct完成设置COMPLETED
+                    self.status = AgentStatus.COMPLETED
                     self._on_after_loop()
                     return
 
@@ -1012,6 +1039,10 @@ class BaseAgent(ABC):
         except Exception as e:
             # ===== 【步骤2.9+2.11】场景1：未捕获异常 =====
             # 【步骤2.11】废弃create_error_from_exception，使用StepFactory.create_error_step
+            # 【修复 小健 2026-05-24】P1-3: 异常退出设置FAILED
+            self.status = AgentStatus.FAILED
+            # 【修复 小健 2026-05-24】P2-5: 异常退出清理temp_history
+            self.message_builder.temp_history.clear()
             import traceback; traceback.print_exc()
             logger.error(f"Agent run_stream error: {e}", exc_info=True)
             
