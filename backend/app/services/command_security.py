@@ -365,29 +365,6 @@ def _ensure_system_dirs_loaded():
     return _cached_system_dirs
 
 
-# ============================================================
-# CRSS评分系统常量定义 (设计文档v1.1)
-# ============================================================
-
-# 操作类型权重表（维度1）
-OPERATION_WEIGHTS = {
-    'READ': {'min': 0, 'max': 2, 'default': 1, 'keywords': ['cat', 'ls', 'grep', '查看', '读取', 'type', 'dir']},
-    'CREATE': {'min': 2, 'max': 4, 'default': 3, 'keywords': ['mkdir', 'touch', '创建', '新建', 'md']},
-    'UPDATE': {'min': 4, 'max': 7, 'default': 5, 'keywords': ['edit', 'sed', '修改', '编辑', '更新', 'echo', 'write']},
-    'DELETE': {'min': 6, 'max': 10, 'default': 8, 'keywords': ['rm', 'del', 'delete', '删除', 'remove', '清除', 'rmdir', 'rd']},
-    'COPY': {'min': 2, 'max': 5, 'default': 3, 'keywords': ['copy', 'cp', '复制', '拷贝']},
-    'MOVE': {'min': 2, 'max': 5, 'default': 3, 'keywords': ['move', 'mv', '移动']},
-    'EXEC': {'min': 5, 'max': 10, 'default': 7, 'keywords': ['sudo', 'run', 'exec', '执行', 'start']},
-}
-
-# 操作对象权重表（维度2）
-TARGET_WEIGHTS = {
-    'TEMP': {'min': 0, 'max': 4, 'default': 3, 'patterns': [r'\.tmp$', r'\.cache', r'^temp[/\\]', r'temp[/\\]', r'\.log$', r'log[/\\]', r'\*.tmp']},
-    'USER': {'min': 3, 'max': 5, 'default': 4, 'patterns': [r'~/', r'/home/', r'文档[/\\]', r'用户', r'documents', r'users?[/\\]']},
-    'PROJECT': {'min': 3, 'max': 6, 'default': 3, 'patterns': [r'src[/\\]', r'app[/\\]', r'backend[/\\]', r'frontend[/\\]', r'\.py', r'\.js', r'\.ts', r'tests[/\\]', r'config[/\\]', r'\.git']},
-    'SYSTEM': {'min': 8, 'max': 10, 'default': 9, 'patterns': [r'C:\\Windows', r'/bin', r'/etc', r'/sbin', r'/usr', r'系统', r'windows[/\\]system32', r'registry', r'密码', r'shadow', r'passwd', r'SAM', r'配置', r'注册表']},
-}
-
 # 项目保护目录列表（支持从配置文件加载）
 DEFAULT_PROJECT_PROTECTED_DIRS = [
     'backend/', 'frontend/', 'config/', 'tests/',
@@ -406,24 +383,6 @@ def get_project_protected_dirs() -> List[str]:
             return dirs
     return DEFAULT_PROJECT_PROTECTED_DIRS
 
-
-# 影响范围系数（维度3）
-SCOPE_MULTIPLIERS = {
-    'SINGLE_FILE': 1.1,     # 单文件：具体文件名，如 tests/11.txt 或 *.tmp
-    'DIRECTORY': 1.45,      # 目录：目录名/结尾，如 tests/ 或 src/
-    'CROSS_DIR': 1.5,        # 跨目录：包含通配符，如 tests/*.txt
-    'SYSTEM': 3.0,           # 系统级：-rf, /s /q, /
-}
-
-# 范围识别关键词
-SCOPE_PATTERNS = {
-    'SINGLE_FILE': [r'^[^*?]+\.[a-zA-Z0-9]+$', r'^[^*?/]+$'],  # 具体文件名
-    'DIRECTORY': [r'[/\\]$', r'\$'],                              # 以/或\结尾
-    # 只匹配明确的全盘操作，不匹配普通通配符
-    'CROSS_DIR': [r'所有', r'批量', r'全部'],
-    # 只匹配真正的系统级操作，不匹配普通盘符根目录（如E盘根目录）
-    'SYSTEM': [r'/s\s+/q', r'^[/\\]$', r'全盘', r'系统根目录', r'C:\\根目录', r'/根目录'],
-}
 
 
 # 危险命令模式（正则表达式）- 用于更灵活的匹配
