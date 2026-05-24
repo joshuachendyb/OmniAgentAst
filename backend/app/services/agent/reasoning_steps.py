@@ -922,7 +922,7 @@ class StepFactory:
             execution_status=_status,
             summary=execution_result.get("summary", ""),
             execution_result=execution_result.get("data"),
-            error_message="",
+            error_message=(execution_result.get("error_message", "") or execution_result.get("message", "")) if execution_result.get("code", 0) != 0 else "",
             action_retry_count=execution_result.get("retry_count", 0),
             execution_time_ms=execution_time_ms,
         )
