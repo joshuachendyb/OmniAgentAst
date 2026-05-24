@@ -168,6 +168,6 @@ async def shutdown_event():
 async def root():
     return {
         "message": "OmniAgentAst API",
-        "version": "0.2.2",
+        "version": app_version,
         "docs": "/docs"
     }
