@@ -84,8 +84,12 @@ def _format_llm_observation(result: dict) -> str:
     code = result.get("code", "SUCCESS")
     LLM_SAFE_LIMIT = 100_000
 
+    from app.utils.logger import logger as _logger
+
     if code == "SUCCESS":
         display_data = result.get("llm_data") or result.get("data")
+        if display_data is None:
+            _logger.warning("[OBS-001] _format_llm_observation: llm_data和data均为空")
         text = f"Observation: success - {result.get('message', '')}"
         if result.get("warning"):
             text += f"\n⚠ 警告: {result['warning']}"
