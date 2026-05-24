@@ -312,8 +312,8 @@ class ToolExecutor:
                     f"失败: {error_type.description} - {str(e)[:100]}"
                 )
                 
-                # 检查是否可重试
-                if not error_type.is_retryable:
+                # 检查是否可重试（is_retryable硬编码timeout + retryable_errors来自config）
+                if not (error_type.is_retryable or error_type.value in retry_policy.retryable_errors):
                     return {
                         "code": f"ERR_{error_type.value.upper()}",
                         "data": None,
