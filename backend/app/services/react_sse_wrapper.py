@@ -46,6 +46,24 @@ from app.services.agent.base_react import DEFAULT_MAX_STEPS
 from app.services.intents.crss_scorer import CRSS_CONFIDENCE_THRESHOLD  # 【修复 2026-05-13 小沈】H2: 改为从crss_scorer导入，切断与chat_router的循环依赖
 
 
+async def _yield_error_sse(
+    error_type: str, error_label: str, log_tag: str,
+    task_id: str, e: Exception, next_step, ai_service,
+    current_execution_steps, session_id
+) -> str:
+    """统一的错误SSE响应 — 消除_run_agent_sse/_run_generic的重复错误处理"""
+    logger.error(f"{log_tag} 执行出错：task_id={task_id}, error={e}", exc_info=True)
+    error_step_obj = StepFactory.create_error_step(
+        step=next_step(), error_type=error_type, error_message=error_label,
+        recoverable=False, model=ai_service.model, provider=ai_service.provider
+    )
+    error_step_dict = error_step_obj.to_dict()
+    error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
+    current_execution_steps.append(error_step_dict)
+    await save_execution_steps_to_db(session_id, current_execution_steps, error_label)
+    return error_response
+
+
 # ============================================================
 # SSE 格式化函数
 # ============================================================
@@ -281,19 +299,11 @@ async def _run_agent_sse_stream(
                 await asyncio.sleep(0.05)
     
     except Exception as e:
-        logger.error(f"{_LOG_TAG} 执行出错：task_id={task_id}, error={e}", exc_info=True)
-        error_step_obj = StepFactory.create_error_step(
-            step=next_step(),
-            error_type=f'{intent_type}_operation_error',
-            error_message=_ERROR_LABEL,
-            recoverable=False,
-            model=ai_service.model,
-            provider=ai_service.provider
+        error_response = await _yield_error_sse(
+            error_type=f'{intent_type}_operation_error', error_label=_ERROR_LABEL, log_tag=_LOG_TAG,
+            task_id=task_id, e=e, next_step=next_step, ai_service=ai_service,
+            current_execution_steps=current_execution_steps, session_id=session_id
         )
-        error_step_dict = error_step_obj.to_dict()
-        error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
-        current_execution_steps.append(error_step_dict)
-        await save_execution_steps_to_db(session_id, current_execution_steps, _ERROR_LABEL)
         yield error_response
     finally:
         # 【修复 2026-05-10 小沈】将 Agent 内真实 LLM 调用次数回传给外层日志（generate_sse_stream 中 llm_call_count 从未递增）
@@ -326,7 +336,6 @@ async def _run_generic_sse_stream(
     """
     from app.services.agent.base_react import BaseAgent
     from app.services.agent.llm_strategies import TextStrategy
-    from app.services.agent.reasoning_steps import StepFactory
     
     _LOG_TAG = "[GenericOp]"
     _ERROR_LABEL = "操作执行失败"
@@ -381,7 +390,6 @@ async def _run_generic_sse_stream(
             async with running_tasks_lock:
                 is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
                 if is_cancelled:
-                    from app.chat_stream.error_handler import create_incident_data
                     logger.info(f"[InterruptCheck] 任务 {task_id} 取消状态: {is_cancelled}")
                     interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
                     yield f"data: {json.dumps(interrupted_data)}\n\n"
@@ -400,19 +408,11 @@ async def _run_generic_sse_stream(
                 await asyncio.sleep(0.05)
     
     except Exception as e:
-        logger.error(f"{_LOG_TAG} 执行出错：task_id={task_id}, error={e}", exc_info=True)
-        error_step_obj = StepFactory.create_error_step(
-            step=next_step(),
-            error_type='generic_operation_error',
-            error_message=_ERROR_LABEL,
-            recoverable=False,
-            model=ai_service.model,
-            provider=ai_service.provider
+        error_response = await _yield_error_sse(
+            error_type='generic_operation_error', error_label=_ERROR_LABEL, log_tag=_LOG_TAG,
+            task_id=task_id, e=e, next_step=next_step, ai_service=ai_service,
+            current_execution_steps=current_execution_steps, session_id=session_id
         )
-        error_step_dict = error_step_obj.to_dict()
-        error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
-        current_execution_steps.append(error_step_dict)
-        await save_execution_steps_to_db(session_id, current_execution_steps, _ERROR_LABEL)
         yield error_response
 
 
