@@ -212,7 +212,7 @@ class PromptLogger:
         message_summaries = []
         for i, msg in enumerate(messages):
             role = msg.get("role", "unknown")
-            content = msg.get("content", "")
+            content = msg.get("content") or ""
             message_summaries.append({
                 "序号": i + 1,
                 "角色": role,
