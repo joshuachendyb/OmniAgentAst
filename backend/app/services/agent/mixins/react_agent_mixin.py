@@ -330,31 +330,3 @@ class ReactAgentMixin(ToolLoaderMixin):
         )
     
     # ===== 任务追踪管理 =====
-    
-    def _on_task_init(self, task: str, context=None):
-        """任务开始追踪Hook"""
-        from app.services.agent.mixins.task_tracker import get_task_tracker
-        if not self.task_id:
-            # task_id为空时才需要创建
-            from uuid import uuid4
-            self.task_id = str(uuid4())
-            self._task_created_by_agent = True
-        
-        # 创建追踪记录
-        if self._task_tracker:
-            agent_id = self.__class__.__name__.replace('ReactAgent', '').lower()
-            self._task_tracker.create_task(
-                task_id=self.task_id,
-                agent_id=agent_id,
-                task_description=task
-            )
-    
-    def _on_task_complete(self):
-        """任务结束追踪Hook"""
-        if self._task_created_by_agent and self.task_id and self._task_tracker:
-            try:
-                agent_id = self.__class__.__name__.replace('ReactAgent', '').lower()
-                self._task_tracker.complete_task(self.task_id, agent_id=agent_id, success=True)
-                self._task_created_by_agent = False
-            except Exception as e:
-                logger.error(f"Failed to complete task tracking: {e}")

@@ -83,28 +83,8 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, RollbackMixin, BaseAge
     
     # ===== Hook 实现 =====
     
-    def _on_session_init(self, task: str, context: Optional[Dict[str, Any]]):
-        if self.config.rollback_enabled:
-            task_id = self.task_id
-            if not task_id:
-                task_id = self._task_tracker.create_task(
-                    agent_id=f"{self.config.intent_type}-agent",
-                    task_description=task
-                )
-                self._task_created_by_agent = True
-                logger.info(f"Task created in run_stream(): {task_id}")
-    
     def _on_before_loop(self, sys_prompt: str, task_prompt: str, context: Optional[Dict[str, Any]] = None):
         pass
-    
-    def _on_after_loop(self):
-        if self.config.rollback_enabled and self._task_created_by_agent and self.task_id and self._task_tracker:
-            try:
-                self._task_tracker.complete_task(self.task_id, success=True)
-                logger.info(f"Session completed in run_stream: {self.task_id}")
-                self._task_created_by_agent = False
-            except Exception as e:
-                logger.error(f"Failed to complete session {self.task_id}: {e}")
     
     # ===== run() 方法（file 等需要回滚的 category 使用）=====
     
