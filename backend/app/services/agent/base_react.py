@@ -310,17 +310,18 @@ class BaseAgent(ABC):
         2. Action - 执行工具
         3. Observation - LLM 根据结果更新思考
         
-        【重构 2026-04-11 小沈】按照"先 break → 循环外 yield"原则重构：
-        - 场景1-4（错误场景）：循环内 break → 循环外 yield error
-        - 场景5（正常完成）：循环内 break → 循环外 yield final
-        - yield error/final 后就是最后一个 step，不需要额外的 final step
-        
-        场景编号：
-        1. 未捕获异常 - except块捕获
-        2. LLM返回空响应
-        3. 超过最大步数
-        4. 解析失败 - 重试3次
-        5. 正常完成（finish）
+        循环内分支（按处理顺序）：
+        1. 最大步数检查 → 退出
+        2. 中断检查 → 退出
+        3. LLM调用 + 返回后中断检查 → 退出
+        4. 空响应 → 截断历史重试 / 退出
+        5. 解析响应 → 按type分支：
+           - chunk → 无工具Agent退出 / 阈值退出 / continue
+           - answer/implicit → 正常完成退出
+           - thought_only → continue
+           - parse_error → 重试 / 退出
+           - action → 工具执行(Thought→Action→Observation) → 退出或继续
+        6. 未捕获异常(except) → 退出
         """
         # 初始化状态
         self.steps = []
@@ -353,6 +354,13 @@ class BaseAgent(ABC):
         # chunk处理相关变量
         chunk_buffer = ""
         consecutive_chunk_count = 0
+        # 缓存有效工具名集合（每次循环复用，避免重复获取）
+        _valid_tool_names = {"finish"}
+        try:
+            from app.services.tools.registry import tool_registry
+            _valid_tool_names = {t["name"] for t in tool_registry.list_tools()} | {"finish"}
+        except Exception as _e:
+            logger.debug(f"[工具名验证] 获取工具列表失败: {_e}, 仅允许finish")
         # 超时机制
         # ===== 场景1：未捕获异常 (try...except包裹整个循环) =====
         try:
@@ -588,9 +596,18 @@ class BaseAgent(ABC):
                     
                     continue  # 继续下一轮循环
                 
-                # ===== 【深度优化】问题3：检查解析是否失败 =====
+                # ===== 无效工具名保护：type=action但tool_name无效时转为parse_error =====
+                # 【修复 小健 2026-05-24】空工具名保护
+                # 【修复 小健 2026-05-24】Bug#9: ToolRegistry无instance()方法，需用模块级tool_registry变量
+                if parsed["type"] != "parse_error":
+                    if not tool_name or tool_name not in _valid_tool_names:
+                        logger.warning(f"[parse_react_response] 空工具名或无效工具名: tool_name={tool_name!r}, parsed_type={parsed['type']}, 转为parse_error")
+                        parsed = {"type": "parse_error", "error": f"LLM返回无效工具名: {tool_name!r}"}
+                
+                # ===== 检查解析是否失败 =====
                 # 不再依赖 "⚠️" 符号，改用显式的 type="parse_error" 判断
                 # parse_error表示解析失败，需要重试；error表示真实运行错误
+                # （也处理上方无效工具名转来的parse_error）
                 if parsed["type"] == "parse_error":
                     error_msg = parsed.get("error", "Unknown parse error")
                     logger.warning(f"[parse_react_response] 情况4: 解析错误: {error_msg}, 重试次数={self.parse_retry_count}")
@@ -649,30 +666,6 @@ class BaseAgent(ABC):
                     continue
                 
                 # ===== 【步骤2.9】情况1：工具调用（Action）=====
-                # 【修复 小健 2026-05-24】空工具名保护：type=action但tool_name无效时视为parse_error
-                # 【修复 小健 2026-05-24】Bug#9: ToolRegistry无instance()方法，需用模块级tool_registry变量
-                _valid_tool_names = {"finish"} 
-                try:
-                    from app.services.tools.registry import tool_registry
-                    _valid_tool_names = {t["name"] for t in tool_registry.list_tools()} | {"finish"}
-                except Exception as _e:
-                    logger.debug(f"[工具名验证] 获取工具列表失败: {_e}, 仅允许finish")
-                if not tool_name or tool_name not in _valid_tool_names:
-                    logger.warning(f"[parse_react_response] 空工具名或无效工具名: tool_name={tool_name!r}, parsed_type={parsed['type']}, 视为parse_error")
-                    parsed = {"type": "parse_error", "error": f"LLM返回无效工具名: {tool_name!r}"}
-                    self.parse_retry_count += 1
-                    if self.parse_retry_count >= self.max_parse_retries:
-                        yield self._exit_with_error(step_count, "parse_error", f"LLM反复返回无效工具名（已重试{self.max_parse_retries}次）")
-                        self._on_after_loop()
-                        return
-                    retrying_data = create_incident_data(
-                        incident_value="retrying",
-                        message=f"LLM返回无效工具名，正在重试（第{self.parse_retry_count}次）",
-                        step=step_count
-                    )
-                    yield retrying_data
-                    continue
-
                 logger.info(f"[parse_react_response] 情况1: type=action, tool={tool_name}")
                 # 获取thought和reasoning字段
                 thought = parsed.get("thought", "")
@@ -705,11 +698,7 @@ class BaseAgent(ABC):
                     reasoning=reasoning
                 )
 
-                # 【步骤2.10】记录步骤历史
-                self.steps.append(thought_step)
-
-                # yield Step字典
-                yield thought_step.to_dict()
+                yield self._emit_step(thought_step)
                 
                 # 【修正 2026-04-17 小沈】删除：response 提前加入 conversation_history
                 # 按照设计文档15.2.0.4，response 应该在 action_tool 之后才加入
@@ -750,20 +739,8 @@ class BaseAgent(ABC):
                 # 【步骤2.9】根据执行结果构建 action_tool
                 
                 # 【步骤2.9】统一执行结果字典格式（供StepFactory使用）
-                _status = extract_status(execution_result)
-                exec_status = _status
-                execution_result_dict = {
-                    "status": _status,
-                    "summary": execution_result.get("message", ""),
-                    "data": execution_result.get("data"),
-                    "retry_count": execution_result.get("retry_count", 0),
-                    "code": execution_result.get("code", "SUCCESS"),
-                    "warning": execution_result.get("warning"),
-                    "attachment": execution_result.get("attachment"),
-                    "next_actions": execution_result.get("next_actions"),
-                    "return_direct": execution_result.get("return_direct", False),
-                    "error_message": execution_result.get("error_message", ""),
-                }
+                execution_result_dict = self._build_execution_result_dict(execution_result)
+                exec_status = execution_result_dict["status"]
 
                 # 【步骤2.9】使用StepFactory创建ActionToolStep
                 action_step = StepFactory.create_action_tool_step(
@@ -774,11 +751,7 @@ class BaseAgent(ABC):
                     execution_time_ms=execution_time_ms
                 )
 
-                # 【步骤2.10】记录步骤历史
-                self.steps.append(action_step)
-
-                # yield Step字典
-                yield action_step.to_dict()
+                yield self._emit_step(action_step)
                 
                 # 【修正 2026-04-17 小沈】按照设计文档15.2.0.4执行顺序
                 # 步骤5：response 应该在 action_tool 之后再加入 conversation_history
@@ -830,11 +803,7 @@ class BaseAgent(ABC):
                     return_direct=execution_result.get("return_direct", False)
                 )
 
-                # 【步骤2.10】记录步骤历史（统一使用display_result，数据一致）
-                self.steps.append(observation_step)
-
-                # yield带警告的版本给前端
-                yield observation_step.to_dict()
+                yield self._emit_step(observation_step)
                 
                 # 【步骤9】检查是否需要动态加载新工具
                 # 在Observation之后、下一轮LLM调用前检查
@@ -858,8 +827,7 @@ class BaseAgent(ABC):
                         model=getattr(self, 'model', None),
                         provider=getattr(self, 'provider', None)
                     )
-                    self.steps.append(final_step)
-                    yield final_step.to_dict()
+                    yield self._emit_step(final_step)
                     # 【修复 小健 2026-05-24】P1-3: return_direct完成设置COMPLETED
                     self.status = AgentStatus.COMPLETED
                     self._on_after_loop()
@@ -888,35 +856,21 @@ class BaseAgent(ABC):
                             p_result = {"code": -1, "message": f"并行工具 {p_name} 返回None", "data": None}
                         p_time = int((time.perf_counter() - start_p) * 1000)
                     
-                        _p_code = p_result.get("code", "SUCCESS")
-                        p_result_dict = {
-                            "status": "success" if _p_code == "SUCCESS" and not p_result.get("warning") else ("warning" if _p_code.startswith("WARNING_") or p_result.get("warning") else "error"),
-                            "summary": p_result.get("message", ""),
-                            "data": p_result.get("data"),
-                            "retry_count": p_result.get("retry_count", 0),
-                            "code": _p_code,
-                            "warning": p_result.get("warning"),
-                            "attachment": p_result.get("attachment"),
-                            "next_actions": p_result.get("next_actions"),
-                            "return_direct": p_result.get("return_direct", False),
-                            "error_message": p_result.get("error_message", ""),
-                        }
+                        p_result_dict = self._build_execution_result_dict(p_result)
                     
                         p_action_step = StepFactory.create_action_tool_step(
                             step=step_count, tool_name=p_name, tool_params=p_params,
                             execution_result=p_result_dict,
                             execution_time_ms=p_time
                         )
-                        self.steps.append(p_action_step)
-                        yield p_action_step.to_dict()
+                        yield self._emit_step(p_action_step)
                     
                         p_obs_step = StepFactory.create_observation_step(
                             step=step_count, tool_name=p_name, tool_params=p_params,
                             execution_result=p_result_dict,
                             return_direct=False
                         )
-                        self.steps.append(p_obs_step)
-                        yield p_obs_step.to_dict()
+                        yield self._emit_step(p_obs_step)
                         p_obs_text = self.message_builder.build_observation_text(p_result)
                         _fc_handled = False
                         if getattr(self, '_strategy', None) == "tools":
@@ -965,14 +919,12 @@ class BaseAgent(ABC):
                             step=step_count, tool_name=p_name, tool_params=p_params,
                             execution_result=_p_err_dict, execution_time_ms=0
                         )
-                        self.steps.append(p_action_step)
-                        yield p_action_step.to_dict()
+                        yield self._emit_step(p_action_step)
                         p_obs_step = StepFactory.create_observation_step(
                             step=step_count, tool_name=p_name, tool_params=p_params,
                             execution_result=_p_err_dict, return_direct=False
                         )
-                        self.steps.append(p_obs_step)
-                        yield p_obs_step.to_dict()
+                        yield self._emit_step(p_obs_step)
         
         except Exception as e:
             # ===== 【步骤2.9+2.11】场景1：未捕获异常 =====
@@ -1037,3 +989,23 @@ class BaseAgent(ABC):
                 step=step_count
             )
         return None
+
+    @staticmethod
+    def _build_execution_result_dict(execution_result: Dict[str, Any]) -> Dict[str, Any]:
+        """从工具返回结果构建统一格式dict（供StepFactory使用）— 小健 2026-05-24
+        
+        统一主工具和并行工具的execution_result_dict构建逻辑。
+        """
+        _status = extract_status(execution_result)
+        return {
+            "status": _status,
+            "summary": execution_result.get("message", ""),
+            "data": execution_result.get("data"),
+            "retry_count": execution_result.get("retry_count", 0),
+            "code": execution_result.get("code", "SUCCESS"),
+            "warning": execution_result.get("warning"),
+            "attachment": execution_result.get("attachment"),
+            "next_actions": execution_result.get("next_actions"),
+            "return_direct": execution_result.get("return_direct", False),
+            "error_message": execution_result.get("error_message", ""),
+        }
