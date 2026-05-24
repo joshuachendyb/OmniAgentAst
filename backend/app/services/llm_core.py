@@ -22,6 +22,7 @@ import httpcore
 from typing import List, Dict, Optional, AsyncGenerator, Any
 
 from app.utils.logger import logger
+from app.constants import RATE_LIMIT_STATUS_CODES, DEFAULT_CONNECT_TIMEOUT, DEFAULT_WRITE_TIMEOUT, DEFAULT_POOL_TIMEOUT, DEFAULT_PROBE_TIMEOUT, LLM_MAX_CONNECTIONS, LLM_MAX_KEEPALIVE
 
 
 def _convert_xml_tool_call_to_json(content: str) -> Optional[str]:
@@ -166,16 +167,17 @@ class BaseAIService:
         
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(
-                connect=30.0,  # 【2026-05-14 小健/小沈】httpx 0.26.0→0.28.1后TLS偶发超时，10→30
-                read=self.timeout,  # 【LLM-006 小沈 2026-05-24】read=None → self.timeout(60s)，防止无限等待
-                write=10.0,
-                pool=10.0,
+                connect=DEFAULT_CONNECT_TIMEOUT,
+                read=self.timeout,
+                write=DEFAULT_WRITE_TIMEOUT,
+                pool=DEFAULT_POOL_TIMEOUT,
             ),
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
+            limits=httpx.Limits(max_connections=LLM_MAX_CONNECTIONS, max_keepalive_connections=LLM_MAX_KEEPALIVE)
         )
         
         self._cancelled = False
         self._current_response: Optional[httpx.Response] = None
+        self._supports_reasoning: Optional[bool] = None
 
     async def __call__(self, message: str, history: Optional[List[Dict]] = None) -> "ChatResponse":
         """使BaseAIService可调用，兼容策略层直接调用 llm_client(msg, history) 的约定"""
@@ -226,9 +228,11 @@ class BaseAIService:
         self._cancelled = False
         self._current_response = None
     
+    RATE_LIMIT_STATUS_CODES = RATE_LIMIT_STATUS_CODES
+
     def _is_rate_limit_status(self, status_code: int) -> bool:
-        """判断HTTP状态码是否为限流"""
-        return status_code == 429 or status_code == 1305
+        """判断HTTP状态码是否为限流 — 标准HTTP 429 + 非标准限流码 — 小健 2026-05-24"""
+        return status_code in self.RATE_LIMIT_STATUS_CODES
     
     async def _post_with_retry(self, url: str, headers: dict, json_body: dict, max_retries: int = 3, retry_delay: float = 2.0):
         """带429指数退避重试的POST请求 — 在传输层统一处理限流"""
@@ -254,6 +258,52 @@ class BaseAIService:
         """
         return _StreamRetryContext(self, url, headers, json_body, max_retries, retry_delay)
     
+    async def _detect_reasoning_support(self) -> bool:
+        """通过API探测模型是否支持reasoning_content — 小健 2026-05-24
+
+        发一个简单请求，检查响应message中是否包含reasoning_content字段。
+        首次探测后缓存到 _supports_reasoning，不再重复请求。
+        """
+        if self._supports_reasoning is not None:
+            return self._supports_reasoning
+        try:
+            async with httpx.AsyncClient(timeout=DEFAULT_PROBE_TIMEOUT) as client:
+                response = await client.post(
+                    f"{self.api_base}/chat/completions",
+                    headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+                    json={"model": self.model, "messages": [{"role": "user", "content": "1+1=?"}], "stream": False}
+                )
+                if response.status_code == 200:
+                    message = response.json().get("choices", [{}])[0].get("message", {})
+                    self._supports_reasoning = "reasoning_content" in message
+                else:
+                    self._supports_reasoning = False
+        except Exception as e:
+            logger.warning(f"[reasoning探测] 探测失败，默认不支持: {e}")
+            self._supports_reasoning = False
+        logger.info(f"[reasoning探测] model={self.model}, supports_reasoning={self._supports_reasoning}")
+        return self._supports_reasoning
+
+    @staticmethod
+    def _fix_thinking_messages(messages: List[Dict], is_thinking: bool) -> List[Dict]:
+        """修复thinking模型消息兼容性 — 小健 2026-05-24
+
+        thinking模型(如deepseek-v3/r1)要求assistant消息必须包含
+        reasoning_content或tool_calls字段，否则API返回400。
+
+        修复策略：对缺少reasoning_content且无tool_calls的assistant消息，
+        将content移入reasoning_content字段，content置空字符串。
+        """
+        if not is_thinking:
+            return messages
+        for msg in messages:
+            if msg.get("role") == "assistant" and not msg.get("tool_calls"):
+                if "reasoning_content" not in msg:
+                    content = msg.get("content") or ""
+                    msg["reasoning_content"] = content
+                    msg["content"] = ""
+        return messages
+
     def _build_messages(self, message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
         """构建消息列表 — message为空时直接返回history，否则拼接"""
         if not message and history:
@@ -314,6 +364,9 @@ class BaseAIService:
         """发送对话请求（流式返回）"""
         self.reset_cancel()
         messages = self._build_messages(message, history)
+        is_thinking = await self._detect_reasoning_support()
+        if is_thinking:
+            messages = self._fix_thinking_messages(messages, True)
         
         logger.info(f"[LLM Request] model={self.model}, messages数量={len(messages)}, 首条消息={messages[0] if messages else '无'}")
         
@@ -555,6 +608,9 @@ class BaseAIService:
         self.reset_cancel()
         try:
             messages = self._build_messages(message, history)
+            is_thinking = await self._detect_reasoning_support()
+            if is_thinking:
+                messages = self._fix_thinking_messages(messages, True)
             
             request_json = {
                 "model": self.model,
@@ -715,6 +771,9 @@ class BaseAIService:
         
         try:
             messages = self._build_messages(message, history)
+            is_thinking = await self._detect_reasoning_support()
+            if is_thinking:
+                messages = self._fix_thinking_messages(messages, True)
             
             request_json = {
                 "model": self.model,
