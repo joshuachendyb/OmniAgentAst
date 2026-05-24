@@ -21,9 +21,6 @@ from app.utils.logger import logger
 class AgentFactory:
     """智能体工厂 — 基于声明式配置"""
     
-    _AGENTS: Dict[str, Type[BaseAgent]] = {}
-    _TOOL_CATEGORIES: Dict[str, Optional[ToolCategory]] = {}
-    
     @classmethod
     def create(
         cls,
@@ -76,18 +73,6 @@ class AgentFactory:
         )
     
     @classmethod
-    def register(
-        cls,
-        intent_type: str,
-        agent_class: Type[BaseAgent],
-        tool_category: Optional[ToolCategory] = None
-    ):
-        """注册新的Agent（向后兼容接口）"""
-        cls._AGENTS[intent_type] = agent_class
-        if tool_category:
-            cls._TOOL_CATEGORIES[intent_type] = tool_category
-    
-    @classmethod
     def list_available_agents(cls) -> Dict[str, str]:
         """列出所有可用的Agent"""
         result = {}
@@ -98,10 +83,4 @@ class AgentFactory:
         return result
 
 
-for config in AGENT_REGISTRY.values():
-    AgentClass = DesktopReactAgent if config.intent_type == "desktop" else UniversalReactAgent
-    AgentFactory._AGENTS[config.intent_type] = AgentClass
-    AgentFactory._TOOL_CATEGORIES[config.intent_type] = config.category
-    for alias in config.aliases:
-        AgentFactory._AGENTS[alias] = AgentClass
-        AgentFactory._TOOL_CATEGORIES[alias] = config.category
+

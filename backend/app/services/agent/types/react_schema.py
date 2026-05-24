@@ -512,17 +512,4 @@ def _build_detailed_schema(tool: Any) -> Dict[str, Any]:
     }
 
 
-def _build_brief_schema(tool: Any, score: float) -> Dict[str, Any]:
-    """构建简要Schema（用于低置信度意图）"""
-    return {
-        "type": "function",
-        "function": {
-            "name": tool.name,
-            "description": f"【简要】{tool.description[:50]}... 置信度: {score:.2f}",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    }
+

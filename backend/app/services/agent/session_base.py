@@ -162,10 +162,6 @@ class SessionStatsMixin:
             "updated_at": datetime.now()
         }
     
-    def clear_stats_cache(self) -> None:
-        """清空统计缓存"""
-        self._stats_cache.clear()
-
 
 __all__ = [
     "SessionServiceBase",

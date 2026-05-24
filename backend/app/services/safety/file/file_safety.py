@@ -19,7 +19,6 @@ from app.db.operations_db import get_connection
 from app.db.config import OPERATIONS_DB_PATH
 from app.db.models.operation_enums import OperationType, OperationStatus
 from app.db.models.operation_models import OperationRecord, SessionRecord
-from app.db.models.operation_orm import OperationRecordORM
 from app.utils.logger import logger
 
 
