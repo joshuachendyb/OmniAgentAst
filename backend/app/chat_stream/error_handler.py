@@ -252,7 +252,7 @@ def get_function_call_error_info(error: Exception) -> Dict[str, Any]:
             "retryable": True,
             "retry_after": 10
         }
-    elif "502" in error_msg or "502" in error_msg:
+    elif "502" in error_msg or "bad gateway" in error_msg.lower():
         return {
             "code": "BAD_GATEWAY",
             "message": "AI服务网关错误 (errorcode=502)，请稍后重试",
