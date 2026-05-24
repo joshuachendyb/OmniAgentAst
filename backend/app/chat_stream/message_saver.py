@@ -19,8 +19,15 @@
                        └── ExecutionStepsUpdate 数据类
 """
 
-from typing import List, Dict, Optional, Callable, Any
+from typing import List, Dict, Optional, Callable, Any, Set
 from app.chat_stream.chat_helpers import create_timestamp
+
+_INVALID_SESSION_IDS: Set[str] = set()
+
+
+def mark_session_valid(session_id: str) -> None:
+    """标记会话为有效（新会话创建时调用，清除可能的无效标记）— 小健 2026-05-24"""
+    _INVALID_SESSION_IDS.discard(session_id)
 
 
 # ============================================================
@@ -57,6 +64,9 @@ async def save_execution_steps_to_db(
     if session_id is None:
         return
     
+    if session_id in _INVALID_SESSION_IDS:
+        return
+    
     try:
         # 如果没传 user_message_id，从缓存获取
         if user_message_id is None:
@@ -72,9 +82,12 @@ async def save_execution_steps_to_db(
             )
         )
     except Exception as e:
-        # 记录错误但不抛出异常，避免中断流式响应
         from app.utils.logger import logger
-        logger.error(f"[Save] 保存失败: {e}", exc_info=True)
+        if "会话不存在" in str(e) or "404" in str(e):
+            _INVALID_SESSION_IDS.add(session_id)
+            logger.warning(f"[Save] 会话不存在，已标记跳过: session_id={session_id}")
+        else:
+            logger.error(f"[Save] 保存失败: {e}", exc_info=True)
 
 
 async def add_step_and_save(
