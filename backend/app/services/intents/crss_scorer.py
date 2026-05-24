@@ -181,20 +181,32 @@ def _match_keywords(keywords: list, chinese_keywords: list, text: str) -> float:
         if kw in text and not _is_negated(kw, text):
             score += 2.0
     for pattern in keywords:
+        # 【修复 小健 2026-05-24】P2-16: 只去掉\b边界标记，其他反斜杠转义保留原样
         keyword = pattern.replace(r'\b', '')
+        if keyword != pattern and '\\' in keyword:
+            keyword = keyword.replace(r'\\', '\\')
         if _ascii_word_boundary_match(keyword, text):
             score += 1.0
     return score
 
 
 def _is_negated(keyword: str, text: str) -> bool:
-    """检查中文关键词前是否有否定前缀 - 小健 2026-05-13"""
-    idx = text.find(keyword)
-    if idx < 0:
-        return False
-    prefix = text[max(0, idx - 2):idx].strip()
+    """检查中文关键词前是否有否定前缀 - 小健 2026-05-13
+    【修复 小健 2026-05-24】P2-15: 检查所有出现位置，若存在未被否定的出现则返回False
+    """
     negation_words = ["不", "没", "别", "勿", "无", "未", "非", "没有", "不要", "不用"]
-    return any(negation in prefix for negation in negation_words)
+    start = 0
+    has_non_negated = False
+    while True:
+        idx = text.find(keyword, start)
+        if idx < 0:
+            break
+        prefix = text[max(0, idx - 2):idx].strip()
+        if not any(negation in prefix for negation in negation_words):
+            has_non_negated = True
+            break
+        start = idx + len(keyword)
+    return not has_non_negated and text.find(keyword) >= 0
 
 
 def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
