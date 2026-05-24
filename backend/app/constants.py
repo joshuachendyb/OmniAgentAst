@@ -152,6 +152,12 @@ ERROR_TYPE_MAP = {
     API_ERROR_504: ("timeout", "AI服务响应超时 (errorcode=504)，请稍后重试"),
     "unknown": ("server", "AI服务暂无响应，请稍后重试"),
     "empty_response": ("server", "AI服务返回空响应，请稍后重试"),
+    # 【新增 2026-05-25 小健】get_function_call_error_info 所需的消息键
+    "http_error": ("server", "服务器响应异常，请稍后重试"),
+    "validation_error": ("validation", "参数值错误，请检查输入"),
+    "not_found": ("file_system", "文件或资源不存在"),
+    "permission_denied": ("security", "权限不足，无法执行操作"),
+    "unknown_fallback": ("unknown", "AI 处理异常，请稍后重试"),
 }
 
 # ============================================================
