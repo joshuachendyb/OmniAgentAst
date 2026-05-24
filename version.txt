@@ -1,3 +1,35 @@
+v0.13.39
+
+更新时间: 2026-05-25 08:30:00
+
+更新内容：
+
+## v0.13.38→v0.13.39 变更汇总 - 小健-2026-05-25
+
+| commit | 说明 |
+|--------|------|
+| (本次) | docs: 后端代码审查报告 补写第23~27章完整深度分析+第20~27章标准化升级+所有13~27章头部插入X.0工作要求节 - 小健-2026-05-25 |
+
+---
+
+v0.13.38
+
+更新时间: 2026-05-24 23:47:20
+
+更新内容：
+
+## v0.13.37→v0.13.38 变更汇总 - 小沈-2026-05-24
+
+| commit | 说明 |
+|--------|------|
+| 51b273d7 | refactor: llm_core.py 提取_parse_sse_lines消除SSE循环~80行重复+_ERROR_TYPE_MAP合并7个except块 - 小沈-2026-05-24 |
+| 87d222e9 | fix: react_sse_wrapper.py 修复line384错误模块导入(Interrupt被吞为error P1)+提取_yield_error_sse消除12行重复 - 小沈-2026-05-24 |
+| b26e86cd | refactor: react_output_parser.py 删除全库零引用的_extract_by_known_tools死代码(激活版在TextStrategy) - 小沈-2026-05-24 |
+| 2bdb3d6e | fix: universal_react.py _execute_tool传已解析的action而非original_action(消除冗余二次别名解析 P3) - 小沈-2026-05-24 |
+| d41c4441 | fix: logger.py 删除_check_and_rotate_log_file消除双重日切实现(emit自动处理+首次init不自加handler) - 小沈-2026-05-24 |
+
+---
+
 v0.13.37
 
 更新时间: 2026-05-24 20:50:00
