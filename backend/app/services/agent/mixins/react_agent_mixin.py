@@ -258,7 +258,7 @@ class ReactAgentMixin(ToolLoaderMixin):
                 "max_steps": self.max_steps,
                 "use_function_calling": getattr(self, 'use_function_calling', False),
                 "trim_info": getattr(self, '_last_trim_info', None),
-                "total_chars": sum(len(m.get("content","")) for m in assembled_messages),
+                "total_chars": sum(len(m.get("content") or "") for m in assembled_messages),
             }
         )
         try:
