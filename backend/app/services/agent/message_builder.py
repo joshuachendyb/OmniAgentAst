@@ -24,17 +24,18 @@ import hashlib
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.agent.tool_result_formatter import _format_llm_observation
+from app.constants import MAX_CONTEXT_CHARS, TEMP_HISTORY_CHAR_LIMIT, OBSERVATION_BUDGET_DECAY, OBSERVATION_BUDGET_MIN, OBSERVATION_BUDGET_MAX
 
 
 class MessageBuilder:
     """Prompt/Message组装的统一入口"""
 
     # ===== 观测文本构建常量（从base_react.py搬入）=====
-    OBSERVATION_BUDGET_DECAY = 10000
-    OBSERVATION_BUDGET_MIN = 20000
+    OBSERVATION_BUDGET_DECAY = OBSERVATION_BUDGET_DECAY
+    OBSERVATION_BUDGET_MIN = OBSERVATION_BUDGET_MIN
     OBSERVATION_HEAD_RATIO = 0.6
 
-    def __init__(self, max_context_chars: int = 150000):
+    def __init__(self, max_context_chars: int = MAX_CONTEXT_CHARS):
         self.conversation_history: List[Dict[str, Any]] = []
         self.temp_history: List[Dict[str, Any]] = []
         self.MAX_CONTEXT_CHARS = max_context_chars
@@ -130,7 +131,6 @@ class MessageBuilder:
 
     def _cap_temp_history(self):
         """对temp_history加字符容量限制（最多50000字符），从最旧条目开始截断"""
-        TEMP_HISTORY_CHAR_LIMIT = 50000
         while self._total_chars(self.temp_history) > TEMP_HISTORY_CHAR_LIMIT and len(self.temp_history) > 1:
             self.temp_history.pop(0)
 
@@ -282,7 +282,7 @@ class MessageBuilder:
     def _get_observation_budget(llm_call_count: int) -> int:
         """计算observation可用预算 — 替代 base_react.py L1378-1382"""
         budget = MessageBuilder.OBSERVATION_BUDGET_MIN + MessageBuilder.OBSERVATION_BUDGET_DECAY * max(0, 5 - llm_call_count)
-        return min(budget, 50000)
+        return min(budget, OBSERVATION_BUDGET_MAX)
 
     @staticmethod
     def _smart_truncate(content: str, budget: int, head_ratio: float = None) -> str:
