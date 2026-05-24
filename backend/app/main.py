@@ -59,9 +59,15 @@ app = FastAPI(
 print("OmniAgentAst Backend v" + app_version + " started")
 
 # CORS配置 - 显式指定前端源，避免通配符与credentials冲突
+import os
+from app.constants import DEFAULT_CORS_ORIGINS
+
+_cors_origins_str = os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS)
+_cors_origins = [origin.strip() for origin in _cors_origins_str.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
