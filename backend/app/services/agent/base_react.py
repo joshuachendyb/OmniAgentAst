@@ -458,7 +458,7 @@ class BaseAgent(ABC):
                 
                 # ===== 先获取 parsed 结果 =====
                 thought_content = parsed.get("content", "")
-                tool_name = parsed.get("tool_name") or parsed.get("action_tool") or "finish"
+                tool_name = parsed.get("tool_name") or parsed.get("action_tool")
                 tool_params = parsed.get("tool_params", parsed.get("params", {}))
                 
                 # ===== chunk类型处理（流式中间文本片段，非完成信号）=====
