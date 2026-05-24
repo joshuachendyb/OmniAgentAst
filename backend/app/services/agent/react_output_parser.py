@@ -2432,11 +2432,25 @@ def _extract_json_with_balanced_braces(text: str) -> Tuple[Optional[str], str]:
     content_before = text[:start_idx].strip()
     
     # 平衡括号匹配
+    # 【修复 小健 2026-05-24】P1-5: 跟踪字符串内花括号，避免JSON值含{}时误匹配
     stack = []
     end_idx = None
+    in_string = False
+    escape_next = False
     
     for i in range(start_idx, len(text)):
         char = text[i]
+        if escape_next:
+            escape_next = False
+            continue
+        if char == '\\' and in_string:
+            escape_next = True
+            continue
+        if char == '"' and not escape_next:
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
         if char in '{[':
             stack.append(char)
         elif char == '}' and stack and stack[-1] == '{':
@@ -2461,7 +2475,13 @@ def _extract_json_with_balanced_braces(text: str) -> Tuple[Optional[str], str]:
     # 这允许后续降级策略尝试挽救性解析
     # ==========================================================================
     if stack:  # 括号未闭合，JSON被截断
-        return text[start_idx:], content_before
+        # 【修复 小健 2026-05-24】P1-6: 尝试补全缺失的闭合括号，提高截断JSON的挽救率
+        truncated = text[start_idx:]
+        for _ in range(len(stack)):
+            opener = stack.pop()
+            closer = '}' if opener == '{' else ']'
+            truncated += closer
+        return truncated, content_before
     
     # 没有找到完整JSON
     return None, content_before
