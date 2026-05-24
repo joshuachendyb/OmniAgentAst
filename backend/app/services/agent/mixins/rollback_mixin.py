@@ -7,6 +7,7 @@ Author: 小强 - 2026-05-23
 from typing import Dict, Any, Optional
 
 from app.utils.logger import logger
+from app.services.agent.types import AgentStatus
 
 
 class RollbackMixin:
@@ -47,7 +48,6 @@ class RollbackMixin:
                     else:
                         raise ValueError(f"No operation_id found for step {step.step_number}")
             
-            from app.services.agent.types import AgentStatus
             self.status = AgentStatus.ROLLED_BACK
             return success
             
