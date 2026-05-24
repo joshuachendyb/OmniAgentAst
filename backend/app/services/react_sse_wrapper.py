@@ -247,7 +247,8 @@ async def _run_agent_sse_stream(
         async for event in agent.run_stream(
             task=last_message, context=None,
             max_steps=max_steps, task_id=task_id,
-            running_tasks=running_tasks
+            running_tasks=running_tasks,
+            step_counter=next_step
         ):
             # 检查中断
             async with running_tasks_lock:
@@ -373,7 +374,8 @@ async def _run_generic_sse_stream(
         async for event in agent.run_stream(
             task=last_message, context=None,
             max_steps=_generic_max_steps, task_id=task_id,
-            running_tasks=running_tasks
+            running_tasks=running_tasks,
+            step_counter=next_step
         ):
             # 中断检查
             async with running_tasks_lock:
@@ -387,7 +389,8 @@ async def _run_generic_sse_stream(
                     await save_execution_steps_to_db(session_id, current_execution_steps, "")
                     break
             
-            sse_data = _format_sse_event(event, next_step(), ai_service.model, ai_service.provider)
+            sse_step = event.get('step') if isinstance(event, dict) else None
+            sse_data = _format_sse_event(event, sse_step if sse_step is not None else next_step(), ai_service.model, ai_service.provider)
             if sse_data:
                 if sse_data.startswith("data: "):
                     step_data = json.loads(sse_data[6:])
@@ -713,7 +716,10 @@ async def generate_sse_stream(
             step=next_step()
         )
         current_execution_steps.append(interrupted_step)
-        await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
+        try:
+            await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
+        except Exception:
+            pass
         
         try:
             interrupted_data = create_incident_data('interrupted', '客户端断开连接，任务中断')
