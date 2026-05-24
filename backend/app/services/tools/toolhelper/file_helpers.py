@@ -1901,38 +1901,18 @@ async def get_file_info_impl(
             return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"File not found: {file_path}"}
         
         def _get_info_sync():
-            stat = path.stat(follow_symlinks=follow_symlinks)
-            info = {
-                "path": str(path.absolute()),
-                "name": path.name,
-                "type": "directory" if path.is_dir() else "file",
-                "size": stat.st_size,
-                "created_time": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                "modified_time": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                "accessed_time": datetime.fromtimestamp(stat.st_atime).isoformat(),
-                "is_readable": os.access(path, os.R_OK),
-                "is_writable": os.access(path, os.W_OK),
-                "is_executable": os.access(path, os.X_OK),
-            }
+            meta_result = get_file_metadata(file_path, follow_symlinks)
+            if not meta_result.get("success"):
+                raise RuntimeError(meta_result.get("error", "获取文件元数据失败"))
+            info = meta_result["metadata"]
             
-            if not follow_symlinks and path.is_symlink():
-                info["is_symlink"] = True
-                try:
-                    info["symlink_target"] = str(os.readlink(path))
-                except OSError:
-                    info["symlink_target"] = None
-            else:
-                info["is_symlink"] = path.is_symlink()
-            
-            if path.is_file():
-                info["extension"] = path.suffix
-                info["parent_directory"] = str(path.parent)
-            elif path.is_dir():
+            if path.is_dir():
                 try:
                     import time as _time
                     from app.services.tools.tool_meta import get_timeout as _get_timeout
                     _gi_deadline = _time.monotonic() + _get_timeout("get_file_info") - 2
-                    _fc = 0; _dc = 0
+                    _fc = 0
+                    _dc = 0
                     for _p in path.rglob("*"):
                         if _time.monotonic() > _gi_deadline:
                             import logging; logging.getLogger(__name__).warning(f"[get_file_info] 超时自检触发，提前返回 file_count={_fc}, dir_count={_dc}")
