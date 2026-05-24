@@ -944,19 +944,3 @@ from app.services.command_parser import (
     TARGET_WEIGHTS,
     SCOPE_MULTIPLIERS,
 )
-
-
-def calculate_confidence(command: str, op_type: str, op_target: str, scope: str) -> float:
-    """
-    计算评分置信度
-    
-    基于各维度解析的置信度综合计算
-    """
-    type_result = parse_operation_type_v2(command)
-    type_confidence = type_result[1] if isinstance(type_result, tuple) else 1.0
-    
-    target_result = parse_operation_target_v2(command)
-    target_confidence = target_result[1] if isinstance(target_result, tuple) else 1.0
-    
-    confidence = (type_confidence + target_confidence) / 2
-    return confidence
