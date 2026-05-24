@@ -22,7 +22,7 @@ import httpcore
 from typing import List, Dict, Optional, AsyncGenerator, Any
 
 from app.utils.logger import logger
-from app.constants import RATE_LIMIT_STATUS_CODES, DEFAULT_CONNECT_TIMEOUT, DEFAULT_WRITE_TIMEOUT, DEFAULT_POOL_TIMEOUT, DEFAULT_PROBE_TIMEOUT, LLM_MAX_CONNECTIONS, LLM_MAX_KEEPALIVE
+from app.constants import RATE_LIMIT_STATUS_CODES, DEFAULT_CONNECT_TIMEOUT, DEFAULT_WRITE_TIMEOUT, DEFAULT_POOL_TIMEOUT, DEFAULT_PROBE_TIMEOUT, LLM_MAX_CONNECTIONS, LLM_MAX_KEEPALIVE, DEFAULT_LLM_TIMEOUT
 
 
 def _convert_xml_tool_call_to_json(content: str) -> Optional[str]:
@@ -149,7 +149,7 @@ class BaseAIService:
     新增provider只需在配置文件中添加配置，零代码修改！
     """
     
-    def __init__(self, api_key: str, model: str, api_base: str, provider: str = "", timeout: int = 60,
+    def __init__(self, api_key: str, model: str, api_base: str, provider: str = "", timeout: int = DEFAULT_LLM_TIMEOUT,
                  max_tokens: int = 4096, temperature: float = 0.7, seed: Optional[int] = None):
         self.api_key = api_key
         self.model = model
@@ -160,9 +160,9 @@ class BaseAIService:
         self.seed = seed
         
         try:
-            timeout_value = float(timeout) if timeout else 60.0
+            timeout_value = float(timeout) if timeout else float(DEFAULT_LLM_TIMEOUT)
         except (ValueError, TypeError):
-            timeout_value = 60.0
+            timeout_value = float(DEFAULT_LLM_TIMEOUT)
         self.timeout = int(timeout_value)
         
         self.client = httpx.AsyncClient(
