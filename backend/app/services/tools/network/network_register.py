@@ -27,6 +27,21 @@ Network Register - 网络通信工具注册点
 # ============================================================
 from app.services.tools.registry import register_tool, ToolCategory, tool_registry
 from app.utils.logger import logger
+from typing import Optional
+
+
+def _http_request_failure_hint(tool_params: Optional[dict] = None) -> str:
+    """http_request失败时的国内替代URL提示 — 小健 2026-05-24"""
+    failed_url = (tool_params or {}).get("url", "")
+    hint = "⚠️ 网络请求失败。如果是访问国外服务超时，请换用国内可达的替代地址：\n"
+    hint += "  - 查公网IP → 用 https://httpbin.org/ip 或 https://myip.ipip.net\n"
+    hint += "  - 查IP详情 → 用 https://ipapi.co/json/ 或 https://ip.sb/api/\n"
+    hint += "  - DNS查询 → 用 https://dns.alidns.com/resolve?name=域名&type=A\n"
+    hint += "  - 网络连通 → 用 ping 测试国内域名(如 baidu.com)\n"
+    if failed_url:
+        hint += f"  失败URL: {failed_url}\n"
+    hint += "请勿重复请求同一失败URL！"
+    return hint
 
 # 导入 Pydantic 模型
 from app.services.tools.network.network_schema import (
@@ -191,6 +206,7 @@ def _register_network_tools():
     for tool_name in NETWORK_TOOL_DESCRIPTIONS:
         input_model = NETWORK_TOOL_INPUT_MODELS[tool_name]
         examples = NETWORK_TOOL_EXAMPLES.get(tool_name, [])
+        failure_hint_fn = _http_request_failure_hint if tool_name == "http_request" else None
         tool_registry.register(
             name=tool_name,
             description=NETWORK_TOOL_DESCRIPTIONS[tool_name],
@@ -198,6 +214,7 @@ def _register_network_tools():
             input_model=input_model,
             category=ToolCategory.NETWORK,
             examples=examples,
+            failure_hint_fn=failure_hint_fn,
         )
         logger.info(
             f"[network_register] 已注册工具: {tool_name}, 使用 Pydantic 模型: {input_model.__name__}, examples: {len(examples)}个"
