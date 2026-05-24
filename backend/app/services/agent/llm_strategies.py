@@ -34,6 +34,17 @@ class LLMStrategy(ABC):
         """调用 LLM — messages是完整的消息列表（含system/user/assistant/tool）"""
         pass
     
+    def _make_parse_error(self, error: str, content: str = "") -> str:
+        """构建parse_error返回（消除5倍内联字典重复）- 小沈 2026-05-24"""
+        return json.dumps({
+            "type": "parse_error",
+            "error": error,
+            "content": content,
+            "tool_name": None,
+            "tool_params": None,
+            "reasoning": None
+        }, ensure_ascii=False)
+    
     def _make_result(self, content: str, tool_name: str, tool_params: dict, reasoning: Any = None, response: str = "") -> str:
         """构建返回结果（基类方法，供子类使用）- 小沈2026-05-07加response字段"""
         result = {
@@ -101,23 +112,9 @@ class TextStrategy(LLMStrategy):
             if error_info:
                 error_hint = self._format_error_hint(error_info)
                 logger.warning(f"[LLM Response] Error hint: {error_hint}")
-                return json.dumps({
-                    "type": "parse_error",
-                    "error": error_hint,
-                    "content": "",
-                    "tool_name": None,
-                    "tool_params": None,
-                    "reasoning": None
-                }, ensure_ascii=False)
+                return self._make_parse_error(error_hint)
             _, user_message = get_stream_error_info('empty_response')
-            return json.dumps({
-                "type": "parse_error",
-                "error": user_message,
-                "content": "",
-                "tool_name": None,
-                "tool_params": None,
-                "reasoning": None
-            }, ensure_ascii=False)
+            return self._make_parse_error(user_message)
         
         # ===== P1: 使用 parse_react_response（第一层解析）=====
         # 【多层次解析架构说明】
@@ -240,14 +237,10 @@ class TextStrategy(LLMStrategy):
         #   - 第二层 _extract_by_known_tools 也没找到工具名
         #   - 所有解析层都失败，返回 parse_error 让 base_react.py 处理
         logger.info(f"[TextStrategy] 所有解析层都失败，返回 parse_error")
-        return json.dumps({
-            "type": "parse_error",
-            "error": "无法从 LLM 响应中提取工具调用（tool_name 或 tool_params 缺失）",
-            "content": content,
-            "tool_name": None,
-            "tool_params": None,
-            "reasoning": None
-        }, ensure_ascii=False)
+        return self._make_parse_error(
+            "无法从 LLM 响应中提取工具调用（tool_name 或 tool_params 缺失）",
+            content=content
+        )
     
     # ===== 方案A：分级错误信息 =====
     ERROR_HINTS = {
@@ -406,6 +399,19 @@ class ToolsStrategy(LLMStrategy):
         """
         self.tools = tools or []
 
+    async def _fallback_to_text(self, messages: List[Dict], **kwargs) -> str:
+        """fallback到TextStrategy（消除重复3次的内联回退模式）- 小沈 2026-05-24"""
+        text_strategy = TextStrategy()
+        if self.tools:
+            messages = self._inject_tools_into_messages(messages)
+            logger.info(f"[Function Calling] fallback前注入{len(self.tools)}个工具描述到messages")
+        return await text_strategy.call(
+            llm_client=kwargs.pop('llm_client'),
+            messages=messages,
+            conversation_history=kwargs.pop('conversation_history'),
+            **kwargs
+        )
+
     def _inject_tools_into_messages(self, messages: List[Dict]) -> List[Dict]:
         """将tools定义作为文本注入到messages中（fallback到text模式时使用）— 小沈 2026-05-24"""
         if not self.tools:
@@ -444,17 +450,7 @@ class ToolsStrategy(LLMStrategy):
         
         if not hasattr(llm_client, 'chat_with_tools'):
             logger.warning("[Function Calling] llm_client has no chat_with_tools method, falling back to text mode")
-            text_strategy = TextStrategy()
-            # LLM-002: fallback前将tools定义注入到messages中 — 小沈 2026-05-24
-            if self.tools:
-                messages = self._inject_tools_into_messages(messages)
-                logger.info(f"[Function Calling] fallback前注入{len(self.tools)}个工具描述到messages")
-            return await text_strategy.call(
-                llm_client=llm_client,
-                messages=messages,
-                conversation_history=conversation_history,
-                **kwargs
-            )
+            return await self._fallback_to_text(messages, **kwargs)
         
         try:
             response = await llm_client.chat_with_tools(
@@ -470,14 +466,7 @@ class ToolsStrategy(LLMStrategy):
                 logger.error(f"[Function Calling] API Error: {error_msg}")
                 error_type = resolve_http_error_type(error_msg)
                 error_code, error_message = get_stream_error_info(error_type, original_message=error_msg)
-                return json.dumps({
-                    "type": "parse_error",
-                    "error": error_message,
-                    "content": f"[错误] {error_message}",
-                    "tool_name": None,
-                    "tool_params": None,
-                    "reasoning": None
-                }, ensure_ascii=False)
+                return self._make_parse_error(error_message, content=f"[错误] {error_message}")
             
             if hasattr(response, 'content') and response.content:
                 raw_content = response.content
@@ -515,24 +504,12 @@ class ToolsStrategy(LLMStrategy):
                     return content
             else:
                 logger.warning("[Function Calling] Empty response, falling back to text mode")
-                text_strategy = TextStrategy()
-                # LLM-002: fallback前将tools定义注入到messages中 — 小沈 2026-05-24
-                if self.tools:
-                    messages = self._inject_tools_into_messages(messages)
-                    logger.info(f"[Function Calling] 空响应fallback前注入{len(self.tools)}个工具描述到messages")
-                return await text_strategy.call(
-                    llm_client=llm_client, messages=messages,
-                    conversation_history=conversation_history, **kwargs
-                )
+                return await self._fallback_to_text(messages, **kwargs)
         except Exception as e:
             logger.error(f"[Function Calling] Exception: {e}")
             error_type = resolve_http_error_type(str(e))
             error_code, error_message = get_stream_error_info(error_type, original_message=str(e))
-            return json.dumps({
-                "type": "parse_error", "error": error_message,
-                "content": f"[错误] {error_message}",
-                "tool_name": None, "tool_params": None, "reasoning": None
-            }, ensure_ascii=False)
+            return self._make_parse_error(error_message, content=f"[错误] {error_message}")
     
     def _format_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> str:
         """
