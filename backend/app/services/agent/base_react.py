@@ -298,7 +298,8 @@ class BaseAgent(ABC):
         context: Optional[Dict[str, Any]] = None,
         max_steps: int = DEFAULT_MAX_STEPS,
         task_id: Optional[str] = None,
-        running_tasks: Optional[Dict[str, Any]] = None
+        running_tasks: Optional[Dict[str, Any]] = None,
+        step_counter: Optional[Callable[[], int]] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         ReAct 核心循环
@@ -369,7 +370,7 @@ class BaseAgent(ABC):
                     self._on_after_loop()
                     return
 
-                step_count += 1
+                step_count = step_counter() if step_counter else (step_count + 1)
                 
                 # =====【中断检查】每次循环开始检查任务是否被取消 - 小欧-2026-04-21 =====
                 if task_id and running_tasks:
@@ -512,7 +513,7 @@ class BaseAgent(ABC):
                         if chunk_buffer:
                             self.message_builder.add_assistant(chunk_buffer)
                         # 【修复 小健 2026-05-24】P2-4: final步骤使用递增step_count
-                        step_count += 1
+                        step_count = step_counter() if step_counter else (step_count + 1)
                         final_step = StepFactory.create_final_step(
                             step=step_count, response=chunk_buffer, thought=""
                         )
@@ -633,12 +634,16 @@ class BaseAgent(ABC):
                     
                     # 【修复 小健 2026-05-16】网络/API错误不注入history，只有LLM格式错误才注入
                     _err = str(error_msg).lower()
-                    is_network_error = any(kw in _err for kw in [
-                        "429", "rate_limit", "请求过于频繁",
-                        "readerror", "connecttimeout", "connectionerror",
-                        "timeout", "服务调用失败", "api请求",
-                        "502", "503", "504", "network",
-                    ])
+                    _error_type = None
+                    try:
+                        from app.chat_stream.error_handler import resolve_http_error_type
+                        _error_type = resolve_http_error_type(error_msg)
+                    except Exception:
+                        pass
+                    is_network_error = _error_type is not None and (
+                        _error_type.startswith("api_error_") and _error_type != "api_error_400"
+                        or _error_type in ("network", "connect", "protocol", "timeout")
+                    )
                     if not is_network_error:
                         # LLM格式错误：添加提示到历史，引导LLM修复
                         self.message_builder.add_observation(f"Parse Error: {error_msg}. Please ensure your response follows the ReAct format (Thought -> Action -> Action Input).")
@@ -646,7 +651,7 @@ class BaseAgent(ABC):
                         # 网络/API错误：不注入history，给前端提示，直接重试
                         logger.info(f"[parse_react_response] 网络/API错误，不注入history: {error_msg}")
                         # 【修复 小健 2026-05-21】429等网络错误添加指数退避等待
-                        _is_429 = "429" in _err or "rate_limit" in _err or "请求过于频繁" in _err
+                        _is_429 = _error_type == "api_error_429"
                         if _is_429:
                             _retry_delay = 2.0 * (2 ** self.parse_retry_count)
                             logger.warning(f"[parse_react_response] 429限流, 等待{_retry_delay:.0f}s后重试 (第{self.parse_retry_count+1}次)")
