@@ -24,8 +24,13 @@ import httpx
 import os
 from typing import Any, Optional, List, Dict
 
+from app.constants import DEFAULT_LLM_TIMEOUT
+
 # ============== 配置加载 ==============
 # 【修复 2026-04-20 小沈】意图分类器使用固定模型，不受用户切换AI影响
+
+_DEFAULT_INTENT_MODEL = "gemma3:4b"
+_DEFAULT_OLLAMA_API_BASE = "https://ollama.com/v1"
 # 问题原因：之前从config读取qiniu.models[0]，切换AI会导致意图分类器模型变化
 
 def _load_intent_config() -> dict:
@@ -41,19 +46,19 @@ def _load_intent_config() -> dict:
             config = yaml.safe_load(f)
         oc_config = config.get("ai", {}).get("ollamacloud", {})
         oc_models = oc_config.get("models", [])
-        fallback_model = oc_models[0] if oc_models else "gemma3:4b"
+        fallback_model = oc_models[0] if oc_models else _DEFAULT_INTENT_MODEL
         return {
-            "api_base": oc_config.get("api_base", "https://ollama.com/v1"),
+            "api_base": oc_config.get("api_base", _DEFAULT_OLLAMA_API_BASE),
             "api_key": oc_config.get("api_key", ""),
             "model": oc_config.get("intent_model", fallback_model),
-            "timeout": oc_config.get("timeout", 60)
+            "timeout": oc_config.get("timeout", DEFAULT_LLM_TIMEOUT)
         }
     except Exception:
         return {
-            "api_base": "https://ollama.com/v1",
+            "api_base": _DEFAULT_OLLAMA_API_BASE,
             "api_key": "",
-            "model": "gemma3:4b",
-            "timeout": 60
+            "model": _DEFAULT_INTENT_MODEL,
+            "timeout": DEFAULT_LLM_TIMEOUT
         }
 
 INTENT_CLASSIFIER_CONFIG = _load_intent_config()
