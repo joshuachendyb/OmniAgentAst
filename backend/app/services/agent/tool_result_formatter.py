@@ -54,6 +54,26 @@ def extract_status(result: dict) -> str:
         return "error"
 
 
+def build_execution_result_dict(execution_result: Dict[str, Any]) -> Dict[str, Any]:
+    """从工具返回结果构建统一格式dict（供StepFactory使用）— 小健 2026-05-24
+
+    统一主工具和并行工具的execution_result_dict构建逻辑。
+    """
+    _status = extract_status(execution_result)
+    return {
+        "status": _status,
+        "summary": execution_result.get("message", ""),
+        "data": execution_result.get("data"),
+        "retry_count": execution_result.get("retry_count", 0),
+        "code": execution_result.get("code", "SUCCESS"),
+        "warning": execution_result.get("warning"),
+        "attachment": execution_result.get("attachment"),
+        "next_actions": execution_result.get("next_actions"),
+        "return_direct": execution_result.get("return_direct", False),
+        "error_message": execution_result.get("error_message", ""),
+    }
+
+
 def _safe_truncate(data: Any, limit: int) -> Any:
     """安全截断：仅防 json.dumps OOM，非业务截断 — 小沈 2026-05-21"""
     if isinstance(data, dict):
@@ -93,11 +113,12 @@ def _format_next_actions(result: dict, text: str) -> str:
     return text + "\n".join(na_lines)
 
 
-def _format_llm_observation(result: dict) -> str:
+def _format_llm_observation(result: dict, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
     """
     格式化工具结果为LLM observation文本 — 小沈 2026-05-21
     更新 2026-05-22 小健：合入next_actions拼接逻辑（从base_react.py搬入）
     工具通过 llm_data 自行控制给LLM的数据量，格式化层不做业务截断
+    更新 2026-05-24 小健：增加 tool_name/tool_params 参数供 failure hint 使用
     """
     code = result.get("code", "SUCCESS")
     LLM_SAFE_LIMIT = 100_000
@@ -130,8 +151,6 @@ def _format_llm_observation(result: dict) -> str:
 
     else:  # ERR_*
         text = f"Observation: error [{code}] - {result.get('message', '')}"
-        tool_name = result.get("tool_name")
-        tool_params = result.get("tool_params")
         if tool_name:
             hint = _get_failure_hint(tool_name, tool_params)
             if hint:
