@@ -422,54 +422,31 @@ def resolve_http_error_type(error_message: str) -> Optional[str]:
     """
     从错误消息字符串中解析并返回 HTTP 错误类型标识
     
-    【重构 2026-04-10 小沈】
-    从 chat_stream_query.py 迁移到此模块，符合单一职责原则
-    
-    优先级匹配原则：
-    1. 优先使用原始HTTP错误码（429、500等）- 保留API返回的真实信息
-    2. 没有错误码时，才从语义推断 - 作为备用方案
-    
-    Args:
-        error_message: 原始错误消息字符串
-    
-    Returns:
-        HTTP 错误类型标识（如 'api_error_429', 'api_error_500' 等）
-        如果无法解析，返回 None
+    【重构 小健 2026-05-24】用结构化映射表+正则提取替换硬编码字符串匹配
     """
     if not error_message:
         return None
     
+    from app.constants import API_ERROR_PREFIX
+    _STATUS_TO_ERROR = {
+        429: "api_error_429", 503: "api_error_503", 524: "api_error_524",
+        500: "api_error_500", 502: "api_error_502", 504: "api_error_504",
+        401: "api_error_401", 403: "api_error_403", 400: "api_error_400",
+    }
+    
+    import re
+    for match in re.finditer(r'\b(\d{3})\b', error_message):
+        code = int(match.group(1))
+        if code in _STATUS_TO_ERROR:
+            return _STATUS_TO_ERROR[code]
+    
     msg_lower = error_message.lower()
-    
-    # 1. 优先匹配数字错误码（原始HTTP状态码），保留API返回的真实信息
-    if "429" in error_message:
-        return 'api_error_429'
-    elif "503" in error_message:
-        return 'api_error_503'
-    elif "524" in error_message:
-        return 'api_error_524'
-    elif "500" in error_message:
-        return 'api_error_500'
-    elif "502" in error_message:
-        return 'api_error_502'
-    elif "504" in error_message:
-        return 'api_error_504'
-    elif "401" in error_message:
-        return 'api_error_401'
-    elif "403" in error_message:
-        return 'api_error_403'
-    elif "400" in error_message:
-        return 'api_error_400'
-    
-    # 2. 没有数字错误码时，才从语义推断
-    elif "rate limit" in msg_lower or "too many requests" in msg_lower:
-        return 'api_error_429'
-    elif "limit_error" in msg_lower:
-        return 'api_error_429'
-    elif "auth" in msg_lower or "unauthorized" in msg_lower:
-        return 'api_error_401'
-    elif "forbidden" in msg_lower:
-        return 'api_error_403'
+    if "rate limit" in msg_lower or "too many requests" in msg_lower or "limit_error" in msg_lower:
+        return "api_error_429"
+    if "auth" in msg_lower or "unauthorized" in msg_lower:
+        return "api_error_401"
+    if "forbidden" in msg_lower:
+        return "api_error_403"
     
     return None
 
