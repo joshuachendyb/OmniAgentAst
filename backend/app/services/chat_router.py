@@ -134,6 +134,7 @@ async def route_with_fallback(user_input: str) -> Dict:
             "corrected": llm_result.get("corrected", user_input),
             "all_intents": llm_result.get("all_intents", {}),
             "source": "llm",
+            "raw_intent": intent_str,
         })
 
         logger.info(
@@ -291,13 +292,23 @@ class ChatRouter:
         candidates_list = [c.value for c in candidates_values if c]  # 【修复 2026-04-30 小沈】简化：if c 已过滤None，else "" 不可达
         
         # 【2026-05-13 小沈】不再有chat分类，未匹配的intent走network→有search_web工具可用
-        # 这样像"今天天气怎么样"等无匹配的实时信息查询可以走网络搜索
-        intent_type = intent_type_value.value if intent_type_value else "network"
+        # 【修复 小健 2026-05-24】greeting/闲聊类走system（有meta工具，适合简单问答），非network
+        _chat_like_intents = {"greeting", "chat", "conversation", "qa", "question"}
+        if intent_type_value is not None:
+            intent_type = intent_type_value.value
+        else:
+            _raw_intent = str(intent_info.get("raw_intent", "")).lower()
+            if _raw_intent in _chat_like_intents:
+                intent_type = "system"
+                logger.info(f"[ChatRouter] 闲聊类意图({_raw_intent})→system(简单问答)")
+            else:
+                intent_type = "network"
         
         logger.info(
             f"[ChatRouter] 两阶段意图检测 → intent_type={intent_type}({intent_type_value}), "
             f"confidence={confidence:.4f}, source={intent_info['source']}, "
             f"candidates={candidates_list}, "
+            f"raw_intent={intent_info.get('raw_intent', 'N/A')}, "
             f"original='{user_input}', corrected='{intent_info['corrected']}'"
         )
         
