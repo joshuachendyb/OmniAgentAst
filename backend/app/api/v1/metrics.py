@@ -6,7 +6,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.utils.monitoring import get_metrics_summary, get_raw_metrics, reset_metrics
 from app.utils.logger import logger
@@ -67,7 +67,7 @@ async def get_metrics():
         return MetricsResponse(
             success=True,
             metrics=metrics_dict,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             total_metrics=total_metrics
         )
     except Exception as e:
@@ -92,7 +92,7 @@ async def get_raw_metrics_endpoint(name: Optional[str] = None):
         return {
             "success": True,
             "metrics": raw_metrics,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
         logger.error(f"获取原始指标失败: {e}")
@@ -119,7 +119,7 @@ async def reset_metrics_endpoint(request: ResetMetricsRequest):
         return ResetMetricsResponse(
             success=True,
             message="所有监控指标已重置",
-            timestamp=datetime.utcnow().isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
     except Exception as e:
         logger.error(f"重置指标失败: {e}")
@@ -141,13 +141,13 @@ async def metrics_health_check():
         return {
             "success": True,
             "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "message": "监控系统运行正常"
         }
     except Exception as e:
         return {
             "success": False,
             "status": "unhealthy",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "message": f"监控系统异常: {str(e)}"
         }
