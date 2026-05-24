@@ -165,7 +165,7 @@ class RetryPolicy:
                 error_type = ErrorClassifier.classify(e)
                 
                 # 检查是否可重试
-                if not ErrorClassifier.is_retryable(error_type, self.retryable_errors):
+                if not (error_type.is_retryable or error_type.value in self.retryable_errors):
                     # 不可重试，记录失败并返回
                     self._circuit_breaker.record_failure()
                     return {
