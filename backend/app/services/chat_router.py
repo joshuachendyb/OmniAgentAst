@@ -50,6 +50,7 @@ from app.services.intents.crss_scorer import (
     detect_intent_v2,
     CRSS_CONFIDENCE_THRESHOLD,
 )
+from app.services.command_security import check_command_safety
 
 
 # 【修复 2026-04-30 小沈】CRSS置信度阈值：归一化评分 >= 此值认为意图可信
