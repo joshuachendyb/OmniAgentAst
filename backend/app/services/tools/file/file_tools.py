@@ -1755,6 +1755,43 @@ class FileTools:
         new_content = content[:idx] + new_text + content[idx + len(old_text):]
         return new_content, {"ok": True}
 
+    def _execute_edit_sync(self, path: Path, edits: List[Dict], dry_run: bool, encoding: Optional[str], edit_result: Dict) -> bool:
+        """执行文件编辑同步操作 — 小健 2026-05-25 重构拆分
+
+        使用场景:
+            _apply_edits中作为同步操作函数传递给safety.execute_with_safety
+
+        使用示例:
+            edit_result = {}
+            success = self._execute_edit_sync(path, edits, dry_run, encoding, edit_result)
+
+        返回数据说明:
+            - 返回bool，True表示成功
+            - edit_result会被填充编辑结果（applied_edits/total_edits/results/preview/dry_run/used_enc）
+        """
+        content, used_enc, err_msg = FileTools._read_file_with_encodings_sync(path, encoding)
+        if err_msg:
+            raise ValueError(err_msg)
+
+        modified = content
+        results = []
+        for i, edit in enumerate(edits):
+            modified, result = FileTools._apply_single_edit(modified, edit)
+            result["index"] = i
+            results.append(result)
+
+        applied = sum(1 for r in results if r["ok"])
+        if not dry_run and applied > 0:
+            self._write_file_atomic(modified, path, used_enc, append=False, create_parents=False)
+
+        edit_result['applied_edits'] = applied
+        edit_result['total_edits'] = len(edits)
+        edit_result['results'] = results
+        edit_result['preview'] = modified if dry_run else None
+        edit_result['dry_run'] = dry_run
+        edit_result['used_enc'] = used_enc
+        return True
+
     async def _apply_edits(
         self,
         file_path: str,
@@ -1762,7 +1799,17 @@ class FileTools:
         dry_run: bool = False,
         encoding: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """高级编辑文件，支持多处编辑和预览（内部方法） - 小沈 2026-05-01, 小健 2026-05-19 参数名dryRun→dry_run"""
+        """高级编辑文件，支持多处编辑和预览（内部方法） — 小健 2026-05-25 重构拆分
+
+        使用场景:
+            edit_file工具内部调用
+
+        使用示例:
+            result = await self._apply_edits('test.py', [{'oldText': 'old', 'newText': 'new'}])
+
+        返回数据说明:
+            - 返回Dict，包含applied_edits/total_edits/results/preview/dry_run/encoding/operation_id
+        """
         try:
             is_valid, error_msg = self._validate_path(file_path)
             if not is_valid:
@@ -1791,36 +1838,11 @@ class FileTools:
                 sequence_number=self._get_next_sequence()
             )
 
-            def _edit_sync() -> bool:
-                content, used_enc, err_msg = FileTools._read_file_with_encodings_sync(path, encoding)
-                if err_msg:
-                    raise ValueError(err_msg)
-
-                modified = content
-                results = []
-                for i, edit in enumerate(edits):
-                    modified, result = FileTools._apply_single_edit(modified, edit)
-                    result["index"] = i
-                    results.append(result)
-
-                applied = sum(1 for r in results if r["ok"])
-                if not dry_run and applied > 0:
-                    # 复用 _write_file_atomic（20.2方案已实现）
-                    self._write_file_atomic(modified, path, used_enc, append=False, create_parents=False)
-
-                edit_result['applied_edits'] = applied
-                edit_result['total_edits'] = len(edits)
-                edit_result['results'] = results
-                edit_result['preview'] = modified if dry_run else None
-                edit_result['dry_run'] = dry_run
-                edit_result['used_enc'] = used_enc
-                return True
-
             edit_result = {}
             success = await asyncio.to_thread(
                 self.safety.execute_with_safety,
                 operation_id=operation_id,
-                operation_func=_edit_sync
+                operation_func=lambda: self._execute_edit_sync(path, edits, dry_run, encoding, edit_result)
             )
             if success:
                 return build_success(
