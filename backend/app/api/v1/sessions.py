@@ -472,10 +472,10 @@ class SessionUpdate(BaseModel):
 
 def _try_mark_valid(cursor, session_id: str) -> None:
     """如果会话之前is_valid=False，尝试自愈标记为True — 小健 2026-05-25"""
-    cursor.execute("SELECT is_valid FROM chat_sessions WHERE session_id = ?", (session_id,))
+    cursor.execute("SELECT is_valid FROM chat_sessions WHERE id = ?", (session_id,))
     row = cursor.fetchone()
     if row and not row[0]:
-        cursor.execute("UPDATE chat_sessions SET is_valid = 1 WHERE session_id = ?", (session_id,))
+        cursor.execute("UPDATE chat_sessions SET is_valid = 1 WHERE id = ?", (session_id,))
         logger.info(f"[save_message] 会话{session_id}已自愈标记为有效")
 
 
