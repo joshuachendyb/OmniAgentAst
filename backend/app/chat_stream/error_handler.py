@@ -8,10 +8,48 @@ Author: 小沈 - 2026-03-22
 """
 
 import json
-from typing import Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 from app.chat_stream.chat_helpers import create_timestamp
-from app.constants import ERROR_TYPE_MAP
+from app.constants import ERROR_TYPE_MAP, HTTPX_EXCEPTION_TO_ERROR_KEY
+
+
+# 替换 P3g-P3n 8 个 if/elif 的数据表
+HTTP_STATUS_MAP_ENTRIES: List[Dict[str, Any]] = [
+    {"codes": ["503"], "keywords": ["无可用渠道"],
+     "code": "API_CHANNEL_UNAVAILABLE", "msg_key": "api_error_503", "retryable": False},
+    {"codes": ["429"], "keywords": ["rate limit", "limit_error", "配额"],
+     "code": "RATE_LIMIT_EXCEEDED", "msg_key": "api_error_429", "retryable": True, "retry_after": 30},
+    {"codes": ["401"], "keywords": ["认证", "unauthorized"],
+     "code": "AUTH_FAILED", "msg_key": "api_error_401", "retryable": False},
+    {"codes": ["403"], "keywords": ["forbidden"],
+     "code": "FORBIDDEN", "msg_key": "api_error_403", "retryable": False},
+    {"codes": ["400"], "keywords": [],
+     "code": "BAD_REQUEST", "msg_key": "api_error_400", "retryable": False},
+    {"codes": ["500"], "keywords": [],
+     "code": "SERVER_ERROR", "msg_key": "api_error_500", "retryable": True, "retry_after": 10},
+    {"codes": ["502"], "keywords": ["bad gateway"],
+     "code": "BAD_GATEWAY", "msg_key": "api_error_502", "retryable": True, "retry_after": 10},
+    {"codes": ["504"], "keywords": [],
+     "code": "GATEWAY_TIMEOUT", "msg_key": "api_error_504", "retryable": True, "retry_after": 15},
+]
+
+
+def _build_error_response(code: str, msg_key: str, retryable: bool,
+                           retry_after: Optional[int] = None,
+                           message: Optional[str] = None) -> Dict[str, Any]:
+    """统一构建错误响应字典。使用 ERROR_TYPE_MAP 获取标准错误消息。"""
+    error_type, default_message = ERROR_TYPE_MAP.get(
+        msg_key, ("unknown", "AI服务暂无响应，请稍后重试"))
+    result: Dict[str, Any] = {
+        "code": code,
+        "message": message if message is not None else default_message,
+        "error_type": error_type,
+        "retryable": retryable,
+    }
+    if retry_after is not None:
+        result["retry_after"] = retry_after
+    return result
 
 
 def create_error_step(
@@ -121,161 +159,48 @@ def create_error_response(
 
 
 def get_function_call_error_info(error: Exception) -> Dict[str, Any]:
-    """
-    获取用户友好的错误信息
-    
-    Args:
-        error: 异常对象
-    
-    Returns:
-        错误信息字典，包含 code, message, error_type, retryable
-    """
     error_type = type(error).__name__
     error_msg = str(error).lower()
-    
-    # 优先处理 IdleTimeoutError
+
+    # P1: IdleTimeoutError 特殊处理
     try:
         from app.utils.idle_timeout import IdleTimeoutError
         if isinstance(error, IdleTimeoutError):
-            return {
-                "code": "IDLE_TIMEOUT",
-                "message": "请求超时：AI模型30秒内未返回任何内容，已重试3次，请更换问题或稍后重试",
-                "error_type": "timeout",
-                "retryable": True,
-                "retry_after": 5
-            }
+            return _build_error_response("IDLE_TIMEOUT", "idle_timeout",
+                                          retryable=True, retry_after=5)
     except ImportError:
         pass
-    
-    from app.constants import HTTPX_EXCEPTION_TO_ERROR_KEY
 
+    # P2: httpx 异常 → 数据驱动查表
     if error_type in HTTPX_EXCEPTION_TO_ERROR_KEY:
-        map_key = HTTPX_EXCEPTION_TO_ERROR_KEY[error_type]
-        if map_key in ERROR_TYPE_MAP:
-            error_code, error_message = ERROR_TYPE_MAP[map_key]
-            return {
-                "code": error_type.upper(),
-                "message": error_message,
-                "error_type": error_code,
-                "retryable": True,
-                "retry_after": 10 if error_code in ['connect', 'network', 'protocol'] else 5
-            }
-    
-    # 其他错误类型继续使用原有逻辑
+        msg_key = HTTPX_EXCEPTION_TO_ERROR_KEY[error_type]
+        retry_after = 10 if msg_key in ("connect_error", "network_error", "protocol_error") else 5
+        return _build_error_response(error_type.upper(), msg_key,
+                                      retryable=True, retry_after=retry_after)
+
+    # P3: 字符串模式匹配 — 异常类型优先，消息降级
     if error_type == "TimeoutError" or "timeout" in error_msg:
-        return {
-            "code": "TIMEOUT",
-            "message": "请求超时，请重试",
-            "error_type": "timeout",
-            "retryable": True,
-            "retry_after": 5
-        }
-    elif error_type == "ConnectionError" or "connection" in error_msg:
-        return {
-            "code": "CONNECTION_ERROR",
-            "message": "连接失败，请检查网络",
-            "error_type": "connect",
-            "retryable": True,
-            "retry_after": 10
-        }
-    elif error_type == "HTTPError" or "http" in error_msg:
-        return {
-            "code": "HTTP_ERROR",
-            "message": "服务器响应异常，请稍后重试",
-            "error_type": "server",
-            "retryable": True,
-            "retry_after": 10
-        }
-    elif error_type == "ValueError":
-        return {
-            "code": "VALIDATION_ERROR",
-            "message": "参数值错误，请检查输入",
-            "error_type": "validation",
-            "retryable": False
-        }
-    elif "not found" in error_msg or "不存在" in error_msg:
-        return {
-            "code": "NOT_FOUND",
-            "message": "文件或资源不存在",
-            "error_type": "file_system",
-            "retryable": False
-        }
-    elif "permission" in error_msg or "权限" in error_msg:
-        return {
-            "code": "PERMISSION_DENIED",
-            "message": "权限不足，无法执行操作",
-            "error_type": "security",
-            "retryable": False
-        }
-    # 【新增 2026-04-09 小沈】HTTP错误码处理
-    elif "503" in error_msg or "无可用渠道" in error_msg:
-        return {
-            "code": "API_CHANNEL_UNAVAILABLE",
-            "message": "AI服务渠道不可用 (errorcode=503)，请检查API配置或更换模型",
-            "error_type": "api_error",
-            "retryable": False
-        }
-    elif "429" in error_msg or "rate limit" in error_msg.lower() or "limit_error" in error_msg or "配额" in error_msg:
-        return {
-            "code": "RATE_LIMIT_EXCEEDED",
-            "message": "API请求过于频繁 (errorcode=429)，请稍后再试或更换模型",
-            "error_type": "api_error",
-            "retryable": True,
-            "retry_after": 30
-        }
-    elif "401" in error_msg or "认证" in error_msg or "unauthorized" in error_msg.lower():
-        return {
-            "code": "AUTH_FAILED",
-            "message": "API认证失败 (errorcode=401)，请检查API密钥配置",
-            "error_type": "security",
-            "retryable": False
-        }
-    elif "403" in error_msg or "forbidden" in error_msg.lower():
-        return {
-            "code": "FORBIDDEN",
-            "message": "API访问被拒绝 (errorcode=403)，请检查API权限配置",
-            "error_type": "security",
-            "retryable": False
-        }
-    elif "400" in error_msg:
-        return {
-            "code": "BAD_REQUEST",
-            "message": "API请求参数错误 (errorcode=400)，请检查输入内容",
-            "error_type": "validation",
-            "retryable": False
-        }
-    elif "500" in error_msg:
-        return {
-            "code": "SERVER_ERROR",
-            "message": "AI服务内部错误 (errorcode=500)，请稍后重试或更换模型",
-            "error_type": "server",
-            "retryable": True,
-            "retry_after": 10
-        }
-    elif "502" in error_msg or "bad gateway" in error_msg.lower():
-        return {
-            "code": "BAD_GATEWAY",
-            "message": "AI服务网关错误 (errorcode=502)，请稍后重试",
-            "error_type": "server",
-            "retryable": True,
-            "retry_after": 10
-        }
-    elif "504" in error_msg:
-        return {
-            "code": "GATEWAY_TIMEOUT",
-            "message": "AI服务响应超时 (errorcode=504)，请稍后重试",
-            "error_type": "timeout",
-            "retryable": True,
-            "retry_after": 15
-        }
-    else:
-        return {
-            "code": "UNKNOWN_ERROR",
-            "message": "AI 处理异常，请稍后重试",
-            "error_type": "unknown",
-            "retryable": True,
-            "retry_after": 5
-        }
+        return _build_error_response("TIMEOUT", "timeout_error", retryable=True, retry_after=5)
+    if error_type == "ConnectionError" or "connection" in error_msg:
+        return _build_error_response("CONNECTION_ERROR", "connect_error", retryable=True, retry_after=10)
+    if error_type == "HTTPError" or "http" in error_msg:
+        return _build_error_response("HTTP_ERROR", "http_error", retryable=True, retry_after=10)
+    if error_type == "ValueError":
+        return _build_error_response("VALIDATION_ERROR", "validation_error", retryable=False)
+    if "not found" in error_msg or "不存在" in error_msg:
+        return _build_error_response("NOT_FOUND", "not_found", retryable=False)
+    if "permission" in error_msg or "权限" in error_msg:
+        return _build_error_response("PERMISSION_DENIED", "permission_denied", retryable=False)
+
+    # P3g-P3n: HTTP 状态码/关键词 → 查 HTTP_STATUS_MAP_ENTRIES 数据表
+    for entry in HTTP_STATUS_MAP_ENTRIES:
+        if any(code in error_msg for code in entry["codes"]) or \
+           any(kw in error_msg for kw in entry.get("keywords", [])):
+            return _build_error_response(entry["code"], entry["msg_key"],
+                                          entry["retryable"], entry.get("retry_after"))
+
+    # O1: 兜底
+    return _build_error_response("UNKNOWN_ERROR", "unknown_fallback", retryable=True, retry_after=5)
 
 
 def classify_error(error_type: str, error_message: str = "") -> tuple[str, str]:
