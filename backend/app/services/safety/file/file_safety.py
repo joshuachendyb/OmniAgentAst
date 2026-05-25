@@ -203,136 +203,105 @@ class FileOperationSafety:
             if conn:
                 conn.close()
     
-    def execute_with_safety(
-        self,
-        operation_id: str,
-        operation_func,
-        *args,
-        **kwargs
-    ) -> bool:
-        """
-        安全执行文件操作（带备份和记录）
+    def _collect_file_info(self, path: Path) -> Dict[str, Any]:
+        """收集文件信息（21.4 组件1，小沈 2026-05-25 实施）
         
-        Args:
-            operation_id: 操作ID
-            operation_func: 实际执行的操作函数
-            *args, **kwargs: 传递给操作函数的参数
-            
-        Returns:
-            是否执行成功
+        消除 F1a/F1b 双路径重复，is_directory 在此一并计算
         """
+        if not path or not path.exists():
+            return {"size": None, "hash": None, "extension": None, "is_directory": False}
+
+        info = {
+            "size": path.stat().st_size,
+            "is_directory": path.is_dir(),
+        }
+        if path.is_file():
+            info["hash"] = self._compute_file_hash(path)
+            info["extension"] = path.suffix.lower() if path.suffix else None
+        else:
+            info["hash"] = None
+            info["extension"] = None
+        return info
+
+    def _update_op_failed(self, cursor, operation_id: str, error_message: str):
+        """统一更新 FAILED 状态（21.4 组件2，小沈 2026-05-25 实施）
+        
+        消除 3 处重复 UPDATE（O1b/E1b/X1a）
+        """
+        cursor.execute('''
+            UPDATE file_operations 
+            SET status = ?, error_message = ?
+            WHERE operation_id = ?
+        ''', (OperationStatus.FAILED.value, error_message, operation_id))
+
+    def execute_with_safety(self, operation_id: str, operation_func, *args, **kwargs) -> bool:
+        """安全执行文件操作（21.4 重构，小沈 2026-05-25 实施）"""
         conn = get_connection()
         cursor = conn.cursor()
-        
+
         try:
-            # 获取操作信息
             cursor.execute('''
-                SELECT operation_type, source_path, destination_path 
+                SELECT operation_type, source_path, destination_path, created_at
                 FROM file_operations WHERE operation_id = ?
             ''', (operation_id,))
-            
             row = cursor.fetchone()
             if not row:
                 logger.error(f"Operation not found: {operation_id}")
                 return False
-            
-            op_type, source_path_str, dest_path_str = row
-            source_path = Path(source_path_str) if source_path_str else None
-            dest_path = Path(dest_path_str) if dest_path_str else None
-            
-            # 更新状态为执行中
-            cursor.execute('''
-                UPDATE file_operations 
-                SET status = ?, executed_at = ?
-                WHERE operation_id = ?
-            ''', (OperationStatus.EXECUTING.value, datetime.now(), operation_id))
+
+            op_type, src_str, dst_str, created_at_str = row
+            source_path = Path(src_str) if src_str else None
+            dest_path = Path(dst_str) if dst_str else None
+            created_at = datetime.fromisoformat(created_at_str) if isinstance(created_at_str, str) else created_at_str
+
+            cursor.execute(
+                'UPDATE file_operations SET status = ?, executed_at = ? WHERE operation_id = ?',
+                (OperationStatus.EXECUTING.value, datetime.now(), operation_id),
+            )
             conn.commit()
-            
-            # 对于删除操作，先备份到回收站
+
             backup_path = None
             if op_type == OperationType.DELETE.value and source_path and source_path.exists():
                 backup_path = self._backup_to_recycle_bin(source_path)
-            
-            # 执行实际操作
+
             success = operation_func(*args, **kwargs)
-            
+
             if success:
-                # 收集文件信息
-                file_size = None
-                file_hash = None
-                file_extension = None
-                
-                if dest_path and dest_path.exists():
-                    file_size = dest_path.stat().st_size
-                    if dest_path.is_file():
-                        file_hash = self._compute_file_hash(dest_path)
-                        file_extension = dest_path.suffix.lower() if dest_path.suffix else None
-                elif source_path and source_path.exists():
-                    file_size = source_path.stat().st_size
-                    if source_path.is_file():
-                        file_hash = self._compute_file_hash(source_path)
-                        file_extension = source_path.suffix.lower() if source_path.suffix else None
-                
-                # 计算操作耗时（毫秒）
+                target = dest_path if dest_path and dest_path.exists() else source_path if source_path and source_path.exists() else None
+                info = self._collect_file_info(target) if target else {}
+
                 executed_at = datetime.now()
-                cursor.execute('SELECT created_at FROM file_operations WHERE operation_id = ?', (operation_id,))
-                created_at_row = cursor.fetchone()
-                duration_ms = None
-                if created_at_row and created_at_row[0]:
-                    created_at = datetime.fromisoformat(created_at_row[0]) if isinstance(created_at_row[0], str) else created_at_row[0]
-                    duration_ms = int((executed_at - created_at).total_seconds() * 1000)
-                
-                # 计算空间影响（字节）
-                # DELETE: +size (frees space), CREATE: -size (uses space), MOVE/COPY: 0
+                duration_ms = int((executed_at - created_at).total_seconds() * 1000) if created_at else None
+
                 space_impact = 0
-                if op_type == OperationType.DELETE.value and file_size:
-                    space_impact = file_size  # Positive = freed space
-                elif op_type == OperationType.CREATE.value and file_size:
-                    space_impact = -file_size  # Negative = used space
-                # MOVE and COPY have 0 net impact
-                
-                # 更新成功状态
+                if op_type == OperationType.DELETE.value and info.get("size"):
+                    space_impact = info["size"]
+                elif op_type == OperationType.CREATE.value and info.get("size"):
+                    space_impact = -info["size"]
+
                 cursor.execute('''
-                    UPDATE file_operations 
-                    SET status = ?, backup_path = ?, backup_expires_at = ?,
+                    UPDATE file_operations SET status = ?, backup_path = ?, backup_expires_at = ?,
                         file_size = ?, file_hash = ?, is_directory = ?,
-                        file_extension = ?, duration_ms = ?, space_impact_bytes = ?,
-                        executed_at = ?
+                        file_extension = ?, duration_ms = ?, space_impact_bytes = ?, executed_at = ?
                     WHERE operation_id = ?
                 ''', (
                     OperationStatus.SUCCESS.value,
                     str(backup_path) if backup_path else None,
                     datetime.now() + timedelta(days=self.config.BACKUP_RETENTION_DAYS) if backup_path else None,
-                    file_size,
-                    file_hash,
-                    1 if (source_path and source_path.is_dir()) or (dest_path and dest_path.is_dir()) else 0,
-                    file_extension,
-                    duration_ms,
-                    space_impact,
-                    executed_at,
-                    operation_id
+                    info.get("size"), info.get("hash"), info.get("is_directory", False),
+                    info.get("extension"), duration_ms, space_impact, executed_at,
+                    operation_id,
                 ))
-                
                 logger.info(f"Operation executed successfully: {operation_id}")
             else:
-                cursor.execute('''
-                    UPDATE file_operations 
-                    SET status = ?, error_message = ?
-                    WHERE operation_id = ?
-                ''', (OperationStatus.FAILED.value, "Operation failed", operation_id))
-                
-                logger.warning(f"Operation failed: {operation_id}")
-            
+                self._update_op_failed(cursor, operation_id, "Operation failed")
+
             conn.commit()
             return success
-            
+
         except Exception as e:
             logger.error(f"Error executing operation {operation_id}: {e}")
-            cursor.execute('''
-                UPDATE file_operations 
-                SET status = ?, error_message = ?
-                WHERE operation_id = ?
-            ''', (OperationStatus.FAILED.value, str(e), operation_id))
+            self._update_op_failed(cursor, operation_id, str(e))
             conn.commit()
             return False
         finally:
