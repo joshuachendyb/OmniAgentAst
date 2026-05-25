@@ -232,6 +232,28 @@ class ToolMetadata:
         return ""
 
 
+def _generate_input_schema(input_model: Optional[Type[BaseModel]], input_schema: Optional[Dict]) -> Dict:
+    """从 input_model 生成 input_schema（优先于传入的 schema — 小健 2026-05-25）"""
+    if input_model is None:
+        return input_schema or {}
+    try:
+        schema = input_model.model_json_schema()
+        schema = _fix_schema_types(schema)
+        logger.info(f"[ToolRegistry.register] 从 Pydantic 模型生成 input_schema")
+        return schema
+    except Exception as e:
+        logger.error(f"[ToolRegistry.register] 从 Pydantic 模型生成 Schema 失败: {e}")
+        return input_schema or {}
+
+
+def _update_tool_metadata(metadata: ToolMetadata, **kwargs) -> None:
+    """更新工具元数据的可选字段 — 小健 2026-05-25"""
+    for key, value in kwargs.items():
+        if value is not None:
+            setattr(metadata, key, value)
+    metadata.updated_at = datetime.now()
+
+
 class ToolRegistry:
     """
     类型安全的工具注册表
@@ -307,80 +329,39 @@ class ToolRegistry:
         Raises:
             ValueError: 如果工具已注册（首次注册时）
         """
-        # 【小健 2026-04-29】input_model处理逻辑：自动生成Schema，优先于手动传入的input_schema，后续新增工具必须走此流程
-        # 【2026-04-29 小沈新增】如果传入 input_model，自动生成 input_schema
-        if input_model is not None and input_schema is None:
-            try:
-                input_schema = input_model.model_json_schema()
-                input_schema = _fix_schema_types(input_schema)
-                logger.info(f"[ToolRegistry.register] 从 Pydantic 模型生成 input_schema: {name}")
-            except Exception as e:
-                logger.error(f"[ToolRegistry.register] 从 Pydantic 模型生成 Schema 失败: {e}")
-                input_schema = {}
-        
-        if input_model is not None and input_schema is not None:
-            try:
-                input_schema = input_model.model_json_schema()
-                input_schema = _fix_schema_types(input_schema)
-                logger.info(f"[ToolRegistry.register] 使用 Pydantic 模型覆盖 input_schema: {name}")
-            except Exception as e:
-                logger.error(f"[ToolRegistry.register] 从 Pydantic 模型生成 Schema 失败: {e}")
-        # 允许重复注册（更新模式）
+        input_schema = _generate_input_schema(input_model, input_schema)
+
+        # 更新路径
         if name in self._tools:
-            # 更新已有工具
-            metadata = self._tools[name]
-            metadata.description = description
-            metadata.version = version
-            metadata.updated_at = datetime.now()
+            _update_tool_metadata(self._tools[name],
+                description=description, version=version, category=category,
+                input_schema=input_schema, output_schema=output_schema, examples=examples)
             self._implementations[name] = implementation
-            # 【修复 U10 小沈 2026-05-15】重复注册时也更新schema
-            if input_schema:
-                metadata.input_schema = input_schema
-            if output_schema:
-                metadata.output_schema = output_schema
-            if examples:
-                metadata.examples = examples
-            if category:
-                metadata.category = category
-            logger.info(f"Tool updated: {name} (version: {version})")
             return {"status": "success"}
-        
-        # 验证依赖关系
+
+        # 依赖验证
         if dependencies:
             missing = [dep for dep in dependencies if dep not in self._tools]
             if missing:
                 raise ValueError(f"Missing dependencies: {missing}")
-        
-        # 创建工具元数据
+
+        # 新建路径
         metadata = ToolMetadata(
-            name=name,
-            description=description,
-            category=category,
-            version=version,
-            dependencies=dependencies or [],
-            input_schema=input_schema or {},
-            output_schema=output_schema or {},
-            examples=examples or [],
-            expose_to_llm=expose_to_llm,
-            next_actions=next_actions or {},
+            name=name, description=description, category=category, version=version,
+            dependencies=dependencies or [], input_schema=input_schema or {},
+            output_schema=output_schema or {}, examples=examples or [],
+            expose_to_llm=expose_to_llm, next_actions=next_actions or {},
             failure_hint_fn=failure_hint_fn,
         )
-        
-        # 注册工具
         self._tools[name] = metadata
         self._implementations[name] = implementation
-        
-        # 更新分类索引
-        if category not in self._categories:
-            self._categories[category] = []
+
+        self._categories.setdefault(category, [])
         if name not in self._categories[category]:
             self._categories[category].append(name)
-        
-        # 更新工具更新时间
+
         metadata.updated_at = datetime.now()
-        
         logger.info(f"Tool registered: {name} (category: {category.value})")
-        
         return {"status": "success"}
     
     def get(self, name: str) -> Optional[Dict[str, Any]]:
