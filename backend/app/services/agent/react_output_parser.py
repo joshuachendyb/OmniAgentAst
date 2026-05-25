@@ -2317,7 +2317,7 @@ def _parse_action_input(input_section: str) -> Dict[str, Any]:
         return result
 
     logger.error(f"[_parse_action_input] All parsers failed for: {input_section[:100]}...")
-    return {}
+    return None
 
 
 def _extract_json_with_balanced_braces(text: str) -> Tuple[Optional[str], str]:
