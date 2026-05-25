@@ -1293,53 +1293,6 @@ class FileTools:
         except Exception as e:
             logger.error(f"Failed to move {source_path} -> {destination_path}: {e}")
             return build_error("ERR_FILE_MOVE_FAILED", str(e))
-    
-def _match_fnmatch(name: str, pattern: str, ignore_case: bool) -> bool:
-    """统一封装fnmatch，消除if-else三元组重复 — 小健 2026-05-25"""
-    import fnmatch
-    return fnmatch.fnmatch(name, pattern) if ignore_case else fnmatch.fnmatchcase(name, pattern)
-
-
-def _is_already_seen_or_skipped(name: str, seen: set, seen_count: int, start: int) -> Tuple[bool, bool]:
-    """返回(is_duplicate, is_skipped_by_offset)。消除20行三段逻辑重复 — 小健 2026-05-25"""
-    if name in seen:
-        return True, False
-    seen.add(name)
-    if seen_count <= start:
-        return False, True
-    return False, False
-
-
-def _collect_entry_result(relative_path: str, name: str, fpath: Path, all_matches: List, llm_preview: List) -> None:
-    """收集匹配结果到all_matches和llm_preview — 小健 2026-05-25"""
-    try:
-        st = fpath.stat()
-        entry = {"name": name, "path": relative_path, "size": st.st_size,
-                 "mtime": st.st_mtime, "type": "file" if fpath.is_file() else "directory"}
-    except (PermissionError, OSError):
-        entry = {"name": name, "path": relative_path, "size": 0, "mtime": 0,
-                 "type": "file" if fpath.is_file() else "directory"}
-    all_matches.append(entry)
-    if len(llm_preview) < 30:
-        llm_preview.append({"name": name, "path": relative_path, "type": entry["type"]})
-
-
-def _paginate_search(all_matches: List, path: str, llm_preview: List,
-                       page_size: int, start_offset: int) -> Dict:
-    """分页+build_success统一构建，生成next_page_token支持游标续页 — 小健 2026-05-25"""
-    total = len(all_matches)
-    has_more = total > page_size
-    page = all_matches[:page_size] if has_more else all_matches
-    next_page_token = encode_page_token(start_offset + page_size) if has_more else None
-    return build_success({
-        "pattern": "", "search_dir": path, "matches": page, "total": total,
-        "page": 1, "total_pages": (total + page_size - 1) // page_size if has_more else 1,
-        "page_size": page_size, "next_page_token": next_page_token, "has_more": has_more,
-    }, f"搜索完成，共{total}个匹配",
-       llm_data={"模式": "", "搜索目录": path, "匹配数": total,
-                 "文件预览": [m.get("path","") if isinstance(m,dict) else str(m) for m in llm_preview[:20]],
-                 "has_more": has_more},
-       next_actions=build_next_actions([("read_file", "读取找到的文件", "需要查看内容时")]))
 
 
     async def search_files(
@@ -1407,7 +1360,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
 
         all_matches.sort(key=lambda x: x.get("name", ""))
         return _paginate_search(all_matches, search_dir, llm_preview, DEFAULT_PAGE_SIZE, start_offset)
-    
+
     async def _copy_file(
         self,
         source_path: str,
@@ -1418,7 +1371,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
     ) -> Dict[str, Any]:
         """复制文件或目录 - 小健 2026-05-02 增加preserve_metadata"""
         from app.services.tools.toolhelper.file_helpers import copy_file_impl
-        
+
         return await copy_file_impl(
             source_path=source_path,
             destination_path=destination_path,
@@ -1440,7 +1393,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
     ) -> Dict[str, Any]:
         """获取文件信息 - 小健 2026-05-02 增加follow_symlinks"""
         from app.services.tools.toolhelper.file_helpers import get_file_info_impl
-        
+
         return await get_file_info_impl(
             file_path=file_path,
             validate_path_func=self._validate_path,
@@ -1458,7 +1411,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
     ) -> Dict[str, Any]:
         """批量重命名文件"""
         from app.services.tools.toolhelper.file_helpers import batch_rename_impl
-        
+
         return await batch_rename_impl(
             directory=directory,
             pattern=pattern,
@@ -1486,7 +1439,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
     ) -> Dict[str, Any]:
         """压缩文件或目录"""
         from app.services.tools.toolhelper.file_helpers import compress_files_impl
-        
+
         return await compress_files_impl(
             source_path=source_path,
             output_path=output_path,
@@ -1513,7 +1466,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
     ) -> Dict[str, Any]:
         """解压压缩文件"""
         from app.services.tools.toolhelper.file_helpers import extract_archive as _extract_archive
-        
+
         return _extract_archive(
             archive_path=archive_path,
             output_dir=output_dir,
@@ -1531,7 +1484,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
     ) -> Dict[str, Any]:
         """计算文件哈希值"""
         from app.services.tools.toolhelper.file_helpers import get_file_hash as _get_file_hash
-        
+
         return _get_file_hash(
             file_path=file_path,
             algorithm=algorithm,
@@ -1549,7 +1502,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
     ) -> Dict[str, Any]:
         """统计文件系统信息"""
         from app.services.tools.toolhelper.file_helpers import file_statistics_impl
-        
+
         return await file_statistics_impl(
             directory=directory,
             recursive=recursive,
@@ -1574,7 +1527,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
     ) -> Dict[str, Any]:
         """计算文件校验和"""
         from app.services.tools.toolhelper.file_helpers import file_checksum_impl
-        
+
         return await file_checksum_impl(
             file_path=file_path,
             algorithm=algorithm,
@@ -1661,21 +1614,21 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
                 is_binary, binary_reason = _is_binary_file(fp)
                 if is_binary:
                     return build_error("ERR_FILE_READ", f"{binary_reason}。已跳过该文件。: {fp}", data={"file_path": fp})
-                
+
                 is_valid, error_msg = self._validate_path(fp)
                 if not is_valid:
                     return build_error("ERR_FILE_READ", f"{error_msg}: {fp}", data={"file_path": fp})
                 path = Path(fp)
                 if not path.exists():
                     return build_error("ERR_FILE_NOT_FOUND", f"文件不存在: {fp}", data={"file_path": fp})
-                
+
                 # 【修复 2026-05-01 小沈】OOM防护：单文件大小预检
                 try:
                     if path.stat().st_size > MAX_READ_SIZE:
                         return build_error("ERR_FILE_READ_TOO_LARGE", f"文件过大({path.stat().st_size}字节)，超过读取上限{MAX_READ_SIZE//1024//1024}MB: {fp}", data={"file_path": fp})
                 except OSError as e:
                     return build_error("ERR_FILE_READ", f"{e}: {fp}", data={"file_path": fp})
-                
+
                 try:
                     for enc in ["utf-8", "gbk", "gb2312", "utf-8-sig"]:
                         try:
@@ -2055,7 +2008,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
 
     async def get_directory_tree(self, dir_path: str) -> Dict[str, Any]:
         """获取目录树（委托给 _get_directory_tree 实现）
-        
+
         规范：§11.10 浏览器禁止执行write、chmod等shell操作
         通过 path_utils.validate_and_normalize 实现安全路径检查
         """
@@ -2136,11 +2089,11 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
         except Exception as e:
             logger.error(f"get_directory_tree failed: {dir_path}: {e}")
             return build_error("ERR_FILE_LIST_DIR_FAILED", str(e))
-    
+
     # ============================================================
     # 第九部分：精简合并工具（v2.0）— 小沈 2026-05-18
     # ============================================================
-    
+
     async def read_file(
         self,
         file_paths: List[str],
@@ -2153,16 +2106,16 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
         """
         读取文本文件（统一入口）— 小沈 2026-05-18
         【小沈 2026-05-19】合并file_path+file_paths→file_paths
-        
+
         P11统一入口：合并 read_text_file + read_batch_file
         - 传1个路径：单文件模式，支持 head/tail/offset/limit 分页
         - 传多个路径：批量模式，每个文件返回完整内容
-        
+
         P15返回值全面化：单文件返回content/encoding/file_size/total_lines；批量返回results列表
         """
         if not file_paths:
             return build_error("ERR_PARAM_INVALID", "file_paths不能为空，至少提供1个文件路径")
-        
+
         # 单文件模式
         if len(file_paths) == 1:
             return await self._read_text_file(
@@ -2173,10 +2126,10 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
                 limit=limit,
                 encoding=encoding
             )
-        
+
         # 批量模式：忽略行控制参数
         return await self._read_batch_file(file_paths=file_paths)
-    
+
     async def edit_file(
         self,
         file_path: str,
@@ -2198,7 +2151,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
 
         if not old_string and not edits:
             return build_error("ERR_PARAM_INVALID", "old_string或edits至少填一个")
-        
+
         # 单处替换模式：调用precise_replace_in_file逻辑
         if old_string:
             return await self._precise_replace_in_file(
@@ -2210,7 +2163,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
                 dry_run=dry_run,
                 encoding=encoding
             )
-        
+
         # 多处编辑模式：调用edit_text_file逻辑
         else:
             return await self._apply_edits(
@@ -2219,7 +2172,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
                 dry_run=dry_run,
                 encoding=encoding
             )
-    
+
     async def rename_file(
         self,
         mode: Literal["single", "batch"] = "single",
@@ -2280,7 +2233,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
             destination_path=str(dst),
             overwrite=False
         )
-    
+
     async def archive_tool(
         self,
         action: Literal["compress", "extract"],
@@ -2330,7 +2283,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
             if "data" not in result:
                 return build_error("ERR_FILE_EXTRACT", result.get("message", "解压失败"))
             return result
-    
+
     async def file_operation(
         self,
         action: Literal["move", "copy", "delete"],
@@ -2343,12 +2296,12 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
     ) -> Dict[str, Any]:
         """
         文件操作统一入口 — 小沈 2026-05-18
-        
+
         P11统一入口：合并 move_file + copy_file + delete_file
         - action="move": 移动文件/目录（原子操作 shutil.move，同盘瞬间完成）
         - action="copy": 复制文件/目录（shutil.copy2，preserve_metadata=True保留时间戳/权限）
         - action="delete": 删除文件/目录（默认send2trash放入回收站，force=True永久删除）
-        
+
         P17互斥校验：action只能是"move"/"copy"/"delete"
         P17必填参数校验：move/copy需要destination，delete不需要
         P16幂等性：
@@ -2496,6 +2449,53 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
         except Exception as e:
             logger.error(f"[data_file_format] 执行失败: {e}")
             return build_error("ERR_DOC_DATA_FORMAT_FAILED", str(e))
+
+def _match_fnmatch(name: str, pattern: str, ignore_case: bool) -> bool:
+    """统一封装fnmatch，消除if-else三元组重复 — 小健 2026-05-25"""
+    import fnmatch
+    return fnmatch.fnmatch(name, pattern) if ignore_case else fnmatch.fnmatchcase(name, pattern)
+
+
+def _is_already_seen_or_skipped(name: str, seen: set, seen_count: int, start: int) -> Tuple[bool, bool]:
+    """返回(is_duplicate, is_skipped_by_offset)。消除20行三段逻辑重复 — 小健 2026-05-25"""
+    if name in seen:
+        return True, False
+    seen.add(name)
+    if seen_count <= start:
+        return False, True
+    return False, False
+
+
+def _collect_entry_result(relative_path: str, name: str, fpath: Path, all_matches: List, llm_preview: List) -> None:
+    """收集匹配结果到all_matches和llm_preview — 小健 2026-05-25"""
+    try:
+        st = fpath.stat()
+        entry = {"name": name, "path": relative_path, "size": st.st_size,
+                 "mtime": st.st_mtime, "type": "file" if fpath.is_file() else "directory"}
+    except (PermissionError, OSError):
+        entry = {"name": name, "path": relative_path, "size": 0, "mtime": 0,
+                 "type": "file" if fpath.is_file() else "directory"}
+    all_matches.append(entry)
+    if len(llm_preview) < 30:
+        llm_preview.append({"name": name, "path": relative_path, "type": entry["type"]})
+
+
+def _paginate_search(all_matches: List, path: str, llm_preview: List,
+                       page_size: int, start_offset: int) -> Dict:
+    """分页+build_success统一构建，生成next_page_token支持游标续页 — 小健 2026-05-25"""
+    total = len(all_matches)
+    has_more = total > page_size
+    page = all_matches[:page_size] if has_more else all_matches
+    next_page_token = encode_page_token(start_offset + page_size) if has_more else None
+    return build_success({
+        "pattern": "", "search_dir": path, "matches": page, "total": total,
+        "page": 1, "total_pages": (total + page_size - 1) // page_size if has_more else 1,
+        "page_size": page_size, "next_page_token": next_page_token, "has_more": has_more,
+    }, f"搜索完成，共{total}个匹配",
+       llm_data={"模式": "", "搜索目录": path, "匹配数": total,
+                 "文件预览": [m.get("path","") if isinstance(m,dict) else str(m) for m in llm_preview[:20]],
+                 "has_more": has_more},
+       next_actions=build_next_actions([("read_file", "读取找到的文件", "需要查看内容时")]))
 
 
 # ============================================================
