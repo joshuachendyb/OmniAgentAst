@@ -33,7 +33,7 @@ import shutil
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, get_type_hints
+from typing import Any, Dict, List, Literal, Optional, Tuple, get_type_hints
 
 from app.services.context_vars import _current_task_id
 
@@ -132,6 +132,49 @@ def _remove_readonly(func, path, excinfo):
     """force删除时解除只读属性的回调 - 小健 2026-05-02"""
     os.chmod(path, os.stat(path).st_mode | 0o200)
     func(path)
+
+
+# 【小沈重构 2026-05-25】25.5节：组件1 - 永久删除
+def _force_delete_sync(path: Path, recursive: bool = False) -> bool:
+    """永久删除：目录(如果recursive→rmtree否则rmdir) / 文件→unlink - 小沈重构 2026-05-25"""
+    try:
+        if path.is_dir():
+            if recursive:
+                shutil.rmtree(str(path), onerror=_remove_readonly)
+            else:
+                path.rmdir()
+        else:
+            if path.exists() and not os.access(str(path), os.W_OK):
+                path.chmod(path.stat().st_mode | 0o200)
+            path.unlink()
+        return True
+    except Exception as e:
+        logger.error(f"[_force_delete_sync] 删除失败: {path}, 错误: {e}")
+        return False
+
+
+# 【小沈重构 2026-05-25】25.5节：组件2 - 回收站删除（回退到永久删除）
+def _send2trash_sync(path: Path, recursive: bool = False) -> Tuple[bool, str]:
+    """尝试放入回收站，失败则回退到永久删除 - 小沈重构 2026-05-25"""
+    try:
+        import send2trash
+        send2trash.send2trash(str(path))
+        return True, "send2trash"
+    except ImportError:
+        logger.warning("send2trash未安装，回退到永久删除")
+    except Exception as e:
+        logger.warning(f"send2trash失败: {e}，回退到永久删除")
+    return _force_delete_sync(path, recursive), "permanent"
+
+
+# 【小沈重构 2026-05-25】25.5节：组件3 - 构建删除结果
+def _build_delete_result(operation_id: str, path: Path, force: bool, method: str) -> dict:
+    """构建删除操作的统一返回结果 - 小沈重构 2026-05-25"""
+    delete_mode = "永久删除" if force else "放入回收站"
+    return build_success(
+        {"operation_id": operation_id, "deleted_path": str(path)},
+        f"文件已{delete_mode}: {path}",
+    )
 
 
 # ============================================================
@@ -1061,18 +1104,20 @@ class FileTools:
         recursive: bool = False,
         force: bool = False
     ) -> Dict[str, Any]:
-        """删除文件或目录 - 小健 2026-05-03 默认放入回收站，force=True永久删除"""
+        """删除文件或目录 - 小健 2026-05-03 默认放入回收站，force=True永久删除
+        【小沈重构 2026-05-25】25.5节：骨架~30行，闭包拆分为3个独立函数"""
+
         # 验证路径合法性
         is_valid, error_msg = self._validate_path(file_path)
         if not is_valid:
             return build_error("ERR_PATH_INVALID", error_msg)
-        
+
         path = Path(file_path)
-        
+
         try:
             if not path.exists():
                 return build_success(None, f"文件不存在，无需删除(P16幂等): {file_path}")
-            
+
             if not self.task_id:
                 self.task_id = _current_task_id.get(None)
             if not self.task_id:
@@ -1084,74 +1129,20 @@ class FileTools:
                 source_path=path,
                 sequence_number=self._get_next_sequence()
             )
-            
-            # 定义删除操作 - 小沈 2026-05-19 追踪删除方式
-            deletion_info = {}  # 可变容器追踪删除方式: "send2trash" 或 "permanent"
+
             def _delete_sync():
                 if force:
-                    # force=True: 永久删除（不放入回收站）
-                    if path.is_dir():
-                        if recursive:
-                            shutil.rmtree(str(path), onerror=_remove_readonly)
-                        else:
-                            path.rmdir()
-                    else:
-                        if path.exists() and not os.access(str(path), os.W_OK):
-                            path.chmod(path.stat().st_mode | 0o200)
-                        path.unlink()
-                    return True
-                else:
-                    # force=False: 放入回收站（默认，更安全）
-                    try:
-                        import send2trash
-                        send2trash.send2trash(str(path))
-                        deletion_info["method"] = "send2trash"
-                        return True
-                    except ImportError:
-                        # send2trash未安装时回退到永久删除
-                        logger.warning("send2trash未安装，回退到永久删除")
-                        if path.is_dir():
-                            if recursive:
-                                shutil.rmtree(str(path), onerror=_remove_readonly)
-                            else:
-                                path.rmdir()
-                        else:
-                            path.unlink()
-                        deletion_info["method"] = "permanent"
-                        return True
-                    except Exception as e:
-                        # send2trash失败时回退到永久删除
-                        logger.warning(f"send2trash失败: {e}，回退到永久删除")
-                        if path.is_dir():
-                            if recursive:
-                                shutil.rmtree(str(path), onerror=_remove_readonly)
-                            else:
-                                path.rmdir()
-                        else:
-                            path.unlink()
-                        deletion_info["method"] = "permanent"
-                        return True
-            
-            success = await asyncio.to_thread(
+                    return _force_delete_sync(path, recursive), "permanent"
+                return _send2trash_sync(path, recursive)
+
+            is_ok, method = await asyncio.to_thread(
                 self.safety.execute_with_safety,
                 operation_id=operation_id,
                 operation_func=_delete_sync
             )
-            
-            if success:
-                delete_mode = "永久删除" if force else "放入回收站"
-                data = {
-                    "operation_id": operation_id,
-                    "deleted_path": str(path),
-                }
-                caps = []
-                if not force:
-                    method = deletion_info.get("method", "send2trash")
-                    if method == "send2trash":
-                        caps = ["send2trash"]
-                    else:
-                        caps = ["os.remove"]
-                return build_success(data, f"文件已{delete_mode}: {file_path}")
+
+            if is_ok:
+                return _build_delete_result(operation_id, path, force, method)
             else:
                 return build_error("ERR_FILE_DELETE_FAILED", "删除文件失败，safety拦截")
 
