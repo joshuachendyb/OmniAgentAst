@@ -29,13 +29,63 @@ from app.services.tools.tool_result_utils import build_next_actions  # 小沈 20
 from app.services.tools._response import build_success, build_error
 
 
+def _list_env_vars(prefix: Optional[str] = None) -> dict:
+    """列出环境变量（原 list_env 逻辑，独立方法）
+
+    小沈 2026-05-25 重构拆分
+    """
+    try:
+        raw = {n: v for n, v in os.environ.items()
+               if prefix is None or n.upper().startswith(prefix.upper())}
+        MAX_VAL = 1000
+        env_list, truncated_count = [], 0
+        for k, v in sorted(raw.items()):
+            val = str(v)
+            if len(val) > MAX_VAL:
+                val = val[:MAX_VAL] + f"...({len(val)}字符)"
+                truncated_count += 1
+            env_list.append({"name": k, "value": val})
+        _llm = {"总数": len(env_list), "截断数": truncated_count}
+        return build_success(
+            {"count": len(env_list), "variables": env_list, "prefix": prefix},
+            f"共找到 {len(env_list)} 个环境变量",
+            llm_data=_llm,
+            next_actions=build_next_actions([("set_env", "设置环境变量", "需要修改环境变量时")]))
+    except Exception as e:
+        logger.error(f"[list_env] 列出环境变量失败: {e}")
+        return build_error("ERR_SYS_ENV_LIST", f"列出环境变量失败: {str(e)}")
+
+
+def _get_env_by_scope(name: str, scope: str) -> Optional[str]:
+    """按 scope 读取环境变量值，注册表失败回退 os.environ
+
+    小沈 2026-05-25 重构拆分（修复 26.2-1🟡 scope 合法性校验）
+    """
+    if scope == "process":
+        return os.environ.get(name)
+    if scope not in ("user", "system"):      # 小沈 2026-05-25: 校验scope合法性
+        return os.environ.get(name)          # 未知 scope 回退进程环境变量
+    try:
+        import winreg
+        hive = winreg.HKEY_CURRENT_USER if scope == "user" else winreg.HKEY_LOCAL_MACHINE
+        subkey = r"Environment" if scope == "user" else r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+        with winreg.OpenKey(hive, subkey, 0, winreg.KEY_READ) as key:
+            try:
+                val, _ = winreg.QueryValueEx(key, name)
+                return val
+            except FileNotFoundError:
+                return None
+    except Exception:
+        return os.environ.get(name)
+
+
 def get_env(name: Optional[str] = None, scope: str = "process",
             expand_vars: bool = True, action: str = "get",
             prefix: Optional[str] = None,
             ) -> dict:
     """
     获取或列出环境变量 - 小沈 2026-05-03 | 2026-05-18 合并list_env
-    【2026-05-18 小沈】P2: 合并list_env（action="list"），减少LLM工具数
+    【2026-05-25 小沈重构】拆分 list 分支为 _list_env_vars，scope 分派为 _get_env_by_scope
 
     Args:
         name: 环境变量名称（action="get"时必填）
@@ -47,87 +97,28 @@ def get_env(name: Optional[str] = None, scope: str = "process",
     Returns:
         {code, data, message}
     """
-    # 【2026-05-18 小沈】action="list"分支：原list_env逻辑
-    # 小健 2026-05-19: action值校验
     if action not in ("get", "list"):
         return build_error("ERR_SYS_ENV_INVALID_ACTION", f"无效的action: {action}，支持: get/list")
     if action == "list":
-        try:
-            env_vars = {}
-            # include_system 已从Schema移除，默认False，不读取注册表系统级变量
-            for n, v in os.environ.items():
-                if prefix is None or n.upper().startswith(prefix.upper()):
-                    env_vars[n] = v
-            MAX_VAL = 1000
-            env_list = []
-            truncated_count = 0
-            for k, v in sorted(env_vars.items()):
-                val = str(v)
-                if len(val) > MAX_VAL:
-                    val = val[:MAX_VAL] + f"...({len(val)}字符)"
-                    truncated_count += 1
-                env_list.append({"name": k, "value": val})
-            _llm = {
-                "总数": len(env_list),
-                "截断数": truncated_count,
-                "变量列表": [{"name": e["name"], "value": e["value"][:200] + ("..." if len(e["value"]) > 200 else "")} for e in env_list],
-            }
-            return build_success(
-                {"count": len(env_list), "variables": env_list, "prefix": prefix},
-                f"共找到 {len(env_list)} 个环境变量",
-                llm_data=_llm,
-                next_actions=build_next_actions([("set_env", "设置环境变量", "需要修改环境变量时")])
-            )
-        except Exception as e:
-            logger.error(f"[get_env] 列出环境变量失败: {e}")
-            return build_error("ERR_SYS_ENV_LIST", f"列出环境变量失败: {str(e)}")
+        return _list_env_vars(prefix)
 
-    # action="get"分支：原get_env逻辑
-    if action == "get" and not name:
+    if not name:
         return build_error("ERR_SYS_ENV_INVALID_NAME", "action='get'时name参数必填")
-    
+
     try:
-        value = None
-
-        if scope == "process":
-            value = os.environ.get(name)
-        elif scope in ("user", "system"):
+        value = _get_env_by_scope(name, scope)
+        if value is not None and expand_vars and isinstance(value, str):
             try:
-                import winreg
-                hive = winreg.HKEY_CURRENT_USER if scope == "user" else winreg.HKEY_LOCAL_MACHINE
-                key = winreg.OpenKey(
-                    hive,
-                    r"Environment" if scope == "user" else r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
-                    0, winreg.KEY_READ
-                )
-                try:
-                    value, _ = winreg.QueryValueEx(key, name)
-                except FileNotFoundError:
-                    value = None
-                finally:
-                    winreg.CloseKey(key)
-            except Exception as e:
-                logger.warning(f"[get_env] 读取{scope}级环境变量失败: {e}")
-                value = os.environ.get(name)
+                value = os.path.expandvars(value)
+            except Exception:
+                pass
 
-        if value is not None:
-            if expand_vars and isinstance(value, str):
-                try:
-                    expanded = os.path.expandvars(value)
-                    value = expanded
-                except Exception:
-                    pass
-            return build_success(
-                {"name": name, "value": value, "exists": True, "scope": scope, "expanded": expand_vars},
-                f"成功获取环境变量 {name}（作用域: {scope}）",
-                next_actions=build_next_actions([("set_env", "设置环境变量", "需要修改环境变量时")])
-            )
-        else:
-            return build_success(
-                {"name": name, "value": None, "exists": False, "scope": scope, "expanded": expand_vars},
-                f"环境变量 {name} 不存在（作用域: {scope}）",
-                next_actions=build_next_actions([("set_env", "设置环境变量", "需要修改环境变量时")])
-            )
+        return build_success(
+            {"name": name, "value": value, "exists": value is not None,
+             "scope": scope, "expanded": expand_vars},
+            f"环境变量 {name} ({'存在' if value is not None else '不存在'})",
+            next_actions=build_next_actions([("set_env", "设置环境变量", "需要修改环境变量时")]))
+
     except Exception as e:
         logger.error(f"[get_env] 获取环境变量失败: {e}")
         return build_error("ERR_SYS_ENV_GET", f"获取环境变量失败: {str(e)}")
