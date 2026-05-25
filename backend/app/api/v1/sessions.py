@@ -435,131 +435,85 @@ async def list_sessions(
                 pass
 
 
+def _ensure_ts_milliseconds(ts_value: Any) -> int:
+    """统一时间戳转毫秒整数（21.3 组件1，小沈 2026-05-25 实施）
+    
+    支持 int/float（直取）、str（fromisoformat→ms）、失败兜底 UTC now
+    """
+    if isinstance(ts_value, (int, float)):
+        return int(ts_value)
+    try:
+        return int(datetime.fromisoformat(str(ts_value).replace(' ', 'T')).timestamp() * 1000)
+    except (ValueError, TypeError, OverflowError):
+        logger.warning(f"时间戳转换失败，使用当前时间: {ts_value}")
+        return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+
+def _safe_parse_json(json_str: Optional[str], label: str = "") -> Any:
+    """安全解析 JSON 字符串（21.3 组件2，小沈 2026-05-25 实施）
+    
+    失败返回 None 并记录警告，供 get_session_messages 和 list_sessions 复用
+    """
+    if not json_str:
+        return None
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        logger.warning(f"JSON解析失败 [{label}]: {json_str[:100]}")
+        return None
+
+
 @router.get("/sessions/{session_id}/messages")
 async def get_session_messages(session_id: str):
-    """
-    获取会话消息历史
-    
-    优化内容（12.1.1节）：
-    - 响应格式扩展：新增title_locked, title_source, title_updated_at字段
-    
-    Args:
-        session_id: 会话ID
-        
-    Returns:
-        dict: 包含session_id, title, title_locked, title_source, title_updated_at和messages的对象
-    """
+    """获取会话消息历史（21.3 重构，小沈 2026-05-25 实施）"""
     conn = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        
-        # P0风险缓解：检查数据库字段是否存在（向后兼容）
+
         fields_exist = check_db_fields_exist(conn)
-        
-        # 验证会话存在
+
         if fields_exist['title_locked'] and fields_exist['title_updated_at'] and fields_exist['version']:
-            # 所有新字段都存在，使用完整查询
-            cursor.execute(
-                '''SELECT id, title, 
-                          COALESCE(title_locked, 0) as title_locked,
-                          COALESCE(title_updated_at, created_at) as title_updated_at,
-                          COALESCE(version, 1) as version,
-                          COALESCE(is_valid, 1) as is_valid
-                   FROM chat_sessions 
-                   WHERE id = ? AND is_deleted = FALSE''',
-                (session_id,)
-            )
+            cursor.execute('''SELECT id, title, COALESCE(title_locked, 0) as title_locked,
+                              COALESCE(title_updated_at, created_at) as title_updated_at,
+                              COALESCE(version, 1) as version, COALESCE(is_valid, 1) as is_valid
+                           FROM chat_sessions WHERE id = ? AND is_deleted = FALSE''', (session_id,))
         else:
-            # 新字段不存在，使用兼容查询
-            cursor.execute(
-                '''SELECT id, title, 0 as title_locked, created_at as title_updated_at, 1 as version, 1 as is_valid
-                   FROM chat_sessions 
-                   WHERE id = ? AND is_deleted = FALSE''',
-                (session_id,)
-            )
-        
+            cursor.execute('''SELECT id, title, 0 as title_locked, created_at as title_updated_at,
+                               1 as version, 1 as is_valid
+                           FROM chat_sessions WHERE id = ? AND is_deleted = FALSE''', (session_id,))
+
         session = cursor.fetchone()
-        
         if not session:
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
-        
-        # 获取消息（添加 display_name 字段）
-        cursor.execute(
-            '''SELECT id, session_id, role, content, timestamp, execution_steps, display_name
-               FROM chat_messages 
-               WHERE session_id = ?
-               ORDER BY timestamp ASC''',
-            (session_id,)
-        )
-        
-        rows = cursor.fetchall()
-        
-        # 解析 execution_steps JSON字符串为数组
-        # 【重要 2026-04-01 小沈】execution_steps中的timestamp是int类型
-        # json.loads() 反序列化后，step.timestamp 保持为 int（如 1774971788504）
-        # 前端 new Date(1774971788504) 能正确解析，导出时 formatTimestamp() 正常工作
-        # 注意：message.timestamp 之前被转为字符串（第629行），导致前端 new Date("...") 返回 Invalid Date
+
+        cursor.execute('''SELECT id, session_id, role, content, timestamp, execution_steps, display_name
+                       FROM chat_messages WHERE session_id = ? ORDER BY timestamp ASC''', (session_id,))
+
         messages = []
-        for row in rows:
-            execution_steps_data = None
-            if row['execution_steps']:
-                try:
-                    execution_steps_data = json.loads(row['execution_steps'])
-                except json.JSONDecodeError:
-                    logger.warning(f"解析 execution_steps 失败: {row['execution_steps']}")
-
-            # ⭐ 小新修复 2026-03-07：如果 display_name 为空，尝试从 execution_steps 中提取
+        for row in cursor.fetchall():
+            steps = _safe_parse_json(row['execution_steps'], label="execution_steps")
             display_name = row['display_name']
-            if not display_name and execution_steps_data:
-                display_name = extract_display_name_from_steps(execution_steps_data)
+            if not display_name and steps:
+                display_name = extract_display_name_from_steps(steps)
 
-            # 【修复 2026-04-01 小沈】返回毫秒时间戳给前端
-            # 根因：之前使用 str(int(ts_value)) 将时间戳转为字符串，导致前端 new Date("1774971788505") 返回 Invalid Date
-            # 修复：直接返回 int 类型，前端 new Date(1774971788505) 能正确解析
-            # 对比：execution_steps 中的 timestamp 通过 json.loads() 返回 int，导出正常
-            #      message.timestamp 之前被转为字符串，导出为空
-            ts_value = row['timestamp']
-            if isinstance(ts_value, (int, float)):
-                timestamp_ms = int(ts_value)  # 保持 int 类型
-            else:
-                try:
-                    timestamp_ms = int(datetime.fromisoformat(str(ts_value).replace(' ', 'T')).timestamp() * 1000)
-                except:
-                    timestamp_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-            
             messages.append(MessageResponse(
-                id=row['id'],
-                session_id=row['session_id'],
-                role=row['role'],
-                content=row['content'],
-                timestamp=timestamp_ms,
-                execution_steps=execution_steps_data,
-                display_name=display_name
+                id=row['id'], session_id=row['session_id'],
+                role=row['role'], content=row['content'],
+                timestamp=_ensure_ts_milliseconds(row['timestamp']),
+                execution_steps=steps, display_name=display_name,
             ))
-        
-        logger.info(f"获取会话消息: session_id={session_id}, count={len(messages)}")
-        
-        # 返回扩展格式（12.1.1节要求）
-        # 新增字段：title_locked, title_source, title_updated_at
+
         title_locked = bool(session['title_locked'])
-        title_source = 'user' if title_locked else 'auto'
-        title_updated_at = _convert_to_utc(session['title_updated_at'])
-        
-        # ⭐ 修复API设计缺陷：也需要返回version字段，以便前端正确调用更新API
-        version = session['version'] if 'version' in session else 1
-        
         return {
-            "session_id": session_id,
-            "title": session['title'],
+            "session_id": session_id, "title": session['title'],
             "title_locked": title_locked,
-            "title_source": title_source,
-            "title_updated_at": title_updated_at,
-            "version": version,  # ⭐ 添加version字段
-            "is_valid": session['is_valid'],  # 【小沈添加】返回会话有效性状态
-            "messages": messages
+            "title_source": "user" if title_locked else "auto",
+            "title_updated_at": _convert_to_utc(session['title_updated_at']),
+            "version": session['version'], "is_valid": session['is_valid'],
+            "messages": messages,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -567,10 +521,8 @@ async def get_session_messages(session_id: str):
         raise HTTPException(status_code=500, detail=f"获取会话消息失败: {str(e)}")
     finally:
         if conn:
-            try:
-                conn.close()
-            except Exception:
-                pass
+            try: conn.close()
+            except Exception: pass
 
 
 
