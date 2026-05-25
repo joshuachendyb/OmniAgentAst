@@ -33,14 +33,39 @@ from app.utils.logger import logger
 
 class FileOperationPrompts(BasePrompts):
     """文件操作Prompt模板类"""
-    
+
+    def _build_tool_descriptions(self, category: str, tools: List[str]) -> str:
+        """从 ToolRegistry 动态生成工具描述字符串。
+
+        小沈 2026-05-25 重构拆分
+        统一 17.1(`SystemPrompts`)和 22.2(`FileOperationPrompts`)的模板生成，
+        新增/修改工具后自动更新 prompt，无需人工维护模板。
+        消除 11 个工具描述硬编码（YAGNI）。
+        """
+        from app.services.tools.registry import ToolRegistry
+        registry = ToolRegistry.get_instance()
+        lines = []
+        for idx, tool_name in enumerate(tools, 1):
+            meta = registry.get_tool_meta(tool_name)
+            if not meta:
+                continue
+            lines.append(f"{idx}. {tool_name} - {meta.get('description', '')}")
+            lines.append(f"   - When to use: {meta.get('when_to_use', '')}")
+            params = meta.get('parameters', {})
+            if params:
+                lines.append(f"   - Parameters: {', '.join(params.keys())}")
+            lines.append(f"   - Returns: {meta.get('returns', '')}")
+            example = meta.get('example', '')
+            if example:
+                lines.append(f"   - Examples: {example}")
+            lines.append("")
+        return "\n".join(lines)
+
     def get_system_prompt(self) -> str:
-        """获取增强版系统Prompt"""
-        # 获取系统信息（来自中间层）
-        system_info = get_system_info(include_commands=False)  # 【修复 2026-05-14 小沈】FileAgent不注入命令格式
+        """获取增强版系统Prompt - 小沈 2026-05-25 重构拆分"""
+        system_info = get_system_info(include_commands=False)
         logger.info(f"[FileOperationPrompts] get_system_prompt() 被调用，中间层已注入系统信息，长度: {len(system_info)}")
-        
-        # ========== Prompt 日志记录 ==========
+
         from app.utils.prompt_logger import get_prompt_logger
         prompt_logger = get_prompt_logger()
         prompt_logger.log_system_prompt(
@@ -53,91 +78,18 @@ class FileOperationPrompts(BasePrompts):
             },
             round_number=1
         )
-        
-        # 直接字符串拼接，避免f-string解析问题
-        return system_info + """
 
-You are a professional file management assistant. You help users organize, analyze, and manage files and directories.
+        tools = [
+            "read_file", "write_text_file", "list_directory",
+            "search_files", "grep_file_content", "edit_file",
+            "rename_file", "file_operation", "archive_tool",
+            "read_media_file", "data_file_format",
+        ]
+        tool_descriptions = self._build_tool_descriptions("file", tools)
 
-【Available FILE Tools — 共11个】:
+        prompt = f"{system_info}\n\n# File Operation Tools\n\n{tool_descriptions}"
 
-1. read_file - Read text file(s), unified entry for single/batch mode
-   - When to use: read/peek/view text files, config files, logs
-   - Returns: content, file_path, encoding, total_lines (single) or results (batch)
-   - Examples:
-     * read_file(file_paths=["C:/config.json"], offset=1, limit=100)
-     * read_file(file_paths=["C:/file1.txt", "C:/file2.txt"])
-
-2. write_text_file - Write or append text to file
-   - When to use: create new files, overwrite existing content, append to logs
-   - Returns: file_path, success, message
-   - Examples:
-     * write_text_file(file_path="D:/output.txt", text="Hello World")
-     * write_text_file(file_path="D:/app.log", text="new line\\n", append=True)
-
-3. list_directory - List directory contents
-   - When to use: browse files, check directory structure
-   - Returns: items, total_count, dir_count, file_count, page_token
-   - Examples:
-     * list_directory(dir_path="D:/project", recursive=True)
-     * list_directory(dir_path="D:/project", format="tree")
-
-4. search_files - Search files by name pattern
-   - When to use: find files by name, glob pattern matching
-   - Returns: matches, total_matched, page_token
-   - Examples:
-     * search_files(pattern="**/*.py", search_dir="D:/project")
-
-5. grep_file_content - Search files by content pattern
-   - When to use: find files containing specific text, regex search
-   - Returns: matches, total_matched, page_token
-   - Examples:
-     * grep_file_content(pattern="TODO", search_dir="D:/project", glob="*.py")
-     * grep_file_content(pattern="def main", search_dir="D:/src", context={"around": 3})
-
-6. edit_file - Edit text file (single or multi-edit)
-   - When to use: precise text replacement, batch edits
-   - Returns: file_path, changes_made, diff
-   - Examples:
-     * edit_file(file_path="D:/main.py", old_string="def old():", new_string="def new():")
-     * edit_file(file_path="D:/main.py", edits=[{"oldText": "old", "newText": "new"}])
-
-7. rename_file - Rename file(s)
-   - When to use: rename single file, batch rename with regex
-   - Returns: old_path, new_path, success (single) or results (batch)
-   - Examples:
-     * rename_file(mode="single", path="C:/old.txt", new_name="new.txt")
-     * rename_file(mode="batch", directory="D:/project", pattern="file_(\\\\d+).txt", replacement="renamed_\\\\1.txt")
-
-8. file_operation - File operations: move/copy/delete
-   - When to use: move/copy files, delete files/directories
-   - Returns: operation, source, destination, success, message
-   - Examples:
-     * file_operation(action="move", source="C:/old.txt", destination="D:/new.txt")
-     * file_operation(action="delete", source="C:/temp.txt")
-     * file_operation(action="delete", source="C:/temp", recursive=True, force=True)
-
-9. archive_tool - Compress/extract archives
-   - When to use: zip/unzip files, create archives
-   - Returns: operation, source, destination, file_count, size
-   - Examples:
-     * archive_tool(action="compress", source="D:/project", destination="D:/backup.zip")
-     * archive_tool(action="extract", source="D:/backup.zip", destination="D:/extracted")
-
-10. read_media_file - Read image, audio, video, PDF file
-    - When to use: view image, play audio/video, read PDF content
-    - Returns: base64_data, mime_type, file_name
-    - Examples:
-      * read_media_file(file_path="D:/screenshot.png")
-
-11. data_file_format - Read/write structured data files
-    - When to use: read/write JSON, YAML, TOML, INI, XML, Properties files
-    - Returns: data (read) or success (write), file_path, format
-    - Examples:
-      * data_file_format(action="read", file_path="D:/config.json")
-      * data_file_format(action="write", file_path="D:/config.yaml", data={"key": "value"})
-
-
+        return prompt + """
 【Tool Call Examples】:
 Example 1: 读取文件
 {"thought": "用户要读取配置文件", "reasoning": "调用read_file单文件模式", "tool_name": "read_file", "tool_params": {"file_paths": ["C:/config.json"]}}
