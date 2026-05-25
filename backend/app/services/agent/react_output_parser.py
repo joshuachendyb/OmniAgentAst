@@ -14,7 +14,7 @@ Version: 1.0
 
 import re
 import json
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 
 from app.utils.logger import logger
 
@@ -1171,7 +1171,77 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
     return _add_reasoning_warning(result)
 
 
-def _create_action_result_from_list(data: list) -> Dict[str, Any]:
+# 【小沈重构 2026-05-25】25.3节：统一构造action结果dict，消除3处字段名重复
+def _make_action_result_dict(
+    result_type: str, thought: str, content: str, reasoning: str,
+    tool_name: Optional[str], tool_params: Optional[Dict],
+    response: Optional[str], error: Optional[str] = None,
+    pending_calls: Optional[List] = None,
+) -> Dict[str, Any]:
+    """统一构造 action 结果 dict，消除 3 处的字段名重复 - 小沈重构 2026-05-25"""
+    result = {
+        "type": result_type, "thought": thought,
+        "content": content, "reasoning": reasoning,
+        "tool_name": tool_name, "tool_params": tool_params,
+        "response": response, "error": error,
+    }
+    if pending_calls:
+        result["_pending_calls"] = pending_calls
+    return _add_reasoning_warning(result)
+
+
+def _resolve_return_type(data: Dict) -> Dict[str, Any]:
+    """根据 tool_name 确定返回类型，统一调用 _make_action_result_dict - 小沈重构 2026-05-25"""
+    thought, content = data.get("thought", ""), data.get("content", data.get("thought", ""))
+    reasoning = data.get("reasoning", "")
+    raw_params = data.get("tool_params", data.get("args", {}))
+    tool_params = _process_tool_params(raw_params, data.get("tool_name"), None)
+    pending = data.get("_pending_calls")
+    tool_name = data.get("tool_name")
+
+    # finish → answer
+    if tool_name == "finish":
+        raw_result = tool_params.get("result") if isinstance(tool_params, dict) else None
+        result_text = _normalize_result_to_str(raw_result) if raw_result is not None else ""
+        return _make_action_result_dict(
+            "answer", content, result_text or content, reasoning,
+            None, None, result_text or content, None, pending)
+
+    # tool_name 空 → implicit
+    if not tool_name:
+        logger.warning(f"[_create_action_result_from_dict] tool_name为空，降级为implicit")
+        return _make_action_result_dict(
+            "implicit", thought, content, reasoning,
+            None, None, content or thought, None, pending)
+
+    # 正常 action
+    return _make_action_result_dict(
+        "action", thought, content, reasoning,
+        tool_name, tool_params, None, None, pending)
+
+
+# 【小沈重构 2026-05-25】25.3节：骨架~25行，3种返回类型统一分发
+def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
+    """
+    【重构 2026-05-25】从 dict 输入创建统一格式的结果
+    直接处理已解析的 dict（不是 JSON 字符串），解决长文本 content 丢失问题
+    """
+    if not data or not isinstance(data, dict):
+        return _make_action_result_dict("parse_error", "", "", "", None, None, "", "Empty or invalid dict input")
+
+    explicit_type = data.get("type")
+    if explicit_type == "parse_error":
+        return _build_parse_error_result(data)
+    if explicit_type == "answer":
+        return _build_answer_result(data)
+    if explicit_type == "chunk":
+        return _build_chunk_result(data)
+
+    if "action" in data and "tool_name" not in data:
+        output = json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+        return _build_action_from_old_format(data, output)
+
+    return _resolve_return_type(data)
     """
     【2026-04-28 小沈新增】从 list 输入创建统一格式的结果
     处理LLM返回的JSON数组场景
