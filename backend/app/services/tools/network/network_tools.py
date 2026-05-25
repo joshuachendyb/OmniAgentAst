@@ -34,13 +34,16 @@ import platform
 import subprocess
 import socket
 import asyncio
-from typing import Optional, Dict, Any, Literal, List
+from typing import Optional, Dict, Any, Literal, List, Tuple
 from urllib.parse import urlencode, urlparse, urlunparse
 
 import httpx
 from app.utils.logger import logger
 from app.constants import RETRYABLE_HTTP_STATUS_CODES, BROWSER_USER_AGENT, DEFAULT_MAX_OUTPUT_CHARS, DEFAULT_MAX_DOC_CHARS
-from app.services.tools.toolhelper.network_helper import well_known_ports, _html_to_markdown, _decode_bing_redirect_url  # 小健 2026-05-18
+from app.services.tools.toolhelper.network_helper import (  # 小健 2026-05-18
+    well_known_ports, _html_to_markdown, _decode_bing_redirect_url,
+    _validate_url, _check_network,  # 小沈 2026-05-25 提升到模块级，消除3处函数内重复import
+)
 from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
 from app.services.tools._response import build_success, build_error
 
@@ -63,8 +66,6 @@ async def http_request(
     timeout_sec = timeout / 1000.0
     
     try:
-        from app.services.tools.toolhelper.network_helper import _validate_url, _check_network
-
         url_info = _validate_url(url)
         if not url_info["data"]["valid"]:
             return build_error("ERR_INVALID_URL", f"URL格式无效: {url}，URL必须包含协议和域名（如 https://api.example.com/data）")
@@ -201,6 +202,47 @@ async def http_request(
         return build_error("ERR_NET_UNKNOWN", f"请求异常: {str(e)}")
 
 
+NET_ERROR_MAP = [
+    (httpx.TimeoutException, "ERR_NETWORK_TIMEOUT", "下载超时"),
+    (httpx.HTTPStatusError, "ERR_NETWORK_HTTP_ERROR", "下载失败"),
+    (httpx.RequestError, "ERR_NETWORK_REQUEST_ERROR", "网络请求失败"),
+]
+
+
+def _map_network_error(url: str, timeout: int, e: Exception) -> Dict[str, Any]:
+    """将 httpx 异常映射为 build_error — 小健 2026-05-25"""
+    for exc_type, code, prefix in NET_ERROR_MAP:
+        if isinstance(e, exc_type):
+            detail = f"{prefix}（{timeout/1000}秒）：{url}"
+            if isinstance(e, httpx.HTTPStatusError):
+                detail = f"{prefix} (HTTP {e.response.status_code})：{url}"
+            return build_error(code, detail)
+    # 兜底：未知错误
+    logger.error(f"[download_file] 未知错误: {e}")
+    return build_error("ERR_NET_UNKNOWN", f"下载异常: {str(e)}")
+
+
+async def _stream_download(client: httpx.AsyncClient, url: str, dest_path: str,
+                           headers: dict, chunk_size: int = 8192) -> Tuple[int, str, int]:
+    """流式下载文件到本地，返回 (downloaded_bytes, content_type, total_bytes) — 小健 2026-05-25"""
+    async with client.stream("GET", url, headers=headers) as response:
+        response.raise_for_status()
+        content_type = response.headers.get("content-type", "")
+        total_bytes = int(response.headers.get("content-length", 0))
+
+        downloaded = 0
+        try:
+            with open(dest_path, "wb") as f:
+                async for chunk in response.aiter_bytes(chunk_size=chunk_size):
+                    f.write(chunk)
+                    downloaded += len(chunk)
+        except (PermissionError, OSError):
+            if os.path.exists(dest_path):
+                os.remove(dest_path)
+            raise
+        return downloaded, content_type, total_bytes
+
+
 async def download_file(
     url: str,
     destination_path: str,
@@ -208,118 +250,50 @@ async def download_file(
     timeout: int = 300000,
     proxy: Optional[str] = None,
 ) -> dict:
-    """从URL下载文件 — 小沈 2026-05-19 精简参数(7→5)"""
-    # ⚠️ 警告: 以下参数已从Schema移除，硬编码默认值，后续视需求决定是否恢复
-    resume = False
-    chunk_size = 8192
+    """从URL下载文件 — 小沈 2026-05-25 重构"""
     try:
-        from app.services.tools.toolhelper.network_helper import _validate_url, _check_network
-
         url_info = _validate_url(url)
         if not url_info["data"]["valid"]:
-            return build_error("ERR_INVALID_URL", f"URL格式无效: {url}，URL必须包含协议和域名")
-
+            return build_error("ERR_INVALID_URL", f"URL格式无效: {url}")
         net_info = _check_network()
         if not net_info["data"]["connected"]:
-            return build_error("ERR_NETWORK_DOWN", "网络不可用，无法发送请求")
+            return build_error("ERR_NETWORK_DOWN", "网络不可用")
 
-        # 验证目标路径
         dest_path = os.path.abspath(destination_path)
         dest_dir = os.path.dirname(dest_path)
         if not dest_dir:
-            return build_error("ERR_NETWORK_INVALID_PATH", f"无效的目标路径: {destination_path}，路径必须包含目录")
-
-        # 创建目标目录
+            return build_error("ERR_NETWORK_INVALID_PATH", f"无效路径: {destination_path}")
         try:
             os.makedirs(dest_dir, exist_ok=True)
         except (PermissionError, OSError) as e:
-            return build_error("ERR_NETWORK_CREATE_DIR", f"无法创建目录 {dest_dir}: {str(e)}")
+            return build_error("ERR_NETWORK_CREATE_DIR", f"无法创建目录: {e}")
 
-        # 构建请求头
-        request_headers = {}
-        if headers:
-            request_headers.update(headers)
-
-        # 代理配置 - 小健 2026-05-18 添加
-        proxy_config = None
-        if proxy:
-            proxy_config = proxy
-        elif os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY"):
+        proxy_config = proxy
+        if not proxy_config:
             proxy_config = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
 
-        # 检查是否支持断点续传（根据resume参数和文件是否存在）
-        downloaded = 0
-        resume_offset = 0
-        if resume and os.path.exists(dest_path):
-            resume_offset = os.path.getsize(dest_path)
-            if resume_offset > 0:
-                request_headers["Range"] = f"bytes={resume_offset}-"
+        req_headers = headers or {}
 
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout / 1000.0, connect=timeout / 1000.0 / 3),  # 小健 2026-05-19: 毫秒转秒+添加connect超时
+            timeout=httpx.Timeout(timeout / 1000.0, connect=timeout / 1000.0 / 3),
             follow_redirects=True,
-            proxy=proxy_config
+            proxy=proxy_config,
         ) as client:
-            async with client.stream("GET", url, headers=request_headers) as response:
-                response.raise_for_status()
-                # 检查服务器是否支持断点续传
-                is_resume = response.status_code == 206
-                if is_resume:
-                    content_range = response.headers.get("content-range", "")
-                    try:
-                        if content_range and "/" in content_range:
-                            total_size = int(content_range.split("/")[-1])
-                        else:
-                            total_size = resume_offset + int(response.headers.get("content-length", 0))
-                    except (ValueError, IndexError):
-                        total_size = resume_offset + int(response.headers.get("content-length", 0))
-                else:
-                    total_size = int(response.headers.get("content-length", 0))
-                    if resume_offset > 0:
-                        resume_offset = 0
+            downloaded, content_type, total_bytes = await _stream_download(client, url, dest_path, req_headers)
 
-                content_type = response.headers.get("content-type", "")
-
-                # 流式写入文件
-                progress_percent = 0
-                try:
-                    with open(dest_path, "ab" if resume_offset > 0 else "wb") as f:
-                        async for chunk in response.aiter_bytes(chunk_size=chunk_size):
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            if total_size > 0:
-                                progress_percent = int((resume_offset + downloaded) * 100 / total_size)
-                except (PermissionError, OSError) as e:
-                    # 清理不完整的文件
-                    try:
-                        if dest_path and os.path.exists(dest_path):
-                            os.remove(dest_path)
-                    except OSError:
-                        pass
-                    return build_error("ERR_NETWORK_WRITE_FILE", f"写入文件失败 {dest_path}: {str(e)}")
-
-                return build_success(
-                    {
-                        "file_path": dest_path,
-                        "file_size": downloaded,
-                        "total_size": total_size,
-                        "progress_percent": progress_percent,
-                        "content_type": content_type,
-                    },
-                    f"文件下载成功 ({downloaded}/{total_size} 字节, {progress_percent}%)：保存到 {dest_path}",
-                    llm_data={"路径": dest_path, "大小": downloaded, "类型": content_type},
-                    next_actions=build_next_actions([("read_file", "读取下载的文件", "需要查看下载内容时")]),
-                )
-
-    except httpx.TimeoutException:
-        return build_error("ERR_NETWORK_TIMEOUT", f"下载超时（{timeout/1000}秒）：{url}")
-    except httpx.HTTPStatusError as e:
-        return build_error("ERR_NETWORK_HTTP_ERROR", f"下载失败 (HTTP {e.response.status_code})：{url}")
-    except httpx.RequestError as e:
-        return build_error("ERR_NETWORK_REQUEST_ERROR", f"网络请求失败：{str(e)}")
+        return build_success(
+            {"file_path": dest_path, "file_size": downloaded, "total_size": total_bytes, "content_type": content_type},
+            f"文件下载成功 ({downloaded}/{total_bytes} 字节)：{dest_path}",
+            llm_data={"路径": dest_path, "大小": downloaded, "类型": content_type},
+            next_actions=build_next_actions([("read_file", "读取下载的文件", "需要查看时")]),
+        )
+    except (PermissionError, OSError) as e:
+        return build_error("ERR_NETWORK_WRITE_FILE", f"写入文件失败 {dest_path}: {e}")
+    except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
+        return _map_network_error(url, timeout, e)
     except Exception as e:
         logger.error(f"[download_file] 未知错误: {e}")
-        return build_error("ERR_NET_UNKNOWN", f"下载异常: {str(e)}")
+        return build_error("ERR_NET_UNKNOWN", f"下载异常: {e}")
 
 
 async def fetch_webpage(
@@ -335,8 +309,6 @@ async def fetch_webpage(
     timeout_sec = timeout / 1000.0
     
     try:
-        from app.services.tools.toolhelper.network_helper import _validate_url, _check_network
-
         url_info = _validate_url(url)
         if not url_info["data"]["valid"]:
             return build_error("ERR_INVALID_URL", f"URL格式无效: {url}")
