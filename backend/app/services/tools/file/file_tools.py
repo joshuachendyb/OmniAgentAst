@@ -571,86 +571,40 @@ class FileTools:
         self._sequence = 0
     
     def _validate_content_format(self, file_path: str, content: str) -> Optional[str]:
-        """
-        写入前按文件扩展名验证内容格式合法性
-        
-        【新增 2026-04-30 小沈】
-        防止写入畸形格式的文件：
-        - .json: 验证JSON合法性
-        - .csv: 验证CSV基本格式
-        - .xml/.html/.htm: 验证标记基本合法性
-        - .py: 验证Python语法
-        - .xlsx/.docx/.pdf/.png/.jpg等二进制格式: 拒绝通过write_file写入
-        
-        Args:
-            file_path: 文件路径
-            content: 要写入的内容
-            
-        Returns:
-            None 表示验证通过，str 表示错误信息
+        """写入前按文件扩展名验证内容格式合法性 — 小健 2026-05-25 重构拆分
+
+        使用场景:
+            write_file写入文件前验证格式合法性
+
+        使用示例:
+            error = self._validate_content_format('test.json', '{"key": "value"}')
+            if error:
+                print(f"验证失败: {error}")
+
+        返回数据说明:
+            - 返回None表示验证通过
+            - 返回str表示错误信息
         """
         path = Path(file_path)
         suffix = path.suffix.lower()
-        
-        # 二进制格式禁止通过write_file写入（会损坏文件）
+
         if suffix in self.BINARY_EXTENSIONS:
             return f"不支持通过write_file写入二进制格式文件(.{suffix[1:]})，请使用对应的专业工具操作"
-        
-        # .json: 验证JSON合法性
-        if suffix == '.json':
-            try:
-                import json
-                json.loads(content)
-            except json.JSONDecodeError as e:
-                return f"JSON格式验证失败: 第{e.lineno}行第{e.colno}列 - {e.msg}"
-        
-        # .csv: 验证CSV基本格式（检查行数和列数一致性）
-        elif suffix == '.csv':
-            try:
-                import csv
-                from io import StringIO
-                reader = csv.reader(StringIO(content))
-                row_lengths = []
-                for i, row in enumerate(reader):
-                    if i > 1000:  # 只检查前1000行
-                        break
-                    if row:  # 跳过空行
-                        row_lengths.append(len(row))
-                if row_lengths and len(set(row_lengths)) > 1:
-                    return f"CSV格式警告: 列数不一致(发现{set(row_lengths)}种列数)，写入可能导致数据错位"
-            except Exception as e:
-                return f"CSV格式验证失败: {str(e)[:100]}"
-        
-        # .xml/.html/.htm: 验证标记基本合法性
-        elif suffix in ('.xml', '.html', '.htm'):
-            if suffix == '.xml':
-                try:
-                    import xml.etree.ElementTree as ET
-                    ET.fromstring(content)
-                except ET.ParseError as e:
-                    return f"XML格式验证失败: {str(e)[:100]}"
-            # html只做基本检查（< 和 > 配对）
-            elif suffix in ('.html', '.htm'):
-                open_tags = content.count('<')
-                close_tags = content.count('>')
-                if open_tags != close_tags:
-                    return f"HTML标记验证警告: '<'({open_tags}个)与'>'({close_tags}个)数量不匹配"
-        
-        # .py: 验证Python语法
-        elif suffix == '.py':
-            try:
-                compile(content, str(path), 'exec')
-            except SyntaxError as e:
-                # 【修复 2026-05-01 序号5】Python验证错误提示优化：给出具体修复建议
-                error_msg = f"Python语法验证失败: 第{e.lineno}行 - {e.msg}"
-                if "unterminated string literal" in e.msg:
-                    error_msg += "；建议：转义字符串请使用raw string r'...'，如 r'\\\\' 代替 '\\\\'"
-                elif "invalid character" in e.msg:
-                    error_msg += "；建议：Python不支持全角标点，请使用半角括号()、逗号,、冒号:、分号;"
-                elif "invalid escape sequence" in e.msg:
-                    error_msg += "；建议：请在字符串前加r前缀使用raw string，或将转义字符双写如 \\\\d → r'\\d'"
-                return error_msg
-        
+
+        from app.services.tools.toolhelper import content_validation as cv
+
+        validators = {
+            '.json': cv.validate_json_content,
+            '.csv': cv.validate_csv_content,
+            '.xml': cv.validate_xml_content,
+            '.html': cv.validate_html_content,
+            '.htm': cv.validate_html_content,
+            '.py': lambda c: cv.validate_python_content(c, str(path)),
+        }
+
+        validator = validators.get(suffix)
+        if validator:
+            return validator(content)
         return None
 
     def _validate_path(self, file_path: str) -> tuple[bool, Optional[str]]:
