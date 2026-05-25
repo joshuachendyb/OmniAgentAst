@@ -666,6 +666,88 @@ class FileTools:
         except Exception as e:
             return False, f"路径验证失败: {str(e)}"
     
+    async def _try_read_file_with_encodings(
+        path: Path,
+        preferred: Optional[str] = None,
+    ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        """编码检测+同步文件读取，返回 (content, used_encoding, error)
+        
+        小沈 2026-05-25 重构拆分
+        """
+        try:
+            from app.services.tools.toolhelper.file_helpers import get_file_encoding
+            
+            if preferred:
+                encodings_to_try = [preferred]
+            else:
+                auto = get_file_encoding(str(path))
+                encodings_to_try = []
+                if auto and auto.get("encoding"):
+                    encodings_to_try.append(auto["encoding"])
+            encodings_to_try.extend(["utf-8", "gbk", "gb2312", "utf-8-sig"])
+            
+            do_detect = preferred is None
+            
+            for enc in encodings_to_try:
+                if enc is None:
+                    continue
+                try:
+                    def _read(e=enc):
+                        with open(path, 'r', encoding=e, errors='replace') as f:
+                            return f.read()
+                    content = await asyncio.to_thread(_read)
+                    if do_detect and '\ufffd' in content:
+                        content = None
+                        continue
+                    return content, enc, None
+                except Exception:
+                    continue
+            
+            return None, None, f"无法读取文件: {path}，已尝试编码: {encodings_to_try}"
+        except Exception as e:
+            return None, None, str(e)
+    
+    @staticmethod
+    def _select_lines(
+        lines: list,
+        head: Optional[int] = None,
+        tail: Optional[int] = None,
+        offset: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """根据参数选择行并构建 _data 字典
+        
+        小沈 2026-05-25 重构拆分
+        """
+        total = len(lines)
+        params = {}
+        
+        if head is not None:
+            selected = lines[:min(head, total)]
+            params["head"] = head
+        elif tail is not None:
+            start = max(0, total - tail)
+            selected = lines[start:]
+            params["tail"] = tail
+        elif offset is not None:
+            start_idx = max(0, offset - 1)
+            effective_limit = limit if limit else READ_FILE_DEFAULT_LIMIT
+            selected = lines[start_idx:start_idx + effective_limit]
+            params.update({
+                "offset": offset, "limit": limit,
+                "start_line": offset, "end_line": offset + len(selected) - 1,
+            })
+        else:
+            selected = lines
+        
+        content = "".join(selected)
+        return {
+            "content": content,
+            "total_lines": total,
+            "line_count": len(selected),
+            **params,
+        }
+    
     async def _read_text_file(
         self,
         file_path: str,
@@ -675,7 +757,11 @@ class FileTools:
         limit: Optional[int] = None,
         encoding: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """读取文本文件的完整内容，支持指定行数 - 小沈 2026-05-02 增加 offset/limit 参数
+        """读取文本文件
+        
+        【小沈重构 2026-05-25】
+        - 重构拆分：提取 _try_read_file_with_encodings / _select_lines
+        - 保持所有分支完整，功能不减少
         
         参数组合说明：
         - 无参数：读取全部内容
@@ -714,87 +800,24 @@ class FileTools:
                 return build_error("ERR_PATH_NOT_FILE", f"路径不是文件: {file_path}")
 
             # 尝试编码读取
-            encodings_to_try = [encoding, "utf-8", "gbk", "gb2312", "utf-8-sig"] if encoding else ["utf-8", "gbk", "gb2312", "utf-8-sig"]
             file_size = path.stat().st_size
-
-            # 【修复 2026-05-01 小沈】OOM防护：预检文件大小
             if file_size > MAX_READ_SIZE:
-                return build_error("ERR_FILE_READ_TOO_LARGE", f"文件过大({file_size}字节)，超过读取上限{MAX_READ_SIZE}字节({MAX_READ_SIZE//1024//1024}MB)。请使用head/tail参数分段读取。")
-
-            content = None
-            used_encoding = None
-
-            for enc in encodings_to_try:
-                if enc is None:
-                    continue
-                try:
-                    def _read_sync(e=enc):
-                        with open(path, 'r', encoding=e, errors='replace') as f:
-                            return f.read()
-                    content = await asyncio.to_thread(_read_sync)
-                    # 【修复 小沈 2026-05-19】自动检测模式下utf-8因errors='replace'不会抛异常，
-                    # 但会产生\uFFFD替换字符。检测到替换字符时继续尝试下一个编码。
-                    if encoding is None and '\ufffd' in content:
-                        content = None
-                        continue
-                    used_encoding = enc
-                    break
-                except Exception:
-                    continue
-
-            if content is None:
-                return build_error("ERR_FILE_READ_FAILED", f"无法读取文件: {file_path}，已尝试编码: {encodings_to_try}")
-
+                return build_error("ERR_FILE_READ_TOO_LARGE", f"文件过大({file_size}字节)。请使用 head/tail 分段读取。")
+            
+            content, used_encoding, error = await self._try_read_file_with_encodings(path, encoding)
+            if error:
+                return build_error("ERR_FILE_READ_FAILED", error)
+            
             lines = content.splitlines(keepends=True)
-            total_lines = len(lines)
-
-            # 处理不同的参数组合
-            if head is not None:
-                # head: 读取前N行
-                selected_lines = lines[:min(head, total_lines)]
-            elif tail is not None:
-                # tail: 读取后N行
-                start = max(0, total_lines - tail)
-                selected_lines = lines[start:]
-            elif offset is not None:
-                # offset/limit: 分页读取（从第offset行开始读取limit行）
-                start_idx = max(0, offset - 1)
-                effective_limit = limit if limit else READ_FILE_DEFAULT_LIMIT
-                end_idx = start_idx + effective_limit
-                selected_lines = lines[start_idx:end_idx]
-            else:
-                # 无参数：读取全部
-                selected_lines = lines
-
-            result_content = "".join(selected_lines)
-            line_count = len(selected_lines)
-
-            # 构造成功返回数据
-            _data = {
-                "content": result_content,
-                "total_lines": total_lines,
-                "line_count": line_count,
-                "encoding": used_encoding,
-                "file_size": file_size,
-            }
-
-            if head is not None:
-                _data["head"] = head
-            elif tail is not None:
-                _data["tail"] = tail
-            elif offset is not None:
-                _data["offset"] = offset
-                _data["limit"] = limit
-                _data["start_line"] = offset
-                _data["end_line"] = offset + line_count - 1
-
-            # 【优化 小沈 2026-05-15】llm_data提供精简内容+行数，避免LLM上下文浪费
-            _llm = format_file_content_llm(result_content) if result_content else None
-
-
+            _data = self._select_lines(lines, head, tail, offset, limit)
+            _data["encoding"] = used_encoding
+            _data["file_size"] = file_size
+            
+            _llm = format_file_content_llm(_data["content"]) if _data["content"] else None
+            
             return build_success(
                 _data,
-                f"读取文件成功: {file_path} ({line_count}/{total_lines}行, {file_size}字节, 编码:{used_encoding})",
+                f"读取文件成功: {file_path} ({_data['line_count']}/{_data['total_lines']}行, {file_size}字节, 编码:{used_encoding})",
                 llm_data=_llm,
                 next_actions=build_next_actions([
                     ("edit_file", "编辑文件", "需要修改内容时"),
