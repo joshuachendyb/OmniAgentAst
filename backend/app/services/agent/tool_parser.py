@@ -88,137 +88,96 @@ class ToolParser:
         return None, text.strip()
     
     @staticmethod
-    def parse_response(response: str) -> Dict[str, Any]:
-        """
-        解析LLM响应
+    def _consolidate_json_extraction(text: str) -> tuple:
+        """统一 JSON 提取：平衡括号 + Markdown 代码块 + 内容前置文本。
         
-        Args:
-            response: LLM的原始响应文本
+        小沈 2026-05-25 重构拆分
         
         Returns:
-            解析后的字典，包含thought, action, action_input
-        
-        Raises:
-            ValueError: 如果解析失败
+            (json_str, content_before) — json_str 可为 None
         """
-        # 初始化content_before
         content_before = ""
+        json_text = None
         
-        # Step 0: 先尝试用平衡括号在整个response上提取，得到JSON前的纯文本
-        json_text, content_before = ToolParser._extract_json_with_balanced_braces(response)
+        # S0: 平衡括号提取
+        json_text, content_before = ToolParser._extract_json_with_balanced_braces(text)
         
-        # Step 1: 尝试去除Markdown代码块
-        json_match = re.search(
-            r'```(?:json)?\s*\n?(.*?)\n?```',
-            response,
-            re.DOTALL | re.IGNORECASE
-        )
-
+        # S1: 无论 S0 是否成功，始终检查 Markdown 代码块并更新 content_before
+        json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL | re.IGNORECASE)
         if json_match:
-            # 去除```后，提取JSON前面的纯文本
-            json_str = json_match.group(1).strip()
-            json_without_backticks = json_str
-            # 获取Markdown代码块之前的文本（排除```标记）
-            # 找到markdown开始的```位置
-            md_start = response.find('```')
-            if md_start != -1:
-                content_before = response[:md_start].strip()
-        else:
-            json_without_backticks = response.strip()
-            if not content_before:
-                content_before = ""
-
-        # Step 2: 用平衡括号提取JSON
-        if json_text:
-            json_str = json_text
-        else:
-            # 尝试在去除Markdown的文本上再提取一次
-            json_text_2, content_before_2 = ToolParser._extract_json_with_balanced_braces(json_without_backticks)
-            if json_text_2:
-                json_str = json_text_2
-                # 如果之前没有content_before，使用这次的
-                if not content_before:
-                    content_before = content_before_2
-            else:
-                json_str = json_without_backticks
+            content_before = text[:text.find('```')].strip()
+            if not json_text:
+                # S0 失败时，取代码块内文本再提取一次
+                json_text, _ = ToolParser._extract_json_with_balanced_braces(json_match.group(1).strip())
         
-        # Step 3: 尝试直接解析，处理截断的JSON和格式错误
-        parsed = None
+        return json_text, content_before
+    
+    @staticmethod
+    def _parse_json_robust(json_str: str) -> Optional[Dict[str, Any]]:
+        """三级降级 JSON 解析：直接→修复→逐字段。
+        
+        小沈 2026-05-25 重构拆分
+        """
+        # P1+P2: 尝试直接解析 + 修复尾逗号
         try:
-            parsed = json.loads(json_str)
+            return json.loads(json_str)
         except json.JSONDecodeError:
-            # 尝试修复：去除尾随逗号
             try:
                 fixed = re.sub(r',(\s*[}\]])', r'\1', json_str)
-                parsed = json.loads(fixed)
+                return json.loads(fixed)
             except json.JSONDecodeError:
-                # 截断JSON情况：尝试从部分有效的JSON中提取字段
-                # 逐个字段尝试提取
-                parsed = {}
-                
-                # 尝试提取 tool_name
-                tool_name_match = re.search(r'"tool_name"\s*:\s*"([^"]*)"', json_str)
-                if tool_name_match:
-                    parsed["tool_name"] = tool_name_match.group(1)
-                
-                # 尝试提取 action (备用字段名)
-                action_match = re.search(r'"action"\s*:\s*"([^"]*)"', json_str)
-                if action_match:
-                    parsed["action"] = action_match.group(1)
-                
-                # 尝试提取 action_tool (备用字段名)
-                action_tool_match = re.search(r'"action_tool"\s*:\s*"([^"]*)"', json_str)
-                if action_tool_match:
-                    parsed["action_tool"] = action_tool_match.group(1)
-                
-                # 尝试提取 tool_params
-                tool_params_match = re.search(r'"tool_params"\s*:\s*(\{[^}]*\})', json_str)
-                if tool_params_match:
-                    try:
-                        parsed["tool_params"] = json.loads(tool_params_match.group(1))
-                    except:
-                        parsed["tool_params"] = {}
-                
-                # 尝试提取 params (备用字段名)
-                params_match = re.search(r'"params"\s*:\s*(\{[^}]*\})', json_str)
-                if params_match and "tool_params" not in parsed:
-                    try:
-                        parsed["params"] = json.loads(params_match.group(1))
-                    except:
-                        parsed["params"] = {}
-                
-                # 尝试提取 action_input (备用字段名)
-                action_input_match = re.search(r'"action_input"\s*:\s*(\{.*\})', json_str)
-                if action_input_match:
-                    try:
-                        parsed["action_input"] = json.loads(action_input_match.group(1))
-                    except:
-                        parsed["action_input"] = {}
-                
-                # 如果成功提取了工具名，就使用它
-                if not parsed.get("tool_name") and not parsed.get("action") and not parsed.get("action_tool"):
-                    # 回退到文本提取
-                    parsed = ToolParser._extract_from_text(response)
-                    if not parsed:
-                        # 【专家方法】返回错误结果而不是抛出异常，复用已提取的content_before
-                        error_info = ToolParser.format_error("json_parse_error", "JSON解析失败")
-                        user_content = f"⚠️ {error_info['title']}\n\n{error_info['description']}"
-                        final_content = content_before if content_before else user_content
-                        return {
-                            "content": final_content,
-                            "thought": "",
-                            "tool_name": "finish",
-                            "tool_params": {},
-                            "reasoning": None,
-                        }
+                pass
         
-        # JSON前面的纯文本作为content（用于显示）
-        # 如果content为空但parsed(from _extract_from_text)有thought，则用thought作为content
+        # P3: 逐字段提取
+        result = {}
+        for field in ["tool_name", "action", "action_tool", "tool_params", "params", "action_input"]:
+            ToolParser._try_extract_field(json_str, result, field)
+        
+        if result.get("tool_name") or result.get("action") or result.get("action_tool"):
+            return result
+        return None
+    
+    @staticmethod
+    def _try_extract_field(json_str: str, target: dict, field: str) -> None:
+        """尝试从截断 JSON 中提取单个字段。
+        
+        小沈 2026-05-25 重构拆分
+        """
+        if field in ("tool_params", "params"):
+            m = re.search(rf'"{field}"\s*:\s*(\{{[^}}]*\}})', json_str)
+            if m:
+                try:
+                    target[field] = json.loads(m.group(1))
+                    return
+                except json.JSONDecodeError:
+                    target[field] = {}
+                    return
+        elif field == "action_input":
+            # action_input 使用贪心匹配 .* 处理嵌套JSON（修复问题20.6-1🔴）
+            m = re.search(rf'"{field}"\s*:\s*(\{{.*\}})', json_str)
+            if m:
+                try:
+                    target[field] = json.loads(m.group(1))
+                    return
+                except json.JSONDecodeError:
+                    target[field] = {}
+                    return
+        else:
+            m = re.search(rf'"{field}"\s*:\s*"([^"]*)"', json_str)
+            if m:
+                target[field] = m.group(1)
+    
+    @staticmethod
+    def _resolve_parse_result(parsed: Dict[str, Any], content_before: str) -> Dict[str, Any]:
+        """统一字段名 fallback 链 + content/thought/reasoning 组装。
+        
+        小沈 2026-05-25 重构拆分
+        """
         content = content_before if content_before else parsed.get("thought", "")
-        # JSON里的thought单独提取
         thought = parsed.get("thought", parsed.get("thinking", ""))
         tool_name = parsed.get("tool_name", parsed.get("action_tool", parsed.get("action", "finish")))
         
+        # 使用 in 键存在检查而非 falsy or 链（修复问题20.6-4🟡）
         if "tool_params" in parsed:
             tool_params = parsed.get("tool_params", {})
         elif "params" in parsed:
@@ -230,16 +189,55 @@ class ToolParser:
         else:
             tool_params = {}
         
-        # reasoning支持备用字段（和thought类似）
         reasoning = parsed.get("reasoning", parsed.get("thinking", parsed.get("analysis", "")))
-        
         return {
-            "content": content,          # JSON前面的纯文本
-            "thought": thought,          # JSON里的thought
-            "tool_name": tool_name,
-            "tool_params": tool_params,
+            "content": content, "thought": thought,
+            "tool_name": tool_name, "tool_params": tool_params,
             "reasoning": reasoning,
         }
+    
+    @staticmethod
+    def parse_response(response: str) -> Dict[str, Any]:
+        """
+        解析LLM响应
+        
+        【小沈重构 2026-05-25】
+        - 重构拆分：提取 _consolidate_json_extraction / _parse_json_robust / _resolve_parse_result
+        - 保持所有分支完整，功能不减少
+        
+        Args:
+            response: LLM的原始响应文本
+        
+        Returns:
+            解析后的字典，包含thought, action, action_input
+        """
+        try:
+            # S0+S1+S2: 统一 JSON 提取
+            json_str, content_before = ToolParser._consolidate_json_extraction(response)
+            
+            if json_str:
+                # P1+P2+P3: 三级降级解析
+                parsed = ToolParser._parse_json_robust(json_str)
+                if parsed:
+                    return ToolParser._resolve_parse_result(parsed, content_before)
+            
+            # P3g: 文本降级提取
+            parsed = ToolParser._extract_from_text(response)
+            if parsed:
+                return ToolParser._resolve_parse_result(parsed, content_before)
+            
+            # P3h: finish 兜底
+            error_info = ToolParser.format_error("json_parse_error", "JSON解析失败")
+            return {
+                "content": content_before or f"⚠️ {error_info['title']}\n\n{error_info['description']}",
+                "thought": "", "tool_name": "finish",
+                "tool_params": {}, "reasoning": None,
+            }
+        except Exception:
+            return {
+                "content": "解析异常", "thought": "",
+                "tool_name": "finish", "tool_params": {}, "reasoning": None,
+            }
     
     @staticmethod
     def _extract_from_text(text: str) -> Optional[Dict[str, Any]]:
