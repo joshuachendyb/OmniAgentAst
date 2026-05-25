@@ -76,6 +76,9 @@ from app.services.tools.tool_result_utils import format_file_content_llm, format
 # file_tools.py 在 tools 模块加载时被导入，此时 agent 还未初始化完成
 # 将 agent 服务延迟到实际使用时再导入
 
+# data_file_format 分发常量依赖（21.2，小沈 2026-05-25 实施）
+from app.services.tools.toolhelper import data_format_helper as df_tools
+
 
 # ============================================================
 # 第一部分：分页配置常量
@@ -476,6 +479,43 @@ def _paginate_results(all_items: List, page_token: Optional[str],
     page = all_items[start:end]
     next_token = encode_page_token(end) if end < len(all_items) else None
     return page, next_token
+
+
+def _apply_replacement(
+    content: str, old_string: str, new_string: str,
+    ignore_case: bool = False, replace_all: bool = False,
+) -> Tuple[str, int]:
+    """精确替换（21.1 组件，小沈 2026-05-25 实施）"""
+    if ignore_case:
+        import re as re_mod
+        if replace_all:
+            new_content = re_mod.sub(re_mod.escape(old_string), new_string, content, flags=re_mod.IGNORECASE)
+            count = len(re_mod.findall(re_mod.escape(old_string), content, flags=re_mod.IGNORECASE))
+        else:
+            new_content = re_mod.sub(re_mod.escape(old_string), new_string, content, count=1, flags=re_mod.IGNORECASE)
+            count = 1
+    else:
+        if replace_all:
+            count = content.count(old_string)
+            new_content = content.replace(old_string, new_string)
+        else:
+            idx = content.find(old_string)
+            if idx == -1:
+                raise ValueError(f"文件中未找到匹配文本: {old_string[:50]}")
+            new_content = content[:idx] + new_string + content[idx + len(old_string):]
+            count = 1
+    return new_content, count
+
+
+# data_file_format 分发映射表（21.2 组件1，小沈 2026-05-25 实施）
+_FORMAT_DISPATCH = {
+    "json":       {"read": df_tools._read_json,       "write": df_tools._write_json},
+    "yaml":       {"read": df_tools._parse_yaml,      "write": df_tools._write_yaml},
+    "toml":       {"read": df_tools._parse_toml,      "write": df_tools._write_toml},
+    "ini":        {"read": df_tools._parse_ini,       "write": None},
+    "xml":        {"read": df_tools._parse_xml,       "write": None},
+    "properties": {"read": df_tools._parse_properties, "write": None},
+}
 
 
 # ============================================================
@@ -1748,107 +1788,48 @@ class FileTools:
         dry_run: bool = False,
         encoding: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """精确替换文件中的字符串 — 小健 2026-05-19 增加dry_run支持"""
-        # 【修复 2026-04-30 小沈】空old_string拒绝：content.replace("", x)会在每个字符间插入，导致内容爆炸
+        """精确替换文件中的字符串（21.1 重构，小沈 2026-05-25 实施）"""
         if not old_string:
             return build_error("ERR_PARAM_INVALID", "old_string不能为空，空字符串替换会导致内容爆炸")
 
         if not self.task_id:
             self.task_id = _current_task_id.get(None)
         if not self.task_id:
-            return build_error("ERR_META_NO_ACTIVE_TASK", "当前没有活跃任务ID，请先创建一个任务")
+            return build_error("ERR_META_NO_ACTIVE_TASK", "当前没有活跃任务ID")
 
-        is_binary, binary_reason = _is_binary_file(file_path)
+        is_binary, reason = _is_binary_file(file_path)
         if is_binary:
-            return build_error("ERR_FILE_READ_BINARY_FILE", f"{binary_reason}。请使用对应的专业工具操作二进制文件。")
+            return build_error("ERR_FILE_READ_BINARY_FILE", f"{reason}。请使用专业工具操作二进制文件。")
 
         try:
-            is_valid, error_msg = self._validate_path(file_path)
+            is_valid, err = self._validate_path(file_path)
             if not is_valid:
-                return build_error("ERR_PATH_INVALID", error_msg)
-
+                return build_error("ERR_PATH_INVALID", err)
             path = Path(file_path)
             if not path.exists():
                 return build_error("ERR_FILE_NOT_FOUND", f"文件不存在: {file_path}")
-
             if path.stat().st_size > MAX_READ_SIZE:
-                return build_error("ERR_FILE_READ_TOO_LARGE", f"文件过大({path.stat().st_size}字节)，超过替换上限{MAX_READ_SIZE//1024//1024}MB")
+                return build_error("ERR_FILE_READ_TOO_LARGE",
+                    f"文件过大({path.stat().st_size}字节)，超过替换上限{MAX_READ_SIZE//1024//1024}MB")
 
             operation_id = self.safety.record_operation(
-                task_id=self.task_id,
-                operation_type=OperationType.MODIFY,
-                destination_path=path,
-                sequence_number=self._get_next_sequence()
+                task_id=self.task_id, operation_type=OperationType.MODIFY,
+                destination_path=path, sequence_number=self._get_next_sequence(),
             )
 
-            encodings_to_try = [encoding, "utf-8", "gbk", "gb2312", "utf-8-sig"] if encoding else ["utf-8", "gbk", "gb2312", "utf-8-sig"]
+            content, used_enc, err_msg = await _try_read_file_with_encodings(path, encoding)
+            if err_msg:
+                raise ValueError(err_msg)
 
             replace_result = {}
 
             def _replace_sync() -> bool:
-                content = None
-                used_enc = None
-                for enc in encodings_to_try:
-                    if enc is None:
-                        continue
-                    try:
-                        with open(path, 'r', encoding=enc, errors='replace') as f:
-                            content = f.read()
-                        used_enc = enc
-                        break
-                    except Exception:
-                        continue
-                if content is None:
-                    raise ValueError(f"无法读取文件: {file_path}")
-
-                if ignore_case:
-                    import re as re_mod
-                    if replace_all:
-                        new_content = re_mod.sub(re_mod.escape(old_string), new_string, content, flags=re_mod.IGNORECASE)
-                        count = len(re_mod.findall(re_mod.escape(old_string), content, flags=re_mod.IGNORECASE))
-                    else:
-                        new_content = re_mod.sub(re_mod.escape(old_string), new_string, content, count=1, flags=re_mod.IGNORECASE)
-                        count = 1
-                else:
-                    if replace_all:
-                        count = content.count(old_string)
-                        new_content = content.replace(old_string, new_string)
-                    else:
-                        idx = content.find(old_string)
-                        if idx == -1:
-                            raise ValueError(f"文件中未找到匹配文本: {old_string[:50]}")
-                        new_content = content[:idx] + new_string + content[idx + len(old_string):]
-                        count = 1
-
+                new_content, count = _apply_replacement(content, old_string, new_string, ignore_case, replace_all)
                 replace_result['count'] = count
                 replace_result['used_enc'] = used_enc
-                replace_result['name'] = path.name
-
                 if dry_run:
-                    replace_result['preview'] = True
-                    replace_result['diff_info'] = f"将替换 {count} 处匹配: '{old_string[:50]}' -> '{new_string[:50]}'"
                     return True
-
-                import tempfile
-                import os
-                with tempfile.NamedTemporaryFile(
-                    mode='w', encoding=used_enc,
-                    dir=path.parent, delete=False,
-                    prefix=f".{path.name}.", suffix=""
-                ) as f:
-                    f.write(new_content)
-                    temp_path = f.name
-                try:
-                    os.replace(temp_path, str(path))
-                except Exception:
-                    try:
-                        os.unlink(temp_path)
-                    except OSError:
-                        pass
-                    raise
-                replace_result['count'] = count
-                replace_result['used_enc'] = used_enc
-                replace_result['name'] = path.name
+                _write_file_atomic(new_content, path, used_enc, append=False, create_parents=False)
                 return True
 
             success = await asyncio.to_thread(
@@ -1856,27 +1837,74 @@ class FileTools:
                 operation_id=operation_id,
                 operation_func=_replace_sync
             )
-            if success:
-                data = {
-                    "replaced_count": replace_result['count'],
-                    "encoding": replace_result['used_enc'],
-                    "file_path": str(path),
-                    "file_name": replace_result['name'],
-                    "operation_id": operation_id,
-                }
-                if replace_result.get('preview'):
-                    data["preview"] = True
-                    data["diff_info"] = replace_result.get('diff_info', '')
-                return build_success(
-                    data,
-                    f"已替换 {replace_result['count']} 处匹配",
-                    next_actions=build_next_actions([("read_file", "验证修改结果", "需要确认修改时")]),
-                )
-            return build_error("ERR_FILE_REPLACE_FAILED", "文件替换失败，safety拦截")
+            if not success:
+                return build_error("ERR_FILE_REPLACE_FAILED", "文件替换失败，safety拦截")
 
-        except Exception as e:
-            logger.error(f"precise_replace_in_file failed: {file_path}: {e}")
+            data = {
+                "replaced_count": replace_result['count'],
+                "encoding": replace_result['used_enc'],
+                "file_path": str(path),
+                "file_name": path.name,
+                "operation_id": operation_id,
+            }
+            if dry_run:
+                data["preview"] = True
+                data["diff_info"] = (f"将替换 {replace_result['count']} 处匹配: "
+                                    f"'{old_string[:50]}' -> '{new_string[:50]}'")
+            return build_success(
+                data,
+                f"已替换 {replace_result['count']} 处匹配",
+                next_actions=build_next_actions([("read_file", "验证修改结果", "需要确认修改时")]),
+            )
+
+        except ValueError as e:
             return build_error("ERR_FILE_REPLACE_FAILED", str(e))
+        except Exception as e:
+            return build_error("ERR_FILE_REPLACE_FAILED", f"替换失败: {e}")
+
+    @staticmethod
+    def _read_file_with_encodings_sync(path: Path, preferred: Optional[str] = None) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        """同步读取文件，自动尝试编码 - 小健 2026-05-25
+
+        复用自 _try_read_file_with_encodings（L709）的同步版本，
+        供 _edit_sync 等同步闭包使用。
+        """
+        encodings_to_try = [preferred] if preferred else []
+        encodings_to_try.extend(["utf-8", "gbk", "gb2312", "utf-8-sig"])
+        for enc in encodings_to_try:
+            if enc is None:
+                continue
+            try:
+                with open(path, 'r', encoding=enc, errors='replace') as f:
+                    content = f.read()
+                return content, enc, None
+            except Exception:
+                continue
+        return None, None, f"无法读取文件: {path}，已尝试编码: {encodings_to_try}"
+
+    @staticmethod
+    def _apply_single_edit(content: str, edit: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+        """对内容执行一次编辑，返回 (新内容, 编辑结果)。
+
+        小沈 2026-05-25 重构拆分
+        消除 R1a-c 的 3 路 if-elif 重复（行1926-1934）。
+        YAGNI: 不再返回 old_text/new_text——调用方仅需知悉编辑是否成功。
+
+        edit: {"oldText": str, "newText": str}
+        返回 edit_result: {ok, reason} 或 {ok}
+        """
+        old_text = edit.get("oldText", "")
+        new_text = edit.get("newText", "")
+
+        if not old_text:
+            return content, {"ok": False, "reason": "oldText 为空"}
+
+        idx = content.find(old_text)
+        if idx == -1:
+            return content, {"ok": False, "reason": f"未找到匹配: {old_text[:50]}"}
+
+        new_content = content[:idx] + new_text + content[idx + len(old_text):]
+        return new_content, {"ok": True}
 
     async def _apply_edits(
         self,
@@ -1914,60 +1942,23 @@ class FileTools:
                 sequence_number=self._get_next_sequence()
             )
 
-            encodings_to_try = [encoding, "utf-8", "gbk", "gb2312", "utf-8-sig"] if encoding else ["utf-8", "gbk", "gb2312", "utf-8-sig"]
-
-            edit_result = {}
-
             def _edit_sync() -> bool:
-                content = None
-                used_enc = None
-                for enc in encodings_to_try:
-                    if enc is None:
-                        continue
-                    try:
-                        with open(path, 'r', encoding=enc, errors='replace') as f:
-                            content = f.read()
-                        used_enc = enc
-                        break
-                    except Exception:
-                        continue
-                if content is None:
-                    raise ValueError(f"无法读取文件: {file_path}")
+                content, used_enc, err_msg = FileTools._read_file_with_encodings_sync(path, encoding)
+                if err_msg:
+                    raise ValueError(err_msg)
 
-                results = []
                 modified = content
+                results = []
                 for i, edit in enumerate(edits):
-                    old_text = edit.get("oldText", "")
-                    new_text = edit.get("newText", "")
-                    if not old_text:
-                        results.append({"index": i, "ok": False, "reason": "oldText 为空"})
-                        continue
-                    idx = modified.find(old_text)
-                    if idx == -1:
-                        results.append({"index": i, "ok": False, "reason": f"未找到匹配文本: {old_text[:50]}"})
-                        continue
-                    modified = modified[:idx] + new_text + modified[idx + len(old_text):]
-                    results.append({"index": i, "ok": True, "old_text": old_text[:50], "new_text": new_text[:50]})
+                    modified, result = FileTools._apply_single_edit(modified, edit)
+                    result["index"] = i
+                    results.append(result)
 
                 applied = sum(1 for r in results if r["ok"])
                 if not dry_run and applied > 0:
-                    import tempfile
-                    import os
-                    with tempfile.NamedTemporaryFile(
-                        mode='w', encoding=used_enc,
-                        dir=path.parent, delete=False,
-                        prefix=f".{path.name}.", suffix=""
-                    ) as f:
-                        f.write(modified)
-                        temp_path = f.name
-                    try:
-                        os.replace(temp_path, str(path))
-                    except Exception:
-                        try:
-                            os.unlink(temp_path)
-                        except OSError:
-                            pass
-                        raise
+                    # 复用 _write_file_atomic（20.2方案已实现）
+                    self._write_file_atomic(modified, path, used_enc, append=False, create_parents=False)
+
                 edit_result['applied_edits'] = applied
                 edit_result['total_edits'] = len(edits)
                 edit_result['results'] = results
@@ -1976,6 +1967,7 @@ class FileTools:
                 edit_result['used_enc'] = used_enc
                 return True
 
+            edit_result = {}
             success = await asyncio.to_thread(
                 self.safety.execute_with_safety,
                 operation_id=operation_id,
@@ -2460,139 +2452,104 @@ class FileTools:
                 recursive=recursive,
                 force=force
             )
-    
+
+    @staticmethod
+    def _build_format_result(
+        result: Dict[str, Any], action: str,
+        detected_format: str, file_path: str,
+    ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+        """构建 data_file_format 的统一返回数据 + llm_data（21.2 组件2，小沈 2026-05-25 实施）"""
+        if result.get("code", "").startswith("ERR_"):
+            return build_error("ERR_DOC_DATA_FORMAT_FAILED", result.get("message", "未知错误")), None
+
+        result_data = result.get("data", result)
+        suffix = {}
+
+        if action == "write":
+            try:
+                suffix["bytes_written"] = os.path.getsize(file_path)
+            except Exception:
+                pass
+
+        llm_data = None
+        if action == "read":
+            llm_data = {"格式": detected_format, "文件": file_path, "动作": "read"}
+            if isinstance(result_data, dict):
+                llm_data["键"] = list(result_data.keys())[:30]
+                llm_data["顶层项数"] = len(result_data)
+            elif isinstance(result_data, list):
+                llm_data["项数"] = len(result_data)
+                llm_data["预览"] = make_json_safe(result_data[:5], max_str_len=200)
+
+        return build_success(
+            {"data": result_data, "format": detected_format,
+             "file_path": file_path, "action": action, **suffix},
+            f"已{action} {detected_format.upper()}格式文件: {file_path}",
+            llm_data=llm_data,
+            next_actions=build_next_actions([("edit_file", "编辑格式化文件", "需要修改时")]),
+        ), llm_data
+
     async def data_file_format(
-        self,
-        file_path: str,
+        self, file_path: str,
         action: Literal["read", "write"] = "read",
-        format: Optional[Literal["json", "yaml", "toml", "ini", "xml", "properties"]] = None,
+        format: Optional[str] = None,
         data: Optional[Any] = None,
         encoding: str = "utf-8",
         indent: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """
-        结构化配置格式统一入口 — 小沈 2026-05-18
-        
-        归入File分类（不是data_format分类），与read_file/write_text_file同类。
-        注意：CSV/Excel属于Document分类，不在本工具范围内。
-        
-        P11统一入口：合并 read_json/write_json/parse_yaml/write_yaml/parse_toml/write_toml/parse_ini/parse_xml/parse_properties
-        - action="read": 读取配置文件
-        - action="write": 写入配置文件
-        
-        P17互斥校验：action只能是"read"或"write"
-        P17必填参数校验：write模式需要data参数
-        """
+        """结构化配置格式统一入口（21.2 重构，小沈 2026-05-25 实施）"""
         from app.services.tools.toolhelper import data_format_helper as df_tools
-        
-        # P17互斥校验
+
         if action not in ("read", "write"):
             return build_error("ERR_PARAM_INVALID", f"不支持的action: {action}，可选: read/write")
-
         if not file_path:
             return build_error("ERR_PARAM_INVALID", "file_path是必填参数")
 
-        is_valid, error_msg = self._validate_path(file_path)
+        is_valid, err = self._validate_path(file_path)
         if not is_valid:
-            return build_error("ERR_PATH_INVALID", error_msg)
+            return build_error("ERR_PATH_INVALID", err)
 
-        detected_format = format
-        if not detected_format:
+        detected = format
+        if not detected:
             ext = os.path.splitext(file_path)[1].lower()
-            format_map = {
-                ".json": "json",
-                ".yaml": "yaml",
-                ".yml": "yaml",
-                ".toml": "toml",
-                ".ini": "ini",
-                ".cfg": "ini",
-                ".xml": "xml",
-                ".properties": "properties",
+            _ext_map = {
+                ".json": "json", ".yaml": "yaml", ".yml": "yaml",
+                ".toml": "toml", ".ini": "ini", ".cfg": "ini",
+                ".xml": "xml", ".properties": "properties",
             }
-            detected_format = format_map.get(ext)
-            if not detected_format:
-                return build_error("ERR_DOC_FORMAT_NOT_DETECTED", f"无法识别文件格式: {file_path}，请通过format参数指定")
+            detected = _ext_map.get(ext)
+        if not detected:
+            return build_error("ERR_DOC_FORMAT_NOT_DETECTED",
+                f"无法识别文件格式: {file_path}，请通过format参数指定")
 
-        # write模式前置校验（提取自各格式分支）
         if action == "write":
-            if detected_format in ("ini", "xml", "properties"):
-                return build_error("ERR_DOC_FORMAT_NOT_SUPPORTED", f"{detected_format.upper()}格式暂不支持写入")
+            if detected in ("ini", "xml", "properties"):
+                return build_error("ERR_DOC_FORMAT_NOT_SUPPORTED",
+                    f"{detected.upper()}格式暂不支持写入")
             if data is None:
                 return build_error("ERR_PARAM_INVALID", "write模式需要提供data参数")
 
-        from app.services.tools.toolhelper import data_format_helper as df_tools
+        dispatch = _FORMAT_DISPATCH.get(detected)
+        if not dispatch:
+            return build_error("ERR_PARAM_INVALID", f"不支持的格式: {detected}")
 
-        # 调用对应格式工具
+        func = dispatch[action]
+        if func is None:
+            return build_error("ERR_DOC_FORMAT_NOT_SUPPORTED",
+                f"{detected.upper()}格式暂不支持{action}操作")
+
         try:
-            if detected_format == "json":
-                if action == "read":
-                    result = df_tools._read_json(file_path=file_path, encoding=encoding)
-                else:
-                    result = df_tools._write_json(
-                        file_path=file_path,
-                        data=data,
-                        encoding=encoding,
-                        indent=indent or 2
-                    )
-
-            elif detected_format == "yaml":
-                if action == "read":
-                    result = df_tools._parse_yaml(file_path=file_path, encoding=encoding)
-                else:
-                    result = df_tools._write_yaml(
-                        file_path=file_path,
-                        data=data,
-                        encoding=encoding,
-                        indent=indent
-                    )
-
-            elif detected_format == "toml":
-                if action == "read":
-                    result = df_tools._parse_toml(file_path=file_path, encoding=encoding)
-                else:
-                    result = df_tools._write_toml(file_path=file_path, data=data, encoding=encoding)
-
-            elif detected_format == "ini":
-                result = df_tools._parse_ini(file_path=file_path, encoding=encoding)
-
-            elif detected_format == "xml":
-                result = df_tools._parse_xml(file_path=file_path, encoding=encoding)
-
-            elif detected_format == "properties":
-                result = df_tools._parse_properties(file_path=file_path, encoding=encoding)
-
-            else:
-                return build_error("ERR_PARAM_INVALID", f"不支持的格式: {detected_format}")
-
-            # 统一返回格式转换
-            helper_code = result.get("code", "")
-            if helper_code.startswith("ERR_"):
-                return build_error("ERR_DOC_DATA_FORMAT_FAILED", result.get("message", "未知错误"))
-
-            bytes_written = None
+            kwargs = {"file_path": file_path, "encoding": encoding}
             if action == "write":
-                try:
-                    bytes_written = os.path.getsize(file_path)
-                except Exception:
-                    pass
+                kwargs["data"] = data
+                if detected == "json":
+                    kwargs["indent"] = indent or 2
+                elif detected == "yaml" and indent is not None:
+                    kwargs["indent"] = indent
 
-            result_data = result.get("data", result)
-            _llm = None
-            if action == "read":
-                _llm = {"格式": detected_format, "文件": file_path, "动作": "read"}
-                if isinstance(result_data, dict):
-                    _llm["键"] = list(result_data.keys())[:30]
-                    _llm["顶层项数"] = len(result_data)
-                elif isinstance(result_data, list):
-                    _llm["项数"] = len(result_data)
-                    _llm["预览"] = make_json_safe(result_data[:5], max_str_len=200)
-
-            return build_success(
-                {"data": result_data, "format": detected_format, "file_path": file_path, "action": action, "bytes_written": bytes_written},
-                f"已{action} {detected_format.upper()}格式文件: {file_path}",
-                llm_data=_llm,
-                next_actions=build_next_actions([("edit_file", "编辑格式化文件", "需要修改时")]),
-            )
+            result = await asyncio.to_thread(func, **kwargs)
+            resp, _ = self._build_format_result(result, action, detected, file_path)
+            return resp
 
         except Exception as e:
             logger.error(f"[data_file_format] 执行失败: {e}")
