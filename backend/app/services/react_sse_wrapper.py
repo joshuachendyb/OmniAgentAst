@@ -584,6 +584,28 @@ async def _cleanup_task(
         logger.info(f"[Cleanup] 任务 {task_id} 已被中断，保留记录")
 
 
+async def _save_step_to_db(
+    sse_event: str, session_id: str,
+    current_execution_steps: List, current_content: str
+) -> None:
+    """保存SSE事件中的step数据到DB - 小沈 2026-05-25
+
+    使用场景:
+    - generate_sse_stream中统一SSE保存逻辑
+    - 需要保存interrupted/paused/resumed事件的场景
+
+    使用示例:
+        await _save_step_to_db(interrupt_msg, session_id, current_execution_steps, current_content)
+
+    返回数据说明:
+        - 无返回值，副作用为current_execution_steps和DB保存
+    """
+    if sse_event.startswith("data: "):
+        step_data = json.loads(sse_event[6:])
+        current_execution_steps.append(step_data)
+        await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
+
+
 # ============================================================
 # SSE 流式生成器函数（供 chat_router.py 调用）
 # ============================================================
@@ -652,18 +674,12 @@ async def generate_sse_stream(
         is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock)
         if is_interrupted:
             yield interrupt_msg
-            if interrupt_msg.startswith("data: "):
-                step_data = json.loads(interrupt_msg[6:])
-                current_execution_steps.append(step_data)
-                await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
+            await _save_step_to_db(interrupt_msg, session_id, current_execution_steps, current_content or "")
             return
 
         async for pause_event in check_and_yield_if_paused(task_id, running_tasks, running_tasks_lock):
             yield pause_event
-            if pause_event.startswith("data: "):
-                step_data = json.loads(pause_event[6:])
-                current_execution_steps.append(step_data)
-                await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
+            await _save_step_to_db(pause_event, session_id, current_execution_steps, current_content or "")
 
         session_id = session_id or str(uuid.uuid4())
         last_message = messages[-1]["content"] if messages else ""
