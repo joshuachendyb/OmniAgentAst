@@ -888,71 +888,67 @@ def _service_start(
         return build_error("ERR_SERVICE_START", f"启动服务失败: {str(e)}")
 
 
+def _query_sc_service_state(service_name: str) -> str:
+    """执行 sc query 并返回归一化状态: running/stopped/unknown — 小沈 2026-05-25"""
+    try:
+        r = subprocess.run(["sc", "query", service_name], capture_output=True, text=True, timeout=10)
+        for line in r.stdout.splitlines():
+            s = line.strip()
+            if s.startswith("STATE:"):
+                if "RUNNING" in s:
+                    return "running"
+                if "STOPPED" in s:
+                    return "stopped"
+                return "other"
+        return "unknown"
+    except Exception:
+        return "unknown"
+
+
+def _wait_sc_service_state(service_name: str, target: str, timeout: int) -> str:
+    """轮询等待 Windows 服务达到目标状态，返回最终状态 — 小沈 2026-05-25"""
+    import time
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(1)
+        state = _query_sc_service_state(service_name)
+        if state == target:
+            return state
+    return _query_sc_service_state(service_name)
+
+
 def _windows_service_start(service_name: str, timeout: int, wait_for_started: bool = False) -> dict:
     """Windows服务启动 - 小健 2026-05-19 补wait_for_started等待逻辑"""
     try:
-        query_cmd = ["sc", "query", service_name]
-        query_result = subprocess.run(query_cmd, capture_output=True, text=True, timeout=10)
-        
-        if query_result.returncode != 0:
+        initial = _query_sc_service_state(service_name)
+        if initial == "unknown":
             return build_error("ERR_SERVICE_NOT_FOUND", f"服务 {service_name} 不存在")
-        
-        current_state = ""
-        for line in query_result.stdout.splitlines():
-            if line.strip().startswith("STATE:"):
-                current_state = line.strip()
-                break
-        
-        if "RUNNING" in current_state:
+        if initial == "running":
             return build_success({
                     "service_name": service_name,
                     "state": "running",
                     "action": "none",
                 }, f"服务 {service_name} 已经在运行中")
-        
+
         start_cmd = ["sc", "start", service_name]
         start_result = subprocess.run(start_cmd, capture_output=True, text=True, timeout=timeout)
-        
+
         if start_result.returncode != 0:
             return build_error("ERR_SERVICE_START", f"启动服务失败: {start_result.stderr.strip() or start_result.stdout.strip()}")
-        
-        import time
+
         if wait_for_started:
-            deadline = time.time() + timeout
-            final_state = "unknown"
-            while time.time() < deadline:
-                time.sleep(1)
-                check_cmd = ["sc", "query", service_name]
-                check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
-                for line in check_result.stdout.splitlines():
-                    if line.strip().startswith("STATE:"):
-                        if "RUNNING" in line:
-                            final_state = "running"
-                        elif "STOPPED" in line:
-                            final_state = "stopped"
-                        break
-                if final_state == "running":
-                    break
+            final_state = _wait_sc_service_state(service_name, "running", timeout)
         else:
+            import time
             time.sleep(2)
-            check_cmd = ["sc", "query", service_name]
-            check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
-            
-            final_state = "unknown"
-            for line in check_result.stdout.splitlines():
-                if line.strip().startswith("STATE:"):
-                    if "RUNNING" in line:
-                        final_state = "running"
-                    elif "STOPPED" in line:
-                        final_state = "stopped"
-                    break
-        
+            final_state = _query_sc_service_state(service_name)
+
         return build_success({
                 "service_name": service_name,
                 "state": final_state,
                 "action": "start",
             }, f"服务 {service_name} 启动命令已执行，当前状态: {final_state}")
-    
+
     except subprocess.TimeoutExpired:
         return build_error("ERR_SHELL_TIMEOUT", f"启动服务 {service_name} 超时")
 
@@ -1026,75 +1022,40 @@ def _service_stop(
 def _windows_service_stop(service_name: str, force: bool, timeout: int, wait_for_stopped: bool = False) -> dict:
     """Windows服务停止 - 小健 2026-05-19 补wait_for_stopped等待逻辑"""
     try:
-        query_cmd = ["sc", "query", service_name]
-        query_result = subprocess.run(query_cmd, capture_output=True, text=True, timeout=10)
-        
-        if query_result.returncode != 0:
+        initial = _query_sc_service_state(service_name)
+        if initial == "unknown":
             return build_error("ERR_SERVICE_NOT_FOUND", f"服务 {service_name} 不存在")
-        
-        current_state = ""
-        for line in query_result.stdout.splitlines():
-            if line.strip().startswith("STATE:"):
-                current_state = line.strip()
-                break
-        
-        if "STOPPED" in current_state:
+        if initial == "stopped":
             return build_success({
                     "service_name": service_name,
                     "state": "stopped",
                     "action": "none",
                 }, f"服务 {service_name} 已经停止")
-        
+
         stop_cmd = ["sc", "stop", service_name]
         stop_result = subprocess.run(stop_cmd, capture_output=True, text=True, timeout=timeout)
-        
+
         if stop_result.returncode != 0:
             if force:
                 taskkill_cmd = ["taskkill", "/F", "/IM", f"{service_name}.exe"]
                 subprocess.run(taskkill_cmd, capture_output=True, text=True, timeout=10)
-            
             return build_error("ERR_SERVICE_STOP", f"停止服务失败: {stop_result.stderr.strip() or stop_result.stdout.strip()}")
-        
-        import time
+
         if wait_for_stopped:
-            deadline = time.time() + timeout
-            final_state = "unknown"
-            while time.time() < deadline:
-                time.sleep(1)
-                check_cmd = ["sc", "query", service_name]
-                check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
-                for line in check_result.stdout.splitlines():
-                    if line.strip().startswith("STATE:"):
-                        if "STOPPED" in line:
-                            final_state = "stopped"
-                        elif "RUNNING" in line:
-                            final_state = "running"
-                        break
-                if final_state == "stopped":
-                    break
+            final_state = _wait_sc_service_state(service_name, "stopped", timeout)
         else:
+            import time
             time.sleep(2)
-            check_cmd = ["sc", "query", service_name]
-            check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
-            
-            final_state = "unknown"
-            for line in check_result.stdout.splitlines():
-                if line.strip().startswith("STATE:"):
-                    if "RUNNING" in line:
-                        final_state = "running"
-                    elif "STOPPED" in line:
-                        final_state = "stopped"
-                    break
-        
+            final_state = _query_sc_service_state(service_name)
+
         stop_type = "强制停止" if force else "优雅停止"
-        
         return build_success({
                 "service_name": service_name,
                 "state": final_state,
                 "action": "stop",
                 "stop_type": stop_type,
             }, f"服务 {service_name} 停止命令已执行（{stop_type}），当前状态: {final_state}")
-    
+
     except subprocess.TimeoutExpired:
         return build_error("ERR_SHELL_TIMEOUT", f"停止服务 {service_name} 超时")
 
