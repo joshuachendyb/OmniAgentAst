@@ -94,6 +94,49 @@ def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
     }
 
 
+def _resolve_proxy(proxy: Optional[str] = None) -> Optional[str]:
+    """解析代理配置：优先参数，其次环境变量 — 小沈 2026-05-25
+
+    使用场景:
+    - http_request中代理配置
+    - fetch_webpage中代理配置
+
+    使用示例:
+        proxy_config = _resolve_proxy(proxy)
+
+    返回数据说明:
+    - 返回str或None，代理URL
+    """
+    return proxy or os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
+
+
+def _build_http_error(last_exception: Exception, url: str, retry: int) -> Dict[str, Any]:
+    """构建HTTP请求最终错误响应 — 小沈 2026-05-25
+
+    使用场景:
+    - http_request中最终错误构建
+    - 需要统一处理TimeoutException/HTTPStatusError/RequestError的场景
+
+    使用示例:
+        return _build_http_error(last_exception, url, retry)
+
+    返回数据说明:
+    - 返回Dict，错误响应
+    """
+    if isinstance(last_exception, httpx.TimeoutException):
+        return build_error("ERR_NETWORK_TIMEOUT", f"请求超时：{url}")
+    if isinstance(last_exception, httpx.HTTPStatusError):
+        return build_error(
+            "ERR_NETWORK_HTTP_ERROR",
+            f"HTTP请求失败（重试{retry}次后）：{url}",
+            data={
+                "status_code": last_exception.response.status_code,
+                "body": last_exception.response.text if hasattr(last_exception.response, 'text') else None,
+            },
+        )
+    return build_error("ERR_NETWORK_REQUEST_ERROR", f"网络请求失败（重试{retry}次后）：{str(last_exception)}")
+
+
 async def http_request(
     url: str,
     method: str = "GET",
@@ -129,11 +172,7 @@ async def http_request(
         if headers:
             request_headers.update(headers)
 
-        proxy_config = None
-        if proxy:
-            proxy_config = proxy
-        elif os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY"):
-            proxy_config = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
+        proxy_config = _resolve_proxy(proxy)
 
         last_exception = None
         for attempt in range(retry + 1):
@@ -190,19 +229,7 @@ async def http_request(
                     continue
                 break
 
-        if isinstance(last_exception, httpx.TimeoutException):
-            return build_error("ERR_NETWORK_TIMEOUT", f"请求超时（{timeout}毫秒）：{url}")
-        elif isinstance(last_exception, httpx.HTTPStatusError):
-            return build_error(
-                "ERR_NETWORK_HTTP_ERROR",
-                f"HTTP请求失败（重试{retry}次后）：{url}",
-                data={
-                    "status_code": last_exception.response.status_code,
-                    "body": last_exception.response.text if hasattr(last_exception.response, 'text') else None,
-                },
-            )
-        else:
-            return build_error("ERR_NETWORK_REQUEST_ERROR", f"网络请求失败（重试{retry}次后）：{str(last_exception)}")
+        return _build_http_error(last_exception, url, retry)
 
     except Exception as e:
         logger.error(f"[http_request] 未知错误: {e}")
