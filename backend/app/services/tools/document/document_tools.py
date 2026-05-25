@@ -240,6 +240,58 @@ def _parse_pages(pages_str: str) -> List[int]:
 # 内部读取函数（原 read_pdf/read_docx/read_xlsx/read_pptx 逻辑）
 # ============================================================
 
+def _process_page(page, page_num: int,
+                  extract_tables: bool, extract_images: bool
+                  ) -> Tuple[str, List[Dict], List[Dict]]:
+    """处理单页PDF：返回 (text, tables_data, images_data)
+
+    小沈 2026-05-25 重构拆分
+    """
+    text = page.extract_text() or ""
+
+    tables = []
+    if extract_tables:
+        for idx, t in enumerate(page.extract_tables() or []):
+            tables.append({"page": page_num, "table_idx": idx, "data": t})
+
+    images = []
+    if extract_images:
+        for idx, img in enumerate(page.images or []):
+            images.append({
+                "page": page_num, "image_idx": idx,
+                "x0": float(img.get("x0", 0)), "y0": float(img.get("y0", 0)),
+                "x1": float(img.get("x1", 0)), "y1": float(img.get("y1", 0)),
+                "width": float(img.get("width", 0)), "height": float(img.get("height", 0)),
+            })
+
+    return text, tables, images
+
+
+def _build_pdf_result(fp: str, pages_read: List[int], all_text: List[str],
+                      tables_data: List[Dict], images_data: List[Dict],
+                      page_count: int) -> dict:
+    """构建统一的 PDF 读取返回结果
+
+    小沈 2026-05-25 重构拆分
+    """
+    full_text = "\n\n".join(all_text)
+    result = {"text": full_text, "page_count": page_count, "pages_read": pages_read}
+    _llm = {"文件": fp, "页数": f"{page_count}页(读取{len(pages_read)}页)",
+            "文本长度": f"{len(full_text)}字符", "内容": full_text}
+    msg = f"成功读取PDF文件: {fp}，共读取 {len(pages_read)} 页"
+    if tables_data:
+        result["tables"] = tables_data
+        result["table_count"] = len(tables_data)
+        _llm["表格数"] = len(tables_data)
+        msg += f"，{len(tables_data)} 个表格"
+    if images_data:
+        result["images"] = images_data
+        result["image_count"] = len(images_data)
+        _llm["图片数"] = len(images_data)
+        msg += f"，{len(images_data)} 张图片"
+    return build_success(result, msg, llm_data=_llm)
+
+
 def _read_pdf(
     file_path: str,
     pages: str = None,
@@ -247,7 +299,7 @@ def _read_pdf(
     extract_tables: bool = False
 ) -> Dict[str, Any]:
     """读取PDF文件并提取文本内容（内部函数） - 小健 2026-05-18
-    【2026-05-18 小沈】增加extract_images图片提取功能
+    【2026-05-25 小沈重构】拆分：逐页提取 → _process_page，结果构建 → _build_pdf_result
     """
     if not _check_module("pdfplumber"):
         return build_error("ERR_NO_PDFPLUMBER",
@@ -260,85 +312,21 @@ def _read_pdf(
         if not path.exists():
             return build_error("ERR_DOC_READ_PDF", f"文件不存在: {file_path}")
 
-        all_text = []
-        page_count = 0
-        pages_read = []
-        tables_data = []
-        images_data = []
-
+        all_text, pages_read, tables_data, images_data = [], [], [], []
         with pdfplumber.open(path) as pdf:
             page_count = len(pdf.pages)
+            target = _parse_pages(pages) if pages else list(range(1, page_count + 1))
+            target = [p for p in target if 1 <= p <= page_count]
 
-            if pages:
-                target_pages = _parse_pages(pages)
-                target_pages = [p for p in target_pages if 1 <= p <= page_count]
-            else:
-                target_pages = list(range(1, page_count + 1))
+            for pn in target:
+                page = pdf.pages[pn - 1]
+                text, tables, images = _process_page(page, pn, extract_tables, extract_images)
+                all_text.append(f"--- 第 {pn} 页 ---\n{text}")
+                pages_read.append(pn)
+                tables_data.extend(tables)
+                images_data.extend(images)
 
-            for page_num in target_pages:
-                page = pdf.pages[page_num - 1]
-                text = page.extract_text() or ""
-                all_text.append(f"--- 第 {page_num} 页 ---\n{text}")
-                pages_read.append(page_num)
-                
-                if extract_tables:
-                    tables = page.extract_tables()
-                    if tables:
-                        for idx, table in enumerate(tables):
-                            tables_data.append({
-                                "page": page_num,
-                                "table_idx": idx,
-                                "data": table
-                            })
-                
-                if extract_images:
-                    images = page.images
-                    if images:
-                        for idx, img in enumerate(images):
-                            images_data.append({
-                                "page": page_num,
-                                "image_idx": idx,
-                                "x0": float(img.get("x0", 0)),
-                                "y0": float(img.get("y0", 0)),
-                                "x1": float(img.get("x1", 0)),
-                                "y1": float(img.get("y1", 0)),
-                                "width": float(img.get("width", 0)),
-                                "height": float(img.get("height", 0)),
-                            })
-
-        result_data = {
-            "text": "\n\n".join(all_text),
-            "page_count": page_count,
-            "pages_read": pages_read,
-        }
-        
-        if extract_tables and tables_data:
-            result_data["tables"] = tables_data
-            result_data["table_count"] = len(tables_data)
-        
-        if extract_images and images_data:
-            result_data["images"] = images_data
-            result_data["image_count"] = len(images_data)
-
-        full_text = result_data["text"]
-        _llm = {
-            "文件": file_path,
-            "页数": f"{page_count}页(读取{len(pages_read)}页)",
-            "文本长度": f"{len(full_text)}字符",
-            "内容": full_text,
-        }
-        if extract_tables and tables_data:
-            _llm["表格数"] = len(tables_data)
-        if extract_images and images_data:
-            _llm["图片数"] = len(images_data)
-        
-        msg = f"成功读取PDF文件: {file_path}，共读取 {len(pages_read)} 页"
-        if extract_tables and tables_data:
-            msg += f"，{len(tables_data)} 个表格"
-        if extract_images and images_data:
-            msg += f"，{len(images_data)} 张图片"
-        
-        return build_success(result_data, msg, llm_data=_llm)
+        return _build_pdf_result(file_path, pages_read, all_text, tables_data, images_data, page_count)
     except Exception as e:
         return build_error("ERR_DOC_READ_PDF", f"读取PDF文件失败: {str(e)}")
 
