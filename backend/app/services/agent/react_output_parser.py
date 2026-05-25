@@ -976,6 +976,22 @@ def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
         return None
 
     data = _try_parse_with_strategies(json_str, STRATEGIES)
+
+    # 【修复 2026-05-26 小欧】第一个JSON没有tool_name时，试最后一个{
+    # LLM推理中可能先写草稿JSON再写真正的工具调用，真正的在末尾
+    if (not data or not data.get("tool_name")) and content.count('{') > 1:
+        last_brace = content.rfind('{')
+        if last_brace > 0:
+            json_str2, _ = _extract_json_with_balanced_braces(content[last_brace:])
+            if json_str2 and json_str2 != json_str:
+                data2 = _try_parse_with_strategies(json_str2, STRATEGIES)
+                if data2 and data2.get("tool_name"):
+                    logger.info(
+                        f"[_extract_json_block] 第一个JSON无tool_name，从末尾提取成功: "
+                        f"tool_name={data2.get('tool_name')}"
+                    )
+                    data = data2
+
     if data:
         return data
 
