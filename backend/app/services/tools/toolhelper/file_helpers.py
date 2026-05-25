@@ -82,6 +82,77 @@ def _is_safe_path(output_dir: str, member_path: str) -> bool:
     return target.startswith(os.path.normpath(output_dir) + os.sep) or target == os.path.normpath(output_dir)
 
 
+def _resolve_output_dir(archive_path: str, output_dir: Optional[str] = None) -> str:
+    """自动推断输出目录。未指定时从basename剥离已知扩展名 — 小健 2026-05-25"""
+    if output_dir:
+        return os.path.abspath(output_dir)
+    archive_path = os.path.abspath(archive_path)
+    base_name = os.path.basename(archive_path)
+    for ext in ['.zip', '.tar.gz', '.tar.bz2', '.tbz2', '.tgz', '.tar', '.gz', '.bz2']:
+        if base_name.lower().endswith(ext):
+            base_name = base_name[:-len(ext)]
+            break
+    return os.path.join(os.path.dirname(archive_path), base_name)
+
+
+def _extract_zip_archive(archive_path: str, output_dir: str, overwrite: bool,
+                         password: Optional[str] = None) -> Dict[str, Any]:
+    """解压zip文件（密码+安全路径+覆盖控制）— 小健 2026-05-25"""
+    extracted_count, skipped_count = 0, 0
+    with zipfile.ZipFile(archive_path, 'r') as zf:
+        if password:
+            zf.setpassword(password.encode('utf-8'))
+        for name in zf.namelist():
+            if not _is_safe_path(output_dir, name):
+                logger.warning(f"跳过路径遍历成员: {name}")
+                skipped_count += 1
+                continue
+            target_path = os.path.join(output_dir, name)
+            if not overwrite and os.path.exists(target_path):
+                skipped_count += 1
+                continue
+            zf.extract(name, output_dir)
+            extracted_count += 1
+    return {
+        "success": True,
+        "output_dir": output_dir,
+        "extracted_files": extracted_count,
+        "skipped_files": skipped_count,
+        "format": "zip"
+    }
+
+
+def _extract_tar_archive(archive_path: str, output_dir: str, overwrite: bool,
+                         preserve_permissions: bool, mode: str, fmt: str) -> Dict[str, Any]:
+    """参数化解压tar文件。mode=r:gz/r:bz2/r, fmt=tar.gz/tar.bz2/tar — 小健 2026-05-25"""
+    extracted_count, skipped_count = 0, 0
+    with tarfile.open(archive_path, mode) as tf:
+        for member in tf.getmembers():
+            if not _is_safe_path(output_dir, member.name):
+                logger.warning(f"跳过路径遍历成员: {member.name}")
+                skipped_count += 1
+                continue
+            target_path = os.path.join(output_dir, member.name)
+            if not overwrite and os.path.exists(target_path):
+                skipped_count += 1
+                continue
+            if member.isfile():
+                tf.extract(member, output_dir)
+                extracted_count += 1
+                if preserve_permissions:
+                    try:
+                        os.chmod(target_path, member.mode)
+                    except Exception as e:
+                        logger.warning(f"设置权限失败: {e}")
+    return {
+        "success": True,
+        "output_dir": output_dir,
+        "extracted_files": extracted_count,
+        "skipped_files": skipped_count,
+        "format": fmt
+    }
+
+
 def extract_archive(
     archive_path: str,
     output_dir: Optional[str] = None,
@@ -90,172 +161,26 @@ def extract_archive(
     preserve_permissions: bool = True,
 ) -> Dict[str, Any]:
     """
-    解压压缩文件 - 小沈 2026-05-02
-    
+    解压压缩文件 - 小沈 2026-05-02；小健 2026-05-25 重构
+
     支持 zip、tar、tar.gz、tar.bz2 格式
     """
     try:
-        archive_path = os.path.abspath(archive_path)
-        
         if not os.path.exists(archive_path):
             return {"success": False, "error": f"压缩文件不存在: {archive_path}"}
-        
-        if output_dir is None:
-            base_name = os.path.basename(archive_path)
-            for ext in ['.zip', '.tar.gz', '.tar.bz2', '.tar', '.gz', '.bz2']:
-                if base_name.lower().endswith(ext):
-                    base_name = base_name[:-len(ext)]
-                    break
-            output_dir = os.path.join(os.path.dirname(archive_path), base_name)
-        
-        output_dir = os.path.abspath(output_dir)
-        os.makedirs(output_dir, exist_ok=True)
-        
+        out_dir = _resolve_output_dir(archive_path, output_dir)
+        os.makedirs(out_dir, exist_ok=True)
         lower_path = archive_path.lower()
-        
+
         if lower_path.endswith('.zip'):
-            with zipfile.ZipFile(archive_path, 'r') as zf:
-                if password:
-                    zf.setpassword(password.encode('utf-8'))
-                
-                members = zf.namelist()
-                extracted = []
-                skipped = []
-                
-                for member in members:
-                    if not _is_safe_path(output_dir, member):
-                        logger.warning(f"跳过路径遍历成员: {member}")
-                        skipped.append(member)
-                        continue
-                    
-                    target_path = os.path.join(output_dir, member)
-                    
-                    if not overwrite and os.path.exists(target_path):
-                        skipped.append(member)
-                        continue
-                    
-                    zf.extract(member, output_dir)
-                    extracted.append(member)
-                
-                return {
-                    "success": True,
-                    "output_dir": output_dir,
-                    "extracted_files": len(extracted),
-                    "skipped_files": len(skipped),
-                    "format": "zip"
-                }
-        
-        elif lower_path.endswith('.tar.gz') or lower_path.endswith('.tgz'):
-            with tarfile.open(archive_path, 'r:gz') as tf:
-                members = tf.getmembers()
-                extracted = []
-                skipped = []
-                
-                for member in members:
-                    if not _is_safe_path(output_dir, member.name):
-                        logger.warning(f"跳过路径遍历成员: {member.name}")
-                        skipped.append(member.name)
-                        continue
-                    
-                    target_path = os.path.join(output_dir, member.name)
-                    
-                    if not overwrite and os.path.exists(target_path):
-                        skipped.append(member.name)
-                        continue
-                    
-                    tf.extract(member, output_dir)
-                    
-                    if preserve_permissions:
-                        try:
-                            os.chmod(target_path, member.mode)
-                        except Exception as e:
-                            logger.warning(f"设置权限失败: {e}")
-                    
-                    extracted.append(member.name)
-                
-                return {
-                    "success": True,
-                    "output_dir": output_dir,
-                    "extracted_files": len(extracted),
-                    "skipped_files": len(skipped),
-                    "format": "tar.gz"
-                }
-        
-        elif lower_path.endswith('.tar.bz2') or lower_path.endswith('.tbz2'):
-            with tarfile.open(archive_path, 'r:bz2') as tf:
-                members = tf.getmembers()
-                extracted = []
-                skipped = []
-                
-                for member in members:
-                    if not _is_safe_path(output_dir, member.name):
-                        logger.warning(f"跳过路径遍历成员: {member.name}")
-                        skipped.append(member.name)
-                        continue
-                    
-                    target_path = os.path.join(output_dir, member.name)
-                    
-                    if not overwrite and os.path.exists(target_path):
-                        skipped.append(member.name)
-                        continue
-                    
-                    tf.extract(member, output_dir)
-                    
-                    if preserve_permissions:
-                        try:
-                            os.chmod(target_path, member.mode)
-                        except Exception as e:
-                            logger.warning(f"设置权限失败: {e}")
-                    
-                    extracted.append(member.name)
-                
-                return {
-                    "success": True,
-                    "output_dir": output_dir,
-                    "extracted_files": len(extracted),
-                    "skipped_files": len(skipped),
-                    "format": "tar.bz2"
-                }
-        
-        elif lower_path.endswith('.tar'):
-            with tarfile.open(archive_path, 'r') as tf:
-                members = tf.getmembers()
-                extracted = []
-                skipped = []
-                
-                for member in members:
-                    if not _is_safe_path(output_dir, member.name):
-                        logger.warning(f"跳过路径遍历成员: {member.name}")
-                        skipped.append(member.name)
-                        continue
-                    
-                    target_path = os.path.join(output_dir, member.name)
-                    
-                    if not overwrite and os.path.exists(target_path):
-                        skipped.append(member.name)
-                        continue
-                    
-                    tf.extract(member, output_dir)
-                    
-                    if preserve_permissions:
-                        try:
-                            os.chmod(target_path, member.mode)
-                        except Exception as e:
-                            logger.warning(f"设置权限失败: {e}")
-                    
-                    extracted.append(member.name)
-                
-                return {
-                    "success": True,
-                    "output_dir": output_dir,
-                    "extracted_files": len(extracted),
-                    "skipped_files": len(skipped),
-                    "format": "tar"
-                }
-        
-        else:
-            return {"success": False, "error": f"不支持的压缩格式: {archive_path}"}
-    
+            return _extract_zip_archive(archive_path, out_dir, overwrite, password)
+        if lower_path.endswith('.tar.gz') or lower_path.endswith('.tgz'):
+            return _extract_tar_archive(archive_path, out_dir, overwrite, preserve_permissions, 'r:gz', 'tar.gz')
+        if lower_path.endswith('.tar.bz2') or lower_path.endswith('.tbz2'):
+            return _extract_tar_archive(archive_path, out_dir, overwrite, preserve_permissions, 'r:bz2', 'tar.bz2')
+        if lower_path.endswith('.tar'):
+            return _extract_tar_archive(archive_path, out_dir, overwrite, preserve_permissions, 'r', 'tar')
+        return {"success": False, "error": f"不支持的压缩格式: {archive_path}"}
     except zipfile.BadZipFile:
         return {"success": False, "error": "无效的ZIP文件或密码错误"}
     except tarfile.TarError as e:

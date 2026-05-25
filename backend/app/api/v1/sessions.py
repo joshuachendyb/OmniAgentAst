@@ -547,177 +547,80 @@ class SessionUpdate(BaseModel):
     updated_by: Optional[str] = Field(None, description="修改者")
 
 
+def _try_mark_valid(cursor, session_id: str) -> None:
+    """如果会话之前is_valid=False，尝试自愈标记为True — 小健 2026-05-25"""
+    cursor.execute("SELECT is_valid FROM chat_sessions WHERE session_id = ?", (session_id,))
+    row = cursor.fetchone()
+    if row and not row[0]:
+        cursor.execute("UPDATE chat_sessions SET is_valid = 1 WHERE session_id = ?", (session_id,))
+        logger.info(f"[save_message] 会话{session_id}已自愈标记为有效")
+
+
+def _track_user_message(session_id: str, message_id: str) -> None:
+    """线程安全地存储user_message_id，覆盖旧值 — 小健 2026-05-25"""
+    with _message_ids_lock:
+        _user_message_ids[session_id] = message_id
+        logger.info(f"[save_message] 记录user消息ID: {message_id}, 会话: {session_id}")
+
+
 @router.post("/sessions/{session_id}/messages")
 async def save_message(session_id: str, message: MessageCreate):
-    """
-    保存消息到会话
-    
-    优化内容：
-    1. 标题保护逻辑：如果标题被锁定，不自动更新标题
-    2. updated_at更新时机优化：不再每次保存消息都更新
-    3. 事务处理优化：确保消息保存和标题更新的一致性
-    4. 添加 execution_steps 字段保存执行步骤
-    
-    P0风险缓解：添加了字段存在性检查，向后兼容旧数据库结构
-    
-    Args:
-        session_id: 会话ID
-        message: 消息内容（包含 execution_steps）
-        
-    Returns:
-        dict: 保存结果
-    """
+    """保存消息到会话 — 小健 2026-05-25 重构"""
     conn = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        
-        # P0风险缓解：检查数据库字段是否存在（向后兼容）
         fields_exist = check_db_fields_exist(conn)
-        
-        # 根据字段存在性动态构建查询语句
-        if fields_exist['title_locked']:
-            # 新字段存在，使用完整查询
+        new_message_count = 0
+
+        if fields_exist.get("title_locked"):
             cursor.execute(
-                '''SELECT id, title, message_count, 
-                          COALESCE(title_locked, 0) as title_locked 
-                   FROM chat_sessions 
-                   WHERE id = ? AND is_deleted = FALSE''',
-                (session_id,)
-            )
+                "SELECT id, title, message_count, COALESCE(title_locked, 0) as title_locked "
+                "FROM chat_sessions WHERE id = ? AND is_deleted = FALSE", (session_id,))
         else:
-            # 新字段不存在，使用兼容查询（假设标题未锁定）
-            logger.warning(f"字段title_locked不存在，使用兼容模式查询会话: {session_id}")
             cursor.execute(
-                '''SELECT id, title, message_count, 0 as title_locked 
-                   FROM chat_sessions 
-                   WHERE id = ? AND is_deleted = FALSE''',
-                (session_id,)
-            )
-        
+                "SELECT id, title, message_count, 0 as title_locked "
+                "FROM chat_sessions WHERE id = ? AND is_deleted = FALSE", (session_id,))
         session = cursor.fetchone()
-        
         if not session:
-            raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
-        
-        # 【小沈修复 2026-03-31】使用毫秒时间戳
+            raise HTTPException(status_code=404, detail="会话不存在")
+
         utc_time = get_timestamp_ms()
-        
-        # ⭐ 【小沈添加 2026-03-03】从缓存获取 display_name（如果是AI回复且前端未提供）
+        new_message_count = session["message_count"] + 1
+
         display_name_to_save = message.display_name
         if message.role == "assistant" and not display_name_to_save:
             display_name_to_save = get_cached_display_name(session_id)
-            logger.debug(f"从缓存获取 display_name: session_id={session_id}, display_name={display_name_to_save}")
-        
-        # 插入消息（添加 display_name 和 execution_steps 字段）
+
         execution_steps_json = json.dumps(message.execution_steps) if message.execution_steps else None
         cursor.execute(
-            'INSERT INTO chat_messages (session_id, role, content, timestamp, display_name, execution_steps, client_os, browser, device, network) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            (session_id, message.role, message.content, utc_time, display_name_to_save, execution_steps_json, 
-             message.client_os, message.browser, message.device, message.network)
-        )
+            "INSERT INTO chat_messages(session_id, role, content, timestamp, display_name, execution_steps, client_os, browser, device, network) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (session_id, message.role, message.content, utc_time, display_name_to_save,
+             execution_steps_json, message.client_os, message.browser, message.device, message.network))
         message_id = cursor.lastrowid
-        
-        # 【新增 2026-03-16】保存用户消息ID到内存字典，用于生成AI消息ID
-        if message.role == 'user':
-            with _message_ids_lock:
-                _user_message_ids[session_id] = message_id
-            logger.info(f"[保存用户消息ID] message_id={message_id}, session_id={session_id}")
-        
-        # 计算新的消息计数
-        new_message_count = session['message_count'] + 1
-        
-        # 优化：标题保护逻辑
-        # 如果标题未被锁定，且是第一条消息，才考虑更新标题
-        should_update_title = False
-        new_title = session['title']
-        
-# P0风险缓解：检查字段是否存在，如果不存在则假设标题未锁定
-        title_locked = session['title_locked'] if fields_exist['title_locked'] else False
 
-        # 【小新第二修复 2026-03-02】删除自动用消息内容作为标题的逻辑
-        # 原因：前端已经生成漂亮的时间标题（如"3月1日 深夜会话 23:18"），
-        # 不需要后端用消息内容覆盖。标题应该由用户手动修改才更新。
+        if message.role == "user":
+            _track_user_message(session_id, message_id)
 
-        # 优化：updated_at更新时机
-        # 每次保存消息都更新updated_at，因为它是"最后活动时间"
-        should_update_updated_at = True
-        
-        # 执行会话更新（根据字段存在性动态构建SQL）
-        if should_update_title or should_update_updated_at:
-            update_fields = ['message_count = ?']
-            update_values = [new_message_count]
-            
-            if should_update_title:
-                update_fields.append('title = ?')
-                update_values.append(new_title)
-            
-            if should_update_updated_at:
-                update_fields.append('updated_at = ?')
-                update_values.append(utc_time)
-            
-             # P0风险缓解：如果新字段存在，也更新它们
-            if fields_exist['title_locked'] and should_update_title:
-                update_fields.append('title_locked = ?')
-                update_values.append(False)  # 自动更新的标题不锁定
-            
-            if fields_exist['title_updated_at'] and should_update_title:
-                update_fields.append('title_updated_at = ?')
-                update_values.append(utc_time)
-            
-# ⭐ 修复P1-问题4：只在标题实际变化时递增版本号
-            # 修复原因：避免标题未变化时也递增版本号，导致频繁409冲突
-            if fields_exist['version'] and should_update_title:
-                # 只有在标题更新时才递增版本号
-                update_fields.append('version = version + 1')  # 【小新第二修复 2026-03-02】使用SQL递增，而不是设置为1
-            
-            update_values.append(session_id)
-            
-            cursor.execute(
-                f'UPDATE chat_sessions SET {", ".join(update_fields)} WHERE id = ?',
-                update_values
-            )
-        else:
-            # 只更新消息计数
-            cursor.execute(
-                'UPDATE chat_sessions SET message_count = ? WHERE id = ?',
-                (new_message_count, session_id)
-            )
-        
-        # 【小沈修改2026-03-03】保存消息后，自动将该会话的is_valid设置为TRUE
-        # 这是因为只要有消息保存，说明是真实用户会话
         cursor.execute(
-            'UPDATE chat_sessions SET is_valid = TRUE WHERE id = ? AND is_valid = FALSE',
-            (session_id,)
-        )
-        if cursor.rowcount > 0:
-            logger.info(f"会话自动标记为有效: session_id={session_id}")
-        
-        # 提交事务
+            "UPDATE chat_sessions SET message_count = ?, updated_at = ? WHERE id = ?",
+            (new_message_count, utc_time, session_id))
+
+        _try_mark_valid(cursor, session_id)
+
         conn.commit()
-        
-        logger.info(f"保存消息成功: session_id={session_id}, message_id={message_id}, "
-                   f"role={message.role}, message_count={new_message_count}, "
-                   f"title_updated={should_update_title}")
-        
-        return {
-            "success": True, 
-            "message_id": message_id,
-            "message_count": new_message_count,
-            "title_updated": should_update_title
-        }
-        
+        return {"success": True, "message_id": message_id, "message_count": new_message_count}
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"保存消息失败: {e}")
-        raise HTTPException(status_code=500, detail=f"保存消息失败: {str(e)}")
+        try: conn.rollback()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         if conn:
-            try:
-                conn.close()
-            except Exception:
-                pass
+            try: conn.close()
+            except: pass
 
 
 class AssistantMessageIdAllocator:

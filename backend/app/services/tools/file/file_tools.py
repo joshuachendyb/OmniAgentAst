@@ -1294,6 +1294,54 @@ class FileTools:
             logger.error(f"Failed to move {source_path} -> {destination_path}: {e}")
             return build_error("ERR_FILE_MOVE_FAILED", str(e))
     
+def _match_fnmatch(name: str, pattern: str, ignore_case: bool) -> bool:
+    """统一封装fnmatch，消除if-else三元组重复 — 小健 2026-05-25"""
+    import fnmatch
+    return fnmatch.fnmatch(name, pattern) if ignore_case else fnmatch.fnmatchcase(name, pattern)
+
+
+def _is_already_seen_or_skipped(name: str, seen: set, seen_count: int, start: int) -> Tuple[bool, bool]:
+    """返回(is_duplicate, is_skipped_by_offset)。消除20行三段逻辑重复 — 小健 2026-05-25"""
+    if name in seen:
+        return True, False
+    seen.add(name)
+    if seen_count <= start:
+        return False, True
+    return False, False
+
+
+def _collect_entry_result(relative_path: str, name: str, fpath: Path, all_matches: List, llm_preview: List) -> None:
+    """收集匹配结果到all_matches和llm_preview — 小健 2026-05-25"""
+    try:
+        st = fpath.stat()
+        entry = {"name": name, "path": relative_path, "size": st.st_size,
+                 "mtime": st.st_mtime, "type": "file" if fpath.is_file() else "directory"}
+    except (PermissionError, OSError):
+        entry = {"name": name, "path": relative_path, "size": 0, "mtime": 0,
+                 "type": "file" if fpath.is_file() else "directory"}
+    all_matches.append(entry)
+    if len(llm_preview) < 30:
+        llm_preview.append({"name": name, "path": relative_path, "type": entry["type"]})
+
+
+def _paginate_search(all_matches: List, path: str, llm_preview: List,
+                       page_size: int, start_offset: int) -> Dict:
+    """分页+build_success统一构建，生成next_page_token支持游标续页 — 小健 2026-05-25"""
+    total = len(all_matches)
+    has_more = total > page_size
+    page = all_matches[:page_size] if has_more else all_matches
+    next_page_token = encode_page_token(start_offset + page_size) if has_more else None
+    return build_success({
+        "pattern": "", "search_dir": path, "matches": page, "total": total,
+        "page": 1, "total_pages": (total + page_size - 1) // page_size if has_more else 1,
+        "page_size": page_size, "next_page_token": next_page_token, "has_more": has_more,
+    }, f"搜索完成，共{total}个匹配",
+       llm_data={"模式": "", "搜索目录": path, "匹配数": total,
+                 "文件预览": [m.get("path","") if isinstance(m,dict) else str(m) for m in llm_preview[:20]],
+                 "has_more": has_more},
+       next_actions=build_next_actions([("read_file", "读取找到的文件", "需要查看内容时")]))
+
+
     async def search_files(
         self,
         pattern: str,
@@ -1304,168 +1352,61 @@ class FileTools:
         type: Optional[Literal["file", "directory"]] = None,
         page_token: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """搜索文件名 — 小沈 2026-05-19 精简参数(9→7)
-        【FIX 2026-05-20 小健】exclude_patterns已从参数中删除（schema已精简）
-        【FIX 2026-05-21 小健】sortBy未定义bug修复（schema精简时遗漏了内部引用）
-        """
-        sortBy = "name"
+        """搜索文件名 — 小沈 2026-05-19 精简参数(9→7)；小健 2026-05-25 重构"""
         is_valid, error_msg = self._validate_path(search_dir)
         if not is_valid:
             return build_error("ERR_PATH_INVALID", error_msg)
-
         if not pattern or not pattern.strip():
             return build_error("ERR_PARAM_INVALID", "文件名匹配模式不能为空，请提供有效的文件名模式")
+        path = Path(os.path.expanduser(search_dir))
+        if not path.exists():
+            return build_error("ERR_FILE_NOT_FOUND", f"搜索目录不存在: {search_dir}")
 
-        search_path = Path(os.path.expanduser(search_dir))
+        deadline = time.monotonic() + get_timeout("search_files") - 2
+        all_matches, llm_preview = [], []
+        seen_files = set()
+        start_offset = decode_page_token(page_token) if page_token else 0
+
+        def _search_sync():
+            nonlocal seen_files
+            for root, dirs, files in os.walk(path):
+                if time.monotonic() > deadline:
+                    logger.warning(f"[search_files] 超时自检触发，提前返回{len(all_matches)}个匹配")
+                    break
+                if not recursive:
+                    dirs.clear()
+                elif max_depth:
+                    depth = root[len(str(path)):].count(os.sep)
+                    if depth >= max_depth:
+                        dirs.clear()
+
+                if type != "file":
+                    for d in dirs:
+                        if not _match_fnmatch(d, pattern, ignore_case):
+                            continue
+                        relative = os.path.relpath(os.path.join(root, d), path)
+                        dup, skip = _is_already_seen_or_skipped(relative, seen_files, len(all_matches), start_offset)
+                        if dup or skip:
+                            continue
+                        _collect_entry_result(relative, d, Path(os.path.join(root, d)), all_matches, llm_preview)
+
+                if type != "directory":
+                    for f in files:
+                        if not _match_fnmatch(f, pattern, ignore_case):
+                            continue
+                        relative = os.path.relpath(os.path.join(root, f), path)
+                        dup, skip = _is_already_seen_or_skipped(relative, seen_files, len(all_matches), start_offset)
+                        if dup or skip:
+                            continue
+                        _collect_entry_result(relative, f, Path(os.path.join(root, f)), all_matches, llm_preview)
 
         try:
-            if not search_path.exists():
-                return build_error("ERR_FILE_NOT_FOUND", f"搜索目录不存在: {search_dir}")
-
-            _deadline = time.monotonic() + get_timeout("search_files") - 2
-
-            _pagination_info = {}
-            excludePatterns = None
-            def _search_sync():
-                all_matches = []
-                seen_files = set()
-                start_offset = decode_page_token(page_token) if page_token else 0
-                seen_count = 0
-
-                import fnmatch
-
-                for root, dirs, files in os.walk(search_path):
-                    if time.monotonic() > _deadline:
-                        logger.warning(f"[search_files] 超时自检触发，已遍历{seen_count}条，提前返回{len(all_matches)}个匹配")
-                        break
-                    if not recursive:
-                        dirs.clear()
-                    else:
-                        rel_root = Path(root).relative_to(search_path)
-                        depth = len(rel_root.parts) if str(rel_root) != "." else 0
-                        if depth >= max_depth:
-                            dirs.clear()
-                            continue
-
-                    if excludePatterns:
-                        dirs[:] = [d for d in dirs if not any(fnmatch.fnmatch(d, pat) for pat in excludePatterns)]
-
-                    for dirname in dirs:
-                        if type == "file":
-                            continue
-                        matched = fnmatch.fnmatch(dirname, pattern) if ignore_case else fnmatch.fnmatchcase(dirname, pattern)
-                        if not matched:
-                            continue
-
-                        dir_path = Path(root) / dirname
-                        dir_str = str(dir_path.relative_to(search_path))
-
-                        if dir_str in seen_files:
-                            continue
-
-                        seen_count += 1
-
-                        if seen_count <= start_offset:
-                            seen_files.add(dir_str)
-                            continue
-                        seen_files.add(dir_str)
-
-                        all_matches.append({
-                            "name": dirname,
-                            "path": dir_str,
-                            "type": "directory"
-                        })
-
-                    for filename in files:
-                        if type == "directory":
-                            continue
-                        if any(fnmatch.fnmatch(filename, pat) for pat in excludePatterns or []):
-                            continue
-                        matched = fnmatch.fnmatch(filename, pattern) if ignore_case else fnmatch.fnmatchcase(filename, pattern)
-                        if not matched:
-                            continue
-
-                        file_path = Path(root) / filename
-                        file_str = str(file_path.relative_to(search_path))
-
-                        if file_str in seen_files:
-                            continue
-
-                        seen_count += 1
-
-                        if seen_count <= start_offset:
-                            seen_files.add(file_str)
-                            continue
-                        seen_files.add(file_str)
-
-                        try:
-                            st = file_path.stat()
-                            size = st.st_size
-                        except (PermissionError, OSError):
-                            st = None
-                            size = 0
-
-                        all_matches.append({
-                            "name": filename,
-                            "path": file_str,
-                            "size": size,
-                            "type": "file",
-                            "mtime": st.st_mtime if st is not None and sortBy == "mtime" else None
-                        })
-
-                _pagination_info['start_offset'] = start_offset
-                return all_matches
-
-            all_matches = await asyncio.to_thread(_search_sync)
-            start_offset = _pagination_info.get('start_offset', 0)
-
-            if sortBy == "mtime":
-                all_matches.sort(key=lambda x: x.get("mtime", 0) or 0, reverse=True)
-            elif sortBy == "name":
-                all_matches.sort(key=lambda x: x.get("name", ""))
-            elif sortBy == "size":
-                all_matches.sort(key=lambda x: x.get("size", 0) or 0, reverse=True)
-
-            total = len(all_matches)
-
-            logger.info(f"[search_files] 搜索完成: pattern={pattern}, search_dir={search_dir}, total={total}, matches数量={len(all_matches)}")
-
-            if total > DEFAULT_PAGE_SIZE:
-                total_pages = (total + DEFAULT_PAGE_SIZE - 1) // DEFAULT_PAGE_SIZE
-                page_matches = all_matches[:DEFAULT_PAGE_SIZE]
-                has_more = True
-                next_offset = start_offset + DEFAULT_PAGE_SIZE
-                next_page_token = encode_page_token(next_offset) if has_more else None
-            else:
-                page_matches = all_matches
-                total_pages = 1
-                has_more = False
-                next_page_token = None
-
-            return build_success(
-                {
-                    "pattern": pattern,
-                    "search_dir": str(search_path),
-                    "matches": page_matches,
-                    "total": total,
-                    "page": 1,
-                    "total_pages": total_pages,
-                    "page_size": DEFAULT_PAGE_SIZE,
-                    "next_page_token": next_page_token,
-                    "has_more": has_more,
-                },
-                f"搜索完成，共{total}个匹配",
-                llm_data={
-                    "模式": pattern, "搜索目录": str(search_path), "匹配数": total,
-                    "文件预览": [m.get("path","") if isinstance(m,dict) else str(m) for m in page_matches[:20]],
-                    "has_more": has_more,
-                },
-                next_actions=build_next_actions([("read_file", "读取找到的文件", "需要查看内容时")]),
-            )
-
+            await asyncio.to_thread(_search_sync)
         except Exception as e:
-            logger.error(f"Failed to search files: {e}")
-            return build_error("ERR_FILE_SEARCH_FAILED", str(e))
+            return build_error("ERR_FILE_SEARCH_FAILED", f"搜索失败: {e}")
+
+        all_matches.sort(key=lambda x: x.get("name", ""))
+        return _paginate_search(all_matches, search_dir, llm_preview, DEFAULT_PAGE_SIZE, start_offset)
     
     async def _copy_file(
         self,
