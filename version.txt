@@ -1,8 +1,59 @@
-v0.13.42
+v0.13.43
 
-更新时间: 2026-05-25 16:48:19
+更新时间: 2026-05-25 20:31:15
 
 更新内容：
+
+## v0.13.42→v0.13.43 变更汇总 - 小沈-2026-05-25
+
+### docs 文档更新（2个commit）
+
+| commit | 说明 |
+|--------|------|
+| 92c8f4d9 | docs: 扫描报告v2.0 重扫更新P0/P1/P2全量 - 小健-2026-05-25 |
+| da5f47c4 | docs: 审查报告138文件全景 可复用函数表修正 - 小健-2026-05-25 |
+
+### refactor 第23~24章 6个函数拆分重构（6个commit）
+
+| commit | 说明 |
+|--------|------|
+| 4ff801f2 | refactor: filter_data 重构拆分 - 小沈-2026-05-25 |
+| a6fcff86 | refactor: execute_shell_command 重构拆分 - 小沈-2026-05-25 |
+| 96abaadd | refactor: http_request 重构拆分 - 小沈-2026-05-25 |
+| b0f66e5a | refactor: get_function_call_error_info 重构拆分 - 小沈-2026-05-25 |
+| 3724f662 | refactor: list_sessions 重构拆分 + fix chat_router Tuple import - 小沈-2026-05-25 |
+| 3faaf3d9 | refactor: llm_core 新增_cancel_or_wait取消等待方法 - 小沈-2026-05-25 |
+| 34496545 | refactor: database_tools _get_tables拆分提取 - 小沈-2026-05-25 |
+| 13d2c3d4 | refactor: file_tools 全文件缩进重构/注释更新 - 小沈-2026-05-25 |
+| 2b99c916 | refactor: env_tools get_env重构优化 - 小沈-2026-05-25 |
+
+### fix 修复（4个commit）
+
+| commit | 说明 |
+|--------|------|
+| 768349c8 | fix: _try_read_file_with_encodings补充self参数修复调用崩溃 - 小沈-2026-05-25 |
+| 4bb03b96 | fix: 补充缺失的pandas/Tuple/Union类型导入 - 小沈-2026-05-25 |
+| 0308e0eb | fix: 补充缺失的Callable类型导入 - 小沈-2026-05-25 |
+| 62be1735 | fix: 回移13个不含测试/审查字样的文件到doc/ - 小沈-2026-05-25 |
+
+### chore 杂项（3个commit）
+
+| commit | 说明 |
+|--------|------|
+| 34367e7b | refactor: 新增19.7实施计划(函数30~34) - 小沈-2026-05-25 |
+| c5772abc | docs: 修复18.7.5 yield_sse描述 死代码→冗余定义 - 小健-2026-05-25 |
+| 6cc31df4 | refactor: 删除_create_action_result_from_dict死代码 - 小沈-2026-05-25 |
+| ecd9e552 | feat: 新增ToolRegistry.get_instance/get_tool_meta方法 - 小沈-2026-05-25 |
+
+### 目录整理（2个commit）
+
+| commit | 说明 |
+|--------|------|
+| 00edf48c | docs: 测试/审查/分析报告移入doc-测试与审查/目录 - 小沈-2026-05-25 |
+| 8277e7f7 | docs: 移入correction_test.txt等 - 小沈-2026-05-25 |
+| 68b40e27 | docs: 从doc-5月优化/前端设计等移入测试审查类文件 - 小沈-2026-05-25 |
+
+
 
 ## v0.13.41→v0.13.42 变更汇总 - 小沈-2026-05-25
 
