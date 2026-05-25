@@ -102,6 +102,73 @@ class ToolStepMixin:
                 return {"tool_calls": _fc_resp.tool_calls, "tool_call_id": _tc_id}
         return None
 
+    def _build_err_dict(error: Exception) -> Dict[str, Any]:
+        """构建异常路径的错误结果字典
+        
+        小沈 2026-05-25 重构拆分
+        YAGNI: retry_count/warning/attachment/next_actions 已删除
+        """
+        return {
+            "code": -1,
+            "status": "error",
+            "summary": str(error),
+            "data": None,
+            "return_direct": False,
+            "error_message": str(error),
+        }
+    
+    def _build_tool_outcome(
+        self,
+        execution_result: Dict[str, Any],
+        execution_result_dict: Dict[str, Any],
+        execution_time_ms: int,
+        step_count: int,
+        tool_name: str,
+        tool_params: Dict[str, Any],
+        is_primary: bool,
+        observation_text: str,
+        *,
+        fc_context: Optional[Dict[str, Any]] = None,
+    ) -> _ToolStepOutcome:
+        """统一构建工具执行的完整产出
+        
+        小沈 2026-05-25 重构拆分
+        """
+        action_step = StepFactory.create_action_tool_step(
+            step=step_count, tool_name=tool_name, tool_params=tool_params,
+            execution_result=execution_result_dict,
+            execution_time_ms=execution_time_ms,
+        )
+        action_step_dict = self._emit_step(action_step)
+        
+        prefix = "[并行] " if not is_primary else ""
+        obs_inject_text = f"{prefix}{observation_text}"
+        
+        return_direct = execution_result.get("return_direct", False) and is_primary
+        display_result = dict(execution_result)
+        display_result['summary'] = execution_result.get('message', '')
+        display_result.setdefault('error_message', '')
+        
+        observation_step = StepFactory.create_observation_step(
+            step=step_count, tool_name=tool_name, tool_params=tool_params,
+            execution_result=display_result,
+            return_direct=return_direct,
+        )
+        observation_step_dict = self._emit_step(observation_step)
+        is_done = return_direct and observation_step.is_done()
+        
+        return _ToolStepOutcome(
+            execution_result=execution_result,
+            execution_result_dict=execution_result_dict,
+            execution_time_ms=execution_time_ms,
+            observation_text=observation_text,
+            is_done=is_done,
+            action_step_dict=action_step_dict,
+            observation_step_dict=observation_step_dict,
+            obs_inject_text=obs_inject_text,
+            obs_fc_context=fc_context,
+        )
+    
     async def _execute_tool_step(
         self,
         tool_name: str,
@@ -110,70 +177,47 @@ class ToolStepMixin:
         *,
         is_primary: bool = True,
     ) -> _ToolStepOutcome:
-        """执行单个工具调用，构建action_tool+observation步骤 — 小健 2026-05-24
-
+        """执行单个工具调用，构建action_tool+observation步骤
+        
+        【小沈重构 2026-05-25】
+        - 重构拆分：提取 _build_err_dict / _build_tool_outcome
+        - 内联 YAGNI：display_summary 单次使用变量
+        - 保持所有分支完整，功能不减少
+        
         统一主工具和pending工具的执行逻辑，消除代码重复。
         主工具(is_primary=True): 支持return_direct
         Pending工具(is_primary=False): 跳过return_direct
-
-        注意：本方法不调用 add_observation()，由调用方在适当时机
-        （主工具在add_assistant之后，pending工具直接调用）执行。
-        调用方通过 outcome.obs_inject_text 和 outcome.obs_fc_context 注入。
-
-        使用场景:
-            主工具: outcome = await self._execute_tool_step(name, params, step)
-                    yield outcome.action_step_dict
-                    self.message_builder.add_assistant(response)
-                    self.message_builder.add_observation(outcome.obs_inject_text, ..., fc_context=outcome.obs_fc_context)
-                    yield outcome.observation_step_dict
-
-            Pending: outcome = await self._execute_tool_step(name, params, step, is_primary=False)
-                    yield outcome.action_step_dict
-                    self.message_builder.add_observation(outcome.obs_inject_text, ..., fc_context=outcome.obs_fc_context)
-                    yield outcome.observation_step_dict
-
+        
         Args:
             tool_name: 工具名称
             tool_params: 工具参数
             step_count: 当前步骤序号
             is_primary: 是否为主工具（默认True）
-
+        
         Returns:
             _ToolStepOutcome: 包含执行结果、步骤dict、observation注入信息
         """
         try:
             start_time = time.perf_counter()
             logger.info(f"[DEBUG_TOOL_PARAMS] before execute_tool: tool_name={tool_name}, tool_params={tool_params}")
-
+            
             from app.services.context_vars import _current_task_id
             _current_task_id.set(self.task_id or "")
-
+            
             execution_result = await self._execute_tool(tool_name, tool_params)
             if execution_result is None:
                 execution_result = {"code": -1, "message": f"工具 {tool_name} 返回None", "data": None}
                 logger.warning(f"[execute_tool] _execute_tool返回None: tool_name={tool_name}")
+            
             execution_time_ms = int((time.perf_counter() - start_time) * 1000)
-
             execution_result_dict = build_execution_result_dict(execution_result)
-
-            action_step = StepFactory.create_action_tool_step(
-                step=step_count, tool_name=tool_name, tool_params=tool_params,
-                execution_result=execution_result_dict,
-                execution_time_ms=execution_time_ms
-            )
-            action_step_dict = self._emit_step(action_step)
-
+            
             observation_text = self.message_builder.build_observation_text(
                 execution_result, tool_name=tool_name, tool_params=tool_params
             )
-
-            prefix = "[并行] " if not is_primary else ""
-            obs_inject_text = f"{prefix}{observation_text}"
-
-            fc_context = None
-            if is_primary:
-                fc_context = self._resolve_fc_context(tool_name)
-
+            
+            fc_context = self._resolve_fc_context(tool_name) if is_primary else None
+            
             try:
                 _p_logger = get_prompt_logger()
                 _p_logger.log_observation(
@@ -185,60 +229,19 @@ class ToolStepMixin:
                 )
             except Exception:
                 pass
-
-            return_direct = execution_result.get("return_direct", False) and is_primary
-            display_summary = execution_result.get('message', '')
-            display_result = dict(execution_result)
-            display_result['summary'] = display_summary
-            display_result.setdefault('error_message', '')
-
-            observation_step = StepFactory.create_observation_step(
-                step=step_count, tool_name=tool_name, tool_params=tool_params,
-                execution_result=display_result,
-                return_direct=return_direct
+            
+            return self._build_tool_outcome(
+                execution_result, execution_result_dict, execution_time_ms,
+                step_count, tool_name, tool_params, is_primary, observation_text,
+                fc_context=fc_context,
             )
-            observation_step_dict = self._emit_step(observation_step)
-
-            is_done = return_direct and observation_step.is_done()
-
-            return _ToolStepOutcome(
-                execution_result=execution_result,
-                execution_result_dict=execution_result_dict,
-                execution_time_ms=execution_time_ms,
-                observation_text=observation_text,
-                is_done=is_done,
-                action_step_dict=action_step_dict,
-                observation_step_dict=observation_step_dict,
-                obs_inject_text=obs_inject_text,
-                obs_fc_context=fc_context,
-            )
-
+        
         except Exception as _exec_err:
             logger.warning(f"[ReAct] 工具 {tool_name} 执行异常: {_exec_err}")
-            _err_dict = {
-                "status": "error", "summary": str(_exec_err), "data": None, "code": -1,
-                "retry_count": 0, "warning": None, "attachment": None,
-                "next_actions": None, "return_direct": False, "error_message": str(_exec_err)
-            }
-            action_step = StepFactory.create_action_tool_step(
-                step=step_count, tool_name=tool_name, tool_params=tool_params,
-                execution_result=_err_dict, execution_time_ms=0
-            )
-            action_step_dict = self._emit_step(action_step)
-            observation_step = StepFactory.create_observation_step(
-                step=step_count, tool_name=tool_name, tool_params=tool_params,
-                execution_result=_err_dict, return_direct=False
-            )
-            observation_step_dict = self._emit_step(observation_step)
-
-            return _ToolStepOutcome(
-                execution_result=_err_dict,
-                execution_result_dict=_err_dict,
-                execution_time_ms=0,
-                observation_text=f"Observation: error - {str(_exec_err)}",
-                is_done=False,
-                action_step_dict=action_step_dict,
-                observation_step_dict=observation_step_dict,
-                obs_inject_text=f"[并行] Observation: error - {str(_exec_err)}" if not is_primary else f"Observation: error - {str(_exec_err)}",
-                obs_fc_context=None,
+            err_dict = _build_err_dict(_exec_err)
+            return self._build_tool_outcome(
+                err_dict, err_dict, 0,
+                step_count, tool_name, tool_params, is_primary,
+                f"Observation: error - {str(_exec_err)}",
+                fc_context=None,
             )
