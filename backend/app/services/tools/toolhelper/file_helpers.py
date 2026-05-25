@@ -1674,6 +1674,61 @@ def _apply_filters(path: Path, filters: Optional[Dict[str, Any]]) -> bool:
     return True
 
 
+def _build_checksum_result(
+    checksum: str, algorithm: str, file_path: str,
+    file_size: int, elapsed_ms: int,
+    verify_hash: Optional[str] = None,
+) -> Dict[str, Any]:
+    """构建校验和返回结果。
+
+    小沈 2026-05-25 重构拆分
+    YAGNI: 不再输出 hash_algorithm/checksum_upper/checksum_lower 派生字段。
+    消除 verify 3 条路径(msg+data构建)的重复。
+    """
+    data = {
+        "checksum": checksum,
+        "algorithm": algorithm,
+        "file_path": file_path,
+        "file_size": file_size,
+        "elapsed_ms": elapsed_ms,
+    }
+    if verify_hash:
+        matched = checksum.lower() == verify_hash.lower()
+        data["verify_result"] = matched
+        message = f"校验和{'匹配' if matched else '不匹配'}" \
+                  f"(输入: {verify_hash}, 计算: {checksum})"
+    else:
+        message = f"{algorithm.upper()} 校验和: {checksum}"
+
+    from app.services.tools._response import build_success
+    return build_success(data, message,
+        llm_data={"校验算法": algorithm, "校验值": checksum, "验证结果": data.get("verify_result")},
+    )
+
+
+def _calculate_checksum_sync(
+    path: Path, algorithm: str, chunk_size: int, timeout: int,
+) -> str:
+    """同步分块哈希计算（含超时）。
+
+    小沈 2026-05-25 重构拆分
+    提取自原 file_checksum_impl 嵌套函数，复用 select_hasher。
+    """
+    import time
+    start_time = time.time()
+    timeout_sec = timeout / 1000.0
+    hash_obj = select_hasher(algorithm)
+    with open(path, 'rb') as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            hash_obj.update(chunk)
+            if time.time() - start_time > timeout_sec:
+                raise TimeoutError(f"哈希计算超时（{timeout}毫秒）")
+    return hash_obj.hexdigest()
+
+
 async def file_checksum_impl(
     file_path: str,
     algorithm: str = "sha256",
@@ -1707,30 +1762,30 @@ async def file_checksum_impl(
         统一格式的结果字典：{ code, data, message }
     """
     from app.services.safety.file.file_safety import OperationType
-    
+
     is_valid, error_msg = validate_path_func(file_path)
     if not is_valid:
         return {"code": "ERR_PATH_INVALID", "data": None, "message": f"文件路径验证失败: {error_msg}"}
-    
+
     if not task_id:
         return {"code": "ERR_META_NO_TASK", "data": None, "message": "No active task"}
-    
+
     supported_algorithms = ["md5", "sha1", "sha256", "sha512"]
     if algorithm.lower() not in supported_algorithms:
         return {"code": "ERR_DOC_UNSUPPORTED_FORMAT", "data": None, "message": f"不支持的哈希算法: {algorithm}，支持算法: {', '.join(supported_algorithms)}"}
-    
+
     if chunk_size < 1024 or chunk_size > 1048576:
         return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": f"无效的分块大小: {chunk_size}，必须在1024到1048576之间"}
-    
+
     path = Path(file_path)
-    
+
     try:
         if not path.exists():
             return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"文件不存在: {file_path}"}
-        
+
         if not path.is_file():
             return {"code": "ERR_PATH_NOT_FILE", "data": None, "message": f"路径不是文件: {file_path}"}
-        
+
         operation_id = record_operation_func(
             task_id=task_id,
             operation_type=OperationType.CHECKSUM,
@@ -1738,70 +1793,21 @@ async def file_checksum_impl(
             destination_path=None,
             sequence_number=get_next_sequence_func()
         )
-        
-        def _calculate_checksum_sync():
-            start_time = time.time()
-            timeout_sec = timeout / 1000.0
-            
-            try:
-                file_size = path.stat().st_size
-                
-                hash_obj = select_hasher(algorithm)
-                
-                with open(path, 'rb') as f:
-                    while True:
-                        chunk = f.read(chunk_size)
-                        if not chunk:
-                            break
-                        hash_obj.update(chunk)
-                        if time.time() - start_time > timeout_sec:
-                            raise TimeoutError(f"哈希计算超时（{timeout}毫秒）")
-                
-                checksum = hash_obj.hexdigest()
-                end_time = time.time()
-                
-                verification_result = None
-                if verify_hash is not None:
-                    verification_result = (checksum.lower() == verify_hash.lower())
-                
-                return {
-                    "file_path": str(path),
-                    "algorithm": algorithm,
-                    "checksum": checksum,
-                    "file_size": file_size,
-                    "chunk_size": chunk_size,
-                    "verification_result": verification_result,
-                    "expected_hash": verify_hash if verify_hash else None,
-                    "elapsed_time": end_time - start_time,
-                    "hash_algorithm": algorithm.lower(),
-                    "checksum_upper": checksum.upper(),
-                    "checksum_lower": checksum.lower()
-                }
-                
-            except Exception:
-                raise
-        
-        result = await asyncio.to_thread(
-            execute_with_safety_func,
-            operation_id=operation_id,
-            operation_func=_calculate_checksum_sync
-        )
-        
-        if result:
-            data = {"operation_id": operation_id, **result}
-            if verify_hash is not None:
-                if result["verification_result"]:
-                    msg = f"哈希验证通过: {algorithm.upper()} 匹配"
-                else:
-                    msg = f"哈希验证失败: {algorithm.upper()} 不匹配"
-                    data["expected_hash"] = verify_hash
-                    data["actual_hash"] = result["checksum"]
-            else:
-                msg = f"哈希计算完成: {algorithm.upper()}"
-            return {"code": "SUCCESS", "data": data, "message": msg}
-        else:
-            return {"code": "ERR_FILE_CHECKSUM_FAILED", "data": None, "message": "哈希计算失败"}
-            
+
+        start = time.perf_counter()
+        try:
+            checksum = await asyncio.to_thread(
+                execute_with_safety_func,
+                operation_id=operation_id,
+                operation_func=lambda: _calculate_checksum_sync(path, algorithm, chunk_size, timeout),
+            )
+        except TimeoutError:
+            return {"code": "ERR_FILE_CHECKSUM_TIMEOUT", "data": None, "message": f"计算超时({timeout}ms)"}
+        elapsed_ms = int((time.perf_counter() - start) * 1000)
+
+        return _build_checksum_result(checksum, algorithm, str(path),
+                                       path.stat().st_size, elapsed_ms, verify_hash)
+
     except Exception as e:
         return {"code": "ERR_FILE_CHECKSUM_FAILED", "data": None, "message": f"哈希计算失败: {str(e)}"}
 
