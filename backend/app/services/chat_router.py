@@ -31,7 +31,7 @@ Author: 小沈 - 2026-03-26
 import json
 import uuid
 import asyncio
-from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
@@ -241,6 +241,27 @@ class ChatRouter:
     def __init__(self) -> None:
         self.preprocessing = PreprocessingPipeline()
 
+    async def _detect_intent(self, user_input: str) -> Tuple[str, str, float, List[str]]:
+        """两阶段意图检测 + 闲聊/network降级。返回 (intent_type, source, confidence, candidates) — 小沈 2026-05-25 重构"""
+        intent_info = await route_with_fallback(user_input)
+        intent_value = intent_info["intent"]
+        source = intent_info.get("source", "unknown")
+        conf = intent_info["confidence"]
+        candidates = [c.value for c in intent_info.get("candidates", []) if c]
+        if intent_value is not None:
+            return intent_value.value, source, conf, candidates
+        raw = str(intent_info.get("raw_intent", "")).lower()
+        intent_type = "system" if raw in {"greeting", "chat", "conversation", "qa", "question"} else "network"
+        return intent_type, f"{source}(fallback)", conf, candidates
+
+    def _init_route_context(self, provider: str, model: str, ai_service, session_id: str):
+        """初始化 task_id/ai_service/steps/execution_steps/running_tasks引用 — 小沈 2026-05-25 重构"""
+        task_id = str(uuid.uuid4())
+        if ai_service is None:
+            ai_service = AIServiceFactory.get_service_for_model(provider, model)
+        from app.services.react_sse_wrapper import running_tasks, running_tasks_lock
+        return task_id, ai_service, running_tasks, running_tasks_lock
+
     async def route(
         self,
         user_input: str,
@@ -251,154 +272,49 @@ class ChatRouter:
         context: Optional[Dict[str, Any]] = None,
         system_prompt: Optional[str] = None,
         max_steps: int = DEFAULT_MAX_STEPS,
-        ai_service: Optional[Any] = None  # 【新增】接收外部传入的 ai_service
+        ai_service: Optional[Any] = None
     ) -> AsyncGenerator[str, None]:
-        """
-        根据用户意图路由到对应的执行层
+        """6步路由：预处理→意图检测→初始化→安全检测→start_step→ReAct — 小沈 2026-05-25 重构"""
+        # S1 预处理
+        await self.preprocessing.process(user_input=user_input, session_id=session_id)
 
-        【6步完整流程】
+        # S2 意图检测
+        intent_type, source, confidence, candidates = await self._detect_intent(user_input)
+        logger.info(f"[ChatRouter] intent_type={intent_type}({source}), conf={confidence:.2f}")
 
-        Args:
-            user_input: 用户输入
-            model: 模型名称
-            provider: 提供商
-            session_id: 会话ID
-            request: 原始请求（用于获取history）
-            context: 额外上下文
-            system_prompt: 自定义系统提示
-            max_steps: 最大步数
-
-        Yields:
-            SSE 格式字符串
-        """
-        # ===== 步骤1: 预处理 =====
-        # 【修改 2026-04-30 小沈】意图检测使用两阶段 route_with_fallback
-        # 预处理只做纯文本处理，意图检测在步骤2
-        # 【修复 2026-04-30 小沈】移除废弃的 intent_labels 参数和死变量 intent_result
-        await self.preprocessing.process(
-            user_input=user_input,
-            session_id=session_id
-        )
-        
-        # ===== 步骤2: 意图检测（两阶段：CRSS + LLM兜底）=====
-        # 【修改 2026-04-30 小沈】使用两阶段意图路由
-        # 阶段1：CRSS规则快速匹配 → 阶段2：LLM语义分类（兜底）
-        intent_info = await route_with_fallback(user_input)
-        intent_type_value = intent_info["intent"]
-        confidence = intent_info["confidence"]
-        
-        # 【新增 2026-04-30 小沈】从 intent_info 提取 candidates 列表
-        candidates_values = intent_info.get("candidates", [])
-        candidates_list = [c.value for c in candidates_values if c]  # 【修复 2026-04-30 小沈】简化：if c 已过滤None，else "" 不可达
-        
-        # 【2026-05-13 小沈】不再有chat分类，未匹配的intent走network→有search_web工具可用
-        # 【修复 小健 2026-05-24】greeting/闲聊类走system（有meta工具，适合简单问答），非network
-        _chat_like_intents = {"greeting", "chat", "conversation", "qa", "question"}
-        if intent_type_value is not None:
-            intent_type = intent_type_value.value
-        else:
-            _raw_intent = str(intent_info.get("raw_intent", "")).lower()
-            if _raw_intent in _chat_like_intents:
-                intent_type = "system"
-                logger.info(f"[ChatRouter] 闲聊类意图({_raw_intent})→system(简单问答)")
-            else:
-                intent_type = "network"
-        
-        logger.info(
-            f"[ChatRouter] 两阶段意图检测 → intent_type={intent_type}({intent_type_value}), "
-            f"confidence={confidence:.4f}, source={intent_info['source']}, "
-            f"candidates={candidates_list}, "
-            f"raw_intent={intent_info.get('raw_intent', 'N/A')}, "
-            f"original='{user_input}', corrected='{intent_info['corrected']}'"
-        )
-        
-        # ===== 步骤3: 初始化 =====
-        # task_id: 任务ID
-        task_id = str(uuid.uuid4())
-        
-        # ai_service: AI服务实例（优先使用传入的，复用而非重建）
-        if ai_service is None:
-            ai_service = AIServiceFactory.get_service_for_model(provider, model)
-            logger.info(f"[ChatRouter] route() 自行创建 ai_service")
-        else:
-            logger.info(f"[ChatRouter] route() 复用传入的 ai_service")
-        
-        # next_step: 步骤计数器（使用统一函数）
+        # S3 初始化
+        task_id, ai_service, running_tasks, running_tasks_lock = self._init_route_context(
+            provider, model, ai_service, session_id)
         next_step = create_step_counter()
-        
-        # current_execution_steps: 执行步骤列表
-        current_execution_steps: List[Dict] = []
-        
-        # 【问题1修复】使用 react_sse_wrapper 模块级全局变量，确保 cancel_task 能找到任务
-        from app.services.react_sse_wrapper import running_tasks, running_tasks_lock
-        # 运行期间保持引用，防止被垃圾回收
-        _running_tasks_ref = running_tasks
-        _running_tasks_lock_ref = running_tasks_lock
-        
-        # ===== 步骤4: 安全检测 =====
-        from app.services.command_security import check_command_safety
-        security_check_result = check_command_safety(user_input)
-        
-        # 如果被阻止，记录警告但继续执行
-        if security_check_result.get('blocked', False):
-            logger.warning(
-                f"[ChatRouter] Security check blocked: "
-                f"risk={security_check_result.get('risk')}, "
-                f"user_input={user_input[:50]}"
-            )
-        
-        # ===== 步骤5: start步骤 =====
-        from app.chat_stream.start_step import send_start_step
-        
-        # 包装 yield 函数
-        def yield_sse(data: dict):
-            return f"data: {json.dumps(data)}\n\n"
-        
+        execution_steps: List[Dict] = []
+
+        # S4 安全检测
+        sec = check_command_safety(user_input)
+        if sec.get('blocked'):
+            logger.warning(f"[ChatRouter] Security blocked, risk={sec.get('risk')}")
+
+        # S5 start_step（yield_sse保留，因为 send_start_step 签名要求 yield_func 参数）
         try:
-            start_data = await send_start_step(
-                ai_service=ai_service,
-                task_id=task_id,
-                next_step=next_step,
-                user_message=user_input,
-                security_check_result=security_check_result,
-                current_execution_steps=current_execution_steps,
-                session_id=session_id,
-                yield_func=yield_sse
-            )
-            # 将 start_data yield 给前端（和 chat2.py 保持一致）
+            def yield_sse(data: dict) -> str:
+                return f"data: {json.dumps(data)}\n\n"
+            from app.chat_stream.start_step import send_start_step
+            start_data = await send_start_step(ai_service=ai_service, task_id=task_id, next_step=next_step,
+                user_message=user_input, security_check_result=sec,
+                current_execution_steps=execution_steps, session_id=session_id,
+                yield_func=yield_sse)
             yield f"data: {json.dumps(start_data)}\n\n"
         except Exception as e:
-            logger.error(f"[ChatRouter] send_start_step failed: {e}", exc_info=True)
-            yield create_error_response(
-                error_type="start_failed",
-                error_message=f"start步骤失败: {str(e)}"
-            )
+            yield create_error_response(error_type="start_failed", error_message=f"start步骤失败: {e}")
             return
-        
-        # ===== 步骤6: 统一走ReAct循环 =====
-        # 【2026-05-13 小沈】删除chat/chat_stream_query分流，所有意图统一走react_sse_wrapper
-        # 未匹配的intent走network，有search_web等工具可用
-        
-        logger.info(f"[ChatRouter] 意图分发 (type={intent_type}, conf={confidence:.2f}, candidates={candidates_list})，统一走react_sse_wrapper")
+
+        # S6 ReAct 循环（所有意图统一路由）
         from app.services.react_sse_wrapper import generate_sse_stream
-        
         messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
-        
-        async for event in generate_sse_stream(
-            messages=messages,
-            intent_type=intent_type,
-            confidence=confidence,
-            candidates=candidates_list,
-            provider=provider,
-            model=model,
-            task_id=task_id,
-            session_id=session_id,
-            ai_service=ai_service,
-            next_step=next_step,
-            running_tasks=running_tasks,
-            running_tasks_lock=running_tasks_lock,
-            current_execution_steps=current_execution_steps
-        ):
+        async for event in generate_sse_stream(messages=messages, intent_type=intent_type,
+            confidence=confidence, candidates=candidates, provider=provider, model=model,
+            task_id=task_id, session_id=session_id, ai_service=ai_service, next_step=next_step,
+            running_tasks=running_tasks, running_tasks_lock=running_tasks_lock,
+            current_execution_steps=execution_steps):
             yield event
 
     def _create_error_sse(self, error_type: str, error_message: str, step: int) -> str:

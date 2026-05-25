@@ -185,6 +185,35 @@ def _convert_to_utc(time_value) -> str:
         return get_utc_timestamp()
 
 
+def _build_list_where(keyword: Optional[str], is_valid: Optional[bool],
+                       for_count: bool = False) -> Tuple[str, List]:
+    """构建 list_sessions 的 WHERE 子句和参数，COUNT/SELECT 两用。"""
+    where = "WHERE is_deleted = FALSE"
+    params: List = []
+    if keyword:
+        where += " AND title LIKE ?"
+        params.append(f"%{keyword}%")
+    if is_valid is not None:
+        where += " AND is_valid = ?"
+        params.append(1 if is_valid else 0)
+    return where, params
+
+
+def _format_timestamp(val: Any) -> str:
+    """统一将时间戳转换为 ISO 格式字符串。
+    
+    3 种类型：
+    - int/float: 毫秒 → datetime.fromtimestamp(/1000) → ISO
+    - str: 替换 +00:00 为 Z，或追加 Z
+    - datetime/其他: _convert_to_utc 兜底
+    """
+    if isinstance(val, (int, float)):
+        return datetime.fromtimestamp(val / 1000, timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f') + 'Z'
+    if isinstance(val, str):
+        return val.replace('+00:00', 'Z') if '+00:00' in val else (val + 'Z' if not val.endswith('Z') else val)
+    return _convert_to_utc(val)
+
+
 # ============== API接口 ==============
 
 @router.post("/sessions", response_model=SessionResponse)
@@ -277,162 +306,56 @@ async def create_session(session_create: Optional[SessionCreate] = None):
 
 @router.get("/sessions", response_model=SessionListResponse)
 async def list_sessions(
-    page: int = Query(1, ge=1, description="页码"),
-    page_size: int = Query(20, ge=1, le=100, description="每页数量"),
-    keyword: Optional[str] = Query(None, description="搜索关键词"),
-    is_valid: Optional[bool] = Query(None, description="过滤有效会话（True=有效，False=无效，None=全部）")
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    keyword: Optional[str] = Query(None),
+    is_valid: Optional[bool] = Query(None)
 ):
-    """
-    获取会话列表
-    
-    优化内容：
-    1. 排序策略优化：从`updated_at.desc()`改为`created_at.desc(), updated_at.desc()`
-    2. 性能优化：添加合适的索引支持
-    3. 时间转换优化：批量转换减少函数调用
-    
-    Args:
-        page: 页码
-        page_size: 每页数量
-        keyword: 搜索关键词
-        
-    Returns:
-        SessionListResponse: 会话列表（包含分页信息）
-    """
     conn = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        
-        # 先获取总数
-        if keyword:
-            if is_valid is not None:
-                cursor.execute(
-                    'SELECT COUNT(*) FROM chat_sessions WHERE is_deleted = FALSE AND title LIKE ? AND is_valid = ?',
-                    (f'%{keyword}%', is_valid)
-                )
-            else:
-                cursor.execute(
-                    'SELECT COUNT(*) FROM chat_sessions WHERE is_deleted = FALSE AND title LIKE ?',
-                    (f'%{keyword}%',)
-                )
-        else:
-            if is_valid is not None:
-                cursor.execute(
-                    'SELECT COUNT(*) FROM chat_sessions WHERE is_deleted = FALSE AND is_valid = ?',
-                    (is_valid,)
-                )
-            else:
-                cursor.execute(
-                    'SELECT COUNT(*) FROM chat_sessions WHERE is_deleted = FALSE'
-                )
+
+        # C1: COUNT — 复用 _build_list_where
+        where, params = _build_list_where(keyword, is_valid, for_count=True)
+        cursor.execute(f"SELECT COUNT(*) FROM chat_sessions {where}", params)
         total = cursor.fetchone()[0]
-        
-        # 构建查询
+
+        # S1: SELECT — 复用同一 _build_list_where
+        where, params = _build_list_where(keyword, is_valid, for_count=False)
         offset = (page - 1) * page_size
-        
-        # 【小强修复 2026-03-31】优化排序策略：
-        # 1. 优先返回有消息的会话（message_count > 0）
-        # 2. 再按更新时间降序排列
-        # 3. 最后按创建时间降序
-        # 原因：空会话（message_count=0）会排在有消息的会话后面
-        # 效果：加载最近会话时，会优先返回有消息的会话
-        if keyword:
-            # 搜索标题
-            if is_valid is not None:
-                cursor.execute(
-                    '''SELECT id, title, created_at, updated_at, message_count, is_valid
-                       FROM chat_sessions 
-                       WHERE is_deleted = FALSE AND title LIKE ? AND is_valid = ?
-                        ORDER BY updated_at DESC, created_at DESC
-                       LIMIT ? OFFSET ?''',
-                    (f'%{keyword}%', is_valid, page_size, offset)
-                )
-            else:
-                cursor.execute(
-                    '''SELECT id, title, created_at, updated_at, message_count, is_valid
-                       FROM chat_sessions 
-                       WHERE is_deleted = FALSE AND title LIKE ?
-                        ORDER BY updated_at DESC, created_at DESC
-                       LIMIT ? OFFSET ?''',
-                    (f'%{keyword}%', page_size, offset)
-                )
-        else:
-            if is_valid is not None:
-                cursor.execute(
-                    '''SELECT id, title, created_at, updated_at, message_count, is_valid
-                       FROM chat_sessions 
-                       WHERE is_deleted = FALSE AND is_valid = ?
-                        ORDER BY updated_at DESC, created_at DESC
-                       LIMIT ? OFFSET ?''',
-                    (is_valid, page_size, offset)
-                )
-            else:
-                cursor.execute(
-                    '''SELECT id, title, created_at, updated_at, message_count, is_valid
-                       FROM chat_sessions 
-                       WHERE is_deleted = FALSE
-                        ORDER BY updated_at DESC, created_at DESC
-                       LIMIT ? OFFSET ?''',
-                    (page_size, offset)
-                )
-        
+        cursor.execute(
+            f"SELECT id, title, created_at, updated_at, message_count, is_valid "
+            f"FROM chat_sessions {where} ORDER BY updated_at DESC, created_at DESC "
+            f"LIMIT ? OFFSET ?",
+            params + [page_size, offset]
+        )
         rows = cursor.fetchall()
-        
-        # 优化：批量转换时间戳，减少函数调用开销
-        # 对于大量数据，这样可以显著提高性能
-        sessions = []
-        for row in rows:
-            # 直接使用行数据，避免多次函数调用
-            created_at = row['created_at']
-            updated_at = row['updated_at']
-            
-            # 【小沈修复 2026-03-31】统一转换为ISO格式字符串返回给前端
-            # 处理两种情况：1. ISO格式字符串 2. 毫秒时间戳（int/float）
-            if isinstance(created_at, (int, float)):
-                # 毫秒时间戳转换为ISO格式
-                created_at_str = datetime.fromtimestamp(created_at / 1000, timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f') + 'Z'
-            elif isinstance(created_at, str):
-                created_at_str = created_at.replace('+00:00', 'Z') if '+00:00' in created_at else created_at + 'Z' if not created_at.endswith('Z') else created_at
-            else:
-                created_at_str = _convert_to_utc(created_at)
-                
-            # 【小沈修复 2026-03-31】统一转换为ISO格式字符串返回给前端
-            # 处理两种情况：1. ISO格式字符串 2. 毫秒时间戳（int/float）
-            if isinstance(updated_at, (int, float)):
-                # 毫秒时间戳转换为ISO格式
-                updated_at_str = datetime.fromtimestamp(updated_at / 1000, timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f') + 'Z'
-            elif isinstance(updated_at, str):
-                updated_at_str = updated_at.replace('+00:00', 'Z') if '+00:00' in updated_at else updated_at + 'Z' if not updated_at.endswith('Z') else updated_at
-            else:
-                updated_at_str = _convert_to_utc(updated_at)
-            
-            sessions.append(SessionResponse(
+
+        # O1: 结果映射 — 复用 _format_timestamp
+        sessions = [
+            SessionResponse(
                 session_id=row['id'],
                 title=row['title'],
-                created_at=created_at_str,
-                updated_at=updated_at_str,
+                created_at=_format_timestamp(row['created_at']),
+                updated_at=_format_timestamp(row['updated_at']),
                 message_count=row['message_count'],
                 is_valid=row['is_valid']
-            ))
-        
-        logger.info(f"获取会话列表: page={page}, page_size={page_size}, keyword={keyword}, count={len(sessions)}")
-        
-        return SessionListResponse(
-            total=total,
-            page=page,
-            page_size=page_size,
-            sessions=sessions
-        )
-        
+            )
+            for row in rows
+        ]
+
+        logger.info(f"获取会话列表: page={page}, page_size={page_size}, "
+                     f"keyword={keyword}, count={len(sessions)}")
+        return SessionListResponse(total=total, page=page, page_size=page_size, sessions=sessions)
+
     except Exception as e:
         logger.error(f"获取会话列表失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取会话列表失败: {str(e)}")
     finally:
         if conn:
-            try:
-                conn.close()
-            except Exception:
-                pass
+            try: conn.close()
+            except Exception: pass
 
 
 def _ensure_ts_milliseconds(ts_value: Any) -> int:
