@@ -29,7 +29,7 @@ import socket
 import subprocess
 import re
 import logging
-from typing import Optional, Dict, Any, List, Literal
+from typing import Optional, Dict, Any, List, Literal, Tuple
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -1149,6 +1149,80 @@ def _linux_service_stop(service_name: str, force: bool, timeout: int, wait_for_s
         return build_error("ERR_SHELL_TIMEOUT", f"停止服务 {service_name} 超时")
 
 
+def _run_schtasks_query() -> str:
+    """执行 schtasks /query /fo list /v，返回 stdout 文本。异常由内层抛出
+
+    小沈 2026-05-25 重构拆分
+    """
+    cmd = ["schtasks", "/query", "/fo", "list", "/v"]
+    result = subprocess.run(cmd, capture_output=True, encoding='gbk',
+                            errors='ignore', timeout=30)
+    if result.returncode != 0:
+        raise RuntimeError(f"schtasks 执行失败: {result.stderr}")
+    if not result.stdout:
+        raise ValueError("计划任务列表为空")
+    return result.stdout
+
+
+def _parse_task_entries(stdout: str) -> List[Dict[str, str]]:
+    """解析 schtasks /query /fo list /v 输出为结构化 dict 列表。
+    可复用于 _task_detail（同样的 schtasks 输出格式）
+
+    小沈 2026-05-25 重构拆分
+    """
+    tasks, current = [], {}
+    for line in stdout.splitlines():
+        s = line.strip()
+        if s.startswith("TaskName:"):
+            if current and "name" in current:
+                tasks.append(current)
+            current = {"name": s.split(":", 1)[1].strip()}
+        elif s.startswith("Next Run Time:"):
+            current["next_run"] = s.split(":", 1)[1].strip()
+        elif s.startswith("Status:"):
+            raw = s.split(":", 1)[1].strip()
+            current["status"] = {"Ready": "ready", "Running": "running",
+                                 "Disabled": "disabled"}.get(raw, "other")
+            current["status_desc"] = raw
+        elif s.startswith("Task To Run:"):
+            current["command"] = s.split(":", 1)[1].strip()
+    if current and "name" in current:
+        tasks.append(current)
+    return tasks
+
+
+def _filter_tasks(tasks: List[Dict], filter_name: Optional[str],
+                  filter_status: str, max_results: int) -> Tuple[List[Dict], int]:
+    """过滤 + 截断，返回 (limited, matched_count)
+
+    小沈 2026-05-25 重构拆分
+    """
+    matched = []
+    for t in tasks:
+        if filter_name and filter_name.lower() not in t.get("name", "").lower():
+            continue
+        if filter_status != "all" and t.get("status", "") != filter_status:
+            continue
+        matched.append(t)
+    return matched[:max_results], len(matched)
+
+
+def _build_task_llm(tasks: List[Dict], total_raw: int,
+                    total_matched: int, max_results: int) -> Dict:
+    """构建 llm_data 摘要（移除 YAGNI 死代码 _llm["截断"]）
+
+    小沈 2026-05-25 重构拆分
+    """
+    return {
+        "任务总数": total_raw,
+        "过滤后": total_matched,
+        "返回数": len(tasks),
+        "任务列表": [{"名称": t.get("name", ""),
+                    "状态": t.get("status_desc", t.get("status", ""))}
+                   for t in tasks],
+    }
+
+
 def _task_list(
     filter_name: Optional[str] = None,
     filter_status: str = "all",
@@ -1156,96 +1230,40 @@ def _task_list(
 ) -> dict:
     """
     列出所有计划任务 - 小健 2026-05-06 参数名对齐Schema
-    
+    【小沈重构 2026-05-25】重构拆分：提取 _run_schtasks_query / _parse_task_entries / _filter_tasks / _build_task_llm
+
     使用schtasks query命令列出计划任务。
-    
+
     Args:
-        folder: 任务文件夹
-        state: 状态过滤（ready/running/disabled）
-        output_format: 输出格式（json/table）
-    
+        filter_name: 任务名称过滤（可选）
+        filter_status: 状态过滤（ready/running/disabled/all）
+        max_results: 最大返回数量
+
     Returns:
         {code, data, message}
     """
     try:
         if platform.system() != "Windows":
             return build_error("ERR_DESKTOP_PLATFORM_NOT_SUPPORTED", "task_list 仅支持Windows系统")
-        
-        cmd = ["schtasks", "/query", "/fo", "list", "/v"]
-        result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=30)
-        
-        if result.returncode != 0:
-            return build_error("ERR_TASK_LIST", f"获取计划任务列表失败: {result.stderr}")
-        
-        if not result.stdout:
-            return build_error("ERR_TASK_EMPTY", "计划任务列表为空")
-        
-        tasks = []
-        current_task = {}
-        
-        for line in result.stdout.splitlines():
-            line_stripped = line.strip()
-            if line_stripped.startswith("TaskName:"):
-                if current_task and "name" in current_task:
-                    tasks.append(current_task)
-                current_task = {"name": line_stripped.split(":", 1)[1].strip()}
-            elif line_stripped.startswith("Next Run Time:"):
-                current_task["next_run"] = line_stripped.split(":", 1)[1].strip()
-            elif line_stripped.startswith("Status:"):
-                status_str = line_stripped.split(":", 1)[1].strip()
-                if "Ready" in status_str:
-                    current_task["status"] = "ready"
-                elif "Running" in status_str:
-                    current_task["status"] = "running"
-                elif "Disabled" in status_str:
-                    current_task["status"] = "disabled"
-                else:
-                    current_task["status"] = "other"
-                current_task["status_desc"] = status_str
-            elif line_stripped.startswith("Task To Run:"):
-                current_task["command"] = line_stripped.split(":", 1)[1].strip()
-        
-        if current_task and "name" in current_task:
-            tasks.append(current_task)
-        
-        filtered_tasks = []
-        for task in tasks:
-            if filter_name:
-                task_name = task.get("name", "")
-                if filter_name.lower() not in task_name.lower():
-                    continue
 
-            if filter_status != "all":
-                task_status = task.get("status", "")
-                if task_status != filter_status:
-                    continue
-
-            filtered_tasks.append(task)
-
-        # 【修复 小沈 2026-05-15】应用max_results限制，防止LLM上下文爆满
-        limited_tasks = filtered_tasks[:max_results]
-
-        # 【优化 小沈 2026-05-15】llm_data精简摘要
-        _llm = {
-            "任务总数": len(tasks),
-            "过滤后": len(filtered_tasks),
-            "返回数": len(limited_tasks),
-            "任务列表": [{"名称": t.get("name", ""), "状态": t.get("status_desc", t.get("status", ""))} for t in limited_tasks],
-        }
-        if len(filtered_tasks) > max_results:
-            _llm["截断"] = f"共{len(filtered_tasks)}个，仅返回前{max_results}个"
+        stdout = _run_schtasks_query()
+        tasks = _parse_task_entries(stdout)
+        limited, matched = _filter_tasks(tasks, filter_name, filter_status, max_results)
+        llm = _build_task_llm(limited, len(tasks), matched, max_results)
 
         return build_success({
-                "tasks": limited_tasks,
-                "total": len(limited_tasks),
-                "total_matched": len(tasks),
-                "platform": "Windows",
-            }, f"找到 {len(tasks)} 个计划任务，返回前 {len(limited_tasks)} 个", llm_data=_llm)
-    
+            "tasks": limited,
+            "total": len(limited),
+            "total_matched": len(tasks),
+            "platform": "Windows",
+        }, f"找到 {len(tasks)} 个计划任务，返回前 {len(limited)} 个", llm_data=llm)
+
     except subprocess.TimeoutExpired:
         return build_error("ERR_SHELL_TIMEOUT", "获取计划任务列表超时")
+    except ValueError as e:                    # 小沈 2026-05-25: 恢复ERR_TASK_EMPTY专用错误码
+        return build_error("ERR_TASK_EMPTY", str(e))
     except FileNotFoundError:
-        return build_error("ERR_SHELL_COMMAND_NOT_FOUND", "schtasks命令不存在")
+        return build_error("ERR_SHELL_COMMAND_NOT_FOUND", "schtasks 命令不存在")
     except Exception as e:
         logger.error(f"[task_list] 获取计划任务列表失败: {e}")
         return build_error("ERR_TASK_LIST", f"获取计划任务列表失败: {str(e)}")
