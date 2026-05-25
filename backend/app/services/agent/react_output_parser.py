@@ -1016,7 +1016,9 @@ def _try_regex_tool_call_fallback(output: str) -> Optional[Dict[str, Any]]:
     # 【修复 2026-05-10 小健】finish是合法的退出标志，返回answer类型（不执行工具，直接结束）
     if tool_name == "finish":
         tp: Dict[str, Any] = {}
-        tp_mark = re.search(r'"tool_params"\s*:\s*\{', output)
+        # 【修复 2026-05-26 小欧】用finditer取最后一个tool_params，避免re.search匹配推理中的草稿
+        tp_marks = list(re.finditer(r'"tool_params"\s*:\s*\{', output))
+        tp_mark = tp_marks[-1] if tp_marks else None
         if tp_mark:
             brace_idx = tp_mark.end() - 1
             substr = output[brace_idx:]
@@ -1027,14 +1029,21 @@ def _try_regex_tool_call_fallback(output: str) -> Optional[Dict[str, Any]]:
                 except (json.JSONDecodeError, TypeError):
                     pass
         result_text = tp.get("result", "") if tp else ""
+        # 【修复 2026-05-26 小欧】取finish前的推理文本，拼接result_text去重
+        finish_mark = list(re.finditer(r'"tool_name"\s*:\s*"finish"', output))
+        if finish_mark:
+            prefix_text = output[:finish_mark[-1].start()].strip()
+            content = prefix_text + ("\n\n" + result_text if result_text and result_text not in prefix_text else "")
+        else:
+            content = result_text or ""
         return {
             "type": "answer",
-            "thought": output[:200],
-            "content": result_text,
+            "thought": content[:200],
+            "content": content,
             "reasoning": "",
             "tool_name": None,
             "tool_params": None,
-            "response": result_text,
+            "response": content,
             "error": None
         }
     try:
@@ -1047,7 +1056,9 @@ def _try_regex_tool_call_fallback(output: str) -> Optional[Dict[str, Any]]:
         return None
 
     tp: Dict[str, Any] = {}
-    tp_mark = re.search(r'"tool_params"\s*:\s*\{', output)
+    # 【修复 2026-05-26 小欧】用finditer取最后一个tool_params
+    tp_marks = list(re.finditer(r'"tool_params"\s*:\s*\{', output))
+    tp_mark = tp_marks[-1] if tp_marks else None
     if tp_mark:
         brace_idx = tp_mark.end() - 1
         substr = output[brace_idx:]
