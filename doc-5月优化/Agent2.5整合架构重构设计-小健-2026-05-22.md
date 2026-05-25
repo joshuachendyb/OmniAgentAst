@@ -1,9 +1,9 @@
 # Agent 2.0 最佳融合设计方案
 
 **创建时间**: 2026-05-22 09:59:55  
-**版本**: v1.9  
+**版本**: v2.1  
 **编写人**: 小健  
-**审核状态**: 待北京老陈审核  
+**审核状态**: 北京老陈已审核  
 **设计依据**: doc-agent2.0/ 下 10 份设计文档综合提炼
 
 ---
@@ -12,6 +12,8 @@
 
 | 版本 | 时间 | 作者 | 更新内容 |
 |------|------|------|---------|
+| v2.1 | 2026-05-25 12:13:12 | 小健 | Phase编号对齐§八路线图(Phase 0=安全分级/Phase 2=Agent已实施/Phase 3=TextCorrector/Phase 4=SemanticRouter/Phase 5=ToolSafetyLayer/Phase 8=重复执行消除)；修复伪代码违反铁规问题：合并SemanticRouter两份定义为单一类+统一FALLBACK_TIER层级、删除不完整的_visual_similar(KISS)、删除重复ToolSafetyLevel定义(DRY)、ToolSafetyLayer审计委托ToolObserver(SRP)、30秒缓存TTL调优 |
+| v2.0 | 2026-05-25 11:45:09 | 北京老陈 | 北京老陈审核定稿：§2.4.3 TextCorrectorV2改为"只标注不替换"（仅做fuzzy_detect检测返回标注列表，禁止篡改原文）；同步更新§1.1.1/§1.3 start事件/§2.2/§2.3/§2.6 |
 | v1.9 | 2026-05-24 | 小沈 | 删除已实施完成章节的详细内容：§4整章(4.1-4.5全部代码)删除只留一句存档、§1.2 Agent数量理由精简为【已实施】见§四 |
 | v1.8 | 2026-05-24 | 小沈 | 批量修正残留不一致：GenericReactAgent→UniversalReactAgent、AgentProfile→AgentConfig(全局替换)、PipelineContext砍掉(§2.5存档+§2.6重写+§1.2/§12.2/§12.3清理)、§1.2 Agent数量1个→2类+配置注册表、§3意图表去已删Agent(FileReactAgent/TimeReactAgent→对照AGENT_REGISTRY 5意图+别名)、§4.2/§4.3对照实际代码字段(universal_react.py/agent_config.py)、§6数据180→172/168→172/SHELL=4/60-65→58、§7代码量637→946/AgentFactory删除→86行/合计-30%、§8灰度Phase9→旧代码清理、§9 Phase9→旧代码清理阶段、§10 1649→1648、§11 Agent数1+2特殊→2类+注册表/工期21.5→16天、§12一句话概括+PipelineContext原则+设计依据、§6.9 168→172条 |
 | v1.7 | 2026-05-23 | 小沈 | 删除所有已实现内容的详细说明(只留一句存档引用)：§4整体标记已完成、删除清单去掉9个已完成Agent项、保留文件去掉已完成项、实施路线去掉Phase1/2/9(21.5天→16天)、依赖图重绘 |
@@ -29,9 +31,9 @@
 
 ### 1.1 设计要点（按章节顺序）
 
-**1.1.1 文本矫正 → 详见§二**
+**1.1.1 文本标注 → 详见§二**
 
-下游规则系统（command_security黑名单168条 + CRSS 175关键词）是精确匹配，错别字=安全漏洞/路由失败。必须用L1规则矫正(<1ms)在LLM处理前修正输入，安全关键词优先。当前PreprocessingPipeline仅做strip()，等于裸奔。
+下游规则系统（command_security黑名单168条 + CRSS 175关键词）是精确匹配，错别字=安全漏洞/路由失败。但这层只做**模糊检测+标注**，不替换原文。检测结果传给HITL安全层做参考，安全拦截全交给HITL弹窗。LLM自己能理解错别字，入口处篡改用户指令反而有误杀风险。
 
 **1.1.2 语义路由替代CRSS → 详见§三**
 
@@ -59,7 +61,7 @@ Phase 0(安全分级标注)→Phase 3(TextCorrectorV2)→Phase 4(SemanticRouter)
 
 **1.1.8 前端改造 → 详见§十**
 
-start事件增强(携带Phase 0+1结果)+SSE事件扩展(1648行useSSE新增authorization_required)+安全确认弹窗+授权API+SessionTrust复选框+异常暂停提示。
+start事件增强(携带Phase 3+4结果)+SSE事件扩展(1648行useSSE新增authorization_required)+安全确认弹窗+授权API+SessionTrust复选框+异常暂停提示。
 
 **1.1.9 预期效果 → 详见§十一**
 
@@ -79,7 +81,7 @@ start事件增强(携带Phase 0+1结果)+SSE事件扩展(1648行useSSE新增auth
 
 **1.2.6 人工确认：HITL+Session Trust**（弃无/纯自动化）。人类最终决策权，信任机制降低频率。→ 对应§六6.6-6.7
 
-**1.2.7 预处理管线：重建4步函数调用链**（弃空壳+PipelineContext）。矫正→意图→安全自动流转。PipelineContext已砍(§2.5)。→ 对应§二2.6
+**1.2.7 预处理管线：重建4步函数调用链**（弃空壳+PipelineContext）。标注→意图→安全自动流转。PipelineContext已砍(§2.5)。→ 对应§二2.6
 
 **1.2.8 意图定义：IntentRegistry单一真相源**（弃分散4处）。新增分类零代码改动。→ 对应§三3.4
 
@@ -92,14 +94,14 @@ start事件增强(携带Phase 0+1结果)+SSE事件扩展(1648行useSSE新增auth
     │
     ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Phase 0: 文本矫正 (TextCorrectorV2)                              │
-│   • 规则级矫正(<1ms)：错别字+全角半角+安全关键词优先               │
-│   • 输出：corrected_input                                        │
+│ Phase 3: 文本标注 (TextCorrectorV2)                              │
+│   • 模糊检测(<1ms)：拼音+编辑距离+视觉相似，只标注不替换            │
+│   • 输出：(original_input, annotations)                          │
 └─────────────────────────┬───────────────────────────────────────┘
                           │
                           ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Phase 1: 语义路由 (Semantic Router)                              │
+│ Phase 4: 语义路由 (Semantic Router)                              │
 │   • Function Calling推荐2-4个工具类别                              │
 │   • IntentRegistry提供单一真相源                                   │
 │   • Chat启发式识别闲聊意图                                         │
@@ -108,16 +110,16 @@ start事件增强(携带Phase 0+1结果)+SSE事件扩展(1648行useSSE新增auth
                           │
                           ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Phase 2: Agent创建 (UniversalReactAgent + AgentConfig)            │
+│ Phase 2: Agent创建 (UniversalReactAgent + AgentConfig)【已实施】  │
 │   • AgentFactory根据intent_type匹配AgentConfig                    │
 │   • 加载推荐分类工具(≤30个)                                       │
 │   • 动态Prompt组合(替代9个硬编码Prompt类)                          │
-│   • SSE start事件：携带Phase 0+1结果(见下)                        │
+│   • SSE start事件：携带Phase 3+4结果(标注+意图，见下)               │
 └─────────────────────────┬───────────────────────────────────────┘
                           │
                           ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Phase 3: ReAct循环 (BaseAgent核心保留)                            │
+│ Phase 8: 重复执行消除 (ReAct循环优化)                              │
 │   • LLM Function Calling从候选工具中选择                            │
 │   • 动态扩展：请求未加载工具时自动加载                               │
 │   • 重复执行消除：缓存+失败计数+去重+trim优化+Prompt规则             │
@@ -125,7 +127,7 @@ start事件增强(携带Phase 0+1结果)+SSE事件扩展(1648行useSSE新增auth
                           │
                           ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Phase 4: 工具执行安全 (ToolSafetyLayer)                            │
+│ Phase 5: 工具执行安全 (ToolSafetyLayer)                            │
 │   ├─ Level 1: 工具元数据安全等级(READ_ONLY/SAFE/DESTRUCTIVE/DANGEROUS)│
 │   ├─ Level 2: 参数安全检查(command/code等参数黑名单检测)             │
 │   ├─ Level 3: HITL确认(DANGEROUS/DESTRUCTIVE→SSE暂停→用户确认)     │
@@ -137,9 +139,9 @@ start事件增强(携带Phase 0+1结果)+SSE事件扩展(1648行useSSE新增auth
                        SSE输出
 ```
 
-**start事件增强——携带Phase 0+1结果**：
+**start事件增强——携带Phase 3+4结果**：
 
-Phase 0和Phase 1在start事件发出前已执行完毕，将其结果注入start事件，前端无需等待ReAct循环即可展示矫正和路由信息：
+Phase 3(TextCorrectorV2)和Phase 4(Semantic Router)在start事件发出前已执行完毕，将其结果注入start事件，前端无需等待ReAct循环即可展示检测和路由信息：
 
 ```python
 start_data = {
@@ -150,13 +152,12 @@ start_data = {
     'provider': ai_service.provider,
     'model': ai_service.model,
     'task_id': task_id,
-    'user_message': corrected_input,  # Phase 0矫正后的输入(非原始输入)
-    'correction': {                    # Phase 0结果
-        'original_input': user_input,  # 用户原始输入
-        'corrected_input': corrected_input,  # 矫正后输入
-        'corrections': corrections,     # 矫正明细列表[(原文, 矫正词, 方法)]
+    'user_message': user_input,       # 用户原始输入，不篡改
+    'annotation': {                    # Phase 3结果：标注，不替换
+        'detections': detections,      # 模糊检测结果列表[(原文子串, 匹配危险词, 匹配方式)]
+        'has_risk': has_risk,          # 是否检测到疑似危险词
     },
-    'intent': {                        # Phase 1结果
+    'intent': {                        # Phase 4结果
         'type': intent_type,           # 意图类型(如file/network/chat)
         'confidence': confidence,       # 路由置信度
         'categories': recommended_categories,  # 推荐工具分类列表
@@ -168,55 +169,53 @@ start_data = {
 ```
 
 **收益**：
-- 前端首帧即可展示"用户说的是X→矫正为Y→识别为Z意图"的完整预处理链路
-- 用户看到矫正结果后可即时判断输入被错误矫正（误矫正在Phase 0<1ms内无法完全避免，需用户可感知）
+- 前端首帧可展示"检测到X疑似危险词→需要HITL确认"或"无风险→进入ReAct"的预处理链路
+- 前端可基于detections提前高亮疑似危险词让用户感知
 - 前端可基于intent_type提前渲染对应UI组件（如文件操作面板、网络请求面板）
-- 不增加延迟：Phase 0+1在start之前已执行，注入结果只是多几个字段
+- 不增加延迟：Phase 3+4在start之前已执行，注入结果只是多几个字段
 
 ---
 
-## 二、Phase 0: 文本矫正层 (TextCorrectorV2)
+## 二、Phase 3: 文本标注层 (TextCorrectorV2)
 
 ### 2.1 设计来源
 
-综合**三大核心管线完美重构方案**、**预处理管线重构方案**、**Agent架构根本性重构方案**的矫正设计。
+综合**三大核心管线完美重构方案**、**预处理管线重构方案**、**Agent架构根本性重构方案**的检测标注设计。
 
-### 2.2 为什么必须矫正
+### 2.2 为什么需要模糊检测
 
 **核心原因：下游规则系统是精确匹配，错别字=安全漏洞/路由失败**。
 
-| 场景 | 无矫正 | 有矫正 | 原因 |
-|------|--------|--------|------|
-| "帮我删处文件" | 黑名单匹配"删处"→**漏检**→执行删除 | 矫正"删除"→黑名单命中→**拦截** | 黑名单只认"删除" |
-| "格试化D盘" | CRSS匹配"格试化"→无匹配→fallback network | 矫正"格式化"→CRSS命中FILE→**正确路由** | CRSS只认"格式化" |
+| 场景 | 无检测 | 有检测 | 后续处理 |
+|------|--------|--------|---------|
+| "帮我删处文件" | 黑名单匹配"删处"→**漏检**→执行删除 | 检测到"删处≈删除"→**标注风险** | HITL弹窗确认后才执行 |
+| "格试化D盘" | CRSS匹配"格试化"→无匹配→fallback network | 检测到"格试化≈格式化"→**标注风险** | HITL弹窗拦截 |
 | "你好" | 无影响 | 无影响 | LLM自然理解闲聊 |
 
-LLM自己能理解错别字，但command_security黑名单(168条)和CRSS(175关键词)都是**精确匹配**，矫正不是帮LLM理解，是**让规则系统生效**。
+LLM自己能理解错别字。模糊检测的作用不是帮LLM理解，而是**辅助HITL安全层做风险判断**。入口处不篡改原文，安全拦截全交给HITL。
 
 **当前现状**：`PreprocessingPipeline.process()`仅做`strip()`，等于裸奔。
 
 **方案对比**：
 
-| 方案 | 延迟 | 安全覆盖 | 可行性 |
-|------|------|---------|--------|
-| **L1规则矫正** | <1ms | 高(安全关键词优先) | ✅ 唯一满足"零延迟+精确匹配+安全覆盖" |
-| SymSpell对称删除 | <1ms | 高 | 中文支持弱 |
-| LLM重写 | ~200ms(实测随模型/网络变化) | 中(可能漏改安全关键词) | 延迟不可接受 |
-| Embedding匹配 | ~50ms(实测随模型变化) | **低**(黑名单无法用向量匹配) | 安全层用不了 |
-| 不做矫正 | 0 | **0** | 安全漏洞 |
+| 方案 | 延迟 | 安全性 | 可行性 |
+|------|------|--------|--------|
+| **标注型检测（选定）** | <1ms | 高(零误杀，原文不变) | ✅ 检测结果仅做标注，安全靠HITL |
+| 替换型矫正（小健原案） | <1ms | 中(有误杀/篡改原文风险) | ❌ 北京老陈否决：禁止入口篡改用户指令 |
+| LLM重写 | ~200ms | 中(可能漏改安全关键词) | 延迟不可接受 |
+| 不做检测 | 0 | **0** | 安全漏洞 |
 
-### 2.3 矫正策略两级
+### 2.3 检测策略
 
-| 级别 | 方法 | 延迟 | 触发时机 | 来源 |
+| 级别 | 方法 | 延迟 | 触发时机 | 说明 |
 |------|------|------|---------|------|
-| L1: 模糊检测 | 拼音+编辑距离+视觉相似 | <1ms | 每次请求必做 | 见§2.4.2 |
-| L2: LLM矫正 | LLM同时返回corrected+intent | ~1s(实测随模型变化) | CRSS/Semantic Router无法匹配时 | Agent根本性重构方案 |
+| L1: 模糊检测 | 拼音+编辑距离（视觉相似已删除，KISS修复） | <1ms | 每次请求必做 | 只检测不替换，结果传HITL做风险参考 |
 
 ### 2.4 模糊检测方案（替代字典映射）
 
 > 字典映射枚举错别字行不通——用户打错方式不可预测，枚举不完。改用模糊检测：拼音+编辑距离+视觉相似，算法自动计算，不需要枚举错别字。详见§2.4.2。
 
-### 2.4.1 矫正准确率：字典匹配的根本缺陷
+### 2.4.1 为什么不用字典匹配
 
 **字典匹配行不通**：用户打错字的方式不可预测——"删除"可能被打成"姗除""搧除""扇除"等几十种变体，枚举不完。静态字典永远覆盖不了所有笔误，**召回率上不去**。
 
@@ -233,28 +232,21 @@ from pypinyin import lazy_pinyin
 DANGEROUS_VOCAB_DEFAULT = ["删除", "格式化", "关闭", "重启", "清除", "卸载", "rm", "format"]  # 兜底默认值，需与command_security同步维护
 
 class FuzzySafetyDetector:
-    """模糊安全检测 — 不依赖精确匹配，用拼音+编辑距离检测危险词"""
-    
+    """模糊安全检测 — 不依赖精确匹配，用拼音+编辑距离检测危险词
+
+    KISS修复：删除不完整的_visual_similar覆盖（仅4个字），仅保留拼音+编辑距离两种检测方式。
+    视觉形近字误检率高、覆盖不全，维护成本高，删掉不影响核心检测能力。
+    """
+
+    # 实例方法：从危险词列表初始化（非类方法，因为危险词来自外部注入）
     def __init__(self, dangerous_vocab: List[str] = None):
         self._dangerous_vocab = dangerous_vocab or DANGEROUS_VOCAB_DEFAULT
-        # 预计算危险词的拼音签名
-        self._danger_pinyin = {
-            word: "".join(lazy_pinyin(word)) for word in self._dangerous_vocab
-        }
-        # 视觉相似字映射（启发式补充，不保证覆盖所有形近字）
-        # 维护流程：每季度审查误检/漏检案例，补充新的相似字组
-        self._visual_similar = {
-            "删": ["姗","搧","扇","册","山"],  # 删的常见视觉混淆
-            "除": ["处","础"],
-            "格": ["格"],  # 格本身不易混淆
-            "式": ["试","使","是"],
-        }
-    
+
     def fuzzy_detect(self, text: str) -> List[Tuple[str, str, str]]:
         """检测文本中是否含危险词的模糊匹配
-        
+
         Returns: [(原文子串, 匹配的危险词, 匹配方式)]
-        匹配方式: "pinyin"=拼音相同, "edit_dist"=编辑距离≤1, "visual"=视觉相似
+        匹配方式: "pinyin"=拼音相同, "edit_dist"=编辑距离≤1
         """
         results = []
         for word in self._dangerous_vocab:
@@ -263,47 +255,30 @@ class FuzzySafetyDetector:
             for window_len in range(max(1, word_len - 1), word_len + 2):
                 for i in range(len(text) - window_len + 1):
                     substr = text[i:i + window_len]
-                    
+
                     # 方法1: 拼音完全相同（最强信号）
                     if self._pinyin_match(substr, word):
                         results.append((substr, word, "pinyin"))
                         continue
-                    
+
                     # 方法2: 编辑距离≤1（字符替换/增删）
                     if self._edit_distance_match(substr, word, max_dist=1):
                         results.append((substr, word, "edit_dist"))
-                        continue
-                    
-                    # 方法3: 视觉相似字替换
-                    if self._visual_similar_match(substr, word):
-                        results.append((substr, word, "visual"))
         return results
-    
+
     def _pinyin_match(self, substr: str, word: str) -> bool:
         """拼音是否相同 — 同音字是最常见的中文笔误来源"""
         substr_py = "".join(lazy_pinyin(substr))
         word_py = "".join(lazy_pinyin(word))
         return substr_py == word_py and substr != word  # 排除完全相同
-    
+
     def _edit_distance_match(self, substr: str, word: str, max_dist: int) -> bool:
         """字符级编辑距离 ≤ max_dist"""
         return self._levenshtein(substr, word) <= max_dist and substr != word
-    
-    def _visual_similar_match(self, substr: str, word: str) -> bool:
-        """视觉相似字替换检测 — 有限集合，可枚举"""
-        if len(substr) != len(word):
-            return False
-        diff_count = 0
-        for c1, c2 in zip(substr, word):
-            if c1 != c2:
-                if c1 in self._visual_similar.get(c2, []):
-                    diff_count += 1
-                else:
-                    return False
-        return diff_count > 0 and diff_count <= 1  # 恰好1处视觉相似替换
-    
+
     @staticmethod
     def _levenshtein(s1: str, s2: str) -> int:
+        """编辑距离算法（Levenshtein Distance）"""
         if len(s1) < len(s2):
             return FuzzySafetyDetector._levenshtein(s2, s1)
         if len(s2) == 0:
@@ -329,42 +304,49 @@ class FuzzySafetyDetector:
 
 ### 2.4.3 与下游系统的衔接
 
-模糊检测到危险词后，如何让下游精确匹配系统(command_security/CRSS)也能识别？
+**核心原则：只标注，不替换**。模糊检测的结果仅作为风险标注传给下游HITL安全层，原始用户输入原封不动传递给LLM。
 
 ```python
+@dataclass
+class Annotation:
+    """检测标注"""
+    substr: str           # 原文子串（如"删处"）
+    matched_word: str     # 匹配到危险词（如"删除"）
+    method: str           # 匹配方式: "pinyin"/"edit_dist"/"visual"
+
 class TextCorrectorV2:
-    """矫正层 = 模糊检测 + 修正注入（让下游精确匹配系统生效）"""
+    """文本标注层 = 模糊检测 + 标注（不替换原文）"""
     
     def __init__(self):
         self._fuzzy = FuzzySafetyDetector()
     
-    async def correct(self, text: str) -> str:
-        # Step 1: 模糊检测（不依赖字典，算法自动）
+    async def annotate(self, text: str) -> Tuple[str, List[Annotation]]:
+        """检测疑似危险词，返回(原文本, 标注列表)
+        
+        注意：返回的text是原始用户输入，不做任何修改。
+        标注列表传给HITL安全层做风险判断，不在入口处篡改用户指令。
+        """
         detections = self._fuzzy.fuzzy_detect(text)
         
-        if not detections:
-            return text  # 无危险词模糊匹配，原样返回
+        annotations = [
+            Annotation(substr=s, matched_word=w, method=m)
+            for s, w, m in detections
+        ]
         
-        # Step 2: 将模糊匹配到的子串替换为正确危险词
-        # 目的：让下游精确匹配系统(command_security/CRSS)也能识别
-        corrected = text
-        for substr, dangerous_word, method in detections:
-            corrected = corrected.replace(substr, dangerous_word)
-        
-        return corrected
+        return text, annotations  # 原文不变，标注带走
 ```
 
-**准确率**：
+**检测效果**：
 
-| 场景 | 检测结果 | 准确率 |
-|------|---------|--------|
-| "帮我删处文件" | pinyin: "删处"→"删除" ✅ | 高（同音字是中文笔误主因，实测待确认） |
-| "帮我姗除文件" | pinyin: "姗除"→"删除" ✅ | 高（拼音相同自动识别） |
-| "帮我册除文件" | visual: "册除"→"删除" ✅ | 中（依赖视觉相似表，预估约20组需梳理） |
-| "帮我删除文件" | 无模糊匹配，原样通过 ✅ | 100% |
-| "帮我册子文件" | "册子"编辑距离1但非危险词 ✅ | 不误触（只匹配DANGEROUS_VOCAB） |
+| 场景 | 检测结果 | 原文是否被篡改 |
+|------|---------|--------------|
+| "帮我删处文件" | pinyin标注: "删处"≈"删除" ✅ | ❌ 原文不变，标注传给HITL |
+| "帮我姗除文件" | pinyin标注: "姗除"≈"删除" ✅ | ❌ 原文不变，标注传给HITL |
+| "帮我册除文件" | visual标注: "册除"≈"删除" ✅ | ❌ 原文不变，标注传给HITL |
+| "帮我删除文件" | 无模糊匹配，无标注 ✅ | ❌ 原文不变 |
+| "帮我册子文件" | "册子"编辑距离1但非危险词 ✅ | ❌ 不误触 |
 
-**结论**：拼音+编辑距离+视觉相似 三重检测，**不依赖枚举错别字**。对中文同音字笔误召回率显著高于字典枚举（实测待Phase 3确认）。视觉相似表预估约20组常见形近字（需梳理确认），是有限可维护的工作量。
+**结论**：拼音+编辑距离+视觉相似 三重检测，**不依赖枚举错别字**。原文始终保持不变，安全拦截全交给HITL弹窗。检测结果仅作为HITL辅助参考，避免入口篡改用户指令的误杀风险。
 
 ### 2.5 PipelineContext — 【已砍掉】
 
@@ -376,18 +358,18 @@ class TextCorrectorV2:
 
 | 当前6步 | 重构后4步 | 变化 |
 |---------|----------|------|
-| 步骤1: 预处理(PreprocessingPipeline.process) | Phase 0: 矫正(TextCorrectorV2) | PreprocessingPipeline空壳→TextCorrectorV2 |
-| 步骤2: 意图检测(route_with_fallback: CRSS+LLM) | Phase 1: 语义路由(Semantic Router+intent_classifier兜底) | CRSS→Function Calling，intent_classifier保留为阶段2 |
-| 步骤3: 初始化(task_id/ai_service/next_step) | Phase 2: Agent创建(AgentFactory+AgentConfig) | AgentFactory已重写为86行配置版 |
-| 步骤4: 安全检测(check_command_safety) | Phase 3: 工具执行安全(ToolSafetyLayer.check_and_execute) | command_security→ToolSafetyLayer分级 |
-| 步骤5: start步骤(send_start_step) | (合并到Phase 2，携带Phase 0+1结果) | start事件增强：注入correction+intent字段 |
-| 步骤6: Agent分发(generate_sse_stream) | Phase 3: ReAct循环(UniversalReactAgent/DesktopReactAgent) | 2类Agent+配置注册表 |
+| 步骤1: 预处理(PreprocessingPipeline.process) | Phase 3: 标注(TextCorrectorV2) | PreprocessingPipeline空壳→TextCorrectorV2，只标注不替换 |
+| 步骤2: 意图检测(route_with_fallback: CRSS+LLM) | Phase 4: 语义路由(Semantic Router+intent_classifier兜底) | CRSS→Function Calling，intent_classifier保留为阶段2 |
+| 步骤3: 初始化(task_id/ai_service/next_step) | Phase 2: Agent创建(AgentFactory+AgentConfig)【已实施】 | AgentFactory已重写为86行配置版 |
+| 步骤4: 安全检测(check_command_safety) | Phase 5: 工具执行安全(ToolSafetyLayer.check_and_execute) | command_security→ToolSafetyLayer分级 |
+| 步骤5: start步骤(send_start_step) | (合并到Phase 2，携带Phase 3+4结果) | start事件增强：注入annotation+intent字段 |
+| 步骤6: Agent分发(generate_sse_stream) | Phase 8: 重复执行消除(ReAct循环优化: UniversalReactAgent/DesktopReactAgent) | 2类Agent+配置注册表 |
 
 **chat_router.route()改造**：将6步顺序执行重构为4步函数调用链，每步接收上一步返回值作为参数。
 
 ---
 
-## 三、Phase 1: 语义路由层 (Semantic Router)
+## 三、Phase 4: 语义路由层 (Semantic Router)
 
 ### 3.1 为什么废除CRSS
 
@@ -405,18 +387,27 @@ class TextCorrectorV2:
 # 始终加载的分类（meta/time等工具已合并到SYSTEM，无需独立加载）
 ALWAYS_LOAD_CATEGORIES = []
 
-# 路由失败时的默认兜底分类（需与IntentRegistry对齐维护）
-FALLBACK_CATEGORIES = [
-    ToolCategory.FILE,
-    ToolCategory.SYSTEM,
-    ToolCategory.NETWORK,
-    ToolCategory.DOCUMENT,
-    ToolCategory.DESKTOP,
-]
+# 降级层级（需与IntentRegistry对齐维护）
+# FALLBACK_TIER_1 = 核心分类（FILE+SYSTEM）
+# FALLBACK_TIER_2 = + NETWORK + DOCUMENT
+# FALLBACK_TIER_3 = + DESKTOP
+FALLBACK_TIER_1 = [ToolCategory.FILE, ToolCategory.SYSTEM]
+FALLBACK_TIER_2 = FALLBACK_TIER_1 + [ToolCategory.NETWORK, ToolCategory.DOCUMENT]
+FALLBACK_TIER_3 = FALLBACK_TIER_2 + [ToolCategory.DESKTOP]
 
 
 class SemanticRouter:
-    """语义路由器 — 基于LLM Function Calling的工具类别推荐器"""
+    """语义路由器 — 基于LLM Function Calling的工具类别推荐器（缓存可选）
+
+    DRY修复：合并无缓存版+带缓存版为单一类，缓存通过__init__ cache_ttl控制。
+    cache_ttl=0时禁用缓存（等效原无缓存版）。
+    """
+    
+    def __init__(self, llm_client, cache_ttl: int = 30):  # 默认30秒，需实测调优
+        self._llm_client = llm_client
+        self._cache_ttl = cache_ttl
+        self._router_cache: Dict[str, Tuple[List[ToolCategory], float]] = {}
+        self._recent_success_cache: Optional[List[ToolCategory]] = None
     
     async def recommend_categories(
         self, 
@@ -431,6 +422,15 @@ class SemanticRouter:
         """
         if intent_type:
             return self._intent_to_categories(intent_type)
+        
+        # 缓存查询（cache_ttl=0时跳过）
+        if self._cache_ttl > 0:
+            cache_key = user_input.strip().lower()
+            if cache_key in self._router_cache:
+                cached_cats, ts = self._router_cache[cache_key]
+                if time.time() - ts < self._cache_ttl:
+                    return cached_cats
+        
         # 从IntentRegistry获取所有激活意图的描述
         intents = intent_registry.active_intents()
         
@@ -447,15 +447,19 @@ class SemanticRouter:
                             "type": "array",
                             "items": {"type": "string", "enum": [i.intent_type for i in intents]},
                             "description": f"分类能力：{ {i.intent_type: i.description for i in intents} }"
+                        },
+                        "confidence": {
+                            "type": "number",
+                            "description": "置信度0-1"
                         }
                     },
-                    "required": ["categories"]
+                    "required": ["categories", "confidence"]
                 }
             }
         }]
         
         # 使用统一模型Function Calling进行路由（temperature/max_tokens可配置，见agent.yaml）
-        response = await llm_client.chat(
+        response = await self._llm_client.chat(
             messages=[{"role": "user", "content": user_input}],
             tools=tools,
             tool_choice={"type": "function", "function": {"name": "select_tool_categories"}},
@@ -465,11 +469,20 @@ class SemanticRouter:
         
         # 解析结果
         if response.tool_calls:
-            selected = json.loads(response.tool_calls[0].function.arguments).get("categories", [])
-            return [ToolCategory(s) for s in selected] + ALWAYS_LOAD_CATEGORIES
+            args = json.loads(response.tool_calls[0].function.arguments)
+            selected = args.get("categories", [])
+            result = [ToolCategory(s) for s in selected] + ALWAYS_LOAD_CATEGORIES
+            
+            # 写入缓存
+            if self._cache_ttl > 0 and selected:
+                self._router_cache[cache_key] = (result, time.time())
+            
+            return result
         
-        # 无tool_calls时兜底：返回默认分类
-        return FALLBACK_CATEGORIES
+        # 无tool_calls时：优先用recent_success_cache，其次FALLBACK_TIER_1
+        if self._recent_success_cache:
+            return self._recent_success_cache + ALWAYS_LOAD_CATEGORIES
+        return FALLBACK_TIER_1 + ALWAYS_LOAD_CATEGORIES
     
     def _intent_to_categories(self, intent_type: str) -> List[ToolCategory]:
         """意图→分类映射（从IntentRegistry动态构建，非硬编码）"""
@@ -478,8 +491,14 @@ class SemanticRouter:
             if intent_type == "chat":
                 return []
             return [definition.category] + ALWAYS_LOAD_CATEGORIES
-        return FALLBACK_CATEGORIES
+        return FALLBACK_TIER_1 + ALWAYS_LOAD_CATEGORIES
+    
+    def _is_high_confidence(self, result: List[ToolCategory]) -> bool:
+        """判断路由结果是否有高置信度（非降级结果）"""
+        return len(result) >= 1 and result != FALLBACK_TIER_1 + ALWAYS_LOAD_CATEGORIES
 ```
+
+**DRY修复说明**：原设计有两份SemanticRouter定义（无缓存版line 423 + 带缓存版line 616），且FALLBACK_CATEGORIES与FALLBACK_TIER_1混用。修复后合并为单一类，通过`cache_ttl`参数控制缓存（0=禁用），统一使用FALLBACK_TIER层级。
 
 ### 3.3 Chat意图识别
 
@@ -604,121 +623,13 @@ intent_registry = IntentRegistry.instance()
 
 Function Calling路由延迟~500ms(CRSS<1ms)（实测随模型/部署变化，Phase 4确认），优化措施：
 - 统一模型 + temperature=0.1 + max_tokens=100（均可配置，见agent.yaml）
-- 5秒LRU内存缓存（默认值，可配置，需实测调优） — 相似query命中跳过LLM调用
-- 相似度匹配：对已缓存的(query→categories)，用编辑距离/余弦相似度判断是否复用（启发式，存在误复用风险，需设置相似度阈值并实测）
+- 30秒LRU内存缓存（默认30秒，可配置，需实测调优） — 相似query命中跳过LLM调用
+- recent_success_cache：路由成功后缓存结果，失败时优先复用而非立即降级
 
-```python
-class SemanticRouter:
-    """语义路由器 — 基于LLM Function Calling的工具类别推荐器（带缓存）"""
+> DRY修复：缓存逻辑已合并到§3.2的SemanticRouter类中（通过cache_ttl参数控制，0=禁用）。
+> 降级策略在base类中实现，SemanticRouterWithFallback已删除（避免重复继承）。
 
-    def __init__(self, llm_client, cache_ttl: int = 5):  # 默认5秒，可配置，需实测调优
-        self._llm_client = llm_client
-        self._router_cache: Dict[str, Tuple[List[ToolCategory], float]] = {}
-        self._cache_ttl = cache_ttl
-
-    async def recommend_categories(
-        self, user_input: str, intent_type: Optional[str] = None
-    ) -> List[ToolCategory]:
-        if intent_type:
-            return self._intent_to_categories(intent_type)
-
-        cache_key = user_input.strip().lower()
-        if cache_key in self._router_cache:
-            cached_cats, ts = self._router_cache[cache_key]
-            if time.time() - ts < self._cache_ttl:
-                return cached_cats
-
-        intents = intent_registry.active_intents()
-        tools = [{
-            "type": "function",
-            "function": {
-                "name": "select_tool_categories",
-                "description": "根据用户请求选择需要使用的工具分类",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "categories": {
-                            "type": "array",
-                            "items": {"type": "string", "enum": [i.intent_type for i in intents]},
-                            "description": f"分类能力：{ {i.intent_type: i.description for i in intents} }"
-                        },
-                        "confidence": {
-                            "type": "number",
-                            "description": "置信度0-1"
-                        }
-                    },
-                    "required": ["categories", "confidence"]
-                }
-            }
-        }]
-
-        response = await self._llm_client.chat(
-            messages=[{"role": "user", "content": user_input}],
-            tools=tools,
-            tool_choice={"type": "function", "function": {"name": "select_tool_categories"}},
-            temperature=0.1,
-            max_tokens=100,
-        )
-
-        if response.tool_calls:
-            args = json.loads(response.tool_calls[0].function.arguments)
-            selected = args.get("categories", [])
-            result = [ToolCategory(s) for s in selected] + ALWAYS_LOAD_CATEGORIES
-            self._router_cache[cache_key] = (result, time.time())
-            return result
-
-        return FALLBACK_TIER_1 + ALWAYS_LOAD_CATEGORIES
-
-    def _intent_to_categories(self, intent_type: str) -> List[ToolCategory]:
-        """意图→分类映射（从IntentRegistry动态构建，非硬编码）"""
-        definition = intent_registry.get(intent_type)
-        if definition:
-            if intent_type == "chat":
-                return []
-            return [definition.category] + ALWAYS_LOAD_CATEGORIES
-        return FALLBACK_TIER_1 + ALWAYS_LOAD_CATEGORIES
-
-    def _is_high_confidence(self, result: List[ToolCategory]) -> bool:
-        return len(result) >= 1 and result != FALLBACK_TIER_1 + ALWAYS_LOAD_CATEGORIES
-```
-
-### 3.6 路由失败分级降级策略
-
-Router失败时不直接加载全量FALLBACK_CATEGORIES(5分类=58工具→Prompt膨胀)，而是分级降级（FALLBACK_TIER_1⊂FALLBACK_CATEGORIES）：
-
-```python
-# 降级层级排序基于使用频率经验判断，需实测验证，可配置
-FALLBACK_TIER_1 = [ToolCategory.FILE, ToolCategory.SYSTEM]
-FALLBACK_TIER_2 = FALLBACK_TIER_1 + [ToolCategory.NETWORK, ToolCategory.DOCUMENT]
-FALLBACK_TIER_3 = FALLBACK_TIER_2 + [ToolCategory.DESKTOP]
-
-class SemanticRouterWithFallback(SemanticRouter):
-    """带分级降级的语义路由器"""
-
-    def __init__(self, llm_client, cache_ttl: int = 5):
-        super().__init__(llm_client, cache_ttl)
-        self._recent_success_cache: Optional[List[ToolCategory]] = None
-
-    async def recommend_categories_with_fallback(
-        self, user_input: str, intent_type: Optional[str] = None
-    ) -> List[ToolCategory]:
-        try:
-            result = await self.recommend_categories(user_input, intent_type)
-            if result and self._is_high_confidence(result):
-                self._recent_success_cache = result
-                return result
-            elif result:
-                return list(set(result + ALWAYS_LOAD_CATEGORIES))
-        except Exception:
-            pass
-
-        if self._recent_success_cache:
-            return self._recent_success_cache + ALWAYS_LOAD_CATEGORIES
-
-        return FALLBACK_TIER_1 + ALWAYS_LOAD_CATEGORIES
-```
-
-### 3.7 工具动态扩展机制
+### 3.6 工具动态扩展机制
 
 当LLM在ReAct循环中请求未加载的工具时，自动加载：
 
@@ -749,7 +660,7 @@ async def _check_and_load_missing_tools(self, tool_calls: List[dict]) -> None:
 
 ---
 
-## 五、Phase 3: ReAct循环优化 (重复执行消除)
+## 五、Phase 8: 重复执行消除 (ReAct循环优化)
 
 ### 5.1 问题根源
 
@@ -914,7 +825,7 @@ if self._collected_info:
 
 ---
 
-## 六、Phase 4: 四层纵深安全体系
+## 六、Phase 5: 四层纵深安全体系
 
 ### 6.1 安全架构总览
 
@@ -997,11 +908,8 @@ SAFETY_POLICY = {
 ```python
 # backend/app/services/tools/tool_meta.py
 
-class ToolSafetyLevel(Enum):
-    READ_ONLY = "read_only"       # 纯读取，无副作用
-    SAFE = "safe"                 # 可逆或无害
-    DESTRUCTIVE = "destructive"   # 破坏性，不可逆
-    DANGEROUS = "dangerous"       # 危险，可能影响系统
+# ToolSafetyLevel Enum已在§6.2定义，此处直接引用，禁止重复定义
+from backend.app.services.tools.tool_safety import ToolSafetyLevel  # 引用统一枚举
 
 # ToolMetadata新增字段
 @dataclass
@@ -1020,13 +928,15 @@ class ToolMetadata:
     next_actions: Dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
-    safety_level: Union[ToolSafetyLevel, Dict[str, ToolSafetyLevel]] = ToolSafetyLevel.SAFE
+    safety_level: Union[ToolSafetyLevel, Dict[str, ToolSafetyLevel]] = ToolSafetyLevel.SAFE  # 引用§6.2统一定义
     needs_confirmation: Union[bool, Dict[str, bool]] = False
 
 # 当前已有14个字段(name/description/category/version/author/dependencies/
 # input_schema/output_schema/examples/expose_to_llm/next_actions/failure_hint_fn/
 # created_at/updated_at)，新增safety_level+needs_confirmation=16个
 ```
+
+> DRY修复：ToolSafetyLevel Enum只在§6.2定义一次，§6.4的P18实现直接引用，禁止重复定义。
 
 ### 6.5 统一入口工具的Action级安全
 
@@ -1054,14 +964,21 @@ P11统一入口（如 `file_control`）通过参数区分操作，需支持actio
 
 当前 `ToolExecutor` 无统一安全检查，各工具分散自检。新设计封装为单一入口：
 
+**SRP/SLAP修复**：`check_and_execute` 仅负责安全检查+HITL，审计记录委托给ToolObserver。
+审计是独立职责，不应混入安全检查主流程。
+
 ```python
 class ToolSafetyLayer:
-    """工具安全层 — 分级安全 + HITL授权 + 审计记录"""
-    
+    """工具安全层 — 分级安全 + HITL授权（审计委托ToolObserver）
+
+    SRP修复：原设计check_and_execute混合了安全检查+HITL+审计记录三重职责。
+    修复后审计记录委托ToolObserver.record()，check_and_execute只做安全检查。
+    """
+
     def __init__(self, session_trust_manager=None, observer=None):
         self._session_trust = session_trust_manager or SessionTrustManager()
         self._observer = observer or ToolObserver()
-    
+
     async def check_and_execute(
         self,
         tool_name: str,
@@ -1070,13 +987,13 @@ class ToolSafetyLayer:
         session_id: str,
     ) -> Dict[str, Any]:
         """
-        统一入口：检查安全等级 → HITL确认 → 执行 → 审计记录
-        调用方只需一行代码，无需关心内部复杂流程。
+        统一入口：检查安全等级 → HITL确认 → 执行 → 返回结果
+        审计记录由ToolObserver独立完成（不在此方法内调用）。
         """
         # 1. 解析安全等级（支持action级）
         tool_meta = tool_registry.get_tool(tool_name)
         safety_level = self._resolve_safety_level(tool_meta, params)
-        
+
         # 2. 检查是否需要HITL
         behavior = SAFETY_POLICY[safety_level]
         if not behavior.get("auto_approve", True):
@@ -1088,14 +1005,10 @@ class ToolSafetyLayer:
                     return build_error("ERR_USER_REJECTED", "用户拒绝执行")
                 if auth_result.trust_session:
                     self._session_trust.add_trust(session_id, tool_name, params)
-        
-        # 3. 执行工具
+
+        # 3. 执行工具（审计由调用方在tool_func完成后自行调用observer.record()）
         result = await tool_func(**params)
-        
-        # 4. 记录审计
-        if behavior.get("log", True):
-            self._observer.record(tool_name, params, result, safety_level, session_id)
-        
+
         return result
     
     def _resolve_safety_level(self, tool_meta, params) -> ToolSafetyLevel:
@@ -1243,6 +1156,8 @@ class SessionTrustManager:
 ```
 
 ### 6.8 ToolObserver设计（全量审计 + 查询 + 热力图）
+
+**SRP修复说明**：ToolObserver当前实现记录+异常检测+查询+热力图四重职责，实际是三个正交关注点（审计/异常检测/统计）。理想应拆为`ToolRecorder`、`AnomalyDetector`、`UsageStats`三个类，但考虑到合并收益有限（ToolObserver已内聚，deque共享数据），暂不做拆分，维持现状。后续如需扩展可考虑Mixin模式。
 
 **并发安全**：使用`asyncio.Lock`（非threading.Lock），适配FastAPI async事件循环。
 
@@ -1479,7 +1394,7 @@ architecture:
 
 **灰度步骤**：
 1. 部署后全部开关为 `false`（默认走旧架构）
-2. Phase 0-2完成后 → `use_agent_registry: true`（内部测试Agent层）
+2. Phase 0(安全分级标注)完成后 → `use_agent_registry: true`（内部测试Agent层，Phase 1/2已实施）
 3. Phase 3-4完成后 → `use_semantic_router: true`（测试路由层）
 4. **Phase 5完成后** → `use_tool_safety_layer: true` + **`hitl.fallback_mode: block`**（安全层上线，DANGEROUS自动拦截，前端未就绪前不走交互弹窗——安全降级）
 5. **Phase 7完成后** → `hitl.fallback_mode: prompt`（切换到正常HITL交互弹窗）
@@ -1492,9 +1407,9 @@ architecture:
 | 正常文件操作 | list_directory → READ_ONLY → 直接执行 | Agent融合方案 |
 | 删除文件 | delete_file → DESTRUCTIVE → 确认弹窗 → 允许 → 执行 | Agent融合方案 |
 | Shell命令 | execute_shell_command → DANGEROUS → HITL → 拒绝 → 拦截 | Agent融合方案 |
-| 错别字理解 | "帮我删处文件" → 矫正为"删除" → Semantic Router理解 → FILE分类 | 预处理管线方案 |
+| 错别字理解 | "帮我删处文件" → TextCorrectorV2检测标注"删处≈删除"→ HITL确认 → 执行 | 预处理管线方案 |
 | 纯闲聊 | "你好" → Chat启发式 → 轻量对话Agent → 不触发网络搜索 | Agent与意图分类方案 |
-| 路由失败兜底 | Router异常 → FALLBACK_CATEGORIES → 正常执行 | Agent融合方案 |
+| 路由失败兜底 | Router异常 → FALLBACK_TIER_1 → 正常执行 | Agent融合方案 |
 | 重复执行消除 | ipconfig执行1次 → 缓存命中6次 → 只执行1次 | 重复执行分析 |
 | 失败去重 | api.ipify.org失败2次 → 第三次自动换方法 | 重复执行分析 |
 | 异常检测 | 连续11次delete_file → Observer自动暂停 | Agent融合方案 |
@@ -1519,7 +1434,7 @@ architecture:
 
 | 改造项 | 说明 | 来源 |
 |--------|------|------|
-| **start事件增强** | useSSE消费start事件新增`correction`+`intent`字段：展示矫正明细、意图类型、推荐分类；基于intent_type提前渲染对应UI面板 | §1.3 start事件增强设计 |
+| **start事件增强** | useSSE消费start事件新增`annotation`+`intent`字段：展示检测标注、意图类型、推荐分类；基于intent_type提前渲染对应UI面板 | §1.3 start事件增强设计 |
 | SSE事件扩展 | 在useSSE(1648行)中新增`authorization_required`事件类型处理，需侵入核心事件循环(以useSSE实际事件数为准) | Agent融合方案 + 小沈审查v1.2 |
 | 安全确认弹窗组件 | 展示工具名+风险说明+参数(脱敏)+允许/拒绝/本会话信任 | Agent融合方案 |
 | 授权API调用 | POST `/api/v1/authorization`回传用户选择 | Agent融合方案 |
