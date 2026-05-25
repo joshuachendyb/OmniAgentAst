@@ -48,6 +48,52 @@ from app.services.tools.tool_result_utils import build_next_actions, truncate_da
 from app.services.tools._response import build_success, build_error
 
 
+def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
+    """解析 HTTP 响应体并构建 llm_data。
+    Returns: {"body": 前端数据, "llm_body": LLM 数据, "content_type_short": str}
+    """
+    content_type = response.headers.get("content-type", "")
+    content_type_short = content_type.split(";")[0].strip() if content_type else "unknown"
+
+    if "application/json" in content_type:
+        try:
+            body = response.json()
+        except (json.JSONDecodeError, ValueError):
+            body = response.text
+    else:
+        body = response.text
+
+    body_json_len = 0
+    if isinstance(body, (dict, list)):
+        body_json_len = len(json.dumps(body, ensure_ascii=False))
+
+    if isinstance(body, str) and len(body) > 5000:
+        try:
+            json.loads(body)
+        except (json.JSONDecodeError, ValueError):
+            body = body[:4000] + f"\n...[截断 {len(body)-4000} 字符]"
+
+    if isinstance(body, (dict, list)) and body_json_len <= 5000:
+        llm_body = body
+    elif isinstance(body, str) and len(body) <= 5000:
+        llm_body = body
+    elif isinstance(body, (dict, list)):
+        from app.services.tools.tool_result_utils import make_json_safe
+        llm_body = make_json_safe(body, max_depth=4, max_str_len=500)
+    else:
+        llm_body = str(body)[:4000]
+
+    return {
+        "body": truncate_data_for_frontend({
+            "status_code": response.status_code,
+            "headers": dict(response.headers),
+            "body": body,
+        }),
+        "llm_body": llm_body,
+        "content_type_short": content_type_short,
+    }
+
+
 async def http_request(
     url: str,
     method: str = "GET",
@@ -112,53 +158,14 @@ async def http_request(
                     response = await client.request(method_upper, **request_kwargs)
                     response.raise_for_status()
 
-                    content_type = response.headers.get("content-type", "")
-                    response_body = None
-                    if "application/json" in content_type:
-                        try:
-                            response_body = response.json()
-                        except (json.JSONDecodeError, ValueError):
-                            response_body = response.text
-                    else:
-                        response_body = response.text
-
-                    # 【修复 小健 2026-05-16】llm_data给LLM关键数据，≤5K全给，超5K用make_json_safe保留结构
-                    _body = response_body
-                    _body_json_len = 0
-                    if isinstance(response_body, (dict, list)):
-                        _body_json_len = len(json.dumps(response_body, ensure_ascii=False))
-                    _ct = response.headers.get("content-type", "")
-                    _ct_short = _ct.split(";")[0].strip() if _ct else "unknown"
-
-                    if isinstance(_body, str) and len(_body) > 5000:
-                        try:
-                            json.loads(_body)
-                        except (json.JSONDecodeError, ValueError):
-                            _body = _body[:4000] + f"\n...[截断 {len(_body)-4000} 字符]"
-
-                    if isinstance(response_body, dict) and _body_json_len <= 5000:
-                        _llm_body = response_body
-                    elif isinstance(response_body, list) and _body_json_len <= 5000:
-                        _llm_body = response_body
-                    elif isinstance(response_body, str) and len(response_body) <= 5000:
-                        _llm_body = response_body
-                    elif isinstance(response_body, (dict, list)):
-                        from app.services.tools.tool_result_utils import make_json_safe
-                        _llm_body = make_json_safe(response_body, max_depth=4, max_str_len=500)
-                    else:
-                        _llm_body = str(_body)[:4000]
-
+                    parsed = _parse_response_body(response)
                     return build_success(
-                        truncate_data_for_frontend({
-                            "status_code": response.status_code,
-                            "headers": dict(response.headers),
-                            "body": _body,
-                        }),
+                        parsed["body"],
                         f"请求成功 (HTTP {response.status_code})",
                         llm_data={
                             "状态码": response.status_code,
-                            "内容类型": _ct_short,
-                            "响应体": _llm_body,
+                            "内容类型": parsed["content_type_short"],
+                            "响应体": parsed["llm_body"],
                         },
                         next_actions=build_next_actions([("http_request", "继续发送请求", "需要发送更多请求时")]),
                     )
@@ -758,165 +765,92 @@ async def _search_bing(
     return results
 
 
-async def _ping(
-    host: str,
-    count: int = 4,
-    timeout: int = 5,
-) -> dict:
-    """
-    执行ping测试 - 小沈 2026-05-02
-    
-    使用系统ping命令测试网络连通性。
-    Windows使用 ping 命令，Linux/macOS使用 ping 命令。
-    
-    参数:
-        host: 目标主机地址（域名或IP）
-        count: 发送ping包数量
-        timeout: 每次ping的超时时间（秒）
-    
-    返回:
-        {
-            "code": "SUCCESS",
-            "data": {
-                "host": "目标主机",
-                "packets_sent": 发送包数,
-                "packets_received": 接收包数,
-                "packets_lost": 丢失包数,
-                "loss_rate": 丢包率,
-                "min_latency": 最小延迟(ms),
-                "avg_latency": 平均延迟(ms),
-                "max_latency": 最大延迟(ms),
-                "is_reachable": 是否可达,
-                "raw_output": 原始输出,
-            },
-            "message": "描述信息"
-        }
-    """
+
+def _build_ping_cmd(host: str, count: int, timeout: int) -> List[str]:
+    """根据平台构建ping命令 — 小沈 2026-05-25 重构"""
+    system = platform.system().lower()
+    if system == "windows":
+        return ["ping", "-n", str(count), "-w", str(timeout * 1000), host]
+    return ["ping", "-c", str(count), "-W", str(timeout), host]
+
+
+def _parse_ping_output(raw_output: str, system: str) -> dict:
+    """解析ping输出，返回 {sent, received, lost, loss%, min, avg, max, reachable} — 小沈 2026-05-25 重构"""
+    result = {"packets_sent": 0, "packets_received": 0, "packets_lost": 0, "loss_rate": 0.0,
+              "min_latency": None, "avg_latency": None, "max_latency": None, "is_reachable": False}
+    if system == "windows":
+        loss = re.search(r"(?:已发送|Sent\s*=\s*)(\d+).*?(?:已接收|Received\s*=\s*)(\d+).*?(?:丢失|Lost\s*=\s*)(\d+).*?(\d+)%", raw_output, re.DOTALL | re.IGNORECASE)
+        if loss:
+            result.update(packets_sent=int(loss.group(1)), packets_received=int(loss.group(2)),
+                          packets_lost=int(loss.group(3)), loss_rate=float(loss.group(4)))
+        latency = re.search(r"(?:最短|Minimum)\s*[=:]\s*([\d.]+).*?(?:最长|Maximum)\s*[=:]\s*([\d.]+).*?(?:平均|Average)\s*[=:]\s*([\d.]+)", raw_output, re.DOTALL | re.IGNORECASE)
+        if latency:
+            result.update(min_latency=float(latency.group(1)), max_latency=float(latency.group(2)),
+                          avg_latency=float(latency.group(3)))
+        if "TTL=" in raw_output.upper() or (loss and int(loss.group(2)) > 0):
+            result["is_reachable"] = True
+    else:
+        loss = re.search(r"(\d+)\s+packets transmitted.*?(\d+)\s+received.*?(\d+)%\s+packet loss", raw_output, re.DOTALL)
+        if loss:
+            sent, recv, rate = int(loss.group(1)), int(loss.group(2)), float(loss.group(3))
+            result.update(packets_sent=sent, packets_received=recv, packets_lost=sent-recv, loss_rate=rate)
+        latency = re.search(r"rtt min/avg/max/mdev\s*=\s*([\d.]+)/([\d.]+)/([\d.]+)", raw_output)
+        if latency:
+            result.update(min_latency=float(latency.group(1)), avg_latency=float(latency.group(2)),
+                          max_latency=float(latency.group(3)))
+        if result["packets_received"] > 0:
+            result["is_reachable"] = True
+    return result
+
+
+def _build_ping_result(host: str, raw_output: str, parsed: dict) -> dict:
+    """统一构建ping的build_success响应 — 小沈 2026-05-25 重构"""
+    data = {"host": host, **parsed}
+    reachable = parsed["is_reachable"]
+    raw_len = len(raw_output)
+
+    if raw_len <= 5000:
+        llm = {"目标": host, "结果": raw_output.strip()}
+    elif reachable:
+        avg = parsed.get("avg_latency")
+        lat = f"{avg}ms / {parsed['min_latency']}ms / {parsed['max_latency']}ms" if avg else "N/A"
+        llm = {"目标": host, "发包/收包": f"{parsed['packets_sent']}/{parsed['packets_received']}",
+               "丢包率": f"{parsed['loss_rate']}%", "延迟(avg/min/max)": lat, "原始输出(截断)": raw_output[:3000].strip()}
+    else:
+        llm = {"目标": host, "结果预览": raw_output[:3000].strip()}
+
+    if not reachable:
+        data.update(packets_received=0, packets_lost=parsed["packets_sent"],
+                     loss_rate=100.0, min_latency=None, avg_latency=None, max_latency=None)
+
+    msg = f"Ping测试{'成功' if reachable else '失败'}：{host}{' 可达' if reachable else ' 不可达'}"
+    if reachable:
+        avg = parsed.get("avg_latency")
+        msg += f"，平均延迟 {avg if avg is not None else 'N/A'} ms"
+    return build_success(data, msg, llm_data=llm)
+
+
+async def _ping(host: str, count: int = 4, timeout: int = 5) -> dict:
+    """Ping测试（内部函数） — 小沈 2026-05-25 重构"""
     try:
-        if not host or len(host.strip()) == 0:
+        if not host or not host.strip():
             return build_error("ERR_NETWORK_INVALID_HOST", "目标主机地址不能为空")
-        
         host = host.strip()
-        
-        system = platform.system().lower()
-        
-        if system == "windows":
-            cmd = ["ping", "-n", str(count), "-w", str(timeout * 1000), host]
-        else:
-            cmd = ["ping", "-c", str(count), "-W", str(timeout), host]
-        
+        cmd = _build_ping_cmd(host, count, timeout)
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=count * timeout + 10
-            )
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=count * timeout + 10)
             raw_output = result.stdout
         except subprocess.TimeoutExpired:
-            return build_error("ERR_NETWORK_TIMEOUT", f"Ping命令执行超时（{count * timeout + 10}秒）")
+            return build_error("ERR_NETWORK_TIMEOUT", f"Ping超时（{count * timeout + 10}秒）")
         except FileNotFoundError:
             return build_error("ERR_SHELL_COMMAND_NOT_FOUND", "系统ping命令不可用")
-        
-        packets_sent = count
-        packets_received = 0
-        packets_lost = 0
-        loss_rate = 0.0
-        min_latency = None
-        avg_latency = None
-        max_latency = None
-        is_reachable = False
-        
-        if system == "windows":
-            # 【修复 小健 2026-05-16】兼容Windows中文/英文ping丢包格式
-            loss_match = re.search(r"(?:已发送|Packets\s*:\s*Sent\s*=\s*)(\d+).*?(?:已接收|Received\s*=\s*)(\d+).*?(?:丢失|Lost\s*=\s*)(\d+).*?(\d+)%", raw_output, re.DOTALL | re.IGNORECASE)
-            if loss_match:
-                packets_sent = int(loss_match.group(1))
-                packets_received = int(loss_match.group(2))
-                packets_lost = int(loss_match.group(3))
-                loss_rate = float(loss_match.group(4))
-            
-            # 【修复 小健 2026-05-16】兼容Windows中文/英文ping延迟格式，支持小数
-            latency_match = re.search(r"(?:最短|Minimum)\s*[=:]\s*([\d.]+)\s*ms.*?(?:最长|Maximum)\s*[=:]\s*([\d.]+)\s*ms.*?(?:平均|Average)\s*[=:]\s*([\d.]+)\s*ms", raw_output, re.DOTALL | re.IGNORECASE)
-            if latency_match:
-                min_latency = float(latency_match.group(1))
-                max_latency = float(latency_match.group(2))
-                avg_latency = float(latency_match.group(3))
-            
-            # 【修复 小健 2026-05-15】IPv6 ping不含"TTL="，用packets_received>0作为补充判定
-            if "TTL=" in raw_output or "ttl=" in raw_output.lower() or (loss_match and int(loss_match.group(2)) > 0):
-                is_reachable = True
-        else:
-            loss_match = re.search(r"(\d+)\s+packets transmitted.*?(\d+)\s+received.*?(\d+)%\s+packet loss", raw_output, re.DOTALL)
-            if loss_match:
-                packets_sent = int(loss_match.group(1))
-                packets_received = int(loss_match.group(2))
-                loss_rate = float(loss_match.group(3))
-                packets_lost = packets_sent - packets_received
-            
-            latency_match = re.search(r"rtt min/avg/max/mdev\s*=\s*([\d.]+)/([\d.]+)/([\d.]+)", raw_output)
-            if latency_match:
-                min_latency = float(latency_match.group(1))
-                avg_latency = float(latency_match.group(2))
-                max_latency = float(latency_match.group(3))
-            
-            if packets_received > 0:
-                is_reachable = True
-        
-        if is_reachable:
-            # 【修复 小健 2026-05-16】llm_data直接给原始输出，≤5K全给，不再正则解析后重组避免N/A丢失
-            _raw_len = len(raw_output)
-            if _raw_len <= 5000:
-                _llm_ping = {"目标": host, "结果": raw_output.strip()}
-            else:
-                _llm_ping = {
-                    "目标": host,
-                    "发包/收包": f"{packets_sent}/{packets_received}",
-                    "丢包率": f"{loss_rate}%",
-                    "延迟(avg/min/max)": f"{avg_latency}ms / {min_latency}ms / {max_latency}ms" if avg_latency else "N/A",
-                    "原始输出(截断)": raw_output[:3000].strip(),
-                }
-            return build_success(
-                {
-                    "host": host,
-                    "packets_sent": packets_sent,
-                    "packets_received": packets_received,
-                    "packets_lost": packets_lost,
-                    "loss_rate": loss_rate,
-                    "min_latency": min_latency,
-                    "avg_latency": avg_latency,
-                    "max_latency": max_latency,
-                    "is_reachable": True,
-                },
-                f"Ping测试成功：{host} 可达，平均延迟 {avg_latency if avg_latency else 'N/A'} ms",
-                llm_data=_llm_ping,
-            )
-        else:
-            # 【修复 小健 2026-05-16】不可达时也用raw_output给LLM
-            _raw_len = len(raw_output)
-            if _raw_len <= 5000:
-                _llm_ping_fail = {"目标": host, "结果": raw_output.strip()}
-            else:
-                _llm_ping_fail = {"目标": host, "结果预览": raw_output[:3000].strip()}
-            return build_success(
-                {
-                    "host": host,
-                    "packets_sent": packets_sent,
-                    "packets_received": 0,
-                    "packets_lost": packets_sent,
-                    "loss_rate": 100.0,
-                    "min_latency": None,
-                    "avg_latency": None,
-                    "max_latency": None,
-                    "is_reachable": False,
-                },
-                f"Ping测试失败：{host} 不可达",
-                llm_data=_llm_ping_fail,
-            )
-    
+
+        parsed = _parse_ping_output(raw_output, platform.system().lower())
+        return _build_ping_result(host, raw_output, parsed)
+
     except Exception as e:
         logger.error(f"[ping] 未知错误: {e}")
-        return build_error("ERR_NET_UNKNOWN", f"Ping测试异常: {str(e)}")
+        return build_error("ERR_NET_UNKNOWN", f"Ping测试异常: {e}")
 
 
 # 【24.5.4 组件1】统一端口结果 data 构建(消除 5 次 data dict)
