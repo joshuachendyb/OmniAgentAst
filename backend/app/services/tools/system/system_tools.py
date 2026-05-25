@@ -1269,6 +1269,57 @@ def _task_list(
         return build_error("ERR_TASK_LIST", f"获取计划任务列表失败: {str(e)}")
 
 
+def _build_schtasks_create_cmd(
+    task_name: str,
+    command: str,
+    schedule: str,
+    description: Optional[str] = None,
+    user: Optional[str] = None,
+    start_time: Optional[str] = None,
+    start_date: Optional[str] = None,
+    interval: Optional[int] = None,
+) -> list:
+    """构建 schtasks /create 命令参数列表 — 纯函数，无IO — 小沈 2026-05-25"""
+    cmd = ["schtasks", "/create", "/tn", task_name, "/tr", command]
+
+    schedule_parts = schedule.split()
+    time_part = schedule_parts[0]
+
+    sc_type = "daily"
+    sc_extra = []
+    if len(schedule_parts) > 1:
+        if "/day" in schedule_parts:
+            day_idx = schedule_parts.index("/day")
+            if day_idx + 1 < len(schedule_parts):
+                day_num = schedule_parts[day_idx + 1]
+                sc_type = "weekly"
+                day_name = "MON,TUE,WED,THU,FRI,SAT,SUN".split(",")[int(day_num)-1] if day_num.isdigit() else day_num
+                sc_extra = ["/d", day_name]
+        elif "/monthly" in schedule_parts:
+            monthly_idx = schedule_parts.index("/monthly")
+            if monthly_idx + 1 < len(schedule_parts):
+                day_num = schedule_parts[monthly_idx + 1]
+                sc_type = "monthly"
+                sc_extra = ["/d", day_num]
+
+    cmd.extend(["/sc", sc_type, "/st", time_part])
+    cmd.extend(sc_extra)
+
+    if description:
+        cmd.extend(["/d", description])
+    if user:
+        cmd.extend(["/ru", user])
+    if start_time:
+        cmd.extend(["/st", start_time])
+    if start_date:
+        cmd.extend(["/sd", start_date])
+    if interval and interval > 0:
+        cmd.extend(["/ri", str(interval)])
+
+    cmd.append("/f")
+    return cmd
+
+
 def _task_create(
     task_name: str,
     command: str,
@@ -1301,56 +1352,16 @@ def _task_create(
     try:
         if platform.system() != "Windows":
             return build_error("ERR_DESKTOP_PLATFORM_NOT_SUPPORTED", "task_create 仅支持Windows系统")
-        
-        cmd = ["schtasks", "/create", "/tn", task_name, "/tr", command]
-        
-        # 小健 2026-05-19: 修正schedule解析避免重复/sc参数
-        schedule_parts = schedule.split()
-        time_part = schedule_parts[0]
-        
-        # 先确定schedule type和对应参数
-        sc_type = "daily"
-        sc_extra = []
-        if len(schedule_parts) > 1:
-            if "/day" in schedule_parts:
-                day_idx = schedule_parts.index("/day")
-                if day_idx + 1 < len(schedule_parts):
-                    day_num = schedule_parts[day_idx + 1]
-                    sc_type = "weekly"
-                    day_name = "MON,TUE,WED,THU,FRI,SAT,SUN".split(",")[int(day_num)-1] if day_num.isdigit() else day_num
-                    sc_extra = ["/d", day_name]
-            elif "/monthly" in schedule_parts:
-                monthly_idx = schedule_parts.index("/monthly")
-                if monthly_idx + 1 < len(schedule_parts):
-                    day_num = schedule_parts[monthly_idx + 1]
-                    sc_type = "monthly"
-                    sc_extra = ["/d", day_num]
-        
-        cmd.extend(["/sc", sc_type, "/st", time_part])
-        cmd.extend(sc_extra)
-        
-        if description:
-            cmd.extend(["/d", description])
-        
-        if user:
-            cmd.extend(["/ru", user])
-        
-        if start_time:
-            cmd.extend(["/st", start_time])  # 小健 2026-05-19: /sd是Start Date, /st才是Start Time
-        
-        if start_date:
-            cmd.extend(["/sd", start_date])  # 小健 2026-05-19: 补充start_date参数(原为死参数)
-        
-        if interval and interval > 0:
-            cmd.extend(["/ri", str(interval)])  # 小健 2026-05-19: 补充interval参数(原为死参数)
-        
-        cmd.append("/f")
-        
+
+        cmd = _build_schtasks_create_cmd(
+            task_name, command, schedule,
+            description, user, start_time, start_date, interval)
+
         result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=30)
-        
+
         if result.returncode != 0:
             return build_error("ERR_TASK_CREATE", f"创建计划任务失败: {result.stderr.strip() or result.stdout.strip()}")
-        
+
         return build_success({
                 "task_name": task_name,
                 "command": command,
@@ -1358,7 +1369,7 @@ def _task_create(
                 "description": description,
                 "user": user,
             }, f"计划任务 {task_name} 创建成功")
-    
+
     except subprocess.TimeoutExpired:
         return build_error("ERR_SHELL_TIMEOUT", "创建计划任务超时")
     except FileNotFoundError:
