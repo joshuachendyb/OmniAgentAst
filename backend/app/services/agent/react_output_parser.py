@@ -633,6 +633,21 @@ def _try_codeblock_parse(output: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+# 【小健修复 2026-05-25】提取为独立函数（25.2审计发现：重构时被遗漏，残留在_determine_parse_type内作为死代码）
+def _parse_thought_only(output: str, thought_match: re.Match) -> Dict[str, Any]:
+    """提取纯思考内容（无Action/Answer的场景）"""
+    thought_text = output[thought_match.end():].strip()
+    return {
+        "type": "thought_only",
+        "thought": thought_text,
+        "content": thought_text,
+        "reasoning": thought_text,
+        "tool_name": None,
+        "tool_params": None,
+        "response": None,
+    }
+
+
 def _try_keyword_parse(output: str) -> Optional[Dict[str, Any]]:
     """尝试关键词匹配（传统 ReAct 格式）- 小沈重构 2026-05-25"""
     try:
@@ -691,29 +706,6 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
     is_implicit = len(stripped) >= 5
     text = stripped if is_implicit else stripped[:200]
     return _make_fallback_result(text, is_implicit=is_implicit)
-    """
-    提取纯思考内容（无Action/Answer的场景）
-    
-    来源：设计文档第14章 14.5节
-    重要性：独立函数便于单独测试和复用
-    
-    Args:
-        output: LLM原始响应文本
-        thought_match: Thought关键词的re.Match对象
-        
-    Returns:
-        统一格式解析结果，type="thought_only"
-    """
-    thought_text = output[thought_match.end():].strip()
-    return {
-        "type": "thought_only",
-        "thought": thought_text,
-        "content": thought_text,          # 兼容性字段
-        "reasoning": thought_text,        # 兼容性字段
-        "tool_name": None,
-        "tool_params": None,
-        "response": None
-    }
 
 
 # =============================================================================

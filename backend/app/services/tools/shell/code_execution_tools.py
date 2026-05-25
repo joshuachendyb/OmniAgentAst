@@ -215,6 +215,24 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
         return build_error("ERR_EXEC_PYTHON", f"Python代码执行失败: {str(e)}")
 
 
+# 【小健修复 2026-05-25】提取为模块级常量 + 独立函数（25.4审计发现：设计要求提取但被内联）
+_JS_DANGEROUS_PATTERNS = [
+    (r'require\s*\(\s*["\']child_process["\']\s*\)', 'require("child_process") - 可能执行系统命令'),
+    (r'require\s*\(\s*["\']fs["\']\s*\)', 'require("fs") - 可能操作文件系统'),
+    (r'process\.exit\s*\(', 'process.exit() - 可能终止进程'),
+    (r'eval\s*\(', 'eval() - 可能执行任意代码'),
+]
+
+
+def _js_safety_check(code: str) -> Optional[str]:
+    """JS安全检查：返回None表示安全，返回str表示错误消息 - 小健修复 2026-05-25"""
+    import re as re_mod
+    for pattern, desc in _JS_DANGEROUS_PATTERNS:
+        if re_mod.search(pattern, code):
+            return f"安全检查: 检测到危险模式 {desc}，如需执行请设置safety_check=False"
+    return None
+
+
 def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] = None, safety_check: bool = True) -> dict:
     """执行JavaScript代码 - 小沈 2026-05-02, 小健 2026-05-19 增加safety_check+UTF-8环境
     【2026-05-18 小沈】P16幂等性：working_dir不存在时自动创建(makedirs exist_ok=True)
@@ -225,16 +243,9 @@ def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str]
         return build_error("ERR_SHELL_EXEC_EMPTY_CODE", "code不能为空，请提供要执行的JavaScript代码")
 
     if safety_check:
-        js_dangerous_patterns = [
-            (r'require\s*\(\s*["\']child_process["\']\s*\)', 'require("child_process") - 可能执行系统命令'),
-            (r'require\s*\(\s*["\']fs["\']\s*\)', 'require("fs") - 可能操作文件系统'),
-            (r'process\.exit\s*\(', 'process.exit() - 可能终止进程'),
-            (r'eval\s*\(', 'eval() - 可能执行任意代码'),
-        ]
-        import re as re_mod
-        for pattern, desc in js_dangerous_patterns:
-            if re_mod.search(pattern, code):
-                return build_error("ERR_UNSAFE_CODE", f"安全检查: 检测到危险模式 {desc}，如需执行请设置safety_check=False")
+        err = _js_safety_check(code)
+        if err:
+            return build_error("ERR_UNSAFE_CODE", err)
 
     if working_dir is not None and not os.path.isdir(working_dir):
         try:
