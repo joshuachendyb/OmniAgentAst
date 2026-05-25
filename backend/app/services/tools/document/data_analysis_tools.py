@@ -281,6 +281,77 @@ def analyze_data(
             ]))
 
 
+def _load_data_to_df(data: Union[str, List[Dict[str, Any]]],
+                      max_rows: Optional[int] = None) -> dict:
+    """加载数据为 DataFrame，返回 {"df": DataFrame} 或 {"error": dict}。"""
+    if isinstance(data, str):
+        path = Path(data)
+        if not path.exists():
+            return {"error": build_error("ERR_FILTER_INVALID", f"文件不存在: {data}",
+                next_actions=build_next_actions([
+                    ("search_files", "搜索文件", "确认文件路径时", {"pattern": path.name})]))}
+        if data.endswith('.xlsx'):
+            if not _check_module("openpyxl"):
+                return {"error": build_error("ERR_DOC_NO_OPENPYXL",
+                    "openpyxl库未安装，请先执行: pip install openpyxl",
+                    next_actions=build_next_actions([
+                        ("read_document", "尝试其他方式读取", "openpyxl不可用时", {"file_path": data})]))}
+            return {"df": pd.read_excel(data, engine="openpyxl", nrows=max_rows)}
+        return {"df": pd.read_csv(data, nrows=max_rows)}
+    if isinstance(data, list):
+        return {"df": pd.DataFrame(data)}
+    return {"error": build_error("ERR_FILTER_INVALID", "data参数必须是文件路径或数据数组",
+        next_actions=build_next_actions([
+            ("tool_help", "查看filter_data参数", "确认数据格式时", {"tool_name": "filter_data"})]))}
+
+
+def _build_condition_mask(df: pd.DataFrame, conditions: List[Dict[str, Any]]) -> dict:
+    """构建过滤掩码，返回 {"mask": pd.Series, "warnings": List[str]}。"""
+    operator_map = {
+        "eq": "__eq__", "ne": "__ne__", "gt": "__gt__",
+        "gte": "__ge__", "lt": "__lt__", "lte": "__le__",
+    }
+    valid_operators = set(operator_map.keys()) | {"in", "contains", "not_contains"}
+    mask = pd.Series([True] * len(df), index=df.index)
+    warnings: List[str] = []
+
+    for cond in conditions:
+        column = cond.get("column")
+        operator = cond.get("operator", "eq")
+        value = cond.get("value")
+
+        if not column:
+            return {"error": build_error("ERR_FILTER_INVALID",
+                f"条件缺少column字段: {cond}",
+                next_actions=build_next_actions([
+                    ("tool_help", "查看filter_data参数", "确认条件格式时", {"tool_name": "filter_data"}),
+                    ("analyze_data", "先分析数据", "了解可用字段时")]))}
+        if column not in df.columns:
+            warnings.append(f"列'{column}'不存在，已跳过")
+            continue
+        if operator not in valid_operators:
+            warnings.append(f"操作符'{operator}'不支持，已跳过")
+            continue
+
+        if operator in operator_map:
+            try:
+                cond_mask = getattr(df[column].astype(float), operator_map[operator])(float(value))
+            except (ValueError, TypeError):
+                cond_mask = getattr(df[column], operator_map[operator])(value)
+        elif operator == "in":
+            cond_mask = df[column].isin(value if isinstance(value, list) else [value])
+        elif operator == "contains":
+            cond_mask = df[column].astype(str).str.contains(str(value), na=False)
+        elif operator == "not_contains":
+            cond_mask = ~df[column].astype(str).str.contains(str(value), na=False)
+        else:
+            continue
+
+        mask = mask & cond_mask
+
+    return {"mask": mask, "warnings": warnings}
+
+
 def filter_data(
     data: Union[str, List[Dict[str, Any]]],
     conditions: List[Dict[str, Any]],
@@ -289,97 +360,23 @@ def filter_data(
     sort_by: Optional[str] = None,
     top_n: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """按条件筛选/过滤数据 - 小沈 2026-05-05, 修正 2026-05-05"""
+    import pandas as pd
     if not _check_module("pandas"):
         return build_error("ERR_NO_PANDAS", "pandas库未安装，请先执行: pip install pandas",
-            next_actions=build_next_actions([
-                ("tool_search", "搜索替代工具", "pandas不可用时"),
-            ]))
-
-    _used_openpyxl = False
+            next_actions=build_next_actions([("tool_search", "搜索替代工具", "pandas不可用时")]))
 
     try:
-        import pandas as pd
-
-        if isinstance(data, str):
-            path = Path(data)
-            if not path.exists():
-                return build_error("ERR_FILTER_INVALID", f"文件不存在: {data}",
-                    next_actions=build_next_actions([
-                        ("search_files", "搜索文件", "确认文件路径时", {"pattern": Path(data).name}),
-                    ]))
-            if data.endswith('.xlsx'):
-                if not _check_module("openpyxl"):
-                    return build_error("ERR_DOC_NO_OPENPYXL", "openpyxl库未安装，请先执行: pip install openpyxl",
-                        next_actions=build_next_actions([
-                            ("read_document", "尝试其他方式读取", "openpyxl不可用时", {"file_path": data}),
-                        ]))
-                df = pd.read_excel(data, engine="openpyxl" if data.endswith('.xlsx') else None, nrows=max_rows)
-                _used_openpyxl = True
-            else:
-                df = pd.read_csv(data, nrows=max_rows)
-        elif isinstance(data, list):
-            df = pd.DataFrame(data)
-        else:
-            return build_error("ERR_FILTER_INVALID", "data参数必须是文件路径或数据数组",
-                next_actions=build_next_actions([
-                    ("tool_help", "查看filter_data参数", "确认数据格式时", {"tool_name": "filter_data"}),
-                ]))
-
+        loaded = _load_data_to_df(data, max_rows)
+        if "error" in loaded:
+            return loaded["error"]
+        df = loaded["df"]
         original_count = len(df)
 
-        operator_map = {
-            "eq": "__eq__",
-            "ne": "__ne__",
-            "gt": "__gt__",
-            "gte": "__ge__",
-            "lt": "__lt__",
-            "lte": "__le__",
-        }
-        valid_operators = set(operator_map.keys()) | {"in", "contains", "not_contains"}
-
-        mask = pd.Series([True] * len(df), index=df.index)
-        warnings = []
-
-        for cond in conditions:
-            column = cond.get("column")
-            operator = cond.get("operator", "eq")
-            value = cond.get("value")
-
-            if not column:
-                return build_error("ERR_FILTER_INVALID", f"条件缺少column字段: {cond}。每个条件必须指定column",
-                    next_actions=build_next_actions([
-                        ("tool_help", "查看filter_data参数", "确认条件格式时", {"tool_name": "filter_data"}),
-                        ("analyze_data", "先分析数据", "了解可用字段时"),
-                    ]))
-
-            if column not in df.columns:
-                warnings.append(f"列'{column}'不存在，已跳过")
-                continue
-
-            if operator not in valid_operators:
-                warnings.append(f"操作符'{operator}'不支持，已跳过")
-                continue
-
-            if operator in operator_map:
-                try:
-                    col_values = df[column].astype(float)
-                    value = float(value)
-                    cond_mask = getattr(col_values, operator_map[operator])(value)
-                except (ValueError, TypeError):
-                    cond_mask = getattr(df[column], operator_map[operator])(value)
-            elif operator == "in":
-                cond_mask = df[column].isin(value if isinstance(value, list) else [value])
-            elif operator == "contains":
-                cond_mask = df[column].astype(str).str.contains(str(value), na=False)
-            elif operator == "not_contains":
-                cond_mask = ~df[column].astype(str).str.contains(str(value), na=False)
-            else:
-                continue
-
-            mask = mask & cond_mask
-
-        filtered_df = df[mask]
+        result = _build_condition_mask(df, conditions)
+        if "error" in result:
+            return result["error"]
+        filtered_df = df[result["mask"]]
+        warnings = result["warnings"]
 
         if select_columns:
             available_cols = [c for c in select_columns if c in filtered_df.columns]
@@ -393,40 +390,33 @@ def filter_data(
             filtered_df = filtered_df.head(top_n)
 
         columns = filtered_df.columns.tolist()
-        serialized_rows = _serialize_rows(filtered_df)
-
+        rows = _serialize_rows(filtered_df)
         result_data = {
-            "columns": columns,
-            "rows": serialized_rows,
-            "row_count": len(serialized_rows),
-            "original_count": original_count,
-            "filtered_count": len(serialized_rows),
-            "filter_ratio": f"{len(serialized_rows)}/{original_count}",
+            "columns": columns, "rows": rows,
+            "row_count": len(rows), "original_count": original_count,
+            "filtered_count": len(rows),
+            "filter_ratio": f"{len(rows)}/{original_count}",
         }
         if warnings:
             result_data["warnings"] = warnings
 
-        message = f"筛选完成: {original_count}行 → {len(serialized_rows)}行 (条件: {len(conditions)}个)"
+        message = f"筛选完成: {original_count}行 → {len(rows)}行 (条件: {len(conditions)}个)"
         if warnings:
             message += f" | 警告: {'; '.join(warnings)}"
 
-        result = build_success(
-            truncate_data_for_frontend(result_data),
-            message,
+        return build_success(truncate_data_for_frontend(result_data), message,
             llm_data={
-                "筛选前": result_data.get("original_count",0), "筛选后": result_data.get("filtered_count",0),
-                "列": result_data.get("columns",[])[:20],
-                "行预览": make_json_safe(result_data.get("rows",[])[:5], max_str_len=150)
+                "筛选前": result_data["original_count"],
+                "筛选后": result_data["filtered_count"],
+                "列": result_data["columns"][:20],
+                "行预览": make_json_safe(result_data["rows"][:5], max_str_len=150),
             },
             next_actions=build_next_actions([
                 ("analyze_data", "统计分析", "需要对筛选结果统计时"),
-                ("generate_chart", "生成图表", "需要可视化时"),
-            ])
+                ("generate_chart", "生成图表", "需要可视化时")]),
         )
-        return result
     except Exception as e:
         return build_error("ERR_FILTER_INVALID", f"数据筛选失败: {str(e)}",
             next_actions=build_next_actions([
                 ("tool_help", "查看filter_data用法", "检查参数时", {"tool_name": "filter_data"}),
-                ("analyze_data", "先分析数据概览", "确认数据内容时"),
-            ]))
+                ("analyze_data", "先分析数据概览", "确认数据内容时")]))
