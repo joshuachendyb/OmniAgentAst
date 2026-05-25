@@ -8,6 +8,7 @@ Author: 小健 - 2026-05-06
 重构 2026-05-25 - 小健
 """
 import json
+from datetime import datetime
 from typing import Dict, List
 
 from app.services.prompts.BasePromptTemplate import BasePrompts
@@ -83,8 +84,8 @@ def _build_tool_descriptions(category: str, tool_names: List[str]) -> str:
 
     lines = [f"  以下是 {mapped_category} 分类下的 {len(tools)} 个工具："]
     for i, t in enumerate(tools, 1):
-        name = t["name"]
-        desc = t.get("description", "")
+        name = t.name
+        desc = t.description or ""
         desc_first = desc.split('，')[0] if '，' in desc else desc
         lines.extend([
             f"  {i}. {name} - {desc}",
