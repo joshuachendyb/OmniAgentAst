@@ -296,6 +296,80 @@ async def download_file(
         return build_error("ERR_NET_UNKNOWN", f"下载异常: {e}")
 
 
+def _extract_html_content(html_content: str, extract_format: str, max_tokens: int) -> Tuple[str, bool]:
+    """3路格式提取+截断检查。消除A/B路径完全重复代码 — 小健 2026-05-25"""
+    if extract_format == "html":
+        content = html_content
+    elif extract_format == "text":
+        content = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL|re.IGNORECASE)
+        content = re.sub(r'<style[^>]*>.*?</style>', '', content, flags=re.DOTALL|re.IGNORECASE)
+        content = re.sub(r'<[^>]+>', ' ', content)
+        content = re.sub(r'\s+', ' ', content).strip()
+    else:
+        content = _html_to_markdown(html_content)
+    max_len = max_tokens * 4
+    truncated = len(content) > max_len
+    if truncated:
+        content = content[:max_len]
+    return content, truncated
+
+
+def _build_media_result(url: str, mime: str, raw_bytes: bytes, extract_format: str, response_status: int) -> Dict:
+    """构建图片/PDF的base64附件响应 — 小健 2026-05-25"""
+    import base64
+    b64 = base64.b64encode(raw_bytes).decode("ascii")
+    return build_success(
+        {
+            "url": url,
+            "content": f"[{mime} 文件，大小: {len(raw_bytes)} 字节]",
+            "format": extract_format,
+            "content_type": mime,
+            "status_code": response_status,
+            "truncated": False,
+        },
+        f"成功获取{mime}文件",
+        attachment={
+            "type": "base64",
+            "mime": mime,
+            "data": b64,
+            "filename": url.split("/")[-1].split("?")[0] or "download"
+        },
+        next_actions=build_next_actions([("search_web", "搜索更多网页", "需要搜索更多信息时")]),
+    )
+
+
+async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout_sec: float,
+                                extract_format: str, max_tokens: int) -> Dict:
+    """Playwright路径封装。消除ImportError+渲染异常+页面操作的重复 — 小健 2026-05-25"""
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        return build_error("ERR_NETWORK_JS_RENDER", "js_render需要安装Playwright: pip install playwright && playwright install chromium")
+    try:
+        browser_config = {
+            "headless": True,
+            "proxy": {"server": proxy} if proxy else None,
+        }
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(**browser_config)
+            page = await browser.new_page()
+            if proxy:
+                await page.set_default_timeout(timeout_sec * 1000)
+            await page.goto(url, wait_until="networkidle", timeout=timeout_sec * 1000)
+            html_content = await page.content()
+            await browser.close()
+        content, truncated = _extract_html_content(html_content, extract_format, max_tokens)
+        return {
+            "html_content": html_content,
+            "extracted_content": content,
+            "truncated": truncated,
+            "content_type": "text/html",
+            "status_code": 200,
+        }
+    except Exception as e:
+        return build_error("ERR_NETWORK_JS_RENDER", f"JS渲染失败: {str(e)}")
+
+
 async def fetch_webpage(
     url: str,
     prompt: Optional[str] = None,
@@ -305,9 +379,9 @@ async def fetch_webpage(
     max_tokens: int = 8000,
     proxy: Optional[str] = None,
 ) -> dict:
-    """获取网页内容 — 小沈 2026-05-19 精简参数(8→7)"""
+    """获取网页内容 — 小沈 2026-05-19 精简参数(8→7)；小健 2026-05-25 重构 — 小健 2026-05-25"""
     timeout_sec = timeout / 1000.0
-    
+
     try:
         url_info = _validate_url(url)
         if not url_info["data"]["valid"]:
@@ -323,122 +397,44 @@ async def fetch_webpage(
         headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         headers["Accept-Language"] = "en-US,en;q=0.9,zh-CN;q=0.8"
         headers["Accept-Encoding"] = "gzip, deflate"
-        
-        # js_render: 使用Playwright渲染动态页面
+
         if js_render:
-            try:
-                from playwright.async_api import async_playwright
-                
-                # Playwright proxy格式: {"server": "http://proxy:port"} - 小健 2026-05-18 修正
-                browser_config = {
-                    "headless": True,
-                    "proxy": {"server": proxy} if proxy else None,
-                }
-                
-                async with async_playwright() as p:
-                    browser = await p.chromium.launch(**browser_config)
-                    page = await browser.new_page()
-                    
-                    if proxy:
-                        await page.set_default_timeout(timeout_sec * 1000)
-                    
-                    await page.goto(url, wait_until="networkidle", timeout=timeout_sec * 1000)
-                    html_content = await page.content()
-                    status_code = 200
-                    
-                    await browser.close()
-                    
-                    # 提取内容 - 小沈 2026-05-05 修正js_render分支缺少内容提取
-                    if extract_format == "html":
-                        extracted_content = html_content
-                    elif extract_format == "text":
-                        text_content = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL|re.IGNORECASE)
-                        text_content = re.sub(r'<style[^>]*>.*?</style>', '', text_content, flags=re.DOTALL|re.IGNORECASE)
-                        text_content = re.sub(r'<[^>]+>', ' ', text_content)
-                        text_content = re.sub(r'\s+', ' ', text_content).strip()
-                        extracted_content = text_content
-                    else:
-                        extracted_content = _html_to_markdown(html_content)
-                    
-                    if len(extracted_content) > max_tokens * 4:
-                        extracted_content = extracted_content[:max_tokens * 4]
-                        truncated = True
-                    else:
-                        truncated = False
-                    
-                    content_type = "text/html"
-                    
-            except ImportError:
-                return build_error("ERR_NETWORK_JS_RENDER", "js_render需要安装Playwright: pip install playwright && playwright install chromium")
-            except Exception as e:
-                return build_error("ERR_NETWORK_JS_RENDER", f"JS渲染失败: {str(e)}")
+            playwright_result = await _fetch_via_playwright(url, proxy, timeout_sec, extract_format, max_tokens)
+            if "code" in playwright_result:
+                return playwright_result
+            html_content = playwright_result["html_content"]
+            extracted_content = playwright_result["extracted_content"]
+            truncated = playwright_result["truncated"]
+            content_type = playwright_result["content_type"]
+            status_code = playwright_result["status_code"]
         else:
-            # httpx 0.26.0: proxy参数接受str，proxies已弃用 - 小健 2026-05-18 修正
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(timeout_sec),
                 follow_redirects=True,
                 proxy=proxy
             ) as client:
                 response = await client.get(url, headers=headers)
-                
-                # 【修复 2026-05-16 小健】Cloudflare反爬检测：cf-mitigated → 降级UA重试
+
                 if response.status_code == 403 and response.headers.get("cf-mitigated") == "challenge":
                     logger.info(f"[fetch_webpage] Cloudflare挑战检测，降级UA重试: {url}")
                     simple_headers = dict(headers)
                     simple_headers["User-Agent"] = BROWSER_USER_AGENT
                     response = await client.get(url, headers=simple_headers)
-                
+
                 response.raise_for_status()
-                
-                # 【修复 2026-05-16 小健】图片类型 → 返回base64附件
+
                 content_type = response.headers.get("content-type", "")
                 mime = content_type.split(";")[0].strip().lower() if content_type else ""
                 if mime and (mime.startswith("image/") or mime in ("application/pdf",)):
                     raw_bytes = response.content
-                    import base64
-                    b64 = base64.b64encode(raw_bytes).decode("ascii")
-                    return build_success(
-                        {
-                            "url": url,
-                            "content": f"[{mime} 文件，大小: {len(raw_bytes)} 字节]",
-                            "format": extract_format,
-                            "content_type": content_type,
-                            "status_code": response.status_code,
-                            "truncated": False,
-                        },
-                        f"成功获取{mime}文件",
-                        attachment={
-                            "type": "base64",
-                            "mime": mime,
-                            "data": b64,
-                            "filename": url.split("/")[-1].split("?")[0] or "download"
-                        },
-                        next_actions=build_next_actions([("search_web", "搜索更多网页", "需要搜索更多信息时")]),
-                    )
-                
+                    return _build_media_result(url, mime, raw_bytes, extract_format, response.status_code)
+
                 html_content = response.text
                 content_type = response.headers.get("content-type", "")
-            
-            # 提取内容
-            if extract_format == "html":
-                extracted_content = html_content
-            elif extract_format == "text":
-                text_content = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL|re.IGNORECASE)
-                text_content = re.sub(r'<style[^>]*>.*?</style>', '', text_content, flags=re.DOTALL|re.IGNORECASE)
-                text_content = re.sub(r'<[^>]+>', ' ', text_content)
-                text_content = re.sub(r'\s+', ' ', text_content).strip()
-                extracted_content = text_content
-            else:
-                extracted_content = _html_to_markdown(html_content)
-            
-            if len(extracted_content) > max_tokens * 4:
-                extracted_content = extracted_content[:max_tokens * 4]
-                truncated = True
-            else:
-                truncated = False
-            
+
+            extracted_content, truncated = _extract_html_content(html_content, extract_format, max_tokens)
             status_code = response.status_code
-        
+
         result_data = {
             "url": url,
             "content": extracted_content,
@@ -447,15 +443,15 @@ async def fetch_webpage(
             "status_code": status_code,
             "truncated": truncated,
         }
-        
+
         if prompt:
             result_data["prompt"] = prompt
             result_data["note"] = "AI提取功能需要LLM后处理"
-        
+
         _content_for_llm = result_data.get("content", "")
         if isinstance(_content_for_llm, str) and len(_content_for_llm) > 5000:
             _content_for_llm = _content_for_llm[:5000] + f"...(原文{len(_content_for_llm)}字符)"
-        
+
         return build_success(
             truncate_data_for_frontend(result_data),
             f"成功获取网页内容（{extract_format}格式）" + ("（已截断）" if truncated else ""),
@@ -465,7 +461,7 @@ async def fetch_webpage(
             },
             next_actions=build_next_actions([("search_web", "搜索更多网页", "需要搜索更多信息时")]),
         )
-    
+
     except httpx.TimeoutException:
         return build_error("ERR_NETWORK_TIMEOUT", f"获取网页超时（{timeout_sec:.1f}秒）：{url}")
     except httpx.HTTPStatusError as e:

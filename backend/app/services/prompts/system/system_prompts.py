@@ -5,201 +5,149 @@ SystemPrompts - 系统信息 Prompt模板
 P2优先级
 
 Author: 小健 - 2026-05-06
+重构 2026-05-25 - 小健
 """
-from datetime import datetime
+import json
+from typing import Dict, List
 
 from app.services.prompts.BasePromptTemplate import BasePrompts
 from app.services.prompts.middle import get_system_prompt as get_system_info
 from app.utils.logger import logger
 
 
+def _build_category_header(name: str, count: int, desc: str = "") -> str:
+    """统一构建分类标题 - 小健 2026-05-25
+
+    使用场景:
+    - get_system_prompt中构建分类标题
+
+    使用示例:
+        header = _build_category_header(name, count, desc)
+
+    返回数据说明:
+    - 返回str，分类标题行
+    """
+    return f"# {name} 工具 ({count}个){' - ' + desc if desc else ''}\n"
+
+
+def _build_tool_descriptions(category: str, tool_names: List[str]) -> str:
+    """从工具名称列表构建分类工具描述 - 小健 2026-05-25
+
+    使用场景:
+    - get_system_prompt中动态生成工具描述块
+
+    使用示例:
+        descriptions = _build_tool_descriptions("SYSTEM", tool_names)
+
+    返回数据说明:
+    - 返回str，工具描述块
+    """
+    from app.services.tools.registry import tool_registry, ToolCategory
+
+    # 映射 ToolCategory 到设计文档中的分类名称
+    CATEGORY_NAME_MAP = {
+        ToolCategory.SYSTEM: "SYSTEM",
+        ToolCategory.SHELL: "SHELL",
+        ToolCategory.NETWORK: "NETWORK",
+        ToolCategory.DESKTOP: "DESKTOP",
+        ToolCategory.DOCUMENT: "DOCUMENT",
+        ToolCategory.META: "META"
+    }
+
+    mapped_category = CATEGORY_NAME_MAP.get(category, category)
+
+    # 重新映射分类
+    if mapped_category == "SYSTEM":
+        mapped_category = "SYSTEM"
+    elif mapped_category == "SHELL":
+        mapped_category = "SHELL"
+    elif mapped_category == "NETWORK":
+        mapped_category = "NETWORK"
+    elif mapped_category == "DESKTOP":
+        mapped_category = "DESKTOP"
+    elif mapped_category == "DOCUMENT":
+        mapped_category = "DOCUMENT"
+    elif mapped_category == "META":
+        mapped_category = "META"
+
+    # 从注册表获取该分类的工具
+    tools = []
+    if tool_names:
+        for tool_name in tool_names:
+            tool = tool_registry.get_tool(tool_name)
+            if tool:
+                tools.append(tool)
+
+    if not tools:
+        return ""
+
+    lines = [f"  以下是 {mapped_category} 分类下的 {len(tools)} 个工具："]
+    for i, t in enumerate(tools, 1):
+        name = t["name"]
+        desc = t.get("description", "")
+        desc_first = desc.split('，')[0] if '，' in desc else desc
+        lines.extend([
+            f"  {i}. {name} - {desc}",
+            f"     When to use: 当需要{desc_first}时",
+            f"     Returns: 返回操作结果",
+            f"     Examples: \"tool_name\": \"{name}\"",
+        ])
+    return "\n".join(lines)
+
+
+def _build_examples(count: int = 4) -> str:
+    """从模板池选取 N 个生成 JSON 示例 - 小健 2026-05-25
+
+    使用场景:
+    - get_system_prompt中生成示例
+
+    使用示例:
+        examples = _build_examples(6)
+
+    返回数据说明:
+    - 返回str, 示例块
+    """
+    _EXAMPLE_TEMPLATES = [
+        {"thought": "用户想了解天气", "reasoning": "需要使用天气工具", "tool_name": "get_weather", "tool_params": {"city": "北京"}},
+        {"thought": "用户问了一个简单问题", "reasoning": "直接回答即可", "tool_name": "finish", "tool_params": {"result": "答案"}},
+        {"thought": "需要搜索文件", "reasoning": "使用 search_files 工具", "tool_name": "search_files", "tool_params": {"pattern": "*.py", "search_dir": "/home"}},
+        {"thought": "需要读取文件内容", "reasoning": "使用 read_file 工具", "tool_name": "read_file", "tool_params": {"file_path": "/path/to/file"}},
+        {"thought": "执行命令", "reasoning": "调用execute_shell_command", "tool_name": "execute_shell_command", "tool_params": {"command": "dir"}},
+        {"thought": "任务完成", "reasoning": "结果已返回，无更多操作", "tool_name": "finish", "tool_params": {"result": "任务完成"}},
+    ]
+
+    lines = ["  以下是一些 ReAct 调用示例："]
+    for i, ex in enumerate(_EXAMPLE_TEMPLATES[:count], 1):
+        lines.append(f"  示例{i}：{json.dumps(ex, ensure_ascii=False, indent=6)}")
+    return "\n".join(lines)
+
+
 class SystemPrompts(BasePrompts):
     """系统信息 Prompt模板类"""
-    
+
     def get_system_prompt(self) -> str:
+        """获取系统提示词 - 小健 2026-05-25 重构
+
+        返回:
+            str: 系统提示词字符串
+        """
         system_info = get_system_info(include_commands=False)
-        return system_info + """
-You are a professional system information assistant. You help users check system info, manage processes, services, tasks, environment variables, and registry.
+        from app.services.tools.registry import tool_registry, ToolCategory
 
-【Available SYSTEM Tools — 共24个 (10 system + 4 shell + 10 meta)】:
+        categories = [
+            (ToolCategory.SYSTEM, "系统信息/文件操作"),
+            (ToolCategory.SHELL, "命令执行"),
+            (ToolCategory.META, "时间/工具/管道")
+        ]
 
-1. get_system_info - Get complete system info
-   - When to use: user asks about OS, CPU, memory, disk, network
-   - Returns: OS, CPU, memory, disk, network details
-   - Examples:
-     * get_system_info()
+        parts = [system_info]
+        for category, desc in categories:
+            tool_names = tool_registry.get_categories().get(category, [])
+            parts.append(_build_category_header(category.value, len(tool_names), desc))
+            parts.append(_build_tool_descriptions(category.value, tool_names))
+        parts.append(_build_examples(6))
 
-2. net_connections - Get network connections
-   - When to use: check TCP/UDP connections, open ports
-   - Returns: list of connections with protocol, local/remote address, state
-   - Examples:
-     * net_connections()
-
-3. event_log - Get system event log
-   - When to use: check system/app events, errors, warnings
-   - Returns: list of log entries with level, source, time
-   - Examples:
-     * event_log()
-
-4. list_processes - List all processes
-   - When to use: check running processes, find process by name/pid
-   - Returns: list of processes with pid, name, cpu/memory usage
-   - Examples:
-     * list_processes()
-
-5. kill_process - Kill process by PID
-   - When to use: force terminate a stuck or unwanted process
-   - Returns: success status, message
-   - Examples:
-     * kill_process(pid=1234)
-
-6. service_control - Service control
-   - When to use: list/start/stop/restart Windows services
-   - Returns: service status, message
-   - Examples:
-     * service_control(action="list")
-     * service_control(action="stop", name="Spooler")
-
-7. task_control - Task scheduler control
-   - When to use: create/delete/list scheduled tasks
-   - Returns: task list or success status
-   - Examples:
-     * task_control(action="list")
-
-8. get_env - Get/list environment variables
-   - When to use: check environment variable values
-   - Returns: env variable value or full list
-   - Examples:
-     * get_env(action="list")
-     * get_env(action="get", name="PATH")
-
-9. set_env - Set/delete environment variables
-   - When to use: create, modify, or delete environment variables
-   - Returns: success status, message
-   - Examples:
-     * set_env(action="set", name="MY_VAR", value="test")
-     * set_env(action="delete", name="MY_VAR")
-
-10. registry_control - Registry control
-    - When to use: read/write/delete Windows registry keys
-    - Returns: registry value or success status
-    - Examples:
-      * registry_control(action="read", key_path="Software\\MyApp")
-      * registry_control(action="write", key_path="Software\\MyApp", value_name="Version", value="1.0")
-
-【SHELL Tools (4) — command execution & code running】:
-
-11. execute_shell_command - Execute command in shell (PowerShell/CMD)
-    - When to use: run system commands, scripts; background execution
-    - Returns: stdout/stderr/returncode or shell_id/is_running
-    - Examples:
-      * execute_shell_command(command="dir")
-      * execute_shell_command(command="npm run dev", run_in_background=true)
-
-12. find_command - Find command path (like which/where)
-    - When to use: check if command installed, find its path
-    - Returns: available(bool), path or paths list
-    - Examples:
-      * find_command(command="python")
-      * find_command(command="python", all_paths=true)
-
-13. execute_code - Execute Python or JavaScript code
-    - When to use: run code snippets, quick calculations
-    - Returns: stdout/stderr/returncode
-    - Examples:
-      * execute_code(code="print('Hello')")
-      * execute_code(code="console.log('Hi');", language="javascript")
-
-14. shell_session - Manage background shell sessions
-    - When to use: read output from background command, terminate session
-    - Returns: shell_id/stdout/stderr/is_running or termination status
-    - Examples:
-      * shell_session(shell_id="shell_abc123")
-      * shell_session(shell_id="shell_abc123", action="terminate")
-
-【META Tools (10) — time, tool discovery, pipeline, batch】:
-
-15. tool_help - Query detailed tool usage info
-    - When to use: learn how to use a specific tool
-    - Returns: name, description, params, examples
-    - Examples:
-      * tool_help(tool_name="get_time")
-
-16. tool_search - Search tools by keyword
-    - When to use: discover available tools matching a need
-    - Returns: matched tool list sorted by relevance
-    - Examples:
-      * tool_search(query="读取CSV文件")
-
-17. pipeline - Execute multiple tools in sequence
-    - When to use: chain tool calls into automated workflow
-    - Returns: step-by-step results
-    - Examples:
-      * pipeline(steps='[{"tool":"get_time","params":{"action":"now"}}]')
-
-18. get_time - Time operations (now/format/timestamp)
-    - When to use: get current time, format time, convert timestamps
-    - Returns: iso, timestamp, formatted string, timezone, weekday
-    - Examples:
-      * get_time(action="now")
-      * get_time(action="format", time_value="2026-05-18 10:00:00", format_str="%Y年%m月%d日")
-
-19. time_add - Time arithmetic (add/subtract)
-    - When to use: calculate N days/hours/minutes later or earlier
-    - Returns: result_time, iso, timestamp
-    - Examples:
-      * time_add(start="2026-05-18 10:00:00", delta=7, unit="days")
-
-20. time_diff - Calculate difference between two times
-    - When to use: how many days/hours between dates
-    - Returns: humanized diff, seconds/minutes/hours/days
-    - Examples:
-      * time_diff(start="2026-05-01", end="2026-05-18")
-
-21. query_calendar - Date checks (weekend/holiday/workday)
-    - When to use: check if date is weekend/holiday/workday, find next workday
-    - Returns: is_weekend, is_holiday, is_workday, holiday_name
-    - Examples:
-      * query_calendar(date="2026-05-18", check_type="weekend")
-
-22. timezone_convert - Timezone conversion
-    - When to use: convert between UTC and local time
-    - Returns: converted time, iso, timestamp
-    - Examples:
-      * timezone_convert(time_value="2026-05-18 10:00:00", direction="utc_to_local", tz="Asia/Shanghai")
-
-23. batch_process - Batch file operations (rename/delete/copy)
-    - When to use: bulk rename, delete, or copy files by glob pattern
-    - Returns: matched_count, processed_count, operations
-    - Examples:
-      * batch_process(source_pattern="*.txt", action="rename", target_pattern="*.md")
-
-24. timer - Timer management (set/clear/list)
-    - When to use: set timed reminders, clear or list timers
-    - Returns: timer_id, trigger_at or timer list
-    - Examples:
-      * timer(action="set", delay=180, callback="remind user to drink water")
-
-【Tool Call Examples】:
-Example 1: 获取系统信息
-{"thought": "用户询问系统信息", "reasoning": "调用get_system_info", "tool_name": "get_system_info", "tool_params": {}}
-
-Example 2: 列出环境变量
-{"thought": "用户要列出环境变量", "reasoning": "调用get_env", "tool_name": "get_env", "tool_params": {"action": "list"}}
-
-Example 3: 读取注册表
-{"thought": "用户要读取注册表", "reasoning": "调用registry_control", "tool_name": "registry_control", "tool_params": {"action": "read", "key_path": "Software\\MyApp"}}
-
-Example 4: 执行命令
-{"thought": "用户要执行命令", "reasoning": "调用execute_shell_command", "tool_name": "execute_shell_command", "tool_params": {"command": "dir"}}
-
-Example 5: 查询时间
-{"thought": "用户询问当前时间", "reasoning": "调用get_time", "tool_name": "get_time", "tool_params": {"action": "now"}}
-
-Example 6: 任务完成
-{"thought": "系统信息已获取", "reasoning": "结果已返回，无更多操作", "tool_name": "finish", "tool_params": {"result": "系统信息如下：..."}}
-"""
-    
+        return "\n".join(parts)
 
     def get_parameter_reminder(self) -> str:
         from app.services.tools.registry import tool_registry, ToolCategory
