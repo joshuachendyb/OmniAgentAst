@@ -1559,14 +1559,21 @@ class FileTools:
     ) -> Dict[str, Any]:
         """解压压缩文件"""
         from app.services.tools.toolhelper.file_helpers import extract_archive as _extract_archive
+        from app.services.tools._response import build_success, build_error
 
-        return _extract_archive(
+        result = _extract_archive(
             archive_path=archive_path,
             output_dir=output_dir,
             overwrite=overwrite,
             password=password,
             preserve_permissions=preserve_permissions,
         )
+        # 兼容旧格式 {success, error} → 新格式 {code, data, message}
+        if "code" in result:
+            return result
+        if result.get("success"):
+            return build_success(result.get("data", result.get("file_path", "")), result.get("error", "解压成功"))
+        return build_error("ERR_FILE_EXTRACT", result.get("error", "解压失败"))
 
     async def _get_file_hash(
         self,
@@ -1817,7 +1824,7 @@ class FileTools:
                 replace_result['used_enc'] = used_enc
                 if dry_run:
                     return True
-                _write_file_atomic(new_content, path, used_enc, append=False, create_parents=False)
+                self._write_file_atomic(new_content, path, used_enc, append=False, create_parents=False)
                 return True
 
             success = await asyncio.to_thread(
@@ -2518,7 +2525,7 @@ def _is_already_seen_or_skipped(name: str, seen: set, seen_count: int, start: in
     if name in seen:
         return True, False
     seen.add(name)
-    if seen_count <= start:
+    if seen_count < start:
         return False, True
     return False, False
 

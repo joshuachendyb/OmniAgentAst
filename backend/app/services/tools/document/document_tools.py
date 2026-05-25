@@ -523,7 +523,7 @@ def _read_pptx(
 ) -> Dict[str, Any]:
     """读取PPT幻灯片（内部函数） - 小健 2026-05-18"""
     if not _check_module("pptx"):
-        return build_error("ERR_NO_PPTX",
+        return build_error("ERR_DOC_NO_PPTX",
                 "python-pptx库未安装，请先执行: pip install python-pptx")
 
     try:
@@ -531,7 +531,7 @@ def _read_pptx(
 
         path = Path(file_path)
         if not path.exists():
-            return build_error("ERR_READ_PPTX", f"文件不存在: {file_path}")
+            return build_error("ERR_DOC_READ_PPTX", f"文件不存在: {file_path}")
 
         prs = Presentation(path)
         slides_data = []
@@ -580,7 +580,7 @@ def _read_pptx(
         return build_success(result_data, f"成功读取PPT文件: {file_path}，共 {len(prs.slides)} 页",
                 llm_data=_llm)
     except Exception as e:
-        return build_error("ERR_READ_PPTX", f"读取PPT文件失败: {str(e)}")
+        return build_error("ERR_DOC_READ_PPTX", f"读取PPT文件失败: {str(e)}")
 
 
 # ============================================================
@@ -768,7 +768,7 @@ def _write_pptx(
 ) -> Dict[str, Any]:
     """写入PPT幻灯片（内部函数） - 小健 2026-05-18"""
     if not _check_module("pptx"):
-        return build_error("ERR_NO_PPTX",
+        return build_error("ERR_DOC_NO_PPTX",
                 "python-pptx库未安装，请先执行: pip install python-pptx")
     
     try:
@@ -810,7 +810,7 @@ def _write_pptx(
         return build_success({"file_path": str(path), "slide_count": len(prs.slides)},
                 f"成功写入PPT文件: {file_path}，共 {len(prs.slides)} 页")
     except Exception as e:
-        return build_error("ERR_WRITE_PPTX", f"写入PPT文件失败: {str(e)}")
+        return build_error("ERR_DOC_WRITE_PPTX", f"写入PPT文件失败: {str(e)}")
 
 
 # ============================================================

@@ -1146,73 +1146,71 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
         return _build_action_from_old_format(data, output)
 
     return _resolve_return_type(data)
+
+
+def _convert_function_calling_items(items: List[Dict]) -> List[Dict]:
+    """转换Function Calling格式为统一格式 - 小沈 2026-05-25
+
+    使用场景:
+    - _create_action_result_from_list中Function Calling格式转换
+    - 需要将Function Calling格式转换为统一action_tool格式的场景
+
+    使用示例:
+        converted = _convert_function_calling_items(valid_items)
+        last_converted = converted[-1]
+
+    返回数据说明:
+        - 返回List[Dict]，转换后的action_tool格式列表
     """
-    【2026-04-28 小沈新增】从 list 输入创建统一格式的结果
-    处理LLM返回的JSON数组场景
-    
-    Args:
-        data: 已经解析好的 list（来自 LLM 返回的 JSON 数组）
-        
-    Returns:
-        统一格式的结果字典
+    converted = []
+    for item in items:
+        if isinstance(item, dict) and "function" in item:
+            func = item["function"]
+            fname = func.get("name", "") if isinstance(func, dict) else ""
+            fargs_str = func.get("arguments", "{}") if isinstance(func, dict) else "{}"
+            try:
+                import json as _json
+                fargs = _json.loads(fargs_str) if isinstance(fargs_str, str) else (fargs_str or {})
+            except (_json.JSONDecodeError, TypeError):
+                fargs = {}
+            converted.append({"name": fname, "args": fargs})
+        else:
+            converted.append(item)
+    return converted
+
+
+def _create_action_result_from_list(data: List) -> Dict[str, Any]:
+    """从list输入创建统一格式的结果 - 小沈 2026-05-25
+
+    使用场景:
+    - 处理LLM返回的JSON数组场景
+    - 需要统一Function Calling格式和action_tool格式的场景
+
+    使用示例:
+        return _create_action_result_from_list(data)
+
+    返回数据说明:
+        - 返回Dict，统一格式结果字典
     """
-    # 空数组处理
     if not data:
         logger.info(f"[parse_react_response] list为空，返回parse_error")
-        return {
-            "type": "parse_error",
-            "error": "Empty list input from LLM",
-            "thought": "",
-            "content": "",
-            "reasoning": "",
-            "tool_name": None,
-            "tool_params": None,
-            "response": ""
-        }
-    
-    # 遍历list，寻找有效的dict元素
+        return _make_action_result_dict(
+            "parse_error", "", "", None, None, "", "Empty list input from LLM"
+        )
+
     valid_items = [item for item in data if isinstance(item, dict)]
-    
-    # 无有效dict元素
     if not valid_items:
         logger.info(f"[parse_react_response] list中无有效dict元素，返回parse_error")
-        return {
-            "type": "parse_error",
-            "error": "No valid dict items in list",
-            "thought": "",
-            "content": "",
-            "reasoning": "",
-            "tool_name": None,
-            "tool_params": None,
-            "response": ""
-        }
-    
-    # 取最后一个有效的dict元素（LLM通常将最终结果放在最后）
+        return _make_action_result_dict(
+            "parse_error", "", "", None, None, "", "No valid dict items in list"
+        )
+
     last_item = valid_items[-1]
-    
-    # 【2026-05-14 小沈】处理Function Calling格式数组
-    # 如 [{"index":0,"function":{"name":"search_web","arguments":"{\"query\":\"test\"}"}}]
-    # 这种格式的item中没有tool_name字段，需要通过function.name提取
-    if len(valid_items) > 0 and "tool_name" not in valid_items[0] and "function" in valid_items[0]:
-        # 整个数组都是Function Calling格式 → 全部转换
-        converted = []
-        for item in valid_items:
-            if isinstance(item, dict) and "function" in item:
-                func = item["function"]
-                fname = func.get("name", "") if isinstance(func, dict) else ""
-                fargs_str = func.get("arguments", "{}") if isinstance(func, dict) else "{}"
-                try:
-                    import json as _json
-                    fargs = _json.loads(fargs_str) if isinstance(fargs_str, str) else (fargs_str or {})
-                except (_json.JSONDecodeError, TypeError):
-                    fargs = {}
-                converted.append({"name": fname, "args": fargs})
-            else:
-                converted.append(item)
-        
+
+    if "tool_name" not in valid_items[0] and "function" in valid_items[0]:
+        converted = _convert_function_calling_items(valid_items)
         last_converted = converted[-1]
         pending_calls = converted[:-1]
-        
         logger.info(f"[parse_react_response] list检测到Function Calling格式({len(converted)}个)")
         last_item = {
             "tool_name": last_converted["name"],
@@ -1223,7 +1221,7 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
         }
         if pending_calls:
             last_item["_pending_calls"] = pending_calls
-    
+
     logger.info(f"[parse_react_response] list解析成功，使用最后一个元素")
     return _create_action_result_from_dict(last_item)
 
