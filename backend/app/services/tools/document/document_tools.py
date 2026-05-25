@@ -28,7 +28,7 @@ import csv
 import json
 import os
 import tempfile
-from typing import Dict, Any, List, Optional, Literal, Union
+from typing import Dict, Any, List, Optional, Literal, Union, Tuple
 from pathlib import Path
 
 from app.services.tools.document.document_schema import (

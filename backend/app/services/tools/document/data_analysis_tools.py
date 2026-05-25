@@ -26,6 +26,7 @@ import tempfile
 import logging
 from typing import Dict, Any, List, Union, Optional, Literal, Tuple
 from pathlib import Path
+import pandas as pd
 from datetime import datetime
 from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe
 from app.services.tools._response import build_success, build_error
