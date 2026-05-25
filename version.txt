@@ -1,3 +1,42 @@
+v0.13.44
+
+更新时间: 2026-05-25 22:04:14
+
+更新内容：
+
+## v0.13.43→v0.13.44 变更汇总 - 小沈/小健-2026-05-25
+
+### refactor system_tools 4个函数拆分重构（4个commit）
+
+| commit | 说明 |
+|--------|------|
+| c8883d3c | refactor: 拆分_task_create抽取_build_schtasks_create_cmd纯函数 - 小沈-2026-05-25 |
+| dc3f73b7 | refactor: 拆分list_processes抽取_filter_process和_format_process - 小沈-2026-05-25 |
+| ff61d7ea | refactor: 抽取_filter_services消除_windows_service_list与_linux_service_list的DRY违规 - 小沈-2026-05-25 |
+| 2a88cef3 | refactor: 拆分date_helper.is_holiday为独立判断函数 — 小健 2026-05-25 |
+
+### refactor toolhelper 5个大函数拆分（1个commit）
+
+| commit | 说明 |
+|--------|------|
+| efc92213 | refactor: 拆分toolhelper目录5个大函数 — 小健 2026-05-25 |
+
+### refactor file_tools 2个函数拆分（2个commit）
+
+| commit | 说明 |
+|--------|------|
+| 60c94aea | refactor: 拆分FileTools._validate_content_format为独立验证函数 — 小健 2026-05-25 |
+| 4b5a3081 | refactor: 拆分FileTools._apply_edits闭包为独立_execute_edit_sync方法 — 小健 2026-05-25 |
+
+### fix file_tools.py缩进bug修复（2个commit）
+
+| commit | 说明 |
+|--------|------|
+| c2fef98a | fix: file_tools.py缩进bug修复(33个内部函数恢复为FileTools类方法)+更新扫描报告 - 小沈-2026-05-25 |
+| 2354bea0 | fix: file_tools.py缩进bug修复(33个内部函数恢复为FileTools类方法)+P2表格全局顺序编号 - 小沈-2026-05-25 |
+
+---
+
 v0.13.43
 
 更新时间: 2026-05-25 20:31:15
