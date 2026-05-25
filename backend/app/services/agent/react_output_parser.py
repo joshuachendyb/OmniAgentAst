@@ -481,8 +481,13 @@ def _handle_mixed_text_json(output) -> Optional[Dict[str, Any]]:
     if tool_name == "finish":
         raw_result = tool_params.get("result") if tool_params else None
         result_text = _normalize_result_to_str(raw_result) if raw_result is not None else ""
-        content = result_text or prefix_text
-        return _build_handler_result("answer", thought=json_data.get("thought", ""),
+        # 拼接JSON前的推理文本和result，去重
+        if prefix_text and result_text:
+            content = prefix_text + ("\n\n" + result_text if result_text not in prefix_text else "")
+        else:
+            content = prefix_text or result_text or ""
+        thought = prefix_text or json_data.get("thought", "")
+        return _build_handler_result("answer", thought=thought,
             content=content, response=content)
 
     # action
