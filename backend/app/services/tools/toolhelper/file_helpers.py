@@ -69,7 +69,7 @@ import time
 import tempfile
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, Tuple, List
+from typing import Optional, Dict, Any, Tuple, List, Generator, Callable
 import logging
 from app.services.tools.toolhelper.hash_helper import select_hasher
 
@@ -862,6 +862,188 @@ def is_content_identical(
 # 以下6个impl函数从已删除的file/模块迁移而来 - 小沈 2026-05-18
 # ================================================================================
 
+def _classify_size_dist(size: int) -> str:
+    """文件大小分桶，返回桶名 - 小健 2026-05-25
+
+    使用场景: _StatsCollector和list_directory共用尺寸分类
+    使用示例: _classify_size_dist(500) → "0-1KB"; _classify_size_dist(5_000_000) → "1MB-10MB"
+    返回数据说明: 返回6级桶名之一: "0-1KB"|"1KB-1MB"|"1MB-10MB"|"10MB-100MB"|"100MB-1GB"|"1GB+"
+    """
+    if size < 1024:
+        return "0-1KB"
+    if size < 1048576:
+        return "1KB-1MB"
+    if size < 10485760:
+        return "1MB-10MB"
+    if size < 104857600:
+        return "10MB-100MB"
+    if size < 1073741824:
+        return "100MB-1GB"
+    return "1GB+"
+
+
+def _walk_with_timeout(
+    path: Path, deadline: float, pattern: str = "*",
+    callback: Optional[Callable[[Path, Any, int], None]] = None,
+    recursive: bool = True, max_depth: int = 100000,
+    filters: Optional[Dict[str, Any]] = None,
+) -> Tuple[List[Path], bool]:
+    """通用目录遍历器，支持超时+深度+过滤 - 小健 2026-05-25
+
+    使用场景: _collect_files/_compress_entries/_scan_stats_directory三处复用
+    使用示例: _walk_with_timeout(Path("/src"), deadline, callback=collector.record_file)
+    返回数据说明: (文件列表, 是否超时)
+    """
+    results: List[Path] = []
+    timed_out = False
+
+    def _walk(current: Path, depth: int):
+        nonlocal timed_out
+        if depth > max_depth or timed_out:
+            return
+        if time.monotonic() > deadline:
+            timed_out = True
+            return
+        try:
+            for item in current.iterdir():
+                if timed_out or time.monotonic() > deadline:
+                    timed_out = True
+                    return
+                try:
+                    if not _apply_filters(item, filters):
+                        continue
+                    if item.is_file():
+                        st = item.stat()
+                        results.append(item)
+                        if callback:
+                            callback(item, st, depth)
+                    elif item.is_dir() and recursive:
+                        if callback:
+                            callback(item, None, depth)
+                        _walk(item, depth + 1)
+                except (PermissionError, OSError):
+                    continue
+        except (PermissionError, OSError):
+            pass
+
+    if path.is_file():
+        st = path.stat()
+        results.append(path)
+        if callback:
+            callback(path, st, 0)
+    else:
+        _walk(path, 0)
+
+    return results, timed_out
+
+
+async def _collect_files(
+    dir_path: Path, recursive: bool,
+    deadline: Optional[float] = None, pattern: Optional[str] = None,
+) -> Tuple[List[Path], bool]:
+    """收集目录下文件列表，支持超时 - 小健 2026-05-25"""
+    def _sync_collect() -> Tuple[List[Path], bool]:
+        result: List[Path] = []
+        iterator = dir_path.rglob(pattern or "*") if recursive else dir_path.glob(pattern or "*")
+        for fpath in iterator:
+            if deadline and time.monotonic() > deadline:
+                logger.warning(f"[_collect_files] 超时，已收集{len(result)}个文件")
+                return result, True
+            if fpath.is_file():
+                result.append(fpath)
+        return result, False
+    files, timed_out = await asyncio.to_thread(_sync_collect)
+    if timed_out:
+        logger.warning(f"[_collect_files] 文件收集超时，仅处理已收集的{len(files)}个文件")
+    return files, timed_out
+
+
+def _resolve_name_conflict(
+    new_path: Path, strategy: str, max_attempts: int = 100,
+) -> Tuple[Path, bool]:
+    """解决文件名冲突，返回(最终路径, 是否解决) - 小健 2026-05-25"""
+    if not new_path.exists():
+        return new_path, True
+    if strategy == "skip":
+        return new_path, False
+    if strategy == "overwrite":
+        return new_path, True
+    final_path = new_path
+    counter = 1
+    while final_path.exists() and counter <= max_attempts:
+        name_parts = new_path.stem.split('.')
+        if len(name_parts) > 1:
+            base_name = '.'.join(name_parts[:-1])
+            extension = new_path.suffix
+            final_path = new_path.parent / f"{base_name}_{counter}{extension}"
+        else:
+            final_path = new_path.parent / f"{new_path.stem}_{counter}"
+        counter += 1
+    if counter > max_attempts:
+        logger.error(f"冲突解决失败，超过{max_attempts}次尝试")
+        return final_path, False
+    return final_path, True
+
+
+def _rename_file_sync(src: Path, dst: Path, conflict_strategy: str):
+    """同步执行单文件重命名 - 小健 2026-05-25"""
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if conflict_strategy == "overwrite" and dst.exists():
+            dst.unlink()
+        shutil.move(str(src), str(dst))
+        return True
+    except Exception as e:
+        return str(e)
+
+
+async def _process_single_rename(
+    file_path: Path, new_name: str, original_name: str,
+    conflict_strategy: str, preview: bool, task_id: Optional[str],
+    record_operation_func, execute_with_safety_func, get_next_sequence_func,
+    use_regex: bool, regex: Optional[re.Pattern], pattern: str, replacement: str,
+) -> Tuple[Dict[str, Any], int, int, int]:
+    """处理单个文件重命名，返回(op_dict, renamed_delta, skipped_delta, failed_delta) - 小健 2026-05-25"""
+    from app.db.models.operation_enums import OperationType
+    if new_name == original_name:
+        return {"file": str(file_path), "original_name": original_name, "new_name": new_name,
+                "status": "skipped", "reason": "文件名未变化", "operation_id": None}, 0, 1, 0
+    new_path = file_path.parent / new_name
+    conflict_resolved = False
+    final_new_path = new_path
+    if new_path.exists():
+        if conflict_strategy == "skip":
+            return {"file": str(file_path), "original_name": original_name, "new_name": new_name,
+                    "status": "skipped", "reason": "目标文件已存在（跳过）", "operation_id": None}, 0, 1, 0
+        resolved_path, resolved = _resolve_name_conflict(new_path, conflict_strategy)
+        if not resolved and conflict_strategy != "overwrite":
+            return {"file": str(file_path), "original_name": original_name, "new_name": new_name,
+                    "status": "skipped", "reason": f"冲突解决失败: {conflict_strategy}", "operation_id": None}, 0, 1, 0
+        final_new_path = resolved_path
+        conflict_resolved = resolved
+    operation_id = None
+    if record_operation_func:
+        operation_id = record_operation_func(
+            task_id=task_id, operation_type=OperationType.RENAME,
+            source_path=file_path, destination_path=final_new_path,
+            sequence_number=get_next_sequence_func())
+    if not preview:
+        rename_result = await asyncio.to_thread(
+            execute_with_safety_func, operation_id=operation_id,
+            operation_func=lambda _s=file_path, _d=final_new_path: _rename_file_sync(_s, _d, conflict_strategy))
+        if rename_result is True:
+            return {"file": str(file_path), "original_name": original_name, "new_name": final_new_path.name,
+                    "new_path": str(final_new_path), "status": "renamed", "operation_id": operation_id,
+                    "conflict_resolved": conflict_resolved}, 1, 0, 0
+        else:
+            return {"file": str(file_path), "original_name": original_name, "new_name": new_name,
+                    "status": "failed", "error": str(rename_result), "operation_id": operation_id}, 0, 0, 1
+    else:
+        return {"file": str(file_path), "original_name": original_name, "new_name": final_new_path.name,
+                "new_path": str(final_new_path), "status": "planned", "conflict_resolved": conflict_resolved,
+                "operation_id": None}, 1, 0, 0
+
+
 async def batch_rename_impl(
     directory: str,
     pattern: str,
@@ -876,220 +1058,281 @@ async def batch_rename_impl(
     execute_with_safety_func=None,
     get_next_sequence_func=None,
 ) -> Dict[str, Any]:
-    """
-    batch_rename工具的实现函数 - 格式统一 - 小沈 2026-05-21
-    重构注释 - 小健 2026-05-24
-    
-    【函数结构说明】
-    虽然函数较长（219行），但逻辑线性清晰，分为5个阶段：
-    1. 参数验证（行908-922）
-    2. 正则编译（行924-928）
-    3. 文件收集（行930-952）- 已提取为内部函数_collect_sync
-    4. 批量处理（行959-1070）- 主循环：计算新名→处理冲突→执行重命名
-    5. 结果汇总（行1072-1090）
-    
-    Args:
-        directory: 目标目录路径
-        pattern: 匹配模式（支持正则表达式）
-        replacement: 替换字符串
-        recursive: 是否递归处理子目录
-        preview: 是否只预览不执行
-        conflict_strategy: 冲突处理策略（skip、overwrite、rename）
-        validate_path_func: 路径验证函数
-        safety_service: 安全服务
-        task_id: 任务ID
-        record_operation_func: 记录操作函数
-        execute_with_safety_func: 安全执行函数
-        get_next_sequence_func: 获取下一个序列号函数
-    
-    Returns:
-        统一格式的结果字典
-    """
-    from app.db.models.operation_enums import OperationType
-    
+    """批量重命名 - 小沈 2026-05-21, 重构 小健 2026-05-25"""
     is_valid, error_msg = validate_path_func(directory)
     if not is_valid:
         return {"code": "ERR_PATH_INVALID", "data": None, "message": f"目录路径验证失败: {error_msg}"}
-    
     if not task_id:
         return {"code": "ERR_META_NO_TASK", "data": None, "message": "No active task"}
-    
     dir_path = Path(directory)
-    
+
     try:
         if not dir_path.exists():
             return {"code": "ERR_FILE_DIRECTORY_NOT_FOUND", "data": None, "message": f"目录不存在: {directory}"}
-        
         if not dir_path.is_dir():
             return {"code": "ERR_FILE_PATH_NOT_DIR", "data": None, "message": f"路径不是目录: {directory}"}
-        
+
         try:
             regex = re.compile(pattern)
             use_regex = True
         except re.error:
+            regex = None
             use_regex = False
-        
-        import time as _time
+
         from app.services.tools.tool_meta import get_timeout as _get_timeout
-        _br_deadline = _time.monotonic() + _get_timeout("batch_rename") - 2
-        _br_timed_out = False
+        deadline = time.monotonic() + _get_timeout("batch_rename") - 2
+        files_to_process, _ = await _collect_files(dir_path, recursive, deadline)
 
-        def _collect_sync():
-            nonlocal _br_timed_out
-            result = []
-            if recursive:
-                for file_path in dir_path.rglob("*"):
-                    if _time.monotonic() > _br_deadline:
-                        _br_timed_out = True
-                        import logging; logging.getLogger(__name__).warning(f"[batch_rename] 超时自检触发，已收集{len(result)}个文件，提前返回")
-                        break
-                    if file_path.is_file():
-                        result.append(file_path)
-            else:
-                for file_path in dir_path.iterdir():
-                    if file_path.is_file():
-                        result.append(file_path)
-            return result
-
-        files_to_process = await asyncio.to_thread(_collect_sync)
-        
         operations = []
-        renamed_count = 0
-        skipped_count = 0
-        failed_count = 0
-        
+        renamed_count = skipped_count = failed_count = 0
         for file_path in files_to_process:
+            if time.monotonic() > deadline:
+                logger.warning(f"[batch_rename] 总超时，已处理{len(operations)}/{len(files_to_process)}个文件")
+                break
             original_name = file_path.name
-            
-            if use_regex:
-                new_name = regex.sub(replacement, original_name)
-            else:
-                new_name = original_name.replace(pattern, replacement)
-            
-            if new_name == original_name:
-                skipped_count += 1
-                operations.append({
-                    "file": str(file_path),
-                    "original_name": original_name,
-                    "new_name": new_name,
-                    "status": "skipped",
-                    "reason": "文件名未变化",
-                    "operation_id": None
-                })
-                continue
-            
-            new_path = file_path.parent / new_name
-            
-            conflict_resolved = False
-            final_new_path = new_path
-            if new_path.exists():
-                if conflict_strategy == "skip":
-                    skipped_count += 1
-                    operations.append({
-                        "file": str(file_path),
-                        "original_name": original_name,
-                        "new_name": new_name,
-                        "status": "skipped",
-                        "reason": "目标文件已存在（跳过）",
-                        "operation_id": None
-                    })
-                    continue
-                elif conflict_strategy == "overwrite":
-                    pass
-                elif conflict_strategy == "rename":
-                    counter = 1
-                    while final_new_path.exists():
-                        name_parts = new_path.stem.split('.')
-                        if len(name_parts) > 1:
-                            base_name = '.'.join(name_parts[:-1])
-                            extension = new_path.suffix
-                            final_new_path = new_path.parent / f"{base_name}_{counter}{extension}"
-                        else:
-                            final_new_path = new_path.parent / f"{new_path.stem}_{counter}"
-                        counter += 1
-                    conflict_resolved = True
-            
-            operation_id = None
-            if record_operation_func:
-                operation_id = record_operation_func(
-                    task_id=task_id,
-                    operation_type=OperationType.RENAME,
-                    source_path=file_path,
-                    destination_path=final_new_path,
-                    sequence_number=get_next_sequence_func()
-                )
-            
-            if not preview:
-                def _rename_sync(_src=file_path, _dst=final_new_path):
-                    try:
-                        _dst.parent.mkdir(parents=True, exist_ok=True)
-                        
-                        if conflict_strategy == "overwrite" and _dst.exists():
-                            _dst.unlink()
-                        
-                        shutil.move(str(_src), str(_dst))
-                        return True
-                    except Exception as e:
-                        return str(e)
-                
-                rename_result = await asyncio.to_thread(
-                    execute_with_safety_func,
-                    operation_id=operation_id,
-                    operation_func=_rename_sync
-                )
-                
-                if rename_result is True:
-                    renamed_count += 1
-                    operations.append({
-                        "file": str(file_path),
-                        "original_name": original_name,
-                        "new_name": final_new_path.name,
-                        "new_path": str(final_new_path),
-                        "status": "renamed",
-                        "operation_id": operation_id,
-                        "conflict_resolved": conflict_resolved
-                    })
-                else:
-                    failed_count += 1
-                    operations.append({
-                        "file": str(file_path),
-                        "original_name": original_name,
-                        "new_name": new_name,
-                        "status": "failed",
-                        "error": str(rename_result),
-                        "operation_id": operation_id
-                    })
-            else:
-                renamed_count += 1
-                operations.append({
-                    "file": str(file_path),
-                    "original_name": original_name,
-                    "new_name": final_new_path.name,
-                    "new_path": str(final_new_path),
-                    "status": "planned",
-                    "conflict_resolved": conflict_resolved,
-                    "operation_id": None
-                })
-        
+            new_name = regex.sub(replacement, original_name) if use_regex else original_name.replace(pattern, replacement)
+            op, rd, sd, fd = await _process_single_rename(
+                file_path, new_name, original_name, conflict_strategy, preview, task_id,
+                record_operation_func, execute_with_safety_func, get_next_sequence_func,
+                use_regex, regex, pattern, replacement)
+            operations.append(op)
+            renamed_count += rd
+            skipped_count += sd
+            failed_count += fd
+
         result = {
-            "directory": str(dir_path),
-            "pattern": pattern,
-            "replacement": replacement,
-            "use_regex": use_regex,
-            "recursive": recursive,
-            "preview_mode": preview,
-            "conflict_strategy": conflict_strategy,
-            "total_files": len(files_to_process),
-            "renamed_files": renamed_count,
-            "skipped_files": skipped_count,
-            "failed_files": failed_count,
-            "operations": operations
+            "directory": str(dir_path), "pattern": pattern, "replacement": replacement,
+            "use_regex": use_regex, "recursive": recursive, "preview_mode": preview,
+            "conflict_strategy": conflict_strategy, "total_files": len(files_to_process),
+            "renamed_files": renamed_count, "skipped_files": skipped_count,
+            "failed_files": failed_count, "operations": operations,
         }
-        
-        return {"code": "SUCCESS", "data": result, "message": "批量重命名预览" if preview else f"批量重命名完成: {renamed_count}个文件已重命名"}
-            
+        return {"code": "SUCCESS", "data": result,
+                "message": "批量重命名预览" if preview else f"批量重命名完成: {renamed_count}个文件已重命名"}
+
     except Exception as e:
         return {"code": "ERR_RENAME_FAILED", "data": None, "message": f"批量重命名失败: {str(e)}"}
+
+
+class _StatsCollector:
+    """目录统计收集器，聚合文件/目录统计 - 小健 2026-05-25"""
+
+    def __init__(self):
+        self.total_files = 0
+        self.total_dirs = 0
+        self.total_size = 0
+        self.file_types: Dict[str, int] = {}
+        self.size_dist: Dict[str, int] = {
+            "0-1KB": 0, "1KB-1MB": 0, "1MB-10MB": 0,
+            "10MB-100MB": 0, "100MB-1GB": 0, "1GB+": 0,
+        }
+        self.mtime_dist: Dict[str, int] = {
+            "today": 0, "this_week": 0, "this_month": 0, "this_year": 0, "older": 0,
+        }
+        self.depth_dist: Dict[str, int] = {}
+        self.samples: List[Dict] = []
+
+    def record_file(self, item: Path, st: Any, depth: int) -> None:
+        self.total_files += 1
+        self.total_size += st.st_size
+        ext = item.suffix.lower()
+        self.file_types[ext or "no_extension"] = self.file_types.get(ext or "no_extension", 0) + 1
+        self.size_dist[_classify_size_dist(st.st_size)] += 1
+        td = time.time() - st.st_mtime
+        if td < 86400:
+            self.mtime_dist["today"] += 1
+        elif td < 604800:
+            self.mtime_dist["this_week"] += 1
+        elif td < 2592000:
+            self.mtime_dist["this_month"] += 1
+        elif td < 31536000:
+            self.mtime_dist["this_year"] += 1
+        else:
+            self.mtime_dist["older"] += 1
+        depth_key = f"depth_{depth}"
+        self.depth_dist[depth_key] = self.depth_dist.get(depth_key, 0) + 1
+        if len(self.samples) < 1000:
+            self.samples.append({
+                "path": str(item), "name": item.name, "size": st.st_size,
+                "extension": ext if ext else "", "modified_time": st.st_mtime, "depth": depth,
+            })
+
+    def record_dir(self, item: Any = None, st: Any = None, depth: int = 0) -> None:
+        self.total_dirs += 1
+
+    def to_dict(self, directory: str, scan_time: float) -> Dict[str, Any]:
+        avg = self.total_size / self.total_files if self.total_files > 0 else 0
+        sorted_types = dict(sorted(self.file_types.items(), key=lambda x: x[1], reverse=True))
+        return {
+            "directory": directory,
+            "total_files": self.total_files,
+            "total_directories": self.total_dirs,
+            "total_size": self.total_size,
+            "average_file_size": avg,
+            "file_types": sorted_types,
+            "size_distribution": self.size_dist,
+            "modification_time_distribution": self.mtime_dist,
+            "depth_distribution": self.depth_dist,
+            "files": self.samples,
+            "scan_time": scan_time,
+        }
+
+
+def _scan_stats_directory(
+    dir_path: Path, recursive: bool, max_depth: int,
+    deadline: float, filters: Optional[Dict[str, Any]],
+) -> _StatsCollector:
+    """扫描目录收集统计，支持超时+深度+过滤 - 小健 2026-05-25"""
+    collector = _StatsCollector()
+    _walk_with_timeout(
+        dir_path, deadline, callback=collector.record_file,
+        recursive=recursive, max_depth=max_depth, filters=filters,
+    )
+    return collector
+
+
+def _format_stats_output(stats: Dict[str, Any], output_format: str) -> Dict[str, Any]:
+    """根据格式(json/csv/text)添加output字段 - 小健 2026-05-25"""
+    if output_format == "json":
+        stats["output"] = json.dumps(stats, indent=2, ensure_ascii=False)
+    elif output_format == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["统计项", "值"])
+        writer.writerow(["目录", stats["directory"]])
+        writer.writerow(["总文件数", stats["total_files"]])
+        writer.writerow(["总目录数", stats["total_directories"]])
+        writer.writerow(["总大小(字节)", stats["total_size"]])
+        writer.writerow(["平均文件大小(字节)", stats["average_file_size"]])
+        writer.writerow(["扫描时间(秒)", stats["scan_time"]])
+        writer.writerow([])
+        writer.writerow(["文件类型分布"])
+        writer.writerow(["文件类型", "数量"])
+        for ext, count in stats["file_types"].items():
+            writer.writerow([ext, count])
+        writer.writerow([])
+        writer.writerow(["大小分布"])
+        writer.writerow(["大小范围", "数量"])
+        for size_range, count in stats["size_distribution"].items():
+            writer.writerow([size_range, count])
+        writer.writerow([])
+        writer.writerow(["修改时间分布"])
+        writer.writerow(["时间范围", "数量"])
+        for time_range, count in stats["modification_time_distribution"].items():
+            writer.writerow([time_range, count])
+        stats["output"] = output.getvalue()
+    elif output_format == "text":
+        lines = [
+            f"目录统计: {stats['directory']}",
+            f"总文件数: {stats['total_files']}",
+            f"总目录数: {stats['total_directories']}",
+            f"总大小: {stats['total_size']:,} 字节",
+            f"平均文件大小: {stats['average_file_size']:,.2f} 字节",
+            f"扫描时间: {stats['scan_time']:.2f} 秒",
+            "",
+            "文件类型分布:",
+        ]
+        for ext, count in stats["file_types"].items():
+            lines.append(f"  {ext}: {count}")
+        lines.append("")
+        lines.append("大小分布:")
+        for size_range, count in stats["size_distribution"].items():
+            lines.append(f"  {size_range}: {count}")
+        lines.append("")
+        lines.append("修改时间分布:")
+        for time_range, count in stats["modification_time_distribution"].items():
+            lines.append(f"  {time_range}: {count}")
+        lines.append("")
+        lines.append("深度分布:")
+        for depth, count in sorted(stats["depth_distribution"].items()):
+            lines.append(f"  {depth}: {count}")
+        stats["output"] = "\n".join(lines)
+    return stats
+
+
+def _validate_compress_params(
+    source_path: str, output_path: str, fmt: str,
+    overwrite: bool, compression_level: int, task_id: Optional[str],
+    validate_path_func,
+) -> Optional[Dict[str, Any]]:
+    """压缩参数校验链，返回None表示通过或error dict - 小健 2026-05-25"""
+    is_valid_src, error_msg_src = validate_path_func(source_path)
+    if not is_valid_src:
+        return {"code": "ERR_PATH_INVALID", "data": None, "message": f"源路径验证失败: {error_msg_src}"}
+    is_valid_dst, error_msg_dst = validate_path_func(output_path)
+    if not is_valid_dst:
+        return {"code": "ERR_PATH_INVALID", "data": None, "message": f"目标路径验证失败: {error_msg_dst}"}
+    if not overwrite and os.path.exists(output_path):
+        return {"code": "ERR_FILE_EXISTS", "data": None, "message": f"目标文件已存在: {output_path}，可设置overwrite=true覆盖"}
+    if not task_id:
+        return {"code": "ERR_META_NO_TASK", "data": None, "message": "No active task"}
+    if fmt not in ("zip", "tar.gz"):
+        return {"code": "ERR_DOC_UNSUPPORTED_FORMAT", "data": None, "message": f"不支持的压缩格式: {fmt}，支持格式: zip, tar.gz"}
+    if not 0 <= compression_level <= 9:
+        return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": f"无效的压缩级别: {compression_level}，必须是0-9之间的整数"}
+    return None
+
+
+def _compress_entries(source: Path, deadline: float) -> Generator[Tuple[Path, str], None, bool]:
+    """通用文件遍历生成器，yield(path, arcname) → 返回是否超时 - 小健 2026-05-25"""
+    if source.is_file():
+        yield source, source.name
+        return False
+    for item in source.rglob("*"):
+        if time.monotonic() > deadline:
+            return True
+        if item.is_file():
+            yield item, str(item.relative_to(source.parent))
+    return False
+
+
+def _write_zip(
+    source: Path, destination: Path, compression_level: int,
+    password: Optional[str], deadline: float,
+) -> Tuple[List[str], bool]:
+    """写入zip压缩包，返回(文件列表, 是否超时) - 小健 2026-05-25"""
+    compressed_files: List[str] = []
+    compression = zipfile.ZIP_STORED if compression_level == 0 else zipfile.ZIP_DEFLATED
+    with zipfile.ZipFile(destination, 'w', compression=compression, compresslevel=compression_level) as zf:
+        if password:
+            zf.setpassword(password.encode('utf-8'))
+        for file_path, arcname in _compress_entries(source, deadline):
+            zf.write(file_path, arcname)
+            compressed_files.append(str(file_path))
+    return compressed_files, False
+
+
+def _write_targz(
+    source: Path, destination: Path, deadline: float,
+) -> Tuple[List[str], bool]:
+    """写入tar.gz压缩包，返回(文件列表, 是否超时) - 小健 2026-05-25"""
+    compressed_files: List[str] = []
+    with tarfile.open(destination, 'w:gz') as tf:
+        for file_path, arcname in _compress_entries(source, deadline):
+            tf.add(file_path, arcname)
+            compressed_files.append(str(file_path))
+    return compressed_files, False
+
+
+def _build_compress_result(
+    source: str, destination: str, fmt: str, compression_level: int,
+    password: Optional[str], original_size: int, compressed_size: int,
+    compressed_files: List[str],
+) -> Dict[str, Any]:
+    """构建压缩成功结果dict - 小健 2026-05-25"""
+    ratio = 1 - (compressed_size / original_size) if original_size > 0 else 0
+    return {
+        "source_path": source,
+        "destination_path": destination,
+        "format": fmt,
+        "compression_level": compression_level,
+        "encrypted": password is not None,
+        "original_size": original_size,
+        "compressed_size": compressed_size,
+        "compression_ratio": ratio,
+        "compressed_files": compressed_files,
+        "file_count": len(compressed_files),
+    }
 
 
 async def compress_files_impl(
@@ -1108,179 +1351,76 @@ async def compress_files_impl(
     execute_with_safety_func=None,
     get_next_sequence_func=None,
 ) -> Dict[str, Any]:
-    """
-    compress_files工具的实现函数 - 小沈 2026-05-03 修正; 格式统一 - 小沈 2026-05-21
-    
-    Args:
-        source_path: 源文件或目录路径（必填）
-        output_path: 输出压缩文件路径（必填）
-        format: 压缩格式：zip、tar.gz（可选），默认zip
-        exclude_patterns: 排除的文件/目录模式数组（可选）
-        compression_level: 压缩级别0-9（可选），默认6
-        overwrite: 是否覆盖已存在的目标文件（可选），默认false
-        password: 压缩密码（可选），用于加密压缩文件
-        split_size: 分卷大小字节（可选），None表示不分卷
-        validate_path_func: 路径验证函数
-        safety_service: 安全服务
-        task_id: 任务ID
-        record_operation_func: 记录操作函数
-        execute_with_safety_func: 安全执行函数
-        get_next_sequence_func: 获取下一个序列号函数
-    
-    Returns:
-        统一格式的结果字典
-    """
+    """compress_files工具的实现函数 - 小健 2026-05-25 重构"""
     from app.services.safety.file.file_safety import OperationType
-    
-    is_valid_src, error_msg_src = validate_path_func(source_path)
-    if not is_valid_src:
-        return {"code": "ERR_PATH_INVALID", "data": None, "message": f"源路径验证失败: {error_msg_src}"}
-    
-    destination_path = output_path
-    
-    is_valid_dst, error_msg_dst = validate_path_func(destination_path)
-    if not is_valid_dst:
-        return {"code": "ERR_PATH_INVALID", "data": None, "message": f"目标路径验证失败: {error_msg_dst}"}
-    
-    if not overwrite and os.path.exists(destination_path):
-        return {"code": "ERR_FILE_EXISTS", "data": None, "message": f"目标文件已存在: {destination_path}，可设置overwrite=true覆盖"}
-    
-    if not task_id:
-        return {"code": "ERR_META_NO_TASK", "data": None, "message": "No active task"}
-    
-    if format not in ["zip", "tar.gz"]:
-        return {"code": "ERR_DOC_UNSUPPORTED_FORMAT", "data": None, "message": f"不支持的压缩格式: {format}，支持格式: zip, tar.gz"}
-    
-    if not 0 <= compression_level <= 9:
-        return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": f"无效的压缩级别: {compression_level}，必须是0-9之间的整数"}
-    
+
+    validation_error = _validate_compress_params(
+        source_path, output_path, format, overwrite, compression_level, task_id, validate_path_func)
+    if validation_error:
+        return validation_error
+
     source = Path(source_path)
     destination = Path(output_path)
-    
+
     try:
         if not source.exists():
             return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"源路径不存在: {source_path}"}
-        
-        if destination.exists() and not overwrite:
-            return {"code": "ERR_FILE_EXISTS", "data": None, "message": f"目标文件已存在: {output_path}，可设置overwrite=true覆盖"}
-        
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        
-        operation_id = record_operation_func(
-            task_id=task_id,
-            operation_type=OperationType.COMPRESS,
-            source_path=source,
-            destination_path=destination,
-            sequence_number=get_next_sequence_func()
-        )
-        
-        import time as _time
-        from app.services.tools.tool_meta import get_timeout as _get_timeout
-        _cf_deadline = _time.monotonic() + _get_timeout("compress_files") - 2
 
-        def _get_total_size(path: Path) -> int:
-            if path.is_file():
-                return path.stat().st_size
-            else:
-                total_size = 0
-                for file_path in path.rglob("*"):
-                    if _time.monotonic() > _cf_deadline:
-                        import logging; logging.getLogger(__name__).warning(f"[compress_files._get_total_size] 超时自检触发，提前返回")
-                        break
-                    if file_path.is_file():
-                        total_size += file_path.stat().st_size
-                return total_size
-        
-        original_size = _get_total_size(source)
-        
+        destination.parent.mkdir(parents=True, exist_ok=True)
+
+        operation_id = record_operation_func(
+            task_id=task_id, operation_type=OperationType.COMPRESS,
+            source_path=source, destination_path=destination,
+            sequence_number=get_next_sequence_func(),
+        )
+
+        from app.services.tools.tool_meta import get_timeout as _get_timeout
+        _cf_deadline = time.monotonic() + _get_timeout("compress_files") - 2
+
+        original_size = _get_total_size_sync(source, _cf_deadline)
+
         def _compress_sync():
             try:
-                compressed_files = []
-                
                 if format == "zip":
-                    compression = zipfile.ZIP_STORED if compression_level == 0 else zipfile.ZIP_DEFLATED
-                    
-                    zip_password = None
-                    password_warning = None
-                    if password:
-                        zip_password = password.encode('utf-8')
-                        password_warning = "注意：Python zipfile不支持写入加密，密码仅对解压验证有效"
-                    
-                    with zipfile.ZipFile(
-                        destination, 
-                        'w', 
-                        compression=compression, 
-                        compresslevel=compression_level
-                    ) as zf:
-                        if password:
-                            zf.setpassword(zip_password)
-                        
-                        if source.is_file():
-                            zf.write(source, source.name)
-                            compressed_files.append(str(source))
-                        else:
-                            for file_path in source.rglob("*"):
-                                if _time.monotonic() > _cf_deadline:
-                                    import logging; logging.getLogger(__name__).warning(f"[compress_files] 超时自检触发，已压缩{len(compressed_files)}个文件，提前返回")
-                                    break
-                                if file_path.is_file():
-                                    arcname = file_path.relative_to(source.parent)
-                                    zf.write(file_path, arcname)
-                                    compressed_files.append(str(file_path))
-                
-                elif format == "tar.gz":
-                    with tarfile.open(destination, 'w:gz') as tf:
-                        if source.is_file():
-                            tf.add(source, source.name)
-                            compressed_files.append(str(source))
-                        else:
-                            for file_path in source.rglob("*"):
-                                if _time.monotonic() > _cf_deadline:
-                                    import logging; logging.getLogger(__name__).warning(f"[compress_files] 超时自检触发(tar.gz)，已压缩{len(compressed_files)}个文件，提前返回")
-                                    break
-                                if file_path.is_file():
-                                    arcname = file_path.relative_to(source.parent)
-                                    tf.add(file_path, arcname)
-                                    compressed_files.append(str(file_path))
-                
+                    compressed_files, _ = _write_zip(source, destination, compression_level, password, _cf_deadline)
+                else:
+                    compressed_files, _ = _write_targz(source, destination, _cf_deadline)
                 compressed_size = destination.stat().st_size
-                
-                compression_ratio = 1 - (compressed_size / original_size) if original_size > 0 else 0
-                
-                return {
-                    "source_path": str(source),
-                    "destination_path": str(destination),
-                    "format": format,
-                    "compression_level": compression_level,
-                    "encrypted": password is not None,
-                    "original_size": original_size,
-                    "compressed_size": compressed_size,
-                    "compression_ratio": compression_ratio,
-                    "compressed_files": compressed_files,
-                    "file_count": len(compressed_files)
-                }
-                
-            except Exception as e:
+                return _build_compress_result(
+                    str(source), str(destination), format, compression_level,
+                    password, original_size, compressed_size, compressed_files)
+            except Exception:
                 if destination.exists():
                     try:
                         destination.unlink()
                     except OSError:
                         pass
                 raise
-        
+
         result = await asyncio.to_thread(
-            execute_with_safety_func,
-            operation_id=operation_id,
-            operation_func=_compress_sync
-        )
-        
+            execute_with_safety_func, operation_id=operation_id, operation_func=_compress_sync)
+
         if result:
-            return {"code": "SUCCESS", "data": {"operation_id": operation_id, **result}, "message": f"压缩完成: {result.get('file_count', 0)}个文件"}
-        else:
-            return {"code": "ERR_FILE_COMPRESS_FAILED", "data": None, "message": "压缩失败"}
-            
+            return {"code": "SUCCESS", "data": {"operation_id": operation_id, **result},
+                    "message": f"压缩完成: {result.get('file_count', 0)}个文件"}
+        return {"code": "ERR_FILE_COMPRESS_FAILED", "data": None, "message": "压缩失败"}
+
     except Exception as e:
         return {"code": "ERR_FILE_COMPRESS_FAILED", "data": None, "message": f"压缩失败: {str(e)}"}
+
+
+def _get_total_size_sync(path: Path, deadline: float) -> int:
+    """同步计算源路径总大小，支持超时 - 小健 2026-05-25"""
+    if path.is_file():
+        return path.stat().st_size
+    total_size = 0
+    for file_path in path.rglob("*"):
+        if time.monotonic() > deadline:
+            logger.warning("[_get_total_size_sync] 超时自检触发，提前返回")
+            break
+        if file_path.is_file():
+            total_size += file_path.stat().st_size
+    return total_size
 
 
 def _split_zip_file(zip_path: Path, split_size: int) -> List[Path]:
@@ -1425,268 +1565,49 @@ async def file_statistics_impl(
     execute_with_safety_func=None,
     get_next_sequence_func=None,
 ) -> Dict[str, Any]:
-    """
-    file_statistics工具的实现函数 - 格式统一 - 小沈 2026-05-21
-    
-    Args:
-        directory: 统计目录路径
-        recursive: 是否递归统计子目录
-        max_depth: 最大递归深度
-        filters: 过滤条件字典
-        output_format: 输出格式：json、csv、text
-        validate_path_func: 路径验证函数
-        safety_service: 安全服务
-        task_id: 任务ID
-        record_operation_func: 记录操作函数
-        execute_with_safety_func: 安全执行函数
-        get_next_sequence_func: 获取下一个序列号函数
-    
-    Returns:
-        统一格式的结果字典
-    """
+    """file_statistics工具的实现函数 - 小健 2026-05-25 重构"""
     from app.services.safety.file.file_safety import OperationType
-    
+
     is_valid, error_msg = validate_path_func(directory)
     if not is_valid:
         return {"code": "ERR_PATH_INVALID", "data": None, "message": f"目录路径验证失败: {error_msg}"}
-    
     if not task_id:
         return {"code": "ERR_META_NO_TASK", "data": None, "message": "No active task"}
-    
-    if output_format not in ["json", "csv", "text"]:
+    if output_format not in ("json", "csv", "text"):
         return {"code": "ERR_DOC_UNSUPPORTED_FORMAT", "data": None, "message": f"不支持的输出格式: {output_format}，支持格式: json, csv, text"}
-    
+
     dir_path = Path(directory)
-    
+
     try:
         if not dir_path.exists():
             return {"code": "ERR_FILE_DIRECTORY_NOT_FOUND", "data": None, "message": f"目录不存在: {directory}"}
-        
         if not dir_path.is_dir():
             return {"code": "ERR_FILE_PATH_NOT_DIR", "data": None, "message": f"路径不是目录: {directory}"}
-        
-        operation_id = record_operation_func(
-            task_id=task_id,
-            operation_type=OperationType.STATISTICS,
-            source_path=dir_path,
-            destination_path=None,
-            sequence_number=get_next_sequence_func()
-        )
-        
-        def _statistics_sync():
-            import time
-            start_time = time.time()
-            
-            stats = {
-                "directory": str(dir_path),
-                "total_files": 0,
-                "total_directories": 0,
-                "total_size": 0,
-                "file_types": {},
-                "size_distribution": {
-                    "0-1KB": 0,
-                    "1KB-1MB": 0,
-                    "1MB-10MB": 0,
-                    "10MB-100MB": 0,
-                    "100MB-1GB": 0,
-                    "1GB+": 0
-                },
-                "modification_time_distribution": {
-                    "today": 0,
-                    "this_week": 0,
-                    "this_month": 0,
-                    "this_year": 0,
-                    "older": 0
-                },
-                "depth_distribution": {},
-                "files": [],
-                "scan_time": 0
-            }
-            
-            from app.services.tools.tool_meta import get_timeout as _get_timeout
-            _stat_deadline = time.monotonic() + _get_timeout("file_statistics") - 2
-            _stat_timed_out = False
 
-            def _scan_directory(current_path: Path, current_depth: int):
-                nonlocal _stat_timed_out
-                if current_depth > max_depth:
-                    return
-                if _stat_timed_out:
-                    return
-                if time.monotonic() > _stat_deadline:
-                    _stat_timed_out = True
-                    logger.warning(f"[file_statistics] 超时自检触发，已统计{stats['total_files']}个文件，提前返回")
-                    return
-                
-                try:
-                    for item in current_path.iterdir():
-                        if _stat_timed_out:
-                            return
-                        try:
-                            if not _apply_filters(item, filters):
-                                continue
-                            
-                            if item.is_file():
-                                stat = item.stat()
-                                file_size = stat.st_size
-                                mtime = stat.st_mtime
-                                
-                                stats["total_files"] += 1
-                                stats["total_size"] += file_size
-                                
-                                ext = item.suffix.lower()
-                                if ext:
-                                    stats["file_types"][ext] = stats["file_types"].get(ext, 0) + 1
-                                else:
-                                    stats["file_types"]["no_extension"] = stats["file_types"].get("no_extension", 0) + 1
-                                
-                                if file_size < 1024:
-                                    stats["size_distribution"]["0-1KB"] += 1
-                                elif file_size < 1024 * 1024:
-                                    stats["size_distribution"]["1KB-1MB"] += 1
-                                elif file_size < 10 * 1024 * 1024:
-                                    stats["size_distribution"]["1MB-10MB"] += 1
-                                elif file_size < 100 * 1024 * 1024:
-                                    stats["size_distribution"]["10MB-100MB"] += 1
-                                elif file_size < 1024 * 1024 * 1024:
-                                    stats["size_distribution"]["100MB-1GB"] += 1
-                                else:
-                                    stats["size_distribution"]["1GB+"] += 1
-                                
-                                now = time.time()
-                                time_diff = now - mtime
-                                
-                                if time_diff < 24 * 60 * 60:
-                                    stats["modification_time_distribution"]["today"] += 1
-                                elif time_diff < 7 * 24 * 60 * 60:
-                                    stats["modification_time_distribution"]["this_week"] += 1
-                                elif time_diff < 30 * 24 * 60 * 60:
-                                    stats["modification_time_distribution"]["this_month"] += 1
-                                elif time_diff < 365 * 24 * 60 * 60:
-                                    stats["modification_time_distribution"]["this_year"] += 1
-                                else:
-                                    stats["modification_time_distribution"]["older"] += 1
-                                
-                                depth_key = f"depth_{current_depth}"
-                                stats["depth_distribution"][depth_key] = stats["depth_distribution"].get(depth_key, 0) + 1
-                                
-                                if len(stats["files"]) < 1000:
-                                    stats["files"].append({
-                                        "path": str(item),
-                                        "name": item.name,
-                                        "size": file_size,
-                                        "extension": ext if ext else "",
-                                        "modified_time": mtime,
-                                        "depth": current_depth
-                                    })
-                                
-                            elif item.is_dir():
-                                stats["total_directories"] += 1
-                                
-                                if recursive:
-                                    _scan_directory(item, current_depth + 1)
-                                    if _stat_timed_out:
-                                        return
-                                    
-                        except (PermissionError, OSError):
-                            continue
-                            
-                except (PermissionError, OSError):
-                    pass
-            
-            _scan_directory(dir_path, 0)
-            
-            if stats["total_files"] > 0:
-                stats["average_file_size"] = stats["total_size"] / stats["total_files"]
-            else:
-                stats["average_file_size"] = 0
-            
-            stats["scan_time"] = time.time() - start_time
-            
-            stats["file_types"] = dict(sorted(
-                stats["file_types"].items(),
-                key=lambda x: x[1],
-                reverse=True
-            ))
-            
-            if output_format == "json":
-                stats["output"] = json.dumps(stats, indent=2, ensure_ascii=False)
-            elif output_format == "csv":
-                output = io.StringIO()
-                writer = csv.writer(output)
-                
-                writer.writerow(["统计项", "值"])
-                writer.writerow(["目录", stats["directory"]])
-                writer.writerow(["总文件数", stats["total_files"]])
-                writer.writerow(["总目录数", stats["total_directories"]])
-                writer.writerow(["总大小(字节)", stats["total_size"]])
-                writer.writerow(["平均文件大小(字节)", stats["average_file_size"]])
-                writer.writerow(["扫描时间(秒)", stats["scan_time"]])
-                writer.writerow([])
-                
-                writer.writerow(["文件类型分布"])
-                writer.writerow(["文件类型", "数量"])
-                for ext, count in stats["file_types"].items():
-                    writer.writerow([ext, count])
-                writer.writerow([])
-                
-                writer.writerow(["大小分布"])
-                writer.writerow(["大小范围", "数量"])
-                for size_range, count in stats["size_distribution"].items():
-                    writer.writerow([size_range, count])
-                writer.writerow([])
-                
-                writer.writerow(["修改时间分布"])
-                writer.writerow(["时间范围", "数量"])
-                for time_range, count in stats["modification_time_distribution"].items():
-                    writer.writerow([time_range, count])
-                
-                stats["output"] = output.getvalue()
-                
-            elif output_format == "text":
-                lines = []
-                lines.append(f"目录统计: {stats['directory']}")
-                lines.append(f"总文件数: {stats['total_files']}")
-                lines.append(f"总目录数: {stats['total_directories']}")
-                lines.append(f"总大小: {stats['total_size']:,} 字节")
-                lines.append(f"平均文件大小: {stats['average_file_size']:,.2f} 字节")
-                lines.append(f"扫描时间: {stats['scan_time']:.2f} 秒")
-                lines.append("")
-                
-                lines.append("文件类型分布:")
-                for ext, count in stats["file_types"].items():
-                    lines.append(f"  {ext}: {count}")
-                lines.append("")
-                
-                lines.append("大小分布:")
-                for size_range, count in stats["size_distribution"].items():
-                    lines.append(f"  {size_range}: {count}")
-                lines.append("")
-                
-                lines.append("修改时间分布:")
-                for time_range, count in stats["modification_time_distribution"].items():
-                    lines.append(f"  {time_range}: {count}")
-                lines.append("")
-                
-                lines.append("深度分布:")
-                for depth, count in sorted(stats["depth_distribution"].items()):
-                    lines.append(f"  {depth}: {count}")
-                
-                stats["output"] = "\n".join(lines)
-            
-            return stats
-        
-        result = await asyncio.to_thread(
-            execute_with_safety_func,
-            operation_id=operation_id,
-            operation_func=_statistics_sync
+        operation_id = record_operation_func(
+            task_id=task_id, operation_type=OperationType.STATISTICS,
+            source_path=dir_path, destination_path=None,
+            sequence_number=get_next_sequence_func(),
         )
-        
+
+        from app.services.tools.tool_meta import get_timeout as _get_timeout
+        _stat_deadline = time.monotonic() + _get_timeout("file_statistics") - 2
+
+        def _statistics_sync():
+            start_time = time.time()
+            collector = _scan_stats_directory(dir_path, recursive, max_depth, _stat_deadline, filters)
+            scan_time = time.time() - start_time
+            stats = collector.to_dict(str(dir_path), scan_time)
+            return _format_stats_output(stats, output_format)
+
+        result = await asyncio.to_thread(
+            execute_with_safety_func, operation_id=operation_id, operation_func=_statistics_sync)
+
         if result:
-            return {"code": "SUCCESS", "data": {"operation_id": operation_id, **result}, "message": f"文件统计完成: {result.get('total_files', 0)}个文件, {result.get('total_directories', 0)}个目录"}
-        else:
-            return {"code": "ERR_STATISTICS_FAILED", "data": None, "message": "文件统计失败"}
-            
+            return {"code": "SUCCESS", "data": {"operation_id": operation_id, **result},
+                    "message": f"文件统计完成: {result.get('total_files', 0)}个文件, {result.get('total_directories', 0)}个目录"}
+        return {"code": "ERR_STATISTICS_FAILED", "data": None, "message": "文件统计失败"}
+
     except Exception as e:
         return {"code": "ERR_STATISTICS_FAILED", "data": None, "message": f"文件统计失败: {str(e)}"}
 
@@ -1852,7 +1773,7 @@ async def file_checksum_impl(
                     "verification_result": verification_result,
                     "expected_hash": verify_hash if verify_hash else None,
                     "elapsed_time": end_time - start_time,
-                    "hash_algorithm": algorithm_lower,
+                    "hash_algorithm": algorithm.lower(),
                     "checksum_upper": checksum.upper(),
                     "checksum_lower": checksum.lower()
                 }
