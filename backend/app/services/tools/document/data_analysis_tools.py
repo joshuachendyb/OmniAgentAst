@@ -118,6 +118,70 @@ def generate_chart(
             ]))
 
 
+def _convert_pd_value(val: Any) -> Any:
+    """统一 pandas 值转换为 Python 原生类型。
+
+    小沈 2026-05-25 重构拆分
+    消除 P1a-P1c NA转换4处重复（原L209-214, 225-230, 208-212, 224-228）
+
+    pd.Series → {k: _convert_pd_value(v) for k, v in val.items()}
+    pd.NA/pd.NaT → None
+    有 .item() 的 numpy 类型 → val.item()
+    其他 → val
+    """
+    import pandas as pd
+    if isinstance(val, pd.Series):
+        return {k: _convert_pd_value(v) for k, v in val.items()}
+    if pd.isna(val):
+        return None
+    if hasattr(val, 'item'):
+        return val.item()
+    return val
+
+
+def _compute_stats(
+    df: pd.DataFrame,
+    numeric_cols: List[str],
+    operations: List[str],
+    all_ops: List[str],
+    *,
+    group_by: Optional[str] = None,
+) -> Dict[str, Any]:
+    """统一分组/非分组统计计算。
+
+    小沈 2026-05-25 重构拆分
+    消除 G1a(分组, 原L198-217)和 G1b(非分组, 原L219-233)两套完全重复的循环。
+    内部调用 _convert_pd_value 统一 NA 转换。
+    """
+    import pandas as pd
+    if group_by and group_by in df.columns:
+        grouped = df.groupby(group_by)[numeric_cols]
+        result = {}
+        for name, group_df in grouped:
+            group_key = str(name)
+            result[group_key] = {}
+            for op in operations:
+                if op not in all_ops:
+                    continue
+                try:
+                    val = getattr(group_df, op)()
+                    result[group_key][op] = _convert_pd_value(val)
+                except Exception:
+                    result[group_key][op] = None
+        return {"grouped_statistics": result}
+
+    statistics = {}
+    for op in operations:
+        if op not in all_ops:
+            continue
+        try:
+            val = getattr(df[numeric_cols], op)()
+            statistics[op] = _convert_pd_value(val)
+        except Exception:
+            statistics[op] = None
+    return {"statistics": statistics}
+
+
 def analyze_data(
     data: Union[str, List[Dict[str, Any]]],
     operations: Optional[List[str]] = None,
@@ -190,47 +254,10 @@ def analyze_data(
 
         if top_n and top_n > 0:
             df = df.head(top_n)
-            result["limited"] = True
             result["top_n"] = top_n
 
         result["row_count"] = len(df)
-
-        if group_by and group_by in df.columns:
-            grouped = df.groupby(group_by)[numeric_cols]
-            stats_by_group = {}
-            for name, group_df in grouped:
-                group_key = str(name)
-                stats_by_group[group_key] = {}
-                for op in operations:
-                    if op in all_ops:
-                        try:
-                            val = getattr(group_df, op)()
-                            if isinstance(val, pd.Series):
-                                stats_by_group[group_key][op] = {
-                                    k: (None if pd.isna(v) else v.item() if hasattr(v, 'item') else v)
-                                    for k, v in val.items()
-                                }
-                            else:
-                                stats_by_group[group_key][op] = None if pd.isna(val) else (val.item() if hasattr(val, 'item') else val)
-                        except Exception:
-                            stats_by_group[group_key][op] = None
-            result["grouped_statistics"] = stats_by_group
-        else:
-            statistics = {}
-            for op in operations:
-                if op in all_ops:
-                    try:
-                        val = getattr(df[numeric_cols], op)()
-                        if isinstance(val, pd.Series):
-                            statistics[op] = {
-                                k: (None if pd.isna(v) else v.item() if hasattr(v, 'item') else v)
-                                for k, v in val.items()
-                            }
-                        else:
-                            statistics[op] = None if pd.isna(val) else (val.item() if hasattr(val, 'item') else val)
-                    except Exception:
-                        statistics[op] = None
-            result["statistics"] = statistics
+        result.update(_compute_stats(df, numeric_cols, operations, all_ops, group_by=group_by))
 
         return build_success(
             truncate_data_for_frontend(result),
