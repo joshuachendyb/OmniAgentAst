@@ -729,6 +729,10 @@ class ToolRegistry:
         """返回已注册工具数量"""
         return len(self._tools)
 
+    def get_categories(self) -> Dict[ToolCategory, List[str]]:
+        """返回分类→工具名列表映射（copy防外部修改）— 小沈 2026-05-25"""
+        return {k: list(v) for k, v in self._categories.items()}
+
     @classmethod
     def get_instance(cls) -> "ToolRegistry":
         """获取全局工具注册表单例实例"""
