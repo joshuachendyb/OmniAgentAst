@@ -517,6 +517,117 @@ def _build_context(lines: List[str], line_no: int,
     return entry
 
 
+def _collect_file_matches(
+    lines: List[str],
+    regex: Any,
+    multiline: bool,
+    head_limit: Optional[int],
+    match_count: int,
+    context_lines: Optional[int],
+    after_lines: Optional[int],
+    before_lines: Optional[int],
+) -> List[Dict]:
+    """收集单个文件中的匹配行 — 小沈 2026-05-25
+
+    使用场景:
+    - _grep_files_sync中处理单个文件的匹配
+    - 支持多行和单行两种模式
+
+    使用示例:
+        file_matches = _collect_file_matches(lines, regex, multiline, head_limit, match_count, ...)
+
+    返回数据说明:
+    - 返回List[Dict]，匹配行列表
+    """
+    import re as re_mod
+    file_matches = []
+    if multiline:
+        content = ''.join(lines)
+        for m in regex.finditer(content):
+            if head_limit is not None and match_count + len(file_matches) >= head_limit:
+                break
+            line_no = content[:m.start()].count('\n') + 1
+            file_matches.append({"line": line_no, "content": m.group()})
+    else:
+        for line_no, line in enumerate(lines, 1):
+            if head_limit is not None and match_count + len(file_matches) >= head_limit:
+                break
+            m = regex.search(line)
+            if m:
+                entry = {"line": line_no, "content": line.rstrip('\n\r')}
+                ctx = _build_context(lines, line_no, context_lines, after_lines, before_lines)
+                entry.update(ctx)
+                file_matches.append(entry)
+    return file_matches
+
+
+def _grep_files_sync(
+    search_path: Path,
+    pattern: str,
+    file_glob: Optional[str],
+    output_mode: Optional[str],
+    ignore_case: bool,
+    multiline: bool,
+    head_limit: Optional[int],
+    context_lines: Optional[int],
+    after_lines: Optional[int],
+    before_lines: Optional[int],
+    deadline: float,
+) -> Tuple[List[Dict], int]:
+    """同步文件内容搜索 — 小沈 2026-05-25
+
+    使用场景:
+    - grep_file_content中同步搜索逻辑
+    - 需要在独立线程中执行阻塞IO操作的场景
+
+    使用示例:
+        matches, total_matches = await asyncio.to_thread(
+            _grep_files_sync, search_path, pattern, glob, output_mode, ...
+        )
+
+    返回数据说明:
+    - matches: List[Dict], 匹配结果列表
+    - total_matches: int, 总匹配次数
+    """
+    import fnmatch
+    import re as re_mod
+
+    flags = re_mod.IGNORECASE if ignore_case else 0
+    if multiline:
+        flags |= re_mod.DOTALL
+    try:
+        regex = re_mod.compile(pattern, flags)
+    except re_mod.error as e:
+        raise ValueError(f"正则表达式错误: {e}")
+
+    results = []
+    match_count = 0
+
+    for root, dirs, files in os.walk(search_path):
+        if time.monotonic() > deadline:
+            logger.warning(f"[_grep_files_sync] 超时自检触发，已匹配{match_count}条，提前返回{len(results)}个文件结果")
+            break
+        filtered_files = [f for f in files if not file_glob or fnmatch.fnmatch(f, file_glob)]
+        for filename in filtered_files:
+            if head_limit is not None and match_count >= head_limit:
+                break
+            file_path = Path(root) / filename
+            lines = _read_file_safe(file_path)
+            if not lines:
+                continue
+
+            file_matches = _collect_file_matches(
+                lines, regex, multiline, head_limit, match_count,
+                context_lines, after_lines, before_lines
+            )
+            match_count += len(file_matches)
+            fmt_entry = _format_match_output(file_matches, output_mode, str(file_path))
+            if fmt_entry:
+                results.append(fmt_entry)
+
+    return results, match_count
+
+
 def _format_match_output(file_matches: List, output_mode: Optional[str],
                          file_path: str) -> Optional[Dict]:
     """根据output_mode格式化单文件结果，返回条目或None — 小健 2026-05-25
@@ -1916,68 +2027,10 @@ class FileTools:
             if not pattern:
                 return build_error("ERR_PARAM_INVALID", "搜索模式不能为空")
 
-            file_glob = glob
-            _grep_deadline = time.monotonic() + get_timeout("grep_file_content") - 2
-
-            def _grep_sync() -> List[Dict[str, Any]]:
-                import fnmatch
-                import re as re_mod
-
-                flags = re_mod.IGNORECASE if ignore_case else 0
-                if multiline:
-                    flags |= re_mod.DOTALL
-                try:
-                    regex = re_mod.compile(pattern, flags)
-                except re.error as e:
-                    raise ValueError(f"正则表达式错误: {e}")
-
-                results = []
-                match_count = 0
-
-                for root, dirs, files in os.walk(search_path):
-                    if time.monotonic() > _grep_deadline:
-                        logger.warning(f"[grep_file_content] 超时自检触发，已匹配{match_count}条，提前返回{len(results)}个文件结果")
-                        break
-                    filtered_files = [f for f in files if not file_glob or fnmatch.fnmatch(f, file_glob)]
-                    for filename in filtered_files:
-                        if head_limit is not None and match_count >= head_limit:
-                            break
-                        file_path = Path(root) / filename
-                        lines = _read_file_safe(file_path)
-                        if not lines:
-                            continue
-
-                        file_matches = []
-                        if multiline:
-                            content = ''.join(lines)
-                            for m in regex.finditer(content):
-                                match_count += 1
-                                line_no = content[:m.start()].count('\n') + 1
-                                file_matches.append({"line": line_no, "content": m.group()})
-                                if head_limit is not None and match_count >= head_limit:
-                                    break
-                        else:
-                            for line_no, line in enumerate(lines, 1):
-                                m = regex.search(line)
-                                if m:
-                                    match_count += 1
-                                    entry = {"line": line_no, "content": line.rstrip('\n\r')}
-                                    ctx = _build_context(lines, line_no, context_lines, after_lines, before_lines)
-                                    entry.update(ctx)
-                                    file_matches.append(entry)
-                                    if head_limit is not None and match_count >= head_limit:
-                                        break
-
-                        fmt_entry = _format_match_output(file_matches, output_mode, str(file_path))
-                        if fmt_entry:
-                            results.append(fmt_entry)
-
-                return results
-
-            matches = await asyncio.to_thread(_grep_sync)
-            total_matches = sum(
-                m.get("match_count", 0) if "match_count" in m else (m.get("count", 1) if "count" in m else 1)
-                for m in matches
+            deadline = time.monotonic() + get_timeout("grep_file_content") - 2
+            matches, total_matches = await asyncio.to_thread(
+                _grep_files_sync, search_path, pattern, glob, output_mode,
+                ignore_case, multiline, head_limit, context_lines, after_lines, before_lines, deadline
             )
 
             total = len(matches)
