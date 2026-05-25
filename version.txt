@@ -1,8 +1,54 @@
-v0.13.39
+v0.13.40
 
-更新时间: 2026-05-25 06:45:59
+更新时间: 2026-05-25 12:15:00
 
 更新内容：
+
+## v0.13.39→v0.13.40 变更汇总 - 小沈-2026-05-25
+
+### refactor 第25章5个函数拆分重构（5个commit）
+
+| commit | 说明 |
+|--------|------|
+| 1de1a809 | refactor: 25.1 generate_report 拆分 - 小沈-2026-05-25 |
+| 666e983d | refactor: 25.2 _determine_parse_type 拆分 - 小沈-2026-05-25 |
+| 59122953 | refactor: 25.3 _create_action_result_from_dict统一action结果构造 - 小沈-2026-05-25 |
+| fbb685ed | refactor: 25.4 _execute_javascript 拆分 - 小沈-2026-05-25 |
+| e53a903a | refactor: 25.5 _delete_file 拆分 - 小沈-2026-05-25 |
+
+### 重构详情
+
+#### 25.1 generate_report (operation_history.py:442)
+- 新增: `_FORMAT_HANDLERS` 分发字典 + `_make_report_response` 工厂
+- 替换: 106行→25行骨架，4格式if-elif链 → HANDLERS字典分发
+- 消除: 8次 ReportResponse 重复构造 → 2次调用
+- YAGNI删除: json分支的 JSONDecodeError 异常保护（generate_json_report返回已是有效JSON）
+
+#### 25.2 _determine_parse_type (react_output_parser.py:622)
+- 新增: `_try_codeblock_parse` + `_try_keyword_parse` + `_make_fallback_result`
+- 替换: 105行→20行骨架，3优先级串行 → 3个独立解析器管道
+- 消除: implicit/parse_error 的 7字段dict重复 → `_make_fallback_result` 统一构造
+- 修复: implicit截断问题（原设计错误，已按25.6问题1修复）
+
+#### 25.3 _create_action_result_from_dict (react_output_parser.py:1033)
+- 新增: `_make_action_result_dict` + `_resolve_return_type`
+- 替换: 106行→25行骨架，3种返回类型各构造 → `_make_action_result_dict` 统一
+- 消除: `_pending_calls`透传和`_add_reasoning_warning`在2处重复 → 下沉到`_make_action_result_dict`
+- 消除: 3种返回类型的7字段dict构造重复
+
+#### 25.4 _execute_javascript (code_execution_tools.py:218)
+- 新增: `_build_js_exec_result` 统一结果构建
+- 替换: ~115行→35行骨架，安全检查内联 → `_build_js_exec_result` 提取
+- 消除: `format_output_for_llm` + `truncate_data_for_frontend` 在成功/失败3处重复 → 统一处理
+- 保持: TimeoutExpired 路径内联（与正常路径差异大，不适合合并）
+
+#### 25.5 _delete_file (file_tools.py:1058)
+- 新增: `_force_delete_sync` + `_send2trash_sync` + `_build_delete_result`
+- 替换: ~98行→30行骨架，42行闭包 → 3个独立函数
+- 消除: send2trash未安装回退 和 异常回退 的2份重复rmtree/rmdir/unlink代码
+- YAGNI删除: `deletion_info`可变容器 + `caps`列表构建（前端从未消费）
+
+---
 
 ## v0.13.38→v0.13.39 变更汇总 - 小健-2026-05-25
 
