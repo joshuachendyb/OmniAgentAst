@@ -427,114 +427,89 @@ def _handle_non_standard_json(output) -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Handler #7: 混合文本中提取JSON块 + 不完整JSON检测
 # ---------------------------------------------------------------------------
+
+# 【24.4.4 组件1】统一 handler 结果构建(消除 4 个 8 字段 dict 重复)
+def _build_handler_result(type_: str, thought: str = "", content: str = "",
+                           reasoning: str = "", tool_name: Optional[str] = None,
+                           tool_params: Optional[Dict] = None,
+                           response: Any = None, error: Optional[str] = None) -> Dict[str, Any]:
+    """构建统一 handler 结果 — 小健 2026-05-25"""
+    return {
+        "type": type_, "thought": thought, "content": content or thought,
+        "reasoning": reasoning, "tool_name": tool_name, "tool_params": tool_params or {},
+        "response": response or thought, "error": error,
+    }
+
+
 def _handle_mixed_text_json(output) -> Optional[Dict[str, Any]]:
     """
     处理从混合文本中提取JSON的场景，包括不完整JSON检测。
     当前代码 lines 313-437 的逻辑整体迁移。
     作者: 小沈 2026-05-19
     """
+    # 【24.4.4 重构后主函数】~70行骨架
     if not isinstance(output, str):
         return None
-    
+
     json_data = _extract_json_block(output)
-    
-    # 不完整JSON检测
+    prefix_text = ""
+    if json_data:
+        json_start = output.find("{")
+        prefix_text = output[:json_start].strip() if json_start != -1 else ""
+
+    # 不完整 JSON 检测
     if not json_data:
         if re.match(r'^\s*\{\s*"thought":\s*"', output):
-            # 不完整JSON先走正则兜底，可能能提取出tool调用
             regex_recovered = _try_regex_tool_call_fallback(output)
             if regex_recovered:
-                logger.info("[parse_react_response] 不完整JSON但正则兜底提取到tool调用，跳过implicit")
+                logger.info("不完整JSON但正则兜底提取到tool调用")
                 return _add_reasoning_warning(regex_recovered)
             thought_text = output.strip()
-            logger.info("[parse_react_response] 检测到不完整JSON格式，返回chunk")
-            return {
-                "type": "chunk",
-                "thought": thought_text,
-                "content": thought_text,
-                "reasoning": thought_text,
-                "tool_name": None,
-                "tool_params": None,
-                "response": thought_text,
-                "error": None
-            }
-        return None  # 无JSON块 → 交给后续handler
-    
+            logger.info("检测到不完整JSON格式，返回chunk")
+            return _build_handler_result("chunk", thought=thought_text)
+        return None
+
     if not isinstance(json_data, dict):
         return None
-    
-    # 提取前缀文本
-    json_start = output.find('{')
-    prefix_text = output[:json_start].strip() if json_start != -1 else ""
-    
+
     tool_name = json_data.get("tool_name")
     tool_params = json_data.get("tool_params", {})
     if not isinstance(tool_params, dict):
         tool_params = {}
-    
-    # finish 类型
-    # 【修复A3 2026-05-20 小健】result 使用 _normalize_result_to_str 标准化
+
+    # finish
     if tool_name == "finish":
-        logger.info("[parse_react_response] 混合文本中提取到finish JSON")
         raw_result = tool_params.get("result") if tool_params else None
         result_text = _normalize_result_to_str(raw_result) if raw_result is not None else ""
-        return {
-            "type": "answer",
-            "thought": json_data.get("thought", ""),
-            "content": result_text or prefix_text,
-            "reasoning": json_data.get("reasoning", ""),
-            "tool_name": None,
-            "tool_params": None,
-            "response": result_text or prefix_text,
-            "error": None
-        }
-    
-    # tool_name action (非finish)
+        content = result_text or prefix_text
+        return _build_handler_result("answer", thought=json_data.get("thought", ""),
+            content=content, response=content)
+
+    # action
     if tool_name:
-        logger.info("[parse_react_response] 混合文本中提取到JSON，走JSON处理流程")
-        extracted_content = json_data.get("content", "")
-        if not extracted_content:
-            extracted_content = prefix_text
-        if tool_params:
-            tool_params = _process_tool_params(tool_params, tool_name, output)
-        return {
-            "type": "action",
-            "thought": json_data.get("thought", ""),
-            "content": extracted_content,
-            "reasoning": json_data.get("reasoning", ""),
-            "tool_name": tool_name,
-            "tool_params": tool_params,
-            "response": None,
-            "error": None
-        }
-    
-    # 无tool_name但有content/reasoning → implicit
+        extracted = json_data.get("content", "") or prefix_text
+        params = _process_tool_params(tool_params, tool_name, output)
+        return _build_handler_result("action", thought=json_data.get("thought", ""),
+            content=extracted, tool_name=tool_name, tool_params=params)
+
+    # implicit
     if "content" in json_data or "reasoning" in json_data:
-        has_action_keyword = re.search(r'\bAction\s*:', output, re.IGNORECASE)
-        has_answer_keyword = re.search(r'\bAnswer\s*:', output, re.IGNORECASE)
-        if not has_action_keyword and not has_answer_keyword:
-            logger.info("[parse_react_response] 检测到无tool_name的JSON，提取content/reasoning字段")
-            content_value = json_data.get("content", "")
-            reasoning_value = json_data.get("reasoning", "")
-            if isinstance(content_value, str) and content_value.startswith("{"):
+        if not re.search(r'\bAction\s*:', output, re.IGNORECASE) and \
+           not re.search(r'\bAnswer\s*:', output, re.IGNORECASE):
+            content = json_data.get("content", "")
+            reasoning = json_data.get("reasoning", "")
+            # 嵌套 JSON 提取(防御性)
+            if isinstance(content, str) and content.startswith("{"):
                 try:
-                    parsed_content = json.loads(content_value)
-                    if isinstance(parsed_content, dict):
-                        content_value = parsed_content.get("content", content_value)
+                    parsed = json.loads(content)
+                    if isinstance(parsed, dict):
+                        content = parsed.get("content", content)
                 except (json.JSONDecodeError, TypeError):
                     pass
-            return {
-                "type": "implicit",
-                "thought": prefix_text or content_value,
-                "content": content_value,
-                "reasoning": reasoning_value,
-                "tool_name": None,
-                "tool_params": None,
-                "response": content_value,
-                "error": None
-            }
-    
-    return None  # 无匹配 → 交给后续handler
+            return _build_handler_result("implicit", thought=prefix_text or content,
+                content=content, reasoning=reasoning, response=content)
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -618,6 +593,50 @@ def parse_react_response(output: str) -> Dict[str, Any]:
 # =============================================================================
 # 步骤1.2：实现四种情况判断逻辑
 # =============================================================================
+
+# 【24.1.4 组件2/3 常量】工具名/参数名降级映射 — 小健 2026-05-25
+_TOOL_NAME_FALLBACK_KEYS = ["action", "action_tool", "tool_name"]
+_TOOL_PARAMS_FALLBACK_KEYS = ["params", "action_input", "actionInput"]
+
+
+# 【24.1.4 组件1】统一 action 结果构建(消除 2 个 return dict 的 6 字段重复)
+def _build_action_result(type_: str, tool_name: str, tool_params: Dict[str, Any],
+                          thought: str, error: Optional[str] = None) -> Dict[str, Any]:
+    """构建统一 action 结果 — 小健 2026-05-25"""
+    return {
+        "type": type_,
+        "thought": thought,
+        "content": thought,      # 兼容字段，可随版本逐步废弃
+        "reasoning": thought,    # 兼容字段，可随版本逐步废弃
+        "tool_name": tool_name,
+        "tool_params": tool_params,
+        "response": None,
+        "error": error,
+    }
+
+
+# 【24.1.4 组件2】从 tool_params 兜底提取工具名(消除 M1a 3 个连续 if)
+def _fallback_tool_name(tool_params: Dict[str, Any], current: str) -> str:
+    """从 tool_params 中按优先级兜底查找工具名 — 小健 2026-05-25"""
+    if current:
+        return current
+    for key in _TOOL_NAME_FALLBACK_KEYS:
+        if key in tool_params:
+            return tool_params.pop(key)
+    return ""
+
+
+# 【24.1.4 组件3】统一参数名映射(消除 M1b 3 个连续 if)
+def _normalize_tool_params(tool_params: Dict[str, Any]) -> Dict[str, Any]:
+    """将不同 LLM 输出的参数名统一为 tool_params — 小健 2026-05-25"""
+    if "tool_params" in tool_params:
+        return tool_params
+    for key in _TOOL_PARAMS_FALLBACK_KEYS:
+        if key in tool_params:
+            tool_params["tool_params"] = tool_params.pop(key)
+            break
+    return tool_params
+
 
 # 【小沈重构 2026-05-25】25.2节：提取3个独立解析器，消除SLAP/DRY违反
 def _try_codeblock_parse(output: str) -> Optional[Dict[str, Any]]:
@@ -2099,92 +2118,36 @@ def _parse_action(
     关键改进3: 非贪婪匹配JSON ``.*?`` 确保正确捕获
     关键改进4: 中英文关键词完整支持
     """
-    # 提取Thought内容
-    if thought_match:
-        thought_start = thought_match.end()
-        thought_end = action_match.start()
-        thought = output[thought_start:thought_end].strip()
-    else:
-        # 关键改进2: 无Thought标记时捕获Action之前的内容
-        thought = output[:action_match.start()].strip()
-    
-    # 定位Action Input
-    action_input_match = re.search(REACT_KEYWORDS["action_input"], output, re.IGNORECASE)
-    
-    # 提取工具名（Action和Action Input之间）
-    action_start = action_match.end()
-    if action_input_match:
-        action_end = action_input_match.start()
-        action_section = output[action_start:action_end].strip()
-    else:
-        # 没有Action Input，取Action之后到行尾
-        action_section = output[action_start:].strip()
-    
-    # 关键改进1: 工具名约束 - 禁止空格和括号
-    tool_name_match = re.match(r'^([^\n\(\) ]+)', action_section)
-    if tool_name_match:
-        tool_name = tool_name_match.group(1)
-    else:
-        # Action 为空或格式异常时，避免 split()[0] 越界
-        parts = action_section.split()
-        tool_name = parts[0] if parts else ""
-    
-    # 提取工具参数
-    if action_input_match:
-        input_start = action_input_match.end()
-        input_section = output[input_start:].strip()
-        tool_params = _parse_action_input(input_section)
-    else:
-        tool_params = {}
-    
-    # ==========================================================================
-    # 【P1-高优先级新增】多字段名映射（兼容不同LLM输出格式）
-    # 来源：tool_parser.py (行200-215)
-    # 处理不同LLM可能使用的不同字段名
-    # ==========================================================================
-    # 如果解析到的tool_params中包含备用字段名，进行统一映射
-    if isinstance(tool_params, dict):
-        # 工具名映射：action -> action_tool -> tool_name
-        if not tool_name and "action" in tool_params:
-            tool_name = tool_params.pop("action")
-        if not tool_name and "action_tool" in tool_params:
-            tool_name = tool_params.pop("action_tool")
-        
-        # 参数映射：params -> action_input -> actionInput
-        if "params" in tool_params and "tool_params" not in tool_params:
-            tool_params["tool_params"] = tool_params.pop("params")
-        if "action_input" in tool_params and "tool_params" not in tool_params:
-            tool_params["tool_params"] = tool_params.pop("action_input")
-        if "actionInput" in tool_params and "tool_params" not in tool_params:
-            tool_params["tool_params"] = tool_params.pop("actionInput")
-    
-    # 深度检查：如果工具名解析成功但参数解析彻底失败（返回None而非{}）
-    if tool_name and tool_params is None:
-        return {
-            "type": "parse_error",
-            "error": f"Failed to parse parameters for tool '{tool_name}' after 5 levels of fallback",
-            "thought": thought,
-            "content": thought,
-            "reasoning": thought,
-            "tool_name": tool_name,
-            "tool_params": {},
-            "response": None
-        }
+    # 【24.1.4 重构后主函数】~60行骨架，调用3个提取组件
+    # 提取 thought
+    thought = output[thought_match.end():action_match.start()].strip() if thought_match \
+        else output[:action_match.start()].strip()
 
-    # 【修复A5 2026-05-20 小健】使用 _process_tool_params 统一管道替换仅 supplement
-    # 从 "仅 supplement" 升级为 "normalize + filter + supplement 完整链路"
-    final_tool_params = tool_params or {}
-    final_tool_params = _process_tool_params(final_tool_params, tool_name, output)
-    return {
-        "type": "action",
-        "thought": thought,
-        "content": thought,             # 兼容性字段
-        "reasoning": thought,           # 兼容性字段
-        "tool_name": tool_name,
-        "tool_params": final_tool_params,
-        "response": None,
-        "error": None
-    }
+    # 定位 action_input 并提取 tool_name 和 params
+    action_input_match = re.search(REACT_KEYWORDS["action_input"], output, re.IGNORECASE)
+    action_start = action_match.end()
+
+    if action_input_match:
+        action_section = output[action_start:action_input_match.start()].strip()
+        input_section = output[action_input_match.end():].strip()
+        tool_params = _parse_action_input(input_section) or {}
+    else:
+        action_section = output[action_start:].strip()
+        tool_params = {}
+
+    # 工具名正则
+    tool_name_match = re.match(r'^([^\n\(\) ]+)', action_section)
+    tool_name = tool_name_match.group(1) if tool_name_match \
+        else (action_section.split()[0] if action_section else "")
+
+    # 统一字段映射
+    if isinstance(tool_params, dict):
+        tool_name = _fallback_tool_name(tool_params, tool_name)
+        tool_params = _normalize_tool_params(tool_params)
+
+    # 统一管道
+    final_tool_params = _process_tool_params(tool_params or {}, tool_name, output)
+    return _build_action_result("action", tool_name, final_tool_params, thought)
 
 
 # =============================================================================

@@ -507,6 +507,56 @@ async def fetch_webpage(
 
 
 
+# 【24.2.4 组件1】MCP_CONFIGS 提至模块级常量 — 每次调用避免重建
+_MCP_CONFIGS = {
+    "parallel": {
+        "url": "https://search.parallel.ai/mcp",
+        "tool_name": "web_search",
+        "build_args": lambda q, n: {"objective": q, "search_queries": [q], "session_id": "omniagent-search"},
+    },
+    "exa": {
+        "url": "https://mcp.exa.ai/mcp",
+        "tool_name": "web_search_exa",
+        "build_args": lambda q, n: {"query": q, "type": "auto", "numResults": n, "livecrawl": "fallback"},
+    },
+}
+
+
+# 【24.2.4 组件2】统一失败日志 + return None(消除 7 路重复)
+def _search_failed(engine: str, reason: str = "") -> None:
+    """日志记录 MCP 搜索失败 — 小健 2026-05-25"""
+    logger.info(f"[_search_mcp_engine:{engine}] {reason}" if reason else f"[_search_mcp_engine:{engine}] 失败")
+
+
+# 【24.2.4 组件3】从 P1c 提取为独立函数(消除 R1b 无结果 + 逐行状态机)
+def _parse_exa_results(text: str, num_results: int) -> Optional[List[Dict[str, str]]]:
+    """解析 Exa MCP 的文本格式结果 — 小健 2026-05-25"""
+    results = []
+    current = {}
+    for line in text.split("\n"):
+        line = line.strip()
+        if line.startswith("Title: "):
+            if current.get("title"):
+                results.append(current)
+                if len(results) >= num_results:
+                    break
+            current = {"title": line[7:], "url": "", "snippet": ""}
+        elif line.startswith("URL: "):
+            current["url"] = line[5:]
+        elif line.startswith("Highlights:") or (current.get("snippet") == "" and line and
+              not line.startswith("Published") and not line.startswith("Author")):
+            if not current["snippet"]:
+                current["snippet"] = line[:300]
+    if current.get("title"):
+        results.append(current)
+
+    formatted = [
+        {"title": r["title"], "url": r["url"], "snippet": r.get("snippet", "")[:300], "source": "Exa"}
+        for r in results[:num_results] if r.get("title") and r.get("url")
+    ]
+    return formatted or None
+
+
 async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: Optional[str] = None) -> Optional[List[dict]]:
     """MCP搜索引擎统一入口 - 小沈 2026-05-17
     合并 _search_parallel_mcp + _search_exa_mcp，消除约80行重复代码。
@@ -520,104 +570,52 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: O
     Returns:
         搜索结果列表或None（失败时）
     """
-    MCP_CONFIGS = {
-        "parallel": {
-            "url": "https://search.parallel.ai/mcp",
-            "tool_name": "web_search",
-            "build_args": lambda q, n: {
-                "objective": q,
-                "search_queries": [q],
-                "session_id": "omniagent-search",
-            },
-        },
-        "exa": {
-            "url": "https://mcp.exa.ai/mcp",
-            "tool_name": "web_search_exa",
-            "build_args": lambda q, n: {
-                "query": q,
-                "type": "auto",
-                "numResults": n,
-                "livecrawl": "fallback",
-            },
-        },
-    }
-    config = MCP_CONFIGS.get(engine)
+    config = _MCP_CONFIGS.get(engine)
     if not config:
+        _search_failed(engine, "未知引擎")
         return None
-    
+
     payload = {
         "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-        "params": {
-            "name": config["tool_name"],
-            "arguments": config["build_args"](query, num_results),
-        }
+        "params": {"name": config["tool_name"], "arguments": config["build_args"](query, num_results)},
     }
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=10.0), proxy=proxy) as c:
-            resp = await c.post(
-                config["url"],
-                json=payload,
-                headers={"Accept": "application/json, text/event-stream"}
-            )
+            resp = await c.post(config["url"], json=payload,
+                headers={"Accept": "application/json, text/event-stream"})
             resp.raise_for_status()
             data = resp.json()
             result_text = data.get("result", {}).get("content", [{}])[0].get("text", "")
             if not result_text:
-                logger.info(f"[_search_mcp_engine:{engine}] 返回空数据")
+                _search_failed(engine, "返回空数据")
                 return None
-        
+
         if engine == "parallel":
             if not result_text.startswith("{"):
-                logger.info("[_search_mcp_engine:parallel] 返回数据非JSON")
+                _search_failed(engine, "返回数据非JSON")
                 return None
             parsed = json.loads(result_text)
-            raw_results = parsed.get("results", [])
             results = []
-            for r in raw_results[:num_results]:
-                url = r.get("url", "")
-                title = r.get("title", "")
-                excerpts = r.get("excerpts", [])
-                snippet = excerpts[0][:300] if excerpts else ""
+            for r in parsed.get("results", [])[:num_results]:
+                title, url = r.get("title", ""), r.get("url", "")
                 if title and url:
+                    snippet = (r.get("excerpts", [])[0] or "")[:300]
                     results.append({"title": title, "url": url, "snippet": snippet, "source": "Parallel"})
-            if results:
-                return results
-            logger.info("[_search_mcp_engine:parallel] 无搜索结果")
-            return None
-        
+            if not results:
+                _search_failed(engine, "无搜索结果")
+                return None
+            return results
         else:  # exa
-            results = []
-            current = {}
-            for line in result_text.split("\n"):
-                line = line.strip()
-                if line.startswith("Title: "):
-                    if current.get("title"):
-                        results.append(current)
-                        if len(results) >= num_results:
-                            break
-                    current = {"title": line[7:], "url": "", "snippet": ""}
-                elif line.startswith("URL: "):
-                    current["url"] = line[5:]
-                elif line.startswith("Highlights:") or (current.get("snippet") == "" and line and not line.startswith("Published") and not line.startswith("Author")):
-                    if not current["snippet"]:
-                        current["snippet"] = line[:300]
-            if current.get("title"):
-                results.append(current)
-            formatted = []
-            for r in results[:num_results]:
-                if r.get("title") and r.get("url"):
-                    formatted.append({"title": r["title"], "url": r["url"], "snippet": r.get("snippet", "")[:300], "source": "Exa"})
-            if formatted:
-                return formatted
-            logger.info("[_search_mcp_engine:exa] 无搜索结果")
-            return None
-    
+            formatted = _parse_exa_results(result_text, num_results)
+            if not formatted:
+                _search_failed(engine, "无搜索结果")
+            return formatted
+
     except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
-        logger.info(f"[_search_mcp_engine:{engine}] 失败: {type(e).__name__}")
-        return None
+        _search_failed(engine, f"网络错误: {type(e).__name__}")
     except Exception as e:
-        logger.info(f"[_search_mcp_engine:{engine}] 异常: {type(e).__name__}")
-        return None
+        _search_failed(engine, f"异常: {type(e).__name__}")
+    return None  # 所有异常汇聚到唯一 return None
 
 
 async def _search_parallel_mcp(query: str, num_results: int, proxy: Optional[str] = None) -> Optional[List[dict]]:
@@ -953,6 +951,13 @@ async def _ping(
         return build_error("ERR_NET_UNKNOWN", f"Ping测试异常: {str(e)}")
 
 
+# 【24.5.4 组件1】统一端口结果 data 构建(消除 5 次 data dict)
+def _build_port_result(host: str, port: int, is_open: bool,
+                        service: Optional[str] = None) -> Dict[str, Any]:
+    """构建端口检查结果 data — 小健 2026-05-25"""
+    return {"host": host, "port": port, "is_open": is_open, "service": service}
+
+
 async def _port_check(
     host: str,
     port: int,
@@ -980,87 +985,42 @@ async def _port_check(
             "message": "描述信息"
         }
     """
+    # 【24.5.4 重构后主函数】~50行，统一 E1b 为 build_error
     try:
-        if not host or len(host.strip()) == 0:
+        if not host or not host.strip():
             return build_error("ERR_NETWORK_INVALID_HOST", "目标主机地址不能为空")
-        
         if port < 1 or port > 65535:
-            return build_error("ERR_NETWORK_INVALID_PORT", f"端口号无效：{port}，必须在 1-65535 范围内")
-        
+            return build_error("ERR_NETWORK_INVALID_PORT", f"端口号无效: {port}")
         host = host.strip()
-        
+        service = well_known_ports.get(port, "Unknown")
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(timeout)
-            
-            result = sock.connect_ex((host, port))
-            
-            if result == 0:
-                is_open = True
-                sock.close()
-                
-                service = well_known_ports.get(port, "Unknown")
-                
-                return build_success(
-                    {
-                        "host": host,
-                        "port": port,
-                        "is_open": True,
-                        "service": service,
-                    },
-                    f"端口 {port} ({service}) 开放：{host}:{port}",
-                    llm_data={"主机": host, "端口": port, "开放": True, "服务": service},
-                )
-            else:
-                sock.close()
-                
-                return build_success(
-                    {
-                        "host": host,
-                        "port": port,
-                        "is_open": False,
-                        "service": well_known_ports.get(port, "Unknown"),
-                    },
-                    f"端口 {port} 关闭：{host}:{port}，请检查服务是否启动或防火墙设置",
-                    llm_data={"主机": host, "端口": port, "开放": False},
-                )
-        
-        except socket.gaierror as e:
-            return build_error(
-                "ERR_NETWORK_DNS_ERROR",
-                f"DNS解析失败：{host} ({str(e)})",
-                data={
-                    "host": host,
-                    "port": port,
-                    "is_open": False,
-                    "service": None,
-                },
-            )
-        except socket.timeout:
-            return build_success(
-                {
-                    "host": host,
-                    "port": port,
-                    "is_open": False,
-                    "service": well_known_ports.get(port, "Unknown"),
-                },
-                f"端口 {port} 连接超时：{host}:{port}",
-            )
-        except OSError as e:
-            return build_error(
-                "ERR_NETWORK_CONNECTION_ERROR",
-                f"连接失败：{str(e)}",
-                data={
-                    "host": host,
-                    "port": port,
-                    "is_open": False,
-                    "service": None,
-                },
-            )
-    
+            is_open = sock.connect_ex((host, port)) == 0
+        finally:
+            sock.close()
+
+        if is_open:
+            return build_success(_build_port_result(host, port, True, service),
+                f"端口 {port} ({service}) 开放: {host}:{port}",
+                llm_data={"主机": host, "端口": port, "开放": True})
+        return build_success(_build_port_result(host, port, False, service),
+            f"端口 {port} 关闭: {host}:{port}",
+            llm_data={"主机": host, "端口": port, "开放": False})
+
+    except socket.gaierror as e:
+        return build_error("ERR_NETWORK_DNS_ERROR", f"DNS解析失败: {host} ({e})",
+            data=_build_port_result(host, port, False))
+    except socket.timeout:
+        return build_error("ERR_NETWORK_TIMEOUT", f"端口 {port} 连接超时: {host}:{port}",
+            data=_build_port_result(host, port, False, service))
+    except OSError as e:
+        return build_error("ERR_NETWORK_CONNECTION_ERROR", f"连接失败: {e}",
+            data=_build_port_result(host, port, False))
     except Exception as e:
         logger.error(f"[port_check] 未知错误: {e}")
-        return build_error("ERR_NET_UNKNOWN", f"端口检查异常: {str(e)}")
+        return build_error("ERR_NET_UNKNOWN", f"端口检查异常: {e}")
 
 
 async def network_diagnose(

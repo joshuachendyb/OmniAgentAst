@@ -26,7 +26,7 @@ Author: 小沈 - 2026-05-02
 import winreg
 import os
 import tempfile
-from typing import Optional, Dict, Any, Literal
+from typing import Optional, Dict, Any, Literal, Callable
 from datetime import datetime
 
 from app.utils.logger import logger
@@ -180,6 +180,42 @@ def reg_read(key_path: str, value_name: Optional[str] = None, hive: str = "HKCU"
         return build_error("ERR_REG_READ_FAILED", error_msg)
 
 
+# 【24.3.4 组件1】_REG_TYPE_MAP 移至模块级(消除每次调用重建)
+_REG_TYPE_MAP: Dict[str, int] = {
+    "REG_SZ": winreg.REG_SZ,
+    "REG_DWORD": winreg.REG_DWORD,
+    "REG_QWORD": winreg.REG_QWORD,
+    "REG_EXPAND_SZ": winreg.REG_EXPAND_SZ,
+    "REG_MULTI_SZ": winreg.REG_MULTI_SZ,
+    "REG_BINARY": winreg.REG_BINARY,
+}
+
+
+# 【24.3.4 组件2】统一根键校验(消除 H1 重复)
+def _validate_root_key(full_root_key: str) -> Optional[int]:
+    """校验根键是否有效，返回 hkey 或 None — 小健 2026-05-25"""
+    hkey = ROOT_KEY_MAP.get(full_root_key)
+    if hkey is None:
+        return None
+    return hkey
+
+
+# 【24.3.4 组件3】统一值类型转换(消除 V1a-V1f 6 路 elif)
+_REG_CONVERTERS: Dict[str, Callable] = {
+    "REG_DWORD": lambda v: int(v),
+    "REG_QWORD": lambda v: int(v),
+    "REG_EXPAND_SZ": lambda v: v,
+    "REG_BINARY": lambda v: bytes.fromhex(v.replace(" ", "")),
+    "REG_MULTI_SZ": lambda v: v.split(";") if isinstance(v, str) else v,
+}
+
+
+def _convert_reg_value(value_type: str, value: str) -> Any:
+    """按注册表类型转换值 — 小健 2026-05-25"""
+    converter = _REG_CONVERTERS.get(value_type)
+    return converter(value) if converter else value
+
+
 def reg_write(key_path: str, value_name: str, value: str, value_type: str = "auto_detect", backup_before_write: bool = True, dry_run: bool = False, hive: str = "HKCU") -> dict:
     """写入注册表键值
     
@@ -202,93 +238,46 @@ def reg_write(key_path: str, value_name: str, value: str, value_type: str = "aut
     Returns:
         {code, data, message}
     """
-    # 先解析key_path（所有模式都需要）
+    # 【24.3.4 重构后主函数】~55行骨架
     full_root_key, sub_key = _parse_key_path(key_path, hive)
-    
-    # dry_run模式：仅校验，不实际写入
+    hkey = _validate_root_key(full_root_key)
+    if hkey is None:
+        return build_error("ERR_SYS_REG_INVALID_ROOT_KEY", f"无效的根键: {full_root_key}")
+
     if dry_run:
-        hkey = ROOT_KEY_MAP.get(full_root_key)
-        if hkey is None:
-            return build_error("ERR_SYS_REG_INVALID_ROOT_KEY", f"无效的根键: {full_root_key}")
-        
         try:
             with winreg.OpenKey(hkey, sub_key, 0, winreg.KEY_READ):
                 pass
-            return build_success({"key_path": key_path, "dry_run": True}, "dry_run模式：键路径有效，可以写入")
+            return build_success({"key_path": key_path, "dry_run": True}, "键路径有效，可以写入")
         except FileNotFoundError:
             return build_error("ERR_SYS_REG_KEY_NOT_FOUND", f"键路径不存在: {key_path}")
         except Exception as e:
-            return build_error("ERR_REG_VALIDATE_FAILED", f"校验失败: {str(e)}")
-    
+            return build_error("ERR_REG_VALIDATE_FAILED", f"校验失败: {e}")
+
     try:
-        # 备份
         if backup_before_write:
-            session_id = "reg_write"
-            _backup_registry(full_root_key, sub_key, session_id)
-        hkey = ROOT_KEY_MAP.get(full_root_key)
-        
-        if hkey is None:
-            return build_error("ERR_SYS_REG_INVALID_ROOT_KEY", f"无效的根键: {full_root_key}")
+            _backup_registry(full_root_key, sub_key, "reg_write")
 
-        # 类型映射
-        type_map = {
-            "REG_SZ": winreg.REG_SZ,
-            "REG_DWORD": winreg.REG_DWORD,
-            "REG_QWORD": winreg.REG_QWORD,
-            "REG_EXPAND_SZ": winreg.REG_EXPAND_SZ,
-            "REG_MULTI_SZ": winreg.REG_MULTI_SZ,
-            "REG_BINARY": winreg.REG_BINARY,
-        }
-        
-        # auto_detect: 自动推断类型
-        actual_value_type = value_type
+        actual_type = value_type
         if value_type == "auto_detect":
-            if value.isdigit():
-                actual_value_type = "REG_DWORD"
-            else:
-                actual_value_type = "REG_SZ"
-        
-        reg_type = type_map.get(actual_value_type)
-        if reg_type is None:
-            return build_error("ERR_REG_UNSUPPORTED_TYPE", f"不支持的值类型: {value_type}")
-        
-        # 值转换
-        converted_value = value
-        if actual_value_type == "REG_DWORD":
-            converted_value = int(value)
-        elif actual_value_type == "REG_QWORD":
-            converted_value = int(value)
-        elif actual_value_type == "REG_EXPAND_SZ":
-            converted_value = value
-        elif actual_value_type == "REG_BINARY":
-            if isinstance(value, str):
-                converted_value = bytes.fromhex(value.replace(" ", ""))
-        elif actual_value_type == "REG_MULTI_SZ":
-            if isinstance(value, str):
-                converted_value = value.split(";")
-        
+            actual_type = "REG_DWORD" if value.isdigit() else "REG_SZ"
+
+        if actual_type not in _REG_TYPE_MAP:
+            return build_error("ERR_REG_UNSUPPORTED_TYPE", f"不支持的类型: {value_type}")
+
+        converted = _convert_reg_value(actual_type, value)
         with winreg.CreateKey(hkey, sub_key) as key:
-            winreg.SetValueEx(key, value_name, 0, reg_type, converted_value)
+            winreg.SetValueEx(key, value_name, 0, _REG_TYPE_MAP[actual_type], converted)
 
-        result_data = {
-            "key_path": f"{full_root_key}\\{sub_key}",
-            "value_name": value_name,
-            "value": value,
-            "value_type": actual_value_type,
-            "backup": backup_before_write,
-        }
-
-        logger.info(f"[reg_write] 成功写入: {full_root_key}\\{sub_key}\\{value_name}")
-        return build_success(result_data, "写入成功")
-
+        logger.info(f"[reg_write] 写入成功: {full_root_key}\\{sub_key}\\{value_name}")
+        return build_success({"key_path": f"{full_root_key}\\{sub_key}", "value_name": value_name,
+                              "value": value, "value_type": actual_type}, "写入成功")
     except PermissionError:
-        error_msg = f"权限不足，无法写入: {key_path}"
-        logger.error(f"[reg_write] {error_msg}")
-        return build_error("ERR_REG_PERMISSION_DENIED", error_msg)
+        logger.error(f"[reg_write] 权限不足: {key_path}")
+        return build_error("ERR_REG_PERMISSION_DENIED", f"权限不足: {key_path}")
     except Exception as e:
-        error_msg = f"写入注册表失败: {str(e)}"
-        logger.error(f"[reg_write] {error_msg}")
-        return build_error("ERR_REG_WRITE_FAILED", error_msg)
+        logger.error(f"[reg_write] 写入失败: {e}")
+        return build_error("ERR_REG_WRITE_FAILED", f"写入注册表失败: {e}")
 
 
 def reg_delete(key_path: str, value_name: Optional[str] = None, backup_before_delete: bool = True, recursive: bool = False, hive: str = "HKCU") -> dict:
