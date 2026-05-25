@@ -515,6 +515,34 @@ class BaseAIService:
         """关闭HTTP客户端"""
         await self.client.aclose()
     
+    async def _cancel_or_wait(self, request_task: asyncio.Task) -> Optional[ChatResponse]:
+        """心跳循环：1秒间隔检查取消。取消则返回 error ChatResponse — 小沈 2026-05-25"""
+        try:
+            while not request_task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(request_task), timeout=1.0)
+                except asyncio.TimeoutError:
+                    if self._cancelled:
+                        logger.info("[chat_with_tools] 检测到取消，中断请求")
+                        request_task.cancel()
+                        try:
+                            await request_task
+                        except asyncio.CancelledError:
+                            pass
+                        return ChatResponse(content="", model=self.model, provider=self.provider, error="任务已取消")
+        except asyncio.CancelledError:
+            return ChatResponse(content="", model=self.model, provider=self.provider, error="任务已取消")
+        if self._cancelled:
+            return ChatResponse(content="", model=self.model, provider=self.provider, error="任务已取消")
+        return None
+
+    def _response_or_error(self, content: str = "", error: str = "",
+                          tool_calls: Optional[List] = None,
+                          reasoning: str = "") -> ChatResponse:
+        """统一构建 ChatResponse，消除 error 路径的 6 次构造重复 — 小沈 2026-05-25"""
+        return ChatResponse(content=content, model=self.model, provider=self.provider,
+                           error=error, tool_calls=tool_calls, reasoning=reasoning)
+
     async def chat_with_tools(
         self,
         message: str,
@@ -522,163 +550,61 @@ class BaseAIService:
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto"
     ) -> ChatResponse:
-        """发送对话请求（使用 Function Calling）
-        
-        【小沈优化 2026-04-21】使用后台任务+心跳检查，1秒内响应取消
-        """
+        """发送对话请求（使用 Function Calling） — 小沈 2026-05-25 重构"""
         self.reset_cancel()
         try:
             messages = self._build_messages(message, history)
-            is_thinking = await self._detect_reasoning_support()
-            if is_thinking:
+            if await self._detect_reasoning_support():
                 messages = self._fix_thinking_messages(messages, True)
-            
-            request_json = {
-                "model": self.model,
-                "messages": messages
-            }
-            
+            request_json = {"model": self.model, "messages": messages}
             if tools:
                 request_json["tools"] = tools
                 request_json["tool_choice"] = tool_choice
-            
-            logger.info(
-                f"[chat_with_tools] model={self.model}, "
-                f"messages数量={len(messages)}, "
-                f"tools数量={len(tools) if tools else 0}"
-            )
-            
-            # 【小沈优化 2026-04-21】使用后台任务+心跳检查，支持1秒内响应取消
-            request_task = asyncio.ensure_future(
-                self._post_with_retry(
-                    f"{self.api_base}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json_body=request_json
-                )
-            )
-            
-            try:
-                while not request_task.done():
-                    # 等待1秒或直到任务完成
-                    try:
-                        await asyncio.wait_for(asyncio.shield(request_task), timeout=1.0)
-                    except asyncio.TimeoutError:
-                        # 检查是否被取消
-                        if self._cancelled:
-                            logger.info("[chat_with_tools] 检测到取消，中断请求")
-                            request_task.cancel()
-                            try:
-                                await request_task
-                            except asyncio.CancelledError:
-                                pass
-                            return ChatResponse(
-                                content="",
-                                model=self.model,
-                                provider=self.provider,
-                                error="任务已取消"
-                            )
-                        continue
-                
-                response = await request_task
-                
-                # 【LLM-004 小沈 2026-05-24】请求完成后、处理响应前检查取消标志
-                # 消除最后1秒心跳窗口期内的取消延迟
-                if self._cancelled:
-                    logger.info("[chat_with_tools] 请求完成后检测到取消，丢弃响应")
-                    return ChatResponse(
-                        content="", model=self.model, provider=self.provider, error="任务已取消"
-                    )
-                
-            except asyncio.CancelledError:
-                return ChatResponse(
-                    content="",
-                    model=self.model,
-                    provider=self.provider,
-                    error="任务已取消"
-                )
-            
+
+            logger.info(f"[chat_with_tools] model={self.model}, messages数量={len(messages)}, tools数量={len(tools) if tools else 0}")
+
+            request_task = asyncio.ensure_future(self._post_with_retry(f"{self.api_base}/chat/completions",
+                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+                json_body=request_json))
+
+            cancel_response = await self._cancel_or_wait(request_task)
+            if cancel_response:
+                return cancel_response
+
+            response = await request_task
             if response.status_code != 200:
-                error_text = response.text
-                logger.error(f"[chat_with_tools] API Error: {response.status_code}, {error_text}")
-                return ChatResponse(
-                    content="",
-                    model=self.model,
-                    provider=self.provider,
-                    error=f"API Error: {response.status_code}, {error_text}"
-                )
-            
+                return self._response_or_error(error=f"API Error: {response.status_code}, {response.text}")
+
             data = response.json()
             choices = data.get("choices", [])
-            
             if not choices:
-                return ChatResponse(
-                    content="",
-                    model=self.model,
-                    provider=self.provider,
-                    error="No response from API"
-                )
-            
+                return self._response_or_error(error="No response from API")
+
             msg = choices[0].get("message", {})
             tool_calls = msg.get("tool_calls", [])
             if tool_calls:
-                return ChatResponse(
-                    content=json.dumps(tool_calls, ensure_ascii=False),
-                    model=self.model,
-                    provider=self.provider,
-                    tool_calls=tool_calls
-                )
-            else:
-                content = msg.get("content", "")
-                reasoning = msg.get("reasoning", "") or ""
-                if not content:
-                    finish_reason = choices[0].get("finish_reason", "")
-                    if finish_reason == "tool_calls":
-                        return ChatResponse(
-                            content="",
-                            model=self.model,
-                            provider=self.provider,
-                            error="Failed to parse tool_calls"
-                        )
-                    # 【2026-05-23 小沈】reasoning fallback：content为空时用reasoning兜底
-                    if reasoning:
-                        content = reasoning
-                        logger.info(f"[chat_with_tools] content为空，使用reasoning作为fallback")
-                
-                # 【通用XML工具调用检测 2026-05-13 小沈】某些模型（如LongCat）返回XML格式工具调用
-                # 格式: <XXX_tool_call>TOOL_NAME\n<XXX_arg_key>k</XXX_arg_key>\n<XXX_arg_value>v</XXX_arg_value>\n</XXX_tool_call>
+                return self._response_or_error(content=json.dumps(tool_calls, ensure_ascii=False), tool_calls=tool_calls)
+
+            content = msg.get("content", "") or ""
+            reasoning = msg.get("reasoning", "") or ""
+            if not content:
+                finish_reason = choices[0].get("finish_reason", "")
+                if finish_reason == "tool_calls":
+                    return self._response_or_error(error="Failed to parse tool_calls")
+                if reasoning:
+                    content = reasoning
+                    logger.info(f"[chat_with_tools] content为空，使用reasoning作为fallback")
+
+            if content and "<" in content and ">" in content:
                 xml_converted = _convert_xml_tool_call_to_json(content)
                 if xml_converted:
                     logger.info(f"[chat_with_tools] 检测到XML工具调用格式，已转为JSON: {xml_converted}")
-                    return ChatResponse(
-                        content=xml_converted,
-                        model=self.model,
-                        provider=self.provider
-                    )
-                
-                return ChatResponse(
-                    content=content,
-                    model=self.model,
-                    provider=self.provider,
-                    reasoning=reasoning
-                )
-                
+                    return self._response_or_error(content=xml_converted)
+            return self._response_or_error(content=content, reasoning=reasoning)
+
         except Exception as e:
-            import traceback
-            error_type_name = type(e).__name__
-            logger.error(
-                f"[chat_with_tools] Exception: {str(e)}, "
-                f"type: {error_type_name}, "
-                f"stack: {traceback.format_exc()}"
-            )
-            return ChatResponse(
-                content="",
-                model=self.model,
-                provider=self.provider,
-                error=f"{error_type_name}: {str(e)}"
-            )
+            logger.error(f"[chat_with_tools] Exception: {e}")
+            return self._response_or_error(error=f"{type(e).__name__}: {e}")
     
     async def chat_with_tools_stream(
         self,
