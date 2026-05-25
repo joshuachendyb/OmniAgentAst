@@ -91,7 +91,7 @@ async def _is_cancelled_and_yield(
     task_id: str, running_tasks: dict, running_tasks_lock: asyncio.Lock,
     next_step: Callable[[], int], session_id: str,
     current_execution_steps: list, current_content: str
-) -> bool:
+) -> Optional[str]:
     """统一cancelled检查和yield逻辑 - 小沈 2026-05-25
 
     使用场景:
@@ -99,11 +99,10 @@ async def _is_cancelled_and_yield(
     - generate_sse_stream中cancelled检查
 
     使用示例:
-        if await _is_cancelled_and_yield(...):
-            break
+        sse_data = await _is_cancelled_and_yield(...)
 
     返回数据说明:
-        - bool, 是否已取消并yield了interrupted事件
+        - Optional[str], 已取消则返回interrupted SSE字符串，否则None
     """
     async with running_tasks_lock:
         is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
@@ -111,10 +110,10 @@ async def _is_cancelled_and_yield(
             logger.info(f"[InterruptCheck] 任务 {task_id} 取消状态: {is_cancelled}")
             interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
             logger.info(f"[Step incident] 发送incident步骤(interrupted)")
-            yield f"data: {json.dumps(interrupted_data)}\n\n"
             current_execution_steps.append(interrupted_data)
             await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
-    return
+            return f"data: {json.dumps(interrupted_data)}\n\n"
+    return None
 
 
 async def _yield_error_sse(
@@ -482,10 +481,12 @@ async def _run_sse_stream(
             max_steps=max_steps, task_id=task_id,
             running_tasks=running_tasks, step_counter=next_step,
         ):
-            if await _is_cancelled_and_yield(
+            cancelled_sse = await _is_cancelled_and_yield(
                 task_id, running_tasks, running_tasks_lock, next_step,
                 session_id, current_execution_steps, current_content
-            ):
+            )
+            if cancelled_sse:
+                yield cancelled_sse
                 break
             event_step = event.get('step') if isinstance(event, dict) else None
             sse_step = event_step if event_step is not None else next_step()
