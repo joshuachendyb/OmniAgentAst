@@ -20,7 +20,8 @@ import uuid
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
+from contextlib import contextmanager
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from app.utils.logger import logger
@@ -70,6 +71,28 @@ from app.db.models.chat_models import (
     BatchTitleResponse,
     MessageResponse,
 )
+
+
+@contextmanager
+def get_db_connection() -> Iterator[sqlite3.Connection]:
+    """消除DB连接管理(conn→cursor→try→except→finally)的重复
+
+    使用场景: sessions.py中所有DB操作
+    使用示例: with get_db_connection() as conn: cursor = conn.cursor(); cursor.execute("SELECT ...")
+    返回数据说明: yield sqlite3.Connection对象，with块结束后自动关闭
+
+    @author 小健 2026-05-25
+    """
+    conn: Optional[sqlite3.Connection] = None
+    try:
+        conn = get_connection()
+        yield conn
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def get_utc_timestamp() -> str:
@@ -745,6 +768,152 @@ async def save_message(session_id: str, message: MessageCreate):
                 pass
 
 
+class AssistantMessageIdAllocator:
+    """为assistant消息分配唯一ID。save_execution_steps和save_message复用
+
+    使用场景: save_execution_steps中为新的assistant消息分配ID; save_message中复用同一ID分配逻辑
+    使用示例: allocator = AssistantMessageIdAllocator(_user_message_ids, _message_ids_lock); message_id, is_new = allocator.allocate(session_id, conn)
+    返回数据说明: allocate返回Tuple[int, bool]，(消息ID, 是否为新消息)
+
+    @author 小健 2026-05-25
+    """
+    def __init__(self, user_ids: Dict[str, int], lock: threading.Lock):
+        self._user_ids = user_ids
+        self._assistant_ids: Dict[str, int] = {}
+        self._lock = lock
+
+    def allocate(self, session_id: str, conn: sqlite3.Connection) -> Tuple[int, bool]:
+        """返回 (message_id, is_new)"""
+        with self._lock:
+            user_id = self._user_ids.get(session_id)
+
+        if user_id is not None:
+            expected = user_id + 1
+        else:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id FROM chat_messages WHERE session_id=? AND role='user' ORDER BY id DESC LIMIT 1",
+                (session_id,),
+            )
+            row = cursor.fetchone()
+            expected = (row["id"] + 1) if row else 1
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, role FROM chat_messages WHERE id=?", (expected,))
+        existing = cursor.fetchone()
+        if existing and existing["role"] == "assistant":
+            return expected, False
+        if existing and existing["role"] != "assistant":
+            cursor.execute(
+                "SELECT id FROM chat_messages WHERE session_id=? ORDER BY id DESC LIMIT 1",
+                (session_id,),
+            )
+            max_row = cursor.fetchone()
+            expected = (max_row["id"] + 1) if max_row else 1
+
+        with self._lock:
+            self._assistant_ids[session_id] = expected
+        return expected, True
+
+
+def extract_metadata(execution_steps: Optional[List[Dict[str, Any]]]) -> Dict[str, Optional[str]]:
+    """从execution_steps的start步骤提取model/provider/display_name
+
+    使用场景: save_execution_steps中提取metadata用于display_name
+    使用示例: metadata = extract_metadata(update_data.execution_steps)
+    返回数据说明: {"model": str|None, "provider": str|None, "display_name": str|None}
+
+    @author 小健 2026-05-25
+    """
+    if not execution_steps:
+        return {"model": None, "provider": None, "display_name": None}
+    for step in execution_steps:
+        if step.get("type") == "start":
+            model = step.get("model")
+            provider = step.get("provider")
+            display_name = step.get("display_name")
+            if not display_name and provider and model:
+                display_name = f"{provider} ({model})"
+            return {"model": model, "provider": provider, "display_name": display_name}
+    return {"model": None, "provider": None, "display_name": None}
+
+
+def _ensure_session_exists(session_id: str, conn: sqlite3.Connection) -> None:
+    """检查会话是否存在，不存在则抛出HTTPException
+
+    @author 小健 2026-05-25
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM chat_sessions WHERE id=? AND is_deleted=FALSE", (session_id,))
+    if cursor.fetchone() is None:
+        raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+
+
+def _insert_assistant_message(
+    conn: sqlite3.Connection, message_id: int, session_id: str,
+    display_name: Optional[str], update_data: "ExecutionStepsUpdate",
+) -> None:
+    """插入新的assistant消息
+
+    @author 小健 2026-05-25
+    """
+    cursor = conn.cursor()
+    utc_time = get_timestamp_ms()
+    initial_content = update_data.content or ""
+    cursor.execute(
+        """INSERT INTO chat_messages
+           (id, session_id, role, content, timestamp, display_name) VALUES (?, ?, ?, ?, ?, ?)""",
+        (message_id, session_id, "assistant", initial_content, utc_time, display_name),
+    )
+    logger.info(f"🆕 [新消息创建] message_id={message_id}, session_id={session_id}, display_name={display_name}")
+
+
+def _update_message_fields(
+    conn: sqlite3.Connection, message_id: int,
+    update_data: "ExecutionStepsUpdate", display_name: Optional[str],
+) -> None:
+    """动态构建并执行消息字段更新
+
+    @author 小健 2026-05-25
+    """
+    cursor = conn.cursor()
+    fields: list = []
+    values: list = []
+    if update_data.execution_steps:
+        fields.append("execution_steps = ?")
+        values.append(json.dumps(update_data.execution_steps))
+    if update_data.content is not None:
+        fields.append("content = ?")
+        values.append(update_data.content)
+    if fields:
+        values.append(message_id)
+        cursor.execute(
+            f'UPDATE chat_messages SET {", ".join(fields)} WHERE id = ?',
+            values,
+        )
+
+
+def _update_session_message_count(
+    conn: sqlite3.Connection, session_id: str, increment: bool,
+) -> None:
+    """更新会话message_count（仅首次创建+1）和updated_at
+
+    @author 小健 2026-05-25
+    """
+    cursor = conn.cursor()
+    utc_time = get_timestamp_ms()
+    if increment:
+        cursor.execute(
+            "UPDATE chat_sessions SET message_count=message_count+1, updated_at=? WHERE id=?",
+            (utc_time, session_id),
+        )
+    else:
+        cursor.execute(
+            "UPDATE chat_sessions SET updated_at=? WHERE id=?",
+            (utc_time, session_id),
+        )
+
+
 class ExecutionStepsUpdate(BaseModel):
     """
     更新执行步骤请求
@@ -764,471 +933,217 @@ class ExecutionStepsUpdate(BaseModel):
 
 @router.post("/sessions/{session_id}/execution_steps")
 async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdate):
+    """保存/更新会话的执行步骤（智能UPSERT）
+
+    重构：259行大函数拆分为骨架+Allocator+辅助函数
+    @author 小沈, 小健 2026-05-25
     """
-    保存/更新会话的执行步骤（智能UPSERT）
-    
-    功能：单独保存或更新消息的 execution_steps 和 content 字段
-    与 save_message 的区别：只更新 execution_steps 和 content，不插入新消息（除非消息不存在）
-    
-    @author 小沈
-    @update 2026-03-16 v11.0修复：实现智能UPSERT，解决以下问题：
-    
-    修复的问题：
-    - 缺陷3：content覆盖问题 - 直接传递当前累积的content，DB直接覆盖
-    - 缺陷4：message_count重复 - 每次创建消息都+1，可能重复
-    - 缺陷5：visibilitychange调用无效 - 后端API已支持content参数
-    
-    实现逻辑：
-    1. 查找最后一条assistant消息
-    2. 如果不存在，创建消息占位（仅首次创建时更新message_count）
-    3. 更新execution_steps和content字段（智能覆盖）
-    
-    Args:
-        session_id: 会话ID
-        update_data: 包含 execution_steps 和 content 的请求体
-        
-    Returns:
-        dict: 保存结果
-    """
-    conn = None
+    allocator = AssistantMessageIdAllocator(_user_message_ids, _message_ids_lock)
     try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        # 检查会话是否存在
-        cursor.execute(
-            'SELECT id FROM chat_sessions WHERE id = ? AND is_deleted = FALSE',
-            (session_id,)
-        )
-        session = cursor.fetchone()
-        
-        if not session:
-            raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
-        
-        # 查找该会话的最后一条assistant消息（用于更新 execution_steps 和 content）
-        # @update 2026-03-16：添加role='assistant'过滤，只更新assistant消息
-        # 【重要修复】使用message_count来判断是否需要创建新消息，而不是仅依赖timestamp
-        # 根因：如果仅用timestamp排序，上一次对话的assistant消息可能被错误地更新
-        # 解决方案：同时检查timestamp和消息顺序，确保只更新最近一次对话的assistant消息
-        
-        # 先查找会话的message_count
-        cursor.execute(
-            'SELECT message_count FROM chat_sessions WHERE id = ?',
-            (session_id,)
-        )
-        session_info = cursor.fetchone()
-        session_message_count = session_info['message_count'] if session_info else 0
-        
-        # 根据message_count计算应该有多少条assistant消息
-        expected_assistant_count = (session_message_count + 1) // 2
-        
-        # ⭐ 【重要修复 2026-03-17】每次都重新计算AI消息ID，不依赖缓存
-        # 缓存逻辑错误：之前一直用第一次的缓存ID，导致后续消息覆盖问题
-        # 修复：每次都用当前用户消息ID+1来计算AI消息ID
-        
-        # 计算AI消息ID = 用户消息ID + 1
-        user_message_id = _user_message_ids.get(session_id)
-        
-        if user_message_id:
-            expected_assistant_id = user_message_id + 1
-            # 存入字典（更新为最新的）
-            with _message_ids_lock:
-                _assistant_message_ids[session_id] = expected_assistant_id
-            logger.info(f"[重新计算AI消息ID] user_message_id={user_message_id}, assistant_message_id={expected_assistant_id}")
-            # 检查消息是否已存在
-            cursor.execute('SELECT id, role FROM chat_messages WHERE id = ?', (expected_assistant_id,))
-            existing_msg = cursor.fetchone()
-            
-            if existing_msg:
-                if existing_msg['role'] == 'assistant':
-                    should_create_new = False
-                    logger.info(f"[更新现有] assistant消息(ID={expected_assistant_id}): session_id={session_id}")
-                else:
-                    should_create_new = True
-                    logger.warning(f"[ID被占用] ID={expected_assistant_id}是{existing_msg['role']}，创建新消息")
-            else:
-                should_create_new = True
-                logger.info(f"[新建] ID={expected_assistant_id}不存在，创建assistant消息: session_id={session_id}")
-        else:
-            # 计算AI消息ID = 用户消息ID + 1
-            user_message_id = _user_message_ids.get(session_id)
-            
-            if user_message_id:
-                expected_assistant_id = user_message_id + 1
-                # 存入字典
-                with _message_ids_lock:
-                    _assistant_message_ids[session_id] = expected_assistant_id
-                logger.info(f"[计算AI消息ID] user_message_id={user_message_id}, assistant_message_id={expected_assistant_id}")
-            else:
-                # 内存没有查数据库
-                cursor.execute(
-                    '''SELECT id FROM chat_messages 
-                       WHERE session_id = ? AND role = 'user'
-                       ORDER BY id DESC LIMIT 1''',
-                    (session_id,)
-                )
-                last_user_msg = cursor.fetchone()
-                
-                if last_user_msg:
-                    expected_assistant_id = last_user_msg['id'] + 1
-                    with _message_ids_lock:
-                        _assistant_message_ids[session_id] = expected_assistant_id
-                    logger.info(f"[基于数据库] user_msg_id={last_user_msg['id']}, assistant_msg_id={expected_assistant_id}")
-                else:
-                    expected_assistant_id = 1
-                    logger.warning(f"[异常] session没有用户消息，ID={session_id}")
-            
-            # 检查消息是否已存在
-            cursor.execute('SELECT id, role FROM chat_messages WHERE id = ?', (expected_assistant_id,))
-            existing_msg = cursor.fetchone()
-            
-            if existing_msg:
-                if existing_msg['role'] == 'assistant':
-                    should_create_new = False
-                    logger.info(f"[更新现有] assistant消息(ID={expected_assistant_id}): session_id={session_id}")
-                else:
-                    should_create_new = True
-                    logger.warning(f"[ID被占用] ID={expected_assistant_id}是{existing_msg['role']}，创建新消息")
-            else:
-                should_create_new = True
-                logger.info(f"[新建] ID={expected_assistant_id}不存在，创建assistant消息: session_id={session_id}")
-        
-        # 【小健修复 2026-05-24】ID被占用时，查找下一个可用ID，避免UNIQUE constraint冲突
-        # 根因：当expected_assistant_id已被user消息占用时，should_create_new=True但仍用冲突ID做INSERT
-        if should_create_new:
-            cursor.execute('SELECT id FROM chat_messages WHERE id = ?', (expected_assistant_id,))
-            if cursor.fetchone():
-                cursor.execute(
-                    '''SELECT id FROM chat_messages WHERE session_id = ? ORDER BY id DESC LIMIT 1''',
-                    (session_id,)
-                )
-                max_msg = cursor.fetchone()
-                expected_assistant_id = (max_msg['id'] + 1) if max_msg else 1
-                with _message_ids_lock:
-                    _assistant_message_ids[session_id] = expected_assistant_id
-                logger.info(f"[ID冲突解决] 重新分配assistant_message_id={expected_assistant_id}")
-        
-        # ⭐ 【重要修复 2026-03-16】从execution_steps的start步骤提取metadata
-        metadata = {'model': None, 'provider': None, 'display_name': None}
-        if update_data.execution_steps:
-            for step in update_data.execution_steps:
-                if step.get('type') == 'start':
-                    metadata['model'] = step.get('model')
-                    metadata['provider'] = step.get('provider')
-                    metadata['display_name'] = step.get('display_name')
-                    logger.info(f"[提取metadata] 从start步骤提取: model={metadata['model']}, provider={metadata['provider']}, display_name={metadata['display_name']}")
-                    break
-        
-        # 如果需要创建新消息
-        # 【小沈修复 2026-03-31】使用毫秒时间戳，避免前端解析错误
-        if should_create_new:
-            utc_time = get_timestamp_ms()
-            initial_content = update_data.content if update_data.content else ''
-            
-            # 保存metadata到数据库
-            display_name_to_save = metadata['display_name'] or f"{metadata['provider']} ({metadata['model']})" if metadata['provider'] and metadata['model'] else None
-            
-            # ⭐ 【重要】使用期望的ID插入，而不是让数据库自动生成
-            cursor.execute(
-                '''INSERT INTO chat_messages 
-                   (id, session_id, role, content, timestamp, display_name) VALUES (?, ?, ?, ?, ?, ?)''',
-                (expected_assistant_id, session_id, 'assistant', initial_content, utc_time, display_name_to_save)
-            )
-            last_message = {'id': expected_assistant_id, 'content': initial_content}
-            is_new_message = True
-            
-            # ⭐ 【调试】记录新消息ID和创建时间
-            logger.info(f"🆕 [新消息创建] message_id={expected_assistant_id}, session_id={session_id}, timestamp={utc_time}, display_name={display_name_to_save}")
-        else:
-            # 更新现有消息
-            is_new_message = False
-            # 确认消息存在
-            cursor.execute('SELECT id FROM chat_messages WHERE id = ?', (expected_assistant_id,))
-            if not cursor.fetchone():
-                # 消息不存在，创建新消息
-                # 【小沈修复 2026-04-01】修复 message.timestamp 显示 1970 年的问题
-                # 根因：之前使用 get_utc_timestamp() 返回 ISO 字符串，前端解析时只取前导数字导致显示 1970 年
-                # 修复：改为 get_timestamp_ms() 返回毫秒数，与前端期望的格式一致
-                utc_time = get_timestamp_ms()
-                initial_content = update_data.content if update_data.content else ''
-                
-                # 保存metadata到数据库
-                display_name_to_save = metadata['display_name'] or f"{metadata['provider']} ({metadata['model']})" if metadata['provider'] and metadata['model'] else None
-                
-                # ⭐ 【重要】使用期望的ID插入
-                cursor.execute(
-                    '''INSERT INTO chat_messages 
-                       (id, session_id, role, content, timestamp, display_name) VALUES (?, ?, ?, ?, ?, ?)''',
-                    (expected_assistant_id, session_id, 'assistant', initial_content, utc_time, display_name_to_save)
-                )
-                last_message = {'id': expected_assistant_id, 'content': initial_content}
-                is_new_message = True
-                logger.warning(f"[修复] 消息{expected_assistant_id}不存在，创建新消息ID={expected_assistant_id}, display_name={display_name_to_save}")
-            else:
-                last_message = {'id': expected_assistant_id, 'content': ''}
-                logger.info(f"[更新] assistant消息(ID={expected_assistant_id}): session_id={session_id}")
-        
-        # 构建更新字段和值（智能UPSERT）
-        # @update 2026-03-16：同时更新execution_steps和content
-        update_fields = []
-        update_values = []
-        
-        # 更新execution_steps（如果有）
-        if update_data.execution_steps:
-            execution_steps_json = json.dumps(update_data.execution_steps)
-            update_fields.append('execution_steps = ?')
-            update_values.append(execution_steps_json)
-        
-        # 更新content（如果有）- 解决缺陷3：content覆盖问题
-        # @update 2026-03-16：直接覆盖，使用传入的content替换原有内容
-        if update_data.content is not None:
-            update_fields.append('content = ?')
-            update_values.append(update_data.content)
-        
-        # 执行更新（如果有字段需要更新）
-        if update_fields:
-            update_values.append(last_message['id'])
-            cursor.execute(
-                f'UPDATE chat_messages SET {", ".join(update_fields)} WHERE id = ?',
-                update_values
-            )
-        
-        # 【修复缺陷4】只在首次创建消息时更新message_count，避免重复
-        # @update 2026-03-16：使用is_new_message标记，只在首次创建时+1
-        # 【小沈修复 2026-03-31】updated_at保持ISO格式（显示用），但message timestamp用毫秒
-        utc_time = get_timestamp_ms()
-        message_id = last_message['id']
-        
-        # ⭐ 【调试】记录保存的消息ID和时间
-        logger.info(f"💾 [后端保存] message_id={message_id}, session_id={session_id}, timestamp={utc_time}, is_new={is_new_message}, steps_count={len(update_data.execution_steps) if update_data.execution_steps else 0}, reply_to={update_data.reply_to_message_id}")
-        
-        if is_new_message:
-            # 首次创建消息时，更新message_count
-            cursor.execute(
-                'UPDATE chat_sessions SET message_count = message_count + 1, updated_at = ? WHERE id = ?',
-                (utc_time, session_id)
-            )
-        else:
-            # 已有消息时，只更新updated_at
-            cursor.execute(
-                'UPDATE chat_sessions SET updated_at = ? WHERE id = ?',
-                (utc_time, session_id)
-            )
-        
-        # 提交事务
-        conn.commit()
-        
-        logger.info(f"保存执行步骤成功: session_id={session_id}, message_id={last_message['id']}, "
-                   f"is_new={is_new_message}, has_content={update_data.content is not None}")
-        
-        return {
-            "success": True,
-            "message_id": last_message['id'],
-            "is_new_message": is_new_message
-        }
-        
+        with get_db_connection() as conn:
+            _ensure_session_exists(session_id, conn)
+            message_id, is_new = allocator.allocate(session_id, conn)
+            metadata = extract_metadata(update_data.execution_steps)
+            display_name = metadata.get("display_name")
+            if is_new:
+                _insert_assistant_message(conn, message_id, session_id, display_name, update_data)
+            _update_message_fields(conn, message_id, update_data, display_name)
+            _update_session_message_count(conn, session_id, is_new)
+            conn.commit()
+        logger.info(f"保存执行步骤成功: session_id={session_id}, message_id={message_id}, is_new={is_new}")
+        return {"success": True, "message_id": message_id, "is_new_message": is_new}
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"保存执行步骤失败: {e}")
         raise HTTPException(status_code=500, detail=f"保存执行步骤失败: {str(e)}")
-    finally:
-        if conn:
-            try:
-                conn.close()
-            except Exception:
-                pass
+
+
+def _get_sql_mode(mode: str, fields_exist: dict) -> str:
+    """将外层mode映射为_build_update_sql所需的sql_mode
+
+    使用场景: update_session中决策SQL构建模式
+    使用示例: _get_sql_mode("select_then_update", fields) → "compat"或"legacy"
+    返回数据说明: "optimistic"/"compat"/"legacy"
+
+    @author 小健 2026-05-25
+    """
+    if mode == "optimistic":
+        return "optimistic"
+    if mode == "select_then_update" and fields_exist["version"]:
+        return "compat"
+    return "legacy"
+
+
+def _resolve_update_mode(
+    fields_exist: dict, update_data: SessionUpdate,
+    cursor, session_id: str, utc_time: str,
+) -> Tuple[str, str, Tuple]:
+    """判断UPDATE模式：optimistic/compat/legacy，compat/legacy时先SELECT验证
+
+    使用场景: update_session中3路分支决策
+    使用示例: mode, _, params = _resolve_update_mode(fields, data, cur, sid, utc)
+    返回数据说明: (mode, where_extra, params)
+        mode="optimistic": params=()；mode="select_then_update": params=(session, current_version)
+
+    @author 小健 2026-05-25
+    """
+    if fields_exist["version"]:
+        if update_data.version is not None:
+            return "optimistic", "", ()
+        cursor.execute(
+            """SELECT id, title, COALESCE(version, 1) as version,
+                      COALESCE(title_locked, 0) as title_locked
+               FROM chat_sessions WHERE id = ? AND is_deleted = FALSE""",
+            (session_id,),
+        )
+    else:
+        cursor.execute(
+            """SELECT id, title, 1 as version, 0 as title_locked
+               FROM chat_sessions WHERE id = ? AND is_deleted = FALSE""",
+            (session_id,),
+        )
+    session = cursor.fetchone()
+    if not session:
+        return "not_found", "", (None, 0)
+    return "select_then_update", "", (session, session["version"])
+
+
+def _build_update_params(
+    mode: str, update_data: SessionUpdate,
+    utc_time: str, session_id: str,
+) -> tuple:
+    """根据模式构建UPDATE SQL的参数元组
+
+    使用场景: update_session中配合_build_update_sql使用
+    使用示例: params = _build_update_params("optimistic", data, utc, sid)
+    返回数据说明: UPDATE语句的参数元组（不含session_id和version）
+
+    @author 小健 2026-05-25
+    """
+    if mode == "optimistic":
+        return (update_data.title, utc_time, 1, utc_time, session_id, update_data.version)
+    if mode == "compat":
+        return (update_data.title, utc_time, 1, utc_time, session_id)
+    return (update_data.title, utc_time, session_id)
+
+
+def _build_update_sql(mode: str) -> Tuple[str, str]:
+    """根据模式构建SET子句和version WHERE子句
+
+    使用场景: update_session中3路UPDATE SQL统一构建
+    使用示例: _build_update_sql("optimistic") → ("SET title=?, ...", "AND version=?")
+    返回数据说明: (set_clause, version_where_clause)
+
+    @author 小健 2026-05-25
+    """
+    base_set = "title = ?, updated_at = ?"
+    if mode == "optimistic":
+        return (
+            f"SET {base_set}, title_locked = ?, title_updated_at = ?, version = version + 1",
+            "AND is_deleted = FALSE AND version = ?",
+        )
+    if mode == "compat":
+        return (
+            f"SET {base_set}, title_locked = ?, title_updated_at = ?, version = version + 1",
+            "AND is_deleted = FALSE",
+        )
+    return f"SET {base_set}", "AND is_deleted = FALSE"
+
+
+def _raise_session_error(
+    conn: sqlite3.Connection, status_code: int, msg: str,
+):
+    """统一回滚+关闭+抛出HTTPException，消除重复
+
+    使用场景: update_session中404/409等错误退出
+    使用示例: _raise_session_error(conn, 404, "会话不存在")
+    返回数据说明: 不返回，直接raise HTTPException
+
+    @author 小健 2026-05-25
+    """
+    try:
+        conn.rollback()
+    except Exception:
+        pass
+    try:
+        conn.close()
+    except Exception:
+        pass
+    raise HTTPException(status_code=status_code, detail=msg)
+
+
+_TITLE_HISTORY_TABLE_EXISTS: Optional[bool] = None
+
+
+def _record_title_history(
+    cursor, session_id: str, old_title: Optional[str],
+    utc_time: str, updated_by: str = "user",
+):
+    """记录标题变更历史，首次探测DDL后缓存结果
+
+    使用场景: update_session中插入chat_session_title_history
+    使用示例: _record_title_history(cursor, sid, "旧标题", utc_time, "user")
+    返回数据说明: 无返回，直接执行INSERT
+
+    @author 小健 2026-05-25
+    """
+    global _TITLE_HISTORY_TABLE_EXISTS
+    if _TITLE_HISTORY_TABLE_EXISTS is None:
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='chat_session_title_history'"
+        )
+        _TITLE_HISTORY_TABLE_EXISTS = cursor.fetchone() is not None
+    if _TITLE_HISTORY_TABLE_EXISTS and old_title:
+        cursor.execute(
+            """INSERT INTO chat_session_title_history
+               (session_id, title, created_at, updated_by, change_reason)
+               VALUES (?, ?, ?, ?, ?)""",
+            (session_id, old_title, utc_time, updated_by, "user_edit"),
+        )
+        logger.info(f"记录标题历史: session_id={session_id}, old_title={old_title}")
 
 
 @router.put("/sessions/{session_id}")
 async def update_session(session_id: str, update_data: SessionUpdate):
+    """更新会话标题（乐观锁+标题历史+降级兼容）
+
+    重构：189行→≤60行骨架+_build_update_sql+_raise_session_error+_record_title_history
+    @author 小沈, 小健 2026-05-25
     """
-    更新会话标题
-    
-    优化内容（11.4.2节和12.1.2节）：
-    - 添加乐观锁并发控制（version参数）
-    - 标题历史记录（插入title_history表）
-    - 请求参数扩展：version和updated_by
-    
-    P0问题1和2已修复：
-    - 使用原子性UPDATE避免竞态条件
-    - 显式事务边界，确保数据一致性
-    
-    P0风险缓解：version参数可选，向后兼容旧前端
-    
-    Args:
-        session_id: 会话ID
-        update_data: 更新的数据（包含title, version, updated_by）
-        
-    Returns:
-        dict: 更新结果
-    """
-    conn = None
-    cursor = None
     try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        # ⭐ 修复P0-问题2：显式开启事务
-        cursor.execute("BEGIN")
-        
-        logger.debug(f"开始事务: session_id={session_id}, operation=update_title")
-        
-        # P0风险缓解：检查数据库字段是否存在
-        fields_exist = check_db_fields_exist(conn)
-        
-        utc_time = get_utc_timestamp()
-        
-        # 验证会话存在并获取当前状态（使用原子性UPDATE修复并发问题）
-        if fields_exist['version']:
-            # 新字段存在，支持乐观锁
-            if update_data.version is not None:
-                # ⭐ 修复P0-问题1：使用原子性UPDATE避免竞态条件
-                # 尝试直接更新并检查version，受影响行数=0说明版本冲突
-                cursor.execute(
-                    '''UPDATE chat_sessions 
-                       SET title = ?, updated_at = ?, 
-                           title_locked = ?, 
-                           title_updated_at = ?, 
-                           version = version + 1
-                       WHERE id = ? AND is_deleted = FALSE AND version = ?''',
-                    (update_data.title, utc_time, 1, utc_time, 
-                     session_id, update_data.version)
-                )
-                
-                # ⭐ 修复P0-问题1：检查是否更新成功
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("BEGIN")
+            logger.debug(f"开始事务: session_id={session_id}, operation=update_title")
+            fields_exist = check_db_fields_exist(conn)
+            utc_time = get_utc_timestamp()
+            mode, _, params = _resolve_update_mode(fields_exist, update_data, cursor, session_id, utc_time)
+            if mode == "not_found":
+                _raise_session_error(conn, 404, f"会话不存在: {session_id}")
+            sql_mode = _get_sql_mode(mode, fields_exist)
+            set_clause, where_clause = _build_update_sql(sql_mode)
+            update_params = _build_update_params(sql_mode, update_data, utc_time, session_id)
+            cursor.execute(f"UPDATE chat_sessions {set_clause} WHERE id = ? {where_clause}", update_params)
+            if mode == "optimistic":
                 if cursor.rowcount == 0:
-                    # 更新失败，说明版本冲突
-                    conn.rollback()
-                    conn.close()
-                    logger.warning(
-                        f"版本冲突: session_id={session_id}, client_version={update_data.version}"
-                    )
-                    raise HTTPException(
-                        status_code=409,
-                        detail="会话已被其他用户修改，请刷新后重试"
-                    )
-                
-                # 获取更新后的数据
-                cursor.execute(
-                    '''SELECT id, title, version FROM chat_sessions WHERE id = ?''',
-                    (session_id,)
-                )
+                    logger.warning(f"版本冲突: session_id={session_id}, client_version={update_data.version}")
+                    _raise_session_error(conn, 409, "会话已被其他用户修改，请刷新后重试")
+                cursor.execute("SELECT id, title, version FROM chat_sessions WHERE id = ?", (session_id,))
                 session = cursor.fetchone()
-                current_version = session['version']
+                current_version = session["version"]
             else:
-                # 版本号兼容模式：不检查version（旧前端），使用SELECT获取
-                cursor.execute(
-                    '''SELECT id, title, COALESCE(version, 1) as version, 
-                              COALESCE(title_locked, 0) as title_locked
-                       FROM chat_sessions 
-                       WHERE id = ? AND is_deleted = FALSE''',
-                    (session_id,)
-                )
-                session = cursor.fetchone()
-                
-                if not session:
-                    conn.rollback()
-                    conn.close()
-                    raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
-                
-                current_version = session['version']
-                
-                # 更新标题（不检查version）
-                cursor.execute(
-                    '''UPDATE chat_sessions 
-                       SET title = ?, updated_at = ?, 
-                           title_locked = ?, 
-                           title_updated_at = ?, 
-                           version = version + 1
-                       WHERE id = ?''',
-                    (update_data.title, utc_time, 1, utc_time, session_id)
-                )
-        else:
-            # 新字段不存在，兼容模式
-            cursor.execute(
-                '''SELECT id, title, 1 as version, 0 as title_locked
-                   FROM chat_sessions 
-                   WHERE id = ? AND is_deleted = FALSE''',
-                (session_id,)
-            )
-            session = cursor.fetchone()
-            
-            if not session:
-                conn.rollback()
-                conn.close()
-                raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
-            
-            current_version = session['version']
-            
-            # 更新标题
-            cursor.execute(
-                '''UPDATE chat_sessions 
-                       SET title = ?, updated_at = ? 
-                   WHERE id = ?''',
-                (update_data.title, utc_time, session_id)
-            )
-        
-        # 记录旧标题（用于历史记录）- 修复sqlite3.Row不支持.get()方法
-        old_title = session['title'] if session else ''
-        new_version = current_version + 1
-        
-        # 插入标题历史记录（11.2.1节要求）
-        # 检查title_history表是否存在
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='chat_session_title_history'"
-        )
-        title_history_exists = cursor.fetchone() is not None
-        
-        if title_history_exists:
-            updated_by = update_data.updated_by or 'user'
-            cursor.execute(
-                '''INSERT INTO chat_session_title_history 
-                   (session_id, title, created_at, updated_by, change_reason) 
-                   VALUES (?, ?, ?, ?, ?)''',
-                (session_id, old_title, utc_time, updated_by, 'user_edit')
-            )
-            logger.info(f"记录标题历史: session_id={session_id}, old_title={old_title}")
-        
-        # ⭐ 修复P0-问题2：提交事务
-        cursor.execute("COMMIT")
-        conn.close()
-        
+                session, current_version = params
+            old_title = session["title"] if session else ""
+            new_version = current_version + 1
+            _record_title_history(cursor, session_id, old_title, utc_time, update_data.updated_by or "user")
+            cursor.execute("COMMIT")
         logger.info(f"更新会话成功: id={session_id}, title={update_data.title}, version={new_version}")
-        
-        return {
-            "success": True, 
-            "title": update_data.title,
-            "version": new_version
-        }
-        
-    except HTTPException as he:
-        # ⭐ 修复P1-问题3：完善错误处理
-        try:
-            if conn:
-                conn.close()
-        except:
-            pass
-        logger.error(f"更新会话HTTP异常: session_id={session_id}, status={he.status_code}, detail={he.detail}")
+        return {"success": True, "title": update_data.title, "version": new_version}
+    except HTTPException:
         raise
     except Exception as e:
-        # ⭐ 修复P1-问题3：添加详细错误日志
-        logger.error(
-            f"更新会话失败: session_id={session_id}, title={update_data.title}, "
-            f"version={update_data.version}, error={str(e)}"
-        )
-        try:
-            # ⭐ 修复P0-问题2：回滚事务
-            if cursor:
-                cursor.execute("ROLLBACK")
-                logger.warning(f"事务已回滚: session_id={session_id}")
-        except Exception as rollback_err:
-            logger.error(f"回滚失败: {rollback_err}")
-        try:
-            if conn:
-                conn.close()
-        except:
-            pass
+        logger.error(f"更新会话失败: session_id={session_id}, error={str(e)}")
         raise HTTPException(status_code=500, detail="更新会话失败，请重试")
 
 
@@ -1325,17 +1240,17 @@ async def get_session_titles_batch(
             ]
         }
     """
+    conn = None
     try:
         # 解析会话ID列表
         id_list = [sid.strip() for sid in session_ids.split(',') if sid.strip()]
-        
+
         if not id_list:
             raise HTTPException(status_code=400, detail="会话ID列表不能为空")
-        
+
         if len(id_list) > 100:
             raise HTTPException(status_code=400, detail="最多一次查询100个会话")
-        
-        conn = None
+
         conn = get_connection()
         cursor = conn.cursor()
         
