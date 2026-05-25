@@ -47,6 +47,76 @@ from app.services.intents.crss_scorer import CRSS_CONFIDENCE_THRESHOLD  # 【修
 from app.services.task_lifecycle import TaskLifecycleManager  # 【重构 2026-05-25 小沈】替代直接操作running_tasks
 
 
+class GenericReactAgent:
+    """通用TextStrategy兜底Agent - 小沈 2026-05-25
+
+    使用场景:
+    - _run_sse_stream中AgentFactory.create失败时回退
+    - 需要直接使用LLM文本策略的场景
+
+    使用示例:
+        strategy = TextStrategy()
+        agent = GenericReactAgent(llm_client, task_id, strategy)
+    """
+
+    def __init__(self, llm_client, task_id, strategy, **kwargs):
+        from app.services.agent.base_react import BaseAgent
+        super(GenericReactAgent, self).__init__(
+            llm_client=llm_client, task_id=task_id, tool_category=None, **kwargs
+        )
+        self._strategy = strategy
+
+    async def _get_llm_response(self) -> str:
+        self.llm_call_count += 1
+        if not self._strategy:
+            return ""
+        last_msg = self.conversation_history[-1]["content"] if self.conversation_history else ""
+        history = self.conversation_history[:-1] if len(self.conversation_history) > 1 else []
+        return await self._strategy.call(
+            llm_client=self.llm_client, message=last_msg,
+            history_dicts=history, conversation_history=self.conversation_history,
+        )
+
+    async def _execute_tool(self, action, params):
+        return {}
+
+    def _get_system_prompt(self):
+        return "你是一个有用的AI助手，直接回答用户的问题。"
+
+    def _get_task_prompt(self, task, context=None):
+        return task
+
+
+async def _is_cancelled_and_yield(
+    task_id: str, running_tasks: dict, running_tasks_lock: asyncio.Lock,
+    next_step: Callable[[], int], session_id: str,
+    current_execution_steps: list, current_content: str
+) -> bool:
+    """统一cancelled检查和yield逻辑 - 小沈 2026-05-25
+
+    使用场景:
+    - _run_sse_stream中cancelled检查
+    - generate_sse_stream中cancelled检查
+
+    使用示例:
+        if await _is_cancelled_and_yield(...):
+            break
+
+    返回数据说明:
+        - bool, 是否已取消并yield了interrupted事件
+    """
+    async with running_tasks_lock:
+        is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
+        if is_cancelled:
+            logger.info(f"[InterruptCheck] 任务 {task_id} 取消状态: {is_cancelled}")
+            interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
+            logger.info(f"[Step incident] 发送incident步骤(interrupted)")
+            yield f"data: {json.dumps(interrupted_data)}\n\n"
+            current_execution_steps.append(interrupted_data)
+            await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
+    return
+
+
 async def _yield_error_sse(
     error_type: str, error_label: str, log_tag: str,
     task_id: str, e: Exception, next_step, ai_service,
@@ -398,31 +468,9 @@ async def _run_sse_stream(
         )
     except ValueError:
         logger.info(f"[ChatOp] intent_type='{intent_type}' 无专用Agent，使用通用TextStrategy兜底")
-        from app.services.agent.base_react import BaseAgent
         from app.services.agent.llm_strategies import TextStrategy
-        _generic_max_steps = get_config().get('app.max_steps', DEFAULT_MAX_STEPS)
-        class _GenericAgent(BaseAgent):
-            def __init__(self, llm_client, task_id, strategy, **kwargs):
-                super().__init__(llm_client=llm_client, task_id=task_id, tool_category=None, **kwargs)
-                self._strategy = strategy
-            async def _get_llm_response(self) -> str:
-                self.llm_call_count += 1
-                if self._strategy:
-                    last_msg = self.conversation_history[-1]["content"] if self.conversation_history else ""
-                    history = self.conversation_history[:-1] if len(self.conversation_history) > 1 else []
-                    return await self._strategy.call(
-                        llm_client=self.llm_client, message=last_msg,
-                        history_dicts=history, conversation_history=self.conversation_history,
-                    )
-                return ""
-            async def _execute_tool(self, action, params):
-                return {}
-            def _get_system_prompt(self):
-                return "你是一个有用的AI助手，直接回答用户的问题。"
-            def _get_task_prompt(self, task, context=None):
-                return task
         strategy = TextStrategy() if ai_service else None
-        agent = _GenericAgent(llm_client=llm_client, task_id=task_id, strategy=strategy)
+        agent = GenericReactAgent(llm_client=llm_client, task_id=task_id, strategy=strategy)
         log_tag = "[GenericOp]"
         error_label = "操作执行失败"
         error_type = 'generic_operation_error'
@@ -434,16 +482,11 @@ async def _run_sse_stream(
             max_steps=max_steps, task_id=task_id,
             running_tasks=running_tasks, step_counter=next_step,
         ):
-            async with running_tasks_lock:
-                is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
-                if is_cancelled:
-                    logger.info(f"[InterruptCheck] 任务 {task_id} 取消状态: {is_cancelled}")
-                    interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
-                    logger.info(f"[Step incident] 发送incident步骤(interrupted)")
-                    yield f"data: {json.dumps(interrupted_data)}\n\n"
-                    current_execution_steps.append(interrupted_data)
-                    await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
-                    break
+            if await _is_cancelled_and_yield(
+                task_id, running_tasks, running_tasks_lock, next_step,
+                session_id, current_execution_steps, current_content
+            ):
+                break
             event_step = event.get('step') if isinstance(event, dict) else None
             sse_step = event_step if event_step is not None else next_step()
             sse_data = _format_sse_event(event, sse_step, ai_service.model, ai_service.provider)
