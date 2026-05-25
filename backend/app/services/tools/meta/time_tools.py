@@ -293,125 +293,79 @@ def _time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
         )
 
 
-async def _timer_set(delay: float, callback: str, callback_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """设置定时器，在延迟后执行回调 — 小沈 2026-05-18"""
-    global _timer_counter;
+def _error_timer_set(reason: str) -> Dict[str, Any]:
+    """统一构建定时器设置错误 — 小健 2026-05-25"""
+    return build_error(
+        "ERR_TIMER_SET",
+        reason,
+        next_actions=build_next_actions([("timer", "重试设置定时器", "需要重新设置时")]),
+    )
+
+
+async def _invoke_timer_callback(timer_id: str, callback: str, callback_data: Optional[Dict] = None) -> Dict[str, Any]:
+    """执行定时器回调，返回 event — 小健 2026-05-25"""
+    event = {
+        "timer_id": timer_id,
+        "triggered_at": datetime.now().astimezone().isoformat(),
+        "callback": callback,
+        "status": "triggered",
+    }
     try:
-        if delay <= 0:
-            return build_error(
-                "ERR_TIMER_SET",
-                "延迟时间必须大于0",
-                next_actions=build_next_actions([("timer", "重试设置定时器", "需要重新设置时")]),
-            )
-
-        if delay > 86400:  # 超过1天
-            return build_error(
-                "ERR_TIMER_SET",
-                "延迟时间不能超过24小时",
-                next_actions=build_next_actions([("timer", "重试设置定时器", "需要缩短延迟时间时")]),
-            )
-
-        # 生成定时器ID
-        _timer_counter += 1;
-        timer_id = f"timer_{_timer_counter}_{int(datetime.now().timestamp())}";
-
-        # 计算触发时间
-        trigger_at = datetime.now().astimezone() + timedelta(seconds=delay);
-
-        # 存储回调信息
-        _timer_callbacks[timer_id] = {
-            "callback": callback,
-            "callback_data": callback_data,
-            "created_at": datetime.now().astimezone().isoformat(),
-            "trigger_at": trigger_at.isoformat(),
-        }
-
-        # 创建回调函数（真正实现回调执行）
-        async def _timer_callback():
-            """定时器触发时执行"""
-            try:
-                # 获取回调信息
-                cb_info = _timer_callbacks.get(timer_id, {})
-                cb = cb_info.get("callback", "")
-                cb_data = cb_info.get("callback_data")
-
-                # 记录触发事件
-                event = {
-                    "timer_id": timer_id,
-                    "triggered_at": datetime.now().astimezone().isoformat(),
-                    "callback": cb,
-                    "callback_data": cb_data,
-                    "status": "triggered",
-                }
-                _timer_events.append(event)
-
-                # 执行回调
-                if cb:
-                    # 情况1：callback是简单消息，记录日志
-                    if not cb.strip().startswith("http") and not cb.strip().startswith("{"):
-                        logger.info(f"[Timer {timer_id}] 提醒: {cb}")
-                        event["executed_as"] = "log_message"
-                    # 情况2：callback是URL，尝试调用（简化版）
-                    elif cb.strip().startswith("http"):
-                        try:
-                            import httpx
-                            resp = httpx.get(cb, timeout=5.0)
-                            event["executed_as"] = "http_call"
-                            event["http_status"] = resp.status_code
-                        except Exception as http_err:
-                            event["executed_as"] = "http_call_failed"
-                            event["error"] = str(http_err)
-                    # 情况3：其他情况，记录
-                    else:
-                        logger.info(f"[Timer {timer_id}] 回调内容: {cb}")
-                        event["executed_as"] = "other"
-
-                # 如果有callback_data，合并到事件
-                if cb_data:
-                    event["executed_data"] = cb_data
-
-                logger.info(f"[Timer {timer_id}] 已触发，回调: {cb}")
-
-            except Exception as cb_err:
-                # 记录错误事件
-                error_event = {
-                    "timer_id": timer_id,
-                    "triggered_at": datetime.now().astimezone().isoformat(),
-                    "status": "error",
-                    "error": str(cb_err),
-                }
-                _timer_events.append(error_event)
-                logger.error(f"[Timer {timer_id}] 回调执行失败: {cb_err}")
-
-        # 设置定时器
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        timer_handle = loop.call_later(delay, lambda: asyncio.ensure_future(_timer_callback()));
-
-        # 保存定时器
-        _timers[timer_id] = timer_handle;
-
-        return build_success(
-            {
-                "timer_id": timer_id,
-                "delay": delay,
-                "trigger_at": trigger_at.strftime("%Y-%m-%d %H:%M:%S"),
-                "message": f"定时器已设置，{int(delay/60)}分钟后提醒"
-            },
-            "定时器设置成功",
-            llm_data={"timer_id": timer_id, "trigger_at": trigger_at.strftime("%Y-%m-%d %H:%M:%S")},
-        )
+        if not callback:
+            pass
+        elif not callback.strip().startswith("http"):
+            logger.info(f"[Timer {timer_id}] 提醒: {callback}")
+            event["executed_as"] = "log_message"
+        else:
+            import httpx
+            resp = httpx.get(callback, timeout=5.0)
+            event["executed_as"] = "http_call"
+            event["http_status"] = resp.status_code
+    except httpx.TimeoutException:
+        event["executed_as"] = "http_timeout"
     except Exception as e:
-        return build_error(
-            "ERR_TIMER_SET",
-            f"设置定时器失败: {str(e)}",
-            next_actions=build_next_actions([
-                ("timer", "重试设置定时器", "需要重新设置时"),
-            ]),
-        )
+        event["executed_as"] = "http_call_failed"
+        event["error"] = str(e)
+
+    if callback_data:
+        event["callback_data"] = callback_data
+    return event
+
+
+async def _timer_set(delay: float, callback: str, callback_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """设置定时器，在延迟后执行回调 — 小沈 2026-05-25 重构"""
+    global _timer_counter
+
+    if delay <= 0:
+        return _error_timer_set("延迟时间必须大于0")
+    if delay > 86400:
+        return _error_timer_set("延迟时间不能超过24小时")
+
+    _timer_counter += 1
+    timer_id = f"timer_{_timer_counter}_{int(datetime.now().timestamp())}"
+    trigger_at = datetime.now().astimezone() + timedelta(seconds=delay)
+
+    _timer_callbacks[timer_id] = {
+        "callback": callback, "callback_data": callback_data,
+        "created_at": datetime.now().astimezone().isoformat(),
+        "trigger_at": trigger_at.isoformat(),
+    }
+
+    async def _timer_callback():
+        event = await _invoke_timer_callback(timer_id, callback, callback_data)
+        _timer_events.append(event)
+
+    loop = asyncio.get_running_loop()
+    timer_handle = loop.call_later(delay, lambda: asyncio.create_task(_timer_callback()))
+    _timers[timer_id] = timer_handle
+
+    return build_success({
+        "timer_id": timer_id, "delay": delay,
+        "trigger_at": trigger_at.strftime("%Y-%m-%d %H:%M:%S"),
+        "message": f"定时器已设置，{int(delay / 60)}分钟后提醒",
+    }, "定时器设置成功",
+        llm_data={"timer_id": timer_id, "trigger_at": trigger_at.strftime("%Y-%m-%d %H:%M:%S")},
+    )
 
 
 async def _timer_clear(timer_id: str) -> Dict[str, Any]:
