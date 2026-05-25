@@ -23,7 +23,7 @@ ReAct Agent Structured Outputs 实现 - Function Calling Schema 生成器
 """
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Callable
 
 from app.services.tools.registry import tool_registry
 from app.utils.logger import logger
