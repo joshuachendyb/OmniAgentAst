@@ -729,6 +729,33 @@ class ToolRegistry:
         """返回已注册工具数量"""
         return len(self._tools)
 
+    @classmethod
+    def get_instance(cls) -> "ToolRegistry":
+        """获取全局工具注册表单例实例"""
+        return tool_registry
+
+    def get_tool_meta(self, name: str) -> Optional[Dict[str, Any]]:
+        """获取工具元数据（dict格式，兼容旧接口）"""
+        meta = self._tools.get(name)
+        if meta is None:
+            return None
+        example_str = ""
+        if meta.examples:
+            params = meta.examples[0]
+            def fmt_val(v):
+                if isinstance(v, str):
+                    return f'"{v}"'
+                return repr(v)
+            parts = [f'{k}={fmt_val(v)}' for k, v in params.items()]
+            example_str = f'{name}({", ".join(parts)})'
+        return {
+            "description": meta.description,
+            "parameters": meta.input_schema,
+            "returns": meta.output_schema,
+            "example": example_str,
+            "when_to_use": "",
+        }
+
 
 # 全局工具注册表实例
 # 【小健 2026-04-29】后续新增所有工具分类（time/shell/network/env/system/database/desktop）的register文件，必须按此规范使用input_model参数注册，禁止旧的非规范方式
