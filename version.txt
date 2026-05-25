@@ -1,18 +1,44 @@
-v0.13.40
+v0.13.41
 
-更新时间: 2026-05-25 12:15:00
+更新时间: 2026-05-25 13:52:15
 
 更新内容：
 
-## v0.13.39→v0.13.40 变更汇总 - 小沈-2026-05-25
+## v0.13.40→v0.13.41 变更汇总 - 小沈-2026-05-25
 
-### refactor 第25章5个函数拆分重构（5个commit）
+### refactor 第24章5个函数拆分重构（1个commit）
 
 | commit | 说明 |
 |--------|------|
-| 1de1a809 | refactor: 25.1 generate_report 拆分 - 小沈-2026-05-25 |
-| 666e983d | refactor: 25.2 _determine_parse_type 拆分 - 小沈-2026-05-25 |
-| 59122953 | refactor: 25.3 _create_action_result_from_dict统一action结果构造 - 小沈-2026-05-25 |
+| 3c03056b | refactor: 24.1-24.5 五个函数拆分重构(react_output_parser+network_tools+reg_tools) - 小沈-2026-05-25 |
+
+### 重构详情
+
+#### 24.1 _parse_action (react_output_parser.py:2119)
+- 新增: `_TOOL_NAME_FALLBACK_KEYS` / `_TOOL_PARAMS_FALLBACK_KEYS` 常量 + `_build_action_result` / `_fallback_tool_name` / `_normalize_tool_params` 函数
+- 替换: 111行→40行骨架，M1a 5个连续if → `_fallback_tool_name`，M1b 3个连续if → `_normalize_tool_params`
+- YAGNI删除: parse_error条件永假分支（原L2108-2118）
+
+#### 24.2 _search_mcp_engine (network_tools.py:510)
+- 新增: `_MCP_CONFIGS` 模块级常量 + `_search_failed` / `_parse_exa_results` 函数
+- 替换: 111行→60行骨架，MCP_CONFIGS函数内定义 → 模块级
+- 消除: 7路return None → 1路唯一出口
+
+#### 24.3 reg_write (system/reg_tools.py:183)
+- 新增: `_REG_TYPE_MAP` / `_REG_CONVERTERS` 常量 + `_validate_root_key` / `_convert_reg_value` 函数
+- 替换: 109行→55行骨架，H1重复hkey检查 → `_validate_root_key`，V1a-V1f 6路elif → `_convert_reg_value`
+- YAGNI删除: backup结果字段 + V1c REG_EXPAND_SZ显式elif
+
+#### 24.4 _handle_mixed_text_json (react_output_parser.py:448)
+- 新增: `_build_handler_result` 统一8字段dict构造
+- 替换: 108行→70行骨架，4个8字段dict重复 → 4次`_build_handler_result`调用
+
+#### 24.5 _port_check (network_tools.py:962)
+- 新增: `_build_port_result` 统一data dict构造
+- 替换: 108行→50行骨架，5次data dict重复 → `_build_port_result`，E1b build_success → build_error统一
+- 增强: sock.close()用try/finally保证，well_known_ports缓存局部变量
+
+---
 | fbb685ed | refactor: 25.4 _execute_javascript 拆分 - 小沈-2026-05-25 |
 | e53a903a | refactor: 25.5 _delete_file 拆分 - 小沈-2026-05-25 |
 
