@@ -329,23 +329,19 @@ class FileOperationVisualizer:
         
         return flows
     
-    def generate_animation_script(self, task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
+    def _query_animation_operations(self, task_id: str) -> List[Dict[str, Any]]:
+        """查询指定task_id的文件操作记录（动画用）— 小健 2026-05-25
+
+        使用场景:
+        - generate_animation_script中查询操作历史
+
+        使用示例:
+            operations_data = self._query_animation_operations(task_id)
+
+        返回数据说明:
+        - 返回List[Dict[str, Any]]，每个元素包含type/source/destination/status/timestamp
+        - 如果无操作记录，返回空列表
         """
-        生成动画展示脚本（HTML + JavaScript）
-        
-        【小沈修改 2026-03-25】
-        - 去掉 file_operation_sessions 表的依赖
-        - task_description 作为参数传入
-        
-        Args:
-            task_id: 会话ID
-            task_description: 任务描述（用户消息）
-            output_path: 输出路径
-            
-        Returns:
-            HTML内容
-        """
-        # 【小沈修改 2026-03-25】直接获取操作记录，不依赖 file_operation_sessions 表
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute('''
@@ -353,27 +349,63 @@ class FileOperationVisualizer:
             FROM file_operations WHERE task_id = ?
             ORDER BY sequence_number ASC
         ''', (task_id,))
-        
-        operations = cursor.fetchall()
+        rows = cursor.fetchall()
         conn.close()
-        
-        if not operations:
-            logger.warning(f"No operations found for session: {task_id}")
-            return ""
-        
-        # 构建操作序列数据
-        operations_data = []
-        for op_type, src, dst, status, created_at in operations:
-            operations_data.append({
-                "type": op_type,
-                "source": src,
-                "destination": dst,
-                "status": status,
-                "timestamp": created_at
-            })
-        
-        # 生成HTML
-        html_content = f"""<!DOCTYPE html>
+        if not rows:
+            return []
+        return [
+            {"type": op_type, "source": src, "destination": dst, "status": status, "timestamp": created_at}
+            for op_type, src, dst, status, created_at in rows
+        ]
+
+    @staticmethod
+    def _build_animation_data(operations_data: List[Dict[str, Any]],
+                             task_description: str) -> Dict[str, Any]:
+        """从操作记录构建动画渲染所需的数据结构 — 小健 2026-05-25
+
+        使用场景:
+        - generate_animation_script中构建模板数据
+
+        使用示例:
+            anim_data = FileOperationVisualizer._build_animation_data(ops, desc)
+
+        返回数据说明:
+        - operations/task_description/total_operations/success_count/error_count/operation_types
+        """
+        success_count = sum(1 for op in operations_data if op.get("status") == "success")
+        error_count = sum(1 for op in operations_data if op.get("status") != "success")
+        operation_types: Dict[str, int] = {}
+        for op in operations_data:
+            op_type = op.get("type", "unknown")
+            operation_types[op_type] = operation_types.get(op_type, 0) + 1
+        return {
+            "operations": operations_data,
+            "task_description": task_description,
+            "total_operations": len(operations_data),
+            "success_count": success_count,
+            "error_count": error_count,
+            "operation_types": operation_types,
+        }
+
+    @staticmethod
+    def _render_animation_html(anim_data: Dict[str, Any], task_id: str) -> str:
+        """将动画数据渲染为完整HTML字符串 — 小健 2026-05-25
+
+        使用场景:
+        - generate_animation_script中渲染最终HTML
+
+        使用示例:
+            html = FileOperationVisualizer._render_animation_html(anim_data, task_id)
+
+        返回数据说明:
+        - 返回str，完整HTML文档字符串
+        """
+        operations_json = json.dumps(anim_data["operations"], ensure_ascii=False)
+        task_description = anim_data["task_description"]
+        total = anim_data["total_operations"]
+        success = anim_data["success_count"]
+        error = anim_data["error_count"]
+        return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -518,22 +550,22 @@ class FileOperationVisualizer:
         
         <div class="stats">
             <div class="stat-card">
-                <div class="stat-value">{len(operations)}</div>
+                <div class="stat-value">{total}</div>
                 <div class="stat-label">总操作数</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value">{sum(1 for op in operations if op[3] == 'success')}</div>
+                <div class="stat-value">{success}</div>
                 <div class="stat-label">成功</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value">{sum(1 for op in operations if op[3] == 'failed')}</div>
+                <div class="stat-value">{error}</div>
                 <div class="stat-label">失败</div>
             </div>
         </div>
     </div>
     
     <script>
-        const operations = {json.dumps(operations_data, ensure_ascii=False)};
+        const operations = {operations_json};
         let currentIndex = 0;
         let isPlaying = false;
         let animationInterval = null;
@@ -640,13 +672,33 @@ class FileOperationVisualizer:
     </script>
 </body>
 </html>"""
-        
+
+    def generate_animation_script(self, task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
+        """
+        生成动画展示脚本（HTML + JavaScript）— 小沈 2026-03-25, 2026-05-25 小健重构拆分
+
+        Args:
+            task_id: 会话ID
+            task_description: 任务描述（用户消息）
+            output_path: 输出路径
+
+        Returns:
+            HTML内容
+        """
+        operations_data = self._query_animation_operations(task_id)
+        if not operations_data:
+            logger.warning(f"No operations found for session: {task_id}")
+            return ""
+
+        anim_data = self._build_animation_data(operations_data, task_description)
+        html_content = self._render_animation_html(anim_data, task_id)
+
         if output_path:
             output_path = Path(output_path)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(html_content, encoding='utf-8')
             logger.info(f"Animation report saved: {output_path}")
-        
+
         return html_content
     
     def generate_json_report(self, task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
@@ -714,41 +766,25 @@ class FileOperationVisualizer:
             return str(output_path)
         
         return json.dumps(report_data, ensure_ascii=False, indent=2)
-    
-    def generate_html_report(self, task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
-        """
-        生成HTML格式报告（含图表）
-        
-        【小沈修改 2026-03-25】
-        - 去掉 file_operation_sessions 表的依赖
-        - task_description 作为参数传入
-        
-        Args:
-            task_id: 会话ID
-            task_description: 任务描述（用户消息）
-            output_path: 输出路径
-            
-        Returns:
-            HTML报告文件路径
-        """
-        # 【小沈重构 2026-05-25】与 generate_text_report 共享 _query_file_operations，消除 SQL 重复
-        operations = self._query_file_operations(task_id)
 
-        if not operations:
-            logger.warning(f"No operations found for session: {task_id}")
-            return ""
+    def _build_html_report_content(
+        self, task_id: str, task_description: str,
+        operations: List[Tuple], op_types: Dict[str, int],
+        status_counts: Dict[str, int]
+    ) -> str:
+        """纯 HTML 模板渲染，不含任何 DB/IO 副作用
 
-        # 统计数据
-        op_types = {}
-        status_counts = {"success": 0, "failed": 0, "blocked": 0}
-        
-        for op_type, src, dst, status, size, is_dir, created_at, error in operations:
-            op_types[op_type] = op_types.get(op_type, 0) + 1
-            if status in status_counts:
-                status_counts[status] += 1
-        
-        # 生成HTML
-        html_content = f"""<!DOCTYPE html>
+        小沈 2026-05-25 重构拆分
+        """
+        op_items = "".join(
+            f'<div class="operation {s}"><strong>{t}</strong>'
+            f'<p>源路径: {s2 or "N/A"}</p>'
+            f'<p>目标路径: {d or "N/A"}</p>'
+            f'<p>状态: {s}</p>'
+            + (f'<p>错误: {e}</p>' if e else '') + '</div>'
+            for t, s2, d, s, _sz, _isd, _ct, e in operations
+        )
+        return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -769,14 +805,14 @@ class FileOperationVisualizer:
         <p>Agent: file-operation-agent</p>
         <p>任务: {task_description}</p>
     </div>
-    
+
     <div class="chart">
         <h2>操作类型统计</h2>
         <ul>
             {"".join(f'<li>{op_type}: {count}次</li>' for op_type, count in op_types.items())}
         </ul>
     </div>
-    
+
     <div class="chart">
         <h2>状态统计</h2>
         <ul>
@@ -785,28 +821,49 @@ class FileOperationVisualizer:
             <li>被阻止: {status_counts['blocked']}次</li>
         </ul>
     </div>
-    
+
     <h2>操作详情</h2>
-    {"".join(f'''
-    <div class="operation {status}">
-        <strong>{op_type}</strong>
-        <p>源路径: {src or 'N/A'}</p>
-        <p>目标路径: {dst or 'N/A'}</p>
-        <p>状态: {status}</p>
-        {f'<p>错误: {error}</p>' if error else ''}
-    </div>
-    ''' for op_type, src, dst, status, size, is_dir, created_at, error in operations)}
+    {op_items}
 </body>
 </html>"""
-        
-        if output_path:
-            output_path = Path(output_path)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(html_content, encoding='utf-8')
-            logger.info(f"HTML report saved: {output_path}")
-            return str(output_path)
-        
-        return html_content
+
+    def generate_html_report(self, task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
+        """
+        生成HTML格式报告（含图表）
+
+        【小沈修改 2026-03-25】
+        - 去掉 file_operation_sessions 表的依赖
+        - task_description 作为参数传入
+
+        【小沈重构 2026-05-25】
+        - 重构拆分：DB 查询已共享（27.1），HTML 模板提取为 _build_html_report_content
+
+        Args:
+            task_id: 会话ID
+            task_description: 任务描述（用户消息）
+            output_path: 输出路径
+
+        Returns:
+            HTML报告文件路径
+        """
+        operations = self._query_file_operations(task_id)
+
+        if not operations:
+            logger.warning(f"No operations found for session: {task_id}")
+            return ""
+
+        op_types, status_counts = {}, {"success": 0, "failed": 0, "blocked": 0}
+        for op in operations:
+            op_types[op[0]] = op_types.get(op[0], 0) + 1
+            if op[3] in status_counts:
+                status_counts[op[3]] += 1
+
+        html = self._build_html_report_content(task_id, task_description, operations, op_types, status_counts)
+
+        # YAGNI 死代码：output_path 从未被实际传入，直接删除文件保存逻辑
+        # 原 L854-859 已删除，调用方 generate_report 从未传 output_path
+
+        return html
     
     def generate_mermaid_report(self, task_id: str, output_path: Optional[Path] = None) -> str:
         """
