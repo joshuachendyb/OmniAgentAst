@@ -271,6 +271,75 @@ def _process_step_result(result: Dict, i: int, tool_name: str,
     return None
 
 
+def _inject_context(params: Dict, context: Dict, tool_name: str) -> Dict:
+    """将context中未在params指定的键注入到params — 小沈 2026-05-25
+
+    使用场景:
+    - pipeline中上下文注入逻辑
+    - 需要将前一步输出注入到后一步参数的场景
+
+    使用示例:
+        params = _inject_context(step.get("params", {}), context, tool_name)
+
+    返回数据说明:
+    - 返回Dict，注入后的参数字典
+    """
+    if not context:
+        return params
+    result = dict(params)
+    impl = tool_registry.get_implementation(tool_name)
+    if impl:
+        try:
+            impl_sig = set(inspect.signature(impl).parameters.keys())
+            for k, v in context.items():
+                if k not in result and k in impl_sig:
+                    result[k] = v
+        except Exception:
+            pass
+    return result
+
+
+def _validate_step(step: Any, i: int, steps_list: List) -> Optional[Dict]:
+    """校验单步格式，返回错误dict或None — 小沈 2026-05-25
+
+    使用场景:
+    - pipeline中步骤校验
+    - 需要验证步骤格式、工具存在性、参数格式的场景
+
+    使用示例:
+        err = _validate_step(step, i, steps_list)
+        if err: return err
+
+    返回数据说明:
+    - None: 校验通过
+    - Dict: 错误响应，应立即返回
+    """
+    if not isinstance(step, dict):
+        return _pipeline_error("ERR_INVALID_STEP",
+            f"步骤{i+1}格式无效，应为对象，当前类型: {type(step).__name__}",
+            llm_data={"failed_step": i + 1, "error": f"步骤类型错误: {type(step).__name__}"})
+    tool_name = step.get("tool")
+    if not tool_name:
+        return _pipeline_error("ERR_MISSING_TOOL",
+            f"步骤{i+1}缺少tool字段",
+            llm_data={"failed_step": i + 1})
+    if not tool_registry.get_tool(tool_name):
+        available = list(tool_registry._tools.keys())
+        similar = [n for n in available if tool_name.lower() in n.lower()]
+        return _pipeline_error("ERR_TOOL_NOT_FOUND",
+            f"步骤{i+1}: 工具 '{tool_name}' 不存在，请用 tool_search 查找正确名称",
+            tool=tool_name,
+            data={"similar_tools": similar[:5]},
+            llm_data={"failed_step": i + 1, "tool": tool_name, "similar_tools": similar[:3]})
+    params = step.get("params", {})
+    if not isinstance(params, dict):
+        return _pipeline_error("ERR_INVALID_PARAMS",
+            f"步骤{i+1}({tool_name})的params必须是对象格式",
+            tool=tool_name,
+            llm_data={"failed_step": i + 1, "tool": tool_name})
+    return None
+
+
 def pipeline(steps: str, stop_on_error: bool = True, timeout_per_step: int = 60) -> Dict[str, Any]:
     """
     定义工具执行管道 — 小沈 2026-05-17, 2026-05-22 新增timeout_per_step, 2026-05-25 小健重构拆分
@@ -303,68 +372,24 @@ def pipeline(steps: str, stop_on_error: bool = True, timeout_per_step: int = 60)
 
     context: Dict[str, Any] = {}
     results: List[Dict] = []
+    import concurrent.futures
 
     for i, step in enumerate(steps_list):
-        if not isinstance(step, dict):
-            return _pipeline_error("ERR_INVALID_STEP",
-                f"步骤{i+1}格式无效，应为对象，当前类型: {type(step).__name__}",
-                llm_data={"failed_step": i + 1, "error": f"步骤类型错误: {type(step).__name__}"})
-
-        tool_name = step.get("tool")
-        if not tool_name:
-            return _pipeline_error("ERR_MISSING_TOOL",
-                f"步骤{i+1}缺少tool字段",
-                llm_data={"failed_step": i + 1})
-
-        metadata = tool_registry.get_tool(tool_name)
-        if not metadata:
-            available = list(tool_registry._tools.keys())
-            similar = [n for n in available if tool_name.lower() in n.lower()]
-            return _pipeline_error("ERR_TOOL_NOT_FOUND",
-                f"步骤{i+1}: 工具 '{tool_name}' 不存在，请用 tool_search 查找正确名称",
-                tool=tool_name,
-                data={"similar_tools": similar[:5]},
-                llm_data={"failed_step": i + 1, "tool": tool_name, "similar_tools": similar[:3]})
-
-        params = step.get("params", {})
-        if not isinstance(params, dict):
-            return _pipeline_error("ERR_INVALID_PARAMS",
-                f"步骤{i+1}({tool_name})的params必须是对象格式",
+        err = _validate_step(step, i, steps_list)
+        if err:
+            return err
+        tool_name = step["tool"]
+        impl = tool_registry.get_implementation(tool_name)
+        if not impl:
+            return _pipeline_error("ERR_META_TOOL_IMPL_NOT_FOUND",
+                f"步骤{i+1}: 工具 '{tool_name}' 无法获取实现，请检查工具是否正确注册",
                 tool=tool_name,
                 llm_data={"failed_step": i + 1, "tool": tool_name})
-
+        params = _inject_context(step.get("params", {}), context, tool_name)
         try:
-            if context:
-                impl_sig = set()
-                try:
-                    impl_func = tool_registry.get_implementation(tool_name)
-                    if impl_func:
-                        impl_sig = set(inspect.signature(impl_func).parameters.keys())
-                except Exception:
-                    pass
-                for k, v in context.items():
-                    if k not in params and (not impl_sig or k in impl_sig):
-                        params[k] = v
-
-            impl = tool_registry.get_implementation(tool_name)
-            if not impl:
-                return _pipeline_error("ERR_META_TOOL_IMPL_NOT_FOUND",
-                    f"步骤{i+1}: 工具 '{tool_name}' 无法获取实现，请检查工具是否正确注册",
-                    tool=tool_name,
-                    llm_data={"failed_step": i + 1, "tool": tool_name})
-
-            try:
-                result = _run_tool_with_timeout(impl, params, timeout_per_step)
-            except Exception as exec_err:
-                import concurrent.futures as cf
-                if isinstance(exec_err, cf.TimeoutError):
-                    return _timeout_error(i, tool_name, timeout_per_step, results, steps, stop_on_error)
-                raise
-
-            err = _process_step_result(result, i, tool_name, results, context, stop_on_error)
-            if err:
-                return err
-
+            result = _run_tool_with_timeout(impl, params, timeout_per_step)
+        except concurrent.futures.TimeoutError:
+            return _timeout_error(i, tool_name, timeout_per_step, results, steps, stop_on_error)
         except TypeError as e:
             return _pipeline_error("ERR_PARAM_MISMATCH",
                 f"步骤{i+1}({tool_name})参数不匹配: {str(e)}，请用 tool_help 查看正确参数",
@@ -372,14 +397,16 @@ def pipeline(steps: str, stop_on_error: bool = True, timeout_per_step: int = 60)
                 data={"step": i+1, "tool": tool_name, "error": str(e)},
                 llm_data={"failed_step": i + 1, "tool": tool_name, "error": str(e)})
         except Exception as e:
-            import concurrent.futures as cf
-            if isinstance(e, cf.TimeoutError):
+            if isinstance(e, concurrent.futures.TimeoutError):
                 return _timeout_error(i, tool_name, timeout_per_step, results, steps, stop_on_error)
             return _pipeline_error("ERR_PIPELINE_FAILED",
                 f"步骤{i+1}({tool_name})执行异常: {str(e)}",
                 tool=tool_name,
                 data={"step": i+1, "tool": tool_name, "error": str(e)},
                 llm_data={"failed_step": i + 1, "tool": tool_name, "error": str(e)})
+        err = _process_step_result(result, i, tool_name, results, context, stop_on_error)
+        if err:
+            return err
 
     data = truncate_data_for_frontend({
         "total_steps": len(steps_list),
