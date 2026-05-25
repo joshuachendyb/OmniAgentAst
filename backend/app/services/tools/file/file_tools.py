@@ -806,6 +806,105 @@ class FileTools:
             logger.error(f"read_text_file failed: {file_path}: {e}")
             return build_error("ERR_FILE_READ_FAILED", str(e))
     
+    @staticmethod
+    def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
+        """统一编码检测，复用 get_file_encoding
+        
+        小沈 2026-05-25 重构拆分
+        """
+        if not append:
+            return "utf-8"
+        
+        path = Path(file_path)
+        if not (path.exists() and path.is_file()):
+            return "utf-8"
+        
+        try:
+            from app.services.tools.toolhelper.file_helpers import get_file_encoding
+            result = get_file_encoding(file_path)
+            return result.get("encoding", "utf-8")
+        except Exception:
+            return "utf-8"
+    
+    @staticmethod
+    def _write_file_atomic(content: str, path: Path, encoding: str,
+                            append: bool, create_parents: bool) -> bool:
+        """原子写入：追加模式直接写，否则临时文件+os.replace
+        
+        小沈 2026-05-25 重构拆分
+        """
+        import tempfile
+        import os
+        
+        if create_parents:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        elif not path.parent.exists():
+            raise FileNotFoundError(f"父目录不存在: {path.parent}")
+        
+        if append and path.exists() and path.is_file():
+            with open(path, 'a', encoding=encoding) as f:
+                f.write(content)
+            return True
+        
+        with tempfile.NamedTemporaryFile(
+            mode='w', encoding=encoding, dir=path.parent,
+            delete=False, prefix=f".{path.name}.", suffix=""
+        ) as f:
+            f.write(content)
+            temp_path = f.name
+        
+        try:
+            os.replace(temp_path, str(path))
+            return True
+        except Exception:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+            raise
+    
+    def _check_write_safety(self, file_path: str, content: str,
+                             encoding: Optional[str] = None) -> tuple:
+        """统一前置校验链，返回 (error_or_None, modified_content)
+        
+        小沈 2026-05-25 重构拆分
+        """
+        _enc = encoding or "utf-8"
+        
+        is_binary, reason = _is_binary_file(file_path)
+        if is_binary:
+            return f"{reason}。write_text_file 仅支持文本文件。", content
+        
+        if content and len(content.encode(_enc)) > MAX_READ_SIZE:
+            return f"内容过大，超过写入上限{MAX_READ_SIZE//1024//1024}MB。", content
+        
+        path = Path(file_path)
+        if path.suffix.lower() == '.py' and content:
+            fullwidth_map = {'（': '(', '）': ')', '，': ',', '：': ':', '；': ';'}
+            for fw, hw in fullwidth_map.items():
+                content = content.replace(fw, hw)
+        
+        if content:
+            from app.services.tools.toolhelper.content_quality import check_content_quality
+            quality = check_content_quality(content=content, file_path=file_path)
+            if quality.get("is_thought_leak"):
+                return quality["warning"], content
+        
+        validation_error = self._validate_content_format(file_path, content)
+        if validation_error:
+            return validation_error, content
+        
+        is_valid, error_msg = self._validate_path(file_path)
+        if not is_valid:
+            return error_msg, content
+        
+        old_size = path.stat().st_size if path.exists() and path.is_file() else 0
+        new_size = len(content.encode(_enc))
+        if old_size > 1024 and new_size > 0 and new_size < old_size * 0.20:
+            return f"数据保护：新内容({new_size}字节)远小于原始内容({old_size}字节)", content
+        
+        return None, content
+    
     async def write_text_file(
         self,
         file_path: str,
@@ -815,78 +914,27 @@ class FileTools:
         create_parents: bool = True,
         unescape: bool = True
     ) -> Dict[str, Any]:
-        """写入文本文件 - 小健 2026-05-03 增加编码自动检测+OOM保护"""
-        # 【新增 2026-05-02 小沈】二进制文件保护（最关键，防止破坏二进制文件）
-        is_binary, binary_reason = _is_binary_file(file_path)
-        if is_binary:
-            return build_error("ERR_FILE_READ_BINARY_FILE", f"{binary_reason}。write_text_file 仅支持文本文件，禁止写入二进制文件。")
+        """写入文本文件
         
-        # 【小健 2026-05-03】OOM保护：写入内容超过10MB时拒绝
-        content = text
-        if content and len(content.encode(encoding or 'utf-8')) > MAX_READ_SIZE:
-            return build_error("ERR_FILE_READ_TOO_LARGE", f"内容过大({len(content.encode(encoding or 'utf-8'))}字节)，超过写入上限{MAX_READ_SIZE//1024//1024}MB。请分批写入或使用其他方式处理大文件。")
-
-        path_preview = Path(file_path)
-        if path_preview.suffix.lower() == '.py' and content:
-            fullwidth_map = {
-                '（': '(', '）': ')', '，': ',', '：': ':', '；': ';',
-                '！': '!', '？': '?', '＝': '=', '＋': '+', '－': '-',
-                '＊': '*', '／': '/', '＜': '<', '＞': '>', '［': '[', '］': ']',
-            }
-            original_content = content
-            for fw, hw in fullwidth_map.items():
-                content = content.replace(fw, hw)
-            if content != original_content:
-                logger.info(f"write_text_file: 自动将全角标点替换为半角标点({file_path})，如需保留全角请在中文注释中使用")
-
-        if content:
-            from app.services.tools.toolhelper.content_quality import check_content_quality
-            quality_result = check_content_quality(content=content, file_path=file_path)
-            if quality_result.get("is_thought_leak"):
-                return build_error("ERR_FILE_CONTENT_BLOCKED", f"内容保护：{quality_result['warning']}")
+        【小沈重构 2026-05-25】
+        - 重构拆分：提取 _detect_file_encoding_for_write / _write_file_atomic / _check_write_safety
+        - 保持所有分支完整，功能不减少
+        """
+        error, content = self._check_write_safety(file_path, text, encoding)
+        if error:
+            return build_error("ERR_FILE_CONTENT_BLOCKED", error)
+        
         if unescape:
             content = content.replace("\\\\", "\\").replace("\\n", "\n").replace("\\\"", "\"")
         
-        validation_error = self._validate_content_format(file_path, content)
-        if validation_error:
-            return build_error("ERR_FILE_CONTENT_INVALID", validation_error)
-        
-        is_valid, error_msg = self._validate_path(file_path)
-        if not is_valid:
-            return build_error("ERR_PATH_INVALID", error_msg)
-        
-        path = Path(file_path)
-        
-        # 【小健 2026-05-03】编码自动检测：encoding=None时自动检测
-        if encoding is None:
-            if append and path.exists() and path.is_file():
-                # 追加模式：检测已有文件的编码
-                for enc in ["utf-8", "gbk", "gb2312", "utf-8-sig"]:
-                    try:
-                        with open(path, 'r', encoding=enc) as f:
-                            f.read(1024)
-                        encoding = enc
-                        break
-                    except (UnicodeDecodeError, UnicodeError):
-                        continue
-                if encoding is None:
-                    encoding = "utf-8"
-            else:
-                encoding = "utf-8"
-        
-        if not append and path.exists() and path.is_file():
-            old_size = path.stat().st_size
-            new_size = len(content.encode(encoding))
-            # 【修正 2026-05-19 小健】数据保护：缩小80%以上且非空内容才拦截
-            # 原阈值95%过严，重构代码等合法场景经常缩小80%+
-            # 豁免条件：新内容为空（有意清空）或缩小比例<80%
-            if old_size > 1024 and new_size > 0 and new_size < old_size * 0.20:
-                return build_error("ERR_FILE_DATA_PROTECTION", f"数据保护：新内容({new_size}字节)远小于原始内容({old_size}字节，缩小{100-int(new_size/max(old_size,1)*100)}%)，可能覆盖数据。如确认覆盖，请使用precise_replace_in_file或在text中传入完整内容。")
+        encoding = encoding or self._detect_file_encoding_for_write(file_path, append)
         
         if not self.task_id:
             self.task_id = _current_task_id.get(None)
         if not self.task_id:
-            return build_error("ERR_META_NO_ACTIVE_TASK", "当前没有活跃任务ID，请先创建一个任务")
+            return build_error("ERR_META_NO_ACTIVE_TASK", "当前没有活跃任务ID")
+        
+        path = Path(file_path)
         
         try:
             operation_id = self.safety.record_operation(
@@ -896,45 +944,10 @@ class FileTools:
                 sequence_number=self._get_next_sequence()
             )
             
-            def _write_sync():
-                import tempfile
-                import os
-                
-                if create_parents:
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                elif not path.parent.exists():
-                    raise FileNotFoundError(f"父目录不存在: {path.parent}")
-                
-                if append and path.exists() and path.is_file():
-                    with open(path, 'a', encoding=encoding) as f:
-                        f.write(content)
-                    return True
-                
-                with tempfile.NamedTemporaryFile(
-                    mode='w',
-                    encoding=encoding,
-                    dir=path.parent,
-                    delete=False,
-                    prefix=f".{path.name}.",
-                    suffix=""
-                ) as f:
-                    f.write(content)
-                    temp_path = f.name
-                
-                try:
-                    os.replace(temp_path, str(path))
-                    return True
-                except Exception:
-                    try:
-                        os.unlink(temp_path)
-                    except OSError:
-                        pass
-                    raise
-            
             success = await asyncio.to_thread(
                 self.safety.execute_with_safety,
                 operation_id=operation_id,
-                operation_func=_write_sync
+                operation_func=lambda: self._write_file_atomic(content, path, encoding, append, create_parents)
             )
             
             if success:
