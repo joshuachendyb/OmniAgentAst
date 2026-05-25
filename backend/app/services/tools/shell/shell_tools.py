@@ -32,7 +32,7 @@ import subprocess
 import signal
 import uuid
 import shutil
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 from app.services.tools.tool_result_utils import format_output_for_llm, build_next_actions, truncate_data_for_frontend
@@ -45,158 +45,122 @@ from app.services.tools.toolhelper.shell_helper import _check_shell_injection, _
 _background_shells: Dict[str, Dict[str, Any]] = {}
 
 
-def execute_shell_command(
-    command: str,
-    shell_type: Optional[str] = "powershell",
-    timeout: int = 30000,
-    run_in_background: bool = False,
-    cwd: Optional[str] = None,
-    env_vars: Optional[dict] = None,
+def _decode_output(data: Optional[bytes]) -> str:
+    """统一解码字节输出，utf-8→gbk→空 双编码回退。"""
+    if not data:
+        return ""
+    try:
+        return data.decode("utf-8")
+    except (UnicodeDecodeError, AttributeError):
+        try:
+            return data.decode("gbk")
+        except (UnicodeDecodeError, AttributeError):
+            return ""
+
+
+def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
+                         timed_out: bool, timeout: int = 30000) -> dict:
+    """统一构建 shell 执行结果（超时/成功/失败 3 路）。"""
+    data = truncate_data_for_frontend({
+        "stdout": stdout_str, "stderr": stderr_str, "returncode": returncode,
+    })
+    llm_data = format_output_for_llm(stdout_str, stderr_str)
+
+    if timed_out:
+        return build_error("ERR_SHELL_TIMEOUT",
+            f"命令执行超时（{timeout}毫秒），可增大timeout参数重试",
+            data=data, llm_data=llm_data,
+            next_actions=build_next_actions([
+                ("execute_shell_command", "增大超时重试", "需要更长时间执行时")]))
+    if returncode == 0:
+        message = "命令执行成功（有警告输出）" if stderr_str.strip() else "命令执行成功"
+        return build_success(data, message, llm_data=llm_data,
+            next_actions=build_next_actions([
+                ("execute_shell_command", "继续执行后续命令", "需要执行更多命令时"),
+                ("find_command", "查找命令路径", "需要确认命令是否存在时")]))
+    return build_error("ERR_SHELL_EXEC", f"命令执行失败（退出码{returncode}），请检查命令语法和参数",
+        data=data, llm_data=llm_data,
+        next_actions=build_next_actions([
+            ("execute_shell_command", "重新执行命令", "修改命令后重试时"),
+            ("find_command", "查找命令路径", "需要确认命令是否存在时")]))
+
+
+def _run_shell_background(
+    command: str, executable: Optional[str],
+    cwd: Optional[str], env: Optional[dict]
 ) -> dict:
-    """执行Shell命令 — 小沈 2026-05-19 精简参数(8→6)"""
-    # 小健 2026-05-19: shell_type校验 — 非法值明确报错而非静默默认
+    """启动后台 shell 命令并立即返回 shell_id。"""
+    process = subprocess.Popen(
+        command, shell=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        cwd=cwd, env=env, executable=executable,
+    )
+    shell_id = f"shell_{uuid.uuid4().hex[:8]}"
+    _background_shells[shell_id] = {
+        "process": process, "command": command,
+        "started_at": datetime.now().isoformat(),
+        "shell_type": "powershell", "cwd": cwd,
+    }
+    return build_success(
+        {"shell_id": shell_id, "is_running": True, "started_at": datetime.now().isoformat()},
+        f"命令已在后台启动，shell_id: {shell_id}",
+        next_actions=build_next_actions([
+            ("shell_session", "读取后台命令输出", "需要查看命令执行结果时",
+             {"shell_id": shell_id, "action": "output"})]))
+
+
+def execute_shell_command(
+    command: str, shell_type: Optional[str] = "powershell",
+    timeout: int = 30000, run_in_background: bool = False,
+    cwd: Optional[str] = None, env_vars: Optional[dict] = None,
+) -> dict:
+    # V1: 参数校验
     if shell_type not in ("powershell", "cmd", None):
-        return build_error("ERR_PARAMETER_INVALID", f"shell_type仅支持powershell/cmd，当前值: '{shell_type}'")
-    
-    # 小健 2026-05-19: command空值校验
+        return build_error("ERR_PARAMETER_INVALID",
+            f"shell_type仅支持powershell/cmd，当前值: '{shell_type}'")
     if not command or not command.strip():
         return build_error("ERR_PARAMETER_EMPTY", "command不能为空")
-    
-    # cwd存在性校验
     if cwd is not None and not os.path.isdir(cwd):
-        return build_error("ERR_PARAMETER_INVALID", f"工作目录不存在: {cwd}，请检查路径是否正确")
-    
+        return build_error("ERR_PARAMETER_INVALID", f"工作目录不存在: {cwd}")
+
     timeout_sec = timeout / 1000.0
-    
     env = None
     if env_vars:
         env = os.environ.copy()
         env.update(env_vars)
-    
-    if shell_type == "cmd":
-        executable = None  # shell=True时使用COMSPEC默认cmd.exe - 小沈 2026-05-06
-    else:
-        # 【修复 小沈 2026-05-19】动态查找powershell路径，避免硬编码路径失效
-        executable = shutil.which("powershell.exe") or shutil.which("pwsh.exe") or "powershell.exe"
-    
+
+    executable = None if shell_type == "cmd" else (
+        shutil.which("powershell.exe") or shutil.which("pwsh.exe") or "powershell.exe")
+
+    # S1: 安全注入检查
+    injection_error = _check_shell_injection(command)
+    if injection_error:
+        logger.warning(f"[Shell安全] 拦截高风险命令: {command[:200]}")
+        return build_error("ERR_SHELL_INJECTION", injection_error)
+
+    # B1: 后台模式
+    if run_in_background:
+        return _run_shell_background(command, executable, cwd, env)
+
+    # B1b: 前台执行
     try:
-        injection_error = _check_shell_injection(command)
-        if injection_error:
-            logger.warning(f"[Shell安全] 拦截高风险命令: {command[:200]}")
-            return build_error("ERR_SHELL_INJECTION", injection_error)
-        
-        if run_in_background:
-            shell_id = f"shell_{uuid.uuid4().hex[:8]}"
-            process = subprocess.Popen(
-                command,
-                shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=cwd,
-                env=env,
-                executable=executable
-            )
-            _background_shells[shell_id] = {
-                "process": process,
-                "command": command,
-                "started_at": datetime.now().isoformat(),
-                "shell_type": shell_type,
-                "cwd": cwd
-            }
-            return build_success(
-                {
-                    "shell_id": shell_id,
-                    "is_running": True,
-                    "started_at": datetime.now().isoformat()
-                },
-                f"命令已在后台启动，shell_id: {shell_id}",
-                next_actions=build_next_actions([
-                    ("shell_session", "读取后台命令输出", "需要查看命令执行结果时", {"shell_id": shell_id, "action": "output"}),
-                ])
-            )
-        
         proc = subprocess.Popen(
-            command,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=cwd,
-            env=env,
-            executable=executable
-        )
+            command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            cwd=cwd, env=env, executable=executable)
         timed_out = False
         try:
             stdout_bytes, stderr_bytes = proc.communicate(timeout=timeout_sec)
         except subprocess.TimeoutExpired:
             timed_out = True
             proc.kill()
-            try:
-                stdout_bytes, stderr_bytes = proc.communicate(timeout=5)
-            except subprocess.TimeoutExpired:
-                stdout_bytes, stderr_bytes = b"", b""
-        
-        # 手动解码，处理编码问题（先UTF-8，失败后尝试GBK）
-        stdout_str = ""
-        stderr_str = ""
-        try:
-            stdout_str = stdout_bytes.decode("utf-8") if stdout_bytes else ""
-        except (UnicodeDecodeError, AttributeError):
-            stdout_str = stdout_bytes.decode("gbk") if stdout_bytes else ""
-        
-        try:
-            stderr_str = stderr_bytes.decode("utf-8") if stderr_bytes else ""
-        except (UnicodeDecodeError, AttributeError):
-            stderr_str = stderr_bytes.decode("gbk") if stderr_bytes else ""
-        
+            try: stdout_bytes, stderr_bytes = proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired: stdout_bytes, stderr_bytes = b"", b""
+
+        stdout_str = _decode_output(stdout_bytes)
+        stderr_str = _decode_output(stderr_bytes)
         returncode = proc.returncode if proc.returncode is not None else -1
-        if timed_out:
-            return build_error(
-                "ERR_SHELL_TIMEOUT",
-                f"命令执行超时（{timeout}毫秒），可增大timeout参数重试",
-                data={
-                    "stdout": stdout_str,
-                    "stderr": stderr_str,
-                    "returncode": returncode
-                },
-                next_actions=build_next_actions([
-                    ("execute_shell_command", "增大超时重试", "需要更长时间执行时"),
-                ])
-            )
-        if returncode == 0:
-            if stderr_str and stderr_str.strip():
-                message = "命令执行成功（有警告输出）"
-            else:
-                message = "命令执行成功"
-            _llm = format_output_for_llm(stdout_str, stderr_str)  # 小沈-2026-05-15
-            return build_success(
-                truncate_data_for_frontend({
-                    "stdout": stdout_str,
-                    "stderr": stderr_str,
-                    "returncode": returncode
-                }),
-                message,
-                llm_data=_llm,
-                next_actions=build_next_actions([
-                    ("execute_shell_command", "继续执行后续命令", "需要执行更多命令时"),
-                    ("find_command", "查找命令路径", "需要确认命令是否存在时"),
-                ])
-            )
-        else:
-            _llm = format_output_for_llm(stdout_str, stderr_str)
-            return build_error(
-                "ERR_SHELL_EXEC",
-                f"命令执行失败（退出码{returncode}），请检查命令语法和参数",
-                data=truncate_data_for_frontend({
-                    "stdout": stdout_str,
-                    "stderr": stderr_str,
-                    "returncode": returncode
-                }),
-                llm_data=_llm,
-                next_actions=build_next_actions([
-                    ("execute_shell_command", "重新执行命令", "修改命令后重试时"),
-                    ("find_command", "查找命令路径", "需要确认命令是否存在时"),
-                ])
-            )
+
+        return _build_shell_result(returncode, stdout_str, stderr_str, timed_out, timeout=timeout)
     except Exception as e:
         return build_error("ERR_SHELL_EXCEPTION", f"命令执行异常: {str(e)}")
 
