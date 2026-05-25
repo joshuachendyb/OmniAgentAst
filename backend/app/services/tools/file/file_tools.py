@@ -707,6 +707,7 @@ class FileTools:
             return False, f"路径验证失败: {str(e)}"
     
     async def _try_read_file_with_encodings(
+        self,
         path: Path,
         preferred: Optional[str] = None,
     ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
@@ -1817,7 +1818,7 @@ class FileTools:
                 destination_path=path, sequence_number=self._get_next_sequence(),
             )
 
-            content, used_enc, err_msg = await _try_read_file_with_encodings(path, encoding)
+            content, used_enc, err_msg = await self._try_read_file_with_encodings(path, encoding)
             if err_msg:
                 raise ValueError(err_msg)
 
