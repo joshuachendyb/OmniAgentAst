@@ -1,8 +1,76 @@
-v0.13.41
+v0.13.42
 
-更新时间: 2026-05-25 13:52:15
+更新时间: 2026-05-25 16:48:19
 
 更新内容：
+
+## v0.13.41→v0.13.42 变更汇总 - 小沈-2026-05-25
+
+### refactor 第23章5个函数拆分重构（5个commit）
+
+| commit | 说明 |
+|--------|------|
+| 84408560 | refactor: _supplement_missing_params 死代码消除 - 小沈-2026-05-25 |
+| 081d63a0 | refactor: _timer_set 重构拆分 - 小沈-2026-05-25 |
+| f54fb463 | refactor: download_file 重构拆分 - 小沈-2026-05-25 |
+| 5e85e02a | refactor: register 重构拆分 - 小沈-2026-05-25 |
+| dd0ecd21 | refactor: calculate_risk_score_v2 重构拆分 - 小沈-2026-05-25 |
+
+### 重构详情
+
+#### 23.1 _timer_set (meta/time_tools.py)
+- 新增: `_error_timer_set` / `_invoke_timer_callback` 组件函数
+- 替换: V1a/V1b→`_error_timer_set`，`ensure_future`→`create_task`
+- YAGNI删除: `new_event_loop/set_event_loop`、C1c"其他"回调、外层try
+
+#### 23.2 download_file (network/network_tools.py)
+- 新增: `NET_ERROR_MAP` / `_map_network_error` / `_stream_download` 组件
+- 替换: 4个except统一→`_map_network_error`，err变量→`_stream_download`
+- 增强: `except (PermissionError,OSError)`→`ERR_NETWORK_WRITE_FILE`(修复问题#2)
+- YAGNI删除: resume 27行死代码、`progress_percent`字段
+
+#### 23.3 _supplement_missing_params (react_output_parser.py)
+- 缩减: 原推断函数→3行return占位
+- YAGNI删除: 全部推断逻辑(W1-W2/R1/D1)、`_check_missing_required_params`调用
+
+#### 23.4 calculate_risk_score_v2 (command_security.py)
+- 新增: `_parse_tuple_result` / `_build_risk_details` 组件
+- 替换: 6次isinstance→2次`_parse_tuple_result`，`log`→`log2`
+- 简化公式: `type*0.6 + target*0.4`
+- YAGNI删除: `matches`字典、details 11字段→5字段
+
+#### 23.5 register (registry.py)
+- 新增: `_generate_input_schema` / `_update_tool_metadata` 组件(在ToolRegistry类之前)
+- 替换: M1a/M1b合并→`_generate_input_schema`，U1a→`_update_tool_metadata`
+- 简化: `setdefault`替代if存在检查
+
+---
+
+### refactor 其他9个函数拆分重构（11个commit）
+
+| commit | 说明 |
+|--------|------|
+| 04399533 | refactor: detect_file_operation_intent 重构拆分 - 小沈-2026-05-25 |
+| 6c1d9224 | refactor: _execute_tool_step 重构拆分 - 小沈-2026-05-25 |
+| 16a5bba5 | refactor: _read_text_file 重构拆分 - 小沈-2026-05-25 |
+| f41764a1 | refactor: data_analysis_tools.py analyze_data重构拆分 - 小沈-2026-05-25 |
+| 8e64177c | refactor: file_prompts.py get_system_prompt重构拆分 - 小沈-2026-05-25 |
+| 332277ee | refactor: database_tools.py execute_sql重构拆分 - 小沈-2026-05-25 |
+| 2b16504d | refactor: file_helpers.py file_checksum_impl重构拆分 - 小沈-2026-05-25 |
+| 856d685c | refactor: file_tools.py _apply_edits重构拆分+编码读取复用修复 - 小沈-小健-2026-05-25 |
+| 97bc47fc | refactor: sessions.py sessions重构拆分 - 小沈-2026-05-25 |
+| 401002aa | refactor: tool_executor.py tool_executor重构拆分 - 小沈-2026-05-25 |
+| c1120a2c | refactor: file_safety.py file_safety重构拆分 - 小沈-2026-05-25 |
+
+### docs
+
+| commit | 说明 |
+|--------|------|
+| 20f05cfc | docs: 更新138文件全景设计文档22章验证结果 - 小沈-2026-05-25 |
+| 3caccd2f | docs: 新增scan_funcs.py函数扫描工具 - 小沈-2026-05-25 |
+| 460c24b8 | docs: 新增21章函数重构验证报告 - 小健-2026-05-25 |
+
+---
 
 ## v0.13.40→v0.13.41 变更汇总 - 小沈-2026-05-25
 
