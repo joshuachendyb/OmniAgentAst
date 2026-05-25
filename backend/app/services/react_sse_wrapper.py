@@ -44,6 +44,7 @@ from app.chat_stream.message_saver import save_execution_steps_to_db, add_step_a
 from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse, format_sse_event
 from app.services.agent.base_react import DEFAULT_MAX_STEPS
 from app.services.intents.crss_scorer import CRSS_CONFIDENCE_THRESHOLD  # 【修复 2026-05-13 小沈】H2: 改为从crss_scorer导入，切断与chat_router的循环依赖
+from app.services.task_lifecycle import TaskLifecycleManager  # 【重构 2026-05-25 小沈】替代直接操作running_tasks
 
 
 async def _yield_error_sse(
@@ -214,18 +215,157 @@ async def cleanup_expired_tasks():
 
 
 # ============================================================
-# 通用Agent SSE执行器 - 【提取 2026-04-30 小沈】消除4处重复代码
-# file/time/network/desktop分支逻辑完全一致，只差intent_type和日志标签
+# generate_sse_stream 辅助函数 — 【重构 2026-05-25 小沈】拆分346行大函数
 # ============================================================
 
-async def _run_agent_sse_stream(
+async def _log_prompts(
+    messages: List[Dict[str, str]],
+    intent_type: str,
+    confidence: float,
+    session_id: Optional[str],
+    task_id: str,
+) -> None:
+    """Prompt Logger记录 — 保证生命周期顺序：start_request→log_system_prompt→log_task_prompt
+
+    使用场景:
+        - generate_sse_stream中非chat意图的prompt日志记录
+        - 仅记录非generic/chat意图，跳过纯聊天
+
+    使用示例:
+        await _log_prompts(messages, "file", 0.9, session_id, task_id)
+
+    返回数据说明:
+        - 无返回值，副作用为写入prompt_logger
+    """
+    if not messages:
+        return
+    user_message = ""
+    for msg in messages:
+        if msg.get("role") == "user":
+            user_message = msg.get("content", "")
+            break
+    from app.api.v1.sessions import _assistant_message_ids, _user_message_ids
+    ai_message_id = _assistant_message_ids.get(session_id)
+    if not ai_message_id and session_id in _user_message_ids:
+        ai_message_id = _user_message_ids[session_id] + 1
+    if not ai_message_id:
+        return
+    from app.utils.prompt_logger import get_prompt_logger
+    prompt_logger = get_prompt_logger()
+    prompt_logger.start_request(
+        user_message=user_message,
+        user_message_id=str(ai_message_id),
+        session_id=session_id or task_id,
+    )
+    if intent_type in ("", "generic", "chat"):
+        prompts_instance = None
+        source_name = "通用意图：无系统Prompt"
+    else:
+        try:
+            from app.services.agent.agent_config import resolve_agent_config
+            config = resolve_agent_config(intent_type)
+            prompts_instance = config.prompt_class()
+            source_name = config.prompt_module.split('.')[-1] + ".py"
+        except (ValueError, ImportError):
+            from app.services.prompts.file import FileOperationPrompts
+            prompts_instance = FileOperationPrompts()
+            source_name = "file_prompts.py"
+    if prompts_instance and intent_type not in ("", "generic"):
+        full_prompt = prompts_instance.build_full_system_prompt()
+        prompt_logger.log_system_prompt(
+            step_name="系统Prompt生成",
+            prompt_content=full_prompt,
+            source=source_name,
+            details={"intent_type": intent_type, "confidence": confidence, "note": "含OUTPUT_FORMAT(含退出规则)+TOOL_CALL_RULES+SAFETY+ROLLBACK"},
+            round_number=1,
+        )
+    prompt_logger.log_task_prompt(
+        task_content=user_message,
+        context={"intent_type": intent_type, "confidence": confidence},
+        round_number=1,
+    )
+
+
+async def _perform_security_check(
+    messages: List[Dict[str, str]],
+    next_step: Callable[[], int],
+    session_id: Optional[str],
+    current_execution_steps: List[Dict],
+    ai_service: Any,
+) -> Optional[str]:
+    """安全检查 — 返回None表示通过，返回str表示error SSE数据
+
+    使用场景:
+        - generate_sse_stream中对用户最后一条消息进行安全检查
+        - chat_router已做过冗余检查，此处为直接调用的兜底
+
+    使用示例:
+        error_sse = await _perform_security_check(messages, next_step, sid, steps, ai_svc)
+        if error_sse:
+            yield error_sse; return
+
+    返回数据说明:
+        - None: 安全检查通过
+        - str: SSE格式的error事件字符串
+    """
+    if not messages:
+        return None
+    last_message = messages[-1]["content"] if messages else ""
+    security_check_result = check_command_safety(last_message)
+    if security_check_result.get('is_safe', True):
+        return None
+    risk = security_check_result.get('risk', '未知风险')
+    risk_level = security_check_result.get('risk_level', 'unknown')
+    blocked = security_check_result.get('blocked', False)
+    is_need_confirm = security_check_result.get('is_need_confirm', False)
+    logger.info(f"[Step error] 发送error步骤(安全检测拦截), level={risk_level}, blocked={blocked}")
+    from app.services.command_security import calculate_risk_score_v2
+    risk_detail = calculate_risk_score_v2(last_message)
+    risk_level_text = {
+        "safe": "安全", "low": "低风险", "medium": "中等风险",
+        "high": "高风险", "critical": "极高风险",
+    }.get(risk_level, "未知")
+    action_text = "已拦截" if blocked else ("需确认" if is_need_confirm else "警告")
+    security_context = {
+        "crss_report": {
+            "risk_score": risk_detail.get('score', 0),
+            "risk_level": risk_level,
+            "risk_level_text": f"[{risk_level_text}]",
+            "action_required": action_text,
+            "is_safe": security_check_result.get('is_safe', True),
+            "is_blocked": blocked,
+            "need_confirmation": is_need_confirm,
+        },
+        "analysis": {
+            "operation_type": risk_detail.get('details', {}).get('operation_type', 'UNKNOWN'),
+            "operation_target": risk_detail.get('details', {}).get('target', 'UNKNOWN'),
+            "impact_scope": risk_detail.get('details', {}).get('scope', 'UNKNOWN'),
+        },
+        "matched_rule": security_check_result.get('rule_matched'),
+        "original_command": last_message,
+        "suggestions": risk_detail.get('suggestions', []),
+    }
+    error_step_obj = StepFactory.create_error_step(
+        step=next_step(), error_type="security",
+        error_message=f"危险操作需确认: {risk}",
+        recoverable=False, model=ai_service.model, provider=ai_service.provider,
+        context=security_context,
+    )
+    error_step_dict = error_step_obj.to_dict()
+    error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
+    current_execution_steps.append(error_step_dict)
+    await save_execution_steps_to_db(session_id, current_execution_steps, f"错误: {risk}")
+    return error_response
+
+
+async def _run_sse_stream(
     intent_type: str,
     llm_client,
     task_id: str,
     ai_service,
     candidates: list,
     last_message: str,
-    next_step,
+    next_step: Callable[[], int],
     running_tasks: dict,
     running_tasks_lock,
     session_id: str,
@@ -233,42 +373,67 @@ async def _run_agent_sse_stream(
     current_content: str,
     agent_llm_holder: Optional[Dict[str, Any]] = None,
 ) -> AsyncGenerator[str, None]:
-    """
-    通用Agent SSE执行器：创建Agent → 运行run_stream → 格式化SSE → yield
-    
-    AgentFactory未注册的intent_type会自动回退到FileReactAgent。
-    
-    Args:
-        intent_type: 意图类型(file/time/network/desktop等)
-        其余: 与generate_sse_stream中的同名变量含义一致
-        
-    Yields:
-        SSE格式字符串
+    """统一SSE流执行 — 合并_run_agent_sse_stream + _run_generic_sse_stream，消除~70%重复
+
+    使用场景:
+        - generate_sse_stream中分发执行SSE流
+        - 先尝试AgentFactory创建专用Agent，ValueError时回退通用Agent
+
+    使用示例:
+        async for chunk in _run_sse_stream(...):
+            yield chunk
+
+    返回数据说明:
+        - yield: SSE格式字符串
     """
     from app.services.agent.agent_factory import AgentFactory
-    
-    _LOG_TAG = f"[{intent_type.upper()}Op]"
-    _ERROR_LABEL = f"{intent_type}操作执行失败"
-    
-    agent = None  # 【修复 2026-05-13 小沈】M8: 预初始化，防止AgentFactory.create()抛异常时finally块中agent未绑定
-    agent = AgentFactory.create(
-        intent_type=intent_type,
-        llm_client=llm_client,
-        task_id=task_id,
-        candidates=candidates
-    )
-    
+    agent = None
+    log_tag = f"[{intent_type.upper()}Op]"
+    error_label = f"{intent_type}操作执行失败"
+    error_type = f'{intent_type}_operation_error'
+    try:
+        agent = AgentFactory.create(
+            intent_type=intent_type, llm_client=llm_client,
+            task_id=task_id, candidates=candidates,
+        )
+    except ValueError:
+        logger.info(f"[ChatOp] intent_type='{intent_type}' 无专用Agent，使用通用TextStrategy兜底")
+        from app.services.agent.base_react import BaseAgent
+        from app.services.agent.llm_strategies import TextStrategy
+        _generic_max_steps = get_config().get('app.max_steps', DEFAULT_MAX_STEPS)
+        class _GenericAgent(BaseAgent):
+            def __init__(self, llm_client, task_id, strategy, **kwargs):
+                super().__init__(llm_client=llm_client, task_id=task_id, tool_category=None, **kwargs)
+                self._strategy = strategy
+            async def _get_llm_response(self) -> str:
+                self.llm_call_count += 1
+                if self._strategy:
+                    last_msg = self.conversation_history[-1]["content"] if self.conversation_history else ""
+                    history = self.conversation_history[:-1] if len(self.conversation_history) > 1 else []
+                    return await self._strategy.call(
+                        llm_client=self.llm_client, message=last_msg,
+                        history_dicts=history, conversation_history=self.conversation_history,
+                    )
+                return ""
+            async def _execute_tool(self, action, params):
+                return {}
+            def _get_system_prompt(self):
+                return "你是一个有用的AI助手，直接回答用户的问题。"
+            def _get_task_prompt(self, task, context=None):
+                return task
+        strategy = TextStrategy() if ai_service else None
+        agent = _GenericAgent(llm_client=llm_client, task_id=task_id, strategy=strategy)
+        log_tag = "[GenericOp]"
+        error_label = "操作执行失败"
+        error_type = 'generic_operation_error'
     config = get_config()
-    max_steps = config.get_max_steps(DEFAULT_MAX_STEPS)  # 使用统一方法
-    
+    max_steps = config.get_max_steps(DEFAULT_MAX_STEPS) if hasattr(config, 'get_max_steps') else config.get('app.max_steps', DEFAULT_MAX_STEPS)
     try:
         async for event in agent.run_stream(
             task=last_message, context=None,
             max_steps=max_steps, task_id=task_id,
-            running_tasks=running_tasks,
-            step_counter=next_step
+            running_tasks=running_tasks, step_counter=next_step,
         ):
-            # 检查中断
             async with running_tasks_lock:
                 is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
                 if is_cancelled:
@@ -279,8 +444,6 @@ async def _run_agent_sse_stream(
                     current_execution_steps.append(interrupted_data)
                     await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
                     break
-            
-            # SSE 格式化 - 【修复 小健 2026-05-24】P2-14: 优先使用event自带的step编号，避免与Agent内部不同步
             event_step = event.get('step') if isinstance(event, dict) else None
             sse_step = event_step if event_step is not None else next_step()
             sse_data = _format_sse_event(event, sse_step, ai_service.model, ai_service.provider)
@@ -293,127 +456,89 @@ async def _run_agent_sse_stream(
                     elif step_data.get('type') == 'chunk':
                         current_content = step_data.get('content', current_content)
                     await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
-                
-                logger.info(f"{_LOG_TAG} SSE发送数据")
+                logger.info(f"{log_tag} SSE发送数据")
                 yield sse_data
                 await asyncio.sleep(0.05)
-    
     except Exception as e:
         error_response = await _yield_error_sse(
-            error_type=f'{intent_type}_operation_error', error_label=_ERROR_LABEL, log_tag=_LOG_TAG,
+            error_type=error_type, error_label=error_label, log_tag=log_tag,
             task_id=task_id, e=e, next_step=next_step, ai_service=ai_service,
-            current_execution_steps=current_execution_steps, session_id=session_id
+            current_execution_steps=current_execution_steps, session_id=session_id,
         )
         yield error_response
     finally:
-        # 【修复 2026-05-10 小沈】将 Agent 内真实 LLM 调用次数回传给外层日志（generate_sse_stream 中 llm_call_count 从未递增）
         if agent_llm_holder is not None and agent is not None:
             agent_llm_holder["n"] = getattr(agent, "llm_call_count", 0)
 
 
-# ============================================================
-# 通用SSE流式处理（intent_type未注册AgentFactory时的兜底）
-# 使用TextStrategy纯文本对话，不涉及工具调用
-# 小沈 - 2026-05-13
-# ============================================================
-
-async def _run_generic_sse_stream(
-    llm_client,
+async def _handle_client_disconnect(
     task_id: str,
-    ai_service,
-    last_message: str,
-    next_step,
-    running_tasks: dict,
-    running_tasks_lock,
-    session_id: str,
-    current_execution_steps: list,
+    session_id: Optional[str],
+    current_execution_steps: List[Dict],
+    current_content: str,
+    next_step: Callable[[], int],
+    running_tasks: Dict[str, Any],
+    running_tasks_lock: asyncio.Lock,
 ) -> AsyncGenerator[str, None]:
+    """处理客户端断开连接，保存已执行步骤并yield中断SSE事件
+
+    使用场景:
+        - generate_sse_stream中CancelledError的处理
+        - 需要在客户端断开后仍尝试发送interrupted事件的场景
+
+    使用示例:
+        except asyncio.CancelledError:
+            async for sse_event in _handle_client_disconnect(task_id, session_id, steps, ...):
+                yield sse_event
+
+    返回数据说明:
+        - yield: str类型SSE格式事件字符串
+        - 如果客户端已完全断开，yield可能因GeneratorExit而跳过
     """
-    通用SSE流式处理：用于未注册AgentFactory的intent_type
-    - 使用TextStrategy纯文本对话
-    - 复用base_react.run_stream()（通过简单BaseAgent子类）
-    - 不涉及工具调用
-    """
-    from app.services.agent.base_react import BaseAgent
-    from app.services.agent.llm_strategies import TextStrategy
-    
-    _LOG_TAG = "[GenericOp]"
-    _ERROR_LABEL = "操作执行失败"
-    
-    # 【L13修复 2026-05-13 小沈】从config读取max_steps
-    _generic_max_steps = get_config().get('app.max_steps', DEFAULT_MAX_STEPS)
-    
-    # 创建一个简单的Agent：复用BaseAgent.run_stream()，ToolCategory=None
-    # 注意：不用ReactAgentMixin（不涉及工具，直接调TextStrategy）
-    class _GenericAgent(BaseAgent):
-        def __init__(self, llm_client, task_id, strategy, **kwargs):
-            super().__init__(llm_client=llm_client, task_id=task_id, tool_category=None, **kwargs)
-            self._strategy = strategy
-        
-        async def _get_llm_response(self) -> str:
-            self.llm_call_count += 1
-            if self._strategy:
-                last_msg = self.conversation_history[-1]["content"] if self.conversation_history else ""
-                history = self.conversation_history[:-1] if len(self.conversation_history) > 1 else []
-                return await self._strategy.call(
-                    llm_client=self.llm_client,
-                    message=last_msg,
-                    history_dicts=history,
-                    conversation_history=self.conversation_history
-                )
-            return ""
-        
-        async def _execute_tool(self, action, params):
-            return {}
-        
-        def _get_system_prompt(self):
-            return "你是一个有用的AI助手，直接回答用户的问题。"
-        
-        def _get_task_prompt(self, task, context=None):
-            return task
-    
-    strategy = TextStrategy() if ai_service else None
-    agent = _GenericAgent(
-        llm_client=llm_client,
-        task_id=task_id,
-        strategy=strategy,
+    async with running_tasks_lock:
+        running_tasks[task_id] = {"status": "cancelled", "cancelled": True}
+    interrupted_step = create_incident_data(
+        incident_value='interrupted', message='客户端断开连接，任务中断', step=next_step(),
     )
-    
+    current_execution_steps.append(interrupted_step)
     try:
-        async for event in agent.run_stream(
-            task=last_message, context=None,
-            max_steps=_generic_max_steps, task_id=task_id,
-            running_tasks=running_tasks,
-            step_counter=next_step
-        ):
-            # 中断检查
-            async with running_tasks_lock:
-                is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
-                if is_cancelled:
-                    logger.info(f"[InterruptCheck] 任务 {task_id} 取消状态: {is_cancelled}")
-                    interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
-                    yield f"data: {json.dumps(interrupted_data)}\n\n"
-                    current_execution_steps.append(interrupted_data)
-                    await save_execution_steps_to_db(session_id, current_execution_steps, "")
-                    break
-            
-            sse_step = event.get('step') if isinstance(event, dict) else None
-            sse_data = _format_sse_event(event, sse_step if sse_step is not None else next_step(), ai_service.model, ai_service.provider)
-            if sse_data:
-                if sse_data.startswith("data: "):
-                    step_data = json.loads(sse_data[6:])
-                    current_execution_steps.append(step_data)
-                    await save_execution_steps_to_db(session_id, current_execution_steps, step_data.get('response', step_data.get('content', '')))
-                yield sse_data
-                await asyncio.sleep(0.05)
-    
-    except Exception as e:
-        error_response = await _yield_error_sse(
-            error_type='generic_operation_error', error_label=_ERROR_LABEL, log_tag=_LOG_TAG,
-            task_id=task_id, e=e, next_step=next_step, ai_service=ai_service,
-            current_execution_steps=current_execution_steps, session_id=session_id
-        )
-        yield error_response
+        await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
+    except Exception as _save_err:
+        logger.warning(f"[SSE] CancelledError后保存失败(可忽略): {_save_err}")
+    try:
+        interrupted_data = create_incident_data('interrupted', '客户端断开连接，任务中断')
+        logger.info(f"[Step interrupted] 发送interrupted步骤(客户端断开)")
+        yield f"data: {json.dumps(interrupted_data)}\n\n"
+    except Exception:
+        logger.info(f"[Step interrupted] 客户端已断开，跳过yield")
+
+
+async def _cleanup_task(
+    task_id: str,
+    manager: TaskLifecycleManager,
+    agent_llm_holder: Dict[str, Any],
+    llm_call_count: int,
+) -> None:
+    """清理任务 — LLM计数日志 + TaskLifecycleManager.cleanup
+
+    使用场景:
+        - generate_sse_stream的finally块中调用
+
+    使用示例:
+        await _cleanup_task(task_id, manager, agent_llm_holder, llm_call_count)
+
+    返回数据说明:
+        - 无返回值，副作用为日志输出和running_tasks清理
+    """
+    reported_llm = agent_llm_holder.get("n", 0) if agent_llm_holder.get("n", 0) > 0 else llm_call_count
+    logger.info(
+        f"[LLM Total Counter] ====== Conversation finished, total LLM calls: {reported_llm} ======"
+    )
+    cleaned = await manager.cleanup(task_id)
+    if cleaned:
+        logger.info(f"[Cleanup] 任务 {task_id} 正常完成，已清理")
+    else:
+        logger.info(f"[Cleanup] 任务 {task_id} 已被中断，保留记录")
 
 
 # ============================================================
@@ -437,333 +562,96 @@ async def generate_sse_stream(
     current_execution_steps: Optional[List[Dict]] = None
 ) -> AsyncGenerator[str, None]:
     """
-    SSE 流式生成器 - 实时展示ReAct执行步骤
+    SSE 流式生成器 - 实时展示ReAct执行步骤（骨架 ≤80行）
     
     供 chat_router.py 调用，返回 AsyncGenerator 用于 SSE 流式输出。
-    
-    【阶段6修改】添加 intent_type 和 confidence 参数实现分发逻辑。
-    【2026-04-30 小沈】新增 candidates 参数，传递候选意图列表。
+    【重构 2026-05-25 小沈】拆分为5个辅助函数 + TaskLifecycleManager。
     注意：start 步骤由 chat_router 发送，本层只处理分发后的逻辑。
-    
-    Args:
-        messages: 消息列表
-        intent_type: 意图类型
-        confidence: 意图置信度
-        candidates: 候选意图列表
-        provider: AI 服务提供商
-        model: AI 模型
-        temperature: 创造性参数
-        task_id: 任务ID
-        session_id: 会话ID
-        ai_service: AI服务实例
-        next_step: 步骤计数器函数
-        running_tasks: 任务字典
-        running_tasks_lock: 任务锁
-        current_execution_steps: 执行步骤列表
-    
-    Yields:
-        SSE 格式的数据字符串
     """
-    # 如果没传入 candidates，设置默认值
     if candidates is None:
         candidates = []
-    
-    # 强制要求传入 running_tasks / running_tasks_lock，避免与模块级 cancel_task 使用不同 dict
     if running_tasks is None or running_tasks_lock is None:
         raise ValueError("running_tasks and running_tasks_lock must be provided")
     if current_execution_steps is None:
         current_execution_steps = []
     if next_step is None:
         next_step = create_step_counter()
-    
-    # 生成 task_id
     if not task_id:
         task_id = str(uuid.uuid4())
-    
-    # ===== Prompt Logger 记录 =====
-    # 获取用户消息
-    user_message = ""
-    for msg in messages:
-        if msg.get("role") == "user":
-            user_message = msg.get("content", "")
-            break
-    
-    # 从 sessions.py 获取 AI 消息 ID（user_message_id + 1）
-    from app.api.v1.sessions import _assistant_message_ids, _user_message_ids
-    ai_message_id = _assistant_message_ids.get(session_id)
-    if not ai_message_id and session_id in _user_message_ids:
-        ai_message_id = _user_message_ids[session_id] + 1
-    
-    # 启动 prompt logger（只记录非 chat 意图）
-    from app.utils.prompt_logger import get_prompt_logger
-    prompt_logger = get_prompt_logger()
-    if intent_type not in ("", "generic") and ai_message_id:
-        prompt_logger.start_request(
-            user_message=user_message,
-            user_message_id=str(ai_message_id),
-            session_id=session_id or task_id
-        )
-        # 【改造 2026-05-23 小强】使用 agent_config 统一解析 intent→prompt 映射
-        if intent_type in ("", "generic", "chat"):
-            prompts_instance = None
-            source_name = "通用意图：无系统Prompt"
-        else:
-            try:
-                from app.services.agent.agent_config import resolve_agent_config
-                config = resolve_agent_config(intent_type)
-                prompts_instance = config.prompt_class()
-                source_name = config.prompt_module.split('.')[-1] + ".py"
-            except (ValueError, ImportError):
-                from app.services.prompts.file import FileOperationPrompts
-                prompts_instance = FileOperationPrompts()
-                source_name = "file_prompts.py"
-        
-        if prompts_instance and intent_type not in ("", "generic"):
-            full_prompt = prompts_instance.build_full_system_prompt()
-            prompt_logger.log_system_prompt(
-                step_name="系统Prompt生成",
-                prompt_content=full_prompt,
-                source=source_name,
-                details={"intent_type": intent_type, "confidence": confidence, "note": "含OUTPUT_FORMAT(含退出规则)+TOOL_CALL_RULES+SAFETY+ROLLBACK"},
-                round_number=1
-            )
-        # 记录任务 prompt
-        prompt_logger.log_task_prompt(
-            task_content=user_message,
-            context={"intent_type": intent_type, "confidence": confidence},
-            round_number=1
-        )
-    
-    # 每次对话开始，重置LLM调用计数器（file/time 等路径由 Agent.llm_call_count 回填 — 小沈-2026-05-10）
-    llm_call_count = 0
-    agent_llm_holder: Dict[str, Any] = {"n": 0}
-    
-    # 【重要】严格规则：ai_service 必须由 chat_router 传入，禁止在此处创建
+
     if ai_service is None:
         raise ValueError("[AIServiceFactory] react_sse_wrapper 禁止创建 ai_service，必须由 chat_router 传入")
     logger.info(f"[AIServiceFactory] 使用 router 传入的 ai_service（复用）")
-    
-    # 注册任务（包含ai_service引用+asyncio.Task引用，用于强制中断）
-    async with running_tasks_lock:
-        running_tasks[task_id] = {
-            "status": "running", 
-            "cancelled": False,
-            "paused": False,
-            "created_at": datetime.now(),
-            "ai_service": ai_service,
-            "_task": asyncio.current_task()  # 存储asyncio.Task引用，用于task.cancel()真正中断
-        }
-    
-    logger.info(f"[LLM Total Counter] ====== New conversation started, counter reset to 0 ======")
-    
-    # 注意：不重复创建 next_step 和 current_execution_steps
-    # 因为 router 已经创建并传入，如果没传入才使用默认值（在函数开头已处理）
+
+    manager = TaskLifecycleManager(running_tasks, running_tasks_lock)
+    await manager.register(task_id, ai_service)
+
+    llm_call_count = 0
+    agent_llm_holder: Dict[str, Any] = {"n": 0}
     current_content: str = ""
-    
-    # 获取 display_name
     display_name = f"{ai_service.provider} ({ai_service.model})"
-    
-    # 缓存 display_name
     if session_id:
         cache_display_name(session_id, display_name)
-    
-    # 安全检查（注意：chat_router.py 已经做过安全检测，这里是冗余检查，保留以防直接调用）
-    last_message = messages[-1]["content"] if messages else ""
-    security_check_result = check_command_safety(last_message)
-    
-    # 注意：start 步骤已在 chat_router.py 中发送，这里不再重复发送
-    # 避免导致 start 步骤重复 (step=1 和 step=2 都是 start)
-    
-    # 安全检查未通过，返回错误
-    if not security_check_result.get('is_safe', True):
-        risk = security_check_result.get('risk', '未知风险')
-        risk_level = security_check_result.get('risk_level', 'unknown')
-        blocked = security_check_result.get('blocked', False)
-        is_need_confirm = security_check_result.get('is_need_confirm', False)
-        
-        logger.info(f"[Step error] 发送error步骤(安全检测拦截), level={risk_level}, blocked={blocked}")
-        
-        # 获取详细的CRSS评分信息
-        from app.services.command_security import calculate_risk_score_v2
-        risk_detail = calculate_risk_score_v2(last_message)
-        
-        # 构建专业的CRSS评分报告
-        risk_level_text = {
-            "safe": "安全",
-            "low": "低风险",
-            "medium": "中等风险",
-            "high": "高风险",
-            "critical": "极高风险"
-        }.get(risk_level, "未知")
-        
-        action_text = "已拦截" if blocked else ("需确认" if is_need_confirm else "警告")
-        
-        # 构建专业的安全评估报告
-        security_context = {
-            "crss_report": {
-                "risk_score": risk_detail.get('score', 0),
-                "risk_level": risk_level,
-                "risk_level_text": f"[{risk_level_text}]",
-                "action_required": action_text,
-                "is_safe": security_check_result.get('is_safe', True),
-                "is_blocked": blocked,
-                "need_confirmation": is_need_confirm,
-            },
-            "analysis": {
-                "operation_type": risk_detail.get('details', {}).get('operation_type', 'UNKNOWN'),
-                "operation_target": risk_detail.get('details', {}).get('target', 'UNKNOWN'),
-                "impact_scope": risk_detail.get('details', {}).get('scope', 'UNKNOWN'),
-            },
-            "matched_rule": security_check_result.get('rule_matched'),
-            "original_command": last_message,
-            "suggestions": risk_detail.get('suggestions', []),
-        }
-        
-        error_step_obj = StepFactory.create_error_step(
-            step=next_step(),
-            error_type="security",
-            error_message=f"危险操作需确认: {risk}",
-            recoverable=False,
-            model=ai_service.model,
-            provider=ai_service.provider,
-            context=security_context
-        )
-        error_step_dict = error_step_obj.to_dict()
-        error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
-        current_execution_steps.append(error_step_dict)
-        await save_execution_steps_to_db(session_id, current_execution_steps, f"错误: {risk}")
-        yield error_response
+
+    logger.info(f"[LLM Total Counter] ====== New conversation started, counter reset to 0 ======")
+
+    if intent_type not in ("", "generic") and ai_service:
+        await _log_prompts(messages, intent_type, confidence, session_id, task_id)
+
+    security_error = await _perform_security_check(
+        messages, next_step, session_id, current_execution_steps, ai_service,
+    )
+    if security_error:
+        yield security_error
         return
-    
+
     try:
-        # 构建历史消息
-        history = []
-        if len(messages) > 1:
-            for msg in messages[:-1]:
-                history.append({"role": msg["role"], "content": msg["content"]})
-        
-        # 检查中断
         is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock)
         if is_interrupted:
             yield interrupt_msg
-            # 保存 interrupted 步骤到数据库
             if interrupt_msg.startswith("data: "):
                 step_data = json.loads(interrupt_msg[6:])
                 current_execution_steps.append(step_data)
                 await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
             return
-        
-        # 暂停检查
+
         async for pause_event in check_and_yield_if_paused(task_id, running_tasks, running_tasks_lock):
             yield pause_event
-            # 保存 paused 步骤到数据库
             if pause_event.startswith("data: "):
                 step_data = json.loads(pause_event[6:])
                 current_execution_steps.append(step_data)
                 await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
-        
-        # 【阶段6】根据 intent_type 分发到不同 Agent
+
         session_id = session_id or str(uuid.uuid4())
-        
-        llm_client = ai_service
-        
-        # 分发逻辑
-        # 【2026-05-13 小沈】改为try AgentFactory + 兜底通用Agent（不再限4个意图，不报"not_implemented"）
-        try:
-            from app.services.agent.agent_factory import AgentFactory
-            async for sse_chunk in _run_agent_sse_stream(
-                intent_type=intent_type,
-                llm_client=llm_client,
-                task_id=task_id,
-                ai_service=ai_service,
-                candidates=candidates,
-                last_message=last_message,
-                next_step=next_step,
-                running_tasks=running_tasks,
-                running_tasks_lock=running_tasks_lock,
-                session_id=session_id,
-                current_execution_steps=current_execution_steps,
-                current_content=current_content,
-                agent_llm_holder=agent_llm_holder,
-            ):
-                yield sse_chunk
-        except ValueError:
-            # intent_type未注册AgentFactory → 用通用TextStrategy Agent兜底
-            logger.info(f"[ChatOp] intent_type='{intent_type}' 无专用Agent，使用通用TextStrategy兜底")
-            async for sse_chunk in _run_generic_sse_stream(
-                llm_client=llm_client,
-                task_id=task_id,
-                ai_service=ai_service,
-                last_message=last_message,
-                next_step=next_step,
-                running_tasks=running_tasks,
-                running_tasks_lock=running_tasks_lock,
-                session_id=session_id,
-                current_execution_steps=current_execution_steps,
-            ):
-                yield sse_chunk
-    
+        last_message = messages[-1]["content"] if messages else ""
+
+        async for sse_chunk in _run_sse_stream(
+            intent_type=intent_type, llm_client=ai_service, task_id=task_id,
+            ai_service=ai_service, candidates=candidates, last_message=last_message,
+            next_step=next_step, running_tasks=running_tasks, running_tasks_lock=running_tasks_lock,
+            session_id=session_id, current_execution_steps=current_execution_steps,
+            current_content=current_content, agent_llm_holder=agent_llm_holder,
+        ):
+            yield sse_chunk
+
     except asyncio.CancelledError:
-        # 【问题3修复】客户端断开连接，任务被中断
-        # 用try-catch包裹yield，防止客户端已断开导致失败
-        async with running_tasks_lock:
-            running_tasks[task_id] = {"status": "cancelled", "cancelled": True}
-        interrupted_step = create_incident_data(
-            incident_value='interrupted',
-            message='客户端断开连接，任务中断',
-            step=next_step()
-        )
-        current_execution_steps.append(interrupted_step)
-        try:
-            await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
-        except Exception as _save_err:
-            logger.warning(f"[SSE] CancelledError后保存失败(可忽略): {_save_err}")
-        
-        try:
-            interrupted_data = create_incident_data('interrupted', '客户端断开连接，任务中断')
-            logger.info(f"[Step interrupted] 发送interrupted步骤(客户端断开)")
-            yield f"data: {json.dumps(interrupted_data)}\n\n"
-        except Exception:
-            # 客户端已断开，yield失败是正常的，记录日志但不中断
-            logger.info(f"[Step interrupted] 客户端已断开，跳过yield")
-    
+        async for sse_event in _handle_client_disconnect(
+            task_id, session_id, current_execution_steps, current_content,
+            next_step, running_tasks, running_tasks_lock,
+        ):
+            yield sse_event
+
     except Exception as e:
         logger.error(f"流式响应异常：task_id={task_id}, error={e}", exc_info=True)
-        
-        # 【改造 2026-04-17 小沈】使用StepFactory统一Step封装
-        error_step_value = next_step()
-        error_step_obj = StepFactory.create_error_step(
-            step=error_step_value,
-            error_type="stream_error",
-            error_message=str(e),
-            recoverable=False,
-            model=ai_service.model,
-            provider=ai_service.provider
+        error_response = await _yield_error_sse(
+            error_type="stream_error", error_label="流式响应异常", log_tag="[SSE]",
+            task_id=task_id, e=e, next_step=next_step, ai_service=ai_service,
+            current_execution_steps=current_execution_steps, session_id=session_id,
         )
-        error_step_dict = error_step_obj.to_dict()
-        error_response = format_sse_event('error', error_step_value, error_step_dict)
-        
-        logger.info(f"[Step error] 发送error步骤")
-        current_execution_steps.append(error_step_dict)
-        await save_execution_steps_to_db(session_id, current_execution_steps, f"错误: {error_step_dict['error_message']}")
         yield error_response
-    
+
     finally:
-        reported_llm = agent_llm_holder.get("n", 0) if agent_llm_holder.get("n", 0) > 0 else llm_call_count
-        logger.info(
-            f"[LLM Total Counter] ====== Conversation finished, total LLM calls: {reported_llm} ======"
-        )
-        
-        # 清理任务：如果任务状态不是cancelled，则删除
-        # cancelled状态的任务由cancel_task保留记录
-        async with running_tasks_lock:
-            if task_id in running_tasks:
-                task_status = running_tasks[task_id].get("status")
-                if task_status != "cancelled":
-                    del running_tasks[task_id]
-                    logger.info(f"[Cleanup] 任务 {task_id} 正常完成，已清理")
-                else:
-                    logger.info(f"[Cleanup] 任务 {task_id} 已被中断，保留记录")
+        await _cleanup_task(task_id, manager, agent_llm_holder, llm_call_count)
 
 
 # ============================================================
