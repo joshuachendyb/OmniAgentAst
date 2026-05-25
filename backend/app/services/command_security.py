@@ -25,6 +25,7 @@ Shell命令黑名单安全检查服务
 import re
 import os
 import json
+import math
 from typing import Tuple, List, Optional, Set, Dict, Any
 from app.utils.logger import logger
 from app.services.command_parser import generate_risk_suggestions
@@ -696,122 +697,79 @@ def calculate_confidence(command: str, op_type: str, op_target: str, scope: str)
     return confidence
 
 
+def _parse_tuple_result(result) -> Tuple[str, float, List[str]]:
+    """统一解析 parse_operation_type_v2 / parse_operation_target_v2 返回值 — 小健 2026-05-25"""
+    if not isinstance(result, tuple):
+        return result, 1.0, []
+    value = result[0]
+    confidence = result[1] if len(result) > 1 else 1.0
+    matches = result[2] if len(result) > 2 else []
+    return value, confidence, matches
+
+
+def _build_risk_details(op_type: str, op_target: str, scope: str,
+                         final_score: int, confidence: float) -> Dict[str, Any]:
+    """构建评分详情（仅保留外部消费的字段，移除中间计算值 — 小健 2026-05-25）"""
+    return {
+        "operation_type": op_type,
+        "operation_target": op_target,
+        "impact_scope": scope,
+        "score": final_score,
+        "confidence": round(confidence, 2),
+    }
+
+
 def calculate_risk_score_v2(command: str) -> dict:
-    """
-    改进的CRSS评分系统 v2.0
-    
-    设计文档3.1节 252-310行
-    新公式：
-    1. 使用加权平均代替简单平均
-    2. 使用对数函数平滑影响范围系数
-    3. 添加风险叠加机制
-    """
-    import math
-    
     if not command or not command.strip():
-        return {
-            'score': 0, 
-            'level': 'LOW',
-            'message': '操作安全',
-            'details': {},
-            'matches': {},
-            'suggestions': ['操作安全，可继续执行']
-        }
-    
+        return {"score": 0, "level": "LOW", "message": "操作安全",
+                "details": {}, "suggestions": ["操作安全，可继续执行"]}
+
     command_lower = command.lower().strip()
-    
-    # 1. 黑名单命令直接10分（致命危险）
+
+    # 黑名单直接 10 分
     checker = get_safety_checker()
     if not checker.is_safe(command):
-        return {
-            'score': 10,
-            'details': {
-                'operation_type': 'BLACKLIST',
-                'operation_target': 'BLACKLIST',
-                'impact_scope': 'BLACKLIST',
-                'type_score': 10,
-                'target_score': 10,
-                'scope_multiplier': 1.0,
-                'base_score': 10,
-                'smoothed_multiplier': 1.0,
-                'risk_bonus': 0,
-                'confidence': 1.0
-            }
-        }
-    
-    # 2. 解析三个维度（使用v2函数）
-    op_type_result = parse_operation_type_v2(command)
-    op_type = op_type_result[0] if isinstance(op_type_result, tuple) else op_type_result
-    op_type_conf = op_type_result[1] if isinstance(op_type_result, tuple) else 1.0
-    op_type_match = op_type_result[2] if isinstance(op_type_result, tuple) and len(op_type_result) > 2 else []
-    
-    op_target_result = parse_operation_target_v2(command)
-    op_target = op_target_result[0] if isinstance(op_target_result, tuple) else op_target_result
-    op_target_conf = op_target_result[1] if isinstance(op_target_result, tuple) else 1.0
-    op_target_match = op_target_result[2] if isinstance(op_target_result, tuple) and len(op_target_result) > 2 else []
-    
+        return {"score": 10, "level": "CRITICAL", "message": "黑名单命令，已拦截",
+                "details": _build_risk_details("BLACKLIST", "BLACKLIST", "BLACKLIST", 10, 1.0),
+                "suggestions": ["命令已被拦截"]}
+
+    # 解析 3 维度
+    op_type, op_type_conf, _ = _parse_tuple_result(parse_operation_type_v2(command))
+    op_target, op_target_conf, _ = _parse_tuple_result(parse_operation_target_v2(command))
     scope = parse_impact_scope(command)
-    
-    # 3. 获取各维度权重
-    type_score = OPERATION_WEIGHTS[op_type]['default']
-    target_score = TARGET_WEIGHTS[op_target]['default']
+
+    # 权重 + 评分
+    type_score = OPERATION_WEIGHTS[op_type]["default"]
+    target_score = TARGET_WEIGHTS[op_target]["default"]
     scope_multiplier = SCOPE_MULTIPLIERS[scope]
-    
-    # 4. 新的评分公式
-    # 4.1 加权平均（操作类型权重更高）
-    type_weight = 0.5
-    target_weight = 0.3
-    base_score = type_score * type_weight + target_score * target_weight + (type_score + target_score) / 2 * (1 - type_weight - target_weight)
-    
-    # 4.2 对数平滑影响范围系数（避免跳跃式增长）
-    smoothed_multiplier = 1 + math.log(scope_multiplier, 2)  # log2(系数) + 1
-    
-    # 4.3 风险叠加（高风险操作额外加分）
+
+    # 简化：type*0.6 + target*0.4（原公式 type*0.5 + target*0.3 + (type+target)/2*0.2 可化简）
+    base_score = type_score * 0.6 + target_score * 0.4
+    smoothed_multiplier = 1 + math.log2(scope_multiplier)
+
+    # 风险叠加
     risk_bonus = 0
-    if op_type == 'DELETE' and op_target == 'SYSTEM':
-        risk_bonus = 3  # 删除系统文件额外加分
-    elif op_type == 'DELETE' and scope == 'SYSTEM':
-        risk_bonus = 2  # 系统级删除额外加分
-    elif op_type == 'EXEC' and op_target == 'SYSTEM':
-        risk_bonus = 2  # 执行系统命令额外加分
-    
-    # 4.4 计算最终分数
+    if op_type == "DELETE" and op_target == "SYSTEM":
+        risk_bonus = 3
+    elif op_type == "DELETE" and scope == "SYSTEM":
+        risk_bonus = 2
+    elif op_type == "EXEC" and op_target == "SYSTEM":
+        risk_bonus = 2
+
     raw_score = base_score * smoothed_multiplier + risk_bonus
     final_score = min(10, max(0, int(round(raw_score))))
-    
-    # 5. 计算置信度
     confidence = calculate_confidence(command, op_type, op_target, scope)
-    
-    # 6. 生成建议（根据风险级别）
-    suggestions = generate_risk_suggestions(final_score, op_type, op_target, scope)
-    
-    # 6. 返回详细结果（包含matches和suggestions）
-    result = {
-        'score': final_score,
-        'level': get_risk_level(final_score),
-        'message': get_risk_message(final_score, command),
-        'details': {
-            'operation_type': op_type,
-            'operation_target': op_target,
-            'impact_scope': scope,
-            'type_score': type_score,
-            'target_score': target_score,
-            'scope_multiplier': scope_multiplier,
-            'base_score': base_score,
-            'smoothed_multiplier': smoothed_multiplier,
-            'risk_bonus': risk_bonus,
-            'confidence': confidence,
-        },
-        'matches': {
-            'operation_type': op_type_match if op_type_match else [],
-            'operation_target': op_target_match if op_target_match else [],
-        },
-        'suggestions': suggestions
+
+    logger.info(f"CRSS v2: command='{command}', type={op_type}({type_score}), target={op_target}({target_score}), "
+                f"scope={scope}(x{scope_multiplier}), score={final_score}, conf={confidence:.2f}")
+
+    return {
+        "score": final_score,
+        "level": get_risk_level(final_score),
+        "message": get_risk_message(final_score, command),
+        "details": _build_risk_details(op_type, op_target, scope, final_score, confidence),
+        "suggestions": generate_risk_suggestions(final_score, op_type, op_target, scope),
     }
-    
-    logger.info(f"CRSS评分v2: command='{command}', type={op_type}({type_score}), target={op_target}({target_score}), scope={scope}(×{scope_multiplier}), score={final_score}, confidence={confidence:.2f}")
-    
-    return result
 
 
 def get_risk_level(score: int) -> str:
