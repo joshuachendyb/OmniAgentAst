@@ -306,6 +306,91 @@ def _build_entry(item: Path, st: os.stat_result) -> Dict[str, Any]:
     }
 
 
+def _scan_directory_sync(
+    path: Path, recursive: bool, max_depth: int,
+    include_hidden: bool, deadline: float,
+) -> Tuple[List[Dict], Dict, Dict, Dict]:
+    """同步扫描目录（可被to_thread调用）— 小沈 2026-05-25
+
+    使用场景:
+    - list_directory的list模式同步扫描
+    - 需要在独立线程中执行阻塞IO操作的场景
+
+    使用示例:
+        entries, stats, file_types, size_bins = await asyncio.to_thread(
+            _scan_directory_sync, path, True, 10, False, deadline
+        )
+
+    返回数据说明:
+        - entries: List[Dict], 文件/目录条目列表
+        - stats: Dict, 统计信息(total_size/dir_count/file_count)
+        - file_types: Dict[str, int], 文件类型统计
+        - size_bins: Dict[str, int], 文件大小分桶统计
+    """
+    entries = []
+    stats = {"total_size": 0, "dir_count": 0, "file_count": 0}
+    ext_counter: Dict[str, int] = {}
+    size_bins = {"<1KB": 0, "1KB-10KB": 0, "10KB-100KB": 0, "100KB-1MB": 0, ">1MB": 0}
+    _timed_out = False
+
+    def _scan_recursive(current_path: Path, current_depth: int):
+        nonlocal _timed_out
+        if current_depth > max_depth:
+            return
+        if time.monotonic() > deadline:
+            _timed_out = True
+            logger.warning(f"[_scan_directory_sync] 超时自检触发，已收集{len(entries)}条，提前返回")
+            return
+        try:
+            for item in current_path.iterdir():
+                if _timed_out:
+                    return
+                try:
+                    if not include_hidden and item.name.startswith('.'):
+                        continue
+                    st = item.stat()
+                    entry = _build_entry(item, st)
+                    entries.append(entry)
+                    if item.is_dir():
+                        stats["dir_count"] += 1
+                        _scan_recursive(item, current_depth + 1)
+                        if _timed_out:
+                            return
+                    else:
+                        stats["total_size"] += st.st_size
+                        stats["file_count"] += 1
+                        ext = item.suffix.lower().lstrip('.') if item.suffix else ''
+                        ext_counter[ext] = ext_counter.get(ext, 0) + 1
+                        size_bins[_classify_size(st.st_size)] += 1
+                except (PermissionError, OSError):
+                    continue
+        except (PermissionError, OSError):
+            return
+
+    if recursive:
+        _scan_recursive(path, 1)
+    else:
+        for item in path.iterdir():
+            try:
+                if not include_hidden and item.name.startswith('.'):
+                    continue
+                st = item.stat()
+                entry = _build_entry(item, st)
+                entries.append(entry)
+                if item.is_dir():
+                    stats["dir_count"] += 1
+                else:
+                    stats["total_size"] += st.st_size
+                    stats["file_count"] += 1
+                    ext = item.suffix.lower().lstrip('.') if item.suffix else ''
+                    ext_counter[ext] = ext_counter.get(ext, 0) + 1
+                    size_bins[_classify_size(st.st_size)] += 1
+            except (PermissionError, OSError):
+                continue
+
+    return entries, stats, ext_counter, size_bins
+
+
 def _count_tree_stats(node: dict) -> tuple:
     """递归统计树形结构的文件数/目录数/总大小 — 小健 2026-05-25
 
@@ -1039,67 +1124,10 @@ class FileTools:
             if not path.is_dir():
                 return build_error("ERR_FILE_PATH_NOT_DIR", f"Not a directory: {dir_path}")
 
-            _list_deadline = time.monotonic() + get_timeout("list_directory") - 2
-            _list_timed_out = False
-
-            def _list_sync():
-                nonlocal _list_timed_out
-                entries = []
-                stats = {"total_size": 0, "dir_count": 0, "file_count": 0}
-                ext_counter: Dict[str, int] = {}
-                size_bins = {"<1KB": 0, "1KB-10KB": 0, "10KB-100KB": 0, "100KB-1MB": 0, ">1MB": 0}
-
-                def _process_item(item, st, is_dir):
-                    entries.append(_build_entry(item, st))
-                    if is_dir:
-                        stats["dir_count"] += 1
-                    else:
-                        stats["total_size"] += st.st_size
-                        stats["file_count"] += 1
-                        ext = item.suffix.lower().lstrip('.') if item.suffix else ''
-                        ext_counter[ext] = ext_counter.get(ext, 0) + 1
-                        size_bins[_classify_size(st.st_size)] += 1
-
-                if recursive:
-                    def _scan_recursive(current_path: Path, current_depth: int):
-                        nonlocal _list_timed_out
-                        if current_depth > max_depth:
-                            return
-                        if time.monotonic() > _list_deadline:
-                            _list_timed_out = True
-                            logger.warning(f"[list_directory] 超时自检触发，已收集{len(entries)}条，提前返回")
-                            return
-                        try:
-                            for item in current_path.iterdir():
-                                if _list_timed_out:
-                                    return
-                                try:
-                                    if not include_hidden and item.name.startswith('.'):
-                                        continue
-                                    st = item.stat()
-                                    _process_item(item, st, item.is_dir())
-                                    if item.is_dir():
-                                        _scan_recursive(item, current_depth + 1)
-                                        if _list_timed_out:
-                                            return
-                                except (PermissionError, OSError):
-                                    continue
-                        except (PermissionError, OSError):
-                            return
-                    _scan_recursive(path, 1)
-                else:
-                    for item in path.iterdir():
-                        try:
-                            if not include_hidden and item.name.startswith('.'):
-                                continue
-                            st = item.stat()
-                            _process_item(item, st, item.is_dir())
-                        except (PermissionError, OSError):
-                            continue
-
-                return entries, stats["total_size"], stats["dir_count"], stats["file_count"], ext_counter, size_bins
-
-            all_entries, total_size, dir_count, file_count, file_types, size_distribution = await asyncio.to_thread(_list_sync)
+            deadline = time.monotonic() + get_timeout("list_directory") - 2
+            all_entries, stats, file_types, size_distribution = await asyncio.to_thread(
+                _scan_directory_sync, path, recursive, max_depth, include_hidden, deadline
+            )
 
             if sortBy == "size":
                 all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x.get("size") or 0), reverse=True)
@@ -1111,15 +1139,15 @@ class FileTools:
             total = len(all_entries)
             MAX_DISPLAY_ENTRIES = 200
             statistics = {
-                "total_size": total_size, "dir_count": dir_count,
-                "file_count": file_count, "sort_by": sortBy,
+                "total_size": stats["total_size"], "dir_count": stats["dir_count"],
+                "file_count": stats["file_count"], "sort_by": sortBy,
                 "file_types": file_types, "size_distribution": size_distribution,
             }
 
             if total > MAX_DISPLAY_ENTRIES:
                 logger.warning(
                     f"[list_directory] Large directory truncated: path={path}, "
-                    f"total={total}, dir_count={dir_count}, file_count={file_count}, "
+                    f"total={total}, dir_count={stats['dir_count']}, file_count={stats['file_count']}, "
                     f"displayed={MAX_DISPLAY_ENTRIES}"
                 )
 
