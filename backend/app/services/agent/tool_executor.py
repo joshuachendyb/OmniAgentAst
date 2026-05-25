@@ -192,140 +192,110 @@ class ToolExecutor:
         
         # 【步骤4】使用重试逻辑执行
         return await self._execute_with_retry(action, action_input)
-    
-    async def _execute_with_retry(
-        self,
-        action: str,
-        action_input: Dict[str, Any]
+
+    @staticmethod
+    def _build_retry_error(
+        code: str, message: str, retry_count: int,
+        *, error_type: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        步骤5：修改_execute_with_retry()，使用ErrorClassifier统一分类
-        """
-        # 延迟导入避免循环依赖 - 小健 2026-05-24
-        from app.services.agent.retry_policy import RetryPolicy
+        """统一构建重试相关错误响应（21.5 组件1，小沈 2026-05-25 实施）
         
+        消除 4 处重复 {code, data, message, retry_count, metadata} 构建。
+        retry_count 统一为"已完成的重试次数"（不含首次尝试）。
+        """
+        result = {
+            "code": code, "data": None,
+            "message": message, "retry_count": retry_count,
+        }
+        if error_type:
+            result["metadata"] = {"error_type": error_type}
+        return result
+
+    async def _execute_tool_once(
+        self, tool, normalized_input: Dict[str, Any], timeout: float,
+    ) -> Any:
+        """统一单次工具调用（21.5 组件2，小沈 2026-05-25 实施）
+        
+        修复：纯同步工具通过 to_thread 移出事件循环，wait_for 超时保护生效。
+        """
+        import inspect
+        if inspect.iscoroutinefunction(tool):
+            return await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
+
+        result = await asyncio.wait_for(
+            asyncio.to_thread(lambda: tool(**normalized_input)), timeout=timeout
+        )
+        if inspect.iscoroutine(result):
+            return await asyncio.wait_for(result, timeout=timeout)
+        return result
+
+    async def _execute_with_retry(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
+        """重试执行工具（21.5 重构，小沈 2026-05-25 实施）"""
+        from app.services.agent.retry_policy import RetryPolicy
+        import inspect
+
         tool = self.available_tools[action]
         config = get_tool_config()
         retry_policy = RetryPolicy(
             max_retries=config.get_retry_max(action),
             backoff_factor=config.get_retry_backoff(action),
-            retryable_errors=config.get_retryable_errors(action)
+            retryable_errors=config.get_retryable_errors(action),
         )
-        
+
         attempt_count = 0
         last_error: Optional[Exception] = None
-        
+
         while attempt_count <= retry_policy.max_retries:
             try:
                 normalized_input = self._normalize_params(action, action_input)
-                
-                # 验证必需参数
-                import inspect
+
                 sig = inspect.signature(tool)
-                required_params = [
+                required = [
                     p.name for p in sig.parameters.values()
                     if p.default == inspect.Parameter.empty
                     and p.name != 'self'
                     and p.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
                 ]
-                missing = [p for p in required_params if p not in normalized_input]
+                missing = [p for p in required if p not in normalized_input]
                 if missing:
-                    logger.warning(f"[参数验证] action={action} 缺少必需参数: {missing}")
-                    return {
-                        "code": "ERR_MISSING_PARAM",
-                        "data": None,
-                        "message": f"Missing required parameter(s): {', '.join(missing)}",
-                        "retry_count": 0
-                    }
-                
-                # 执行工具
-                # 【修复 2026-04-30 小沈】兼容同步工具函数（如execute_shell_command/find_command）
-                # 【修复 2026-05-07 小沈】lambda包装的async工具：iscoroutinefunction(lambda)=False，
-                # 需要先调用lambda拿到实际方法再判断是否coroutine
-                # 【修复 2026-05-10 小健】使用tool_meta.get_timeout（精细配置）替代config.get_timeout（YAML default=5秒太小）
-                # 【修复 2026-05-14 小沈】同步工具统一走to_thread线程池，不阻塞主线程事件循环
-                # =========================================================================
-                # 背景：execute_shell_command/ping/port_check等工具内部用subprocess.run()或
-                # socket.socket()等同步阻塞调用。如果直接在事件循环线程执行，会导致整个asyncio
-                # 事件循环卡死——SSE无法发送事件、新请求无法处理、服务器僵死。
-                # 
-                # 修复方案：所有非async def的工具都通过asyncio.to_thread()委托到线程池执行，
-                # 释放事件循环继续处理其他协程。
-                #
-                # 三种工具类型的处理路径：
-                #   1. 纯async def工具（iscoroutinefunction=True）：
-                #      → 直接await，asyncio.wait_for做超时保护（保持不变）
-                #   2. lambda包装的async工具（iscoroutinefunction=False，但调用后返回coroutine）：
-                #      → to_thread执行lambda，lambda在子线程中创建coroutine对象
-                #      → coroutine返回主线程，await执行真正的async逻辑
-                #   3. 纯同步工具（iscoroutinefunction=False，返回值不是coroutine）：
-                #      → to_thread在线程池执行，subprocess.run不阻塞事件循环
-                #      → asyncio.wait_for做超时保护
-                # =========================================================================
+                    return self._build_retry_error(
+                        "ERR_MISSING_PARAM",
+                        f"Missing required parameter(s): {', '.join(missing)}", 0,
+                    )
+
                 timeout = get_timeout(action)
-                if inspect.iscoroutinefunction(tool):
-                    result = await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
-                else:
-                    # 【修复 小健 2026-05-24】P1-8: 区分真同步工具和返回coroutine的async工具
-                    # 对于返回coroutine的工具，直接await而非走to_thread
-                    _sync_call = tool(**normalized_input)
-                    if inspect.iscoroutine(_sync_call):
-                        # 返回coroutine的async工具（iscoroutinefunction=False但返回coroutine）
-                        result = await asyncio.wait_for(_sync_call, timeout=timeout)
-                    else:
-                        # 真同步工具：走to_thread避免阻塞事件循环
-                        result = await asyncio.wait_for(
-                            asyncio.to_thread(lambda: _sync_call),
-                            timeout=timeout
-                        )
-                
-                return result
-            
+                return await self._execute_tool_once(tool, normalized_input, timeout)
+
             except Exception as e:
                 last_error = e
                 error_type = ErrorClassifier.classify(e)
                 attempt_count += 1
-                
-                # 步骤5：记录日志
+
                 logger.warning(
                     f"[重试] action={action} 尝试{attempt_count}/{retry_policy.max_retries} "
                     f"失败: {error_type.description} - {str(e)[:100]}"
                 )
-                
-                # 检查是否可重试（is_retryable硬编码timeout + retryable_errors来自config）
+
                 if not (error_type.is_retryable or error_type.value in retry_policy.retryable_errors):
-                    return {
-                        "code": f"ERR_{error_type.value.upper()}",
-                        "data": None,
-                        "message": f"{error_type.description}: {str(e)[:200]}",
-                        # 【修复 小健 2026-05-24】P2-17: retry_count统一为重试次数(不含首次尝试)
-                        "retry_count": attempt_count - 1,
-                        "metadata": {"error_type": error_type.value}
-                    }
-                
-                # 检查是否还有重试机会
+                    return self._build_retry_error(
+                        f"ERR_{error_type.value.upper()}",
+                        f"{error_type.description}: {str(e)[:200]}",
+                        attempt_count - 1, error_type=error_type.value,
+                    )
+
                 if attempt_count >= retry_policy.max_retries:
-                    logger.error(f"[重试] action={action} 超过最大重试次数{retry_policy.max_retries}")
-                    return {
-                        "code": f"ERR_{error_type.value.upper()}",
-                        "data": None,
-                        "message": f"{error_type.description}: {str(e)[:200]}",
-                        "retry_count": attempt_count - 1,
-                        "metadata": {"error_type": error_type.value}
-                    }
-                
-                # 等待后重试（指数退避）
-                wait_time = retry_policy.backoff_factor ** (attempt_count - 1)
-                logger.info(f"[重试] action={action} 等待{wait_time}秒后重试...")
-                await asyncio.sleep(wait_time)
-        
-        # 返回最后的错误
-        return {
-            "code": "ERR_UNKNOWN",
-            "data": None,
-            "message": str(last_error)[:200] if last_error else "Unknown error",
-            "retry_count": attempt_count
-        }
+                    return self._build_retry_error(
+                        f"ERR_{error_type.value.upper()}",
+                        f"{error_type.description}: {str(e)[:200]}",
+                        attempt_count - 1, error_type=error_type.value,
+                    )
+
+                await asyncio.sleep(retry_policy.backoff_factor ** (attempt_count - 1))
+
+        return self._build_retry_error(
+            "ERR_UNKNOWN", str(last_error)[:200] if last_error else "Unknown error",
+            attempt_count - 1,
+        )
     
     def _normalize_params(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
         """
