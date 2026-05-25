@@ -730,6 +730,23 @@ def _service_list(
         return build_error("ERR_SERVICE_LIST", f"获取服务列表失败: {str(e)}")
 
 
+def _filter_services(services: list, filter_name: Optional[str], filter_state: str, max_results: int) -> list:
+    """服务过滤 + 截断 — 消除 _windows_service_list 与 _linux_service_list 的 DRY 违规 — 小沈 2026-05-25"""
+    filtered = []
+    for svc in services:
+        if filter_name:
+            sn = svc.get("name", "")
+            sd = svc.get("display_name", "")
+            if filter_name.lower() not in sn.lower() and filter_name.lower() not in sd.lower():
+                continue
+        if filter_state != "all":
+            ss = svc.get("state", "")
+            if ss != filter_state:
+                continue
+        filtered.append(svc)
+    return filtered[:max_results]
+
+
 def _windows_service_list(
     filter_name: Optional[str],
     filter_state: str,
@@ -769,31 +786,16 @@ def _windows_service_list(
         if current_service and "name" in current_service:
             services.append(current_service)
         
-        filtered_services = []
-        for svc in services:
-            if filter_name:
-                svc_name = svc.get("name", "")
-                svc_display = svc.get("display_name", "")
-                if filter_name.lower() not in svc_name.lower() and filter_name.lower() not in svc_display.lower():
-                    continue
-            
-            if filter_state != "all":
-                svc_state = svc.get("state", "")
-                if svc_state != filter_state:
-                    continue
-            
-            filtered_services.append(svc)
-        
-        limited_services = filtered_services[:max_results]
+        filtered_services = _filter_services(services, filter_name, filter_state, max_results)
         
         return build_success(truncate_data_for_frontend({
-                "services": limited_services,
-                "total": len(limited_services),
-                "total_matched": len(filtered_services),
+                "services": filtered_services,
+                "total": len(filtered_services),
+                "total_matched": len(services),
                 "platform": "Windows",
-            }), f"找到 {len(filtered_services)} 个服务，返回前 {len(limited_services)} 个", llm_data={
-                "总数": len(filtered_services), "返回数": len(limited_services),
-                "服务预览": [{"name": s.get("name","")[:30], "state": s.get("state","")} for s in limited_services[:20]]
+            }), f"找到 {len(services)} 个服务，返回前 {len(filtered_services)} 个", llm_data={
+                "总数": len(services), "返回数": len(filtered_services),
+                "服务预览": [{"name": s.get("name","")[:30], "state": s.get("state","")} for s in filtered_services[:20]]
             })
     
     except subprocess.TimeoutExpired:
@@ -840,31 +842,16 @@ def _linux_service_list(
                     "state_desc": svc_state,
                 })
         
-        filtered_services = []
-        for svc in services:
-            if filter_name:
-                svc_name = svc.get("name", "")
-                svc_display = svc.get("display_name", "")
-                if filter_name.lower() not in svc_name.lower() and filter_name.lower() not in svc_display.lower():
-                    continue
-            
-            if filter_state != "all":
-                svc_state = svc.get("state", "")
-                if svc_state != filter_state:
-                    continue
-            
-            filtered_services.append(svc)
-        
-        limited_services = filtered_services[:max_results]
+        filtered_services = _filter_services(services, filter_name, filter_state, max_results)
         
         return build_success(truncate_data_for_frontend({
-                "services": limited_services,
-                "total": len(limited_services),
-                "total_matched": len(filtered_services),
+                "services": filtered_services,
+                "total": len(filtered_services),
+                "total_matched": len(services),
                 "platform": "Linux",
-            }), f"找到 {len(filtered_services)} 个服务，返回前 {len(limited_services)} 个", llm_data={
-                "总数": len(filtered_services), "返回数": len(limited_services),
-                "服务预览": [{"name": s.get("name","")[:30], "state": s.get("state","")} for s in limited_services[:20]]
+            }), f"找到 {len(services)} 个服务，返回前 {len(filtered_services)} 个", llm_data={
+                "总数": len(services), "返回数": len(filtered_services),
+                "服务预览": [{"name": s.get("name","")[:30], "state": s.get("state","")} for s in filtered_services[:20]]
             })
     
     except subprocess.TimeoutExpired:
