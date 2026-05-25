@@ -27,6 +27,77 @@ from app.utils.logger import logger
 from app.config import get_config
 
 
+def _should_retry(error_type: str, retry_controller: RetryController) -> Tuple[bool, str]:
+    """判断是否应该重试，返回 (should_retry, reason)
+
+    使用场景:
+    - _execute_retry_loop中统一重试判断逻辑
+    - 需要判断是否可重试并记录重试原因的场景
+
+    使用示例:
+        should_retry, reason = _should_retry('idle_timeout', retry_controller)
+        if should_retry:
+            continue
+
+    返回数据说明:
+        - should_retry: bool, 是否应该重试
+        - reason: str, 重试原因（如 'idle_timeout'/'network_error'/'exhausted'）
+
+    Author: 小沈 - 2026-05-25
+    """
+    if retry_controller.can_retry():
+        retry_controller.increment_retry()
+        return True, error_type
+    return False, 'exhausted'
+
+
+async def _build_empty_response_error(
+    next_step: Callable[[], int],
+    add_step_and_save: Callable,
+    ai_service: Any,
+    error_message: str,
+) -> Tuple[str, Dict[str, Any]]:
+    """统一空内容错误事件 + step_data 的构建和保存
+
+    使用场景:
+    - _execute_retry_loop中空内容错误处理
+    - 需要统一构建empty_response错误事件的场景
+
+    使用示例:
+        error_resp, error_step = await _build_empty_response_error(
+            next_step, add_step_and_save, ai_service, 
+            "模型未能生成有效回复，请尝试更换问题或稍后重试"
+        )
+
+    返回数据说明:
+        - error_resp: str, SSE格式的错误响应字符串
+        - error_step: Dict[str, Any], 错误步骤字典
+
+    Author: 小沈 - 2026-05-25
+    """
+    step = next_step()
+    error_resp = create_error_response(
+        error_type="empty_response",
+        error_message=error_message,
+        model=ai_service.model,
+        provider=ai_service.provider,
+        recoverable=True,
+        retry_after=3,
+        step=step
+    )
+    error_step = StepFactory.create_error_step(
+        step=step,
+        error_type='empty_response',
+        error_message=error_message,
+        model=ai_service.model,
+        provider=ai_service.provider,
+        recoverable=True,
+        retry_after=3
+    ).to_dict()
+    await add_step_and_save(error_step, f"错误: {error_message}")
+    return error_resp, error_step
+
+
 def _build_history(
     messages: Any,
 ) -> List[Dict[str, str]]:
@@ -231,64 +302,31 @@ async def _execute_retry_loop(
             state["full_content"] = full_content
             break
 
-        elif state["last_error_type"] == 'idle_timeout':
-            if retry_controller.can_retry():
-                retry_controller.increment_retry()
-                continue
-            else:
+        should_retry, reason = _should_retry(state["last_error_type"], retry_controller)
+        if should_retry:
+            continue
+
+        if reason == 'exhausted':
+            if state["last_error_type"] == 'idle_timeout':
                 logger.error(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时，已达最大重试次数{max_retries}")
                 state["ai_call_successful"] = False
                 break
-
-        elif state["last_error_type"] == 'network_error':
-            if retry_controller.can_retry():
-                retry_controller.increment_retry()
-                continue
-            else:
+            elif state["last_error_type"] == 'network_error':
                 logger.error(f"[AI Call] 第{retry_attempt + 1}次调用网络错误，已达最大重试次数{max_retries}")
                 state["ai_call_successful"] = False
                 break
-
-        elif state["last_error"]:
-            logger.error(f"[AI Call] 第{retry_attempt + 1}次调用失败（其他错误）: {state['last_error']}")
-            state["ai_call_successful"] = False
-            break
-
-        else:
-            if has_received_content and full_content.strip():
-                state["ai_call_successful"] = True
-                state["full_content"] = full_content
+            elif state["last_error"]:
+                logger.error(f"[AI Call] 第{retry_attempt + 1}次调用失败（其他错误）: {state['last_error']}")
+                state["ai_call_successful"] = False
                 break
             else:
                 logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用完成但无内容（流结束，模型未返回有效内容）")
-                if retry_controller.can_retry():
-                    retry_controller.increment_retry()
-                    continue
-                else:
-                    error_step_value = next_step()
-                    error_message = "模型未能生成有效回复，请尝试更换问题或稍后重试"
-                    error_response = create_error_response(
-                        error_type="empty_response",
-                        error_message=error_message,
-                        model=ai_service.model,
-                        provider=ai_service.provider,
-                        recoverable=True,
-                        retry_after=3,
-                        step=error_step_value
-                    )
-                    error_step_obj = StepFactory.create_error_step(
-                        step=error_step_value,
-                        error_type='empty_response',
-                        error_message=error_message,
-                        model=ai_service.model,
-                        provider=ai_service.provider,
-                        recoverable=True,
-                        retry_after=3
-                    )
-                    error_step_dict = error_step_obj.to_dict()
-                    yield (error_response, error_step_dict)
-                    await add_step_and_save(error_step_dict, f"错误: {error_message}")
-                    return
+                error_resp, error_step = await _build_empty_response_error(
+                    next_step, add_step_and_save, ai_service,
+                    "模型未能生成有效回复，请尝试更换问题或稍后重试"
+                )
+                yield (error_resp, error_step)
+                return
 
 
 async def _handle_retry_exhausted(
