@@ -619,118 +619,78 @@ def parse_react_response(output: str) -> Dict[str, Any]:
 # 步骤1.2：实现四种情况判断逻辑
 # =============================================================================
 
-def _determine_parse_type(output: str) -> Dict[str, Any]:
-    """
-    【2026-04-18小沈优化】判断LLM输出类型并调用对应解析函数
-    【2026-05-19小沈】移除重复的纯JSON块检测（已在handler #7处理），精简为3优先级
-    
-    调整后的优先级顺序：
-    ① ```包裹检测 - 最高优先级
-    ② 关键词匹配 - 第二优先级
-    ③ 长度兜底 - 最低优先级（≥5字符→implicit，<5→parse_error）
-    
-    【新增】统一的异常处理机制
-    """
-    if not output or not output.strip():
-        return {"type": "parse_error", "error": "Empty output", "thought": "", "content": "", "reasoning": "", "tool_name": None, "tool_params": None, "response": ""}
-    
-    output = output.strip()
-    
-    # ① 【最高优先级】```包裹JSON解析
-    # 【2026-04-19小沈优化】删除了对tool_parser.ToolParser的依赖，直接解析```块
+# 【小沈重构 2026-05-25】25.2节：提取3个独立解析器，消除SLAP/DRY违反
+def _try_codeblock_parse(output: str) -> Optional[Dict[str, Any]]:
+    """尝试从 ``` 包裹中提取 JSON - 小沈重构 2026-05-25"""
+    if '```' not in output:
+        return None
     try:
-        if '```' in output:
-            # 提取```块内的JSON
-            json_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', output)
-            if json_match:
-                json_str = json_match.group(1).strip()
-                json_data = json.loads(json_str)
-                if "tool_name" in json_data:
-                    return _create_action_result(json_data, output)
-    except Exception as e:
-        logger.debug(f"```包裹JSON解析失败: {e}")
-    
-    # ② 【第二优先级】关键词匹配（传统ReAct格式）
-    # 注：纯JSON块检测已由解析器链 handler #7 (_handle_mixed_text_json) 处理，
-    # 此处不再重复调用 _extract_json_block（缺陷3修复 小沈 2026-05-19）
+        json_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', output)
+        if json_match and "tool_name" in (jd := json.loads(json_match.group(1).strip())):
+            return _create_action_result(jd, output)
+    except Exception:
+        pass
+    return None
+
+
+def _try_keyword_parse(output: str) -> Optional[Dict[str, Any]]:
+    """尝试关键词匹配（传统 ReAct 格式）- 小沈重构 2026-05-25"""
     try:
-        # 定位关键词位置
         thought_match = re.search(REACT_KEYWORDS["thought"], output, re.IGNORECASE)
         action_match = re.search(REACT_KEYWORDS["action"], output, re.IGNORECASE)
         answer_match = re.search(REACT_KEYWORDS["answer"], output, re.IGNORECASE)
-        
-        # 获取位置索引（未匹配设为无穷大）
+
         action_idx = action_match.start() if action_match else float('inf')
         answer_idx = answer_match.start() if answer_match else float('inf')
-        
-        # 情况B: 有Action（且Action在Answer之前）- Action优先规则
+
         if action_match and action_idx < answer_idx:
             return _parse_action(output, thought_match, action_match)
-        
-        # 情况C: 有Answer
         if answer_match:
             return _parse_answer(output, thought_match, answer_match)
-        
-        # 情况D: 只有Thought（有Thought标记但无Action/Answer）
         if thought_match:
             return _parse_thought_only(output, thought_match)
-    except Exception as e:
-        logger.debug(f"关键词匹配失败: {e}")
-    
-    # 所有解析方法都失败，根据输出长度判断返回implicit或parse_error
-    # 【2026-05-14 小沈】不再使用工具名兜底（_extract_by_known_tools）
-    # prompt已要求"必须使用JSON格式输出"，非JSON文本不应搜工具名。
-    # 之前从"测试一下网络延迟（ping）"中误提取ping作为工具调用，
-    # 导致ping {}→缺host→报错→LLM重试的死循环。
-    # 【恢复 2026-04-24 小沈】纯文本无关键词时，长文本返回implicit，短文本返回parse_error
-    # =========================================================================
-    # 【chunk vs implicit 语义说明 - 小沈 2026-05-14】
-    #
-    # chunk:   流式文本片段，表示"还没完，后面还有"。Agent追加到buffer后继续循环。
-    # implicit:隐式完成，表示"LLM已经说完了，这就是最终回答"。Agent直接结束循环。
-    #
-    # 此函数（_determine_parse_type）只被非流式路径（parse_react_response）调用，
-    # 处理的已经是LLM完整返回文本。所以fallback应返回implicit，不是chunk。
-    #
-    # chunk应出现的路径：
-    #   1. LLM显式返回 {"type": "chunk", ...} → JSON路径（line 175）
-    #   2. 非标准JSON中声明 type=chunk → 非标准JSON路径（line 252）
-    #   3. 不完整JSON（被截断的流式输出）→ 不完整JSON检测（line 341）
-    #   4. JSON有content/reasoning但无tool_name → JSON块解析（line 427）
-    #   5. TextStrategy.chunk路径 → llm_strategies.py（line 186，通过strategy返回给textStrategy处理）
-    # =========================================================================
+    except Exception:
+        pass
+    return None
+
+
+def _make_fallback_result(text: str, is_implicit: bool) -> Dict[str, Any]:
+    """构建长度兜底的 implicit 或 parse_error 统一结果 - 小沈重构 2026-05-25"""
+    error_msg = None if is_implicit else "无法解析LLM响应，所有解析层（JSON/关键词/工具名）都失败"
+    return {
+        "type": "implicit" if is_implicit else "parse_error",
+        "thought": text, "content": text, "reasoning": text,
+        "tool_name": None, "tool_params": None,
+        "response": text, "error": error_msg,
+    }
+
+
+# 【小沈重构 2026-05-25】25.2节：骨架~20行，3优先级管道
+def _determine_parse_type(output: str) -> Dict[str, Any]:
+    """
+    【重构 2026-05-25】判断LLM输出类型并调用对应解析函数
+    优先级顺序：① ```包裹 ② 关键词匹配 ③ 长度兜底
+    """
+    if not output or not output.strip():
+        return _make_fallback_result("", is_implicit=False)
+
+    output = output.strip()
+
+    # 优先级 ① ```包裹
+    result = _try_codeblock_parse(output)
+    if result:
+        return result
+
+    # 优先级 ② 关键词匹配
+    result = _try_keyword_parse(output)
+    if result:
+        return result
+
+    # 优先级 ③ 长度兜底
     stripped = output.strip()
-    if len(stripped) >= 5:
-        # 【2026-05-14 小沈】非流式路径的完整文本回答应返回implicit，不是chunk
-        return {
-            "type": "implicit",
-            "thought": stripped,
-            "content": stripped,             # 兼容性字段
-            "reasoning": stripped,           # 兼容性字段
-            "tool_name": None,
-            "tool_params": None,
-            "response": stripped,
-            "error": None
-        }
-    else:
-        # 很短的输出，返回parse_error
-        return {
-            "type": "parse_error",
-            "error": "无法解析LLM响应，所有解析层（JSON/关键词/工具名）都失败",
-            "thought": stripped[:200],
-            "content": stripped[:200],
-            "reasoning": stripped[:200],
-            "tool_name": None,
-            "tool_params": None,
-            "response": stripped
-        }
-
-
-# =============================================================================
-# 【必选】步骤1.5：实现纯思考内容提取函数（设计文档14.5节要求）
-# =============================================================================
-
-def _parse_thought_only(output: str, thought_match: re.Match) -> Dict[str, Any]:
+    is_implicit = len(stripped) >= 5
+    text = stripped if is_implicit else stripped[:200]
+    return _make_fallback_result(text, is_implicit=is_implicit)
     """
     提取纯思考内容（无Action/Answer的场景）
     
