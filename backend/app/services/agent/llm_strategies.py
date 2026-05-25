@@ -444,26 +444,9 @@ class ToolsStrategy(LLMStrategy):
                         logger.info(f"[Function Calling] Non-list response: {content[:200]}")
                         return content
                 except (json.JSONDecodeError, TypeError) as e:
-                    from app.services.agent.react_output_parser import _extract_json_block, _extract_json_with_balanced_braces
-                    extracted = _extract_json_block(response.content)
-                    if extracted and isinstance(extracted, dict) and ("tool_name" in extracted or ("name" in extracted and "arguments" in extracted)):
-                        if "name" in extracted and "tool_name" not in extracted:
-                            extracted["tool_name"] = extracted["name"]
-                            extracted["tool_params"] = extracted.get("arguments", {})
-                        # 【修复 2026-05-26 小欧】finish时拼接JSON前的推理文本和result，去重
-                        if extracted.get("tool_name") == "finish":
-                            _, content_before = _extract_json_with_balanced_braces(response.content)
-                            existing = extracted.get("tool_params", {}).get("result", "")
-                            if content_before and existing:
-                                if existing not in content_before:
-                                    extracted.setdefault("tool_params", {})["result"] = content_before + "\n\n" + existing
-                            elif content_before:
-                                extracted.setdefault("tool_params", {})["result"] = content_before
-                        content = json.dumps(extracted, ensure_ascii=False)
-                        logger.info(f"[Function Calling] JSON解析失败但_extract_json_block提取成功: tool_name={extracted.get('tool_name')}")
-                        return content
+                    # 非JSON响应直接给下游parse_react_response统一解析（SRP：策略层只负责调用LLM，不负责解析）
                     content = response.content
-                    logger.info(f"[Function Calling] JSON解析失败，content交给下游解析器: {content[:200]}")
+                    logger.info(f"[Function Calling] 非JSON响应，原始文本交给parse_react_response解析: {content[:200]}")
                     return content
             else:
                 logger.warning("[Function Calling] Empty response, falling back to text mode")
