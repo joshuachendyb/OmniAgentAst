@@ -12,7 +12,7 @@ import inspect
 import asyncio
 import os
 import shutil
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Callable
 
 from app.services.tools.registry import tool_registry
 from app.services.tools.tool_result_utils import (
@@ -161,9 +161,23 @@ def tool_search(query: str) -> Dict[str, Any]:
     )
 
 
+def _pipeline_error(code: str, msg: str, step: Optional[int] = None,
+                    tool: Optional[str] = None, data: Optional[Dict] = None,
+                    llm_data: Optional[Dict] = None) -> Dict[str, Any]:
+    """统一pipeline错误响应，附加next_actions — 小健 2026-05-25"""
+    actions = []
+    if tool:
+        actions.append(("tool_help", "查看工具参数", "不确定参数时", {"tool_name": tool}))
+    else:
+        actions.append(("tool_help", "查看pipeline用法", "不确定steps格式时", {"tool_name": "pipeline"}))
+    if code in ("ERR_TOOL_NOT_FOUND", "ERR_PIPELINE_STOPPED"):
+        actions.append(("tool_search", "搜索替代工具", "需要查找其他工具时"))
+    return build_error(code, msg, data=data, llm_data=llm_data, next_actions=build_next_actions(actions))
+
+
 def _timeout_error(step_idx: int, tool_name: str, timeout_val: int,
                    done_results: list, orig_steps: str, orig_stop: bool) -> Dict[str, Any]:
-    """pipeline步骤超时错误 - 小沈 2026-05-22"""
+    """pipeline步骤超时错误 — 小健 2026-05-25"""
     error_data = truncate_data_for_frontend({
         "step": step_idx + 1,
         "tool": tool_name,
@@ -184,17 +198,89 @@ def _timeout_error(step_idx: int, tool_name: str, timeout_val: int,
     )
 
 
+def _run_tool_with_timeout(impl: Callable, params: Dict, timeout: int) -> Any:
+    """统一工具执行分发：async/sync + timeout — 小健 2026-05-25
+
+    使用场景:
+    - pipeline中执行每步工具，支持async和sync工具
+    - 超时抛出TimeoutError
+
+    使用示例:
+        result = _run_tool_with_timeout(impl, params, 60)
+
+    返回数据说明:
+    - 正常返回工具执行结果Dict
+    - 超时抛出concurrent.futures.TimeoutError
+    """
+    import concurrent.futures
+    if inspect.iscoroutinefunction(impl):
+        try:
+            loop = asyncio.get_running_loop()
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(asyncio.run, impl(**params))
+                return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            raise
+        except RuntimeError:
+            return asyncio.run(impl(**params))
+    else:
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(impl, **params)
+            return future.result(timeout=timeout)
+
+
+def _process_step_result(result: Dict, i: int, tool_name: str,
+                         results: List, context: Dict, stop_on_error: bool) -> Optional[Dict]:
+    """处理单步结果，返回None继续或error dict停止 — 小健 2026-05-25
+
+    使用场景:
+    - pipeline中处理每步工具的执行结果
+
+    使用示例:
+        err = _process_step_result(result, i, tool_name, results, context, stop_on_error)
+        if err: return err
+
+    返回数据说明:
+    - None: 继续
+    - Dict: 错误响应，应立即返回
+    """
+    step_data = result.get("data")
+    step_llm = result.get("llm_data")
+    results.append({
+        "step": i + 1, "tool": tool_name, "code": result.get("code"),
+        "message": result.get("message"),
+        "data": truncate_data_for_frontend(step_data) if isinstance(step_data, dict) else step_data,
+        "llm_data": make_json_safe(step_llm, max_depth=3, max_str_len=300) if step_llm else None,
+    })
+    if result.get("code") != "SUCCESS" and stop_on_error:
+        error_data = truncate_data_for_frontend({
+            "step": i + 1, "tool": tool_name,
+            "error_code": result.get("code"),
+            "error_message": result.get("message"),
+            "results": results,
+        })
+        return _pipeline_error("ERR_PIPELINE_STOPPED",
+            f"管道已在步骤{i+1}({tool_name})停止: {result.get('message')}，可设置stop_on_error=False继续执行",
+            step=i+1, tool=tool_name, data=error_data,
+            llm_data={"failed_step": i+1, "tool": tool_name, "error_code": result.get("code"),
+                       "error_message": result.get("message"), "completed_steps": len(results)})
+    if isinstance(step_data, dict):
+        for k, v in step_data.items():
+            if k not in context:
+                context[k] = v
+    return None
+
+
 def pipeline(steps: str, stop_on_error: bool = True, timeout_per_step: int = 60) -> Dict[str, Any]:
     """
-    定义工具执行管道 - 小沈 2026-05-17, 2026-05-22 新增timeout_per_step
+    定义工具执行管道 — 小沈 2026-05-17, 2026-05-22 新增timeout_per_step, 2026-05-25 小健重构拆分
 
     将多个工具按顺序编排执行，前一步的输出自动成为后一步的输入。
 
     Args:
-        steps: JSON格式的工具执行步骤列表。如
-            '[{"tool":"read_csv","params":{"file_path":"data.csv"}},{"tool":"analyze_data","params":{}}]'
+        steps: JSON格式的工具执行步骤列表
         stop_on_error: 某步失败时是否停止管道，默认True
-        timeout_per_step: 每步执行超时时间（秒），超时则报错停止管道，默认60秒
+        timeout_per_step: 每步执行超时时间（秒），默认60秒
 
     Returns:
         执行结果，包含steps(步骤数)和results(每步结果)
@@ -205,80 +291,47 @@ def pipeline(steps: str, stop_on_error: bool = True, timeout_per_step: int = 60)
         else:
             steps_list = json.loads(steps)
     except json.JSONDecodeError as e:
-        return build_error(
-            "ERR_INVALID_JSON",
-            f"steps参数不是有效的JSON格式: {str(e)}，请检查JSON语法",
-            next_actions=build_next_actions([
-                ("tool_help", "查看pipeline用法", "不确定steps格式时", {"tool_name": "pipeline"}),
-            ]),
-        )
+        return _pipeline_error("ERR_INVALID_JSON",
+            f"steps参数不是有效的JSON格式: {str(e)}，请检查JSON语法")
     except TypeError as e:
-        return build_error(
-            "ERR_INVALID_JSON",
-            f"steps参数类型错误: {str(e)}，需要JSON字符串或列表",
-            next_actions=build_next_actions([
-                ("tool_help", "查看pipeline用法", "不确定steps格式时", {"tool_name": "pipeline"}),
-            ]),
-        )
+        return _pipeline_error("ERR_INVALID_JSON",
+            f"steps参数类型错误: {str(e)}，需要JSON字符串或列表")
 
     if not isinstance(steps_list, list):
-        return build_error(
-            "ERR_INVALID_FORMAT",
-            f"steps必须是JSON数组格式，当前类型: {type(steps_list).__name__}",
-            next_actions=build_next_actions([
-                ("tool_help", "查看pipeline用法", "不确定steps格式时", {"tool_name": "pipeline"}),
-            ]),
-        )
+        return _pipeline_error("ERR_INVALID_FORMAT",
+            f"steps必须是JSON数组格式，当前类型: {type(steps_list).__name__}")
 
     context: Dict[str, Any] = {}
-    results = []
+    results: List[Dict] = []
 
     for i, step in enumerate(steps_list):
         if not isinstance(step, dict):
-            return build_error(
-                "ERR_INVALID_STEP",
+            return _pipeline_error("ERR_INVALID_STEP",
                 f"步骤{i+1}格式无效，应为对象，当前类型: {type(step).__name__}",
-                llm_data={"failed_step": i + 1, "error": f"步骤类型错误: {type(step).__name__}"},
-                next_actions=build_next_actions([
-                    ("tool_help", "查看pipeline用法", "不确定步骤格式时", {"tool_name": "pipeline"}),
-                ]),
-            )
+                llm_data={"failed_step": i + 1, "error": f"步骤类型错误: {type(step).__name__}"})
 
         tool_name = step.get("tool")
         if not tool_name:
-            return build_error(
-                "ERR_MISSING_TOOL",
+            return _pipeline_error("ERR_MISSING_TOOL",
                 f"步骤{i+1}缺少tool字段",
-                llm_data={"failed_step": i + 1},
-                next_actions=build_next_actions([
-                    ("tool_search", "搜索可用工具", "不确定工具名时"),
-                ]),
-            )
+                llm_data={"failed_step": i + 1})
 
         metadata = tool_registry.get_tool(tool_name)
         if not metadata:
             available = list(tool_registry._tools.keys())
             similar = [n for n in available if tool_name.lower() in n.lower()]
-            return build_error(
-                "ERR_TOOL_NOT_FOUND",
+            return _pipeline_error("ERR_TOOL_NOT_FOUND",
                 f"步骤{i+1}: 工具 '{tool_name}' 不存在，请用 tool_search 查找正确名称",
+                tool=tool_name,
                 data={"similar_tools": similar[:5]},
-                llm_data={"failed_step": i + 1, "tool": tool_name, "similar_tools": similar[:3]},
-                next_actions=build_next_actions([
-                    ("tool_search", "搜索可用工具", "查找正确工具名时"),
-                ]),
-            )
+                llm_data={"failed_step": i + 1, "tool": tool_name, "similar_tools": similar[:3]})
 
         params = step.get("params", {})
         if not isinstance(params, dict):
-            return build_error(
-                "ERR_INVALID_PARAMS",
+            return _pipeline_error("ERR_INVALID_PARAMS",
                 f"步骤{i+1}({tool_name})的params必须是对象格式",
-                llm_data={"failed_step": i + 1, "tool": tool_name},
-                next_actions=build_next_actions([
-                    ("tool_help", "查看工具参数", "不确定参数格式时", {"tool_name": tool_name}),
-                ]),
-            )
+                tool=tool_name,
+                llm_data={"failed_step": i + 1, "tool": tool_name})
 
         try:
             if context:
@@ -295,104 +348,44 @@ def pipeline(steps: str, stop_on_error: bool = True, timeout_per_step: int = 60)
 
             impl = tool_registry.get_implementation(tool_name)
             if not impl:
-                return build_error(
-                    "ERR_META_TOOL_IMPL_NOT_FOUND",
+                return _pipeline_error("ERR_META_TOOL_IMPL_NOT_FOUND",
                     f"步骤{i+1}: 工具 '{tool_name}' 无法获取实现，请检查工具是否正确注册",
-                    llm_data={"failed_step": i + 1, "tool": tool_name},
-                    next_actions=build_next_actions([
-                        ("tool_search", "搜索替代工具", "需要查找功能类似的工具时"),
-                    ]),
-                )
-            
-            if inspect.iscoroutinefunction(impl):
-                try:
-                    loop = asyncio.get_running_loop()
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as pool:
-                        future = pool.submit(asyncio.run, impl(**params))
-                        result = future.result(timeout=timeout_per_step)
-                except concurrent.futures.TimeoutError:
+                    tool=tool_name,
+                    llm_data={"failed_step": i + 1, "tool": tool_name})
+
+            try:
+                result = _run_tool_with_timeout(impl, params, timeout_per_step)
+            except Exception as exec_err:
+                import concurrent.futures as cf
+                if isinstance(exec_err, cf.TimeoutError):
                     return _timeout_error(i, tool_name, timeout_per_step, results, steps, stop_on_error)
-                except RuntimeError:
-                    result = asyncio.run(impl(**params))
-            else:
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    future = pool.submit(impl, **params)
-                    try:
-                        result = future.result(timeout=timeout_per_step)
-                    except concurrent.futures.TimeoutError:
-                        return _timeout_error(i, tool_name, timeout_per_step, results, steps, stop_on_error)
-            
-            step_data = result.get("data")
-            step_llm_data = result.get("llm_data")
+                raise
 
-            results.append({
-                "step": i + 1,
-                "tool": tool_name,
-                "code": result.get("code"),
-                "message": result.get("message"),
-                "data": truncate_data_for_frontend(step_data) if isinstance(step_data, dict) else step_data,
-                "llm_data": make_json_safe(step_llm_data, max_depth=3, max_str_len=300) if step_llm_data else None,
-            })
-
-            if result.get("code") != "SUCCESS" and stop_on_error:
-                error_data = truncate_data_for_frontend({
-                    "step": i + 1,
-                    "tool": tool_name,
-                    "error_code": result.get("code"),
-                    "error_message": result.get("message"),
-                    "results": results,
-                })
-                return build_error(
-                    "ERR_PIPELINE_STOPPED",
-                    f"管道已在步骤{i+1}({tool_name})停止: {result.get('message')}，可设置stop_on_error=False继续执行",
-                    data=error_data,
-                    llm_data={
-                        "failed_step": i + 1,
-                        "tool": tool_name,
-                        "error_code": result.get("code"),
-                        "error_message": result.get("message"),
-                        "completed_steps": len(results),
-                    },
-                    next_actions=build_next_actions([
-                        ("tool_help", "查看失败工具用法", "需要修复参数时", {"tool_name": tool_name}),
-                        ("tool_search", "搜索替代工具", "需要换工具时"),
-                    ]),
-                )
-
-            if isinstance(step_data, dict):
-                for k, v in step_data.items():
-                    if k not in context:
-                        context[k] = v
+            err = _process_step_result(result, i, tool_name, results, context, stop_on_error)
+            if err:
+                return err
 
         except TypeError as e:
-            return build_error(
-                "ERR_PARAM_MISMATCH",
+            return _pipeline_error("ERR_PARAM_MISMATCH",
                 f"步骤{i+1}({tool_name})参数不匹配: {str(e)}，请用 tool_help 查看正确参数",
+                tool=tool_name,
                 data={"step": i+1, "tool": tool_name, "error": str(e)},
-                llm_data={"failed_step": i + 1, "tool": tool_name, "error": str(e)},
-                next_actions=build_next_actions([
-                    ("tool_help", "查看工具参数", "不确定参数时", {"tool_name": tool_name}),
-                ]),
-            )
+                llm_data={"failed_step": i + 1, "tool": tool_name, "error": str(e)})
         except Exception as e:
-            return build_error(
-                "ERR_PIPELINE_FAILED",
+            import concurrent.futures as cf
+            if isinstance(e, cf.TimeoutError):
+                return _timeout_error(i, tool_name, timeout_per_step, results, steps, stop_on_error)
+            return _pipeline_error("ERR_PIPELINE_FAILED",
                 f"步骤{i+1}({tool_name})执行异常: {str(e)}",
+                tool=tool_name,
                 data={"step": i+1, "tool": tool_name, "error": str(e)},
-                llm_data={"failed_step": i + 1, "tool": tool_name, "error": str(e)},
-                next_actions=build_next_actions([
-                    ("tool_help", "查看失败工具用法", "需要排查问题时", {"tool_name": tool_name}),
-                ]),
-            )
+                llm_data={"failed_step": i + 1, "tool": tool_name, "error": str(e)})
 
     data = truncate_data_for_frontend({
         "total_steps": len(steps_list),
         "completed_steps": len(results),
         "results": results,
     })
-
     llm_data = {
         "total_steps": len(steps_list),
         "completed_steps": len(results),
@@ -401,7 +394,6 @@ def pipeline(steps: str, stop_on_error: bool = True, timeout_per_step: int = 60)
             for r in results
         ],
     }
-
     return build_success(
         data,
         f"管道执行完成: {len(results)}/{len(steps_list)} 个步骤",

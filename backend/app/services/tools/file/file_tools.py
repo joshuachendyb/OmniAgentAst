@@ -214,6 +214,228 @@ from datetime import datetime
 
 
 # ============================================================
+# 第五部分B：模块级共享函数（函数12/15拆分提取）— 小健 2026-05-25
+# ============================================================
+
+def _classify_size(size: int) -> str:
+    """文件大小分桶 — 小健 2026-05-25
+
+    使用场景:
+    - list_directory中size_distribution统计
+    - _list_sync中消除2处重复的分桶逻辑
+
+    使用示例:
+        bucket = _classify_size(st.st_size)  # 返回 "<1KB"/"1KB-10KB"/"10KB-100KB"/"100KB-1MB"/">1MB"
+
+    返回数据说明:
+    - 返回str，分桶名称
+    """
+    if size < 1024: return "<1KB"
+    if size < 10240: return "1KB-10KB"
+    if size < 102400: return "10KB-100KB"
+    if size < 1048576: return "100KB-1MB"
+    return ">1MB"
+
+
+def _build_entry(item: Path, st: os.stat_result) -> Dict[str, Any]:
+    """构建单个目录条目（供递归/非递归共用，消除25行重复）— 小健 2026-05-25
+
+    使用场景:
+    - list_directory的_list_sync中递归和非递归分支
+    - 消除递归/非递归完全相同的entry构建模式
+
+    使用示例:
+        entry = _build_entry(item, st)
+
+    返回数据说明:
+    - 返回Dict，包含name/path/type/size/mtime
+    """
+    is_dir = item.is_dir()
+    return {
+        "name": item.name,
+        "path": str(item.absolute()),
+        "type": "directory" if is_dir else "file",
+        "size": None if is_dir else st.st_size,
+        "mtime": st.st_mtime,
+    }
+
+
+def _count_tree_stats(node: dict) -> tuple:
+    """递归统计树形结构的文件数/目录数/总大小 — 小健 2026-05-25
+
+    使用场景:
+    - list_directory的tree模式补充统计信息
+
+    使用示例:
+        files, dirs, total_size = _count_tree_stats(tree_obj)
+
+    返回数据说明:
+    - 返回(int, int, int): 文件数, 目录数, 总大小
+    """
+    files = dirs = total_size = 0
+    if node.get("type") == "file":
+        files = 1
+        total_size = node.get("size", 0)
+    elif node.get("type") == "directory":
+        dirs = 1
+    for child in node.get("children", []):
+        cf, cd, cs = _count_tree_stats(child)
+        files += cf; dirs += cd; total_size += cs
+    return files, dirs, total_size
+
+
+def _build_list_success(entries: List, total: int, path: Path, statistics: Dict,
+                        start_offset: int, max_display: int) -> Dict[str, Any]:
+    """统一构建list模式的成功响应（截断/全量共用）— 小健 2026-05-25
+
+    使用场景:
+    - list_directory中截断和全量两种分支的统一响应构建
+
+    使用示例:
+        return _build_list_success(all_entries, total, path, statistics, start_offset, 200)
+
+    返回数据说明:
+    - 返回build_success结果Dict
+    """
+    truncated = total > max_display
+    if truncated:
+        display = entries[start_offset:start_offset + max_display]
+        next_token = encode_page_token(start_offset + max_display) if start_offset + max_display < total else None
+    else:
+        display = entries
+        next_token = None
+    llm_preview = [e.get("name", "") for e in display[:30]]
+    llm = {"目录": str(path), "总数": total, "条目预览": llm_preview}
+    if truncated:
+        llm["截断"] = True
+    return build_success(
+        {"entries": display, "total": total, "directory": str(path),
+         "truncated": truncated, "statistics": statistics, "next_page_token": next_token},
+        f"列出目录成功: {path} ({total}项)" + (f"，已截断显示前{max_display}项" if truncated else ""),
+        llm_data=llm,
+        next_actions=build_next_actions([
+            ("search_files", "搜索文件", "需要查找特定文件时"),
+            ("read_file", "读取文件", "需要查看文件内容时"),
+        ]))
+
+
+_ENCODING_PRIORITY = ["utf-8", "gbk", "gb2312", "utf-8-sig"]
+
+
+def _read_file_safe(file_path: Path) -> List[str]:
+    """多编码尝试读取文件行，OOM防护 + OSError兜底 — 小健 2026-05-25
+
+    使用场景:
+    - grep_file_content中读取搜索文件
+    - 复用get_file_encoding编码检测能力
+
+    使用示例:
+        lines = _read_file_safe(file_path)
+        if not lines: continue
+
+    返回数据说明:
+    - 返回List[str]，文件行列表；文件过大或读取失败返回[]
+    """
+    try:
+        size = file_path.stat().st_size
+        if size > MAX_SEARCH_FILE_SIZE:
+            return []
+    except OSError:
+        return []
+    for enc in _ENCODING_PRIORITY:
+        try:
+            with file_path.open("r", encoding=enc) as f:
+                return f.readlines()
+        except (UnicodeDecodeError, LookupError):
+            continue
+    with file_path.open("r", encoding="utf-8", errors="replace") as f:
+        return f.readlines()
+
+
+def _build_context(lines: List[str], line_no: int,
+                   context_lines: Optional[int], after_lines: Optional[int],
+                   before_lines: Optional[int]) -> Dict[str, Any]:
+    """构建匹配行的上下文字段，含边界保护 — 小健 2026-05-25
+
+    使用场景:
+    - grep_file_content中构建after/before上下文
+
+    使用示例:
+        ctx = _build_context(lines, line_no, context_lines, after_lines, before_lines)
+
+    返回数据说明:
+    - 返回Dict，可能包含after/before键
+    """
+    entry = {}
+    n = context_lines or after_lines or 0
+    if n and line_no - 1 + n < len(lines) + n:
+        after_content = []
+        for i in range(1, n + 1):
+            if line_no - 1 + i < len(lines):
+                after_content.append(lines[line_no - 1 + i].rstrip('\n\r'))
+        if after_content:
+            entry["after"] = after_content
+    m = context_lines or before_lines or 0
+    if m:
+        before_content = []
+        for i in range(1, m + 1):
+            if line_no - 1 - i >= 0:
+                before_content.insert(0, lines[line_no - 1 - i].rstrip('\n\r'))
+        if before_content:
+            entry["before"] = before_content
+    return entry
+
+
+def _format_match_output(file_matches: List, output_mode: Optional[str],
+                         file_path: str) -> Optional[Dict]:
+    """根据output_mode格式化单文件结果，返回条目或None — 小健 2026-05-25
+
+    使用场景:
+    - grep_file_content中3路output_mode分发
+
+    使用示例:
+        entry = _format_match_output(file_matches, output_mode, str(file_path))
+        if entry: results.append(entry)
+
+    返回数据说明:
+    - count模式: 返回{"file", "count"}
+    - files_with_matches模式: 返回{"file"}
+    - content模式: 返回{"file", "matches", "match_count"}
+    - 无匹配: 返回None
+    """
+    if not file_matches:
+        return None
+    if output_mode == "count":
+        return {"file": file_path, "count": len(file_matches)}
+    if output_mode == "files_with_matches":
+        return {"file": file_path}
+    return {"file": file_path, "matches": file_matches, "match_count": len(file_matches)}
+
+
+_DEFAULT_PAGE_SIZE = 200
+
+
+def _paginate_results(all_items: List, page_token: Optional[str],
+                      page_size: int = _DEFAULT_PAGE_SIZE) -> tuple:
+    """统一分页：token解码 → 切片 → has_more推导 — 小健 2026-05-25
+
+    使用场景:
+    - grep_file_content和list_directory中分页逻辑共享
+
+    使用示例:
+        page, next_token = _paginate_results(all_items, page_token, 200)
+
+    返回数据说明:
+    - 返回(List, Optional[str]): 当前页条目, 下一页token
+    """
+    start = decode_page_token(page_token) if page_token else 0
+    end = start + page_size
+    page = all_items[start:end]
+    next_token = encode_page_token(end) if end < len(all_items) else None
+    return page, next_token
+
+
+# ============================================================
 # 第六部分：FileTools类（重写版）
 # ============================================================
 
@@ -706,53 +928,30 @@ class FileTools:
         sortBy: str = "name",
         include_hidden: bool = False,
     ) -> Dict[str, Any]:
-        """列出目录内容 — 小沈 2026-05-19 精简参数(8→7)
+        """列出目录内容 — 小沈 2026-05-19, 2026-05-25 小健重构拆分
         P11统一入口：list/tree/statistics三合一
-        【FIX 2026-05-20 小健】exclude_patterns已从参数中删除（schema已精简）
         """
-        # P17 format校验
         if format not in ("list", "tree"):
             return build_error("ERR_PARAM_INVALID", f"format只支持'list'或'tree'，当前值: '{format}'")
-
         if max_depth < 1:
             return build_error("ERR_PARAM_INVALID", f"max_depth必须>=1，当前值: {max_depth}")
         if sortBy not in ("name", "size", "mtime"):
             return build_error("ERR_PARAM_INVALID", f"sortBy只支持'name'/'size'/'mtime'，当前值: '{sortBy}'")
-        
-        # format="tree" 分支：委托 get_directory_tree 逻辑 — 小沈 2026-05-18
+
         if format == "tree":
-            tree_result = await self._get_directory_tree(
-                dir_path=dir_path,
-                max_depth=max_depth,
-            )
-            # 小健 2026-05-19: tree模式补充statistics统计信息
+            tree_result = await self._get_directory_tree(dir_path=dir_path, max_depth=max_depth)
             if tree_result.get("code") == "SUCCESS" and "data" in tree_result:
                 tree_data = tree_result["data"]
                 if isinstance(tree_data, dict) and "tree" in tree_data:
-                    tree_obj = tree_data["tree"]
-                    def _count_tree(node: dict) -> tuple:
-                        files = dirs = total_size = 0
-                        if node.get("type") == "file":
-                            files = 1
-                            total_size = node.get("size", 0)
-                        elif node.get("type") == "directory":
-                            dirs = 1
-                        for child in node.get("children", []):
-                            cf, cd, cs = _count_tree(child)
-                            files += cf; dirs += cd; total_size += cs
-                        return files, dirs, total_size
-                    f, d, s = _count_tree(tree_obj)
+                    f, d, s = _count_tree_stats(tree_data["tree"])
                     tree_data["statistics"] = {"file_count": f, "dir_count": d, "total_size": s}
             return tree_result
 
-        # 验证路径合法性
         is_valid, error_msg = self._validate_path(dir_path)
         if not is_valid:
             return build_error("ERR_PATH_INVALID", error_msg)
 
         path = Path(dir_path)
-
-        # 解码page_token
         start_offset = 0
         if page_token:
             try:
@@ -763,23 +962,29 @@ class FileTools:
         try:
             if not path.exists():
                 return build_error("ERR_FILE_NOT_FOUND", f"Directory not found: {dir_path}")
-
             if not path.is_dir():
                 return build_error("ERR_FILE_PATH_NOT_DIR", f"Not a directory: {dir_path}")
 
-            # 异步执行目录遍历
-            # 【修复 2026-05-10 小健】超时自检：递归遍历大目录时主动退出
             _list_deadline = time.monotonic() + get_timeout("list_directory") - 2
             _list_timed_out = False
 
             def _list_sync():
                 nonlocal _list_timed_out
-                import fnmatch
-                _exclude = []  # exclude_patterns已从参数中移除 - 小健 2026-05-20
                 entries = []
                 stats = {"total_size": 0, "dir_count": 0, "file_count": 0}
                 ext_counter: Dict[str, int] = {}
                 size_bins = {"<1KB": 0, "1KB-10KB": 0, "10KB-100KB": 0, "100KB-1MB": 0, ">1MB": 0}
+
+                def _process_item(item, st, is_dir):
+                    entries.append(_build_entry(item, st))
+                    if is_dir:
+                        stats["dir_count"] += 1
+                    else:
+                        stats["total_size"] += st.st_size
+                        stats["file_count"] += 1
+                        ext = item.suffix.lower().lstrip('.') if item.suffix else ''
+                        ext_counter[ext] = ext_counter.get(ext, 0) + 1
+                        size_bins[_classify_size(st.st_size)] += 1
 
                 if recursive:
                     def _scan_recursive(current_path: Path, current_depth: int):
@@ -797,78 +1002,24 @@ class FileTools:
                                 try:
                                     if not include_hidden and item.name.startswith('.'):
                                         continue
-                                    if any(fnmatch.fnmatch(item.name, p) for p in _exclude):
-                                        continue
                                     st = item.stat()
-                                    is_dir = item.is_dir()
-                                    entries.append({
-                                        "name": item.name,
-                                        "path": str(item.absolute()),
-                                        "type": "directory" if is_dir else "file",
-                                        "size": None if is_dir else st.st_size,
-                                        "mtime": st.st_mtime,
-                                    })
-                                    if is_dir:
-                                        stats["dir_count"] += 1
+                                    _process_item(item, st, item.is_dir())
+                                    if item.is_dir():
                                         _scan_recursive(item, current_depth + 1)
                                         if _list_timed_out:
                                             return
-                                    else:
-                                        stats["total_size"] += st.st_size
-                                        stats["file_count"] += 1
-                                        ext = item.suffix.lower().lstrip('.') if item.suffix else ''
-                                        ext_counter[ext] = ext_counter.get(ext, 0) + 1
-                                        sz = st.st_size
-                                        if sz < 1024:
-                                            size_bins["<1KB"] += 1
-                                        elif sz < 10240:
-                                            size_bins["1KB-10KB"] += 1
-                                        elif sz < 102400:
-                                            size_bins["10KB-100KB"] += 1
-                                        elif sz < 1048576:
-                                            size_bins["100KB-1MB"] += 1
-                                        else:
-                                            size_bins[">1MB"] += 1
                                 except (PermissionError, OSError):
                                     continue
                         except (PermissionError, OSError):
                             return
-
                     _scan_recursive(path, 1)
                 else:
                     for item in path.iterdir():
                         try:
                             if not include_hidden and item.name.startswith('.'):
                                 continue
-                            if any(fnmatch.fnmatch(item.name, p) for p in _exclude):
-                                continue
                             st = item.stat()
-                            is_dir = item.is_dir()
-                            entries.append({
-                                "name": item.name,
-                                "path": str(item.absolute()),
-                                "type": "directory" if is_dir else "file",
-                                "size": None if is_dir else st.st_size,
-                                "mtime": st.st_mtime,
-                            })
-                            if is_dir:
-                                stats["dir_count"] += 1
-                            else:
-                                stats["total_size"] += st.st_size
-                                stats["file_count"] += 1
-                                ext = item.suffix.lower().lstrip('.') if item.suffix else ''
-                                ext_counter[ext] = ext_counter.get(ext, 0) + 1
-                                sz = st.st_size
-                                if sz < 1024:
-                                    size_bins["<1KB"] += 1
-                                elif sz < 10240:
-                                    size_bins["1KB-10KB"] += 1
-                                elif sz < 102400:
-                                    size_bins["10KB-100KB"] += 1
-                                elif sz < 1048576:
-                                    size_bins["100KB-1MB"] += 1
-                                else:
-                                    size_bins[">1MB"] += 1
+                            _process_item(item, st, item.is_dir())
                         except (PermissionError, OSError):
                             continue
 
@@ -876,7 +1027,6 @@ class FileTools:
 
             all_entries, total_size, dir_count, file_count, file_types, size_distribution = await asyncio.to_thread(_list_sync)
 
-            # 排序：目录优先，然后按sortBy
             if sortBy == "size":
                 all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x.get("size") or 0), reverse=True)
             elif sortBy == "mtime":
@@ -885,13 +1035,7 @@ class FileTools:
                 all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x["name"].lower()))
 
             total = len(all_entries)
-
-            # 【优化 2026-04-16 小沈】大目录优化
-            # 背景：E盘根目录有 492,335 个文件，entries JSON 大小达 90.58MB
-            # 问题：导致 API 请求体过大，触发 429 错误
-            # 解决：截断大目录，只返回前 200 项 + 统计摘要
             MAX_DISPLAY_ENTRIES = 200
-
             statistics = {
                 "total_size": total_size, "dir_count": dir_count,
                 "file_count": file_count, "sort_by": sortBy,
@@ -899,48 +1043,13 @@ class FileTools:
             }
 
             if total > MAX_DISPLAY_ENTRIES:
-                display_entries = all_entries[start_offset:start_offset + MAX_DISPLAY_ENTRIES]
-
                 logger.warning(
                     f"[list_directory] Large directory truncated: path={path}, "
                     f"total={total}, dir_count={dir_count}, file_count={file_count}, "
                     f"displayed={MAX_DISPLAY_ENTRIES}"
                 )
 
-                return build_success(
-                    {
-                        "entries": display_entries, "total": total, "directory": str(path),
-                        "truncated": True, "dir_count": dir_count, "file_count": file_count,
-                        "statistics": statistics,
-                        "next_page_token": encode_page_token(start_offset + MAX_DISPLAY_ENTRIES) if start_offset + MAX_DISPLAY_ENTRIES < total else None
-                    },
-                    f"列出目录成功: {path} ({total}项，已截断显示前{MAX_DISPLAY_ENTRIES}项)",
-                    llm_data={
-                        "目录": str(path), "总数": total, "目录数": dir_count, "文件数": file_count,
-                        "条目预览": [e.get("name","") for e in display_entries[:30]],
-                        "截断": True
-                    },
-                    next_actions=build_next_actions([
-                        ("search_files", "搜索文件", "需要查找特定文件时"),
-                        ("read_file", "读取文件", "需要查看文件内容时"),
-                    ])
-                )
-
-            return build_success(
-                {
-                    "entries": all_entries, "total": total, "directory": str(path),
-                    "statistics": statistics, "next_page_token": None
-                },
-                f"列出目录成功: {path} ({total}项)",
-                llm_data={
-                    "目录": str(path), "总数": total,
-                    "条目预览": [e.get("name","") for e in all_entries[:30]]
-                },
-                next_actions=build_next_actions([
-                    ("search_files", "搜索文件", "需要查找特定文件时"),
-                    ("read_file", "读取文件", "需要查看文件内容时"),
-                ])
-            )
+            return _build_list_success(all_entries, total, path, statistics, start_offset, MAX_DISPLAY_ENTRIES)
 
         except Exception as e:
             logger.error(f"Failed to list directory {dir_path}: {e}")
@@ -1875,40 +1984,21 @@ class FileTools:
         head_limit: Optional[int] = None,
         page_token: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """基于正则的内容搜索 — 小沈 2026-05-19 精简参数(13→9)"""
-        # 从context对象解构上下文行数 — 小沈 2026-05-19
-        after_lines = None
-        before_lines = None
-        context_lines = None
+        """基于正则的内容搜索 — 小沈 2026-05-19, 2026-05-25 小健重构拆分"""
+        after_lines = before_lines = context_lines = None
         if context:
             after_lines = context.get("after")
             before_lines = context.get("before")
             context_lines = context.get("around")
-        show_line_no = True  # 小沈 2026-05-19: 永远显示行号
-        type = None  # ⚠️ 警告: 已从Schema移除，用glob替代，后续视需求决定是否恢复
         try:
             search_path = Path(search_dir).resolve() if search_dir else Path.cwd().resolve()
             is_valid, error_msg = self._validate_path(str(search_path))
             if not is_valid:
                 return build_error("ERR_PATH_INVALID", error_msg)
-
             if not pattern:
                 return build_error("ERR_PARAM_INVALID", "搜索模式不能为空")
 
-            type_ext_map = {
-                "js": "*.js", "ts": "*.ts", "tsx": "*.tsx", "jsx": "*.jsx",
-                "py": "*.py", "rs": "*.rs", "go": "*.go", "java": "*.java",
-                "html": "*.html", "css": "*.css", "json": "*.json", "yaml": "*.yaml",
-                "md": "*.md", "xml": "*.xml", "c": "*.c", "cpp": "*.cpp",
-                "h": "*.h", "rust": "*.rs",
-            }
             file_glob = glob
-            if not file_glob and type:
-                file_glob = type_ext_map.get(type)
-                if file_glob is None:
-                    return build_error("ERR_PARAM_INVALID", f"不支持的语言类型: '{type}'，可用: {', '.join(sorted(type_ext_map.keys()))}")
-
-            # 【修复 2026-05-10 小健】超时自检：os.walk循环中检查耗时，超时提前返回已有结果
             _grep_deadline = time.monotonic() + get_timeout("grep_file_content") - 2
 
             def _grep_sync() -> List[Dict[str, Any]]:
@@ -1927,39 +2017,16 @@ class FileTools:
                 match_count = 0
 
                 for root, dirs, files in os.walk(search_path):
-                    # 【修复 2026-05-10 小健】超时自检：接近deadline时提前返回
                     if time.monotonic() > _grep_deadline:
                         logger.warning(f"[grep_file_content] 超时自检触发，已匹配{match_count}条，提前返回{len(results)}个文件结果")
                         break
-                    filtered_files = []
-                    for f in files:
-                        if file_glob and not fnmatch.fnmatch(f, file_glob):
-                            continue
-                        filtered_files.append(f)
+                    filtered_files = [f for f in files if not file_glob or fnmatch.fnmatch(f, file_glob)]
                     for filename in filtered_files:
                         if head_limit is not None and match_count >= head_limit:
                             break
                         file_path = Path(root) / filename
-                        # 【修复 2026-05-01 小沈】OOM防护：跳过大文件
-                        try:
-                            if file_path.stat().st_size > MAX_SEARCH_FILE_SIZE:
-                                continue
-                        except OSError:
-                            continue
-                        try:
-                            # 小健 2026-05-19: 多编码尝试，支持gbk等中文编码文件
-                            lines = None
-                            for _enc in ('utf-8', 'gbk', 'gb2312', 'utf-8-sig'):
-                                try:
-                                    with open(file_path, 'r', encoding=_enc, errors='strict') as f:
-                                        lines = f.readlines()
-                                    break
-                                except (UnicodeDecodeError, UnicodeError):
-                                    continue
-                            if lines is None:
-                                with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
-                                    lines = f.readlines()
-                        except Exception:
+                        lines = _read_file_safe(file_path)
+                        if not lines:
                             continue
 
                         file_matches = []
@@ -1968,10 +2035,7 @@ class FileTools:
                             for m in regex.finditer(content):
                                 match_count += 1
                                 line_no = content[:m.start()].count('\n') + 1
-                                file_matches.append({
-                                    "line": line_no if show_line_no else None,
-                                    "content": m.group(),
-                                })
+                                file_matches.append({"line": line_no, "content": m.group()})
                                 if head_limit is not None and match_count >= head_limit:
                                     break
                         else:
@@ -1979,53 +2043,28 @@ class FileTools:
                                 m = regex.search(line)
                                 if m:
                                     match_count += 1
-                                    entry = {
-                                        "line": line_no if show_line_no else None,
-                                        "content": line.rstrip('\n\r'),
-                                    }
-                                    if context_lines or after_lines:
-                                        after = after_lines or context_lines or 0
-                                        after_content = []
-                                        for i in range(1, after + 1):
-                                            if line_no - 1 + i < len(lines):
-                                                after_content.append(lines[line_no - 1 + i].rstrip('\n\r'))
-                                        entry["after"] = after_content if after_content else None
-                                    if context_lines or before_lines:
-                                        before = before_lines or context_lines or 0
-                                        before_content = []
-                                        for i in range(1, before + 1):
-                                            if line_no - 1 - i >= 0:
-                                                before_content.insert(0, lines[line_no - 1 - i].rstrip('\n\r'))
-                                        entry["before"] = before_content if before_content else None
+                                    entry = {"line": line_no, "content": line.rstrip('\n\r')}
+                                    ctx = _build_context(lines, line_no, context_lines, after_lines, before_lines)
+                                    entry.update(ctx)
                                     file_matches.append(entry)
                                     if head_limit is not None and match_count >= head_limit:
                                         break
 
-                        if file_matches:
-                            if output_mode == "count":
-                                results.append({"file": str(file_path), "count": len(file_matches)})
-                            elif output_mode == "files_with_matches":
-                                results.append({"file": str(file_path)})
-                            else:
-                                results.append({"file": str(file_path), "matches": file_matches, "match_count": len(file_matches)})
+                        fmt_entry = _format_match_output(file_matches, output_mode, str(file_path))
+                        if fmt_entry:
+                            results.append(fmt_entry)
 
                 return results
 
             matches = await asyncio.to_thread(_grep_sync)
-            total_matches = sum(m.get("match_count", 0) if "match_count" in m else (m.get("count", 1) if "count" in m else 1) for m in matches)
+            total_matches = sum(
+                m.get("match_count", 0) if "match_count" in m else (m.get("count", 1) if "count" in m else 1)
+                for m in matches
+            )
 
-            # 【小健 2026-05-02】分页逻辑（从search_file_content迁移）
             total = len(matches)
-            start_offset = decode_page_token(page_token) if page_token else 0
-            if total > DEFAULT_PAGE_SIZE or start_offset > 0:
-                end_offset = start_offset + DEFAULT_PAGE_SIZE
-                page_results = matches[start_offset:end_offset]
-                has_more = end_offset < total
-                next_page_token = encode_page_token(end_offset) if has_more else None
-            else:
-                page_results = matches
-                has_more = False
-                next_page_token = None
+            page_results, next_page_token = _paginate_results(matches, page_token, DEFAULT_PAGE_SIZE)
+            has_more = next_page_token is not None
 
             return build_success(
                 {
@@ -2051,7 +2090,6 @@ class FileTools:
                 ]),
             )
         except Exception as e:
-
             return build_error("ERR_FILE_CONTENT_SEARCH_FAILED", str(e))
 
     async def get_directory_tree(self, dir_path: str) -> Dict[str, Any]:
