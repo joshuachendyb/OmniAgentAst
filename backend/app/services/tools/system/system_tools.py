@@ -386,6 +386,48 @@ def _get_linux_event_log(
         return build_error("ERR_SHELL_COMMAND_NOT_FOUND", "journalctl命令不存在")
 
 
+def _filter_process(
+    proc_info: dict,
+    filter_name: Optional[str] = None,
+    filter_pid: Optional[int] = None,
+    user: Optional[str] = None,
+    status: Optional[str] = None,
+) -> bool:
+    """进程过滤谓词 — 纯函数 — 小沈 2026-05-25"""
+    if filter_name:
+        pn = proc_info.get('name', '')
+        if filter_name.lower() not in pn.lower():
+            return False
+    if filter_pid:
+        if proc_info.get('pid') != filter_pid:
+            return False
+    if user:
+        pu = proc_info.get('username', '') or ''
+        if user.lower() not in pu.lower():
+            return False
+    if status:
+        ps = proc_info.get('status', '') or ''
+        if status.lower() not in ps.lower():
+            return False
+    return True
+
+
+def _format_process(proc_info: dict) -> dict:
+    """格式化单个进程信息为输出字典 — 小沈 2026-05-25"""
+    cpu = proc_info.get('cpu_percent') or 0.0
+    mem = proc_info.get('memory_percent') or 0.0
+    return {
+        "pid": proc_info['pid'],
+        "name": proc_info.get('name', 'N/A'),
+        "status": proc_info.get('status', 'N/A'),
+        "user": proc_info.get('username', 'N/A'),
+        "cpu_percent": round(cpu, 2),
+        "memory_percent": round(mem, 2),
+        "exe": proc_info.get('exe', 'N/A'),
+        "cmdline": ' '.join(proc_info.get('cmdline', []))[:200] if proc_info.get('cmdline') else 'N/A',
+    }
+
+
 def list_processes(
     filter_name: Optional[str] = None,
     filter_pid: Optional[int] = None,
@@ -413,65 +455,29 @@ def list_processes(
     descending: bool = False
     try:
         processes = []
-        
+
         for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'exe', 'cmdline', 'status', 'create_time', 'username']):
             try:
                 proc_info = proc.info
-                
-                # 参数过滤
-                if filter_name:
-                    proc_name = proc_info.get('name', '')
-                    if filter_name.lower() not in proc_name.lower():
-                        continue
-                
-                if filter_pid:
-                    if proc_info.get('pid') != filter_pid:
-                        continue
-                
-                # 小健 2026-05-19: 补user/status过滤(原标注暂未生效但数据已有)
-                if user:
-                    proc_user = proc_info.get('username', '') or ''
-                    if user.lower() not in proc_user.lower():
-                        continue
-                
-                if status:
-                    proc_status = proc_info.get('status', '') or ''
-                    if status.lower() not in proc_status.lower():
-                        continue
-                
-                cpu_percent = proc_info.get('cpu_percent') or 0.0
-                memory_percent = proc_info.get('memory_percent') or 0.0
-                
-                processes.append({
-                    "pid": proc_info['pid'],
-                    "name": proc_info.get('name', 'N/A'),
-                    "status": proc_info.get('status', 'N/A'),
-                    "user": proc_info.get('username', 'N/A'),
-                    "cpu_percent": round(cpu_percent, 2),
-                    "memory_percent": round(memory_percent, 2),
-                    "exe": proc_info.get('exe', 'N/A'),
-                    "cmdline": ' '.join(proc_info.get('cmdline', []))[:200] if proc_info.get('cmdline') else 'N/A',
-                })
-            
+                if not _filter_process(proc_info, filter_name, filter_pid, user, status):
+                    continue
+                processes.append(_format_process(proc_info))
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue
-        
-        # 排序处理
+
         sort_keys = {
             "pid": lambda x: x["pid"],
             "name": lambda x: x["name"].lower(),
             "cpu": lambda x: x["cpu_percent"],
             "memory": lambda x: x["memory_percent"],
         }
-        
-        # 按pid/name/cpu/memory其中一个排序
         if sort_by in sort_keys:
             processes.sort(key=sort_keys[sort_by], reverse=descending)
         else:
             processes.sort(key=sort_keys["pid"], reverse=False)
-        
+
         limited_processes = processes[:max_results]
-        
+
         return build_success(truncate_data_for_frontend({
                 "processes": limited_processes,
                 "total": len(limited_processes),
@@ -481,7 +487,7 @@ def list_processes(
                 "总数": len(processes), "返回数": len(limited_processes), "排序": sort_by,
                 "进程预览": [{"pid": p.get("pid"), "name": p.get("name","")[:30], "cpu": p.get("cpu_percent"), "mem": p.get("memory_percent")} for p in limited_processes[:20]]
             }, next_actions=build_next_actions([("kill_process", "终止进程", "需要结束某个进程时"), ("get_system_info", "查看系统总览", "需要更多系统信息时")]))
-    
+
     except Exception as e:
         logger.error(f"[list_processes] 获取进程列表失败: {e}")
         return build_error("ERR_SYSTEM_PROCESS_LIST", f"获取进程列表失败: {str(e)}")
