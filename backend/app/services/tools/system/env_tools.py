@@ -21,8 +21,9 @@ Author: 小沈 - 2026-04-29
 """
 
 import os
+import subprocess
 import sys
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 from app.utils.logger import logger
 from app.services.tools.tool_result_utils import build_next_actions  # 小沈 2026-05-19
@@ -124,168 +125,125 @@ def get_env(name: Optional[str] = None, scope: str = "process",
         return build_error("ERR_SYS_ENV_GET", f"获取环境变量失败: {str(e)}")
 
 
-def set_env(name: str, value: Optional[str] = None, scope: str = "process",
-            append_mode: bool = False, action: str = "set",
-            ) -> dict:
-    """
-    设置或删除环境变量 - 小沈 2026-05-03 增加append_mode支持
-    【2026-05-17 小沈】P1-5: 合并delete_env（action="delete"），增加exist_ok幂等
+def _env_success(name: str, value: Any, scope: str, deleted: bool = False,
+                  append_mode: bool = False, msg: str = "") -> dict:
+    """统一构建 env 操作的成功响应 — 小沈 2026-05-25"""
+    return build_success(
+        {"name": name, "value": value, "scope": scope, "deleted": deleted, "append_mode": append_mode},
+        msg or f"已{'删除' if deleted else '设置'}: {name}",
+        next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])
+    )
 
-    注意：
-    - action="set": 设置变量（默认行为）
-    - action="delete": 删除变量（原delete_env逻辑）
-    - scope="process": 仅当前进程生效（推荐）
-    - scope="user": 需要写入用户环境（需要权限，可能需要重启shell生效）
-    - scope="system": 需要管理员权限（写入系统环境，不推荐）
-    - append_mode=True: 追加而非覆盖，自动去重和选择分隔符
+
+def _delete_env(name: str, scope: str) -> dict:
+    """删除环境变量，3种scope。统一构建success — 小沈 2026-05-25"""
+    if scope == "process":
+        exists = name in os.environ
+        if exists:
+            del os.environ[name]
+        return _env_success(name, None, scope, deleted=exists, msg=f"已{'删除' if exists else '不存在'}: {name}")
+    if scope == "user":
+        import winreg
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_SET)
+            winreg.DeleteValue(key, name)
+            winreg.CloseKey(key)
+            os.environ.pop(name, None)
+            return _env_success(name, None, scope, deleted=True, msg=f"已删除(用户): {name}")
+        except FileNotFoundError:
+            winreg.CloseKey(key)
+            return _env_success(name, None, scope, deleted=False, msg=f"不存在: {name}")
+    exists = name in os.environ
+    if exists:
+        del os.environ[name]
+    return _env_success(name, None, "system→process(降级)", deleted=exists,
+                         msg=f"已{'删除' if exists else '不存在'}(降级为process): {name}")
+
+
+def _read_env(name: str, scope: str = "process") -> Optional[str]:
+    """读取环境变量值：process从os.environ，user/system从注册表(fallback os.environ) — 小沈 2026-05-25"""
+    if scope == "process":
+        return os.environ.get(name)
+    try:
+        import winreg
+        hive = winreg.HKEY_CURRENT_USER if scope == "user" else winreg.HKEY_LOCAL_MACHINE
+        path = r"Environment" if scope == "user" else r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+        key = winreg.OpenKey(hive, path, 0, winreg.KEY_READ)
+        try:
+            val, _ = winreg.QueryValueEx(key, name)
+            return val
+        except FileNotFoundError:
+            return None
+        finally:
+            winreg.CloseKey(key)
+    except Exception:
+        return os.environ.get(name)
+
+
+def _set_scope(name: str, value: str, scope: str) -> Tuple[str, str]:
+    """写入指定scope，返回(实际_scope, 消息) — 小沈 2026-05-25"""
+    if scope == "process":
+        os.environ[name] = value
+        return scope, f"已设置(进程级): {name}"
+    if scope == "user":
+        result = subprocess.run(["setx", name, value], capture_output=True, text=True, shell=True)
+        if result.returncode == 0:
+            os.environ[name] = value
+            return "user", f"已设置(用户级): {name}，需重启终端生效"
+        logger.warning(f"[set_env] setx失败: {result.stderr}")
+    os.environ[name] = value
+    return "process", "系统级需管理员权限/设置失败，已降级为进程级: {name}"
+
+
+def set_env(name: str, value: Optional[str] = None, scope: str = "process",
+             append_mode: bool = False, action: str = "set") -> dict:
+    """设置/删除环境变量 — 小沈 2026-05-25 重构
+
+    - action="delete": 删除变量
+    - scope="process": 仅当前进程生效
+    - scope="user": 需要写入用户环境
+    - scope="system": 需要管理员权限
+    - append_mode=True: 追加而非覆盖
 
     Args:
         name: 环境变量名称
-        value: 环境变量值（action="set"时必填，action="delete"时忽略）
+        value: 环境变量值（action="set"时必填）
         scope: 作用域 (process/user/system)
-        append_mode: 追加模式（默认False覆盖）
-        action: 操作类型 ("set"|"delete")，默认"set"
+        append_mode: 追加模式
+        action: 操作类型
 
     Returns:
         {code, data, message}
     """
-    try:
-        if not name or not name.strip():
-            return build_error("ERR_SYS_ENV_INVALID_NAME", "环境变量名称不能为空")
+    if not name or not name.strip():
+        return build_error("ERR_SYS_ENV_INVALID_NAME", "环境变量名称不能为空")
+    if action not in ("set", "delete"):
+        return build_error("ERR_SYS_ENV_INVALID_ACTION", f"无效的action: {action}")
+    if action == "delete":
+        return _delete_env(name, scope)
+    if value is None:
+        return build_error("ERR_SYS_ENV_INVALID_VALUE", "环境变量值不能为None")
+    if scope not in ("process", "user", "system"):
+        return build_error("ERR_SYS_ENV_INVALID_SCOPE", f"无效的作用域: {scope}")
 
-        # 【2026-05-17 小沈】action="delete"分支：原delete_env逻辑
-        # 小健 2026-05-19: action值校验
-        if action not in ("set", "delete"):
-            return build_error("ERR_SYS_ENV_INVALID_ACTION", f"无效的action: {action}，支持: set/delete")
-        if action == "delete":
-            if scope == "process":
-                if name in os.environ:
-                    del os.environ[name]
-                    return build_success({"name": name, "deleted": True, "scope": scope},
-                            f"已删除: {name}",
-                            next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")]))
-                return build_success({"name": name, "deleted": False, "scope": scope},
-                        f"不存在: {name}",
-                        next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")]))
+    existing = _read_env(name, scope)
+    if existing == value:
+        return _env_success(name, value, scope, msg=f"值相同(幂等): {name}")
 
-            import winreg
-            if scope == "user":
-                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_SET)
-                try:
-                    winreg.DeleteValue(key, name)
-                    if name in os.environ:
-                        del os.environ[name]
-                    return build_success({"name": name, "scope": "user", "deleted": True},
-                            f"已删除: {name}",
-                            next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")]))
-                except FileNotFoundError:
-                    return build_success({"name": name, "deleted": False, "scope": scope},
-                            f"不存在: {name}",
-                            next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")]))
-                finally:
-                    winreg.CloseKey(key)
-            else:
-                # 【2026-05-18 小沈】system scope delete降级为process（与set行为一致）
-                if name in os.environ:
-                    del os.environ[name]
-                    return build_success({"name": name, "deleted": True, "scope": "system→process(降级)"},
-                            f"已删除(降级为process): {name}",
-                            next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")]))
-                return build_success({"name": name, "deleted": False, "scope": "system→process(降级)"},
-                        f"不存在(降级为process): {name}",
-                        next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")]))
-
-        # action="set"分支：原set_env逻辑
-        if value is None:
-            return build_error("ERR_SYS_ENV_INVALID_VALUE", "环境变量值不能为None（action='set'时value必填）")
-
-        # 【2026-05-17 小沈】exist_ok幂等增强（硬编码为True，已从Schema移除）
-        # 小健 2026-05-19: scope=user/system时需从注册表读取当前值,而非os.environ
-        if value is not None:
-            if scope == "process":
-                existing = os.environ.get(name)
-            else:
-                existing = None
-                try:
-                    import winreg
-                    hive = winreg.HKEY_CURRENT_USER if scope == "user" else winreg.HKEY_LOCAL_MACHINE
-                    reg_path = r"Environment" if scope == "user" else r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
-                    key = winreg.OpenKey(hive, reg_path, 0, winreg.KEY_READ)
-                    try:
-                        existing, _ = winreg.QueryValueEx(key, name)
-                    except FileNotFoundError:
-                        existing = None
-                    finally:
-                        winreg.CloseKey(key)
-                except Exception:
-                    existing = os.environ.get(name)
-            if existing == value:
-                return build_success(
-                    {"name": name, "value": value, "scope": scope, "append_mode": append_mode},
-                    f"环境变量已存在且值相同: {name}={value[:50]}{'...' if len(value) > 50 else ''}",
-                    next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])
-                )
-
-        if append_mode:
-            existing = os.environ.get(name, "")
-            separator = ";" if sys.platform == "win32" else ":"
-            if existing:
-                parts = [p.strip() for p in existing.split(separator) if p.strip()]
-                new_value_stripped = value.strip()
-                if new_value_stripped not in parts:
-                    parts.append(new_value_stripped)
-                effective_value = separator.join(parts)
-            else:
-                effective_value = value
+    separator = ";" if sys.platform == "win32" else ":"
+    if append_mode:
+        existing_val = os.environ.get(name, "")
+        if existing_val:
+            parts = [p.strip() for p in existing_val.split(separator) if p.strip()]
+            if value.strip() not in parts:
+                parts.append(value.strip())
+            effective = separator.join(parts)
         else:
-            effective_value = value
+            effective = value
+    else:
+        effective = value
 
-        if scope == "process":
-            os.environ[name] = effective_value
-            return build_success(
-                {"name": name, "value": effective_value, "scope": scope, "append_mode": append_mode},
-                f"已设置环境变量（当前进程）: {name}={effective_value}",
-                next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])
-            )
-
-        elif scope == "user":
-            import subprocess
-            result = subprocess.run(
-                ["setx", name, effective_value],
-                capture_output=True,
-                text=True,
-                shell=True
-            )
-            if result.returncode == 0:
-                os.environ[name] = effective_value
-                return build_success(
-                    {"name": name, "value": effective_value, "scope": scope, "append_mode": append_mode},
-                    f"已设置环境变量（用户级）: {name}={effective_value}，需要重启终端生效",
-                    next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])
-                )
-            else:
-                logger.warning(f"[set_env] setx失败，降级为process: {result.stderr}")
-                os.environ[name] = effective_value
-                return build_success(
-                    {"name": name, "value": effective_value, "scope": "process", "append_mode": append_mode},
-                    f"设置用户环境变量失败，已降级为进程级: {name}={effective_value}",
-                    next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])
-                )
-
-        elif scope == "system":
-            logger.warning("[set_env] system scope需管理员权限，降级为process")
-            os.environ[name] = effective_value
-            return build_success(
-                {"name": name, "value": effective_value, "scope": "process", "append_mode": append_mode},
-                f"系统级需管理员权限，已降级为进程级: {name}={effective_value}",
-                next_actions=build_next_actions([("get_env", "验证变量已设置", "需要确认设置结果时")])
-            )
-
-        else:
-            return build_error("ERR_SYS_ENV_INVALID_SCOPE", f"无效的作用域: {scope}，必须是 process/user/system 之一")
-
-    except Exception as e:
-        logger.error(f"[set_env] 设置环境变量失败: {e}")
-        return build_error("ERR_SYS_ENV_SET", f"设置环境变量失败: {str(e)}")
+    actual_scope, msg = _set_scope(name, effective, scope)
+    return _env_success(name, effective, actual_scope, append_mode=append_mode, msg=msg)
 
 
