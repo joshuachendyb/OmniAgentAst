@@ -168,6 +168,55 @@ def query_sql(
         _close_connection(conn, engine)
 
 
+def _check_sql_safety(sql: str, dry_run: bool) -> Tuple[bool, Optional[str], Optional[List[str]]]:
+    """统一危险模式检测 + 无WHERE检测 + 拦截决策。
+
+    小沈 2026-05-25 重构拆分
+    消除 S1a-c(危险检测) + S2a-c(拦截决策) 的重复分支。
+    返回: (has_danger, warning_message, detected_list)
+    """
+    import re
+    sql_upper = sql.strip().upper()
+
+    DANGEROUS_PATTERN = re.compile(r'\b(DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b', re.IGNORECASE)
+    dangerous_matches = DANGEROUS_PATTERN.findall(sql)
+
+    no_where_pattern = re.compile(r'\b(DELETE|UPDATE)\b.*?(?!.*\bWHERE\b)', re.IGNORECASE | re.DOTALL)
+    if re.match(r'\s*(DELETE|UPDATE)\s', sql_upper) and 'WHERE' not in sql_upper:
+        dangerous_matches.append('NO_WHERE')
+
+    if dangerous_matches:
+        warnings = []
+        dangerous_to_show = [d for d in dangerous_matches if d != 'NO_WHERE']
+        if dangerous_to_show:
+            warnings.append(f"危险操作: {dangerous_to_show}")
+        if 'NO_WHERE' in dangerous_matches:
+            warnings.append("缺少 WHERE 条件")
+        return True, f"警告：检测到危险操作 {'+'.join(warnings)}，已拦截执行。可使用dry_run=true预演", dangerous_matches
+    return False, None, None
+
+
+def _rollback_and_return(conn, error_type: str, error: Exception) -> Dict[str, Any]:
+    """统一回滚连接并返回错误。
+
+    小沈 2026-05-25 重构拆分
+    消除 E1a/E1b 的回滚+错误返回模式重复2次（行279-283 和 290-294）。
+    """
+    if conn:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    logger.error(f"[execute_sql] {error_type}: {error}")
+    return build_error(error_type, str(error), next_actions=_SQL_NEXT_ACTIONS)
+
+
+_SQL_NEXT_ACTIONS = build_next_actions([
+    ("query_sql", "查询 SQL 数据库", "需要重新查询时"),
+    ("tool_help", "查看 execute_sql 用法", "需要帮助时", {"tool_name": "execute_sql"}),
+])
+
+
 def execute_sql(
     sql: str,
     connection_type: Literal["sqlite", "mysql", "postgresql"] = "sqlite",
@@ -176,69 +225,31 @@ def execute_sql(
     dry_run: bool = False,
     timeout: int = 30000,
 ) -> Dict[str, Any]:
-    """
-    执行写操作SQL
-
-    Args:
-        sql: SQL 写操作语句。支持 INSERT/UPDATE/DELETE/DDL
-        connection_type: 数据库类型：sqlite/mysql/postgresql
-        connection_string: MySQL/PostgreSQL 连接字符串
-        db_path: SQLite 数据库文件路径
-        dry_run: 预演模式，仅校验语法不执行
-        timeout: 超时毫秒数，默认30000
-        affected_rows_check: 是否校验影响行数，默认True
-
-    Returns:
-        Dict with code, data, message
-    """
+    """执行写操作SQL - 小沈 2026-05-25 重构拆分"""
     conn = None
     engine = None
-    
+
     try:
-        sql_upper = sql.strip().upper()
-        
-        DANGEROUS_PATTERN = re.compile(r'\b(DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b', re.IGNORECASE)
-        dangerous_matches = DANGEROUS_PATTERN.findall(sql)
-        
-        # 小健 2026-05-19: 检测DELETE/UPDATE无WHERE子句
-        no_where_pattern = re.compile(r'\b(DELETE|UPDATE)\b.*?(?!.*\bWHERE\b)', re.IGNORECASE | re.DOTALL)
-        if re.match(r'\s*(DELETE|UPDATE)\s', sql_upper) and 'WHERE' not in sql_upper:
-            dangerous_matches.append('NO_WHERE')
-        
-        if dangerous_matches and not dry_run:
+        has_danger, warning_msg, dangerous_list = _check_sql_safety(sql, dry_run)
+        if has_danger and not dry_run:
             return build_warning(
                 "WARNING_DB_SAFETY",
-                f"警告：检测到危险操作 {dangerous_matches}，已拦截执行。可使用dry_run=true预演",
-                data={
-                    "detected": dangerous_matches,
-                    "suggestion": "检测到危险操作，建议使用 dry_run=true 先验证"
-                },
-                next_actions=build_next_actions([
-                    ("execute_sql", "dry_run预演", "需要预检SQL时", {"dry_run": True}),
-                    ("query_sql", "查询数据", "需要先查看数据时"),
-                ])
+                warning_msg,
+                data={"detected": dangerous_list, "suggestion": "检测到危险操作，建议使用 dry_run=true 先验证"},
+                next_actions=_SQL_NEXT_ACTIONS
             )
-        
+
         if dry_run:
             return build_success(
-                {
-                    "sql": sql,
-                    "dry_run": True,
-                    "syntax_valid": True
-                },
+                {"sql": sql, "dry_run": True, "syntax_valid": True},
                 "预演模式：语法验证通过，实际未执行",
-                next_actions=build_next_actions([
-                    ("query_sql", "查询验证结果", "需要确认修改结果时"),
-                ])
+                next_actions=_SQL_NEXT_ACTIONS
             )
-        
+
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
-            return build_error("ERR_DB_CONNECTION", conn_error,
-                next_actions=build_next_actions([
-                    ("tool_help", "查看execute_sql参数", "检查连接参数时", {"tool_name": "execute_sql"}),
-                ]))
-        
+            return build_error("ERR_DB_CONNECTION", conn_error, next_actions=_SQL_NEXT_ACTIONS)
+
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
             engine = conn.engine
@@ -249,54 +260,27 @@ def execute_sql(
             cursor = conn.cursor()
             cursor.execute(sql)
             affected_rows = cursor.rowcount
-            
-            # affected_rows_check 已从Schema移除，固定启用>10000行保护
+
             if affected_rows > 10000:
                 conn.rollback()
                 return build_warning(
                     "WARNING_DB_SAFETY",
                     f"警告：影响行数 {affected_rows} > 10000，已自动回滚",
-                    data={
-                        "affected_rows": affected_rows,
-                        "action": "rollback"
-                    }
+                    data={"affected_rows": affected_rows, "action": "rollback"}
                 )
-            
+
             conn.commit()
-        
+
         return build_success(
-            {
-                "affected_rows": affected_rows,
-                "sql": sql
-            },
+            {"affected_rows": affected_rows, "sql": sql},
             f"执行成功，影响行数: {affected_rows}",
-            next_actions=build_next_actions([
-                ("query_sql", "查询验证结果", "需要确认修改结果时"),
-            ])
+            next_actions=_SQL_NEXT_ACTIONS
         )
-        
+
     except sqlite3.Error as e:
-        if conn:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-        return build_error("ERR_SQL_EXEC", f"SQL执行错误: {str(e)}",
-            next_actions=build_next_actions([
-                ("get_db_schema", "查看表结构", "确认字段名是否正确时"),
-                ("tool_help", "查看execute_sql用法", "检查SQL语法时", {"tool_name": "execute_sql"}),
-            ]))
+        return _rollback_and_return(conn, "ERR_SQL_EXEC", e)
     except Exception as e:
-        if conn:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-        return build_error("ERR_EXEC_FAILED", f"执行失败: {str(e)}",
-            next_actions=build_next_actions([
-                ("get_db_schema", "查看表结构", "确认表是否存在时"),
-                ("tool_help", "查看execute_sql用法", "检查参数时", {"tool_name": "execute_sql"}),
-            ]))
+        return _rollback_and_return(conn, "ERR_EXEC_FAILED", e)
     finally:
         _close_connection(conn, engine)
 
