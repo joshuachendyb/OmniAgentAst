@@ -758,224 +758,256 @@ def _parse_thought_only(output: str, thought_match: re.Match) -> Dict[str, Any]:
 
 # =============================================================================
 # 【2026-04-18 小沈新增】纯JSON块提取函数
-# 用于从无```包裹的LLM响应中提取JSON对象
-# 解决兜底函数_extract_by_known_tools错误提取参数的问题
+# 【2026-05-25 小健重构】拆分为骨架+策略链+字段提取，消除SLAP/DRY违反
 # =============================================================================
 
-def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
-    """
-    【P0-必须新增】从纯JSON块（无```包裹）中提取数据
-    
-    处理以下情况：
-    1. 纯JSON：{"tool_name": "xxx", "tool_params": {...}}
-    2. 文本+JSON：some text {"tool_name": "xxx"...}
-    3. JSON中的实际换行符
-    
-    【2026-04-18小沈优化】简化逻辑，移除冗余的状态处理
-    - _extract_json_with_balanced_braces()已包含完整的字符串状态处理
-    - 不需要在调用前再进行一次状态处理
-    
-    Args:
-        content: LLM响应文本
-        
-    Returns:
-        解析后的字典，或None（解析失败）
+def _extract_json_string(content: str) -> Optional[str]:
+    """从文本中提取JSON字符串
+
+    使用场景: _extract_json_block第一步，复用_extract_json_with_balanced_braces
+
+    使用示例:
+        json_str = _extract_json_string(content)
+
+    返回数据说明: 提取的JSON字符串，或None
     """
     if not content:
         return None
-    
     content = content.strip()
-    
-    # 直接使用平衡括号算法提取JSON（已包含字符串状态处理）
     json_str, _ = _extract_json_with_balanced_braces(content)
-    
-    if not json_str:
-        return None
-    
-    json_str_escaped = json_str  # 初始化默认
-    json_str_fixed = json_str    # 初始化默认
-    
-    # 尝试直接解析
+    return json_str if json_str else None
+
+
+def _strategy_direct_parse(json_str: str) -> Optional[Dict[str, Any]]:
+    """策略1: json.loads直接解析"""
     try:
         return json.loads(json_str)
     except json.JSONDecodeError:
-        # 失败原因1: 编码问题 - 尝试用errors='replace'
-        try:
-            json_fixed = json_str.encode('utf-8', errors='replace').decode('utf-8')
-            return json.loads(json_fixed)
-        except:
-            pass
-    
-    # 【修复 2026-05-11 小健】失败原因1.5: value中含未转义双引号/中文引号
-    # LLM常在thought/reasoning里写"穆里奇"这种文本，如果用ASCII双引号则破坏JSON
-    # 尝试：1) 中文引号\u201c\u201d替换为普通字符再parse  2) 去掉中文引号再parse
+        return None
+
+
+def _strategy_encoding_fix(json_str: str) -> Optional[Dict[str, Any]]:
+    """策略2: errors='replace'编码修复
+
+    使用场景: UTF-8编码异常导致json.loads失败时的降级策略
+
+    返回数据说明: 编码修复后解析的dict，或None
+    """
+    try:
+        json_fixed = json_str.encode('utf-8', errors='replace').decode('utf-8')
+        return json.loads(json_fixed)
+    except (json.JSONDecodeError, UnicodeError):
+        return None
+
+
+def _strategy_chinese_quotes(json_str: str) -> Optional[Dict[str, Any]]:
+    """策略3: 中文引号替换
+
+    使用场景: LLM在thought/reasoning中写中文双引号\u201c\u201d破坏JSON
+    从_try_parse_non_standard_json的中文引号逻辑提取(2026-05-25 小健)
+
+    返回数据说明: 中文引号修复后解析的dict，或None
+    """
     for fix_fn in [
-        lambda s: s.replace('\u201c', '\u300c').replace('\u201d', '\u300d'),  # 中文双引号→中文方括号引号
-        lambda s: s.replace('\u201c', '').replace('\u201d', ''),              # 直接去掉中文引号
+        lambda s: s.replace('\u201c', '\u300c').replace('\u201d', '\u300d'),
+        lambda s: s.replace('\u201c', '').replace('\u201d', ''),
     ]:
         try:
             return json.loads(fix_fn(json_str))
         except json.JSONDecodeError:
             pass
-    
-    # 失败原因2: 未转义换行符 - 用空格替换
+    return None
+
+
+def _strategy_newline_fix(json_str: str) -> Optional[Dict[str, Any]]:
+    """策略4: 换行符转空格
+
+    使用场景: JSON value中含未转义换行符导致解析失败
+
+    返回数据说明: 换行符替换后解析的dict，或None
+    """
     try:
-        json_str_escaped = json_str.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
-        return json.loads(json_str_escaped)
+        escaped = json_str.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
+        return json.loads(escaped)
     except json.JSONDecodeError:
-        pass
-    
-    # 失败原因3: 尾随逗号 - 修复后重试
+        return None
+
+
+def _strategy_trailing_comma(json_str: str) -> Optional[Dict[str, Any]]:
+    """策略5: 尾随逗号修复
+
+    使用场景: JSON末尾多余的逗号(如 {"a":1,})导致解析失败
+    从_try_parse_non_standard_json的尾随逗号逻辑提取(2026-05-25 小健)
+
+    返回数据说明: 尾随逗号修复后解析的dict，或None
+    """
     try:
-        json_str_fixed = re.sub(r',(\s*[}\]])', r'\1', json_str_escaped)
-        return json.loads(json_str_fixed)
+        escaped = json_str.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
+        fixed = re.sub(r',(\s*[}\]])', r'\1', escaped)
+        return json.loads(fixed)
     except json.JSONDecodeError:
-        pass
-    
-# 【新增强降级】如果JSON提取成功但解析失败，尝试手动提取tool_params
-    # 这是最后的fallback确保不丢失参数
+        return None
+
+
+ParseStrategy = Optional[Dict[str, Any]]
+
+STRATEGIES = [
+    _strategy_direct_parse,
+    _strategy_encoding_fix,
+    _strategy_chinese_quotes,
+    _strategy_newline_fix,
+    _strategy_trailing_comma,
+]
+
+
+def _try_parse_with_strategies(
+    json_str: str, strategies: list,
+) -> Optional[Dict[str, Any]]:
+    """按策略链顺序尝试解析JSON字符串
+
+    使用场景: _extract_json_block第二步，遍历降级策略直到成功
+
+    使用示例:
+        data = _try_parse_with_strategies(json_str, STRATEGIES)
+
+    返回数据说明: 第一个成功策略返回的dict，或None(全部失败)
+    """
+    for strategy in strategies:
+        result = strategy(json_str)
+        if result is not None:
+            return result
+    return None
+
+
+_FIELD_ALIASES = {
+    "thought": ["thought", "content"],
+    "content": ["content", "thought"],
+}
+
+
+def _try_extract_single_field(
+    json_str: str, field: str, is_nested_object: bool,
+) -> Optional[Any]:
+    """从JSON字符串中提取单个字段的值
+
+    使用场景: _extract_fields_from_json_str内部调用，逐字段提取
+
+    使用示例:
+        value = _try_extract_single_field(json_str, "tool_name", False)
+
+    返回数据说明: 提取的字段值(可能是str/dict)，或None
+    """
+    if is_nested_object:
+        start_pattern = rf'"{field}"\s*:\s*\{{'
+    else:
+        start_pattern = rf'"{field}"\s*:\s*"'
+
+    start_match = re.search(start_pattern, json_str)
+    if not start_match:
+        return None
+
+    json_after, _ = _extract_json_with_balanced_braces(json_str[start_match.start():])
+    if not json_after:
+        return None
+
     try:
-        # 【2026-04-27 小沈修复】使用平衡括号算法替代正则表达式
-        # 问题：正则 `[^}]+` 无法正确匹配嵌套 `}` 的JSON对象，导致 file_pattern 丢失
-        # 修复：使用 _extract_json_with_balanced_braces 正确提取完整的 JSON 对象
-        
-        # 先尝试直接解析整个 json_str
-        try:
-            return json.loads(json_str)
-        except json.JSONDecodeError:
-            pass
-        
-        # 【2026-04-28 小沈修复】使用平衡括号算法正确提取所有字段（包括长文本content）
-        # 问题：正则 `"content":\s*"([^"]*)"` 无法正确匹配含引号/换行的长文本
-        # 修复：使用 _extract_json_with_balanced_braces 提取每个字段的完整值
-        
-        result = {}
-        
-        # 1. 提取 tool_name（使用平衡括号算法）
-        tn_start_pattern = r'"tool_name"\s*:\s*"'
-        tn_start_match = re.search(tn_start_pattern, json_str)
-        if tn_start_match:
-            # 从 tool_name 位置开始提取
-            json_after_tn, _ = _extract_json_with_balanced_braces(json_str[tn_start_match.start():])
-            if json_after_tn:
+        partial = json.loads(json_after)
+        return partial.get(field)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    if is_nested_object:
+        inner_start = json_after.find('{', json_after.find(field))
+        if inner_start != -1:
+            inner_json, _ = _extract_json_with_balanced_braces(json_after[inner_start:])
+            if inner_json:
                 try:
-                    partial_json = json.loads(json_after_tn)
-                    result["tool_name"] = partial_json.get("tool_name", "")
-                except:
-                    # 备用：从文本中提取
-                    tool_name_match = re.search(r'"tool_name":\s*"([^"]+)"', json_str)
-                    if tool_name_match:
-                        result["tool_name"] = tool_name_match.group(1)
-        
-        # 2. 提取 tool_params（使用平衡括号算法）
-        # 【2026-04-28 小沈修复】确保正确提取嵌套的tool_params对象
-        tp_start_pattern = r'"tool_params"\s*:\s*\{'
-        tp_start_match = re.search(tp_start_pattern, json_str)
-        if tp_start_match:
-            # 从 tool_params 位置开始，使用平衡括号算法提取完整对象
-            json_after_tp, _ = _extract_json_with_balanced_braces(json_str[tp_start_match.start():])
-            if json_after_tp:
-                # 尝试直接解析整个提取的JSON（包含 "tool_params": {...}）
-                try:
-                    partial_json = json.loads(json_after_tp)
-                    # 如果解析成功，检查是 {"tool_params": {...}} 还是直接是 {...}
-                    if "tool_params" in partial_json:
-                        tp = partial_json.get("tool_params", {})
-                    else:
-                        # 没有外层tool_params键，可能是直接返回的params对象
-                        tp = partial_json
-                except:
-                    # 如果直接解析失败，尝试提取tool_params内部的内容
-                    try:
-                        # 去掉外层的 "tool_params": 部分，提取内部对象
-                        inner_start = json_after_tp.find('{', json_after_tp.find('tool_params'))
-                        if inner_start != -1:
-                            inner_json, _ = _extract_json_with_balanced_braces(json_after_tp[inner_start:])
-                            if inner_json:
-                                tp = json.loads(inner_json)
-                            else:
-                                tp = {}
-                        else:
-                            tp = {}
-                    except:
-                        # 【2026-04-28 小沈新增】当JSON解析失败时，使用正则提取参数
-                        # 处理content字段包含中文引号的情况
-                        tp = _extract_params_by_regex_from_json_str(json_after_tp)
-            
-            else:
-                tp = {}
-        else:
-            tp = {}
-        
-        # 【2026-04-28 小沈新增】如果tp仍然为空，尝试用正则提取
-        if not tp:
+                    return json.loads(inner_json)
+                except (json.JSONDecodeError, ValueError):
+                    return _extract_params_by_regex_from_json_str(json_after)
+        return None
+
+    if field == "tool_name":
+        m = re.search(r'"tool_name":\s*"([^"]+)"', json_str)
+        return m.group(1) if m else None
+
+    if field in ("content", "thought"):
+        val = _extract_content_value_from_json_str(json_str)
+        if val:
+            return val
+        m = re.search(rf'"{field}"\s*:\s*"(.*?)"\s*,', json_str, re.DOTALL)
+        return m.group(1) if m else None
+
+    if field == "reasoning":
+        m = re.search(r'"reasoning":\s*"([^"]*)"', json_str)
+        return m.group(1) if m else None
+
+    return None
+
+
+def _extract_fields_from_json_str(
+    json_str: str, fields: list,
+) -> Dict[str, Any]:
+    """从JSON字符串中统一提取多个字段
+
+    使用场景: _extract_json_block第三步，策略链全部失败后的字段级fallback
+
+    使用示例:
+        result = _extract_fields_from_json_str(json_str, ["tool_name","tool_params","content","thought","reasoning"])
+
+    返回数据说明: 字段名→值的dict，缺失字段不在结果中
+    """
+    result = {}
+    nested_fields = {"tool_params"}
+
+    for field in fields:
+        aliases = _FIELD_ALIASES.get(field, [field])
+        is_nested = field in nested_fields
+
+        for alias in aliases:
+            value = _try_extract_single_field(json_str, alias, is_nested)
+            if value is not None:
+                if isinstance(value, str):
+                    value = value.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+                result[field] = value
+                if field in ("content", "thought") and alias != field:
+                    cross_field = "thought" if field == "content" else "content"
+                    result[cross_field] = value
+                break
+
+        if field == "tool_params" and "tool_params" not in result:
             tp = _extract_params_by_regex_from_json_str(json_str)
-        
-        if tp:
-            result["tool_params"] = tp
-        
-        # 3. 提取 content（使用平衡括号算法修复长文本截断问题）
-        ct_start_pattern = r'"content"\s*:\s*"'
-        ct_start_match = re.search(ct_start_pattern, json_str)
-        if ct_start_match:
-            # 从 content 位置开始提取，使用平衡括号算法处理引号内的内容
-            json_after_ct, _ = _extract_json_with_balanced_braces(json_str[ct_start_match.start():])
-            if json_after_ct:
-                try:
-                    partial_json = json.loads(json_after_ct)
-                    content_value = partial_json.get("content", "")
-                    content_fixed = content_value.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-                    result["content"] = content_fixed
-                    result["thought"] = content_fixed
-                except:
-                    # 【2026-04-28 小沈修复】如果解析失败，使用平衡引号算法提取content值
-                    # 处理content字段包含中文引号的情况
-                    content_fixed = _extract_content_value_from_json_str(json_str)
-                    if content_fixed:
-                        result["content"] = content_fixed
-                        result["thought"] = content_fixed
-        
-        # 【修复 2026-05-15 小健】LLM可能返回"thought"而非"content"，需独立提取
-        if not result.get("thought"):
-            th_start_pattern = r'"thought"\s*:\s*"'
-            th_start_match = re.search(th_start_pattern, json_str)
-            if th_start_match:
-                json_after_th, _ = _extract_json_with_balanced_braces(json_str[th_start_match.start():])
-                if json_after_th:
-                    try:
-                        partial_json = json.loads(json_after_th)
-                        thought_value = partial_json.get("thought", "")
-                        thought_fixed = thought_value.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-                        result["content"] = thought_fixed
-                        result["thought"] = thought_fixed
-                    except:
-                        # 平衡引号算法提取thought值
-                        th_value_match = re.search(r'"thought"\s*:\s*"(.*?)"\s*,', json_str, re.DOTALL)
-                        if th_value_match:
-                            thought_fixed = th_value_match.group(1).encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-                            result["content"] = thought_fixed
-                            result["thought"] = thought_fixed
-        
-        # 4. 提取 reasoning（使用平衡括号算法）
-        rs_start_pattern = r'"reasoning"\s*:\s*"'
-        rs_start_match = re.search(rs_start_pattern, json_str)
-        if rs_start_match:
-            json_after_rs, _ = _extract_json_with_balanced_braces(json_str[rs_start_match.start():])
-            if json_after_rs:
-                try:
-                    partial_json = json.loads(json_after_rs)
-                    reasoning_value = partial_json.get("reasoning", "")
-                    reasoning_fixed = reasoning_value.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-                    result["reasoning"] = reasoning_fixed
-                except:
-                    reasoning_match = re.search(r'"reasoning":\s*"([^"]*)"', json_str)
-                    if reasoning_match:
-                        reasoning_fixed = reasoning_match.group(1).encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-                        result["reasoning"] = reasoning_fixed
-        
-        # 【修复 2026-05-10 小沈】仅有 tool_name、tool_params 解析失败时仍返回，交由 executor/补充参数兜底
+            if tp:
+                result["tool_params"] = tp
+
+    return result
+
+
+def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
+    """从纯JSON块（无```包裹）中提取数据
+
+    处理以下情况：
+    1. 纯JSON：{"tool_name": "xxx", "tool_params": {...}}
+    2. 文本+JSON：some text {"tool_name": "xxx"...}
+    3. JSON中的实际换行符
+
+    使用场景: LLM响应中提取工具调用或文本回复的JSON
+
+    返回数据说明: 解析后的字典，或None（解析失败）
+    """
+    json_str = _extract_json_string(content)
+    if not json_str:
+        return None
+
+    data = _try_parse_with_strategies(json_str, STRATEGIES)
+    if data:
+        return data
+
+    try:
+        fields = ["tool_name", "tool_params", "content", "thought", "reasoning"]
+        result = _extract_fields_from_json_str(json_str, fields)
         if result.get("tool_name"):
-            if not result.get("tool_params"):
+            if "tool_params" not in result:
                 result["tool_params"] = {}
             logger.info(
                 f"[_extract_json_block] Fallback成功提取: tool_name={result.get('tool_name')}, "
@@ -984,7 +1016,7 @@ def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
             return result
     except Exception as e:
         logger.error(f"[_extract_json_block] Fallback提取失败: {e}")
-    
+
     return None
 
 
@@ -2191,108 +2223,101 @@ def _parse_answer(
 # 步骤1.5：实现_parse_action_input()函数
 # =============================================================================
 
+def _try_parse_chain(input_str: str, parsers) -> Optional[Dict]:
+    """通用链式解析：依次尝试每个解析器，首个成功返回
+
+    小沈 2026-05-25 重构拆分
+    """
+    for parser in parsers:
+        try:
+            result = parser(input_str)
+            if result is not None:
+                return result
+        except Exception:
+            continue
+    return None
+
+
+def _try_markdown_parse(s: str) -> Optional[Dict]:
+    mc = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', s, re.DOTALL | re.IGNORECASE)
+    return json.loads(mc.group(1).strip()) if mc else None
+
+
+def _try_json_parse(s: str) -> Optional[Dict]:
+    return json.loads(s)
+
+
+def _try_balanced_braces(s: str) -> Optional[Dict]:
+    js, _ = _extract_json_with_balanced_braces(s)
+    return json.loads(js) if js else None
+
+
+def _try_single_quotes(s: str) -> Optional[Dict]:
+    return json.loads(s.replace("'", '"'))
+
+
+def _try_kv_parse(s: str) -> Optional[Dict]:
+    return _extract_key_value_pairs(s)
+
+
+_TOOL_NAME_KEYS = [r'"tool_name"', r'"action_tool"', r'"action"']
+_TOOL_PARAMS_KEYS = [r'"tool_params"', r'"params"', r'"action_input"']
+
+
+def _extract_fields_partial(s: str) -> Optional[Dict]:
+    """部分损坏 JSON 的挽救性字段提取
+
+    小沈 2026-05-25 重构拆分
+    """
+    result = {}
+    for pat in _TOOL_NAME_KEYS:
+        m = re.search(rf'{pat}\s*:\s*"([^"]*)"', s)
+        if m:
+            result["tool_name"] = m.group(1)
+            break
+    for pat in _TOOL_PARAMS_KEYS:
+        m = re.search(rf'{pat}\s*:\s*(\{{[^}}]*\}})', s)
+        if m:
+            try:
+                result["tool_params"] = json.loads(m.group(1))
+            except Exception:
+                result["tool_params"] = {}
+            break
+    return result if result else None
+
+
 def _parse_action_input(input_section: str) -> Dict[str, Any]:
     """
     解析Action Input中的JSON参数
-    
+
     实现五级降级策略（原四级+Markdown去除），确保最大限度解析成功
-    
+
+    【小沈重构 2026-05-25】链式解析管道，职责单一，每个解析器独立可测试
+
     Args:
         input_section: Action Input之后的文本内容
-        
+
     Returns:
         解析后的参数字典（失败返回空字典）
-        
-    解析策略依据: LlamaIndex action_input_parser 实现 + 现有代码改进
-    五级降级策略:
-        第0级: Markdown代码块去除（【基于14.0分析修正位置】）
-        第1级: 标准json.loads()解析
-        第2级: 正则提取JSON片段（平衡括号匹配）- 额外改进
-        第3级: 替换单引号为双引号后解析
-        第4级: 截断JSON字段提取 + 正则提取key:value对作为兜底
     """
     if not input_section:
         return {}
-    
-    # 记录原始输入用于错误分析
-    # ==========================================================================
-    # 【基于14.0分析修正】第0级: Markdown代码块去除（在_parse_action_input内处理）
-    # 原建议位置：parse_react_response() 入口 ❌
-    # 修正位置：_parse_action_input() 第0级 ✅
-    # 理由：Markdown只包裹JSON参数部分，应在局部精准处理
-    # 来源：tool_parser.py (行92-106)
-    # ==========================================================================
-    json_str = input_section
-    
-    # 尝试去除Markdown代码块
-    md_match = re.search(
-        r'```(?:json)?\s*\n?(.*?)\n?```',
-        input_section,
-        re.DOTALL | re.IGNORECASE
-    )
-    if md_match:
-        json_str = md_match.group(1).strip()
-    
-    # 第1级: 标准JSON解析
-    try:
-        return json.loads(json_str)
-    except json.JSONDecodeError:
-        pass
-    
-    # 第2级: 正则提取JSON片段（平衡括号匹配算法）- 额外改进
-    # 来源：tool_parser.py _extract_json_with_balanced_braces()
-    try:
-        json_match, _ = _extract_json_with_balanced_braces(json_str)
-        if json_match:
-            return json.loads(json_match)
-    except (json.JSONDecodeError, ValueError):
-        pass
-    
-    # 第3级: 替换单引号为双引号
-    try:
-        # 替换单引号为双引号，但保留字符串内的单引号
-        normalized = json_str.replace("'", '"')
-        return json.loads(normalized)
-    except json.JSONDecodeError:
-        pass
-    
-    # ==========================================================================
-    # 【基于14.0分析新增】第4级增强: 截断JSON字段提取 + key:value兜底
-    # 来源：tool_parser.py (行136-177)
-    # 处理JSON部分损坏的情况，尝试挽救性提取
-    # ==========================================================================
-    parsed_fallback = {}
-    
-    # 尝试提取 tool_name（多种字段名）
-    for field_pattern in [r'"tool_name"', r'"action_tool"', r'"action"']:
-        match = re.search(rf'{field_pattern}\s*:\s*"([^"]*)"', json_str)
-        if match:
-            parsed_fallback["tool_name"] = match.group(1)
-            break
-    
-    # 尝试提取 tool_params（多种字段名）
-    for field_pattern in [r'"tool_params"', r'"params"', r'"action_input"']:
-        match = re.search(rf'{field_pattern}\s*:\s*(\{{[^}}]*\}})', json_str)
-        if match:
-            try:
-                parsed_fallback["tool_params"] = json.loads(match.group(1))
-                break
-            except:
-                parsed_fallback["tool_params"] = {}
-                break
-    
-    # 如果成功提取到任何字段，返回挽救性结果
-    if parsed_fallback:
-        return parsed_fallback
-    
-    # 第5级: 正则提取key:value对（最坏情况兜底）
-    fallback_kv = _extract_key_value_pairs(json_str)
-    if fallback_kv:
-        return fallback_kv
-        
-    # 如果所有级别都失败，返回 None 触发上层的 type="error"
-    logger.error(f"[_parse_action_input] All 5 levels of JSON parsing failed for: {input_section[:100]}...")
-    return None
+
+    PARSERS = [
+        _try_markdown_parse,    # L0: Markdown 去除
+        _try_json_parse,        # L1: 标准 JSON
+        _try_balanced_braces,   # L2: 平衡括号
+        _try_single_quotes,     # L3: 单引号替换
+        _extract_fields_partial, # L4: 字段提取
+        _try_kv_parse,          # L5: KV 兜底
+    ]
+
+    result = _try_parse_chain(input_section, PARSERS)
+    if result is not None:
+        return result
+
+    logger.error(f"[_parse_action_input] All parsers failed for: {input_section[:100]}...")
+    return {}
 
 
 def _extract_json_with_balanced_braces(text: str) -> Tuple[Optional[str], str]:
