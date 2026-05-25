@@ -217,10 +217,13 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
 
 def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] = None, safety_check: bool = True) -> dict:
     """执行JavaScript代码 - 小沈 2026-05-02, 小健 2026-05-19 增加safety_check+UTF-8环境
-    【2026-05-18 小沈】P16幂等性：working_dir不存在时自动创建(makedirs exist_ok=True)"""
+    【2026-05-18 小沈】P16幂等性：working_dir不存在时自动创建(makedirs exist_ok=True)
+    【小沈重构 2026-05-25】25.4节：骨架~35行，安全检查+执行+结果构建3步下沉为独立函数"""
+
+    # 【小沈重构 2026-05-25】25.4节：组件1 - 安全检查
     if not code or not code.strip():
         return build_error("ERR_SHELL_EXEC_EMPTY_CODE", "code不能为空，请提供要执行的JavaScript代码")
-    # 小健 2026-05-19: JavaScript安全检查
+
     if safety_check:
         js_dangerous_patterns = [
             (r'require\s*\(\s*["\']child_process["\']\s*\)', 'require("child_process") - 可能执行系统命令'),
@@ -232,19 +235,20 @@ def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str]
         for pattern, desc in js_dangerous_patterns:
             if re_mod.search(pattern, code):
                 return build_error("ERR_UNSAFE_CODE", f"安全检查: 检测到危险模式 {desc}，如需执行请设置safety_check=False")
-    
+
     if working_dir is not None and not os.path.isdir(working_dir):
         try:
             os.makedirs(working_dir, exist_ok=True)
         except OSError as e:
             return build_error("ERR_SHELL_EXEC_INVALID_DIR", f"工作目录创建失败: {working_dir}, 错误: {e}")
+
+    # 【小沈重构 2026-05-25】25.4节：执行 + 结果构建
     try:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False, encoding='utf-8') as f:
             f.write(code)
             temp_file = f.name
 
         try:
-            # 小健 2026-05-19: 传入UTF-8环境变量(与execute_python一致)
             result = subprocess.run(
                 ['node', temp_file],
                 capture_output=True,
@@ -255,43 +259,7 @@ def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str]
 
             stdout_str = _safe_decode(result.stdout)
             stderr_str = _safe_decode(result.stderr)
-
-            if result.returncode == 0:
-                if stderr_str and stderr_str.strip():
-                    message = "JavaScript代码执行成功（有警告输出）"
-                else:
-                    message = "JavaScript代码执行成功"
-                _llm = format_output_for_llm(stdout_str, stderr_str)  # 小沈-2026-05-15
-                return build_success(
-                    truncate_data_for_frontend({
-                        "stdout": stdout_str,
-                        "stderr": stderr_str,
-                        "returncode": result.returncode
-                    }),
-                    message,
-                    llm_data=_llm,
-                    next_actions=build_next_actions([
-                        ("write_text_file", "将输出结果保存到文件", "需要持久化保存代码输出时"),
-                        ("execute_code", "继续执行后续代码", "需要运行更多JavaScript代码时", {"language": "javascript"}),
-                    ])
-                )
-            else:
-                message = f"JavaScript代码执行失败（退出码{result.returncode}），请检查代码语法"
-                _llm = format_output_for_llm(stdout_str, stderr_str)
-                return build_error(
-                    "ERR_EXEC_FAILED",
-                    message,
-                    data=truncate_data_for_frontend({
-                        "stdout": stdout_str,
-                        "stderr": stderr_str,
-                        "returncode": result.returncode
-                    }),
-                    llm_data=_llm,
-                    next_actions=build_next_actions([
-                        ("execute_code", "修改代码重试", "需要修正代码后重新执行时", {"language": "javascript"}),
-                        ("tool_search", "搜索可用的代码辅助工具", "需要查找其他工具帮助诊断问题时"),
-                    ])
-                )
+            return _build_js_exec_result(stdout_str, stderr_str, result.returncode, timeout)
 
         except subprocess.TimeoutExpired as e:
             _partial_stdout = _safe_decode(e.stdout)
@@ -320,3 +288,33 @@ def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str]
         return build_error("ERR_SHELL_EXEC_NODE_NOT_FOUND", "未找到Node.js环境，请先安装Node.js")
     except Exception as e:
         return build_error("ERR_EXEC_JS", f"JavaScript代码执行失败: {str(e)}")
+
+
+# 【小沈重构 2026-05-25】25.4节：组件2 - 统一构建JS执行结果，消除3处输出处理重复
+def _build_js_exec_result(
+    stdout: str, stderr: str, returncode: int,
+    timeout: int, language: str = "javascript",
+) -> dict:
+    """统一构建 JS 执行结果，输出处理 + LLM 格式化 + 前端截断 - 小沈重构 2026-05-25"""
+    out_data = truncate_data_for_frontend({
+        "stdout": stdout,
+        "stderr": stderr,
+        "returncode": returncode,
+    })
+    llm = format_output_for_llm(out_data["stdout"], out_data["stderr"])
+
+    if returncode == 0:
+        has_warning = bool(out_data["stderr"] and out_data["stderr"].strip())
+        message = f"JavaScript代码执行成功{'（有警告输出）' if has_warning else ''}"
+        next_acts = build_next_actions([
+            ("write_text_file", "将输出结果保存到文件", "需要持久化保存代码输出时"),
+            ("execute_code", "继续执行后续代码", "需要运行更多JavaScript代码时", {"language": language}),
+        ])
+        return build_success(out_data, message, llm_data=llm, next_actions=next_acts)
+    else:
+        message = f"JavaScript代码执行失败（退出码{returncode}），请检查代码语法"
+        next_acts = build_next_actions([
+            ("execute_code", "修改代码重试", "需要修正代码后重新执行时", {"language": language}),
+            ("tool_search", "搜索可用的代码辅助工具", "需要查找其他工具帮助诊断问题时"),
+        ])
+        return build_error("ERR_EXEC_FAILED", message, data=out_data, llm_data=llm, next_actions=next_acts)
