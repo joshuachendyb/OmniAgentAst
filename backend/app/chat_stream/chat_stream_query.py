@@ -10,7 +10,7 @@ Author: 小沈 - 2026-03-22
 
 import json
 import asyncio
-from typing import List, Dict, Optional, Any, Callable, AsyncGenerator
+from typing import List, Dict, Optional, Any, Callable, AsyncGenerator, Tuple
 
 from app.utils.retry_controller import RetryController
 from app.utils.idle_timeout import IdleTimeoutIterator, IdleTimeoutError
@@ -27,6 +27,323 @@ from app.utils.logger import logger
 from app.config import get_config
 
 
+def _build_history(
+    messages: Any,
+) -> List[Dict[str, str]]:
+    """从request.messages构建历史消息列表
+
+    使用场景:
+    - chat_stream_query中构建LLM调用所需的history参数
+    - 所有需要将ChatRequest.messages转为history格式的场景
+
+    使用示例:
+        history = _build_history(request.messages)
+
+    返回数据说明:
+    - 返回List[Dict[str, str]]，每个元素为{"role": ..., "content": ...}
+    - 如果messages只有1条，返回空列表（仅当前消息，无历史）
+
+    Author: 小沈 - 2026-03-22
+    """
+    history: List[Dict[str, str]] = []
+    if len(messages) > 1:
+        for msg in messages[:-1]:
+            history.append({"role": msg.role, "content": msg.content})
+    return history
+
+
+def _init_retry_state(
+    ai_service: Any,
+    max_retries: int = 3,
+) -> Dict[str, Any]:
+    """初始化重试循环所需的状态变量
+
+    使用场景:
+    - chat_stream_query中重试循环前的状态初始化
+    - 需要统一初始化重试控制器、超时时间、保护计数器的场景
+
+    使用示例:
+        state = _init_retry_state(ai_service, max_retries=3)
+        retry_controller = state["retry_controller"]
+
+    返回数据说明:
+    - chat_timeout: float, AI服务超时时间（秒）
+    - max_retries: int, 最大重试次数
+    - retry_controller: RetryController实例
+    - ai_call_successful: bool, 初始为False
+    - last_error: Optional[str], 初始为None
+    - last_error_type: Optional[str], 初始为None
+    - full_content: str, 初始为空
+    - chunk_count: int, 初始为0
+    - max_chunk_count: int, 最大chunk数量(5000)
+    - empty_content_count: int, 连续空content次数(0)
+    - max_empty_content_count: int, 最大连续空content次数(100)
+
+    Author: 小沈 - 2026-03-22
+    """
+    chat_timeout = ai_service.timeout if hasattr(ai_service, 'timeout') and ai_service.timeout else 60
+    return {
+        "chat_timeout": float(chat_timeout),
+        "max_retries": max_retries,
+        "retry_controller": RetryController(max_retries=max_retries),
+        "ai_call_successful": False,
+        "last_error": None,
+        "last_error_type": None,
+        "full_content": "",
+        "chunk_count": 0,
+        "max_chunk_count": 5000,
+        "empty_content_count": 0,
+        "max_empty_content_count": 100,
+    }
+
+
+async def _execute_retry_loop(
+    ai_service: Any,
+    history: List[Dict[str, str]],
+    task_id: str,
+    running_tasks: dict,
+    running_tasks_lock: asyncio.Lock,
+    next_step: Callable[[], int],
+    current_execution_steps: List[Dict],
+    save_execution_steps_to_db: Callable,
+    add_step_and_save: Callable,
+    state: Dict[str, Any],
+    llm_call_count: int,
+    last_is_reasoning: Optional[bool],
+) -> AsyncGenerator[Tuple[str, Optional[Dict[str, Any]]], None]:
+    """执行重试循环，yield (sse_event, step_data) 元组
+
+    使用场景:
+    - chat_stream_query中重试循环的核心逻辑
+    - 需要IdleTimeoutIterator包装流式迭代并自动重试的场景
+
+    使用示例:
+        async for sse_event, step_data in _execute_retry_loop(...):
+            if sse_event:
+                yield sse_event
+
+    返回数据说明:
+    - yield: Tuple[str, Optional[Dict[str, Any]]]
+      - sse_event: SSE格式事件字符串，可直接yield给前端
+      - step_data: 可选的步骤数据，用于DB保存
+    - 循环结束后通过修改state字典传递最终状态
+
+    Author: 小沈 - 2026-03-22
+    """
+    retry_controller = state["retry_controller"]
+    chat_timeout = state["chat_timeout"]
+    max_retries = state["max_retries"]
+
+    for retry_attempt in range(max_retries + 1):
+        if retry_attempt > 0:
+            retry_data = create_incident_data(
+                'retrying',
+                f'请求超时，正在重试 ({retry_attempt}/{max_retries})...',
+                step=next_step()
+            )
+            yield (f"data: {json.dumps(retry_data)}\n\n", None)
+            await add_step_and_save(retry_data, None)
+
+        full_content = ""
+        chunk_count = 0
+        has_received_content = False
+        empty_content_count = 0
+        idle_timeout_stream = None
+
+        try:
+            llm_call_count += 1
+            idle_timeout_stream = IdleTimeoutIterator(
+                ai_service.chat_stream(message="", history=history),
+                timeout_seconds=chat_timeout,
+                name=f"AI-Stream-{retry_attempt + 1}"
+            )
+
+            async for chunk in idle_timeout_stream:
+                chunk_count += 1
+
+                if chunk_count > state["max_chunk_count"]:
+                    logger.warning(f"[AI Call] 超过最大chunk数量 {state['max_chunk_count']}，强制结束")
+                    break
+                if not chunk.content and getattr(chunk, 'is_reasoning', False):
+                    empty_content_count += 1
+                    if empty_content_count > state["max_empty_content_count"]:
+                        logger.warning(f"[AI Call] 连续 {state['max_empty_content_count']} 次无实际内容，强制结束")
+                        break
+                else:
+                    empty_content_count = 0
+
+                async with running_tasks_lock:
+                    if running_tasks.get(task_id, {}).get("cancelled", False):
+                        interrupted_data = create_incident_data(
+                            'interrupted', '任务已被中断', step=next_step()
+                        )
+                        yield (f"data: {json.dumps(interrupted_data)}\n\n", None)
+                        return
+
+                async for pause_event in check_and_yield_if_paused(
+                    task_id, running_tasks, running_tasks_lock, next_step
+                ):
+                    yield (pause_event, None)
+
+                if chunk.stream_error:
+                    state["last_error"] = chunk.stream_error
+                    state["last_error_type"] = getattr(chunk, 'stream_error_type', 'unknown')
+                    logger.warning(f"[AI Call] 流式请求返回错误: {chunk.stream_error}, error_type: {state['last_error_type']}")
+                    logger.error(f"[AI Call] 检测到错误，不重试: {chunk.stream_error}")
+                    state["ai_call_successful"] = False
+                    break
+
+                current_is_reasoning = getattr(chunk, 'is_reasoning', False)
+                if chunk.content:
+                    chunk_step = StepFactory.create_chunk_step(
+                        step=next_step(), content=chunk.content, is_reasoning=current_is_reasoning
+                    )
+                    chunk_data = chunk_step.to_dict()
+                    current_execution_steps.append(chunk_data)
+                    has_received_content = True
+                    full_content += chunk.content
+
+                    if last_is_reasoning != current_is_reasoning:
+                        try:
+                            await save_execution_steps_to_db(current_execution_steps, full_content)
+                        except Exception as e:
+                            logger.error(f"[Save] is_reasoning变化保存失败: {e}", exc_info=True)
+                        last_is_reasoning = current_is_reasoning
+
+                    yield (f"data: {json.dumps(chunk_data)}\n\n", None)
+
+                if chunk.is_done:
+                    break
+
+        except IdleTimeoutError as e:
+            state["last_error"] = str(e)
+            state["last_error_type"] = 'idle_timeout'
+            elapsed = idle_timeout_stream.get_elapsed_time() if idle_timeout_stream else chat_timeout
+            logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时：{elapsed:.1f}秒无内容")
+
+        except Exception as e:
+            state["last_error"] = str(e)
+            state["last_error_type"] = 'network_error'
+            logger.error(f"[AI Call] 第{retry_attempt + 1}次调用异常: {e}")
+
+        if has_received_content:
+            state["ai_call_successful"] = True
+            state["full_content"] = full_content
+            break
+
+        elif state["last_error_type"] == 'idle_timeout':
+            if retry_controller.can_retry():
+                retry_controller.increment_retry()
+                continue
+            else:
+                logger.error(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时，已达最大重试次数{max_retries}")
+                state["ai_call_successful"] = False
+                break
+
+        elif state["last_error_type"] == 'network_error':
+            if retry_controller.can_retry():
+                retry_controller.increment_retry()
+                continue
+            else:
+                logger.error(f"[AI Call] 第{retry_attempt + 1}次调用网络错误，已达最大重试次数{max_retries}")
+                state["ai_call_successful"] = False
+                break
+
+        elif state["last_error"]:
+            logger.error(f"[AI Call] 第{retry_attempt + 1}次调用失败（其他错误）: {state['last_error']}")
+            state["ai_call_successful"] = False
+            break
+
+        else:
+            if has_received_content and full_content.strip():
+                state["ai_call_successful"] = True
+                state["full_content"] = full_content
+                break
+            else:
+                logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用完成但无内容（流结束，模型未返回有效内容）")
+                if retry_controller.can_retry():
+                    retry_controller.increment_retry()
+                    continue
+                else:
+                    error_step_value = next_step()
+                    error_message = "模型未能生成有效回复，请尝试更换问题或稍后重试"
+                    error_response = create_error_response(
+                        error_type="empty_response",
+                        error_message=error_message,
+                        model=ai_service.model,
+                        provider=ai_service.provider,
+                        recoverable=True,
+                        retry_after=3,
+                        step=error_step_value
+                    )
+                    error_step_obj = StepFactory.create_error_step(
+                        step=error_step_value,
+                        error_type='empty_response',
+                        error_message=error_message,
+                        model=ai_service.model,
+                        provider=ai_service.provider,
+                        recoverable=True,
+                        retry_after=3
+                    )
+                    error_step_dict = error_step_obj.to_dict()
+                    yield (error_response, error_step_dict)
+                    await add_step_and_save(error_step_dict, f"错误: {error_message}")
+                    return
+
+
+async def _handle_retry_exhausted(
+    ai_service: Any,
+    state: Dict[str, Any],
+    next_step: Callable[[], int],
+    add_step_and_save: Callable,
+) -> Optional[Tuple[str, Dict[str, Any]]]:
+    """重试耗尽时的错误处理
+
+    使用场景:
+    - chat_stream_query中重试循环结束后的失败处理
+    - ai_call_successful为False时调用
+
+    使用示例:
+        result = await _handle_retry_exhausted(ai_service, state, next_step, add_step_and_save)
+        if result:
+            error_sse, error_dict = result
+            yield error_sse
+
+    返回数据说明:
+    - None: 不需要处理（成功场景）
+    - Tuple: (error_sse_event, error_step_dict)，需要yield给前端并保存DB
+
+    Author: 小沈 - 2026-03-22
+    """
+    if state["ai_call_successful"]:
+        return None
+
+    logger.error(f"[AI Call] 重试失败，ai_call_successful={state['ai_call_successful']}")
+    last_error = state.get("last_error")
+    last_error_type = state.get("last_error_type")
+
+    error_step_value = next_step()
+    error_step_obj = StepFactory.create_error_step(
+        step=error_step_value,
+        error_type=last_error_type or "retry_failed",
+        error_message=last_error or "模型未能生成有效回复，请尝试更换问题或稍后重试",
+        recoverable=True,
+        model=ai_service.model,
+        provider=ai_service.provider,
+        retry_after=3
+    )
+    error_step_dict = error_step_obj.to_dict()
+    error_response = format_sse_event('error', error_step_value, error_step_dict)
+
+    if last_error:
+        logger.error(f"[AI Call] 所有重试失败，最后错误: {last_error}, 类型: {last_error_type}")
+    else:
+        logger.error(f"[AI Call] 所有重试失败，无有效响应（模型返回空内容）")
+
+    await add_step_and_save(error_step_dict, f"错误: {error_step_dict['error_message']}")
+    return (error_response, error_step_dict)
+
+
 async def chat_stream_query(
     request,
     ai_service,
@@ -40,371 +357,49 @@ async def chat_stream_query(
     running_tasks_lock: asyncio.Lock,
     next_step: Callable[[], int],
     display_name: str,
-    session_id: Optional[str],  # 【小沈修复 2026-03-23】添加 session_id 参数
+    session_id: Optional[str],
     save_execution_steps_to_db: Callable,
     add_step_and_save: Callable,
 ) -> AsyncGenerator[str, None]:
-    """
-    流式问答处理函数
-    
-    处理问答类消息的流式响应，无文件操作
+    """流式问答处理函数，处理问答类消息的流式响应（无文件操作）
+
     流程：start → thought → chunk → final
-    
-    参数：
-    - request: ChatRequest 对象
-    - ai_service: AI服务实例
-    - task_id: 任务ID
-    - llm_call_count: LLM调用计数器
-    - current_execution_steps: 执行步骤列表
-    - current_content: 当前累积内容
-    - last_is_reasoning: 上一个is_reasoning状态
-    - last_message: 最后一条用户消息
-    - running_tasks: 运行中的任务字典
-    - running_tasks_lock: 任务锁
-    - next_step: 获取下一个步骤号的函数
-    - display_name: 显示名称
-    - save_execution_steps_to_db: 保存到数据库的函数
-    - add_step_and_save: 添加步骤并保存的函数
-    
+
     Author: 小沈 - 2026-03-22
     """
-    
-    # 检查是否被中断
     async with running_tasks_lock:
         if running_tasks.get(task_id, {}).get("cancelled", False):
-            interrupted_data = create_incident_data(
-                'interrupted', 
-                '任务已被中断', 
-                step=next_step()
-            )
-            # logger.info(f"[Step incident] 发送incident步骤 - incident_type=interrupted, message=任务已被中断")
+            interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
             yield f"data: {json.dumps(interrupted_data)}\n\n"
             return
-    
-    # 构建历史消息
-    history = []
-    if len(request.messages) > 1:
-        for msg in request.messages[:-1]:
-            history.append({"role": msg.role, "content": msg.content})
-    
-    # 统一的空闲超时和重试机制
-    # 空闲超时由 IdleTimeoutIterator 实时检测，重试次数由 RetryController 管理
-    # 使用 AI 服务提供商的超时配置（更准确）
-    chat_timeout = ai_service.timeout if hasattr(ai_service, 'timeout') and ai_service.timeout else 60
-    max_retries = 3  # 默认3次
-    retry_controller = RetryController(max_retries=max_retries)
-    ai_call_successful = False
-    last_error = None
-    last_error_type = None
-    
-    full_content = ""
-    chunk_count = 0
-    # 【小沈修复 2026-03-17】添加保护机制：防止AI一直输出reasoning导致流式不结束
-    max_chunk_count = 5000  # 最大chunk数量
-    empty_content_count = 0  # 连续空content次数
-    max_empty_content_count = 100  # 最大连续空content次数
-    
-    for retry_attempt in range(max_retries + 1):
-        if retry_attempt > 0:
-            # 发送重试提示给前端
-            retry_data = create_incident_data(
-                'retrying', 
-                f'请求超时，正在重试 ({retry_attempt}/{max_retries})...', 
-                step=next_step()
-            )
-            yield f"data: {json.dumps(retry_data)}\n\n"
-            # 保存 retrying 步骤到数据库
-            await add_step_and_save(retry_data, None)
-            # logger.info(f"[Retry] 开始第{retry_attempt + 1}次AI调用（共{max_retries + 1}次）")
-        
-        # 使用流式API，逐token返回
-        full_content = ""
-        chunk_count = 0
-        has_received_content = False  # 本次调用是否收到内容
-        chunk = None  # 初始化
-        idle_timeout_stream = None  # 初始化，用于异常处理中获取空闲时间
-        
-        try:
-            llm_call_count += 1
-            # logger.info(f"[LLM Total Counter] >>> Stream AI called, count: {llm_call_count}")
-            
-            # 【小沈修复】使用 IdleTimeoutIterator 包装流式迭代器，实现实时空闲超时检测
-            # 超时时间从配置读取
-            idle_timeout_stream = IdleTimeoutIterator(
-                ai_service.chat_stream(message="", history=history),
-                timeout_seconds=float(chat_timeout),
-                name=f"AI-Stream-{retry_attempt + 1}"
-            )
-            
-            async for chunk in idle_timeout_stream:
-                # 注意：IdleTimeoutIterator 自动检测空闲超时，收到内容时自动重置计时器
-                # 如果30秒内没有下一个 chunk，会抛出 IdleTimeoutError
-                
-                chunk_count += 1
-                
-                # 【小沈修复 2026-03-17】保护机制：防止AI一直输出reasoning导致流式不结束
-                if chunk_count > max_chunk_count:
-                    logger.warning(f"[AI Call] 超过最大chunk数量 {max_chunk_count}，强制结束")
-                    break
-                if not chunk.content and getattr(chunk, 'is_reasoning', False):
-                    empty_content_count += 1
-                    if empty_content_count > max_empty_content_count:
-                        logger.warning(f"[AI Call] 连续 {max_empty_content_count} 次无实际内容，强制结束")
-                        break
-                else:
-                    empty_content_count = 0
-                
-                # 检查是否被中断
-                async with running_tasks_lock:
-                    if running_tasks.get(task_id, {}).get("cancelled", False):
-                        interrupted_data = create_incident_data(
-                            'interrupted', 
-                            '任务已被中断', 
-                            step=next_step()
-                        )
-                        # logger.info(f"[Step incident] 发送incident步骤 - incident_type=interrupted, message=任务已被中断")
-                        yield f"data: {json.dumps(interrupted_data)}\n\n"
-                        return
-                
-                # 暂停检查：AI流式响应过程中也检查暂停状态
-                async for pause_event in check_and_yield_if_paused(task_id, running_tasks, running_tasks_lock, next_step):
-                    yield pause_event
-                
-                # 检查chunk是否有错误（非空闲超时错误）
-                if chunk.stream_error:
-                    last_error = chunk.stream_error
-                    last_error_type = getattr(chunk, 'stream_error_type', 'unknown')
-                    logger.warning(f"[AI Call] 流式请求返回错误: {chunk.stream_error}, error_type: {last_error_type}")
-                    # 非空闲超时错误，直接报错不重试
-                    logger.error(f"[AI Call] 检测到错误，不重试: {chunk.stream_error}")
-                    ai_call_successful = False
-                    break
-                
-                # 【小沈修复 2026-03-28】只处理有内容的chunk，空chunk不需要保存和发送
-                # 空chunk：LLM在超时重试时确实没返回内容，既不显示也不需要保存
-                current_is_reasoning = getattr(chunk, 'is_reasoning', False)
-                
-                # 只处理有内容的chunk
-                if chunk.content:
-                    # 【改造 2026-04-17 小沈】使用 StepFactory 统一封装 ChunkStep
-                    chunk_step = StepFactory.create_chunk_step(
-                        step=next_step(),
-                        content=chunk.content,
-                        is_reasoning=current_is_reasoning
-                    )
-                    chunk_data = chunk_step.to_dict()
-                    
-                    current_execution_steps.append(chunk_data)
-                    
-                    has_received_content = True
-                    full_content += chunk.content
-                    current_content = full_content  # 累积content
-                    
-                    # 【小沈修复 2026-03-16】is_reasoning变化时保存，确保回答部分完整
-                    if last_is_reasoning != current_is_reasoning:
-                        try:
-                            await save_execution_steps_to_db(current_execution_steps, current_content)
-                        except Exception as e:
-                            logger.error(f"[Save] is_reasoning变化保存失败: {e}", exc_info=True)
-                        last_is_reasoning = current_is_reasoning
-                    
-                    # 发送chunk给前端
-                    yield f"data: {json.dumps(chunk_data)}\n\n"
-                    
-                if chunk.is_done:
-                    break
-            
-        except IdleTimeoutError as e:
-            # 【关键】空闲超时异常 - 由 IdleTimeoutIterator 实时检测
-            last_error = str(e)
-            last_error_type = 'idle_timeout'
-            elapsed = idle_timeout_stream.get_elapsed_time() if idle_timeout_stream else chat_timeout
-            logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时：{elapsed:.1f}秒无内容")
-            # 空闲超时进入后面的重试判断逻辑
-        
-        except Exception as e:
-            last_error = str(e)
-            last_error_type = 'network_error'
-            logger.error(f"[AI Call] 第{retry_attempt + 1}次调用异常: {e}")
-            # 其他异常进入后面的错误判断逻辑
-        
-        # 【小沈-2026-03-14重构】统一的重试判断逻辑
-        # 判断优先级：1.收到内容成功 → 2.空闲超时重试 → 3.网络错误重试 → 4.其他错误失败
-        
-        if has_received_content:
-            # ✅ 已经收到过内容，说明模型在工作
-            ai_call_successful = True
-            # logger.info(f"[AI Call] 第{retry_attempt + 1}次调用成功（已收到内容）")
-            break  # 【关键】成功后立即退出重试循环
-        
-        elif last_error_type == 'idle_timeout':
-            # ⚠️ 空闲超时（无内容）
-            if retry_controller.can_retry():
-                # 还能重试
-                retry_controller.increment_retry()
-                logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时{elapsed:.0f}秒，准备第{retry_controller.get_retry_count() + 1}次重试...")
-                continue
-            else:
-                # 已达最大重试次数
-                logger.error(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时，已达最大重试次数{max_retries}")
-                last_error = f"空闲超时：模型{elapsed:.0f}秒未响应"
-                ai_call_successful = False
-                break
-        
-        elif last_error_type == 'network_error':
-            # ⚠️ 网络错误（连接失败、读取失败等）
-            if retry_controller.can_retry():
-                # 还能重试
-                retry_controller.increment_retry()
-                logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用网络错误，准备第{retry_controller.get_retry_count() + 1}次重试...")
-                continue
-            else:
-                # 已达最大重试次数
-                logger.error(f"[AI Call] 第{retry_attempt + 1}次调用网络错误，已达最大重试次数{max_retries}")
-                ai_call_successful = False
-                break
-        
-        elif last_error:
-            # ❌ 有其他错误（非空闲超时、非网络错误）
-            logger.error(f"[AI Call] 第{retry_attempt + 1}次调用失败（其他错误）: {last_error}")
-            ai_call_successful = False
-            break
-        
-        else:
-            # 【边界情况】流正常结束但无内容（模型思考中或空响应）
-            # 【小沈&小新修复 2026-03-14】检查是否收到内容
-            if has_received_content and full_content.strip():
-                # 收到了有效内容，判断为成功
-                ai_call_successful = True
-                # logger.info(f"[AI Call] 第{retry_attempt + 1}次调用完成，收到内容长度={len(full_content)}")
-                break
-            else:
-                # 【修复】未收到内容，视为错误，发送error步骤
-                logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用完成但无内容（流结束，模型未返回有效内容）")
-                if retry_controller.can_retry():
-                    # 还能重试
-                    retry_controller.increment_retry()
-                    # logger.info(f"[AI Call] 空响应，准备第{retry_controller.get_retry_count() + 1}次重试...")
-                    continue
-                else:
-                    # 已达最大重试次数，发送error步骤
-                    # 【小沈修复 2026-03-23】只调用一次 next_step()，避免 step 多 1
-                    logger.error(f"[AI Call] 空响应重试失败，已达最大重试次数{max_retries}")
-                    error_message = "模型未能生成有效回复，请尝试更换问题或稍后重试"
-                    error_step_value = next_step()
-                    yield create_error_response(
-                        error_type="empty_response",
-                        error_message=error_message,
-                        model=ai_service.model,
-                        provider=ai_service.provider,
-                        recoverable=True,
-                        retry_after=3,
-                        step=error_step_value
-                    )
-                    
-                    # 保存error步骤到数据库
-                    # 【改造 2026-04-17 小沈】使用 StepFactory 统一封装 ErrorStep
-                    error_step_obj = StepFactory.create_error_step(
-                        step=error_step_value,
-                        error_type='empty_response',
-                        error_message=error_message,
-                        model=ai_service.model,
-                        provider=ai_service.provider,
-                        recoverable=True,
-                        retry_after=3
-                    )
-                    error_step_dict = error_step_obj.to_dict()
-                    await add_step_and_save(error_step_dict, f"错误: {error_message}")
-                    return  # 直接返回，不再发送final步骤
-    
-    # 【重试机制】重试循环结束，检查最终结果
-    if not ai_call_successful:
-        logger.error(f"[AI Call] 重试失败，ai_call_successful={ai_call_successful}")
-        
-        # 【改造 2026-04-17 小沈】使用StepFactory统一Step封装
-        # 错误解析逻辑保留，只替换Step创建部分
-        error_step_value = next_step()
-        error_step_obj = StepFactory.create_error_step(
-            step=error_step_value,
-            error_type=last_error_type or "retry_failed",
-            error_message=last_error or "模型未能生成有效回复，请尝试更换问题或稍后重试",
-            recoverable=True,
-            model=ai_service.model,
-            provider=ai_service.provider,
-            retry_after=3
-        )
-        error_step_dict = error_step_obj.to_dict()
-        error_response = format_sse_event('error', error_step_value, error_step_dict)
-        
-        # 记录日志
-        if last_error:
-            logger.error(f"[AI Call] 所有重试失败，最后错误: {last_error}, 类型: {last_error_type}")
-        else:
-            logger.error(f"[AI Call] 所有重试失败，无有效响应（模型返回空内容）")
-        
-        # yield给前端
-        yield error_response
-        
-        # 保存到数据库
-        await add_step_and_save(error_step_dict, f"错误: {error_step_dict['error_message']}")
-        
-        return  # 直接返回，不再发送final步骤
-    
-    # ═══════════════════════════════════════════════════════════════════════════════
-    # 【小沈修复 2026-03-17 问题分析与修复说明】
-    #
-    # 问题：AI消息的execution_steps数据丢失（完整数据112条→数据库只有99条）
-    #
-    # 根因分析：
-    #   1. 后端在流式结束时自动保存完整数据（包含所有steps，112条）
-    #   2. 前端onComplete也调用saveExecutionSteps，传99条覆盖后端数据
-    #   3. 前后端重复保存，后保存的覆盖先保存的
-    #
-    # 修复方案：
-    #   1. 先添加final步骤到current_execution_steps数组
-    #   2. 保存一次到数据库（包含完整steps）
-    #   3. 删除后续的重复保存代码
-    #   4. 前端配合：删除onComplete中的saveExecutionSteps调用
-    #
-    # 数据流：后端生成steps → 后端保存1次 → 前端不再保存
-    # 核心思想：数据由后端生成，后端自己知道完整数据，不需要前端指挥
-    # ═══════════════════════════════════════════════════════════════════════════════
-    
-    # 先添加final步骤到数组，再保存
-    # 【改造 2026-04-17 小沈】使用 StepFactory 统一封装 FinalStep
+
+    history = _build_history(request.messages)
+    state = _init_retry_state(ai_service, max_retries=3)
+
+    async for sse_event, step_data in _execute_retry_loop(
+        ai_service, history, task_id, running_tasks, running_tasks_lock,
+        next_step, current_execution_steps, save_execution_steps_to_db,
+        add_step_and_save, state, llm_call_count, last_is_reasoning,
+    ):
+        if sse_event:
+            yield sse_event
+
+    retry_result = await _handle_retry_exhausted(ai_service, state, next_step, add_step_and_save)
+    if retry_result:
+        error_sse, _ = retry_result
+        yield error_sse
+        return
+
+    full_content = state["full_content"]
     final_step_value = next_step()
-    final_step_obj = StepFactory.create_final_step(
-        step=final_step_value,
-        response=full_content
-    )
+    final_step_obj = StepFactory.create_final_step(step=final_step_value, response=full_content)
     final_step_dict = final_step_obj.to_dict()
-    
-    # 补充数据库需要的额外字段
-    final_step_dict.update({
-        'model': ai_service.model,
-        'provider': ai_service.provider
-    })
-    
+    final_step_dict.update({"model": ai_service.model, "provider": ai_service.provider})
     current_execution_steps.append(final_step_dict)
-    
-    # final前强制保存一次，确保所有steps都写入数据库
-    # logger.info(f"[Step final] 💾 final前强制保存: {len(current_execution_steps)} steps")
-    # 【警告 2026-03-23】此处调用存在参数错位问题：
-    # save_execution_steps_to_db 期望签名：(session_id, execution_steps, content)
-    # 但这里只传了2个参数：(current_execution_steps, full_content)
-    # 导致：session_id=List[Dict], execution_steps=str
-    # 在 chat2.py 调用 chat_stream_query 时，传递的是 wrapped_save_steps 闭包（已绑定session_id）
-    # 所以这里不会执行到，只有直接调用 chat_stream_query 时才有问题
     await save_execution_steps_to_db(current_execution_steps, full_content)
-    
-    # 发送最终结果，【新增】添加provider字段作为兜底
-    content_preview = full_content[:200] + "..." if len(full_content) > 200 else full_content
-    # logger.info(f"[Step final] 🚀 发送final步骤, content长度={len(full_content)}, content预览={content_preview}")
-    # 【小沈修复 2026-03-23】复用 final_step_value，避免 step 多 1
+
     yield create_final_response(
-        content=full_content,
-        model=ai_service.model,
-        provider=ai_service.provider,
-        display_name=display_name,
+        content=full_content, model=ai_service.model,
+        provider=ai_service.provider, display_name=display_name,
         step=final_step_value
     )

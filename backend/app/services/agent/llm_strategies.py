@@ -72,155 +72,74 @@ class TextStrategy(LLMStrategy):
     """
     # P4: 从注册中心动态获取工具名 - 小健 2026-05-02
     from app.services.agent.react_output_parser import _get_all_tool_names
-    
-    async def call(
-        self,
-        llm_client: Callable,
-        messages: List[Dict[str, str]],
-        conversation_history: List[Dict[str, str]],
-        **kwargs
-    ) -> str:
-        """调用 LLM（文本模式）— 429重试由llm_core传输层统一处理"""
-        logger.info(f"[TextStrategy] call() 被调用, model={getattr(llm_client, 'model', '?')}")
-        
-        response = await llm_client(message="", history=messages)
-        
+
+    def _extract_llm_content(self, response: Any) -> tuple:
+        """提取LLM响应的文本内容 + error_info + reasoning。三段式：content→dict→str - 北京老陈 2026-05-25"""
         error_info = None
-        if hasattr(response, 'error') and response.error:
+        if getattr(response, "error", None):
             error_info = response.error
             logger.warning(f"[LLM Response] LLM returned error: {error_info}")
-        
-        if hasattr(response, 'content'):
-            content = response.content
-        elif isinstance(response, dict):
-            content = response.get("content", str(response))
-        else:
+        content = response.content if hasattr(response, "content") and response.content else None
+        if content is None and isinstance(response, dict):
+            content = response.get("content") or str(response)
+        elif content is None:
             content = str(response)
-        # 【2026-05-13 小沈】提取模型的推理内容(reasoning_content/thinking)
-        response_reasoning = getattr(response, 'reasoning', '') or ''
-        
-        logger.info(f"[LLM Response Raw (text)] content长度: {len(content) if isinstance(content, str) else '非字符串'}")
-        logger.info(f"[LLM Response Raw (text)] content类型: {type(content)}")
-        logger.info(f"[LLM Response Raw (text)] content前200字符: {str(content)[:200] if content else '空'}")
-        logger.info(f"[LLM Response Raw (text)] content={content}")
-        
-        # ===== 情况0: 空内容 =====
-        # 【LLM-001 小沈 2026-05-24】空内容/错误返回parse_error而非finish，
-        # 让base_react.py进入重试逻辑，而非当作正常完成
-        if not content:
-            logger.warning("[LLM Response] Warning: LLM returned empty content!")
-            if error_info:
-                error_hint = self._format_error_hint(error_info)
-                logger.warning(f"[LLM Response] Error hint: {error_hint}")
-                return self._make_parse_error(error_hint)
-            _, user_message = get_stream_error_info('empty_response')
-            return self._make_parse_error(user_message)
-        
-        # ===== P1: 使用 parse_react_response（第一层解析）=====
-        # 【多层次解析架构说明】
-        # 每层解析后，根据 type 类型决定处理方式：
-        #   - answer: 直接返回 finish，退出循环
-        #   - implicit: 直接返回 finish，退出循环（base_react.py 会识别并退出）
-        #   - thought_only / parse_error: 继续下一层解析
-        #   - action: 检查 tool_name 和 tool_params 是否都有值
-        #       - 都有值: 直接返回，执行工具
-        #       - 缺失任一: 继续下一层解析
-        #
-        # 解析层级：
-        #   第一层: parse_react_response（JSON预解析 + 四级降级策略）
-        #   第二层: _extract_by_known_tools（从原始文本提取工具名）
-        #   第三层: 兜底返回 finish
-        from app.services.agent.react_output_parser import parse_react_response
-        logger.info(f"[DEBUG] 传给parse前 - content长度: {len(content) if isinstance(content, str) else '非字符串'}, content类型: {type(content)}")
-        try:
-            parsed = parse_react_response(content)
-            parsed_type = parsed.get("type")
-            logger.info(f"[TextStrategy] parse_react_response success: type={parsed_type}")
-            
-            # 【第一层解析结果处理】
-            # answer: 直接返回 finish，退出循环
-            if parsed_type == "answer":
-                logger.info(f"[TextStrategy] type=answer, 直接返回finish")
-                _response = parsed.get("response", "")
-                if not _response or not _response.strip():
-                    _response = parsed.get("content", "")
-                return self._make_result(
-                    content=parsed.get("content", ""),
-                    tool_name="finish",
-                    tool_params={"result": _response},
-                    reasoning=parsed.get("reasoning"),
-                    response=_response
-                )
-            
-            # chunk: 返回chunk类型数据，由ReAct循环判断是否提升为implicit
-            if parsed_type == "chunk":
-                logger.info(f"[TextStrategy] type=chunk, 返回chunk数据等待ReAct循环判断")
-                chunk_data = {
-                    "type": "chunk",
-                    "content": parsed.get("content", ""),
-                    "thought": parsed.get("thought", ""),
-                    "reasoning": parsed.get("reasoning", ""),
-                    "tool_name": None,
-                    "tool_params": None,
-                    "response": parsed.get("content", ""),
-                    "error": None
-                }
-                # 【2026-05-13 小沈】注入模型的推理内容，用于SSE事件传给前端
-                if response_reasoning:
-                    chunk_data["_thinking"] = response_reasoning
-                    chunk_data["is_reasoning"] = True
-                return json.dumps(chunk_data, ensure_ascii=False)
-            
-            # implicit（兼容保留）：直接返回 finish，退出循环
-            if parsed_type == "implicit":
-                logger.info(f"[TextStrategy] type=implicit, 直接返回finish")
-                _response = parsed.get("response", "")
-                if not _response or not _response.strip():
-                    _response = parsed.get("content", "")
-                return self._make_result(
-                    content=parsed.get("content", ""),
-                    tool_name="finish",
-                    tool_params={"result": _response},
-                    reasoning=parsed.get("reasoning"),
-                    response=_response
-                )
-            
-            # thought_only / parse_error: 继续下一层解析
-            # 【说明】这些类型在 base_react.py 中需要继续循环或重试
-            if parsed_type in ("thought_only", "parse_error"):
-                logger.info(f"[TextStrategy] type={parsed_type}, 继续下一层解析")
-            
-            # action: 检查 tool_name 和 tool_params 是否完整
-            # 【完全成功条件】tool_name 有值 且 tool_params 有值 → 直接返回
-            # 【部分成功条件】tool_name 或 tool_params 缺失 → 继续下一层解析
-            if parsed_type == "action":
-                tool_name = parsed.get("tool_name")
-                raw_tool_params = parsed.get("tool_params")
-                # 【修复 2026-05-07 小沈】区分tool_params的两种"空"：
-                #   {} → 合法，无参数工具（如list_allowed_directories），直接返回
-                #   None → 解析失败，没拿到参数，需要fallback
-                tool_params = raw_tool_params if raw_tool_params is not None else {}
-                
-                # 完全成功：tool_name有值 且 tool_params不是None（解析器成功提取了参数信息）
-                if tool_name and raw_tool_params is not None:
-                    logger.info(f"[TextStrategy] type=action, tool_name和tool_params都有值，直接返回")
-                    return self._make_result(
-                        content=parsed.get("content", ""),
-                        tool_name=tool_name,
-                        tool_params=tool_params,
-                        reasoning=parsed.get("reasoning")
-                    )
-                
-                # 部分成功：tool_name 或 tool_params 缺失，继续下一层解析
-                logger.info(f"[TextStrategy] type=action 但 tool_name={tool_name}, tool_params={bool(tool_params)}，继续下一层解析")
-            
-        except ValueError:
-            pass  # parse_react_response 解析失败（异常），继续方案A/B
-        
-        # ===== 方案B: 工具名保底匹配（第二层解析）=====
-        # 【说明】从原始文本 content 中查找已知工具名
-        # 如果找到，返回 tool_name 和简化的 tool_params
-        # 如果没找到，触发兜底错误处理
+        response_reasoning = getattr(response, "reasoning", "") or ""
+        return content, error_info, response_reasoning
+
+    def _handle_answer_response(self, parsed: Dict, reasoning: Optional[str]) -> str:
+        """统一处理answer和implicit的finish结果构造 - 北京老陈 2026-05-25"""
+        _response = parsed.get("response", "")
+        if not _response or not _response.strip():
+            _response = parsed.get("content", "")
+        return self._make_result(
+            content=parsed.get("content", ""),
+            tool_name="finish",
+            tool_params={"result": _response},
+            reasoning=parsed.get("reasoning"),
+            response=_response
+        )
+
+    @staticmethod
+    def _build_chunk_data(parsed: Dict, response_reasoning: Optional[str]) -> str:
+        """构造chunk_data结构体，TextStrategy/JsonStrategy共享 - 北京老陈 2026-05-25"""
+        chunk_data = {
+            "type": "chunk",
+            "content": parsed.get("content", ""),
+            "thought": parsed.get("thought", ""),
+            "reasoning": parsed.get("reasoning", ""),
+            "tool_name": None,
+            "tool_params": None,
+            "response": parsed.get("content", ""),
+            "error": None
+        }
+        if response_reasoning:
+            chunk_data["_thinking"] = response_reasoning
+            chunk_data["is_reasoning"] = True
+        return json.dumps(chunk_data, ensure_ascii=False)
+
+    def _handle_action_response(self, parsed: Dict, reasoning: Optional[str]) -> Optional[str]:
+        """处理action类型。tool_name有效→返回result；缺失→fallthrough返回None - 北京老陈 2026-05-25"""
+        tool_name = parsed.get("tool_name")
+        raw_tool_params = parsed.get("tool_params")
+        tool_params = raw_tool_params if raw_tool_params is not None else {}
+        if tool_name and raw_tool_params is not None:
+            logger.info(f"[TextStrategy] type=action, tool_name和tool_params都有值，直接返回")
+            return self._make_result(
+                content=parsed.get("content", ""),
+                tool_name=tool_name,
+                tool_params=tool_params,
+                reasoning=parsed.get("reasoning")
+            )
+        logger.info(f"[TextStrategy] type=action 但 tool_name={tool_name}, tool_params={bool(tool_params)}，继续下一层解析")
+        return None
+
+    def _resolve_parse_fallback(self, content: str, parsed_type: Optional[str]) -> str:
+        """显式fallthrough链：thought_only/parse_error/ValueError→方案B→方案C兜底 - 北京老陈 2026-05-25"""
+        if parsed_type and parsed_type not in ("thought_only", "parse_error"):
+            logger.info(f"[TextStrategy] parsed_type={parsed_type}无handler，尝试方案B")
+        else:
+            logger.info(f"[TextStrategy] P1跳过(type={parsed_type})，尝试P2工具名保底")
         tool_result = self._extract_by_known_tools(content)
         if tool_result:
             logger.info(f"[TextStrategy] Tool match found: {tool_result['tool_name']}")
@@ -229,18 +148,53 @@ class TextStrategy(LLMStrategy):
                 tool_name=tool_result.get("tool_name", "finish"),
                 tool_params=tool_result.get("tool_params", {})
             )
-        
-        # ===== 所有解析层都失败，兜底返回 parse_error（第三层）=====
-        # 【说明】
-        #   - 第一层 parse_react_response 返回了非 answer/implicit 类型
-        #   - 且 type=action 但 tool_name 或 tool_params 缺失
-        #   - 第二层 _extract_by_known_tools 也没找到工具名
-        #   - 所有解析层都失败，返回 parse_error 让 base_react.py 处理
-        logger.info(f"[TextStrategy] 所有解析层都失败，返回 parse_error")
+        logger.info(f"[TextStrategy] P2工具名保底失败，返回parse_error")
         return self._make_parse_error(
             "无法从 LLM 响应中提取工具调用（tool_name 或 tool_params 缺失）",
             content=content
         )
+
+    async def call(
+        self,
+        llm_client: Callable,
+        messages: List[Dict[str, str]],
+        conversation_history: List[Dict[str, str]],
+        **kwargs
+    ) -> str:
+        """调用 LLM（文本模式）— 429重试由llm_core传输层统一处理 - 北京老陈 2026-05-25 重构"""
+        logger.info(f"[TextStrategy] call() 被调用, model={getattr(llm_client, 'model', '?')}")
+        response = await llm_client(message="", history=messages)
+        content, error_info, response_reasoning = self._extract_llm_content(response)
+        logger.info(f"[LLM Response Raw (text)] len={len(content) if isinstance(content, str) else '非字符串'} type={type(content)} preview={str(content)[:200] if content else '空'}")
+        logger.info(f"[LLM Response Raw (text)] content={content}")
+        if not content:
+            logger.warning("[LLM Response] Warning: LLM returned empty content!")
+            if error_info:
+                error_hint = self._format_error_hint(error_info)
+                logger.warning(f"[LLM Response] Error hint: {error_hint}")
+                return self._make_parse_error(error_hint)
+            _, user_message = get_stream_error_info('empty_response')
+            return self._make_parse_error(user_message)
+        from app.services.agent.react_output_parser import parse_react_response
+        logger.info(f"[DEBUG] 传给parse前 - content长度: {len(content) if isinstance(content, str) else '非字符串'}, content类型: {type(content)}")
+        try:
+            parsed = parse_react_response(content)
+            parsed_type = parsed.get("type")
+            logger.info(f"[TextStrategy] parse_react_response success: type={parsed_type}")
+            handler_map: Dict[str, Callable] = {
+                "answer": lambda: self._handle_answer_response(parsed, response_reasoning),
+                "implicit": lambda: self._handle_answer_response(parsed, response_reasoning),
+                "chunk": lambda: self._build_chunk_data(parsed, response_reasoning),
+                "action": lambda: self._handle_action_response(parsed, response_reasoning),
+            }
+            handler = handler_map.get(parsed_type)
+            if handler:
+                result = handler()
+                if result:
+                    return result
+            return self._resolve_parse_fallback(content, parsed_type)
+        except ValueError:
+            return self._resolve_parse_fallback(content, None)
     
     # ===== 方案A：分级错误信息 =====
     ERROR_HINTS = {
