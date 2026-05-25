@@ -22,7 +22,7 @@ import json
 import csv
 import tempfile
 import logging
-from typing import Dict, Any, List, Union
+from typing import Dict, Any, List, Union, Tuple
 from pathlib import Path
 
 from app.services.tools._response import build_success, build_error
@@ -30,58 +30,92 @@ from app.services.tools._response import build_success, build_error
 logger = logging.getLogger(__name__)
 
 
+def _detect_encoding(path: Path, default: str = "utf-8") -> str:
+    """检测文件编码 — 小健 2026-05-25 重构拆分
+
+    使用场景:
+        _read_json/_read_csv_basic等读取函数复用
+
+    使用示例:
+        encoding = _detect_encoding(Path('test.csv'))
+
+    返回数据说明:
+        - 返回str，检测到的编码
+    """
+    try:
+        with open(path, "rb") as f:
+            raw = f.read(4)
+            if raw.startswith(b'\xef\xbb\xbf'):
+                return "utf-8-sig"
+            elif raw.startswith(b'\xff\xfe') or raw.startswith(b'\xfe\xff'):
+                return "utf-16"
+            else:
+                try:
+                    raw.decode("utf-8")
+                    return "utf-8"
+                except UnicodeDecodeError:
+                    return "gbk"
+    except Exception:
+        return default
+
+
+def _truncate_dict(d: Any, max_depth: int = 10, max_list_len: int = 100, current_depth: int = 0) -> Tuple[Any, bool]:
+    """截断嵌套字典/列表 — 小健 2026-05-25 重构拆分
+
+    使用场景:
+        _read_json中限制返回数据深度
+
+    使用示例:
+        truncated_data, is_truncated = _truncate_dict(data, max_depth=10)
+
+    返回数据说明:
+        - 返回Tuple[Any, bool]，截断后的数据和是否被截断
+    """
+    if current_depth >= max_depth:
+        return {"__truncated__": True, "depth": current_depth}, True
+    if isinstance(d, dict):
+        result = {}
+        any_truncated = False
+        for k, v in d.items():
+            result[k], t = _truncate_dict(v, max_depth, max_list_len, current_depth + 1)
+            any_truncated = any_truncated or t
+        return result, any_truncated
+    elif isinstance(d, list):
+        truncated_list = d[:max_list_len]
+        any_truncated = len(d) > max_list_len
+        result = []
+        for item in truncated_list:
+            r, t = _truncate_dict(item, max_depth, max_list_len, current_depth + 1)
+            result.append(r)
+            any_truncated = any_truncated or t
+        return result, any_truncated
+    return d, False
+
+
 def _read_json(file_path: str, encoding: str = "auto_detect", max_depth: int = 10) -> Dict[str, Any]:
-    """读取JSON文件内容 - 小沈 2026-05-03, 修正 2026-05-05"""
+    """读取JSON文件内容 — 小健 2026-05-25 重构拆分
+
+    使用场景:
+        data_file_format工具读取JSON文件
+
+    使用示例:
+        result = _read_json('test.json', max_depth=5)
+
+    返回数据说明:
+        - 返回Dict，包含解析后的数据和截断状态
+    """
     try:
         path = Path(file_path)
         if not path.exists():
             return build_error("ERR_DOC_READ_JSON", f"文件不存在: {file_path}")
 
-        actual_encoding = "utf-8"
-        if encoding == "auto_detect":
-            try:
-                with open(path, "rb") as f:
-                    raw = f.read(4)
-                    if raw.startswith(b'\xef\xbb\xbf'):
-                        actual_encoding = "utf-8-sig"
-                    elif raw.startswith(b'\xff\xfe') or raw.startswith(b'\xfe\xff'):
-                        actual_encoding = "utf-16"
-                    else:
-                        try:
-                            raw.decode("utf-8")
-                            actual_encoding = "utf-8"
-                        except UnicodeDecodeError:
-                            actual_encoding = "gbk"
-            except Exception:
-                actual_encoding = "utf-8"
-
+        actual_encoding = _detect_encoding(path) if encoding == "auto_detect" else encoding
         with open(path, "r", encoding=actual_encoding) as f:
             data = json.load(f)
 
-        def truncate_dict(d, current_depth=0):
-            if current_depth >= max_depth:
-                return {"__truncated__": True, "depth": current_depth}, True
-            if isinstance(d, dict):
-                result = {}
-                any_truncated = False
-                for k, v in d.items():
-                    result[k], t = truncate_dict(v, current_depth + 1)
-                    any_truncated = any_truncated or t
-                return result, any_truncated
-            elif isinstance(d, list):
-                truncated_list = d[:100]
-                any_truncated = len(d) > 100
-                result = []
-                for item in truncated_list:
-                    r, t = truncate_dict(item, current_depth + 1)
-                    result.append(r)
-                    any_truncated = any_truncated or t
-                return result, any_truncated
-            return d, False
-
         truncated = False
         if max_depth < 50:
-            data, truncated = truncate_dict(data)
+            data, truncated = _truncate_dict(data, max_depth)
 
         return build_success(
             data,
@@ -119,21 +153,23 @@ def _write_json(file_path: str, data: Union[Dict[str, Any], List[Any]], encoding
 
 
 def _read_csv_basic(file_path: str, encoding: str = "auto_detect", delimiter: str = "auto_detect", has_header: bool = True, max_rows: int = 500, skip_blank_lines: bool = True) -> Dict[str, Any]:
-    """读取CSV文件内容（基础版）- 小沈 2026-05-03, 修正 2026-05-05"""
+    """读取CSV文件内容（基础版）- 小健 2026-05-25 重构
+
+    使用场景:
+        data_file_format工具读取CSV文件
+
+    使用示例:
+        result = _read_csv_basic('test.csv', has_header=True)
+
+    返回数据说明:
+        - 返回Dict，包含headers/rows/total_rows
+    """
     try:
         path = Path(file_path)
         if not path.exists():
             return build_error("ERR_READ_CSV_BASIC", f"文件不存在: {file_path}")
 
-        actual_encoding = "utf-8"
-        if encoding == "auto_detect":
-            try:
-                with open(path, "rb") as f:
-                    raw = f.read(10)
-                    raw.decode("utf-8")
-                actual_encoding = "utf-8"
-            except Exception:
-                actual_encoding = "gbk"
+        actual_encoding = _detect_encoding(path) if encoding == "auto_detect" else encoding
 
         actual_delimiter = ","
         if delimiter == "auto_detect":

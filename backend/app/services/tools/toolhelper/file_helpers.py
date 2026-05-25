@@ -1116,62 +1116,122 @@ def _scan_stats_directory(
     return collector
 
 
+def _format_stats_json(stats: Dict[str, Any]) -> Dict[str, Any]:
+    """格式化统计结果为JSON — 小健 2026-05-25
+
+    使用场景:
+        _format_stats_output中生成JSON格式输出
+
+    使用示例:
+        result = _format_stats_json(stats)
+
+    返回数据说明:
+        - 返回Dict，包含output字段（JSON字符串）
+    """
+    stats["output"] = json.dumps(stats, indent=2, ensure_ascii=False)
+    return stats
+
+
+def _format_stats_csv(stats: Dict[str, Any]) -> Dict[str, Any]:
+    """格式化统计结果为CSV — 小健 2026-05-25
+
+    使用场景:
+        _format_stats_output中生成CSV格式输出
+
+    使用示例:
+        result = _format_stats_csv(stats)
+
+    返回数据说明:
+        - 返回Dict，包含output字段（CSV字符串）
+    """
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["统计项", "值"])
+    writer.writerow(["目录", stats["directory"]])
+    writer.writerow(["总文件数", stats["total_files"]])
+    writer.writerow(["总目录数", stats["total_directories"]])
+    writer.writerow(["总大小(字节)", stats["total_size"]])
+    writer.writerow(["平均文件大小(字节)", stats["average_file_size"]])
+    writer.writerow(["扫描时间(秒)", stats["scan_time"]])
+    writer.writerow([])
+    writer.writerow(["文件类型分布"])
+    writer.writerow(["文件类型", "数量"])
+    for ext, count in stats["file_types"].items():
+        writer.writerow([ext, count])
+    writer.writerow([])
+    writer.writerow(["大小分布"])
+    writer.writerow(["大小范围", "数量"])
+    for size_range, count in stats["size_distribution"].items():
+        writer.writerow([size_range, count])
+    writer.writerow([])
+    writer.writerow(["修改时间分布"])
+    writer.writerow(["时间范围", "数量"])
+    for time_range, count in stats["modification_time_distribution"].items():
+        writer.writerow([time_range, count])
+    stats["output"] = output.getvalue()
+    return stats
+
+
+def _format_stats_text(stats: Dict[str, Any]) -> Dict[str, Any]:
+    """格式化统计结果为文本 — 小健 2026-05-25
+
+    使用场景:
+        _format_stats_output中生成文本格式输出
+
+    使用示例:
+        result = _format_stats_text(stats)
+
+    返回数据说明:
+        - 返回Dict，包含output字段（文本字符串）
+    """
+    lines = [
+        f"目录统计: {stats['directory']}",
+        f"总文件数: {stats['total_files']}",
+        f"总目录数: {stats['total_directories']}",
+        f"总大小: {stats['total_size']:,} 字节",
+        f"平均文件大小: {stats['average_file_size']:,.2f} 字节",
+        f"扫描时间: {stats['scan_time']:.2f} 秒",
+        "",
+        "文件类型分布:",
+    ]
+    for ext, count in stats["file_types"].items():
+        lines.append(f"  {ext}: {count}")
+    lines.append("")
+    lines.append("大小分布:")
+    for size_range, count in stats["size_distribution"].items():
+        lines.append(f"  {size_range}: {count}")
+    lines.append("")
+    lines.append("修改时间分布:")
+    for time_range, count in stats["modification_time_distribution"].items():
+        lines.append(f"  {time_range}: {count}")
+    lines.append("")
+    lines.append("深度分布:")
+    for depth, count in sorted(stats["depth_distribution"].items()):
+        lines.append(f"  {depth}: {count}")
+    stats["output"] = "\n".join(lines)
+    return stats
+
+
 def _format_stats_output(stats: Dict[str, Any], output_format: str) -> Dict[str, Any]:
-    """根据格式(json/csv/text)添加output字段 - 小健 2026-05-25"""
-    if output_format == "json":
-        stats["output"] = json.dumps(stats, indent=2, ensure_ascii=False)
-    elif output_format == "csv":
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(["统计项", "值"])
-        writer.writerow(["目录", stats["directory"]])
-        writer.writerow(["总文件数", stats["total_files"]])
-        writer.writerow(["总目录数", stats["total_directories"]])
-        writer.writerow(["总大小(字节)", stats["total_size"]])
-        writer.writerow(["平均文件大小(字节)", stats["average_file_size"]])
-        writer.writerow(["扫描时间(秒)", stats["scan_time"]])
-        writer.writerow([])
-        writer.writerow(["文件类型分布"])
-        writer.writerow(["文件类型", "数量"])
-        for ext, count in stats["file_types"].items():
-            writer.writerow([ext, count])
-        writer.writerow([])
-        writer.writerow(["大小分布"])
-        writer.writerow(["大小范围", "数量"])
-        for size_range, count in stats["size_distribution"].items():
-            writer.writerow([size_range, count])
-        writer.writerow([])
-        writer.writerow(["修改时间分布"])
-        writer.writerow(["时间范围", "数量"])
-        for time_range, count in stats["modification_time_distribution"].items():
-            writer.writerow([time_range, count])
-        stats["output"] = output.getvalue()
-    elif output_format == "text":
-        lines = [
-            f"目录统计: {stats['directory']}",
-            f"总文件数: {stats['total_files']}",
-            f"总目录数: {stats['total_directories']}",
-            f"总大小: {stats['total_size']:,} 字节",
-            f"平均文件大小: {stats['average_file_size']:,.2f} 字节",
-            f"扫描时间: {stats['scan_time']:.2f} 秒",
-            "",
-            "文件类型分布:",
-        ]
-        for ext, count in stats["file_types"].items():
-            lines.append(f"  {ext}: {count}")
-        lines.append("")
-        lines.append("大小分布:")
-        for size_range, count in stats["size_distribution"].items():
-            lines.append(f"  {size_range}: {count}")
-        lines.append("")
-        lines.append("修改时间分布:")
-        for time_range, count in stats["modification_time_distribution"].items():
-            lines.append(f"  {time_range}: {count}")
-        lines.append("")
-        lines.append("深度分布:")
-        for depth, count in sorted(stats["depth_distribution"].items()):
-            lines.append(f"  {depth}: {count}")
-        stats["output"] = "\n".join(lines)
+    """根据格式(json/csv/text)添加output字段 — 小健 2026-05-25 重构拆分
+
+    使用场景:
+        file_statistics_impl中格式化输出
+
+    使用示例:
+        result = _format_stats_output(stats, "csv")
+
+    返回数据说明:
+        - 返回Dict，包含格式化后的output字段
+    """
+    formatters = {
+        "json": _format_stats_json,
+        "csv": _format_stats_csv,
+        "text": _format_stats_text,
+    }
+    formatter = formatters.get(output_format)
+    if formatter:
+        return formatter(stats)
     return stats
 
 
@@ -1537,65 +1597,74 @@ async def file_statistics_impl(
         return {"code": "ERR_STATISTICS_FAILED", "data": None, "message": f"文件统计失败: {str(e)}"}
 
 
+def _parse_date_filter(date_value: Any) -> Optional[float]:
+    """解析日期过滤器值 — 小健 2026-05-25 重构拆分
+
+    使用场景:
+        _apply_filters中解析modified_after/modified_before
+
+    使用示例:
+        timestamp = _parse_date_filter("2024-01-01")
+
+    返回数据说明:
+        - 返回Optional[float]，解析失败返回None
+    """
+    if isinstance(date_value, (int, float)):
+        return date_value
+    elif isinstance(date_value, str):
+        try:
+            from datetime import datetime
+            dt = datetime.fromisoformat(date_value.replace('Z', '+00:00'))
+            return dt.timestamp()
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
 def _apply_filters(path: Path, filters: Optional[Dict[str, Any]]) -> bool:
     """
-    应用过滤条件 - 小沈 2026-05-18 从file_statistics.py迁移
-    
-    Args:
-        path: 文件路径
-        filters: 过滤条件字典
-    
-    Returns:
-        是否通过过滤
+    应用过滤条件 - 小沈 2026-05-18 从file_statistics.py迁移，小健 2026-05-25 重构
+
+    使用场景:
+        file_statistics/_walk_with_timeout中过滤文件
+
+    使用示例:
+        if _apply_filters(file_path, {"min_size": 1024}):
+            process(file_path)
+
+    返回数据说明:
+        - 返回bool，是否通过过滤
     """
     if not filters:
         return True
-    
+
     if "file_type" in filters:
         file_type = filters["file_type"]
         if not path.suffix.lower().endswith(file_type.lower()):
             return False
-    
+
     if path.is_file():
         try:
             stat = path.stat()
-            
+
             if "min_size" in filters and stat.st_size < filters["min_size"]:
                 return False
             if "max_size" in filters and stat.st_size > filters["max_size"]:
                 return False
-            
+
             if "modified_after" in filters:
-                modified_after = filters["modified_after"]
-                if isinstance(modified_after, (int, float)):
-                    if stat.st_mtime < modified_after:
-                        return False
-                elif isinstance(modified_after, str):
-                    try:
-                        from datetime import datetime
-                        dt = datetime.fromisoformat(modified_after.replace('Z', '+00:00'))
-                        if stat.st_mtime < dt.timestamp():
-                            return False
-                    except (ValueError, TypeError):
-                        pass
-            
+                modified_after = _parse_date_filter(filters["modified_after"])
+                if modified_after is not None and stat.st_mtime < modified_after:
+                    return False
+
             if "modified_before" in filters:
-                modified_before = filters["modified_before"]
-                if isinstance(modified_before, (int, float)):
-                    if stat.st_mtime > modified_before:
-                        return False
-                elif isinstance(modified_before, str):
-                    try:
-                        from datetime import datetime
-                        dt = datetime.fromisoformat(modified_before.replace('Z', '+00:00'))
-                        if stat.st_mtime > dt.timestamp():
-                            return False
-                    except (ValueError, TypeError):
-                        pass
-        
+                modified_before = _parse_date_filter(filters["modified_before"])
+                if modified_before is not None and stat.st_mtime > modified_before:
+                    return False
+
         except (OSError, PermissionError):
             return False
-    
+
     return True
 
 

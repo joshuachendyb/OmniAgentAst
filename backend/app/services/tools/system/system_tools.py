@@ -906,13 +906,15 @@ def _query_sc_service_state(service_name: str) -> str:
 
 
 def _wait_sc_service_state(service_name: str, target: str, timeout: int) -> str:
-    """轮询等待 Windows 服务达到目标状态，返回最终状态 — 小沈 2026-05-25"""
+    """轮询等待 Windows 服务达到目标状态，返回最终状态 — 小健 2026-05-25 重构修复other状态"""
     import time
     deadline = time.time() + timeout
     while time.time() < deadline:
         time.sleep(1)
         state = _query_sc_service_state(service_name)
         if state == target:
+            return state
+        if state == "other":
             return state
     return _query_sc_service_state(service_name)
 
@@ -1256,15 +1258,14 @@ def _build_schtasks_create_cmd(
                 sc_type = "monthly"
                 sc_extra = ["/d", day_num]
 
-    cmd.extend(["/sc", sc_type, "/st", time_part])
-    cmd.extend(sc_extra)
-
-    if description:
-        cmd.extend(["/d", description])
-    if user:
-        cmd.extend(["/ru", user])
     if start_time:
         cmd.extend(["/st", start_time])
+    else:
+        cmd.extend(["/st", time_part])
+    if description:
+        cmd.extend(["/tn", description])
+    if user:
+        cmd.extend(["/ru", user])
     if start_date:
         cmd.extend(["/sd", start_date])
     if interval and interval > 0:
