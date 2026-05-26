@@ -72,6 +72,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Tuple, List, Generator, Callable
 import logging
 from app.services.tools.toolhelper.hash_helper import select_hasher
+from app.services.tools._response import build_success, build_error
 
 logger = logging.getLogger(__name__)
 
@@ -167,27 +168,29 @@ def extract_archive(
     """
     try:
         if not os.path.exists(archive_path):
-            return {"success": False, "error": f"压缩文件不存在: {archive_path}"}
+            return build_error("ERR_FILE_EXTRACT", f"压缩文件不存在: {archive_path}")
         out_dir = _resolve_output_dir(archive_path, output_dir)
         os.makedirs(out_dir, exist_ok=True)
         lower_path = archive_path.lower()
 
         if lower_path.endswith('.zip'):
-            return _extract_zip_archive(archive_path, out_dir, overwrite, password)
-        if lower_path.endswith('.tar.gz') or lower_path.endswith('.tgz'):
-            return _extract_tar_archive(archive_path, out_dir, overwrite, preserve_permissions, 'r:gz', 'tar.gz')
-        if lower_path.endswith('.tar.bz2') or lower_path.endswith('.tbz2'):
-            return _extract_tar_archive(archive_path, out_dir, overwrite, preserve_permissions, 'r:bz2', 'tar.bz2')
-        if lower_path.endswith('.tar'):
-            return _extract_tar_archive(archive_path, out_dir, overwrite, preserve_permissions, 'r', 'tar')
-        return {"success": False, "error": f"不支持的压缩格式: {archive_path}"}
+            result = _extract_zip_archive(archive_path, out_dir, overwrite, password)
+        elif lower_path.endswith('.tar.gz') or lower_path.endswith('.tgz'):
+            result = _extract_tar_archive(archive_path, out_dir, overwrite, preserve_permissions, 'r:gz', 'tar.gz')
+        elif lower_path.endswith('.tar.bz2') or lower_path.endswith('.tbz2'):
+            result = _extract_tar_archive(archive_path, out_dir, overwrite, preserve_permissions, 'r:bz2', 'tar.bz2')
+        elif lower_path.endswith('.tar'):
+            result = _extract_tar_archive(archive_path, out_dir, overwrite, preserve_permissions, 'r', 'tar')
+        else:
+            return build_error("ERR_FILE_EXTRACT", f"不支持的压缩格式: {archive_path}")
+        return build_success(result, f"解压成功: {archive_path}")
     except zipfile.BadZipFile:
-        return {"success": False, "error": "无效的ZIP文件或密码错误"}
+        return build_error("ERR_FILE_EXTRACT", "无效的ZIP文件或密码错误")
     except tarfile.TarError as e:
-        return {"success": False, "error": f"TAR文件错误: {str(e)}"}
+        return build_error("ERR_FILE_EXTRACT", f"TAR文件错误: {str(e)}")
     except Exception as e:
         logger.error(f"[extract_archive] 解压失败: {e}")
-        return {"success": False, "error": str(e)}
+        return build_error("ERR_FILE_EXTRACT", str(e))
 
 
 def get_file_hash(
@@ -201,39 +204,38 @@ def get_file_hash(
     """
     try:
         file_path = os.path.abspath(file_path)
-        
+
         if not os.path.exists(file_path):
-            return {"success": False, "error": f"文件不存在: {file_path}"}
-        
+            return build_error("ERR_FILE_HASH", f"文件不存在: {file_path}")
+
         if not os.path.isfile(file_path):
-            return {"success": False, "error": f"不是文件: {file_path}"}
-        
+            return build_error("ERR_FILE_HASH", f"不是文件: {file_path}")
+
         try:
             hasher = select_hasher(algorithm)
         except ValueError:
-            return {"success": False, "error": f"不支持的算法: {algorithm}"}
-        
+            return build_error("ERR_FILE_HASH", f"不支持的算法: {algorithm}")
+
         chunk_size = 65536
         file_size = os.path.getsize(file_path)
-        
+
         with open(file_path, 'rb') as f:
             while True:
                 chunk = f.read(chunk_size)
                 if not chunk:
                     break
                 hasher.update(chunk)
-        
-        return {
-            "success": True,
+
+        return build_success({
             "file_path": file_path,
             "algorithm": algorithm,
             "hash": hasher.hexdigest(),
             "file_size": file_size
-        }
-    
+        }, "哈希计算成功")
+
     except Exception as e:
         logger.error(f"[get_file_hash] 计算哈希失败: {e}")
-        return {"success": False, "error": str(e)}
+        return build_error("ERR_FILE_HASH", str(e))
 
 
 def ensure_directory_exists(dir_path: str) -> Dict[str, Any]:
@@ -312,36 +314,35 @@ def get_file_encoding(file_path: str) -> Dict[str, Any]:
     """
     try:
         file_path = os.path.abspath(file_path)
-        
         if not os.path.exists(file_path):
-            return {"success": False, "error": f"文件不存在: {file_path}"}
-        
+            return build_error("ERR_FILE_ENCODING", f"文件不存在: {file_path}")
+
         common_encodings = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'big5', 'utf-16', 'utf-16-le', 'utf-16-be', 'latin-1']
-        
+
         with open(file_path, 'rb') as f:
             raw_data = f.read(10000)
-        
+
         if raw_data.startswith(b'\xef\xbb\xbf'):
-            return {"success": True, "file_path": file_path, "encoding": "utf-8-sig", "confidence": 1.0}
-        
+            return build_success({"file_path": file_path, "encoding": "utf-8-sig", "confidence": 1.0}, "编码检测完成")
+
         if raw_data.startswith(b'\xff\xfe'):
-            return {"success": True, "file_path": file_path, "encoding": "utf-16-le", "confidence": 1.0}
-        
+            return build_success({"file_path": file_path, "encoding": "utf-16-le", "confidence": 1.0}, "编码检测完成")
+
         if raw_data.startswith(b'\xfe\xff'):
-            return {"success": True, "file_path": file_path, "encoding": "utf-16-be", "confidence": 1.0}
-        
+            return build_success({"file_path": file_path, "encoding": "utf-16-be", "confidence": 1.0}, "编码检测完成")
+
         for encoding in common_encodings:
             try:
                 raw_data.decode(encoding)
-                return {"success": True, "file_path": file_path, "encoding": encoding, "confidence": 0.9}
+                return build_success({"file_path": file_path, "encoding": encoding, "confidence": 0.9}, "编码检测完成")
             except UnicodeDecodeError:
                 continue
-        
-        return {"success": True, "file_path": file_path, "encoding": "utf-8", "confidence": 0.5}
-    
+
+        return build_success({"file_path": file_path, "encoding": "utf-8", "confidence": 0.5}, "编码检测完成(低置信度)")
+
     except Exception as e:
         logger.error(f"[get_file_encoding] 检测编码失败: {e}")
-        return {"success": False, "error": str(e)}
+        return build_error("ERR_FILE_ENCODING", str(e))
 
 
 def get_mime_type(file_path: str) -> Dict[str, Any]:
@@ -401,35 +402,31 @@ def backup_file(
     """
     try:
         file_path = os.path.abspath(file_path)
-        
         if not os.path.exists(file_path):
-            return {"success": False, "error": f"文件不存在: {file_path}"}
-        
+            return build_error("ERR_FILE_BACKUP", f"文件不存在: {file_path}")
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
         file_name = os.path.basename(file_path)
         backup_name = f"{file_name}{suffix}_{timestamp}"
-        
+
         if backup_dir is None:
             backup_dir = os.path.dirname(file_path)
         else:
             backup_dir = os.path.abspath(backup_dir)
             os.makedirs(backup_dir, exist_ok=True)
-        
+
         backup_path = os.path.join(backup_dir, backup_name)
-        
         shutil.copy2(file_path, backup_path)
-        
-        return {
-            "success": True,
+
+        return build_success({
             "original_path": file_path,
             "backup_path": backup_path,
             "backup_size": os.path.getsize(backup_path)
-        }
-    
+        }, f"备份成功: {backup_path}")
+
     except Exception as e:
         logger.error(f"[backup_file] 备份失败: {e}")
-        return {"success": False, "error": str(e)}
+        return build_error("ERR_FILE_BACKUP", str(e))
 
 
 def move_to_trash(file_path: str) -> Dict[str, Any]:
@@ -571,12 +568,12 @@ def get_file_metadata(file_path: str, follow_symlinks: bool = True) -> Dict[str,
     try:
         file_path = os.path.abspath(file_path)
         path = Path(file_path)
-        
+
         if not path.exists():
-            return {"success": False, "error": f"文件不存在: {file_path}"}
-        
+            return build_error("ERR_FILE_METADATA", f"文件不存在: {file_path}")
+
         stat = path.stat(follow_symlinks=follow_symlinks)
-        
+
         metadata = {
             "path": str(path.absolute()),
             "name": path.name,
@@ -589,7 +586,7 @@ def get_file_metadata(file_path: str, follow_symlinks: bool = True) -> Dict[str,
             "is_writable": os.access(path, os.W_OK),
             "is_executable": os.access(path, os.X_OK),
         }
-        
+
         if not follow_symlinks and path.is_symlink():
             metadata["is_symlink"] = True
             try:
@@ -598,7 +595,7 @@ def get_file_metadata(file_path: str, follow_symlinks: bool = True) -> Dict[str,
                 metadata["symlink_target"] = None
         else:
             metadata["is_symlink"] = path.is_symlink()
-        
+
         if path.is_file():
             metadata["extension"] = path.suffix
             metadata["parent_directory"] = str(path.parent)
@@ -616,12 +613,12 @@ def get_file_metadata(file_path: str, follow_symlinks: bool = True) -> Dict[str,
             except (OSError, PermissionError):
                 metadata["file_count"] = None
                 metadata["dir_count"] = None
-        
-        return {"success": True, "metadata": metadata}
-    
+
+        return build_success({"metadata": metadata}, "元数据获取成功")
+
     except Exception as e:
         logger.error(f"[get_file_metadata] 获取元数据失败: {e}")
-        return {"success": False, "error": str(e)}
+        return build_error("ERR_FILE_METADATA", str(e))
 
 
 def calculate_distribution(
@@ -1823,9 +1820,9 @@ async def get_file_info_impl(
         
         def _get_info_sync():
             meta_result = get_file_metadata(file_path, follow_symlinks)
-            if not meta_result.get("success"):
-                raise RuntimeError(meta_result.get("error", "获取文件元数据失败"))
-            info = meta_result["metadata"]
+            if meta_result.get("code") != "SUCCESS":
+                raise RuntimeError(meta_result.get("message", "获取文件元数据失败"))
+            info = meta_result["data"]["metadata"]
             
             if path.is_dir():
                 try:

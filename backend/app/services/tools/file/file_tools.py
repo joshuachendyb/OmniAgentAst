@@ -873,8 +873,8 @@ class FileTools:
             else:
                 auto = get_file_encoding(str(path))
                 encodings_to_try = []
-                if auto and auto.get("encoding"):
-                    encodings_to_try.append(auto["encoding"])
+                if auto and auto.get("data", {}).get("encoding"):
+                    encodings_to_try.append(auto["data"]["encoding"])
             encodings_to_try.extend(["utf-8", "gbk", "gb2312", "utf-8-sig"])
             
             do_detect = preferred is None
@@ -1036,7 +1036,7 @@ class FileTools:
         try:
             from app.services.tools.toolhelper.file_helpers import get_file_encoding
             result = get_file_encoding(file_path)
-            return result.get("encoding", "utf-8")
+            return result.get("data", {}).get("encoding", "utf-8")
         except Exception:
             return "utf-8"
     
@@ -1559,21 +1559,13 @@ class FileTools:
     ) -> Dict[str, Any]:
         """解压压缩文件"""
         from app.services.tools.toolhelper.file_helpers import extract_archive as _extract_archive
-        from app.services.tools._response import build_success, build_error
-
-        result = _extract_archive(
+        return _extract_archive(
             archive_path=archive_path,
             output_dir=output_dir,
             overwrite=overwrite,
             password=password,
             preserve_permissions=preserve_permissions,
         )
-        # 兼容旧格式 {success, error} → 新格式 {code, data, message}
-        if "code" in result:
-            return result
-        if result.get("success"):
-            return build_success(result.get("data", result.get("file_path", "")), result.get("error", "解压成功"))
-        return build_error("ERR_FILE_EXTRACT", result.get("error", "解压失败"))
 
     async def _get_file_hash(
         self,
@@ -1584,24 +1576,10 @@ class FileTools:
     ) -> Dict[str, Any]:
         """计算文件哈希值"""
         from app.services.tools.toolhelper.file_helpers import get_file_hash as _get_file_hash
-        from app.services.tools._response import build_success, build_error
-
-        result = _get_file_hash(
+        return _get_file_hash(
             file_path=file_path,
             algorithm=algorithm,
         )
-        # 兼容旧格式 {success, error} → 新格式 {code, data, message}
-        if result.get("success"):
-            return build_success(
-                data={
-                    "file_path": result.get("file_path", file_path),
-                    "algorithm": result.get("algorithm", algorithm),
-                    "hash": result.get("hash", ""),
-                    "file_size": result.get("file_size", 0),
-                },
-                message=result.get("error", "哈希计算成功"),
-            )
-        return build_error("ERR_FILE_HASH", result.get("error", "哈希计算失败"))
 
     async def _file_statistics(
         self,
