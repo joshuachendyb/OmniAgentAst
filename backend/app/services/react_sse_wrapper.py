@@ -496,7 +496,8 @@ async def _run_sse_stream(
                     step_data = json.loads(sse_data[6:])
                     current_execution_steps.append(step_data)
                     if step_data.get('type') == 'final':
-                        current_content = step_data.get('response', '')
+                        # 【P0-B3修复 小沈小健 2026-05-26】fallback到current_content，避免final.response为空时丢失chunk内容
+                        current_content = step_data.get('response', current_content) or current_content
                     elif step_data.get('type') == 'chunk':
                         current_content = step_data.get('content', current_content)
                     await save_execution_steps_to_db(session_id, current_execution_steps, current_content)

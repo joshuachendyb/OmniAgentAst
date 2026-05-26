@@ -139,8 +139,7 @@ class BaseAgent(ABC):
         
         # 【v2.3新增】chunk处理相关属性—所有Agent子类共享
         self.max_consecutive_chunks = MAX_CONSECUTIVE_CHUNKS  # 连续chunk达此阈值时提升为implicit
-        # self.temp_history 已迁入 MessageBuilder，此处保留向后兼容属性
-        self.temp_history: List[Dict[str, str]] = []  # 临时历史，用于chunk过程中LLM参考
+        # self.temp_history 已迁入 MessageBuilder，此处不再保留（内部已统一通过 message_builder.temp_history 访问）
         
         # 创建工具执行器
         self.executor = None  # 子类应初始化

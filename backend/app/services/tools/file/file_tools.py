@@ -1584,13 +1584,24 @@ class FileTools:
     ) -> Dict[str, Any]:
         """计算文件哈希值"""
         from app.services.tools.toolhelper.file_helpers import get_file_hash as _get_file_hash
+        from app.services.tools._response import build_success, build_error
 
-        return _get_file_hash(
+        result = _get_file_hash(
             file_path=file_path,
             algorithm=algorithm,
-            verify_against=verify_against,
-            timeout=timeout,
         )
+        # 兼容旧格式 {success, error} → 新格式 {code, data, message}
+        if result.get("success"):
+            return build_success(
+                data={
+                    "file_path": result.get("file_path", file_path),
+                    "algorithm": result.get("algorithm", algorithm),
+                    "hash": result.get("hash", ""),
+                    "file_size": result.get("file_size", 0),
+                },
+                message=result.get("error", "哈希计算成功"),
+            )
+        return build_error("ERR_FILE_HASH", result.get("error", "哈希计算失败"))
 
     async def _file_statistics(
         self,

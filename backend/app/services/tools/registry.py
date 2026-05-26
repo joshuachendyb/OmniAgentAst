@@ -873,12 +873,18 @@ def get_tools_dict() -> Dict[str, Callable]:
 def get_implementations_from_registry() -> Dict[str, Callable]:
     """
     从tool_registry获取所有工具实现函数
-    
+
     Returns:
         {工具名: 工具函数} 格式
     """
-    return {name: tool_registry.get_implementation(name) 
-            for name in tool_registry.list_tools()}
+    # 【P0-B1修复 小健小沈 2026-05-26】list_tools()返回格式可能为[str]或[dict]，需适配
+    tools_list = tool_registry.list_tools()
+    if tools_list and isinstance(tools_list[0], dict):
+        tool_names = [t["name"] for t in tools_list if "name" in t]
+    else:
+        tool_names = tools_list
+    return {name: tool_registry.get_implementation(name)
+            for name in tool_names}
 
 
 def get_tools_from_registry_by_category(category: ToolCategory) -> Dict[str, Callable]:

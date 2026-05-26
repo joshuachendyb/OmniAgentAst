@@ -238,7 +238,7 @@ class ToolStepMixin:
         
         except Exception as _exec_err:
             logger.warning(f"[ReAct] 工具 {tool_name} 执行异常: {_exec_err}")
-            err_dict = _build_err_dict(_exec_err)
+            err_dict = self._build_err_dict(_exec_err)
             return self._build_tool_outcome(
                 err_dict, err_dict, 0,
                 step_count, tool_name, tool_params, is_primary,
