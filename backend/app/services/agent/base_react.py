@@ -59,11 +59,6 @@ from app.utils.retry_controller import _calculate_retry_delay
 
 
 
-
-# 【步骤2.11】已废弃以下导入，改用StepFactory：
-# from app.chat_stream.error_handler import create_tool_error_result, create_session_error_result, create_error_from_exception
-# 这些函数的逻辑已整合到StepFactory.create_action_tool_step()和create_error_step()
-
 # ===== 全局默认值常量 =====
 # 原则：config.yaml > 代码常量 > 硬编码默认值
 # react_sse_wrapper.py 从 config.yaml 读取后传入

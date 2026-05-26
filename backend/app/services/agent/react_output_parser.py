@@ -85,9 +85,7 @@ def _normalize_result_to_str(raw_result) -> str:
 # 步骤1.1：定义REACT_KEYWORDS中英文关键词映射表
 # =============================================================================
 
-# 【基于14.0分析增强】中文关键词模式来源：
-# - tool_parser.py action_patterns (行245-261) 中的中文模式提取
-# - 支持更灵活的中文动词+工具名匹配
+# 【基于14.0分析增强】中文关键词模式
 REACT_KEYWORDS = {
     "thought": r"(?:Thought|思考|推理):\s*",
     "action": r"(?:Action|行动|工具调用|(?:调用|使用|执行)\s+|(?:工具|函数)\s*为):\s*",
@@ -2138,7 +2136,7 @@ def _extract_json_with_balanced_braces(text: str) -> Tuple[Optional[str], str]:
     """
     从文本中提取JSON对象（使用平衡括号匹配算法）
     
-    【基于14.0分析增强】补充截断JSON检测（tool_parser.py行65-66）
+    【基于14.0分析增强】补充截断JSON检测
     
     Args:
         text: 包含JSON的文本
@@ -2200,7 +2198,6 @@ def _extract_json_with_balanced_braces(text: str) -> Tuple[Optional[str], str]:
     
     # ==========================================================================
     # 【基于14.0分析新增】截断JSON检测
-    # 来源：tool_parser.py (行65-66)
     # 如果JSON被截断（brace_count > 0），返回不完整JSON和前面文本
     # 这允许后续降级策略尝试挽救性解析
     # ==========================================================================
