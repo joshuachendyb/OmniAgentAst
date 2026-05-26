@@ -44,8 +44,9 @@ from app.services.agent.reasoning_steps import (
 )
 from app.services.tools.registry import ToolCategory, get_tools_from_registry_by_category
 from app.services.tools import ensure_tools_registered
-from app.constants import MAX_CONTEXT_CHARS
+
 # 【修复 小健 2026-05-24】P2-1: 删除重复导入AgentStatus
+from app.constants import MAX_CONTEXT_CHARS
 from app.services.preprocessing.intent_classifier import IntentClassifier  # 【步骤9】意图分类器
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_timestamp
@@ -55,6 +56,9 @@ from app.services.agent.tool_result_formatter import extract_status, build_execu
 from app.services.agent.mixins.tool_step_mixin import ToolStepMixin, _ToolStepOutcome
 from app.services.agent.chunk_buffer import ChunkBuffer
 from app.utils.retry_controller import _calculate_retry_delay
+
+
+
 
 # 【步骤2.11】已废弃以下导入，改用StepFactory：
 # from app.chat_stream.error_handler import create_tool_error_result, create_session_error_result, create_error_from_exception
@@ -757,5 +761,4 @@ class BaseAgent(ABC):
             yield outcome.observation_step_dict
 
         self._pending_step_count = step_count
-
 
