@@ -1,8 +1,26 @@
-v0.14.0
+v0.14.1
 
-更新时间: 2026-05-26 11:41:13
+更新时间: 2026-05-26 15:02:00
 
 更新内容：
+
+## v0.14.0→v0.14.1 变更汇总 - 小沈-2026-05-26
+
+### test 补全15.3错误路径0覆盖/修复15.4 Mock掩盖/统一15.5惰性导入（3个commit）
+
+| commit | 说明 |
+|--------|------|
+| cd59db40 | test: 惰性导入修复辅助脚本 - 小沈-2026-05-26 |
+| 34ac6e6d | test: 补全15.3错误路径0覆盖/修复15.4 Mock掩盖/统一15.5惰性导入 - 小沈-2026-05-26 |
+
+### 变更详情
+
+1. **test_error_paths.py（新建）**: 33个测试覆盖B3 content跟踪/B1 registry返回None/CRSS+LLM联调/基础错误路径
+2. **test_e2e_chat_api.py（新建）**: 去skip+去MagicMock改用patch.object(BaseAIService)+WindowsProactorEventLoopPolicy
+3. **惰性导入清理**: test_error_paths.py(test_error_paths.py)和test_e2e_chat_api.py(test_e2e_chat_api.py)全部惰性import改为顶层import
+4. **_fix_lazy_imports.py（新建）**: 惰性导入批量修复辅助脚本
+
+---
 
 ## v0.13.46→v0.14.0 变更汇总 - 小欧-2026-05-26
 
