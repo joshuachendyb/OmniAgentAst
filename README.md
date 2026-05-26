@@ -2,7 +2,7 @@
 
 > AI智能体桌面应用 - 基于 ReAct 架构的全栈 Web 应用（React + FastAPI）
 
-**版本**: v4.0.0 | **更新时间**: 2026-05-26 09:13:45 | **作者**: 北京老陈团队
+**版本**: v0.14.0 | **更新时间**: 2026-05-26 09:13:45 | **作者**: 北京老陈团队
 
 ---
 
@@ -147,7 +147,7 @@ AgentFactory.create(intent_type, llm_client, task_id, ...)
 | ToolObserver | 设计中 | 全量审计日志 + 异常检测 |
 | HITL | 设计中 | DANGEROUS工具人机协同确认 |
 
-> 统一Agent（GenericReactAgent → UniversalReactAgent）已在 v4.0.0 完成，详见 `doc-agent2.0/`。
+> 统一Agent（GenericReactAgent → UniversalReactAgent）已在 v0.14.0 完成，详见 `doc-agent2.0/`。
 
 ---
 
@@ -408,7 +408,7 @@ cd backend
 
 | 版本 | 日期 | 主要变更 |
 |------|------|---------|
-| **v4.0.0** | 2026-05-25 | 全面import修复、测试文件修复、requirements.txt修复、文档目录整理、里程碑版本 |
+| **v0.14.0** | 2026-05-25 | 全面import修复、测试文件修复、requirements.txt修复、文档目录整理、里程碑版本 |
 | v0.13.46 | 2026-05-25 | feature/prompt-optimization 全量变更合并 |
 | v0.13.11 | 2026-05-20 | Agent架构重构设计文档；README全面更新 |
 | v0.13.0 | 2026-05-18 | ToolCategory从13类精简为7类 |
@@ -443,4 +443,4 @@ cd backend
 
 ---
 
-**许可**: 内部项目 | **最后更新**: 2026-05-26 09:13:45 | **版本**: v4.0.0
+**许可**: 内部项目 | **最后更新**: 2026-05-26 09:13:45 | **版本**: v0.14.0
