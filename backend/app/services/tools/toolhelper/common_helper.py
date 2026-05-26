@@ -18,6 +18,7 @@ Author: 小沈 - 2026-05-18
 import os
 import platform
 import subprocess
+from app.constants import ERR_DESKTOP_NOT_WINDOWS
 from typing import Any, Dict, Optional, Tuple
 
 
@@ -27,6 +28,7 @@ def _check_module(module_name: str) -> bool:
     委托给 exec_helper._check_module_available 获取版本信息
     """
     from app.services.tools.toolhelper.exec_helper import _check_module_available
+
     available, _ = _check_module_available(module_name)
     return available
 
@@ -111,7 +113,7 @@ def check_windows_platform() -> Optional[Dict[str, Any]]:
     """
     if platform.system() != "Windows":
         return {
-            "code": "ERR_DESKTOP_NOT_WINDOWS",
+            "code": ERR_DESKTOP_NOT_WINDOWS,
             "data": None,
             "message": "此功能仅支持 Windows 系统"
         }
@@ -175,3 +177,4 @@ __all__ = [
     "check_windows_platform",
     "run_windows_command",
 ]
+
