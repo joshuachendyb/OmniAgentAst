@@ -1,3 +1,34 @@
+v0.13.46
+
+更新时间: 2026-05-26 09:05:08
+
+更新内容：
+
+## v0.13.45→v0.13.46 变更汇总 - 小欧-2026-05-26
+
+### fix+refactor prompt优化 + 测试修复（15个commit + 1个merge）
+
+| commit | 说明 |
+|--------|------|
+| f5b0928e | Merge branch 'feature/prompt-optimization' - 小欧-2026-05-26 |
+| 935e7344 | fix: 测试修复+import修复+文件目录整理 - 小欧-2026-05-26 |
+| 17b2da5b | fix: 测试模块级代码/import/文件路径修复+registry方法 - 小欧-2026-05-26 |
+| e9cb1c49 | docs: AGENTS.md 编码铁规更新为5+3八大原则体系 - 小欧-2026-05-26 |
+| 65500d76 | refactor: llm_strategies.py移除解析逻辑,遵守SRP,原始文本交给parse_react_response - 小欧-2026-05-26 |
+| c51f4048 | refactor: _try_extract_last_tool_call提取独立函数, _extract_json_block保持SLAP - 小欧-2026-05-26 |
+| a9c587a7 | fix: react_output_parser.py _extract_json_block无tool_name时取最后一个JSON-通用修法 - 小欧-2026-05-26 |
+| cff73e14 | fix: react_output_parser.py _try_regex_tool_call_fallback用finditer取最后一个tool_params - 小欧-2026-05-26 |
+| aa42d8b4 | docs: 重命名E2E-FSI测试规范为E2E-FSI测试规范-2026-0524 - 小欧-2026-05-26 |
+| c8e83087 | fix: sessions.py _try_mark_valid中session_id改为id字段查询 - 小欧-2026-05-26 |
+| 46123932 | fix: system_prompts.py ToolMetadata访问改为t.name/t.description + datetime导入 - 小欧-2026-05-26 |
+| 5f00602b | feat: registry.py 新增get_categories方法返回深拷贝 - 小欧-2026-05-26 |
+| 07d7839b | feat: react_sse_wrapper.py _is_cancelled_and_yield改为返回str而非yield - 小欧-2026-05-26 |
+| 3e3a216d | fix: chat_router.py 补check_command_safety导入 - 小欧-2026-05-26 |
+| fa405285 | fix: react_output_parser.py _handle_mixed_text_json finish拼接prefix_text与result - 小欧-2026-05-26 |
+| ee9ee634 | fix: llm_strategies.py finish时拼接JSON前置推理文本与result - 小欧-2026-05-26 |
+
+---
+
 v0.13.45
 
 更新时间: 2026-05-25 23:24:13
