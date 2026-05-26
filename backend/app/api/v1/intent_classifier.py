@@ -166,7 +166,7 @@ class IntentClassifier:
                     score += 0.2
         
         # 正则匹配：动词 + 文件名模式
-        verb_file_pattern = r'(创建 | 打开 | 读取 | 写入 | 删除 | 修改)\s*(文件 | 文件.)?'
+        verb_file_pattern = r'(创建|打开|读取|写入|删除|修改)\s*(文件|文件.)?'
         if re.search(verb_file_pattern, message):
             score += 0.5
         
