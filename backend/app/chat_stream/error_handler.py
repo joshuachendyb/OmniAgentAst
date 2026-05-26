@@ -10,8 +10,8 @@ Author: 小沈 - 2026-03-22
 import json
 from typing import Any, Dict, Optional
 
+from app.constants import ERROR_TYPE_MAP, HTTPX_EXCEPTION_TO_ERROR_KEY, HTTP_STATUS_MAP_ENTRIES, PATTERN_ERROR_ENTRIES
 from app.chat_stream.chat_helpers import create_timestamp
-from app.constants import ERROR_TYPE_MAP, HTTPX_EXCEPTION_TO_ERROR_KEY, PATTERN_ERROR_ENTRIES, HTTP_STATUS_MAP_ENTRIES
 
 
 def _build_error_response(code: str, msg_key: str, retryable: bool,
