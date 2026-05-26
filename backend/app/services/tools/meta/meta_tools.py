@@ -24,6 +24,9 @@ from app.utils.logger import logger
 from app.services.tools._response import build_success, build_error
 
 
+
+
+
 def tool_help(tool_name: str) -> Dict[str, Any]:
     """
     查询指定工具的详细用法信息。
@@ -39,7 +42,7 @@ def tool_help(tool_name: str) -> Dict[str, Any]:
         available = list(tool_registry._tools.keys())
         similar = [n for n in available if tool_name.lower() in n.lower()]
         return build_error(
-            "ERR_TOOL_NOT_FOUND",
+            ERR_TOOL_NOT_FOUND,
             f"工具 '{tool_name}' 不存在，请检查名称或使用 tool_search 搜索",
             data={"similar_names": similar[:10], "total_tools": len(available)},
             llm_data={"similar_names": similar[:5], "total_tools": len(available)},
@@ -103,7 +106,7 @@ def tool_search(query: str) -> Dict[str, Any]:
 
     if not query.strip():
         return build_error(
-            "ERR_DOC_QUERY_EMPTY",
+            ERR_DOC_QUERY_EMPTY,
             "搜索关键词不能为空，请提供描述性关键词",
             next_actions=build_next_actions([
                 ("tool_help", "查询单个工具用法", "已知工具名时"),
@@ -170,7 +173,7 @@ def _pipeline_error(code: str, msg: str, step: Optional[int] = None,
         actions.append(("tool_help", "查看工具参数", "不确定参数时", {"tool_name": tool}))
     else:
         actions.append(("tool_help", "查看pipeline用法", "不确定steps格式时", {"tool_name": "pipeline"}))
-    if code in ("ERR_TOOL_NOT_FOUND", "ERR_PIPELINE_STOPPED"):
+    if code in (ERR_TOOL_NOT_FOUND, ERR_PIPELINE_STOPPED):
         actions.append(("tool_search", "搜索替代工具", "需要查找其他工具时"))
     return build_error(code, msg, data=data, llm_data=llm_data, next_actions=build_next_actions(actions))
 
@@ -185,7 +188,7 @@ def _timeout_error(step_idx: int, tool_name: str, timeout_val: int,
         "results": done_results,
     })
     return build_error(
-        "ERR_PIPELINE_TIMEOUT",
+        ERR_PIPELINE_TIMEOUT,
         f"步骤{step_idx + 1}({tool_name})执行超时（{timeout_val}秒），请增大timeout_per_step或简化操作",
         data=error_data,
         llm_data={"failed_step": step_idx + 1, "tool": tool_name, "timeout": timeout_val,
@@ -259,7 +262,7 @@ def _process_step_result(result: Dict, i: int, tool_name: str,
             "error_message": result.get("message"),
             "results": results,
         })
-        return _pipeline_error("ERR_PIPELINE_STOPPED",
+        return _pipeline_error(ERR_PIPELINE_STOPPED,
             f"管道已在步骤{i+1}({tool_name})停止: {result.get('message')}，可设置stop_on_error=False继续执行",
             step=i+1, tool=tool_name, data=error_data,
             llm_data={"failed_step": i+1, "tool": tool_name, "error_code": result.get("code"),
@@ -315,25 +318,25 @@ def _validate_step(step: Any, i: int, steps_list: List) -> Optional[Dict]:
     - Dict: 错误响应，应立即返回
     """
     if not isinstance(step, dict):
-        return _pipeline_error("ERR_INVALID_STEP",
+        return _pipeline_error(ERR_INVALID_STEP,
             f"步骤{i+1}格式无效，应为对象，当前类型: {type(step).__name__}",
             llm_data={"failed_step": i + 1, "error": f"步骤类型错误: {type(step).__name__}"})
     tool_name = step.get("tool")
     if not tool_name:
-        return _pipeline_error("ERR_MISSING_TOOL",
+        return _pipeline_error(ERR_MISSING_TOOL,
             f"步骤{i+1}缺少tool字段",
             llm_data={"failed_step": i + 1})
     if not tool_registry.get_tool(tool_name):
         available = list(tool_registry._tools.keys())
         similar = [n for n in available if tool_name.lower() in n.lower()]
-        return _pipeline_error("ERR_TOOL_NOT_FOUND",
+        return _pipeline_error(ERR_TOOL_NOT_FOUND,
             f"步骤{i+1}: 工具 '{tool_name}' 不存在，请用 tool_search 查找正确名称",
             tool=tool_name,
             data={"similar_tools": similar[:5]},
             llm_data={"failed_step": i + 1, "tool": tool_name, "similar_tools": similar[:3]})
     params = step.get("params", {})
     if not isinstance(params, dict):
-        return _pipeline_error("ERR_INVALID_PARAMS",
+        return _pipeline_error(ERR_INVALID_PARAMS,
             f"步骤{i+1}({tool_name})的params必须是对象格式",
             tool=tool_name,
             llm_data={"failed_step": i + 1, "tool": tool_name})
@@ -360,14 +363,14 @@ def pipeline(steps: str, stop_on_error: bool = True, timeout_per_step: int = 60)
         else:
             steps_list = json.loads(steps)
     except json.JSONDecodeError as e:
-        return _pipeline_error("ERR_INVALID_JSON",
+        return _pipeline_error(ERR_INVALID_JSON,
             f"steps参数不是有效的JSON格式: {str(e)}，请检查JSON语法")
     except TypeError as e:
-        return _pipeline_error("ERR_INVALID_JSON",
+        return _pipeline_error(ERR_INVALID_JSON,
             f"steps参数类型错误: {str(e)}，需要JSON字符串或列表")
 
     if not isinstance(steps_list, list):
-        return _pipeline_error("ERR_INVALID_FORMAT",
+        return _pipeline_error(ERR_META_INVALID_FORMAT,
             f"steps必须是JSON数组格式，当前类型: {type(steps_list).__name__}")
 
     context: Dict[str, Any] = {}
@@ -381,7 +384,7 @@ def pipeline(steps: str, stop_on_error: bool = True, timeout_per_step: int = 60)
         tool_name = step["tool"]
         impl = tool_registry.get_implementation(tool_name)
         if not impl:
-            return _pipeline_error("ERR_META_TOOL_IMPL_NOT_FOUND",
+            return _pipeline_error(ERR_META_TOOL_IMPL_NOT_FOUND,
                 f"步骤{i+1}: 工具 '{tool_name}' 无法获取实现，请检查工具是否正确注册",
                 tool=tool_name,
                 llm_data={"failed_step": i + 1, "tool": tool_name})
@@ -391,7 +394,7 @@ def pipeline(steps: str, stop_on_error: bool = True, timeout_per_step: int = 60)
         except concurrent.futures.TimeoutError:
             return _timeout_error(i, tool_name, timeout_per_step, results, steps, stop_on_error)
         except TypeError as e:
-            return _pipeline_error("ERR_PARAM_MISMATCH",
+            return _pipeline_error(ERR_PARAM_MISMATCH,
                 f"步骤{i+1}({tool_name})参数不匹配: {str(e)}，请用 tool_help 查看正确参数",
                 tool=tool_name,
                 data={"step": i+1, "tool": tool_name, "error": str(e)},
@@ -399,7 +402,7 @@ def pipeline(steps: str, stop_on_error: bool = True, timeout_per_step: int = 60)
         except Exception as e:
             if isinstance(e, concurrent.futures.TimeoutError):
                 return _timeout_error(i, tool_name, timeout_per_step, results, steps, stop_on_error)
-            return _pipeline_error("ERR_PIPELINE_FAILED",
+            return _pipeline_error(ERR_PIPELINE_FAILED,
                 f"步骤{i+1}({tool_name})执行异常: {str(e)}",
                 tool=tool_name,
                 data={"step": i+1, "tool": tool_name, "error": str(e)},
@@ -444,14 +447,15 @@ async def batch_process(
     对匹配glob模式的所有文件执行同一操作（rename/delete/copy）。
     """
     if max_files < 1 or max_files > 10000:
-        return build_error("ERR_PARAM_INVALID", f"max_files必须在1-10000之间，当前值：{max_files}")
+        return build_error(ERR_PARAM_INVALID, f"max_files必须在1-10000之间，当前值：{max_files}")
 
     import glob as glob_module
+
     files = glob_module.glob(source_pattern, recursive=True)
     files = [f for f in files if os.path.isfile(f)][:max_files]
 
     if not files:
-        return build_error("ERR_NO_MATCH", f"没有匹配到文件: {source_pattern}")
+        return build_error(ERR_NO_MATCH, f"没有匹配到文件: {source_pattern}")
 
     plan = {
         "action": action,
@@ -488,12 +492,12 @@ async def batch_process(
                 os.remove(f)
             elif action == "copy":
                 if not target_dir:
-                    return build_error("ERR_PARAM_MISSING", "copy操作需要指定target_dir")
+                    return build_error(ERR_PARAM_MISSING, "copy操作需要指定target_dir")
                 os.makedirs(target_dir, exist_ok=exist_ok)
                 dest = os.path.join(target_dir, os.path.basename(f))
                 shutil.copy2(f, dest)
             else:
-                return build_error("ERR_PARAM_INVALID", f"不支持的action: {action}，可选: rename/delete/copy")
+                return build_error(ERR_PARAM_INVALID, f"不支持的action: {action}，可选: rename/delete/copy")
             results["success"] += 1
         except Exception as e:
             results["failed"] += 1
@@ -511,3 +515,20 @@ async def batch_process(
 
 
 __all__ = ["tool_help", "tool_search", "pipeline", "batch_process"]
+from app.constants import (
+    ERR_DOC_QUERY_EMPTY,
+    ERR_INVALID_JSON,
+    ERR_INVALID_PARAMS,
+    ERR_INVALID_STEP,
+    ERR_META_INVALID_FORMAT,
+    ERR_META_TOOL_IMPL_NOT_FOUND,
+    ERR_MISSING_TOOL,
+    ERR_NO_MATCH,
+    ERR_PARAM_INVALID,
+    ERR_PARAM_MISMATCH,
+    ERR_PARAM_MISSING,
+    ERR_PIPELINE_FAILED,
+    ERR_PIPELINE_STOPPED,
+    ERR_PIPELINE_TIMEOUT,
+    ERR_TOOL_NOT_FOUND,
+)
