@@ -32,6 +32,9 @@ from app.services.tools._response import build_success, build_error
 from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, truncate_text  # 小沈 2026-05-20
 
 
+
+
+
 def _check_pyautogui() -> bool:
     try:
         importlib.import_module("pyautogui")
@@ -50,39 +53,39 @@ def _click(
 ) -> Dict[str, Any]:
     """模拟鼠标点击 - 小沈 2026-05-02"""
     if not _check_pyautogui():
-        return build_error("ERR_NO_PYAUTOGUI", "pyautogui库未安装，请先执行: pip install pyautogui")
+        return build_error(ERR_NO_PYAUTOGUI, "pyautogui库未安装，请先执行: pip install pyautogui")
     try:
         import pyautogui
         clicks = 2 if click_type == "double" else 1
         pyautogui.click(x=x, y=y, button=button, clicks=clicks)
         return build_success({"x": x, "y": y, "button": button, "click_type": click_type}, f"点击完成: ({x}, {y}) {button} {click_type}")
     except Exception as e:
-        return build_error("ERR_DESKTOP_MOUSE_CLICK", f"点击失败: {str(e)}")
+        return build_error(ERR_DESKTOP_MOUSE_CLICK, f"点击失败: {str(e)}")
 
 
 def _move(x: int, y: int, duration: float = 0) -> Dict[str, Any]:
     """移动鼠标到指定位置 - 小沈 2026-05-02"""
     if not _check_pyautogui():
-        return build_error("ERR_NO_PYAUTOGUI", "pyautogui库未安装")
+        return build_error(ERR_NO_PYAUTOGUI, "pyautogui库未安装")
     try:
         import pyautogui
         pyautogui.moveTo(x, y, duration=duration)
         return build_success({"x": x, "y": y}, f"鼠标移动到: ({x}, {y})")
     except Exception as e:
-        return build_error("ERR_FILE_MOVE_FAILED", f"移动失败: {str(e)}")
+        return build_error(ERR_FILE_MOVE_FAILED, f"移动失败: {str(e)}")
 
 
 def _scroll(direction: str, amount: int = 3) -> Dict[str, Any]:
     """模拟鼠标滚轮滚动 - 小沈 2026-05-02"""
     if not _check_pyautogui():
-        return build_error("ERR_NO_PYAUTOGUI", "pyautogui库未安装")
+        return build_error(ERR_NO_PYAUTOGUI, "pyautogui库未安装")
     try:
         import pyautogui
         scroll_amount = -amount if direction == "down" else amount
         pyautogui.scroll(scroll_amount)
         return build_success({"direction": direction, "amount": amount}, f"滚动完成: {direction} {amount}单位")
     except Exception as e:
-        return build_error("ERR_DESKTOP_MOUSE_SCROLL", f"滚动失败: {str(e)}")
+        return build_error(ERR_DESKTOP_MOUSE_SCROLL, f"滚动失败: {str(e)}")
 
 
 # ========== 键盘操作 ==========
@@ -90,7 +93,7 @@ def _scroll(direction: str, amount: int = 3) -> Dict[str, Any]:
 def _type_text(text: str, interval: float = 0) -> Dict[str, Any]:
     """模拟键盘输入文本 - 小沈 2026-05-02"""
     if not _check_pyautogui():
-        return build_error("ERR_NO_PYAUTOGUI", "pyautogui库未安装")
+        return build_error(ERR_NO_PYAUTOGUI, "pyautogui库未安装")
     try:
         import pyautogui
         # ASCII字符使用typewrite（支持间隔），非ASCII使用write
@@ -100,26 +103,26 @@ def _type_text(text: str, interval: float = 0) -> Dict[str, Any]:
             pyautogui.write(text)
         return build_success({"text_length": len(text)}, f"输入文本完成: {len(text)}个字符")
     except Exception as e:
-        return build_error("ERR_KEYBOARD_TYPE", f"输入文本失败: {str(e)}")
+        return build_error(ERR_KEYBOARD_TYPE, f"输入文本失败: {str(e)}")
 
 
 def _shortcut(keys: str) -> Dict[str, Any]:
     """执行键盘快捷键组合 - 小沈 2026-05-02"""
     if not _check_pyautogui():
-        return build_error("ERR_NO_PYAUTOGUI", "pyautogui库未安装")
+        return build_error(ERR_NO_PYAUTOGUI, "pyautogui库未安装")
     try:
         import pyautogui
         key_list = [k.strip() for k in keys.split("+")]
         pyautogui.hotkey(*key_list)
         return build_success({"keys": keys}, f"快捷键执行完成: {keys}")
     except Exception as e:
-        return build_error("ERR_KEYBOARD_SHORTCUT", f"快捷键执行失败: {str(e)}")
+        return build_error(ERR_KEYBOARD_SHORTCUT, f"快捷键执行失败: {str(e)}")
 
 
 def _key_combo(keys: List[str], action: str = "press") -> Dict[str, Any]:
     """按住多个键后释放 - 小沈 2026-05-02"""
     if not _check_pyautogui():
-        return build_error("ERR_NO_PYAUTOGUI", "pyautogui库未安装")
+        return build_error(ERR_NO_PYAUTOGUI, "pyautogui库未安装")
     try:
         import pyautogui
         if action == "press":
@@ -132,7 +135,7 @@ def _key_combo(keys: List[str], action: str = "press") -> Dict[str, Any]:
                 pyautogui.keyUp(key)
         return build_success({"keys": keys, "action": action}, f"按键操作完成: {keys} {action}")
     except Exception as e:
-        return build_error("ERR_KEY_COMBO", f"按键操作失败: {str(e)}")
+        return build_error(ERR_KEY_COMBO, f"按键操作失败: {str(e)}")
 
 
 # ========== 屏幕操作 ==========
@@ -142,7 +145,7 @@ def _screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[
     try:
         import pyautogui
     except ImportError:
-        return build_error("ERR_NO_PYAUTOGUI", "pyautogui库未安装")
+        return build_error(ERR_NO_PYAUTOGUI, "pyautogui库未安装")
     try:
         if output_path is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -158,7 +161,7 @@ def _screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[
         img.save(output_path)
         return build_success({"image_path": output_path}, f"截图保存到: {output_path}")
     except Exception as e:
-        return build_error("ERR_SCREENSHOT", f"截图失败: {str(e)}")
+        return build_error(ERR_SCREENSHOT, f"截图失败: {str(e)}")
 
 
 def _snapshot(display: int = 1) -> Dict[str, Any]:
@@ -174,7 +177,7 @@ def _snapshot(display: int = 1) -> Dict[str, Any]:
             img.save(output_path)
             return build_success({"image_path": output_path, "display": display}, f"快照保存到: {output_path}")
         except ImportError:
-            return build_error("ERR_NO_SCREENSHOT_LIB", "需要安装 mss 或 pyautogui 库")
+            return build_error(ERR_NO_SCREENSHOT_LIB, "需要安装 mss 或 pyautogui 库")
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
@@ -193,7 +196,7 @@ def _snapshot(display: int = 1) -> Dict[str, Any]:
             pil_img.save(output_path)
         return build_success({"image_path": output_path, "display": display, "monitors": len(monitors) - 1}, f"快照保存到: {output_path}")
     except Exception as e:
-        return build_error("ERR_SCREEN_SNAPSHOT", f"快照失败: {str(e)}")
+        return build_error(ERR_SCREEN_SNAPSHOT, f"快照失败: {str(e)}")
 
 
 def screen_record(duration: int, output_path: Optional[str] = None, fps: int = 15) -> Dict[str, Any]:
@@ -202,18 +205,18 @@ def screen_record(duration: int, output_path: Optional[str] = None, fps: int = 1
         import mss
         from PIL import Image
     except ImportError:
-        return build_error("ERR_NO_RECORD_LIB", "需要安装 mss 和 PIL 库")
+        return build_error(ERR_NO_RECORD_LIB, "需要安装 mss 和 PIL 库")
     try:
         import numpy  # 移到循环前导入 - 小沈 2026-05-04
     except ImportError:
-        return build_error("ERR_NO_NUMPY", "需要安装 numpy 库")
+        return build_error(ERR_NO_NUMPY, "需要安装 numpy 库")
     try:
         import imageio.v2 as imageio
     except ImportError:
         try:
             import imageio
         except ImportError:
-            return build_error("ERR_NO_IMAGEIO", "需要安装 imageio 库: pip install imageio imageio-ffmpeg")
+            return build_error(ERR_NO_IMAGEIO, "需要安装 imageio 库: pip install imageio imageio-ffmpeg")
     try:
         if output_path is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -239,7 +242,7 @@ def screen_record(duration: int, output_path: Optional[str] = None, fps: int = 1
         return build_success({"output_path": output_path, "duration": duration, "fps": fps}, f"录制完成: {output_path}",
                              next_actions=build_next_actions([]))
     except Exception as e:
-        return build_error("ERR_SCREEN_RECORD", f"录制失败: {str(e)}")
+        return build_error(ERR_SCREEN_RECORD, f"录制失败: {str(e)}")
 
 
 # ========== 窗口操作 ==========
@@ -251,7 +254,7 @@ def _focus_window(title: str) -> Dict[str, Any]:
     try:
         import win32gui
     except ImportError:
-        return build_error("ERR_NO_WIN32GUI", "需要安装 pywin32 库")
+        return build_error(ERR_NO_WIN32GUI, "需要安装 pywin32 库")
     try:
         target_hwnd = None
         def _enum_cb(hwnd, _):
@@ -267,9 +270,9 @@ def _focus_window(title: str) -> Dict[str, Any]:
             win32gui.SetForegroundWindow(target_hwnd)
             return build_success({"title": title, "hwnd": target_hwnd}, f"窗口已聚焦: {title}")
         else:
-            return build_error("ERR_WINDOW_NOT_FOUND", f"未找到窗口: {title}")
+            return build_error(ERR_WINDOW_NOT_FOUND, f"未找到窗口: {title}")
     except Exception as e:
-        return build_error("ERR_FOCUS_WINDOW", f"聚焦窗口失败: {str(e)}")
+        return build_error(ERR_FOCUS_WINDOW, f"聚焦窗口失败: {str(e)}")
 
 
 def _resize_window(title: str, width: int = None, height: int = None) -> Dict[str, Any]:
@@ -277,7 +280,7 @@ def _resize_window(title: str, width: int = None, height: int = None) -> Dict[st
     try:
         import win32gui
     except ImportError:
-        return build_error("ERR_NO_WIN32GUI", "需要安装 pywin32 库")
+        return build_error(ERR_NO_WIN32GUI, "需要安装 pywin32 库")
     try:
         target_hwnd = None
         def _enum_cb(hwnd, _):
@@ -290,7 +293,7 @@ def _resize_window(title: str, width: int = None, height: int = None) -> Dict[st
         win32gui.EnumWindows(_enum_cb, None)
 
         if not target_hwnd:
-            return build_error("ERR_WINDOW_NOT_FOUND", f"未找到窗口: {title}")
+            return build_error(ERR_WINDOW_NOT_FOUND, f"未找到窗口: {title}")
 
         left, top, right, bottom = win32gui.GetWindowRect(target_hwnd)
         curr_width = right - left
@@ -302,7 +305,7 @@ def _resize_window(title: str, width: int = None, height: int = None) -> Dict[st
         win32gui.MoveWindow(target_hwnd, left, top, new_width, new_height, True)
         return build_success({"title": title, "width": new_width, "height": new_height}, f"窗口大小调整完成: {new_width}x{new_height}")
     except Exception as e:
-        return build_error("ERR_WINDOW_RESIZE", f"调整窗口大小失败: {str(e)}")
+        return build_error(ERR_WINDOW_RESIZE, f"调整窗口大小失败: {str(e)}")
 
 
 # ========== OCR操作 ==========
@@ -313,11 +316,11 @@ def ocr(image_path: str, language: str = "eng") -> Dict[str, Any]:
         import pytesseract
         from PIL import Image
     except ImportError:
-        return build_error("ERR_NO_TESSERACT", "需要安装 pytesseract 和 PIL 库: pip install pytesseract Pillow")
+        return build_error(ERR_NO_TESSERACT, "需要安装 pytesseract 和 PIL 库: pip install pytesseract Pillow")
     try:
         path = Path(image_path)
         if not path.exists():
-            return build_error("ERR_OCR", f"图片文件不存在: {image_path}")
+            return build_error(ERR_OCR, f"图片文件不存在: {image_path}")
 
         img = Image.open(image_path)
         text = pytesseract.image_to_string(img, lang=language)
@@ -328,7 +331,7 @@ def ocr(image_path: str, language: str = "eng") -> Dict[str, Any]:
                              llm_data={"字符数": len(text), "语言": language, "文本预览": _llm_text},
                              next_actions=build_next_actions([("screen_capture", "重新截图", "需要识别其他区域时")]))
     except Exception as e:
-        return build_error("ERR_OCR", f"OCR识别失败: {str(e)}")
+        return build_error(ERR_OCR, f"OCR识别失败: {str(e)}")
 
 
 # ========== 剪贴板操作（Tool 105-106）==========
@@ -360,7 +363,7 @@ def _read_clipboard() -> Dict[str, Any]:
                 _llm["截断"] = f"原文{len(text)}字符"
             return build_success({"text": text}, "剪贴板读取成功", llm_data=_llm)
         except Exception as e:
-            return build_error("ERR_DESKTOP_CLIPBOARD", f"读取剪贴板失败: {str(e)}")
+            return build_error(ERR_DESKTOP_CLIPBOARD, f"读取剪贴板失败: {str(e)}")
 
 
 def _write_clipboard(content: str) -> Dict[str, Any]:
@@ -379,7 +382,7 @@ def _write_clipboard(content: str) -> Dict[str, Any]:
             text_bytes = content.encode('gbk') + b'\0'
             h_mem = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(text_bytes))
             if h_mem == 0:
-                return build_error("ERR_DESKTOP_CLIPBOARD", "内存分配失败")
+                return build_error(ERR_DESKTOP_CLIPBOARD, "内存分配失败")
             p_mem = kernel32.GlobalLock(h_mem)
             if p_mem:
                 ctypes.memmove(p_mem, text_bytes, len(text_bytes))
@@ -391,9 +394,9 @@ def _write_clipboard(content: str) -> Dict[str, Any]:
                 return build_success({"content": content}, "剪贴板写入成功")
             else:
                 kernel32.GlobalFree(h_mem)
-                return build_error("ERR_DESKTOP_CLIPBOARD", "内存锁定失败")
+                return build_error(ERR_DESKTOP_CLIPBOARD, "内存锁定失败")
         except Exception as e:
-            return build_error("ERR_DESKTOP_CLIPBOARD", f"写入剪贴板失败: {str(e)}")
+            return build_error(ERR_DESKTOP_CLIPBOARD, f"写入剪贴板失败: {str(e)}")
 
 
 # ========== 通知操作（Tool 107）==========
@@ -402,9 +405,34 @@ def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, 
     """发送系统通知 - 按文档9.7节定义"""
     try:
         from win10toast import ToastNotifier
+
         toaster = ToastNotifier()
         toaster.show_toast(title, message, duration=duration)
         return build_success({"title": title, "message": message, "duration": duration}, "通知发送成功",
                              next_actions=build_next_actions([]))
     except ImportError:
-        return build_error("ERR_NO_WIN10TOAST", "需要安装 win10toast 库: pip install win10toast")
+        return build_error(ERR_NO_WIN10TOAST, "需要安装 win10toast 库: pip install win10toast")
+from app.constants import (
+    ERR_DESKTOP_CLIPBOARD,
+    ERR_DESKTOP_MOUSE_CLICK,
+    ERR_DESKTOP_MOUSE_SCROLL,
+    ERR_FILE_MOVE_FAILED,
+    ERR_FOCUS_WINDOW,
+    ERR_KEYBOARD_SHORTCUT,
+    ERR_KEYBOARD_TYPE,
+    ERR_KEY_COMBO,
+    ERR_NO_IMAGEIO,
+    ERR_NO_NUMPY,
+    ERR_NO_PYAUTOGUI,
+    ERR_NO_RECORD_LIB,
+    ERR_NO_SCREENSHOT_LIB,
+    ERR_NO_TESSERACT,
+    ERR_NO_WIN10TOAST,
+    ERR_NO_WIN32GUI,
+    ERR_OCR,
+    ERR_SCREENSHOT,
+    ERR_SCREEN_RECORD,
+    ERR_SCREEN_SNAPSHOT,
+    ERR_WINDOW_NOT_FOUND,
+    ERR_WINDOW_RESIZE,
+)
