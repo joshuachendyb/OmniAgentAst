@@ -39,14 +39,38 @@ from urllib.parse import urlencode, urlparse, urlunparse
 
 import httpx
 from app.utils.logger import logger
-from app.constants import RETRYABLE_HTTP_STATUS_CODES, BROWSER_USER_AGENT, DEFAULT_MAX_OUTPUT_CHARS, DEFAULT_MAX_DOC_CHARS
+
 from app.services.tools.toolhelper.network_helper import (  # 小健 2026-05-18
     well_known_ports, _html_to_markdown, _decode_bing_redirect_url,
     _validate_url, _check_network,  # 小沈 2026-05-25 提升到模块级，消除3处函数内重复import
 )
 from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
+from app.constants import (
+    BROWSER_USER_AGENT,
+    DEFAULT_MAX_DOC_CHARS,
+    DEFAULT_MAX_OUTPUT_CHARS,
+    ERR_INVALID_MODE,
+    ERR_INVALID_URL,
+    ERR_MISSING_PARAM,
+    ERR_NETWORK_CONNECTION_ERROR,
+    ERR_NETWORK_CREATE_DIR,
+    ERR_NETWORK_DNS_ERROR,
+    ERR_NETWORK_DOWN,
+    ERR_NETWORK_HTTP_ERROR,
+    ERR_NETWORK_INVALID_HOST,
+    ERR_NETWORK_INVALID_PARAM,
+    ERR_NETWORK_INVALID_PATH,
+    ERR_NETWORK_INVALID_PORT,
+    ERR_NETWORK_JS_RENDER,
+    ERR_NETWORK_REQUEST_ERROR,
+    ERR_NETWORK_TIMEOUT,
+    ERR_NETWORK_WRITE_FILE,
+    ERR_NET_UNKNOWN,
+    ERR_PARAM_INVALID,
+    ERR_SHELL_COMMAND_NOT_FOUND,
+    RETRYABLE_HTTP_STATUS_CODES,
+)
 from app.services.tools._response import build_success, build_error
-
 
 def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
     """解析 HTTP 响应体并构建 llm_data。
@@ -124,17 +148,17 @@ def _build_http_error(last_exception: Exception, url: str, retry: int) -> Dict[s
     - 返回Dict，错误响应
     """
     if isinstance(last_exception, httpx.TimeoutException):
-        return build_error("ERR_NETWORK_TIMEOUT", f"请求超时：{url}")
+        return build_error(ERR_NETWORK_TIMEOUT, f"请求超时：{url}")
     if isinstance(last_exception, httpx.HTTPStatusError):
         return build_error(
-            "ERR_NETWORK_HTTP_ERROR",
+            ERR_NETWORK_HTTP_ERROR,
             f"HTTP请求失败（重试{retry}次后）：{url}",
             data={
                 "status_code": last_exception.response.status_code,
                 "body": last_exception.response.text if hasattr(last_exception.response, 'text') else None,
             },
         )
-    return build_error("ERR_NETWORK_REQUEST_ERROR", f"网络请求失败（重试{retry}次后）：{str(last_exception)}")
+    return build_error(ERR_NETWORK_REQUEST_ERROR, f"网络请求失败（重试{retry}次后）：{str(last_exception)}")
 
 
 async def http_request(
@@ -150,18 +174,18 @@ async def http_request(
     """发起HTTP请求 — 小沈 2026-05-19 精简参数(11→8)"""
     # 参数校验
     if retry < 0 or retry > 10:
-        return build_error("ERR_NETWORK_INVALID_PARAM", f"重试次数必须在0-10之间，当前值：{retry}")
+        return build_error(ERR_NETWORK_INVALID_PARAM, f"重试次数必须在0-10之间，当前值：{retry}")
     
     timeout_sec = timeout / 1000.0
     
     try:
         url_info = _validate_url(url)
         if not url_info["data"]["valid"]:
-            return build_error("ERR_INVALID_URL", f"URL格式无效: {url}，URL必须包含协议和域名（如 https://api.example.com/data）")
+            return build_error(ERR_INVALID_URL, f"URL格式无效: {url}，URL必须包含协议和域名（如 https://api.example.com/data）")
 
         net_info = _check_network()
         if not net_info["data"]["connected"]:
-            return build_error("ERR_NETWORK_DOWN", "网络不可用，无法发送请求")
+            return build_error(ERR_NETWORK_DOWN, "网络不可用，无法发送请求")
 
         parsed = urlparse(url)
         if params:
@@ -216,7 +240,7 @@ async def http_request(
                     except Exception:
                         error_body = None
                     return build_error(
-                        "ERR_NETWORK_HTTP_ERROR",
+                        ERR_NETWORK_HTTP_ERROR,
                         f"HTTP请求失败 (HTTP {e.response.status_code})：{url}",
                         data={
                             "status_code": e.response.status_code,
@@ -233,13 +257,13 @@ async def http_request(
 
     except Exception as e:
         logger.error(f"[http_request] 未知错误: {e}")
-        return build_error("ERR_NET_UNKNOWN", f"请求异常: {str(e)}")
+        return build_error(ERR_NET_UNKNOWN, f"请求异常: {str(e)}")
 
 
 NET_ERROR_MAP = [
-    (httpx.TimeoutException, "ERR_NETWORK_TIMEOUT", "下载超时"),
-    (httpx.HTTPStatusError, "ERR_NETWORK_HTTP_ERROR", "下载失败"),
-    (httpx.RequestError, "ERR_NETWORK_REQUEST_ERROR", "网络请求失败"),
+    (httpx.TimeoutException, ERR_NETWORK_TIMEOUT, "下载超时"),
+    (httpx.HTTPStatusError, ERR_NETWORK_HTTP_ERROR, "下载失败"),
+    (httpx.RequestError, ERR_NETWORK_REQUEST_ERROR, "网络请求失败"),
 ]
 
 
@@ -253,7 +277,7 @@ def _map_network_error(url: str, timeout: int, e: Exception) -> Dict[str, Any]:
             return build_error(code, detail)
     # 兜底：未知错误
     logger.error(f"[download_file] 未知错误: {e}")
-    return build_error("ERR_NET_UNKNOWN", f"下载异常: {str(e)}")
+    return build_error(ERR_NET_UNKNOWN, f"下载异常: {str(e)}")
 
 
 async def _stream_download(client: httpx.AsyncClient, url: str, dest_path: str,
@@ -288,19 +312,19 @@ async def download_file(
     try:
         url_info = _validate_url(url)
         if not url_info["data"]["valid"]:
-            return build_error("ERR_INVALID_URL", f"URL格式无效: {url}")
+            return build_error(ERR_INVALID_URL, f"URL格式无效: {url}")
         net_info = _check_network()
         if not net_info["data"]["connected"]:
-            return build_error("ERR_NETWORK_DOWN", "网络不可用")
+            return build_error(ERR_NETWORK_DOWN, "网络不可用")
 
         dest_path = os.path.abspath(destination_path)
         dest_dir = os.path.dirname(dest_path)
         if not dest_dir:
-            return build_error("ERR_NETWORK_INVALID_PATH", f"无效路径: {destination_path}")
+            return build_error(ERR_NETWORK_INVALID_PATH, f"无效路径: {destination_path}")
         try:
             os.makedirs(dest_dir, exist_ok=True)
         except (PermissionError, OSError) as e:
-            return build_error("ERR_NETWORK_CREATE_DIR", f"无法创建目录: {e}")
+            return build_error(ERR_NETWORK_CREATE_DIR, f"无法创建目录: {e}")
 
         proxy_config = proxy
         if not proxy_config:
@@ -322,12 +346,12 @@ async def download_file(
             next_actions=build_next_actions([("read_file", "读取下载的文件", "需要查看时")]),
         )
     except (PermissionError, OSError) as e:
-        return build_error("ERR_NETWORK_WRITE_FILE", f"写入文件失败 {dest_path}: {e}")
+        return build_error(ERR_NETWORK_WRITE_FILE, f"写入文件失败 {dest_path}: {e}")
     except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
         return _map_network_error(url, timeout, e)
     except Exception as e:
         logger.error(f"[download_file] 未知错误: {e}")
-        return build_error("ERR_NET_UNKNOWN", f"下载异常: {e}")
+        return build_error(ERR_NET_UNKNOWN, f"下载异常: {e}")
 
 
 def _extract_html_content(html_content: str, extract_format: str, max_tokens: int) -> Tuple[str, bool]:
@@ -377,8 +401,9 @@ async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout_sec: flo
     """Playwright路径封装。消除ImportError+渲染异常+页面操作的重复 — 小健 2026-05-25"""
     try:
         from playwright.async_api import async_playwright
+
     except ImportError:
-        return build_error("ERR_NETWORK_JS_RENDER", "js_render需要安装Playwright: pip install playwright && playwright install chromium")
+        return build_error(ERR_NETWORK_JS_RENDER, "js_render需要安装Playwright: pip install playwright && playwright install chromium")
     try:
         browser_config = {
             "headless": True,
@@ -401,7 +426,7 @@ async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout_sec: flo
             "status_code": 200,
         }
     except Exception as e:
-        return build_error("ERR_NETWORK_JS_RENDER", f"JS渲染失败: {str(e)}")
+        return build_error(ERR_NETWORK_JS_RENDER, f"JS渲染失败: {str(e)}")
 
 
 async def fetch_webpage(
@@ -419,11 +444,11 @@ async def fetch_webpage(
     try:
         url_info = _validate_url(url)
         if not url_info["data"]["valid"]:
-            return build_error("ERR_INVALID_URL", f"URL格式无效: {url}")
+            return build_error(ERR_INVALID_URL, f"URL格式无效: {url}")
 
         net_info = _check_network()
         if not net_info["data"]["connected"]:
-            return build_error("ERR_NETWORK_DOWN", "网络不可用，无法发送请求")
+            return build_error(ERR_NETWORK_DOWN, "网络不可用，无法发送请求")
 
         headers = {
             "User-Agent": BROWSER_USER_AGENT,
@@ -497,14 +522,14 @@ async def fetch_webpage(
         )
 
     except httpx.TimeoutException:
-        return build_error("ERR_NETWORK_TIMEOUT", f"获取网页超时（{timeout_sec:.1f}秒）：{url}")
+        return build_error(ERR_NETWORK_TIMEOUT, f"获取网页超时（{timeout_sec:.1f}秒）：{url}")
     except httpx.HTTPStatusError as e:
-        return build_error("ERR_NETWORK_HTTP_ERROR", f"获取网页失败 (HTTP {e.response.status_code})：{url}")
+        return build_error(ERR_NETWORK_HTTP_ERROR, f"获取网页失败 (HTTP {e.response.status_code})：{url}")
     except httpx.RequestError as e:
-        return build_error("ERR_NETWORK_REQUEST_ERROR", f"网络请求失败：{str(e)}")
+        return build_error(ERR_NETWORK_REQUEST_ERROR, f"网络请求失败：{str(e)}")
     except Exception as e:
         logger.error(f"[fetch_webpage] 未知错误: {e}")
-        return build_error("ERR_NET_UNKNOWN", f"获取网页异常: {str(e)}")
+        return build_error(ERR_NET_UNKNOWN, f"获取网页异常: {str(e)}")
 
 
 
@@ -644,7 +669,7 @@ async def search_web(
     """搜索网络 — 小沈 2026-05-19 精简参数(7→5)"""
     try:
         if len(query) < 2:
-            return build_error("ERR_PARAM_INVALID", "搜索查询至少需要2个字符")
+            return build_error(ERR_PARAM_INVALID, "搜索查询至少需要2个字符")
         
     # ===== 第一引擎：Parallel MCP =====
         results = await _search_parallel_mcp(query, num_results, proxy)
@@ -709,7 +734,7 @@ async def search_web(
     
     except Exception as e:
         logger.error(f"[search_web] 未知错误: {e}")
-        return build_error("ERR_NET_UNKNOWN", f"搜索异常: {str(e)}")
+        return build_error(ERR_NET_UNKNOWN, f"搜索异常: {str(e)}")
 
 
 async def _search_bing(
@@ -861,23 +886,23 @@ async def _ping(host: str, count: int = 4, timeout: int = 5) -> dict:
     """Ping测试（内部函数） — 小沈 2026-05-25 重构"""
     try:
         if not host or not host.strip():
-            return build_error("ERR_NETWORK_INVALID_HOST", "目标主机地址不能为空")
+            return build_error(ERR_NETWORK_INVALID_HOST, "目标主机地址不能为空")
         host = host.strip()
         cmd = _build_ping_cmd(host, count, timeout)
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=count * timeout + 10)
             raw_output = result.stdout
         except subprocess.TimeoutExpired:
-            return build_error("ERR_NETWORK_TIMEOUT", f"Ping超时（{count * timeout + 10}秒）")
+            return build_error(ERR_NETWORK_TIMEOUT, f"Ping超时（{count * timeout + 10}秒）")
         except FileNotFoundError:
-            return build_error("ERR_SHELL_COMMAND_NOT_FOUND", "系统ping命令不可用")
+            return build_error(ERR_SHELL_COMMAND_NOT_FOUND, "系统ping命令不可用")
 
         parsed = _parse_ping_output(raw_output, platform.system().lower())
         return _build_ping_result(host, raw_output, parsed)
 
     except Exception as e:
         logger.error(f"[ping] 未知错误: {e}")
-        return build_error("ERR_NET_UNKNOWN", f"Ping测试异常: {e}")
+        return build_error(ERR_NET_UNKNOWN, f"Ping测试异常: {e}")
 
 
 # 【24.5.4 组件1】统一端口结果 data 构建(消除 5 次 data dict)
@@ -917,9 +942,9 @@ async def _port_check(
     # 【24.5.4 重构后主函数】~50行，统一 E1b 为 build_error
     try:
         if not host or not host.strip():
-            return build_error("ERR_NETWORK_INVALID_HOST", "目标主机地址不能为空")
+            return build_error(ERR_NETWORK_INVALID_HOST, "目标主机地址不能为空")
         if port < 1 or port > 65535:
-            return build_error("ERR_NETWORK_INVALID_PORT", f"端口号无效: {port}")
+            return build_error(ERR_NETWORK_INVALID_PORT, f"端口号无效: {port}")
         host = host.strip()
         service = well_known_ports.get(port, "Unknown")
 
@@ -939,17 +964,17 @@ async def _port_check(
             llm_data={"主机": host, "端口": port, "开放": False})
 
     except socket.gaierror as e:
-        return build_error("ERR_NETWORK_DNS_ERROR", f"DNS解析失败: {host} ({e})",
+        return build_error(ERR_NETWORK_DNS_ERROR, f"DNS解析失败: {host} ({e})",
             data=_build_port_result(host, port, False))
     except socket.timeout:
-        return build_error("ERR_NETWORK_TIMEOUT", f"端口 {port} 连接超时: {host}:{port}",
+        return build_error(ERR_NETWORK_TIMEOUT, f"端口 {port} 连接超时: {host}:{port}",
             data=_build_port_result(host, port, False, service))
     except OSError as e:
-        return build_error("ERR_NETWORK_CONNECTION_ERROR", f"连接失败: {e}",
+        return build_error(ERR_NETWORK_CONNECTION_ERROR, f"连接失败: {e}",
             data=_build_port_result(host, port, False))
     except Exception as e:
         logger.error(f"[port_check] 未知错误: {e}")
-        return build_error("ERR_NET_UNKNOWN", f"端口检查异常: {e}")
+        return build_error(ERR_NET_UNKNOWN, f"端口检查异常: {e}")
 
 
 async def network_diagnose(
@@ -976,10 +1001,10 @@ async def network_diagnose(
         result = await _ping(host=host, count=count, timeout=timeout)
     elif mode == "port":
         if port is None:
-            return build_error("ERR_MISSING_PARAM", "mode='port'时port参数必填")
+            return build_error(ERR_MISSING_PARAM, "mode='port'时port参数必填")
         result = await _port_check(host=host, port=port, timeout=timeout)
     else:
-        return build_error("ERR_INVALID_MODE", f"无效的诊断模式: {mode}，必须是 ping 或 port")
+        return build_error(ERR_INVALID_MODE, f"无效的诊断模式: {mode}，必须是 ping 或 port")
 
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([("network_diagnose", "深入诊断", "需要切换ping/port模式进一步检测时")])
