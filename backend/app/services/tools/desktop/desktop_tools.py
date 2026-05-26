@@ -36,6 +36,7 @@ from app.services.tools.tool_result_utils import build_next_actions, truncate_da
 from app.services.tools._response import build_success, build_error
 from app.services.tools.toolhelper.window_helper import check_win32_platform, get_window_rect, get_window_state, find_windows_by_title  # 小沈 2026-05-22
 
+
 _HAS_WIN32 = False
 _win32gui = None
 _win32con = None
@@ -46,6 +47,8 @@ if platform.system() == "Windows":
         import win32gui as _win32gui_mod
         import win32con as _win32con_mod
         import win32api as _win32api_mod
+
+
         _win32gui = _win32gui_mod
         _win32con = _win32con_mod
         _win32api = _win32api_mod
@@ -110,16 +113,16 @@ def window_info(
             )
         except Exception as e:
             logger.error(f"window_info list error: {e}")
-            return build_error("ERR_WINDOW_LIST", f"获取窗口列表失败: {str(e)}")
+            return build_error(ERR_WINDOW_LIST, f"获取窗口列表失败: {str(e)}")
 
     elif action == "info":
         if not window_title:
-            return build_error("ERR_PARAM_INVALID", "action=info时必须提供window_title参数",
+            return build_error(ERR_PARAM_INVALID, "action=info时必须提供window_title参数",
                 next_actions=build_next_actions([("window_info", "列出所有窗口", "查看可用窗口", {"action": "list"})]))
         try:
             matched_hwnds = find_windows_by_title(window_title)
             if not matched_hwnds:
-                return build_error("ERR_WINDOW_NOT_FOUND", f"未找到窗口: {window_title}",
+                return build_error(ERR_WINDOW_NOT_FOUND, f"未找到窗口: {window_title}",
                     next_actions=build_next_actions([("window_info", "列出所有窗口", "查看当前打开的窗口", {"action": "list"})]))
 
             hwnd = matched_hwnds[0]
@@ -150,10 +153,10 @@ def window_info(
                 next_actions=build_next_actions([("window_control", "控制该窗口", "需要操作窗口时")]))
         except Exception as e:
             logger.error(f"window_info info error: {e}")
-            return build_error("ERR_DESKTOP_GET_WINDOW_INFO", f"获取窗口信息失败: {str(e)}")
+            return build_error(ERR_DESKTOP_GET_WINDOW_INFO, f"获取窗口信息失败: {str(e)}")
 
     else:
-        return build_error("ERR_INVALID_ACTION", f"不支持的action: {action}，可选: list/info",
+        return build_error(ERR_INVALID_ACTION, f"不支持的action: {action}，可选: list/info",
             next_actions=build_next_actions([("window_info", "查看用法", "确认参数", {"action": "list"})]))
 
 
@@ -169,12 +172,12 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
     try:
         valid_actions = ["maximize", "minimize", "restore", "topmost", "unpin"]
         if action not in valid_actions:
-            return build_error("ERR_INVALID_ACTION", f"无效的操作: {action}，支持的操作为: {valid_actions}")
+            return build_error(ERR_INVALID_ACTION, f"无效的操作: {action}，支持的操作为: {valid_actions}")
 
         matched_hwnds = find_windows_by_title(window_title)
 
         if not matched_hwnds:
-            return build_error("ERR_WINDOW_NOT_FOUND", f"未找到窗口: {window_title}")
+            return build_error(ERR_WINDOW_NOT_FOUND, f"未找到窗口: {window_title}")
 
         hwnd = matched_hwnds[0]
         title = _win32gui.GetWindowText(hwnd)
@@ -213,7 +216,7 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"set_window_state error: {e}")
-        return build_error("ERR_WINDOW_SET_STATE", f"设置窗口状态失败: {str(e)}")
+        return build_error(ERR_WINDOW_SET_STATE, f"设置窗口状态失败: {str(e)}")
 
 
 # ========== 统一入口函数（26→10精简方案） ==========
@@ -277,7 +280,7 @@ def mouse_control(
         from app.services.tools.toolhelper.gui_helper import _get_mouse_position
         result = _get_mouse_position()
     else:
-        return build_error("ERR_INVALID_ACTION", f"无效的鼠标操作: {action}，支持: click/move/scroll/position",
+        return build_error(ERR_INVALID_ACTION, f"无效的鼠标操作: {action}，支持: click/move/scroll/position",
             next_actions=build_next_actions([("tool_help", "查看mouse_control参数", "确认可用操作时")]))
 
     if result.get("code") == "SUCCESS":
@@ -311,7 +314,7 @@ def keyboard_control(
         key_list = [k.strip() for k in text_or_keys.split(",")]
         result = _key_combo(keys=key_list)
     else:
-        return build_error("ERR_INVALID_ACTION", f"无效的键盘操作: {action}，支持: type/shortcut/combo",
+        return build_error(ERR_INVALID_ACTION, f"无效的键盘操作: {action}，支持: type/shortcut/combo",
             next_actions=build_next_actions([("tool_help", "查看keyboard_control参数", "确认可用操作时")]))
 
     if result.get("code") == "SUCCESS":
@@ -364,12 +367,13 @@ def clipboard_control(
         result = _read_clipboard()
     elif action == "write":
         if content is None:
-            return build_error("ERR_MISSING_PARAM", "写入剪贴板需要提供content参数",
+            return build_error(ERR_MISSING_PARAM, "写入剪贴板需要提供content参数",
                 next_actions=build_next_actions([("tool_help", "查看clipboard_control参数", "确认用法时")]))
         from app.services.tools.desktop.gui_tools import _write_clipboard
+
         result = _write_clipboard(content=content)
     else:
-        return build_error("ERR_INVALID_ACTION", f"无效的剪贴板操作: {action}，支持: read/write",
+        return build_error(ERR_INVALID_ACTION, f"无效的剪贴板操作: {action}，支持: read/write",
             next_actions=build_next_actions([("tool_help", "查看clipboard_control参数", "确认可用操作时")]))
 
     if result.get("code") == "SUCCESS":
@@ -379,3 +383,12 @@ def clipboard_control(
             ("tool_help", "查看clipboard_control用法", "不确定参数时", {"tool_name": "clipboard_control"}),
         ])
     return result
+from app.constants import (
+    ERR_DESKTOP_GET_WINDOW_INFO,
+    ERR_INVALID_ACTION,
+    ERR_MISSING_PARAM,
+    ERR_PARAM_INVALID,
+    ERR_WINDOW_LIST,
+    ERR_WINDOW_NOT_FOUND,
+    ERR_WINDOW_SET_STATE,
+)
