@@ -1079,9 +1079,7 @@ def _try_regex_tool_call_fallback(output: str) -> Optional[Dict[str, Any]]:
             "error": None
         }
     try:
-        from app.services.tools import ensure_tools_registered
         from app.services.tools.registry import tool_registry
-        ensure_tools_registered()
         if tool_registry.get_implementation(tool_name) is None:
             return None
     except Exception:

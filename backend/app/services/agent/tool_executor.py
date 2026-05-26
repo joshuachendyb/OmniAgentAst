@@ -132,9 +132,6 @@ class ToolExecutor:
         if tools is not None:
             self.available_tools = tools
         else:
-            # 【M5修正】从tool_registry获取实现函数 - 【修复 2026-05-10 小健】确保先注册
-            from app.services.tools import ensure_tools_registered
-            ensure_tools_registered()
             from app.services.tools.registry import get_implementations_from_registry
             self.available_tools = get_implementations_from_registry()
     
@@ -182,11 +179,7 @@ class ToolExecutor:
             }
         
         if action not in self.available_tools:
-            # 【2026-04-30 小沈】跨分类fallback：本地没有时从全局registry查找
-            # 【防御 2026-05-10 小沈】本地映射为空时先确保按需注册已完成（避免首请求时序窗口）
-            if not self.available_tools:
-                from app.services.tools import ensure_tools_registered
-                ensure_tools_registered()
+            # 跨分类fallback：本地没有时从全局registry查找
             from app.services.tools.registry import tool_registry
             impl = tool_registry.get_implementation(action)
             if impl is not None:

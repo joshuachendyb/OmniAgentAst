@@ -5,7 +5,6 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from datetime import datetime
 import traceback
-from pathlib import Path
 
 from app.api.v1 import health, init_model_select, operation_history, routes, sessions, security, execution, metrics
 # 兼容导入
@@ -18,29 +17,10 @@ from app.utils.monitoring import setup_monitoring
 import logging
 
 from app.constants import DEFAULT_CORS_ORIGINS
+from app.utils.version import get_version
 
 
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
-
-# 配置日志 - 使用统一的 logger 配置，不再使用 basicConfig
-# 日志统一在 app/utils/logger.py 中配置
-
-def get_version() -> str:
-    """从version.txt读取版本号"""
-    try:
-        current_file = Path(__file__).resolve()
-        backend_dir = current_file.parent.parent
-        project_root = backend_dir.parent
-        version_file = project_root / "version.txt"
-        
-        if version_file.exists():
-            with open(version_file, 'r', encoding='utf-8') as f:
-                version = f.readline().strip()
-            print(f"[Version] read version: {version}")
-            return version.lstrip('v')
-    except Exception as e:
-        pass
-    return "0.13.36"
 
 app_version = get_version()
 
@@ -135,6 +115,9 @@ from app.services.react_sse_wrapper import cleanup_expired_tasks
 @app.on_event("startup")
 async def startup_event():
     """应用启动时启动后台任务"""
+    from app.services.tools import ensure_tools_registered
+    ensure_tools_registered()
+    
     async def cleanup_task():
         """定期清理过期任务"""
         while True:

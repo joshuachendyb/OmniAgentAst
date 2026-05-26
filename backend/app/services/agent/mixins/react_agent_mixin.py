@@ -32,14 +32,7 @@ class ReactAgentMixin(ToolLoaderMixin):
     """
     
     def _init_tools_and_executor(self, tool_category: Optional[ToolCategory] = None):
-        """初始化工具加载和执行器 - 小沈 2026-05-10
-        
-        首次调用时触发工具注册（ensure_tools_registered），后续调用跳过。
-        """
-        # 全量注册所有工具
-        from app.services.tools import ensure_tools_registered
-        ensure_tools_registered()
-        
+        """初始化工具加载和执行器 - 小沈 2026-05-10"""
         if tool_category:
             self._tools_dict = self.load_tools_by_category(tool_category)
         else:

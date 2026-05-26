@@ -43,7 +43,6 @@ from app.services.agent.reasoning_steps import (
     ErrorStep,
 )
 from app.services.tools.registry import ToolCategory, get_tools_from_registry_by_category
-from app.services.tools import ensure_tools_registered
 
 # 【修复 小健 2026-05-24】P2-1: 删除重复导入AgentStatus
 from app.constants import MAX_CONTEXT_CHARS
@@ -132,8 +131,6 @@ class BaseAgent(ABC):
         self._loaded_categories = set()
         if self.tool_category:
             self._loaded_categories.add(self.tool_category.value)
-        # self._loaded_categories.add("support_tool")  # support_tool已废弃，不再预加载
-        
         self._intent_classifier = IntentClassifier()
         
         # 【v2.3新增】chunk处理相关属性—所有Agent子类共享
@@ -161,9 +158,6 @@ class BaseAgent(ABC):
         """
         if not self.tool_category:
             return {}
-        
-        # 【Phase 1修复 小健 2026-05-14】【修复 U8 小沈 2026-05-15】全量注册，不再传categories
-        ensure_tools_registered()
         
         return get_tools_from_registry_by_category(self.tool_category)
     
