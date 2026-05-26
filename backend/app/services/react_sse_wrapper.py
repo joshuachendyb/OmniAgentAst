@@ -139,18 +139,9 @@ async def _yield_error_sse(
 # SSE 格式化函数
 # ============================================================
 
-def _format_sse_event(event: Dict[str, Any], step: int, model: str, provider: str) -> str:
+def dispatch_sse_event(event: Dict[str, Any], step: int, model: str, provider: str) -> str:
     """
     将 event dict 格式化为 SSE 字符串
-    
-    Args:
-        event: event dict from agent.run_stream()
-        step: 步骤编号
-        model: 模型名称（用于 final/error 响应）
-        provider: 提供商（用于 final/error 响应）
-    
-    Returns:
-        SSE 格式的字符串
     """
     event_type = event.get('type', '')
     
@@ -491,7 +482,7 @@ async def _run_sse_stream(
                 break
             event_step = event.get('step') if isinstance(event, dict) else None
             sse_step = event_step if event_step is not None else next_step()
-            sse_data = _format_sse_event(event, sse_step, ai_service.model, ai_service.provider)
+            sse_data = dispatch_sse_event(event, sse_step, ai_service.model, ai_service.provider)
             if sse_data:
                 if sse_data.startswith("data: "):
                     step_data = json.loads(sse_data[6:])

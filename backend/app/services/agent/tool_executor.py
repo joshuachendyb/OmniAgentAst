@@ -14,6 +14,12 @@ from typing import Any, Callable, Dict, List, Optional
 
 from app.utils.logger import logger
 
+from app.constants import (
+    ERR_MISSING_PARAM,
+    ERR_TOOL_DEPRECATED,
+    ERR_TOOL_NOT_FOUND,
+    ERR_UNKNOWN,
+)
 
 # 工具结果格式化 — 小沈 2026-05-21
 from app.services.agent.tool_result_formatter import (
@@ -25,7 +31,7 @@ from app.services.agent.tool_result_formatter import (
 from app.services.tools.tool_config import (
     get_tool_config,
     get_tool_name_alias,
-    is_deprecated_tool
+    is_deprecated_tool,
 
 
 )
@@ -339,11 +345,3 @@ class ToolExecutor:
             logger.warning(f"[参数监控] action={action}, 获取schema失败: {e}")
         
         return params
-    
-from app.constants import (
-    DEFAULT_RETRYABLE_ERRORS,
-    ERR_MISSING_PARAM,
-    ERR_TOOL_DEPRECATED,
-    ERR_TOOL_NOT_FOUND,
-    ERR_UNKNOWN,
-)
