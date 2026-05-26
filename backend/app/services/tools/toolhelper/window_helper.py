@@ -18,9 +18,8 @@ Author: 小沈 - 2026-05-18
 import platform
 from typing import Any, Dict, List, Optional
 
+from app.constants import ERR_DESKTOP_NOT_WINDOWS, ERR_DESKTOP_NO_PYWIN32
 from app.utils.logger import logger
-
-
 _HAS_WIN32 = False
 _win32gui = None
 _win32con = None
@@ -29,6 +28,9 @@ if platform.system() == "Windows":
     try:
         import win32gui as _win32gui_mod
         import win32con as _win32con_mod
+
+
+
         _win32gui = _win32gui_mod
         _win32con = _win32con_mod
         _HAS_WIN32 = True
@@ -46,13 +48,13 @@ def check_win32_platform() -> Optional[Dict[str, Any]]:
     """
     if platform.system() != "Windows":
         return {
-            "code": "ERR_DESKTOP_NOT_WINDOWS",
+            "code": ERR_DESKTOP_NOT_WINDOWS,
             "data": None,
             "message": "此功能仅支持 Windows 系统"
         }
     if not _HAS_WIN32:
         return {
-            "code": "ERR_DESKTOP_NO_PYWIN32",
+            "code": ERR_DESKTOP_NO_PYWIN32,
             "data": None,
             "message": "pywin32库未安装，请先执行: pip install pywin32"
         }
@@ -182,3 +184,4 @@ __all__ = [
     "_win32gui",
     "_win32con",
 ]
+
