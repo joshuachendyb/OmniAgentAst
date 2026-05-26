@@ -45,14 +45,15 @@ from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool
 from app.services.agent.base_react import DEFAULT_MAX_STEPS
 from app.services.intents.crss_scorer import CRSS_CONFIDENCE_THRESHOLD  # 【修复 2026-05-13 小沈】H2: 改为从crss_scorer导入，切断与chat_router的循环依赖
 from app.services.task_lifecycle import TaskLifecycleManager  # 【重构 2026-05-25 小沈】替代直接操作running_tasks
+from app.services.agent.base_react import BaseAgent
 
 
-class GenericReactAgent:
+class GenericReactAgent(BaseAgent):
     """通用TextStrategy兜底Agent - 小沈 2026-05-25
 
     使用场景:
-    - _run_sse_stream中AgentFactory.create失败时回退
-    - 需要直接使用LLM文本策略的场景
+        - _run_sse_stream中AgentFactory.create失败时回退
+        - 需要直接使用LLM文本策略的场景
 
     使用示例:
         strategy = TextStrategy()
@@ -60,8 +61,8 @@ class GenericReactAgent:
     """
 
     def __init__(self, llm_client, task_id, strategy, **kwargs):
-        from app.services.agent.base_react import BaseAgent
-        super(GenericReactAgent, self).__init__(
+        BaseAgent.__init__(
+            self,
             llm_client=llm_client, task_id=task_id, tool_category=None, **kwargs
         )
         self._strategy = strategy

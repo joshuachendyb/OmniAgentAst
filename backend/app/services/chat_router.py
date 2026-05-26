@@ -50,7 +50,6 @@ from app.services.intents.crss_scorer import (
     detect_intent_v2,
     CRSS_CONFIDENCE_THRESHOLD,
 )
-from app.services.command_security import check_command_safety
 
 
 # 【修复 2026-04-30 小沈】CRSS置信度阈值：归一化评分 >= 此值认为意图可信
@@ -289,18 +288,13 @@ class ChatRouter:
         next_step = create_step_counter()
         execution_steps: List[Dict] = []
 
-        # S4 安全检测
-        sec = check_command_safety(user_input)
-        if sec.get('blocked'):
-            logger.warning(f"[ChatRouter] Security blocked, risk={sec.get('risk')}")
-
-        # S5 start_step（yield_sse保留，因为 send_start_step 签名要求 yield_func 参数）
+        # S4 start_step — 安全检查统一在react_sse_wrapper中执行，此处不重复检查
         try:
             def yield_sse(data: dict) -> str:
                 return f"data: {json.dumps(data)}\n\n"
             from app.chat_stream.start_step import send_start_step
             start_data = await send_start_step(ai_service=ai_service, task_id=task_id, next_step=next_step,
-                user_message=user_input, security_check_result=sec,
+                user_message=user_input, security_check_result={},
                 current_execution_steps=execution_steps, session_id=session_id,
                 yield_func=yield_sse)
             yield f"data: {json.dumps(start_data)}\n\n"
