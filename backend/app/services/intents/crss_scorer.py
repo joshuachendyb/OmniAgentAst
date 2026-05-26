@@ -16,6 +16,8 @@ from typing import Dict, List, Optional, Tuple
 
 from app.services.tools.registry import ToolCategory
 
+from app.constants import CRSS_DANGEROUS_COMMAND_BONUS, CRSS_ACTION_MODULATION_FACTOR, CRSS_ACTION_INFERENCE_WEIGHT
+
 logger = logging.getLogger(__name__)
 
 # 置信度阈值
@@ -53,7 +55,7 @@ TYPE_KEYWORDS: Dict[str, Dict] = {
         "keywords": [r'\bping\b', r'\bcurl\b', r'\bwget\b', r'\bssh\b',
                      r'\bhttp\b', r'\bhttps\b', r'\bftp\b', r'\bsocket\b'],
         "chinese_keywords": ['网络', '端口', '下载', '请求', 'API',
-                             'IP', 'IP地址', 'DNS', '公网IP', '网关', 'WIFI', 'WiFi']  # 【修复 2026-05-14 小沈】补充IP/DNS/WIFI等高频词
+                             'IP', 'IP地址', 'DNS', '公网IP', '网关', 'WIFI', 'WiFi']
     },
     "DESKTOP": {
         "keywords": [r'\bscreenshot\b', r'\bcapture\b',
@@ -120,7 +122,7 @@ ACTION_DEFINITIONS = {
     "execute": {
         "keywords": ['run', 'exec', 'execute', '运行', '执行', '启动', '编译'],
         "compatibility": {
-            ToolCategory.SHELL: 1.5,
+            ToolCategory.SYSTEM: 1.5,
         }
     },
     "query": {
@@ -128,7 +130,6 @@ ACTION_DEFINITIONS = {
         "compatibility": {
             ToolCategory.DOCUMENT: 1.5,
             ToolCategory.SYSTEM: 1.0,
-            ToolCategory.META: 0.8,
             ToolCategory.FILE: 1.0,
         }
     },
@@ -163,15 +164,15 @@ ACTION_DEFINITIONS = {
 
 TYPE_CATEGORY_MAP = {
     "FILE": ToolCategory.FILE,
-    "SHELL": ToolCategory.SHELL,
-    "TIME": ToolCategory.META,
+    "SHELL": ToolCategory.SYSTEM,
+    "TIME": ToolCategory.SYSTEM,
     "NETWORK": ToolCategory.NETWORK,
     "DESKTOP": ToolCategory.DESKTOP,
     "ENV": ToolCategory.SYSTEM,
     "SYSTEM": ToolCategory.SYSTEM,
     "DATABASE": ToolCategory.DOCUMENT,
     "DOCUMENT": ToolCategory.DOCUMENT,
-    "CODE_EXECUTION": ToolCategory.SHELL,
+    "CODE_EXECUTION": ToolCategory.SYSTEM,
 }
 
 
@@ -182,20 +183,32 @@ def _match_keywords(keywords: list, chinese_keywords: list, text: str) -> float:
         if kw in text and not _is_negated(kw, text):
             score += 2.0
     for pattern in keywords:
+        # 【修复 小健 2026-05-24】P2-16: 只去掉\b边界标记，其他反斜杠转义保留原样
         keyword = pattern.replace(r'\b', '')
+        if keyword != pattern and '\\' in keyword:
+            keyword = keyword.replace(r'\\', '\\')
         if _ascii_word_boundary_match(keyword, text):
             score += 1.0
     return score
 
 
 def _is_negated(keyword: str, text: str) -> bool:
-    """检查中文关键词前是否有否定前缀 - 小健 2026-05-13"""
-    idx = text.find(keyword)
-    if idx < 0:
-        return False
-    prefix = text[max(0, idx - 2):idx].strip()
+    """检查中文关键词前是否有否定前缀 - 小健 2026-05-13
+    【修复 小健 2026-05-24】P2-15: 检查所有出现位置，若存在未被否定的出现则返回False
+    """
     negation_words = ["不", "没", "别", "勿", "无", "未", "非", "没有", "不要", "不用"]
-    return any(negation in prefix for negation in negation_words)
+    start = 0
+    has_non_negated = False
+    while True:
+        idx = text.find(keyword, start)
+        if idx < 0:
+            break
+        prefix = text[max(0, idx - 2):idx].strip()
+        if not any(negation in prefix for negation in negation_words):
+            has_non_negated = True
+            break
+        start = idx + len(keyword)
+    return not has_non_negated and text.find(keyword) >= 0
 
 
 def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
@@ -223,8 +236,8 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
         from app.services.command_security import DANGEROUS_COMMANDS
         for dangerous in DANGEROUS_COMMANDS:
             if dangerous.lower() in command_lower:
-                logger.info(f"[CRSS] 危险命令 → SHELL +3.0: '{dangerous}'")
-                type_raw[ToolCategory.SHELL] = type_raw.get(ToolCategory.SHELL, 0) + 3.0
+                logger.info(f"[CRSS] 危险命令 → SHELL +{CRSS_DANGEROUS_COMMAND_BONUS}: '{dangerous}'")
+                type_raw[ToolCategory.SYSTEM] = type_raw.get(ToolCategory.SYSTEM, 0) + CRSS_DANGEROUS_COMMAND_BONUS
                 break
     except ImportError:
         pass
@@ -260,14 +273,14 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
             for action_name, action_score in action_scores.items():
                 action_def = ACTION_DEFINITIONS[action_name]
                 compat = action_def["compatibility"].get(cat, 0.3)
-                final_raw[cat] += type_score * compat * 0.3  # 动作调制
+                final_raw[cat] += type_score * compat * CRSS_ACTION_MODULATION_FACTOR  # 动作调制
     elif action_scores:
         # 无类型分 → 用动作反推类型
         for action_name, action_score in action_scores.items():
             defn = ACTION_DEFINITIONS[action_name]
             for cat, compat in defn["compatibility"].items():
                 if compat >= 1.0:
-                    final_raw[cat] = final_raw.get(cat, 0) + action_score * 0.5
+                    final_raw[cat] = final_raw.get(cat, 0) + action_score * CRSS_ACTION_INFERENCE_WEIGHT
         if final_raw:
             logger.info(f"[CRSS] 无类型匹配，动作推断类型: {[c.value for c in final_raw.keys()]}")
 

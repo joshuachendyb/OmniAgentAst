@@ -1,9 +1,39 @@
 # AGENTS.md - OmniAgentAs-desk
 
-**Version**: v0.13.11 | **Project**: Full-stack (React+FastAPI) AI agent desktop
+**Version**: v0.13.33 | **Project**: Full-stack (React+FastAPI) AI agent desktop
 
 > Global rules (roles, timestamps, commit format, versioning, doc style) are in `C:\Users\chend\.config\opencode\AGENTS.md` (auto-loaded).
 > This file contains **project-specific** info only.
+
+---
+
+## 编码铁规（必须遵守）
+
+**生效时间**: 2026-05-26 06:40:00 | **适用范围**: 所有代码文件
+**更新人**: 北京老陈
+
+### 八大原则 — 日常5 + 重构再加3
+
+**日常编码必须遵守以下 5 条**：
+
+| 原则 | 说明 | 违反后果 |
+|------|------|---------|
+| **SRP** — 单一职责 | 一个类/模块/函数只做一件事 | 改了 A 影响 B |
+| **DRY** — 不重复 | 相同逻辑只写一次，抽取共用 | 改了 A 漏了 B |
+| **KISS** — 保持简单 | 能简单不复杂，不提前引入抽象 | 代码绕来绕去看不懂 |
+| **SLAP** — 同一抽象层 | 一个函数不混搭高层编排和底层细节 | 读代码像读天书 |
+| **YAGNI** — 不要过度设计 | 不加用不上的接口/模式/抽象 | 废弃代码越积越多 |
+
+**代码重构/框架设计时，在上述 5 条基础上再遵守以下 3 条**：
+
+| 原则 | 说明 | 适用场景 |
+|------|------|---------|
+| **OCP** — 开闭原则 | 对扩展开放，对修改封闭 | 库/框架/公共组件设计 |
+| **LSP** — 里氏替换 | 子类不违反父类约定 | 继承体系 |
+| **ISP** — 接口隔离 | 接口职责单一，不塞入不相关方法 | 多实现/插件系统 |
+
+### 违反后果
+上述原则是必须遵守的编码纪律。违反者代码被打回重写，直到符合原则为止。
 
 ---
 
@@ -95,7 +125,7 @@ OmniAgentAs-desk/
 │   │   └── utils/
 │   ├── tests/                  # pytest
 │   ├── tools/                  # test/debug scripts
-│   └── chat_app.db             # SQLite
+│   └── ~/.omniagent/           # SQLite DBs (chat_history.db, operations.db)
 ├── frontend/
 │   ├── src/
 │   └── package.json
@@ -113,7 +143,7 @@ OmniAgentAs-desk/
 
 | Layer | Tech | Notes |
 |-------|------|-------|
-| Backend | FastAPI, Uvicorn, SQLAlchemy, aiosqlite | SQLite `chat_app.db` |
+| Backend | FastAPI, Uvicorn, SQLAlchemy, aiosqlite | SQLite `~/.omniagent/chat_history.db` |
 | | **httpx==0.26.0, httpcore==1.0.1** | **LOCKED** — 0.28.1 breaks TLS |
 | | Pydantic v2 | Tool schemas |
 | Frontend | React 18, TypeScript 5, Vite | |
@@ -150,9 +180,7 @@ OmniAgentAs-desk/
 
 `version.txt` is append-only, oldest at bottom.
 
----
-
-## Code Conventions
+---## Code Conventions
 
 ### Python
 - snake_case functions/vars, PascalCase classes, UPPER_SNAKE_CASE constants

@@ -128,5 +128,4 @@ __all__ = [
     "ensure_tools_registered",
     "is_tools_registered",
     "reset_registered_state",
-    "_registered_categories",
 ]

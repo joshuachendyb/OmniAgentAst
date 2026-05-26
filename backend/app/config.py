@@ -72,15 +72,16 @@ class Config:
         return base_dir / "config" / "config.yaml"
     
     def _apply_env_overrides(self):
-        """应用环境变量覆盖"""
-        # AI配置 - 只在对应的provider配置存在时才覆盖
+        """应用环境变量覆盖 — 通用模式：{PROVIDER}_API_KEY 自动匹配 — 小健 2026-05-24"""
         ai_config = self._config_data.get('ai', {})
         
-        if os.getenv('ZHIPUAI_API_KEY') and 'zhipuai' in ai_config:
-            ai_config['zhipuai']['api_key'] = os.getenv('ZHIPUAI_API_KEY')
-        
-        if os.getenv('OPENCODE_API_KEY') and 'opencode' in ai_config:
-            ai_config['opencode']['api_key'] = os.getenv('OPENCODE_API_KEY')
+        for provider_name, provider_config in ai_config.items():
+            if not isinstance(provider_config, dict):
+                continue
+            env_key = f"{provider_name.upper()}_API_KEY"
+            env_value = os.getenv(env_key)
+            if env_value:
+                provider_config['api_key'] = env_value
         
         if os.getenv('AI_PROVIDER'):
             ai_config['provider'] = os.getenv('AI_PROVIDER')
@@ -123,7 +124,14 @@ class Config:
             AI配置字典
         """
         if provider is None:
-            provider = self.get('ai.provider', 'zhipuai')
+            provider = self.get('ai.provider')
+            if not provider:
+                ai_config = self.get('ai', {})
+                for key, val in ai_config.items():
+                    if isinstance(val, dict) and val.get('models'):
+                        provider = key
+                        break
+                provider = provider or 'zhipuai'
         
         return self.get(f'ai.{provider}', {})
     

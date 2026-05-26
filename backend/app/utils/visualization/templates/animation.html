@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件操作动画报告 - {{ task_description }}</title>
+    <style>
+        {{ css_content|safe }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📁 文件操作执行动画</h1>
+            <p>{{ task_description }}</p>
+            <p style="margin-top: 10px; font-size: 12px;">会话ID: {{ task_id }}</p>
+        </div>
+        
+        <div class="controls">
+            <button class="btn" id="playBtn" onclick="playAnimation()">▶️ 播放</button>
+            <button class="btn" id="pauseBtn" onclick="pauseAnimation()" disabled>⏸️ 暂停</button>
+            <button class="btn" onclick="resetAnimation()">🔄 重置</button>
+            <button class="btn" onclick="exportReport()">📄 导出报告</button>
+        </div>
+        
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+        </div>
+        
+        <div class="operations" id="operations">
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value">{{ total }}</div>
+                <div class="stat-label">总操作数</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ success }}</div>
+                <div class="stat-label">成功</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ error }}</div>
+                <div class="stat-label">失败</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        {{ js_content|safe }}
+    </script>
+</body>
+</html>

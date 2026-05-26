@@ -53,8 +53,8 @@ class BasePrompts(ABC):
 {
   "thought": "分析当前状态和下一步决策",
   "reasoning": "为什么选这个工具、参数如何确定",
-  "tool_name": "具体工具名",
-  "tool_params": {"参数名": "参数值"}
+  "tool_name": "get_current_time",
+  "tool_params": {"action": "now"}
 }
 
 情况2：任务完成（退出循环）
@@ -68,7 +68,7 @@ class BasePrompts(ABC):
 【字段要求】：
 - thought: 必需
 - reasoning: 必需
-- tool_name: 必需（具体工具名或finish）
+- tool_name: 必需（实际工具名或finish）
 - tool_params: 必需（参数对象或{}）
 
 【禁止项】：
@@ -117,7 +117,7 @@ class BasePrompts(ABC):
         pass
 
     def get_available_tools_prompt(self) -> str:
-        """获取可用工具列表描述（已废弃：工具概要由_call_llm_with_summary动态注入）"""
+        """获取可用工具列表描述（已废弃：工具概要由_call_llm动态注入）"""
         return ""
 
     def get_task_prompt(self, task: str) -> str:

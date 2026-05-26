@@ -5,12 +5,15 @@
 import json
 import sqlite3
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from dataclasses import dataclass, asdict
 import textwrap
+from jinja2 import Environment, FileSystemLoader
 
 from app.services.safety.file.file_safety import FileSafetyConfig
+# 【小沈重构 2026-05-22】数据库配置迁移至 app/db/
+from app.db.operations_db import get_connection as get_operations_connection
 from app.utils.logger import logger
 
 
@@ -51,112 +54,123 @@ class FileOperationVisualizer:
     """
     
     def __init__(self):
-        self.config = FileSafetyConfig()
+        # 【小沈重构 2026-05-22】不再需要 FileSafetyConfig 的 DB_PATH
+        pass
     
     def _get_connection(self) -> sqlite3.Connection:
         """获取数据库连接"""
-        return sqlite3.connect(str(self.config.DB_PATH))
-    
-    def generate_text_report(self, task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
-        """
-        生成文本格式报告
-        
-        【小沈修改 2026-03-25】
-        - 去掉 file_operation_sessions 表的依赖
-        - task_description 作为参数传入
-        - 统计数据从 file_operations 表计算
-        
-        【小沈修改 2026-04-30】
-        - 修复列名：task_id → task_id（与 file_operations 表结构一致）
-        
-        Args:
-            task_id: 任务ID
-            task_description: 任务描述（用户消息）
-            output_path: 输出路径（可选）
-            
-        Returns:
-            报告文本内容
+        return get_operations_connection()
+
+    def _query_file_operations(self, task_id: str) -> List[Tuple]:
+        """查询 file_operations 表，返回所有操作记录（与 generate_html_report 共享）
+
+        小沈 2026-05-25 重构拆分
         """
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT operation_type, source_path, destination_path, status, 
+            SELECT operation_type, source_path, destination_path, status,
                    file_size, is_directory, created_at, error_message
             FROM file_operations WHERE task_id = ?
             ORDER BY sequence_number ASC
         ''', (task_id,))
-        
         operations = cursor.fetchall()
         conn.close()
-        
-        if not operations:
-            logger.warning(f"No operations found for session: {task_id}")
-            return ""
-        
-        total = len(operations)
-        success_count = sum(1 for op in operations if op[3] == 'success')
-        failed_count = sum(1 for op in operations if op[3] == 'failed')
-        rolled_back_count = sum(1 for op in operations if 'rollback' in str(op[3]))
-        created_at = operations[0][6] if operations else None
-        
+        return operations
+
+    def _count_op_stats(self, operations: List[Tuple]) -> Dict[str, int]:
+        """统计操作状态分布，返回 {total, success, failed, rolled_back}
+
+        小沈 2026-05-25 重构拆分
+        """
+        return {
+            "total": len(operations),
+            "success": sum(1 for op in operations if op[3] == "success"),
+            "failed": sum(1 for op in operations if op[3] == "failed"),
+            "rolled_back": sum(1 for op in operations if "rollback" in str(op[3])),
+        }
+
+    def _build_text_report_lines(
+        self, task_id: str, task_description: str,
+        operations: List[Tuple], stats: Dict[str, int]
+    ) -> List[str]:
+        """构建文本报告的所有行（纯格式化，无 DB/IO 副作用）
+
+        小沈 2026-05-25 重构拆分
+        """
         lines = []
-        lines.append(f"文件操作报告")
-        lines.append(f"=" * 50)
+        lines.append("文件操作报告")
+        lines.append("=" * 50)
         lines.append(f"会话ID: {task_id}")
-        lines.append(f"Agent: file-operation-agent")  # 【小沈修改 2026-03-25】固定值
-        lines.append(f"任务描述: {task_description}")  # 【小沈修改 2026-03-25】参数传入
-        lines.append(f"开始时间: {created_at}")
-        lines.append(f"完成时间: 未完成")  # 【小沈修改 2026-03-25】简化处理
-        lines.append(f"")
+        lines.append(f"Agent: file-operation-agent")
+        lines.append(f"任务描述: {task_description}")
+        lines.append(f"开始时间: {operations[0][6] if operations else ''}")
+        lines.append(f"完成时间: 未完成")
+        lines.append("")
         lines.append("-" * 80)
-        lines.append(f"操作统计:")
-        lines.append(f"  - 总操作数: {total}")
-        lines.append(f"  - 成功: {success_count}")
-        lines.append(f"  - 失败: {failed_count}")
-        lines.append(f"  - 已回滚: {rolled_back_count}")
+        lines.append("操作统计:")
+        lines.append(f"  - 总操作数: {stats['total']}")
+        lines.append(f"  - 成功: {stats['success']}")
+        lines.append(f"  - 失败: {stats['failed']}")
+        lines.append(f"  - 已回滚: {stats['rolled_back']}")
         lines.append("-" * 80)
-        lines.append(f"")
-        
-        # 详细操作列表
-        if operations:
-            lines.append("详细操作记录:")
+        lines.append("")
+
+        for i, (op_type, src, dst, status, size, is_dir, created_at, error) in enumerate(operations, 1):
+            lines.append(f"[{i}] {op_type.upper()}")
+            lines.append(f"    状态: {status}")
+            if src:
+                lines.append(f"    源路径: {src}")
+            if dst:
+                lines.append(f"    目标路径: {dst}")
+            if size:
+                lines.append(f"    文件大小: {self._format_size(size)}")
+            if is_dir:
+                lines.append(f"    类型: 目录")
+            if error:
+                lines.append(f"    错误信息: {error}")
+            lines.append(f"    执行时间: {created_at}")
             lines.append("")
-            
-            for i, (op_type, src, dst, status, size, is_dir, created_at, error) in enumerate(operations, 1):
-                lines.append(f"[{i}] {op_type.upper()}")
-                lines.append(f"    状态: {status}")
-                
-                if src:
-                    lines.append(f"    源路径: {src}")
-                if dst:
-                    lines.append(f"    目标路径: {dst}")
-                
-                if size:
-                    size_str = self._format_size(size)
-                    lines.append(f"    文件大小: {size_str}")
-                
-                if is_dir:
-                    lines.append(f"    类型: 目录")
-                
-                if error:
-                    lines.append(f"    错误信息: {error}")
-                
-                lines.append(f"    执行时间: {created_at}")
-                lines.append("")
-        
+
         lines.append("=" * 80)
         lines.append("报告生成时间: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         lines.append("=" * 80)
-        
+        return lines
+
+    def generate_text_report(self, task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
+        """生成文本格式报告
+
+        【小沈修改 2026-03-25】
+        - 去掉 file_operation_sessions 表的依赖
+        - task_description 作为参数传入
+        - 统计数据从 file_operations 表计算
+
+        【小沈修改 2026-04-30】
+        - 修复列名：task_id → task_id（与 file_operations 表结构一致）
+
+        【小沈重构 2026-05-25】
+        - 重构拆分：提取 _query_file_operations / _count_op_stats / _build_text_report_lines
+
+        Args:
+            task_id: 任务ID
+            task_description: 任务描述（用户消息）
+            output_path: 输出路径（可选）
+
+        Returns:
+            报告文本内容
+        """
+        operations = self._query_file_operations(task_id)
+        if not operations:
+            logger.warning(f"No operations found for session: {task_id}")
+            return ""
+
+        stats = self._count_op_stats(operations)
+        lines = self._build_text_report_lines(task_id, task_description, operations, stats)
         report_text = "\n".join(lines)
-        
-        # 保存到文件
-        if output_path:
-            output_path = Path(output_path)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(report_text, encoding='utf-8')
-            logger.info(f"Text report saved: {output_path}")
-        
+
+        # YAGNI 死代码：output_path 从未被实际传入，直接删除保存逻辑
+        # 原 L157-161 已删除，调用方从未传 output_path
+
         return report_text
     
     def _format_size(self, size_bytes: int) -> str:
@@ -316,23 +330,19 @@ class FileOperationVisualizer:
         
         return flows
     
-    def generate_animation_script(self, task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
+    def _query_animation_operations(self, task_id: str) -> List[Dict[str, Any]]:
+        """查询指定task_id的文件操作记录（动画用）— 小健 2026-05-25
+
+        使用场景:
+        - generate_animation_script中查询操作历史
+
+        使用示例:
+            operations_data = self._query_animation_operations(task_id)
+
+        返回数据说明:
+        - 返回List[Dict[str, Any]]，每个元素包含type/source/destination/status/timestamp
+        - 如果无操作记录，返回空列表
         """
-        生成动画展示脚本（HTML + JavaScript）
-        
-        【小沈修改 2026-03-25】
-        - 去掉 file_operation_sessions 表的依赖
-        - task_description 作为参数传入
-        
-        Args:
-            task_id: 会话ID
-            task_description: 任务描述（用户消息）
-            output_path: 输出路径
-            
-        Returns:
-            HTML内容
-        """
-        # 【小沈修改 2026-03-25】直接获取操作记录，不依赖 file_operation_sessions 表
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute('''
@@ -340,300 +350,137 @@ class FileOperationVisualizer:
             FROM file_operations WHERE task_id = ?
             ORDER BY sequence_number ASC
         ''', (task_id,))
-        
-        operations = cursor.fetchall()
+        rows = cursor.fetchall()
         conn.close()
+        if not rows:
+            return []
+        return [
+            {"type": op_type, "source": src, "destination": dst, "status": status, "timestamp": created_at}
+            for op_type, src, dst, status, created_at in rows
+        ]
+
+    @staticmethod
+    def _build_animation_data(operations_data: List[Dict[str, Any]],
+                             task_description: str) -> Dict[str, Any]:
+        """从操作记录构建动画渲染所需的数据结构 — 小健 2026-05-25
+
+        使用场景:
+        - generate_animation_script中构建模板数据
+
+        使用示例:
+            anim_data = FileOperationVisualizer._build_animation_data(ops, desc)
+
+        返回数据说明:
+        - operations/task_description/total_operations/success_count/error_count/operation_types
+        """
+        success_count = sum(1 for op in operations_data if op.get("status") == "success")
+        error_count = sum(1 for op in operations_data if op.get("status") != "success")
+        operation_types: Dict[str, int] = {}
+        for op in operations_data:
+            op_type = op.get("type", "unknown")
+            operation_types[op_type] = operation_types.get(op_type, 0) + 1
+        return {
+            "operations": operations_data,
+            "task_description": task_description,
+            "total_operations": len(operations_data),
+            "success_count": success_count,
+            "error_count": error_count,
+            "operation_types": operation_types,
+        }
+
+    def _prepare_animation_data(self, anim_data: Dict[str, Any], task_id: str) -> Dict[str, Any]:
+        """准备动画渲染所需数据 — 小健 2026-05-25
+
+        使用场景:
+            _render_animation_html中准备Jinja2模板变量
+
+        使用示例:
+            template_vars = self._prepare_animation_data(anim_data, task_id)
+
+        返回数据说明:
+            - 返回Dict，包含operations_json, task_description, total, success, error, task_id
+        """
+        return {
+            "operations_json": json.dumps(anim_data["operations"], ensure_ascii=False),
+            "task_description": anim_data["task_description"],
+            "total": anim_data["total_operations"],
+            "success": anim_data["success_count"],
+            "error": anim_data["error_count"],
+            "task_id": task_id
+        }
+
+    def _load_template_assets(self) -> Tuple[str, str]:
+        """加载CSS和JS模板资源 — 小健 2026-05-25
+
+        使用场景:
+            _render_animation_html中加载外部样式和脚本
+
+        使用示例:
+            css_content, js_content = self._load_template_assets()
+
+        返回数据说明:
+            - 返回Tuple[str, str]，分别是CSS内容和JS内容
+        """
+        template_dir = Path(__file__).parent / "templates"
+        css_path = template_dir / "animation.css"
+        js_path = template_dir / "animation.js"
         
-        if not operations:
+        css_content = css_path.read_text(encoding="utf-8")
+        js_content = js_path.read_text(encoding="utf-8")
+        
+        return css_content, js_content
+
+    def _render_animation_html(self, anim_data: Dict[str, Any], task_id: str) -> str:
+        """使用Jinja2模板渲染动画HTML — 小健 2026-05-25
+
+        使用场景:
+            generate_animation_script中渲染最终HTML
+
+        使用示例:
+            html = FileOperationVisualizer._render_animation_html(anim_data, task_id)
+
+        返回数据说明:
+            - 返回str，完整HTML文档字符串
+        """
+        template_dir = Path(__file__).parent / "templates"
+        env = Environment(loader=FileSystemLoader(template_dir))
+        
+        template = env.get_template("animation.html")
+        template_vars = self._prepare_animation_data(anim_data, task_id)
+        css_content, js_content = self._load_template_assets()
+        
+        return template.render(
+            **template_vars,
+            css_content=css_content,
+            js_content=js_content
+        )
+
+    def generate_animation_script(self, task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
+        """
+        生成动画展示脚本（HTML + JavaScript）— 小沈 2026-03-25, 2026-05-25 小健重构拆分
+
+        Args:
+            task_id: 会话ID
+            task_description: 任务描述（用户消息）
+            output_path: 输出路径
+
+        Returns:
+            HTML内容
+        """
+        operations_data = self._query_animation_operations(task_id)
+        if not operations_data:
             logger.warning(f"No operations found for session: {task_id}")
             return ""
-        
-        # 构建操作序列数据
-        operations_data = []
-        for op_type, src, dst, status, created_at in operations:
-            operations_data.append({
-                "type": op_type,
-                "source": src,
-                "destination": dst,
-                "status": status,
-                "timestamp": created_at
-            })
-        
-        # 生成HTML
-        html_content = f"""<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>文件操作动画报告 - {task_description}</title>
-    <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #1a1a2e;
-            color: #eee;
-            min-height: 100vh;
-            padding: 20px;
-        }}
-        .container {{
-            max-width: 1200px;
-            margin: 0 auto;
-        }}
-        .header {{
-            text-align: center;
-            margin-bottom: 30px;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 10px;
-        }}
-        .header h1 {{ font-size: 24px; margin-bottom: 10px; }}
-        .header p {{ opacity: 0.8; }}
-        .controls {{
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-            margin-bottom: 20px;
-        }}
-        .btn {{
-            padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
-            background: #667eea;
-            color: white;
-            cursor: pointer;
-            font-size: 14px;
-            transition: all 0.3s;
-        }}
-        .btn:hover {{ background: #764ba2; transform: translateY(-2px); }}
-        .btn:disabled {{ opacity: 0.5; cursor: not-allowed; }}
-        .progress-bar {{
-            width: 100%;
-            height: 4px;
-            background: #333;
-            border-radius: 2px;
-            margin-bottom: 20px;
-            overflow: hidden;
-        }}
-        .progress-fill {{
-            height: 100%;
-            background: linear-gradient(90deg, #667eea, #764ba2);
-            width: 0%;
-            transition: width 0.3s;
-        }}
-        .operations {{
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }}
-        .operation {{
-            padding: 15px;
-            background: #16213e;
-            border-radius: 8px;
-            border-left: 4px solid #667eea;
-            opacity: 0.3;
-            transform: translateX(-20px);
-            transition: all 0.5s;
-        }}
-        .operation.active {{
-            opacity: 1;
-            transform: translateX(0);
-            background: #1e3a5f;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
-        }}
-        .operation.success {{ border-left-color: #4ade80; }}
-        .operation.failed {{ border-left-color: #f87171; }}
-        .operation-type {{
-            font-weight: bold;
-            color: #667eea;
-            margin-bottom: 5px;
-        }}
-        .operation-path {{
-            font-family: monospace;
-            font-size: 12px;
-            color: #aaa;
-        }}
-        .operation-arrow {{
-            color: #667eea;
-            margin: 0 10px;
-        }}
-        .stats {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
-            margin-top: 30px;
-        }}
-        .stat-card {{
-            padding: 15px;
-            background: #16213e;
-            border-radius: 8px;
-            text-align: center;
-        }}
-        .stat-value {{
-            font-size: 32px;
-            font-weight: bold;
-            color: #667eea;
-        }}
-        .stat-label {{
-            font-size: 12px;
-            color: #888;
-            margin-top: 5px;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>📁 文件操作执行动画</h1>
-            <p>{task_description}</p>
-            <p style="margin-top: 10px; font-size: 12px;">会话ID: {task_id}</p>
-        </div>
-        
-        <div class="controls">
-            <button class="btn" id="playBtn" onclick="playAnimation()">▶️ 播放</button>
-            <button class="btn" id="pauseBtn" onclick="pauseAnimation()" disabled>⏸️ 暂停</button>
-            <button class="btn" onclick="resetAnimation()">🔄 重置</button>
-            <button class="btn" onclick="exportReport()">📄 导出报告</button>
-        </div>
-        
-        <div class="progress-bar">
-            <div class="progress-fill" id="progressFill"></div>
-        </div>
-        
-        <div class="operations" id="operations">
-            <!-- Operations will be inserted here -->
-        </div>
-        
-        <div class="stats">
-            <div class="stat-card">
-                <div class="stat-value">{len(operations)}</div>
-                <div class="stat-label">总操作数</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">{sum(1 for op in operations if op[3] == 'success')}</div>
-                <div class="stat-label">成功</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">{sum(1 for op in operations if op[3] == 'failed')}</div>
-                <div class="stat-label">失败</div>
-            </div>
-        </div>
-    </div>
-    
-    <script>
-        const operations = {json.dumps(operations_data, ensure_ascii=False)};
-        let currentIndex = 0;
-        let isPlaying = false;
-        let animationInterval = null;
-        
-        function renderOperations() {{
-            const container = document.getElementById('operations');
-            container.innerHTML = '';
-            
-            operations.forEach((op, index) => {{
-                const div = document.createElement('div');
-                div.className = `operation ${{op.status}}`;
-                div.id = `op-${{index}}`;
-                
-                const typeMap = {{
-                    'create': '📄 创建',
-                    'delete': '🗑️ 删除',
-                    'move': '📦 移动',
-                    'copy': '📋 复制',
-                    'rename': '✏️ 重命名',
-                    'modify': '✏️ 修改'
-                }};
-                
-                let pathHtml = '';
-                if (op.source && op.destination) {{
-                    pathHtml = `<span class="operation-path">${{op.source}}</span>
-                               <span class="operation-arrow">→</span>
-                               <span class="operation-path">${{op.destination}}</span>`;
-                }} else if (op.source) {{
-                    pathHtml = `<span class="operation-path">${{op.source}}</span>`;
-                }} else if (op.destination) {{
-                    pathHtml = `<span class="operation-path">${{op.destination}}</span>`;
-                }}
-                
-                div.innerHTML = `
-                    <div class="operation-type">${{typeMap[op.type] || op.type}}</div>
-                    <div>${{pathHtml}}</div>
-                `;
-                
-                container.appendChild(div);
-            }});
-        }}
-        
-        function updateProgress() {{
-            const progress = (currentIndex / operations.length) * 100;
-            document.getElementById('progressFill').style.width = progress + '%';
-        }}
-        
-        function highlightOperation(index) {{
-            // Remove active from all
-            document.querySelectorAll('.operation').forEach(op => {{
-                op.classList.remove('active');
-            }});
-            
-            // Add active to current
-            const current = document.getElementById(`op-${{index}}`);
-            if (current) {{
-                current.classList.add('active');
-                current.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-            }}
-        }}
-        
-        function playAnimation() {{
-            if (isPlaying) return;
-            isPlaying = true;
-            
-            document.getElementById('playBtn').disabled = true;
-            document.getElementById('pauseBtn').disabled = false;
-            
-            animationInterval = setInterval(() => {{
-                if (currentIndex >= operations.length) {{
-                    pauseAnimation();
-                    return;
-                }}
-                
-                highlightOperation(currentIndex);
-                updateProgress();
-                currentIndex++;
-            }}, 1500); // 1.5 seconds per operation
-        }}
-        
-        function pauseAnimation() {{
-            isPlaying = false;
-            clearInterval(animationInterval);
-            
-            document.getElementById('playBtn').disabled = false;
-            document.getElementById('pauseBtn').disabled = true;
-        }}
-        
-        function resetAnimation() {{
-            pauseAnimation();
-            currentIndex = 0;
-            updateProgress();
-            document.querySelectorAll('.operation').forEach(op => {{
-                op.classList.remove('active');
-            }});
-        }}
-        
-        function exportReport() {{
-            window.print();
-        }}
-        
-        // Initialize
-        renderOperations();
-    </script>
-</body>
-</html>"""
-        
+
+        anim_data = self._build_animation_data(operations_data, task_description)
+        html_content = self._render_animation_html(anim_data, task_id)
+
         if output_path:
             output_path = Path(output_path)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(html_content, encoding='utf-8')
             logger.info(f"Animation report saved: {output_path}")
-        
+
         return html_content
     
     def generate_json_report(self, task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
@@ -701,51 +548,25 @@ class FileOperationVisualizer:
             return str(output_path)
         
         return json.dumps(report_data, ensure_ascii=False, indent=2)
-    
-    def generate_html_report(self, task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
+
+    def _build_html_report_content(
+        self, task_id: str, task_description: str,
+        operations: List[Tuple], op_types: Dict[str, int],
+        status_counts: Dict[str, int]
+    ) -> str:
+        """纯 HTML 模板渲染，不含任何 DB/IO 副作用
+
+        小沈 2026-05-25 重构拆分
         """
-        生成HTML格式报告（含图表）
-        
-        【小沈修改 2026-03-25】
-        - 去掉 file_operation_sessions 表的依赖
-        - task_description 作为参数传入
-        
-        Args:
-            task_id: 会话ID
-            task_description: 任务描述（用户消息）
-            output_path: 输出路径
-            
-        Returns:
-            HTML报告文件路径
-        """
-        # 【小沈修改 2026-03-25】直接获取操作记录，不依赖 file_operation_sessions 表
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_type, source_path, destination_path, status,
-                   file_size, is_directory, created_at, error_message
-            FROM file_operations WHERE task_id = ?
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-        
-        operations = cursor.fetchall()
-        conn.close()
-        
-        if not operations:
-            logger.warning(f"No operations found for session: {task_id}")
-            return ""
-        
-        # 统计数据
-        op_types = {}
-        status_counts = {"success": 0, "failed": 0, "blocked": 0}
-        
-        for op_type, src, dst, status, size, is_dir, created_at, error in operations:
-            op_types[op_type] = op_types.get(op_type, 0) + 1
-            if status in status_counts:
-                status_counts[status] += 1
-        
-        # 生成HTML
-        html_content = f"""<!DOCTYPE html>
+        op_items = "".join(
+            f'<div class="operation {s}"><strong>{t}</strong>'
+            f'<p>源路径: {s2 or "N/A"}</p>'
+            f'<p>目标路径: {d or "N/A"}</p>'
+            f'<p>状态: {s}</p>'
+            + (f'<p>错误: {e}</p>' if e else '') + '</div>'
+            for t, s2, d, s, _sz, _isd, _ct, e in operations
+        )
+        return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -766,14 +587,14 @@ class FileOperationVisualizer:
         <p>Agent: file-operation-agent</p>
         <p>任务: {task_description}</p>
     </div>
-    
+
     <div class="chart">
         <h2>操作类型统计</h2>
         <ul>
             {"".join(f'<li>{op_type}: {count}次</li>' for op_type, count in op_types.items())}
         </ul>
     </div>
-    
+
     <div class="chart">
         <h2>状态统计</h2>
         <ul>
@@ -782,28 +603,49 @@ class FileOperationVisualizer:
             <li>被阻止: {status_counts['blocked']}次</li>
         </ul>
     </div>
-    
+
     <h2>操作详情</h2>
-    {"".join(f'''
-    <div class="operation {status}">
-        <strong>{op_type}</strong>
-        <p>源路径: {src or 'N/A'}</p>
-        <p>目标路径: {dst or 'N/A'}</p>
-        <p>状态: {status}</p>
-        {f'<p>错误: {error}</p>' if error else ''}
-    </div>
-    ''' for op_type, src, dst, status, size, is_dir, created_at, error in operations)}
+    {op_items}
 </body>
 </html>"""
-        
-        if output_path:
-            output_path = Path(output_path)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(html_content, encoding='utf-8')
-            logger.info(f"HTML report saved: {output_path}")
-            return str(output_path)
-        
-        return html_content
+
+    def generate_html_report(self, task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
+        """
+        生成HTML格式报告（含图表）
+
+        【小沈修改 2026-03-25】
+        - 去掉 file_operation_sessions 表的依赖
+        - task_description 作为参数传入
+
+        【小沈重构 2026-05-25】
+        - 重构拆分：DB 查询已共享（27.1），HTML 模板提取为 _build_html_report_content
+
+        Args:
+            task_id: 会话ID
+            task_description: 任务描述（用户消息）
+            output_path: 输出路径
+
+        Returns:
+            HTML报告文件路径
+        """
+        operations = self._query_file_operations(task_id)
+
+        if not operations:
+            logger.warning(f"No operations found for session: {task_id}")
+            return ""
+
+        op_types, status_counts = {}, {"success": 0, "failed": 0, "blocked": 0}
+        for op in operations:
+            op_types[op[0]] = op_types.get(op[0], 0) + 1
+            if op[3] in status_counts:
+                status_counts[op[3]] += 1
+
+        html = self._build_html_report_content(task_id, task_description, operations, op_types, status_counts)
+
+        # YAGNI 死代码：output_path 从未被实际传入，直接删除文件保存逻辑
+        # 原 L854-859 已删除，调用方 generate_report 从未传 output_path
+
+        return html
     
     def generate_mermaid_report(self, task_id: str, output_path: Optional[Path] = None) -> str:
         """

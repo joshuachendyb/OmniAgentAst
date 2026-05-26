@@ -15,39 +15,30 @@ MessageBuilder 实例生命周期必须与 Agent 实例强绑定，
 严禁全局共享单例，防止多会话并发状态污染。
 
 【19.8 修正 — 小沈 2026-05-21】：
-- add_assistant() 不自动调 trim_history()，由 _call_llm_with_summary 统一调度
+- add_assistant() 不自动调 trim_history()，由 _call_llm 统一调度
 - build_observation_text() 设计为 @staticmethod，不依赖实例状态
 """
 
 import json
 import hashlib
-import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.agent.tool_result_formatter import _format_llm_observation
+from app.constants import MAX_CONTEXT_CHARS, TEMP_HISTORY_CHAR_LIMIT, OBSERVATION_BUDGET_DECAY, OBSERVATION_BUDGET_MIN, OBSERVATION_BUDGET_MAX
 
 
 class MessageBuilder:
     """Prompt/Message组装的统一入口"""
 
     # ===== 观测文本构建常量（从base_react.py搬入）=====
-    OBSERVATION_BUDGET_DECAY = 10000
-    OBSERVATION_BUDGET_MIN = 20000
+    OBSERVATION_BUDGET_DECAY = OBSERVATION_BUDGET_DECAY
+    OBSERVATION_BUDGET_MIN = OBSERVATION_BUDGET_MIN
     OBSERVATION_HEAD_RATIO = 0.6
 
-    def __init__(self, max_context_chars: int = 150000):
+    def __init__(self, max_context_chars: int = MAX_CONTEXT_CHARS):
         self.conversation_history: List[Dict[str, Any]] = []
         self.temp_history: List[Dict[str, Any]] = []
-        self._executed_tool_summary: List[str] = []
-        self._failed_attempts: Dict[str, int] = {}
-        self._executed_cache: Dict[str, Any] = {}
-        self._cache_timestamps: Dict[str, float] = {}
-        self._cache_ttl: int = 60
         self.MAX_CONTEXT_CHARS = max_context_chars
-        # Schema/工具内容缓存
-        self._cached_schema_text: Optional[str] = None
-        self._cached_tools_content: Optional[str] = None
-        self._last_injected_categories: Optional[Any] = None
 
     def reset_per_run(self) -> None:
         """每次 run_stream 仅重置 conversation_history，缓存和计数保留跨会话"""
@@ -68,23 +59,30 @@ class MessageBuilder:
     def add_assistant(self, content: str) -> None:
         """追加assistant消息 — 替代8处散落的append
         
-        【19.8修正】不自动调 trim_history()，由 _call_llm_with_summary 统一调度。
+        【19.8修正】不自动调 trim_history()，由 _call_llm 统一调度。
         """
         self.conversation_history.append({"role": "assistant", "content": content})
 
-    def add_observation(self, observation_text: str, llm_call_count: int = 0) -> None:
-        """追加observation消息（role=system）— 替代_add_observation_to_history
+    def add_observation(self, observation_text: str, llm_call_count: int = 0, fc_context: Optional[Dict] = None) -> None:
+        """追加observation消息 — 含智能截断 + [Observation]前缀归一化 + trim
         
-        含智能截断 + [Observation]前缀归一化 + trim。
+        fc_context: ToolsStrategy下FC协议上下文，含tool_calls和tool_call_id。
+        有fc_context时按OpenAI FC协议注入assistant(tool_calls)+tool(tool_call_id)，
+        模型能识别"工具已被处理"，不会重复调用。
         """
-        # 智能截断
         budget = self._get_observation_budget(llm_call_count)
         if len(observation_text) > budget:
             observation_text = self._smart_truncate(observation_text, budget=budget)
-        # 统一[Observation]前缀
         observation_text = self._normalize_observation_prefix(observation_text)
-        # 追加
-        self.conversation_history.append({"role": "system", "content": observation_text})
+        
+        if fc_context and fc_context.get("tool_call_id"):
+            tool_call_id = fc_context["tool_call_id"]
+            tool_calls = fc_context.get("tool_calls")
+            if tool_calls:
+                self.conversation_history.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
+            self.conversation_history.append({"role": "tool", "content": observation_text, "tool_call_id": tool_call_id})
+        else:
+            self.conversation_history.append({"role": "system", "content": observation_text})
         self.trim_history()
 
     def add_parse_error(self, error_msg: str) -> None:
@@ -105,44 +103,38 @@ class MessageBuilder:
     # =========================================================================
 
     @staticmethod
-    def build_observation_text(execution_result: dict) -> str:
+    def build_observation_text(execution_result: dict, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
         """根据工具执行结果构建observation文本 — 统一委托_format_llm_observation
 
         小健 2026-05-22：原手写逻辑已合入 _format_llm_observation（含next_actions），
         此方法保留作为兼容入口。
+        更新 2026-05-24 小健：增加 tool_name/tool_params 参数供 failure hint 使用
         """
-        return _format_llm_observation(execution_result)
+        return _format_llm_observation(execution_result, tool_name, tool_params)
 
     # =========================================================================
-    # 第三组：每轮 LLM 调用的消息组装（从 _call_llm_with_summary 拆出）
+    # 第三组：每轮 LLM 调用的消息组装（从 _call_llm 拆出）
     # =========================================================================
 
-    def split_history_for_llm(self) -> Tuple[str, List[Dict[str, Any]]]:
-        """将conversation_history拆分为last_message和history_dicts
-        
-        替代 react_agent_mixin.py L310-322
+    def prepare_messages_for_llm(self) -> List[Dict[str, Any]]:
+        """准备发给LLM的完整消息列表 — 合并原split+merge+assemble
+
+        不再拆出last_message再拼回，整个history作为一个List[Dict]贯穿流程。
+        注入点（tools/summary/schema）在第一个非system消息前或末尾操作。
+
+        MSG-001 小沈 2026-05-24: temp_history加入字符容量限制，从最旧开始移除
         """
-        last_user_idx = -1
-        for i in range(len(self.conversation_history) - 1, -1, -1):
-            if self.conversation_history[i].get("role") == "user":
-                last_user_idx = i
-                break
-
-        if last_user_idx >= 0:
-            last_message = self.conversation_history[last_user_idx]["content"]
-            history_dicts = (self.conversation_history[:last_user_idx]
-                           + self.conversation_history[last_user_idx + 1:])
-        else:
-            last_message = self.conversation_history[-1]["content"]
-            history_dicts = self.conversation_history[:-1]
-
-        return last_message, history_dicts
-
-    def merge_temp_history(self, history_dicts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """合并temp_history — 替代 react_agent_mixin.py L324-326"""
+        messages = list(self.conversation_history)
         if self.temp_history:
-            return list(history_dicts) + list(self.temp_history)
-        return history_dicts
+            messages = messages + list(self.temp_history)
+        # temp_history容量保护：总字符超50000时从最旧截断
+        self._cap_temp_history()
+        return messages
+
+    def _cap_temp_history(self):
+        """对temp_history加字符容量限制（最多50000字符），从最旧条目开始截断"""
+        while self._total_chars(self.temp_history) > TEMP_HISTORY_CHAR_LIMIT and len(self.temp_history) > 1:
+            self.temp_history.pop(0)
 
     @staticmethod
     def inject_tools_info(
@@ -167,19 +159,6 @@ class MessageBuilder:
         return list(history_dicts[:insert_pos]) + [tools_msg] + list(history_dicts[insert_pos:])
 
     @staticmethod
-    def inject_executed_summary(
-        history_dicts: List[Dict[str, Any]],
-        executed_tool_summary: List[str]
-    ) -> List[Dict[str, Any]]:
-        """注入已执行工具汇总 — 替代 react_agent_mixin.py L365-371"""
-        done_tools = [s for s in executed_tool_summary if '→success' in s]
-        if not done_tools:
-            return history_dicts
-        progress = ("【已执行工具(勿重复)】" + "; ".join(done_tools[-8:])
-                   + "\n注意：上述工具已成功执行，结果已在Observation中，禁止再次调用！")
-        return list(history_dicts) + [{"role": "system", "content": progress}]
-
-    @staticmethod
     def inject_schema_text(
         history_dicts: List[Dict[str, Any]],
         schema_text: str
@@ -188,14 +167,6 @@ class MessageBuilder:
         if not schema_text:
             return history_dicts
         return list(history_dicts) + [{"role": "system", "content": schema_text}]
-
-    @staticmethod
-    def assemble_messages(
-        history_dicts: List[Dict[str, Any]],
-        last_message: str
-    ) -> List[Dict[str, Any]]:
-        """组装最终发给LLM的messages — 替代 react_agent_mixin.py L394-395"""
-        return list(history_dicts) + [{"role": "user", "content": last_message}]
 
     # =========================================================================
     # 第四组：历史裁剪（从 base_react.py 搬入）
@@ -252,6 +223,8 @@ class MessageBuilder:
             obs_list.pop(0)
 
         rebuilt = system_msgs + obs_list + assistant_msgs
+        # FC协议配对裁剪：role:tool必须有对应role:assistant(tool_calls)，反之亦然
+        rebuilt = self._trim_fc_pairs(rebuilt)
         # 确保至少有 system + user
         if len(rebuilt) >= 2:
             self.conversation_history = rebuilt
@@ -264,120 +237,8 @@ class MessageBuilder:
     # 第五组：缓存/失败计数管理（从 base_react.py 搬入）
     # =========================================================================
 
-    def invalidate_cache(self) -> None:
-        """清空 Schema/工具内容缓存"""
-        self._cached_schema_text = None
-        self._cached_tools_content = None
-        self._last_injected_categories = None
-
-    @staticmethod
-    def _params_to_key(params: dict) -> str:
-        """参数 → MD5 key — 替代 base_react.py L208-217"""
-        param_str = json.dumps(params, sort_keys=True, ensure_ascii=False)
-        return hashlib.md5(param_str.encode()).hexdigest()
-
-    @staticmethod
-    def _is_no_cache_tool(tool_name: str, tool_params: dict) -> bool:
-        """判断工具是否不应缓存 — 小沈 2026-05-21"""
-        _NO_CACHE_TOOLS = {"ping", "port_check"}
-        if tool_name in _NO_CACHE_TOOLS:
-            return True
-        if tool_name == "execute_shell_command" and tool_params:
-            command = str(tool_params.get("command", "")).lower()
-            if any(kw in command for kw in ["ping", "tracert", "curl", "wget"]):
-                return True
-        return False
-
-    def check_cache_or_block(self, tool_name: str, tool_params: dict) -> tuple:
-        """缓存检查+失败拦截 — 整合 base_react.py L768-801
-        返回: (execution_result, observation_prefix, cache_hit, fail_count)
-        """
-        cache_key = f"{tool_name}:{self._params_to_key(tool_params)}"
-        observation_prefix = ""
-        cache_hit = False
-        execution_result = None
-        fail_count = self._failed_attempts.get(cache_key, 0)
-        
-        # 失败拦截
-        if fail_count >= 3:
-            execution_result = {
-                "code": "ERR_BLOCKED",
-                "message": f"已连续失败{fail_count}次，系统强制跳过",
-                "data": None,
-                "error": f"{tool_name} 已连续失败{fail_count}次"
-            }
-            observation_prefix = f"[系统拦截] {tool_name} 已连续失败{fail_count}次，强制跳过执行。请换用其他工具或方法。\n"
-            return execution_result, observation_prefix, cache_hit, fail_count
-        
-        # 缓存检查
-        if not self._is_no_cache_tool(tool_name, tool_params) and cache_key in self._executed_cache:
-            cached_time = self._cache_timestamps.get(cache_key, 0)
-            if time.time() - cached_time < self._cache_ttl:
-                execution_result = self._executed_cache[cache_key]
-                observation_prefix = "[缓存命中] 此命令已执行过，结果已在上方Observation中。禁止再次调用相同工具+参数！ "
-                cache_hit = True
-            else:
-                del self._executed_cache[cache_key]
-                del self._cache_timestamps[cache_key]
-        
-        return execution_result, observation_prefix, cache_hit, fail_count
-
-    def update_execution_cache(self, tool_name: str, tool_params: dict, execution_result: dict, exec_status: str) -> str:
-        """更新缓存+失败计数+汇总 — 整合 base_react.py L898-936
-        返回: observation附加文本（失败警告）
-        """
-        cache_key = f"{tool_name}:{self._params_to_key(tool_params)}"
-        extra_text = ""
-        
-        if exec_status == 'success':
-            if not self._is_no_cache_tool(tool_name, tool_params):
-                self._executed_cache[cache_key] = execution_result
-                self._cache_timestamps[cache_key] = time.time()
-            if cache_key in self._failed_attempts:
-                del self._failed_attempts[cache_key]
-        elif exec_status in ('error', 'timeout', 'permission_denied', 'blocked'):
-            _fc = self._failed_attempts.get(cache_key, 0) + 1
-            self._failed_attempts[cache_key] = _fc
-            if _fc >= 2:
-                extra_text += f"\n[此操作已失败{_fc}次]"
-            if _fc >= 3:
-                extra_text += "\n[⚠️ 禁止再尝试此操作！必须使用其他方法或换URL]"
-        
-        # 已执行工具汇总
-        summary_entry = self.build_summary_entry(tool_name, tool_params, exec_status)
-        if summary_entry:
-            self._executed_tool_summary.append(summary_entry)
-            if len(self._executed_tool_summary) > 50:
-                self._executed_tool_summary = self._executed_tool_summary[-30:]
-        
-        # 限制失败计数器长度
-        if len(self._failed_attempts) > 100:
-            self._failed_attempts = dict(list(self._failed_attempts.items())[-50:])
-        
-        return extra_text
-
-    @staticmethod
-    def build_summary_entry(tool_name: str, tool_params: dict, exec_status: str) -> str:
-        """构建汇总条目 — 整合 base_react.py L915-931"""
-        if tool_name == "http_request" and tool_params:
-            _url = str(tool_params.get("url", ""))[:60]
-            return f"http_request({_url})→{exec_status}"
-        elif tool_name == "ping" and tool_params:
-            _host = str(tool_params.get("host", ""))
-            return f"ping({_host})→{exec_status}"
-        elif tool_name == "port_check" and tool_params:
-            _host = str(tool_params.get("host", ""))
-            _port = tool_params.get("port", "")
-            return f"port_check({_host}:{_port})→{exec_status}"
-        elif tool_name == "execute_shell_command" and tool_params:
-            _cmd = str(tool_params.get("command", ""))[:50]
-            return f"shell({_cmd})→{exec_status}"
-        elif tool_name != "finish":
-            return f"{tool_name}→{exec_status}"
-        return ""
-
     # =========================================================================
-    # 第七组：Schema 文本生成（从 react_agent_mixin.py 搬入）
+    # 第六组：Schema 文本生成（从 react_agent_mixin.py 搬入）
     # =========================================================================
 
     @staticmethod
@@ -419,7 +280,7 @@ class MessageBuilder:
     def _get_observation_budget(llm_call_count: int) -> int:
         """计算observation可用预算 — 替代 base_react.py L1378-1382"""
         budget = MessageBuilder.OBSERVATION_BUDGET_MIN + MessageBuilder.OBSERVATION_BUDGET_DECAY * max(0, 5 - llm_call_count)
-        return min(budget, 50000)
+        return min(budget, OBSERVATION_BUDGET_MAX)
 
     @staticmethod
     def _smart_truncate(content: str, budget: int, head_ratio: float = None) -> str:
@@ -428,28 +289,81 @@ class MessageBuilder:
             head_ratio = MessageBuilder.OBSERVATION_HEAD_RATIO
         if len(content) <= budget:
             return content
+        # 【修复 小健 2026-05-24】P2-12: budget极小时确保返回不超预算
+        OMISSION_TEXT_LEN = 50
+        if budget <= OMISSION_TEXT_LEN + 10:
+            return content[:budget]
         head_budget = int(budget * head_ratio)
-        tail_budget = budget - head_budget - 50
+        tail_budget = budget - head_budget - OMISSION_TEXT_LEN
         head = content[:head_budget]
         tail = content[-tail_budget:] if tail_budget > 0 else ""
-        return f"{head}\n... [中间省略 {len(content) - budget} 字符] ...\n{tail}"
+        result = f"{head}\n... [中间省略 {len(content) - budget} 字符] ...\n{tail}"
+        # 【修复 小健 2026-05-24】P2-12: 硬截断确保不超预算
+        if len(result) > budget:
+            result = result[:budget]
+        return result
 
     @staticmethod
     def _normalize_observation_prefix(text: str) -> str:
         """确保observation文本以 [Observation] 开头 — 替代 base_react.py 前缀处理"""
+        # 【修复 小健 2026-05-24】P1-7: 防止双重[Observation]前缀
         if text.startswith("[Observation]"):
             return text
-        # 去掉已有的 Observation: 前缀变体
         for prefix in ["Observation:", "observation:"]:
             if text.startswith(prefix):
                 text = text[len(prefix):].strip()
+                break
+        # 去掉前缀后再次检查，避免双重
+        if text.startswith("[Observation]"):
+            return text
         return f"[Observation] {text}"
 
     @staticmethod
     def _is_observation_role(msg: Dict) -> bool:
-        """判断消息是否为observation — 替代 base_react.py L1252-1254"""
+        """判断消息是否为observation — 替代 base_react.py L1252-1254
+
+        三种形式：
+        1. text策略: role=system + content含[Observation]
+        2. tools策略(FC协议): role=tool（与assistant(tool_calls)配对）
+           MSG-003 小沈 2026-05-24: 不再校验tool_call_id，空tool_call_id也被识别
+        """
+        if msg.get("role") == "tool":
+            return True
         content = msg.get("content", "")
         return msg.get("role") == "system" and ("[Observation]" in content or "Observation:" in content)
+
+    @staticmethod
+    def _trim_fc_pairs(messages: List[Dict]) -> List[Dict]:
+        """FC协议配对裁剪：确保role:tool与role:assistant(tool_calls)严格配对
+
+        OpenAI要求：assistant消息中每个tool_call.id都必须有对应role:tool(tool_call_id)，
+        role:tool的tool_call_id也必须有对应assistant(tool_calls)。
+        任一端缺失则双方都移除。
+        """
+        valid_tool_call_ids = set()
+        for msg in messages:
+            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                for tc in msg["tool_calls"]:
+                    tid = tc.get("id")
+                    if tid:
+                        valid_tool_call_ids.add(tid)
+        valid_tool_response_ids = set()
+        for msg in messages:
+            if msg.get("role") == "tool" and msg.get("tool_call_id"):
+                valid_tool_response_ids.add(msg["tool_call_id"])
+        paired_ids = valid_tool_call_ids & valid_tool_response_ids
+        result = []
+        for msg in messages:
+            role = msg.get("role", "")
+            if role == "tool" and msg.get("tool_call_id"):
+                if msg["tool_call_id"] in paired_ids:
+                    result.append(msg)
+            elif role == "assistant" and msg.get("tool_calls"):
+                if all(tc.get("id") in paired_ids for tc in msg["tool_calls"] if tc.get("id")):
+                    result.append(msg)
+            else:
+                result.append(msg)
+        return result
 
     @staticmethod
     def _is_error_obs(content: str) -> bool:
@@ -458,10 +372,17 @@ class MessageBuilder:
 
     @staticmethod
     def _dedup_by_fingerprint(obs_list: List[Dict]) -> List[Dict]:
-        """基于指纹去重observation — 替代 base_react.py L1267-1278"""
+        """基于指纹去重observation — 替代 base_react.py L1267-1278
+
+        FC协议消息(role:tool+tool_call_id)不参与去重：
+        同工具重复调用时content可能相同但tool_call_id不同，去重会断裂配对。
+        """
         seen = set()
         result = []
         for obs in obs_list:
+            if obs.get("role") == "tool" and obs.get("tool_call_id"):
+                result.append(obs)
+                continue
             content = obs.get("content", "")
             fp = hashlib.md5(content.encode()).hexdigest()[:16]
             if fp not in seen:
@@ -471,5 +392,14 @@ class MessageBuilder:
 
     @staticmethod
     def _total_chars(messages: List[Dict]) -> int:
-        """计算消息列表总字符数 — 替代 base_react.py L1281-1283"""
-        return sum(len(msg.get("content", "")) for msg in messages)
+        """计算消息列表总字符数 — 替代 base_react.py L1281-1283
+
+        FC模式下assistant消息content可为None（tool_calls协议），
+        msg.get("content", "")在key存在但值为None时返回None而非默认值，
+        len(None)会TypeError。必须显式处理None。
+        """
+        total = 0
+        for msg in messages:
+            content = msg.get("content")
+            total += len(content) if content is not None else 0
+        return total

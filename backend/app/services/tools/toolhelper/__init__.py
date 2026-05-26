@@ -14,7 +14,7 @@ ToolHelper 模块 - 内部辅助函数集合（不暴露给LLM）
     ├── file_helpers.py       # 文件操作辅助函数（10个）
     ├── content_quality.py    # 内容质量辅助函数
     ├── db_helper.py          # 数据库辅助函数（check_db_exists等）- 小沈 2026-05-17
-    ├── gui_helper.py         # GUI辅助函数（_find_window_by_title等）- 小沈 2026-05-17
+    ├── gui_helper.py         # GUI辅助函数（find_windows_by_title从window_helper导入）- 小沈 2026-05-17
     ├── network_helper.py     # 网络辅助函数（_check_network等）- 小沈 2026-05-17
     ├── exec_helper.py        # 代码执行辅助函数（_check_python_available等）- 小沈 2026-05-17
     ├── shell_helper.py       # Shell辅助函数（_check_shell_injection等）- 小沈 2026-05-17
@@ -55,7 +55,6 @@ from app.services.tools.toolhelper.gui_helper import (
     _check_capture_permission,
     _check_tesseract_available,
     _check_notification_permission,
-    _find_window_by_title,
 )
 
 from app.services.tools.toolhelper.exec_helper import (
@@ -113,10 +112,16 @@ from app.services.tools.toolhelper.date_helper import (
 )
 
 from app.services.tools.toolhelper.common_helper import (
+    _check_module,
     truncate_value,
     safe_path_join,
     check_windows_platform,
     run_windows_command,
+)
+
+from app.services.tools.toolhelper.data_helper import (
+    _serialize_rows,
+    _load_dataframe,
 )
 
 __all__ = [
@@ -141,7 +146,6 @@ __all__ = [
     "_check_capture_permission",
     "_check_tesseract_available",
     "_check_notification_permission",
-    "_find_window_by_title",
     "_check_python_available",
     "_validate_code_safety",
     "_check_node_available",
@@ -167,10 +171,13 @@ __all__ = [
     "run_schtasks_command",
     "parse_schtasks_query_output",
     "parse_schedule_string",
+    "_check_module",
     "truncate_value",
     "safe_path_join",
     "check_windows_platform",
     "run_windows_command",
+    "_serialize_rows",
+    "_load_dataframe",
     "parse_datetime_any",
     "parse_datetime_string",
     "is_holiday",

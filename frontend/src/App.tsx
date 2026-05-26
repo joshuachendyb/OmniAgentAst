@@ -73,7 +73,7 @@ const RouterContent: React.FC = () => {
  */
 const App: React.FC = () => {
   return (
-    <BrowserRouter>
+    <BrowserRouter unstable_useTransitions={false}>
       <SecurityProvider>
         <AppProvider>
           <RouterContent />

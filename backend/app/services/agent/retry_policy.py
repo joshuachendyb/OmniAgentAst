@@ -15,6 +15,7 @@ from enum import Enum
 from typing import Dict, Any, Callable, List, Optional
 
 from app.services.agent.tool_executor import ErrorType, ErrorClassifier
+from app.constants import DEFAULT_RETRYABLE_ERRORS
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,7 @@ class RetryPolicy:
         """
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
-        self.retryable_errors = retryable_errors or ["timeout", "network_error"]
+        self.retryable_errors = retryable_errors or DEFAULT_RETRYABLE_ERRORS
         
         self._circuit_breaker = CircuitBreaker()
     
@@ -164,7 +165,7 @@ class RetryPolicy:
                 error_type = ErrorClassifier.classify(e)
                 
                 # 检查是否可重试
-                if not ErrorClassifier.is_retryable(error_type, self.retryable_errors):
+                if not (error_type.is_retryable or error_type.value in self.retryable_errors):
                     # 不可重试，记录失败并返回
                     self._circuit_breaker.record_failure()
                     return {

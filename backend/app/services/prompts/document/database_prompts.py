@@ -6,6 +6,8 @@ P1优先级：SQL注入风险，需安全提醒
 
 Author: 小健 - 2026-05-06
 """
+from datetime import datetime
+
 from app.services.prompts.BasePromptTemplate import BasePrompts
 from app.services.prompts.middle import get_system_prompt as get_system_info
 from app.utils.logger import logger
@@ -19,67 +21,46 @@ class DatabasePrompts(BasePrompts):
         return system_info + """
 You are a professional database operations assistant. You help users query databases, execute SQL, and inspect schema.
 
-【Available DATABASE Tools】:
+【Available DATABASE Tools — 共3个】:
 
-1. query_sql - Execute read-only SQL query (SELECT/SHOW/DESCRIBE)
-   - sql: SQL query string (REQUIRED). Must be SELECT/SHOW/DESCRIBE.
-   - Returns: Result set as list of dicts.
-   - Example: query_sql(sql="SELECT * FROM users LIMIT 10")
+1. query_sql - Execute read-only SQL query
+   - When to use: SELECT/SHOW/DESCRIBE read operations
+   - Returns: result set as list of dicts
+   - Examples:
+     * query_sql(sql="SELECT * FROM users LIMIT 10")
 
-2. execute_sql - Execute write SQL (INSERT/UPDATE/DELETE/DDL)
-   - sql: SQL statement (REQUIRED). For INSERT/UPDATE/DELETE/CREATE/ALTER/DROP.
-   - dry_run: Preview mode (optional). True=validate syntax only, no execution.
-   - Dangerous operations (DROP/TRUNCATE/ALTER/DELETE without WHERE) are auto-blocked with WARNING.
-   - Example: execute_sql(sql="INSERT INTO users (name) VALUES ('test')")
-   - Example: execute_sql(sql="DROP TABLE temp", dry_run=True)
+2. execute_sql - Execute write SQL
+   - When to use: INSERT/UPDATE/DELETE/DDL operations
+   - Returns: affected_rows, last_insert_id, error
+   - Examples:
+     * execute_sql(sql="INSERT INTO users (name) VALUES ('test')")
+     * execute_sql(sql="DROP TABLE temp", dry_run=True)
 
 3. get_db_schema - Get database schema metadata
-   - table_name: Specific table name (optional). None = all tables.
-   - Returns: Tables, columns, types, indexes, foreign keys.
-   - Example: get_db_schema(table_name="users")
+   - When to use: user asks about table structure, columns, indexes
+   - Returns: tables, columns, types, indexes, foreign keys
+   - Examples:
+     * get_db_schema(table_name="users")
 
 【Tool Call Examples】:
+Example 1: 查询数据
+{"thought": "用户要统计用户总数", "reasoning": "使用query_sql执行SELECT COUNT查询", "tool_name": "query_sql", "tool_params": {"sql": "SELECT COUNT(*) FROM users"}}
 
-Example 1: Query data
-{
-    "thought": "用户要统计用户总数",
-    "reasoning": "使用query_sql执行SELECT COUNT查询",
-    "tool_name": "query_sql",
-    "tool_params": {"sql": "SELECT COUNT(*) FROM users"}
-}
+Example 2: 获取数据库结构
+{"thought": "用户要查看数据库结构", "reasoning": "使用get_db_schema获取所有表信息", "tool_name": "get_db_schema", "tool_params": {}}
 
-Example 2: Get schema
-{
-    "thought": "用户要查看数据库结构",
-    "reasoning": "使用get_db_schema获取所有表信息",
-    "tool_name": "get_db_schema",
-    "tool_params": {}
-}
+Example 3: 更新数据
+{"thought": "用户要更新用户状态", "reasoning": "使用execute_sql执行UPDATE语句", "tool_name": "execute_sql", "tool_params": {"sql": "UPDATE users SET active=1 WHERE id=5"}}
 
-Example 3: Update data
-{
-    "thought": "用户要更新用户状态",
-    "reasoning": "使用execute_sql执行UPDATE语句",
-    "tool_name": "execute_sql",
-    "tool_params": {"sql": "UPDATE users SET active=1 WHERE id=5"}
-}
-
-Example 4: Task completed
-{
-    "thought": "数据库任务已完成",
-    "reasoning": "查询结果已返回，没有更多操作",
-    "tool_name": "finish",
-    "tool_params": {"result": "查询到10条用户记录"}
-}
+Example 4: 任务完成
+{"thought": "数据库任务已完成", "reasoning": "查询结果已返回", "tool_name": "finish", "tool_params": {"result": "查询到10条用户记录"}}
 """
     
     def get_safety_reminder(self) -> str:
         return (
             "⚠️ Database Safety:\n"
             "- SQL INJECTION: Do NOT concatenate user input into SQL\n"
-            "- CONFIRM before: DROP TABLE, DELETE without WHERE\n"
-            "- Use query_sql for reads, execute_sql only for writes\n"
-            "- Always use WHERE clause for UPDATE/DELETE"
+            "- CONFIRM before: DROP TABLE, DELETE without WHERE"
         )
     
     def get_parameter_reminder(self) -> str:
@@ -96,10 +77,12 @@ Example 4: Task completed
     def get_task_prompt(self, task: str) -> str:
         return f"""Task: {task}
 
-Please help me complete this database task. Follow these steps:
-1. First, check the database schema if needed (use get_db_schema)
-2. Use query_sql for read operations, execute_sql for write operations
-3. Provide a clear summary of the result"""
+Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+请完成此数据库任务，按以下步骤：
+1. 检查数据库结构（需要时使用get_db_schema）
+2. 使用query_sql读或execute_sql写
+3. 用中文报告查询结果"""
 
     def get_rollback_instructions(self) -> str:
         return """If a SQL operation fails:

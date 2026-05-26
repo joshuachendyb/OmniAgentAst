@@ -23,9 +23,10 @@ ReAct Agent Structured Outputs 实现 - Function Calling Schema 生成器
 """
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Callable
 
 from app.services.tools.registry import tool_registry
+from app.utils.logger import logger
 
 
 def get_tools_schema_for_function_calling() -> List[Dict[str, Any]]:
@@ -512,17 +513,4 @@ def _build_detailed_schema(tool: Any) -> Dict[str, Any]:
     }
 
 
-def _build_brief_schema(tool: Any, score: float) -> Dict[str, Any]:
-    """构建简要Schema（用于低置信度意图）"""
-    return {
-        "type": "function",
-        "function": {
-            "name": tool.name,
-            "description": f"【简要】{tool.description[:50]}... 置信度: {score:.2f}",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    }
+

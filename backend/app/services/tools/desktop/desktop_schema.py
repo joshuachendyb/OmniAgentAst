@@ -4,17 +4,16 @@ DESKTOP Schema - 桌面工具 Pydantic 模型
 
 【架构规范】2026-04-29 小沈
 
-【工具列表】统一DESKTOP工具（26→10精简方案）- 小沈 2026-05-17
-1. list_windows - 列出所有窗口
-2. get_window_info - 获取窗口详细信息
-3. window_control - 统一窗口控制（合并set_window_state+focus_window+resize_window）
-4. mouse_control - 统一鼠标控制（合并click+move+scroll）
-5. keyboard_control - 统一键盘控制（合并type_text+shortcut+key_combo）
-6. screen_capture - 统一屏幕截图（合并screenshot+snapshot）
-7. clipboard_control - 统一剪贴板控制（合并read_clipboard+write_clipboard）
-8. screen_record - 录制屏幕
-9. ocr - OCR识别
-10. send_notification - 发送通知
+【工具列表】统一DESKTOP工具（10→9精简，Ch19）- 小沈 2026-05-22
+1. window_info - 窗口信息查询（合并list_windows+get_window_info）
+2. window_control - 统一窗口控制（合并set_window_state+focus_window+resize_window）
+3. mouse_control - 统一鼠标控制（合并click+move+scroll）
+4. keyboard_control - 统一键盘控制（合并type_text+shortcut+key_combo）
+5. screen_capture - 统一屏幕截图（合并screenshot+snapshot）
+6. clipboard_control - 统一剪贴板控制（合并read_clipboard+write_clipboard）
+7. screen_record - 录制屏幕
+8. ocr - OCR识别
+9. send_notification - 发送通知
 
 【2026-05-19 小沈】参数精简：MouseControlInput 8→6(砍duration+click_type)
 
@@ -27,22 +26,22 @@ from typing import Optional, Literal, Dict, List
 from pydantic import BaseModel, Field
 
 
-class ListWindowsInput(BaseModel):
-    """list_windows 工具的输入参数 - 列出所有窗口"""
+class WindowInfoInput(BaseModel):
+    """window_info 工具的输入参数 - 窗口信息查询 - 小沈 2026-05-22"""
+    action: Literal["list", "info"] = Field(
+        description="查询操作：list(列出所有窗口)、info(获取单个窗口详细信息)"
+    )
+    window_title: Optional[str] = Field(
+        default=None,
+        description="窗口标题（action=info时必填，大小写不敏感的模糊匹配）"
+    )
     include_minimized: bool = Field(
         default=False,
-        description="是否包含最小化的窗口，默认 False"
+        description="是否包含最小化的窗口（action=list时使用），默认 False"
     )
     filter_title: Optional[str] = Field(
         default=None,
-        description="按窗口标题过滤（大小写不敏感的模糊匹配）"
-    )
-
-
-class GetWindowInfoInput(BaseModel):
-    """get_window_info 工具的输入参数 - 获取窗口详细信息"""
-    window_title: str = Field(
-        description="窗口标题（大小写不敏感的模糊匹配）"
+        description="按窗口标题过滤（action=list时使用，大小写不敏感的模糊匹配）"
     )
 
 

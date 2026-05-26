@@ -150,34 +150,36 @@ def _fix_schema_types(schema: Dict[str, Any]) -> Dict[str, Any]:
 class ToolCategory(Enum):
     """
     工具分类枚举 - 【2026-05-18 小沈】精简方案：13→7分类
-    废弃分类：TIME→META, ENVIRONMENT→SYSTEM, DATABASE→DOCUMENT,
-             CODE_EXECUTION→SHELL, DATA_FORMAT(废弃), SUPPORT_TOOL(废弃)
+    实际注册映射(与INTENT_TO_CATEGORY同步):
+      SHELL/META工具→注册到SYSTEM, TIME→SYSTEM, ENVIRONMENT→SYSTEM,
+      DATABASE→DOCUMENT, CODE_EXECUTION→SYSTEM, DATA_FORMAT→FILE
+    注意: SHELL和META枚举值保留用于INTENT_TO_CATEGORY兼容, 但无工具直接注册到它们
+    【2026-05-24 小沈】修正INTENT_TO_CATEGORY映射与实际注册一致
     """
     FILE = "file"
-    SHELL = "shell"         # Shell命令执行 + 代码执行
+    SHELL = "shell"         # Shell命令执行 + 代码执行 (实际注册到SYSTEM)
     NETWORK = "network"     # 网络通信
-    SYSTEM = "system"        # 系统信息 + 环境管理
+    SYSTEM = "system"        # 系统信息 + 环境管理 + Shell + Meta/时间
     DESKTOP = "desktop"     # 桌面功能
     DOCUMENT = "document"      # 文档读写 + 数据库
-    META = "meta"              # 元工具 + 时间日期
+    META = "meta"              # 元工具 + 时间日期 (实际注册到SYSTEM)
 
 
 INTENT_TO_CATEGORY: Dict[str, "ToolCategory"] = {
     "file": ToolCategory.FILE,
-    "shell": ToolCategory.SHELL,
+    "shell": ToolCategory.SYSTEM,
     "network": ToolCategory.NETWORK,
     "system": ToolCategory.SYSTEM,
     "desktop": ToolCategory.DESKTOP,
     "document": ToolCategory.DOCUMENT,
-    "meta": ToolCategory.META,
-    "time": ToolCategory.META,
+    "meta": ToolCategory.SYSTEM,
+    "time": ToolCategory.SYSTEM,
     "environment": ToolCategory.SYSTEM,
     "env": ToolCategory.SYSTEM,
     "database": ToolCategory.DOCUMENT,
-    "code_execution": ToolCategory.SHELL,
+    "code_execution": ToolCategory.SYSTEM,
     "data_format": ToolCategory.FILE,
     "data_analysis": ToolCategory.DOCUMENT,
-    "support_tool": ToolCategory.META,
 }
 
 
@@ -206,6 +208,7 @@ class ToolMetadata:
     examples: List[Dict[str, Any]] = field(default_factory=list)
     expose_to_llm: bool = True
     next_actions: Dict[str, Any] = field(default_factory=dict)
+    failure_hint_fn: Optional[Callable] = None
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
     
@@ -218,6 +221,37 @@ class ToolMetadata:
             self.created_at = datetime.now()
         if self.updated_at is None:
             self.updated_at = self.created_at
+
+    def get_failure_hint(self, tool_params: Optional[dict] = None) -> str:
+        """获取工具失败时的替代建议 — 小健 2026-05-24"""
+        if self.failure_hint_fn:
+            try:
+                return self.failure_hint_fn(tool_params)
+            except Exception:
+                pass
+        return ""
+
+
+def _generate_input_schema(input_model: Optional[Type[BaseModel]], input_schema: Optional[Dict]) -> Dict:
+    """从 input_model 生成 input_schema（优先于传入的 schema — 小健 2026-05-25）"""
+    if input_model is None:
+        return input_schema or {}
+    try:
+        schema = input_model.model_json_schema()
+        schema = _fix_schema_types(schema)
+        logger.info(f"[ToolRegistry.register] 从 Pydantic 模型生成 input_schema")
+        return schema
+    except Exception as e:
+        logger.error(f"[ToolRegistry.register] 从 Pydantic 模型生成 Schema 失败: {e}")
+        return input_schema or {}
+
+
+def _update_tool_metadata(metadata: ToolMetadata, **kwargs) -> None:
+    """更新工具元数据的可选字段 — 小健 2026-05-25"""
+    for key, value in kwargs.items():
+        if value is not None:
+            setattr(metadata, key, value)
+    metadata.updated_at = datetime.now()
 
 
 class ToolRegistry:
@@ -271,6 +305,7 @@ class ToolRegistry:
         examples: Optional[List[Dict]] = None,
         expose_to_llm: bool = True,
         next_actions: Optional[Dict[str, Any]] = None,
+        failure_hint_fn: Optional[Callable] = None,
     ) -> Dict[str, Any]:
         """
         注册工具
@@ -294,79 +329,39 @@ class ToolRegistry:
         Raises:
             ValueError: 如果工具已注册（首次注册时）
         """
-        # 【小健 2026-04-29】input_model处理逻辑：自动生成Schema，优先于手动传入的input_schema，后续新增工具必须走此流程
-        # 【2026-04-29 小沈新增】如果传入 input_model，自动生成 input_schema
-        if input_model is not None and input_schema is None:
-            try:
-                input_schema = input_model.model_json_schema()
-                input_schema = _fix_schema_types(input_schema)
-                logger.info(f"[ToolRegistry.register] 从 Pydantic 模型生成 input_schema: {name}")
-            except Exception as e:
-                logger.error(f"[ToolRegistry.register] 从 Pydantic 模型生成 Schema 失败: {e}")
-                input_schema = {}
-        
-        if input_model is not None and input_schema is not None:
-            try:
-                input_schema = input_model.model_json_schema()
-                input_schema = _fix_schema_types(input_schema)
-                logger.info(f"[ToolRegistry.register] 使用 Pydantic 模型覆盖 input_schema: {name}")
-            except Exception as e:
-                logger.error(f"[ToolRegistry.register] 从 Pydantic 模型生成 Schema 失败: {e}")
-        # 允许重复注册（更新模式）
+        input_schema = _generate_input_schema(input_model, input_schema)
+
+        # 更新路径
         if name in self._tools:
-            # 更新已有工具
-            metadata = self._tools[name]
-            metadata.description = description
-            metadata.version = version
-            metadata.updated_at = datetime.now()
+            _update_tool_metadata(self._tools[name],
+                description=description, version=version, category=category,
+                input_schema=input_schema, output_schema=output_schema, examples=examples)
             self._implementations[name] = implementation
-            # 【修复 U10 小沈 2026-05-15】重复注册时也更新schema
-            if input_schema:
-                metadata.input_schema = input_schema
-            if output_schema:
-                metadata.output_schema = output_schema
-            if examples:
-                metadata.examples = examples
-            if category:
-                metadata.category = category
-            logger.info(f"Tool updated: {name} (version: {version})")
             return {"status": "success"}
-        
-        # 验证依赖关系
+
+        # 依赖验证
         if dependencies:
             missing = [dep for dep in dependencies if dep not in self._tools]
             if missing:
                 raise ValueError(f"Missing dependencies: {missing}")
-        
-        # 创建工具元数据
+
+        # 新建路径
         metadata = ToolMetadata(
-            name=name,
-            description=description,
-            category=category,
-            version=version,
-            dependencies=dependencies or [],
-            input_schema=input_schema or {},
-            output_schema=output_schema or {},
-            examples=examples or [],
-            expose_to_llm=expose_to_llm,
-            next_actions=next_actions or {},
+            name=name, description=description, category=category, version=version,
+            dependencies=dependencies or [], input_schema=input_schema or {},
+            output_schema=output_schema or {}, examples=examples or [],
+            expose_to_llm=expose_to_llm, next_actions=next_actions or {},
+            failure_hint_fn=failure_hint_fn,
         )
-        
-        # 注册工具
         self._tools[name] = metadata
         self._implementations[name] = implementation
-        
-        # 更新分类索引
-        if category not in self._categories:
-            self._categories[category] = []
+
+        self._categories.setdefault(category, [])
         if name not in self._categories[category]:
             self._categories[category].append(name)
-        
-        # 更新工具更新时间
+
         metadata.updated_at = datetime.now()
-        
         logger.info(f"Tool registered: {name} (category: {category.value})")
-        
         return {"status": "success"}
     
     def get(self, name: str) -> Optional[Dict[str, Any]]:
@@ -506,6 +501,14 @@ class ToolRegistry:
         required = set(input_schema.get("required", []))
         return sorted(required)
 
+    def list_all_tools(self) -> Dict[str, Callable]:
+        """获取所有工具实现
+        
+        Returns:
+            工具名到实现的映射字典
+        """
+        return self._implementations.copy()
+    
     def get_all_tools_summary(self, priority_category: Optional['ToolCategory'] = None,
                                expose_to_llm_only: bool = True,
                                exclude_categories: Optional[set] = None) -> str:
@@ -653,20 +656,23 @@ class ToolRegistry:
             return "default=" + str(val)
         return ""
 
-    def generate_param_reminder(self, category: Optional['ToolCategory'] = None) -> str:
+    def generate_param_reminder(self, category: Optional['ToolCategory'] = None, style: str = "code") -> str:
         """
         从 input_schema 自动生成 Parameter Reminder 文本 - 小沈 2026-05-09
-        
+
         参数信息完全来自 Pydantic 模型：
         - 参数名：properties 的 key
         - 参数类型：properties[field].type
         - 必填/可选：是否在 required 数组中
         - 默认值：properties[field].default（跳过 None）
-        
+
         Args:
             category: 工具分类，None=全部
+            style: "code"=函数签名风格(推荐), "text"=自然语言风格(兼容)
         """
-        lines = ["Parameter Reminder (auto-generated from Pydantic):", ""]
+        TYPE_MAP = {"integer": "int", "number": "number", "string": "str", "boolean": "bool", "object": "dict", "array": "list"}
+        header = "Parameter Reminder (auto-generated from Pydantic):" if style == "text" else "Available Functions (auto-generated):"
+        lines = [header, ""]
         for name, meta in sorted(self._tools.items(), key=lambda x: x[0]):
             if not meta.expose_to_llm:
                 continue
@@ -679,22 +685,80 @@ class ToolRegistry:
             required_set = set(schema.get("required", []))
             param_parts = []
             for pname, pinfo in schema.get("properties", {}).items():
-                ptype = pinfo.get("type", "any")
+                ptype = pinfo.get("type")
+                if ptype is None:
+                    if "anyOf" in pinfo:
+                        type_set = set()
+                        for item in pinfo["anyOf"]:
+                            if isinstance(item, dict) and "type" in item and item["type"] != "null":
+                                type_set.add(item["type"])
+                        ptype = "/".join(sorted(type_set)) if type_set else "any"
+                    elif "oneOf" in pinfo:
+                        type_set = set()
+                        for item in pinfo["oneOf"]:
+                            if isinstance(item, dict) and "type" in item and item["type"] != "null":
+                                type_set.add(item["type"])
+                        ptype = "/".join(sorted(type_set)) if type_set else "any"
+                    else:
+                        ptype = "any"
                 req_str = "required" if pname in required_set else "optional"
                 default_str = self._format_default(pinfo.get("default"))
-                if default_str:
-                    param_parts.append("{}({}, {}, {})".format(pname, req_str, ptype, default_str))
+
+                if style == "code":
+                    short_type = "/".join(TYPE_MAP.get(t.strip(), t.strip()) for t in ptype.split("/"))
+                    optional_mark = "" if pname in required_set else "?"
+                    default_expr = ""
+                    if default_str:
+                        default_expr = "=" + default_str.split("=", 1)[1]
+                    param_parts.append(f"{pname}{optional_mark}: {short_type}{default_expr}")
                 else:
-                    param_parts.append("{}({}, {})".format(pname, req_str, ptype))
+                    if default_str:
+                        param_parts.append("{}({}, {}, {})".format(pname, req_str, ptype, default_str))
+                    else:
+                        param_parts.append("{}({}, {})".format(pname, req_str, ptype))
             
             if param_parts:
-                lines.append("- " + name + ": " + ", ".join(param_parts))
+                if style == "code":
+                    lines.append(f"def {name}({', '.join(param_parts)})")
+                else:
+                    lines.append("- " + name + ": " + ", ".join(param_parts))
         
         return "\n".join(lines)
 
     def __len__(self) -> int:
         """返回已注册工具数量"""
         return len(self._tools)
+
+    def get_categories(self) -> Dict[ToolCategory, List[str]]:
+        """返回分类→工具名列表映射（copy防外部修改）— 小沈 2026-05-25"""
+        return {k: list(v) for k, v in self._categories.items()}
+
+    @classmethod
+    def get_instance(cls) -> "ToolRegistry":
+        """获取全局工具注册表单例实例"""
+        return tool_registry
+
+    def get_tool_meta(self, name: str) -> Optional[Dict[str, Any]]:
+        """获取工具元数据（dict格式，兼容旧接口）"""
+        meta = self._tools.get(name)
+        if meta is None:
+            return None
+        example_str = ""
+        if meta.examples:
+            params = meta.examples[0]
+            def fmt_val(v):
+                if isinstance(v, str):
+                    return f'"{v}"'
+                return repr(v)
+            parts = [f'{k}={fmt_val(v)}' for k, v in params.items()]
+            example_str = f'{name}({", ".join(parts)})'
+        return {
+            "description": meta.description,
+            "parameters": meta.input_schema,
+            "returns": meta.output_schema,
+            "example": example_str,
+            "when_to_use": "",
+        }
 
 
 # 全局工具注册表实例
@@ -809,12 +873,18 @@ def get_tools_dict() -> Dict[str, Callable]:
 def get_implementations_from_registry() -> Dict[str, Callable]:
     """
     从tool_registry获取所有工具实现函数
-    
+
     Returns:
         {工具名: 工具函数} 格式
     """
-    return {name: tool_registry.get_implementation(name) 
-            for name in tool_registry.list_tools()}
+    # 【P0-B1修复 小健小沈 2026-05-26】list_tools()返回格式可能为[str]或[dict]，需适配
+    tools_list = tool_registry.list_tools()
+    if tools_list and isinstance(tools_list[0], dict):
+        tool_names = [t["name"] for t in tools_list if "name" in t]
+    else:
+        tool_names = tools_list
+    return {name: tool_registry.get_implementation(name)
+            for name in tool_names}
 
 
 def get_tools_from_registry_by_category(category: ToolCategory) -> Dict[str, Callable]:

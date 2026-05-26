@@ -1,3 +1,672 @@
+v0.14.0
+
+更新时间: 2026-05-26 09:13:45
+
+更新内容：
+
+## v0.13.46→v0.14.0 变更汇总 - 小欧-2026-05-26
+
+### minor 版本升级至v0.14.0
+
+| commit | 说明 |
+|--------|------|
+| 0445fbbd | fix: 删除doc-5月优化重复doc移至doc-5月agent3.0 - 小欧-2026-05-26 |
+| 2e74bc07 | docs: 升级version.txt至v0.13.46 - 小欧-2026-05-26 |
+
+---
+
+v0.13.46
+
+更新时间: 2026-05-26 09:05:08
+
+更新内容：
+
+## v0.13.45→v0.13.46 变更汇总 - 小欧-2026-05-26
+
+### fix+refactor prompt优化 + 测试修复（15个commit + 1个merge）
+
+| commit | 说明 |
+|--------|------|
+| f5b0928e | Merge branch 'feature/prompt-optimization' - 小欧-2026-05-26 |
+| 935e7344 | fix: 测试修复+import修复+文件目录整理 - 小欧-2026-05-26 |
+| 17b2da5b | fix: 测试模块级代码/import/文件路径修复+registry方法 - 小欧-2026-05-26 |
+| e9cb1c49 | docs: AGENTS.md 编码铁规更新为5+3八大原则体系 - 小欧-2026-05-26 |
+| 65500d76 | refactor: llm_strategies.py移除解析逻辑,遵守SRP,原始文本交给parse_react_response - 小欧-2026-05-26 |
+| c51f4048 | refactor: _try_extract_last_tool_call提取独立函数, _extract_json_block保持SLAP - 小欧-2026-05-26 |
+| a9c587a7 | fix: react_output_parser.py _extract_json_block无tool_name时取最后一个JSON-通用修法 - 小欧-2026-05-26 |
+| cff73e14 | fix: react_output_parser.py _try_regex_tool_call_fallback用finditer取最后一个tool_params - 小欧-2026-05-26 |
+| aa42d8b4 | docs: 重命名E2E-FSI测试规范为E2E-FSI测试规范-2026-0524 - 小欧-2026-05-26 |
+| c8e83087 | fix: sessions.py _try_mark_valid中session_id改为id字段查询 - 小欧-2026-05-26 |
+| 46123932 | fix: system_prompts.py ToolMetadata访问改为t.name/t.description + datetime导入 - 小欧-2026-05-26 |
+| 5f00602b | feat: registry.py 新增get_categories方法返回深拷贝 - 小欧-2026-05-26 |
+| 07d7839b | feat: react_sse_wrapper.py _is_cancelled_and_yield改为返回str而非yield - 小欧-2026-05-26 |
+| 3e3a216d | fix: chat_router.py 补check_command_safety导入 - 小欧-2026-05-26 |
+| fa405285 | fix: react_output_parser.py _handle_mixed_text_json finish拼接prefix_text与result - 小欧-2026-05-26 |
+| ee9ee634 | fix: llm_strategies.py finish时拼接JSON前置推理文本与result - 小欧-2026-05-26 |
+
+---
+
+v0.13.45
+
+更新时间: 2026-05-25 23:24:13
+
+更新内容：
+
+## v0.13.44→v0.13.45 变更汇总 - 小健-2026-05-25
+
+### fix 搜索差一错误/替换NameError/解压格式兼容/FC格式转换（1个commit）
+
+| commit | 说明 |
+|--------|------|
+| 29dd2479 | fix: file_tools.py, document_tools.py, react_output_parser.py - 修复搜索差一错误/替换NameError/解压格式兼容/FC格式转换 - 小健-2026-05-25 |
+
+---
+
+## v0.13.43→v0.13.44 变更汇总 - 小沈/小健-2026-05-25
+
+### refactor system_tools 4个函数拆分重构（4个commit）
+
+| commit | 说明 |
+|--------|------|
+| c8883d3c | refactor: 拆分_task_create抽取_build_schtasks_create_cmd纯函数 - 小沈-2026-05-25 |
+| dc3f73b7 | refactor: 拆分list_processes抽取_filter_process和_format_process - 小沈-2026-05-25 |
+| ff61d7ea | refactor: 抽取_filter_services消除_windows_service_list与_linux_service_list的DRY违规 - 小沈-2026-05-25 |
+| 2a88cef3 | refactor: 拆分date_helper.is_holiday为独立判断函数 — 小健 2026-05-25 |
+
+### refactor toolhelper 5个大函数拆分（1个commit）
+
+| commit | 说明 |
+|--------|------|
+| efc92213 | refactor: 拆分toolhelper目录5个大函数 — 小健 2026-05-25 |
+
+### refactor file_tools 2个函数拆分（2个commit）
+
+| commit | 说明 |
+|--------|------|
+| 60c94aea | refactor: 拆分FileTools._validate_content_format为独立验证函数 — 小健 2026-05-25 |
+| 4b5a3081 | refactor: 拆分FileTools._apply_edits闭包为独立_execute_edit_sync方法 — 小健 2026-05-25 |
+
+### fix file_tools.py缩进bug修复（2个commit）
+
+| commit | 说明 |
+|--------|------|
+| c2fef98a | fix: file_tools.py缩进bug修复(33个内部函数恢复为FileTools类方法)+更新扫描报告 - 小沈-2026-05-25 |
+| 2354bea0 | fix: file_tools.py缩进bug修复(33个内部函数恢复为FileTools类方法)+P2表格全局顺序编号 - 小沈-2026-05-25 |
+
+---
+
+v0.13.43
+
+更新时间: 2026-05-25 20:31:15
+
+更新内容：
+
+## v0.13.42→v0.13.43 变更汇总 - 小沈-2026-05-25
+
+### docs 文档更新（2个commit）
+
+| commit | 说明 |
+|--------|------|
+| 92c8f4d9 | docs: 扫描报告v2.0 重扫更新P0/P1/P2全量 - 小健-2026-05-25 |
+| da5f47c4 | docs: 审查报告138文件全景 可复用函数表修正 - 小健-2026-05-25 |
+
+### refactor 第23~24章 6个函数拆分重构（6个commit）
+
+| commit | 说明 |
+|--------|------|
+| 4ff801f2 | refactor: filter_data 重构拆分 - 小沈-2026-05-25 |
+| a6fcff86 | refactor: execute_shell_command 重构拆分 - 小沈-2026-05-25 |
+| 96abaadd | refactor: http_request 重构拆分 - 小沈-2026-05-25 |
+| b0f66e5a | refactor: get_function_call_error_info 重构拆分 - 小沈-2026-05-25 |
+| 3724f662 | refactor: list_sessions 重构拆分 + fix chat_router Tuple import - 小沈-2026-05-25 |
+| 3faaf3d9 | refactor: llm_core 新增_cancel_or_wait取消等待方法 - 小沈-2026-05-25 |
+| 34496545 | refactor: database_tools _get_tables拆分提取 - 小沈-2026-05-25 |
+| 13d2c3d4 | refactor: file_tools 全文件缩进重构/注释更新 - 小沈-2026-05-25 |
+| 2b99c916 | refactor: env_tools get_env重构优化 - 小沈-2026-05-25 |
+
+### fix 修复（4个commit）
+
+| commit | 说明 |
+|--------|------|
+| 768349c8 | fix: _try_read_file_with_encodings补充self参数修复调用崩溃 - 小沈-2026-05-25 |
+| 4bb03b96 | fix: 补充缺失的pandas/Tuple/Union类型导入 - 小沈-2026-05-25 |
+| 0308e0eb | fix: 补充缺失的Callable类型导入 - 小沈-2026-05-25 |
+| 62be1735 | fix: 回移13个不含测试/审查字样的文件到doc/ - 小沈-2026-05-25 |
+
+### chore 杂项（3个commit）
+
+| commit | 说明 |
+|--------|------|
+| 34367e7b | refactor: 新增19.7实施计划(函数30~34) - 小沈-2026-05-25 |
+| c5772abc | docs: 修复18.7.5 yield_sse描述 死代码→冗余定义 - 小健-2026-05-25 |
+| 6cc31df4 | refactor: 删除_create_action_result_from_dict死代码 - 小沈-2026-05-25 |
+| ecd9e552 | feat: 新增ToolRegistry.get_instance/get_tool_meta方法 - 小沈-2026-05-25 |
+
+### 目录整理（2个commit）
+
+| commit | 说明 |
+|--------|------|
+| 00edf48c | docs: 测试/审查/分析报告移入doc-测试与审查/目录 - 小沈-2026-05-25 |
+| 8277e7f7 | docs: 移入correction_test.txt等 - 小沈-2026-05-25 |
+| 68b40e27 | docs: 从doc-5月优化/前端设计等移入测试审查类文件 - 小沈-2026-05-25 |
+
+
+
+## v0.13.41→v0.13.42 变更汇总 - 小沈-2026-05-25
+
+### refactor 第23章5个函数拆分重构（5个commit）
+
+| commit | 说明 |
+|--------|------|
+| 84408560 | refactor: _supplement_missing_params 死代码消除 - 小沈-2026-05-25 |
+| 081d63a0 | refactor: _timer_set 重构拆分 - 小沈-2026-05-25 |
+| f54fb463 | refactor: download_file 重构拆分 - 小沈-2026-05-25 |
+| 5e85e02a | refactor: register 重构拆分 - 小沈-2026-05-25 |
+| dd0ecd21 | refactor: calculate_risk_score_v2 重构拆分 - 小沈-2026-05-25 |
+
+### 重构详情
+
+#### 23.1 _timer_set (meta/time_tools.py)
+- 新增: `_error_timer_set` / `_invoke_timer_callback` 组件函数
+- 替换: V1a/V1b→`_error_timer_set`，`ensure_future`→`create_task`
+- YAGNI删除: `new_event_loop/set_event_loop`、C1c"其他"回调、外层try
+
+#### 23.2 download_file (network/network_tools.py)
+- 新增: `NET_ERROR_MAP` / `_map_network_error` / `_stream_download` 组件
+- 替换: 4个except统一→`_map_network_error`，err变量→`_stream_download`
+- 增强: `except (PermissionError,OSError)`→`ERR_NETWORK_WRITE_FILE`(修复问题#2)
+- YAGNI删除: resume 27行死代码、`progress_percent`字段
+
+#### 23.3 _supplement_missing_params (react_output_parser.py)
+- 缩减: 原推断函数→3行return占位
+- YAGNI删除: 全部推断逻辑(W1-W2/R1/D1)、`_check_missing_required_params`调用
+
+#### 23.4 calculate_risk_score_v2 (command_security.py)
+- 新增: `_parse_tuple_result` / `_build_risk_details` 组件
+- 替换: 6次isinstance→2次`_parse_tuple_result`，`log`→`log2`
+- 简化公式: `type*0.6 + target*0.4`
+- YAGNI删除: `matches`字典、details 11字段→5字段
+
+#### 23.5 register (registry.py)
+- 新增: `_generate_input_schema` / `_update_tool_metadata` 组件(在ToolRegistry类之前)
+- 替换: M1a/M1b合并→`_generate_input_schema`，U1a→`_update_tool_metadata`
+- 简化: `setdefault`替代if存在检查
+
+---
+
+### refactor 其他9个函数拆分重构（11个commit）
+
+| commit | 说明 |
+|--------|------|
+| 04399533 | refactor: detect_file_operation_intent 重构拆分 - 小沈-2026-05-25 |
+| 6c1d9224 | refactor: _execute_tool_step 重构拆分 - 小沈-2026-05-25 |
+| 16a5bba5 | refactor: _read_text_file 重构拆分 - 小沈-2026-05-25 |
+| f41764a1 | refactor: data_analysis_tools.py analyze_data重构拆分 - 小沈-2026-05-25 |
+| 8e64177c | refactor: file_prompts.py get_system_prompt重构拆分 - 小沈-2026-05-25 |
+| 332277ee | refactor: database_tools.py execute_sql重构拆分 - 小沈-2026-05-25 |
+| 2b16504d | refactor: file_helpers.py file_checksum_impl重构拆分 - 小沈-2026-05-25 |
+| 856d685c | refactor: file_tools.py _apply_edits重构拆分+编码读取复用修复 - 小沈-小健-2026-05-25 |
+| 97bc47fc | refactor: sessions.py sessions重构拆分 - 小沈-2026-05-25 |
+| 401002aa | refactor: tool_executor.py tool_executor重构拆分 - 小沈-2026-05-25 |
+| c1120a2c | refactor: file_safety.py file_safety重构拆分 - 小沈-2026-05-25 |
+
+### docs
+
+| commit | 说明 |
+|--------|------|
+| 20f05cfc | docs: 更新138文件全景设计文档22章验证结果 - 小沈-2026-05-25 |
+| 3caccd2f | docs: 新增scan_funcs.py函数扫描工具 - 小沈-2026-05-25 |
+| 460c24b8 | docs: 新增21章函数重构验证报告 - 小健-2026-05-25 |
+
+---
+
+## v0.13.40→v0.13.41 变更汇总 - 小沈-2026-05-25
+
+### refactor 第24章5个函数拆分重构（1个commit）
+
+| commit | 说明 |
+|--------|------|
+| 3c03056b | refactor: 24.1-24.5 五个函数拆分重构(react_output_parser+network_tools+reg_tools) - 小沈-2026-05-25 |
+
+### 重构详情
+
+#### 24.1 _parse_action (react_output_parser.py:2119)
+- 新增: `_TOOL_NAME_FALLBACK_KEYS` / `_TOOL_PARAMS_FALLBACK_KEYS` 常量 + `_build_action_result` / `_fallback_tool_name` / `_normalize_tool_params` 函数
+- 替换: 111行→40行骨架，M1a 5个连续if → `_fallback_tool_name`，M1b 3个连续if → `_normalize_tool_params`
+- YAGNI删除: parse_error条件永假分支（原L2108-2118）
+
+#### 24.2 _search_mcp_engine (network_tools.py:510)
+- 新增: `_MCP_CONFIGS` 模块级常量 + `_search_failed` / `_parse_exa_results` 函数
+- 替换: 111行→60行骨架，MCP_CONFIGS函数内定义 → 模块级
+- 消除: 7路return None → 1路唯一出口
+
+#### 24.3 reg_write (system/reg_tools.py:183)
+- 新增: `_REG_TYPE_MAP` / `_REG_CONVERTERS` 常量 + `_validate_root_key` / `_convert_reg_value` 函数
+- 替换: 109行→55行骨架，H1重复hkey检查 → `_validate_root_key`，V1a-V1f 6路elif → `_convert_reg_value`
+- YAGNI删除: backup结果字段 + V1c REG_EXPAND_SZ显式elif
+
+#### 24.4 _handle_mixed_text_json (react_output_parser.py:448)
+- 新增: `_build_handler_result` 统一8字段dict构造
+- 替换: 108行→70行骨架，4个8字段dict重复 → 4次`_build_handler_result`调用
+
+#### 24.5 _port_check (network_tools.py:962)
+- 新增: `_build_port_result` 统一data dict构造
+- 替换: 108行→50行骨架，5次data dict重复 → `_build_port_result`，E1b build_success → build_error统一
+- 增强: sock.close()用try/finally保证，well_known_ports缓存局部变量
+
+---
+| fbb685ed | refactor: 25.4 _execute_javascript 拆分 - 小沈-2026-05-25 |
+| e53a903a | refactor: 25.5 _delete_file 拆分 - 小沈-2026-05-25 |
+
+### 重构详情
+
+#### 25.1 generate_report (operation_history.py:442)
+- 新增: `_FORMAT_HANDLERS` 分发字典 + `_make_report_response` 工厂
+- 替换: 106行→25行骨架，4格式if-elif链 → HANDLERS字典分发
+- 消除: 8次 ReportResponse 重复构造 → 2次调用
+- YAGNI删除: json分支的 JSONDecodeError 异常保护（generate_json_report返回已是有效JSON）
+
+#### 25.2 _determine_parse_type (react_output_parser.py:622)
+- 新增: `_try_codeblock_parse` + `_try_keyword_parse` + `_make_fallback_result`
+- 替换: 105行→20行骨架，3优先级串行 → 3个独立解析器管道
+- 消除: implicit/parse_error 的 7字段dict重复 → `_make_fallback_result` 统一构造
+- 修复: implicit截断问题（原设计错误，已按25.6问题1修复）
+
+#### 25.3 _create_action_result_from_dict (react_output_parser.py:1033)
+- 新增: `_make_action_result_dict` + `_resolve_return_type`
+- 替换: 106行→25行骨架，3种返回类型各构造 → `_make_action_result_dict` 统一
+- 消除: `_pending_calls`透传和`_add_reasoning_warning`在2处重复 → 下沉到`_make_action_result_dict`
+- 消除: 3种返回类型的7字段dict构造重复
+
+#### 25.4 _execute_javascript (code_execution_tools.py:218)
+- 新增: `_build_js_exec_result` 统一结果构建
+- 替换: ~115行→35行骨架，安全检查内联 → `_build_js_exec_result` 提取
+- 消除: `format_output_for_llm` + `truncate_data_for_frontend` 在成功/失败3处重复 → 统一处理
+- 保持: TimeoutExpired 路径内联（与正常路径差异大，不适合合并）
+
+#### 25.5 _delete_file (file_tools.py:1058)
+- 新增: `_force_delete_sync` + `_send2trash_sync` + `_build_delete_result`
+- 替换: ~98行→30行骨架，42行闭包 → 3个独立函数
+- 消除: send2trash未安装回退 和 异常回退 的2份重复rmtree/rmdir/unlink代码
+- YAGNI删除: `deletion_info`可变容器 + `caps`列表构建（前端从未消费）
+
+---
+
+## v0.13.38→v0.13.39 变更汇总 - 小健-2026-05-25
+
+### docs 第15~27章代码审查报告补全（7个commit）
+
+| commit | 说明 |
+|--------|------|
+| 74835547 | doc: 第24章24.1-24.5补全 - 小健-2026-05-25 |
+| d4267dae | doc: 第23章23.1-23.5补全 - 小健-2026-05-25 |
+| 4086ad51 | doc: 第22章22.3-22.5补全 - 小健-2026-05-25 |
+| b07ed4f1 | docs: 第21章补全 5函数YAGNI/可复用检查/组件代码 - 小健-2026-05-25 |
+| 8ad4ea28 | docs: 第20章补全 5函数YAGNI/可复用检查/组件代码 - 小健-2026-05-25 |
+| acfcdddb | docs: 第19章按13章模板补全(5函数完整YAGNI+可复用检查+组件Python代码) - 小健-2026-05-25 |
+| dba11249 | docs: 第18章按13章模板重写(5函数完整深度分析+YAGNI+可复用检查+组件Python代码) - 小健-2026-05-25 |
+
+### docs 第16/17/25章按模板重写（4个commit）
+
+| commit | 说明 |
+|--------|------|
+| c846db97 | docs: 第17章按13章模板重写(5函数完整深度分析+YAGNI+可复用检查+组件Python代码) - 小健-2026-05-25 |
+| 44650701 | docs: 第16章按13章模板重写(5函数完整深度分析+YAGNI+可复用检查+组件Python代码) - 小健-2026-05-25 |
+| dcfcdc22 | docs: 第25章按13章模板重写(5函数完整深度分析+YAGNI+组件代码) - 小健-2026-05-25 |
+| 41774d39 | docs: 后端代码审查报告 补写第23~27章完整深度分析+升级汇总表+X.0工作要求节 - 小健-2026-05-25 |
+
+### refactor 死代码清理+重复消除（2个commit）
+
+| commit | 说明 |
+|--------|------|
+| ea734172 | refactor: universal_react.py删除_on_session_init/on_after_loop(死代码+bug)+react_agent_mixin.py删除_on_task_init/complete(零调用) - 小沈-2026-05-24 |
+| a817e25a | refactor: llm_strategies.py 提取_make_parse_error消除5倍parse_error字典重复+提取_fallback_to_text消除2倍回退重复 - 小沈-2026-05-24 |
+
+---
+
+## v0.13.37→v0.13.38 变更汇总 - 小沈-2026-05-24
+
+| commit | 说明 |
+|--------|------|
+| 51b273d7 | refactor: llm_core.py 提取_parse_sse_lines消除SSE循环~80行重复+_ERROR_TYPE_MAP合并7个except块 - 小沈-2026-05-24 |
+| 87d222e9 | fix: react_sse_wrapper.py 修复line384错误模块导入(Interrupt被吞为error P1)+提取_yield_error_sse消除12行重复 - 小沈-2026-05-24 |
+| b26e86cd | refactor: react_output_parser.py 删除全库零引用的_extract_by_known_tools死代码(激活版在TextStrategy) - 小沈-2026-05-24 |
+| 2bdb3d6e | fix: universal_react.py _execute_tool传已解析的action而非original_action(消除冗余二次别名解析 P3) - 小沈-2026-05-24 |
+| d41c4441 | fix: logger.py 删除_check_and_rotate_log_file消除双重日切实现(emit自动处理+首次init不自加handler) - 小沈-2026-05-24 |
+
+---
+
+v0.13.37
+
+更新时间: 2026-05-24 20:50:00
+
+更新内容：
+
+## v0.13.36→v0.13.37 变更汇总 - 小沈-2026-05-24
+
+### fix 第5章代码审查修复（8个commit）
+
+| commit | 说明 |
+|--------|------|
+| d611ed22 | fix: file_helpers.py 3处哈希算法if/elif→select_hasher()消除4次重复 - 小沈-2026-05-24 |
+| 17f9ec1d | refactor: file_helpers.py 删除dead_code _calculate_hash_for_multiple_files(零调用) - 小沈-2026-05-24 |
+| 4ab2b71a | refactor: file_helpers.py get_file_info_impl委托get_file_metadata消除30行重复 - 小沈-2026-05-24 |
+| 573ece39 | fix: file_safety.py 6级.parent链替换为resolve().parents[5] - 小沈-2026-05-24 |
+| 03ec66dd | refactor: common_helper.py _check_module委托exec_helper._check_module_available消除importlib重复 - 小沈-2026-05-24 |
+| 06b95212 | fix: tool_config.py get_timeout回退到tool_meta.TOOL_TIMEOUTS统一超时来源 - 小沈-2026-05-24 |
+| bb70e3ba | refactor: gui_helper.py _find_window_by_title→window_helper.find_windows_by_title消除实现重复 - 小沈-2026-05-24 |
+| 59d88d58 | fix: __init__.py 移除_find_window_by_title导出(已移至window_helper) - 小沈-2026-05-24 |
+
+---
+
+v0.13.36
+
+更新时间: 2026-05-24 19:33:00
+
+更新内容：
+
+## v0.13.35→v0.13.36 变更汇总 - 小健-2026-05-24
+
+### fix 代码审查修复（7项）
+
+| commit | 说明 |
+|--------|------|
+| 9347b3e8 | fix: command_security.py - 删除重复calculate_confidence定义(P0双定义覆盖bug) - 小健-2026-05-24 |
+| 45afaf87 | refactor: react_output_parser.py - 删除7处重复import(re/logger)消除冗余 - 小健-2026-05-24 |
+| 99abd257 | fix: health.py - execute_tool判空改为is not None(避免list当作falsy) - 小健-2026-05-24 |
+| ca81a354 | fix: error_handler.py - 修复重复502检测+补充bad gateway小写匹配 - 小健-2026-05-24 |
+| 30b12093 | fix: retry_policy.py - is_retryable检查改用ErrorType枚举 - 小健-2026-05-24 |
+| 1330ea9c | fix: session.py - task_id去掉重复task-前缀 - 小健-2026-05-24 |
+| 1fd07d64 | fix: react_schema.py - 添加缺失的logger导入 - 小健-2026-05-24 |
+| ba74fe2a | fix: tool_executor.py - 删除重复RetryPolicy+延迟导入retry_policy - 小健-2026-05-24 |
+
+### feat 新功能（1项）
+
+| commit | 说明 |
+|--------|------|
+| 520d9c93 | feat: registry.py - 新增list_all_tools()公开方法 - 小健-2026-05-24 |
+
+### docs 文档（1项）
+
+| commit | 说明 |
+|--------|------|
+| cba041f7 | docs: 后端代码审查报告-修正版(8项修复明细) - 小健-2026-05-24 |
+| 9ebd1e82 | docs: file_helpers.py - batch_rename_impl添加函数结构注释 - 小健-2026-05-24 |
+
+---
+
+v0.13.35
+
+更新时间: 2026-05-24 19:13:00
+
+更新内容：
+
+## v0.13.34→v0.13.35 变更汇总 - 小健-2026-05-24
+
+### feat ToolStepMixin工具执行SRP提取（2个commit）
+
+| commit | 说明 |
+|--------|------|
+| 6ad8845d | feat: tool_step_mixin.py - 工具步骤编排混入类(SRP分离,从base_react.py迁入_execute_tool_step/+_resolve_fc_context/+_ToolStepOutcome) - 小健-2026-05-24 |
+| c57194fa | refactor: base_react.py/desktop_react.py/universal_react.py - 工具执行提取到ToolStepMixin(主循环-185行,主工具/并行工具统一_execute_tool_step) - 小健-2026-05-24 |
+
+### fix 3项缺陷修复（3个commit）
+
+| commit | 说明 |
+|--------|------|
+| 13af8bc9 | fix: message_builder.py - FC协议观察注入改用tool_call_id检查(避免tool_calls为空时false trigger) - 小健-2026-05-24 |
+| 5d28566c | fix: message_saver.py - _INVALID_SESSION_IDS加500上限防止无限增长内存泄漏 - 小健-2026-05-24 |
+| 279c0e95 | fix: react_sse_wrapper.py - CancelledError后保存异常改用logger.warning(原bare except丢失上下文) - 小健-2026-05-24 |
+
+### refactor 硬编码提取为常量（1个commit）
+
+| commit | 说明 |
+|--------|------|
+| ea08d700 | refactor: intent_classifier.py - 硬编码默认值提取为常量+使用DEFAULT_LLM_TIMEOUT替代60 - 小健-2026-05-24 |
+
+### docs 文档（2个commit）
+
+| commit | 说明 |
+|--------|------|
+| 4247eb77 | docs: AGENTS.md - 新增编码铁规章节(DRY/KISS/SLAP/SRP)+版本号更新v0.13.11→v0.13.33 - 小健-2026-05-24 |
+| 0969f527 | docs: 后端代码审查报告-138文件全景(DRY/KISS/SLAP/SRP逐文件评估+P0-P3问题清单+死代码分析) - 小健-2026-05-24 |
+
+---
+
+v0.13.34
+
+更新时间: 2026-05-24 18:40:34
+
+更新内容：
+
+## v0.13.33→v0.13.34 变更汇总 - 小健-2026-05-24
+
+### chore 死代码清理（删除989行）
+
+16个文件变更，删除11个文件：
+- `parsers/` 7文件(454行) — 自创建以来从未被外部import的孤立策略模式实现
+- `_deprecated_capability.py` / `_deprecated_capability_detector.py` / `_deprecated_strategy_selector.py` (376行) — 功能已合并到llm_adapter.py，无逻辑丢失
+- `operation_orm.py` (73行) — 注释自认"未使用"的ORM死代码
+- `routes.py:cleanup_all_backups()` (35行) — 从未被调用的注释级功能
+- `agent_factory.py:register()` / `_AGENTS` / `_TOOL_CATEGORIES` (18行) — 旧工厂设计残留，只写入未读取
+- `react_schema.py:_build_brief_schema()` (14行) — 定义后从未调用
+- `session_base.py:clear_stats_cache()` (4行) — 定义后从未调用
+- `file_safety.py` 中 `operation_orm.OperationRecordORM` 无用import (1行)
+
+## v0.13.32→v0.13.33 变更汇总 - 小健-2026-05-24
+
+### fix 代码深度审查问题修复（13个commit）
+
+| commit | 说明 |
+|--------|------|
+| 64ecb4f3 | fix: base_react.py - step_counter注入Agent替换独立step_count，start→Agent全程一条线计数 - 小沈-2026-05-24 |
+| 17cca41b | fix: react_sse_wrapper.py - 传递step_counter给Agent+generic流步号改用event.step - 小沈-2026-05-24 |
+| 57e681ff | fix: tool_result_formatter.py - _format_llm_observation增加tool_name/tool_params参数使failure hint真正生效(原result.get永远为None) - 小健-2026-05-24 |
+| 48e0777b | fix: message_builder.py - build_observation_text增加tool_name/tool_params参数透传 - 小健-2026-05-24 |
+| b298733a | fix: base_react.py - build_execution_result_dict/error类型提取/build_observation_text传tool_name - 小健-2026-05-24 |
+| c1f465b0 | fix: base_react.py - 移除tool_name'或finish'兜底使无效工具名检查能捕获空工具名 - 小健-2026-05-24 |
+| f87de810 | fix: error_handler.py - 提取is_network_or_api_error消除内联重复 - 小健-2026-05-24 |
+| 09cc3ac3 | fix: tool_result_formatter.py - extract_status数字code防崩溃 - 小健-2026-05-24 |
+| 062028e6 | fix: tool_executor.py - RetryPolicy默认retryable_errors添加network_error - 小健-2026-05-24 |
+| 65ef1546 | fix: tool_parser.py - rate_limit检测补充下划线写法 - 小健-2026-05-24 |
+| 524ddd54 | fix: BasePromptTemplate.py - prompt示例tool_name从通用描述改为实际工具名 - 小健-2026-05-24 |
+| 623432e5 | fix: intent_classifier.py - intent_model从配置读取替代硬编码gemma3:4b - 小健-2026-05-24 |
+| b4996fc5 | fix: tool_executor.py - retryable_errors接入实际重试决策逻辑(原死代码从未生效) - 小健-2026-05-24 |
+| e3e453f3 | fix: error_handler.py - import ERROR_TYPE_MAP移到文件顶部 - 小健-2026-05-24 |
+
+### refactor 常量迁移+代码提取（8个commit）
+
+| commit | 说明 |
+|--------|------|
+| f4734480 | feat: constants.py - 新增全局常量文件 - 小健-2026-05-24 |
+| 83981ef9 | feat: constants.py - 新增3张映射表 - 小健-2026-05-24 |
+| bb29dad6 | feat: registry.py - ToolMetadata新增failure_hint_fn字段 - 小健-2026-05-24 |
+| 2c64a7d2 | feat: network_register.py - http_request注册failure_hint_fn - 小健-2026-05-24 |
+| dc807b35 | feat: tool_result_formatter.py - 工具失败时从registry获取替代建议提示 - 小健-2026-05-24 |
+| c75d251f | refactor: llm_core.py - timeout硬编码改为引用常量 - 小健-2026-05-24 |
+| 7cb6cdff | refactor: tool_executor.py - retryable_errors默认值改为引用常量 - 小健-2026-05-24 |
+| 9cdc1b00 | refactor: retry_policy.py - retryable_errors默认值改为引用常量 - 小健-2026-05-24 |
+| 26456c42 | refactor: message_builder.py - 硬编码常量提取到constants.py - 小健-2026-05-24 |
+| 65e26c32 | refactor: base_react.py - 提取_build_execution_result_dict等消除多段重复 - 小健-2026-05-24 |
+| 3d672570 | refactor: base_react.py - 提取_emit_step等消除中断检查/错误退出重复 - 小健-2026-05-24 |
+| 71fd8252 | refactor: error_handler.py - 映射表统一引用constants.py - 小健-2026-05-24 |
+| f3a33f02 | refactor: error_handler.py - resolve_http_error_type改用结构化映射表 - 小健-2026-05-24 |
+| aebc5850 | refactor: network_tools.py - 硬编码提取到constants.py - 小健-2026-05-24 |
+
+### test 测试改造（2个commit）
+
+| commit | 说明 |
+|--------|------|
+| 9380b838 | test: test_s5_deep.py - execute_javascript→execute_code统一接口 - 小健-2026-05-24 |
+| 752d04c1 | test: test_s4_deep.py - execute_python→execute_code统一接口 - 小健-2026-05-24 |
+| 315d49e7 | fix: test_s4_deep.py/test_s5_deep.py - 空代码断言修正+capabilities_used→next_actions - 小健-2026-05-24 |
+
+### docs 文档（8个commit）
+
+| commit | 说明 |
+|--------|------|
+| ee4b03a7 | docs: Agent系统后端核心流程设计实现与问题分析 - 小沈-2026-05-24 |
+| ac0674aa | docs: react-消息构建重构代码深度分析报告 - 小沈-2026-05-24 |
+| d3d17ec2 | docs: Agent实现机制深度分析文档 - 小沈-2026-05-24 |
+| ec65614e | docs: Agent系统后端设计实现说明 - 小沈-2026-05-24 |
+| 54519708 | docs: Agent架构重构设计说明文档 - 小沈-2026-05-24 |
+| 7e2de318 | docs: 深度代码审查问题清单 - 小沈-2026-05-24 |
+| a7766394 | docs: E2E-FSI测试规范 - 小沈-2026-05-24 |
+| 8588736b | docs: E2E-FSI测试规范v1.1+Bug#9/#10记录 - 小沈-2026-05-24 |
+| ce06621e | docs: 服务器运行时错误分析报告 - 小沈-2026-05-24 |
+
+## v0.13.31→v0.13.32 变更汇总 - 小沈-2026-05-23
+
+### refactor 消息流程重构+策略简化+缓存删除（10个commit）
+
+| commit | 说明 |
+|--------|------|
+| 91573dca | refactor: agent消息流程重构(消Dict往返转换+429重试统一+死代码归档) - 小沈-2026-05-23 |
+| cd6e8bd0 | refactor: 消息构建流程简化(split+assemble→prepare_messages_for_llm) - 小沈-2026-05-23 |
+| 50d33ce2 | refactor: 429重试下沉到llm_core传输层，Strategy层彻底消除重试逻辑 - 小沈-2026-05-23 |
+| 135440e2 | refactor: 删除Message类+清空adapter.py+删除LLMClientWrapper - 小沈-2026-05-23 |
+| 04e907e1 | refactor: 删除ResponseFormatStrategy，只保留text和tools两种策略 - 小沈-2026-05-23 |
+| ec577f93 | refactor: 探测+选择3层合并为llm_adapter.py一个文件 - 小沈-2026-05-23 |
+| 6563d2fd | refactor: FC协议合规注入 — tools策略下observation用assistant(tool_calls)+tool(tool_call_id) - 小沈-2026-05-23 |
+| 3fe8727d | refactor: 策略选择从每轮探测改为首次懒确定+缓存 - 小沈-2026-05-23 |
+| ea580576 | refactor: 3个名不副实函数重命名 + 清理llm_adapter残留 - 小沈-2026-05-23 |
+| acf8733e | refactor: 删除工具执行缓存+失败拦截+write_file质量检测（-90行） - 小沈-2026-05-23 |
+
+### fix 修复（6个commit）
+
+| commit | 说明 |
+|--------|------|
+| fcc0c0b6 | fix: 历史页优化(useRef防闭包陷阱+批量删除并行+无效会话禁用) - 小沈-2026-05-23 |
+| 7cf48129 | fix: 历史页修复6项bug(删除后退页/闭包旧值/is_valid不一致/ref统一/loading超时/title空值) - 小沈-2026-05-23 |
+| 667e09b9 | fix: 修复工具调用死循环+session404+清除无效task_id - 小沈-2026-05-23 |
+| 41285075 | fix: 删除LLMClientWrapper残留引用，直接用ai_service - 小沈-2026-05-23 |
+| 9fc3ad29 | fix: 小健审查修复3个FC协议bug - 小沈-2026-05-23 |
+| 07edb920 | fix: 小健审查修复 — 清理残留引用(注释+_executed_tool_summary+inject_executed_summary) - 小沈-2026-05-23 |
+
+### docs 文档更新（2个commit）
+
+| commit | 说明 |
+|--------|------|
+| 9262b07e | docs: 更新流程分析文档（策略选择懒确定+FC协议注入） - 小沈-2026-05-23 |
+| 138820b8 | docs: 修正流程文档行号与代码一致 - 小沈-2026-05-23 |
+
+---
+
+v0.13.31
+
+更新时间: 2026-05-23 13:55:11
+
+更新内容：
+- docs: Ollama云API 39个模型测试结果记录 (2026-05-23 14:00:53)
+- fix: api.ts恢复readConfigFile函数并修复格式 (2026-05-23 13:59:42)
+- refactor: Settings设置页抽出4个子组件+types类型定义 (2026-05-23 13:59:42)
+- docs: 问题分析-工具调用死循环分析文档 (2026-05-23 13:51:52)
+- feat: routes.py新增GET /config/read接口读取配置文件 (2026-05-23 13:51:48)
+- perf: intent_classifier.py从七牛deepseek-v3.1切换到ollama cloud gemma3:4b提速37倍 (2026-05-23 13:51:43)
+- fix: llm_core.py chat_with_tools缺少reset_cancel导致后续调用被取消 (2026-05-23 13:51:38)
+- fix: App.tsx BrowserRouter禁用startTransition根治导航延迟 (2026-05-23 10:07:49)
+- fix: 会话页切换保持存活（display:none避免SSE重连） (2026-05-23 09:47:28)
+- fix: React Router v7导航延迟修复（App.tsx+Layout/index.tsx） (2026-05-23 09:39:27)
+- fix: SSE超时从60秒改为180秒，适配CPU推理慢（qwen2.5:1.5b约2分钟） (2026-05-23 08:25:15)
+- docs: 更新全链路E2E集成测试方案 (2026-05-23 08:20:30)
+- fix: 修复 ListDirectoryView 缺少 tree/root 字段类型定义 (2026-05-23 08:20:05)
+- fix: 修复 renderers 中 FontSize/Spacing 不存在属性（XS/SM/XXS） (2026-05-23 08:20:01)
+- fix: stepStyles.ts 添加防删注释防止常量改名不同步 (2026-05-23 08:19:56)
+- fix: 修复 @/ 路径别名配置缺失导致前端500错误 (2026-05-23 08:19:51)
+- docs: Agent2.5设计文档v1.5 补全所有伪代码 (2026-05-23 01:42:18)
+- docs: Agent2.5设计文档v1.4 核心决策硬核论证 (2026-05-23 01:30:50)
+- docs: Ollama部署说明更新 + 全链路E2E集成测试方案 (2026-05-23 01:17:08)
+- docs: Agent2.5设计文档v1.3小沈审查修正 (2026-05-23 01:15:48)
+
+v0.13.30
+
+更新时间: 2026-05-23 00:31:32
+
+更新内容：
+- fix: 修正version.txt中v0.13.24/26/27/29时间错误（原为估计整点时间，改为实际git tag时间）
+- fix: 补充缺失的v0.13.25版本记录；标记v0.13.22无对应git tag
+
+v0.13.29
+
+更新时间: 2026-05-23 00:15:55
+
+更新内容：
+- refactor: 10个prompt文件统一对齐§4.6模板
+  - code_execution/file/shell/network/system/desktop/document/database/meta/time
+  - 统一：删合并标注/参数说明/P0P1分组，补When to use/Returns，行内Example改JSON键值格式，Tool Call Examples改中文场景+JSON格式+finish示例
+  - 精简：shell 4条→1条safety，database 4条→2条，file 6条→2条+7行rollback→3行
+  - 新增：system/network/code_exec safety，document从极简扩展到完整9工具模板
+  - 删除：meta/time的CORE RULES段，time的merge标注，file的F1-F11编号
+
+v0.13.28
+
+更新时间: 2026-05-22 23:56:21
+
+更新内容：
+- docs: 重写§8统一规范结论为逐文件精确改动清单，10个文件各4方法明确列清
+
+v0.13.27
+
+更新时间: 2026-05-22 17:51:56
+
+更新内容：
+- fix: 修复深度分析发现的4个高危+1个中危问题
+- H1: 后端summary为空时使用error_message或默认值
+- H2: 前端一次性安全解构，添加完整性验证
+- H3: SSE解析正确处理null（typeof null === 'object'历史bug）
+- H4: 前端所有字段提供默认值
+- M5: 添加error_message渲染（红色显示）
+- 代码健壮性大幅提升
+
+v0.13.26
+
+更新时间: 2026-05-22 15:33:17
+
+更新内容：
+- fix: 修复代码核查发现的3个问题
+- next_actions类型定义：string[] → 对象数组{tool, description, when, params}
+- Colors.PRIMARY常量添加 + BG.LIGHT别名
+- NextActions组件支持显示详细信息（Tooltip）
+- 全部问题修复完成，代码实施完全符合设计方案
+
+v0.13.25
+
+更新时间: 2026-05-22 15:17:49
+
+更新内容：
+- docs: 工具返回格式统一设计方案完成总结 - 小沈-2026-05-22
+
+v0.13.24
+
+更新时间: 2026-05-22 15:16:42
+
+更新内容：
+- feat: 完成工具返回格式统一设计方案全部6个阶段（第13章设计方案）
+- 阶段5: StepContent observation渲染改造，使用统一渲染组件
+- 所有阶段完成：样式常量→后端改造→前端类型→渲染组件→通用渲染器→集成
+
+v0.13.23
+
+更新时间: 2026-05-22 15:14:10
+
+更新内容：
+- feat: 实施工具返回格式统一设计方案-阶段0+1+2+3（第13章设计方案）
+- 阶段0: 添加Spacing/BorderWidth/Radius样式常量，替换魔法数字
+- 阶段1: 后端ObservationStep.to_dict()改为observation JSON对象
+- 阶段2: 前端类型定义+SSE解析兼容层
+- 阶段3: 6个统一渲染组件（StatusIcon/ToolInfo/WarningBox/NextActions/SmartContentRenderer/GenericResultRenderer）
+- 遵循UX规范：系统颜色常量、禁止硬编码、禁止到处框框色块
+
+v0.13.22
+
+更新时间: 2026-05-22 15:30:00
+
+更新内容：
+- docs: 工具返回格式统一设计方案-追加UI/UX规范审核章节(13.13)
+- docs: 设计文档代码示例统一使用系统常量(Colors/FontSize/FontWeight)
+
+⚠️ 注：无对应git tag，时间不确定
+
 v0.13.21
 
 更新时间: 2026-05-22 11:50:24
@@ -1808,7 +2477,7 @@ v0.12.6
 
 **1. 工具精简（28个 → 24个）**：
 - 删除 `glob_files`：功能已被 `search_files(sortBy)` 覆盖
-- 删除 `read_file`：功能已被 `read_text_file` 覆盖  
+- 删除 `read_file`：功能已被 `read_text_file` 覆盖
 - 删除 `search_file_content`：功能已被 `grep_file_content` 覆盖
 - 保留 `rename_file`：语义明确（仅同目录改名）
 

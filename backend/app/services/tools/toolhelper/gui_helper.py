@@ -15,7 +15,7 @@ GUI Helper - GUI内部辅助函数集合（不暴露给LLM）
 - _check_capture_permission(): 检查截屏权限
 - _check_tesseract_available(): 检查OCR引擎
 - _check_notification_permission(): 检查通知权限
-- _find_window_by_title(title): 按标题查找窗口（去重3处实现）
+- find_windows_by_title(title): 按标题查找窗口（从window_helper导入）
 
 Author: 小沈 - 2026-05-17
 """
@@ -26,6 +26,7 @@ import subprocess
 from typing import Any, Callable, Dict, List, Optional
 
 from app.utils.logger import logger
+from app.services.tools.toolhelper.window_helper import find_windows_by_title
 
 
 def _require_gui_lib(lib_name: str) -> bool:
@@ -95,30 +96,6 @@ except ImportError:
 
 # ========== 辅助函数 ==========
 
-def _find_window_by_title(title: str) -> List[int]:
-    """按标题模糊匹配查找窗口句柄列表 - 小沈 2026-05-17
-
-    去重desktop_tools._find_windows_by_title / gui_tools.focus_window / gui_tools.resize_window
-    三处的重复实现，统一到此函数。
-    """
-    if not WIN32_AVAILABLE:
-        return []
-
-    windows = []
-
-    def callback(hwnd: int, _: List) -> bool:
-        try:
-            win_title = _win32gui_mod.GetWindowText(hwnd)
-            if win_title and title.lower() in win_title.lower():
-                windows.append(hwnd)
-        except Exception:
-            pass
-        return True
-
-    _win32gui_mod.EnumWindows(callback, [])
-    return windows
-
-
 def _get_mouse_position() -> Dict[str, Any]:
     """获取当前鼠标位置 - 小沈 2026-05-17
 
@@ -167,13 +144,13 @@ def _check_screen_size() -> Dict[str, Any]:
 def _check_window_exists(window_title: str) -> Dict[str, Any]:
     """检查窗口是否存在 - 小沈 2026-05-17
 
-    迁移自 gui_helpers.check_window_exists，使用 _find_window_by_title 去重
+    迁移自 gui_helpers.check_window_exists，使用 find_windows_by_title 去重
     """
     if not WIN32_AVAILABLE:
         return {"code": "ERR_DESKTOP_CHECK_WINDOW", "data": None, "message": "win32库未安装"}
 
     try:
-        hwnds = _find_window_by_title(window_title)
+        hwnds = find_windows_by_title(window_title)
         exists = len(hwnds) > 0
         return {"code": "SUCCESS", "data": {"exists": exists}, "message": f"窗口 '{window_title}' {'存在' if exists else '不存在'}"}
     except Exception as e:
@@ -183,13 +160,13 @@ def _check_window_exists(window_title: str) -> Dict[str, Any]:
 def _get_window_position(window_title: str) -> Dict[str, Any]:
     """获取窗口位置和大小 - 小沈 2026-05-17
 
-    迁移自 gui_helpers.get_window_position，使用 _find_window_by_title 去重
+    迁移自 gui_helpers.get_window_position，使用 find_windows_by_title 去重
     """
     if not WIN32_AVAILABLE:
         return {"code": "ERR_DESKTOP_GET_WINDOW_POSITION", "data": None, "message": "win32库未安装"}
 
     try:
-        hwnds = _find_window_by_title(window_title)
+        hwnds = find_windows_by_title(window_title)
         if not hwnds:
             return {"code": "ERR_DESKTOP_GET_WINDOW_POSITION", "data": None, "message": f"窗口 '{window_title}' 未找到"}
 

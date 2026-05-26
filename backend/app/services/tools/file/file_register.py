@@ -18,6 +18,7 @@ F9  archive_tool       — 合并compress_files + extract_archive
 F10 file_operation     — 合并move_file + copy_file + delete_file
 F11 data_file_format   — 合并json/yaml/toml/ini/xml/properties
 
+
 创建时间: 2026-04-26
 精简时间: 2026-05-18
 """
@@ -51,17 +52,16 @@ FILE_TOOL_DESCRIPTIONS = {
     "read_file": """读取文本文件（统一入口）- 合并read_text_file + read_batch_file功能。
 
 使用方式：
-- file_paths传入1个路径：单文件读取，支持head/tail/offset/limit分页
-- file_paths传入多个路径：批量读取，每个文件返回完整内容
+- 单文件读取：file_paths传入1个路径，支持head/tail/offset/limit分页
+- 批量读取：file_paths传入多个路径，返回完整内容
 
-使用示例：
-- 单文件：{"file_paths": ["D:/test.txt"]}
-- 单文件取前10行：{"file_paths": ["D:/test.txt"], "head": 10}
-- 单文件分页：{"file_paths": ["D:/test.txt"], "offset": 5, "limit": 10}
-- 批量：{"file_paths": ["D:/a.txt", "D:/b.txt"]}
+使用示例：【常用名转换说明】
+- 单文件/read_text_file → read_file(file_paths=["D:/test.txt"])
+- 分页读取 → read_file(file_paths=["D:/test.txt"], head=10, limit=100)
+- 批量/read_batch_file → read_file(file_paths=["D:/a.txt", "D:/b.txt"])
 
 返回数据说明：
-- 单文件：data.content/data.total_lines/data.line_count/data.encoding/data.file_size
+- 单文件：data.content/data.total_lines/data.encoding/data.file_size
 - 批量：data.results/data.success_count/data.failed_count""",
 
     "write_text_file": """写入或追加文本文件内容，支持中文、编码自动检测、追加模式。仅支持文本文件。
@@ -89,34 +89,36 @@ FILE_TOOL_DESCRIPTIONS = {
 返回数据说明：
 - data.success/data.data(Base64)/data.mime_type/data.file_size""",
 
-    "edit_file": """编辑文本文件 — 支持单处替换和多处编辑。
+    "edit_file": """编辑文本文件 - 合并precise_replace_in_file + edit_text_file功能。
 
-使用场景：
-- old_string+new_string: 单处精确替换
-- edits: 多处结构化编辑
+使用方式：
+- 单处替换：old_string + new_string
+- 多处编辑：edits数组
+- 预览：dry_run=true
 
 【重要】old_string和edits不能同时传入
 
-使用示例：
-- 单处替换：{"file_path": "D:/main.py", "old_string": "def old():", "new_string": "def new():"}
-- 替换所有：{"file_path": "D:/main.py", "old_string": "old_var", "new_string": "new_var", "replace_all": true}
-- 多处编辑：{"file_path": "D:/main.py", "edits": [{"oldText": "old", "newText": "new"}]}
-- 预览：{"file_path": "D:/main.py", "old_string": "x=1", "new_string": "x=2", "dry_run": true}
+使用示例：【常用名转换说明】
+- 单处替换/precise_replace_in_file → edit_file(file_path="D:/main.py", old_string="old", new_string="new")
+- 替换所有 → edit_file(file_path="D:/main.py", old_string="old", new_string="new", replace_all=true)
+- 多处编辑/edit_text_file → edit_file(file_path="D:/main.py", edits=[{"oldText":"old","newText":"new"}])
+- 预览修改 → edit_file(file_path="D:/main.py", old_string="old", new_string="new", dry_run=true)
 
 返回数据说明：
 - data.success/data.replaced_count(单处)/data.applied_edits(多处)/data.preview(dry_run)""",
 
     "list_directory": """列出目录内容（统一入口）- 合并list_directory + get_directory_tree + file_statistics功能。
 
-使用场景：
-- format="list": 扁平列表（含文件大小/修改时间）
-- format="tree": JSON树结构
+使用方式：
+- format="list"：扁平列表（含文件大小/修改时间）
+- format="tree"：JSON树结构
 - 始终返回statistics统计信息
 
-使用示例：
-- 列出目录：{"dir_path": "D:/project"}
-- 递归：{"dir_path": "D:/project", "recursive": true}
-- 树结构：{"dir_path": "D:/project", "format": "tree"}
+使用示例：【常用名转换说明】
+- 列出文件/list_directory → list_directory(dir_path="D:/project")
+- 递归列出 → list_directory(dir_path="D:/project", recursive=true, max_depth=3)
+- 树结构/get_directory_tree → list_directory(dir_path="D:/project", format="tree")
+- 统计信息/file_statistics → list_directory(dir_path="D:/project", format="list")
 
 返回数据说明：
 - data.success/data.entries(list)/data.tree(tree)/data.statistics(统计)""",
@@ -140,58 +142,67 @@ FILE_TOOL_DESCRIPTIONS = {
 返回数据说明：
 - data.success/data.matches/data.total_files/data.total_matches""",
 
-    "rename_file": """重命名文件 — 支持单文件和批量重命名。
+    "rename_file": """重命名文件 - 合并rename_file + batch_rename功能。
 
-使用模式：
-- mode="single": 单文件重命名，需file_path + new_name（new_name仅文件名，不能含路径分隔符）
-- mode="batch": 批量正则重命名，需directory + pattern + replacement
+使用方式：
+- mode="single"：单文件重命名，需file_path + new_name
+- mode="batch"：批量正则重命名，需directory + pattern + replacement
 
-使用示例：
-- 单文件：{"mode": "single", "file_path": "D:/old.txt", "new_name": "new.txt"}
-- 批量：{"mode": "batch", "directory": "D:/files", "pattern": "file_(\\\\d+).txt", "replacement": "renamed_\\\\1.txt"}
+使用示例：【常用名转换说明】
+- 单文件/rename_file → rename_file(file_path="D:/old.txt", new_name="new.txt")
+- 批量/batch_rename → rename_file(mode="batch", directory="D:/files", pattern="file_(\\d+).txt", replacement="renamed_\\1.txt")
 
 返回数据说明：
 - data.success/data.new_path(单文件)/data.operations(批量)""",
 
-    "archive_tool": """压缩/解压工具 — 支持zip/tar/tar.gz/tar.bz2格式。
+    "archive_tool": """压缩/解压工具 - 合并compress_files + extract_archive + test_archive功能。支持zip/tar/tar.gz/tar.bz2格式。
 
-使用示例：
-- 压缩：{"action": "compress", "source": "D:/project", "destination": "D:/backup.zip"}
-- 解压：{"action": "extract", "source": "D:/backup.zip", "destination": "D:/extracted"}
+使用方式：
+- action="compress"：压缩文件/目录
+- action="extract"：解压到指定目录
+- action="test"：验证压缩包完整性
+
+使用示例：【常用名转换说明】
+- 压缩/compress_files → archive_tool(action="compress", source="D:/project", destination="D:/backup.zip")
+- 解压/extract_archive → archive_tool(action="extract", source="D:/backup.zip", destination="D:/output")
+- 验证/test_archive → archive_tool(action="test", source="D:/backup.zip")
+- 压缩目录/zip_files → archive_tool(action="compress", source="D:/project", destination="D:/project.zip")
+- 解压/unzip → archive_tool(action="extract", source="D:/project.zip", destination="D:/extracted")
 
 返回数据说明：
 - data.success/data.compressed_size(压缩)/data.extracted_files(解压)""",
 
-    "file_operation": """文件操作统一入口 - 合并move_file + copy_file + delete_file功能。
+    "file_operation": """文件操作统一入口 - 合并move_file + copy_file + delete_file等文件处理功能。
 
-使用示例：
-- 移动：{"action": "move", "source": "D:/a.txt", "destination": "E:/b.txt"}
-- 复制：{"action": "copy", "source": "D:/a.txt", "destination": "D:/backup/a.txt"}
-- 删除：{"action": "delete", "source": "D:/temp.txt"}
-- 永久删除目录：{"action": "delete", "source": "D:/temp", "recursive": true, "force": true}
+使用方式：
+- action="move"：移动文件
+- action="copy"：复制文件（备份）
+- action="delete"：删除文件（可放回收站）
 
-参数说明：
-- force：仅delete模式有效，True=跳过回收站永久删除，False=放入回收站
-- preserve_metadata：仅copy模式有效，True=保留文件元数据（修改时间等）
+使用示例：【常用名转换说明】
+- 移动/move_file → file_operation(action="move", source="D:/a.txt", destination="E:/b.txt")
+- 复制/copy_file → file_operation(action="copy", source="D:/a.txt", destination="D:/backup/a.txt")
+- 删除/delete_file → file_operation(action="delete", source="D:/temp.txt")
+- 备份/backup_file → file_operation(action="copy", source="D:/original.txt", destination="D:/backup.txt")
+- 恢复/restore_backup → file_operation(action="copy", source="D:/backup.txt", destination="D:/original.txt")
+- 永久删除 → file_operation(action="delete", source="D:/temp", force=true, recursive=true)
 
 返回数据说明：
 - data.success/data.action/data.source/data.destination""",
 
-    "data_file_format": """读取/修改 JSON、YAML、TOML、INI、XML、Properties 等结构化配置文件 — 统一入口。
+    "data_file_format": """结构化配置文件读写 - 合并read_json + write_json + read_yaml + write_yaml等功能。
 
-当你需要解析配置文件、修改配置项、读取JSON数据时使用此工具。
-⚠️ CSV/Excel 使用 Document 分类的 read_document，不在此工具范围。
-⚠️ write模式仅支持JSON/YAML/TOML，INI/XML/Properties暂不支持写入。
+支持格式：JSON/YAML/TOML/INI/XML/Properties
+⚠️ CSV/Excel使用read_document工具
+⚠️ write模式仅支持JSON/YAML/TOML，INI/XML/Properties暂不支持写入
 
-使用示例：
-- 读JSON：{"action": "read", "file_path": "D:/config.json"}
-- 写JSON：{"action": "write", "file_path": "D:/config.json", "data": {"key": "value"}}
-- 读YAML：{"action": "read", "file_path": "D:/config.yaml"}
-- 写TOML：{"action": "write", "file_path": "D:/config.toml", "data": {"section": {"k": "v"}}}
-
-参数说明：
-- data：write模式必填，JSON/YAML/TOML传dict或list
-- indent：仅JSON写入有效，格式化缩进空格数（默认2）
+使用示例：【常用名转换说明】
+- 读JSON/read_json → data_file_format(action="read", file_path="D:/config.json")
+- 写JSON/write_json → data_file_format(action="write", file_path="D:/config.json", data={"key":"value"})
+- 读YAML/read_yaml → data_file_format(action="read", file_path="D:/config.yaml")
+- 写YAML/write_yaml → data_file_format(action="write", file_path="D:/config.yaml", data={"key":"value"})
+- 读TOML → data_file_format(action="read", file_path="D:/config.toml")
+- 读INI/read_config → data_file_format(action="read", file_path="D:/config.ini")
 
 返回数据说明：
 - data.success/data.data(读取)/data.format/data.bytes_written(写入)""",

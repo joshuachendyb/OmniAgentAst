@@ -14,7 +14,7 @@ Version: 1.0
 
 import re
 import json
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 
 from app.utils.logger import logger
 
@@ -143,6 +143,10 @@ def _process_json_result(data: Dict, output: str) -> Optional[Dict[str, Any]]:
     if "tool_name" in data:
         return _build_action_from_new_format(data, output)
     
+    # OpenAI function calling 格式 (name + arguments)
+    if "name" in data and ("arguments" in data or "args" in data):
+        return _build_action_from_fc_format(data, output)
+    
     # 旧字段格式 (action/action_input)
     if "action" in data:
         return _build_action_from_old_format(data, output)
@@ -214,6 +218,49 @@ def _process_tool_params(tool_params, tool_name=None, raw_output=None):
         )
     
     return tool_params
+
+
+def _build_action_from_fc_format(data: Dict, output: str) -> Dict[str, Any]:
+    """
+    从OpenAI function calling格式构造action结果
+    
+    LLM在text策略下可能幻觉输出FC格式: {"name": "xxx", "arguments": {...}}
+    将其转换为标准ReAct action格式。
+    
+    小健 2026-05-24
+    """
+    tool_name = data["name"]
+    is_finish = tool_name == "finish"
+    
+    raw_args = data.get("arguments", data.get("args", {}))
+    if isinstance(raw_args, str):
+        try:
+            raw_args = json.loads(raw_args)
+        except (json.JSONDecodeError, TypeError):
+            raw_args = {}
+    if not isinstance(raw_args, dict):
+        raw_args = {}
+    
+    if is_finish and raw_args.get("result"):
+        raw_result = raw_args["result"]
+        response = _normalize_result_to_str(raw_result)
+    else:
+        response = ""
+    
+    processed_params = None if is_finish else _process_tool_params(raw_args, tool_name, output)
+    
+    result = {
+        "type": "answer" if is_finish else "action",
+        "thought": data.get("thought", ""),
+        "content": data.get("thought", ""),
+        "reasoning": data.get("reasoning", ""),
+        "tool_name": None if is_finish else tool_name,
+        "tool_params": processed_params,
+        "response": response,
+    }
+    
+    logger.info(f"[parse_react_response] FC格式转换: name={tool_name} → type={result['type']}")
+    return _add_reasoning_warning(result)
 
 
 def _build_action_from_new_format(data: Dict, output: str) -> Dict[str, Any]:
@@ -380,114 +427,94 @@ def _handle_non_standard_json(output) -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Handler #7: 混合文本中提取JSON块 + 不完整JSON检测
 # ---------------------------------------------------------------------------
+
+# 【24.4.4 组件1】统一 handler 结果构建(消除 4 个 8 字段 dict 重复)
+def _build_handler_result(type_: str, thought: str = "", content: str = "",
+                           reasoning: str = "", tool_name: Optional[str] = None,
+                           tool_params: Optional[Dict] = None,
+                           response: Any = None, error: Optional[str] = None) -> Dict[str, Any]:
+    """构建统一 handler 结果 — 小健 2026-05-25"""
+    return {
+        "type": type_, "thought": thought, "content": content or thought,
+        "reasoning": reasoning, "tool_name": tool_name, "tool_params": tool_params or {},
+        "response": response or thought, "error": error,
+    }
+
+
 def _handle_mixed_text_json(output) -> Optional[Dict[str, Any]]:
     """
     处理从混合文本中提取JSON的场景，包括不完整JSON检测。
     当前代码 lines 313-437 的逻辑整体迁移。
     作者: 小沈 2026-05-19
     """
+    # 【24.4.4 重构后主函数】~70行骨架
     if not isinstance(output, str):
         return None
-    
+
     json_data = _extract_json_block(output)
-    
-    # 不完整JSON检测
+    prefix_text = ""
+    if json_data:
+        json_start = output.find("{")
+        prefix_text = output[:json_start].strip() if json_start != -1 else ""
+
+    # 不完整 JSON 检测
     if not json_data:
         if re.match(r'^\s*\{\s*"thought":\s*"', output):
-            # 不完整JSON先走正则兜底，可能能提取出tool调用
             regex_recovered = _try_regex_tool_call_fallback(output)
             if regex_recovered:
-                logger.info("[parse_react_response] 不完整JSON但正则兜底提取到tool调用，跳过implicit")
+                logger.info("不完整JSON但正则兜底提取到tool调用")
                 return _add_reasoning_warning(regex_recovered)
             thought_text = output.strip()
-            logger.info("[parse_react_response] 检测到不完整JSON格式，返回chunk")
-            return {
-                "type": "chunk",
-                "thought": thought_text,
-                "content": thought_text,
-                "reasoning": thought_text,
-                "tool_name": None,
-                "tool_params": None,
-                "response": thought_text,
-                "error": None
-            }
-        return None  # 无JSON块 → 交给后续handler
-    
+            logger.info("检测到不完整JSON格式，返回chunk")
+            return _build_handler_result("chunk", thought=thought_text)
+        return None
+
     if not isinstance(json_data, dict):
         return None
-    
-    # 提取前缀文本
-    json_start = output.find('{')
-    prefix_text = output[:json_start].strip() if json_start != -1 else ""
-    
+
     tool_name = json_data.get("tool_name")
     tool_params = json_data.get("tool_params", {})
     if not isinstance(tool_params, dict):
         tool_params = {}
-    
-    # finish 类型
-    # 【修复A3 2026-05-20 小健】result 使用 _normalize_result_to_str 标准化
+
+    # finish
     if tool_name == "finish":
-        logger.info("[parse_react_response] 混合文本中提取到finish JSON")
         raw_result = tool_params.get("result") if tool_params else None
         result_text = _normalize_result_to_str(raw_result) if raw_result is not None else ""
-        return {
-            "type": "answer",
-            "thought": json_data.get("thought", ""),
-            "content": result_text or prefix_text,
-            "reasoning": json_data.get("reasoning", ""),
-            "tool_name": None,
-            "tool_params": None,
-            "response": result_text or prefix_text,
-            "error": None
-        }
-    
-    # tool_name action (非finish)
+        # 拼接JSON前的推理文本和result，去重
+        if prefix_text and result_text:
+            content = prefix_text + ("\n\n" + result_text if result_text not in prefix_text else "")
+        else:
+            content = prefix_text or result_text or ""
+        thought = prefix_text or json_data.get("thought", "")
+        return _build_handler_result("answer", thought=thought,
+            content=content, response=content)
+
+    # action
     if tool_name:
-        logger.info("[parse_react_response] 混合文本中提取到JSON，走JSON处理流程")
-        extracted_content = json_data.get("content", "")
-        if not extracted_content:
-            extracted_content = prefix_text
-        if tool_params:
-            tool_params = _process_tool_params(tool_params, tool_name, output)
-        return {
-            "type": "action",
-            "thought": json_data.get("thought", ""),
-            "content": extracted_content,
-            "reasoning": json_data.get("reasoning", ""),
-            "tool_name": tool_name,
-            "tool_params": tool_params,
-            "response": None,
-            "error": None
-        }
-    
-    # 无tool_name但有content/reasoning → implicit
+        extracted = json_data.get("content", "") or prefix_text
+        params = _process_tool_params(tool_params, tool_name, output)
+        return _build_handler_result("action", thought=json_data.get("thought", ""),
+            content=extracted, tool_name=tool_name, tool_params=params)
+
+    # implicit
     if "content" in json_data or "reasoning" in json_data:
-        has_action_keyword = re.search(r'\bAction\s*:', output, re.IGNORECASE)
-        has_answer_keyword = re.search(r'\bAnswer\s*:', output, re.IGNORECASE)
-        if not has_action_keyword and not has_answer_keyword:
-            logger.info("[parse_react_response] 检测到无tool_name的JSON，提取content/reasoning字段")
-            content_value = json_data.get("content", "")
-            reasoning_value = json_data.get("reasoning", "")
-            if isinstance(content_value, str) and content_value.startswith("{"):
+        if not re.search(r'\bAction\s*:', output, re.IGNORECASE) and \
+           not re.search(r'\bAnswer\s*:', output, re.IGNORECASE):
+            content = json_data.get("content", "")
+            reasoning = json_data.get("reasoning", "")
+            # 嵌套 JSON 提取(防御性)
+            if isinstance(content, str) and content.startswith("{"):
                 try:
-                    parsed_content = json.loads(content_value)
-                    if isinstance(parsed_content, dict):
-                        content_value = parsed_content.get("content", content_value)
+                    parsed = json.loads(content)
+                    if isinstance(parsed, dict):
+                        content = parsed.get("content", content)
                 except (json.JSONDecodeError, TypeError):
                     pass
-            return {
-                "type": "implicit",
-                "thought": prefix_text or content_value,
-                "content": content_value,
-                "reasoning": reasoning_value,
-                "tool_name": None,
-                "tool_params": None,
-                "response": content_value,
-                "error": None
-            }
-    
-    return None  # 无匹配 → 交给后续handler
+            return _build_handler_result("implicit", thought=prefix_text or content,
+                content=content, reasoning=reasoning, response=content)
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -572,368 +599,425 @@ def parse_react_response(output: str) -> Dict[str, Any]:
 # 步骤1.2：实现四种情况判断逻辑
 # =============================================================================
 
-def _determine_parse_type(output: str) -> Dict[str, Any]:
-    """
-    【2026-04-18小沈优化】判断LLM输出类型并调用对应解析函数
-    【2026-05-19小沈】移除重复的纯JSON块检测（已在handler #7处理），精简为3优先级
-    
-    调整后的优先级顺序：
-    ① ```包裹检测 - 最高优先级
-    ② 关键词匹配 - 第二优先级
-    ③ 长度兜底 - 最低优先级（≥5字符→implicit，<5→parse_error）
-    
-    【新增】统一的异常处理机制
-    """
-    if not output or not output.strip():
-        return {"type": "parse_error", "error": "Empty output", "thought": "", "content": "", "reasoning": "", "tool_name": None, "tool_params": None, "response": ""}
-    
-    output = output.strip()
-    
-    # ① 【最高优先级】```包裹JSON解析
-    # 【2026-04-19小沈优化】删除了对tool_parser.ToolParser的依赖，直接解析```块
+# 【24.1.4 组件2/3 常量】工具名/参数名降级映射 — 小健 2026-05-25
+_TOOL_NAME_FALLBACK_KEYS = ["action", "action_tool", "tool_name"]
+_TOOL_PARAMS_FALLBACK_KEYS = ["params", "action_input", "actionInput"]
+
+
+# 【24.1.4 组件1】统一 action 结果构建(消除 2 个 return dict 的 6 字段重复)
+def _build_action_result(type_: str, tool_name: str, tool_params: Dict[str, Any],
+                          thought: str, error: Optional[str] = None) -> Dict[str, Any]:
+    """构建统一 action 结果 — 小健 2026-05-25"""
+    return {
+        "type": type_,
+        "thought": thought,
+        "content": thought,      # 兼容字段，可随版本逐步废弃
+        "reasoning": thought,    # 兼容字段，可随版本逐步废弃
+        "tool_name": tool_name,
+        "tool_params": tool_params,
+        "response": None,
+        "error": error,
+    }
+
+
+# 【24.1.4 组件2】从 tool_params 兜底提取工具名(消除 M1a 3 个连续 if)
+def _fallback_tool_name(tool_params: Dict[str, Any], current: str) -> str:
+    """从 tool_params 中按优先级兜底查找工具名 — 小健 2026-05-25"""
+    if current:
+        return current
+    for key in _TOOL_NAME_FALLBACK_KEYS:
+        if key in tool_params:
+            return tool_params.pop(key)
+    return ""
+
+
+# 【24.1.4 组件3】统一参数名映射(消除 M1b 3 个连续 if)
+def _normalize_tool_params(tool_params: Dict[str, Any]) -> Dict[str, Any]:
+    """将不同 LLM 输出的参数名统一为 tool_params — 小健 2026-05-25"""
+    if "tool_params" in tool_params:
+        return tool_params
+    for key in _TOOL_PARAMS_FALLBACK_KEYS:
+        if key in tool_params:
+            tool_params["tool_params"] = tool_params.pop(key)
+            break
+    return tool_params
+
+
+# 【小沈重构 2026-05-25】25.2节：提取3个独立解析器，消除SLAP/DRY违反
+def _try_codeblock_parse(output: str) -> Optional[Dict[str, Any]]:
+    """尝试从 ``` 包裹中提取 JSON - 小沈重构 2026-05-25"""
+    if '```' not in output:
+        return None
     try:
-        if '```' in output:
-            # 提取```块内的JSON
-            json_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', output)
-            if json_match:
-                json_str = json_match.group(1).strip()
-                json_data = json.loads(json_str)
-                if "tool_name" in json_data:
-                    return _create_action_result(json_data, output)
-    except Exception as e:
-        # 记录日志，继续尝试下一个优先级
-        from app.utils.logger import logger
-        logger.debug(f"```包裹JSON解析失败: {e}")
-    
-    # ② 【第二优先级】关键词匹配（传统ReAct格式）
-    # 注：纯JSON块检测已由解析器链 handler #7 (_handle_mixed_text_json) 处理，
-    # 此处不再重复调用 _extract_json_block（缺陷3修复 小沈 2026-05-19）
-    try:
-        # 定位关键词位置
-        thought_match = re.search(REACT_KEYWORDS["thought"], output, re.IGNORECASE)
-        action_match = re.search(REACT_KEYWORDS["action"], output, re.IGNORECASE)
-        answer_match = re.search(REACT_KEYWORDS["answer"], output, re.IGNORECASE)
-        
-        # 获取位置索引（未匹配设为无穷大）
-        action_idx = action_match.start() if action_match else float('inf')
-        answer_idx = answer_match.start() if answer_match else float('inf')
-        
-        # 情况B: 有Action（且Action在Answer之前）- Action优先规则
-        if action_match and action_idx < answer_idx:
-            return _parse_action(output, thought_match, action_match)
-        
-        # 情况C: 有Answer
-        if answer_match:
-            return _parse_answer(output, thought_match, answer_match)
-        
-        # 情况D: 只有Thought（有Thought标记但无Action/Answer）
-        if thought_match:
-            return _parse_thought_only(output, thought_match)
-    except Exception as e:
-        from app.utils.logger import logger
-        logger.debug(f"关键词匹配失败: {e}")
-    
-    # 所有解析方法都失败，根据输出长度判断返回implicit或parse_error
-    # 【2026-05-14 小沈】不再使用工具名兜底（_extract_by_known_tools）
-    # prompt已要求"必须使用JSON格式输出"，非JSON文本不应搜工具名。
-    # 之前从"测试一下网络延迟（ping）"中误提取ping作为工具调用，
-    # 导致ping {}→缺host→报错→LLM重试的死循环。
-    # 【恢复 2026-04-24 小沈】纯文本无关键词时，长文本返回implicit，短文本返回parse_error
-    # =========================================================================
-    # 【chunk vs implicit 语义说明 - 小沈 2026-05-14】
-    #
-    # chunk:   流式文本片段，表示"还没完，后面还有"。Agent追加到buffer后继续循环。
-    # implicit:隐式完成，表示"LLM已经说完了，这就是最终回答"。Agent直接结束循环。
-    #
-    # 此函数（_determine_parse_type）只被非流式路径（parse_react_response）调用，
-    # 处理的已经是LLM完整返回文本。所以fallback应返回implicit，不是chunk。
-    #
-    # chunk应出现的路径：
-    #   1. LLM显式返回 {"type": "chunk", ...} → JSON路径（line 175）
-    #   2. 非标准JSON中声明 type=chunk → 非标准JSON路径（line 252）
-    #   3. 不完整JSON（被截断的流式输出）→ 不完整JSON检测（line 341）
-    #   4. JSON有content/reasoning但无tool_name → JSON块解析（line 427）
-    #   5. TextStrategy.chunk路径 → llm_strategies.py（line 186，通过strategy返回给textStrategy处理）
-    # =========================================================================
-    stripped = output.strip()
-    if len(stripped) >= 5:
-        # 【2026-05-14 小沈】非流式路径的完整文本回答应返回implicit，不是chunk
-        return {
-            "type": "implicit",
-            "thought": stripped,
-            "content": stripped,             # 兼容性字段
-            "reasoning": stripped,           # 兼容性字段
-            "tool_name": None,
-            "tool_params": None,
-            "response": stripped,
-            "error": None
-        }
-    else:
-        # 很短的输出，返回parse_error
-        return {
-            "type": "parse_error",
-            "error": "无法解析LLM响应，所有解析层（JSON/关键词/工具名）都失败",
-            "thought": stripped[:200],
-            "content": stripped[:200],
-            "reasoning": stripped[:200],
-            "tool_name": None,
-            "tool_params": None,
-            "response": stripped
-        }
+        json_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', output)
+        if json_match and "tool_name" in (jd := json.loads(json_match.group(1).strip())):
+            return _create_action_result(jd, output)
+    except Exception:
+        pass
+    return None
 
 
-# =============================================================================
-# 【必选】步骤1.5：实现纯思考内容提取函数（设计文档14.5节要求）
-# =============================================================================
-
+# 【小健修复 2026-05-25】提取为独立函数（25.2审计发现：重构时被遗漏，残留在_determine_parse_type内作为死代码）
 def _parse_thought_only(output: str, thought_match: re.Match) -> Dict[str, Any]:
-    """
-    提取纯思考内容（无Action/Answer的场景）
-    
-    来源：设计文档第14章 14.5节
-    重要性：独立函数便于单独测试和复用
-    
-    Args:
-        output: LLM原始响应文本
-        thought_match: Thought关键词的re.Match对象
-        
-    Returns:
-        统一格式解析结果，type="thought_only"
-    """
+    """提取纯思考内容（无Action/Answer的场景）"""
     thought_text = output[thought_match.end():].strip()
     return {
         "type": "thought_only",
         "thought": thought_text,
-        "content": thought_text,          # 兼容性字段
-        "reasoning": thought_text,        # 兼容性字段
+        "content": thought_text,
+        "reasoning": thought_text,
         "tool_name": None,
         "tool_params": None,
-        "response": None
+        "response": None,
     }
+
+
+def _try_keyword_parse(output: str) -> Optional[Dict[str, Any]]:
+    """尝试关键词匹配（传统 ReAct 格式）- 小沈重构 2026-05-25"""
+    try:
+        thought_match = re.search(REACT_KEYWORDS["thought"], output, re.IGNORECASE)
+        action_match = re.search(REACT_KEYWORDS["action"], output, re.IGNORECASE)
+        answer_match = re.search(REACT_KEYWORDS["answer"], output, re.IGNORECASE)
+
+        action_idx = action_match.start() if action_match else float('inf')
+        answer_idx = answer_match.start() if answer_match else float('inf')
+
+        if action_match and action_idx < answer_idx:
+            return _parse_action(output, thought_match, action_match)
+        if answer_match:
+            return _parse_answer(output, thought_match, answer_match)
+        if thought_match:
+            return _parse_thought_only(output, thought_match)
+    except Exception:
+        pass
+    return None
+
+
+def _make_fallback_result(text: str, is_implicit: bool) -> Dict[str, Any]:
+    """构建长度兜底的 implicit 或 parse_error 统一结果 - 小沈重构 2026-05-25"""
+    error_msg = None if is_implicit else "无法解析LLM响应，所有解析层（JSON/关键词/工具名）都失败"
+    return {
+        "type": "implicit" if is_implicit else "parse_error",
+        "thought": text, "content": text, "reasoning": text,
+        "tool_name": None, "tool_params": None,
+        "response": text, "error": error_msg,
+    }
+
+
+# 【小沈重构 2026-05-25】25.2节：骨架~20行，3优先级管道
+def _determine_parse_type(output: str) -> Dict[str, Any]:
+    """
+    【重构 2026-05-25】判断LLM输出类型并调用对应解析函数
+    优先级顺序：① ```包裹 ② 关键词匹配 ③ 长度兜底
+    """
+    if not output or not output.strip():
+        return _make_fallback_result("", is_implicit=False)
+
+    output = output.strip()
+
+    # 优先级 ① ```包裹
+    result = _try_codeblock_parse(output)
+    if result:
+        return result
+
+    # 优先级 ② 关键词匹配
+    result = _try_keyword_parse(output)
+    if result:
+        return result
+
+    # 优先级 ③ 长度兜底
+    stripped = output.strip()
+    is_implicit = len(stripped) >= 5
+    text = stripped if is_implicit else stripped[:200]
+    return _make_fallback_result(text, is_implicit=is_implicit)
 
 
 # =============================================================================
 # 【2026-04-18 小沈新增】纯JSON块提取函数
-# 用于从无```包裹的LLM响应中提取JSON对象
-# 解决兜底函数_extract_by_known_tools错误提取参数的问题
+# 【2026-05-25 小健重构】拆分为骨架+策略链+字段提取，消除SLAP/DRY违反
 # =============================================================================
 
-def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
-    """
-    【P0-必须新增】从纯JSON块（无```包裹）中提取数据
-    
-    处理以下情况：
-    1. 纯JSON：{"tool_name": "xxx", "tool_params": {...}}
-    2. 文本+JSON：some text {"tool_name": "xxx"...}
-    3. JSON中的实际换行符
-    
-    【2026-04-18小沈优化】简化逻辑，移除冗余的状态处理
-    - _extract_json_with_balanced_braces()已包含完整的字符串状态处理
-    - 不需要在调用前再进行一次状态处理
-    
-    Args:
-        content: LLM响应文本
-        
-    Returns:
-        解析后的字典，或None（解析失败）
+def _extract_json_string(content: str) -> Optional[str]:
+    """从文本中提取JSON字符串
+
+    使用场景: _extract_json_block第一步，复用_extract_json_with_balanced_braces
+
+    使用示例:
+        json_str = _extract_json_string(content)
+
+    返回数据说明: 提取的JSON字符串，或None
     """
     if not content:
         return None
-    
-    import re  # 确保re可用
-    
     content = content.strip()
-    
-    # 直接使用平衡括号算法提取JSON（已包含字符串状态处理）
     json_str, _ = _extract_json_with_balanced_braces(content)
-    
-    if not json_str:
-        return None
-    
-    json_str_escaped = json_str  # 初始化默认
-    json_str_fixed = json_str    # 初始化默认
-    
-    # 尝试直接解析
+    return json_str if json_str else None
+
+
+def _strategy_direct_parse(json_str: str) -> Optional[Dict[str, Any]]:
+    """策略1: json.loads直接解析"""
     try:
         return json.loads(json_str)
     except json.JSONDecodeError:
-        # 失败原因1: 编码问题 - 尝试用errors='replace'
-        try:
-            json_fixed = json_str.encode('utf-8', errors='replace').decode('utf-8')
-            return json.loads(json_fixed)
-        except:
-            pass
-    
-    # 【修复 2026-05-11 小健】失败原因1.5: value中含未转义双引号/中文引号
-    # LLM常在thought/reasoning里写"穆里奇"这种文本，如果用ASCII双引号则破坏JSON
-    # 尝试：1) 中文引号\u201c\u201d替换为普通字符再parse  2) 去掉中文引号再parse
+        return None
+
+
+def _strategy_encoding_fix(json_str: str) -> Optional[Dict[str, Any]]:
+    """策略2: errors='replace'编码修复
+
+    使用场景: UTF-8编码异常导致json.loads失败时的降级策略
+
+    返回数据说明: 编码修复后解析的dict，或None
+    """
+    try:
+        json_fixed = json_str.encode('utf-8', errors='replace').decode('utf-8')
+        return json.loads(json_fixed)
+    except (json.JSONDecodeError, UnicodeError):
+        return None
+
+
+def _strategy_chinese_quotes(json_str: str) -> Optional[Dict[str, Any]]:
+    """策略3: 中文引号替换
+
+    使用场景: LLM在thought/reasoning中写中文双引号\u201c\u201d破坏JSON
+    从_try_parse_non_standard_json的中文引号逻辑提取(2026-05-25 小健)
+
+    返回数据说明: 中文引号修复后解析的dict，或None
+    """
     for fix_fn in [
-        lambda s: s.replace('\u201c', '\u300c').replace('\u201d', '\u300d'),  # 中文双引号→中文方括号引号
-        lambda s: s.replace('\u201c', '').replace('\u201d', ''),              # 直接去掉中文引号
+        lambda s: s.replace('\u201c', '\u300c').replace('\u201d', '\u300d'),
+        lambda s: s.replace('\u201c', '').replace('\u201d', ''),
     ]:
         try:
             return json.loads(fix_fn(json_str))
         except json.JSONDecodeError:
             pass
-    
-    # 失败原因2: 未转义换行符 - 用空格替换
+    return None
+
+
+def _strategy_newline_fix(json_str: str) -> Optional[Dict[str, Any]]:
+    """策略4: 换行符转空格
+
+    使用场景: JSON value中含未转义换行符导致解析失败
+
+    返回数据说明: 换行符替换后解析的dict，或None
+    """
     try:
-        json_str_escaped = json_str.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
-        return json.loads(json_str_escaped)
+        escaped = json_str.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
+        return json.loads(escaped)
     except json.JSONDecodeError:
-        pass
-    
-    # 失败原因3: 尾随逗号 - 修复后重试
+        return None
+
+
+def _strategy_trailing_comma(json_str: str) -> Optional[Dict[str, Any]]:
+    """策略5: 尾随逗号修复
+
+    使用场景: JSON末尾多余的逗号(如 {"a":1,})导致解析失败
+    从_try_parse_non_standard_json的尾随逗号逻辑提取(2026-05-25 小健)
+
+    返回数据说明: 尾随逗号修复后解析的dict，或None
+    """
     try:
-        json_str_fixed = re.sub(r',(\s*[}\]])', r'\1', json_str_escaped)
-        return json.loads(json_str_fixed)
+        escaped = json_str.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
+        fixed = re.sub(r',(\s*[}\]])', r'\1', escaped)
+        return json.loads(fixed)
     except json.JSONDecodeError:
-        pass
-    
-# 【新增强降级】如果JSON提取成功但解析失败，尝试手动提取tool_params
-    # 这是最后的fallback确保不丢失参数
+        return None
+
+
+ParseStrategy = Optional[Dict[str, Any]]
+
+STRATEGIES = [
+    _strategy_direct_parse,
+    _strategy_encoding_fix,
+    _strategy_chinese_quotes,
+    _strategy_newline_fix,
+    _strategy_trailing_comma,
+]
+
+
+def _try_parse_with_strategies(
+    json_str: str, strategies: list,
+) -> Optional[Dict[str, Any]]:
+    """按策略链顺序尝试解析JSON字符串
+
+    使用场景: _extract_json_block第二步，遍历降级策略直到成功
+
+    使用示例:
+        data = _try_parse_with_strategies(json_str, STRATEGIES)
+
+    返回数据说明: 第一个成功策略返回的dict，或None(全部失败)
+    """
+    for strategy in strategies:
+        result = strategy(json_str)
+        if result is not None:
+            return result
+    return None
+
+
+_FIELD_ALIASES = {
+    "thought": ["thought", "content"],
+    "content": ["content", "thought"],
+}
+
+
+def _try_extract_single_field(
+    json_str: str, field: str, is_nested_object: bool,
+) -> Optional[Any]:
+    """从JSON字符串中提取单个字段的值
+
+    使用场景: _extract_fields_from_json_str内部调用，逐字段提取
+
+    使用示例:
+        value = _try_extract_single_field(json_str, "tool_name", False)
+
+    返回数据说明: 提取的字段值(可能是str/dict)，或None
+    """
+    if is_nested_object:
+        start_pattern = rf'"{field}"\s*:\s*\{{'
+    else:
+        start_pattern = rf'"{field}"\s*:\s*"'
+
+    start_match = re.search(start_pattern, json_str)
+    if not start_match:
+        return None
+
+    json_after, _ = _extract_json_with_balanced_braces(json_str[start_match.start():])
+    if not json_after:
+        return None
+
     try:
-        # 【2026-04-27 小沈修复】使用平衡括号算法替代正则表达式
-        # 问题：正则 `[^}]+` 无法正确匹配嵌套 `}` 的JSON对象，导致 file_pattern 丢失
-        # 修复：使用 _extract_json_with_balanced_braces 正确提取完整的 JSON 对象
-        
-        # 先尝试直接解析整个 json_str
-        try:
-            return json.loads(json_str)
-        except json.JSONDecodeError:
-            pass
-        
-        # 【2026-04-28 小沈修复】使用平衡括号算法正确提取所有字段（包括长文本content）
-        # 问题：正则 `"content":\s*"([^"]*)"` 无法正确匹配含引号/换行的长文本
-        # 修复：使用 _extract_json_with_balanced_braces 提取每个字段的完整值
-        
-        result = {}
-        
-        # 1. 提取 tool_name（使用平衡括号算法）
-        tn_start_pattern = r'"tool_name"\s*:\s*"'
-        tn_start_match = re.search(tn_start_pattern, json_str)
-        if tn_start_match:
-            # 从 tool_name 位置开始提取
-            json_after_tn, _ = _extract_json_with_balanced_braces(json_str[tn_start_match.start():])
-            if json_after_tn:
+        partial = json.loads(json_after)
+        return partial.get(field)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    if is_nested_object:
+        inner_start = json_after.find('{', json_after.find(field))
+        if inner_start != -1:
+            inner_json, _ = _extract_json_with_balanced_braces(json_after[inner_start:])
+            if inner_json:
                 try:
-                    partial_json = json.loads(json_after_tn)
-                    result["tool_name"] = partial_json.get("tool_name", "")
-                except:
-                    # 备用：从文本中提取
-                    tool_name_match = re.search(r'"tool_name":\s*"([^"]+)"', json_str)
-                    if tool_name_match:
-                        result["tool_name"] = tool_name_match.group(1)
-        
-        # 2. 提取 tool_params（使用平衡括号算法）
-        # 【2026-04-28 小沈修复】确保正确提取嵌套的tool_params对象
-        tp_start_pattern = r'"tool_params"\s*:\s*\{'
-        tp_start_match = re.search(tp_start_pattern, json_str)
-        if tp_start_match:
-            # 从 tool_params 位置开始，使用平衡括号算法提取完整对象
-            json_after_tp, _ = _extract_json_with_balanced_braces(json_str[tp_start_match.start():])
-            if json_after_tp:
-                # 尝试直接解析整个提取的JSON（包含 "tool_params": {...}）
-                try:
-                    partial_json = json.loads(json_after_tp)
-                    # 如果解析成功，检查是 {"tool_params": {...}} 还是直接是 {...}
-                    if "tool_params" in partial_json:
-                        tp = partial_json.get("tool_params", {})
-                    else:
-                        # 没有外层tool_params键，可能是直接返回的params对象
-                        tp = partial_json
-                except:
-                    # 如果直接解析失败，尝试提取tool_params内部的内容
-                    try:
-                        # 去掉外层的 "tool_params": 部分，提取内部对象
-                        inner_start = json_after_tp.find('{', json_after_tp.find('tool_params'))
-                        if inner_start != -1:
-                            inner_json, _ = _extract_json_with_balanced_braces(json_after_tp[inner_start:])
-                            if inner_json:
-                                tp = json.loads(inner_json)
-                            else:
-                                tp = {}
-                        else:
-                            tp = {}
-                    except:
-                        # 【2026-04-28 小沈新增】当JSON解析失败时，使用正则提取参数
-                        # 处理content字段包含中文引号的情况
-                        tp = _extract_params_by_regex_from_json_str(json_after_tp)
-            
-            else:
-                tp = {}
-        else:
-            tp = {}
-        
-        # 【2026-04-28 小沈新增】如果tp仍然为空，尝试用正则提取
-        if not tp:
+                    return json.loads(inner_json)
+                except (json.JSONDecodeError, ValueError):
+                    return _extract_params_by_regex_from_json_str(json_after)
+        return None
+
+    if field == "tool_name":
+        m = re.search(r'"tool_name":\s*"([^"]+)"', json_str)
+        return m.group(1) if m else None
+
+    if field in ("content", "thought"):
+        val = _extract_content_value_from_json_str(json_str)
+        if val:
+            return val
+        m = re.search(rf'"{field}"\s*:\s*"(.*?)"\s*,', json_str, re.DOTALL)
+        return m.group(1) if m else None
+
+    if field == "reasoning":
+        m = re.search(r'"reasoning":\s*"([^"]*)"', json_str)
+        return m.group(1) if m else None
+
+    return None
+
+
+def _extract_fields_from_json_str(
+    json_str: str, fields: list,
+) -> Dict[str, Any]:
+    """从JSON字符串中统一提取多个字段
+
+    使用场景: _extract_json_block第三步，策略链全部失败后的字段级fallback
+
+    使用示例:
+        result = _extract_fields_from_json_str(json_str, ["tool_name","tool_params","content","thought","reasoning"])
+
+    返回数据说明: 字段名→值的dict，缺失字段不在结果中
+    """
+    result = {}
+    nested_fields = {"tool_params"}
+
+    for field in fields:
+        aliases = _FIELD_ALIASES.get(field, [field])
+        is_nested = field in nested_fields
+
+        for alias in aliases:
+            value = _try_extract_single_field(json_str, alias, is_nested)
+            if value is not None:
+                if isinstance(value, str):
+                    value = value.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+                result[field] = value
+                if field in ("content", "thought") and alias != field:
+                    cross_field = "thought" if field == "content" else "content"
+                    result[cross_field] = value
+                break
+
+        if field == "tool_params" and "tool_params" not in result:
             tp = _extract_params_by_regex_from_json_str(json_str)
-        
-        if tp:
-            result["tool_params"] = tp
-        
-        # 3. 提取 content（使用平衡括号算法修复长文本截断问题）
-        ct_start_pattern = r'"content"\s*:\s*"'
-        ct_start_match = re.search(ct_start_pattern, json_str)
-        if ct_start_match:
-            # 从 content 位置开始提取，使用平衡括号算法处理引号内的内容
-            json_after_ct, _ = _extract_json_with_balanced_braces(json_str[ct_start_match.start():])
-            if json_after_ct:
-                try:
-                    partial_json = json.loads(json_after_ct)
-                    content_value = partial_json.get("content", "")
-                    content_fixed = content_value.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-                    result["content"] = content_fixed
-                    result["thought"] = content_fixed
-                except:
-                    # 【2026-04-28 小沈修复】如果解析失败，使用平衡引号算法提取content值
-                    # 处理content字段包含中文引号的情况
-                    content_fixed = _extract_content_value_from_json_str(json_str)
-                    if content_fixed:
-                        result["content"] = content_fixed
-                        result["thought"] = content_fixed
-        
-        # 【修复 2026-05-15 小健】LLM可能返回"thought"而非"content"，需独立提取
-        if not result.get("thought"):
-            th_start_pattern = r'"thought"\s*:\s*"'
-            th_start_match = re.search(th_start_pattern, json_str)
-            if th_start_match:
-                json_after_th, _ = _extract_json_with_balanced_braces(json_str[th_start_match.start():])
-                if json_after_th:
-                    try:
-                        partial_json = json.loads(json_after_th)
-                        thought_value = partial_json.get("thought", "")
-                        thought_fixed = thought_value.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-                        result["content"] = thought_fixed
-                        result["thought"] = thought_fixed
-                    except:
-                        # 平衡引号算法提取thought值
-                        th_value_match = re.search(r'"thought"\s*:\s*"(.*?)"\s*,', json_str, re.DOTALL)
-                        if th_value_match:
-                            thought_fixed = th_value_match.group(1).encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-                            result["content"] = thought_fixed
-                            result["thought"] = thought_fixed
-        
-        # 4. 提取 reasoning（使用平衡括号算法）
-        rs_start_pattern = r'"reasoning"\s*:\s*"'
-        rs_start_match = re.search(rs_start_pattern, json_str)
-        if rs_start_match:
-            json_after_rs, _ = _extract_json_with_balanced_braces(json_str[rs_start_match.start():])
-            if json_after_rs:
-                try:
-                    partial_json = json.loads(json_after_rs)
-                    reasoning_value = partial_json.get("reasoning", "")
-                    reasoning_fixed = reasoning_value.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-                    result["reasoning"] = reasoning_fixed
-                except:
-                    reasoning_match = re.search(r'"reasoning":\s*"([^"]*)"', json_str)
-                    if reasoning_match:
-                        reasoning_fixed = reasoning_match.group(1).encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-                        result["reasoning"] = reasoning_fixed
-        
-        # 【修复 2026-05-10 小沈】仅有 tool_name、tool_params 解析失败时仍返回，交由 executor/补充参数兜底
+            if tp:
+                result["tool_params"] = tp
+
+    return result
+
+
+def _try_extract_last_tool_call(content: str) -> Optional[Dict[str, Any]]:
+    """从文本末尾提取最后一个含tool_name的JSON块
+
+    ReAct模式下LLM先推理再调用工具，推理文本中可能包含草稿JSON（无tool_name），
+    真正的工具调用JSON在文本末尾。此函数从最后一个 { 开始提取。
+
+    使用场景: _extract_json_block中第一个JSON无tool_name时的兜底策略
+
+    返回数据说明: 解析后的dict（含tool_name），或None
+    """
+    last_brace = content.rfind('{')
+    if last_brace < 0:
+        return None
+    json_str, _ = _extract_json_with_balanced_braces(content[last_brace:])
+    if not json_str:
+        return None
+    data = _try_parse_with_strategies(json_str, STRATEGIES)
+    if data and data.get("tool_name"):
+        logger.info(
+            f"[_extract_json_block] 第一个JSON无tool_name，从末尾提取成功: "
+            f"tool_name={data.get('tool_name')}"
+        )
+        return data
+    return None
+
+
+def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
+    """从纯JSON块（无```包裹）中提取数据
+
+    处理以下情况：
+    1. 纯JSON：{"tool_name": "xxx", "tool_params": {...}}
+    2. 文本+JSON：some text {"tool_name": "xxx"...}
+    3. JSON中的实际换行符
+
+    使用场景: LLM响应中提取工具调用或文本回复的JSON
+
+    返回数据说明: 解析后的字典，或None（解析失败）
+    """
+    json_str = _extract_json_string(content)
+    if not json_str:
+        return None
+
+    data = _try_parse_with_strategies(json_str, STRATEGIES)
+
+    # 【通用修补 2026-05-26 小欧】第一个JSON无tool_name时，从末尾找含tool_name的JSON
+    # 解释：LLM在推理文本中可能写了草稿JSON（如{"result":"..."}），
+    # 这些草稿无tool_name字段。真正的工具调用在文本末尾。
+    # 这条规则通用有效：在ReAct中，最后一个含tool_name的JSON块就是真实调用。
+    if (not data or not data.get("tool_name")) and content.count('{') > 1:
+        data = _try_extract_last_tool_call(content)
+
+    if data:
+        return data
+
+    try:
+        fields = ["tool_name", "tool_params", "content", "thought", "reasoning"]
+        result = _extract_fields_from_json_str(json_str, fields)
         if result.get("tool_name"):
-            if not result.get("tool_params"):
+            if "tool_params" not in result:
                 result["tool_params"] = {}
             logger.info(
                 f"[_extract_json_block] Fallback成功提取: tool_name={result.get('tool_name')}, "
@@ -942,7 +1026,7 @@ def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
             return result
     except Exception as e:
         logger.error(f"[_extract_json_block] Fallback提取失败: {e}")
-    
+
     return None
 
 
@@ -966,7 +1050,9 @@ def _try_regex_tool_call_fallback(output: str) -> Optional[Dict[str, Any]]:
     # 【修复 2026-05-10 小健】finish是合法的退出标志，返回answer类型（不执行工具，直接结束）
     if tool_name == "finish":
         tp: Dict[str, Any] = {}
-        tp_mark = re.search(r'"tool_params"\s*:\s*\{', output)
+        # 【修复 2026-05-26 小欧】用finditer取最后一个tool_params，避免re.search匹配推理中的草稿
+        tp_marks = list(re.finditer(r'"tool_params"\s*:\s*\{', output))
+        tp_mark = tp_marks[-1] if tp_marks else None
         if tp_mark:
             brace_idx = tp_mark.end() - 1
             substr = output[brace_idx:]
@@ -977,14 +1063,21 @@ def _try_regex_tool_call_fallback(output: str) -> Optional[Dict[str, Any]]:
                 except (json.JSONDecodeError, TypeError):
                     pass
         result_text = tp.get("result", "") if tp else ""
+        # 【修复 2026-05-26 小欧】取finish前的推理文本，拼接result_text去重
+        finish_mark = list(re.finditer(r'"tool_name"\s*:\s*"finish"', output))
+        if finish_mark:
+            prefix_text = output[:finish_mark[-1].start()].strip()
+            content = prefix_text + ("\n\n" + result_text if result_text and result_text not in prefix_text else "")
+        else:
+            content = result_text or ""
         return {
             "type": "answer",
-            "thought": output[:200],
-            "content": result_text,
+            "thought": content[:200],
+            "content": content,
             "reasoning": "",
             "tool_name": None,
             "tool_params": None,
-            "response": result_text,
+            "response": content,
             "error": None
         }
     try:
@@ -997,7 +1090,9 @@ def _try_regex_tool_call_fallback(output: str) -> Optional[Dict[str, Any]]:
         return None
 
     tp: Dict[str, Any] = {}
-    tp_mark = re.search(r'"tool_params"\s*:\s*\{', output)
+    # 【修复 2026-05-26 小欧】用finditer取最后一个tool_params
+    tp_marks = list(re.finditer(r'"tool_params"\s*:\s*\{', output))
+    tp_mark = tp_marks[-1] if tp_marks else None
     if tp_mark:
         brace_idx = tp_mark.end() - 1
         substr = output[brace_idx:]
@@ -1030,30 +1125,64 @@ def _try_regex_tool_call_fallback(output: str) -> Optional[Dict[str, Any]]:
     }
 
 
+# 【小沈重构 2026-05-25】25.3节：统一构造action结果dict，消除3处字段名重复
+def _make_action_result_dict(
+    result_type: str, thought: str, content: str, reasoning: str,
+    tool_name: Optional[str], tool_params: Optional[Dict],
+    response: Optional[str], error: Optional[str] = None,
+    pending_calls: Optional[List] = None,
+) -> Dict[str, Any]:
+    """统一构造 action 结果 dict，消除 3 处的字段名重复 - 小沈重构 2026-05-25"""
+    result = {
+        "type": result_type, "thought": thought,
+        "content": content, "reasoning": reasoning,
+        "tool_name": tool_name, "tool_params": tool_params,
+        "response": response, "error": error,
+    }
+    if pending_calls:
+        result["_pending_calls"] = pending_calls
+    return _add_reasoning_warning(result)
+
+
+def _resolve_return_type(data: Dict) -> Dict[str, Any]:
+    """根据 tool_name 确定返回类型，统一调用 _make_action_result_dict - 小沈重构 2026-05-25"""
+    thought, content = data.get("thought", ""), data.get("content", data.get("thought", ""))
+    reasoning = data.get("reasoning", "")
+    raw_params = data.get("tool_params", data.get("args", {}))
+    tool_params = _process_tool_params(raw_params, data.get("tool_name"), None)
+    pending = data.get("_pending_calls")
+    tool_name = data.get("tool_name")
+
+    # finish → answer
+    if tool_name == "finish":
+        raw_result = tool_params.get("result") if isinstance(tool_params, dict) else None
+        result_text = _normalize_result_to_str(raw_result) if raw_result is not None else ""
+        return _make_action_result_dict(
+            "answer", content, result_text or content, reasoning,
+            None, None, result_text or content, None, pending)
+
+    # tool_name 空 → implicit
+    if not tool_name:
+        logger.warning(f"[_create_action_result_from_dict] tool_name为空，降级为implicit")
+        return _make_action_result_dict(
+            "implicit", thought, content, reasoning,
+            None, None, content or thought, None, pending)
+
+    # 正常 action
+    return _make_action_result_dict(
+        "action", thought, content, reasoning,
+        tool_name, tool_params, None, None, pending)
+
+
+# 【小沈重构 2026-05-25】25.3节：骨架~25行，3种返回类型统一分发
 def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
     """
-    【2026-04-28 小沈新增】从 dict 输入创建统一格式的结果
+    【重构 2026-05-25】从 dict 输入创建统一格式的结果
     直接处理已解析的 dict（不是 JSON 字符串），解决长文本 content 丢失问题
-    
-    Args:
-        data: 已经解析好的 dict（来自 LLM 返回的 JSON）
-        
-    Returns:
-        统一格式的结果字典
     """
     if not data or not isinstance(data, dict):
-        return {
-            "type": "parse_error",
-            "error": "Empty or invalid dict input",
-            "thought": "",
-            "content": "",
-            "reasoning": "",
-            "tool_name": None,
-            "tool_params": None,
-            "response": ""
-        }
-    
-    # 显式type优先判断（缺陷4修复 小沈 2026-05-19）
+        return _make_action_result_dict("parse_error", "", "", "", None, None, "", "Empty or invalid dict input")
+
     explicit_type = data.get("type")
     if explicit_type == "parse_error":
         return _build_parse_error_result(data)
@@ -1061,152 +1190,77 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
         return _build_answer_result(data)
     if explicit_type == "chunk":
         return _build_chunk_result(data)
-    
-    # 【修复 2026-05-21 小健】支持旧格式action字段
-    # 当dict含action但不含tool_name时，委托给_build_action_from_old_format处理
-    # 否则_create_action_result_from_dict会因tool_name为空降级为implicit（bug）
+
     if "action" in data and "tool_name" not in data:
         output = json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
         return _build_action_from_old_format(data, output)
 
-    tool_name = data.get("tool_name")
-    # 【2026-04-28 小沈修复】支持args字段（LLM可能返回args而非tool_params）
-    raw_params = data.get("tool_params", data.get("args", {}))
-    # 【2026-04-28 小沈修复】thought字段独立获取，不被content字段覆盖
-    thought = data.get("thought", "")
-    content = data.get("content", thought)
-    reasoning = data.get("reasoning", "")
-
-    # 【修复A4 2026-05-20 小健】使用 _process_tool_params 统一管道替换 inline 三步
-    # 同时修复 raw_output=None 的参数补充能力不足问题
-    tool_params = _process_tool_params(raw_params, tool_name, None)
-
-    # finish 类型处理
-    # 【修复A4 2026-05-20 小健】finish result 使用 _normalize_result_to_str 标准化
-    if tool_name == "finish":
-        raw_result = tool_params.get("result") if isinstance(tool_params, dict) else None
-        result_text = _normalize_result_to_str(raw_result) if raw_result is not None else ""
-        return {
-            "type": "answer",
-            "thought": content,
-            "content": result_text or content,
-            "reasoning": reasoning,
-            "tool_name": None,
-            "tool_params": None,
-            "response": result_text or content,
-            "error": None
-        }
-    
-    # 【2026-05-14 小沈修复】tool_name为None时不应返回action类型
-    # _create_action_result_from_dict是在JSON解析成功后调用的，此时如果LLM返回的
-    # JSON中有content/reasoning但tool_name为null，说明LLM"空口说话"（没调用工具）。
-    # 应返回implicit（隐式完成），不是action（会导致_execute_tool(None,None)→None.copy()崩溃）
-    if not tool_name:
-        logger.warning(f"[_create_action_result_from_dict] tool_name为空，降级为implicit")
-        result = {
-            "type": "implicit",
-            "thought": thought,
-            "content": content,
-            "reasoning": reasoning,
-            "tool_name": None,
-            "tool_params": None,
-            "response": content or thought,
-            "error": None
-        }
-        if "_pending_calls" in data:
-            result["_pending_calls"] = data["_pending_calls"]
-        return _add_reasoning_warning(result)
-
-    # action 类型
-    # 【修复A4 2026-05-20 小健】tool_params 已由 _process_tool_params 完整处理
-    # (normalize → filter → supplement)，无需再次 supplement
-    # 【改进7 2026-05-01 小沈 小健】添加reasoning验证
-    result = {
-        "type": "action",
-        "thought": thought,
-        "content": content,
-        "reasoning": reasoning,
-        "tool_name": tool_name,
-        "tool_params": tool_params,
-        "response": None,
-        "error": None
-    }
-    # 【2026-05-14 小沈】透传并行工具调用信息
-    if "_pending_calls" in data:
-        result["_pending_calls"] = data["_pending_calls"]
-    return _add_reasoning_warning(result)
+    return _resolve_return_type(data)
 
 
-def _create_action_result_from_list(data: list) -> Dict[str, Any]:
+def _convert_function_calling_items(items: List[Dict]) -> List[Dict]:
+    """转换Function Calling格式为统一格式 - 小沈 2026-05-25
+
+    使用场景:
+    - _create_action_result_from_list中Function Calling格式转换
+    - 需要将Function Calling格式转换为统一action_tool格式的场景
+
+    使用示例:
+        converted = _convert_function_calling_items(valid_items)
+        last_converted = converted[-1]
+
+    返回数据说明:
+        - 返回List[Dict]，转换后的action_tool格式列表
     """
-    【2026-04-28 小沈新增】从 list 输入创建统一格式的结果
-    处理LLM返回的JSON数组场景
-    
-    Args:
-        data: 已经解析好的 list（来自 LLM 返回的 JSON 数组）
-        
-    Returns:
-        统一格式的结果字典
+    converted = []
+    for item in items:
+        if isinstance(item, dict) and "function" in item:
+            func = item["function"]
+            fname = func.get("name", "") if isinstance(func, dict) else ""
+            fargs_str = func.get("arguments", "{}") if isinstance(func, dict) else "{}"
+            try:
+                import json as _json
+                fargs = _json.loads(fargs_str) if isinstance(fargs_str, str) else (fargs_str or {})
+            except (_json.JSONDecodeError, TypeError):
+                fargs = {}
+            converted.append({"name": fname, "args": fargs})
+        else:
+            converted.append(item)
+    return converted
+
+
+def _create_action_result_from_list(data: List) -> Dict[str, Any]:
+    """从list输入创建统一格式的结果 - 小沈 2026-05-25
+
+    使用场景:
+    - 处理LLM返回的JSON数组场景
+    - 需要统一Function Calling格式和action_tool格式的场景
+
+    使用示例:
+        return _create_action_result_from_list(data)
+
+    返回数据说明:
+        - 返回Dict，统一格式结果字典
     """
-    from app.utils.logger import logger
-    
-    # 空数组处理
     if not data:
         logger.info(f"[parse_react_response] list为空，返回parse_error")
-        return {
-            "type": "parse_error",
-            "error": "Empty list input from LLM",
-            "thought": "",
-            "content": "",
-            "reasoning": "",
-            "tool_name": None,
-            "tool_params": None,
-            "response": ""
-        }
-    
-    # 遍历list，寻找有效的dict元素
+        return _make_action_result_dict(
+            "parse_error", "", "", None, None, "", "Empty list input from LLM"
+        )
+
     valid_items = [item for item in data if isinstance(item, dict)]
-    
-    # 无有效dict元素
     if not valid_items:
         logger.info(f"[parse_react_response] list中无有效dict元素，返回parse_error")
-        return {
-            "type": "parse_error",
-            "error": "No valid dict items in list",
-            "thought": "",
-            "content": "",
-            "reasoning": "",
-            "tool_name": None,
-            "tool_params": None,
-            "response": ""
-        }
-    
-    # 取最后一个有效的dict元素（LLM通常将最终结果放在最后）
+        return _make_action_result_dict(
+            "parse_error", "", "", None, None, "", "No valid dict items in list"
+        )
+
     last_item = valid_items[-1]
-    
-    # 【2026-05-14 小沈】处理Function Calling格式数组
-    # 如 [{"index":0,"function":{"name":"search_web","arguments":"{\"query\":\"test\"}"}}]
-    # 这种格式的item中没有tool_name字段，需要通过function.name提取
-    if len(valid_items) > 0 and "tool_name" not in valid_items[0] and "function" in valid_items[0]:
-        # 整个数组都是Function Calling格式 → 全部转换
-        converted = []
-        for item in valid_items:
-            if isinstance(item, dict) and "function" in item:
-                func = item["function"]
-                fname = func.get("name", "") if isinstance(func, dict) else ""
-                fargs_str = func.get("arguments", "{}") if isinstance(func, dict) else "{}"
-                try:
-                    import json as _json
-                    fargs = _json.loads(fargs_str) if isinstance(fargs_str, str) else (fargs_str or {})
-                except (_json.JSONDecodeError, TypeError):
-                    fargs = {}
-                converted.append({"name": fname, "args": fargs})
-            else:
-                converted.append(item)
-        
+
+    if "tool_name" not in valid_items[0] and "function" in valid_items[0]:
+        converted = _convert_function_calling_items(valid_items)
         last_converted = converted[-1]
         pending_calls = converted[:-1]
-        
         logger.info(f"[parse_react_response] list检测到Function Calling格式({len(converted)}个)")
         last_item = {
             "tool_name": last_converted["name"],
@@ -1217,7 +1271,7 @@ def _create_action_result_from_list(data: list) -> Dict[str, Any]:
         }
         if pending_calls:
             last_item["_pending_calls"] = pending_calls
-    
+
     logger.info(f"[parse_react_response] list解析成功，使用最后一个元素")
     return _create_action_result_from_dict(last_item)
 
@@ -1248,11 +1302,11 @@ def _normalize_tool_params_content(tool_params: Dict) -> Dict:
         if field_name in normalized:
             field_value = normalized[field_name]
             
-            # 数字类型转换为字符串
-            if isinstance(field_value, (int, float)):
+            # 布尔类型必须在int之前检查（bool是int子类）
+            if isinstance(field_value, bool):
                 normalized[field_name] = str(field_value)
-            # 布尔类型转换为字符串
-            elif isinstance(field_value, bool):
+            # 数字类型转换为字符串
+            elif isinstance(field_value, (int, float)):
                 normalized[field_name] = str(field_value)
             # 列表/字典类型转换为JSON字符串
             elif isinstance(field_value, (list, dict)):
@@ -1296,7 +1350,6 @@ def _filter_tool_params(tool_params: Dict) -> Dict:
     # 注意：content字段是许多工具的有效参数（如write_file），不应该被过滤
     # 过滤逻辑：只保留看起来像真正参数的字段名（字母/数字/下划线组成）
     # 同时过滤掉以--开头的参数名（[TOOL_CALL]格式的参数）
-    import re
     param_name_pattern = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
     
     # 【2026-04-28 小沈新增】驼峰转下划线映射表
@@ -1363,125 +1416,10 @@ def _check_missing_required_params(tool_name: str, tool_params: Dict, original_o
 
 
 def _supplement_missing_params(tool_name: str, tool_params: Dict, original_output: str = None) -> Dict:
-    """
-    【2026-04-28 小沈新增】补充缺失的必需参数
-    
-    当LLM返回的参数不完整时，尝试从原始输出或内容中推断缺失的参数。
-    这是处理LLM返回参数顺序不固定（如先返回file_path再返回content）的容错机制。
-    
-    处理逻辑：
-    1. 首先调用_check_missing_required_params尝试从原始输出补充
-    2. 如果无法补充，根据工具类型使用推断逻辑：
-       - write_file: 
-         - 缺失content时：从original_output中提取content字段
-         - 缺失file_path时：从content第一行提取标题作为文件名
-       - read_file:
-         - 缺失file_path时：从content中提取路径或使用默认值
-    
-    Args:
-        tool_name: 工具名称（如write_file, read_file等）
-        tool_params: 已解析的参数字典（可能不完整）
-        original_output: LLM原始输出文本（用于提取缺失参数）
-        
-    Returns:
-        补充后的参数字典
-        
-    示例:
-        # LLM返回 {"file_path": "xxx"} 但缺失content
-        >>> _supplement_missing_params("write_file", {"file_path": "xxx"}, '{"tool_name":"write_file","tool_params":{"file_path":"xxx","content":"小说内容"}}')
-        {"file_path": "xxx", "content": "小说内容"}
-        
-        # LLM返回 {"content": "xxx"} 但缺失file_path
-        >>> _supplement_missing_params("write_file", {"content": "第一章\n内容..."}, None)
-        {"content": "第一章\n内容...", "file_path": "E:/故事/第一章.txt"}
-    """
-    result, has_missing = _check_missing_required_params(tool_name, tool_params, original_output)
-    
-    # 如果能补充，直接返回
-    if result is not None:
-        return result
-    
-    # 无法补充时，使用推断逻辑
-    # 【适用范围】专为「写小说/长文本」场景设计，非小说内容（代码、日志等）推断可能不准确
-    # 【回退机制】推断失败时直接返回原参数，让LLM重试
-    
-    # 对于write_file，如果没有content，从file_path推断
-    if tool_name == "write_file" and "content" not in tool_params and "file_path" in tool_params:
-        # 已有file_path，content缺失，这通常是LLM返回参数顺序问题
-        # 从original_output中提取content：优先JSON解析，失败再用正则
-        if original_output:
-            # 【改进】优先尝试JSON解析，精确提取tool_params里的content
-            extracted_content = None
-            try:
-                json_data = json.loads(original_output)
-                # 标准格式：tool_params.content
-                if isinstance(json_data, dict):
-                    tool_params_data = json_data.get("tool_params") or json_data.get("action_input") or {}
-                    if isinstance(tool_params_data, dict) and "content" in tool_params_data:
-                        extracted_content = tool_params_data["content"]
-            except (json.JSONDecodeError, TypeError):
-                pass
-            
-            if extracted_content:
-                tool_params["content"] = extracted_content
-                logger.info(f"[_supplement_missing_params] 从JSON解析补充content参数")
-                return tool_params
-            
-            # 【改进】正则支持转义引号（\" 或 \'）
-            import re
-            patterns = [
-                r'"content"\s*:\s*"((?:[^\"\\]|\\.)*)"',  # 支持转义双引号
-                r"'content'\s*:\s*'((?:[^'\\]|\\.)*)'",  # 支持转义单引号
-            ]
-            for pattern in patterns:
-                match = re.search(pattern, original_output, re.DOTALL)
-                if match:
-                    tool_params["content"] = match.group(1)
-                    logger.info(f"[_supplement_missing_params] 从正则匹配补充content参数")
-                    return tool_params
-        
-        # 如果无法提取，返回原始参数（让LLM重试）
-        logger.warning(f"[_supplement_missing_params] write_file 缺失content，无法从原始输出补充（original_output={type(original_output).__name__}）")
-        return tool_params
-    
-    # 对于write_file，如果没有file_path，从content推断
-    # 【适用范围】专为「写小说/长文本」场景设计，非小说内容推断可能不准确
-    # 【回退机制】推断失败时返回原参数，让LLM重试
-    if tool_name == "write_file" and "file_path" not in tool_params and "content" in tool_params:
-        content = tool_params.get("content", "")
-        first_line = content.split('\n')[0].strip() if content else ""
-        inferred_path = None
-        if first_line and len(first_line) < 100:
-            import re
-            title_match = re.match(r'^([^:：]+)', first_line)
-            if title_match:
-                title = title_match.group(1).strip()
-                title = re.sub(r'[\\/:*?"<>|]', '', title)[:50]
-                inferred_path = f"E:/故事/{title}.txt"
-        
-        if inferred_path:
-            tool_params["file_path"] = inferred_path
-            return tool_params
-        else:
-            # 推断失败，明确日志并返回原参数，让LLM重试
-            logger.warning(f"[_supplement_missing_params] write_file 无法从content推断file_path（第一行长度={len(first_line)}字符），返回原参数让LLM重试")
-            return tool_params
-    
-    # 对于read_file，如果没有file_path，尝试从content推断
-    if tool_name == "read_file" and "file_path" not in tool_params and "content" in tool_params:
-        content = tool_params.get("content", "")
-        # 从content中尝试提取文件名
-        import re
-        # 匹配可能的小说文件名或路径
-        match = re.search(r'([A-Za-z]:[/\\]|/)[^/\\:*?"<>|]+\.txt', content)
-        if match:
-            tool_params["file_path"] = match.group(0)
-            return tool_params
-        # 使用默认读取路径
-        tool_params["file_path"] = "E:/默认读取.txt"
-        return tool_params
-    
-    # 其他情况返回原参数（可能不完整）
+    """补充缺失的必需参数（当前为占位，Pydantic 模型自动校验 — 小健 2026-05-25）
+    2026-05-25 小沈 重构: _check_missing_required_params 已变 stub(始终返回原参数)，
+    此函数后续 ~80行推断逻辑全部是死代码，可直接删除。若以后需要恢复 content 推断，
+    应从 _create_action_result 中独立调用，而非在此维护 130 行死代码。"""
     return tool_params
 
 
@@ -1724,102 +1662,6 @@ def _extract_tool_params_from_thought(thought: str, tool_name: str = None) -> Di
     return {}
 
 
-# =============================================================================
-# 【P0-必须新增】步骤1.2.1：实现工具名兜底匹配函数
-# =============================================================================
-
-def _extract_by_known_tools(content: str) -> Optional[Dict[str, Any]]:
-    """
-    【P0-必须新增】通过已知工具名匹配提取action
-    
-    来源：llm_strategies.py _extract_by_known_tools() (行229-267)
-    调用位置：_determine_parse_type() 入口处作为pre-check
-    
-    当关键词定位失败时，尝试在content中查找已知工具名作为兜底。
-    这是系统鲁棒性的关键保障，必须在关键词定位之前执行。
-    
-    【2026-04-28 小沈修复】增强参数提取逻辑：
-    1. 先尝试从tool_params JSON块中提取完整参数（包括content字段）
-    2. 再使用正确的参数名（file_path而非path）
-    3. 最后才使用简单的正则提取作为兜底
-    
-    Args:
-        content: LLM响应文本
-        
-    Returns:
-        工具信息字典（成功）或None（失败）
-        {
-            "tool_name": str,       # 匹配到的工具名
-            "content": str,         # 原始文本作为thought
-            "tool_params": dict     # 提取的参数（完整版）
-        }
-    """
-    content_lower = content.lower()
-    
-    for tool in _get_all_tool_names():
-        # 查找工具名出现位置（单词边界匹配）
-        pattern = rf'\b{re.escape(tool)}\b'
-        tool_match = re.search(pattern, content_lower, re.IGNORECASE)
-        if not tool_match:
-            continue
-            
-        # 【2026-04-28 小沈新增】尝试提取完整的tool_params JSON块
-        params = _extract_tool_params_from_text(content, tool_match.start())
-        
-        if params:
-            return {
-                "tool_name": tool,
-                "content": content,
-                "tool_params": params
-            }
-        
-        # 如果上面失败，使用简单的路径提取作为兜底，但使用正确的参数名
-        params = {}
-        
-        # 根据工具类型选择正确的参数名
-        path_param_name = "file_path" if tool in ["read_file", "write_file", "delete_file"] else "path"
-        
-        # 【2026-04-28 小沈修复】同时添加path作为别名，保持向后兼容
-        also_add_path_alias = tool in ["read_file", "write_file", "delete_file"]
-        
-        # 查找路径参数（Windows/Unix路径）
-        path_patterns = [
-            r'["\']?([A-Za-z]:\\[^"\'\s]+)["\']?',  # Windows路径 C:\path
-            r'["\']?(/[^\s"\'<>]+)["\']?',          # Unix路径 /path
-        ]
-        
-        for p in path_patterns:
-            matches = re.findall(p, content)
-            if matches:
-                params[path_param_name] = matches[0]
-                # 同时添加path别名以保持向后兼容
-                if also_add_path_alias:
-                    params["path"] = matches[0]
-                break
-        
-        # 【2026-05-14 小沈修复】参数为空时检查是否为自然语言提及
-        # 如果没有提取到任何参数，检查工具名是否被括号包裹
-        # 如"测试一下网络延迟（ping）"中的ping是自然语言引用，不是工具调用
-        if not params:
-            start = tool_match.start()
-            end = tool_match.end()
-            if start > 0 and end < len(content):
-                before_char = content[start - 1]
-                after_char = content[end]
-                if before_char in ('(', '（') and after_char in (')', '）'):
-                    continue  # 括号内提及 → 跳过，继续搜索下一个工具名
-        
-        # 【2026-04-28 小沈修复】即使没有找到路径参数，只要找到了工具名就返回
-        # 这确保 "I will list_directory the files" 这种情况也能正确匹配
-        return {
-            "tool_name": tool,
-            "content": content,
-            "tool_params": params
-        }
-    
-    return None
-
-
 def _extract_tool_params_from_text(content: str, tool_start_pos: int) -> Optional[Dict[str, Any]]:
     """
     【2026-04-28 小沈新增】从文本中提取tool_params JSON块
@@ -1844,7 +1686,6 @@ def _extract_tool_params_from_text(content: str, tool_start_pos: int) -> Optiona
         return None
     
     # 使用平衡括号算法提取完整的tool_params对象
-    from .react_output_parser import _extract_json_with_balanced_braces
     json_start = tp_match.start()
     json_text, _ = _extract_json_with_balanced_braces(search_text[json_start:])
     
@@ -2106,92 +1947,36 @@ def _parse_action(
     关键改进3: 非贪婪匹配JSON ``.*?`` 确保正确捕获
     关键改进4: 中英文关键词完整支持
     """
-    # 提取Thought内容
-    if thought_match:
-        thought_start = thought_match.end()
-        thought_end = action_match.start()
-        thought = output[thought_start:thought_end].strip()
-    else:
-        # 关键改进2: 无Thought标记时捕获Action之前的内容
-        thought = output[:action_match.start()].strip()
-    
-    # 定位Action Input
-    action_input_match = re.search(REACT_KEYWORDS["action_input"], output, re.IGNORECASE)
-    
-    # 提取工具名（Action和Action Input之间）
-    action_start = action_match.end()
-    if action_input_match:
-        action_end = action_input_match.start()
-        action_section = output[action_start:action_end].strip()
-    else:
-        # 没有Action Input，取Action之后到行尾
-        action_section = output[action_start:].strip()
-    
-    # 关键改进1: 工具名约束 - 禁止空格和括号
-    tool_name_match = re.match(r'^([^\n\(\) ]+)', action_section)
-    if tool_name_match:
-        tool_name = tool_name_match.group(1)
-    else:
-        # Action 为空或格式异常时，避免 split()[0] 越界
-        parts = action_section.split()
-        tool_name = parts[0] if parts else ""
-    
-    # 提取工具参数
-    if action_input_match:
-        input_start = action_input_match.end()
-        input_section = output[input_start:].strip()
-        tool_params = _parse_action_input(input_section)
-    else:
-        tool_params = {}
-    
-    # ==========================================================================
-    # 【P1-高优先级新增】多字段名映射（兼容不同LLM输出格式）
-    # 来源：tool_parser.py (行200-215)
-    # 处理不同LLM可能使用的不同字段名
-    # ==========================================================================
-    # 如果解析到的tool_params中包含备用字段名，进行统一映射
-    if isinstance(tool_params, dict):
-        # 工具名映射：action -> action_tool -> tool_name
-        if not tool_name and "action" in tool_params:
-            tool_name = tool_params.pop("action")
-        if not tool_name and "action_tool" in tool_params:
-            tool_name = tool_params.pop("action_tool")
-        
-        # 参数映射：params -> action_input -> actionInput
-        if "params" in tool_params and "tool_params" not in tool_params:
-            tool_params["tool_params"] = tool_params.pop("params")
-        if "action_input" in tool_params and "tool_params" not in tool_params:
-            tool_params["tool_params"] = tool_params.pop("action_input")
-        if "actionInput" in tool_params and "tool_params" not in tool_params:
-            tool_params["tool_params"] = tool_params.pop("actionInput")
-    
-    # 深度检查：如果工具名解析成功但参数解析彻底失败（返回None而非{}）
-    if tool_name and tool_params is None:
-        return {
-            "type": "parse_error",
-            "error": f"Failed to parse parameters for tool '{tool_name}' after 5 levels of fallback",
-            "thought": thought,
-            "content": thought,
-            "reasoning": thought,
-            "tool_name": tool_name,
-            "tool_params": {},
-            "response": None
-        }
+    # 【24.1.4 重构后主函数】~60行骨架，调用3个提取组件
+    # 提取 thought
+    thought = output[thought_match.end():action_match.start()].strip() if thought_match \
+        else output[:action_match.start()].strip()
 
-    # 【修复A5 2026-05-20 小健】使用 _process_tool_params 统一管道替换仅 supplement
-    # 从 "仅 supplement" 升级为 "normalize + filter + supplement 完整链路"
-    final_tool_params = tool_params or {}
-    final_tool_params = _process_tool_params(final_tool_params, tool_name, output)
-    return {
-        "type": "action",
-        "thought": thought,
-        "content": thought,             # 兼容性字段
-        "reasoning": thought,           # 兼容性字段
-        "tool_name": tool_name,
-        "tool_params": final_tool_params,
-        "response": None,
-        "error": None
-    }
+    # 定位 action_input 并提取 tool_name 和 params
+    action_input_match = re.search(REACT_KEYWORDS["action_input"], output, re.IGNORECASE)
+    action_start = action_match.end()
+
+    if action_input_match:
+        action_section = output[action_start:action_input_match.start()].strip()
+        input_section = output[action_input_match.end():].strip()
+        tool_params = _parse_action_input(input_section) or {}
+    else:
+        action_section = output[action_start:].strip()
+        tool_params = {}
+
+    # 工具名正则
+    tool_name_match = re.match(r'^([^\n\(\) ]+)', action_section)
+    tool_name = tool_name_match.group(1) if tool_name_match \
+        else (action_section.split()[0] if action_section else "")
+
+    # 统一字段映射
+    if isinstance(tool_params, dict):
+        tool_name = _fallback_tool_name(tool_params, tool_name)
+        tool_params = _normalize_tool_params(tool_params)
+
+    # 统一管道
+    final_tool_params = _process_tool_params(tool_params or {}, tool_name, output)
+    return _build_action_result("action", tool_name, final_tool_params, thought)
 
 
 # =============================================================================
@@ -2252,108 +2037,100 @@ def _parse_answer(
 # 步骤1.5：实现_parse_action_input()函数
 # =============================================================================
 
+def _try_parse_chain(input_str: str, parsers) -> Optional[Dict]:
+    """通用链式解析：依次尝试每个解析器，首个成功返回
+
+    小沈 2026-05-25 重构拆分
+    """
+    for parser in parsers:
+        try:
+            result = parser(input_str)
+            if result is not None:
+                return result
+        except Exception:
+            continue
+    return None
+
+
+def _try_markdown_parse(s: str) -> Optional[Dict]:
+    mc = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', s, re.DOTALL | re.IGNORECASE)
+    return json.loads(mc.group(1).strip()) if mc else None
+
+
+def _try_json_parse(s: str) -> Optional[Dict]:
+    return json.loads(s)
+
+
+def _try_balanced_braces(s: str) -> Optional[Dict]:
+    js, _ = _extract_json_with_balanced_braces(s)
+    return json.loads(js) if js else None
+
+
+def _try_single_quotes(s: str) -> Optional[Dict]:
+    return json.loads(s.replace("'", '"'))
+
+
+def _try_kv_parse(s: str) -> Optional[Dict]:
+    return _extract_key_value_pairs(s)
+
+
+_TOOL_NAME_KEYS = [r'"tool_name"', r'"action_tool"', r'"action"']
+_TOOL_PARAMS_KEYS = [r'"tool_params"', r'"params"', r'"action_input"']
+
+
+def _extract_fields_partial(s: str) -> Optional[Dict]:
+    """部分损坏 JSON 的挽救性字段提取
+
+    小沈 2026-05-25 重构拆分
+    """
+    result = {}
+    for pat in _TOOL_NAME_KEYS:
+        m = re.search(rf'{pat}\s*:\s*"([^"]*)"', s)
+        if m:
+            result["tool_name"] = m.group(1)
+            break
+    for pat in _TOOL_PARAMS_KEYS:
+        m = re.search(rf'{pat}\s*:\s*(\{{[^}}]*\}})', s)
+        if m:
+            try:
+                result["tool_params"] = json.loads(m.group(1))
+            except Exception:
+                result["tool_params"] = {}
+            break
+    return result if result else None
+
+
 def _parse_action_input(input_section: str) -> Dict[str, Any]:
     """
     解析Action Input中的JSON参数
-    
+
     实现五级降级策略（原四级+Markdown去除），确保最大限度解析成功
-    
+
+    【小沈重构 2026-05-25】链式解析管道，职责单一，每个解析器独立可测试
+
     Args:
         input_section: Action Input之后的文本内容
-        
+
     Returns:
         解析后的参数字典（失败返回空字典）
-        
-    解析策略依据: LlamaIndex action_input_parser 实现 + 现有代码改进
-    五级降级策略:
-        第0级: Markdown代码块去除（【基于14.0分析修正位置】）
-        第1级: 标准json.loads()解析
-        第2级: 正则提取JSON片段（平衡括号匹配）- 额外改进
-        第3级: 替换单引号为双引号后解析
-        第4级: 截断JSON字段提取 + 正则提取key:value对作为兜底
     """
     if not input_section:
         return {}
-    
-    # 记录原始输入用于错误分析
-    from app.utils.logger import logger
-    # ==========================================================================
-    # 【基于14.0分析修正】第0级: Markdown代码块去除（在_parse_action_input内处理）
-    # 原建议位置：parse_react_response() 入口 ❌
-    # 修正位置：_parse_action_input() 第0级 ✅
-    # 理由：Markdown只包裹JSON参数部分，应在局部精准处理
-    # 来源：tool_parser.py (行92-106)
-    # ==========================================================================
-    json_str = input_section
-    
-    # 尝试去除Markdown代码块
-    md_match = re.search(
-        r'```(?:json)?\s*\n?(.*?)\n?```',
-        input_section,
-        re.DOTALL | re.IGNORECASE
-    )
-    if md_match:
-        json_str = md_match.group(1).strip()
-    
-    # 第1级: 标准JSON解析
-    try:
-        return json.loads(json_str)
-    except json.JSONDecodeError:
-        pass
-    
-    # 第2级: 正则提取JSON片段（平衡括号匹配算法）- 额外改进
-    # 来源：tool_parser.py _extract_json_with_balanced_braces()
-    try:
-        json_match, _ = _extract_json_with_balanced_braces(json_str)
-        if json_match:
-            return json.loads(json_match)
-    except (json.JSONDecodeError, ValueError):
-        pass
-    
-    # 第3级: 替换单引号为双引号
-    try:
-        # 替换单引号为双引号，但保留字符串内的单引号
-        normalized = json_str.replace("'", '"')
-        return json.loads(normalized)
-    except json.JSONDecodeError:
-        pass
-    
-    # ==========================================================================
-    # 【基于14.0分析新增】第4级增强: 截断JSON字段提取 + key:value兜底
-    # 来源：tool_parser.py (行136-177)
-    # 处理JSON部分损坏的情况，尝试挽救性提取
-    # ==========================================================================
-    parsed_fallback = {}
-    
-    # 尝试提取 tool_name（多种字段名）
-    for field_pattern in [r'"tool_name"', r'"action_tool"', r'"action"']:
-        match = re.search(rf'{field_pattern}\s*:\s*"([^"]*)"', json_str)
-        if match:
-            parsed_fallback["tool_name"] = match.group(1)
-            break
-    
-    # 尝试提取 tool_params（多种字段名）
-    for field_pattern in [r'"tool_params"', r'"params"', r'"action_input"']:
-        match = re.search(rf'{field_pattern}\s*:\s*(\{{[^}}]*\}})', json_str)
-        if match:
-            try:
-                parsed_fallback["tool_params"] = json.loads(match.group(1))
-                break
-            except:
-                parsed_fallback["tool_params"] = {}
-                break
-    
-    # 如果成功提取到任何字段，返回挽救性结果
-    if parsed_fallback:
-        return parsed_fallback
-    
-    # 第5级: 正则提取key:value对（最坏情况兜底）
-    fallback_kv = _extract_key_value_pairs(json_str)
-    if fallback_kv:
-        return fallback_kv
-        
-    # 如果所有级别都失败，返回 None 触发上层的 type="error"
-    logger.error(f"[_parse_action_input] All 5 levels of JSON parsing failed for: {input_section[:100]}...")
+
+    PARSERS = [
+        _try_markdown_parse,    # L0: Markdown 去除
+        _try_json_parse,        # L1: 标准 JSON
+        _try_balanced_braces,   # L2: 平衡括号
+        _try_single_quotes,     # L3: 单引号替换
+        _extract_fields_partial, # L4: 字段提取
+        _try_kv_parse,          # L5: KV 兜底
+    ]
+
+    result = _try_parse_chain(input_section, PARSERS)
+    if result is not None:
+        return result
+
+    logger.error(f"[_parse_action_input] All parsers failed for: {input_section[:100]}...")
     return None
 
 
@@ -2385,11 +2162,25 @@ def _extract_json_with_balanced_braces(text: str) -> Tuple[Optional[str], str]:
     content_before = text[:start_idx].strip()
     
     # 平衡括号匹配
+    # 【修复 小健 2026-05-24】P1-5: 跟踪字符串内花括号，避免JSON值含{}时误匹配
     stack = []
     end_idx = None
+    in_string = False
+    escape_next = False
     
     for i in range(start_idx, len(text)):
         char = text[i]
+        if escape_next:
+            escape_next = False
+            continue
+        if char == '\\' and in_string:
+            escape_next = True
+            continue
+        if char == '"' and not escape_next:
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
         if char in '{[':
             stack.append(char)
         elif char == '}' and stack and stack[-1] == '{':
@@ -2414,7 +2205,13 @@ def _extract_json_with_balanced_braces(text: str) -> Tuple[Optional[str], str]:
     # 这允许后续降级策略尝试挽救性解析
     # ==========================================================================
     if stack:  # 括号未闭合，JSON被截断
-        return text[start_idx:], content_before
+        # 【修复 小健 2026-05-24】P1-6: 尝试补全缺失的闭合括号，提高截断JSON的挽救率
+        truncated = text[start_idx:]
+        for _ in range(len(stack)):
+            opener = stack.pop()
+            closer = '}' if opener == '{' else ']'
+            truncated += closer
+        return truncated, content_before
     
     # 没有找到完整JSON
     return None, content_before
@@ -2465,7 +2262,6 @@ __all__ = [
     "_parse_answer",
     "_parse_action_input",
     "_parse_thought_only",  # 【新增】14.5节要求的独立函数
-    "_extract_by_known_tools",  # 【P0新增】工具名兜底匹配
     "_extract_json_block",  # 【2026-04-18小沈新增】纯JSON块提取
     "_extract_json_with_balanced_braces",
     "_extract_key_value_pairs",

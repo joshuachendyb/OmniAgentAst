@@ -8,7 +8,7 @@
  * @since 2026-02-18
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Card,
   List,
@@ -62,21 +62,25 @@ const HistoryPage: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(false);
   const [keyword, setKeyword] = useState("");
+  const keywordRef = useRef(keyword);
   const [pagination, setPagination] = useState({
     current: 1,
     pageSize: 20,
     total: 0,
   });
+  const paginationRef = useRef(pagination);
   const navigate = useNavigate();
   const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null);
   const [selectedSessions, setSelectedSessions] = useState<Set<string>>(
     new Set()
-  ); // 前端小新代修改 UX-H03: 批量删除功能
+  );
+
+  useEffect(() => { keywordRef.current = keyword; }, [keyword]);
+  useEffect(() => { paginationRef.current = pagination; }, [pagination]);
 
   /**
    * 加载会话列表
    */
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const loadSessions = useCallback(async (page: number = 1, searchKeyword?: string) => {
     setLoading(true);
     try {
@@ -84,7 +88,7 @@ const HistoryPage: React.FC = () => {
         page,
         pagination.pageSize,
         searchKeyword,
-        undefined  // ⭐ 显示所有会话（包括有效和无效）
+        undefined
       );
       setSessions(response.sessions);
       setPagination((prev) => ({
@@ -93,12 +97,12 @@ const HistoryPage: React.FC = () => {
         total: response.total,
       }));
     } catch (error) {
-      handleError("加载会话列表失败");
+      handleError(new Error("加载会话列表失败"));
       console.error("加载会话列表失败:", error);
     } finally {
       setLoading(false);
     }
-  }, /* eslint-disable-next-line react-hooks/exhaustive-deps */ [pagination.pageSize]);
+  }, [pagination.pageSize]);
 
   /**
    * 首次加载
@@ -120,36 +124,8 @@ const HistoryPage: React.FC = () => {
    * 刷新列表
    */
   const handleRefresh = () => {
-    loadSessions(pagination.current, keyword);
+    loadSessions(paginationRef.current.current, keywordRef.current);
     showSuccess("列表已刷新");
-  };
-
-  /**
-   * 强制刷新列表 - 清除可能的缓存
-   */
-  const handleForceRefresh = async () => {
-    setLoading(true);
-    try {
-      // 添加时间戳参数强制刷新，防止缓存
-      const response = await sessionApi.listSessions(
-        pagination.current,
-        pagination.pageSize,
-        keyword,
-        undefined  // ⭐ 显示所有会话（包括有效和无效）
-      );
-      setSessions(response.sessions);
-      setPagination({
-        ...pagination,
-        current: pagination.current,
-        total: response.total,
-      });
-      showSuccess("列表已强制刷新");
-    } catch (error) {
-      handleError("刷新失败");
-      console.error("强制刷新失败:", error);
-    } finally {
-      setLoading(false);
-    }
   };
 
   /**
@@ -159,8 +135,15 @@ const HistoryPage: React.FC = () => {
     try {
       await sessionApi.deleteSession(sessionId);
       showSuccess("会话已删除");
-      // 刷新列表
-      loadSessions(pagination.current, keyword);
+      const currentPage = paginationRef.current.current;
+      const currentKeyword = keywordRef.current;
+      const response = await sessionApi.listSessions(currentPage, pagination.pageSize, currentKeyword, undefined);
+      if (response.sessions.length === 0 && currentPage > 1) {
+        loadSessions(currentPage - 1, currentKeyword);
+      } else {
+        setSessions(response.sessions);
+        setPagination(prev => ({ ...prev, current: currentPage, total: response.total }));
+      }
     } catch (error) {
       handleError("删除会话失败");
       console.error("删除会话失败:", error);
@@ -176,13 +159,18 @@ const HistoryPage: React.FC = () => {
       return;
     }
     try {
-      for (const sessionId of selectedSessions) {
-        await sessionApi.deleteSession(sessionId);
+      const results = await Promise.allSettled(
+        Array.from(selectedSessions).map(sessionId => sessionApi.deleteSession(sessionId))
+      );
+      const successCount = results.filter(r => r.status === 'fulfilled').length;
+      const failCount = results.filter(r => r.status === 'rejected').length;
+      if (failCount === 0) {
+        showSuccess(`已删除 ${successCount} 个会话`);
+      } else {
+        handleError({ message: `删除完成：${successCount} 成功，${failCount} 失败`, error_type: ErrorType.WARNING });
       }
-      showSuccess(`已删除 ${selectedSessions.size} 个会话`);
       setSelectedSessions(new Set());
-      // 刷新列表
-      loadSessions(pagination.current, keyword);
+      loadSessions(paginationRef.current.current, keywordRef.current);
     } catch (error) {
       handleError("批量删除会话失败");
       console.error("批量删除会话失败:", error);
@@ -212,7 +200,7 @@ const HistoryPage: React.FC = () => {
           break;
         }
         allSessions.push(...response.sessions);
-        if (response.sessions.length < pageSize) {
+        if (response.sessions.length < pageSize || page > 1000) {
           hasMore = false;
           break;
         }
@@ -255,16 +243,16 @@ const HistoryPage: React.FC = () => {
   const handleResume = async (sessionId: string) => {
     console.log("🔄 准备跳转到会话:", sessionId);
     setLoadingSessionId(sessionId);
+    const timer = setTimeout(() => setLoadingSessionId(null), 5000);
     try {
-      // 跳转到聊天页面，带上 session_id 参数（使用 React Router，不刷新页面）
-      // ⭐ 修复：使用 replace 避免浏览器历史记录堆积
       navigate(`/?session_id=${sessionId}`, { replace: true });
       console.log("✅ 跳转成功:", sessionId);
     } catch (error) {
       console.error("❌ 跳转失败:", error);
       handleError("跳转失败");
-    } finally {
       setLoadingSessionId(null);
+    } finally {
+      clearTimeout(timer);
     }
   };
 
@@ -330,13 +318,6 @@ const HistoryPage: React.FC = () => {
               >
                 刷新
               </Button>
-              <Button
-                icon={<ReloadOutlined />}
-                onClick={handleForceRefresh}
-                loading={loading}
-              >
-                强刷
-              </Button>
               <Badge count={pagination.total} showZero>
                 <Button icon={<CommentOutlined />}>总会话</Button>
               </Badge>
@@ -354,6 +335,7 @@ const HistoryPage: React.FC = () => {
             }
             size="large"
             onSearch={handleSearch}
+            onChange={(e) => { if (!e.target.value) handleSearch(''); }}
             loading={loading}
           />
 
@@ -390,22 +372,23 @@ const HistoryPage: React.FC = () => {
                   <Card
                     hoverable
                     size="small"
-                    className="session-card"
-                    style={{ 
+                    style={{
                       height: "100%",
-                      opacity: session.is_valid ? 1 : 0.5,  // ⭐ 无效会话灰色显示
-                      backgroundColor: session.is_valid ? "#fff" : "#f5f5f5"  // ⭐ 灰色背景
+                      opacity: session.is_valid === false ? 0.5 : 1,
+                      backgroundColor: session.is_valid === false ? "#f5f5f5" : "#fff",
+                      transition: "all 0.3s ease",
                     }}
                     actions={[
-                      <Tooltip key="resume" title="继续对话">
+                      <Tooltip key="resume" title={session.is_valid === false ? "无效会话，无法继续" : "继续对话"}>
                         <Button
                           type="link"
                           icon={<MessageOutlined />}
                           onClick={(e) => {
-                            e.stopPropagation(); // 防止事件冒泡
+                            e.stopPropagation();
                             handleResume(session.session_id);
                           }}
                           loading={loadingSessionId === session.session_id}
+                          disabled={session.is_valid === false}
                         >
                           继续
                         </Button>
@@ -413,7 +396,7 @@ const HistoryPage: React.FC = () => {
                       <Popconfirm
                         key="delete"
                         title="删除会话"
-                        description={`确定要删除"${session.title}"吗？此操作不可恢复。`}
+                        description={`确定要删除"${session.title || '未命名会话'}"吗？此操作不可恢复。`}
                         onConfirm={() => {
                           handleDelete(session.session_id);
                         }}
@@ -453,9 +436,9 @@ const HistoryPage: React.FC = () => {
                     <div style={{ padding: "0 10px" }}>
                       <Card.Meta
                         title={
-                          <Tooltip title={session.title}>
+                          <Tooltip title={session.title || '未命名会话'}>
                             <Text strong ellipsis style={{ maxWidth: 200 }}>
-                              {session.title}
+                              {session.title || '未命名会话'}
                             </Text>
                           </Tooltip>
                         }
@@ -467,7 +450,7 @@ const HistoryPage: React.FC = () => {
                           >
                             <Space>
                               <Tag icon={<CommentOutlined />} color="blue">
-                                {session.message_count ?? 0} 条消息
+                                {session.message_count} 条消息
                               </Tag>
                             </Space>
                             <Space>
@@ -502,23 +485,13 @@ const HistoryPage: React.FC = () => {
                 onChange={(page) => loadSessions(page, keyword)}
                 showSizeChanger={false}
                 showQuickJumper
-                showTotal={(total) => `共 ${total} 条`}
+                showTotal={(total) => keyword ? `共 ${total} 条结果` : `共 ${total} 条`}
               />
             </div>
           )}
         </Space>
       </Card>
 
-      {/* 自定义CSS - 卡片hover效果 */}
-      <style>{`
-         .session-card {
-           transition: all 0.3s ease;
-         }
-         .session-card:hover {
-           transform: translateY(-4px);
-           box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-         }
-       `}</style>
     </div>
   );
 };

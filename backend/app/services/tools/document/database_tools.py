@@ -23,7 +23,7 @@ DATABASE Tools - 数据库工具实现
 
 import re
 import sqlite3
-from typing import Any, Dict, List, Optional, Union, Literal
+from typing import Any, Dict, List, Optional, Union, Literal, Tuple
 from app.utils.logger import logger
 from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe
 from app.services.tools._response import build_success, build_error, build_warning
@@ -101,11 +101,18 @@ def query_sql(
         sql_upper = sql.strip().upper()
         
         if not sql_upper.startswith(("SELECT", "SHOW", "DESCRIBE", "PRAGMA", "WITH", "EXPLAIN")):
-            return build_error("ERR_READ_ONLY_VIOLATION", f"错误：只允许 SELECT/SHOW/DESCRIBE 等只读操作，当前语句以 {sql.split()[0] if sql.split() else '未知'} 开头")
+            return build_error("ERR_READ_ONLY_VIOLATION", f"错误：只允许 SELECT/SHOW/DESCRIBE 等只读操作，当前语句以 {sql.split()[0] if sql.split() else '未知'} 开头",
+                next_actions=build_next_actions([
+                    ("execute_sql", "执行写操作", "需要修改数据时"),
+                    ("get_db_schema", "查看表结构", "确认字段名时"),
+                ]))
         
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
-            return build_error("ERR_DB_CONNECTION", conn_error)
+            return build_error("ERR_DB_CONNECTION", conn_error,
+                next_actions=build_next_actions([
+                    ("tool_help", "查看query_sql参数", "检查连接参数时", {"tool_name": "query_sql"}),
+                ]))
         
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
@@ -146,11 +153,68 @@ def query_sql(
         )
             
     except sqlite3.Error as e:
-        return build_error("ERR_SQL_EXEC", f"SQL执行错误: {str(e)}")
+        return build_error("ERR_SQL_EXEC", f"SQL执行错误: {str(e)}",
+            next_actions=build_next_actions([
+                ("get_db_schema", "查看表结构", "确认字段名是否正确时"),
+                ("tool_help", "查看query_sql用法", "检查SQL语法时", {"tool_name": "query_sql"}),
+            ]))
     except Exception as e:
-        return build_error("ERR_QUERY_FAILED", f"执行失败: {str(e)}")
+        return build_error("ERR_QUERY_FAILED", f"执行失败: {str(e)}",
+            next_actions=build_next_actions([
+                ("get_db_schema", "查看表结构", "确认表是否存在时"),
+                ("tool_help", "查看query_sql用法", "检查参数时", {"tool_name": "query_sql"}),
+            ]))
     finally:
         _close_connection(conn, engine)
+
+
+def _check_sql_safety(sql: str, dry_run: bool) -> Tuple[bool, Optional[str], Optional[List[str]]]:
+    """统一危险模式检测 + 无WHERE检测 + 拦截决策。
+
+    小沈 2026-05-25 重构拆分
+    消除 S1a-c(危险检测) + S2a-c(拦截决策) 的重复分支。
+    返回: (has_danger, warning_message, detected_list)
+    """
+    import re
+    sql_upper = sql.strip().upper()
+
+    DANGEROUS_PATTERN = re.compile(r'\b(DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b', re.IGNORECASE)
+    dangerous_matches = DANGEROUS_PATTERN.findall(sql)
+
+    no_where_pattern = re.compile(r'\b(DELETE|UPDATE)\b.*?(?!.*\bWHERE\b)', re.IGNORECASE | re.DOTALL)
+    if re.match(r'\s*(DELETE|UPDATE)\s', sql_upper) and 'WHERE' not in sql_upper:
+        dangerous_matches.append('NO_WHERE')
+
+    if dangerous_matches:
+        warnings = []
+        dangerous_to_show = [d for d in dangerous_matches if d != 'NO_WHERE']
+        if dangerous_to_show:
+            warnings.append(f"危险操作: {dangerous_to_show}")
+        if 'NO_WHERE' in dangerous_matches:
+            warnings.append("缺少 WHERE 条件")
+        return True, f"警告：检测到危险操作 {'+'.join(warnings)}，已拦截执行。可使用dry_run=true预演", dangerous_matches
+    return False, None, None
+
+
+def _rollback_and_return(conn, error_type: str, error: Exception) -> Dict[str, Any]:
+    """统一回滚连接并返回错误。
+
+    小沈 2026-05-25 重构拆分
+    消除 E1a/E1b 的回滚+错误返回模式重复2次（行279-283 和 290-294）。
+    """
+    if conn:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    logger.error(f"[execute_sql] {error_type}: {error}")
+    return build_error(error_type, str(error), next_actions=_SQL_NEXT_ACTIONS)
+
+
+_SQL_NEXT_ACTIONS = build_next_actions([
+    ("query_sql", "查询 SQL 数据库", "需要重新查询时"),
+    ("tool_help", "查看 execute_sql 用法", "需要帮助时", {"tool_name": "execute_sql"}),
+])
 
 
 def execute_sql(
@@ -161,66 +225,31 @@ def execute_sql(
     dry_run: bool = False,
     timeout: int = 30000,
 ) -> Dict[str, Any]:
-    """
-    执行写操作SQL
-
-    Args:
-        sql: SQL 写操作语句。支持 INSERT/UPDATE/DELETE/DDL
-        connection_type: 数据库类型：sqlite/mysql/postgresql
-        connection_string: MySQL/PostgreSQL 连接字符串
-        db_path: SQLite 数据库文件路径
-        dry_run: 预演模式，仅校验语法不执行
-        timeout: 超时毫秒数，默认30000
-        affected_rows_check: 是否校验影响行数，默认True
-
-    Returns:
-        Dict with code, data, message
-    """
+    """执行写操作SQL - 小沈 2026-05-25 重构拆分"""
     conn = None
     engine = None
-    
+
     try:
-        sql_upper = sql.strip().upper()
-        
-        DANGEROUS_PATTERN = re.compile(r'\b(DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b', re.IGNORECASE)
-        dangerous_matches = DANGEROUS_PATTERN.findall(sql)
-        
-        # 小健 2026-05-19: 检测DELETE/UPDATE无WHERE子句
-        no_where_pattern = re.compile(r'\b(DELETE|UPDATE)\b.*?(?!.*\bWHERE\b)', re.IGNORECASE | re.DOTALL)
-        if re.match(r'\s*(DELETE|UPDATE)\s', sql_upper) and 'WHERE' not in sql_upper:
-            dangerous_matches.append('NO_WHERE')
-        
-        if dangerous_matches and not dry_run:
+        has_danger, warning_msg, dangerous_list = _check_sql_safety(sql, dry_run)
+        if has_danger and not dry_run:
             return build_warning(
                 "WARNING_DB_SAFETY",
-                f"警告：检测到危险操作 {dangerous_matches}，已拦截执行。可使用dry_run=true预演",
-                data={
-                    "detected": dangerous_matches,
-                    "suggestion": "检测到危险操作，建议使用 dry_run=true 先验证"
-                },
-                next_actions=build_next_actions([
-                    ("execute_sql", "dry_run预演", "需要预检SQL时", {"dry_run": True}),
-                    ("query_sql", "查询数据", "需要先查看数据时"),
-                ])
+                warning_msg,
+                data={"detected": dangerous_list, "suggestion": "检测到危险操作，建议使用 dry_run=true 先验证"},
+                next_actions=_SQL_NEXT_ACTIONS
             )
-        
+
         if dry_run:
             return build_success(
-                {
-                    "sql": sql,
-                    "dry_run": True,
-                    "syntax_valid": True
-                },
+                {"sql": sql, "dry_run": True, "syntax_valid": True},
                 "预演模式：语法验证通过，实际未执行",
-                next_actions=build_next_actions([
-                    ("query_sql", "查询验证结果", "需要确认修改结果时"),
-                ])
+                next_actions=_SQL_NEXT_ACTIONS
             )
-        
+
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
-            return build_error("ERR_DB_CONNECTION", conn_error)
-        
+            return build_error("ERR_DB_CONNECTION", conn_error, next_actions=_SQL_NEXT_ACTIONS)
+
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
             engine = conn.engine
@@ -231,46 +260,27 @@ def execute_sql(
             cursor = conn.cursor()
             cursor.execute(sql)
             affected_rows = cursor.rowcount
-            
-            # affected_rows_check 已从Schema移除，固定启用>10000行保护
+
             if affected_rows > 10000:
                 conn.rollback()
                 return build_warning(
                     "WARNING_DB_SAFETY",
                     f"警告：影响行数 {affected_rows} > 10000，已自动回滚",
-                    data={
-                        "affected_rows": affected_rows,
-                        "action": "rollback"
-                    }
+                    data={"affected_rows": affected_rows, "action": "rollback"}
                 )
-            
+
             conn.commit()
-        
+
         return build_success(
-            {
-                "affected_rows": affected_rows,
-                "sql": sql
-            },
+            {"affected_rows": affected_rows, "sql": sql},
             f"执行成功，影响行数: {affected_rows}",
-            next_actions=build_next_actions([
-                ("query_sql", "查询验证结果", "需要确认修改结果时"),
-            ])
+            next_actions=_SQL_NEXT_ACTIONS
         )
-        
+
     except sqlite3.Error as e:
-        if conn:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-        return build_error("ERR_SQL_EXEC", f"SQL执行错误: {str(e)}")
+        return _rollback_and_return(conn, "ERR_SQL_EXEC", e)
     except Exception as e:
-        if conn:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-        return build_error("ERR_EXEC_FAILED", f"执行失败: {str(e)}")
+        return _rollback_and_return(conn, "ERR_EXEC_FAILED", e)
     finally:
         _close_connection(conn, engine)
 
@@ -299,123 +309,90 @@ def get_db_schema(
     Returns:
         Dict with code, data, message
     """
-    conn = None
-    engine = None
-    
+
+
+def _get_tables(conn, connection_type: str, db_name: Optional[str]) -> List[str]:
+    """获取表列表（2路SQL） — 小沈 2026-05-25 重构"""
+    if connection_type in ("mysql", "postgresql"):
+        from sqlalchemy import text
+        result = conn.execute(text("SELECT table_name FROM information_schema.tables WHERE table_schema = :db_name"),
+                               {"db_name": db_name or "test"})
+        return [row[0] for row in result.fetchall()]
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+    return [row[0] for row in cursor.fetchall()]
+
+
+def _get_columns(conn, connection_type: str, table_name: str) -> List[Dict]:
+    """获取列信息（2路SQL） — 小沈 2026-05-25 重构"""
+    if connection_type in ("mysql", "postgresql"):
+        from sqlalchemy import text as sa_text
+        result = conn.execute(sa_text("SELECT column_name, data_type, is_nullable, column_key, column_default FROM information_schema.columns WHERE table_name=:t"), {"t": table_name})
+        return [{"name": r[0], "type": r[1], "nullable": r[2] == "YES", "pk": r[3] == "PRI", "default": r[4]} for r in result]
+    cursor = conn.cursor()
+    cursor.execute(f"PRAGMA table_info('{table_name}')")
+    return [{"name": r[1], "type": r[2], "nullable": not r[3], "default": r[4], "pk": bool(r[5])} for r in cursor.fetchall()]
+
+
+def _get_indexes(conn, connection_type: str, table_name: str) -> List[Dict]:
+    """获取索引信息（2路SQL） — 小沈 2026-05-25 重构"""
+    if connection_type in ("mysql", "postgresql"):
+        from sqlalchemy import text as sa_text2
+        result = conn.execute(sa_text2("SELECT index_name, non_unique FROM information_schema.statistics WHERE table_name=:t GROUP BY index_name, non_unique"), {"t": table_name})
+        return [{"name": r[0], "unique": not bool(r[1])} for r in result]
+    cursor = conn.cursor()
+    cursor.execute(f"PRAGMA index_list('{table_name}')")
+    return [{"name": r[1], "unique": bool(r[2])} for r in cursor.fetchall()]
+
+
+def _filter_tables(tables: List[str], table_name: Optional[str], filter_pattern: Optional[str]) -> List[str]:
+    """表名过滤：精确匹配优先，fnmatch降级，20表截断 — 小沈 2026-05-25 重构"""
+    if table_name:
+        tables = [t for t in tables if t == table_name]
+        if not tables:
+            return []
+    elif filter_pattern:
+        import fnmatch
+        pat = filter_pattern.replace("%", "*").replace("_", "?")
+        tables = [t for t in tables if fnmatch.fnmatch(t.lower(), pat.lower())]
+    return tables[:20]
+
+
+def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None,
+                   db_name=None, table_name=None, filter_pattern=None) -> Dict:
+    """获取数据库表结构 — 小沈 2026-05-25 重构"""
+    conn = engine = None
     try:
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path)
         if conn is None:
             return build_error("ERR_DB_CONNECTION", conn_error)
-        
-        if connection_type in ("mysql", "postgresql"):
-            from sqlalchemy import text
-            query = text("SELECT table_name FROM information_schema.tables WHERE table_schema = :db_name")
-            result = conn.execute(query, {"db_name": db_name or "test"})
-            tables = [row[0] for row in result.fetchall()]
-        else:
-            cursor = conn.cursor()
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-            tables = [row[0] for row in cursor.fetchall()]
-        
-        _close_connection(conn, engine)
-        conn = None
-        engine = None
-        
-        # 【2026-05-17 小沈】table_name 参数：指定单表查询，覆盖 filter_pattern
-        if table_name:
-            tables = [t for t in tables if t == table_name]
-            if not tables:
-                return build_error("ERR_DOC_DB_TABLE_NOT_FOUND", f"表不存在: {table_name}")
-        elif filter_pattern:
-            import fnmatch
-            # 小健 2026-05-19: SQL LIKE用%通配，fnmatch用*，自动转换
-            fnmatch_pattern = filter_pattern.replace("%", "*").replace("_", "?")
-            tables = [t for t in tables if fnmatch.fnmatch(t.lower(), fnmatch_pattern.lower())]
-        
-        if len(tables) > 20:
-            tables = tables[:20]
-        
+
+        tables = _get_tables(conn, connection_type, db_name)
+        tables = _filter_tables(tables, table_name, filter_pattern)
+        if table_name and not tables:
+            return build_error("ERR_DOC_DB_TABLE_NOT_FOUND", f"表不存在: {table_name}")
+
         schema_info = []
-        
-        conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path)
-        if conn is None:
-            return build_error("ERR_DB_CONNECTION", conn_error)
-        
-        for table_name in tables:
-            if connection_type in ("mysql", "postgresql"):
-                from sqlalchemy import text as sa_text
-                col_result = conn.execute(
-                    sa_text("SELECT column_name, data_type, is_nullable, column_key, column_default FROM information_schema.columns WHERE table_name = :table_name"),
-                    {"table_name": table_name}
-                )
-                columns = []
-                for col in col_result.fetchall():
-                    columns.append({
-                        "name": col[0],
-                        "type": col[1],
-                        "nullable": col[2] == "YES",
-                        "pk": col[3] == "PRI",
-                        "default": col[4]
-                    })
-            else:
-                cursor = conn.cursor()
-                cursor.execute(f"PRAGMA table_info('{table_name}')")
-                columns = []
-                for col in cursor.fetchall():
-                    columns.append({
-                        "name": col[1],
-                        "type": col[2],
-                        "nullable": not col[3],
-                        "default": col[4],
-                        "pk": bool(col[5])
-                    })
-            
-            table_info = {"name": table_name, "columns": columns}
-            
-            # include_details 已从Schema移除，固定获取索引信息
-            if connection_type in ("mysql", "postgresql"):
-                from sqlalchemy import text as sa_text2
-                idx_result = conn.execute(
-                    sa_text2("SELECT index_name, non_unique FROM information_schema.statistics WHERE table_name = :table_name GROUP BY index_name, non_unique"),
-                    {"table_name": table_name}
-                )
-                indexes = []
-                for idx in idx_result.fetchall():
-                    indexes.append({"name": idx[0], "unique": not bool(idx[1])})
-                table_info["indexes"] = indexes
-            else:
-                cursor.execute(f"PRAGMA index_list('{table_name}')")
-                indexes = []
-                for idx in cursor.fetchall():
-                    indexes.append({"name": idx[1], "unique": bool(idx[2])})
-                table_info["indexes"] = indexes
-            
-            schema_info.append(table_info)
-        
-        _close_connection(conn, engine)
-        
-        # output_format 已从Schema移除，固定使用markdown格式
+        for t in tables:
+            columns = _get_columns(conn, connection_type, t)
+            indexes = _get_indexes(conn, connection_type, t)
+            schema_info.append({"name": t, "columns": columns, "indexes": indexes})
+
         md = f"## 数据库结构 (共 {len(schema_info)} 个表)\n\n"
         for table in schema_info:
-            md += f"### {table['name']}\n\n"
-            md += "| 字段名 | 类型 | 可空 | 主键 | 默认值 |\n"
-            md += "|--------|------|------|------|--------|\n"
-            for col in table["columns"]:
-                md += f"| {col['name']} | {col['type']} | {'否' if col.get('nullable') else '是'} | {'是' if col.get('pk') else '否'} | {col.get('default') or '-'} |\n"
+            md += f"### {table['name']}\n\n|字段名|类型|可空|主键|默认值|\n|--------|------|------|------|--------|\n"
+            for c in table["columns"]:
+                md += f"|{c['name']}|{c['type']}|{'否' if c.get('nullable') else '是'}|{'是' if c.get('pk') else '否'}|{c.get('default') or '-'}|\n"
             md += "\n"
-        
-        return build_success(
-            {"tables": schema_info, "total": len(schema_info), "markdown": md},
-            f"获取成功，共 {len(schema_info)} 个表",
-            next_actions=build_next_actions([
-                ("query_sql", "查询表数据", "需要查看数据时"),
-            ])
-        )
-            
+
+        return build_success({"tables": schema_info, "total": len(schema_info), "markdown": md},
+                              f"获取成功，共 {len(schema_info)} 个表",
+                              next_actions=build_next_actions([("query_sql", "查询表数据", "需要查看数据时")]))
+
     except sqlite3.Error as e:
-        return build_error("ERR_SQL_EXEC", f"获取数据库结构失败: {str(e)}")
+        return build_error("ERR_SQL_EXEC", f"SQLite错误: {e}")
     except Exception as e:
-        return build_error("ERR_SCHEMA_FAILED", f"执行失败: {str(e)}")
+        return build_error("ERR_SCHEMA_FAILED", f"执行失败: {e}")
     finally:
         _close_connection(conn, engine)
 

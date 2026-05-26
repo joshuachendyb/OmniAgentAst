@@ -16,7 +16,10 @@ import sqlite3
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
-from app.models.file_operations import SessionRecord, OperationStatus
+# 【小沈重构 2026-05-22】数据库配置迁移至 app/db/
+from app.db.models.operation_models import SessionRecord
+from app.db.models.operation_enums import OperationStatus
+from app.db.operations_db import get_connection as get_operations_connection
 from app.utils.logger import logger
 from app.services.agent.session_base import SessionServiceBase, SessionStatsMixin
 from app.services.intents.definitions.file.file_stats import FileSessionStats
@@ -36,27 +39,19 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
     """
     
     def __init__(self):
-        from app.services.safety.file.file_safety import FileSafetyConfig
-        self.config = FileSafetyConfig()
-        self._init_db()
+        # 【小沈重构 2026-05-22】数据库初始化已由 app.db.operations_db 模块级处理
+        # 不再需要 FileSafetyConfig 和 _init_db
+        pass
     
     def _init_db(self):
-        """初始化数据库（建表已移至file_safety.py，此处不再重复）"""
-        # 建表已由 FileSafetyService._init_db() 统一处理
-        # 此处只做连接测试
-        conn = None
-        try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT 1")  # 测试连接
-            conn.commit()
-        finally:
-            if conn:
-                conn.close()
+        """初始化数据库（建表已由app.db.operations_db模块级处理）"""
+        # 建表已由 app.db.operations_db 模块级 init_database() 统一处理
+        # 此处无需任何操作
+        pass
     
     def _get_connection(self) -> sqlite3.Connection:
         """获取数据库连接"""
-        return sqlite3.connect(str(self.config.DB_PATH))
+        return get_operations_connection()
     
     def create_task(self, agent_id: str, task_description: str) -> str:
         """
@@ -69,7 +64,7 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
         Returns:
             task_id: 任务唯一标识符
         """
-        task_id = f"task-{self._generate_task_id()}"
+        task_id = self._generate_task_id()
         
         conn = None
         try:

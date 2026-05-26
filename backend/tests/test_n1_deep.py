@@ -28,7 +28,7 @@ async def test_post_json():
 async def test_invalid_url():
     """N1-003: 无效URL被拒绝"""
     result = await http_request(url="not-a-valid-url")
-    assert result["code"] == "ERR_NETWORK_INVALID_URL"
+    assert result["code"] == "ERR_INVALID_URL"
 
 
 @pytest.mark.asyncio

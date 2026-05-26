@@ -240,53 +240,6 @@ def setup_monitoring(app) -> MetricsCollector:
     return _collector
 
 
-def record_request(method: str, path: str, status_code: int, duration: float, 
-                  request_size: int = 0, response_size: int = 0):
-    """
-    记录HTTP请求指标（供外部调用）
-    
-    Args:
-        method: HTTP方法
-        path: 请求路径
-        status_code: 状态码
-        duration: 请求持续时间（秒）
-        request_size: 请求大小（字节）
-        response_size: 响应大小（字节）
-    """
-    _collector.record_metric(
-        name="http_requests_total",
-        value=1,
-        labels={"method": method, "path": path, "status": str(status_code)}
-    )
-    
-    _collector.record_metric(
-        name="http_request_duration_seconds",
-        value=duration,
-        labels={"method": method, "path": path}
-    )
-    
-    if request_size > 0:
-        _collector.record_metric(
-            name="http_request_size_bytes",
-            value=request_size,
-            labels={"method": method, "path": path}
-        )
-    
-    if response_size > 0:
-        _collector.record_metric(
-            name="http_response_size_bytes",
-            value=response_size,
-            labels={"method": method, "path": path}
-        )
-    
-    if status_code >= 400:
-        _collector.record_metric(
-            name="errors_total",
-            value=1,
-            labels={"method": method, "path": path, "status": str(status_code)}
-        )
-
-
 def record_error(error_type: str, message: str = "", labels: Optional[Dict[str, str]] = None):
     """
     记录错误指标
@@ -344,7 +297,6 @@ def reset_metrics():
 # 导出公共接口
 __all__ = [
     "setup_monitoring",
-    "record_request",
     "record_error",
     "get_metrics_summary",
     "get_raw_metrics",

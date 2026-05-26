@@ -63,7 +63,7 @@ import re
 import asyncio
 import threading
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 import yaml
 
@@ -134,194 +134,103 @@ class AIServiceFactory:
                 break
         return fallback_provider, fallback_model
     
-    @classmethod
-    def validate_config(cls, config_path: Optional[str] = None) -> ConfigValidationResult:
-        """
-        完整配置验证
-        
-        验证项：
-        1. 配置文件是否存在
-        2. ai 配置块是否存在
-        3. provider 字段是否存在
-        4. provider 配置是否存在
-        5. api_key 是否存在
-        6. model 是否存在
-        7. api_base 是否存在
-        
-        Returns:
-            ConfigValidationResult: 包含成功状态、错误列表、警告列表
-        """
+    @staticmethod
+    def _make_validation_error(message: str, field: str = "",
+                               provider: str = "", model: str = "",
+                               errors: Optional[list] = None,
+                               warnings: Optional[list] = None) -> "ConfigValidationResult":
+        """构造验证错误结果，消除9次ConfigValidationResult样板 - 小健 2026-05-25"""
+        return ConfigValidationResult(
+            success=False, provider=provider, model=model, message=message,
+            errors=errors or ([{"field": field, "message": message}] if field else []),
+            warnings=warnings or [])
+
+    @staticmethod
+    def _validate_credentials(ai_config: dict, final_provider: str) -> Tuple[list, list]:
+        """验证凭据(api_key/api_base)，返回(errors, warnings) - 小健 2026-05-25"""
         errors = []
         warnings = []
-        provider = "unknown"
-        model = ""
-        
-        # 1. 检查配置文件是否存在
-        actual_path = cls.get_config_path(config_path)
-        if not os.path.exists(actual_path):
-            errors.append(f"配置文件不存在: {actual_path}")
-            return ConfigValidationResult(
-                success=False,
-                provider=provider,
-                model=model,
-                message="配置文件不存在",
-                errors=errors,
-                warnings=warnings
-            )
-        
-        # 2. 加载配置
-        try:
-            config = get_config().raw_config
-        except Exception as e:
-            errors.append(f"配置文件加载失败: {str(e)}")
-            return ConfigValidationResult(
-                success=False,
-                provider=provider,
-                model=model,
-                message="配置文件加载失败",
-                errors=errors,
-                warnings=warnings
-            )
-        
-        # 3. 检查 ai 配置块
-        ai_config = config.get("ai")
-        if not ai_config:
-            errors.append("配置文件缺少 'ai' 配置块")
-            return ConfigValidationResult(
-                success=False,
-                provider=provider,
-                model=model,
-                message="缺少 ai 配置块",
-                errors=errors,
-                warnings=warnings
-            )
-        
-        if not isinstance(ai_config, dict):
-            errors.append("'ai' 配置块格式错误，应为字典类型")
-            return ConfigValidationResult(
-                success=False,
-                provider=provider,
-                model=model,
-                message="ai 配置块格式错误",
-                errors=errors,
-                warnings=warnings
-            )
-        
-        # ====================================================================
-        # 【统一Fallback逻辑 - 必须遵守！】
-        # 先找第一个有models的provider作为fallback（动态遍历，不是硬编码！）
-        fallback_provider, fallback_model = cls._get_fallback_provider_and_model(ai_config)
-        
-        # 如果没有找到任何provider，保持空值
-        # 不再硬编码默认provider，让配置文件完全控制
-        # ====================================================================
-        
-        # 4. 检查 provider 字段是否存在
-        selected_provider = ai_config.get("provider")
-        if not selected_provider:
-            errors.append("ai.provider 字段为空，请在配置文件中设置 ai.provider")
-            return ConfigValidationResult(
-                success=False,
-                provider=fallback_provider if fallback_provider else "unknown",
-                model=fallback_model,
-                message="ai.provider 未设置",
-                errors=errors,
-                warnings=warnings
-            )
-        
-        # 5. 检查 model 字段是否存在
-        selected_model = ai_config.get("model")
-        if not selected_model:
-            errors.append("ai.model 字段为空，请在配置文件中设置 ai.model")
-            return ConfigValidationResult(
-                success=False,
-                provider=selected_provider,
-                model="",
-                message="ai.model 未设置",
-                errors=errors,
-                warnings=warnings
-            )
-        
-        # 6. 检查 provider 配置块是否存在
-        selected_provider_config = ai_config.get(selected_provider)
-        if not selected_provider_config:
-            errors.append(f"ai.{selected_provider} 配置块不存在，请在配置文件中添加 ai.{selected_provider} 配置块")
-            return ConfigValidationResult(
-                success=False,
-                provider=selected_provider,
-                model=selected_model,
-                message=f"ai.{selected_provider} 配置块不存在",
-                errors=errors,
-                warnings=warnings
-            )
-        
-        # 7. 检查 provider 配置块格式是否正确
-        if not isinstance(selected_provider_config, dict):
-            errors.append(f"ai.{selected_provider} 配置格式错误，应该是字典类型（当前是 {type(selected_provider_config).__name__} 类型）")
-            return ConfigValidationResult(
-                success=False,
-                provider=selected_provider,
-                model=selected_model,
-                message=f"ai.{selected_provider} 配置格式错误",
-                errors=errors,
-                warnings=warnings
-            )
-        
-        # 8. 检查 model 是否在 provider 的 models 列表中
-        provider_models = selected_provider_config.get("models", [])
-        if selected_model not in provider_models:
-            available_models = ", ".join(provider_models) if provider_models else "（空）"
-            errors.append(f"model '{selected_model}' 不在 ai.{selected_provider}.models 列表中。可用的 model: {available_models}")
-            return ConfigValidationResult(
-                success=False,
-                provider=selected_provider,
-                model=selected_model,
-                message=f"model '{selected_model}' 无效",
-                errors=errors,
-                warnings=warnings
-            )
-        
-        # 9. 确定最终使用的 provider 和 model（都验证通过了，就用选择的）
-        final_provider = selected_provider
-        final_model = selected_model
-        
-        # api_key
+        selected_provider_config = ai_config.get(final_provider, {})
         api_key = selected_provider_config.get("api_key")
         if not api_key:
             errors.append(f"provider '{final_provider}' 缺少 api_key 配置")
         elif not isinstance(api_key, str) or api_key.strip() == "":
             errors.append(f"provider '{final_provider}' 的 api_key 为空")
-        
-        # 不再检查provider下的model，因为已经没有这个字段了
-        
-        # api_base
         api_base = selected_provider_config.get("api_base")
         if not api_base:
             warnings.append(f"provider '{final_provider}' 未配置 api_base，将使用默认值")
-        
-        # 10. 构建结果
+        return errors, warnings
+
+    @classmethod
+    def validate_config(cls, config_path: Optional[str] = None) -> ConfigValidationResult:
+        """完整配置验证 - 小健 2026-05-25 重构为数据驱动步骤"""
+        errors: list = []
+        warnings: list = []
+        provider = "unknown"
+        model = ""
+
+        actual_path = cls.get_config_path(config_path)
+        if not os.path.exists(actual_path):
+            return cls._make_validation_error("配置文件不存在", errors=[f"配置文件不存在: {actual_path}"])
+
+        try:
+            config = get_config().raw_config
+        except Exception as e:
+            return cls._make_validation_error("配置文件加载失败", errors=[f"配置文件加载失败: {str(e)}"])
+
+        ai_config = config.get("ai")
+        if not ai_config:
+            return cls._make_validation_error("缺少 ai 配置块", errors=["配置文件缺少 'ai' 配置块"])
+        if not isinstance(ai_config, dict):
+            return cls._make_validation_error("ai 配置块格式错误", errors=["'ai' 配置块格式错误，应为字典类型"])
+
+        fallback_provider, fallback_model = cls._get_fallback_provider_and_model(ai_config)
+
+        selected_provider = ai_config.get("provider")
+        if not selected_provider:
+            return cls._make_validation_error("ai.provider 未设置", provider=fallback_provider or "unknown",
+                                               model=fallback_model, errors=["ai.provider 字段为空，请在配置文件中设置 ai.provider"])
+
+        selected_model = ai_config.get("model")
+        if not selected_model:
+            return cls._make_validation_error("ai.model 未设置", provider=selected_provider,
+                                               errors=["ai.model 字段为空，请在配置文件中设置 ai.model"])
+
+        selected_provider_config = ai_config.get(selected_provider)
+        if not selected_provider_config:
+            return cls._make_validation_error(f"ai.{selected_provider} 配置块不存在", provider=selected_provider,
+                                               model=selected_model,
+                                               errors=[f"ai.{selected_provider} 配置块不存在，请在配置文件中添加"])
+
+        if not isinstance(selected_provider_config, dict):
+            return cls._make_validation_error(f"ai.{selected_provider} 配置格式错误", provider=selected_provider,
+                                               model=selected_model,
+                                               errors=[f"ai.{selected_provider} 配置格式错误，应该是字典类型"])
+
+        provider_models = selected_provider_config.get("models", [])
+        if selected_model not in provider_models:
+            available = ", ".join(provider_models) if provider_models else "（空）"
+            return cls._make_validation_error(f"model '{selected_model}' 无效", provider=selected_provider,
+                                               model=selected_model,
+                                               errors=[f"model '{selected_model}' 不在 ai.{selected_provider}.models 列表中。可用的 model: {available}"])
+
+        final_provider = selected_provider
+        final_model = selected_model
+
+        cred_errors, cred_warnings = cls._validate_credentials(ai_config, final_provider)
+        errors.extend(cred_errors)
+        warnings.extend(cred_warnings)
+
         if errors:
-            return ConfigValidationResult(
-                success=False,
-                provider=final_provider,
-                model=final_model,
-                message=f"配置验证失败: {len(errors)} 个错误",
-                errors=errors,
-                warnings=warnings
-            )
-        
+            return cls._make_validation_error(f"配置验证失败: {len(errors)} 个错误",
+                                               provider=final_provider, model=final_model,
+                                               errors=errors, warnings=warnings)
+
         message = f"配置验证通过: provider={final_provider}, model={final_model}"
         if warnings:
             message += f" ({len(warnings)} 个警告)"
-        
-        return ConfigValidationResult(
-            success=True,
-            provider=final_provider,
-            model=final_model,
-            message=message,
-            errors=errors,
-            warnings=warnings
-        )
+        return ConfigValidationResult(success=True, provider=final_provider, model=final_model,
+                                       message=message, errors=errors, warnings=warnings)
     
     @classmethod
     def get_service(cls, config_path: Optional[str] = None) -> BaseAIService:

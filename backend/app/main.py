@@ -33,20 +33,14 @@ def get_version() -> str:
         project_root = backend_dir.parent
         version_file = project_root / "version.txt"
         
-        print(f"[Version] current_file: {current_file}")
-        print(f"[Version] backend_dir: {backend_dir}")
-        print(f"[Version] project_root: {project_root}")
-        print(f"[Version] version_file: {version_file}")
-        print(f"[Version] version_file exists: {version_file.exists()}")
-        
         if version_file.exists():
             with open(version_file, 'r', encoding='utf-8') as f:
                 version = f.readline().strip()
             print(f"[Version] read version: {version}")
             return version.lstrip('v')
     except Exception as e:
-        print(f"[Version] Failed to read version.txt: {e}")
-    return "0.4.14"
+        pass
+    return "0.13.36"
 
 app_version = get_version()
 
@@ -56,12 +50,18 @@ app = FastAPI(
     version=app_version
 )
 
-print("OmniAgentAst Backend v" + app_version + " started")
+logger.info("Backend v" + app_version + " started")
 
 # CORS配置 - 显式指定前端源，避免通配符与credentials冲突
+import os
+from app.constants import DEFAULT_CORS_ORIGINS
+
+_cors_origins_str = os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS)
+_cors_origins = [origin.strip() for origin in _cors_origins_str.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -168,6 +168,6 @@ async def shutdown_event():
 async def root():
     return {
         "message": "OmniAgentAst API",
-        "version": "0.2.2",
+        "version": app_version,
         "docs": "/docs"
     }

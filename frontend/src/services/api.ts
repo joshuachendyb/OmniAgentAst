@@ -485,11 +485,11 @@ export const configApi = {
 
   /**
    * 读取配置文件原文内容
-   * @author 小新
-   * @update 2026-03-04 新增
-   * @deprecated 后端已删除 GET /config/read
    */
-  // readConfigFile 已删除
+  readConfigFile: async (): Promise<{ config_content: string }> => {
+    const response = await api.get<{ config_content: string }>("/config/read");
+    return response.data;
+  },
 };
 
 // ============================================

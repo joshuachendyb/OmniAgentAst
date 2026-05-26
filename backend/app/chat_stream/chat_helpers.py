@@ -37,22 +37,6 @@ def create_step_counter() -> Callable[[], int]:
     return next_step
 
 
-def get_provider_display_name(provider: str) -> str:
-    """
-    直接返回provider名称，不做任何映射转换
-    只验证provider是否在配置文件中存在
-    """
-    from app.config import get_config
-    config = get_config()
-    ai_config = config.get('ai', {})
-    
-    # 如果provider在配置文件中存在，直接返回原始名称
-    if provider in ai_config:
-        return provider
-    else:
-        return provider
-
-
 def create_final_response(
     content: str,
     step: Optional[int] = None,

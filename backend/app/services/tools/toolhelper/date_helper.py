@@ -17,12 +17,19 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Tuple
 
+# 清明年份查表（2024-2035）
+QINGMING_DATES = {
+    2024: (4, 4), 2025: (4, 4), 2026: (4, 5),
+    2027: (4, 5), 2028: (4, 4), 2029: (4, 5), 2030: (4, 5),
+    2031: (4, 5), 2032: (4, 4), 2033: (4, 4), 2034: (4, 5), 2035: (4, 5),
+}
+
 
 def parse_datetime_any(value: Any) -> Optional[datetime]:
     """通用时间解析：支持datetime/int/float/str → datetime（带时区）"""
     try:
         if isinstance(value, datetime):
-            return value.astimezone() if value.tzinfo else value.astimezone()
+            return value.astimezone()
         elif isinstance(value, (int, float)):
             return datetime.fromtimestamp(value, tz=timezone.utc).astimezone()
         elif isinstance(value, str):
@@ -94,9 +101,16 @@ def parse_datetime_string(date_str: str) -> Optional[datetime]:
 
 
 def is_holiday(date_obj) -> Tuple[bool, Optional[str]]:
-    """判断日期是否为假日，返回(是否假日, 节日名称)
+    """判断日期是否为假日，返回(是否假日, 节日名称) — 小健 2026-05-25 重构拆分
 
-    支持14个公历节日 + 9个农历节日 + 清明节查表（2024-2035）
+    使用场景:
+        time_tools中判断工作日/节假日
+
+    使用示例:
+        is_holiday, name = is_holiday(datetime(2024, 1, 1))
+
+    返回数据说明:
+        - 返回Tuple[bool, Optional[str]]，(True, "元旦")表示是节假日
     """
     try:
         dt = date_obj if hasattr(date_obj, 'month') else None
@@ -104,61 +118,77 @@ def is_holiday(date_obj) -> Tuple[bool, Optional[str]]:
             return (False, None)
 
         month_day = (dt.month, dt.day)
-        year = dt.year
 
-        solar_holidays = {
-            (1, 1): "元旦",
-            (2, 14): "情人节",
-            (3, 8): "妇女节",
-            (3, 12): "植树节",
-            (4, 1): "愚人节",
-            (5, 1): "劳动节",
-            (5, 4): "青年节",
-            (6, 1): "儿童节",
-            (7, 1): "建党节",
-            (8, 1): "建军节",
-            (9, 10): "教师节",
-            (10, 1): "国庆节",
-            (12, 24): "平安夜",
-            (12, 25): "圣诞节",
-        }
+        holiday = _is_solar_holiday(month_day, dt.year)
+        if holiday:
+            return (True, holiday)
 
-        qingming_dates = {
-            2024: (4, 4), 2025: (4, 4), 2026: (4, 5),
-            2027: (4, 5), 2028: (4, 4), 2029: (4, 5), 2030: (4, 5),
-            2031: (4, 5), 2032: (4, 4), 2033: (4, 4), 2034: (4, 5), 2035: (4, 5),
-        }
-        qingming = qingming_dates.get(year, (4, 5))
-
-        if month_day in solar_holidays:
-            return (True, solar_holidays[month_day])
-        if month_day == qingming:
-            return (True, "清明节")
-
-        try:
-            from lunarcalendar import Converter
-            solar_date = dt.date() if hasattr(dt, 'date') else dt
-            lunar = Converter.Solar2Lunar(solar_date)
-            lunar_month_day = (lunar.month, lunar.day)
-            lunar_holidays = {
-                (1, 1): "春节（农历正月初一）",
-                (1, 15): "元宵节（农历正月十五）",
-                (5, 5): "端午节（农历五月初五）",
-                (7, 7): "七夕节（农历七月初七）",
-                (7, 15): "中元节（农历七月十五）",
-                (8, 15): "中秋节（农历八月十五）",
-                (9, 9): "重阳节（农历九月初九）",
-                (12, 8): "腊八节（农历十二月初八）",
-                (12, 30): "除夕（农历十二月三十）",
-            }
-            if lunar_month_day in lunar_holidays:
-                return (True, lunar_holidays[lunar_month_day])
-        except Exception:
-            pass
+        holiday = _is_lunar_holiday(dt)
+        if holiday:
+            return (True, holiday)
 
         return (False, None)
     except Exception:
         return (False, None)
+
+
+def _is_solar_holiday(month_day: Tuple[int, int], year: int) -> Optional[str]:
+    """判断公历假日 — 小健 2026-05-25 重构拆分
+
+    使用场景:
+        is_holiday中判断公历节日（含清明节）
+
+    使用示例:
+        holiday = _is_solar_holiday((1, 1), 2024)
+
+    返回数据说明:
+        - 返回Optional[str]，节日名称或None
+    """
+    solar_holidays = {
+        (1, 1): "元旦", (2, 14): "情人节", (3, 8): "妇女节",
+        (3, 12): "植树节", (4, 1): "愚人节", (5, 1): "劳动节",
+        (5, 4): "青年节", (6, 1): "儿童节", (7, 1): "建党节",
+        (8, 1): "建军节", (9, 10): "教师节", (10, 1): "国庆节",
+        (12, 24): "平安夜", (12, 25): "圣诞节",
+    }
+
+    if month_day in solar_holidays:
+        return solar_holidays[month_day]
+
+    qingming = QINGMING_DATES.get(year, (4, 5))
+    if month_day == qingming:
+        return "清明节"
+
+    return None
+
+
+def _is_lunar_holiday(date_obj) -> Optional[str]:
+    """判断农历假日 — 小健 2026-05-25 重构拆分
+
+    使用场景:
+        is_holiday中判断农历节日
+
+    使用示例:
+        holiday = _is_lunar_holiday(datetime(2024, 2, 10))
+
+    返回数据说明:
+        - 返回Optional[str]，节日名称或None
+    """
+    try:
+        from lunarcalendar import Converter
+        solar_date = date_obj.date() if hasattr(date_obj, 'date') else date_obj
+        lunar = Converter.Solar2Lunar(solar_date)
+        lunar_month_day = (lunar.month, lunar.day)
+        lunar_holidays = {
+            (1, 1): "春节（农历正月初一）", (1, 15): "元宵节（农历正月十五）",
+            (5, 5): "端午节（农历五月初五）", (7, 7): "七夕节（农历七月初七）",
+            (7, 15): "中元节（农历七月十五）", (8, 15): "中秋节（农历八月十五）",
+            (9, 9): "重阳节（农历九月初九）", (12, 8): "腊八节（农历十二月初八）",
+            (12, 30): "除夕（农历十二月三十）",
+        }
+        return lunar_holidays.get(lunar_month_day)
+    except Exception:
+        return None
 
 
 def calc_next_n_workday(start_date, n: int) -> list:

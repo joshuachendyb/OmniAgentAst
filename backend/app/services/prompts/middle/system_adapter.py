@@ -8,6 +8,7 @@
 作者: 小沈
 版本: v1.0
 """
+import functools
 import platform
 from typing import Dict, Any
 from app.utils.logger import logger
@@ -174,6 +175,7 @@ class SystemAdapter:
         }
 
 
+@functools.lru_cache(maxsize=1)
 def get_system_adapter() -> SystemAdapter:
     """获取系统适配器实例（单例）"""
     return SystemAdapter()

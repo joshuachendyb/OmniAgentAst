@@ -4,15 +4,35 @@
 """
 from datetime import datetime, timedelta
 from pathlib import Path
+import json
 from typing import List, Optional, Dict, Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.models.file_operations import OperationRecord, OperationType, OperationStatus
+# 【小沈重构 2026-05-22】数据库配置迁移至 app/db/
+from app.db.models.operation_models import OperationRecord
+from app.db.models.operation_enums import OperationType, OperationStatus
 from app.utils.visualization import get_visualizer
 from app.utils.logger import logger
 
 router = APIRouter()
+
+
+# 【小沈重构 2026-05-25】25.1节：提取报告格式分发handlers，消除4格式8次ReportResponse重复
+_FORMAT_HANDLERS = {
+    "txt": lambda v, sid, td: (v.generate_text_report(sid, td), None, None),
+    "json": lambda v, sid, td: (
+        v.generate_json_report(sid, td),
+        lambda c: json.loads(c) if c else None,
+        None,
+    ),
+    "html": lambda v, sid, td: (v.generate_html_report(sid, td), None, None),
+    "mmd": lambda v, sid, td: (
+        v.generate_mermaid_report(sid),
+        None,
+        lambda rp: Path(rp).read_text(encoding="utf-8") if rp and Path(rp).exists() else None,
+    ),
+}
 
 
 def _get_safety():
@@ -90,6 +110,21 @@ class ReportResponse(BaseModel):
     data: Optional[Dict[str, Any]] = Field(None, description="报告数据（JSON格式）")
     download_url: Optional[str] = Field(None, description="下载链接（HTML格式）")
     message: Optional[str] = Field(None, description="消息")
+
+
+def _make_report_response(
+    success: bool, format: str, content: Any = None,
+    data: Any = None, message: str = ""
+) -> ReportResponse:
+    """【小沈重构 2026-05-25】25.1节：统一构造ReportResponse，消除8次重复构造"""
+    return ReportResponse(
+        success=success, format=format,
+        content=content, data=data,
+        message=message or (
+            f"{format.upper()} report generated successfully" if success
+            else f"Failed to generate {format.upper()} report"
+        ),
+    )
 
 
 class RollbackRequest(BaseModel):
@@ -442,13 +477,12 @@ async def generate_report(
     format: Literal["txt", "json", "html", "mmd"] = Query("json", description="报告格式"),
     task_description: str = Query(..., description="任务描述（用户消息）")  # 【小沈修改 2026-03-25】新增参数
 ) -> ReportResponse:
-    """
-    生成操作报告
-    
+    """生成操作报告【小沈重构 2026-05-25】25.1节：骨架~25行，消除4格式if-elif重复
+
     【小沈修改 2026-03-25】
     - 去掉 file_operation_sessions 表的依赖
     - 新增 task_description 参数
-    
+
     - **session_id**: 会话ID
     - **format**: 报告格式
         - txt: 文本报告
@@ -456,89 +490,32 @@ async def generate_report(
         - html: HTML可视化报告（独立文件）
         - mmd: Mermaid流程图
     - **task_description**: 任务描述（用户消息）
-    
+
     返回报告内容或下载链接
     """
     try:
-        visualizer = get_visualizer()
-        
-        if format == "txt":
-            # 【小沈修改 2026-03-25】传递 task_description
-            content = visualizer.generate_text_report(session_id, task_description)
-            if content:
-                return ReportResponse(
-                    success=True,
-                    format="txt",
-                    content=content,
-                    message="Text report generated successfully"
-                )
-            else:
-                return ReportResponse(
-                    success=False,
-                    format="txt",
-                    message="Failed to generate text report"
-                )
-        
-        elif format == "json":
-            # 【小沈修改 2026-03-25】传递 task_description
-            content = visualizer.generate_json_report(session_id, task_description)
-            if content:
-                import json
-                try:
-                    data = json.loads(content)
-                except json.JSONDecodeError:
-                    data = {"raw_content": content}
-                return ReportResponse(
-                    success=True,
-                    format="json",
-                    data=data,
-                    message="JSON report generated successfully"
-                )
-            else:
-                return ReportResponse(
-                    success=False,
-                    format="json",
-                    message="Failed to generate JSON report"
-                )
-        
-        elif format == "html":
-            # 【小沈修改 2026-03-25】传递 task_description
-            content = visualizer.generate_html_report(session_id, task_description)
-            if content:
-                return ReportResponse(
-                    success=True,
-                    format="html",
-                    content=content,
-                    message="HTML report generated successfully"
-                )
-            else:
-                return ReportResponse(
-                    success=False,
-                    format="html",
-                    message="Failed to generate HTML report"
-                )
-        
-        elif format == "mmd":
-            # Mermaid报告不需要 task_description
-            report_path = visualizer.generate_mermaid_report(session_id)
-            if report_path and Path(report_path).exists():
-                content = Path(report_path).read_text(encoding="utf-8")
-                return ReportResponse(
-                    success=True,
-                    format="mmd",
-                    content=content,
-                    message="Mermaid diagram generated successfully"
-                )
-            else:
-                return ReportResponse(
-                    success=False,
-                    format="mmd",
-                    message="Failed to generate Mermaid diagram"
-                )
-        
-        else:
+        if format not in _FORMAT_HANDLERS:
             raise HTTPException(status_code=400, detail=f"Unsupported format: {format}")
-        
+
+        visualizer = get_visualizer()
+        handler = _FORMAT_HANDLERS[format]
+        content, parse_data_fn, read_path_fn = handler(visualizer, session_id, task_description)
+
+        if parse_data_fn:
+            data = parse_data_fn(content)
+        else:
+            data = None
+
+        if read_path_fn:
+            content = read_path_fn(content)
+
+        if content or data:
+            return _make_report_response(True, format, content=content, data=data)
+        else:
+            return _make_report_response(False, format)
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to generate report: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -567,7 +544,7 @@ async def rollback_operations(request: RollbackRequest):
             
             # 获取操作信息用于响应
             operations = []
-            session_id = safety.get_operation_session_id(request.operation_id) or "unknown"
+            session_id = safety.get_operation_task_id(request.operation_id) or "unknown"
             
             if success:
                 operations.append({
