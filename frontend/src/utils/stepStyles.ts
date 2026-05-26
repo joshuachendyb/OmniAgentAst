@@ -45,18 +45,18 @@ export const darkModeColors = {
 // ==================== 类型定义 ====================
 
 // 步骤类型定义
-export type StepType = 
-  | 'thought' 
-  | 'start' 
-  | 'final' 
-  | 'error' 
-  | 'interrupted' 
-  | 'paused' 
-  | 'resumed' 
+export type StepType =
+  | 'thought'
+  | 'start'
+  | 'final'
+  | 'error'
+  | 'interrupted'
+  | 'paused'
+  | 'resumed'
   | 'retrying'
-  | 'observation' 
-  | 'action_tool' 
-  | 'chunk' 
+  | 'observation'
+  | 'action_tool'
+  | 'chunk'
   | 'report'
   | 'incident';
 
@@ -68,35 +68,60 @@ export type LayoutMode = 'inline' | 'block' | 'inline-with-details';
 
 // 颜色方案接口 - 9种浅色方案精简版
 interface ColorScheme {
-  bg1: string;          // 背景色-主
-  bg2?: string;         // 背景色-次（可选）
-  border: string;       // 边框颜色
-  text: string;        // 文字颜色
-  label: string;       // 视觉标签
+  bg1: string; // 背景色-主
+  bg2?: string; // 背景色-次（可选）
+  border: string; // 边框颜色
+  text: string; // 文字颜色
+  label: string; // 视觉标签
   priority: StepPriority;
-  layout: LayoutMode;   // 分行模式
+  layout: LayoutMode; // 分行模式
 }
 
 // 字体大小规范
+// ⚠️ 警告：修改或重命名属性前，请搜索 renderers/ 目录下所有引用（如 FontSize.SM/XS/XXS 过去已被误用过），务必同步更新，否则编译报错（历史教训 2026-05-23）
 export const FontSize = {
   // 主要内容字体
-  PRIMARY: 14,          // 主标题、重要信息（final、error主要内容）
-  SECONDARY: 13,        // 普通内容（thought、start描述）
-  TERTIARY: 12,         // 辅助信息（时间戳、ID）
-  SMALL: 11,            // 微小信息（标签、徽章）
-  CAPTION: 10,          // 注释文字
-  
+  PRIMARY: 14, // 主标题、重要信息（final、error主要内容）
+  SECONDARY: 13, // 普通内容（thought、start描述）
+  TERTIARY: 12, // 辅助信息（时间戳、ID）
+  SMALL: 11, // 微小信息（标签、徽章）
+  CAPTION: 10, // 注释文字
+
   // 特殊字体
-  CODE: 12,             // 代码/路径
-  EMOJI: 14,            // 表情符号大小
+  CODE: 12, // 代码/路径
+  EMOJI: 14, // 表情符号大小
 } as const;
 
 // 字重规范
 export const FontWeight = {
-  BOLD: 600,            // 标题、重要标签
-  MEDIUM: 500,          // 次要标题
-  REGULAR: 400,         // 普通文字
-  LIGHT: 300,           // 辅助文字
+  BOLD: 600, // 标题、重要标签
+  MEDIUM: 500, // 次要标题
+  REGULAR: 400, // 普通文字
+  LIGHT: 300, // 辅助文字
+} as const;
+
+// 间距常量 - 小强 2026-05-22
+// ⚠️ 警告：修改或重命名属性前，请搜索 renderers/ 目录下所有引用，务必同步更新（历史教训 2026-05-23）
+export const Spacing = {
+  XS: 4, // 极小间距
+  SM: 6, // 小间距（标准）
+  MD: 8, // 中间距
+  LG: 12, // 大间距
+  XL: 16, // 超大间距
+} as const;
+
+// 边框宽度常量 - 小强 2026-05-22
+export const BorderWidth = {
+  THIN: 1, // 细边框
+  DEFAULT: 1, // 默认边框
+  THICK: 2, // 粗边框
+} as const;
+
+// 圆角常量 - 小强 2026-05-22
+export const Radius = {
+  SM: 4, // 小圆角
+  DEFAULT: 6, // 默认圆角
+  LG: 8, // 大圆角
 } as const;
 
 // 颜色常量 - 9种浅色方案精简版
@@ -104,27 +129,29 @@ export const FontWeight = {
 export const Colors = {
   // 文字颜色（3种浅色）
   TEXT: {
-    PRIMARY: '#595959',     // 主要文字 - 改用浅灰色（避免深色#262626）
-    SECONDARY: '#595959',   // 次要文字 - 中灰
-    TERTIARY: '#999999',    // 辅助文字 - 深灰（仍是浅色）
+    PRIMARY: '#595959', // 主要文字 - 改用浅灰色（避免深色#262626）
+    SECONDARY: '#595959', // 次要文字 - 中灰
+    TERTIARY: '#999999', // 辅助文字 - 深灰（仍是浅色）
   },
   // 背景颜色（3种浅色）
   BG: {
-    PRIMARY: '#ffffff',    // 主背景 - 白色
-    SECONDARY: '#fafafa',  // 次要背景 - 极浅灰
-    TERTIARY: '#f5f5f5',   // 第三背景 - 浅灰
+    PRIMARY: '#ffffff', // 主背景 - 白色
+    SECONDARY: '#fafafa', // 次要背景 - 极浅灰
+    TERTIARY: '#f5f5f5', // 第三背景 - 浅灰
+    LIGHT: '#fafafa', // 浅背景（别名）
   },
   // 边框颜色（3种浅色）
   BORDER: {
-    LIGHT: '#f0f0f0',    // 浅边框
-    DEFAULT: '#d9d9d9',    // 中边框
-    STRONG: '#bfbfbf',    // 深边框（仍是浅色）
+    LIGHT: '#f0f0f0', // 浅边框
+    DEFAULT: '#d9d9d9', // 中边框
+    STRONG: '#bfbfbf', // 深边框（仍是浅色）
   },
-  // 功能颜色（4种）
-  SUCCESS: '#52c41a',        // 成功状态 - 绿色
-  ERROR: '#ff4d4f',          // 错误状态 - 红色
-  WARNING: '#d97706',        // 警告/思考状态 - 橙色
-  INFO: '#096dd9',          // 信息/开始状态 - 蓝色
+  // 功能颜色（5种）
+  PRIMARY: '#1890ff', // 主色调 - 蓝色
+  SUCCESS: '#52c41a', // 成功状态 - 绿色
+  ERROR: '#ff4d4f', // 错误状态 - 红色
+  WARNING: '#d97706', // 警告/思考状态 - 橙色
+  INFO: '#096dd9', // 信息/开始状态 - 蓝色
 } as const;
 
 // ==================== 步骤配置 ====================
@@ -133,130 +160,130 @@ export const Colors = {
 const colorSchemes: Record<StepType, ColorScheme> = {
   // ===== 思考类（橙色系）=====
   thought: {
-    bg1: "#fff7e6",
-    bg2: "#fffbe6",
-    border: "#ffd591",
-    text: "#ad4e00",
-    label: "💭 思考",
-    priority: "secondary",
-    layout: "block",
+    bg1: '#fff7e6',
+    bg2: '#fffbe6',
+    border: '#ffd591',
+    text: '#ad4e00',
+    label: '💭 思考',
+    priority: 'secondary',
+    layout: 'block',
   },
   incident: {
-    bg1: "#fff7e6",
-    bg2: "#fffbe6",
-    border: "#ffd591",
-    text: "#ad4e00",
-    label: "🔧 处理中",
-    priority: "secondary",
-    layout: "block",
+    bg1: '#fff7e6',
+    bg2: '#fffbe6',
+    border: '#ffd591',
+    text: '#ad4e00',
+    label: '🔧 处理中',
+    priority: 'secondary',
+    layout: 'block',
   },
   interrupted: {
-    bg1: "#fff2e8",
-    bg2: "#fff",
-    border: "#ffbb96",
-    text: "#d4380d",
-    label: "⚠️ 中断",
-    priority: "primary",
-    layout: "block",
+    bg1: '#fff2e8',
+    bg2: '#fff',
+    border: '#ffbb96',
+    text: '#d4380d',
+    label: '⚠️ 中断',
+    priority: 'primary',
+    layout: 'block',
   },
 
   // ===== 基础类（灰色系）=====
   start: {
-    bg1: "#fafafa",
-    bg2: "#f5f5f5",
-    border: "#d9d9d9",
-    text: "#595959",
-    label: "🚀 开始",
-    priority: "primary",
-    layout: "inline-with-details",
+    bg1: '#fafafa',
+    bg2: '#f5f5f5',
+    border: '#d9d9d9',
+    text: '#595959',
+    label: '🚀 开始',
+    priority: 'primary',
+    layout: 'inline-with-details',
   },
   retrying: {
-    bg1: "#f5f5f5",
-    bg2: "#f0f0f0",
-    border: "#d9d9d9",
-    text: "#595959",
-    label: "🔄 重试",
-    priority: "secondary",
-    layout: "inline",
+    bg1: '#f5f5f5',
+    bg2: '#f0f0f0',
+    border: '#d9d9d9',
+    text: '#595959',
+    label: '🔄 重试',
+    priority: 'secondary',
+    layout: 'inline',
   },
   action_tool: {
-    bg1: "#f5f5f5",
-    bg2: "#fafafa",
-    border: "#d9d9d9",
-    text: "#595959",
-    label: "⚙️ 执行",
-    priority: "primary",
-    layout: "inline-with-details",
+    bg1: '#f5f5f5',
+    bg2: '#fafafa',
+    border: '#d9d9d9',
+    text: '#595959',
+    label: '⚙️ 执行',
+    priority: 'primary',
+    layout: 'inline-with-details',
   },
 
   // ===== 完成类（绿色系）=====
   final: {
-    bg1: "#f6ffed",
-    border: "#b7eb8f",
-    text: "#52c41a",
-    label: "✅ 完成",
-    priority: "primary",
-    layout: "block",
+    bg1: '#f6ffed',
+    border: '#b7eb8f',
+    text: '#52c41a',
+    label: '✅ 完成',
+    priority: 'primary',
+    layout: 'block',
   },
   resumed: {
-    bg1: "#f6ffed",
-    bg2: "#f5f5f5",
-    border: "#b7eb8f",
-    text: "#389e0d",
-    label: "▶️ 恢复",
-    priority: "secondary",
-    layout: "inline",
+    bg1: '#f6ffed',
+    bg2: '#f5f5f5',
+    border: '#b7eb8f',
+    text: '#389e0d',
+    label: '▶️ 恢复',
+    priority: 'secondary',
+    layout: 'inline',
   },
   observation: {
-    bg1: "#f6ffed",
-    bg2: "#f5fff5",
-    border: "#b7eb8f",
-    text: "#389e0d",
-    label: "📋 观察",
-    priority: "secondary",
-    layout: "inline-with-details",
+    bg1: '#f6ffed',
+    bg2: '#f5fff5',
+    border: '#b7eb8f',
+    text: '#389e0d',
+    label: '📋 观察',
+    priority: 'secondary',
+    layout: 'inline-with-details',
   },
   report: {
-    bg1: "#f6ffed",
-    bg2: "#f5f5f5",
-    border: "#b7eb8f",
-    text: "#389e0d",
-    label: "📊 报告",
-    priority: "secondary",
-    layout: "inline-with-details",
+    bg1: '#f6ffed',
+    bg2: '#f5f5f5',
+    border: '#b7eb8f',
+    text: '#389e0d',
+    label: '📊 报告',
+    priority: 'secondary',
+    layout: 'inline-with-details',
   },
 
   // ===== 错误类（红色系）=====
   error: {
-    bg1: "#fff1f0",
-    bg2: "#fff",
-    border: "#ffa39e",
-    text: "#cf1322",
-    label: "❌ 错误",
-    priority: "primary",
-    layout: "block",  // 错误信息需要醒目显示
+    bg1: '#fff1f0',
+    bg2: '#fff',
+    border: '#ffa39e',
+    text: '#cf1322',
+    label: '❌ 错误',
+    priority: 'primary',
+    layout: 'block', // 错误信息需要醒目显示
   },
 
   // ===== 暂停类（灰色系）- 表示暂停和等待 =====
   paused: {
-    bg1: "#fafafa",
-    bg2: "#f5f5f5",
-    border: "#d9d9d9",
-    text: "#595959",
-    label: "⏸️ 暂停",
-    priority: "secondary",
-    layout: "inline",  // 暂停信息简短，一行显示
+    bg1: '#fafafa',
+    bg2: '#f5f5f5',
+    border: '#d9d9d9',
+    text: '#595959',
+    label: '⏸️ 暂停',
+    priority: 'secondary',
+    layout: 'inline', // 暂停信息简短，一行显示
   },
 
   // ===== 内容类（紫色系）- 表示内容片段 =====
   chunk: {
-    bg1: "#f9f0ff",
-    bg2: "#f5f5ff",
-    border: "#d3adf7",
-    text: "#722ed1",
-    label: "📝 内容",
-    priority: "primary",
-    layout: "block",  // 内容片段需要换行显示
+    bg1: '#f9f0ff',
+    bg2: '#f5f5ff',
+    border: '#d3adf7',
+    text: '#722ed1',
+    label: '📝 内容',
+    priority: 'primary',
+    layout: 'block', // 内容片段需要换行显示
   },
 };
 
@@ -268,21 +295,26 @@ const colorSchemes: Record<StepType, ColorScheme> = {
  * @param isPrimary 是否为主信息
  * @returns CSS样式对象
  */
-export const getStepStyle = (stepType: StepType | string, isPrimary: boolean = true) => {
-  const scheme = (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) || colorSchemes.start;
-  
+export const getStepStyle = (
+  stepType: StepType | string,
+  isPrimary: boolean = true
+) => {
+  const scheme =
+    (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) ||
+    colorSchemes.start;
+
   return {
-    borderRadius: 8,
-    padding: "6px",
-    marginTop: 6,
+    borderRadius: Radius.LG,
+    padding: `${Spacing.SM}px`,
+    marginTop: Spacing.SM,
     fontSize: isPrimary ? FontSize.SECONDARY : FontSize.TERTIARY,
     lineHeight: 1.8,
     background: scheme.bg1,
-    border: `1px solid ${scheme.border}`,
+    border: `${BorderWidth.THIN}px solid ${scheme.border}`,
     color: scheme.text,
     display: 'flex' as const,
     flexDirection: 'column' as const,
-    gap: '1px',
+    gap: `${BorderWidth.THIN}px`,
   };
 };
 
@@ -292,13 +324,15 @@ export const getStepStyle = (stepType: StepType | string, isPrimary: boolean = t
  * @returns CSS样式对象
  */
 export const getStepTitleStyle = (stepType: StepType | string) => {
-  const scheme = (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) || colorSchemes.start;
-  
+  const scheme =
+    (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) ||
+    colorSchemes.start;
+
   return {
     fontWeight: FontWeight.BOLD,
     color: scheme.text,
     fontSize: FontSize.SECONDARY,
-    marginBottom: 4,
+    marginBottom: Spacing.XS,
   };
 };
 
@@ -309,11 +343,13 @@ export const getStepTitleStyle = (stepType: StepType | string) => {
  * @returns CSS样式对象
  */
 export const getStepContentStyle = (
-  stepType: StepType | string, 
+  stepType: StepType | string,
   variant: 'primary' | 'secondary' | 'detail' = 'primary'
 ) => {
-  const scheme = (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) || colorSchemes.start;
-  
+  const scheme =
+    (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) ||
+    colorSchemes.start;
+
   const variants = {
     primary: {
       fontSize: FontSize.SECONDARY,
@@ -331,7 +367,7 @@ export const getStepContentStyle = (
       fontWeight: FontWeight.LIGHT,
     },
   };
-  
+
   return variants[variant];
 };
 
@@ -341,19 +377,21 @@ export const getStepContentStyle = (
  * @returns CSS样式对象
  */
 export const getStepLabelStyle = (stepType: StepType | string) => {
-  const scheme = (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) || colorSchemes.start;
-  
+  const scheme =
+    (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) ||
+    colorSchemes.start;
+
   return {
     display: 'inline-flex' as const,
     alignItems: 'center' as const,
-    gap: 4,
-    padding: '2px 0',     // 取消背景色块后精简padding
-    borderRadius: 0,      // 取消圆角
+    gap: Spacing.XS,
+    padding: '2px 0', // 取消背景色块后精简padding
+    borderRadius: 0, // 取消圆角
     backgroundColor: 'transparent', // 无背景
     color: scheme.text,
     fontSize: FontSize.TERTIARY,
     fontWeight: FontWeight.MEDIUM,
-    boxShadow: 'none',    // 取消阴影
+    boxShadow: 'none', // 取消阴影
   };
 };
 
@@ -368,21 +406,23 @@ export const getStepBadgeStyle = (
   stepType: StepType | string,
   variant: 'default' | 'outline' = 'default'
 ) => {
-  const scheme = (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) || colorSchemes.start;
+  const scheme =
+    (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) ||
+    colorSchemes.start;
   const color = scheme.text;
-  
+
   if (variant === 'outline') {
     return {
-      padding: '4px 10px',
-      borderRadius: 6,
+      padding: `${Spacing.XS}px ${Spacing.MD}px`,
+      borderRadius: Radius.DEFAULT,
       fontSize: FontSize.TERTIARY,
       fontWeight: FontWeight.BOLD,
       color: color,
-      border: '1.5px solid ' + color,
+      border: `${BorderWidth.THIN}px solid ${color}`,
       backgroundColor: 'transparent',
     };
   }
-  
+
   // 渐变badge样式（默认改为无背景，只保留文字颜色）
   return {
     padding: '2px 0',
@@ -394,7 +434,7 @@ export const getStepBadgeStyle = (
     border: 'none',
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 4,
+    gap: Spacing.XS,
   };
 };
 
@@ -404,14 +444,16 @@ export const getStepBadgeStyle = (
  * @returns CSS样式对象
  */
 export const getStepDetailStyle = (stepType: StepType | string) => {
-  const scheme = (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) || colorSchemes.start;
-  
+  const scheme =
+    (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) ||
+    colorSchemes.start;
+
   return {
-    marginTop: 6,
-    padding: '6px 10px',
-    borderRadius: 4,
+    marginTop: Spacing.SM,
+    padding: `${Spacing.SM}px ${Spacing.MD}px`,
+    borderRadius: Radius.SM,
     backgroundColor: `${scheme.bg1}20`, // 20% opacity
-    border: `1px solid ${scheme.border}`,
+    border: `${BorderWidth.THIN}px solid ${scheme.border}`,
     fontSize: FontSize.CODE,
     fontFamily: "Consolas, Monaco, 'Courier New', monospace",
     color: Colors.TEXT.TERTIARY,
@@ -431,20 +473,20 @@ export const getStepDetailStyle = (stepType: StepType | string) => {
  */
 export const getTimestampStyle = (stepType: StepType): React.CSSProperties => {
   const scheme = colorSchemes[stepType] || colorSchemes.start;
-  
+
   return {
-    marginLeft: "auto",              // 靠右对齐
-    padding: '3px 10px',             // 增加内边距
-    borderRadius: 6,                 // 圆角
-    backgroundColor: scheme.bg1,     // 步骤类型的浅色背景（保持各类型特色）
+    marginLeft: 'auto', // 靠右对齐
+    padding: `${Spacing.XS - 1}px ${Spacing.MD}px`, // 增加内边距
+    borderRadius: Radius.DEFAULT, // 圆角
+    backgroundColor: scheme.bg1, // 步骤类型的浅色背景（保持各类型特色）
     // 【小强修复 2026-04-14】去掉边框，更简洁
-    color: '#595959',                // 统一浅灰色字体，符合9种浅色方案
-    fontSize: FontSize.TERTIARY,     // 12px
-    fontWeight: FontWeight.BOLD,     // 加粗
+    color: Colors.TEXT.PRIMARY, // 统一浅灰色字体，符合9种浅色方案
+    fontSize: FontSize.TERTIARY, // 12px
+    fontWeight: FontWeight.BOLD, // 加粗
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 4,
-    boxShadow: '0 1px 2px rgba(0,0,0,0.05)',  // 轻微阴影
+    gap: Spacing.XS,
+    boxShadow: '0 1px 2px rgba(0,0,0,0.05)', // 轻微阴影
   };
 };
 
@@ -455,7 +497,7 @@ export const getTimestampStyle = (stepType: StepType): React.CSSProperties => {
  */
 export const getNextStepStyle = (stepType: StepType): React.CSSProperties => {
   const scheme = colorSchemes[stepType] || colorSchemes.start;
-  
+
   // 转换十六进制颜色为rgba格式，添加透明度
   const hexToRgba = (hex: string, alpha: number): string => {
     const cleanHex = hex.replace('#', '');
@@ -464,13 +506,13 @@ export const getNextStepStyle = (stepType: StepType): React.CSSProperties => {
     const b = parseInt(cleanHex.substring(4, 6), 16);
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   };
-  
+
   return {
-    marginTop: 6,
-    padding: '6px 10px',
-    borderRadius: 4,
-    backgroundColor: hexToRgba(scheme.bg1, 0.19),  // 约30%透明度
-    border: `1px solid ${hexToRgba(scheme.border, 0.25)}`,  // 约40%透明度
+    marginTop: Spacing.SM,
+    padding: `${Spacing.SM}px ${Spacing.MD}px`,
+    borderRadius: Radius.SM,
+    backgroundColor: hexToRgba(scheme.bg1, 0.19), // 约30%透明度
+    border: `${BorderWidth.THIN}px solid ${hexToRgba(scheme.border, 0.25)}`, // 约40%透明度
     fontSize: FontSize.TERTIARY,
     color: scheme.text,
     fontWeight: FontWeight.MEDIUM,
@@ -482,19 +524,21 @@ export const getNextStepStyle = (stepType: StepType): React.CSSProperties => {
  * @param status 成功或失败状态
  * @returns CSS样式对象
  */
-export const getStatusBadgeStyle = (status: 'success' | 'error'): React.CSSProperties => {
+export const getStatusBadgeStyle = (
+  status: 'success' | 'error'
+): React.CSSProperties => {
   const isSuccess = status === 'success';
   return {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 4,
-    padding: '2px 8px',
-    borderRadius: 4,
+    gap: Spacing.XS,
+    padding: `2px ${Spacing.SM}px`,
+    borderRadius: Radius.SM,
     backgroundColor: isSuccess ? '#f6ffed' : '#fff1f0',
-    color: isSuccess ? '#52c41a' : '#ff4d4f',
+    color: isSuccess ? Colors.SUCCESS : Colors.ERROR,
     fontSize: FontSize.TERTIARY,
     fontWeight: FontWeight.MEDIUM,
-    border: `1px solid ${isSuccess ? '#b7eb8f' : '#ffa39e'}`,
+    border: `${BorderWidth.THIN}px solid ${isSuccess ? '#b7eb8f' : '#ffa39e'}`,
   };
 };
 
@@ -506,14 +550,14 @@ export const getFinishedBadgeStyle = (): React.CSSProperties => {
   return {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 4,
-    padding: '4px 12px',
-    borderRadius: 6,
+    gap: Spacing.XS,
+    padding: `${Spacing.XS}px ${Spacing.LG}px`,
+    borderRadius: Radius.DEFAULT,
     backgroundColor: '#f6ffed',
-    color: '#52c41a',
+    color: Colors.SUCCESS,
     fontSize: FontSize.TERTIARY,
     fontWeight: FontWeight.BOLD,
-    border: '1px solid #b7eb8f',
+    border: `${BorderWidth.THIN}px solid #b7eb8f`,
     boxShadow: '0 2px 4px rgba(82,196,26,0.1)',
   };
 };
@@ -526,7 +570,9 @@ export const getFinishedBadgeStyle = (): React.CSSProperties => {
  * @returns 标签文本（含emoji）
  */
 export const getStepLabel = (stepType: StepType | string): string => {
-  return isValidStepType(stepType) ? colorSchemes[stepType]?.label || "未知" : "未知";
+  return isValidStepType(stepType)
+    ? colorSchemes[stepType]?.label || '未知'
+    : '未知';
 };
 
 /**
@@ -552,7 +598,9 @@ export const getAllStepTypes = (): StepType[] => {
  * @returns 优先级
  */
 export const getStepPriority = (stepType: StepType | string): StepPriority => {
-  return isValidStepType(stepType) ? colorSchemes[stepType]?.priority || 'secondary' : 'secondary';
+  return isValidStepType(stepType)
+    ? colorSchemes[stepType]?.priority || 'secondary'
+    : 'secondary';
 };
 
 /**
@@ -561,7 +609,9 @@ export const getStepPriority = (stepType: StepType | string): StepPriority => {
  * @returns 分行模式
  */
 export const getStepLayout = (stepType: StepType | string): LayoutMode => {
-  return isValidStepType(stepType) ? colorSchemes[stepType]?.layout || 'block' : 'block';
+  return isValidStepType(stepType)
+    ? colorSchemes[stepType]?.layout || 'block'
+    : 'block';
 };
 
 /**

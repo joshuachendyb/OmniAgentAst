@@ -11,12 +11,13 @@
 
 组装架构（唯一入口：build_full_system_prompt()）：
   ① get_system_prompt()        — 分类特有：角色定义 + 工具详情 + 示例
-  ② OUTPUT_FORMAT              — 公共：JSON输出格式（对齐解析器）
+  ② OUTPUT_FORMAT              — 公共：JSON输出格式（含退出规则，已合并FINISH_RULE）
   ③ TOOL_CALL_RULES            — 公共：工具调用规则（直接调用，禁止反复讨论）
   ④ get_safety_reminder()      — 分类特有：安全提醒（子类覆盖，默认空）
-  ⑤ get_parameter_reminder()   — 分类特有：参数命名提醒（子类覆盖，默认空）
-  ⑥ FINISH_RULE                — 公共：终止规则（防死循环）
-  ⑦ get_rollback_instructions()— 公共：回滚说明
+  ⑤ get_rollback_instructions()— 公共：回滚说明
+  
+  注：⑥ get_parameter_reminder() 已去掉，由方案C（_tools_to_schema_text）替代
+     ⑦ FINISH_RULE 已合并到 OUTPUT_FORMAT（2026-05-10 小沈）
 
 运行时由ReactAgentMixin._build_system_prompt()追加：
   ⑧ _build_candidates_hint()   — 动态：候选意图提示
@@ -44,19 +45,46 @@ class BasePrompts(ABC):
     """
 
     # 【2026-05-07 小沈】统一JSON输出格式（对齐react_output_parser.py解析逻辑）
-    # 【修复】解析器已支持args字段，去掉args禁止项，只保留[TOOL_CALL]禁止
+    # 【2026-05-10 小沈】合并FINISH_RULE到OUTPUT_FORMAT，统一两种返回情况 - 小健审查
     OUTPUT_FORMAT = """【Response Format - 必须遵守】:
-必须使用JSON格式输出，包含以下字段：
-- thought: 分析当前状态和下一步决策（禁止写确认性语言如"已成功"/"需要继续"）
-- reasoning: 为什么选这个工具、参数如何确定（必需，不能为空）
-- tool_name: 要调用的工具名
-- tool_params: 工具参数（无参数时为空对象{}）
+必须使用JSON格式输出，只能返回以下两种情况之一：
 
-格式禁止项：
+情况1：调用工具（继续执行）
+{
+  "thought": "分析当前状态和下一步决策",
+  "reasoning": "为什么选这个工具、参数如何确定",
+  "tool_name": "get_current_time",
+  "tool_params": {"action": "now"}
+}
+
+情况2：任务完成（退出循环）
+{
+  "thought": "任务已完成",
+  "reasoning": "完成说明",
+  "tool_name": "finish",
+  "tool_params": {"result": "最终结果"}
+}
+
+【字段要求】：
+- thought: 必需
+- reasoning: 必需
+- tool_name: 必需（实际工具名或finish）
+- tool_params: 必需（参数对象或{}）
+
+【禁止项】：
+- ❌ 禁止同时返回多个tool_name
+- ❌ 禁止tool_name存在但tool_params缺失
 - ❌ 禁止使用 [TOOL_CALL] 格式（如：[TOOL_CALL]{{...}}[/TOOL_CALL]）
+- ❌ 禁止使用XML标签格式（如：&lt;longcat_tool_call&gt; &lt;arg_key&gt;等任何XML/HTML标签）
+- ❌ 禁止在content中嵌入工具调用（工具调用必须通过tool_name+tool_params字段）
+- ❌ 禁止使用任意自定义标签或特殊标记包裹工具名和参数
 
-示例：
-{"thought": "用户询问当前时间", "reasoning": "调用get_current_time获取", "tool_name": "get_current_time", "tool_params": {"format": "%Y-%m-%d"}}"""
+【示例】：
+{"thought": "用户询问时间", "reasoning": "调用get_current_time", "tool_name": "get_current_time", "tool_params": {"format": "%Y-%m-%d"}}
+{"thought": "已完成", "tool_name": "finish", "tool_params": {"result": "当前时间是2026-05-09"}}
+
+【SAFETY WARNING】:
+⚠️ 任务完成时必须返回 tool_name="finish"，否则会进入死循环。"""
 
     # 【2026-05-07 小沈】通用Tool Call Rules
     TOOL_CALL_RULES = """【Tool Call Rules - 极其重要】:
@@ -68,24 +96,8 @@ class BasePrompts(ABC):
 - 始终用中文回复用户
 - 工具返回错误时，向用户解释错误并建议替代方案"""
 
-    # 【2026-05-07 小沈】终止规则（从react_agent_mixin集中到基类）
-    FINISH_RULE = """
-【TERMINATION RULE - 任务完成时必须正确退出，否则会死循环】:
-
-系统通过解析器判断你的输出类型：
-- 含 tool_name 且 tool_name≠"finish" → type=action（继续调用工具，循环不退出）
-- 含 tool_name="finish" → type=answer（退出循环，返回结果）
-- 不含 tool_name，只含 content/reasoning → type=implicit（退出循环，返回结果）
-
-因此，任务完成后你必须用以下任一方式退出：
-
-方式1（推荐）：使用finish
-{"thought": "任务完成", "tool_name": "finish", "tool_params": {"result": "完成摘要"}}
-
-方式2：直接输出纯文本回复（不包含tool_name字段）
-{"content": "今天是2026年5月7日", "reasoning": "已获取时间信息"}
-
-⚠️ 禁止：任务完成后在回复中包含除finish以外的任何tool_name，这会被解析为type=action导致死循环"""
+    # 【2026-05-07 小沈】终止规则已合并到OUTPUT_FORMAT - 2026-05-10 小沈
+    FINISH_RULE = ""
 
     @abstractmethod
     def get_system_prompt(self) -> str:
@@ -105,7 +117,7 @@ class BasePrompts(ABC):
         pass
 
     def get_available_tools_prompt(self) -> str:
-        """获取可用工具列表描述（已废弃：工具概要由_call_llm_with_summary动态注入）"""
+        """获取可用工具列表描述（已废弃：工具概要由_call_llm动态注入）"""
         return ""
 
     def get_task_prompt(self, task: str) -> str:
@@ -137,12 +149,13 @@ class BasePrompts(ABC):
         
         组装顺序：
         ① get_system_prompt()       — 分类特有（角色+工具+示例）
-        ② OUTPUT_FORMAT             — 公共：JSON输出格式
+        ② OUTPUT_FORMAT             — 公共：JSON输出格式（含退出规则）
         ③ TOOL_CALL_RULES           — 公共：工具调用规则
         ④ get_safety_reminder()     — 分类特有：安全提醒
-        ⑤ get_parameter_reminder()  — 分类特有：参数命名
-        ⑥ FINISH_RULE               — 公共：终止规则
-        ⑦ get_rollback_instructions()— 公共：回滚说明
+        ⑤ get_rollback_instructions()— 公共：回滚说明
+        
+        注：⑥ get_parameter_reminder() 已去掉，由方案C（_tools_to_schema_text）替代
+           ⑦ FINISH_RULE 已合并到 OUTPUT_FORMAT
         
         Returns:
             完整的 System Prompt
@@ -156,15 +169,18 @@ class BasePrompts(ABC):
         if safety:
             parts.append(safety)
         
-        param_reminder = self.get_parameter_reminder()
-        if param_reminder:
-            parts.append(param_reminder)
-        
-        parts.append(self.FINISH_RULE)
-        
         rollback = self.get_rollback_instructions()
         if rollback:
             parts.append(rollback)
+        
+        # 【修复 U3 小沈 2026-05-15】避免重复规则
+        avoid_repeat_rules = """
+【避免重复规则】
+- 同一命令/URL成功后不要重复执行（结果不会变）
+- 同一命令/URL失败3次后必须换工具或换URL，禁止再试同方式
+- 已获取的信息直接使用，不需要重新获取
+- 失败后优先尝试替代方法，而非反复重试同一方法"""
+        parts.append(avoid_repeat_rules)
         
         return "\n\n".join(parts)
 

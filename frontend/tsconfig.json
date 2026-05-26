@@ -16,7 +16,12 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    // ⚠️ 警告：禁止删除 baseUrl 和 paths！@/ 别名被所有 renderers 使用，删除会导致全前端 500 错误（历史教训 2026-05-23）
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
   },
   "include": ["src"],
   "exclude": ["src/backup", "src/tests", "src/hooks/chat"],

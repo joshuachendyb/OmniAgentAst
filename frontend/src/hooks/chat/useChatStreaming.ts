@@ -94,7 +94,7 @@ export const useChatStreaming = (
   callbacks: UseChatCallbacksReturn,
   config: SSEConfig
 ): UseChatStreamingReturn => {
-  const { sessionId } = state;
+  const { sessionId, setSessionId } = state;
   const { onStep, onChunk, onComplete, onError, onPaused, onResumed, onShowSteps, onRetry } = callbacks;
   
   // 使用useSSE Hook
@@ -226,10 +226,16 @@ export const useChatStreaming = (
         console.log("✅ [executeSend] 用户消息保存成功, message_id:", saveResult?.message_id);
       } catch (error) {
         console.error("❌ [executeSend] 保存用户消息失败:", error);
-        // 使用统一错误处理中心 - 错误消息保存失败但继续发送AI
-        const result = handleError(error, { source: "api", continueOnError: true });
-        if (!result.shouldContinue) {
-          console.warn("   └─ 保存失败且不能继续");
+        const is404 = (error as { response?: { status?: number } })?.response?.status === 404;
+        if (is404) {
+          console.warn("🔴 [executeSend] sessionId无效(404)，清空sessionId，SSE将不带sessionId");
+          currentSessionIdRef.current = null;
+          setSessionId(null);
+        } else {
+          const result = handleError(error, { source: "api", continueOnError: true });
+          if (!result.shouldContinue) {
+            console.warn("   └─ 保存失败且不能继续");
+          }
         }
       }
     } else {
@@ -258,6 +264,7 @@ export const useChatStreaming = (
     console.log("✅ [executeSend] sendStreamMessage已调用");
   }, [
     sessionId,
+    setSessionId,
     setLoading,
     setWaitTime,
     setIsRetrying,

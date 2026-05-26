@@ -9,8 +9,7 @@ from app.services.tools.network.network_tools import (
     download_file,
     fetch_webpage,
     search_web,
-    ping,
-    port_check,
+    network_diagnose,
 )
 
 __all__ = [
@@ -18,6 +17,5 @@ __all__ = [
     "download_file",
     "fetch_webpage",
     "search_web",
-    "ping",
-    "port_check",
+    "network_diagnose",
 ]

@@ -8,7 +8,7 @@
  * @since 2026-04-25
  */
 
-import React, { useMemo } from "react";
+import React from "react";
 import { CheckCircleOutlined, CloseCircleOutlined, WarningOutlined, SyncOutlined, RightOutlined } from "@ant-design/icons";
 import { Collapse, Tag } from "antd";
 
@@ -29,9 +29,11 @@ interface BatchRenameViewProps {
   };
 }
 
-/**
- * BatchRenameView 主组件
- */
+const STATS_STYLE: React.CSSProperties = { display: "flex", gap: 16, marginBottom: 12, paddingBottom: 12, borderBottom: "1px solid #f0f0f0" };
+const STAT_ITEM_STYLE: React.CSSProperties = { display: "flex", alignItems: "center", gap: 6, fontSize: 13 };
+const LIST_ITEM_STYLE: React.CSSProperties = { display: "flex", alignItems: "center", padding: "6px 0", fontSize: 12, fontFamily: "Consolas, Monaco, 'Courier New', monospace", borderBottom: "1px solid #f5f5f5" };
+const PANEL_STYLE: React.CSSProperties = { background: "#fafafa", border: "1px solid #d9d9d9", borderRadius: 6, marginTop: 8 };
+
 const BatchRenameView: React.FC<BatchRenameViewProps> = ({ data }) => {
   const { 
     total_count = 0,
@@ -43,66 +45,24 @@ const BatchRenameView: React.FC<BatchRenameViewProps> = ({ data }) => {
   } = data;
 
   const hasList = rename_list && rename_list.length > 0;
-
-  // 错误状态
   const hasError = error_message !== undefined && error_message !== "";
 
-  // 容器样式 - 使用useMemo缓存
-  const containerStyle = useMemo(() => ({
-    background: hasError 
-      ? "linear-gradient(135deg, #fff2f0 0%, #f5f5f5 100%)"
-      : "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
-    border: hasError 
-      ? "1px solid #ffa39e"
-      : "1px solid #b7eb8f",
+  const containerStyle: React.CSSProperties = {
+    background: hasError ? "#fff2f0" : "#f6ffed",
+    border: hasError ? "1px solid #ffa39e" : "1px solid #b7eb8f",
     borderRadius: 8,
     padding: "12px 16px",
     marginTop: 6,
-  }), [hasError]);
+  };
 
-  // 标题样式
-  const titleStyle = useMemo(() => ({
+  const titleStyle: React.CSSProperties = {
     display: "flex",
     alignItems: "center",
     marginBottom: 12,
     fontSize: 14,
     fontWeight: 500,
     color: hasError ? "#ff4d4f" : "#52c41a",
-  }), [hasError]);
-
-  // 统计数字样式
-  const statsStyle = useMemo(() => ({
-    display: "flex",
-    gap: 16,
-    marginBottom: 12,
-    paddingBottom: 12,
-    borderBottom: "1px solid #f0f0f0",
-  }), []);
-
-  // 统计项样式
-  const statItemStyle = useMemo(() => ({
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    fontSize: 13,
-  }), []);
-
-  // 重命名列表项样式
-  const listItemStyle = useMemo(() => ({
-    display: "flex",
-    alignItems: "center",
-    padding: "6px 0",
-    fontSize: 12,
-    fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-    borderBottom: "1px solid #f5f5f5",
-  }), []);
-
-  const panelStyle = useMemo(() => ({
-    background: "#fafafa",
-    border: "1px solid #d9d9d9",
-    borderRadius: 6,
-    marginTop: 8,
-  }), []);
+  };
 
   return (
     <div style={containerStyle}>
@@ -124,20 +84,20 @@ const BatchRenameView: React.FC<BatchRenameViewProps> = ({ data }) => {
       {/* 统计信息 */}
       {!hasError && (
         <>
-          <div style={statsStyle}>
-            <div style={statItemStyle}>
+          <div style={STATS_STYLE}>
+            <div style={STAT_ITEM_STYLE}>
               <span style={{ color: "#8c8c8c" }}>处理文件：</span>
               <strong>{total_count}个</strong>
             </div>
             
-            <div style={statItemStyle}>
+            <div style={STAT_ITEM_STYLE}>
               <CheckCircleOutlined style={{ color: "#52c41a" }} />
               <span style={{ color: "#52c41a" }}>成功：</span>
               <strong>{success_count}个</strong>
             </div>
             
             {skip_count > 0 && (
-              <div style={statItemStyle}>
+              <div style={STAT_ITEM_STYLE}>
                 <WarningOutlined style={{ color: "#faad14" }} />
                 <span style={{ color: "#faad14" }}>跳过：</span>
                 <strong>{skip_count}个</strong>
@@ -145,7 +105,7 @@ const BatchRenameView: React.FC<BatchRenameViewProps> = ({ data }) => {
             )}
             
             {failed_count > 0 && (
-              <div style={statItemStyle}>
+              <div style={STAT_ITEM_STYLE}>
                 <CloseCircleOutlined style={{ color: "#ff4d4f" }} />
                 <span style={{ color: "#ff4d4f" }}>失败：</span>
                 <strong>{failed_count}个</strong>
@@ -157,7 +117,7 @@ const BatchRenameView: React.FC<BatchRenameViewProps> = ({ data }) => {
           {hasList && (
             <Collapse
               ghost
-              style={panelStyle}
+              style={PANEL_STYLE}
               items={[
                 {
                   key: '1',
@@ -172,7 +132,7 @@ const BatchRenameView: React.FC<BatchRenameViewProps> = ({ data }) => {
                         <div 
                           key={index} 
                           style={{
-                            ...listItemStyle,
+                            ...LIST_ITEM_STYLE,
                             opacity: item.success ? 1 : 0.5,
                             color: item.success ? "#595959" : "#ff4d4f",
                           }}

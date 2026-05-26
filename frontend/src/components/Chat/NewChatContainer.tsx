@@ -16,7 +16,7 @@ import { useBeforeUnload } from '../../hooks/useBeforeUnload';
 
 const NewChatContainer: React.FC = () => {
   const [searchParams] = useSearchParams();
-  const chatFacade = useChatFacade({ baseURL: API_BASE_URL, sessionId: searchParams.get('sessionId') });
+  const chatFacade = useChatFacade({ baseURL: API_BASE_URL, sessionId: searchParams.get('session_id') });
   const {
     chatState,
     chatStreaming,

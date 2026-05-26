@@ -8,7 +8,7 @@
  * @since 2026-04-25
  */
 
-import React, { useMemo } from "react";
+import React from "react";
 import { CheckCircleOutlined, CloseCircleOutlined, FolderOutlined, CopyOutlined } from "@ant-design/icons";
 import { Button, Tooltip } from "antd";
 
@@ -22,9 +22,9 @@ interface CreateDirectoryViewProps {
   };
 }
 
-/**
- * CreateDirectoryView 主组件
- */
+const INFO_ITEM_STYLE: React.CSSProperties = { display: "flex", alignItems: "center", marginBottom: 8, fontSize: 13, color: "#595959" };
+const LABEL_STYLE: React.CSSProperties = { minWidth: 80, color: "#8c8c8c", marginRight: 8 };
+
 const CreateDirectoryView: React.FC<CreateDirectoryViewProps> = ({ data }) => {
   const { 
     directory_path = "", 
@@ -34,44 +34,22 @@ const CreateDirectoryView: React.FC<CreateDirectoryViewProps> = ({ data }) => {
     error_message 
   } = data;
 
-  // 容器样式 - 使用useMemo缓存
-  const containerStyle = useMemo(() => ({
-    background: success 
-      ? "linear-gradient(135deg, #e6f7ff 0%, #f5f5f5 100%)"
-      : "linear-gradient(135deg, #fff2f0 0%, #f5f5f5 100%)",
-    border: success 
-      ? "1px solid #91d5ff" 
-      : "1px solid #ffa39e",
+  const containerStyle: React.CSSProperties = {
+    background: success ? "#e6f7ff" : "#fff2f0",
+    border: success ? "1px solid #91d5ff" : "1px solid #ffa39e",
     borderRadius: 8,
     padding: "12px 16px",
     marginTop: 6,
-  }), [success]);
+  };
 
-  // 标题样式
-  const titleStyle = useMemo(() => ({
+  const titleStyle: React.CSSProperties = {
     display: "flex",
     alignItems: "center",
     marginBottom: 12,
     fontSize: 14,
     fontWeight: 500,
     color: success ? "#1890ff" : "#ff4d4f",
-  }), [success]);
-
-  // 信息项样式
-  const infoItemStyle = useMemo(() => ({
-    display: "flex",
-    alignItems: "center",
-    marginBottom: 8,
-    fontSize: 13,
-    color: "#595959",
-  }), []);
-
-  // 标签样式
-  const labelStyle = useMemo(() => ({
-    minWidth: 80,
-    color: "#8c8c8c",
-    marginRight: 8,
-  }), []);
+  };
 
   const handleCopyPath = (path: string) => {
     navigator.clipboard.writeText(path);
@@ -95,8 +73,8 @@ const CreateDirectoryView: React.FC<CreateDirectoryViewProps> = ({ data }) => {
       </div>
 
       {/* 目录路径 */}
-      <div style={infoItemStyle}>
-        <span style={labelStyle}>目录路径：</span>
+      <div style={INFO_ITEM_STYLE}>
+        <span style={LABEL_STYLE}>目录路径：</span>
         <div style={{ flex: 1, display: "flex", alignItems: "center" }}>
           <FolderOutlined style={{ marginRight: 6, color: "#fa8c16" }} />
           <span style={{ flex: 1, fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontSize: 12 }}>
@@ -115,15 +93,15 @@ const CreateDirectoryView: React.FC<CreateDirectoryViewProps> = ({ data }) => {
       </div>
 
       {/* 权限 */}
-      <div style={infoItemStyle}>
-        <span style={labelStyle}>权限：</span>
+      <div style={INFO_ITEM_STYLE}>
+        <span style={LABEL_STYLE}>权限：</span>
         <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace" }}>{permissions}</span>
       </div>
 
       {/* 创建时间 */}
       {created_at && (
-        <div style={infoItemStyle}>
-          <span style={labelStyle}>创建时间：</span>
+        <div style={INFO_ITEM_STYLE}>
+          <span style={LABEL_STYLE}>创建时间：</span>
           <span>{created_at}</span>
         </div>
       )}

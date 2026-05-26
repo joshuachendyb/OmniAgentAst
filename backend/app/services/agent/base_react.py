@@ -25,12 +25,14 @@ Updated: 小沈 - 2026-04-26
 """
 
 import asyncio
+import json
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, AsyncGenerator, Callable
+from typing import Any, Dict, List, Optional, AsyncGenerator, Callable, Set, Tuple, Union
 
 from app.services.agent.types import AgentStatus
 from app.services.agent.react_output_parser import parse_react_response
+from app.services.agent.message_builder import MessageBuilder
 from app.services.agent.reasoning_steps import (
     StepFactory,
     ReasoningStep,
@@ -41,13 +43,18 @@ from app.services.agent.reasoning_steps import (
     ErrorStep,
 )
 from app.services.tools.registry import ToolCategory, get_tools_from_registry_by_category
-from app.services.agent.types import AgentStatus
-from app.services.agent.types.react_schema import get_tools_schema_for_categories  # 【步骤9】动态加载Schema
+from app.services.tools import ensure_tools_registered
+from app.constants import MAX_CONTEXT_CHARS
+# 【修复 小健 2026-05-24】P2-1: 删除重复导入AgentStatus
 from app.services.preprocessing.intent_classifier import IntentClassifier  # 【步骤9】意图分类器
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_timestamp
 from app.chat_stream.incident_handler import create_incident_data
 from app.utils.prompt_logger import get_prompt_logger
+from app.services.agent.tool_result_formatter import extract_status, build_execution_result_dict
+from app.services.agent.mixins.tool_step_mixin import ToolStepMixin, _ToolStepOutcome
+from app.services.agent.chunk_buffer import ChunkBuffer
+from app.utils.retry_controller import _calculate_retry_delay
 
 # 【步骤2.11】已废弃以下导入，改用StepFactory：
 # from app.chat_stream.error_handler import create_tool_error_result, create_session_error_result, create_error_from_exception
@@ -57,6 +64,9 @@ from app.utils.prompt_logger import get_prompt_logger
 # 原则：config.yaml > 代码常量 > 硬编码默认值
 # react_sse_wrapper.py 从 config.yaml 读取后传入
 DEFAULT_MAX_STEPS = 100
+# 连续chunk最大次数-达到此阈值且为工具Agent时提升为implicit退出循环
+# chat Agent（无工具）首个chunk即退出，不受此限制
+MAX_CONSECUTIVE_CHUNKS = 5
 
 
 class BaseAgent(ABC):
@@ -102,7 +112,7 @@ class BaseAgent(ABC):
         
         # 【步骤2.10】步骤历史管理：使用ReasoningStep类型
         self.steps: List[ReasoningStep] = []
-        self.conversation_history: List[Dict[str, str]] = []
+        self.message_builder = MessageBuilder(max_context_chars=self.MAX_CONTEXT_CHARS)
         self.status = AgentStatus.IDLE
         self.llm_call_count = 0
         self._lock = asyncio.Lock()
@@ -118,15 +128,32 @@ class BaseAgent(ABC):
         self.empty_response_retry_count = 0  # 空响应重试计数器
         self.max_empty_response_retries = 2  # 空响应最大重试次数（截断历史后重试）
         
-        # 【Phase1修复】从registry加载工具
-        self._tools_dict = self._load_tools()
-        self._loaded_categories = set()  # 【步骤9】已加载的分类，用于动态加载
+        # 【修复 小健 2026-05-24】P2-8: _load_tools移到子类_init_tools_and_executor统一调用，避免重复初始化
+        self._tools_dict = {}
+        self._loaded_categories = set()
+        if self.tool_category:
+            self._loaded_categories.add(self.tool_category.value)
+        # self._loaded_categories.add("support_tool")  # support_tool已废弃，不再预加载
         
-        # 【步骤9】意图分类器初始化（用于更可靠检测）
-        self._intent_classifier = None   # 意图分类器（用于更可靠检测）
+        self._intent_classifier = IntentClassifier()
+        
+        # 【v2.3新增】chunk处理相关属性—所有Agent子类共享
+        self.max_consecutive_chunks = MAX_CONSECUTIVE_CHUNKS  # 连续chunk达此阈值时提升为implicit
+        # self.temp_history 已迁入 MessageBuilder，此处不再保留（内部已统一通过 message_builder.temp_history 访问）
         
         # 创建工具执行器
         self.executor = None  # 子类应初始化
+        
+    
+    @property
+    def conversation_history(self) -> List[Dict[str, str]]:
+        """@property透传至MessageBuilder — 小沈 2026-05-21"""
+        return self.message_builder.conversation_history
+    
+    @conversation_history.setter
+    def conversation_history(self, value: List[Dict[str, str]]) -> None:
+        """@property setter — 小沈 2026-05-21"""
+        self.message_builder.conversation_history = value
     
     def _load_tools(self) -> Dict[str, Callable]:
         """
@@ -135,6 +162,9 @@ class BaseAgent(ABC):
         """
         if not self.tool_category:
             return {}
+        
+        # 【Phase 1修复 小健 2026-05-14】【修复 U8 小沈 2026-05-15】全量注册，不再传categories
+        ensure_tools_registered()
         
         return get_tools_from_registry_by_category(self.tool_category)
     
@@ -212,7 +242,7 @@ class BaseAgent(ABC):
         参考：文档4.14节步骤9代码示例
         
         Args:
-            intent_type: 意图类型（file/time/shell/network等）
+            intent_type: 意图类型（file/meta/shell/network等，也兼容旧名time/database等）
             reason: 加载原因（用于日志）
         """
         if intent_type in self._loaded_categories:
@@ -220,130 +250,43 @@ class BaseAgent(ABC):
         
         logger.info(f"[动态加载] 原因: {reason}，加载意图: {intent_type}")
         
-        # 1. 获取该意图的工具
-        try:
-            category = ToolCategory(intent_type)
-            new_tools = get_tools_from_registry_by_category(category)
-        except ValueError as e:
-            logger.warning(f"[动态加载] 意图'{intent_type}'无对应工具分类: {e}")
+        # 1. 获取该意图的工具（支持新旧意图名） - 【2026-05-18 小沈】
+        from app.services.tools.registry import resolve_category
+        category = resolve_category(intent_type)
+        if not category:
+            logger.warning(f"[动态加载] 意图'{intent_type}'无对应工具分类")
             return
+        new_tools = get_tools_from_registry_by_category(category)
         
         # 2. 添加到_tools_dict
         self._tools_dict.update(new_tools)
-        self._loaded_categories.add(intent_type)
-        
-        # 3. 重新生成tools_schema（给LLM看）
-        self._refresh_tools_schema()
-        
+        self._loaded_categories.add(category.value)
+
+        # 【修复 N4 小沈 2026-05-15】不再注入load_hint，依赖下一轮detail自动包含新分类
+        new_tool_names = sorted(new_tools.keys())
+        logger.info(f"[动态加载] 已加载{intent_type}分类的{len(new_tool_names)}个工具，下一轮detail将自动包含")
+
+        # 3. 刷新FC通道的tools定义（如果已启用）
+        # 【修复 问题2+9 小沈 2026-05-15】增加openai_tools存在性检查
+        if hasattr(self, 'tools_strategy') and self.tools_strategy is not None and hasattr(self, 'openai_tools') and self.openai_tools:
+            from app.services.tools.registry import tool_registry
+            new_openai_tools = tool_registry.to_openai_tools(category=category)
+            self.openai_tools.extend([t for t in new_openai_tools if t not in self.openai_tools])
+            self.tools_strategy.tools = self.openai_tools
+            logger.info(f"[FC刷新] tools定义已更新，当前{len(self.openai_tools)}个")
+
+        # 【修复 小健 2026-05-24】P2-9: 用try/except替代hasattr+delattr，消除TOCTOU风险
+        for _attr in ('_cached_schema_text', '_cached_tools_content', '_last_injected_categories'):
+            try:
+                delattr(self, _attr)
+            except AttributeError:
+                pass
+
         logger.info(f"[动态加载] 完成，新增{len(new_tools)}个工具，总计{len(self._tools_dict)}个")
     
-    def _refresh_tools_schema(self):
-        """重新生成tools_schema"""
-        # 根据当前已加载的分类，生成Schema
-        categories = list(self._loaded_categories)
-        self._tools_schema = get_tools_schema_for_categories(categories)
-        
-        # 同时更新system prompt，告知LLM新增了工具
-        self._update_system_prompt_with_tools()
-    
-    def _update_system_prompt_with_tools(self):
-        """更新system prompt，告知LLM新增了工具"""
-        # 获取当前工具的简要清单
-        tool_names = list(self._tools_dict.keys())
-        if not tool_names:
-            return
-        
-        tool_hint = f"\n【工具更新】当前可用工具: {', '.join(tool_names[:10])}"
-        if len(tool_names) > 10:
-            tool_hint += f" 等{len(tool_names)}个工具"
-        
-        # 注意：实际实现中，这个方法可能被子类覆盖
-        # 基类只提供默认实现
-        pass
-    
     async def _check_and_load_missing_tools(self, observation: str, llm_client=None):
-        """
-        在Observation阶段，检测是否需要新工具（改进版）
-        
-        参考：文档4.14节步骤9代码示例
-        改进方案：结合LLM判断 + 关键词检测
-        
-        Args:
-            observation: LLM返回的observation内容
-            llm_client: LLM客户端（用于LLM判断）
-        """
-        # 方案1：LLM判断（更可靠，推荐）
-        if llm_client and self._intent_classifier:
-            try:
-                # 使用意图分类器重新检测
-                # labels应该是所有可能的意图类型
-                from app.services.tools.registry import ToolCategory
-                labels = [cat.value for cat in ToolCategory]
-                
-                result = await self._intent_classifier.classify(observation, labels)
-                new_intent = result.get("intent")
-                confidence = result.get("confidence", 0)
-                
-                if (new_intent and new_intent not in self._loaded_categories 
-                        and confidence >= 0.3):
-                    # 否定词检测：避免"不要执行shell"误触发
-                    if self._should_trigger_dynamic_load(observation, new_intent):
-                        self.load_tools_by_intent(
-                            new_intent, 
-                            reason=f"LLM检测新意图: {new_intent}(置信度{confidence:.2f})"
-                        )
-                    return
-            except Exception as e:
-                logger.warning(f"[动态加载] LLM判断失败，降级到关键词: {e}")
-        
-        # 方案2：关键词检测（降级方案）
-        trigger_keywords = {
-            "network": ["ping ", "http", "下载", "网络", "url", "curl", "wget"],
-            "desktop": ["截图", "截屏", "窗口", "鼠标点击", "键盘输入"],
-            "shell": ["执行命令", "npm ", "pip ", "git ", "docker "],
-            "database": ["数据库", "SQL", "查询", "SELECT", "INSERT"],
-            "env": ["环境变量", "PATH", "JAVA_HOME"],
-            "system": ["系统信息", "CPU", "内存", "磁盘"],
-        }
-        
-        for intent, keywords in trigger_keywords.items():
-            if any(kw in observation for kw in keywords):
-                # 否定词检测：避免"不要执行shell"误触发
-                if self._should_trigger_dynamic_load(observation, intent):
-                    if intent not in self._loaded_categories:
-                        self.load_tools_by_intent(
-                            intent, 
-                            reason=f"Observation关键词检测: {keywords}"
-                        )
-                        return  # 一次只加载一个，避免混乱
-    
-    def _should_trigger_dynamic_load(self, observation: str, intent: str) -> bool:
-        """
-        判断是否应该触发动态加载（包含否定词检测）
-        
-        参考：文档4.14节步骤9缺陷7修正
-        避免"不要执行shell"误触发
-        
-        Args:
-            observation: LLM返回的observation内容
-            intent: 检测的意图类型
-        Returns:
-            bool: 是否应该触发动态加载
-        """
-        # 否定词列表（表示否定的词语）
-        negation_words = [
-            "不要", "不需要", "别", "禁止", "不可以", "不能", 
-            "don't", "donot", "cannot", "should not", "not to"
-        ]
-        
-        # 检查observation中是否包含否定词
-        has_negation = any(neg in observation.lower() for neg in negation_words)
-        
-        if has_negation:
-            logger.info(f"[动态加载] 检测到否定词，不触发{intent}工具加载")
-            return False
-        
-        return True
+        """全量注册后无需动态加载 - 小沈 2026-05-15"""
+        return
     
     # ===== 核心方法（子类调用）=====
     
@@ -353,721 +296,466 @@ class BaseAgent(ABC):
         context: Optional[Dict[str, Any]] = None,
         max_steps: int = DEFAULT_MAX_STEPS,
         task_id: Optional[str] = None,
-        running_tasks: Optional[Dict[str, Any]] = None
+        running_tasks: Optional[Dict[str, Any]] = None,
+        step_counter: Optional[Callable[[], int]] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """
-        ReAct 核心循环
-        
-        每次循环包含 3 个阶段：
-        1. Thought - LLM 生成思考和动作
-        2. Action - 执行工具
-        3. Observation - LLM 根据结果更新思考
-        
-        【重构 2026-04-11 小沈】按照"先 break → 循环外 yield"原则重构：
-        - 场景1-4（错误场景）：循环内 break → 循环外 yield error
-        - 场景5（正常完成）：循环内 break → 循环外 yield final
-        - yield error/final 后就是最后一个 step，不需要额外的 final step
-        
-        场景编号：
-        1. 未捕获异常 - except块捕获
-        2. LLM返回空响应
-        3. 超过最大步数
-        4. 解析失败 - 重试3次
-        5. 正常完成（finish）
-        """
-        # 初始化状态
-        self.steps = []
-        self.conversation_history = []
-        self.status = AgentStatus.THINKING
-        self.llm_call_count = 0
-        self.last_answer_response = ""
-        
-        # 【重要】task_id 用于操作追踪和回退，【禁止】使用 session_id
-        # session_id 专用于会话场景，操作追踪必须用 task_id
-        if task_id:
-            self.task_id = task_id  # 保存answer类型的真正答案
-        
-        # Hook: Session 初始化
-        self._on_session_init(task, context)
-        
-        # 获取 prompt
-        sys_prompt = self._get_system_prompt()
-        task_prompt = self._get_task_prompt(task, context)
-        
-        # Hook: 循环开始前
-        self._on_before_loop(sys_prompt, task_prompt, context)
-        
-        # 添加到对话历史
-        self.conversation_history.append({"role": "system", "content": sys_prompt})
-        self.conversation_history.append({"role": "user", "content": task_prompt})
-        
+        """ReAct 核心循环 — 重构为骨架+私有方法分发 — 小沈 2026-05-25"""
+        chunk_buffer, valid_tool_names = self._initialize_run_state(task, task_id, context)
         step_count = 0
 
-        # ===== 场景1：未捕获异常 (try...except包裹整个循环) =====
         try:
             while True:
-                # ===== 场景3：每次循环开始检查最大步数 =====
                 if step_count >= max_steps:
-                    # 【步骤3.2】直接ErrorStep→return
-                    error_step = StepFactory.create_error_step(
-                        step=step_count,
-                        error_type="max_steps_exceeded",
-                        error_message=f"已达到最大迭代次数 {max_steps}",
-                        recoverable=False
-                    )
-                    self.steps.append(error_step)
-                    yield error_step.to_dict()
+                    yield self._exit_with_error(step_count, "max_steps_exceeded", f"已达到最大迭代次数 {max_steps}")
                     self._on_after_loop()
                     return
 
-                step_count += 1
-                
-                # =====【中断检查】每次循环开始检查任务是否被取消 - 小欧-2026-04-21 =====
-                import time
-                if task_id and running_tasks:
-                    # 直接检查 cancelled 标志（非线程安全但可接受，因为只是检查布尔值）
-                    task_data = running_tasks.get(task_id, {})
-                    is_cancelled = task_data.get("cancelled", False)
-                    # 【时间测量】计算时间差
-                    cancel_request_time = task_data.get("cancel_request_time")
-                    if cancel_request_time:
-                        time_diff = (time.time() - cancel_request_time) * 1000
-                        logger.info(f"[InterruptCheck] 任务 {task_id} 延迟: {time_diff:.0f}ms")
-                    if is_cancelled:
-                        logger.info(f"[Interrupt] 任务 {task_id} 被取消，发送 interrupted 事件")
-                        # 【问题2修复】使用create_incident_data替代裸字典，保证Step封装统一性
-                        interrupted_data = create_incident_data(
-                            incident_value="interrupted",
-                            message="用户取消了任务",
-                            step=step_count
-                        )
-                        yield interrupted_data
-                        self._on_after_loop()
-                        return
-                
-                # ===== 调用LLM =====
+                step_count = step_counter() if step_counter else (step_count + 1)
+
+                _int = self._check_interrupt(step_count, running_tasks)
+                if _int:
+                    if task_id and running_tasks:
+                        _crt = running_tasks.get(task_id, {}).get("cancel_request_time")
+                        if _crt:
+                            logger.info(f"[InterruptCheck] 任务 {task_id} 延迟: {(time.time() - _crt) * 1000:.0f}ms")
+                    yield _int
+                    self._on_after_loop()
+                    return
+
                 self.status = AgentStatus.THINKING
-                logger.info(f"[Debug] 调用LLM (第{self.llm_call_count}轮), history长度={len(self.conversation_history)}")
                 response = await self._get_llm_response()
-                logger.info(f"[Debug] LLM响应 (第{self.llm_call_count}轮): {response[:200]}...")
-                
-                # ===== 场景2：LLM返回空响应 =====
+
+                _int = self._check_interrupt(step_count, running_tasks)
+                if _int:
+                    yield _int
+                    self._on_after_loop()
+                    return
+
                 if not response:
                     self.empty_response_retry_count += 1
-                    logger.error(
-                        f"[空响应] LLM返回空响应 (第{self.empty_response_retry_count}次重试), "
-                        f"history长度={len(self.conversation_history)}"
-                    )
-                    
-                    if self.empty_response_retry_count <= self.max_empty_response_retries:
-                        # 【修复 2026-05-05 小沈】截断历史重试
-                        original_len = len(self.conversation_history)
-                        if original_len > 4:
-                            # 保留system prompt(前2条) + 最近2条，删除中间的
-                            kept = self.conversation_history[:2] + self.conversation_history[-2:]
-                            removed_len = original_len - len(kept)
-                            self.conversation_history = kept
-                            logger.warning(
-                                f"[空响应截断历史] 从{original_len}条截断到{len(kept)}条, "
-                                f"移除{removed_len}条中间历史, 准备重试"
-                            )
-                            # 发送重试提示事件
-                            retrying_data = create_incident_data(
-                                incident_value="retrying",
-                                message=f"AI返回空响应，已压缩对话历史重试（第{self.empty_response_retry_count}次）"
-                            )
-                            yield retrying_data
-                            continue
-                        else:
-                            logger.warning("[空响应] 历史已很短无法截断，直接报错")
-                    # 重试次数用尽或历史太短，报错退出
-                    error_step = StepFactory.create_error_step(
-                        step=step_count,
-                        error_type="empty_response",
-                        error_message=f"AI服务返回空响应（已重试{self.empty_response_retry_count}次）",
-                        recoverable=False
-                    )
-                    self.steps.append(error_step)
-                    yield error_step.to_dict()
-                    self._on_after_loop()
-                    return
-                
-                # ===== 场景4：解析响应并获取结果 =====  # 修复 2026-04-15 小沈
-                parsed = parse_react_response(response)
-                
-                # 【修复 2026-05-05 小沈】成功获取响应，重置空响应计数器
-                self.empty_response_retry_count = 0
-                
-                # ===== 先获取 parsed 结果 =====
-                thought_content = parsed.get("content", "")
-                tool_name = parsed.get("tool_name", parsed.get("action_tool", "finish"))
-                tool_params = parsed.get("tool_params", parsed.get("params", {}))
-                
-                # ===== 场景5：正常完成（基于type字段判断）=====
-                # 【重构 2026-04-16 小沈】使用type字段判断，替代旧的tool_name=="finish"
-                if parsed["type"] in ["answer", "implicit"]:
-                    logger.info(f"[parse_react_response] 情况2: type={parsed['type']}, answer/implicit完成")
-                    
-                    # 【修复D3】成功解析，重置重试计数器
                     self.parse_retry_count = 0
-                    
-                    # 提取 thought_content 和 answer_response
-                    thought_content = parsed.get("content", "")
-                    # 【修复 2026-05-07 小沈】response取值链：response → tool_params.result → content → reasoning
-                    answer_response = parsed.get("response", "")
-                    if not answer_response or not answer_response.strip():
-                        answer_response = parsed.get("tool_params", {}).get("result", "") if isinstance(parsed.get("tool_params"), dict) else ""
-                    if not answer_response or not answer_response.strip():
-                        answer_response = parsed.get("content", "")
-                    if not answer_response or not answer_response.strip():
-                        answer_response = parsed.get("reasoning", "")
-                    
-                    # 【修复 2026-05-05 小沈】finish时直接yield final，不再先yield thought
-                    _reasoning = parsed.get("reasoning", "")
-                    final_step = StepFactory.create_final_step(
-                        step=step_count,
-                        response=answer_response,
-                        thought=_reasoning,
-                        model=getattr(self, 'model', None),
-                        provider=getattr(self, 'provider', None)
-                    )
-                    self.steps.append(final_step)
-                    yield final_step.to_dict()
-                    
-                    self._on_after_loop()
-                    # FinalStep.is_done() 必然为 True，无需检查直接return
-                    return
-                
-                # 【新增】thought_only类型：纯思考分支，继续下一轮循环
-                if parsed["type"] == "thought_only":
-                    logger.info(f"[parse_react_response] 情况3: type=thought_only, 纯思考继续")
-                    thought = parsed.get("thought", "")
-                    
-                    # 【修复D3】成功解析，重置重试计数器
-                    self.parse_retry_count = 0
-                    
-                    # 【步骤2.9】使用StepFactory创建ThoughtStep
-                    # 【修复 2026-05-05 小沈】thought去重拼接：相同则不拼
-                    _thought_val = thought_content
-                    if thought and thought.strip():
-                        _thought_val = thought if thought == thought_content else (thought + "\n" + thought_content).strip()
-                    thought_step = StepFactory.create_thought_step(
-                        step=step_count,
-                        content="",
-                        tool_name="",
-                        tool_params={},
-                        thought=_thought_val,
-                        reasoning=parsed.get("reasoning", "")
-                    )
-                    
-                    # 【步骤2.10】记录步骤历史
-                    self.steps.append(thought_step)
-                    
-                    # yield Step字典
-                    yield thought_step.to_dict()
-                    
-                    self.conversation_history.append({"role": "assistant", "content": response})
-                    
-                    # 【修复D2】调用_trim_history防止历史无限增长
-                    self._trim_history()
-                    
-                    continue  # 继续下一轮循环
-                
-                # ===== 【深度优化】问题3：检查解析是否失败 =====
-                # 不再依赖 "⚠️" 符号，改用显式的 type="parse_error" 判断
-                # parse_error表示解析失败，需要重试；error表示真实运行错误
-                if parsed["type"] == "parse_error":
-                    error_msg = parsed.get("error", "Unknown parse error")
-                    logger.warning(f"[parse_react_response] 情况4: 解析错误: {error_msg}, 重试次数={self.parse_retry_count}")
-                    
-                    # 【步骤3.3】添加错误提示到历史，引导 LLM 修复
-                    self._add_observation_to_history(f"Parse Error: {error_msg}. Please ensure your response follows the ReAct format (Thought -> Action -> Action Input).")
-                    
-                    # 重试计数器+1
-                    self.parse_retry_count += 1
-                    
-                    # 【步骤3.3】重试次数 >= 3？直接ErrorStep→return
-                    if self.parse_retry_count >= self.max_parse_retries:
-                        error_step = StepFactory.create_error_step(
-                            step=step_count,
-                            error_type="parse_error",
-                            error_message=f"解析失败: {error_msg}（已重试{self.max_parse_retries}次）",
-                            recoverable=False
-                        )
-                        self.steps.append(error_step)
-                        yield error_step.to_dict()
-                        self._on_after_loop()
-                        return
-                    # 【问题3修复】重试前发送retrying事件，让前端显示重试提示
-                    retrying_data = create_incident_data(
-                        incident_value="retrying",
-                        message=f"解析失败，正在重试（第{self.parse_retry_count}次）",
-                        step=step_count
-                    )
-                    yield retrying_data
-                    # 否则继续下一次循环
+                    async for step in self._handle_empty_response(step_count):
+                        yield step
                     continue
-                
-                # ===== 【步骤2.9】情况1：工具调用（Action）=====
-                logger.info(f"[parse_react_response] 情况1: type=action, tool={tool_name}")
-                # 获取thought和reasoning字段
-                thought = parsed.get("thought", "")
-                reasoning = parsed.get("reasoning", "")
-                
-                # 【修复D3】成功解析，重置重试计数器
-                self.parse_retry_count = 0
 
-                # 【步骤2.9】使用StepFactory创建ThoughtStep
-                # 【修复 2026-05-05 小沈】thought去重拼接：thought和thought_content相同则不拼
-                _thought_val = thought_content
-                if thought and thought.strip():
-                    _thought_val = thought if thought == thought_content else (thought + "\n" + thought_content).strip()
-                thought_step = StepFactory.create_thought_step(
-                    step=step_count,
-                    content="",
-                    tool_name=tool_name,
-                    tool_params=tool_params,
-                    thought=_thought_val,
-                    reasoning=reasoning
-                )
+                self.empty_response_retry_count = 0
+                parsed = parse_react_response(response)
+                parsed_type = parsed["type"]
 
-                # 【步骤2.10】记录步骤历史
-                self.steps.append(thought_step)
+                if parsed_type == "chunk":
+                    async for step in self._handle_chunk_type(parsed, step_count, chunk_buffer, step_counter):
+                        yield step
+                    continue
 
-                # yield Step字典
-                yield thought_step.to_dict()
-                
-                # 【修正 2026-04-17 小沈】删除：response 提前加入 conversation_history
-                # 按照设计文档15.2.0.4，response 应该在 action_tool 之后才加入
-                
-                # ========== Action 阶段 ==========
-                self.status = AgentStatus.EXECUTING
-                
-                # 【工具执行前中断检查】在执行工具前检查是否被中断
-                if task_id and running_tasks:
-                    is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
-                    logger.info(f"[InterruptCheck] 任务 {task_id} 工具执行前取消状态: {is_cancelled}")
-                    if is_cancelled:
-                        logger.info(f"[Interrupt] 任务 {task_id} 被取消，工具执行前中断")
-                        # 【问题2修复】使用create_incident_data替代裸字典
-                        interrupted_data = create_incident_data(
-                            incident_value="interrupted",
-                            message="用户取消了任务",
-                            step=step_count
-                        )
-                        yield interrupted_data
-                        self._on_after_loop()
-                        return
-                
-                # 使用 perf_counter 计算工具执行耗时（高精度）
-                start_time = time.perf_counter()
-                logger.info(f"[DEBUG_TOOL_PARAMS] before execute_tool: tool_name={tool_name}, tool_params={tool_params}")
-                execution_result = await self._execute_tool(tool_name, tool_params)
-                execution_time_ms = int((time.perf_counter() - start_time) * 1000)
-                
-                # 【工具执行后中断检查】在执行工具后检查是否被中断
-                if task_id and running_tasks:
-                    is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
-                    logger.info(f"[InterruptCheck] 任务 {task_id} 工具执行后取消状态: {is_cancelled}")
-                    if is_cancelled:
-                        logger.info(f"[Interrupt] 任务 {task_id} 被取消，工具执行后中断")
-                        # 【问题2修复】使用create_incident_data替代裸字典
-                        interrupted_data = create_incident_data(
-                            incident_value="interrupted",
-                            message="用户取消了任务",
-                            step=step_count
-                        )
-                        yield interrupted_data
-                        self._on_after_loop()
-                        return
-                
-                # 【步骤2.9】根据执行结果构建 action_tool
-                
-                # 【步骤2.9】统一执行结果字典格式（供StepFactory使用）
-                execution_result_dict = {
-                    "status": execution_result.get("status", "success"),
-                    "summary": execution_result.get("summary", ""),
-                    "data": execution_result.get("data"),
-                    "error": execution_result.get("error", ""),
-                    "retry_count": execution_result.get("retry_count", 0)
-                }
-
-                # 【步骤2.9】使用StepFactory创建ActionToolStep
-                action_step = StepFactory.create_action_tool_step(
-                    step=step_count,
-                    tool_name=tool_name,
-                    tool_params=tool_params,
-                    execution_result=execution_result_dict,
-                    execution_time_ms=execution_time_ms
-                )
-
-                # 【步骤2.10】记录步骤历史
-                self.steps.append(action_step)
-
-                # yield Step字典
-                yield action_step.to_dict()
-                
-                # 【修正 2026-04-17 小沈】按照设计文档15.2.0.4执行顺序
-                # 步骤5：response 应该在 action_tool 之后再加入 conversation_history
-                self.conversation_history.append({"role": "assistant", "content": response})
-                
-                # ========== Observation 阶段 ==========
-                # 区分不同 execution_status 生成 observation_text（给 LLM 历史）
-                exec_status = execution_result.get('status', 'unknown')
-                
-                if exec_status == 'success':
-                    # 成功状态：显示完整信息，包括实际数据
-                    observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
-                    if execution_result.get('data'):
-                        data = execution_result.get('data')
-                        # 【优化 2026-04-16 小沈】检查是否截断
-                        # 如果是 list_directory 的大目录，会返回 truncated=True
-                        if isinstance(data, dict) and data.get('truncated'):
-                            # 大目录截断：显示统计摘要，让 LLM 知道目录规模
-                            # 格式：[目录包含 X 项: Y 目录, Z 文件，显示前 200 项]
-                            total = data.get('total', 0)
-                            dir_count = data.get('dir_count', 0)
-                            file_count = data.get('file_count', 0)
-                            display_count = min(total, 200)
-                            truncated_info = f"\n[目录包含 {total} 项: {dir_count} 目录, {file_count} 文件，显示前 {display_count} 项]"
-                            observation_text += truncated_info
-                            # 【修复 2026-04-16 小沈】保留 entries 中的 path 字段
-                            # 原因：LLM 需要 path 来定位文件/目录
-                            if data.get('entries'):
-                                observation_text += f"\n实际数据: {data.get('entries')}"
-                        else:
-                            # 非截断数据：直接显示
-                            observation_text += f"\n实际数据: {data}"
-                elif exec_status == 'warning':
-                    # 警告状态：显示警告信息和部分数据
-                    observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
-                    if execution_result.get('data'):
-                        observation_text += f"\n部分数据: {execution_result.get('data')}"
-                else:
-                    # 失败状态（error/timeout/permission_denied）：只显示错误摘要，不显示数据
-                    observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
-                
-                # 【改进2 2026-05-01 小沈 小健】agent层独立内容质量检测
-                # 给LLM通道：在observation_text中附加质量警告和content摘要
-                if tool_name == "write_file" and exec_status == 'success':
-                    data_dict = execution_result.get('data', {}) or {}
-                    quality_warning = self._check_write_content_quality(tool_params, data_dict)
-                    if quality_warning:
-                        observation_text += f"\n⚠️ 内容质量警告: {quality_warning}"
-                    # 附加content摘要供LLM自查
-                    written_content = tool_params.get("content", "")
-                    if written_content:
-                        content_preview = written_content[:200]
-                        if len(written_content) > 200:
-                            content_preview += "..."
-                        observation_text += f"\n写入内容摘要({len(written_content)}字符): {content_preview}"
-
-                # 更新消息历史（给LLM通道）
-                logger.info(f"[Debug] observation加入history: {observation_text[:100]}...")
-                self._add_observation_to_history(observation_text)
-
-                # 记录观察结果到prompt日志
-                prompt_logger = get_prompt_logger()
-                prompt_logger.log_observation(
-                    step_name="工具执行结果",
-                    observation_content=observation_text,
-                    tool_name=tool_name,
-                    tool_params=tool_params
-                )
-
-                # ===== 【步骤2.9】yield observation =====
-                # 【改进2 2026-05-01】给前端通道也附加质量警告
-                display_summary = execution_result.get('summary', '')
-                if tool_name == "write_file" and exec_status == 'success':
-                    data_dict = execution_result.get('data', {}) or {}
-                    quality_warning = self._check_write_content_quality(tool_params, data_dict)
-                    if quality_warning:
-                        display_summary += f"\n⚠️ {quality_warning}"
-
-                # 使用带警告的display_result创建ObservationStep（给前端）
-                display_result = dict(execution_result)
-                display_result['summary'] = display_summary
-
-                observation_step = StepFactory.create_observation_step(
-                    step=step_count,
-                    tool_name=tool_name,
-                    tool_params=tool_params,
-                    execution_result=display_result,
-                    return_direct=execution_result.get("return_direct", False)
-                )
-
-                # 【步骤2.10】记录步骤历史（用原始execution_result，不含警告，避免重复）
-                self.steps.append(StepFactory.create_observation_step(
-                    step=step_count,
-                    tool_name=tool_name,
-                    tool_params=tool_params,
-                    execution_result=execution_result,
-                    return_direct=execution_result.get("return_direct", False)
-                ))
-
-                # yield带警告的版本给前端
-                yield observation_step.to_dict()
-                
-                # 【步骤9】检查是否需要动态加载新工具
-                # 在Observation之后、下一轮LLM调用前检查
-                # observation_text 是行712-744构建的observation内容
-                await self._check_and_load_missing_tools(observation_text, self.llm_client)
-                
-                # 【步骤3.6】核心设计: observation_step.is_done() 决定是否直接结束任务
-                if observation_step.is_done():
-                    # return_direct 时生成 FinalStep 并退出
-                    final_step = StepFactory.create_final_step(
-                        step=step_count,
-                        response=str(execution_result.get("data", "")),
-                        thought="工具执行要求直接返回结果",
-                        model=getattr(self, 'model', None),
-                        provider=getattr(self, 'provider', None)
-                    )
-                    self.steps.append(final_step)
-                    yield final_step.to_dict()
+                if parsed_type in ("answer", "implicit"):
+                    async for step in self._handle_completion_type(parsed, step_count, chunk_buffer):
+                        yield step
                     self._on_after_loop()
                     return
 
-                self._trim_history()
-        
+                if parsed_type == "thought_only":
+                    async for step in self._handle_thought_only(parsed, step_count, chunk_buffer):
+                        yield step
+                    continue
+
+                thought_content = parsed.get("content", "")
+                tool_name = parsed.get("tool_name") or parsed.get("action_tool")
+                tool_params = parsed.get("tool_params", parsed.get("params", {}))
+
+                if parsed_type != "parse_error":
+                    if not tool_name or tool_name not in valid_tool_names:
+                        parsed = {"type": "parse_error", "error": f"LLM返回无效工具名: {tool_name!r}"}
+                        parsed_type = "parse_error"
+
+                if parsed_type == "parse_error":
+                    async for step in self._handle_parse_error(parsed, step_count, chunk_buffer):
+                        yield step
+                    continue
+
+                async for step in self._handle_action_type(
+                    parsed, step_count, chunk_buffer, valid_tool_names,
+                    running_tasks, task_id, step_counter, response
+                ):
+                    yield step
+
         except Exception as e:
-            # ===== 【步骤2.9+2.11】场景1：未捕获异常 =====
-            # 【步骤2.11】废弃create_error_from_exception，使用StepFactory.create_error_step
-            logger.error(f"Agent run_stream error: {e}", exc_info=True)
-            
-            # 【步骤2.9】使用StepFactory创建ErrorStep
-            error_step = StepFactory.create_error_step(
-                step=step_count,
-                error_type="unhandled_exception",
-                error_message=str(e),
-                recoverable=False
-            )
-            
-            # 【步骤2.10】记录步骤历史
-            self.steps.append(error_step)
-            
-            # yield Step字典
-            yield error_step.to_dict()
-            
+            yield self._handle_run_exception(e, step_count)
             self._on_after_loop()
             return
+
+    def _initialize_run_state(
+        self, task: str, task_id: Optional[str], context: Optional[Dict[str, Any]] = None
+    ) -> Tuple[ChunkBuffer, Set[str]]:
+        """初始化运行状态，返回(chunk_buffer, valid_tool_names) — 小沈 2026-05-25"""
+        self.steps = []
+        self.message_builder.reset_per_run()
+        self.conversation_history = self.message_builder.conversation_history
+        self.status = AgentStatus.THINKING
+        self.llm_call_count = 0
+        if task_id:
+            self.task_id = task_id
+
+        self._on_session_init(task, context)
+        sys_prompt = self._get_system_prompt()
+        task_prompt = self._get_task_prompt(task, context)
+        self._on_before_loop(sys_prompt, task_prompt, context)
+        self.message_builder.init_history(sys_prompt, task_prompt)
+        self.conversation_history = self.message_builder.conversation_history
+
+        chunk_buffer = ChunkBuffer(self.max_consecutive_chunks)
+        valid_tool_names: Set[str] = {"finish"}
+        try:
+            from app.services.tools.registry import tool_registry
+            valid_tool_names = {t["name"] for t in tool_registry.list_tools()} | {"finish"}
+        except Exception as _e:
+            logger.debug(f"[工具名验证] 获取工具列表失败: {_e}, 仅允许finish")
+
+        return chunk_buffer, valid_tool_names
+
+    async def _handle_empty_response(
+        self, step_count: int
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """空响应截断历史重试 — 小沈 2026-05-25"""
+        logger.error(
+            f"[空响应] LLM返回空响应 (第{self.empty_response_retry_count}次重试), "
+            f"history长度={len(self.conversation_history)}"
+        )
+
+        if self.empty_response_retry_count > self.max_empty_response_retries:
+            yield self._exit_with_error(step_count, "empty_response", f"AI服务返回空响应（已重试{self.empty_response_retry_count}次）")
+            self._on_after_loop()
+            return
+
+        original_len = len(self.conversation_history)
+        if original_len <= 4:
+            logger.warning("[空响应] 历史已很短无法截断，直接报错")
+            yield self._exit_with_error(step_count, "empty_response", f"AI服务返回空响应（已重试{self.empty_response_retry_count}次）")
+            self._on_after_loop()
+            return
+
+        kept_head = self.conversation_history[:2]
+        kept_tail = self.conversation_history[-2:]
+        seen_ids: Set[int] = set()
+        deduped = []
+        for item in kept_head + kept_tail:
+            item_id = id(item)
+            if item_id not in seen_ids:
+                seen_ids.add(item_id)
+                deduped.append(item)
+        removed_len = original_len - len(deduped)
+        self.conversation_history = deduped
+        self.message_builder.conversation_history = deduped
+        logger.warning(
+            f"[空响应截断历史] 从{original_len}条截断到{len(deduped)}条, "
+            f"移除{removed_len}条中间历史, 准备重试"
+        )
+        yield create_incident_data(
+            incident_value="retrying",
+            message=f"AI返回空响应，已压缩对话历史重试（第{self.empty_response_retry_count}次）"
+        )
+
+    async def _handle_chunk_type(
+        self, parsed: Dict[str, Any], step_count: int,
+        chunk_buffer: ChunkBuffer, step_counter: Optional[Callable[[], int]]
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """chunk类型处理：拼接buffer、阈值检测、无工具Agent退出 — 小沈 2026-05-25"""
+        self.parse_retry_count = 0
+        chunk_content = parsed.get("content", "")
+
+        chunk_buffer.append(chunk_content)
+        self.message_builder.temp_history.append({"role": "assistant", "content": chunk_content})
+        if len(self.message_builder.temp_history) > 10:
+            self.message_builder.temp_history = self.message_builder.temp_history[-10:]
+
+        chunk_step = StepFactory.create_chunk_step(step=step_count, content=chunk_content)
+        yield self._emit_step(chunk_step)
+
+        if self.tool_category is None:
+            content = chunk_buffer.flush_to(self.message_builder)
+            sc = step_counter() if step_counter else (step_count + 1)
+            final_step = StepFactory.create_final_step(step=sc, response=content, thought="")
+            yield self._emit_step(final_step)
+            self._on_after_loop()
+            return
+
+        if chunk_buffer.should_promote():
+            promoted_content = chunk_buffer.flush_to(self.message_builder)
+            final_step = StepFactory.create_final_step(step=step_count, response=promoted_content, thought="")
+            yield self._emit_step(final_step)
+            self._on_after_loop()
+            return
+
+    async def _handle_completion_type(
+        self, parsed: Dict[str, Any], step_count: int, chunk_buffer: ChunkBuffer
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """answer/implicit完成处理 — 小沈 2026-05-25"""
+        self.parse_retry_count = 0
+
+        if chunk_buffer.buffer:
+            chunk_buffer.flush_to(self.message_builder)
+
+        answer_response = parsed.get("response", "")
+        if not answer_response or not answer_response.strip():
+            answer_response = parsed.get("tool_params", {}).get("result", "") if isinstance(parsed.get("tool_params"), dict) else ""
+        if not answer_response or not answer_response.strip():
+            answer_response = parsed.get("content", "")
+        if not answer_response or not answer_response.strip():
+            answer_response = parsed.get("reasoning", "")
+
+        _reasoning = parsed.get("reasoning", "")
+        final_step = StepFactory.create_final_step(
+            step=step_count, response=answer_response, thought=_reasoning,
+            model=getattr(self, 'model', None), provider=getattr(self, 'provider', None)
+        )
+        yield self._emit_step(final_step)
+        self.status = AgentStatus.COMPLETED
+
+    async def _handle_thought_only(
+        self, parsed: Dict[str, Any], step_count: int, chunk_buffer: ChunkBuffer
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """thought_only纯思考分支 — 小沈 2026-05-25"""
+        self.parse_retry_count = 0
+        thought = parsed.get("thought", "")
+        thought_content = parsed.get("content", "")
+
+        _thought_val = thought_content
+        if thought and thought.strip():
+            _thought_val = thought if thought == thought_content else (thought + "\n" + thought_content).strip()
+
+        thought_step = StepFactory.create_thought_step(
+            step=step_count, content="", tool_name="", tool_params={},
+            thought=_thought_val, reasoning=parsed.get("reasoning", "")
+        )
+        yield self._emit_step(thought_step)
+        self.message_builder.add_assistant(_thought_val)
+        self.message_builder.trim_history()
+        chunk_buffer.clear()
+
+    async def _handle_parse_error(
+        self, parsed: Dict[str, Any], step_count: int, chunk_buffer: ChunkBuffer
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """解析错误重试（复用_calculate_retry_delay） — 小沈 2026-05-25"""
+        error_msg = parsed.get("error", "Unknown parse error")
+        chunk_buffer.clear()
+
+        from app.chat_stream.error_handler import is_network_or_api_error
+        is_network_error, _error_type = is_network_or_api_error(error_msg)
+
+        if not is_network_error:
+            self.message_builder.add_observation(
+                f"Parse Error: {error_msg}. Please ensure your response follows the ReAct format (Thought -> Action -> Action Input)."
+            )
+        else:
+            logger.info(f"[parse_react_response] 网络/API错误，不注入history: {error_msg}")
+            if _error_type == "api_error_429":
+                _retry_delay = _calculate_retry_delay(self.parse_retry_count)
+                logger.warning(f"[parse_react_response] 429限流, 等待{_retry_delay:.0f}s后重试 (第{self.parse_retry_count+1}次)")
+                await asyncio.sleep(_retry_delay)
+            yield create_incident_data(
+                incident_value="rate_limit",
+                message=f"API暂时不可用，正在重试（第{self.parse_retry_count + 1}次）",
+                step=step_count
+            )
+
+        self.parse_retry_count += 1
+        if self.parse_retry_count >= self.max_parse_retries:
+            yield self._exit_with_error(step_count, "parse_error", f"解析失败: {error_msg}（已重试{self.max_parse_retries}次）")
+            self._on_after_loop()
+            return
+
+        yield create_incident_data(
+            incident_value="retrying",
+            message=f"解析失败，正在重试（第{self.parse_retry_count}次）",
+            step=step_count
+        )
+
+    async def _handle_action_type(
+        self, parsed: Dict[str, Any], step_count: int,
+        chunk_buffer: ChunkBuffer, valid_tool_names: Set[str],
+        running_tasks: Optional[Dict[str, Any]], task_id: Optional[str],
+        step_counter: Optional[Callable[[], int]], response: str
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """action工具执行入口 — 小沈 2026-05-25"""
+        tool_name = parsed.get("tool_name") or parsed.get("action_tool")
+        tool_params = parsed.get("tool_params", parsed.get("params", {}))
+        thought_content = parsed.get("content", "")
+        thought = parsed.get("thought", "")
+        reasoning = parsed.get("reasoning", "")
+
+        self.parse_retry_count = 0
+
+        chunk_buffer_was_flushed = bool(chunk_buffer.buffer)
+        if chunk_buffer.buffer:
+            chunk_buffer.flush_to(self.message_builder)
+
+        _thought_val = thought_content
+        if thought and thought.strip():
+            _thought_val = thought if thought == thought_content else (thought + "\n" + thought_content).strip()
+
+        thought_step = StepFactory.create_thought_step(
+            step=step_count, content="", tool_name=tool_name,
+            tool_params=tool_params, thought=_thought_val, reasoning=reasoning
+        )
+        yield self._emit_step(thought_step)
+
+        self.status = AgentStatus.EXECUTING
+
+        _int = self._check_interrupt(step_count, running_tasks)
+        if _int:
+            yield _int
+            self._on_after_loop()
+            return
+
+        outcome = await self._execute_tool_step(tool_name, tool_params, step_count, is_primary=True)
+        yield outcome.action_step_dict
+
+        if not chunk_buffer_was_flushed:
+            self.message_builder.add_assistant(response)
+
+        _int = self._check_interrupt(step_count, running_tasks)
+        if _int:
+            yield _int
+            self._on_after_loop()
+            return
+
+        async for step in self._execute_observation_flow(
+            outcome, parsed, step_count, running_tasks, task_id
+        ):
+            yield step
+
+    async def _execute_observation_flow(
+        self, outcome: _ToolStepOutcome, parsed: Dict[str, Any],
+        step_count: int, running_tasks: Optional[Dict[str, Any]],
+        task_id: Optional[str]
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Observation阶段：结果注入+is_done判断+pending执行 — 小沈 2026-05-25"""
+        self.status = AgentStatus.OBSERVING
+        self.message_builder.add_observation(
+            outcome.obs_inject_text, self.llm_call_count, fc_context=outcome.obs_fc_context
+        )
+        yield outcome.observation_step_dict
+
+        await self._check_and_load_missing_tools(outcome.observation_text, self.llm_client)
+
+        if outcome.is_done:
+            _result_data = outcome.execution_result.get("data")
+            try:
+                _response_text = json.dumps(_result_data, ensure_ascii=False) if _result_data is not None else ""
+            except (TypeError, ValueError):
+                _response_text = str(_result_data)
+            _msg = outcome.execution_result.get("message", "")
+            if _msg:
+                _response_text = _msg + "\n" + _response_text
+            final_step = StepFactory.create_final_step(
+                step=step_count, response=_response_text, thought="工具执行要求直接返回结果",
+                model=getattr(self, 'model', None), provider=getattr(self, 'provider', None)
+            )
+            yield self._emit_step(final_step)
+            self.status = AgentStatus.COMPLETED
+            self._on_after_loop()
+            return
+
+        self.message_builder.trim_history()
+
+        pending_calls = parsed.get("_pending_calls", [])
+        if pending_calls:
+            logger.info(f"[ReAct] 主工具完成，继续执行 {len(pending_calls)} 个并行工具")
+        async for _pd in self._execute_pending_calls(pending_calls, step_count, running_tasks, task_id):
+            yield _pd
+        if hasattr(self, '_pending_step_count'):
+            self._pending_step_count  # noqa — step_count同步已在_execute_pending_calls内部处理
+
+    def _handle_run_exception(self, e: Exception, step_count: int) -> Dict[str, Any]:
+        """未捕获异常兜底 — 小沈 2026-05-25"""
+        self.message_builder.temp_history.clear()
+        import traceback; traceback.print_exc()
+        logger.error(f"Agent run_stream error: {e}", exc_info=True)
+        return self._exit_with_error(step_count, "unhandled_exception", str(e))
     
     # ===== 对话历史管理 =====
 
-    MAX_HISTORY_TURNS = 5  # 保留最近 N 轮对话（每轮 = thought + observation）
-
-    def _trim_history(self) -> None:
-        """
-        分层保留对话历史
-        - 保留 system message
-        - 保留原始用户消息（任务需求）← 【改进3 2026-05-01 小沈 小健】
-        - 保留所有 observation 消息（工具执行结果）
-        - 保留最近5条消息
-
-        【修复 2026-04-01 小沈】
-        - 问题：关键词匹配可能丢失工具执行结果（如代码、JSON数据）
-        - 修复：直接识别 observation 消息（以 "Observation:" 开头），不再依赖关键词
-
-        【优化 2026-04-16 小沈】
-        - 问题：entries 数据过大导致 API 429 错误
-        - 修复：在 list_directory 中截断 entries（最多 200 项），已从根本上解决超长 observation 问题
-
-        【改进3 2026-05-01 小沈 小健】
-        - 问题：原始user消息在important裁剪时可能被丢弃，导致LLM丢失任务约束（如"10章"）
-        - 修复：显式保留conversation_history[1]（原始user消息），不参与important裁剪
-        - 参考：设计文档 v2.1 §改进3
-        """
-        if len(self.conversation_history) <= 2:
-            return  # 少于 system + user，不需要裁剪
-
-        # 不需要裁剪
-        if len(self.conversation_history) <= 15:
-            return
-
-        system_msg = self.conversation_history[0]
-
-        # 【改进3 2026-05-01】显式保留原始用户消息，不参与裁剪
-        # 原始user消息在conversation_history[1]，记录了用户最初的任务需求（如"写10章小说"）
-        original_user_msg = self.conversation_history[1] if len(self.conversation_history) > 1 else None
-
-        recent = self.conversation_history[-5:]
-
-        original_len = len(self.conversation_history)
-
-        # 从index=2开始遍历（跳过已显式保留的原始user消息）
-        important = []
-        start_idx = 2 if original_user_msg else 1
-        for msg in self.conversation_history[start_idx:-5]:
-            content = msg.get("content", "")
-            role = msg.get("role", "")
-
-            # 保留条件：
-            # 1. assistant消息（LLM推理过程，保持上下文连贯性）
-            # 2. observation消息（工具执行结果，以 "Observation:" 开头）
-            if role == "assistant" or content.startswith("Observation:"):
-                important.append(msg)
-
-        # 如果重要消息太多，只保留最新的10条
-        if len(important) > 10:
-            important = important[-10:]
-
-        # 重建：system + original_user + important + recent
-        rebuilt = [system_msg]
-        if original_user_msg:
-            rebuilt.append(original_user_msg)
-        rebuilt.extend(important)
-        rebuilt.extend(recent)
-
-        self.conversation_history = rebuilt
-
-        logger.info(f"[History] Trimmed from {original_len} to {len(self.conversation_history)} messages (important={len(important)}, recent={len(recent)})")
+    MAX_CONTEXT_CHARS = MAX_CONTEXT_CHARS  # from app.constants — 小健 2026-05-24
 
     # ===== 通用方法 =====
 
-    # 【升级 2026-05-05 小沈】智能observation截断策略
-    # 方案D: 首尾保留+智能摘要 + 动态递减预算
-    CONTEXT_WINDOW_SIZE = 200000  # 上下文窗口大小（字符数，约200K tokens）
-    OBSERVATION_BUDGET_INITIAL = 150000  # 第1轮observation最大长度
-    OBSERVATION_BUDGET_DECAY = 10000  # 每增加1轮，预算减少10K
-    OBSERVATION_BUDGET_MIN = 20000  # 最低预算，不低于20K
-    OBSERVATION_HEAD_RATIO = 0.6  # 头部保留比例（60%给头部，40%给尾部）
-    OBSERVATION_SUMMARY_THRESHOLD = 50000  # 超过此长度时启用智能摘要
-
-    def _get_observation_budget(self) -> int:
-        """根据当前轮数动态计算observation可用预算
-
-        策略：初始150K，每轮递减10K，最低20K
-        轮数越多，history越长，留给新observation的空间越小
+    def _emit_step(self, step) -> dict:
+        """记录步骤并返回yield用的dict — 小健 2026-05-24
+        
+        统一 self.steps.append(step) + step.to_dict() 两步操作。
+        调用方: step_dict = self._emit_step(step); yield step_dict
         """
-        budget = self.OBSERVATION_BUDGET_INITIAL - (self.llm_call_count * self.OBSERVATION_BUDGET_DECAY)
-        budget = max(budget, self.OBSERVATION_BUDGET_MIN)
-        return budget
+        self.steps.append(step)
+        return step.to_dict()
 
-    @staticmethod
-    def _smart_truncate(content: str, budget: int, head_ratio: float = 0.6) -> str:
-        """智能截断：首尾保留 + 中间摘要
-
-        策略：
-        1. 内容在预算内 → 原样返回
-        2. 内容超预算但<摘要阈值 → 首部保留budget，末尾附截断提示
-        3. 内容超摘要阈值 → 首部保留head_ratio*budget，
-           尾部保留(1-head_ratio)*budget，中间替换为摘要
-
-        Args:
-            content: 原始内容
-            budget: 本次允许的最大字符数
-            head_ratio: 头部保留比例，默认0.6
-
-        Returns:
-            截断后的内容
+    def _exit_with_error(self, step_count: int, error_type: str, error_message: str, recoverable: bool = False) -> dict:
+        """创建error_step并返回yield用的dict，同时设置FAILED状态 — 小健 2026-05-24
+        
+        统一 error_step创建 + append + status设置。
+        调用方: yield self._exit_with_error(...); self._on_after_loop(); return
         """
-        original_len = len(content)
+        self.status = AgentStatus.FAILED
+        error_step = StepFactory.create_error_step(
+            step=step_count,
+            error_type=error_type,
+            error_message=error_message,
+            recoverable=recoverable
+        )
+        return self._emit_step(error_step)
 
-        if original_len <= budget:
-            return content
-
-        head_size = int(budget * head_ratio)
-        tail_size = budget - head_size
-
-        # 计算中间省略了多少
-        middle_len = original_len - head_size - tail_size
-
-        # 估算省略的行数
-        head_part = content[:head_size]
-        tail_part = content[-tail_size:]
-        total_lines = content.count('\n') + 1
-        head_lines = head_part.count('\n') + 1
-        tail_lines = tail_part.count('\n') + 1
-        omitted_lines = total_lines - head_lines - tail_lines
-
-        # 构建摘要
-        if omitted_lines > 0:
-            summary = f"\n\n... [省略 {middle_len} 字符, 约 {omitted_lines} 行] ...\n\n"
-        else:
-            summary = f"\n\n... [省略 {middle_len} 字符] ...\n\n"
-
-        truncated = head_part + summary + tail_part
-        return truncated
-
-    def _add_observation_to_history(self, observation: str) -> None:
-        """添加观察结果到对话历史
-
-        【升级 2026-05-05 小沈】智能截断策略：
-        - 动态预算：第1轮150K，每轮递减10K，最低20K
-        - 首尾保留：保留头部（结构/开头信息）+ 尾部（结果/错误信息）
-        - 中间摘要：省略部分用字符数+行数摘要替代
-        - 上下文保护：总observation不超过上下文窗口
+    def _check_interrupt(self, step_count: int, running_tasks: Optional[Dict[str, Any]] = None) -> Optional[dict]:
+        """检查任务是否被中断，若中断返回interrupted_data的dict — 小健 2026-05-24
+        
+        统一4处中断检查逻辑。直接读取cancelled标志（非线程安全但可接受，
+        因为只是检查布尔值，与loop中现有模式一致）。
+        调用方: _int = self._check_interrupt(step_count, running_tasks); 
+               if _int: yield _int; self._on_after_loop(); return
         """
-        budget = self._get_observation_budget()
-
-        if len(observation) > budget:
-            truncated = self._smart_truncate(
-                observation,
-                budget=budget,
-                head_ratio=self.OBSERVATION_HEAD_RATIO
+        task_id = getattr(self, '_task_id', None) or getattr(self, 'task_id', None)
+        if not task_id or not running_tasks:
+            return None
+        task_data = running_tasks.get(task_id, {})
+        if task_data.get("cancelled", False):
+            return create_incident_data(
+                incident_value='interrupted',
+                message='用户取消了任务',
+                step=step_count
             )
-            logger.warning(
-                f"[智能截断] 轮数={self.llm_call_count}, "
-                f"原始长度={len(observation)}, "
-                f"预算={budget}, "
-                f"截断后={len(truncated)}, "
-                f"策略=首尾保留(头{int(self.OBSERVATION_HEAD_RATIO*100)}%+尾{int((1-self.OBSERVATION_HEAD_RATIO)*100)}%)"
-            )
-            observation = truncated
-        else:
-            logger.info(
-                f"[observation] 轮数={self.llm_call_count}, "
-                f"长度={len(observation)}, 预算={budget}, 无需截断"
-            )
-        self.conversation_history.append({"role": "user", "content": observation})
-        self._trim_history()
+        return None
 
-    # ========== 【改进2 2026-05-01 小沈 小健】agent层独立内容质量检测 ==========
+    async def _execute_pending_calls(
+        self,
+        pending_calls: List[Dict[str, Any]],
+        step_count: int,
+        running_tasks: Optional[Dict[str, Any]],
+        task_id: Optional[str]
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """编排并行工具调用列表 — 小健 2026-05-24
 
-    def _check_write_content_quality(self, tool_params: dict, data: dict) -> str:
+        在主工具Observation完成后执行附带的pending_calls。
+        每个调用委托给 _execute_tool_step(is_primary=False)，
+        本方法仅负责step递增、中断检查和yield转发。
+        返回更新后的step_count供调用方同步。
         """
-        agent层独立检查write_file写入内容的质量。
+        for pending in pending_calls:
+            step_count += 1
+            p_name = pending.get("name", "finish")
+            p_params = pending.get("args", {})
+            logger.info(f"[ReAct] 执行并行工具: {p_name}")
 
-        与改进1（工具层）不同，此方法在Observation阶段执行，检测结果通过
-        两条Observation通道（给LLM + 给前端）传递。即使工具层漏检（如精确
-        关键词未命中），agent层仍能发现并警告LLM和前端用户。
+            if self._check_interrupt(step_count, running_tasks):
+                logger.info(f"[Interrupt] 任务 {task_id} 在并行工具执行前被取消")
+                break
 
-        使用共享的 content_quality.check_content_quality 方法，检测逻辑
-        与工具层完全一致。
-
-        另外独立检查 bytes_written 极小（<256字节），提示可能输出不完整。
-
-        Args:
-            tool_params: LLM返回的tool_params字典（含content, file_path等）
-            data: 工具执行返回的data字典（含bytes_written等）
-
-        Returns:
-            警告信息字符串（空字符串表示无问题）
-        """
-        bytes_written = 0
-        if isinstance(data, dict):
-            bytes_written = data.get("bytes_written", 0)
-
-        written_content = tool_params.get("content", "")
-        file_path = tool_params.get("file_path", "")
-        warnings = []
-
-        # 使用共享的自我指涉检测方法
-        if written_content:
-            from app.services.tools.toolhelper.content_quality import check_content_quality
-            quality_result = check_content_quality(content=written_content, file_path=file_path)
-            if quality_result.get("is_thought_leak"):
-                warnings.append(
-                    f"内容疑似思维泄漏：写入内容中{int(quality_result['self_ref_rate']*100)}%"
-                    f"为自我指涉描述，不是实际的文件内容。"
-                    f"请在content参数中传入真正的文件内容，而非你的思考过程。"
-                )
-
-        # 检查bytes_written极小（<256字节），可能不是期望的完整内容
-        if 0 < bytes_written < 256:
-            warnings.append(
-                f"写入内容过小：仅{bytes_written}字节，"
-                f"请确认是否已将完整内容写入content参数。"
+            outcome = await self._execute_tool_step(
+                p_name, p_params, step_count, is_primary=False
             )
+            yield outcome.action_step_dict
+            self.message_builder.add_observation(
+                outcome.obs_inject_text, self.llm_call_count,
+                fc_context=outcome.obs_fc_context
+            )
+            yield outcome.observation_step_dict
 
-        return "；".join(warnings)
+        self._pending_step_count = step_count
+
+

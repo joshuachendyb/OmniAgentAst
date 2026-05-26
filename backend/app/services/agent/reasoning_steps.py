@@ -22,6 +22,8 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List, Callable
 
 
+
+
 def create_timestamp() -> int:
     """
     创建时间戳（毫秒）
@@ -154,7 +156,7 @@ class ToolMixin:
     设计依据：13.2.2.2节ToolMixin设计
     """
     
-    def __init__(self, tool_name: str, tool_params: Dict[str, Any]):
+    def __init__(self, tool_name: str, tool_params: Optional[Dict[str, Any]] = None):
         """
         初始化ToolMixin
         
@@ -368,6 +370,9 @@ class ActionToolStep(ToolMixin, ReasoningStep):
         """
         初始化ActionToolStep
         
+        职责：只传递执行结果摘要（status/data/耗时/重试），
+        详细信息（code/warning/next_actions/attachment）由ObservationStep负责。
+        
         Args:
             step: 步骤序号
             tool_name: 工具名称
@@ -440,13 +445,12 @@ class ActionToolStep(ToolMixin, ReasoningStep):
         base_dict = ReasoningStep.to_dict(self)
         base_dict.update({
             "execution_status": self._execution_status,
-            "summary": self._summary,
-            "execution_result": self._execution_result,  # 原raw_data
-            "error_message": self._error_message,
-            "action_retry_count": self._action_retry_count,  # 原retry_count
+            "execution_result": self._execution_result,
+            "raw_data": self._execution_result,
+            "action_retry_count": self._action_retry_count,
             "execution_time_ms": self._execution_time_ms,
-            "tool_name": self._tool_name,  # 来自ToolMixin
-            "tool_params": self._tool_params,  # 来自ToolMixin
+            "tool_name": self._tool_name,
+            "tool_params": self._tool_params,
         })
         return base_dict
 
@@ -477,26 +481,48 @@ class ObservationStep(ToolMixin, ReasoningStep):
         tool_params: Dict[str, Any],
         observation: str = "",
         return_direct: bool = False,
+        execution_status: str = "",
+        code: str = "",
+        warning: Optional[str] = None,
+        attachment: Any = None,
+        next_actions: Optional[List[Dict[str, str]]] = None,
+        summary: str = "",
+        error_message: str = "",
         timestamp: Optional[int] = None
     ):
         """
         初始化ObservationStep
         
+        职责：传递执行详细信息（code/warning/next_actions/attachment/summary/error_message），
+        业务数据（data）由ActionToolStep负责，不重复。
+        
         Args:
             step: 步骤序号
             tool_name: 工具名称
             tool_params: 工具参数
-            observation: 观察结果
+            observation: 观察结果文本（summary）
             return_direct: 是否直接返回
+            execution_status: 执行状态
+            code: 原始错误码
+            warning: 警告文本
+            attachment: 二进制附件
+            next_actions: 推荐下一步操作
+            summary: 执行摘要（给前端展示用）
+            error_message: 错误信息（给前端展示用）
             timestamp: 时间戳（毫秒）
         """
-        # 调用ToolMixin初始化
         ToolMixin.__init__(self, tool_name, tool_params)
-        # 调用ReasoningStep初始化
         ReasoningStep.__init__(self, step, timestamp)
         
         self._observation = observation
         self._return_direct = return_direct
+        self._execution_status = execution_status
+        self._code = code
+        self._warning = warning
+        self._attachment = attachment
+        self._next_actions = next_actions
+        self._summary = summary
+        self._error_message = error_message
     
     def get_type(self) -> str:
         return "observation"
@@ -514,17 +540,48 @@ class ObservationStep(ToolMixin, ReasoningStep):
         """获取是否直接返回"""
         return self._return_direct
     
+    @property
+    def summary(self) -> str:
+        """获取执行摘要"""
+        return self._summary
+    
+    @property
+    def error_message(self) -> str:
+        """获取错误信息"""
+        return self._error_message
+    
     def is_done(self) -> bool:
         return self._return_direct
     
     def to_dict(self) -> Dict[str, Any]:
         base_dict = ReasoningStep.to_dict(self)
-        base_dict.update({
-            "observation": self._observation,
-            "return_direct": self._return_direct,
-            "tool_name": self._tool_name,  # 来自ToolMixin
-            "tool_params": self._tool_params,  # 来自ToolMixin
-        })
+        
+        # 【改造 2026-05-22 小沈】observation改为JSON对象，符合第13章设计方案
+        # 【修复 2026-05-22 小资】summary为空时使用error_message或默认值，避免前端渲染失败
+        summary_text = self._observation or self._summary or self._error_message or "执行完成"
+        observation_obj = {
+            "summary": summary_text,
+            "tool_name": self._tool_name or "unknown",
+            "tool_params": self._tool_params or {},
+            "return_direct": self._return_direct or False,
+        }
+        
+        if self._execution_status:
+            observation_obj["execution_status"] = self._execution_status
+        if self._error_message:
+            observation_obj["error_message"] = self._error_message
+        if self._warning:
+            observation_obj["warning"] = self._warning
+        if self._next_actions:
+            observation_obj["next_actions"] = self._next_actions
+        if self._attachment is not None:
+            observation_obj["attachment"] = self._attachment
+        
+        d = {"observation": observation_obj}
+        if self._code:
+            d["code"] = self._code
+        
+        base_dict.update(d)
         return base_dict
 
 
@@ -580,6 +637,10 @@ class FinalStep(ReasoningStep):
         self._thought = thought
         self._model = model
         self._provider = provider
+        # 【修复 2026-05-13 小健】初始化属性，避免访问时AttributeError
+        self._is_finished = True       # type="final"本身就是已完成标识
+        self._is_streaming = False     # 最终回答不是流式
+        self._is_reasoning = False     # 最终回答不可能在推理中
     
     def get_type(self) -> str:
         return "final"
@@ -627,10 +688,10 @@ class FinalStep(ReasoningStep):
     
     def to_dict(self) -> Dict[str, Any]:
         base_dict = ReasoningStep.to_dict(self)
-        # 删除重复的content字段，FinalStep用response
-        base_dict.pop("content", None)
+        # 【修复 2026-05-13 小沈】M5: 保留content作为response别名，向后兼容旧消费者
         base_dict.update({
             "response": self._response,
+            "content": self._response,  # content作为response的别名
             "thought": self._thought,
             "model": self._model,
             "provider": self._provider,
@@ -848,16 +909,22 @@ class StepFactory:
         Returns:
             ActionToolStep实例
         """
+        # 【已修复 2026-05-21 小沈】
+        # 原 bug：execution_result_dict 没有 "code" 键（只有 "status" 键），
+        # extract_status() 始终返回 "success" 默认值。
+        # 修正：直接使用 execution_result_dict["status"]（由 caller 已计算好）
+        _status = execution_result.get("status", "success")
+        
         return ActionToolStep(
             step=step,
             tool_name=tool_name,
             tool_params=tool_params or {},
-            execution_status=execution_result.get("status", "success"),
+            execution_status=_status,
             summary=execution_result.get("summary", ""),
             execution_result=execution_result.get("data"),
-            error_message=execution_result.get("error", ""),
+            error_message=(execution_result.get("error_message", "") or execution_result.get("message", "")) if execution_result.get("code", 0) != 0 else "",
             action_retry_count=execution_result.get("retry_count", 0),
-            execution_time_ms=execution_time_ms
+            execution_time_ms=execution_time_ms,
         )
     
     @staticmethod
@@ -894,31 +961,25 @@ class StepFactory:
         """
         创建ObservationStep
         
-        【修复 2026-04-17 小沈】
-        - 原错误实现：使用 execution_result.get("data") 作为 observation 内容
-        - 修正为：使用 execution_result.get("summary") 作为 observation 内容
-        - 原因：遵循设计文档 15.6.4 的规范
-          - observation 只显示精简的 summary 字段给前端
-          - 不应该显示完整的 data 结构（会显示 {'success': True, 'entries': [...]} 等冗余数据）
-          - display_text = execution_result.get('summary', '') 是设计文档规定的格式
+        execution_result 中包含完整信息，observation 字段取 summary 文本，
+        其余字段（code/data/warning/attachment/next_actions）条件透传给前端SSE。
         
         Args:
             step: 步骤序号
             tool_name: 工具名称
             tool_params: 工具参数
             execution_result: 执行结果字典
-                - status: 执行状态（success/error/warning）
-                - summary: 执行摘要（用于 observation 字段）
-                - data: 原始数据（不用于 observation）
+                - status: 执行状态
+                - summary: 执行摘要（用于 observation 文本字段）
+                - data: 业务数据
+                - code: 原始错误码
+                - warning: 警告文本
+                - attachment: 附件
+                - next_actions: 推荐下一步
             return_direct: 是否直接返回
             
         Returns:
             ObservationStep实例
-            
-        设计依据：
-        - 设计文档：15.6.4 observation 类型（第5006行）
-        - 原文："observation 只显示精简的 observation 字段给前端"
-        - 原文："observation: string 观察结果文本（display_text精简摘要）"
         """
         # 【修复 2026-04-17 小沈】使用 summary 而不是 data
         # observation 字段只应包含精简摘要，不是完整的原始数据结构
@@ -930,7 +991,14 @@ class StepFactory:
             tool_name=tool_name,
             tool_params=tool_params or {},
             observation=observation_text,
-            return_direct=return_direct
+            return_direct=return_direct,
+            execution_status=execution_result.get("status", ""),
+            code=execution_result.get("code", ""),
+            warning=execution_result.get("warning"),
+            attachment=execution_result.get("attachment"),
+            next_actions=execution_result.get("next_actions"),
+            summary=execution_result.get("summary", ""),
+            error_message=execution_result.get("error_message", ""),
         )
     
     @staticmethod

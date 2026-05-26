@@ -11,7 +11,7 @@ from pathlib import Path
 # from app.api.v1 import health, chat_non_stream, chat2, init_model_select, file_operations, config, sessions, security, execution, metrics
 # 【阶段6废弃端点但保留代码】chat2.py 已移至 backup/chat2.py
 # cleanup_expired_tasks 已迁移到 react_sse_wrapper.py
-from app.api.v1 import health, init_model_select, file_operations, routes, sessions, security, execution, metrics
+from app.api.v1 import health, init_model_select, operation_history, routes, sessions, security, execution, metrics
 # 兼容导入
 config = routes
 # chat_stream 暂时禁用，使用 chat_router 替代
@@ -33,20 +33,14 @@ def get_version() -> str:
         project_root = backend_dir.parent
         version_file = project_root / "version.txt"
         
-        print(f"[Version] current_file: {current_file}")
-        print(f"[Version] backend_dir: {backend_dir}")
-        print(f"[Version] project_root: {project_root}")
-        print(f"[Version] version_file: {version_file}")
-        print(f"[Version] version_file exists: {version_file.exists()}")
-        
         if version_file.exists():
             with open(version_file, 'r', encoding='utf-8') as f:
                 version = f.readline().strip()
             print(f"[Version] read version: {version}")
             return version.lstrip('v')
     except Exception as e:
-        print(f"[Version] Failed to read version.txt: {e}")
-    return "0.4.14"
+        pass
+    return "0.13.36"
 
 app_version = get_version()
 
@@ -56,12 +50,18 @@ app = FastAPI(
     version=app_version
 )
 
-print("OmniAgentAst Backend v" + app_version + " started")
+logger.info("Backend v" + app_version + " started")
 
-# CORS配置
+# CORS配置 - 显式指定前端源，避免通配符与credentials冲突
+import os
+from app.constants import DEFAULT_CORS_ORIGINS
+
+_cors_origins_str = os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS)
+_cors_origins = [origin.strip() for origin in _cors_origins_str.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -124,7 +124,7 @@ from app.services.chat_router import router as chat_router_router, task_router
 app.include_router(chat_router_router, prefix="/api/v1", tags=["chat"])
 app.include_router(task_router, prefix="/api/v1", tags=["chat"])
 app.include_router(init_model_select.router, prefix="/api/v1", tags=["chat"])
-app.include_router(file_operations.router, prefix="/api/v1", tags=["file-operations"])
+app.include_router(operation_history.router, prefix="/api/v1", tags=["operation-history"])
 app.include_router(config.router, prefix="/api/v1", tags=["config"])
 app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 app.include_router(security.router, prefix="/api/v1", tags=["security"])
@@ -135,6 +135,8 @@ app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 # 【阶段6更新】cleanup_expired_tasks 改为从 react_sse_wrapper 导入
 import asyncio
 from app.services.react_sse_wrapper import cleanup_expired_tasks
+# 【Phase 1修复 小健 2026-05-14】删除模块级import，改为函数内import
+# from app.services.tools.shell.shell_tools import cleanup_background_shells
 
 @app.on_event("startup")
 async def startup_event():
@@ -153,10 +155,19 @@ async def startup_event():
     logger.info("后台清理任务已启动")
 
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时清理后台shell进程"""
+    # 【Phase 1修复 小健 2026-05-14】函数内import避免触发register
+    from app.services.tools.shell.shell_tools import cleanup_background_shells
+    count = cleanup_background_shells()
+    logger.info(f"已清理 {count} 个后台shell进程")
+
+
 @app.get("/")
 async def root():
     return {
         "message": "OmniAgentAst API",
-        "version": "0.2.2",
+        "version": app_version,
         "docs": "/docs"
     }

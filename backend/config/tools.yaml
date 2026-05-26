@@ -6,7 +6,7 @@ tools:
   timeouts:
     read_file: 10
     write_file: 10
-    default: 5
+    default: 60
 
   aliases:
     read_file:

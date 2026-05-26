@@ -92,3 +92,39 @@ class RetryController:
     
     def __repr__(self) -> str:
         return f"RetryController(max_retries={self.max_retries}, retry_count={self.retry_count})"
+
+
+def _calculate_retry_delay(
+    retry_count: int, base: int = 2, max_wait: int = 30
+) -> float:
+    """
+    计算指数退避等待时间
+
+    使用场景:
+        重试场景下计算下次重试前的等待秒数，替代硬编码的 2**retry_count 退避逻辑。
+        供 base_react._handle_parse_error、llm_core、chat_stream_query 共同复用。
+
+    使用示例/常用名转换说明:
+        _calculate_retry_delay(0)  → 1.0   (首次重试等待1秒)
+        _calculate_retry_delay(1)  → 2.0
+        _calculate_retry_delay(3)  → 8.0
+        _calculate_retry_delay(5)  → 30.0  (max_wait截断)
+        _calculate_retry_delay(10) → 30.0  (max_wait截断)
+        _calculate_retry_delay(3, base=3, max_wait=60) → 27.0
+
+    返回数据说明:
+        float: 等待秒数，范围 [1.0, max_wait]
+
+    Args:
+        retry_count: 当前重试次数（0=首次重试）
+        base: 指数底数，默认2
+        max_wait: 最大等待秒数，默认30
+
+    Author: 小沈 2026-05-25
+    """
+    if retry_count < 0:
+        retry_count = 0
+    if base < 2:
+        base = 2
+    wait = float(base ** retry_count)
+    return min(wait, float(max_wait))

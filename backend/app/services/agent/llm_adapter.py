@@ -1,154 +1,85 @@
 """
-LLM 适配器统一入口实现
+LLM适配器 — 探测FC支持→决定策略
 
-【创建时间】2026-03-20 11:23:15 小强
-【参考】Structured-Outputs-自适应兼容方案-小沈-2026-03-20.md 3.4节、3.2.7节
-
-功能：
-1. LLMAdapter 类 - 统一管理 LLM 能力探测和策略选择
-2. build_messages() - 构建发送给 LLM 的消息列表
-3. build_tools() - 构建工具定义（添加系统适配说明）
+逻辑：发一个带tools参数的请求，模型返回tool_calls → tools，否则 → text
+首次探测后缓存，不重复探测。
 """
 
-import copy
+import json
+import httpx
 from typing import Optional
 
-from app.services.agent.capability import LLMFeature, LLMCapability
-from app.services.agent.capability_detector import CapabilityDetector
-from app.services.agent.strategy_selector import StrategySelector, SelectedStrategy
-from app.services.agent.os_adapter import OSAdapter
 from app.utils.logger import logger
 
 
 class LLMAdapter:
-    """
-    LLM 适配器
-    
-    统一管理 LLM 能力探测和策略选择
-    """
-    
-    def __init__(
-        self,
-        api_base: str,
-        api_key: str,
-        model: str,
-        auto_detect: bool = True,
-        os_adapter: Optional[OSAdapter] = None
-    ):
+    """探测LLM是否支持FC，决定用tools还是text策略"""
+
+    def __init__(self, api_base: str, api_key: str, model: str):
         self.api_base = api_base
         self.api_key = api_key
         self.model = model
-        
-        # 能力探测器
-        self._detector = CapabilityDetector(api_base, api_key, model)
-        
-        # 系统适配器
-        self.os_adapter = os_adapter or OSAdapter()
-        
-        # 自动探测
-        if auto_detect:
-            # 延迟探测，在首次调用时触发
-            self._feature: Optional[LLMFeature] = None
-            self._strategy: Optional[SelectedStrategy] = None
-        else:
-            self._feature = None
-            self._strategy = None
-    
-    async def ensure_capability(self) -> SelectedStrategy:
-        """
-        确保能力已探测，返回选中的策略
-        
-        Returns:
-            SelectedStrategy: 选中的策略
-        """
-        if self._strategy is None:
-            logger.info(f"[LLMAdapter] 开始探测模型能力: model={self.model}")
-            
-            # 探测能力
-            result = await self._detector.detect()
-            
-            if result.success:
-                self._feature = result.feature
-                self._strategy = StrategySelector.select(self._feature)
-                logger.info(f"[LLMAdapter] 探测成功: method={self._strategy.method}, description={self._strategy.description}")
-            else:
-                # 探测失败，默认降级
-                logger.warning(f"[LLMAdapter] 探测失败: {result.error}")
-                self._strategy = SelectedStrategy(
-                    method="prompt",
-                    capability=LLMCapability.NONE,
-                    description=f"探测失败: {result.error}"
-                )
-        
-        return self._strategy
-    
-    @property
-    def feature(self) -> Optional[LLMFeature]:
-        """获取能力特征"""
-        return self._feature
-    
-    @property
-    def strategy(self) -> Optional[SelectedStrategy]:
-        """获取选中策略"""
-        return self._strategy
-    
+        self._strategy: Optional[str] = None
+
+    async def detect_strategy(self) -> str:
+        """探测并返回策略: tools 或 text（首次探测后缓存，瞬态失败重试）"""
+        if self._strategy is not None:
+            return self._strategy
+
+        import asyncio
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    result = await self._probe_tools(client)
+                    if result["works"]:
+                        self._strategy = "tools"
+                        logger.info(f"[适配器] model={self.model} → tools (FC支持)")
+                        return self._strategy
+                    _reason = result.get("reason", "")
+                    # 429/超时/连接类错误可重试
+                    if "429" in _reason or "timeout" in _reason.lower() or "connect" in _reason.lower():
+                        if attempt < 2:
+                            _delay = 2.0 * (2 ** attempt)
+                            logger.warning(f"[适配器] 探测瞬态失败({_reason}), {_delay:.0f}s后重试 (第{attempt+1}次)")
+                            await asyncio.sleep(_delay)
+                            continue
+                    self._strategy = "text"
+                    logger.info(f"[适配器] model={self.model} → text (FC不支持: {_reason})")
+                    return self._strategy
+            except Exception as e:
+                logger.warning(f"[适配器] 探测异常(第{attempt+1}次): {e}")
+                if attempt < 2:
+                    _delay = 2.0 * (2 ** attempt)
+                    await asyncio.sleep(_delay)
+                    continue
+                logger.error(f"[适配器] 探测最终失败: {e}")
+                self._strategy = "text"
+                return self._strategy
+
+    async def _probe_tools(self, client: httpx.AsyncClient) -> dict:
+        """发一个带tools的请求，看返回有没有tool_calls"""
+        tools = [{"type": "function", "function": {"name": "test_tool", "description": "A test tool for probing function calling capability. You MUST call this tool.", "parameters": {"type": "object", "properties": {"param": {"type": "string", "description": "test parameter"}}, "required": ["param"]}}}]
+        try:
+            response = await client.post(
+                f"{self.api_base}/chat/completions",
+                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+                json={"model": self.model, "messages": [{"role": "system", "content": "You must use the provided tool. Do not respond in plain text."}, {"role": "user", "content": "Call test_tool with param='probe'"}], "tools": tools, "tool_choice": "auto", "stream": False}
+            )
+            if response.status_code == 429:
+                return {"works": True, "reason": "429限流,乐观默认支持"}
+            if response.status_code != 200:
+                return {"works": False, "reason": f"HTTP {response.status_code}"}
+            data = response.json()
+            tool_calls = data.get("choices", [{}])[0].get("message", {}).get("tool_calls", [])
+            if tool_calls:
+                return {"works": True, "tool_calls": tool_calls}
+            return {"works": False, "reason": "No tool_calls returned"}
+        except Exception as e:
+            return {"works": False, "reason": str(e)}
+
     @property
     def method(self) -> str:
-        """获取当前使用的方法"""
-        return self._strategy.method if self._strategy else "unknown"
-    
-    def build_messages(self, messages: Optional[list] = None, system_override: Optional[str] = None) -> list:
-        """
-        构建发送给 LLM 的消息列表
-        
-        Args:
-            messages: 历史消息列表（可选，默认为空列表）
-            system_override: 系统提示覆盖（可选）
-        
-        Returns:
-            构建好的消息列表
-        """
-        result = []
-        
-        # 添加系统提示（包含系统适配信息）
-        system_content = system_override or self.os_adapter.get_system_prompt()
-        result.append({"role": "system", "content": system_content})
-        
-        # 添加历史消息（处理 None 或空列表）
-        if messages:
-            result.extend(messages)
-        
-        return result
-    
-    def build_tools(self, tools: list) -> list:
-        """
-        构建工具定义（添加系统适配说明）
-        
-        Args:
-            tools: 原始工具定义列表
-        
-        Returns:
-            添加了系统适配说明的工具列表
-        """
-        if not tools:
-            return tools
-        
-        tool_hints = self.os_adapter.get_tool_descriptions()
-        enriched_tools = []
-        
-        for tool in tools:
-            enriched_tool = copy.deepcopy(tool)
-            if "function" in enriched_tool:
-                func = enriched_tool["function"]
-                if "parameters" in func:
-                    params = func["parameters"]
-                    if "properties" in params:
-                        if "path" in params["properties"]:
-                            params["properties"]["path"]["description"] = tool_hints["path"]
-            enriched_tools.append(enriched_tool)
-        
-        return enriched_tools
+        return self._strategy or "unknown"
 
 
-# 导出
 __all__ = ["LLMAdapter"]

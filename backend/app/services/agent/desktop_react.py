@@ -10,12 +10,13 @@ from typing import Any, Optional, Dict, List
 
 from app.services.agent.base_react import BaseAgent, DEFAULT_MAX_STEPS
 from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin
+from app.services.agent.mixins.tool_step_mixin import ToolStepMixin
 from app.services.prompts.desktop.desktop_prompts import DesktopPrompts
 from app.services.tools.registry import ToolCategory
 from app.utils.logger import logger
 
 
-class DesktopReactAgent(ReactAgentMixin, BaseAgent):
+class DesktopReactAgent(ToolStepMixin, ReactAgentMixin, BaseAgent):
     """桌面操作 ReAct Agent"""
     
     def __init__(
@@ -58,7 +59,7 @@ class DesktopReactAgent(ReactAgentMixin, BaseAgent):
         return self.prompts.get_task_prompt(task)
     
     async def _get_llm_response(self) -> str:
-        return await self._call_llm_with_summary()
+        return await self._call_llm()
     
     async def _execute_tool(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
         normalized_params = self.executor._normalize_params(action, params)
@@ -67,9 +68,9 @@ class DesktopReactAgent(ReactAgentMixin, BaseAgent):
     async def rollback(self, step_number=None) -> bool:
         """
         桌面操作无法回滚
-        
+
         Returns:
             False - 表示回滚不可用，而非回滚失败
         """
-        logger.warning(f"[DesktopReactAgent] 桌面操作无法回滚，已执行操作不会撤销。请手动检查系统状态。")
-        return False  # ✅ 更准确的返回值（缺陷4修正）
+        logger.warning(f"[DesktopReactAgent] 桌面操作无法回滚，已执行操作不会撤销。")
+        return False

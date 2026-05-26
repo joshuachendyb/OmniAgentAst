@@ -33,14 +33,39 @@ from app.utils.logger import logger
 
 class FileOperationPrompts(BasePrompts):
     """文件操作Prompt模板类"""
-    
+
+    def _build_tool_descriptions(self, category: str, tools: List[str]) -> str:
+        """从 ToolRegistry 动态生成工具描述字符串。
+
+        小沈 2026-05-25 重构拆分
+        统一 17.1(`SystemPrompts`)和 22.2(`FileOperationPrompts`)的模板生成，
+        新增/修改工具后自动更新 prompt，无需人工维护模板。
+        消除 11 个工具描述硬编码（YAGNI）。
+        """
+        from app.services.tools.registry import ToolRegistry
+        registry = ToolRegistry.get_instance()
+        lines = []
+        for idx, tool_name in enumerate(tools, 1):
+            meta = registry.get_tool_meta(tool_name)
+            if not meta:
+                continue
+            lines.append(f"{idx}. {tool_name} - {meta.get('description', '')}")
+            lines.append(f"   - When to use: {meta.get('when_to_use', '')}")
+            params = meta.get('parameters', {})
+            if params:
+                lines.append(f"   - Parameters: {', '.join(params.keys())}")
+            lines.append(f"   - Returns: {meta.get('returns', '')}")
+            example = meta.get('example', '')
+            if example:
+                lines.append(f"   - Examples: {example}")
+            lines.append("")
+        return "\n".join(lines)
+
     def get_system_prompt(self) -> str:
-        """获取增强版系统Prompt"""
-        # 获取系统信息（来自中间层）
-        system_info = get_system_info()
+        """获取增强版系统Prompt - 小沈 2026-05-25 重构拆分"""
+        system_info = get_system_info(include_commands=False)
         logger.info(f"[FileOperationPrompts] get_system_prompt() 被调用，中间层已注入系统信息，长度: {len(system_info)}")
-        
-        # ========== Prompt 日志记录 ==========
+
         from app.utils.prompt_logger import get_prompt_logger
         prompt_logger = get_prompt_logger()
         prompt_logger.log_system_prompt(
@@ -50,116 +75,41 @@ class FileOperationPrompts(BasePrompts):
             details={
                 "系统信息长度": len(system_info),
                 "包含内容": "服务器OS、路径格式、命令格式"
-            }
+            },
+            round_number=1
         )
-        
-        # 直接字符串拼接，避免f-string解析问题
-        return system_info + """
+
+        tools = [
+            "read_file", "write_text_file", "list_directory",
+            "search_files", "grep_file_content", "edit_file",
+            "rename_file", "file_operation", "archive_tool",
+            "read_media_file", "data_file_format",
+        ]
+        tool_descriptions = self._build_tool_descriptions("file", tools)
+
+        prompt = f"{system_info}\n\n# File Operation Tools\n\n{tool_descriptions}"
+
+        return prompt + """
+【Tool Call Examples】:
+Example 1: 读取文件
+{"thought": "用户要读取配置文件", "reasoning": "调用read_file单文件模式", "tool_name": "read_file", "tool_params": {"file_paths": ["C:/config.json"]}}
+
+Example 2: 搜索文件内容
+{"thought": "搜索包含TODO的Python文件", "reasoning": "使用grep_file_content搜索", "tool_name": "grep_file_content", "tool_params": {"pattern": "TODO", "search_dir": "D:/project", "glob": "*.py"}}
+
+Example 3: 写入文件
+{"thought": "用户要写入新文件", "reasoning": "使用write_text_file写入", "tool_name": "write_text_file", "tool_params": {"file_path": "D:/output.txt", "text": "Hello World"}}
+
+Example 4: 任务完成
+{"thought": "文件操作已完成", "reasoning": "全部操作成功，结果已返回", "tool_name": "finish", "tool_params": {"result": "已读取配置文件并完成搜索"}}
 
 
-You are a professional file management assistant. You help users organize, analyze, and manage files and directories.
-
-You have access to the following tools:
-
-
-Available Tools:
-
-1. read_text_file(file_path, head=None, tail=None, offset=None, limit=None, encoding=None)
-   Read text file content, supports head/tail/offset/limit modes. Always UTF-8.
-   - file_path: Complete file path (MUST use file_path, NOT filepath or path)
-   - head: Read first N lines (cannot use with tail/offset)
-   - tail: Read last N lines (cannot use with head/offset)
-   - offset: Starting line number (1-indexed, cannot use with head/tail)
-   - limit: Maximum lines to read (use with offset)
-   Example: {"file_path": "C:/Users/username/Documents/config.json", "offset": 1, "limit": 100}
-
-2. write_text_file(file_path, text, encoding=None, append=False, create_parents=True, unescape=True)
-   Write or append text to a file (overwrites if exists, unless append=True).
-   - file_path: Complete file path (MUST use file_path)
-   - text: Text content to write (MUST use text, NOT content)
-   - append: Append to file instead of overwrite, default False
-   Example: {"file_path": "D:/project/config.json", "text": "{\"key\": \"value\"}"}
-
-3. list_directory(dir_path, recursive=False, max_depth=10, sortBy=None, include_hidden=False)
-   List directory contents with file size, modification time.
-   - dir_path: Complete directory path (MUST use dir_path, NOT directory_path or path)
-   - recursive: Whether to list subdirectories, default False
-   - max_depth: Maximum recursion depth (only when recursive=True), default 10
-   Example: {"dir_path": "D:/project/code", "recursive": True, "max_depth": 3}
-   Common use: When user says "查看D盘", "列出目录", "文件夹里有什么"
-
-4. delete_file(file_path, recursive=False, force=False)
-   Delete file or directory. Default: move to recycle bin (safe). force=True: permanent delete.
-   - file_path: Complete path to delete (MUST use file_path)
-   - recursive: Required for non-empty directories, default False
-   - force: Permanent delete without recycle bin, default False
-   Example: {"file_path": "C:/Users/username/temp.txt", "recursive": False}
-
-5. move_file(source_path, destination_path, overwrite=False)
-   Move or rename file/directory.
-   - source_path: Source file/directory path (MUST use source_path)
-   - destination_path: Target path (MUST use destination_path)
-   Example: {"source_path": "C:/old/file.txt", "destination_path": "D:/new/file.txt"}
-
-6. search_files(pattern, search_dir, recursive=True, max_depth=10, ignore_case=True)
-   Search files by file name pattern (glob supported, Chinese filenames supported).
-   - pattern: File name pattern with wildcard (e.g., "**/*.py", "config*") (REQUIRED)
-   - search_dir: Starting directory for search (REQUIRED, CANNOT be empty)
-   - recursive: Whether to search subdirectories, default True
-   Example: {"pattern": "**/*.py", "search_dir": "D:/project", "recursive": True}
-
-7. grep_file_content(pattern, search_dir=None, glob=None, ignore_case=False, head_limit=None, show_line_no=True)
-   Search files by content pattern (regex supported, Chinese supported).
-   - pattern: Regex search pattern (REQUIRED, CANNOT be empty)
-   - search_dir: Starting directory for search, default current dir
-   - glob: File name filter (e.g., "*.py"), default None
-   - ignore_case: Whether to ignore case, default False
-   - head_limit: Max results to return, default None
-   Example: {"pattern": "TODO", "search_dir": "D:/project", "glob": "*.py", "ignore_case": true}
-
-8. generate_report(output_dir=None)
-   Generate operation report for current session.
-   - output_dir: Output directory (optional)
-   Example: {"output_dir": "C:/Users/username/Desktop"}
-
-9. precise_replace_in_file(file_path, old_string, new_string, replace_all=False)
-   Precise string replacement in text file. Supports Chinese content matching.
-   - file_path: File absolute path
-   - old_string: Exact text to find and replace
-   - new_string: Replacement text
-   Example: {"file_path": "D:/project/main.py", "old_string": "def old():", "new_string": "def new():"}
-
-10. edit_text_file(file_path, edits, dryRun=False)
-    Advanced multi-edit with pattern matching, supports dryRun preview.
-    - file_path: File path to edit
-    - edits: Array of {oldText, newText} edit operations
-    - dryRun: Preview only without modifying file, default False
-    Example: {"file_path": "D:/project/main.py", "edits": [{"oldText": "old", "newText": "new"}]}
-
-11. get_directory_tree(dir_path, excludePatterns=None, max_depth=None)
-    Get recursive JSON tree structure of directory.
-    - dir_path: Starting directory
-    Example: {"dir_path": "D:/project"}
-
-
-【Tool Call Examples - Follow this format exactly】:
-
-Example 1: List directory
-{"thought": "查看D盘根目录文件", "reasoning": "调用list_directory", "tool_name": "list_directory", "tool_params": {"dir_path": "D:/"}}
-
-Example 2: Read file
-{"thought": "读取配置文件", "reasoning": "调用read_text_file", "tool_name": "read_text_file", "tool_params": {"file_path": "C:/Users/username/config.json"}}
-
-Example 3: Write file
-{"thought": "写入文件内容", "reasoning": "调用write_text_file", "tool_name": "write_text_file", "tool_params": {"file_path": "D:/project/output.txt", "text": "Hello World"}}
-
-Example 4: Error handling
-{"thought": "文件读取失败，路径可能不存在", "reasoning": "向用户报告错误并建议检查路径", "tool_name": "finish", "tool_params": {"result": "读取失败：文件C:/not-exist.txt不存在，请确认路径是否正确"}}
-
-Example 5: Task completed
-{"thought": "任务已完成", "reasoning": "无更多操作", "tool_name": "finish", "tool_params": {"result": "已列出D盘根目录的文件：..."}}
-
-
+【⚠️ P17互斥参数规则 - 极其重要】:
+- read_file: file_paths传1个路径=单文件, 传多个=批量
+- edit_file: old_string 和 edits 不能同时使用
+- rename_file: path 和 directory 不能同时使用
+- archive_tool: compress模式需要source+destination，extract模式需要source
+- file_operation: move/copy需要destination，delete不需要
 
 【⚠️ write_text_file text规则 - 极其重要】:
 - text参数必须传入实际的文件内容（代码、文本、正文等）
@@ -184,17 +134,14 @@ Example 5: Task completed
 
 Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
-Please help me complete this file management task. Follow these steps:
-1. First, analyze what needs to be done
-2. Use the appropriate tools to accomplish the task
-3. Provide a summary when finished
+请完成此文件管理任务，按以下步骤：
+1. 分析需要做什么操作
+2. 使用合适的工具完成任务
+3. 用中文总结结果
 
 Remember:
-- You can use multiple tools in sequence
-- Each tool call should be well-reasoned
-- If an operation fails, explain why and suggest alternatives
-- All file operations are tracked for safety"""
-
+- 不要将思考内容传入text参数
+- text参数必须是实际的文件内容"""
         if context:
             base_prompt += f"\n\nAdditional context:\n{context}"
         
@@ -237,52 +184,32 @@ Please reconsider your approach and suggest an alternative action."""
 
     def get_rollback_instructions(self) -> str:
         """获取回滚指令Prompt"""
-        return """If you need to undo previous operations, you can use the rollback functionality.
-
-To rollback:
-1. Single operation rollback - undo the last operation
-2. Session rollback - undo all operations in this session
-
-Rollback will:
-- Restore deleted files from backup
-- Move files back to their original locations
-- Delete newly created files (if safe to do so)
-
-Warning: Rollback operations cannot be undone. Be certain before proceeding."""
+        return """If an operation fails:
+1. Check if backup exists (file operations are backed up automatically)
+2. Use the rollback functionality to undo the operation
+3. Verify the file has been restored correctly"""
 
     def get_safety_reminder(self) -> str:
         """获取安全提醒Prompt"""
         return """Safety reminders:
-1. All file deletions are backed up automatically
-2. File moves are tracked with source/destination mapping
-3. All operations are recorded in the operation history
-4. You can rollback any operation or the entire session
-5. Be careful when writing files - existing content will be overwritten
-6. Search operations are read-only and safe to use anytime"""
+1. Be careful when writing files - existing content will be overwritten
+2. text parameter must contain actual file content, NOT your thoughts/plans"""
     
     def get_parameter_reminder(self) -> str:
-        """获取参数命名提醒Prompt"""
-        return """【Parameter Naming Reminder】
-
-Correct parameter names to use:
-- list_directory: dir_path
-- read_text_file: file_path
-- write_text_file: file_path, text
-- delete_file: file_path
-- move_file: source_path, destination_path
-- search_files: pattern, search_dir
-- grep_file_content: pattern, search_dir
-- precise_replace_in_file: file_path, old_string, new_string
-
-Common mistakes to avoid:
-- ❌ directory_path (use: dir_path)
-- ❌ filepath (use: file_path)
-- ❌ content for write (use: text)
-- ❌ file_pattern for search (use: pattern)
-- ❌ path for search_dir (use: search_dir)
-- ❌ src/dst (use: source_path/destination_path)
-- ❌ read_file (use: read_text_file)
-- ❌ write_file (use: write_text_file)"""
+        from app.services.tools.registry import tool_registry, ToolCategory
+        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.FILE)
+        forbidden = (
+            "\n\nCommon mistakes to avoid:\n"
+            "- ❌ directory_path (use: dir_path)\n"
+            "- ❌ filepath (use: file_path)\n"
+            "- ❌ content for write (use: text)\n"
+            "- ❌ file_pattern for search (use: pattern)\n"
+            "- ❌ path for search_dir (use: search_dir)\n"
+            "- ❌ src/dst (use: source/destination)\n"
+            "- ❌ read_text_file (use: read_file)\n"
+            "- ❌ write_file (use: write_text_file)"
+        )
+        return auto_reminder + forbidden
 
 class TaskTemplates:
     """预定义任务模板"""

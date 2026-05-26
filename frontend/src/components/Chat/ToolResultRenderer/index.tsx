@@ -32,9 +32,18 @@ import TimeUtcToLocalRenderer from './types/TimeUtcToLocalRenderer';
 import TimeLocalToUtcRenderer from './types/TimeLocalToUtcRenderer';
 import TimeIsWeekendRenderer from './types/TimeIsWeekendRenderer';
 import TimeIsHolidayRenderer from './types/TimeIsHolidayRenderer';
+import TimeAddRenderer from './types/TimeAddRenderer';
+import TimeCompareRenderer from './types/TimeCompareRenderer';
+import TimeIsWorkdayRenderer from './types/TimeIsWorkdayRenderer';
+import TimeNextNWorkdayRenderer from './types/TimeNextNWorkdayRenderer';
+import TimeToTimestampRenderer from './types/TimeToTimestampRenderer';
+import TimestampToTimeRenderer from './types/TimestampToTimeRenderer';
+import TimerListRenderer from './types/TimerListRenderer';
+import FileOperationRenderer from './types/FileOperationRenderer';
 import FileMonitorRenderer from './types/FileMonitorRenderer';
 import FileStatisticsRenderer from './types/FileStatisticsRenderer';
 import FileChecksumRenderer from './types/FileChecksumRenderer';
+import GetDirectoryTreeRenderer from './types/GetDirectoryTreeRenderer';
 import DefaultRenderer from './types/DefaultRenderer';
 import { BaseRendererProps } from './types/BaseRendererProps';
 
@@ -59,8 +68,10 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
   switch (step.tool_name) {
     case "list_directory":
       return <ListDirectoryRenderer step={step} isExpanded={isExpanded} onToggle={handleToggle} />;
+    case "read_text_file":
     case "read_file":
       return <ReadFileRenderer step={step} />;
+    case "write_text_file":
     case "write_file":
       return <WriteFileRenderer step={step} />;
     case "delete_file":
@@ -69,6 +80,7 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
       return <MoveFileRenderer step={step} />;
     case "search_files":
       return <SearchFilesRenderer step={step} />;
+    case "grep_file_content":
     case "search_file_content":
       return <SearchFileContentRenderer step={step} />;
     case "generate_report":
@@ -85,6 +97,7 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
       return <BatchRenameRenderer step={step} />;
     case "compress_files":
       return <CompressFilesRenderer step={step} />;
+    case "get_current_time":
     case "time_now":
       return <TimeNowRenderer step={step} />;
     case "time_format":
@@ -103,12 +116,37 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
       return <TimeIsWeekendRenderer step={step} />;
     case "time_is_holiday":
       return <TimeIsHolidayRenderer step={step} />;
+    case "time_add":
+      return <TimeAddRenderer step={step} />;
+    case "time_compare":
+      return <TimeCompareRenderer step={step} />;
+    case "time_is_workday":
+      return <TimeIsWorkdayRenderer step={step} />;
+    case "time_next_n_workday":
+      return <TimeNextNWorkdayRenderer step={step} />;
+    case "time_to_timestamp":
+      return <TimeToTimestampRenderer step={step} />;
+    case "timestamp_to_time":
+      return <TimestampToTimeRenderer step={step} />;
+    case "timer_list":
+      return <TimerListRenderer step={step} />;
     case "file_monitor":
       return <FileMonitorRenderer step={step} />;
     case "file_statistics":
       return <FileStatisticsRenderer step={step} />;
     case "file_checksum":
       return <FileChecksumRenderer step={step} />;
+    case "edit_text_file":
+    case "rename_file":
+    case "list_allowed_directories":
+    case "read_media_file":
+    case "read_batch_file":
+    case "precise_replace_in_file":
+    case "get_file_hash":
+    case "extract_archive":
+      return <FileOperationRenderer step={step} />;
+    case "get_directory_tree":
+      return <GetDirectoryTreeRenderer step={step} />;
     default:
       return <DefaultRenderer step={step} />;
   }

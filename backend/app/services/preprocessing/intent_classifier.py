@@ -3,17 +3,17 @@
 意图检测模块
 
 阶段2: LLM语义分类器（设计文档 v1.5 §3.1.2）
-使用 LLM（七牛 deepseek-v3.1）进行意图分类，返回完整置信度分布。
+使用 LLM（ollama cloud gemma3:4b）进行意图分类，返回完整置信度分布。
 Author: 小沈 - 2026-03-27
-Updated: 小沈 - 2026-04-30（支持多意图置信度分布）
+Updated: 小沈 - 2026-05-23（七牛 deepseek-v3.1 → ollama cloud gemma3:4b，快37倍）
 
 注意：意图分类的 LLM 调用独立于此文件，不与主流程的 BaseAIService 混淆
 
 ====================================================================
-为什么硬编码使用七牛的 deepseek-v3.1？
+为什么使用 ollama cloud 的 gemma3:4b？
 ====================================================================
-1. 意图分类是一个轻量级的辅助功能，不需要使用主聊天的大模型
-2. deepseek-v3.1 是一个性价比很高的模型，适合快速分类任务
+1. 意图分类是轻量级辅助功能，不需要大模型
+2. gemma3:4b 实测 1.5s，比七牛 deepseek-v3.1（55.8s）快37倍
 3. 独立配置可以避免意图分类失败时影响主聊天功能
 4. 这样设计可以让意图分类的配置与主聊天配置解耦
 ====================================================================
@@ -24,12 +24,17 @@ import httpx
 import os
 from typing import Any, Optional, List, Dict
 
+from app.constants import DEFAULT_LLM_TIMEOUT
+
 # ============== 配置加载 ==============
 # 【修复 2026-04-20 小沈】意图分类器使用固定模型，不受用户切换AI影响
+
+_DEFAULT_INTENT_MODEL = "gemma3:4b"
+_DEFAULT_OLLAMA_API_BASE = "https://ollama.com/v1"
 # 问题原因：之前从config读取qiniu.models[0]，切换AI会导致意图分类器模型变化
 
-def _load_qiniu_config() -> dict:
-    """从配置文件加载七牛 API 配置"""
+def _load_intent_config() -> dict:
+    """从配置文件加载 ollama cloud API 配置（用于意图分类）"""
     import yaml
     backend_dir = os.path.dirname(os.path.abspath(__file__))
     backend_dir = os.path.dirname(os.path.dirname(backend_dir))
@@ -39,37 +44,57 @@ def _load_qiniu_config() -> dict:
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
-        qiniu_config = config.get("ai", {}).get("qiniu", {})
+        oc_config = config.get("ai", {}).get("ollamacloud", {})
+        oc_models = oc_config.get("models", [])
+        fallback_model = oc_models[0] if oc_models else _DEFAULT_INTENT_MODEL
         return {
-            "api_base": qiniu_config.get("api_base", "https://api.qnaigc.com/v1"),
-            "api_key": qiniu_config.get("api_key", ""),
-            # 【修复】使用固定的deepseek-v3.1，不受切换AI影响
-            "model": "deepseek-v3.1",
-            "timeout": qiniu_config.get("timeout", 90)
+            "api_base": oc_config.get("api_base", _DEFAULT_OLLAMA_API_BASE),
+            "api_key": oc_config.get("api_key", ""),
+            "model": oc_config.get("intent_model", fallback_model),
+            "timeout": oc_config.get("timeout", DEFAULT_LLM_TIMEOUT)
         }
     except Exception:
         return {
-            "api_base": "https://api.qnaigc.com/v1",
+            "api_base": _DEFAULT_OLLAMA_API_BASE,
             "api_key": "",
-            "model": "deepseek-v3.1",
-            "timeout": 90
+            "model": _DEFAULT_INTENT_MODEL,
+            "timeout": DEFAULT_LLM_TIMEOUT
         }
 
-INTENT_CLASSIFIER_CONFIG = _load_qiniu_config()
+INTENT_CLASSIFIER_CONFIG = _load_intent_config()
 
 # ============== 意图定义（从labels动态生成）==============
 
 _INTENT_DEFINITIONS = {
     "file": "文件操作，包括查看目录、浏览文件、打开磁盘(C盘/D盘/E盘)、打开文件夹、列出文件、读取/保存/删除/复制/移动文件等",
-    "shell": "命令执行，包括运行npm/pip/git/docker等命令行工具、执行脚本、编译代码、运行程序等",
-    "time": "时间日期，包括查询当前时间、格式化日期、计算时间差、设置定时器、时区转换、检查周末/假日等",
+    "system": "系统操作，包括命令执行(npm/pip/git/docker)、时间日期、环境变量、系统信息(CPU/内存/磁盘/进程/服务)、代码执行等",
     "network": "网络操作，包括ping/curl/wget/ssh等网络工具、端口扫描、HTTP请求、API调用、下载文件、FTP操作等",
     "desktop": "桌面操作，包括截图、截屏、窗口管理、打开应用程序、模拟按键、鼠标点击等",
-    "env": "环境变量，包括查看/设置PATH、HOME、TEMP等系统环境变量、系统变量配置等",
-    "system": "系统信息，包括查询CPU/内存/磁盘/进程/服务等系统资源、系统配置查看等",
-    "database": "数据库操作，包括SQL查询、select/insert/update/delete等数据库命令、表结构操作等",
-    "chat": "普通对话，不涉及上述任何特定操作的日常聊天、问答、解释等",
+    "document": "文档读写和数据库，包括读取/创建/编辑docx、pdf、txt、md等文档文件、SQL查询、数据库操作等",
+    "shell": "（已合并到system）命令执行操作",
+    "meta": "（已合并到system）时间日期和元信息",
+    "time": "（已合并到system）时间日期操作",
+    "environment": "（已合并到system）环境变量操作",
+    "env": "（已合并到system）环境变量操作",
+    "database": "（已合并到document）数据库操作",
+    "code_execution": "（已合并到system）代码执行操作",
 }
+
+
+def _extract_json_balanced(content: str) -> Optional[str]:
+    """使用平衡花括号提取JSON字符串，正确处理嵌套JSON - 小健 2026-05-13"""
+    start = content.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    for i in range(start, len(content)):
+        if content[i] == "{":
+            depth += 1
+        elif content[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return content[start:i + 1]
+    return None
 
 
 def _build_intent_prompt(text: str, labels: List[str]) -> str:
@@ -81,8 +106,8 @@ def _build_intent_prompt(text: str, labels: List[str]) -> str:
 
     definitions_str = "\n".join(definitions_lines)
 
-    return f"""你是一个文本处理助手。需要完成两个任务：
-1. 文本矫正：修正错别字、标点、格式
+    return f"""你是一个意图分类助手。需要完成两个任务：
+1. 文本矫正：仅修正明显的错别字和标点错误。严禁纠正：专有名词、人名、地名、文件名、路径、技术术语、缩写、非中文词汇。如无法判断是否为错别字，保持原样。
 2. 意图分类：分析用户意图，返回所有候选意图的置信度分布
 
 意图定义：
@@ -111,7 +136,7 @@ async def classify_intent(
         labels: 候选意图标签列表，如 ["file", "network", "chat"]
         api_key: API 密钥（可选，默认从配置文件读取）
         api_base: API 地址（可选，默认从配置文件读取）
-        model: 模型名称（可选，默认用配置：deepseek-v3.1）
+        model: 模型名称（可选，默认用配置：gemma3:4b）
 
     Returns:
         {
@@ -146,8 +171,8 @@ async def classify_intent(
             if response.status_code != 200:
                 return {
                     "corrected": text,
-                    "intent": "chat",
-                    "confidence": 0.5,
+                    "intent": "",
+                    "confidence": 0.0,
                     "all_intents": {},
                     "error": f"API error: {response.status_code}"
                 }
@@ -157,15 +182,17 @@ async def classify_intent(
 
             try:
                 if "{" in content and "}" in content:
-                    json_str = content[content.find("{"):content.rfind("}")+1]
+                    json_str = _extract_json_balanced(content)
+                    if json_str is None:
+                        raise json.JSONDecodeError("未找到平衡花括号", content, 0)
                     result = json.loads(json_str)
                     all_intents = result.get("all_intents", {})
                     if not isinstance(all_intents, dict) or len(all_intents) == 0:
-                        all_intents = {result.get("intent", "chat"): float(result.get("confidence", 0.5))}
+                        all_intents = {result.get("intent", ""): float(result.get("confidence", 0.0))}
                     return {
                         "corrected": result.get("corrected", text),
-                        "intent": result.get("intent", "chat"),
-                        "confidence": float(result.get("confidence", 0.5)),
+                        "intent": result.get("intent", ""),
+                        "confidence": float(result.get("confidence", 0.0)),
                         "all_intents": all_intents,
                     }
             except (json.JSONDecodeError, ValueError):
@@ -173,8 +200,8 @@ async def classify_intent(
 
             return {
                 "corrected": text,
-                "intent": "chat",
-                "confidence": 0.5,
+                "intent": "",
+                "confidence": 0.0,
                 "all_intents": {},
                 "error": "Failed to parse LLM response"
             }
@@ -182,8 +209,8 @@ async def classify_intent(
     except Exception as e:
         return {
             "corrected": text,
-            "intent": "chat",
-            "confidence": 0.5,
+            "intent": "",
+            "confidence": 0.0,
             "all_intents": {},
             "error": str(e)
         }
@@ -216,12 +243,4 @@ class IntentClassifier:
         if not text or not labels:
             return {"corrected": text, "intent": "unknown", "confidence": 0.0, "all_intents": {}}
 
-        return await classify_intent(text, labels)
-
-    async def classify_with_llm_async(
-        self,
-        text: str,
-        labels: List[str]
-    ) -> Dict[str, Any]:
-        """使用 LLM 进行意图分类（异步方法，同时文本矫正）"""
         return await classify_intent(text, labels)

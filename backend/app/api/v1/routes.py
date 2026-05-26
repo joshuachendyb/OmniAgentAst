@@ -188,6 +188,42 @@ def write_yaml_with_order(file_path: str, data: dict):
         yaml.dump(ordered_data, f, allow_unicode=True, default_flow_style=False)
 
 
+def _resolve_fallback_provider(ai_config: Dict) -> Tuple[str, str]:
+    """解析当前有效的provider和model（含fallback逻辑）"""
+    # 1. 找第一个有models的provider作为fallback
+    fallback_provider = ''
+    fallback_model = ''
+    for provider_name in ai_config.keys():
+        if provider_name == 'provider' or provider_name == 'model':
+            continue
+        provider_data = ai_config.get(provider_name, {})
+        if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
+            fallback_provider = provider_name
+            fallback_model = provider_data['models'][0]
+            break
+
+    if not fallback_provider:
+        fallback_provider = ''
+        fallback_model = ''
+
+    # 2. 检查 ai.provider 和 ai.model 是否有效
+    selected_provider = ai_config.get('provider', '')
+    selected_model = ai_config.get('model', '')
+
+    is_valid = (
+        selected_provider and
+        selected_provider in ai_config and
+        'models' in ai_config[selected_provider] and
+        selected_model and
+        selected_model in ai_config[selected_provider]['models']
+    )
+
+    # 3. 使用有效配置或fallback
+    if is_valid:
+        return selected_provider, selected_model
+    return fallback_provider, fallback_model
+
+
 # ============================================
 # 安全配置模型
 # ============================================
@@ -249,50 +285,12 @@ async def get_system_config():
     """
     try:
         config = get_config_instance()
-        ai_config = config.get('ai', {})
         
-        # ====================================================================
-        # 【统一Fallback逻辑 - 必须遵守！】
-        # 1. 找第一个有models的provider作为fallback（动态遍历，不是硬编码！）
-        fallback_provider = ''
-        fallback_model = ''
-        for provider_name in ai_config.keys():
-            if provider_name == 'provider' or provider_name == 'model':
-                continue
-            provider_data = ai_config.get(provider_name, {})
-            if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
-                fallback_provider = provider_name
-                fallback_model = provider_data['models'][0]
-                break
-        
-        # 如果没有找到任何provider，用空值
-        # 注意：配置文件应该至少有一个provider配置
-        if not fallback_provider:
-            fallback_provider = ''
-            fallback_model = ''
-        
-        # 2. 检查 ai.provider 和 ai.model 是否有效
-        selected_provider = ai_config.get('provider', '')
-        selected_model = ai_config.get('model', '')
-        
-        is_valid = (
-            selected_provider and 
-            selected_provider in ai_config and 
-            'models' in ai_config[selected_provider] and 
-            selected_model and 
-            selected_model in ai_config[selected_provider]['models']
-        )
-        
-        # 3. 使用有效配置或fallback
-        if is_valid:
-            final_provider = selected_provider
-            final_model = selected_model
-        else:
-            final_provider = fallback_provider
-            final_model = fallback_model
-        # ====================================================================
+        # 【重构 2026-05-14 小健】使用Config统一方法，不再自己实现fallback
+        final_provider, final_model = config.get_ai_provider_model()
         
         # 获取当前provider的配置，读取其api_key
+        ai_config = config.get('ai', {})
         provider_config = ai_config.get(final_provider, {})
         api_key = provider_config.get('api_key', '')
         api_key_configured = bool(api_key and api_key.strip() != '')
@@ -326,7 +324,7 @@ async def get_system_config():
             theme=theme,
             language=language,
             security=security_config,
-            max_steps=config.get('app', {}).get('max_steps', DEFAULT_MAX_STEPS)
+            max_steps=config.get_max_steps(DEFAULT_MAX_STEPS)  # 使用统一方法
         )
         
     except Exception as e:
@@ -336,265 +334,61 @@ async def get_system_config():
 
 @router.put("/config")
 async def update_config(config_update: ConfigUpdate):
-    """
-    更新系统配置（带备份恢复机制）
-    
-    备份策略：
-    1. 更新前备份配置文件
-    2. 验证配置完整性
-    3. 保留备份文件（不立即删除）
-    4. 返回 backup_path 供 validate_ai_service 使用
-    
-    备份删除/恢复逻辑：
-    - 由 validate_ai_service 决定
-    - 验证成功 → 删除备份 ✅
-    - 验证失败 → 恢复备份 ❌
-    
-    设计原因：
-    - 配置更新后立即验证服务可用性
-    - 避免无效配置导致系统不可用
-    - 保证配置可回滚
-    
-    完整流程：
-    1. 用户切换模型 → updateConfig
-    2. 后端备份 → 更新配置 → 返回成功
-    3. 前端调用 → validateService
-    4. 验证成功 → 删除备份
-    5. 验证失败 → 恢复备份
-    
-    Args:
-        config_update: 配置更新请求
-        
-    Returns:
-        dict: 更新结果（包含 backup_path）
-    
-    作者：小欧
-    时间：2026-03-01
-    """
-    backup_path = None  # ⭐ 初始化备份路径
-    config_path = None  # ⭐ 初始化配置路径
-    backup_restored = False  # ⭐ 标记备份是否已恢复，避免重复
-    
+    """更新系统配置（带备份恢复机制）- 小欧 2026-03-01, 重构 小健 2026-05-25"""
+    backup_path: Optional[Path] = None
+    config_path: Optional[Path] = None
+    restored = [False]
+
     try:
         config_path = Path(AIServiceFactory.get_config_path())
-        
-        # 1. 【新增】自动备份
-        backup_path = _backup_config_file(config_path)
-        logger.info(f"配置文件已备份：{backup_path}")
-        
-        # 2. 读取现有配置
+        backup_path = _backup_config(config_path)
         with open(config_path, 'r', encoding='utf-8') as f:
             original_config_data = yaml.safe_load(f) or {}
-        
-        # 复制一份用于修改
         config_data = original_config_data.copy()
-        
-        # 3. 应用更新（保持原有逻辑）
-        if config_update.ai_provider:
-            # 验证提供商 - 检查是否在配置文件中（通用方式，不硬编码）
-            ai_config = config_data.get('ai', {})
-            if config_update.ai_provider not in ai_config:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"不支持的提供商: {config_update.ai_provider}"
-                )
-            config_data['ai']['provider'] = config_update.ai_provider
-            logger.info(f"[update_config] 写入 provider={config_update.ai_provider}")
-            
-            # 【修复】不再调用switch_provider，直接清空缓存让get_service重新加载
-            # 统一由updateConfig处理provider和model的更新
-            AIServiceFactory._instance = None
-            AIServiceFactory._current_provider = config_update.ai_provider
-            logger.info(f"切换AI提供商成功: {config_update.ai_provider}")
-        
-        # 【修正】更新AI模型 - 只更新顶层ai.model
-        # 如果只传了ai_model没传ai_provider，使用当前配置的provider
-        if config_update.ai_model:
-            provider = config_update.ai_provider or config_data.get('ai', {}).get('provider', 'zhipuai')
-            if provider in config_data['ai']:
-                # 【修正】只更新顶层 ai.model
-                config_data['ai']['model'] = config_update.ai_model
-                logger.info(f"[update_config] 写入 model={config_update.ai_model} (provider={provider})")
-                # 【修复】清空AIServiceFactory缓存，强制重新读取配置
-                AIServiceFactory._instance = None
-                AIServiceFactory._config = None
-                logger.info(f"已清空AIServiceFactory缓存")
-        
-        # 更新API Key - 通用方式（不硬编码）
-        if config_update.provider_api_keys:
-            for provider_name, api_key in config_update.provider_api_keys.items():
-                # ⭐ 用户要求：不验证 API Key 格式（2026-03-01）
-                
-                # 检查Provider是否存在
-                if provider_name in config_data.get('ai', {}):
-                    config_data['ai'][provider_name]['api_key'] = api_key.strip()
-                    logger.info(f"更新Provider API Key成功: {provider_name}")
-                else:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"不支持的Provider: {provider_name}"
-                    )
-        
-        # 确保app配置节存在
-        if 'app' not in config_data:
-            config_data['app'] = {}
-        
-        # 更新主题
-        if config_update.theme:
-            config_data['app']['theme'] = config_update.theme
-        
-        # 更新语言
-        if config_update.language:
-            config_data['app']['language'] = config_update.language
-        
-        # 更新 max_steps
-        if config_update.max_steps is not None:
-            if config_update.max_steps < 1:
-                raise HTTPException(status_code=400, detail="max_steps 必须大于等于 1")
-            if config_update.max_steps > 1000:
-                raise HTTPException(status_code=400, detail="max_steps 不能超过 1000")
-            config_data['app']['max_steps'] = config_update.max_steps
-            logger.info(f"更新 max_steps 成功: {config_update.max_steps}")
-        
-        # 更新安全配置
-        if config_update.security:
-            # 手动转换为字典 - 避免Pydantic版本兼容问题
-            security_dict = {
-                "contentFilterEnabled": config_update.security.contentFilterEnabled,
-                "contentFilterLevel": config_update.security.contentFilterLevel,
-                "whitelistEnabled": config_update.security.whitelistEnabled,
-                "commandWhitelist": config_update.security.commandWhitelist,
-                "commandBlacklist": config_update.security.commandBlacklist,
-                "confirmDangerousOps": config_update.security.confirmDangerousOps,
-                "maxFileSize": config_update.security.maxFileSize
-            }
-            config_data['security'] = security_dict
-            logger.info(f"更新安全配置成功")
-        
-        # 4. 【新增】自动修复常见问题
-        config_data = _fix_config_common_issues(config_data)
-        
-        # 5. 【新增】验证配置完整性
-        is_valid, errors, warnings = _validate_config_integrity(config_data)
-        
+        config_data.setdefault('app', {})
+
+        for field, handler in FIELD_HANDLERS.items():
+            value = getattr(config_update, field, None)
+            if value is not None:
+                handler(config_data, config_update)
+
+        is_valid, errors, warnings, fail_result = _auto_fix_and_validate(
+            config_data, config_path, backup_path, original_config_data)
         if not is_valid:
-            # ⭐ 验证失败：恢复备份
-            if not backup_restored and backup_path and backup_path.exists():
-                logger.warning(f"配置验证失败，恢复备份：{backup_path}")
-                shutil.copy2(str(backup_path), str(config_path))  # type: ignore
-                backup_restored = True  # ⭐ 标记已恢复
-            
-            # 恢复后重新加载，获取回滚后的真正模型
-            config = get_config_instance()
-            config.reload()
-            original_ai = original_config_data.get('ai', {})
-            current_provider = original_ai.get('provider', 'unknown')
-            current_model = original_ai.get('model', 'unknown')
-            
-            # 删除备份文件
-            backup_path.unlink(missing_ok=True)
-            return {
-                "success": False,
-                "message": "配置验证失败",
-                "errors": errors,
-                "warnings": warnings,
-                "backup_path": str(backup_path),
-                "current_provider": current_provider,
-                "current_model": current_model
-            }
-        
-        # 6. 【修复】确保 ai.provider 和 ai.model 在最前面
+            return fail_result
+
         config_data = _ensure_ai_provider_model_first(config_data)
-        
-        # 7. 写回配置文件
-        logger.info(f"[update_config] 准备写入配置文件...")
-        with open(config_path, 'w', encoding='utf-8') as f:
-            write_yaml_with_order(str(config_path), config_data)
-        logger.info(f"[update_config] 配置文件已写入")
-        
-        # 验证写入结果
+        write_yaml_with_order(str(config_path), config_data)
         with open(config_path, 'r', encoding='utf-8') as f:
             verify_data = yaml.safe_load(f)
             logger.info(f"[update_config] 验证写入: provider={verify_data['ai'].get('provider')}, model={verify_data['ai'].get('model')}")
-        
-        # 7. 重新加载
-        config = get_config_instance()
-        config.reload()
-        
-        # ============================================================
-        # 【小强修复 2026-04-07】
-        # 修改说明：
-        # 之前：验证成功后保留备份，等待 validate_ai_service 实际调用AI API后再删除
-        # 现在：验证成功后立即删除备份（使用 _validate_config_integrity 结果）
-        #
-        # 原因：用户要求切换模型时不再调用外部AI API做验证，
-        #       直接用配置文件完整性检查（_validate_config_integrity）的结果来决定
-        #       1）前端是否打* 2）后端是否删除/恢复备份
-        # ============================================================
-        
-        # 6. 【新增】验证成功，立即删除备份文件
-        #    不再等待 validate_ai_service 调用AI API验证
+        get_config_instance().reload()
+
         if backup_path and backup_path.exists():
             try:
                 backup_path.unlink()
                 logger.info(f"验证成功，已删除备份文件：{backup_path}")
             except Exception as e:
                 logger.warning(f"删除备份文件失败：{e}")
-        
-        # 清理全局备份路径（不再需要，供 validate_ai_service 使用）
         AIServiceFactory.clear_backup_paths()
-        
-        logger.info(f"配置更新成功：{config_update.dict(exclude_none=True)}")
-        
-        # ============================================================
-        # 【旧逻辑 - 已注释】
-        # 之前是保留备份文件，等待 validate_ai_service 处理：
-        # 1. 设置全局备份路径，供 validate_ai_service 使用
-        # AIServiceFactory.set_backup_paths(str(backup_path), str(config_path))
-        # 2. 保留备份（不删除），等待 validate_ai_service 处理
-        # logger.info(f"配置更新成功，备份文件保留：{backup_path}，等待服务验证")
-        # ============================================================
-        
-        # 返回当前配置模型，供前端更新下拉框
+
         current_provider = config_data.get('ai', {}).get('provider', '')
         current_model = config_data.get('ai', {}).get('model', '')
-        
         return {
-            "success": True,
-            "message": "配置更新成功，请验证服务可用性",
-            "updated_fields": config_update.dict(exclude_none=True),
-            "warnings": warnings,
-            "backup_path": str(backup_path),
-            "current_provider": current_provider,
-            "current_model": current_model
+            "success": True, "message": "配置更新成功，请验证服务可用性",
+            "updated_fields": config_update.dict(exclude_none=True), "warnings": warnings,
+            "backup_path": str(backup_path), "current_provider": current_provider, "current_model": current_model,
         }
-        
+
     except HTTPException:
-        # ⭐ HTTP 异常：恢复备份
-        if not backup_restored and backup_path is not None and config_path is not None and backup_path.exists():
-            try:
-                logger.warning(f"发生 HTTP 异常，恢复备份：{backup_path}")
-                shutil.copy2(str(backup_path), str(config_path))  # type: ignore
-                backup_restored = True  # ⭐ 标记已恢复
-            except:
-                pass
-        # 清理备份文件
+        _restore_backup_if_needed(backup_path, config_path, restored)
         if backup_path:
             backup_path.unlink(missing_ok=True)
         raise
     except Exception as e:
-        # ⭐ 其他异常：恢复备份
-        if not backup_restored and backup_path is not None and config_path is not None and backup_path.exists():
-            try:
-                logger.error(f"更新配置失败，恢复备份：{backup_path}, 错误：{e}")
-                shutil.copy2(str(backup_path), str(config_path))  # type: ignore
-                backup_restored = True  # ⭐ 标记已恢复
-            except:
-                pass
-        # 清理备份文件
+        _restore_backup_if_needed(backup_path, config_path, restored)
         if backup_path:
             backup_path.unlink(missing_ok=True)
-        # 【修复 P2-007】记录详细日志但返回通用错误信息
         logger.error(f"更新配置失败：{e}", exc_info=True)
         raise HTTPException(status_code=500, detail="更新配置失败，请稍后重试")
 
@@ -653,43 +447,13 @@ async def validate_config(request: ConfigValidateRequest):
             if current_model_models and len(current_model_models) > 0:
                 model_name = current_model_models[0]
         
-        provider_config = ai_config.get(current_model_provider, {})
-        api_base = provider_config.get('api_base', 'https://api.openai.com/v1')
-        
-        # 【小沈-2026-03-27修复】直接在接口中验证，添加30秒超时
-        import httpx
-        is_valid = False
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"{api_base}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {request.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": model_name,
-                        "messages": [{"role": "user", "content": "test"}]
-                    }
-                )
-                is_valid = response.status_code == 200
-        except Exception as e:
-            logger.warning(f"配置验证请求失败: {e}")
-            
-            if is_valid:
-                logger.info(f"配置验证成功: provider={request.provider}, model={model_name}")
-                return ConfigValidateResponse(
-                    valid=True,
-                    message=f"API Key验证成功，当前使用 {request.provider} ({model_name})",
-                    model=model_name
-                )
-            else:
-                logger.warning(f"配置验证失败: provider={request.provider}, model={model_name}")
-                return ConfigValidateResponse(
-                    valid=False,
-                    message=f"API Key无效，请检查是否正确",
-                    model=None
-                )
+        # 配置已保存，FC能力在首次LLM调用时由 llm_adapter.detect_strategy 自动探测
+        logger.info(f"配置已保存: provider={request.provider}, model={model_name}")
+        return ConfigValidateResponse(
+            valid=True,
+            message=f"配置已保存，将在首次使用时验证 {request.provider} ({model_name})",
+            model=model_name
+        )
             
     except Exception as e:
         logger.error(f"配置验证异常: {e}")
@@ -735,47 +499,7 @@ async def get_model_list():
         
         ai_config = config.get('ai', {})
         
-        # ====================================================================
-        # 【统一Fallback逻辑 - 必须遵守！】
-        # 1. 找第一个有models的provider作为fallback
-        fallback_provider = ''
-        fallback_model = ''
-        # 动态遍历所有provider（不是硬编码！）
-        for provider_name in ai_config.keys():
-            if provider_name == 'provider' or provider_name == 'model':
-                continue
-            provider_data = ai_config.get(provider_name, {})
-            if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
-                fallback_provider = provider_name
-                fallback_model = provider_data['models'][0]
-                break
-        
-        # 如果没有找到任何provider，用空值
-        # 注意：配置文件应该至少有一个provider配置
-        if not fallback_provider:
-            fallback_provider = ''
-            fallback_model = ''
-        
-        # 2. 检查 ai.provider 和 ai.model 是否有效
-        selected_provider = ai_config.get('provider', '')
-        selected_model = ai_config.get('model', '')
-        
-        is_valid = (
-            selected_provider and 
-            selected_provider in ai_config and 
-            'models' in ai_config[selected_provider] and 
-            selected_model and 
-            selected_model in ai_config[selected_provider]['models']
-        )
-        
-        # 3. 使用有效配置或fallback
-        if is_valid:
-            final_provider = selected_provider
-            final_model = selected_model
-        else:
-            final_provider = fallback_provider
-            final_model = fallback_model
-        # ====================================================================
+        final_provider, final_model = _resolve_fallback_provider(ai_config)
         
         # 构建模型列表 - 动态遍历配置文件中的所有provider
         models = []
@@ -877,46 +601,7 @@ async def get_full_config():
         config = get_config_instance()
         ai_config = config.get('ai', {})
         
-        # ====================================================================
-        # 【统一Fallback逻辑 - 必须遵守！】
-        # 1. 找第一个有models的provider作为fallback（动态遍历，不是硬编码！）
-        fallback_provider = ''
-        fallback_model = ''
-        for provider_name in ai_config.keys():
-            if provider_name == 'provider' or provider_name == 'model':
-                continue
-            provider_data = ai_config.get(provider_name, {})
-            if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
-                fallback_provider = provider_name
-                fallback_model = provider_data['models'][0]
-                break
-        
-        # 如果没有找到任何provider，用空值
-        # 注意：配置文件应该至少有一个provider配置
-        if not fallback_provider:
-            fallback_provider = ''
-            fallback_model = ''
-        
-        # 2. 检查 ai.provider 和 ai.model 是否有效
-        selected_provider = ai_config.get('provider', '')
-        selected_model = ai_config.get('model', '')
-        
-        is_valid = (
-            selected_provider and 
-            selected_provider in ai_config and 
-            'models' in ai_config[selected_provider] and 
-            selected_model and 
-            selected_model in ai_config[selected_provider]['models']
-        )
-        
-        # 3. 使用有效配置或fallback
-        if is_valid:
-            final_provider = selected_provider
-            final_model = selected_model
-        else:
-            final_provider = fallback_provider
-            final_model = fallback_model
-        # ====================================================================
+        final_provider, final_model = _resolve_fallback_provider(ai_config)
         
         providers = {}
         # 动态遍历所有provider（不是硬编码！）
@@ -1318,19 +1003,150 @@ class ConfigPathResponse(BaseModel):
     exists: bool = Field(..., description="配置文件是否存在")
 
 
-def _backup_config_file(config_path: Path) -> Path:
-    """
-    自动备份配置文件
-    
-    返回备份文件路径
-    """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = config_path.parent / f"config.yaml.backup.{timestamp}"
-    
-    shutil.copy2(config_path, backup_path)
-    logger.info(f"配置文件已备份: {backup_path}")
-    
-    return backup_path
+def _invalidate_ai_service_cache(provider: Optional[str] = None) -> None:
+    """清理AIServiceFactory缓存，强制下次重新读取配置 - 小健 2026-05-25"""
+    AIServiceFactory._instance = None
+    AIServiceFactory._config = None
+    if provider:
+        AIServiceFactory._current_provider = provider
+    logger.info("已清空AIServiceFactory缓存，下次调用将重新加载配置")
+
+
+def _backup_config(config_path: Path) -> Path:
+    """备份配置文件，复用file_helpers.backup_file - 小健 2026-05-25"""
+    from app.services.tools.toolhelper.file_helpers import backup_file
+    result = backup_file(str(config_path), suffix=".backup")
+    if not result.get("success"):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = config_path.parent / f"config.yaml.backup.{timestamp}"
+        shutil.copy2(config_path, backup_path)
+        logger.info(f"配置文件已备份(fallback): {backup_path}")
+        return backup_path
+    bp = Path(result["backup_path"])
+    logger.info(f"配置文件已备份: {bp}")
+    return bp
+
+
+def _update_provider(config_data: dict, update: "ConfigUpdate") -> None:
+    ai_config = config_data.get('ai', {})
+    if update.ai_provider not in ai_config:
+        raise HTTPException(status_code=400, detail=f"不支持的提供商: {update.ai_provider}")
+    config_data['ai']['provider'] = update.ai_provider
+    _invalidate_ai_service_cache(update.ai_provider)
+    logger.info(f"更新AI Provider: {update.ai_provider}")
+
+
+def _update_model(config_data: dict, update: "ConfigUpdate") -> None:
+    _ai_cfg = config_data.get('ai', {})
+    provider = update.ai_provider or _ai_cfg.get('provider')
+    if not provider:
+        for _k, _v in _ai_cfg.items():
+            if isinstance(_v, dict) and _v.get('models'):
+                provider = _k
+                break
+    if provider in config_data.get('ai', {}):
+        config_data['ai']['model'] = update.ai_model
+        logger.info(f"更新AI Model: {update.ai_model} (provider={provider})")
+        _invalidate_ai_service_cache(provider)
+
+
+def _update_api_keys(config_data: dict, update: "ConfigUpdate") -> None:
+    for provider_name, api_key in (update.provider_api_keys or {}).items():
+        if provider_name in config_data.get('ai', {}):
+            config_data['ai'][provider_name]['api_key'] = api_key.strip()
+            logger.info(f"更新Provider API Key成功: {provider_name}")
+        else:
+            raise HTTPException(status_code=400, detail=f"不支持的Provider: {provider_name}")
+
+
+def _update_theme(config_data: dict, update: "ConfigUpdate") -> None:
+    config_data.setdefault('app', {})['theme'] = update.theme
+    logger.info(f"更新主题: {update.theme}")
+
+
+def _update_language(config_data: dict, update: "ConfigUpdate") -> None:
+    config_data.setdefault('app', {})['language'] = update.language
+    logger.info(f"更新语言: {update.language}")
+
+
+def _update_max_steps(config_data: dict, update: "ConfigUpdate") -> None:
+    if update.max_steps < 1:
+        raise HTTPException(status_code=400, detail="max_steps 必须大于等于 1")
+    if update.max_steps > 1000:
+        raise HTTPException(status_code=400, detail="max_steps 不能超过 1000")
+    config_data.setdefault('app', {})['max_steps'] = update.max_steps
+    logger.info(f"更新max_steps: {update.max_steps}")
+
+
+def _update_security(config_data: dict, update: "ConfigUpdate") -> None:
+    if not update.security:
+        return
+    config_data['security'] = {
+        "contentFilterEnabled": update.security.contentFilterEnabled,
+        "contentFilterLevel": update.security.contentFilterLevel,
+        "whitelistEnabled": update.security.whitelistEnabled,
+        "commandWhitelist": update.security.commandWhitelist,
+        "commandBlacklist": update.security.commandBlacklist,
+        "confirmDangerousOps": update.security.confirmDangerousOps,
+        "maxFileSize": update.security.maxFileSize,
+    }
+    logger.info("更新安全配置成功")
+
+
+FIELD_HANDLERS: Dict[str, Any] = {
+    "ai_provider": _update_provider,
+    "ai_model": _update_model,
+    "provider_api_keys": _update_api_keys,
+    "theme": _update_theme,
+    "language": _update_language,
+    "max_steps": _update_max_steps,
+    "security": _update_security,
+}
+
+
+def _restore_backup_if_needed(
+    backup_path: Optional[Path], config_path: Optional[Path],
+    restored_flag: List[bool],
+) -> bool:
+    """恢复备份配置（仅一次）- 小健 2026-05-25"""
+    if restored_flag[0]:
+        return False
+    if not backup_path or not config_path or not backup_path.exists():
+        return False
+    try:
+        shutil.copy2(str(backup_path), str(config_path))
+        restored_flag[0] = True
+        logger.warning(f"已从备份恢复配置: {backup_path}")
+        return True
+    except Exception as e:
+        logger.error(f"备份恢复失败: {e}")
+        return False
+
+
+def _auto_fix_and_validate(
+    config_data: dict, config_path: Path, backup_path: Optional[Path],
+    original_config_data: dict,
+) -> Tuple[bool, List[str], List[str], Optional[Dict[str, Any]]]:
+    """自动修复+验证，失败则恢复备份 - 小健 2026-05-25"""
+    config_data = _fix_config_common_issues(config_data)
+    is_valid, errors, warnings = _validate_config_integrity(config_data)
+    if not is_valid:
+        _restore_backup_if_needed(backup_path, config_path, [False])
+        get_config_instance().reload()
+        if backup_path and backup_path.exists():
+            try:
+                backup_path.unlink()
+            except Exception:
+                pass
+        original_ai = original_config_data.get('ai', {})
+        fail_result = {
+            "success": False, "message": "配置验证失败", "errors": errors, "warnings": warnings,
+            "backup_path": str(backup_path) if backup_path else None,
+            "current_provider": original_ai.get('provider', 'unknown'),
+            "current_model": original_ai.get('model', 'unknown'),
+        }
+        return False, errors, warnings, fail_result
+    return True, [], warnings, None
 
 
 # ================================================================================
@@ -1359,51 +1175,6 @@ def _backup_config_file(config_path: Path) -> Path:
 #   2. 删除所有遗留的备份文件
 #   3. 原因：当前配置文件已经是最新状态（成功时被删除，失败时被恢复）
 # 
-# 【何时启用】
-#   当前阶段暂时不启用，因为：
-#   1. 备份逻辑还在调试中
-#   2. 需要确保正常流程备份文件都能正确删除
-#   3. 调试完成后，再在后端启动时调用此函数
-# 
-# 【启用方式】
-#   在 backend/app/main.py 的启动流程中，首次调用API前调用此函数：
-#   
-#   from app.api.v1.config import cleanup_all_backups
-#   cleanup_all_backups(Path("D:/2bktest/MDview/OmniAgentAs-desk/config/config.yaml"))
-# 
-# ================================================================================
-def cleanup_all_backups(config_path: Path) -> int:
-    """
-    清理所有遗留的配置文件备份文件（防御性函数）
-    
-    【使用场景】
-    - 后端启动时调用
-    - 清理上次异常退出时遗留的备份文件
-    
-    【清理策略】
-    - 删除所有 config.yaml.backup.* 文件
-    - 原因：当前配置文件已经是正确状态
-#     - 成功时会删除最新备份，失败时会恢复备份
-    
-    【参数】
-    - config_path: 配置文件路径
-    
-    【返回值】
-    - 清理的备份文件数量
-    """
-    backup_files = list(config_path.parent.glob("config.yaml.backup.*"))
-    count = 0
-    for backup_file in backup_files:
-        backup_file.unlink(missing_ok=True)
-        logger.info(f"已清理遗留备份: {backup_file}")
-        count += 1
-    
-    if count > 0:
-        logger.info(f"启动时清理了 {count} 个遗留备份文件")
-    
-    return count
-
-
 def _validate_config_integrity(config_data: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
     """
     完整验证配置文件完整性
@@ -1600,4 +1371,26 @@ async def open_config_folder():
     except Exception as e:
         logger.error(f"打开配置目录失败: {e}")
         raise HTTPException(status_code=500, detail=f"打开配置目录失败: {str(e)}")
+
+
+@router.get("/config/read")
+async def read_config_file():
+    """
+    读取配置文件原文内容
+    
+    Returns:
+        config_content: 配置文件YAML原文
+    """
+    try:
+        config_path = Path(AIServiceFactory.get_config_path())
+        if not config_path.exists():
+            raise HTTPException(status_code=404, detail=f"配置文件不存在: {config_path}")
+        with open(config_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        return {"config_content": content}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"读取配置文件失败: {e}")
+        raise HTTPException(status_code=500, detail=f"读取配置文件失败: {str(e)}")
 

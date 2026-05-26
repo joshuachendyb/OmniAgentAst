@@ -6,7 +6,7 @@ chat_stream 模块
 Author: 小沈 - 2026-03-22
 """
 
-from app.chat_stream.chat_helpers import create_timestamp, get_provider_display_name, create_final_response
+from app.chat_stream.chat_helpers import create_timestamp, create_final_response
 from app.chat_stream.error_handler import (
     create_error_response,
     get_function_call_error_info,
@@ -29,7 +29,6 @@ from app.chat_stream.sse_formatter import (
 __all__ = [
     # chat_helpers
     "create_timestamp",
-    "get_provider_display_name",
     "create_final_response",
     # error_handler
     "create_error_response",

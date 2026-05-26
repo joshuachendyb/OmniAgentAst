@@ -34,11 +34,107 @@ import platform
 import subprocess
 import socket
 import asyncio
-from typing import Optional, Dict, Any, Literal, List
+from typing import Optional, Dict, Any, Literal, List, Tuple
 from urllib.parse import urlencode, urlparse, urlunparse
 
 import httpx
 from app.utils.logger import logger
+from app.constants import RETRYABLE_HTTP_STATUS_CODES, BROWSER_USER_AGENT, DEFAULT_MAX_OUTPUT_CHARS, DEFAULT_MAX_DOC_CHARS
+from app.services.tools.toolhelper.network_helper import (  # 小健 2026-05-18
+    well_known_ports, _html_to_markdown, _decode_bing_redirect_url,
+    _validate_url, _check_network,  # 小沈 2026-05-25 提升到模块级，消除3处函数内重复import
+)
+from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
+from app.services.tools._response import build_success, build_error
+
+
+def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
+    """解析 HTTP 响应体并构建 llm_data。
+    Returns: {"body": 前端数据, "llm_body": LLM 数据, "content_type_short": str}
+    """
+    content_type = response.headers.get("content-type", "")
+    content_type_short = content_type.split(";")[0].strip() if content_type else "unknown"
+
+    if "application/json" in content_type:
+        try:
+            body = response.json()
+        except (json.JSONDecodeError, ValueError):
+            body = response.text
+    else:
+        body = response.text
+
+    body_json_len = 0
+    if isinstance(body, (dict, list)):
+        body_json_len = len(json.dumps(body, ensure_ascii=False))
+
+    if isinstance(body, str) and len(body) > 5000:
+        try:
+            json.loads(body)
+        except (json.JSONDecodeError, ValueError):
+            body = body[:4000] + f"\n...[截断 {len(body)-4000} 字符]"
+
+    if isinstance(body, (dict, list)) and body_json_len <= 5000:
+        llm_body = body
+    elif isinstance(body, str) and len(body) <= 5000:
+        llm_body = body
+    elif isinstance(body, (dict, list)):
+        from app.services.tools.tool_result_utils import make_json_safe
+        llm_body = make_json_safe(body, max_depth=4, max_str_len=500)
+    else:
+        llm_body = str(body)[:4000]
+
+    return {
+        "body": truncate_data_for_frontend({
+            "status_code": response.status_code,
+            "headers": dict(response.headers),
+            "body": body,
+        }),
+        "llm_body": llm_body,
+        "content_type_short": content_type_short,
+    }
+
+
+def _resolve_proxy(proxy: Optional[str] = None) -> Optional[str]:
+    """解析代理配置：优先参数，其次环境变量 — 小沈 2026-05-25
+
+    使用场景:
+    - http_request中代理配置
+    - fetch_webpage中代理配置
+
+    使用示例:
+        proxy_config = _resolve_proxy(proxy)
+
+    返回数据说明:
+    - 返回str或None，代理URL
+    """
+    return proxy or os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
+
+
+def _build_http_error(last_exception: Exception, url: str, retry: int) -> Dict[str, Any]:
+    """构建HTTP请求最终错误响应 — 小沈 2026-05-25
+
+    使用场景:
+    - http_request中最终错误构建
+    - 需要统一处理TimeoutException/HTTPStatusError/RequestError的场景
+
+    使用示例:
+        return _build_http_error(last_exception, url, retry)
+
+    返回数据说明:
+    - 返回Dict，错误响应
+    """
+    if isinstance(last_exception, httpx.TimeoutException):
+        return build_error("ERR_NETWORK_TIMEOUT", f"请求超时：{url}")
+    if isinstance(last_exception, httpx.HTTPStatusError):
+        return build_error(
+            "ERR_NETWORK_HTTP_ERROR",
+            f"HTTP请求失败（重试{retry}次后）：{url}",
+            data={
+                "status_code": last_exception.response.status_code,
+                "body": last_exception.response.text if hasattr(last_exception.response, 'text') else None,
+            },
+        )
+    return build_error("ERR_NETWORK_REQUEST_ERROR", f"网络请求失败（重试{retry}次后）：{str(last_exception)}")
 
 
 async def http_request(
@@ -46,46 +142,28 @@ async def http_request(
     method: str = "GET",
     headers: Optional[Dict[str, str]] = None,
     params: Optional[Dict[str, str]] = None,
-    body: Optional[Any] = None,
     json_body: Optional[Dict[str, Any]] = None,
     timeout: int = 30000,
-    verify_ssl: bool = True,
     proxy: Optional[str] = None,
     retry: int = 3,
-    follow_redirects: bool = True,
 ) -> dict:
-    """
-    发起HTTP请求 - 小沈 2026-05-03 补齐参数+timeout改毫秒
-
-    支持 GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS 方法。
-    支持自定义请求头、查询参数、请求体。
-    支持超时控制、SSL验证、代理、重试和重定向跟随。
-    """
+    """发起HTTP请求 — 小沈 2026-05-19 精简参数(11→8)"""
     # 参数校验
     if retry < 0 or retry > 10:
-        return {
-            "code": "ERR_NETWORK_INVALID_PARAM",
-            "data": None,
-            "message": f"重试次数必须在0-10之间，当前值：{retry}"
-        }
-    if timeout < 1000 or timeout > 600000:
-        return {
-            "code": "ERR_NETWORK_INVALID_PARAM",
-            "data": None,
-            "message": f"超时时间必须在1000-600000毫秒之间，当前值：{timeout}"
-        }
+        return build_error("ERR_NETWORK_INVALID_PARAM", f"重试次数必须在0-10之间，当前值：{retry}")
     
     timeout_sec = timeout / 1000.0
     
     try:
-        parsed = urlparse(url)
-        if not parsed.scheme or not parsed.netloc:
-            return {
-                "code": "ERR_NETWORK_INVALID_URL",
-                "data": None,
-                "message": f"无效的URL: {url}，URL必须包含协议和域名（如 https://api.example.com/data）"
-            }
+        url_info = _validate_url(url)
+        if not url_info["data"]["valid"]:
+            return build_error("ERR_INVALID_URL", f"URL格式无效: {url}，URL必须包含协议和域名（如 https://api.example.com/data）")
 
+        net_info = _check_network()
+        if not net_info["data"]["connected"]:
+            return build_error("ERR_NETWORK_DOWN", "网络不可用，无法发送请求")
+
+        parsed = urlparse(url)
         if params:
             query_string = urlencode(params, doseq=True)
             url = urlunparse(parsed._replace(query=query_string))
@@ -94,19 +172,15 @@ async def http_request(
         if headers:
             request_headers.update(headers)
 
-        proxy_config = None
-        if proxy:
-            proxy_config = proxy
-        elif os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY"):
-            proxy_config = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
+        proxy_config = _resolve_proxy(proxy)
 
         last_exception = None
         for attempt in range(retry + 1):
             try:
                 async with httpx.AsyncClient(
                     timeout=httpx.Timeout(timeout_sec),
-                    follow_redirects=follow_redirects,
-                    verify=verify_ssl,
+                    follow_redirects=True,
+                    verify=True,
                     proxy=proxy_config,
                 ) as client:
                     method_upper = method.upper()
@@ -119,223 +193,215 @@ async def http_request(
                     if method_upper in ("POST", "PUT", "PATCH"):
                         if json_body is not None:
                             request_kwargs["json"] = json_body
-                        elif body is not None:
-                            request_kwargs["content"] = body.encode("utf-8") if isinstance(body, str) else body
 
                     response = await client.request(method_upper, **request_kwargs)
                     response.raise_for_status()
 
-                    content_type = response.headers.get("content-type", "")
-                    response_body = None
-                    if "application/json" in content_type:
-                        try:
-                            response_body = response.json()
-                        except (json.JSONDecodeError, ValueError):
-                            response_body = response.text
-                    else:
-                        response_body = response.text
-
-                    return {
-                        "code": "SUCCESS",
-                        "data": {
-                            "status_code": response.status_code,
-                            "headers": dict(response.headers),
-                            "body": response_body,
+                    parsed = _parse_response_body(response)
+                    return build_success(
+                        parsed["body"],
+                        f"请求成功 (HTTP {response.status_code})",
+                        llm_data={
+                            "状态码": response.status_code,
+                            "内容类型": parsed["content_type_short"],
+                            "响应体": parsed["llm_body"],
                         },
-                        "message": f"请求成功 (HTTP {response.status_code})"
-                    }
+                        next_actions=build_next_actions([("http_request", "继续发送请求", "需要发送更多请求时")]),
+                    )
             except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
                 last_exception = e
-                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code not in (429, 500, 502, 503, 504):
+                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code not in RETRYABLE_HTTP_STATUS_CODES:
                     try:
                         error_body = e.response.text
                     except Exception:
                         error_body = None
-                    return {
-                        "code": "ERR_NETWORK_HTTP_ERROR",
-                        "data": {
+                    return build_error(
+                        "ERR_NETWORK_HTTP_ERROR",
+                        f"HTTP请求失败 (HTTP {e.response.status_code})：{url}",
+                        data={
                             "status_code": e.response.status_code,
                             "body": error_body,
                         },
-                        "message": f"HTTP请求失败 (HTTP {e.response.status_code})：{url}"
-                    }
+                    )
                 if attempt < retry:
                     import asyncio
                     await asyncio.sleep(0.5 * (2 ** attempt))
                     continue
                 break
 
-        if isinstance(last_exception, httpx.TimeoutException):
-            return {
-                "code": "ERR_NETWORK_TIMEOUT",
-                "data": None,
-                "message": f"请求超时（{timeout}毫秒）：{url}"
-            }
-        elif isinstance(last_exception, httpx.HTTPStatusError):
-            return {
-                "code": "ERR_NETWORK_HTTP_ERROR",
-                "data": {
-                    "status_code": last_exception.response.status_code,
-                    "body": last_exception.response.text if hasattr(last_exception.response, 'text') else None,
-                },
-                "message": f"HTTP请求失败（重试{retry}次后）：{url}"
-            }
-        else:
-            return {
-                "code": "ERR_NETWORK_REQUEST_ERROR",
-                "data": None,
-                "message": f"网络请求失败（重试{retry}次后）：{str(last_exception)}"
-            }
+        return _build_http_error(last_exception, url, retry)
 
     except Exception as e:
         logger.error(f"[http_request] 未知错误: {e}")
-        return {
-            "code": "ERR_NETWORK_UNKNOWN",
-            "data": None,
-            "message": f"请求异常: {str(e)}"
-        }
+        return build_error("ERR_NET_UNKNOWN", f"请求异常: {str(e)}")
+
+
+NET_ERROR_MAP = [
+    (httpx.TimeoutException, "ERR_NETWORK_TIMEOUT", "下载超时"),
+    (httpx.HTTPStatusError, "ERR_NETWORK_HTTP_ERROR", "下载失败"),
+    (httpx.RequestError, "ERR_NETWORK_REQUEST_ERROR", "网络请求失败"),
+]
+
+
+def _map_network_error(url: str, timeout: int, e: Exception) -> Dict[str, Any]:
+    """将 httpx 异常映射为 build_error — 小健 2026-05-25"""
+    for exc_type, code, prefix in NET_ERROR_MAP:
+        if isinstance(e, exc_type):
+            detail = f"{prefix}（{timeout/1000}秒）：{url}"
+            if isinstance(e, httpx.HTTPStatusError):
+                detail = f"{prefix} (HTTP {e.response.status_code})：{url}"
+            return build_error(code, detail)
+    # 兜底：未知错误
+    logger.error(f"[download_file] 未知错误: {e}")
+    return build_error("ERR_NET_UNKNOWN", f"下载异常: {str(e)}")
+
+
+async def _stream_download(client: httpx.AsyncClient, url: str, dest_path: str,
+                           headers: dict, chunk_size: int = 8192) -> Tuple[int, str, int]:
+    """流式下载文件到本地，返回 (downloaded_bytes, content_type, total_bytes) — 小健 2026-05-25"""
+    async with client.stream("GET", url, headers=headers) as response:
+        response.raise_for_status()
+        content_type = response.headers.get("content-type", "")
+        total_bytes = int(response.headers.get("content-length", 0))
+
+        downloaded = 0
+        try:
+            with open(dest_path, "wb") as f:
+                async for chunk in response.aiter_bytes(chunk_size=chunk_size):
+                    f.write(chunk)
+                    downloaded += len(chunk)
+        except (PermissionError, OSError):
+            if os.path.exists(dest_path):
+                os.remove(dest_path)
+            raise
+        return downloaded, content_type, total_bytes
 
 
 async def download_file(
     url: str,
     destination_path: str,
     headers: Optional[Dict[str, str]] = None,
-    timeout: int = 300,
-    chunk_size: int = 8192,
-    resume: bool = True,
+    timeout: int = 300000,
+    proxy: Optional[str] = None,
 ) -> dict:
-    """
-    从URL下载文件到本地路径
-
-    支持大文件流式下载、断点续传、进度显示。
-    自动创建目标目录。
-    支持超时控制和自定义请求头。
-    """
+    """从URL下载文件 — 小沈 2026-05-25 重构"""
     try:
-        # 验证URL
-        parsed = urlparse(url)
-        if not parsed.scheme or not parsed.netloc:
-            return {
-                "code": "ERR_NETWORK_INVALID_URL",
-                "data": None,
-                "message": f"无效的URL: {url}，URL必须包含协议和域名"
-            }
+        url_info = _validate_url(url)
+        if not url_info["data"]["valid"]:
+            return build_error("ERR_INVALID_URL", f"URL格式无效: {url}")
+        net_info = _check_network()
+        if not net_info["data"]["connected"]:
+            return build_error("ERR_NETWORK_DOWN", "网络不可用")
 
-        # 验证目标路径
         dest_path = os.path.abspath(destination_path)
         dest_dir = os.path.dirname(dest_path)
         if not dest_dir:
-            return {
-                "code": "ERR_NETWORK_INVALID_PATH",
-                "data": None,
-                "message": f"无效的目标路径: {destination_path}，路径必须包含目录"
-            }
-
-        # 创建目标目录
+            return build_error("ERR_NETWORK_INVALID_PATH", f"无效路径: {destination_path}")
         try:
             os.makedirs(dest_dir, exist_ok=True)
         except (PermissionError, OSError) as e:
-            return {
-                "code": "ERR_NETWORK_CREATE_DIR",
-                "data": None,
-                "message": f"无法创建目录 {dest_dir}: {str(e)}"
-            }
+            return build_error("ERR_NETWORK_CREATE_DIR", f"无法创建目录: {e}")
 
-        # 构建请求头
-        request_headers = {}
-        if headers:
-            request_headers.update(headers)
+        proxy_config = proxy
+        if not proxy_config:
+            proxy_config = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
 
-        # 检查是否支持断点续传（根据resume参数和文件是否存在）
-        downloaded = 0
-        resume_offset = 0
-        if resume and os.path.exists(dest_path):
-            resume_offset = os.path.getsize(dest_path)
-            if resume_offset > 0:
-                request_headers["Range"] = f"bytes={resume_offset}-"
+        req_headers = headers or {}
 
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout),
-            follow_redirects=True
+            timeout=httpx.Timeout(timeout / 1000.0, connect=timeout / 1000.0 / 3),
+            follow_redirects=True,
+            proxy=proxy_config,
         ) as client:
-            async with client.stream("GET", url, headers=request_headers) as response:
-                # 检查服务器是否支持断点续传
-                is_resume = response.status_code == 206
-                if is_resume:
-                    content_range = response.headers.get("content-range", "")
-                    try:
-                        if content_range and "/" in content_range:
-                            total_size = int(content_range.split("/")[-1])
-                        else:
-                            total_size = resume_offset + int(response.headers.get("content-length", 0))
-                    except (ValueError, IndexError):
-                        total_size = resume_offset + int(response.headers.get("content-length", 0))
-                else:
-                    total_size = int(response.headers.get("content-length", 0))
-                    if resume_offset > 0:
-                        resume_offset = 0
+            downloaded, content_type, total_bytes = await _stream_download(client, url, dest_path, req_headers)
 
-                content_type = response.headers.get("content-type", "")
-
-                # 流式写入文件
-                progress_percent = 0
-                try:
-                    with open(dest_path, "ab" if resume_offset > 0 else "wb") as f:
-                        async for chunk in response.aiter_bytes(chunk_size=chunk_size):
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            if total_size > 0:
-                                progress_percent = int((resume_offset + downloaded) * 100 / total_size)
-                except (PermissionError, OSError) as e:
-                    # 清理不完整的文件
-                    try:
-                        if dest_path and os.path.exists(dest_path):
-                            os.remove(dest_path)
-                    except OSError:
-                        pass
-                    return {
-                        "code": "ERR_NETWORK_WRITE_FILE",
-                        "data": None,
-                        "message": f"写入文件失败 {dest_path}: {str(e)}"
-                    }
-
-                return {
-                    "code": "SUCCESS",
-                    "data": {
-                        "file_path": dest_path,
-                        "file_size": downloaded,
-                        "total_size": total_size,
-                        "progress_percent": progress_percent,
-                        "content_type": content_type,
-                    },
-                    "message": f"文件下载成功 ({downloaded}/{total_size} 字节, {progress_percent}%)：保存到 {dest_path}"
-                }
-
-    except httpx.TimeoutException:
-        return {
-            "code": "ERR_NETWORK_TIMEOUT",
-            "data": None,
-            "message": f"下载超时（{timeout}秒）：{url}"
-        }
-    except httpx.HTTPStatusError as e:
-        return {
-            "code": "ERR_NETWORK_HTTP_ERROR",
-            "data": None,
-            "message": f"下载失败 (HTTP {e.response.status_code})：{url}"
-        }
-    except httpx.RequestError as e:
-        return {
-            "code": "ERR_NETWORK_REQUEST_ERROR",
-            "data": None,
-            "message": f"网络请求失败：{str(e)}"
-        }
+        return build_success(
+            {"file_path": dest_path, "file_size": downloaded, "total_size": total_bytes, "content_type": content_type},
+            f"文件下载成功 ({downloaded}/{total_bytes} 字节)：{dest_path}",
+            llm_data={"路径": dest_path, "大小": downloaded, "类型": content_type},
+            next_actions=build_next_actions([("read_file", "读取下载的文件", "需要查看时")]),
+        )
+    except (PermissionError, OSError) as e:
+        return build_error("ERR_NETWORK_WRITE_FILE", f"写入文件失败 {dest_path}: {e}")
+    except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
+        return _map_network_error(url, timeout, e)
     except Exception as e:
         logger.error(f"[download_file] 未知错误: {e}")
-        return {
-            "code": "ERR_NETWORK_UNKNOWN",
-            "data": None,
-            "message": f"下载异常: {str(e)}"
+        return build_error("ERR_NET_UNKNOWN", f"下载异常: {e}")
+
+
+def _extract_html_content(html_content: str, extract_format: str, max_tokens: int) -> Tuple[str, bool]:
+    """3路格式提取+截断检查。消除A/B路径完全重复代码 — 小健 2026-05-25"""
+    if extract_format == "html":
+        content = html_content
+    elif extract_format == "text":
+        content = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL|re.IGNORECASE)
+        content = re.sub(r'<style[^>]*>.*?</style>', '', content, flags=re.DOTALL|re.IGNORECASE)
+        content = re.sub(r'<[^>]+>', ' ', content)
+        content = re.sub(r'\s+', ' ', content).strip()
+    else:
+        content = _html_to_markdown(html_content)
+    max_len = max_tokens * 4
+    truncated = len(content) > max_len
+    if truncated:
+        content = content[:max_len]
+    return content, truncated
+
+
+def _build_media_result(url: str, mime: str, raw_bytes: bytes, extract_format: str, response_status: int) -> Dict:
+    """构建图片/PDF的base64附件响应 — 小健 2026-05-25"""
+    import base64
+    b64 = base64.b64encode(raw_bytes).decode("ascii")
+    return build_success(
+        {
+            "url": url,
+            "content": f"[{mime} 文件，大小: {len(raw_bytes)} 字节]",
+            "format": extract_format,
+            "content_type": mime,
+            "status_code": response_status,
+            "truncated": False,
+        },
+        f"成功获取{mime}文件",
+        attachment={
+            "type": "base64",
+            "mime": mime,
+            "data": b64,
+            "filename": url.split("/")[-1].split("?")[0] or "download"
+        },
+        next_actions=build_next_actions([("search_web", "搜索更多网页", "需要搜索更多信息时")]),
+    )
+
+
+async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout_sec: float,
+                                extract_format: str, max_tokens: int) -> Dict:
+    """Playwright路径封装。消除ImportError+渲染异常+页面操作的重复 — 小健 2026-05-25"""
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        return build_error("ERR_NETWORK_JS_RENDER", "js_render需要安装Playwright: pip install playwright && playwright install chromium")
+    try:
+        browser_config = {
+            "headless": True,
+            "proxy": {"server": proxy} if proxy else None,
         }
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(**browser_config)
+            page = await browser.new_page()
+            if proxy:
+                await page.set_default_timeout(timeout_sec * 1000)
+            await page.goto(url, wait_until="networkidle", timeout=timeout_sec * 1000)
+            html_content = await page.content()
+            await browser.close()
+        content, truncated = _extract_html_content(html_content, extract_format, max_tokens)
+        return {
+            "html_content": html_content,
+            "extracted_content": content,
+            "truncated": truncated,
+            "content_type": "text/html",
+            "status_code": 200,
+        }
+    except Exception as e:
+        return build_error("ERR_NETWORK_JS_RENDER", f"JS渲染失败: {str(e)}")
 
 
 async def fetch_webpage(
@@ -345,123 +411,64 @@ async def fetch_webpage(
     js_render: bool = False,
     timeout: int = 30000,
     max_tokens: int = 8000,
-    user_agent: Optional[str] = None,
     proxy: Optional[str] = None,
 ) -> dict:
-    """
-    获取和处理网页内容 - 小沈 2026-05-04 添加Playwright JS渲染支持
-    
-    支持静态抓取和JS渲染（Playwright）。
-    支持多种输出格式：markdown、html、text。
-    支持AI提取指令（prompt）。
-    """
+    """获取网页内容 — 小沈 2026-05-19 精简参数(8→7)；小健 2026-05-25 重构 — 小健 2026-05-25"""
     timeout_sec = timeout / 1000.0
-    
+
     try:
-        parsed = urlparse(url)
-        if not parsed.scheme or not parsed.netloc:
-            return {
-                "code": "ERR_NETWORK_INVALID_URL",
-                "data": None,
-                "message": f"无效的URL: {url}"
-            }
-        
-        headers = {}
-        if user_agent:
-            headers["User-Agent"] = user_agent
-        else:
-            headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        
-        proxy_config = None
-        if proxy:
-            proxy_config = {"http://": proxy, "https://": proxy}
-        
-        # js_render: 使用Playwright渲染动态页面
+        url_info = _validate_url(url)
+        if not url_info["data"]["valid"]:
+            return build_error("ERR_INVALID_URL", f"URL格式无效: {url}")
+
+        net_info = _check_network()
+        if not net_info["data"]["connected"]:
+            return build_error("ERR_NETWORK_DOWN", "网络不可用，无法发送请求")
+
+        headers = {
+            "User-Agent": BROWSER_USER_AGENT,
+        }
+        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        headers["Accept-Language"] = "en-US,en;q=0.9,zh-CN;q=0.8"
+        headers["Accept-Encoding"] = "gzip, deflate"
+
         if js_render:
-            try:
-                from playwright.async_api import async_playwright
-                
-                browser_config = {
-                    "headless": True,
-                    "proxy": proxy_config,
-                }
-                
-                async with async_playwright() as p:
-                    browser = await p.chromium.launch(**browser_config)
-                    page = await browser.new_page()
-                    
-                    if proxy_config:
-                        await page.set_default_timeout(timeout_sec * 1000)
-                    
-                    await page.goto(url, wait_until="networkidle", timeout=timeout_sec * 1000)
-                    html_content = await page.content()
-                    status_code = 200
-                    
-                    await browser.close()
-                    
-                    # 提取内容 - 小沈 2026-05-05 修正js_render分支缺少内容提取
-                    if extract_format == "html":
-                        extracted_content = html_content
-                    elif extract_format == "text":
-                        text_content = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL|re.IGNORECASE)
-                        text_content = re.sub(r'<style[^>]*>.*?</style>', '', text_content, flags=re.DOTALL|re.IGNORECASE)
-                        text_content = re.sub(r'<[^>]+>', ' ', text_content)
-                        text_content = re.sub(r'\s+', ' ', text_content).strip()
-                        extracted_content = text_content
-                    else:
-                        extracted_content = _html_to_markdown(html_content)
-                    
-                    if len(extracted_content) > max_tokens * 4:
-                        extracted_content = extracted_content[:max_tokens * 4]
-                        truncated = True
-                    else:
-                        truncated = False
-                    
-                    content_type = "text/html"
-                    
-            except ImportError:
-                return {
-                    "code": "ERR_NETWORK_JS_RENDER",
-                    "data": None,
-                    "message": "js_render需要安装Playwright: pip install playwright && playwright install chromium"
-                }
-            except Exception as e:
-                return {
-                    "code": "ERR_NETWORK_JS_RENDER",
-                    "data": None,
-                    "message": f"JS渲染失败: {str(e)}"
-                }
+            playwright_result = await _fetch_via_playwright(url, proxy, timeout_sec, extract_format, max_tokens)
+            if "code" in playwright_result:
+                return playwright_result
+            html_content = playwright_result["html_content"]
+            extracted_content = playwright_result["extracted_content"]
+            truncated = playwright_result["truncated"]
+            content_type = playwright_result["content_type"]
+            status_code = playwright_result["status_code"]
         else:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(timeout_sec),
                 follow_redirects=True,
-                proxies=proxy_config
+                proxy=proxy
             ) as client:
                 response = await client.get(url, headers=headers)
+
+                if response.status_code == 403 and response.headers.get("cf-mitigated") == "challenge":
+                    logger.info(f"[fetch_webpage] Cloudflare挑战检测，降级UA重试: {url}")
+                    simple_headers = dict(headers)
+                    simple_headers["User-Agent"] = BROWSER_USER_AGENT
+                    response = await client.get(url, headers=simple_headers)
+
                 response.raise_for_status()
+
+                content_type = response.headers.get("content-type", "")
+                mime = content_type.split(";")[0].strip().lower() if content_type else ""
+                if mime and (mime.startswith("image/") or mime in ("application/pdf",)):
+                    raw_bytes = response.content
+                    return _build_media_result(url, mime, raw_bytes, extract_format, response.status_code)
+
                 html_content = response.text
                 content_type = response.headers.get("content-type", "")
-            
-            # 提取内容
-            if extract_format == "html":
-                extracted_content = html_content
-            elif extract_format == "text":
-                text_content = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL|re.IGNORECASE)
-                text_content = re.sub(r'<style[^>]*>.*?</style>', '', text_content, flags=re.DOTALL|re.IGNORECASE)
-                text_content = re.sub(r'<[^>]+>', ' ', text_content)
-                text_content = re.sub(r'\s+', ' ', text_content).strip()
-                extracted_content = text_content
-            else:
-                extracted_content = _html_to_markdown(html_content)
-            
-            if len(extracted_content) > max_tokens * 4:
-                extracted_content = extracted_content[:max_tokens * 4]
-                truncated = True
-            else:
-                truncated = False
-            
+
+            extracted_content, truncated = _extract_html_content(html_content, extract_format, max_tokens)
             status_code = response.status_code
-        
+
         result_data = {
             "url": url,
             "content": extracted_content,
@@ -470,76 +477,161 @@ async def fetch_webpage(
             "status_code": status_code,
             "truncated": truncated,
         }
-        
+
         if prompt:
             result_data["prompt"] = prompt
             result_data["note"] = "AI提取功能需要LLM后处理"
-        
-        return {
-            "code": "SUCCESS",
-            "data": result_data,
-            "message": f"成功获取网页内容（{extract_format}格式）" + ("（已截断）" if truncated else "")
-        }
-    
+
+        _content_for_llm = result_data.get("content", "")
+        if isinstance(_content_for_llm, str) and len(_content_for_llm) > 5000:
+            _content_for_llm = _content_for_llm[:5000] + f"...(原文{len(_content_for_llm)}字符)"
+
+        return build_success(
+            truncate_data_for_frontend(result_data),
+            f"成功获取网页内容（{extract_format}格式）" + ("（已截断）" if truncated else ""),
+            llm_data={
+                "URL": url, "格式": extract_format, "状态码": result_data.get("status_code"),
+                "内容预览": _content_for_llm, "截断": truncated
+            },
+            next_actions=build_next_actions([("search_web", "搜索更多网页", "需要搜索更多信息时")]),
+        )
+
     except httpx.TimeoutException:
-        return {
-            "code": "ERR_NETWORK_TIMEOUT",
-            "data": None,
-            "message": f"获取网页超时（{timeout}秒）：{url}"
-        }
+        return build_error("ERR_NETWORK_TIMEOUT", f"获取网页超时（{timeout_sec:.1f}秒）：{url}")
     except httpx.HTTPStatusError as e:
-        return {
-            "code": "ERR_NETWORK_HTTP_ERROR",
-            "data": None,
-            "message": f"获取网页失败 (HTTP {e.response.status_code})：{url}"
-        }
+        return build_error("ERR_NETWORK_HTTP_ERROR", f"获取网页失败 (HTTP {e.response.status_code})：{url}")
     except httpx.RequestError as e:
-        return {
-            "code": "ERR_NETWORK_REQUEST_ERROR",
-            "data": None,
-            "message": f"网络请求失败：{str(e)}"
-        }
+        return build_error("ERR_NETWORK_REQUEST_ERROR", f"网络请求失败：{str(e)}")
     except Exception as e:
         logger.error(f"[fetch_webpage] 未知错误: {e}")
-        return {
-            "code": "ERR_NETWORK_UNKNOWN",
-            "data": None,
-            "message": f"获取网页异常: {str(e)}"
-        }
+        return build_error("ERR_NET_UNKNOWN", f"获取网页异常: {str(e)}")
 
 
-def _html_to_markdown(html: str) -> str:
-    """简单的HTML转Markdown - 小沈 2026-05-02"""
-    text = html
-    text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL|re.IGNORECASE)
-    text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL|re.IGNORECASE)
-    text = re.sub(r'<head[^>]*>.*?</head>', '', text, flags=re.DOTALL|re.IGNORECASE)
-    text = re.sub(r'<nav[^>]*>.*?</nav>', '', text, flags=re.DOTALL|re.IGNORECASE)
-    text = re.sub(r'<footer[^>]*>.*?</footer>', '', text, flags=re.DOTALL|re.IGNORECASE)
+
+
+# 【24.2.4 组件1】MCP_CONFIGS 提至模块级常量 — 每次调用避免重建
+_MCP_CONFIGS = {
+    "parallel": {
+        "url": "https://search.parallel.ai/mcp",
+        "tool_name": "web_search",
+        "build_args": lambda q, n: {"objective": q, "search_queries": [q], "session_id": "omniagent-search"},
+    },
+    "exa": {
+        "url": "https://mcp.exa.ai/mcp",
+        "tool_name": "web_search_exa",
+        "build_args": lambda q, n: {"query": q, "type": "auto", "numResults": n, "livecrawl": "fallback"},
+    },
+}
+
+
+# 【24.2.4 组件2】统一失败日志 + return None(消除 7 路重复)
+def _search_failed(engine: str, reason: str = "") -> None:
+    """日志记录 MCP 搜索失败 — 小健 2026-05-25"""
+    logger.info(f"[_search_mcp_engine:{engine}] {reason}" if reason else f"[_search_mcp_engine:{engine}] 失败")
+
+
+# 【24.2.4 组件3】从 P1c 提取为独立函数(消除 R1b 无结果 + 逐行状态机)
+def _parse_exa_results(text: str, num_results: int) -> Optional[List[Dict[str, str]]]:
+    """解析 Exa MCP 的文本格式结果 — 小健 2026-05-25"""
+    results = []
+    current = {}
+    for line in text.split("\n"):
+        line = line.strip()
+        if line.startswith("Title: "):
+            if current.get("title"):
+                results.append(current)
+                if len(results) >= num_results:
+                    break
+            current = {"title": line[7:], "url": "", "snippet": ""}
+        elif line.startswith("URL: "):
+            current["url"] = line[5:]
+        elif line.startswith("Highlights:") or (current.get("snippet") == "" and line and
+              not line.startswith("Published") and not line.startswith("Author")):
+            if not current["snippet"]:
+                current["snippet"] = line[:300]
+    if current.get("title"):
+        results.append(current)
+
+    formatted = [
+        {"title": r["title"], "url": r["url"], "snippet": r.get("snippet", "")[:300], "source": "Exa"}
+        for r in results[:num_results] if r.get("title") and r.get("url")
+    ]
+    return formatted or None
+
+
+async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: Optional[str] = None) -> Optional[List[dict]]:
+    """MCP搜索引擎统一入口 - 小沈 2026-05-17
+    合并 _search_parallel_mcp + _search_exa_mcp，消除约80行重复代码。
     
-    text = re.sub(r'<h1[^>]*>(.*?)</h1>', r'# \1\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<h2[^>]*>(.*?)</h2>', r'## \1\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<h3[^>]*>(.*?)</h3>', r'### \1\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<h4[^>]*>(.*?)</h4>', r'#### \1\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<h5[^>]*>(.*?)</h5>', r'##### \1\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<h6[^>]*>(.*?)</h6>', r'###### \1\n', text, flags=re.IGNORECASE)
+    Args:
+        engine: "parallel" | "exa"
+        query: 搜索关键词
+        num_results: 结果数量
+        proxy: 代理服务器地址（小沈 2026-05-19 修复：新增proxy参数）
     
-    text = re.sub(r'<strong[^>]*>(.*?)</strong>', r'**\1**', text, flags=re.IGNORECASE)
-    text = re.sub(r'<b[^>]*>(.*?)</b>', r'**\1**', text, flags=re.IGNORECASE)
-    text = re.sub(r'<em[^>]*>(.*?)</em>', r'*\1*', text, flags=re.IGNORECASE)
-    text = re.sub(r'<i[^>]*>(.*?)</i>', r'*\1*', text, flags=re.IGNORECASE)
-    
-    text = re.sub(r'<a[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', r'[\2](\1)', text, flags=re.IGNORECASE)
-    
-    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<p[^>]*>(.*?)</p>', r'\1\n\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<li[^>]*>(.*?)</li>', r'- \1\n', text, flags=re.IGNORECASE)
-    
-    text = re.sub(r'<[^>]+>', ' ', text)
-    text = re.sub(r'\s+', ' ', text)
-    text = re.sub(r'\n\s*\n', '\n\n', text)
-    
-    return text.strip()
+    Returns:
+        搜索结果列表或None（失败时）
+    """
+    config = _MCP_CONFIGS.get(engine)
+    if not config:
+        _search_failed(engine, "未知引擎")
+        return None
+
+    payload = {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": config["tool_name"], "arguments": config["build_args"](query, num_results)},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=10.0), proxy=proxy) as c:
+            resp = await c.post(config["url"], json=payload,
+                headers={"Accept": "application/json, text/event-stream"})
+            resp.raise_for_status()
+            data = resp.json()
+            result_text = data.get("result", {}).get("content", [{}])[0].get("text", "")
+            if not result_text:
+                _search_failed(engine, "返回空数据")
+                return None
+
+        if engine == "parallel":
+            if not result_text.startswith("{"):
+                _search_failed(engine, "返回数据非JSON")
+                return None
+            parsed = json.loads(result_text)
+            results = []
+            for r in parsed.get("results", [])[:num_results]:
+                title, url = r.get("title", ""), r.get("url", "")
+                if title and url:
+                    snippet = (r.get("excerpts", [])[0] or "")[:300]
+                    results.append({"title": title, "url": url, "snippet": snippet, "source": "Parallel"})
+            if not results:
+                _search_failed(engine, "无搜索结果")
+                return None
+            return results
+        else:  # exa
+            formatted = _parse_exa_results(result_text, num_results)
+            if not formatted:
+                _search_failed(engine, "无搜索结果")
+            return formatted
+
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
+        _search_failed(engine, f"网络错误: {type(e).__name__}")
+    except Exception as e:
+        _search_failed(engine, f"异常: {type(e).__name__}")
+    return None  # 所有异常汇聚到唯一 return None
+
+
+async def _search_parallel_mcp(query: str, num_results: int, proxy: Optional[str] = None) -> Optional[List[dict]]:
+    """Parallel MCP搜索 - 小健 2026-05-16
+    【2026-05-17 小沈 已弃用】请使用 _search_mcp_engine("parallel", query, num_results, proxy) 代替
+    """
+    return await _search_mcp_engine("parallel", query, num_results, proxy)
+
+
+async def _search_exa_mcp(query: str, num_results: int, proxy: Optional[str] = None) -> Optional[List[dict]]:
+    """Exa MCP搜索 - 小健 2026-05-16
+    【2026-05-17 小沈 已弃用】请使用 _search_mcp_engine("exa", query, num_results, proxy) 代替
+    """
+    return await _search_mcp_engine("exa", query, num_results, proxy)
 
 
 async def search_web(
@@ -547,40 +639,32 @@ async def search_web(
     allowed_domains: Optional[List[str]] = None,
     blocked_domains: Optional[List[str]] = None,
     num_results: int = 10,
-    time_range: str = "any",
-    language: Optional[str] = None,
-    safe_search: str = "moderate",
     proxy: Optional[str] = None,
 ) -> dict:
-    """
-    搜索网络获取最新信息 - 小沈 2026-05-02
-    【重构 2026-05-07 小沈】双引擎fallback: DuckDuckGo优先(5s连接超时)，失败降级到Bing
-    
-    DuckDuckGo: 无需API Key，返回结构化JSON
-    Bing: 无需API Key，解析HTML获取结果（国内可访问）
-    """
+    """搜索网络 — 小沈 2026-05-19 精简参数(7→5)"""
     try:
         if len(query) < 2:
-            return {
-                "code": "ERR_SEARCH_QUERY_TOO_SHORT",
-                "data": None,
-                "message": "搜索查询至少需要2个字符"
-            }
+            return build_error("ERR_PARAM_INVALID", "搜索查询至少需要2个字符")
         
-        proxy_config = None
-        if proxy:
-            proxy_config = {"http://": proxy, "https://": proxy}
+    # ===== 第一引擎：Parallel MCP =====
+        results = await _search_parallel_mcp(query, num_results, proxy)
+        engine_used = "Parallel"
         
-        # ===== 第一引擎：DuckDuckGo =====
-        ddg_result = await _search_duckduckgo(query, num_results, time_range, language, safe_search, proxy_config)
-        if ddg_result is not None:
-            results = ddg_result
-            engine_used = "DuckDuckGo"
-        else:
-            # ===== 降级第二引擎：Bing =====
-            logger.info("[search_web] DuckDuckGo失败，降级到Bing搜索")
-            results = await _search_bing(query, num_results, language, safe_search, proxy_config)
-            engine_used = "Bing"
+        # ===== 第二引擎：Exa MCP =====
+        if results is None:
+            logger.info("[search_web] Parallel失败，降级到Exa MCP搜索")
+            results = await _search_exa_mcp(query, num_results, proxy)
+            engine_used = "Exa"
+        
+        # ===== 第三引擎：Bing中国 =====
+        if results is None:
+            logger.info("[search_web] Exa失败，降级到Bing中国搜索")
+            try:  # 小健 2026-05-19: 包裹try/except, Bing网络错误不应导致整个search_web崩溃
+                results = await _search_bing(query, num_results, proxy)
+                engine_used = "Bing"
+            except Exception as e:
+                logger.warning(f"[search_web] Bing搜索也失败: {e}")
+                results = []
         
         # 域名过滤
         if allowed_domains:
@@ -590,146 +674,63 @@ async def search_web(
         
         results = results[:num_results]
         
-        return {
-            "code": "SUCCESS",
-            "data": {
+        # 解码所有结果中的ck/a跳转URL
+        for r in results:
+            r["url"] = _decode_bing_redirect_url(r.get("url", ""))
+            
+        # 整理llm_data展示结果
+        llm_results = []
+        for r in results:
+            raw_url = r.get("url", "")
+            clean_url = _decode_bing_redirect_url(raw_url)
+            llm_results.append({
+                "title": r.get("title", ""),
+                "snippet": r.get("snippet", "")[:300],
+                "url": clean_url,
+                "source": r.get("source", ""),
+            })
+
+        return build_success(
+            {
                 "query": query,
                 "results": results,
                 "total": len(results),
                 "engine": engine_used,
-                "time_range": time_range,
-                "language": language,
             },
-            "message": f"找到 {len(results)} 条搜索结果（{engine_used}）"
-        }
+            f"找到 {len(results)} 条搜索结果（{engine_used}）",
+            llm_data={
+                "搜索引擎": engine_used,
+                "查询词": query,
+                "结果数量": len(results),
+                "搜索结果": llm_results if llm_results else "无相关结果",
+            },
+            next_actions=build_next_actions([("fetch_webpage", "打开搜索结果链接", "需要查看某个搜索结果的详细内容时")]),
+        )
     
     except Exception as e:
         logger.error(f"[search_web] 未知错误: {e}")
-        return {
-            "code": "ERR_NETWORK_UNKNOWN",
-            "data": None,
-            "message": f"搜索异常: {str(e)}"
-        }
-
-
-async def _search_duckduckgo(
-    query: str,
-    num_results: int,
-    time_range: str,
-    language: Optional[str],
-    safe_search: str,
-    proxy_config: Optional[dict],
-) -> Optional[List[dict]]:
-    """DuckDuckGo Instant Answer API搜索 - 小沈 2026-05-07
-    返回None表示失败（调用方应降级到其他引擎）
-    """
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-    search_url = "https://api.duckduckgo.com/"
-    
-    time_kl_map = {"d": "us-en", "w": "us-en", "m": "us-en", "y": "us-en", "any": "us-en"}
-    lang_map = {
-        "zh-CN": "zh-cn", "zh": "zh-cn",
-        "en-US": "us-en", "en": "us-en",
-        "ja": "jp-jp", "ja-JP": "jp-jp",
-        "ko": "kr-kr", "ko-KR": "kr-kr",
-        "fr": "fr-fr", "de": "de-de", "es": "es-es",
-        "it": "it-it", "pt": "pt-br", "ru": "ru-ru",
-    }
-    safe_map = {"strict": "1", "moderate": "2", "off": "-1"}
-    
-    params = {"q": query, "format": "json", "no_html": 1, "skip_disambig": 1}
-    if time_range != "any" and time_range in time_kl_map:
-        params["df"] = time_range
-    if language and language in lang_map:
-        params["kl"] = lang_map[language]
-    if safe_search in safe_map:
-        params["kp"] = safe_map[safe_search]
-    
-    try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(5.0, connect=5.0),
-            follow_redirects=True,
-            proxies=proxy_config
-        ) as client:
-            response = await client.get(search_url, params=params, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-        
-        results = []
-        if data.get("AbstractText"):
-            results.append({
-                "title": data.get("Heading", "摘要"),
-                "url": data.get("AbstractURL", ""),
-                "snippet": data.get("AbstractText", ""),
-                "source": "DuckDuckGo Instant Answer"
-            })
-        for topic in data.get("RelatedTopics", [])[:num_results]:
-            if isinstance(topic, dict):
-                if "Text" in topic and "FirstURL" in topic:
-                    results.append({
-                        "title": topic.get("Text", "").split(" - ")[0] if " - " in topic.get("Text", "") else topic.get("Text", ""),
-                        "url": topic.get("FirstURL", ""),
-                        "snippet": topic.get("Text", ""),
-                        "source": "DuckDuckGo"
-                    })
-                elif "Topics" in topic:
-                    for subtopic in topic.get("Topics", []):
-                        if len(results) >= num_results:
-                            break
-                        if "Text" in subtopic and "FirstURL" in subtopic:
-                            results.append({
-                                "title": subtopic.get("Text", "").split(" - ")[0] if " - " in subtopic.get("Text", "") else subtopic.get("Text", ""),
-                                "url": subtopic.get("FirstURL", ""),
-                                "snippet": subtopic.get("Text", ""),
-                                "source": "DuckDuckGo"
-                            })
-        
-        if results:
-            return results
-        logger.info("[_search_duckduckgo] 无搜索结果，返回None触发降级")
-        return None
-    
-    except (httpx.TimeoutException, httpx.ConnectTimeout, httpx.ConnectError) as e:
-        logger.info(f"[_search_duckduckgo] 连接失败: {type(e).__name__}，降级到Bing")
-        return None
-    except httpx.HTTPStatusError as e:
-        logger.info(f"[_search_duckduckgo] HTTP错误 {e.response.status_code}，降级到Bing")
-        return None
-    except Exception as e:
-        logger.info(f"[_search_duckduckgo] 异常: {type(e).__name__}，降级到Bing")
-        return None
+        return build_error("ERR_NET_UNKNOWN", f"搜索异常: {str(e)}")
 
 
 async def _search_bing(
     query: str,
     num_results: int,
-    language: Optional[str],
-    safe_search: str,
-    proxy_config: Optional[dict],
+    proxy_config: Optional[str] = None,
 ) -> List[dict]:
-    """Bing搜索（HTML解析）- 小沈 2026-05-07
+    """Bing搜索（HTML解析）- 小沈 2026-05-07, 小健 2026-05-19 proxy_config改字符串
     国内可访问，无需API Key，解析搜索结果页HTML
     """
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "User-Agent": BROWSER_USER_AGENT,
     }
-    
     params = {"q": query, "count": num_results}
-    if language == "zh-CN" or language == "zh":
-        params["setlang"] = "zh-CN"
-    if safe_search == "strict":
-        params["safe"] = "strict"
     
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(15.0, connect=8.0),
         follow_redirects=True,
-        proxies=proxy_config
+        proxy=proxy_config  # 小健 2026-05-19: proxies→proxy(httpx 0.26.0已弃用proxies)
     ) as client:
-        response = await client.get("https://www.bing.com/search", params=params, headers=headers)
+        response = await client.get("https://cn.bing.com/search", params=params, headers=headers)
         response.raise_for_status()
         html = response.text
     
@@ -740,13 +741,19 @@ async def _search_bing(
     for block in algo_blocks[1:]:
         if len(results) >= num_results:
             break
-        # 提取URL：第一个外部链接
+        # 提取URL：优先找非bing.com的外部链接，其次是bing.com/ck/a跳转链接
         a_match = re.search(r'<a[^>]+href="(https?://[^"]+)"[^>]*>', block[:3000])
         if not a_match:
             continue
         url = a_match.group(1)
-        if "bing.com" in url or "microsoft.com" in url:
+        # 【2026-05-13 小沈】Bing现在所有结果都用ck/a跳转链接，没有直接外部URL
+        # HTTP跟随跳转会返回原URL（无法解码），所以直接保留ck/a链接作为结果
+        if "bing.com/ck/a" in url:
+            # 保留跳转链接，用户点击后会被重定向到真实网站
+            pass
+        elif "bing.com" in url or "microsoft.com" in url:
             continue
+        
         # 提取标题：优先从<h2>取（Bing的真实标题在h2中）
         h2_match = re.search(r'<h2[^>]*>(.*?)</h2>', block[:3000], re.DOTALL)
         if h2_match:
@@ -773,7 +780,11 @@ async def _search_bing(
         for match in href_pattern.finditer(html):
             url = match.group(1)
             title = re.sub(r'<[^>]+>', '', match.group(2)).strip()
-            if title and "bing.com" not in url and "microsoft.com" not in url and len(title) > 5:
+            if "bing.com/ck/a" in url:
+                pass  # 保留跳转链接
+            elif "bing.com" in url or "microsoft.com" in url:
+                continue
+            if title and len(title) > 5:
                 results.append({"title": title, "url": url, "snippet": "", "source": "Bing"})
             if len(results) >= num_results:
                 break
@@ -781,165 +792,102 @@ async def _search_bing(
     return results
 
 
-async def ping(
-    host: str,
-    count: int = 4,
-    timeout: int = 5,
-) -> dict:
-    """
-    执行ping测试 - 小沈 2026-05-02
-    
-    使用系统ping命令测试网络连通性。
-    Windows使用 ping 命令，Linux/macOS使用 ping 命令。
-    
-    参数:
-        host: 目标主机地址（域名或IP）
-        count: 发送ping包数量
-        timeout: 每次ping的超时时间（秒）
-    
-    返回:
-        {
-            "code": "SUCCESS",
-            "data": {
-                "host": "目标主机",
-                "packets_sent": 发送包数,
-                "packets_received": 接收包数,
-                "packets_lost": 丢失包数,
-                "loss_rate": 丢包率,
-                "min_latency": 最小延迟(ms),
-                "avg_latency": 平均延迟(ms),
-                "max_latency": 最大延迟(ms),
-                "is_reachable": 是否可达,
-                "raw_output": 原始输出,
-            },
-            "message": "描述信息"
-        }
-    """
+
+def _build_ping_cmd(host: str, count: int, timeout: int) -> List[str]:
+    """根据平台构建ping命令 — 小沈 2026-05-25 重构"""
+    system = platform.system().lower()
+    if system == "windows":
+        return ["ping", "-n", str(count), "-w", str(timeout * 1000), host]
+    return ["ping", "-c", str(count), "-W", str(timeout), host]
+
+
+def _parse_ping_output(raw_output: str, system: str) -> dict:
+    """解析ping输出，返回 {sent, received, lost, loss%, min, avg, max, reachable} — 小沈 2026-05-25 重构"""
+    result = {"packets_sent": 0, "packets_received": 0, "packets_lost": 0, "loss_rate": 0.0,
+              "min_latency": None, "avg_latency": None, "max_latency": None, "is_reachable": False}
+    if system == "windows":
+        loss = re.search(r"(?:已发送|Sent\s*=\s*)(\d+).*?(?:已接收|Received\s*=\s*)(\d+).*?(?:丢失|Lost\s*=\s*)(\d+).*?(\d+)%", raw_output, re.DOTALL | re.IGNORECASE)
+        if loss:
+            result.update(packets_sent=int(loss.group(1)), packets_received=int(loss.group(2)),
+                          packets_lost=int(loss.group(3)), loss_rate=float(loss.group(4)))
+        latency = re.search(r"(?:最短|Minimum)\s*[=:]\s*([\d.]+).*?(?:最长|Maximum)\s*[=:]\s*([\d.]+).*?(?:平均|Average)\s*[=:]\s*([\d.]+)", raw_output, re.DOTALL | re.IGNORECASE)
+        if latency:
+            result.update(min_latency=float(latency.group(1)), max_latency=float(latency.group(2)),
+                          avg_latency=float(latency.group(3)))
+        if "TTL=" in raw_output.upper() or (loss and int(loss.group(2)) > 0):
+            result["is_reachable"] = True
+    else:
+        loss = re.search(r"(\d+)\s+packets transmitted.*?(\d+)\s+received.*?(\d+)%\s+packet loss", raw_output, re.DOTALL)
+        if loss:
+            sent, recv, rate = int(loss.group(1)), int(loss.group(2)), float(loss.group(3))
+            result.update(packets_sent=sent, packets_received=recv, packets_lost=sent-recv, loss_rate=rate)
+        latency = re.search(r"rtt min/avg/max/mdev\s*=\s*([\d.]+)/([\d.]+)/([\d.]+)", raw_output)
+        if latency:
+            result.update(min_latency=float(latency.group(1)), avg_latency=float(latency.group(2)),
+                          max_latency=float(latency.group(3)))
+        if result["packets_received"] > 0:
+            result["is_reachable"] = True
+    return result
+
+
+def _build_ping_result(host: str, raw_output: str, parsed: dict) -> dict:
+    """统一构建ping的build_success响应 — 小沈 2026-05-25 重构"""
+    data = {"host": host, **parsed}
+    reachable = parsed["is_reachable"]
+    raw_len = len(raw_output)
+
+    if raw_len <= 5000:
+        llm = {"目标": host, "结果": raw_output.strip()}
+    elif reachable:
+        avg = parsed.get("avg_latency")
+        lat = f"{avg}ms / {parsed['min_latency']}ms / {parsed['max_latency']}ms" if avg else "N/A"
+        llm = {"目标": host, "发包/收包": f"{parsed['packets_sent']}/{parsed['packets_received']}",
+               "丢包率": f"{parsed['loss_rate']}%", "延迟(avg/min/max)": lat, "原始输出(截断)": raw_output[:3000].strip()}
+    else:
+        llm = {"目标": host, "结果预览": raw_output[:3000].strip()}
+
+    if not reachable:
+        data.update(packets_received=0, packets_lost=parsed["packets_sent"],
+                     loss_rate=100.0, min_latency=None, avg_latency=None, max_latency=None)
+
+    msg = f"Ping测试{'成功' if reachable else '失败'}：{host}{' 可达' if reachable else ' 不可达'}"
+    if reachable:
+        avg = parsed.get("avg_latency")
+        msg += f"，平均延迟 {avg if avg is not None else 'N/A'} ms"
+    return build_success(data, msg, llm_data=llm)
+
+
+async def _ping(host: str, count: int = 4, timeout: int = 5) -> dict:
+    """Ping测试（内部函数） — 小沈 2026-05-25 重构"""
     try:
-        if not host or len(host.strip()) == 0:
-            return {
-                "code": "ERR_NETWORK_INVALID_HOST",
-                "data": None,
-                "message": "目标主机地址不能为空"
-            }
-        
+        if not host or not host.strip():
+            return build_error("ERR_NETWORK_INVALID_HOST", "目标主机地址不能为空")
         host = host.strip()
-        
-        system = platform.system().lower()
-        
-        if system == "windows":
-            cmd = ["ping", "-n", str(count), "-w", str(timeout * 1000), host]
-        else:
-            cmd = ["ping", "-c", str(count), "-W", str(timeout), host]
-        
+        cmd = _build_ping_cmd(host, count, timeout)
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=count * timeout + 10
-            )
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=count * timeout + 10)
             raw_output = result.stdout
         except subprocess.TimeoutExpired:
-            return {
-                "code": "ERR_NETWORK_TIMEOUT",
-                "data": None,
-                "message": f"Ping命令执行超时（{count * timeout + 10}秒）"
-            }
+            return build_error("ERR_NETWORK_TIMEOUT", f"Ping超时（{count * timeout + 10}秒）")
         except FileNotFoundError:
-            return {
-                "code": "ERR_NETWORK_COMMAND_NOT_FOUND",
-                "data": None,
-                "message": "系统ping命令不可用"
-            }
-        
-        packets_sent = count
-        packets_received = 0
-        packets_lost = 0
-        loss_rate = 0.0
-        min_latency = None
-        avg_latency = None
-        max_latency = None
-        is_reachable = False
-        
-        if system == "windows":
-            loss_match = re.search(r"已发送\s*=\s*(\d+).*?已接收\s*=\s*(\d+).*?丢失\s*=\s*(\d+).*?(\d+)%", raw_output, re.DOTALL)
-            if loss_match:
-                packets_sent = int(loss_match.group(1))
-                packets_received = int(loss_match.group(2))
-                packets_lost = int(loss_match.group(3))
-                loss_rate = float(loss_match.group(4))
-            
-            latency_match = re.search(r"最短\s*=\s*(\d+)ms.*?最长\s*=\s*(\d+)ms.*?平均\s*=\s*(\d+)ms", raw_output, re.DOTALL)
-            if latency_match:
-                min_latency = int(latency_match.group(1))
-                max_latency = int(latency_match.group(2))
-                avg_latency = int(latency_match.group(3))
-            
-            if "TTL=" in raw_output or "ttl=" in raw_output.lower():
-                is_reachable = True
-        else:
-            loss_match = re.search(r"(\d+)\s+packets transmitted.*?(\d+)\s+received.*?(\d+)%\s+packet loss", raw_output, re.DOTALL)
-            if loss_match:
-                packets_sent = int(loss_match.group(1))
-                packets_received = int(loss_match.group(2))
-                loss_rate = float(loss_match.group(3))
-                packets_lost = packets_sent - packets_received
-            
-            latency_match = re.search(r"rtt min/avg/max/mdev\s*=\s*([\d.]+)/([\d.]+)/([\d.]+)", raw_output)
-            if latency_match:
-                min_latency = float(latency_match.group(1))
-                avg_latency = float(latency_match.group(2))
-                max_latency = float(latency_match.group(3))
-            
-            if packets_received > 0:
-                is_reachable = True
-        
-        if is_reachable:
-            return {
-                "code": "SUCCESS",
-                "data": {
-                    "host": host,
-                    "packets_sent": packets_sent,
-                    "packets_received": packets_received,
-                    "packets_lost": packets_lost,
-                    "loss_rate": loss_rate,
-                    "min_latency": min_latency,
-                    "avg_latency": avg_latency,
-                    "max_latency": max_latency,
-                    "is_reachable": True,
-                    "raw_output": raw_output,
-                },
-                "message": f"Ping测试成功：{host} 可达，平均延迟 {avg_latency if avg_latency else 'N/A'} ms"
-            }
-        else:
-            return {
-                "code": "SUCCESS",
-                "data": {
-                    "host": host,
-                    "packets_sent": packets_sent,
-                    "packets_received": 0,
-                    "packets_lost": packets_sent,
-                    "loss_rate": 100.0,
-                    "min_latency": None,
-                    "avg_latency": None,
-                    "max_latency": None,
-                    "is_reachable": False,
-                    "raw_output": raw_output,
-                },
-                "message": f"Ping测试失败：{host} 不可达"
-            }
-    
+            return build_error("ERR_SHELL_COMMAND_NOT_FOUND", "系统ping命令不可用")
+
+        parsed = _parse_ping_output(raw_output, platform.system().lower())
+        return _build_ping_result(host, raw_output, parsed)
+
     except Exception as e:
         logger.error(f"[ping] 未知错误: {e}")
-        return {
-            "code": "ERR_NETWORK_UNKNOWN",
-            "data": None,
-            "message": f"Ping测试异常: {str(e)}"
-        }
+        return build_error("ERR_NET_UNKNOWN", f"Ping测试异常: {e}")
 
 
-async def port_check(
+# 【24.5.4 组件1】统一端口结果 data 构建(消除 5 次 data dict)
+def _build_port_result(host: str, port: int, is_open: bool,
+                        service: Optional[str] = None) -> Dict[str, Any]:
+    """构建端口检查结果 data — 小健 2026-05-25"""
+    return {"host": host, "port": port, "is_open": is_open, "service": service}
+
+
+async def _port_check(
     host: str,
     port: int,
     timeout: int = 3,
@@ -966,124 +914,73 @@ async def port_check(
             "message": "描述信息"
         }
     """
+    # 【24.5.4 重构后主函数】~50行，统一 E1b 为 build_error
     try:
-        if not host or len(host.strip()) == 0:
-            return {
-                "code": "ERR_NETWORK_INVALID_HOST",
-                "data": None,
-                "message": "目标主机地址不能为空"
-            }
-        
+        if not host or not host.strip():
+            return build_error("ERR_NETWORK_INVALID_HOST", "目标主机地址不能为空")
         if port < 1 or port > 65535:
-            return {
-                "code": "ERR_NETWORK_INVALID_PORT",
-                "data": None,
-                "message": f"端口号无效：{port}，必须在 1-65535 范围内"
-            }
-        
+            return build_error("ERR_NETWORK_INVALID_PORT", f"端口号无效: {port}")
         host = host.strip()
-        
-        well_known_ports = {
-            20: "FTP-Data(数据端口)",
-            21: "FTP-Control(控制端口)",
-            22: "SSH",
-            23: "Telnet",
-            25: "SMTP",
-            53: "DNS",
-            80: "HTTP",
-            110: "POP3",
-            143: "IMAP",
-            443: "HTTPS",
-            465: "SMTPS",
-            587: "SMTP-MSA",
-            993: "IMAPS",
-            995: "POP3S",
-            1433: "MSSQL",
-            1521: "Oracle",
-            3306: "MySQL",
-            3389: "RDP",
-            5432: "PostgreSQL",
-            5900: "VNC",
-            6379: "Redis",
-            8080: "HTTP-Proxy",
-            8443: "HTTPS-Alt",
-            27017: "MongoDB",
-        }
-        
+        service = well_known_ports.get(port, "Unknown")
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(timeout)
-            
-            result = sock.connect_ex((host, port))
-            
-            if result == 0:
-                is_open = True
-                sock.close()
-                
-                service = well_known_ports.get(port, "Unknown")
-                
-                return {
-                    "code": "SUCCESS",
-                    "data": {
-                        "host": host,
-                        "port": port,
-                        "is_open": True,
-                        "service": service,
-                    },
-                    "message": f"端口 {port} ({service}) 开放：{host}:{port}"
-                }
-            else:
-                sock.close()
-                
-                return {
-                    "code": "SUCCESS",
-                    "data": {
-                        "host": host,
-                        "port": port,
-                        "is_open": False,
-                        "service": well_known_ports.get(port, "Unknown"),
-                    },
-                    "message": f"端口 {port} 关闭：{host}:{port}"
-                }
-        
-        except socket.gaierror as e:
-            return {
-                "code": "ERR_NETWORK_DNS_ERROR",
-                "data": {
-                    "host": host,
-                    "port": port,
-                    "is_open": False,
-                    "service": None,
-                },
-                "message": f"DNS解析失败：{host} ({str(e)})"
-            }
-        except socket.timeout:
-            return {
-                "code": "SUCCESS",
-                "data": {
-                    "host": host,
-                    "port": port,
-                    "is_open": False,
-                    "service": well_known_ports.get(port, "Unknown"),
-                },
-                "message": f"端口 {port} 连接超时：{host}:{port}"
-            }
-        except OSError as e:
-            return {
-                "code": "ERR_NETWORK_CONNECTION_ERROR",
-                "data": {
-                    "host": host,
-                    "port": port,
-                    "is_open": False,
-                    "service": None,
-                },
-                "message": f"连接失败：{str(e)}"
-            }
-    
+            is_open = sock.connect_ex((host, port)) == 0
+        finally:
+            sock.close()
+
+        if is_open:
+            return build_success(_build_port_result(host, port, True, service),
+                f"端口 {port} ({service}) 开放: {host}:{port}",
+                llm_data={"主机": host, "端口": port, "开放": True})
+        return build_success(_build_port_result(host, port, False, service),
+            f"端口 {port} 关闭: {host}:{port}",
+            llm_data={"主机": host, "端口": port, "开放": False})
+
+    except socket.gaierror as e:
+        return build_error("ERR_NETWORK_DNS_ERROR", f"DNS解析失败: {host} ({e})",
+            data=_build_port_result(host, port, False))
+    except socket.timeout:
+        return build_error("ERR_NETWORK_TIMEOUT", f"端口 {port} 连接超时: {host}:{port}",
+            data=_build_port_result(host, port, False, service))
+    except OSError as e:
+        return build_error("ERR_NETWORK_CONNECTION_ERROR", f"连接失败: {e}",
+            data=_build_port_result(host, port, False))
     except Exception as e:
         logger.error(f"[port_check] 未知错误: {e}")
-        return {
-            "code": "ERR_NETWORK_UNKNOWN",
-            "data": None,
-            "message": f"端口检查异常: {str(e)}"
-        }
+        return build_error("ERR_NET_UNKNOWN", f"端口检查异常: {e}")
+
+
+async def network_diagnose(
+    host: str,
+    mode: Literal["ping", "port"] = "ping",
+    port: Optional[int] = None,
+    count: int = 4,
+    timeout: int = 5,
+) -> dict:
+    """网络连通性诊断 - 小沈 2026-05-17
+    【2026-05-17 小沈】合并 ping + port_check
+
+    Args:
+        host: 目标主机地址（域名或IP）
+        mode: 诊断模式。ping=ICMP可达性检测(主机级), port=TCP端口检测(服务级)
+        port: 目标端口号（mode="port"时必填，mode="ping"时忽略）
+        count: ping次数（mode="ping"时生效，默认4次）
+        timeout: 超时秒数，默认5
+
+    Returns:
+        {code, data, message}
+    """
+    if mode == "ping":
+        result = await _ping(host=host, count=count, timeout=timeout)
+    elif mode == "port":
+        if port is None:
+            return build_error("ERR_MISSING_PARAM", "mode='port'时port参数必填")
+        result = await _port_check(host=host, port=port, timeout=timeout)
+    else:
+        return build_error("ERR_INVALID_MODE", f"无效的诊断模式: {mode}，必须是 ping 或 port")
+
+    if result.get("code") == "SUCCESS":
+        result["next_actions"] = build_next_actions([("network_diagnose", "深入诊断", "需要切换ping/port模式进一步检测时")])
+    return result

@@ -28,10 +28,11 @@ logger = logging.getLogger(__name__)
 TOOL_NAME_ALIASES = {
     'write_file': 'write_text_file',        # 兼容旧代码
     'glob_files': 'search_files',            # 兼容旧代码
-    'read_file': 'read_text_file',           # 兼容旧代码（文本文件）
+    'read_text_file': 'read_file',           # 【修复 小健 2026-05-24】Bug#10: 方向反了，read_file是主名不是别名
     'search_file_content': 'grep_file_content',  # 兼容旧代码
-    'edit_file': 'edit_text_file',           # 兼容旧代码（语义明确化）
-    'time_now': 'get_current_time',          # 兼容旧代码（语义明确化）- 小沈 2026-05-03
+    'edit_text_file': 'edit_file',           # 【修复 小健 2026-05-24】Bug#10: 方向反了，edit_file是主名
+    'time_now': 'get_time',                  # 【修复 小健 2026-05-24】Bug#10: get_time是主名，不是get_current_time
+    'get_current_time': 'get_time',          # 【修复 小健 2026-05-24】Bug#10: get_time是注册主名
 }
 
 # 废弃工具列表（不再支持，调用时返回错误提示）
@@ -136,12 +137,17 @@ class ToolConfig:
         """
         timeouts = self._config.get("tools", {}).get("timeouts", {})
         
-        # 查找工具特定超时
+        # 查找YAML配置的特定超时
         if tool_name in timeouts:
             return timeouts[tool_name]
         
-        # 返回默认超时
-        return timeouts.get("default", self.DEFAULT_TIMEOUT)
+        # YAML中有default则用它
+        if "default" in timeouts:
+            return timeouts["default"]
+        
+        # 回退到tool_meta硬编码超时表
+        from app.services.tools.tool_meta import TOOL_TIMEOUTS
+        return TOOL_TIMEOUTS.get(tool_name, TOOL_TIMEOUTS["default"])
     
     def get_aliases(self, tool_name: str) -> Optional[Dict[str, str]]:
         """

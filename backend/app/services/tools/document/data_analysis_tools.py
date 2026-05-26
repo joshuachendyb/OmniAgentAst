@@ -12,161 +12,49 @@
 3. *_register.py: 显式注册（description + examples + input_model）
 
 包含：
-- read_csv_dataframe: 使用pandas读取CSV文件并返回DataFrame格式数据
 - generate_chart: 使用matplotlib生成数据可视化图表
 - analyze_data: 对数据集进行统计分析
-- read_excel_dataframe: 使用pandas读取Excel文件并返回DataFrame格式数据
 - filter_data: 按条件筛选/过滤数据
 
 Author: 小沈 - 2026-05-02
-【新增 2026-05-05 小沈】read_excel_dataframe, filter_data
-【修正 2026-05-05 小沈】小健检查发现的问题：
-1. matplotlib fig 未用 try/finally，savefig异常时fig泄漏
-2. filter_data 缺 openpyxl 检查
-3. 饼图单色改为自动多色配色
-4. filter_data 条件列不存在时加警告
-5. analyze_data 加 encoding/max_rows 参数
-6. usecols 类型注解修正为 Optional[List[str]]
-7. read_excel_dataframe sheet_name 返回实际名
-8. 条件中 operator 不存在时加警告
+【2026-05-18 小沈】删除read_csv_dataframe/read_excel_dataframe，逻辑已迁入document_tools.py
 """
 
 import os
 import json
 import tempfile
-import importlib
 import logging
-from typing import Dict, Any, List, Union, Optional
+from typing import Dict, Any, List, Union, Optional, Literal, Tuple
 from pathlib import Path
+import pandas as pd
 from datetime import datetime
+from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe
+from app.services.tools._response import build_success, build_error
+from app.services.tools.toolhelper.common_helper import _check_module
+from app.services.tools.toolhelper.data_helper import _serialize_rows
 
 logger = logging.getLogger(__name__)
 
 
-def _check_pandas() -> bool:
-    """检查pandas是否可用 - 小沈 2026-05-02"""
-    try:
-        importlib.import_module("pandas")
-        return True
-    except ImportError:
-        return False
-
-
-def _check_matplotlib() -> bool:
-    """检查matplotlib是否可用 - 小沈 2026-05-02"""
-    try:
-        importlib.import_module("matplotlib")
-        return True
-    except ImportError:
-        return False
-
-
-def _check_openpyxl() -> bool:
-    """检查openpyxl是否可用 - 小沈 2026-05-05"""
-    try:
-        importlib.import_module("openpyxl")
-        return True
-    except ImportError:
-        return False
-
-
-def _serialize_rows(df) -> List[List[Any]]:
-    """将DataFrame行数据序列化为JSON安全格式 - 小沈 2026-05-05"""
-    import pandas as pd
-    rows = df.values.tolist()
-    serialized_rows = []
-    for row in rows:
-        serialized_row = []
-        for val in row:
-            if pd.isna(val):
-                serialized_row.append(None)
-            elif hasattr(val, 'item'):
-                serialized_row.append(val.item())
-            else:
-                serialized_row.append(val)
-        serialized_rows.append(serialized_row)
-    return serialized_rows
-
-
-def read_csv_dataframe(
-    file_path: str,
-    encoding: str = "utf-8",
-    delimiter: str = ",",
-    has_header: bool = True,
-    max_rows: int = 1000,
-    usecols: Optional[List[str]] = None,
-    skip_rows: int = 0
-) -> Dict[str, Any]:
-    """使用pandas读取CSV文件返回DataFrame格式数据 - 小沈 2026-05-02, 修正 2026-05-05"""
-    if not _check_pandas():
-        return {
-            "code": "ERR_NO_PANDAS",
-            "data": None,
-            "message": "pandas库未安装，请先执行: pip install pandas"
-        }
-
-    try:
-        import pandas as pd
-
-        path = Path(file_path)
-        if not path.exists():
-            return {
-                "code": "ERR_READ_CSV_DATAFRAME",
-                "data": None,
-                "message": f"文件不存在: {file_path}"
-            }
-
-        header = 0 if has_header else None
-        df = pd.read_csv(
-            path,
-            encoding=encoding,
-            delimiter=delimiter,
-            header=header,
-            nrows=max_rows,
-            usecols=usecols,
-            skiprows=skip_rows
-        )
-
-        columns = df.columns.tolist()
-        serialized_rows = _serialize_rows(df)
-        dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
-
-        return {
-            "code": "SUCCESS",
-            "data": {
-                "columns": columns,
-                "rows": serialized_rows,
-                "row_count": len(serialized_rows),
-                "dtypes": dtypes,
-            },
-            "message": f"成功读取CSV文件: {file_path}，共 {len(serialized_rows)} 行数据"
-        }
-    except Exception as e:
-        return {
-            "code": "ERR_READ_CSV_DATAFRAME",
-            "data": None,
-            "message": f"读取CSV文件失败: {str(e)}"
-        }
-
-
 def generate_chart(
     data: Dict[str, Any],
-    chart_type: str = "bar",
+    chart_type: Literal["bar", "line", "pie", "scatter"] = "bar",
     title: Optional[str] = None,
     x_label: Optional[str] = None,
     y_label: Optional[str] = None,
     output_path: Optional[str] = None,
-    figure_size: Optional[tuple] = None,
-    rotation: int = 0,
-    color: Optional[str] = None
 ) -> Dict[str, Any]:
     """使用matplotlib生成数据可视化图表 - 小沈 2026-05-02, 修正 2026-05-05"""
-    if not _check_matplotlib():
-        return {
-            "code": "ERR_NO_MATPLOTLIB",
-            "data": None,
-            "message": "matplotlib库未安装，请先执行: pip install matplotlib"
-        }
+    from app.services.tools.document.document_tools import _validate_chart_data
+    validation = _validate_chart_data(data)
+    if validation["code"] != "SUCCESS" or not validation["data"].get("valid", False):
+        return validation
+
+    if not _check_module("matplotlib"):
+        return build_error("ERR_NO_MATPLOTLIB", "matplotlib库未安装，请先执行: pip install matplotlib",
+            next_actions=build_next_actions([
+                ("tool_search", "搜索其他可视化方式", "matplotlib不可用时"),
+            ]))
 
     try:
         import matplotlib
@@ -177,40 +65,32 @@ def generate_chart(
         values = data.get("values", [])
 
         if not labels or not values:
-            return {
-                "code": "ERR_GENERATE_CHART",
-                "data": None,
-                "message": "数据格式错误，需要包含 labels 和 values 字段"
-            }
+            return build_error("ERR_DOC_CHART_GENERATE", "数据格式错误，需要包含 labels 和 values 字段",
+                next_actions=build_next_actions([
+                    ("tool_help", "查看generate_chart参数", "确认数据格式时", {"tool_name": "generate_chart"}),
+                    ("analyze_data", "先分析数据", "确认可用字段时"),
+                ]))
 
         if output_path is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             temp_dir = tempfile.gettempdir()
             output_path = os.path.join(temp_dir, f"chart_{timestamp}.png")
 
-        fig, ax = plt.subplots(figsize=figure_size if figure_size else (10, 6))
+        fig, ax = plt.subplots(figsize=(10, 6))
 
-        chart_type_lower = chart_type.lower() if chart_type else "bar"
+        chart_type_lower = chart_type  # 小健 2026-05-19: Schema Literal已保证非空小写
 
         try:
             if chart_type_lower == "pie":
-                if color:
-                    cmap = plt.get_cmap("Set3")
-                    chart_colors = [cmap(i / max(len(values), 1)) for i in range(len(values))]
-                else:
-                    chart_colors = None
-                ax.pie(values, labels=labels, autopct="%1.1f%%", colors=chart_colors)
+                ax.pie(values, labels=labels, autopct="%1.1f%%")
             elif chart_type_lower == "bar":
-                ax.bar(labels, values, color=color)
+                ax.bar(labels, values)
             elif chart_type_lower == "line":
-                ax.plot(labels, values, marker="o", color=color)
+                ax.plot(labels, values, marker="o")
             elif chart_type_lower == "scatter":
-                ax.scatter(labels, values, c=color)
+                ax.scatter(labels, values)
             else:
-                ax.bar(labels, values, color=color)
-
-            if rotation and chart_type_lower != "pie":
-                plt.xticks(rotation=rotation)
+                ax.bar(labels, values)
 
             if title:
                 ax.set_title(title)
@@ -225,17 +105,82 @@ def generate_chart(
         finally:
             plt.close(fig)
 
-        return {
-            "code": "SUCCESS",
-            "data": output_path,
-            "message": f"成功生成{chart_type_lower}图表: {output_path}"
-        }
+        result = build_success(
+            output_path,
+            f"成功生成{chart_type_lower}图表: {output_path}",
+            next_actions=build_next_actions([])
+        )
+        return result
     except Exception as e:
-        return {
-            "code": "ERR_GENERATE_CHART",
-            "data": None,
-            "message": f"生成图表失败: {str(e)}"
-        }
+        return build_error("ERR_DOC_CHART_GENERATE", f"生成图表失败: {str(e)}",
+            next_actions=build_next_actions([
+                ("tool_help", "查看generate_chart用法", "检查参数时", {"tool_name": "generate_chart"}),
+                ("filter_data", "尝试筛选数据后重试", "数据量过大时"),
+            ]))
+
+
+def _convert_pd_value(val: Any) -> Any:
+    """统一 pandas 值转换为 Python 原生类型。
+
+    小沈 2026-05-25 重构拆分
+    消除 P1a-P1c NA转换4处重复（原L209-214, 225-230, 208-212, 224-228）
+
+    pd.Series → {k: _convert_pd_value(v) for k, v in val.items()}
+    pd.NA/pd.NaT → None
+    有 .item() 的 numpy 类型 → val.item()
+    其他 → val
+    """
+    import pandas as pd
+    if isinstance(val, pd.Series):
+        return {k: _convert_pd_value(v) for k, v in val.items()}
+    if pd.isna(val):
+        return None
+    if hasattr(val, 'item'):
+        return val.item()
+    return val
+
+
+def _compute_stats(
+    df: pd.DataFrame,
+    numeric_cols: List[str],
+    operations: List[str],
+    all_ops: List[str],
+    *,
+    group_by: Optional[str] = None,
+) -> Dict[str, Any]:
+    """统一分组/非分组统计计算。
+
+    小沈 2026-05-25 重构拆分
+    消除 G1a(分组, 原L198-217)和 G1b(非分组, 原L219-233)两套完全重复的循环。
+    内部调用 _convert_pd_value 统一 NA 转换。
+    """
+    import pandas as pd
+    if group_by and group_by in df.columns:
+        grouped = df.groupby(group_by)[numeric_cols]
+        result = {}
+        for name, group_df in grouped:
+            group_key = str(name)
+            result[group_key] = {}
+            for op in operations:
+                if op not in all_ops:
+                    continue
+                try:
+                    val = getattr(group_df, op)()
+                    result[group_key][op] = _convert_pd_value(val)
+                except Exception:
+                    result[group_key][op] = None
+        return {"grouped_statistics": result}
+
+    statistics = {}
+    for op in operations:
+        if op not in all_ops:
+            continue
+        try:
+            val = getattr(df[numeric_cols], op)()
+            statistics[op] = _convert_pd_value(val)
+        except Exception:
+            statistics[op] = None
+    return {"statistics": statistics}
 
 
 def analyze_data(
@@ -243,20 +188,17 @@ def analyze_data(
     operations: Optional[List[str]] = None,
     group_by: Optional[str] = None,
     sort_by: Optional[str] = None,
-    sort_ascending: bool = True,
     top_n: Optional[int] = None,
-    encoding: str = "utf-8",
-    max_rows: Optional[int] = None
+    max_rows: Optional[int] = None,
 ) -> Dict[str, Any]:
     """对数据集进行统计分析 - 小沈 2026-05-02, 修正 2026-05-05
     【新增参数】encoding: 文件编码(默认utf-8); max_rows: 最大读取行数(默认None=全部)
     """
-    if not _check_pandas():
-        return {
-            "code": "ERR_NO_PANDAS",
-            "data": None,
-            "message": "pandas库未安装，请先执行: pip install pandas"
-        }
+    if not _check_module("pandas"):
+        return build_error("ERR_NO_PANDAS", "pandas库未安装，请先执行: pip install pandas",
+            next_actions=build_next_actions([
+                ("tool_search", "搜索替代工具", "pandas不可用时"),
+            ]))
 
     try:
         import pandas as pd
@@ -268,255 +210,173 @@ def analyze_data(
         if isinstance(data, str):
             path = Path(data)
             if not path.exists():
-                return {
-                    "code": "ERR_ANALYZE_DATA",
-                    "data": None,
-                    "message": f"文件不存在: {data}"
-                }
-            read_kwargs = {"encoding": encoding}
+                return build_error("ERR_DOC_ANALYZE_DATA", f"文件不存在: {data}",
+                    next_actions=build_next_actions([
+                        ("search_files", "搜索文件", "确认文件路径时", {"pattern": Path(data).name}),
+                        ("list_directory", "查看目录", "确认目录内容时", {"dir_path": str(Path(data).parent)}),
+                    ]))
+            read_kwargs = {}
             if max_rows is not None:
                 read_kwargs["nrows"] = max_rows
-            df = pd.read_csv(data, **read_kwargs)
+            # 小健 2026-05-19: 识别xlsx后缀
+            if data.endswith('.xlsx') or data.endswith('.xls'):
+                if not _check_module("openpyxl"):
+                    return build_error("ERR_DOC_NO_OPENPYXL", "openpyxl库未安装，请先执行: pip install openpyxl",
+                        next_actions=build_next_actions([
+                            ("read_document", "尝试其他方式读取", "openpyxl不可用时", {"file_path": data}),
+                        ]))
+                df = pd.read_excel(data, engine="openpyxl", **({k: v for k, v in read_kwargs.items() if k == 'nrows'}))
+            else:
+                df = pd.read_csv(data, **read_kwargs)
         elif isinstance(data, list):
             df = pd.DataFrame(data)
         else:
-            return {
-                "code": "ERR_ANALYZE_DATA",
-                "data": None,
-                "message": "data参数必须是CSV文件路径或数据数组"
-            }
+            return build_error("ERR_DOC_ANALYZE_DATA", "data参数必须是CSV文件路径或数据数组",
+                next_actions=build_next_actions([
+                    ("tool_help", "查看analyze_data参数", "确认数据格式时", {"tool_name": "analyze_data"}),
+                ]))
 
         total_count = len(df)
         numeric_cols = df.select_dtypes(include="number").columns.tolist()
         if not numeric_cols:
-            return {
-                "code": "SUCCESS",
-                "data": {"row_count": total_count, "columns": df.columns.tolist(), "statistics": {}},
-                "message": "数据中无数值列，无法进行统计计算"
-            }
+            return build_success(
+                {"row_count": total_count, "columns": df.columns.tolist(), "statistics": {}},
+                "数据中无数值列，无法进行统计计算",
+                next_actions=build_next_actions([
+                    ("filter_data", "筛选数据", "需要按条件过滤时"),
+                    ("generate_chart", "生成图表", "需要可视化时"),
+                ])
+            )
 
         result = {"total_count": total_count, "columns": df.columns.tolist()}
 
         if sort_by and sort_by in df.columns:
-            df = df.sort_values(by=sort_by, ascending=sort_ascending)
+            df = df.sort_values(by=sort_by, ascending=True)
 
         if top_n and top_n > 0:
             df = df.head(top_n)
-            result["limited"] = True
             result["top_n"] = top_n
 
         result["row_count"] = len(df)
+        result.update(_compute_stats(df, numeric_cols, operations, all_ops, group_by=group_by))
 
-        if group_by and group_by in df.columns:
-            grouped = df.groupby(group_by)[numeric_cols]
-            stats_by_group = {}
-            for name, group_df in grouped:
-                group_key = str(name)
-                stats_by_group[group_key] = {}
-                for op in operations:
-                    if op in all_ops:
-                        try:
-                            val = getattr(group_df, op)()
-                            if isinstance(val, pd.Series):
-                                stats_by_group[group_key][op] = {
-                                    k: (None if pd.isna(v) else v.item() if hasattr(v, 'item') else v)
-                                    for k, v in val.items()
-                                }
-                            else:
-                                stats_by_group[group_key][op] = None if pd.isna(val) else (val.item() if hasattr(val, 'item') else val)
-                        except Exception:
-                            stats_by_group[group_key][op] = None
-            result["grouped_statistics"] = stats_by_group
-        else:
-            statistics = {}
-            for op in operations:
-                if op in all_ops:
-                    try:
-                        val = getattr(df[numeric_cols], op)()
-                        if isinstance(val, pd.Series):
-                            statistics[op] = {
-                                k: (None if pd.isna(v) else v.item() if hasattr(v, 'item') else v)
-                                for k, v in val.items()
-                            }
-                        else:
-                            statistics[op] = None if pd.isna(val) else (val.item() if hasattr(val, 'item') else val)
-                    except Exception:
-                        statistics[op] = None
-            result["statistics"] = statistics
-
-        return {
-            "code": "SUCCESS",
-            "data": result,
-            "message": f"成功分析数据，共 {len(df)} 行，{len(numeric_cols)} 个数值列"
-        }
-    except Exception as e:
-        return {
-            "code": "ERR_ANALYZE_DATA",
-            "data": None,
-            "message": f"数据分析失败: {str(e)}"
-        }
-
-
-def read_excel_dataframe(
-    file_path: str,
-    sheet_name: Optional[str] = None,
-    max_rows: int = 1000,
-    usecols: Optional[List[str]] = None,
-    skip_rows: int = 0
-) -> Dict[str, Any]:
-    """使用pandas读取Excel文件返回DataFrame格式数据 - 小沈 2026-05-05, 修正 2026-05-05"""
-    if not _check_pandas():
-        return {
-            "code": "ERR_NO_PANDAS",
-            "data": None,
-            "message": "pandas库未安装，请先执行: pip install pandas openpyxl"
-        }
-
-    if not _check_openpyxl():
-        return {
-            "code": "ERR_NO_OPENPYXL",
-            "data": None,
-            "message": "openpyxl库未安装，请先执行: pip install openpyxl"
-        }
-
-    try:
-        import pandas as pd
-
-        path = Path(file_path)
-        if not path.exists():
-            return {
-                "code": "ERR_READ_EXCEL_DATAFRAME",
-                "data": None,
-                "message": f"文件不存在: {file_path}"
-            }
-
-        df = pd.read_excel(
-            path,
-            sheet_name=sheet_name if sheet_name else 0,
-            nrows=max_rows,
-            usecols=usecols,
-            skiprows=skip_rows,
-            engine="openpyxl"
-        )
-
-        columns = df.columns.tolist()
-        serialized_rows = _serialize_rows(df)
-        dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
-
-        actual_sheet = sheet_name if sheet_name else "Sheet1"
-
-        return {
-            "code": "SUCCESS",
-            "data": {
-                "columns": columns,
-                "rows": serialized_rows,
-                "row_count": len(serialized_rows),
-                "dtypes": dtypes,
-                "sheet_name": actual_sheet,
+        return build_success(
+            truncate_data_for_frontend(result),
+            f"成功分析数据，共 {len(df)} 行，{len(numeric_cols)} 个数值列",
+            llm_data={
+                "总行数": len(df), "数值列数": len(numeric_cols),
+                "列": list(result.get("columns", {}).keys())[:20] if isinstance(result.get("columns"), dict) else [],
+                "统计摘要": make_json_safe(result.get("statistics", {}), max_str_len=200)
             },
-            "message": f"成功读取Excel文件: {file_path}，共 {len(serialized_rows)} 行数据"
-        }
+            next_actions=build_next_actions([
+                ("filter_data", "筛选数据", "需要按条件过滤时"),
+                ("generate_chart", "生成图表", "需要可视化时"),
+            ])
+        )
     except Exception as e:
-        return {
-            "code": "ERR_READ_EXCEL_DATAFRAME",
-            "data": None,
-            "message": f"读取Excel文件失败: {str(e)}"
-        }
+        return build_error("ERR_DOC_ANALYZE_DATA", f"数据分析失败: {str(e)}",
+            next_actions=build_next_actions([
+                ("tool_help", "查看analyze_data用法", "检查参数时", {"tool_name": "analyze_data"}),
+                ("filter_data", "先筛选数据", "数据量过大需要分批处理时"),
+            ]))
+
+
+def _load_data_to_df(data: Union[str, List[Dict[str, Any]]],
+                      max_rows: Optional[int] = None) -> dict:
+    """加载数据为 DataFrame，返回 {"df": DataFrame} 或 {"error": dict}。"""
+    if isinstance(data, str):
+        path = Path(data)
+        if not path.exists():
+            return {"error": build_error("ERR_FILTER_INVALID", f"文件不存在: {data}",
+                next_actions=build_next_actions([
+                    ("search_files", "搜索文件", "确认文件路径时", {"pattern": path.name})]))}
+        if data.endswith('.xlsx'):
+            if not _check_module("openpyxl"):
+                return {"error": build_error("ERR_DOC_NO_OPENPYXL",
+                    "openpyxl库未安装，请先执行: pip install openpyxl",
+                    next_actions=build_next_actions([
+                        ("read_document", "尝试其他方式读取", "openpyxl不可用时", {"file_path": data})]))}
+            return {"df": pd.read_excel(data, engine="openpyxl", nrows=max_rows)}
+        return {"df": pd.read_csv(data, nrows=max_rows)}
+    if isinstance(data, list):
+        return {"df": pd.DataFrame(data)}
+    return {"error": build_error("ERR_FILTER_INVALID", "data参数必须是文件路径或数据数组",
+        next_actions=build_next_actions([
+            ("tool_help", "查看filter_data参数", "确认数据格式时", {"tool_name": "filter_data"})]))}
+
+
+def _build_condition_mask(df: pd.DataFrame, conditions: List[Dict[str, Any]]) -> dict:
+    """构建过滤掩码，返回 {"mask": pd.Series, "warnings": List[str]}。"""
+    operator_map = {
+        "eq": "__eq__", "ne": "__ne__", "gt": "__gt__",
+        "gte": "__ge__", "lt": "__lt__", "lte": "__le__",
+    }
+    valid_operators = set(operator_map.keys()) | {"in", "contains", "not_contains"}
+    mask = pd.Series([True] * len(df), index=df.index)
+    warnings: List[str] = []
+
+    for cond in conditions:
+        column = cond.get("column")
+        operator = cond.get("operator", "eq")
+        value = cond.get("value")
+
+        if not column:
+            return {"error": build_error("ERR_FILTER_INVALID",
+                f"条件缺少column字段: {cond}",
+                next_actions=build_next_actions([
+                    ("tool_help", "查看filter_data参数", "确认条件格式时", {"tool_name": "filter_data"}),
+                    ("analyze_data", "先分析数据", "了解可用字段时")]))}
+        if column not in df.columns:
+            warnings.append(f"列'{column}'不存在，已跳过")
+            continue
+        if operator not in valid_operators:
+            warnings.append(f"操作符'{operator}'不支持，已跳过")
+            continue
+
+        if operator in operator_map:
+            try:
+                cond_mask = getattr(df[column].astype(float), operator_map[operator])(float(value))
+            except (ValueError, TypeError):
+                cond_mask = getattr(df[column], operator_map[operator])(value)
+        elif operator == "in":
+            cond_mask = df[column].isin(value if isinstance(value, list) else [value])
+        elif operator == "contains":
+            cond_mask = df[column].astype(str).str.contains(str(value), na=False)
+        elif operator == "not_contains":
+            cond_mask = ~df[column].astype(str).str.contains(str(value), na=False)
+        else:
+            continue
+
+        mask = mask & cond_mask
+
+    return {"mask": mask, "warnings": warnings}
 
 
 def filter_data(
     data: Union[str, List[Dict[str, Any]]],
     conditions: List[Dict[str, Any]],
     select_columns: Optional[List[str]] = None,
+    max_rows: Optional[int] = None,
     sort_by: Optional[str] = None,
-    sort_ascending: bool = True,
-    top_n: Optional[int] = None
+    top_n: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """按条件筛选/过滤数据 - 小沈 2026-05-05, 修正 2026-05-05"""
-    if not _check_pandas():
-        return {
-            "code": "ERR_NO_PANDAS",
-            "data": None,
-            "message": "pandas库未安装，请先执行: pip install pandas"
-        }
+    import pandas as pd
+    if not _check_module("pandas"):
+        return build_error("ERR_NO_PANDAS", "pandas库未安装，请先执行: pip install pandas",
+            next_actions=build_next_actions([("tool_search", "搜索替代工具", "pandas不可用时")]))
 
     try:
-        import pandas as pd
-
-        if isinstance(data, str):
-            path = Path(data)
-            if not path.exists():
-                return {
-                    "code": "ERR_FILTER_DATA",
-                    "data": None,
-                    "message": f"文件不存在: {data}"
-                }
-            if data.endswith(('.xlsx', '.xls')):
-                if not _check_openpyxl():
-                    return {
-                        "code": "ERR_NO_OPENPYXL",
-                        "data": None,
-                        "message": "openpyxl库未安装，请先执行: pip install openpyxl"
-                    }
-                df = pd.read_excel(data, engine="openpyxl" if data.endswith('.xlsx') else None)
-            else:
-                df = pd.read_csv(data)
-        elif isinstance(data, list):
-            df = pd.DataFrame(data)
-        else:
-            return {
-                "code": "ERR_FILTER_DATA",
-                "data": None,
-                "message": "data参数必须是文件路径或数据数组"
-            }
-
+        loaded = _load_data_to_df(data, max_rows)
+        if "error" in loaded:
+            return loaded["error"]
+        df = loaded["df"]
         original_count = len(df)
 
-        operator_map = {
-            "eq": "__eq__",
-            "ne": "__ne__",
-            "gt": "__gt__",
-            "gte": "__ge__",
-            "lt": "__lt__",
-            "lte": "__le__",
-        }
-        valid_operators = set(operator_map.keys()) | {"in", "contains", "not_contains"}
-
-        mask = pd.Series([True] * len(df), index=df.index)
-        warnings = []
-
-        for cond in conditions:
-            column = cond.get("column")
-            operator = cond.get("operator", "eq")
-            value = cond.get("value")
-
-            if column not in df.columns:
-                warnings.append(f"列'{column}'不存在，已跳过")
-                continue
-
-            if operator not in valid_operators:
-                warnings.append(f"操作符'{operator}'不支持，已跳过")
-                continue
-
-            if operator in operator_map:
-                try:
-                    col_values = df[column].astype(float)
-                    value = float(value)
-                    cond_mask = getattr(col_values, operator_map[operator])(value)
-                except (ValueError, TypeError):
-                    cond_mask = getattr(df[column], operator_map[operator])(value)
-            elif operator == "in":
-                cond_mask = df[column].isin(value if isinstance(value, list) else [value])
-            elif operator == "contains":
-                cond_mask = df[column].astype(str).str.contains(str(value), na=False)
-            elif operator == "not_contains":
-                cond_mask = ~df[column].astype(str).str.contains(str(value), na=False)
-            else:
-                continue
-
-            mask = mask & cond_mask
-
-        filtered_df = df[mask]
+        result = _build_condition_mask(df, conditions)
+        if "error" in result:
+            return result["error"]
+        filtered_df = df[result["mask"]]
+        warnings = result["warnings"]
 
         if select_columns:
             available_cols = [c for c in select_columns if c in filtered_df.columns]
@@ -524,37 +384,39 @@ def filter_data(
                 filtered_df = filtered_df[available_cols]
 
         if sort_by and sort_by in filtered_df.columns:
-            filtered_df = filtered_df.sort_values(by=sort_by, ascending=sort_ascending)
+            filtered_df = filtered_df.sort_values(by=sort_by, ascending=True)
 
         if top_n and top_n > 0:
             filtered_df = filtered_df.head(top_n)
 
         columns = filtered_df.columns.tolist()
-        serialized_rows = _serialize_rows(filtered_df)
-
+        rows = _serialize_rows(filtered_df)
         result_data = {
-            "columns": columns,
-            "rows": serialized_rows,
-            "row_count": len(serialized_rows),
-            "original_count": original_count,
-            "filtered_count": len(serialized_rows),
-            "filter_ratio": f"{len(serialized_rows)}/{original_count}",
+            "columns": columns, "rows": rows,
+            "row_count": len(rows), "original_count": original_count,
+            "filtered_count": len(rows),
+            "filter_ratio": f"{len(rows)}/{original_count}",
         }
         if warnings:
             result_data["warnings"] = warnings
 
-        message = f"筛选完成: {original_count}行 → {len(serialized_rows)}行 (条件: {len(conditions)}个)"
+        message = f"筛选完成: {original_count}行 → {len(rows)}行 (条件: {len(conditions)}个)"
         if warnings:
             message += f" | 警告: {'; '.join(warnings)}"
 
-        return {
-            "code": "SUCCESS",
-            "data": result_data,
-            "message": message
-        }
+        return build_success(truncate_data_for_frontend(result_data), message,
+            llm_data={
+                "筛选前": result_data["original_count"],
+                "筛选后": result_data["filtered_count"],
+                "列": result_data["columns"][:20],
+                "行预览": make_json_safe(result_data["rows"][:5], max_str_len=150),
+            },
+            next_actions=build_next_actions([
+                ("analyze_data", "统计分析", "需要对筛选结果统计时"),
+                ("generate_chart", "生成图表", "需要可视化时")]),
+        )
     except Exception as e:
-        return {
-            "code": "ERR_FILTER_DATA",
-            "data": None,
-            "message": f"数据筛选失败: {str(e)}"
-        }
+        return build_error("ERR_FILTER_INVALID", f"数据筛选失败: {str(e)}",
+            next_actions=build_next_actions([
+                ("tool_help", "查看filter_data用法", "检查参数时", {"tool_name": "filter_data"}),
+                ("analyze_data", "先分析数据概览", "确认数据内容时")]))

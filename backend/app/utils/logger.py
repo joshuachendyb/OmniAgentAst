@@ -30,16 +30,13 @@ class SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
     
     def _check_and_rotate_by_date(self):
         """检查日期变化，必要时轮转日志文件"""
-        global _current_log_date
         
         today = datetime.now().strftime('%Y-%m-%d')
         
         # 如果日期变了，需要切换到新的日志文件
         if self._current_date != today:
-            # 记录轮转信息
             old_date = self._current_date
             self._current_date = today
-            _current_log_date = today
             
             # 输出轮转信息到控制台
             print(f"[Logger] 日志文件轮转: {old_date} -> {today}")
@@ -136,8 +133,6 @@ _logging_configured = False
 # 存储共享的处理器
 _file_handler: Optional[logging.handlers.RotatingFileHandler] = None
 _console_handler: Optional[logging.StreamHandler] = None
-# 记录当前日志文件的日期
-_current_log_date: str = ""
 
 def _get_log_file_path() -> Path:
     """获取当日日志文件路径"""
@@ -188,27 +183,6 @@ def _create_handler_for_logger(logger_name: str, level: int = None, formatter: l
         print(f"[Logger] 创建文件处理器失败: {e}")
         return None
 
-def _check_and_rotate_log_file(logger: logging.Logger):
-    """检查是否需要切换到新的日志文件（日期变化时）"""
-    global _current_log_date
-    
-    today = datetime.now().strftime('%Y-%m-%d')
-    
-    # 如果日期变了，需要重新创建文件处理器
-    if _current_log_date != today:
-        _current_log_date = today
-        
-        # 移除旧的文件处理器
-        for handler in logger.handlers[:]:
-            if isinstance(handler, logging.handlers.RotatingFileHandler):
-                handler.close()
-                logger.removeHandler(handler)
-        
-        # 创建新的文件处理器
-        new_handler = _setup_file_handler()
-        new_handler.setFormatter(logger.handlers[0].formatter if logger.handlers else logging.Formatter('%(asctime)s - %(levelname)s - %(filename)s - %(message)s'))
-        new_handler.setLevel(logger.level)
-        logger.addHandler(new_handler)
 
 def setup_logger(name: str) -> logging.Logger:
     """
@@ -225,9 +199,8 @@ def setup_logger(name: str) -> logging.Logger:
     
     logger = logging.getLogger(name)
     
-    # 如果已经配置过，检查是否需要切换日志文件
+    # 如果已经配置过，直接返回已有logger（emit()自动处理日切）
     if logger.handlers:
-        _check_and_rotate_log_file(logger)
         return logger
     
     # 获取配置
@@ -248,10 +221,6 @@ def setup_logger(name: str) -> logging.Logger:
     
     # 全局只创建一次处理器
     if not _logging_configured:
-        # 初始化当前日期
-        global _current_log_date
-        _current_log_date = datetime.now().strftime('%Y-%m-%d')
-        
         # 文件处理器 - 带轮转
         _file_handler = _setup_file_handler()
         _file_handler.setFormatter(formatter)
@@ -265,9 +234,8 @@ def setup_logger(name: str) -> logging.Logger:
         
         _logging_configured = True
     
-    # 检查并切换日志文件（日期变化时）
-    _check_and_rotate_log_file(logger)
-    
+    # 如果全局已配置，检查是否需要切换日志文件（日期变化时）
+
     # 为每个logger添加处理器（创建新的实例以避免共享问题）
     if _file_handler and _console_handler:
         # 使用新函数创建文件处理器，并设置logger名称

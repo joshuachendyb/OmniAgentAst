@@ -12,111 +12,76 @@ Author: 小沈 - 2026-04-29
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional
+
+
+# 【2026-05-19 小沈】ExecutePythonInput/ExecuteJavascriptInput 已迁移至
+# code_execution_schema.py，此处不再重复定义，避免Schema分歧。
+# shell_register.py 显式从 code_execution_schema.py import 这两个类。
 
 
 class ExecuteShellCommandInput(BaseModel):
-    """execute_shell_command 工具的输入参数 - 小沈 2026-05-04 encoding已正确实现"""
+    """execute_shell_command 工具的输入参数 — 小沈 2026-05-19 精简8→6"""
     command: str = Field(
         ..., description="要执行的命令。如 \"dir\"、\"ls -la\"、\"python script.py\" 等"
     )
-    shell_type: Optional[str] = Field(
+    shell_type: Optional[Literal["powershell", "cmd"]] = Field(
         default="powershell",
-        description="执行环境。可选值：powershell、cmd。由 Agent 根据命令特征智能判断：默认 powershell，若执行报错且疑似语法错误（如包含 %VAR%），Agent 自动切换 cmd 重试"
+        description="执行环境：powershell(默认)或cmd。Windows系统推荐powershell"
     )
     timeout: int = Field(
-        default=300000, ge=1000, le=600000, description="超时毫秒数，默认300000（5分钟），最大600000（10分钟）。Agent 根据命令类型智能调整：简单命令 30s，编译/安装 300s - 小沈 2026-05-03"
+        default=30000, ge=1, le=600000, description="超时毫秒数，默认30000(30秒)。最小1毫秒，最大600000(10分钟)"
     )
     run_in_background: bool = Field(
         default=False,
-        description="是否在后台运行命令。由 Agent 根据命令特征智能判断：长期运行的服务(如npm run dev)自动设true"
+        description="是否在后台运行命令。长期服务(如npm run dev)Agent自动设为true"
     )
     cwd: Optional[str] = Field(
-        default=None, description="工作目录。由 Agent 根据上下文智能设置当前项目目录"
-    )
-    encoding: Optional[str] = Field(
-        default=None, description="命令输出编码。默认utf-8，可选值：utf-8（默认）、gbk、gb2312、latin-1。若不指定则默认utf-8，自动尝试回退到gbk"
+        default=None, description="工作目录。Agent根据上下文智能设置"
     )
     env_vars: Optional[dict] = Field(
-        default=None, description="环境变量对象。由 Agent 根据命令类型自动注入必要环境变量（如 PYTHONIOENCODING=utf-8）"
-    )
-    run_as_admin: bool = Field(
-        default=False, description="是否请求管理员权限（标记）。当前版本标记此意图，实际执行受限于当前进程权限。Agent 智能判断安装软件、修改注册表等高权限操作"
+        default=None, description="额外环境变量字典，将与系统环境变量合并。如 {\"PYTHONIOENCODING\": \"utf-8\", \"NODE_ENV\": \"production\"}"
     )
 
 
-class GetWorkingDirectoryInput(BaseModel):
-    """get_working_directory 工具的输入参数（无参数）"""
-    pass
-
-
-class ChangeDirectoryInput(BaseModel):
-    """change_directory 工具的输入参数"""
-    path: str = Field(
-        ..., description="要切换到的目录路径。必填参数"
-    )
-
-
-class CheckPathExistsInput(BaseModel):
-    """check_path_exists 工具的输入参数"""
-    path: str = Field(
-        ..., description="要检查的文件或目录路径。必填参数"
-    )
-
-
-class CheckCommandAvailableInput(BaseModel):
-    """check_command_available 工具的输入参数"""
+class FindCommandInput(BaseModel):
+    """find_command 工具的输入参数 - 小沈 2026-05-17
+    合并 check_command_available + locate_command
+    """
     command: str = Field(
-        ..., description="要检查的命令名称，如 python、git、npm"
+        ..., description="要查找的命令名称，如 python、git、npm、node"
+    )
+    all_paths: bool = Field(
+        default=False,
+        description="查找模式。False=返回第一个匹配路径(快速,shutil.which), True=返回全部匹配路径(完整列表,where/which -a)"
     )
 
 
-class LocateCommandInput(BaseModel):
-    """locate_command 工具的输入参数"""
-    command: str = Field(
-        ..., description="要查找的命令名称，如 python、node"
-    )
-
-
-class GetShellOutputInput(BaseModel):
-    """get_shell_output 工具的输入参数"""
+class ShellSessionInput(BaseModel):
+    """shell_session 工具的输入参数 — 小沈 2026-05-19 精简8→5
+    action="output": 读取输出(filter/max_lines生效)
+    action="terminate": 终止会话(force生效)
+    """
     shell_id: str = Field(
-        ..., description="后台 shell 的 ID，由 execute_shell_command 的 run_in_background=true 时返回"
+        ..., description="后台Shell会话ID，由 execute_shell_command 的 run_in_background=true 时返回"
+    )
+    action: Literal["output", "terminate"] = Field(
+        default="output",
+        description="操作类型：output=读取输出，terminate=终止会话"
     )
     filter: Optional[str] = Field(
-        default=None, description="过滤输出的正则表达式（可选）。Agent 根据用户意图智能设置，如 'ERROR|FAIL'"
-    )
-    encoding: Optional[str] = Field(
-        default=None, description="输出编码。Agent 自动检测，默认 utf-8。若乱码自动尝试 gbk、gb2312"
+        default=None, description="输出过滤正则表达式（action=output时生效）。如 'ERROR|FAIL'"
     )
     max_lines: int = Field(
-        default=1000, ge=1, le=10000, description="最大返回行数。默认 1000 行。若输出超长，Agent 自动截取最后 N 行并提示截断"
-    )
-    tail: bool = Field(
-        default=False, description="是否只返回最后 N 行输出。由 Agent 根据用户意图智能判断"
-    )
-
-
-class TerminateShellInput(BaseModel):
-    """terminate_shell 工具的输入参数"""
-    shell_id: str = Field(
-        ..., description="要终止的 shell ID。通过 execute_shell_command 的 run_in_background=true 执行命令后获得"
+        default=1000, ge=1, le=10000, description="最大返回行数（action=output时生效）。默认1000，返回尾部最新输出"
     )
     force: bool = Field(
-        default=False, description="是否强制终止。Agent 智能判断：优雅终止，若进程无响应则自动重试并设 true 强制杀死"
-    )
-    cleanup: bool = Field(
-        default=True, description="终止后是否清理临时文件和子进程。Agent 智能判断"
+        default=False, description="强制终止（action=terminate时生效）。优雅终止失败时Agent自动设true"
     )
 
 
 __all__ = [
     "ExecuteShellCommandInput",
-    "GetWorkingDirectoryInput",
-    "ChangeDirectoryInput",
-    "CheckPathExistsInput",
-    "CheckCommandAvailableInput",
-    "LocateCommandInput",
-    "GetShellOutputInput",
-    "TerminateShellInput",
+    "FindCommandInput",
+    "ShellSessionInput",
 ]

@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 # ============================================================================
 from app.services.preprocessing import PreprocessingPipeline, TextCorrector, IntentClassifier
 from .base_react import BaseAgent
-# 【2026-04-19小沈优化】P3完成：ToolParser已迁移到parse_react_response，删除旧导入
+
 from .tool_executor import ToolExecutor
 from .react_output_parser import (
     parse_react_response,
@@ -73,21 +73,20 @@ def __getattr__(name: str):
         from app.services.tools.file.file_tools import FileTools, get_file_tools
         return locals()[name]
     if name == "IntentAgent":
-        from .file_react import FileReactAgent
-        return FileReactAgent
+        from .universal_react import UniversalReactAgent
+        return UniversalReactAgent
     if name == "IntentReactAgent":
-        from .file_react import FileReactAgent
-        return FileReactAgent
+        from .universal_react import UniversalReactAgent
+        return UniversalReactAgent
     if name == "FileReactAgent":
-        from .file_react import FileReactAgent
-        return FileReactAgent
+        from .universal_react import UniversalReactAgent
+        return UniversalReactAgent
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
     # 新框架
     "BaseAgent",
-    "ToolParser",
     "ToolExecutor",
     "PreprocessingPipeline",
     "TextCorrector",
@@ -97,7 +96,6 @@ __all__ = [
     # 新解析器（第14章）
     "parse_react_response",
     "REACT_KEYWORDS",
-    "ReactToolParser",
     # 原 file_operations（通过__getattr__懒加载）
     "FileOperationSafety",
     "FileSafetyConfig",

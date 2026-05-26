@@ -28,6 +28,9 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 from datetime import datetime
 
+from app.services.tools._response import build_success, build_error
+from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, truncate_text  # 小沈 2026-05-20
+
 
 def _check_pyautogui() -> bool:
     try:
@@ -39,7 +42,7 @@ def _check_pyautogui() -> bool:
 
 # ========== 鼠标操作 ==========
 
-def click(
+def _click(
     x: int = None,
     y: int = None,
     button: str = "left",
@@ -47,47 +50,47 @@ def click(
 ) -> Dict[str, Any]:
     """模拟鼠标点击 - 小沈 2026-05-02"""
     if not _check_pyautogui():
-        return {"code": "ERR_NO_PYAUTOGUI", "data": None, "message": "pyautogui库未安装，请先执行: pip install pyautogui"}
+        return build_error("ERR_NO_PYAUTOGUI", "pyautogui库未安装，请先执行: pip install pyautogui")
     try:
         import pyautogui
         clicks = 2 if click_type == "double" else 1
         pyautogui.click(x=x, y=y, button=button, clicks=clicks)
-        return {"code": "SUCCESS", "data": {"x": x, "y": y, "button": button, "click_type": click_type}, "message": f"点击完成: ({x}, {y}) {button} {click_type}"}
+        return build_success({"x": x, "y": y, "button": button, "click_type": click_type}, f"点击完成: ({x}, {y}) {button} {click_type}")
     except Exception as e:
-        return {"code": "ERR_CLICK", "data": None, "message": f"点击失败: {str(e)}"}
+        return build_error("ERR_DESKTOP_MOUSE_CLICK", f"点击失败: {str(e)}")
 
 
-def move(x: int, y: int, duration: float = 0) -> Dict[str, Any]:
+def _move(x: int, y: int, duration: float = 0) -> Dict[str, Any]:
     """移动鼠标到指定位置 - 小沈 2026-05-02"""
     if not _check_pyautogui():
-        return {"code": "ERR_NO_PYAUTOGUI", "data": None, "message": "pyautogui库未安装"}
+        return build_error("ERR_NO_PYAUTOGUI", "pyautogui库未安装")
     try:
         import pyautogui
         pyautogui.moveTo(x, y, duration=duration)
-        return {"code": "SUCCESS", "data": {"x": x, "y": y}, "message": f"鼠标移动到: ({x}, {y})"}
+        return build_success({"x": x, "y": y}, f"鼠标移动到: ({x}, {y})")
     except Exception as e:
-        return {"code": "ERR_MOVE", "data": None, "message": f"移动失败: {str(e)}"}
+        return build_error("ERR_FILE_MOVE_FAILED", f"移动失败: {str(e)}")
 
 
-def scroll(direction: str, amount: int = 3) -> Dict[str, Any]:
+def _scroll(direction: str, amount: int = 3) -> Dict[str, Any]:
     """模拟鼠标滚轮滚动 - 小沈 2026-05-02"""
     if not _check_pyautogui():
-        return {"code": "ERR_NO_PYAUTOGUI", "data": None, "message": "pyautogui库未安装"}
+        return build_error("ERR_NO_PYAUTOGUI", "pyautogui库未安装")
     try:
         import pyautogui
         scroll_amount = -amount if direction == "down" else amount
         pyautogui.scroll(scroll_amount)
-        return {"code": "SUCCESS", "data": {"direction": direction, "amount": amount}, "message": f"滚动完成: {direction} {amount}单位"}
+        return build_success({"direction": direction, "amount": amount}, f"滚动完成: {direction} {amount}单位")
     except Exception as e:
-        return {"code": "ERR_SCROLL", "data": None, "message": f"滚动失败: {str(e)}"}
+        return build_error("ERR_DESKTOP_MOUSE_SCROLL", f"滚动失败: {str(e)}")
 
 
 # ========== 键盘操作 ==========
 
-def type_text(text: str, interval: float = 0) -> Dict[str, Any]:
+def _type_text(text: str, interval: float = 0) -> Dict[str, Any]:
     """模拟键盘输入文本 - 小沈 2026-05-02"""
     if not _check_pyautogui():
-        return {"code": "ERR_NO_PYAUTOGUI", "data": None, "message": "pyautogui库未安装"}
+        return build_error("ERR_NO_PYAUTOGUI", "pyautogui库未安装")
     try:
         import pyautogui
         # ASCII字符使用typewrite（支持间隔），非ASCII使用write
@@ -95,28 +98,28 @@ def type_text(text: str, interval: float = 0) -> Dict[str, Any]:
             pyautogui.typewrite(text, interval=interval)
         else:
             pyautogui.write(text)
-        return {"code": "SUCCESS", "data": {"text_length": len(text)}, "message": f"输入文本完成: {len(text)}个字符"}
+        return build_success({"text_length": len(text)}, f"输入文本完成: {len(text)}个字符")
     except Exception as e:
-        return {"code": "ERR_TYPE_TEXT", "data": None, "message": f"输入文本失败: {str(e)}"}
+        return build_error("ERR_KEYBOARD_TYPE", f"输入文本失败: {str(e)}")
 
 
-def shortcut(keys: str) -> Dict[str, Any]:
+def _shortcut(keys: str) -> Dict[str, Any]:
     """执行键盘快捷键组合 - 小沈 2026-05-02"""
     if not _check_pyautogui():
-        return {"code": "ERR_NO_PYAUTOGUI", "data": None, "message": "pyautogui库未安装"}
+        return build_error("ERR_NO_PYAUTOGUI", "pyautogui库未安装")
     try:
         import pyautogui
         key_list = [k.strip() for k in keys.split("+")]
         pyautogui.hotkey(*key_list)
-        return {"code": "SUCCESS", "data": {"keys": keys}, "message": f"快捷键执行完成: {keys}"}
+        return build_success({"keys": keys}, f"快捷键执行完成: {keys}")
     except Exception as e:
-        return {"code": "ERR_SHORTCUT", "data": None, "message": f"快捷键执行失败: {str(e)}"}
+        return build_error("ERR_KEYBOARD_SHORTCUT", f"快捷键执行失败: {str(e)}")
 
 
-def key_combo(keys: List[str], action: str = "press") -> Dict[str, Any]:
+def _key_combo(keys: List[str], action: str = "press") -> Dict[str, Any]:
     """按住多个键后释放 - 小沈 2026-05-02"""
     if not _check_pyautogui():
-        return {"code": "ERR_NO_PYAUTOGUI", "data": None, "message": "pyautogui库未安装"}
+        return build_error("ERR_NO_PYAUTOGUI", "pyautogui库未安装")
     try:
         import pyautogui
         if action == "press":
@@ -127,19 +130,19 @@ def key_combo(keys: List[str], action: str = "press") -> Dict[str, Any]:
         elif action == "release":
             for key in keys:
                 pyautogui.keyUp(key)
-        return {"code": "SUCCESS", "data": {"keys": keys, "action": action}, "message": f"按键操作完成: {keys} {action}"}
+        return build_success({"keys": keys, "action": action}, f"按键操作完成: {keys} {action}")
     except Exception as e:
-        return {"code": "ERR_KEY_COMBO", "data": None, "message": f"按键操作失败: {str(e)}"}
+        return build_error("ERR_KEY_COMBO", f"按键操作失败: {str(e)}")
 
 
 # ========== 屏幕操作 ==========
 
-def screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[str, Any]:
+def _screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[str, Any]:
     """截取屏幕截图 - 小沈 2026-05-02"""
     try:
         import pyautogui
     except ImportError:
-        return {"code": "ERR_NO_PYAUTOGUI", "data": None, "message": "pyautogui库未安装"}
+        return build_error("ERR_NO_PYAUTOGUI", "pyautogui库未安装")
     try:
         if output_path is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -153,12 +156,12 @@ def screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[s
 
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         img.save(output_path)
-        return {"code": "SUCCESS", "data": output_path, "message": f"截图保存到: {output_path}"}
+        return build_success({"image_path": output_path}, f"截图保存到: {output_path}")
     except Exception as e:
-        return {"code": "ERR_SCREENSHOT", "data": None, "message": f"截图失败: {str(e)}"}
+        return build_error("ERR_SCREENSHOT", f"截图失败: {str(e)}")
 
 
-def snapshot(display: int = 1) -> Dict[str, Any]:
+def _snapshot(display: int = 1) -> Dict[str, Any]:
     """获取完整桌面状态快照 - 小沈 2026-05-02"""
     try:
         import mss
@@ -169,9 +172,9 @@ def snapshot(display: int = 1) -> Dict[str, Any]:
             output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
             img = pyautogui.screenshot()
             img.save(output_path)
-            return {"code": "SUCCESS", "data": {"image_path": output_path, "display": display}, "message": f"快照保存到: {output_path}"}
+            return build_success({"image_path": output_path, "display": display}, f"快照保存到: {output_path}")
         except ImportError:
-            return {"code": "ERR_NO_SCREENSHOT_LIB", "data": None, "message": "需要安装 mss 或 pyautogui 库"}
+            return build_error("ERR_NO_SCREENSHOT_LIB", "需要安装 mss 或 pyautogui 库")
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
@@ -188,29 +191,29 @@ def snapshot(display: int = 1) -> Dict[str, Any]:
             from PIL import Image
             pil_img = Image.frombytes("RGB", img.size, img.bgra, "raw", "BGRX")
             pil_img.save(output_path)
-        return {"code": "SUCCESS", "data": {"image_path": output_path, "display": display, "monitors": len(monitors) - 1}, "message": f"快照保存到: {output_path}"}
+        return build_success({"image_path": output_path, "display": display, "monitors": len(monitors) - 1}, f"快照保存到: {output_path}")
     except Exception as e:
-        return {"code": "ERR_SNAPSHOT", "data": None, "message": f"快照失败: {str(e)}"}
+        return build_error("ERR_SCREEN_SNAPSHOT", f"快照失败: {str(e)}")
 
 
-def screen_record(duration: int, output_path: str = None, fps: int = 15) -> Dict[str, Any]:
+def screen_record(duration: int, output_path: Optional[str] = None, fps: int = 15) -> Dict[str, Any]:
     """录制屏幕视频 - 小沈 2026-05-02"""
     try:
         import mss
         from PIL import Image
     except ImportError:
-        return {"code": "ERR_NO_RECORD_LIB", "data": None, "message": "需要安装 mss 和 PIL 库"}
+        return build_error("ERR_NO_RECORD_LIB", "需要安装 mss 和 PIL 库")
     try:
         import numpy  # 移到循环前导入 - 小沈 2026-05-04
     except ImportError:
-        return {"code": "ERR_NO_NUMPY", "data": None, "message": "需要安装 numpy 库"}
+        return build_error("ERR_NO_NUMPY", "需要安装 numpy 库")
     try:
         import imageio.v2 as imageio
     except ImportError:
         try:
             import imageio
         except ImportError:
-            return {"code": "ERR_NO_IMAGEIO", "data": None, "message": "需要安装 imageio 库: pip install imageio imageio-ffmpeg"}
+            return build_error("ERR_NO_IMAGEIO", "需要安装 imageio 库: pip install imageio imageio-ffmpeg")
     try:
         if output_path is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -233,40 +236,22 @@ def screen_record(duration: int, output_path: str = None, fps: int = 15) -> Dict
 
             imageio.mimwrite(output_path, frames, fps=fps)
 
-        return {"code": "SUCCESS", "data": {"output_path": output_path, "duration": duration, "fps": fps}, "message": f"录制完成: {output_path}"}
+        return build_success({"output_path": output_path, "duration": duration, "fps": fps}, f"录制完成: {output_path}",
+                             next_actions=build_next_actions([]))
     except Exception as e:
-        return {"code": "ERR_SCREEN_RECORD", "data": None, "message": f"录制失败: {str(e)}"}
+        return build_error("ERR_SCREEN_RECORD", f"录制失败: {str(e)}")
 
 
 # ========== 窗口操作 ==========
+# 【2026-05-19 小沈】list_windows 已删除（desktop_tools.py 中有权威实现）
+# gui_tools.py 只保留 screen_record / ocr / send_notification
 
-def list_windows(filter: str = None) -> Dict[str, Any]:
-    """获取所有打开的窗口列表 - 小沈 2026-05-02"""
-    try:
-        import win32gui
-    except ImportError:
-        return {"code": "ERR_NO_WIN32GUI", "data": None, "message": "需要安装 pywin32 库: pip install pywin32"}
-    try:
-        windows = []
-        def _enum_cb(hwnd, _):
-            if win32gui.IsWindowVisible(hwnd):
-                title = win32gui.GetWindowText(hwnd)
-                if title:
-                    if filter is None or filter.lower() in title.lower():
-                        windows.append({"hwnd": hwnd, "title": title})
-            return True
-        win32gui.EnumWindows(_enum_cb, None)
-        return {"code": "SUCCESS", "data": {"windows": windows, "count": len(windows)}, "message": f"找到 {len(windows)} 个窗口"}
-    except Exception as e:
-        return {"code": "ERR_LIST_WINDOWS", "data": None, "message": f"获取窗口列表失败: {str(e)}"}
-
-
-def focus_window(title: str) -> Dict[str, Any]:
+def _focus_window(title: str) -> Dict[str, Any]:
     """聚焦指定窗口 - 小沈 2026-05-02"""
     try:
         import win32gui
     except ImportError:
-        return {"code": "ERR_NO_WIN32GUI", "data": None, "message": "需要安装 pywin32 库"}
+        return build_error("ERR_NO_WIN32GUI", "需要安装 pywin32 库")
     try:
         target_hwnd = None
         def _enum_cb(hwnd, _):
@@ -280,19 +265,19 @@ def focus_window(title: str) -> Dict[str, Any]:
 
         if target_hwnd:
             win32gui.SetForegroundWindow(target_hwnd)
-            return {"code": "SUCCESS", "data": {"title": title, "hwnd": target_hwnd}, "message": f"窗口已聚焦: {title}"}
+            return build_success({"title": title, "hwnd": target_hwnd}, f"窗口已聚焦: {title}")
         else:
-            return {"code": "ERR_WINDOW_NOT_FOUND", "data": None, "message": f"未找到窗口: {title}"}
+            return build_error("ERR_WINDOW_NOT_FOUND", f"未找到窗口: {title}")
     except Exception as e:
-        return {"code": "ERR_FOCUS_WINDOW", "data": None, "message": f"聚焦窗口失败: {str(e)}"}
+        return build_error("ERR_FOCUS_WINDOW", f"聚焦窗口失败: {str(e)}")
 
 
-def resize_window(title: str, width: int = None, height: int = None) -> Dict[str, Any]:
+def _resize_window(title: str, width: int = None, height: int = None) -> Dict[str, Any]:
     """调整窗口大小 - 小沈 2026-05-02"""
     try:
         import win32gui
     except ImportError:
-        return {"code": "ERR_NO_WIN32GUI", "data": None, "message": "需要安装 pywin32 库"}
+        return build_error("ERR_NO_WIN32GUI", "需要安装 pywin32 库")
     try:
         target_hwnd = None
         def _enum_cb(hwnd, _):
@@ -305,7 +290,7 @@ def resize_window(title: str, width: int = None, height: int = None) -> Dict[str
         win32gui.EnumWindows(_enum_cb, None)
 
         if not target_hwnd:
-            return {"code": "ERR_WINDOW_NOT_FOUND", "data": None, "message": f"未找到窗口: {title}"}
+            return build_error("ERR_WINDOW_NOT_FOUND", f"未找到窗口: {title}")
 
         left, top, right, bottom = win32gui.GetWindowRect(target_hwnd)
         curr_width = right - left
@@ -315,9 +300,9 @@ def resize_window(title: str, width: int = None, height: int = None) -> Dict[str
         new_height = height if height else curr_height
 
         win32gui.MoveWindow(target_hwnd, left, top, new_width, new_height, True)
-        return {"code": "SUCCESS", "data": {"title": title, "width": new_width, "height": new_height}, "message": f"窗口大小调整完成: {new_width}x{new_height}"}
+        return build_success({"title": title, "width": new_width, "height": new_height}, f"窗口大小调整完成: {new_width}x{new_height}")
     except Exception as e:
-        return {"code": "ERR_RESIZE_WINDOW", "data": None, "message": f"调整窗口大小失败: {str(e)}"}
+        return build_error("ERR_WINDOW_RESIZE", f"调整窗口大小失败: {str(e)}")
 
 
 # ========== OCR操作 ==========
@@ -328,27 +313,36 @@ def ocr(image_path: str, language: str = "eng") -> Dict[str, Any]:
         import pytesseract
         from PIL import Image
     except ImportError:
-        return {"code": "ERR_NO_TESSERACT", "data": None, "message": "需要安装 pytesseract 和 PIL 库: pip install pytesseract Pillow"}
+        return build_error("ERR_NO_TESSERACT", "需要安装 pytesseract 和 PIL 库: pip install pytesseract Pillow")
     try:
         path = Path(image_path)
         if not path.exists():
-            return {"code": "ERR_OCR", "data": None, "message": f"图片文件不存在: {image_path}"}
+            return build_error("ERR_OCR", f"图片文件不存在: {image_path}")
 
         img = Image.open(image_path)
         text = pytesseract.image_to_string(img, lang=language)
-        return {"code": "SUCCESS", "data": {"text": text, "language": language, "char_count": len(text)}, "message": f"OCR识别完成: {len(text)}个字符"}
+        _llm_text = text[:5000]
+        if len(text) > 5000:
+            _llm_text += f"...(原文{len(text)}字符)"
+        return build_success(truncate_data_for_frontend({"text": text, "language": language, "char_count": len(text)}), f"OCR识别完成: {len(text)}个字符",
+                             llm_data={"字符数": len(text), "语言": language, "文本预览": _llm_text},
+                             next_actions=build_next_actions([("screen_capture", "重新截图", "需要识别其他区域时")]))
     except Exception as e:
-        return {"code": "ERR_OCR", "data": None, "message": f"OCR识别失败: {str(e)}"}
+        return build_error("ERR_OCR", f"OCR识别失败: {str(e)}")
 
 
 # ========== 剪贴板操作（Tool 105-106）==========
 
-def read_clipboard() -> Dict[str, Any]:
+def _read_clipboard() -> Dict[str, Any]:
     """读取剪贴板内容 - 按文档9.6节定义"""
     try:
-        import pyperclip  # 修复：正确库名pyperclip - 小沈 2026-05-04
+        import pyperclip
         text = pyperclip.paste()
-        return {"code": "SUCCESS", "data": {"text": text}, "message": "剪贴板读取成功"}
+        # 【优化 小沈 2026-05-15】截断过长内容+llm_data精简
+        _llm = {"内容": text[:5000]}
+        if len(text) > 5000:
+            _llm["截断"] = f"原文{len(text)}字符"
+        return build_success(truncate_data_for_frontend({"text": text}), "剪贴板读取成功", llm_data=_llm)
     except ImportError:
         try:
             import ctypes
@@ -361,17 +355,20 @@ def read_clipboard() -> Dict[str, Any]:
                 text = ctypes.c_char_p(data).value.decode('gbk') if data else ""
             finally:
                 user32.CloseClipboard()
-            return {"code": "SUCCESS", "data": {"text": text}, "message": "剪贴板读取成功"}
+            _llm = {"内容": text[:5000]}
+            if len(text) > 5000:
+                _llm["截断"] = f"原文{len(text)}字符"
+            return build_success({"text": text}, "剪贴板读取成功", llm_data=_llm)
         except Exception as e:
-            return {"code": "ERR_CLIPBOARD", "data": None, "message": f"读取剪贴板失败: {str(e)}"}
+            return build_error("ERR_DESKTOP_CLIPBOARD", f"读取剪贴板失败: {str(e)}")
 
 
-def write_clipboard(content: str) -> Dict[str, Any]:
+def _write_clipboard(content: str) -> Dict[str, Any]:
     """写入内容到剪贴板 - 按文档9.6节定义"""
     try:
         import pyperclip  # 修复：正确库名pyperclip - 小沈 2026-05-04
         pyperclip.copy(content)
-        return {"code": "SUCCESS", "data": {"content": content}, "message": "剪贴板写入成功"}
+        return build_success(truncate_data_for_frontend({"content": content}), "剪贴板写入成功")
     except ImportError:
         try:
             import ctypes
@@ -382,7 +379,7 @@ def write_clipboard(content: str) -> Dict[str, Any]:
             text_bytes = content.encode('gbk') + b'\0'
             h_mem = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(text_bytes))
             if h_mem == 0:
-                return {"code": "ERR_CLIPBOARD", "data": None, "message": "内存分配失败"}
+                return build_error("ERR_DESKTOP_CLIPBOARD", "内存分配失败")
             p_mem = kernel32.GlobalLock(h_mem)
             if p_mem:
                 ctypes.memmove(p_mem, text_bytes, len(text_bytes))
@@ -391,12 +388,12 @@ def write_clipboard(content: str) -> Dict[str, Any]:
                 user32.EmptyClipboard()
                 user32.SetClipboardData(CF_TEXT, h_mem)
                 user32.CloseClipboard()
-                return {"code": "SUCCESS", "data": {"content": content}, "message": "剪贴板写入成功"}
+                return build_success({"content": content}, "剪贴板写入成功")
             else:
                 kernel32.GlobalFree(h_mem)
-                return {"code": "ERR_CLIPBOARD", "data": None, "message": "内存锁定失败"}
+                return build_error("ERR_DESKTOP_CLIPBOARD", "内存锁定失败")
         except Exception as e:
-            return {"code": "ERR_CLIPBOARD", "data": None, "message": f"写入剪贴板失败: {str(e)}"}
+            return build_error("ERR_DESKTOP_CLIPBOARD", f"写入剪贴板失败: {str(e)}")
 
 
 # ========== 通知操作（Tool 107）==========
@@ -407,6 +404,7 @@ def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, 
         from win10toast import ToastNotifier
         toaster = ToastNotifier()
         toaster.show_toast(title, message, duration=duration)
-        return {"code": "SUCCESS", "data": {"title": title, "message": message, "duration": duration}, "message": "通知发送成功"}
+        return build_success({"title": title, "message": message, "duration": duration}, "通知发送成功",
+                             next_actions=build_next_actions([]))
     except ImportError:
-        return {"code": "ERR_NO_WIN10TOAST", "data": None, "message": "需要安装 win10toast 库: pip install win10toast"}
+        return build_error("ERR_NO_WIN10TOAST", "需要安装 win10toast 库: pip install win10toast")

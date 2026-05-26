@@ -13,6 +13,13 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
 from app.utils.logger import logger
+from app.constants import DEFAULT_RETRYABLE_ERRORS
+
+# 工具结果格式化 — 小沈 2026-05-21
+from app.services.agent.tool_result_formatter import (
+    _format_llm_observation,
+    _format_frontend_event,
+)
 
 # 【步骤7】T2: 从ToolConfig加载超时和别名
 from app.services.tools.tool_config import (
@@ -34,6 +41,7 @@ class ErrorType(Enum):
     FILE_NOT_FOUND = "file_not_found"
     INVALID_PARAMS = "invalid_params"
     TOOL_NOT_FOUND = "tool_not_found"
+    CIRCUIT_OPEN = "circuit_open"
     UNKNOWN = "unknown"
     
     @property
@@ -93,29 +101,6 @@ class ErrorClassifier:
         else:
             return ErrorType.UNKNOWN
 
-
-class RetryPolicy:
-    """重试策略（精简版：无熔断器）"""
-    
-    def __init__(
-        self,
-        max_retries: int = 3,
-        backoff_factor: float = 2.0,
-        retryable_errors: Optional[List[str]] = None
-    ):
-        """
-        初始化重试策略
-        
-        Args:
-            max_retries: 最大重试次数
-            backoff_factor: 退避因子
-            retryable_errors: 可重试错误列表
-        """
-        self.max_retries = max_retries
-        self.backoff_factor = backoff_factor
-        self.retryable_errors = retryable_errors or ["timeout"]
-
-
 # 工具超时配置 - 从tool_meta.py统一导入 - 小健 2026-05-02
 from app.services.tools.tool_meta import TOOL_TIMEOUTS, get_timeout
 
@@ -138,7 +123,9 @@ class ToolExecutor:
         if tools is not None:
             self.available_tools = tools
         else:
-            # 【M5修正】从tool_registry获取实现函数
+            # 【M5修正】从tool_registry获取实现函数 - 【修复 2026-05-10 小健】确保先注册
+            from app.services.tools import ensure_tools_registered
+            ensure_tools_registered()
             from app.services.tools.registry import get_implementations_from_registry
             self.available_tools = get_implementations_from_registry()
     
@@ -164,9 +151,9 @@ class ToolExecutor:
         deprecation_msg = is_deprecated_tool(action)
         if deprecation_msg:
             return {
-                "status": "error",
-                "summary": f"工具 '{action}' 已废弃: {deprecation_msg}",
+                "code": "ERR_TOOL_DEPRECATED",
                 "data": None,
+                "message": f"工具 '{action}' 已废弃: {deprecation_msg}",
                 "retry_count": 0
             }
         
@@ -179,137 +166,136 @@ class ToolExecutor:
         
         if action == "finish":
             return {
-                "status": "success",
-                "summary": "Task completed",
-                "result": {
-                    "operation_type": "finish",
-                    "message": action_input.get("result", "Task completed"),
-                    "data": action_input
-                },
+                "code": "SUCCESS",
                 "data": action_input.get("result"),
+                "message": action_input.get("result", "Task completed"),
                 "retry_count": 0
             }
         
         if action not in self.available_tools:
             # 【2026-04-30 小沈】跨分类fallback：本地没有时从全局registry查找
+            # 【防御 2026-05-10 小沈】本地映射为空时先确保按需注册已完成（避免首请求时序窗口）
+            if not self.available_tools:
+                from app.services.tools import ensure_tools_registered
+                ensure_tools_registered()
             from app.services.tools.registry import tool_registry
             impl = tool_registry.get_implementation(action)
             if impl is not None:
                 self.available_tools[action] = impl
                 return await self._execute_with_retry(action, action_input)
             return {
-                "status": "error",
-                "summary": f"Unknown tool: {action}. Available tools: {list(self.available_tools.keys())}",
+                "code": "ERR_TOOL_NOT_FOUND",
                 "data": None,
+                "message": f"Unknown tool: {action}. Available tools: {list(self.available_tools.keys())}",
                 "retry_count": 0
             }
         
         # 【步骤4】使用重试逻辑执行
         return await self._execute_with_retry(action, action_input)
-    
-    async def _execute_with_retry(
-        self,
-        action: str,
-        action_input: Dict[str, Any]
+
+    @staticmethod
+    def _build_retry_error(
+        code: str, message: str, retry_count: int,
+        *, error_type: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """统一构建重试相关错误响应（21.5 组件1，小沈 2026-05-25 实施）
+        
+        消除 4 处重复 {code, data, message, retry_count, metadata} 构建。
+        retry_count 统一为"已完成的重试次数"（不含首次尝试）。
         """
-        步骤5：修改_execute_with_retry()，使用ErrorClassifier统一分类
+        result = {
+            "code": code, "data": None,
+            "message": message, "retry_count": retry_count,
+        }
+        if error_type:
+            result["metadata"] = {"error_type": error_type}
+        return result
+
+    async def _execute_tool_once(
+        self, tool, normalized_input: Dict[str, Any], timeout: float,
+    ) -> Any:
+        """统一单次工具调用（21.5 组件2，小沈 2026-05-25 实施）
+        
+        修复：纯同步工具通过 to_thread 移出事件循环，wait_for 超时保护生效。
         """
+        import inspect
+        if inspect.iscoroutinefunction(tool):
+            return await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
+
+        result = await asyncio.wait_for(
+            asyncio.to_thread(lambda: tool(**normalized_input)), timeout=timeout
+        )
+        if inspect.iscoroutine(result):
+            return await asyncio.wait_for(result, timeout=timeout)
+        return result
+
+    async def _execute_with_retry(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
+        """重试执行工具（21.5 重构，小沈 2026-05-25 实施）"""
+        from app.services.agent.retry_policy import RetryPolicy
+        import inspect
+
         tool = self.available_tools[action]
         config = get_tool_config()
         retry_policy = RetryPolicy(
             max_retries=config.get_retry_max(action),
             backoff_factor=config.get_retry_backoff(action),
-            retryable_errors=config.get_retryable_errors(action)
+            retryable_errors=config.get_retryable_errors(action),
         )
-        
+
         attempt_count = 0
         last_error: Optional[Exception] = None
-        
+
         while attempt_count <= retry_policy.max_retries:
             try:
                 normalized_input = self._normalize_params(action, action_input)
-                
-                # 验证必需参数
-                import inspect
+
                 sig = inspect.signature(tool)
-                required_params = [
+                required = [
                     p.name for p in sig.parameters.values()
                     if p.default == inspect.Parameter.empty
                     and p.name != 'self'
                     and p.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
                 ]
-                missing = [p for p in required_params if p not in normalized_input]
+                missing = [p for p in required if p not in normalized_input]
                 if missing:
-                    logger.warning(f"[参数验证] action={action} 缺少必需参数: {missing}")
-                    return {
-                        "status": "error",
-                        "summary": f"Missing required parameter(s): {', '.join(missing)}",
-                        "data": None,
-                        "retry_count": 0
-                    }
-                
-                # 执行工具
-                # 【修复 2026-04-30 小沈】兼容同步工具函数（如execute_command/change_directory）
-                # 【修复 2026-05-07 小沈】lambda包装的async工具：iscoroutinefunction(lambda)=False，
-                # 需要先调用lambda拿到实际方法再判断是否coroutine
-                timeout = config.get_timeout(action)
-                if inspect.iscoroutinefunction(tool):
-                    result = await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
-                else:
-                    # 先调用一次看返回值是否为coroutine（lambda包装的async方法）
-                    call_result = tool(**normalized_input)
-                    if inspect.iscoroutine(call_result):
-                        result = await asyncio.wait_for(call_result, timeout=timeout)
-                    else:
-                        result = call_result
-                
-                return self._format_result(result, action)
-            
+                    return self._build_retry_error(
+                        "ERR_MISSING_PARAM",
+                        f"Missing required parameter(s): {', '.join(missing)}", 0,
+                    )
+
+                timeout = get_timeout(action)
+                return await self._execute_tool_once(tool, normalized_input, timeout)
+
             except Exception as e:
                 last_error = e
                 error_type = ErrorClassifier.classify(e)
                 attempt_count += 1
-                
-                # 步骤5：记录日志
+
                 logger.warning(
                     f"[重试] action={action} 尝试{attempt_count}/{retry_policy.max_retries} "
                     f"失败: {error_type.description} - {str(e)[:100]}"
                 )
-                
-                # 检查是否可重试
-                if not error_type.is_retryable:
-                    return {
-                        "status": error_type.to_status,
-                        "summary": f"{error_type.description}: {str(e)[:200]}",
-                        "data": None,
-                        "retry_count": attempt_count - 1,
-                        "metadata": {"error_type": error_type.value}
-                    }
-                
-                # 检查是否还有重试机会
+
+                if not (error_type.is_retryable or error_type.value in retry_policy.retryable_errors):
+                    return self._build_retry_error(
+                        f"ERR_{error_type.value.upper()}",
+                        f"{error_type.description}: {str(e)[:200]}",
+                        attempt_count - 1, error_type=error_type.value,
+                    )
+
                 if attempt_count >= retry_policy.max_retries:
-                    logger.error(f"[重试] action={action} 超过最大重试次数{retry_policy.max_retries}")
-                    return {
-                        "status": error_type.to_status,
-                        "summary": f"{error_type.description}: {str(e)[:200]}",
-                        "data": None,
-                        "retry_count": attempt_count,
-                        "metadata": {"error_type": error_type.value}
-                    }
-                
-                # 等待后重试（指数退避）
-                wait_time = retry_policy.backoff_factor ** (attempt_count - 1)
-                logger.info(f"[重试] action={action} 等待{wait_time}秒后重试...")
-                await asyncio.sleep(wait_time)
-        
-        # 返回最后的错误
-        return {
-            "status": "error",
-            "summary": str(last_error)[:200] if last_error else "Unknown error",
-            "data": None,
-            "retry_count": attempt_count
-        }
+                    return self._build_retry_error(
+                        f"ERR_{error_type.value.upper()}",
+                        f"{error_type.description}: {str(e)[:200]}",
+                        attempt_count - 1, error_type=error_type.value,
+                    )
+
+                await asyncio.sleep(retry_policy.backoff_factor ** (attempt_count - 1))
+
+        return self._build_retry_error(
+            "ERR_UNKNOWN", str(last_error)[:200] if last_error else "Unknown error",
+            attempt_count - 1,
+        )
     
     def _normalize_params(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -351,79 +337,3 @@ class ToolExecutor:
         
         return params
     
-    def _format_result(self, result: Any, action: str) -> Dict[str, Any]:
-        """
-        格式化工具执行结果
-        
-        【2026-04-16 小沈修改】新增 warning 状态判断逻辑
-        
-        Args:
-            result: 原始执行结果
-            action: 工具名称
-        
-        Returns:
-            格式化后的结果
-        """
-        if isinstance(result, dict):
-            # 【2026-04-16 小沈新增】处理工具返回的warning状态
-            if result.get("status") == "warning":
-                return {
-                    "status": "warning",
-                    "summary": result.get("summary", "Warning during execution"),
-                    "data": result.get("data"),
-                    "retry_count": result.get("retry_count", 0)
-                }
-            elif "status" in result and "summary" in result:
-                return {
-                    "status": result.get("status", "success"),
-                    "summary": result.get("summary", ""),
-                    "data": result.get("data"),
-                    "retry_count": result.get("retry_count", 0)
-                }
-            # 【修复 2026-05-01 小沈】先检查code字段（shell工具返回code/data/message格式）
-            # 之前只检查success字段，导致execute_command等工具的SUCCESS结果被误判为error
-            elif result.get("code") == "SUCCESS":
-                # code=SUCCESS但需区分returncode：0=真正成功，非0=有错误输出
-                data = result.get("data")
-                if isinstance(data, dict) and data.get("returncode", 0) != 0:
-                    return {
-                        "status": "error",
-                        "summary": result.get("message", f"Command exited with code {data.get('returncode')}"),
-                        "data": result,
-                        "retry_count": 0
-                    }
-                else:
-                    return {
-                        "status": "success",
-                        "summary": result.get("message", f"Successfully executed {action}"),
-                        "data": result,
-                        "retry_count": 0
-                    }
-            elif result.get("code", "").startswith("ERR_"):
-                return {
-                    "status": "error",
-                    "summary": result.get("message", f"Failed to execute {action}"),
-                    "data": result,
-                    "retry_count": 0
-                }
-            elif result.get("success", False):
-                return {
-                    "status": "success",
-                    "summary": result.get("message", f"Successfully executed {action}"),
-                    "data": result,
-                    "retry_count": 0
-                }
-            else:
-                return {
-                    "status": "error",
-                    "summary": result.get("error", result.get("message", f"Failed to execute {action}")),
-                    "data": result,
-                    "retry_count": 0
-                }
-        else:
-            return {
-                "status": "success",
-                "summary": f"Successfully executed {action}",
-                "data": result,
-                "retry_count": 0
-            }

@@ -9,21 +9,12 @@ from typing import Optional, Any, Dict
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 import sqlite3
-from pathlib import Path
 from app.chat_stream.chat_helpers import create_timestamp
 
 router = APIRouter()
 
-# 数据库路径
-DB_PATH = Path.home() / ".omniagent" / "chat_history.db"
-
-
-def _get_db_connection():
-    """获取数据库连接"""
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    return conn
+# 【小沈重构 2026-05-22】数据库配置迁移至 app/db/
+from app.db.chat_db import get_connection
 
 
 class ExecutionStep:
@@ -61,7 +52,7 @@ async def generate_execution_stream(session_id: str):
     """
     try:
         # 连接数据库获取会话消息
-        conn = _get_db_connection()
+        conn = get_connection()
         cursor = conn.cursor()
         
         # 获取会话消息和执行步骤
@@ -154,7 +145,7 @@ async def get_execution_stream(session_id: str):
     - complete: 流结束
     """
     # 验证会话是否存在
-    conn = _get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     
     try:

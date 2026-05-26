@@ -14,10 +14,11 @@ from uuid import uuid4
 import tempfile
 import platform
 
-from app.models.file_operations import (
-    OperationRecord, SessionRecord, OperationType, OperationStatus,
-    OperationRecordORM
-)
+# 【小沈重构 2026-05-22】数据库配置迁移至 app/db/
+from app.db.operations_db import get_connection
+from app.db.config import OPERATIONS_DB_PATH
+from app.db.models.operation_enums import OperationType, OperationStatus
+from app.db.models.operation_models import OperationRecord, SessionRecord
 from app.utils.logger import logger
 
 
@@ -25,14 +26,12 @@ class FileSafetyConfig:
     """文件安全配置"""
     # 回收站路径
     RECYCLE_BIN_PATH: Path = Path.home() / ".omniagent" / "recycle_bin"
-    # 数据库路径
-    DB_PATH: Path = Path.home() / ".omniagent" / "operations.db"
     # 备份保留天数
     BACKUP_RETENTION_DAYS: int = 30
     # 报告输出路径
     # 【小沈修改 2026-03-25】Debug阶段改为项目目录下，方便查看
     # 生产环境可改为 Path.home() / ".omniagent" / "reports"
-    PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent.parent  # 项目根目录
+    PROJECT_ROOT = Path(__file__).resolve().parents[5]  # 项目根目录
     REPORT_PATH: Path = PROJECT_ROOT / "reports"
     
     @classmethod
@@ -56,9 +55,7 @@ class FileOperationSafety:
     def __init__(self):
         self.config = FileSafetyConfig()
         self.config.ensure_directories()
-        self._init_database()
-        # 【修复-波次1】移除未使用的_connection属性
-        # 所有方法都使用_get_connection()创建新连接，不需要保存连接引用
+        # 【小沈重构 2026-05-22】数据库初始化已由 app.db.operations_db 模块级调用
     
     def close(self):
         """
@@ -68,84 +65,6 @@ class FileOperationSafety:
         虽然当前实现每次操作都创建新连接，但为了未来扩展和完整性保留此方法
         """
         logger.info("FileOperationSafety resources cleaned up")
-        
-    def _init_database(self):
-        """初始化SQLite数据库"""
-        conn = None
-        try:
-            conn = sqlite3.connect(str(self.config.DB_PATH))
-            cursor = conn.cursor()
-            
-            # 创建操作记录表
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS file_operations (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    operation_id TEXT UNIQUE NOT NULL,
-                    task_id TEXT NOT NULL,
-                    operation_type TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending',
-                    source_path TEXT,
-                    destination_path TEXT,
-                    backup_path TEXT,
-                    backup_expires_at TIMESTAMP,
-                    file_size INTEGER,
-                    file_hash TEXT,
-                    is_directory BOOLEAN DEFAULT 0,
-                    file_extension TEXT,
-                    duration_ms INTEGER,
-                    space_impact_bytes INTEGER,
-                    metadata TEXT DEFAULT '{}',
-                    error_message TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    executed_at TIMESTAMP,
-                    rolled_back_at TIMESTAMP,
-                    sequence_number INTEGER DEFAULT 0
-                )
-            ''')
-            
-            # 创建会话记录表
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS file_operation_sessions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    task_id TEXT UNIQUE NOT NULL,
-                    agent_id TEXT NOT NULL,
-                    task_description TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending',
-                    total_operations INTEGER DEFAULT 0,
-                    success_count INTEGER DEFAULT 0,
-                    failed_count INTEGER DEFAULT 0,
-                    rolled_back_count INTEGER DEFAULT 0,
-                    report_generated BOOLEAN DEFAULT 0,
-                    report_path TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    completed_at TIMESTAMP
-                )
-            ''')
-            
-            # 创建索引
-            cursor.execute('''
-                CREATE INDEX IF NOT EXISTS idx_operations_session 
-                ON file_operations(task_id)
-            ''')
-            cursor.execute('''
-                CREATE INDEX IF NOT EXISTS idx_operations_created 
-                ON file_operations(created_at)
-            ''')
-            
-            conn.commit()
-            logger.info("File operation database initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize database: {e}")
-            raise
-        finally:
-            # 【修复问题8：数据库连接未关闭】
-            # 确保连接总是被关闭，即使在异常情况下
-            if conn:
-                conn.close()
-    
-    def _get_connection(self) -> sqlite3.Connection:
-        """获取数据库连接（线程安全）"""
-        return sqlite3.connect(str(self.config.DB_PATH))
     
     def _compute_file_hash(self, file_path: Path) -> str:
         """计算文件哈希（SHA-256）"""
@@ -157,6 +76,32 @@ class FileOperationSafety:
             return sha256_hash.hexdigest()
         except Exception:
             return ""
+    
+    @staticmethod
+    def _row_to_operation_record(row) -> OperationRecord:
+        """将SQLite行转换为OperationRecord - 小健 2026-05-24"""
+        return OperationRecord(
+            operation_id=row[1],
+            task_id=row[2],
+            operation_type=OperationType(row[3]),
+            status=OperationStatus(row[4]),
+            source_path=row[5],
+            destination_path=row[6],
+            backup_path=row[7],
+            backup_expires_at=row[8],
+            file_size=row[9],
+            file_hash=row[10],
+            is_directory=bool(row[11]),
+            file_extension=row[12],
+            duration_ms=row[13],
+            space_impact_bytes=row[14],
+            metadata=json.loads(row[15]) if row[15] else {},
+            error_message=row[16],
+            created_at=row[17],
+            executed_at=row[18],
+            rolled_back_at=row[19],
+            sequence_number=row[20]
+        )
     
     def _backup_to_recycle_bin(self, source_path: Path) -> Optional[Path]:
         """
@@ -226,7 +171,7 @@ class FileOperationSafety:
         # 【修复-添加finally块确保资源释放】
         conn = None
         try:
-            conn = self._get_connection()
+            conn = get_connection()
             cursor = conn.cursor()
             
             cursor.execute('''
@@ -258,136 +203,105 @@ class FileOperationSafety:
             if conn:
                 conn.close()
     
-    def execute_with_safety(
-        self,
-        operation_id: str,
-        operation_func,
-        *args,
-        **kwargs
-    ) -> bool:
-        """
-        安全执行文件操作（带备份和记录）
+    def _collect_file_info(self, path: Path) -> Dict[str, Any]:
+        """收集文件信息（21.4 组件1，小沈 2026-05-25 实施）
         
-        Args:
-            operation_id: 操作ID
-            operation_func: 实际执行的操作函数
-            *args, **kwargs: 传递给操作函数的参数
-            
-        Returns:
-            是否执行成功
+        消除 F1a/F1b 双路径重复，is_directory 在此一并计算
         """
-        conn = self._get_connection()
+        if not path or not path.exists():
+            return {"size": None, "hash": None, "extension": None, "is_directory": False}
+
+        info = {
+            "size": path.stat().st_size,
+            "is_directory": path.is_dir(),
+        }
+        if path.is_file():
+            info["hash"] = self._compute_file_hash(path)
+            info["extension"] = path.suffix.lower() if path.suffix else None
+        else:
+            info["hash"] = None
+            info["extension"] = None
+        return info
+
+    def _update_op_failed(self, cursor, operation_id: str, error_message: str):
+        """统一更新 FAILED 状态（21.4 组件2，小沈 2026-05-25 实施）
+        
+        消除 3 处重复 UPDATE（O1b/E1b/X1a）
+        """
+        cursor.execute('''
+            UPDATE file_operations 
+            SET status = ?, error_message = ?
+            WHERE operation_id = ?
+        ''', (OperationStatus.FAILED.value, error_message, operation_id))
+
+    def execute_with_safety(self, operation_id: str, operation_func, *args, **kwargs) -> bool:
+        """安全执行文件操作（21.4 重构，小沈 2026-05-25 实施）"""
+        conn = get_connection()
         cursor = conn.cursor()
-        
+
         try:
-            # 获取操作信息
             cursor.execute('''
-                SELECT operation_type, source_path, destination_path 
+                SELECT operation_type, source_path, destination_path, created_at
                 FROM file_operations WHERE operation_id = ?
             ''', (operation_id,))
-            
             row = cursor.fetchone()
             if not row:
                 logger.error(f"Operation not found: {operation_id}")
                 return False
-            
-            op_type, source_path_str, dest_path_str = row
-            source_path = Path(source_path_str) if source_path_str else None
-            dest_path = Path(dest_path_str) if dest_path_str else None
-            
-            # 更新状态为执行中
-            cursor.execute('''
-                UPDATE file_operations 
-                SET status = ?, executed_at = ?
-                WHERE operation_id = ?
-            ''', (OperationStatus.EXECUTING.value, datetime.now(), operation_id))
+
+            op_type, src_str, dst_str, created_at_str = row
+            source_path = Path(src_str) if src_str else None
+            dest_path = Path(dst_str) if dst_str else None
+            created_at = datetime.fromisoformat(created_at_str) if isinstance(created_at_str, str) else created_at_str
+
+            cursor.execute(
+                'UPDATE file_operations SET status = ?, executed_at = ? WHERE operation_id = ?',
+                (OperationStatus.EXECUTING.value, datetime.now(), operation_id),
+            )
             conn.commit()
-            
-            # 对于删除操作，先备份到回收站
+
             backup_path = None
             if op_type == OperationType.DELETE.value and source_path and source_path.exists():
                 backup_path = self._backup_to_recycle_bin(source_path)
-            
-            # 执行实际操作
+
             success = operation_func(*args, **kwargs)
-            
+
             if success:
-                # 收集文件信息
-                file_size = None
-                file_hash = None
-                file_extension = None
-                
-                if dest_path and dest_path.exists():
-                    file_size = dest_path.stat().st_size
-                    if dest_path.is_file():
-                        file_hash = self._compute_file_hash(dest_path)
-                        file_extension = dest_path.suffix.lower() if dest_path.suffix else None
-                elif source_path and source_path.exists():
-                    file_size = source_path.stat().st_size
-                    if source_path.is_file():
-                        file_hash = self._compute_file_hash(source_path)
-                        file_extension = source_path.suffix.lower() if source_path.suffix else None
-                
-                # 计算操作耗时（毫秒）
+                target = dest_path if dest_path and dest_path.exists() else source_path if source_path and source_path.exists() else None
+                info = self._collect_file_info(target) if target else {}
+
                 executed_at = datetime.now()
-                cursor.execute('SELECT created_at FROM file_operations WHERE operation_id = ?', (operation_id,))
-                created_at_row = cursor.fetchone()
-                duration_ms = None
-                if created_at_row and created_at_row[0]:
-                    created_at = datetime.fromisoformat(created_at_row[0]) if isinstance(created_at_row[0], str) else created_at_row[0]
-                    duration_ms = int((executed_at - created_at).total_seconds() * 1000)
-                
-                # 计算空间影响（字节）
-                # DELETE: +size (frees space), CREATE: -size (uses space), MOVE/COPY: 0
+                duration_ms = int((executed_at - created_at).total_seconds() * 1000) if created_at else None
+
                 space_impact = 0
-                if op_type == OperationType.DELETE.value and file_size:
-                    space_impact = file_size  # Positive = freed space
-                elif op_type == OperationType.CREATE.value and file_size:
-                    space_impact = -file_size  # Negative = used space
-                # MOVE and COPY have 0 net impact
-                
-                # 更新成功状态
+                if op_type == OperationType.DELETE.value and info.get("size"):
+                    space_impact = info["size"]
+                elif op_type == OperationType.CREATE.value and info.get("size"):
+                    space_impact = -info["size"]
+
                 cursor.execute('''
-                    UPDATE file_operations 
-                    SET status = ?, backup_path = ?, backup_expires_at = ?,
+                    UPDATE file_operations SET status = ?, backup_path = ?, backup_expires_at = ?,
                         file_size = ?, file_hash = ?, is_directory = ?,
-                        file_extension = ?, duration_ms = ?, space_impact_bytes = ?,
-                        executed_at = ?
+                        file_extension = ?, duration_ms = ?, space_impact_bytes = ?, executed_at = ?
                     WHERE operation_id = ?
                 ''', (
                     OperationStatus.SUCCESS.value,
                     str(backup_path) if backup_path else None,
                     datetime.now() + timedelta(days=self.config.BACKUP_RETENTION_DAYS) if backup_path else None,
-                    file_size,
-                    file_hash,
-                    1 if (source_path and source_path.is_dir()) or (dest_path and dest_path.is_dir()) else 0,
-                    file_extension,
-                    duration_ms,
-                    space_impact,
-                    executed_at,
-                    operation_id
+                    info.get("size"), info.get("hash"), info.get("is_directory", False),
+                    info.get("extension"), duration_ms, space_impact, executed_at,
+                    operation_id,
                 ))
-                
                 logger.info(f"Operation executed successfully: {operation_id}")
             else:
-                cursor.execute('''
-                    UPDATE file_operations 
-                    SET status = ?, error_message = ?
-                    WHERE operation_id = ?
-                ''', (OperationStatus.FAILED.value, "Operation failed", operation_id))
-                
-                logger.warning(f"Operation failed: {operation_id}")
-            
+                self._update_op_failed(cursor, operation_id, "Operation failed")
+
             conn.commit()
             return success
-            
+
         except Exception as e:
             logger.error(f"Error executing operation {operation_id}: {e}")
-            cursor.execute('''
-                UPDATE file_operations 
-                SET status = ?, error_message = ?
-                WHERE operation_id = ?
-            ''', (OperationStatus.FAILED.value, str(e), operation_id))
+            self._update_op_failed(cursor, operation_id, str(e))
             conn.commit()
             return False
         finally:
@@ -405,7 +319,7 @@ class FileOperationSafety:
         """
         conn = None
         try:
-            conn = self._get_connection()
+            conn = get_connection()
             cursor = conn.cursor()
         
             cursor.execute('''
@@ -490,7 +404,7 @@ class FileOperationSafety:
         """
         conn = None
         try:
-            conn = self._get_connection()
+            conn = get_connection()
             cursor = conn.cursor()
             cursor.execute(
                 'SELECT task_id FROM file_operations WHERE operation_id = ?',
@@ -517,7 +431,7 @@ class FileOperationSafety:
         """
         conn = None
         try:
-            conn = self._get_connection()
+            conn = get_connection()
             cursor = conn.cursor()
             
             result = {
@@ -579,7 +493,7 @@ class FileOperationSafety:
         Returns:
             操作记录列表
         """
-        conn = self._get_connection()
+        conn = get_connection()
         cursor = conn.cursor()
         
         try:
@@ -590,33 +504,7 @@ class FileOperationSafety:
             ''', (task_id,))
             
             rows = cursor.fetchall()
-            operations = []
-            
-            for row in rows:
-                op = OperationRecord(
-                    operation_id=row[1],
-                    task_id=row[2],
-                    operation_type=OperationType(row[3]),
-                    status=OperationStatus(row[4]),
-                    source_path=row[5],
-                    destination_path=row[6],
-                    backup_path=row[7],
-                    backup_expires_at=row[8],
-                    file_size=row[9],
-                    file_hash=row[10],
-                    is_directory=bool(row[11]),
-                    file_extension=row[12],
-                    duration_ms=row[13],
-                    space_impact_bytes=row[14],
-                    metadata=json.loads(row[15]) if row[15] else {},
-                    error_message=row[16],
-                    created_at=row[17],
-                    executed_at=row[18],
-                    rolled_back_at=row[19],
-                    sequence_number=row[20]
-                )
-                operations.append(op)
-            
+            operations = [self._row_to_operation_record(row) for row in rows]
             return operations
             
         except Exception as e:
@@ -635,7 +523,7 @@ class FileOperationSafety:
         Returns:
             操作记录，不存在返回None
         """
-        conn = self._get_connection()
+        conn = get_connection()
         cursor = conn.cursor()
         
         try:
@@ -648,28 +536,7 @@ class FileOperationSafety:
             if not row:
                 return None
             
-            return OperationRecord(
-                operation_id=row[1],
-                task_id=row[2],
-                operation_type=OperationType(row[3]),
-                status=OperationStatus(row[4]),
-                source_path=row[5],
-                destination_path=row[6],
-                backup_path=row[7],
-                backup_expires_at=row[8],
-                file_size=row[9],
-                file_hash=row[10],
-                is_directory=bool(row[11]),
-                file_extension=row[12],
-                duration_ms=row[13],
-                space_impact_bytes=row[14],
-                metadata=json.loads(row[15]) if row[15] else {},
-                error_message=row[16],
-                created_at=row[17],
-                executed_at=row[18],
-                rolled_back_at=row[19],
-                sequence_number=row[20]
-            )
+            return self._row_to_operation_record(row)
             
         except Exception as e:
             logger.error(f"Failed to get operation {operation_id}: {e}")
@@ -684,7 +551,7 @@ class FileOperationSafety:
         Returns:
             清理的文件数量
         """
-        conn = self._get_connection()
+        conn = get_connection()
         cursor = conn.cursor()
         count = 0
         

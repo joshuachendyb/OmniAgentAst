@@ -1,43 +1,34 @@
 # -*- coding: utf-8 -*-
-"""Document 模块 - 文档读写工具 + 数据分析工具
+"""Document 模块 - 文档读写 + 数据分析 + 数据库工具
 
-【修正 2026-05-05 小沈】补充缺失的工具导出
+【2026-05-18 小沈】Database工具迁入(query_sql/execute_sql/get_db_schema)
 """
 
 from app.services.tools.document.document_register import *
-from app.services.tools.document.data_analysis_register import *
 from app.services.tools.document.document_tools import (
-    read_pdf,
-    read_docx,
-    read_xlsx,
-    write_docx,
-    write_xlsx,
-    read_pptx,
-    write_pdf,
+    read_document,
+    write_document,
     convert_document,
-    write_pptx,
 )
 from app.services.tools.document.data_analysis_tools import (
-    read_csv_dataframe,
-    read_excel_dataframe,
-    generate_chart,
     analyze_data,
     filter_data,
+    generate_chart,
+)
+from app.services.tools.document.database_tools import (
+    query_sql,
+    execute_sql,
+    get_db_schema,
 )
 
 __all__ = [
-    "read_pdf",
-    "read_docx",
-    "read_xlsx",
-    "write_docx",
-    "write_xlsx",
-    "read_pptx",
-    "write_pdf",
+    "read_document",
+    "write_document",
     "convert_document",
-    "write_pptx",
-    "read_csv_dataframe",
-    "read_excel_dataframe",
-    "generate_chart",
     "analyze_data",
     "filter_data",
+    "generate_chart",
+    "query_sql",
+    "execute_sql",
+    "get_db_schema",
 ]

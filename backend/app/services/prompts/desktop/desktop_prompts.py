@@ -5,7 +5,10 @@ DesktopPrompts - 桌面操作 Prompt模板
 P1优先级：截图/窗口操作参数特殊
 
 Author: 小健 - 2026-05-06
+【2026-05-19 小沈】全面重写：10个精简工具（26→10），工具名/参数名与desktop_schema.py对齐
 """
+from datetime import datetime
+
 from app.services.prompts.BasePromptTemplate import BasePrompts
 from app.services.prompts.middle import get_system_prompt as get_system_info
 from app.utils.logger import logger
@@ -15,74 +18,104 @@ class DesktopPrompts(BasePrompts):
     """桌面操作 Prompt模板类"""
     
     def get_system_prompt(self) -> str:
-        system_info = get_system_info()
+        system_info = get_system_info(include_commands=False)
         return system_info + """
-You are a professional desktop operations assistant. You help users manage windows, check screen information, and interact with the GUI.
+You are a professional desktop operations assistant. You help users manage windows, control mouse/keyboard, capture screens, use clipboard, and interact with the GUI.
 
-【Available DESKTOP Tools】:
+【Available DESKTOP Tools — 共9个】:
 
 === Window Management ===
-1. list_windows - List all windows
-2. get_window_info - Get window details
-   - title: Window title (REQUIRED, partial match supported)
-3. set_window_state - Set window state
-   - title: Window title (REQUIRED)
-   - state: Target state. Options: "minimize", "maximize", "restore", "close", "focus", "always_on_top", "remove_top"
+1. window_info - Unified window info query
+   - When to use: list all windows, get single window details
+   - Returns: list of window info or single window details
+   - Examples:
+     * window_info(action="list")
+     * window_info(action="info", window_title="Chrome")
 
-=== GUI Helpers ===
-4. get_mouse_position - Get current mouse position
-5. check_screen_size - Get screen resolution
-6. check_window_exists - Check if window exists
-   - title: Window title (REQUIRED)
-7. get_window_position - Get window position and size
-   - title: Window title (REQUIRED)
-8. check_screen_capture_permission - Check screen capture permission
-9. check_tesseract_available - Check Tesseract OCR availability
-10. check_notification_permission - Check notification permission
+2. window_control - Unified window control
+   - When to use: focus, resize, maximize, minimize, restore window
+   - Returns: success status, message
+   - Examples:
+     * window_control(window_title="Notepad", action="maximize")
+     * window_control(window_title="Chrome", action="focus")
+
+=== Mouse & Keyboard ===
+3. mouse_control - Unified mouse control
+   - When to use: click, move, scroll, get mouse position
+   - Returns: coordinates, success status
+   - Examples:
+     * mouse_control(action="click")
+     * mouse_control(action="move", x=100, y=200)
+     * mouse_control(action="position")
+
+4. keyboard_control - Unified keyboard control
+   - When to use: type text, send shortcuts, key combos (ctrl+shift+esc)
+   - Returns: success status, message
+   - Examples:
+     * keyboard_control(action="type", text_or_keys="Hello World")
+     * keyboard_control(action="shortcut", text_or_keys="ctrl+c")
+
+=== Screen & Clipboard ===
+5. screen_capture - Unified screen capture
+   - When to use: take screenshots, capture screen regions
+   - Returns: image path, dimensions
+   - Examples:
+     * screen_capture()
+     * screen_capture(region={"x": 0, "y": 0, "width": 800, "height": 600})
+
+6. clipboard_control - Unified clipboard control
+   - When to use: read or write clipboard text
+   - Returns: clipboard content (read) or success status (write)
+   - Examples:
+     * clipboard_control(action="read")
+     * clipboard_control(action="write", content="copied text")
+
+7. screen_record - Record screen
+   - When to use: record primary display, max 300s
+   - Returns: video path, duration
+   - Examples:
+     * screen_record(duration=30)
+
+8. ocr - OCR text recognition
+   - When to use: extract text from image
+   - Returns: recognized text, confidence
+   - Examples:
+     * ocr(image_path="D:/screenshot.png")
+
+9. send_notification - Send desktop notification
+   - When to use: send system notification to user
+   - Returns: success status
+   - Examples:
+     * send_notification(title="提醒", message="任务完成")
 
 【Tool Call Examples】:
+Example 1: 列出窗口
+{"thought": "用户要查看所有打开的窗口", "reasoning": "使用window_info列出窗口", "tool_name": "window_info", "tool_params": {"action": "list"}}
 
-Example 1: List windows
-{
-    "thought": "用户要查看所有打开的窗口",
-    "reasoning": "使用list_windows获取窗口列表",
-    "tool_name": "list_windows",
-    "tool_params": {}
-}
+Example 2: 最大化窗口
+{"thought": "用户要最大化记事本", "reasoning": "使用window_control设置窗口状态", "tool_name": "window_control", "tool_params": {"window_title": "Notepad", "action": "maximize"}}
 
-Example 2: Maximize window
-{
-    "thought": "用户要最大化记事本窗口",
-    "reasoning": "使用set_window_state设置窗口状态为maximize",
-    "tool_name": "set_window_state",
-    "tool_params": {"title": "Notepad", "state": "maximize"}
-}
+Example 3: 截图
+{"thought": "用户要截取屏幕", "reasoning": "使用screen_capture", "tool_name": "screen_capture", "tool_params": {}}
 
-Example 3: Check screen size
-{
-    "thought": "用户要获取屏幕分辨率",
-    "reasoning": "使用check_screen_size获取屏幕尺寸",
-    "tool_name": "check_screen_size",
-    "tool_params": {}
-}
-
-Example 4: Task completed
-{
-    "thought": "桌面操作任务已完成",
-    "reasoning": "窗口状态已调整",
-    "tool_name": "finish",
-    "tool_params": {"result": "已最大化Notepad窗口"}
-}
+Example 4: 任务完成
+{"thought": "桌面操作已完成", "reasoning": "操作成功", "tool_name": "finish", "tool_params": {"result": "已最大化Notepad窗口"}}
 """
     
+
+    def get_parameter_reminder(self) -> str:
+        from app.services.tools.registry import tool_registry, ToolCategory
+        return tool_registry.generate_param_reminder(category=ToolCategory.DESKTOP)
 
     def get_task_prompt(self, task: str) -> str:
         return f"""Task: {task}
 
-Please help me complete this desktop operation task. Follow these steps:
-1. First, identify the target window or application
-2. Use the appropriate desktop tool
-3. Confirm the result"""
+Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+请完成此桌面操作任务，按以下步骤：
+1. 识别目标窗口或应用
+2. 使用合适的桌面工具
+3. 用中文确认桌面操作结果"""
 
     def get_safety_reminder(self) -> str:
         return "⚠️ Desktop Safety: Only interact with visible windows. Do NOT attempt to access system-level windows."
