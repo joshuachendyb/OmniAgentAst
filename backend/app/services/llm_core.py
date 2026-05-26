@@ -22,12 +22,15 @@ import httpcore
 from typing import List, Dict, Optional, AsyncGenerator, Any
 
 from app.utils.logger import logger
-from app.constants import (
-    RATE_LIMIT_STATUS_CODES, DEFAULT_CONNECT_TIMEOUT, DEFAULT_WRITE_TIMEOUT,
-    DEFAULT_POOL_TIMEOUT, DEFAULT_PROBE_TIMEOUT, LLM_MAX_CONNECTIONS,
-    LLM_MAX_KEEPALIVE, DEFAULT_LLM_TIMEOUT,
-    HTTPX_EXCEPTION_TO_ERROR_KEY, ERROR_TYPE_MAP,
-)
+
+
+
+
+
+
+from app.constants import (DEFAULT_CONNECT_TIMEOUT, DEFAULT_LLM_TIMEOUT, DEFAULT_POOL_TIMEOUT,
+    DEFAULT_PROBE_TIMEOUT, DEFAULT_WRITE_TIMEOUT, ERROR_TYPE_MAP, HTTPX_EXCEPTION_TO_ERROR_KEY,
+    LLM_MAX_CONNECTIONS, LLM_MAX_KEEPALIVE, RATE_LIMIT_STATUS_CODES)
 
 
 def _resolve_exception(e: Exception) -> tuple:
@@ -646,4 +649,5 @@ class BaseAIService:
             yield self._create_stream_error_chunk(e)
         finally:
             self._current_response = None
+
 
