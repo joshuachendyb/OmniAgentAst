@@ -124,4 +124,4 @@ backend/json_backup/
 reports/test_task/*.txt
 
 # Research
-插件研究-research/
+插件模型-research/
