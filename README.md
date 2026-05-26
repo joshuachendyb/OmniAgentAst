@@ -201,84 +201,74 @@ OmniAgentAs-desk/
 > 1. **隔离依赖** — 不同项目用不同版本的包，互不冲突（如项目A用pydantic 2.5、项目B用pydantic 2.13）
 > 2. **干净卸载** — 不要了直接删 `.venv` 目录，不影响全局 Python
 > 3. **环境可复现** — `requirements.txt` 一键装完，新同事 clone 下来就能跑
->
-> 以下每种操作都列出了两种方式，按需选择。
 
 ### 6.2 初次安装（新人从零开始）
 
-<details>
-<summary><b>方式一：虚拟环境（推荐）</b></summary>
+需要 **两个终端同时运行**，一个跑后端、一个跑前端。
+
+---
+
+#### 终端 1 — 后端（任选一种方式）
+
+**方式 A：虚拟环境（推荐）**
 
 ```bash
-# ========== 后端 ==========
 cd backend
-
-# 1. 创建虚拟环境（仅首次）
-python -m venv .venv
-
-# 2. 安装依赖
-.venv\Scripts\pip install -r requirements.txt
-
-# 3. 启动后端
-.venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
-
-# ========== 前端（新开一个终端）==========
-cd ../frontend
-
-npm install
-npm run dev
+python -m venv .venv              # ① 创建虚拟环境（仅首次）
+.venv\Scripts\pip install -r requirements.txt  # ② 安装依赖
+.venv\Scripts\python -m uvicorn app.main:app --reload --port 8000  # ③ 启动
 ```
-</details>
 
-<details>
-<summary><b>方式二：全局 Python（不用虚拟环境）</b></summary>
+**方式 B：全局 Python（不用虚拟环境）**
 
 ```bash
-# ========== 后端 ==========
 cd backend
-pip install -r requirements.txt
-python -m uvicorn app.main:app --reload --port 8000
-
-# ========== 前端 ==========
-cd ../frontend
-npm install
-npm run dev
+pip install -r requirements.txt              # ① 安装依赖
+python -m uvicorn app.main:app --reload --port 8000  # ② 启动
 ```
 
-> 注意：全局安装的包会和其他项目共用，不同项目依赖版本不同时可能冲突。
-</details>
+> 方式 B 的包装到全局，不同项目依赖版本不同时可能冲突。
 
-后端: `http://127.0.0.1:8000` | API文档: `http://127.0.0.1:8000/docs` | 前端: `http://localhost:5173`
+---
+
+#### 终端 2 — 前端（两种方式都一样）
+
+```bash
+cd frontend
+npm install            # ① 安装依赖（仅首次）
+npm run dev            # ② 启动
+```
+
+---
+
+启动后访问：
+- 后端 API: `http://127.0.0.1:8000`
+- API 文档: `http://127.0.0.1:8000/docs`
+- 前端页面: `http://localhost:5173`
 
 ### 6.2a 日常运行（已有环境）
 
-<details>
-<summary><b>方式一：虚拟环境</b></summary>
+同样需要 **两个终端同时运行**。
 
+#### 终端 1 — 后端
+
+**方式 A：虚拟环境**
 ```bash
-# 后端
 cd backend
 .venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
-
-# 前端（新开终端）
-cd ../frontend
-npm run dev
 ```
-</details>
 
-<details>
-<summary><b>方式二：全局 Python</b></summary>
-
+**方式 B：全局 Python**
 ```bash
-# 后端
 cd backend
 python -m uvicorn app.main:app --reload --port 8000
+```
 
-# 前端
-cd ../frontend
+#### 终端 2 — 前端
+```bash
+cd frontend
 npm run dev
 ```
-</details>
 
 ### 6.3 可选依赖（二级工具）
 
