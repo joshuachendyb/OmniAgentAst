@@ -13,7 +13,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
 from app.utils.logger import logger
-from app.constants import DEFAULT_RETRYABLE_ERRORS
+
 
 # 工具结果格式化 — 小沈 2026-05-21
 from app.services.agent.tool_result_formatter import (
@@ -26,6 +26,8 @@ from app.services.tools.tool_config import (
     get_tool_config,
     get_tool_name_alias,
     is_deprecated_tool
+
+
 )
 
 
@@ -105,6 +107,7 @@ class ErrorClassifier:
 from app.services.tools.tool_meta import TOOL_TIMEOUTS, get_timeout
 
 
+
 class ToolExecutor:
     """
     工具执行器
@@ -151,7 +154,7 @@ class ToolExecutor:
         deprecation_msg = is_deprecated_tool(action)
         if deprecation_msg:
             return {
-                "code": "ERR_TOOL_DEPRECATED",
+                "code": ERR_TOOL_DEPRECATED,
                 "data": None,
                 "message": f"工具 '{action}' 已废弃: {deprecation_msg}",
                 "retry_count": 0
@@ -184,7 +187,7 @@ class ToolExecutor:
                 self.available_tools[action] = impl
                 return await self._execute_with_retry(action, action_input)
             return {
-                "code": "ERR_TOOL_NOT_FOUND",
+                "code": ERR_TOOL_NOT_FOUND,
                 "data": None,
                 "message": f"Unknown tool: {action}. Available tools: {list(self.available_tools.keys())}",
                 "retry_count": 0
@@ -259,7 +262,7 @@ class ToolExecutor:
                 missing = [p for p in required if p not in normalized_input]
                 if missing:
                     return self._build_retry_error(
-                        "ERR_MISSING_PARAM",
+                        ERR_MISSING_PARAM,
                         f"Missing required parameter(s): {', '.join(missing)}", 0,
                     )
 
@@ -293,7 +296,7 @@ class ToolExecutor:
                 await asyncio.sleep(retry_policy.backoff_factor ** (attempt_count - 1))
 
         return self._build_retry_error(
-            "ERR_UNKNOWN", str(last_error)[:200] if last_error else "Unknown error",
+            ERR_UNKNOWN, str(last_error)[:200] if last_error else "Unknown error",
             attempt_count - 1,
         )
     
@@ -337,3 +340,10 @@ class ToolExecutor:
         
         return params
     
+from app.constants import (
+    DEFAULT_RETRYABLE_ERRORS,
+    ERR_MISSING_PARAM,
+    ERR_TOOL_DEPRECATED,
+    ERR_TOOL_NOT_FOUND,
+    ERR_UNKNOWN,
+)
