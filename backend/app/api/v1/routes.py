@@ -808,7 +808,7 @@ async def update_provider(provider_name: str, data: ProviderUpdate):
         config_path = Path(AIServiceFactory.get_config_path())
         
         # 1. 自动备份
-        backup_path = _backup_config_file(config_path)
+        backup_path = _backup_config(config_path)
         
         with open(config_path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
@@ -925,7 +925,7 @@ async def add_provider(data: ProviderAddRequest):
         config_path = Path(AIServiceFactory.get_config_path())
         
         # 1. 自动备份
-        backup_path = _backup_config_file(config_path)
+        backup_path = _backup_config(config_path)
         
         with open(config_path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
@@ -1016,13 +1016,13 @@ def _backup_config(config_path: Path) -> Path:
     """备份配置文件，复用file_helpers.backup_file - 小健 2026-05-25"""
     from app.services.tools.toolhelper.file_helpers import backup_file
     result = backup_file(str(config_path), suffix=".backup")
-    if not result.get("success"):
+    if result.get("code") != "SUCCESS":
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_path = config_path.parent / f"config.yaml.backup.{timestamp}"
         shutil.copy2(config_path, backup_path)
         logger.info(f"配置文件已备份(fallback): {backup_path}")
         return backup_path
-    bp = Path(result["backup_path"])
+    bp = Path(result["data"]["backup_path"])
     logger.info(f"配置文件已备份: {bp}")
     return bp
 
@@ -1271,7 +1271,7 @@ async def fix_config():
         config_path = Path(AIServiceFactory.get_config_path())
         
         # 1. 备份
-        backup_path = _backup_config_file(config_path)
+        backup_path = _backup_config(config_path)
         
         # 2. 读取配置
         with open(config_path, 'r', encoding='utf-8') as f:
