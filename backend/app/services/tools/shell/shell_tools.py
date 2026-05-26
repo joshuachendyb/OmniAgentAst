@@ -41,6 +41,9 @@ from app.services.tools._response import build_success, build_error
 from app.services.tools.toolhelper.shell_helper import _check_shell_injection, _read_stream_nonblocking
 
 
+
+
+
 # 后台Shell会话管理器 - 小沈 2026-05-02
 _background_shells: Dict[str, Dict[str, Any]] = {}
 
@@ -67,7 +70,7 @@ def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
     llm_data = format_output_for_llm(stdout_str, stderr_str)
 
     if timed_out:
-        return build_error("ERR_SHELL_TIMEOUT",
+        return build_error(ERR_SHELL_TIMEOUT,
             f"命令执行超时（{timeout}毫秒），可增大timeout参数重试",
             data=data, llm_data=llm_data,
             next_actions=build_next_actions([
@@ -78,7 +81,7 @@ def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
             next_actions=build_next_actions([
                 ("execute_shell_command", "继续执行后续命令", "需要执行更多命令时"),
                 ("find_command", "查找命令路径", "需要确认命令是否存在时")]))
-    return build_error("ERR_SHELL_EXEC", f"命令执行失败（退出码{returncode}），请检查命令语法和参数",
+    return build_error(ERR_SHELL_EXEC, f"命令执行失败（退出码{returncode}），请检查命令语法和参数",
         data=data, llm_data=llm_data,
         next_actions=build_next_actions([
             ("execute_shell_command", "重新执行命令", "修改命令后重试时"),
@@ -116,12 +119,12 @@ def execute_shell_command(
 ) -> dict:
     # V1: 参数校验
     if shell_type not in ("powershell", "cmd", None):
-        return build_error("ERR_PARAMETER_INVALID",
+        return build_error(ERR_PARAMETER_INVALID,
             f"shell_type仅支持powershell/cmd，当前值: '{shell_type}'")
     if not command or not command.strip():
-        return build_error("ERR_PARAMETER_EMPTY", "command不能为空")
+        return build_error(ERR_PARAMETER_EMPTY, "command不能为空")
     if cwd is not None and not os.path.isdir(cwd):
-        return build_error("ERR_PARAMETER_INVALID", f"工作目录不存在: {cwd}")
+        return build_error(ERR_PARAMETER_INVALID, f"工作目录不存在: {cwd}")
 
     timeout_sec = timeout / 1000.0
     env = None
@@ -136,7 +139,7 @@ def execute_shell_command(
     injection_error = _check_shell_injection(command)
     if injection_error:
         logger.warning(f"[Shell安全] 拦截高风险命令: {command[:200]}")
-        return build_error("ERR_SHELL_INJECTION", injection_error)
+        return build_error(ERR_SHELL_INJECTION, injection_error)
 
     # B1: 后台模式
     if run_in_background:
@@ -162,7 +165,7 @@ def execute_shell_command(
 
         return _build_shell_result(returncode, stdout_str, stderr_str, timed_out, timeout=timeout)
     except Exception as e:
-        return build_error("ERR_SHELL_EXCEPTION", f"命令执行异常: {str(e)}")
+        return build_error(ERR_SHELL_EXCEPTION, f"命令执行异常: {str(e)}")
 
 
 def _get_working_directory() -> dict:
@@ -170,7 +173,7 @@ def _get_working_directory() -> dict:
     try:
         return build_success({"path": os.getcwd()}, "成功获取当前工作目录")
     except Exception as e:
-        return build_error("ERR_SHELL_GET_CWD", f"获取工作目录失败: {str(e)}")
+        return build_error(ERR_SHELL_GET_CWD, f"获取工作目录失败: {str(e)}")
 
 
 def _check_path_exists(path: str) -> dict:
@@ -184,7 +187,7 @@ def _check_path_exists(path: str) -> dict:
             "路径存在" if exists else "路径不存在"
         )
     except Exception as e:
-        return build_error("ERR_SHELL_CHECK_PATH", f"检查路径失败: {str(e)}")
+        return build_error(ERR_SHELL_CHECK_PATH, f"检查路径失败: {str(e)}")
 
 def find_command(command: str, all_paths: bool = False) -> dict:
     """查找系统命令路径 - 小沈 2026-05-17
@@ -243,7 +246,7 @@ def find_command(command: str, all_paths: bool = False) -> dict:
                     f"命令 '{command}' 不可用"
                 )
     except Exception as e:
-        return build_error("ERR_SHELL_FIND_COMMAND", f"查找命令失败: {str(e)}")
+        return build_error(ERR_SHELL_FIND_COMMAND, f"查找命令失败: {str(e)}")
 
 
 def cleanup_background_shells() -> int:
@@ -279,10 +282,10 @@ def shell_session(
     if action == "output":
         shell_info = _background_shells.get(shell_id)
         if not shell_info:
-            return build_error("ERR_SHELL_NOT_FOUND", f"后台Shell会话不存在: {shell_id}")
+            return build_error(ERR_SHELL_NOT_FOUND, f"后台Shell会话不存在: {shell_id}")
         process = shell_info.get("process")
         if not process:
-            return build_error("ERR_SHELL_NOT_FOUND", f"后台Shell会话无进程: {shell_id}")
+            return build_error(ERR_SHELL_NOT_FOUND, f"后台Shell会话无进程: {shell_id}")
         stdout_str = _read_stream_nonblocking(process.stdout, "utf-8")
         stderr_str = _read_stream_nonblocking(process.stderr, "utf-8")
         is_running = process.poll() is None
@@ -291,6 +294,7 @@ def shell_session(
             _background_shells.pop(shell_id, None)
         if filter:
             import re as _re
+
             try:
                 pattern = _re.compile(filter)
                 stdout_lines = [l for l in stdout_str.splitlines() if pattern.search(l)]
@@ -314,7 +318,7 @@ def shell_session(
     elif action == "terminate":
         shell_info = _background_shells.get(shell_id)
         if not shell_info:
-            return build_error("ERR_SHELL_NOT_FOUND", f"后台Shell会话不存在: {shell_id}")
+            return build_error(ERR_SHELL_NOT_FOUND, f"后台Shell会话不存在: {shell_id}")
         process = shell_info.get("process")
         if not process:
             _background_shells.pop(shell_id, None)
@@ -350,4 +354,17 @@ def shell_session(
             ])
         )
     else:
-        return build_error("ERR_INVALID_ACTION", f"无效的操作类型: {action}，必须是 output 或 terminate")
+        return build_error(ERR_INVALID_ACTION, f"无效的操作类型: {action}，必须是 output 或 terminate")
+from app.constants import (
+    ERR_INVALID_ACTION,
+    ERR_PARAMETER_EMPTY,
+    ERR_PARAMETER_INVALID,
+    ERR_SHELL_CHECK_PATH,
+    ERR_SHELL_EXCEPTION,
+    ERR_SHELL_EXEC,
+    ERR_SHELL_FIND_COMMAND,
+    ERR_SHELL_GET_CWD,
+    ERR_SHELL_INJECTION,
+    ERR_SHELL_NOT_FOUND,
+    ERR_SHELL_TIMEOUT,
+)
