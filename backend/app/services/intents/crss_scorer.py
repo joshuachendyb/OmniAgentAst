@@ -14,9 +14,10 @@ import re
 import logging
 from typing import Dict, List, Optional, Tuple
 
+from app.constants import CRSS_ACTION_INFERENCE_WEIGHT, CRSS_ACTION_MODULATION_FACTOR, CRSS_DANGEROUS_COMMAND_BONUS
 from app.services.tools.registry import ToolCategory
 
-from app.constants import CRSS_DANGEROUS_COMMAND_BONUS, CRSS_ACTION_MODULATION_FACTOR, CRSS_ACTION_INFERENCE_WEIGHT
+
 
 logger = logging.getLogger(__name__)
 
@@ -336,4 +337,5 @@ __all__ = [
     'detect_intent_v2',
     'CRSS_CONFIDENCE_THRESHOLD',
 ]
+
 
