@@ -25,6 +25,7 @@ import os
 from typing import Any, Optional, List, Dict
 
 from app.constants import DEFAULT_LLM_TIMEOUT
+from app.services.intents.crss_scorer import INTENT_NAMES
 
 # ============== 配置加载 ==============
 # 【修复 2026-04-20 小沈】意图分类器使用固定模型，不受用户切换AI影响
@@ -63,14 +64,20 @@ def _load_intent_config() -> dict:
 
 INTENT_CLASSIFIER_CONFIG = _load_intent_config()
 
-# ============== 意图定义（从labels动态生成）==============
+# ============== 意图定义 ==============
+# 主意图类型从crss_scorer.INTENT_NAMES获取（单一来源）
+# 描述文本在此维护（LLM prompt用自然语言，与crss_scorer的regex关键词不同）
 
-_INTENT_DEFINITIONS = {
+_INTENT_DESCRIPTIONS = {
     "file": "文件操作，包括查看目录、浏览文件、打开磁盘(C盘/D盘/E盘)、打开文件夹、列出文件、读取/保存/删除/复制/移动文件等",
     "system": "系统操作，包括命令执行(npm/pip/git/docker)、时间日期、环境变量、系统信息(CPU/内存/磁盘/进程/服务)、代码执行等",
     "network": "网络操作，包括ping/curl/wget/ssh等网络工具、端口扫描、HTTP请求、API调用、下载文件、FTP操作等",
     "desktop": "桌面操作，包括截图、截屏、窗口管理、打开应用程序、模拟按键、鼠标点击等",
     "document": "文档读写和数据库，包括读取/创建/编辑docx、pdf、txt、md等文档文件、SQL查询、数据库操作等",
+}
+
+# 已合并的旧意图别名（保留向后兼容）
+_INTENT_ALIASES = {
     "shell": "（已合并到system）命令执行操作",
     "meta": "（已合并到system）时间日期和元信息",
     "time": "（已合并到system）时间日期操作",
@@ -79,6 +86,12 @@ _INTENT_DEFINITIONS = {
     "database": "（已合并到document）数据库操作",
     "code_execution": "（已合并到system）代码执行操作",
 }
+
+_INTENT_DEFINITIONS = {
+    name.lower(): _INTENT_DESCRIPTIONS.get(name.lower(), f"{name}操作")
+    for name in INTENT_NAMES
+}
+_INTENT_DEFINITIONS.update(_INTENT_ALIASES)
 
 
 def _extract_json_balanced(content: str) -> Optional[str]:
