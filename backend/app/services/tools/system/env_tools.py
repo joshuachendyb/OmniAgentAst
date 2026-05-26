@@ -30,6 +30,9 @@ from app.services.tools.tool_result_utils import build_next_actions  # 小沈 20
 from app.services.tools._response import build_success, build_error
 
 
+
+
+
 def _list_env_vars(prefix: Optional[str] = None) -> dict:
     """列出环境变量（原 list_env 逻辑，独立方法）
 
@@ -54,7 +57,7 @@ def _list_env_vars(prefix: Optional[str] = None) -> dict:
             next_actions=build_next_actions([("set_env", "设置环境变量", "需要修改环境变量时")]))
     except Exception as e:
         logger.error(f"[list_env] 列出环境变量失败: {e}")
-        return build_error("ERR_SYS_ENV_LIST", f"列出环境变量失败: {str(e)}")
+        return build_error(ERR_SYS_ENV_LIST, f"列出环境变量失败: {str(e)}")
 
 
 def _get_env_by_scope(name: str, scope: str) -> Optional[str]:
@@ -99,12 +102,12 @@ def get_env(name: Optional[str] = None, scope: str = "process",
         {code, data, message}
     """
     if action not in ("get", "list"):
-        return build_error("ERR_SYS_ENV_INVALID_ACTION", f"无效的action: {action}，支持: get/list")
+        return build_error(ERR_SYS_ENV_INVALID_ACTION, f"无效的action: {action}，支持: get/list")
     if action == "list":
         return _list_env_vars(prefix)
 
     if not name:
-        return build_error("ERR_SYS_ENV_INVALID_NAME", "action='get'时name参数必填")
+        return build_error(ERR_SYS_ENV_INVALID_NAME, "action='get'时name参数必填")
 
     try:
         value = _get_env_by_scope(name, scope)
@@ -122,7 +125,7 @@ def get_env(name: Optional[str] = None, scope: str = "process",
 
     except Exception as e:
         logger.error(f"[get_env] 获取环境变量失败: {e}")
-        return build_error("ERR_SYS_ENV_GET", f"获取环境变量失败: {str(e)}")
+        return build_error(ERR_SYS_ENV_GET, f"获取环境变量失败: {str(e)}")
 
 
 def _env_success(name: str, value: Any, scope: str, deleted: bool = False,
@@ -166,6 +169,7 @@ def _read_env(name: str, scope: str = "process") -> Optional[str]:
         return os.environ.get(name)
     try:
         import winreg
+
         hive = winreg.HKEY_CURRENT_USER if scope == "user" else winreg.HKEY_LOCAL_MACHINE
         path = r"Environment" if scope == "user" else r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
         key = winreg.OpenKey(hive, path, 0, winreg.KEY_READ)
@@ -216,15 +220,15 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
         {code, data, message}
     """
     if not name or not name.strip():
-        return build_error("ERR_SYS_ENV_INVALID_NAME", "环境变量名称不能为空")
+        return build_error(ERR_SYS_ENV_INVALID_NAME, "环境变量名称不能为空")
     if action not in ("set", "delete"):
-        return build_error("ERR_SYS_ENV_INVALID_ACTION", f"无效的action: {action}")
+        return build_error(ERR_SYS_ENV_INVALID_ACTION, f"无效的action: {action}")
     if action == "delete":
         return _delete_env(name, scope)
     if value is None:
-        return build_error("ERR_SYS_ENV_INVALID_VALUE", "环境变量值不能为None")
+        return build_error(ERR_SYS_ENV_INVALID_VALUE, "环境变量值不能为None")
     if scope not in ("process", "user", "system"):
-        return build_error("ERR_SYS_ENV_INVALID_SCOPE", f"无效的作用域: {scope}")
+        return build_error(ERR_SYS_ENV_INVALID_SCOPE, f"无效的作用域: {scope}")
 
     existing = _read_env(name, scope)
     if existing == value:
@@ -247,3 +251,11 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
     return _env_success(name, effective, actual_scope, append_mode=append_mode, msg=msg)
 
 
+from app.constants import (
+    ERR_SYS_ENV_GET,
+    ERR_SYS_ENV_INVALID_ACTION,
+    ERR_SYS_ENV_INVALID_NAME,
+    ERR_SYS_ENV_INVALID_SCOPE,
+    ERR_SYS_ENV_INVALID_VALUE,
+    ERR_SYS_ENV_LIST,
+)
