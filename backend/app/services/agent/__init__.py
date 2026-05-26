@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 # ============================================================================
 # 新框架导出（无循环依赖）
 # ============================================================================
-from app.services.preprocessing import PreprocessingPipeline, TextCorrector, IntentClassifier
+from app.services.preprocessing import TextCorrector, IntentClassifier
 from .base_react import BaseAgent
 
 from .tool_executor import ToolExecutor
@@ -88,7 +88,6 @@ __all__ = [
     # 新框架
     "BaseAgent",
     "ToolExecutor",
-    "PreprocessingPipeline",
     "TextCorrector",
     "IntentClassifier",
     "SessionServiceBase",

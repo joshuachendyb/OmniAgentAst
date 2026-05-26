@@ -645,20 +645,6 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: O
     return None  # 所有异常汇聚到唯一 return None
 
 
-async def _search_parallel_mcp(query: str, num_results: int, proxy: Optional[str] = None) -> Optional[List[dict]]:
-    """Parallel MCP搜索 - 小健 2026-05-16
-    【2026-05-17 小沈 已弃用】请使用 _search_mcp_engine("parallel", query, num_results, proxy) 代替
-    """
-    return await _search_mcp_engine("parallel", query, num_results, proxy)
-
-
-async def _search_exa_mcp(query: str, num_results: int, proxy: Optional[str] = None) -> Optional[List[dict]]:
-    """Exa MCP搜索 - 小健 2026-05-16
-    【2026-05-17 小沈 已弃用】请使用 _search_mcp_engine("exa", query, num_results, proxy) 代替
-    """
-    return await _search_mcp_engine("exa", query, num_results, proxy)
-
-
 async def search_web(
     query: str,
     allowed_domains: Optional[List[str]] = None,
@@ -672,13 +658,13 @@ async def search_web(
             return build_error(ERR_PARAM_INVALID, "搜索查询至少需要2个字符")
         
     # ===== 第一引擎：Parallel MCP =====
-        results = await _search_parallel_mcp(query, num_results, proxy)
+        results = await _search_mcp_engine("parallel", query, num_results, proxy)
         engine_used = "Parallel"
         
         # ===== 第二引擎：Exa MCP =====
         if results is None:
             logger.info("[search_web] Parallel失败，降级到Exa MCP搜索")
-            results = await _search_exa_mcp(query, num_results, proxy)
+            results = await _search_mcp_engine("exa", query, num_results, proxy)
             engine_used = "Exa"
         
         # ===== 第三引擎：Bing中国 =====

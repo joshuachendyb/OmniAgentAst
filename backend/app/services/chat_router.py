@@ -12,10 +12,9 @@ Chat Router - 路由层
 - 第三层：file_react.py / network_react.py / desktop_react.py - 意图特定 Agent
 - 第四层：base_react.py - 通用 ReAct 逻辑
 
-【6步流程】
-步骤1: 预处理 (PreprocessingPipeline)
-步骤2: 意图检测 (IntentRegistry)
-步骤3: 初始化 (ai_service/next_step/running_tasks/current_execution_steps)
+【5步流程】
+步骤1: 意图检测 (IntentRegistry)
+步骤2: 初始化 (ai_service/next_step/running_tasks/current_execution_steps)
 步骤4: 安全检测 (security_check)
 步骤5: start步骤 (start_step)
 步骤6: 调用 react_sse_wrapper（由第二层内部根据intent_type分发）
@@ -37,7 +36,6 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.services.preprocessing.pipeline import PreprocessingPipeline
 from app.services import AIServiceFactory
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_step_counter
@@ -179,7 +177,7 @@ async def chat_stream_v2(request: ChatRequest):
     步骤1: 预处理 (PreprocessingPipeline)
     步骤2: 意图检测 (IntentRegistry)
     步骤3: 初始化
-    步骤4: 安全检测 (security_check)
+
     步骤5: start步骤 (start_step)
     步骤6: 分发到Agent
     """
@@ -239,7 +237,7 @@ class ChatRouter:
     """
 
     def __init__(self) -> None:
-        self.preprocessing = PreprocessingPipeline()
+        pass
 
     async def _detect_intent(self, user_input: str) -> Tuple[str, str, float, List[str]]:
         """两阶段意图检测 + 闲聊/network降级。返回 (intent_type, source, confidence, candidates) — 小沈 2026-05-25 重构"""
@@ -274,21 +272,18 @@ class ChatRouter:
         max_steps: int = DEFAULT_MAX_STEPS,
         ai_service: Optional[Any] = None
     ) -> AsyncGenerator[str, None]:
-        """6步路由：预处理→意图检测→初始化→安全检测→start_step→ReAct — 小沈 2026-05-25 重构"""
-        # S1 预处理
-        await self.preprocessing.process(user_input=user_input, session_id=session_id)
-
-        # S2 意图检测
+        """5步路由：意图检测→初始化→安全检测→start_step→ReAct — 小沈 2026-05-27 清理"""
+        # S1 意图检测
         intent_type, source, confidence, candidates = await self._detect_intent(user_input)
         logger.info(f"[ChatRouter] intent_type={intent_type}({source}), conf={confidence:.2f}")
 
-        # S3 初始化
+        # S2 初始化
         task_id, ai_service, running_tasks, running_tasks_lock = self._init_route_context(
             provider, model, ai_service, session_id)
         next_step = create_step_counter()
         execution_steps: List[Dict] = []
 
-        # S4 start_step — 安全检查统一在react_sse_wrapper中执行，此处不重复检查
+        # S3 start_step — 安全检查统一在react_sse_wrapper中执行，此处不重复检查
         try:
             def yield_sse(data: dict) -> str:
                 return f"data: {json.dumps(data)}\n\n"
@@ -302,7 +297,7 @@ class ChatRouter:
             yield create_error_response(error_type="start_failed", error_message=f"start步骤失败: {e}")
             return
 
-        # S6 ReAct 循环（所有意图统一路由）
+        # S4 ReAct 循环（所有意图统一路由）
         from app.services.react_sse_wrapper import generate_sse_stream
         messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
         async for event in generate_sse_stream(messages=messages, intent_type=intent_type,

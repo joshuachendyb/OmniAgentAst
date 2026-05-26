@@ -807,20 +807,4 @@ def get_risk_message(score: int, command: str = "") -> str:
         return "危险操作已被系统拦截"
 
 
-# =============================================================================
-# 方案4：命令语义解析器
-# 已移至独立模块 app/services/command_parser/
-# 设计文档：CRSS评分系统深度分析与改进方案-2026-04-20.md 3.4节
-# =============================================================================
 
-# 从独立模块导入
-from app.services.command_parser import (
-    parse_command_semantics,
-    generate_risk_suggestions,
-    parse_operation_type_v2,
-    parse_operation_target_v2,
-    parse_impact_scope,
-    OPERATION_WEIGHTS,
-    TARGET_WEIGHTS,
-    SCOPE_MULTIPLIERS,
-)
