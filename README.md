@@ -204,71 +204,110 @@ OmniAgentAs-desk/
 
 ### 6.2 初次安装（新人从零开始）
 
-需要 **两个终端同时运行**，一个跑后端、一个跑前端。
+> **前提**：已下载项目代码，打开命令行（PowerShell / cmd），`cd` 到项目文件夹（如 `cd D:\OmniAgentAs-desk`）。
+
+后端和前端需要**同时运行**，所以要开**两个命令行窗口**。
 
 ---
 
-#### 终端 1 — 后端（任选一种方式）
+#### 窗口 1 — 后端（选一种方式）
 
-**方式 A：虚拟环境（推荐）**
+先进入后端目录：
 
 ```bash
 cd backend
-python -m venv .venv              # ① 创建虚拟环境（仅首次）
-.venv\Scripts\pip install -r requirements.txt  # ② 安装依赖
-.venv\Scripts\python -m uvicorn app.main:app --reload --port 8000  # ③ 启动
 ```
+
+**方式 A（推荐）：虚拟环境**
+
+```bash
+# ① 创建虚拟环境（仅第一次需要）
+python -m venv .venv
+
+# ② 安装依赖（仅第一次需要）
+.venv\Scripts\pip install -r requirements.txt
+
+# ③ 启动后端服务
+.venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
+```
+
+> 启动 uvicorn 后这个窗口**不要关闭**，它要一直运行。
 
 **方式 B：全局 Python（不用虚拟环境）**
 
 ```bash
-cd backend
-pip install -r requirements.txt              # ① 安装依赖
-python -m uvicorn app.main:app --reload --port 8000  # ② 启动
-```
+# ① 安装依赖（仅第一次需要）
+pip install -r requirements.txt
 
-> 方式 B 的包装到全局，不同项目依赖版本不同时可能冲突。
-
----
-
-#### 终端 2 — 前端（两种方式都一样）
-
-```bash
-cd frontend
-npm install            # ① 安装依赖（仅首次）
-npm run dev            # ② 启动
-```
-
----
-
-启动后访问：
-- 后端 API: `http://127.0.0.1:8000`
-- API 文档: `http://127.0.0.1:8000/docs`
-- 前端页面: `http://localhost:5173`
-
-### 6.2a 日常运行（已有环境）
-
-同样需要 **两个终端同时运行**。
-
-#### 终端 1 — 后端
-
-**方式 A：虚拟环境**
-```bash
-cd backend
-.venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
-```
-
-**方式 B：全局 Python**
-```bash
-cd backend
+# ② 启动后端服务
 python -m uvicorn app.main:app --reload --port 8000
 ```
 
-#### 终端 2 — 前端
+> 方式 B 的包装到全局，不同项目依赖版本不同时可能冲突。
+> 启动后这个窗口**同样不要关闭**。
+
+---
+
+#### 窗口 2 — 前端（两种方式一样）
+
+再开一个命令行窗口，同样先 `cd` 到项目文件夹，然后：
+
+```bash
+cd frontend
+
+# ① 安装依赖（仅第一次需要）
+npm install
+
+# ② 启动前端开发服务器
+npm run dev
+```
+
+> 这个窗口启动后**也不要关闭**。
+
+---
+
+#### 打开浏览器访问
+
+| 地址 | 说明 |
+|------|------|
+| http://localhost:5173 | 前端页面 |
+| http://127.0.0.1:8000 | 后端 API |
+| http://127.0.0.1:8000/docs | API 交互式文档 |
+
+---
+
+### 6.2a 日常运行（第二次及以后）
+
+不用再装依赖了，直接启动就行。同样开**两个命令行窗口**，先 `cd` 到项目文件夹。
+
+#### 窗口 1 — 后端
+
+```bash
+cd backend
+```
+
+**虚拟环境方式：**
+
+```bash
+.venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
+```
+
+**全局 Python 方式：**
+
+```bash
+python -m uvicorn app.main:app --reload --port 8000
+```
+
+> 启动后窗口 1 不要关闭。
+
+#### 窗口 2 — 前端
+
 ```bash
 cd frontend
 npm run dev
 ```
+
+> 启动后窗口 2 不要关闭。
 
 ### 6.3 可选依赖（二级工具）
 
