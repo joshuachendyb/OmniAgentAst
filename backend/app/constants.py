@@ -172,6 +172,50 @@ CRSS_DANGEROUS_COMMAND_BONUS = 3.0  # 危险命令额外加分
 CRSS_ACTION_MODULATION_FACTOR = 0.3  # 动作兼容调制因子
 CRSS_ACTION_INFERENCE_WEIGHT = 0.5  # 动作推类型权重
 
+# ============================================================
+# 10. 字符串模式→错误响应映射表（error_handler数据驱动）
+#     替换 get_function_call_error_info P3a-P3f 6个if/elif
+# ============================================================
+
+PATTERN_ERROR_ENTRIES = [
+    {"types": ["TimeoutError"], "keywords": ["timeout"],
+     "code": "TIMEOUT", "msg_key": "timeout_error", "retryable": True, "retry_after": 5},
+    {"types": ["ConnectionError"], "keywords": ["connection"],
+     "code": "CONNECTION_ERROR", "msg_key": "connect_error", "retryable": True, "retry_after": 10},
+    {"types": ["HTTPError"], "keywords": ["http"],
+     "code": "HTTP_ERROR", "msg_key": "http_error", "retryable": True, "retry_after": 10},
+    {"types": ["ValueError"], "keywords": [],
+     "code": "VALIDATION_ERROR", "msg_key": "validation_error", "retryable": False},
+    {"types": [], "keywords": ["not found", "不存在"],
+     "code": "NOT_FOUND", "msg_key": "not_found", "retryable": False},
+    {"types": [], "keywords": ["permission", "权限"],
+     "code": "PERMISSION_DENIED", "msg_key": "permission_denied", "retryable": False},
+]
+
+# ============================================================
+# 11. HTTP状态码/关键词→错误响应映射表（error_handler数据驱动）
+#     替换 get_function_call_error_info P3g-P3n 8个if/elif
+# ============================================================
+
+HTTP_STATUS_MAP_ENTRIES = [
+    {"codes": ["503"], "keywords": ["无可用渠道"],
+     "code": "API_CHANNEL_UNAVAILABLE", "msg_key": "api_error_503", "retryable": False},
+    {"codes": ["429"], "keywords": ["rate limit", "limit_error", "配额"],
+     "code": "RATE_LIMIT_EXCEEDED", "msg_key": "api_error_429", "retryable": True, "retry_after": 30},
+    {"codes": ["401"], "keywords": ["认证", "unauthorized"],
+     "code": "AUTH_FAILED", "msg_key": "api_error_401", "retryable": False},
+    {"codes": ["403"], "keywords": ["forbidden"],
+     "code": "FORBIDDEN", "msg_key": "api_error_403", "retryable": False},
+    {"codes": ["400"], "keywords": [],
+     "code": "BAD_REQUEST", "msg_key": "api_error_400", "retryable": False},
+    {"codes": ["500"], "keywords": [],
+     "code": "SERVER_ERROR", "msg_key": "api_error_500", "retryable": True, "retry_after": 10},
+    {"codes": ["502"], "keywords": ["bad gateway"],
+     "code": "BAD_GATEWAY", "msg_key": "api_error_502", "retryable": True, "retry_after": 10},
+    {"codes": ["504"], "keywords": [],
+     "code": "GATEWAY_TIMEOUT", "msg_key": "api_error_504", "retryable": True, "retry_after": 15},
+]
+
 HTTPX_EXCEPTION_TO_ERROR_KEY = {
     "ConnectError": "connect_error",
     "ProtocolError": "protocol_error",

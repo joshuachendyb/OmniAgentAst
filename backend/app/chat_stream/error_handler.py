@@ -8,31 +8,10 @@ Author: 小沈 - 2026-03-22
 """
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from app.chat_stream.chat_helpers import create_timestamp
-from app.constants import ERROR_TYPE_MAP, HTTPX_EXCEPTION_TO_ERROR_KEY
-
-
-# 替换 P3g-P3n 8 个 if/elif 的数据表
-HTTP_STATUS_MAP_ENTRIES: List[Dict[str, Any]] = [
-    {"codes": ["503"], "keywords": ["无可用渠道"],
-     "code": "API_CHANNEL_UNAVAILABLE", "msg_key": "api_error_503", "retryable": False},
-    {"codes": ["429"], "keywords": ["rate limit", "limit_error", "配额"],
-     "code": "RATE_LIMIT_EXCEEDED", "msg_key": "api_error_429", "retryable": True, "retry_after": 30},
-    {"codes": ["401"], "keywords": ["认证", "unauthorized"],
-     "code": "AUTH_FAILED", "msg_key": "api_error_401", "retryable": False},
-    {"codes": ["403"], "keywords": ["forbidden"],
-     "code": "FORBIDDEN", "msg_key": "api_error_403", "retryable": False},
-    {"codes": ["400"], "keywords": [],
-     "code": "BAD_REQUEST", "msg_key": "api_error_400", "retryable": False},
-    {"codes": ["500"], "keywords": [],
-     "code": "SERVER_ERROR", "msg_key": "api_error_500", "retryable": True, "retry_after": 10},
-    {"codes": ["502"], "keywords": ["bad gateway"],
-     "code": "BAD_GATEWAY", "msg_key": "api_error_502", "retryable": True, "retry_after": 10},
-    {"codes": ["504"], "keywords": [],
-     "code": "GATEWAY_TIMEOUT", "msg_key": "api_error_504", "retryable": True, "retry_after": 15},
-]
+from app.constants import ERROR_TYPE_MAP, HTTPX_EXCEPTION_TO_ERROR_KEY, PATTERN_ERROR_ENTRIES, HTTP_STATUS_MAP_ENTRIES
 
 
 def _build_error_response(code: str, msg_key: str, retryable: bool,
@@ -178,21 +157,14 @@ def get_function_call_error_info(error: Exception) -> Dict[str, Any]:
         return _build_error_response(error_type.upper(), msg_key,
                                       retryable=True, retry_after=retry_after)
 
-    # P3: 字符串模式匹配 — 异常类型优先，消息降级
-    if error_type == "TimeoutError" or "timeout" in error_msg:
-        return _build_error_response("TIMEOUT", "timeout_error", retryable=True, retry_after=5)
-    if error_type == "ConnectionError" or "connection" in error_msg:
-        return _build_error_response("CONNECTION_ERROR", "connect_error", retryable=True, retry_after=10)
-    if error_type == "HTTPError" or "http" in error_msg:
-        return _build_error_response("HTTP_ERROR", "http_error", retryable=True, retry_after=10)
-    if error_type == "ValueError":
-        return _build_error_response("VALIDATION_ERROR", "validation_error", retryable=False)
-    if "not found" in error_msg or "不存在" in error_msg:
-        return _build_error_response("NOT_FOUND", "not_found", retryable=False)
-    if "permission" in error_msg or "权限" in error_msg:
-        return _build_error_response("PERMISSION_DENIED", "permission_denied", retryable=False)
+    # P3: 字符串模式匹配 — 数据表驱动（替换原6个if/elif P3a-P3f）
+    for entry in PATTERN_ERROR_ENTRIES:
+        if error_type in entry["types"] or \
+           any(kw in error_msg for kw in entry["keywords"]):
+            return _build_error_response(entry["code"], entry["msg_key"],
+                                          entry["retryable"], entry.get("retry_after"))
 
-    # P3g-P3n: HTTP 状态码/关键词 → 查 HTTP_STATUS_MAP_ENTRIES 数据表
+    # P4: HTTP 状态码/关键词 → 查 HTTP_STATUS_MAP_ENTRIES 数据表
     for entry in HTTP_STATUS_MAP_ENTRIES:
         if any(code in error_msg for code in entry["codes"]) or \
            any(kw in error_msg for kw in entry.get("keywords", [])):
