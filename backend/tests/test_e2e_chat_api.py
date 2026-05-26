@@ -1,0 +1,304 @@
+"""
+端到端测试 - 真实模拟前端发消息给后端API
+编写人：小沈 - 2026-05-13
+【修复 2026-05-26 小沈】去掉pytest.mark.skip，修复Windows async兼容性
+
+测试方式：
+1. 启动FastAPI应用（通过ASGITransport，不调真实LLM）
+2. 模拟LLM API的httpx响应（mock AIServiceFactory.get_service + BaseAIService）
+3. 发送真实HTTP POST请求到 /chat/stream/v2
+4. 接收并验证SSE流式响应
+5. 覆盖完整链路：路由→意图检测→Agent创建→SSE格式化→输出
+
+注意：只mock最外层的LLM HTTP调用，内部全部走真实代码
+"""
+
+import sys
+import asyncio
+import pytest
+import json
+from unittest.mock import patch, MagicMock, AsyncMock
+from httpx import AsyncClient, ASGITransport
+from app.main import app
+from app.services.llm_core import BaseAIService, StreamChunk, ChatResponse
+
+
+# ============================================================
+# Windows 事件循环策略（避免Windows上asyncio子进程/超时问题）
+# ============================================================
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+
+# ============================================================
+# Mock LLM - 替换AI服务的chat_stream返回mock数据
+# ============================================================
+
+@pytest.fixture(autouse=True)
+def mock_llm():
+    """
+    替换BaseAIService.chat_stream为mock版本
+    后端完整链路（路由→意图检测→Agent创建→SSE输出）全部走真实代码
+    只替换最底层的LLM流式响应返回mock数据
+    """
+    async def mock_chat_stream(self, message, history=None):
+        yield StreamChunk(
+            content='你好！我是AI助手。',
+            model=self.model,
+            is_reasoning=False
+        )
+        yield StreamChunk(content='', model=self.model, is_done=True)
+
+    async def mock_chat(self, message, history=None):
+        return ChatResponse(
+            content='你好！我是AI助手。',
+            model=self.model,
+            provider=self.provider
+        )
+
+    async def mock_chat_with_tools(self, message, history=None, tools=None, tool_choice="auto"):
+        return ChatResponse(
+            content='{"tool_name":"finish","tool_params":{"result":"done"}}',
+            model=self.model,
+            provider=self.provider
+        )
+
+    # 【修复 2026-05-26 小沈】仅patch BaseAIService方法，让AIServiceFactory创建真实实例
+    with patch.object(BaseAIService, 'chat_stream', mock_chat_stream), \
+         patch.object(BaseAIService, 'chat', mock_chat), \
+         patch.object(BaseAIService, 'chat_with_tools', mock_chat_with_tools):
+        yield
+
+
+# ============================================================
+# 端到端测试
+# ============================================================
+
+class TestEndToEndChatAPI:
+    """端到端测试 - 模拟前端发消息"""
+
+    @pytest.mark.asyncio
+    async def test_chat_basic_greeting(self, mock_llm):
+        """测试普通问候"""
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/chat/stream/v2",
+                json={
+                    "messages": [{"role": "user", "content": "你好"}],
+                    "stream": True
+                },
+                timeout=30
+            )
+            assert response.status_code == 200
+            assert "text/event-stream" in response.headers.get("content-type", "")
+            text = response.text
+            assert "data: " in text
+            print(f"  HTTP 200, content-type={response.headers.get('content-type')}")
+            print(f"  响应前100字: {text[:100]}")
+
+    @pytest.mark.asyncio
+    async def test_chat_stream_has_sse_format(self, mock_llm):
+        """验证SSE每行都是有效的 data: 格式"""
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/chat/stream/v2",
+                json={
+                    "messages": [{"role": "user", "content": "今天天气怎么样"}],
+                    "stream": True
+                },
+                timeout=30
+            )
+            assert response.status_code == 200
+
+            lines = response.text.strip().split('\n')
+            sse_events = []
+            for line in lines:
+                line = line.strip()
+                if line.startswith("data: "):
+                    try:
+                        data = json.loads(line[6:])
+                        sse_events.append(data)
+                    except json.JSONDecodeError:
+                        pass
+
+            assert len(sse_events) > 0
+            assert sse_events[0]["type"] == "start"
+            for evt in sse_events:
+                assert "type" in evt
+                assert "step" in evt
+            print(f"  SSE事件数: {len(sse_events)}")
+            print(f"  事件类型: {[e['type'] for e in sse_events]}")
+
+    @pytest.mark.asyncio
+    async def test_chat_step_numbering(self, mock_llm):
+        """验证step递增"""
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/chat/stream/v2",
+                json={
+                    "messages": [{"role": "user", "content": "现在几点了"}],
+                    "stream": True
+                },
+                timeout=30
+            )
+            lines = response.text.strip().split('\n')
+            steps = []
+            for line in lines:
+                if line.startswith("data: "):
+                    try:
+                        data = json.loads(line[6:])
+                        steps.append((data["type"], data["step"]))
+                    except:
+                        pass
+
+            step_nums = [s[1] for s in steps]
+            assert step_nums == list(range(1, len(steps) + 1)), f"step应递增: {step_nums}"
+            print(f"  step序列: {step_nums}")
+
+    @pytest.mark.asyncio
+    async def test_chat_with_long_message(self, mock_llm):
+        """测试长文本输入"""
+
+        long_msg = "请详细介绍一下人工智能的发展历史" * 10
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/chat/stream/v2",
+                json={
+                    "messages": [{"role": "user", "content": long_msg}],
+                    "stream": True
+                },
+                timeout=30
+            )
+            assert response.status_code == 200
+            lines = response.text.strip().split('\n')
+            sse_count = sum(1 for l in lines if l.startswith("data: ") and "[DONE]" not in l)
+            assert sse_count > 0
+            print(f"  长文本: 输入{len(long_msg)}字, SSE事件{sse_count}个")
+
+    @pytest.mark.asyncio
+    async def test_chat_empty_message(self, mock_llm):
+        """测试空消息"""
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/chat/stream/v2",
+                json={
+                    "messages": [{"role": "user", "content": ""}],
+                    "stream": True
+                },
+                timeout=30
+            )
+            print(f"  空消息响应码: {response.status_code}")
+
+    @pytest.mark.asyncio
+    async def test_chat_multi_turn(self, mock_llm):
+        """模拟多轮对话"""
+        transport = ASGITransport(app=app)
+
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp1 = await client.post(
+                "/api/v1/chat/stream/v2",
+                json={
+                    "messages": [{"role": "user", "content": "你好"}],
+                    "stream": True,
+                    "session_id": "e2e-test-session"
+                },
+                timeout=30
+            )
+            assert resp1.status_code == 200
+
+            resp2 = await client.post(
+                "/api/v1/chat/stream/v2",
+                json={
+                    "messages": [
+                        {"role": "user", "content": "你好"},
+                        {"role": "assistant", "content": "你好！"},
+                        {"role": "user", "content": "今天天气怎么样"}
+                    ],
+                    "stream": True,
+                    "session_id": "e2e-test-session"
+                },
+                timeout=30
+            )
+            assert resp2.status_code == 200
+            lines2 = resp2.text.strip().split('\n')
+            sse2 = [json.loads(l[6:]) for l in lines2 if l.startswith("data: ") and l[6:].strip()]
+            types2 = [e["type"] for e in sse2]
+            print(f"  多轮对话SSE类型: {types2}")
+
+    @pytest.mark.asyncio
+    async def test_chat_special_characters(self, mock_llm):
+        """测试特殊字符输入"""
+
+        special_msgs = [
+            "Hello World! @#$%^&*()",
+            "line1\nline2\nline3",
+            "<script>alert('xss')</script>",
+            "  前后空格  ",
+            "中文English混合123!@#",
+        ]
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            for msg in special_msgs:
+                response = await client.post(
+                    "/api/v1/chat/stream/v2",
+                    json={
+                        "messages": [{"role": "user", "content": msg}],
+                        "stream": True
+                    },
+                    timeout=30
+                )
+                assert response.status_code == 200
+                print(f"  特殊字符[{msg[:30]}]: HTTP {response.status_code}")
+
+    @pytest.mark.asyncio
+    async def test_health_endpoint(self, mock_llm):
+        """验证服务健康检查"""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/v1/health")
+            assert response.status_code == 200
+            data = response.json()
+            assert "status" in data
+            print(f"  Health: {data}")
+
+    @pytest.mark.asyncio
+    async def test_chat_sse_contains_start_step(self, mock_llm):
+        """验证SSE流第一个事件是start类型"""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/chat/stream/v2",
+                json={
+                    "messages": [{"role": "user", "content": "测试start步骤"}],
+                    "stream": True
+                },
+                timeout=30
+            )
+            lines = response.text.strip().split('\n')
+            first_data = None
+            for l in lines:
+                if l.startswith("data: ") and l[6:].strip():
+                    try:
+                        first_data = json.loads(l[6:])
+                        break
+                    except:
+                        pass
+            assert first_data is not None
+            assert first_data["type"] == "start", f"第一个事件应为start: {first_data['type']}"
+            print(f"  首个事件: type={first_data['type']}, step={first_data.get('step')}")
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v", "-s"])
