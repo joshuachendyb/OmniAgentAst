@@ -23,7 +23,7 @@
   return build_success(data, msg, next_actions=build_next_actions([...]))
 
   # 错误
-  return build_error("ERR_FILE_NOT_FOUND", f"文件不存在: {fp}")
+  return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {fp}")
 
   # 警告(成功但有风险)
   return build_success(data, msg, warning="文件较大，内容已截断")
@@ -31,6 +31,7 @@
   # 未来扩展(无需改此文件)
   return build_success(data, msg, new_field_2027="...")
 """
+from app.constants import ERR_FILE_NOT_FOUND
 from typing import Any, Dict, Optional, List
 
 SUCCESS_CODE = "SUCCESS"
@@ -206,6 +207,7 @@ def extract_status(result: Dict[str, Any]) -> str:
         status = "error"
 
     return status
+
 
 
 
