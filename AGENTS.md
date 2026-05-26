@@ -1,18 +1,13 @@
 # AGENTS.md - OmniAgentAs-desk
 
-**Version**: v0.13.33 | **Project**: Full-stack (React+FastAPI) AI agent desktop
-
 > Global rules (roles, timestamps, commit format, versioning, doc style) are in `C:\Users\chend\.config\opencode\AGENTS.md` (auto-loaded).
 > This file contains **project-specific** info only.
 
 ---
 
-## 编码铁规（必须遵守）
+## 1. 编码铁规（必须遵守）
 
-**生效时间**: 2026-05-26 06:40:00 | **适用范围**: 所有代码文件
-**更新人**: 北京老陈
-
-### 八大原则 — 日常5 + 重构再加3
+###  1.1 八大原则 — 日常5 + 重构再加3
 
 **日常编码必须遵守以下 5 条**：
 
@@ -32,12 +27,21 @@
 | **LSP** — 里氏替换 | 子类不违反父类约定 | 继承体系 |
 | **ISP** — 接口隔离 | 接口职责单一，不塞入不相关方法 | 多实现/插件系统 |
 
-### 违反后果
+### 1.2 违反后果
 上述原则是必须遵守的编码纪律。违反者代码被打回重写，直到符合原则为止。
 
+### 1.3制度性防护
+
+| # | 措施 | 目的 |
+|---|------|------|
+|1 | **禁止SKIPPED测试累积** — 任何重构必须同步更新测试，不得标记skip后搁置 | 防止测试腐烂 |
+|2 | **重构checklist** — 每次重构前必须：①grep所有调用方 ②检查返回格式一致性 ③检查导入路径 | 防止引入断裂点 |
+|3 | **格式铁律** — 所有工具函数返回统一用 `build_success()` / `build_error()`，旧格式函数加`@deprecated`装饰器 | 防止格式分裂 |
+|4 | **集成冒烟测试** — 每次提交前运行 `test_execution_chain.py`（chat_router完整链路 + 1个真实工具调用） | 防止验收时崩盘 |
 ---
 
-## System & Platform
+
+## 2 System & Platform
 
 - **OS**: Windows only. Use PowerShell. No Linux/macOS commands.
 - **Shell**: PowerShell 7+. Use `Select-String` instead of `grep`.
@@ -45,7 +49,7 @@
 
 ---
 
-## Commands
+## 3 Commands
 
 ### Backend (workdir=`backend/`)
 
@@ -70,7 +74,7 @@ npm run test:e2e     # Playwright
 
 ---
 
-## Architecture (Current)
+## 4 Architecture (Current)
 
 ### Backend: `backend/app/main.py` → FastAPI
 
@@ -105,7 +109,7 @@ npm run test:e2e     # Playwright
 
 ---
 
-## Project Structure
+## 5 Project Structure
 
 ```
 OmniAgentAs-desk/
@@ -139,7 +143,7 @@ OmniAgentAs-desk/
 
 ---
 
-## Key Dependencies
+## 6 Key Dependencies
 
 | Layer | Tech | Notes |
 |-------|------|-------|
@@ -154,20 +158,24 @@ OmniAgentAs-desk/
 
 ---
 
-## Known Pitfalls
+## 7  Known Pitfalls
 
 | Pitfall | Detail |
 |---------|--------|
 | **httpx version lock** | `httpx==0.26.0` + `httpcore==1.0.1` required. Don't upgrade. |
 | **Duplicate `__all__`** | Register files may have 2 `__all__` defs (second overwrites first). |
-| **`parsers/` is deprecated** | All files in `agent/parsers/` marked @deprecated. Use `react_output_parser.py` chain instead. |
 | **Tool impl vs registration** | Functions in `{cat}_tools.py`, registration in `{cat}_register.py`. Don't confuse them. |
 | **`_loaded_categories`** | Per-agent set for tool loading. Initialized to `{current_category, support_tool}`. |
-| **`check_date` renamed to `query_calendar`** | Old name no longer exists. |
+| **常量/枚举分散定义** | `ToolCategory` 值、Error Code 前缀等硬编码在多个文件，改分类名漏改一处就崩。集中定义在枚举/常量文件中，不要在各处写 magic string。 |
+| **模块迁移后测试引用旧路径** | 重构迁移方法/类后，测试文件仍 import 旧模块路径（如 `_tools_to_schema_text` → `MessageBuilder.build_schema_text`）。重构后必须 `grep` 所有引用并同步更新测试。 |
+| **构造器新增参数漏改调用方** | `FileTools(task_id=...)` 等构造器新增必需参数后，所有调用方（尤其测试中 ~69 处）都要改。变更签名前先 `grep` 定位全部调用方。 |
+| **`datetime.replace(hour=N)` 跨夜崩溃** | 凌晨运行时 `hour-N<0` 抛 `ValueError`。一律用 `timedelta`（如 `base_time - timedelta(hours=1)`）做相对时间运算。 |
+| **`finally` 中访问未绑定变量** | `try` 内 `raise` 后变量才赋值（如 `conn = get_connection()`），`finally` 访问导致 `UnboundLocalError`。在 `try` 前先 `conn = None` 初始化。 |
+| **工具函数返回 key 不统一** | 部分代码用 `{"status":...,"summary":...}`，有的用 `{"code":...,"message":...}`。已有铁规要求统一用 `build_success()/build_error()`，检查时重点核对。 |
 
 ---
 
-## Git Workflow
+## 8 Git Workflow
 
 ```bash
 # Commit format: <type>: <description> - <签名>-<日期>
@@ -180,7 +188,7 @@ OmniAgentAs-desk/
 
 `version.txt` is append-only, oldest at bottom.
 
----## Code Conventions
+---##  9 Code Conventions
 
 ### Python
 - snake_case functions/vars, PascalCase classes, UPPER_SNAKE_CASE constants
