@@ -197,9 +197,17 @@ OmniAgentAs-desk/
 | Node.js | ≥ 18.x | — |
 | npm | ≥ 9.0 | — |
 
-> **虚拟环境说明**：后端 Python 依赖必须用虚拟环境隔离（见下方 6.2 节创建方法），以下所有后端命令都基于虚拟环境。
+> **虚拟环境说明**：Python 后端强烈建议使用虚拟环境，原因：
+> 1. **隔离依赖** — 不同项目用不同版本的包，互不冲突（如项目A用pydantic 2.5、项目B用pydantic 2.13）
+> 2. **干净卸载** — 不要了直接删 `.venv` 目录，不影响全局 Python
+> 3. **环境可复现** — `requirements.txt` 一键装完，新同事 clone 下来就能跑
+>
+> 以下每种操作都列出了两种方式，按需选择。
 
 ### 6.2 初次安装（新人从零开始）
+
+<details>
+<summary><b>方式一：虚拟环境（推荐）</b></summary>
 
 ```bash
 # ========== 后端 ==========
@@ -220,10 +228,32 @@ cd ../frontend
 npm install
 npm run dev
 ```
+</details>
+
+<details>
+<summary><b>方式二：全局 Python（不用虚拟环境）</b></summary>
+
+```bash
+# ========== 后端 ==========
+cd backend
+pip install -r requirements.txt
+python -m uvicorn app.main:app --reload --port 8000
+
+# ========== 前端 ==========
+cd ../frontend
+npm install
+npm run dev
+```
+
+> 注意：全局安装的包会和其他项目共用，不同项目依赖版本不同时可能冲突。
+</details>
 
 后端: `http://127.0.0.1:8000` | API文档: `http://127.0.0.1:8000/docs` | 前端: `http://localhost:5173`
 
-### 6.2a 日常运行（已有虚拟环境）
+### 6.2a 日常运行（已有环境）
+
+<details>
+<summary><b>方式一：虚拟环境</b></summary>
 
 ```bash
 # 后端
@@ -234,41 +264,93 @@ cd backend
 cd ../frontend
 npm run dev
 ```
+</details>
+
+<details>
+<summary><b>方式二：全局 Python</b></summary>
+
+```bash
+# 后端
+cd backend
+python -m uvicorn app.main:app --reload --port 8000
+
+# 前端
+cd ../frontend
+npm run dev
+```
+</details>
 
 ### 6.3 可选依赖（二级工具）
 
-这些包大部分已包含在 `requirements.txt` 中。如需单独安装（同样在虚拟环境中操作）：
+这些包大部分已包含在 `requirements.txt` 中。如需单独安装：
+
+<details>
+<summary><b>虚拟环境</b></summary>
 
 ```bash
 cd backend
-.venv\Scripts\pip install pandas matplotlib           # 数据分析
-.venv\Scripts\pip install pdfplumber python-docx openpyxl  # 文档读写
-.venv\Scripts\pip install pyautogui pywin32 pytesseract Pillow  # GUI操作
-.venv\Scripts\pip install mss imageio numpy           # 屏幕录制
+.venv\Scripts\pip install pandas matplotlib
+.venv\Scripts\pip install pdfplumber python-docx openpyxl
+.venv\Scripts\pip install pyautogui pywin32 pytesseract Pillow
+.venv\Scripts\pip install mss imageio numpy
 ```
+</details>
+
+<details>
+<summary><b>全局 Python</b></summary>
+
+```bash
+cd backend
+pip install pandas matplotlib
+pip install pdfplumber python-docx openpyxl
+pip install pyautogui pywin32 pytesseract Pillow
+pip install mss imageio numpy
+```
+</details>
 
 ---
 
 ## 七、开发命令
 
-### 后端（需在虚拟环境中执行）
+### 后端
 
-**激活虚拟环境后**（`cd backend` 目录下执行一次即可）：
+<details>
+<summary><b>虚拟环境（推荐）</b></summary>
+
+激活后命令直接敲，无需前缀：
+
 ```bash
+cd backend
 .venv\Scripts\activate
 ```
 
-之后 `pytest`、`uvicorn` 等命令直接敲即可，无需每次加 `.venv\Scripts\` 前缀。
+| 命令 | 说明 |
+|------|------|
+| `uvicorn app.main:app --reload` | 启动开发服务器 |
+| `pytest` | 运行全部测试 |
+| `pytest tests/test_xxx.py -v` | 运行指定测试文件 |
+| `pytest -k test_name -v` | 按名称匹配运行测试 |
+| `pytest --cov=app` | 测试并生成覆盖率 |
 
-**不激活直接使用**（每次都要加前缀）：
+不激活时，每条命令加 `.venv\Scripts\` 前缀：
+
+```bash
+.venv\Scripts\python -m uvicorn app.main:app --reload
+.venv\Scripts\pytest -k test_name -v
+```
+</details>
+
+<details>
+<summary><b>全局 Python</b></summary>
 
 | 命令 | 说明 |
 |------|------|
-| `.venv\Scripts\python -m uvicorn app.main:app --reload` | 启动开发服务器 |
-| `.venv\Scripts\pytest` | 运行全部测试 |
-| `.venv\Scripts\pytest tests/test_xxx.py -v` | 运行指定测试文件 |
-| `.venv\Scripts\pytest -k test_name -v` | 按名称匹配运行测试 |
-| `.venv\Scripts\pytest --cov=app` | 测试并生成覆盖率 |
+| `python -m uvicorn app.main:app --reload` | 启动开发服务器 |
+| `pytest` | 运行全部测试 |
+| `pytest tests/test_xxx.py -v` | 运行指定测试文件 |
+| `pytest -k test_name -v` | 按名称匹配运行测试 |
+| `pytest --cov=app` | 测试并生成覆盖率 |
+</details>
 
 ### 前端
 
