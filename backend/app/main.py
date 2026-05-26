@@ -20,6 +20,10 @@ from app.utils.monitoring import setup_monitoring
 
 # 只过滤uvicorn的访问日志，不影响应用日志
 import logging
+
+from app.constants import DEFAULT_CORS_ORIGINS
+
+
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 # 配置日志 - 使用统一的 logger 配置，不再使用 basicConfig
@@ -54,7 +58,7 @@ logger.info("Backend v" + app_version + " started")
 
 # CORS配置 - 显式指定前端源，避免通配符与credentials冲突
 import os
-from app.constants import DEFAULT_CORS_ORIGINS
+
 
 _cors_origins_str = os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS)
 _cors_origins = [origin.strip() for origin in _cors_origins_str.split(",") if origin.strip()]
@@ -135,6 +139,7 @@ app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 # 【阶段6更新】cleanup_expired_tasks 改为从 react_sse_wrapper 导入
 import asyncio
 from app.services.react_sse_wrapper import cleanup_expired_tasks
+
 # 【Phase 1修复 小健 2026-05-14】删除模块级import，改为函数内import
 # from app.services.tools.shell.shell_tools import cleanup_background_shells
 
