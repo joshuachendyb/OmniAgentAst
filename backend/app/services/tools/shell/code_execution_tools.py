@@ -44,6 +44,9 @@ from app.services.tools.shell.code_execution_schema import (
 from app.services.tools.tool_result_utils import format_output_for_llm, build_next_actions, truncate_data_for_frontend  # 小沈-2026-05-15, 小沈-2026-05-20
 from app.services.tools._response import build_success, build_error
 
+
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -111,7 +114,7 @@ def execute_code(
     elif language == "javascript":
         return _execute_javascript(code=code, timeout=timeout, working_dir=working_dir, safety_check=safety_check)
     else:
-        return build_error("ERR_PARAM_INVALID", f"不支持的语言: {language}，可选: python/javascript",
+        return build_error(ERR_PARAM_INVALID, f"不支持的语言: {language}，可选: python/javascript",
             next_actions=build_next_actions([("tool_help", "查看execute_code参数", "确认可用语言", {"tool_name": "execute_code"})]))
 
 
@@ -120,18 +123,18 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
     【2026-05-17 小沈】增加safety_check参数，P12组合复用：自动调用_validate_code_safety进行安全检查
     【2026-05-18 小沈】P16幂等性：working_dir不存在时自动创建(makedirs exist_ok=True)"""
     if not code or not code.strip():
-        return build_error("ERR_SHELL_EXEC_EMPTY_CODE", "code不能为空，请提供要执行的Python代码")
+        return build_error(ERR_SHELL_EXEC_EMPTY_CODE, "code不能为空，请提供要执行的Python代码")
     if working_dir is not None and not os.path.isdir(working_dir):
         try:
             os.makedirs(working_dir, exist_ok=True)
         except OSError as e:
-            return build_error("ERR_SHELL_EXEC_INVALID_DIR", f"工作目录创建失败: {working_dir}, 错误: {e}")
+            return build_error(ERR_SHELL_EXEC_INVALID_DIR, f"工作目录创建失败: {working_dir}, 错误: {e}")
     # P12: 执行前自动调用安全检查（不暴露给LLM）
     if safety_check:
         from app.services.tools.toolhelper.exec_helper import _validate_code_safety
         warnings = _validate_code_safety(code)
         if warnings:
-            return build_error("ERR_UNSAFE_CODE", f"代码存在安全风险: {', '.join(warnings)}，如确认安全可设置 safety_check=False", data={"warnings": warnings})
+            return build_error(ERR_UNSAFE_CODE, f"代码存在安全风险: {', '.join(warnings)}，如确认安全可设置 safety_check=False", data={"warnings": warnings})
     try:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
             f.write(code)
@@ -172,7 +175,7 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
                 message = f"Python代码执行失败（退出码{result.returncode}），请检查代码语法和逻辑"
                 _llm = format_output_for_llm(stdout_str, stderr_str)
                 return build_error(
-                    "ERR_EXEC_FAILED",
+                    ERR_EXEC_FAILED,
                     message,
                     data=truncate_data_for_frontend({
                         "stdout": stdout_str,
@@ -190,7 +193,7 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
             _partial_stdout = _safe_decode(e.stdout)
             _partial_stderr = _safe_decode(e.stderr)
             return build_error(
-                "ERR_EXEC_TIMEOUT",
+                ERR_EXEC_TIMEOUT,
                 f"Python代码执行超时（{timeout}秒），可增大timeout或优化代码性能",
                 data=truncate_data_for_frontend({
                     "stdout": _partial_stdout,
@@ -210,9 +213,9 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
                 logger.warning(f"删除临时文件失败: {temp_file}, 错误: {e}")
 
     except FileNotFoundError:
-        return build_error("ERR_SHELL_EXEC_PYTHON_NOT_FOUND", "未找到Python环境，请确认Python已安装且在PATH中")
+        return build_error(ERR_SHELL_EXEC_PYTHON_NOT_FOUND, "未找到Python环境，请确认Python已安装且在PATH中")
     except Exception as e:
-        return build_error("ERR_EXEC_PYTHON", f"Python代码执行失败: {str(e)}")
+        return build_error(ERR_EXEC_PYTHON, f"Python代码执行失败: {str(e)}")
 
 
 # 【小健修复 2026-05-25】提取为模块级常量 + 独立函数（25.4审计发现：设计要求提取但被内联）
@@ -227,6 +230,7 @@ _JS_DANGEROUS_PATTERNS = [
 def _js_safety_check(code: str) -> Optional[str]:
     """JS安全检查：返回None表示安全，返回str表示错误消息 - 小健修复 2026-05-25"""
     import re as re_mod
+
     for pattern, desc in _JS_DANGEROUS_PATTERNS:
         if re_mod.search(pattern, code):
             return f"安全检查: 检测到危险模式 {desc}，如需执行请设置safety_check=False"
@@ -240,18 +244,18 @@ def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str]
 
     # 【小沈重构 2026-05-25】25.4节：组件1 - 安全检查
     if not code or not code.strip():
-        return build_error("ERR_SHELL_EXEC_EMPTY_CODE", "code不能为空，请提供要执行的JavaScript代码")
+        return build_error(ERR_SHELL_EXEC_EMPTY_CODE, "code不能为空，请提供要执行的JavaScript代码")
 
     if safety_check:
         err = _js_safety_check(code)
         if err:
-            return build_error("ERR_UNSAFE_CODE", err)
+            return build_error(ERR_UNSAFE_CODE, err)
 
     if working_dir is not None and not os.path.isdir(working_dir):
         try:
             os.makedirs(working_dir, exist_ok=True)
         except OSError as e:
-            return build_error("ERR_SHELL_EXEC_INVALID_DIR", f"工作目录创建失败: {working_dir}, 错误: {e}")
+            return build_error(ERR_SHELL_EXEC_INVALID_DIR, f"工作目录创建失败: {working_dir}, 错误: {e}")
 
     # 【小沈重构 2026-05-25】25.4节：执行 + 结果构建
     try:
@@ -276,7 +280,7 @@ def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str]
             _partial_stdout = _safe_decode(e.stdout)
             _partial_stderr = _safe_decode(e.stderr)
             return build_error(
-                "ERR_EXEC_TIMEOUT",
+                ERR_EXEC_TIMEOUT,
                 f"JavaScript代码执行超时（{timeout}秒），可增大timeout或优化代码性能",
                 data=truncate_data_for_frontend({
                     "stdout": _partial_stdout,
@@ -296,9 +300,9 @@ def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str]
                 logger.warning(f"删除临时文件失败: {temp_file}, 错误: {e}")
 
     except FileNotFoundError:
-        return build_error("ERR_SHELL_EXEC_NODE_NOT_FOUND", "未找到Node.js环境，请先安装Node.js")
+        return build_error(ERR_SHELL_EXEC_NODE_NOT_FOUND, "未找到Node.js环境，请先安装Node.js")
     except Exception as e:
-        return build_error("ERR_EXEC_JS", f"JavaScript代码执行失败: {str(e)}")
+        return build_error(ERR_EXEC_JS, f"JavaScript代码执行失败: {str(e)}")
 
 
 # 【小沈重构 2026-05-25】25.4节：组件2 - 统一构建JS执行结果，消除3处输出处理重复
@@ -328,4 +332,16 @@ def _build_js_exec_result(
             ("execute_code", "修改代码重试", "需要修正代码后重新执行时", {"language": language}),
             ("tool_search", "搜索可用的代码辅助工具", "需要查找其他工具帮助诊断问题时"),
         ])
-        return build_error("ERR_EXEC_FAILED", message, data=out_data, llm_data=llm, next_actions=next_acts)
+        return build_error(ERR_EXEC_FAILED, message, data=out_data, llm_data=llm, next_actions=next_acts)
+from app.constants import (
+    ERR_EXEC_FAILED,
+    ERR_EXEC_JS,
+    ERR_EXEC_PYTHON,
+    ERR_EXEC_TIMEOUT,
+    ERR_PARAM_INVALID,
+    ERR_SHELL_EXEC_EMPTY_CODE,
+    ERR_SHELL_EXEC_INVALID_DIR,
+    ERR_SHELL_EXEC_NODE_NOT_FOUND,
+    ERR_SHELL_EXEC_PYTHON_NOT_FOUND,
+    ERR_UNSAFE_CODE,
+)
