@@ -95,7 +95,7 @@ DESCRIPTIONS = {
 - 分页读取 → read_document(file_path="D:/report.pdf", pages="1-3", extract_tables=true)
 
 【返回数据说明】
-- code: SUCCESS / ERR_FILE_NOT_FOUND / ERR_UNSUPPORTED_FORMAT
+- code: SUCCESS / ERR_FILE_NOT_FOUND / ERR_DOC_FORMAT_NOT_SUPPORTED
 - data: 文档内容（格式因文件类型而异）
 - message: 操作结果消息""",
 
@@ -119,7 +119,7 @@ DESCRIPTIONS = {
 - 写PPT/write_pptx → write_document(file_path="D:/slides.pptx", title="项目汇报")
 
 【返回数据说明】
-- code: SUCCESS / ERR_UNSUPPORTED_FORMAT
+- code: SUCCESS / ERR_DOC_FORMAT_NOT_SUPPORTED
 - data: { file_path }
 - message: 操作结果消息""",
 
