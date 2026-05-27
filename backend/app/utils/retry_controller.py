@@ -18,9 +18,9 @@
     controller.reset()
 """
 
-import logging
+from app.utils.logger import setup_logger
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 class RetryController:
