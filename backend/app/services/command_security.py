@@ -28,7 +28,7 @@ import json
 import math
 from typing import Tuple, List, Optional, Set, Dict, Any
 from app.utils.logger import logger
-from app.services.command_parser import generate_risk_suggestions
+from app.services.command_parser import generate_risk_suggestions, parse_operation_type_v2, parse_operation_target_v2, parse_impact_scope, OPERATION_WEIGHTS, TARGET_WEIGHTS, SCOPE_MULTIPLIERS
 
 try:
     import yaml

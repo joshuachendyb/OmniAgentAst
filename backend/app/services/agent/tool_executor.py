@@ -179,7 +179,6 @@ class ToolExecutor:
             }
         
         if action not in self.available_tools:
-            # 跨分类fallback：本地没有时从全局registry查找
             from app.services.tools.registry import tool_registry
             impl = tool_registry.get_implementation(action)
             if impl is not None:

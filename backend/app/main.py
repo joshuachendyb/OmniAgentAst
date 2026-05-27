@@ -114,10 +114,12 @@ from app.services.react_sse_wrapper import cleanup_expired_tasks
 
 @app.on_event("startup")
 async def startup_event():
-    """应用启动时启动后台任务"""
+    """应用启动时注册工具 + 启动后台任务"""
+    # S1: 全量注册工具（确保首次请求时可用）
     from app.services.tools import ensure_tools_registered
     ensure_tools_registered()
-    
+
+    # S2: 启动后台清理任务
     async def cleanup_task():
         """定期清理过期任务"""
         while True:

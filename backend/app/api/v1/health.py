@@ -62,12 +62,9 @@ async def execute_tool(request: ToolExecuteRequest):
     用法: POST /api/v1/tool/execute
     Body: {"tool_name": "read_file", "params": {"path": "app/main.py"}}
     """
-    from app.services.tools import ensure_tools_registered, tool_registry
+    from app.services.tools import tool_registry
     import asyncio
     import inspect
-    
-    # 确保工具已注册
-    ensure_tools_registered()
     
     tool_name = request.tool_name
     # 兼容parameters和params字段, parameters优先 - 小健 2026-05-21
@@ -135,9 +132,7 @@ async def list_tools():
     """
     获取所有已注册的工具列表
     """
-    from app.services.tools import ensure_tools_registered, tool_registry
-    
-    ensure_tools_registered()
+    from app.services.tools import tool_registry
     
     tools = tool_registry.to_openai_tools()
     

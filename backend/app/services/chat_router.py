@@ -12,12 +12,11 @@ Chat Router - 路由层
 - 第三层：file_react.py / network_react.py / desktop_react.py - 意图特定 Agent
 - 第四层：base_react.py - 通用 ReAct 逻辑
 
-【5步流程】
-步骤1: 意图检测 (IntentRegistry)
+【4步流程】
+步骤1: 意图检测
 步骤2: 初始化 (ai_service/next_step/running_tasks/current_execution_steps)
-步骤4: 安全检测 (security_check)
-步骤5: start步骤 (start_step)
-步骤6: 调用 react_sse_wrapper（由第二层内部根据intent_type分发）
+步骤3: start步骤 (start_step)
+步骤4: 调用 react_sse_wrapper（由第二层内部根据intent_type分发）
 
 【阶段6修改】
 - 步骤6改为调用 react_sse_wrapper.generate_sse_stream()
@@ -236,9 +235,6 @@ class ChatRouter:
     聊天路由器 - 根据意图类型分发到对应的执行层
     """
 
-    def __init__(self) -> None:
-        pass
-
     async def _detect_intent(self, user_input: str) -> Tuple[str, str, float, List[str]]:
         """两阶段意图检测 + 闲聊/network降级。返回 (intent_type, source, confidence, candidates) — 小沈 2026-05-25 重构"""
         intent_info = await route_with_fallback(user_input)
@@ -272,7 +268,7 @@ class ChatRouter:
         max_steps: int = DEFAULT_MAX_STEPS,
         ai_service: Optional[Any] = None
     ) -> AsyncGenerator[str, None]:
-        """5步路由：意图检测→初始化→安全检测→start_step→ReAct — 小沈 2026-05-27 清理"""
+        """4步路由：意图检测→初始化→start_step→ReAct — 小沈 2026-05-27 清理"""
         # S1 意图检测
         intent_type, source, confidence, candidates = await self._detect_intent(user_input)
         logger.info(f"[ChatRouter] intent_type={intent_type}({source}), conf={confidence:.2f}")
