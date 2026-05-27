@@ -12,6 +12,7 @@ LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05
 from typing import List, Dict, Optional
 
 from app.utils.logger import logger
+from app.utils.retry_engine import RetryEngine, BackoffStrategy
 from app.constants import ERROR_TYPE_MAP, HTTPX_EXCEPTION_TO_ERROR_KEY
 
 
@@ -57,7 +58,7 @@ class StreamChunk:
 
 
 class _StreamRetryContext:
-    """流式请求429重试上下文管理器 — 在传输层统一处理限流"""
+    """流式请求429重试上下文管理器 — 委托到RetryEngine统一退避策略 — 小沈 2026-05-27"""
 
     def __init__(self, service, url, headers, json_body, max_retries=3, retry_delay=2.0):
         self.service = service
@@ -67,9 +68,15 @@ class _StreamRetryContext:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self._response_ctx = None
+        self._engine = RetryEngine(
+            max_retries=max_retries,
+            backoff_strategy=BackoffStrategy.EXPONENTIAL,
+            backoff_factor=retry_delay,
+        )
 
     async def __aenter__(self):
         import asyncio
+        from app.utils.retry_engine import BackoffStrategy
         for attempt in range(self.max_retries):
             self._response_ctx = self.service.client.stream(
                 "POST", self.url, headers=self.headers, json=self.json_body
@@ -78,7 +85,7 @@ class _StreamRetryContext:
             if self.service._is_rate_limit_status(response.status_code):
                 await self._response_ctx.__aexit__(None, None, None)
                 if attempt < self.max_retries - 1:
-                    delay = self.retry_delay * (2 ** attempt)
+                    delay = self._engine._calculate_delay(attempt + 1)
                     logger.warning(f"[429重试] 流式HTTP {response.status_code}, 第{attempt+1}/{self.max_retries}次, {delay:.0f}s后重试")
                     await asyncio.sleep(delay)
                     continue
