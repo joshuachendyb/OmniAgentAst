@@ -80,9 +80,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel
-import logging
+from app.utils.logger import setup_logger
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 _TYPE_ORDER = ["string", "integer", "number", "boolean", "object", "array", "null"]
