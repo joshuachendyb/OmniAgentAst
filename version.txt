@@ -29,6 +29,7 @@ v0.14.2
 
 1. **废弃文件全删除 26个（3,150行）**: v1 intent分类(3)/安全模块(3)/旧Agent遗留(4)/旧Schema(1)/旧Prompt(4)/辅助工具(2)/旧操作模型(1)/空壳__init__(8)
 2. **内联删除 563行**: 死函数13个/转发函数9个/空壳函数2个/重复逻辑3处/冗余导出15个/死import~18/废弃常量8个/废弃注释9处/防御调用4→1
+5. **去重get_version调用**: health.py 删除 `get_version()` 调用，改为 `request.app.version`（main.py 启动时已设好）
 3. **新增文件 1个（+20行）**: utils/version.py（合并health.py+main.py两个副本）
 4. **合计**: 54 files changed, +249 insertions, -3,713 deletions, **净减 -3,464 行**
 
