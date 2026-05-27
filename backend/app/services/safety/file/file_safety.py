@@ -20,6 +20,7 @@ from app.db.config import OPERATIONS_DB_PATH
 from app.db.models.operation_enums import OperationType, OperationStatus
 from app.db.models.operation_models import OperationRecord, SessionRecord
 from app.utils.logger import logger
+from app.services.safety.manager import SafetyHook
 
 
 class FileSafetyConfig:
@@ -41,9 +42,14 @@ class FileSafetyConfig:
         cls.REPORT_PATH.mkdir(parents=True, exist_ok=True)
 
 
-class FileOperationSafety:
+class FileOperationSafety(SafetyHook):
     """
-    文件操作安全服务
+    文件操作安全服务 — 继承SafetyHook，可注册到SafetyManager
+    
+    【重构 2026-05-27 小健】遵循DRY+OCP原则：
+    - 继承SafetyHook基类，实现check()和execute_with_safety()
+    - 可通过SafetyManager.register_hook("file", self)注册
+    - SafetyManager.execute_with_safety("file", ...)统一调度
     
     功能：
     1. 操作历史记录 - 记录所有文件操作到SQLite数据库
