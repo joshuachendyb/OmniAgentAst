@@ -43,11 +43,4 @@ TOOL_TIMEOUTS = {
 }
 
 
-def get_timeout(tool_name: str) -> int:
-    """获取工具超时时间（秒）
-
-    @deprecated 请使用 tool_config.get_timeout() — 小健 2026-05-27
-    本函数仅作为tool_config的兜底数据源(TOOL_TIMEOUTS字典)的便捷查询，
-    对外调用方应统一走 tool_config.get_timeout() (YAML优先+硬编码兜底)。
-    """
-    return TOOL_TIMEOUTS.get(tool_name, TOOL_TIMEOUTS["default"])
+# get_timeout已删除，统一使用tool_config.get_timeout()
