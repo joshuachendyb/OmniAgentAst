@@ -6,6 +6,9 @@ T3: 执行器增强（重试+熔断+错误分类）
 参考文档: Omni系统tool-实现分析报告 v1.15 第6.2.3节
 
 创建时间: 2026-04-19 09:30:00
+更新: 2026-05-27 - 标记为遗留代码，重试逻辑已统一到 tool_retry_engine.py
+
+注意: 此模块现已废弃，新的重试逻辑应使用 tool_retry_engine.py 中的 ToolRetryEngine
 """
 
 import asyncio
@@ -14,7 +17,7 @@ import time
 from enum import Enum
 from typing import Dict, Any, Callable, List, Optional
 
-from app.services.agent.tool_executor import ErrorType, ErrorClassifier
+from app.utils.error_classifier import ErrorCategory, UnifiedErrorClassifier
 from app.constants import DEFAULT_RETRYABLE_ERRORS
 
 
@@ -166,16 +169,16 @@ class RetryPolicy:
                 attempt_count += 1
                 
                 # 分类错误
-                error_type = ErrorClassifier.classify(e)
+                error_category = UnifiedErrorClassifier.classify(e)
                 
                 # 检查是否可重试
-                if not (error_type.is_retryable or error_type.value in self.retryable_errors):
+                if not (error_category.is_retryable or error_category.name.lower() in self.retryable_errors):
                     # 不可重试，记录失败并返回
                     self._circuit_breaker.record_failure()
                     return {
                         "status": "error",
                         "error": str(e),
-                        "error_type": error_type.value,
+                        "error_type": error_category.name.lower(),
                         "retry_count": attempt_count - 1
                     }
                 
@@ -188,7 +191,7 @@ class RetryPolicy:
                     return {
                         "status": "error",
                         "error": str(e),
-                        "error_type": error_type.value,
+                        "error_type": error_category.name.lower(),
                         "retry_count": attempt_count
                     }
                 
@@ -202,7 +205,7 @@ class RetryPolicy:
         return {
             "status": "error",
             "error": str(last_error),
-            "error_type": ErrorType.UNKNOWN.value,
+            "error_type": ErrorCategory.UNKNOWN.name.lower(),
             "retry_count": attempt_count
         }
     
