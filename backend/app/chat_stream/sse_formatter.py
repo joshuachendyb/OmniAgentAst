@@ -149,10 +149,149 @@ def format_chunk_sse(
     return format_sse_event("chunk", step, chunk_data)
 
 
+def format_final_sse(
+    response: str,
+    step: Optional[int] = None,
+    display_name: Optional[str] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    is_finished: bool = True,
+    thought: str = '',
+    is_streaming: bool = False,
+    is_reasoning: bool = False
+) -> str:
+    """
+    格式化 final 事件 — SSE统一入口
+    
+    Args:
+        response: 最终回复内容
+        step: 步骤序号（可选）
+        display_name: 模型显示名称（可选）
+        provider: 模型提供商（可选）
+        model: 模型名称（可选）
+        is_finished: 是否完成
+        thought: 思考内容
+        is_streaming: 是否流式输出
+        is_reasoning: 是否在推理中
+    
+    Returns:
+        SSE格式的响应字符串
+    """
+    final_display_name = display_name
+    if not final_display_name and provider and model:
+        final_display_name = f"{provider} ({model})"
+    elif not final_display_name and provider:
+        final_display_name = provider
+    elif not final_display_name and model:
+        final_display_name = model
+    
+    data = {
+        'response': response,
+        'is_finished': is_finished,
+        'thought': thought,
+        'is_streaming': is_streaming,
+        'is_reasoning': is_reasoning,
+        'display_name': final_display_name,
+        'model': model,
+        'provider': provider,
+    }
+    if step is not None:
+        return format_sse_event('final', step, data)
+    else:
+        base = {'type': 'final', 'timestamp': create_timestamp()}
+        base.update(data)
+        return f"data: {json.dumps(base, ensure_ascii=False)}\n\n"
+
+
+def format_error_sse(
+    error_type: str,
+    error_message: str,
+    step: Optional[int] = None,
+    model: Optional[str] = None,
+    provider: Optional[str] = None,
+    details: Optional[str] = None,
+    stack: Optional[str] = None,
+    recoverable: Optional[bool] = None,
+    retry_after: Optional[int] = None
+) -> str:
+    """
+    格式化 error 事件 — SSE统一入口
+    
+    Args:
+        error_type: 错误类型
+        error_message: 错误信息
+        step: 步骤序号（可选）
+        model: 模型名称（可选）
+        provider: 提供商（可选）
+        details: 详细错误信息（可选）
+        stack: 堆栈信息（可选）
+        recoverable: 是否可恢复
+        retry_after: 重试等待秒数（可选）
+    
+    Returns:
+        SSE格式的响应字符串
+    """
+    data = {
+        'error_type': error_type,
+        'error_message': error_message,
+    }
+    if model is not None:
+        data['model'] = model
+    if provider is not None:
+        data['provider'] = provider
+    if details is not None:
+        data['details'] = details
+    if stack is not None:
+        data['stack'] = stack
+    if recoverable is not None:
+        data['recoverable'] = recoverable
+    if retry_after is not None:
+        data['retry_after'] = retry_after
+    
+    if step is not None:
+        return format_sse_event('error', step, data)
+    else:
+        base = {'type': 'error', 'timestamp': create_timestamp()}
+        base.update(data)
+        return f"data: {json.dumps(base, ensure_ascii=False)}\n\n"
+
+
+def format_incident_sse(
+    incident_value: str,
+    message: str,
+    step: Optional[int] = None
+) -> str:
+    """
+    格式化 incident 事件 — SSE统一入口
+    
+    Args:
+        incident_value: incident类型值（如 'interrupted', 'paused', 'retrying'）
+        message: 消息内容
+        step: 步骤序号（可选）
+    
+    Returns:
+        SSE格式的响应字符串
+    """
+    data = {
+        'type': 'incident',
+        'incident': incident_value,
+        'message': message,
+    }
+    if step is not None:
+        return format_sse_event('incident', step, data)
+    else:
+        base = {'type': 'incident', 'timestamp': create_timestamp()}
+        base.update(data)
+        return f"data: {json.dumps(base, ensure_ascii=False)}\n\n"
+
+
 __all__ = [
     "format_sse_event",
     "format_thought_sse",
     "format_action_tool_sse",
     "format_observation_sse",
     "format_chunk_sse",
+    "format_final_sse",
+    "format_error_sse",
+    "format_incident_sse",
 ]
