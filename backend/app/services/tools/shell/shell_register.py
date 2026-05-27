@@ -170,6 +170,13 @@ def _register_shell_tools():
         )
         logger.info(f"[shell_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个")
 
+    # 【重构 2026-05-27 小健】2.28：注册shell安全Hook到SafetyManager统一入口
+    from app.services.safety.manager import get_safety_manager
+    from app.services.safety.shell.command_safety_hook import get_shell_safety_hook
+    _sm = get_safety_manager()
+    if _sm.get_hook("shell") is None:
+        _sm.register_hook("shell", get_shell_safety_hook())
+
 
 # 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
 _initialized = False  # 守护变量，供显式调用时使用
