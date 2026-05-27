@@ -35,7 +35,6 @@ Author: 小沈 - 2026-05-02
 import os
 import subprocess
 import tempfile
-import logging
 from typing import Optional
 
 from app.services.tools.shell.code_execution_schema import (
@@ -43,11 +42,12 @@ from app.services.tools.shell.code_execution_schema import (
 )
 from app.services.tools.tool_result_utils import format_output_for_llm, build_next_actions, truncate_data_for_frontend  # 小沈-2026-05-15, 小沈-2026-05-20
 from app.services.tools._response import build_success, build_error
+from app.utils.logger import setup_logger
 
 
 
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 def _safe_decode(data, encodings=None):
