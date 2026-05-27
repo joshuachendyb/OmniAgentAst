@@ -164,12 +164,12 @@ class ReactAgentMixin(ToolLoaderMixin):
     def _build_candidates_hint(self) -> str:
         """构建候选意图提示 — 委托到PromptAssembler"""
         assembler = PromptAssembler(self.prompts, candidates=self._candidates)
-        return assembler._build_candidates_hint()
-    
+        return assembler.build_candidates_hint()
+
     def _build_cross_tool_hint(self, category_name: str) -> str:
         """构建跨分类工具提示 — 委托到PromptAssembler"""
         assembler = PromptAssembler(self.prompts, category_name=category_name)
-        return assembler._build_cross_tool_hint()
+        return assembler.build_cross_tool_hint()
     
 
     def _build_system_prompt(self, category_name: str) -> str:
