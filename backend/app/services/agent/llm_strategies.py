@@ -149,12 +149,19 @@ class TextStrategy(LLMStrategy):
         conversation_history: List[Dict[str, str]],
         **kwargs
     ) -> str:
-        """调用 LLM（文本模式）— 429重试由llm_core传输层统一处理 - 北京老陈 2026-05-25 重构"""
+        """调用 LLM（文本模式）— 只返回原始文本，不解析（DRY原则）
+        
+        【重构 2026-05-27 小健】遵循设计文档2.3节：
+        - 移除内部parse_react_response调用（违反DRY）
+        - 直接返回原始LLM文本内容
+        - base_react.py作为唯一解析入口调用parse_react_response()
+        - 429重试由llm_core传输层统一处理
+        """
         logger.info(f"[TextStrategy] call() 被调用, model={getattr(llm_client, 'model', '?')}")
         response = await llm_client(message="", history=messages)
         content, error_info, response_reasoning = self._extract_llm_content(response)
         logger.info(f"[LLM Response Raw (text)] len={len(content) if isinstance(content, str) else '非字符串'} type={type(content)} preview={str(content)[:200] if content else '空'}")
-        logger.info(f"[LLM Response Raw (text)] content={content}")
+        
         if not content:
             logger.warning("[LLM Response] Warning: LLM returned empty content!")
             if error_info:
@@ -163,26 +170,9 @@ class TextStrategy(LLMStrategy):
                 return self._make_parse_error(error_hint)
             _, user_message = get_stream_error_info('empty_response')
             return self._make_parse_error(user_message)
-        from app.services.agent.react_output_parser import parse_react_response
-        logger.info(f"[DEBUG] 传给parse前 - content长度: {len(content) if isinstance(content, str) else '非字符串'}, content类型: {type(content)}")
-        try:
-            parsed = parse_react_response(content)
-            parsed_type = parsed.get("type")
-            logger.info(f"[TextStrategy] parse_react_response success: type={parsed_type}")
-            handler_map: Dict[str, Callable] = {
-                "answer": lambda: self._handle_answer_response(parsed, response_reasoning),
-                "implicit": lambda: self._handle_answer_response(parsed, response_reasoning),
-                "chunk": lambda: self._build_chunk_data(parsed, response_reasoning),
-                "action": lambda: self._handle_action_response(parsed, response_reasoning),
-            }
-            handler = handler_map.get(parsed_type)
-            if handler:
-                result = handler()
-                if result:
-                    return result
-            return self._resolve_parse_fallback(content, parsed_type)
-        except ValueError:
-            return self._resolve_parse_fallback(content, None)
+        
+        logger.info(f"[TextStrategy] 返回原始文本，由base_react.py统一解析")
+        return content
     
     # ===== 方案A：分级错误信息 =====
     ERROR_HINTS = {
