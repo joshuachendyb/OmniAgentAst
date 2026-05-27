@@ -430,9 +430,13 @@ async def chat_stream_query(
 
     full_content = state["full_content"]
     final_step_value = next_step()
-    final_step_obj = StepFactory.create_final_step(step=final_step_value, response=full_content)
+    final_step_obj = StepFactory.create_final_step(
+        step=final_step_value, 
+        response=full_content,
+        model=ai_service.model,
+        provider=ai_service.provider
+    )
     final_step_dict = final_step_obj.to_dict()
-    final_step_dict.update({"model": ai_service.model, "provider": ai_service.provider})
     current_execution_steps.append(final_step_dict)
     await save_execution_steps_to_db(current_execution_steps, full_content)
 
