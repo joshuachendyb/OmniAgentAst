@@ -7,46 +7,9 @@ Reasoning内容处理适配器
 Author: 小沈 - 2026-05-27
 """
 
-import httpx
 from typing import Dict, List, Optional
 
 from app.utils.logger import logger
-from app.constants import DEFAULT_PROBE_TIMEOUT
-
-
-async def detect_reasoning_support(
-    api_base: str, api_key: str, model: str, cached: Optional[bool] = None
-) -> bool:
-    """
-    通过API探测模型是否支持reasoning_content
-
-    发一个简单请求，检查响应message中是否包含reasoning_content字段。
-
-    Args:
-        api_base: API基础URL
-        api_key: API密钥
-        model: 模型名称
-        cached: 已缓存的探测结果（非None时直接返回）
-
-    Returns:
-        True如果模型支持reasoning_content
-    """
-    if cached is not None:
-        return cached
-    try:
-        async with httpx.AsyncClient(timeout=DEFAULT_PROBE_TIMEOUT) as client:
-            response = await client.post(
-                f"{api_base}/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={"model": model, "messages": [{"role": "user", "content": "1+1=?"}], "stream": False}
-            )
-            if response.status_code == 200:
-                message = response.json().get("choices", [{}])[0].get("message", {})
-                return "reasoning_content" in message
-            return False
-    except Exception as e:
-        logger.warning(f"[reasoning探测] 探测失败，默认不支持: {e}")
-        return False
 
 
 def fix_thinking_messages(messages: List[Dict], is_thinking: bool) -> List[Dict]:
