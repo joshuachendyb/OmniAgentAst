@@ -6,21 +6,19 @@
 2. 状态重置：每次新请求时重置计数器
 3. 简洁设计：只负责重试次数，不负责计时（计时由 IdleTimeoutIterator 负责）
 
-使用方法：
-    controller = RetryController(max_retries=3)
-    
-    # 检查是否还能重试
-    if controller.can_retry():
-        controller.increment_retry()
-        # 执行重试...
-    
-    # 开始新请求时
-    controller.reset()
+【重构 2026-05-27 小沈】_calculate_retry_delay委托到RetryEngine统一退避策略
 """
 
 from app.utils.logger import setup_logger
+from app.utils.retry_engine import RetryEngine, BackoffStrategy
 
 logger = setup_logger(__name__)
+
+_DEFAULT_ENGINE = RetryEngine(
+    max_retries=10,
+    backoff_strategy=BackoffStrategy.EXPONENTIAL,
+    backoff_factor=2.0,
+)
 
 
 class RetryController:
@@ -98,7 +96,7 @@ def _calculate_retry_delay(
     retry_count: int, base: int = 2, max_wait: int = 30
 ) -> float:
     """
-    计算指数退避等待时间
+    计算指数退避等待时间 — 委托到RetryEngine统一退避策略 — 小沈 2026-05-27
 
     使用场景:
         重试场景下计算下次重试前的等待秒数，替代硬编码的 2**retry_count 退避逻辑。
@@ -119,12 +117,15 @@ def _calculate_retry_delay(
         retry_count: 当前重试次数（0=首次重试）
         base: 指数底数，默认2
         max_wait: 最大等待秒数，默认30
-
-    Author: 小沈 2026-05-25
     """
     if retry_count < 0:
         retry_count = 0
     if base < 2:
         base = 2
-    wait = float(base ** retry_count)
-    return min(wait, float(max_wait))
+    engine = RetryEngine(
+        max_retries=10,
+        backoff_strategy=BackoffStrategy.EXPONENTIAL,
+        backoff_factor=float(base),
+    )
+    delay = engine._calculate_delay(retry_count + 1)
+    return min(delay, float(max_wait))
