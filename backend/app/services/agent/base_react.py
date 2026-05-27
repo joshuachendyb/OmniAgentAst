@@ -146,16 +146,6 @@ class BaseAgent(ABC):
         """@property setter — 小沈 2026-05-21"""
         self.message_builder.conversation_history = value
     
-    def _load_tools(self) -> Dict[str, Callable]:
-        """
-        从registry加载工具
-        参考: 7.5节行1082-1088
-        """
-        if not self.tool_category:
-            return {}
-        
-        return get_tools_from_registry_by_category(self.tool_category)
-    
     # ===== 抽象方法（子类必须实现）=====
     
     @abstractmethod
