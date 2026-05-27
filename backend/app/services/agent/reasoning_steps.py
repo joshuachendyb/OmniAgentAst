@@ -21,22 +21,7 @@ Date: 2026-04-15
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List, Callable
 
-from app.chat_stream.chat_helpers import create_timestamp
-
-
-
-def create_step_counter() -> Callable:
-    """
-    创建步骤计数器
-    
-    Returns:
-        Callable: 计数器函数，每次调用返回递增的整数
-    """
-    counter = [0]
-    def next_step() -> int:
-        counter[0] += 1
-        return counter[0]
-    return next_step
+from app.chat_stream.chat_helpers import create_timestamp, create_step_counter
 
 
 # =============================================================================
