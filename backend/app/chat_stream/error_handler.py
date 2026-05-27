@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 
 from app.constants import ERROR_TYPE_MAP, HTTPX_EXCEPTION_TO_ERROR_KEY, HTTP_STATUS_MAP_ENTRIES, PATTERN_ERROR_ENTRIES
 from app.chat_stream.chat_helpers import create_timestamp
+from app.services.agent.reasoning_steps import StepFactory
 
 
 def _build_error_response(code: str, msg_key: str, retryable: bool,
@@ -42,23 +43,11 @@ def create_error_step(
     retry_after: Optional[int] = None
 ) -> Dict[str, Any]:
     """
-    创建保存到数据库的 error_step
-    【2026-04-15 小沈修改15.7】：按15.7.1要求使用新字段，删除旧字段
+    创建保存到数据库的 error_step — 统一委托到StepFactory
 
-    Args:
-        error_type: 错误类型（如 timeout, security, server）
-        error_message: 错误信息
-        step_num: 步骤序号
-        model: 模型名称（可选）
-        provider: 提供商（可选）
-        recoverable: 是否可恢复
-        context: 错误上下文（包含step/model/provider/thought_content）
-        retry_after: 重试等待秒数
-
-    Returns:
-        error_step 字典
+    【2026-05-27 小沈】去重：error_handler的create_error_step和StepFactory.create_error_step
+    双重定义消除。本函数委托到StepFactory.create_error_step()，保持返回dict格式兼容。
     """
-    # 构建context字段
     if context is None:
         context = {
             "step": step_num,
@@ -66,22 +55,18 @@ def create_error_step(
             "provider": provider,
             "thought_content": ""
         }
-    
-    # 【15.7修改】只保留新字段，删除旧字段code/message/retryable
-    return {
-        'type': 'error',
-        'step': step_num,
-        'error_message': error_message,
-        'error_type': error_type,
-        'timestamp': create_timestamp(),
-        'model': model,
-        'provider': provider,
-        'reasoning': '',
-        'is_reasoning': False,
-        'recoverable': recoverable,
-        'context': context,
-        'retry_after': retry_after
-    }
+
+    error_step = StepFactory.create_error_step(
+        step=step_num,
+        error_type=error_type,
+        error_message=error_message,
+        recoverable=recoverable,
+        model=model,
+        provider=provider,
+        context=context,
+        retry_after=retry_after
+    )
+    return error_step.to_dict()
 
 
 def create_error_response(
