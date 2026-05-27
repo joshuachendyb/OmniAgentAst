@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from pydantic import BaseModel, Field
+from app.services.agent.tool_result_utils import create_tool_result
 
 
 class CheckDbExistsInput(BaseModel):
@@ -24,19 +25,22 @@ class CheckDbExistsInput(BaseModel):
 
 
 def check_db_exists(db_path: str) -> Dict[str, Any]:
-    """检查数据库是否存在 - 小沈 2026-05-17（从 support_tool_tools.py 迁移）"""
+    """检查数据库是否存在 - 小沈 2026-05-17（从 support_tool_tools.py 迁移）
+    
+    【重构 2026-05-27 小健】DRY原则：使用create_tool_result统一结果格式
+    """
     path = Path(db_path)
     if not path.exists():
-        return {"code": "SUCCESS", "data": {"exists": False, "db_type": None, "size": 0}, "message": f"数据库文件不存在: {db_path}"}
+        return create_tool_result(data={"exists": False, "db_type": None, "size": 0}, message=f"数据库文件不存在: {db_path}")
 
     size = path.stat().st_size
     try:
         conn = sqlite3.connect(str(path))
         conn.execute("SELECT 1")
         conn.close()
-        return {"code": "SUCCESS", "data": {"exists": True, "db_type": "sqlite", "size": size}, "message": f"数据库存在且可连接: {db_path}"}
+        return create_tool_result(data={"exists": True, "db_type": "sqlite", "size": size}, message=f"数据库存在且可连接: {db_path}")
     except Exception as e:
-        return {"code": "SUCCESS", "data": {"exists": True, "db_type": "unknown", "size": size, "error": str(e)}, "message": f"数据库文件存在但无法连接: {str(e)}"}
+        return create_tool_result(data={"exists": True, "db_type": "unknown", "size": size, "error": str(e)}, message=f"数据库文件存在但无法连接: {str(e)}")
 
 
 __all__ = [
