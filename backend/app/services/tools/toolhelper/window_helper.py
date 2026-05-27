@@ -6,6 +6,10 @@
 【说明】从 desktop_tools.py 和 gui_tools.py 中提取重复的窗口操作逻辑，
        供 desktop 分类统一调用。不注册到tool_registry，不暴露给LLM。
 
+【分层规范 - 小健 2026-05-27】
+本文件属于【工具层helper】，使用 _response.py 的 build_success/build_error/build_warning
+禁止使用 agent/tool_result_utils.py 的 create_xxx 函数
+
 包含函数：
 - find_windows_by_title: 统一窗口模糊查找（替代7处重复实现）
 - get_window_rect: 获取窗口位置大小
@@ -20,6 +24,7 @@ from typing import Any, Dict, List, Optional
 
 from app.constants import ERR_DESKTOP_NOT_WINDOWS, ERR_DESKTOP_NO_PYWIN32
 from app.utils.logger import logger
+from app.services.tools._response import build_error
 _HAS_WIN32 = False
 _win32gui = None
 _win32con = None
@@ -47,17 +52,9 @@ def check_win32_platform() -> Optional[Dict[str, Any]]:
         Dict: 错误信息（平台不可用）
     """
     if platform.system() != "Windows":
-        return {
-            "code": ERR_DESKTOP_NOT_WINDOWS,
-            "data": None,
-            "message": "此功能仅支持 Windows 系统"
-        }
+        return build_error(ERR_DESKTOP_NOT_WINDOWS, "此功能仅支持 Windows 系统")
     if not _HAS_WIN32:
-        return {
-            "code": ERR_DESKTOP_NO_PYWIN32,
-            "data": None,
-            "message": "pywin32库未安装，请先执行: pip install pywin32"
-        }
+        return build_error(ERR_DESKTOP_NO_PYWIN32, "pywin32库未安装，请先执行: pip install pywin32")
     return None
 
 
