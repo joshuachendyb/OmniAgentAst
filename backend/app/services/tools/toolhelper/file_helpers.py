@@ -1000,7 +1000,7 @@ async def batch_rename_impl(
             regex = None
             use_regex = False
 
-        from app.services.tools.tool_meta import get_timeout as _get_timeout
+        from app.services.tools.tool_config import get_timeout as _get_timeout
         deadline = time.monotonic() + _get_timeout("batch_rename") - 2
         files_to_process, _ = await _collect_files(dir_path, recursive, deadline)
 
@@ -1355,7 +1355,7 @@ async def compress_files_impl(
             sequence_number=get_next_sequence_func(),
         )
 
-        from app.services.tools.tool_meta import get_timeout as _get_timeout
+        from app.services.tools.tool_config import get_timeout as _get_timeout
         _cf_deadline = time.monotonic() + _get_timeout("compress_files") - 2
 
         original_size = _get_total_size_sync(source, _cf_deadline)
@@ -1571,7 +1571,7 @@ async def file_statistics_impl(
             sequence_number=get_next_sequence_func(),
         )
 
-        from app.services.tools.tool_meta import get_timeout as _get_timeout
+        from app.services.tools.tool_config import get_timeout as _get_timeout
         _stat_deadline = time.monotonic() + _get_timeout("file_statistics") - 2
 
         def _statistics_sync():
@@ -1826,7 +1826,7 @@ async def get_file_info_impl(
             if path.is_dir():
                 try:
                     import time as _time
-                    from app.services.tools.tool_meta import get_timeout as _get_timeout
+                    from app.services.tools.tool_config import get_timeout as _get_timeout
                     _gi_deadline = _time.monotonic() + _get_timeout("get_file_info") - 2
                     _fc = 0
                     _dc = 0
