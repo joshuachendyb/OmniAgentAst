@@ -40,6 +40,12 @@ from app.services.llm.core import (
     _StreamRetryContext,
     _resolve_exception,
 )
+from app.services.llm.stream_parser import (
+    parse_sse_stream,
+    handle_http_error_stream,
+    create_cancelled_chunk,
+    create_error_chunk,
+)
 
 
 class _RateLimitError(Exception):
@@ -208,94 +214,7 @@ class BaseAIService:
 
     def _create_cancelled_chunk(self) -> StreamChunk:
         """创建取消StreamChunk — 小健 2026-05-25"""
-        return StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
-
-    async def _handle_http_error(self, response, log_tag: str = "stream") -> AsyncGenerator[StreamChunk, None]:
-        """处理HTTP非200错误响应 — 小健 2026-05-25"""
-        try:
-            error_body = await response.aread()
-            error_text = error_body.decode("utf-8", errors="ignore")
-            logger.error(f"[{log_tag}] HTTP {response.status_code} error: {error_text[:500]}")
-            try:
-                error_json = json.loads(error_text)
-                error_msg = error_json.get("error", {}).get("message", "")
-                if error_msg:
-                    yield StreamChunk(content="", model=self.model, is_done=True,
-                                      stream_error=f"API Error: {response.status_code}, {error_text}",
-                                      stream_error_type="api_error")
-                    return
-            except json.JSONDecodeError:
-                pass
-            yield StreamChunk(content="", model=self.model, is_done=True,
-                              stream_error=f"HTTP {response.status_code}: {error_text[:200]}",
-                              stream_error_type="http_error")
-        except Exception as e:
-            logger.error(f"[{log_tag}] 读取错误响应失败: {e}")
-            yield StreamChunk(content="", model=self.model, is_done=True,
-                              stream_error=f"HTTP {response.status_code} error",
-                              stream_error_type="http_error")
-
-    async def _parse_sse_stream(self, response, log_tag: str = "sse") -> AsyncGenerator[StreamChunk, None]:
-        """通用SSE解析生成器 — 消除chat_stream/chat_with_tools_stream之间~90%重复 — 小健 2026-05-25
-
-        职责: 从HTTP响应中解析SSE流，yield StreamChunk
-        包含: wait_for心跳、取消检查、data:前缀解析、[DONE]处理、choices[0].delta提取
-        """
-        line_iterator = response.aiter_lines()
-        _reasoning_content_total = 0
-        _content_total = 0
-
-        while True:
-            try:
-                line = await asyncio.wait_for(line_iterator.__anext__(), timeout=1.0)
-            except asyncio.TimeoutError:
-                if self._cancelled:
-                    yield self._create_cancelled_chunk()
-                    return
-                continue
-            except StopAsyncIteration:
-                break
-
-            if self._cancelled:
-                yield self._create_cancelled_chunk()
-                return
-
-            if not line or not line.strip():
-                continue
-
-            if line.startswith("data: "):
-                data_str = line[6:]
-            elif line.startswith("data:"):
-                data_str = line[5:]
-            else:
-                continue
-
-            if data_str.strip() == "[DONE]":
-                logger.info(f"[{log_tag}] 流结束, content_total={_content_total}, reasoning_total={_reasoning_content_total}")
-                yield StreamChunk(content="", model=self.model, is_done=True)
-                return
-
-            try:
-                data = json.loads(data_str)
-                choices = data.get("choices", [])
-                if choices:
-                    delta = choices[0].get("delta", {})
-                    content = delta.get("content", "") or ""
-                    reasoning_content = delta.get("reasoning_content", "") or ""
-
-                    if content:
-                        _content_total += len(content)
-                        yield StreamChunk(content=content, model=self.model, is_done=False, is_reasoning=False)
-
-                    if reasoning_content:
-                        _reasoning_content_total += len(reasoning_content)
-                        if _reasoning_content_total == len(reasoning_content):
-                            logger.info(f"[{log_tag}] 首次收到reasoning, model={self.model}")
-                        yield StreamChunk(content=reasoning_content, model=self.model, is_done=False, is_reasoning=True)
-            except json.JSONDecodeError:
-                continue
-
-        yield StreamChunk(content="", model=self.model, is_done=True)
+        return create_cancelled_chunk(self.model)
 
     def _build_messages(self, message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
         """构建消息列表 — 委托给MessageBuilder统一入口（DRY原则）
@@ -372,10 +291,10 @@ class BaseAIService:
                     yield self._create_cancelled_chunk()
                     return
                 if response.status_code != 200:
-                    async for chunk in self._handle_http_error(response, log_tag="chat_stream"):
+                    async for chunk in handle_http_error_stream(response, self.model, log_tag="chat_stream"):
                         yield chunk
                     return
-                async for chunk in self._parse_sse_stream(response, log_tag="chat_stream"):
+                async for chunk in parse_sse_stream(response, self.model, lambda: self._cancelled, log_tag="chat_stream"):
                     yield chunk
         except Exception as e:
             yield self._create_stream_error_chunk(e)
@@ -508,10 +427,10 @@ class BaseAIService:
                     yield self._create_cancelled_chunk()
                     return
                 if response.status_code != 200:
-                    yield StreamChunk(content="", model=self.model, is_done=True,
-                                      stream_error=f"API Error: {response.status_code}")
+                    async for chunk in handle_http_error_stream(response, self.model, log_tag="chat_with_tools_stream"):
+                        yield chunk
                     return
-                async for chunk in self._parse_sse_stream(response, log_tag="chat_with_tools_stream"):
+                async for chunk in parse_sse_stream(response, self.model, lambda: self._cancelled, log_tag="chat_with_tools_stream"):
                     yield chunk
         except Exception as e:
             yield self._create_stream_error_chunk(e)
