@@ -8,7 +8,21 @@
 """
 
 import re
-from app.services.command_parser.command_security import SCOPE_MULTIPLIERS, SCOPE_PATTERNS
+
+# 【内联】原 command_security.py 的 CRSS 范围配置
+SCOPE_MULTIPLIERS = {
+    'SINGLE_FILE': 1.1,
+    'DIRECTORY': 1.45,
+    'CROSS_DIR': 1.5,
+    'SYSTEM': 3.0,
+}
+
+SCOPE_PATTERNS = {
+    'SINGLE_FILE': [r'^[^*?]+\.[a-zA-Z0-9]+$', r'^[^*?/]+$'],
+    'DIRECTORY': [r'[/\\]$', r'\$'],
+    'CROSS_DIR': [r'\*', r'\?'],
+    'SYSTEM': [r'^-rf$', r'^/s$', r'^/q$', r'^C:\\$', r'^/$'],
+}
 
 
 def parse_impact_scope(command: str) -> str:
