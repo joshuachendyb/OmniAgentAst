@@ -39,6 +39,22 @@ class MessageBuilder:
     OBSERVATION_BUDGET_MIN = OBSERVATION_BUDGET_MIN
     OBSERVATION_HEAD_RATIO = 0.6
 
+    @staticmethod
+    def build_llm_messages(message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
+        """LLM层消息列表拼接 — DRY原则：统一入口
+        
+        【重构 2026-05-27 小健】替代llm_core._build_messages()，
+        消除消息构建逻辑分散两处（DRY）。
+        LLM层只应接收已构建好的messages，不应自行组装（SLAP）。
+        """
+        if not message and history:
+            return list(history)
+        messages = []
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": message})
+        return messages
+
     def __init__(self, max_context_chars: int = MAX_CONTEXT_CHARS):
         self.conversation_history: List[Dict[str, Any]] = []
         self.temp_history: List[Dict[str, Any]] = []
@@ -240,6 +256,10 @@ class MessageBuilder:
     # =========================================================================
     # 第五组：缓存/失败计数管理（从 base_react.py 搬入）
     # =========================================================================
+
+    def invalidate_cache(self) -> None:
+        """兼容性no-op — MessageBuilder无缓存状态，保留空实现供调用方安全使用"""
+        pass
 
     # =========================================================================
     # 第六组：Schema 文本生成（从 react_agent_mixin.py 搬入）
