@@ -184,6 +184,50 @@ class BasePrompts(ABC):
         
         return "\n\n".join(parts)
 
+    @staticmethod
+    def build_tool_descriptions(tool_names: List[str], category_label: str = "") -> str:
+        """从 ToolRegistry 动态生成工具描述字符串 — 小沈 2026-05-27
+
+        DRY原则：统一 file_prompts 和 system_prompts 中重复的 _build_tool_descriptions。
+        新增/修改工具后自动更新 prompt，无需人工维护模板。
+
+        Args:
+            tool_names: 工具名列表
+            category_label: 分类标签（如"FILE""SYSTEM"），非空时在开头添加分类标题
+
+        Returns:
+            工具描述字符串
+        """
+        from app.services.tools.registry import tool_registry
+
+        tools = []
+        for name in tool_names:
+            tool = tool_registry.get_tool(name)
+            if tool:
+                tools.append(tool)
+
+        if not tools:
+            return ""
+
+        lines = []
+        if category_label:
+            lines.append(f"  以下是 {category_label} 分类下的 {len(tools)} 个工具：")
+
+        for idx, t in enumerate(tools, 1):
+            desc = t.description or ""
+            desc_first = desc.split('，')[0] if '，' in desc else desc
+            lines.append(f"{idx}. {t.name} - {desc}")
+            lines.append(f"   - When to use: 当需要{desc_first}时")
+
+            input_schema = getattr(t, 'input_schema', None) or {}
+            params = input_schema.get('properties', {})
+            if params:
+                lines.append(f"   - Parameters: {', '.join(params.keys())}")
+            lines.append(f"   - Returns: 返回操作结果")
+            lines.append("")
+
+        return "\n".join(lines)
+
 
 __all__ = [
     "BasePrompts",
