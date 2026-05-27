@@ -1,6 +1,38 @@
-v0.14.1
+v0.14.2
 
-更新时间: 2026-05-26 21:03:59
+更新时间: 2026-05-27 12:12:45
+
+## v0.14.1→v0.14.2 变更汇总 - 小欧-2026-05-27
+
+### Phase 1 清扫 - 删除26个废弃文件+内联死代码563行，净减3,464行（19个commit）
+
+| commit | 说明 |
+|--------|------|
+| 46c06d48 | refactor: 第一阶段终检清理 - 删除重复常量+冗余导出+pycache |
+| 2be72577 | refactor: 第一阶段彻底清扫 - 删剩余8项冗余代码 |
+| 6c003d82 | refactor: 删除command_security.py（内联CommandParser+常量到各使用文件） |
+| fed738d7 | refactor: 第一阶段最终清理 - 删_load_tools + 重复逻辑 |
+| acb94418 | docs: 补充Phase 1清扫记录 |
+| 2e24862c | fix: 删除base_react.py废弃的_load_tools方法 |
+| 44a250e4 | fix: 删除其他孤立文件(shared_validators/react_schema/tmp_debug) |
+| 2c61c7ce | fix: 清除命令安全检查的所有引用 |
+| 01f69d0a | fix: 彻底删除命令安全检查系统 |
+| c73856d9 | refactor: 第一阶段深度清理 - 删死函数6个+转发函数3个+空壳1个+死import+注释代码块+冗余导出 |
+| 52c4bb96 | refactor: 第一阶段1.5 删死代码和临时文件 |
+| 40c90648 | refactor: 第一阶段扫描清理 |
+| cd2ef0c9 | refactor: 第一阶段1.4 删DRY重复 - network_tools弃用搜索函数 |
+| 550971da | refactor: 第一阶段1.3 删防御调用 - ensure_tools_registered 4处→1处 |
+| c02e4687 | refactor: 第一阶段1.2 删废弃注释 |
+| 3132eb8a | refactor: 第一阶段1.1 删废弃文件 |
+
+### 变更详情
+
+1. **废弃文件全删除 26个（3,150行）**: v1 intent分类(3)/安全模块(3)/旧Agent遗留(4)/旧Schema(1)/旧Prompt(4)/辅助工具(2)/旧操作模型(1)/空壳__init__(8)
+2. **内联删除 563行**: 死函数13个/转发函数9个/空壳函数2个/重复逻辑3处/冗余导出15个/死import~18/废弃常量8个/废弃注释9处/防御调用4→1
+3. **新增文件 1个（+20行）**: utils/version.py（合并health.py+main.py两个副本）
+4. **合计**: 54 files changed, +249 insertions, -3,713 deletions, **净减 -3,464 行**
+
+---
 
 ## v0.14.0→v0.14.1 变更汇总 - 小沈-2026-05-26
 
