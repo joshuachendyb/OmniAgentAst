@@ -20,10 +20,10 @@
 
 import asyncio
 import time
-import logging
 from typing import AsyncIterator, TypeVar, Generic
+from app.utils.logger import setup_logger
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 T = TypeVar('T')
 
