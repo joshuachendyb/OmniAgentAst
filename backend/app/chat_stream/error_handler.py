@@ -44,8 +44,7 @@ def create_error_response(
     step: Optional[int] = None
 ) -> str:
     """
-    创建统一的错误响应格式
-    【2026-04-15 小沈修改15.7】：按15.7.1要求删除旧字段code和message
+    创建统一的错误响应格式 — 委托给sse_formatter统一入口
     
     Args:
         error_type: 错误类型
@@ -61,28 +60,18 @@ def create_error_response(
     Returns:
         SSE 格式的错误响应字符串
     """
-    # 【15.7修改】只输出新字段，删除旧字段code和message
-    response: Dict[str, Any] = {
-        'type': 'error',
-        'error_type': error_type,
-        'error_message': error_message,
-    }
-    if step is not None:
-        response['step'] = step
-    if model is not None:
-        response['model'] = model
-    if provider is not None:
-        response['provider'] = provider
-    if details:
-        response['details'] = details
-    if stack:
-        response['stack'] = stack
-    if recoverable is not None:
-        response['recoverable'] = recoverable
-    if retry_after is not None:
-        response['retry_after'] = retry_after
-    response['timestamp'] = create_timestamp()
-    return f"data: {json.dumps(response, ensure_ascii=False)}\n\n"
+    from app.chat_stream.sse_formatter import format_error_sse
+    return format_error_sse(
+        error_type=error_type,
+        error_message=error_message,
+        step=step,
+        model=model,
+        provider=provider,
+        details=details,
+        stack=stack,
+        recoverable=recoverable,
+        retry_after=retry_after
+    )
 
 
 def get_function_call_error_info(error: Exception) -> Dict[str, Any]:
