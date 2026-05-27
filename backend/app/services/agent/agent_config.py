@@ -84,6 +84,18 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
 
 def resolve_agent_config(intent_type: str) -> AgentConfig:
     """根据 intent_type 解析 Agent 配置（支持别名）"""
+    # 首先规范化意图类型
+    from app.services.intents.intent_mapper import normalize_intent
+    normalized_intent = normalize_intent(intent_type)
+    
+    # 使用规范化后的意图查找配置
+    for config in AGENT_REGISTRY.values():
+        if config.intent_type == normalized_intent:
+            return config
+        if normalized_intent in config.aliases:
+            return config
+    
+    # 如果找不到，尝试原逻辑（向后兼容）
     for config in AGENT_REGISTRY.values():
         if config.intent_type == intent_type:
             return config
@@ -94,8 +106,14 @@ def resolve_agent_config(intent_type: str) -> AgentConfig:
 
 def get_all_intent_types() -> List[str]:
     """获取所有 intent_type（含别名）"""
+    from app.services.intents.intent_mapper import get_agent_intent_names, get_aliases_for_intent, IntentType
+    
     result = []
-    for config in AGENT_REGISTRY.values():
-        result.append(config.intent_type)
-        result.extend(config.aliases)
-    return result
+    # 添加所有标准意图类型
+    result.extend(get_agent_intent_names())
+    
+    # 添加所有别名
+    for intent_type in IntentType:
+        result.extend(get_aliases_for_intent(intent_type))
+    
+    return list(set(result))  # 去重
