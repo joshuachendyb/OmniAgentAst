@@ -12,6 +12,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy
 from app.services.agent.llm_adapter import LLMAdapter
+from app.services.agent.strategy_manager import LLMStrategyManager
 from app.services.tools.mixin import ToolLoaderMixin
 from app.services.tools.registry import ToolCategory
 from app.utils.logger import logger
@@ -44,10 +45,11 @@ class ReactAgentMixin(ToolLoaderMixin):
         """初始化LLM调用策略 - 小健 2026-05-23
 
         创建策略对象和adapter，策略在首次LLM调用时懒确定并缓存。
+        【2026-05-27 小沈】使用策略管理器统一管理策略生命周期
         """
         self.text_strategy = TextStrategy()
-        self._strategy = None
-        self._strategy_probe_count = 0  # 重新探测计数器 — 小沈 2026-05-24
+        self.adapter = LLMAdapter(self)
+        self.strategy_manager = LLMStrategyManager(self.adapter)
 
         _cls = self.__class__.__name__
         _has_client = self.llm_client is not None
@@ -197,11 +199,11 @@ class ReactAgentMixin(ToolLoaderMixin):
     # ===== LLM调用 =====
     
     async def _call_llm(self) -> str:
-        """LLM调用统一入口 — 策略在首次调用时确定，后续直接用缓存"""
+        """LLM调用统一入口 — 策略由策略管理器统一管理"""
         self.llm_call_count += 1
         mb = self.message_builder
         messages = mb.prepare_messages_for_llm()
-        strategy = await self._resolve_strategy()           # 策略检测（含重试探测）
+        strategy = await self.strategy_manager.get_strategy()  # 策略管理器统一处理
         messages = self._inject_tools_hint(messages, strategy)
         if strategy == "text":
             messages = self._inject_schema(messages)
@@ -211,24 +213,12 @@ class ReactAgentMixin(ToolLoaderMixin):
         return response
 
     async def _resolve_strategy(self) -> str:
-        """策略检测与决策 — 提取自 _call_llm() 的if/elif分支"""
-        if self._strategy is None:
-            if self.adapter is not None:
-                self._strategy = await self.adapter.detect_strategy()
-            else:
-                self._strategy = "text"
-                logger.warning(f"[{self.__class__.__name__}] adapter为None, 降级到text策略")
-            logger.info(f"[{self.__class__.__name__}] 策略确定: {self._strategy}")
-        elif self._strategy == "text" and self.adapter:
-            # STRAT-001: 首次探测失败永久降级text → 每10次重新探测一次
-            self._strategy_probe_count += 1
-            if self._strategy_probe_count >= 10:
-                self._strategy_probe_count = 0
-                _new = await self.adapter.detect_strategy()
-                if _new != self._strategy:
-                    logger.info(f"[{self.__class__.__name__}] 策略已升级: text→{_new}")
-                    self._strategy = _new
-        return self._strategy
+        """策略检测与决策 — 提取自 _call_llm() 的if/elif分支【已废弃】
+
+        【2026-05-27 小沈】此方法已废弃，策略管理逻辑迁移到 LLMStrategyManager
+        保留此方法仅用于向后兼容
+        """
+        return await self.strategy_manager.get_strategy()
 
     def _inject_tools_hint(self, history_dicts, strategy_method):
         """工具提示注入（含缓存） — text策略时注入工具描述，tools策略时不注入"""
