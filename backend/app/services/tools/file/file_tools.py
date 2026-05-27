@@ -748,6 +748,7 @@ class FileTools:
         from app.services.agent import get_file_safety_service, get_session_service
         from app.services.agent.mixins.task_tracker import get_task_tracker
         from app.utils.visualization.file_visualization import get_visualizer
+        from app.services.safety.manager import get_safety_manager
         
         self.safety = get_file_safety_service()
         self.task_tracker = get_task_tracker()
@@ -756,6 +757,11 @@ class FileTools:
         self._sequence = 0
         self._sequence_lock = threading.Lock()
         self.allowed_paths = ALLOWED_PATHS.copy()
+        
+        # 【重构 2026-05-27 小健】DRY+OCP：注册file安全Hook到SafetyManager统一入口
+        _sm = get_safety_manager()
+        if _sm.get_hook("file") is None:
+            _sm.register_hook("file", self.safety)
     
     def _get_next_sequence(self) -> int:
         """获取下一个操作序号（线程安全）"""
