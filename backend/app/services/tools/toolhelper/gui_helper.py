@@ -25,6 +25,7 @@ import importlib
 import subprocess
 from typing import Any, Callable, Dict, List, Optional
 
+from app.services.agent.tool_result_utils import create_tool_result
 from app.utils.logger import logger
 from app.services.tools.toolhelper.window_helper import find_windows_by_title
 
@@ -107,14 +108,14 @@ def _get_mouse_position() -> Dict[str, Any]:
     if WIN32_AVAILABLE:
         try:
             point = _win32api_mod.GetCursorPos()
-            return {"code": "SUCCESS", "data": {"x": point[0], "y": point[1]}, "message": f"鼠标位置: ({point[0]}, {point[1]})"}
+            return create_tool_result(data={"x": point[0], "y": point[1]}, message=f"鼠标位置: ({point[0]}, {point[1]})")
         except Exception as e:
             return {"code": ERR_DESKTOP_GET_MOUSE_POSITION, "data": None, "message": f"获取失败: {str(e)}"}
 
     if PYAUTOGUI_AVAILABLE:
         try:
             x, y = _pyautogui_mod.position()
-            return {"code": "SUCCESS", "data": {"x": x, "y": y}, "message": f"鼠标位置: ({x}, {y})"}
+            return create_tool_result(data={"x": x, "y": y}, message=f"鼠标位置: ({x}, {y})")
         except Exception as e:
             return {"code": ERR_DESKTOP_GET_MOUSE_POSITION, "data": None, "message": f"获取失败: {str(e)}"}
 
@@ -130,14 +131,14 @@ def _check_screen_size() -> Dict[str, Any]:
         try:
             width = _win32api_mod.GetSystemMetrics(_win32con_mod.SM_CXSCREEN)
             height = _win32api_mod.GetSystemMetrics(_win32con_mod.SM_CYSCREEN)
-            return {"code": "SUCCESS", "data": {"width": width, "height": height}, "message": f"屏幕分辨率: {width}x{height}"}
+            return create_tool_result(data={"width": width, "height": height}, message=f"屏幕分辨率: {width}x{height}")
         except Exception as e:
             return {"code": ERR_DESKTOP_CHECK_SCREEN_SIZE, "data": None, "message": f"获取失败: {str(e)}"}
 
     if PYAUTOGUI_AVAILABLE:
         try:
             size = _pyautogui_mod.size()
-            return {"code": "SUCCESS", "data": {"width": size.width, "height": size.height}, "message": f"屏幕分辨率: {size.width}x{size.height}"}
+            return create_tool_result(data={"width": size.width, "height": size.height}, message=f"屏幕分辨率: {size.width}x{size.height}")
         except Exception as e:
             return {"code": ERR_DESKTOP_CHECK_SCREEN_SIZE, "data": None, "message": f"获取失败: {str(e)}"}
 
@@ -155,7 +156,7 @@ def _check_window_exists(window_title: str) -> Dict[str, Any]:
     try:
         hwnds = find_windows_by_title(window_title)
         exists = len(hwnds) > 0
-        return {"code": "SUCCESS", "data": {"exists": exists}, "message": f"窗口 '{window_title}' {'存在' if exists else '不存在'}"}
+        return create_tool_result(data={"exists": exists}, message=f"窗口 '{window_title}' {'存在' if exists else '不存在'}")
     except Exception as e:
         return {"code": ERR_DESKTOP_CHECK_WINDOW, "data": None, "message": f"检查失败: {str(e)}"}
 
@@ -181,7 +182,7 @@ def _get_window_position(window_title: str) -> Dict[str, Any]:
             "width": rect[2] - rect[0],
             "height": rect[3] - rect[1],
         }
-        return {"code": "SUCCESS", "data": result, "message": f"窗口位置: ({result['x']}, {result['y']}) 大小: {result['width']}x{result['height']}"}
+        return create_tool_result(data=result, message=f"窗口位置: ({result['x']}, {result['y']}) 大小: {result['width']}x{result['height']}")
     except Exception as e:
         return {"code": ERR_DESKTOP_GET_WINDOW_POSITION, "data": None, "message": f"获取失败: {str(e)}"}
 
@@ -197,8 +198,8 @@ def _check_capture_permission() -> Dict[str, Any]:
         hdc = user32.GetDC(0)
         if hdc:
             user32.ReleaseDC(0, hdc)
-            return {"code": "SUCCESS", "data": {"has_permission": True}, "message": "Windows系统默认允许屏幕捕获，已验证可获取桌面DC"}
-        return {"code": "SUCCESS", "data": {"has_permission": False}, "message": "无法获取桌面DC，屏幕捕获可能受限"}
+            return create_tool_result(data={"has_permission": True}, message="Windows系统默认允许屏幕捕获，已验证可获取桌面DC")
+        return create_tool_result(data={"has_permission": False}, message="无法获取桌面DC，屏幕捕获可能受限")
     except Exception as e:
         return {"code": ERR_FILE_CHECK_PERMISSION, "data": None, "message": f"检查屏幕捕获权限失败: {str(e)}"}
 
@@ -217,10 +218,10 @@ def _check_tesseract_available() -> Dict[str, Any]:
         )
         available = result.returncode == 0
         if available:
-            return {"code": "SUCCESS", "data": {"is_available": True}, "message": "Tesseract OCR 引擎可用"}
-        return {"code": "SUCCESS", "data": {"is_available": False}, "message": "Tesseract 命令执行失败"}
+            return create_tool_result(data={"is_available": True}, message="Tesseract OCR 引擎可用")
+        return create_tool_result(data={"is_available": False}, message="Tesseract 命令执行失败")
     except FileNotFoundError:
-        return {"code": "SUCCESS", "data": {"is_available": False}, "message": "Tesseract OCR 未安装"}
+        return create_tool_result(data={"is_available": False}, message="Tesseract OCR 未安装")
     except Exception as e:
         return {"code": ERR_DESKTOP_CHECK_TESSERACT, "data": None, "message": f"检查失败: {str(e)}"}
 
@@ -239,9 +240,9 @@ def _check_notification_permission() -> Dict[str, Any]:
             value, _ = winreg.QueryValueEx(key, "ToastEnabled")
             winreg.CloseKey(key)
             has_permission = bool(value)
-            return {"code": "SUCCESS", "data": {"has_permission": has_permission}, "message": f"通知权限(注册表检查): {'允许' if has_permission else '禁止'}"}
+            return create_tool_result(data={"has_permission": has_permission}, message=f"通知权限(注册表检查): {'允许' if has_permission else '禁止'}")
         except FileNotFoundError:
-            return {"code": "SUCCESS", "data": {"has_permission": True}, "message": "通知权限: 注册表项未找到，Windows系统默认允许"}
+            return create_tool_result(data={"has_permission": True}, message="通知权限: 注册表项未找到，Windows系统默认允许")
     except Exception as e:
         return {"code": ERR_FILE_CHECK_PERMISSION, "data": None, "message": f"检查通知权限失败: {str(e)}"}
 from app.constants import (
