@@ -2,6 +2,10 @@
 """
 统一工具重试引擎
 
+【分层规范 - 小健 2026-05-27】
+本文件属于【Agent编排层】，使用 tool_result_utils.py 的 create_xxx 函数
+禁止使用 _response.py 的 build_xxx 函数（那是工具层用的）
+
 负责统一处理工具执行的重试逻辑，消除双重实现
 Author: 小沈 - 2026-05-27
 """
