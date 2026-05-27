@@ -19,15 +19,14 @@ class AIConfigResolver:
             config: 配置实例，如果为None则使用全局配置
         """
         self._config = config or get_config()
-        self._raw_config = self._config.raw_config
     
     def get_ai_config(self) -> Dict[str, Any]:
-        """获取AI配置块
+        """获取AI配置块 — 使用config.get()统一入口
         
         Returns:
             AI配置字典
         """
-        return self._raw_config.get("ai", {})
+        return self._config.get("ai", {})
     
     def resolve_provider_model(self) -> Tuple[str, str]:
         """解析当前生效的provider和model，含完整fallback链
