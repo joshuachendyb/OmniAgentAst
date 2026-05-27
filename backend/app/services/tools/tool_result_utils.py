@@ -10,19 +10,17 @@
 """
 import json
 import logging
+from app.constants import (
+    DEFAULT_MAX_OUTPUT_CHARS,
+    DEFAULT_MAX_FILE_CHARS,
+    DEFAULT_MAX_DOC_CHARS,
+    DEFAULT_MAX_CLIPBOARD_CHARS,
+    DEFAULT_MAX_ENV_VALUE_CHARS,
+    DEFAULT_MAX_DATA_CHARS,
+    DEFAULT_MAX_LIST_ITEMS,
+)
 
 logger = logging.getLogger(__name__)
-
-# 【截断安全阈值】小沈 2026-05-20 — 集中管理，方便后续调整
-# LLM通道: 给LLM的精简数据，严格控制上下文占用
-DEFAULT_MAX_OUTPUT_CHARS = 5000   # shell/code执行输出（stdout+stderr合计）
-DEFAULT_MAX_FILE_CHARS = 8000     # 文件内容（代码文件常需完整内容才能修改）
-DEFAULT_MAX_DOC_CHARS = 10000     # PDF/DOCX文档
-DEFAULT_MAX_CLIPBOARD_CHARS = 5000
-DEFAULT_MAX_ENV_VALUE_CHARS = 1000
-# DATA通道: 给前端的结构化数据，1M上限防OOM
-DEFAULT_MAX_DATA_CHARS = 1000000  # data字段总字符上限(1M)
-DEFAULT_MAX_LIST_ITEMS = 10000    # data中列表项上限
 
 
 def truncate_text(text: str, max_chars: int, suffix: str = None) -> tuple:
