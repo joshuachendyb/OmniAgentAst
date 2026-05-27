@@ -31,10 +31,8 @@
   # 未来扩展(无需改此文件)
   return build_success(data, msg, new_field_2027="...")
 """
-from app.constants import ERR_FILE_NOT_FOUND
+from app.constants import ERR_FILE_NOT_FOUND, SUCCESS_CODE
 from typing import Any, Dict, Optional, List
-
-SUCCESS_CODE = "SUCCESS"
 
 # 必填字段 — 始终写入
 _REQUIRED_FIELDS = ("code", "data", "message")
@@ -191,22 +189,6 @@ def is_error(result: Dict[str, Any]) -> bool:
     """判断返回是否失败"""
     code = result.get("code", "")
     return code.startswith("ERR_")
-
-
-def extract_status(result: Dict[str, Any]) -> str:
-    """从统一格式提取Agent消费的status字段
-
-    Agent消费: status/summary/data/error/llm_data/next_actions
-    """
-    code = result.get("code", SUCCESS_CODE)
-    if code == SUCCESS_CODE:
-        status = "success"
-    elif code.startswith("WARNING_"):
-        status = "warning"
-    else:
-        status = "error"
-
-    return status
 
 
 
