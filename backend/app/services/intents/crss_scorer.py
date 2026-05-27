@@ -29,67 +29,11 @@ def _ascii_word_boundary_match(keyword: str, text: str) -> bool:
     return bool(re.search(pattern, text, re.IGNORECASE))
 
 
-# ====================================================================
-# 第一层：类型关键词——用户要对"什么"操作
-# 命中直接+2.0(中文)/+1.0(英文)，决定主路由方向
-# ====================================================================
+# 第一层：类型关键词已迁移到 intent_mapper.py 的 CRSS_TYPE_KEYWORDS
+# 使用统一的意图映射模块获取意图名称和关键词
+from app.services.intents.intent_mapper import get_crss_intent_names, CRSS_TYPE_KEYWORDS, resolve_category
 
-TYPE_KEYWORDS: Dict[str, Dict] = {
-    "FILE": {
-        "keywords": [r'\bls\b', r'\bdir\b', r'\bcd\b', r'\bpwd\b',
-                     r'\bcat\b', r'\bgrep\b', r'\bfind\b', r'\btree\b',
-                     r'\bcp\b', r'\bmv\b', r'\brm\b', r'\bmkdir\b', r'\btouch\b'],
-        "chinese_keywords": ['文件', '目录', '文件夹', '路径', '磁盘', 'C盘', 'D盘', 'E盘']
-    },
-    "SHELL": {
-        "keywords": [r'\bnpm\b', r'\bpip\b', r'\bnode\b', r'\bgcc\b', r'\bpython\b',
-                     r'\bgit\b', r'\bdocker\b', r'\bgradle\b'],
-        "chinese_keywords": ['终端', '命令', '脚本']
-    },
-    "TIME": {
-        "keywords": [r'\bdate\b', r'\btime\b', r'\bnow\b', r'\bclock\b',
-                     r'\bcalendar\b', r'\bschedule\b'],
-        "chinese_keywords": ['时间', '日期', '今天星期', '几月几号', '现在几点']
-    },
-    "NETWORK": {
-        "keywords": [r'\bping\b', r'\bcurl\b', r'\bwget\b', r'\bssh\b',
-                     r'\bhttp\b', r'\bhttps\b', r'\bftp\b', r'\bsocket\b'],
-        "chinese_keywords": ['网络', '端口', '下载', '请求', 'API',
-                             'IP', 'IP地址', 'DNS', '公网IP', '网关', 'WIFI', 'WiFi']
-    },
-    "DESKTOP": {
-        "keywords": [r'\bscreenshot\b', r'\bcapture\b',
-                     r'\bclick\b', r'\btype\b', r'\bpress\b', r'\bkey\b'],
-        "chinese_keywords": ['截图', '录屏', '点击', '按键', '键盘', '鼠标', '窗口', '桌面', '浏览器']
-    },
-    "ENV": {
-        "keywords": [r'\bPATH\b', r'\bHOME\b', r'\bTEMP\b'],
-        "chinese_keywords": ['环境变量', '系统变量']
-    },
-    "SYSTEM": {
-        "keywords": [r'\bcpu\b', r'\bmemory\b', r'\bram\b', r'\bdisk\b',
-                     r'\bprocess\b', r'\bservice\b'],
-        "chinese_keywords": ['系统信息', 'CPU', '内存', '进程', '服务', '磁盘']
-    },
-    "DATABASE": {
-        "keywords": [r'\bsql\b', r'\bdb\b', r'\bdatabase\b',
-                     r'\bselect\b', r'\binsert\b', r'\bupdate\b', r'\bdelete\b'],
-        "chinese_keywords": ['数据库', '表', '数据', 'SQL']
-    },
-    "DOCUMENT": {
-        "keywords": [r'\bdocx\b', r'\bpdf\b', r'\btxt\b', r'\bmd\b', r'\bcsv\b', r'\bjson\b'],
-        "chinese_keywords": ['文档', '报告', '笔记', '文本', '文章']
-    },
-    "CODE_EXECUTION": {
-        "keywords": [r'\bcompile\b', r'\bg\+\+\b'],
-        "chinese_keywords": ['编译', '执行程序']
-    },
-}
-
-# 规范意图类型名称列表 — 单一来源
-# 新增意图类型时：(1)在此处添加TYPE_KEYWORDS条目 (2) 其他模块自动获取
-# 使用统一的意图映射模块获取意图名称
-from app.services.intents.intent_mapper import get_crss_intent_names
+TYPE_KEYWORDS = CRSS_TYPE_KEYWORDS
 INTENT_NAMES = get_crss_intent_names()
 
 
@@ -164,26 +108,7 @@ ACTION_DEFINITIONS = {
 }
 
 
-# ====================================================================
-# 类型→枚举映射
-# ====================================================================
-
-# 使用统一的意图映射模块
-from app.services.intents.intent_mapper import resolve_category
-
-# 保持向后兼容的映射（已迁移到intent_mapper.py）
-TYPE_CATEGORY_MAP = {
-    "FILE": ToolCategory.FILE,
-    "SHELL": ToolCategory.SYSTEM,
-    "TIME": ToolCategory.SYSTEM,
-    "NETWORK": ToolCategory.NETWORK,
-    "DESKTOP": ToolCategory.DESKTOP,
-    "ENV": ToolCategory.SYSTEM,
-    "SYSTEM": ToolCategory.SYSTEM,
-    "DATABASE": ToolCategory.DOCUMENT,
-    "DOCUMENT": ToolCategory.DOCUMENT,
-    "CODE_EXECUTION": ToolCategory.SYSTEM,
-}
+# TYPE_CATEGORY_MAP 已删除，统一使用 intent_mapper.resolve_category()
 
 
 def _match_keywords(keywords: list, chinese_keywords: list, text: str) -> float:
@@ -326,7 +251,6 @@ def detect_intent_v2(command: str) -> Tuple[Optional[ToolCategory], List[ToolCat
 __all__ = [
     'TYPE_KEYWORDS',
     'ACTION_DEFINITIONS',
-    'TYPE_CATEGORY_MAP',
     '_compute_intent_scores',
     'detect_intent_v2',
     'CRSS_CONFIDENCE_THRESHOLD',
