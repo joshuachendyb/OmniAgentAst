@@ -1,3 +1,40 @@
+v0.14.3
+
+更新时间: 2026-05-27 15:20:00
+
+## v0.14.2→v0.14.3 变更汇总 - 小健-2026-05-27
+
+### Phase 2 收-去重 - 补充14项双重实现文档（1个commit）
+
+| commit | 说明 |
+|--------|------|
+| 1fa3a7af | docs: 第二阶段收-去重补充14项双重实现，修复2.21合并2.28并重新编号 |
+
+### 补充详情
+
+**第二阶段文档补充完成**（2.1-2.28共28项）：
+1. 原有2.1-2.15（phsa2内容）已存在
+2. 补充2.16-2.28（14项双重/多重实现）
+   - 策略选择双重统一（LLMAdapter.detect_strategy() vs _detect_reasoning_support()）
+   - 消息构建双重统一（MessageBuilder vs llm_core._build_messages()）
+   - Step创建双重统一（StepFactory vs error_handler手动dict）
+   - 配置读取双重统一（raw_config直接访问 vs config.get()）
+   - 会话管理壳函数清除（_init_session兼容壳）
+   - 重试逻辑四重收敛（llm_core/retry_controller/retry_policy/base_react）
+   - 工具结果格式化三重收敛（tool_result_formatter/tool_result_utils/_response.py）
+   - Prompt构建统一入口（3层拼接）
+   - 日志记录统一（setup_logger() vs logging.getLogger(__name__)）
+   - Fallback逻辑三重统一（config.py/services/__init__/routes）
+   - 工具超时配置统一（tool_meta硬编码 vs tool_config YAML）
+   - create_timestamp双重消除（chat_helpers vs reasoning_steps）
+   - 安全检查入口统一（CommandParser评分 vs FileOperationSafety执行）
+
+**重要修复：**
+- 合并2.28（429重试逻辑统一）到2.21（重试逻辑四重收敛）
+- 重新编号2.29→2.28
+- 更新3.0+第三阶段描述，增加原则违反说明
+
+
 v0.14.2
 
 更新时间: 2026-05-27 12:12:45
