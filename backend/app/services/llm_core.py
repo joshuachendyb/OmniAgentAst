@@ -213,14 +213,8 @@ class BaseAIService:
         return create_cancelled_chunk(self.model)
 
     def _build_messages(self, message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
-        """构建消息列表 — 委托给MessageBuilder统一入口（DRY原则）
-        
-        【重构 2026-05-27 小健】遵循DRY+SLAP原则：
-        - 委托给MessageBuilder.build_llm_messages()统一入口
-        - LLM层不再自行组装消息列表
-        """
-        from app.services.agent.message_builder import MessageBuilder
-        return MessageBuilder.build_llm_messages(message, history)
+        """构建消息列表 — 委托给request_builder统一入口 — 小健 2026-05-27"""
+        return build_messages(message, history)
     
     async def chat(self, message: str, history: Optional[List[Dict]] = None) -> ChatResponse:
         """发送对话请求（一次性返回）
