@@ -32,43 +32,6 @@ def _build_error_response(code: str, msg_key: str, retryable: bool,
     return result
 
 
-def create_error_step(
-    error_type: str,
-    error_message: str,
-    step_num: int,
-    model: Optional[str] = None,
-    provider: Optional[str] = None,
-    recoverable: bool = False,
-    context: Optional[Dict[str, Any]] = None,
-    retry_after: Optional[int] = None
-) -> Dict[str, Any]:
-    """
-    创建保存到数据库的 error_step — 统一委托到StepFactory
-
-    【2026-05-27 小沈】去重：error_handler的create_error_step和StepFactory.create_error_step
-    双重定义消除。本函数委托到StepFactory.create_error_step()，保持返回dict格式兼容。
-    """
-    if context is None:
-        context = {
-            "step": step_num,
-            "model": model,
-            "provider": provider,
-            "thought_content": ""
-        }
-
-    error_step = StepFactory.create_error_step(
-        step=step_num,
-        error_type=error_type,
-        error_message=error_message,
-        recoverable=recoverable,
-        model=model,
-        provider=provider,
-        context=context,
-        retry_after=retry_after
-    )
-    return error_step.to_dict()
-
-
 def create_error_response(
     error_type: str,
     error_message: str,
@@ -392,17 +355,17 @@ def create_session_error_result(
         step=step_num
     )
     
-    # 6. 创建 error_step（保存到数据库）
-    error_step = create_error_step(
+    # 6. 创建 error_step（保存到数据库）— 小健 2026-05-27：直接用StepFactory
+    error_step = StepFactory.create_error_step(
+        step=step_num,
         error_type=error_type,
         error_message=error_message,
-        step_num=step_num,
+        recoverable=retryable,
         model=model,
         provider=provider,
-        recoverable=retryable,
         context={"step": step_num, "model": model, "provider": provider, "thought_content": ""},
         retry_after=retry_after
-    )
+    ).to_dict()
     
     return error_response, error_step
 
@@ -455,17 +418,17 @@ def create_error_from_exception(
         step=step_num
     )
     
-    # 3. 创建 error_step（保存到数据库）
-    error_step = create_error_step(
+    # 3. 创建 error_step（保存到数据库）— 小健 2026-05-27：直接用StepFactory
+    error_step = StepFactory.create_error_step(
+        step=step_num,
         error_type=error_type,
         error_message=error_message,
-        step_num=step_num,
+        recoverable=retryable,
         model=model,
         provider=provider,
-        recoverable=retryable,
         context={"step": step_num, "model": model, "provider": provider, "thought_content": ""},
         retry_after=retry_after
-    )
+    ).to_dict()
     
     return error_response, error_step
 
