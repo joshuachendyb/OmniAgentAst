@@ -164,45 +164,13 @@ class Config:
         """
         获取AI provider和model（含fallback逻辑）- 统一入口
         
-        Fallback逻辑（2026-05-14 小健从routes.py移入）：
-        1. 找第一个有models的provider作为fallback
-        2. 检查ai.provider和ai.model是否有效
-        3. 使用有效配置或fallback
+        注意：此方法已委托给AIConfigResolver处理，保持接口兼容性
         
         Returns:
             (provider, model) 元组
         """
-        ai_config = self.get('ai', {})
-        
-        # 1. 找fallback provider（第一个有models的）
-        fallback_provider = ''
-        fallback_model = ''
-        for provider_name in ai_config.keys():
-            if provider_name in ('provider', 'model'):
-                continue
-            provider_data = ai_config.get(provider_name, {})
-            if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
-                fallback_provider = provider_name
-                fallback_model = provider_data['models'][0]
-                break
-        
-        # 2. 检查当前配置是否有效
-        selected_provider = ai_config.get('provider', '')
-        selected_model = ai_config.get('model', '')
-        
-        is_valid = (
-            selected_provider and 
-            selected_provider in ai_config and 
-            'models' in ai_config[selected_provider] and 
-            selected_model and 
-            selected_model in ai_config[selected_provider]['models']
-        )
-        
-        # 3. 返回有效配置或fallback
-        if is_valid:
-            return (selected_provider, selected_model)
-        else:
-            return (fallback_provider, fallback_model)
+        from app.services.ai_config_resolver import resolve_provider_model
+        return resolve_provider_model()
     
     def get_log_config(self) -> Dict[str, Any]:
         """
