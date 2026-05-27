@@ -3,9 +3,9 @@
 Agent 类型定义
 
 Author: 小沈 - 2026-03-21
+重构 2026-05-27 小欧：AgentStatus 移至 agent_status.py
 """
 
-from enum import Enum
 from .step_types import (
     ThoughtStep,
     ActionToolStep,
@@ -13,17 +13,7 @@ from .step_types import (
     Step,
 )
 from .result_types import AgentResult
-
-
-class AgentStatus(Enum):
-    """Agent状态"""
-    IDLE = "idle"
-    THINKING = "thinking"
-    EXECUTING = "executing"
-    OBSERVING = "observing"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    ROLLED_BACK = "rolled_back"
+from .agent_status import AgentStatus
 
 
 __all__ = [
