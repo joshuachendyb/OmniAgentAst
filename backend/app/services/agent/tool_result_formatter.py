@@ -14,7 +14,7 @@
 import json
 from typing import Any, Dict, List, Optional
 
-SUCCESS_CODE = "SUCCESS"
+from app.constants import SUCCESS_CODE, LLM_SAFE_LIMIT
 
 
 def _get_failure_hint(tool_name: str, tool_params: Optional[dict] = None) -> str:
@@ -121,7 +121,7 @@ def _format_llm_observation(result: dict, tool_name: str = "", tool_params: Opti
     更新 2026-05-24 小健：增加 tool_name/tool_params 参数供 failure hint 使用
     """
     code = result.get("code", "SUCCESS")
-    LLM_SAFE_LIMIT = 100_000
+    LLM_SAFE_LIMIT_LOCAL = LLM_SAFE_LIMIT
 
     from app.utils.logger import logger as _logger
 
@@ -134,7 +134,7 @@ def _format_llm_observation(result: dict, tool_name: str = "", tool_params: Opti
             text += f"\n⚠ 警告: {result['warning']}"
         if display_data:
             if isinstance(display_data, (dict, list)):
-                display_data = _safe_truncate(display_data, LLM_SAFE_LIMIT)
+                display_data = _safe_truncate(display_data, LLM_SAFE_LIMIT_LOCAL)
             text += f"\n数据: {json.dumps(display_data, ensure_ascii=False)}"
         text = _format_next_actions(result, text)
         return text
@@ -144,7 +144,7 @@ def _format_llm_observation(result: dict, tool_name: str = "", tool_params: Opti
         if result.get("data"):
             data = result["data"]
             if isinstance(data, (dict, list)):
-                data = _safe_truncate(data, LLM_SAFE_LIMIT)
+                data = _safe_truncate(data, LLM_SAFE_LIMIT_LOCAL)
             text += f"\n部分数据: {json.dumps(data, ensure_ascii=False)}"
         text = _format_next_actions(result, text)
         return text
