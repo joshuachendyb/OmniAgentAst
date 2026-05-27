@@ -24,7 +24,7 @@ import platform
 import subprocess
 from app.constants import ERR_DESKTOP_NOT_WINDOWS
 from typing import Any, Dict, Optional, Tuple
-from app.services.tools._response import build_error
+from app.services.tools._response import build_error, build_success
 
 
 def _check_module(module_name: str) -> bool:
