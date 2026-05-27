@@ -26,6 +26,8 @@ import time
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse
 
+from app.services.agent.tool_result_utils import create_tool_result
+
 
 def _check_network() -> Dict[str, Any]:
     """检查网络连通性（内部Helper） - 小沈 2026-05-17（从 support_tool_tools.py 迁移）
@@ -52,11 +54,11 @@ def _check_network() -> Dict[str, Any]:
             sock.connect((host, port))
             latency = (time.time() - t1) * 1000
             sock.close()
-            return {"code": "SUCCESS", "data": {"connected": True, "host": host, "latency_ms": round(latency, 2)}, "message": f"网络连通，延迟: {latency:.1f}ms"}
+            return create_tool_result(data={"connected": True, "host": host, "latency_ms": round(latency, 2)}, message=f"网络连通，延迟: {latency:.1f}ms")
         except (socket.timeout, socket.error, OSError):
             continue
 
-    return {"code": "SUCCESS", "data": {"connected": False}, "message": "网络不可用"}
+    return create_tool_result(data={"connected": False}, message="网络不可用")
 
 
 def _validate_url(url: str) -> Dict[str, Any]:
@@ -80,18 +82,17 @@ def _validate_url(url: str) -> Dict[str, Any]:
         valid_schemes = {"http", "https", "ftp", "ftps", "ws", "wss"}
         scheme_ok = parsed.scheme in valid_schemes
 
-        return {
-            "code": "SUCCESS",
-            "data": {
+        return create_tool_result(
+            data={
                 "valid": is_valid and scheme_ok,
                 "scheme": parsed.scheme,
                 "netloc": parsed.netloc,
                 "path": parsed.path,
             },
-            "message": "URL格式有效" if (is_valid and scheme_ok) else "URL格式无效"
-        }
+            message="URL格式有效" if (is_valid and scheme_ok) else "URL格式无效"
+        )
     except Exception as e:
-        return {"code": "SUCCESS", "data": {"valid": False, "error": str(e)}, "message": f"URL验证失败: {str(e)}"}
+        return create_tool_result(data={"valid": False, "error": str(e)}, message=f"URL验证失败: {str(e)}")
 
 
 __all__ = [
