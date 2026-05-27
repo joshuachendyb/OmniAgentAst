@@ -236,17 +236,6 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
     command_lower = command.lower().strip()
     type_raw: Dict[ToolCategory, float] = {}
 
-    # ===== 步骤0: 危险命令 → SHELL =====
-    try:
-        from app.services.command_security import DANGEROUS_COMMANDS
-        for dangerous in DANGEROUS_COMMANDS:
-            if dangerous.lower() in command_lower:
-                logger.info(f"[CRSS] 危险命令 → SHELL +{CRSS_DANGEROUS_COMMAND_BONUS}: '{dangerous}'")
-                type_raw[ToolCategory.SYSTEM] = type_raw.get(ToolCategory.SYSTEM, 0) + CRSS_DANGEROUS_COMMAND_BONUS
-                break
-    except ImportError:
-        pass
-
     # ===== 步骤1: 类型分 =====
     for type_name, kw in TYPE_KEYWORDS.items():
         cat = TYPE_CATEGORY_MAP[type_name]

@@ -32,7 +32,6 @@ import uuid
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 from app.services import AIServiceFactory
-from app.services.command_security import check_command_safety
 from app.config import get_config
 from app.utils.logger import logger
 from app.utils.display_name_cache import cache_display_name
@@ -347,78 +346,6 @@ async def _log_prompts(
     )
 
 
-async def _perform_security_check(
-    messages: List[Dict[str, str]],
-    next_step: Callable[[], int],
-    session_id: Optional[str],
-    current_execution_steps: List[Dict],
-    ai_service: Any,
-) -> Optional[str]:
-    """安全检查 — 返回None表示通过，返回str表示error SSE数据
-
-    使用场景:
-        - generate_sse_stream中对用户最后一条消息进行安全检查
-        - chat_router已做过冗余检查，此处为直接调用的兜底
-
-    使用示例:
-        error_sse = await _perform_security_check(messages, next_step, sid, steps, ai_svc)
-        if error_sse:
-            yield error_sse; return
-
-    返回数据说明:
-        - None: 安全检查通过
-        - str: SSE格式的error事件字符串
-    """
-    if not messages:
-        return None
-    last_message = messages[-1]["content"] if messages else ""
-    security_check_result = check_command_safety(last_message)
-    if security_check_result.get('is_safe', True):
-        return None
-    risk = security_check_result.get('risk', '未知风险')
-    risk_level = security_check_result.get('risk_level', 'unknown')
-    blocked = security_check_result.get('blocked', False)
-    is_need_confirm = security_check_result.get('is_need_confirm', False)
-    logger.info(f"[Step error] 发送error步骤(安全检测拦截), level={risk_level}, blocked={blocked}")
-    from app.services.command_security import calculate_risk_score_v2
-    risk_detail = calculate_risk_score_v2(last_message)
-    risk_level_text = {
-        "safe": "安全", "low": "低风险", "medium": "中等风险",
-        "high": "高风险", "critical": "极高风险",
-    }.get(risk_level, "未知")
-    action_text = "已拦截" if blocked else ("需确认" if is_need_confirm else "警告")
-    security_context = {
-        "crss_report": {
-            "risk_score": risk_detail.get('score', 0),
-            "risk_level": risk_level,
-            "risk_level_text": f"[{risk_level_text}]",
-            "action_required": action_text,
-            "is_safe": security_check_result.get('is_safe', True),
-            "is_blocked": blocked,
-            "need_confirmation": is_need_confirm,
-        },
-        "analysis": {
-            "operation_type": risk_detail.get('details', {}).get('operation_type', 'UNKNOWN'),
-            "operation_target": risk_detail.get('details', {}).get('target', 'UNKNOWN'),
-            "impact_scope": risk_detail.get('details', {}).get('scope', 'UNKNOWN'),
-        },
-        "matched_rule": security_check_result.get('rule_matched'),
-        "original_command": last_message,
-        "suggestions": risk_detail.get('suggestions', []),
-    }
-    error_step_obj = StepFactory.create_error_step(
-        step=next_step(), error_type="security",
-        error_message=f"危险操作需确认: {risk}",
-        recoverable=False, model=ai_service.model, provider=ai_service.provider,
-        context=security_context,
-    )
-    error_step_dict = error_step_obj.to_dict()
-    error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
-    current_execution_steps.append(error_step_dict)
-    await save_execution_steps_to_db(session_id, current_execution_steps, f"错误: {risk}")
-    return error_response
-
-
 async def _run_sse_stream(
     intent_type: str,
     llm_client,
@@ -656,13 +583,6 @@ async def generate_sse_stream(
 
     if intent_type not in ("", "generic") and ai_service:
         await _log_prompts(messages, intent_type, confidence, session_id, task_id)
-
-    security_error = await _perform_security_check(
-        messages, next_step, session_id, current_execution_steps, ai_service,
-    )
-    if security_error:
-        yield security_error
-        return
 
     try:
         is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock)
