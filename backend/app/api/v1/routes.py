@@ -221,8 +221,9 @@ async def get_system_config():
     try:
         config = get_config_instance()
         
-        # 【重构 2026-05-14 小健】使用Config统一方法，不再自己实现fallback
-        final_provider, final_model = config.get_ai_provider_model()
+        # 【重构 2026-05-28 小健】直接调用AIConfigResolver，绕过config中间层
+        from app.services.ai_config_resolver import resolve_provider_model
+        final_provider, final_model = resolve_provider_model()
         
         # 获取当前provider的配置，读取其api_key
         ai_config = config.get('ai', {})
