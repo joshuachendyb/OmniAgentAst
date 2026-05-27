@@ -40,7 +40,7 @@ from app.chat_stream.error_handler import create_error_response
 from app.services.agent.reasoning_steps import StepFactory
 from app.chat_stream.chat_helpers import create_final_response, create_timestamp, create_step_counter
 from app.chat_stream.message_saver import save_execution_steps_to_db, add_step_and_save, create_add_step_and_save, parse_and_save_sse
-from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse, format_sse_event
+from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse, format_sse_event, format_chunk_sse
 from app.services.agent.base_react import DEFAULT_MAX_STEPS
 from app.services.intents.crss_scorer import CRSS_CONFIDENCE_THRESHOLD  # 【修复 2026-05-13 小沈】H2: 改为从crss_scorer导入，切断与chat_router的循环依赖
 from app.services.task_lifecycle import TaskLifecycleManager  # 【重构 2026-05-25 小沈】替代直接操作running_tasks
@@ -221,32 +221,7 @@ def dispatch_sse_event(event: Dict[str, Any], step: int, model: str, provider: s
 # SSE 格式化函数 - chunk 类型处理
 # ============================================================
 
-def format_chunk_sse(event: Dict[str, Any], step: int, model: str, provider: str) -> str:
-    """
-    格式化chunk类型的SSE事件
-    
-    Args:
-        event: chunk事件 dict，包含content/thought/reasoning/timestamp/is_reasoning
-        step: 步骤编号
-        model: 模型名称
-        provider: 提供商
-    
-    Returns:
-        SSE格式的字符串
-    
-    Author: 小沈-2026-04-25（参考文档问题1修复）
-    """
-    chunk_data = {
-        "type": "chunk",
-        "step": step,
-        "content": event.get("content", ""),
-        "thought": event.get("thought", ""),
-        "reasoning": event.get("reasoning", ""),
-        "timestamp": event.get("timestamp", ""),
-        "is_reasoning": event.get("is_reasoning", False),
-        "_thinking": event.get("_thinking", "")
-    }
-    return f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
+# format_chunk_sse 已迁移到 sse_formatter.py 统一入口
 
 
 # ============================================================
