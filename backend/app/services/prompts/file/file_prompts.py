@@ -35,31 +35,8 @@ class FileOperationPrompts(BasePrompts):
     """文件操作Prompt模板类"""
 
     def _build_tool_descriptions(self, category: str, tools: List[str]) -> str:
-        """从 ToolRegistry 动态生成工具描述字符串。
-
-        小沈 2026-05-25 重构拆分
-        统一 17.1(`SystemPrompts`)和 22.2(`FileOperationPrompts`)的模板生成，
-        新增/修改工具后自动更新 prompt，无需人工维护模板。
-        消除 11 个工具描述硬编码（YAGNI）。
-        """
-        from app.services.tools.registry import ToolRegistry
-        registry = ToolRegistry.get_instance()
-        lines = []
-        for idx, tool_name in enumerate(tools, 1):
-            meta = registry.get_tool_meta(tool_name)
-            if not meta:
-                continue
-            lines.append(f"{idx}. {tool_name} - {meta.get('description', '')}")
-            lines.append(f"   - When to use: {meta.get('when_to_use', '')}")
-            params = meta.get('parameters', {})
-            if params:
-                lines.append(f"   - Parameters: {', '.join(params.keys())}")
-            lines.append(f"   - Returns: {meta.get('returns', '')}")
-            example = meta.get('example', '')
-            if example:
-                lines.append(f"   - Examples: {example}")
-            lines.append("")
-        return "\n".join(lines)
+        """从 ToolRegistry 动态生成工具描述字符串 — 委托到 BasePrompts.build_tool_descriptions"""
+        return self.build_tool_descriptions(tools, category_label=category.upper())
 
     def get_system_prompt(self) -> str:
         """获取增强版系统Prompt - 小沈 2026-05-25 重构拆分"""
