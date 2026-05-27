@@ -7,6 +7,10 @@
        从 network/network_tools.py 迁移 _html_to_markdown 和 _decode_bing_redirect_url
        这些函数作为内部Helper，不注册到tool_registry，仅供Agent内部代码调用
 
+【分层规范 - 小健 2026-05-27】
+本文件属于【工具层helper】，使用 _response.py 的 build_success/build_error/build_warning
+禁止使用 agent/tool_result_utils.py 的 create_xxx 函数
+
 包含函数（6个）：
 - _check_network: 检查网络连通性（内部Helper）
 - _validate_url: 验证URL格式（内部Helper）
@@ -26,7 +30,7 @@ import time
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse
 
-from app.services.agent.tool_result_utils import create_tool_result
+from app.services.tools._response import build_success, build_error
 
 
 def _check_network() -> Dict[str, Any]:
@@ -54,11 +58,11 @@ def _check_network() -> Dict[str, Any]:
             sock.connect((host, port))
             latency = (time.time() - t1) * 1000
             sock.close()
-            return create_tool_result(data={"connected": True, "host": host, "latency_ms": round(latency, 2)}, message=f"网络连通，延迟: {latency:.1f}ms")
+            return build_success({"connected": True, "host": host, "latency_ms": round(latency, 2)}, f"网络连通，延迟: {latency:.1f}ms")
         except (socket.timeout, socket.error, OSError):
             continue
 
-    return create_tool_result(data={"connected": False}, message="网络不可用")
+    return build_success({"connected": False}, "网络不可用")
 
 
 def _validate_url(url: str) -> Dict[str, Any]:
@@ -82,17 +86,17 @@ def _validate_url(url: str) -> Dict[str, Any]:
         valid_schemes = {"http", "https", "ftp", "ftps", "ws", "wss"}
         scheme_ok = parsed.scheme in valid_schemes
 
-        return create_tool_result(
-            data={
+        return build_success(
+            {
                 "valid": is_valid and scheme_ok,
                 "scheme": parsed.scheme,
                 "netloc": parsed.netloc,
                 "path": parsed.path,
             },
-            message="URL格式有效" if (is_valid and scheme_ok) else "URL格式无效"
+            "URL格式有效" if (is_valid and scheme_ok) else "URL格式无效"
         )
     except Exception as e:
-        return create_tool_result(data={"valid": False, "error": str(e)}, message=f"URL验证失败: {str(e)}")
+        return build_success({"valid": False, "error": str(e)}, f"URL验证失败: {str(e)}")
 
 
 __all__ = [
