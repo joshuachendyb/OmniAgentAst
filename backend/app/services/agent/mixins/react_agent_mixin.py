@@ -17,6 +17,7 @@ from app.services.tools.mixin import ToolLoaderMixin
 from app.services.tools.registry import ToolCategory
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
+from app.services.prompts.prompt_assembler import PromptAssembler
 
 
 class ReactAgentMixin(ToolLoaderMixin):
@@ -160,37 +161,30 @@ class ReactAgentMixin(ToolLoaderMixin):
         return "\n\n".join(parts) if parts else ""
     
     def _build_candidates_hint(self) -> str:
-        """构建候选意图提示"""
-        if not self._candidates:
-            return ""
-        candidates_list = ", ".join(self._candidates)
-        return (
-            f"\n\n【候选意图】已识别出以下可能的意图类别: {candidates_list}。"
-            "你可以根据实际任务需要，访问任意候选分类的工具。"
-        )
+        """构建候选意图提示 — 委托到PromptAssembler"""
+        assembler = PromptAssembler(self.prompts, candidates=self._candidates)
+        return assembler._build_candidates_hint()
     
     def _build_cross_tool_hint(self, category_name: str) -> str:
-        """构建跨分类工具提示"""
-        return (
-            f"\n\n【注意】除了{category_name}工具，你还可以使用其他分类的工具。"
-            "根据任务需要自由选择合适的工具，不受初始分类限制。"
-        )
+        """构建跨分类工具提示 — 委托到PromptAssembler"""
+        assembler = PromptAssembler(self.prompts, category_name=category_name)
+        return assembler._build_cross_tool_hint()
     
 
     def _build_system_prompt(self, category_name: str) -> str:
-        """构建完整system prompt
+        """构建完整system prompt — 委托到PromptAssembler统一入口 — 小沈 2026-05-27
         
-        【2026-05-07 小沈重构】统一组装架构：
-        基类build_full_system_prompt()负责公共规则(OUTPUT_FORMAT/TOOL_CALL_RULES/safety/param/rollback)
-        mixin追加动态部分(candidates/cross/finish_rule)
+        SLAP原则：调用方只需调PromptAssembler.build_system_prompt()，
+        不关心三层（SystemAdapter→BasePrompts→Mixin）拼接细节。
         """
         if hasattr(self, '_custom_system_prompt') and self._custom_system_prompt:
             return self._custom_system_prompt
-        base = self.prompts.build_full_system_prompt()
-        return (base 
-                + self._build_candidates_hint() 
-                + self._build_cross_tool_hint(category_name) 
-               )
+        assembler = PromptAssembler(
+            prompts=self.prompts,
+            candidates=self._candidates,
+            category_name=category_name,
+        )
+        return assembler.build_system_prompt()
     
     # ===== LLM调用 =====
     
