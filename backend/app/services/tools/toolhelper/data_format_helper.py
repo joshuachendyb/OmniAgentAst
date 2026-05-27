@@ -21,16 +21,16 @@
 import json
 import csv
 import tempfile
-import logging
 from typing import Dict, Any, List, Union, Tuple
 from pathlib import Path
 
 from app.services.tools._response import build_success, build_error
+from app.utils.logger import setup_logger
 
 
 
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 def _detect_encoding(path: Path, default: str = "utf-8") -> str:
