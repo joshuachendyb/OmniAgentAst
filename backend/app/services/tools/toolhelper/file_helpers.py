@@ -72,12 +72,12 @@ import tempfile
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Tuple, List, Generator, Callable
-import logging
 from app.services.tools.toolhelper.hash_helper import select_hasher
 from app.services.tools._response import build_success, build_error
+from app.utils.logger import setup_logger
 
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 def _is_safe_path(output_dir: str, member_path: str) -> bool:
@@ -1832,7 +1832,7 @@ async def get_file_info_impl(
                     _dc = 0
                     for _p in path.rglob("*"):
                         if _time.monotonic() > _gi_deadline:
-                            import logging; logging.getLogger(__name__).warning(f"[get_file_info] 超时自检触发，提前返回 file_count={_fc}, dir_count={_dc}")
+                            logger.warning(f"[get_file_info] 超时自检触发，提前返回 file_count={_fc}, dir_count={_dc}")
 
                             break
                         if _p.is_file():
