@@ -112,7 +112,8 @@ async def _is_cancelled_and_yield(
             logger.info(f"[Step incident] 发送incident步骤(interrupted)")
             current_execution_steps.append(interrupted_data)
             await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
-            return f"data: {json.dumps(interrupted_data)}\n\n"
+            from app.chat_stream.sse_formatter import format_incident_sse
+            return format_incident_sse('interrupted', '任务已被中断', step=interrupted_data.get('step'))
     return None
 
 
@@ -184,16 +185,16 @@ def dispatch_sse_event(event: Dict[str, Any], step: int, model: str, provider: s
             is_reasoning=event.get('is_reasoning', False)  # 【15.7新增】
         )
     elif event_type == 'incident':
-        # 【问题2修复】incident类型直接格式化为SSE（base_react.py已使用create_incident_data产生标准格式）
+        # incident类型直接格式化为SSE
         return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
     elif event_type == 'interrupted':
-        # 【兼容层】处理仍发送type="interrupted"的旧代码路径，转换为incident格式
-        incident_data = create_incident_data(
+        # 兼容层：处理仍发送type="interrupted"的旧代码路径
+        from app.chat_stream.sse_formatter import format_incident_sse
+        return format_incident_sse(
             'interrupted',
             event.get('message', '用户取消了任务'),
             step=step
         )
-        return f"data: {json.dumps(incident_data, ensure_ascii=False)}\n\n"
     elif event_type == 'error':
         # 【15.7修改】error字段：删除code和message，使用新字段
         return create_error_response(
@@ -447,7 +448,8 @@ async def _handle_client_disconnect(
     try:
         interrupted_data = create_incident_data('interrupted', '客户端断开连接，任务中断')
         logger.info(f"[Step interrupted] 发送interrupted步骤(客户端断开)")
-        yield f"data: {json.dumps(interrupted_data)}\n\n"
+        from app.chat_stream.sse_formatter import format_incident_sse
+        yield format_incident_sse('interrupted', '客户端断开连接，任务中断')
     except Exception:
         logger.info(f"[Step interrupted] 客户端已断开，跳过yield")
 
