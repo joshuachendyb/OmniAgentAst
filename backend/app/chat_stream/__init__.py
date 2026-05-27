@@ -11,7 +11,6 @@ from app.chat_stream.error_handler import (
     create_error_response,
     get_function_call_error_info,
     ERROR_TYPE_MAP,
-    classify_error,
 )
 from app.chat_stream.incident_handler import (
     create_incident_data,
@@ -34,7 +33,6 @@ __all__ = [
     "create_error_response",
     "get_function_call_error_info",
     "ERROR_TYPE_MAP",
-    "classify_error",
     # incident_handler
     "create_incident_data",
     "check_and_yield_if_interrupted",
