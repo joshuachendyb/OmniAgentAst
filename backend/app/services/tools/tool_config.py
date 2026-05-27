@@ -24,16 +24,8 @@ logger = setup_logger(__name__)
 # 【别名映射表 - 小健 2026-05-02】
 # ============================================================
 
-# 工具名称别名映射（别名 -> 主工具名）
-TOOL_NAME_ALIASES = {
-    'write_file': 'write_text_file',        # 兼容旧代码
-    'glob_files': 'search_files',            # 兼容旧代码
-    'read_text_file': 'read_file',           # 【修复 小健 2026-05-24】Bug#10: 方向反了，read_file是主名不是别名
-    'search_file_content': 'grep_file_content',  # 兼容旧代码
-    'edit_text_file': 'edit_file',           # 【修复 小健 2026-05-24】Bug#10: 方向反了，edit_file是主名
-    'time_now': 'get_time',                  # 【修复 小健 2026-05-24】Bug#10: get_time是主名，不是get_current_time
-    'get_current_time': 'get_time',          # 【修复 小健 2026-05-24】Bug#10: get_time是注册主名
-}
+# 工具名称别名从tool_aliases.py统一导入
+from app.services.tools.tool_aliases import TOOL_NAME_ALIASES
 
 # 废弃工具列表（不再支持，调用时返回错误提示）
 DEPRECATED_TOOLS = {
