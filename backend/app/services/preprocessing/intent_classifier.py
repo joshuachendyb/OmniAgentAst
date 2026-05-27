@@ -25,7 +25,7 @@ import os
 from typing import Any, Optional, List, Dict
 
 from app.constants import DEFAULT_LLM_TIMEOUT
-from app.services.intents.crss_scorer import INTENT_NAMES
+from app.services.intents.intent_mapper import get_agent_intent_names, get_aliases_for_intent, IntentType, normalize_intent
 
 
 
@@ -68,7 +68,7 @@ def _load_intent_config() -> dict:
 INTENT_CLASSIFIER_CONFIG = _load_intent_config()
 
 # ============== 意图定义 ==============
-# 主意图类型从crss_scorer.INTENT_NAMES获取（单一来源）
+# 使用统一的意图映射模块（单一来源）
 # 描述文本在此维护（LLM prompt用自然语言，与crss_scorer的regex关键词不同）
 
 _INTENT_DESCRIPTIONS = {
@@ -79,22 +79,15 @@ _INTENT_DESCRIPTIONS = {
     "document": "文档读写和数据库，包括读取/创建/编辑docx、pdf、txt、md等文档文件、SQL查询、数据库操作等",
 }
 
-# 已合并的旧意图别名（保留向后兼容）
-_INTENT_ALIASES = {
-    "shell": "（已合并到system）命令执行操作",
-    "meta": "（已合并到system）时间日期和元信息",
-    "time": "（已合并到system）时间日期操作",
-    "environment": "（已合并到system）环境变量操作",
-    "env": "（已合并到system）环境变量操作",
-    "database": "（已合并到document）数据库操作",
-    "code_execution": "（已合并到system）代码执行操作",
-}
-
-_INTENT_DEFINITIONS = {
-    name.lower(): _INTENT_DESCRIPTIONS.get(name.lower(), f"{name}操作")
-    for name in INTENT_NAMES
-}
-_INTENT_DEFINITIONS.update(_INTENT_ALIASES)
+# 构建意图定义字典
+_INTENT_DEFINITIONS = {}
+for intent_type in IntentType:
+    intent_name = intent_type.value
+    _INTENT_DEFINITIONS[intent_name] = _INTENT_DESCRIPTIONS.get(intent_name, f"{intent_name}操作")
+    
+    # 添加别名描述
+    for alias in get_aliases_for_intent(intent_type):
+        _INTENT_DEFINITIONS[alias] = f"（已合并到{intent_name}）" + _INTENT_DESCRIPTIONS.get(intent_name, f"{intent_name}操作")
 
 
 def _extract_json_balanced(content: str) -> Optional[str]:
