@@ -256,6 +256,33 @@ class ChatRouter:
         from app.services.react_sse_wrapper import running_tasks, running_tasks_lock
         return task_id, ai_service, running_tasks, running_tasks_lock
 
+    async def _step_start(self, ai_service, task_id, next_step, user_input, execution_steps, session_id):
+        """S3 start_step 细节下沉 — 消除内联 yield_sse 闭包和start_step细节"""
+        try:
+            def yield_sse(data: dict) -> str:
+                return f"data: {json.dumps(data)}\n\n"
+            from app.chat_stream.start_step import send_start_step
+            start_data = await send_start_step(ai_service=ai_service, task_id=task_id, next_step=next_step,
+                user_message=user_input, security_check_result={},
+                current_execution_steps=execution_steps, session_id=session_id,
+                yield_func=yield_sse)
+            yield f"data: {json.dumps(start_data)}\n\n"
+        except Exception as e:
+            yield create_error_response(error_type="start_failed", error_message=f"start步骤失败: {e}")
+
+    async def _step_react_loop(self, messages, intent_type, confidence, candidates, provider, model,
+                               task_id, session_id, ai_service, next_step, running_tasks, running_tasks_lock,
+                               execution_steps):
+        """S4 ReAct 循环细节下沉 — 实现SLAP分层"""
+        from app.services.react_sse_wrapper import generate_sse_stream
+        messages_list = [{"role": msg.role, "content": msg.content} for msg in messages]
+        async for event in generate_sse_stream(messages=messages_list, intent_type=intent_type,
+            confidence=confidence, candidates=candidates, provider=provider, model=model,
+            task_id=task_id, session_id=session_id, ai_service=ai_service, next_step=next_step,
+            running_tasks=running_tasks, running_tasks_lock=running_tasks_lock,
+            current_execution_steps=execution_steps):
+            yield event
+
     async def route(
         self,
         user_input: str,
@@ -280,27 +307,17 @@ class ChatRouter:
         execution_steps: List[Dict] = []
 
         # S3 start_step — 安全检查统一在react_sse_wrapper中执行，此处不重复检查
-        try:
-            def yield_sse(data: dict) -> str:
-                return f"data: {json.dumps(data)}\n\n"
-            from app.chat_stream.start_step import send_start_step
-            start_data = await send_start_step(ai_service=ai_service, task_id=task_id, next_step=next_step,
-                user_message=user_input, security_check_result={},
-                current_execution_steps=execution_steps, session_id=session_id,
-                yield_func=yield_sse)
-            yield f"data: {json.dumps(start_data)}\n\n"
-        except Exception as e:
-            yield create_error_response(error_type="start_failed", error_message=f"start步骤失败: {e}")
-            return
+        async for event in self._step_start(
+            ai_service, task_id, next_step, user_input, execution_steps, session_id
+        ):
+            yield event
 
         # S4 ReAct 循环（所有意图统一路由）
-        from app.services.react_sse_wrapper import generate_sse_stream
-        messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
-        async for event in generate_sse_stream(messages=messages, intent_type=intent_type,
-            confidence=confidence, candidates=candidates, provider=provider, model=model,
-            task_id=task_id, session_id=session_id, ai_service=ai_service, next_step=next_step,
-            running_tasks=running_tasks, running_tasks_lock=running_tasks_lock,
-            current_execution_steps=execution_steps):
+        async for event in self._step_react_loop(
+            request.messages, intent_type, confidence, candidates, provider, model,
+            task_id, session_id, ai_service, next_step, running_tasks, running_tasks_lock,
+            execution_steps
+        ):
             yield event
 
 
