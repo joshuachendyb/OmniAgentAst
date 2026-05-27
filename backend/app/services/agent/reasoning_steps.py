@@ -21,18 +21,8 @@ Date: 2026-04-15
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List, Callable
 
+from app.chat_stream.chat_helpers import create_timestamp
 
-
-
-def create_timestamp() -> int:
-    """
-    创建时间戳（毫秒）
-    
-    Returns:
-        int: 当前时间戳（毫秒）
-    """
-    import time
-    return int(time.time() * 1000)
 
 
 def create_step_counter() -> Callable:
