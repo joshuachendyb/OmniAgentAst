@@ -20,15 +20,22 @@ CATEGORY_TOOL_ALIASES: Dict[str, Dict[str, str]] = {
         "delete_dir": "delete_directory",
         "rename_dir": "rename_directory",
     },
-    # 其他分类的别名可以在这里添加
-    # "shell": {...},
-    # "network": {...},
 }
 
-# ===== 全局工具别名 = 所有分类别的并集 =====
+TOOL_NAME_ALIASES: Dict[str, str] = {
+    'write_file': 'write_text_file',
+    'glob_files': 'search_files',
+    'read_text_file': 'read_file',
+    'search_file_content': 'grep_file_content',
+    'edit_text_file': 'edit_file',
+    'time_now': 'get_time',
+    'get_current_time': 'get_time',
+}
+
 GLOBAL_TOOL_ALIASES: Dict[str, str] = {}
 for _cat_aliases in CATEGORY_TOOL_ALIASES.values():
     GLOBAL_TOOL_ALIASES.update(_cat_aliases)
+GLOBAL_TOOL_ALIASES.update(TOOL_NAME_ALIASES)
 
 
 def resolve_tool_alias(tool_name: str, category: str = None) -> str:
@@ -83,6 +90,7 @@ def is_alias(tool_name: str) -> bool:
 __all__ = [
     "GLOBAL_TOOL_ALIASES",
     "CATEGORY_TOOL_ALIASES",
+    "TOOL_NAME_ALIASES",
     "resolve_tool_alias",
     "is_alias",
 ]
