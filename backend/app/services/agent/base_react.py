@@ -94,10 +94,15 @@ class BaseAgent(ABC):
             tool_category: 工具分类（可选，用于加载特定工具集）
             max_steps: 最大步数（默认 DEFAULT_MAX_STEPS=100，优先从 config.yaml 读取）
         """
+        # 初始化编排 - 按职责分组调用私有方法
+        self._init_llm(llm_client, **kwargs)
+        self._init_state(task_id, tool_category, max_steps)
+        self._init_messages()
+        self._init_tools()
+    
+    def _init_llm(self, llm_client: Any, **kwargs):
+        """初始化LLM客户端相关属性 - 提取自__init__的LLM职责部分"""
         self.llm_client = llm_client
-        self.task_id = task_id  # 赋值task_id
-        self.tool_category = tool_category
-        self.max_steps = max_steps
         
         # 【修复 2026-04-30 小沈】将 **kwargs 中有用的参数 setattr 到 self
         # 之前 **kwargs 被静默忽略，导致 model/provider/api_base/api_key 丢失
@@ -106,10 +111,12 @@ class BaseAgent(ABC):
         for key, value in kwargs.items():
             if key in _ALLOWED_KWARGS:
                 setattr(self, key, value)
-        
-        # 【步骤2.10】步骤历史管理：使用ReasoningStep类型
-        self.steps: List[ReasoningStep] = []
-        self.message_builder = MessageBuilder(max_context_chars=self.MAX_CONTEXT_CHARS)
+    
+    def _init_state(self, task_id: str, tool_category: Optional[ToolCategory], max_steps: int):
+        """初始化状态管理相关属性 - 提取自__init__的状态管理职责部分"""
+        self.task_id = task_id  # 赋值task_id
+        self.tool_category = tool_category
+        self.max_steps = max_steps
         self.status = AgentStatus.IDLE
         self.llm_call_count = 0
         self._lock = asyncio.Lock()
@@ -122,15 +129,23 @@ class BaseAgent(ABC):
         self.empty_response_retry_count = 0  # 空响应重试计数器
         self.max_empty_response_retries = 2  # 空响应最大重试次数（截断历史后重试）
         
+        # 【v2.3新增】chunk处理相关属性—所有Agent子类共享
+        self.max_consecutive_chunks = MAX_CONSECUTIVE_CHUNKS  # 连续chunk达此阈值时提升为implicit
+    
+    def _init_messages(self):
+        """初始化消息构建相关属性 - 提取自__init__的消息构建职责部分"""
+        # 【步骤2.10】步骤历史管理：使用ReasoningStep类型
+        self.steps: List[ReasoningStep] = []
+        self.message_builder = MessageBuilder(max_context_chars=self.MAX_CONTEXT_CHARS)
+    
+    def _init_tools(self):
+        """初始化工具相关属性 - 提取自__init__的工具职责部分"""
         # 【修复 小健 2026-05-24】P2-8: _load_tools移到子类_init_tools_and_executor统一调用，避免重复初始化
         self._tools_dict = {}
         self._loaded_categories = set()
         if self.tool_category:
             self._loaded_categories.add(self.tool_category.value)
         self._intent_classifier = IntentClassifier()
-        
-        # 【v2.3新增】chunk处理相关属性—所有Agent子类共享
-        self.max_consecutive_chunks = MAX_CONSECUTIVE_CHUNKS  # 连续chunk达此阈值时提升为implicit
         
         # 创建工具执行器
         self.executor = None  # 子类应初始化
