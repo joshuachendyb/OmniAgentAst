@@ -169,6 +169,15 @@ class RetryEngine:
         """最大重试次数"""
         return self._max_retries
 
+    def record_attempt(self) -> int:
+        """手动记录一次重试尝试（用于非execute模式的重试场景，如空响应截断重试）"""
+        self._attempt_count += 1
+        return self._attempt_count
+
+    def reset_attempts(self) -> None:
+        """重置重试计数（用于收到有效响应后重置空响应计数）"""
+        self._attempt_count = 0
+
 
 def create_rate_limit_retry_engine(
     max_retries: int = 3,
