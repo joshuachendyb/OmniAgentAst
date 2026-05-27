@@ -11,8 +11,8 @@ Updated: 小沈 - 2026-05-12 (合并file_react独有逻辑: prompt_logger+temp_h
 from typing import Dict, Any, List, Optional, Tuple
 from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy
-from app.services.agent.llm_adapter import LLMAdapter
 from app.services.agent.strategy_manager import LLMStrategyManager
+from app.services.llm.capability_detector import CapabilityDetector
 from app.services.tools.mixin import ToolLoaderMixin
 from app.services.tools.registry import ToolCategory
 from app.utils.logger import logger
@@ -45,12 +45,10 @@ class ReactAgentMixin(ToolLoaderMixin):
     def _init_llm_strategies(self):
         """初始化LLM调用策略 - 小健 2026-05-23
 
-        创建策略对象和adapter，策略在首次LLM调用时懒确定并缓存。
-        【2026-05-27 小沈】使用策略管理器统一管理策略生命周期
+        创建策略对象和detector，策略在首次LLM调用时懒确定并缓存。
+        【2026-05-27 小沈】使用CapabilityDetector替代LLMAdapter
         """
         self.text_strategy = TextStrategy()
-        self.adapter = LLMAdapter(self)
-        self.strategy_manager = LLMStrategyManager(self.adapter)
 
         _cls = self.__class__.__name__
         _has_client = self.llm_client is not None
@@ -66,11 +64,12 @@ class ReactAgentMixin(ToolLoaderMixin):
             from app.services.tools.registry import tool_registry
 
             if self.llm_client and _self_api_base:
-                self.adapter = LLMAdapter(
+                self.detector = CapabilityDetector(
                     api_base=_self_api_base,
                     api_key=_self_api_key,
                     model=_self_model,
                 )
+                self.strategy_manager = LLMStrategyManager(self.detector)
 
                 openai_tools = tool_registry.to_openai_tools(self.tool_category)
                 self.tools_strategy = ToolsStrategy(tools=openai_tools)
@@ -78,16 +77,18 @@ class ReactAgentMixin(ToolLoaderMixin):
                 self.openai_tools = openai_tools
                 logger.info(f"[{_cls}] _init_llm_strategies 成功: tools={len(openai_tools)}, use_function_calling=True, 策略待首次调用确定")
             else:
-                self.adapter = None
+                self.detector = None
+                self.strategy_manager = None
                 self.tools_strategy = None
                 self.use_function_calling = False
                 self.openai_tools = []
                 self._strategy = "text"
                 _reason = "llm_client is None" if not self.llm_client else "api_base为空"
-                logger.warning(f"[{_cls}] _init_llm_strategies 跳过adapter({_reason}): 直接text模式")
+                logger.warning(f"[{_cls}] _init_llm_strategies 跳过detector({_reason}): 直接text模式")
         except Exception as e:
             logger.warning(f"[{_cls}] LLM策略初始化失败，降级到文本模式: {e}")
-            self.adapter = None
+            self.detector = None
+            self.strategy_manager = None
             self.tools_strategy = None
             self.use_function_calling = False
             self.openai_tools = []
