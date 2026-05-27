@@ -1,10 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from datetime import datetime, timezone
 from pydantic import BaseModel
-
-# 使用统一的日志配置
-from app.utils.logger import logger
-from app.utils.version import get_version
 
 router = APIRouter()
 
@@ -21,14 +17,14 @@ class EchoResponse(BaseModel):
     timestamp: str
 
 @router.get("/health", response_model=HealthResponse)
-async def health_check():
+async def health_check(request: Request):
     """
     健康检查接口
     """
     return HealthResponse(
         status="healthy",
         timestamp=datetime.now(timezone.utc).isoformat(),
-        version=get_version()  # 【修复-波次5】使用统一版本号
+        version=request.app.version
     )
 
 @router.post("/echo", response_model=EchoResponse)
