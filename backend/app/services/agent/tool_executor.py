@@ -9,10 +9,10 @@ Version: 1.2 - 2026-05-02 添加工具别名映射机制 - 小健
 """
 
 import asyncio
-from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 from app.utils.logger import logger
+from app.utils.error_classifier import ErrorCategory, UnifiedErrorClassifier
 
 from app.constants import (
     ERR_MISSING_PARAM,
@@ -38,76 +38,8 @@ from app.services.tools.tool_config import (
 
 
 # =============================================================================
-# 7.4.3 T3：执行器增强 - 错误分类与重试
+# 7.4.3 T3：执行器增强 - 重试（错误分类已迁移到 app.utils.error_classifier）
 # =============================================================================
-
-class ErrorType(Enum):
-    """错误类型枚举（含is_retryable/to_status/description）"""
-    
-    TIMEOUT = "timeout"
-    PERMISSION_DENIED = "permission_denied"
-    FILE_NOT_FOUND = "file_not_found"
-    INVALID_PARAMS = "invalid_params"
-    TOOL_NOT_FOUND = "tool_not_found"
-    CIRCUIT_OPEN = "circuit_open"
-    UNKNOWN = "unknown"
-    
-    @property
-    def is_retryable(self) -> bool:
-        """判断错误是否可重试"""
-        return self.value in ["timeout"]
-    
-    @property
-    def to_status(self) -> str:
-        """转换为status字符串"""
-        mapping = {
-            "timeout": "timeout",
-            "permission_denied": "permission_denied",
-            "file_not_found": "error",
-            "invalid_params": "error",
-            "tool_not_found": "error",
-            "unknown": "error",
-        }
-        return mapping.get(self.value, "error")
-    
-    @property
-    def description(self) -> str:
-        """错误描述"""
-        mapping = {
-            "timeout": "执行超时",
-            "permission_denied": "权限拒绝",
-            "file_not_found": "文件未找到",
-            "invalid_params": "无效参数",
-            "tool_not_found": "工具未找到",
-            "unknown": "未知错误",
-        }
-        return mapping.get(self.value, "未知错误")
-
-
-class ErrorClassifier:
-    """错误分类器"""
-    
-    @staticmethod
-    def classify(error: Exception) -> ErrorType:
-        """分类错误类型"""
-        error_msg = str(error).lower()
-        
-        if isinstance(error, asyncio.TimeoutError):
-            return ErrorType.TIMEOUT
-        elif isinstance(error, PermissionError):
-            return ErrorType.PERMISSION_DENIED
-        elif isinstance(error, FileNotFoundError):
-            return ErrorType.FILE_NOT_FOUND
-        elif isinstance(error, ValueError):
-            return ErrorType.INVALID_PARAMS
-        elif isinstance(error, (KeyError, TypeError, AttributeError)):
-            return ErrorType.INVALID_PARAMS
-        elif isinstance(error, OSError):
-            return ErrorType.FILE_NOT_FOUND
-        elif "not found" in error_msg or "does not exist" in error_msg:
-            return ErrorType.TOOL_NOT_FOUND
-        else:
-            return ErrorType.UNKNOWN
 
 # 工具超时配置 - 从tool_meta.py统一导入 - 小健 2026-05-02
 from app.services.tools.tool_meta import TOOL_TIMEOUTS, get_timeout
@@ -203,6 +135,8 @@ class ToolExecutor:
         
         消除 4 处重复 {code, data, message, retry_count, metadata} 构建。
         retry_count 统一为"已完成的重试次数"（不含首次尝试）。
+        
+        Note: 该方法保留用于向后兼容，实际实现已迁移到 tool_retry_engine.py
         """
         result = {
             "code": code, "data": None,
@@ -212,91 +146,16 @@ class ToolExecutor:
             result["metadata"] = {"error_type": error_type}
         return result
 
-    async def _execute_tool_once(
-        self, tool, normalized_input: Dict[str, Any], timeout: float,
-    ) -> Any:
-        """统一单次工具调用（21.5 组件2，小沈 2026-05-25 实施）
-        
-        修复：纯同步工具通过 to_thread 移出事件循环，wait_for 超时保护生效。
-        """
-        import inspect
-        if inspect.iscoroutinefunction(tool):
-            return await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
-
-        result = await asyncio.wait_for(
-            asyncio.to_thread(lambda: tool(**normalized_input)), timeout=timeout
-        )
-        if inspect.iscoroutine(result):
-            return await asyncio.wait_for(result, timeout=timeout)
-        return result
-
     async def _execute_with_retry(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
-        """重试执行工具（21.5 重构，小沈 2026-05-25 实施）"""
-        from app.services.agent.retry_policy import RetryPolicy
-        import inspect
-
-        tool = self.available_tools[action]
-        config = get_tool_config()
-        retry_policy = RetryPolicy(
-            max_retries=config.get_retry_max(action),
-            backoff_factor=config.get_retry_backoff(action),
-            retryable_errors=config.get_retryable_errors(action),
-        )
-
-        attempt_count = 0
-        last_error: Optional[Exception] = None
-
-        while attempt_count <= retry_policy.max_retries:
-            try:
-                normalized_input = self._normalize_params(action, action_input)
-
-                sig = inspect.signature(tool)
-                required = [
-                    p.name for p in sig.parameters.values()
-                    if p.default == inspect.Parameter.empty
-                    and p.name != 'self'
-                    and p.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
-                ]
-                missing = [p for p in required if p not in normalized_input]
-                if missing:
-                    return self._build_retry_error(
-                        ERR_MISSING_PARAM,
-                        f"Missing required parameter(s): {', '.join(missing)}", 0,
-                    )
-
-                timeout = get_timeout(action)
-                return await self._execute_tool_once(tool, normalized_input, timeout)
-
-            except Exception as e:
-                last_error = e
-                error_type = ErrorClassifier.classify(e)
-                attempt_count += 1
-
-                logger.warning(
-                    f"[重试] action={action} 尝试{attempt_count}/{retry_policy.max_retries} "
-                    f"失败: {error_type.description} - {str(e)[:100]}"
-                )
-
-                if not (error_type.is_retryable or error_type.value in retry_policy.retryable_errors):
-                    return self._build_retry_error(
-                        f"ERR_{error_type.value.upper()}",
-                        f"{error_type.description}: {str(e)[:200]}",
-                        attempt_count - 1, error_type=error_type.value,
-                    )
-
-                if attempt_count >= retry_policy.max_retries:
-                    return self._build_retry_error(
-                        f"ERR_{error_type.value.upper()}",
-                        f"{error_type.description}: {str(e)[:200]}",
-                        attempt_count - 1, error_type=error_type.value,
-                    )
-
-                await asyncio.sleep(retry_policy.backoff_factor ** (attempt_count - 1))
-
-        return self._build_retry_error(
-            ERR_UNKNOWN, str(last_error)[:200] if last_error else "Unknown error",
-            attempt_count - 1,
-        )
+        """重试执行工具（使用统一重试引擎）
+        
+        Note: 实际逻辑已迁移到 tool_retry_engine.py
+        此方法作为适配器保留，调用统一重试引擎
+        """
+        from app.services.agent.tool_retry_engine import execute_tool_with_unified_retry
+        
+        # 使用统一重试引擎执行
+        return await execute_tool_with_unified_retry(action, action_input, self.available_tools)
     
     def _normalize_params(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
         """
