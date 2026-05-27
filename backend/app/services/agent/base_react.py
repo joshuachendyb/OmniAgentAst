@@ -127,14 +127,26 @@ class BaseAgent(ABC):
         self._empty_response_retry_engine = RetryEngine(
             max_retries=2, backoff_strategy=BackoffStrategy.FIXED, backoff_factor=1.0)
         
-        # 向后兼容属性（供外部读取计数/最大值）
+        # 向后兼容属性（供外部读取计数/最大值，委托给RetryEngine）
         self.parse_retry_count = 0
         self.max_parse_retries = 3
-        self.empty_response_retry_count = 0
-        self.max_empty_response_retries = 2
         
         # 【v2.3新增】chunk处理相关属性—所有Agent子类共享
         self.max_consecutive_chunks = MAX_CONSECUTIVE_CHUNKS  # 连续chunk达此阈值时提升为implicit
+    
+    @property
+    def empty_response_retry_count(self) -> int:
+        """向后兼容：委托给RetryEngine"""
+        return self._empty_response_retry_engine.attempt_count
+
+    @empty_response_retry_count.setter
+    def empty_response_retry_count(self, value: int):
+        self._empty_response_retry_engine._attempt_count = value
+
+    @property
+    def max_empty_response_retries(self) -> int:
+        """向后兼容：委托给RetryEngine"""
+        return self._empty_response_retry_engine.max_retries
     
     def _init_messages(self):
         """初始化消息构建相关属性 - 提取自__init__的消息构建职责部分"""
@@ -325,13 +337,13 @@ class BaseAgent(ABC):
                     return
 
                 if not response:
-                    self.empty_response_retry_count += 1
+                    self._empty_response_retry_engine.record_attempt()
                     self.parse_retry_count = 0
                     async for step in self._handle_empty_response(step_count):
                         yield step
                     continue
 
-                self.empty_response_retry_count = 0
+                self._empty_response_retry_engine.reset_attempts()
                 parsed = parse_react_response(response)
                 parsed_type = parsed["type"]
 
@@ -409,20 +421,22 @@ class BaseAgent(ABC):
         self, step_count: int
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """空响应截断历史重试 — 小沈 2026-05-25"""
+        _retry_cnt = self._empty_response_retry_engine.attempt_count
+        _max_retries = self._empty_response_retry_engine.max_retries
         logger.error(
-            f"[空响应] LLM返回空响应 (第{self.empty_response_retry_count}次重试), "
+            f"[空响应] LLM返回空响应 (第{_retry_cnt}次重试), "
             f"history长度={len(self.conversation_history)}"
         )
 
-        if self.empty_response_retry_count > self.max_empty_response_retries:
-            yield self._exit_with_error(step_count, "empty_response", f"AI服务返回空响应（已重试{self.empty_response_retry_count}次）")
+        if _retry_cnt > _max_retries:
+            yield self._exit_with_error(step_count, "empty_response", f"AI服务返回空响应（已重试{_retry_cnt}次）")
             self._on_after_loop()
             return
 
         original_len = len(self.conversation_history)
         if original_len <= 4:
             logger.warning("[空响应] 历史已很短无法截断，直接报错")
-            yield self._exit_with_error(step_count, "empty_response", f"AI服务返回空响应（已重试{self.empty_response_retry_count}次）")
+            yield self._exit_with_error(step_count, "empty_response", f"AI服务返回空响应（已重试{_retry_cnt}次）")
             self._on_after_loop()
             return
 
@@ -444,7 +458,7 @@ class BaseAgent(ABC):
         )
         yield create_incident_data(
             incident_value="retrying",
-            message=f"AI返回空响应，已压缩对话历史重试（第{self.empty_response_retry_count}次）"
+            message=f"AI返回空响应，已压缩对话历史重试（第{_retry_cnt}次）"
         )
 
     async def _handle_chunk_type(
@@ -531,8 +545,8 @@ class BaseAgent(ABC):
         error_msg = parsed.get("error", "Unknown parse error")
         chunk_buffer.clear()
 
-        from app.chat_stream.error_handler import is_network_or_api_error
-        is_network_error, _error_type = is_network_or_api_error(error_msg)
+        from app.utils.error_classifier import UnifiedErrorClassifier
+        is_network_error, _error_type = UnifiedErrorClassifier.is_network_or_api_error(error_msg)
 
         if not is_network_error:
             self.message_builder.add_observation(
