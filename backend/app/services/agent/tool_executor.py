@@ -43,7 +43,8 @@ from app.services.tools.tool_config import (
 # =============================================================================
 
 # 工具超时配置 - 从tool_meta.py统一导入 - 小健 2026-05-02
-from app.services.tools.tool_meta import TOOL_TIMEOUTS, get_timeout
+from app.services.tools.tool_config import get_timeout
+from app.services.tools.tool_meta import TOOL_TIMEOUTS
 
 
 
