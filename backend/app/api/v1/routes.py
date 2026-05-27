@@ -144,36 +144,6 @@ def ordered_dict(data: dict) -> OrderedDict:
     return result
 
 
-def _ensure_ai_provider_model_first(config_data: dict) -> dict:
-    """
-    确保 ai.provider 和 ai.model 在 ai 字典的最前面
-    解决写入配置文件时顺序错乱的问题
-    """
-    if 'ai' not in config_data:
-        return config_data
-    
-    ai_data = config_data['ai']
-    if not isinstance(ai_data, dict):
-        return config_data
-    
-    # 构建新的有序字典，provider 和 model 在最前面
-    new_ai = OrderedDict()
-    
-    # 先添加 provider 和 model
-    if 'provider' in ai_data:
-        new_ai['provider'] = ai_data['provider']
-    if 'model' in ai_data:
-        new_ai['model'] = ai_data['model']
-    
-    # 再添加其他 key，按字母顺序
-    for key in sorted(ai_data.keys()):
-        if key not in ('provider', 'model'):
-            new_ai[key] = ai_data[key]
-    
-    config_data['ai'] = new_ai
-    return config_data
-
-
 def write_yaml_with_order(file_path: str, data: dict):
     """使用OrderedDict写入YAML，保持特定顺序"""
     ordered_data = ordered_dict(data)
@@ -357,7 +327,6 @@ async def update_config(config_update: ConfigUpdate):
         if not is_valid:
             return fail_result
 
-        config_data = _ensure_ai_provider_model_first(config_data)
         write_yaml_with_order(str(config_path), config_data)
         with open(config_path, 'r', encoding='utf-8') as f:
             verify_data = yaml.safe_load(f)
