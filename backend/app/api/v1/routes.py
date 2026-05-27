@@ -96,6 +96,7 @@ from app.config import get_config as get_config_instance
 from app.services import AIServiceFactory
 from app.utils.logger import logger
 from app.services.agent.base_react import DEFAULT_MAX_STEPS
+from app.services.ai_config_resolver import get_ai_config_resolver
 
 router = APIRouter()
 
@@ -341,7 +342,6 @@ async def validate_config(request: ConfigValidateRequest):
     """
     try:
         # 使用统一的AIConfigResolver进行验证
-        from app.services.ai_config_resolver import get_ai_config_resolver
         resolver = get_ai_config_resolver()
         
         # 验证指定的provider和model
