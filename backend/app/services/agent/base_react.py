@@ -53,7 +53,6 @@ from app.utils.prompt_logger import get_prompt_logger
 from app.services.agent.tool_result_formatter import extract_status, build_execution_result_dict
 from app.services.agent.mixins.tool_step_mixin import ToolStepMixin, _ToolStepOutcome
 from app.services.agent.chunk_buffer import ChunkBuffer
-from app.utils.retry_controller import _calculate_retry_delay
 
 
 
@@ -121,13 +120,18 @@ class BaseAgent(ABC):
         self.llm_call_count = 0
         self._lock = asyncio.Lock()
         
-        # 【重构 2026-04-11 小沈】解析重试相关参数
-        self.parse_retry_count = 0  # 解析重试计数器
-        self.max_parse_retries = 3   # 最大重试次数
+        # 【重构 2026-05-27 小健】2.22：parse/empty重试委托给RetryEngine
+        from app.utils.retry_engine import RetryEngine, BackoffStrategy
+        self._parse_retry_engine = RetryEngine(
+            max_retries=3, backoff_strategy=BackoffStrategy.EXPONENTIAL, backoff_factor=2.0)
+        self._empty_response_retry_engine = RetryEngine(
+            max_retries=2, backoff_strategy=BackoffStrategy.FIXED, backoff_factor=1.0)
         
-        # 【修复 2026-05-05 小沈】空响应重试相关参数
-        self.empty_response_retry_count = 0  # 空响应重试计数器
-        self.max_empty_response_retries = 2  # 空响应最大重试次数（截断历史后重试）
+        # 向后兼容属性（供外部读取计数/最大值）
+        self.parse_retry_count = 0
+        self.max_parse_retries = 3
+        self.empty_response_retry_count = 0
+        self.max_empty_response_retries = 2
         
         # 【v2.3新增】chunk处理相关属性—所有Agent子类共享
         self.max_consecutive_chunks = MAX_CONSECUTIVE_CHUNKS  # 连续chunk达此阈值时提升为implicit
@@ -537,7 +541,7 @@ class BaseAgent(ABC):
         else:
             logger.info(f"[parse_react_response] 网络/API错误，不注入history: {error_msg}")
             if _error_type == "api_error_429":
-                _retry_delay = _calculate_retry_delay(self.parse_retry_count)
+                _retry_delay = self._parse_retry_engine._calculate_delay(self.parse_retry_count + 1)
                 logger.warning(f"[parse_react_response] 429限流, 等待{_retry_delay:.0f}s后重试 (第{self.parse_retry_count+1}次)")
                 await asyncio.sleep(_retry_delay)
             yield create_incident_data(
