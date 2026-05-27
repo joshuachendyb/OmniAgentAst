@@ -62,8 +62,8 @@ class DesktopReactAgent(ToolStepMixin, ReactAgentMixin, BaseAgent):
         return await self._call_llm()
     
     async def _execute_tool(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        normalized_params = self.executor._normalize_params(action, params)
-        return await self.executor.execute(action, normalized_params)
+        # 参数归一化由 executor.execute() 内部自动处理，不再手动调用
+        return await self.executor.execute(action, params)
     
     async def rollback(self, step_number=None) -> bool:
         """
