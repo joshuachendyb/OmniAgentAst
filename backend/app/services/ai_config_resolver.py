@@ -195,12 +195,3 @@ def resolve_provider_model() -> Tuple[str, str]:
         (provider, model) 元组
     """
     return get_ai_config_resolver().resolve_provider_model()
-
-
-def validate_ai_config() -> Tuple[bool, str, str, list]:
-    """便捷函数：验证AI配置
-    
-    Returns:
-        (is_valid, provider, model, error_messages) 元组
-    """
-    return get_ai_config_resolver().validate_config()
