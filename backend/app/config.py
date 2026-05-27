@@ -203,10 +203,6 @@ def get(key: str, default: Any = None) -> Any:
     """获取配置项"""
     return get_config().get(key, default)
 
-def get_ai_config(provider: Optional[str] = None) -> Dict[str, Any]:
-    """获取AI配置"""
-    return get_config().get_ai_config(provider)
-
 def get_api_key(provider: Optional[str] = None) -> str:
     """获取API密钥"""
     return get_config().get_api_key(provider)
