@@ -42,9 +42,8 @@ from app.services.tools.tool_config import (
 # 7.4.3 T3：执行器增强 - 重试（错误分类已迁移到 app.utils.error_classifier）
 # =============================================================================
 
-# 工具超时配置 - 从tool_meta.py统一导入 - 小健 2026-05-02
+# 工具超时配置 - 从tool_config.py统一导入 - 小健 2026-05-02
 from app.services.tools.tool_config import get_timeout
-from app.services.tools.tool_meta import TOOL_TIMEOUTS
 
 
 
