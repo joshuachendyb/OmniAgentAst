@@ -523,7 +523,64 @@ def _handle_regex_fallback(output) -> Optional[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Handler #9: 关键词匹配（最终兜底）
+# Handler #9: 已知工具名匹配（从内容中提取工具名）
+# ---------------------------------------------------------------------------
+def _handle_known_tool_match(output) -> Optional[Dict[str, Any]]:
+    """从内容中匹配已知工具名
+    
+    当其他解析器都无法解析时，尝试在内容中查找已知工具名
+    这是最终fallback，用于处理无法解析为JSON但包含工具名的响应
+    """
+    if not isinstance(output, str):
+        return None
+    
+    logger.info(f"[parse_react_response] 尝试已知工具名匹配流程")
+    
+    import re
+    
+    # 获取所有已知工具名
+    known_tool_names = _get_all_tool_names()
+    
+    content_lower = output.lower()
+    
+    for tool_name in known_tool_names:
+        # 查找工具名出现位置
+        pattern = rf'\b{re.escape(tool_name)}\b'
+        if re.search(pattern, content_lower, re.IGNORECASE):
+            logger.info(f"[parse_react_response] 在内容中找到已知工具名: {tool_name}")
+            
+            # 尝试提取参数
+            params = {}
+            # 提取路径参数
+            path_pattern = r'["\']?([\w\-/\.]+\.(?:txt|md|py|json|yaml|yml|csv|xlsx|xls|doc|docx|pdf|jpg|jpeg|png|gif))["\']?'
+            path_matches = re.findall(path_pattern, output, re.IGNORECASE)
+            if path_matches:
+                params["path"] = path_matches[0]
+            
+            # 提取内容参数
+            content_pattern = r'["\']content["\']?\s*:\s*["\']([^"\']+)["\']'
+            content_match = re.search(content_pattern, output)
+            if content_match:
+                params["content"] = content_match.group(1)
+            
+            # 返回action结果
+            return {
+                "type": "action",
+                "thought": output[:200] + ("..." if len(output) > 200 else ""),
+                "content": output,
+                "reasoning": "",
+                "tool_name": tool_name,
+                "tool_params": params if params else {"unknown_params": True},
+                "response": None,
+                "error": None
+            }
+    
+    logger.info(f"[parse_react_response] 未找到已知工具名")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Handler #10: 关键词匹配（最终兜底）
 # ---------------------------------------------------------------------------
 def _handle_keyword_match(output) -> Optional[Dict[str, Any]]:
     logger.info(f"[parse_react_response] 走关键词匹配流程")
@@ -542,7 +599,8 @@ _HANDLERS = [
     _handle_non_standard_json,   # 6: 单引号JSON → 各种type
     _handle_mixed_text_json,     # 7: 混合文本提取JSON + 不完整JSON
     _handle_regex_fallback,      # 8: 正则兜底提取工具调用
-    _handle_keyword_match,       # 9: 关键词匹配(_determine_parse_type)
+    _handle_known_tool_match,    # 9: 已知工具名匹配
+    _handle_keyword_match,       # 10: 关键词匹配(_determine_parse_type)
 ]
 
 
