@@ -14,7 +14,6 @@ from typing import Any, Callable, Dict, Optional
 from app.utils.logger import logger
 from app.utils.error_classifier import ErrorCategory, UnifiedErrorClassifier
 from app.services.tools.tool_config import get_tool_config, get_timeout
-from app.services.tools.tool_meta import TOOL_TIMEOUTS
 from app.services.agent.tool_result_utils import create_tool_result, create_error_tool_result
 
 from app.constants import (
