@@ -302,6 +302,15 @@ def get_tool_config() -> ToolConfig:
     return tool_config
 
 
+def get_timeout(tool_name: str) -> int:
+    """获取工具超时时间 — 模块级便捷入口
+
+    【小健 2026-05-27】去重：统一超时查询入口，替代tool_meta.get_timeout()。
+    YAML优先 + tool_meta.TOOL_TIMEOUTS兜底。
+    """
+    return tool_config.get_timeout(tool_name)
+
+
 def get_tool_name_alias(alias: str) -> Optional[str]:
     """
     获取工具名称的主名 - 小健 2026-05-02
