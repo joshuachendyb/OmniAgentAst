@@ -43,7 +43,7 @@ class PromptAssembler:
         self._candidates = candidates or []
         self._category_name = category_name
 
-    def _build_candidates_hint(self) -> str:
+    def build_candidates_hint(self) -> str:
         """构建候选意图提示"""
         if not self._candidates:
             return ""
@@ -53,7 +53,7 @@ class PromptAssembler:
             "你可以根据实际任务需要，访问任意候选分类的工具。"
         )
 
-    def _build_cross_tool_hint(self) -> str:
+    def build_cross_tool_hint(self) -> str:
         """构建跨分类工具提示"""
         if not self._category_name:
             return ""
@@ -77,8 +77,8 @@ class PromptAssembler:
         base = self._prompts.build_full_system_prompt()
         return (
             base
-            + self._build_candidates_hint()
-            + self._build_cross_tool_hint()
+            + self.build_candidates_hint()
+            + self.build_cross_tool_hint()
         )
 
 
