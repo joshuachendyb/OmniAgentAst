@@ -160,25 +160,8 @@ class Config:
         """
         return self.get('app.max_steps', default)
     
-    def get_ai_provider_model(self) -> tuple[str, str]:
-        """
-        获取AI provider和model（含fallback逻辑）- 统一入口
-        
-        注意：此方法已委托给AIConfigResolver处理，保持接口兼容性
-        
-        Returns:
-            (provider, model) 元组
-        """
-        from app.services.ai_config_resolver import resolve_provider_model
-        return resolve_provider_model()
-    
     def get_log_config(self) -> Dict[str, Any]:
-        """
-        获取日志配置 - 统一入口
-        
-        Returns:
-            日志配置字典
-        """
+        """获取日志配置 - 统一入口"""
         return self.get('logging', {})
     
     def reload(self):
@@ -231,10 +214,6 @@ def get_api_key(provider: Optional[str] = None) -> str:
 def get_max_steps(default: int = 100) -> int:
     """获取max_steps配置"""
     return get_config().get_max_steps(default)
-
-def get_ai_provider_model() -> tuple[str, str]:
-    """获取AI provider和model（含fallback逻辑）"""
-    return get_config().get_ai_provider_model()
 
 def get_log_config() -> Dict[str, Any]:
     """获取日志配置"""
