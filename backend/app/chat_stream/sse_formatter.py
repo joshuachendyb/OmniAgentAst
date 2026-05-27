@@ -119,9 +119,40 @@ def format_observation_sse(
     return format_sse_event('observation', step, d)
 
 
+def format_chunk_sse(
+    event: Dict[str, Any], step: int, model: str, provider: str
+) -> str:
+    """
+    格式化chunk类型的SSE事件 — 从react_sse_wrapper.py迁移过来统一入口
+    
+    Args:
+        event: chunk事件 dict，包含content/thought/reasoning/timestamp/is_reasoning
+        step: 步骤编号
+        model: 模型名称
+        provider: 提供商
+    
+    Returns:
+        SSE格式的字符串
+    """
+    chunk_data = {
+        "type": "chunk",
+        "step": step,
+        "content": event.get("content", ""),
+        "thought": event.get("thought", ""),
+        "reasoning": event.get("reasoning", ""),
+        "timestamp": event.get("timestamp", ""),
+        "is_reasoning": event.get("is_reasoning", False),
+        "_thinking": event.get("_thinking", ""),
+        "model": model,
+        "provider": provider
+    }
+    return format_sse_event("chunk", step, chunk_data)
+
+
 __all__ = [
     "format_sse_event",
     "format_thought_sse",
     "format_action_tool_sse",
     "format_observation_sse",
+    "format_chunk_sse",
 ]
