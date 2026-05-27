@@ -201,7 +201,17 @@ class ReactAgentMixin(ToolLoaderMixin):
         self.llm_call_count += 1
         mb = self.message_builder
         messages = mb.prepare_messages_for_llm()
+        strategy = await self._resolve_strategy()           # 策略检测（含重试探测）
+        messages = self._inject_tools_hint(messages, strategy)
+        if strategy == "text":
+            messages = self._inject_schema(messages)
+        self._log_prompt(messages, strategy)
+        response = await self._dispatch_strategy(strategy, messages)
+        self._log_response(response)
+        return response
 
+    async def _resolve_strategy(self) -> str:
+        """策略检测与决策 — 提取自 _call_llm() 的if/elif分支"""
         if self._strategy is None:
             if self.adapter is not None:
                 self._strategy = await self.adapter.detect_strategy()
@@ -218,14 +228,7 @@ class ReactAgentMixin(ToolLoaderMixin):
                 if _new != self._strategy:
                     logger.info(f"[{self.__class__.__name__}] 策略已升级: text→{_new}")
                     self._strategy = _new
-
-        messages = self._inject_tools_hint(messages, self._strategy)
-        if self._strategy == "text":
-            messages = self._inject_schema(messages)
-        self._log_prompt(messages, self._strategy)
-        response = await self._dispatch_strategy(self._strategy, messages)
-        self._log_response(response)
-        return response
+        return self._strategy
 
     def _inject_tools_hint(self, history_dicts, strategy_method):
         """工具提示注入（含缓存） — text策略时注入工具描述，tools策略时不注入"""
