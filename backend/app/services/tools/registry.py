@@ -184,14 +184,15 @@ INTENT_TO_CATEGORY: Dict[str, "ToolCategory"] = {
 
 
 def resolve_category(intent_type: str) -> Optional["ToolCategory"]:
-    """意图类型→ToolCategory解析，支持新旧意图名 - 【2026-05-18 小沈】"""
-    cat = INTENT_TO_CATEGORY.get(intent_type)
-    if cat:
-        return cat
-    try:
-        return ToolCategory(intent_type)
-    except ValueError:
-        return None
+    """意图类型→ToolCategory解析（委托给intent_mapper统一入口）
+    
+    【重构 2026-05-27 小健】遵循DRY原则：
+    - 此函数委托给intent_mapper.resolve_category()
+    - 统一入口在app.services.intents.intent_mapper
+    - 本函数保留用于向后兼容
+    """
+    from app.services.intents.intent_mapper import resolve_category as _resolve_category_unified
+    return _resolve_category_unified(intent_type)
 
 
 @dataclass
