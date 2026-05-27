@@ -135,23 +135,11 @@ class TextStrategy(LLMStrategy):
         return None
 
     def _resolve_parse_fallback(self, content: str, parsed_type: Optional[str]) -> str:
-        """显式fallthrough链：thought_only/parse_error/ValueError→方案B→方案C兜底 - 北京老陈 2026-05-25"""
-        if parsed_type and parsed_type not in ("thought_only", "parse_error"):
-            logger.info(f"[TextStrategy] parsed_type={parsed_type}无handler，尝试方案B")
-        else:
-            logger.info(f"[TextStrategy] P1跳过(type={parsed_type})，尝试P2工具名保底")
-        tool_result = self._extract_by_known_tools(content)
-        if tool_result:
-            logger.info(f"[TextStrategy] Tool match found: {tool_result['tool_name']}")
-            return self._make_result(
-                content=tool_result.get("content", content),
-                tool_name=tool_result.get("tool_name", "finish"),
-                tool_params=tool_result.get("tool_params", {})
-            )
-        logger.info(f"[TextStrategy] P2工具名保底失败，返回parse_error")
+        """统一fallback处理：所有解析失败都返回parse_error - 北京老陈 2026-05-25"""
+        logger.info(f"[TextStrategy] parse_react_response返回type={parsed_type}，fallback到parse_error")
         return self._make_parse_error(
-            "无法从 LLM 响应中提取工具调用（tool_name 或 tool_params 缺失）",
-            content=content
+            "无法从 LLM 响应中提取工具调用",
+            content=content[:200] + ("..." if len(content) > 200 else "")
         )
 
     async def call(
@@ -259,81 +247,7 @@ class TextStrategy(LLMStrategy):
         # 返回统一格式的错误提示
         return f"⚠️ {user_message}"
     
-    def _extract_by_known_tools(self, content: str) -> Optional[dict]:
-        """
-        【方案B】通过已知工具名匹配提取 action
-        
-        当 ToolParser 无法解析时，尝试在 content 中查找已知工具名
-        【2026-04-28 小沈增强】提取更完整的参数，包括 path, content 等
-        """
-        import re
-        # 【修复 2026-05-05 小沈】方法内局部导入，避免reload后NameError
-        from app.services.agent.react_output_parser import _get_all_tool_names
-        
-        content_lower = content.lower()
-        
-        for tool in _get_all_tool_names():
-            # 查找工具名出现位置
-            pattern = rf'\b{re.escape(tool)}\b'
-            if re.search(pattern, content_lower, re.IGNORECASE):
-                logger.info(f"[TextStrategy] Found known tool: {tool}")
-                
-                # 尝试提取参数（增强版：提取多种参数）
-                params = {}
-                
-                # 1. 【修复 2026-05-01 小沈 小健】查找 path 参数（根据工具类型使用正确的参数名）
-                path_patterns = [
-                    r'["\']?([A-Za-z]:\\[^"\'\s,}]+)["\']?',  # Windows 路径 C:\path
-                    r'["\']?(/[^\s"\'<>,}]+)["\']?',  # Unix 路径 /path
-                ]
 
-                extracted_path = None
-                for p in path_patterns:
-                    matches = re.findall(p, content)
-                    if matches:
-                        extracted_path = matches[0]
-                        break
-
-                if extracted_path:
-                    # 【修复 U18 小沈 2026-05-15】不再用路径赋值给第一个参数
-                    # 兜底匹配到工具名时跳过参数提取，交给工具执行器处理
-                    logger.info(f"[TextStrategy] 兜底匹配到{tool}，跳过参数提取（交给工具执行器处理）")
-                
-                # 2. 查找 text 参数（用于 write_file 等工具）- 小健 2026-05-02 content→text
-                json_match = re.search(r'\{[^}]*"text"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
-                if json_match:
-                    params["text"] = json_match.group(1)
-                else:
-                    # 备用：从 content 标签中提取
-                    content_match = re.search(r'["\']?content["\']?\s*:\s*"([^"]*)"', content, re.DOTALL)
-                    if content_match:
-                        params["content"] = content_match.group(1)
-                
-                # 3. 查找其他常见参数
-                # file_name
-                fn_match = re.search(r'["\']?file_name["\']?\s*:\s*"([^"]*)"', content)
-                if fn_match:
-                    params["file_name"] = fn_match.group(1)
-                
-                # search_query
-                sq_match = re.search(r'["\']?search_query["\']?\s*:\s*"([^"]*)"', content)
-                if sq_match:
-                    params["search_query"] = sq_match.group(1)
-                
-                # keyword
-                kw_match = re.search(r'["\']?keyword["\']?\s*:\s*"([^"]*)"', content)
-                if kw_match:
-                    params["keyword"] = kw_match.group(1)
-                
-                logger.info(f"[TextStrategy] Extracted params: {list(params.keys())}")
-                
-                return {
-                    "tool_name": tool,
-                    "content": content,
-                    "tool_params": params
-                }
-        
-        return None
 
 
 class ToolsStrategy(LLMStrategy):
