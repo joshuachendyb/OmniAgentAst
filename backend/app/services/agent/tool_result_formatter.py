@@ -15,6 +15,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 from app.constants import SUCCESS_CODE, LLM_SAFE_LIMIT
+from app.services.tools.tool_result_utils import safe_truncate
 
 
 def _get_failure_hint(tool_name: str, tool_params: Optional[dict] = None) -> str:
@@ -74,18 +75,6 @@ def build_execution_result_dict(execution_result: Dict[str, Any]) -> Dict[str, A
     }
 
 
-def _safe_truncate(data: Any, limit: int) -> Any:
-    """安全截断：仅防 json.dumps OOM，非业务截断 — 小沈 2026-05-21"""
-    if isinstance(data, dict):
-        if len(data) > limit:
-            keys = list(data.keys())[:limit]
-            return {k: data[k] for k in keys}
-    elif isinstance(data, list):
-        if len(data) > limit:
-            return data[:limit]
-    return data
-
-
 def _format_next_actions(result: dict, text: str) -> str:
     """将next_actions格式化为文本追加到observation — 小健 2026-05-22"""
     next_actions = result.get('next_actions')
@@ -134,7 +123,7 @@ def _format_llm_observation(result: dict, tool_name: str = "", tool_params: Opti
             text += f"\n⚠ 警告: {result['warning']}"
         if display_data:
             if isinstance(display_data, (dict, list)):
-                display_data = _safe_truncate(display_data, LLM_SAFE_LIMIT_LOCAL)
+                display_data = safe_truncate(display_data, LLM_SAFE_LIMIT_LOCAL)
             text += f"\n数据: {json.dumps(display_data, ensure_ascii=False)}"
         text = _format_next_actions(result, text)
         return text
@@ -144,7 +133,7 @@ def _format_llm_observation(result: dict, tool_name: str = "", tool_params: Opti
         if result.get("data"):
             data = result["data"]
             if isinstance(data, (dict, list)):
-                data = _safe_truncate(data, LLM_SAFE_LIMIT_LOCAL)
+                data = safe_truncate(data, LLM_SAFE_LIMIT_LOCAL)
             text += f"\n部分数据: {json.dumps(data, ensure_ascii=False)}"
         text = _format_next_actions(result, text)
         return text
