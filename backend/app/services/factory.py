@@ -59,15 +59,11 @@ for provider_name in ai_config.keys():
 """
 
 import os
-import re
 import asyncio
 import threading
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
-import yaml
-
-from app.config import get_config
 from app.utils.logger import setup_logger
 from .llm_core import BaseAIService
 
@@ -111,21 +107,6 @@ class AIServiceFactory:
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
         return os.path.join(base_dir, "config", "config.yaml")
     
-    @classmethod
-    def _get_fallback_provider_and_model(cls, ai_config: dict) -> tuple[str, str]:
-        """
-        获取 fallback 的 provider 和 model（统一 Fallback 逻辑）
-        
-        Args:
-            ai_config: ai 配置字典
-            
-        Returns:
-            tuple: (fallback_provider, fallback_model)
-        """
-        from app.services.ai_config_resolver import AIConfigResolver
-        resolver = AIConfigResolver()
-        return resolver._fallback_provider_model(ai_config)
-    
     @staticmethod
     def _make_validation_error(message: str, field: str = "",
                                provider: str = "", model: str = "",
@@ -165,11 +146,6 @@ class AIServiceFactory:
         if not os.path.exists(actual_path):
             return cls._make_validation_error("配置文件不存在", errors=[f"配置文件不存在: {actual_path}"])
 
-        try:
-            config = get_config().raw_config
-        except Exception as e:
-            return cls._make_validation_error("配置文件加载失败", errors=[f"配置文件加载失败: {str(e)}"])
-
         # 使用统一的AIConfigResolver进行验证
         from app.services.ai_config_resolver import get_ai_config_resolver
         resolver = get_ai_config_resolver()
@@ -181,10 +157,10 @@ class AIServiceFactory:
                 provider=final_provider or "unknown",
                 model=final_model or "",
                 errors=error_messages,
-                warnings=[] if not hasattr(resolver, '_config') else []
+                warnings=[]
             )
 
-        cred_errors, cred_warnings = cls._validate_credentials(ai_config, final_provider)
+        cred_errors, cred_warnings = cls._validate_credentials(resolver.get_ai_config(), final_provider)
         errors.extend(cred_errors)
         warnings.extend(cred_warnings)
 
