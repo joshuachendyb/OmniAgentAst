@@ -158,42 +158,6 @@ def write_yaml_with_order(file_path: str, data: dict):
         yaml.dump(ordered_data, f, allow_unicode=True, default_flow_style=False)
 
 
-def _resolve_fallback_provider(ai_config: Dict) -> Tuple[str, str]:
-    """解析当前有效的provider和model（含fallback逻辑）"""
-    # 1. 找第一个有models的provider作为fallback
-    fallback_provider = ''
-    fallback_model = ''
-    for provider_name in ai_config.keys():
-        if provider_name == 'provider' or provider_name == 'model':
-            continue
-        provider_data = ai_config.get(provider_name, {})
-        if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
-            fallback_provider = provider_name
-            fallback_model = provider_data['models'][0]
-            break
-
-    if not fallback_provider:
-        fallback_provider = ''
-        fallback_model = ''
-
-    # 2. 检查 ai.provider 和 ai.model 是否有效
-    selected_provider = ai_config.get('provider', '')
-    selected_model = ai_config.get('model', '')
-
-    is_valid = (
-        selected_provider and
-        selected_provider in ai_config and
-        'models' in ai_config[selected_provider] and
-        selected_model and
-        selected_model in ai_config[selected_provider]['models']
-    )
-
-    # 3. 使用有效配置或fallback
-    if is_valid:
-        return selected_provider, selected_model
-    return fallback_provider, fallback_model
-
-
 # ============================================
 # 安全配置模型
 # ============================================
@@ -466,9 +430,7 @@ async def get_model_list():
         # 使用缓存，自动检测变更
         config = get_config_instance()
         
-        ai_config = config.get('ai', {})
-        
-        final_provider, final_model = _resolve_fallback_provider(ai_config)
+        final_provider, final_model = config.get_ai_provider_model()
         
         # 构建模型列表 - 动态遍历配置文件中的所有provider
         models = []
@@ -569,8 +531,7 @@ async def get_full_config():
         # 使用缓存，自动检测变更
         config = get_config_instance()
         ai_config = config.get('ai', {})
-        
-        final_provider, final_model = _resolve_fallback_provider(ai_config)
+        final_provider, final_model = config.get_ai_provider_model()
         
         providers = {}
         # 动态遍历所有provider（不是硬编码！）

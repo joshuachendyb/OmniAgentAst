@@ -284,34 +284,6 @@ class AIServiceFactory:
         )
 
         return cls._instance
-
-    @classmethod
-    def switch_provider(cls, provider: str, config_path: Optional[str] = None):
-        """【废弃】切换AI提供商 - 请使用updateConfig同时更新provider和model"""
-        import warnings
-        warnings.warn(
-            "AIServiceFactory.switch_provider() 已废弃，请使用 /api/v1/config (PUT) 同时更新provider和model",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        print(f"[AIServiceFactory] ⚠️ switch_provider() 已废弃，请使用 /api/v1/config (PUT)")
-        
-        # 抛出异常，避免误用
-        raise NotImplementedError(
-            "AIServiceFactory.switch_provider() 已废弃，请使用 /api/v1/config (PUT) 同时更新provider和model"
-        )
-    
-    @classmethod
-    def get_current_provider(cls) -> str:
-        """获取当前使用的AI提供商"""
-        if cls._current_provider:
-            return cls._current_provider
-        
-        try:
-            config = get_config().raw_config
-            return config.get("ai", {}).get("provider", "unknown")
-        except:
-            return "unknown"
     
     @classmethod
     def reset(cls):

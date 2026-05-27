@@ -6,7 +6,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from datetime import datetime
 import traceback
 
-from app.api.v1 import health, init_model_select, operation_history, routes, sessions, execution, metrics
+from app.api.v1 import health, operation_history, routes, sessions, execution, metrics
 # 兼容导入
 config = routes
 # chat_stream 暂时禁用，使用 chat_router 替代
@@ -96,7 +96,6 @@ app.include_router(health.router, prefix="/api/v1", tags=["health"])
 from app.services.chat_router import router as chat_router_router, task_router
 app.include_router(chat_router_router, prefix="/api/v1", tags=["chat"])
 app.include_router(task_router, prefix="/api/v1", tags=["chat"])
-app.include_router(init_model_select.router, prefix="/api/v1", tags=["chat"])
 app.include_router(operation_history.router, prefix="/api/v1", tags=["operation-history"])
 app.include_router(config.router, prefix="/api/v1", tags=["config"])
 app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
