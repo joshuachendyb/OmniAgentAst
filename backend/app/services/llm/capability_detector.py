@@ -64,8 +64,11 @@ class CapabilityDetector:
         """
         探测LLM调用策略（text/tools）
 
+        发送带tools参数的请求，模型返回tool_calls → tools，否则 → text。
+        首次探测后缓存，瞬态失败重试3次。
+
         Args:
-            probe_fn: 自定义探测函数，接收response_json返回策略字符串
+            probe_fn: 自定义探测函数（已废弃，保留参数兼容）
 
         Returns:
             "text" 或 "tools"
@@ -74,14 +77,55 @@ class CapabilityDetector:
         if cache_key in self._cache:
             return self._cache[cache_key]
 
-        if probe_fn is not None:
-            result = await probe_fn()
-        else:
-            result = "text"
+        import asyncio
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=DEFAULT_PROBE_TIMEOUT) as client:
+                    result = await self._probe_tools(client)
+                    if result["works"]:
+                        self._cache[cache_key] = "tools"
+                        logger.info(f"[CapabilityDetector] model={self._model} → tools (FC支持)")
+                        return "tools"
+                    _reason = result.get("reason", "")
+                    if "429" in _reason or "timeout" in _reason.lower() or "connect" in _reason.lower():
+                        if attempt < 2:
+                            _delay = 2.0 * (2 ** attempt)
+                            logger.warning(f"[CapabilityDetector] 探测瞬态失败({_reason}), {_delay:.0f}s后重试 (第{attempt+1}次)")
+                            await asyncio.sleep(_delay)
+                            continue
+                    self._cache[cache_key] = "text"
+                    logger.info(f"[CapabilityDetector] model={self._model} → text (FC不支持: {_reason})")
+                    return "text"
+            except Exception as e:
+                logger.warning(f"[CapabilityDetector] 探测异常(第{attempt+1}次): {e}")
+                if attempt < 2:
+                    _delay = 2.0 * (2 ** attempt)
+                    await asyncio.sleep(_delay)
+                    continue
+                logger.error(f"[CapabilityDetector] 探测最终失败: {e}")
+                self._cache[cache_key] = "text"
+                return "text"
 
-        self._cache[cache_key] = result
-        logger.info(f"[CapabilityDetector] strategy={result}, model={self._model}")
-        return result
+    async def _probe_tools(self, client: httpx.AsyncClient) -> dict:
+        """发一个带tools的请求，看返回有没有tool_calls"""
+        tools = [{"type": "function", "function": {"name": "test_tool", "description": "A test tool for probing function calling capability. You MUST call this tool.", "parameters": {"type": "object", "properties": {"param": {"type": "string", "description": "test parameter"}}, "required": ["param"]}}}]
+        try:
+            response = await client.post(
+                f"{self._api_base}/chat/completions",
+                headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
+                json={"model": self._model, "messages": [{"role": "system", "content": "You must use the provided tool. Do not respond in plain text."}, {"role": "user", "content": "Call test_tool with param='probe'"}], "tools": tools, "tool_choice": "auto", "stream": False}
+            )
+            if response.status_code == 429:
+                return {"works": True, "reason": "429限流,乐观默认支持"}
+            if response.status_code != 200:
+                return {"works": False, "reason": f"HTTP {response.status_code}"}
+            data = response.json()
+            tool_calls = data.get("choices", [{}])[0].get("message", {}).get("tool_calls", [])
+            if tool_calls:
+                return {"works": True, "tool_calls": tool_calls}
+            return {"works": False, "reason": "No tool_calls returned"}
+        except Exception as e:
+            return {"works": False, "reason": str(e)}
 
     async def detect_reasoning_support(self) -> bool:
         """
