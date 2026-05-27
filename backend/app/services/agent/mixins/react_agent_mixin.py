@@ -202,13 +202,6 @@ class ReactAgentMixin(ToolLoaderMixin):
         self._log_response(response)
         return response
 
-    async def _resolve_strategy(self) -> str:
-        """策略检测与决策 — 提取自 _call_llm() 的if/elif分支【已废弃】
-
-        【2026-05-27 小沈】此方法已废弃，策略管理逻辑迁移到 LLMStrategyManager
-        保留此方法仅用于向后兼容
-        """
-        return await self.strategy_manager.get_strategy()
 
     def _inject_tools_hint(self, history_dicts, strategy_method):
         """工具提示注入（含缓存） — text策略时注入工具描述，tools策略时不注入"""
