@@ -32,68 +32,21 @@ def _build_category_header(name: str, count: int, desc: str = "") -> str:
 
 
 def _build_tool_descriptions(category: str, tool_names: List[str]) -> str:
-    """从工具名称列表构建分类工具描述 - 小健 2026-05-25
+    """从工具名称列表构建分类工具描述 — 委托到 BasePrompts.build_tool_descriptions — 小沈 2026-05-27"""
+    from app.services.prompts.BasePromptTemplate import BasePrompts
 
-    使用场景:
-    - get_system_prompt中动态生成工具描述块
-
-    使用示例:
-        descriptions = _build_tool_descriptions("SYSTEM", tool_names)
-
-    返回数据说明:
-    - 返回str，工具描述块
-    """
-    from app.services.tools.registry import tool_registry, ToolCategory
-
-    # 映射 ToolCategory 到设计文档中的分类名称
     CATEGORY_NAME_MAP = {
-        ToolCategory.SYSTEM: "SYSTEM",
-        ToolCategory.SHELL: "SHELL",
-        ToolCategory.NETWORK: "NETWORK",
-        ToolCategory.DESKTOP: "DESKTOP",
-        ToolCategory.DOCUMENT: "DOCUMENT",
-        ToolCategory.META: "META"
+        "SYSTEM": "SYSTEM",
+        "SHELL": "SHELL",
+        "NETWORK": "NETWORK",
+        "DESKTOP": "DESKTOP",
+        "DOCUMENT": "DOCUMENT",
+        "META": "META",
     }
 
-    mapped_category = CATEGORY_NAME_MAP.get(category, category)
-
-    # 重新映射分类
-    if mapped_category == "SYSTEM":
-        mapped_category = "SYSTEM"
-    elif mapped_category == "SHELL":
-        mapped_category = "SHELL"
-    elif mapped_category == "NETWORK":
-        mapped_category = "NETWORK"
-    elif mapped_category == "DESKTOP":
-        mapped_category = "DESKTOP"
-    elif mapped_category == "DOCUMENT":
-        mapped_category = "DOCUMENT"
-    elif mapped_category == "META":
-        mapped_category = "META"
-
-    # 从注册表获取该分类的工具
-    tools = []
-    if tool_names:
-        for tool_name in tool_names:
-            tool = tool_registry.get_tool(tool_name)
-            if tool:
-                tools.append(tool)
-
-    if not tools:
-        return ""
-
-    lines = [f"  以下是 {mapped_category} 分类下的 {len(tools)} 个工具："]
-    for i, t in enumerate(tools, 1):
-        name = t.name
-        desc = t.description or ""
-        desc_first = desc.split('，')[0] if '，' in desc else desc
-        lines.extend([
-            f"  {i}. {name} - {desc}",
-            f"     When to use: 当需要{desc_first}时",
-            f"     Returns: 返回操作结果",
-            f"     Examples: \"tool_name\": \"{name}\"",
-        ])
-    return "\n".join(lines)
+    from app.services.tools.registry import ToolCategory
+    mapped_category = CATEGORY_NAME_MAP.get(str(category), str(category))
+    return BasePrompts.build_tool_descriptions(tool_names, category_label=mapped_category)
 
 
 def _build_examples(count: int = 4) -> str:
