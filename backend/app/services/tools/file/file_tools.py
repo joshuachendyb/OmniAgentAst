@@ -751,6 +751,7 @@ class FileTools:
         from app.services.safety.manager import get_safety_manager
         
         self.safety = get_file_safety_service()
+        self.safety_manager = get_safety_manager()
         self.task_tracker = get_task_tracker()
         self.visualizer = get_visualizer()
         self.task_id = task_id or _current_task_id.get(None)
@@ -759,9 +760,8 @@ class FileTools:
         self.allowed_paths = ALLOWED_PATHS.copy()
         
         # 【重构 2026-05-27 小健】DRY+OCP：注册file安全Hook到SafetyManager统一入口
-        _sm = get_safety_manager()
-        if _sm.get_hook("file") is None:
-            _sm.register_hook("file", self.safety)
+        if self.safety_manager.get_hook("file") is None:
+            self.safety_manager.register_hook("file", self.safety)
     
     def _get_next_sequence(self) -> int:
         """获取下一个操作序号（线程安全）"""
@@ -1160,7 +1160,7 @@ class FileTools:
         path = Path(file_path)
         
         try:
-            operation_id = self.safety.record_operation(
+            operation_id = self.safety_manager.record_operation("file",
                 task_id=self.task_id,
                 operation_type=OperationType.CREATE,
                 destination_path=path,
@@ -1168,7 +1168,8 @@ class FileTools:
             )
             
             success = await asyncio.to_thread(
-                self.safety.execute_with_safety,
+                self.safety_manager.execute_with_safety,
+                "file",
                 operation_id=operation_id,
                 operation_func=lambda: self._write_file_atomic(content, path, encoding, append, create_parents)
             )
@@ -1302,7 +1303,7 @@ class FileTools:
             if not self.task_id:
                 return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID，请先创建一个任务")
 
-            operation_id = self.safety.record_operation(
+            operation_id = self.safety_manager.record_operation("file",
                 task_id=self.task_id,
                 operation_type=OperationType.DELETE,
                 source_path=path,
@@ -1315,7 +1316,8 @@ class FileTools:
                 return _send2trash_sync(path, recursive)
 
             is_ok, method = await asyncio.to_thread(
-                self.safety.execute_with_safety,
+                self.safety_manager.execute_with_safety,
+                "file",
                 operation_id=operation_id,
                 operation_func=_delete_sync
             )
@@ -1358,7 +1360,7 @@ class FileTools:
             if not self.task_id:
                 return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID，请先创建一个任务")
 
-            operation_id = self.safety.record_operation(
+            operation_id = self.safety_manager.record_operation("file",
                 task_id=self.task_id,
                 operation_type=OperationType.MOVE,
                 source_path=src,
@@ -1380,7 +1382,8 @@ class FileTools:
                 return True
             
             success = await asyncio.to_thread(
-                self.safety.execute_with_safety,
+                self.safety_manager.execute_with_safety,
+                "file",
                 operation_id=operation_id,
                 operation_func=_move_sync
             )
@@ -1483,8 +1486,8 @@ class FileTools:
             validate_path_func=self._validate_path,
             safety_service=self.safety,
             task_id=self.task_id,
-            record_operation_func=self.safety.record_operation,
-            execute_with_safety_func=self.safety.execute_with_safety,
+            record_operation_func=lambda *a, **kw: self.safety_manager.record_operation("file", *a, **kw),
+            execute_with_safety_func=lambda *a, **kw: self.safety_manager.execute_with_safety("file", *a, **kw),
             get_next_sequence_func=self._get_next_sequence,
         )
 
@@ -1524,8 +1527,8 @@ class FileTools:
             validate_path_func=self._validate_path,
             safety_service=self.safety,
             task_id=self.task_id,
-            record_operation_func=self.safety.record_operation,
-            execute_with_safety_func=self.safety.execute_with_safety,
+            record_operation_func=lambda *a, **kw: self.safety_manager.record_operation("file", *a, **kw),
+            execute_with_safety_func=lambda *a, **kw: self.safety_manager.execute_with_safety("file", *a, **kw),
             get_next_sequence_func=self._get_next_sequence,
         )
 
@@ -1553,8 +1556,8 @@ class FileTools:
             validate_path_func=self._validate_path,
             safety_service=self.safety,
             task_id=self.task_id,
-            record_operation_func=self.safety.record_operation,
-            execute_with_safety_func=self.safety.execute_with_safety,
+            record_operation_func=lambda *a, **kw: self.safety_manager.record_operation("file", *a, **kw),
+            execute_with_safety_func=lambda *a, **kw: self.safety_manager.execute_with_safety("file", *a, **kw),
             get_next_sequence_func=self._get_next_sequence,
         )
 
@@ -1610,8 +1613,8 @@ class FileTools:
             validate_path_func=self._validate_path,
             safety_service=self.safety,
             task_id=self.task_id,
-            record_operation_func=self.safety.record_operation,
-            execute_with_safety_func=self.safety.execute_with_safety,
+            record_operation_func=lambda *a, **kw: self.safety_manager.record_operation("file", *a, **kw),
+            execute_with_safety_func=lambda *a, **kw: self.safety_manager.execute_with_safety("file", *a, **kw),
             get_next_sequence_func=self._get_next_sequence,
         )
 
@@ -1635,8 +1638,8 @@ class FileTools:
             validate_path_func=self._validate_path,
             safety_service=self.safety,
             task_id=self.task_id,
-            record_operation_func=self.safety.record_operation,
-            execute_with_safety_func=self.safety.execute_with_safety,
+            record_operation_func=lambda *a, **kw: self.safety_manager.record_operation("file", *a, **kw),
+            execute_with_safety_func=lambda *a, **kw: self.safety_manager.execute_with_safety("file", *a, **kw),
             get_next_sequence_func=self._get_next_sequence,
         )
 
@@ -1805,7 +1808,7 @@ class FileTools:
                 return build_error(ERR_FILE_READ_TOO_LARGE,
                     f"文件过大({path.stat().st_size}字节)，超过替换上限{MAX_READ_SIZE//1024//1024}MB")
 
-            operation_id = self.safety.record_operation(
+            operation_id = self.safety_manager.record_operation("file",
                 task_id=self.task_id, operation_type=OperationType.MODIFY,
                 destination_path=path, sequence_number=self._get_next_sequence(),
             )
@@ -1826,7 +1829,8 @@ class FileTools:
                 return True
 
             success = await asyncio.to_thread(
-                self.safety.execute_with_safety,
+                self.safety_manager.execute_with_safety,
+                "file",
                 operation_id=operation_id,
                 operation_func=_replace_sync
             )
@@ -1975,7 +1979,7 @@ class FileTools:
             if path.stat().st_size > MAX_READ_SIZE:
                 return build_error(ERR_FILE_READ_TOO_LARGE, f"文件过大({path.stat().st_size}字节)，超过编辑上限{MAX_READ_SIZE//1024//1024}MB")
 
-            operation_id = self.safety.record_operation(
+            operation_id = self.safety_manager.record_operation("file",
                 task_id=self.task_id,
                 operation_type=OperationType.MODIFY,
                 destination_path=path,
@@ -1984,7 +1988,8 @@ class FileTools:
 
             edit_result = {}
             success = await asyncio.to_thread(
-                self.safety.execute_with_safety,
+                self.safety_manager.execute_with_safety,
+                "file",
                 operation_id=operation_id,
                 operation_func=lambda: self._execute_edit_sync(path, edits, dry_run, encoding, edit_result)
             )
