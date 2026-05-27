@@ -72,8 +72,8 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, RollbackMixin, BaseAge
         if original_action != action:
             logger.info(f"[UniversalAgent._execute_tool] alias: {original_action} → {action}")
         
-        normalized_params = self.executor._normalize_params(action, params)
-        return await self.executor.execute(action, normalized_params)
+        # 参数归一化由 executor.execute() 内部自动处理，不再手动调用
+        return await self.executor.execute(action, params)
     
     def _get_system_prompt(self) -> str:
         return self._build_system_prompt(self.config.category_display_name)
