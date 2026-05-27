@@ -6,6 +6,10 @@
 【说明】从各工具文件中提取的通用模式，供任意分类工具调用。
        不注册到tool_registry，不暴露给LLM。
 
+【分层规范 - 小健 2026-05-27】
+本文件属于【工具层helper】，使用 _response.py 的 build_success/build_error/build_warning
+禁止使用 agent/tool_result_utils.py 的 create_xxx 函数
+
 包含函数：
 - truncate_value: 统一截断入口（整合truncate_text + make_json_safe）
 - safe_path_join: 安全路径拼接 + 防路径遍历
@@ -20,6 +24,7 @@ import platform
 import subprocess
 from app.constants import ERR_DESKTOP_NOT_WINDOWS
 from typing import Any, Dict, Optional, Tuple
+from app.services.tools._response import build_error
 
 
 def _check_module(module_name: str) -> bool:
@@ -112,11 +117,7 @@ def check_windows_platform() -> Optional[Dict[str, Any]]:
         Dict: 错误信息（非Windows平台）
     """
     if platform.system() != "Windows":
-        return {
-            "code": ERR_DESKTOP_NOT_WINDOWS,
-            "data": None,
-            "message": "此功能仅支持 Windows 系统"
-        }
+        return build_error(ERR_DESKTOP_NOT_WINDOWS, "此功能仅支持 Windows 系统")
     return None
 
 
