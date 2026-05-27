@@ -21,6 +21,7 @@ import httpcore
 from typing import List, Dict, Optional, AsyncGenerator, Any
 
 from app.utils.logger import logger
+from app.utils.retry_engine import RetryEngine, BackoffStrategy, create_rate_limit_retry_engine
 
 from app.services.llm.model_adapters.xml_adapter import convert_xml_tool_call_to_json
 from app.services.llm.model_adapters.reasoning import (
@@ -39,6 +40,13 @@ from app.services.llm.core import (
     _StreamRetryContext,
     _resolve_exception,
 )
+
+
+class _RateLimitError(Exception):
+    """429限流错误 — 供RetryEngine判断可重试性 — 小沈 2026-05-27"""
+    def __init__(self, status_code: int):
+        self.status_code = status_code
+        super().__init__(f"HTTP {status_code} rate limit")
 
 
 class BaseAIService:
@@ -143,20 +151,26 @@ class BaseAIService:
         return status_code in self.RATE_LIMIT_STATUS_CODES
     
     async def _post_with_retry(self, url: str, headers: dict, json_body: dict, max_retries: int = 3, retry_delay: float = 2.0):
-        """带429指数退避重试的POST请求 — 在传输层统一处理限流"""
-        import asyncio
-        for attempt in range(max_retries):
+        """带429指数退避重试的POST请求 — 委托到RetryEngine统一重试引擎 — 小沈 2026-05-27"""
+        engine = create_rate_limit_retry_engine(
+            max_retries=max_retries,
+            backoff_factor=retry_delay,
+            is_rate_limit_fn=lambda e: (
+                hasattr(e, 'response') and self._is_rate_limit_status(getattr(e, 'status_code', 0))
+            ),
+        )
+
+        async def _do_post():
             response = await self.client.post(url, headers=headers, json=json_body)
             if self._is_rate_limit_status(response.status_code):
-                if attempt < max_retries - 1:
-                    delay = retry_delay * (2 ** attempt)
-                    logger.warning(f"[429重试] HTTP {response.status_code}, 第{attempt+1}/{max_retries}次, {delay:.0f}s后重试")
-                    await asyncio.sleep(delay)
-                    continue
-                else:
-                    logger.error(f"[429重试] HTTP {response.status_code}, 持续{max_retries}次, 放弃")
+                raise _RateLimitError(response.status_code)
             return response
-        return response
+
+        try:
+            return await engine.execute(_do_post)
+        except _RateLimitError as e:
+            logger.error(f"[429重试] HTTP {e.status_code}, 持续{max_retries}次, 放弃")
+            return e.response if hasattr(e, 'response') else await self.client.post(url, headers=headers, json=json_body)
     
     def _stream_with_retry(self, url: str, headers: dict, json_body: dict, max_retries: int = 3, retry_delay: float = 2.0):
         """带429指数退避重试的流式请求上下文管理器
@@ -167,25 +181,17 @@ class BaseAIService:
         return _StreamRetryContext(self, url, headers, json_body, max_retries, retry_delay)
     
     async def _detect_reasoning_support(self) -> bool:
-        """通过API探测模型是否支持reasoning_content — 小健 2026-05-24
-
-        发一个简单请求，检查响应message中是否包含reasoning_content字段。
-        首次探测后缓存到 _supports_reasoning，不再重复请求。
+        """通过CapabilityDetector探测reasoning_content支持 — DRY原则
+        
+        【重构 2026-05-27 小健】委托给CapabilityDetector统一入口，
+        消除与llm_adapter.detect_strategy的双重"发请求→判断→缓存"模式。
         """
         if self._supports_reasoning is not None:
             return self._supports_reasoning
         try:
-            async with httpx.AsyncClient(timeout=DEFAULT_PROBE_TIMEOUT) as client:
-                response = await client.post(
-                    f"{self.api_base}/chat/completions",
-                    headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-                    json={"model": self.model, "messages": [{"role": "user", "content": "1+1=?"}], "stream": False}
-                )
-                if response.status_code == 200:
-                    message = response.json().get("choices", [{}])[0].get("message", {})
-                    self._supports_reasoning = "reasoning_content" in message
-                else:
-                    self._supports_reasoning = False
+            from app.services.llm.capability_detector import CapabilityDetector
+            detector = CapabilityDetector(self.api_base, self.api_key, self.model)
+            self._supports_reasoning = await detector.detect_reasoning_support()
         except Exception as e:
             logger.warning(f"[reasoning探测] 探测失败，默认不支持: {e}")
             self._supports_reasoning = False
@@ -292,19 +298,14 @@ class BaseAIService:
         yield StreamChunk(content="", model=self.model, is_done=True)
 
     def _build_messages(self, message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
-        """构建消息列表 — LLM层最简拼接，与Agent层MessageBuilder不重叠
-
-        MessageBuilder（Agent层）负责历史裁剪/工具注入/schema注入等复杂逻辑，
-        _build_messages（LLM层）只做最后的history+message列表拼接。
-        两层职责边界清晰：MessageBuilder=全功能组装，_build_messages=LLM接口拼接。
+        """构建消息列表 — 委托给MessageBuilder统一入口（DRY原则）
+        
+        【重构 2026-05-27 小健】遵循DRY+SLAP原则：
+        - 委托给MessageBuilder.build_llm_messages()统一入口
+        - LLM层不再自行组装消息列表
         """
-        if not message and history:
-            return list(history)
-        messages = []
-        if history:
-            messages.extend(history)
-        messages.append({"role": "user", "content": message})
-        return messages
+        from app.services.agent.message_builder import MessageBuilder
+        return MessageBuilder.build_llm_messages(message, history)
     
     async def chat(self, message: str, history: Optional[List[Dict]] = None) -> ChatResponse:
         """发送对话请求（一次性返回）
