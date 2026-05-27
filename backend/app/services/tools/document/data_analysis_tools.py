@@ -23,7 +23,6 @@ Author: 小沈 - 2026-05-02
 import os
 import json
 import tempfile
-import logging
 from typing import Dict, Any, List, Union, Optional, Literal, Tuple
 from pathlib import Path
 import pandas as pd
@@ -32,11 +31,12 @@ from app.services.tools.tool_result_utils import build_next_actions, truncate_da
 from app.services.tools._response import build_success, build_error
 from app.services.tools.toolhelper.common_helper import _check_module
 from app.services.tools.toolhelper.data_helper import _serialize_rows
+from app.utils.logger import setup_logger
 
 
 
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 def generate_chart(
