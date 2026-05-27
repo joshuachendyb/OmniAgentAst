@@ -32,7 +32,7 @@ import asyncio
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from app.services import AIServiceFactory
@@ -47,6 +47,11 @@ from app.services.intents.crss_scorer import (
     detect_intent_v2,
     CRSS_CONFIDENCE_THRESHOLD,
 )
+from app.services.react_sse_wrapper import running_tasks, running_tasks_lock, generate_sse_stream
+from app.chat_stream.start_step import send_start_step
+from app.chat_stream.sse_formatter import format_sse_event
+from app.services.preprocessing.intent_classifier import classify_intent
+from app.services.tools.registry import resolve_category
 
 
 # 【修复 2026-04-30 小沈】CRSS置信度阈值：归一化评分 >= 此值认为意图可信
@@ -110,8 +115,6 @@ async def route_with_fallback(user_input: str) -> Dict:
     )
 
     try:
-        from app.services.preprocessing.intent_classifier import classify_intent
-
         # 准备提示标签（所有ToolCategory，不再含chat——所有请求走ReAct循环）
         intent_labels = [c.value for c in ToolCategory]
 
@@ -121,7 +124,6 @@ async def route_with_fallback(user_input: str) -> Dict:
         llm_confidence = float(llm_result.get("confidence", 0.5))
 
         # 将LLM返回的字符串转为ToolCategory（支持新旧意图名） - 【2026-05-18 小沈】
-        from app.services.tools.registry import resolve_category
         intent_enum = resolve_category(intent_str)
 
         result.update({
@@ -186,7 +188,6 @@ async def chat_stream_v2(request: ChatRequest):
             error_type="invalid_request",
             error_message="消息列表不能为空"
         )
-        from fastapi.responses import PlainTextResponse
         return PlainTextResponse(
             content=error_response,
             media_type="text/event-stream"
@@ -195,7 +196,6 @@ async def chat_stream_v2(request: ChatRequest):
     user_input = request.messages[-1].content
     
     # 获取配置 - 使用 AIServiceFactory 的统一逻辑
-    from app.services import AIServiceFactory
     ai_service = AIServiceFactory.get_service()
     provider = ai_service.provider
     model = ai_service.model
@@ -253,19 +253,17 @@ class ChatRouter:
         task_id = str(uuid.uuid4())
         if ai_service is None:
             ai_service = AIServiceFactory.get_service_for_model(provider, model)
-        from app.services.react_sse_wrapper import running_tasks, running_tasks_lock
         return task_id, ai_service, running_tasks, running_tasks_lock
 
     async def _step_start(self, ai_service, task_id, next_step, user_input, execution_steps, session_id):
-        """S3 start_step 细节下沉 — 消除内联 yield_sse 闭包和start_step细节"""
+        """S3 start_step 细节下沉 — SLAP分层"""
         try:
-            def yield_sse(data: dict) -> str:
-                return f"data: {json.dumps(data)}\n\n"
-            from app.chat_stream.start_step import send_start_step
-            start_data = await send_start_step(ai_service=ai_service, task_id=task_id, next_step=next_step,
+            start_data = await send_start_step(
+                ai_service=ai_service, task_id=task_id, next_step=next_step,
                 user_message=user_input, security_check_result={},
                 current_execution_steps=execution_steps, session_id=session_id,
-                yield_func=yield_sse)
+                yield_func=lambda d: f"data: {json.dumps(d)}\n\n"
+            )
             yield f"data: {json.dumps(start_data)}\n\n"
         except Exception as e:
             yield create_error_response(error_type="start_failed", error_message=f"start步骤失败: {e}")
@@ -274,7 +272,6 @@ class ChatRouter:
                                task_id, session_id, ai_service, next_step, running_tasks, running_tasks_lock,
                                execution_steps):
         """S4 ReAct 循环细节下沉 — 实现SLAP分层"""
-        from app.services.react_sse_wrapper import generate_sse_stream
         messages_list = [{"role": msg.role, "content": msg.content} for msg in messages]
         async for event in generate_sse_stream(messages=messages_list, intent_type=intent_type,
             confidence=confidence, candidates=candidates, provider=provider, model=model,
