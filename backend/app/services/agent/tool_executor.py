@@ -13,6 +13,7 @@ from typing import Any, Callable, Dict, Optional
 
 from app.utils.logger import logger
 from app.utils.error_classifier import ErrorCategory, UnifiedErrorClassifier
+from app.services.agent.tool_result_utils import create_tool_result, create_error_tool_result
 
 from app.constants import (
     ERR_MISSING_PARAM,
@@ -103,12 +104,12 @@ class ToolExecutor:
             logger.info(f"工具别名转换: {original_action} -> {action}")
         
         if action == "finish":
-            return {
-                "code": "SUCCESS",
-                "data": action_input.get("result"),
-                "message": action_input.get("result", "Task completed"),
-                "retry_count": 0
-            }
+            return create_tool_result(
+                code="SUCCESS",
+                data=action_input.get("result"),
+                message=action_input.get("result", "Task completed"),
+                retry_count=0
+            )
         
         if action not in self.available_tools:
             from app.services.tools.registry import tool_registry
@@ -116,12 +117,14 @@ class ToolExecutor:
             if impl is not None:
                 self.available_tools[action] = impl
                 return await self._execute_with_retry(action, action_input)
-            return {
-                "code": ERR_TOOL_NOT_FOUND,
-                "data": None,
-                "message": f"Unknown tool: {action}. Available tools: {list(self.available_tools.keys())}",
-                "retry_count": 0
-            }
+            return create_error_tool_result(
+                code=ERR_TOOL_NOT_FOUND,
+                data=None,
+                message=f"Unknown tool: {action}. Available tools: {list(self.available_tools.keys())}",
+                retry_count=0,
+                error_message=f"工具 '{action}' 未找到",
+                error_type="tool_not_found"
+            )
         
         # 【步骤4】使用重试逻辑执行
         return await self._execute_with_retry(action, action_input)
@@ -157,17 +160,17 @@ class ToolExecutor:
         # 使用统一重试引擎执行
         return await execute_tool_with_unified_retry(action, action_input, self.available_tools)
     
-    def _normalize_params(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
+    def normalize_params(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
         """
         参数规范化：基于tool_registry的input_schema校验 - 小健 2026-05-02
-        
+
         从tool_registry.get_tool()获取input_schema，支持所有tool类型（file/shell/network等）
         删除硬编码的file_register依赖。
-        
+
         Args:
             action: 工具名称
             action_input: 原始参数
-        
+
         Returns:
             规范化后的参数
         """
