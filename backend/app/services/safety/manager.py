@@ -57,10 +57,26 @@ class SafetyManager:
 
     统一管理所有分类的安全检查Hook，对外暴露单一入口。
     调用方无需了解安全实现的两层结构，符合SLAP原则。
+
+    两层编排：
+      ① CommandParser.parse() — 分析层（命令语义解析+风险评估）
+      ② Hook.execute_with_safety() — 执行层（备份/回滚/记录）
     """
 
     def __init__(self):
         self._hooks: Dict[str, SafetyHook] = {}
+        self._command_parser = None
+
+    def set_command_parser(self, parser):
+        """设置命令解析器（分析层）— 小沈 2026-05-27"""
+        self._command_parser = parser
+        logger.info("[SafetyManager] 设置CommandParser分析层")
+
+    def parse_command(self, command: str) -> Dict[str, Any]:
+        """解析命令语义（分析层）— 小沈 2026-05-27"""
+        if self._command_parser is None:
+            return {"operation": None, "sources": [], "targets": [], "direction": None, "quantity": "single"}
+        return self._command_parser.parse(command)
 
     def register_hook(self, category: str, hook: SafetyHook):
         """
@@ -120,6 +136,67 @@ class SafetyManager:
         """获取指定分类的Hook"""
         return self._hooks.get(category)
 
+    async def check_and_execute(
+        self,
+        category: str,
+        action: str,
+        params: Dict[str, Any],
+        operation_func: Callable,
+        *args,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """安全检查+执行统一入口 — 先check再execute，SLAP原则
+
+        【小健 2026-05-27】组合check()+on_before_execute()+operation()+on_after_execute()
+        调用方只需一个调用，无需了解安全两层结构。
+
+        Args:
+            category: 工具分类（如"file", "shell"）
+            action: 操作名称
+            params: 操作参数
+            operation_func: 实际执行函数
+            *args, **kwargs: 传递给operation_func的参数
+
+        Returns:
+            {"is_safe": bool, "check_result": dict, "execution_result": Any, "error": str|None}
+        """
+        check_result = self.check(category, action, params)
+        if not check_result.get("is_safe", True):
+            return {
+                "is_safe": False,
+                "check_result": check_result,
+                "execution_result": None,
+                "error": check_result.get("message", "安全检查未通过"),
+            }
+
+        before_result = await self.on_before_execute(category, action, params)
+        if before_result is not None:
+            return {
+                "is_safe": False,
+                "check_result": check_result,
+                "execution_result": before_result,
+                "error": "执行前安全Hook拦截",
+            }
+
+        try:
+            result = operation_func(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"[SafetyManager] 执行失败: {e}")
+            return {
+                "is_safe": True,
+                "check_result": check_result,
+                "execution_result": None,
+                "error": str(e),
+            }
+
+        await self.on_after_execute(category, action, params, result)
+        return {
+            "is_safe": True,
+            "check_result": check_result,
+            "execution_result": result,
+            "error": None,
+        }
+
     def execute_with_safety(self, category: str, operation_id: str, operation_func: Callable, *args, **kwargs) -> bool:
         """安全执行统一入口 — DRY原则：所有分类的安全执行走此入口
         
@@ -162,10 +239,15 @@ _safety_manager: Optional[SafetyManager] = None
 
 
 def get_safety_manager() -> SafetyManager:
-    """获取SafetyManager单例"""
+    """获取SafetyManager单例 — 自动加载CommandParser — 小沈 2026-05-27"""
     global _safety_manager
     if _safety_manager is None:
         _safety_manager = SafetyManager()
+        try:
+            from app.services.command_parser.parser import CommandParser
+            _safety_manager.set_command_parser(CommandParser())
+        except Exception as e:
+            logger.warning(f"[SafetyManager] CommandParser加载失败: {e}")
     return _safety_manager
 
 
