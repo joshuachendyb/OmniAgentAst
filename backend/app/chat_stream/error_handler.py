@@ -123,22 +123,6 @@ def get_function_call_error_info(error: Exception) -> Dict[str, Any]:
     return _build_error_response("UNKNOWN_ERROR", "unknown_fallback", retryable=True, retry_after=5)
 
 
-def classify_error(error_type: str, error_message: str = "") -> tuple[str, str]:
-    """
-    根据错误类型分类，获取用户友好的错误信息
-    
-    Args:
-        error_type: 错误类型标识
-        error_message: 原始错误信息
-    
-    Returns:
-        (code, message) 元组
-    """
-    if error_type in ERROR_TYPE_MAP:
-        return ERROR_TYPE_MAP[error_type]
-    else:
-        return 'server', f"服务调用失败: {error_message}"
-
 
 def get_stream_error_info(error_type: str, original_message: str = None) -> tuple[str, str]:
     """
@@ -255,25 +239,6 @@ def resolve_http_error_type(error_message: str) -> Optional[str]:
     
     return None
 
-
-def is_network_or_api_error(error_message: str) -> tuple[bool, Optional[str]]:
-    """判断错误是否为网络/API错误，返回(is_network, error_type) — 小健 2026-05-24
-    
-    用于parse_error分支决策：网络错误不注入history（重试即可），
-    非网络错误注入history引导LLM修复格式。
-    解析异常时静默降级为(False, None)，与原loop内联try/except行为一致。
-    """
-    try:
-        error_type = resolve_http_error_type(error_message)
-    except Exception:
-        return (False, None)
-    if error_type is None:
-        return (False, None)
-    is_network = (
-        error_type.startswith("api_error_") and error_type != "api_error_400"
-        or error_type in ("network", "connect", "protocol", "timeout")
-    )
-    return (is_network, error_type)
 
 
 def create_session_error_result(
