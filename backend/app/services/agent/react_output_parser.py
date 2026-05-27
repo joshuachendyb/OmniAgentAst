@@ -209,12 +209,6 @@ def _process_tool_params(tool_params, tool_name=None, raw_output=None):
     tool_params = _normalize_tool_params_content(tool_params)
     tool_params = _filter_tool_params(tool_params)
     
-    if tool_name and tool_name != "finish" and tool_params:
-        tool_params = _supplement_missing_params(
-            tool_name, tool_params,
-            raw_output if isinstance(raw_output, str) else None
-        )
-    
     return tool_params
 
 
@@ -1105,9 +1099,6 @@ def _try_regex_tool_call_fallback(output: str) -> Optional[Dict[str, Any]]:
     if isinstance(tp, dict):
         tp = _normalize_tool_params_content(tp)
         tp = _filter_tool_params(tp)
-        if tp:
-            tp = _supplement_missing_params(tool_name, tp, output)
-
     return {
         "type": "action",
         "thought": prefix_text,
@@ -1386,37 +1377,6 @@ def _filter_tool_params(tool_params: Dict) -> Dict:
                     filtered[k] = v
     
     return filtered
-
-
-# TOOL_REQUIRED_PARAMS 已删除 - 小健 2026-05-02
-# 必需参数从Pydantic模型schema动态获取，使用 _get_required_params(tool_name)
-
-
-def _check_missing_required_params(tool_name: str, tool_params: Dict, original_output: str = None) -> tuple:
-    """
-    【2026-04-28 小沈新增】检测并补充缺失的必需参数
-    
-    注意：必需参数校验已删除（小健 2026-05-02）。
-    Pydantic模型在执行时自动校验required参数，此处不再重复检查。
-    保留此函数作为兼容性占位，统一返回(原参数字典, False)。
-    
-    Args:
-        tool_name: 工具名称
-        tool_params: 已解析的参数字典
-        original_output: LLM原始输出文本
-        
-    Returns:
-        tuple: (原参数字典, False) 固定返回
-    """
-    return tool_params, False
-
-
-def _supplement_missing_params(tool_name: str, tool_params: Dict, original_output: str = None) -> Dict:
-    """补充缺失的必需参数（当前为占位，Pydantic 模型自动校验 — 小健 2026-05-25）
-    2026-05-25 小沈 重构: _check_missing_required_params 已变 stub(始终返回原参数)，
-    此函数后续 ~80行推断逻辑全部是死代码，可直接删除。若以后需要恢复 content 推断，
-    应从 _create_action_result 中独立调用，而非在此维护 130 行死代码。"""
-    return tool_params
 
 
 def _try_parse_non_standard_json(input_str: str) -> Optional[Dict]:

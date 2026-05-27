@@ -109,9 +109,6 @@ app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 import asyncio
 from app.services.react_sse_wrapper import cleanup_expired_tasks
 
-# 【Phase 1修复 小健 2026-05-14】删除模块级import，改为函数内import
-# from app.services.tools.shell.shell_tools import cleanup_background_shells
-
 @app.on_event("startup")
 async def startup_event():
     """应用启动时注册工具 + 启动后台任务"""

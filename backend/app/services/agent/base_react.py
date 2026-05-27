@@ -44,9 +44,8 @@ from app.services.agent.reasoning_steps import (
 )
 from app.services.tools.registry import ToolCategory, get_tools_from_registry_by_category
 
-# 【修复 小健 2026-05-24】P2-1: 删除重复导入AgentStatus
 from app.constants import MAX_CONTEXT_CHARS
-from app.services.preprocessing.intent_classifier import IntentClassifier  # 【步骤9】意图分类器
+from app.services.preprocessing.intent_classifier import IntentClassifier
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_timestamp
 from app.chat_stream.incident_handler import create_incident_data
@@ -115,9 +114,6 @@ class BaseAgent(ABC):
         self.llm_call_count = 0
         self._lock = asyncio.Lock()
         
-        # 【步骤4】移除旧ToolParser初始化，使用parse_react_response函数调用
-        # self.parser = ToolParser()  # 已移除
-        
         # 【重构 2026-04-11 小沈】解析重试相关参数
         self.parse_retry_count = 0  # 解析重试计数器
         self.max_parse_retries = 3   # 最大重试次数
@@ -135,7 +131,6 @@ class BaseAgent(ABC):
         
         # 【v2.3新增】chunk处理相关属性—所有Agent子类共享
         self.max_consecutive_chunks = MAX_CONSECUTIVE_CHUNKS  # 连续chunk达此阈值时提升为implicit
-        # self.temp_history 已迁入 MessageBuilder，此处不再保留（内部已统一通过 message_builder.temp_history 访问）
         
         # 创建工具执行器
         self.executor = None  # 子类应初始化
@@ -276,10 +271,6 @@ class BaseAgent(ABC):
                 pass
 
         logger.info(f"[动态加载] 完成，新增{len(new_tools)}个工具，总计{len(self._tools_dict)}个")
-    
-    async def _check_and_load_missing_tools(self, observation: str, llm_client=None):
-        """全量注册后无需动态加载 - 小沈 2026-05-15"""
-        return
     
     # ===== 核心方法（子类调用）=====
     
@@ -627,8 +618,6 @@ class BaseAgent(ABC):
             outcome.obs_inject_text, self.llm_call_count, fc_context=outcome.obs_fc_context
         )
         yield outcome.observation_step_dict
-
-        await self._check_and_load_missing_tools(outcome.observation_text, self.llm_client)
 
         if outcome.is_done:
             _result_data = outcome.execution_result.get("data")

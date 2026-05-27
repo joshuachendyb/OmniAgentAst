@@ -510,10 +510,6 @@ class BaseAIService:
         finally:
             self._current_response = None
     
-    async def validate(self) -> bool:
-        """验证API Key是否有效 - 已废弃，请使用 init_model_select.py 中的接口实现"""
-        raise NotImplementedError("validate() 已废弃，请使用 /api/v1/chat/validate 接口")
-    
     async def close(self):
         """关闭HTTP客户端"""
         await self.client.aclose()

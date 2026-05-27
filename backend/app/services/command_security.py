@@ -92,30 +92,6 @@ def get_security_config() -> dict:
 
 # ============================================================
 # 配置加载函数（支持YAML配置文件）
-# 【废弃】2026-04-20 当前未使用，预留给未来版本
-# ============================================================
-
-def load_dangerous_commands_from_config(config_path: Optional[str] = None) -> Dict[str, List[str]]:
-    """
-    从配置文件加载危险命令
-    
-    未来版本支持从YAML/JSON配置文件加载
-    
-    Args:
-        config_path: 配置文件路径
-        
-    Returns:
-        Dict[str, List[str]]: 按类型分类的危险命令
-    """
-    # 尝试加载配置文件（未来版本启用）
-    # if config_path and os.path.exists(config_path):
-    #     with open(config_path, 'r', encoding='utf-8') as f:
-    #         config = yaml.safe_load(f)
-    #         return config.get('dangerous_commands', {})
-    
-    # 使用内置默认配置
-    return DEFAULT_DANGEROUS_COMMANDS
-
 
 # ============================================================
 # Shell命令黑名单安全规则定义（按类型分类）
@@ -627,34 +603,6 @@ def check_command_safety(command: str) -> Dict[str, Any]:
         "is_need_confirm": is_need_confirm,
         "rule_matched": risk if not is_safe else None
     }
-
-
-def is_command_safe(command: str) -> bool:
-    """
-    快速检查命令是否安全
-    
-    Args:
-        command: 待检查的命令
-        
-    Returns:
-        bool: 是否安全
-    """
-    checker = get_safety_checker()
-    return checker.is_safe(command)
-
-
-def get_command_risk_level(command: str) -> str:
-    """
-    获取命令风险等级
-    
-    Args:
-        command: 待检查的命令
-        
-    Returns:
-        str: 风险等级
-    """
-    checker = get_safety_checker()
-    return checker.get_risk_level(command)
 
 
 

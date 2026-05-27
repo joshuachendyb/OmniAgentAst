@@ -303,20 +303,6 @@ class ChatRouter:
             current_execution_steps=execution_steps):
             yield event
 
-    def _create_error_sse(self, error_type: str, error_message: str, step: int) -> str:
-        """创建错误 SSE 响应"""
-        return create_error_response(
-            error_type=error_type,
-            error_message=error_message,
-            step=step
-        )
-
-
-# 便捷函数：创建 router 实例
-def create_chat_router() -> ChatRouter:
-    """创建 ChatRouter 实例"""
-    return ChatRouter()
-
 
 # ============================================================================
 # 任务控制 API 端点（附录7.1）

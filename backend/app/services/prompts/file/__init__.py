@@ -9,12 +9,8 @@ Prompts/File 模块 - 文件操作Prompt模板
 Author: 小沈 - 2026-03-21
 """
 
-from app.services.prompts.file.file_prompts import (
-    FileOperationPrompts,
-    TaskTemplates,
-)
+from app.services.prompts.file.file_prompts import FileOperationPrompts
 
 __all__ = [
     "FileOperationPrompts",
-    "TaskTemplates",
 ]

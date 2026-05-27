@@ -29,10 +29,7 @@ from app.services.preprocessing import TextCorrector, IntentClassifier
 from .base_react import BaseAgent
 
 from .tool_executor import ToolExecutor
-from .react_output_parser import (
-    parse_react_response,
-    REACT_KEYWORDS,
-)
+from .react_output_parser import parse_react_response
 from .session_base import SessionServiceBase, SessionStatsMixin
 
 # ============================================================================
@@ -92,9 +89,7 @@ __all__ = [
     "IntentClassifier",
     "SessionServiceBase",
     "SessionStatsMixin",
-    # 新解析器（第14章）
     "parse_react_response",
-    "REACT_KEYWORDS",
     # 原 file_operations（通过__getattr__懒加载）
     "FileOperationSafety",
     "FileSafetyConfig",
@@ -103,7 +98,4 @@ __all__ = [
     "get_session_service",
     "FileTools",
     "get_file_tools",
-    "IntentAgent",
-    "IntentReactAgent",
-    "FileReactAgent",
 ]

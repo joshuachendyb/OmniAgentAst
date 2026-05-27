@@ -4,6 +4,5 @@ from .BasePromptTemplate import BasePrompts
 
 __all__ = [
     "BasePrompts",
-    "base",
     "file",
 ]
