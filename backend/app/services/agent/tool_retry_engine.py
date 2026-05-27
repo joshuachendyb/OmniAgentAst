@@ -15,6 +15,7 @@ from app.utils.logger import logger
 from app.utils.error_classifier import ErrorCategory, UnifiedErrorClassifier
 from app.services.tools.tool_config import get_tool_config, get_timeout
 from app.services.tools.tool_meta import TOOL_TIMEOUTS
+from app.services.agent.tool_result_utils import create_tool_result, create_error_tool_result
 
 from app.constants import (
     ERR_MISSING_PARAM,
@@ -46,7 +47,7 @@ class ToolRetryEngine:
             from app.services.tools.registry import get_implementations_from_registry
             self.available_tools = get_implementations_from_registry()
     
-    def _normalize_params(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
+    def normalize_params(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
         """
         参数规范化：基于tool_registry的input_schema校验
         
@@ -118,13 +119,14 @@ class ToolRetryEngine:
         消除 4 处重复 {code, data, message, retry_count, metadata} 构建。
         retry_count 统一为"已完成的重试次数"（不含首次尝试）。
         """
-        result = {
-            "code": code, "data": None,
-            "message": message, "retry_count": retry_count,
-        }
-        if error_type:
-            result["metadata"] = {"error_type": error_type}
-        return result
+        return create_error_tool_result(
+            code=code,
+            data=None,
+            message=message,
+            retry_count=retry_count,
+            error_message=message,
+            error_type=error_type or "unknown"
+        )
     
     async def execute_tool_with_retry(
         self,
@@ -169,12 +171,15 @@ class ToolRetryEngine:
             and p.name != 'self'
             and p.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
         ]
-        normalized_input = self._normalize_params(action, action_input)
+        normalized_input = self.normalize_params(action, action_input)
         missing = [p for p in required if p not in normalized_input]
         if missing:
-            return self._build_retry_error(
-                ERR_MISSING_PARAM,
-                f"Missing required parameter(s): {', '.join(missing)}", 0,
+            return create_error_tool_result(
+                code=ERR_MISSING_PARAM,
+                message=f"Missing required parameter(s): {', '.join(missing)}",
+                retry_count=0,
+                error_message=f"缺少必需参数: {', '.join(missing)}",
+                error_type="invalid_params"
             )
         
         # 获取重试配置
@@ -191,12 +196,12 @@ class ToolRetryEngine:
         while attempt_count <= max_retries:
             try:
                 result = await self._execute_tool_once(tool, normalized_input, timeout)
-                return {
-                    "code": "SUCCESS",
-                    "data": result,
-                    "message": "Tool execution succeeded",
-                    "retry_count": attempt_count
-                }
+                return create_tool_result(
+                    code="SUCCESS",
+                    data=result,
+                    message="Tool execution succeeded",
+                    retry_count=attempt_count
+                )
                 
             except Exception as e:
                 last_error = e
