@@ -212,10 +212,7 @@ class BaseAIService:
         """创建取消StreamChunk — 小健 2026-05-25"""
         return create_cancelled_chunk(self.model)
 
-    def _build_messages(self, message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
-        """构建消息列表 — 委托给request_builder统一入口 — 小健 2026-05-27"""
-        return build_messages(message, history)
-    
+
     async def chat(self, message: str, history: Optional[List[Dict]] = None) -> ChatResponse:
         """发送对话请求（一次性返回）
         
@@ -265,7 +262,7 @@ class BaseAIService:
     async def chat_stream(self, message: str, history: Optional[List[Dict]] = None) -> AsyncGenerator[StreamChunk, None]:
         """发送对话请求（流式返回）— 重构为骨架+通用解析+错误处理 小健 2026-05-25"""
         self.reset_cancel()
-        messages = self._build_messages(message, history)
+        messages = build_messages(message, history)
         if await self._detect_reasoning_support():
             messages = fix_thinking_messages(messages, True)
 
@@ -333,7 +330,7 @@ class BaseAIService:
         """发送对话请求（使用 Function Calling） — 小沈 2026-05-25 重构"""
         self.reset_cancel()
         try:
-            messages = self._build_messages(message, history)
+            messages = build_messages(message, history)
             if await self._detect_reasoning_support():
                 messages = fix_thinking_messages(messages, True)
             request_json = {"model": self.model, "messages": messages}
@@ -397,7 +394,7 @@ class BaseAIService:
         self.reset_cancel()
 
         try:
-            messages = self._build_messages(message, history)
+            messages = build_messages(message, history)
             if await self._detect_reasoning_support():
                 messages = fix_thinking_messages(messages, True)
 
