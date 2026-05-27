@@ -10,6 +10,7 @@ Author: 小沈 - 2026-05-27
 """
 
 from typing import Any, Callable, Dict, Optional
+from uuid import uuid4
 
 from app.utils.logger import logger
 
@@ -135,6 +136,27 @@ class SafetyManager:
     def get_hook(self, category: str) -> Optional[SafetyHook]:
         """获取指定分类的Hook"""
         return self._hooks.get(category)
+
+    def record_operation(self, category: str, *args, **kwargs) -> str:
+        """记录操作统一入口 — 委托给对应分类的hook — 小健 2026-05-28
+        
+        Args:
+            category: 工具分类（如"file"）
+            *args, **kwargs: 传递给hook.record_operation()的参数
+            
+        Returns:
+            operation_id: 操作唯一标识符
+        """
+        hook = self._hooks.get(category)
+        if hook is None:
+            logger.warning(f"[SafetyManager] 无{category}分类的Hook，返回空operation_id")
+            return f"op-nohook-{uuid4().hex[:8]}"
+        
+        if not hasattr(hook, 'record_operation'):
+            logger.warning(f"[SafetyManager] {category}的Hook未实现record_operation，返回空operation_id")
+            return f"op-norecord-{uuid4().hex[:8]}"
+        
+        return hook.record_operation(*args, **kwargs)
 
     async def check_and_execute(
         self,
