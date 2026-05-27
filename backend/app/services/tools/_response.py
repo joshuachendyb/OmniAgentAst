@@ -1,9 +1,29 @@
 """
 统一工具返回结构定义 — 小健 2026-05-21
 
+【分层规范 - 小健 2026-05-27】
+本文件属于【工具层】，职责：构建返回dict基础结构（code/data/message + 可选字段）
+
+三层职责边界（严格遵守）：
+  _response.py (工具层)
+    → 提供 build_success / build_error / build_warning
+    → 工具函数、helper函数 直接使用这三个函数
+    → 禁止使用 agent/tool_result_utils.py 的 create_xxx 函数
+
+  tool_result_utils.py (Agent层)
+    → 提供 create_tool_result / create_error_tool_result / create_warning_tool_result
+    → Agent编排层使用（tool_executor、tool_retry_engine等）
+    → 委托工具层构建，追加Agent层特有字段（error_type、metadata等）
+
+  tool_result_formatter.py (格式化层)
+    → LLM observation / 前端SSE / extract_status 格式化
+    → 禁止构建结果，只消费和格式化
+
+违反后果：层级混乱，职责不清，代码审查打回
+
 设计原则:
   1. 必填字段(code/data/message)始终写入，可选字段仅非默认值时写入
-  2. build_success/build_error是
+  2. build_success/build_error/build_warning 三个函数对称完整
   3. 扩展性：通过**extra_kwargs支持未来新增字段，无需改签名
   4. 向后兼容：所有工具返回的都是普通dict，消费端无需改动
 
@@ -26,7 +46,7 @@
   return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {fp}")
 
   # 警告(成功但有风险)
-  return build_success(data, msg, warning="文件较大，内容已截断")
+  return build_warning("WARNING_xxx", "警告消息", data=...)
 
   # 未来扩展(无需改此文件)
   return build_success(data, msg, new_field_2027="...")
