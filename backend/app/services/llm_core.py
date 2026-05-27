@@ -46,6 +46,10 @@ from app.services.llm.stream_parser import (
     create_cancelled_chunk,
     create_error_chunk,
 )
+from app.services.llm.request_builder import (
+    build_request_body,
+    build_messages,
+)
 
 
 class _RateLimitError(Exception):
@@ -107,24 +111,16 @@ class BaseAIService:
 
     def _build_request_body(self, messages: List[Dict]) -> Dict:
         """
-        构建LLM API请求体
-
-        【改进8 2026-05-01 小沈 小健】添加max_tokens/temperature/seed参数
-
-        Returns:
-            包含model/messages/stream/参数的请求体字典
+        构建LLM API请求体 — 委托给request_builder — 小健 2026-05-27
         """
-        body = {
-            "model": self.model,
-            "messages": messages,
-            "stream": True,
-            "max_tokens": self.max_tokens,
-            "temperature": self.temperature,
-        }
-        # seed可选，None时不传（避免不支持seed的API报错）
-        if self.seed is not None:
-            body["seed"] = self.seed
-        return body
+        return build_request_body(
+            messages,
+            model=self.model,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+            seed=self.seed,
+            stream=True
+        )
     
     def cancel(self):
         """强制取消当前请求"""
