@@ -89,7 +89,9 @@ TYPE_KEYWORDS: Dict[str, Dict] = {
 
 # 规范意图类型名称列表 — 单一来源
 # 新增意图类型时：(1)在此处添加TYPE_KEYWORDS条目 (2) 其他模块自动获取
-INTENT_NAMES = tuple(TYPE_KEYWORDS.keys())
+# 使用统一的意图映射模块获取意图名称
+from app.services.intents.intent_mapper import get_crss_intent_names
+INTENT_NAMES = get_crss_intent_names()
 
 
 # ====================================================================
@@ -167,6 +169,10 @@ ACTION_DEFINITIONS = {
 # 类型→枚举映射
 # ====================================================================
 
+# 使用统一的意图映射模块
+from app.services.intents.intent_mapper import resolve_category
+
+# 保持向后兼容的映射（已迁移到intent_mapper.py）
 TYPE_CATEGORY_MAP = {
     "FILE": ToolCategory.FILE,
     "SHELL": ToolCategory.SYSTEM,
@@ -238,7 +244,7 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
 
     # ===== 步骤1: 类型分 =====
     for type_name, kw in TYPE_KEYWORDS.items():
-        cat = TYPE_CATEGORY_MAP[type_name]
+        cat = resolve_category(type_name)
         score = _match_keywords(kw.get("keywords", []), kw.get("chinese_keywords", []), command_lower)
         if score > 0:
             type_raw[cat] = type_raw.get(cat, 0) + score
