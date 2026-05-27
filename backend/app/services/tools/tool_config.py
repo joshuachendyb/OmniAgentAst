@@ -11,13 +11,13 @@ T2: 配置外部化 + 配置安全机制
 
 import os
 import yaml
-import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, Union
 from datetime import datetime
 from pydantic import BaseModel, Field, field_validator
+from app.utils.logger import setup_logger
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 # ============================================================
