@@ -227,6 +227,13 @@ HTTPX_EXCEPTION_TO_ERROR_KEY = {
 }
 
 # ============================================================
+# 11.5. 工具结果状态码 — 小沈 2026-05-27
+# ============================================================
+
+SUCCESS_CODE = "SUCCESS"
+LLM_SAFE_LIMIT = 100_000
+
+# ============================================================
 # 12. 工具错误码常量 — 小沈 2026-05-26
 #     命名规范: ERR_{MODULE}_{PROBLEM}
 #     MODULE: DOC/FILE/SHELL/META/SYSTEM/DESKTOP/NETWORK/DB/REG/TIMER/TASK/WIN/SYS_ENV/SYS_REG

@@ -190,7 +190,12 @@ class Config:
     
     @property
     def raw_config(self) -> Dict[str, Any]:
-        """获取原始配置字典"""
+        """获取原始配置字典
+
+        【2026-05-27 小沈】@deprecated — 请使用 config.get(key) 点号路径访问。
+        raw_config暴露原始字典让调用方自行遍历取值，违反DRY和KISS原则。
+        保留此属性仅为向后兼容，新代码应使用config.get()。
+        """
         return self._config_data.copy()
 
 
