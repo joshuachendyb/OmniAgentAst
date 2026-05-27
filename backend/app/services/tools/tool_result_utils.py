@@ -9,6 +9,7 @@
   - data：完整结构化数据给前端渲染
 """
 import json
+from typing import Any, Dict, List, Optional
 from app.constants import (
     DEFAULT_MAX_OUTPUT_CHARS,
     DEFAULT_MAX_FILE_CHARS,
@@ -159,3 +160,26 @@ def build_next_actions(actions: list) -> list:
             entry["params"] = item[3]
         result.append(entry)
     return result
+
+
+def safe_truncate(data: Any, limit: int) -> Any:
+    """安全截断：仅防 json.dumps OOM，非业务截断 — 小沈 2026-05-27
+
+    DRY原则：从tool_result_formatter.py迁移到截断唯一职责层。
+    供tool_result_formatter.py和任何需要安全兜底截断的地方复用。
+
+    Args:
+        data: 待截断数据（dict/list/其他）
+        limit: 条目数量上限
+
+    Returns:
+        截断后的数据
+    """
+    if isinstance(data, dict):
+        if len(data) > limit:
+            keys = list(data.keys())[:limit]
+            return {k: data[k] for k in keys}
+    elif isinstance(data, list):
+        if len(data) > limit:
+            return data[:limit]
+    return data
