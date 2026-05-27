@@ -9,7 +9,6 @@
   - data：完整结构化数据给前端渲染
 """
 import json
-import logging
 from app.constants import (
     DEFAULT_MAX_OUTPUT_CHARS,
     DEFAULT_MAX_FILE_CHARS,
@@ -19,8 +18,9 @@ from app.constants import (
     DEFAULT_MAX_DATA_CHARS,
     DEFAULT_MAX_LIST_ITEMS,
 )
+from app.utils.logger import setup_logger
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 def truncate_text(text: str, max_chars: int, suffix: str = None) -> tuple:
