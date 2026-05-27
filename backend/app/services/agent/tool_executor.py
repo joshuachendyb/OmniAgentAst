@@ -2,6 +2,10 @@
 """
 工具执行器模块
 
+【分层规范 - 小健 2026-05-27】
+本文件属于【Agent编排层】，使用 tool_result_utils.py 的 create_xxx 函数
+禁止使用 _response.py 的 build_xxx 函数（那是工具层用的）
+
 负责执行解析后的工具调用，处理错误和结果格式化
 Author: 小沈 - 2026-03-21
 Version: 1.1 - 2026-04-19 添加T3重试逻辑
@@ -12,7 +16,6 @@ import asyncio
 from typing import Any, Callable, Dict, Optional
 
 from app.utils.logger import logger
-from app.utils.error_classifier import ErrorCategory, UnifiedErrorClassifier
 from app.services.agent.tool_result_utils import create_tool_result, create_error_tool_result
 
 from app.constants import (
@@ -89,12 +92,14 @@ class ToolExecutor:
         # 【废弃检查】小健 2026-05-02
         deprecation_msg = is_deprecated_tool(action)
         if deprecation_msg:
-            return {
-                "code": ERR_TOOL_DEPRECATED,
-                "data": None,
-                "message": f"工具 '{action}' 已废弃: {deprecation_msg}",
-                "retry_count": 0
-            }
+            return create_error_tool_result(
+                code=ERR_TOOL_DEPRECATED,
+                data=None,
+                message=f"工具 '{action}' 已废弃: {deprecation_msg}",
+                retry_count=0,
+                error_message=f"工具 '{action}' 已废弃",
+                error_type="tool_deprecated"
+            )
         
         # 【别名转换】小健 2026-05-02
         original_action = action
@@ -129,26 +134,6 @@ class ToolExecutor:
         # 【步骤4】使用重试逻辑执行
         return await self._execute_with_retry(action, action_input)
 
-    @staticmethod
-    def _build_retry_error(
-        code: str, message: str, retry_count: int,
-        *, error_type: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """统一构建重试相关错误响应（21.5 组件1，小沈 2026-05-25 实施）
-        
-        消除 4 处重复 {code, data, message, retry_count, metadata} 构建。
-        retry_count 统一为"已完成的重试次数"（不含首次尝试）。
-        
-        Note: 该方法保留用于向后兼容，实际实现已迁移到 tool_retry_engine.py
-        """
-        result = {
-            "code": code, "data": None,
-            "message": message, "retry_count": retry_count,
-        }
-        if error_type:
-            result["metadata"] = {"error_type": error_type}
-        return result
-
     async def _execute_with_retry(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
         """重试执行工具（使用统一重试引擎）
         
@@ -160,42 +145,3 @@ class ToolExecutor:
         # 使用统一重试引擎执行
         return await execute_tool_with_unified_retry(action, action_input, self.available_tools)
     
-    def normalize_params(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        参数规范化：基于tool_registry的input_schema校验 - 小健 2026-05-02
-
-        从tool_registry.get_tool()获取input_schema，支持所有tool类型（file/shell/network等）
-        删除硬编码的file_register依赖。
-
-        Args:
-            action: 工具名称
-            action_input: 原始参数
-
-        Returns:
-            规范化后的参数
-        """
-        params = action_input.copy()
-        
-        # 从tool_registry获取input_schema，支持所有tool类型
-        try:
-            from app.services.tools.registry import tool_registry
-            metadata = tool_registry.get_tool(action)
-            if metadata and metadata.input_schema:
-                valid_params = set(metadata.input_schema.get("properties", {}).keys())
-                invalid_keys = []
-                for key in list(params.keys()):
-                    if key not in valid_params:
-                        val = params[key]
-                        val_str = str(val)[:50] + "..." if len(str(val)) > 50 else str(val)
-                        logger.warning(
-                            f"[参数监控] action={action}, 非标准参数名: "
-                            f"param={key}={val_str}, 期望参数={sorted(valid_params)}"
-                        )
-                        invalid_keys.append(key)
-                # 【修复 2026-05-07 小沈】删除非法参数，防止传给函数报 unexpected keyword argument
-                for key in invalid_keys:
-                    del params[key]
-        except Exception as e:
-            logger.warning(f"[参数监控] action={action}, 获取schema失败: {e}")
-        
-        return params
