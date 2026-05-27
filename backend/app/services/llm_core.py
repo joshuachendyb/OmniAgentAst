@@ -15,7 +15,6 @@ LLM 核心模块 - 提供通用的 LLM API 调用能力
 """
 
 import json
-import re
 import asyncio
 import httpx
 import httpcore
@@ -23,136 +22,23 @@ from typing import List, Dict, Optional, AsyncGenerator, Any
 
 from app.utils.logger import logger
 
-
-
-
-
+from app.services.llm.model_adapters.xml_adapter import convert_xml_tool_call_to_json
+from app.services.llm.model_adapters.reasoning import (
+    fix_thinking_messages,
+    extract_reasoning_from_chunk,
+    extract_reasoning_from_message,
+)
 
 from app.constants import (DEFAULT_CONNECT_TIMEOUT, DEFAULT_LLM_TIMEOUT, DEFAULT_POOL_TIMEOUT,
-    DEFAULT_PROBE_TIMEOUT, DEFAULT_WRITE_TIMEOUT, ERROR_TYPE_MAP, HTTPX_EXCEPTION_TO_ERROR_KEY,
+    DEFAULT_PROBE_TIMEOUT, DEFAULT_WRITE_TIMEOUT,
     LLM_MAX_CONNECTIONS, LLM_MAX_KEEPALIVE, RATE_LIMIT_STATUS_CODES)
 
-
-def _resolve_exception(e: Exception) -> tuple:
-    """解析异常→(用户消息, 错误类型)，复用constants.py已有常量组合查询 — 小健 2026-05-25
-
-    httpx异常通过HTTPX_EXCEPTION_TO_ERROR_KEY映射到error_key，
-    httpcore异常共用同名映射（如httpcore.ReadError与httpx.ReadError→"read_error"），
-    再通过ERROR_TYPE_MAP[error_key]获取(分类, 用户消息)。
-    """
-    error_key = HTTPX_EXCEPTION_TO_ERROR_KEY.get(type(e).__name__)
-    if error_key and error_key in ERROR_TYPE_MAP:
-        _, user_msg = ERROR_TYPE_MAP[error_key]
-        return user_msg, error_key
-    return f"AI服务调用失败: {type(e).__name__}", "unknown_error"
-
-
-def _convert_xml_tool_call_to_json(content: str) -> Optional[str]:
-    """
-    通用XML工具调用转JSON
-    
-    某些模型（如LongCat）返回XML格式工具调用而不是标准OpenAI tool_calls。
-    格式: <XXX_tool_call>TOOL_NAME\\n<XXX_arg_key>k</XXX_arg_key>\\n<XXX_arg_value>v</XXX_arg_value>\\n</XXX_tool_call>
-    
-    此函数通用检测任意前缀的XML工具调用标签并转为标准JSON格式。
-    
-    Returns:
-        转换后的JSON字符串，如果无匹配返回None
-    """
-    if not content or '<' not in content or '_tool_call>' not in content:
-        return None
-    
-    # 匹配 <任意前缀_tool_call>TOOL_NAME
-    m = re.search(r'<(\w+)_tool_call>\s*(\w+)', content)
-    if not m:
-        return None
-    
-    prefix = m.group(1)   # 如: longcat
-    tool_name = m.group(2)  # 如: search_web
-    
-    # 匹配 <prefix_arg_key>KEY</prefix_arg_key> 和 <prefix_arg_value>VALUE</prefix_arg_value> 对
-    arg_keys = re.findall(rf'<{prefix}_arg_key>([^<]+)</{prefix}_arg_key>', content)
-    arg_values = re.findall(rf'<{prefix}_arg_value>([^<]*)</{prefix}_arg_value>', content)
-    
-    if not arg_keys:
-        return None
-    
-    # 构建标准JSON格式
-    tool_params = {}
-    for i, key in enumerate(arg_keys):
-        val = arg_values[i] if i < len(arg_values) else ''
-        tool_params[key.strip()] = val.strip()
-    
-    result = json.dumps({
-        "tool_name": tool_name,
-        "tool_params": tool_params
-    }, ensure_ascii=False)
-    
-    return result
-
-
-class ChatResponse:
-    """聊天响应类 - 非流式响应"""
-    def __init__(self, content: str, model: str, provider: str = "", error: Optional[str] = None,
-                 reasoning: Optional[str] = None, tool_calls: Optional[List[Dict]] = None):
-        self.content = content
-        self.model = model
-        self.provider = provider
-        self.error = error
-        self.success = error is None
-        self.reasoning = reasoning or ""
-        self.tool_calls = tool_calls or []
-
-
-class StreamChunk:
-    """流式响应片段"""
-    def __init__(self, content: str, model: str, is_done: bool = False, 
-                 stream_error: Optional[str] = None, stream_error_type: Optional[str] = None,
-                 reasoning: Optional[str] = None, is_reasoning: bool = False):
-        self.content = content
-        self.model = model
-        self.is_done = is_done
-        self.stream_error = stream_error
-        self.stream_error_type = stream_error_type
-        self.reasoning = reasoning
-        self.is_reasoning = is_reasoning
-
-
-class _StreamRetryContext:
-    """流式请求429重试上下文管理器 — 在传输层统一处理限流"""
-
-    def __init__(self, service, url, headers, json_body, max_retries=3, retry_delay=2.0):
-        self.service = service
-        self.url = url
-        self.headers = headers
-        self.json_body = json_body
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
-        self._response_ctx = None
-
-    async def __aenter__(self):
-        import asyncio
-        for attempt in range(self.max_retries):
-            self._response_ctx = self.service.client.stream(
-                "POST", self.url, headers=self.headers, json=self.json_body
-            )
-            response = await self._response_ctx.__aenter__()
-            if self.service._is_rate_limit_status(response.status_code):
-                await self._response_ctx.__aexit__(None, None, None)
-                if attempt < self.max_retries - 1:
-                    delay = self.retry_delay * (2 ** attempt)
-                    logger.warning(f"[429重试] 流式HTTP {response.status_code}, 第{attempt+1}/{self.max_retries}次, {delay:.0f}s后重试")
-                    await asyncio.sleep(delay)
-                    continue
-                else:
-                    logger.error(f"[429重试] 流式HTTP {response.status_code}, 持续{self.max_retries}次, 放弃")
-                    return response
-            return response
-        return response
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self._response_ctx:
-            return await self._response_ctx.__aexit__(exc_type, exc_val, exc_tb)
+from app.services.llm.core import (
+    ChatResponse,
+    StreamChunk,
+    _StreamRetryContext,
+    _resolve_exception,
+)
 
 
 class BaseAIService:
@@ -306,26 +192,6 @@ class BaseAIService:
         logger.info(f"[reasoning探测] model={self.model}, supports_reasoning={self._supports_reasoning}")
         return self._supports_reasoning
 
-    @staticmethod
-    def _fix_thinking_messages(messages: List[Dict], is_thinking: bool) -> List[Dict]:
-        """修复thinking模型消息兼容性 — 小健 2026-05-24
-
-        thinking模型(如deepseek-v3/r1)要求assistant消息必须包含
-        reasoning_content或tool_calls字段，否则API返回400。
-
-        修复策略：对缺少reasoning_content且无tool_calls的assistant消息，
-        将content移入reasoning_content字段，content置空字符串。
-        """
-        if not is_thinking:
-            return messages
-        for msg in messages:
-            if msg.get("role") == "assistant" and not msg.get("tool_calls"):
-                if "reasoning_content" not in msg:
-                    content = msg.get("content") or ""
-                    msg["reasoning_content"] = content
-                    msg["content"] = ""
-        return messages
-
     def _create_stream_error_chunk(self, e: Exception) -> StreamChunk:
         """根据异常类型创建错误StreamChunk — 小健 2026-05-25"""
         msg, err_type = _resolve_exception(e)
@@ -426,7 +292,12 @@ class BaseAIService:
         yield StreamChunk(content="", model=self.model, is_done=True)
 
     def _build_messages(self, message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
-        """构建消息列表 — message为空时直接返回history，否则拼接"""
+        """构建消息列表 — LLM层最简拼接，与Agent层MessageBuilder不重叠
+
+        MessageBuilder（Agent层）负责历史裁剪/工具注入/schema注入等复杂逻辑，
+        _build_messages（LLM层）只做最后的history+message列表拼接。
+        两层职责边界清晰：MessageBuilder=全功能组装，_build_messages=LLM接口拼接。
+        """
         if not message and history:
             return list(history)
         messages = []
@@ -486,7 +357,7 @@ class BaseAIService:
         self.reset_cancel()
         messages = self._build_messages(message, history)
         if await self._detect_reasoning_support():
-            messages = self._fix_thinking_messages(messages, True)
+            messages = fix_thinking_messages(messages, True)
 
         try:
             async with self._stream_with_retry(
@@ -554,7 +425,7 @@ class BaseAIService:
         try:
             messages = self._build_messages(message, history)
             if await self._detect_reasoning_support():
-                messages = self._fix_thinking_messages(messages, True)
+                messages = fix_thinking_messages(messages, True)
             request_json = {"model": self.model, "messages": messages}
             if tools:
                 request_json["tools"] = tools
@@ -595,7 +466,7 @@ class BaseAIService:
                     logger.info(f"[chat_with_tools] content为空，使用reasoning作为fallback")
 
             if content and "<" in content and ">" in content:
-                xml_converted = _convert_xml_tool_call_to_json(content)
+                xml_converted = convert_xml_tool_call_to_json(content)
                 if xml_converted:
                     logger.info(f"[chat_with_tools] 检测到XML工具调用格式，已转为JSON: {xml_converted}")
                     return self._response_or_error(content=xml_converted)
@@ -618,7 +489,7 @@ class BaseAIService:
         try:
             messages = self._build_messages(message, history)
             if await self._detect_reasoning_support():
-                messages = self._fix_thinking_messages(messages, True)
+                messages = fix_thinking_messages(messages, True)
 
             request_json = {"model": self.model, "messages": messages, "stream": True}
             if tools:
@@ -647,3 +518,8 @@ class BaseAIService:
             self._current_response = None
 
 
+__all__ = [
+    "BaseAIService",
+    "ChatResponse",
+    "StreamChunk",
+]
