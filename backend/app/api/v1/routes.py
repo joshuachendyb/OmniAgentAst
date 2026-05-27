@@ -340,52 +340,29 @@ async def validate_config(request: ConfigValidateRequest):
         ConfigValidateResponse: 验证结果
     """
     try:
-        # 获取配置
-        config = get_config_instance()
+        # 使用统一的AIConfigResolver进行验证
+        from app.services.ai_config_resolver import get_ai_config_resolver
+        resolver = get_ai_config_resolver()
         
-        # 获取provider配置
-        provider_config = config.get(f'ai.{request.provider}', {})
-        if not provider_config:
+        # 验证指定的provider和model
+        try:
+            provider_config = resolver.get_service_config(request.provider, request.model)
+        except ValueError as e:
             return ConfigValidateResponse(
                 valid=False,
-                message=f"Provider '{request.provider}' 配置不存在",
+                message=str(e),
                 model=None
             )
         
-        # 【修复】优先用用户指定的provider，只有当指定provider无效时才fallback
-        ai_config = config.get('ai', {})
-        current_model_provider = request.provider
-        
-        # 检查用户指定的provider是否有有效配置
-        provider_has_models = (
-            current_model_provider in ai_config and 
-            'models' in ai_config[current_model_provider] and 
-            ai_config[current_model_provider]['models']
-        )
-        
-        # 如果用户指定的provider无效，fallback到第一个有效的provider（动态遍历，不是硬编码！）
-        if not provider_has_models:
-            for provider_name in ai_config.keys():
-                if provider_name == 'provider' or provider_name == 'model':
-                    continue
-                provider_data = ai_config.get(provider_name, {})
-                if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
-                    current_model_provider = provider_name
-                    break
-        
-        # model优先用配置的，如果没有就用当前模型的第一个model
-        model_name = ai_config.get('model', '')
-        if not model_name:
-            current_model_models = ai_config.get(current_model_provider, {}).get('models', [])
-            if current_model_models and len(current_model_models) > 0:
-                model_name = current_model_models[0]
+        # 获取最终的provider和model（含fallback）
+        final_provider, final_model = resolver.resolve_provider_model()
         
         # 配置已保存，FC能力在首次LLM调用时由 llm_adapter.detect_strategy 自动探测
-        logger.info(f"配置已保存: provider={request.provider}, model={model_name}")
+        logger.info(f"配置已保存: provider={final_provider}, model={final_model}")
         return ConfigValidateResponse(
             valid=True,
-            message=f"配置已保存，将在首次使用时验证 {request.provider} ({model_name})",
-            model=model_name
+            message=f"配置已保存，将在首次使用时验证 {final_provider} ({final_model})",
+            model=final_model
         )
             
     except Exception as e:
