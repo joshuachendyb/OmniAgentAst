@@ -109,10 +109,14 @@ app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 # 【阶段6更新】cleanup_expired_tasks 改为从 react_sse_wrapper 导入
 import asyncio
 from app.services.react_sse_wrapper import cleanup_expired_tasks
+from app.db import db
 
 @app.on_event("startup")
 async def startup_event():
     """应用启动时注册工具 + 启动后台任务"""
+    # S0: 初始化数据库
+    db.init()
+    
     # S1: 全量注册工具（确保首次请求时可用）
     from app.services.tools import ensure_tools_registered
     ensure_tools_registered()
