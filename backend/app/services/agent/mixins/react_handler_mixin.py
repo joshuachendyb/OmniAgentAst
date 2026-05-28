@@ -40,6 +40,14 @@ class ReActHandlerMixin:
     - self._execute_tool_step()
     """
 
+    @staticmethod
+    def _merge_thought_text(thought: str, content: str) -> str:
+        """合并 thought 和 content 文本 — 小沈 2026-05-28"""
+        _val = content
+        if thought and thought.strip():
+            _val = thought if thought == content else (thought + "\n" + content).strip()
+        return _val
+
     async def _handle_empty_response(
         self, step_count: int
     ) -> AsyncGenerator[Dict[str, Any], None]:
@@ -148,9 +156,7 @@ class ReActHandlerMixin:
         thought = parsed.get("thought", "")
         thought_content = parsed.get("content", "")
 
-        _thought_val = thought_content
-        if thought and thought.strip():
-            _thought_val = thought if thought == thought_content else (thought + "\n" + thought_content).strip()
+        _thought_val = self._merge_thought_text(thought, thought_content)
 
         thought_step = StepFactory.create_thought_step(
             step=step_count, content="", tool_name="", tool_params={},
@@ -217,9 +223,7 @@ class ReActHandlerMixin:
         if chunk_buffer.buffer:
             chunk_buffer.flush_to(self.message_builder)
 
-        _thought_val = thought_content
-        if thought and thought.strip():
-            _thought_val = thought if thought == thought_content else (thought + "\n" + thought_content).strip()
+        _thought_val = self._merge_thought_text(thought, thought_content)
 
         thought_step = StepFactory.create_thought_step(
             step=step_count, content="", tool_name=tool_name,
@@ -247,12 +251,12 @@ class ReActHandlerMixin:
             self._on_after_loop()
             return
 
-        async for step in self._execute_observation_flow(
+        async for step in self._handle_observation_flow(
             outcome, parsed, step_count, running_tasks, task_id
         ):
             yield step
 
-    async def _execute_observation_flow(
+    async def _handle_observation_flow(
         self, outcome: _ToolStepOutcome, parsed: Dict[str, Any],
         step_count: int, running_tasks: Optional[Dict[str, Any]],
         task_id: Optional[str]
@@ -287,10 +291,9 @@ class ReActHandlerMixin:
         pending_calls = parsed.get("_pending_calls", [])
         if pending_calls:
             logger.info(f"[ReAct] 主工具完成，继续执行 {len(pending_calls)} 个并行工具")
-        async for _pd in self._execute_pending_calls(pending_calls, step_count, running_tasks, task_id):
-            yield _pd
-        if hasattr(self, '_pending_step_count'):
-            self._pending_step_count  # noqa — step_count同步已在_execute_pending_calls内部处理
+        async for _pd in self._handle_pending_calls(pending_calls, step_count, running_tasks, task_id):
+
+            self._pending_step_count  # noqa — step_count同步已在_handle_pending_calls内部处理
 
     def _handle_run_exception(self, e: Exception, step_count: int) -> Dict[str, Any]:
         """未捕获异常兜底 — 小沈 2026-05-25"""
@@ -299,7 +302,7 @@ class ReActHandlerMixin:
         logger.error(f"Agent run_stream error: {e}", exc_info=True)
         return self._exit_with_error(step_count, "unhandled_exception", str(e))
 
-    async def _execute_pending_calls(
+    async def _handle_pending_calls(
         self,
         pending_calls: List[Dict[str, Any]],
         step_count: int,
