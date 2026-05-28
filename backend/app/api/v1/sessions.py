@@ -354,8 +354,10 @@ async def list_sessions(
         raise HTTPException(status_code=500, detail=f"获取会话列表失败: {str(e)}")
     finally:
         if conn:
-            try: conn.close()
-            except Exception: pass
+            try:
+                conn.close()
+            except Exception:
+                logger.warning("关闭数据库连接失败", exc_info=True)
 
 
 def _ensure_ts_milliseconds(ts_value: Any) -> int:
@@ -444,8 +446,10 @@ async def get_session_messages(session_id: str):
         raise HTTPException(status_code=500, detail=f"获取会话消息失败: {str(e)}")
     finally:
         if conn:
-            try: conn.close()
-            except Exception: pass
+            try:
+                conn.close()
+            except Exception:
+                logger.warning("关闭数据库连接失败", exc_info=True)
 
 
 
