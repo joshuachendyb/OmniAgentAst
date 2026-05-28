@@ -107,20 +107,6 @@ def safe_path_join(base_dir: str, *paths: str) -> Optional[str]:
         return None
 
 
-def check_windows_platform() -> Optional[Dict[str, Any]]:
-    """统一Windows平台检查 - 小沈 2026-05-18
-
-    替代 desktop_tools + system_tools 中6处 platform.system() 判断。
-
-    Returns:
-        None: 平台为Windows
-        Dict: 错误信息（非Windows平台）
-    """
-    if platform.system() != "Windows":
-        return build_error(ERR_DESKTOP_NOT_WINDOWS, "此功能仅支持 Windows 系统")
-    return None
-
-
 def run_windows_command(
     cmd: list,
     timeout: int = 30,

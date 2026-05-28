@@ -288,32 +288,6 @@ def execute_sql(
         _close_connection(conn, engine)
 
 
-def get_db_schema(
-    connection_type: Literal["sqlite", "mysql", "postgresql"] = "sqlite",
-    connection_string: Optional[str] = None,
-    db_path: Optional[str] = None,
-    db_name: Optional[str] = None,
-    table_name: Optional[str] = None,
-    filter_pattern: Optional[str] = None,
-) -> Dict[str, Any]:
-    """
-    获取数据库表结构
-
-    Args:
-        connection_type: 数据库类型：sqlite/mysql/postgresql
-        connection_string: MySQL/PostgreSQL 连接字符串
-        db_path: SQLite 数据库文件路径
-        db_name: 数据库名（SQLite 忽略此参数）
-        table_name: 指定表名，仅获取该表结构。与filter_pattern互斥，table_name优先 - 小沈 2026-05-17
-        filter_pattern: 表名过滤模式（SQL LIKE 语法）
-        include_details: 是否包含详细索引、外键、约束信息
-        output_format: 输出格式：markdown(默认)、json、sql_ddl
-
-    Returns:
-        Dict with code, data, message
-    """
-
-
 def _get_tables(conn, connection_type: str, db_name: Optional[str]) -> List[str]:
     """获取表列表（2路SQL） — 小沈 2026-05-25 重构"""
     if connection_type in ("mysql", "postgresql"):

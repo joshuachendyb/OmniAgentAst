@@ -193,14 +193,6 @@ def get(key: str, default: Any = None) -> Any:
     """获取配置项"""
     return get_config().get(key, default)
 
-def get_api_key(provider: Optional[str] = None) -> str:
-    """获取API密钥"""
-    return get_config().get_api_key(provider)
-
 def get_max_steps(default: int = 100) -> int:
     """获取max_steps配置"""
     return get_config().get_max_steps(default)
-
-def get_log_config() -> Dict[str, Any]:
-    """获取日志配置"""
-    return get_config().get_log_config()

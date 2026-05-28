@@ -346,12 +346,3 @@ __all__ = [
 
 from app.services.tools.file.file_tools import FileTools, get_file_tools
 
-
-def get_all_file_tool_names() -> list:
-    """获取所有已注册的文件工具名"""
-    return list(TOOL_INPUT_MODELS.keys())
-
-
-def get_tool_input_models() -> dict:
-    """获取所有工具的Pydantic输入模型映射"""
-    return TOOL_INPUT_MODELS

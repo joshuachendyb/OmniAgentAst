@@ -73,24 +73,10 @@ def resolve_tool_alias(tool_name: str, category: str = None) -> str:
     return tool_name
 
 
-def is_alias(tool_name: str) -> bool:
-    """
-    检查是否是别名
-    
-    Args:
-        tool_name: 工具名
-    
-    Returns:
-        是否是别名
-    """
-    return tool_name in GLOBAL_TOOL_ALIASES
-
-
 # 导出
 __all__ = [
     "GLOBAL_TOOL_ALIASES",
     "CATEGORY_TOOL_ALIASES",
     "TOOL_NAME_ALIASES",
     "resolve_tool_alias",
-    "is_alias",
 ]
