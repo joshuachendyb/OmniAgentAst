@@ -75,7 +75,7 @@ from pathlib import Path
 from collections import Counter
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Tuple, List, Generator, Callable
-from app.services.tools.toolhelper.hash_helper import select_hasher
+from app.services.tools.toolhelper.hash_helper import select_hasher, compute_file_hash
 from app.services.tools._response import build_success, build_error
 from app.utils.logger import setup_logger
 
@@ -207,6 +207,7 @@ def get_file_hash(
     计算文件哈希值 - 小沈 2026-05-02
     
     支持 md5、sha1、sha256、sha512
+    使用 compute_file_hash 统一核心逻辑
     """
     try:
         file_path = os.path.abspath(file_path)
@@ -217,28 +218,20 @@ def get_file_hash(
         if not os.path.isfile(file_path):
             return build_error(ERR_FILE_HASH, f"不是文件: {file_path}")
 
-        try:
-            hasher = select_hasher(algorithm)
-        except ValueError:
-            return build_error(ERR_FILE_HASH, f"不支持的算法: {algorithm}")
-
-        chunk_size = 65536
+        # 使用统一的哈希计算函数
+        hash_value = compute_file_hash(file_path, algorithm)
         file_size = os.path.getsize(file_path)
-
-        with open(file_path, 'rb') as f:
-            while True:
-                chunk = f.read(chunk_size)
-                if not chunk:
-                    break
-                hasher.update(chunk)
 
         return build_success({
             "file_path": file_path,
             "algorithm": algorithm,
-            "hash": hasher.hexdigest(),
+            "hash": hash_value,
             "file_size": file_size
         }, "哈希计算成功")
 
+    except ValueError as e:
+        # 算法不支持错误
+        return build_error(ERR_FILE_HASH, str(e))
     except Exception as e:
         logger.error(f"[get_file_hash] 计算哈希失败: {e}")
         return build_error(ERR_FILE_HASH, str(e))
@@ -1546,20 +1539,14 @@ def _calculate_checksum_sync(
     """同步分块哈希计算（含超时）。
 
     小沈 2026-05-25 重构拆分
-    提取自原 file_checksum_impl 嵌套函数，复用 select_hasher。
+    使用统一的 compute_file_hash 函数。
     """
-    start_time = time.time()
-    timeout_sec = timeout / 1000.0
-    hash_obj = select_hasher(algorithm)
-    with open(path, 'rb') as f:
-        while True:
-            chunk = f.read(chunk_size)
-            if not chunk:
-                break
-            hash_obj.update(chunk)
-            if time.time() - start_time > timeout_sec:
-                raise TimeoutError(f"哈希计算超时（{timeout}毫秒）")
-    return hash_obj.hexdigest()
+    return compute_file_hash(
+        file_path=str(path),
+        algorithm=algorithm,
+        chunk_size=chunk_size,
+        timeout_ms=timeout
+    )
 
 
 async def file_checksum_impl(
