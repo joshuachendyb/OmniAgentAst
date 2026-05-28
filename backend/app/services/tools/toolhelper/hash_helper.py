@@ -52,6 +52,7 @@ def compute_file_hash(
     file_path: str,
     algorithm: str = "sha256",
     chunk_size: int = 65536,
+    timeout_ms: int = None,
 ) -> str:
     """核心哈希计算，返回hexdigest字符串 - 小沈 2026-05-18
 
@@ -59,6 +60,7 @@ def compute_file_hash(
         file_path: 文件路径（绝对路径）
         algorithm: 哈希算法（md5/sha1/sha256/sha512）
         chunk_size: 分块大小，默认64KB
+        timeout_ms: 超时毫秒数，None表示无超时
 
     Returns:
         hexdigest字符串
@@ -66,14 +68,25 @@ def compute_file_hash(
     Raises:
         FileNotFoundError: 文件不存在
         ValueError: 不支持的算法
+        TimeoutError: 超时（如果timeout_ms不为None）
     """
+    import time
     hasher = select_hasher(algorithm)
+    start_time = time.time() if timeout_ms is not None else None
+    
     with open(file_path, 'rb') as f:
         while True:
             chunk = f.read(chunk_size)
             if not chunk:
                 break
             hasher.update(chunk)
+            
+            # 检查超时
+            if start_time is not None and timeout_ms is not None:
+                elapsed_ms = (time.time() - start_time) * 1000
+                if elapsed_ms > timeout_ms:
+                    raise TimeoutError(f"哈希计算超时（{timeout_ms}毫秒）")
+    
     return hasher.hexdigest()
 
 
