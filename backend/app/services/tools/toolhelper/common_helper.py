@@ -43,7 +43,7 @@ def truncate_value(
     max_chars: int = 5000,
     max_depth: int = 5,
 ) -> Tuple[Any, bool]:
-    """统一截断入口 - 小沈 2026-05-18
+    """统一截断入口 - 小沈 2026-05-18 【已废弃，请使用 tool_result_utils.make_json_safe】
 
     整合 truncate_text + make_json_safe 逻辑，
     支持字符串截断和字典/列表深度截断。
@@ -56,6 +56,7 @@ def truncate_value(
     Returns:
         (截断后的值, 是否截断)
     """
+    # TODO: 此函数未使用，考虑删除或迁移到tool_result_utils.py
     truncated = False
 
     if isinstance(value, str):
@@ -155,6 +156,12 @@ def run_windows_command(
             "stdout": "",
             "stderr": f"命令执行失败: {str(e)}",
         }
+
+
+def check_windows_platform() -> bool:
+    """检查当前平台是否为Windows"""
+    import platform
+    return platform.system().lower() == "windows"
 
 
 __all__ = [
