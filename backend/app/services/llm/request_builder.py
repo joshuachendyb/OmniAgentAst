@@ -10,7 +10,7 @@ Author: 小健 - 2026-05-27
 
 from typing import List, Dict, Optional
 
-from app.services.agent.message_builder import MessageBuilder
+from app.services.agent.message_utils import build_llm_messages
 
 
 def build_request_body(
@@ -59,7 +59,7 @@ def build_messages(message: str, history: Optional[List[Dict]] = None) -> List[D
     Returns:
         消息列表
     """
-    return MessageBuilder.build_llm_messages(message, history)
+    return build_llm_messages(message, history)
 
 
 __all__ = [

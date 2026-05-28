@@ -18,6 +18,7 @@ from app.services.tools.registry import ToolCategory
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
 from app.services.prompts.prompt_assembler import PromptAssembler
+from app.services.agent.message_utils import inject_tools_info, inject_schema_text, build_schema_text
 
 
 class ReactAgentMixin(ToolLoaderMixin):
@@ -217,7 +218,7 @@ class ReactAgentMixin(ToolLoaderMixin):
                     self._last_injected_categories = frozenset(loaded)
                 _cached = getattr(self, '_cached_tools_content', None)
                 if _cached:
-                    history_dicts = self.message_builder.inject_tools_info(history_dicts, _cached)
+                    history_dicts = inject_tools_info(history_dicts, _cached)
             except Exception as e:
                 logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
         return history_dicts
@@ -225,9 +226,9 @@ class ReactAgentMixin(ToolLoaderMixin):
     def _inject_schema(self, history_dicts):
         """Schema文本注入 — 小沈 2026-05-21"""
         if not hasattr(self, '_cached_schema_text'):
-            self._cached_schema_text = self.message_builder.build_schema_text(getattr(self, 'openai_tools', []))
+            self._cached_schema_text = build_schema_text(getattr(self, 'openai_tools', []))
         if self._cached_schema_text:
-            history_dicts = self.message_builder.inject_schema_text(history_dicts, self._cached_schema_text)
+            history_dicts = inject_schema_text(history_dicts, self._cached_schema_text)
         return history_dicts
 
     def _log_prompt(self, assembled_messages, strategy_method):

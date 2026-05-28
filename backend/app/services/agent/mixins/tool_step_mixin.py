@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 
 from app.services.agent.reasoning_steps import StepFactory
 from app.services.agent.tool_result_formatter import build_execution_result_dict
+from app.services.agent.message_utils import build_observation_text
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
 
@@ -212,7 +213,7 @@ class ToolStepMixin:
             execution_time_ms = int((time.perf_counter() - start_time) * 1000)
             execution_result_dict = build_execution_result_dict(execution_result)
             
-            observation_text = self.message_builder.build_observation_text(
+            observation_text = build_observation_text(
                 execution_result, tool_name=tool_name, tool_params=tool_params
             )
             

@@ -1,14 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-MessageBuilder — Prompt/Message组装统一入口
+MessageBuilder — conversation_history 状态管理器
 
 将分散在 base_react.py 和 react_agent_mixin.py 中的
-conversation_history操作、observation构建、消息注入逻辑集中管理。
+conversation_history操作集中管理。
 
-设计原则：
-- 所有conversation_history的写操作都通过此类
-- observation_text构建独立可测试（静态方法）
-- 消息注入(工具/Schema/汇总)独立可测试（静态方法）
+无状态工具函数（build_llm_messages、inject_tools_info、build_schema_text 等）
+已迁入 message_utils.py，遵循 SRP。
 
 【生命周期与会话绑定说明 — 小沈 2026-05-20】：
 MessageBuilder 实例生命周期必须与 Agent 实例强绑定，
@@ -16,15 +14,19 @@ MessageBuilder 实例生命周期必须与 Agent 实例强绑定，
 
 【19.8 修正 — 小沈 2026-05-21】：
 - add_assistant() 不自动调 trim_history()，由 _call_llm 统一调度
-- build_observation_text() 设计为 @staticmethod，不依赖实例状态
+
+【2026-05-28 拆分 — 小沈】：
+- build_llm_messages() → message_utils.build_llm_messages()
+- build_observation_text() → message_utils.build_observation_text()
+- inject_tools_info() → message_utils.inject_tools_info()
+- inject_schema_text() → message_utils.inject_schema_text()
+- build_schema_text() → message_utils.build_schema_text()
 """
 
-import json
 import hashlib
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from app.constants import MAX_CONTEXT_CHARS, OBSERVATION_BUDGET_DECAY, OBSERVATION_BUDGET_MAX, OBSERVATION_BUDGET_MIN, TEMP_HISTORY_CHAR_LIMIT
-from app.services.agent.tool_result_formatter import _format_llm_observation
 
 
 
@@ -38,22 +40,6 @@ class MessageBuilder:
     OBSERVATION_BUDGET_DECAY = OBSERVATION_BUDGET_DECAY
     OBSERVATION_BUDGET_MIN = OBSERVATION_BUDGET_MIN
     OBSERVATION_HEAD_RATIO = 0.6
-
-    @staticmethod
-    def build_llm_messages(message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
-        """LLM层消息列表拼接 — DRY原则：统一入口
-        
-        【重构 2026-05-27 小健】替代llm_core._build_messages()，
-        消除消息构建逻辑分散两处（DRY）。
-        LLM层只应接收已构建好的messages，不应自行组装（SLAP）。
-        """
-        if not message and history:
-            return list(history)
-        messages = []
-        if history:
-            messages.extend(history)
-        messages.append({"role": "user", "content": message})
-        return messages
 
     def __init__(self, max_context_chars: int = MAX_CONTEXT_CHARS):
         self.conversation_history: List[Dict[str, Any]] = []
@@ -119,21 +105,7 @@ class MessageBuilder:
             self.add_assistant(chunk_buffer)
 
     # =========================================================================
-    # 第二组：observation_text 构建（独立可测试，静态方法）
-    # =========================================================================
-
-    @staticmethod
-    def build_observation_text(execution_result: dict, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
-        """根据工具执行结果构建observation文本 — 统一委托_format_llm_observation
-
-        小健 2026-05-22：原手写逻辑已合入 _format_llm_observation（含next_actions），
-        此方法保留作为兼容入口。
-        更新 2026-05-24 小健：增加 tool_name/tool_params 参数供 failure hint 使用
-        """
-        return _format_llm_observation(execution_result, tool_name, tool_params)
-
-    # =========================================================================
-    # 第三组：每轮 LLM 调用的消息组装（从 _call_llm 拆出）
+    # 第二组：每轮 LLM 调用的消息组装
     # =========================================================================
 
     def prepare_messages_for_llm(self) -> List[Dict[str, Any]]:
@@ -156,40 +128,8 @@ class MessageBuilder:
         while self._total_chars(self.temp_history) > TEMP_HISTORY_CHAR_LIMIT and len(self.temp_history) > 1:
             self.temp_history.pop(0)
 
-    @staticmethod
-    def inject_tools_info(
-        history_dicts: List[Dict[str, Any]],
-        tools_content: str
-    ) -> List[Dict[str, Any]]:
-        """注入工具信息到 history_dicts
-        
-        替代 react_agent_mixin.py L339-363
-        在第一个非system消息前插入，LLM最先看到工具信息。
-        """
-        if not tools_content:
-            return history_dicts
-        tools_msg = {"role": "system", "content": tools_content}
-        insert_pos = 0
-        for i, msg in enumerate(history_dicts):
-            if msg.get("role") != "system":
-                insert_pos = i
-                break
-        else:
-            insert_pos = len(history_dicts)
-        return list(history_dicts[:insert_pos]) + [tools_msg] + list(history_dicts[insert_pos:])
-
-    @staticmethod
-    def inject_schema_text(
-        history_dicts: List[Dict[str, Any]],
-        schema_text: str
-    ) -> List[Dict[str, Any]]:
-        """注入Schema文本（仅TextStrategy使用）— 替代 react_agent_mixin.py L381-390"""
-        if not schema_text:
-            return history_dicts
-        return list(history_dicts) + [{"role": "system", "content": schema_text}]
-
     # =========================================================================
-    # 第四组：历史裁剪（从 base_react.py 搬入）
+    # 第三组：历史裁剪
     # =========================================================================
 
     def trim_history(self) -> None:
@@ -254,7 +194,7 @@ class MessageBuilder:
                                         + self.conversation_history[-8:])
 
     # =========================================================================
-    # 第五组：缓存/失败计数管理（从 base_react.py 搬入）
+    # 缓存/失败计数管理
     # =========================================================================
 
     def invalidate_cache(self) -> None:
@@ -262,42 +202,7 @@ class MessageBuilder:
         pass
 
     # =========================================================================
-    # 第六组：Schema 文本生成（从 react_agent_mixin.py 搬入）
-    # =========================================================================
-
-    @staticmethod
-    def build_schema_text(openai_tools: List[Dict]) -> str:
-        """将openai_tools转换为文本格式（方案C）— 迁入自 react_agent_mixin.py L252-292
-        小沈 2026-05-21
-        """
-        if not openai_tools:
-            return ""
-        lines = ["【Tools Schema参考（仅作参考，实际调用仍以JSON格式返回）】:"]
-        for tool in openai_tools:
-            func = tool.get("function", {})
-            name = func.get("name", "")
-            params = func.get("parameters", {})
-            properties = params.get("properties", {})
-            required = params.get("required", [])
-            if not properties:
-                lines.append(f"{name}: 无参数")
-                continue
-            params_list = []
-            for pname, pinfo in properties.items():
-                ptype = pinfo.get("type", "any")
-                pdefault = pinfo.get("default")
-                is_required = pname in required
-                if pdefault is not None:
-                    params_list.append(f"{pname}({ptype}, default={pdefault})")
-                elif is_required:
-                    params_list.append(f"{pname}({ptype}, required)")
-                else:
-                    params_list.append(f"{pname}({ptype}, optional)")
-            lines.append(f"{name}: {', '.join(params_list)}")
-        return "\n".join(lines)
-
-    # =========================================================================
-    # 第六组：observation 截断辅助（从 base_react.py 搬入）
+    # 第四组：observation 截断辅助
     # =========================================================================
 
     @staticmethod
