@@ -8,13 +8,10 @@ import asyncio
 from typing import Optional, Any, Dict
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
-import sqlite3
 from app.utils.time_utils import create_timestamp
+from app.db import db
 
 router = APIRouter()
-
-# 【小沈重构 2026-05-22】数据库配置迁移至 app/db/
-from app.db.chat_db import get_connection
 
 
 class ExecutionStep:
@@ -52,20 +49,19 @@ async def generate_execution_stream(session_id: str):
     """
     try:
         # 连接数据库获取会话消息
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        # 获取会话消息和执行步骤
-        cursor.execute(
-            '''SELECT id, session_id, role, content, timestamp, execution_steps 
-               FROM chat_messages 
-               WHERE session_id = ?
-               ORDER BY timestamp ASC''',
-            (session_id,)
-        )
-        
-        rows = cursor.fetchall()
-        conn.close()
+        with db.get_conn("chat") as conn:
+            cursor = conn.cursor()
+            
+            # 获取会话消息和执行步骤
+            cursor.execute(
+                '''SELECT id, session_id, role, content, timestamp, execution_steps 
+                   FROM chat_messages 
+                   WHERE session_id = ?
+                   ORDER BY timestamp ASC''',
+                (session_id,)
+            )
+            
+            rows = cursor.fetchall()
         
         if not rows:
             # 会话不存在或没有消息
@@ -145,10 +141,8 @@ async def get_execution_stream(session_id: str):
     - complete: 流结束
     """
     # 验证会话是否存在
-    conn = get_connection()
-    cursor = conn.cursor()
-    
-    try:
+    with db.get_conn("chat") as conn:
+        cursor = conn.cursor()
         cursor.execute(
             'SELECT id FROM chat_sessions WHERE id = ? AND is_deleted = FALSE',
             (session_id,)
@@ -157,9 +151,6 @@ async def get_execution_stream(session_id: str):
         
         if not session:
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
-            
-    finally:
-        conn.close()
     
     # 返回SSE流
     return StreamingResponse(
