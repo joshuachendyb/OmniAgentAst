@@ -35,7 +35,6 @@ from app.services.tools._response import build_success, build_error, build_warni
 
 
 def create_tool_result(
-    code: str = "SUCCESS",
     data: Any = None,
     message: str = "执行成功",
     retry_count: int = 0,
@@ -48,19 +47,19 @@ def create_tool_result(
     创建标准工具结果字典（Agent层工厂）
 
     委托到 _response.build_success 构建，追加Agent层特有字段。
+    注意：此函数固定返回 SUCCESS_CODE，如需其他code请使用 _response.build_* 函数。
 
     Args:
-        code: 结果码（SUCCESS/ERROR/...）
         data: 返回数据
         message: 结果消息
         retry_count: 重试次数
         metadata: 元数据
-        error_message: 错误消息
+        error_message: 错误消息（成功结果中的额外错误信息）
         error_type: 错误类型
         return_direct: 是否直接返回
 
     Returns:
-        标准工具结果字典
+        标准工具结果字典（固定code=SUCCESS）
     """
     result = build_success(
         data=data,
@@ -68,7 +67,6 @@ def create_tool_result(
         retry_count=retry_count,
         return_direct=return_direct,
     )
-    result["code"] = code
     if metadata:
         result["metadata"] = metadata
     if error_message:
