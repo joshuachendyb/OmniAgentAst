@@ -110,7 +110,6 @@ class ToolExecutor:
         
         if action == "finish":
             return create_tool_result(
-                code="SUCCESS",
                 data=action_input.get("result"),
                 message=action_input.get("result", "Task completed"),
                 retry_count=0
