@@ -17,7 +17,6 @@
 
 import json
 import threading
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from sqlite3 import Connection
 
@@ -25,19 +24,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.utils.logger import logger
-from app.api.v1.db_helpers import (
-    get_db_connection,
-    check_db_fields_exist,
-    _convert_to_utc,
-)
+from app.utils.time_utils import get_timestamp_ms
+from app.db import db
 from app.api.v1.messages import _user_message_ids, _message_ids_lock
 
 router = APIRouter()
-
-
-def _get_timestamp_ms() -> int:
-    """获取毫秒时间戳，避免时间戳存储为ISO字符串导致前端解析错误"""
-    return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
 class AssistantMessageIdAllocator:
@@ -130,7 +121,7 @@ def _insert_assistant_message(
     @author 小健 2026-05-25
     """
     cursor = conn.cursor()
-    utc_time = _get_timestamp_ms()
+    utc_time = get_timestamp_ms()
     initial_content = update_data.content or ""
     cursor.execute(
         """INSERT INTO chat_messages
@@ -173,7 +164,7 @@ def _update_session_message_count(
     @author 小健 2026-05-25
     """
     cursor = conn.cursor()
-    utc_time = _get_timestamp_ms()
+    utc_time = get_timestamp_ms()
     if increment:
         cursor.execute(
             "UPDATE chat_sessions SET message_count=message_count+1, updated_at=? WHERE id=?",
@@ -212,7 +203,7 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
     """
     allocator = AssistantMessageIdAllocator(_user_message_ids, _message_ids_lock)
     try:
-        with get_db_connection() as conn:
+        with db.get_conn("chat") as conn:
             _ensure_session_exists(session_id, conn)
             message_id, is_new = allocator.allocate(session_id, conn)
             metadata = extract_metadata(update_data.execution_steps)
@@ -221,7 +212,6 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
                 _insert_assistant_message(conn, message_id, session_id, display_name, update_data)
             _update_message_fields(conn, message_id, update_data, display_name)
             _update_session_message_count(conn, session_id, is_new)
-            conn.commit()
         logger.info(f"保存执行步骤成功: session_id={session_id}, message_id={message_id}, is_new={is_new}")
         return {"success": True, "message_id": message_id, "is_new_message": is_new}
     except HTTPException:
