@@ -9,7 +9,7 @@ Author: 小健 - 2026-05-06
 from datetime import datetime
 
 from app.services.prompts.BasePromptTemplate import BasePrompts
-from app.services.prompts.middle import get_system_prompt as get_system_info
+from app.services.prompts.middle import get_system_prompt as get_system_prompt_string
 from app.utils.logger import logger
 
 
@@ -17,7 +17,7 @@ class NetworkPrompts(BasePrompts):
     """网络通信 Prompt模板类"""
     
     def get_system_prompt(self) -> str:
-        system_info = get_system_info(include_commands=False)  # 【修复 2026-05-14 小沈】NetworkAgent不注入命令格式，避免LLM幻觉调execute_shell_command
+        system_info = get_system_prompt_string(include_commands=False)  # 【修复 2026-05-14 小沈】NetworkAgent不注入命令格式，避免LLM幻觉调execute_shell_command
         return system_info + """
 You are a professional network operations assistant. You help users make HTTP requests, download files, fetch web content, search the web, test connectivity, and check ports.
 
