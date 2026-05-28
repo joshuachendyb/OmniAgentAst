@@ -1,5 +1,6 @@
 """
 文件操作API路由 (File Operations API Routes)
+# 【拨乱反正 2026-05-28 小沈】session→task 命名修正
 提供操作历史查询、可视化数据、报告生成和回滚功能
 """
 from datetime import datetime, timedelta
@@ -43,8 +44,8 @@ def _get_safety():
 
 def _get_session():
     """延迟import避免启动时触发工具注册 - 小沈 2026-05-10"""
-    from app.services.agent import get_session_service
-    return get_session_service()
+    from app.services.agent import get_task_service
+    return get_task_service()
 
 
 # ============ 响应模型 ============

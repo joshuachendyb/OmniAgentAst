@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
+# 【拨乱反正 2026-05-28 小沈】session→task 命名修正
+# 原则：绝不搞向后兼容，旧名必须彻底清除
 """
-文件操作会话管理服务 (File Operation Session Service)
-
+任务操作服务 (Task Operation Service)
+ 
 【创建时间】2026-03-20
 【重构时间】2026-03-21 小沈
 【设计依据】多意图处理架构设计-小沈-2026-03-20.md (v2.18) - 12.1.5.1节
 【重构说明】
-  - 继承自 SessionServiceBase（通用会话服务基类）
+  - 继承自 TaskServiceBase
   - file专用统计使用 FileSessionStats（位于 intents/definitions/file/file_stats.py）
 
 Author: 小沈 - 2026-03-21
@@ -17,19 +19,19 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 # 【小沈重构 2026-05-22】数据库配置迁移至 app/db/
-from app.db.models.operation_models import SessionRecord
+from app.db.models.operation_models import TaskRecord
 from app.db.models.operation_enums import OperationStatus
 from app.db.operations_db import get_connection as get_operations_connection
 from app.utils.logger import logger
-from app.services.agent.session_base import SessionServiceBase, SessionStatsMixin
+from app.services.agent.task_base import TaskServiceBase, TaskStatsMixin
 from app.services.intents.definitions.file.file_stats import FileSessionStats
 
 
-class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
+class TaskOperationService(TaskServiceBase, TaskStatsMixin):
     """
-    文件操作会话管理服务
+    任务操作服务
     
-    继承自 SessionServiceBase，实现文件操作特有的会话管理。
+    继承自 TaskServiceBase，实现任务操作服务。
     file专用统计字段使用 FileSessionStats。
     
     功能：
@@ -72,7 +74,7 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
             cursor = conn.cursor()
             
             cursor.execute('''
-                INSERT INTO file_operation_sessions 
+                INSERT INTO task_operations 
                 (task_id, agent_id, task_description, status, created_at)
                 VALUES (?, ?, ?, ?, ?)
             ''', (
@@ -82,11 +84,11 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
             
             conn.commit()
             
-            logger.info(f"Session created: {task_id} - {task_description}")
+            logger.info(f"Task created: {task_id} - {task_description}")
             return task_id
             
         except Exception as e:
-            logger.error(f"Failed to create session: {e}")
+            logger.error(f"Failed to create task: {e}")
             raise
             
         finally:
@@ -107,7 +109,7 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
             cursor = conn.cursor()
             
             cursor.execute('''
-                UPDATE file_operation_sessions 
+                UPDATE task_operations 
                 SET status = ?, completed_at = ?
                 WHERE task_id = ?
             ''', (
@@ -117,10 +119,10 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
             ))
             
             conn.commit()
-            logger.info(f"Session completed: {task_id} (success={success})")
+            logger.info(f"Task completed: {task_id} (success={success})")
             
         except Exception as e:
-            logger.error(f"Failed to complete session: {e}")
+            logger.error(f"Failed to complete task: {e}")
             raise
             
         finally:
@@ -135,7 +137,7 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
             cursor = conn.cursor()
             
             cursor.execute('''
-                SELECT * FROM file_operation_sessions WHERE task_id = ?
+                SELECT * FROM task_operations WHERE task_id = ?
             ''', (task_id,))
             
             row = cursor.fetchone()
@@ -161,7 +163,7 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
             cursor = conn.cursor()
             
             cursor.execute('''
-                SELECT * FROM file_operation_sessions 
+                SELECT * FROM task_operations 
                 ORDER BY created_at DESC 
                 LIMIT ?
             ''', (limit,))
@@ -180,16 +182,12 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
                 conn.close()
 
 
-_task_tracker_instance: Optional[FileOperationSessionService] = None
+_task_tracker_instance: Optional[TaskOperationService] = None
 
 
-def get_file_session_service() -> FileOperationSessionService:
-    """获取文件操作会话服务单例"""
+def get_task_service() -> TaskOperationService:
+    """获取任务服务单例"""
     global _task_tracker_instance
     if _task_tracker_instance is None:
-        _task_tracker_instance = FileOperationSessionService()
+        _task_tracker_instance = TaskOperationService()
     return _task_tracker_instance
-
-
-# 向后兼容别名
-get_session_service = get_file_session_service

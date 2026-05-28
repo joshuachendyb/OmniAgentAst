@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 【拨乱反正 2026-05-28 小沈】session→task 命名修正
+# 原则：绝不搞向后兼容，旧名必须彻底清除
 """
 懒加载兼容模块 — 原 file_operations 的向后兼容导入
 
@@ -18,10 +20,6 @@ if TYPE_CHECKING:
         FileSafetyConfig,
         get_file_safety_service,
     )
-    from app.services.agent.session import (
-        FileOperationSessionService,
-        get_session_service,
-    )
     from app.services.tools.file.file_tools import (
         FileTools,
         get_file_tools,
@@ -34,12 +32,6 @@ def __getattr__(name: str):
             FileOperationSafety,
             FileSafetyConfig,
             get_file_safety_service,
-        )
-        return locals()[name]
-    if name in ("FileOperationSessionService", "get_session_service"):
-        from app.services.agent.session import (
-            FileOperationSessionService,
-            get_session_service,
         )
         return locals()[name]
     if name in ("FileTools", "get_file_tools"):

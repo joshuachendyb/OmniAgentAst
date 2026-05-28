@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 【拨乱反正 2026-05-28 小沈】session→task 命名修正
+# 原则：绝不搞向后兼容，旧名必须彻底清除
 """
 任务追踪服务基类 (Task Tracker Service Base)
 
@@ -7,8 +9,8 @@
 根据架构设计文档 12.1.5.1 节，创建通用任务追踪服务基类。
 未来其他意图（network、desktop、system、database）可继承此类实现自己的任务追踪服务。
 
-当前 file 意图的任务追踪服务（FileOperationSessionService）位于：
-- agent/session.py
+当前 task 追踪服务（TaskOperationService）位于：
+- agent/task_service.py
 
 file 意图特有的统计字段位于：
 - intents/definitions/file/file_stats.py
@@ -29,7 +31,7 @@ from typing import Optional, List, Dict, Any
 from uuid import uuid4
 
 
-class SessionServiceBase(ABC):
+class TaskServiceBase(ABC):
     """
     任务追踪服务基类 (抽象基类)
     
@@ -42,7 +44,7 @@ class SessionServiceBase(ABC):
     - get_recent_tasks: 获取最近的任务列表
     
     各意图特有功能在子类中实现：
-    - file 意图: FileOperationSessionService (agent/session.py)
+    - 意图: TaskOperationService (agent/task_service.py)
     """
     
     @abstractmethod
@@ -115,7 +117,7 @@ class SessionServiceBase(ABC):
         return datetime.now()
 
 
-class SessionStatsMixin:
+class TaskStatsMixin:
     """
     任务统计混入类 - 小沈-2026-05-06 session→task命名纠正
     
@@ -164,6 +166,6 @@ class SessionStatsMixin:
     
 
 __all__ = [
-    "SessionServiceBase",
-    "SessionStatsMixin",
+    "TaskServiceBase",
+    "TaskStatsMixin",
 ]

@@ -1,5 +1,6 @@
 """
 MCP文件操作工具集 - 重写版本
+# 【拨乱反正 2026-05-28 小沈】session→task 命名修正
 
 【重构日期】2026-03-19 小强
 【参考】FastMCP、MarcusJellinghaus、LangChain、Claude官方Tool Use规范
@@ -743,7 +744,7 @@ class FileTools:
     }
     
     def __init__(self, task_id: Optional[str] = None):
-        from app.services.agent import get_file_safety_service, get_session_service
+        from app.services.agent import get_file_safety_service, get_task_service
         from app.services.agent.mixins.task_tracker import get_task_tracker
         from app.utils.visualization.file_visualization import get_visualizer
         from app.services.safety.manager import get_safety_manager

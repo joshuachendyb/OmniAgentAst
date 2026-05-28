@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
+# 【拨乱反正 2026-05-28 小沈】session→task 命名修正
+# 原则：绝不搞向后兼容，旧名必须彻底清除
 """
 TaskExecutionTracker - 任务执行追踪器
 
 统一管理所有Agent的任务执行追踪。
 
-- FileAgent: 追踪操作+统计+回滚（FileSafetyService + FileOperationSessionService）
+- FileAgent: 追踪操作+统计+回滚（FileSafetyService + TaskOperationService）
 - 其他Agent: 追踪执行统计（通用统计）
 
 Author: 小健 - 2026-05-06
@@ -21,7 +23,7 @@ class TaskExecutionTracker:
     任务执行追踪器（统一入口）
     
     根据 agent_id（意图类型）分发到对应的追踪服务：
-    - file → FileOperationSessionService（操作追踪+统计+回滚）
+    - file → TaskOperationService（操作追踪+统计+回滚）
     - 其他 → GenericTaskTracker（通用统计）
     """
     
@@ -32,8 +34,8 @@ class TaskExecutionTracker:
     
     def _init_file_tracker(self):
         """初始化file专用追踪器"""
-        from app.services.agent.session import get_file_session_service
-        self._trackers['file'] = get_file_session_service()
+        from app.services.agent.task_service import get_task_service
+        self._trackers['file'] = get_task_service()
     
     def _init_generic_tracker(self):
         """初始化通用追踪器（非file意图使用）"""
@@ -51,7 +53,7 @@ class TaskExecutionTracker:
         创建任务追踪记录
         
         ⚠️ 修正-小沈 2026-05-06 14:37:45：
-        FileOperationSessionService.create_session()不接受task_id参数，
+        TaskOperationService.create_task()不接受task_id参数，
         它自己生成sess-xxx。但safety用task_id记录操作。
         
         所以create_task只做统计记录，不应覆盖调用方的task_id。
@@ -59,11 +61,8 @@ class TaskExecutionTracker:
         tracker = self.get_tracker(agent_id)
         if tracker:
             try:
-                # 【修复 2026-05-07 小沈】FileOperationSessionService用create_task，GenericTaskTracker用create_session
                 if hasattr(tracker, 'create_task'):
                     tracker.create_task(agent_id=agent_id, task_description=task_description)
-                elif hasattr(tracker, 'create_session'):
-                    tracker.create_session(agent_id=agent_id, task_description=task_description)
             except Exception as e:
                 logger.warning(f"[TaskTracker] create_task失败: {e}")
     
@@ -72,11 +71,8 @@ class TaskExecutionTracker:
         tracker = self.get_tracker(agent_id)
         if tracker:
             try:
-                # 【修复 2026-05-07 小沈】FileOperationSessionService用complete_task，GenericTaskTracker用complete_session
                 if hasattr(tracker, 'complete_task'):
                     tracker.complete_task(task_id, success=success)
-                elif hasattr(tracker, 'complete_session'):
-                    tracker.complete_session(task_id, success=success)
             except Exception as e:
                 logger.error(f"[TaskTracker] complete_task失败: {e}")
 
@@ -92,8 +88,8 @@ class GenericTaskTracker:
     def __init__(self):
         self._tasks: Dict[str, Dict[str, Any]] = {}  # {task_id: task_info}
     
-    def create_session(self, agent_id: str, task_description: str) -> str:
-        """创建任务记录（保持session命名，与FileOperationSessionService一致）"""
+    def create_task(self, agent_id: str, task_description: str) -> str:
+        """创建任务记录"""
         task_id = str(uuid4())
         self._tasks[task_id] = {
             "agent_id": agent_id,
@@ -104,8 +100,8 @@ class GenericTaskTracker:
         logger.info(f"[GenericTaskTracker] 创建任务: {task_id}, agent={agent_id}")
         return task_id
     
-    def complete_session(self, task_id: str, success: bool = True):
-        """完成任务记录（保持session命名，与FileOperationSessionService一致）"""
+    def complete_task(self, task_id: str, success: bool = True):
+        """完成任务记录"""
         if task_id in self._tasks:
             self._tasks[task_id]["status"] = "completed" if success else "failed"
             self._tasks[task_id]["completed_at"] = datetime.now().isoformat()
