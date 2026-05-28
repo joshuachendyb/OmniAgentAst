@@ -3,7 +3,7 @@
 工具结果格式化模块 — 小沈 2026-05-21
 
 提供两条输出路径：
-- _format_llm_observation(): 给LLM看的observation文本
+- format_llm_observation(): 给LLM看的observation文本
 - _format_frontend_event(): 给前端SSE事件的dict
 
 设计原则：
@@ -102,7 +102,7 @@ def _format_next_actions(result: dict, text: str) -> str:
     return text + "\n".join(na_lines)
 
 
-def _format_llm_observation(result: dict, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
+def format_llm_observation(result: dict, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
     """
     格式化工具结果为LLM observation文本 — 小沈 2026-05-21
     更新 2026-05-22 小健：合入next_actions拼接逻辑（从base_react.py搬入）
@@ -117,7 +117,7 @@ def _format_llm_observation(result: dict, tool_name: str = "", tool_params: Opti
     if code == "SUCCESS":
         display_data = result.get("llm_data") or result.get("data")
         if display_data is None:
-            _logger.warning("[OBS-001] _format_llm_observation: llm_data和data均为空")
+            _logger.warning("[OBS-001] format_llm_observation: llm_data和data均为空")
         text = f"Observation: success - {result.get('message', '')}"
         if result.get("warning"):
             text += f"\n⚠ 警告: {result['warning']}"

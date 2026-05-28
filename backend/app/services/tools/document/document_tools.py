@@ -38,7 +38,7 @@ from app.services.tools.document.document_schema import (
     ReadDocumentInput,
     WriteDocumentInput,
 )
-from app.services.tools.tool_result_utils import build_next_actions
+from app.utils.tool_result_utils import build_next_actions
 from app.services.tools._response import build_success, build_error, build_warning
 from app.services.tools.toolhelper.common_helper import _check_module
 from app.services.tools.toolhelper.data_helper import _serialize_rows

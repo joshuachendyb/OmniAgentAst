@@ -36,7 +36,7 @@ from pathlib import Path
 import json as json_module
 
 from app.utils.logger import logger
-from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe
+from app.utils.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe
 from app.services.tools._response import build_success, build_error  # 小沈 2026-05-20
 
 

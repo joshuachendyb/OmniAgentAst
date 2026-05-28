@@ -35,7 +35,7 @@ from app.constants import (ERR_REG_DELETE_FAILED, ERR_REG_INVALID_PARAM, ERR_REG
     ERR_SYS_REG_KEY_NOT_FOUND)
 
 from app.utils.logger import logger
-from app.services.tools.tool_result_utils import build_next_actions  # 小沈 2026-05-19
+from app.utils.tool_result_utils import build_next_actions  # 小沈 2026-05-19
 from app.services.tools._response import build_success, build_error
 
 

@@ -45,7 +45,7 @@ from app.services.tools.toolhelper.network_helper import (  # 小健 2026-05-18
     well_known_ports, _html_to_markdown, _decode_bing_redirect_url,
     _validate_url, _check_network,  # 小沈 2026-05-25 提升到模块级，消除3处函数内重复import
 )
-from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
+from app.utils.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
 from app.constants import (
     BROWSER_USER_AGENT,
     DEFAULT_MAX_DOC_CHARS,
@@ -103,7 +103,7 @@ def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
     elif isinstance(body, str) and len(body) <= 5000:
         llm_body = body
     elif isinstance(body, (dict, list)):
-        from app.services.tools.tool_result_utils import make_json_safe
+        from app.utils.tool_result_utils import make_json_safe
         llm_body = make_json_safe(body, max_depth=4, max_str_len=500)
     else:
         llm_body = str(body)[:4000]

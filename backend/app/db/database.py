@@ -39,6 +39,7 @@ class DatabaseManager:
         }
         self._db_dir.mkdir(parents=True, exist_ok=True)
     
+    @contextmanager
     def get_conn(self, db_name: str = "chat") -> Iterator[sqlite3.Connection]:
         """获取数据库连接（上下文管理器）
         

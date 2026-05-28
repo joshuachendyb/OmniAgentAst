@@ -4,7 +4,7 @@
 
 > Global rules (roles, timestamps, commit format, versioning, doc style) are in `C:\Users\chend\.config\opencode\AGENTS.md` (auto-loaded).
 > This file contains **project-specific** info only.
-
+**严禁** 用PowerShell 来操作代码编辑\替换,否则导致代码编码错误
 ---
 
 ## 编码铁规（必须遵守）

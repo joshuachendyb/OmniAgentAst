@@ -34,7 +34,7 @@ from datetime import datetime, timedelta, timezone;
 from typing import Dict, Any, Optional, Callable, Awaitable, List, Union, Literal;
 import re;
 from app.utils.logger import logger;
-from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend;
+from app.utils.tool_result_utils import build_next_actions, truncate_data_for_frontend;
 from app.services.tools._response import build_success, build_error
 from app.services.tools.toolhelper.date_helper import (
     parse_datetime_any as _parse_datetime_any,

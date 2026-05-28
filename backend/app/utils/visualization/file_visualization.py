@@ -12,8 +12,7 @@ import textwrap
 from jinja2 import Environment, FileSystemLoader
 
 from app.services.safety.file.file_safety import FileSafetyConfig
-# 【小沈重构 2026-05-22】数据库配置迁移至 app/db/
-from app.db.operations_db import get_connection as get_operations_connection
+from app.db import db
 from app.utils.logger import logger
 
 
@@ -54,28 +53,22 @@ class FileOperationVisualizer:
     """
     
     def __init__(self):
-        # 【小沈重构 2026-05-22】不再需要 FileSafetyConfig 的 DB_PATH
         pass
-    
-    def _get_connection(self) -> sqlite3.Connection:
-        """获取数据库连接"""
-        return get_operations_connection()
 
     def _query_file_operations(self, task_id: str) -> List[Tuple]:
         """查询 file_operations 表，返回所有操作记录（与 generate_html_report 共享）
 
         小沈 2026-05-25 重构拆分
         """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_type, source_path, destination_path, status,
-                   file_size, is_directory, created_at, error_message
-            FROM file_operations WHERE task_id = ?
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-        operations = cursor.fetchall()
-        conn.close()
+        with db.get_conn("operations") as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT operation_type, source_path, destination_path, status,
+                       file_size, is_directory, created_at, error_message
+                FROM file_operations WHERE task_id = ?
+                ORDER BY sequence_number ASC
+            ''', (task_id,))
+            operations = cursor.fetchall()
         return operations
 
     def _count_op_stats(self, operations: List[Tuple]) -> Dict[str, int]:
@@ -196,17 +189,15 @@ class FileOperationVisualizer:
         Returns:
             根节点
         """
-        # 【小沈修改 2026-03-25】直接获取操作记录，不依赖 file_operation_sessions 表
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_id, operation_type, source_path, destination_path, status
-            FROM file_operations WHERE task_id = ?
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-        
-        operations = cursor.fetchall()
-        conn.close()
+        with db.get_conn("operations") as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT operation_id, operation_type, source_path, destination_path, status
+                FROM file_operations WHERE task_id = ?
+                ORDER BY sequence_number ASC
+            ''', (task_id,))
+            
+            operations = cursor.fetchall()
         
         if not operations:
             return None
@@ -288,16 +279,15 @@ class FileOperationVisualizer:
         Returns:
             流程数据列表
         """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_type, source_path, destination_path, status
-            FROM file_operations WHERE task_id = ? AND status = 'success'
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-        
-        operations = cursor.fetchall()
-        conn.close()
+        with db.get_conn("operations") as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT operation_type, source_path, destination_path, status
+                FROM file_operations WHERE task_id = ? AND status = 'success'
+                ORDER BY sequence_number ASC
+            ''', (task_id,))
+            
+            operations = cursor.fetchall()
         
         flows = []
         
@@ -343,15 +333,14 @@ class FileOperationVisualizer:
         - 返回List[Dict[str, Any]]，每个元素包含type/source/destination/status/timestamp
         - 如果无操作记录，返回空列表
         """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_type, source_path, destination_path, status, created_at
-            FROM file_operations WHERE task_id = ?
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-        rows = cursor.fetchall()
-        conn.close()
+        with db.get_conn("operations") as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT operation_type, source_path, destination_path, status, created_at
+                FROM file_operations WHERE task_id = ?
+                ORDER BY sequence_number ASC
+            ''', (task_id,))
+            rows = cursor.fetchall()
         if not rows:
             return []
         return [
@@ -500,17 +489,16 @@ class FileOperationVisualizer:
             JSON报告文件路径
         """
         # 【小沈修改 2026-03-25】直接获取操作记录，不依赖 file_operation_sessions 表
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_type, source_path, destination_path, status,
-                   file_size, is_directory, created_at, error_message
-            FROM file_operations WHERE task_id = ?
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-        
-        operations = cursor.fetchall()
-        conn.close()
+        with db.get_conn("operations") as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT operation_type, source_path, destination_path, status,
+                       file_size, is_directory, created_at, error_message
+                FROM file_operations WHERE task_id = ?
+                ORDER BY sequence_number ASC
+            ''', (task_id,))
+            
+            operations = cursor.fetchall()
         
         if not operations:
             logger.warning(f"No operations found for session: {task_id}")
@@ -658,16 +646,15 @@ class FileOperationVisualizer:
         Returns:
             Mermaid报告文件路径
         """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_type, source_path, destination_path, status, sequence_number
-            FROM file_operations WHERE task_id = ?
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-        
-        operations = cursor.fetchall()
-        conn.close()
+        with db.get_conn("operations") as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT operation_type, source_path, destination_path, status, sequence_number
+                FROM file_operations WHERE task_id = ?
+                ORDER BY sequence_number ASC
+            ''', (task_id,))
+            
+            operations = cursor.fetchall()
         
         # 生成Mermaid流程图
         mermaid_content = "graph TD\n"

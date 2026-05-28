@@ -27,7 +27,7 @@ from app.constants import (
 
 # 工具结果格式化 — 小沈 2026-05-21
 from app.services.agent.tool_result_formatter import (
-    _format_llm_observation,
+    format_llm_observation,
     _format_frontend_event,
 )
 
