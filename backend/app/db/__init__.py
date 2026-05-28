@@ -1,32 +1,24 @@
-"""
-数据库模块 (Database Module)
-提供统一的数据库连接、初始化和数据模型管理
+"""DB SDK
 
-Author: 小沈 - 2026-05-22
-"""
-from app.db.config import (
-    DB_DIR,
-    CHAT_DB_PATH,
-    OPERATIONS_DB_PATH,
-    OBSERVER_DB_PATH,
-    ensure_db_dir,
-    create_connection,
-)
-from app.db.chat_db import get_connection as get_chat_connection, init_database as init_chat_database
-from app.db.operations_db import get_connection as get_operations_connection, init_database as init_operations_database
+管理3个SQLite数据库：
+- chat_history.db: 对话会话和消息
+- operations.db: 文件操作和任务记录
+- tool_observer.db: 工具调用审计（后续实现）
 
-__all__ = [
-    # 配置
-    "DB_DIR",
-    "CHAT_DB_PATH",
-    "OPERATIONS_DB_PATH",
-    "OBSERVER_DB_PATH",
-    "ensure_db_dir",
-    "create_connection",
-    # 聊天数据库
-    "get_chat_connection",
-    "init_chat_database",
-    # 操作数据库
-    "get_operations_connection",
-    "init_operations_database",
-]
+使用方式:
+    from app.db import db
+    
+    with db.get_conn("chat") as conn:
+        conn.execute("SELECT ...")
+
+禁止行为:
+    - 禁止手动conn.commit()
+    - 禁止手动conn.close()
+    - 禁止使用裸连接
+
+Author: 小沈 - 2026-05-28
+"""
+
+from app.db.database import db
+
+__all__ = ["db"]
