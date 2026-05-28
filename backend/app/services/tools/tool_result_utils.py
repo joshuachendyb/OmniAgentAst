@@ -76,7 +76,10 @@ def format_file_content_llm(content: str, max_chars: int = DEFAULT_MAX_FILE_CHAR
 
 
 def make_json_safe(data, max_depth: int = 5, max_str_len: int = 500):
-    """递归截断JSON数据防止超大dump 小沈-2026-05-15"""
+    """递归截断JSON数据防止超大dump 小沈-2026-05-15
+    
+    使用 truncate_text 进行字符串截断，避免重复实现。
+    """
     if max_depth <= 0:
         return "..."
     if isinstance(data, dict):
@@ -86,7 +89,8 @@ def make_json_safe(data, max_depth: int = 5, max_str_len: int = 500):
             return [make_json_safe(x, max_depth - 1, max_str_len) for x in data[:100]] + [f"...(共{len(data)}项)"]
         return [make_json_safe(x, max_depth - 1, max_str_len) for x in data]
     if isinstance(data, str) and len(data) > max_str_len:
-        return data[:max_str_len] + f"...({len(data)}字符)"
+        truncated_text, _ = truncate_text(data, max_str_len, suffix=f"...({len(data)}字符)")
+        return truncated_text
     return data
 
 
