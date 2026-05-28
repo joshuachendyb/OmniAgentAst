@@ -200,7 +200,6 @@ class ToolRetryEngine:
             try:
                 result = await self._execute_tool_once(tool, normalized_input, timeout)
                 return create_tool_result(
-                    code="SUCCESS",
                     data=result,
                     message="Tool execution succeeded",
                     retry_count=attempt_count
