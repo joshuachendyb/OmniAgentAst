@@ -664,11 +664,8 @@ export const useSSE = (
     setReconnectStatus('connecting');
 
     try {
-      // 多意图重构配置: 0=旧端点, 1=新端点(v2)
-      const USE_NEW_ROUTER = 1; // 可配置：0 或 1
-      const url = USE_NEW_ROUTER
-        ? `${config.baseURL}/chat/stream/v2`
-        : `${config.baseURL}/chat/stream`;
+      // 聊天流式传输端点
+      const url = `${config.baseURL}/chat/stream`;
       const controller = new AbortController();
       abortControllerRef.current = controller; // 【修复 2026-05-11 小健】保存到ref，disconnect时可abort
       const timeoutId = setTimeout(() => controller.abort(), 180000); // 180s超时，qwen2.5:1.5b CPU首次推理约2分钟

@@ -169,7 +169,7 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = Field(default=None, description="会话ID")
 
 
-@router.post("/chat/stream/v2")
+@router.post("/chat/stream")
 async def chat_stream_v2(request: ChatRequest):
     """
     新版本流式API，使用 chat_router 进行意图路由
@@ -377,3 +377,42 @@ async def confirm_operation(request: Request):
         "success": True,
         "message": "确认已收到"
     }
+
+
+@router.get("/chat/validate")
+async def validate_chat_config():
+    """
+    验证AI服务配置是否可用
+    
+    Returns:
+        dict: 验证结果，包含valid、message、provider、model字段
+    """
+    try:
+        from app.services.factory import AIServiceFactory
+        from app.services.ai_config_resolver import get_ai_config_resolver
+        
+        resolver = get_ai_config_resolver()
+        is_valid, final_provider, final_model, error_messages = resolver.validate_config()
+        
+        if not is_valid:
+            return {
+                "valid": False,
+                "message": f"配置验证失败: {', '.join(error_messages)}",
+                "provider": final_provider or "unknown",
+                "model": final_model or ""
+            }
+        
+        return {
+            "valid": True,
+            "message": f"配置验证通过: {final_provider} ({final_model})",
+            "provider": final_provider,
+            "model": final_model
+        }
+    except Exception as e:
+        logger.error(f"验证AI服务配置失败: {e}")
+        return {
+            "valid": False,
+            "message": f"验证失败: {str(e)}",
+            "provider": "unknown",
+            "model": ""
+        }

@@ -148,18 +148,6 @@ export const chatApi = {
     return response.data;
   },
 
-  /**
-   * 切换AI提供商 - 已存在API
-   * @author 小新
-   */
-  switchProvider: async (
-    provider: "zhipuai" | "opencode"
-  ): Promise<ValidateResponse> => {
-    const response = await api.post<ValidateResponse>(
-      `/chat/switch/${provider}`
-    );
-    return response.data;
-  },
 };
 
 // ============================================
