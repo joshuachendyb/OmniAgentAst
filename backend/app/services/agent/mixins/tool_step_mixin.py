@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 
 from app.services.agent.reasoning_steps import StepFactory
 from app.services.agent.tool_result_formatter import build_execution_result_dict
-from app.services.agent.message_utils import build_observation_text
+from app.services.agent.agent_utils.message_utils import build_observation_text
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
 
