@@ -597,3 +597,31 @@ sequence_number: int = Field(default=0, description="任务内操作顺序号")
 
 **报告完成时间**: 2026-05-28 18:46:53
 **分析人**: 小沈 + 北京老陈
+task的 需求 
+task_id 是 task-{uuid4().hex} 格式（如 task-a1b2c3d4e5f6...），自动生成。
+
+task 关联的数据模型（两个 Pydantic 模型 + 一个 DB 表）：
+
+TaskRecord（任务记录主体）
+task_operations 表字段：
+
+task_id, agent_id, task_description, status
+统计：total_operations, success_count, failed_count, rolled_back_count
+报告：report_generated, report_path
+时间：created_at, completed_at
+OperationRecord（操作记录明细）
+file_operations 表字段：
+
+operation_id, task_id（关联到任务）
+operation_type, status
+source_path, destination_path, backup_path
+file_size, file_hash
+sequence_number（回滚顺序）
+状态枚举（OperationStatus）
+状态	含义	适用
+PENDING	待执行	刚创建
+EXECUTING	执行中	正在处理
+SUCCESS	成功完成	正常结束
+FAILED	执行失败	出错了
+ROLLBACK	已回滚	被撤销了
+使用链路：task_id 是主键串联 — TaskRecord 记录一次文件操作任务的整体情况，OperationRecord 记录该任务内的每一次具体文件操作（移动/复制/删除等），通过 task_id 关联，sequence_number 决定回滚顺序。
