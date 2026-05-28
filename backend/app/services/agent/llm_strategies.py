@@ -71,7 +71,7 @@ class TextStrategy(LLMStrategy):
     - 方案B: 工具名保底匹配
     """
     # P4: 从注册中心动态获取工具名 - 小健 2026-05-02
-    from app.services.agent.react_output_parser import _get_all_tool_names
+    from app.services.agent.llm_response_parser import _get_all_tool_names
 
     def _extract_llm_content(self, response: Any) -> tuple:
         """提取LLM响应的文本内容 + error_info + reasoning。三段式：content→dict→str - 北京老陈 2026-05-25"""

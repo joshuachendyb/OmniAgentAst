@@ -15,7 +15,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 from app.constants import SUCCESS_CODE, LLM_SAFE_LIMIT
-from app.services.tools.tool_result_utils import safe_truncate
+from app.utils.data_utils import safe_truncate
 
 
 def _get_failure_hint(tool_name: str, tool_params: Optional[dict] = None) -> str:

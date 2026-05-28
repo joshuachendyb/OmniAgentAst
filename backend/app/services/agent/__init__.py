@@ -11,7 +11,7 @@ Agent 模块 - 多意图处理架构 + 文件操作服务
 # ============================================================================
 from .base_react import BaseAgent
 from .tool_executor import ToolExecutor
-from .react_output_parser import parse_react_response
+from .llm_response_parser import parse_react_response
 from .session_base import SessionServiceBase, SessionStatsMixin
 
 # ============================================================================

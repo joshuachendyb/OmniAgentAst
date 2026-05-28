@@ -9,7 +9,7 @@ from typing import Optional, Any, Dict
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 import sqlite3
-from app.chat_stream.chat_helpers import create_timestamp
+from app.utils.time_utils import create_timestamp
 
 router = APIRouter()
 

@@ -11,7 +11,7 @@ import asyncio
 import json
 from typing import Dict, Optional, Callable, AsyncGenerator
 
-from app.chat_stream.chat_helpers import create_timestamp
+from app.utils.time_utils import create_timestamp
 
 
 def create_incident_data(incident_value: str, message: str, step: Optional[int] = None) -> dict:

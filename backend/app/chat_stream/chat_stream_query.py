@@ -14,7 +14,8 @@ from typing import List, Dict, Optional, Any, Callable, AsyncGenerator, Tuple
 
 from app.utils.retry_controller import RetryController
 from app.utils.idle_timeout import IdleTimeoutIterator, IdleTimeoutError
-from app.chat_stream.chat_helpers import create_timestamp, create_final_response
+from app.utils.time_utils import create_timestamp
+from app.chat_stream.chat_helpers import create_final_response
 from app.chat_stream.error_handler import create_error_response
 from app.services.agent.reasoning_steps import StepFactory
 from app.chat_stream.sse_formatter import format_sse_event

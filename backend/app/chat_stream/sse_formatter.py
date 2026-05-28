@@ -10,7 +10,7 @@ import json
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from app.chat_stream.chat_helpers import create_timestamp
+from app.utils.time_utils import create_timestamp
 
 
 def format_sse_event(event_type: str, step: int, data: Dict[str, Any]) -> str:

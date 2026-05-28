@@ -37,7 +37,7 @@ from pydantic import BaseModel, Field
 
 from app.services import AIServiceFactory
 from app.utils.logger import logger
-from app.chat_stream.chat_helpers import create_step_counter
+from app.utils.time_utils import create_step_counter
 from app.chat_stream.error_handler import create_error_response
 from app.services.agent.base_react import DEFAULT_MAX_STEPS
 from app.services.tools.registry import ToolCategory

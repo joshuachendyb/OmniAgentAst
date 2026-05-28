@@ -12,6 +12,8 @@ Author: 小沈 - 2026-03-26
 
 from typing import Dict, Any, List, Callable
 
+from app.utils.time_utils import create_timestamp
+
 
 async def send_start_step(
     ai_service: Any,
@@ -46,8 +48,6 @@ async def send_start_step(
     返回：
     - start_data 字典（包含 display_name/provider/model 等）
     """
-    from app.chat_stream.chat_helpers import create_timestamp
-    
     # 1. 构建 start_data
     # 2026-04-28 小强修改：北京老陈要求user_message不截断，完全显示
     start_data = {

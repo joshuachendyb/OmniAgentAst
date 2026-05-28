@@ -21,7 +21,7 @@ Date: 2026-04-15
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List, Callable
 
-from app.chat_stream.chat_helpers import create_timestamp, create_step_counter
+from app.utils.time_utils import create_timestamp, create_step_counter
 
 
 # =============================================================================

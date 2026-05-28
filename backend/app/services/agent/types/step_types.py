@@ -11,7 +11,7 @@ Author: 小沈 - 2026-03-21
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
-from app.chat_stream.chat_helpers import create_timestamp
+from app.utils.time_utils import create_timestamp
 
 
 @dataclass
