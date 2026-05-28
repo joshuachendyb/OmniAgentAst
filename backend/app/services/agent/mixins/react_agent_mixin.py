@@ -18,7 +18,7 @@ from app.services.tools.registry import ToolCategory
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
 from app.services.prompts.prompt_assembler import PromptAssembler
-from app.services.agent.message_utils import inject_tools_info, inject_schema_text, build_schema_text
+from app.services.agent.agent_utils.message_utils import inject_tools_info, inject_schema_text, build_schema_text
 
 
 class ReactAgentMixin(ToolLoaderMixin):
