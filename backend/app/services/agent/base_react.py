@@ -27,7 +27,7 @@ Updated: 小沈 - 2026-04-26
 import asyncio
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, AsyncGenerator, Callable, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, AsyncGenerator, Callable, Set, Tuple
 
 from app.services.agent.types import AgentStatus
 from app.services.agent.llm_response_parser import parse_react_response
@@ -35,20 +35,13 @@ from app.services.agent.message_builder import MessageBuilder
 from app.services.agent.reasoning_steps import (
     StepFactory,
     ReasoningStep,
-    ThoughtStep,
-    ActionToolStep,
-    ObservationStep,
-    FinalStep,
-    ErrorStep,
 )
 from app.services.tools.registry import ToolCategory, get_tools_from_registry_by_category
 
 from app.constants import MAX_CONTEXT_CHARS
 from app.services.preprocessing.intent_classifier import IntentClassifier
 from app.utils.logger import logger
-from app.utils.time_utils import create_timestamp
 from app.chat_stream.incident_handler import create_incident_data
-from app.utils.prompt_logger import get_prompt_logger
 from app.services.agent.chunk_buffer import ChunkBuffer
 from app.services.agent.mixins.react_handler_mixin import ReActHandlerMixin
 
@@ -452,6 +445,5 @@ class BaseAgent(ReActHandlerMixin, ABC):
                 step=step_count
             )
         return None
-
 
 
