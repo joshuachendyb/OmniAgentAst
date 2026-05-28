@@ -25,9 +25,7 @@ Updated: 小沈 - 2026-04-26
 """
 
 import asyncio
-import json
 import time
-import traceback
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, AsyncGenerator, Callable, Set, Tuple, Union
 
@@ -51,9 +49,8 @@ from app.utils.logger import logger
 from app.utils.time_utils import create_timestamp
 from app.chat_stream.incident_handler import create_incident_data
 from app.utils.prompt_logger import get_prompt_logger
-from app.services.agent.tool_result_formatter import extract_status, build_execution_result_dict
-from app.services.agent.mixins.tool_step_mixin import ToolStepMixin, _ToolStepOutcome
 from app.services.agent.chunk_buffer import ChunkBuffer
+from app.services.agent.mixins.react_handler_mixin import ReActHandlerMixin
 
 
 
@@ -66,7 +63,7 @@ DEFAULT_MAX_STEPS = 100
 MAX_CONSECUTIVE_CHUNKS = 5
 
 
-class BaseAgent(ABC):
+class BaseAgent(ReActHandlerMixin, ABC):
     """
     Agent 核心基类 - 支持多工具分类
     
@@ -405,265 +402,6 @@ class BaseAgent(ABC):
 
         return chunk_buffer, valid_tool_names
 
-    async def _handle_empty_response(
-        self, step_count: int
-    ) -> AsyncGenerator[Dict[str, Any], None]:
-        """空响应截断历史重试 — 小沈 2026-05-25"""
-        _retry_cnt = self._empty_response_retry_engine.attempt_count
-        _max_retries = self._empty_response_retry_engine.max_retries
-        logger.error(
-            f"[空响应] LLM返回空响应 (第{_retry_cnt}次重试), "
-            f"history长度={len(self.conversation_history)}"
-        )
-
-        if _retry_cnt > _max_retries:
-            yield self._exit_with_error(step_count, "empty_response", f"AI服务返回空响应（已重试{_retry_cnt}次）")
-            self._on_after_loop()
-            return
-
-        original_len = len(self.conversation_history)
-        if original_len <= 4:
-            logger.warning("[空响应] 历史已很短无法截断，直接报错")
-            yield self._exit_with_error(step_count, "empty_response", f"AI服务返回空响应（已重试{_retry_cnt}次）")
-            self._on_after_loop()
-            return
-
-        kept_head = self.conversation_history[:2]
-        kept_tail = self.conversation_history[-2:]
-        seen_ids: Set[int] = set()
-        deduped = []
-        for item in kept_head + kept_tail:
-            item_id = id(item)
-            if item_id not in seen_ids:
-                seen_ids.add(item_id)
-                deduped.append(item)
-        removed_len = original_len - len(deduped)
-        self.conversation_history = deduped
-        self.message_builder.conversation_history = deduped
-        logger.warning(
-            f"[空响应截断历史] 从{original_len}条截断到{len(deduped)}条, "
-            f"移除{removed_len}条中间历史, 准备重试"
-        )
-        yield create_incident_data(
-            incident_value="retrying",
-            message=f"AI返回空响应，已压缩对话历史重试（第{_retry_cnt}次）"
-        )
-
-    async def _handle_chunk_type(
-        self, parsed: Dict[str, Any], step_count: int,
-        chunk_buffer: ChunkBuffer, step_counter: Optional[Callable[[], int]]
-    ) -> AsyncGenerator[Dict[str, Any], None]:
-        """chunk类型处理：拼接buffer、阈值检测、无工具Agent退出 — 小沈 2026-05-25"""
-        self.parse_retry_count = 0
-        chunk_content = parsed.get("content", "")
-
-        chunk_buffer.append(chunk_content)
-        self.message_builder.temp_history.append({"role": "assistant", "content": chunk_content})
-        if len(self.message_builder.temp_history) > 10:
-            self.message_builder.temp_history = self.message_builder.temp_history[-10:]
-
-        chunk_step = StepFactory.create_chunk_step(step=step_count, content=chunk_content)
-        yield self._emit_step(chunk_step)
-
-        if self.tool_category is None:
-            content = chunk_buffer.flush_to(self.message_builder)
-            sc = step_counter() if step_counter else (step_count + 1)
-            final_step = StepFactory.create_final_step(step=sc, response=content, thought="")
-            yield self._emit_step(final_step)
-            self._on_after_loop()
-            return
-
-        if chunk_buffer.should_promote():
-            promoted_content = chunk_buffer.flush_to(self.message_builder)
-            final_step = StepFactory.create_final_step(step=step_count, response=promoted_content, thought="")
-            yield self._emit_step(final_step)
-            self._on_after_loop()
-            return
-
-    async def _handle_completion_type(
-        self, parsed: Dict[str, Any], step_count: int, chunk_buffer: ChunkBuffer
-    ) -> AsyncGenerator[Dict[str, Any], None]:
-        """answer/implicit完成处理 — 小沈 2026-05-25"""
-        self.parse_retry_count = 0
-
-        if chunk_buffer.buffer:
-            chunk_buffer.flush_to(self.message_builder)
-
-        answer_response = parsed.get("response", "")
-        if not answer_response or not answer_response.strip():
-            answer_response = parsed.get("tool_params", {}).get("result", "") if isinstance(parsed.get("tool_params"), dict) else ""
-        if not answer_response or not answer_response.strip():
-            answer_response = parsed.get("content", "")
-        if not answer_response or not answer_response.strip():
-            answer_response = parsed.get("reasoning", "")
-
-        _reasoning = parsed.get("reasoning", "")
-        final_step = StepFactory.create_final_step(
-            step=step_count, response=answer_response, thought=_reasoning,
-            model=getattr(self, 'model', None), provider=getattr(self, 'provider', None)
-        )
-        yield self._emit_step(final_step)
-        self.status = AgentStatus.COMPLETED
-
-    async def _handle_thought_only(
-        self, parsed: Dict[str, Any], step_count: int, chunk_buffer: ChunkBuffer
-    ) -> AsyncGenerator[Dict[str, Any], None]:
-        """thought_only纯思考分支 — 小沈 2026-05-25"""
-        self.parse_retry_count = 0
-        thought = parsed.get("thought", "")
-        thought_content = parsed.get("content", "")
-
-        _thought_val = thought_content
-        if thought and thought.strip():
-            _thought_val = thought if thought == thought_content else (thought + "\n" + thought_content).strip()
-
-        thought_step = StepFactory.create_thought_step(
-            step=step_count, content="", tool_name="", tool_params={},
-            thought=_thought_val, reasoning=parsed.get("reasoning", "")
-        )
-        yield self._emit_step(thought_step)
-        self.message_builder.add_assistant(_thought_val)
-        self.message_builder.trim_history()
-        chunk_buffer.clear()
-
-    async def _handle_parse_error(
-        self, parsed: Dict[str, Any], step_count: int, chunk_buffer: ChunkBuffer
-    ) -> AsyncGenerator[Dict[str, Any], None]:
-        """解析错误重试（复用_calculate_retry_delay） — 小沈 2026-05-25"""
-        error_msg = parsed.get("error", "Unknown parse error")
-        chunk_buffer.clear()
-
-        from app.utils.error_classifier import UnifiedErrorClassifier
-        is_network_error, _error_type = UnifiedErrorClassifier.is_network_or_api_error(error_msg)
-
-        if not is_network_error:
-            self.message_builder.add_observation(
-                f"Parse Error: {error_msg}. Please ensure your response follows the ReAct format (Thought -> Action -> Action Input)."
-            )
-        else:
-            logger.info(f"[parse_react_response] 网络/API错误，不注入history: {error_msg}")
-            if _error_type == "api_error_429":
-                _retry_delay = self._parse_retry_engine._calculate_delay(self.parse_retry_count + 1)
-                logger.warning(f"[parse_react_response] 429限流, 等待{_retry_delay:.0f}s后重试 (第{self.parse_retry_count+1}次)")
-                await asyncio.sleep(_retry_delay)
-            yield create_incident_data(
-                incident_value="rate_limit",
-                message=f"API暂时不可用，正在重试（第{self.parse_retry_count + 1}次）",
-                step=step_count
-            )
-
-        self.parse_retry_count += 1
-        if self.parse_retry_count >= self.max_parse_retries:
-            yield self._exit_with_error(step_count, "parse_error", f"解析失败: {error_msg}（已重试{self.max_parse_retries}次）")
-            self._on_after_loop()
-            return
-
-        yield create_incident_data(
-            incident_value="retrying",
-            message=f"解析失败，正在重试（第{self.parse_retry_count}次）",
-            step=step_count
-        )
-
-    async def _handle_action_type(
-        self, parsed: Dict[str, Any], step_count: int,
-        chunk_buffer: ChunkBuffer, valid_tool_names: Set[str],
-        running_tasks: Optional[Dict[str, Any]], task_id: Optional[str],
-        step_counter: Optional[Callable[[], int]], response: str
-    ) -> AsyncGenerator[Dict[str, Any], None]:
-        """action工具执行入口 — 小沈 2026-05-25"""
-        tool_name = parsed.get("tool_name") or parsed.get("action_tool")
-        tool_params = parsed.get("tool_params", parsed.get("params", {}))
-        thought_content = parsed.get("content", "")
-        thought = parsed.get("thought", "")
-        reasoning = parsed.get("reasoning", "")
-
-        self.parse_retry_count = 0
-
-        chunk_buffer_was_flushed = bool(chunk_buffer.buffer)
-        if chunk_buffer.buffer:
-            chunk_buffer.flush_to(self.message_builder)
-
-        _thought_val = thought_content
-        if thought and thought.strip():
-            _thought_val = thought if thought == thought_content else (thought + "\n" + thought_content).strip()
-
-        thought_step = StepFactory.create_thought_step(
-            step=step_count, content="", tool_name=tool_name,
-            tool_params=tool_params, thought=_thought_val, reasoning=reasoning
-        )
-        yield self._emit_step(thought_step)
-
-        self.status = AgentStatus.EXECUTING
-
-        _int = self._check_interrupt(step_count, running_tasks)
-        if _int:
-            yield _int
-            self._on_after_loop()
-            return
-
-        outcome = await self._execute_tool_step(tool_name, tool_params, step_count, is_primary=True)
-        yield outcome.action_step_dict
-
-        if not chunk_buffer_was_flushed:
-            self.message_builder.add_assistant(response)
-
-        _int = self._check_interrupt(step_count, running_tasks)
-        if _int:
-            yield _int
-            self._on_after_loop()
-            return
-
-        async for step in self._execute_observation_flow(
-            outcome, parsed, step_count, running_tasks, task_id
-        ):
-            yield step
-
-    async def _execute_observation_flow(
-        self, outcome: _ToolStepOutcome, parsed: Dict[str, Any],
-        step_count: int, running_tasks: Optional[Dict[str, Any]],
-        task_id: Optional[str]
-    ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Observation阶段：结果注入+is_done判断+pending执行 — 小沈 2026-05-25"""
-        self.status = AgentStatus.OBSERVING
-        self.message_builder.add_observation(
-            outcome.obs_inject_text, self.llm_call_count, fc_context=outcome.obs_fc_context
-        )
-        yield outcome.observation_step_dict
-
-        if outcome.is_done:
-            _result_data = outcome.execution_result.get("data")
-            try:
-                _response_text = json.dumps(_result_data, ensure_ascii=False) if _result_data is not None else ""
-            except (TypeError, ValueError):
-                _response_text = str(_result_data)
-            _msg = outcome.execution_result.get("message", "")
-            if _msg:
-                _response_text = _msg + "\n" + _response_text
-            final_step = StepFactory.create_final_step(
-                step=step_count, response=_response_text, thought="工具执行要求直接返回结果",
-                model=getattr(self, 'model', None), provider=getattr(self, 'provider', None)
-            )
-            yield self._emit_step(final_step)
-            self.status = AgentStatus.COMPLETED
-            self._on_after_loop()
-            return
-
-        self.message_builder.trim_history()
-
-        pending_calls = parsed.get("_pending_calls", [])
-        if pending_calls:
-            logger.info(f"[ReAct] 主工具完成，继续执行 {len(pending_calls)} 个并行工具")
-        async for _pd in self._execute_pending_calls(pending_calls, step_count, running_tasks, task_id):
-            yield _pd
-        if hasattr(self, '_pending_step_count'):
-            self._pending_step_count  # noqa — step_count同步已在_execute_pending_calls内部处理
-
-    def _handle_run_exception(self, e: Exception, step_count: int) -> Dict[str, Any]:
-        """未捕获异常兜底 — 小沈 2026-05-25"""
-        self.message_builder.temp_history.clear()
-        traceback.print_exc()
-        logger.error(f"Agent run_stream error: {e}", exc_info=True)
-        return self._exit_with_error(step_count, "unhandled_exception", str(e))
     
     # ===== 对话历史管理 =====
 
@@ -715,39 +453,5 @@ class BaseAgent(ABC):
             )
         return None
 
-    async def _execute_pending_calls(
-        self,
-        pending_calls: List[Dict[str, Any]],
-        step_count: int,
-        running_tasks: Optional[Dict[str, Any]],
-        task_id: Optional[str]
-    ) -> AsyncGenerator[Dict[str, Any], None]:
-        """编排并行工具调用列表 — 小健 2026-05-24
 
-        在主工具Observation完成后执行附带的pending_calls。
-        每个调用委托给 _execute_tool_step(is_primary=False)，
-        本方法仅负责step递增、中断检查和yield转发。
-        返回更新后的step_count供调用方同步。
-        """
-        for pending in pending_calls:
-            step_count += 1
-            p_name = pending.get("name", "finish")
-            p_params = pending.get("args", {})
-            logger.info(f"[ReAct] 执行并行工具: {p_name}")
-
-            if self._check_interrupt(step_count, running_tasks):
-                logger.info(f"[Interrupt] 任务 {task_id} 在并行工具执行前被取消")
-                break
-
-            outcome = await self._execute_tool_step(
-                p_name, p_params, step_count, is_primary=False
-            )
-            yield outcome.action_step_dict
-            self.message_builder.add_observation(
-                outcome.obs_inject_text, self.llm_call_count,
-                fc_context=outcome.obs_fc_context
-            )
-            yield outcome.observation_step_dict
-
-        self._pending_step_count = step_count
 
