@@ -5,7 +5,7 @@
 Author: 小沈 - 2026-05-22
 """
 import sqlite3
-from app.db.config import CHAT_DB_PATH, ensure_db_dir
+from app.db.config import CHAT_DB_PATH, create_connection
 
 
 def get_connection() -> sqlite3.Connection:
@@ -15,13 +15,7 @@ def get_connection() -> sqlite3.Connection:
     Returns:
         sqlite3.Connection: 启用了WAL模式的数据库连接
     """
-    ensure_db_dir()
-    conn = sqlite3.connect(str(CHAT_DB_PATH))
-    conn.row_factory = sqlite3.Row
-    # 【M18修复 2026-05-13 小沈】启用WAL模式+忙等待超时，解决并发写入"database is locked"错误
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
-    return conn
+    return create_connection(CHAT_DB_PATH, row_factory=sqlite3.Row)
 
 
 def init_database():
