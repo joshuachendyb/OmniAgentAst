@@ -157,24 +157,25 @@ PATTERN_ERROR_ENTRIES = [
 ]
 
 # 错误类型到用户友好消息的映射
+# 合并自 constants.py ERROR_TYPE_MAP 的详细消息文本 — 小沈 2026-05-28
 ERROR_TYPE_TO_MESSAGE: Dict[ErrorCategory, Tuple[str, str]] = {
-    ErrorCategory.TIMEOUT: ("timeout", "请求超时，请稍后重试"),
+    ErrorCategory.TIMEOUT: ("timeout", "请求超时，请重试"),
     ErrorCategory.PERMISSION_DENIED: ("permission_denied", "权限不足，请检查您的权限设置"),
     ErrorCategory.FILE_NOT_FOUND: ("file_not_found", "文件未找到，请检查文件路径"),
     ErrorCategory.INVALID_PARAMS: ("invalid_params", "参数错误，请检查输入参数"),
     ErrorCategory.TOOL_NOT_FOUND: ("tool_not_found", "工具未找到"),
     ErrorCategory.CIRCUIT_OPEN: ("circuit_open", "服务暂时不可用，请稍后重试"),
-    ErrorCategory.NETWORK: ("network", "网络连接失败，请检查网络后重试"),
-    ErrorCategory.CONNECT: ("connect", "连接失败，请检查网络连接"),
-    ErrorCategory.PROTOCOL: ("protocol", "协议错误，请稍后重试"),
-    ErrorCategory.SERVER: ("server", "服务器错误，请稍后重试"),
-    ErrorCategory.API_RATE_LIMIT: ("api_error_429", "请求过于频繁，请稍后重试"),
-    ErrorCategory.API_UNAUTHORIZED: ("api_error_401", "认证失败，请检查API密钥"),
-    ErrorCategory.API_FORBIDDEN: ("api_error_403", "权限不足，请检查API权限"),
-    ErrorCategory.API_BAD_REQUEST: ("api_error_400", "请求参数错误"),
-    ErrorCategory.UNKNOWN: ("unknown", "未知错误，请稍后重试"),
-    ErrorCategory.EMPTY_RESPONSE: ("empty_response", "AI未返回有效响应，请重试"),
-    ErrorCategory.IDLE_TIMEOUT: ("idle_timeout", "AI响应超时，请稍后重试"),
+    ErrorCategory.NETWORK: ("network", "网络错误，请检查网络连接"),
+    ErrorCategory.CONNECT: ("connect", "连接失败，请检查网络"),
+    ErrorCategory.PROTOCOL: ("protocol", "协议错误，请重试"),
+    ErrorCategory.SERVER: ("server", "服务器错误，请稍后重试或更换模型"),
+    ErrorCategory.API_RATE_LIMIT: ("api_error_429", "API请求过于频繁 (errorcode=429)，请稍后再试或更换模型"),
+    ErrorCategory.API_UNAUTHORIZED: ("api_error_401", "API认证失败 (errorcode=401)，请检查API密钥配置"),
+    ErrorCategory.API_FORBIDDEN: ("api_error_403", "API访问被拒绝 (errorcode=403)，请检查API权限配置"),
+    ErrorCategory.API_BAD_REQUEST: ("api_error_400", "API请求参数错误 (errorcode=400)，请检查输入内容"),
+    ErrorCategory.UNKNOWN: ("unknown", "AI 处理异常，请稍后重试"),
+    ErrorCategory.EMPTY_RESPONSE: ("empty_response", "AI服务返回空响应，请稍后重试"),
+    ErrorCategory.IDLE_TIMEOUT: ("idle_timeout", "请求超时：AI模型30秒内未返回任何内容，已重试3次，请更换问题或稍后重试"),
 }
 
 
@@ -247,21 +248,19 @@ class UnifiedErrorClassifier:
         根据错误类型字符串分类，获取用户友好的错误信息
         
         Args:
-            error_type: 错误类型标识
+            error_type: 错误类型标识（如 "api_error_429", "connect", "timeout"）
             error_message: 原始错误信息
             
         Returns:
             (code, message) 元组
         """
-        # 首先尝试将错误类型字符串映射到ErrorCategory
-        error_type_upper = error_type.upper()
+        error_type_lower = error_type.lower()
         for category in ErrorCategory:
-            if category.value == error_type_upper or category.name == error_type_upper:
+            if category.value == error_type_lower or category.name.lower() == error_type_lower:
                 if category in ERROR_TYPE_TO_MESSAGE:
                     code, default_message = ERROR_TYPE_TO_MESSAGE[category]
                     return code, default_message
         
-        # 如果没有匹配，返回默认错误
         return 'server', f"服务调用失败: {error_message}"
     
     @staticmethod

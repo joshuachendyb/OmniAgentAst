@@ -10,8 +10,6 @@ from app.utils.time_utils import create_timestamp
 from app.chat_stream.chat_helpers import create_final_response
 from app.chat_stream.error_handler import (
     create_error_response,
-    get_function_call_error_info,
-    ERROR_TYPE_MAP,
 )
 from app.chat_stream.incident_handler import (
     create_incident_data,
@@ -32,8 +30,6 @@ __all__ = [
     "create_final_response",
     # error_handler
     "create_error_response",
-    "get_function_call_error_info",
-    "ERROR_TYPE_MAP",
     # incident_handler
     "create_incident_data",
     "check_and_yield_if_interrupted",

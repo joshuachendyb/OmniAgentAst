@@ -14,21 +14,17 @@ from typing import List, Dict, Optional
 
 from app.utils.logger import logger
 from app.utils.retry_engine import RetryEngine, BackoffStrategy
-from app.constants import ERROR_TYPE_MAP, HTTPX_EXCEPTION_TO_ERROR_KEY
 
 
 def _resolve_exception(e: Exception) -> tuple:
-    """解析异常→(用户消息, 错误类型)，复用constants.py已有常量组合查询 — 小健 2026-05-25
-
-    httpx异常通过HTTPX_EXCEPTION_TO_ERROR_KEY映射到error_key，
-    httpcore异常共用同名映射（如httpcore.ReadError与httpx.ReadError→"read_error"），
-    再通过ERROR_TYPE_MAP[error_key]获取(分类, 用户消息)。
-    """
-    error_key = HTTPX_EXCEPTION_TO_ERROR_KEY.get(type(e).__name__)
-    if error_key and error_key in ERROR_TYPE_MAP:
-        _, user_msg = ERROR_TYPE_MAP[error_key]
-        return user_msg, error_key
-    return f"AI服务调用失败: {type(e).__name__}", "unknown_error"
+    """解析异常→(用户消息, 错误类型) — 委托至UnifiedErrorClassifier统一分类 — 小沈 2026-05-28"""
+    from app.utils.error_classifier import UnifiedErrorClassifier
+    info = UnifiedErrorClassifier.get_error_info(e)
+    msg = info["message"]
+    err_type = info["code"]
+    if info["category"].value == "unknown":
+        logger.error(f"[_resolve_exception] 未知异常: {e}, 类型: {type(e).__name__}")
+    return msg, err_type
 
 
 class ChatResponse:
