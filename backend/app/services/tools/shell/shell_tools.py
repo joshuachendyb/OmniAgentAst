@@ -40,6 +40,7 @@ from app.services.tools.tool_result_utils import format_output_for_llm, build_ne
 from app.utils.logger import logger  # 小健-2026-05-19 修复BUG-001: logger未导入
 from app.services.tools._response import build_success, build_error
 from app.services.tools.toolhelper.shell_helper import _check_shell_injection, _read_stream_nonblocking
+from app.services.safety.manager import get_safety_manager
 
 
 
@@ -141,6 +142,11 @@ def execute_shell_command(
     if injection_error:
         logger.warning(f"[Shell安全] 拦截高风险命令: {command[:200]}")
         return build_error(ERR_SHELL_INJECTION, injection_error)
+
+    # S2: 语义安全检查（通过SafetyManager统一调度）
+    safety_check = get_safety_manager().check("shell", "execute_shell_command", {"command": command})
+    if not safety_check.get("is_safe", True):
+        logger.warning(f"[Shell安全] 语义分析风险: {safety_check.get('message')}")
 
     # B1: 后台模式
     if run_in_background:
