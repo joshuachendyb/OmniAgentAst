@@ -10,6 +10,7 @@ from app.db.config import (
     OPERATIONS_DB_PATH,
     OBSERVER_DB_PATH,
     ensure_db_dir,
+    create_connection,
 )
 from app.db.chat_db import get_connection as get_chat_connection, init_database as init_chat_database
 from app.db.operations_db import get_connection as get_operations_connection, init_database as init_operations_database
@@ -21,6 +22,7 @@ __all__ = [
     "OPERATIONS_DB_PATH",
     "OBSERVER_DB_PATH",
     "ensure_db_dir",
+    "create_connection",
     # 聊天数据库
     "get_chat_connection",
     "init_chat_database",
