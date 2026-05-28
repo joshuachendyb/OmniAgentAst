@@ -10,7 +10,7 @@ Author: 小健 - 2026-05-27
 
 from typing import List, Dict, Optional
 
-from app.services.agent.message_utils import build_llm_messages
+from app.services.agent.agent_utils.message_utils import build_llm_messages
 
 
 def build_request_body(
