@@ -32,8 +32,8 @@ class TaskExecutionTracker:
     
     def _init_file_tracker(self):
         """初始化file专用追踪器"""
-        from app.services.agent.session import get_task_tracker
-        self._trackers['file'] = get_task_tracker()
+        from app.services.agent.session import get_file_session_service
+        self._trackers['file'] = get_file_session_service()
     
     def _init_generic_tracker(self):
         """初始化通用追踪器（非file意图使用）"""
