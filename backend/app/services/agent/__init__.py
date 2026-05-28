@@ -10,6 +10,7 @@ Agent 模块 - 多意图处理架构 + 文件操作服务
 # 新框架导出（无循环依赖）
 # ============================================================================
 from .base_react import BaseAgent
+from .generic_react import GenericReactAgent
 from .tool_executor import ToolExecutor
 from .llm_response_parser import parse_react_response
 from .session_base import SessionServiceBase, SessionStatsMixin
@@ -23,6 +24,7 @@ from ._deprecated_imports import __getattr__
 __all__ = [
     # 新框架
     "BaseAgent",
+    "GenericReactAgent",
     "ToolExecutor",
     "SessionServiceBase",
     "SessionStatsMixin",

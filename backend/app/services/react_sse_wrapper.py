@@ -45,47 +45,7 @@ from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool
 from app.services.agent.base_react import DEFAULT_MAX_STEPS
 from app.services.intents.crss_scorer import CRSS_CONFIDENCE_THRESHOLD  # 【修复 2026-05-13 小沈】H2: 改为从crss_scorer导入，切断与chat_router的循环依赖
 from app.services.task_lifecycle import TaskLifecycleManager  # 【重构 2026-05-25 小沈】替代直接操作running_tasks
-from app.services.agent.base_react import BaseAgent
-
-
-class GenericReactAgent(BaseAgent):
-    """通用TextStrategy兜底Agent - 小沈 2026-05-25
-
-    使用场景:
-        - _run_sse_stream中AgentFactory.create失败时回退
-        - 需要直接使用LLM文本策略的场景
-
-    使用示例:
-        strategy = TextStrategy()
-        agent = GenericReactAgent(llm_client, task_id, strategy)
-    """
-
-    def __init__(self, llm_client, task_id, strategy, **kwargs):
-        BaseAgent.__init__(
-            self,
-            llm_client=llm_client, task_id=task_id, tool_category=None, **kwargs
-        )
-        self._strategy = strategy
-
-    async def _get_llm_response(self) -> str:
-        self.llm_call_count += 1
-        if not self._strategy:
-            return ""
-        last_msg = self.conversation_history[-1]["content"] if self.conversation_history else ""
-        history = self.conversation_history[:-1] if len(self.conversation_history) > 1 else []
-        return await self._strategy.call(
-            llm_client=self.llm_client, message=last_msg,
-            history_dicts=history, conversation_history=self.conversation_history,
-        )
-
-    async def _execute_tool(self, action, params):
-        return {}
-
-    def _get_system_prompt(self):
-        return "你是一个有用的AI助手，直接回答用户的问题。"
-
-    def _get_task_prompt(self, task, context=None):
-        return task
+from app.services.agent.generic_react import GenericReactAgent
 
 
 async def _is_cancelled_and_yield(
