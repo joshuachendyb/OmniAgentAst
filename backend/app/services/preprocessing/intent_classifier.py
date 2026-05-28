@@ -39,31 +39,16 @@ _DEFAULT_OLLAMA_API_BASE = "https://ollama.com/v1"
 
 def _load_intent_config() -> dict:
     """从配置文件加载 ollama cloud API 配置（用于意图分类）"""
-    import yaml
-    backend_dir = os.path.dirname(os.path.abspath(__file__))
-    backend_dir = os.path.dirname(os.path.dirname(backend_dir))
-    backend_dir = os.path.dirname(backend_dir)
-    project_root = os.path.dirname(backend_dir)
-    config_path = os.path.join(project_root, "config", "config.yaml")
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f)
-        oc_config = config.get("ai", {}).get("ollamacloud", {})
-        oc_models = oc_config.get("models", [])
-        fallback_model = oc_models[0] if oc_models else _DEFAULT_INTENT_MODEL
-        return {
-            "api_base": oc_config.get("api_base", _DEFAULT_OLLAMA_API_BASE),
-            "api_key": oc_config.get("api_key", ""),
-            "model": oc_config.get("intent_model", fallback_model),
-            "timeout": oc_config.get("timeout", DEFAULT_LLM_TIMEOUT)
-        }
-    except Exception:
-        return {
-            "api_base": _DEFAULT_OLLAMA_API_BASE,
-            "api_key": "",
-            "model": _DEFAULT_INTENT_MODEL,
-            "timeout": DEFAULT_LLM_TIMEOUT
-        }
+    from app.config import get_config
+    oc_config = get_config().get('ai.ollamacloud', {})
+    oc_models = oc_config.get("models", [])
+    fallback_model = oc_models[0] if oc_models else _DEFAULT_INTENT_MODEL
+    return {
+        "api_base": oc_config.get("api_base", _DEFAULT_OLLAMA_API_BASE),
+        "api_key": oc_config.get("api_key", ""),
+        "model": oc_config.get("intent_model", fallback_model),
+        "timeout": oc_config.get("timeout", DEFAULT_LLM_TIMEOUT),
+    }
 
 INTENT_CLASSIFIER_CONFIG = _load_intent_config()
 

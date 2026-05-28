@@ -87,49 +87,40 @@ LOG_DIR = Path(__file__).parent.parent.parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 class LogConfig:
-    """日志配置管理"""
-    
+    """日志配置管理 — 委托至 app.config.Config（消除重复文件读取）"""
+
     @classmethod
     def load_config(cls) -> dict:
-        """从配置文件加载日志配置（不使用缓存）"""
-        # 【修复】项目根目录是backend的父目录，需要再退一级
-        config_path = Path(__file__).parent.parent.parent.parent / "config" / "config.yaml"
-        try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = yaml.safe_load(f) or {}
-                return config.get("logging", {})
-        except Exception as e:
-            print(f"[Logger] 无法加载配置文件，使用默认配置: {e}")
-            return {}
-    
+        """获取日志配置（通过 Config 缓存）"""
+        from app.config import get_config
+        return get_config().get_log_config()
+
     @classmethod
     def is_debug_mode(cls) -> bool:
         """检查是否为debug模式"""
-        config = cls.load_config()
-        app_config = config.get("app", {})
-        return app_config.get("debug", False)
-    
+        from app.config import get_config
+        return get_config().get('app.debug', False)
+
     @classmethod
     def get_log_level(cls) -> str:
         """获取日志级别"""
-        config = cls.load_config()
-        level = config.get("level", "INFO")
-        # debug模式下使用DEBUG级别
-        if cls.is_debug_mode():
+        from app.config import get_config
+        level = get_config().get('logging.level', 'INFO')
+        if get_config().get('app.debug', False):
             return "DEBUG"
         return level
-    
+
     @classmethod
     def get_max_bytes(cls) -> int:
         """获取单个日志文件最大大小（字节）"""
-        config = cls.load_config()
-        return config.get("max_file_size", 10 * 1024 * 1024)  # 默认10MB
-    
+        from app.config import get_config
+        return get_config().get('logging.max_file_size', 10 * 1024 * 1024)
+
     @classmethod
     def get_backup_count(cls) -> int:
         """获取备份文件数量"""
-        config = cls.load_config()
-        return config.get("backup_count", 5)
+        from app.config import get_config
+        return get_config().get('logging.backup_count', 5)
 
 # 全局配置锁，确保只配置一次
 _logging_configured = False
