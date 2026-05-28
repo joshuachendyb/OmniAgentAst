@@ -183,12 +183,13 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
 _task_tracker_instance: Optional[FileOperationSessionService] = None
 
 
-def get_task_tracker() -> FileOperationSessionService:
-    """获取会话服务单例"""
+def get_file_session_service() -> FileOperationSessionService:
+    """获取文件操作会话服务单例"""
     global _task_tracker_instance
     if _task_tracker_instance is None:
         _task_tracker_instance = FileOperationSessionService()
     return _task_tracker_instance
 
 
-get_session_service = get_task_tracker
+# 向后兼容别名
+get_session_service = get_file_session_service
