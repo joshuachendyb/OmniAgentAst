@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Dict, List
 
 from app.services.prompts.BasePromptTemplate import BasePrompts
-from app.services.prompts.middle import get_system_prompt as get_system_info
+from app.services.prompts.middle import get_system_prompt as get_system_prompt_string
 from app.utils.logger import logger
 
 
@@ -85,7 +85,7 @@ class SystemPrompts(BasePrompts):
         返回:
             str: 系统提示词字符串
         """
-        system_info = get_system_info(include_commands=False)
+        system_info = get_system_prompt_string(include_commands=False)
         from app.services.tools.registry import tool_registry, ToolCategory
 
         categories = [
