@@ -10,6 +10,8 @@ TaskExecutionTracker - 任务执行追踪器
 Author: 小健 - 2026-05-06
 """
 
+from datetime import datetime
+from uuid import uuid4
 from typing import Optional, Dict, Any
 from app.utils.logger import logger
 
@@ -92,9 +94,6 @@ class GenericTaskTracker:
     
     def create_session(self, agent_id: str, task_description: str) -> str:
         """创建任务记录（保持session命名，与FileOperationSessionService一致）"""
-        from uuid import uuid4
-        from datetime import datetime
-        
         task_id = str(uuid4())
         self._tasks[task_id] = {
             "agent_id": agent_id,
@@ -107,8 +106,6 @@ class GenericTaskTracker:
     
     def complete_session(self, task_id: str, success: bool = True):
         """完成任务记录（保持session命名，与FileOperationSessionService一致）"""
-        from datetime import datetime
-        
         if task_id in self._tasks:
             self._tasks[task_id]["status"] = "completed" if success else "failed"
             self._tasks[task_id]["completed_at"] = datetime.now().isoformat()

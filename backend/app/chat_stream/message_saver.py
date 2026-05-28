@@ -19,8 +19,9 @@
                        └── ExecutionStepsUpdate 数据类
 """
 
+import json
 from typing import List, Dict, Optional, Callable, Any, Set
-from app.chat_stream.chat_helpers import create_timestamp
+from app.utils.time_utils import create_timestamp
 
 _INVALID_SESSION_IDS: Set[str] = set()
 _INVALID_SESSION_IDS_MAX = 500  # 容量上限，防止无限增长 — 小健 2026-05-24
@@ -184,8 +185,6 @@ async def parse_and_save_sse(
     
     Author: 小沈 - 2026-03-23
     """
-    import json
-    
     # 解析 SSE 格式
     if sse_data.startswith("data: "):
         sse_data = sse_data[6:]  # 去掉 "data: " 前缀

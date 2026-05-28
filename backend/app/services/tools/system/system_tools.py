@@ -29,9 +29,11 @@ import socket
 import subprocess
 import re
 import logging
+import time
 from typing import Optional, Dict, Any, List, Literal, Tuple
 from datetime import datetime, timedelta
 from pathlib import Path
+import json as json_module
 
 from app.utils.logger import logger
 from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe
@@ -359,7 +361,6 @@ def _get_linux_event_log(
         if result.returncode != 0:
             return build_error(ERR_SYSTEM_EVENT_LOG, f"获取事件日志失败: {result.stderr}")
         
-        import json as json_module
         events = []
         
         for line in result.stdout.splitlines():
@@ -659,8 +660,6 @@ def _get_logs(
     Returns:
         {code, data, message}
     """
-    from pathlib import Path
-    
     try:
         log_path = Path(log_file)
         
@@ -910,7 +909,6 @@ def _query_sc_service_state(service_name: str) -> str:
 
 def _wait_sc_service_state(service_name: str, target: str, timeout: int) -> str:
     """轮询等待 Windows 服务达到目标状态，返回最终状态 — 小健 2026-05-25 重构修复other状态"""
-    import time
     deadline = time.time() + timeout
     while time.time() < deadline:
         time.sleep(1)
@@ -944,7 +942,6 @@ def _windows_service_start(service_name: str, timeout: int, wait_for_started: bo
         if wait_for_started:
             final_state = _wait_sc_service_state(service_name, "running", timeout)
         else:
-            import time
             time.sleep(2)
             final_state = _query_sc_service_state(service_name)
 
@@ -953,7 +950,7 @@ def _windows_service_start(service_name: str, timeout: int, wait_for_started: bo
                 "state": final_state,
                 "action": "start",
             }, f"服务 {service_name} 启动命令已执行，当前状态: {final_state}")
-
+    
     except subprocess.TimeoutExpired:
         return build_error(ERR_SHELL_TIMEOUT, f"启动服务 {service_name} 超时")
 
@@ -967,7 +964,6 @@ def _linux_service_start(service_name: str, timeout: int, wait_for_started: bool
         if start_result.returncode != 0:
             return build_error(ERR_SERVICE_START, f"启动服务失败: {start_result.stderr.strip()}")
         
-        import time
         if wait_for_started:
             deadline = time.time() + timeout
             final_state = "unknown"
@@ -1049,7 +1045,6 @@ def _windows_service_stop(service_name: str, force: bool, timeout: int, wait_for
         if wait_for_stopped:
             final_state = _wait_sc_service_state(service_name, "stopped", timeout)
         else:
-            import time
             time.sleep(2)
             final_state = _query_sc_service_state(service_name)
 
@@ -1078,8 +1073,6 @@ def _linux_service_stop(service_name: str, force: bool, timeout: int, wait_for_s
             
             return build_error(ERR_SERVICE_STOP, f"停止服务失败: {stop_result.stderr.strip()}")
         
-        import time
-
         if wait_for_stopped:
             deadline = time.time() + timeout
             final_state = "unknown"

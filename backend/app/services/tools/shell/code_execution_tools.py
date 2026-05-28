@@ -36,6 +36,7 @@ import os
 import subprocess
 import tempfile
 from typing import Optional
+import re as re_mod
 
 from app.services.tools.shell.code_execution_schema import (
     ExecuteCodeInput,
@@ -229,8 +230,6 @@ _JS_DANGEROUS_PATTERNS = [
 
 def _js_safety_check(code: str) -> Optional[str]:
     """JS安全检查：返回None表示安全，返回str表示错误消息 - 小健修复 2026-05-25"""
-    import re as re_mod
-
     for pattern, desc in _JS_DANGEROUS_PATTERNS:
         if re_mod.search(pattern, code):
             return f"安全检查: 检测到危险模式 {desc}，如需执行请设置safety_check=False"

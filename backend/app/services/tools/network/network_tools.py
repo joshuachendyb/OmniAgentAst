@@ -34,6 +34,7 @@ import platform
 import subprocess
 import socket
 import asyncio
+import base64
 from typing import Optional, Dict, Any, Literal, List, Tuple
 from urllib.parse import urlencode, urlparse, urlunparse
 
@@ -248,7 +249,6 @@ async def http_request(
                         },
                     )
                 if attempt < retry:
-                    import asyncio
                     await asyncio.sleep(0.5 * (2 ** attempt))
                     continue
                 break
@@ -374,7 +374,6 @@ def _extract_html_content(html_content: str, extract_format: str, max_tokens: in
 
 def _build_media_result(url: str, mime: str, raw_bytes: bytes, extract_format: str, response_status: int) -> Dict:
     """构建图片/PDF的base64附件响应 — 小健 2026-05-25"""
-    import base64
     b64 = base64.b64encode(raw_bytes).decode("ascii")
     return build_success(
         {

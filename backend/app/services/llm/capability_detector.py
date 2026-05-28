@@ -8,6 +8,7 @@ LLM能力探测统一基类
 Author: 小沈 - 2026-05-27
 """
 
+import asyncio
 import httpx
 from typing import Any, Callable, Dict, Optional
 
@@ -77,7 +78,6 @@ class CapabilityDetector:
         if cache_key in self._cache:
             return self._cache[cache_key]
 
-        import asyncio
         for attempt in range(3):
             try:
                 async with httpx.AsyncClient(timeout=DEFAULT_PROBE_TIMEOUT) as client:

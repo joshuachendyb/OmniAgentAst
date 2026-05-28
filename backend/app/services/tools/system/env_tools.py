@@ -23,6 +23,7 @@ Author: 小沈 - 2026-04-29
 import os
 import subprocess
 import sys
+import winreg
 from typing import Optional, Dict, Any, List, Tuple
 
 from app.utils.logger import logger
@@ -146,7 +147,6 @@ def _delete_env(name: str, scope: str) -> dict:
             del os.environ[name]
         return _env_success(name, None, scope, deleted=exists, msg=f"已{'删除' if exists else '不存在'}: {name}")
     if scope == "user":
-        import winreg
         try:
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_SET)
             winreg.DeleteValue(key, name)

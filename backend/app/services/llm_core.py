@@ -16,6 +16,7 @@ LLM 核心模块 - 提供通用的 LLM API 调用能力
 
 import json
 import asyncio
+import traceback
 import httpx
 import httpcore
 from typing import List, Dict, Optional, AsyncGenerator, Any
@@ -130,7 +131,6 @@ class BaseAIService:
             try:
                 # 【修复 2026-04-30 小沈】异步流用aclose()，不能用同步close()
                 if hasattr(self._current_response, 'aclose'):
-                    import asyncio
                     try:
                         asyncio.get_event_loop().run_until_complete(self._current_response.aclose())
                     except RuntimeError:
@@ -204,7 +204,6 @@ class BaseAIService:
         """根据异常类型创建错误StreamChunk — 小健 2026-05-25"""
         msg, err_type = _resolve_exception(e)
         if err_type == "unknown_error":
-            import traceback
             logger.error(f"[{_resolve_exception.__name__}] 未知异常: {e}, 类型: {type(e).__name__}, 堆栈: {traceback.format_exc()}")
         return StreamChunk(content="", model=self.model, is_done=True, stream_error=msg, stream_error_type=err_type)
 

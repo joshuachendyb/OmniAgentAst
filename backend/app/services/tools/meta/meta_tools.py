@@ -7,12 +7,14 @@ Meta 工具实现 - tool_help / tool_search
 - tool_search: 按关键词搜索匹配的工具列表
 """
 
+import concurrent.futures
 import json
 import inspect
 import asyncio
 import os
 import shutil
 from typing import Dict, Any, List, Optional, Callable
+import glob as glob_module
 
 from app.services.tools.registry import tool_registry
 from app.services.tools.tool_result_utils import (
@@ -215,7 +217,6 @@ def _run_tool_with_timeout(impl: Callable, params: Dict, timeout: int) -> Any:
     - 正常返回工具执行结果Dict
     - 超时抛出concurrent.futures.TimeoutError
     """
-    import concurrent.futures
     if inspect.iscoroutinefunction(impl):
         try:
             loop = asyncio.get_running_loop()
@@ -375,7 +376,7 @@ def pipeline(steps: str, stop_on_error: bool = True, timeout_per_step: int = 60)
 
     context: Dict[str, Any] = {}
     results: List[Dict] = []
-    import concurrent.futures
+
 
     for i, step in enumerate(steps_list):
         err = _validate_step(step, i, steps_list)
@@ -448,8 +449,6 @@ async def batch_process(
     """
     if max_files < 1 or max_files > 10000:
         return build_error(ERR_PARAM_INVALID, f"max_files必须在1-10000之间，当前值：{max_files}")
-
-    import glob as glob_module
 
     files = glob_module.glob(source_pattern, recursive=True)
     files = [f for f in files if os.path.isfile(f)][:max_files]

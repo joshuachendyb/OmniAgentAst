@@ -26,10 +26,13 @@ MCP文件操作工具集 - 重写版本
 
 import asyncio
 import base64
+import fnmatch
 import inspect
 import os
 import re
+import re as re_mod
 import shutil
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -542,7 +545,6 @@ def _collect_file_matches(
     返回数据说明:
     - 返回List[Dict]，匹配行列表
     """
-    import re as re_mod
     file_matches = []
     if multiline:
         content = ''.join(lines)
@@ -592,9 +594,6 @@ def _grep_files_sync(
     - matches: List[Dict], 匹配结果列表
     - total_matches: int, 总匹配次数
     """
-    import fnmatch
-    import re as re_mod
-
     flags = re_mod.IGNORECASE if ignore_case else 0
     if multiline:
         flags |= re_mod.DOTALL
@@ -686,7 +685,6 @@ def _apply_replacement(
 ) -> Tuple[str, int]:
     """精确替换（21.1 组件，小沈 2026-05-25 实施）"""
     if ignore_case:
-        import re as re_mod
         if replace_all:
             new_content = re_mod.sub(re_mod.escape(old_string), new_string, content, flags=re_mod.IGNORECASE)
             count = len(re_mod.findall(re_mod.escape(old_string), content, flags=re_mod.IGNORECASE))
@@ -1056,9 +1054,6 @@ class FileTools:
         
         小沈 2026-05-25 重构拆分
         """
-        import tempfile
-        import os
-        
         if create_parents:
             path.parent.mkdir(parents=True, exist_ok=True)
         elif not path.parent.exists():
@@ -2102,7 +2097,6 @@ class FileTools:
             # 【修复 2026-05-01 小沈】默认max_depth防止无限递归
             effective_max_depth = max_depth if max_depth is not None else 10
             excludes = excludePatterns or []
-            import fnmatch
             entry_count = [0]
             # 【修复 2026-05-10 小健】超时自检
             _tree_deadline = time.monotonic() + get_timeout("get_directory_tree") - 2
@@ -2519,8 +2513,6 @@ class FileTools:
 
 def _match_fnmatch(name: str, pattern: str, ignore_case: bool) -> bool:
     """统一封装fnmatch，消除if-else三元组重复 — 小健 2026-05-25"""
-    import fnmatch
-
     return fnmatch.fnmatch(name, pattern) if ignore_case else fnmatch.fnmatchcase(name, pattern)
 
 

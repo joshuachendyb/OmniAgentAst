@@ -7,6 +7,9 @@
 import logging
 import logging.handlers
 import os
+import time
+import uuid
+import warnings
 import yaml
 from datetime import datetime
 from pathlib import Path
@@ -244,7 +247,6 @@ def setup_logger(name: str) -> logging.Logger:
         if not file_handler:
             # 失败时使用不带轮转的FileHandler
             log_file = _get_log_file_path()
-            import warnings
             warnings.warn(f"创建SafeRotatingFileHandler失败，使用普通FileHandler")
             file_handler = logging.FileHandler(log_file, encoding='utf-8')
             file_handler.setFormatter(formatter)
@@ -295,8 +297,6 @@ class APILogger:
         Returns:
             str: 请求ID
         """
-        import time
-        import uuid
         request_id = str(uuid.uuid4())[:8]  # 生成短ID
         self._request_times[request_id] = {
             'start_time': time.time(),
@@ -320,7 +320,6 @@ class APILogger:
     def log_response_with_time(self, request_id: str, provider: str, status_code: int, 
                                content_len: int = 0, error: Optional[str] = None):
         """记录响应并计算耗时"""
-        import time
         
         # 计算耗时
         elapsed_time = 0.0

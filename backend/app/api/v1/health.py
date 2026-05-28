@@ -1,6 +1,10 @@
+import asyncio
+import inspect
 from fastapi import APIRouter, Request
 from datetime import datetime, timezone
 from pydantic import BaseModel
+import uuid as _uuid
+import re as _re
 
 router = APIRouter()
 
@@ -59,8 +63,6 @@ async def execute_tool(request: ToolExecuteRequest):
     Body: {"tool_name": "read_file", "params": {"path": "app/main.py"}}
     """
     from app.services.tools import tool_registry
-    import asyncio
-    import inspect
     
     tool_name = request.tool_name
     # 兼容parameters和params字段, parameters优先 - 小健 2026-05-21
@@ -80,7 +82,6 @@ async def execute_tool(request: ToolExecuteRequest):
         # 与Agent调用链保持一致：设置_current_task_id ContextVar
         # Agent在react_sse_wrapper.py:525生成task_id，在base_react.py:793设置ContextVar
         from app.services.context_vars import _current_task_id
-        import uuid as _uuid
         _api_task_id = str(_uuid.uuid4())
         _current_task_id.set(_api_task_id)
         
@@ -107,12 +108,10 @@ async def execute_tool(request: ToolExecuteRequest):
         # 【修复 小健 2026-05-21】参数错误友好提示
         err_msg = str(e)
         if "missing" in err_msg and "required positional argument" in err_msg:
-            import re as _re
             match = _re.search(r"missing \d+ required positional argument[s]?:\s*(.+)", err_msg)
             missing_params = match.group(1) if match else "未知参数"
             err_msg = f"缺少必填参数: {missing_params}。请参考tool/list获取{tool_name}的inputSchema"
         elif "missing 1 required positional argument" in err_msg:
-            import re as _re
             match = _re.search(r"(\w+)\(\) missing \d+ required positional argument[s]?:\s*'?(\w+)'?", err_msg)
             if match:
                 err_msg = f"工具{match.group(1)}缺少必填参数'{match.group(2)}'"

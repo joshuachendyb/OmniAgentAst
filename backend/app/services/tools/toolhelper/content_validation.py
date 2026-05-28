@@ -13,7 +13,11 @@
 - validate_python_content: 验证Python语法
 """
 
+import csv
+import json
+from io import StringIO
 from typing import Optional
+import xml.etree.ElementTree as ET
 
 
 def validate_json_content(content: str) -> Optional[str]:
@@ -31,7 +35,6 @@ def validate_json_content(content: str) -> Optional[str]:
         - 返回None表示验证通过
         - 返回str表示错误信息
     """
-    import json
     try:
         json.loads(content)
         return None
@@ -54,8 +57,6 @@ def validate_csv_content(content: str, max_check_lines: int = 1000) -> Optional[
         - 返回None表示验证通过
         - 返回str表示错误信息
     """
-    import csv
-    from io import StringIO
     try:
         reader = csv.reader(StringIO(content))
         row_lengths = []
@@ -86,7 +87,6 @@ def validate_xml_content(content: str) -> Optional[str]:
         - 返回None表示验证通过
         - 返回str表示错误信息
     """
-    import xml.etree.ElementTree as ET
     try:
         ET.fromstring(content)
         return None

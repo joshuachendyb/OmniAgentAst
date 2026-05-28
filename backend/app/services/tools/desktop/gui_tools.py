@@ -21,9 +21,10 @@ GUI操作工具函数模块
 Author: 小沈 - 2026-05-02
 """
 
-import os
 import importlib
+import os
 import tempfile
+import time
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 from datetime import datetime
@@ -224,7 +225,6 @@ def screen_record(duration: int, output_path: Optional[str] = None, fps: int = 1
 
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-        import time
         with mss.mss() as sct:
             monitor = sct.monitors[1]
             frames = []

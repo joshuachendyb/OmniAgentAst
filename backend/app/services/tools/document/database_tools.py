@@ -21,6 +21,7 @@ DATABASE Tools - 数据库工具实现
 创建时间: 2026-04-29
 """
 
+import fnmatch
 import re
 import sqlite3
 from typing import Any, Dict, List, Optional, Union, Literal, Tuple
@@ -178,7 +179,6 @@ def _check_sql_safety(sql: str, dry_run: bool) -> Tuple[bool, Optional[str], Opt
     消除 S1a-c(危险检测) + S2a-c(拦截决策) 的重复分支。
     返回: (has_danger, warning_message, detected_list)
     """
-    import re
     sql_upper = sql.strip().upper()
 
     DANGEROUS_PATTERN = re.compile(r'\b(DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b', re.IGNORECASE)
@@ -355,8 +355,6 @@ def _filter_tables(tables: List[str], table_name: Optional[str], filter_pattern:
         if not tables:
             return []
     elif filter_pattern:
-        import fnmatch
-
         pat = filter_pattern.replace("%", "*").replace("_", "?")
         tables = [t for t in tables if fnmatch.fnmatch(t.lower(), pat.lower())]
     return tables[:20]

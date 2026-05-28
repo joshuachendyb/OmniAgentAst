@@ -84,8 +84,9 @@ for provider_name in ai_config.keys():
 """
 
 import os
-import yaml
 import shutil
+import subprocess
+import yaml
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any, Tuple, List
@@ -1267,7 +1268,6 @@ async def open_config_folder():
         # 使用Windows资源管理器打开文件夹
         # explorer /select,"file" 会打开文件夹并选中文件
         # explorer /e,"folder" 会打开文件夹
-        import subprocess
         subprocess.Popen(['explorer', '/e,', config_dir], 
                         stdout=subprocess.DEVNULL, 
                         stderr=subprocess.DEVNULL)

@@ -9,6 +9,7 @@ LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05
 对外透明：llm_core.py重新导出这些类，外部import路径不变。
 """
 
+import asyncio
 from typing import List, Dict, Optional
 
 from app.utils.logger import logger
@@ -75,7 +76,6 @@ class _StreamRetryContext:
         )
 
     async def __aenter__(self):
-        import asyncio
         from app.utils.retry_engine import BackoffStrategy
         for attempt in range(self.max_retries):
             self._response_ctx = self.service.client.stream(

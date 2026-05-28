@@ -67,9 +67,12 @@ import asyncio
 import json
 import csv
 import io
+import time as _time
 import time
 import tempfile
+import filecmp
 from pathlib import Path
+from collections import Counter
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Tuple, List, Generator, Callable
 from app.services.tools.toolhelper.hash_helper import select_hasher
@@ -563,8 +566,6 @@ def get_file_metadata(file_path: str, follow_symlinks: bool = True) -> Dict[str,
     Returns:
         包含完整元数据的字典
     """
-    from datetime import datetime
-    
     try:
         file_path = os.path.abspath(file_path)
         path = Path(file_path)
@@ -637,8 +638,6 @@ def calculate_distribution(
     Returns:
         包含 file_types/size_distribution/depth_distribution 的字典
     """
-    from collections import Counter
-    
     try:
         if filters:
             min_size = filters.get("min_size", 0)
@@ -752,8 +751,6 @@ def is_content_identical(
     Returns:
         True表示内容一致
     """
-    import filecmp
-    
     try:
         src_path = os.path.abspath(src)
         dst_path = os.path.abspath(dst)
@@ -1609,7 +1606,6 @@ def _parse_date_filter(date_value: Any) -> Optional[float]:
         return date_value
     elif isinstance(date_value, str):
         try:
-            from datetime import datetime
             dt = datetime.fromisoformat(date_value.replace('Z', '+00:00'))
             return dt.timestamp()
         except (ValueError, TypeError):
@@ -1704,7 +1700,6 @@ def _calculate_checksum_sync(
     小沈 2026-05-25 重构拆分
     提取自原 file_checksum_impl 嵌套函数，复用 select_hasher。
     """
-    import time
     start_time = time.time()
     timeout_sec = timeout / 1000.0
     hash_obj = select_hasher(algorithm)
@@ -1825,7 +1820,6 @@ async def get_file_info_impl(
             
             if path.is_dir():
                 try:
-                    import time as _time
                     from app.services.tools.tool_config import get_timeout as _get_timeout
                     _gi_deadline = _time.monotonic() + _get_timeout("get_file_info") - 2
                     _fc = 0

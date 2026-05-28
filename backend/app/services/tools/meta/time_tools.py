@@ -155,7 +155,6 @@ def _get_current_time(
 def _time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None) -> Dict[str, Any]:
     """格式化时间戳 — 小沈 2026-05-18"""
     try:
-        from datetime import timezone
         # 1. 确定要格式化的datetime
         if timestamp is None:
             dt = datetime.now().astimezone()

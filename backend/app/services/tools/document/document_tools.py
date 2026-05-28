@@ -27,6 +27,9 @@ Author: 小沈 - 2026-05-02
 import csv
 import json
 import os
+import platform
+import shutil
+import subprocess
 import tempfile
 from typing import Dict, Any, List, Optional, Literal, Union, Tuple
 from pathlib import Path
@@ -450,8 +453,6 @@ def _read_csv_stdlib(
     max_rows: int = 1000
 ) -> Dict[str, Any]:
     """使用标准库csv读取CSV文件（内部函数）— 小健 2026-05-18"""
-    import csv
-    
     try:
         path = Path(file_path)
         if not path.exists():
@@ -978,13 +979,11 @@ def convert_document(
         if output_path is None:
             output_path = str(src.with_suffix('.pdf'))
         
-        import subprocess
          
         soffice_paths = [
             r"C:\Program Files\LibreOffice\program\soffice.exe",
             r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
         ]
-        import platform
         if platform.system() != 'Windows':
             soffice_paths = ["/usr/bin/soffice", "/usr/local/bin/soffice"]
         
@@ -1018,8 +1017,6 @@ def convert_document(
             return build_error(ERR_DOC_CONVERT_FAILED, "转换后PDF文件未生成")
         
         if output_path != str(expected_pdf):
-            import shutil
-
             shutil.move(str(expected_pdf), output_path)
         
         return build_success({"input_path": str(src), "output_path": output_path},

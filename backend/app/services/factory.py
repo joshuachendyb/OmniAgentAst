@@ -62,6 +62,7 @@ import os
 import asyncio
 import threading
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional, Tuple
 
 from app.utils.logger import setup_logger
@@ -196,7 +197,6 @@ class AIServiceFactory:
         
         cls._current_provider = final_provider
         
-        from datetime import datetime
         log_msg = f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}"
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {log_msg}")
         logger.info(log_msg)
@@ -267,7 +267,6 @@ class AIServiceFactory:
             cls._instance = None
             cls._current_provider = final_provider
             
-            from datetime import datetime
             log_msg = f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}"
             print(f"[{datetime.now().strftime('%H:%M:%S')}] {log_msg}")
             logger.info(log_msg)

@@ -23,9 +23,10 @@ REGISTRY 工具函数模块 - Windows注册表操作工具
 Author: 小沈 - 2026-05-02
 """
 
-import winreg
 import os
+import subprocess
 import tempfile
+import winreg
 from typing import Optional, Dict, Any, Literal, Callable
 from datetime import datetime
 from app.constants import (ERR_REG_DELETE_FAILED, ERR_REG_INVALID_PARAM, ERR_REG_PERMISSION_DENIED,
@@ -95,8 +96,6 @@ def _backup_registry(root_key: str, sub_key: str, session_id: str) -> str:
     backup_file = os.path.join(backup_dir, f"reg_backup_{session_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.reg")
     
     try:
-        import subprocess
-
         export_key = f"{root_key}\\{sub_key}"
         result = subprocess.run(
             ["reg", "export", export_key, backup_file, "/y"],

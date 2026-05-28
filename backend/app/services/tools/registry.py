@@ -75,6 +75,7 @@
 更新人: 小沈
 """
 
+from collections import defaultdict
 from typing import Dict, List, Optional, Callable, Any, Union, Type
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -530,7 +531,6 @@ class ToolRegistry:
         lines.append("=== 其他可用工具（概要）===")
         lines.append("")
 
-        from collections import defaultdict
         by_category: Dict[ToolCategory, List[str]] = defaultdict(list)
         for name, metadata in self._tools.items():
             if expose_to_llm_only and not metadata.expose_to_llm:
@@ -542,6 +542,7 @@ class ToolRegistry:
         category_order = list(self.CATEGORY_ORDER)
         if priority_category and priority_category in category_order:
             category_order.remove(priority_category)
+
             category_order.insert(0, priority_category)
 
         for cat in category_order:
@@ -589,7 +590,6 @@ class ToolRegistry:
             lines.append("=== 可用工具列表（完整）===")
         lines.append("")
 
-        from collections import defaultdict
         by_category: Dict[ToolCategory, List[str]] = defaultdict(list)
         for name, metadata in self._tools.items():
             if expose_to_llm_only and not metadata.expose_to_llm:

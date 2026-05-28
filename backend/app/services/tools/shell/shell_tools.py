@@ -34,6 +34,7 @@ import uuid
 import shutil
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+import re as _re
 
 from app.services.tools.tool_result_utils import format_output_for_llm, build_next_actions, truncate_data_for_frontend
 from app.utils.logger import logger  # 小健-2026-05-19 修复BUG-001: logger未导入
@@ -293,8 +294,6 @@ def shell_session(
         if not is_running:
             _background_shells.pop(shell_id, None)
         if filter:
-            import re as _re
-
             try:
                 pattern = _re.compile(filter)
                 stdout_lines = [l for l in stdout_str.splitlines() if pattern.search(l)]

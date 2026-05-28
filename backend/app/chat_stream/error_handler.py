@@ -8,10 +8,11 @@ Author: 小沈 - 2026-03-22
 """
 
 import json
+import re
 from typing import Any, Dict, Optional
 
 from app.constants import ERROR_TYPE_MAP, HTTPX_EXCEPTION_TO_ERROR_KEY, HTTP_STATUS_MAP_ENTRIES, PATTERN_ERROR_ENTRIES
-from app.chat_stream.chat_helpers import create_timestamp
+from app.utils.time_utils import create_timestamp
 from app.services.agent.reasoning_steps import StepFactory
 
 
@@ -171,7 +172,6 @@ def _extract_message_and_type(error_message: str) -> str:
     if not error_message:
         return ""
     
-    import re
     # 匹配 {"error":{"message":"...","type":"...","param":"...","code":"..."...}}
     json_match = re.search(r'\{["\']?error["\']?\s*:\s*\{([^}]+)\}', str(error_message), re.IGNORECASE)
     if json_match:
@@ -212,7 +212,6 @@ def resolve_http_error_type(error_message: str) -> Optional[str]:
     
     from app.constants import HTTP_STATUS_TO_ERROR_TYPE, API_ERROR_429, API_ERROR_401, API_ERROR_403
     
-    import re
     for match in re.finditer(r'\b(\d{3})\b', error_message):
         code = int(match.group(1))
         if code in HTTP_STATUS_TO_ERROR_TYPE:
