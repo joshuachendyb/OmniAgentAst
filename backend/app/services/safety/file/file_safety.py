@@ -7,7 +7,6 @@ import os
 import shutil
 import hashlib
 import json
-import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -15,9 +14,7 @@ from uuid import uuid4
 import tempfile
 import platform
 
-# 【小沈重构 2026-05-22】数据库配置迁移至 app/db/
-from app.db.operations_db import get_connection
-from app.db.config import OPERATIONS_DB_PATH
+from app.db import db
 from app.db.models.operation_enums import OperationType, OperationStatus
 from app.db.models.operation_models import OperationRecord, TaskRecord
 from app.utils.logger import logger
@@ -175,29 +172,25 @@ class FileOperationSafety(SafetyHook):
             elif operation_type == OperationType.DELETE:
                 space_impact_bytes = file_size   # 删除文件释放空间（正值）
         
-        # 【修复-添加finally块确保资源释放】
-        conn = None
         try:
-            conn = get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                INSERT INTO file_operations 
-                (operation_id, task_id, operation_type, status, source_path, 
-                 destination_path, sequence_number, file_size, space_impact_bytes, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                operation_id, task_id, operation_type.value, 
-                OperationStatus.PENDING.value,
-                str(source_path) if source_path else None,
-                str(destination_path) if destination_path else None,
-                sequence_number,
-                file_size,
-                space_impact_bytes,
-                datetime.now()
-            ))
-            
-            conn.commit()
+            with db.get_conn("operations") as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    INSERT INTO file_operations 
+                    (operation_id, task_id, operation_type, status, source_path, 
+                     destination_path, sequence_number, file_size, space_impact_bytes, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    operation_id, task_id, operation_type.value, 
+                    OperationStatus.PENDING.value,
+                    str(source_path) if source_path else None,
+                    str(destination_path) if destination_path else None,
+                    sequence_number,
+                    file_size,
+                    space_impact_bytes,
+                    datetime.now()
+                ))
             
             logger.debug(f"Operation recorded: {operation_id} - {operation_type.value}")
             return operation_id
@@ -205,10 +198,6 @@ class FileOperationSafety(SafetyHook):
         except Exception as e:
             logger.error(f"Failed to record operation: {e}")
             raise
-            
-        finally:
-            if conn:
-                conn.close()
     
     def _collect_file_info(self, path: Path) -> Dict[str, Any]:
         """收集文件信息（21.4 组件1，小沈 2026-05-25 实施）
@@ -243,76 +232,70 @@ class FileOperationSafety(SafetyHook):
 
     def execute_with_safety(self, operation_id: str, operation_func, *args, **kwargs) -> bool:
         """安全执行文件操作（21.4 重构，小沈 2026-05-25 实施）"""
-        conn = get_connection()
-        cursor = conn.cursor()
-
         try:
-            cursor.execute('''
-                SELECT operation_type, source_path, destination_path, created_at
-                FROM file_operations WHERE operation_id = ?
-            ''', (operation_id,))
-            row = cursor.fetchone()
-            if not row:
-                logger.error(f"Operation not found: {operation_id}")
-                return False
-
-            op_type, src_str, dst_str, created_at_str = row
-            source_path = Path(src_str) if src_str else None
-            dest_path = Path(dst_str) if dst_str else None
-            created_at = datetime.fromisoformat(created_at_str) if isinstance(created_at_str, str) else created_at_str
-
-            cursor.execute(
-                'UPDATE file_operations SET status = ?, executed_at = ? WHERE operation_id = ?',
-                (OperationStatus.EXECUTING.value, datetime.now(), operation_id),
-            )
-            conn.commit()
-
-            backup_path = None
-            if op_type == OperationType.DELETE.value and source_path and source_path.exists():
-                backup_path = self._backup_to_recycle_bin(source_path)
-
-            success = operation_func(*args, **kwargs)
-
-            if success:
-                target = dest_path if dest_path and dest_path.exists() else source_path if source_path and source_path.exists() else None
-                info = self._collect_file_info(target) if target else {}
-
-                executed_at = datetime.now()
-                duration_ms = int((executed_at - created_at).total_seconds() * 1000) if created_at else None
-
-                space_impact = 0
-                if op_type == OperationType.DELETE.value and info.get("size"):
-                    space_impact = info["size"]
-                elif op_type == OperationType.CREATE.value and info.get("size"):
-                    space_impact = -info["size"]
+            with db.get_conn("operations") as conn:
+                cursor = conn.cursor()
 
                 cursor.execute('''
-                    UPDATE file_operations SET status = ?, backup_path = ?, backup_expires_at = ?,
-                        file_size = ?, file_hash = ?, is_directory = ?,
-                        file_extension = ?, duration_ms = ?, space_impact_bytes = ?, executed_at = ?
-                    WHERE operation_id = ?
-                ''', (
-                    OperationStatus.SUCCESS.value,
-                    str(backup_path) if backup_path else None,
-                    datetime.now() + timedelta(days=self.config.BACKUP_RETENTION_DAYS) if backup_path else None,
-                    info.get("size"), info.get("hash"), info.get("is_directory", False),
-                    info.get("extension"), duration_ms, space_impact, executed_at,
-                    operation_id,
-                ))
-                logger.info(f"Operation executed successfully: {operation_id}")
-            else:
-                self._update_op_failed(cursor, operation_id, "Operation failed")
+                    SELECT operation_type, source_path, destination_path, created_at
+                    FROM file_operations WHERE operation_id = ?
+                ''', (operation_id,))
+                row = cursor.fetchone()
+                if not row:
+                    logger.error(f"Operation not found: {operation_id}")
+                    return False
 
-            conn.commit()
+                op_type, src_str, dst_str, created_at_str = row
+                source_path = Path(src_str) if src_str else None
+                dest_path = Path(dst_str) if dst_str else None
+                created_at = datetime.fromisoformat(created_at_str) if isinstance(created_at_str, str) else created_at_str
+
+                cursor.execute(
+                    'UPDATE file_operations SET status = ?, executed_at = ? WHERE operation_id = ?',
+                    (OperationStatus.EXECUTING.value, datetime.now(), operation_id),
+                )
+
+                backup_path = None
+                if op_type == OperationType.DELETE.value and source_path and source_path.exists():
+                    backup_path = self._backup_to_recycle_bin(source_path)
+
+                success = operation_func(*args, **kwargs)
+
+                if success:
+                    target = dest_path if dest_path and dest_path.exists() else source_path if source_path and source_path.exists() else None
+                    info = self._collect_file_info(target) if target else {}
+
+                    executed_at = datetime.now()
+                    duration_ms = int((executed_at - created_at).total_seconds() * 1000) if created_at else None
+
+                    space_impact = 0
+                    if op_type == OperationType.DELETE.value and info.get("size"):
+                        space_impact = info["size"]
+                    elif op_type == OperationType.CREATE.value and info.get("size"):
+                        space_impact = -info["size"]
+
+                    cursor.execute('''
+                        UPDATE file_operations SET status = ?, backup_path = ?, backup_expires_at = ?,
+                            file_size = ?, file_hash = ?, is_directory = ?,
+                            file_extension = ?, duration_ms = ?, space_impact_bytes = ?, executed_at = ?
+                        WHERE operation_id = ?
+                    ''', (
+                        OperationStatus.SUCCESS.value,
+                        str(backup_path) if backup_path else None,
+                        datetime.now() + timedelta(days=self.config.BACKUP_RETENTION_DAYS) if backup_path else None,
+                        info.get("size"), info.get("hash"), info.get("is_directory", False),
+                        info.get("extension"), duration_ms, space_impact, executed_at,
+                        operation_id,
+                    ))
+                    logger.info(f"Operation executed successfully: {operation_id}")
+                else:
+                    self._update_op_failed(cursor, operation_id, "Operation failed")
+
             return success
 
         except Exception as e:
             logger.error(f"Error executing operation {operation_id}: {e}")
-            self._update_op_failed(cursor, operation_id, str(e))
-            conn.commit()
             return False
-        finally:
-            conn.close()
     
     def rollback_operation(self, operation_id: str) -> bool:
         """
@@ -324,80 +307,75 @@ class FileOperationSafety(SafetyHook):
         Returns:
             是否回滚成功
         """
-        conn = None
         try:
-            conn = get_connection()
-            cursor = conn.cursor()
-        
-            cursor.execute('''
-                SELECT operation_type, source_path, destination_path, backup_path, status
-                FROM file_operations WHERE operation_id = ?
-            ''', (operation_id,))
+            with db.get_conn("operations") as conn:
+                cursor = conn.cursor()
             
-            row = cursor.fetchone()
-            if not row:
-                logger.error(f"Operation not found for rollback: {operation_id}")
-                return False
-            
-            op_type, src, dst, backup, status = row
-            
-            if status == OperationStatus.ROLLBACK.value:
-                logger.info(f"Operation already rolled back: {operation_id}")
-                return True
-            
-            success = False
-            
-            if op_type == OperationType.DELETE.value:
-                # 回滚删除：从回收站恢复
-                if backup and Path(backup).exists():
-                    backup_path = Path(backup)
-                    source_path = Path(src)
-                    source_path.parent.mkdir(parents=True, exist_ok=True)
-                    
-                    if backup_path.is_dir():
-                        shutil.copytree(backup_path, source_path)
-                    else:
-                        shutil.copy2(backup_path, source_path)
-                    success = True
-                    logger.info(f"Restored deleted file: {backup} -> {source_path}")
-                    
-            elif op_type == OperationType.MOVE.value:
-                # 回滚移动：移回源位置
-                dest_path = Path(dst)
-                source_path = Path(src)
-                if dest_path.exists():
-                    dest_path.rename(source_path)
-                    success = True
-                    logger.info(f"Moved back: {dest_path} -> {source_path}")
-                    
-            elif op_type == OperationType.CREATE.value:
-                # 回滚创建：删除创建的文件
-                dest_path = Path(dst) if dst else Path(src)
-                if dest_path.exists():
-                    if dest_path.is_dir():
-                        shutil.rmtree(dest_path)
-                    else:
-                        dest_path.unlink()
-                    success = True
-                    logger.info(f"Removed created file: {dest_path}")
-            
-            if success:
                 cursor.execute('''
-                    UPDATE file_operations 
-                    SET status = ?, rolled_back_at = ?
-                    WHERE operation_id = ?
-                ''', (OperationStatus.ROLLBACK.value, datetime.now(), operation_id))
-                conn.commit()
-                logger.info(f"Operation rolled back: {operation_id}")
-            
-            return success
-            
+                    SELECT operation_type, source_path, destination_path, backup_path, status
+                    FROM file_operations WHERE operation_id = ?
+                ''', (operation_id,))
+                
+                row = cursor.fetchone()
+                if not row:
+                    logger.error(f"Operation not found for rollback: {operation_id}")
+                    return False
+                
+                op_type, src, dst, backup, status = row
+                
+                if status == OperationStatus.ROLLBACK.value:
+                    logger.info(f"Operation already rolled back: {operation_id}")
+                    return True
+                
+                success = False
+                
+                if op_type == OperationType.DELETE.value:
+                    # 回滚删除：从回收站恢复
+                    if backup and Path(backup).exists():
+                        backup_path = Path(backup)
+                        source_path = Path(src)
+                        source_path.parent.mkdir(parents=True, exist_ok=True)
+                        
+                        if backup_path.is_dir():
+                            shutil.copytree(backup_path, source_path)
+                        else:
+                            shutil.copy2(backup_path, source_path)
+                        success = True
+                        logger.info(f"Restored deleted file: {backup} -> {source_path}")
+                        
+                elif op_type == OperationType.MOVE.value:
+                    # 回滚移动：移回源位置
+                    dest_path = Path(dst)
+                    source_path = Path(src)
+                    if dest_path.exists():
+                        dest_path.rename(source_path)
+                        success = True
+                        logger.info(f"Moved back: {dest_path} -> {source_path}")
+                        
+                elif op_type == OperationType.CREATE.value:
+                    # 回滚创建：删除创建的文件
+                    dest_path = Path(dst) if dst else Path(src)
+                    if dest_path.exists():
+                        if dest_path.is_dir():
+                            shutil.rmtree(dest_path)
+                        else:
+                            dest_path.unlink()
+                        success = True
+                        logger.info(f"Removed created file: {dest_path}")
+                
+                if success:
+                    cursor.execute('''
+                        UPDATE file_operations 
+                        SET status = ?, rolled_back_at = ?
+                        WHERE operation_id = ?
+                    ''', (OperationStatus.ROLLBACK.value, datetime.now(), operation_id))
+                    logger.info(f"Operation rolled back: {operation_id}")
+                
+                return success
+                
         except Exception as e:
             logger.error(f"Failed to rollback operation {operation_id}: {e}")
             return False
-        finally:
-            if conn:
-                conn.close()
     
     def get_operation_task_id(self, operation_id: str) -> Optional[str]:
         """
@@ -409,22 +387,18 @@ class FileOperationSafety(SafetyHook):
         Returns:
             task_id，如果操作不存在返回None
         """
-        conn = None
         try:
-            conn = get_connection()
-            cursor = conn.cursor()
-            cursor.execute(
-                'SELECT task_id FROM file_operations WHERE operation_id = ?',
-                (operation_id,)
-            )
-            row = cursor.fetchone()
-            return row[0] if row else None
+            with db.get_conn("operations") as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    'SELECT task_id FROM file_operations WHERE operation_id = ?',
+                    (operation_id,)
+                )
+                row = cursor.fetchone()
+                return row[0] if row else None
         except Exception as e:
             logger.error(f"Failed to get task_id for operation {operation_id}: {e}")
             return None
-        finally:
-            if conn:
-                conn.close()
     
     def rollback_session(self, task_id: str) -> Dict[str, Any]:
         """
@@ -436,50 +410,48 @@ class FileOperationSafety(SafetyHook):
         Returns:
             回滚结果统计
         """
-        conn = None
-        try:
-            conn = get_connection()
-            cursor = conn.cursor()
-            
-            result = {
-                "task_id": task_id,
-                "total": 0,
-                "success": 0,
-                "failed": 0,
-                "operations": []
-            }
+        result = {
+            "task_id": task_id,
+            "total": 0,
+            "success": 0,
+            "failed": 0,
+            "operations": []
+        }
         
-            # 获取会话的所有成功操作（按逆序）
-            cursor.execute('''
-                SELECT operation_id, operation_type, source_path, destination_path
-                FROM file_operations 
-                WHERE task_id = ? AND status = ?
-                ORDER BY sequence_number DESC
-            ''', (task_id, OperationStatus.SUCCESS.value))
-            
-            operations = cursor.fetchall()
-            result["total"] = len(operations)
-            
-            for op_id, op_type, src, dst in operations:
-                success = self.rollback_operation(op_id)
-                result["operations"].append({
-                    "operation_id": op_id,
-                    "type": op_type,
-                    "success": success
-                })
+        try:
+            with db.get_conn("operations") as conn:
+                cursor = conn.cursor()
                 
-                if success:
-                    result["success"] += 1
-                else:
-                    result["failed"] += 1
-            
-            # 更新会话状态
-            cursor.execute('''
-                UPDATE task_operations 
-                SET rolled_back_count = ?, status = ?
-                WHERE task_id = ?
-            ''', (result["success"], OperationStatus.ROLLBACK.value, task_id))
-            conn.commit()
+                # 获取会话的所有成功操作（按逆序）
+                cursor.execute('''
+                    SELECT operation_id, operation_type, source_path, destination_path
+                    FROM file_operations 
+                    WHERE task_id = ? AND status = ?
+                    ORDER BY sequence_number DESC
+                ''', (task_id, OperationStatus.SUCCESS.value))
+                
+                operations = cursor.fetchall()
+                result["total"] = len(operations)
+                
+                for op_id, op_type, src, dst in operations:
+                    success = self.rollback_operation(op_id)
+                    result["operations"].append({
+                        "operation_id": op_id,
+                        "type": op_type,
+                        "success": success
+                    })
+                    
+                    if success:
+                        result["success"] += 1
+                    else:
+                        result["failed"] += 1
+                
+                # 更新会话状态
+                cursor.execute('''
+                    UPDATE task_operations 
+                    SET rolled_back_count = ?, status = ?
+                    WHERE task_id = ?
+                ''', (result["success"], OperationStatus.ROLLBACK.value, task_id))
             
             logger.info(f"Task rollback completed: {task_id} - {result['success']}/{result['total']} succeeded")
             return result
@@ -487,8 +459,6 @@ class FileOperationSafety(SafetyHook):
         except Exception as e:
             logger.error(f"Failed to rollback session {task_id}: {e}")
             return result
-        finally:
-            conn.close()
     
     def get_session_operations(self, task_id: str) -> List[OperationRecord]:
         """
@@ -500,25 +470,23 @@ class FileOperationSafety(SafetyHook):
         Returns:
             操作记录列表
         """
-        conn = get_connection()
-        cursor = conn.cursor()
-        
         try:
-            cursor.execute('''
-                SELECT * FROM file_operations 
-                WHERE task_id = ?
-                ORDER BY sequence_number ASC
-            ''', (task_id,))
-            
-            rows = cursor.fetchall()
-            operations = [self._row_to_operation_record(row) for row in rows]
-            return operations
-            
+            with db.get_conn("operations") as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    SELECT * FROM file_operations 
+                    WHERE task_id = ?
+                    ORDER BY sequence_number ASC
+                ''', (task_id,))
+                
+                rows = cursor.fetchall()
+                operations = [self._row_to_operation_record(row) for row in rows]
+                return operations
+                
         except Exception as e:
             logger.error(f"Failed to get session operations: {e}")
             return []
-        finally:
-            conn.close()
     
     def get_operation(self, operation_id: str) -> Optional[OperationRecord]:
         """
@@ -530,26 +498,24 @@ class FileOperationSafety(SafetyHook):
         Returns:
             操作记录，不存在返回None
         """
-        conn = get_connection()
-        cursor = conn.cursor()
-        
         try:
-            cursor.execute('''
-                SELECT * FROM file_operations 
-                WHERE operation_id = ?
-            ''', (operation_id,))
-            
-            row = cursor.fetchone()
-            if not row:
-                return None
+            with db.get_conn("operations") as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    SELECT * FROM file_operations 
+                    WHERE operation_id = ?
+                ''', (operation_id,))
+                
+                row = cursor.fetchone()
+                if not row:
+                    return None
             
             return self._row_to_operation_record(row)
             
         except Exception as e:
             logger.error(f"Failed to get operation {operation_id}: {e}")
             return None
-        finally:
-            conn.close()
     
     def cleanup_expired_backups(self) -> int:
         """
@@ -558,38 +524,37 @@ class FileOperationSafety(SafetyHook):
         Returns:
             清理的文件数量
         """
-        conn = get_connection()
-        cursor = conn.cursor()
         count = 0
         
         try:
-            cursor.execute('''
-                SELECT backup_path FROM file_operations 
-                WHERE backup_expires_at < ? AND backup_path IS NOT NULL
-            ''', (datetime.now(),))
-            
-            rows = cursor.fetchall()
-            
-            for (backup_path,) in rows:
-                try:
-                    path = Path(backup_path)
-                    if path.exists():
-                        if path.is_dir():
-                            shutil.rmtree(path)
-                        else:
-                            path.unlink()
-                        count += 1
-                        logger.info(f"Cleaned up expired backup: {backup_path}")
-                except Exception as e:
-                    logger.error(f"Failed to cleanup backup {backup_path}: {e}")
+            with db.get_conn("operations") as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    SELECT backup_path FROM file_operations 
+                    WHERE backup_expires_at < ? AND backup_path IS NOT NULL
+                ''', (datetime.now(),))
+                
+                rows = cursor.fetchall()
+                
+                for (backup_path,) in rows:
+                    try:
+                        path = Path(backup_path)
+                        if path.exists():
+                            if path.is_dir():
+                                shutil.rmtree(path)
+                            else:
+                                path.unlink()
+                            count += 1
+                            logger.info(f"Cleaned up expired backup: {backup_path}")
+                    except Exception as e:
+                        logger.error(f"Failed to cleanup backup {backup_path}: {e}")
             
             return count
             
         except Exception as e:
             logger.error(f"Failed to cleanup expired backups: {e}")
             return count
-        finally:
-            conn.close()
 
 
 # 单例模式
