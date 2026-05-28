@@ -61,23 +61,24 @@ async def save_execution_steps_to_db(
     
     Author: 小沈 - 2026-03-23
     """
-    from app.api.v1 import sessions
-    
+    from app.api.v1 import messages as _messages
+    from app.api.v1.conversation import save_execution_steps, ExecutionStepsUpdate
+
     if session_id is None:
         return
-    
+
     if session_id in _INVALID_SESSION_IDS:
         return
-    
+
     try:
         # 如果没传 user_message_id，从缓存获取
         if user_message_id is None:
-            user_message_id = sessions._user_message_ids.get(session_id)
-        
-        # 调用 sessions 模块的 save_execution_steps 函数
-        await sessions.save_execution_steps(
+            user_message_id = _messages._user_message_ids.get(session_id)
+
+        # 调用 conversation 模块的 save_execution_steps 函数
+        await save_execution_steps(
             session_id,
-            sessions.ExecutionStepsUpdate(
+            ExecutionStepsUpdate(
                 execution_steps=execution_steps,
                 content=content,
                 reply_to_message_id=user_message_id
