@@ -20,10 +20,10 @@ ToolHelper 模块 - 内部辅助函数集合（不暴露给LLM）
     ├── shell_helper.py       # Shell辅助函数（_check_shell_injection等）- 小沈 2026-05-17
     ├── hash_helper.py        # 哈希计算辅助函数（select_hasher/compute_file_hash等）- 小沈 2026-05-18
     ├── window_helper.py      # 窗口管理辅助函数（find_windows_by_title等）- 小沈 2026-05-18
-    ├── service_helper.py     # Windows服务辅助函数（run_sc_command等）- 小沈 2026-05-18
-    ├── task_helper.py        # Windows计划任务辅助函数（run_schtasks_command等）- 小沈 2026-05-18
+    # service_helper.py  / task_helper.py   — 已删除导出（YAGNI 2026-05-28 小健）
     └── common_helper.py      # 通用工具辅助函数（truncate_value/safe_path_join等）- 小沈 2026-05-18
 
+【2026-05-28 小健】删除 service_helper/task_helper 死导出（YAGNI）
 Author: 小沈 - 2026-05-02, 补建5个Helper 2026-05-18
 """
 
@@ -39,10 +39,6 @@ from app.services.tools.toolhelper.file_helpers import (
     move_to_trash,
     validate_command,
     check_shell_running,
-)
-
-from app.services.tools.toolhelper.db_helper import (
-    check_db_exists,
 )
 
 from app.services.tools.toolhelper.gui_helper import (
@@ -90,18 +86,8 @@ from app.services.tools.toolhelper.window_helper import (
     enum_visible_windows,
 )
 
-from app.services.tools.toolhelper.service_helper import (
-    run_sc_command,
-    parse_sc_query_state,
-    parse_sc_query_services,
-    check_service_state,
-)
-
-from app.services.tools.toolhelper.task_helper import (
-    run_schtasks_command,
-    parse_schtasks_query_output,
-    parse_schedule_string,
-)
+# 【2026-05-28 小健】service_helper / task_helper 未在任何工具中使用(YAGNI)，已删除导出
+# 原始文件保留在目录中，如需使用需重新注册导出
 
 from app.services.tools.toolhelper.date_helper import (
     parse_datetime_any,
@@ -136,7 +122,7 @@ __all__ = [
     "move_to_trash",
     "validate_command",
     "check_shell_running",
-    "check_db_exists",
+    # check_db_exists 已删除导出（YAGNI 2026-05-28 小健）
     "_require_gui_lib",
     "_gui_safe_call",
     "_get_mouse_position",
@@ -164,13 +150,7 @@ __all__ = [
     "get_window_state",
     "check_win32_platform",
     "enum_visible_windows",
-    "run_sc_command",
-    "parse_sc_query_state",
-    "parse_sc_query_services",
-    "check_service_state",
-    "run_schtasks_command",
-    "parse_schtasks_query_output",
-    "parse_schedule_string",
+    # service_helper / task_helper 已删除导出（YAGNI 2026-05-28 小健）
     "_check_module",
     "truncate_value",
     "safe_path_join",

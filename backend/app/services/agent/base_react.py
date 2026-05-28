@@ -27,11 +27,12 @@ Updated: 小沈 - 2026-04-26
 import asyncio
 import json
 import time
+import traceback
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, AsyncGenerator, Callable, Set, Tuple, Union
 
 from app.services.agent.types import AgentStatus
-from app.services.agent.react_output_parser import parse_react_response
+from app.services.agent.llm_response_parser import parse_react_response
 from app.services.agent.message_builder import MessageBuilder
 from app.services.agent.reasoning_steps import (
     StepFactory,
@@ -47,7 +48,7 @@ from app.services.tools.registry import ToolCategory, get_tools_from_registry_by
 from app.constants import MAX_CONTEXT_CHARS
 from app.services.preprocessing.intent_classifier import IntentClassifier
 from app.utils.logger import logger
-from app.chat_stream.chat_helpers import create_timestamp
+from app.utils.time_utils import create_timestamp
 from app.chat_stream.incident_handler import create_incident_data
 from app.utils.prompt_logger import get_prompt_logger
 from app.services.agent.tool_result_formatter import extract_status, build_execution_result_dict
@@ -127,26 +128,13 @@ class BaseAgent(ABC):
         self._empty_response_retry_engine = RetryEngine(
             max_retries=2, backoff_strategy=BackoffStrategy.FIXED, backoff_factor=1.0)
         
-        # 向后兼容属性（供外部读取计数/最大值，委托给RetryEngine）
         self.parse_retry_count = 0
         self.max_parse_retries = 3
         
         # 【v2.3新增】chunk处理相关属性—所有Agent子类共享
         self.max_consecutive_chunks = MAX_CONSECUTIVE_CHUNKS  # 连续chunk达此阈值时提升为implicit
     
-    @property
-    def empty_response_retry_count(self) -> int:
-        """向后兼容：委托给RetryEngine"""
-        return self._empty_response_retry_engine.attempt_count
 
-    @empty_response_retry_count.setter
-    def empty_response_retry_count(self, value: int):
-        self._empty_response_retry_engine._attempt_count = value
-
-    @property
-    def max_empty_response_retries(self) -> int:
-        """向后兼容：委托给RetryEngine"""
-        return self._empty_response_retry_engine.max_retries
     
     def _init_messages(self):
         """初始化消息构建相关属性 - 提取自__init__的消息构建职责部分"""
@@ -673,7 +661,7 @@ class BaseAgent(ABC):
     def _handle_run_exception(self, e: Exception, step_count: int) -> Dict[str, Any]:
         """未捕获异常兜底 — 小沈 2026-05-25"""
         self.message_builder.temp_history.clear()
-        import traceback; traceback.print_exc()
+        traceback.print_exc()
         logger.error(f"Agent run_stream error: {e}", exc_info=True)
         return self._exit_with_error(step_count, "unhandled_exception", str(e))
     
