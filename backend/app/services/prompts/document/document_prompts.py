@@ -10,7 +10,7 @@ Author: 小健 - 2026-05-06
 from datetime import datetime
 
 from app.services.prompts.BasePromptTemplate import BasePrompts
-from app.services.prompts.middle import get_system_prompt as get_system_info
+from app.services.prompts.middle import get_system_prompt as get_system_prompt_string
 from app.utils.logger import logger
 
 
@@ -18,7 +18,7 @@ class DocumentPrompts(BasePrompts):
     """文档读写 Prompt模板类"""
     
     def get_system_prompt(self) -> str:
-        system_info = get_system_info(include_commands=False)
+        system_info = get_system_prompt_string(include_commands=False)
         return system_info + """
 You are a professional document operations assistant. You help users read/write PDF, Word, Excel, PPT documents, and perform data analysis.
 
