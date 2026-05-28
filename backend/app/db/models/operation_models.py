@@ -1,6 +1,7 @@
 """
 操作数据模型 (Operation Data Models)
-定义文件操作记录和会话记录的数据结构
+定义文件操作记录和任务记录的数据结构
+# 【拨乱反正 2026-05-28 小沈】session→task 命名修正
 
 Author: 小沈 - 2026-05-22
 """
@@ -71,10 +72,10 @@ class OperationRecord(BaseModel):
     )
 
 
-class SessionRecord(BaseModel):
+class TaskRecord(BaseModel):
     """
-    会话记录模型
-    记录一次完整的文件操作会话，包含多个操作记录
+    任务记录模型
+    记录一次完整的文件操作任务，包含多个操作记录
     """
     id: Optional[int] = Field(default=None, description="数据库自增ID")
     task_id: str = Field(..., description="任务执行ID (UUID)")

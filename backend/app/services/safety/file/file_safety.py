@@ -1,5 +1,6 @@
 """
 文件操作安全服务 (File Operation Safety Service)
+# 【拨乱反正 2026-05-28 小沈】session→task 命名修正
 提供备份、回滚、操作历史等安全机制
 """
 import os
@@ -18,7 +19,7 @@ import platform
 from app.db.operations_db import get_connection
 from app.db.config import OPERATIONS_DB_PATH
 from app.db.models.operation_enums import OperationType, OperationStatus
-from app.db.models.operation_models import OperationRecord, SessionRecord
+from app.db.models.operation_models import OperationRecord, TaskRecord
 from app.utils.logger import logger
 from app.services.safety.manager import SafetyHook
 
@@ -474,13 +475,13 @@ class FileOperationSafety(SafetyHook):
             
             # 更新会话状态
             cursor.execute('''
-                UPDATE file_operation_sessions 
+                UPDATE task_operations 
                 SET rolled_back_count = ?, status = ?
                 WHERE task_id = ?
             ''', (result["success"], OperationStatus.ROLLBACK.value, task_id))
             conn.commit()
             
-            logger.info(f"Session rollback completed: {task_id} - {result['success']}/{result['total']} succeeded")
+            logger.info(f"Task rollback completed: {task_id} - {result['success']}/{result['total']} succeeded")
             return result
             
         except Exception as e:

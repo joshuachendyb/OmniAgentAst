@@ -1,6 +1,7 @@
 """
 操作数据库管理模块 (Operations Database Module)
 管理 operations.db 的连接和初始化
+# 【拨乱反正 2026-05-28 小沈】session→task 命名修正
 
 Author: 小沈 - 2026-05-22
 """
@@ -53,9 +54,9 @@ def init_database():
             )
         ''')
         
-        # 创建会话记录表
+        # 创建任务记录表
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS file_operation_sessions (
+            CREATE TABLE IF NOT EXISTS task_operations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 task_id TEXT UNIQUE NOT NULL,
                 agent_id TEXT NOT NULL,
