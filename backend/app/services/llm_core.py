@@ -51,6 +51,7 @@ from app.services.llm.request_builder import (
     build_request_body,
     build_messages,
 )
+from app.services.llm.client_sdk import create_llm_client
 
 
 class _RateLimitError(Exception):
@@ -92,15 +93,14 @@ class BaseAIService:
             timeout_value = float(DEFAULT_LLM_TIMEOUT)
         self.timeout = int(timeout_value)
         
-        self.client = httpx.AsyncClient(
-            timeout=httpx.Timeout(
-                connect=DEFAULT_CONNECT_TIMEOUT,
-                read=self.timeout,
-                write=DEFAULT_WRITE_TIMEOUT,
-                pool=DEFAULT_POOL_TIMEOUT,
-            ),
-            limits=httpx.Limits(max_connections=LLM_MAX_CONNECTIONS, max_keepalive_connections=LLM_MAX_KEEPALIVE)
+        self._llm_sdk = create_llm_client(
+            provider=provider or "openai",
+            model=model,
+            api_key=api_key,
+            base_url=api_base,
+            timeout=int(self.timeout),
         )
+        self.client = self._llm_sdk._client
         
         self._cancelled = False
         self._current_response: Optional[httpx.Response] = None
@@ -289,7 +289,7 @@ class BaseAIService:
     
     async def close(self):
         """关闭HTTP客户端"""
-        await self.client.aclose()
+        await self._llm_sdk.close()
     
     async def _cancel_or_wait(self, request_task: asyncio.Task) -> Optional[ChatResponse]:
         """心跳循环：1秒间隔检查取消。取消则返回 error ChatResponse — 小沈 2026-05-25"""
