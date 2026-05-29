@@ -72,7 +72,7 @@ def run_windows_command(
         encoding: 输出编码，默认gbk（Windows中文环境）
 
     Returns:
-        {"returncode": int, "stdout": str, "stderr": str}
+        build_success/build_error 统一格式
     """
     try:
         result = subprocess.run(
@@ -82,29 +82,16 @@ def run_windows_command(
         )
         stdout = result.stdout.decode(encoding, errors='ignore') if isinstance(result.stdout, bytes) else result.stdout
         stderr = result.stderr.decode(encoding, errors='ignore') if isinstance(result.stderr, bytes) else result.stderr
-        return {
-            "returncode": result.returncode,
-            "stdout": stdout,
-            "stderr": stderr,
-        }
+        if result.returncode == 0:
+            return build_success(data={"returncode": result.returncode, "stdout": stdout, "stderr": stderr}, message="命令执行成功")
+        else:
+            return build_error(error_code="ERR_COMMAND_FAILED", message=f"命令返回非零退出码({result.returncode})", data={"returncode": result.returncode, "stdout": stdout, "stderr": stderr})
     except subprocess.TimeoutExpired:
-        return {
-            "returncode": -1,
-            "stdout": "",
-            "stderr": f"命令执行超时({timeout}秒): {' '.join(cmd)}",
-        }
+        return build_error(error_code="ERR_COMMAND_TIMEOUT", message=f"命令执行超时({timeout}秒): {' '.join(cmd)}")
     except FileNotFoundError as e:
-        return {
-            "returncode": -1,
-            "stdout": "",
-            "stderr": f"命令未找到: {str(e)}",
-        }
+        return build_error(error_code="ERR_COMMAND_NOT_FOUND", message=f"命令未找到: {str(e)}")
     except Exception as e:
-        return {
-            "returncode": -1,
-            "stdout": "",
-            "stderr": f"命令执行失败: {str(e)}",
-        }
+        return build_error(error_code="ERR_COMMAND_FAILED", message=f"命令执行失败: {str(e)}")
 
 
 def check_windows_platform() -> bool:
