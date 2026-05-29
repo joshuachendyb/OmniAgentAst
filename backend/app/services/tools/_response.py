@@ -86,7 +86,6 @@ def build_success(
         retry_count: 可选重试次数(默认0不写入)
         return_direct: 可选是否直接返回前端(默认False不写入)
         attachment: 可选二进制附件(base64图片/文件等，前端渲染)
-        **extra: 未来扩展字段，自动追加到结果中
 
     Returns:
         统一格式的dict
@@ -126,7 +125,6 @@ def build_error(
         llm_data: 可选给LLM的错误摘要
         next_actions: 可选推荐恢复操作
         attachment: 可选二进制附件
-        **extra: 未来扩展字段
 
     Returns:
         统一格式的dict
@@ -165,7 +163,6 @@ def build_warning(
         llm_data: 可选给LLM的数据
         next_actions: 可选推荐操作
         attachment: 可选二进制附件
-        **extra: 未来扩展字段
 
     Returns:
         统一格式的dict
@@ -176,8 +173,8 @@ def build_warning(
         "message": message,
     }
 
-    _add_optionals(result, llm_data=llm_data, next_actions=next_actions,
-                   attachment=attachment)
+    _add_optionals(result, llm_data=llm_data,
+                   next_actions=next_actions, attachment=attachment)
 
     result.update(extra)
 
