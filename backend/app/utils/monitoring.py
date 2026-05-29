@@ -159,68 +159,61 @@ class MonitoringMiddleware:
         self.collector = collector
     
     async def __call__(self, scope, receive, send):
-        # 只处理HTTP请求
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         
-        # 提取请求信息
         path = scope.get("path", "")
         method = scope.get("method", "GET")
-        
-        # 记录请求开始
         start_time = time.time()
         request_size = 0
         
-        # 创建一个发送包装器来捕获响应信息
-        async def send_wrapper(message):
-            nonlocal start_time
-            
-            if message["type"] == "http.response.start":
-                status_code = message["status"]
-                
-                # 记录请求指标
-                self.collector.record_metric(
-                    name="http_requests_total",
-                    value=1,
-                    labels={"method": method, "path": path, "status": str(status_code)}
-                )
-                
-                # 记录请求持续时间
-                duration = time.time() - start_time
-                self.collector.record_metric(
-                    name="http_request_duration_seconds",
-                    value=duration,
-                    labels={"method": method, "path": path}
-                )
-                
-                # 记录请求大小（估算）
-                self.collector.record_metric(
-                    name="http_request_size_bytes",
-                    value=request_size,
-                    labels={"method": method, "path": path}
-                )
-                
-                # 如果是错误状态码，记录错误
-                if status_code >= 400:
-                    self.collector.record_metric(
-                        name="errors_total",
-                        value=1,
-                        labels={"method": method, "path": path, "status": str(status_code)}
-                    )
-            
-            await send(message)
-        
-        # 处理请求
+        wrapped_send = self._make_send_wrapper(send, start_time, method, path, request_size)
         try:
-            await self.app(scope, receive, send_wrapper)
+            await self.app(scope, receive, wrapped_send)
         except Exception as e:
-            # 记录未捕获的异常
             self.collector.record_metric(
                 name="errors_total",
                 value=1,
                 labels={"method": method, "path": path, "error": type(e).__name__}
             )
             raise
+    
+    def _make_send_wrapper(self, send, start_time, method, path, request_size):
+        """创建包装send — 闭包提取为工厂方法 — 小健 2026-05-29"""
+        async def wrapper(message):
+            if message["type"] == "http.response.start":
+                self._record_response_metrics(message, start_time, method, path, request_size)
+            await send(message)
+        return wrapper
+    
+    def _record_response_metrics(self, message, start_time, method, path, request_size):
+        """记录响应指标 — 提取的独立方法 — 小健 2026-05-29"""
+        status_code = message["status"]
+        self.collector.record_metric(
+            name="http_requests_total",
+            value=1,
+            labels={"method": method, "path": path, "status": str(status_code)}
+        )
+        
+        duration = time.time() - start_time
+        self.collector.record_metric(
+            name="http_request_duration_seconds",
+            value=duration,
+            labels={"method": method, "path": path}
+        )
+        
+        self.collector.record_metric(
+            name="http_request_size_bytes",
+            value=request_size,
+            labels={"method": method, "path": path}
+        )
+        
+        if status_code >= 400:
+            self.collector.record_metric(
+                name="errors_total",
+                value=1,
+                labels={"method": method, "path": path, "status": str(status_code)}
+            )
 
 
 def setup_monitoring(app) -> MetricsCollector:
