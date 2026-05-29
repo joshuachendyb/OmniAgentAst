@@ -6,14 +6,18 @@ ToolInitMixin — 工具加载职责混入类
 - _init_tools_and_executor: 初始化工具字典和执行器
 - _get_tools_summary: 获取跨分类工具概要
 - _get_tools_detail: 获取已加载分类工具的完整描述
+- _inject_tools_hint: 工具提示注入（含缓存）
+- _inject_schema: Schema文本注入
 
 Author: 小沈 - 2026-05-29 (从react_agent_mixin.py拆分)
+Updated: 小沈 - 2026-05-29 (ISP修复: 从PromptBuildMixin移入_inject_tools_hint/_inject_schema)
 """
 from typing import Optional
 
 from app.services.agent.tool_executor import ToolExecutor
 from app.services.tools.mixin import ToolLoaderMixin
 from app.services.tools.tool_types import ToolCategory
+from app.services.agent.agent_utils.message_utils import inject_tools_info, inject_schema_text, build_schema_text
 from app.utils.logger import logger
 
 
@@ -66,3 +70,29 @@ class ToolInitMixin(ToolLoaderMixin):
             except Exception:
                 continue
         return "\n\n".join(parts) if parts else ""
+
+    def _inject_tools_hint(self, history_dicts, strategy_method):
+        """工具提示注入（含缓存） — text策略时注入工具描述，tools策略时不注入 — 小沈 2026-05-29 (从PromptBuildMixin移入)"""
+        if strategy_method != "tools":
+            try:
+                loaded = getattr(self, '_loaded_categories', set())
+                _last = getattr(self, '_last_injected_categories', None)
+                if _last is None or loaded != _last:
+                    detail = self._get_tools_detail()
+                    summary = self._get_tools_summary(exclude_categories=loaded)
+                    self._cached_tools_content = f"【已加载工具（完整）】\n{detail}\n\n【其他可用工具（概要）】\n{summary}"
+                    self._last_injected_categories = frozenset(loaded)
+                _cached = getattr(self, '_cached_tools_content', None)
+                if _cached:
+                    history_dicts = inject_tools_info(history_dicts, _cached)
+            except Exception as e:
+                logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
+        return history_dicts
+
+    def _inject_schema(self, history_dicts):
+        """Schema文本注入 — 小沈 2026-05-21"""
+        if not hasattr(self, '_cached_schema_text'):
+            self._cached_schema_text = build_schema_text(getattr(self, 'openai_tools', []))
+        if self._cached_schema_text:
+            history_dicts = inject_schema_text(history_dicts, self._cached_schema_text)
+        return history_dicts

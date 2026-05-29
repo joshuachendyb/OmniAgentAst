@@ -22,9 +22,9 @@ class ReactAgentMixin(ToolInitMixin, LLMDispatchMixin, PromptBuildMixin):
     ReAct Agent 公用逻辑混入类（组合入口）
     
     继承3个职责子Mixin：
-    - ToolInitMixin: 工具加载职责（_init_tools_and_executor, _get_tools_summary, _get_tools_detail）
+    - ToolInitMixin: 工具加载+工具注入（_init_tools_and_executor, _get_tools_summary, _get_tools_detail, _inject_tools_hint, _inject_schema）
     - LLMDispatchMixin: LLM调用+策略分发（_init_llm_strategies, _call_llm, _dispatch_strategy）
-    - PromptBuildMixin: Prompt构建+日志（_inject_tools_hint, _inject_schema, _build_system_prompt, _log_prompt, _log_response）
+    - PromptBuildMixin: Prompt构建+日志（_build_system_prompt, _log_prompt, _log_response）
     
     使用方式：
         class ShellReactAgent(ReactAgentMixin, BaseAgent):

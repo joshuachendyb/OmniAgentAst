@@ -8,11 +8,22 @@ LLMDispatchMixin — LLM调用+策略分发职责混入类
 - _dispatch_strategy: 策略分派
 
 Author: 小沈 - 2026-05-29 (从react_agent_mixin.py拆分)
+Updated: 小沈 - 2026-05-29 (DRY修复: 提取_resolve_llm_attr)
 """
+from typing import Any, Optional
+
 from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy
 from app.services.agent.strategy_manager import LLMStrategyManager
 from app.services.llm.capability_detector import CapabilityDetector
 from app.utils.logger import logger
+
+
+def _resolve_llm_attr(obj, attr_name: str) -> Optional[Any]:
+    """从self或llm_client获取LLM属性 — 消除getattr重复 — 小沈 2026-05-29"""
+    value = getattr(obj, attr_name, None)
+    if value is None and getattr(obj, 'llm_client', None) is not None:
+        value = getattr(obj.llm_client, attr_name, None)
+    return value
 
 
 class LLMDispatchMixin:
@@ -28,9 +39,9 @@ class LLMDispatchMixin:
 
         _cls = self.__class__.__name__
         _has_client = self.llm_client is not None
-        _self_api_base = getattr(self, 'api_base', None) or (getattr(self.llm_client, 'api_base', None) if _has_client else None)
-        _self_api_key = getattr(self, 'api_key', None) or (getattr(self.llm_client, 'api_key', None) if _has_client else None)
-        _self_model = getattr(self, 'model', None) or (getattr(self.llm_client, 'model', None) if _has_client else None)
+        _self_api_base = _resolve_llm_attr(self, 'api_base')
+        _self_api_key = _resolve_llm_attr(self, 'api_key')
+        _self_model = _resolve_llm_attr(self, 'model')
         logger.info(
             f"[{_cls}] _init_llm_strategies: llm_client={_has_client}, "
             f"api_base={_self_api_base}, model={_self_model}"
