@@ -68,8 +68,7 @@ def _strategy_chinese_quotes(json_str: str) -> Optional[Dict[str, Any]]:
 @register_strategy
 def _strategy_newline_fix(json_str: str) -> Optional[Dict[str, Any]]:
     try:
-        escaped = json_str.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
-        return json.loads(escaped)
+        return json.loads(_normalize_newlines(json_str))
     except json.JSONDecodeError:
         return None
 
@@ -77,11 +76,15 @@ def _strategy_newline_fix(json_str: str) -> Optional[Dict[str, Any]]:
 @register_strategy
 def _strategy_trailing_comma(json_str: str) -> Optional[Dict[str, Any]]:
     try:
-        escaped = json_str.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
-        fixed = re.sub(r',(\s*[}\]])', r'\1', escaped)
+        fixed = re.sub(r',(\s*[}\]])', r'\1', _normalize_newlines(json_str))
         return json.loads(fixed)
     except json.JSONDecodeError:
         return None
+
+
+def _normalize_newlines(json_str: str) -> str:
+    """统一换行符替换 — 小健 2026-05-29 DRY修复"""
+    return json_str.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
 
 
 def _try_parse_with_strategies(

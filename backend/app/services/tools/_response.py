@@ -190,4 +190,7 @@ def _add_optionals(result: Dict[str, Any], **kwargs: Any) -> None:
                 result[field_name] = value
 
 
+from app.services.tools.response_utils import is_success, is_error  # noqa: E402 — SRP-004 重导出保持向后兼容
+
+
 
