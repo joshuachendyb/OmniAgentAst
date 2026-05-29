@@ -102,6 +102,8 @@ app.include_router(messages.router, prefix="/api/v1", tags=["sessions"])
 app.include_router(conversation.router, prefix="/api/v1", tags=["conversation"])
 app.include_router(execution.router, prefix="/api/v1", tags=["execution"])
 app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
+from app.api.v1.task_queries import router as task_queries_router
+app.include_router(task_queries_router, prefix="/api/v1", tags=["task-queries"])
 
 
 # 【阶段6更新】cleanup_expired_tasks 改为从 react_sse_wrapper 导入

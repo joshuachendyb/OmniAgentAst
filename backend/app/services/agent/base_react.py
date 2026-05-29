@@ -45,6 +45,7 @@ from app.utils.logger import logger
 from app.chat_stream.incident_handler import create_incident_data
 from app.services.agent.chunk_buffer import ChunkBuffer
 from app.services.agent.mixins.react_handler_mixin import ReActHandlerMixin
+from app.services.task import get_tracker
 
 
 
@@ -291,6 +292,7 @@ class BaseAgent(ReActHandlerMixin, ABC):
             while True:
                 if step_count >= max_steps:
                     yield self._exit_with_error(step_count, "max_steps_exceeded", f"已达到最大迭代次数 {max_steps}")
+                    self._complete_tracked_task(success=False)
                     self._on_after_loop()
                     return
 
@@ -303,6 +305,7 @@ class BaseAgent(ReActHandlerMixin, ABC):
                         if _crt:
                             logger.info(f"[InterruptCheck] 任务 {task_id} 延迟: {(time.time() - _crt) * 1000:.0f}ms")
                     yield _int
+                    self._complete_tracked_task(success=False)
                     self._on_after_loop()
                     return
 
@@ -312,6 +315,7 @@ class BaseAgent(ReActHandlerMixin, ABC):
                 _int = self._check_interrupt(step_count, running_tasks)
                 if _int:
                     yield _int
+                    self._complete_tracked_task(success=False)
                     self._on_after_loop()
                     return
 
@@ -334,6 +338,7 @@ class BaseAgent(ReActHandlerMixin, ABC):
                 if parsed_type in ("answer", "implicit"):
                     async for step in self._handle_completion_type(parsed, step_count, chunk_buffer):
                         yield step
+                    self._complete_tracked_task(success=True)
                     self._on_after_loop()
                     return
 
@@ -364,6 +369,7 @@ class BaseAgent(ReActHandlerMixin, ABC):
 
         except Exception as e:
             yield self._handle_run_exception(e, step_count)
+            self._complete_tracked_task(success=False)
             self._on_after_loop()
             return
 
@@ -393,6 +399,22 @@ class BaseAgent(ReActHandlerMixin, ABC):
             valid_tool_names = {t["name"] for t in tool_registry.list_tools()} | {"finish"}
         except Exception as _e:
             logger.debug(f"[工具名验证] 获取工具列表失败: {_e}, 仅允许finish")
+
+        # Task追踪：创建任务记录
+        self._task_tracker = None
+        self._tracked_task_id = None
+        try:
+            intent = getattr(self, '_intent', None) or self.tool_category.value if self.tool_category else "unknown"
+            agent_id = getattr(self, 'task_id', 'unknown')
+            tracker = get_tracker()
+            self._tracked_task_id = tracker.create_task(
+                intent=intent,
+                agent_id=agent_id,
+                description=task[:200] if task else "",
+            )
+            self._task_tracker = tracker
+        except Exception as _e:
+            logger.debug(f"[TaskTracker] 创建任务失败: {_e}")
 
         return chunk_buffer, valid_tool_names
 
@@ -446,5 +468,23 @@ class BaseAgent(ReActHandlerMixin, ABC):
                 step=step_count
             )
         return None
+
+    def _complete_tracked_task(self, success: bool):
+        """Task追踪：完成任务记录"""
+        if self._task_tracker and self._tracked_task_id:
+            try:
+                self._task_tracker.complete_task(self._tracked_task_id, success=success)
+            except Exception as _e:
+                logger.debug(f"[TaskTracker] 完成任务失败: {_e}")
+
+    def record_operation(self, operation_type: str, **kwargs):
+        """Task追踪：记录一次操作 — 供外部调用"""
+        if self._task_tracker and self._tracked_task_id:
+            try:
+                self._task_tracker.add_operation(
+                    self._tracked_task_id, operation_type, **kwargs,
+                )
+            except Exception as _e:
+                logger.debug(f"[TaskTracker] 记录操作失败: {_e}")
 
 
