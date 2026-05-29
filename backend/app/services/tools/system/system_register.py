@@ -24,7 +24,8 @@ SYSTEM Register - 系统信息工具注册点
 更新时间: 2026-05-17 小沈 - 16→10工具重构
 """
 
-from app.services.tools.registry import ToolCategory, tool_registry
+from app.services.tools.registry import tool_registry
+from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 from app.services.tools.system.system_schema import (

@@ -18,7 +18,8 @@ Shell Register - Shell工具注册点
 # Shell操作工具（共4个LLM工具 — 2026-05-22 小沈 5→4）
 """
 
-from app.services.tools.registry import register_tool, ToolCategory, tool_registry
+from app.services.tools.registry import register_tool, tool_registry
+from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 from app.services.tools.shell.shell_schema import (

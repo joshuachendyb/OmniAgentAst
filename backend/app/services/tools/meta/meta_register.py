@@ -7,7 +7,8 @@ Meta Register - 元工具注册点
 - tool_search: 按关键词搜索工具
 """
 
-from app.services.tools.registry import tool_registry, ToolCategory
+from app.services.tools.registry import tool_registry
+from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 from app.services.tools.meta.meta_schema import (

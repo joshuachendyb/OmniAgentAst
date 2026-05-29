@@ -33,7 +33,8 @@ Document Register - 文档读写工具注册点
 """
 
 import logging
-from app.services.tools.registry import ToolCategory, tool_registry
+from app.services.tools.registry import tool_registry
+from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 from app.services.tools.document.document_schema import (

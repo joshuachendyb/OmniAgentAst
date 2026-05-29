@@ -40,7 +40,8 @@ from app.services.tools.file.file_schema import (
 )
 
 from app.services.tools.file.file_tools import FileTools, get_file_tools
-from app.services.tools.registry import ToolCategory, tool_registry
+from app.services.tools.registry import tool_registry
+from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 

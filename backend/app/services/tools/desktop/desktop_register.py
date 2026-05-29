@@ -21,7 +21,8 @@ DESKTOP Register - 桌面工具注册点（26→10精简方案）
 """
 
 import logging
-from app.services.tools.registry import ToolCategory, tool_registry
+from app.services.tools.registry import tool_registry
+from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 from app.services.tools.desktop.desktop_schema import (
