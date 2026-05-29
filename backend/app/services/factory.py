@@ -195,7 +195,21 @@ class AIServiceFactory:
         if cls._instance is not None and cls._current_provider == final_provider and cls._instance.model == final_model:
             return cls._instance
         
+        # 关闭旧实例
+        old_instance = cls._instance
+        cls._instance = None
         cls._current_provider = final_provider
+        
+        if old_instance is not None:
+            try:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.ensure_future(old_instance.close())
+                else:
+                    loop.run_until_complete(old_instance.close())
+            except Exception as e:
+                logger.warning(f"[AIServiceFactory] 关闭旧实例出错: {e}")
         
         log_msg = f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}"
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {log_msg}")
@@ -221,11 +235,24 @@ class AIServiceFactory:
     
     @classmethod
     def reset(cls):
-        """重置工厂状态"""
+        """重置工厂状态，关闭当前实例"""
         with cls._lock:
+            old_instance = cls._instance
             cls._instance = None
             cls._current_provider = ""
-            print("[AIServiceFactory] 工厂状态已重置")
+        
+        if old_instance is not None:
+            try:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.ensure_future(old_instance.close())
+                else:
+                    loop.run_until_complete(old_instance.close())
+            except Exception as e:
+                logger.warning(f"[AIServiceFactory] reset关闭实例出错: {e}")
+        
+        print("[AIServiceFactory] 工厂状态已重置")
     
     @classmethod
     def get_service_for_model(cls, provider: str, model: str, config_path: Optional[str] = None):
@@ -258,14 +285,20 @@ class AIServiceFactory:
             final_model = model
             
             # 关闭旧实例
-            if cls._instance is not None:
-                try:
-                    asyncio.create_task(cls._instance.close())
-                except Exception as e:
-                    print(f"[AIServiceFactory] 关闭旧实例出错: {e}")
-            
+            old_instance = cls._instance
             cls._instance = None
             cls._current_provider = final_provider
+            
+            if old_instance is not None:
+                try:
+                    import asyncio
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.ensure_future(old_instance.close())
+                    else:
+                        loop.run_until_complete(old_instance.close())
+                except Exception as e:
+                    logger.warning(f"[AIServiceFactory] 关闭旧实例出错: {e}")
             
             log_msg = f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}"
             print(f"[{datetime.now().strftime('%H:%M:%S')}] {log_msg}")
