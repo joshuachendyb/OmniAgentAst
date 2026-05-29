@@ -71,8 +71,30 @@ def extract_metadata_from_steps(execution_steps: Optional[List[Dict[str, Any]]])
     return {"model": None, "provider": None, "display_name": None}
 
 
+def format_param_value(val: Any) -> str:
+    """将参数默认值格式化为字符串（供LLM提示文本使用）
+
+    统一处理：None→""、bool→"true"/"false"、int/float→str()、其他→str()
+    调用方根据需要加 "default=" 等前缀。
+
+    Args:
+        val: 参数值
+
+    Returns:
+        格式化后的字符串
+    """
+    if val is None:
+        return ""
+    if isinstance(val, bool):
+        return "true" if val else "false"
+    if isinstance(val, (int, float)):
+        return str(val)
+    return str(val)
+
+
 __all__ = [
     "extract_display_name_from_steps",
     "build_display_name",
     "extract_metadata_from_steps",
+    "format_param_value",
 ]
