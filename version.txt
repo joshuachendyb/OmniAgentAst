@@ -1,3 +1,41 @@
+v0.14.5
+
+更新时间: 2026-05-30 05:42:33
+
+## v0.14.4→v0.14.5 变更汇总 - 小健-2026-05-30
+
+### 10大原则深度核查修复（17个commit）
+
+| commit | 说明 |
+|--------|------|
+| 093d0963 | refactor: 删除旧task系统+修复遗留bug - 小沈-2026-05-29 |
+| 024b5219 | docs: 更新Task代码深度分析报告至v1.2 - 小沈-2026-05-29 |
+| fb959e78 | refactor: 删除step_types.py重复定义，统一使用reasoning_steps - 小健-2026-05-29 |
+| b4fa8f11 | fix: 恢复_response.py的**extra参数 - 小沈-2026-05-29 |
+| 88419456 | refactor: error_classifier/logger优化 - 小健-2026-05-29 |
+| b4ec246c | docs: 后端10大原则核查文档更新 - 小沈+小健-2026-05-29 |
+| 258f4519 | refactor: OCP-001 策略链配置化 - 小健-2026-05-29 |
+| 383a59f4 | refactor: KISS-002 send_wrapper闭包简化 - 小健-2026-05-29 |
+| f48c8673 | refactor: SRP-008 RenameContext参数封装 - 小健-2026-05-29 |
+| 1892eb89 | refactor: SRP-004 _response.py职责拆分 - 小健-2026-05-29 |
+| 35e28115 | refactor: SRP-003+ISP-001 react_agent_mixin.py拆分 - 小健-2026-05-29 |
+| f5ae0ce5 | refactor: ISP-002 HandlerHostProtocol定义 - 小健-2026-05-29 |
+| 2fdf814c | refactor: SRP-001 file_visualization.py拆分为9个文件 - 小健-2026-05-29 |
+| 63f3baa9 | refactor: SRP-002 reasoning_steps.py拆分为8个文件 - 小健-2026-05-29 |
+| ba86b6b3 | refactor: SRP-005+006 logger.py拆分为3个文件 - 小健-2026-05-29 |
+| b2584664 | refactor: SRP-007 monitoring.py拆分为2个文件 - 小健-2026-05-29 |
+| d57796d2 | fix: 10大原则二次核查修复 - 小健 2026-05-29 |
+
+**变更详情**：
+1. **旧task系统彻底删除**：task_base/task_service/mixins/task_tracker/operation_history 4文件+step_types.py重复定义
+2. **SRP拆分**：file_visualization→9文件、reasoning_steps→8文件、logger→3文件、monitoring→2文件、react_agent_mixin→4Mixin、_response→2文件
+3. **ISP定义**：HandlerHostProtocol显式接口约束
+4. **其他**：RenameContext封装、send_wrapper闭包简化、OCP策略链配置化
+5. **二次数核查修复**：SRP-004 _response.py:193 向后兼容重导出已删除
+6. **文档更新**：后端10大原则核查问题清单 + Task分析报告v1.2
+
+---
+
 v0.14.4
 
 更新时间: 2026-05-29 18:02:14
