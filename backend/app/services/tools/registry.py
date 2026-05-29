@@ -190,7 +190,6 @@ def resolve_category(intent_type: str) -> Optional["ToolCategory"]:
     【重构 2026-05-27 小健】遵循DRY原则：
     - 此函数委托给intent_mapper.resolve_category()
     - 统一入口在app.services.intents.intent_mapper
-    - 本函数保留用于向后兼容
     """
     from app.services.intents.intent_mapper import resolve_category as _resolve_category_unified
     return _resolve_category_unified(intent_type)
@@ -740,7 +739,7 @@ class ToolRegistry:
         return tool_registry
 
     def get_tool_meta(self, name: str) -> Optional[Dict[str, Any]]:
-        """获取工具元数据（dict格式，兼容旧接口）"""
+        """获取工具元数据（dict格式）"""
         meta = self._tools.get(name)
         if meta is None:
             return None
@@ -831,46 +830,6 @@ def register_tool(
     return decorator
 
 
-# 兼容层：保留原有接口
-def get_registered_tools() -> List[Dict[str, Any]]:
-    """获取已注册的工具列表（兼容旧接口）"""
-    return [
-        {
-            "name": metadata.name,
-            "description": metadata.description,
-            "category": metadata.category.value,
-            "version": metadata.version,
-        }
-        for metadata in tool_registry.list_tools(include_metadata=True)
-    ]
-
-
-def get_tool(name: str) -> Optional[Dict[str, Any]]:
-    """获取工具定义（兼容旧接口）"""
-    metadata = tool_registry.get_tool(name)
-    if not metadata:
-        return None
-    
-    return {
-        "name": metadata.name,
-        "description": metadata.description,
-        "category": metadata.category.value,
-        "version": metadata.version,
-        "input_schema": metadata.input_schema,
-        "examples": metadata.examples,
-    }
-
-
-def get_tools_dict() -> Dict[str, Callable]:
-    """
-    获取工具函数字典（兼容旧接口，供ToolExecutor使用）
-    
-    Returns:
-        {工具名: 工具函数} 格式
-    """
-    return tool_registry._implementations
-
-
 def get_implementations_from_registry() -> Dict[str, Callable]:
     """
     从tool_registry获取所有工具实现函数
@@ -915,10 +874,6 @@ def get_tools_from_registry_by_category(category: ToolCategory) -> Dict[str, Cal
         if impl:
             result[name] = impl
     return result
-
-
-# 别名兼容性
-get_tools_dict_by_category = get_tools_from_registry_by_category
 
 
 def get_tools_from_file_registry() -> Dict[str, Callable]:

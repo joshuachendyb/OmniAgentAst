@@ -14,16 +14,7 @@ from typing import Optional, List, Dict, Any
 
 
 def extract_display_name_from_steps(execution_steps_data: list) -> Optional[str]:
-    """从 execution_steps 中提取 display_name 信息
-    
-    用于兼容早期保存的历史消息（当时没有单独存储 display_name）
-    
-    Args:
-        execution_steps_data: 执行步骤列表
-        
-    Returns:
-        display_name字符串，如 "provider (model)"，未找到返回None
-    """
+    """从 execution_steps 中提取 display_name 信息"""
     if not execution_steps_data:
         return None
 

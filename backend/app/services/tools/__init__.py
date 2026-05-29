@@ -8,11 +8,8 @@ from app.services.tools.registry import (
     ToolCategory,
     ToolMetadata,
     tool_registry,
-    get_tools_dict,
     get_tools_from_file_registry,
     register_tool,
-    get_registered_tools,
-    get_tool,
 )
 
 from app.services.tools.tool_config import (
@@ -33,11 +30,8 @@ __all__ = [
     "ToolCategory",
     "ToolMetadata",
     "tool_registry",
-    "get_tools_dict",
     "get_tools_from_file_registry",
     "register_tool",
-    "get_registered_tools",
-    "get_tool",
     "ToolConfig",
     "tool_config",
     "get_tool_config",

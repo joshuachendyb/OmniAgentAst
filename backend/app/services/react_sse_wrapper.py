@@ -149,7 +149,6 @@ def dispatch_sse_event(event: Dict[str, Any], step: int, model: str, provider: s
         # incident类型直接格式化为SSE
         return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
     elif event_type == 'interrupted':
-        # 兼容层：处理仍发送type="interrupted"的旧代码路径
         from app.chat_stream.sse_formatter import format_incident_sse
         return format_incident_sse(
             'interrupted',

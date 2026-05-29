@@ -38,10 +38,6 @@ router = APIRouter()
 def extract_display_name_from_steps(execution_steps_data: list) -> Optional[str]:
     """
     从 execution_steps 中提取 display_name 信息
-    用于兼容早期保存的历史消息（当时没有单独存储 display_name）
-
-    @author 小新
-    @update 2026-03-07 修复历史消息 display_name 不显示的问题
     """
     if not execution_steps_data:
         return None

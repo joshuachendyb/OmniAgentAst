@@ -18,7 +18,6 @@ _tools_registered = False
 _registered_categories: set = set()
 
 # 【Phase 3 小沈 2026-05-18】精简方案：14→7注册模块
-# 废弃分类的注册函数仍保留在原目录中（兼容导入），不再通过此表调用
 _CATEGORY_MODULES = {
     "file": ("app.services.tools.file", "_register_file_tools"),
     "shell": ("app.services.tools.shell", "_register_shell_tools"),

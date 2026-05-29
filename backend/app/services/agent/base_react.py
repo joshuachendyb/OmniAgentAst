@@ -229,7 +229,7 @@ class BaseAgent(ReActHandlerMixin, ABC):
         参考：文档4.14节步骤9代码示例
         
         Args:
-            intent_type: 意图类型（file/meta/shell/network等，也兼容旧名time/database等）
+            intent_type: 意图类型（file/meta/shell/network等）
             reason: 加载原因（用于日志）
         """
         if intent_type in self._loaded_categories:

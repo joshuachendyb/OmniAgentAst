@@ -43,8 +43,6 @@ def extract_status(result: dict) -> str:
       SUCCESS        → "success"
       WARNING_*      → "warning"
       ERR_* / 其他   → "error"
-
-    注意: 历史兼容 — 如果result里有warning字段且code=SUCCESS，也视为warning
     """
     code = result.get("code", SUCCESS_CODE)
     if code == SUCCESS_CODE:
