@@ -4,7 +4,7 @@ v0.14.4
 
 ## v0.14.3→v0.14.4 变更汇总 - 小健-2026-05-29
 
-### fix+refactor+docs 后端深度核查 + 死代码删除 + 文档整理（8个commit）
+### 一、后端深度核查 + 尾队清理（8个commit - 小健-2026-05-29）
 
 | commit | 说明 |
 |--------|------|
@@ -17,12 +17,213 @@ v0.14.4
 | 4e9d725e | fix: operation_models+main.py - 小健-2026-05-29 |
 | 107bd38c | fix: API层messages/operation_history/routes - 小健-2026-05-29 |
 
-### 变更详情
-
+**变更详情**：
 1. **后端深度核查**：38个违反10大原则问题清单输出
-2. **死代码删除**（4,223行净删）：agent_utils/_utils.py（168行）、backup/registry.py（862行）、tool_aliases.py（82行）、service_helper.py（135行）、task_helper.py（144行）
-3. **修复**：API层3文件、Agent层3文件、Tools层3文件、models+main
-4. **文档整理**：3份文档重命名带[x]/[y]前缀
+2. **死代码删除**：agent_utils/_utils.py(168行) + backup_20260529/registry.py(862行) + tool_aliases.py(82行) + service_helper.py(135行) + task_helper.py(144行)，合计4,223行净删
+3. **修复**：API层3文件 + Agent层3文件 + Tools层3文件 + models + main
+4. **文档整理**：3份旧版文档改名带[x]/[y]前缀
+
+---
+
+### 二、全量commit分类统计（v0.14.3→v0.14.4，合计334个commit）
+
+| 类型 | 数量 | 占比 |
+|------|------|------|
+| refactor | 203 | 60.8% |
+| docs | 60 | 18.0% |
+| feat | 58 | 17.4% |
+| fix | 12 | 3.6% |
+| chore | 1 | 0.3% |
+
+---
+
+### 三、registry 拆分（14个commit - 小沈-2026-05-29）
+
+| commit | 说明 |
+|--------|------|
+| 5c8031dd | chore: registry拆分备份 |
+| d522d2bc | refactor: registry拆分-新建tool_types/schema_utils/tool_queries/tool_description |
+| daea26d0 | refactor: registry.py精简862→210行+删get_exact_implementation+__init__.py极简化 |
+| 86d6fb91 | refactor: 更新agent/intents/chat_router导入路径-ToolCategory→tool_types |
+| 27f0929c | refactor: 更新8个register文件导入路径-ToolCategory→tool_types |
+| aa3f31bf | refactor: 更新6个prompts文件导入路径-ToolCategory→tool_types |
+| 5cd0b88b | refactor: 删除registry.resolve_category转发函数 |
+
+**变更详情**：
+- `registry.py` 从862行精简为210行（-652行），核心职责收窄为工具注册+元数据管理
+- 拆出4个新文件：`tool_types.py`（ToolCategory/ToolType枚举）、`schema_utils.py`（Schema生成）、`tool_queries.py`（查询方法）、`tool_description.py`（描述生成）
+- 14个文件导入路径从 `registry.ToolCategory` 统一改为 `tool_types.ToolCategory`
+- 删除 `resolve_category` 转发函数（YAGNI）
+
+---
+
+### 四、LLM客户端SDK（10个commit - 小沈-2026-05-29）
+
+| commit | 说明 |
+|--------|------|
+| a82f4fb6 | feat: 新建LLM客户端SDK |
+| 38e07739 | refactor: BaseAIService改用LLMClientSDK |
+| fc6dfdbb | refactor: intent_classifier改用LLMClientSDK |
+| f3d273c9 | refactor: capability_detector改用LLMClientSDK |
+| dae11dc8 | docs: Task设计文档v2.7更新实施现状章节 |
+| fac2052b | docs: Network-HTTP客户端SDK设计方案 |
+| 93e3bbbc | feat: 新建HTTP客户端SDK+精简network_tools |
+| e29b19ec | docs: 新增LLM客户端SDK设计方案 |
+
+**变更详情**：
+- 新建 `LLMClientSDK` 统一LLM客户端接口，替换 `BaseAIService` 直接调用
+- `intent_classifier`、`capability_detector`、`factory` 全部改用SDK
+- 延迟初始化LLM客户端消除启动加载
+- 新建 `Network-HTTP客户端SDK` 统一HTTP请求
+
+---
+
+### 五、Task模块新建（22个commit - 小沈-2026-05-29）
+
+| commit | 说明 |
+|--------|------|
+| 83d70a71 | feat: 新建Task模块-阶段一~四(基础设施+Tracker+Queries+迁移) |
+| b2852c4e | feat: Agent集成+API路由+测试(阶段五) |
+| dae11dc8 | docs: Task设计文档v2.7更新实施现状章节 |
+| 33360d05 | docs: Task设计新增第十章实施计划-5阶段+验收标准 |
+| c44a4206 | docs: Task设计删除回滚方案章节 |
+| dd4b53dd | docs: Task设计更新原则表-10大原则最终确认 |
+| 1ef97a6c | docs: Task设计回归双表+独立数据库task_tracker.db-修复DRY+YAGNI |
+| 87051e32 | docs: Task设计合并为单表task_operations-删除file_operations/operations |
+| 721193ec | docs: Task设计方案复用已有OperationStatus/OperationRecord/TaskRecord |
+| e03d514c | docs: Task设计方案v2.4修复DRY/YAGNI/ISP三原则 |
+| dae11dc8 | docs: Task设计文档v2.7更新实施现状章节 |
+
+**变更详情**：
+- 5阶段实施：基础设施→TaskTracker→Queries→迁移→Agent集成+API+测试
+- 独立数据库 `task_tracker.db`，遵循10大原则设计
+- 复用已有 `OperationStatus`/`OperationRecord`/`TaskRecord` 减少重复
+
+---
+
+### 六、DB基础设施统一（28个commit - 小沈-2026-05-28/29）
+
+| commit | 说明 |
+|--------|------|
+| 6f68647b | feat: DB SDK — DatabaseManager统一数据库操作接口 |
+| e8b6acf0 | feat: agent_utils包初始化 |
+| 6cfcfe5c | feat: utils/tool_result_utils — 工具结果格式化公共函数 |
+| 66e696f5 | refactor: db/__init__.py 改用DatabaseManager统一入口 |
+| 36d82098 | refactor: conversation.py 适配新 DB 接口 |
+| c8582fba | refactor: messages.py 适配新 DB 接口 |
+| 90180494 | refactor: sessions.py 适配新 DB 接口 |
+| 4fc2f54a | refactor: main.py 适配新 DB 接口 |
+| 7916215f | refactor: 删除 chat_db.py（DB SDK 替代） |
+| 891f7d2c | refactor: 删除 operations_db.py（DB SDK 替代） |
+| f638b19f | refactor: 删除 db/config.py（DB SDK 替代） |
+| 598c1649 | refactor: 删除 db_helpers.py（DB SDK 替代） |
+| e64f9a94 | refactor: 删除 agent/message_utils.py（已迁入 agent_utils/） |
+| 992157e6 | refactor: 删除 agent/tool_result_utils.py（已迁入 agent_utils/） |
+| c9fd0cec | refactor: 删除 tools/tool_result_utils.py（已迁入 utils/） |
+
+**变更详情**：
+- `DatabaseManager` 统一DB操作接口，替代 `chat_db.py`/`operations_db.py`/`db_helpers.py`/`db/config.py` 4个旧入口
+- 6个数据层文件（conversation/messages/sessions/execution/main/db/__init__）适配新DB接口
+- 迁入agent_utils层公用函数：`message_utils.py`/`tool_result_utils.py`
+
+---
+
+### 七、向后兼容代码彻底清除 + 公用函数规范化（40+个commit - 小沈-2026-05-28/29）
+
+**向后兼容清除**（删除别名/转发函数/废弃shell/legacy命名）：
+- `fix_sessions.py` 向后兼容SQL分支
+- `registry.py` SHELL/META枚举和旧映射
+- `agent_config.py` 别名和回退查找逻辑
+- `tool_executor.py` 废弃检查和别名转换
+- `tool_config.py` 工具别名和废弃函数
+- `task_tracker.py` 向后兼容intent名列表
+- `routes.py` 向后兼容model更新分支
+- `system_adapter.py/network_register.py/time_tools.py/_response.py` 向后兼容注释
+- `log_request/log_response` 兼容包装函数
+- `_get_sql_mode` legacy命名残留
+
+**公用函数规范化**：
+- 新增 `FUNCTIONS.md` 公用函数清单
+- `format_param_value` 公用函数替换 `_format_default`（DRY消除）
+- 分层规范：工具层`_response.py` → `tools/tool_result_utils.py` → `agent_utils/tool_result_utils.py` → `utils/tool_result_utils.py`
+
+---
+
+### 八、V2跨文件功能分散分析 + 全面重构（50+个commit - 小沈/小健-2026-05-27/28）
+
+**分析文档**：跨文档功能分散问题清单 + "一个事情一个出入口"原则分析
+
+**重构要点**：
+- **错误分类统一**：`UnifiedErrorClassifier` 替代 constants 数据表，`error_handler.py` 简化
+- **安全检查统一**：`SafetyManager` + `SafetyHook`接口 + `CommandSafetyHook`，`file_safety.py` 适配
+- **SSE格式化统一**：`sse_formatter.py` 新增 `format_final/error/incident/chunk_sse`
+- **重试引擎统一**：`RetryEngine` 替代4套独立重试机制
+- **Prompt组装统一**：`PromptAssembler` 三层编排SRP+SLAP
+- **消息构建统一**：`message_builder.py` 新增 `build_llm_messages`
+- **工具结果格式化统一**：`tool_result_formatter.py` + `tool_result_utils.py` 三层分层
+- **日志统一**：全部 `logging.getLogger(__name__)` → `setup_logger()` 统一入口
+- **超时配置统一**：`tool_config.get_timeout()` 统一入口
+- **常量统一**：`constants.py` 全局常量文件，`SUCCESS_CODE` 替代硬编码
+
+---
+
+### 九、parse_react_response + Handler 重构（16个commit - 小沈-2026-05-29）
+
+| commit | 说明 |
+|--------|------|
+| d2633ba8 | refactor: llm_response_parser修复DRY/YAGNI/复用优先 |
+| f3678c41 | docs: llm_response_parser拆分设计文档v1.0 |
+| 54953258 | refactor: _handlers.py改名parse_react_response.py-文件名与主函数一致 |
+| dce6afc1 | refactor: Handler#7拆分子函数+Handler#9单正则优化+重复调用注释 |
+| 209d6575 | fix: parse_react_response.py删除死代码(return None后不可达) |
+
+**变更详情**：
+- `_handlers.py` 重命名为 `parse_react_response.py`（文件命名与主函数一致）
+- Handler#7 拆分子函数，Handler#9 单正则优化
+- 删除return None后不可达死代码
+
+---
+
+### 十、文档海量更新（60个commit - 小沈/小健/小欧-2026-05-27/28/29）
+
+| 文档类别 | 数量 | 说明 |
+|---------|------|------|
+| 设计文档 | ~30 | Task/DB/Registry/SDK/Handler各版本文档 |
+| 分析报告 | ~10 | 跨文件功能分散/深度代码审查/10大原则核查 |
+| 规范文档 | ~5 | AGENTS.md/FUNCTIONS.md/10大原则清单 |
+| 测试报告 | ~5 | 各阶段测试报告 |
+| 其他 | ~10 | 文档整理/重命名/目录清理 |
+
+**关键文档**：
+1. `后端代码10大原则深度核查问题清单-小健-2026-05-29.md` — 38个违反问题清单
+2. `registry拆分设计方案-小健-2026-05-29.md` — Registry拆分设计
+3. `LLM客户端SDK设计方案-小沈-2026-05-29.md` — LLM SDK设计
+4. `Network-HTTP客户端SDK设计方案-小沈-2026-05-29.md` — HTTP SDK设计
+5. `Task系统设计方案v2.x` 系列 — Task模块5版迭代
+6. `DB基础设施统一设计方案-小沈-2026-05-28-v5.md` — DB SDK设计
+
+---
+
+### 十一、尾队批次变更详情（8个commit，本次tag触发）
+
+**1. 后端深度核查（38个问题清单）**
+- `doc-5月agent3.0/后端代码10大原则深度核查问题清单-小健-2026-05-29.md` — 覆盖全部backend文件，按10大原则分类
+
+**2. 死代码删除（4,223行净删）**
+- `agent_utils/_utils.py`（168行）— 全项目0处导入的llm_response_parser复制品
+- `backup_20260529_110303/registry.py`（862行）— 拆分备份残留
+- `tool_aliases.py`（82行）— 别名已内联
+- `service_helper.py`（135行）— 零引用
+- `task_helper.py`（144行）— 零引用
+
+**3. 修复（9个文件）**
+- API层：`messages.py`/`operation_history.py`/`routes.py`
+- Agent层：`__init__.py`/`react_agent_mixin.py`/`universal_react.py`
+- Tools层：`file_tools.py`/`tool_queries.py`/`data_format_helper.py`
+- 其他：`operation_models.py`/`main.py`
+
+**4. 文档整理**
+- 3份旧版文档重命名带`[x]/[y]`前缀（已删除/不可用标记）
 
 ---
 
