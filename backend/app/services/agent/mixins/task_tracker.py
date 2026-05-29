@@ -40,8 +40,7 @@ class TaskExecutionTracker:
     def _init_generic_tracker(self):
         """初始化通用追踪器（非file意图使用）"""
         self._generic_tracker = GenericTaskTracker()
-        for intent in ['time', 'shell', 'network', 'desktop', 'database', 
-                       'system', 'document', 'code_execution']:
+        for intent in ['file', 'system', 'network', 'desktop', 'document']:
             self._trackers[intent] = self._generic_tracker
     
     def get_tracker(self, intent_type: str):
