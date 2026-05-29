@@ -31,12 +31,7 @@ def build_llm_messages(message: str, history: Optional[List[Dict]] = None) -> Li
 
 
 def build_observation_text(execution_result: dict, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
-    """根据工具执行结果构建observation文本 — 统一委托format_llm_observation
-
-    小健 2026-05-22：原手写逻辑已合入 format_llm_observation（含next_actions），
-    此方法保留作为兼容入口。
-    更新 2026-05-24 小健：增加 tool_name/tool_params 参数供 failure hint 使用
-    """
+    """根据工具执行结果构建observation文本"""
     return format_llm_observation(execution_result, tool_name, tool_params)
 
 

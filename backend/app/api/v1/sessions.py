@@ -76,8 +76,6 @@ async def create_session(session_create: Optional[SessionCreate] = None):
     2. 设置`title_updated_at = 创建时间` - 记录标题最后更新时间
     3. 初始化`version = 1` - 用于乐观锁版本控制
     
-    P0风险缓解：添加了字段存在性检查，向后兼容旧数据库结构
-    
     Args:
         session_create: 会话创建请求（可选）
         
@@ -176,7 +174,7 @@ async def list_sessions(
 class SessionUpdate(BaseModel):
     """会话更新请求"""
     title: Optional[str] = Field(None, description="会话标题", min_length=1, max_length=200)
-    version: Optional[int] = Field(None, ge=1, description="乐观锁版本号（可选，向后兼容旧前端）")
+    version: Optional[int] = Field(None, ge=1, description="乐观锁版本号")
     updated_by: Optional[str] = Field(None, description="修改者")
 
 

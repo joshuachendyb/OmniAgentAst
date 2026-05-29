@@ -663,10 +663,8 @@ class FinalStep(ReasoningStep):
     
     def to_dict(self) -> Dict[str, Any]:
         base_dict = ReasoningStep.to_dict(self)
-        # 【修复 2026-05-13 小沈】M5: 保留content作为response别名，向后兼容旧消费者
         base_dict.update({
             "response": self._response,
-            "content": self._response,  # content作为response的别名
             "thought": self._thought,
             "model": self._model,
             "provider": self._provider,

@@ -7,8 +7,6 @@ from datetime import datetime
 import traceback
 
 from app.api.v1 import health, operation_history, routes, sessions, messages, conversation, execution, metrics
-# 兼容导入
-config = routes
 # chat_stream 暂时禁用，使用 chat_router 替代
 from app.utils.logger import logger
 from app.utils.monitoring import setup_monitoring
@@ -98,7 +96,7 @@ from app.services.chat_router import router as chat_router_router, task_router
 app.include_router(chat_router_router, prefix="/api/v1", tags=["chat"])
 app.include_router(task_router, prefix="/api/v1", tags=["chat"])
 app.include_router(operation_history.router, prefix="/api/v1", tags=["operation-history"])
-app.include_router(config.router, prefix="/api/v1", tags=["config"])
+app.include_router(routes.router, prefix="/api/v1", tags=["config"])
 app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 app.include_router(messages.router, prefix="/api/v1", tags=["sessions"])
 app.include_router(conversation.router, prefix="/api/v1", tags=["conversation"])
