@@ -767,7 +767,6 @@ class RenameContext:
     preview: bool = False
     conflict_strategy: str = "skip"
     validate_path_func: Optional[Callable] = None
-    safety_service: Optional[Any] = None
     task_id: Optional[str] = None
     record_operation_func: Optional[Callable] = None
     execute_with_safety_func: Optional[Callable] = None
@@ -1168,7 +1167,6 @@ async def compress_files_impl(
     password: Optional[str] = None,
     split_size: Optional[int] = None,
     validate_path_func=None,
-    safety_service=None,
     task_id: Optional[str] = None,
     record_operation_func=None,
     execute_with_safety_func=None,
@@ -1284,7 +1282,6 @@ async def copy_file_impl(
     recursive: bool,
     overwrite: bool,
     validate_path_func,
-    safety_service,
     task_id: Optional[str],
     record_operation_func,
     execute_with_safety_func,
@@ -1301,7 +1298,6 @@ async def copy_file_impl(
         overwrite: 是否覆盖已存在的目标
         preserve_metadata: 是否保留文件元数据（时间戳等），默认True
         validate_path_func: 路径验证函数
-        safety_service: 安全服务
         task_id: 任务ID
         record_operation_func: 记录操作函数
         execute_with_safety_func: 安全执行函数
@@ -1382,7 +1378,6 @@ async def file_statistics_impl(
     filters: Optional[Dict[str, Any]] = None,
     output_format: str = "json",
     validate_path_func=None,
-    safety_service=None,
     task_id: Optional[str] = None,
     record_operation_func=None,
     execute_with_safety_func=None,
@@ -1560,7 +1555,6 @@ async def file_checksum_impl(
     chunk_size: int = 65536,
     timeout: int = 30000,
     validate_path_func=None,
-    safety_service=None,
     task_id: Optional[str] = None,
     record_operation_func=None,
     execute_with_safety_func=None,
@@ -1576,7 +1570,6 @@ async def file_checksum_impl(
         chunk_size: 分块大小（字节），默认65536，用于大文件流式计算
         timeout: 超时毫秒数（可选），默认30000，Agent根据文件大小动态调整
         validate_path_func: 路径验证函数
-        safety_service: 安全服务
         task_id: 任务ID
         record_operation_func: 记录操作函数
         execute_with_safety_func: 安全执行函数
