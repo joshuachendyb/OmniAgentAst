@@ -68,7 +68,7 @@ async def update_session(session_id: str, update_data: SessionUpdate):
     - 使用原子性UPDATE避免竞态条件
     - 显式事务边界，确保数据一致性
     
-    P0风险缓解：version参数可选，向后兼容旧前端
+    # version参数必填，遵循禁止向后兼容原则
     
     Args:
         session_id: 会话ID
@@ -126,64 +126,20 @@ async def update_session(session_id: str, update_data: SessionUpdate):
                 old_title = session['title']
                 new_version = session['version']
             else:
-                # 兼容模式：不检查version（旧前端）
-                cursor.execute("BEGIN")
-                
-                # 获取当前状态
-                cursor.execute(
-                    '''SELECT id, title, COALESCE(version, 1) as version, 
-                              COALESCE(title_locked, 0) as title_locked
-                       FROM chat_sessions 
-                       WHERE id = ? AND is_deleted = FALSE''',
-                    (session_id,)
-                )
-                session = cursor.fetchone()
-                
-                if not session:
-                    cursor.execute("ROLLBACK")
-                    conn.close()
-                    raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
-                
-                old_title = session['title']
-                current_version = session['version']
-                new_version = current_version + 1
-                
-                # 更新标题（不检查version）
-                cursor.execute(
-                    '''UPDATE chat_sessions 
-                       SET title = ?, updated_at = ?, 
-                          title_locked = ?, 
-                          title_updated_at = ?, 
-                          version = ?
-                       WHERE id = ?''',
-                    (update_data.title, utc_time, 1, utc_time, 
-                     new_version, session_id)
-                )
-        else:
-            # 新字段不存在，完全兼容模式
-            cursor.execute("BEGIN")
-            
-            cursor.execute(
-                '''SELECT id, title FROM chat_sessions 
-                   WHERE id = ? AND is_deleted = FALSE''',
-                (session_id,)
-            )
-            session = cursor.fetchone()
-            
-            if not session:
+                # version参数必填，不支持旧版本
                 cursor.execute("ROLLBACK")
                 conn.close()
-                raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
-            
-            old_title = session['title']
-            new_version = 1  # 模拟版本号
-            
-            # 更新标题
-            cursor.execute(
-                '''UPDATE chat_sessions 
-                   SET title = ?, updated_at = ? 
-                   WHERE id = ?''',
-                (update_data.title, utc_time, session_id)
+                raise HTTPException(
+                    status_code=400, 
+                    detail="version参数必填，请升级前端版本"
+                )
+        else:
+            # 数据库字段不存在，需要升级数据库
+            cursor.execute("ROLLBACK")
+            conn.close()
+            raise HTTPException(
+                status_code=500, 
+                detail="数据库表结构不完整，请运行数据库迁移脚本"
             )
         
         # 插入标题历史记录（如果表存在）
