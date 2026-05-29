@@ -135,7 +135,7 @@ class SystemAdapter:
         - 其他Agent: include_commands=False（避免LLM看到ipconfig/curl暗示后幻觉调execute_shell_command）
         
         Args:
-            include_commands: 是否注入【命令格式】段，默认True(保持向后兼容)
+            include_commands: 是否注入【命令格式】段，默认True
         
         Returns:
             格式化的系统信息字符串
