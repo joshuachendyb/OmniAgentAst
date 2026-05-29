@@ -53,7 +53,7 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_module="app.services.prompts.system.system_prompts",
         prompt_class_name="SystemPrompts",
         category_display_name="系统操作",
-        aliases=["shell", "meta", "time", "environment", "env", "code_execution"],
+        aliases=["shell"],
     ),
     "network": AgentConfig(
         intent_type="network",
@@ -69,7 +69,7 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_module="app.services.prompts.document.document_prompts",
         prompt_class_name="DocumentPrompts",
         category_display_name="文档读写",
-        aliases=["database"],
+        aliases=[],
     ),
     "desktop": AgentConfig(
         intent_type="desktop",
@@ -95,12 +95,6 @@ def resolve_agent_config(intent_type: str) -> AgentConfig:
         if normalized_intent in config.aliases:
             return config
     
-    # 如果找不到，尝试原逻辑（向后兼容）
-    for config in AGENT_REGISTRY.values():
-        if config.intent_type == intent_type:
-            return config
-        if intent_type in config.aliases:
-            return config
     raise ValueError(f"Unknown intent_type: {intent_type}")
 
 
