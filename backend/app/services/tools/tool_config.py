@@ -21,19 +21,6 @@ logger = setup_logger(__name__)
 
 
 # ============================================================
-# 【别名映射表 - 小健 2026-05-02】
-# ============================================================
-
-# 工具名称别名从tool_aliases.py统一导入
-from app.services.tools.tool_aliases import TOOL_NAME_ALIASES
-
-# 废弃工具列表（不再支持，调用时返回错误提示）
-DEPRECATED_TOOLS = {
-    # 目前无废弃工具
-}
-
-
-# ============================================================
 # 【步骤3】配置Schema验证（Pydantic）
 # ============================================================
 
@@ -303,27 +290,3 @@ def get_timeout(tool_name: str) -> int:
     return tool_config.get_timeout(tool_name)
 
 
-def get_tool_name_alias(alias: str) -> Optional[str]:
-    """
-    获取工具名称的主名 - 小健 2026-05-02
-    
-    Args:
-        alias: 工具别名
-    
-    Returns:
-        主工具名，如果不是别名则返回None
-    """
-    return TOOL_NAME_ALIASES.get(alias)
-
-
-def is_deprecated_tool(tool_name: str) -> Optional[str]:
-    """
-    检查工具是否已废弃 - 小健 2026-05-02
-    
-    Args:
-        tool_name: 工具名称
-    
-    Returns:
-        废弃提示信息，如果未废弃则返回None
-    """
-    return DEPRECATED_TOOLS.get(tool_name)
