@@ -19,11 +19,9 @@ ToolLoaderMixin - 工具加载混入类
             self._tools_dict = self.load_tools_by_category(self.tool_category)
 """
 from typing import Dict, Callable, Optional, List
-from app.services.tools.registry import (
-    tool_registry,
-    get_tools_from_registry_by_category,
-    ToolCategory
-)
+from app.services.tools.registry import tool_registry
+from app.services.tools.tool_queries import get_tools_from_registry_by_category
+from app.services.tools.tool_types import ToolCategory
 
 
 class ToolLoaderMixin:
@@ -72,7 +70,7 @@ class ToolLoaderMixin:
         """
         result = {}
         for name in tool_names:
-            impl = tool_registry.get_exact_implementation(name)
+            impl = tool_registry.get_implementation(name)
             if impl:
                 result[name] = impl
         return result
