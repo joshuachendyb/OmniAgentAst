@@ -31,13 +31,9 @@ from app.services.agent.tool_result_formatter import (
     _format_frontend_event,
 )
 
-# 【步骤7】T2: 从ToolConfig加载超时和别名
+# 【步骤7】T2: 从ToolConfig加载超时
 from app.services.tools.tool_config import (
     get_tool_config,
-    get_tool_name_alias,
-    is_deprecated_tool,
-
-
 )
 
 
@@ -80,7 +76,6 @@ class ToolExecutor:
         执行工具调用（带重试逻辑）
         
         步骤4：修改execute()方法，增加重试逻辑
-        步骤5：增加别名转换和废弃检查 - 小健 2026-05-02
         
         Args:
             action: 工具名称
@@ -89,25 +84,6 @@ class ToolExecutor:
         Returns:
             执行结果，包含success标志和结果数据
         """
-        # 【废弃检查】小健 2026-05-02
-        deprecation_msg = is_deprecated_tool(action)
-        if deprecation_msg:
-            return create_error_tool_result(
-                code=ERR_TOOL_DEPRECATED,
-                data=None,
-                message=f"工具 '{action}' 已废弃: {deprecation_msg}",
-                retry_count=0,
-                error_message=f"工具 '{action}' 已废弃",
-                error_type="tool_deprecated"
-            )
-        
-        # 【别名转换】小健 2026-05-02
-        original_action = action
-        main_name = get_tool_name_alias(action)
-        if main_name:
-            action = main_name
-            logger.info(f"工具别名转换: {original_action} -> {action}")
-        
         if action == "finish":
             return create_tool_result(
                 data=action_input.get("result"),
