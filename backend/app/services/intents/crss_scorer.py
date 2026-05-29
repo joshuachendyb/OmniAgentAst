@@ -14,7 +14,7 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 from app.constants import CRSS_ACTION_INFERENCE_WEIGHT, CRSS_ACTION_MODULATION_FACTOR, CRSS_DANGEROUS_COMMAND_BONUS
-from app.services.tools.registry import ToolCategory
+from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import setup_logger
 
 

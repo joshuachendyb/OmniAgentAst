@@ -36,7 +36,8 @@ from app.services.agent.reasoning_steps import (
     StepFactory,
     ReasoningStep,
 )
-from app.services.tools.registry import ToolCategory, get_tools_from_registry_by_category
+from app.services.tools.tool_types import ToolCategory
+from app.services.tools.tool_queries import get_tools_from_registry_by_category
 
 from app.constants import MAX_CONTEXT_CHARS
 from app.services.preprocessing.intent_classifier import IntentClassifier

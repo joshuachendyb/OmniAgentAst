@@ -64,7 +64,7 @@ class ToolExecutor:
         if tools is not None:
             self.available_tools = tools
         else:
-            from app.services.tools.registry import get_implementations_from_registry
+            from app.services.tools.tool_queries import get_implementations_from_registry
             self.available_tools = get_implementations_from_registry()
     
     async def execute(

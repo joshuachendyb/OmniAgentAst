@@ -14,7 +14,7 @@ from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy
 from app.services.agent.strategy_manager import LLMStrategyManager
 from app.services.llm.capability_detector import CapabilityDetector
 from app.services.tools.mixin import ToolLoaderMixin
-from app.services.tools.registry import ToolCategory
+from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
 from app.services.prompts.prompt_assembler import PromptAssembler

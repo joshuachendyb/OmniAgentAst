@@ -10,7 +10,7 @@ Author: 小强 - 2026-05-23
 from dataclasses import dataclass, field
 from typing import Type, List, Dict, Optional
 
-from app.services.tools.registry import ToolCategory
+from app.services.tools.tool_types import ToolCategory
 from app.services.prompts.BasePromptTemplate import BasePrompts
 
 

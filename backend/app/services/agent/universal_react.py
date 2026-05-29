@@ -16,7 +16,7 @@ from app.services.agent.mixins.rollback_mixin import RollbackMixin
 from app.services.agent.mixins.tool_step_mixin import ToolStepMixin
 from app.services.agent.agent_config import AgentConfig
 from app.services.agent.types import AgentResult
-from app.services.tools.registry import ToolCategory
+from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 

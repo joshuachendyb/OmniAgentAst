@@ -12,7 +12,7 @@ from app.services.agent.base_react import BaseAgent, DEFAULT_MAX_STEPS
 from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin
 from app.services.agent.mixins.tool_step_mixin import ToolStepMixin
 from app.services.prompts.desktop.desktop_prompts import DesktopPrompts
-from app.services.tools.registry import ToolCategory
+from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 

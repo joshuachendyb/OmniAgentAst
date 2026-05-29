@@ -15,7 +15,7 @@
 
 from enum import Enum
 from typing import Dict, List, Optional, Tuple
-from app.services.tools.registry import ToolCategory
+from app.services.tools.tool_types import ToolCategory
 
 
 class IntentType(str, Enum):
