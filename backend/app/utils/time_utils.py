@@ -8,6 +8,7 @@
 
 【小健 2026-05-28】SRP+DRY：从chat_helpers.py提取集中到此
 【小沈 2026-05-28】新增：convert_to_utc/ensure_ts_milliseconds/get_timestamp_ms/get_utc_timestamp
+【小沈 2026-05-29】重命名：ensure_ts_milliseconds → ensure_timestamp_milliseconds（符合命名规范）
 
 Author: 小健 - 2026-05-28
 """
@@ -45,14 +46,18 @@ def convert_to_utc(time_value) -> str:
         return get_utc_timestamp()
 
 
-def ensure_ts_milliseconds(ts_value: Any) -> int:
-    """统一时间戳转毫秒整数"""
+def ensure_timestamp_milliseconds(ts_value: Any) -> int:
+    """确保时间戳转为毫秒整数"""
     if isinstance(ts_value, (int, float)):
         return int(ts_value)
     try:
         return int(datetime.fromisoformat(str(ts_value).replace(' ', 'T')).timestamp() * 1000)
     except (ValueError, TypeError, OverflowError):
         return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+
+# 兼容旧名称
+ensure_ts_milliseconds = ensure_timestamp_milliseconds
 
 
 def create_step_counter() -> Callable[[], int]:
@@ -77,6 +82,7 @@ __all__ = [
     "get_timestamp_ms",
     "get_utc_timestamp",
     "convert_to_utc",
-    "ensure_ts_milliseconds",
+    "ensure_timestamp_milliseconds",
+    "ensure_ts_milliseconds",  # 兼容旧名称
     "create_step_counter",
 ]

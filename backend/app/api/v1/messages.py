@@ -21,8 +21,8 @@ from pydantic import BaseModel, Field
 
 from app.utils.logger import logger
 from app.utils.display_name_cache import get_cached_display_name
-from app.utils.time_utils import convert_to_utc, ensure_ts_milliseconds, get_timestamp_ms
-from app.utils.data_utils import safe_parse_json
+from app.utils.time_utils import convert_to_utc, ensure_timestamp_milliseconds, get_timestamp_ms
+from app.utils.data_utils import parse_json
 from app.db import db
 from app.db.models.chat_models import MessageResponse
 
@@ -89,7 +89,7 @@ async def get_session_messages(session_id: str):
 
             messages = []
             for row in cursor.fetchall():
-                steps = safe_parse_json(row['execution_steps'], label="execution_steps")
+                steps = parse_json(row['execution_steps'], label="execution_steps")
                 display_name = row['display_name']
                 if not display_name and steps:
                     display_name = extract_display_name_from_steps(steps)
@@ -97,7 +97,7 @@ async def get_session_messages(session_id: str):
                 messages.append(MessageResponse(
                     id=row['id'], session_id=row['session_id'],
                     role=row['role'], content=row['content'],
-                    timestamp=ensure_ts_milliseconds(row['timestamp']),
+                    timestamp=ensure_timestamp_milliseconds(row['timestamp']),
                     execution_steps=steps, display_name=display_name,
                 ))
 

@@ -9,6 +9,7 @@
 DRY：从 tool_result_utils.py 提取集中于此，避免 agent 层跨层导入 tools 层。
 
 【小沈 2026-05-28】新增：safe_parse_json
+【小沈 2026-05-29】重命名：safe_parse_json → parse_json（符合命名规范）
 
 Author: 小健 - 2026-05-28
 """
@@ -29,8 +30,8 @@ def safe_truncate(data: Any, limit: int) -> Any:
     return data
 
 
-def safe_parse_json(json_str: Optional[str], label: str = "") -> Any:
-    """安全解析 JSON 字符串"""
+def parse_json(json_str: Optional[str], label: str = "") -> Any:
+    """解析 JSON 字符串，失败返回 None"""
     if not json_str:
         return None
     try:
@@ -39,7 +40,12 @@ def safe_parse_json(json_str: Optional[str], label: str = "") -> Any:
         return None
 
 
+# 兼容旧名称
+safe_parse_json = parse_json
+
+
 __all__ = [
     "safe_truncate",
-    "safe_parse_json",
+    "parse_json",
+    "safe_parse_json",  # 兼容旧名称
 ]
