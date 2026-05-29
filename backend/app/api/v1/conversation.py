@@ -79,7 +79,7 @@ class AssistantMessageIdAllocator:
         return expected, True
 
 
-def extract_metadata(execution_steps: Optional[List[Dict[str, Any]]]) -> Dict[str, Optional[str]]:
+def _extract_metadata(execution_steps: Optional[List[Dict[str, Any]]]) -> Dict[str, Optional[str]]:
     """从execution_steps的start步骤提取model/provider/display_name
 
     使用场景: save_execution_steps中提取metadata用于display_name
@@ -206,7 +206,7 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
         with db.get_conn("chat") as conn:
             _ensure_session_exists(session_id, conn)
             message_id, is_new = allocator.allocate(session_id, conn)
-            metadata = extract_metadata(update_data.execution_steps)
+            metadata = _extract_metadata(update_data.execution_steps)
             display_name = metadata.get("display_name")
             if is_new:
                 _insert_assistant_message(conn, message_id, session_id, display_name, update_data)
