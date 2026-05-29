@@ -59,7 +59,3 @@ class RetryCounter:
     
     def __repr__(self) -> str:
         return f"RetryCounter(max_retries={self.max_retries}, retry_count={self.retry_count})"
-
-
-# 兼容旧名称
-RetryController = RetryCounter

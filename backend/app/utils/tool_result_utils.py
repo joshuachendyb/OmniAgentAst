@@ -169,7 +169,3 @@ def build_next_actions(actions: list) -> list:
             entry["params"] = item[3]
         result.append(entry)
     return result
-
-
-# safe_truncate 已迁移到 app.utils.data_utils，此函数保留在此仅供向后兼容（小健 2026-05-28）
-from app.utils.data_utils import safe_truncate

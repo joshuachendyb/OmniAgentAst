@@ -12,7 +12,7 @@ import json
 import asyncio
 from typing import List, Dict, Optional, Any, Callable, AsyncGenerator, Tuple
 
-from app.utils.retry_counter import RetryCounter as RetryController
+from app.utils.retry_counter import RetryCounter
 from app.utils.idle_timeout import IdleTimeoutIterator, IdleTimeoutError
 from app.utils.time_utils import create_timestamp
 from app.chat_stream.chat_helpers import create_final_response
@@ -28,7 +28,7 @@ from app.utils.logger import logger
 from app.config import get_config
 
 
-def _should_retry(error_type: str, retry_controller: RetryController) -> Tuple[bool, str]:
+def _should_retry(error_type: str, retry_controller: RetryCounter) -> Tuple[bool, str]:
     """判断是否应该重试，返回 (should_retry, reason)
 
     使用场景:
@@ -141,7 +141,7 @@ def _init_retry_state(
     返回数据说明:
     - chat_timeout: float, AI服务超时时间（秒）
     - max_retries: int, 最大重试次数
-    - retry_controller: RetryController实例
+    - retry_controller: RetryCounter实例
     - ai_call_successful: bool, 初始为False
     - last_error: Optional[str], 初始为None
     - last_error_type: Optional[str], 初始为None
@@ -157,7 +157,7 @@ def _init_retry_state(
     return {
         "chat_timeout": float(chat_timeout),
         "max_retries": max_retries,
-        "retry_controller": RetryController(max_retries=max_retries),
+        "retry_controller": RetryCounter(max_retries=max_retries),
         "ai_call_successful": False,
         "last_error": None,
         "last_error_type": None,

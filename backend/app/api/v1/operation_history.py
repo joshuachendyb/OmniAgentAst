@@ -636,8 +636,7 @@ async def get_next_page(request: NextPageRequest):
     - next_page_token: 从action_tool响应中获取的令牌
     """
     try:
-        from app.services.agent import FileTools
-        # FileOperationTools 已废弃，直接使用 FileTools
+        from app.services.tools.file.file_tools import FileTools
         tools = FileTools(session_id=request.task_id)
         
         # 调用对应工具的分页方法
