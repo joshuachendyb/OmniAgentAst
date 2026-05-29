@@ -14,19 +14,10 @@ from .base_react import BaseAgent
 from .generic_react import GenericReactAgent
 from .tool_executor import ToolExecutor
 from .llm_response_parser import parse_react_response
-from .task_base import TaskServiceBase, TaskStatsMixin
-from .task_service import TaskOperationService, get_task_service
-
-
 __all__ = [
     # 新框架
     "BaseAgent",
     "GenericReactAgent",
     "ToolExecutor",
-    "TaskServiceBase",
-    "TaskStatsMixin",
     "parse_react_response",
-    # task 服务
-    "TaskOperationService",
-    "get_task_service",
 ]

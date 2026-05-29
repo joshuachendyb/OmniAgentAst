@@ -65,13 +65,6 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, RollbackMixin, BaseAge
         return await self._call_llm()
     
     async def _execute_tool(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        from app.services.tools.tool_aliases import resolve_tool_alias
-        
-        original_action = action
-        action = resolve_tool_alias(action, self.config.category.value)
-        if original_action != action:
-            logger.info(f"[UniversalAgent._execute_tool] alias: {original_action} → {action}")
-        
         # 参数归一化由 executor.execute() 内部自动处理，不再手动调用
         return await self.executor.execute(action, params)
     

@@ -115,8 +115,8 @@ class ReactAgentMixin(ToolLoaderMixin):
             self._task_created_by_agent = False
             return
         
-        from app.services.agent.mixins.task_tracker import get_task_tracker
-        self._task_tracker = get_task_tracker()
+        from app.services.task import get_tracker
+        self._task_tracker = get_tracker()
         self._task_created_by_agent = False
     
     def _init_candidates(self, candidates: Optional[List[str]] = None):
