@@ -407,9 +407,10 @@ async def get_model_list():
     """
     try:
         # 使用缓存，自动检测变更
-        config = get_config_instance()
+        resolver = get_ai_config_resolver()
+        ai_config = resolver.get_ai_config()
         
-        final_provider, final_model = config.get_ai_provider_model()
+        final_provider, final_model = resolver.resolve_provider_model()
         
         # 构建模型列表 - 动态遍历配置文件中的所有provider
         models = []
@@ -508,9 +509,9 @@ async def get_full_config():
     """
     try:
         # 使用缓存，自动检测变更
-        config = get_config_instance()
-        ai_config = config.get('ai', {})
-        final_provider, final_model = config.get_ai_provider_model()
+        resolver = get_ai_config_resolver()
+        ai_config = resolver.get_ai_config()
+        final_provider, final_model = resolver.resolve_provider_model()
         
         providers = {}
         # 动态遍历所有provider（不是硬编码！）

@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from app.utils.logger import logger
 from app.utils.display_name_cache import get_cached_display_name
+from app.utils.common import extract_display_name_from_steps
 from app.utils.time_utils import convert_to_utc, ensure_timestamp_milliseconds, get_timestamp_ms
 from app.utils.data_utils import parse_json
 from app.db import db
@@ -33,28 +34,6 @@ _assistant_message_ids: dict = {}
 _message_ids_lock = threading.Lock()
 
 router = APIRouter()
-
-
-def extract_display_name_from_steps(execution_steps_data: list) -> Optional[str]:
-    """
-    从 execution_steps 中提取 display_name 信息
-    """
-    if not execution_steps_data:
-        return None
-
-    for step in execution_steps_data:
-        if isinstance(step, dict):
-            if step.get("type") in ["start", "chunk", "final"]:
-                model = step.get("model", "")
-                provider = step.get("provider", "")
-                if model or provider:
-                    if provider and model:
-                        return f"{provider} ({model})"
-                    elif model:
-                        return model
-                    elif provider:
-                        return provider
-    return None
 
 
 @router.get("/sessions/{session_id}/messages")

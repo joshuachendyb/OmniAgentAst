@@ -42,12 +42,6 @@ def _get_safety():
     return get_file_safety_service()
 
 
-def _get_session():
-    """延迟import避免启动时触发工具注册 - 小沈 2026-05-10"""
-    from app.services.agent import get_task_service
-    return get_task_service()
-
-
 # ============ 响应模型 ============
 
 class TreeNode(BaseModel):
