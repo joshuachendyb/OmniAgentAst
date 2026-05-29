@@ -81,6 +81,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel
+from app.utils.common import format_param_value
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -613,19 +614,6 @@ class ToolRegistry:
 
         return tools
 
-    @staticmethod
-    def _format_default(val) -> str:
-        """将 Pydantic 默认值格式化为字符串，跳过 None - 小沈 2026-05-09"""
-        if val is None:
-            return ""
-        if isinstance(val, str):
-            return "default=" + val
-        if isinstance(val, bool):
-            return "default=" + ("true" if val else "false")
-        if isinstance(val, (int, float)):
-            return "default=" + str(val)
-        return ""
-
     def generate_param_reminder(self, category: Optional['ToolCategory'] = None, style: str = "code") -> str:
         """
         从 input_schema 自动生成 Parameter Reminder 文本 - 小沈 2026-05-09
@@ -672,7 +660,8 @@ class ToolRegistry:
                     else:
                         ptype = "any"
                 req_str = "required" if pname in required_set else "optional"
-                default_str = self._format_default(pinfo.get("default"))
+                default_formatted = format_param_value(pinfo.get("default"))
+                default_str = f"default={default_formatted}" if default_formatted else ""
 
                 if style == "code":
                     short_type = "/".join(TYPE_MAP.get(t.strip(), t.strip()) for t in ptype.split("/"))
