@@ -53,7 +53,7 @@ class OperationRecord(BaseModel):
     rolled_back_at: Optional[datetime] = Field(default=None, description="回滚时间")
     
     # 顺序信息（用于批量回滚）
-    sequence_number: int = Field(default=0, description="会话内操作顺序号")
+    sequence_number: int = Field(default=0, description="任务内操作顺序号")
     
     model_config = ConfigDict(
         json_schema_extra={
