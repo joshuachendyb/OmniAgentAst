@@ -17,6 +17,11 @@ import re
 from enum import Enum
 from typing import Optional, Tuple, Dict, Any
 
+try:
+    from app.utils.idle_timeout import IdleTimeoutError
+except ImportError:
+    IdleTimeoutError = None
+
 
 class ErrorCategory(Enum):
     """错误分类枚举"""
@@ -197,12 +202,8 @@ class UnifiedErrorClassifier:
         error_msg = str(error).lower()
         
         # 特殊处理：IdleTimeoutError
-        try:
-            from app.utils.idle_timeout import IdleTimeoutError
-            if isinstance(error, IdleTimeoutError):
-                return ErrorCategory.IDLE_TIMEOUT
-        except ImportError:
-            pass
+        if IdleTimeoutError and isinstance(error, IdleTimeoutError):
+            return ErrorCategory.IDLE_TIMEOUT
         
         # 检查HTTPX异常
         if error_type in HTTPX_EXCEPTION_TO_ERROR_TYPE:

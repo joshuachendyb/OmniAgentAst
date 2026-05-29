@@ -11,6 +11,7 @@ import time
 import uuid
 import warnings
 import yaml
+import functools
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
