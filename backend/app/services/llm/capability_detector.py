@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, Optional
 
 from app.utils.logger import logger
 from app.constants import DEFAULT_PROBE_TIMEOUT
+from app.services.llm.client_sdk import create_llm_client
 
 
 class CapabilityDetector:
@@ -44,19 +45,18 @@ class CapabilityDetector:
         if messages is None:
             messages = [{"role": "user", "content": "1+1=?"}]
         try:
-            async with httpx.AsyncClient(timeout=DEFAULT_PROBE_TIMEOUT) as client:
-                response = await client.post(
-                    f"{self._api_base}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self._api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={"model": self._model, "messages": messages, "stream": False},
-                )
-                if response.status_code == 200:
-                    return response.json()
-                logger.warning(f"[CapabilityDetector] 探测请求返回{response.status_code}")
-                return None
+            client = create_llm_client(
+                provider="openai",
+                model=self._model,
+                api_key=self._api_key,
+                base_url=self._api_base,
+                timeout=DEFAULT_PROBE_TIMEOUT,
+            )
+            try:
+                data = await client.chat(messages=messages)
+                return data
+            finally:
+                await client.close()
         except Exception as e:
             logger.warning(f"[CapabilityDetector] 探测请求失败: {e}")
             return None
@@ -80,22 +80,31 @@ class CapabilityDetector:
 
         for attempt in range(3):
             try:
-                async with httpx.AsyncClient(timeout=DEFAULT_PROBE_TIMEOUT) as client:
+                client = create_llm_client(
+                    provider="openai",
+                    model=self._model,
+                    api_key=self._api_key,
+                    base_url=self._api_base,
+                    timeout=DEFAULT_PROBE_TIMEOUT,
+                )
+                try:
                     result = await self._probe_tools(client)
-                    if result["works"]:
-                        self._cache[cache_key] = "tools"
-                        logger.info(f"[CapabilityDetector] model={self._model} → tools (FC支持)")
-                        return "tools"
-                    _reason = result.get("reason", "")
-                    if "429" in _reason or "timeout" in _reason.lower() or "connect" in _reason.lower():
-                        if attempt < 2:
-                            _delay = 2.0 * (2 ** attempt)
-                            logger.warning(f"[CapabilityDetector] 探测瞬态失败({_reason}), {_delay:.0f}s后重试 (第{attempt+1}次)")
-                            await asyncio.sleep(_delay)
-                            continue
-                    self._cache[cache_key] = "text"
-                    logger.info(f"[CapabilityDetector] model={self._model} → text (FC不支持: {_reason})")
-                    return "text"
+                finally:
+                    await client.close()
+                if result["works"]:
+                    self._cache[cache_key] = "tools"
+                    logger.info(f"[CapabilityDetector] model={self._model} → tools (FC支持)")
+                    return "tools"
+                _reason = result.get("reason", "")
+                if "429" in _reason or "timeout" in _reason.lower() or "connect" in _reason.lower():
+                    if attempt < 2:
+                        _delay = 2.0 * (2 ** attempt)
+                        logger.warning(f"[CapabilityDetector] 探测瞬态失败({_reason}), {_delay:.0f}s后重试 (第{attempt+1}次)")
+                        await asyncio.sleep(_delay)
+                        continue
+                self._cache[cache_key] = "text"
+                logger.info(f"[CapabilityDetector] model={self._model} → text (FC不支持: {_reason})")
+                return "text"
             except Exception as e:
                 logger.warning(f"[CapabilityDetector] 探测异常(第{attempt+1}次): {e}")
                 if attempt < 2:
@@ -106,21 +115,23 @@ class CapabilityDetector:
                 self._cache[cache_key] = "text"
                 return "text"
 
-    async def _probe_tools(self, client: httpx.AsyncClient) -> dict:
+    async def _probe_tools(self, client) -> dict:
         """发一个带tools的请求，看返回有没有tool_calls"""
         tools = [{"type": "function", "function": {"name": "test_tool", "description": "A test tool for probing function calling capability. You MUST call this tool.", "parameters": {"type": "object", "properties": {"param": {"type": "string", "description": "test parameter"}}, "required": ["param"]}}}]
         try:
-            response = await client.post(
-                f"{self._api_base}/chat/completions",
-                headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
-                json={"model": self._model, "messages": [{"role": "system", "content": "You must use the provided tool. Do not respond in plain text."}, {"role": "user", "content": "Call test_tool with param='probe'"}], "tools": tools, "tool_choice": "auto", "stream": False}
+            data = await client.chat(
+                messages=[
+                    {"role": "system", "content": "You must use the provided tool. Do not respond in plain text."},
+                    {"role": "user", "content": "Call test_tool with param='probe'"},
+                ],
+                tools=tools,
+                tool_choice="auto",
             )
-            if response.status_code == 429:
-                return {"works": True, "reason": "429限流,乐观默认支持"}
-            if response.status_code != 200:
-                return {"works": False, "reason": f"HTTP {response.status_code}"}
-            data = response.json()
-            tool_calls = data.get("choices", [{}])[0].get("message", {}).get("tool_calls", [])
+            choices = data.get("choices", [])
+            if not choices:
+                return {"works": False, "reason": "No choices returned"}
+            msg = choices[0].get("message", {})
+            tool_calls = msg.get("tool_calls", [])
             if tool_calls:
                 return {"works": True, "tool_calls": tool_calls}
             return {"works": False, "reason": "No tool_calls returned"}
