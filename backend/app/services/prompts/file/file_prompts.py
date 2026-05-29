@@ -173,7 +173,8 @@ Please reconsider your approach and suggest an alternative action."""
 2. text parameter must contain actual file content, NOT your thoughts/plans"""
     
     def get_parameter_reminder(self) -> str:
-        from app.services.tools.registry import tool_registry, ToolCategory
+        from app.services.tools.registry import tool_registry
+        from app.services.tools.tool_types import ToolCategory
         auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.FILE)
         forbidden = (
             "\n\nCommon mistakes to avoid:\n"

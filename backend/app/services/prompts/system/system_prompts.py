@@ -44,7 +44,7 @@ def _build_tool_descriptions(category: str, tool_names: List[str]) -> str:
         "META": "META",
     }
 
-    from app.services.tools.registry import ToolCategory
+    from app.services.tools.tool_types import ToolCategory
     mapped_category = CATEGORY_NAME_MAP.get(str(category), str(category))
     return BasePrompts.build_tool_descriptions(tool_names, category_label=mapped_category)
 
@@ -86,7 +86,8 @@ class SystemPrompts(BasePrompts):
             str: 系统提示词字符串
         """
         system_info = get_system_prompt_string(include_commands=False)
-        from app.services.tools.registry import tool_registry, ToolCategory
+        from app.services.tools.registry import tool_registry
+        from app.services.tools.tool_types import ToolCategory
 
         categories = [
             (ToolCategory.SYSTEM, "系统信息/文件操作"),
@@ -104,7 +105,8 @@ class SystemPrompts(BasePrompts):
         return "\n".join(parts)
 
     def get_parameter_reminder(self) -> str:
-        from app.services.tools.registry import tool_registry, ToolCategory
+        from app.services.tools.registry import tool_registry
+        from app.services.tools.tool_types import ToolCategory
         auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.SYSTEM)
         forbidden = (
             "\n\nFORBIDDEN parameter names - DO NOT use:\n"

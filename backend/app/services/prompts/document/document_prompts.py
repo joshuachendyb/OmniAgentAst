@@ -100,7 +100,8 @@ Example 4: 任务完成
         return "⚠️ Document Safety: write_document overwrites existing files. Read before write to confirm."
 
     def get_parameter_reminder(self) -> str:
-        from app.services.tools.registry import tool_registry, ToolCategory
+        from app.services.tools.registry import tool_registry
+        from app.services.tools.tool_types import ToolCategory
         auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.DOCUMENT)
         forbidden = (
             "\n\nFORBIDDEN parameter names - DO NOT use:\n"
