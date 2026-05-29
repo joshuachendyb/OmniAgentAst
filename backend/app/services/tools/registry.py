@@ -150,20 +150,13 @@ def _fix_schema_types(schema: Dict[str, Any]) -> Dict[str, Any]:
 
 class ToolCategory(Enum):
     """
-    工具分类枚举 - 【2026-05-18 小沈】精简方案：13→7分类
-    实际注册映射(与INTENT_TO_CATEGORY同步):
-      SHELL/META工具→注册到SYSTEM, TIME→SYSTEM, ENVIRONMENT→SYSTEM,
-      DATABASE→DOCUMENT, CODE_EXECUTION→SYSTEM, DATA_FORMAT→FILE
-    注意: SHELL和META枚举值保留用于INTENT_TO_CATEGORY兼容, 但无工具直接注册到它们
-    【2026-05-24 小沈】修正INTENT_TO_CATEGORY映射与实际注册一致
+    工具分类枚举
     """
-    FILE = "file"
-    SHELL = "shell"         # Shell命令执行 + 代码执行 (实际注册到SYSTEM)
-    NETWORK = "network"     # 网络通信
-    SYSTEM = "system"        # 系统信息 + 环境管理 + Shell + Meta/时间
-    DESKTOP = "desktop"     # 桌面功能
-    DOCUMENT = "document"      # 文档读写 + 数据库
-    META = "meta"              # 元工具 + 时间日期 (实际注册到SYSTEM)
+    FILE = "file"          # 文件操作
+    SYSTEM = "system"      # 系统操作（包含shell、meta、time、environment、code_execution）
+    NETWORK = "network"    # 网络通信
+    DESKTOP = "desktop"    # 桌面功能
+    DOCUMENT = "document"  # 文档读写（包含database、data_analysis）
 
 
 INTENT_TO_CATEGORY: Dict[str, "ToolCategory"] = {
@@ -173,14 +166,6 @@ INTENT_TO_CATEGORY: Dict[str, "ToolCategory"] = {
     "system": ToolCategory.SYSTEM,
     "desktop": ToolCategory.DESKTOP,
     "document": ToolCategory.DOCUMENT,
-    "meta": ToolCategory.SYSTEM,
-    "time": ToolCategory.SYSTEM,
-    "environment": ToolCategory.SYSTEM,
-    "env": ToolCategory.SYSTEM,
-    "database": ToolCategory.DOCUMENT,
-    "code_execution": ToolCategory.SYSTEM,
-    "data_format": ToolCategory.FILE,
-    "data_analysis": ToolCategory.DOCUMENT,
 }
 
 
@@ -270,21 +255,17 @@ class ToolRegistry:
         registry.register(name="xxx", description="...", category=ToolCategory.FILE, implementation=func)
     """
     
-    # 【Phase 3 小沈 2026-05-18】精简方案：7分类
     CATEGORY_ORDER = [
-        ToolCategory.FILE, ToolCategory.SHELL, ToolCategory.NETWORK,
-        ToolCategory.SYSTEM, ToolCategory.DESKTOP, ToolCategory.DOCUMENT,
-        ToolCategory.META,
+        ToolCategory.FILE, ToolCategory.SYSTEM, ToolCategory.NETWORK,
+        ToolCategory.DESKTOP, ToolCategory.DOCUMENT,
     ]
 
     CATEGORY_NAMES = {
         ToolCategory.FILE: "文件操作工具",
-        ToolCategory.SHELL: "Shell/代码执行工具",
+        ToolCategory.SYSTEM: "系统/Shell/时间/环境工具",
         ToolCategory.NETWORK: "网络通信工具",
-        ToolCategory.SYSTEM: "系统/环境工具",
         ToolCategory.DESKTOP: "桌面工具",
         ToolCategory.DOCUMENT: "文档(含数据分析与数据库)工具",
-        ToolCategory.META: "时间/元工具",
     }
 
     def __init__(self):
@@ -668,7 +649,7 @@ class ToolRegistry:
 
         Args:
             category: 工具分类，None=全部
-            style: "code"=函数签名风格(推荐), "text"=自然语言风格(兼容)
+            style: "code"=函数签名风格(推荐), "text"=自然语言风格
         """
         TYPE_MAP = {"integer": "int", "number": "number", "string": "str", "boolean": "bool", "object": "dict", "array": "list"}
         header = "Parameter Reminder (auto-generated from Pydantic):" if style == "text" else "Available Functions (auto-generated):"
@@ -797,7 +778,7 @@ def register_tool(
         )
         async def list_directory(params): ...
         
-        # 方式2：使用字典（兼容旧代码）
+        # 方式2：使用字典
         @register_tool(
             name="list_directory",
             description="列出目录内容",
@@ -849,7 +830,7 @@ def get_implementations_from_registry() -> Dict[str, Callable]:
 
 def get_tools_from_registry_by_category(category: ToolCategory) -> Dict[str, Callable]:
     """
-    按分类从registry获取工具（别名: get_tools_dict_by_category）
+    按分类从registry获取工具
     参考: 文档5.3节+7.6节完整代码
     
     Args:
