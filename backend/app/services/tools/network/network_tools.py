@@ -45,6 +45,7 @@ from app.services.tools.toolhelper.network_helper import (  # 小健 2026-05-18
     well_known_ports, _html_to_markdown, _decode_bing_redirect_url,
     _validate_url, _check_network,  # 小沈 2026-05-25 提升到模块级，消除3处函数内重复import
 )
+from app.services.tools.network.http_client_sdk import create_http_client, HTTPClient  # 小沈 2026-05-29
 from app.utils.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
 from app.constants import (
     BROWSER_USER_AGENT,
@@ -119,22 +120,6 @@ def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
     }
 
 
-def _resolve_proxy(proxy: Optional[str] = None) -> Optional[str]:
-    """解析代理配置：优先参数，其次环境变量 — 小沈 2026-05-25
-
-    使用场景:
-    - http_request中代理配置
-    - fetch_webpage中代理配置
-
-    使用示例:
-        proxy_config = _resolve_proxy(proxy)
-
-    返回数据说明:
-    - 返回str或None，代理URL
-    """
-    return proxy or os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
-
-
 def _build_http_error(last_exception: Exception, url: str, retry: int) -> Dict[str, Any]:
     """构建HTTP请求最终错误响应 — 小沈 2026-05-25
 
@@ -197,17 +182,10 @@ async def http_request(
         if headers:
             request_headers.update(headers)
 
-        proxy_config = _resolve_proxy(proxy)
-
         last_exception = None
         for attempt in range(retry + 1):
             try:
-                async with httpx.AsyncClient(
-                    timeout=httpx.Timeout(timeout_sec),
-                    follow_redirects=True,
-                    verify=True,
-                    proxy=proxy_config,
-                ) as client:
+                async with create_http_client(timeout_sec=timeout_sec, proxy=proxy) as client:
                     method_upper = method.upper()
 
                     request_kwargs = {
@@ -280,7 +258,7 @@ def _map_network_error(url: str, timeout: int, e: Exception) -> Dict[str, Any]:
     return build_error(ERR_NET_UNKNOWN, f"下载异常: {str(e)}")
 
 
-async def _stream_download(client: httpx.AsyncClient, url: str, dest_path: str,
+async def _stream_download(client: HTTPClient, url: str, dest_path: str,
                            headers: dict, chunk_size: int = 8192) -> Tuple[int, str, int]:
     """流式下载文件到本地，返回 (downloaded_bytes, content_type, total_bytes) — 小健 2026-05-25"""
     async with client.stream("GET", url, headers=headers) as response:
@@ -326,17 +304,9 @@ async def download_file(
         except (PermissionError, OSError) as e:
             return build_error(ERR_NETWORK_CREATE_DIR, f"无法创建目录: {e}")
 
-        proxy_config = proxy
-        if not proxy_config:
-            proxy_config = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
-
         req_headers = headers or {}
 
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout / 1000.0, connect=timeout / 1000.0 / 3),
-            follow_redirects=True,
-            proxy=proxy_config,
-        ) as client:
+        async with create_http_client(timeout_sec=timeout / 1000.0, proxy=proxy) as client:
             downloaded, content_type, total_bytes = await _stream_download(client, url, dest_path, req_headers)
 
         return build_success(
@@ -466,11 +436,7 @@ async def fetch_webpage(
             content_type = playwright_result["content_type"]
             status_code = playwright_result["status_code"]
         else:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(timeout_sec),
-                follow_redirects=True,
-                proxy=proxy
-            ) as client:
+            async with create_http_client(timeout_sec=timeout_sec, proxy=proxy) as client:
                 response = await client.get(url, headers=headers)
 
                 if response.status_code == 403 and response.headers.get("cf-mitigated") == "challenge":
@@ -606,8 +572,8 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: O
         "params": {"name": config["tool_name"], "arguments": config["build_args"](query, num_results)},
     }
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=10.0), proxy=proxy) as c:
-            resp = await c.post(config["url"], json=payload,
+        async with create_http_client(timeout_sec=25.0, proxy=proxy) as client:
+            resp = await client.post(config["url"], json=payload,
                 headers={"Accept": "application/json, text/event-stream"})
             resp.raise_for_status()
             data = resp.json()
@@ -735,11 +701,7 @@ async def _search_bing(
     }
     params = {"q": query, "count": num_results}
     
-    async with httpx.AsyncClient(
-        timeout=httpx.Timeout(15.0, connect=8.0),
-        follow_redirects=True,
-        proxy=proxy_config  # 小健 2026-05-19: proxies→proxy(httpx 0.26.0已弃用proxies)
-    ) as client:
+    async with create_http_client(timeout_sec=15.0, proxy=proxy_config) as client:
         response = await client.get("https://cn.bing.com/search", params=params, headers=headers)
         response.raise_for_status()
         html = response.text

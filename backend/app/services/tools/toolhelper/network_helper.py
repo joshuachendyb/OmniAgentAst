@@ -11,13 +11,12 @@
 本文件属于【工具层helper】，使用 _response.py 的 build_success/build_error/build_warning
 禁止使用 agent/tool_result_utils.py 的 create_xxx 函数
 
-包含函数（6个）：
+包含函数（5个）：
 - _check_network: 检查网络连通性（内部Helper）
 - _validate_url: 验证URL格式（内部Helper）
 - _html_to_markdown: 简易HTML转Markdown（内部Helper）- 小沈 2026-05-17
 - _decode_bing_redirect_url: 解码Bing跳转URL（内部Helper）- 小沈 2026-05-17
 - well_known_ports: 常用端口映射表（内部常量）- 小健 2026-05-18
-- _create_http_client: 统一创建httpx.AsyncClient（内部Helper）- 小健 2026-05-18
 
 Author: 小沈 - 2026-05-17
 """
@@ -105,7 +104,6 @@ __all__ = [
     "_html_to_markdown",
     "_decode_bing_redirect_url",
     "well_known_ports",
-    "_create_http_client",
 ]
 
 
@@ -195,39 +193,3 @@ well_known_ports = {
     27017: "MongoDB",
 }
 """常用端口映射表 - 小健 2026-05-18 从 network_tools.py 下沉"""
-
-
-async def _create_http_client(
-    timeout_sec: float = 30.0,
-    proxy: Optional[str] = None,
-    verify_ssl: bool = True,
-    follow_redirects: bool = True,
-) -> Any:
-    """统一创建httpx.AsyncClient - 小健 2026-05-18
-
-    消除 http_request/download_file/fetch_webpage 三处重复的客户端创建代码。
-    统一代理配置（HTTP_PROXY/HTTPS_PROXY环境变量）、超时、SSL验证。
-
-    Args:
-        timeout_sec: 超时秒数，默认30
-        proxy: 代理地址。None时从环境变量HTTPS_PROXY/HTTP_PROXY读取
-        verify_ssl: 是否验证SSL证书，默认True
-        follow_redirects: 是否跟随重定向，默认True
-
-    Returns:
-        httpx.AsyncClient 实例（需由调用方 async with 使用）
-    """
-    import httpx
-
-    proxy_url = proxy or os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
-
-    limits = httpx.Limits(max_connections=100, max_keepalive_connections=20)
-    timeout = httpx.Timeout(timeout_sec, connect=timeout_sec)
-
-    return httpx.AsyncClient(
-        verify=verify_ssl,
-        timeout=timeout,
-        limits=limits,
-        follow_redirects=follow_redirects,
-        proxy=proxy_url if proxy_url else None,
-    )
