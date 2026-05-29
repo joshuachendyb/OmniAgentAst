@@ -37,7 +37,7 @@ class ExecutionStep:
         return data
 
 
-async def generate_execution_stream(session_id: str):
+async def _generate_execution_stream(session_id: str):
     """
     生成执行过程的SSE流
     
@@ -154,7 +154,7 @@ async def get_execution_stream(session_id: str):
     
     # 返回SSE流
     return StreamingResponse(
-        generate_execution_stream(session_id),
+        _generate_execution_stream(session_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
