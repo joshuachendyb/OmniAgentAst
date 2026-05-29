@@ -87,7 +87,7 @@ from ._keyword_parsers import (
     _extract_fields_partial,
 )
 
-from ._handlers import (
+from .parse_react_response import (
     _handle_dict_input,
     _handle_list_input,
     _handle_json_array_string,
