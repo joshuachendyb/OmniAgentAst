@@ -612,10 +612,6 @@ class FinalStep(ReasoningStep):
         self._thought = thought
         self._model = model
         self._provider = provider
-        # 【修复 2026-05-13 小健】初始化属性，避免访问时AttributeError
-        self._is_finished = True       # type="final"本身就是已完成标识
-        self._is_streaming = False     # 最终回答不是流式
-        self._is_reasoning = False     # 最终回答不可能在推理中
     
     def get_type(self) -> str:
         return "final"
@@ -632,21 +628,6 @@ class FinalStep(ReasoningStep):
     def thought(self) -> str:
         """获取思考过程"""
         return self._thought
-    
-    @property
-    def is_finished(self) -> bool:
-        """获取业务完成标志"""
-        return self._is_finished
-    
-    @property
-    def is_streaming(self) -> bool:
-        """获取是否流式输出"""
-        return self._is_streaming
-    
-    @property
-    def is_reasoning(self) -> bool:
-        """获取是否推理中"""
-        return self._is_reasoning
     
     @property
     def model(self) -> Optional[str]:
