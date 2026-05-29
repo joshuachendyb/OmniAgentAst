@@ -2,13 +2,14 @@
 
 **创建时间**: 2026-05-29 12:09:34
 **编写人**: 小沈
-**文档版本**: v1.0
+**文档版本**: v1.1
 
 ## 版本历史
 
 | 版本 | 时间 | 签名 | 更新内容 |
 |------|------|------|---------|
 | v1.0 | 2026-05-29 12:09:34 | 小沈 | 初始版本：拆分说明 + 审计结果 + 修复记录 |
+| v1.1 | 2026-05-29 12:30:00 | 小沈 | 优化：Handler#7拆分子函数+Handler#9单正则+_handlers→parse_react_response |
 
 ---
 
@@ -35,13 +36,13 @@
 
 ```
 backend/app/services/agent/llm_response_parser/
-├── __init__.py          # 包入口，导出 parse_react_response
-├── _utils.py            # 第1层：零依赖共享工具函数
-├── _tool_params.py      # 第2层：工具参数提取/规范化（依赖 _utils）
-├── _json_strategies.py  # 第3层：JSON 解析策略（依赖 _utils, _tool_params）
-├── _result_builders.py  # 第4层：结果构建（依赖 _utils, _tool_params）
-├── _keyword_parsers.py  # 第5层：ReAct 关键词解析（依赖 _utils, _tool_params, _result_builders）
-└── _handlers.py         # 第6层：输入处理器 + 解析入口（依赖所有下层）
+├── __init__.py              # 包入口，导出 parse_react_response
+├── _utils.py                # 第1层：零依赖共享工具函数
+├── _tool_params.py          # 第2层：工具参数提取/规范化（依赖 _utils）
+├── _json_strategies.py      # 第3层：JSON 解析策略（依赖 _utils, _tool_params）
+├── _result_builders.py      # 第4层：结果构建（依赖 _utils, _tool_params）
+├── _keyword_parsers.py      # 第5层：ReAct 关键词解析（依赖 _utils, _tool_params, _result_builders）
+└── parse_react_response.py  # 第6层：输入处理器 + 解析入口（依赖所有下层）
 ```
 
 ### 2.2 分层依据
@@ -53,7 +54,7 @@ backend/app/services/agent/llm_response_parser/
 | 3 | `_json_strategies.py` | JSON 解析策略（5级降级） | `_utils`, `_tool_params` |
 | 4 | `_result_builders.py` | 构建 typed result dict | `_utils`, `_tool_params` |
 | 5 | `_keyword_parsers.py` | ReAct 关键词匹配解析 | `_utils`, `_tool_params`, `_result_builders` |
-| 6 | `_handlers.py` | 输入处理器链 + 主入口 | 所有下层 |
+| 6 | `parse_react_response.py` | 输入处理器链 + 主入口 | 所有下层 |
 
 **依赖方向**：单向，无循环依赖。
 
@@ -119,18 +120,21 @@ backend/app/services/agent/llm_response_parser/
 | `_try_single_quotes` | `_keyword_parsers.py` | 关键词解析 |
 | `_try_kv_parse` | `_keyword_parsers.py` | 关键词解析 |
 | `_extract_fields_partial` | `_keyword_parsers.py` | 关键词解析 |
-| `_handle_dict_input` | `_handlers.py` | 输入处理 |
-| `_handle_list_input` | `_handlers.py` | 输入处理 |
-| `_handle_json_array_string` | `_handlers.py` | 输入处理 |
-| `_handle_empty_input` | `_handlers.py` | 输入处理 |
-| `_handle_standard_json` | `_handlers.py` | 输入处理 |
-| `_handle_non_standard_json` | `_handlers.py` | 输入处理 |
-| `_handle_mixed_text_json` | `_handlers.py` | 输入处理 |
-| `_handle_regex_fallback` | `_handlers.py` | 输入处理 |
-| `_handle_known_tool_match` | `_handlers.py` | 输入处理 |
-| `_handle_keyword_match` | `_handlers.py` | 输入处理 |
-| `parse_react_response` | `_handlers.py` | 主入口 |
-| `_try_regex_tool_call_fallback` | `_handlers.py` | 输入处理 |
+| `_handle_dict_input` | `parse_react_response.py` | 输入处理 |
+| `_handle_list_input` | `parse_react_response.py` | 输入处理 |
+| `_handle_json_array_string` | `parse_react_response.py` | 输入处理 |
+| `_handle_empty_input` | `parse_react_response.py` | 输入处理 |
+| `_handle_standard_json` | `parse_react_response.py` | 输入处理 |
+| `_handle_non_standard_json` | `parse_react_response.py` | 输入处理 |
+| `_handle_mixed_text_json` | `parse_react_response.py` | 输入处理 |
+| `_handle_incomplete_json` | `parse_react_response.py` | **v1.1新增**：不完整JSON处理 |
+| `_handle_finish_tool` | `parse_react_response.py` | **v1.1新增**：finish工具处理 |
+| `_handle_implicit_content` | `parse_react_response.py` | **v1.1新增**：隐式内容处理 |
+| `_handle_regex_fallback` | `parse_react_response.py` | 输入处理 |
+| `_handle_known_tool_match` | `parse_react_response.py` | 输入处理 |
+| `_handle_keyword_match` | `parse_react_response.py` | 输入处理 |
+| `parse_react_response` | `parse_react_response.py` | 主入口 |
+| `_try_regex_tool_call_fallback` | `parse_react_response.py` | 输入处理 |
 
 ---
 
@@ -164,6 +168,10 @@ backend/app/services/agent/llm_response_parser/
 | YAGNI: 死代码 | `_keyword_parsers.py` + `_json_strategies.py` | 删 `_parse_thought_only_reasoning` + `ParseStrategy` |
 | YAGNI: `__all__` | `__init__.py` | 11个导出 → 1个（仅 `parse_react_response`） |
 | No compat: docstring | `__init__.py` | 删 "保持与原完全相同" 误导声明 |
+| SRP: 文件改名 | `_handlers.py` → `parse_react_response.py` | 文件名与主入口函数名一致 |
+| KISS: Handler #7 拆分 | 62行 → 3个子函数 | `_handle_incomplete_json` / `_handle_finish_tool` / `_handle_implicit_content` |
+| 性能: Handler #9 优化 | `for` 循环 × n 次正则 → 单次正则匹配 | O(n×m) → O(m) |
+| 可读性: 重复调用注释 | Handler #7 和 #8 的 `_try_regex_tool_call_fallback` 调用加注释 | 说明区别：降级 vs 最终兜底 |
 
 ### 3.4 暂缓项
 
@@ -212,12 +220,12 @@ _result_builders.py (第4层 - 依赖 _utils, _tool_params)
 _keyword_parsers.py (第5层 - 依赖 _utils, _tool_params, _result_builders)
     │
     ▼
-_handlers.py (第6层 - 顶层，依赖所有下层)
+parse_react_response.py (第6层 - 顶层，依赖所有下层)
 ```
 
 **依赖方向**：单向，无循环依赖。
 
 ---
 
-**文档完成时间**: 2026-05-29 12:09:34
+**文档完成时间**: 2026-05-29 12:30:00
 **编写人**: 小沈
