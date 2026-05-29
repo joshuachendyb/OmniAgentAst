@@ -111,6 +111,91 @@ def _handle_non_standard_json(output) -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Handler #7: 混合文本中提取JSON块 + 不完整JSON检测
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Handler #7: 混合文本中提取JSON块 + 不完整JSON检测
+# ---------------------------------------------------------------------------
+
+def _handle_incomplete_json(output: str) -> Optional[Dict[str, Any]]:
+    """处理不完整JSON：检测是否像截断的JSON，尝试正则兜底
+    
+    与 Handler #8 的区别：
+    - 本函数：JSON 提取失败后的降级，针对"看起来像截断的JSON"的特定情况
+    - Handler #8：所有 JSON 解析都失败后的最终兜底，针对任意输入
+    
+    错误处理路径：
+    - 像不完整JSON + 正则成功 → 返回 action（带 warning）
+    - 像不完整JSON + 正则失败 → 返回 chunk
+    - 不像不完整JSON → 返回 None（交给下一个 handler）
+    """
+    if not re.match(r'^\s*\{\s*"thought":\s*"', output):
+        return None
+
+    regex_recovered = _try_regex_tool_call_fallback(output)
+    if regex_recovered:
+        logger.info("不完整JSON但正则兜底提取到tool调用")
+        return _add_reasoning_warning(regex_recovered)
+
+    thought_text = output.strip()
+    logger.info("检测到不完整JSON格式，返回chunk")
+    return _build_handler_result("chunk", thought=thought_text)
+
+
+def _handle_finish_tool(json_data: Dict, prefix_text: str) -> Optional[Dict[str, Any]]:
+    """处理 tool_name == "finish" 的情况
+    
+    错误处理路径：
+    - tool_params.result 存在 → 拼接 prefix_text + result_text
+    - tool_params.result 不存在 → 返回空 content
+    - prefix_text 为空 → 直接用 result_text
+    """
+    tool_params = json_data.get("tool_params", {})
+    if not isinstance(tool_params, dict):
+        tool_params = {}
+
+    raw_result = tool_params.get("result") if tool_params else None
+    result_text = _normalize_result_to_str(raw_result) if raw_result is not None else ""
+
+    if prefix_text and result_text:
+        content = prefix_text + ("\n\n" + result_text if result_text not in prefix_text else "")
+    else:
+        content = prefix_text or result_text or ""
+
+    thought = prefix_text or json_data.get("thought", "")
+    return _build_handler_result("answer", thought=thought,
+        content=content, response=content)
+
+
+def _handle_implicit_content(json_data: Dict, output: str, prefix_text: str) -> Optional[Dict[str, Any]]:
+    """处理有 content/reasoning 但无 tool_name 的隐式解析
+    
+    错误处理路径：
+    - output 包含 "Action:" 或 "Answer:" → 返回 None（让后续 handler 处理）
+    - content 是嵌套 JSON 字符串 → 尝试解析提取内层 content
+    - content 解析失败 → 保留原始 content
+    """
+    if "content" not in json_data and "reasoning" not in json_data:
+        return None
+
+    if re.search(r'\bAction\s*:', output, re.IGNORECASE) or \
+       re.search(r'\bAnswer\s*:', output, re.IGNORECASE):
+        return None
+
+    content = json_data.get("content", "")
+    reasoning = json_data.get("reasoning", "")
+
+    # 尝试解析嵌套的 content JSON（如 content 字段本身是 JSON 字符串）
+    if isinstance(content, str) and content.startswith("{"):
+        try:
+            parsed = json.loads(content)
+            if isinstance(parsed, dict):
+                content = parsed.get("content", content)
+        except (json.JSONDecodeError, TypeError):
+            pass  # 解析失败，保留原始 content
+
+    return _build_handler_result("implicit", thought=prefix_text or content,
+        content=content, reasoning=reasoning, response=content)
+
+
 def _handle_mixed_text_json(output) -> Optional[Dict[str, Any]]:
     if not isinstance(output, str):
         return None
@@ -121,16 +206,9 @@ def _handle_mixed_text_json(output) -> Optional[Dict[str, Any]]:
         json_start = output.find("{")
         prefix_text = output[:json_start].strip() if json_start != -1 else ""
 
+    # 没有 JSON 块：尝试不完整 JSON 处理
     if not json_data:
-        if re.match(r'^\s*\{\s*"thought":\s*"', output):
-            regex_recovered = _try_regex_tool_call_fallback(output)
-            if regex_recovered:
-                logger.info("不完整JSON但正则兜底提取到tool调用")
-                return _add_reasoning_warning(regex_recovered)
-            thought_text = output.strip()
-            logger.info("检测到不完整JSON格式，返回chunk")
-            return _build_handler_result("chunk", thought=thought_text)
-        return None
+        return _handle_incomplete_json(output)
 
     if not isinstance(json_data, dict):
         return None
@@ -140,43 +218,26 @@ def _handle_mixed_text_json(output) -> Optional[Dict[str, Any]]:
     if not isinstance(tool_params, dict):
         tool_params = {}
 
+    # tool_name == "finish" → 返回 answer
     if tool_name == "finish":
-        raw_result = tool_params.get("result") if tool_params else None
-        result_text = _normalize_result_to_str(raw_result) if raw_result is not None else ""
-        if prefix_text and result_text:
-            content = prefix_text + ("\n\n" + result_text if result_text not in prefix_text else "")
-        else:
-            content = prefix_text or result_text or ""
-        thought = prefix_text or json_data.get("thought", "")
-        return _build_handler_result("answer", thought=thought,
-            content=content, response=content)
+        return _handle_finish_tool(json_data, prefix_text)
 
+    # 有 tool_name → 返回 action
     if tool_name:
         extracted = json_data.get("content", "") or prefix_text
         params = _process_tool_params(tool_params, tool_name, output)
         return _build_handler_result("action", thought=json_data.get("thought", ""),
             content=extracted, tool_name=tool_name, tool_params=params)
 
-    if "content" in json_data or "reasoning" in json_data:
-        if not re.search(r'\bAction\s*:', output, re.IGNORECASE) and \
-           not re.search(r'\bAnswer\s*:', output, re.IGNORECASE):
-            content = json_data.get("content", "")
-            reasoning = json_data.get("reasoning", "")
-            if isinstance(content, str) and content.startswith("{"):
-                try:
-                    parsed = json.loads(content)
-                    if isinstance(parsed, dict):
-                        content = parsed.get("content", content)
-                except (json.JSONDecodeError, TypeError):
-                    pass
-            return _build_handler_result("implicit", thought=prefix_text or content,
-                content=content, reasoning=reasoning, response=content)
-
-    return None
+    # 有 content/reasoning → 隐式解析
+    return _handle_implicit_content(json_data, output, prefix_text)
 
 
 # ---------------------------------------------------------------------------
 # Handler #8: 正则兜底
+# ---------------------------------------------------------------------------
+# Handler #8: 正则兜底（所有 JSON 解析失败后的最终兜底）
+# 与 _handle_incomplete_json 的区别：本 handler 不检查输入格式，直接尝试正则
 # ---------------------------------------------------------------------------
 def _handle_regex_fallback(output) -> Optional[Dict[str, Any]]:
     if not isinstance(output, str):
@@ -198,35 +259,41 @@ def _handle_known_tool_match(output) -> Optional[Dict[str, Any]]:
     logger.info(f"[parse_react_response] 尝试已知工具名匹配流程")
 
     known_tool_names = _get_all_tool_names()
+    if not known_tool_names:
+        return None
 
-    content_lower = output.lower()
+    # 构建单个正则，一次匹配所有工具名（O(m) 替代 O(n×m)）
+    escaped_names = [re.escape(name) for name in known_tool_names]
+    combined_pattern = rf'(?i)\b({"|".join(escaped_names)})\b'
+    match = re.search(combined_pattern, output)
+    if not match:
+        logger.info(f"[parse_react_response] 未找到已知工具名")
+        return None
 
-    for tool_name in known_tool_names:
-        pattern = rf'\b{re.escape(tool_name)}\b'
-        if re.search(pattern, content_lower, re.IGNORECASE):
-            logger.info(f"[parse_react_response] 在内容中找到已知工具名: {tool_name}")
+    tool_name = match.group(1)
+    logger.info(f"[parse_react_response] 在内容中找到已知工具名: {tool_name}")
 
-            params = {}
-            path_pattern = r'["\']?([\w\-/\.]+\.(?:txt|md|py|json|yaml|yml|csv|xlsx|xls|doc|docx|pdf|jpg|jpeg|png|gif))["\']?'
-            path_matches = re.findall(path_pattern, output, re.IGNORECASE)
-            if path_matches:
-                params["path"] = path_matches[0]
+    params = {}
+    path_pattern = r'["\']?([\w\-/\.]+\.(?:txt|md|py|json|yaml|yml|csv|xlsx|xls|doc|docx|pdf|jpg|jpeg|png|gif))["\']?'
+    path_matches = re.findall(path_pattern, output, re.IGNORECASE)
+    if path_matches:
+        params["path"] = path_matches[0]
 
-            content_pattern = r'["\']content["\']?\s*:\s*["\']([^"\']+)["\']'
-            content_match = re.search(content_pattern, output)
-            if content_match:
-                params["content"] = content_match.group(1)
+    content_pattern = r'["\']content["\']?\s*:\s*["\']([^"\']+)["\']'
+    content_match = re.search(content_pattern, output)
+    if content_match:
+        params["content"] = content_match.group(1)
 
-            return {
-                "type": "action",
-                "thought": output[:200] + ("..." if len(output) > 200 else ""),
-                "content": output,
-                "reasoning": "",
-                "tool_name": tool_name,
-                "tool_params": params if params else {"unknown_params": True},
-                "response": None,
-                "error": None
-            }
+    return {
+        "type": "action",
+        "thought": output[:200] + ("..." if len(output) > 200 else ""),
+        "content": output,
+        "reasoning": "",
+        "tool_name": tool_name,
+        "tool_params": params if params else {"unknown_params": True},
+        "response": None,
+        "error": None
+    }
 
     logger.info(f"[parse_react_response] 未找到已知工具名")
     return None
