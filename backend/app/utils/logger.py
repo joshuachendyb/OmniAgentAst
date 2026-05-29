@@ -304,10 +304,6 @@ class APILogger:
         
         return request_id
     
-    def log_request(self, provider: str, model: str, message_len: int, history_count: int = 0):
-        """记录请求开始"""
-        return self.log_request_start(provider, model, message_len, history_count)
-    
     def log_response_with_time(self, request_id: str, provider: str, status_code: int, 
                                content_len: int = 0, error: Optional[str] = None):
         """记录响应并计算耗时"""
@@ -334,18 +330,7 @@ class APILogger:
             )
         
         return elapsed_time
-    
-    def log_response(self, provider: str, status_code: int, content_len: int = 0, error: Optional[str] = None):
-        """记录响应"""
-        if error:
-            self.logger.error(
-                f"[{provider}] 响应错误 | 状态码: {status_code} | 错误: {error}"
-            )
-        else:
-            self.logger.info(
-                f"[{provider}] 响应成功 | 状态码: {status_code} | 内容长度: {content_len}"
-            )
-    
+
     def log_timeout(self, provider: str, timeout_seconds: int):
         """记录超时"""
         self.logger.warning(
