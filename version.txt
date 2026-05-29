@@ -1,3 +1,31 @@
+v0.14.4
+
+更新时间: 2026-05-29 18:02:14
+
+## v0.14.3→v0.14.4 变更汇总 - 小健-2026-05-29
+
+### fix+refactor+docs 后端深度核查 + 死代码删除 + 文档整理（8个commit）
+
+| commit | 说明 |
+|--------|------|
+| 4bc3d270 | docs: 新增后端代码10大原则深度核查问题清单 - 小健-2026-05-29 |
+| fdaebfe5 | docs: 新增重命名文档(带[x]/[y]前缀) - 小健-2026-05-29 |
+| e8720423 | docs: 删除旧版文档(已重命名带[x]/[y]前缀) - 小健-2026-05-29 |
+| c548a9fd | refactor: 删除死代码agent_utils/_utils/backup/tool_aliases/service_helper/task_helper - 小健-2026-05-29 |
+| 7e84298d | fix: Tools层file_tools/tool_queries/data_format_helper - 小健-2026-05-29 |
+| 5431e7a6 | fix: Agent层__init__/react_agent_mixin/universal_react - 小健-2026-05-29 |
+| 4e9d725e | fix: operation_models+main.py - 小健-2026-05-29 |
+| 107bd38c | fix: API层messages/operation_history/routes - 小健-2026-05-29 |
+
+### 变更详情
+
+1. **后端深度核查**：38个违反10大原则问题清单输出
+2. **死代码删除**（4,223行净删）：agent_utils/_utils.py（168行）、backup/registry.py（862行）、tool_aliases.py（82行）、service_helper.py（135行）、task_helper.py（144行）
+3. **修复**：API层3文件、Agent层3文件、Tools层3文件、models+main
+4. **文档整理**：3份文档重命名带[x]/[y]前缀
+
+---
+
 v0.14.3
 
 更新时间: 2026-05-27 15:20:00
