@@ -12,6 +12,7 @@ Author: 小沈 - 2026-05-28
 from typing import Any, Dict, List, Optional
 
 from app.services.agent.tool_result_formatter import format_llm_observation
+from app.utils.common import format_param_value
 
 
 def build_llm_messages(message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
@@ -89,7 +90,7 @@ def build_schema_text(openai_tools: List[Dict]) -> str:
             pdefault = pinfo.get("default")
             is_required = pname in required
             if pdefault is not None:
-                params_list.append(f"{pname}({ptype}, default={pdefault})")
+                params_list.append(f"{pname}({ptype}, default={format_param_value(pdefault)})")
             elif is_required:
                 params_list.append(f"{pname}({ptype}, required)")
             else:
