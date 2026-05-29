@@ -181,13 +181,6 @@ class SessionUpdate(BaseModel):
 
 
 
-def _get_sql_mode(mode: str) -> str:
-    """将外层mode映射为_build_update_sql所需的sql_mode"""
-    if mode == "optimistic":
-        return "optimistic"
-    return "legacy"
-
-
 def _resolve_update_mode(
     update_data: SessionUpdate,
     cursor, session_id: str, utc_time: str,
@@ -278,9 +271,8 @@ async def update_session(session_id: str, update_data: SessionUpdate):
             mode, _, params = _resolve_update_mode(update_data, cursor, session_id, utc_time)
             if mode == "not_found":
                 raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
-            sql_mode = _get_sql_mode(mode)
-            set_clause, where_clause = _build_update_sql(sql_mode)
-            update_params = _build_update_params(sql_mode, update_data, utc_time, session_id)
+            set_clause, where_clause = _build_update_sql(mode)
+            update_params = _build_update_params(mode, update_data, utc_time, session_id)
             cursor.execute(f"UPDATE chat_sessions {set_clause} WHERE id = ? {where_clause}", update_params)
             if mode == "optimistic":
                 if cursor.rowcount == 0:
@@ -394,10 +386,6 @@ async def get_session_titles_batch(
         with db.get_conn("chat") as conn:
             cursor = conn.cursor()
             
-            # P0风险缓解：检查数据库字段是否存在
-            fields_exist = db.check_fields("chat_sessions", ["title_locked", "title_updated_at"])
-            
-            # 构建查询SQL
             # 使用IN子句批量查询
             placeholders = ','.join(['?' for _ in id_list])
             
