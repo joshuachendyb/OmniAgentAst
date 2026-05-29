@@ -68,7 +68,6 @@ _OPTIONAL_FIELDS = {
 
 
 def build_success(
-    code: str = SUCCESS_CODE,
     data: Any = None,
     message: str = "执行成功",
     warning: Optional[str] = None,
@@ -77,6 +76,7 @@ def build_success(
     retry_count: int = 0,
     return_direct: bool = False,
     attachment: Optional[Dict[str, Any]] = None,
+    code: Optional[str] = None,
     **extra: Any,
 ) -> Dict[str, Any]:
     """构建成功响应
