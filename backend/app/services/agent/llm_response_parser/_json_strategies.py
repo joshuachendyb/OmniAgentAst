@@ -1,16 +1,33 @@
 # -*- coding: utf-8 -*-
 """
 JSON 策略解析模块（第3层 - 依赖 _utils, _tool_params）
+
+【OCP改造 2026-05-29 小健】
+采用注册制，支持动态扩展JSON解析策略，符合OCP原则
 """
 
 import re
 import json
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Callable
 
 from app.utils.logger import logger
 from app.utils.data_utils import parse_json
 from ._utils import _extract_json_with_balanced_braces
 from ._tool_params import _extract_params_by_regex_from_json_str, _extract_content_value_from_json_str
+
+
+_STRATEGY_REGISTRY: List[Callable[[str], Optional[Dict[str, Any]]]] = []
+
+
+def register_strategy(func: Callable[[str], Optional[Dict[str, Any]]]) -> Callable[[str], Optional[Dict[str, Any]]]:
+    """注册JSON解析策略装饰器 — 小健 2026-05-29"""
+    _STRATEGY_REGISTRY.append(func)
+    return func
+
+
+def get_strategies() -> List[Callable[[str], Optional[Dict[str, Any]]]]:
+    """获取策略链（支持运行时扩展）— 小健 2026-05-29"""
+    return list(_STRATEGY_REGISTRY)
 
 
 def _extract_json_string(content: str) -> Optional[str]:
@@ -21,10 +38,12 @@ def _extract_json_string(content: str) -> Optional[str]:
     return json_str if json_str else None
 
 
+@register_strategy
 def _strategy_direct_parse(json_str: str) -> Optional[Dict[str, Any]]:
     return parse_json(json_str)
 
 
+@register_strategy
 def _strategy_encoding_fix(json_str: str) -> Optional[Dict[str, Any]]:
     try:
         json_fixed = json_str.encode('utf-8', errors='replace').decode('utf-8')
@@ -33,6 +52,7 @@ def _strategy_encoding_fix(json_str: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+@register_strategy
 def _strategy_chinese_quotes(json_str: str) -> Optional[Dict[str, Any]]:
     for fix_fn in [
         lambda s: s.replace('\u201c', '\u300c').replace('\u201d', '\u300d'),
@@ -45,6 +65,7 @@ def _strategy_chinese_quotes(json_str: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+@register_strategy
 def _strategy_newline_fix(json_str: str) -> Optional[Dict[str, Any]]:
     try:
         escaped = json_str.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
@@ -53,6 +74,7 @@ def _strategy_newline_fix(json_str: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+@register_strategy
 def _strategy_trailing_comma(json_str: str) -> Optional[Dict[str, Any]]:
     try:
         escaped = json_str.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
@@ -60,15 +82,6 @@ def _strategy_trailing_comma(json_str: str) -> Optional[Dict[str, Any]]:
         return json.loads(fixed)
     except json.JSONDecodeError:
         return None
-
-
-STRATEGIES = [
-    _strategy_direct_parse,
-    _strategy_encoding_fix,
-    _strategy_chinese_quotes,
-    _strategy_newline_fix,
-    _strategy_trailing_comma,
-]
 
 
 def _try_parse_with_strategies(
@@ -174,7 +187,7 @@ def _try_extract_last_tool_call(content: str) -> Optional[Dict[str, Any]]:
     json_str, _ = _extract_json_with_balanced_braces(content[last_brace:])
     if not json_str:
         return None
-    data = _try_parse_with_strategies(json_str, STRATEGIES)
+    data = _try_parse_with_strategies(json_str, get_strategies())
     if data and data.get("tool_name"):
         logger.info(
             f"[_extract_json_block] 第一个JSON无tool_name，从末尾提取成功: "
@@ -189,7 +202,7 @@ def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
     if not json_str:
         return None
 
-    data = _try_parse_with_strategies(json_str, STRATEGIES)
+    data = _try_parse_with_strategies(json_str, get_strategies())
 
     if (not data or not data.get("tool_name")) and content.count('{') > 1:
         data = _try_extract_last_tool_call(content)

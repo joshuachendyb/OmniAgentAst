@@ -44,7 +44,8 @@ from ._json_strategies import (
     _strategy_chinese_quotes,
     _strategy_newline_fix,
     _strategy_trailing_comma,
-    STRATEGIES,
+    register_strategy,
+    get_strategies,
     _try_parse_with_strategies,
     _FIELD_ALIASES,
     _try_extract_single_field,
@@ -53,6 +54,8 @@ from ._json_strategies import (
     _extract_json_block,
     _try_parse_non_standard_json,
 )
+
+STRATEGIES = get_strategies()
 
 from ._result_builders import (
     _process_json_result,
