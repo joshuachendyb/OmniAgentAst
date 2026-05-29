@@ -42,6 +42,7 @@
 | `extract_display_name_from_steps` | 从步骤提取显示名称 | execution_steps_data | str或None |
 | `build_display_name` | 构建显示名称 | provider, model | str |
 | `extract_metadata_from_steps` | 从步骤提取元数据 | execution_steps | dict |
+| `format_param_value` | **【v1.3新增】** 将参数默认值格式化为字符串（供LLM提示文本使用），None→""、bool→"true"/"false" | val | str |
 
 ### 1.4 工具函数（tool_result_utils.py）
 
