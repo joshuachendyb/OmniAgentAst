@@ -136,8 +136,12 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """应用关闭时清理后台shell进程"""
-    # 【Phase 1修复 小健 2026-05-14】函数内import避免触发register
+    """应用关闭时清理资源"""
+    # 清理 LLM 客户端
+    from app.services.factory import AIServiceFactory
+    await AIServiceFactory.reset()
+    
+    # 清理后台shell进程
     from app.services.tools.shell.shell_tools import cleanup_background_shells
     count = cleanup_background_shells()
     logger.info(f"已清理 {count} 个后台shell进程")
