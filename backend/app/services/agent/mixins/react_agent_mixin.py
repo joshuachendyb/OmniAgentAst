@@ -144,7 +144,8 @@ class ReactAgentMixin(ToolLoaderMixin):
         此处只做多分类拼接，不再生成额外标题。
         【2026-05-18 小沈】使用resolve_category支持新旧分类名
         """
-        from app.services.tools.registry import tool_registry, resolve_category
+        from app.services.tools.registry import tool_registry
+        from app.services.intents.intent_mapper import resolve_category
         parts = []
         loaded_cats = getattr(self, '_loaded_categories', set())
         for cat_name in sorted(loaded_cats):

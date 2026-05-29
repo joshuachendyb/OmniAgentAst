@@ -51,7 +51,7 @@ from app.services.react_sse_wrapper import running_tasks, running_tasks_lock, ge
 from app.chat_stream.start_step import send_start_step
 from app.chat_stream.sse_formatter import format_sse_event
 from app.services.preprocessing.intent_classifier import classify_intent
-from app.services.tools.registry import resolve_category
+from app.services.intents.intent_mapper import resolve_category
 
 
 # 【修复 2026-04-30 小沈】CRSS置信度阈值：归一化评分 >= 此值认为意图可信

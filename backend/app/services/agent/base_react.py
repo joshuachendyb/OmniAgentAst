@@ -237,8 +237,8 @@ class BaseAgent(ReActHandlerMixin, ABC):
         
         logger.info(f"[动态加载] 原因: {reason}，加载意图: {intent_type}")
         
-        # 1. 获取该意图的工具（支持新旧意图名） - 【2026-05-18 小沈】
-        from app.services.tools.registry import resolve_category
+        # 1. 获取该意图的工具 - 【2026-05-18 小沈】
+        from app.services.intents.intent_mapper import resolve_category
         category = resolve_category(intent_type)
         if not category:
             logger.warning(f"[动态加载] 意图'{intent_type}'无对应工具分类")

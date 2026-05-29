@@ -29,26 +29,15 @@ def test_text_strategy_no_parse():
     return True
 
 
-def test_resolve_category_delegation():
-    """验证registry.resolve_category委托给intent_mapper"""
-    from app.services.tools.registry import resolve_category
-    from app.services.intents.intent_mapper import resolve_category as resolve_unified
+def test_resolve_category():
+    """验证intent_mapper.resolve_category正常解析"""
+    from app.services.intents.intent_mapper import resolve_category
     
-    # 测试几个意图类型
     test_cases = ["file", "shell", "network", "system", "desktop", "document"]
-    
-    all_match = True
     for intent in test_cases:
-        result_registry = resolve_category(intent)
-        result_unified = resolve_unified(intent)
-        
-        if result_registry != result_unified:
-            print(f"❌ 失败：intent={intent}, registry={result_registry}, unified={result_unified}")
-            all_match = False
-    
-    if all_match:
-        print("✅ 通过：registry.resolve_category正确委托给intent_mapper")
-        print("   符合DRY原则：统一入口")
+        cat = resolve_category(intent)
+        assert cat is not None, f"{intent}: resolve_category返回None"
+    print("✅ 通过：intent_mapper.resolve_category正常解析")
         return True
     return False
 
