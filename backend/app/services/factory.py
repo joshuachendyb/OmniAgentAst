@@ -59,7 +59,6 @@ for provider_name in ai_config.keys():
 """
 
 import os
-import asyncio
 import threading
 from dataclasses import dataclass
 from datetime import datetime
@@ -99,7 +98,32 @@ class AIServiceFactory:
     _backup_path: Optional[str] = None
     _config_path: Optional[str] = None
     _backup_lock: threading.Lock = threading.Lock()  # ⭐ 新增：锁保护
-    
+
+    @staticmethod
+    async def _close_instance(instance: Optional[BaseAIService]) -> None:
+        """安全关闭服务实例（异步）— 消除3次重复 — 小沈 2026-05-29"""
+        if instance is None:
+            return
+        try:
+            await instance.close()
+        except Exception as e:
+            logger.warning(f"[AIServiceFactory] 关闭实例出错: {e}")
+
+    @staticmethod
+    def _close_instance_sync(instance: Optional[BaseAIService]) -> None:
+        """安全关闭服务实例（同步包装，用于无法await的上下文）"""
+        if instance is None:
+            return
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.ensure_future(instance.close())
+            else:
+                loop.run_until_complete(instance.close())
+        except Exception as e:
+            logger.warning(f"[AIServiceFactory] 关闭旧实例出错: {e}")
+
     @classmethod
     def get_config_path(cls, config_path: Optional[str] = None) -> str:
         """获取配置文件路径"""
@@ -199,17 +223,8 @@ class AIServiceFactory:
         old_instance = cls._instance
         cls._instance = None
         cls._current_provider = final_provider
-        
-        if old_instance is not None:
-            try:
-                import asyncio
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.ensure_future(old_instance.close())
-                else:
-                    loop.run_until_complete(old_instance.close())
-            except Exception as e:
-                logger.warning(f"[AIServiceFactory] 关闭旧实例出错: {e}")
+
+        cls._close_instance_sync(old_instance)
         
         log_msg = f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}"
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {log_msg}")
@@ -241,16 +256,7 @@ class AIServiceFactory:
             cls._instance = None
             cls._current_provider = ""
         
-        if old_instance is not None:
-            try:
-                import asyncio
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.ensure_future(old_instance.close())
-                else:
-                    loop.run_until_complete(old_instance.close())
-            except Exception as e:
-                logger.warning(f"[AIServiceFactory] reset关闭实例出错: {e}")
+        cls._close_instance_sync(old_instance)
         
         print("[AIServiceFactory] 工厂状态已重置")
     
@@ -288,17 +294,8 @@ class AIServiceFactory:
             old_instance = cls._instance
             cls._instance = None
             cls._current_provider = final_provider
-            
-            if old_instance is not None:
-                try:
-                    import asyncio
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        asyncio.ensure_future(old_instance.close())
-                    else:
-                        loop.run_until_complete(old_instance.close())
-                except Exception as e:
-                    logger.warning(f"[AIServiceFactory] 关闭旧实例出错: {e}")
+
+            cls._close_instance_sync(old_instance)
             
             log_msg = f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}"
             print(f"[{datetime.now().strftime('%H:%M:%S')}] {log_msg}")

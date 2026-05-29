@@ -20,7 +20,6 @@ Updated: 小沈 - 2026-05-23（七牛 deepseek-v3.1 → ollama cloud gemma3:4b�
 """
 
 import json
-import httpx
 import os
 from typing import Any, Optional, List, Dict
 
