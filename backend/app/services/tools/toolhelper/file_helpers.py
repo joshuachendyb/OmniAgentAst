@@ -75,6 +75,7 @@ from pathlib import Path
 from collections import Counter
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Tuple, List, Generator, Callable
+from dataclasses import dataclass, field
 from app.services.tools.toolhelper.hash_helper import select_hasher, compute_file_hash
 from app.services.tools._response import build_success, build_error
 from app.utils.logger import setup_logger
@@ -756,13 +757,39 @@ def _rename_file_sync(src: Path, dst: Path, conflict_strategy: str):
         return str(e)
 
 
+@dataclass
+class RenameContext:
+    """批量重命名上下文 — 13参数→1参数封装 — 小健 2026-05-29"""
+    directory: str
+    pattern: str
+    replacement: str
+    recursive: bool = False
+    preview: bool = False
+    conflict_strategy: str = "skip"
+    validate_path_func: Optional[Callable] = None
+    safety_service: Optional[Any] = None
+    task_id: Optional[str] = None
+    record_operation_func: Optional[Callable] = None
+    execute_with_safety_func: Optional[Callable] = None
+    get_next_sequence_func: Optional[Callable] = None
+    _regex: Optional[Any] = field(init=False, repr=False, default=None)
+    _use_regex: bool = field(init=False, repr=False, default=False)
+
+    def __post_init__(self):
+        if self.pattern:
+            try:
+                self._regex = re.compile(self.pattern)
+                self._use_regex = True
+            except re.error:
+                self._regex = None
+                self._use_regex = False
+
+
 async def _process_single_rename(
+    ctx: RenameContext,
     file_path: Path, new_name: str, original_name: str,
-    conflict_strategy: str, preview: bool, task_id: Optional[str],
-    record_operation_func, execute_with_safety_func, get_next_sequence_func,
-    use_regex: bool, regex: Optional[re.Pattern], pattern: str, replacement: str,
 ) -> Tuple[Dict[str, Any], int, int, int]:
-    """处理单个文件重命名，返回(op_dict, renamed_delta, skipped_delta, failed_delta) - 小健 2026-05-25"""
+    """处理单个文件重命名，返回(op_dict, renamed_delta, skipped_delta, failed_delta) — 小健 2026-05-29 SRP-008"""
     from app.db.models.operation_enums import OperationType
     if new_name == original_name:
         return {"file": str(file_path), "original_name": original_name, "new_name": new_name,
@@ -771,25 +798,25 @@ async def _process_single_rename(
     conflict_resolved = False
     final_new_path = new_path
     if new_path.exists():
-        if conflict_strategy == "skip":
+        if ctx.conflict_strategy == "skip":
             return {"file": str(file_path), "original_name": original_name, "new_name": new_name,
                     "status": "skipped", "reason": "目标文件已存在（跳过）", "operation_id": None}, 0, 1, 0
-        resolved_path, resolved = _resolve_name_conflict(new_path, conflict_strategy)
-        if not resolved and conflict_strategy != "overwrite":
+        resolved_path, resolved = _resolve_name_conflict(new_path, ctx.conflict_strategy)
+        if not resolved and ctx.conflict_strategy != "overwrite":
             return {"file": str(file_path), "original_name": original_name, "new_name": new_name,
-                    "status": "skipped", "reason": f"冲突解决失败: {conflict_strategy}", "operation_id": None}, 0, 1, 0
+                    "status": "skipped", "reason": f"冲突解决失败: {ctx.conflict_strategy}", "operation_id": None}, 0, 1, 0
         final_new_path = resolved_path
         conflict_resolved = resolved
     operation_id = None
-    if record_operation_func:
-        operation_id = record_operation_func(
-            task_id=task_id, operation_type=OperationType.RENAME,
+    if ctx.record_operation_func:
+        operation_id = ctx.record_operation_func(
+            task_id=ctx.task_id, operation_type=OperationType.RENAME,
             source_path=file_path, destination_path=final_new_path,
-            sequence_number=get_next_sequence_func())
-    if not preview:
+            sequence_number=ctx.get_next_sequence_func())
+    if not ctx.preview:
         rename_result = await asyncio.to_thread(
-            execute_with_safety_func, operation_id=operation_id,
-            operation_func=lambda _s=file_path, _d=final_new_path: _rename_file_sync(_s, _d, conflict_strategy))
+            ctx.execute_with_safety_func, operation_id=operation_id,
+            operation_func=lambda _s=file_path, _d=final_new_path: _rename_file_sync(_s, _d, ctx.conflict_strategy))
         if rename_result is True:
             return {"file": str(file_path), "original_name": original_name, "new_name": final_new_path.name,
                     "new_path": str(final_new_path), "status": "renamed", "operation_id": operation_id,
@@ -803,44 +830,24 @@ async def _process_single_rename(
                 "operation_id": None}, 1, 0, 0
 
 
-async def batch_rename_impl(
-    directory: str,
-    pattern: str,
-    replacement: str,
-    recursive: bool = False,
-    preview: bool = False,
-    conflict_strategy: str = "skip",
-    validate_path_func=None,
-    safety_service=None,
-    task_id: Optional[str] = None,
-    record_operation_func=None,
-    execute_with_safety_func=None,
-    get_next_sequence_func=None,
-) -> Dict[str, Any]:
-    """批量重命名 - 小沈 2026-05-21, 重构 小健 2026-05-25"""
-    is_valid, error_msg = validate_path_func(directory)
+async def batch_rename_impl(ctx: RenameContext) -> Dict[str, Any]:
+    """批量重命名 — 12参数→1参数 — 小健 2026-05-29 SRP-008"""
+    is_valid, error_msg = ctx.validate_path_func(ctx.directory)
     if not is_valid:
         return build_error(ERR_PATH_INVALID, f"目录路径验证失败: {error_msg}")
-    if not task_id:
+    if not ctx.task_id:
         return build_error(ERR_META_NO_ACTIVE_TASK, "No active task")
-    dir_path = Path(directory)
+    dir_path = Path(ctx.directory)
 
     try:
         if not dir_path.exists():
-            return build_error(ERR_FILE_DIRECTORY_NOT_FOUND, f"目录不存在: {directory}")
+            return build_error(ERR_FILE_DIRECTORY_NOT_FOUND, f"目录不存在: {ctx.directory}")
         if not dir_path.is_dir():
-            return build_error(ERR_FILE_PATH_NOT_DIR, f"路径不是目录: {directory}")
-
-        try:
-            regex = re.compile(pattern)
-            use_regex = True
-        except re.error:
-            regex = None
-            use_regex = False
+            return build_error(ERR_FILE_PATH_NOT_DIR, f"路径不是目录: {ctx.directory}")
 
         from app.services.tools.tool_config import get_timeout as _get_timeout
         deadline = time.monotonic() + _get_timeout("batch_rename") - 2
-        files_to_process, _ = await _collect_files(dir_path, recursive, deadline)
+        files_to_process, _ = await _collect_files(dir_path, ctx.recursive, deadline)
 
         operations = []
         renamed_count = skipped_count = failed_count = 0
@@ -849,25 +856,22 @@ async def batch_rename_impl(
                 logger.warning(f"[batch_rename] 总超时，已处理{len(operations)}/{len(files_to_process)}个文件")
                 break
             original_name = file_path.name
-            new_name = regex.sub(replacement, original_name) if use_regex else original_name.replace(pattern, replacement)
-            op, rd, sd, fd = await _process_single_rename(
-                file_path, new_name, original_name, conflict_strategy, preview, task_id,
-                record_operation_func, execute_with_safety_func, get_next_sequence_func,
-                use_regex, regex, pattern, replacement)
+            new_name = ctx._regex.sub(ctx.replacement, original_name) if ctx._use_regex else original_name.replace(ctx.pattern, ctx.replacement)
+            op, rd, sd, fd = await _process_single_rename(ctx, file_path, new_name, original_name)
             operations.append(op)
             renamed_count += rd
             skipped_count += sd
             failed_count += fd
 
         result = {
-            "directory": str(dir_path), "pattern": pattern, "replacement": replacement,
-            "use_regex": use_regex, "recursive": recursive, "preview_mode": preview,
-            "conflict_strategy": conflict_strategy, "total_files": len(files_to_process),
+            "directory": str(dir_path), "pattern": ctx.pattern, "replacement": ctx.replacement,
+            "use_regex": ctx._use_regex, "recursive": ctx.recursive, "preview_mode": ctx.preview,
+            "conflict_strategy": ctx.conflict_strategy, "total_files": len(files_to_process),
             "renamed_files": renamed_count, "skipped_files": skipped_count,
             "failed_files": failed_count, "operations": operations,
         }
         return build_success(result,
-                "批量重命名预览" if preview else f"批量重命名完成: {renamed_count}个文件已重命名")
+                "批量重命名预览" if ctx.preview else f"批量重命名完成: {renamed_count}个文件已重命名")
 
     except Exception as e:
         return build_error(ERR_FILE_RENAME_FAILED, f"批量重命名失败: {str(e)}")

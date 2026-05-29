@@ -1500,9 +1500,9 @@ class FileTools:
         conflict_strategy: Literal["skip", "overwrite", "append_number"] = "skip",
     ) -> Dict[str, Any]:
         """批量重命名文件"""
-        from app.services.tools.toolhelper.file_helpers import batch_rename_impl
+        from app.services.tools.toolhelper.file_helpers import batch_rename_impl, RenameContext
 
-        return await batch_rename_impl(
+        ctx = RenameContext(
             directory=directory,
             pattern=pattern,
             replacement=replacement,
@@ -1516,6 +1516,7 @@ class FileTools:
             execute_with_safety_func=lambda *a, **kw: self.safety_manager.execute_with_safety("file", *a, **kw),
             get_next_sequence_func=self._get_next_sequence,
         )
+        return await batch_rename_impl(ctx)
 
     async def _compress_files(
         self,
