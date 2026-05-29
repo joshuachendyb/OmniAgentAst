@@ -135,19 +135,6 @@ class Config:
         
         return self.get(f'ai.{provider}', {})
     
-    def get_api_key(self, provider: Optional[str] = None) -> str:
-        """
-        获取API密钥
-        
-        Args:
-            provider: 提供商名称
-            
-        Returns:
-            API密钥
-        """
-        ai_config = self.get_ai_config(provider)
-        return ai_config.get('api_key', '')
-    
     def get_max_steps(self, default: int = 100) -> int:
         """
         获取max_steps配置 - 统一入口
@@ -159,10 +146,6 @@ class Config:
             max_steps值
         """
         return self.get('app.max_steps', default)
-    
-    def get_log_config(self) -> Dict[str, Any]:
-        """获取日志配置 - 统一入口"""
-        return self.get('logging', {})
     
     def reload(self):
         """重新加载配置 - 强制清空缓存"""
@@ -186,13 +169,3 @@ def get_config() -> Config:
     if _config_instance is None:
         _config_instance = Config()
     return _config_instance
-
-
-# 便捷函数
-def get(key: str, default: Any = None) -> Any:
-    """获取配置项"""
-    return get_config().get(key, default)
-
-def get_max_steps(default: int = 100) -> int:
-    """获取max_steps配置"""
-    return get_config().get_max_steps(default)
