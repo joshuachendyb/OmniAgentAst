@@ -13,7 +13,6 @@
 【2026-05-18 小沈重构】16→7精简
 - 16个公开函数改为内部函数（加下划线前缀）
 - 新增7个公开函数：get_time, time_add, time_diff, query_calendar, timezone_convert, timer
-- 旧函数委托保留（P9向下兼容）
 
 包含（重构后7个公开工具）：
 - get_time: 统一入口(action=now/format/to_timestamp/from_timestamp)
