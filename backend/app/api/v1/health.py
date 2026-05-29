@@ -45,7 +45,6 @@ async def echo(request: EchoRequest):
 class ToolExecuteRequest(BaseModel):
     tool_name: str
     params: dict = {}
-    parameters: dict = {}  # 兼容别名 - 小健 2026-05-21
 
 
 class ToolExecuteResponse(BaseModel):
@@ -65,8 +64,7 @@ async def execute_tool(request: ToolExecuteRequest):
     from app.services.tools import tool_registry
     
     tool_name = request.tool_name
-    # 兼容parameters和params字段, parameters优先 - 小健 2026-05-21
-    params = request.parameters if request.parameters is not None else request.params
+    params = request.params
     
     # 获取工具实现
     impl = tool_registry.get_implementation(tool_name)

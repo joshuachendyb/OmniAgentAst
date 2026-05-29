@@ -1184,15 +1184,6 @@ class FileTools:
         except Exception as e:
             logger.error(f"Failed to write file {file_path}: {e}")
             return build_error(ERR_FILE_WRITE_FAILED, str(e))
-
-    async def _write_file(self, file_path: str, text: str, encoding: str = "utf-8",
-                         append: bool = False, create_parents: bool = True,
-                         unescape: bool = True) -> Dict[str, Any]:
-        """write_file兼容别名 - 小健 2026-05-02"""
-        return await self.write_text_file(
-            file_path=file_path, text=text, encoding=encoding,
-            append=append, create_parents=create_parents, unescape=unescape
-        )
     
     async def list_directory(
         self,
