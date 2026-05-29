@@ -33,7 +33,6 @@ def _ascii_word_boundary_match(keyword: str, text: str) -> bool:
 # 使用统一的意图映射模块获取意图名称和关键词
 from app.services.intents.intent_mapper import get_crss_intent_names, CRSS_TYPE_KEYWORDS, resolve_category
 
-TYPE_KEYWORDS = CRSS_TYPE_KEYWORDS
 INTENT_NAMES = get_crss_intent_names()
 
 
@@ -151,7 +150,7 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
     双维度CRSS加权评分
 
     流程：
-    1. 计算类型分（TYPE_KEYWORDS匹配）
+    1. 计算类型分（CRSS_TYPE_KEYWORDS匹配）
     2. 计算动作分（ACTION_DEFINITIONS匹配）
     3. 最终分 = 类型分 × (1 + 动作兼容系数)
     4. 无类型分时 → 动作推断类型分（兜底）
@@ -167,7 +166,7 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
     type_raw: Dict[ToolCategory, float] = {}
 
     # ===== 步骤1: 类型分 =====
-    for type_name, kw in TYPE_KEYWORDS.items():
+    for type_name, kw in CRSS_TYPE_KEYWORDS.items():
         cat = resolve_category(type_name)
         score = _match_keywords(kw.get("keywords", []), kw.get("chinese_keywords", []), command_lower)
         if score > 0:
@@ -249,7 +248,7 @@ def detect_intent_v2(command: str) -> Tuple[Optional[ToolCategory], List[ToolCat
 
 
 __all__ = [
-    'TYPE_KEYWORDS',
+    'CRSS_TYPE_KEYWORDS',
     'ACTION_DEFINITIONS',
     '_compute_intent_scores',
     'detect_intent_v2',
