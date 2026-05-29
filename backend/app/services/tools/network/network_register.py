@@ -14,10 +14,6 @@ Network Register - 网络通信工具注册点
 4. search_web - 搜索网络获取最新信息
 5. network_diagnose - 网络连通性诊断（合并ping+port_check）
 
-已取消注册（向下兼容，函数仍保留）：
-- ping → 合入 network_diagnose(mode="ping")
-- port_check → 合入 network_diagnose(mode="port")
-
 创建时间: 2026-04-29
 更新时间: 2026-05-17 小沈
 """
