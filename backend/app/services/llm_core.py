@@ -86,6 +86,8 @@ class BaseAIService:
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.seed = seed
+        self._llm_sdk = None
+        self.client = None
         
         try:
             timeout_value = float(timeout) if timeout else float(DEFAULT_LLM_TIMEOUT)
@@ -93,18 +95,21 @@ class BaseAIService:
             timeout_value = float(DEFAULT_LLM_TIMEOUT)
         self.timeout = int(timeout_value)
         
-        self._llm_sdk = create_llm_client(
-            provider=provider or "openai",
-            model=model,
-            api_key=api_key,
-            base_url=api_base,
-            timeout=int(self.timeout),
-        )
-        self.client = self._llm_sdk._client
-        
         self._cancelled = False
         self._current_response: Optional[httpx.Response] = None
         self._supports_reasoning: Optional[bool] = None
+
+    def _ensure_client(self):
+        """确保SDK客户端已创建（延迟初始化）"""
+        if self._llm_sdk is None:
+            self._llm_sdk = create_llm_client(
+                provider=self.provider or "openai",
+                model=self.model,
+                api_key=self.api_key,
+                base_url=self.api_base,
+                timeout=self.timeout,
+            )
+            self.client = self._llm_sdk._client
 
     async def __call__(self, message: str, history: Optional[List[Dict]] = None) -> "ChatResponse":
         """使BaseAIService可调用，兼容策略层直接调用 llm_client(msg, history) 的约定"""
@@ -154,6 +159,7 @@ class BaseAIService:
     
     async def _post_with_retry(self, url: str, headers: dict, json_body: dict, max_retries: int = 3, retry_delay: float = 2.0):
         """带429指数退避重试的POST请求 — 委托到RetryEngine统一重试引擎 — 小沈 2026-05-27"""
+        self._ensure_client()
         engine = create_rate_limit_retry_engine(
             max_retries=max_retries,
             backoff_factor=retry_delay,

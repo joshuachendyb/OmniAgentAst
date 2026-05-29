@@ -73,6 +73,7 @@ class _StreamRetryContext:
 
     async def __aenter__(self):
         from app.utils.retry_engine import BackoffStrategy
+        self.service._ensure_client()
         for attempt in range(self.max_retries):
             self._response_ctx = self.service.client.stream(
                 "POST", self.url, headers=self.headers, json=self.json_body
