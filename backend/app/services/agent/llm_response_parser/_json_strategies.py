@@ -8,6 +8,7 @@ import json
 from typing import Dict, Any, Optional, List
 
 from app.utils.logger import logger
+from app.utils.data_utils import parse_json
 from ._utils import _extract_json_with_balanced_braces
 from ._tool_params import _extract_params_by_regex_from_json_str, _extract_content_value_from_json_str
 
@@ -21,10 +22,7 @@ def _extract_json_string(content: str) -> Optional[str]:
 
 
 def _strategy_direct_parse(json_str: str) -> Optional[Dict[str, Any]]:
-    try:
-        return json.loads(json_str)
-    except json.JSONDecodeError:
-        return None
+    return parse_json(json_str)
 
 
 def _strategy_encoding_fix(json_str: str) -> Optional[Dict[str, Any]]:
@@ -63,8 +61,6 @@ def _strategy_trailing_comma(json_str: str) -> Optional[Dict[str, Any]]:
     except json.JSONDecodeError:
         return None
 
-
-ParseStrategy = Optional[Dict[str, Any]]
 
 STRATEGIES = [
     _strategy_direct_parse,
@@ -222,10 +218,9 @@ def _try_parse_non_standard_json(input_str: str) -> Optional[Dict]:
     if not isinstance(input_str, str):
         return None
 
-    try:
-        return json.loads(input_str)
-    except json.JSONDecodeError:
-        pass
+    result = parse_json(input_str)
+    if result is not None:
+        return result
 
     try:
         result = re.sub(r"'([^'\\]*(\\.[^'\\]*)*)'", r'"\1"', input_str)

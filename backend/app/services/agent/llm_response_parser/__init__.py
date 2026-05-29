@@ -3,7 +3,6 @@
 llm_response_parser - ReAct输出统一解析器包
 
 对外接口：parse_react_response(output) → Dict
-保持与原 react_output_parser.py 完全相同的导出接口
 
 Author: 小沈
 Date: 2026-05-28
@@ -107,14 +106,4 @@ from ._handlers import (
 
 __all__ = [
     "parse_react_response",
-    "_parse_action",
-    "_parse_answer",
-    "_parse_action_input",
-    "_parse_thought_only",
-    "_extract_json_block",
-    "_extract_json_with_balanced_braces",
-    "_extract_key_value_pairs",
-    "_create_action_result",
-    "_extract_tool_params_from_thought",
-    "REACT_KEYWORDS",
 ]

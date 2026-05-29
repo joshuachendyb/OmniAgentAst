@@ -166,3 +166,30 @@ def _extract_key_value_pairs(text: str) -> Dict[str, Any]:
             result[key] = value
 
     return result
+
+
+def _extract_string_value(json_str: str, field_name: str) -> Optional[str]:
+    """从JSON字符串中提取指定字段的字符串值（char-walking方式，处理转义）
+
+    用于json.loads失败时的降级提取，处理含转义字符的字符串值。
+    """
+    field_marker = f'"{field_name}"'
+    field_start = json_str.find(field_marker)
+    if field_start == -1:
+        return None
+
+    quote_start = json_str.find('"', field_start + len(field_marker))
+    if quote_start == -1:
+        return None
+
+    value_start = quote_start + 1
+    i = value_start
+    while i < len(json_str):
+        if json_str[i] == '\\' and i + 1 < len(json_str):
+            i += 2
+            continue
+        if json_str[i] == '"':
+            return json_str[value_start:i]
+        i += 1
+
+    return None

@@ -8,7 +8,7 @@ import json
 from typing import Dict, Any, Optional
 
 from app.utils.logger import logger
-from ._utils import _extract_json_with_balanced_braces
+from ._utils import _extract_json_with_balanced_braces, _extract_string_value
 
 
 # 【24.1.4 组件2/3 常量】工具名/参数名降级映射 — 小健 2026-05-25
@@ -207,21 +207,7 @@ def _extract_content_value_from_json_str(json_str: str) -> Optional[str]:
     if tool_params_pos != -1 and content_start > tool_params_pos:
         return None
 
-    quote_start = json_str.find('"', content_start + len('"content"'))
-    if quote_start == -1:
-        return None
-
-    value_start = quote_start + 1
-    i = value_start
-    while i < len(json_str):
-        if json_str[i] == '\\' and i + 1 < len(json_str):
-            i += 2
-            continue
-        if json_str[i] == '"':
-            return json_str[value_start:i]
-        i += 1
-
-    return None
+    return _extract_string_value(json_str, "content")
 
 
 def _extract_params_by_regex_from_json_str(json_str: str) -> Optional[Dict[str, Any]]:
@@ -248,37 +234,13 @@ def _extract_params_by_regex_from_json_str(json_str: str) -> Optional[Dict[str, 
     if file_path_match:
         params["file_path"] = file_path_match.group(1)
 
-    content_start = tp_json.find('"content"')
-    if content_start != -1:
-        quote_start = tp_json.find('"', content_start + len('"content"'))
-        if quote_start != -1:
-            value_start = quote_start + 1
-            i = value_start
-            while i < len(tp_json):
-                if tp_json[i] == '\\' and i + 1 < len(tp_json):
-                    i += 2
-                    continue
-                if tp_json[i] == '"':
-                    params["content"] = tp_json[value_start:i]
-                    break
-                i += 1
+    content_val = _extract_string_value(tp_json, "content")
+    if content_val is not None:
+        params["content"] = content_val
 
-    result_start = tp_json.find('"result"')
-    if result_start != -1:
-        colon_pos = tp_json.find(':', result_start + len('"result"'))
-        if colon_pos != -1:
-            quote_start = tp_json.find('"', colon_pos)
-            if quote_start != -1:
-                value_start = quote_start + 1
-                i = value_start
-                while i < len(tp_json):
-                    if tp_json[i] == '\\' and i + 1 < len(tp_json):
-                        i += 2
-                        continue
-                    if tp_json[i] == '"':
-                        params["result"] = tp_json[value_start:i]
-                        break
-                    i += 1
+    result_val = _extract_string_value(tp_json, "result")
+    if result_val is not None:
+        params["result"] = result_val
 
     other_params = ["dir_path", "source_path", "destination_path", "file_pattern", "pattern", "offset", "limit", "encoding"]
     for p in other_params:
@@ -314,20 +276,8 @@ def _extract_params_by_regex(text: str) -> Optional[Dict[str, Any]]:
                 params["file_path"] = match.group(1)
                 break
 
-    content_start = text.find('"content"')
-    if content_start != -1:
-        quote_start = text.find('"', content_start + len('"content"'))
-        if quote_start != -1:
-            value_start = quote_start + 1
-            i = value_start
-            in_string = True
-            while i < len(text):
-                if text[i] == '\\' and i + 1 < len(text):
-                    i += 2
-                    continue
-                if text[i] == '"':
-                    params["content"] = text[value_start:i]
-                    break
-                i += 1
+    content_val = _extract_string_value(text, "content")
+    if content_val is not None:
+        params["content"] = content_val
 
     return params if params else None

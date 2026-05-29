@@ -8,12 +8,10 @@ import json
 from typing import Dict, Any, Optional, Tuple
 
 from app.utils.logger import logger
+from app.utils.data_utils import parse_json
 from ._utils import REACT_KEYWORDS, _extract_json_with_balanced_braces, _extract_key_value_pairs
 from ._tool_params import _fallback_tool_name, _normalize_tool_params, _process_tool_params, _build_action_result
 from ._result_builders import _create_action_result
-
-
-_parse_thought_only_reasoning = ""
 
 
 def _try_codeblock_parse(output: str) -> Optional[Dict[str, Any]]:
@@ -165,7 +163,7 @@ def _try_markdown_parse(s: str) -> Optional[Dict]:
 
 
 def _try_json_parse(s: str) -> Optional[Dict]:
-    return json.loads(s)
+    return parse_json(s)
 
 
 def _try_balanced_braces(s: str) -> Optional[Dict]:
