@@ -746,16 +746,14 @@ class FileTools:
         from app.services.safety.file.file_safety import get_file_safety_service
         from app.services.safety.manager import get_safety_manager
         
-        self.safety = get_file_safety_service()
         self.safety_manager = get_safety_manager()
         self.task_id = task_id or _current_task_id.get(None)
         self._sequence = 0
         self._sequence_lock = threading.Lock()
         self.allowed_paths = ALLOWED_PATHS.copy()
         
-        # 【重构 2026-05-27 小健】DRY+OCP：注册file安全Hook到SafetyManager统一入口
         if self.safety_manager.get_hook("file") is None:
-            self.safety_manager.register_hook("file", self.safety)
+            self.safety_manager.register_hook("file", get_file_safety_service())
     
     def _get_next_sequence(self) -> int:
         """获取下一个操作序号（线程安全）"""
@@ -1466,7 +1464,6 @@ class FileTools:
             overwrite=overwrite,
             preserve_metadata=preserve_metadata,
             validate_path_func=self._validate_path,
-            safety_service=self.safety,
             task_id=self.task_id,
             record_operation_func=lambda *a, **kw: self.safety_manager.record_operation("file", *a, **kw),
             execute_with_safety_func=lambda *a, **kw: self.safety_manager.execute_with_safety("file", *a, **kw),
@@ -1507,7 +1504,6 @@ class FileTools:
             preview=preview,
             conflict_strategy=conflict_strategy,
             validate_path_func=self._validate_path,
-            safety_service=self.safety,
             task_id=self.task_id,
             record_operation_func=lambda *a, **kw: self.safety_manager.record_operation("file", *a, **kw),
             execute_with_safety_func=lambda *a, **kw: self.safety_manager.execute_with_safety("file", *a, **kw),
@@ -1537,7 +1533,6 @@ class FileTools:
             overwrite=overwrite,
             password=password,
             validate_path_func=self._validate_path,
-            safety_service=self.safety,
             task_id=self.task_id,
             record_operation_func=lambda *a, **kw: self.safety_manager.record_operation("file", *a, **kw),
             execute_with_safety_func=lambda *a, **kw: self.safety_manager.execute_with_safety("file", *a, **kw),
@@ -1594,7 +1589,6 @@ class FileTools:
             filters=filters,
             output_format=output_format,
             validate_path_func=self._validate_path,
-            safety_service=self.safety,
             task_id=self.task_id,
             record_operation_func=lambda *a, **kw: self.safety_manager.record_operation("file", *a, **kw),
             execute_with_safety_func=lambda *a, **kw: self.safety_manager.execute_with_safety("file", *a, **kw),
@@ -1619,7 +1613,6 @@ class FileTools:
             chunk_size=chunk_size,
             timeout=timeout,
             validate_path_func=self._validate_path,
-            safety_service=self.safety,
             task_id=self.task_id,
             record_operation_func=lambda *a, **kw: self.safety_manager.record_operation("file", *a, **kw),
             execute_with_safety_func=lambda *a, **kw: self.safety_manager.execute_with_safety("file", *a, **kw),
