@@ -36,6 +36,7 @@ class DatabaseManager:
             "chat": self._db_dir / "chat_history.db",
             "operations": self._db_dir / "operations.db",
             "observer": self._db_dir / "tool_observer.db",
+            "task_tracker": self._db_dir / "task_tracker.db",
         }
         self._db_dir.mkdir(parents=True, exist_ok=True)
     
@@ -115,7 +116,9 @@ class DatabaseManager:
         
         self._init_chat_db()
         self._init_operations_db()
+        self._init_task_tracker_db()
         self._migrate_old_tables()
+        self._migrate_from_old_db()
         
         # observer数据库按需初始化（后续实现ToolObserver时调用init_observer）
         logger.info("All databases initialized successfully")
@@ -265,8 +268,80 @@ class DatabaseManager:
                 logger.info(f"Migrated {len(rows)} rows")
                 
         except Exception as e:
-            logger.error(f"Migration failed: {e}")
-            # 迁移失败不阻止应用启动
+                logger.error(f"Migration failed: {e}")
+                # 迁移失败不阻止应用启动
+
+    def _init_task_tracker_db(self):
+        """初始化 Task 追踪数据库（独立库 task_tracker.db）"""
+        with self.get_conn("task_tracker") as conn:
+            conn.executescript('''
+                CREATE TABLE IF NOT EXISTS tasks (
+                    task_id          TEXT PRIMARY KEY,
+                    intent           TEXT NOT NULL CHECK(intent IN (
+                        'file', 'shell', 'document', 'code_execution',
+                        'network', 'system', 'desktop', 'time', 'meta'
+                    )),
+                    agent_id         TEXT NOT NULL,
+                    task_description TEXT NOT NULL,
+                    status           TEXT NOT NULL DEFAULT 'executing',
+                    total_operations INTEGER DEFAULT 0,
+                    success_count    INTEGER DEFAULT 0,
+                    failed_count     INTEGER DEFAULT 0,
+                    rolled_back_count INTEGER DEFAULT 0,
+                    report_generated INTEGER DEFAULT 0,
+                    report_path      TEXT,
+                    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    completed_at     TIMESTAMP
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_tasks_intent  ON tasks(intent);
+                CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at);
+
+                CREATE TABLE IF NOT EXISTS operations (
+                    operation_id     TEXT PRIMARY KEY,
+                    task_id          TEXT NOT NULL REFERENCES tasks(task_id) ON DELETE CASCADE,
+                    intent           TEXT NOT NULL DEFAULT '',
+                    operation_type   TEXT NOT NULL,
+                    status           TEXT NOT NULL DEFAULT 'pending',
+                    source_path      TEXT,
+                    destination_path TEXT,
+                    backup_path      TEXT,
+                    file_size        INTEGER DEFAULT 0,
+                    file_hash        TEXT,
+                    sequence_number  INTEGER NOT NULL DEFAULT 0,
+                    details          TEXT,
+                    error            TEXT,
+                    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_ops_task ON operations(task_id);
+                CREATE INDEX IF NOT EXISTS idx_ops_seq  ON operations(task_id, sequence_number);
+            ''')
+
+    def _migrate_from_old_db(self):
+        """从旧 operations.db 迁移数据到新 task_tracker.db（幂等，失败不阻塞启动）"""
+        try:
+            with self.get_conn("operations") as old_conn:
+                old_ops = old_conn.execute("SELECT * FROM file_operations").fetchall()
+                if not old_ops:
+                    return
+                with self.get_conn("task_tracker") as new_conn:
+                    for row in old_ops:
+                        new_conn.execute(
+                            """INSERT OR IGNORE INTO operations
+                               (operation_id, task_id, intent, operation_type, status,
+                                source_path, destination_path, backup_path,
+                                file_size, file_hash, sequence_number, details, error, created_at)
+                               VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            (row["operation_id"], row["task_id"], row["operation_type"],
+                             row["status"], row["source_path"], row["destination_path"],
+                             row["backup_path"], row["file_size"], row["file_hash"],
+                             row["sequence_number"], row["metadata"], row["error_message"],
+                             row["created_at"])
+                        )
+                    logger.info(f"Migrated {len(old_ops)} operations from old DB to task_tracker.db")
+        except Exception as e:
+            logger.warning(f"Migration from old DB skipped (old DB may not exist): {e}")
 
 
 # 全局SDK实例（唯一入口）
