@@ -683,9 +683,7 @@ async def update_model(provider_name: str, old_model_name: str, data: ModelAddRe
         models[index] = new_model_name
         config['ai'][provider_name]['models'] = models
         
-        # 如果顶层 ai.model 指向旧名称，更新为新名称
-        if config['ai'].get('model') == old_model_name:
-            config['ai']['model'] = new_model_name
+
         
         write_yaml_with_order(str(config_path), config)
         
