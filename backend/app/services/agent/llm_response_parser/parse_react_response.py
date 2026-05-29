@@ -295,9 +295,6 @@ def _handle_known_tool_match(output) -> Optional[Dict[str, Any]]:
         "error": None
     }
 
-    logger.info(f"[parse_react_response] 未找到已知工具名")
-    return None
-
 
 # ---------------------------------------------------------------------------
 # Handler #10: 关键词匹配（最终兜底）
