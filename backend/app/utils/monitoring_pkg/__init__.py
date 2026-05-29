@@ -1,6 +1,6 @@
 """
-监控和指标收集模块 — 转发层
-实际实现已拆分至 monitoring_pkg 包
+监控和指标收集模块
+用于收集运行时指标和性能监控
 """
 
 from app.utils.monitoring_pkg.collector import MetricType, Metric, MetricsCollector
