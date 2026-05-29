@@ -22,7 +22,7 @@ Author: 小沈 - 2026-05-28
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
-from typing import Iterator, Dict
+from typing import Iterator
 from app.utils.logger import logger
 
 
@@ -99,47 +99,6 @@ class DatabaseManager:
                     conn.close()
                 except Exception:
                     pass  # 关闭失败不影响主流程
-    
-    def check_fields(self, table: str, fields: list, db_name: str = "chat") -> Dict[str, bool]:
-        """检查表中字段是否存在（使用PRAGMA table_info，不用try/except）
-        
-        使用方式:
-            fields = db.check_fields("chat_sessions", ["title_locked", "version"])
-        
-        Args:
-            table: 表名
-            fields: 要检查的字段列表
-            db_name: 数据库名称，默认chat
-            
-        Returns:
-            dict: {field_name: True/False}
-        """
-        result = {f: False for f in fields}
-        
-        try:
-            with self.get_conn(db_name) as conn:
-                # 使用PRAGMA查询字段信息（不用try/except试探）
-                rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
-                
-                # 提取所有字段名（标准化处理）
-                columns = set()
-                for row in rows:
-                    field_name = row["name"]
-                    if field_name:
-                        # 去除空格、引号，转小写
-                        field_name = field_name.strip().strip('"').strip("'").lower()
-                        columns.add(field_name)
-                
-                # 检查每个字段是否存在
-                for field in fields:
-                    result[field] = field.lower() in columns
-                    
-        except Exception as e:
-            logger.error(f"Check fields failed [{table}]: {e}")
-            # 失败时返回全False
-            result = {f: False for f in fields}
-        
-        return result
     
     def init(self):
         """初始化所有数据库（应用启动时调用）
