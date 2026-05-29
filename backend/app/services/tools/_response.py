@@ -25,7 +25,6 @@
   1. 必填字段(code/data/message)始终写入，可选字段仅非默认值时写入
   2. build_success/build_error/build_warning 三个函数对称完整
   3. 扩展性：通过**extra_kwargs支持未来新增字段，无需改签名
-  4. 向后兼容：所有工具返回的都是普通dict，消费端无需改动
 
 字段规范:
   必填(3个): code, data, message
