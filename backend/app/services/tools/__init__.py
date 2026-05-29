@@ -18,7 +18,7 @@ from app.services.tools.tool_config import (
     get_tool_config,
 )
 
-from app.services.tools.registration import (
+from app.services.tools.lazy_loader import (
     ensure_tools_registered,
     is_tools_registered,
     reset_registered_state,

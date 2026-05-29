@@ -1,11 +1,14 @@
 """
-Tools 注册管理模块
+Tools 懒加载模块（原 registration.py）
 
 【2026-05-10 小沈重构】注册机制改造：
 - 原设计：模块级import 15个子模块触发注册 → 启动时全量注册118个工具+118条日志
 - 新设计：按需注册，首次请求时调用 ensure_tools_registered() 触发
 - 原因：tools/__init__.py 被 base_react.py 的 import tools.registry 间接触发，
          导致启动时就全量注册，而非请求时按需注册
+
+【2026-05-29 小健】重命名：registration.py → lazy_loader.py
+- 原因：registration 与 registry 命名混淆，lazy_loader 更清晰表达"懒加载"职责
 
 调用链路（改造后）：
   启动时: app.main → routes → base_react → import tools.registry → 只加载registry，不触发注册
