@@ -348,8 +348,8 @@ class BaseAgent(ReActHandlerMixin, ABC):
                     continue
 
                 thought_content = parsed.get("content", "")
-                tool_name = parsed.get("tool_name") or parsed.get("action_tool")
-                tool_params = parsed.get("tool_params", parsed.get("params", {}))
+                tool_name = parsed.get("tool_name")
+                tool_params = parsed.get("tool_params", {})
 
                 if parsed_type != "parse_error":
                     if not tool_name or tool_name not in valid_tool_names:

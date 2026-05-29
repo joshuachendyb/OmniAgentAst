@@ -161,6 +161,18 @@ def to_openai_tools(registry, category: Optional[ToolCategory] = None) -> list:
     return tools
 
 
+def _resolve_union_type(pinfo: dict) -> str:
+    """从 anyOf/oneOf 中解析联合类型 — 消除重复 — 小沈 2026-05-29"""
+    for key in ("anyOf", "oneOf"):
+        if key in pinfo:
+            type_set = set()
+            for item in pinfo[key]:
+                if isinstance(item, dict) and "type" in item and item["type"] != "null":
+                    type_set.add(item["type"])
+            return "/".join(sorted(type_set)) if type_set else "any"
+    return "any"
+
+
 def generate_param_reminder(
     registry,
     category: Optional[ToolCategory] = None,
@@ -197,20 +209,7 @@ def generate_param_reminder(
         for pname, pinfo in schema.get("properties", {}).items():
             ptype = pinfo.get("type")
             if ptype is None:
-                if "anyOf" in pinfo:
-                    type_set = set()
-                    for item in pinfo["anyOf"]:
-                        if isinstance(item, dict) and "type" in item and item["type"] != "null":
-                            type_set.add(item["type"])
-                    ptype = "/".join(sorted(type_set)) if type_set else "any"
-                elif "oneOf" in pinfo:
-                    type_set = set()
-                    for item in pinfo["oneOf"]:
-                        if isinstance(item, dict) and "type" in item and item["type"] != "null":
-                            type_set.add(item["type"])
-                    ptype = "/".join(sorted(type_set)) if type_set else "any"
-                else:
-                    ptype = "any"
+                ptype = _resolve_union_type(pinfo)
             req_str = "required" if pname in required_set else "optional"
             default_formatted = format_param_value(pinfo.get("default"))
             default_str = f"default={default_formatted}" if default_formatted else ""

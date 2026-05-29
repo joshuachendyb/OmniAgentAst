@@ -24,12 +24,10 @@
 设计原则:
   1. 必填字段(code/data/message)始终写入，可选字段仅非默认值时写入
   2. build_success/build_error/build_warning 三个函数对称完整
-  3. 扩展性：通过**extra_kwargs支持未来新增字段，无需改签名
 
 字段规范:
   必填(3个): code, data, message
   可选(5个): warning, llm_data, next_actions, retry_count, return_direct
-  扩展: 任何**extra字段自动追加，未来新增字段无需改此文件
 
 使用示例:
   # 最简成功
@@ -46,9 +44,6 @@
 
   # 警告(成功但有风险)
   return build_warning("WARNING_xxx", "警告消息", data=...)
-
-  # 未来扩展(无需改此文件)
-  return build_success(data, msg, new_field_2027="...")
 """
 from app.constants import ERR_FILE_NOT_FOUND, SUCCESS_CODE
 from typing import Any, Dict, Optional, List
@@ -69,8 +64,9 @@ _OPTIONAL_FIELDS = {
 
 
 def build_success(
-    data: Any,
-    message: str = "操作成功",
+    code: str = SUCCESS_CODE,
+    data: Any = None,
+    message: str = "执行成功",
     warning: Optional[str] = None,
     llm_data: Optional[Dict[str, Any]] = None,
     next_actions: Optional[List[Dict[str, str]]] = None,
@@ -105,7 +101,6 @@ def build_success(
                    next_actions=next_actions, retry_count=retry_count,
                    return_direct=return_direct, attachment=attachment)
 
-    # 扩展字段：直接追加
     result.update(extra)
 
     return result

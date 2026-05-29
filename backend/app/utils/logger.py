@@ -76,11 +76,11 @@ class SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
         try:
             super().emit(record)
         except PermissionError:
-            # 轮转失败时静默忽略
-            pass
-        except Exception:
-            # 其他错误也静默忽略
-            pass
+            import sys
+            sys.stderr.write(f"[Logger] 日志写入权限不足: {record.getMessage()}\n")
+        except Exception as e:
+            import sys
+            sys.stderr.write(f"[Logger] 日志写入失败: {e}\n")
 
 # 日志目录
 LOG_DIR = Path(__file__).parent.parent.parent / "logs"

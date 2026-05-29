@@ -64,13 +64,3 @@ class DesktopReactAgent(ToolStepMixin, ReactAgentMixin, BaseAgent):
     async def _execute_tool(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
         # 参数归一化由 executor.execute() 内部自动处理，不再手动调用
         return await self.executor.execute(action, params)
-    
-    async def rollback(self, step_number=None) -> bool:
-        """
-        桌面操作无法回滚
-
-        Returns:
-            False - 表示回滚不可用，而非回滚失败
-        """
-        logger.warning(f"[DesktopReactAgent] 桌面操作无法回滚，已执行操作不会撤销。")
-        return False

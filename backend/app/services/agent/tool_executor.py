@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, Optional
 
 from app.utils.logger import logger
 from app.services.agent.agent_utils.tool_result_utils import create_tool_result, create_error_tool_result
+from app.services.agent.tool_retry_engine import execute_tool_with_unified_retry
 
 from app.constants import (
     ERR_MISSING_PARAM,
@@ -96,7 +97,7 @@ class ToolExecutor:
             impl = tool_registry.get_implementation(action)
             if impl is not None:
                 self.available_tools[action] = impl
-                return await self._execute_with_retry(action, action_input)
+                return await execute_tool_with_unified_retry(action, action_input, self.available_tools)
             return create_error_tool_result(
                 code=ERR_TOOL_NOT_FOUND,
                 data=None,
@@ -107,16 +108,5 @@ class ToolExecutor:
             )
         
         # 【步骤4】使用重试逻辑执行
-        return await self._execute_with_retry(action, action_input)
-
-    async def _execute_with_retry(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
-        """重试执行工具（使用统一重试引擎）
-        
-        Note: 实际逻辑已迁移到 tool_retry_engine.py
-        此方法作为适配器保留，调用统一重试引擎
-        """
-        from app.services.agent.tool_retry_engine import execute_tool_with_unified_retry
-        
-        # 使用统一重试引擎执行
         return await execute_tool_with_unified_retry(action, action_input, self.available_tools)
     

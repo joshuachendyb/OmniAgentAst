@@ -323,14 +323,3 @@ class UnifiedErrorClassifier:
             return (False, ErrorCategory.API_FORBIDDEN.value)
         
         return (False, None)
-
-
-# 便捷函数
-def classify_error(error_type: str, error_message: str = "") -> Tuple[str, str]:
-    """兼容现有接口"""
-    return UnifiedErrorClassifier.classify_error_message(error_type, error_message)
-
-
-def get_error_info(error: Exception) -> Dict[str, Any]:
-    """获取错误的完整信息"""
-    return UnifiedErrorClassifier.get_error_info(error)

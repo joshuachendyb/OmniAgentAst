@@ -18,6 +18,6 @@ class AgentResult:
     message: str
     steps: List[Step]
     total_steps: int
-    session_id: Optional[str] = None
+    task_id: Optional[str] = None
     final_result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None

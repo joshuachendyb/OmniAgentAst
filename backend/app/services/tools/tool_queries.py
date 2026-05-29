@@ -34,14 +34,8 @@ def get_tools_from_registry_by_category(category: ToolCategory) -> Dict[str, Cal
     Returns:
         {工具名: 工具函数} 格式
     """
-    # Get tool list - handle both old and new return formats
     tools_list = tool_registry.list_tools(category=category, include_metadata=False)
-    
-    # If tools_list is list of dicts (new format), extract names
-    if tools_list and isinstance(tools_list[0], dict):
-        tool_names = [t["name"] for t in tools_list if "name" in t]
-    else:
-        tool_names = tools_list
+    tool_names = [t["name"] for t in tools_list if "name" in t]
     
     # Get implementations
     result = {}

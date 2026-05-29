@@ -211,8 +211,8 @@ class ReActHandlerMixin:
         step_counter: Optional[Callable[[], int]], response: str
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """action工具执行入口 — 小沈 2026-05-25"""
-        tool_name = parsed.get("tool_name") or parsed.get("action_tool")
-        tool_params = parsed.get("tool_params", parsed.get("params", {}))
+        tool_name = parsed.get("tool_name")
+        tool_params = parsed.get("tool_params", {})
         thought_content = parsed.get("content", "")
         thought = parsed.get("thought", "")
         reasoning = parsed.get("reasoning", "")

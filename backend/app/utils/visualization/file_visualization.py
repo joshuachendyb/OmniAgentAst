@@ -130,7 +130,7 @@ class FileOperationVisualizer:
         lines.append("=" * 80)
         return lines
 
-    def generate_text_report(self, task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
+    def generate_text_report(self, task_id: str, task_description: str) -> str:
         """生成文本格式报告
 
         【小沈修改 2026-03-25】
@@ -597,7 +597,7 @@ class FileOperationVisualizer:
 </body>
 </html>"""
 
-    def generate_html_report(self, task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
+    def generate_html_report(self, task_id: str, task_description: str) -> str:
         """
         生成HTML格式报告（含图表）
 
@@ -727,7 +727,7 @@ class FileOperationVisualizer:
         # 【小沈修改 2026-03-25】传递 task_description 给各个方法
         # 文本报告
         text_path = output_dir / f"report_text_{timestamp}.txt"
-        self.generate_text_report(task_id, task_description, text_path)
+        self.generate_text_report(task_id, task_description)
         reports['text'] = text_path
         
         # 树形结构JSON

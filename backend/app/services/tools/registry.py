@@ -6,7 +6,7 @@
 
 拆分自 884行 → ~250行 — 小沈 2026-05-29
 移出内容: ToolCategory/ToolMetadata → tool_types.py, Schema处理 → schema_utils.py,
-         查询函数 → tool_queries.py, 格式转换 → tool_format.py
+         查询函数 → tool_queries.py, 格式转换 → tool_description.py
 """
 
 from typing import Dict, List, Optional, Callable, Any, Type

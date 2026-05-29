@@ -11,7 +11,6 @@
 禁止使用 agent/tool_result_utils.py 的 create_xxx 函数
 
 包含函数：
-- truncate_value: 统一截断入口（整合truncate_text + make_json_safe）
 - safe_path_join: 安全路径拼接 + 防路径遍历
 - check_windows_platform: 统一Windows平台检查
 - run_windows_command: 统一Windows命令执行器（默认GBK编码）
@@ -36,56 +35,6 @@ def _check_module(module_name: str) -> bool:
 
     available, _ = _check_module_available(module_name)
     return available
-
-
-def truncate_value(
-    value: Any,
-    max_chars: int = 5000,
-    max_depth: int = 5,
-) -> Tuple[Any, bool]:
-    """统一截断入口 - 小沈 2026-05-18 【已废弃，请使用 tool_result_utils.make_json_safe】
-
-    整合 truncate_text + make_json_safe 逻辑，
-    支持字符串截断和字典/列表深度截断。
-
-    Args:
-        value: 要截断的值
-        max_chars: 字符串最大长度
-        max_depth: 字典/列表最大深度
-
-    Returns:
-        (截断后的值, 是否截断)
-    """
-    # TODO: 此函数未使用，考虑删除或迁移到tool_result_utils.py
-    truncated = False
-
-    if isinstance(value, str):
-        if len(value) > max_chars:
-            return value[:max_chars] + f"...[截断，原长度{len(value)}]", True
-        return value, False
-
-    if isinstance(value, dict):
-        if max_depth <= 0:
-            return f"...[深度截断，字典{len(value)}项]", True
-        result = {}
-        for k, v in value.items():
-            result[k], t = truncate_value(v, max_chars, max_depth - 1)
-            if t:
-                truncated = True
-        return result, truncated
-
-    if isinstance(value, (list, tuple)):
-        if max_depth <= 0:
-            return f"...[深度截断，{type(value).__name__}{len(value)}项]", True
-        result = []
-        for item in value:
-            r, t = truncate_value(item, max_chars, max_depth - 1)
-            result.append(r)
-            if t:
-                truncated = True
-        return result, truncated
-
-    return value, False
 
 
 def safe_path_join(base_dir: str, *paths: str) -> Optional[str]:
@@ -166,7 +115,6 @@ def check_windows_platform() -> bool:
 
 __all__ = [
     "_check_module",
-    "truncate_value",
     "safe_path_join",
     "check_windows_platform",
     "run_windows_command",

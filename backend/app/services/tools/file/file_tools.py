@@ -744,7 +744,7 @@ class FileTools:
     }
     
     def __init__(self, task_id: Optional[str] = None):
-        from app.services.agent import get_file_safety_service
+        from app.services.safety.file.file_safety import get_file_safety_service
         from app.utils.visualization.file_visualization import get_visualizer
         from app.services.safety.manager import get_safety_manager
         
