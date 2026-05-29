@@ -744,14 +744,12 @@ class FileTools:
     }
     
     def __init__(self, task_id: Optional[str] = None):
-        from app.services.agent import get_file_safety_service, get_task_service
-        from app.services.agent.mixins.task_tracker import get_task_tracker
+        from app.services.agent import get_file_safety_service
         from app.utils.visualization.file_visualization import get_visualizer
         from app.services.safety.manager import get_safety_manager
         
         self.safety = get_file_safety_service()
         self.safety_manager = get_safety_manager()
-        self.task_tracker = get_task_tracker()
         self.visualizer = get_visualizer()
         self.task_id = task_id or _current_task_id.get(None)
         self._sequence = 0
