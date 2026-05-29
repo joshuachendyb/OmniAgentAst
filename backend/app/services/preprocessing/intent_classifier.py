@@ -166,31 +166,31 @@ async def classify_intent(
 
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
 
-            try:
-                if "{" in content and "}" in content:
-                    json_str = _extract_json_balanced(content)
-                    if json_str is None:
-                        raise json.JSONDecodeError("未找到平衡花括号", content, 0)
-                    result = json.loads(json_str)
-                    all_intents = result.get("all_intents", {})
-                    if not isinstance(all_intents, dict) or len(all_intents) == 0:
-                        all_intents = {result.get("intent", ""): float(result.get("confidence", 0.0))}
-                    return {
-                        "corrected": result.get("corrected", text),
-                        "intent": result.get("intent", ""),
-                        "confidence": float(result.get("confidence", 0.0)),
-                        "all_intents": all_intents,
-                    }
-            except (json.JSONDecodeError, ValueError):
-                pass
+        try:
+            if "{" in content and "}" in content:
+                json_str = _extract_json_balanced(content)
+                if json_str is None:
+                    raise json.JSONDecodeError("未找到平衡花括号", content, 0)
+                result = json.loads(json_str)
+                all_intents = result.get("all_intents", {})
+                if not isinstance(all_intents, dict) or len(all_intents) == 0:
+                    all_intents = {result.get("intent", ""): float(result.get("confidence", 0.0))}
+                return {
+                    "corrected": result.get("corrected", text),
+                    "intent": result.get("intent", ""),
+                    "confidence": float(result.get("confidence", 0.0)),
+                    "all_intents": all_intents,
+                }
+        except (json.JSONDecodeError, ValueError):
+            pass
 
-            return {
-                "corrected": text,
-                "intent": "",
-                "confidence": 0.0,
-                "all_intents": {},
-                "error": "Failed to parse LLM response"
-            }
+        return {
+            "corrected": text,
+            "intent": "",
+            "confidence": 0.0,
+            "all_intents": {},
+            "error": "Failed to parse LLM response"
+        }
 
     except Exception as e:
         return {
