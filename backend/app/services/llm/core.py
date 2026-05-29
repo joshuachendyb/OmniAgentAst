@@ -75,7 +75,7 @@ class _StreamRetryContext:
         from app.utils.retry_engine import BackoffStrategy
         self.service._ensure_client()
         for attempt in range(self.max_retries):
-            self._response_ctx = self.service.client.stream(
+            self._response_ctx = self.service._llm_sdk.stream(
                 "POST", self.url, headers=self.headers, json=self.json_body
             )
             response = await self._response_ctx.__aenter__()

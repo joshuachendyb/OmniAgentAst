@@ -137,6 +137,14 @@ class LLMClient:
                         break
                     yield data
 
+    def stream(self, method: str, url: str, **kwargs):
+        """获取响应流（返回 async context manager）"""
+        return self._client.stream(method, url, **kwargs)
+
+    async def request(self, method: str, url: str, **kwargs) -> httpx.Response:
+        """发送任意 HTTP 请求（用于非 /chat/completions 路由的重试/探测场景）"""
+        return await self._client.request(method, url, **kwargs)
+
     async def close(self):
         """关闭客户端，释放连接池"""
         await self._client.aclose()

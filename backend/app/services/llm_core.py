@@ -87,7 +87,6 @@ class BaseAIService:
         self.temperature = temperature
         self.seed = seed
         self._llm_sdk = None
-        self.client = None
         
         try:
             timeout_value = float(timeout) if timeout else float(DEFAULT_LLM_TIMEOUT)
@@ -109,7 +108,6 @@ class BaseAIService:
                 base_url=self.api_base,
                 timeout=self.timeout,
             )
-            self.client = self._llm_sdk._client
 
     async def __call__(self, message: str, history: Optional[List[Dict]] = None) -> "ChatResponse":
         """使BaseAIService可调用，兼容策略层直接调用 llm_client(msg, history) 的约定"""
@@ -169,7 +167,7 @@ class BaseAIService:
         )
 
         async def _do_post():
-            response = await self.client.post(url, headers=headers, json=json_body)
+            response = await self._llm_sdk.request("POST", url, headers=headers, json=json_body)
             if self._is_rate_limit_status(response.status_code):
                 raise _RateLimitError(response.status_code)
             return response
@@ -178,7 +176,7 @@ class BaseAIService:
             return await engine.execute(_do_post)
         except _RateLimitError as e:
             logger.error(f"[429重试] HTTP {e.status_code}, 持续{max_retries}次, 放弃")
-            return e.response if hasattr(e, 'response') else await self.client.post(url, headers=headers, json=json_body)
+            return e.response if hasattr(e, 'response') else await self._llm_sdk.request("POST", url, headers=headers, json=json_body)
     
     def _stream_with_retry(self, url: str, headers: dict, json_body: dict, max_retries: int = 3, retry_delay: float = 2.0):
         """带429指数退避重试的流式请求上下文管理器
@@ -295,7 +293,8 @@ class BaseAIService:
     
     async def close(self):
         """关闭HTTP客户端"""
-        await self._llm_sdk.close()
+        if self._llm_sdk:
+            await self._llm_sdk.close()
     
     async def _cancel_or_wait(self, request_task: asyncio.Task) -> Optional[ChatResponse]:
         """心跳循环：1秒间隔检查取消。取消则返回 error ChatResponse — 小沈 2026-05-25"""
