@@ -190,16 +190,7 @@ def _add_optionals(result: Dict[str, Any], **kwargs: Any) -> None:
                 result[field_name] = value
 
 
-def is_success(result: Dict[str, Any]) -> bool:
-    """判断返回是否成功"""
-    code = result.get("code", "")
-    return code == SUCCESS_CODE or code.startswith("WARNING_")
-
-
-def is_error(result: Dict[str, Any]) -> bool:
-    """判断返回是否失败"""
-    code = result.get("code", "")
-    return code.startswith("ERR_")
+from app.services.tools.response_utils import is_success, is_error  # noqa: E402 — SRP-004 重导出保持向后兼容
 
 
 
