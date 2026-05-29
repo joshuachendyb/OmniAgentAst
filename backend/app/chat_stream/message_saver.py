@@ -27,11 +27,6 @@ _INVALID_SESSION_IDS: Set[str] = set()
 _INVALID_SESSION_IDS_MAX = 500  # 容量上限，防止无限增长 — 小健 2026-05-24
 
 
-def mark_session_valid(session_id: str) -> None:
-    """标记会话为有效（新会话创建时调用，清除可能的无效标记）— 小健 2026-05-24"""
-    _INVALID_SESSION_IDS.discard(session_id)
-
-
 # ============================================================
 # 核心保存函数
 # ============================================================
