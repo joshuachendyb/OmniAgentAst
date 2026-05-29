@@ -181,50 +181,26 @@ class SessionUpdate(BaseModel):
 
 
 
-def _get_sql_mode(mode: str, fields_exist: dict) -> str:
-    """将外层mode映射为_build_update_sql所需的sql_mode
-
-    使用场景: update_session中决策SQL构建模式
-    使用示例: _get_sql_mode("select_then_update", fields) → "compat"或"legacy"
-    返回数据说明: "optimistic"/"compat"/"legacy"
-
-    @author 小健 2026-05-25
-    """
+def _get_sql_mode(mode: str) -> str:
+    """将外层mode映射为_build_update_sql所需的sql_mode"""
     if mode == "optimistic":
         return "optimistic"
-    if mode == "select_then_update" and fields_exist["version"]:
-        return "compat"
     return "legacy"
 
 
 def _resolve_update_mode(
-    fields_exist: dict, update_data: SessionUpdate,
+    update_data: SessionUpdate,
     cursor, session_id: str, utc_time: str,
 ) -> Tuple[str, str, Tuple]:
-    """判断UPDATE模式：optimistic/compat/legacy，compat/legacy时先SELECT验证
-
-    使用场景: update_session中3路分支决策
-    使用示例: mode, _, params = _resolve_update_mode(fields, data, cur, sid, utc)
-    返回数据说明: (mode, where_extra, params)
-        mode="optimistic": params=()；mode="select_then_update": params=(session, current_version)
-
-    @author 小健 2026-05-25
-    """
-    if fields_exist["version"]:
-        if update_data.version is not None:
-            return "optimistic", "", ()
-        cursor.execute(
-            """SELECT id, title, COALESCE(version, 1) as version,
-                      COALESCE(title_locked, 0) as title_locked
-               FROM chat_sessions WHERE id = ? AND is_deleted = FALSE""",
-            (session_id,),
-        )
-    else:
-        cursor.execute(
-            """SELECT id, title, 1 as version, 0 as title_locked
-               FROM chat_sessions WHERE id = ? AND is_deleted = FALSE""",
-            (session_id,),
-        )
+    """判断UPDATE模式"""
+    if update_data.version is not None:
+        return "optimistic", "", ()
+    cursor.execute(
+        """SELECT id, title, COALESCE(version, 1) as version,
+                  COALESCE(title_locked, 0) as title_locked
+           FROM chat_sessions WHERE id = ? AND is_deleted = FALSE""",
+        (session_id,),
+    )
     session = cursor.fetchone()
     if not session:
         return "not_found", "", (None, 0)
@@ -235,42 +211,21 @@ def _build_update_params(
     mode: str, update_data: SessionUpdate,
     utc_time: str, session_id: str,
 ) -> tuple:
-    """根据模式构建UPDATE SQL的参数元组
-
-    使用场景: update_session中配合_build_update_sql使用
-    使用示例: params = _build_update_params("optimistic", data, utc, sid)
-    返回数据说明: UPDATE语句的参数元组（不含session_id和version）
-
-    @author 小健 2026-05-25
-    """
+    """根据模式构建UPDATE SQL的参数元组"""
     if mode == "optimistic":
         return (update_data.title, utc_time, 1, utc_time, session_id, update_data.version)
-    if mode == "compat":
-        return (update_data.title, utc_time, 1, utc_time, session_id)
-    return (update_data.title, utc_time, session_id)
+    return (update_data.title, utc_time, 1, utc_time, session_id)
 
 
 def _build_update_sql(mode: str) -> Tuple[str, str]:
-    """根据模式构建SET子句和version WHERE子句
-
-    使用场景: update_session中3路UPDATE SQL统一构建
-    使用示例: _build_update_sql("optimistic") → ("SET title=?, ...", "AND version=?")
-    返回数据说明: (set_clause, version_where_clause)
-
-    @author 小健 2026-05-25
-    """
+    """根据模式构建SET子句和version WHERE子句"""
     base_set = "title = ?, updated_at = ?"
     if mode == "optimistic":
         return (
             f"SET {base_set}, title_locked = ?, title_updated_at = ?, version = version + 1",
             "AND is_deleted = FALSE AND version = ?",
         )
-    if mode == "compat":
-        return (
-            f"SET {base_set}, title_locked = ?, title_updated_at = ?, version = version + 1",
-            "AND is_deleted = FALSE",
-        )
-    return f"SET {base_set}", "AND is_deleted = FALSE"
+    return f"SET {base_set}, title_locked = ?, title_updated_at = ?, version = version + 1", "AND is_deleted = FALSE"
 
 
 
@@ -309,7 +264,7 @@ def _record_title_history(
 
 @router.put("/sessions/{session_id}")
 async def update_session(session_id: str, update_data: SessionUpdate):
-    """更新会话标题（乐观锁+标题历史+降级兼容）
+    """更新会话标题（乐观锁+标题历史）
 
     重构：189行→≤60行骨架+_build_update_sql+_raise_session_error+_record_title_history
     @author 小沈, 小健 2026-05-25
@@ -319,12 +274,11 @@ async def update_session(session_id: str, update_data: SessionUpdate):
             cursor = conn.cursor()
             cursor.execute("BEGIN")
             logger.debug(f"开始事务: session_id={session_id}, operation=update_title")
-            fields_exist = db.check_fields("chat_sessions", ["title_locked", "title_updated_at", "version", "is_valid"])
             utc_time = get_utc_timestamp()
-            mode, _, params = _resolve_update_mode(fields_exist, update_data, cursor, session_id, utc_time)
+            mode, _, params = _resolve_update_mode(update_data, cursor, session_id, utc_time)
             if mode == "not_found":
                 raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
-            sql_mode = _get_sql_mode(mode, fields_exist)
+            sql_mode = _get_sql_mode(mode)
             set_clause, where_clause = _build_update_sql(sql_mode)
             update_params = _build_update_params(sql_mode, update_data, utc_time, session_id)
             cursor.execute(f"UPDATE chat_sessions {set_clause} WHERE id = ? {where_clause}", update_params)
@@ -447,24 +401,14 @@ async def get_session_titles_batch(
             # 使用IN子句批量查询
             placeholders = ','.join(['?' for _ in id_list])
             
-            if fields_exist['title_locked'] and fields_exist['title_updated_at']:
-                # 新字段存在，使用完整查询
-                cursor.execute(
-                    f'''SELECT id, title, 
-                             COALESCE(title_locked, 0) as title_locked,
-                             COALESCE(title_updated_at, created_at) as title_updated_at
-                        FROM chat_sessions 
-                        WHERE id IN ({placeholders}) AND is_deleted = FALSE''',
-                    id_list
-                )
-            else:
-                # 新字段不存在，使用兼容查询
-                cursor.execute(
-                    f'''SELECT id, title, 0 as title_locked, created_at as title_updated_at
-                        FROM chat_sessions 
-                        WHERE id IN ({placeholders}) AND is_deleted = FALSE''',
-                    id_list
-                )
+            cursor.execute(
+                f'''SELECT id, title, 
+                         COALESCE(title_locked, 0) as title_locked,
+                         COALESCE(title_updated_at, created_at) as title_updated_at
+                    FROM chat_sessions 
+                    WHERE id IN ({placeholders}) AND is_deleted = FALSE''',
+                id_list
+            )
             
             rows = cursor.fetchall()
         

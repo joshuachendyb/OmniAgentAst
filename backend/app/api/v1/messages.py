@@ -68,17 +68,10 @@ async def get_session_messages(session_id: str):
         with db.get_conn("chat") as conn:
             cursor = conn.cursor()
 
-            fields_exist = db.check_fields("chat_sessions", ["title_locked", "title_updated_at", "version", "is_valid"])
-
-            if fields_exist['title_locked'] and fields_exist['title_updated_at'] and fields_exist['version']:
-                cursor.execute('''SELECT id, title, COALESCE(title_locked, 0) as title_locked,
-                                  COALESCE(title_updated_at, created_at) as title_updated_at,
-                                  COALESCE(version, 1) as version, COALESCE(is_valid, 1) as is_valid
-                               FROM chat_sessions WHERE id = ? AND is_deleted = FALSE''', (session_id,))
-            else:
-                cursor.execute('''SELECT id, title, 0 as title_locked, created_at as title_updated_at,
-                                   1 as version, 1 as is_valid
-                               FROM chat_sessions WHERE id = ? AND is_deleted = FALSE''', (session_id,))
+            cursor.execute('''SELECT id, title, COALESCE(title_locked, 0) as title_locked,
+                              COALESCE(title_updated_at, created_at) as title_updated_at,
+                              COALESCE(version, 1) as version, COALESCE(is_valid, 1) as is_valid
+                           FROM chat_sessions WHERE id = ? AND is_deleted = FALSE''', (session_id,))
 
             session = cursor.fetchone()
             if not session:
@@ -152,17 +145,11 @@ async def save_message(session_id: str, message: MessageCreate):
     try:
         with db.get_conn("chat") as conn:
             cursor = conn.cursor()
-            fields_exist = db.check_fields("chat_sessions", ["title_locked"])
             new_message_count = 0
 
-            if fields_exist.get("title_locked"):
-                cursor.execute(
-                    "SELECT id, title, message_count, COALESCE(title_locked, 0) as title_locked "
-                    "FROM chat_sessions WHERE id = ? AND is_deleted = FALSE", (session_id,))
-            else:
-                cursor.execute(
-                    "SELECT id, title, message_count, 0 as title_locked "
-                    "FROM chat_sessions WHERE id = ? AND is_deleted = FALSE", (session_id,))
+            cursor.execute(
+                "SELECT id, title, message_count, COALESCE(title_locked, 0) as title_locked "
+                "FROM chat_sessions WHERE id = ? AND is_deleted = FALSE", (session_id,))
             session = cursor.fetchone()
             if not session:
                 raise HTTPException(status_code=404, detail="会话不存在")
