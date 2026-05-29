@@ -40,12 +40,7 @@ def parse_json(json_str: Optional[str], label: str = "") -> Any:
         return None
 
 
-# 兼容旧名称
-safe_parse_json = parse_json
-
-
 __all__ = [
     "safe_truncate",
     "parse_json",
-    "safe_parse_json",  # 兼容旧名称
 ]

@@ -56,10 +56,6 @@ def ensure_timestamp_milliseconds(ts_value: Any) -> int:
         return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
-# 兼容旧名称
-ensure_ts_milliseconds = ensure_timestamp_milliseconds
-
-
 def create_step_counter() -> Callable[[], int]:
     """
     创建统一的步骤计数器函数
@@ -83,6 +79,5 @@ __all__ = [
     "get_utc_timestamp",
     "convert_to_utc",
     "ensure_timestamp_milliseconds",
-    "ensure_ts_milliseconds",  # 兼容旧名称
     "create_step_counter",
 ]
