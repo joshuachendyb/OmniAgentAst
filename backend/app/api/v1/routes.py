@@ -102,7 +102,7 @@ from app.services.ai_config_resolver import get_ai_config_resolver
 router = APIRouter()
 
 
-def ordered_dict(data: dict) -> OrderedDict:
+def __ordered_dict(data: dict) -> OrderedDict:
     """
     将字典转换为OrderedDict，保持特定顺序
     ai节点下：provider和model在最前面，其他provider按字母顺序
@@ -128,7 +128,7 @@ def ordered_dict(data: dict) -> OrderedDict:
             if key not in ('provider', 'model'):
                 value = ai_data[key]
                 if isinstance(value, dict):
-                    ai_ordered[key] = ordered_dict(value)
+                    ai_ordered[key] = _ordered_dict(value)
                 else:
                     ai_ordered[key] = value
         
@@ -139,16 +139,16 @@ def ordered_dict(data: dict) -> OrderedDict:
         if key != 'ai':
             value = data[key]
             if isinstance(value, dict):
-                result[key] = ordered_dict(value)
+                result[key] = _ordered_dict(value)
             else:
                 result[key] = value
     
     return result
 
 
-def write_yaml_with_order(file_path: str, data: dict):
+def _write_yaml_with_order(file_path: str, data: dict):
     """使用OrderedDict写入YAML，保持特定顺序"""
-    ordered_data = ordered_dict(data)
+    ordered_data = _ordered_dict(data)
     
     # 自定义representer，让OrderedDict按普通dict输出
     def represent_ordereddict(dumper, data):
@@ -294,7 +294,7 @@ async def update_config(config_update: ConfigUpdate):
         if not is_valid:
             return fail_result
 
-        write_yaml_with_order(str(config_path), config_data)
+        _write_yaml_with_order(str(config_path), config_data)
         with open(config_path, 'r', encoding='utf-8') as f:
             verify_data = yaml.safe_load(f)
             logger.info(f"[update_config] 验证写入: provider={verify_data['ai'].get('provider')}, model={verify_data['ai'].get('model')}")
@@ -575,7 +575,7 @@ async def delete_provider(provider_name: str):
             if remaining:
                 config['ai']['provider'] = remaining[0]
         
-        write_yaml_with_order(str(config_path), config)
+        _write_yaml_with_order(str(config_path), config)
         
         # 重新加载配置
         config_obj = get_config_instance()
@@ -629,7 +629,7 @@ async def delete_model(provider_name: str, model_name: str):
         if current_model == model_name and models:
             config['ai']['model'] = models[0]
         
-        write_yaml_with_order(str(config_path), config)
+        _write_yaml_with_order(str(config_path), config)
         
         # 重新加载配置
         config_obj = get_config_instance()
@@ -686,7 +686,7 @@ async def update_model(provider_name: str, old_model_name: str, data: ModelAddRe
         
 
         
-        write_yaml_with_order(str(config_path), config)
+        _write_yaml_with_order(str(config_path), config)
         
         # 重新加载配置
         config_obj = get_config_instance()
@@ -752,7 +752,7 @@ async def update_provider(provider_name: str, data: ProviderUpdate):
                 "backup_path": str(backup_path)
             }
         
-        write_yaml_with_order(str(config_path), config)
+        _write_yaml_with_order(str(config_path), config)
         
         # 重新加载配置
         config_obj = get_config_instance()
@@ -807,7 +807,7 @@ async def add_model(provider_name: str, data: ModelAddRequest):
         if not config['ai'].get('model'):
             config['ai']['model'] = model_name
         
-        write_yaml_with_order(str(config_path), config)
+        _write_yaml_with_order(str(config_path), config)
         
         # 重新加载配置
         config_obj = get_config_instance()
@@ -861,7 +861,7 @@ async def add_provider(data: ProviderAddRequest):
                 "backup_path": str(backup_path)
             }
         
-        write_yaml_with_order(str(config_path), config)
+        _write_yaml_with_order(str(config_path), config)
         
         # 重新加载配置
         config_obj = get_config_instance()
@@ -1210,7 +1210,7 @@ async def fix_config():
         
         # 5. 写入修复后的配置
         with open(config_path, 'w', encoding='utf-8') as f:
-            write_yaml_with_order(str(config_path), config_data)
+            _write_yaml_with_order(str(config_path), config_data)
         
         # 6. 重新加载
         config = get_config_instance()
