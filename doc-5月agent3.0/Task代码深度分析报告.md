@@ -14,6 +14,7 @@
 | v1.0 | 2026-05-28 18:29:48 | 小沈 | 初始版本：10 个问题分析 + 修复方案 |
 | v1.1 | 2026-05-28 18:40:55 | 小沈+北京老陈 | 新增 TASK-011~014（docstring说谎、GenericTaskTracker不继承基类、_deprecated_imports.py违反铁规、sequence_number旧名残留）；增强 TASK-001/+TASK-003；更新总计为14个问题 |
 | v1.2 | 2026-05-29 19:11:34 | 小沈 | 修复执行记录：14个问题全部解决（删除旧文件+迁移+遗留bug修复）；新增第七章修复执行记录 |
+| v1.3 | 2026-05-30 06:27:22 | 小健 | 精简：删除五（修复策略建议）和六（补充说明），七→五 |
 
 ---
 
@@ -578,98 +579,13 @@ sequence_number: int = Field(default=0, description="任务内操作顺序号")
 
 ---
 
-## 五、修复策略建议
-
-### 波次建议（原计划）
-
-| 波次 | 包含问题 | 说明 |
-|------|---------|------|
-| **Wave 1** | TASK-004, TASK-005, TASK-002, TASK-011, TASK-014 | 死代码+旧名清理，零风险，立即执行 |
-| **Wave 2** | TASK-001, TASK-007, TASK-009, TASK-013 | 小改动+清理 backward compat |
-| **Wave 3** | TASK-003, TASK-010 | 抽取公共模式，需回归测试 |
-| **Wave 4** | TASK-008, TASK-006, TASK-012 | 架构调整，需全面测试 |
-
-### 实际执行（2026-05-29）
-
-**策略变更**: 不按波次逐个修复旧文件，而是采用**迁移+删除**策略：
-1. 将用户迁移到新 `services/task/` 系统
-2. 删除旧 task 系统 4 个文件
-3. 问题自动消失（符合 DRY/KISS/YAGNI 原则）
-
-**实际执行**:
-- 一次性删除 4 个旧文件 → 11 个问题自动解决
-- 修复 3 个遗留 bug（`_response.py`/`file_tools.py`/`data_format_helper.py`）
-- 迁移 3 个引用点（`react_agent_mixin.py`/`agent/__init__.py`/`file_tools.py`）
-- 更新 1 个测试文件（`test_react_agent_mixin.py`）
-- 89 核心测试全部通过
-
----
-
-## 六、补充说明
-
-### 6.1 关于 TASK-005 的特别说明
-
-在分析中发现的 `universal_react.py` 的 create_task 调用不可达问题，根因是 `__init__` 强制执行了 `task_id` 非空校验（2026-05-22 的构造器变更），但关联的 `_run_with_task_tracking` 方法中的条件分支未同步删除。
-
-虽然该路径不会导致运行时崩溃（因为不可达），但保留了:
-1. 误导的代码（看起来能创建 session 但实际上不能）
-2. 废弃的 finally 清理逻辑
-3. 未来如果有人修改了构造器校验逻辑，可能意外激活一个有 bug 的代码路径
-
-**建议**: 立即删除该不可达分支。
-
-### 6.2 未纳入的问题
-
-以下问题在分析中被识别但不属于本报告范围:
-
-| 问题 | 原因 |
-|------|------|
-| Singleton 模式 (get_task_service) | 项目约定，非本模块问题 |
-| 日志格式不统一 | 跨文件规范问题，需单独规范 |
-| 缺少类型注解 | 已有类型注解，未发现缺失 |
-
----
-
-**报告完成时间**: 2026-05-28 18:46:53
-**分析人**: 小沈 + 北京老陈
-task的 需求 
-task_id 是 task-{uuid4().hex} 格式（如 task-a1b2c3d4e5f6...），自动生成。
-
-task 关联的数据模型（两个 Pydantic 模型 + 一个 DB 表）：
-
-TaskRecord（任务记录主体）
-task_operations 表字段：
-
-task_id, agent_id, task_description, status
-统计：total_operations, success_count, failed_count, rolled_back_count
-报告：report_generated, report_path
-时间：created_at, completed_at
-OperationRecord（操作记录明细）
-file_operations 表字段：
-
-operation_id, task_id（关联到任务）
-operation_type, status
-source_path, destination_path, backup_path
-file_size, file_hash
-sequence_number（回滚顺序）
-状态枚举（OperationStatus）
-状态	含义	适用
-PENDING	待执行	刚创建
-EXECUTING	执行中	正在处理
-SUCCESS	成功完成	正常结束
-FAILED	执行失败	出错了
-ROLLBACK	已回滚	被撤销了
-使用链路：task_id 是主键串联 — TaskRecord 记录一次文件操作任务的整体情况，OperationRecord 记录该任务内的每一次具体文件操作（移动/复制/删除等），通过 task_id 关联，sequence_number 决定回滚顺序。
-
----
-
-## 七、修复执行记录
+## 五、修复执行记录
 
 **执行时间**: 2026-05-29 18:14:00 ~ 19:11:34
 **执行人**: 小沈
 **修复策略**: 不逐个修复旧文件，而是将用户迁移到新 `services/task/` 系统，然后删除旧文件，问题自动消失
 
-### 7.1 问题处理结果总览
+### 5.1 问题处理结果总览
 
 | 编号 | 问题 | 处理方式 | 结果 |
 |------|------|---------|------|
@@ -690,7 +606,7 @@ ROLLBACK	已回滚	被撤销了
 
 **总计**: 14/14 问题已解决
 
-### 7.2 删除的文件清单
+### 5.2 删除的文件清单
 
 | 文件 | 对应问题 | 说明 |
 |------|---------|------|
@@ -699,7 +615,7 @@ ROLLBACK	已回滚	被撤销了
 | `backend/app/services/agent/mixins/task_tracker.py` | TASK-006, TASK-007, TASK-008, TASK-012 | TaskExecutionTracker (路由层) + GenericTaskTracker |
 | `backend/app/api/v1/operation_history.py` | TASK-004 | API 路由 (含死代码) |
 
-### 7.3 迁移修复清单
+### 5.3 迁移修复清单
 
 | 文件 | 问题 | 修复内容 |
 |------|------|---------|
@@ -708,7 +624,7 @@ ROLLBACK	已回滚	被撤销了
 | `file_tools.py:747` | `get_file_safety_service` 导入路径断裂 | 改为 `from app.services.safety.file.file_safety import get_file_safety_service` |
 | `test_react_agent_mixin.py` | 引用已删除的 `mixins/task_tracker` 模块 | 更新为新 `TaskTracker` API (`get_tracker`/`create_task(intent=...)`/`complete_task(task_id, success=...)`) |
 
-### 7.4 遗留 bug 修复清单
+### 5.4 遗留 bug 修复清单
 
 | 文件 | 问题 | 修复内容 |
 |------|------|---------|
@@ -716,13 +632,13 @@ ROLLBACK	已回滚	被撤销了
 | `_response.py` | `build_success` 的 `code` 参数缺少默认值 `SUCCESS_CODE` | 添加 `code: str = SUCCESS_CODE` 默认值 |
 | `data_format_helper.py` | 9 个函数被 `430d1505` 提交误删 | 全部恢复：`_detect_encoding`, `_truncate_dict`, `_read_json`, `_write_json`, `_read_csv_basic`, `_parse_yaml`, `_write_yaml`, `_parse_toml`, `_write_toml` |
 
-### 7.5 提交记录
+### 5.5 提交记录
 
 | commit | 内容 | 文件数 |
 |--------|------|--------|
 | `093d0963` | refactor: 删除旧task系统+修复遗留bug | 21 files, +369 -1267 |
 
-### 7.6 测试验证
+### 5.6 测试验证
 
 | 测试集 | 通过/总数 | 状态 |
 |--------|----------|------|
