@@ -5,7 +5,6 @@
 """
 import os
 import shutil
-import hashlib
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -71,13 +70,10 @@ class FileOperationSafety(SafetyHook):
         logger.info("FileOperationSafety resources cleaned up")
     
     def _compute_file_hash(self, file_path: Path) -> str:
-        """计算文件哈希（SHA-256）"""
+        """计算文件哈希（SHA-256）— 委托给hash_helper.compute_file_hash"""
         try:
-            sha256_hash = hashlib.sha256()
-            with open(file_path, "rb") as f:
-                for byte_block in iter(lambda: f.read(4096), b""):
-                    sha256_hash.update(byte_block)
-            return sha256_hash.hexdigest()
+            from app.services.tools.toolhelper.hash_helper import compute_file_hash
+            return compute_file_hash(str(file_path), algorithm="sha256")
         except Exception:
             return ""
     
