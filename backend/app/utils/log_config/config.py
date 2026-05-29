@@ -11,7 +11,7 @@ class LogConfig:
     def load_config(cls) -> dict:
         """获取日志配置（通过 Config 缓存）"""
         from app.config import get_config
-        return get_config().get_log_config()
+        return get_config().get('logging', {})
 
     @classmethod
     def is_debug_mode(cls) -> bool:
