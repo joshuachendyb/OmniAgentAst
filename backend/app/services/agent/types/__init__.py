@@ -7,7 +7,7 @@ Author: 小沈 - 2026-03-21
 重构 2026-05-29 小健：删除step_types.py重复定义，统一使用reasoning_steps
 """
 
-from app.services.agent.reasoning_steps import (
+from app.services.agent.steps import (
     ReasoningStep,
     ThoughtStep,
     ActionToolStep,

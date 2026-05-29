@@ -8,7 +8,7 @@ Author: 小沈 - 2026-03-21
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from app.services.agent.reasoning_steps import ReasoningStep
+from app.services.agent.steps import ReasoningStep
 
 
 @dataclass

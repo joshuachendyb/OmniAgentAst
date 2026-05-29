@@ -1,6 +1,10 @@
 """
 统一工具返回结构定义 — 小健 2026-05-21
 
+【10大原则规范 2026-05-30 小健】
+- SRP: 仅提供3个build函数（build_success/error/warning），is_success/is_error已独立到 response_utils.py
+- 禁止向后兼容: is_success/is_error重导出已删除，调用者必须从 response_utils.py 导入
+
 【分层规范 - 小健 2026-05-27】
 本文件属于【工具层】，职责：构建返回dict基础结构（code/data/message + 可选字段）
 
@@ -190,7 +194,6 @@ def _add_optionals(result: Dict[str, Any], **kwargs: Any) -> None:
                 result[field_name] = value
 
 
-from app.services.tools.response_utils import is_success, is_error  # noqa: E402 — SRP-004 重导出保持向后兼容
 
 
 

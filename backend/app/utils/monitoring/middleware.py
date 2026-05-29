@@ -7,7 +7,7 @@ import time
 from typing import Dict, List, Optional, Any
 
 from app.utils.logger import logger
-from app.utils.monitoring_pkg.collector import MetricsCollector, Metric
+from app.utils.monitoring.collector import MetricsCollector, Metric
 
 
 # 全局指标收集器实例
