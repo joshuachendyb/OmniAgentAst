@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 from app.services.agent.steps import StepFactory
 from app.services.agent.tool_result_formatter import build_execution_result_dict
 from app.services.agent.agent_utils.message_utils import build_observation_text
+from app.services.tools._response import build_error
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
 
@@ -104,19 +105,11 @@ class ToolStepMixin:
         return None
 
     def _build_err_dict(error: Exception) -> Dict[str, Any]:
-        """构建异常路径的错误结果字典
-        
-        小沈 2026-05-25 重构拆分
-        YAGNI: retry_count/warning/attachment/next_actions 已删除
-        """
-        return {
-            "code": -1,
-            "status": "error",
-            "summary": str(error),
-            "data": None,
-            "return_direct": False,
-            "error_message": str(error),
-        }
+        """构建异常路径的错误结果字典 — 小沈 2026-05-25 重构拆分"""
+        result = build_error(error_code="ERR_TOOL_EXECUTION", message=str(error))
+        result["return_direct"] = False
+        result["summary"] = str(error)
+        return result
     
     def _build_tool_outcome(
         self,
@@ -207,7 +200,7 @@ class ToolStepMixin:
             
             execution_result = await self._execute_tool(tool_name, tool_params)
             if execution_result is None:
-                execution_result = {"code": -1, "message": f"工具 {tool_name} 返回None", "data": None}
+                execution_result = build_error(error_code="ERR_TOOL_RETURNED_NONE", message=f"工具 {tool_name} 返回None")
                 logger.warning(f"[execute_tool] _execute_tool返回None: tool_name={tool_name}")
             
             execution_time_ms = int((time.perf_counter() - start_time) * 1000)
