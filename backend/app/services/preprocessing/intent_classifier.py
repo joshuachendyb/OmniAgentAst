@@ -26,6 +26,7 @@ from typing import Any, Optional, List, Dict
 
 from app.constants import DEFAULT_LLM_TIMEOUT
 from app.services.intents.intent_mapper import get_agent_intent_names, get_aliases_for_intent, IntentType, normalize_intent
+from app.services.llm.client_sdk import create_llm_client
 
 
 
@@ -147,32 +148,23 @@ async def classify_intent(
     prompt = _build_intent_prompt(text, labels)
 
     try:
-        _timeout = INTENT_CLASSIFIER_CONFIG.get("timeout", 90)  # 【修复 2026-04-30 小沈】用配置的timeout，默认90s
-        async with httpx.AsyncClient(timeout=_timeout) as client:
-            response = await client.post(
-                f"{_api_base}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {_api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": _model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.1
-                }
+        _timeout = INTENT_CLASSIFIER_CONFIG.get("timeout", 90)
+        client = create_llm_client(
+            provider="openai",
+            model=_model,
+            api_key=_api_key,
+            base_url=_api_base,
+            timeout=_timeout,
+        )
+        try:
+            data = await client.chat(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
             )
+        finally:
+            await client.close()
 
-            if response.status_code != 200:
-                return {
-                    "corrected": text,
-                    "intent": "",
-                    "confidence": 0.0,
-                    "all_intents": {},
-                    "error": f"API error: {response.status_code}"
-                }
-
-            data = response.json()
-            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
 
             try:
                 if "{" in content and "}" in content:
