@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-预编译正则模式集中定义
+公共预编译正则模式
 
-将跨文件重复的正则模式集中到一处，预编译复用：
-- 消除DRY违反（相同pattern字符串分散在多文件）
-- 预编译提升性能（re.compile一次，多次使用）
+集中跨文件重复使用的正则pattern，预编译复用：
+- HTML清洗：SCRIPT_TAG / STYLE_TAG / HTML_TAG / MULTI_WHITESPACE
+- 时间校验：UTC_OFFSET
 
 仅集中跨文件重复的模式，文件私有的正则就地保留。
 
