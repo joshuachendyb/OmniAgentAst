@@ -14,8 +14,7 @@ import json
 import traceback
 from typing import Any, Dict, List, Optional, Set, Callable, AsyncGenerator
 
-from app.services.agent.steps import StepFactory
-from app.chat_stream.incident_handler import create_incident_data
+from app.services.agent.steps import StepFactory, IncidentStep
 from app.utils.error_classifier import UnifiedErrorClassifier
 from app.utils.logger import logger
 from app.services.agent.chunk_buffer import ChunkBuffer
@@ -87,8 +86,9 @@ class ReActHandlerMixin:
             f"[空响应截断历史] 从{original_len}条截断到{len(deduped)}条, "
             f"移除{removed_len}条中间历史, 准备重试"
         )
-        yield create_incident_data(
-            incident_value="retrying",
+        yield IncidentStep(
+            step=step_count,
+            incident_value='retrying',
             message=f"AI返回空响应，已压缩对话历史重试（第{_retry_cnt}次）"
         )
 
@@ -186,10 +186,10 @@ class ReActHandlerMixin:
                 _retry_delay = self._parse_retry_engine._calculate_delay(self.parse_retry_count + 1)
                 logger.warning(f"[parse_react_response] 429限流, 等待{_retry_delay:.0f}s后重试 (第{self.parse_retry_count+1}次)")
                 await asyncio.sleep(_retry_delay)
-            yield create_incident_data(
-                incident_value="rate_limit",
-                message=f"API暂时不可用，正在重试（第{self.parse_retry_count + 1}次）",
-                step=step_count
+            yield IncidentStep(
+                step=step_count,
+                incident_value='rate_limit',
+                message=f"API暂时不可用，正在重试（第{self.parse_retry_count + 1}次）"
             )
 
         self.parse_retry_count += 1
@@ -198,10 +198,10 @@ class ReActHandlerMixin:
             self._on_after_loop()
             return
 
-        yield create_incident_data(
-            incident_value="retrying",
-            message=f"解析失败，正在重试（第{self.parse_retry_count}次）",
-            step=step_count
+        yield IncidentStep(
+            step=step_count,
+            incident_value='retrying',
+            message=f"解析失败，正在重试（第{self.parse_retry_count}次）"
         )
 
     async def _handle_action_type(
@@ -266,7 +266,7 @@ class ReActHandlerMixin:
         self.message_builder.add_observation(
             outcome.obs_inject_text, self.llm_call_count, fc_context=outcome.obs_fc_context
         )
-        yield outcome.observation_step_dict
+        yield outcome.observation_step
 
         if outcome.is_done:
             _result_data = outcome.execution_result.get("data")
@@ -329,7 +329,7 @@ class ReActHandlerMixin:
             outcome = await self._execute_tool_step(
                 p_name, p_params, step_count, is_primary=False
             )
-            yield outcome.action_step_dict
+            yield outcome.action_step
             self.message_builder.add_observation(
                 outcome.obs_inject_text, self.llm_call_count,
                 fc_context=outcome.obs_fc_context

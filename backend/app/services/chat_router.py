@@ -256,22 +256,12 @@ class ChatRouter:
         return task_id, ai_service, running_tasks, running_tasks_lock
 
     async def _step_start(self, ai_service, task_id, next_step, user_input, execution_steps, session_id):
-        """S3 start_step 细节下沉 — SLAP分层"""
+        """S3 start_step 细节下沉 — SLAP分层 — 小沈 2026-05-30 修复：send_start_step已返回StartStep，直接format"""
         try:
-            from app.services.agent.steps import StartStep
-            start_data = await send_start_step(
+            start_step = await send_start_step(
                 ai_service=ai_service, task_id=task_id, next_step=next_step,
                 user_message=user_input, security_check_result={},
                 current_execution_steps=execution_steps, session_id=session_id,
-            )
-            start_step = StartStep(
-                step=start_data.get('step', 0),
-                display_name=start_data.get('display_name', ''),
-                provider=start_data.get('provider', ''),
-                model=start_data.get('model', ''),
-                task_id=start_data.get('task_id', ''),
-                user_message=start_data.get('user_message', ''),
-                security_check=start_data.get('security_check', {})
             )
             yield format_agent_sse(start_step)
         except Exception as e:

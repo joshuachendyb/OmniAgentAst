@@ -123,7 +123,12 @@ class StepFactory:
     def create_chunk_step(
         step: int,
         content: str,
-        is_reasoning: bool = False
+        is_reasoning: bool = False,
+        thought: str = '',
+        reasoning: str = '',
+        thinking: str = '',
+        model: str = '',
+        provider: str = '',
     ) -> ChunkStep:
         """
         创建ChunkStep
@@ -132,6 +137,11 @@ class StepFactory:
             step: 步骤序号
             content: 块内容
             is_reasoning: 是否正在推理
+            thought: 思考内容
+            reasoning: 推理过程
+            thinking: 内部思考标记
+            model: 模型名称
+            provider: 提供商
                 
         Returns:
             ChunkStep实例
@@ -139,7 +149,12 @@ class StepFactory:
         return ChunkStep(
             step=step,
             content=content,
-            is_reasoning=is_reasoning
+            is_reasoning=is_reasoning,
+            thought=thought,
+            reasoning=reasoning,
+            thinking=thinking,
+            model=model,
+            provider=provider,
         )
     
     @staticmethod
