@@ -83,6 +83,9 @@ class BaseAgent(ReActHandlerMixin, ABC):
         self._init_state(task_id, tool_category, max_steps)
         self._init_messages()
         self._init_tools()
+        self._init_llm_strategies()
+        self._init_task_tracking(enable=getattr(self, '_rollback_enabled', True))
+        self._init_candidates(getattr(self, '_candidates', None))
     
     def _init_llm(self, llm_client: Any, **kwargs):
         """初始化LLM客户端相关属性 - 提取自__init__的LLM职责部分"""
@@ -149,23 +152,13 @@ class BaseAgent(ReActHandlerMixin, ABC):
     
     # ===== 抽象方法（子类必须实现）=====
     
-    @abstractmethod
     async def _get_llm_response(self) -> str:
         """
-        获取 LLM 响应
+        获取 LLM 响应 - 默认实现
         
-        子类实现：调用具体的 LLM 客户端
+        子类如需不同行为可覆盖此方法
         """
-        pass
-    
-    async def _execute_tool(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        执行工具 - 默认实现
-        
-        子类如需不同行为可覆盖此方法（如GenericReactAgent返回空）
-        """
-        from app.services.agent.tool_executor import execute_tool_with_unified_retry
-        return await execute_tool_with_unified_retry(action, params, self._tools_dict)
+        return await self._call_llm()
     
     @abstractmethod
     def _get_system_prompt(self) -> str:

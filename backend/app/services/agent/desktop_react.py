@@ -33,6 +33,7 @@ class DesktopReactAgent(ToolStepMixin, ReactAgentMixin, BaseAgent):
             raise ValueError("task_id is required for desktop operation tracking")
         
         effective_category = tool_category or ToolCategory.DESKTOP
+        self._candidates = candidates
         
         super().__init__(
             llm_client=llm_client,
@@ -41,11 +42,6 @@ class DesktopReactAgent(ToolStepMixin, ReactAgentMixin, BaseAgent):
             max_steps=max_steps,
             **kwargs
         )
-        
-        # 公用逻辑初始化
-        self._init_llm_strategies()
-        self._init_task_tracking()  # 使用Mixin的任务追踪管理
-        self._init_candidates(candidates)
         
         # Desktop专用prompts
         self.prompts = DesktopPrompts()
@@ -57,6 +53,3 @@ class DesktopReactAgent(ToolStepMixin, ReactAgentMixin, BaseAgent):
     
     def _get_task_prompt(self, task: str, context=None) -> str:
         return self.prompts.get_task_prompt(task)
-    
-    async def _get_llm_response(self) -> str:
-        return await self._call_llm()

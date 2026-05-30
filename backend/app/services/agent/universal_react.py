@@ -40,6 +40,8 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, RollbackMixin, BaseAge
         self.config = config
         effective_category = tool_category or config.category
         effective_max_steps = max_steps or config.max_steps
+        self._rollback_enabled = config.rollback_enabled
+        self._candidates = candidates
         
         super().__init__(
             llm_client=llm_client,
@@ -49,10 +51,6 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, RollbackMixin, BaseAge
             **kwargs
         )
         
-        self._init_llm_strategies()
-        self._init_task_tracking(enable=config.rollback_enabled)
-        self._init_candidates(candidates)
-        
         self.prompts = config.prompt_class()
         
         logger.info(
@@ -60,9 +58,6 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, RollbackMixin, BaseAge
             f"(intent={config.intent_type}, task_id={task_id}, "
             f"category={effective_category}, rollback={config.rollback_enabled})"
         )
-    
-    async def _get_llm_response(self) -> str:
-        return await self._call_llm()
     
     def _get_system_prompt(self) -> str:
         return self._build_system_prompt(self.config.category_display_name)
