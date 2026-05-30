@@ -20,10 +20,11 @@ class GenericReactAgent(BaseAgent):
         agent = GenericReactAgent(llm_client, task_id, strategy)
     """
 
-    def __init__(self, llm_client, task_id, strategy, **kwargs):
+    def __init__(self, llm_client, task_id, strategy=None, **kwargs):
+        """strategy改为可选 — 小沈 2026-05-30"""
         BaseAgent.__init__(
             self,
-            llm_client=llm_client, task_id=task_id, tool_category=None, **kwargs
+            llm_client=llm_client, task_id=task_id, **kwargs
         )
         self._strategy = strategy
 
