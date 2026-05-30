@@ -68,11 +68,3 @@ def clear_cached_display_name(session_id: str):
             del _display_name_cache[session_id]
             logger.debug(f"清除缓存 display_name: session_id={session_id}")
 
-
-def clear_all_cache():
-    """
-    清除所有缓存（用于测试或重启）
-    """
-    with _cache_lock:
-        _display_name_cache.clear()
-        logger.info("已清除所有 display_name 缓存")
