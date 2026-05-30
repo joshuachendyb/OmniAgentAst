@@ -73,7 +73,7 @@ from app.services.tools.file.file_schema import (
 # 【小沈重构 2026-05-22】数据库配置迁移至 app/db/
 from app.db.models.operation_enums import OperationType
 from app.utils.logger import logger
-from app.services.tools.tool_config import get_timeout
+from app.services.tools.tool_constants import TOOL_TIMEOUTS
 from app.utils.tool_result_formatter import format_file_content_llm, format_output_for_llm, build_next_actions, truncate_data_for_frontend, truncate_text, make_json_safe, DEFAULT_MAX_FILE_CHARS  # 小沈-2026-05-15, 2026-05-20增加截断安全, 2026-05-21小健修复make_json_safe缺失
 
 # 【重要】延迟导入，避免循环导入问题
@@ -89,33 +89,6 @@ from app.services.tools.toolhelper import data_format_helper as df_tools
 # ============================================================
 # 第一部分：分页配置常量
 # ============================================================
-
-PAGE_SIZE = 100
-MAX_PAGE_SIZE = 500
-
-# 【修复 2026-05-01 小沈】OOM防护常量
-MAX_READ_SIZE = 10 * 1024 * 1024        # 文本文件读取上限：10MB
-MAX_MEDIA_READ_SIZE = 50 * 1024 * 1024   # 媒体文件读取上限：50MB（base64后约67MB）
-MAX_BATCH_FILE_COUNT = 100               # 批量读取文件数上限
-MAX_SEARCH_FILE_SIZE = 10 * 1024 * 1024  # 搜索/单个文件读取上限：10MB
-
-# 【新增 2026-05-02 小沈】二进制文件保护：禁止的后缀列表
-BINARY_EXTENSIONS = {
-    # 图片
-    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.ico', '.tiff', '.tif',
-    # 音视频
-    '.mp3', '.mp4', '.wav', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.m4a', '.ogg',
-    # 压缩包
-    '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.tar.gz', '.tar.bz2',
-    # 可执行文件
-    '.exe', '.dll', '.so', '.dylib', '.msi', '.app', '.deb', '.rpm',
-    # 办公文档（二进制格式）
-    '.docx', '.xlsx', '.pptx', '.doc', '.xls', '.ppt', '.pdf',
-    # 数据库
-    '.db', '.sqlite', '.sqlite3',
-    # 虚拟机/磁盘
-    '.iso', '.vhd', '.vmdk',
-}
 
 
 def _is_binary_file(file_path: str) -> tuple[bool, str]:
@@ -1226,7 +1199,7 @@ class FileTools:
             if not path.is_dir():
                 return build_error(ERR_FILE_PATH_NOT_DIR, f"Not a directory: {dir_path}")
 
-            deadline = time.monotonic() + get_timeout("list_directory") - 2
+            deadline = time.monotonic() + TOOL_TIMEOUTS.get("list_directory", TOOL_TIMEOUTS["default"]) - 2
             all_entries, stats, file_types, size_distribution = await asyncio.to_thread(
                 _scan_directory_sync, path, recursive, max_depth, include_hidden, deadline
             )
@@ -1401,7 +1374,7 @@ class FileTools:
         if not path.exists():
             return build_error(ERR_FILE_NOT_FOUND, f"搜索目录不存在: {search_dir}")
 
-        deadline = time.monotonic() + get_timeout("search_files") - 2
+        deadline = time.monotonic() + TOOL_TIMEOUTS.get("search_files", TOOL_TIMEOUTS["default"]) - 2
         all_matches, llm_preview = [], []
         seen_files = set()
         start_offset = decode_page_token(page_token) if page_token else 0
@@ -2014,7 +1987,7 @@ class FileTools:
             if not pattern:
                 return build_error(ERR_PARAM_INVALID, "搜索模式不能为空")
 
-            deadline = time.monotonic() + get_timeout("grep_file_content") - 2
+            deadline = time.monotonic() + TOOL_TIMEOUTS.get("grep_file_content", TOOL_TIMEOUTS["default"]) - 2
             matches, total_matches = await asyncio.to_thread(
                 _grep_files_sync, search_path, pattern, glob, output_mode,
                 ignore_case, multiline, head_limit, context_lines, after_lines, before_lines, deadline
@@ -2081,7 +2054,7 @@ class FileTools:
             excludes = excludePatterns or []
             entry_count = [0]
             # 【修复 2026-05-10 小健】超时自检
-            _tree_deadline = time.monotonic() + get_timeout("get_directory_tree") - 2
+            _tree_deadline = time.monotonic() + TOOL_TIMEOUTS.get("get_directory_tree", TOOL_TIMEOUTS["default"]) - 2
             _tree_timed_out = False
 
             def _build_tree(current_path: Path, depth: int = 0) -> Optional[Dict[str, Any]]:

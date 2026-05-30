@@ -17,7 +17,8 @@ from typing import Any, Callable, Dict, Optional
 
 from app.utils.logger import logger
 from app.utils.error_classifier import ErrorCategory, UnifiedErrorClassifier
-from app.services.tools.tool_config import get_tool_config, get_timeout
+from app.services.tools.tool_config import get_tool_config
+from app.services.tools.tool_constants import TOOL_TIMEOUTS
 from app.services.agent.agent_utils.tool_result_factory import create_tool_result, create_error_tool_result
 
 from app.constants import (
@@ -186,11 +187,10 @@ class ToolRetryEngine:
             )
         
         # 获取重试配置
-        config = get_tool_config()
-        max_retries = config.get_retry_max(action)
-        backoff_factor = config.get_retry_backoff(action)
-        retryable_errors = config.get_retryable_errors(action)
-        timeout = get_timeout(action)
+        max_retries = TOOL_RETRY_MAX.get(action, TOOL_RETRY_MAX["default"])
+        backoff_factor = TOOL_RETRY_BACKOFF.get(action, TOOL_RETRY_BACKOFF["default"])
+        retryable_errors = TOOL_RETRYABLE_ERRORS.get(action, TOOL_RETRYABLE_ERRORS["default"])
+        timeout = TOOL_TIMEOUTS.get(action, TOOL_TIMEOUTS["default"])
         
         # 执行重试循环
         attempt_count = 0

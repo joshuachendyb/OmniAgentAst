@@ -6,7 +6,8 @@ T2: 配置外部化 + 配置安全机制
 参考文档: Omni系统tool-实现分析报告 v1.15 第7.4.2节
 
 创建时间: 2026-04-19 09:00:00
-更新时间: 2026-04-19
+更新时间: 2026-05-31
+更新内容: 删除tool函数内部常量相关代码，超时数字统一由tool_constants.py管理 - 北京老陈
 """
 
 import os
@@ -24,13 +25,6 @@ logger = setup_logger(__name__)
 # 【步骤3】配置Schema验证（Pydantic）
 # ============================================================
 
-class ToolTimeoutSchema(BaseModel):
-    """工具超时配置Schema"""
-    read_file: int = Field(default=10, ge=1, le=3600)
-    write_file: int = Field(default=10, ge=1, le=3600)
-    default: int = Field(default=5, ge=1, le=3600)
-
-
 class ToolAliasSchema(BaseModel):
     """工具别名配置Schema"""
     path: Optional[str] = None
@@ -40,7 +34,6 @@ class ToolAliasSchema(BaseModel):
 
 class ToolsConfigSchema(BaseModel):
     """工具配置完整Schema"""
-    timeouts: ToolTimeoutSchema = Field(default_factory=ToolTimeoutSchema)
     aliases: Dict[str, ToolAliasSchema] = Field(default_factory=dict)
 
 
@@ -50,16 +43,14 @@ class ToolConfig:
     
     功能:
     - 加载YAML配置文件
-    - 获取工具超时设置
     - 获取参数别名
     - 配置热重载
     
     使用方式:
         config = ToolConfig()
-        timeout = config.get_timeout("read_file")
+        aliases = config.get_aliases("read_file")
     """
     
-    DEFAULT_TIMEOUT = 5
     DEFAULT_CONFIG_PATH = "config/tools.yaml"
     
     def __init__(self, config_path: Optional[str] = None):
@@ -97,36 +88,9 @@ class ToolConfig:
         """获取默认配置"""
         return {
             "tools": {
-                "timeouts": {
-                    "default": self.DEFAULT_TIMEOUT
-                },
                 "aliases": {}
             }
         }
-    
-    def get_timeout(self, tool_name: str) -> int:
-        """
-        获取工具超时时间
-        
-        Args:
-            tool_name: 工具名称
-        
-        Returns:
-            超时时间（秒）
-        """
-        timeouts = self._config.get("tools", {}).get("timeouts", {})
-        
-        # 查找YAML配置的特定超时
-        if tool_name in timeouts:
-            return timeouts[tool_name]
-        
-        # YAML中有default则用它
-        if "default" in timeouts:
-            return timeouts["default"]
-        
-        # 回退到tool_meta硬编码超时表
-        from app.services.tools.tool_constants import TOOL_TIMEOUTS
-        return TOOL_TIMEOUTS.get(tool_name, TOOL_TIMEOUTS["default"])
     
     def get_aliases(self, tool_name: str) -> Optional[Dict[str, str]]:
         """
@@ -140,49 +104,6 @@ class ToolConfig:
         """
         aliases = self._config.get("tools", {}).get("aliases", {})
         return aliases.get(tool_name)
-    
-    # =============================================================================
-    # 7.4.3 T3：执行器增强 - 重试配置方法
-    # =============================================================================
-    
-    def get_retry_max(self, tool_name: str) -> int:
-        """
-        获取最大重试次数
-        
-        Args:
-            tool_name: 工具名称
-        
-        Returns:
-            最大重试次数
-        """
-        retry = self._config.get("tools", {}).get("retry", {})
-        return retry.get(tool_name, retry.get("default", {}).get("max_retries", 3))
-    
-    def get_retry_backoff(self, tool_name: str) -> float:
-        """
-        获取重试退避因子
-        
-        Args:
-            tool_name: 工具名称
-        
-        Returns:
-            退避因子
-        """
-        retry = self._config.get("tools", {}).get("retry", {})
-        return retry.get(tool_name, retry.get("default", {}).get("backoff_factor", 2.0))
-    
-    def get_retryable_errors(self, tool_name: str) -> list:
-        """
-        获取可重试错误列表
-        
-        Args:
-            tool_name: 工具名称
-        
-        Returns:
-            可重试错误列表
-        """
-        retry = self._config.get("tools", {}).get("retry", {})
-        return retry.get(tool_name, retry.get("default", {}).get("retryable_errors", ["timeout"]))
     
     def reload(self) -> bool:
         """
@@ -255,21 +176,7 @@ class ToolConfig:
         Returns:
             验证结果dict
         """
-        errors = []
-        warnings = []
-        
-        # 验证超时值
-        timeouts = self._config.get("tools", {}).get("timeouts", {})
-        for tool_name, timeout in timeouts.items():
-            if not isinstance(timeout, int):
-                errors.append(f"Timeout for {tool_name} must be int")
-            elif timeout <= 0:
-                warnings.append(f"Timeout for {tool_name} should be positive")
-        
-        if errors:
-            return {"status": "error", "errors": errors, "warnings": warnings}
-        
-        return {"status": "success", "warnings": warnings}
+        return {"status": "success", "warnings": []}
 
 
 # 全局配置实例
@@ -279,14 +186,5 @@ tool_config = ToolConfig()
 def get_tool_config() -> ToolConfig:
     """获取工具配置实例"""
     return tool_config
-
-
-def get_timeout(tool_name: str) -> int:
-    """获取工具超时时间 — 模块级便捷入口
-
-    【小健 2026-05-27】去重：统一超时查询入口，替代tool_meta.get_timeout()。
-    YAML优先 + tool_meta.TOOL_TIMEOUTS兜底。
-    """
-    return tool_config.get_timeout(tool_name)
 
 

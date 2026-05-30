@@ -38,6 +38,7 @@ import json as json_module
 from app.utils.logger import logger
 from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, make_json_safe
 from app.services.tools._response import build_success, build_error  # 小沈 2026-05-20
+from app.services.tools.tool_constants import TOOL_TIMEOUTS
 
 
 
@@ -277,7 +278,7 @@ def _get_windows_event_log(
             "/f:text"
         ]
         
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"]))
         
         if result.returncode != 0:
             return build_error(ERR_SYSTEM_EVENT_LOG, f"获取事件日志失败: {result.stderr}")
@@ -356,7 +357,7 @@ def _get_linux_event_log(
             "json"
         ]
         
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"]))
         
         if result.returncode != 0:
             return build_error(ERR_SYSTEM_EVENT_LOG, f"获取事件日志失败: {result.stderr}")
@@ -757,7 +758,7 @@ def _windows_service_list(
     """Windows服务列表获取"""
     try:
         cmd = ["sc", "query", "type=", "service", "state=", "all"]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUTS.get("service_control", TOOL_TIMEOUTS["default"]))
         
         if result.returncode != 0:
             return build_error(ERR_SERVICE_LIST, f"获取服务列表失败: {result.stderr}")
@@ -814,7 +815,7 @@ def _linux_service_list(
     """Linux服务列表获取（systemctl）"""
     try:
         cmd = ["systemctl", "list-units", "--type=service", "--all", "--no-pager", "--plain"]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUTS.get("service_control", TOOL_TIMEOUTS["default"]))
         
         if result.returncode != 0:
             return build_error(ERR_SERVICE_LIST, f"获取服务列表失败: {result.stderr}")
@@ -1109,7 +1110,7 @@ def _run_schtasks_query() -> str:
     """
     cmd = ["schtasks", "/query", "/fo", "list", "/v"]
     result = subprocess.run(cmd, capture_output=True, encoding='gbk',
-                            errors='ignore', timeout=30)
+                            errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
     if result.returncode != 0:
         raise RuntimeError(f"schtasks 执行失败: {result.stderr}")
     if not result.stdout:
@@ -1309,7 +1310,7 @@ def _task_create(
             task_name, command, schedule,
             description, user, start_time, start_date, interval)
 
-        result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=30)
+        result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
 
         if result.returncode != 0:
             return build_error(ERR_TASK_CREATE, f"创建计划任务失败: {result.stderr.strip() or result.stdout.strip()}")
@@ -1366,7 +1367,7 @@ def _task_delete(
         
         cmd = ["schtasks", "/delete", "/tn", full_task_name, "/f"]
         
-        result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=30)
+        result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
         
         if result.returncode != 0:
             return build_error(ERR_TASK_DELETE, f"删除计划任务失败: {result.stderr.strip() or result.stdout.strip()}")

@@ -77,26 +77,7 @@ CATEGORY_MODULES = {
 }
 
 # ============================================================
-# 4. 工具分类配置（从 tool_types.py 迁移）
-# ============================================================
-
-from app.services.tools.tool_types import ToolCategory
-
-CATEGORY_ORDER = [
-    ToolCategory.FILE, ToolCategory.SYSTEM, ToolCategory.NETWORK,
-    ToolCategory.DESKTOP, ToolCategory.DOCUMENT,
-]
-
-CATEGORY_NAMES = {
-    ToolCategory.FILE: "文件操作工具",
-    ToolCategory.SYSTEM: "系统/Shell/时间/环境工具",
-    ToolCategory.NETWORK: "网络通信工具",
-    ToolCategory.DESKTOP: "桌面工具",
-    ToolCategory.DOCUMENT: "文档(含数据分析与数据库)工具",
-}
-
-# ============================================================
-# 5. 网络工具配置（从 http_client_sdk.py 迁移）
+# 4. 网络工具配置（从 http_client_sdk.py 迁移）
 # ============================================================
 
 DEFAULT_TIMEOUT_SEC = 30.0
@@ -169,3 +150,19 @@ QINGMING_DATES = {
 }
 
 SUPPORTED_ALGORITHMS = {"md5", "sha1", "sha256", "sha512"}
+
+# ============================================================
+# 10. 工具重试配置（从 tool_config.py 迁移）
+# ============================================================
+
+TOOL_RETRY_MAX = {
+    "default": 3,
+}
+
+TOOL_RETRY_BACKOFF = {
+    "default": 2.0,
+}
+
+TOOL_RETRYABLE_ERRORS = {
+    "default": ["timeout"],
+}

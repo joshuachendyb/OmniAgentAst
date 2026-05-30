@@ -840,8 +840,8 @@ async def batch_rename_impl(ctx: RenameContext) -> Dict[str, Any]:
         if not dir_path.is_dir():
             return build_error(ERR_FILE_PATH_NOT_DIR, f"路径不是目录: {ctx.directory}")
 
-        from app.services.tools.tool_config import get_timeout as _get_timeout
-        deadline = time.monotonic() + _get_timeout("batch_rename") - 2
+        from app.services.tools.tool_constants import TOOL_TIMEOUTS
+        deadline = time.monotonic() + TOOL_TIMEOUTS.get("batch_rename", TOOL_TIMEOUTS["default"]) - 2
         files_to_process, _ = await _collect_files(dir_path, ctx.recursive, deadline)
 
         operations = []
@@ -1191,8 +1191,8 @@ async def compress_files_impl(
             sequence_number=get_next_sequence_func(),
         )
 
-        from app.services.tools.tool_config import get_timeout as _get_timeout
-        _cf_deadline = time.monotonic() + _get_timeout("compress_files") - 2
+        from app.services.tools.tool_constants import TOOL_TIMEOUTS
+        _cf_deadline = time.monotonic() + TOOL_TIMEOUTS.get("compress_files", TOOL_TIMEOUTS["default"]) - 2
 
         original_size = _get_total_size_sync(source, _cf_deadline)
 
@@ -1404,8 +1404,8 @@ async def file_statistics_impl(
             sequence_number=get_next_sequence_func(),
         )
 
-        from app.services.tools.tool_config import get_timeout as _get_timeout
-        _stat_deadline = time.monotonic() + _get_timeout("file_statistics") - 2
+        from app.services.tools.tool_constants import TOOL_TIMEOUTS
+        _stat_deadline = time.monotonic() + TOOL_TIMEOUTS.get("file_statistics", TOOL_TIMEOUTS["default"]) - 2
 
         def _statistics_sync():
             start_time = time.time()
@@ -1648,8 +1648,8 @@ async def get_file_info_impl(
             
             if path.is_dir():
                 try:
-                    from app.services.tools.tool_config import get_timeout as _get_timeout
-                    _gi_deadline = _time.monotonic() + _get_timeout("get_file_info") - 2
+                    from app.services.tools.tool_constants import TOOL_TIMEOUTS
+                    _gi_deadline = _time.monotonic() + TOOL_TIMEOUTS.get("get_file_info", TOOL_TIMEOUTS["default"]) - 2
                     _fc = 0
                     _dc = 0
                     for _p in path.rglob("*"):
