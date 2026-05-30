@@ -485,7 +485,7 @@ yield format_agent_sse(incident_step)
 2. `create_incident_data` 不能删除，必须保留
 3. `format_agent_sse` 的旧签名 `(event, step, model, provider)` 必须保留
 
-**结论**：chat_stream_query.py 是历史遗留代码，通过 format_agent_sse 的兼容入口调用。新代码统一用 Step 对象。
+**结论**：chat_stream_query.py 不修改，通过 format_agent_sse 的 dict 入口调用。新代码统一用 Step 对象。
 
 ---
 
@@ -584,8 +584,8 @@ return start_step  # 返回 StartStep
 | 文件 | 删除的 import | 新增的 import |
 |------|-------------|-------------|
 | `sse_formatter.py` | 删除 8 个 format_*_sse 定义 | 无 |
-| `chat_stream_query.py` | `from app.chat_stream.sse_formatter import format_sse_event` | `from app.services.agent.steps import IncidentStep` |
-| `incident_handler.py` | 保留 create_incident_data（chat_stream_query.py 依赖） | `from app.services.agent.steps import IncidentStep` |
+| `chat_stream_query.py` | 不修改（老陈决定） | 不修改（老陈决定） |
+| `incident_handler.py` | 无（create_incident_data 保留） | `from app.services.agent.steps import IncidentStep` |
 | `react_sse_wrapper.py` | `from app.chat_stream.sse_formatter import format_sse_event` | `from app.services.agent.steps import IncidentStep, ErrorStep` + 新增 _emit_and_save 函数 |
 | `chat_router.py` | `from app.chat_stream.sse_formatter import format_sse_event, format_start_sse` | `from app.services.agent.steps import StartStep` |
 | `error_handler.py` | `from app.chat_stream.sse_formatter import format_error_sse` | `from app.services.agent.steps import StepFactory` + `from app.chat_stream.sse_formatter import format_agent_sse` |
