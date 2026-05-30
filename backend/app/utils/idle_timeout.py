@@ -151,34 +151,7 @@ class IdleTimeoutIterator(Generic[T]):
         """手动重置计时器（用于外部控制）"""
         self._last_content_time = time.time()
         logger.debug(f"[IdleTimeoutIterator-{self._name}] 计时器已手动重置")
-    
+
     def __repr__(self) -> str:
         return (f"IdleTimeoutIterator(name={self._name}, "
-                f"timeout={self._timeout}s, "
-                f"count={self._count}, "
-                f"elapsed={self.get_elapsed_time():.1f}s)")
-
-
-# ==================== 便捷函数 ====================
-
-def wrap_with_idle_timeout(
-    iterator: AsyncIterator[T], 
-    timeout_seconds: float = 30.0,
-    name: str = "iterator"
-) -> IdleTimeoutIterator[T]:
-    """
-    便捷函数：包装异步迭代器，添加空闲超时检测
-    
-    Args:
-        iterator: 原始异步迭代器
-        timeout_seconds: 超时秒数
-        name: 迭代器名称
-    
-    Returns:
-        IdleTimeoutIterator: 包装后的迭代器
-    
-    Example:
-        async for chunk in wrap_with_idle_timeout(ai_service.chat_stream(), timeout_seconds=30):
-            process(chunk)
-    """
-    return IdleTimeoutIterator(iterator, timeout_seconds=timeout_seconds, name=name)
+                f"timeout={self._timeout}s, count={self._count})")
