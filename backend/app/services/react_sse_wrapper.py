@@ -42,7 +42,7 @@ from app.utils.time_utils import create_timestamp, create_step_counter
 from app.chat_stream.chat_helpers import create_final_response
 from app.chat_stream.message_saver import save_execution_steps_to_db, add_step_and_save, create_add_step_and_save, parse_and_save_sse
 from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse, format_sse_event, format_chunk_sse
-from app.services.agent.base_react import DEFAULT_MAX_STEPS
+from app.constants import DEFAULT_MAX_STEPS
 from app.services.intents.crss_scorer import CRSS_CONFIDENCE_THRESHOLD  # 【修复 2026-05-13 小沈】H2: 改为从crss_scorer导入，切断与chat_router的循环依赖
 from app.services.task_lifecycle import TaskLifecycleManager  # 【重构 2026-05-25 小沈】替代直接操作running_tasks
 from app.services.agent.generic_react import GenericReactAgent
