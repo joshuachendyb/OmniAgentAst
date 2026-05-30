@@ -9,6 +9,7 @@ UniversalReactAgent — 配置驱动的通用 ReAct Agent
   BaseAgent → GenericReactAgent → UniversalReactAgent → DesktopReactAgent
 
 Author: 小强 - 2026-05-23
+Updated: 小沈 - 2026-05-30 (config可选+rollback内置+去掉RollbackMixin+覆盖_get_llm_response)
 """
 import asyncio
 from typing import Dict, Any, List, Optional, AsyncGenerator
@@ -16,64 +17,106 @@ from typing import Dict, Any, List, Optional, AsyncGenerator
 from app.services.agent.generic_react import GenericReactAgent
 from app.constants import DEFAULT_MAX_STEPS
 from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin
-from app.services.agent.mixins.rollback_mixin import RollbackMixin
 from app.services.agent.mixins.tool_step_mixin import ToolStepMixin
 from app.services.agent.agent_config import AgentConfig
-from app.services.agent.types import AgentResult
+from app.services.agent.types import AgentResult, AgentStatus
 from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 
-class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, RollbackMixin, GenericReactAgent):
+class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, GenericReactAgent):
     """配置驱动的通用 ReAct Agent — 第二层：加工具、加回滚"""
-    
+
     def __init__(
         self,
         llm_client: Any,
         task_id: str,
-        config: AgentConfig,
+        config: Optional[AgentConfig] = None,
         tool_category: Optional[ToolCategory] = None,
         max_steps: Optional[int] = None,
         candidates: Optional[List[str]] = None,
         **kwargs
     ):
+        # config变为可选 — 小沈 2026-05-30
         if not task_id:
-            raise ValueError(f"task_id is required for {config.intent_type} operation tracking")
-        
-        self.config = config
-        effective_category = tool_category or config.category
-        effective_max_steps = max_steps or config.max_steps
-        
+            intent_type = config.intent_type if config else "unknown"
+            raise ValueError(f"task_id is required for {intent_type} operation tracking")
+
+        effective_category = tool_category or (config.category if config else None)
+        effective_max_steps = max_steps or (config.max_steps if config else DEFAULT_MAX_STEPS)
+        rollback_enabled = config.rollback_enabled if config else True
+
         super().__init__(
             llm_client=llm_client,
             task_id=task_id,
             tool_category=effective_category,
             max_steps=effective_max_steps,
-            rollback_enabled=config.rollback_enabled,
+            rollback_enabled=rollback_enabled,
             candidates=candidates,
             **kwargs
         )
-        
-        self.prompts = config.prompt_class()
-        
-        logger.info(
-            f"UniversalReactAgent initialized "
-            f"(intent={config.intent_type}, task_id={task_id}, "
-            f"category={effective_category}, rollback={config.rollback_enabled})"
-        )
-    
+
+        if config:
+            self.config = config
+            self.prompts = config.prompt_class()
+
+            logger.info(
+                f"UniversalReactAgent initialized "
+                f"(intent={config.intent_type}, task_id={task_id}, "
+                f"category={effective_category}, rollback={config.rollback_enabled})"
+            )
+        else:
+            logger.info(
+                f"UniversalReactAgent initialized "
+                f"(task_id={task_id}, category={effective_category})"
+            )
+
+    # ===== 必须覆盖：绕过GenericReactAgent的strategy =====
+
+    async def _get_llm_response(self) -> str:
+        """直接调LLM，不走strategy — 小沈 2026-05-30"""
+        return await self._call_llm()
+
+    # ===== rollback直接定义在这里（不再用RollbackMixin）=====
+
+    async def rollback(self, step_number: Optional[int] = None) -> bool:
+        """回滚操作 — 小沈 2026-05-30（从RollbackMixin移入）"""
+        try:
+            if not self.task_id:
+                raise ValueError("Session ID is required for rollback")
+
+            if step_number is None:
+                result = await self._execute_tool('rollback_session', {'task_id': self.task_id})
+                success = result.get("status") == "success"
+            else:
+                steps_to_rollback = [s for s in self.steps if s.step_number > step_number]
+                if not steps_to_rollback:
+                    return False
+                success = True
+                for step in sorted(steps_to_rollback, key=lambda s: s.step_number, reverse=True):
+                    observation = step.observation or {}
+                    result_data = observation.get("result", {}) if isinstance(observation, dict) else {}
+                    operation_id = result_data.get("operation_id")
+                    if operation_id:
+                        step_result = await self._execute_tool('rollback_operation', {'operation_id': operation_id})
+                        step_success = step_result.get("status") == "success" if isinstance(step_result, dict) else bool(step_result)
+                        success = success and step_success
+                    else:
+                        raise ValueError(f"No operation_id found for step {step.step_number}")
+
+            self.status = AgentStatus.ROLLED_BACK
+            return success
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Rollback failed: {e}")
+            return False
+
     def _get_system_prompt(self) -> str:
         return self._build_system_prompt(self.config.category_display_name)
-    
+
     def _get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
         return self.prompts.get_task_prompt(task)
-    
-    # ===== Hook 实现 =====
-    
-    def _on_before_loop(self, sys_prompt: str, task_prompt: str, context: Optional[Dict[str, Any]] = None):
-        pass
-    
-    # ===== run() 方法（file 等需要回滚的 category 使用）=====
     
     async def run(
         self,
@@ -96,8 +139,9 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, RollbackMixin, Generic
         session_created_by_this_run = False
         
         if not task_id:
+            agent_id = f"{self.config.intent_type}-agent" if hasattr(self, 'config') and self.config else "unknown-agent"
             task_id = self._task_tracker.create_task(
-                agent_id=f"{self.config.intent_type}-agent",
+                agent_id=agent_id,
                 task_description=task
             )
             session_created_by_this_run = True
