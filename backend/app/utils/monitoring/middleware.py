@@ -96,29 +96,6 @@ def setup_monitoring(app) -> MetricsCollector:
     return _collector
 
 
-def record_error(error_type: str, message: str = "", labels: Optional[Dict[str, str]] = None):
-    """
-    记录错误指标
-    
-    Args:
-        error_type: 错误类型
-        message: 错误消息
-        labels: 附加标签
-    """
-    if labels is None:
-        labels = {}
-    
-    labels["error_type"] = error_type
-    if message:
-        labels["message"] = message
-    
-    _collector.record_metric(
-        name="errors_total",
-        value=1,
-        labels=labels
-    )
-
-
 def get_metrics_summary() -> Dict[str, Dict[str, Any]]:
     """
     获取指标摘要
