@@ -29,7 +29,7 @@ Author: 小沈 - 2026-05-02, 补建5个Helper 2026-05-18
 
 from app.services.tools.toolhelper.file_helpers import (
     extract_archive,
-    get_file_hash,
+    hash_file_tool,
     ensure_directory_exists,
     check_write_permission,
     check_read_permission,
@@ -110,7 +110,7 @@ from app.services.tools.toolhelper.data_helper import (
 
 __all__ = [
     "extract_archive",
-    "get_file_hash",
+    "hash_file_tool",
     "ensure_directory_exists",
     "check_write_permission",
     "check_read_permission",
