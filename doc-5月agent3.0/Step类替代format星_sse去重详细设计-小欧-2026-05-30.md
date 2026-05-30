@@ -304,7 +304,7 @@ def format_agent_sse(event_or_step, step: int = None, model: str = '', provider:
 **关键设计决策**：
 - 不做任何字段映射——Step.to_dict() 产出什么就透传什么
 - dict 输入仅用于 chat_stream_query.py 遗留代码，新代码统一用 Step 对象
-- 旧签名 `(event, step, model, provider)` 保留兼容
+- 旧签名 `(event, step, model, provider)` 仅 chat_stream_query.py 使用
 
 ---
 
@@ -549,7 +549,33 @@ return format_agent_sse(final_step)
 
 ### 6.11 chat_stream/start_step.py — send_start_step 返回 StartStep
 
-`send_start_step()` 改为返回 StartStep 对象（不是 dict）。chat_router 直接使用。
+`send_start_step()` 改为返回 StartStep 对象。内部逻辑：
+1. 构建 start_data dict（用于 DB 保存）
+2. 追加到 current_execution_steps
+3. 保存到 DB
+4. 构建 StartStep 对象
+5. 返回 StartStep
+
+```python
+# 改前：
+start_data = {
+    'type': 'start', 'step': next_step(), 'timestamp': create_timestamp(),
+    'display_name': ..., 'provider': ..., 'model': ..., 'task_id': ...,
+    'user_message': ..., 'security_check': ...
+}
+current_execution_steps.append(start_data)
+await save_execution_steps_to_db(...)
+return start_data  # 返回 dict
+
+# 改后：
+start_step = StartStep(
+    step=next_step(), display_name=..., provider=..., model=...,
+    task_id=..., user_message=..., security_check=...
+)
+current_execution_steps.append(start_step.to_dict())
+await save_execution_steps_to_db(...)
+return start_step  # 返回 StartStep
+```
 
 ---
 
