@@ -16,7 +16,7 @@ import asyncio
 from typing import Any, Callable, Dict, Optional
 
 from app.utils.logger import logger
-from app.services.agent.agent_utils.tool_result_utils import create_tool_result, create_error_tool_result
+from app.services.agent.agent_utils.tool_result_factory import create_tool_result, create_error_tool_result
 from app.services.agent.tool_retry_engine import execute_tool_with_unified_retry
 
 from app.constants import (
