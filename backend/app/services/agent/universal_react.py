@@ -10,7 +10,8 @@ Author: 小强 - 2026-05-23
 import asyncio
 from typing import Dict, Any, List, Optional, AsyncGenerator
 
-from app.services.agent.base_react import BaseAgent, DEFAULT_MAX_STEPS
+from app.services.agent.base_react import BaseAgent
+from app.constants import DEFAULT_MAX_STEPS
 from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin
 from app.services.agent.mixins.rollback_mixin import RollbackMixin
 from app.services.agent.mixins.tool_step_mixin import ToolStepMixin
