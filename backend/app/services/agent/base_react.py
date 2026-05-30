@@ -158,14 +158,14 @@ class BaseAgent(ReActHandlerMixin, ABC):
         """
         pass
     
-    @abstractmethod
     async def _execute_tool(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """
-        执行工具
+        执行工具 - 默认实现
         
-        子类实现：调用具体的工具执行器
+        子类如需不同行为可覆盖此方法（如GenericReactAgent返回空）
         """
-        pass
+        from app.services.agent.tool_executor import execute_tool_with_unified_retry
+        return await execute_tool_with_unified_retry(action, params, self._tools_dict)
     
     @abstractmethod
     def _get_system_prompt(self) -> str:

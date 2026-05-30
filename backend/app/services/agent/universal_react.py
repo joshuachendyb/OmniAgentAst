@@ -64,10 +64,6 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, RollbackMixin, BaseAge
     async def _get_llm_response(self) -> str:
         return await self._call_llm()
     
-    async def _execute_tool(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        from app.services.agent.tool_executor import execute_tool_with_unified_retry
-        return await execute_tool_with_unified_retry(action, params, self._tools_dict)
-    
     def _get_system_prompt(self) -> str:
         return self._build_system_prompt(self.config.category_display_name)
     
