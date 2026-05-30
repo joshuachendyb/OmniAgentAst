@@ -135,9 +135,8 @@ class BaseAgent(ReActHandlerMixin, ABC):
             self._loaded_categories.add(self.tool_category.value)
         self._intent_classifier = IntentClassifier()
         
-        # 创建工具执行器
-        self.executor = None  # 子类应初始化
-        
+        # 工具执行函数由tool_init_mixin._init_tools_and_executor初始化
+        # 不再需要self.executor = None
     
     @property
     def conversation_history(self) -> List[Dict[str, str]]:
