@@ -25,12 +25,11 @@ class ToolInitMixin(ToolLoaderMixin):
     """工具加载职责混入类"""
 
     def _init_tools_and_executor(self, tool_category: Optional[ToolCategory] = None):
-        """初始化工具加载 - 小沈 2026-05-10"""
+        """初始化工具加载 — merge模式：叠加到已有工具之上 — 小沈 2026-05-30"""
         if tool_category:
-            self._tools_dict = self.load_tools_by_category(tool_category)
-        else:
-            self._tools_dict = {}
-        logger.info(f"[{self.__class__.__name__}] 加载工具: {len(self._tools_dict)}个")
+            category_tools = self.load_tools_by_category(tool_category)
+            self._tools_dict.update(category_tools)
+        logger.info(f"[{self.__class__.__name__}] 工具总数: {len(self._tools_dict)}个")
 
     def _get_tools_summary(self, exclude_categories: Optional[set] = None) -> str:
         """获取跨分类工具概要（每轮实时生成） - 小健 2026-05-14
