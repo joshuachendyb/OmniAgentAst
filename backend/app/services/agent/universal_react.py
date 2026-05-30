@@ -5,12 +5,15 @@ UniversalReactAgent — 配置驱动的通用 ReAct Agent
 改造前：9个Agent子类，8个代码完全相同
 改造后：1个通用类 + 声明式配置（AgentConfig）
 
+继承层级：
+  BaseAgent → GenericReactAgent → UniversalReactAgent → DesktopReactAgent
+
 Author: 小强 - 2026-05-23
 """
 import asyncio
 from typing import Dict, Any, List, Optional, AsyncGenerator
 
-from app.services.agent.base_react import BaseAgent
+from app.services.agent.generic_react import GenericReactAgent
 from app.constants import DEFAULT_MAX_STEPS
 from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin
 from app.services.agent.mixins.rollback_mixin import RollbackMixin
@@ -21,8 +24,8 @@ from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 
-class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, RollbackMixin, BaseAgent):
-    """配置驱动的通用 ReAct Agent"""
+class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, RollbackMixin, GenericReactAgent):
+    """配置驱动的通用 ReAct Agent — 第二层：加工具、加回滚"""
     
     def __init__(
         self,

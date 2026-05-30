@@ -2,23 +2,22 @@
 """
 DesktopReactAgent - 桌面操作 ReAct Agent。
 
-P1优先级。
+继承层级：
+  BaseAgent → GenericReactAgent → UniversalReactAgent → DesktopReactAgent
 
 Author: 小健 - 2026-05-06（修正-小沈 2026-05-06：rollback返回False）
 """
 from typing import Any, Optional, Dict, List
 
-from app.services.agent.base_react import BaseAgent
+from app.services.agent.universal_react import UniversalReactAgent
 from app.constants import DEFAULT_MAX_STEPS
-from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin
-from app.services.agent.mixins.tool_step_mixin import ToolStepMixin
 from app.services.prompts.desktop.desktop_prompts import DesktopPrompts
 from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 
-class DesktopReactAgent(ToolStepMixin, ReactAgentMixin, BaseAgent):
-    """桌面操作 ReAct Agent"""
+class DesktopReactAgent(UniversalReactAgent):
+    """桌面操作 ReAct Agent — 第三层：加桌面专用prompts"""
     
     def __init__(
         self,
