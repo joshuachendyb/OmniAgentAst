@@ -14,7 +14,7 @@
   - data：完整结构化数据给前端渲染
 """
 import json
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from app.constants import (
     DEFAULT_MAX_OUTPUT_CHARS,
     DEFAULT_MAX_FILE_CHARS,
@@ -25,8 +25,12 @@ from app.constants import (
     DEFAULT_MAX_LIST_ITEMS,
 )
 from app.utils.logger import setup_logger
+from app.utils.cache import LRUCache, make_cache_key
 
 logger = setup_logger(__name__)
+
+# 全局缓存实例
+_truncate_cache = LRUCache(max_size=1000, log_interval=100)
 
 
 def truncate_text(text: str, max_chars: int, suffix: str = None) -> tuple:
@@ -102,18 +106,76 @@ def make_json_safe(data, max_depth: int = 5, max_str_len: int = 500):
 def truncate_data_for_frontend(data: dict, max_chars: int = DEFAULT_MAX_DATA_CHARS) -> dict:
     """DATA通道截断安全函数 - 小沈 2026-05-20
     
+    优化：延迟检查 + 通用LRU缓存
+    - 快速估算：不序列化就能判断大概大小
+    - 延迟检查：小数据直接返回，大数据才完整检查
+    - 缓存：避免重复计算
+    
     原则：前端需要完整结构化数据，但1M上限防OOM
     - 不超限 → 原样返回
     - 超限 → 递归截断大文本字段，标注原文长度
     """
     try:
+        # 生成缓存key
+        cache_key = make_cache_key(data)
+        
+        # 检查缓存
+        cached_result = _truncate_cache.get(cache_key)
+        if cached_result is not None:
+            return cached_result
+        
+        # 快速估算：如果数据简单，直接返回
+        estimated_size = _quick_estimate(data)
+        if estimated_size < max_chars // 2:
+            _truncate_cache.set(cache_key, data)
+            return data
+        
+        # 完整检查
         json_str = json.dumps(data, ensure_ascii=False)
         if len(json_str) <= max_chars:
+            _truncate_cache.set(cache_key, data)
             return data
+        
+        result = _truncate_data_recursive(data, max_chars)
+        _truncate_cache.set(cache_key, result)
+        return result
     except (TypeError, ValueError):
         return data
+    except Exception as e:
+        logger.error(f"[truncate_data_for_frontend] 异常: {e}")
+        return data
+
+
+def _quick_estimate(data: Any) -> int:
+    """快速估算数据大小（不序列化）
     
-    return _truncate_data_recursive(data, max_chars)
+    算法：
+    - dict: 键数量 × 100 + 值总长度
+    - list: 元素数量 × 平均元素大小
+    - str: 直接返回长度
+    - 其他: 返回50
+    """
+    if data is None:
+        return 0
+    if isinstance(data, str):
+        return len(data)
+    if isinstance(data, (int, float, bool)):
+        return 50
+    if isinstance(data, dict):
+        total = 0
+        for k, v in data.items():
+            total += len(str(k)) + 100  # 键 + 固定开销
+            total += _quick_estimate(v)
+        return total
+    if isinstance(data, (list, tuple)):
+        if len(data) == 0:
+            return 2  # 空列表 "[]"
+        # 采样估算：取前3个元素
+        sample_size = min(3, len(data))
+        sample_total = sum(_quick_estimate(item) for item in data[:sample_size])
+        avg_item_size = sample_total // sample_size
+        return avg_item_size * len(data)
+    return 50  # 其他类型
 
 
 def _truncate_data_recursive(data, budget: int) -> dict:
