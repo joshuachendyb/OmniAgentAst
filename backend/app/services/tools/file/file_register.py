@@ -331,9 +331,6 @@ def _register_file_tools():
             f"[file_register] 已注册工具: {name}, Pydantic模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个"
         )
 
-
-_initialized = False
-
 __all__ = [
     "FileTools",
     "get_file_tools",

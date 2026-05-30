@@ -220,6 +220,5 @@ def _register_network_tools():
 # 【Phase 1修复 小健 2026-05-14】删除模块级注册代码，改为ensure_tools_registered统一调用
 # 原代码：import时自动执行register_network_tools()，破坏按需注册
 # 现在：导出register函数供ensure_tools_registered显式调用
-_initialized = False  # 保留守护变量，供显式调用时使用
 
 __all__ = ["_register_network_tools"]

@@ -16,7 +16,7 @@ from app.utils.logger import logger
 # ⭐ 缓存机制：存储 session_id 到 display_name 的映射
 _display_name_cache: Dict[str, str] = {}
 _cache_lock = Lock()  # 线程安全锁，防止并发访问冲突
-_MAX_CACHE_SIZE = 1000  # 最大缓存条目数，防止内存泄漏
+from app.constants import MAX_CACHE_SIZE as _MAX_CACHE_SIZE
 
 
 def cache_display_name(session_id: str, display_name: str):

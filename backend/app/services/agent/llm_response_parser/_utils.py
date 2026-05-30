@@ -48,15 +48,17 @@ REACT_KEYWORDS = {
 
 
 def _get_all_tool_names():
+    """获取所有已注册工具名 — 动态查询，fallback为最小容错集合
+    
+    【3.14修复 北京老陈 2026-05-31】fallback删除9个已不存在的遗留工具名，
+    改为仅保留finish（唯一100%存在的工具）。
+    """
     try:
         from app.services.tools.registry import tool_registry
         tools = tool_registry.list_tools(include_metadata=False)
         return [t["name"] if isinstance(t, dict) else t for t in tools]
     except Exception:
-        return ["list_directory", "read_file", "write_file", "delete_file",
-                "move_file", "search_files", "grep_file_content", "generate_report",
-                "execute_command", "run_command", "get_current_time", "get_system_info",
-                "finish", "finish_with_error"]
+        return ["finish"]
 
 
 # 【24.4.4 组件1】统一 handler 结果构建(消除 4 个 8 字段 dict 重复)

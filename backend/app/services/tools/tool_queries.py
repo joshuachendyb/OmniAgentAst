@@ -10,6 +10,7 @@ from app.services.tools.registry import tool_registry
 from app.services.tools.tool_types import ToolCategory
 
 
+
 def get_implementations_from_registry() -> Dict[str, Callable]:
     """
     从tool_registry获取所有工具实现函数
@@ -48,26 +49,20 @@ def get_tools_from_registry_by_category(category: ToolCategory) -> Dict[str, Cal
 
 def get_tools_from_file_registry() -> Dict[str, Callable]:
     """
-    从tool_registry获取file工具
+    从tool_registry获取file工具 — 动态发现，消除硬编码列表
+    
+    【3.14修复 北京老陈 2026-05-31】改为通过ToolRegistry动态查询，
+    删除FILE_TOOL_NAMES硬编码列表，新增文件工具自动可查。
     
     Returns:
         {工具名: 工具函数} 格式
     """
-    # 触发 file_register 注册（确保注册已执行）
-    from app.services.tools.file import file_register
-    
-    # 直接使用全局 tool_registry 实例
+    tools_list = tool_registry.list_tools(category=ToolCategory.FILE, include_metadata=False)
     result = {}
-    for name in _FILE_TOOL_NAMES:  # 已知工具名列表
+    for t in tools_list:
+        name = t["name"] if isinstance(t, dict) else t
         impl = tool_registry.get_implementation(name)
         if impl:
             result[name] = impl
     return result
 
-
-# 已知file工具名列表（统一命名）
-_FILE_TOOL_NAMES = [
-    "read_file", "write_text_file", "read_media_file", "edit_file",
-    "list_directory", "search_files", "grep_file_content", "rename_file",
-    "archive_tool", "file_operation", "data_file_format"
-]

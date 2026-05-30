@@ -12,9 +12,10 @@ Author: 小沈 - 2026-05-28
 import asyncio
 import json
 import traceback
-from typing import Any, Dict, List, Optional, Set, Callable, AsyncGenerator
+from typing import Any, Dict, List, Optional, Set, AsyncGenerator
 
 from app.services.agent.steps import StepFactory, IncidentStep
+from app.services.agent.types import AgentStatus
 from app.utils.error_classifier import UnifiedErrorClassifier
 from app.utils.logger import logger
 from app.services.agent.chunk_buffer import ChunkBuffer
@@ -94,9 +95,9 @@ class ReActHandlerMixin:
 
     async def _handle_chunk_type(
         self, parsed: Dict[str, Any], step_count: int,
-        chunk_buffer: ChunkBuffer, step_counter: Optional[Callable[[], int]]
+        chunk_buffer: ChunkBuffer
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """chunk类型处理：拼接buffer、阈值检测、无工具Agent退出 — 小沈 2026-05-25"""
+        """chunk类型处理：拼接buffer、阈值检测、无工具Agent退出 — 小沈 2026-05-30"""
         self.parse_retry_count = 0
         chunk_content = parsed.get("content", "")
 
@@ -110,16 +111,17 @@ class ReActHandlerMixin:
 
         if self.tool_category is None:
             content = chunk_buffer.flush_to(self.message_builder)
-            sc = step_counter() if step_counter else (step_count + 1)
-            final_step = StepFactory.create_final_step(step=sc, response=content, thought="")
+            final_step = StepFactory.create_final_step(step=step_count + 1, response=content, thought="")
             yield self._emit_step(final_step)
+            self.status = AgentStatus.COMPLETED
             self._on_after_loop()
             return
 
         if chunk_buffer.should_promote():
             promoted_content = chunk_buffer.flush_to(self.message_builder)
-            final_step = StepFactory.create_final_step(step=step_count, response=promoted_content, thought="")
+            final_step = StepFactory.create_final_step(step=step_count + 1, response=promoted_content, thought="")
             yield self._emit_step(final_step)
+            self.status = AgentStatus.COMPLETED
             self._on_after_loop()
             return
 
@@ -208,9 +210,9 @@ class ReActHandlerMixin:
         self, parsed: Dict[str, Any], step_count: int,
         chunk_buffer: ChunkBuffer, valid_tool_names: Set[str],
         running_tasks: Optional[Dict[str, Any]], task_id: Optional[str],
-        step_counter: Optional[Callable[[], int]], response: str
+        response: str
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """action工具执行入口 — 小沈 2026-05-25"""
+        """action工具执行入口 — 小沈 2026-05-30"""
         tool_name = parsed.get("tool_name")
         tool_params = parsed.get("tool_params", {})
         thought_content = parsed.get("content", "")
@@ -292,8 +294,7 @@ class ReActHandlerMixin:
         if pending_calls:
             logger.info(f"[ReAct] 主工具完成，继续执行 {len(pending_calls)} 个并行工具")
         async for _pd in self._handle_pending_calls(pending_calls, step_count, running_tasks, task_id):
-
-            self._pending_step_count  # noqa — step_count同步已在_handle_pending_calls内部处理
+            pass
 
     def _handle_run_exception(self, e: Exception, step_count: int) -> Dict[str, Any]:
         """未捕获异常兜底 — 小沈 2026-05-25"""
@@ -335,5 +336,3 @@ class ReActHandlerMixin:
                 fc_context=outcome.obs_fc_context
             )
         yield outcome.observation_step
-
-        self._pending_step_count = step_count

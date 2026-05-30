@@ -29,7 +29,7 @@ Author: 小沈 - 2026-03-26
 import json
 import asyncio
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 from app.services import AIServiceFactory
 from app.config import get_config
@@ -143,7 +143,7 @@ async def _emit_and_save(
 running_tasks_lock = asyncio.Lock()
 running_tasks: dict[str, dict] = {}
 
-TASK_TIMEOUT = timedelta(hours=1)  # 1小时超时
+from app.constants import TASK_TIMEOUT
 
 
 async def cleanup_expired_tasks():
@@ -284,7 +284,7 @@ async def _run_sse_stream(
         async for event in agent.run_stream(
             task=last_message, context=None,
             max_steps=max_steps, task_id=task_id,
-            running_tasks=running_tasks, step_counter=next_step,
+            running_tasks=running_tasks,
         ):
             cancelled_sse = await _is_cancelled_and_yield(
                 task_id, running_tasks, running_tasks_lock, next_step,

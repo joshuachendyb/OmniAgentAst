@@ -11,9 +11,8 @@ from app.utils.logger import logger
 from ._utils import _extract_json_with_balanced_braces, _extract_string_value
 
 
-# 【24.1.4 组件2/3 常量】工具名/参数名降级映射 — 小健 2026-05-25
-_TOOL_NAME_FALLBACK_KEYS = ["action", "action_tool", "tool_name"]
-_TOOL_PARAMS_FALLBACK_KEYS = ["params", "action_input", "actionInput"]
+# 【24.1.4 组件2/3 常量】已迁移到 constants.py — 北京老陈 2026-05-30
+from app.constants import TOOL_NAME_FALLBACK_KEYS, TOOL_PARAMS_FALLBACK_KEYS
 
 
 # 【24.1.4 组件1】统一 action 结果构建(消除 2 个 return dict 的 6 字段重复)
@@ -35,7 +34,7 @@ def _build_action_result(type_: str, tool_name: str, tool_params: Dict[str, Any]
 def _fallback_tool_name(tool_params: Dict[str, Any], current: str) -> str:
     if current:
         return current
-    for key in _TOOL_NAME_FALLBACK_KEYS:
+    for key in TOOL_NAME_FALLBACK_KEYS:
         if key in tool_params:
             return tool_params.pop(key)
     return ""
@@ -45,7 +44,7 @@ def _fallback_tool_name(tool_params: Dict[str, Any], current: str) -> str:
 def _normalize_tool_params(tool_params: Dict[str, Any]) -> Dict[str, Any]:
     if "tool_params" in tool_params:
         return tool_params
-    for key in _TOOL_PARAMS_FALLBACK_KEYS:
+    for key in TOOL_PARAMS_FALLBACK_KEYS:
         if key in tool_params:
             tool_params["tool_params"] = tool_params.pop(key)
             break

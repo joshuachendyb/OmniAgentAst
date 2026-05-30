@@ -85,7 +85,4 @@ def _register_registry_tools():
             f"examples: {len(examples)}个"
         )
 
-
-_initialized = False
-
 __all__ = ["_register_registry_tools"]

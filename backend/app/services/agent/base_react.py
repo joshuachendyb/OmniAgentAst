@@ -27,7 +27,7 @@ Updated: 小沈 - 2026-04-26
 import asyncio
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, AsyncGenerator, Callable, Set, Tuple
+from typing import Any, Dict, List, Optional, AsyncGenerator, Set, Tuple
 
 from app.services.agent.types import AgentStatus
 from app.services.agent.llm_response_parser import parse_react_response
@@ -285,9 +285,8 @@ class BaseAgent(ReActHandlerMixin, ABC):
         max_steps: int = DEFAULT_MAX_STEPS,
         task_id: Optional[str] = None,
         running_tasks: Optional[Dict[str, Any]] = None,
-        step_counter: Optional[Callable[[], int]] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """ReAct 核心循环 — 重构为骨架+私有方法分发 — 小沈 2026-05-25"""
+        """ReAct 核心循环 — 重构为骨架+私有方法分发 — 小沈 2026-05-30"""
         chunk_buffer, valid_tool_names = self._initialize_run_state(task, task_id, context)
         step_count = 0
 
@@ -299,7 +298,7 @@ class BaseAgent(ReActHandlerMixin, ABC):
                     self._on_after_loop()
                     return
 
-                step_count = step_counter() if step_counter else (step_count + 1)
+                step_count += 1
 
                 _int = self._check_interrupt(step_count, running_tasks)
                 if _int:
@@ -334,8 +333,11 @@ class BaseAgent(ReActHandlerMixin, ABC):
                 parsed_type = parsed["type"]
 
                 if parsed_type == "chunk":
-                    async for step in self._handle_chunk_type(parsed, step_count, chunk_buffer, step_counter):
+                    async for step in self._handle_chunk_type(parsed, step_count, chunk_buffer):
                         yield step
+                    if self.status == AgentStatus.COMPLETED:
+                        self._complete_tracked_task(success=True)
+                        return
                     continue
 
                 if parsed_type in ("answer", "implicit"):
@@ -366,7 +368,7 @@ class BaseAgent(ReActHandlerMixin, ABC):
 
                 async for step in self._handle_action_type(
                     parsed, step_count, chunk_buffer, valid_tool_names,
-                    running_tasks, task_id, step_counter, response
+                    running_tasks, task_id, response
                 ):
                     yield step
 
@@ -474,18 +476,22 @@ class BaseAgent(ReActHandlerMixin, ABC):
 
     def _complete_tracked_task(self, success: bool):
         """Task追踪：完成任务记录"""
-        if self._task_tracker and self._tracked_task_id:
+        task_tracker = getattr(self, '_task_tracker', None)
+        tracked_task_id = getattr(self, '_tracked_task_id', None)
+        if task_tracker and tracked_task_id:
             try:
-                self._task_tracker.complete_task(self._tracked_task_id, success=success)
+                task_tracker.complete_task(tracked_task_id, success=success)
             except Exception as _e:
                 logger.debug(f"[TaskTracker] 完成任务失败: {_e}")
 
     def record_operation(self, operation_type: str, **kwargs):
         """Task追踪：记录一次操作 — 供外部调用"""
-        if self._task_tracker and self._tracked_task_id:
+        task_tracker = getattr(self, '_task_tracker', None)
+        tracked_task_id = getattr(self, '_tracked_task_id', None)
+        if task_tracker and tracked_task_id:
             try:
-                self._task_tracker.add_operation(
-                    self._tracked_task_id, operation_type, **kwargs,
+                task_tracker.add_operation(
+                    tracked_task_id, operation_type, **kwargs,
                 )
             except Exception as _e:
                 logger.debug(f"[TaskTracker] 记录操作失败: {_e}")

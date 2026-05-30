@@ -22,8 +22,6 @@ from ._utils import (
 )
 
 from ._tool_params import (
-    _TOOL_NAME_FALLBACK_KEYS,
-    _TOOL_PARAMS_FALLBACK_KEYS,
     _build_action_result,
     _fallback_tool_name,
     _normalize_tool_params,

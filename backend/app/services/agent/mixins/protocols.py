@@ -26,7 +26,6 @@ class HandlerHostProtocol(Protocol):
     max_parse_retries: int
     llm_call_count: int
     tool_category: Any
-    _pending_step_count: int
 
     async def _emit_step(self, step: Any) -> Dict[str, Any]: ...
     def _exit_with_error(self, step_count: int, error_type: str, message: str) -> Dict[str, Any]: ...

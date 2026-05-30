@@ -125,7 +125,7 @@ class ToolConfig:
             return timeouts["default"]
         
         # 回退到tool_meta硬编码超时表
-        from app.services.tools.tool_meta import TOOL_TIMEOUTS
+        from app.services.tools.tool_constants import TOOL_TIMEOUTS
         return TOOL_TIMEOUTS.get(tool_name, TOOL_TIMEOUTS["default"])
     
     def get_aliases(self, tool_name: str) -> Optional[Dict[str, str]]:

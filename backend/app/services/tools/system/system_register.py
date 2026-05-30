@@ -319,7 +319,5 @@ def _register_system_tools():
     _register_registry_tools()
 
 
-# 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
-_initialized = False  # 守护变量，供显式调用时使用
 
 __all__ = ["_register_system_tools"]

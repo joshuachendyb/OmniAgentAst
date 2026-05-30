@@ -47,11 +47,12 @@ from app.services.tools._response import build_success, build_error, build_warni
 # 原因：后端必须返回全部真实数据，前端自己控制显示方式（分页/滚动）
 # 前端不再依赖 next-page 接口，后端不再做分页处理
 
-# read_file 特殊处理：默认限制500行（因为大文件不能一次性读取到内存）
-READ_FILE_DEFAULT_LIMIT = 500
-
-# 其他工具返回全部数据
-DEFAULT_PAGE_SIZE = 200  # 每页返回数量，防止LLM上下文爆满 小沈-2026-05-15
+# 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
+from app.services.tools.tool_constants import (
+    READ_FILE_DEFAULT_LIMIT, DEFAULT_PAGE_SIZE, PAGE_SIZE, MAX_PAGE_SIZE,
+    MAX_READ_SIZE, MAX_MEDIA_READ_SIZE, MAX_BATCH_FILE_COUNT,
+    MAX_SEARCH_FILE_SIZE, BINARY_EXTENSIONS,
+)
 
 from pydantic import BaseModel, Field
 
