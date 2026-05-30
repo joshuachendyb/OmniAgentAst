@@ -94,16 +94,9 @@ def run_windows_command(
         return build_error(error_code="ERR_COMMAND_FAILED", message=f"命令执行失败: {str(e)}")
 
 
-def check_windows_platform() -> bool:
-    """检查当前平台是否为Windows"""
-    import platform
-    return platform.system().lower() == "windows"
-
-
 __all__ = [
     "_check_module",
     "safe_path_join",
-    "check_windows_platform",
     "run_windows_command",
 ]
 
