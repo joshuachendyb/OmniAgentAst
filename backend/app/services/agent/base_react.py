@@ -40,7 +40,6 @@ from app.services.tools.tool_types import ToolCategory
 from app.services.tools.tool_queries import get_tools_from_registry_by_category
 
 from app.constants import MAX_CONTEXT_CHARS
-from app.services.preprocessing.intent_classifier import IntentClassifier
 from app.utils.logger import logger
 from app.chat_stream.incident_handler import create_incident_data
 from app.services.agent.chunk_buffer import ChunkBuffer
@@ -48,6 +47,14 @@ from app.services.agent.mixins.react_handler_mixin import ReActHandlerMixin
 from app.services.task import get_tracker
 
 from app.constants import DEFAULT_MAX_STEPS, MAX_CONSECUTIVE_CHUNKS
+
+
+# ===== meta工具名称列表（基类始终加载）=====
+META_TOOL_NAMES = [
+    'tool_help', 'tool_search', 'pipeline',
+    'get_time', 'time_add', 'time_diff', 'query_calendar', 'timezone_convert',
+    'batch_process', 'timer',
+]
 
 
 class BaseAgent(ReActHandlerMixin, ABC):
@@ -133,15 +140,24 @@ class BaseAgent(ReActHandlerMixin, ABC):
         self.message_builder = MessageBuilder(max_context_chars=self.MAX_CONTEXT_CHARS)
     
     def _init_tools(self):
-        """初始化工具相关属性 - 提取自__init__的工具职责部分"""
+        """初始化工具 — 先加载meta基础工具，再加载分类工具 — 小沈 2026-05-30"""
         self._tools_dict = {}
         self._loaded_categories = set()
         if self.tool_category:
             self._loaded_categories.add(self.tool_category.value)
-        self._intent_classifier = IntentClassifier()
-        
-        # 工具加载统一在base完成，子类不用再调用
+
+        # ① 始终加载meta工具（基础能力）
+        meta_tools = self._load_tools_by_names(META_TOOL_NAMES)
+        self._tools_dict.update(meta_tools)
+
+        # ② 再加载分类工具（merge模式叠加）
         self._init_tools_and_executor(self.tool_category)
+
+
+    async def _execute_tool(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
+        """默认工具执行 — 委托统一重试执行器 — 小沈 2026-05-30"""
+        from app.services.agent.tool_executor import execute_tool_with_unified_retry
+        return await execute_tool_with_unified_retry(action, action_input, self._tools_dict)
     
     @property
     def conversation_history(self) -> List[Dict[str, str]]:
