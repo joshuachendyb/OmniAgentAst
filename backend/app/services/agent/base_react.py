@@ -128,15 +128,14 @@ class BaseAgent(ReActHandlerMixin, ABC):
     
     def _init_tools(self):
         """初始化工具相关属性 - 提取自__init__的工具职责部分"""
-        # 【修复 小健 2026-05-24】P2-8: _load_tools移到子类_init_tools_and_executor统一调用，避免重复初始化
         self._tools_dict = {}
         self._loaded_categories = set()
         if self.tool_category:
             self._loaded_categories.add(self.tool_category.value)
         self._intent_classifier = IntentClassifier()
         
-        # 工具执行函数由tool_init_mixin._init_tools_and_executor初始化
-        # 不再需要self.executor = None
+        # 工具加载统一在base完成，子类不用再调用
+        self._init_tools_and_executor(self.tool_category)
     
     @property
     def conversation_history(self) -> List[Dict[str, str]]:

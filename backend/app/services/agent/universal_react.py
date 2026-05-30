@@ -49,7 +49,6 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, RollbackMixin, BaseAge
             **kwargs
         )
         
-        self._init_tools_and_executor(effective_category)
         self._init_llm_strategies()
         self._init_task_tracking(enable=config.rollback_enabled)
         self._init_candidates(candidates)
