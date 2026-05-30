@@ -24,7 +24,7 @@ Author: 小沈 - 2026-05-17
 import base64
 import os
 import re
-from app.utils.patterns import HTML_TAG_PATTERN, SCRIPT_TAG_PATTERN, STYLE_TAG_PATTERN, MULTI_WHITESPACE_PATTERN
+from app.utils.common_patterns import HTML_TAG_PATTERN, SCRIPT_TAG_PATTERN, STYLE_TAG_PATTERN, MULTI_WHITESPACE_PATTERN
 import socket
 import time
 from typing import Dict, Any, Optional
