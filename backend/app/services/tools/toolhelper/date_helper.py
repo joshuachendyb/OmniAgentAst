@@ -14,7 +14,7 @@
 """
 
 import re
-from app.utils.patterns import UTC_OFFSET_PATTERN
+from app.utils.common_patterns import UTC_OFFSET_PATTERN
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Tuple
 
