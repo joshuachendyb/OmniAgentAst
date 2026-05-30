@@ -26,7 +26,7 @@ import re
 import sqlite3
 from typing import Any, Dict, List, Optional, Union, Literal, Tuple
 from app.utils.logger import logger
-from app.utils.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe
+from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, make_json_safe
 from app.services.tools._response import build_success, build_error, build_warning
 
 
