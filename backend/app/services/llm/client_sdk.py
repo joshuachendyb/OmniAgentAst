@@ -10,14 +10,14 @@ SDK 只管发 HTTP 请求，不处理错误，异常原样抛出。
 import httpx
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-
-# 集中配置
-DEFAULT_CONNECT_TIMEOUT = 30.0
-DEFAULT_READ_TIMEOUT = 60.0
-DEFAULT_WRITE_TIMEOUT = 10.0
-DEFAULT_POOL_TIMEOUT = 10.0
-DEFAULT_MAX_CONNECTIONS = 10
-DEFAULT_MAX_KEEPALIVE = 5
+from app.constants import (
+    DEFAULT_CONNECT_TIMEOUT,
+    DEFAULT_READ_TIMEOUT,
+    DEFAULT_WRITE_TIMEOUT,
+    DEFAULT_POOL_TIMEOUT,
+    LLM_MAX_CONNECTIONS,
+    LLM_MAX_KEEPALIVE,
+)
 
 
 # ===== 请求体构建 =====
@@ -76,8 +76,8 @@ class LLMClient:
                 pool=DEFAULT_POOL_TIMEOUT,
             ),
             limits=httpx.Limits(
-                max_connections=DEFAULT_MAX_CONNECTIONS,
-                max_keepalive_connections=DEFAULT_MAX_KEEPALIVE,
+                max_connections=LLM_MAX_CONNECTIONS,
+                max_keepalive_connections=LLM_MAX_KEEPALIVE,
             ),
             headers={"Authorization": f"Bearer {api_key}"},
             base_url=self._base_url,
