@@ -13,6 +13,7 @@
 |------|------|------|---------|
 | v0.1 | 2026-05-30 21:18:26 | 小欧 | 初始版本，完整差异分析与逐文件修改方案 |
 | v0.2 | 2026-05-30 21:30:00 | 小欧 | 新增 _emit_and_save 统一封装，更新目标架构 |
+| v0.3 | 2026-05-30 21:45:00 | 小欧 | chat_stream_query.py 不修改（老陈决定），format_agent_sse 支持 dict+Step 双输入，保留 create_incident_data |
 
 ---
 
@@ -268,23 +269,31 @@ yield sse_data
 
 **新 format_agent_sse 实现**：
 ```python
-def format_agent_sse(step_obj) -> str:
+def format_agent_sse(event_or_step, step: int = None, model: str = '', provider: str = '') -> str:
     """
-    统一Agent事件SSE格式化入口 — 接收Step对象，调用to_dict()生成SSE
+    统一Agent事件SSE格式化入口
+
+    支持两种输入：
+    1. Step 对象（新代码）：format_agent_sse(step_obj)
+    2. dict（chat_stream_query.py 遗留）：format_agent_sse(event_dict, step, model, provider)
 
     Args:
-        step_obj: ReasoningStep子类实例
+        event_or_step: ReasoningStep 子类实例，或 event dict
+        step: 步骤编号（仅 dict 输入时使用）
+        model: 模型名称（仅 dict 输入时使用）
+        provider: 提供商（仅 dict 输入时使用）
 
     Returns:
         SSE格式字符串，空字符串表示无需发送
     """
-    event_type = step_obj.get_type()
-    step_num = step_obj.step
-    data = step_obj.to_dict()
-
-    # incident + interrupted 统一处理
-    if event_type == 'interrupted':
-        event_type = 'incident'
+    if isinstance(event_or_step, dict):
+        event_type = event_or_step.get('type', '')
+        step_num = step or event_or_step.get('step', 0)
+        data = event_or_step
+    else:
+        event_type = event_or_step.get_type()
+        step_num = event_or_step.step
+        data = event_or_step.to_dict()
 
     if not event_type:
         return ''
@@ -293,9 +302,9 @@ def format_agent_sse(step_obj) -> str:
 ```
 
 **关键设计决策**：
-- `interrupted` 类型在 Step 层面不存在，统一映射为 `incident`
-- 支持 dict 输入的兼容模式，确保过渡期不break
 - 不做任何字段映射——Step.to_dict() 产出什么就透传什么
+- dict 输入仅用于 chat_stream_query.py 遗留代码，新代码统一用 Step 对象
+- 旧签名 `(event, step, model, provider)` 保留兼容
 
 ---
 
@@ -353,9 +362,7 @@ def _check_interrupt(self, step_count, running_tasks=None) -> Optional[IncidentS
 
 ### 6.3 mixins/react_handler_mixin.py — yield Step 对象
 
-**无代码改动**。当前已通过 `yield self._emit_step(step)` 间接 yield Step 对象，_emit_step 改后自动生效。
-
-**唯一需改**：line 90 和 line 189/201 的 `create_incident_data(...)` 调用改为创建 IncidentStep。
+**改动**：line 90 和 line 189/201 的 `create_incident_data(...)` 调用改为创建 IncidentStep。
 
 ---
 
@@ -437,17 +444,17 @@ error_response = format_agent_sse(error_step_obj)
 
 **改动 6：_handle_retry_exhausted 同上**
 
+**注意**：format_agent_sse 现在支持两种调用方式：
+- `format_agent_sse(step_obj)` — 新代码用
+- `format_agent_sse(dict, step, model, provider)` — chat_stream_query.py 遗留用
+
 ---
 
-### 6.6 incident_handler.py — 用 IncidentStep 替代 raw dict
+### 6.6 incident_handler.py — 保留 create_incident_data，改用 IncidentStep
 
-**改动 1：删除 create_incident_data 函数**
-```python
-# 删除整个 create_incident_data 函数
-# 所有调用方改为 IncidentStep(...)
-```
+**改动 1：create_incident_data 保留**（chat_stream_query.py 依赖它）
 
-**改动 2：check_and_yield_if_interrupted**
+**改动 2：check_and_yield_if_interrupted 改用 IncidentStep**
 ```python
 # 改前：
 return True, format_agent_sse({'type': 'interrupted', 'message': '...'}, step=step_value, model='', provider='')
@@ -457,7 +464,7 @@ incident_step = IncidentStep(step=step_value, incident_value='interrupted', mess
 return True, format_agent_sse(incident_step)
 ```
 
-**改动 3：check_and_yield_if_paused**
+**改动 3：check_and_yield_if_paused 改用 IncidentStep**
 ```python
 # 改前：
 yield format_agent_sse({'type': 'incident', 'incident_value': 'resumed', 'message': '...'}, step=..., model='', provider='')
@@ -469,57 +476,16 @@ yield format_agent_sse(incident_step)
 
 ---
 
-### 6.7 chat_stream_query.py — 用 Step 对象替代 raw dict
+### 6.7 chat_stream_query.py — 不修改（老陈决定）
 
-**改动 1：_execute_retry_loop 中 retrying 事件**
-```python
-# 改前：
-yield (format_agent_sse({'type': 'incident', 'incident_value': 'retrying', 'message': f'...'}, step=retry_step, model='', provider=''), None)
+**状态**：保持原样，不做任何改动。
 
-# 改后：
-incident_step = IncidentStep(step=retry_step, incident_value='retrying', message=f'请求超时，正在重试 ({retry_attempt}/{max_retries})...')
-yield (format_agent_sse(incident_step), None)
-```
+**设计影响**：
+1. `format_agent_sse` 必须同时支持 dict 和 Step 两种输入
+2. `create_incident_data` 不能删除，必须保留
+3. `format_agent_sse` 的旧签名 `(event, step, model, provider)` 必须保留
 
-**改动 2：_execute_retry_loop 中 interrupted 事件**
-```python
-# 改前：
-yield (format_agent_sse({'type': 'interrupted', 'message': '...'}, step=interrupted_step, model='', provider=''), None)
-
-# 改后：
-incident_step = IncidentStep(step=interrupted_step, incident_value='interrupted', message='任务已被中断')
-yield (format_agent_sse(incident_step), None)
-```
-
-**改动 3：_execute_retry_loop 中 chunk 事件（line 287）**
-```python
-# 改前：
-chunk_data = chunk_step.to_dict()
-...
-yield (format_agent_sse(chunk_data, chunk_data.get('step', 0), ai_service.model, ai_service.provider), None)
-
-# 改后：
-yield (format_agent_sse(chunk_step), None)  # chunk_step 已是 Step 对象
-```
-
-**改动 4：chat_stream_query 中 interrupted 事件（line 415）**
-```python
-# 改前：
-yield format_agent_sse({'type': 'interrupted', 'message': '...'}, step=interrupted_step, model='', provider='')
-
-# 改后：
-incident_step = IncidentStep(step=interrupted_step, incident_value='interrupted', message='任务已被中断')
-yield format_agent_sse(incident_step)
-```
-
-**改动 5：chat_stream_query 中 final 事件（line 447）**
-```python
-# 改前：
-yield create_final_response(content=full_content, model=ai_service.model, provider=ai_service.provider, display_name=display_name, step=final_step_value)
-
-# 改后：
-yield format_agent_sse(final_step_obj)  # final_step_obj 已在 line 437 创建
-```
+**结论**：chat_stream_query.py 是历史遗留代码，通过 format_agent_sse 的兼容入口调用。新代码统一用 Step 对象。
 
 ---
 
@@ -532,17 +498,7 @@ start_data = await send_start_step(...)
 yield format_start_sse(start_data)
 
 # 改后：
-start_data = await send_start_step(...)
-# send_start_step 返回 dict，需要转为 StartStep
-start_step = StartStep(
-    step=start_data.get('step', 0),
-    display_name=start_data.get('display_name', ''),
-    provider=start_data.get('provider', ''),
-    model=start_data.get('model', ''),
-    task_id=start_data.get('task_id', ''),
-    user_message=start_data.get('user_message', ''),
-    security_check=start_data.get('security_check', {})
-)
+start_step = await send_start_step(...)  # send_start_step 直接返回 StartStep
 yield format_agent_sse(start_step)
 ```
 
@@ -562,10 +518,12 @@ from app.chat_stream.sse_formatter import format_agent_sse
 error_step = StepFactory.create_error_step(
     step=step or 0, error_type=error_type, error_message=error_message,
     model=model, provider=provider, recoverable=recoverable or False,
-    retry_after=retry_after
+    retry_after=retry_after, details=details, stack=stack
 )
 return format_agent_sse(error_step)
 ```
+
+**注意**：ErrorStep 必须有 details/stack 字段，否则这两个参数会丢失。阶段 3 必须完成。
 
 ---
 
@@ -589,9 +547,9 @@ return format_agent_sse(final_step)
 
 ---
 
-### 6.11 chat_stream/start_step.py — send_start_step 保持不变
+### 6.11 chat_stream/start_step.py — send_start_step 返回 StartStep
 
-`send_start_step()` 仍然返回 dict（供 chat_router 保存 DB）。chat_router 负责将 dict 转为 StartStep 再传给 format_agent_sse。不改 send_start_step 本身。
+`send_start_step()` 改为返回 StartStep 对象（不是 dict）。chat_router 直接使用。
 
 ---
 
@@ -601,7 +559,7 @@ return format_agent_sse(final_step)
 |------|-------------|-------------|
 | `sse_formatter.py` | 删除 8 个 format_*_sse 定义 | 无 |
 | `chat_stream_query.py` | `from app.chat_stream.sse_formatter import format_sse_event` | `from app.services.agent.steps import IncidentStep` |
-| `incident_handler.py` | `from app.chat_stream.sse_formatter import format_agent_sse`（改导入路径） | `from app.services.agent.steps import IncidentStep` |
+| `incident_handler.py` | 保留 create_incident_data（chat_stream_query.py 依赖） | `from app.services.agent.steps import IncidentStep` |
 | `react_sse_wrapper.py` | `from app.chat_stream.sse_formatter import format_sse_event` | `from app.services.agent.steps import IncidentStep, ErrorStep` + 新增 _emit_and_save 函数 |
 | `chat_router.py` | `from app.chat_stream.sse_formatter import format_sse_event, format_start_sse` | `from app.services.agent.steps import StartStep` |
 | `error_handler.py` | `from app.chat_stream.sse_formatter import format_error_sse` | `from app.services.agent.steps import StepFactory` + `from app.chat_stream.sse_formatter import format_agent_sse` |
@@ -623,7 +581,7 @@ return format_agent_sse(final_step)
 | **6** | `mixins/tool_step_mixin.py` | _ToolStepOutcome 类型变更 | 阶段 5 完成 |
 | **7** | `react_sse_wrapper.py` | 新增 _emit_and_save，删除 _dispatch_sse_event，用 _emit_and_save 替代重复代码 | 阶段 5-6 完成 |
 | **8** | `incident_handler.py` | 用 IncidentStep 替代 raw dict | 阶段 4 完成 |
-| **9** | `chat_stream_query.py` | 用 Step 对象替代 raw dict | 阶段 4,8 完成 |
+| **9** | `chat_stream_query.py` | **不修改**（老陈决定） | 无 |
 | **10** | `chat_router.py` | 用 StartStep 替代 format_start_sse | 阶段 4 完成 |
 | **11** | `error_handler.py` | 用 ErrorStep 替代 format_error_sse | 阶段 4 完成 |
 | **12** | `chat_helpers.py` | 用 FinalStep 替代 format_final_sse | 阶段 4 完成 |
@@ -637,9 +595,9 @@ return format_agent_sse(final_step)
 | ChunkStep 新增字段前端不识别 | 前端 chunk 解析 | 低 | 新增字段，前端忽略未知字段 |
 | FinalStep 新增字段前端不识别 | 前端 final 解析 | 低 | 新增字段，前端忽略未知字段 |
 | ErrorStep 字段变更 | 前端 error 解析 | 中 | 需同步前端确认 details/stack 字段 |
-| create_incident_data 删除 | 所有调用方 | 低 | 改为 IncidentStep 构造 |
+| create_incident_data 保留 | incident_handler.py | 低 | chat_stream_query.py 依赖，不删除 |
 | run_stream 返回类型变更 | 所有 yield 消费者 | 中 | 阶段 5 一次性改完 |
-| format_agent_sse 强类型 | 过渡期 | 低 | 所有调用方一次性改完 |
+| format_agent_sse 强类型 | 所有调用方 | 低 | 所有调用方一次性改完 |
 
 ---
 
