@@ -33,13 +33,13 @@ class DesktopReactAgent(ToolStepMixin, ReactAgentMixin, BaseAgent):
             raise ValueError("task_id is required for desktop operation tracking")
         
         effective_category = tool_category or ToolCategory.DESKTOP
-        self._candidates = candidates
         
         super().__init__(
             llm_client=llm_client,
             task_id=task_id,
             tool_category=effective_category,
             max_steps=max_steps,
+            candidates=candidates,
             **kwargs
         )
         

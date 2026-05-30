@@ -63,29 +63,32 @@ class BaseAgent(ReActHandlerMixin, ABC):
     def __init__(
         self,
         llm_client: Any,
-        task_id: str,  # 【修改】session_id → task_id，2026-04-26 小沈
+        task_id: str,
         tool_category: Optional[ToolCategory] = None,
         max_steps: int = DEFAULT_MAX_STEPS,
+        rollback_enabled: bool = True,
+        candidates: Optional[List[str]] = None,
         **kwargs
     ):
         """
         初始化 BaseAgent
-        参考: 5.1节行 503-534
 
         Args:
             llm_client: LLM 客户端函数
-            task_id: 任务ID - 用于操作安全追踪和审计（必需，不可为空字符串）
-            tool_category: 工具分类（可选，用于加载特定工具集）
-            max_steps: 最大步数（默认 DEFAULT_MAX_STEPS=100，优先从 config.yaml 读取）
+            task_id: 任务ID
+            tool_category: 工具分类（可选）
+            max_steps: 最大步数
+            rollback_enabled: 是否启用回滚追踪
+            candidates: 候选意图列表
         """
-        # 初始化编排 - 按职责分组调用私有方法
+        # 初始化编排 - 底层一次性做完所有公共初始化
         self._init_llm(llm_client, **kwargs)
         self._init_state(task_id, tool_category, max_steps)
         self._init_messages()
         self._init_tools()
         self._init_llm_strategies()
-        self._init_task_tracking(enable=getattr(self, '_rollback_enabled', True))
-        self._init_candidates(getattr(self, '_candidates', None))
+        self._init_task_tracking(enable=rollback_enabled)
+        self._init_candidates(candidates)
     
     def _init_llm(self, llm_client: Any, **kwargs):
         """初始化LLM客户端相关属性 - 提取自__init__的LLM职责部分"""

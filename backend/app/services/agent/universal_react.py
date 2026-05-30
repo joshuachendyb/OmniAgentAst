@@ -40,14 +40,14 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, RollbackMixin, BaseAge
         self.config = config
         effective_category = tool_category or config.category
         effective_max_steps = max_steps or config.max_steps
-        self._rollback_enabled = config.rollback_enabled
-        self._candidates = candidates
         
         super().__init__(
             llm_client=llm_client,
             task_id=task_id,
             tool_category=effective_category,
             max_steps=effective_max_steps,
+            rollback_enabled=config.rollback_enabled,
+            candidates=candidates,
             **kwargs
         )
         
