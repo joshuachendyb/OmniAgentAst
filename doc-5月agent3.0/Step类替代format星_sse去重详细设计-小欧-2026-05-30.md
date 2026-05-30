@@ -614,19 +614,6 @@ return start_step  # 返回 StartStep
 
 ---
 
-## 九、风险评估
-
-| 风险项 | 影响范围 | 概率 | 缓解措施 |
-|--------|---------|------|---------|
-| ChunkStep 新增字段前端不识别 | 前端 chunk 解析 | 低 | 新增字段，前端忽略未知字段 |
-| FinalStep 新增字段前端不识别 | 前端 final 解析 | 低 | 新增字段，前端忽略未知字段 |
-| ErrorStep 字段变更 | 前端 error 解析 | 中 | 需同步前端确认 details/stack 字段 |
-| create_incident_data 保留 | incident_handler.py | 低 | chat_stream_query.py 依赖，不删除 |
-| run_stream 返回类型变更 | 所有 yield 消费者 | 中 | 阶段 5 一次性改完 |
-| dict+Step 双输入 | format_agent_sse | 低 | 老陈定的规矩，chat_stream_query.py 用 dict，新代码用 Step |
-
----
-
 **文档完成时间**: 2026-05-30 21:18:26
 **作者**: 小欧
 **二次确认**: 已逐文件核对代码，所有字段映射经读取源文件验证
