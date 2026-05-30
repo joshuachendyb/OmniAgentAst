@@ -107,7 +107,7 @@ INTENT_ALIASES: Dict[str, IntentType] = {
 }
 
 
-def map_intent_to_agent(intent_str: str) -> Tuple[IntentType, ToolCategory]:
+def _map_intent_to_agent(intent_str: str) -> Tuple[IntentType, ToolCategory]:
     """
     将意图字符串映射到统一的意图类型和工具分类
     
@@ -137,11 +137,6 @@ def map_intent_to_agent(intent_str: str) -> Tuple[IntentType, ToolCategory]:
     return (IntentType.SYSTEM, ToolCategory.SYSTEM)
 
 
-def get_all_intent_types() -> List[str]:
-    """获取所有支持的意图类型列表（用于CRSS等需要完整列表的地方）"""
-    return list(set(intent_type.value for _, (intent_type, _) in INTENT_MAPPING.items()))
-
-
 def get_crss_intent_names() -> List[str]:
     """获取CRSS使用的意图名称列表（大写）"""
     return list(INTENT_MAPPING.keys())
@@ -162,7 +157,7 @@ def resolve_category(intent_str: str) -> ToolCategory:
     Returns:
         ToolCategory枚举值
     """
-    _, tool_category = map_intent_to_agent(intent_str)
+    _, tool_category = _map_intent_to_agent(intent_str)
     return tool_category
 
 
@@ -177,7 +172,7 @@ def get_aliases_for_intent(intent_type: IntentType) -> List[str]:
 
 def normalize_intent(intent_str: str) -> str:
     """规范化意图字符串（转换为标准的意图类型字符串）"""
-    intent_type, _ = map_intent_to_agent(intent_str)
+    intent_type, _ = _map_intent_to_agent(intent_str)
     return intent_type.value
 
 
