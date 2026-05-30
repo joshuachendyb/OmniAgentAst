@@ -32,7 +32,7 @@ DESKTOP Tools - 桌面工具实现（窗口管理）
 import platform
 from typing import Any, Dict, List, Optional, Literal
 from app.utils.logger import logger
-from app.utils.tool_result_utils import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
+from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
 from app.services.tools._response import build_success, build_error
 from app.services.tools.toolhelper.window_helper import check_win32_platform, get_window_rect, get_window_state, find_windows_by_title  # 小沈 2026-05-22
 
