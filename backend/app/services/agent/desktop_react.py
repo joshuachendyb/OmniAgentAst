@@ -8,7 +8,8 @@ Author: 小健 - 2026-05-06（修正-小沈 2026-05-06：rollback返回False）
 """
 from typing import Any, Optional, Dict, List
 
-from app.services.agent.base_react import BaseAgent, DEFAULT_MAX_STEPS
+from app.services.agent.base_react import BaseAgent
+from app.constants import DEFAULT_MAX_STEPS
 from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin
 from app.services.agent.mixins.tool_step_mixin import ToolStepMixin
 from app.services.prompts.desktop.desktop_prompts import DesktopPrompts
