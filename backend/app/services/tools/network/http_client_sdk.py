@@ -13,10 +13,8 @@ from typing import Optional
 import httpx
 
 
-# 集中配置
-DEFAULT_TIMEOUT_SEC = 30.0
-DEFAULT_MAX_CONNECTIONS = 100
-DEFAULT_MAX_KEEPALIVE = 20
+# 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
+from app.services.tools.tool_constants import DEFAULT_TIMEOUT_SEC, NETWORK_MAX_CONNECTIONS as DEFAULT_MAX_CONNECTIONS, NETWORK_MAX_KEEPALIVE as DEFAULT_MAX_KEEPALIVE
 
 
 def resolve_proxy(proxy: Optional[str] = None) -> Optional[str]:

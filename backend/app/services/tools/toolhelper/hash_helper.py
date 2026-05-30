@@ -20,7 +20,8 @@ import os
 from typing import Any, Dict, List
 
 
-SUPPORTED_ALGORITHMS = {"md5", "sha1", "sha256", "sha512"}
+# 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
+from app.services.tools.tool_constants import SUPPORTED_ALGORITHMS
 
 
 def select_hasher(algorithm: str) -> Any:

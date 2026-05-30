@@ -20,8 +20,8 @@ from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-# 置信度阈值
-CRSS_CONFIDENCE_THRESHOLD = 0.3
+# 常量已迁移到 constants.py — 北京老陈 2026-05-30
+from app.constants import CRSS_CONFIDENCE_THRESHOLD
 
 
 def _ascii_word_boundary_match(keyword: str, text: str) -> bool:

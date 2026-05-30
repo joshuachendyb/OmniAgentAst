@@ -40,7 +40,6 @@ from app.services.agent.steps import StepFactory, IncidentStep
 from app.utils.time_utils import create_timestamp, create_step_counter
 from app.chat_stream.message_saver import save_execution_steps_to_db, add_step_and_save, create_add_step_and_save, parse_and_save_sse
 from app.chat_stream.sse_formatter import format_agent_sse
-from app.constants import DEFAULT_MAX_STEPS
 from app.services.intents.crss_scorer import CRSS_CONFIDENCE_THRESHOLD  # 【修复 2026-05-13 小沈】H2: 改为从crss_scorer导入，切断与chat_router的循环依赖
 from app.services.task_lifecycle import TaskLifecycleManager  # 【重构 2026-05-25 小沈】替代直接操作running_tasks
 from app.services.agent.generic_react import GenericReactAgent
@@ -278,12 +277,10 @@ async def _run_sse_stream(
         log_tag = "[GenericOp]"
         error_label = "操作执行失败"
         error_type = 'generic_operation_error'
-    config = get_config()
-    max_steps = config.get_max_steps(DEFAULT_MAX_STEPS) if hasattr(config, 'get_max_steps') else config.get('app.max_steps', DEFAULT_MAX_STEPS)
     try:
         async for event in agent.run_stream(
             task=last_message, context=None,
-            max_steps=max_steps, task_id=task_id,
+            task_id=task_id,
             running_tasks=running_tasks,
         ):
             cancelled_sse = await _is_cancelled_and_yield(

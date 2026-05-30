@@ -10,13 +10,8 @@
 import re
 from typing import Tuple, List, Dict, Any
 
-# 【内联】原 command_security.py 的 CRSS 目标权重
-TARGET_WEIGHTS = {
-    'TEMP': {'min': 0, 'max': 4, 'default': 3, 'patterns': [r'\.tmp$', r'\.cache', r'^temp[/\\]', r'temp[/\\]', r'\.log$', r'log[/\\]', r'\*.tmp']},
-    'USER': {'min': 3, 'max': 5, 'default': 4, 'patterns': [r'~/', r'/home/', r'文档[/\\]', r'用户', r'documents', r'users?[/\\]']},
-    'PROJECT': {'min': 3, 'max': 6, 'default': 3, 'patterns': [r'src[/\\]', r'app[/\\]', r'backend[/\\]', r'frontend[/\\]', r'\.py', r'\.js', r'\.ts', r'tests[/\\]', r'config[/\\]', r'\.git']},
-    'SYSTEM': {'min': 8, 'max': 10, 'default': 9, 'patterns': [r'C:\\Windows', r'/bin', r'/etc', r'/sbin', r'/usr', r'系统', r'windows[/\\]system32', r'registry', r'密码', r'shadow', r'passwd', r'SAM', r'配置', r'注册表']},
-}
+# 常量已迁移到 constants.py — 北京老陈 2026-05-30
+from app.constants import TARGET_WEIGHTS
 
 
 def parse_operation_target(command: str) -> str:

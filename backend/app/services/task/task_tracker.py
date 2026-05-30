@@ -17,10 +17,8 @@ from app.utils.logger import logger
 from app.db.models.operation_enums import OperationStatus
 from .models import TaskStatus
 
-VALID_INTENTS = {
-    "file", "shell", "document", "code_execution",
-    "network", "system", "desktop", "time", "meta",
-}
+# 常量已迁移到 constants.py — 北京老陈 2026-05-30
+from app.constants import VALID_INTENTS
 
 
 class TaskTracker:

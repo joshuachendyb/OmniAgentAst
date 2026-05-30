@@ -22,21 +22,8 @@ import sys
 from typing import List, Tuple
 
 
-DANGEROUS_PATTERNS = [
-    (r"os\.system\s*\(", "系统调用(os.system)"),
-    (r"subprocess\.(call|run|Popen|check_output)\s*\(", "子进程调用(subprocess)"),
-    (r"shutil\.rmtree\s*\(", "递归删除目录(shutil.rmtree)"),
-    (r"os\.remove\s*\(", "删除文件(os.remove)"),
-    (r"os\.unlink\s*\(", "删除文件(os.unlink)"),
-    (r"__import__\s*\(", "动态导入(__import__)"),
-    (r"eval\s*\(", "动态执行(eval)"),
-    (r"exec\s*\(", "动态执行(exec)"),
-    (r"compile\s*\(", "动态编译(compile)"),
-    (r"open\s*\(.*[\'\"]w[\'\"]", "写入文件操作"),
-    (r"socket\s*\.", "网络Socket操作"),
-    (r"requests\.(get|post|put|delete|patch)\s*\(", "HTTP请求(requests)"),
-    (r"urllib\.request", "URL请求(urllib)"),
-]
+# 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
+from app.services.tools.tool_constants import DANGEROUS_PATTERNS
 
 
 def _check_python_available() -> bool:

@@ -18,10 +18,8 @@ import re
 from typing import Optional
 
 
-SHELL_INJECTION_PATTERNS = [
-    (r'\$\(', '子shell执行 $()'),
-    (r'`[^`]*`', '命令替换反引号'),
-]
+# 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
+from app.services.tools.tool_constants import SHELL_INJECTION_PATTERNS
 
 
 def _check_shell_injection(command: str) -> Optional[str]:

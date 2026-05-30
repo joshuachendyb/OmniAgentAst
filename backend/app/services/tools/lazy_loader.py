@@ -20,16 +20,8 @@ Tools 懒加载模块（原 registration.py）
 _tools_registered = False
 _registered_categories: set = set()
 
-# 【Phase 3 小沈 2026-05-18】精简方案：14→7注册模块
-_CATEGORY_MODULES = {
-    "file": ("app.services.tools.file", "_register_file_tools"),
-    "shell": ("app.services.tools.shell", "_register_shell_tools"),
-    "network": ("app.services.tools.network", "_register_network_tools"),
-    "system": ("app.services.tools.system", "_register_system_tools"),
-    "desktop": ("app.services.tools.desktop", "_register_desktop_tools"),
-    "document": ("app.services.tools.document", "_register_document_tools"),
-    "meta": ("app.services.tools.meta", "_register_meta_tools"),
-}
+# 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
+from app.services.tools.tool_constants import CATEGORY_MODULES as _CATEGORY_MODULES
 
 
 def _import_and_register(module_path: str, register_func_name: str) -> None:

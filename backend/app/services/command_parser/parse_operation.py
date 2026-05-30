@@ -10,16 +10,8 @@
 import re
 from typing import Tuple, List, Dict, Any
 
-# 【内联】原 command_security.py 的 CRSS 评分权重
-OPERATION_WEIGHTS = {
-    'READ': {'min': 0, 'max': 2, 'default': 1, 'keywords': ['cat', 'ls', 'grep', '查看', '读取', 'type', 'dir', '运行']},
-    'CREATE': {'min': 2, 'max': 4, 'default': 3, 'keywords': ['mkdir', 'touch', '创建', '新建', 'md']},
-    'UPDATE': {'min': 4, 'max': 7, 'default': 5, 'keywords': ['edit', 'sed', '修改', '编辑', '更新', 'echo', 'write']},
-    'DELETE': {'min': 6, 'max': 10, 'default': 8, 'keywords': ['rm', 'del', 'delete', '删除', 'remove', '清除', 'rmdir', 'rd']},
-    'COPY': {'min': 2, 'max': 5, 'default': 3, 'keywords': ['copy', 'cp', '复制', '拷贝']},
-    'MOVE': {'min': 2, 'max': 5, 'default': 3, 'keywords': ['move', 'mv', '移动']},
-    'EXEC': {'min': 5, 'max': 10, 'default': 7, 'keywords': ['sudo', 'run', 'exec', '执行', 'start']},
-}
+# 常量已迁移到 constants.py — 北京老陈 2026-05-30
+from app.constants import OPERATION_WEIGHTS
 
 
 def parse_operation_type(command: str) -> str:

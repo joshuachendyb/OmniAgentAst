@@ -18,12 +18,8 @@ from app.utils.common_patterns import UTC_OFFSET_PATTERN
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Tuple
 
-# 清明年份查表（2024-2035）
-QINGMING_DATES = {
-    2024: (4, 4), 2025: (4, 4), 2026: (4, 5),
-    2027: (4, 5), 2028: (4, 4), 2029: (4, 5), 2030: (4, 5),
-    2031: (4, 5), 2032: (4, 4), 2033: (4, 4), 2034: (4, 5), 2035: (4, 5),
-}
+# 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
+from app.services.tools.tool_constants import QINGMING_DATES
 
 
 def parse_datetime_any(value: Any) -> Optional[datetime]:

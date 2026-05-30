@@ -10,7 +10,6 @@ Author: 小健 - 2026-05-06（修正-小沈 2026-05-06：rollback返回False）
 from typing import Any, Optional, Dict, List
 
 from app.services.agent.universal_react import UniversalReactAgent
-from app.constants import DEFAULT_MAX_STEPS
 from app.services.prompts.desktop.desktop_prompts import DesktopPrompts
 from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
@@ -24,7 +23,7 @@ class DesktopReactAgent(UniversalReactAgent):
         llm_client: Any,
         task_id: str,
         tool_category: Optional[ToolCategory] = None,
-        max_steps: int = DEFAULT_MAX_STEPS,
+        max_steps: Optional[int] = None,
         candidates: Optional[List[str]] = None,
         **kwargs
     ):

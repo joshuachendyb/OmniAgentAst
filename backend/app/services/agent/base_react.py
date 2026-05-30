@@ -47,15 +47,7 @@ from app.services.agent.chunk_buffer import ChunkBuffer
 from app.services.agent.mixins.react_handler_mixin import ReActHandlerMixin
 from app.services.task import get_tracker
 
-from app.constants import DEFAULT_MAX_STEPS, MAX_CONSECUTIVE_CHUNKS
-
-
-# ===== meta工具名称列表（基类始终加载）=====
-META_TOOL_NAMES = [
-    'tool_help', 'tool_search', 'pipeline',
-    'get_time', 'time_add', 'time_diff', 'query_calendar', 'timezone_convert',
-    'batch_process', 'timer',
-]
+from app.constants import MAX_CONSECUTIVE_CHUNKS, META_TOOL_NAMES
 
 
 class BaseAgent(ReActHandlerMixin, ABC):
@@ -73,7 +65,7 @@ class BaseAgent(ReActHandlerMixin, ABC):
         llm_client: Any,
         task_id: str,
         tool_category: Optional[ToolCategory] = None,
-        max_steps: int = DEFAULT_MAX_STEPS,
+        max_steps: Optional[int] = None,
         rollback_enabled: bool = True,
         candidates: Optional[List[str]] = None,
         **kwargs
@@ -91,6 +83,10 @@ class BaseAgent(ReActHandlerMixin, ABC):
         """
         # 初始化编排 - 底层一次性做完所有公共初始化
         self._init_llm(llm_client, **kwargs)
+        # 一个地方读取config，其他地方使用 — 北京老陈 2026-05-31
+        if max_steps is None:
+            from app.config import get_config
+            max_steps = get_config().get_max_steps()
         self._init_state(task_id, tool_category, max_steps)
         self._init_messages()
         self._init_tools()
@@ -282,11 +278,15 @@ class BaseAgent(ReActHandlerMixin, ABC):
         self,
         task: str,
         context: Optional[Dict[str, Any]] = None,
-        max_steps: int = DEFAULT_MAX_STEPS,
+        max_steps: Optional[int] = None,
         task_id: Optional[str] = None,
         running_tasks: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """ReAct 核心循环 — 重构为骨架+私有方法分发 — 小沈 2026-05-30"""
+        # 一个地方读取config — 北京老陈 2026-05-31
+        if max_steps is None:
+            from app.config import get_config
+            max_steps = get_config().get_max_steps()
         chunk_buffer, valid_tool_names = self._initialize_run_state(task, task_id, context)
         step_count = 0
 

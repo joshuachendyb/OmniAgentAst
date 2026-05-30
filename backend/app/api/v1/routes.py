@@ -96,7 +96,7 @@ from pydantic import BaseModel, Field
 from app.config import get_config as get_config_instance
 from app.services import AIServiceFactory
 from app.utils.logger import logger
-from app.constants import DEFAULT_MAX_STEPS
+from app.constants import DEFAULT_MAX_STEPS  # 仅Pydantic Field默认值需要，运行时逻辑走config.get_max_steps()
 from app.services.ai_config_resolver import get_ai_config_resolver
 
 router = APIRouter()

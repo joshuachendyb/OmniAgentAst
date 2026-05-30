@@ -14,7 +14,6 @@ from app.services.agent.agent_config import resolve_agent_config, AgentConfig, A
 from app.services.agent.universal_react import UniversalReactAgent
 from app.services.agent.desktop_react import DesktopReactAgent
 from app.services.agent.base_react import BaseAgent
-from app.constants import DEFAULT_MAX_STEPS
 from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
@@ -29,7 +28,6 @@ class AgentFactory:
         llm_client: Any = None,
         task_id: str = "",
         tool_category: Optional[ToolCategory] = None,
-        max_steps: int = DEFAULT_MAX_STEPS,
         candidates: Optional[List[str]] = None,
         **kwargs
     ) -> BaseAgent:
@@ -58,7 +56,6 @@ class AgentFactory:
                 llm_client=llm_client,
                 task_id=task_id,
                 tool_category=tool_category,
-                max_steps=max_steps,
                 candidates=candidates,
                 **kwargs
             )
@@ -68,7 +65,6 @@ class AgentFactory:
             task_id=task_id,
             config=config,
             tool_category=tool_category,
-            max_steps=max_steps,
             candidates=candidates,
             **kwargs
         )

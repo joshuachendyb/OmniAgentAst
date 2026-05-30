@@ -15,7 +15,6 @@ import asyncio
 from typing import Dict, Any, List, Optional, AsyncGenerator
 
 from app.services.agent.generic_react import GenericReactAgent
-from app.constants import DEFAULT_MAX_STEPS
 from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin
 from app.services.agent.mixins.tool_step_mixin import ToolStepMixin
 from app.services.agent.agent_config import AgentConfig
@@ -43,7 +42,15 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, GenericReactAgent):
             raise ValueError(f"task_id is required for {intent_type} operation tracking")
 
         effective_category = tool_category or (config.category if config else None)
-        effective_max_steps = max_steps or (config.max_steps if config else DEFAULT_MAX_STEPS)
+        # 一个地方读取config — 北京老陈 2026-05-31
+        if max_steps is None:
+            if config and config.max_steps:
+                effective_max_steps = config.max_steps
+            else:
+                from app.config import get_config
+                effective_max_steps = get_config().get_max_steps()
+        else:
+            effective_max_steps = max_steps
         rollback_enabled = config.rollback_enabled if config else True
 
         super().__init__(

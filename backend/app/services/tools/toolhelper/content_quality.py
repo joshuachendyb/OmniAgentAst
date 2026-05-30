@@ -42,24 +42,11 @@ import os
 import re
 from typing import Dict, Optional
 
-# 自我指涉/完成性描述关键词（LLM在描述自己的操作/状态，而非真正的文件内容）
-SELF_REF_KEYWORDS = [
-    '已成功', '需要继续', '现在需要', '接下来将', '按照要求',
-    '继续创建', '已完成', '已创建', '写入成功', '已经写入',
-    '已成功创建', '内容已写入', '成功写入', '已成功写入',
-    '现在应该', '接下来需要', '需要先', '然后需要',
-]
-
-# 代码类文件扩展名
-CODE_EXTENSIONS = {'.py', '.js', '.ts', '.java', '.go', '.c', '.cpp', '.rs', '.rb', '.swift', '.kt', '.scala'}
-
-# 文档类文件扩展名
-DOC_EXTENSIONS = {'.txt', '.md', '.doc', '.docx', '.csv', '.log', '.ini', '.cfg', '.yml', '.yaml', '.json', '.xml', '.html', '.htm', '.css', '.scss', '.less'}
-
-# 自我指涉检测阈值
-SELF_REF_THRESHOLD_NORMAL = 0.6    # 正常文本阈值
-SELF_REF_THRESHOLD_SHORT = 0.4     # 极短文本(<50字符)阈值
-SHORT_CONTENT_LENGTH = 50          # 极短文本判定长度
+# 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
+from app.services.tools.tool_constants import (
+    SELF_REF_KEYWORDS, CODE_EXTENSIONS, DOC_EXTENSIONS,
+    SELF_REF_THRESHOLD_NORMAL, SELF_REF_THRESHOLD_SHORT, SHORT_CONTENT_LENGTH,
+)
 
 
 def _detect_self_ref_rate(content: str) -> float:

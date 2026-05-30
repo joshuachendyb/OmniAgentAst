@@ -41,15 +41,10 @@ from app.services.tools._response import build_success, build_error
 
 
 
+# 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
+from app.services.tools.tool_constants import HIVE_MAP
 
-# 文档定义的参数映射：简称 -> Windows注册表常量
-HIVE_MAP = {
-    "HKCU": "HKEY_CURRENT_USER",
-    "HKLM": "HKEY_LOCAL_MACHINE",
-    "HKCR": "HKEY_CLASSES_ROOT",
-    "HKU": "HKEY_USERS",
-    "HKCC": "HKEY_CURRENT_CONFIG",
-}
+import winreg
 
 ROOT_KEY_MAP = {
     "HKEY_CLASSES_ROOT": winreg.HKEY_CLASSES_ROOT,

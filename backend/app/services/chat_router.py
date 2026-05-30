@@ -39,7 +39,6 @@ from app.services import AIServiceFactory
 from app.utils.logger import logger
 from app.utils.time_utils import create_step_counter
 from app.chat_stream.error_handler import create_error_response
-from app.constants import DEFAULT_MAX_STEPS
 from app.services.tools.tool_types import ToolCategory
 
 # 【2026-05-01 小沈】从独立模块导入CRSS评分功能
@@ -288,7 +287,6 @@ class ChatRouter:
         request: Optional[ChatRequest] = None,
         context: Optional[Dict[str, Any]] = None,
         system_prompt: Optional[str] = None,
-        max_steps: int = DEFAULT_MAX_STEPS,
         ai_service: Optional[Any] = None
     ) -> AsyncGenerator[str, None]:
         """4步路由：意图检测→初始化→start_step→ReAct — 小沈 2026-05-27 清理"""
