@@ -65,7 +65,7 @@ from app.services.intents.intent_mapper import resolve_category
 # 小沈 - 2026-04-30
 # ================================================================================
 
-async def route_with_fallback(user_input: str) -> Dict:
+async def _route_with_fallback(user_input: str) -> Dict:
     """
     两阶段意图路由：CRSS快速匹配 + LLM兜底
 
@@ -237,7 +237,7 @@ class ChatRouter:
 
     async def _detect_intent(self, user_input: str) -> Tuple[str, str, float, List[str]]:
         """两阶段意图检测 + 闲聊/network降级。返回 (intent_type, source, confidence, candidates) — 小沈 2026-05-25 重构"""
-        intent_info = await route_with_fallback(user_input)
+        intent_info = await _route_with_fallback(user_input)
         intent_value = intent_info["intent"]
         source = intent_info.get("source", "unknown")
         conf = intent_info["confidence"]
