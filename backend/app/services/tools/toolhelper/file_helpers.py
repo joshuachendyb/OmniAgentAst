@@ -24,7 +24,7 @@
 二、包含函数（10个）
 ================================================================================
 - extract_archive: 解压文件（zip/tar/tar.gz/tar.bz2）
-- get_file_hash: 计算文件哈希（MD5/SHA1/SHA256）
+- hash_file_tool: 计算文件哈希（MD5/SHA1/SHA256）
 - ensure_directory_exists: 确保目录存在
 - check_write_permission: 检查写权限
 - check_read_permission: 检查读权限
@@ -200,15 +200,15 @@ def extract_archive(
         return build_error(ERR_FILE_EXTRACT, str(e))
 
 
-def get_file_hash(
+def hash_file_tool(
     file_path: str,
     algorithm: str = "sha256",
 ) -> Dict[str, Any]:
     """
-    计算文件哈希值 - 小沈 2026-05-02
+    计算文件哈希值 - LLM工具层包装函数 - 小沈 2026-05-02
     
     支持 md5、sha1、sha256、sha512
-    使用 compute_file_hash 统一核心逻辑
+    内部调用 compute_file_hash 核心函数，添加文件验证和结果包装
     """
     try:
         file_path = os.path.abspath(file_path)
@@ -219,7 +219,7 @@ def get_file_hash(
         if not os.path.isfile(file_path):
             return build_error(ERR_FILE_HASH, f"不是文件: {file_path}")
 
-        # 使用统一的哈希计算函数
+        # 调用核心哈希计算函数
         hash_value = compute_file_hash(file_path, algorithm)
         file_size = os.path.getsize(file_path)
 
@@ -234,7 +234,7 @@ def get_file_hash(
         # 算法不支持错误
         return build_error(ERR_FILE_HASH, str(e))
     except Exception as e:
-        logger.error(f"[get_file_hash] 计算哈希失败: {e}")
+        logger.error(f"[hash_file_tool] 计算哈希失败: {e}")
         return build_error(ERR_FILE_HASH, str(e))
 
 
@@ -529,7 +529,7 @@ def check_shell_running(shell_id: str, background_shells: Dict) -> Dict[str, Any
 
 __all__ = [
     "extract_archive",
-    "get_file_hash",
+    "hash_file_tool",
     "ensure_directory_exists",
     "check_write_permission",
     "check_read_permission",
@@ -546,7 +546,7 @@ def _get_file_metadata(file_path: str, follow_symlinks: bool = True) -> Dict[str
     """
     获取文件元数据 - 小沈 2026-05-18
     
-    合并 get_file_info + get_file_hash 的元数据部分，供其他工具内部调用。
+    合并 get_file_info + hash_file_tool 的元数据部分，供其他工具内部调用。
     不作为LLM工具暴露，由各工具的P15返回值承载。
     
     Args:
