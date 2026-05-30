@@ -100,7 +100,6 @@ from app.services.tools.toolhelper.date_helper import (
 from app.services.tools.toolhelper.common_helper import (
     _check_module,
     safe_path_join,
-    check_windows_platform,
     run_windows_command,
 )
 
@@ -152,7 +151,6 @@ __all__ = [
     # service_helper / task_helper 已删除导出（YAGNI 2026-05-28 小健）
     "_check_module",
     "safe_path_join",
-    "check_windows_platform",
     "run_windows_command",
     "_serialize_rows",
     "_load_dataframe",
