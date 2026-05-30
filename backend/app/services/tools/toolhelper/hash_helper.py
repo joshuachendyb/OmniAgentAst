@@ -3,8 +3,8 @@
 哈希计算公共Helper - 统一哈希算法选择和计算
 
 【创建时间】2026-05-18 小沈
-【说明】从 file_helpers.py 的 get_file_hash 提取公共逻辑，
-       供 file_tools.get_file_hash 和 file_checksum 等复用。
+【说明】从 file_helpers.py 的 hash_file_tool 提取公共逻辑，
+       供 file_tools.hash_file_tool 和 file_checksum 等复用。
        不注册到tool_registry，不暴露给LLM。
 
 包含函数：
