@@ -11,10 +11,11 @@ ToolInitMixin — 工具加载职责混入类
 
 Author: 小沈 - 2026-05-29 (从react_agent_mixin.py拆分)
 Updated: 小沈 - 2026-05-29 (ISP修复: 从PromptBuildMixin移入_inject_tools_hint/_inject_schema)
+Updated: 小沈 - 2026-05-30 (ToolExecutor类改为execute_tool_with_unified_retry函数)
 """
 from typing import Optional
 
-from app.services.agent.tool_executor import ToolExecutor
+from app.services.agent.tool_executor import execute_tool_with_unified_retry
 from app.services.tools.mixin import ToolLoaderMixin
 from app.services.tools.tool_types import ToolCategory
 from app.services.agent.agent_utils.message_utils import inject_tools_info, inject_schema_text, build_schema_text
@@ -30,7 +31,9 @@ class ToolInitMixin(ToolLoaderMixin):
             self._tools_dict = self.load_tools_by_category(tool_category)
         else:
             self._tools_dict = {}
-        self.executor = ToolExecutor(self._tools_dict)
+        self._execute_tool_func = lambda action, params: execute_tool_with_unified_retry(
+            action, params, self._tools_dict
+        )
         logger.info(f"[{self.__class__.__name__}] 加载工具: {len(self._tools_dict)}个")
 
     def _get_tools_summary(self, exclude_categories: Optional[set] = None) -> str:
