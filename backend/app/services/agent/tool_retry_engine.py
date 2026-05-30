@@ -262,7 +262,8 @@ async def execute_tool_with_unified_retry(
     """
     统一工具执行接口（使用新的重试引擎）
     
-    这是对外暴露的统一入口，替换 tool_executor.execute 和 retry_policy.execute_with_retry
+    对外暴露的统一入口，替换 tool_executor.execute 和 retry_policy.execute_with_retry。
+    包含finish短路、not-found判断、工具别名查找（下沉自tool_executor.py）。
     
     Args:
         action: 工具名称
@@ -272,5 +273,27 @@ async def execute_tool_with_unified_retry(
     Returns:
         执行结果字典
     """
+    if action == "finish":
+        return create_tool_result(
+            data=action_input.get("result"),
+            message=action_input.get("result", "Task completed"),
+            retry_count=0
+        )
+    
+    if tools is not None and action not in tools:
+        from app.services.tools.registry import tool_registry
+        impl = tool_registry.get_implementation(action)
+        if impl is not None:
+            tools[action] = impl
+        else:
+            return create_error_tool_result(
+                code=ERR_TOOL_NOT_FOUND,
+                data=None,
+                message=f"Unknown tool: {action}. Available tools: {list(tools.keys())}",
+                retry_count=0,
+                error_message=f"工具 '{action}' 未找到",
+                error_type="tool_not_found"
+            )
+    
     engine = _get_tool_retry_engine()
     return await engine.execute_tool_with_retry(action, action_input, tools.get(action) if tools else None)
