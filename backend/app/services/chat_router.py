@@ -49,7 +49,7 @@ from app.services.intents.crss_scorer import (
 )
 from app.services.react_sse_wrapper import running_tasks, running_tasks_lock, generate_sse_stream
 from app.chat_stream.start_step import send_start_step
-from app.chat_stream.sse_formatter import format_sse_event, format_start_sse
+from app.chat_stream.sse_formatter import format_agent_sse
 from app.services.preprocessing.intent_classifier import classify_intent
 from app.services.intents.intent_mapper import resolve_category
 
@@ -258,12 +258,22 @@ class ChatRouter:
     async def _step_start(self, ai_service, task_id, next_step, user_input, execution_steps, session_id):
         """S3 start_step 细节下沉 — SLAP分层"""
         try:
+            from app.services.agent.steps import StartStep
             start_data = await send_start_step(
                 ai_service=ai_service, task_id=task_id, next_step=next_step,
                 user_message=user_input, security_check_result={},
                 current_execution_steps=execution_steps, session_id=session_id,
             )
-            yield format_start_sse(start_data)
+            start_step = StartStep(
+                step=start_data.get('step', 0),
+                display_name=start_data.get('display_name', ''),
+                provider=start_data.get('provider', ''),
+                model=start_data.get('model', ''),
+                task_id=start_data.get('task_id', ''),
+                user_message=start_data.get('user_message', ''),
+                security_check=start_data.get('security_check', {})
+            )
+            yield format_agent_sse(start_step)
         except Exception as e:
             yield create_error_response(error_type="start_failed", error_message=f"start步骤失败: {e}")
 

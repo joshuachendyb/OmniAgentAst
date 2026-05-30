@@ -36,10 +36,10 @@ from app.config import get_config
 from app.utils.logger import logger
 from app.utils.display_name_cache import cache_display_name
 from app.chat_stream.incident_handler import check_and_yield_if_interrupted, check_and_yield_if_paused, create_incident_data
-from app.services.agent.steps import StepFactory
+from app.services.agent.steps import StepFactory, IncidentStep
 from app.utils.time_utils import create_timestamp, create_step_counter
 from app.chat_stream.message_saver import save_execution_steps_to_db, add_step_and_save, create_add_step_and_save, parse_and_save_sse
-from app.chat_stream.sse_formatter import format_sse_event, format_agent_sse
+from app.chat_stream.sse_formatter import format_agent_sse
 from app.constants import DEFAULT_MAX_STEPS
 from app.services.intents.crss_scorer import CRSS_CONFIDENCE_THRESHOLD  # 【修复 2026-05-13 小沈】H2: 改为从crss_scorer导入，切断与chat_router的循环依赖
 from app.services.task_lifecycle import TaskLifecycleManager  # 【重构 2026-05-25 小沈】替代直接操作running_tasks
@@ -51,7 +51,7 @@ async def _is_cancelled_and_yield(
     next_step: Callable[[], int], session_id: str,
     current_execution_steps: list, current_content: str
 ) -> Optional[str]:
-    """统一cancelled检查和yield逻辑 - 小沈 2026-05-25
+    """统一cancelled检查和yield逻辑 - 小欧 2026-05-30
 
     使用场景:
     - _run_sse_stream中cancelled检查
@@ -67,16 +67,15 @@ async def _is_cancelled_and_yield(
         is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
         if is_cancelled:
             logger.info(f"[InterruptCheck] 任务 {task_id} 取消状态: {is_cancelled}")
-            interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
-            logger.info(f"[Step incident] 发送incident步骤(interrupted)")
-            current_execution_steps.append(interrupted_data)
-            await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
-            return format_agent_sse(
-                {'type': 'interrupted', 'message': '任务已被中断'},
-                step=interrupted_data.get('step'),
-                model='',
-                provider=''
+            incident_step = IncidentStep(
+                step=next_step(),
+                incident_value='interrupted',
+                message='任务已被中断'
             )
+            logger.info(f"[Step incident] 发送incident步骤(interrupted)")
+            current_execution_steps.append(incident_step.to_dict())
+            await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
+            return format_agent_sse(incident_step)
     return None
 
 
@@ -85,15 +84,14 @@ async def _yield_error_sse(
     task_id: str, e: Exception, next_step, ai_service,
     current_execution_steps, session_id
 ) -> str:
-    """统一的错误SSE响应 — 消除_run_agent_sse/_run_generic的重复错误处理"""
+    """统一的错误SSE响应 — 小欧 2026-05-30"""
     logger.error(f"{log_tag} 执行出错：task_id={task_id}, error={e}", exc_info=True)
     error_step_obj = StepFactory.create_error_step(
         step=next_step(), error_type=error_type, error_message=error_label,
         recoverable=False, model=ai_service.model, provider=ai_service.provider
     )
-    error_step_dict = error_step_obj.to_dict()
-    error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
-    current_execution_steps.append(error_step_dict)
+    error_response = format_agent_sse(error_step_obj)
+    current_execution_steps.append(error_step_obj.to_dict())
     await save_execution_steps_to_db(session_id, current_execution_steps, error_label)
     return error_response
 
@@ -102,16 +100,39 @@ async def _yield_error_sse(
 # SSE 格式化函数
 # ============================================================
 
-def _dispatch_sse_event(event: Dict[str, Any], step: int, model: str, provider: str) -> str:
-    """将 event dict 格式化为 SSE 字符串 — 委托给sse_formatter统一入口"""
-    return format_agent_sse(event, step, model, provider)
+async def _emit_and_save(
+    step_obj,
+    session_id: str,
+    current_execution_steps: list,
+    current_content: str,
+    sleep_seconds: float = 0.05,
+) -> tuple:
+    """统一封装：格式化SSE + 存DB — 小欧 2026-05-30
 
+    消除_run_sse_stream中的重复模式。
 
-# ============================================================
-# SSE 格式化函数 - chunk 类型处理
-# ============================================================
+    Args:
+        step_obj: ReasoningStep 实例
+        session_id: 会话ID
+        current_execution_steps: 执行步骤列表（会被修改）
+        current_content: 当前内容
+        sleep_seconds: yield前的等待时间（秒）
 
-# format_chunk_sse 已迁移到 sse_formatter.py 统一入口
+    Returns:
+        (sse_data, updated_content) 元组
+    """
+    sse_data = format_agent_sse(step_obj)
+    if sse_data.startswith("data: "):
+        step_dict = json.loads(sse_data[6:])
+        current_execution_steps.append(step_dict)
+        step_type = step_dict.get('type')
+        if step_type == 'final':
+            current_content = step_dict.get('response', current_content) or current_content
+        elif step_type == 'chunk':
+            current_content = step_dict.get('content', current_content)
+        await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
+    await asyncio.sleep(sleep_seconds)
+    return sse_data, current_content
 
 
 # ============================================================
@@ -272,22 +293,10 @@ async def _run_sse_stream(
             if cancelled_sse:
                 yield cancelled_sse
                 break
-            event_step = event.get('step') if isinstance(event, dict) else None
-            sse_step = event_step if event_step is not None else next_step()
-            sse_data = _dispatch_sse_event(event, sse_step, ai_service.model, ai_service.provider)
+            sse_data, current_content = await _emit_and_save(event, session_id, current_execution_steps, current_content)
             if sse_data:
-                if sse_data.startswith("data: "):
-                    step_data = json.loads(sse_data[6:])
-                    current_execution_steps.append(step_data)
-                    if step_data.get('type') == 'final':
-                        # 【P0-B3修复 小沈小健 2026-05-26】fallback到current_content，避免final.response为空时丢失chunk内容
-                        current_content = step_data.get('response', current_content) or current_content
-                    elif step_data.get('type') == 'chunk':
-                        current_content = step_data.get('content', current_content)
-                    await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
                 logger.info(f"{log_tag} SSE发送数据")
                 yield sse_data
-                await asyncio.sleep(0.05)
     except Exception as e:
         error_response = await _yield_error_sse(
             error_type=error_type, error_label=error_label, log_tag=log_tag,
@@ -326,23 +335,19 @@ async def _handle_client_disconnect(
     """
     async with running_tasks_lock:
         running_tasks[task_id] = {"status": "cancelled", "cancelled": True}
-    interrupted_step = create_incident_data(
-        incident_value='interrupted', message='客户端断开连接，任务中断', step=next_step(),
+    incident_step = IncidentStep(
+        step=next_step(),
+        incident_value='interrupted',
+        message='客户端断开连接，任务中断'
     )
-    current_execution_steps.append(interrupted_step)
+    current_execution_steps.append(incident_step.to_dict())
     try:
         await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
     except Exception as _save_err:
         logger.warning(f"[SSE] CancelledError后保存失败(可忽略): {_save_err}")
     try:
-        interrupted_data = create_incident_data('interrupted', '客户端断开连接，任务中断')
         logger.info(f"[Step interrupted] 发送interrupted步骤(客户端断开)")
-        yield format_agent_sse(
-            {'type': 'interrupted', 'message': '客户端断开连接，任务中断'},
-            step=None,
-            model='',
-            provider=''
-        )
+        yield format_agent_sse(incident_step)
     except Exception:
         logger.info(f"[Step interrupted] 客户端已断开，跳过yield")
 

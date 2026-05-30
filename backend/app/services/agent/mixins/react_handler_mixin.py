@@ -240,7 +240,7 @@ class ReActHandlerMixin:
             return
 
         outcome = await self._execute_tool_step(tool_name, tool_params, step_count, is_primary=True)
-        yield outcome.action_step_dict
+        yield outcome.action_step
 
         if not chunk_buffer_was_flushed:
             self.message_builder.add_assistant(response)
@@ -334,6 +334,6 @@ class ReActHandlerMixin:
                 outcome.obs_inject_text, self.llm_call_count,
                 fc_context=outcome.obs_fc_context
             )
-            yield outcome.observation_step_dict
+        yield outcome.observation_step
 
         self._pending_step_count = step_count

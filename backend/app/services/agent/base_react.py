@@ -35,6 +35,7 @@ from app.services.agent.message_builder import MessageBuilder
 from app.services.agent.steps import (
     StepFactory,
     ReasoningStep,
+    IncidentStep,
 )
 from app.services.tools.tool_types import ToolCategory
 from app.services.tools.tool_queries import get_tools_from_registry_by_category
@@ -427,17 +428,17 @@ class BaseAgent(ReActHandlerMixin, ABC):
 
     # ===== 通用方法 =====
 
-    def _emit_step(self, step) -> dict:
-        """记录步骤并返回yield用的dict — 小健 2026-05-24
+    def _emit_step(self, step) -> ReasoningStep:
+        """记录步骤并返回Step对象 — 小欧 2026-05-30
         
-        统一 self.steps.append(step) + step.to_dict() 两步操作。
-        调用方: step_dict = self._emit_step(step); yield step_dict
+        统一 self.steps.append(step) 一步操作。
+        调用方: step_obj = self._emit_step(step); yield step_obj
         """
         self.steps.append(step)
-        return step.to_dict()
+        return step
 
-    def _exit_with_error(self, step_count: int, error_type: str, error_message: str, recoverable: bool = False) -> dict:
-        """创建error_step并返回yield用的dict，同时设置FAILED状态 — 小健 2026-05-24
+    def _exit_with_error(self, step_count: int, error_type: str, error_message: str, recoverable: bool = False) -> ReasoningStep:
+        """创建error_step并返回Step对象，同时设置FAILED状态 — 小欧 2026-05-30
         
         统一 error_step创建 + append + status设置。
         调用方: yield self._exit_with_error(...); self._on_after_loop(); return
@@ -451,8 +452,8 @@ class BaseAgent(ReActHandlerMixin, ABC):
         )
         return self._emit_step(error_step)
 
-    def _check_interrupt(self, step_count: int, running_tasks: Optional[Dict[str, Any]] = None) -> Optional[dict]:
-        """检查任务是否被中断，若中断返回interrupted_data的dict — 小健 2026-05-24
+    def _check_interrupt(self, step_count: int, running_tasks: Optional[Dict[str, Any]] = None) -> Optional[IncidentStep]:
+        """检查任务是否被中断，若中断返回IncidentStep — 小欧 2026-05-30
         
         统一4处中断检查逻辑。直接读取cancelled标志（非线程安全但可接受，
         因为只是检查布尔值，与loop中现有模式一致）。
@@ -464,10 +465,10 @@ class BaseAgent(ReActHandlerMixin, ABC):
             return None
         task_data = running_tasks.get(task_id, {})
         if task_data.get("cancelled", False):
-            return create_incident_data(
+            return IncidentStep(
+                step=step_count,
                 incident_value='interrupted',
-                message='用户取消了任务',
-                step=step_count
+                message='用户取消了任务'
             )
         return None
 

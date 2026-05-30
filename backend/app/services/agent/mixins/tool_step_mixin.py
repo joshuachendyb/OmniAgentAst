@@ -21,7 +21,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from app.services.agent.steps import StepFactory
+from app.services.agent.steps import StepFactory, ReasoningStep
 from app.services.agent.tool_result_formatter import build_execution_result_dict
 from app.services.agent.agent_utils.message_utils import build_observation_text
 from app.services.tools._response import build_error
@@ -31,7 +31,7 @@ from app.utils.prompt_logger import get_prompt_logger
 
 @dataclass
 class _ToolStepOutcome:
-    """单次工具执行的完整产出 — 小健 2026-05-24
+    """单次工具执行的完整产出 — 小欧 2026-05-30
 
     由 _execute_tool_step() 返回，供调用方做后续处理
     （return_direct判断、动态工具加载、pending编排等）。
@@ -42,8 +42,8 @@ class _ToolStepOutcome:
         execution_time_ms: 执行耗时（毫秒）
         observation_text: 构建好的observation文本
         is_done: 是否应直接结束任务（return_direct=True且为主工具时）
-        action_step_dict: action_tool步骤的yield dict（已emit）
-        observation_step_dict: observation步骤的yield dict（已emit，但add_observation未执行）
+        action_step: action_tool步骤的Step对象（已emit）
+        observation_step: observation步骤的Step对象（已emit，但add_observation未执行）
         obs_inject_text: 需要注入conversation_history的observation文本（含前缀）
         obs_fc_context: 需要传入add_observation的fc_context
     """
@@ -52,8 +52,8 @@ class _ToolStepOutcome:
     execution_time_ms: int
     observation_text: str
     is_done: bool
-    action_step_dict: Dict[str, Any]
-    observation_step_dict: Dict[str, Any]
+    action_step: ReasoningStep
+    observation_step: ReasoningStep
     obs_inject_text: str
     obs_fc_context: Optional[Dict[str, Any]]
 
@@ -133,7 +133,7 @@ class ToolStepMixin:
             execution_result=execution_result_dict,
             execution_time_ms=execution_time_ms,
         )
-        action_step_dict = self._emit_step(action_step)
+        action_step_obj = self._emit_step(action_step)
         
         prefix = "[并行] " if not is_primary else ""
         obs_inject_text = f"{prefix}{observation_text}"
@@ -148,7 +148,7 @@ class ToolStepMixin:
             execution_result=display_result,
             return_direct=return_direct,
         )
-        observation_step_dict = self._emit_step(observation_step)
+        observation_step_obj = self._emit_step(observation_step)
         is_done = return_direct and observation_step.is_done()
         
         return _ToolStepOutcome(
@@ -157,8 +157,8 @@ class ToolStepMixin:
             execution_time_ms=execution_time_ms,
             observation_text=observation_text,
             is_done=is_done,
-            action_step_dict=action_step_dict,
-            observation_step_dict=observation_step_dict,
+            action_step=action_step_obj,
+            observation_step=observation_step_obj,
             obs_inject_text=obs_inject_text,
             obs_fc_context=fc_context,
         )

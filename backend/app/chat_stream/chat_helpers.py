@@ -1,12 +1,18 @@
-# backend/app/chat_stream_helpers.py
-# chat_stream共享辅助函数
-# 创建时间: 2026-03-19
-# 创建人: 小健
-# 从chat_stream.py中提取的共享函数，供types模块使用
+# -*- coding: utf-8 -*-
+"""
+chat_stream共享辅助函数
+
+创建时间: 2026-03-19
+创建人: 小健
+从chat_stream.py中提取的共享函数，供types模块使用
+Updated: 小欧 - 2026-05-30 改用 FinalStep + format_agent_sse
+"""
 
 from typing import Optional
 
 from app.utils.time_utils import create_timestamp, create_step_counter
+from app.services.agent.steps import StepFactory
+from app.chat_stream.sse_formatter import format_agent_sse
 
 
 def create_final_response(
@@ -21,7 +27,7 @@ def create_final_response(
     is_reasoning: bool = False
 ) -> str:
     """
-    创建最终的SSE响应 — 委托给sse_formatter统一入口
+    创建最终的SSE响应 — 使用 FinalStep + format_agent_sse
     
     Args:
         content: 最终回复内容
@@ -37,15 +43,11 @@ def create_final_response(
     Returns:
         SSE格式的响应字符串
     """
-    from app.chat_stream.sse_formatter import format_final_sse
-    return format_final_sse(
+    final_step = StepFactory.create_final_step(
+        step=step or 0,
         response=content,
-        step=step,
-        display_name=display_name,
-        provider=provider,
-        model=model,
-        is_finished=is_finished,
         thought=thought,
-        is_streaming=is_streaming,
-        is_reasoning=is_reasoning
+        model=model,
+        provider=provider
     )
+    return format_agent_sse(final_step)

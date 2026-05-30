@@ -5,6 +5,7 @@
 从 chat_stream.py 拆分出来
 职责：统一的中断/暂停处理
 Author: 小沈 - 2026-03-22
+Updated: 小欧 - 2026-05-30 改用 IncidentStep
 """
 
 import asyncio
@@ -12,12 +13,12 @@ from typing import Dict, Optional, Callable, AsyncGenerator
 
 from app.utils.time_utils import create_timestamp
 from app.chat_stream.sse_formatter import format_agent_sse
+from app.services.agent.steps import IncidentStep
 
 
 def create_incident_data(incident_value: str, message: str, step: Optional[int] = None) -> dict:
     """
-    创建统一的incident数据【小沈修复2026-03-28】
-    - 同时保存content和message，确保SSE和数据库完全一致
+    创建统一的incident数据（保留给 chat_stream_query.py 使用）
     
     Args:
         incident_value: incident类型（interrupted/paused/resumed/retrying）
@@ -28,13 +29,13 @@ def create_incident_data(incident_value: str, message: str, step: Optional[int] 
         dict: incident数据
     """
     data = {
-        'type': 'incident',  # 固定为incident
+        'type': 'incident',
         'incident_value': incident_value,
-        'content': message,  # 和SSE一致
+        'content': message,
         'message': message,
         'timestamp': create_timestamp(),
-        'is_reasoning': False,  # 和SSE一致
-        'reasoning': ''  # 和SSE一致
+        'is_reasoning': False,
+        'reasoning': ''
     }
     if step is not None:
         data['step'] = step
@@ -46,7 +47,7 @@ async def check_and_yield_if_interrupted(
     running_tasks: dict, 
     running_tasks_lock: asyncio.Lock,
     next_step: Optional[Callable[[], int]] = None
-) -> tuple[bool, str]:
+) -> tuple:
     """
     检查任务是否被中断，如果是则返回中断消息
     
@@ -58,13 +59,16 @@ async def check_and_yield_if_interrupted(
     
     Returns:
         (is_interrupted, interrupt_message) 元组
-        - is_interrupted: 是否被中断
-        - interrupt_message: 中断消息（如果未被中断则为空字符串）
     """
     async with running_tasks_lock:
         if running_tasks.get(task_id, {}).get("cancelled", False):
             step_value = next_step() if next_step else None
-            return True, format_agent_sse({'type': 'interrupted', 'message': '任务已被中断'}, step=step_value, model='', provider='')
+            incident_step = IncidentStep(
+                step=step_value,
+                incident_value='interrupted',
+                message='任务已被中断'
+            )
+            return True, format_agent_sse(incident_step)
     return False, ""
 
 
@@ -92,22 +96,29 @@ async def check_and_yield_if_paused(
             is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
             
             if is_cancelled:
-                return  # 暂停期间被取消了
+                return
             
             if not is_paused:
-                # 不再暂停，恢复发送
                 if running_tasks.get(task_id, {}).get("_was_paused", False):
                     step_value = next_step() if next_step else None
-                    yield format_agent_sse({'type': 'incident', 'incident_value': 'resumed', 'message': '任务已恢复'}, step=step_value, model='', provider='')
+                    incident_step = IncidentStep(
+                        step=step_value,
+                        incident_value='resumed',
+                        message='任务已恢复'
+                    )
+                    yield format_agent_sse(incident_step)
                     running_tasks[task_id]["_was_paused"] = False
                 return
         
-        # 暂停中，等待恢复
         if is_paused and not running_tasks.get(task_id, {}).get("_was_paused", False):
-            # 刚进入暂停状态，发送paused事件
             async with running_tasks_lock:
                 running_tasks[task_id]["_was_paused"] = True
             step_value = next_step() if next_step else None
-            yield format_agent_sse({'type': 'incident', 'incident_value': 'paused', 'message': '任务已暂停'}, step=step_value, model='', provider='')
+            incident_step = IncidentStep(
+                step=step_value,
+                incident_value='paused',
+                message='任务已暂停'
+            )
+            yield format_agent_sse(incident_step)
         
-        await asyncio.sleep(0.5)  # 每0.5秒检查一次
+        await asyncio.sleep(0.5)

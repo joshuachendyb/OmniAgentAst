@@ -8,11 +8,13 @@ start_step - 发送 start 步骤的独立函数
 【设计文档参考】：omni-对话预处理及Agent的流程设计文档-小沈-2026-03-25.md 阶段4
 
 Author: 小沈 - 2026-03-26
+Updated: 小欧 - 2026-05-30 返回 StartStep 对象
 """
 
 from typing import Dict, Any, List, Callable
 
 from app.utils.time_utils import create_timestamp
+from app.services.agent.steps import StartStep
 
 
 async def send_start_step(
@@ -23,15 +25,15 @@ async def send_start_step(
     security_check_result: Dict[str, Any],
     current_execution_steps: List[Dict[str, Any]],
     session_id: str,
-) -> Dict[str, Any]:
+) -> StartStep:
     """
     发送 start 步骤的独立函数（统一方法）
     
     职责：
-    1. 构建 start_data
-    2. 保存到 current_execution_steps
+    1. 构建 StartStep 对象
+    2. 保存 to_dict() 到 current_execution_steps
     3. 保存到数据库
-    4. 返回 start_data（供后续 final/error 步骤使用）
+    4. 返回 StartStep 对象
     
     参数：
     - ai_service: AI 服务实例（用于获取 provider/model）
@@ -43,34 +45,26 @@ async def send_start_step(
     - session_id: 会话ID（用于保存到数据库）
     
     返回：
-    - start_data 字典（包含 display_name/provider/model 等）
+    - StartStep 对象
     """
-    # 1. 构建 start_data
-    # 2026-04-28 小强修改：北京老陈要求user_message不截断，完全显示
-    start_data = {
-        'type': 'start',
-        'step': next_step(),
-        'timestamp': create_timestamp(),
-        'display_name': f"{ai_service.provider} ({ai_service.model})",
-        'provider': ai_service.provider,
-        'model': ai_service.model,
-        'task_id': task_id,
-        'user_message': user_message if user_message else "",  # 不截断，完全显示
-        'security_check': {
+    start_step = StartStep(
+        step=next_step(),
+        display_name=f"{ai_service.provider} ({ai_service.model})",
+        provider=ai_service.provider,
+        model=ai_service.model,
+        task_id=task_id,
+        user_message=user_message if user_message else "",
+        security_check={
             'is_safe': security_check_result.get('is_safe', True),
             'risk_level': security_check_result.get('risk_level'),
             'risk': security_check_result.get('risk'),
             'blocked': security_check_result.get('blocked', False)
         }
-    }
+    )
     
-    # 2. 保存到 current_execution_steps
-    current_execution_steps.append(start_data)
+    current_execution_steps.append(start_step.to_dict())
     
-    # 4. 保存到数据库
-    # 【修复 2026-03-26 小健检查】缺少保存数据库逻辑，与 chat2.py 保持一致
     from app.chat_stream.message_saver import save_execution_steps_to_db
     await save_execution_steps_to_db(session_id, current_execution_steps, "")
     
-    # 5. 返回 start_data
-    return start_data
+    return start_step

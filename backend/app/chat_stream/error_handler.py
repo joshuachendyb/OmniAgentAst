@@ -5,6 +5,7 @@
 从 chat_stream.py 拆分出来
 职责：统一的错误处理
 Author: 小沈 - 2026-03-22
+Updated: 小欧 - 2026-05-30 改用 ErrorStep + format_agent_sse
 """
 
 import json
@@ -13,6 +14,7 @@ from typing import Any, Dict, Optional
 
 from app.utils.time_utils import create_timestamp
 from app.services.agent.steps import StepFactory
+from app.chat_stream.sse_formatter import format_agent_sse
 
 
 def create_error_response(
@@ -27,7 +29,7 @@ def create_error_response(
     step: Optional[int] = None
 ) -> str:
     """
-    创建统一的错误响应格式 — 委托给sse_formatter统一入口
+    创建统一的错误响应格式 — 使用 ErrorStep + format_agent_sse
     
     Args:
         error_type: 错误类型
@@ -43,18 +45,18 @@ def create_error_response(
     Returns:
         SSE 格式的错误响应字符串
     """
-    from app.chat_stream.sse_formatter import format_error_sse
-    return format_error_sse(
+    error_step = StepFactory.create_error_step(
+        step=step or 0,
         error_type=error_type,
         error_message=error_message,
-        step=step,
         model=model,
         provider=provider,
+        recoverable=recoverable or False,
+        retry_after=retry_after,
         details=details,
-        stack=stack,
-        recoverable=recoverable,
-        retry_after=retry_after
+        stack=stack
     )
+    return format_agent_sse(error_step)
 
 
 def get_function_call_error_info(error: Exception) -> Dict[str, Any]:

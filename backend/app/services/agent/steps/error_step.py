@@ -43,6 +43,8 @@ class ErrorStep(ReasoningStep):
         is_reasoning: bool = False,
         context: Optional[Dict[str, Any]] = None,
         retry_after: Optional[int] = None,
+        details: Optional[str] = None,
+        stack: Optional[str] = None,
         timestamp: Optional[int] = None
     ):
         """
@@ -59,9 +61,10 @@ class ErrorStep(ReasoningStep):
             is_reasoning: 是否推理中（可选）
             context: 错误上下文（可选）
             retry_after: 重试等待秒数（可选）
+            details: 详细错误信息（可选）
+            stack: 堆栈信息（可选）
             timestamp: 时间戳（毫秒）
         """
-        # 调用ReasoningStep初始化
         ReasoningStep.__init__(self, step, timestamp)
         
         self._error_type = error_type
@@ -73,6 +76,8 @@ class ErrorStep(ReasoningStep):
         self._is_reasoning = is_reasoning
         self._context = context
         self._retry_after = retry_after
+        self._details = details
+        self._stack = stack
     
     def get_type(self) -> str:
         return "error"
@@ -125,6 +130,16 @@ class ErrorStep(ReasoningStep):
         """获取重试等待秒数"""
         return self._retry_after
     
+    @property
+    def details(self) -> Optional[str]:
+        """获取详细错误信息"""
+        return self._details
+    
+    @property
+    def stack(self) -> Optional[str]:
+        """获取堆栈信息"""
+        return self._stack
+    
     def is_done(self) -> bool:
         return True
     
@@ -140,5 +155,7 @@ class ErrorStep(ReasoningStep):
             "is_reasoning": self._is_reasoning,
             "context": self._context,
             "retry_after": self._retry_after,
+            "details": self._details,
+            "stack": self._stack,
         })
         return base_dict
