@@ -539,14 +539,10 @@ __all__ = [
     "move_to_trash",
     "validate_command",
     "check_shell_running",
-    "get_file_metadata",
-    "calculate_distribution",
-    "is_binary_file",
-    "is_content_identical",
 ]
 
 
-def get_file_metadata(file_path: str, follow_symlinks: bool = True) -> Dict[str, Any]:
+def _get_file_metadata(file_path: str, follow_symlinks: bool = True) -> Dict[str, Any]:
     """
     获取文件元数据 - 小沈 2026-05-18
     
@@ -1645,7 +1641,7 @@ async def get_file_info_impl(
             return build_error(ERR_FILE_NOT_FOUND, f"File not found: {file_path}")
         
         def _get_info_sync():
-            meta_result = get_file_metadata(file_path, follow_symlinks)
+            meta_result = _get_file_metadata(file_path, follow_symlinks)
             if meta_result.get("code") != "SUCCESS":
                 raise RuntimeError(meta_result.get("message", "获取文件元数据失败"))
             info = meta_result["data"]["metadata"]
