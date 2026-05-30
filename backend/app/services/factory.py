@@ -129,8 +129,9 @@ class AIServiceFactory:
         """获取配置文件路径"""
         if config_path is not None:
             return config_path
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-        return os.path.join(base_dir, "config", "config.yaml")
+        # 【3.21修复 北京老陈 2026-05-31】路径统一到utils/paths.py
+        from app.utils.paths import get_config_path
+        return get_config_path()
     
     @staticmethod
     def _make_validation_error(message: str, field: str = "",

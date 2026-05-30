@@ -74,6 +74,7 @@ from app.constants import (
     RETRYABLE_HTTP_STATUS_CODES,
 )
 from app.services.tools._response import build_success, build_error
+from app.constants import SUCCESS_CODE
 
 def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
     """解析 HTTP 响应体并构建 llm_data。
@@ -954,6 +955,6 @@ async def network_diagnose(
     else:
         return build_error(ERR_INVALID_MODE, f"无效的诊断模式: {mode}，必须是 ping 或 port")
 
-    if result.get("code") == "SUCCESS":
+    if result.get("code") == SUCCESS_CODE:
         result["next_actions"] = build_next_actions([("network_diagnose", "深入诊断", "需要切换ping/port模式进一步检测时")])
     return result

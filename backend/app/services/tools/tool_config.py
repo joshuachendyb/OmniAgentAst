@@ -51,7 +51,9 @@ class ToolConfig:
         aliases = config.get_aliases("read_file")
     """
     
-    DEFAULT_CONFIG_PATH = "config/tools.yaml"
+    # 【3.21修复 北京老陈 2026-05-31】路径统一到utils/paths.py
+    from app.utils.paths import get_config_path, DEFAULT_TOOLS_CONFIG_FILENAME
+    DEFAULT_CONFIG_PATH = get_config_path(DEFAULT_TOOLS_CONFIG_FILENAME)
     
     def __init__(self, config_path: Optional[str] = None):
         """

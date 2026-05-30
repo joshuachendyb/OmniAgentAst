@@ -66,10 +66,9 @@ class Config:
         if env_path:
             return Path(env_path)
         
-        # 【修复】项目根目录是backend的父目录
-        # backend/app/config.py -> .parent=app -> .parent=backend -> .parent=项目根目录
-        base_dir = Path(__file__).parent.parent.parent
-        return base_dir / "config" / "config.yaml"
+        # 【3.21修复 北京老陈 2026-05-31】路径统一到utils/paths.py
+        from app.utils.paths import get_config_path
+        return Path(get_config_path())
     
     def _apply_env_overrides(self):
         """应用环境变量覆盖 — 通用模式：{PROVIDER}_API_KEY 自动匹配 — 小健 2026-05-24"""

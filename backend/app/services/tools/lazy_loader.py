@@ -21,7 +21,7 @@ _tools_registered = False
 _registered_categories: set = set()
 
 # 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
-from app.services.tools.tool_constants import CATEGORY_MODULES as _CATEGORY_MODULES
+from app.services.tools.tool_constants import CATEGORY_MODULES
 
 
 def _import_and_register(module_path: str, register_func_name: str) -> None:
@@ -55,7 +55,7 @@ def ensure_tools_registered() -> None:
 
     from app.utils.logger import logger
     _failed = False
-    for cat_name, (module_path, register_func) in _CATEGORY_MODULES.items():
+    for cat_name, (module_path, register_func) in CATEGORY_MODULES.items():
         if cat_name not in _registered_categories:
             try:
                 _import_and_register(module_path, register_func)

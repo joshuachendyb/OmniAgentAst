@@ -42,10 +42,8 @@ from app.chat_stream.error_handler import create_error_response
 from app.services.tools.tool_types import ToolCategory
 
 # 【2026-05-01 小沈】从独立模块导入CRSS评分功能
-from app.services.intents.crss_scorer import (
-    detect_intent_v2,
-    CRSS_CONFIDENCE_THRESHOLD,
-)
+from app.services.intents.crss_scorer import detect_intent_v2
+from app.constants import CRSS_CONFIDENCE_THRESHOLD
 from app.services.react_sse_wrapper import running_tasks, running_tasks_lock, generate_sse_stream
 from app.chat_stream.start_step import send_start_step
 from app.chat_stream.sse_formatter import format_agent_sse

@@ -16,7 +16,7 @@ from app.utils.logger import logger
 # ⭐ 缓存机制：存储 session_id 到 display_name 的映射
 _display_name_cache: Dict[str, str] = {}
 _cache_lock = Lock()  # 线程安全锁，防止并发访问冲突
-from app.constants import MAX_CACHE_SIZE as _MAX_CACHE_SIZE
+from app.constants import MAX_CACHE_SIZE
 
 
 def cache_display_name(session_id: str, display_name: str):
@@ -29,9 +29,9 @@ def cache_display_name(session_id: str, display_name: str):
     """
     with _cache_lock:
         # 如果缓存超过大小限制，清理旧的条目
-        if len(_display_name_cache) >= _MAX_CACHE_SIZE:
+        if len(_display_name_cache) >= MAX_CACHE_SIZE:
             # 简单策略：删除前一半的缓存条目
-            keys_to_remove = list(_display_name_cache.keys())[:_MAX_CACHE_SIZE // 2]
+            keys_to_remove = list(_display_name_cache.keys())[:MAX_CACHE_SIZE // 2]
             for key in keys_to_remove:
                 del _display_name_cache[key]
             logger.debug(f"缓存清理：删除了 {len(keys_to_remove)} 个旧条目")

@@ -75,7 +75,7 @@ def build_execution_result_dict(execution_result: Dict[str, Any]) -> Dict[str, A
         "summary": execution_result.get("message", ""),
         "data": execution_result.get("data"),
         "retry_count": execution_result.get("retry_count", 0),
-        "code": execution_result.get("code", "SUCCESS"),
+        "code": execution_result.get("code", SUCCESS_CODE),
         "warning": execution_result.get("warning"),
         "attachment": execution_result.get("attachment"),
         "next_actions": execution_result.get("next_actions"),
@@ -118,12 +118,12 @@ def format_llm_observation(result: dict, tool_name: str = "", tool_params: Optio
     工具通过 llm_data 自行控制给LLM的数据量，格式化层不做业务截断
     更新 2026-05-24 小健：增加 tool_name/tool_params 参数供 failure hint 使用
     """
-    code = result.get("code", "SUCCESS")
+    code = result.get("code", SUCCESS_CODE)
     LLM_SAFE_LIMIT_LOCAL = LLM_SAFE_LIMIT
 
     from app.utils.logger import logger as _logger
 
-    if code == "SUCCESS":
+    if code == SUCCESS_CODE:
         display_data = result.get("llm_data") or result.get("data")
         if display_data is None:
             _logger.warning("[OBS-001] format_llm_observation: llm_data和data均为空")

@@ -14,7 +14,7 @@ import httpx
 
 
 # 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
-from app.services.tools.tool_constants import DEFAULT_TIMEOUT_SEC, NETWORK_MAX_CONNECTIONS as DEFAULT_MAX_CONNECTIONS, NETWORK_MAX_KEEPALIVE as DEFAULT_MAX_KEEPALIVE
+from app.services.tools.tool_constants import DEFAULT_TIMEOUT_SEC, NETWORK_MAX_CONNECTIONS, NETWORK_MAX_KEEPALIVE
 
 
 def resolve_proxy(proxy: Optional[str] = None) -> Optional[str]:
@@ -45,8 +45,8 @@ class HTTPClient:
     async def __aenter__(self):
         proxy_url = resolve_proxy(self._proxy)
         limits = httpx.Limits(
-            max_connections=DEFAULT_MAX_CONNECTIONS,
-            max_keepalive_connections=DEFAULT_MAX_KEEPALIVE,
+            max_connections=NETWORK_MAX_CONNECTIONS,
+            max_keepalive_connections=NETWORK_MAX_KEEPALIVE,
         )
         timeout = httpx.Timeout(self._timeout_sec, connect=min(self._timeout_sec, 10.0))
         self._client = httpx.AsyncClient(
