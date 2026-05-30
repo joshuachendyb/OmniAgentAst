@@ -13,7 +13,8 @@ from typing import Any, Dict, List, Optional, Type
 from app.services.agent.agent_config import resolve_agent_config, AgentConfig, AGENT_REGISTRY, get_all_intent_types
 from app.services.agent.universal_react import UniversalReactAgent
 from app.services.agent.desktop_react import DesktopReactAgent
-from app.services.agent.base_react import BaseAgent, DEFAULT_MAX_STEPS
+from app.services.agent.base_react import BaseAgent
+from app.constants import DEFAULT_MAX_STEPS
 from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
