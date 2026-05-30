@@ -623,7 +623,7 @@ return start_step  # 返回 StartStep
 | ErrorStep 字段变更 | 前端 error 解析 | 中 | 需同步前端确认 details/stack 字段 |
 | create_incident_data 保留 | incident_handler.py | 低 | chat_stream_query.py 依赖，不删除 |
 | run_stream 返回类型变更 | 所有 yield 消费者 | 中 | 阶段 5 一次性改完 |
-| format_agent_sse 强类型 | 所有调用方 | 低 | 所有调用方一次性改完 |
+| dict+Step 双输入 | format_agent_sse | 低 | 老陈定的规矩，chat_stream_query.py 用 dict，新代码用 Step |
 
 ---
 
