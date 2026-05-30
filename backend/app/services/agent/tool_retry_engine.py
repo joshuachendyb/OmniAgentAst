@@ -241,7 +241,7 @@ class ToolRetryEngine:
 _tool_retry_engine: Optional[ToolRetryEngine] = None
 
 
-def get_tool_retry_engine() -> ToolRetryEngine:
+def _get_tool_retry_engine() -> ToolRetryEngine:
     """
     获取工具重试引擎单例
     
@@ -272,5 +272,5 @@ async def execute_tool_with_unified_retry(
     Returns:
         执行结果字典
     """
-    engine = get_tool_retry_engine()
+    engine = _get_tool_retry_engine()
     return await engine.execute_tool_with_retry(action, action_input, tools.get(action) if tools else None)
