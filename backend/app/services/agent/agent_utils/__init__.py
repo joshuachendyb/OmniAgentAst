@@ -8,14 +8,14 @@ Agent层公共工具函数目录
 调用方统一从此处导入：from app.services.agent.agent_utils.xxx import yyy
 
 目录结构：
-- tool_result_utils.py: 工具结果统一默认值常量 + Agent层结果工厂
+- tool_result_factory.py: 工具结果统一默认值常量 + Agent层结果工厂
 - message_utils.py: Message工具函数（纯函数，无状态）
 - _utils.py: LLM响应解析器内部工具函数
 
 Author: 小沈 - 2026-05-28
 """
 
-from app.services.agent.agent_utils.tool_result_utils import (
+from app.services.agent.agent_utils.tool_result_factory import (
     create_tool_result,
     create_error_tool_result,
     create_warning_tool_result,
