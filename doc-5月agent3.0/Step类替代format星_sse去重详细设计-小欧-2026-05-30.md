@@ -273,20 +273,14 @@ def format_agent_sse(step_obj) -> str:
     统一Agent事件SSE格式化入口 — 接收Step对象，调用to_dict()生成SSE
 
     Args:
-        step_obj: ReasoningStep子类实例，或dict（兼容过渡期）
+        step_obj: ReasoningStep子类实例
 
     Returns:
         SSE格式字符串，空字符串表示无需发送
     """
-    # 兼容dict输入（过渡期，逐步替换后可删除）
-    if isinstance(step_obj, dict):
-        event_type = step_obj.get('type', '')
-        step_num = step_obj.get('step', 0)
-        data = step_obj
-    else:
-        event_type = step_obj.get_type()
-        step_num = step_obj.step
-        data = step_obj.to_dict()
+    event_type = step_obj.get_type()
+    step_num = step_obj.step
+    data = step_obj.to_dict()
 
     # incident + interrupted 统一处理
     if event_type == 'interrupted':
@@ -645,7 +639,7 @@ return format_agent_sse(final_step)
 | ErrorStep 字段变更 | 前端 error 解析 | 中 | 需同步前端确认 details/stack 字段 |
 | create_incident_data 删除 | 所有调用方 | 低 | 改为 IncidentStep 构造 |
 | run_stream 返回类型变更 | 所有 yield 消费者 | 中 | 阶段 5 一次性改完 |
-| format_agent_sse 兼容模式 | 过渡期 | 低 | 保留 dict 输入兼容 |
+| format_agent_sse 强类型 | 过渡期 | 低 | 所有调用方一次性改完 |
 
 ---
 
