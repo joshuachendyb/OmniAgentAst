@@ -11,7 +11,6 @@ from app.utils.monitoring.collector import MetricType, Metric, MetricsCollector
 from app.utils.monitoring.middleware import (
     MonitoringMiddleware,
     setup_monitoring,
-    record_error,
     get_metrics_summary,
     get_raw_metrics,
     reset_metrics,
@@ -19,7 +18,6 @@ from app.utils.monitoring.middleware import (
 
 __all__ = [
     "setup_monitoring",
-    "record_error",
     "get_metrics_summary",
     "get_raw_metrics",
     "reset_metrics",
