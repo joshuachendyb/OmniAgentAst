@@ -38,9 +38,6 @@ class GenericReactAgent(BaseAgent):
             history_dicts=history, conversation_history=self.conversation_history,
         )
 
-    async def _execute_tool(self, action, params):
-        return {}
-
     def _get_system_prompt(self):
         return "你是一个有用的AI助手，直接回答用户的问题。"
 
