@@ -2,8 +2,11 @@
 """
 回滚能力 Mixin — 从 FileReactAgent 提取的可插拔回滚能力
 
+【废弃 2026-05-30 小沈】rollback()已直接写在UniversalReactAgent，
+RollbackMixin不再被任何类继承，保留此文件供参考。
+
 Author: 小强 - 2026-05-23
-Updated: 小沈 - 2026-05-30 (self.executor改为execute_tool_with_unified_retry)
+Updated: 小沈 - 2026-05-30 (废弃标记)
 """
 from typing import Dict, Any, Optional
 
