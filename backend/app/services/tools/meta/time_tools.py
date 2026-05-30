@@ -32,6 +32,7 @@ import json;
 from datetime import datetime, timedelta, timezone;
 from typing import Dict, Any, Optional, Callable, Awaitable, List, Union, Literal;
 import re;
+from app.utils.patterns import UTC_OFFSET_PATTERN
 from app.utils.logger import logger;
 from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend;
 from app.services.tools._response import build_success, build_error
@@ -430,7 +431,7 @@ def _time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[s
                     local_dt = utc_dt.astimezone(tz)
                 except Exception:
                     # 方法2：失败再尝试±HH:MM格式
-                    if re.match(r'^[+-]\d{2}:\d{2}$', target_tz):
+                    if UTC_OFFSET_PATTERN.match(target_tz):
                         sign = -1 if target_tz[0] == '-' else 1
                         offset_hours = int(target_tz[1:3])
                         offset_minutes = int(target_tz[4:6])
@@ -487,7 +488,7 @@ def _time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict
                         local_dt = local_dt.astimezone(tz)
                 except Exception:
                     # 失败再尝试±HH:MM格式
-                    if re.match(r'^[+-]\d{2}:\d{2}$', source_tz):
+                    if UTC_OFFSET_PATTERN.match(source_tz):
                         sign = -1 if source_tz[0] == '-' else 1
                         offset_hours = int(source_tz[1:3])
                         offset_minutes = int(source_tz[4:6])
@@ -686,7 +687,7 @@ def _timestamp_to_time(timestamp: Union[int, float], target_tz: str = "+08:00") 
 
         # 解析目标时区
         try:
-            if re.match(r'^[+-]\d{2}:\d{2}$', target_tz):
+            if UTC_OFFSET_PATTERN.match(target_tz):
                 sign = -1 if target_tz[0] == '-' else 1
                 offset_hours = int(target_tz[1:3])
                 offset_minutes = int(target_tz[4:6])

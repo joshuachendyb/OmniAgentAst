@@ -30,6 +30,7 @@ Author: 小沈 - 2026-04-29
 import os
 import json
 import re
+from app.utils.patterns import HTML_TAG_PATTERN, SCRIPT_TAG_PATTERN, STYLE_TAG_PATTERN, MULTI_WHITESPACE_PATTERN
 import platform
 import subprocess
 import socket
@@ -329,10 +330,10 @@ def _extract_html_content(html_content: str, extract_format: str, max_tokens: in
     if extract_format == "html":
         content = html_content
     elif extract_format == "text":
-        content = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL|re.IGNORECASE)
-        content = re.sub(r'<style[^>]*>.*?</style>', '', content, flags=re.DOTALL|re.IGNORECASE)
-        content = re.sub(r'<[^>]+>', ' ', content)
-        content = re.sub(r'\s+', ' ', content).strip()
+        content = SCRIPT_TAG_PATTERN.sub('', html_content)
+        content = STYLE_TAG_PATTERN.sub('', content)
+        content = HTML_TAG_PATTERN.sub(' ', content)
+        content = MULTI_WHITESPACE_PATTERN.sub(' ', content).strip()
     else:
         content = _html_to_markdown(html_content)
     max_len = max_tokens * 4
@@ -729,18 +730,18 @@ async def _search_bing(
         # 提取标题：优先从<h2>取（Bing的真实标题在h2中）
         h2_match = re.search(r'<h2[^>]*>(.*?)</h2>', block[:3000], re.DOTALL)
         if h2_match:
-            title = re.sub(r'<[^>]+>', '', h2_match.group(1)).strip()
+            title = HTML_TAG_PATTERN.sub('', h2_match.group(1)).strip()
         else:
             # 兜底从<a>取
             a_text_match = re.search(r'<a[^>]+href="[^"]+ "[^>]*>(.*?)</a>', block[:3000], re.DOTALL)
-            title = re.sub(r'<[^>]+>', '', a_text_match.group(1)).strip() if a_text_match else ""
+            title = HTML_TAG_PATTERN.sub('', a_text_match.group(1)).strip() if a_text_match else ""
         # 提取摘要
         snippet = ""
         p_match = re.search(r'<div\s+class="b_caption"[^>]*>.*?<p[^>]*>(.*?)</p>', block[:3000], re.DOTALL)
         if not p_match:
             p_match = re.search(r'<p[^>]*>(.*?)</p>', block[:3000], re.DOTALL)
         if p_match:
-            snippet = re.sub(r'<[^>]+>', '', p_match.group(1)).strip()
+            snippet = HTML_TAG_PATTERN.sub('', p_match.group(1)).strip()
             snippet = re.sub(r'&ensp;|&#\d+;', ' ', snippet).strip()
         
         if title and url:
@@ -751,7 +752,7 @@ async def _search_bing(
         href_pattern = re.compile(r'<a\s+href="(https?://[^"]+)"[^>]*>(.*?)</a>', re.DOTALL)
         for match in href_pattern.finditer(html):
             url = match.group(1)
-            title = re.sub(r'<[^>]+>', '', match.group(2)).strip()
+            title = HTML_TAG_PATTERN.sub('', match.group(2)).strip()
             if "bing.com/ck/a" in url:
                 pass  # 保留跳转链接
             elif "bing.com" in url or "microsoft.com" in url:

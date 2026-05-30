@@ -159,6 +159,84 @@ class RetryEngine:
 
         raise RuntimeError("RetryEngine: max retries exceeded")
 
+    async def execute_async_context(
+        self,
+        ctx_factory: Callable,
+        result_check: Callable[[Any], bool],
+    ) -> tuple:
+        """
+        异步上下文管理器模式执行（基于返回值判断重试）
+
+        用于流式请求等场景：ctx_factory返回异步上下文管理器，
+        result_check判断结果是否需要重试（True=需要重试）。
+
+        与execute()的关键差异：
+        - 基于返回值判断重试（而非异常）
+        - 正确处理异步上下文管理器的__aenter__/__aexit__
+        - 重试耗尽返回最后结果（不抛异常）
+
+        Args:
+            ctx_factory: 创建异步上下文管理器的工厂函数
+            result_check: 结果检查函数，返回True表示需要重试
+
+        Returns:
+            (ctx, result) 元组：ctx为打开的上下文管理器（需调用方在用完后关闭），
+            result为__aenter__的返回值
+        """
+        self._attempt_count = 0
+        ctx = None
+        result = None
+
+        while self._attempt_count <= self._max_retries:
+            try:
+                ctx = ctx_factory()
+                result = await ctx.__aenter__()
+                self._attempt_count += 1
+
+                if not result_check(result):
+                    return ctx, result
+
+                await ctx.__aexit__(None, None, None)
+                ctx = None
+
+                if self._attempt_count >= self._max_retries:
+                    logger.error(
+                        f"[RetryEngine] 重试耗尽 {self._attempt_count}/{self._max_retries}，返回最后结果"
+                    )
+                    return ctx, result
+
+                delay = self._calculate_delay(self._attempt_count)
+                if self._on_retry:
+                    self._on_retry(self._attempt_count, None)
+                else:
+                    logger.warning(
+                        f"[RetryEngine] 结果需重试 {self._attempt_count}/{self._max_retries}，{delay:.0f}s后重试"
+                    )
+                await asyncio.sleep(delay)
+
+            except Exception as e:
+                if ctx is not None:
+                    await ctx.__aexit__(type(e), e, e.__traceback__)
+                    ctx = None
+                if not self._is_retryable(e):
+                    raise
+
+                self._attempt_count += 1
+                if self._on_retry:
+                    self._on_retry(self._attempt_count, e)
+                else:
+                    logger.warning(
+                        f"[RetryEngine] 异常重试 {self._attempt_count}/{self._max_retries}: {str(e)[:100]}"
+                    )
+
+                if self._attempt_count >= self._max_retries:
+                    raise
+
+                delay = self._calculate_delay(self._attempt_count)
+                await asyncio.sleep(delay)
+
+        return ctx, result
+
     @property
     def attempt_count(self) -> int:
         """当前重试次数"""

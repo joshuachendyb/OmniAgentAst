@@ -14,6 +14,7 @@
 """
 
 import re
+from app.utils.patterns import UTC_OFFSET_PATTERN
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Tuple
 
@@ -221,7 +222,7 @@ def resolve_timezone(tz_str: str):
     try:
         return pytz.timezone(tz_str)
     except Exception:
-        if re.match(r'^[+-]\d{2}:\d{2}$', tz_str):
+        if UTC_OFFSET_PATTERN.match(tz_str):
             sign = -1 if tz_str[0] == '-' else 1
             hours = int(tz_str[1:3])
             minutes = int(tz_str[4:6])

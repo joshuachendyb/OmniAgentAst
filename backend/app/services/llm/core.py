@@ -9,7 +9,6 @@ LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05
 对外透明：llm_core.py重新导出这些类，外部import路径不变。
 """
 
-import asyncio
 from typing import List, Dict, Optional
 
 from app.utils.logger import logger
@@ -72,24 +71,13 @@ class _StreamRetryContext:
         )
 
     async def __aenter__(self):
-        from app.utils.retry_engine import BackoffStrategy
         self.service._ensure_client()
-        for attempt in range(self.max_retries):
-            self._response_ctx = self.service._llm_sdk.stream(
+        self._response_ctx, response = await self._engine.execute_async_context(
+            ctx_factory=lambda: self.service._llm_sdk.stream(
                 "POST", self.url, headers=self.headers, json=self.json_body
-            )
-            response = await self._response_ctx.__aenter__()
-            if self.service._is_rate_limit_status(response.status_code):
-                await self._response_ctx.__aexit__(None, None, None)
-                if attempt < self.max_retries - 1:
-                    delay = self._engine._calculate_delay(attempt + 1)
-                    logger.warning(f"[429重试] 流式HTTP {response.status_code}, 第{attempt+1}/{self.max_retries}次, {delay:.0f}s后重试")
-                    await asyncio.sleep(delay)
-                    continue
-                else:
-                    logger.error(f"[429重试] 流式HTTP {response.status_code}, 持续{self.max_retries}次, 放弃")
-                    return response
-            return response
+            ),
+            result_check=lambda r: self.service._is_rate_limit_status(r.status_code),
+        )
         return response
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):

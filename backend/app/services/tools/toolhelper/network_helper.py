@@ -24,6 +24,7 @@ Author: 小沈 - 2026-05-17
 import base64
 import os
 import re
+from app.utils.patterns import HTML_TAG_PATTERN, SCRIPT_TAG_PATTERN, STYLE_TAG_PATTERN, MULTI_WHITESPACE_PATTERN
 import socket
 import time
 from typing import Dict, Any, Optional
@@ -112,8 +113,8 @@ def _html_to_markdown(html: str) -> str:
     纯文本转换逻辑，不依赖网络模块状态；document分类HTML处理可复用。
     """
     text = html
-    text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL|re.IGNORECASE)
-    text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL|re.IGNORECASE)
+    text = SCRIPT_TAG_PATTERN.sub('', text)
+    text = STYLE_TAG_PATTERN.sub('', text)
     text = re.sub(r'<head[^>]*>.*?</head>', '', text, flags=re.DOTALL|re.IGNORECASE)
     text = re.sub(r'<nav[^>]*>.*?</nav>', '', text, flags=re.DOTALL|re.IGNORECASE)
     text = re.sub(r'<footer[^>]*>.*?</footer>', '', text, flags=re.DOTALL|re.IGNORECASE)
@@ -136,8 +137,8 @@ def _html_to_markdown(html: str) -> str:
     text = re.sub(r'<p[^>]*>(.*?)</p>', r'\1\n\n', text, flags=re.IGNORECASE)
     text = re.sub(r'<li[^>]*>(.*?)</li>', r'- \1\n', text, flags=re.IGNORECASE)
     
-    text = re.sub(r'<[^>]+>', ' ', text)
-    text = re.sub(r'\s+', ' ', text)
+    text = HTML_TAG_PATTERN.sub(' ', text)
+    text = MULTI_WHITESPACE_PATTERN.sub(' ', text)
     text = re.sub(r'\n\s*\n', '\n\n', text)
     
     return text.strip()
