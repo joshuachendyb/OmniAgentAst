@@ -47,15 +47,7 @@ from app.services.agent.chunk_buffer import ChunkBuffer
 from app.services.agent.mixins.react_handler_mixin import ReActHandlerMixin
 from app.services.task import get_tracker
 
-
-
-# ===== 全局默认值常量 =====
-# 原则：config.yaml > 代码常量 > 硬编码默认值
-# react_sse_wrapper.py 从 config.yaml 读取后传入
-DEFAULT_MAX_STEPS = 100
-# 连续chunk最大次数-达到此阈值且为工具Agent时提升为implicit退出循环
-# chat Agent（无工具）首个chunk即退出，不受此限制
-MAX_CONSECUTIVE_CHUNKS = 5
+from app.constants import DEFAULT_MAX_STEPS, MAX_CONSECUTIVE_CHUNKS
 
 
 class BaseAgent(ReActHandlerMixin, ABC):
