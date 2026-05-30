@@ -23,17 +23,15 @@ async def send_start_step(
     security_check_result: Dict[str, Any],
     current_execution_steps: List[Dict[str, Any]],
     session_id: str,
-    yield_func: Callable
 ) -> Dict[str, Any]:
     """
     发送 start 步骤的独立函数（统一方法）
     
     职责：
     1. 构建 start_data
-    2. 通过 SSE 发送 start 步骤（格式：data: {json}\n\n）
-    3. 保存到 current_execution_steps
-    4. 保存到数据库
-    5. 返回 start_data（供后续 final/error 步骤使用）
+    2. 保存到 current_execution_steps
+    3. 保存到数据库
+    4. 返回 start_data（供后续 final/error 步骤使用）
     
     参数：
     - ai_service: AI 服务实例（用于获取 provider/model）
@@ -43,7 +41,6 @@ async def send_start_step(
     - security_check_result: 安全检查结果
     - current_execution_steps: 执行步骤列表
     - session_id: 会话ID（用于保存到数据库）
-    - yield_func: SSE 发送回调函数（只需要传 start_data dict）
     
     返回：
     - start_data 字典（包含 display_name/provider/model 等）
@@ -67,11 +64,7 @@ async def send_start_step(
         }
     }
     
-    # 2. 发送 SSE（通过回调函数）
-    # 【修复 2026-03-26 小健检查】yield_func 只需要传 dict，会自动包装成 SSE 格式
-    yield_func(start_data)
-    
-    # 3. 保存到 current_execution_steps
+    # 2. 保存到 current_execution_steps
     current_execution_steps.append(start_data)
     
     # 4. 保存到数据库

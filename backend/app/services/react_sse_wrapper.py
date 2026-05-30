@@ -36,12 +36,10 @@ from app.config import get_config
 from app.utils.logger import logger
 from app.utils.display_name_cache import cache_display_name
 from app.chat_stream.incident_handler import check_and_yield_if_interrupted, check_and_yield_if_paused, create_incident_data
-from app.chat_stream.error_handler import create_error_response
 from app.services.agent.steps import StepFactory
 from app.utils.time_utils import create_timestamp, create_step_counter
-from app.chat_stream.chat_helpers import create_final_response
 from app.chat_stream.message_saver import save_execution_steps_to_db, add_step_and_save, create_add_step_and_save, parse_and_save_sse
-from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse, format_sse_event, format_chunk_sse
+from app.chat_stream.sse_formatter import format_sse_event, format_agent_sse
 from app.constants import DEFAULT_MAX_STEPS
 from app.services.intents.crss_scorer import CRSS_CONFIDENCE_THRESHOLD  # 【修复 2026-05-13 小沈】H2: 改为从crss_scorer导入，切断与chat_router的循环依赖
 from app.services.task_lifecycle import TaskLifecycleManager  # 【重构 2026-05-25 小沈】替代直接操作running_tasks
@@ -73,8 +71,12 @@ async def _is_cancelled_and_yield(
             logger.info(f"[Step incident] 发送incident步骤(interrupted)")
             current_execution_steps.append(interrupted_data)
             await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
-            from app.chat_stream.sse_formatter import format_incident_sse
-            return format_incident_sse('interrupted', '任务已被中断', step=interrupted_data.get('step'))
+            return format_agent_sse(
+                {'type': 'interrupted', 'message': '任务已被中断'},
+                step=interrupted_data.get('step'),
+                model='',
+                provider=''
+            )
     return None
 
 
@@ -101,81 +103,8 @@ async def _yield_error_sse(
 # ============================================================
 
 def _dispatch_sse_event(event: Dict[str, Any], step: int, model: str, provider: str) -> str:
-    """
-    将 event dict 格式化为 SSE 字符串
-    """
-    event_type = event.get('type', '')
-    
-    if event_type == 'thought':
-        return format_thought_sse(
-            step=step,
-            content=event.get('content', ''),
-            thought=event.get('thought', ''),
-            reasoning=event.get('reasoning', ''),
-            tool_name=event.get('tool_name', event.get('action_tool', '')),
-            tool_params=event.get('tool_params', event.get('params', {}))
-        )
-    elif event_type == 'action_tool':
-        return format_action_tool_sse(
-            step=step,
-            tool_name=event.get('tool_name', ''),
-            tool_params=event.get('tool_params', {}),
-            execution_status=event.get('execution_status', 'success'),
-            execution_result=event.get('execution_result'),
-            execution_time_ms=event.get('execution_time_ms', 0),
-            action_retry_count=event.get('action_retry_count', 0),
-        )
-    elif event_type == 'observation':
-        return format_observation_sse(
-            step=step,
-            observation=event.get('observation', {}),
-            code=event.get('code', ''),
-            timestamp=event.get('timestamp', '')
-        )
-    elif event_type == 'final':
-        # 【15.7修改】final字段：content→response，新增is_finished/thought/is_streaming/is_reasoning
-        return create_final_response(
-            content=event.get('response', ''),  # content替换为response
-            step=step,
-            display_name=f"{provider} ({model})",
-            provider=provider,
-            model=model,
-            is_finished=event.get('is_finished', True),  # 【15.7新增】
-            thought=event.get('thought', ''),  # 【15.7新增】
-            is_streaming=event.get('is_streaming', False),  # 【15.7新增】
-            is_reasoning=event.get('is_reasoning', False)  # 【15.7新增】
-        )
-    elif event_type == 'incident':
-        # incident类型直接格式化为SSE
-        return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-    elif event_type == 'interrupted':
-        from app.chat_stream.sse_formatter import format_incident_sse
-        return format_incident_sse(
-            'interrupted',
-            event.get('message', '用户取消了任务'),
-            step=step
-        )
-    elif event_type == 'error':
-        # 【15.7修改】error字段：删除code和message，使用新字段
-        return create_error_response(
-            error_type=event.get('error_type', 'agent'),
-            error_message=event.get('error_message', '未知错误'),  # 改为error_message
-            model=model,
-            provider=provider,
-            recoverable=event.get('recoverable', event.get('retryable', False)),
-            step=step
-        )
-    elif event_type == 'chunk':
-        # 【问题1修复】chunk类型：流式文本片段，支持统一ReAct流程
-        return format_chunk_sse(
-            event=event,
-            step=step,
-            model=model,
-            provider=provider
-        )
-    else:
-        # 未知类型，返回空字符串
-        return ""
+    """将 event dict 格式化为 SSE 字符串 — 委托给sse_formatter统一入口"""
+    return format_agent_sse(event, step, model, provider)
 
 
 # ============================================================
@@ -408,8 +337,12 @@ async def _handle_client_disconnect(
     try:
         interrupted_data = create_incident_data('interrupted', '客户端断开连接，任务中断')
         logger.info(f"[Step interrupted] 发送interrupted步骤(客户端断开)")
-        from app.chat_stream.sse_formatter import format_incident_sse
-        yield format_incident_sse('interrupted', '客户端断开连接，任务中断')
+        yield format_agent_sse(
+            {'type': 'interrupted', 'message': '客户端断开连接，任务中断'},
+            step=None,
+            model='',
+            provider=''
+        )
     except Exception:
         logger.info(f"[Step interrupted] 客户端已断开，跳过yield")
 

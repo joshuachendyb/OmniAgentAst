@@ -8,10 +8,10 @@ Author: 小沈 - 2026-03-22
 """
 
 import asyncio
-import json
 from typing import Dict, Optional, Callable, AsyncGenerator
 
 from app.utils.time_utils import create_timestamp
+from app.chat_stream.sse_formatter import format_agent_sse
 
 
 def create_incident_data(incident_value: str, message: str, step: Optional[int] = None) -> dict:
@@ -64,8 +64,7 @@ async def check_and_yield_if_interrupted(
     async with running_tasks_lock:
         if running_tasks.get(task_id, {}).get("cancelled", False):
             step_value = next_step() if next_step else None
-            incident_data = create_incident_data('interrupted', '任务已被中断', step=step_value)
-            return True, f"data: {json.dumps(incident_data)}\n\n"
+            return True, format_agent_sse({'type': 'interrupted', 'message': '任务已被中断'}, step=step_value, model='', provider='')
     return False, ""
 
 
@@ -99,8 +98,7 @@ async def check_and_yield_if_paused(
                 # 不再暂停，恢复发送
                 if running_tasks.get(task_id, {}).get("_was_paused", False):
                     step_value = next_step() if next_step else None
-                    resumed_data = create_incident_data('resumed', '任务已恢复', step=step_value)
-                    yield f"data: {json.dumps(resumed_data)}\n\n"
+                    yield format_agent_sse({'type': 'incident', 'incident_value': 'resumed', 'message': '任务已恢复'}, step=step_value, model='', provider='')
                     running_tasks[task_id]["_was_paused"] = False
                 return
         
@@ -110,7 +108,6 @@ async def check_and_yield_if_paused(
             async with running_tasks_lock:
                 running_tasks[task_id]["_was_paused"] = True
             step_value = next_step() if next_step else None
-            paused_data = create_incident_data('paused', '任务已暂停', step=step_value)
-            yield f"data: {json.dumps(paused_data)}\n\n"
+            yield format_agent_sse({'type': 'incident', 'incident_value': 'paused', 'message': '任务已暂停'}, step=step_value, model='', provider='')
         
         await asyncio.sleep(0.5)  # 每0.5秒检查一次

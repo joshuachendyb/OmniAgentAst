@@ -149,6 +149,22 @@ def format_chunk_sse(
     return format_sse_event("chunk", step, chunk_data)
 
 
+def format_start_sse(start_data: Dict[str, Any]) -> str:
+    """
+    格式化 start 事件 — 从start_data dict构建，统一SSE入口
+
+    Args:
+        start_data: start数据字典，包含step/display_name/provider/model/
+                    task_id/user_message/security_check等字段
+
+    Returns:
+        SSE格式的响应字符串
+    """
+    step = start_data.get('step', 0)
+    data = {k: v for k, v in start_data.items() if k not in ('type', 'step')}
+    return format_sse_event('start', step, data)
+
+
 def format_final_sse(
     response: str,
     step: Optional[int] = None,
@@ -259,7 +275,8 @@ def format_error_sse(
 def format_incident_sse(
     incident_value: str,
     message: str,
-    step: Optional[int] = None
+    step: Optional[int] = None,
+    content: Optional[str] = None,
 ) -> str:
     """
     格式化 incident 事件 — SSE统一入口
@@ -268,14 +285,15 @@ def format_incident_sse(
         incident_value: incident类型值（如 'interrupted', 'paused', 'retrying'）
         message: 消息内容
         step: 步骤序号（可选）
+        content: 内容（可选，默认等于message）
     
     Returns:
         SSE格式的响应字符串
     """
     data = {
-        'type': 'incident',
-        'incident': incident_value,
+        'incident_value': incident_value,
         'message': message,
+        'content': content if content is not None else message,
     }
     if step is not None:
         return format_sse_event('incident', step, data)
@@ -285,13 +303,101 @@ def format_incident_sse(
         return f"data: {json.dumps(base, ensure_ascii=False)}\n\n"
 
 
+def format_agent_sse(event: Dict[str, Any], step: int, model: str, provider: str) -> str:
+    """
+    统一Agent事件SSE格式化入口 — 根据event type分发到对应format_*_sse函数
+
+    Args:
+        event: Agent输出的event dict，必须包含type字段
+        step: 步骤编号
+        model: 模型名称
+        provider: 提供商
+
+    Returns:
+        SSE格式字符串
+    """
+    event_type = event.get('type', '')
+
+    if event_type == 'thought':
+        return format_thought_sse(
+            step=step,
+            content=event.get('content', ''),
+            thought=event.get('thought', ''),
+            reasoning=event.get('reasoning', ''),
+            tool_name=event.get('tool_name', event.get('action_tool', '')),
+            tool_params=event.get('tool_params', event.get('params', {}))
+        )
+    elif event_type == 'action_tool':
+        return format_action_tool_sse(
+            step=step,
+            tool_name=event.get('tool_name', ''),
+            tool_params=event.get('tool_params', {}),
+            execution_status=event.get('execution_status', 'success'),
+            execution_result=event.get('execution_result'),
+            execution_time_ms=event.get('execution_time_ms', 0),
+            action_retry_count=event.get('action_retry_count', 0),
+        )
+    elif event_type == 'observation':
+        return format_observation_sse(
+            step=step,
+            observation=event.get('observation', {}),
+            code=event.get('code', ''),
+            timestamp=event.get('timestamp', '')
+        )
+    elif event_type == 'final':
+        return format_final_sse(
+            response=event.get('response', ''),
+            step=step,
+            display_name=f"{provider} ({model})",
+            provider=provider,
+            model=model,
+            is_finished=event.get('is_finished', True),
+            thought=event.get('thought', ''),
+            is_streaming=event.get('is_streaming', False),
+            is_reasoning=event.get('is_reasoning', False)
+        )
+    elif event_type == 'incident':
+        return format_incident_sse(
+            event.get('incident_value', ''),
+            event.get('message', ''),
+            step=step,
+            content=event.get('content', event.get('message', ''))
+        )
+    elif event_type == 'interrupted':
+        return format_incident_sse(
+            'interrupted',
+            event.get('message', '用户取消了任务'),
+            step=step
+        )
+    elif event_type == 'error':
+        return format_error_sse(
+            error_type=event.get('error_type', 'agent'),
+            error_message=event.get('error_message', '未知错误'),
+            model=model,
+            provider=provider,
+            recoverable=event.get('recoverable', event.get('retryable', False)),
+            step=step
+        )
+    elif event_type == 'chunk':
+        return format_chunk_sse(
+            event=event,
+            step=step,
+            model=model,
+            provider=provider
+        )
+
+    return ''
+
+
 __all__ = [
     "format_sse_event",
     "format_thought_sse",
     "format_action_tool_sse",
     "format_observation_sse",
     "format_chunk_sse",
+    "format_start_sse",
     "format_final_sse",
     "format_error_sse",
     "format_incident_sse",
+    "format_agent_sse",
 ]

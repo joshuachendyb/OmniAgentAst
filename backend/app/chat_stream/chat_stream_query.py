@@ -18,7 +18,7 @@ from app.utils.time_utils import create_timestamp
 from app.chat_stream.chat_helpers import create_final_response
 from app.chat_stream.error_handler import create_error_response
 from app.services.agent.steps import StepFactory
-from app.chat_stream.sse_formatter import format_sse_event
+from app.chat_stream.sse_formatter import format_sse_event, format_agent_sse
 from app.chat_stream.incident_handler import (
     create_incident_data,
     check_and_yield_if_paused,
@@ -208,12 +208,13 @@ async def _execute_retry_loop(
 
     for retry_attempt in range(max_retries + 1):
         if retry_attempt > 0:
+            retry_step = next_step()
             retry_data = create_incident_data(
                 'retrying',
                 f'请求超时，正在重试 ({retry_attempt}/{max_retries})...',
-                step=next_step()
+                step=retry_step
             )
-            yield (f"data: {json.dumps(retry_data)}\n\n", None)
+            yield (format_agent_sse({'type': 'incident', 'incident_value': 'retrying', 'message': f'请求超时，正在重试 ({retry_attempt}/{max_retries})...'}, step=retry_step, model='', provider=''), None)
             await add_step_and_save(retry_data, None)
 
         full_content = ""
@@ -246,10 +247,11 @@ async def _execute_retry_loop(
 
                 async with running_tasks_lock:
                     if running_tasks.get(task_id, {}).get("cancelled", False):
+                        interrupted_step = next_step()
                         interrupted_data = create_incident_data(
-                            'interrupted', '任务已被中断', step=next_step()
+                            'interrupted', '任务已被中断', step=interrupted_step
                         )
-                        yield (f"data: {json.dumps(interrupted_data)}\n\n", None)
+                        yield (format_agent_sse({'type': 'interrupted', 'message': '任务已被中断'}, step=interrupted_step, model='', provider=''), None)
                         return
 
                 async for pause_event in check_and_yield_if_paused(
@@ -282,7 +284,7 @@ async def _execute_retry_loop(
                             logger.error(f"[Save] is_reasoning变化保存失败: {e}", exc_info=True)
                         last_is_reasoning = current_is_reasoning
 
-                    yield (f"data: {json.dumps(chunk_data)}\n\n", None)
+                    yield (format_agent_sse(chunk_data, chunk_data.get('step', 0), ai_service.model, ai_service.provider), None)
 
                 if chunk.is_done:
                     break
@@ -408,8 +410,9 @@ async def chat_stream_query(
     """
     async with running_tasks_lock:
         if running_tasks.get(task_id, {}).get("cancelled", False):
-            interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
-            yield f"data: {json.dumps(interrupted_data)}\n\n"
+            interrupted_step = next_step()
+            interrupted_data = create_incident_data('interrupted', '任务已被中断', step=interrupted_step)
+            yield format_agent_sse({'type': 'interrupted', 'message': '任务已被中断'}, step=interrupted_step, model='', provider='')
             return
 
     history = _build_history(request.messages)

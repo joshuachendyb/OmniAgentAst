@@ -49,7 +49,7 @@ from app.services.intents.crss_scorer import (
 )
 from app.services.react_sse_wrapper import running_tasks, running_tasks_lock, generate_sse_stream
 from app.chat_stream.start_step import send_start_step
-from app.chat_stream.sse_formatter import format_sse_event
+from app.chat_stream.sse_formatter import format_sse_event, format_start_sse
 from app.services.preprocessing.intent_classifier import classify_intent
 from app.services.intents.intent_mapper import resolve_category
 
@@ -262,9 +262,8 @@ class ChatRouter:
                 ai_service=ai_service, task_id=task_id, next_step=next_step,
                 user_message=user_input, security_check_result={},
                 current_execution_steps=execution_steps, session_id=session_id,
-                yield_func=lambda d: f"data: {json.dumps(d)}\n\n"
             )
-            yield f"data: {json.dumps(start_data)}\n\n"
+            yield format_start_sse(start_data)
         except Exception as e:
             yield create_error_response(error_type="start_failed", error_message=f"start步骤失败: {e}")
 

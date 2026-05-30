@@ -22,6 +22,8 @@ from .observation_step import ObservationStep
 from .chunk_step import ChunkStep
 from .final_step import FinalStep
 from .error_step import ErrorStep
+from .incident_step import IncidentStep
+from .start_step import StartStep
 
 
 class StepFactory:
@@ -35,6 +37,8 @@ class StepFactory:
     - create_chunk_step()
     - create_final_step()
     - create_error_step()
+    - create_incident_step()
+    - create_start_step()
     
     设计依据：13.2.2.2节Step构建统一入口设计
     """
@@ -262,4 +266,65 @@ class StepFactory:
             is_reasoning=is_reasoning,
             context=context,
             retry_after=retry_after
+        )
+
+    @staticmethod
+    def create_incident_step(
+        step: int,
+        incident_value: str,
+        message: str,
+        content: Optional[str] = None
+    ) -> IncidentStep:
+        """
+        创建IncidentStep
+
+        Args:
+            step: 步骤序号
+            incident_value: 事件类型值（interrupted/paused/resumed/retrying）
+            message: 事件消息
+            content: 内容（可选，默认等于message）
+
+        Returns:
+            IncidentStep实例
+        """
+        return IncidentStep(
+            step=step,
+            incident_value=incident_value,
+            message=message,
+            content=content
+        )
+
+    @staticmethod
+    def create_start_step(
+        step: int,
+        display_name: str,
+        provider: str,
+        model: str,
+        task_id: str,
+        user_message: str,
+        security_check: Dict[str, Any]
+    ) -> StartStep:
+        """
+        创建StartStep
+
+        Args:
+            step: 步骤序号
+            display_name: 模型显示名称
+            provider: 提供商
+            model: 模型名称
+            task_id: 任务ID
+            user_message: 用户消息
+            security_check: 安全检查结果
+
+        Returns:
+            StartStep实例
+        """
+        return StartStep(
+            step=step,
+            display_name=display_name,
+            provider=provider,
+            model=model,
+            task_id=task_id,
+            user_message=user_message,
+            security_check=security_check
         )
