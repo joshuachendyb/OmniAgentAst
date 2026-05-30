@@ -1565,8 +1565,8 @@ class FileTools:
         timeout: int = 30000,
     ) -> Dict[str, Any]:
         """计算文件哈希值"""
-        from app.services.tools.toolhelper.file_helpers import get_file_hash as _get_file_hash
-        return _get_file_hash(
+        from app.services.tools.toolhelper.file_helpers import hash_file_tool
+        return hash_file_tool(
             file_path=file_path,
             algorithm=algorithm,
         )
