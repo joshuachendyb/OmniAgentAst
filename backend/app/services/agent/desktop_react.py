@@ -36,6 +36,7 @@ class DesktopReactAgent(UniversalReactAgent):
         super().__init__(
             llm_client=llm_client,
             task_id=task_id,
+            config=None,
             tool_category=effective_category,
             max_steps=max_steps,
             candidates=candidates,
