@@ -17,7 +17,7 @@ from typing import Dict, Any, List, Optional, Callable
 import glob as glob_module
 
 from app.services.tools.registry import tool_registry
-from app.utils.tool_result_utils import (
+from app.utils.tool_result_formatter import (
     build_next_actions,
     truncate_data_for_frontend,
     make_json_safe,
