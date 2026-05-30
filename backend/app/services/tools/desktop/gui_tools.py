@@ -30,7 +30,7 @@ from pathlib import Path
 from datetime import datetime
 
 from app.services.tools._response import build_success, build_error
-from app.utils.tool_result_utils import build_next_actions, truncate_data_for_frontend, truncate_text  # 小沈 2026-05-20
+from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, truncate_text  # 小沈 2026-05-20
 
 
 
