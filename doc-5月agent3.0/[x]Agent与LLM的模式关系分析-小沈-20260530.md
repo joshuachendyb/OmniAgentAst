@@ -14,8 +14,89 @@
 | v1.8 | 2026-05-31 10:59:18 | 小欧 | 补充当前架构精准描述+层次混乱图示+问题对照表 |
 | **v2.0** | **2026-05-31 11:07:35** | **小欧** | **重新组织文档结构：按正确架构→当前架构→问题分析→改进措施的逻辑顺序** |
 | **v2.1** | **2026-05-31 15:10:00** | **小健** | **深度审查修正：替换已删除文件引用为当前代码，新增3个遗漏问题，发现RetryCounter死代码，更新重试机制分析** |
+| **v3.0** | **2026-05-31 15:50:00** | **小沈** | **SRP目录拆分后全量修正：章节二/三所有文件路径、行号、类名、函数名更新为当前代码状态** |
+| **v4.0** | **2026-05-31 16:20:00** | **小沈** | **新增「零、需求分析与架构范围」章节，明确核心需求、架构原则、设计决策待定项、非范围项** |
 
 ---
+
+## 零、需求分析与架构范围
+
+### 0.1 需求分析
+
+#### 0.1.1 交付模式（结果如何到达用户）
+
+| 模式 | 结果到达方式 | 用户等待方式 |
+|------|------------|-------------|
+| **逐段到达** | 生成过程中分多次送达，用户逐段看到内容 | 在线等待，逐步看到 |
+| **整包到达** | 全部生成完毕后一次性送达 | 在线等待，一次性看到 |
+| **异步交付** | 提交后不等待，完成后通知用户 | 不等待，事后查看 |
+
+注：交付模式只分类"结果怎么给到用户"，不分类"用户在做什么事"。
+
+#### 0.1.2 用户场景 × 交付模式
+
+| 场景 | 用户行为 | 适用交付模式 |
+|------|---------|-------------|
+| 对话问答 | 发消息 → 等回复 → 追问 | 逐段到达、整包到达 |
+| 任务执行 | 下任务 → 离开 → 回来查结果 | 异步交付（推荐），短任务也可用整包到达 |
+
+#### 0.1.3 系统必须支持的能力
+
+| 能力 | 说明 |
+|------|------|
+| 接收用户消息并生成回复 | 用户发文本，系统处理后返回文本 |
+| 回复可逐段到达 | 用户不必等全部生成完，可以先看到部分内容 |
+| 回复可整包到达 | 用户也可以选择一次性看到完整回复 |
+| 使用外部资源 | 处理过程中可读文件、执行命令、查询网络等 |
+| 分多步完成复杂任务 | 单个任务可能需要多次"获取信息→处理→再获取"循环 |
+| 上下文保持 | 同一会话中，前面的对话影响后面的回复 |
+| 用户可中断 | 用户可随时停止进行中的回复生成或任务 |
+| 失败自动重试 | 网络闪断、服务超时等临时故障自动重试，不丢数据 |
+| 多会话并发 | 多个对话/任务同时运行，互不干扰 |
+| 模型可切换 | 不同场景使用不同AI模型，也可由用户主动切换 |
+| 敏感操作确认 | 执行潜在危险操作前先征得用户同意 |
+
+#### 0.1.4 架构必须提供的底层设施
+
+| 设施 | 说明 |
+|------|------|
+| 多模型接入 | 接入不同AI模型提供商，调用方式统一 |
+| 外部资源扩展 | 新增读写文件、执行命令、网络查询等能力时，不改核心处理流程 |
+| 会话隔离 | 不同会话的执行上下文各自独立 |
+| 可观测性 | 每次处理、每次外部调用都有日志可追溯 |
+| 配置管理 | 模型参数、超时时间、重试策略等可配置 |
+
+### 0.2 架构原则（设计约束）
+
+| 原则 | 说明 | 违反后果 |
+|------|------|---------|
+| **SRP** | 每层只做一件事，第1层不编排、第2层不调LLM、第3层不做业务 | 职责混杂，改A影响B |
+| **严格调用** | 第1层→第2层→第3层→LLM API，不可跳过或越层 | 逻辑不可控，重试/状态管理遗漏 |
+| **接口契约** | 层间通过定义接口通信，不直接依赖具体实现 | 层耦合，换实现牵一发动全身 |
+| **不向后兼容** | 新设计只对需求负责，现有代码后续按新设计重构 | 被旧代码绑架，设计变形 |
+
+### 0.3 设计决策待定
+
+以下决策影响第2层和第3层的具体形态：
+
+| 决策 | 选项A | 选项B | 影响范围 |
+|------|-------|-------|---------|
+| **第2层vs传输协议** | 第2层输出**事件对象**，第1层负责序列化 | 第2层直接输出序列化后的数据 | 第2层是否与传输格式耦合 |
+| **非流式路径** | 非流式**统一走第2层**编排 | 非流式跳过第2层直接调用底层 | 架构一致性 |
+| **工具基础设施** | 作为**第2层内部组件** | 作为**独立公共层**，供多层使用 | 工具的访问范围 |
+| **重试职责** | 第2层=业务重试（空响应/格式错），第3层=通信重试（超时/限流） | 全部集中在第2层 | 重试逻辑的归属 |
+
+注：非流式路径的决策会影响0.2"严格调用"原则的适用范围——若选B，则需在该原则中增加"非流式快捷路径例外"条款。
+
+### 0.4 不在范围内（不做的）
+
+| 领域 | 原因 |
+|------|------|
+| 用户认证与授权 | 由系统入口层处理，不在本架构职责内 |
+| 数据库持久化 | 由数据层负责，本架构不涉及存储实现 |
+| 前端UI渲染 | 前端项目独立实现，本架构只定义接口契约 |
+| 工具内部实现 | 本架构只负责调度工具，工具的业务逻辑由各工具自己实现 |
+| 部署与运维 | 由基础设施团队负责 |
 
 ## 一、正确的架构层次模型
 
@@ -188,85 +269,124 @@
 │                        当前代码的实际结构                                 │
 │                                                                         │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  BaseAIService (llm_core.py:64)                                  │  │
+│  │  BaseAIService (llm_core/llm_core.py:39)                            │  │
+│  │  [chat_stream()保留, chat()已拆为独立文件]                           │  │
 │  │                                                                   │  │
 │  │  ┌─────────────────────┐    ┌─────────────────────────────┐      │  │
 │  │  │ chat()              │    │ chat_stream()               │      │  │
 │  │  │ (第1层：用户入口)    │    │ (第3层：LLM服务)            │      │  │
-│  │  │ llm_core.py:219     │    │ llm_core.py:265            │      │  │
+│  │  │ llm_core/chat.py:15│    │ llm_core/chat_stream.py:16 │      │  │
 │  │  └─────────────────────┘    └─────────────────────────────┘      │  │
 │  │                                                                   │  │
 │  │  ┌─────────────────────┐    ┌─────────────────────────────┐      │  │
 │  │  │ chat_with_tools()   │    │ chat_with_tools_stream()    │      │  │
 │  │  │ (第1层：用户入口)    │    │ (第3层：LLM服务)            │      │  │
-│  │  │ llm_core.py:327     │    │ llm_core.py:390            │      │  │
+│  │  │ llm_core/           │    │ llm_core/chat_with_tools_  │      │  │
+│  │  │ tool_caller.py:58   │    │ stream.py:21               │      │  │
 │  │  └─────────────────────┘    └─────────────────────────────┘      │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
 │                                                                         │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  ChatRouter (chat_router.py:230)                                 │  │
-│  │  + generate_sse_stream (react_sse_wrapper.py:406)               │  │
+│  │  chat_router/ 目录（ChatRouter类已拆分）                           │  │
+│  │  + generate_sse_stream (react_sse_wrapper/react_sse_wrapper.py:34)│  │
 │  │                                                                   │  │
 │  │  ┌─────────────────────┐    ┌─────────────────────────────┐      │  │
-│  │  │ route()             │    │ _step_start()              │      │  │
-│  │  │ (第1层：用户入口)    │    │ _step_react_loop()         │      │  │
-│  │  │ chat_router.py:279  │    │ (第1层+第2层混杂)           │      │  │
+│  │  │ route()             │    │ step_start() /              │      │  │
+│  │  │ step_react_loop()   │    │ detect_intent() /           │      │  │
+│  │  │ (第1层+第2层)       │    │ init_route_context()        │      │  │
+│  │  │                     │    │ (第2层：业务编排)            │      │  │
+│  │  │ chat_router/        │    │ chat_router/step_start.py  │      │  │
+│  │  │ route.py:19 +       │    │ :15 + step_react_loop.py:13│      │  │
+│  │  │ step_react_loop.py:13│    │ + detect_intent.py:13     │      │  │
 │  │  └─────────────────────┘    └─────────────────────────────┘      │  │
 │  │                                                                   │  │
-│  │  ┌─────────────────────┐    ┌─────────────────────────────┐      │  │
-│  │  │ generate_sse_stream │    │ _run_sse_stream()           │      │  │
-│  │  │ (第1层：SSE入口)     │    │ (第2层：业务编排)            │      │  │
-│  │  │ react_sse_          │    │ react_sse_wrapper.py:234   │      │  │
-│  │  │ wrapper.py:406      │    │                             │      │  │
-│  │  └─────────────────────┘    └─────────────────────────────┘      │  │
+│  │  ┌─────────────────────────────────────────────────────────────┐  │  │
+│  │  │ generate_sse_stream        (react_sse_wrapper/              │  │  │
+│  │  │ (第1层：SSE入口)            react_sse_wrapper.py:34)        │  │  │
+│  │  └─────────────────────────────────────────────────────────────┘  │  │
+│  │                                                                   │  │
+│  │  ┌─────────────────────────────────────────────────────────────┐  │  │
+│  │  │ run_sse_stream()              (react_sse_wrapper/            │  │  │
+│  │  │ (第2层：业务编排)              run_sse_stream.py:18)          │  │  │
+│  │  └─────────────────────────────────────────────────────────────┘  │  │
+│  │                                                                   │  │
+│  │  辅助函数(react_sse_wrapper/目录):                                 │  │
+│  │  ├─ log_prompts()         log_prompts.py:12                       │  │
+│  │  ├─ handle_client_disconnect() handle_client_disconnect.py:18    │  │
+│  │  ├─ cleanup_task()        cleanup_task.py:15                     │  │
+│  │  ├─ save_step_to_db()     save_step_to_db.py:15                  │  │
+│  │  └─ emit_and_save()       emit_and_save.py:16                    │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
 │                                                                         │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  BaseAgent (base_react.py:53)                                    │  │
+│  │  BaseAgent (base_react/base_react.py:31)                          │  │
 │  │                                                                   │  │
 │  │  ┌─────────────────────┐    ┌─────────────────────────────┐      │  │
 │  │  │ run()               │    │ run_stream()                │      │  │
 │  │  │ (第1层：用户入口)    │    │ (第2层：业务编排)            │      │  │
-│  │  │ universal_react.py  │    │ base_react.py:277          │      │  │
-│  │  │ :128                │    │                             │      │  │
+│  │  │ universal_react.py  │    │ base_react/                │      │  │
+│  │  │ :128                │    │ run_stream.py:17           │      │  │
 │  │  └─────────────────────┘    └─────────────────────────────┘      │  │
+│  │                                                                   │  │
+│  │  其他方法:                                                         │  │
+│  │  ├─ _call_llm()          mixins/llm_dispatch_mixin.py:86         │  │
+│  │  ├─ StepEmitter类        base_react/step_emitter.py:16           │  │
+│  │  │  ├─ emit()            step_emitter.py:22                      │  │
+│  │  │  ├─ exit_with_error() step_emitter.py:27                      │  │
+│  │  │  ├─ check_interrupt() step_emitter.py:38                      │  │
+│  │  │  ├─ complete_task()   step_emitter.py:52                      │  │
+│  │  │  └─ record_operation()step_emitter.py:62                      │  │
+│  │  ├─ initialize_run_state() initialize_run_state.py               │  │
+│  │  └─ agent_initializer()  agent_initializer.py                    │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
+│                                                                         │
+（已在上方更新为最新架构）
 ```
 
 ### 2.2 当前架构的问题对照表
 
 | 层级 | 正确的模块 | 当前实际模块 | 问题 |
 |------|-----------|-------------|------|
-| **第1层：用户入口层** | 独立的用户入口模块 | `BaseAIService.chat()` + `ChatRouter.route()` + `BaseAgent.run()` | 每个入口都混在其他层次的模块中 |
-| **第2层：业务编排层** | 独立的业务编排模块 | `ChatRouter._step_*()` + `react_sse_wrapper._run_sse_stream()` + `BaseAgent.run_stream()` | 业务编排逻辑混在用户入口模块中 |
-| **第3层：LLM服务层** | 独立的LLM服务模块 | `BaseAIService.chat_stream()` | LLM服务混在用户入口模块中 |
+| **第1层：用户入口层** | 独立的用户入口模块 | `BaseAIService.chat()` (`llm_core/chat.py:15`) + `route()` (`chat_router/route.py:19`) + `BaseAgent.run()` (`universal_react.py:128`) + `generate_sse_stream()` (`react_sse_wrapper/react_sse_wrapper.py:34`) | 每个入口都混在其他层次的模块中 |
+| **第2层：业务编排层** | 独立的业务编排模块 | `step_start()` (`chat_router/step_start.py:15`) + `step_react_loop()` (`chat_router/step_react_loop.py:13`) + `run_sse_stream()` (`react_sse_wrapper/run_sse_stream.py:18`) + `BaseAgent.run_stream()` (`base_react/run_stream.py:17`) | 业务编排逻辑混在用户入口模块中 |
+| **第3层：LLM服务层** | 独立的LLM服务模块 | `BaseAIService.chat_stream()` (`llm_core/chat_stream.py:16`) + `chat_with_tools_stream()` (`llm_core/chat_with_tools_stream.py:21`) | LLM服务混在用户入口模块中 |
 
 ### 2.3 层次混乱图示
 
 ```
-当前代码的层次混乱：
+当前代码的层次混乱（SRP重构后，类方法已拆分为独立文件/函数）：
 
-BaseAIService (llm_core.py)
-├── chat()                    ← 第1层：用户入口 ❌ 混在第3层模块中
-├── chat_stream()             ← 第3层：LLM服务 ✅ 正确位置
-├── chat_with_tools()         ← 第1层：用户入口 ❌ 混在第3层模块中
-└── chat_with_tools_stream()  ← 第3层：LLM服务 ✅ 正确位置
+llm_core/llm_core.py (BaseAIService核心)
+├── chat() [在 llm_core/chat.py:15]        ← 第1层：用户入口 ❌ 混在第3层模块中
+├── chat_stream() [llm_core/chat_stream.py:16]  ← 第3层：LLM服务 ✅ 正确位置
+├── chat_with_tools() [llm_core/tool_caller.py:58]  ← 第1层：用户入口 ❌ 混在第3层模块中
+└── chat_with_tools_stream() [llm_core/chat_with_tools_stream.py:21] ← 第3层 ✅
 
-ChatRouter (chat_router.py) + generate_sse_stream (react_sse_wrapper.py)
-├── route()                   ← 第1层：用户入口 ❌ 混在第2层模块附近
-├── _step_start()             ← 第2层：业务编排 ✅ 正确位置
-├── _step_react_loop()        ← 第2层：业务编排 ✅ 正确位置
-├── generate_sse_stream()     ← 第1层+第2层 ❌ 入口+编排混杂
-├── _run_sse_stream()         ← 第2层：业务编排 ✅ 正确位置
-├── _log_prompts()            ← 第2层：业务编排 ✅ 正确位置
-└── _handle_*()               ← 第2层：业务编排 ✅ 正确位置
+chat_router/ 目录（ChatRouter类已拆分）
+├── route() [chat_router/route.py:19]      ← 第1层：用户入口 ❌ 混在第2层模块附近
+├── step_start() [chat_router/step_start.py:15]  ← 第2层：业务编排 ✅
+├── step_react_loop() [chat_router/step_react_loop.py:13]  ← 第2层 ✅
+├── detect_intent() [detect_intent.py:13]  ← 第2层 ✅
+└── init_route_context() [init_route_context.py:15]  ← 第2层 ✅
 
-BaseAgent (base_react.py)
-├── run()                     ← 第1层：用户入口 ❌ 混在第2层模块中
-├── run_stream()              ← 第2层：业务编排 ✅ 正确位置
-├── _call_llm()               ← 第2层：业务编排 ✅ 正确位置
-└── _handle_*()               ← 第2层：业务编排 ✅ 正确位置
+react_sse_wrapper/ 目录（文件已拆为目录）
+├── generate_sse_stream() [react_sse_wrapper.py:34]  ← 第1层+第2层 ❌ 入口+编排混杂
+├── run_sse_stream() [run_sse_stream.py:18]  ← 第2层：业务编排 ✅
+├── log_prompts() [log_prompts.py:12]      ← 第2层 ✅
+├── handle_client_disconnect() [handle_client_disconnect.py:18] ← 第2层 ✅
+├── cleanup_task() [cleanup_task.py:15]    ← 第2层 ✅
+├── save_step_to_db() [save_step_to_db.py:15] ← 第2层 ✅
+└── emit_and_save() [emit_and_save.py:16]  ← 第2层 ✅
+
+base_react/ 目录 + universal_react.py
+├── run() [universal_react.py:128]         ← 第1层：用户入口 ❌ 混在第2层模块中
+├── run_stream() [base_react/run_stream.py:17]  ← 第2层：业务编排 ✅
+├── _call_llm() [mixins/llm_dispatch_mixin.py:86]  ← 第2层 ✅
+├── StepEmitter类 [base_react/step_emitter.py:16]  ← 第2层 ✅
+│   ├── emit(), exit_with_error(), check_interrupt()
+│   ├── complete_task(), record_operation()
+├── initialize_run_state() [initialize_run_state.py] ← 第2层 ✅
+└── agent_initializer() [agent_initializer.py] ← 第2层 ✅
 ```
 
 ### 2.4 当前架构的调用流程
@@ -280,18 +400,18 @@ BaseAgent (base_react.py)
     │               │
     │               └── _stream_with_retry() → LLM API
     │
-    ├── chat_stream_v2 (FastAPI端点 @ chat_router.py:170)
+    ├── chat_stream_v2 (FastAPI端点 @ chat_router/chat_stream_v2.py)
     │       │
-    │       └── ChatRouter.route() (chat_router.py:279)
+    │       └── route() (chat_router/route.py:19)
     │               │
-    │               ├── _detect_intent()  ← 意图检测
-    │               ├── _init_route_context()  ← 初始化
-    │               ├── _step_start()  ← start步骤SSE
-    │               └── _step_react_loop()  ← ReAct循环
+    │               ├── detect_intent() (chat_router/detect_intent.py:13) ← 意图检测
+    │               ├── init_route_context() (chat_router/init_route_context.py:15) ← 初始化
+    │               ├── step_start() (chat_router/step_start.py:15) ← start步骤SSE
+    │               └── step_react_loop() (chat_router/step_react_loop.py:13) ← ReAct循环
     │                       │
-    │                       └── generate_sse_stream() (react_sse_wrapper.py:406)
+    │                       └── generate_sse_stream() (react_sse_wrapper/react_sse_wrapper.py:34)
     │                               │
-    │                               ├── _run_sse_stream() (react_sse_wrapper.py:234)
+    │                               ├── run_sse_stream() (react_sse_wrapper/run_sse_stream.py:18)
     │                               │       │
     │                               │       ├── AgentFactory.create() → Agent
     │                               │       └── agent.run_stream() → BaseAgent
@@ -333,24 +453,24 @@ BaseAgent (base_react.py)
 | 维度 | 说明 |
 |------|------|
 | **问题描述** | `BaseAIService` 类同时包含用户入口层方法（chat）和LLM服务层方法（chat_stream） |
-| **代码位置** | `llm_core.py:64` |
-| **涉及方法** | `chat()`（第1层）+ `chat_stream()`（第3层） |
+| **代码位置** | `llm_core/llm_core.py:39` |
+| **涉及方法** | `chat()`（第1层，已拆至`llm_core/chat.py:15`）+ `chat_stream()`（第3层，`llm_core/chat_stream.py:16`） |
 | **风险等级** | P1-高 |
 
 **精准分析**：
-- `chat()` 方法（llm_core.py:219）是用户入口，接收用户消息，返回ChatResponse
-- `chat_stream()` 方法（llm_core.py:265）是LLM服务层，真正调用LLM API
-- 两个方法在同一个类中，职责边界不清晰
-- 同样 `chat_with_tools()`（第1层）和 `chat_with_tools_stream()`（第3层）也存在同样问题
+- `chat()` 方法（`llm_core/chat.py:15`）是用户入口，接收用户消息，返回ChatResponse（从原`llm_core.py:219`拆出）
+- `chat_stream()` 方法（`llm_core/chat_stream.py:16`）是LLM服务层，真正调用LLM API（从原`llm_core.py:265`拆出）
+- 两个方法虽已拆为独立文件，但仍通过类继承（ChatStreamMixin混合到BaseAIService）在同一个类中
+- 同样 `chat_with_tools()`（第1层，`llm_core/tool_caller.py:58`）和 `chat_with_tools_stream()`（第3层，`llm_core/chat_with_tools_stream.py:21`）也存在同样问题
 
 **改进措施**：
 ```
-当前结构：
-BaseAIService (llm_core.py)
-├── chat()                    ← 第1层：用户入口
-├── chat_stream()             ← 第3层：LLM服务
-├── chat_with_tools()         ← 第1层：用户入口
-└── chat_with_tools_stream()  ← 第3层：LLM服务
+当前结构（SRP拆文件但未拆类继承）：
+BaseAIService (llm_core/llm_core.py:39)
+├── chat()                    → llm_core/chat.py:15   ← 第1层：用户入口
+├── chat_stream()             → llm_core/chat_stream.py:16  ← 第3层：LLM服务
+├── chat_with_tools()         → llm_core/tool_caller.py:58  ← 第1层：用户入口
+└── chat_with_tools_stream()  → llm_core/chat_with_tools_stream.py:21  ← 第3层
 
 正确结构：
 ChatEntry (chat_entry.py)        ← 第1层：用户入口
@@ -367,68 +487,77 @@ LLMService (llm_service.py)      ← 第3层：LLM服务
 | 维度 | 说明 |
 |------|------|
 | **问题描述** | `generate_sse_stream` 函数同时包含第1层入口逻辑和第2层业务编排逻辑 |
-| **代码位置** | `react_sse_wrapper.py:406` |
-| **涉及逻辑** | SSE入口分发（第1层）+ 编排调用 `_run_sse_stream`/`_log_prompts`/`_handle_*`（第2层） |
+| **代码位置** | `react_sse_wrapper/react_sse_wrapper.py:34` |
+| **涉及逻辑** | SSE入口分发（第1层）+ 编排调用 `run_sse_stream`/`log_prompts`/`handle_client_disconnect`（第2层） |
 | **风险等级** | P1-高 |
 
 **精准分析**：
-- `generate_sse_stream()`（react_sse_wrapper.py:406）是 `ChatRouter._step_react_loop()` 的调用目标，属于第1层入口
-- 但它内部直接包含了：
-  - `_log_prompts()` — 第2层业务编排（prompt日志记录）
-  - `_run_sse_stream()` — 第2层业务编排（Agent创建与循环）
-  - `_handle_client_disconnect()` — 第2层业务编排（客户端断开处理）
-  - `_cleanup_task()` — 第2层业务编排（任务清理）
-  - `_save_step_to_db()` — 第2层业务编排（DB保存）
-- 同一函数中同时包含"入口分发"和"编排执行"，违反SRP
+- `generate_sse_stream()`（`react_sse_wrapper/react_sse_wrapper.py:34`，原`react_sse_wrapper.py:406`拆出SRP目录后仅171行）是 `step_react_loop()` 的调用目标，属于第1层入口
+- 其调用的子函数目前已拆为独立文件（但入口函数仍直接包含编排调用）：
+  - `log_prompts()` — `react_sse_wrapper/log_prompts.py:12`，第2层业务编排
+  - `run_sse_stream()` — `react_sse_wrapper/run_sse_stream.py:18`，第2层业务编排（Agent创建与循环）
+  - `handle_client_disconnect()` — `react_sse_wrapper/handle_client_disconnect.py:18`，第2层编排
+  - `cleanup_task()` — `react_sse_wrapper/cleanup_task.py:15`，第2层编排
+  - `save_step_to_db()` — `react_sse_wrapper/save_step_to_db.py:15`，第2层编排
+  - `emit_and_save()` — `react_sse_wrapper/emit_and_save.py:16`，第2层编排
+- 第1层入口`generate_sse_stream()` 仍然直接调度这些第2层函数，入口+编排的职责未分离
 
 **改进措施**：
 ```
-当前结构：
-react_sse_wrapper.py
-├── generate_sse_stream()     ← 第1层：入口 + 第2层：编排（混杂）
-├── _run_sse_stream()         ← 第2层：业务编排
-├── _log_prompts()            ← 第2层：业务编排
-├── _handle_client_disconnect() ← 第2层：业务编排
-└── _cleanup_task()           ← 第2层：业务编排
+当前结构（已拆文件但未拆入口职责）：
+react_sse_wrapper/react_sse_wrapper.py:34
+└── generate_sse_stream()     ← 第1层：入口 + 第2层：编排（仍混杂）
+
+react_sse_wrapper/ 目录各独立文件：
+├── run_sse_stream.py:18      ← 第2层：业务编排 ✅
+├── log_prompts.py:12         ← 第2层 ✅
+├── handle_client_disconnect.py:18 ← 第2层 ✅
+├── cleanup_task.py:15        ← 第2层 ✅
+├── save_step_to_db.py:15     ← 第2层 ✅
+└── emit_and_save.py:16       ← 第2层 ✅
 
 正确结构：
 SSEEntry (sse_entry.py)              ← 第1层：用户入口
-├── generate_sse_stream()            ← 只做分发，不做编排
-└── _log_prompts()                   ← 入口可保留
+└── generate_sse_stream()            ← 只做分发，不做编排
 
 SSEOrchestrator (sse_orchestrator.py) ← 第2层：业务编排
-├── run_sse_stream()                 ← 核心编排
+├── run_sse_stream()
 ├── handle_client_disconnect()
 ├── save_step_to_db()
-└── cleanup_task()
+├── cleanup_task()
+└── emit_and_save()
 ```
 
 ### 3.4 问题3：BaseAgent类跨越两个层次
 
 | 维度 | 说明 |
 |------|------|
-| **问题描述** | `BaseAgent` 类同时包含用户入口层方法（run）和业务编排层方法（run_stream） |
-| **代码位置** | `universal_react.py:128` + `base_react.py:53` |
+| **问题描述** | `BaseAgent` 类（及子类 `UniversalReactAgent`）同时包含用户入口层方法（run）和业务编排层方法（run_stream） |
+| **代码位置** | `universal_react.py:128` + `base_react/base_react.py:31` + `base_react/run_stream.py:17` |
 | **涉及方法** | `run()`（第1层）+ `run_stream()`（第2层） |
 | **风险等级** | P1-高 |
 
 **精准分析**：
-- `run()` 方法（universal_react.py:128）是用户入口，接收用户任务，返回AgentResult
-- `_run_with_task_tracking()` 方法（universal_react.py:138）是入口+聚合逻辑，遍历 `run_stream()` 聚合结果
-- `run_stream()` 方法（base_react.py:277）是业务编排，处理ReAct循环
+- `run()` 方法（`universal_react.py:128`）是用户入口，接收用户任务，返回AgentResult ✅ 未变
+- `_run_with_task_tracking()` 方法（`universal_react.py:138`）是入口+聚合逻辑，遍历 `run_stream()` 聚合结果 ✅ 未变
+- `run_stream()` 方法：已从 `base_react.py:277` 拆至 `base_react/run_stream.py:17`（独立函数），是业务编排，处理ReAct循环
+- `_call_llm()` 方法：已从 `base_react.py` 拆至 `mixins/llm_dispatch_mixin.py:86`
+- `_handle_*()` 方法：已拆为 `StepEmitter` 类（`base_react/step_emitter.py:16`）+ `initialize_run_state()` + `agent_initializer()`
 - 第1层和第2层方法在同一个类继承体系中，职责边界不清晰
 
 **改进措施**：
 ```
-当前结构：
+当前结构（SRP拆文件但未拆类继承）：
 UniversalReactAgent (universal_react.py)
-├── run()                        ← 第1层：用户入口
-└── _run_with_task_tracking()    ← 第1层+第2层（遍历stream聚合结果）
+├── run() [universal_react.py:128]              ← 第1层：用户入口
+└── _run_with_task_tracking() [:138]            ← 第1层+第2层
 
-BaseAgent (base_react.py)
-├── run_stream()                 ← 第2层：业务编排
-├── _call_llm()                  ← 第2层：业务编排
-└── _handle_*()                  ← 第2层：业务编排
+BaseAgent (base_react/base_react.py:31)
+├── run_stream()          → base_react/run_stream.py:17  ← 第2层
+├── _call_llm()           → mixins/llm_dispatch_mixin.py:86  ← 第2层
+├── StepEmitter类         → base_react/step_emitter.py:16  ← 第2层
+├── initialize_run_state()→ initialize_run_state.py  ← 第2层
+└── agent_initializer()   → agent_initializer.py  ← 第2层
 
 正确结构：
 AgentEntry (agent_entry.py)           ← 第1层：用户入口
@@ -437,37 +566,41 @@ AgentEntry (agent_entry.py)           ← 第1层：用户入口
 ReactOrchestrator (react_orchestrator.py)  ← 第2层：业务编排
 ├── run_stream()
 ├── _call_llm()
-└── _handle_*()
+└── StepEmitter
 ```
 
 ### 3.5 问题4：ChatRouter类内部层次混杂
 
 | 维度 | 说明 |
 |------|------|
-| **问题描述** | `ChatRouter` 类同时包含第1层路由入口方法和第2层步骤编排方法 |
-| **代码位置** | `chat_router.py:230` |
-| **涉及方法** | `route()`（第1层）+ `_step_start()`/`_step_react_loop()`（第2层） |
+| **问题描述** | `ChatRouter` 类已不存在（SRP已拆为独立函数），但第1层入口函数 `route()` 和第2层编排函数仍在同一目录下 |
+| **代码位置** | `chat_router/` 目录（`route.py:19` + `step_start.py:15` + `step_react_loop.py:13` + `detect_intent.py:13` + `init_route_context.py:15`） |
+| **涉及方法** | `route()`（第1层）+ `step_start()`/`step_react_loop()`（第2层） |
 | **风险等级** | P2-中 |
 
 **精准分析**：
-- `route()` 方法（chat_router.py:279）是用户入口，接收请求，编排4步流程
-- `_step_start()` 方法（chat_router.py:255）是第2层start步骤编排
-- `_step_react_loop()` 方法（chat_router.py:267）是第2层ReAct循环编排
-- 虽然已通过SLAP做了方法级拆分，但第1层和第2层仍在同一个类中
+- `route()` 函数（`chat_router/route.py:19`，原 `chat_router.py:279`）是用户入口，接收请求，编排4步流程
+- `step_start()` 函数（`chat_router/step_start.py:15`，原 `chat_router.py:255` 的 `_step_start()`）是第2层start步骤编排
+- `step_react_loop()` 函数（`chat_router/step_react_loop.py:13`，原 `chat_router.py:267` 的 `_step_react_loop()`）是第2层ReAct循环编排
+- `detect_intent()` 函数（`chat_router/detect_intent.py:13`）是第2层意图检测
+- `init_route_context()` 函数（`chat_router/init_route_context.py:15`）是第2层初始化
+- SRP已做了方法到独立文件的拆分，但第1层和第2层仍在同一个 `chat_router/` 目录下，入口 `route()` 仍直接调用编排函数
 
 **改进措施**：
 ```
-当前结构：
-ChatRouter (chat_router.py)
-├── route()                    ← 第1层：用户入口
-├── _detect_intent()           ← 第2层：意图检测流程
-├── _init_route_context()      ← 第2层：初始化流程
-├── _step_start()              ← 第2层：start步骤
-└── _step_react_loop()         ← 第2层：ReAct循环
+当前结构（已拆为独立文件但同目录混合）：
+chat_router/ 目录
+├── route.py:19                    ← 第1层：用户入口
+├── step_start.py:15               ← 第2层：start步骤
+├── step_react_loop.py:13          ← 第2层：ReAct循环
+├── detect_intent.py:13            ← 第2层：意图检测
+├── init_route_context.py:15       ← 第2层：初始化
+├── chat_stream_v2.py              ← FastAPI端点
+└── ...
 
 正确结构：
 ChatEntry (chat_entry.py)          ← 第1层：用户入口
-└── route()                        ← 只做入口分发
+└── route()
 
 StepOrchestrator (step_orchestrator.py)  ← 第2层：业务编排
 ├── detect_intent()
@@ -490,11 +623,12 @@ StepOrchestrator (step_orchestrator.py)  ← 第2层：业务编排
 
 **具体案例**：
 ```
-ChatRouter._step_react_loop()
+step_react_loop() [chat_router/step_react_loop.py:13]
   └── generate_sse_stream(ai_service=ai_service, ...)  ← 直接传具体对象
-        └── _run_sse_stream(llm_client=ai_service, ...)  ← 直接传具体对象
+        └── run_sse_stream(llm_client=ai_service, ...)  ← 直接传具体对象
               └── AgentFactory.create(...)  ← 直接依赖AgentFactory
-                    └── agent.run_stream(...)  ← 直接调用具体方法
+                    └── agent.run_stream() [base_react/run_stream.py:17] ← 直接调用
+
 ```
 
 **改进措施**：
@@ -517,12 +651,13 @@ ChatRouter._step_react_loop()
 | 重构方向 | 具体措施 | 预期效果 | 工作量 |
 |---------|---------|---------|--------|
 | **拆分BaseAIService** | 将chat()/chat_with_tools()移到第1层入口模块，chat_stream()/chat_with_tools_stream()保留在第3层LLM服务模块 | 消除层次跨越（问题1） | 中 |
-| **拆分generate_sse_stream** | 将入口分发逻辑与编排执行逻辑分离到不同模块 | 消除层次跨越（问题2） | 中 |
-| **拆分BaseAgent** | 将run()移到第1层入口模块，run_stream()保留在第2层编排模块 | 消除层次跨越（问题3） | 大 |
-| **拆分ChatRouter** | 将route()入口与_step_*()编排分离到不同模块 | 消除层次混杂（问题4） | 小 |
+| **拆分generate_sse_stream** | 将入口分发逻辑与编排执行逻辑分离到不同模块 | 消除层次跨越（问题2） | 小（文件已拆，职责未分） |
+| **拆分BaseAgent** | 将run()移到第1层入口模块，run_stream()保留在第2层编排模块 | 消除层次跨越（问题3） | 中（文件已拆，类继承未拆） |
+| **拆分ChatRouter** | 将route()入口与step_*()编排分离到不同模块 | 消除层次混杂（问题4） | 小（文件已拆，同目录未分） |
 | **层间接口定义** | 第1层↔第2层↔第3层之间定义清晰接口 | 降低耦合度（问题5） | 中 |
 | **重试机制收敛** | 统一使用RetryEngine，SSE路径补充重试保护 | 消除重试分散（问题6） | 小 |
 
+> **注**：2026-05-31 SRP目录拆分后，问题1-4的文件级拆分已完成，但职责级分离（入口vs编排）和类继承解耦仍未完成。
 
 ### 4.2 目标架构
 
@@ -533,7 +668,7 @@ ChatRouter._step_react_loop()
 │  chat_entry.py      sse_entry.py           agent_entry.py           │
 │  ├── chat()         └── generate_sse_      ├── run()                │
 │  └── chat_with_        stream()            └── route()  ← 从        │
-│      tools()                               ChatRouter移入            │
+│      tools()                               chat_router/移入          │
 │                                            （入口部分）              │
 └─────────────────────────────┬───────────────────────────────────────┘
                               │ 接口 IEntryHandler
