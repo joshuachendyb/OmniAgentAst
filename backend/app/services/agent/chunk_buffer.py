@@ -9,8 +9,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+# 【3.9修复 北京老陈 2026-05-31】阈值统一从constants.py读取
+from app.constants import MAX_CONSECUTIVE_CHUNKS
+
 if TYPE_CHECKING:
     from app.services.agent.message_builder import MessageBuilder
+
+# chunk累积超时：连续收到多少个chunk未触发promote则强制停止
+# 防止LLM持续返回chunk导致无限循环
+MAX_CHUNKS_WITHOUT_PROMOTE = 50
 
 
 class ChunkBuffer:
@@ -22,7 +29,7 @@ class ChunkBuffer:
         - 所有需要"累积→阈值检测→flush"模式的场景
 
     使用示例:
-        buffer = ChunkBuffer(max_consecutive=10)
+        buffer = ChunkBuffer(max_consecutive=5)
         buffer.append("hello")
         buffer.append(" world")
         if buffer.should_promote():
@@ -31,23 +38,34 @@ class ChunkBuffer:
     返回数据说明:
         - append: 无返回值，修改内部状态
         - should_promote: 返回bool，True表示连续chunk数达到阈值
+        - should_force_stop: 返回bool，True表示累积超时需强制停止
         - flush_to: 返回str（buffer内容），同时清空buffer并写入MessageBuilder
         - clear: 无返回值，仅清空buffer和计数器
 
     Author: 小沈 2026-05-25
     """
 
-    def __init__(self, max_consecutive: int = 10):
+    def __init__(self, max_consecutive: int = MAX_CONSECUTIVE_CHUNKS):
         self.buffer: str = ""
         self.consecutive_count: int = 0
+        self.total_chunks: int = 0  # 累计chunk总数（用于超时检测）
         self.max_consecutive: int = max_consecutive
 
     def append(self, content: str) -> None:
         self.buffer += content
         self.consecutive_count += 1
+        self.total_chunks += 1
 
     def should_promote(self) -> bool:
+        """连续chunk数达到阈值时返回True"""
         return self.consecutive_count >= self.max_consecutive
+
+    def should_force_stop(self) -> bool:
+        """chunk累积超时需强制停止时返回True
+        
+        【3.9修复 北京老陈 2026-05-31】防止LLM持续返回chunk导致无限循环
+        """
+        return self.total_chunks >= MAX_CHUNKS_WITHOUT_PROMOTE
 
     def flush_to(self, builder: "MessageBuilder") -> str:
         result = self.buffer
@@ -60,3 +78,4 @@ class ChunkBuffer:
     def clear(self) -> None:
         self.buffer = ""
         self.consecutive_count = 0
+        # 注意：total_chunks不清零，用于累计超时检测

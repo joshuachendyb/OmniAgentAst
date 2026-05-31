@@ -109,6 +109,15 @@ class ReActHandlerMixin:
         chunk_step = StepFactory.create_chunk_step(step=step_count, content=chunk_content)
         yield self._emit_step(chunk_step)
 
+        # 【3.9修复 北京老陈 2026-05-31】chunk累积超时检测，防止无限循环
+        if chunk_buffer.should_force_stop():
+            content = chunk_buffer.flush_to(self.message_builder)
+            final_step = StepFactory.create_final_step(step=step_count + 1, response=content, thought="chunk累积超时，强制停止")
+            yield self._emit_step(final_step)
+            self.status = AgentStatus.COMPLETED
+            self._on_after_loop()
+            return
+
         if self.tool_category is None:
             content = chunk_buffer.flush_to(self.message_builder)
             final_step = StepFactory.create_final_step(step=step_count + 1, response=content, thought="")
