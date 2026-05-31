@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-_run_sse_stream — 从 react_sse_wrapper.py 拆出
+_run_sse_stream — 纯SSE流运行器
 
-复制来源: react_sse_wrapper.py 第154-215行
+task操作统一在 API层（chat_stream_v2）处理，本文件不碰
+
 Author: 小沈 - 2026-05-31
+统一: 小健 - 2026-05-31 — 删除所有task操作
 """
 
 from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 
 from app.utils.logger import logger
 from app.services.agent.generic_react import GenericReactAgent
-from app.services.react_sse_wrapper.is_cancelled_and_yield import is_cancelled_and_yield
 from app.services.react_sse_wrapper.emit_and_save import emit_and_save
 from app.services.react_sse_wrapper.yield_error_sse import yield_error_sse
 
@@ -23,14 +24,12 @@ async def run_sse_stream(
     candidates: list,
     last_message: str,
     next_step: Callable[[], int],
-    running_tasks: dict,
-    running_tasks_lock,
     session_id: str,
     current_execution_steps: list,
     current_content: str,
     agent_llm_holder: Optional[Dict[str, Any]] = None,
 ) -> AsyncGenerator[str, None]:
-    """复制自 react_sse_wrapper.py 第154-215行"""
+    """纯SSE流运行器 — 不碰task操作"""
     from app.services.agent.agent_factory import AgentFactory
     agent = None
     log_tag = f"[{intent_type.upper()}Op]"
@@ -53,15 +52,7 @@ async def run_sse_stream(
         async for event in agent.run_stream(
             task=last_message, context=None,
             task_id=task_id,
-            running_tasks=running_tasks,
         ):
-            cancelled_sse = await is_cancelled_and_yield(
-                task_id, running_tasks, running_tasks_lock, next_step,
-                session_id, current_execution_steps, current_content
-            )
-            if cancelled_sse:
-                yield cancelled_sse
-                break
             sse_data, current_content = await emit_and_save(event, session_id, current_execution_steps, current_content)
             if sse_data:
                 logger.info(f"{log_tag} SSE发送数据")
