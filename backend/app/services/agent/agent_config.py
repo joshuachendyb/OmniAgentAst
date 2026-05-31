@@ -129,7 +129,8 @@ def resolve_agent_config(intent_type: str) -> AgentConfig:
 
 def get_all_intent_types() -> List[str]:
     """获取所有 intent_type（含别名）"""
-    from app.services.intents.intent_mapper import get_agent_intent_names, get_aliases_for_intent, IntentType
+    from app.services.intents.intent_mapper import get_agent_intent_names, get_aliases_for_intent
+    from app.services.tools.tool_types import IntentType
     
     result = []
     # 添加所有标准意图类型

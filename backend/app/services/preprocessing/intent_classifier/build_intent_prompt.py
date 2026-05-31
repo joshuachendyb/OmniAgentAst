@@ -7,7 +7,8 @@ build_intent_prompt — 从 intent_classifier.py 拷出
 
 from typing import List, Dict
 
-from app.services.intents.intent_mapper import get_aliases_for_intent, IntentType
+from app.services.intents.intent_mapper import get_aliases_for_intent
+from app.services.tools.tool_types import IntentType
 
 _INTENT_DESCRIPTIONS = {
     "file": "文件操作，包括查看目录、浏览文件、打开磁盘(C盘/D盘/E盘)、打开文件夹、列出文件、读取/保存/删除/复制/移动文件等",

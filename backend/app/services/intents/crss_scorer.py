@@ -31,8 +31,9 @@ def _ascii_word_boundary_match(keyword: str, text: str) -> bool:
 
 
 # 第一层：类型关键词由 INTENT_MAPPING 驱动，CRSS_TYPE_KEYWORDS 是可选数据
-# 新增 CRSS 意图只需在 intent_mapper.py 的 INTENT_MAPPING 加一条即可
-from app.services.intents.intent_mapper import INTENT_MAPPING, CRSS_TYPE_KEYWORDS, resolve_category
+# 新增 CRSS 意图只需在 tool_types.py 的 _CRSS_REGISTRY 加一条即可
+from app.services.tools.tool_types import INTENT_MAPPING, CRSS_TYPE_KEYWORDS
+from app.services.intents.intent_mapper import resolve_category
 
 
 # ====================================================================
