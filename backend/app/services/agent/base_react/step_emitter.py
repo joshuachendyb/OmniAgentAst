@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-步骤发射和Task追踪 — 从 base_react.py 拆出
+step_emitter — 步骤发射和Task追踪
 
-复制来源: base_react.py 第427-491行 (_emit_step, _exit_with_error, _check_interrupt, _complete_tracked_task, record_operation)
+task检查由 run_sse_stream 层处理，本层不碰
+
 Author: 小沈 - 2026-05-31
+统一: 小健 - 2026-05-31 — 删除check_cancelled调用
 """
 
 from typing import Any, Dict, Optional
@@ -34,20 +36,6 @@ class StepEmitter:
             recoverable=recoverable
         )
         return self.emit(error_step)
-
-    def check_interrupt(self, step_count: int, running_tasks: Optional[Dict[str, Any]] = None) -> Optional['IncidentStep']:
-        """复制自 base_react.py 第451-469行 — 检查任务是否被中断"""
-        task_id = getattr(self.agent, '_task_id', None) or getattr(self.agent, 'task_id', None)
-        if not task_id or not running_tasks:
-            return None
-        task_data = running_tasks.get(task_id, {})
-        if task_data.get("cancelled", False):
-            return IncidentStep(
-                step=step_count,
-                incident_value='interrupted',
-                message='用户取消了任务'
-            )
-        return None
 
     def complete_task(self, success: bool):
         """复制自 base_react.py 第471-479行 — Task追踪：完成任务记录"""
