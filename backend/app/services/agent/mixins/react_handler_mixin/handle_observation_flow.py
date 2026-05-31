@@ -20,7 +20,7 @@ class HandleObservationFlowMixin:
 
     async def _handle_observation_flow(
         self, outcome: _ToolStepOutcome, parsed: Dict[str, Any],
-        step_count: int, running_tasks: Optional[Dict[str, Any]],
+        step_count: int,
         task_id: Optional[str]
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """复制自 react_handler_mixin.py 第294-330行"""
@@ -53,5 +53,5 @@ class HandleObservationFlowMixin:
         pending_calls = parsed.get("_pending_calls", [])
         if pending_calls:
             logger.info(f"[ReAct] 主工具完成，继续执行 {len(pending_calls)} 个并行工具")
-        async for _pd in self._handle_pending_calls(pending_calls, step_count, running_tasks, task_id):
+        async for _pd in self._handle_pending_calls(pending_calls, step_count, task_id):
             yield _pd
