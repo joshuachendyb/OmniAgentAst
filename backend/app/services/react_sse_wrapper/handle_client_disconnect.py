@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-_handle_client_disconnect — 从 react_sse_wrapper.py 拆出
+_handle_client_disconnect — 客户端断开连接处理
 
-复制来源: react_sse_wrapper.py 第217-244行
+task操作统一在 services/task/ 层，本文件只做SSE事件生成
+
 Author: 小沈 - 2026-05-31
+统一: 小健 - 2026-05-31 — 删除cancel_task调用
 """
 
-import asyncio
-from typing import List, Dict, Optional, Any, AsyncGenerator, Callable
+from typing import List, Dict, Optional, AsyncGenerator, Callable
 
 from app.services.agent.steps import IncidentStep
 from app.utils.logger import logger
@@ -21,12 +22,8 @@ async def handle_client_disconnect(
     current_execution_steps: List[Dict],
     current_content: str,
     next_step: Callable[[], int],
-    running_tasks: Dict[str, Any],
-    running_tasks_lock: asyncio.Lock,
 ) -> AsyncGenerator[str, None]:
-    """复制自 react_sse_wrapper.py 第217-244行"""
-    async with running_tasks_lock:
-        running_tasks[task_id] = {"status": "cancelled", "cancelled": True}
+    """客户端断开连接处理 — 只生成SSE事件，不操作task"""
     incident_step = IncidentStep(
         step=next_step(),
         incident_value='interrupted',
