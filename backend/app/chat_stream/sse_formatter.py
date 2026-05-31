@@ -44,7 +44,7 @@ def format_agent_sse(event_or_step, step: int = None, model: str = '', provider:
 
     支持两种输入：
     1. Step 对象（新代码）：format_agent_sse(step_obj)
-    2. dict（chat_stream_query.py）：format_agent_sse(event_dict, step, model, provider)
+    2. dict：format_agent_sse(event_dict, step, model, provider)
 
     Args:
         event_or_step: ReasoningStep 子类实例，或 event dict

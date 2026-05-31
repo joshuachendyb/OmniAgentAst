@@ -18,7 +18,7 @@ from app.services.agent.steps import IncidentStep
 
 def create_incident_data(incident_value: str, message: str, step: Optional[int] = None) -> dict:
     """
-    创建统一的incident数据（保留给 chat_stream_query.py 使用）
+    创建统一的incident数据
     
     Args:
         incident_value: incident类型（interrupted/paused/resumed/retrying）
