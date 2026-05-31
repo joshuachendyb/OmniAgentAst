@@ -48,21 +48,6 @@ def get_tools_from_registry_by_category(category: ToolCategory) -> Dict[str, Cal
 
 
 def get_tools_from_file_registry() -> Dict[str, Callable]:
-    """
-    从tool_registry获取file工具 — 动态发现，消除硬编码列表
-    
-    【3.14修复 北京老陈 2026-05-31】改为通过ToolRegistry动态查询，
-    删除FILE_TOOL_NAMES硬编码列表，新增文件工具自动可查。
-    
-    Returns:
-        {工具名: 工具函数} 格式
-    """
-    tools_list = tool_registry.list_tools(category=ToolCategory.FILE, include_metadata=False)
-    result = {}
-    for t in tools_list:
-        name = t["name"] if isinstance(t, dict) else t
-        impl = tool_registry.get_implementation(name)
-        if impl:
-            result[name] = impl
-    return result
+    """从tool_registry获取file工具 — 委托共享函数（消除DRY 小健2026-05-31）"""
+    return get_tools_from_registry_by_category(ToolCategory.FILE)
 

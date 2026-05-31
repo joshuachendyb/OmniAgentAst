@@ -14,42 +14,52 @@
 """
 
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 from app.services.tools.tool_types import ToolCategory
 
 
 class IntentType(str, Enum):
-    """统一的意图类型枚举"""
+    """统一的意图类型枚举
+
+    ToolCategory 由 name 自动派生（IntentType.FILE → ToolCategory.FILE），
+    新增类型只需添加枚举成员。
+    新增分类只需添加一个枚举成员 —— 小健 2026-05-31
+    """
     FILE = "file"
     SYSTEM = "system"  # 包含shell, time, meta, environment, code_execution
     NETWORK = "network"
     DOCUMENT = "document"  # 包含database
     DESKTOP = "desktop"
 
+    @property
+    def category(self) -> "ToolCategory":
+        return ToolCategory[self.name]
 
-# 统一意图映射表：CRSS意图 → 统一意图类型 → ToolCategory
-INTENT_MAPPING: Dict[str, Tuple[IntentType, ToolCategory]] = {
+
+# CRSS意图 → 统一意图类型（ToolCategory 由 IntentType.category 自动派生）
+# CRSS_TYPE_KEYWORDS 由本映射驱动，新增意图只需在此加一条即可
+INTENT_MAPPING: Dict[str, IntentType] = {
     # FILE相关
-    "FILE": (IntentType.FILE, ToolCategory.FILE),
+    "FILE": IntentType.FILE,
     
     # SYSTEM相关（合并多个子类型）
-    "SHELL": (IntentType.SYSTEM, ToolCategory.SYSTEM),
-    "TIME": (IntentType.SYSTEM, ToolCategory.SYSTEM),
-    "ENV": (IntentType.SYSTEM, ToolCategory.SYSTEM),
-    "ENVIRONMENT": (IntentType.SYSTEM, ToolCategory.SYSTEM),
-    "SYSTEM": (IntentType.SYSTEM, ToolCategory.SYSTEM),
-    "CODE_EXECUTION": (IntentType.SYSTEM, ToolCategory.SYSTEM),
-    "META": (IntentType.SYSTEM, ToolCategory.SYSTEM),
+    "SHELL": IntentType.SYSTEM,
+    "TIME": IntentType.SYSTEM,
+    "ENV": IntentType.SYSTEM,
+    "ENVIRONMENT": IntentType.SYSTEM,
+    "SYSTEM": IntentType.SYSTEM,
+    "CODE_EXECUTION": IntentType.SYSTEM,
+    "META": IntentType.SYSTEM,
     
     # NETWORK相关
-    "NETWORK": (IntentType.NETWORK, ToolCategory.NETWORK),
+    "NETWORK": IntentType.NETWORK,
     
     # DOCUMENT相关
-    "DOCUMENT": (IntentType.DOCUMENT, ToolCategory.DOCUMENT),
-    "DATABASE": (IntentType.DOCUMENT, ToolCategory.DOCUMENT),
+    "DOCUMENT": IntentType.DOCUMENT,
+    "DATABASE": IntentType.DOCUMENT,
     
     # DESKTOP相关
-    "DESKTOP": (IntentType.DESKTOP, ToolCategory.DESKTOP),
+    "DESKTOP": IntentType.DESKTOP,
 }
 
 
@@ -115,23 +125,21 @@ def _map_intent_to_agent(intent_str: str) -> Tuple[IntentType, ToolCategory]:
         intent_str: 意图字符串（来自CRSS或用户输入）
         
     Returns:
-        (intent_type, tool_category) 元组
+        (intent_type, tool_category) 元组，ToolCategory由IntentType.category派生
         
     Raises:
         ValueError: 如果意图无法识别
     """
     # 首先尝试精确匹配（大写，来自CRSS）
     if intent_str.upper() in INTENT_MAPPING:
-        return INTENT_MAPPING[intent_str.upper()]
+        intent_type = INTENT_MAPPING[intent_str.upper()]
+        return (intent_type, intent_type.category)
     
     # 然后尝试别名匹配（小写，来自用户输入）
     intent_lower = intent_str.lower()
     if intent_lower in INTENT_ALIASES:
         intent_type = INTENT_ALIASES[intent_lower]
-        # 查找对应的ToolCategory
-        for crss_intent, (mapped_type, tool_cat) in INTENT_MAPPING.items():
-            if mapped_type == intent_type:
-                return (intent_type, tool_cat)
+        return (intent_type, intent_type.category)
     
     # 如果都无法匹配，默认为SYSTEM
     return (IntentType.SYSTEM, ToolCategory.SYSTEM)

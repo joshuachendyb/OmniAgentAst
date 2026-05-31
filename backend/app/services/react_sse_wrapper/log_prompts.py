@@ -24,7 +24,7 @@ async def log_prompts(
         if msg.get("role") == "user":
             user_message = msg.get("content", "")
             break
-    from app.api.v1.messages import _assistant_message_ids, _user_message_ids
+    from app.api.v1.message_id_tracker import _assistant_message_ids, _user_message_ids
     ai_message_id = _assistant_message_ids.get(session_id)
     if not ai_message_id and session_id in _user_message_ids:
         ai_message_id = _user_message_ids[session_id] + 1

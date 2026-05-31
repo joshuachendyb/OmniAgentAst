@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.utils.logger import logger
 from app.db import db
-from app.api.v1.messages import _user_message_ids, _message_ids_lock
+from app.api.v1.message_id_tracker import _user_message_ids, _message_ids_lock
 from app.api.v1.conversation.assistant_message_id_allocator import AssistantMessageIdAllocator
 from app.api.v1.conversation.ensure_session_exists import ensure_session_exists
 from app.utils.common import extract_metadata_from_steps

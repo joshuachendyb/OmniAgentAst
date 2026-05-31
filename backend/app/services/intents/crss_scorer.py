@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Tuple
 
 from app.constants import CRSS_ACTION_INFERENCE_WEIGHT, CRSS_ACTION_MODULATION_FACTOR, CRSS_DANGEROUS_COMMAND_BONUS
 from app.services.tools.tool_types import ToolCategory
+from app.services.intents.crss_definitions import ACTION_DEFINITIONS
 from app.utils.logger import setup_logger
 
 
@@ -29,11 +30,9 @@ def _ascii_word_boundary_match(keyword: str, text: str) -> bool:
     return bool(re.search(pattern, text, re.IGNORECASE))
 
 
-# 第一层：类型关键词已迁移到 intent_mapper.py 的 CRSS_TYPE_KEYWORDS
-# 使用统一的意图映射模块获取意图名称和关键词
-from app.services.intents.intent_mapper import get_crss_intent_names, CRSS_TYPE_KEYWORDS, resolve_category
-
-INTENT_NAMES = get_crss_intent_names()
+# 第一层：类型关键词由 INTENT_MAPPING 驱动，CRSS_TYPE_KEYWORDS 是可选数据
+# 新增 CRSS 意图只需在 intent_mapper.py 的 INTENT_MAPPING 加一条即可
+from app.services.intents.intent_mapper import INTENT_MAPPING, CRSS_TYPE_KEYWORDS, resolve_category
 
 
 # ====================================================================
@@ -41,71 +40,6 @@ INTENT_NAMES = get_crss_intent_names()
 # 动作命中后通过兼容系数调制类型分：最终分 = 类型分 × (1 + 兼容系数)
 # 无类型分时，用动作反推类型（兜底分）
 # ====================================================================
-
-ACTION_DEFINITIONS = {
-    "read": {
-        "keywords": ['cat', 'ls', 'type', 'dir', '读取', '查看', '列出', '打开'],
-        "compatibility": {
-            ToolCategory.FILE: 1.5,
-            ToolCategory.DOCUMENT: 1.2,
-            ToolCategory.SYSTEM: 0.8,
-            ToolCategory.NETWORK: 0.5,
-            ToolCategory.DESKTOP: 0.5,
-        }
-    },
-    "create": {
-        "keywords": ['create', 'mkdir', 'touch', '新建', '创建', '新增', '添加'],
-        "compatibility": {
-            ToolCategory.FILE: 1.5,
-            ToolCategory.DOCUMENT: 1.0,
-        }
-    },
-    "delete": {
-        "keywords": ['rm', 'del', 'delete', 'remove', '删除', '清除', '移除'],
-        "compatibility": {
-            ToolCategory.FILE: 1.5,
-            ToolCategory.DOCUMENT: 1.2,
-            ToolCategory.DESKTOP: 0.5,
-        }
-    },
-    "execute": {
-        "keywords": ['run', 'exec', 'execute', '运行', '执行', '启动', '编译'],
-        "compatibility": {
-            ToolCategory.SYSTEM: 1.5,
-        }
-    },
-    "query": {
-        "keywords": ['select', 'query', 'search', 'find', 'grep', '查询', '搜索', '查找'],
-        "compatibility": {
-            ToolCategory.DOCUMENT: 1.5,
-            ToolCategory.SYSTEM: 1.0,
-            ToolCategory.FILE: 1.0,
-        }
-    },
-    "navigate": {
-        "keywords": ['open', 'launch', 'start', '打开', '启动', '进入'],
-        "compatibility": {
-            ToolCategory.DESKTOP: 1.5,
-            ToolCategory.FILE: 1.0,
-            ToolCategory.NETWORK: 0.8,
-        }
-    },
-    "configure": {
-        "keywords": ['set', 'config', 'change', '修改', '设置', '配置', '调整'],
-        "compatibility": {
-            ToolCategory.SYSTEM: 1.2,
-            ToolCategory.DESKTOP: 1.0,
-            ToolCategory.NETWORK: 1.0,
-        }
-    },
-    "capture": {
-        "keywords": ['screenshot', 'capture', '截图', '录屏', '拍照'],
-        "compatibility": {
-            ToolCategory.DESKTOP: 1.5,
-        }
-    },
-}
-
 
 # TYPE_CATEGORY_MAP 已删除，统一使用 intent_mapper.resolve_category()
 
@@ -165,8 +99,9 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
     command_lower = command.lower().strip()
     type_raw: Dict[ToolCategory, float] = {}
 
-    # ===== 步骤1: 类型分 =====
-    for type_name, kw in CRSS_TYPE_KEYWORDS.items():
+    # ===== 步骤1: 类型分（由 INTENT_MAPPING 驱动，CRSS_TYPE_KEYWORDS 为可选数据）=====
+    for type_name in INTENT_MAPPING:
+        kw = CRSS_TYPE_KEYWORDS.get(type_name, {})
         cat = resolve_category(type_name)
         score = _match_keywords(kw.get("keywords", []), kw.get("chinese_keywords", []), command_lower)
         if score > 0:

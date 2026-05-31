@@ -13,7 +13,6 @@
 """
 
 import json
-import threading
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -27,12 +26,7 @@ from app.utils.time_utils import convert_to_utc, ensure_timestamp_milliseconds, 
 from app.utils.data_utils import parse_json
 from app.db import db
 from app.db.models.chat_models import MessageResponse
-
-# 存储每个session的消息ID
-# key: session_id, value: user_message_id 或 assistant_message_id
-_user_message_ids: dict = {}
-_assistant_message_ids: dict = {}
-_message_ids_lock = threading.Lock()
+from app.api.v1.message_id_tracker import track_user_message, get_user_message_id
 
 router = APIRouter()
 
@@ -104,9 +98,8 @@ def _try_mark_valid(cursor, session_id: str) -> None:
 
 def _track_user_message(session_id: str, message_id: str) -> None:
     """线程安全地存储user_message_id，覆盖旧值 — 小健 2026-05-25"""
-    with _message_ids_lock:
-        _user_message_ids[session_id] = message_id
-        logger.info(f"[save_message] 记录user消息ID: {message_id}, 会话: {session_id}")
+    track_user_message(session_id, message_id)
+    logger.info(f"[save_message] 记录user消息ID: {message_id}, 会话: {session_id}")
 
 
 @router.post("/sessions/{session_id}/messages")
@@ -148,8 +141,3 @@ async def save_message(session_id: str, message: MessageCreate):
         _try_mark_valid(cursor, session_id)
 
     return {"success": True, "message_id": message_id, "message_count": new_message_count}
-
-
-def get_user_message_id(session_id: str) -> Optional[int]:
-    """公共getter — 消除跨模块访问私有变量 小健2026-05-31"""
-    return _user_message_ids.get(session_id)

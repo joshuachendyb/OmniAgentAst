@@ -14,35 +14,48 @@ from enum import Enum
 class ToolCategory(Enum):
     """
     工具分类枚举
+
+    每个成员携带元数据：(value, intent_keys, order, name_cn)
+    - intent_keys: 可映射到该分类的意图名称列表
+    - order: 显示排序
+    - name_cn: 中文名称
+    INTENT_TO_CATEGORY/CATEGORY_ORDER/CATEGORY_NAMES 从此自动派生。
+    新增分类只需添加一个枚举成员 —— 小健 2026-05-31
     """
-    FILE = "file"          # 文件操作
-    SYSTEM = "system"      # 系统操作（包含shell、meta、time、environment、code_execution）
-    NETWORK = "network"    # 网络通信
-    DESKTOP = "desktop"    # 桌面功能
-    DOCUMENT = "document"  # 文档读写（包含database、data_analysis）
+    FILE = ("file", ["file"], 0, "文件操作工具")
+    SYSTEM = ("system", ["shell", "system", "time", "meta", "env", "environment", "code_execution"], 1, "系统/Shell/时间/环境工具")
+    NETWORK = ("network", ["network"], 2, "网络通信工具")
+    DESKTOP = ("desktop", ["desktop"], 3, "桌面工具")
+    DOCUMENT = ("document", ["document", "database", "data_analysis"], 4, "文档(含数据分析与数据库)工具")
+
+    def __new__(cls, value, intent_keys, order, name_cn):
+        member = object.__new__(cls)
+        member._value_ = value
+        member._intent_keys = intent_keys
+        member._order = order
+        member._name_cn = name_cn
+        return member
+
+    @property
+    def intent_keys(self) -> List[str]:
+        return self._intent_keys
+
+    @property
+    def order(self) -> int:
+        return self._order
+
+    @property
+    def name_cn(self) -> str:
+        return self._name_cn
 
 
 INTENT_TO_CATEGORY: Dict[str, ToolCategory] = {
-    "file": ToolCategory.FILE,
-    "shell": ToolCategory.SYSTEM,
-    "network": ToolCategory.NETWORK,
-    "system": ToolCategory.SYSTEM,
-    "desktop": ToolCategory.DESKTOP,
-    "document": ToolCategory.DOCUMENT,
+    k: cat for cat in ToolCategory for k in cat.intent_keys
 }
 
-CATEGORY_ORDER = [
-    ToolCategory.FILE, ToolCategory.SYSTEM, ToolCategory.NETWORK,
-    ToolCategory.DESKTOP, ToolCategory.DOCUMENT,
-]
+CATEGORY_ORDER: List[ToolCategory] = sorted(ToolCategory, key=lambda c: c.order)
 
-CATEGORY_NAMES = {
-    ToolCategory.FILE: "文件操作工具",
-    ToolCategory.SYSTEM: "系统/Shell/时间/环境工具",
-    ToolCategory.NETWORK: "网络通信工具",
-    ToolCategory.DESKTOP: "桌面工具",
-    ToolCategory.DOCUMENT: "文档(含数据分析与数据库)工具",
-}
+CATEGORY_NAMES: Dict[ToolCategory, str] = {cat: cat.name_cn for cat in ToolCategory}
 
 
 @dataclass

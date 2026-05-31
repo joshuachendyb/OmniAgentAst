@@ -10,17 +10,9 @@ from pathlib import Path
 
 class Config:
     """配置管理类"""
-    
-    _instance: Optional['Config'] = None
+
     _config_data: Optional[Dict[str, Any]] = None
     _config_mtime: Optional[float] = None  # 配置文件修改时间，用于缓存检测
-    
-    def __new__(cls):
-        """单例模式"""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._load_config()
-        return cls._instance
     
     def _load_config(self):
         """加载配置文件 - 带缓存优化（双保险）"""
@@ -61,12 +53,11 @@ class Config:
     
     def _get_config_path(self) -> Path:
         """获取配置文件路径"""
-        # 优先使用环境变量指定的路径
         env_path = os.getenv('OMNIAGENT_CONFIG_PATH')
         if env_path:
             return Path(env_path)
-        
-        # 【3.21修复 北京老陈 2026-05-31】路径统一到utils/paths.py
+
+        # 延迟导入：避免 utils/paths.py 依赖 config 导致循环导入
         from app.utils.paths import get_config_path
         return Path(get_config_path())
     
@@ -159,7 +150,7 @@ _config_instance: Optional[Config] = None
 
 def get_config() -> Config:
     """
-    获取配置实例
+    获取配置实例 — 唯一公共API
     
     Returns:
         Config: 配置管理实例
@@ -167,4 +158,5 @@ def get_config() -> Config:
     global _config_instance
     if _config_instance is None:
         _config_instance = Config()
+        _config_instance._load_config()
     return _config_instance

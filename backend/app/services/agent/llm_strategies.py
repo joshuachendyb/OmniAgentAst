@@ -363,6 +363,14 @@ class ToolsStrategy(LLMStrategy):
         _error_code, error_message = get_stream_error_info(error_type, original_message=error_msg)
         return self._make_parse_error(error_message, content=f"[错误] {error_message}")
     
+    @staticmethod
+    def _parse_tool_args(func_args: Any) -> Dict[str, Any]:
+        """解析工具参数JSON，失败时返回空dict — 消除重复 小健2026-05-31"""
+        try:
+            return json.loads(func_args) if isinstance(func_args, str) else func_args
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    
     def _format_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> str:
         """
         将 tool_calls 格式化为 Agent 可以理解的 JSON 格式
@@ -380,10 +388,7 @@ class ToolsStrategy(LLMStrategy):
             func_name = func.get("name", "")
             func_args = func.get("arguments", "{}")
             
-            try:
-                args = json.loads(func_args) if isinstance(func_args, str) else func_args
-            except (json.JSONDecodeError, TypeError):
-                args = {}
+            args = self._parse_tool_args(func_args)
             
             formatted = {
                 "thought": f"Calling tool: {func_name}",
@@ -398,10 +403,7 @@ class ToolsStrategy(LLMStrategy):
                 func_name = func.get("name", "")
                 func_args = func.get("arguments", "{}")
                 
-                try:
-                    args = json.loads(func_args) if isinstance(func_args, str) else func_args
-                except (json.JSONDecodeError, TypeError):
-                    args = {}
+                args = self._parse_tool_args(func_args)
                 
                 calls_info.append({"name": func_name, "args": args})
             

@@ -69,17 +69,21 @@ class ToolInitMixin(ToolLoaderMixin):
                 continue
         return "\n\n".join(parts) if parts else ""
 
+    def _refresh_tools_cache(self, loaded: set):
+        """刷新工具缓存 — 从took_init_mixin提取 小健2026-05-31"""
+        detail = self._get_tools_detail()
+        summary = self._get_tools_summary(exclude_categories=loaded)
+        self._cached_tools_content = f"【已加载工具（完整）】\n{detail}\n\n【其他可用工具（概要）】\n{summary}"
+        self._last_injected_categories = frozenset(loaded)
+
     def _inject_tools_hint(self, history_dicts, strategy_method):
-        """工具提示注入（含缓存） — text策略时注入工具描述，tools策略时不注入 — 小沈 2026-05-29 (从PromptBuildMixin移入)"""
+        """工具提示注入（含缓存） — text策略时注入工具描述，tools策略时不注入 — 小沈 2026-05-29"""
         if strategy_method != "tools":
             try:
                 loaded = getattr(self, '_loaded_categories', set())
                 _last = getattr(self, '_last_injected_categories', None)
                 if _last is None or loaded != _last:
-                    detail = self._get_tools_detail()
-                    summary = self._get_tools_summary(exclude_categories=loaded)
-                    self._cached_tools_content = f"【已加载工具（完整）】\n{detail}\n\n【其他可用工具（概要）】\n{summary}"
-                    self._last_injected_categories = frozenset(loaded)
+                    self._refresh_tools_cache(loaded)
                 _cached = getattr(self, '_cached_tools_content', None)
                 if _cached:
                     history_dicts = inject_tools_info(history_dicts, _cached)

@@ -1,3 +1,40 @@
+v0.14.8
+
+更新时间: 2026-05-31 17:50:00
+
+## v0.14.7→v0.14.8 变更汇总 - 小健-2026-05-31
+
+### 一、refactor 重构（36个问题修复）
+
+**第3组（P2问题21-26）**：
+| 问题 | 文件 | 说明 |
+|------|------|------|
+| #21 | messages.py → message_id_tracker.py | 提取消息ID跟踪到独立状态管理模块（SRP） |
+| #22 | tool_queries.py | get_tools_from_file_registry委托get_tools_from_registry_by_category（DRY） |
+| #23 | llm_strategies.py | 提取_parse_tool_args辅助方法（DRY） |
+| #24 | tool_meta.py | 删除空文件（YAGNI） |
+| #25 | llm_dispatch_mixin.py | 提取_fallback_to_text_mode方法（DRY） |
+| #26 | _invalidate_ai_service_cache.py | 删除空操作函数，调用方改用AIServiceFactory.reset()（YAGNI） |
+
+**第4组（P3问题27-39）**：
+| 问题 | 文件 | 说明 |
+|------|------|------|
+| #27 | registry.py | 删除未使用的get_instance类方法（YAGNI） |
+| #29 | crss_scorer.py → crss_definitions.py | 提取ACTION_DEFINITIONS到独立文件（SRP） |
+| #30 | llm_dispatch_mixin.py | 提取_init_tools_strategy懒初始化（ISP） |
+| #31 | tool_init_mixin.py | 提取_refresh_tools_cache方法（SLAP） |
+| #33 | tool_result_formatter.py | 拆分format_llm_observation为3个私有方法（SRP） |
+| #34 | main.py | 合并import到文件顶部（KISS） |
+| #35 | config.py | __new__委托get_config()统一单例（DRY） |
+| #36 | config.py | _get_config_path添加延迟导入注释（SLAP） |
+| #37 | _write_yaml_with_order.py | yaml.add_representer移至模块级（DRY） |
+| #38 | log_config/config.py | 类级别缓存_config消除重复get_config()（复用优先） |
+| #39 | record_title_history.py | 改用try/except消除全局缓存状态（SRP+YAGNI） |
+
+### 二、测试
+- pytest 13个核心测试全部通过
+- 无功能变更，纯重构/删除/提取操作
+
 v0.14.7
 
 更新时间: 2026-05-31 12:51:51

@@ -29,12 +29,18 @@ def _resolve_llm_attr(obj, attr_name: str) -> Optional[Any]:
 class LLMDispatchMixin:
     """LLM调用+策略分发职责混入类"""
 
-    def _init_llm_strategies(self):
-        """初始化LLM调用策略 - 小健 2026-05-23
+    def _fallback_to_text_mode(self, reason: str):
+        """降级到文本模式 — 消除重复 小健2026-05-31"""
+        self.detector = None
+        self.strategy_manager = None
+        self.tools_strategy = None
+        self.use_function_calling = False
+        self.openai_tools = []
+        self._strategy = "text"
+        logger.warning(f"[{self.__class__.__name__}] 降级到text模式: {reason}")
 
-        创建策略对象和detector，策略在首次LLM调用时懒确定并缓存。
-        【2026-05-27 小沈】使用CapabilityDetector替代LLMAdapter
-        """
+    def _init_llm_strategies(self):
+        """初始化LLM调用策略 — text_strategy立即初始化，tools_strategy可懒加载 小健2026-05-31"""
         self.text_strategy = TextStrategy()
 
         _cls = self.__class__.__name__
@@ -48,8 +54,6 @@ class LLMDispatchMixin:
         )
 
         try:
-            from app.services.tools.registry import tool_registry
-
             if self.llm_client and _self_api_base:
                 self.detector = CapabilityDetector(
                     api_base=_self_api_base,
@@ -57,29 +61,22 @@ class LLMDispatchMixin:
                     model=_self_model,
                 )
                 self.strategy_manager = LLMStrategyManager(self.detector)
-
-                openai_tools = tool_registry.to_openai_tools(self.tool_category)
-                self.tools_strategy = ToolsStrategy(tools=openai_tools)
-                self.use_function_calling = True
-                self.openai_tools = openai_tools
-                logger.info(f"[{_cls}] _init_llm_strategies 成功: tools={len(openai_tools)}, use_function_calling=True, 策略待首次调用确定")
+                self._init_tools_strategy()
+                logger.info(f"[{_cls}] _init_llm_strategies 成功: strategy_manager已创建, 策略待首次调用确定")
             else:
-                self.detector = None
-                self.strategy_manager = None
-                self.tools_strategy = None
-                self.use_function_calling = False
-                self.openai_tools = []
-                self._strategy = "text"
                 _reason = "llm_client is None" if not self.llm_client else "api_base为空"
-                logger.warning(f"[{_cls}] _init_llm_strategies 跳过detector({_reason}): 直接text模式")
+                self._fallback_to_text_mode(f"跳过detector({_reason}): 直接text模式")
         except Exception as e:
-            logger.warning(f"[{_cls}] LLM策略初始化失败，降级到文本模式: {e}")
-            self.detector = None
-            self.strategy_manager = None
-            self.tools_strategy = None
-            self.use_function_calling = False
-            self.openai_tools = []
-            self._strategy = "text"
+            self._fallback_to_text_mode(f"LLM策略初始化失败: {e}")
+
+    def _init_tools_strategy(self):
+        """懒初始化tools_strategy — 提取自_init_llm_strategies 小健2026-05-31"""
+        from app.services.tools.registry import tool_registry
+
+        openai_tools = tool_registry.to_openai_tools(self.tool_category)
+        self.tools_strategy = ToolsStrategy(tools=openai_tools)
+        self.use_function_calling = True
+        self.openai_tools = openai_tools
 
     # ===== LLM调用 =====
 
@@ -98,12 +95,12 @@ class LLMDispatchMixin:
         return response
 
     async def _dispatch_strategy(self, strategy_method, messages):
-        """策略分派 — 只有text和tools两种"""
+        """策略分派 — text和tools两种，tools_strategy按需初始化 小健2026-05-31"""
         _cls = self.__class__.__name__
         conv_history = self.message_builder.conversation_history
         if strategy_method == "tools":
-            if not self.tools_strategy:
-                raise RuntimeError(f"[{_cls}] strategy=tools 但 tools_strategy未初始化")
+            if not hasattr(self, 'tools_strategy') or not self.tools_strategy:
+                self._init_tools_strategy()
             if getattr(self, 'openai_tools', None):
                 self.tools_strategy.tools = self.openai_tools
             response = await self.tools_strategy.call(

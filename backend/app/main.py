@@ -5,18 +5,19 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from datetime import datetime
 import traceback
+import os
+import logging
+import asyncio
 
 from app.api.v1 import health, ai_config, sessions, messages, conversation, execution, metrics
-# chat_stream 暂时禁用，使用 chat_router 替代
+from app.api.v1.chat import router as chat_router_router, task_router
+from app.api.v1.task_queries import router as task_queries_router
 from app.utils.logger import logger
 from app.utils.monitoring import setup_monitoring
-
-# 只过滤uvicorn的访问日志，不影响应用日志
-import logging
-
 from app.constants import DEFAULT_CORS_ORIGINS
 from app.utils.version import get_version
-
+from app.services.react_sse_wrapper import cleanup_expired_tasks
+from app.db import db
 
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
@@ -31,10 +32,6 @@ app = FastAPI(
 
 logger.info("Backend v" + app_version + " started")
 
-# CORS配置 - 显式指定前端源，避免通配符与credentials冲突
-import os
-
-
 _cors_origins_str = os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS)
 _cors_origins = [origin.strip() for origin in _cors_origins_str.split(",") if origin.strip()]
 
@@ -47,6 +44,7 @@ app.add_middleware(
 )
 
 setup_monitoring(app)
+
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
@@ -61,6 +59,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         }
     )
 
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     logger.error(f"Validation Error: {exc.errors()}")
@@ -74,13 +73,12 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         }
     )
 
+
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     error_msg = str(exc)
     error_trace = traceback.format_exc()
-    
     logger.error(f"Unhandled Exception: {error_msg}\n{error_trace}")
-    
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
@@ -91,8 +89,8 @@ async def general_exception_handler(request: Request, exc: Exception):
         }
     )
 
+
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
-from app.api.v1.chat import router as chat_router_router, task_router
 app.include_router(chat_router_router, prefix="/api/v1", tags=["chat"])
 app.include_router(task_router, prefix="/api/v1", tags=["chat"])
 app.include_router(ai_config.router, prefix="/api/v1", tags=["config"])
@@ -101,26 +99,18 @@ app.include_router(messages.router, prefix="/api/v1", tags=["sessions"])
 app.include_router(conversation.router, prefix="/api/v1", tags=["conversation"])
 app.include_router(execution.router, prefix="/api/v1", tags=["execution"])
 app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
-from app.api.v1.task_queries import router as task_queries_router
 app.include_router(task_queries_router, prefix="/api/v1", tags=["task-queries"])
 
-
-# 【阶段6更新】cleanup_expired_tasks 改为从 react_sse_wrapper 导入
-import asyncio
-from app.services.react_sse_wrapper import cleanup_expired_tasks
-from app.db import db
 
 @app.on_event("startup")
 async def startup_event():
     """应用启动时注册工具 + 启动后台任务"""
-    # S0: 初始化数据库
     db.init()
-    
-    # S1: 全量注册工具（确保首次请求时可用）
+
+    # 全量注册工具（确保首次请求时可用）
     from app.services.tools import ensure_tools_registered
     ensure_tools_registered()
 
-    # S2: 启动后台清理任务
     async def cleanup_task():
         """定期清理过期任务"""
         while True:
@@ -128,9 +118,8 @@ async def startup_event():
                 await cleanup_expired_tasks()
             except Exception as e:
                 logger.error(f"清理过期任务失败: {e}")
-            await asyncio.sleep(3600)  # 每小时执行一次
-    
-    # 启动后台任务
+            await asyncio.sleep(3600)
+
     asyncio.create_task(cleanup_task())
     logger.info("后台清理任务已启动")
 
@@ -138,11 +127,9 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """应用关闭时清理资源"""
-    # 清理 LLM 客户端
     from app.services.factory import AIServiceFactory
     await AIServiceFactory.reset()
-    
-    # 清理后台shell进程
+
     from app.services.tools.shell.shell_tools import cleanup_background_shells
     count = cleanup_background_shells()
     logger.info(f"已清理 {count} 个后台shell进程")

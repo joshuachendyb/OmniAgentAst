@@ -194,11 +194,6 @@ class ToolRegistry:
         """返回分类→工具名列表映射（copy防外部修改）— 小沈 2026-05-25"""
         return {k: list(v) for k, v in self._categories.items()}
 
-    @classmethod
-    def get_instance(cls) -> "ToolRegistry":
-        """获取全局工具注册表单例实例"""
-        return tool_registry
-
 
 # 全局工具注册表实例
 tool_registry = ToolRegistry()
