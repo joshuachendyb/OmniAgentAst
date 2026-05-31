@@ -247,6 +247,16 @@ class RetryEngine:
         """最大重试次数"""
         return self._max_retries
 
+    @property
+    def exhausted(self) -> bool:
+        """重试是否已耗尽（必须用 >=）"""
+        return self._attempt_count >= self._max_retries
+
+    @property
+    def current_delay(self) -> float:
+        """当前退避延迟（在 record_attempt() 之前调用）"""
+        return self._calculate_delay(self._attempt_count + 1)
+
     def record_attempt(self) -> int:
         """手动记录一次重试尝试（用于非execute模式的重试场景，如空响应截断重试）"""
         self._attempt_count += 1
