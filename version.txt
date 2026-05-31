@@ -1,3 +1,41 @@
+v0.14.7
+
+更新时间: 2026-05-31 12:51:51
+
+## v0.14.6→v0.14.7 变更汇总 - 小欧-2026-05-31
+
+### 一、feat 新功能（6个commit）
+
+| commit | 说明 |
+|--------|------|
+| 2f80ea1e | chat_router.py 改用 generate_sse_stream_with_retry |
+| 61545d9b | react_sse_wrapper.py 新增 generate_sse_stream_with_retry |
+| 3defb999 | BaseAgent + ReActHandlerMixin 改用 create_agent_retry_engine |
+| b77a93e8 | BaseAIService + _StreamRetryContext 改用 create_network_retry_engine |
+| 05c2e27f | retry/目录 — 3个工厂函数各一个文件，调用点唯一 |
+| a37332fa | retry_engine.py 新增 exhausted + current_delay 属性 |
+
+### 二、docs 文档（5个commit）
+
+| commit | 说明 |
+|--------|------|
+| 5837b125 | 新增重试机制统一设计方案文档(v2.2) |
+| b333f7a0 | 更新Agent与LLM模式关系分析文档 |
+| a0dc4897 | 更新关键流程和功能分散分析报告(基于v0.14.6) |
+| ee5baba6 | 更新Agent与LLM的模式关系分析文档(v1.8)+关键流程分析+函数长度分析 |
+| e12e8a45 | 更新Agent架构重构设计说明文档(v0.13.32→v0.13.33)+新增关键流程分析文档 |
+
+### 三、fix 修复（1个commit）
+
+| commit | 说明 |
+|--------|------|
+| 9ad9f602 | 删除chat_stream_query.py及关联死代码 |
+
+### 变更说明
+统一3层重试机制：retry/目录3个工厂函数各一个文件，每个文件一个调用点，全部委托RetryEngine统一管理。同时更新多个架构分析文档。
+
+---
+
 v0.14.6
 
 更新时间: 2026-05-31 09:58:11
