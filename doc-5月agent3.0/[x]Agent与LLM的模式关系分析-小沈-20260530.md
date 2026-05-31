@@ -1,9 +1,9 @@
-# Agent与LLM的模式关系分析
+# Agent与LLM的架构层次分析
 
 **创建时间**: 2026-05-30 12:41:51  
 **编写人**: 小沈  
-**版本**: v1.0  
-**关联问题**: 2.22+2.29 重试机制收敛（从重试视角分析Agent与LLM的4种交互模式）
+**版本**: v2.1  
+**关联问题**: 2.22+2.29 重试机制收敛（从重试视角分析Agent与LLM的交互模式）
 
 ---
 
@@ -11,290 +11,15 @@
 
 | 版本 | 时间 | 签名 | 更新内容 |
 |------|------|------|---------|
-| v1.0 | 2026-05-30 12:41:51 | 小沈 | 初始版本，从重试视角分析Agent与LLM的4种交互模式 |
-| v1.1 | 2026-05-30 12:55:55 | 小沈 | 修正内部标题与文件名一致 |
-| **v1.2** | **2026-05-30 13:10:00** | **小沈** | **重构全文：从"重试机制分析"改为"Agent与LLM的模式关系分析"，新增决策流，原重试内容降级为附录** |
-| **v1.3** | **2026-05-31 10:20:22** | **小欧** | **3轮代码对照分析，修正6处文档与代码不一致：stream()→chat_stream()、run()→run_stream()、调用路径、重试机制描述** |
-| **v1.4** | **2026-05-31 10:28:42** | **小欧** | **3次复查确认，修正架构图和调用关系图，确保准确反映代码实际结构** |
-| **v1.5** | **2026-05-31 10:35:00** | **小欧** | **重新定义模式名称：4种模式→3个入口+1个底层方法，准确描述调用关系** |
-| **v1.6** | **2026-05-31 10:53:40** | **小欧** | **发现架构缺陷：层次边界不清晰，每个模块都跨越多个层次，职责重叠** |
-| **v1.7** | **2026-05-31 10:57:56** | **小欧** | **完整架构分析：正确架构层次模型+每个层次定义+当前代码问题+改进措施** |
-| **v1.8** | **2026-05-31 10:59:18** | **小欧** | **补充当前架构精准描述+层次混乱图示+问题对照表** |
+| v1.8 | 2026-05-31 10:59:18 | 小欧 | 补充当前架构精准描述+层次混乱图示+问题对照表 |
+| **v2.0** | **2026-05-31 11:07:35** | **小欧** | **重新组织文档结构：按正确架构→当前架构→问题分析→改进措施的逻辑顺序** |
+| **v2.1** | **2026-05-31 15:10:00** | **小健** | **深度审查修正：替换已删除文件引用为当前代码，新增3个遗漏问题，发现RetryCounter死代码，更新重试机制分析** |
 
 ---
 
-## 一、Agent与LLM的3个入口+1个底层方法
+## 一、正确的架构层次模型
 
-### 1.1 调用结构总览
-
-| 类型 | 函数 | 所属层 | 功能 | 说明 |
-|------|------|--------|------|------|
-| **入口1：非流式聚合** | `BaseAIService.chat()` | LLM服务层 | 发送完整请求，等待完整响应 | 内部调用chat_stream()聚合 |
-| **入口2：SSE流式处理** | `chat_stream_query()` | 聊天流层 | 处理流式SSE事件，构建消息 | 调用chat_stream()获取流 |
-| **入口3：Agent ReAct循环** | `BaseAgent.run()` | Agent层 | 思考→行动→观察循环 | 最终调用chat_stream() |
-| **底层方法：流式调用** | `BaseAIService.chat_stream()` | LLM服务层 | 发送请求，逐块接收响应 | 被入口1、2、3调用 |
-
-> **核心关系**：3个入口最终都汇聚到底层方法 `chat_stream()`，它才是真正调用LLM API的地方。
-
-### 1.2 架构分层与调用关系
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        用户请求入口                              │
-│                                                                 │
-│   入口1              入口2                入口3                  │
-│   chat()       chat_stream_query()    BaseAgent.run()           │
-│   (非流式)         (SSE流式)           (Agent层)                │
-└───────────────┬───────────────┬───────────────┬─────────────────┘
-                │               │               │
-                │               │               │
-                ▼               ▼               ▼
-        ┌───────────────────────────────────────────┐
-        │     底层方法：BaseAIService.chat_stream()  │
-        │     (真正调用LLM API的地方)                │
-        └─────────────────────┬─────────────────────┘
-                              │
-                              │ _stream_with_retry()
-                              ▼
-        ┌───────────────────────────────────────────┐
-        │     LLM API (OpenAI兼容格式)              │
-        └───────────────────────────────────────────┘
-```
-
-**调用关系说明**：
-1. **入口1** `BaseAIService.chat()` → 内部调用 `chat_stream()` 聚合流式响应 → 返回ChatResponse
-2. **入口2** `chat_stream_query()` → 调用 `chat_stream()` 获取SSE流 → 构建事件yield给前端
-3. **入口3** `BaseAgent.run()` → `run_stream()` → `_call_llm()` → strategy → `chat_stream()`
-4. **底层方法** `BaseAIService.chat_stream()` → `_stream_with_retry()` → LLM API
-
----
-
-## 二、4种模式的详细分析
-
-### 2.1 模式1：非流式交互（BaseAIService.chat()）
-
-**路径**：`BaseAIService.chat()` → `chat_stream()` → `_stream_with_retry()` → LLM API
-
-**特点**：
-- 同步等待完整响应（内部通过流式聚合实现）
-- 适合不需要实时反馈的场景
-- 重试由 `_stream_with_retry` → `_StreamRetryContext` → `RetryEngine` 处理
-
-**代码路径**：`llm_core.py` → 调用chat_stream()聚合流式响应 → 返回ChatResponse
-
-### 2.2 模式2：流式交互（BaseAIService.chat_stream()）
-
-**路径**：`BaseAIService.chat_stream()` → `_stream_with_retry()` → `_StreamRetryContext` → LLM API
-
-**特点**：
-- 异步逐块接收响应（打字机效果）
-- 适合实时对话场景
-- 重试由 `_StreamRetryContext` → `RetryEngine.execute_async_context()` 处理（429状态码）
-
-**代码路径**：`llm_core.py` → 建立流式连接 → 逐块yield StreamChunk → 关闭连接
-
-### 2.3 模式3：SSE流式处理（chat_stream_query()）
-
-**路径**：`chat_stream_query()` → `BaseAIService.chat_stream()` → LLM API
-
-**特点**：
-- 在流式交互之上封装SSE事件处理
-- 构建消息结构，供前端消费
-- 重试由 `RetryCounter`（计数器+状态判断）处理，触发条件：idle_timeout/network_error
-
-**代码路径**：`chat_stream_query.py` → 调用chat_stream()获取流 → 构建SSE事件yield → 异常时重试
-
-### 2.4 模式4：ReAct循环（BaseAgent.run() / BaseAgent.run_stream()）
-
-**非流式入口**：`BaseAgent.run()`（`universal_react.py:128`）→ 内部调用 `run_stream()`
-
-**核心循环**：`BaseAgent.run_stream()`（`base_react.py:277`）→ 循环：`_get_llm_response()` → `_call_llm()` → parse → execute tool → observe → continue/exit
-
-**特点**：
-- `run()` 是非流式入口，返回 `AgentResult`
-- `run_stream()` 是核心ReAct循环，yield事件流
-- 支持并行工具、回滚、chunk流式输出
-- 重试由 `RetryEngine`（空响应重试+解析重试）处理
-
-**代码路径**：`universal_react.py` → `base_react.py` → `llm_dispatch_mixin.py` → parse → execute tool → observe → loop/exit
-
----
-
-## 三、4种模式的关系
-
-### 3.1 4种模式分别是什么？
-
-| 模式 | 函数 | 所属层 | 功能 | 说明 |
-|------|------|--------|------|------|
-| **模式1：非流式交互** | `BaseAIService.chat()` | LLM服务层 | 非流式调用 | 发送完整请求，等待完整响应 |
-| **模式2：流式交互** | `BaseAIService.chat_stream()` | LLM服务层 | 流式调用 | 发送请求，逐块接收响应 |
-| **模式3：SSE流式处理** | `chat_stream_query()` | 聊天流层 | 流式SSE主循环 | 处理流式SSE事件 |
-| **模式4：ReAct循环** | `BaseAgent.run_stream()` | Agent层 | ReAct循环 | Agent执行任务的主循环 |
-
-### 3.2 4种模式的完整调用流程
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                              用户请求                                    │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┴───────────────┐
-                    │                               │
-                    ▼                               ▼
-        ┌───────────────────┐           ┌───────────────────────┐
-        │  聊天流层入口      │           │  Agent层入口          │
-        │  chat_stream_query│           │  BaseAgent.run()      │
-        └─────────┬─────────┘           └───────────┬───────────┘
-                  │                                 │
-                  │ 调用                            │ 调用
-                  ▼                                 ▼
-        ┌───────────────────┐           ┌───────────────────────┐
-        │  LLM服务层        │           │  Agent核心循环        │
-        │  BaseAIService    │           │  run_stream()         │
-        │  .chat_stream()   │           │  → _call_llm()       │
-        └─────────┬─────────┘           │  → strategy.call()   │
-                  │                     └───────────┬───────────┘
-                  │                                 │
-                  └───────────────┬─────────────────┘
-                                  │
-                                  ▼
-                    ┌───────────────────────────┐
-                    │  LLM API 请求             │
-                    │  _stream_with_retry()     │
-                    │  → _StreamRetryContext     │
-                    └───────────────────────────┘
-```
-
-**各模式调用路径**：
-
-| 模式 | 入口函数 | 调用链 | 最终调用 |
-|------|---------|--------|---------|
-| **模式1** | `BaseAIService.chat()` | `chat()` → `chat_stream()` → `_stream_with_retry()` | LLM API |
-| **模式2** | `BaseAIService.chat_stream()` | `chat_stream()` → `_stream_with_retry()` | LLM API |
-| **模式3** | `chat_stream_query()` | `chat_stream_query()` → `chat_stream()` → `_stream_with_retry()` | LLM API |
-| **模式4** | `BaseAgent.run()` | `run()` → `run_stream()` → `_call_llm()` → `strategy.call()` → `chat_stream()` | LLM API |
-
-### 3.3 4种模式是4个分支还是4个阶段？
-
-**答案：是4个不同的使用场景/分支，不是流程的4个阶段。**
-
-| 模式 | 函数 | 说明 |
-|------|------|------|
-| **模式1：非流式交互** | `BaseAIService.chat()` | 用户发送消息，等待完整响应 |
-| **模式2：流式交互** | `BaseAIService.chat_stream()` | 用户发送消息，逐块接收响应 |
-| **模式3：SSE流式处理** | `chat_stream_query()` | 处理流式SSE事件 |
-| **模式4：ReAct循环** | `BaseAgent.run_stream()` | Agent执行任务的主循环 |
-
-### 3.4 4种模式的调用关系图
-
-```
-用户请求
-    │
-    ├── 模式1：非流式交互（BaseAIService.chat()）
-    │       │
-    │       └── BaseAIService.chat()
-    │               │
-    │               └── 内部调用 chat_stream() 聚合流式响应
-    │                       │
-    │                       └── _stream_with_retry() → LLM API
-    │
-    ├── 模式2：流式交互（BaseAIService.chat_stream()）
-    │       │
-    │       └── BaseAIService.chat_stream()
-    │               │
-    │               └── _stream_with_retry() → LLM API
-    │
-    ├── 模式3：SSE流式处理（chat_stream_query()）
-    │       │
-    │       └── chat_stream_query()
-    │               │
-    │               ├── 调用 BaseAIService.chat_stream() 获取流
-    │               ├── 构建SSE事件yield给前端
-    │               └── 异常时 RetryCounter 重试
-    │
-    └── 模式4：ReAct循环（BaseAgent.run() → run_stream()）
-            │
-            └── BaseAgent.run()
-                    │
-                    └── run_stream() (核心ReAct循环)
-                            │
-                            ├── _get_llm_response() → _call_llm()
-                            │       │
-                            │       └── strategy.call() → chat_stream()
-                            │
-                            ├── parse_react_response()
-                            ├── execute_tool()
-                            └── loop/exit
-```
-
-### 3.5 4种模式的区别
-
-| 维度 | chat() | chat_stream() | chat_stream_query() | BaseAgent.run_stream() |
-|------|--------|---------------|---------------------|------------------------|
-| **所属层** | LLM服务层 | LLM服务层 | 聊天流层 | Agent层 |
-| **调用方式** | 同步等待 | 异步流式 | 异步流式 | 异步循环 |
-| **响应类型** | 完整响应 | 流式响应 | SSE事件 | Agent执行结果 |
-| **典型场景** | 简单问答 | 实时对话 | 流式展示 | 任务执行 |
-
----
-
-## 四、模式选择决策流
-
-```
-用户请求
-    │
-    ├── 是否走Agent流程？
-    │   ├── 是 → 模式4：BaseAgent.run()
-    │   │         └── run_stream() → _call_llm() → strategy
-    │   │                                        │
-    │   │                                        └── 调用 模式2：chat_stream()
-    │   │
-    │   └── 否 → 是否需要流式？
-    │           ├── 是 → 模式3：chat_stream_query()
-    │           │         └── 调用 模式2：chat_stream() → 构建SSE事件
-    │           │
-    │           └── 否 → 模式1：chat()
-    │                     └── 内部调用 模式2：chat_stream() 聚合
-    │
-    ▼
-返回结果
-```
-
-**模式2（chat_stream()）的角色**：是LLM服务层的流式方法，是模式1、3、4的底层依赖，不直接暴露给用户请求入口。
-
-**决策点**：
-1. **是否走Agent** → 由`intent_classifier`判断（复杂任务走Agent，简单问答直接chat）
-2. **是否流式** → 由前端请求参数决定（`stream=true/false`）
-3. **chat_stream_query vs chat_stream** → `chat_stream_query`是`chat_stream`的上层封装，加了一层SSE事件构建
-
----
-
-## 五、附：从重试视角看这4种模式
-
-> 本节是对[重试机制详细分析]文档核心内容的摘要，仅保留与模式关系相关的重试信息。
-
-### 5.1 各模式的重试机制
-
-| 模式 | 重试机制 | 文件 | 触发条件 |
-|------|---------|------|---------|
-| **模式1：chat()** | `_stream_with_retry` → `_StreamRetryContext` → RetryEngine | `llm_core.py:181` | 429状态码 |
-| **模式2：chat_stream()** | `_stream_with_retry` → `_StreamRetryContext` → RetryEngine.execute_async_context() | `llm_core.py:181` | 429状态码 |
-| **模式3：chat_stream_query()** | RetryCounter（计数器+状态判断） | `chat_stream_query.py:160` | idle_timeout/network_error |
-| **模式4：BaseAgent.run_stream()** | `_empty_response_retry_engine` + `_parse_retry_engine`（双引擎） | `base_react.py:120-123` | empty_response/parse_error |
-
-### 5.2 重试与模式的关系
-
-- **4种模式 = 4个不同的重试场景**，不是流程的4个阶段
-- 每种模式有自己独立的触发条件和重试策略
-- 模式1和模式2共享`_StreamRetryContext`重试机制（429限流）
-- 模式3使用`RetryCounter`处理超时和网络错误
-- 模式4使用双引擎：`_empty_response_retry_engine`（空响应）+ `_parse_retry_engine`（解析错误）
-
----
-
-## 六、架构分析（v1.7）
-
-### 6.1 正确的架构层次模型
+### 1.1 三层架构总览
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -303,11 +28,11 @@
 │  职责：接收用户请求，转发到下一层，返回最终结果                      │
 │  边界：只做请求转发和响应封装，不做任何业务逻辑                      │
 │                                                                 │
-│  ┌─────────────┐  ┌─────────────────┐  ┌──────────────────┐    │
-│  │ chat()      │  │ chat_stream_    │  │ BaseAgent.run()  │    │
-│  │ (非流式)    │  │ query()         │  │ (Agent层)        │    │
-│  └─────────────┘  │ (SSE流式)       │  └──────────────────┘    │
-│                   └─────────────────┘                           │
+│  ┌─────────────┐  ┌────────────────────┐  ┌──────────────────┐  │
+│  │ chat()      │  │ generate_sse_      │  │ BaseAgent.run()  │  │
+│  │ (非流式)    │  │ stream()           │  │ (Agent层)        │  │
+│  └─────────────┘  │ (SSE流式)          │  └──────────────────┘  │
+│                   └────────────────────┘                        │
 └─────────────────────────────┬───────────────────────────────────┘
                               │ 接口调用
                               ▼
@@ -342,7 +67,7 @@
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 6.2 每个层次的逻辑功能、边界、相互关系
+### 1.2 每个层次的逻辑功能、边界、相互关系
 
 #### 第1层：用户入口层
 
@@ -355,7 +80,7 @@
 
 **具体职责**：
 - `chat()`：接收用户消息，调用业务编排层，返回ChatResponse
-- `chat_stream_query()`：接收用户消息，调用业务编排层，返回SSE事件流
+- `generate_sse_stream()`：接收用户消息，调用业务编排层，返回SSE事件流
 - `BaseAgent.run()`：接收用户任务，调用业务编排层，返回AgentResult
 
 #### 第2层：业务编排层
@@ -388,63 +113,136 @@
 - 解析响应：解析SSE流式响应或JSON响应
 - 处理重试：429限流重试、超时重试
 
-### 6.3 当前代码的架构（精准描述）
-
-#### 6.3.1 当前架构图
+### 1.3 正确架构下的调用流程
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        当前代码的实际结构                             │
-│                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │  BaseAIService (llm_core.py:64)                              │  │
-│  │                                                               │  │
-│  │  ┌─────────────────────┐    ┌─────────────────────────────┐  │  │
-│  │  │ chat()              │    │ chat_stream()               │  │  │
-│  │  │ (第1层：用户入口)    │    │ (第3层：LLM服务)            │  │  │
-│  │  │ llm_core.py:219     │    │ llm_core.py:265            │  │  │
-│  │  └─────────────────────┘    └─────────────────────────────┘  │  │
-│  │                                                               │  │
-│  │  ┌─────────────────────┐    ┌─────────────────────────────┐  │  │
-│  │  │ chat_with_tools()   │    │ chat_with_tools_stream()    │  │  │
-│  │  │ (第1层：用户入口)    │    │ (第3层：LLM服务)            │  │  │
-│  │  │ llm_core.py:327     │    │ llm_core.py:390            │  │  │
-│  │  └─────────────────────┘    └─────────────────────────────┘  │  │
-│  └───────────────────────────────────────────────────────────────┘  │
-│                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │  chat_stream_query (chat_stream_query.py:388)                │  │
-│  │                                                               │  │
-│  │  ┌─────────────────────┐    ┌─────────────────────────────┐  │  │
-│  │  │ chat_stream_query() │    │ _execute_retry_loop()       │  │  │
-│  │  │ (第1层：用户入口)    │    │ (第2层：业务编排)            │  │  │
-│  │  │ chat_stream_        │    │ chat_stream_query.py:172    │  │  │
-│  │  │ query.py:388        │    │                             │  │  │
-│  │  └─────────────────────┘    └─────────────────────────────┘  │  │
-│  └───────────────────────────────────────────────────────────────┘  │
-│                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │  BaseAgent (base_react.py:53)                                │  │
-│  │                                                               │  │
-│  │  ┌─────────────────────┐    ┌─────────────────────────────┐  │  │
-│  │  │ run()               │    │ run_stream()                │  │  │
-│  │  │ (第1层：用户入口)    │    │ (第2层：业务编排)            │  │  │
-│  │  │ universal_react.py  │    │ base_react.py:277          │  │  │
-│  │  │ :128                │    │                             │  │  │
-│  │  └─────────────────────┘    └─────────────────────────────┘  │  │
-│  └───────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────┘
+用户请求
+    │
+    ├── 是否走Agent流程？
+    │   ├── 是 → 第1层：BaseAgent.run()
+    │   │         → 第2层：run_stream() → _call_llm() → strategy
+    │   │                              → 第3层：chat_stream()
+    │   │
+    │   └── 否 → 是否需要流式？
+    │           ├── 是 → 第1层：generate_sse_stream()
+    │           │         → 第2层：_run_sse_stream()
+    │           │         → 第3层：chat_stream()
+    │           │
+    │           └── 否 → 第1层：chat()
+    │                     → 第3层：chat_stream() 聚合
+    │
+    ▼
+返回结果
 ```
 
-#### 6.3.2 当前架构的问题对照表
+### 1.4 正确架构下的调用关系图
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    第1层：用户入口层                              │
+│                                                                 │
+│   chat()          generate_sse_stream()    BaseAgent.run()      │
+│   (非流式)            (SSE流式)              (Agent层)          │
+└───────────────┬───────────────┬───────────────┬─────────────────┘
+                │               │               │
+                │ 接口调用       │ 接口调用       │ 接口调用
+                ▼               ▼               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    第2层：业务编排层                              │
+│                                                                 │
+│   _run_sse_stream()       run_stream()    _call_llm()          │
+│   (SSE事件构建)            (ReAct循环)     (LLM调用编排)        │
+└───────────────┬───────────────┬───────────────┬─────────────────┘
+                │               │               │
+                │ 接口调用       │ 接口调用       │ 接口调用
+                ▼               ▼               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    第3层：LLM服务层                              │
+│                                                                 │
+│   chat_stream()          chat_with_tools_stream()               │
+│   (流式调用)              (带工具流式调用)                        │
+└─────────────────────────────┬───────────────────────────────────┘
+                              │ HTTP请求
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    LLM API (OpenAI兼容格式)                      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 1.5 各模式调用路径
+
+| 模式 | 入口函数 | 调用链 | 最终调用 |
+|------|---------|--------|---------|
+| **非流式** | `BaseAIService.chat()` | 第1层 → 第3层：`chat()` → `chat_stream()` → `_stream_with_retry()` | LLM API |
+| **SSE流式** | `generate_sse_stream()` | 第1层 → 第2层 → 第3层：`generate_sse_stream()` → `_run_sse_stream()` → `chat_stream()` | LLM API |
+| **Agent** | `BaseAgent.run()` | 第1层 → 第2层 → 第3层：`run()` → `run_stream()` → `_call_llm()` → `chat_stream()` | LLM API |
+
+---
+
+## 二、当前代码的架构（精准描述）
+
+### 2.1 当前架构图
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        当前代码的实际结构                                 │
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  BaseAIService (llm_core.py:64)                                  │  │
+│  │                                                                   │  │
+│  │  ┌─────────────────────┐    ┌─────────────────────────────┐      │  │
+│  │  │ chat()              │    │ chat_stream()               │      │  │
+│  │  │ (第1层：用户入口)    │    │ (第3层：LLM服务)            │      │  │
+│  │  │ llm_core.py:219     │    │ llm_core.py:265            │      │  │
+│  │  └─────────────────────┘    └─────────────────────────────┘      │  │
+│  │                                                                   │  │
+│  │  ┌─────────────────────┐    ┌─────────────────────────────┐      │  │
+│  │  │ chat_with_tools()   │    │ chat_with_tools_stream()    │      │  │
+│  │  │ (第1层：用户入口)    │    │ (第3层：LLM服务)            │      │  │
+│  │  │ llm_core.py:327     │    │ llm_core.py:390            │      │  │
+│  │  └─────────────────────┘    └─────────────────────────────┘      │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  ChatRouter (chat_router.py:230)                                 │  │
+│  │  + generate_sse_stream (react_sse_wrapper.py:406)               │  │
+│  │                                                                   │  │
+│  │  ┌─────────────────────┐    ┌─────────────────────────────┐      │  │
+│  │  │ route()             │    │ _step_start()              │      │  │
+│  │  │ (第1层：用户入口)    │    │ _step_react_loop()         │      │  │
+│  │  │ chat_router.py:279  │    │ (第1层+第2层混杂)           │      │  │
+│  │  └─────────────────────┘    └─────────────────────────────┘      │  │
+│  │                                                                   │  │
+│  │  ┌─────────────────────┐    ┌─────────────────────────────┐      │  │
+│  │  │ generate_sse_stream │    │ _run_sse_stream()           │      │  │
+│  │  │ (第1层：SSE入口)     │    │ (第2层：业务编排)            │      │  │
+│  │  │ react_sse_          │    │ react_sse_wrapper.py:234   │      │  │
+│  │  │ wrapper.py:406      │    │                             │      │  │
+│  │  └─────────────────────┘    └─────────────────────────────┘      │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  BaseAgent (base_react.py:53)                                    │  │
+│  │                                                                   │  │
+│  │  ┌─────────────────────┐    ┌─────────────────────────────┐      │  │
+│  │  │ run()               │    │ run_stream()                │      │  │
+│  │  │ (第1层：用户入口)    │    │ (第2层：业务编排)            │      │  │
+│  │  │ universal_react.py  │    │ base_react.py:277          │      │  │
+│  │  │ :128                │    │                             │      │  │
+│  │  └─────────────────────┘    └─────────────────────────────┘      │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 2.2 当前架构的问题对照表
 
 | 层级 | 正确的模块 | 当前实际模块 | 问题 |
 |------|-----------|-------------|------|
-| **第1层：用户入口层** | 独立的用户入口模块 | `BaseAIService.chat()` + `chat_stream_query()` + `BaseAgent.run()` | 每个入口都混在其他层次的模块中 |
-| **第2层：业务编排层** | 独立的业务编排模块 | `chat_stream_query._execute_retry_loop()` + `BaseAgent.run_stream()` | 业务编排逻辑混在用户入口模块中 |
+| **第1层：用户入口层** | 独立的用户入口模块 | `BaseAIService.chat()` + `ChatRouter.route()` + `BaseAgent.run()` | 每个入口都混在其他层次的模块中 |
+| **第2层：业务编排层** | 独立的业务编排模块 | `ChatRouter._step_*()` + `react_sse_wrapper._run_sse_stream()` + `BaseAgent.run_stream()` | 业务编排逻辑混在用户入口模块中 |
 | **第3层：LLM服务层** | 独立的LLM服务模块 | `BaseAIService.chat_stream()` | LLM服务混在用户入口模块中 |
 
-#### 6.3.3 层次混乱图示
+### 2.3 层次混乱图示
 
 ```
 当前代码的层次混乱：
@@ -455,10 +253,14 @@ BaseAIService (llm_core.py)
 ├── chat_with_tools()         ← 第1层：用户入口 ❌ 混在第3层模块中
 └── chat_with_tools_stream()  ← 第3层：LLM服务 ✅ 正确位置
 
-chat_stream_query (chat_stream_query.py)
-├── chat_stream_query()       ← 第1层：用户入口 ❌ 混在第2层模块中
-├── _execute_retry_loop()     ← 第2层：业务编排 ✅ 正确位置
-└── _init_retry_state()       ← 第2层：业务编排 ✅ 正确位置
+ChatRouter (chat_router.py) + generate_sse_stream (react_sse_wrapper.py)
+├── route()                   ← 第1层：用户入口 ❌ 混在第2层模块附近
+├── _step_start()             ← 第2层：业务编排 ✅ 正确位置
+├── _step_react_loop()        ← 第2层：业务编排 ✅ 正确位置
+├── generate_sse_stream()     ← 第1层+第2层 ❌ 入口+编排混杂
+├── _run_sse_stream()         ← 第2层：业务编排 ✅ 正确位置
+├── _log_prompts()            ← 第2层：业务编排 ✅ 正确位置
+└── _handle_*()               ← 第2层：业务编排 ✅ 正确位置
 
 BaseAgent (base_react.py)
 ├── run()                     ← 第1层：用户入口 ❌ 混在第2层模块中
@@ -467,7 +269,66 @@ BaseAgent (base_react.py)
 └── _handle_*()               ← 第2层：业务编排 ✅ 正确位置
 ```
 
-#### 问题1：BaseAIService类跨越两个层次
+### 2.4 当前架构的调用流程
+
+```
+用户请求
+    │
+    ├── BaseAIService.chat()
+    │       │
+    │       └── 内部调用 chat_stream() 聚合流式响应
+    │               │
+    │               └── _stream_with_retry() → LLM API
+    │
+    ├── chat_stream_v2 (FastAPI端点 @ chat_router.py:170)
+    │       │
+    │       └── ChatRouter.route() (chat_router.py:279)
+    │               │
+    │               ├── _detect_intent()  ← 意图检测
+    │               ├── _init_route_context()  ← 初始化
+    │               ├── _step_start()  ← start步骤SSE
+    │               └── _step_react_loop()  ← ReAct循环
+    │                       │
+    │                       └── generate_sse_stream() (react_sse_wrapper.py:406)
+    │                               │
+    │                               ├── _run_sse_stream() (react_sse_wrapper.py:234)
+    │                               │       │
+    │                               │       ├── AgentFactory.create() → Agent
+    │                               │       └── agent.run_stream() → BaseAgent
+    │                               │               │
+    │                               │               └── _get_llm_response() → _call_llm()
+    │                               │                       │
+    │                               │                       └── strategy.call()
+    │                               │                               │
+    │                               │                               └── ai_service.chat_stream()
+    │                               │                                       │
+    │                               │                                       └── _stream_with_retry() → LLM API
+    │                               │
+    │                               └── SSE事件yield给前端
+    │
+    └── BaseAgent.run()
+            │
+            └── _run_with_task_tracking()
+                    │
+                    └── 遍历 run_stream() 聚合结果
+```
+
+---
+
+## 三、当前架构的问题分析
+
+### 3.1 问题清单
+
+| 问题编号 | 问题描述 | 涉及模块 | 风险等级 |
+|---------|---------|---------|---------|
+| **问题1** | BaseAIService类跨越第1层和第3层 | llm_core.py | P1-高 |
+| **问题2** | generate_sse_stream函数跨越第1层和第2层 | react_sse_wrapper.py | P1-高 |
+| **问题3** | BaseAgent类跨越第1层和第2层 | universal_react.py + base_react.py | P1-高 |
+| **问题4** | ChatRouter类内部入口与编排混杂 | chat_router.py | P2-中 |
+| **问题5** | 层与层之间没有清晰的接口边界 | 全局 | P2-中 |
+| **问题6** | 重试机制仍分散3套，且SSE路径无重试保护 | 多文件 | P2-中 |
+
+### 3.2 问题1：BaseAIService类跨越两个层次
 
 | 维度 | 说明 |
 |------|------|
@@ -480,15 +341,16 @@ BaseAgent (base_react.py)
 - `chat()` 方法（llm_core.py:219）是用户入口，接收用户消息，返回ChatResponse
 - `chat_stream()` 方法（llm_core.py:265）是LLM服务层，真正调用LLM API
 - 两个方法在同一个类中，职责边界不清晰
+- 同样 `chat_with_tools()`（第1层）和 `chat_with_tools_stream()`（第3层）也存在同样问题
 
 **改进措施**：
 ```
 当前结构：
 BaseAIService (llm_core.py)
-├── chat()          ← 第1层：用户入口
-├── chat_stream()   ← 第3层：LLM服务
-├── chat_with_tools()    ← 第1层：用户入口
-└── chat_with_tools_stream() ← 第3层：LLM服务
+├── chat()                    ← 第1层：用户入口
+├── chat_stream()             ← 第3层：LLM服务
+├── chat_with_tools()         ← 第1层：用户入口
+└── chat_with_tools_stream()  ← 第3层：LLM服务
 
 正确结构：
 ChatEntry (chat_entry.py)        ← 第1层：用户入口
@@ -500,39 +362,48 @@ LLMService (llm_service.py)      ← 第3层：LLM服务
 └── chat_with_tools_stream()
 ```
 
-#### 问题2：chat_stream_query函数跨越两个层次
+### 3.3 问题2：generate_sse_stream函数跨越两个层次
 
 | 维度 | 说明 |
 |------|------|
-| **问题描述** | `chat_stream_query` 函数同时包含用户入口层逻辑和业务编排层逻辑 |
-| **代码位置** | `chat_stream_query.py:388` |
-| **涉及逻辑** | 入口逻辑（第1层）+ SSE构建/重试逻辑（第2层） |
+| **问题描述** | `generate_sse_stream` 函数同时包含第1层入口逻辑和第2层业务编排逻辑 |
+| **代码位置** | `react_sse_wrapper.py:406` |
+| **涉及逻辑** | SSE入口分发（第1层）+ 编排调用 `_run_sse_stream`/`_log_prompts`/`_handle_*`（第2层） |
 | **风险等级** | P1-高 |
 
 **精准分析**：
-- `chat_stream_query()` 函数（chat_stream_query.py:388）是用户入口，接收用户请求
-- `_execute_retry_loop()` 函数（chat_stream_query.py:172）是业务编排，处理SSE事件和重试
-- 两个逻辑在同一个文件/模块中，职责边界不清晰
+- `generate_sse_stream()`（react_sse_wrapper.py:406）是 `ChatRouter._step_react_loop()` 的调用目标，属于第1层入口
+- 但它内部直接包含了：
+  - `_log_prompts()` — 第2层业务编排（prompt日志记录）
+  - `_run_sse_stream()` — 第2层业务编排（Agent创建与循环）
+  - `_handle_client_disconnect()` — 第2层业务编排（客户端断开处理）
+  - `_cleanup_task()` — 第2层业务编排（任务清理）
+  - `_save_step_to_db()` — 第2层业务编排（DB保存）
+- 同一函数中同时包含"入口分发"和"编排执行"，违反SRP
 
 **改进措施**：
 ```
 当前结构：
-chat_stream_query.py
-├── chat_stream_query()    ← 第1层：用户入口 + 第2层：业务编排
-├── _execute_retry_loop()  ← 第2层：业务编排
-└── _init_retry_state()    ← 第2层：业务编排
+react_sse_wrapper.py
+├── generate_sse_stream()     ← 第1层：入口 + 第2层：编排（混杂）
+├── _run_sse_stream()         ← 第2层：业务编排
+├── _log_prompts()            ← 第2层：业务编排
+├── _handle_client_disconnect() ← 第2层：业务编排
+└── _cleanup_task()           ← 第2层：业务编排
 
 正确结构：
-ChatStreamEntry (chat_stream_entry.py)  ← 第1层：用户入口
-└── chat_stream_query()
+SSEEntry (sse_entry.py)              ← 第1层：用户入口
+├── generate_sse_stream()            ← 只做分发，不做编排
+└── _log_prompts()                   ← 入口可保留
 
-SSEHandler (sse_handler.py)              ← 第2层：业务编排
-├── execute_retry_loop()
-├── init_retry_state()
-└── handle_retry_exhausted()
+SSEOrchestrator (sse_orchestrator.py) ← 第2层：业务编排
+├── run_sse_stream()                 ← 核心编排
+├── handle_client_disconnect()
+├── save_step_to_db()
+└── cleanup_task()
 ```
 
-#### 问题3：BaseAgent类跨越两个层次
+### 3.4 问题3：BaseAgent类跨越两个层次
 
 | 维度 | 说明 |
 |------|------|
@@ -543,23 +414,24 @@ SSEHandler (sse_handler.py)              ← 第2层：业务编排
 
 **精准分析**：
 - `run()` 方法（universal_react.py:128）是用户入口，接收用户任务，返回AgentResult
+- `_run_with_task_tracking()` 方法（universal_react.py:138）是入口+聚合逻辑，遍历 `run_stream()` 聚合结果
 - `run_stream()` 方法（base_react.py:277）是业务编排，处理ReAct循环
-- 两个方法在同一个类继承体系中，职责边界不清晰
+- 第1层和第2层方法在同一个类继承体系中，职责边界不清晰
 
 **改进措施**：
 ```
 当前结构：
 UniversalReactAgent (universal_react.py)
-├── run()             ← 第1层：用户入口
-└── _run_with_task_tracking() ← 第1层+第2层
+├── run()                        ← 第1层：用户入口
+└── _run_with_task_tracking()    ← 第1层+第2层（遍历stream聚合结果）
 
 BaseAgent (base_react.py)
-├── run_stream()      ← 第2层：业务编排
-├── _call_llm()       ← 第2层：业务编排
-└── _handle_*()       ← 第2层：业务编排
+├── run_stream()                 ← 第2层：业务编排
+├── _call_llm()                  ← 第2层：业务编排
+└── _handle_*()                  ← 第2层：业务编排
 
 正确结构：
-AgentEntry (agent_entry.py)      ← 第1层：用户入口
+AgentEntry (agent_entry.py)           ← 第1层：用户入口
 └── run()
 
 ReactOrchestrator (react_orchestrator.py)  ← 第2层：业务编排
@@ -568,7 +440,42 @@ ReactOrchestrator (react_orchestrator.py)  ← 第2层：业务编排
 └── _handle_*()
 ```
 
-#### 问题4：层与层之间没有清晰的接口边界
+### 3.5 问题4：ChatRouter类内部层次混杂
+
+| 维度 | 说明 |
+|------|------|
+| **问题描述** | `ChatRouter` 类同时包含第1层路由入口方法和第2层步骤编排方法 |
+| **代码位置** | `chat_router.py:230` |
+| **涉及方法** | `route()`（第1层）+ `_step_start()`/`_step_react_loop()`（第2层） |
+| **风险等级** | P2-中 |
+
+**精准分析**：
+- `route()` 方法（chat_router.py:279）是用户入口，接收请求，编排4步流程
+- `_step_start()` 方法（chat_router.py:255）是第2层start步骤编排
+- `_step_react_loop()` 方法（chat_router.py:267）是第2层ReAct循环编排
+- 虽然已通过SLAP做了方法级拆分，但第1层和第2层仍在同一个类中
+
+**改进措施**：
+```
+当前结构：
+ChatRouter (chat_router.py)
+├── route()                    ← 第1层：用户入口
+├── _detect_intent()           ← 第2层：意图检测流程
+├── _init_route_context()      ← 第2层：初始化流程
+├── _step_start()              ← 第2层：start步骤
+└── _step_react_loop()         ← 第2层：ReAct循环
+
+正确结构：
+ChatEntry (chat_entry.py)          ← 第1层：用户入口
+└── route()                        ← 只做入口分发
+
+StepOrchestrator (step_orchestrator.py)  ← 第2层：业务编排
+├── detect_intent()
+├── step_start()
+└── step_react_loop()
+```
+
+### 3.6 问题5：层与层之间没有清晰的接口边界
 
 | 维度 | 说明 |
 |------|------|
@@ -581,6 +488,15 @@ ReactOrchestrator (react_orchestrator.py)  ← 第2层：业务编排
 - 第2层直接调用第3层的具体方法，没有接口抽象
 - 层与层之间耦合度过高，修改一层会影响其他层
 
+**具体案例**：
+```
+ChatRouter._step_react_loop()
+  └── generate_sse_stream(ai_service=ai_service, ...)  ← 直接传具体对象
+        └── _run_sse_stream(llm_client=ai_service, ...)  ← 直接传具体对象
+              └── AgentFactory.create(...)  ← 直接依赖AgentFactory
+                    └── agent.run_stream(...)  ← 直接调用具体方法
+```
+
 **改进措施**：
 ```
 当前结构：
@@ -591,26 +507,123 @@ ReactOrchestrator (react_orchestrator.py)  ← 第2层：业务编排
 第2层 → 定义接口 → 第3层实现接口
 ```
 
-### 6.4 架构问题汇总
+### 3.7 问题6：重试机制仍分散3套
 
-| 问题编号 | 问题描述 | 涉及模块 | 风险等级 | 改进优先级 |
-|---------|---------|---------|---------|-----------|
-| **问题1** | BaseAIService跨越第1层和第3层 | llm_core.py | P1-高 | 高 |
-| **问题2** | chat_stream_query跨越第1层和第2层 | chat_stream_query.py | P1-高 | 高 |
-| **问题3** | BaseAgent跨越第1层和第2层 | universal_react.py + base_react.py | P1-高 | 高 |
-| **问题4** | 层与层之间没有清晰的接口边界 | 全局 | P2-中 | 中 |
+| 维度 | 说明 |
+|------|------|
+| **问题描述** | 3个重试机制虽有 `RetryEngine` 统一引擎但使用方式仍分散，且SSE流式路径无重试保护 |
+| **涉及模块** | `llm_core.py` + `llm/core.py` + `base_react.py` |
+| **风险等级** | P2-中 |
 
-### 6.5 重构建议
+**精准分析**：
 
-| 重构方向 | 具体措施 | 预期效果 | 工作量 |
-|---------|---------|---------|--------|
-| **拆分BaseAIService** | 将chat()移到用户入口模块，chat_stream()保留在LLM服务模块 | 消除层次跨越 | 中 |
-| **拆分chat_stream_query** | 将入口逻辑和业务编排逻辑分离到不同模块 | 消除层次跨越 | 中 |
-| **拆分BaseAgent** | 将run()移到用户入口模块，run_stream()保留在业务编排模块 | 消除层次跨越 | 大 |
-| **定义清晰接口** | 每个层次之间定义清晰的接口边界 | 降低耦合度 | 中 |
+| 重试场景 | 实现方式 | 位置 | 配置 |
+|---------|---------|------|------|
+| **非流式429重试** | `_post_with_retry` → `create_rate_limit_retry_engine(RetryEngine)` | `llm_core.py:158` | max=3, exp退避 |
+| **流式429重试** | `_StreamRetryContext` → `RetryEngine.execute_async_context()` | `llm/core.py:56` | max=3, exp退避 |
+| **Agent parse重试** | `_parse_retry_engine(RetryEngine)` + 内联`record_attempt()` | `base_react.py:120` | max=3, exp退避 |
+| **Agent empty_response重试** | `_empty_response_retry_engine(RetryEngine)` + 内联判断 | `base_react.py:123` | max=2, fixed退避 |
+| **SSE流式重试** | **不存在** | `react_sse_wrapper._run_sse_stream` | **无重试保护** |
+
+**核心问题**：SSE路径（`react_sse_wrapper._run_sse_stream`）**没有重试保护**。`generate_sse_stream` 只有外层 `try/except` 捕获异常，没有超时重试和网络错误重试。
+
+**改进措施**：
+```
+当前：
+1. 非流式429 → RetryEngine (llm_core)
+2. 流式429   → _StreamRetryContext → RetryEngine (llm/core.py)  
+3. Agent     → 双RetryEngine (base_react)
+4. SSE流式   → 无重试
+
+目标：
+统一使用RetryEngine，路径不同配置不同参数：
+1. 非流式429 → create_rate_limit_retry_engine(max=3, exp)
+2. 流式429   → create_rate_limit_retry_engine(max=3, exp)
+3. Agent     → create_parse_retry_engine(max=3, exp) + create_empty_response_engine(max=2, fixed)
+4. SSE流式   → create_sse_retry_engine(max=3, exp)  ← 需要新增
+```
+
+### 3.8 死代码发现：RetryCounter
+
+| 维度 | 说明 |
+|------|------|
+| **问题描述** | `RetryCounter` 类定义在 `retry_counter.py` 中，但无任何模块导入使用 |
+| **代码位置** | `app/utils/retry_counter.py:17` |
+| **风险等级** | P3-低 |
+
+**精准分析**：
+- `grep` 全库搜索 `RetryCounter`，仅匹配到 `retry_counter.py` 自身
+- 零外部引用，`RetryCounter` 是死代码
+- 建议清理：删除 `retry_counter.py` 文件
+
+**改进措施**：
+- 删除 `backend/app/utils/retry_counter.py`
 
 ---
 
-**文档完成时间**: 2026-05-31 10:59:18  
-**编写人**: 小欧  
-**版本**: v1.8
+## 四、改进措施方案
+
+### 4.1 重构建议汇总
+
+| 重构方向 | 具体措施 | 预期效果 | 工作量 |
+|---------|---------|---------|--------|
+| **拆分BaseAIService** | 将chat()/chat_with_tools()移到第1层入口模块，chat_stream()/chat_with_tools_stream()保留在第3层LLM服务模块 | 消除层次跨越（问题1） | 中 |
+| **拆分generate_sse_stream** | 将入口分发逻辑与编排执行逻辑分离到不同模块 | 消除层次跨越（问题2） | 中 |
+| **拆分BaseAgent** | 将run()移到第1层入口模块，run_stream()保留在第2层编排模块 | 消除层次跨越（问题3） | 大 |
+| **拆分ChatRouter** | 将route()入口与_step_*()编排分离到不同模块 | 消除层次混杂（问题4） | 小 |
+| **层间接口定义** | 第1层↔第2层↔第3层之间定义清晰接口 | 降低耦合度（问题5） | 中 |
+| **重试机制收敛** | 统一使用RetryEngine，SSE路径补充重试保护 | 消除重试分散（问题6） | 小 |
+| **清理死代码** | 删除 retry_counter.py（RetryCounter零引用） | 消除死代码 | 小 |
+
+### 4.2 目标架构
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    第1层：用户入口层（独立模块）                       │
+│                                                                     │
+│  chat_entry.py      sse_entry.py           agent_entry.py           │
+│  ├── chat()         └── generate_sse_      ├── run()                │
+│  └── chat_with_        stream()            └── route()  ← 从        │
+│      tools()                               ChatRouter移入            │
+│                                            （入口部分）              │
+└─────────────────────────────┬───────────────────────────────────────┘
+                              │ 接口 IEntryHandler
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    第2层：业务编排层（独立模块）                       │
+│                                                                     │
+│  sse_orchestrator.py        step_orchestrator.py   react_orchest-  │
+│  ├── run_sse_stream()       ├── detect_intent()    rator.py         │
+│  ├── handle_client_         ├── step_start()       ├── run_stream() │
+│  │   disconnect()           └── step_react_loop()  ├── _call_llm()  │
+│  ├── save_step_to_db()                            └── _handle_*()   │
+│  └── cleanup_task()                                                │
+│                                                                     │
+│  重试策略：                                                         │
+│  ├── create_sse_retry_engine()   ← 新增：SSE路径重试保护            │
+│  ├── create_parse_retry_engine() ← 统一配置                         │
+│  └── create_empty_response_engine() ← 统一配置                      │
+└─────────────────────────────┬───────────────────────────────────────┘
+                              │ 接口 ILLMService
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    第3层：LLM服务层（独立模块）                       │
+│                                                                     │
+│  llm_service.py                                                     │
+│  ├── chat_stream()                                                  │
+│  ├── chat_with_tools_stream()                                       │
+│  ├── _stream_with_retry()             ← 保留429重试                 │
+│  └── _post_with_retry()               ← 保留429重试                 │
+└─────────────────────────────┬───────────────────────────────────────┘
+                              │ HTTP请求
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    LLM API (OpenAI兼容格式)                          │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+**文档完成时间**: 2026-05-31 15:10:00  
+**编写人**: 小健  
+**版本**: v2.1
