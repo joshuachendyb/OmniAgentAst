@@ -26,7 +26,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 import json
 
-from app.services.prompts.BasePromptTemplate import BasePrompts
+from app.services.prompts.base_prompt_template import BasePrompts
 from app.services.prompts.middle import get_system_prompt as get_system_prompt_string
 from app.utils.logger import logger
 

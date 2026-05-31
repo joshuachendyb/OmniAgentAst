@@ -15,7 +15,7 @@ Author: 小沈 - 2026-05-27
 
 from typing import List, Optional
 
-from app.services.prompts.BasePromptTemplate import BasePrompts
+from app.services.prompts.base_prompt_template import BasePrompts
 
 
 class PromptAssembler:

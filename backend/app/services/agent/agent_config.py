@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Type, List, Dict, Optional
 
 from app.services.tools.tool_types import ToolCategory
-from app.services.prompts.BasePromptTemplate import BasePrompts
+from app.services.prompts.base_prompt_template import BasePrompts
 
 
 @dataclass

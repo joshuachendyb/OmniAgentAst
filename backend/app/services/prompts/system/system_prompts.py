@@ -11,7 +11,7 @@ import json
 from datetime import datetime
 from typing import Dict, List
 
-from app.services.prompts.BasePromptTemplate import BasePrompts
+from app.services.prompts.base_prompt_template import BasePrompts
 from app.services.prompts.middle import get_system_prompt as get_system_prompt_string
 from app.utils.logger import logger
 
@@ -33,7 +33,7 @@ def _build_category_header(name: str, count: int, desc: str = "") -> str:
 
 def _build_tool_descriptions(category: str, tool_names: List[str]) -> str:
     """从工具名称列表构建分类工具描述 — 委托到 BasePrompts.build_tool_descriptions — 小沈 2026-05-27"""
-    from app.services.prompts.BasePromptTemplate import BasePrompts
+from app.services.prompts.base_prompt_template import BasePrompts
 
     CATEGORY_NAME_MAP = {
         "SYSTEM": "SYSTEM",

@@ -1,6 +1,6 @@
 """Prompts 模块 - Prompt 模板"""
 
-from .BasePromptTemplate import BasePrompts
+from .base_prompt_template import BasePrompts
 
 __all__ = [
     "BasePrompts",
