@@ -29,7 +29,6 @@ class ReActHandlerMixin:
     - self.conversation_history (property)
     - self.message_builder
     - self.status
-    - self.parse_retry_count / self.max_parse_retries
     - self._parse_retry_engine / self._empty_response_retry_engine
     - self.llm_call_count
     - self.tool_category
@@ -98,7 +97,7 @@ class ReActHandlerMixin:
         chunk_buffer: ChunkBuffer
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """chunk类型处理：拼接buffer、阈值检测、无工具Agent退出 — 小沈 2026-05-30"""
-        self.parse_retry_count = 0
+        self._parse_retry_engine.reset_attempts()
         chunk_content = parsed.get("content", "")
 
         # 1. 存入buffer
@@ -157,7 +156,7 @@ class ReActHandlerMixin:
         self, parsed: Dict[str, Any], step_count: int, chunk_buffer: ChunkBuffer
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """answer/implicit完成处理 — 小沈 2026-05-25"""
-        self.parse_retry_count = 0
+        self._parse_retry_engine.reset_attempts()
 
         if chunk_buffer.buffer:
             content = chunk_buffer.flush()
@@ -185,7 +184,7 @@ class ReActHandlerMixin:
         self, parsed: Dict[str, Any], step_count: int, chunk_buffer: ChunkBuffer
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """thought_only纯思考分支 — 小沈 2026-05-25"""
-        self.parse_retry_count = 0
+        self._parse_retry_engine.reset_attempts()
         thought = parsed.get("thought", "")
         thought_content = parsed.get("content", "")
 
@@ -203,7 +202,7 @@ class ReActHandlerMixin:
     async def _handle_parse_error(
         self, parsed: Dict[str, Any], step_count: int, chunk_buffer: ChunkBuffer
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """解析错误重试（复用_calculate_retry_delay） — 小沈 2026-05-25"""
+        """解析错误重试 — 委托调用点2引擎 — 小沈 2026-05-25"""
         error_msg = parsed.get("error", "Unknown parse error")
         chunk_buffer.clear()
 
@@ -216,25 +215,25 @@ class ReActHandlerMixin:
         else:
             logger.info(f"[parse_react_response] 网络/API错误，不注入history: {error_msg}")
             if _error_type == "api_error_429":
-                _retry_delay = self._parse_retry_engine._calculate_delay(self.parse_retry_count + 1)
-                logger.warning(f"[parse_react_response] 429限流, 等待{_retry_delay:.0f}s后重试 (第{self.parse_retry_count+1}次)")
+                _retry_delay = self._parse_retry_engine.current_delay
+                logger.warning(f"[parse_react_response] 429限流, 等待{_retry_delay:.0f}s后重试 (第{self._parse_retry_engine.attempt_count+1}次)")
                 await asyncio.sleep(_retry_delay)
             yield StepFactory.create_incident_step(
                 step=step_count,
                 incident_value='rate_limit',
-                message=f"API暂时不可用，正在重试（第{self.parse_retry_count + 1}次）"
+                message=f"API暂时不可用，正在重试（第{self._parse_retry_engine.attempt_count + 1}次）"
             )
 
-        self.parse_retry_count += 1
-        if self.parse_retry_count >= self.max_parse_retries:
-            yield self._exit_with_error(step_count, "parse_error", f"解析失败: {error_msg}（已重试{self.max_parse_retries}次）")
+        self._parse_retry_engine.record_attempt()
+        if self._parse_retry_engine.exhausted:
+            yield self._exit_with_error(step_count, "parse_error", f"解析失败: {error_msg}（已重试{self._parse_retry_engine.max_retries}次）")
             self._on_after_loop()
             return
 
         yield StepFactory.create_incident_step(
             step=step_count,
             incident_value='retrying',
-            message=f"解析失败，正在重试（第{self.parse_retry_count}次）"
+            message=f"解析失败，正在重试（第{self._parse_retry_engine.attempt_count}次）"
         )
 
     async def _handle_action_type(
@@ -250,7 +249,7 @@ class ReActHandlerMixin:
         thought = parsed.get("thought", "")
         reasoning = parsed.get("reasoning", "")
 
-        self.parse_retry_count = 0
+        self._parse_retry_engine.reset_attempts()
 
         chunk_buffer_was_flushed = bool(chunk_buffer.buffer)
         if chunk_buffer.buffer:

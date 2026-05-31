@@ -116,14 +116,8 @@ class BaseAgent(ReActHandlerMixin, ABC):
         self._lock = asyncio.Lock()
         
         # 【重构 2026-05-27 小健】2.22：parse/empty重试委托给RetryEngine
-        from app.utils.retry_engine import RetryEngine, BackoffStrategy
-        self._parse_retry_engine = RetryEngine(
-            max_retries=3, backoff_strategy=BackoffStrategy.EXPONENTIAL, backoff_factor=2.0)
-        self._empty_response_retry_engine = RetryEngine(
-            max_retries=2, backoff_strategy=BackoffStrategy.FIXED, backoff_factor=1.0)
-        
-        self.parse_retry_count = 0
-        self.max_parse_retries = 3
+        from app.utils.retry import create_agent_retry_engine
+        self._parse_retry_engine, self._empty_response_retry_engine = create_agent_retry_engine()
         
         # 【v2.3新增】chunk处理相关属性—所有Agent子类共享
         self.max_consecutive_chunks = MAX_CONSECUTIVE_CHUNKS  # 连续chunk达此阈值时提升为implicit
@@ -323,7 +317,7 @@ class BaseAgent(ReActHandlerMixin, ABC):
 
                 if not response:
                     self._empty_response_retry_engine.record_attempt()
-                    self.parse_retry_count = 0
+                    self._parse_retry_engine.reset_attempts()
                     async for step in self._handle_empty_response(step_count):
                         yield step
                     continue
