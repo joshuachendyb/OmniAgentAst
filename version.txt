@@ -1,6 +1,27 @@
-v0.14.6
+v0.14.7
 
-更新时间: 2026-05-31 09:58:11
+更新时间: 2026-05-31 12:30:31
+
+## v0.14.6→v0.14.7 变更汇总 - 小沈-2026-05-31
+
+### 一、feat 新功能（7个commit）
+
+| commit | 说明 |
+|--------|------|
+| 5837b125 | 新增重试机制统一设计方案文档(v2.2) |
+| 2f80ea1e | chat_router.py 改用 generate_sse_stream_with_retry |
+| 61545d9b | react_sse_wrapper.py 新增 generate_sse_stream_with_retry |
+| 3defb999 | 调用点2 — BaseAgent + ReActHandlerMixin 改用 create_agent_retry_engine |
+| b77a93e8 | 调用点1 — BaseAIService + _StreamRetryContext 改用 create_network_retry_engine |
+| 05c2e27f | retry/目录 — 3个工厂函数各一个文件，调用点唯一 |
+| a37332fa | retry_engine.py 新增 exhausted + current_delay 属性 |
+
+### 变更说明
+统一3层重试机制：每个函数一个文件，每个文件一个调用点，全部委托到 RetryEngine 统一管理。
+
+---
+
+v0.14.6
 
 ## v0.14.5→v0.14.6 变更汇总 - 小沈-2026-05-31
 
