@@ -1,13 +1,11 @@
 from . import router
 from .models import ConfigUpdate
 from .field_handlers import FIELD_HANDLERS
+from ._helpers import get_config_path, read_yaml_config, write_yaml_config
 from ._backup_config import _backup_config
 from ._auto_fix_and_validate import _auto_fix_and_validate
-from ._write_yaml_with_order import _write_yaml_with_order
 from ._restore_backup_if_needed import _restore_backup_if_needed
-from pathlib import Path
 from fastapi import HTTPException
-import yaml
 from app.config import get_config as get_config_instance
 from app.services import AIServiceFactory
 from app.utils.logger import logger
@@ -20,10 +18,9 @@ async def update_config(config_update: ConfigUpdate):
     restored = [False]
 
     try:
-        config_path = Path(AIServiceFactory.get_config_path())
+        config_path = get_config_path()
         backup_path = _backup_config(config_path)
-        with open(config_path, 'r', encoding='utf-8') as f:
-            original_config_data = yaml.safe_load(f) or {}
+        original_config_data = read_yaml_config(config_path)
         config_data = original_config_data.copy()
         config_data.setdefault('app', {})
 
@@ -37,8 +34,9 @@ async def update_config(config_update: ConfigUpdate):
         if not is_valid:
             return fail_result
 
-        _write_yaml_with_order(str(config_path), config_data)
+        write_yaml_config(str(config_path), config_data)
         with open(config_path, 'r', encoding='utf-8') as f:
+            import yaml
             verify_data = yaml.safe_load(f)
             logger.info(f"[update_config] 验证写入: provider={verify_data['ai'].get('provider')}, model={verify_data['ai'].get('model')}")
         get_config_instance().reload()

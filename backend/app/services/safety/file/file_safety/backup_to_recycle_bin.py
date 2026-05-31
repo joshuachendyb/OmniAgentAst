@@ -6,12 +6,12 @@ backup_to_recycle_bin — 从 file_safety.py 拷出
 """
 
 import shutil
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
 from app.utils.logger import logger
+from app.utils.time_utils import timestamp_for_filename
 from app.services.safety.file.file_safety.config import FileSafetyConfig
 
 
@@ -19,7 +19,7 @@ def backup_to_recycle_bin(source_path: Path) -> Optional[Path]:
     """拷贝自 file_safety.py 第106-134行"""
     config = FileSafetyConfig()
     try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = timestamp_for_filename()
         backup_dir = config.RECYCLE_BIN_PATH / f"{timestamp}_{uuid4().hex[:8]}"
         backup_dir.mkdir(parents=True, exist_ok=True)
         backup_path = backup_dir / source_path.name

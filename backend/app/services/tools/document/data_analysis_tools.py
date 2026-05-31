@@ -26,7 +26,7 @@ import tempfile
 from typing import Dict, Any, List, Union, Optional, Literal, Tuple
 from pathlib import Path
 import pandas as pd
-from datetime import datetime
+from app.utils.time_utils import timestamp_for_filename
 from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, make_json_safe
 from app.services.tools._response import build_success, build_error
 from app.services.tools.toolhelper.common_helper import _check_module
@@ -75,7 +75,7 @@ def generate_chart(
                 ]))
 
         if output_path is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = timestamp_for_filename()
             temp_dir = tempfile.gettempdir()
             output_path = os.path.join(temp_dir, f"chart_{timestamp}.png")
 

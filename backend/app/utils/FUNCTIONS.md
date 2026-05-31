@@ -34,6 +34,8 @@
 | `convert_to_utc` | 转换为UTC ISO格式 | time_value | str |
 | `ensure_timestamp_milliseconds` | 确保时间戳转为毫秒 | ts_value | int |
 | `create_step_counter` | 创建步骤计数器 | 无 | Callable |
+| `timestamp_for_filename` | **【v0.13.33新增】** 文件名时间戳 YYYYMMDD_HHMMSS | 无 | str |
+| `now_str` | **【v0.13.33新增】** 当前时间格式化字符串，默认 YYYY-MM-DD HH:MM:SS | fmt | str |
 
 ### 1.3 通用函数（common.py）
 
@@ -44,7 +46,16 @@
 | `extract_metadata_from_steps` | 从步骤提取元数据 | execution_steps | dict |
 | `format_param_value` | **【v1.3新增】** 将参数默认值格式化为字符串（供LLM提示文本使用），None→""、bool→"true"/"false" | val | str |
 
-### 1.4 工具函数（tool_result_utils.py）
+### 1.4 响应工具（response_utils.py）【v0.13.33新增】
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `api_success` | 统一成功响应 {"success":True, "message":xxx} | message, **extra | dict |
+| `api_failure` | 统一失败响应 {"success":False, "message":xxx} | message, errors, **extra | dict |
+| `api_error` | 记录日志并抛 HTTPException | status_code, detail, log_msg | None |
+| `handle_api_errors` | **【v0.13.33新增】** 通用API异常处理装饰器 | operation_name | decorator |
+
+### 1.5 工具函数（tool_result_utils.py）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|

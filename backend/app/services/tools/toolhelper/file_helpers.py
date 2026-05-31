@@ -74,6 +74,7 @@ import filecmp
 from pathlib import Path
 from collections import Counter
 from datetime import datetime, timedelta
+from app.utils.time_utils import timestamp_for_filename
 from typing import Optional, Dict, Any, Tuple, List, Generator, Callable
 from dataclasses import dataclass, field
 from app.services.tools.toolhelper.hash_helper import select_hasher, compute_file_hash
@@ -404,7 +405,7 @@ def backup_file(
         if not os.path.exists(file_path):
             return build_error(ERR_FILE_BACKUP, f"文件不存在: {file_path}")
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = timestamp_for_filename()
         file_name = os.path.basename(file_path)
         backup_name = f"{file_name}{suffix}_{timestamp}"
 

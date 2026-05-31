@@ -9,8 +9,8 @@
 """
 from pathlib import Path
 from typing import Dict, Optional
-from datetime import datetime
 
+from app.utils.time_utils import timestamp_for_filename
 from app.utils.visualization.text_report import generate_text_report
 from app.utils.visualization.tree_report import export_tree_to_json
 from app.utils.visualization.sankey_report import generate_sankey_data
@@ -37,7 +37,7 @@ def generate_all_reports(task_id: str, task_description: str, output_dir: Option
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = timestamp_for_filename()
 
     reports = {}
 

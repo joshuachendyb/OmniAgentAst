@@ -73,6 +73,22 @@ def create_step_counter() -> Callable[[], int]:
     return next_step
 
 
+def timestamp_for_filename() -> str:
+    """生成文件名用时间戳: YYYYMMDD_HHMMSS
+
+    消除 8 处独立重复：ai_config/_backup_config.py、tools/desktop/gui_tools.py 等
+    """
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def now_str(fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
+    """获取当前时间格式字符串，默认 YYYY-MM-DD HH:MM:SS
+
+    消除 43 处散落的重复 datetime.now().strftime(...) 调用
+    """
+    return datetime.now().strftime(fmt)
+
+
 __all__ = [
     "create_timestamp",
     "get_timestamp_ms",
@@ -80,4 +96,6 @@ __all__ = [
     "convert_to_utc",
     "ensure_timestamp_milliseconds",
     "create_step_counter",
+    "timestamp_for_filename",
+    "now_str",
 ]

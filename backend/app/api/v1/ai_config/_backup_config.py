@@ -1,7 +1,7 @@
 import shutil
-from datetime import datetime
 from pathlib import Path
 from app.utils.logger import logger
+from app.utils.time_utils import timestamp_for_filename
 
 
 def _backup_config(config_path: Path) -> Path:
@@ -9,7 +9,7 @@ def _backup_config(config_path: Path) -> Path:
     from app.services.tools.toolhelper.file_helpers import backup_file
     result = backup_file(str(config_path), suffix=".backup")
     if result.get("code") != "SUCCESS":
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = timestamp_for_filename()
         backup_path = config_path.parent / f"config.yaml.backup.{timestamp}"
         shutil.copy2(config_path, backup_path)
         logger.info(f"配置文件已备份(fallback): {backup_path}")

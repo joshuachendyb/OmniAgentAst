@@ -24,7 +24,7 @@ import csv
 import json
 import shutil
 import tempfile
-from datetime import datetime
+from app.utils.time_utils import timestamp_for_filename
 from typing import Dict, Any, List, Union, Tuple
 from pathlib import Path
 import xml.etree.ElementTree as ET
@@ -124,7 +124,7 @@ def _write_json(file_path: str, data: Union[Dict[str, Any], List[Any]], encoding
         if backup_before_write and path.exists():
             backup_dir = Path(tempfile.gettempdir()) / "json_backup"
             backup_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = timestamp_for_filename()
             backup_path = backup_dir / f"{path.stem}_{timestamp}{path.suffix}"
             shutil.copy2(path, backup_path)
             backup_created = backup_path.exists()

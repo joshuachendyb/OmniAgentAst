@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 from app.utils.monitoring import get_metrics_summary, get_raw_metrics, reset_metrics
 from app.utils.logger import logger
+from app.utils.response_utils import handle_api_errors
 
 router = APIRouter()
 
@@ -45,6 +46,7 @@ class ResetMetricsResponse(BaseModel):
     timestamp: str = Field(..., description="重置时间戳")
 
 @router.get("/metrics", response_model=MetricsResponse)
+@handle_api_errors("获取监控指标")
 async def get_metrics():
     """
     获取监控指标摘要
@@ -54,30 +56,23 @@ async def get_metrics():
     - 错误总数
     - 请求进行中的数量
     """
-    try:
-        summary = get_metrics_summary()
-        total_metrics = sum(len(metrics) for metrics in get_raw_metrics().values())
-        
-        # 转换字典为MetricSummary对象
-        metrics_dict = {
-            name: MetricSummary(**data) 
-            for name, data in summary.items()
-        }
-        
-        return MetricsResponse(
-            success=True,
-            metrics=metrics_dict,
-            timestamp=datetime.now(timezone.utc).isoformat(),
-            total_metrics=total_metrics
-        )
-    except Exception as e:
-        logger.error(f"获取指标失败: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"获取监控指标失败: {str(e)}"
-        )
+    summary = get_metrics_summary()
+    total_metrics = sum(len(metrics) for metrics in get_raw_metrics().values())
+    
+    metrics_dict = {
+        name: MetricSummary(**data) 
+        for name, data in summary.items()
+    }
+    
+    return MetricsResponse(
+        success=True,
+        metrics=metrics_dict,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        total_metrics=total_metrics
+    )
 
 @router.get("/metrics/raw")
+@handle_api_errors("获取原始指标")
 async def get_raw_metrics_endpoint(name: Optional[str] = None):
     """
     获取原始指标数据
@@ -87,21 +82,15 @@ async def get_raw_metrics_endpoint(name: Optional[str] = None):
         
     返回原始指标数据，包含每个数据点的时间戳和标签
     """
-    try:
-        raw_metrics = get_raw_metrics(name)
-        return {
-            "success": True,
-            "metrics": raw_metrics,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-    except Exception as e:
-        logger.error(f"获取原始指标失败: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"获取原始指标失败: {str(e)}"
-        )
+    raw_metrics = get_raw_metrics(name)
+    return {
+        "success": True,
+        "metrics": raw_metrics,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 @router.post("/metrics/reset", response_model=ResetMetricsResponse)
+@handle_api_errors("重置监控指标")
 async def reset_metrics_endpoint(request: ResetMetricsRequest):
     """
     重置所有监控指标
@@ -114,19 +103,12 @@ async def reset_metrics_endpoint(request: ResetMetricsRequest):
             detail="必须设置confirm=true来确认重置指标"
         )
     
-    try:
-        reset_metrics()
-        return ResetMetricsResponse(
-            success=True,
-            message="所有监控指标已重置",
-            timestamp=datetime.now(timezone.utc).isoformat()
-        )
-    except Exception as e:
-        logger.error(f"重置指标失败: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"重置监控指标失败: {str(e)}"
-        )
+    reset_metrics()
+    return ResetMetricsResponse(
+        success=True,
+        message="所有监控指标已重置",
+        timestamp=datetime.now(timezone.utc).isoformat()
+    )
 
 @router.get("/metrics/health")
 async def metrics_health_check():
@@ -136,7 +118,6 @@ async def metrics_health_check():
     检查监控系统是否正常工作
     """
     try:
-        # 尝试获取指标摘要来验证系统是否正常工作
         get_metrics_summary()
         return {
             "success": True,

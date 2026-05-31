@@ -20,6 +20,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.utils.logger import logger
+from app.utils.response_utils import handle_api_errors
 from app.utils.display_name_cache import get_cached_display_name
 from app.utils.common import extract_display_name_from_steps
 from app.utils.time_utils import convert_to_utc, ensure_timestamp_milliseconds, get_timestamp_ms
@@ -37,53 +38,47 @@ router = APIRouter()
 
 
 @router.get("/sessions/{session_id}/messages")
+@handle_api_errors("获取会话消息")
 async def get_session_messages(session_id: str):
     """获取会话消息历史（21.3 重构，小沈 2026-05-25 实施）"""
-    try:
-        with db.get_conn("chat") as conn:
-            cursor = conn.cursor()
+    with db.get_conn("chat") as conn:
+        cursor = conn.cursor()
 
-            cursor.execute('''SELECT id, title, COALESCE(title_locked, 0) as title_locked,
-                              COALESCE(title_updated_at, created_at) as title_updated_at,
-                              COALESCE(version, 1) as version, COALESCE(is_valid, 1) as is_valid
-                           FROM chat_sessions WHERE id = ? AND is_deleted = FALSE''', (session_id,))
+        cursor.execute('''SELECT id, title, COALESCE(title_locked, 0) as title_locked,
+                          COALESCE(title_updated_at, created_at) as title_updated_at,
+                          COALESCE(version, 1) as version, COALESCE(is_valid, 1) as is_valid
+                       FROM chat_sessions WHERE id = ? AND is_deleted = FALSE''', (session_id,))
 
-            session = cursor.fetchone()
-            if not session:
-                raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+        session = cursor.fetchone()
+        if not session:
+            raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
 
-            cursor.execute('''SELECT id, session_id, role, content, timestamp, execution_steps, display_name
-                           FROM chat_messages WHERE session_id = ? ORDER BY timestamp ASC''', (session_id,))
+        cursor.execute('''SELECT id, session_id, role, content, timestamp, execution_steps, display_name
+                       FROM chat_messages WHERE session_id = ? ORDER BY timestamp ASC''', (session_id,))
 
-            messages = []
-            for row in cursor.fetchall():
-                steps = parse_json(row['execution_steps'], label="execution_steps")
-                display_name = row['display_name']
-                if not display_name and steps:
-                    display_name = extract_display_name_from_steps(steps)
+        messages = []
+        for row in cursor.fetchall():
+            steps = parse_json(row['execution_steps'], label="execution_steps")
+            display_name = row['display_name']
+            if not display_name and steps:
+                display_name = extract_display_name_from_steps(steps)
 
-                messages.append(MessageResponse(
-                    id=row['id'], session_id=row['session_id'],
-                    role=row['role'], content=row['content'],
-                    timestamp=ensure_timestamp_milliseconds(row['timestamp']),
-                    execution_steps=steps, display_name=display_name,
-                ))
+            messages.append(MessageResponse(
+                id=row['id'], session_id=row['session_id'],
+                role=row['role'], content=row['content'],
+                timestamp=ensure_timestamp_milliseconds(row['timestamp']),
+                execution_steps=steps, display_name=display_name,
+            ))
 
-            title_locked = bool(session['title_locked'])
-            return {
-                "session_id": session_id, "title": session['title'],
-                "title_locked": title_locked,
-                "title_source": "user" if title_locked else "auto",
-                "title_updated_at": convert_to_utc(session['title_updated_at']),
-                "version": session['version'], "is_valid": session['is_valid'],
-                "messages": messages,
-            }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"获取会话消息失败: {e}")
-        raise HTTPException(status_code=500, detail=f"获取会话消息失败: {str(e)}")
+        title_locked = bool(session['title_locked'])
+        return {
+            "session_id": session_id, "title": session['title'],
+            "title_locked": title_locked,
+            "title_source": "user" if title_locked else "auto",
+            "title_updated_at": convert_to_utc(session['title_updated_at']),
+            "version": session['version'], "is_valid": session['is_valid'],
+            "messages": messages,
+        }
 
 
 class MessageCreate(BaseModel):
@@ -115,49 +110,41 @@ def _track_user_message(session_id: str, message_id: str) -> None:
 
 
 @router.post("/sessions/{session_id}/messages")
+@handle_api_errors("保存消息")
 async def save_message(session_id: str, message: MessageCreate):
     """保存消息到会话 — 小健 2026-05-25 重构"""
-    try:
-        with db.get_conn("chat") as conn:
-            cursor = conn.cursor()
-            new_message_count = 0
+    with db.get_conn("chat") as conn:
+        cursor = conn.cursor()
+        new_message_count = 0
 
-            cursor.execute(
-                "SELECT id, title, message_count, COALESCE(title_locked, 0) as title_locked "
-                "FROM chat_sessions WHERE id = ? AND is_deleted = FALSE", (session_id,))
-            session = cursor.fetchone()
-            if not session:
-                raise HTTPException(status_code=404, detail="会话不存在")
+        cursor.execute(
+            "SELECT id, title, message_count, COALESCE(title_locked, 0) as title_locked "
+            "FROM chat_sessions WHERE id = ? AND is_deleted = FALSE", (session_id,))
+        session = cursor.fetchone()
+        if not session:
+            raise HTTPException(status_code=404, detail="会话不存在")
 
-            utc_time = get_timestamp_ms()
-            new_message_count = session["message_count"] + 1
+        utc_time = get_timestamp_ms()
+        new_message_count = session["message_count"] + 1
 
-            display_name_to_save = message.display_name
-            if message.role == "assistant" and not display_name_to_save:
-                display_name_to_save = get_cached_display_name(session_id)
+        display_name_to_save = message.display_name
+        if message.role == "assistant" and not display_name_to_save:
+            display_name_to_save = get_cached_display_name(session_id)
 
-            execution_steps_json = json.dumps(message.execution_steps) if message.execution_steps else None
-            cursor.execute(
-                "INSERT INTO chat_messages(session_id, role, content, timestamp, display_name, execution_steps, client_os, browser, device, network) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                (session_id, message.role, message.content, utc_time, display_name_to_save,
-                 execution_steps_json, message.client_os, message.browser, message.device, message.network))
-            message_id = cursor.lastrowid
+        execution_steps_json = json.dumps(message.execution_steps) if message.execution_steps else None
+        cursor.execute(
+            "INSERT INTO chat_messages(session_id, role, content, timestamp, display_name, execution_steps, client_os, browser, device, network) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (session_id, message.role, message.content, utc_time, display_name_to_save,
+             execution_steps_json, message.client_os, message.browser, message.device, message.network))
+        message_id = cursor.lastrowid
 
-            if message.role == "user":
-                _track_user_message(session_id, message_id)
+        if message.role == "user":
+            _track_user_message(session_id, message_id)
 
-            cursor.execute(
-                "UPDATE chat_sessions SET message_count = ?, updated_at = ? WHERE id = ?",
-                (new_message_count, utc_time, session_id))
+        cursor.execute(
+            "UPDATE chat_sessions SET message_count = ?, updated_at = ? WHERE id = ?",
+            (new_message_count, utc_time, session_id))
 
-            _try_mark_valid(cursor, session_id)
+        _try_mark_valid(cursor, session_id)
 
-        return {"success": True, "message_id": message_id, "message_count": new_message_count}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-
+    return {"success": True, "message_id": message_id, "message_count": new_message_count}

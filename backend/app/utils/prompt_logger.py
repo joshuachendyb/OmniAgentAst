@@ -15,7 +15,7 @@ import json
 import os
 import uuid
 import threading
-from datetime import datetime
+from app.utils.time_utils import now_str, timestamp_for_filename
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -72,8 +72,8 @@ class PromptLogger:
         Returns:
             日志文件路径
         """
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        file_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = now_str()
+        file_timestamp = timestamp_for_filename()
         
         # 生成文件名：prompt_{message_id}+{YYYYMMDD_HHMMSS}.json
         filename = f"prompt_{user_message_id}+{file_timestamp}.json"
@@ -134,7 +134,7 @@ class PromptLogger:
             "来源": source,
             "内容": prompt_content,
             "内容长度": len(prompt_content),
-            "时间戳": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "时间戳": now_str()
         }
         if round_number > 0:
             entry["轮次"] = round_number
@@ -168,7 +168,7 @@ class PromptLogger:
             "来源": "file_prompts.py:get_task_prompt()",
             "内容": task_content,
             "内容长度": len(task_content),
-            "时间戳": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "时间戳": now_str()
         }
         if round_number > 0:
             entry["轮次"] = round_number
@@ -229,7 +229,7 @@ class PromptLogger:
             "消息总数": len(messages),
             "消息摘要": message_summaries,
             "完整消息列表": messages,  # 保留完整列表用于调试
-            "时间戳": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "时间戳": now_str()
         }
         
         if extra_params:
@@ -312,7 +312,7 @@ class PromptLogger:
             "来源": f"工具执行结果: {tool_name}" if tool_name else "工具执行结果",
             "内容": observation_content,
             "内容长度": len(observation_content),
-            "时间戳": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "时间戳": now_str()
         }
         if round_number > 0:
             entry["轮次"] = round_number
@@ -348,7 +348,7 @@ class PromptLogger:
             "来源": source or f"工具: {tool_name}",
             "内容": prompt_content,
             "内容长度": len(prompt_content),
-            "时间戳": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "时间戳": now_str()
         }
         if round_number > 0:
             entry["轮次"] = round_number

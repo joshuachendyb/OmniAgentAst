@@ -27,7 +27,7 @@ import tempfile
 import time
 from typing import Dict, Any, List, Optional
 from pathlib import Path
-from datetime import datetime
+from app.utils.time_utils import timestamp_for_filename
 
 from app.services.tools._response import build_success, build_error
 from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, truncate_text  # 小沈 2026-05-20
@@ -149,7 +149,7 @@ def _screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[
         return build_error(ERR_NO_PYAUTOGUI, "pyautogui库未安装")
     try:
         if output_path is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = timestamp_for_filename()
             output_path = os.path.join(tempfile.gettempdir(), f"screenshot_{timestamp}.png")
 
         if region:
@@ -172,7 +172,7 @@ def _snapshot(display: int = 1) -> Dict[str, Any]:
     except ImportError:
         try:
             import pyautogui
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = timestamp_for_filename()
             output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
             img = pyautogui.screenshot()
             img.save(output_path)
@@ -180,7 +180,7 @@ def _snapshot(display: int = 1) -> Dict[str, Any]:
         except ImportError:
             return build_error(ERR_NO_SCREENSHOT_LIB, "需要安装 mss 或 pyautogui 库")
     try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = timestamp_for_filename()
         output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
         with mss.mss() as sct:
             monitors = sct.monitors
@@ -220,7 +220,7 @@ def screen_record(duration: int, output_path: Optional[str] = None, fps: int = 1
             return build_error(ERR_NO_IMAGEIO, "需要安装 imageio 库: pip install imageio imageio-ffmpeg")
     try:
         if output_path is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = timestamp_for_filename()
             output_path = os.path.join(tempfile.gettempdir(), f"screen_record_{timestamp}.mp4")
 
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
