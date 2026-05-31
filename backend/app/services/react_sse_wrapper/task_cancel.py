@@ -69,9 +69,6 @@ async def cancel_task(task_id: str, session_id = None) -> dict:
             # 修改：不立即删除，设置为cancelled状态保留记录
             # del running_tasks[task_id]  # 不要立即删除
             # 改为设置状态为已取消，但保留记录
-            task_info["status"] = "cancelled"
-            task_info["cancelled"] = True
-            task_info["interrupt_time"] = interrupt_time.isoformat()
             logger.info(f"[Task Cancelled] 任务 {task_id} 已标记为cancelled，保留记录")
             
             # 返回更详细的状态信息

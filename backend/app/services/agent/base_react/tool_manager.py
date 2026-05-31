@@ -57,13 +57,7 @@ class ToolManager:
         logger.info(f"[动态加载] 已加载{intent_type}分类的{len(new_tool_names)}个工具，下一轮detail将自动包含")
 
         # 3. 刷新FC通道的tools定义（如果已启用）
-        # 【修复 问题2+9 小沈 2026-05-15】增加openai_tools存在性检查
-        if hasattr(self.agent, 'tools_strategy') and self.agent.tools_strategy is not None and hasattr(self.agent, 'openai_tools') and self.agent.openai_tools:
-            from app.services.tools.registry import tool_registry
-            new_openai_tools = tool_registry.to_openai_tools(category=category)
-            self.agent.openai_tools.extend([t for t in new_openai_tools if t not in self.agent.openai_tools])
-            self.agent.tools_strategy.tools = self.agent.openai_tools
-            logger.info(f"[FC刷新] tools定义已更新，当前{len(self.agent.openai_tools)}个")
+        self.refresh_fc_tools(category)
 
         # 【修复 小健 2026-05-24】P2-9: 用try/except替代hasattr+delattr，消除TOCTOU风险
         for _attr in ('_cached_schema_text', '_cached_tools_content', '_last_injected_categories'):

@@ -93,6 +93,19 @@ class LRUCache:
             # 缓存异常不影响主流程
             logger.error(f"[LRUCache] set异常: {e}")
     
+    def delete(self, key: str):
+        """删除缓存条目
+        
+        Args:
+            key: 缓存key
+        """
+        try:
+            with self._lock:
+                if key in self._cache:
+                    del self._cache[key]
+        except Exception as e:
+            logger.error(f"[LRUCache] delete异常: {e}")
+    
     def _log_if_needed(self):
         """根据间隔记录统计日志"""
         if self._operation_count % self._log_interval == 0:

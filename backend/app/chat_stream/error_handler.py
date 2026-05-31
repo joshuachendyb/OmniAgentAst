@@ -155,25 +155,14 @@ def resolve_http_error_type(error_message: str) -> Optional[str]:
     """
     从错误消息字符串中解析并返回 HTTP 错误类型标识
     
-    【重构 小健 2026-05-24】统一引用 constants.HTTP_STATUS_TO_ERROR_TYPE 映射表
+    【重构 小健 2026-05-31】委托给UnifiedErrorClassifier，消除重复分类逻辑
     """
     if not error_message:
         return None
     
-    from app.constants import HTTP_STATUS_TO_ERROR_TYPE, API_ERROR_429, API_ERROR_401, API_ERROR_403
-    
-    for match in re.finditer(r'\b(\d{3})\b', error_message):
-        code = int(match.group(1))
-        if code in HTTP_STATUS_TO_ERROR_TYPE:
-            return HTTP_STATUS_TO_ERROR_TYPE[code]
-    
-    msg_lower = error_message.lower()
-    if "rate limit" in msg_lower or "too many requests" in msg_lower or "limit_error" in msg_lower:
-        return API_ERROR_429
-    if "auth" in msg_lower or "unauthorized" in msg_lower:
-        return API_ERROR_401
-    if "forbidden" in msg_lower:
-        return API_ERROR_403
-    
-    return None
+    from app.utils.error_classifier import UnifiedErrorClassifier
+    category = UnifiedErrorClassifier.classify_error(error_message)
+    if category.value == "unknown":
+        return None
+    return category.value
 

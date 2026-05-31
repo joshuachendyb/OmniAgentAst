@@ -12,7 +12,7 @@ from app.db import db
 from app.api.v1.messages import _user_message_ids, _message_ids_lock
 from app.api.v1.conversation.assistant_message_id_allocator import AssistantMessageIdAllocator
 from app.api.v1.conversation.ensure_session_exists import ensure_session_exists
-from app.api.v1.conversation.extract_metadata import extract_metadata
+from app.utils.common import extract_metadata_from_steps
 from app.api.v1.conversation.insert_assistant_message import insert_assistant_message
 from app.api.v1.conversation.update_message_fields import update_message_fields
 from app.api.v1.conversation.update_session_message_count import update_session_message_count
@@ -26,7 +26,7 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
         with db.get_conn("chat") as conn:
             ensure_session_exists(session_id, conn)
             message_id, is_new = allocator.allocate(session_id, conn)
-            metadata = extract_metadata(update_data.execution_steps)
+            metadata = extract_metadata_from_steps(update_data.execution_steps)
             display_name = metadata.get("display_name")
             if is_new:
                 insert_assistant_message(conn, message_id, session_id, display_name, update_data)

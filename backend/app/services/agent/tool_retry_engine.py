@@ -160,12 +160,14 @@ class ToolRetryEngine:
                     self.available_tools[action] = impl
                     tool = impl
                 else:
-                    return {
-                        "code": ERR_TOOL_NOT_FOUND,
-                        "data": None,
-                        "message": f"Unknown tool: {action}. Available tools: {list(self.available_tools.keys())}",
-                        "retry_count": 0
-                    }
+                    return create_error_tool_result(
+                        code=ERR_TOOL_NOT_FOUND,
+                        data=None,
+                        message=f"Unknown tool: {action}. Available tools: {list(self.available_tools.keys())}",
+                        retry_count=0,
+                        error_message=f"工具 '{action}' 未找到",
+                        error_type="tool_not_found"
+                    )
         
         # 检查参数
         sig = inspect.signature(tool)
@@ -215,14 +217,8 @@ class ToolRetryEngine:
                     f"失败: {error_category.description} - {str(e)[:100]}"
                 )
                 
-                if not (error_category.is_retryable or error_category.name.lower() in retryable_errors):
-                    return self._build_retry_error(
-                        f"ERR_{error_category.name}",
-                        f"{error_category.description}: {str(e)[:200]}",
-                        attempt_count - 1, error_type=error_category.name.lower(),
-                    )
-                
-                if attempt_count >= max_retries:
+                if not (error_category.is_retryable or error_category.name.lower() in retryable_errors) \
+                   or attempt_count >= max_retries:
                     return self._build_retry_error(
                         f"ERR_{error_category.name}",
                         f"{error_category.description}: {str(e)[:200]}",

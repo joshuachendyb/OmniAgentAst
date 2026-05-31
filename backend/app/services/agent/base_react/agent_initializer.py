@@ -19,24 +19,6 @@ class AgentInitializer:
     """Agent初始化逻辑（SRP）"""
 
     @staticmethod
-    def initialize(
-        agent,
-        llm_client: Any,
-        task_id: str,
-        tool_category: Optional[ToolCategory],
-        max_steps: int,
-        rollback_enabled: bool,
-        candidates: Optional[List[str]],
-        **kwargs
-    ) -> None:
-        """一次性完成所有初始化"""
-        agent._init_llm(llm_client, **kwargs)
-        agent._init_state(task_id, tool_category, max_steps)
-        agent._init_messages()
-        agent._init_task_tracking(enable=rollback_enabled)
-        agent._init_candidates(candidates)
-
-    @staticmethod
     def _init_llm(agent, llm_client: Any, **kwargs):
         """复制自 base_react.py 第97-107行 — 初始化LLM客户端相关属性"""
         agent.llm_client = llm_client

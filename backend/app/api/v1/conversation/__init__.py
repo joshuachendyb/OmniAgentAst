@@ -3,7 +3,7 @@
 conversation — 从 conversation.py 拆出的职责
 
 - AssistantMessageIdAllocator: ID分配器
-- extract_metadata: DB持久化
+- extract_metadata_from_steps: 从utils/common.py复用
 - ensure_session_exists: DB持久化
 - insert_assistant_message: DB持久化
 - update_message_fields: DB持久化
@@ -12,7 +12,7 @@ conversation — 从 conversation.py 拆出的职责
 """
 
 from app.api.v1.conversation.assistant_message_id_allocator import AssistantMessageIdAllocator
-from app.api.v1.conversation.extract_metadata import extract_metadata
+from app.utils.common import extract_metadata_from_steps
 from app.api.v1.conversation.ensure_session_exists import ensure_session_exists
 from app.api.v1.conversation.insert_assistant_message import insert_assistant_message
 from app.api.v1.conversation.update_message_fields import update_message_fields
@@ -23,7 +23,7 @@ from app.api.v1.conversation.conversation import router
 
 __all__ = [
     "router",
-    "AssistantMessageIdAllocator", "extract_metadata", "ensure_session_exists",
+    "AssistantMessageIdAllocator", "extract_metadata_from_steps", "ensure_session_exists",
     "insert_assistant_message", "update_message_fields", "update_session_message_count",
     "ExecutionStepsUpdate", "save_execution_steps",
 ]

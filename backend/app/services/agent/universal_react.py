@@ -120,7 +120,9 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, GenericReactAgent):
             return False
 
     def _get_system_prompt(self) -> str:
-        return self._build_system_prompt(self.config.category_display_name)
+        if hasattr(self, 'config') and self.config:
+            return self._build_system_prompt(self.config.category_display_name)
+        return self._build_system_prompt("通用助手")
 
     def _get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
         return self.prompts.get_task_prompt(task)
