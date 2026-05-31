@@ -66,7 +66,20 @@ class ChunkBuffer:
         """
         return self.consecutive_count >= MAX_CHUNKS_WITHOUT_PROMOTE
 
+    def flush(self) -> str:
+        """清空buffer并返回内容 — 纯buffer管理
+        
+        【3.9修复 北京老陈 2026-05-31】分离buffer管理和builder操作（SLAP）
+        """
+        result = self.buffer
+        self.clear()
+        return result
+
     def flush_to(self, builder: "MessageBuilder") -> str:
+        """清空buffer、写入builder、返回内容 — 兼容旧接口
+        
+        注意：此方法混合了buffer管理和builder操作，新代码应使用flush()
+        """
         result = self.buffer
         if result:
             builder.temp_history.clear()

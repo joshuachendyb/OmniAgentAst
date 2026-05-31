@@ -111,28 +111,32 @@ class ReActHandlerMixin:
 
         # 【3.9修复 北京老陈 2026-05-31】chunk累积超时检测，防止无限循环
         if chunk_buffer.should_force_stop():
-            content = chunk_buffer.flush_to(self.message_builder)
-            final_step = StepFactory.create_final_step(step=step_count + 1, response=content, thought="chunk累积超时，强制停止")
-            yield self._emit_step(final_step)
-            self.status = AgentStatus.COMPLETED
-            self._on_after_loop()
+            async for step in self._complete_chunk_with_final(chunk_buffer, step_count, "chunk累积超时，强制停止"):
+                yield step
             return
 
         if self.tool_category is None:
-            content = chunk_buffer.flush_to(self.message_builder)
-            final_step = StepFactory.create_final_step(step=step_count + 1, response=content, thought="")
-            yield self._emit_step(final_step)
-            self.status = AgentStatus.COMPLETED
-            self._on_after_loop()
+            async for step in self._complete_chunk_with_final(chunk_buffer, step_count, ""):
+                yield step
             return
 
         if chunk_buffer.should_promote():
-            promoted_content = chunk_buffer.flush_to(self.message_builder)
-            final_step = StepFactory.create_final_step(step=step_count + 1, response=promoted_content, thought="")
-            yield self._emit_step(final_step)
-            self.status = AgentStatus.COMPLETED
-            self._on_after_loop()
+            async for step in self._complete_chunk_with_final(chunk_buffer, step_count, ""):
+                yield step
             return
+
+    async def _complete_chunk_with_final(
+        self, chunk_buffer: ChunkBuffer, step_count: int, thought: str
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """chunk完成的公共逻辑：flush + final_step + COMPLETED — 北京老陈 2026-05-31
+        
+        【DRY修复】提取三个退出路径的公共代码
+        """
+        content = chunk_buffer.flush_to(self.message_builder)
+        final_step = StepFactory.create_final_step(step=step_count + 1, response=content, thought=thought)
+        yield self._emit_step(final_step)
+        self.status = AgentStatus.COMPLETED
+        self._on_after_loop()
 
     async def _handle_completion_type(
         self, parsed: Dict[str, Any], step_count: int, chunk_buffer: ChunkBuffer
