@@ -1,3 +1,91 @@
+v0.14.9
+
+更新时间: 2026-06-01 06:43:02
+
+## v0.14.8→v0.14.9 变更汇总 - 小沈-2026-06-01
+
+### 一、refactor 重构——大文件拆分为Package目录（19个commit）
+
+将项目中的大单文件按职责拆分为package目录，每个目录内各文件各司其职（SRP拆分）：
+
+| 文件→目录 | 拆分内容 | 说明 |
+|-----------|---------|------|
+| conversation.py→package | 历史管理按会话/消息/查询拆分 | 按职责独立 |
+| sessions.py→package | 会话管理按CRUD拆分 | 约700行拆散 |
+| message_saver.py→package | 消息持久化按写入/查询/清理拆分 | 约500行拆散 |
+| base_react.py→package | Agent主循环核心拆为上下文/流/状态管理 | 约1500行拆散 |
+| react_handler_mixin.py→package | ReAct处理器按流/工具/观察/history拆分 | 约1000行拆散 |
+| chat_router.py→package | 路由按同步/异步/历史/查询拆分 | 约600行拆散 |
+| command_parser/parser.py→package | 命令解析器按token/语义/语法拆分 | 约800行拆散 |
+| factory.py→package | 工厂类按各Agent类型拆分 | 约900行拆散 |
+| llm_core.py→package | LLM核心按客户端/策略/流处理拆分 | 约1200行拆散 |
+| intent_classifier.py→package | 意图分类按评分/匹配/执行拆分 | 约700行拆散 |
+| react_sse_wrapper.py→package | SSE包装按事件/格式/连接管理拆分 | 约600行拆散 |
+| file_safety.py→package | 文件安全按路径/黑名单/白名单拆分 | 约500行拆散 |
+| log_config/setup.py→package | 日志配置按setup/格式化/过滤拆分 | 约400行拆散 |
+
+### 二、refactor 重构——代码清理（4个commit）
+
+| commit | 变更 | 说明 |
+|--------|------|------|
+| 6c9b7324 | 删除init_history_db.py | 已移至其他位置，不再需要 |
+| 8d6dd92b | 删除rollback_mixin.py | rollback逻辑已内联到UniversalReactAgent |
+| 53d8cc38 | BasePromptTemplate重命名 | 文件名对齐PascalCase风格 |
+| 945eb756 | API端点重构 | routes→ai_config重命名，chat迁移到api/v1 |
+
+### 三、refactor 重构——消除后端代码重复（1个commit）
+
+| commit | 变更 |
+|--------|------|
+| 85da77ef | ai_config/sessions/messages 消除重复逻辑；合并_update_language/_update_theme；timestamp_for_filename/now_str统一 |
+
+### 四、feat 新功能——task模块统一（20个commit）
+
+将原先分散在各处的流任务管理、incident处理、生命周期管理逻辑，集中到统一 `task/` 模块下：
+
+| 变更 | 涉及文件 | 说明 |
+|------|---------|------|
+| **新增task模块** | task/__init__.py + 6个子模块（cancel/pause/resume/cleanup/registry/incident_check/cancel_check） | 统一入口，职责分明 |
+| **删除废弃文件** | 旧流任务管理/incident处理/生命周期管理文件 | 彻底清理不再使用的代码 |
+| **适配task模块** | chat_stream_v2、chat_router、react_sse_wrapper、run_sse_stream、run_stream、step_react_loop、step_emitter、base_react、handle_action_type、handle_pending_calls、handle_observation_flow、handle_client_disconnect、react_handler_mixin、init_route_context、main 共20个文件 | 旧引用全部替换为统一task模块 |
+
+### 五、docs 文档更新（21个commit）
+
+**5.1 后端代码深度核查报告（2个commit）**
+| commit | 说明 |
+|--------|------|
+| 9ef01436 | 新增后端代码10大原则深度核査报告 |
+| 8aeaaf0e | Agent-LLM模式关系分析+深度核査报告 |
+
+**5.2 关键流程与架构分析（2个commit）**
+| commit | 说明 |
+|--------|------|
+| b8a25b95 | 更新关键流程拆分分析+大文件拆分方案设计文档 |
+| 37e30b26 | 新增会话记录-问题28OCP最终统一汇报 |
+
+**5.3 Agent-LLM架构分析文档（16个commit，本轮需求逐轮修复）**
+
+| 序号 | commit | 说明 |
+|------|--------|------|
+| 1 | 08292c3f | 更新Agent与LLM架构层次分析文档 |
+| 2 | eeff197c | 更新会话记录 |
+| 3 | a7332971 | 更新Agent与LLM架构分析文档-第1章需求修复(v4.8) |
+| 4 | 6b110ef7 | 新增1.1.2a用户操作流程说明(通俗版) |
+| 5 | 4ad3fcb3 | 修正传输方式设计-SSE为第1层内部机制 |
+| 6 | ed02f3d5 | 明确SSE流式仅用于同步模式 |
+| 7 | 44481f46 | 需求第1章4个问题修复 |
+| 8 | 29fa4746 | 新增1.6节业务场景说明(9个场景) |
+| 9 | 2ca7043b | 7个场景丰富toolcall描述 |
+| 10 | 8901ae7f | 新增多Agent支持TODO备注(第2层改造) |
+| 11 | a3b88d63 | 修复SSE异步矛盾+前端归属移回1.5 |
+| 12 | a476ca82 | 修正同步整包概念/区分暂停停止/场景8补充 |
+| 13 | 45364687 | 新增异步模式核心保障需求-可信可靠可预期 |
+| 14 | 9ad67afe | 更新后端代码10大原则深度核查报告 |
+| 15 | 6a9a6735 | 目录更新 doc-5月→doc-6月发展 |
+| 16 | 3b9cc569 | 更新version.txt v0.14.8→v0.14.9 |
+
+---
+
 v0.14.8
 
 更新时间: 2026-05-31 17:50:00
