@@ -101,43 +101,55 @@ class ReActHandlerMixin:
         self.parse_retry_count = 0
         chunk_content = parsed.get("content", "")
 
+        # 1. 存入buffer
         chunk_buffer.append(chunk_content)
+
+        # 2. 存入message_builder历史（保留最近10条）
         self.message_builder.temp_history.append({"role": "assistant", "content": chunk_content})
         if len(self.message_builder.temp_history) > 10:
             self.message_builder.temp_history = self.message_builder.temp_history[-10:]
 
+        # 3. 立即显示这个chunk
         chunk_step = StepFactory.create_chunk_step(step=step_count, content=chunk_content)
         yield self._emit_step(chunk_step)
 
+        # 4. 检查是否该"倒水"完成
         # 【3.9修复 北京老陈 2026-05-31】chunk累积超时检测，防止无限循环
         if chunk_buffer.should_force_stop():
-            async for step in self._complete_chunk_with_final(chunk_buffer, step_count, "chunk累积超时，强制停止"):
+            content = chunk_buffer.flush()
+            async for step in self._complete_chunk(content, step_count, "chunk累积超时，强制停止"):
                 yield step
             return
 
         if self.tool_category is None:
-            async for step in self._complete_chunk_with_final(chunk_buffer, step_count, ""):
+            content = chunk_buffer.flush()
+            async for step in self._complete_chunk(content, step_count, ""):
                 yield step
             return
 
         if chunk_buffer.should_promote():
-            async for step in self._complete_chunk_with_final(chunk_buffer, step_count, ""):
+            content = chunk_buffer.flush()
+            async for step in self._complete_chunk(content, step_count, ""):
                 yield step
             return
 
-    async def _complete_chunk_with_final(
-        self, chunk_buffer: ChunkBuffer, step_count: int, thought: str
+    async def _complete_chunk(
+        self, content: str, step_count: int, thought: str
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """chunk完成的公共逻辑：flush + final_step + COMPLETED — 北京老陈 2026-05-31
+        """chunk完成的公共逻辑：builder操作 + final_step + COMPLETED — 北京老陈 2026-05-31
         
-        【DRY修复】提取三个退出路径的公共代码
+        【DRY+SLAP修复】只接收content参数，不依赖ChunkBuffer
         """
-        content = chunk_buffer.flush()
+        # builder操作：清空历史，保存accumulated内容
         if content:
             self.message_builder.temp_history.clear()
             self.message_builder.add_assistant(content)
+
+        # 创建final_step
         final_step = StepFactory.create_final_step(step=step_count + 1, response=content, thought=thought)
         yield self._emit_step(final_step)
+
+        # 标记完成
         self.status = AgentStatus.COMPLETED
         self._on_after_loop()
 
