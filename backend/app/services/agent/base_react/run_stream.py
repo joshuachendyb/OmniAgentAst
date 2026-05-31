@@ -2,8 +2,10 @@
 """
 run_stream — 从 base_react.py 拆出
 
-复制来源: base_react.py 第191-293行
+task检查通过 task_registry 函数直接读，不再接收 running_tasks 参数
+
 Author: 小沈 - 2026-05-31
+统一: 小健 - 2026-05-31 — 去掉running_tasks参数
 """
 
 import time
@@ -20,7 +22,6 @@ async def run_stream(
     context: Optional[Dict[str, Any]] = None,
     max_steps: Optional[int] = None,
     task_id: Optional[str] = None,
-    running_tasks: Optional[Dict[str, Any]] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """复制自 base_react.py 第191-293行 — ReAct 核心循环"""
     if max_steps is None:
@@ -39,26 +40,8 @@ async def run_stream(
 
             step_count += 1
 
-            _int = self._check_interrupt(step_count, running_tasks)
-            if _int:
-                if task_id and running_tasks:
-                    _crt = running_tasks.get(task_id, {}).get("cancel_request_time")
-                    if _crt:
-                        logger.info(f"[InterruptCheck] 任务 {task_id} 延迟: {(time.time() - _crt) * 1000:.0f}ms")
-                yield _int
-                self._complete_tracked_task(success=False)
-                self._on_after_loop()
-                return
-
             self.status = AgentStatus.THINKING
             response = await self._get_llm_response()
-
-            _int = self._check_interrupt(step_count, running_tasks)
-            if _int:
-                yield _int
-                self._complete_tracked_task(success=False)
-                self._on_after_loop()
-                return
 
             if not response:
                 self._empty_response_retry_engine.record_attempt()
@@ -107,7 +90,7 @@ async def run_stream(
 
             async for step in self._handle_action_type(
                 parsed, step_count, chunk_buffer, valid_tool_names,
-                running_tasks, task_id, response
+                task_id, response
             ):
                 yield step
 
