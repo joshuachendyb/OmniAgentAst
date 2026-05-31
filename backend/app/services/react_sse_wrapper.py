@@ -29,11 +29,14 @@ Author: 小沈 - 2026-03-26
 import json
 import asyncio
 import uuid
+import traceback
+import httpx
 from datetime import datetime
 from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 from app.services import AIServiceFactory
 from app.config import get_config
 from app.utils.logger import logger
+from app.utils.retry import create_sse_retry_engine
 from app.utils.display_name_cache import cache_display_name
 from app.chat_stream.incident_handler import check_and_yield_if_interrupted, check_and_yield_if_paused, create_incident_data
 from app.services.agent.steps import StepFactory, IncidentStep
@@ -627,3 +630,60 @@ async def resume_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
             logger.info(f"[Resume] 任务 {task_id} 已继续")
             return {"success": True, "message": f"任务 {task_id} 已继续"}
         return {"success": False, "message": f"任务 {task_id} 不存在"}
+
+
+# ============================================================
+# 调用点3：SSE会话重试 — 包裹 generate_sse_stream
+# ============================================================
+
+async def generate_sse_stream_with_retry(
+    messages: List[Dict[str, str]],
+    intent_type: str = "generic",
+    confidence: float = 0.0,
+    candidates: Optional[List[str]] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    temperature: float = 0.7,
+    task_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    ai_service: Optional[Any] = None,
+    next_step: Optional[Callable[[], int]] = None,
+    running_tasks: Optional[Dict[str, Any]] = None,
+    running_tasks_lock: Optional[asyncio.Lock] = None,
+    current_execution_steps: Optional[List[Dict]] = None,
+) -> AsyncGenerator[str, None]:
+    """调用点3：第1.5层 SSE会话重试
+
+    包裹 generate_sse_stream，网络异常/超时时重建Agent重新发起。
+    唯一调用点：ChatRouter._step_react_loop()
+    """
+    retry_engine = create_sse_retry_engine()
+    while True:
+        try:
+            async for event in generate_sse_stream(
+                messages, intent_type, confidence, candidates, provider,
+                model, temperature, task_id, session_id, ai_service,
+                next_step, running_tasks, running_tasks_lock,
+                current_execution_steps,
+            ):
+                yield event
+            return
+        except asyncio.CancelledError:
+            return
+        except (asyncio.TimeoutError, ConnectionError, httpx.RemoteProtocolError,
+                httpx.ConnectError, httpx.ReadTimeout) as e:
+            if retry_engine.exhausted:
+                logger.error(f"[SSE重试] 耗尽，放弃: {e}")
+                error_data = {"type": "error", "error": {"type": "connection_error",
+                    "message": "SSE连接失败，重试耗尽", "detail": str(e)}}
+                yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
+                return
+            delay = retry_engine.current_delay
+            logger.warning(f"[SSE重试] 第{retry_engine.attempt_count}次，等待{delay:.0f}s: {e}")
+            await asyncio.sleep(delay)
+            retry_engine.record_attempt()
+        except Exception as e:
+            error_data = {"type": "error", "error": {"type": "unknown_error",
+                "message": str(e), "detail": traceback.format_exc()}}
+            yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
+            return
