@@ -506,60 +506,9 @@ ChatRouter._step_react_loop()
 第1层 → 定义接口 → 第2层实现接口
 第2层 → 定义接口 → 第3层实现接口
 ```
-
-### 3.7 问题6：重试机制仍分散3套
-
-| 维度 | 说明 |
-|------|------|
-| **问题描述** | 3个重试机制虽有 `RetryEngine` 统一引擎但使用方式仍分散，且SSE流式路径无重试保护 |
-| **涉及模块** | `llm_core.py` + `llm/core.py` + `base_react.py` |
-| **风险等级** | P2-中 |
-
-**精准分析**：
-
-| 重试场景 | 实现方式 | 位置 | 配置 |
-|---------|---------|------|------|
-| **非流式429重试** | `_post_with_retry` → `create_rate_limit_retry_engine(RetryEngine)` | `llm_core.py:158` | max=3, exp退避 |
-| **流式429重试** | `_StreamRetryContext` → `RetryEngine.execute_async_context()` | `llm/core.py:56` | max=3, exp退避 |
-| **Agent parse重试** | `_parse_retry_engine(RetryEngine)` + 内联`record_attempt()` | `base_react.py:120` | max=3, exp退避 |
-| **Agent empty_response重试** | `_empty_response_retry_engine(RetryEngine)` + 内联判断 | `base_react.py:123` | max=2, fixed退避 |
-| **SSE流式重试** | **不存在** | `react_sse_wrapper._run_sse_stream` | **无重试保护** |
-
-**核心问题**：SSE路径（`react_sse_wrapper._run_sse_stream`）**没有重试保护**。`generate_sse_stream` 只有外层 `try/except` 捕获异常，没有超时重试和网络错误重试。
-
-**改进措施**：
-```
-当前：
-1. 非流式429 → RetryEngine (llm_core)
-2. 流式429   → _StreamRetryContext → RetryEngine (llm/core.py)  
-3. Agent     → 双RetryEngine (base_react)
-4. SSE流式   → 无重试
-
-目标：
-统一使用RetryEngine，路径不同配置不同参数：
-1. 非流式429 → create_rate_limit_retry_engine(max=3, exp)
-2. 流式429   → create_rate_limit_retry_engine(max=3, exp)
-3. Agent     → create_parse_retry_engine(max=3, exp) + create_empty_response_engine(max=2, fixed)
-4. SSE流式   → create_sse_retry_engine(max=3, exp)  ← 需要新增
-```
-
-### 3.8 死代码发现：RetryCounter
-
-| 维度 | 说明 |
-|------|------|
-| **问题描述** | `RetryCounter` 类定义在 `retry_counter.py` 中，但无任何模块导入使用 |
-| **代码位置** | `app/utils/retry_counter.py:17` |
-| **风险等级** | P3-低 |
-
-**精准分析**：
-- `grep` 全库搜索 `RetryCounter`，仅匹配到 `retry_counter.py` 自身
-- 零外部引用，`RetryCounter` 是死代码
-- 建议清理：删除 `retry_counter.py` 文件
-
-**改进措施**：
-- 删除 `backend/app/utils/retry_counter.py`
-
 ---
+
+
 
 ## 四、改进措施方案
 
@@ -573,7 +522,7 @@ ChatRouter._step_react_loop()
 | **拆分ChatRouter** | 将route()入口与_step_*()编排分离到不同模块 | 消除层次混杂（问题4） | 小 |
 | **层间接口定义** | 第1层↔第2层↔第3层之间定义清晰接口 | 降低耦合度（问题5） | 中 |
 | **重试机制收敛** | 统一使用RetryEngine，SSE路径补充重试保护 | 消除重试分散（问题6） | 小 |
-| **清理死代码** | 删除 retry_counter.py（RetryCounter零引用） | 消除死代码 | 小 |
+
 
 ### 4.2 目标架构
 
