@@ -107,9 +107,6 @@ class BaseAgent(ReActHandlerMixin, ABC):
     def _exit_with_error(self, step_count: int, error_type: str, error_message: str, recoverable: bool = False) -> ReasoningStep:
         return self._step_emitter.exit_with_error(step_count, error_type, error_message, recoverable)
 
-    def _check_interrupt(self, step_count: int, running_tasks: Optional[Dict[str, Any]] = None) -> Optional[IncidentStep]:
-        return self._step_emitter.check_interrupt(step_count, running_tasks)
-
     def _complete_tracked_task(self, success: bool):
         self._step_emitter.complete_task(success)
 
