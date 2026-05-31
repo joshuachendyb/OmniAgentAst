@@ -22,7 +22,8 @@ import httpcore
 from typing import List, Dict, Optional, AsyncGenerator, Any
 
 from app.utils.logger import logger
-from app.utils.retry_engine import RetryEngine, BackoffStrategy, create_rate_limit_retry_engine
+from app.utils.retry_engine import RetryEngine, BackoffStrategy
+from app.utils.retry import create_network_retry_engine
 
 from app.services.llm.model_adapters.xml_adapter import convert_xml_tool_call_to_json
 from app.services.llm.model_adapters.reasoning import (
@@ -97,6 +98,7 @@ class BaseAIService:
         self._cancelled = False
         self._current_response: Optional[httpx.Response] = None
         self._supports_reasoning: Optional[bool] = None
+        self._network_engine = create_network_retry_engine()
 
     def _ensure_client(self):
         """确保SDK客户端已创建（延迟初始化）"""
@@ -156,15 +158,9 @@ class BaseAIService:
         return status_code in self.RATE_LIMIT_STATUS_CODES
     
     async def _post_with_retry(self, url: str, headers: dict, json_body: dict, max_retries: int = 3, retry_delay: float = 2.0):
-        """带429指数退避重试的POST请求 — 委托到RetryEngine统一重试引擎 — 小沈 2026-05-27"""
+        """带429指数退避重试的POST请求 — 委托到调用点1网络重试引擎 — 小沈 2026-05-27"""
         self._ensure_client()
-        engine = create_rate_limit_retry_engine(
-            max_retries=max_retries,
-            backoff_factor=retry_delay,
-            is_rate_limit_fn=lambda e: (
-                hasattr(e, 'response') and self._is_rate_limit_status(getattr(e, 'status_code', 0))
-            ),
-        )
+        engine = self._network_engine
 
         async def _do_post():
             response = await self._llm_sdk.request("POST", url, headers=headers, json=json_body)

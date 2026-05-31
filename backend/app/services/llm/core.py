@@ -12,7 +12,7 @@ LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05
 from typing import List, Dict, Optional
 
 from app.utils.logger import logger
-from app.utils.retry_engine import RetryEngine, BackoffStrategy
+from app.utils.retry import create_network_retry_engine
 
 
 def _resolve_exception(e: Exception) -> tuple:
@@ -64,9 +64,8 @@ class _StreamRetryContext:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self._response_ctx = None
-        self._engine = RetryEngine(
+        self._engine = create_network_retry_engine(
             max_retries=max_retries,
-            backoff_strategy=BackoffStrategy.EXPONENTIAL,
             backoff_factor=retry_delay,
         )
 
