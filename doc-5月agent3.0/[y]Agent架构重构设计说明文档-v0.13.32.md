@@ -278,7 +278,7 @@ react_sse_wrapper.py 中 prompt logger 改用 `resolve_agent_config(intent_type)
 
 ---
 
-## 9. 向后兼容设计
+## 9. 向后兼容设计[X杜绝向后兼容的设计,下面的设计是错误]
 
 ### 9.1 __init__.py 懒加载
 

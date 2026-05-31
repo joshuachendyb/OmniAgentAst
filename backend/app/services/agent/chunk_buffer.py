@@ -33,13 +33,13 @@ class ChunkBuffer:
         buffer.append("hello")
         buffer.append(" world")
         if buffer.should_promote():
-            content = buffer.flush_to(message_builder)
+            content = buffer.flush()
 
     返回数据说明:
         - append: 无返回值，修改内部状态
         - should_promote: 返回bool，True表示连续chunk数达到阈值
         - should_force_stop: 返回bool，True表示累积超时需强制停止
-        - flush_to: 返回str（buffer内容），同时清空buffer并写入MessageBuilder
+        - flush: 返回str（buffer内容），同时清空buffer
         - clear: 无返回值，仅清空buffer和计数器
 
     Author: 小沈 2026-05-25
@@ -72,18 +72,6 @@ class ChunkBuffer:
         【3.9修复 北京老陈 2026-05-31】分离buffer管理和builder操作（SLAP）
         """
         result = self.buffer
-        self.clear()
-        return result
-
-    def flush_to(self, builder: "MessageBuilder") -> str:
-        """清空buffer、写入builder、返回内容 — 兼容旧接口
-        
-        注意：此方法混合了buffer管理和builder操作，新代码应使用flush()
-        """
-        result = self.buffer
-        if result:
-            builder.temp_history.clear()
-            builder.add_assistant(result)
         self.clear()
         return result
 
