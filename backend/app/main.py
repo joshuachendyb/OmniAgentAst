@@ -16,7 +16,7 @@ from app.utils.logger import logger
 from app.utils.monitoring import setup_monitoring
 from app.constants import DEFAULT_CORS_ORIGINS
 from app.utils.version import get_version
-from app.services.react_sse_wrapper import cleanup_expired_tasks
+from app.services.task.task_registry import cleanup_expired_tasks
 from app.db import db
 
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
