@@ -44,7 +44,7 @@ from app.services.tools.tool_types import ToolCategory
 # 【2026-05-01 小沈】从独立模块导入CRSS评分功能
 from app.services.intents.crss_scorer import detect_intent_v2
 from app.constants import CRSS_CONFIDENCE_THRESHOLD
-from app.services.react_sse_wrapper import running_tasks, running_tasks_lock, generate_sse_stream
+from app.services.react_sse_wrapper import running_tasks, running_tasks_lock, generate_sse_stream_with_retry
 from app.chat_stream.start_step import send_start_step
 from app.chat_stream.sse_formatter import format_agent_sse
 from app.services.preprocessing.intent_classifier import classify_intent
@@ -269,7 +269,7 @@ class ChatRouter:
                                execution_steps):
         """S4 ReAct 循环细节下沉 — 实现SLAP分层"""
         messages_list = [{"role": msg.role, "content": msg.content} for msg in messages]
-        async for event in generate_sse_stream(messages=messages_list, intent_type=intent_type,
+        async for event in generate_sse_stream_with_retry(messages=messages_list, intent_type=intent_type,
             confidence=confidence, candidates=candidates, provider=provider, model=model,
             task_id=task_id, session_id=session_id, ai_service=ai_service, next_step=next_step,
             running_tasks=running_tasks, running_tasks_lock=running_tasks_lock,
