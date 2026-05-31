@@ -48,13 +48,11 @@ class ChunkBuffer:
     def __init__(self, max_consecutive: int = MAX_CONSECUTIVE_CHUNKS):
         self.buffer: str = ""
         self.consecutive_count: int = 0
-        self.total_chunks: int = 0  # 累计chunk总数（用于超时检测）
         self.max_consecutive: int = max_consecutive
 
     def append(self, content: str) -> None:
         self.buffer += content
         self.consecutive_count += 1
-        self.total_chunks += 1
 
     def should_promote(self) -> bool:
         """连续chunk数达到阈值时返回True"""
@@ -64,8 +62,9 @@ class ChunkBuffer:
         """chunk累积超时需强制停止时返回True
         
         【3.9修复 北京老陈 2026-05-31】防止LLM持续返回chunk导致无限循环
+        只有连续chunk未触发promote时才计数，promote后重置
         """
-        return self.total_chunks >= MAX_CHUNKS_WITHOUT_PROMOTE
+        return self.consecutive_count >= MAX_CHUNKS_WITHOUT_PROMOTE
 
     def flush_to(self, builder: "MessageBuilder") -> str:
         result = self.buffer
@@ -78,4 +77,3 @@ class ChunkBuffer:
     def clear(self) -> None:
         self.buffer = ""
         self.consecutive_count = 0
-        # 注意：total_chunks不清零，用于累计超时检测
