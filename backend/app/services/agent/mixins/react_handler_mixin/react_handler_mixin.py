@@ -46,7 +46,6 @@ class ReActHandlerMixin(
     - self.tool_category
     - self._emit_step()
     - self._exit_with_error()
-    - self._check_interrupt()
     - self._on_after_loop()
     - self._execute_tool_step()
     """
