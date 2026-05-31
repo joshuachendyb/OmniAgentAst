@@ -37,6 +37,8 @@ from app.constants import (ERR_REG_DELETE_FAILED, ERR_REG_INVALID_PARAM, ERR_REG
 from app.utils.logger import logger
 from app.utils.tool_result_formatter import build_next_actions  # 小沈 2026-05-19
 from app.services.tools._response import build_success, build_error
+# 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
+from app.services.tools.tool_constants import SUBPROCESS_TIMEOUT_DEFAULT
 
 
 
@@ -94,7 +96,7 @@ def _backup_registry(root_key: str, sub_key: str, session_id: str) -> str:
         export_key = f"{root_key}\\{sub_key}"
         result = subprocess.run(
             ["reg", "export", export_key, backup_file, "/y"],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT
         )
         if result.returncode == 0 and os.path.exists(backup_file):
             _registry_session_backup[backup_key] = backup_file

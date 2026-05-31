@@ -42,6 +42,19 @@ TOOL_TIMEOUTS = {
 }
 
 # ============================================================
+# 1.1 Subprocess/HTTP超时配置（从各工具文件硬编码迁移）— 北京老陈 2026-05-31
+# ============================================================
+
+# subprocess执行超时（秒）
+SUBPROCESS_TIMEOUT_DEFAULT = 10    # 通用subprocess执行超时
+SUBPROCESS_TIMEOUT_SHORT = 5       # 短时subprocess（shell communicate、代码执行）
+SUBPROCESS_TIMEOUT_VERY_SHORT = 3  # 极短subprocess（process wait）
+SUBPROCESS_TIMEOUT_LONG = 60       # 长时subprocess（文档转换等耗时操作）
+
+# httpx请求超时（秒）
+HTTPX_TIMEOUT_DEFAULT = 5.0        # 通用httpx请求超时
+
+# ============================================================
 # 2. 文件工具配置（从 file_tools.py 迁移）
 # ============================================================
 

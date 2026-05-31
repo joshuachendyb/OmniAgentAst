@@ -32,6 +32,8 @@ from typing import Any, Callable, Dict, List, Optional
 from app.services.tools._response import build_success, build_error
 from app.utils.logger import logger
 from app.services.tools.toolhelper.window_helper import find_windows_by_title
+# 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
+from app.services.tools.tool_constants import SUBPROCESS_TIMEOUT_SHORT
 from app.constants import (
     ERR_DESKTOP_CHECK_SCREEN_SIZE,
     ERR_DESKTOP_CHECK_TESSERACT,
@@ -228,7 +230,7 @@ def _check_tesseract_available() -> Dict[str, Any]:
             ["tesseract", "--version"],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=SUBPROCESS_TIMEOUT_SHORT,
         )
         available = result.returncode == 0
         if available:

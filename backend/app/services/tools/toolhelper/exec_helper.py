@@ -24,6 +24,8 @@ from typing import List, Tuple
 
 # 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
 from app.services.tools.tool_constants import DANGEROUS_PATTERNS
+# 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
+from app.services.tools.tool_constants import SUBPROCESS_TIMEOUT_SHORT
 
 
 def _check_python_available() -> bool:
@@ -73,7 +75,7 @@ def _check_node_available() -> bool:
         result = subprocess.run(
             ["node", "--version"],
             capture_output=True,
-            timeout=5
+            timeout=SUBPROCESS_TIMEOUT_SHORT
         )
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):

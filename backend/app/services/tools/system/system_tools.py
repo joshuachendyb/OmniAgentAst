@@ -39,6 +39,8 @@ from app.utils.logger import logger
 from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, make_json_safe
 from app.services.tools._response import build_success, build_error  # 小沈 2026-05-20
 from app.services.tools.tool_constants import TOOL_TIMEOUTS
+# 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
+from app.services.tools.tool_constants import SUBPROCESS_TIMEOUT_DEFAULT
 
 
 
@@ -894,7 +896,7 @@ def _service_start(
 def _query_sc_service_state(service_name: str) -> str:
     """执行 sc query 并返回归一化状态: running/stopped/unknown — 小沈 2026-05-25"""
     try:
-        r = subprocess.run(["sc", "query", service_name], capture_output=True, text=True, timeout=10)
+        r = subprocess.run(["sc", "query", service_name], capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT)
         for line in r.stdout.splitlines():
             s = line.strip()
             if s.startswith("STATE:"):
@@ -971,14 +973,14 @@ def _linux_service_start(service_name: str, timeout: int, wait_for_started: bool
             while time.time() < deadline:
                 time.sleep(1)
                 check_cmd = ["systemctl", "is-active", service_name]
-                check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+                check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT)
                 final_state = check_result.stdout.strip()
                 if final_state == "active":
                     final_state = "running"
                     break
         else:
             check_cmd = ["systemctl", "is-active", service_name]
-            check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+            check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT)
             final_state = check_result.stdout.strip()
         
         return build_success({
@@ -1040,7 +1042,7 @@ def _windows_service_stop(service_name: str, force: bool, timeout: int, wait_for
         if stop_result.returncode != 0:
             if force:
                 taskkill_cmd = ["taskkill", "/F", "/IM", f"{service_name}.exe"]
-                subprocess.run(taskkill_cmd, capture_output=True, text=True, timeout=10)
+                subprocess.run(taskkill_cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT)
             return build_error(ERR_SERVICE_STOP, f"停止服务失败: {stop_result.stderr.strip() or stop_result.stdout.strip()}")
 
         if wait_for_stopped:
@@ -1070,7 +1072,7 @@ def _linux_service_stop(service_name: str, force: bool, timeout: int, wait_for_s
         if stop_result.returncode != 0:
             if force:
                 kill_cmd = ["systemctl", "kill", service_name]
-                subprocess.run(kill_cmd, capture_output=True, text=True, timeout=10)
+                subprocess.run(kill_cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT)
             
             return build_error(ERR_SERVICE_STOP, f"停止服务失败: {stop_result.stderr.strip()}")
         
@@ -1080,14 +1082,14 @@ def _linux_service_stop(service_name: str, force: bool, timeout: int, wait_for_s
             while time.time() < deadline:
                 time.sleep(1)
                 check_cmd = ["systemctl", "is-active", service_name]
-                check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+                check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT)
                 final_state = check_result.stdout.strip()
                 if final_state in ("inactive", "failed"):
                     final_state = "stopped"
                     break
         else:
             check_cmd = ["systemctl", "is-active", service_name]
-            check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+            check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT)
             final_state = check_result.stdout.strip()
         
         stop_type = "强制停止" if force else "优雅停止"
@@ -1360,7 +1362,7 @@ def _task_delete(
         
         # 先查询确认任务存在
         query_cmd = ["schtasks", "/query", "/tn", full_task_name]
-        query_result = subprocess.run(query_cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=10)
+        query_result = subprocess.run(query_cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=SUBPROCESS_TIMEOUT_DEFAULT)
         
         if query_result.returncode != 0:
             return build_error(ERR_TASK_NOT_FOUND, f"计划任务 {full_task_name} 不存在")

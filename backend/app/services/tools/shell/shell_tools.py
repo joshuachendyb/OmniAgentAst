@@ -41,6 +41,10 @@ from app.utils.logger import logger  # 小健-2026-05-19 修复BUG-001: logger�
 from app.services.tools._response import build_success, build_error
 from app.services.tools.toolhelper.shell_helper import _check_shell_injection, _read_stream_nonblocking
 from app.services.safety.manager import get_safety_manager
+# 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
+from app.services.tools.tool_constants import (
+    SUBPROCESS_TIMEOUT_SHORT, SUBPROCESS_TIMEOUT_VERY_SHORT,
+)
 
 
 
@@ -163,7 +167,7 @@ def execute_shell_command(
         except subprocess.TimeoutExpired:
             timed_out = True
             proc.kill()
-            try: stdout_bytes, stderr_bytes = proc.communicate(timeout=5)
+            try: stdout_bytes, stderr_bytes = proc.communicate(timeout=SUBPROCESS_TIMEOUT_SHORT)
             except subprocess.TimeoutExpired: stdout_bytes, stderr_bytes = b"", b""
 
         stdout_str = _decode_output(stdout_bytes)
@@ -268,7 +272,7 @@ def cleanup_background_shells() -> int:
                 if process and process.poll() is None:
                     process.kill()
                     try:
-                        process.wait(timeout=3)
+                        process.wait(timeout=SUBPROCESS_TIMEOUT_VERY_SHORT)
                     except subprocess.TimeoutExpired:
                         pass
                 del _background_shells[shell_id]
@@ -337,13 +341,13 @@ def shell_session(
                 process.kill()
             else:
                 process.terminate()
-            process.wait(timeout=5)
+            process.wait(timeout=SUBPROCESS_TIMEOUT_SHORT)
             terminated = True
             returncode = process.returncode
         except Exception:
             try:
                 process.kill()
-                process.wait(timeout=3)
+                process.wait(timeout=SUBPROCESS_TIMEOUT_VERY_SHORT)
                 terminated = True
                 returncode = process.returncode
             except Exception:

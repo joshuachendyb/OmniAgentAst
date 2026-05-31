@@ -36,6 +36,8 @@ from app.utils.common_patterns import UTC_OFFSET_PATTERN
 from app.utils.logger import logger;
 from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend;
 from app.services.tools._response import build_success, build_error
+# 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
+from app.services.tools.tool_constants import HTTPX_TIMEOUT_DEFAULT
 from app.services.tools.toolhelper.date_helper import (
     parse_datetime_any as _parse_datetime_any,
     parse_datetime_string as _parse_datetime_string,
@@ -320,7 +322,7 @@ async def _invoke_timer_callback(timer_id: str, callback: str, callback_data: Op
             event["executed_as"] = "log_message"
         else:
             import httpx
-            resp = httpx.get(callback, timeout=5.0)
+            resp = httpx.get(callback, timeout=HTTPX_TIMEOUT_DEFAULT)
             event["executed_as"] = "http_call"
             event["http_status"] = resp.status_code
     except httpx.TimeoutException:

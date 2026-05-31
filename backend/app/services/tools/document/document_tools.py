@@ -42,6 +42,8 @@ from app.utils.tool_result_formatter import build_next_actions
 from app.services.tools._response import build_success, build_error, build_warning
 from app.services.tools.toolhelper.common_helper import _check_module
 from app.services.tools.toolhelper.data_helper import _serialize_rows
+# 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
+from app.services.tools.tool_constants import SUBPROCESS_TIMEOUT_LONG
 
 
 
@@ -1007,7 +1009,7 @@ def convert_document(
             str(src)
         ]
         
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_LONG)
         
         if result.returncode != 0:
             return build_error(ERR_DOC_CONVERT_FAILED, f"LibreOffice转换失败: {result.stderr}")
