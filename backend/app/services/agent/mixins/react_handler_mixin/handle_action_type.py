@@ -2,8 +2,10 @@
 """
 _handle_action_type — 从 react_handler_mixin.py 拆出
 
-复制来源: react_handler_mixin.py 第239-292行
+task检查通过 task_registry 函数直接读，不再接收 running_tasks 参数
+
 Author: 小沈 - 2026-05-31
+统一: 小健 - 2026-05-31 — 去掉running_tasks参数
 """
 
 from typing import Any, Dict, Set, Optional, AsyncGenerator
@@ -19,7 +21,7 @@ class HandleActionTypeMixin:
     async def _handle_action_type(
         self, parsed: Dict[str, Any], step_count: int,
         chunk_buffer: ChunkBuffer, valid_tool_names: Set[str],
-        running_tasks: Optional[Dict[str, Any]], task_id: Optional[str],
+        task_id: Optional[str],
         response: str
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """复制自 react_handler_mixin.py 第239-292行"""
@@ -48,25 +50,9 @@ class HandleActionTypeMixin:
 
         self.status = AgentStatus.EXECUTING
 
-        _int = self._check_interrupt(step_count, running_tasks)
-        if _int:
-            yield _int
-            self._on_after_loop()
-            return
-
-        outcome = await self._execute_tool_step(tool_name, tool_params, step_count, is_primary=True)
-        yield outcome.action_step
-
-        if not chunk_buffer_was_flushed:
-            self.message_builder.add_assistant(response)
-
-        _int = self._check_interrupt(step_count, running_tasks)
-        if _int:
-            yield _int
-            self._on_after_loop()
-            return
+        outcome = await self._execute_tool_step(tool_name, tool_params, step_count)
 
         async for step in self._handle_observation_flow(
-            outcome, parsed, step_count, running_tasks, task_id
+            outcome, parsed, step_count, task_id
         ):
             yield step
