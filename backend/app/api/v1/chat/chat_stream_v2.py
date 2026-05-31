@@ -34,6 +34,8 @@ async def chat_stream_v2(request: ChatRequest):
         )
 
     user_input = request.messages[-1].content
+    intent_type, source, confidence, candidates = await detect_intent(user_input)
+    logger.debug(f"[chat_stream_v2] 意图检测: {intent_type} (source={source}, confidence={confidence})")
     ai_service = AIServiceFactory.get_service()
     provider = ai_service.provider
     model = ai_service.model
@@ -49,7 +51,7 @@ async def chat_stream_v2(request: ChatRequest):
                 yield event
 
             async for event in step_react_loop(
-                request.messages, "generic", 0.0, [], provider, model,
+                request.messages, intent_type, confidence, candidates, provider, model,
                 task_id, session_id, ai_service_ref, next_step, rt, rtl, execution_steps
             ):
                 yield event

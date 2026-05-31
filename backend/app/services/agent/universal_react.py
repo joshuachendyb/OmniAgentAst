@@ -137,6 +137,52 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, GenericReactAgent):
         async with self._lock:
             return await self._run_with_task_tracking(task, context, system_prompt)
     
+    async def _collect_result_from_stream(self, task_id: str) -> AgentResult:
+        """从stream中收集最终结果 — 提取自_run_with_task_tracking 小健2026-05-31"""
+        result = None
+        async for event in self.run_stream(task_id, None):
+            event_type = event.get("type")
+            if event_type == "final":
+                result = AgentResult(
+                    success=True,
+                    message=event.get("content", "Task completed successfully"),
+                    steps=self.steps,
+                    total_steps=len(self.steps),
+                    task_id=self.task_id,
+                    final_result=event.get("content")
+                )
+            elif event_type == "error":
+                result = AgentResult(
+                    success=False,
+                    message=event.get("message", "Execution failed"),
+                    steps=self.steps,
+                    total_steps=len(self.steps),
+                    task_id=task_id,
+                    error=event.get("message")
+                )
+        if result is None:
+            result = AgentResult(
+                success=False,
+                message=f"Exceeded maximum steps ({self.max_steps})",
+                steps=self.steps,
+                total_steps=len(self.steps),
+                task_id=task_id,
+                error="Maximum steps exceeded"
+            )
+        return result
+
+    @staticmethod
+    def _build_error_result(steps, task_id: str, error: Exception) -> AgentResult:
+        """构建错误结果 — 提取自_run_with_task_tracking 小健2026-05-31"""
+        return AgentResult(
+            success=False,
+            message=f"Execution failed: {str(error)}",
+            steps=steps,
+            total_steps=len(steps),
+            task_id=task_id,
+            error=str(error)
+        )
+
     async def _run_with_task_tracking(
         self,
         task: str,
@@ -159,52 +205,11 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, GenericReactAgent):
         
         result = None
         try:
-            async for event in self.run_stream(task, context):
-                event_type = event.get("type")
-                
-                if event_type == "final":
-                    result = AgentResult(
-                        success=True,
-                        message=event.get("content", "Task completed successfully"),
-                        steps=self.steps,
-                        total_steps=len(self.steps),
-                        task_id=self.task_id,
-                        final_result=event.get("content")
-                    )
-                elif event_type == "error":
-                    result = AgentResult(
-                        success=False,
-                        message=event.get("message", "Execution failed"),
-                        steps=self.steps,
-                        total_steps=len(self.steps),
-                        task_id=task_id,
-                        error=event.get("message")
-                    )
-            
-            if result is None:
-                result = AgentResult(
-                    success=False,
-                    message=f"Exceeded maximum steps ({self.max_steps})",
-                    steps=self.steps,
-                    total_steps=len(self.steps),
-                    task_id=task_id,
-                    error="Maximum steps exceeded"
-                )
-            
+            result = await self._collect_result_from_stream(task)
             return result
-            
         except Exception as e:
             logger.error(f"Agent execution error: {e}", exc_info=True)
-            result = AgentResult(
-                success=False,
-                message=f"Execution failed: {str(e)}",
-                steps=self.steps,
-                total_steps=len(self.steps),
-                task_id=task_id,
-                error=str(e)
-            )
-            return result
-            
+            return self._build_error_result(self.steps, task_id, e)
         finally:
             if session_created_by_this_run and task_id and self._task_tracker:
                 try:

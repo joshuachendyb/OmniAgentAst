@@ -58,7 +58,7 @@ class AgentInitializer:
         agent.message_builder = MessageBuilder(max_context_chars=MAX_CONTEXT_CHARS)
 
     @staticmethod
-    def _init_task_tracking(agent, enable: bool):
+    def _init_task_tracking(agent, enable: bool, description: str = ""):
         """初始化Task追踪 — 从 _initialize_run_state 中提取"""
         agent._task_tracker = None
         agent._tracked_task_id = None
@@ -72,7 +72,7 @@ class AgentInitializer:
             agent._tracked_task_id = tracker.create_task(
                 intent=intent,
                 agent_id=agent_id,
-                description="",
+                description=description[:200] if description else "",
             )
             agent._task_tracker = tracker
         except Exception as _e:

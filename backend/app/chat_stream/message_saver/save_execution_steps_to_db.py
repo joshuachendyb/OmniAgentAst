@@ -29,7 +29,7 @@ async def save_execution_steps_to_db(
 
     try:
         if user_message_id is None:
-            user_message_id = _messages._user_message_ids.get(session_id)
+            user_message_id = _messages.get_user_message_id(session_id)
 
         await save_execution_steps(
             session_id,

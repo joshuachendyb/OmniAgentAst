@@ -148,3 +148,8 @@ async def save_message(session_id: str, message: MessageCreate):
         _try_mark_valid(cursor, session_id)
 
     return {"success": True, "message_id": message_id, "message_count": new_message_count}
+
+
+def get_user_message_id(session_id: str) -> Optional[int]:
+    """公共getter — 消除跨模块访问私有变量 小健2026-05-31"""
+    return _user_message_ids.get(session_id)

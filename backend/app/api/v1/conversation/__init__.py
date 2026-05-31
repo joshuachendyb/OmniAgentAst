@@ -17,7 +17,7 @@ from app.api.v1.conversation.ensure_session_exists import ensure_session_exists
 from app.api.v1.conversation.insert_assistant_message import insert_assistant_message
 from app.api.v1.conversation.update_message_fields import update_message_fields
 from app.api.v1.conversation.update_session_message_count import update_session_message_count
-from app.api.v1.conversation.models import ExecutionStepsUpdate
+from app.api.v1.conversation.models import ExecutionStepsUpdate, ExecutionStep
 from app.api.v1.conversation.save_execution_steps import save_execution_steps
 from app.api.v1.conversation.conversation import router
 
@@ -25,5 +25,5 @@ __all__ = [
     "router",
     "AssistantMessageIdAllocator", "extract_metadata_from_steps", "ensure_session_exists",
     "insert_assistant_message", "update_message_fields", "update_session_message_count",
-    "ExecutionStepsUpdate", "save_execution_steps",
+    "ExecutionStepsUpdate", "ExecutionStep", "save_execution_steps",
 ]

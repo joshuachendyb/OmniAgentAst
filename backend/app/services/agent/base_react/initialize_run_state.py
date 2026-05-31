@@ -11,7 +11,6 @@ from typing import Any, Dict, Optional, Tuple, Set
 from app.services.agent.types import AgentStatus
 from app.services.agent.chunk_buffer import ChunkBuffer
 from app.utils.logger import logger
-from app.services.task import get_tracker
 
 
 def initialize_run_state(
@@ -41,19 +40,7 @@ def initialize_run_state(
     except Exception as _e:
         logger.debug(f"[工具名验证] 获取工具列表失败: {_e}, 仅允许finish")
 
-    self._task_tracker = None
-    self._tracked_task_id = None
-    try:
-        intent = getattr(self, '_intent', None) or self.tool_category.value if self.tool_category else "unknown"
-        agent_id = getattr(self, 'task_id', 'unknown')
-        tracker = get_tracker()
-        self._tracked_task_id = tracker.create_task(
-            intent=intent,
-            agent_id=agent_id,
-            description=task[:200] if task else "",
-        )
-        self._task_tracker = tracker
-    except Exception as _e:
-        logger.debug(f"[TaskTracker] 创建任务失败: {_e}")
+    from app.services.agent.base_react.agent_initializer import AgentInitializer
+    AgentInitializer._init_task_tracking(self, enable=True, description=task)
 
     return chunk_buffer, valid_tool_names

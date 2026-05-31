@@ -8,7 +8,7 @@ Agent 配置注册表 — 声明式定义
 Author: 小强 - 2026-05-23
 """
 from dataclasses import dataclass, field
-from typing import Type, List, Dict, Optional
+from typing import Type, List, Dict, Optional, Any
 
 from app.services.tools.tool_types import ToolCategory
 from app.services.prompts.base_prompt_template import BasePrompts
@@ -22,11 +22,30 @@ class AgentConfig:
     prompt_module: str
     prompt_class_name: str
     category_display_name: str
+    agent_module: str = ""
+    agent_class_name: str = ""
     rollback_enabled: bool = False
     max_steps: int = 100
     aliases: List[str] = field(default_factory=list)
     
     _prompt_class: Optional[Type[BasePrompts]] = field(default=None, repr=False)
+    _agent_class: Optional[Any] = field(default=None, repr=False)
+    
+    @property
+    def prompt_class(self) -> Type[BasePrompts]:
+        if self._prompt_class is None:
+            import importlib
+            module = importlib.import_module(self.prompt_module)
+            self._prompt_class = getattr(module, self.prompt_class_name)
+        return self._prompt_class
+    
+    @property
+    def agent_class(self) -> Any:
+        if self._agent_class is None and self.agent_module:
+            import importlib
+            module = importlib.import_module(self.agent_module)
+            self._agent_class = getattr(module, self.agent_class_name)
+        return self._agent_class
     
     @property
     def prompt_class(self) -> Type[BasePrompts]:
@@ -44,6 +63,8 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_module="app.services.prompts.file.file_prompts",
         prompt_class_name="FileOperationPrompts",
         category_display_name="文件操作",
+        agent_module="app.services.agent.universal_react",
+        agent_class_name="UniversalReactAgent",
         rollback_enabled=True,
         aliases=[],
     ),
@@ -53,6 +74,8 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_module="app.services.prompts.system.system_prompts",
         prompt_class_name="SystemPrompts",
         category_display_name="系统操作",
+        agent_module="app.services.agent.universal_react",
+        agent_class_name="UniversalReactAgent",
         aliases=["shell"],
     ),
     "network": AgentConfig(
@@ -61,6 +84,8 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_module="app.services.prompts.network.network_prompts",
         prompt_class_name="NetworkPrompts",
         category_display_name="网络通信",
+        agent_module="app.services.agent.universal_react",
+        agent_class_name="UniversalReactAgent",
         aliases=[],
     ),
     "document": AgentConfig(
@@ -69,6 +94,8 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_module="app.services.prompts.document.document_prompts",
         prompt_class_name="DocumentPrompts",
         category_display_name="文档读写",
+        agent_module="app.services.agent.universal_react",
+        agent_class_name="UniversalReactAgent",
         aliases=[],
     ),
     "desktop": AgentConfig(
@@ -77,6 +104,8 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_module="app.services.prompts.desktop.desktop_prompts",
         prompt_class_name="DesktopPrompts",
         category_display_name="桌面操作",
+        agent_module="app.services.agent.desktop_react",
+        agent_class_name="DesktopReactAgent",
         aliases=[],
     ),
 }

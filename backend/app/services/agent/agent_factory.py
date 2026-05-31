@@ -8,11 +8,9 @@ AgentFactory - 智能体工厂
 
 Author: 小强 - 2026-05-23
 """
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional
 
 from app.services.agent.agent_config import resolve_agent_config, AgentConfig, AGENT_REGISTRY, get_all_intent_types
-from app.services.agent.universal_react import UniversalReactAgent
-from app.services.agent.desktop_react import DesktopReactAgent
 from app.services.agent.base_react import BaseAgent
 from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
@@ -51,8 +49,12 @@ class AgentFactory:
             f"rollback={config.rollback_enabled}"
         )
         
+        agent_class = config.agent_class
+        if agent_class is None:
+            raise ValueError(f"Agent class not configured for intent_type: {intent_type}")
+        
         if config.intent_type == "desktop":
-            return DesktopReactAgent(
+            return agent_class(
                 llm_client=llm_client,
                 task_id=task_id,
                 tool_category=tool_category,
@@ -60,7 +62,7 @@ class AgentFactory:
                 **kwargs
             )
         
-        return UniversalReactAgent(
+        return agent_class(
             llm_client=llm_client,
             task_id=task_id,
             config=config,
@@ -74,9 +76,10 @@ class AgentFactory:
         """列出所有可用的Agent"""
         result = {}
         for config in AGENT_REGISTRY.values():
-            result[config.intent_type] = "UniversalReactAgent" if config.intent_type != "desktop" else "DesktopReactAgent"
+            name = config.agent_class_name or "UnknownAgent"
+            result[config.intent_type] = name
             for alias in config.aliases:
-                result[alias] = result[config.intent_type]
+                result[alias] = name
         return result
 
 

@@ -67,10 +67,6 @@ async def execute_tool(request: ToolExecuteRequest):
             match = _re.search(r"missing \d+ required positional argument[s]?:\s*(.+)", err_msg)
             missing_params = match.group(1) if match else "未知参数"
             err_msg = f"缺少必填参数: {missing_params}。请参考tool/list获取{tool_name}的inputSchema"
-        elif "missing 1 required positional argument" in err_msg:
-            match = _re.search(r"(\w+)\(\) missing \d+ required positional argument[s]?:\s*'?(\w+)'?", err_msg)
-            if match:
-                err_msg = f"工具{match.group(1)}缺少必填参数'{match.group(2)}'"
         return ToolExecuteResponse(
             tool_name=tool_name,
             success=False,

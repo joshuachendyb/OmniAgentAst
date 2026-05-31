@@ -322,9 +322,7 @@ class ToolsStrategy(LLMStrategy):
             if hasattr(response, 'error') and response.error:
                 error_msg = response.error
                 logger.error(f"[Function Calling] API Error: {error_msg}")
-                error_type = resolve_http_error_type(error_msg)
-                error_code, error_message = get_stream_error_info(error_type, original_message=error_msg)
-                return self._make_parse_error(error_message, content=f"[错误] {error_message}")
+                return self._make_api_error_response(error_msg)
             
             if hasattr(response, 'content') and response.content:
                 raw_content = response.content
@@ -357,9 +355,13 @@ class ToolsStrategy(LLMStrategy):
                 return await self._fallback_to_text(messages, **kwargs)
         except Exception as e:
             logger.error(f"[Function Calling] Exception: {e}")
-            error_type = resolve_http_error_type(str(e))
-            error_code, error_message = get_stream_error_info(error_type, original_message=str(e))
-            return self._make_parse_error(error_message, content=f"[错误] {error_message}")
+            return self._make_api_error_response(str(e))
+    
+    def _make_api_error_response(self, error_msg: str) -> str:
+        """统一API错误响应构建（消除重复DRY #12）- 小健 2026-05-31"""
+        error_type = resolve_http_error_type(error_msg)
+        _error_code, error_message = get_stream_error_info(error_type, original_message=error_msg)
+        return self._make_parse_error(error_message, content=f"[错误] {error_message}")
     
     def _format_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> str:
         """

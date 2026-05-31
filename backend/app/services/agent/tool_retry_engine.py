@@ -18,7 +18,7 @@ from typing import Any, Callable, Dict, Optional
 from app.utils.logger import logger
 from app.utils.error_classifier import ErrorCategory, UnifiedErrorClassifier
 from app.services.tools.tool_config import get_tool_config
-from app.services.tools.tool_constants import TOOL_TIMEOUTS
+from app.services.tools.tool_constants import TOOL_TIMEOUTS, TOOL_RETRY_MAX, TOOL_RETRY_BACKOFF, TOOL_RETRYABLE_ERRORS
 from app.services.agent.agent_utils.tool_result_factory import create_tool_result, create_error_tool_result
 
 from app.constants import (
@@ -132,6 +132,43 @@ class ToolRetryEngine:
             error_type=error_type or "unknown"
         )
     
+    def _lookup_tool(self, action: str, tool: Optional[Callable] = None) -> Optional[Callable]:
+        """查找工具函数，不存在时返回None（错误已处理）— 提取自execute_tool_with_retry 小健2026-05-31"""
+        if tool is not None:
+            return tool
+        tool = self.available_tools.get(action)
+        if tool is not None:
+            return tool
+        from app.services.tools.registry import tool_registry
+        impl = tool_registry.get_implementation(action)
+        if impl is not None:
+            self.available_tools[action] = impl
+        return impl
+    
+    def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable) -> Optional[Dict[str, Any]]:
+        """验证并归一化参数，无效时返回None — 提取自execute_tool_with_retry 小健2026-05-31"""
+        sig = inspect.signature(tool)
+        required = [
+            p.name for p in sig.parameters.values()
+            if p.default == inspect.Parameter.empty
+            and p.name != 'self'
+            and p.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
+        ]
+        normalized_input = self.normalize_params(action, action_input)
+        missing = [p for p in required if p not in normalized_input]
+        if missing:
+            return None
+        return normalized_input
+    
+    def _get_retry_config(self, action: str):
+        """获取重试配置 — 提取自execute_tool_with_retry 小健2026-05-31"""
+        return (
+            TOOL_RETRY_MAX.get(action, TOOL_RETRY_MAX["default"]),
+            TOOL_RETRY_BACKOFF.get(action, TOOL_RETRY_BACKOFF["default"]),
+            TOOL_RETRYABLE_ERRORS.get(action, TOOL_RETRYABLE_ERRORS["default"]),
+            TOOL_TIMEOUTS.get(action, TOOL_TIMEOUTS["default"]),
+        )
+    
     async def execute_tool_with_retry(
         self,
         action: str,
@@ -149,37 +186,30 @@ class ToolRetryEngine:
         Returns:
             执行结果字典
         """
-        # 获取工具函数
-        if tool is None:
-            tool = self.available_tools.get(action)
-            if tool is None:
-                # 尝试从registry获取
-                from app.services.tools.registry import tool_registry
-                impl = tool_registry.get_implementation(action)
-                if impl is not None:
-                    self.available_tools[action] = impl
-                    tool = impl
-                else:
-                    return create_error_tool_result(
-                        code=ERR_TOOL_NOT_FOUND,
-                        data=None,
-                        message=f"Unknown tool: {action}. Available tools: {list(self.available_tools.keys())}",
-                        retry_count=0,
-                        error_message=f"工具 '{action}' 未找到",
-                        error_type="tool_not_found"
-                    )
+        # 1. 查找工具
+        found_tool = self._lookup_tool(action, tool)
+        if found_tool is None:
+            return create_error_tool_result(
+                code=ERR_TOOL_NOT_FOUND,
+                data=None,
+                message=f"Unknown tool: {action}. Available tools: {list(self.available_tools.keys())}",
+                retry_count=0,
+                error_message=f"工具 '{action}' 未找到",
+                error_type="tool_not_found"
+            )
         
-        # 检查参数
-        sig = inspect.signature(tool)
-        required = [
-            p.name for p in sig.parameters.values()
-            if p.default == inspect.Parameter.empty
-            and p.name != 'self'
-            and p.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
-        ]
-        normalized_input = self.normalize_params(action, action_input)
-        missing = [p for p in required if p not in normalized_input]
-        if missing:
+        # 2. 参数验证
+        normalized_input = self._validate_params(action, action_input, found_tool)
+        if normalized_input is None:
+            sig = inspect.signature(found_tool)
+            required = [
+                p.name for p in sig.parameters.values()
+                if p.default == inspect.Parameter.empty
+                and p.name != 'self'
+                and p.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
+            ]
+            raw_input = self.normalize_params(action, action_input)
+            missing = [p for p in required if p not in raw_input]
             return create_error_tool_result(
                 code=ERR_MISSING_PARAM,
                 message=f"Missing required parameter(s): {', '.join(missing)}",
@@ -188,19 +218,16 @@ class ToolRetryEngine:
                 error_type="invalid_params"
             )
         
-        # 获取重试配置
-        max_retries = TOOL_RETRY_MAX.get(action, TOOL_RETRY_MAX["default"])
-        backoff_factor = TOOL_RETRY_BACKOFF.get(action, TOOL_RETRY_BACKOFF["default"])
-        retryable_errors = TOOL_RETRYABLE_ERRORS.get(action, TOOL_RETRYABLE_ERRORS["default"])
-        timeout = TOOL_TIMEOUTS.get(action, TOOL_TIMEOUTS["default"])
+        # 3. 获取重试配置
+        max_retries, backoff_factor, retryable_errors, timeout = self._get_retry_config(action)
         
-        # 执行重试循环
+        # 4. 执行重试循环
         attempt_count = 0
         last_error: Optional[Exception] = None
         
         while attempt_count <= max_retries:
             try:
-                result = await self._execute_tool_once(tool, normalized_input, timeout)
+                result = await self._execute_tool_once(found_tool, normalized_input, timeout)
                 return create_tool_result(
                     data=result,
                     message="Tool execution succeeded",

@@ -16,6 +16,7 @@ from app.services.react_sse_wrapper.task_pause import pause_task
 from app.services.react_sse_wrapper.task_resume import resume_task
 from app.services.react_sse_wrapper.task_cleanup import cleanup_expired_tasks
 from app.services.react_sse_wrapper.react_sse_wrapper import (
+    SSEConfig,
     generate_sse_stream,
     generate_sse_stream_with_retry,
 )
