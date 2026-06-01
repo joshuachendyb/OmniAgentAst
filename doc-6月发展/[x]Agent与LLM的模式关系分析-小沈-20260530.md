@@ -136,7 +136,7 @@ SSE（Server-Sent Events）在本架构中有两种不同用途：
 | 多会话并发 | 多个对话/任务同时运行，互不干扰 |
 | 模型可切换 | 支持两级切换：①系统自动选——第2层根据意图分类结果自动选择适合的模型（如对话用轻量模型、代码分析用强模型）；②用户手动切——用户可在界面上主动切换当前会话使用的模型。切换范围：可针对单条消息切换，也可设置会话默认模型。第4层屏蔽各模型接口差异，上层无需感知切换 |
 | 敏感操作确认 | 执行潜在危险操作前先征得用户同意。同步模式下用户在线可选择同意/拒绝；异步模式下任务暂停，标记为"待用户确认"，用户回来后处理 |
-| **多个内部模块共用AI调用** | 对话、意图分类、模型能力探测都需要调用AI，调用入口统一 |
+| **多个内部模块共用AI调用** | 对话、意图分类都需要调用AI，调用入口统一 |
 | **逐段输出过程中可插入工具调用** | AI在逐段输出中可随时下发工具调用指令。第3层（执行引擎层）收到指令后调度工具执行，执行结果回传LLM继续生成后续文本。多个工具调用按LLM返回的顺序串行执行 |
 | **不同模型能力兼容** | 不同AI模型的工具调用能力、输出格式支持程度不同，系统需统一处理差异 |
 | **任务追踪** | 每次操作的全生命周期（创建→执行→完成/失败/回滚）可追溯。编排层管理任务级状态，执行引擎层管理步骤级状态 |
@@ -318,7 +318,6 @@ SSE（Server-Sent Events）在本架构中有两种不同用途：
 | 执行步骤记录 | 每一步的thought/action_tool/observation/error 全部记录，供追溯 |
 | 步骤级重试 | LLM返回空响应、格式错误时自动重试当前步骤 |
 | Prompt组装与消息管理 | 将系统提示词、历史消息、当前输入组装为LLM可接受的格式 |
-| 模型能力探测 | 调度前探测模型支持能力（是否支持工具调用、响应格式等） |
 | 经验库 | 执行经验的结构化持久化存储、检索与更新。每次执行完成后提取经验特征（任务类型/执行步骤/结果/耗时/错误模式）存入经验库；新任务启动前检索相似历史经验注入Prompt指导执行方向；同类经验按统计指标合并更新 |
 
 **禁止承担的职责**：
@@ -456,7 +455,6 @@ SSE（Server-Sent Events）在本架构中有两种不同用途：
 | 步骤级重试 | ❌ | ❌ | ✅ | ❌ |
 | 执行步骤记录 | ❌ | ❌ | ✅ | ❌ |
 | Prompt组装 | ❌ | ❌ | ✅ | ❌ |
-| 模型能力探测 | ❌ | ❌ | ✅ | ❌ |
 | 经验库 | ❌ | ❌ | ✅ | ❌ |
 | 与AI模型通信 | ❌ | ❌ | ❌ | ✅ |
 | 网络级重试 | ❌ | ❌ | ❌ | ✅ |
@@ -565,18 +563,17 @@ SSE（Server-Sent Events）在本架构中有两种不同用途：
 │  │  │ (thought/    │  │ (空响应/     │  │ (系统提示词+  │  │ │
 │  │  │ action/obs)  │  │ 格式错误)   │  │ 历史消息)    │  │ │
 │  │  └──────────────┘  └──────────────┘  └──────────────┘  │ │
-│  │  ┌──────────────┐  ┌────────────────────┐              │ │
-│  │  │ 模型能力探测  │  │ 经验库              │              │ │
-│  │  │ (是否支持FC)  │  │ (执行经验结构化     │              │ │
-│  │  │              │  │  持久化存储/检索)   │              │ │
-│  │  └──────────────┘  └────────────────────┘              │ │
+│  │  ┌──────────────────────────────────────┐              │ │
+│  │  │ 经验库                                │              │ │
+│  │  │ (执行经验结构化持久化存储/检索)       │              │ │
+│  │  └──────────────────────────────────────┘              │ │
 │  └─────────────────────────────────────────────────────────┘ │
 │                                                                  │
 │  ┌─── 对下（调用第4层）───────────────────────────────────────┐ │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │ │
-│  │  │ 流式调LLM    │  │ 整包调LLM    │  │ 探测模型能力  │  │ │
-│  │  │ (第3层→第4层)│  │ (第3层→第4层)│  │ (第3层→第4层)│  │ │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘  │ │
+│  │  ┌──────────────┐  ┌──────────────┐  │ │
+│  │  │ 流式调LLM    │  │ 整包调LLM    │  │ │
+│  │  │ (第3层→第4层)│  │ (第3层→第4层)│  │ │
+│  │  └──────────────┘  └──────────────┘  │ │
 │  └─────────────────────────────────────────────────────────┘ │
 └───────────────────────────────┬─────────────────────────────────┘
                                 │ 接口调用（第3层→第4层）
@@ -587,9 +584,9 @@ SSE（Server-Sent Events）在本架构中有两种不同用途：
 │  边界：只做LLM通信，不做任何业务逻辑                                │
 │                                                                  │
 │  ┌─── 对上（第3层调用）───────────────────────────────────────┐ │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │ │
-│  │  │ 流式调LLM    │  │ 整包调LLM    │  │ 探测模型能力  │  │ │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘  │ │
+│  │  ┌──────────────┐  ┌──────────────┐  │ │
+│  │  │ 流式调LLM    │  │ 整包调LLM    │  │ │
+│  │  └──────────────┘  └──────────────┘  │ │
 │  └─────────────────────────────────────────────────────────┘ │
 │                                                                  │
 │  ┌─── 核心功能 ──────────────────────────────────────────────┐ │
@@ -745,7 +742,6 @@ SSE（Server-Sent Events）在本架构中有两种不同用途：
 |------|---------|---------|--------|------|
 | 流式调LLM | 第3层→第4层 | 消息列表+模型参数 | 流式响应块（逐块） | 请求LLM的流式响应 |
 | 整包调LLM | 第3层→第4层 | 消息列表+模型参数 | 完整响应 | 请求LLM的一次性响应 |
-| 探测模型能力 | 第3层→第4层 | 模型标识 | 能力清单 | 查询模型是否支持工具调用等 |
 
 **必须实现的功能**：
 
@@ -757,7 +753,6 @@ SSE（Server-Sent Events）在本架构中有两种不同用途：
 | 执行步骤记录 | 每一步的thought/action_tool/observation/error全部记录，供追溯 |
 | 步骤级重试 | LLM返回空响应、格式错误时自动重试当前步骤 |
 | Prompt组装与消息管理 | 将系统提示词、历史消息、当前输入组装为LLM可接受的格式 |
-| 模型能力探测 | 调度前探测模型支持能力（是否支持工具调用、响应格式等） |
 | 经验库 | 执行经验的结构化持久化存储、检索与更新。每次执行完成后提取经验特征（任务类型/执行步骤/结果/耗时/错误模式）存入经验库；新任务启动前检索相似历史经验注入Prompt指导执行方向；同类经验按统计指标合并更新 |
 
 **禁止实现的功能**：
@@ -787,7 +782,6 @@ SSE（Server-Sent Events）在本架构中有两种不同用途：
 |------|---------|---------|--------|------|
 | 流式调LLM | 第3层→第4层 | 消息列表+模型参数+stream标志 | 流式响应块（逐块） | 获取LLM的流式响应，块中既可能含text也可能含toolcall信号 |
 | 整包调LLM | 第3层→第4层 | 消息列表+模型参数 | 完整响应 | 获取LLM的完整响应，含文本和工具调用参数 |
-| 探测模型能力 | 第3层→第4层 | 模型标识 | 能力清单 | 返回模型支持的能力（FC、输出格式等） |
 
 **对下的接口（第4层调用LLM API）**：
 
@@ -982,7 +976,6 @@ SSE（Server-Sent Events）在本架构中有两种不同用途：
 │  ├─ 执行步骤记录（thought/action/observation/error）              │
 │  ├─ 步骤级重试（空响应/格式错误时重试）                           │
 │  ├─ Prompt组装（系统提示词+历史消息）                             │
-│  ├─ 模型能力探测（是否支持FC等）                                  │
 │  └─ 经验库（执行经验结构化持久化存储/检索/更新）                  │
 │                                                                  │
 │  禁止：不做业务决策，不做任务生命周期管理，不调LLM API              │
@@ -1217,7 +1210,7 @@ FlowTool（工作流，自动编排）
 ---
 ## 三  详细设计的编写规范
 
-本节定义第 4/5/6/7章（分别对应第1/2/3/4层）详细设计的编写方法和输出要求。
+本节定义第 4/5/6/7章（分别对应第4/3/2/1层）详细设计的编写方法和输出要求。
 
 ### 3.1 设计方法
 
@@ -1321,17 +1314,17 @@ llm_client.py ←── llm_config.py
 
 ### 4.2 函数清单
 
-#### 4.2.1 对上接口（第2层调用第3层）
+#### 4.2.1 对上接口（第3层调用第4层）
 
-第3层向上提供三种**接口**：两种LLM调用（按传输方式分） + 一种模型能力探测：
+第4层向上提供两种**接口**：流式调用（`call_stream`）和整包调用（`call_complete`），
 
 | 函数名 | 传输方式 | 功能说明 | 输入参数 | 返回值 |
 |--------|---------|---------|---------|--------|
 | `call_stream()` | 流式（逐块） | LLM流式调用，原始SSE逐块到达，块类型由LLM决定（文本或工具调用） | messages, tools(可选), config(可选) | AsyncIterator[LLMChunk] |
 | `call_complete()` | 整包（一次性） | LLM整包调用，一次性返回完整响应，由LLM决定返回文本或工具调用 | messages, tools(可选), config(可选) | LLMResponse |
-| `probe_capabilities()` | 查询（一次性） | 探测指定模型支持的能力（FC、输出格式、最大token等） | model: str | ModelCapabilities |
+|
 
-#### 4.2.2 对下接口（第3层调用LLM API）
+#### 4.2.2 对下接口（本层调用外部LLM API）
 
 | 函数名 | 功能说明 | 输入参数 | 返回值 |
 |--------|---------|---------|--------|
@@ -1343,10 +1336,10 @@ llm_client.py ←── llm_config.py
 | 函数名 | 功能说明 | 输入参数 | 返回值 |
 |--------|---------|---------|--------|
 | `_build_request_body()` | 构建OpenAI格式的请求体 | messages, tools(可选), stream: bool | dict |
-| `_parse_stream_chunk()` | 解析原始SSE块，自动识别类型（文本增量/工具调用/结束/错误） | chunk: dict | LLMChunk |
+| `_parse_stream_chunk()` | 解析原始SSE块，自动识别类型（文本增量/工具调用(含index)/结束/错误） | chunk: dict | LLMChunk |
 | `_parse_complete_response()` | 解析整包响应，提取文本内容和工具调用列表 | response: dict | LLMResponse |
-| `_adapt_model_capabilities()` | 根据模型能力调整请求参数 | request_body: dict, model: str | dict |
-| `_retry_with_backoff()` | 带退避的网络重试 | func: Callable, max_retries: int | Any |
+| `_adapt_model_capabilities()` | 根据模型注册表配置调整请求参数（max_tokens、多模态等） | request_body: dict, model: str | dict |
+| `_retry_with_backoff()` | 带指数退避+jitter的网络重试（base×2^n ±随机30%） | func: Callable, max_retries: int | Any |
 
 ---
 
@@ -1363,22 +1356,29 @@ async def call_stream(
     """
     流式调用LLM，原始SSE响应逐块到达。
 
-    第3层（执行引擎层）通过此接口获取LLM的流式响应，
-    块类型由LLM自身决定，可能为文本增量或工具调用信号。
+    第3层（执行引擎层）通过此接口获取LLM的流式响应。
+    先校验参数（messages不能为空/None，tools不能为None），
+    再进入流式处理。
+
+    错误报告策略（统一规则）：
+    - 流开始前（第一个chunk yield之前）的错误：直接抛异常
+    - 流开始后的错误：yield LLMChunk(type="error") 作为最后一个chunk后结束
+    - call_complete() 全程抛异常（无流式上下文）
 
     参数:
         messages: 对话消息列表，格式 [{"role": "user", "content": "..."}]
         tools: 工具定义列表（可选），传入则LLM可调用工具
-        config: 模型配置（可选）
+        config: 模型配置（必填，从config.yaml加载，传None则取系统默认配置）
 
     返回:
         异步迭代器，每次yield一个LLMChunk:
         - LLMChunk(type="text", content="...")     # 文本片段
-        - LLMChunk(type="toolcall", name="...", arguments="...", toolcall_id="...")  # 工具调用信号
+        - LLMChunk(type="toolcall", name="...", arguments="...", toolcall_id="...", index=N)  # 工具调用信号
         - LLMChunk(type="done")                      # 结束标记
-        - LLMChunk(type="error", error="...")        # 错误
+        - LLMChunk(type="error", error="...")        # 流中错误（最后一个chunk）
 
-    异常:
+    异常（流开始前）:
+        ValueError: messages为空或None、tools包含无效格式
         LLMConnectionError: 网络连接失败（重试后仍失败）
         LLMRateLimitError: 请求频率超限（重试后仍超限）
         LLMResponseError: 响应格式错误
@@ -1394,11 +1394,12 @@ async def call_complete(
 
     返回的LLMResponse中type字段标明LLM选择了文本回复还是工具调用，
     由第3层根据type决定下一步处理。
+    所有错误均通过异常报告（无流式上下文，无需yield error chunk）。
 
     参数:
         messages: 对话消息列表
         tools: 工具定义列表（可选），传入则LLM可调用工具
-        config: 模型配置（可选）
+        config: 模型配置（必填，传None则取系统默认配置）
 
     返回:
         LLMResponse对象:
@@ -1406,36 +1407,10 @@ async def call_complete(
         - LLMResponse(type="toolcall", content="", tool_calls=[{"name": "...", "arguments": "..."}], usage=..., model=...)
 
     异常:
+        ValueError: messages为空或None
         LLMConnectionError: 网络连接失败
         LLMRateLimitError: 请求频率超限
         LLMResponseError: 响应格式错误
-    """
-
-#### 4.3.2 模型能力探测
-
-```python
-async def probe_capabilities(
-    model: str
-) -> ModelCapabilities:
-    """
-    探测指定模型支持的能力。
-
-    第3层在执行计划生成前调用此接口，了解模型支持的功能，
-    据此调整prompt和参数策略。
-
-    参数:
-        model: 模型标识名（如 "gpt-4", "claude-3"）
-
-    返回:
-        ModelCapabilities对象:
-        - supports_fc: bool          # 是否支持函数调用
-        - supports_streaming: bool   # 是否支持流式输出
-        - supports_json_mode: bool   # 是否支持JSON输出模式
-        - max_tokens: int            # 最大上下文token数
-
-    异常:
-        LLMConnectionError: 模型信息查询失败
-        LLMAuthError: 认证失败
     """
 
 ---
@@ -1482,11 +1457,11 @@ async def probe_capabilities(
 
 | 异常类型 | 触发条件 | 处理方式 | 重试策略 |
 |---------|---------|---------|---------|
-| `LLMConnectionError` | 网络连接失败、DNS解析失败 | 重试3次，指数退避（1s/2s/4s） | 自动重试 |
+| `LLMConnectionError` | 网络连接失败、DNS解析失败 | 重试3次，指数退避+jitter（1s/2s/4s ±随机30%） | 自动重试 |
 | `LLMRateLimitError` | API返回429限流 | 重试3次，等待时间按API返回的Retry-After | 自动重试 |
-| `LLMTimeoutError` | 请求超时（默认60s） | 重试2次，每次增加超时时间 | 自动重试 |
-| `LLMResponseError` | 响应格式错误、解析失败 | 记录日志，向第3层报告错误 | 不重试，由第3层决定 |
-| `LLMAuthError` | API密钥无效、认证失败 | 立即向第3层报告，不重试 | 不重试 |
+| `LLMTimeoutError` | 请求超时（默认120s） | 重试2次，每次增加超时时间 | 自动重试 |
+| `LLMResponseError` | 响应格式错误、解析失败 | 流开始前抛异常；流开始后yield LLMChunk(type="error")为最后一个chunk | 不重试 |
+| `LLMAuthError` | API密钥无效、认证失败 | 流开始前抛异常；流开始后视为响应错误处理 | 不重试 |
 
 ---
 
@@ -1501,6 +1476,7 @@ class LLMChunk:
     name: str           # 工具名称（type="toolcall"时）
     arguments: str      # 工具参数JSON片段（type="toolcall"时，可能跨多个chunk拼接）
     toolcall_id: str    # 工具调用ID（type="toolcall"时）
+    index: int = 0      # 工具调用索引（type="toolcall"时，标识并行多工具调用中的第几个）
     error: str          # 错误信息（type="error"时）
 
 @dataclass
@@ -1514,20 +1490,18 @@ class LLMResponse:
 
 @dataclass
 class LLMConfig:
-    """LLM配置"""
-    model: str = "gpt-4"                            # 模型名
-    api_key: str = ""                               # API密钥
-    base_url: str = "https://api.openai.com/v1"    # API地址
-    timeout: int = 60                               # 超时时间（秒）
-    max_retries: int = 3                            # 最大重试次数
+    """LLM配置（从系统 config.yaml 加载，运行时只读——修改需在任务间切换时更新）
 
-@dataclass
-class ModelCapabilities:
-    """模型能力清单"""
-    supports_fc: bool = False               # 是否支持函数调用
-    supports_streaming: bool = True         # 是否支持流式输出
-    supports_json_mode: bool = False        # 是否支持JSON输出模式
-    max_tokens: int = 4096                  # 最大上下文token数
+    实施注意：config.yaml 当前缺少多模态开关和上下文窗口大小两项配置，
+    后续实施时需补充 llm.multimodal.enabled 和 llm.context_window 字段。
+    """
+    model: str                                      # 模型名（必填，从config.yaml获取）
+    api_key: str                                    # API密钥（必填，从config.yaml获取）
+    base_url: str                                   # API地址（必填，从config.yaml获取）
+    timeout: int = 120                              # 超时时间（秒，默认2分钟）
+    max_retries: int = 3                            # 最大重试次数
+    max_rpm: int = 0                                # 每分钟最大请求数（0=不限流）
+
 ```
 
 
