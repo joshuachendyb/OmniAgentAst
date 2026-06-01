@@ -1297,7 +1297,7 @@ FlowTool（工作流，自动编排）
 | 文件名 | 职责 | 与其他文件的关系 |
 |--------|------|-----------------|
 | `llm_client.py` | LLM通信客户端，封装HTTP请求和响应处理 | 被第3层调用，调用外部LLM API |
-| `llm_config.py` | LLM配置管理（模型名、API地址、密钥、超时） | 被llm_client.py读取 |
+| `llm_config.py` | LLM配置管理（模型名、API地址、密钥、超时）+ 配置初始化（从config.yaml加载）+ 多模型查找 | 被llm_client.py读取，启动时由模块入口调用init_default_config() |
 | `llm_types.py` | LLM相关数据类型定义（请求、响应、流式块） | 被所有LLM相关文件引用 |
 | `llm_retry.py` | 网络级重试逻辑（超时、限流、连接断开） | 被llm_client.py调用 |
 
@@ -1307,9 +1307,9 @@ FlowTool（工作流，自动编排）
 第3层（执行引擎层）
     │
     ▼
-llm_client.py ←── llm_config.py
-    │              llm_types.py
-    │              llm_retry.py
+llm_client.py ────→ llm_config.py  # 读取配置
+    │                  llm_types.py   # 使用类型定义
+    │                  llm_retry.py   # 调用重试
     ▼
 外部 LLM API
 ```
@@ -1326,7 +1326,6 @@ llm_client.py ←── llm_config.py
 |--------|---------|---------|---------|--------|
 | `call_stream()` | 流式（逐块） | LLM流式调用，原始SSE逐块到达，块类型由LLM决定（文本或工具调用） | messages, tools(可选), config(可选) | AsyncIterator[LLMChunk] |
 | `call_complete()` | 整包（一次性） | LLM整包调用，一次性返回完整响应，由LLM决定返回文本或工具调用 | messages, tools(可选), config(可选) | LLMResponse |
-|
 
 #### 4.2.2 对下接口（本层调用外部LLM API）
 
@@ -1340,10 +1339,13 @@ llm_client.py ←── llm_config.py
 | 函数名 | 功能说明 | 输入参数 | 返回值 |
 |--------|---------|---------|--------|
 | `_build_request_body()` | 构建OpenAI格式的请求体 | messages, tools(可选), stream: bool | dict |
-| `_parse_stream_chunk()` | 解析原始SSE块，自动识别类型（文本增量/工具调用(含index)/结束/错误） | chunk: dict | LLMChunk |
+| `_parse_stream_chunk()` | 解析原始SSE块，自动识别类型（文本增量/工具调用(含index)/结束/错误）。每个chunk独立解析，arguments可能为片段，由第3层按index拼接完整 | chunk: dict | LLMChunk |
 | `_parse_complete_response()` | 解析整包响应，提取文本内容和工具调用列表 | response: dict | LLMResponse |
 | `_adapt_model_capabilities()` | 根据模型注册表配置调整请求参数（max_tokens、多模态等） | request_body: dict, model: str | dict |
-| `_retry_with_backoff()` | 带指数退避+jitter的网络重试（base×2^n ±随机30%） | func: Callable, max_retries: int | Any |
+| `init_default_config()` | 从 config.yaml 加载默认 LLMConfig，设置模块级默认实例，供 config=None 时使用 | config_path: str | LLMConfig |
+| `get_model_config()` | 按模型名从 config.yaml 模型注册表中查找对应配置，支持多模型 | model_name: str | LLMConfig |
+| `_rate_limit_check()` | 限流检查，基于LLMConfig.max_rpm控制请求频率，超限时等待或抛LLMRateLimitError | config: LLMConfig | None |
+| `_retry_with_backoff()` | 带指数退避+jitter的网络重试（base_delay×2^n ±随机30%） | func: Callable, base_delay: float, max_retries: int | Any |
 
 ---
 
@@ -1372,7 +1374,7 @@ async def call_stream(
     参数:
         messages: 对话消息列表，格式 [{"role": "user", "content": "..."}]
         tools: 工具定义列表（可选），传入则LLM可调用工具
-        config: 模型配置（必填，从config.yaml加载，传None则取系统默认配置）
+        config: 模型配置（可选，传None则取模块级默认配置——启动时从config.yaml加载的LLMConfig实例）
 
     返回:
         异步迭代器，每次yield一个LLMChunk:
@@ -1426,6 +1428,8 @@ async def call_complete(
 ```
 第3层调用 call_stream()
     │
+    ├── _rate_limit_check()            # 限流检查，控制请求频率
+    │
     ├── _adapt_model_capabilities()    # 根据模型调整参数
     │
     ├── _build_request_body()          # 构建OpenAI格式请求体（含tools定义，若有）
@@ -1444,6 +1448,8 @@ async def call_complete(
 ```
 第3层调用 call_complete()
     │
+    ├── _rate_limit_check()            # 限流检查，控制请求频率
+    │
     ├── _adapt_model_capabilities()    # 根据模型调整参数
     │
     ├── _build_request_body()          # 构建OpenAI格式请求体
@@ -1461,11 +1467,11 @@ async def call_complete(
 
 | 异常类型 | 触发条件 | 处理方式 | 重试策略 |
 |---------|---------|---------|---------|
-| `LLMConnectionError` | 网络连接失败、DNS解析失败 | 重试3次，指数退避+jitter（1s/2s/4s ±随机30%） | 自动重试 |
-| `LLMRateLimitError` | API返回429限流 | 重试3次，等待时间按API返回的Retry-After | 自动重试 |
-| `LLMTimeoutError` | 请求超时（默认120s） | 重试2次，每次增加超时时间 | 自动重试 |
+| `LLMConnectionError` | 网络连接失败、DNS解析失败 | 重试3次，指数退避+jitter（base_delay×2^n ±随机30%）；异常消息必须脱敏，不含api_key | 自动重试 |
+| `LLMRateLimitError` | API返回429限流 | 重试3次，等待时间按API返回的Retry-After；异常消息必须脱敏 | 自动重试 |
+| `LLMTimeoutError` | 请求超时（默认值取LLMConfig.timeout） | 重试2次，每次增加超时时间 | 自动重试 |
 | `LLMResponseError` | 响应格式错误、解析失败 | 流开始前抛异常；流开始后yield LLMChunk(type="error")为最后一个chunk | 不重试 |
-| `LLMAuthError` | API密钥无效、认证失败 | 流开始前抛异常；流开始后视为响应错误处理 | 不重试 |
+| `LLMAuthError` | API密钥无效、认证失败 | 流开始前抛异常；流开始后视为响应错误处理；异常消息不得泄漏api_key | 不重试 |
 
 ---
 
@@ -1476,26 +1482,29 @@ async def call_complete(
 class LLMChunk:
     """流式响应块（传输级，不做语义分类）"""
     type: str           # "text" | "toolcall" | "done" | "error"
-    content: str        # 文本片段（type="text"时）
-    name: str           # 工具名称（type="toolcall"时）
-    arguments: str      # 工具参数JSON片段（type="toolcall"时，可能跨多个chunk拼接）
-    toolcall_id: str    # 工具调用ID（type="toolcall"时）
+    content: str = ""   # 文本片段（type="text"时）
+    name: str = ""      # 工具名称（type="toolcall"时）
+    arguments: str = "" # 工具参数JSON片段（type="toolcall"时，可能跨多个chunk拼接）
+    toolcall_id: str = "" # 工具调用ID（type="toolcall"时）
     index: int = 0      # 工具调用索引（type="toolcall"时，标识并行多工具调用中的第几个）
-    error: str          # 错误信息（type="error"时）
+    error: str = ""     # 错误信息（type="error"时）
 
 @dataclass
 class LLMResponse:
     """整包响应"""
     type: str                                    # "message" | "toolcall"
     content: str                                 # 文本内容
-    tool_calls: List[Dict[str, str]]            # 工具调用列表（type="toolcall"时）
+    tool_calls: List[Dict[str, str]]            # 工具调用列表（type="toolcall"时），每个元素含 name/arguments/toolcall_id
     usage: Dict[str, int]                        # token使用量
     model: str                                   # 使用的模型名
 
 @dataclass
 class LLMConfig:
     """LLM配置（从系统 config.yaml 加载，运行时只读——修改需在任务间切换时更新）
-
+    
+    模块级默认配置：模块启动时从 config.yaml 加载一个 LLMConfig 实例作为默认值，
+    各接口的 config=None 即使用此默认实例。上层也可传入自定义 LLMConfig 覆盖。
+    
     实施注意：config.yaml 当前缺少多模态开关和上下文窗口大小两项配置，
     后续实施时需补充 llm.multimodal.enabled 和 llm.context_window 字段。
     """
