@@ -57,11 +57,8 @@ Pass 2（组件层）：工具注册 / Guardrails / 并发调度
 Pass 3（模式层）：sync→async队列中转 / 流式模式 / 记忆系统
 ```
 
----
 
-## 二、架构总览
-
-### 2.1 核心逻辑层（与我方相关部分）
+### 1.4 核心逻辑层（与我方相关部分）
 
 ```
 ┌──────────────────────────────────────────────────┐
@@ -74,7 +71,7 @@ Pass 3（模式层）：sync→async队列中转 / 流式模式 / 记忆系统
 │                 工具层                              │
 │  tools/registry.py（模块级自注册）                  │
 │  model_tools.py（薄编排层）                         │
-│  分类：工具/资源/知识/记忆                          │
+│  分类：按toolset分组（web/file/terminal等20+组）    │
 ├──────────────────────────────────────────────────┤
 │                 记忆层                              │
 │  memory_manager.py + memory_provider.py            │
@@ -87,7 +84,80 @@ Pass 3（模式层）：sync→async队列中转 / 流式模式 / 记忆系统
 └──────────────────────────────────────────────────┘
 ```
 
-### 2.2 AIAgent类（run_agent.py:294）——薄转发器
+---
+## 二、流式输出模式 ⭐⭐⭐（对我方SSE有直接参考价值）
+
+### 2.1 sync→async 队列中转（stream_consumer）
+
+**核心问题**：LLM调用是同步的（或线程同步），但SSE推送是异步的。Hermes用 `queue.Queue` 做同步→异步的中转——同步回调只管往队列里放，async 协程从队列里取。
+
+```
+LLM线程（同步）                      SSE推送协程（异步）
+    │                                     │
+    ├─ on_delta(text) ──queue.Queue──→  run() drain
+    ├─ on_segment_break() ──────────→  分割事件
+    └─ on_done() ───────────────────→  完成信号
+```
+
+**核心组件**：
+
+| 组件 | 说明 |
+|------|------|
+| **queue.Queue** | 线程安全队列，LLM的同步回调入队，async协程出队 |
+| **run()** | 异步协程，不断drain队列，逐步推送给前端 |
+| **on_delta(text)** | 同步回调，LLM吐出文本时调用 |
+| **on_segment_break()** | tool_call边界标记，触发前端分段渲染 |
+| **think_block过滤** | 状态机过滤推理过程文本 |
+
+### 2.2 对我方SSE推送的参考
+
+```
+我方方案：
+  LLM流式响应 → sync callback → queue.Queue → async drain → SSE推送
+                                                     ↓
+                                             rate-limit控制推送频率
+```
+
+直接采用 queue.Queue 生产者-消费者模式，替换Hermes的platform adapter层，替换为SSE SSEEvent发送。
+
+### 2.3 流式上下文清洗器（`memory_manager.py:62-225`，源码类名 StreamingContextScrubber）
+
+**用途**：状态机，从流式SSE文本中剥离 `<memory-context>...</memory-context>` 标签跨度。
+
+**为什么需要**：一次性正则表达式会在标签跨chunk时失效——标签开始在一个chunk末尾，结束在下一个chunk开头。
+
+**状态**：
+- `_in_span: bool` —— 当前是否在标签内
+- `_buf: str` —— 持有可能成为标签前缀的尾部字节
+- `_at_block_boundary: bool` —— 验证开放标签是否为块级
+
+**核心方法**：
+- `feed(text)`: 返回去除标签后的可见文本
+- `flush()`: 流结束时处理尾部
+
+**对我方价值**：
+- 状态机模式比正则表达式更可靠——跨chunk标签安全剥离
+- 可用于SSE推送到前端前的元数据标签清洗（如 `<!-- experience -->` 标签剥离）
+
+### 对我方价值对比
+
+| 维度 | Hermes做法 | 我方现状 | 借用策略 |
+|------|-----------|---------|---------|
+| **队列中转** | queue.Queue sync→async | 已有类似 | **确认**——我方使用的就是同一生产者-消费者模式 |
+| **segment_break** | tool_call边界触发分段 | 无 | **参考**——tool_call边界触发前端分段渲染 |
+| **think_block过滤** | 状态机过滤推理过程 | 无 | **参考**——过滤推理过程文本 |
+| **流式上下文清洗器（StreamingContextScrubber）** | 跨chunk标签清洗 | 无 | **参考**——SSE推送前的元数据标签剥离 |
+| **前置过滤vs后置过滤** | 入队前过滤 | 出队后过滤 | **参考**——入队前过滤减少无效chunk推送 |
+
+**使用方法**：
+1. 第1层（接入层）SSE推送链路中，LLM同步回调入队 → `queue.Queue` → async drain出队 → SSE write
+2. `on_segment_break()` 在 tool_call 边界触发前端分段渲染
+3. `流式上下文清洗器（StreamingContextScrubber）` 可用于SSE元数据标签剥离
+
+---
+## 三、Agent-引擎层
+
+### 3.2 AIAgent类（run_agent.py:294）——薄转发器
 
 核心入口类 `AIAgent`（`run_agent.py:294`, 4816行）本质是一个**薄转发器**。`__init__`（`run_agent.py:317`）将所有参数原封转发给 `agent.agent_init.init_agent()`。关键行为均在 `agent/` 子模块中实现：
 
@@ -103,7 +173,7 @@ Pass 3（模式层）：sync→async队列中转 / 流式模式 / 记忆系统
 | 内存管理 | `agent/memory_manager.py` + `agent/memory_provider.py` |
 | 工具循环护栏 | `agent/tool_guardrails.py` |
 
-### 2.3 对我方四层架构的对应
+### 3.3 对我方四层架构的对应
 
 | 我方层次 | Hermes对应 | 差异 | 借鉴策略 |
 |---------|-----------|------|---------|
@@ -114,7 +184,7 @@ Pass 3（模式层）：sync→async队列中转 / 流式模式 / 记忆系统
 
 ---
 
-## 三、Agent核心循环 ⭐⭐⭐（对我方最有价值）
+## 四、Agent核心循环 ⭐⭐⭐（对我方最有价值）
 
 ### 3.1 对话循环 flow
 
@@ -656,76 +726,7 @@ handle_function_call(name, args)
 
 ---
 
-## 六、流式输出模式 ⭐⭐⭐（对我方SSE有直接参考价值）
 
-### 6.1 sync→async 队列中转（stream_consumer）
-
-**核心问题**：LLM调用是同步的（或线程同步），但SSE推送是异步的。Hermes用 `queue.Queue` 做同步→异步的中转——同步回调只管往队列里放，async 协程从队列里取。
-
-```
-LLM线程（同步）                      SSE推送协程（异步）
-    │                                     │
-    ├─ on_delta(text) ──queue.Queue──→  run() drain
-    ├─ on_segment_break() ──────────→  分割事件
-    └─ on_done() ───────────────────→  完成信号
-```
-
-**核心组件**：
-
-| 组件 | 说明 |
-|------|------|
-| **queue.Queue** | 线程安全队列，LLM的同步回调入队，async协程出队 |
-| **run()** | 异步协程，不断drain队列，逐步推送给前端 |
-| **on_delta(text)** | 同步回调，LLM吐出文本时调用 |
-| **on_segment_break()** | tool_call边界标记，触发前端分段渲染 |
-| **think_block过滤** | 状态机过滤推理过程文本 |
-
-### 6.2 对我方SSE推送的参考
-
-```
-我方方案：
-  LLM流式响应 → sync callback → queue.Queue → async drain → SSE推送
-                                                     ↓
-                                             rate-limit控制推送频率
-```
-
-直接采用 queue.Queue 生产者-消费者模式，替换Hermes的platform adapter层，替换为SSE SSEEvent发送。
-
-### 6.3 流式上下文清洗器（`memory_manager.py:62-225`，源码类名 StreamingContextScrubber）
-
-**用途**：状态机，从流式SSE文本中剥离 `<memory-context>...</memory-context>` 标签跨度。
-
-**为什么需要**：一次性正则表达式会在标签跨chunk时失效——标签开始在一个chunk末尾，结束在下一个chunk开头。
-
-**状态**：
-- `_in_span: bool` —— 当前是否在标签内
-- `_buf: str` —— 持有可能成为标签前缀的尾部字节
-- `_at_block_boundary: bool` —— 验证开放标签是否为块级
-
-**核心方法**：
-- `feed(text)`: 返回去除标签后的可见文本
-- `flush()`: 流结束时处理尾部
-
-**对我方价值**：
-- 状态机模式比正则表达式更可靠——跨chunk标签安全剥离
-- 可用于SSE推送到前端前的元数据标签清洗（如 `<!-- experience -->` 标签剥离）
-
-### 对我方价值对比
-
-| 维度 | Hermes做法 | 我方现状 | 借用策略 |
-|------|-----------|---------|---------|
-| **队列中转** | queue.Queue sync→async | 已有类似 | **确认**——我方使用的就是同一生产者-消费者模式 |
-| **segment_break** | tool_call边界触发分段 | 无 | **参考**——tool_call边界触发前端分段渲染 |
-| **think_block过滤** | 状态机过滤推理过程 | 无 | **参考**——过滤推理过程文本 |
-| **流式上下文清洗器（StreamingContextScrubber）** | 跨chunk标签清洗 | 无 | **参考**——SSE推送前的元数据标签剥离 |
-| **前置过滤vs后置过滤** | 入队前过滤 | 出队后过滤 | **参考**——入队前过滤减少无效chunk推送 |
-
-**使用方法**：
-1. 第1层（接入层）SSE推送链路中，LLM同步回调入队 → `queue.Queue` → async drain出队 → SSE write
-2. `on_segment_break()` 在 tool_call 边界触发前端分段渲染
-3. `流式上下文清洗器（StreamingContextScrubber）` 可用于SSE元数据标签剥离
-
----
 
 ## 七、记忆系统 ⭐⭐（架构参考，暂不深入）
 

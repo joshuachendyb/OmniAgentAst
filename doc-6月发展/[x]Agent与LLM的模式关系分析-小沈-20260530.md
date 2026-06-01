@@ -205,7 +205,7 @@ SSE（Server-Sent Events）在本架构中有两种不同用途：
 | **第2层与传输协议的关系** | 第2层输出**事件对象**，不关心传输格式。第3层产生输出块，第2层完全透传，第1层负责序列化为SSE事件 | 四层架构决定了职责边界：第2层只做业务决策，不接触传输格式 |
 | **整包（非流式）路径** | 同步始终流式无整包选项；异步整包查询走标准调用链（第1层→第2层→第3层），不设跳层快捷路径 | 同步/异步模式决策已在1.1.1中确定，且无实际需求支持跳层路径。严格调用原则适用全部场景，没有例外 |
 | **LLM输出内容格式与前端渲染** | LLM输出内容以原始文本流透传，不做任何格式转换。第3层只剥离非内容元数据（function call定义、reasoning token等），第2层和第1层完全不碰内容。纯文本、Markdown、代码片段等混合格式均由前端收到后自行判断渲染 | 各层只做自己职责内的事。格式转换是前端的职责，不在本架构范围内。详见1.1.3"输出格式无关"和"输出内容在各层的处理方式" |
-| **重试职责分配** | 分层重试：第2层=任务级重试，第3层=步骤级重试（空响应/格式错误），第4层=通信级重试（超时/限流/断连） | 已在1.1.3需求中明确为分层协作机制，无需再讨论 |
+| **重试职责分配** | 第4层不做客户端限流，API返回429归入网络重试。分层：第2层=任务级，第3层=步骤级，第4层=通信级（超时/限流[API 429]/断连） | 已在1.1.3需求中明确为分层协作机制，无需再讨论 |
 | **工具基础设施归属** | 作为**第3层内部组件**，只有执行引擎层可访问。经典Agent模式，工具是执行引擎的核心组成部分 | 当前无需求支持多层直接调用工具 |
 | **暂停状态存储** | **持久化到数据库**，恢复时从DB载入 | 适应短时间暂停和长时间暂停（如用户离开几小时后再回来恢复）等多样场景 |
 | **持久化经验学习** | 第3层执行引擎新增**经验库**内部模块：执行经验（任务类型/执行步骤/成功失败/耗时/错误模式/工具效能/用户偏好）结构化持久化存储到DB；新任务启动前检索相似历史经验注入Prompt指导执行方向；执行完成后提取经验特征更新经验库 | 必须实现的核心功能模块，已确认优先级为"必须"，概要设计2.10已完成设计要点（存储结构/检索机制/更新策略） |
@@ -1388,7 +1388,6 @@ llm_client.py ────→ llm_config.py  # 读取配置
 | `_parse_stream_chunk()` | 解析原始SSE块，自动识别类型（文本增量/工具调用(含index)/结束/错误）。每个chunk独立解析，arguments可能为片段，由第3层按index拼接完整 | chunk: dict | LLMChunk | 内部 |
 | `_parse_complete_response()` | 解析整包响应，提取文本内容和工具调用列表 | response: dict | LLMResponse | 内部 |
 | `_adapt_model_capabilities()` | 根据模型注册表配置调整请求参数（max_tokens、多模态等） | request_body: dict, model: str | dict | 内部 |
-| `_rate_limit_check()` | 限流检查，基于LLMConfig.max_rpm控制请求频率，超限时等待或抛LLMRateLimitError | config: LLMConfig | None | 内部 |
 
 #### 4.2.2 `llm_config.py` — LLM配置管理
 
@@ -1423,8 +1422,7 @@ async def call_stream(
     流式调用LLM，原始SSE响应逐块到达。
 
     第3层（执行引擎层）通过此接口获取LLM的流式响应。
-    先校验参数（messages不能为空/None，tools不能为None），
-    再进入流式处理。
+    本层不做参数校验——messages和tools由第3层保证数据有效。
 
     错误报告策略（统一规则）：
     - 流开始前（第一个chunk yield之前）的错误：直接抛异常
@@ -1444,9 +1442,8 @@ async def call_stream(
         - LLMChunk(type="error", error="...")        # 流中错误（最后一个chunk）
 
     异常（流开始前）:
-        ValueError: messages为空或None、tools包含无效格式
         LLMConnectionError: 网络连接失败（重试后仍失败）
-        LLMRateLimitError: 请求频率超限（重试后仍超限）
+        LLMRateLimitError: API返回429（重试后仍失败）
         LLMResponseError: 响应格式错误
     """
 
@@ -1465,7 +1462,7 @@ async def call_complete(
     参数:
         messages: 对话消息列表
         tools: 工具定义列表（可选），传入则LLM可调用工具
-        config: 模型配置（必填，传None则取系统默认配置）
+        config: 模型配置（可选，传None则取系统默认配置）
 
     返回:
         LLMResponse对象:
@@ -1473,11 +1470,10 @@ async def call_complete(
         - LLMResponse(type="toolcall", content="", tool_calls=[{"name": "...", "arguments": "..."}], usage=..., model=...)
 
     异常:
-        ValueError: messages为空或None
-        LLMConnectionError: 网络连接失败
-        LLMRateLimitError: 请求频率超限
+        LLMConnectionError: 网络连接失败（重试后仍失败）
+        LLMRateLimitError: API返回429（重试后仍失败）
         LLMResponseError: 响应格式错误
-    """
+"""
 
 ---
 
@@ -1489,8 +1485,6 @@ async def call_complete(
 
 ```
 第3层调用 call_stream()
-    │
-    ├── _rate_limit_check()            # 限流检查，控制请求频率
     │
     ├── _adapt_model_capabilities()    # 根据模型调整参数
     │
@@ -1510,8 +1504,6 @@ async def call_complete(
 ```
 第3层调用 call_complete()
     │
-    ├── _rate_limit_check()            # 限流检查，控制请求频率
-    │
     ├── _adapt_model_capabilities()    # 根据模型调整参数
     │
     ├── _build_request_body()          # 构建OpenAI格式请求体
@@ -1530,7 +1522,7 @@ async def call_complete(
 | 异常类型 | 触发条件 | 处理方式 | 重试策略 |
 |---------|---------|---------|---------|
 | `LLMConnectionError` | 网络连接失败、DNS解析失败 | 重试3次，指数退避+jitter（base_delay×2^n ±随机30%）；异常消息必须脱敏，不含api_key | 自动重试 |
-| `LLMRateLimitError` | API返回429限流 | 重试3次，等待时间按API返回的Retry-After；异常消息必须脱敏 | 自动重试 |
+| `LLMRateLimitError` | API返回429 | 重试3次，等待时间按API返回的Retry-After；异常消息必须脱敏 | 自动重试 |
 | `LLMTimeoutError` | 请求超时（默认值取LLMConfig.timeout） | 重试2次，每次增加超时时间 | 自动重试 |
 | `LLMResponseError` | 响应格式错误、解析失败 | 流开始前抛异常；流开始后yield LLMChunk(type="error")为最后一个chunk | 不重试 |
 | `LLMAuthError` | API密钥无效、认证失败 | 流开始前抛异常；流开始后视为响应错误处理；异常消息不得泄漏api_key | 不重试 |
@@ -1575,7 +1567,6 @@ class LLMConfig:
     base_url: str                                   # API地址（必填，从config.yaml获取）
     timeout: int = 120                              # 超时时间（秒，默认2分钟）
     max_retries: int = 3                            # 最大重试次数
-    max_rpm: int = 0                                # 每分钟最大请求数（0=不限流）
 
 ```
 
