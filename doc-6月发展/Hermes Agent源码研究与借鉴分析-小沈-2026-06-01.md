@@ -12,6 +12,7 @@
 
 | 版本 | 时间 | 签名 | 更新内容 |
 |------|------|------|---------|
+| **v2.3** | **2026-06-02 06:17:00** | **小沈** | **§2简化：去掉多协议分发细节（我方只用OpenAI compatible协议），只保留协议无关的可靠调用模式（错误分类/重试循环/中断感知/超时检测/client自愈/凭证轮换）；旧§2流式内容移入新§6流式输出模式** |
 | **v2.2** | **2026-06-02 05:54:50** | **小沈** | **§1.4关键特征修正：删掉"没有LLM服务层/没有模型调用层"否定表述，改为功能等价性对照表—Hermes的模型通信功能（选路→适配→重试→错误分类）确实存在，仅未独立封装** |
 | **v2.1** | **2026-06-02 05:42:40** | **小沈** | **根据源码分析修正架构描述：§1.2删除"第4层对应Hermes api_call"错误对照，改为Hermes无独立LLM服务层；§1.4删除虚假的4层架构图，改为AIAgent单体+模块化组件的真实结构** |
 | **v2.0** | **2026-06-01 18:41:34** | **小沈** | **基于调试笔记深度重构：新增§6流式输出模式；修复丢失6项内容（流式上下文清洗器（StreamingContextScrubber）/三种调取模式/检查点机制/自改进对比/注册模式示例/DEFAULT_AGENT_IDENTITY）；每章增加对比我方系统/使用方法/价值说明/借鉴点分析** |
@@ -150,74 +151,153 @@ Pass 3（模式层）：sync→async队列中转 / 流式模式 / 记忆系统
 | **第2层 编排层** | 无对应。execute_turn每次独立，无跨turn编排 | 一致，双方均无为编排单独成层 |
 | **第1层 接入层** | stream_consumer queue生产者-消费者模式 | 基本对应，Hermes的背压控制可参考 |
 
-## 二、LLM的服务模块---stream_consume流式输出模式 ⭐⭐⭐（对我方SSE有直接参考价值）
+## 二、LLM的服务层---通信模块
 
-### 2.1 sync→async 队列中转（stream_consumer）
+**我方采用OpenAI compatible协议**（覆盖绝大多数主流模型），因此本节**不关注Hermes的多协议分发（api_mode）**，只提取**协议无关的可靠调用模式**——即"不管用什么协议，如何把API调用做得可靠"。
 
-**核心问题**：LLM调用是同步的（或线程同步），但SSE推送是异步的。Hermes用 `queue.Queue` 做同步→异步的中转——同步回调只管往队列里放，async 协程从队列里取。
+### 2.1 概述：Hermes为什么需要多协议分发
 
-```
-LLM线程（同步）                      SSE推送协程（异步）
-    │                                     │
-    ├─ on_delta(text) ──queue.Queue──→  run() drain
-    ├─ on_segment_break() ──────────→  分割事件
-    └─ on_done() ───────────────────→  完成信号
-```
+Hermes运行时要同时对接4种不兼容的API协议（Anthropic Messages API / AWS Bedrock boto3 / OpenAI Codex Responses / OpenAI chat_completions），所以引入`api_mode`做运行时switch分发。
 
-**核心组件**：
+**我们不需要这个**——我们只采用OpenAI compatible这一种协议，不存在多协议分发的问题。以下内容只提取对我们有用的协议无关模式。
 
-| 组件 | 说明 |
-|------|------|
-| **queue.Queue** | 线程安全队列，LLM的同步回调入队，async协程出队 |
-| **run()** | 异步协程，不断drain队列，逐步推送给前端 |
-| **on_delta(text)** | 同步回调，LLM吐出文本时调用 |
-| **on_segment_break()** | tool_call边界标记，触发前端分段渲染 |
-| **think_block过滤** | 状态机过滤推理过程文本 |
+### 2.2 可借鉴的可靠调用模式（协议无关）
 
-### 2.2 对我方SSE推送的参考
+这些模式与用什么协议无关，适用于任何LLM API调用（包括我们用的OpenAI compatible协议）：
 
-```
-我方方案：
-  LLM流式响应 → sync callback → queue.Queue → async drain → SSE推送
-                                                     ↓
-                                             rate-limit控制推送频率
+#### 2.2.1 per-request client + 外循环重试
+
+Hermes每次API调用都创建**独立client实例**，SDK层`max_retries=0`：
+
+```python
+# 每次调用前创建独立client
+request_client = agent._create_request_openai_client(
+    reason="chat_completion_request",
+    api_kwargs=api_kwargs,
+)
+# SDK不重试，重试完全由conversation_loop外循环控制
+request_client.chat.completions.create(**api_kwargs)
 ```
 
-直接采用 queue.Queue 生产者-消费者模式，替换Hermes的platform adapter层，替换为SSE SSEEvent发送。
+**价值**：重试控制权统一在外循环，不会出现SDK层重试+外循环重试叠加（2×重试）。中断时只关闭当前client，不影响后续请求。
 
-### 2.3 流式上下文清洗器（`memory_manager.py:62-225`，源码类名 StreamingContextScrubber）
+**我方**：当前模式类似，确认一致。
 
-**用途**：状态机，从流式SSE文本中剥离 `<memory-context>...</memory-context>` 标签跨度。
+#### 2.2.2 中断感知调用
 
-**为什么需要**：一次性正则表达式会在标签跨chunk时失效——标签开始在一个chunk末尾，结束在下一个chunk开头。
+主线程不阻塞在HTTP调用上，而是**后台线程执行 + 主线程轮询中断信号**：
 
-**状态**：
-- `_in_span: bool` —— 当前是否在标签内
-- `_buf: str` —— 持有可能成为标签前缀的尾部字节
-- `_at_block_boundary: bool` —— 验证开放标签是否为块级
+```
+主线程                  后台线程
+  │                       │
+  ├─ 启动后台线程 ──────→ ├─ API调用（同步）
+  ├─ 轮询中断信号         ├─ HTTP请求中...
+  ├─ 检测到中断            ├─ ...
+  ├─ 关闭client连接 ────→ ├─ 连接断开 → 抛出异常
+  ├─ 后台线程退出          ├─ 捕获InterruptedError
+  └─ 返回中断响应           └─ 线程结束
+```
 
-**核心方法**：
-- `feed(text)`: 返回去除标签后的可见文本
-- `flush()`: 流结束时处理尾部
+**关键实现**：中断只关闭该线程的client连接，**不影响其他线程**（通过per-request client隔离）。200ms粒度检查中断。
 
-**对我方价值**：
-- 状态机模式比正则表达式更可靠——跨chunk标签安全剥离
-- 可用于SSE推送到前端前的元数据标签清洗（如 `<!-- experience -->` 标签剥离）
+**我方**：当前中断处理简陋，可借鉴。
 
-### 对我方价值对比
+#### 2.2.3 过期调用检测
 
-| 维度 | Hermes做法 | 我方现状 | 借用策略 |
-|------|-----------|---------|---------|
-| **队列中转** | queue.Queue sync→async | 已有类似 | **确认**——我方使用的就是同一生产者-消费者模式 |
-| **segment_break** | tool_call边界触发分段 | 无 | **参考**——tool_call边界触发前端分段渲染 |
-| **think_block过滤** | 状态机过滤推理过程 | 无 | **参考**——过滤推理过程文本 |
-| **流式上下文清洗器（StreamingContextScrubber）** | 跨chunk标签清洗 | 无 | **参考**——SSE推送前的元数据标签剥离 |
-| **前置过滤vs后置过滤** | 入队前过滤 | 出队后过滤 | **参考**——入队前过滤减少无效chunk推送 |
+三种超时检测保护流式连接健康：
 
-**使用方法**：
-1. 第1层（接入层）SSE推送链路中，LLM同步回调入队 → `queue.Queue` → async drain出队 → SSE write
-2. `on_segment_break()` 在 tool_call 边界触发前端分段渲染
-3. `流式上下文清洗器（StreamingContextScrubber）` 可用于SSE元数据标签剥离
+| 检测 | 含义 | 超时时间 |
+|------|------|---------|
+| **首帧超时**（TTFB） | 连接建立后首帧未到 | ~120s（仅Codex） |
+| **空闲超时** | 流中两个SSE事件间隔过长 | 12s~180s（按provider配置） |
+| **非流式过期** | 同步调用整体超时 | 按模型自动估算 |
+
+检测到超时后：关闭client → 重建client → 抛出TimeoutError → 外循环重试（含credential rotation）。
+
+**我方**：当前无任何超时检测，流式连接一旦hang住无人知晓。
+
+#### 2.2.4 错误分类体系（`agent/error_classifier.py`）
+
+`classify_api_error(error)` 将原始异常分类为 `FailoverReason` 枚举（~20个值，6大类），附带 `(is_retryable, should_compress, should_fallback)` 三标志：
+
+| 归类条件 | FailoverReason | is_retryable | 恢复策略 |
+|----------|---------------|-------------|---------|
+| HTTP 401 | AUTH_FAILED | ❌ | 刷新凭证重试 |
+| HTTP 403 + 订阅提示 | BILLING_FAILURE / NOUS_PORTAL | ❌ | 刷新凭证或提示用户 |
+| HTTP 429 | RATE_LIMITED | ✅ | Retry-After或jittered_backoff() |
+| HTTP 413 | PAYLOAD_TOO_LARGE | ✅(压缩后) | 压缩上下文后重试 |
+| HTTP 5xx | BAD_GATEWAY / SERVICE_UNAVAILABLE | ✅ | 指数退避重试 |
+| 上下文过长 | CONTEXT_OVERFLOW | ✅(压缩后) | 压缩上下文或缩减后重试 |
+
+分类链：**优先按HTTP status code** → 按错误内容模式匹配。
+
+**价值**：统一的错误分类是可靠重试的前提——不分类就无法决定"该重试还该放弃"。
+
+#### 2.2.5 多级重试循环
+
+`conversation_loop.py` 的 `while retry_count < max_retries:` 循环（约800行逻辑）：
+
+```
+每轮重试:
+  1. classify_api_error(api_error) → 确定恢复策略
+  2. 按优先级恢复：
+     ┝ 凭证过期 → 刷新凭证 → 重试
+     ┝ 限流(429) → Retry-After / jittered_backoff → 重试
+     ┝ 413/溢出 → 压缩上下文 → 重试（最多3次）
+     ┝ 服务错误(5xx) → jittered_backoff → 重试
+     ┗ 不可恢复错误 → 跳第3步
+  3. 全部策略耗尽 → 检查fallback provider
+     ┝ 有备选 → 切换provider → 重试
+     ┗ 无备选 → 输出诊断 → 返回错误
+```
+
+**退避算法**（`retry_utils.jittered_backoff()`）：
+
+```python
+delay = min(base_delay * (2 ** retry_count), max_delay)  # 2s, 4s, 8s, 16s...
+jitter = delay * 0.1 * random.random()                    # 10%随机jitter
+return delay + jitter
+```
+
+等待过程每200ms检查中断信号。
+
+#### 2.2.6 凭证轮换
+
+遇到认证类错误时，从`credential_pool`选取下一组凭证，自动重建client：
+
+```
+credential_pool = [{key1, url1}, {key2, url2}, ...]
+
+认证失败 → _recover_with_credential_pool()
+  → 选取下一组凭证
+  → 关闭旧client
+  → 创建新client（新api_key + base_url）
+  → 更新instance状态
+  → 重试
+```
+
+**对我方**：个人桌面Agent单凭证为主，但多API key轮换可借鉴——后台任务或长时间运行时可自动切换key绕过限流。
+
+### 2.3 对我方借鉴分析
+
+| 维度 | Hermes（有用模式） | 我方现状 | 借鉴策略 |
+|------|-------------------|---------|---------|
+| **错误分类** | classify_api_error() + FailoverReason枚举 | 简单异常处理 | ✅ 借鉴——统一错误分类enum |
+| **重试循环** | 多级恢复（刷新→退避→压缩→回退） | 简单429/500重试 | ✅ 借鉴——丰富恢复策略 |
+| **中断感知** | 后台线程 + 200ms轮询 + per-request client隔离 | 简陋 | ✅ 借鉴——长时间调用可中断 |
+| **per-request client** | max_retries=0交由外循环 | 已有类似 | ✅ 确认——模式一致 |
+| **流式超时检测** | 首帧+空闲+过期三检测 | 无 | ✅ 借鉴——流式连接健康检查 |
+| **client自愈** | 中断/过期后自动重建client | 无 | ✅ 借鉴——client自动恢复 |
+| **凭证轮换** | credential_pool多key轮换 | 单凭证 | ⚠️ 参考——按需引入 |
+
+**不采用的部分**：
+
+| Hermes做法 | 不采用理由 |
+|-----------|-----------|
+| api_mode运行时分发 | 我方已通过Provider泛型接口编译时解决，不需要 |
+| 4种不同API协议的支持 | 我们只用OpenAI compatible协议 |
+| Anthropic prompt caching特殊策略 | 不针对特殊provider做特殊处理 |
+| provider-specific headers注入 | 不针对特殊provider做特殊处理 |
 
 ---
 ## 三、Agent-引擎层
@@ -791,7 +871,76 @@ handle_function_call(name, args)
 
 ---
 
+## 六、流式输出模式 ⭐⭐⭐（对我方SSE有直接参考价值）
 
+### 6.1 sync→async 队列中转（stream_consumer）
+
+**核心问题**：LLM调用是同步的（或线程同步），但SSE推送是异步的。Hermes用 `queue.Queue` 做同步→异步的中转——同步回调只管往队列里放，async 协程从队列里取。
+
+```
+LLM线程（同步）                      SSE推送协程（异步）
+    │                                     │
+    ├─ on_delta(text) ──queue.Queue──→  run() drain
+    ├─ on_segment_break() ──────────→  分割事件
+    └─ on_done() ───────────────────→  完成信号
+```
+
+**核心组件**：
+
+| 组件 | 说明 |
+|------|------|
+| **queue.Queue** | 线程安全队列，LLM的同步回调入队，async协程出队 |
+| **run()** | 异步协程，不断drain队列，逐步推送给前端 |
+| **on_delta(text)** | 同步回调，LLM吐出文本时调用 |
+| **on_segment_break()** | tool_call边界标记，触发前端分段渲染 |
+| **think_block过滤** | 状态机过滤推理过程文本 |
+
+### 6.2 对我方SSE推送的参考
+
+```
+我方方案：
+  LLM流式响应 → sync callback → queue.Queue → async drain → SSE推送
+                                                     ↓
+                                             rate-limit控制推送频率
+```
+
+直接采用 queue.Queue 生产者-消费者模式，替换Hermes的platform adapter层，替换为SSE SSEEvent发送。
+
+### 6.3 流式上下文清洗器（`memory_manager.py:62-225`，源码类名 StreamingContextScrubber）
+
+**用途**：状态机，从流式SSE文本中剥离 `<memory-context>...</memory-context>` 标签跨度。
+
+**为什么需要**：一次性正则表达式会在标签跨chunk时失效——标签开始在一个chunk末尾，结束在下一个chunk开头。
+
+**状态**：
+- `_in_span: bool` —— 当前是否在标签内
+- `_buf: str` —— 持有可能成为标签前缀的尾部字节
+- `_at_block_boundary: bool` —— 验证开放标签是否为块级
+
+**核心方法**：
+- `feed(text)`: 返回去除标签后的可见文本
+- `flush()`: 流结束时处理尾部
+
+**对我方价值**：
+- 状态机模式比正则表达式更可靠——跨chunk标签安全剥离
+- 可用于SSE推送到前端前的元数据标签清洗（如 `<!-- experience -->` 标签剥离）
+
+### 对我方价值对比
+
+| 维度 | Hermes做法 | 我方现状 | 借用策略 |
+|------|-----------|---------|---------|
+| **队列中转** | queue.Queue sync→async | 已有类似 | **确认**——我方使用的就是同一生产者-消费者模式 |
+| **segment_break** | tool_call边界触发分段 | 无 | **参考**——tool_call边界触发前端分段渲染 |
+| **think_block过滤** | 状态机过滤推理过程 | 无 | **参考**——过滤推理过程文本 |
+| **流式上下文清洗器（StreamingContextScrubber）** | 跨chunk标签清洗 | 无 | **参考**——SSE推送前的元数据标签剥离 |
+| **前置过滤vs后置过滤** | 入队前过滤 | 出队后过滤 | **参考**——入队前过滤减少无效chunk推送 |
+
+**使用方法**：
+1. 第1层（接入层）SSE推送链路中，LLM同步回调入队 → `queue.Queue` → async drain出队 → SSE write
+2. `on_segment_break()` 在 tool_call 边界触发前端分段渲染
+3. `流式上下文清洗器（StreamingContextScrubber）` 可用于SSE元数据标签剥离
+
+---
 
 ## 七、记忆系统 ⭐⭐（架构参考，暂不深入）
 
