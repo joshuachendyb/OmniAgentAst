@@ -87,42 +87,16 @@ cd /mnt/f/agenttool/hermes
 source venv/bin/activate
 nohup python3 -m gateway.run > /dev/null 2>&1 &
 ```
-
----
-
-#### 完整的启动流程和命令
-
-**WSL 终端里执行：**
-
-```bash
-# 1. 进入 WSL（在 Windows PowerShell/CMD 中运行）
-wsl
-
-# 2. 切到 Hermes 项目根目录
-cd /mnt/f/agenttool/hermes
-
-# 3. 激活虚拟环境（必须是项目根目录，相对路径才能解析）
-source venv/bin/activate
-
-# 4. 后台启动微信网关
-nohup python3 -m gateway.run > /dev/null 2>&1 &
-```
-
-**注意事项（按顺序）：**
-
-1. `wsl` 是在 Windows PowerShell/CMD 里执行，进入 Ubuntu 发行版
-2. `cd` 必须成功，激活 venv 用的是相对路径，目录不对会报"找不到 venv/bin/activate"
-3. `source`（不是 `.`）激活 venv，激活后命令行前缀会出现 `(venv)` 字样
-4. `nohup ... &` 把进程挂到后台，关掉 WSL 窗口也不会被杀；`> /dev/null 2>&1` 把所有输出丢掉
-5. 首次启动需要先在 `~/.hermes/config.yaml` 配置微信（weixin / ilink）平台凭证，否则网关启动了也连不上微信
-
-**配置文件路径**：
-
-```
-\\wsl.localhost\Ubuntu\home\admin\.hermes\config.yaml
-```
-
----
+启动 网关----nohup python3 -m gateway.run > /dev/null 2>&1 &---启动微信对话
+ wsl -d Ubuntu bash -c "cd /mnt/f/agenttool/hermes && source venv/bin/activate &&nohup python3 -m gateway.run > /dev/null 2>&1 &"
+nohup python3 -m gateway.run > /tmp/gateway.log 2>&1 
+启动网关----前台看不看日志
+     wsl -d Ubuntu bash -c "cd /mnt/f/agenttool/hermes && source venv/bin/activate && hermes gateway start"
+ 前台看日志：
+     bash
+     wsl -d Ubuntu bash -c "cd /mnt/f/agenttool/hermes && source venv/bin/activate && hermes gateway"
+bash
+     wsl -d Ubuntu bash -c "cd /mnt/f/agenttool/hermes && source venv/bin/activate && hermes gateway stop"
 
 #### 推荐：用 hermes CLI 替代裸命令
 
