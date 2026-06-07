@@ -132,36 +132,8 @@ class ToolRetryEngine:
             error_type=error_type or "unknown"
         )
     
-    def _lookup_tool(self, action: str, tool: Optional[Callable] = None) -> Optional[Callable]:
-        """查找工具函数,不存在时返回None(错误已处理)— 提取自execute_tool_with_retry 小健2026-05-31"""
-        if tool is not None:
-            return tool
-        tool = self.available_tools.get(action)
-        if tool is not None:
-            return tool
-        from app.services.tools.registry import tool_registry
-        impl = tool_registry.get_implementation(action)
-        if impl is not None:
-            self.available_tools[action] = impl
-        return impl
-    
-    def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable) -> Optional[Dict[str, Any]]:
-        """验证并归一化参数,无效时返回None — 提取自execute_tool_with_retry 小健2026-05-31"""
-        sig = inspect.signature(tool)
-        required = [
-            p.name for p in sig.parameters.values()
-            if p.default == inspect.Parameter.empty
-            and p.name != 'self'
-            and p.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
-        ]
-        normalized_input = self.normalize_params(action, action_input)
-        missing = [p for p in required if p not in normalized_input]
-        if missing:
-            return None
-        return normalized_input
-    
     def _get_retry_config(self, action: str):
-        """获取重试配置 — 提取自execute_tool_with_retry 小健2026-05-31"""
+        """获取重试配置 — 提取自 execute_tool_with_retry 小健 2026-05-31"""
         return (
             TOOL_RETRY_MAX.get(action, TOOL_RETRY_MAX["default"]),
             TOOL_RETRY_BACKOFF.get(action, TOOL_RETRY_BACKOFF["default"]),
@@ -176,26 +148,74 @@ class ToolRetryEngine:
         tool: Optional[Callable] = None,
     ) -> Dict[str, Any]:
         """
-        统一工具执行方法(带重试逻辑)
+        统一工具执行方法 (带重试逻辑)
+        
+        【修复 P1-1/P1-2 2026-06-08 小沈】
+        1. 合并参数验证 (消除 normalize_params + _validate_params 重复)
+        2. 简化工具查找 (消除三重查找)
         
         Args:
             action: 工具名称
             action_input: 工具参数
-            tool: 可选传入的工具函数,如果为None则从available_tools获取
+            tool: 可选传入的工具函数，如果为 None 则从 available_tools 获取
         
         Returns:
             执行结果字典
         """
-        # 1. 查找工具
-        found_tool = self._lookup_tool(action, tool)
-        if found_tool is None:
+        # 1. 查找工具 (简化逻辑)
+        if tool is None:
+            tool = self.available_tools.get(action)
+            if tool is None:
+                from app.services.tools.registry import tool_registry
+                tool = tool_registry.get_implementation(action)
+                if tool is not None:
+                    self.available_tools[action] = tool  # 缓存
+                else:
+                    return create_error_tool_result(
+                        code=ERR_TOOL_NOT_FOUND,
+                        data=None,
+                        message=f"Unknown tool: {action}. Available tools: {list(self.available_tools.keys())}",
+                        retry_count=0,
+                        error_message=f"工具 '{action}' 未找到",
+                        error_type="tool_not_found"
+                    )
+        
+        # 2. 统一参数验证 (合并 normalize_params + _validate_params)
+        params = action_input.copy()
+        
+        # 2.1 从 registry 获取 schema，删除非法参数
+        try:
+            from app.services.tools.registry import tool_registry
+            metadata = tool_registry.get_tool(action)
+            if metadata and metadata.input_schema:
+                valid_params = set(metadata.input_schema.get("properties", {}).keys())
+                for key in list(params.keys()):
+                    if key not in valid_params:
+                        val_str = str(params[key])[:50] + "..." if len(str(params[key])) > 50 else str(params[key])
+                        logger.warning(
+                            f"[参数监控] action={action}, 非标准参数名: "
+                            f"param={key}={val_str}"
+                        )
+                        del params[key]
+        except (ImportError, AttributeError) as e:
+            logger.warning(f"[参数监控] action={action}, 获取 schema 失败：{e}", exc_info=True)
+        
+        # 2.2 检查必需参数
+        sig = inspect.signature(tool)
+        required = [
+            p.name for p in sig.parameters.values()
+            if p.default == inspect.Parameter.empty
+            and p.name != 'self'
+            and p.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
+        ]
+        missing = [p for p in required if p not in params]
+        if missing:
             return create_error_tool_result(
-                code=ERR_TOOL_NOT_FOUND,
-                data=None,
-                message=f"Unknown tool: {action}. Available tools: {list(self.available_tools.keys())}",
+                code=ERR_MISSING_PARAM,
+                message=f"Missing required parameter(s): {', '.join(missing)}",
                 retry_count=0,
-                error_message=f"工具 '{action}' 未找到",
-                error_type="tool_not_found"
+                error_message=f"缺少必需参数：{', '.join(missing)}",
+                error_type="invalid_params"
             )
         
         # 2. 参数验证
@@ -218,10 +238,9 @@ class ToolRetryEngine:
                 error_type="invalid_params"
             )
         
-        # 3. 获取重试配置
+        # 3. 执行工具 (带重试)
         max_retries, backoff_factor, retryable_errors, timeout = self._get_retry_config(action)
         
-        # 4. 创建RetryEngine统一退避策略
         def _is_tool_retryable(e: Exception) -> bool:
             error_category = UnifiedErrorClassifier.classify(e)
             return error_category.is_retryable or error_category.name.lower() in retryable_errors
@@ -233,12 +252,11 @@ class ToolRetryEngine:
             retryable_check=_is_tool_retryable,
         )
         
-        # 5. 执行重试循环(使用RetryEngine统一退避策略)
         last_error: Optional[Exception] = None
         
         while engine.attempt_count <= max_retries:
             try:
-                result = await self._execute_tool_once(found_tool, normalized_input, timeout)
+                result = await self._execute_tool_once(tool, params, timeout)
                 return create_tool_result(
                     data=result,
                     message="Tool execution succeeded",
@@ -252,7 +270,7 @@ class ToolRetryEngine:
 
                 logger.warning(
                     f"[重试] action={action} 尝试{attempt}/{max_retries} "
-                    f"失败: {error_category.description} - {str(e)[:100]}",
+                    f"失败：{error_category.description} - {str(e)[:100]}",
                     exc_info=True
                 )
                 
