@@ -9,3 +9,28 @@ __pycache__/
 .vscode/
 *.swp
 .DS_Store
+
+# test & reports
+backend/tests/
+backend/pytest-of-chend/
+reports/
+
+# logs & temp
+backend/logs/
+backend/pt*.txt
+backend/pt.txt
+backend/json_backup/
+
+# frontend build
+frontend/dist/
+frontend/backup/
+
+# debug tools
+backend/tools/
+backend/verify_fixes.py
+
+# test temp data
+backend/test_verify_*
+
+# node_modules
+frontend/node_modules/
