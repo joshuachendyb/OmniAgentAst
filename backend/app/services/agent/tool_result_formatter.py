@@ -12,7 +12,7 @@
 """
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from app.constants import SUCCESS_CODE, LLM_SAFE_LIMIT
 
@@ -34,6 +34,8 @@ def _get_failure_hint(tool_name: str, tool_params: Optional[dict] = None) -> str
 
     优先从tool_registry获取工具自定义提示，
     无自定义提示时返回通用重试建议。
+
+    重写 EXC-20: 异常分类 (ImportError/AttributeError/JSON)
     """
     try:
         from app.services.tools.registry import tool_registry
@@ -42,8 +44,9 @@ def _get_failure_hint(tool_name: str, tool_params: Optional[dict] = None) -> str
             hint = meta.get_failure_hint(tool_params)
             if hint:
                 return hint
-    except Exception:
-        pass
+    except (ImportError, AttributeError, json.JSONDecodeError, TypeError) as e:
+        from app.utils.logger import logger as _logger
+        _logger.debug(f"[_get_failure_hint] 工具提示获取失败: {e}")
     return "请尝试其他可用工具，不要重复调用同一失败操作。"
 
 

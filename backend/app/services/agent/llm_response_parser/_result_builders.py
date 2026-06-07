@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 结果构建模块（第4层 - 依赖 _utils, _tool_params）
-"""
 
+重写记录 — 小欧 2026-06-07:
+- TYPE-3: 4次 isinstance(data, dict) 用 type_guards.validate_data_dict 统一
+
+Author: 小欧 - 2026-06-07
+"""
 import json as _json
 import json
 from typing import Dict, Any, Optional, List

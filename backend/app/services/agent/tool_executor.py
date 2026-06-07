@@ -27,27 +27,18 @@ async def execute_tool_with_unified_retry(
 ) -> Dict[str, Any]:
     """
     统一工具执行接口
-    
-    融合了原始ToolExecutor.execute()和execute_tool_with_unified_retry()的优点：
+
     - 支持tools为None时从registry获取工具实现
     - 支持finish短路
     - 支持not-found判断
     - 支持工具别名查找
     - 调用ToolRetryEngine执行
-    
-    Args:
-        action: 工具名称
-        action_input: 工具参数
-        tools: 可选的工具字典，如果为None则从registry获取
-    
-    Returns:
-        执行结果字典
     """
     # 1. 如果tools为None，从registry获取工具实现
     if tools is None:
         from app.services.tools.tool_queries import get_implementations_from_registry
         tools = get_implementations_from_registry()
-    
+
     # 2. finish短路
     if action == "finish":
         return create_tool_result(
@@ -55,7 +46,7 @@ async def execute_tool_with_unified_retry(
             message=action_input.get("result", "Task completed"),
             retry_count=0
         )
-    
+
     # 3. not-found判断 + 工具别名查找
     if action not in tools:
         from app.services.tools.registry import tool_registry
@@ -71,7 +62,7 @@ async def execute_tool_with_unified_retry(
                 error_message=f"工具 '{action}' 未找到",
                 error_type="tool_not_found"
             )
-    
+
     # 4. 调用ToolRetryEngine执行
     engine = _get_tool_retry_engine()
     return await engine.execute_tool_with_retry(action, action_input, tools.get(action))

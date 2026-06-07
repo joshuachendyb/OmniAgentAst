@@ -386,7 +386,8 @@ def _try_regex_tool_call_fallback(output: str) -> Optional[Dict[str, Any]]:
         from app.services.tools.registry import tool_registry
         if tool_registry.get_implementation(tool_name) is None:
             return None
-    except Exception:
+    except (ImportError, AttributeError) as e:
+        logger.debug(f"[_try_regex_tool_call_fallback] 工具实现查找失败: {e}")
         return None
 
     tp: Dict[str, Any] = {}
@@ -399,7 +400,8 @@ def _try_regex_tool_call_fallback(output: str) -> Optional[Dict[str, Any]]:
         if obj_str:
             try:
                 tp = json.loads(obj_str)
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.debug(f"[_try_regex_tool_call_fallback] tool_params解析失败: {e}")
                 tp = {}
 
     last_brace = output.rfind("{")

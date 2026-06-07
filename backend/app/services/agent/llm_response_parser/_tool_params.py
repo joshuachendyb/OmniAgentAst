@@ -3,11 +3,11 @@
 工具参数处理模块（第2层 - 依赖 _utils）
 """
 
+
 import re
 import json
 from typing import Dict, Any, Optional
 
-from app.utils.logger import logger
 from ._utils import _extract_json_with_balanced_braces, _extract_string_value
 
 
@@ -142,8 +142,8 @@ def _extract_tool_params_from_thought(thought: str, tool_name: str = None) -> Di
             if "tool_name" not in parsed:
                 return parsed
         except json.JSONDecodeError:
+            json_text_escaped = json_text.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
             try:
-                json_text_escaped = json_text.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
                 parsed = json.loads(json_text_escaped)
                 if "tool_params" in parsed:
                     return parsed["tool_params"]
@@ -151,7 +151,7 @@ def _extract_tool_params_from_thought(thought: str, tool_name: str = None) -> Di
                     return parsed["params"]
                 if "tool_name" not in parsed:
                     return parsed
-            except:
+            except json.JSONDecodeError:
                 pass
 
     return {}
@@ -178,7 +178,7 @@ def _extract_tool_params_from_text(content: str, tool_start_pos: int) -> Optiona
             return parsed["tool_params"]
         elif isinstance(parsed, dict):
             return {k: v for k, v in parsed.items() if k not in ["reasoning", "thought", "type", "tool_name", "action", "action_input", "extra_field", "metadata", "context"]}
-    except:
+    except json.JSONDecodeError:
         pass
 
     try:
@@ -187,7 +187,7 @@ def _extract_tool_params_from_text(content: str, tool_start_pos: int) -> Optiona
             inner_json, _ = _extract_json_with_balanced_braces(json_text[inner_start:])
             if inner_json:
                 return json.loads(inner_json)
-    except:
+    except json.JSONDecodeError:
         pass
 
     params = _extract_params_by_regex(search_text)
@@ -226,7 +226,7 @@ def _extract_params_by_regex_from_json_str(json_str: str) -> Optional[Dict[str, 
 
     try:
         return json.loads(tp_json)
-    except:
+    except json.JSONDecodeError:
         pass
 
     file_path_match = re.search(r'"file_path"\s*:\s*"([^"]+)"', tp_json)

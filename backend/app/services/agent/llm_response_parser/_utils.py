@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-共享工具函数模块（第1层 - 零依赖本包其他模块）
-"""
+共享工具函数模块（第1层）
 
+简化 2026-06-07: 1个 except 改具体异常
+"""
 import re
 import json
 from typing import Dict, Any, Optional, Tuple, List
-
-from app.utils.logger import logger
 
 
 # 【改进7 2026-05-01 小沈 小健】reasoning验证辅助函数
@@ -38,7 +37,6 @@ def _normalize_result_to_str(raw_result) -> str:
         return ""
 
 
-# 【基于14.0分析增强】中文关键词模式
 REACT_KEYWORDS = {
     "thought": r"(?:Thought|思考|推理):\s*",
     "action": r"(?:Action|行动|工具调用|(?:调用|使用|执行)\s+|(?:工具|函数)\s*为):\s*",
@@ -48,20 +46,15 @@ REACT_KEYWORDS = {
 
 
 def _get_all_tool_names():
-    """获取所有已注册工具名 — 动态查询，fallback为最小容错集合
-    
-    【3.14修复 北京老陈 2026-05-31】fallback删除9个已不存在的遗留工具名，
-    改为仅保留finish（唯一100%存在的工具）。
-    """
+    """获取所有已注册工具名 — 动态查询，fallback为最小容错集合"""
     try:
         from app.services.tools.registry import tool_registry
         tools = tool_registry.list_tools(include_metadata=False)
         return [t["name"] if isinstance(t, dict) else t for t in tools]
-    except Exception:
+    except (ImportError, AttributeError):
         return ["finish"]
 
 
-# 【24.4.4 组件1】统一 handler 结果构建(消除 4 个 8 字段 dict 重复)
 def _build_handler_result(type_: str, thought: str = "", content: str = "",
                            reasoning: str = "", tool_name: Optional[str] = None,
                            tool_params: Optional[Dict] = None,
@@ -73,7 +66,6 @@ def _build_handler_result(type_: str, thought: str = "", content: str = "",
     }
 
 
-# 【小沈重构 2026-05-25】25.3节：统一构造action结果dict，消除3处字段名重复
 def _make_action_result_dict(
     result_type: str, thought: str, content: str, reasoning: str,
     tool_name: Optional[str], tool_params: Optional[Dict],
@@ -171,10 +163,7 @@ def _extract_key_value_pairs(text: str) -> Dict[str, Any]:
 
 
 def _extract_string_value(json_str: str, field_name: str) -> Optional[str]:
-    """从JSON字符串中提取指定字段的字符串值（char-walking方式，处理转义）
-
-    用于json.loads失败时的降级提取，处理含转义字符的字符串值。
-    """
+    """从JSON字符串中提取指定字段的字符串值（char-walking方式，处理转义）"""
     field_marker = f'"{field_name}"'
     field_start = json_str.find(field_marker)
     if field_start == -1:

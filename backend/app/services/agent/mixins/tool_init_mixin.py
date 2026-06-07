@@ -58,6 +58,7 @@ class ToolInitMixin(ToolLoaderMixin):
             category = resolve_category(cat_name)
             if not category:
                 continue
+            # EXC-12 修复: 异常分类 (ImportError/AttributeError)
             try:
                 detail = tool_registry.get_all_tools_detail(
                     priority_category=category,
@@ -65,7 +66,8 @@ class ToolInitMixin(ToolLoaderMixin):
                 )
                 if detail.strip():
                     parts.append(detail)
-            except Exception:
+            except (ImportError, AttributeError) as e:
+                logger.debug(f"[_get_tools_detail] 工具detail获取失败(cat={cat_name}): {e}")
                 continue
         return "\n\n".join(parts) if parts else ""
 
@@ -79,6 +81,7 @@ class ToolInitMixin(ToolLoaderMixin):
     def _inject_tools_hint(self, history_dicts, strategy_method):
         """工具提示注入（含缓存） — text策略时注入工具描述，tools策略时不注入 — 小沈 2026-05-29"""
         if strategy_method != "tools":
+            # EXC-13 修复: 异常分类 (AttributeError/TypeError)
             try:
                 loaded = getattr(self, '_loaded_categories', set())
                 _last = getattr(self, '_last_injected_categories', None)
@@ -87,8 +90,10 @@ class ToolInitMixin(ToolLoaderMixin):
                 _cached = getattr(self, '_cached_tools_content', None)
                 if _cached:
                     history_dicts = inject_tools_info(history_dicts, _cached)
+            except (AttributeError, TypeError) as e:
+                logger.warning(f"[ToolSummary] 注入工具概要失败(属性/类型): {e}", exc_info=True)
             except Exception as e:
-                logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
+                logger.warning(f"[ToolSummary] 注入工具概要失败(未分类): {e}", exc_info=True)
         return history_dicts
 
     def _inject_schema(self, history_dicts):

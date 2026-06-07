@@ -10,9 +10,9 @@ UniversalReactAgent — 配置驱动的通用 ReAct Agent
 
 Author: 小强 - 2026-05-23
 Updated: 小沈 - 2026-05-30 (config可选+rollback内置+去掉RollbackMixin+覆盖_get_llm_response)
+Updated: 小欧 - 2026-06-07 (EXC-15/16异常分类+简化)
 """
-import asyncio
-from typing import Dict, Any, List, Optional, AsyncGenerator
+from typing import Dict, Any, List, Optional
 
 from app.services.agent.generic_react import GenericReactAgent
 from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin
@@ -115,8 +115,11 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, GenericReactAgent):
             return success
         except ValueError:
             raise
+        except (KeyError, TypeError) as e:
+            logger.error(f"Rollback 数据/类型错误: {e}", exc_info=True)
+            return False
         except Exception as e:
-            logger.error(f"Rollback failed: {e}")
+            logger.error(f"Rollback 未知错误: {e}", exc_info=True)
             return False
 
     def _get_system_prompt(self) -> str:
@@ -126,7 +129,7 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, GenericReactAgent):
 
     def _get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
         return self.prompts.get_task_prompt(task)
-    
+
     async def run(
         self,
         task: str,
@@ -136,7 +139,7 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, GenericReactAgent):
         """运行 Agent 完成任务（非流式）"""
         async with self._lock:
             return await self._run_with_task_tracking(task, context, system_prompt)
-    
+
     async def _collect_result_from_stream(self, task_id: str) -> AgentResult:
         """从stream中收集最终结果 — 提取自_run_with_task_tracking 小健2026-05-31"""
         result = None
@@ -192,7 +195,7 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, GenericReactAgent):
         """内部运行方法（带 session 管理）"""
         task_id = self.task_id or ""
         session_created_by_this_run = False
-        
+
         if not task_id:
             agent_id = f"{self.config.intent_type}-agent" if hasattr(self, 'config') and self.config else "unknown-agent"
             task_id = self._task_tracker.create_task(
@@ -202,13 +205,16 @@ class UniversalReactAgent(ToolStepMixin, ReactAgentMixin, GenericReactAgent):
             session_created_by_this_run = True
             self._task_created_by_agent = True
             logger.info(f"Session created in run(): {task_id}")
-        
+
         result = None
         try:
             result = await self._collect_result_from_stream(task)
             return result
+        except (ValueError, KeyError, TypeError) as e:
+            logger.error(f"Agent execution 任务执行错误: {e}", exc_info=True)
+            return self._build_error_result(self.steps, task_id, e)
         except Exception as e:
-            logger.error(f"Agent execution error: {e}", exc_info=True)
+            logger.error(f"Agent execution 未知错误: {e}", exc_info=True)
             return self._build_error_result(self.steps, task_id, e)
         finally:
             if session_created_by_this_run and task_id and self._task_tracker:

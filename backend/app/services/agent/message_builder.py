@@ -261,26 +261,29 @@ class MessageBuilder:
         role:tool的tool_call_id也必须有对应assistant(tool_calls)。
         任一端缺失则双方都移除。
         """
-        valid_tool_call_ids = set()
+        assistant_ids: set = set()
+        tool_ids: set = set()
         for msg in messages:
-            if msg.get("role") == "assistant" and msg.get("tool_calls"):
-                for tc in msg["tool_calls"]:
-                    tid = tc.get("id")
-                    if tid:
-                        valid_tool_call_ids.add(tid)
-        valid_tool_response_ids = set()
-        for msg in messages:
-            if msg.get("role") == "tool" and msg.get("tool_call_id"):
-                valid_tool_response_ids.add(msg["tool_call_id"])
-        paired_ids = valid_tool_call_ids & valid_tool_response_ids
+            if msg.get("role") == "assistant":
+                for tc in msg.get("tool_calls") or []:
+                    if tc.get("id"):
+                        assistant_ids.add(tc["id"])
+            elif msg.get("role") == "tool":
+                if msg.get("tool_call_id"):
+                    tool_ids.add(msg["tool_call_id"])
+        paired_ids = assistant_ids & tool_ids
         result = []
         for msg in messages:
-            role = msg.get("role", "")
-            if role == "tool" and msg.get("tool_call_id"):
-                if msg["tool_call_id"] in paired_ids:
-                    result.append(msg)
-            elif role == "assistant" and msg.get("tool_calls"):
-                if all(tc.get("id") in paired_ids for tc in msg["tool_calls"] if tc.get("id")):
+            if msg.get("role") == "assistant":
+                tcs = msg.get("tool_calls") or []
+                kept_tcs = [tc for tc in tcs if tc.get("id") in paired_ids]
+                if not kept_tcs and tcs:
+                    continue
+                new_msg = dict(msg)
+                new_msg["tool_calls"] = kept_tcs
+                result.append(new_msg)
+            elif msg.get("role") == "tool":
+                if msg.get("tool_call_id") in paired_ids:
                     result.append(msg)
             else:
                 result.append(msg)

@@ -19,7 +19,7 @@ base_react.py 只保留 ReAct 循环（思考→决策→继续/退出），
 
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from app.services.agent.steps import StepFactory, ReasoningStep
 from app.services.agent.tool_result_formatter import build_execution_result_dict
@@ -221,17 +221,36 @@ class ToolStepMixin:
                     tool_params=tool_params,
                     round_number=self.llm_call_count
                 )
-            except Exception:
-                pass
-            
+            # EXC-23 修复: 异常分类 (AttributeError/TypeError/IO)
+            except (AttributeError, TypeError, IOError) as e:
+                logger.debug(f"[ReAct] prompt_logger.log_observation 失败: {e}", exc_info=True)
+
             return self._build_tool_outcome(
                 execution_result, execution_result_dict, execution_time_ms,
                 step_count, tool_name, tool_params, is_primary, observation_text,
                 fc_context=fc_context,
             )
-        
+
+        # EXC-24 修复: 异常分类 (通用执行错误) + 记录堆栈
+        except (ValueError, KeyError, TypeError) as e:
+            logger.warning(
+                f"[ReAct] 工具 {tool_name} 执行参数/类型错误: {e}",
+                exc_info=True,
+                extra={"tool_name": tool_name, "tool_params": tool_params}
+            )
+            err_dict = self._build_err_dict(e)
+            return self._build_tool_outcome(
+                err_dict, err_dict, 0,
+                step_count, tool_name, tool_params, is_primary,
+                f"Observation: error - {str(e)}",
+                fc_context=None,
+            )
         except Exception as _exec_err:
-            logger.warning(f"[ReAct] 工具 {tool_name} 执行异常: {_exec_err}")
+            logger.error(
+                f"[ReAct] 工具 {tool_name} 未分类异常: {_exec_err}",
+                exc_info=True,
+                extra={"tool_name": tool_name, "tool_params": tool_params}
+            )
             err_dict = self._build_err_dict(_exec_err)
             return self._build_tool_outcome(
                 err_dict, err_dict, 0,

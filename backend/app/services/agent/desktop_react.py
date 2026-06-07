@@ -7,7 +7,7 @@ DesktopReactAgent - 桌面操作 ReAct Agent。
 
 Author: 小健 - 2026-05-06（修正-小沈 2026-05-06：rollback返回False）
 """
-from typing import Any, Optional, Dict, List
+from typing import Any, Optional, List
 
 from app.services.agent.universal_react import UniversalReactAgent
 from app.services.prompts.desktop.desktop_prompts import DesktopPrompts

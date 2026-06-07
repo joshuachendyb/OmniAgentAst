@@ -10,7 +10,7 @@ Author: 小强 - 2026-05-23
 """
 from typing import Any, Dict, List, Optional
 
-from app.services.agent.agent_config import resolve_agent_config, AgentConfig, AGENT_REGISTRY, get_all_intent_types
+from app.services.agent.agent_config import resolve_agent_config, AGENT_REGISTRY
 from app.services.agent.base_react import BaseAgent
 from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger

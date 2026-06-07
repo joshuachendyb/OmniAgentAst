@@ -2,10 +2,7 @@
 """
 Agent 配置注册表 — 声明式定义
 
-改造前：9个Agent子类（每个category一个类）
-改造后：2个类（UniversalReactAgent + DesktopReactAgent）+ 声明式配置
-
-Author: 小强 - 2026-05-23
+简化 2026-06-07: 删掉 L51-56 重复的 prompt_class property
 """
 from dataclasses import dataclass, field
 from typing import Type, List, Dict, Optional, Any
@@ -27,10 +24,10 @@ class AgentConfig:
     rollback_enabled: bool = False
     max_steps: int = 100
     aliases: List[str] = field(default_factory=list)
-    
+
     _prompt_class: Optional[Type[BasePrompts]] = field(default=None, repr=False)
     _agent_class: Optional[Any] = field(default=None, repr=False)
-    
+
     @property
     def prompt_class(self) -> Type[BasePrompts]:
         if self._prompt_class is None:
@@ -38,7 +35,7 @@ class AgentConfig:
             module = importlib.import_module(self.prompt_module)
             self._prompt_class = getattr(module, self.prompt_class_name)
         return self._prompt_class
-    
+
     @property
     def agent_class(self) -> Any:
         if self._agent_class is None and self.agent_module:
@@ -46,14 +43,6 @@ class AgentConfig:
             module = importlib.import_module(self.agent_module)
             self._agent_class = getattr(module, self.agent_class_name)
         return self._agent_class
-    
-    @property
-    def prompt_class(self) -> Type[BasePrompts]:
-        if self._prompt_class is None:
-            import importlib
-            module = importlib.import_module(self.prompt_module)
-            self._prompt_class = getattr(module, self.prompt_class_name)
-        return self._prompt_class
 
 
 AGENT_REGISTRY: Dict[str, AgentConfig] = {
@@ -113,17 +102,15 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
 
 def resolve_agent_config(intent_type: str) -> AgentConfig:
     """根据 intent_type 解析 Agent 配置（支持别名）"""
-    # 首先规范化意图类型
     from app.services.intents.intent_mapper import normalize_intent
     normalized_intent = normalize_intent(intent_type)
-    
-    # 使用规范化后的意图查找配置
+
     for config in AGENT_REGISTRY.values():
         if config.intent_type == normalized_intent:
             return config
         if normalized_intent in config.aliases:
             return config
-    
+
     raise ValueError(f"Unknown intent_type: {intent_type}")
 
 
@@ -131,13 +118,11 @@ def get_all_intent_types() -> List[str]:
     """获取所有 intent_type（含别名）"""
     from app.services.intents.intent_mapper import get_agent_intent_names, get_aliases_for_intent
     from app.services.tools.tool_types import IntentType
-    
+
     result = []
-    # 添加所有标准意图类型
     result.extend(get_agent_intent_names())
-    
-    # 添加所有别名
+
     for intent_type in IntentType:
         result.extend(get_aliases_for_intent(intent_type))
-    
-    return list(set(result))  # 去重
+
+    return list(set(result))

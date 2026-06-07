@@ -56,8 +56,8 @@ class PromptBuildMixin:
         prompt_logger.log_llm_call(
             round_number=self.llm_call_count,
             messages=assembled_messages,
-            model=getattr(self, 'model', 'unknown'),
-            provider=getattr(self, 'provider', 'unknown'),
+            model="",
+            provider="",
             call_type=strategy_method or "text",
             extra_params={
                 "max_steps": self.max_steps,
@@ -66,10 +66,21 @@ class PromptBuildMixin:
                 "total_chars": total_chars,
             }
         )
+        # EXC-25 修复: 异常分类 (IOError/OSError) - prompt_logger.save 涉及文件写入
         try:
             prompt_logger.save()
-        except Exception as e:
-            logger.warning(f"Failed to save prompt log: {e}")
+        except (IOError, OSError) as e:
+            logger.warning(
+                f"Failed to save prompt log (IO): {e}",
+                exc_info=True,
+                extra={"round_number": self.llm_call_count}
+            )
+        except (AttributeError, TypeError) as e:
+            logger.warning(
+                f"Failed to save prompt log (属性/类型): {e}",
+                exc_info=True,
+                extra={"round_number": self.llm_call_count}
+            )
 
     def _log_response(self, response):
         """prompt_logger调用后记录 — 小沈 2026-05-21"""

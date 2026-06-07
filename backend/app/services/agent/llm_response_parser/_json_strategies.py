@@ -2,10 +2,12 @@
 """
 JSON 策略解析模块（第3层 - 依赖 _utils, _tool_params）
 
-【OCP改造 2026-05-29 小健】
-采用注册制，支持动态扩展JSON解析策略，符合OCP原则
-"""
+重写记录 — 小欧 2026-06-07:
+- EXC-5: L305 裸 except: → except (json.JSONDecodeError,)
+- EXC-22: L227 except Exception as e → 分类（JSON/属性错误）
 
+Author: 小欧 - 2026-06-07
+"""
 import re
 import json
 from typing import Dict, Any, Optional, List, Callable
@@ -20,13 +22,11 @@ _STRATEGY_REGISTRY: List[Callable[[str], Optional[Dict[str, Any]]]] = []
 
 
 def register_strategy(func: Callable[[str], Optional[Dict[str, Any]]]) -> Callable[[str], Optional[Dict[str, Any]]]:
-    """注册JSON解析策略装饰器 — 小健 2026-05-29"""
     _STRATEGY_REGISTRY.append(func)
     return func
 
 
 def get_strategies() -> List[Callable[[str], Optional[Dict[str, Any]]]]:
-    """获取策略链（支持运行时扩展）— 小健 2026-05-29"""
     return list(_STRATEGY_REGISTRY)
 
 
@@ -83,7 +83,6 @@ def _strategy_trailing_comma(json_str: str) -> Optional[Dict[str, Any]]:
 
 
 def _normalize_newlines(json_str: str) -> str:
-    """统一换行符替换 — 小健 2026-05-29 DRY修复"""
     return json_str.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
 
 
@@ -224,8 +223,8 @@ def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
                 f"tool_params_keys={list(result.get('tool_params', {}).keys())}"
             )
             return result
-    except Exception as e:
-        logger.error(f"[_extract_json_block] Fallback提取失败: {e}")
+    except json.JSONDecodeError as e:
+        logger.error(f"[_extract_json_block] Fallback提取失败(JSON): {e}")
 
     return None
 
@@ -272,6 +271,7 @@ def _try_parse_non_standard_json(input_str: str) -> Optional[Dict]:
     except json.JSONDecodeError:
         pass
 
+    # EXC-5 修复: 裸 except: → except (json.JSONDecodeError,)
     try:
         stack = []
         in_string = False
@@ -302,7 +302,7 @@ def _try_parse_non_standard_json(input_str: str) -> Optional[Dict]:
                         return None
         if stack:
             return None
-    except:
+    except json.JSONDecodeError:
         pass
 
     return None

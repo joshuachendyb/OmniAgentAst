@@ -14,7 +14,6 @@ from typing import List, Optional
 from app.services.agent.mixins.tool_init_mixin import ToolInitMixin
 from app.services.agent.mixins.llm_dispatch_mixin import LLMDispatchMixin
 from app.services.agent.mixins.prompt_build_mixin import PromptBuildMixin
-from app.utils.logger import logger
 
 
 class ReactAgentMixin(ToolInitMixin, LLMDispatchMixin, PromptBuildMixin):

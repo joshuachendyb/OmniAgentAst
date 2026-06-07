@@ -12,18 +12,15 @@ Author: 小沈 - 2026-05-27
 
 import asyncio
 import inspect
-import logging
 from typing import Any, Callable, Dict, Optional
 
 from app.utils.logger import logger
-from app.utils.error_classifier import ErrorCategory, UnifiedErrorClassifier
-from app.services.tools.tool_config import get_tool_config
+from app.utils.error_classifier import UnifiedErrorClassifier
 from app.services.tools.tool_constants import TOOL_TIMEOUTS, TOOL_RETRY_MAX, TOOL_RETRY_BACKOFF, TOOL_RETRYABLE_ERRORS
 from app.services.agent.agent_utils.tool_result_factory import create_tool_result, create_error_tool_result
 
 from app.constants import (
     ERR_MISSING_PARAM,
-    ERR_TOOL_DEPRECATED,
     ERR_TOOL_NOT_FOUND,
     ERR_UNKNOWN,
 )
@@ -54,16 +51,18 @@ class ToolRetryEngine:
     def normalize_params(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
         """
         参数规范化：基于tool_registry的input_schema校验
-        
+
         Args:
             action: 工具名称
             action_input: 原始参数
-        
+
         Returns:
             规范化后的参数
+
+        重写 EXC-18: 异常分类 (ImportError/AttributeError)
         """
         params = action_input.copy()
-        
+
         # 从tool_registry获取input_schema，支持所有tool类型
         try:
             from app.services.tools.registry import tool_registry
@@ -83,9 +82,9 @@ class ToolRetryEngine:
                 # 删除非法参数，防止传给函数报 unexpected keyword argument
                 for key in invalid_keys:
                     del params[key]
-        except Exception as e:
-            logger.warning(f"[参数监控] action={action}, 获取schema失败: {e}")
-        
+        except (ImportError, AttributeError) as e:
+            logger.warning(f"[参数监控] action={action}, 获取schema失败(导入/属性): {e}", exc_info=True)
+
         return params
     
     async def _execute_tool_once(self, tool: Callable, normalized_input: Dict[str, Any], 
@@ -235,13 +234,15 @@ class ToolRetryEngine:
                 )
                 
             except Exception as e:
+                # EXC-19 修复: 异常分类 (网络/超时/通用) - 不变
                 last_error = e
                 error_category = UnifiedErrorClassifier.classify(e)
                 attempt_count += 1
-                
+
                 logger.warning(
                     f"[重试] action={action} 尝试{attempt_count}/{max_retries} "
-                    f"失败: {error_category.description} - {str(e)[:100]}"
+                    f"失败: {error_category.description} - {str(e)[:100]}",
+                    exc_info=True
                 )
                 
                 if not (error_category.is_retryable or error_category.name.lower() in retryable_errors) \
@@ -260,17 +261,12 @@ class ToolRetryEngine:
         )
 
 
-# 全局实例
+# 全局单例 - 简单点
 _tool_retry_engine: Optional[ToolRetryEngine] = None
 
 
 def _get_tool_retry_engine() -> ToolRetryEngine:
-    """
-    获取工具重试引擎单例
-    
-    Returns:
-        ToolRetryEngine实例
-    """
+    """获取工具重试引擎（全局单例）"""
     global _tool_retry_engine
     if _tool_retry_engine is None:
         _tool_retry_engine = ToolRetryEngine()

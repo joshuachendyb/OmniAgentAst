@@ -11,6 +11,9 @@ Author: 小沈 - 2026-05-29 (从react_agent_mixin.py拆分)
 Updated: 小沈 - 2026-05-29 (DRY修复: 提取_resolve_llm_attr)
 """
 from typing import Any, Optional
+import json
+
+import httpx
 
 from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy
 from app.services.agent.strategy_manager import LLMStrategyManager
@@ -66,7 +69,15 @@ class LLMDispatchMixin:
             else:
                 _reason = "llm_client is None" if not self.llm_client else "api_base为空"
                 self._fallback_to_text_mode(f"跳过detector({_reason}): 直接text模式")
+        # EXC-11 修复: 异常分类 (httpx/JSON/属性错误) + 记录堆栈
+        except (httpx.HTTPError, json.JSONDecodeError) as e:
+            logger.error(f"[_init_llm_strategies] 网络/JSON错误: {e}", exc_info=True)
+            self._fallback_to_text_mode(f"LLM策略初始化失败(网络/JSON): {e}")
+        except (AttributeError, TypeError) as e:
+            logger.error(f"[_init_llm_strategies] 属性/类型错误: {e}", exc_info=True)
+            self._fallback_to_text_mode(f"LLM策略初始化失败(属性/类型): {e}")
         except Exception as e:
+            logger.error(f"[_init_llm_strategies] 未分类错误: {e}", exc_info=True)
             self._fallback_to_text_mode(f"LLM策略初始化失败: {e}")
 
     def _init_tools_strategy(self):

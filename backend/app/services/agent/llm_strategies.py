@@ -12,9 +12,12 @@ Author: 小沈 - 2026-03-21
 """
 
 import json
+import asyncio
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional
 from datetime import datetime
+
+import httpx
 
 from app.utils.logger import logger
 from app.chat_stream.error_handler import resolve_http_error_type, get_stream_error_info
@@ -70,8 +73,6 @@ class TextStrategy(LLMStrategy):
     - 方案A: ToolParser._extract_from_text() 支持中文提取
     - 方案B: 工具名保底匹配
     """
-    # P4: 从注册中心动态获取工具名 - 小健 2026-05-02
-    from app.services.agent.llm_response_parser import _get_all_tool_names
 
     def _extract_llm_content(self, response: Any) -> tuple:
         """提取LLM响应的文本内容 + error_info + reasoning。三段式：content→dict→str - 北京老陈 2026-05-25"""
@@ -353,8 +354,14 @@ class ToolsStrategy(LLMStrategy):
             else:
                 logger.warning("[Function Calling] Empty response, falling back to text mode")
                 return await self._fallback_to_text(messages, **kwargs)
+        except (httpx.HTTPError, asyncio.TimeoutError) as e:
+            logger.error(f"[Function Calling] 网络/超时错误: {e}")
+            return self._make_api_error_response(str(e))
+        except (AttributeError, TypeError) as e:
+            logger.error(f"[Function Calling] 属性/类型错误: {e}")
+            return self._make_api_error_response(str(e))
         except Exception as e:
-            logger.error(f"[Function Calling] Exception: {e}")
+            logger.error(f"[Function Calling] 未知错误: {e}")
             return self._make_api_error_response(str(e))
     
     def _make_api_error_response(self, error_msg: str) -> str:

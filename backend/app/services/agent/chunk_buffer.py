@@ -5,15 +5,8 @@ ChunkBuffer — chunk拼接、阈值检测、flush管理 — 小沈 2026-05-25
 消除 run_stream 和 react_sse_wrapper 中3处重复的chunk flush逻辑。
 """
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
 # 【3.9修复 北京老陈 2026-05-31】阈值统一从constants.py读取
 from app.constants import MAX_CONSECUTIVE_CHUNKS
-
-if TYPE_CHECKING:
-    from app.services.agent.message_builder import MessageBuilder
 
 # chunk累积超时：连续收到多少个chunk未触发promote则强制停止
 # 防止LLM持续返回chunk导致无限循环

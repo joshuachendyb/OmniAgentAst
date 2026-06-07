@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-关键词/ReAct 传统解析模块（第5层 - 依赖 _utils, _tool_params, _result_builders）
-"""
+关键词/ReAct 传统解析模块（第5层）
 
+简化 2026-06-07: 4个 except 改具体异常，不抽函数
+"""
 import re
 import json
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional
 
 from app.utils.logger import logger
 from app.utils.data_utils import parse_json
@@ -21,7 +22,7 @@ def _try_codeblock_parse(output: str) -> Optional[Dict[str, Any]]:
         json_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', output)
         if json_match and "tool_name" in (jd := json.loads(json_match.group(1).strip())):
             return _create_action_result(jd, output)
-    except Exception:
+    except (json.JSONDecodeError, TypeError):
         pass
     return None
 
@@ -54,7 +55,7 @@ def _try_keyword_parse(output: str) -> Optional[Dict[str, Any]]:
             return _parse_answer(output, thought_match, answer_match)
         if thought_match:
             return _parse_thought_only(output, thought_match)
-    except Exception:
+    except (re.error, AttributeError):
         pass
     return None
 
@@ -152,7 +153,7 @@ def _try_parse_chain(input_str: str, parsers) -> Optional[Dict]:
             result = parser(input_str)
             if result is not None:
                 return result
-        except Exception:
+        except (json.JSONDecodeError, TypeError):
             continue
     return None
 
@@ -195,7 +196,7 @@ def _extract_fields_partial(s: str) -> Optional[Dict]:
         if m:
             try:
                 result["tool_params"] = json.loads(m.group(1))
-            except Exception:
+            except (json.JSONDecodeError, TypeError):
                 result["tool_params"] = {}
             break
     return result if result else None
