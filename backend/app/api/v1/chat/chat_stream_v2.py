@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse, PlainTextResponse
 
 from app.services import AIServiceFactory
 from app.utils.logger import logger
-from app.chat_stream.error_handler import create_error_response
+from app.chat_stream import create_error_response
 from app.api.v1.chat.models import ChatRequest
 from app.api.v1.chat.detect_intent import detect_intent
 from app.api.v1.chat.init_route_context import init_route_context
@@ -48,7 +48,7 @@ async def chat_stream_v2(request: ChatRequest):
         from app.services.task.task_cancel_check import task_cancel_check_and_yield
         from app.services.task.task_cleanup import task_cleanup
         from app.services.react_sse_wrapper.run_sse_stream import run_sse_stream
-        from app.chat_stream.message_saver import save_execution_steps_to_db
+        from app.chat_stream import save_execution_steps_to_db
 
         task_id, ai_service_ref = init_route_context(provider, model, ai_service, session_id)
         next_step = create_step_counter()

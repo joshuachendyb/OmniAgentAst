@@ -184,11 +184,9 @@ def detect_intent_v2(command: str) -> Tuple[Optional[ToolCategory], List[ToolCat
 
 
 __all__ = [
-    'CRSS_TYPE_KEYWORDS',
     'ACTION_DEFINITIONS',
     '_compute_intent_scores',
     'detect_intent_v2',
-    'CRSS_CONFIDENCE_THRESHOLD',
 ]
 
 

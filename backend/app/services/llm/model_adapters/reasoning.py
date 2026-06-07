@@ -67,7 +67,6 @@ def extract_reasoning_from_message(message: Dict) -> str:
 
 
 __all__ = [
-    "detect_reasoning_support",
     "fix_thinking_messages",
     "extract_reasoning_from_chunk",
     "extract_reasoning_from_message",

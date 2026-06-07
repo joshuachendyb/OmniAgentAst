@@ -2,6 +2,8 @@
 """
 AgentFactory - 智能体工厂
 
+小健 - 2026-06-08 修复P2: 消除desktop硬编码分支,统一走config.agent_class创建
+
 Author: 小强 - 2026-05-23
 """
 from typing import Any, Dict, List, Optional
@@ -13,7 +15,7 @@ from app.utils.logger import logger
 
 
 class AgentFactory:
-    """智能体工厂 — 基于声明式配置"""
+    """智能体工厂 — 基于声明式配置,无硬编码分支"""
     
     @classmethod
     def create(
@@ -25,28 +27,19 @@ class AgentFactory:
         candidates: Optional[List[str]] = None,
         **kwargs
     ) -> BaseAgent:
-        """创建 Agent 实例"""
+        """创建 Agent 实例 — 统一入口,config决定一切"""
         config = resolve_agent_config(intent_type)
         
         logger.info(
             f"[AgentFactory] intent_type={intent_type} → "
-            f"config.intent={config.intent_type}, category={config.category}, "
-            f"rollback={config.rollback_enabled}"
+            f"config.intent={config.intent_type}, category={config.category}"
         )
         
         agent_class = config.agent_class
         if agent_class is None:
             raise ValueError(f"Agent class not configured for intent_type: {intent_type}")
         
-        if config.intent_type == "desktop":
-            return agent_class(
-                llm_client=llm_client,
-                task_id=task_id,
-                tool_category=tool_category,
-                candidates=candidates,
-                **kwargs
-            )
-        
+        # 统一传入config,不再分desktop特殊路径
         return agent_class(
             llm_client=llm_client,
             task_id=task_id,

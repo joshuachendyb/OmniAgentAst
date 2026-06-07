@@ -2,6 +2,8 @@
 """
 chat_with_tools_stream — 从 llm_core.py 拆出
 
+小健 - 2026-06-08 删除_detect_reasoning_support死代码(永远返回False)
+
 复制来源: llm_core.py 第307-346行 (chat_with_tools_stream)
 Author: 小沈 - 2026-05-31
 """
@@ -10,7 +12,6 @@ from typing import List, Dict, Any, Optional, AsyncGenerator
 
 from app.utils.logger import logger
 from app.services.llm.core import StreamChunk
-from app.services.llm.model_adapters.reasoning import fix_thinking_messages
 from app.services.llm.stream_parser import parse_sse_stream, handle_http_error_stream
 from app.services.llm.request_builder import build_messages
 
@@ -30,8 +31,6 @@ class ChatWithToolsStreamMixin:
 
         try:
             messages = build_messages(message, history)
-            if await self._detect_reasoning_support():
-                messages = fix_thinking_messages(messages, True)
 
             request_json = {"model": self.model, "messages": messages, "stream": True}
             if tools:
