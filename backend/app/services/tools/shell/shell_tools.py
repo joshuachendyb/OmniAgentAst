@@ -141,16 +141,11 @@ def execute_shell_command(
     executable = None if shell_type == "cmd" else (
         shutil.which("powershell.exe") or shutil.which("pwsh.exe") or "powershell.exe")
 
-    # S1: 安全注入检查
-    injection_error = _check_shell_injection(command)
-    if injection_error:
-        logger.warning(f"[Shell安全] 拦截高风险命令: {command[:200]}")
-        return build_error(ERR_SHELL_INJECTION, injection_error)
-
-    # S2: 语义安全检查(通过SafetyManager统一调度)
+    # 安全检查(SafetyManager统一调度)
     safety_check = get_safety_manager().check("shell", "execute_shell_command", {"command": command})
     if not safety_check.get("is_safe", True):
-        logger.warning(f"[Shell安全] 语义分析风险: {safety_check.get('message')}")
+        logger.warning(f"[Shell安全] 拦截: {safety_check.get('message')}")
+        return build_error(ERR_SHELL_INJECTION, safety_check.get("message", "命令不安全"))
 
     # B1: 后台模式
     if run_in_background:

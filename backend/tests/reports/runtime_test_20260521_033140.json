@@ -1,0 +1,132 @@
+{
+  "summary": {
+    "total": 9,
+    "passed": 8,
+    "failed": 1,
+    "skipped": 0,
+    "errors": 0,
+    "pass_rate": "88.9%",
+    "start_time": "2026-05-21T03:31:30.881139",
+    "end_time": "2026-05-21T03:31:40.884124"
+  },
+  "log_anomalies": [],
+  "results": [
+    {
+      "test_id": "INTENT-01",
+      "category": "intent",
+      "tool_name": "intent_classifier",
+      "scenario": "帮我读取一下config.yaml文件",
+      "success": true,
+      "duration_ms": 6139.8,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "INTENT-02",
+      "category": "intent",
+      "tool_name": "intent_classifier",
+      "scenario": "运行pip list命令",
+      "success": true,
+      "duration_ms": 8410.2,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "INTENT-03",
+      "category": "intent",
+      "tool_name": "intent_classifier",
+      "scenario": "现在几点了？今天是星期几？",
+      "success": true,
+      "duration_ms": 5155.3,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "INTENT-04",
+      "category": "intent",
+      "tool_name": "intent_classifier",
+      "scenario": "ping一下百度看看网络通不通",
+      "success": true,
+      "duration_ms": 4740.4,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "INTENT-05",
+      "category": "intent",
+      "tool_name": "intent_classifier",
+      "scenario": "帮我截个屏",
+      "success": false,
+      "duration_ms": 30406.8,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "INTENT-06",
+      "category": "intent",
+      "tool_name": "intent_classifier",
+      "scenario": "查看系统CPU和内存使用情况",
+      "success": true,
+      "duration_ms": 7564.5,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "INTENT-07",
+      "category": "intent",
+      "tool_name": "intent_classifier",
+      "scenario": "读取这个Excel文件的数据",
+      "success": true,
+      "duration_ms": 8868.2,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "INTENT-08",
+      "category": "intent",
+      "tool_name": "intent_classifier",
+      "scenario": "查询数据库里的用户表",
+      "success": true,
+      "duration_ms": 6800.0,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "INTENT-09",
+      "category": "intent",
+      "tool_name": "intent_classifier",
+      "scenario": "执行一段Python代码算阶乘",
+      "success": true,
+      "duration_ms": 6613.2,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    }
+  ]
+}

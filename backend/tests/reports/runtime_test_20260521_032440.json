@@ -1,0 +1,93 @@
+{
+  "summary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "errors": 0,
+    "pass_rate": "100.0%",
+    "start_time": "2026-05-21T03:24:30.227111",
+    "end_time": "2026-05-21T03:24:40.229973"
+  },
+  "log_anomalies": [],
+  "results": [
+    {
+      "test_id": "N1-01",
+      "category": "network",
+      "tool_name": "http_request",
+      "scenario": "发送HTTP GET请求到 http://httpbin.org/get 测试接口",
+      "success": true,
+      "duration_ms": 6369.3,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "N1-02",
+      "category": "network",
+      "tool_name": "http_request",
+      "scenario": "发送HTTP POST请求到 http://httpbin.org/post，body为{test: runtime}",
+      "success": true,
+      "duration_ms": 5064.9,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "N2-01",
+      "category": "network",
+      "tool_name": "download_file",
+      "scenario": "下载 https://httpbin.org/json 到 tests/temp_runtime_test/downlo",
+      "success": true,
+      "duration_ms": 7247.4,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "N3-01",
+      "category": "network",
+      "tool_name": "fetch_webpage",
+      "scenario": "获取网页 https://httpbin.org/html 的内容",
+      "success": true,
+      "duration_ms": 7774.9,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "N4-01",
+      "category": "network",
+      "tool_name": "search_web",
+      "scenario": "搜索网络获取'Python 3.13 新特性'的信息",
+      "success": true,
+      "duration_ms": 6944.5,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "N5-01",
+      "category": "network",
+      "tool_name": "network_diagnose",
+      "scenario": "检查网络连通性，ping 127.0.0.1",
+      "success": true,
+      "duration_ms": 5475.2,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    }
+  ]
+}

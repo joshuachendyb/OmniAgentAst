@@ -61,15 +61,12 @@ class CapabilityDetector:
             logger.warning(f"[CapabilityDetector] 探测请求失败: {e}")
             return None
 
-    async def detect_strategy(self, probe_fn: Callable = None) -> str:
+    async def detect_strategy(self) -> str:
         """
         探测LLM调用策略(text/tools)
 
         发送带tools参数的请求,模型返回tool_calls → tools,否则 → text。
         首次探测后缓存,瞬态失败重试3次。
-
-        Args:
-            probe_fn: 自定义探测函数(已废弃,保留参数兼容)
 
         Returns:
             "text" 或 "tools"

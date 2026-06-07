@@ -1,0 +1,14 @@
+{
+  "summary": {
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "errors": 0,
+    "pass_rate": "0.0%",
+    "start_time": "2026-05-24T16:24:42.951994",
+    "end_time": "2026-05-24T16:24:57.955093"
+  },
+  "log_anomalies": [],
+  "results": []
+}

@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """TaskTracker — 任务生命周期 + 操作管理 + 回滚标记 + 报告
 
+小健 - 2026-06-07 删除VALID_INTENTS硬编码白名单 — 意图由CRSS动态映射
+
 调用方:Agent、回滚模块、报告模块。
 所有意图共用同一个持久化 Tracker。
 
@@ -17,9 +19,6 @@ from app.utils.logger import logger
 from app.db.models.operation_enums import OperationStatus
 from .models import TaskStatus
 
-# 常量已迁移到 constants.py — 北京老陈 2026-05-30
-from app.constants import VALID_INTENTS
-
 
 class TaskTracker:
     """任务追踪器 — 双表操作:tasks(task 级)+ operations(operation 级)"""
@@ -28,10 +27,6 @@ class TaskTracker:
 
     def create_task(self, intent: str, agent_id: str, description: str) -> str:
         """创建任务 → 返回 task_id"""
-        if intent not in VALID_INTENTS:
-            raise ValueError(
-                f"Invalid intent: {intent}. Must be one of: {VALID_INTENTS}"
-            )
         task_id = f"task-{uuid4().hex}"
         with db.get_conn("task_tracker") as conn:
             conn.execute(

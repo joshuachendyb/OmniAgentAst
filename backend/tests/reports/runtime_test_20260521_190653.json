@@ -1,0 +1,28 @@
+{
+  "summary": {
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 0,
+    "errors": 0,
+    "pass_rate": "0.0%",
+    "start_time": "2026-05-21T19:06:48.109985",
+    "end_time": "2026-05-21T19:06:53.111568"
+  },
+  "log_anomalies": [],
+  "results": [
+    {
+      "test_id": "F1-01",
+      "category": "file",
+      "tool_name": "read_file",
+      "scenario": "读取 backend/app/main.py 文件的前20行内容",
+      "success": false,
+      "duration_ms": 3043.9,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    }
+  ]
+}

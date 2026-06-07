@@ -2,9 +2,6 @@
 """
 run_stream - 从 base_react.py 拆出
 
-【2026-06-07 mixin 体系已彻底删除 - AI助手小欧】
-- ReActHandlerMixin 已删除
-- 业务逻辑待后续重构
 """
 from typing import Any, Dict, Optional, AsyncGenerator
 

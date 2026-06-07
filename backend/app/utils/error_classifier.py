@@ -302,6 +302,28 @@ class UnifiedErrorClassifier:
         """
         if not error_message:
             return (False, None)
+        
+        error_lower = error_message.lower()
+        
+        network_patterns = [
+            ("connection", "connection_error"),
+            ("timeout", "timeout"),
+            ("network", "network_error"),
+            ("http 429", "rate_limit"),
+            ("rate limit", "rate_limit"),
+            ("http 401", "unauthorized"),
+            ("unauthorized", "unauthorized"),
+            ("http 403", "forbidden"),
+            ("forbidden", "forbidden"),
+            ("http 5", "server_error"),
+            ("internal server error", "server_error"),
+        ]
+        
+        for pattern, error_type in network_patterns:
+            if pattern in error_lower:
+                return (True, error_type)
+        
+        return (False, None)
     
     @staticmethod
     def extract_api_error_detail(error_message: str) -> str:

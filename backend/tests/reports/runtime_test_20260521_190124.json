@@ -1,0 +1,106 @@
+{
+  "summary": {
+    "total": 7,
+    "passed": 0,
+    "failed": 7,
+    "skipped": 0,
+    "errors": 0,
+    "pass_rate": "0.0%",
+    "start_time": "2026-05-21T19:01:19.584543",
+    "end_time": "2026-05-21T19:01:24.586404"
+  },
+  "log_anomalies": [],
+  "results": [
+    {
+      "test_id": "F1-01",
+      "category": "file",
+      "tool_name": "read_file",
+      "scenario": "读取 backend/app/main.py 文件的前20行内容",
+      "success": false,
+      "duration_ms": 2913.2,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "F1-02",
+      "category": "file",
+      "tool_name": "read_file",
+      "scenario": "读取 backend/pytest.ini 配置文件",
+      "success": false,
+      "duration_ms": 2826.5,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "F1-03",
+      "category": "file",
+      "tool_name": "read_file",
+      "scenario": "查看 README.md 文件内容",
+      "success": false,
+      "duration_ms": 3246.1,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "F2-01",
+      "category": "file",
+      "tool_name": "write_text_file",
+      "scenario": "在 tests/temp_runtime_test 目录下创建一个名为 hello_test.txt 的文件，内容是'H",
+      "success": false,
+      "duration_ms": 3366.8,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "F2-02",
+      "category": "file",
+      "tool_name": "write_text_file",
+      "scenario": "向 tests/temp_runtime_test/hello_test.txt 文件追加一行'Appended Lin",
+      "success": false,
+      "duration_ms": 3426.1,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "F3-01",
+      "category": "file",
+      "tool_name": "read_media_file",
+      "scenario": "读取 frontend/public 目录下的图片文件(vite.svg)",
+      "success": false,
+      "duration_ms": 2373.5,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "F4-01",
+      "category": "file",
+      "tool_name": "edit_file",
+      "scenario": "把 tests/temp_runtime_test/hello_test.txt 文件中的'Hello Runtime ",
+      "success": false,
+      "duration_ms": 2986.7,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    }
+  ]
+}

@@ -46,13 +46,10 @@ REACT_KEYWORDS = {
 
 
 def _get_all_tool_names():
-    """获取所有已注册工具名 — 动态查询,fallback为最小容错集合"""
-    try:
-        from app.services.tools.registry import tool_registry
-        tools = tool_registry.list_tools(include_metadata=False)
-        return [t["name"] if isinstance(t, dict) else t for t in tools]
-    except (ImportError, AttributeError):
-        return ["finish"]
+    """获取所有已注册工具名"""
+    from app.services.tools.registry import tool_registry
+    tools = tool_registry.list_tools(include_metadata=False)
+    return [t["name"] if isinstance(t, dict) else t for t in tools]
 
 
 def _build_handler_result(type_: str, thought: str = "", content: str = "",

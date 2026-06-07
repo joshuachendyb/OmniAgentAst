@@ -1,0 +1,80 @@
+{
+  "summary": {
+    "total": 5,
+    "passed": 0,
+    "failed": 5,
+    "skipped": 0,
+    "errors": 0,
+    "pass_rate": "0.0%",
+    "start_time": "2026-05-25T19:36:57.268211",
+    "end_time": "2026-05-25T19:37:02.271873"
+  },
+  "log_anomalies": [],
+  "results": [
+    {
+      "test_id": "S1-01",
+      "category": "shell",
+      "tool_name": "execute_shell_command",
+      "scenario": "在PowerShell中执行命令 Get-Date 获取当前日期时间",
+      "success": false,
+      "duration_ms": 235.5,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "S1-02",
+      "category": "shell",
+      "tool_name": "execute_shell_command",
+      "scenario": "执行命令 dir backend/app/services 列出服务目录",
+      "success": false,
+      "duration_ms": 9.7,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "S1-03",
+      "category": "shell",
+      "tool_name": "execute_shell_command",
+      "scenario": "执行 echo 'shell test ok' 测试命令行输出",
+      "success": false,
+      "duration_ms": 18.9,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "S2-01",
+      "category": "shell",
+      "tool_name": "find_command",
+      "scenario": "查找 python 命令的安装路径",
+      "success": false,
+      "duration_ms": 19.1,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "S2-02",
+      "category": "shell",
+      "tool_name": "find_command",
+      "scenario": "查找 node 命令是否存在",
+      "success": false,
+      "duration_ms": 18.3,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    }
+  ]
+}

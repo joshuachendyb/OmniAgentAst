@@ -65,7 +65,7 @@ class ActionToolStep(ReasoningStep):
             execution_time_ms: 执行耗时(毫秒)
             timestamp: 时间戳(毫秒)
         """
-        # 调用ToolMixin初始化
+
         # 调用ReasoningStep初始化
         ReasoningStep.__init__(self, step, timestamp)
         

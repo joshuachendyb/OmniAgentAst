@@ -2,8 +2,6 @@
 """
 ReasoningStep 抽象基类
 
-【2026-06-07 mixin 体系已彻底删除 - AI助手小欧】
-- ToolMixin 已删除,tool_name/tool_params 字段已移除
 
 Author: 小沈
 Date: 2026-04-15

@@ -1,0 +1,54 @@
+{
+  "summary": {
+    "total": 3,
+    "passed": 0,
+    "failed": 3,
+    "skipped": 0,
+    "errors": 0,
+    "pass_rate": "0.0%",
+    "start_time": "2026-05-27T20:47:17.284440",
+    "end_time": "2026-05-27T20:47:22.286468"
+  },
+  "log_anomalies": [],
+  "results": [
+    {
+      "test_id": "F1-01",
+      "category": "file",
+      "tool_name": "read_file",
+      "scenario": "读取 backend/app/main.py 文件的前20行内容",
+      "success": false,
+      "duration_ms": 8.9,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "F1-02",
+      "category": "file",
+      "tool_name": "read_file",
+      "scenario": "读取 backend/pytest.ini 配置文件",
+      "success": false,
+      "duration_ms": 9.7,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "F1-03",
+      "category": "file",
+      "tool_name": "read_file",
+      "scenario": "查看 README.md 文件内容",
+      "success": false,
+      "duration_ms": 10.1,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    }
+  ]
+}

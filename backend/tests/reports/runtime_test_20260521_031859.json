@@ -1,0 +1,106 @@
+{
+  "summary": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0,
+    "errors": 0,
+    "pass_rate": "100.0%",
+    "start_time": "2026-05-21T03:18:49.898870",
+    "end_time": "2026-05-21T03:18:59.902595"
+  },
+  "log_anomalies": [],
+  "results": [
+    {
+      "test_id": "M1-01",
+      "category": "meta",
+      "tool_name": "tool_help",
+      "scenario": "查看 read_file 工具的详细用法说明",
+      "success": true,
+      "duration_ms": 76929.0,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "M1-02",
+      "category": "meta",
+      "tool_name": "tool_help",
+      "scenario": "查看 execute_shell_command 工具的详细用法",
+      "success": true,
+      "duration_ms": 32402.2,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "M2-01",
+      "category": "meta",
+      "tool_name": "tool_search",
+      "scenario": "搜索与'文件'相关的所有工具",
+      "success": true,
+      "duration_ms": 6174.0,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "M2-02",
+      "category": "meta",
+      "tool_name": "tool_search",
+      "scenario": "搜索与'网络'相关的所有工具",
+      "success": true,
+      "duration_ms": 5191.6,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "M3-01",
+      "category": "meta",
+      "tool_name": "pipeline",
+      "scenario": "创建一个工具管道：先获取当前时间，再格式化输出",
+      "success": true,
+      "duration_ms": 7261.0,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "M4-01",
+      "category": "meta",
+      "tool_name": "get_time",
+      "scenario": "获取当前时间",
+      "success": true,
+      "duration_ms": 4982.2,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "M4-02",
+      "category": "meta",
+      "tool_name": "get_time",
+      "scenario": "获取当前时间的ISO格式和时间戳",
+      "success": true,
+      "duration_ms": 6858.2,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    }
+  ]
+}

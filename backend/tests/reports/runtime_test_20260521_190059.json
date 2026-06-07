@@ -1,0 +1,41 @@
+{
+  "summary": {
+    "total": 2,
+    "passed": 0,
+    "failed": 2,
+    "skipped": 0,
+    "errors": 0,
+    "pass_rate": "0.0%",
+    "start_time": "2026-05-21T19:00:54.564728",
+    "end_time": "2026-05-21T19:00:59.566837"
+  },
+  "log_anomalies": [],
+  "results": [
+    {
+      "test_id": "F1-01",
+      "category": "file",
+      "tool_name": "read_file",
+      "scenario": "读取 backend/app/main.py 文件的前20行内容",
+      "success": false,
+      "duration_ms": 2913.2,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "F1-02",
+      "category": "file",
+      "tool_name": "read_file",
+      "scenario": "读取 backend/pytest.ini 配置文件",
+      "success": false,
+      "duration_ms": 2826.5,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    }
+  ]
+}
