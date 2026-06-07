@@ -1,0 +1,268 @@
+文件操作报告
+==================================================
+会话ID: test_task
+Agent: file-operation-agent
+任务描述: C:\Users\chend\AppData\Local\Temp\tmppkhnfaj1
+开始时间: 2026-05-15 13:01:40.408203
+完成时间: 未完成
+
+--------------------------------------------------------------------------------
+操作统计:
+  - 总操作数: 39
+  - 成功: 32
+  - 失败: 1
+  - 已回滚: 0
+--------------------------------------------------------------------------------
+
+详细操作记录:
+
+[1] RENAME
+    状态: pending
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpzfpouahz\file1.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmpzfpouahz\file_1.txt
+    执行时间: 2026-05-15 13:01:40.408203
+
+[2] COMPARE
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpmz91tzt3\file1.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmpmz91tzt3\file2.txt
+    文件大小: 12.00 B
+    执行时间: 2026-05-15 13:01:40.449012
+
+[3] COMPARE
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpdo0puyc8\file1.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmpdo0puyc8\file2.txt
+    文件大小: 8.00 B
+    执行时间: 2026-05-15 13:01:40.485616
+
+[4] COMPARE
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpfspcdth8\file1.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmpfspcdth8\file2.txt
+    文件大小: 19.00 B
+    执行时间: 2026-05-15 13:01:40.537375
+
+[5] COMPARE
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpczg2isy0\file1.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmpczg2isy0\file2.txt
+    文件大小: 7.00 B
+    执行时间: 2026-05-15 13:01:40.576410
+
+[6] CHECKSUM
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpim_aivrn\test.txt
+    文件大小: 7.00 B
+    执行时间: 2026-05-15 13:01:40.630654
+
+[7] CHECKSUM
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpnkzqqpw3\test.txt
+    文件大小: 7.00 B
+    执行时间: 2026-05-15 13:01:40.655718
+
+[8] CHECKSUM
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpoc1pbfcv\test.txt
+    文件大小: 7.00 B
+    执行时间: 2026-05-15 13:01:40.680769
+
+[9] CHECKSUM
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpldvaxqts\test.txt
+    文件大小: 7.00 B
+    执行时间: 2026-05-15 13:01:40.710001
+
+[10] DELETE
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpbye6g697\test.txt
+    执行时间: 2026-05-15 13:01:40.774255
+
+[11] DELETE
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpmhle0ns7\subdir
+    执行时间: 2026-05-15 13:01:40.803391
+
+[12] DELETE
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpwxys82p4\empty
+    执行时间: 2026-05-15 13:01:40.828932
+
+[13] MOVE
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpwvv3ey8c\source.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmpwvv3ey8c\dest.txt
+    文件大小: 7.00 B
+    执行时间: 2026-05-15 13:01:40.854711
+
+[14] MOVE
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpndadbagr\source_dir
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmpndadbagr\dest_dir
+    类型: 目录
+    执行时间: 2026-05-15 13:01:40.881013
+
+[15] MOVE
+    状态: failed
+    源路径: C:\Users\chend\AppData\Local\Temp\tmp7rktoubg\source.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmp7rktoubg\dest.txt
+    错误信息: 目标路径已存在: C:\Users\chend\AppData\Local\Temp\tmp7rktoubg\dest.txt，移动操作已取消。请设置overwrite=True或指定其他路径。
+    执行时间: 2026-05-15 13:01:40.905714
+
+[16] MOVE
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpu5yv8gq3\源文件.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmpu5yv8gq3\目标文件.txt
+    文件大小: 4.00 B
+    执行时间: 2026-05-15 13:01:40.932478
+
+[17] COPY
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmp0vplsiy5\source.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmp0vplsiy5\dest.txt
+    文件大小: 7.00 B
+    执行时间: 2026-05-15 13:01:40.958331
+
+[18] COPY
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmplo9vmqre\source.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmplo9vmqre\dest.txt
+    文件大小: 11.00 B
+    执行时间: 2026-05-15 13:01:40.987875
+
+[19] COPY
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmppjxsijik\source_dir
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmppjxsijik\dest_dir
+    类型: 目录
+    执行时间: 2026-05-15 13:01:41.027782
+
+[20] COPY
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmp27ju7ck_\源文件.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmp27ju7ck_\目标文件.txt
+    文件大小: 4.00 B
+    执行时间: 2026-05-15 13:01:41.061703
+
+[21] COPY
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmp0o5ozgvv\large.bin
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmp0o5ozgvv\large_copy.bin
+    文件大小: 976.56 KB
+    执行时间: 2026-05-15 13:01:41.088260
+
+[22] STATISTICS
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmptd75ps8q
+    类型: 目录
+    执行时间: 2026-05-15 13:01:41.247093
+
+[23] STATISTICS
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpmd5ohwpc
+    类型: 目录
+    执行时间: 2026-05-15 13:01:41.283094
+
+[24] CREATE
+    状态: success
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmpw6hhp1nz\empty.txt
+    执行时间: 2026-05-15 13:01:41.357504
+
+[25] RENAME
+    状态: pending
+    源路径: C:\Users\chend\AppData\Local\Temp\tmp_x___fj1\file1.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmp_x___fj1\file_1.txt
+    执行时间: 2026-05-15 13:03:02.392729
+
+[26] COMPARE
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpjhka9z5h\file1.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmpjhka9z5h\file2.txt
+    文件大小: 12.00 B
+    执行时间: 2026-05-15 13:03:02.434779
+
+[27] COMPARE
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmp0ne7_068\file1.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmp0ne7_068\file2.txt
+    文件大小: 8.00 B
+    执行时间: 2026-05-15 13:03:02.461552
+
+[28] COMPARE
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmptt8ff_4j\file1.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmptt8ff_4j\file2.txt
+    文件大小: 19.00 B
+    执行时间: 2026-05-15 13:03:02.489442
+
+[29] COMPARE
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpnnszl0gf\file1.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmpnnszl0gf\file2.txt
+    文件大小: 7.00 B
+    执行时间: 2026-05-15 13:03:02.514350
+
+[30] CHECKSUM
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpx7xk3ik9\test.txt
+    文件大小: 7.00 B
+    执行时间: 2026-05-15 13:03:02.560231
+
+[31] CHECKSUM
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmptuxbu3te\test.txt
+    文件大小: 7.00 B
+    执行时间: 2026-05-15 13:03:02.583307
+
+[32] CHECKSUM
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmp45cq2g7w\test.txt
+    文件大小: 7.00 B
+    执行时间: 2026-05-15 13:03:02.609761
+
+[33] CHECKSUM
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpxs545257\test.txt
+    文件大小: 7.00 B
+    执行时间: 2026-05-15 13:03:02.634064
+
+[34] RENAME
+    状态: pending
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpzfpouahz\file2.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmpzfpouahz\file_2.txt
+    执行时间: 2026-05-15 13:01:40.419819
+
+[35] CHECKSUM
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpldvaxqts\test.txt
+    文件大小: 7.00 B
+    执行时间: 2026-05-15 13:01:40.733885
+
+[36] RENAME
+    状态: pending
+    源路径: C:\Users\chend\AppData\Local\Temp\tmp_x___fj1\file2.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmp_x___fj1\file_2.txt
+    执行时间: 2026-05-15 13:03:02.406635
+
+[37] CHECKSUM
+    状态: success
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpxs545257\test.txt
+    文件大小: 7.00 B
+    执行时间: 2026-05-15 13:03:02.656766
+
+[38] RENAME
+    状态: pending
+    源路径: C:\Users\chend\AppData\Local\Temp\tmpzfpouahz\file3.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmpzfpouahz\file_3.txt
+    执行时间: 2026-05-15 13:01:40.427873
+
+[39] RENAME
+    状态: pending
+    源路径: C:\Users\chend\AppData\Local\Temp\tmp_x___fj1\file3.txt
+    目标路径: C:\Users\chend\AppData\Local\Temp\tmp_x___fj1\file_3.txt
+    执行时间: 2026-05-15 13:03:02.414382
+
+================================================================================
+报告生成时间: 2026-05-15 13:03:02
+================================================================================

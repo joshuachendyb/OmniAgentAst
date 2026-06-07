@@ -120,19 +120,7 @@ class ToolRegistry:
         logger.info(f"Tool registered: {name} (category: {category.value})")
         return {"status": "success"}
     
-    def get(self, name: str) -> Optional[Dict[str, Any]]:
-        """获取工具元数据(返回dict格式)"""
-        metadata = self._tools.get(name)
-        if metadata is None:
-            return None
-        return {
-            "name": metadata.name,
-            "description": metadata.description,
-            "category": metadata.category.value,
-            "version": metadata.version,
-            "implementation": self._implementations.get(name),
-        }
-    
+
     def get_tool(self, name: str) -> Optional[ToolMetadata]:
         """获取工具元数据(返回dataclass)"""
         return self._tools.get(name)

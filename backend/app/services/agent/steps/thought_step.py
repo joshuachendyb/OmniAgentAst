@@ -53,7 +53,7 @@ class ThoughtStep(ReasoningStep):
             reasoning: 推理过程
             timestamp: 时间戳(毫秒)
         """
-        # 调用ToolMixin初始化
+
         # 调用ReasoningStep初始化
         ReasoningStep.__init__(self, step, timestamp)
         
@@ -90,7 +90,7 @@ class ThoughtStep(ReasoningStep):
         base_dict.update({
             "thought": self._thought,
             "reasoning": self._reasoning,
-            "tool_name": self._tool_name,  # 来自ToolMixin
-            "tool_params": self._tool_params,  # 来自ToolMixin
+            "tool_name": self._tool_name,
+            "tool_params": self._tool_params,
         })
         return base_dict

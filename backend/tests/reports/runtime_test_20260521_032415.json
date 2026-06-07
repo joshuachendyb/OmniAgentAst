@@ -1,0 +1,106 @@
+{
+  "summary": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0,
+    "errors": 0,
+    "pass_rate": "100.0%",
+    "start_time": "2026-05-21T03:23:40.370649",
+    "end_time": "2026-05-21T03:24:15.378849"
+  },
+  "log_anomalies": [],
+  "results": [
+    {
+      "test_id": "SY1-01",
+      "category": "system",
+      "tool_name": "get_system_info",
+      "scenario": "获取当前系统的完整信息，包括CPU、内存、磁盘",
+      "success": true,
+      "duration_ms": 4088.0,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "SY2-01",
+      "category": "system",
+      "tool_name": "net_connections",
+      "scenario": "获取当前系统的网络连接列表",
+      "success": true,
+      "duration_ms": 4443.5,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "SY3-01",
+      "category": "system",
+      "tool_name": "event_log",
+      "scenario": "获取Windows系统最近10条应用程序事件日志",
+      "success": true,
+      "duration_ms": 60413.3,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": "timeout但非失败"
+    },
+    {
+      "test_id": "SY4-01",
+      "category": "system",
+      "tool_name": "list_processes",
+      "scenario": "列出系统中占用内存最多的前10个进程",
+      "success": true,
+      "duration_ms": 6264.9,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "SY5-01",
+      "category": "system",
+      "tool_name": "kill_process",
+      "scenario": "查找python进程的PID(不要真的终止)",
+      "success": true,
+      "duration_ms": 7065.8,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "SY6-01",
+      "category": "system",
+      "tool_name": "service_control",
+      "scenario": "列出Windows系统所有服务的状态",
+      "success": true,
+      "duration_ms": 6727.3,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "SY7-01",
+      "category": "system",
+      "tool_name": "task_control",
+      "scenario": "列出Windows计划任务",
+      "success": true,
+      "duration_ms": 33172.3,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    }
+  ]
+}

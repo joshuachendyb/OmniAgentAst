@@ -2,7 +2,7 @@
 """
 Agent 配置注册表 — 声明式定义
 
-简化 2026-06-07: 删掉 L51-56 重复的 prompt_class property
+Author: 小沈 - 2026-06-07
 """
 from dataclasses import dataclass, field
 from typing import Type, List, Dict, Optional, Any
@@ -23,7 +23,6 @@ class AgentConfig:
     agent_class_name: str = ""
     rollback_enabled: bool = False
     max_steps: int = 100
-    aliases: List[str] = field(default_factory=list)
 
     _prompt_class: Optional[Type[BasePrompts]] = field(default=None, repr=False)
     _agent_class: Optional[Any] = field(default=None, repr=False)
@@ -55,7 +54,6 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         agent_module="app.services.agent.universal_react",
         agent_class_name="UniversalReactAgent",
         rollback_enabled=True,
-        aliases=[],
     ),
     "system": AgentConfig(
         intent_type="system",
@@ -65,7 +63,6 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         category_display_name="系统操作",
         agent_module="app.services.agent.universal_react",
         agent_class_name="UniversalReactAgent",
-        aliases=["shell"],
     ),
     "network": AgentConfig(
         intent_type="network",
@@ -75,7 +72,6 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         category_display_name="网络通信",
         agent_module="app.services.agent.universal_react",
         agent_class_name="UniversalReactAgent",
-        aliases=[],
     ),
     "document": AgentConfig(
         intent_type="document",
@@ -85,7 +81,6 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         category_display_name="文档读写",
         agent_module="app.services.agent.universal_react",
         agent_class_name="UniversalReactAgent",
-        aliases=[],
     ),
     "desktop": AgentConfig(
         intent_type="desktop",
@@ -95,34 +90,21 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         category_display_name="桌面操作",
         agent_module="app.services.agent.desktop_react",
         agent_class_name="DesktopReactAgent",
-        aliases=[],
     ),
 }
 
 
 def resolve_agent_config(intent_type: str) -> AgentConfig:
-    """根据 intent_type 解析 Agent 配置(支持别名)"""
+    """根据 intent_type 解析 Agent 配置(精确匹配,无别名)"""
     from app.services.intents.intent_mapper import normalize_intent
     normalized_intent = normalize_intent(intent_type)
-
-    for config in AGENT_REGISTRY.values():
-        if config.intent_type == normalized_intent:
-            return config
-        if normalized_intent in config.aliases:
-            return config
-
+    config = AGENT_REGISTRY.get(normalized_intent)
+    if config is not None:
+        return config
     raise ValueError(f"Unknown intent_type: {intent_type}")
 
 
 def get_all_intent_types() -> List[str]:
-    """获取所有 intent_type(含别名)"""
-    from app.services.intents.intent_mapper import get_agent_intent_names, get_aliases_for_intent
-    from app.services.tools.tool_types import IntentType
-
-    result = []
-    result.extend(get_agent_intent_names())
-
-    for intent_type in IntentType:
-        result.extend(get_aliases_for_intent(intent_type))
-
-    return list(set(result))
+    """获取所有 intent_type"""
+    from app.services.intents.intent_mapper import get_agent_intent_names
+    return get_agent_intent_names()

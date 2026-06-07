@@ -1,0 +1,57 @@
+.............
+============================== warnings summary ===============================
+app\main.py:105
+  G:\OmniAgentAs-desk\backend\app\main.py:105: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+E:\Appsw\python31311\Lib\site-packages\fastapi\applications.py:4598
+E:\Appsw\python31311\Lib\site-packages\fastapi\applications.py:4598
+  E:\Appsw\python31311\Lib\site-packages\fastapi\applications.py:4598: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+app\main.py:127
+  G:\OmniAgentAs-desk\backend\app\main.py:127: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("shutdown")
+
+tests\test_e2e_ollama.py:41
+  G:\OmniAgentAs-desk\backend\tests\test_e2e_ollama.py:41: PytestUnknownMarkWarning: Unknown pytest.mark.e2e_ollama - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e_ollama
+
+tests\test_e2e_ollama.py:61
+  G:\OmniAgentAs-desk\backend\tests\test_e2e_ollama.py:61: PytestUnknownMarkWarning: Unknown pytest.mark.e2e_ollama - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e_ollama
+
+tests\test_e2e_ollama.py:115
+  G:\OmniAgentAs-desk\backend\tests\test_e2e_ollama.py:115: PytestUnknownMarkWarning: Unknown pytest.mark.e2e_ollama - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e_ollama
+
+tests\test_e2e_ollama.py:116
+  G:\OmniAgentAs-desk\backend\tests\test_e2e_ollama.py:116: PytestUnknownMarkWarning: Unknown pytest.mark.slow - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.slow
+
+tests\test_runtime_all_tools.py:53
+  G:\OmniAgentAs-desk\backend\tests\test_runtime_all_tools.py:53: PytestCollectionWarning: cannot collect test class 'TestResult' because it has a __init__ constructor (from: tests/test_runtime_all_tools.py)
+    @dataclass
+
+tests\test_runtime_all_tools.py:69
+  G:\OmniAgentAs-desk\backend\tests\test_runtime_all_tools.py:69: PytestCollectionWarning: cannot collect test class 'TestReport' because it has a __init__ constructor (from: tests/test_runtime_all_tools.py)
+    @dataclass
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+! _pytest.outcomes.Exit: 鍚庡彴鏈嶅姟鏈繍琛? 璇峰厛鍚姩: cd backend && python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 !
+13 passed, 10 warnings in 11.60s

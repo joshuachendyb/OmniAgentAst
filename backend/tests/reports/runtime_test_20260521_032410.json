@@ -1,0 +1,54 @@
+{
+  "summary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0,
+    "errors": 0,
+    "pass_rate": "100.0%",
+    "start_time": "2026-05-21T03:24:00.205904",
+    "end_time": "2026-05-21T03:24:10.208147"
+  },
+  "log_anomalies": [],
+  "results": [
+    {
+      "test_id": "N1-01",
+      "category": "network",
+      "tool_name": "http_request",
+      "scenario": "发送HTTP GET请求到 http://httpbin.org/get 测试接口",
+      "success": true,
+      "duration_ms": 6369.3,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "N1-02",
+      "category": "network",
+      "tool_name": "http_request",
+      "scenario": "发送HTTP POST请求到 http://httpbin.org/post，body为{test: runtime}",
+      "success": true,
+      "duration_ms": 5064.9,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "N2-01",
+      "category": "network",
+      "tool_name": "download_file",
+      "scenario": "下载 https://httpbin.org/json 到 tests/temp_runtime_test/downlo",
+      "success": true,
+      "duration_ms": 7247.4,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    }
+  ]
+}

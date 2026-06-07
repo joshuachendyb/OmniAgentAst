@@ -2,6 +2,7 @@
 """
 chat_stream_v2 — API层入口
 
+小健 - 2026-06-07 清理:删除save_step_to_db调用,改用统一save_execution_steps_to_db
 task操作只在本层处理:register → interrupt检查 → pause检查 → stream → cancel检查 → cleanup
 
 统一: 小健 - 2026-05-31
@@ -42,11 +43,12 @@ async def chat_stream_v2(request: ChatRequest):
 
     async def generate():
         from app.services.task.task_registry import register_task
-        from app.services.task.task_incident_check import task_interrupt_check, task_pause_check
+        from app.services.task.task_incident_check import task_interrupt_check
+        from app.services.task.task_pause_check import task_pause_check
         from app.services.task.task_cancel_check import task_cancel_check_and_yield
         from app.services.task.task_cleanup import task_cleanup
         from app.services.react_sse_wrapper.run_sse_stream import run_sse_stream
-        from app.services.react_sse_wrapper.save_step_to_db import save_step_to_db
+        from app.chat_stream.message_saver import save_execution_steps_to_db
 
         task_id, ai_service_ref = init_route_context(provider, model, ai_service, session_id)
         next_step = create_step_counter()
@@ -63,14 +65,14 @@ async def chat_stream_v2(request: ChatRequest):
             is_interrupted, interrupt_msg = await task_interrupt_check(task_id)
             if is_interrupted:
                 yield interrupt_msg
-                await save_step_to_db(interrupt_msg, session_id, execution_steps, current_content or "")
+                await save_execution_steps_to_db(session_id, execution_steps, current_content or "")
                 await task_cleanup(task_id, agent_llm_holder, llm_call_count)
                 return
 
             # pause检查
             async for pause_event in task_pause_check(task_id):
                 yield pause_event
-                await save_step_to_db(pause_event, session_id, execution_steps, current_content or "")
+                await save_execution_steps_to_db(session_id, execution_steps, current_content or "")
 
             # start步骤
             async for event in step_start(ai_service_ref, task_id, next_step, user_input, execution_steps, session_id):

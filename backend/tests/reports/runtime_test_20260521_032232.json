@@ -1,0 +1,80 @@
+{
+  "summary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "errors": 0,
+    "pass_rate": "100.0%",
+    "start_time": "2026-05-21T03:22:22.430436",
+    "end_time": "2026-05-21T03:22:32.433718"
+  },
+  "log_anomalies": [],
+  "results": [
+    {
+      "test_id": "S1-01",
+      "category": "shell",
+      "tool_name": "execute_shell_command",
+      "scenario": "在PowerShell中执行命令 Get-Date 获取当前日期时间",
+      "success": true,
+      "duration_ms": 4587.1,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "S1-02",
+      "category": "shell",
+      "tool_name": "execute_shell_command",
+      "scenario": "执行命令 dir backend/app/services 列出服务目录",
+      "success": true,
+      "duration_ms": 6076.7,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "S1-03",
+      "category": "shell",
+      "tool_name": "execute_shell_command",
+      "scenario": "执行 echo 'shell test ok' 测试命令行输出",
+      "success": true,
+      "duration_ms": 5031.6,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "S2-01",
+      "category": "shell",
+      "tool_name": "find_command",
+      "scenario": "查找 python 命令的安装路径",
+      "success": true,
+      "duration_ms": 5934.1,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    },
+    {
+      "test_id": "S2-02",
+      "category": "shell",
+      "tool_name": "find_command",
+      "scenario": "查找 node 命令是否存在",
+      "success": true,
+      "duration_ms": 7527.8,
+      "steps_count": 0,
+      "tools_invoked": [],
+      "intent_detected": "",
+      "agent_used": "",
+      "error_message": ""
+    }
+  ]
+}

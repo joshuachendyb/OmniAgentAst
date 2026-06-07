@@ -10,7 +10,7 @@ steps包 - ReAct Agent Step封装类
 - 禁止向后兼容: reasoning_steps.py转发层已删除,统一从本包导入
 
 按SRP原则拆分,每个文件单一职责:
-- base.py: ReasoningStep(ABC) + ToolMixin
+- base.py: ReasoningStep(ABC)
 - chunk_step.py: ChunkStep
 - thought_step.py: ThoughtStep
 - action_step.py: ActionToolStep

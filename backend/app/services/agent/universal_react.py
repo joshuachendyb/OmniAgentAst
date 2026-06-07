@@ -2,19 +2,17 @@
 """
 UniversalReactAgent
 
-【2026-06-07 mixin 体系已彻底删除 - AI助手小欧】
-- ReactAgentMixin / ToolStepMixin 已删除
 """
 from typing import Any, List, Optional, Dict
 
-from app.services.agent.generic_react import GenericReactAgent
+from app.services.agent.base_react import BaseAgent
 from app.services.agent.agent_config import AgentConfig
 from app.services.agent.types import AgentResult
 from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 
-class UniversalReactAgent(GenericReactAgent):
+class UniversalReactAgent(BaseAgent):
     """配置驱动的通用 ReAct Agent"""
 
     def __init__(

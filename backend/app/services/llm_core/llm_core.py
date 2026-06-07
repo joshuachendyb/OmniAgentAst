@@ -123,13 +123,7 @@ class BaseAIService(ChatStreamMixin, ChatWithToolsStreamMixin, ToolCallerMixin):
     async def _detect_reasoning_support(self) -> bool:
         if self._supports_reasoning is not None:
             return self._supports_reasoning
-        try:
-            from app.services.llm.capability_detector import CapabilityDetector
-            detector = CapabilityDetector(self.api_base, self.api_key, self.model)
-            self._supports_reasoning = await detector.detect_reasoning_support()
-        except Exception as e:
-            logger.warning(f"[reasoning探测] 探测失败,默认不支持: {e}")
-            self._supports_reasoning = False
+        self._supports_reasoning = False
         logger.info(f"[reasoning探测] model={self.model}, supports_reasoning={self._supports_reasoning}")
         return self._supports_reasoning
 

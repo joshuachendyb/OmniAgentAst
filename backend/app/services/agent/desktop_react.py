@@ -2,8 +2,6 @@
 """
 DesktopReactAgent
 
-【2026-06-07 mixin 体系已彻底删除 - AI助手小欧】
-- PromptBuildMixin._build_system_prompt 已删除
 """
 from typing import Any, Optional, Dict, List
 

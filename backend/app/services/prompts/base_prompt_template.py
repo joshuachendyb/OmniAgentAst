@@ -19,7 +19,7 @@
   注:⑥ get_parameter_reminder() 已去掉,由方案C(_tools_to_schema_text)替代
      ⑦ FINISH_RULE 已合并到 OUTPUT_FORMAT(2026-05-10 小沈)
 
-运行时由ReactAgentMixin._build_system_prompt()追加:
+  运行时由Agent._build_system_prompt()追加:
   ⑧ _build_candidates_hint()   — 动态:候选意图提示
   ⑨ _build_cross_tool_hint()   — 动态:跨分类工具提示
 
@@ -116,9 +116,6 @@ class BasePrompts(ABC):
         """
         pass
 
-    def get_available_tools_prompt(self) -> str:
-        """获取可用工具列表描述(已废弃:工具概要由_call_llm动态注入)"""
-        return ""
 
     def get_task_prompt(self, task: str) -> str:
         """获取任务描述 Prompt"""

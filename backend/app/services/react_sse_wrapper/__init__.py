@@ -1,21 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-react_sse_wrapper — 从 react_sse_wrapper.py 拆出的职责
+react_sse_wrapper — SSE流运行器
 
-- _core: SSE流式生成主流程
-- task操作统一在 services/task/ 层
+小健 - 2026-06-07 清理:删除旧react_sse_wrapper导出,只保留run_sse_stream
 
 Author: 小沈 - 2026-05-31
-统一: 小健 - 2026-05-31 — task操作移出本层
 """
 
-from app.services.react_sse_wrapper.react_sse_wrapper import (
-    SSEConfig,
-    generate_sse_stream,
-    generate_sse_stream_with_retry,
-)
+from app.services.react_sse_wrapper.run_sse_stream import run_sse_stream
+from app.services.react_sse_wrapper.yield_error_sse import yield_error_sse
 
 __all__ = [
-    "generate_sse_stream",
-    "generate_sse_stream_with_retry",
+    "run_sse_stream",
+    "yield_error_sse",
 ]
