@@ -10,7 +10,7 @@ import asyncio
 from typing import Optional, Callable, AsyncGenerator
 
 from app.utils.time_utils import create_timestamp
-from app.chat_stream.sse_formatter import format_agent_sse
+from app.chat_stream import format_agent_sse
 from app.services.agent.steps import IncidentStep
 from app.services.task.task_registry import check_cancelled, check_paused, check_was_paused, set_was_paused
 

@@ -7,9 +7,7 @@ step_start — 从 chat_router.py 拷出
 
 from typing import List, Dict, Any
 
-from app.chat_stream.start_step import send_start_step
-from app.chat_stream.sse_formatter import format_agent_sse
-from app.chat_stream.error_handler import create_error_response
+from app.chat_stream import send_start_step, format_agent_sse, create_error_response
 
 
 async def step_start(ai_service, task_id, next_step, user_input, execution_steps, session_id):

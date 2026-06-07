@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional
 
 from app.utils.logger import logger
-from app.chat_stream.error_handler import resolve_http_error_type, get_stream_error_info
+from app.chat_stream import resolve_http_error_type, get_stream_error_info
 
 
 class LLMStrategy(ABC):

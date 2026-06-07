@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-UniversalReactAgent
+UniversalReactAgent — 配置驱动的通用 ReAct Agent
 
+【待实现】mixin体系删除后ReAct循环逻辑未迁移，run_stream()目前是占位符。
+当前AgentFactory.create()创建的Agent调用run()会返回not_implemented错误。
+
+Author: 小沈 - 2026-06-07
+Updated: 小沈 - 2026-06-08 清理空壳
 """
 from typing import Any, List, Optional, Dict
 
@@ -68,22 +73,3 @@ class UniversalReactAgent(BaseAgent):
 
     def _get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
         return self.prompts.get_task_prompt(task)
-
-    async def run(
-        self,
-        task: str,
-        context: Optional[Dict[str, Any]] = None,
-        system_prompt: Optional[str] = None
-    ) -> AgentResult:
-        result = None
-        async for event in self.run_stream(task, context):
-            if event.get("type") == "not_implemented":
-                break
-        return AgentResult(
-            success=False,
-            message="mixin 体系已删除,业务逻辑待重构",
-            steps=self.steps,
-            total_steps=len(self.steps),
-            task_id=self.task_id,
-            error="not_implemented",
-        )

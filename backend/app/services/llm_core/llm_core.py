@@ -56,7 +56,6 @@ class BaseAIService(ChatStreamMixin, ChatWithToolsStreamMixin, ToolCallerMixin):
         self.timeout = int(timeout_value)
         self._cancelled = False
         self._current_response: Optional[httpx.Response] = None
-        self._supports_reasoning: Optional[bool] = None
         self._network_engine = create_network_retry_engine()
 
     def _ensure_client(self):
@@ -119,13 +118,6 @@ class BaseAIService(ChatStreamMixin, ChatWithToolsStreamMixin, ToolCallerMixin):
 
     def _stream_with_retry(self, url: str, headers: dict, json_body: dict, max_retries: int = 3, retry_delay: float = 2.0):
         return _StreamRetryContext(self, url, headers, json_body, max_retries, retry_delay)
-
-    async def _detect_reasoning_support(self) -> bool:
-        if self._supports_reasoning is not None:
-            return self._supports_reasoning
-        self._supports_reasoning = False
-        logger.info(f"[reasoning探测] model={self.model}, supports_reasoning={self._supports_reasoning}")
-        return self._supports_reasoning
 
     def _create_stream_error_chunk(self, e: Exception) -> StreamChunk:
         msg, err_type = _resolve_exception(e)

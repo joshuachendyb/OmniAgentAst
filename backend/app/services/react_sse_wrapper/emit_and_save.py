@@ -10,7 +10,7 @@ Author: 小沈 - 2026-05-31
 
 import asyncio
 
-from app.chat_stream.sse_formatter import format_agent_sse
+from app.chat_stream import format_agent_sse
 
 
 async def emit_only(

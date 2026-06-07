@@ -2,6 +2,8 @@
 """
 task_cancel_check — 取消检查并生成SSE事件
 
+小健 - 2026-06-08 修复import路径
+
 从 react_sse_wrapper/is_cancelled_and_yield.py 移入
 统一: 小健 - 2026-05-31
 """
@@ -10,8 +12,8 @@ from typing import Optional, Callable
 
 from app.services.agent.steps import IncidentStep
 from app.utils.logger import logger
-from app.chat_stream.message_saver import save_execution_steps_to_db
-from app.chat_stream.sse_formatter import format_agent_sse
+from app.chat_stream import save_execution_steps_to_db
+from app.chat_stream import format_agent_sse
 from app.services.task.task_registry import check_cancelled
 
 

@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-_yield_error_sse — 从 react_sse_wrapper.py 拆出
+_yield_error_sse — 错误SSE生成器
 
-复制来源: react_sse_wrapper.py 第58-76行
+小健 - 2026-06-08 修复import路径
+
 Author: 小沈 - 2026-05-31
 """
 
 from app.services.agent.steps import StepFactory
 from app.utils.logger import logger
-from app.chat_stream.message_saver import save_execution_steps_to_db
-from app.chat_stream.sse_formatter import format_agent_sse
+from app.chat_stream import save_execution_steps_to_db
+from app.chat_stream import format_agent_sse
 
 
 async def yield_error_sse(
