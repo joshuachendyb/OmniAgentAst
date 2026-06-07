@@ -56,9 +56,6 @@ class BaseAgent(ABC):
     def _init_llm_strategies(self):
         pass
 
-    def _init_tools(self):
-        self._tool_manager = ToolManager(self)
-        self._tool_manager.init_tools()
 
     async def _execute_tool(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
         from app.services.agent.tool_executor import execute_tool_with_unified_retry
