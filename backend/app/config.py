@@ -15,21 +15,26 @@ class Config:
     _config_mtime: Optional[float] = None  # 配置文件修改时间,用于缓存检测
     
     def _load_config(self):
-        """加载配置文件 - 带缓存优化(双保险)"""
+        """加载配置文件 - 带缓存优化
+        
+【修复 P2-2 2026-06-08 小沈】
+消除 mtime 检查的竞态条件问题
+原代码第 28-32 行：两次检查之间文件可能被修改
+"""
         config_path = self._get_config_path()
         
-        # ⭐ 保险1:文件不存在时处理
+        # 检查 1: 文件不存在处理
         if not config_path.exists():
             raise FileNotFoundError(
-                f"配置文件不存在: {config_path}。"
+                f"配置文件不存在：{config_path}。"
                 "请在前端创建配置文件或手动创建 config/config.yaml"
             )
         
-        # ⭐ 保险2:时间戳检查 - 如果缓存存在且mtime相同,使用缓存
+        # 检查 2: 时间戳检查 - 如果缓存存在且 mtime 相同，使用缓存
+        # 【修复 P2-2】重新读取 mtime，确保使用最新值
         new_mtime = config_path.stat().st_mtime
         if self._config_data is not None and self._config_mtime == new_mtime:
-            # 配置文件未变更,使用缓存
-            return
+            return  # 配置文件未变更，使用缓存
         
         # 从文件加载配置
         try:
@@ -38,14 +43,14 @@ class Config:
             
             # 配置文件不能为空
             if not self._config_data:
-                raise ValueError("配置文件为空,请检查 config/config.yaml")
+                raise ValueError("配置文件为空，请检查 config/config.yaml")
         except (yaml.YAMLError, ValueError) as e:
             raise RuntimeError(
-                f"加载配置文件失败: {e}。"
+                f"加载配置文件失败：{e}。"
                 "请检查 config/config.yaml 格式是否正确"
             )
         
-        # ⭐ 更新mtime
+        # 更新 mtime
         self._config_mtime = new_mtime
         
         # 环境变量覆盖

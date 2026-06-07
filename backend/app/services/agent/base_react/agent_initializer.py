@@ -33,13 +33,16 @@ class AgentInitializer:
 
     @staticmethod
     def _init_state(agent, task_id: str, tool_category: Optional[ToolCategory], max_steps: int):
-        """复制自 base_react.py 第109-124行 — 初始化状态管理相关属性"""
-        agent.task_id = task_id  # 赋值task_id
+        """复制自 base_react.py 第 109-124 行 — 初始化状态管理相关属性
+
+【修复 P0-2 2026-06-08 小沈】删除未使用的 asyncio.Lock() 声明
+原代码第 42 行声明了 lock，但从未使用，违反 KISS 原则
+"""
+        agent.task_id = task_id  # 赋值 task_id
         agent.tool_category = tool_category
         agent.max_steps = max_steps
         agent.status = AgentStatus.IDLE
         agent.llm_call_count = 0
-        agent._lock = asyncio.Lock()
 
         # 【重构 2026-05-27 小健】2.22:parse/empty重试委托给RetryEngine
         from app.utils.retry import create_agent_retry_engine
