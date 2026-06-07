@@ -30,11 +30,6 @@ from app.services.llm_core.tool_caller import ToolCallerMixin
 from app.services.llm_core.chat import chat
 
 
-class _RateLimitError(Exception):
-    def __init__(self, status_code: int):
-        self.status_code = status_code
-        super().__init__(f"HTTP {status_code} rate limit")
-
 
 class BaseAIService(ChatStreamMixin, ChatWithToolsStreamMixin, ToolCallerMixin):
     """通用AI服务 — 只保留骨架"""
@@ -102,19 +97,6 @@ class BaseAIService(ChatStreamMixin, ChatWithToolsStreamMixin, ToolCallerMixin):
     def _is_rate_limit_status(self, status_code: int) -> bool:
         return status_code in self.RATE_LIMIT_STATUS_CODES
 
-    async def _post_with_retry(self, url: str, headers: dict, json_body: dict, max_retries: int = 3, retry_delay: float = 2.0):
-        self._ensure_client()
-        engine = self._network_engine
-        async def _do_post():
-            response = await self._llm_sdk.request("POST", url, headers=headers, json=json_body)
-            if self._is_rate_limit_status(response.status_code):
-                raise _RateLimitError(response.status_code)
-            return response
-        try:
-            return await engine.execute(_do_post)
-        except _RateLimitError as e:
-            logger.error(f"[429重试] HTTP {e.status_code}, 持续{max_retries}次, 放弃")
-            return e.response if hasattr(e, 'response') else await self._llm_sdk.request("POST", url, headers=headers, json=json_body)
 
     def _stream_with_retry(self, url: str, headers: dict, json_body: dict, max_retries: int = 3, retry_delay: float = 2.0):
         return _StreamRetryContext(self, url, headers, json_body, max_retries, retry_delay)
