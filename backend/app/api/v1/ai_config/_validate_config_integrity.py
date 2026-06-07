@@ -49,6 +49,6 @@ def _validate_config_integrity(config_data: Dict[str, Any]) -> Tuple[bool, List[
             continue
         provider_data = ai_config.get(provider_name, {})
         if isinstance(provider_data, dict) and 'model' in provider_data:
-            warnings.append(f"provider '{provider_name}' 下有废弃的 model 字段，建议删除")
+            warnings.append(f"provider '{provider_name}' 下有废弃的 model 字段,建议删除")
 
     return True, errors, warnings

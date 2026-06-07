@@ -3,13 +3,13 @@
 数据格式辅助函数模块
 
 【创建时间】2026-05-18 小沈
-【来源】从data_format目录迁入，供file_tools.py调用
+【来源】从data_format目录迁入,供file_tools.py调用
 【恢复 2026-05-29 小沈】恢复被430d1505误删的_read_json/_write_json/_parse_yaml/_write_yaml/_parse_toml/_write_toml/_detect_encoding/_truncate_dict/_read_csv_basic
 
-包含：
+包含:
 - read_json: 读取JSON文件
 - write_json: 写入JSON文件
-- read_csv_basic: 读取CSV文件（基础版）
+- read_csv_basic: 读取CSV文件(基础版)
 - parse_yaml: 读取YAML文件
 - write_yaml: 写入YAML文件
 - parse_toml: 读取TOML文件
@@ -138,7 +138,7 @@ def _write_json(file_path: str, data: Union[Dict[str, Any], List[Any]], encoding
 
 
 def _read_csv_basic(file_path: str, encoding: str = "auto_detect", delimiter: str = "auto_detect", has_header: bool = True, max_rows: int = 500, skip_blank_lines: bool = True) -> Dict[str, Any]:
-    """读取CSV文件内容（基础版）- 小沈 2026-05-25 重构"""
+    """读取CSV文件内容(基础版)- 小沈 2026-05-25 重构"""
     try:
         path = Path(file_path)
         if not path.exists():
@@ -177,7 +177,7 @@ def _read_csv_basic(file_path: str, encoding: str = "auto_detect", delimiter: st
                         break
         if not has_header and rows:
             headers = [f"column_{i}" for i in range(len(rows[0]))] if rows else []
-        return build_success({"headers": headers, "rows": rows, "total_rows": len(rows)}, f"成功读取CSV文件: {file_path}，共 {len(rows)} 行")
+        return build_success({"headers": headers, "rows": rows, "total_rows": len(rows)}, f"成功读取CSV文件: {file_path},共 {len(rows)} 行")
     except Exception as e:
         return build_error(ERR_READ_CSV_BASIC, f"读取CSV文件失败: {str(e)}")
 
@@ -193,7 +193,7 @@ def _parse_yaml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
             data = yaml.safe_load(f)
         return build_success(data, f"成功读取YAML文件: {file_path}")
     except ImportError:
-        return build_error(ERR_NO_PYYAML, "PyYAML未安装，请执行: pip install pyyaml")
+        return build_error(ERR_NO_PYYAML, "PyYAML未安装,请执行: pip install pyyaml")
     except Exception as e:
         return build_error(ERR_PARSE_YAML, f"读取YAML失败: {str(e)}")
 
@@ -208,7 +208,7 @@ def _write_yaml(file_path: str, data: Any, encoding: str = "utf-8", indent: int 
             yaml.safe_dump(data, f, allow_unicode=True, indent=indent)
         return build_success({"file_path": file_path}, f"成功写入YAML文件: {file_path}")
     except ImportError:
-        return build_error(ERR_NO_PYYAML, "PyYAML未安装，请执行: pip install pyyaml")
+        return build_error(ERR_NO_PYYAML, "PyYAML未安装,请执行: pip install pyyaml")
     except Exception as e:
         return build_error(ERR_WRITE_YAML, f"写入YAML失败: {str(e)}")
 
@@ -224,7 +224,7 @@ def _parse_toml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
             data = tomli.load(f)
         return build_success(data, f"成功读取TOML文件: {file_path}")
     except ImportError:
-        return build_error(ERR_NO_TOMLI, "tomli未安装，请执行: pip install tomli")
+        return build_error(ERR_NO_TOMLI, "tomli未安装,请执行: pip install tomli")
     except Exception as e:
         return build_error(ERR_PARSE_TOML, f"读取TOML失败: {str(e)}")
 
@@ -239,7 +239,7 @@ def _write_toml(file_path: str, data: Dict[str, Any], encoding: str = "utf-8") -
             tomli_w.dump(data, f)
         return build_success({"file_path": file_path}, f"成功写入TOML文件: {file_path}")
     except ImportError:
-        return build_error(ERR_NO_TOMLI_W, "tomli_w未安装，请执行: pip install tomli-w")
+        return build_error(ERR_NO_TOMLI_W, "tomli_w未安装,请执行: pip install tomli-w")
     except Exception as e:
         return build_error(ERR_WRITE_TOML, f"写入TOML失败: {str(e)}")
 

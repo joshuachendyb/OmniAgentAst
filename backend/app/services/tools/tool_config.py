@@ -7,7 +7,7 @@ T2: 配置外部化 + 配置安全机制
 
 创建时间: 2026-04-19 09:00:00
 更新时间: 2026-05-31
-更新内容: 删除tool函数内部常量相关代码，超时数字统一由tool_constants.py管理 - 北京老陈
+更新内容: 删除tool函数内部常量相关代码,超时数字统一由tool_constants.py管理 - 北京老陈
 """
 
 import os
@@ -22,7 +22,7 @@ logger = setup_logger(__name__)
 
 
 # ============================================================
-# 【步骤3】配置Schema验证（Pydantic）
+# 【步骤3】配置Schema验证(Pydantic)
 # ============================================================
 
 class ToolAliasSchema(BaseModel):
@@ -60,7 +60,7 @@ class ToolConfig:
         初始化配置
         
         Args:
-            config_path: 配置文件路径，默认config/tools.yaml
+            config_path: 配置文件路径,默认config/tools.yaml
         """
         self._config_path = config_path or self.DEFAULT_CONFIG_PATH
         self._config: Dict[str, Any] = {}
@@ -110,7 +110,7 @@ class ToolConfig:
     def reload(self) -> bool:
         """
         【步骤4】热重载原子性保证
-        先加载到临时变量，再原子替换
+        先加载到临时变量,再原子替换
         
         Returns:
             是否重新加载成功
@@ -126,7 +126,7 @@ class ToolConfig:
         if self._last_modified and current_mtime == self._last_modified:
             return False
         
-        # 【步骤4】原子性替换：先加载到临时变量
+        # 【步骤4】原子性替换:先加载到临时变量
         temp_config = self._load_config_safe()
         if temp_config is not None:
             # 原子替换
@@ -138,7 +138,7 @@ class ToolConfig:
         return False
     
     def _load_config_safe(self) -> Optional[Dict[str, Any]]:
-        """安全加载配置（带环境变量处理）"""
+        """安全加载配置(带环境变量处理)"""
         try:
             config_file = Path(self._config_path)
             if not config_file.exists():
@@ -165,8 +165,8 @@ class ToolConfig:
             env_var = config[2:-1]
             value = os.environ.get(env_var)
             if value is None:
-                # 环境变量未设置：记录警告，保留原始占位符
-                logger.warning(f"环境变量 '${{{env_var}}}' 未设置，配置项保留原值")
+                # 环境变量未设置:记录警告,保留原始占位符
+                logger.warning(f"环境变量 '${{{env_var}}}' 未设置,配置项保留原值")
                 return config
             return value
         return config

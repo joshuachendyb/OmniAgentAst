@@ -1,7 +1,7 @@
 """
 AIServiceFactory — 类骨架
 
-从 factory.py 拆出，遵循 SRP：
+从 factory.py 拆出,遵循 SRP:
 - 各功能函数独立文件
 - 本文件保留 AIServiceFactory 类骨架
 

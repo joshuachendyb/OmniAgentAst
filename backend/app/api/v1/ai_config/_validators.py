@@ -1,13 +1,13 @@
 """ai_config 包通用校验函数 — Provider / Model 存在性检查
 
-【小健 2026-05-31】新建：消除各 endpoint 文件中重复的 "xxx not in config.get('ai', {})" 检查
+【小健 2026-05-31】新建:消除各 endpoint 文件中重复的 "xxx not in config.get('ai', {})" 检查
 """
 
 from fastapi import HTTPException
 
 
 def ensure_provider_exists(config: dict, provider_name: str) -> None:
-    """确保 Provider 存在于配置中，否则抛 HTTPException(404)"""
+    """确保 Provider 存在于配置中,否则抛 HTTPException(404)"""
     if provider_name not in config.get('ai', {}):
         raise HTTPException(
             status_code=404,
@@ -16,7 +16,7 @@ def ensure_provider_exists(config: dict, provider_name: str) -> None:
 
 
 def ensure_provider_not_duplicate(config: dict, provider_name: str) -> None:
-    """确保 Provider 名不重复，否则抛 HTTPException(400)"""
+    """确保 Provider 名不重复,否则抛 HTTPException(400)"""
     if provider_name in config.get('ai', {}):
         raise HTTPException(
             status_code=400,
@@ -25,7 +25,7 @@ def ensure_provider_not_duplicate(config: dict, provider_name: str) -> None:
 
 
 def ensure_model_exists(config: dict, provider_name: str, model_name: str) -> None:
-    """确保模型在指定 Provider 中存在，否则抛 HTTPException(404)"""
+    """确保模型在指定 Provider 中存在,否则抛 HTTPException(404)"""
     providers = config.get('ai', {})
     if provider_name not in providers:
         raise HTTPException(
@@ -41,7 +41,7 @@ def ensure_model_exists(config: dict, provider_name: str, model_name: str) -> No
 
 
 def ensure_model_not_duplicate(config: dict, provider_name: str, model_name: str) -> None:
-    """确保模型名不重复，否则抛 HTTPException(400)"""
+    """确保模型名不重复,否则抛 HTTPException(400)"""
     providers = config.get('ai', {})
     if provider_name not in providers:
         return

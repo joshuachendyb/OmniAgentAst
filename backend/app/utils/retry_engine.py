@@ -2,10 +2,10 @@
 """
 统一重试引擎
 
-消除4套独立重试机制的重复：
+消除4套独立重试机制的重复:
 1. llm_core._post_with_retry() — 非流式429重试
 2. llm_core._StreamRetryContext — 流式429重试
-3. retry_policy.RetryPolicy — 工具执行重试（含熔断器）
+3. retry_policy.RetryPolicy — 工具执行重试(含熔断器)
 4. base_react内联 — parse/empty_response重试
 
 各场景配置不同参数但共享同一引擎。
@@ -30,8 +30,8 @@ class RetryEngine:
     """
     通用重试引擎
     
-    支持配置化退避策略和重试条件，各场景配置不同参数但共享同一引擎。
-    实现SRP（重试策略单一职责）+ DRY（统一入口）+ OCP（新增重试场景只配置参数）。
+    支持配置化退避策略和重试条件,各场景配置不同参数但共享同一引擎。
+    实现SRP(重试策略单一职责)+ DRY(统一入口)+ OCP(新增重试场景只配置参数)。
     """
 
     def __init__(
@@ -47,8 +47,8 @@ class RetryEngine:
 
         Args:
             max_retries: 最大重试次数
-            backoff_strategy: 退避策略（固定/指数）
-            backoff_factor: 退避因子（指数退避的基数）
+            backoff_strategy: 退避策略(固定/指数)
+            backoff_factor: 退避因子(指数退避的基数)
             retryable_check: 判断异常是否可重试的函数
             on_retry: 每次重试前的回调
         """
@@ -64,7 +64,7 @@ class RetryEngine:
         计算退避延迟
 
         Args:
-            attempt: 当前重试次数（从1开始）
+            attempt: 当前重试次数(从1开始)
 
         Returns:
             延迟秒数
@@ -81,7 +81,7 @@ class RetryEngine:
 
     async def execute(self, operation: Callable, *args, **kwargs) -> Any:
         """
-        执行操作（带重试）
+        执行操作(带重试)
 
         Args:
             operation: 异步操作函数
@@ -122,42 +122,6 @@ class RetryEngine:
 
         raise last_error
 
-    async def execute_context(
-        self, operation_factory: Callable, *args, **kwargs
-    ) -> Any:
-        """
-        异步上下文管理器模式执行（用于流式请求等场景）
-
-        每次重试都创建新的operation实例（通过factory函数）。
-
-        Args:
-            operation_factory: 创建操作实例的工厂函数
-            *args, **kwargs: 工厂参数
-
-        Returns:
-            操作实例
-        """
-        self._attempt_count = 0
-
-        while self._attempt_count <= self._max_retries:
-            try:
-                return operation_factory(*args, **kwargs)
-            except Exception as e:
-                self._attempt_count += 1
-
-                if not self._is_retryable(e):
-                    raise
-
-                if self._on_retry:
-                    self._on_retry(self._attempt_count, e)
-
-                if self._attempt_count >= self._max_retries:
-                    raise
-
-                delay = self._calculate_delay(self._attempt_count)
-                await asyncio.sleep(delay)
-
-        raise RuntimeError("RetryEngine: max retries exceeded")
 
     async def execute_async_context(
         self,
@@ -165,22 +129,22 @@ class RetryEngine:
         result_check: Callable[[Any], bool],
     ) -> tuple:
         """
-        异步上下文管理器模式执行（基于返回值判断重试）
+        异步上下文管理器模式执行(基于返回值判断重试)
 
-        用于流式请求等场景：ctx_factory返回异步上下文管理器，
-        result_check判断结果是否需要重试（True=需要重试）。
+        用于流式请求等场景:ctx_factory返回异步上下文管理器,
+        result_check判断结果是否需要重试(True=需要重试)。
 
-        与execute()的关键差异：
-        - 基于返回值判断重试（而非异常）
+        与execute()的关键差异:
+        - 基于返回值判断重试(而非异常)
         - 正确处理异步上下文管理器的__aenter__/__aexit__
-        - 重试耗尽返回最后结果（不抛异常）
+        - 重试耗尽返回最后结果(不抛异常)
 
         Args:
             ctx_factory: 创建异步上下文管理器的工厂函数
-            result_check: 结果检查函数，返回True表示需要重试
+            result_check: 结果检查函数,返回True表示需要重试
 
         Returns:
-            (ctx, result) 元组：ctx为打开的上下文管理器（需调用方在用完后关闭），
+            (ctx, result) 元组:ctx为打开的上下文管理器(需调用方在用完后关闭),
             result为__aenter__的返回值
         """
         self._attempt_count = 0
@@ -201,7 +165,7 @@ class RetryEngine:
 
                 if self._attempt_count >= self._max_retries:
                     logger.error(
-                        f"[RetryEngine] 重试耗尽 {self._attempt_count}/{self._max_retries}，返回最后结果"
+                        f"[RetryEngine] 重试耗尽 {self._attempt_count}/{self._max_retries},返回最后结果"
                     )
                     return ctx, result
 
@@ -210,7 +174,7 @@ class RetryEngine:
                     self._on_retry(self._attempt_count, None)
                 else:
                     logger.warning(
-                        f"[RetryEngine] 结果需重试 {self._attempt_count}/{self._max_retries}，{delay:.0f}s后重试"
+                        f"[RetryEngine] 结果需重试 {self._attempt_count}/{self._max_retries},{delay:.0f}s后重试"
                     )
                 await asyncio.sleep(delay)
 
@@ -249,21 +213,21 @@ class RetryEngine:
 
     @property
     def exhausted(self) -> bool:
-        """重试是否已耗尽（必须用 >=）"""
+        """重试是否已耗尽(必须用 >=)"""
         return self._attempt_count >= self._max_retries
 
     @property
     def current_delay(self) -> float:
-        """当前退避延迟（在 record_attempt() 之前调用）"""
+        """当前退避延迟(在 record_attempt() 之前调用)"""
         return self._calculate_delay(self._attempt_count + 1)
 
     def record_attempt(self) -> int:
-        """手动记录一次重试尝试（用于非execute模式的重试场景，如空响应截断重试）"""
+        """手动记录一次重试尝试(用于非execute模式的重试场景,如空响应截断重试)"""
         self._attempt_count += 1
         return self._attempt_count
 
     def reset_attempts(self) -> None:
-        """重置重试计数（用于收到有效响应后重置空响应计数）"""
+        """重置重试计数(用于收到有效响应后重置空响应计数)"""
         self._attempt_count = 0
 
 
@@ -275,7 +239,7 @@ def create_rate_limit_retry_engine(
     """
     创建429限流重试引擎
 
-    专门处理HTTP 429限流重试，指数退避+max_retries=3。
+    专门处理HTTP 429限流重试,指数退避+max_retries=3。
     统一llm_core._post_with_retry()和_StreamRetryContext的核心429重试逻辑。
 
     Args:

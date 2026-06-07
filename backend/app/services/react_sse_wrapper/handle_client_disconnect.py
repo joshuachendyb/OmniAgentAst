@@ -2,7 +2,7 @@
 """
 _handle_client_disconnect — 客户端断开连接处理
 
-task操作统一在 services/task/ 层，本文件只做SSE事件生成
+task操作统一在 services/task/ 层,本文件只做SSE事件生成
 
 Author: 小沈 - 2026-05-31
 统一: 小健 - 2026-05-31 — 删除cancel_task调用
@@ -23,11 +23,11 @@ async def handle_client_disconnect(
     current_content: str,
     next_step: Callable[[], int],
 ) -> AsyncGenerator[str, None]:
-    """客户端断开连接处理 — 只生成SSE事件，不操作task"""
+    """客户端断开连接处理 — 只生成SSE事件,不操作task"""
     incident_step = IncidentStep(
         step=next_step(),
         incident_value='interrupted',
-        message='客户端断开连接，任务中断'
+        message='客户端断开连接,任务中断'
     )
     current_execution_steps.append(incident_step.to_dict())
     try:
@@ -38,4 +38,4 @@ async def handle_client_disconnect(
         logger.info(f"[Step interrupted] 发送interrupted步骤(客户端断开)")
         yield format_agent_sse(incident_step)
     except Exception:
-        logger.info(f"[Step interrupted] 客户端已断开，跳过yield")
+        logger.info(f"[Step interrupted] 客户端已断开,跳过yield")

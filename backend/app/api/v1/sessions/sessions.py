@@ -2,7 +2,7 @@
 """
 sessions — 路由定义
 
-从 sessions.py 拆出，遵循 SRP：
+从 sessions.py 拆出,遵循 SRP:
 - 各功能函数独立文件
 - 本文件只保留路由定义和装饰器
 

@@ -14,7 +14,7 @@ def build_text_report_lines(
     task_id: str, task_description: str,
     operations: List[Tuple], stats: Dict[str, int]
 ) -> List[str]:
-    """构建文本报告的所有行（纯格式化，无 DB/IO 副作用）
+    """构建文本报告的所有行(纯格式化,无 DB/IO 副作用)
 
     小沈 2026-05-25 重构拆分
     """
@@ -67,15 +67,15 @@ def generate_text_report(task_id: str, task_description: str) -> str:
     - 统计数据从 file_operations 表计算
 
     【小沈修改 2026-04-30】
-    - 修复列名：task_id → task_id（与 file_operations 表结构一致）
+    - 修复列名:task_id → task_id(与 file_operations 表结构一致)
 
     【小沈重构 2026-05-25】
-    - 重构拆分：提取 _query_file_operations / _count_op_stats / _build_text_report_lines
+    - 重构拆分:提取 _query_file_operations / _count_op_stats / _build_text_report_lines
 
     Args:
         task_id: 任务ID
-        task_description: 任务描述（用户消息）
-        output_path: 输出路径（可选）
+        task_description: 任务描述(用户消息)
+        output_path: 输出路径(可选)
 
     Returns:
         报告文本内容
@@ -89,7 +89,7 @@ def generate_text_report(task_id: str, task_description: str) -> str:
     lines = build_text_report_lines(task_id, task_description, operations, stats)
     report_text = "\n".join(lines)
 
-    # YAGNI 死代码：output_path 从未被实际传入，直接删除保存逻辑
-    # 原 L157-161 已删除，调用方从未传 output_path
+    # YAGNI 死代码:output_path 从未被实际传入,直接删除保存逻辑
+    # 原 L157-161 已删除,调用方从未传 output_path
 
     return report_text

@@ -3,7 +3,7 @@
 Reasoning内容处理适配器
 
 处理模型reasoning_content字段的探测、消息修复和内容提取。
-从 llm_core.py 拆分出来，遵循SRP原则。
+从 llm_core.py 拆分出来,遵循SRP原则。
 Author: 小沈 - 2026-05-27
 """
 
@@ -17,10 +17,10 @@ def fix_thinking_messages(messages: List[Dict], is_thinking: bool) -> List[Dict]
     修复thinking模型消息兼容性
 
     thinking模型(如deepseek-v3/r1)要求assistant消息必须包含
-    reasoning_content或tool_calls字段，否则API返回400。
+    reasoning_content或tool_calls字段,否则API返回400。
 
-    修复策略：对缺少reasoning_content且无tool_calls的assistant消息，
-    将content移入reasoning_content字段，content置空字符串。
+    修复策略:对缺少reasoning_content且无tool_calls的assistant消息,
+    将content移入reasoning_content字段,content置空字符串。
 
     Args:
         messages: 消息列表
@@ -48,7 +48,7 @@ def extract_reasoning_from_chunk(delta: Dict) -> Optional[str]:
         delta: SSE chunk的delta对象
 
     Returns:
-        reasoning内容字符串，如果不存在返回None
+        reasoning内容字符串,如果不存在返回None
     """
     return getattr(delta, 'reasoning_content', None) or delta.get('reasoning_content')
 

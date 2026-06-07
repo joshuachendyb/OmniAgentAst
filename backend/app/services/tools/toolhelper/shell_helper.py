@@ -4,11 +4,11 @@ Shell辅助函数模块 - Shell相关的内部辅助函数
 
 【创建时间】2026-05-17 小沈
 【说明】从 shell/shell_tools.py 迁移2个辅助函数
-       这些函数作为内部Helper，不注册到tool_registry，供execute_shell_command等内部调用
+       这些函数作为内部Helper,不注册到tool_registry,供execute_shell_command等内部调用
 
-包含函数（2个）：
-- _check_shell_injection: 检查Shell注入风险（原shell_tools.py内部函数）
-- _read_stream_nonblocking: 非阻塞读取子进程输出流（原shell_tools.py内部函数）
+包含函数(2个):
+- _check_shell_injection: 检查Shell注入风险(原shell_tools.py内部函数)
+- _read_stream_nonblocking: 非阻塞读取子进程输出流(原shell_tools.py内部函数)
 
 Author: 小沈 - 2026-05-17
 """
@@ -23,8 +23,8 @@ from app.services.tools.tool_constants import SHELL_INJECTION_PATTERNS
 
 
 def _check_shell_injection(command: str) -> Optional[str]:
-    """检查shell命令注入风险，返回错误描述或None - 小健 2026-05-13
-    【2026-05-17 小沈】迁移到 toolhelper/shell_helper.py，供code_execution等复用
+    """检查shell命令注入风险,返回错误描述或None - 小健 2026-05-13
+    【2026-05-17 小沈】迁移到 toolhelper/shell_helper.py,供code_execution等复用
     """
     if not command or not command.strip():
         return None
@@ -36,10 +36,10 @@ def _check_shell_injection(command: str) -> Optional[str]:
 
 def _read_stream_nonblocking(stream, encoding: str = "utf-8") -> str:
     """非阻塞读取子进程输出流 - 小沈 2026-05-05
-    【2026-05-17 小沈】迁移到 toolhelper/shell_helper.py，供code_execution/system复用
+    【2026-05-17 小沈】迁移到 toolhelper/shell_helper.py,供code_execution/system复用
 
-    如果进程已结束，读取全部输出；
-    如果进程仍在运行，读取当前可用的输出而不阻塞。
+    如果进程已结束,读取全部输出;
+    如果进程仍在运行,读取当前可用的输出而不阻塞。
     """
     if stream is None:
         return ""

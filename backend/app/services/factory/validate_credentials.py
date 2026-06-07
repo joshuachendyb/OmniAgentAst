@@ -20,5 +20,5 @@ def validate_credentials(ai_config: dict, final_provider: str) -> Tuple[list, li
         errors.append(f"provider '{final_provider}' 的 api_key 为空")
     api_base = selected_provider_config.get("api_base")
     if not api_base:
-        warnings.append(f"provider '{final_provider}' 未配置 api_base，将使用默认值")
+        warnings.append(f"provider '{final_provider}' 未配置 api_base,将使用默认值")
     return errors, warnings

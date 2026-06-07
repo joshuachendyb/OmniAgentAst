@@ -2,7 +2,7 @@
 """
 FileOperationSafety — 从 file_safety.py 拷出
 
-拷贝来源: file_safety.py 第42-554行（类骨架）
+拷贝来源: file_safety.py 第42-554行(类骨架)
 """
 
 from app.services.safety.manager import SafetyHook

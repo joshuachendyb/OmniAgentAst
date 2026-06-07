@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """TaskTracker — 任务生命周期 + 操作管理 + 回滚标记 + 报告
 
-调用方：Agent、回滚模块、报告模块。
+调用方:Agent、回滚模块、报告模块。
 所有意图共用同一个持久化 Tracker。
 
 Author: 小沈 - 2026-05-29
@@ -22,7 +22,7 @@ from app.constants import VALID_INTENTS
 
 
 class TaskTracker:
-    """任务追踪器 — 双表操作：tasks（task 级）+ operations（operation 级）"""
+    """任务追踪器 — 双表操作:tasks(task 级)+ operations(operation 级)"""
 
     # ===== 任务生命周期 =====
 
@@ -130,7 +130,7 @@ class TaskTracker:
     def mark_rolled_back(
         self, task_id: str, op_ids: Optional[List[str]] = None
     ) -> None:
-        """标记操作为已回滚，检查是否全量回滚"""
+        """标记操作为已回滚,检查是否全量回滚"""
         with db.get_conn("task_tracker") as conn:
             if op_ids:
                 placeholders = ",".join("?" for _ in op_ids)
@@ -175,7 +175,7 @@ class TaskTracker:
             )
 
 
-# ===== 单例工厂（线程安全） =====
+# ===== 单例工厂(线程安全) =====
 
 import threading
 from typing import Optional as _Optional
@@ -185,7 +185,7 @@ _lock = threading.Lock()
 
 
 def get_tracker() -> TaskTracker:
-    """获取追踪器单例 — 线程安全，所有意图共用"""
+    """获取追踪器单例 — 线程安全,所有意图共用"""
     global _tracker
     if _tracker is None:
         with _lock:

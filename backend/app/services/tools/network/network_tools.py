@@ -6,22 +6,22 @@ Network 工具函数模块 - 网络通信工具
 【规范】按新规范使用 Pydantic 模型注册
 
 【重要】新函数增加规范 - 小沈 2026-05-04
-新增函数时必须同步修改以下3个文件：
-1. *_tools.py: 函数实现（必须有详细注释）
-2. *_schema.py: Pydantic 模型（输入参数定义）
-3. *_register.py: 显式注册（description + examples + input_model）
+新增函数时必须同步修改以下3个文件:
+1. *_tools.py: 函数实现(必须有详细注释)
+2. *_schema.py: Pydantic 模型(输入参数定义)
+3. *_register.py: 显式注册(description + examples + input_model)
 
-包含：
+包含:
 - http_request: 发起HTTP请求
 - download_file: 下载文件到本地
 - fetch_webpage: 获取和处理网页内容
 - search_web: 搜索网络获取最新信息
-- ping: 执行ping测试（小沈 2026-05-02）
-- port_check: 检查端口是否开放（小沈 2026-05-02）
+- ping: 执行ping测试(小沈 2026-05-02)
+- port_check: 检查端口是否开放(小沈 2026-05-02)
 
-返回格式：统一 {code, data, message} 格式
+返回格式:统一 {code, data, message} 格式
 - code: SUCCESS 或 ERR_xxx 错误码
-- data: 成功时返回数据，失败时为 None
+- data: 成功时返回数据,失败时为 None
 - message: 描述信息
 
 Author: 小沈 - 2026-04-29
@@ -44,7 +44,7 @@ from app.utils.logger import logger
 
 from app.services.tools.toolhelper.network_helper import (  # 小健 2026-05-18
     well_known_ports, _html_to_markdown, _decode_bing_redirect_url,
-    _validate_url, _check_network,  # 小沈 2026-05-25 提升到模块级，消除3处函数内重复import
+    _validate_url, _check_network,  # 小沈 2026-05-25 提升到模块级,消除3处函数内重复import
 )
 from app.services.tools.network.http_client_sdk import create_http_client, HTTPClient  # 小沈 2026-05-29
 from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
@@ -133,20 +133,20 @@ def _build_http_error(last_exception: Exception, url: str, retry: int) -> Dict[s
         return _build_http_error(last_exception, url, retry)
 
     返回数据说明:
-    - 返回Dict，错误响应
+    - 返回Dict,错误响应
     """
     if isinstance(last_exception, httpx.TimeoutException):
-        return build_error(ERR_NETWORK_TIMEOUT, f"请求超时：{url}")
+        return build_error(ERR_NETWORK_TIMEOUT, f"请求超时:{url}")
     if isinstance(last_exception, httpx.HTTPStatusError):
         return build_error(
             ERR_NETWORK_HTTP_ERROR,
-            f"HTTP请求失败（重试{retry}次后）：{url}",
+            f"HTTP请求失败(重试{retry}次后):{url}",
             data={
                 "status_code": last_exception.response.status_code,
                 "body": last_exception.response.text if hasattr(last_exception.response, 'text') else None,
             },
         )
-    return build_error(ERR_NETWORK_REQUEST_ERROR, f"网络请求失败（重试{retry}次后）：{str(last_exception)}")
+    return build_error(ERR_NETWORK_REQUEST_ERROR, f"网络请求失败(重试{retry}次后):{str(last_exception)}")
 
 
 async def http_request(
@@ -162,18 +162,18 @@ async def http_request(
     """发起HTTP请求 — 小沈 2026-05-19 精简参数(11→8)"""
     # 参数校验
     if retry < 0 or retry > 10:
-        return build_error(ERR_NETWORK_INVALID_PARAM, f"重试次数必须在0-10之间，当前值：{retry}")
+        return build_error(ERR_NETWORK_INVALID_PARAM, f"重试次数必须在0-10之间,当前值:{retry}")
     
     timeout_sec = timeout / 1000.0
     
     try:
         url_info = _validate_url(url)
         if not url_info["data"]["valid"]:
-            return build_error(ERR_INVALID_URL, f"URL格式无效: {url}，URL必须包含协议和域名（如 https://api.example.com/data）")
+            return build_error(ERR_INVALID_URL, f"URL格式无效: {url},URL必须包含协议和域名(如 https://api.example.com/data)")
 
         net_info = _check_network()
         if not net_info["data"]["connected"]:
-            return build_error(ERR_NETWORK_DOWN, "网络不可用，无法发送请求")
+            return build_error(ERR_NETWORK_DOWN, "网络不可用,无法发送请求")
 
         parsed = urlparse(url)
         if params:
@@ -222,7 +222,7 @@ async def http_request(
                         error_body = None
                     return build_error(
                         ERR_NETWORK_HTTP_ERROR,
-                        f"HTTP请求失败 (HTTP {e.response.status_code})：{url}",
+                        f"HTTP请求失败 (HTTP {e.response.status_code}):{url}",
                         data={
                             "status_code": e.response.status_code,
                             "body": error_body,
@@ -251,18 +251,18 @@ def _map_network_error(url: str, timeout: int, e: Exception) -> Dict[str, Any]:
     """将 httpx 异常映射为 build_error — 小健 2026-05-25"""
     for exc_type, code, prefix in NET_ERROR_MAP:
         if isinstance(e, exc_type):
-            detail = f"{prefix}（{timeout/1000}秒）：{url}"
+            detail = f"{prefix}({timeout/1000}秒):{url}"
             if isinstance(e, httpx.HTTPStatusError):
-                detail = f"{prefix} (HTTP {e.response.status_code})：{url}"
+                detail = f"{prefix} (HTTP {e.response.status_code}):{url}"
             return build_error(code, detail)
-    # 兜底：未知错误
+    # 兜底:未知错误
     logger.error(f"[download_file] 未知错误: {e}")
     return build_error(ERR_NET_UNKNOWN, f"下载异常: {str(e)}")
 
 
 async def _stream_download(client: HTTPClient, url: str, dest_path: str,
                            headers: dict, chunk_size: int = 8192) -> Tuple[int, str, int]:
-    """流式下载文件到本地，返回 (downloaded_bytes, content_type, total_bytes) — 小健 2026-05-25"""
+    """流式下载文件到本地,返回 (downloaded_bytes, content_type, total_bytes) — 小健 2026-05-25"""
     async with client.stream("GET", url, headers=headers) as response:
         response.raise_for_status()
         content_type = response.headers.get("content-type", "")
@@ -313,7 +313,7 @@ async def download_file(
 
         return build_success(
             {"file_path": dest_path, "file_size": downloaded, "total_size": total_bytes, "content_type": content_type},
-            f"文件下载成功 ({downloaded}/{total_bytes} 字节)：{dest_path}",
+            f"文件下载成功 ({downloaded}/{total_bytes} 字节):{dest_path}",
             llm_data={"路径": dest_path, "大小": downloaded, "类型": content_type},
             next_actions=build_next_actions([("read_file", "读取下载的文件", "需要查看时")]),
         )
@@ -350,7 +350,7 @@ def _build_media_result(url: str, mime: str, raw_bytes: bytes, extract_format: s
     return build_success(
         {
             "url": url,
-            "content": f"[{mime} 文件，大小: {len(raw_bytes)} 字节]",
+            "content": f"[{mime} 文件,大小: {len(raw_bytes)} 字节]",
             "format": extract_format,
             "content_type": mime,
             "status_code": response_status,
@@ -409,7 +409,7 @@ async def fetch_webpage(
     max_tokens: int = 8000,
     proxy: Optional[str] = None,
 ) -> dict:
-    """获取网页内容 — 小沈 2026-05-19 精简参数(8→7)；小健 2026-05-25 重构 — 小健 2026-05-25"""
+    """获取网页内容 — 小沈 2026-05-19 精简参数(8→7);小健 2026-05-25 重构 — 小健 2026-05-25"""
     timeout_sec = timeout / 1000.0
 
     try:
@@ -419,7 +419,7 @@ async def fetch_webpage(
 
         net_info = _check_network()
         if not net_info["data"]["connected"]:
-            return build_error(ERR_NETWORK_DOWN, "网络不可用，无法发送请求")
+            return build_error(ERR_NETWORK_DOWN, "网络不可用,无法发送请求")
 
         headers = {
             "User-Agent": BROWSER_USER_AGENT,
@@ -442,7 +442,7 @@ async def fetch_webpage(
                 response = await client.get(url, headers=headers)
 
                 if response.status_code == 403 and response.headers.get("cf-mitigated") == "challenge":
-                    logger.info(f"[fetch_webpage] Cloudflare挑战检测，降级UA重试: {url}")
+                    logger.info(f"[fetch_webpage] Cloudflare挑战检测,降级UA重试: {url}")
                     simple_headers = dict(headers)
                     simple_headers["User-Agent"] = BROWSER_USER_AGENT
                     response = await client.get(url, headers=simple_headers)
@@ -480,7 +480,7 @@ async def fetch_webpage(
 
         return build_success(
             truncate_data_for_frontend(result_data),
-            f"成功获取网页内容（{extract_format}格式）" + ("（已截断）" if truncated else ""),
+            f"成功获取网页内容({extract_format}格式)" + ("(已截断)" if truncated else ""),
             llm_data={
                 "URL": url, "格式": extract_format, "状态码": result_data.get("status_code"),
                 "内容预览": _content_for_llm, "截断": truncated
@@ -489,11 +489,11 @@ async def fetch_webpage(
         )
 
     except httpx.TimeoutException:
-        return build_error(ERR_NETWORK_TIMEOUT, f"获取网页超时（{timeout_sec:.1f}秒）：{url}")
+        return build_error(ERR_NETWORK_TIMEOUT, f"获取网页超时({timeout_sec:.1f}秒):{url}")
     except httpx.HTTPStatusError as e:
-        return build_error(ERR_NETWORK_HTTP_ERROR, f"获取网页失败 (HTTP {e.response.status_code})：{url}")
+        return build_error(ERR_NETWORK_HTTP_ERROR, f"获取网页失败 (HTTP {e.response.status_code}):{url}")
     except httpx.RequestError as e:
-        return build_error(ERR_NETWORK_REQUEST_ERROR, f"网络请求失败：{str(e)}")
+        return build_error(ERR_NETWORK_REQUEST_ERROR, f"网络请求失败:{str(e)}")
     except Exception as e:
         logger.error(f"[fetch_webpage] 未知错误: {e}")
         return build_error(ERR_NET_UNKNOWN, f"获取网页异常: {str(e)}")
@@ -553,16 +553,16 @@ def _parse_exa_results(text: str, num_results: int) -> Optional[List[Dict[str, s
 
 async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: Optional[str] = None) -> Optional[List[dict]]:
     """MCP搜索引擎统一入口 - 小沈 2026-05-17
-    合并 _search_parallel_mcp + _search_exa_mcp，消除约80行重复代码。
+    合并 _search_parallel_mcp + _search_exa_mcp,消除约80行重复代码。
     
     Args:
         engine: "parallel" | "exa"
         query: 搜索关键词
         num_results: 结果数量
-        proxy: 代理服务器地址（小沈 2026-05-19 修复：新增proxy参数）
+        proxy: 代理服务器地址(小沈 2026-05-19 修复:新增proxy参数)
     
     Returns:
-        搜索结果列表或None（失败时）
+        搜索结果列表或None(失败时)
     """
     config = _MCP_CONFIGS.get(engine)
     if not config:
@@ -624,19 +624,19 @@ async def search_web(
         if len(query) < 2:
             return build_error(ERR_PARAM_INVALID, "搜索查询至少需要2个字符")
         
-    # ===== 第一引擎：Parallel MCP =====
+    # ===== 第一引擎:Parallel MCP =====
         results = await _search_mcp_engine("parallel", query, num_results, proxy)
         engine_used = "Parallel"
         
-        # ===== 第二引擎：Exa MCP =====
+        # ===== 第二引擎:Exa MCP =====
         if results is None:
-            logger.info("[search_web] Parallel失败，降级到Exa MCP搜索")
+            logger.info("[search_web] Parallel失败,降级到Exa MCP搜索")
             results = await _search_mcp_engine("exa", query, num_results, proxy)
             engine_used = "Exa"
         
-        # ===== 第三引擎：Bing中国 =====
+        # ===== 第三引擎:Bing中国 =====
         if results is None:
-            logger.info("[search_web] Exa失败，降级到Bing中国搜索")
+            logger.info("[search_web] Exa失败,降级到Bing中国搜索")
             try:  # 小健 2026-05-19: 包裹try/except, Bing网络错误不应导致整个search_web崩溃
                 results = await _search_bing(query, num_results, proxy)
                 engine_used = "Bing"
@@ -675,7 +675,7 @@ async def search_web(
                 "total": len(results),
                 "engine": engine_used,
             },
-            f"找到 {len(results)} 条搜索结果（{engine_used}）",
+            f"找到 {len(results)} 条搜索结果({engine_used})",
             llm_data={
                 "搜索引擎": engine_used,
                 "查询词": query,
@@ -695,8 +695,8 @@ async def _search_bing(
     num_results: int,
     proxy_config: Optional[str] = None,
 ) -> List[dict]:
-    """Bing搜索（HTML解析）- 小沈 2026-05-07, 小健 2026-05-19 proxy_config改字符串
-    国内可访问，无需API Key，解析搜索结果页HTML
+    """Bing搜索(HTML解析)- 小沈 2026-05-07, 小健 2026-05-19 proxy_config改字符串
+    国内可访问,无需API Key,解析搜索结果页HTML
     """
     headers = {
         "User-Agent": BROWSER_USER_AGENT,
@@ -710,25 +710,25 @@ async def _search_bing(
     
     results = []
     # Bing搜索结果在 <li class="b_algo"> 块中
-    # URL在 <a href="..."> 中，标题在 <h2> 中，摘要在 <p> 或 <div class="b_caption"><p> 中
+    # URL在 <a href="..."> 中,标题在 <h2> 中,摘要在 <p> 或 <div class="b_caption"><p> 中
     algo_blocks = re.split(r'<li\s+class="b_algo"', html)
     for block in algo_blocks[1:]:
         if len(results) >= num_results:
             break
-        # 提取URL：优先找非bing.com的外部链接，其次是bing.com/ck/a跳转链接
+        # 提取URL:优先找非bing.com的外部链接,其次是bing.com/ck/a跳转链接
         a_match = re.search(r'<a[^>]+href="(https?://[^"]+)"[^>]*>', block[:3000])
         if not a_match:
             continue
         url = a_match.group(1)
-        # 【2026-05-13 小沈】Bing现在所有结果都用ck/a跳转链接，没有直接外部URL
-        # HTTP跟随跳转会返回原URL（无法解码），所以直接保留ck/a链接作为结果
+        # 【2026-05-13 小沈】Bing现在所有结果都用ck/a跳转链接,没有直接外部URL
+        # HTTP跟随跳转会返回原URL(无法解码),所以直接保留ck/a链接作为结果
         if "bing.com/ck/a" in url:
-            # 保留跳转链接，用户点击后会被重定向到真实网站
+            # 保留跳转链接,用户点击后会被重定向到真实网站
             pass
         elif "bing.com" in url or "microsoft.com" in url:
             continue
         
-        # 提取标题：优先从<h2>取（Bing的真实标题在h2中）
+        # 提取标题:优先从<h2>取(Bing的真实标题在h2中)
         h2_match = re.search(r'<h2[^>]*>(.*?)</h2>', block[:3000], re.DOTALL)
         if h2_match:
             title = HTML_TAG_PATTERN.sub('', h2_match.group(1)).strip()
@@ -749,7 +749,7 @@ async def _search_bing(
             results.append({"title": title, "url": url, "snippet": snippet, "source": "Bing"})
     
     if not results:
-        logger.warning("[_search_bing] 主解析未提取到结果，尝试简易模式")
+        logger.warning("[_search_bing] 主解析未提取到结果,尝试简易模式")
         href_pattern = re.compile(r'<a\s+href="(https?://[^"]+)"[^>]*>(.*?)</a>', re.DOTALL)
         for match in href_pattern.finditer(html):
             url = match.group(1)
@@ -776,7 +776,7 @@ def _build_ping_cmd(host: str, count: int, timeout: int) -> List[str]:
 
 
 def _parse_ping_output(raw_output: str, system: str) -> dict:
-    """解析ping输出，返回 {sent, received, lost, loss%, min, avg, max, reachable} — 小沈 2026-05-25 重构"""
+    """解析ping输出,返回 {sent, received, lost, loss%, min, avg, max, reachable} — 小沈 2026-05-25 重构"""
     result = {"packets_sent": 0, "packets_received": 0, "packets_lost": 0, "loss_rate": 0.0,
               "min_latency": None, "avg_latency": None, "max_latency": None, "is_reachable": False}
     if system == "windows":
@@ -824,15 +824,15 @@ def _build_ping_result(host: str, raw_output: str, parsed: dict) -> dict:
         data.update(packets_received=0, packets_lost=parsed["packets_sent"],
                      loss_rate=100.0, min_latency=None, avg_latency=None, max_latency=None)
 
-    msg = f"Ping测试{'成功' if reachable else '失败'}：{host}{' 可达' if reachable else ' 不可达'}"
+    msg = f"Ping测试{'成功' if reachable else '失败'}:{host}{' 可达' if reachable else ' 不可达'}"
     if reachable:
         avg = parsed.get("avg_latency")
-        msg += f"，平均延迟 {avg if avg is not None else 'N/A'} ms"
+        msg += f",平均延迟 {avg if avg is not None else 'N/A'} ms"
     return build_success(data, msg, llm_data=llm)
 
 
 async def _ping(host: str, count: int = 4, timeout: int = 5) -> dict:
-    """Ping测试（内部函数） — 小沈 2026-05-25 重构"""
+    """Ping测试(内部函数) — 小沈 2026-05-25 重构"""
     try:
         if not host or not host.strip():
             return build_error(ERR_NETWORK_INVALID_HOST, "目标主机地址不能为空")
@@ -842,7 +842,7 @@ async def _ping(host: str, count: int = 4, timeout: int = 5) -> dict:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=count * timeout + 10)
             raw_output = result.stdout
         except subprocess.TimeoutExpired:
-            return build_error(ERR_NETWORK_TIMEOUT, f"Ping超时（{count * timeout + 10}秒）")
+            return build_error(ERR_NETWORK_TIMEOUT, f"Ping超时({count * timeout + 10}秒)")
         except FileNotFoundError:
             return build_error(ERR_SHELL_COMMAND_NOT_FOUND, "系统ping命令不可用")
 
@@ -872,9 +872,9 @@ async def _port_check(
     使用socket连接测试端口是否开放。
     
     参数:
-        host: 目标主机地址（域名或IP）
-        port: 端口号（1-65535）
-        timeout: 连接超时时间（秒）
+        host: 目标主机地址(域名或IP)
+        port: 端口号(1-65535)
+        timeout: 连接超时时间(秒)
     
     返回:
         {
@@ -883,12 +883,12 @@ async def _port_check(
                 "host": "目标主机",
                 "port": 端口号,
                 "is_open": 是否开放,
-                "service": 服务名称（如果已知）,
+                "service": 服务名称(如果已知),
             },
             "message": "描述信息"
         }
     """
-    # 【24.5.4 重构后主函数】~50行，统一 E1b 为 build_error
+    # 【24.5.4 重构后主函数】~50行,统一 E1b 为 build_error
     try:
         if not host or not host.strip():
             return build_error(ERR_NETWORK_INVALID_HOST, "目标主机地址不能为空")
@@ -937,11 +937,11 @@ async def network_diagnose(
     【2026-05-17 小沈】合并 ping + port_check
 
     Args:
-        host: 目标主机地址（域名或IP）
+        host: 目标主机地址(域名或IP)
         mode: 诊断模式。ping=ICMP可达性检测(主机级), port=TCP端口检测(服务级)
-        port: 目标端口号（mode="port"时必填，mode="ping"时忽略）
-        count: ping次数（mode="ping"时生效，默认4次）
-        timeout: 超时秒数，默认5
+        port: 目标端口号(mode="port"时必填,mode="ping"时忽略)
+        count: ping次数(mode="ping"时生效,默认4次)
+        timeout: 超时秒数,默认5
 
     Returns:
         {code, data, message}
@@ -953,7 +953,7 @@ async def network_diagnose(
             return build_error(ERR_MISSING_PARAM, "mode='port'时port参数必填")
         result = await _port_check(host=host, port=port, timeout=timeout)
     else:
-        return build_error(ERR_INVALID_MODE, f"无效的诊断模式: {mode}，必须是 ping 或 port")
+        return build_error(ERR_INVALID_MODE, f"无效的诊断模式: {mode},必须是 ping 或 port")
 
     if result.get("code") == SUCCESS_CODE:
         result["next_actions"] = build_next_actions([("network_diagnose", "深入诊断", "需要切换ping/port模式进一步检测时")])

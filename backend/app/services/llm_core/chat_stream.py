@@ -11,13 +11,13 @@ from app.services.llm.core import StreamChunk
 
 
 class ChatStreamMixin:
-    """chat_stream 流式对话（SRP）"""
+    """chat_stream 流式对话(SRP)"""
 
     async def chat_stream(
         self,
         message: str,
         history: Optional[List[Dict]] = None,
     ) -> AsyncGenerator[StreamChunk, None]:
-        """复制自 llm_core.py 第269-272行 — 发送对话请求（流式返回）"""
+        """复制自 llm_core.py 第269-272行 — 发送对话请求(流式返回)"""
         async for chunk in self.chat_with_tools_stream(message, history):
             yield chunk

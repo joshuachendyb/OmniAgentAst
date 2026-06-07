@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-结果构建模块（第4层 - 依赖 _utils, _tool_params）
+结果构建模块(第4层 - 依赖 _utils, _tool_params)
 
 重写记录 — 小欧 2026-06-07:
 - TYPE-3: 4次 isinstance(data, dict) 用 type_guards.validate_data_dict 统一
@@ -176,7 +176,7 @@ def _resolve_return_type(data: Dict) -> Dict[str, Any]:
             None, None, result_text or content, None, pending)
 
     if not tool_name:
-        logger.warning(f"[_create_action_result_from_dict] tool_name为空，降级为implicit")
+        logger.warning(f"[_create_action_result_from_dict] tool_name为空,降级为implicit")
         return _make_action_result_dict(
             "implicit", thought, content, reasoning,
             None, None, content or thought, None, pending)
@@ -224,14 +224,14 @@ def _convert_function_calling_items(items: List[Dict]) -> List[Dict]:
 
 def _create_action_result_from_list(data: List) -> Dict[str, Any]:
     if not data:
-        logger.info(f"[parse_react_response] list为空，返回parse_error")
+        logger.info(f"[parse_react_response] list为空,返回parse_error")
         return _make_action_result_dict(
             "parse_error", "", "", None, None, "", "Empty list input from LLM"
         )
 
     valid_items = [item for item in data if isinstance(item, dict)]
     if not valid_items:
-        logger.info(f"[parse_react_response] list中无有效dict元素，返回parse_error")
+        logger.info(f"[parse_react_response] list中无有效dict元素,返回parse_error")
         return _make_action_result_dict(
             "parse_error", "", "", None, None, "", "No valid dict items in list"
         )
@@ -253,7 +253,7 @@ def _create_action_result_from_list(data: List) -> Dict[str, Any]:
         if pending_calls:
             last_item["_pending_calls"] = pending_calls
 
-    logger.info(f"[parse_react_response] list解析成功，使用最后一个元素")
+    logger.info(f"[parse_react_response] list解析成功,使用最后一个元素")
     return _create_action_result_from_dict(last_item)
 
 

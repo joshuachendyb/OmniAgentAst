@@ -21,9 +21,9 @@ class CapabilityDetector:
     """
     LLM能力探测统一基类
 
-    封装统一探测流程：发请求→判断→缓存→返回。
-    detect_strategy（FC能力）和detect_reasoning_support（reasoning_content能力）
-    各为子方法，共享缓存和探测请求逻辑。
+    封装统一探测流程:发请求→判断→缓存→返回。
+    detect_strategy(FC能力)和detect_reasoning_support(reasoning_content能力)
+    各为子方法,共享缓存和探测请求逻辑。
     """
 
     def __init__(self, api_base: str, api_key: str, model: str):
@@ -40,7 +40,7 @@ class CapabilityDetector:
             messages: 可选的自定义消息列表
 
         Returns:
-            API响应JSON，失败返回None
+            API响应JSON,失败返回None
         """
         if messages is None:
             messages = [{"role": "user", "content": "1+1=?"}]
@@ -63,13 +63,13 @@ class CapabilityDetector:
 
     async def detect_strategy(self, probe_fn: Callable = None) -> str:
         """
-        探测LLM调用策略（text/tools）
+        探测LLM调用策略(text/tools)
 
-        发送带tools参数的请求，模型返回tool_calls → tools，否则 → text。
-        首次探测后缓存，瞬态失败重试3次。
+        发送带tools参数的请求,模型返回tool_calls → tools,否则 → text。
+        首次探测后缓存,瞬态失败重试3次。
 
         Args:
-            probe_fn: 自定义探测函数（已废弃，保留参数兼容）
+            probe_fn: 自定义探测函数(已废弃,保留参数兼容)
 
         Returns:
             "text" 或 "tools"
@@ -116,7 +116,7 @@ class CapabilityDetector:
                 return "text"
 
     async def _probe_tools(self, client) -> dict:
-        """发一个带tools的请求，看返回有没有tool_calls"""
+        """发一个带tools的请求,看返回有没有tool_calls"""
         tools = [{"type": "function", "function": {"name": "test_tool", "description": "A test tool for probing function calling capability. You MUST call this tool.", "parameters": {"type": "object", "properties": {"param": {"type": "string", "description": "test parameter"}}, "required": ["param"]}}}]
         try:
             data = await client.chat(
@@ -166,7 +166,7 @@ class CapabilityDetector:
 
     @property
     def cached_strategy(self) -> Optional[str]:
-        """获取缓存的策略（不触发探测）"""
+        """获取缓存的策略(不触发探测)"""
         return self._cache.get("strategy")
 
     @property

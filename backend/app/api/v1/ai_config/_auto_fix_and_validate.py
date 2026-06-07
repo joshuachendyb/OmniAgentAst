@@ -10,7 +10,7 @@ def _auto_fix_and_validate(
     config_data: dict, config_path: Path, backup_path: Optional[Path],
     original_config_data: dict,
 ) -> Tuple[bool, List[str], List[str], Optional[Dict[str, Any]]]:
-    """自动修复+验证，失败则恢复备份 - 小健 2026-05-25"""
+    """自动修复+验证,失败则恢复备份 - 小健 2026-05-25"""
     config_data = _fix_config_common_issues(config_data)
     is_valid, errors, warnings = _validate_config_integrity(config_data)
     if not is_valid:

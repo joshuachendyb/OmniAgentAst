@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-消息ID追踪 — 从messages.py拆出（SRP）
+消息ID追踪 — 从messages.py拆出(SRP)
 
-存储每个session的消息ID，提供线程安全的追踪功能
-重构: 2026-05-31 小健 - 从messages.py提取（问题21修复）
+存储每个session的消息ID,提供线程安全的追踪功能
+重构: 2026-05-31 小健 - 从messages.py提取(问题21修复)
 """
 
 import threading

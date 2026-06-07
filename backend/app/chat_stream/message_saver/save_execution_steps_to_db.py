@@ -44,6 +44,6 @@ async def save_execution_steps_to_db(
         if "会话不存在" in str(e) or "404" in str(e):
             if len(_INVALID_SESSION_IDS) < INVALID_SESSION_IDS_MAX:
                 _INVALID_SESSION_IDS.add(session_id)
-            logger.warning(f"[Save] 会话不存在，已标记跳过: session_id={session_id}, 缓存大小={len(_INVALID_SESSION_IDS)}")
+            logger.warning(f"[Save] 会话不存在,已标记跳过: session_id={session_id}, 缓存大小={len(_INVALID_SESSION_IDS)}")
         else:
             logger.error(f"[Save] 保存失败: {e}", exc_info=True)

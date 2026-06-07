@@ -1,15 +1,15 @@
 """
 统一错误分类模块
 
-责任：统一所有错误分类逻辑，消除3处重复实现
-设计原则：单一职责、单一入口、集中管理
+责任:统一所有错误分类逻辑,消除3处重复实现
+设计原则:单一职责、单一入口、集中管理
 
-目前存在的错误分类分散问题：
+目前存在的错误分类分散问题:
 1. chat_stream/error_handler.py: classify_error函数
 2. services/agent/tool_executor.py: ErrorClassifier类
 3. 其他地方可能也有错误分类逻辑
 
-本模块将所有错误分类逻辑统一到一处，提供单一入口函数。
+本模块将所有错误分类逻辑统一到一处,提供单一入口函数。
 """
 
 import asyncio
@@ -164,23 +164,23 @@ PATTERN_ERROR_ENTRIES = [
 # 错误类型到用户友好消息的映射
 # 合并自 constants.py ERROR_TYPE_MAP 的详细消息文本 — 小沈 2026-05-28
 ERROR_TYPE_TO_MESSAGE: Dict[ErrorCategory, Tuple[str, str]] = {
-    ErrorCategory.TIMEOUT: ("timeout", "请求超时，请重试"),
-    ErrorCategory.PERMISSION_DENIED: ("permission_denied", "权限不足，请检查您的权限设置"),
-    ErrorCategory.FILE_NOT_FOUND: ("file_not_found", "文件未找到，请检查文件路径"),
-    ErrorCategory.INVALID_PARAMS: ("invalid_params", "参数错误，请检查输入参数"),
+    ErrorCategory.TIMEOUT: ("timeout", "请求超时,请重试"),
+    ErrorCategory.PERMISSION_DENIED: ("permission_denied", "权限不足,请检查您的权限设置"),
+    ErrorCategory.FILE_NOT_FOUND: ("file_not_found", "文件未找到,请检查文件路径"),
+    ErrorCategory.INVALID_PARAMS: ("invalid_params", "参数错误,请检查输入参数"),
     ErrorCategory.TOOL_NOT_FOUND: ("tool_not_found", "工具未找到"),
-    ErrorCategory.CIRCUIT_OPEN: ("circuit_open", "服务暂时不可用，请稍后重试"),
-    ErrorCategory.NETWORK: ("network", "网络错误，请检查网络连接"),
-    ErrorCategory.CONNECT: ("connect", "连接失败，请检查网络"),
-    ErrorCategory.PROTOCOL: ("protocol", "协议错误，请重试"),
-    ErrorCategory.SERVER: ("server", "服务器错误，请稍后重试或更换模型"),
-    ErrorCategory.API_RATE_LIMIT: ("api_error_429", "API请求过于频繁 (errorcode=429)，请稍后再试或更换模型"),
-    ErrorCategory.API_UNAUTHORIZED: ("api_error_401", "API认证失败 (errorcode=401)，请检查API密钥配置"),
-    ErrorCategory.API_FORBIDDEN: ("api_error_403", "API访问被拒绝 (errorcode=403)，请检查API权限配置"),
-    ErrorCategory.API_BAD_REQUEST: ("api_error_400", "API请求参数错误 (errorcode=400)，请检查输入内容"),
-    ErrorCategory.UNKNOWN: ("unknown", "AI 处理异常，请稍后重试"),
-    ErrorCategory.EMPTY_RESPONSE: ("empty_response", "AI服务返回空响应，请稍后重试"),
-    ErrorCategory.IDLE_TIMEOUT: ("idle_timeout", "请求超时：AI模型30秒内未返回任何内容，已重试3次，请更换问题或稍后重试"),
+    ErrorCategory.CIRCUIT_OPEN: ("circuit_open", "服务暂时不可用,请稍后重试"),
+    ErrorCategory.NETWORK: ("network", "网络错误,请检查网络连接"),
+    ErrorCategory.CONNECT: ("connect", "连接失败,请检查网络"),
+    ErrorCategory.PROTOCOL: ("protocol", "协议错误,请重试"),
+    ErrorCategory.SERVER: ("server", "服务器错误,请稍后重试或更换模型"),
+    ErrorCategory.API_RATE_LIMIT: ("api_error_429", "API请求过于频繁 (errorcode=429),请稍后再试或更换模型"),
+    ErrorCategory.API_UNAUTHORIZED: ("api_error_401", "API认证失败 (errorcode=401),请检查API密钥配置"),
+    ErrorCategory.API_FORBIDDEN: ("api_error_403", "API访问被拒绝 (errorcode=403),请检查API权限配置"),
+    ErrorCategory.API_BAD_REQUEST: ("api_error_400", "API请求参数错误 (errorcode=400),请检查输入内容"),
+    ErrorCategory.UNKNOWN: ("unknown", "AI 处理异常,请稍后重试"),
+    ErrorCategory.EMPTY_RESPONSE: ("empty_response", "AI服务返回空响应,请稍后重试"),
+    ErrorCategory.IDLE_TIMEOUT: ("idle_timeout", "请求超时:AI模型30秒内未返回任何内容,已重试3次,请更换问题或稍后重试"),
 }
 
 
@@ -201,7 +201,7 @@ class UnifiedErrorClassifier:
         error_type = type(error).__name__
         error_msg = str(error).lower()
         
-        # 特殊处理：IdleTimeoutError
+        # 特殊处理:IdleTimeoutError
         if IdleTimeoutError and isinstance(error, IdleTimeoutError):
             return ErrorCategory.IDLE_TIMEOUT
         
@@ -246,10 +246,10 @@ class UnifiedErrorClassifier:
     @staticmethod
     def classify_error_message(error_type: str, error_message: str = "") -> Tuple[str, str]:
         """
-        根据错误类型字符串分类，获取用户友好的错误信息
+        根据错误类型字符串分类,获取用户友好的错误信息
         
         Args:
-            error_type: 错误类型标识（如 "api_error_429", "connect", "timeout"）
+            error_type: 错误类型标识(如 "api_error_429", "connect", "timeout")
             error_message: 原始错误信息
             
         Returns:
@@ -302,6 +302,30 @@ class UnifiedErrorClassifier:
         """
         if not error_message:
             return (False, None)
+    
+    @staticmethod
+    def extract_api_error_detail(error_message: str) -> str:
+        """从API错误JSON中提取message/type/param/code — 小欧 2026-06-07
+        
+        合并自 error_handler._extract_message_and_type,消除分散逻辑
+        """
+        if not error_message:
+            return ""
+        json_match = re.search(r'\{["\']?error["\']?\s*:\s*\{([^}]+)\}', str(error_message), re.IGNORECASE)
+        if not json_match:
+            return ""
+        inner = json_match.group(1)
+        parts = []
+        for key, pattern in [
+            ("message", r'["\']?message["\']?\s*:\s*["\']([^"\']+)["\']'),
+            ("type", r'["\']?type["\']?\s*:\s*["\']([^"\']+)["\']'),
+            ("param", r'["\']?param["\']?\s*:\s*["\']([^"\']*)["\']'),
+            ("code", r'["\']?code["\']?\s*:\s*["\']([^"\']+)["\']'),
+        ]:
+            m = re.search(pattern, inner, re.IGNORECASE)
+            if m and (key != "param" or m.group(1)):
+                parts.append(f"{key}={m.group(1)}")
+        return ", ".join(parts)
         
         # 检查HTTP状态码
         for match in re.finditer(r'\b(\d{3})\b', error_message):

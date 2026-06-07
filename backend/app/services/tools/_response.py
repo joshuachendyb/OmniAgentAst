@@ -2,13 +2,13 @@
 统一工具返回结构定义 — 小健 2026-05-21
 
 【10大原则规范 2026-05-30 小健】
-- SRP: 仅提供3个build函数（build_success/error/warning），is_success/is_error已独立到 response_utils.py
-- 禁止向后兼容: is_success/is_error重导出已删除，调用者必须从 response_utils.py 导入
+- SRP: 仅提供3个build函数(build_success/error/warning),is_success/is_error已独立到 response_utils.py
+- 禁止向后兼容: is_success/is_error重导出已删除,调用者必须从 response_utils.py 导入
 
 【分层规范 - 小健 2026-05-27】
-本文件属于【工具层】，职责：构建返回dict基础结构（code/data/message + 可选字段）
+本文件属于【工具层】,职责:构建返回dict基础结构(code/data/message + 可选字段)
 
-三层职责边界（严格遵守）：
+三层职责边界(严格遵守):
   _response.py (工具层)
     → 提供 build_success / build_error / build_warning
     → 工具函数、helper函数 直接使用这三个函数
@@ -16,17 +16,17 @@
 
   tool_result_utils.py (Agent层)
     → 提供 create_tool_result / create_error_tool_result / create_warning_tool_result
-    → Agent编排层使用（tool_executor、tool_retry_engine等）
-    → 委托工具层构建，追加Agent层特有字段（error_type、metadata等）
+    → Agent编排层使用(tool_executor、tool_retry_engine等)
+    → 委托工具层构建,追加Agent层特有字段(error_type、metadata等)
 
   tool_result_formatter.py (格式化层)
     → LLM observation / 前端SSE / extract_status 格式化
-    → 禁止构建结果，只消费和格式化
+    → 禁止构建结果,只消费和格式化
 
-违反后果：层级混乱，职责不清，代码审查打回
+违反后果:层级混乱,职责不清,代码审查打回
 
 设计原则:
-  1. 必填字段(code/data/message)始终写入，可选字段仅非默认值时写入
+  1. 必填字段(code/data/message)始终写入,可选字段仅非默认值时写入
   2. build_success/build_error/build_warning 三个函数对称完整
 
 字段规范:
@@ -89,7 +89,7 @@ def build_success(
         next_actions: 可选推荐后续操作列表
         retry_count: 可选重试次数(默认0不写入)
         return_direct: 可选是否直接返回前端(默认False不写入)
-        attachment: 可选二进制附件(base64图片/文件等，前端渲染)
+        attachment: 可选二进制附件(base64图片/文件等,前端渲染)
 
     Returns:
         统一格式的dict
@@ -122,7 +122,7 @@ def build_error(
     """构建错误响应
 
     Args:
-        code: 错误码，必须符合三段式: ERR_MODULE_OPERATION_DETAIL
+        code: 错误码,必须符合三段式: ERR_MODULE_OPERATION_DETAIL
         message: 错误描述
         data: 可选附加错误数据(如校验详情)
         warning: 可选附加警告
@@ -158,10 +158,10 @@ def build_warning(
 ) -> Dict[str, Any]:
     """构建警告响应(部分成功/有风险)
 
-    警告code以WARNING_开头，Agent视为成功但需注意
+    警告code以WARNING_开头,Agent视为成功但需注意
 
     Args:
-        code: 警告码，以WARNING_开头
+        code: 警告码,以WARNING_开头
         message: 警告描述
         data: 部分成功的数据
         llm_data: 可选给LLM的数据

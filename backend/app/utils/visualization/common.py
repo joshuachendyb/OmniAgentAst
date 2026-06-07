@@ -13,7 +13,7 @@ from app.utils.logger import logger
 
 @dataclass
 class OperationNode:
-    """操作节点（用于树形结构）"""
+    """操作节点(用于树形结构)"""
     id: str
     type: str
     name: str
@@ -29,7 +29,7 @@ class OperationNode:
 
 @dataclass
 class FlowData:
-    """流程数据（用于Sankey图）"""
+    """流程数据(用于Sankey图)"""
     source: str
     target: str
     value: int
@@ -37,7 +37,7 @@ class FlowData:
 
 
 def query_file_operations(task_id: str) -> List[Tuple]:
-    """查询 file_operations 表，返回所有操作记录（与 generate_html_report 共享）
+    """查询 file_operations 表,返回所有操作记录(与 generate_html_report 共享)
 
     小沈 2026-05-25 重构拆分
     """
@@ -54,7 +54,7 @@ def query_file_operations(task_id: str) -> List[Tuple]:
 
 
 def count_op_stats(operations: List[Tuple]) -> Dict[str, int]:
-    """统计操作状态分布，返回 {total, success, failed, rolled_back}
+    """统计操作状态分布,返回 {total, success, failed, rolled_back}
 
     小沈 2026-05-25 重构拆分
     """

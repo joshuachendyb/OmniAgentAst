@@ -1,7 +1,7 @@
 """
 流式执行过程API路由
 提供执行过程的SSE流式输出
-重构: 2026-05-31 小健 - ExecutionStep移至共享models（问题19修复）
+重构: 2026-05-31 小健 - ExecutionStep移至共享models(问题19修复)
 """
 
 import json
@@ -48,20 +48,20 @@ async def _generate_execution_stream(session_id: str):
             yield "event: error\ndata: {\"error\": \"会话不存在或没有消息\"}\n\n"
             return
         
-        # 遍历所有消息，构建执行步骤流
+        # 遍历所有消息,构建执行步骤流
         for row in rows:
             role = row['role']
             content = row['content']
             execution_steps_json = row['execution_steps']
             
             if role == 'user':
-                # 用户消息，发送thought事件
+                # 用户消息,发送thought事件
                 yield f"event: step\ndata: {json.dumps(ExecutionStep('thought', f'用户: {content}').to_dict(), ensure_ascii=False)}\n\n"
             
             elif role == 'assistant':
                 # AI回复
                 if execution_steps_json:
-                    # 有执行步骤，解析并发送
+                    # 有执行步骤,解析并发送
                     try:
                         steps = json.loads(execution_steps_json)
                         if isinstance(steps, list):
@@ -76,7 +76,7 @@ async def _generate_execution_stream(session_id: str):
                                     timestamp=step.get('timestamp', create_timestamp())
                                 ).to_dict()
                                 yield f"event: step\ndata: {json.dumps(step_data, ensure_ascii=False)}\n\n"
-                                # 添加小延迟，模拟流式输出
+                                # 添加小延迟,模拟流式输出
                                 await asyncio.sleep(0.1)
                         else:
                             # 单个步骤对象
@@ -90,10 +90,10 @@ async def _generate_execution_stream(session_id: str):
                             ).to_dict()
                             yield f"event: step\ndata: {json.dumps(step_data, ensure_ascii=False)}\n\n"
                     except json.JSONDecodeError:
-                        # 解析失败，发送纯文本
+                        # 解析失败,发送纯文本
                         yield f"event: step\ndata: {json.dumps(ExecutionStep('final', content).to_dict(), ensure_ascii=False)}\n\n"
                 else:
-                    # 没有执行步骤，发送最终内容
+                    # 没有执行步骤,发送最终内容
                     yield f"event: step\ndata: {json.dumps(ExecutionStep('final', content).to_dict(), ensure_ascii=False)}\n\n"
         
         # 发送完成事件
@@ -106,13 +106,13 @@ async def _generate_execution_stream(session_id: str):
 @router.get("/chat/execution/{session_id}/stream")
 async def get_execution_stream(session_id: str):
     """
-    获取执行过程（流式）
+    获取执行过程(流式)
     
     通过SSE (Server-Sent Events) 流式返回执行步骤
     
     - **session_id**: 会话ID
     
-    返回SSE格式的流数据，事件类型包括：
+    返回SSE格式的流数据,事件类型包括:
     - thought: AI思考过程
     - action: 工具调用
     - observation: 工具执行结果

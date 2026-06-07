@@ -18,15 +18,15 @@ _TYPE_ORDER = ["string", "integer", "number", "boolean", "object", "array", "nul
 def _fix_schema_types(schema: Dict[str, Any]) -> Dict[str, Any]:
     """修复Pydantic生成的JSON Schema中缺失的type字段 - 小健 2026-05-06, 小沈 2026-05-08, 2026-05-13
     
-    Pydantic V2对Union/Optional/Dict等复杂类型生成anyOf/oneOf，
+    Pydantic V2对Union/Optional/Dict等复杂类型生成anyOf/oneOf,
     导致OpenAI Schema兼容的properties中缺少type字段。
-    此函数遍历properties，为缺少type的字段推断并补上。
+    此函数遍历properties,为缺少type的字段推断并补上。
     
-    【2026-05-13 小沈】不再将Union类型拼成逗号字符串（如"string,array"）。
-    原因是opencode/DeepSeek等API严格校验schema，不认逗号格式。
-    改为保留anyOf结构，这是标准JSON Schema，所有OpenAI兼容API都支持。
-    影响：Parameter Reminder文本中Union类型显示为"any"而非"string,array"，
-    不影响实际API调用（传的是input_schema原样，不是reminder文本）。
+    【2026-05-13 小沈】不再将Union类型拼成逗号字符串(如"string,array")。
+    原因是opencode/DeepSeek等API严格校验schema,不认逗号格式。
+    改为保留anyOf结构,这是标准JSON Schema,所有OpenAI兼容API都支持。
+    影响:Parameter Reminder文本中Union类型显示为"any"而非"string,array",
+    不影响实际API调用(传的是input_schema原样,不是reminder文本)。
     """
     if not schema or 'properties' not in schema:
         return schema
@@ -48,7 +48,7 @@ def _fix_schema_types(schema: Dict[str, Any]) -> Dict[str, Any]:
                 unique_types = list(dict.fromkeys(non_null_types))
                 if len(unique_types) == 1:
                     prop_info['type'] = unique_types[0]
-                # 多个类型：保留anyOf结构，不合并为逗号字符串（opencode/deepseek等API不兼容逗号格式）
+                # 多个类型:保留anyOf结构,不合并为逗号字符串(opencode/deepseek等API不兼容逗号格式)
         
         if 'oneOf' in prop_info and 'type' not in prop_info:
             non_null_types = []
@@ -75,7 +75,7 @@ def _fix_schema_types(schema: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _generate_input_schema(input_model: Optional[Type[BaseModel]], input_schema: Optional[Dict]) -> Dict:
-    """从 input_model 生成 input_schema（优先于传入的 schema — 小健 2026-05-25）"""
+    """从 input_model 生成 input_schema(优先于传入的 schema — 小健 2026-05-25)"""
     if input_model is None:
         return input_schema or {}
     try:

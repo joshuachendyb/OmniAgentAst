@@ -3,7 +3,7 @@
 ExecutionStepsUpdate / ExecutionStep — 从 conversation.py / execution.py 拷出
 
 拷贝来源: conversation.py 第180-194行, execution.py 第17-37行
-重构 ExecutionStep 移入共享models（问题19修复）- 小健 2026-05-31
+重构 ExecutionStep 移入共享models(问题19修复)- 小健 2026-05-31
 """
 
 from typing import Optional, Any, Dict

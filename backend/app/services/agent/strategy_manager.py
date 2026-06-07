@@ -5,7 +5,7 @@ LLM策略管理器 - 统一管理策略探测、升级和生命周期
 重写记录 — 小欧 2026-06-07:
 - EXC-31: L81 改为 (httpx/JSON/属性错误) 分类
 - EXC-32: L109 改为 (httpx/JSON) 分类
-- ARCH-4: 不变（已经是实例属性，_current_strategy 不再是全局单例）
+- ARCH-4: 不变(已经是实例属性,_current_strategy 不再是全局单例)
 
 Author: 小欧 - 2026-06-07
 """
@@ -21,7 +21,7 @@ class LLMStrategyManager:
     """
     LLM调用策略管理器
 
-    负责统一管理LLM调用策略（text/tools）的探测、升级和生命周期。
+    负责统一管理LLM调用策略(text/tools)的探测、升级和生命周期。
     集中处理首次探测、每步重探测、每10步升级等逻辑。
     """
 
@@ -30,10 +30,10 @@ class LLMStrategyManager:
         初始化策略管理器
 
         Args:
-            capability_detector: 能力探测器，用于探测策略
+            capability_detector: 能力探测器,用于探测策略
         """
         self._detector = capability_detector
-        # ARCH-4: 已经是实例属性（非全局单例）
+        # ARCH-4: 已经是实例属性(非全局单例)
         self._current_strategy: Optional[str] = None
         self._call_count: int = 0
 
@@ -41,12 +41,12 @@ class LLMStrategyManager:
         """
         获取当前策略
 
-        规则：
-        1. 首次调用：探测策略
-        2. 每10步重探测：text策略尝试升级到tools
+        规则:
+        1. 首次调用:探测策略
+        2. 每10步重探测:text策略尝试升级到tools
 
         Returns:
-            策略字符串（"text" 或 "tools"）
+            策略字符串("text" 或 "tools")
         """
         self._call_count += 1
 
@@ -56,7 +56,7 @@ class LLMStrategyManager:
             logger.info(f"[策略管理器] 首次探测策略: {self._current_strategy}")
             return self._current_strategy
 
-        # 每10步重探测：text策略尝试升级到tools
+        # 每10步重探测:text策略尝试升级到tools
         if self._call_count % 10 == 0:
             self._current_strategy = await self._auto_upgrade_strategy()
             if self._current_strategy:
@@ -66,13 +66,13 @@ class LLMStrategyManager:
 
     async def _probe_strategy(self) -> str:
         """
-        探测策略（首次调用）
+        探测策略(首次调用)
 
         Returns:
             探测到的策略字符串
         """
         if self._detector is None:
-            logger.warning("[策略管理器] detector为None，降级到text策略")
+            logger.warning("[策略管理器] detector为None,降级到text策略")
             return "text"
 
         # EXC-31 修复: 异常分类 (httpx/JSON/属性错误)
@@ -92,11 +92,11 @@ class LLMStrategyManager:
 
     async def _auto_upgrade_strategy(self) -> str:
         """
-        自动升级策略（每10步）
+        自动升级策略(每10步)
 
-        规则：
-        - 当前是text策略时，尝试探测是否可以升级到tools
-        - 如果探测结果不是text，则升级；否则保持text
+        规则:
+        - 当前是text策略时,尝试探测是否可以升级到tools
+        - 如果探测结果不是text,则升级;否则保持text
 
         Returns:
             升级后的策略字符串
@@ -133,7 +133,7 @@ class LLMStrategyManager:
 
     @property
     def current_strategy(self) -> Optional[str]:
-        """获取当前策略（不触发探测）"""
+        """获取当前策略(不触发探测)"""
         return self._current_strategy
 
     @property

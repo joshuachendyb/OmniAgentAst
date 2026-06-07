@@ -8,7 +8,7 @@ ChunkBuffer — chunk拼接、阈值检测、flush管理 — 小沈 2026-05-25
 # 【3.9修复 北京老陈 2026-05-31】阈值统一从constants.py读取
 from app.constants import MAX_CONSECUTIVE_CHUNKS
 
-# chunk累积超时：连续收到多少个chunk未触发promote则强制停止
+# chunk累积超时:连续收到多少个chunk未触发promote则强制停止
 # 防止LLM持续返回chunk导致无限循环
 MAX_CHUNKS_WITHOUT_PROMOTE = 50
 
@@ -29,11 +29,11 @@ class ChunkBuffer:
             content = buffer.flush()
 
     返回数据说明:
-        - append: 无返回值，修改内部状态
-        - should_promote: 返回bool，True表示连续chunk数达到阈值
-        - should_force_stop: 返回bool，True表示累积超时需强制停止
-        - flush: 返回str（buffer内容），同时清空buffer
-        - clear: 无返回值，仅清空buffer和计数器
+        - append: 无返回值,修改内部状态
+        - should_promote: 返回bool,True表示连续chunk数达到阈值
+        - should_force_stop: 返回bool,True表示累积超时需强制停止
+        - flush: 返回str(buffer内容),同时清空buffer
+        - clear: 无返回值,仅清空buffer和计数器
 
     Author: 小沈 2026-05-25
     """
@@ -55,14 +55,14 @@ class ChunkBuffer:
         """chunk累积超时需强制停止时返回True
         
         【3.9修复 北京老陈 2026-05-31】防止LLM持续返回chunk导致无限循环
-        只有连续chunk未触发promote时才计数，promote后重置
+        只有连续chunk未触发promote时才计数,promote后重置
         """
         return self.consecutive_count >= MAX_CHUNKS_WITHOUT_PROMOTE
 
     def flush(self) -> str:
         """清空buffer并返回内容 — 纯buffer管理
         
-        【3.9修复 北京老陈 2026-05-31】分离buffer管理和builder操作（SLAP）
+        【3.9修复 北京老陈 2026-05-31】分离buffer管理和builder操作(SLAP)
         """
         result = self.buffer
         self.clear()

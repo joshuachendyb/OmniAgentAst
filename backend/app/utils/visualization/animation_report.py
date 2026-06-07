@@ -1,5 +1,5 @@
 """
-动画报告模块 - 生成文件操作动画展示脚本（HTML+JS）
+动画报告模块 - 生成文件操作动画展示脚本(HTML+JS)
 包含 query_animation_operations, build_animation_data, prepare_animation_data,
      load_template_assets, render_animation_html, generate_animation_script
 小沈 2026-05-29 拆分自 file_visualization.py
@@ -14,7 +14,7 @@ from app.utils.logger import logger
 
 
 def query_animation_operations(task_id: str) -> List[Dict[str, Any]]:
-    """查询指定task_id的文件操作记录（动画用）— 小健 2026-05-25
+    """查询指定task_id的文件操作记录(动画用)— 小健 2026-05-25
 
     使用场景:
     - generate_animation_script中查询操作历史
@@ -23,8 +23,8 @@ def query_animation_operations(task_id: str) -> List[Dict[str, Any]]:
         operations_data = query_animation_operations(task_id)
 
     返回数据说明:
-    - 返回List[Dict[str, Any]]，每个元素包含type/source/destination/status/timestamp
-    - 如果无操作记录，返回空列表
+    - 返回List[Dict[str, Any]],每个元素包含type/source/destination/status/timestamp
+    - 如果无操作记录,返回空列表
     """
     with db.get_conn("operations") as conn:
         cursor = conn.cursor()
@@ -81,7 +81,7 @@ def prepare_animation_data(anim_data: Dict[str, Any], task_id: str) -> Dict[str,
         template_vars = prepare_animation_data(anim_data, task_id)
 
     返回数据说明:
-        - 返回Dict，包含operations_json, task_description, total, success, error, task_id
+        - 返回Dict,包含operations_json, task_description, total, success, error, task_id
     """
     return {
         "operations_json": json.dumps(anim_data["operations"], ensure_ascii=False),
@@ -103,7 +103,7 @@ def load_template_assets() -> Tuple[str, str]:
         css_content, js_content = load_template_assets()
 
     返回数据说明:
-        - 返回Tuple[str, str]，分别是CSS内容和JS内容
+        - 返回Tuple[str, str],分别是CSS内容和JS内容
     """
     template_dir = Path(__file__).parent / "templates"
     css_path = template_dir / "animation.css"
@@ -125,7 +125,7 @@ def render_animation_html(anim_data: Dict[str, Any], task_id: str) -> str:
         html = render_animation_html(anim_data, task_id)
 
     返回数据说明:
-        - 返回str，完整HTML文档字符串
+        - 返回str,完整HTML文档字符串
     """
     template_dir = Path(__file__).parent / "templates"
     env = Environment(loader=FileSystemLoader(template_dir))
@@ -143,11 +143,11 @@ def render_animation_html(anim_data: Dict[str, Any], task_id: str) -> str:
 
 def generate_animation_script(task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
     """
-    生成动画展示脚本（HTML + JavaScript）— 小沈 2026-03-25, 2026-05-25 小健重构拆分
+    生成动画展示脚本(HTML + JavaScript)— 小沈 2026-03-25, 2026-05-25 小健重构拆分
 
     Args:
         task_id: 会话ID
-        task_description: 任务描述（用户消息）
+        task_description: 任务描述(用户消息)
         output_path: 输出路径
 
     Returns:

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-关键词/ReAct 传统解析模块（第5层）
+关键词/ReAct 传统解析模块(第5层)
 
-简化 2026-06-07: 4个 except 改具体异常，不抽函数
+简化 2026-06-07: 4个 except 改具体异常,不抽函数
 """
 import re
 import json
@@ -61,7 +61,7 @@ def _try_keyword_parse(output: str) -> Optional[Dict[str, Any]]:
 
 
 def _make_fallback_result(text: str, is_implicit: bool) -> Dict[str, Any]:
-    error_msg = None if is_implicit else "无法解析LLM响应，所有解析层（JSON/关键词/工具名）都失败"
+    error_msg = None if is_implicit else "无法解析LLM响应,所有解析层(JSON/关键词/工具名)都失败"
     return {
         "type": "implicit" if is_implicit else "parse_error",
         "thought": text, "content": text, "reasoning": text,

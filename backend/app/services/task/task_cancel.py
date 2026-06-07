@@ -27,7 +27,7 @@ async def cancel_task(task_id: str, session_id=None) -> dict:
         running_task.cancel()
         logger.info(f"[Task Cancelled] 任务 {task_id} asyncio.Task.cancel() 已调用")
 
-    # 强制关闭HTTP连接（兜底）
+    # 强制关闭HTTP连接(兜底)
     ai_service = await get_task_field(task_id, "ai_service")
     if ai_service:
         try:
@@ -36,7 +36,7 @@ async def cancel_task(task_id: str, session_id=None) -> dict:
         except Exception as e:
             logger.error(f"[Task Cancelled] 关闭HTTP连接失败: {e}")
 
-    # 设置cancelled状态（含时间戳）
+    # 设置cancelled状态(含时间戳)
     success = await set_cancelled(
         task_id,
         interrupt_time=interrupt_time.isoformat(),
@@ -44,7 +44,7 @@ async def cancel_task(task_id: str, session_id=None) -> dict:
     )
 
     if success:
-        logger.info(f"[Task Cancelled] 任务 {task_id} 已标记为cancelled，保留记录")
+        logger.info(f"[Task Cancelled] 任务 {task_id} 已标记为cancelled,保留记录")
         return {
             "success": True,
             "message": f"任务 {task_id} 已中断",
@@ -52,5 +52,5 @@ async def cancel_task(task_id: str, session_id=None) -> dict:
             "interrupt_time": interrupt_time.isoformat()
         }
     else:
-        logger.warning(f"[TaskControl] 任务 {task_id} 不存在，可能已结束")
+        logger.warning(f"[TaskControl] 任务 {task_id} 不存在,可能已结束")
         return {"success": False, "message": f"任务 {task_id} 不存在", "task_status": "not_found"}

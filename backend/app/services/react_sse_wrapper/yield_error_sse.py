@@ -18,7 +18,7 @@ async def yield_error_sse(
     current_execution_steps, session_id
 ) -> str:
     """复制自 react_sse_wrapper.py 第58-76行"""
-    logger.error(f"{log_tag} 执行出错：task_id={task_id}, error={e}", exc_info=True)
+    logger.error(f"{log_tag} 执行出错:task_id={task_id}, error={e}", exc_info=True)
     error_step_obj = StepFactory.create_error_step(
         step=next_step(), error_type=error_type, error_message=error_label,
         recoverable=False, model=ai_service.model, provider=ai_service.provider

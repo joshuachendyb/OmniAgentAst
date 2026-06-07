@@ -4,15 +4,15 @@
 【重构日期】2026-03-19 小强
 【迁移】2026-03-21 小沈 - 从 agent/prompts.py 迁移到 prompts/file/
 【重构】2026-03-21 小沈 - 继承 BasePrompts 基类
-【增强】2026-03-24 小沈 - 嵌入Prompt中间层（服务器OS信息）
+【增强】2026-03-24 小沈 - 嵌入Prompt中间层(服务器OS信息)
 
-改进点：
-1. 添加参数命名规则（全局约束）
-2. 详细工具描述（每个工具3-5句话）
+改进点:
+1. 添加参数命名规则(全局约束)
+2. 详细工具描述(每个工具3-5句话)
 3. 添加input_examples示例
 4. 统一中英文提示
 5. 继承 BasePrompts 基类
-6. 嵌入服务器OS信息（Prompt中间层）- 2026-03-24
+6. 嵌入服务器OS信息(Prompt中间层)- 2026-03-24
 7. 升级Examples添加reasoning字段 - 2026-04-14
 8. 新增finish示例和result字段 - 2026-04-14
 
@@ -41,7 +41,7 @@ class FileOperationPrompts(BasePrompts):
     def get_system_prompt(self) -> str:
         """获取增强版系统Prompt - 小沈 2026-05-25 重构拆分"""
         system_info = get_system_prompt_string(include_commands=False)
-        logger.info(f"[FileOperationPrompts] get_system_prompt() 被调用，中间层已注入系统信息，长度: {len(system_info)}")
+        logger.info(f"[FileOperationPrompts] get_system_prompt() 被调用,中间层已注入系统信息,长度: {len(system_info)}")
 
         from app.utils.prompt_logger import get_prompt_logger
         prompt_logger = get_prompt_logger()
@@ -78,21 +78,21 @@ Example 3: 写入文件
 {"thought": "用户要写入新文件", "reasoning": "使用write_text_file写入", "tool_name": "write_text_file", "tool_params": {"file_path": "D:/output.txt", "text": "Hello World"}}
 
 Example 4: 任务完成
-{"thought": "文件操作已完成", "reasoning": "全部操作成功，结果已返回", "tool_name": "finish", "tool_params": {"result": "已读取配置文件并完成搜索"}}
+{"thought": "文件操作已完成", "reasoning": "全部操作成功,结果已返回", "tool_name": "finish", "tool_params": {"result": "已读取配置文件并完成搜索"}}
 
 
 【⚠️ P17互斥参数规则 - 极其重要】:
 - read_file: file_paths传1个路径=单文件, 传多个=批量
 - edit_file: old_string 和 edits 不能同时使用
 - rename_file: path 和 directory 不能同时使用
-- archive_tool: compress模式需要source+destination，extract模式需要source
-- file_operation: move/copy需要destination，delete不需要
+- archive_tool: compress模式需要source+destination,extract模式需要source
+- file_operation: move/copy需要destination,delete不需要
 
 【⚠️ write_text_file text规则 - 极其重要】:
-- text参数必须传入实际的文件内容（代码、文本、正文等）
+- text参数必须传入实际的文件内容(代码、文本、正文等)
 - ❌ 绝对禁止将你的思考/计划/状态确认当作text传入
-- ❌ 错误示例: text="已成功创建并写入第一章，需要继续创建第二章"
-- ✅ 正确示例: text="第一章：觉醒
+- ❌ 错误示例: text="已成功创建并写入第一章,需要继续创建第二章"
+- ✅ 正确示例: text="第一章:觉醒
 
 林凡是一名普通的大学生..."""
 
@@ -111,7 +111,7 @@ Example 4: 任务完成
 
 Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
-请完成此文件管理任务，按以下步骤：
+请完成此文件管理任务,按以下步骤:
 1. 分析需要做什么操作
 2. 使用合适的工具完成任务
 3. 用中文总结结果
@@ -129,12 +129,12 @@ Remember:
         格式化观察结果Prompt
         
         Args:
-            observation: 工具执行结果（字符串格式）
+            observation: 工具执行结果(字符串格式)
             
         Returns:
             格式化的观察Prompt
         """
-        # 如果observation是JSON字符串，尝试解析
+        # 如果observation是JSON字符串,尝试解析
         try:
             obs_dict = json.loads(observation) if isinstance(observation, str) else observation
         except (json.JSONDecodeError, TypeError):

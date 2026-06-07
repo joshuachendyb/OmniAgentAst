@@ -45,7 +45,7 @@ def test_resolve_category():
 def test_ai_config_resolver():
     """验证AIConfigResolver存在并被使用"""
     try:
-        from app.services.ai_config_resolver import AIConfigResolver, resolve_provider_model
+        from app.services.ai_config_resolver import AIConfigResolver, get_ai_config_resolver
         from app.config import Config
         
         # 验证Config使用了AIConfigResolver

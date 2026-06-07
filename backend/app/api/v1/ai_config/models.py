@@ -9,8 +9,8 @@ class SecurityConfig(BaseModel):
     contentFilterEnabled: bool = Field(True, description="是否启用内容安全过滤")
     contentFilterLevel: str = Field("medium", description="敏感词过滤级别: low | medium | high")
     whitelistEnabled: bool = Field(False, description="是否启用命令白名单")
-    commandWhitelist: str = Field("", description="命令白名单，每行一个命令")
-    commandBlacklist: str = Field("", description="命令黑名单，每行一个命令")
+    commandWhitelist: str = Field("", description="命令白名单,每行一个命令")
+    commandBlacklist: str = Field("", description="命令黑名单,每行一个命令")
     confirmDangerousOps: bool = Field(True, description="危险操作是否需要二次确认")
     maxFileSize: int = Field(100, description="最大文件操作大小(MB)")
 
@@ -55,7 +55,7 @@ class ModelInfo(BaseModel):
     id: int = Field(..., description="模型ID序号")
     provider: str = Field(..., description="提供商名称(小写)")
     model: str = Field(..., description="模型名称")
-    display_name: str = Field(..., description="显示名称，格式: Provider (model)")
+    display_name: str = Field(..., description="显示名称,格式: Provider (model)")
     current_model: bool = Field(default=False, description="是否为当前模型")
 
 

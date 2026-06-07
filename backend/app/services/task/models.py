@@ -16,7 +16,7 @@ from app.db.models.operation_enums import OperationStatus  # 复用已有枚举
 
 
 class TaskStatus(str, Enum):
-    """任务生命周期状态 — 新增，已有枚举无此定义"""
+    """任务生命周期状态 — 新增,已有枚举无此定义"""
     PENDING = "pending"
     EXECUTING = "executing"
     SUCCESS = "success"
@@ -52,7 +52,7 @@ class OperationRecord(BaseModel):
     source_path: Optional[str] = Field(default=None, description="来源路径")
     destination_path: Optional[str] = Field(default=None, description="目标路径")
     backup_path: Optional[str] = Field(default=None, description="备份路径")
-    file_size: int = Field(default=0, description="文件大小（字节）")
+    file_size: int = Field(default=0, description="文件大小(字节)")
     file_hash: Optional[str] = Field(default=None, description="文件哈希")
     sequence_number: int = Field(default=0, description="操作顺序号")
     details: Optional[str] = Field(default=None, description="JSON 扩展字段")

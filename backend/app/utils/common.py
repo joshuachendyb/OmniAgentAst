@@ -3,9 +3,9 @@
 通用公共函数 — 未归类的公共函数集中于此
 
 【公共函数规范】
-本文件是公共utility模块，所有未归类的公共函数必须在此定义。
-禁止在业务代码（api/v1/、services/等）中重复定义公共函数。
-调用方统一从此处导入：from app.utils.common import xxx
+本文件是公共utility模块,所有未归类的公共函数必须在此定义。
+禁止在业务代码(api/v1/、services/等)中重复定义公共函数。
+调用方统一从此处导入:from app.utils.common import xxx
 
 Author: 小沈 - 2026-05-28
 """
@@ -31,7 +31,7 @@ def extract_display_name_from_steps(execution_steps_data: list) -> Optional[str]
 def build_display_name(provider: str = "", model: str = "") -> str:
     """构建display_name字符串
     
-    统一格式："{provider} ({model})"
+    统一格式:"{provider} ({model})"
     
     Args:
         provider: 提供商名称
@@ -72,9 +72,9 @@ def extract_metadata_from_steps(execution_steps: Optional[List[Dict[str, Any]]])
 
 
 def format_param_value(val: Any) -> str:
-    """将参数默认值格式化为字符串（供LLM提示文本使用）
+    """将参数默认值格式化为字符串(供LLM提示文本使用)
 
-    统一处理：None→""、bool→"true"/"false"、int/float→str()、其他→str()
+    统一处理:None→""、bool→"true"/"false"、int/float→str()、其他→str()
     调用方根据需要加 "default=" 等前缀。
 
     Args:

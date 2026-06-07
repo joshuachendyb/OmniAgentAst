@@ -6,7 +6,7 @@ def _fix_config_common_issues(config_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     自动修复常见的配置问题
 
-    修复内容：
+    修复内容:
     1. 删除所有 provider 下废弃的 model 字段
     """
     ai_config = config_data.get('ai', {})

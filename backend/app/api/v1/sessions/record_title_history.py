@@ -24,4 +24,4 @@ def record_title_history(
         )
         logger.info(f"记录标题历史: session_id={session_id}, old_title={old_title}")
     except Exception:
-        logger.debug("chat_session_title_history表不存在，跳过标题历史记录")
+        logger.debug("chat_session_title_history表不存在,跳过标题历史记录")

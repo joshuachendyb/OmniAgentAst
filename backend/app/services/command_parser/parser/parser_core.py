@@ -1,7 +1,7 @@
 """
 CommandParser — 命令语义解析器 — 核心类
 
-从 parser.py 拆出，遵循 SRP：
+从 parser.py 拆出,遵循 SRP:
 - parse_operation / parse_paths / parse_direction / parse_quantity → 独立文件
 - 本文件只保留 CommandParser 类骨架
 

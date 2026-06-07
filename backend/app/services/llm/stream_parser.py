@@ -2,8 +2,8 @@
 """
 LLM流式响应解析器 — SRP拆分自llm_core.py — 小健 2026-05-27
 
-职责：SSE流解析、HTTP错误处理、取消检测。
-从BaseAIService提取，遵循SRP原则。
+职责:SSE流解析、HTTP错误处理、取消检测。
+从BaseAIService提取,遵循SRP原则。
 
 Author: 小健 - 2026-05-27
 """
@@ -24,8 +24,8 @@ async def parse_sse_stream(
 ) -> AsyncGenerator[StreamChunk, None]:
     """通用SSE解析生成器 — 小健 2026-05-27
 
-    从HTTP响应中解析SSE流，yield StreamChunk。
-    包含：wait_for心跳、取消检查、data:前缀解析、[DONE]处理、choices[0].delta提取。
+    从HTTP响应中解析SSE流,yield StreamChunk。
+    包含:wait_for心跳、取消检查、data:前缀解析、[DONE]处理、choices[0].delta提取。
 
     Args:
         response: httpx响应对象

@@ -4,7 +4,7 @@ chat_stream共享辅助函数
 
 创建时间: 2026-03-19
 创建人: 小健
-从chat_stream.py中提取的共享函数，供types模块使用
+从chat_stream.py中提取的共享函数,供types模块使用
 Updated: 小欧 - 2026-05-30 改用 FinalStep + format_agent_sse
 """
 
@@ -31,10 +31,10 @@ def create_final_response(
     
     Args:
         content: 最终回复内容
-        step: 步骤序号（可选）
-        display_name: 模型显示名称（可选）
-        provider: 模型提供商（可选）
-        model: 模型名称（可选）
+        step: 步骤序号(可选)
+        display_name: 模型显示名称(可选)
+        provider: 模型提供商(可选)
+        model: 模型名称(可选)
         is_finished: 是否完成
         thought: 思考内容
         is_streaming: 是否流式输出

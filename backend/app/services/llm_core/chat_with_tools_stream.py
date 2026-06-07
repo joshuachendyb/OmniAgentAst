@@ -16,7 +16,7 @@ from app.services.llm.request_builder import build_messages
 
 
 class ChatWithToolsStreamMixin:
-    """chat_with_tools_stream Function Calling流式对话（SRP）"""
+    """chat_with_tools_stream Function Calling流式对话(SRP)"""
 
     async def chat_with_tools_stream(
         self,
@@ -25,7 +25,7 @@ class ChatWithToolsStreamMixin:
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto",
     ) -> AsyncGenerator[StreamChunk, None]:
-        """复制自 llm_core.py 第307-346行 — 发送对话请求（使用 Function Calling，流式返回）"""
+        """复制自 llm_core.py 第307-346行 — 发送对话请求(使用 Function Calling,流式返回)"""
         self.reset_cancel()
 
         try:

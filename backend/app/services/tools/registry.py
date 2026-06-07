@@ -73,17 +73,17 @@ class ToolRegistry:
             implementation: 工具实现函数
             version: 版本号
             dependencies: 依赖的其他工具
-            input_model: Pydantic 模型类，自动生成 input_schema
-            input_schema: 输入参数Schema（当没有 input_model 时使用）
+            input_model: Pydantic 模型类,自动生成 input_schema
+            input_schema: 输入参数Schema(当没有 input_model 时使用)
             output_schema: 输出结果Schema
             examples: 使用示例
-            expose_to_llm: 是否暴露给LLM（默认True），为False时工具仅作为内部辅助函数不发送给LLM - 小沈2026-05-02
+            expose_to_llm: 是否暴露给LLM(默认True),为False时工具仅作为内部辅助函数不发送给LLM - 小沈2026-05-02
         
         Returns:
             {"status": "success"} or {"status": "error", "error": "..."}
         
         Raises:
-            ValueError: 如果工具已注册（首次注册时）
+            ValueError: 如果工具已注册(首次注册时)
         """
         input_schema = _generate_input_schema(input_model, input_schema)
 
@@ -121,7 +121,7 @@ class ToolRegistry:
         return {"status": "success"}
     
     def get(self, name: str) -> Optional[Dict[str, Any]]:
-        """获取工具元数据（返回dict格式）"""
+        """获取工具元数据(返回dict格式)"""
         metadata = self._tools.get(name)
         if metadata is None:
             return None
@@ -134,7 +134,7 @@ class ToolRegistry:
         }
     
     def get_tool(self, name: str) -> Optional[ToolMetadata]:
-        """获取工具元数据（返回dataclass）"""
+        """获取工具元数据(返回dataclass)"""
         return self._tools.get(name)
     
     def get_implementation(self, name: str) -> Optional[Callable]:
@@ -191,7 +191,7 @@ class ToolRegistry:
         return len(self._tools)
 
     def get_categories(self) -> Dict[ToolCategory, List[str]]:
-        """返回分类→工具名列表映射（copy防外部修改）— 小沈 2026-05-25"""
+        """返回分类→工具名列表映射(copy防外部修改)— 小沈 2026-05-25"""
         return {k: list(v) for k, v in self._categories.items()}
 
 
@@ -199,7 +199,7 @@ class ToolRegistry:
 tool_registry = ToolRegistry()
 
 
-# 装饰器版本（支持 Pydantic 模型）
+# 装饰器版本(支持 Pydantic 模型)
 def register_tool(
     name: Optional[str] = None,
     description: str = "",

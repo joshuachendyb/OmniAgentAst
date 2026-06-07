@@ -2,8 +2,8 @@
 """
 LLM请求构建器 — SRP拆分自llm_core.py — 小健 2026-05-27
 
-职责：请求体构建、消息列表构建。
-从BaseAIService提取，遵循SRP原则。
+职责:请求体构建、消息列表构建。
+从BaseAIService提取,遵循SRP原则。
 
 Author: 小健 - 2026-05-27
 """
@@ -50,7 +50,7 @@ def build_request_body(
 def build_messages(message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
     """构建消息列表 — 委托给MessageBuilder统一入口 — 小健 2026-05-27
 
-    DRY原则：LLM层不自行组装消息列表，委托给MessageBuilder。
+    DRY原则:LLM层不自行组装消息列表,委托给MessageBuilder。
 
     Args:
         message: 用户消息

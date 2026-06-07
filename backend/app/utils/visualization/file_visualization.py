@@ -2,10 +2,10 @@
 文件操作可视化服务 - 模块级函数入口
 
 【10大原则规范 2026-05-30 小健】
-- YAGNI: 去除 FileOperationVisualizer 类包装（10个方法8个是纯一行委托），改为模块级函数
-- SRP: 每个报告类型独立模块，本文件仅做编排入口
-- DRY: generate_all_reports 集中编排，各报告子模块函数直接复用
-- KISS: 模块级函数而非类+单例，调用更直接
+- YAGNI: 去除 FileOperationVisualizer 类包装(10个方法8个是纯一行委托),改为模块级函数
+- SRP: 每个报告类型独立模块,本文件仅做编排入口
+- DRY: generate_all_reports 集中编排,各报告子模块函数直接复用
+- KISS: 模块级函数而非类+单例,调用更直接
 """
 from pathlib import Path
 from typing import Dict, Optional
@@ -24,7 +24,7 @@ def generate_all_reports(task_id: str, task_description: str, output_dir: Option
 
     Args:
         task_id: 会话ID
-        task_description: 任务描述（用户消息）
+        task_description: 任务描述(用户消息)
         output_dir: 输出目录
 
     Returns:

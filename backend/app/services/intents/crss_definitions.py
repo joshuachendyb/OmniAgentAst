@@ -1,5 +1,5 @@
 """
-CRSS评分器数据定义：动作兼容矩阵 — 从crss_scorer.py提取 小健2026-05-31
+CRSS评分器数据定义:动作兼容矩阵 — 从crss_scorer.py提取 小健2026-05-31
 """
 from app.services.tools.tool_types import ToolCategory
 

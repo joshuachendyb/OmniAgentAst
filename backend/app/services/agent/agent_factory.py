@@ -2,7 +2,7 @@
 """
 AgentFactory - 智能体工厂
 
-改造后：使用声明式配置注册表创建 Agent
+改造后:使用声明式配置注册表创建 Agent
 - UniversalReactAgent 处理 file/system/network/document
 - DesktopReactAgent 独立处理 desktop
 
@@ -33,10 +33,10 @@ class AgentFactory:
         创建 Agent 实例
         
         Args:
-            intent_type: 意图类型（含别名，如 "time" → "system"）
+            intent_type: 意图类型(含别名,如 "time" → "system")
             llm_client: LLM 客户端
             task_id: 任务ID
-            tool_category: 工具分类（可选，由配置自动决定）
+            tool_category: 工具分类(可选,由配置自动决定)
             max_steps: 最大步数
             candidates: 候选意图列表
             **kwargs: 其他参数

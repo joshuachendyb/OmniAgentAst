@@ -1,9 +1,9 @@
 """DB SDK - 统一数据库操作接口
 
-管理3个SQLite数据库：
+管理3个SQLite数据库:
 - chat_history.db: 对话会话和消息
 - operations.db: 文件操作和任务记录
-- tool_observer.db: 工具调用审计（后续实现）
+- tool_observer.db: 工具调用审计(后续实现)
 
 使用方式:
     from app.db import db
@@ -12,9 +12,9 @@
         conn.execute("SELECT ...")
 
 设计原则:
-- 统一入口：所有DB操作通过db.get_conn()
-- 自动事务：上下文管理器自动commit/rollback/close
-- 摒弃裸连接：禁止手动管理连接
+- 统一入口:所有DB操作通过db.get_conn()
+- 自动事务:上下文管理器自动commit/rollback/close
+- 摒弃裸连接:禁止手动管理连接
 
 Author: 小沈 - 2026-05-28
 """
@@ -27,7 +27,7 @@ from app.utils.logger import logger
 
 
 class DatabaseManager:
-    """统一数据库管理器（SDK核心）"""
+    """统一数据库管理器(SDK核心)"""
     
     def __init__(self):
         """初始化数据库管理器"""
@@ -42,7 +42,7 @@ class DatabaseManager:
     
     @contextmanager
     def get_conn(self, db_name: str = "chat") -> Iterator[sqlite3.Connection]:
-        """获取数据库连接（上下文管理器）
+        """获取数据库连接(上下文管理器)
         
         使用方式:
             with db.get_conn("chat") as conn:
@@ -69,18 +69,18 @@ class DatabaseManager:
             conn = sqlite3.connect(str(db_path))
             conn.row_factory = sqlite3.Row
             
-            # 配置PRAGMA（解决并发写入问题）
+            # 配置PRAGMA(解决并发写入问题)
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=5000")
             
             # yield连接给调用方
             yield conn
             
-            # 正常退出：提交事务
+            # 正常退出:提交事务
             conn.commit()
             
         except Exception as e:
-            # 异常退出：回滚事务
+            # 异常退出:回滚事务
             if conn:
                 try:
                     conn.rollback()
@@ -102,7 +102,7 @@ class DatabaseManager:
                     pass  # 关闭失败不影响主流程
     
     def init(self):
-        """初始化所有数据库（应用启动时调用）
+        """初始化所有数据库(应用启动时调用)
         
         调用方式:
             # main.py lifespan
@@ -120,12 +120,12 @@ class DatabaseManager:
         self._migrate_old_tables()
         self._migrate_from_old_db()
         
-        # observer数据库按需初始化（后续实现ToolObserver时调用init_observer）
+        # observer数据库按需初始化(后续实现ToolObserver时调用init_observer)
         logger.info("All databases initialized successfully")
     
     def init_observer(self):
-        """初始化observer数据库（后续实现ToolObserver时调用）"""
-        # 预留：后续实现tool_observer.py时填充建表逻辑
+        """初始化observer数据库(后续实现ToolObserver时调用)"""
+        # 预留:后续实现tool_observer.py时填充建表逻辑
         logger.info("Observer database initialized (placeholder)")
     
     def _init_chat_db(self):
@@ -171,7 +171,7 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON chat_messages(timestamp);
             ''')
             
-            # 添加新字段（如果不存在）
+            # 添加新字段(如果不存在)
             for field in ["client_os", "browser", "device", "network"]:
                 self._ensure_column(conn, "chat_messages", field, "TEXT")
     
@@ -224,7 +224,7 @@ class DatabaseManager:
             ''')
     
     def _ensure_column(self, conn: sqlite3.Connection, table: str, column: str, col_type: str):
-        """确保字段存在（使用PRAGMA查询，不用try/except）"""
+        """确保字段存在(使用PRAGMA查询,不用try/except)"""
         rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
         col_names = {row["name"].lower() for row in rows}
         if column.lower() not in col_names:
@@ -232,7 +232,7 @@ class DatabaseManager:
             logger.info(f"Added column {column} to table {table}")
     
     def _migrate_old_tables(self):
-        """迁移旧表数据（幂等操作）"""
+        """迁移旧表数据(幂等操作)"""
         try:
             with self.get_conn("operations") as conn:
                 # 检查旧表是否存在
@@ -241,7 +241,7 @@ class DatabaseManager:
                 ).fetchone()
                 
                 if row is None:
-                    return  # 旧表不存在，无需迁移
+                    return  # 旧表不存在,无需迁移
                 
                 logger.info("Migrating data from file_operation_sessions to task_operations...")
                 
@@ -261,7 +261,7 @@ class DatabaseManager:
                 # 获取旧表数据
                 rows = conn.execute(f"SELECT {columns_str} FROM file_operation_sessions").fetchall()
                 
-                # 复制数据到新表（INSERT OR IGNORE保证幂等）
+                # 复制数据到新表(INSERT OR IGNORE保证幂等)
                 for row in rows:
                     conn.execute(f"INSERT OR IGNORE INTO task_operations ({columns_str}) VALUES ({placeholders})", row)
                 
@@ -272,7 +272,7 @@ class DatabaseManager:
                 # 迁移失败不阻止应用启动
 
     def _init_task_tracker_db(self):
-        """初始化 Task 追踪数据库（独立库 task_tracker.db）"""
+        """初始化 Task 追踪数据库(独立库 task_tracker.db)"""
         with self.get_conn("task_tracker") as conn:
             conn.executescript('''
                 CREATE TABLE IF NOT EXISTS tasks (
@@ -319,7 +319,7 @@ class DatabaseManager:
             ''')
 
     def _migrate_from_old_db(self):
-        """从旧 operations.db 迁移数据到新 task_tracker.db（幂等，失败不阻塞启动）"""
+        """从旧 operations.db 迁移数据到新 task_tracker.db(幂等,失败不阻塞启动)"""
         try:
             with self.get_conn("operations") as old_conn:
                 old_ops = old_conn.execute("SELECT * FROM file_operations").fetchall()
@@ -344,5 +344,5 @@ class DatabaseManager:
             logger.warning(f"Migration from old DB skipped (old DB may not exist): {e}")
 
 
-# 全局SDK实例（唯一入口）
+# 全局SDK实例(唯一入口)
 db = DatabaseManager()

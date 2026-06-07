@@ -2,8 +2,8 @@
 """
 安全检查统一管理器
 
-提供安全检查的统一入口，消除safety逻辑分散问题。
-将"分析层"安全（CommandParser评分）和"执行层"安全（FileOperationSafety执行）
+提供安全检查的统一入口,消除safety逻辑分散问题。
+将"分析层"安全(CommandParser评分)和"执行层"安全(FileOperationSafety执行)
 统一到一个入口。
 
 Author: 小沈 - 2026-05-27
@@ -20,7 +20,7 @@ class SafetyHook:
     安全检查Hook基类
 
     新增分类只需实现此接口并注册到SafetyManager。
-    遵循OCP原则：对扩展开放，对修改封闭。
+    遵循OCP原则:对扩展开放,对修改封闭。
     """
 
     def check(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -38,16 +38,16 @@ class SafetyHook:
 
     async def on_before_execute(self, action: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
-        执行前Hook（如备份）
+        执行前Hook(如备份)
 
         Returns:
-            None表示通过，dict表示拦截结果
+            None表示通过,dict表示拦截结果
         """
         return None
 
     async def on_after_execute(self, action: str, params: Dict[str, Any], result: Any) -> None:
         """
-        执行后Hook（如记录操作历史）
+        执行后Hook(如记录操作历史)
         """
         pass
 
@@ -56,12 +56,12 @@ class SafetyManager:
     """
     安全检查统一管理器
 
-    统一管理所有分类的安全检查Hook，对外暴露单一入口。
-    调用方无需了解安全实现的两层结构，符合SLAP原则。
+    统一管理所有分类的安全检查Hook,对外暴露单一入口。
+    调用方无需了解安全实现的两层结构,符合SLAP原则。
 
-    两层编排：
-      ① CommandParser.parse() — 分析层（命令语义解析+风险评估）
-      ② Hook.execute_with_safety() — 执行层（备份/回滚/记录）
+    两层编排:
+      ① CommandParser.parse() — 分析层(命令语义解析+风险评估)
+      ② Hook.execute_with_safety() — 执行层(备份/回滚/记录)
     """
 
     def __init__(self):
@@ -69,12 +69,12 @@ class SafetyManager:
         self._command_parser = None
 
     def set_command_parser(self, parser):
-        """设置命令解析器（分析层）— 小沈 2026-05-27"""
+        """设置命令解析器(分析层)— 小沈 2026-05-27"""
         self._command_parser = parser
         logger.info("[SafetyManager] 设置CommandParser分析层")
 
     def parse_command(self, command: str) -> Dict[str, Any]:
-        """解析命令语义（分析层）— 小沈 2026-05-27"""
+        """解析命令语义(分析层)— 小沈 2026-05-27"""
         if self._command_parser is None:
             return {"operation": None, "sources": [], "targets": [], "direction": None, "quantity": "single"}
         return self._command_parser.parse(command)
@@ -84,7 +84,7 @@ class SafetyManager:
         注册安全检查Hook
 
         Args:
-            category: 工具分类名（如"file", "network"）
+            category: 工具分类名(如"file", "network")
             hook: SafetyHook实例
         """
         self._hooks[category] = hook
@@ -117,7 +117,7 @@ class SafetyManager:
             params: 操作参数
 
         Returns:
-            None表示通过，dict表示拦截结果
+            None表示通过,dict表示拦截结果
         """
         hook = self._hooks.get(category)
         if hook is None:
@@ -141,7 +141,7 @@ class SafetyManager:
         """记录操作统一入口 — 委托给对应分类的hook — 小健 2026-05-28
         
         Args:
-            category: 工具分类（如"file"）
+            category: 工具分类(如"file")
             *args, **kwargs: 传递给hook.record_operation()的参数
             
         Returns:
@@ -149,11 +149,11 @@ class SafetyManager:
         """
         hook = self._hooks.get(category)
         if hook is None:
-            logger.warning(f"[SafetyManager] 无{category}分类的Hook，返回空operation_id")
+            logger.warning(f"[SafetyManager] 无{category}分类的Hook,返回空operation_id")
             return f"op-nohook-{uuid4().hex[:8]}"
         
         if not hasattr(hook, 'record_operation'):
-            logger.warning(f"[SafetyManager] {category}的Hook未实现record_operation，返回空operation_id")
+            logger.warning(f"[SafetyManager] {category}的Hook未实现record_operation,返回空operation_id")
             return f"op-norecord-{uuid4().hex[:8]}"
         
         return hook.record_operation(*args, **kwargs)
@@ -167,13 +167,13 @@ class SafetyManager:
         *args,
         **kwargs
     ) -> Dict[str, Any]:
-        """安全检查+执行统一入口 — 先check再execute，SLAP原则
+        """安全检查+执行统一入口 — 先check再execute,SLAP原则
 
         【小健 2026-05-27】组合check()+on_before_execute()+operation()+on_after_execute()
-        调用方只需一个调用，无需了解安全两层结构。
+        调用方只需一个调用,无需了解安全两层结构。
 
         Args:
-            category: 工具分类（如"file", "shell"）
+            category: 工具分类(如"file", "shell")
             action: 操作名称
             params: 操作参数
             operation_func: 实际执行函数
@@ -220,15 +220,15 @@ class SafetyManager:
         }
 
     def execute_with_safety(self, category: str, operation_id: str, operation_func: Callable, *args, **kwargs) -> bool:
-        """安全执行统一入口 — DRY原则：所有分类的安全执行走此入口
+        """安全执行统一入口 — DRY原则:所有分类的安全执行走此入口
         
-        【重构 2026-05-27 小健】遵循DRY+OCP原则：
-        - 统一入口，消除file_safety独立实现
+        【重构 2026-05-27 小健】遵循DRY+OCP原则:
+        - 统一入口,消除file_safety独立实现
         - 委托给对应分类的hook.execute_with_safety()
         - 新增分类只需注册hook即可获得安全执行能力
         
         Args:
-            category: 工具分类（如"file"）
+            category: 工具分类(如"file")
             operation_id: 操作ID
             operation_func: 实际执行函数
             *args, **kwargs: 传递给operation_func的参数
@@ -238,7 +238,7 @@ class SafetyManager:
         """
         hook = self._hooks.get(category)
         if hook is None:
-            logger.warning(f"[SafetyManager] 无{category}分类的Hook，直接执行")
+            logger.warning(f"[SafetyManager] 无{category}分类的Hook,直接执行")
             try:
                 return operation_func(*args, **kwargs)
             except Exception as e:
@@ -246,7 +246,7 @@ class SafetyManager:
                 return False
         
         if not hasattr(hook, 'execute_with_safety'):
-            logger.warning(f"[SafetyManager] {category}的Hook未实现execute_with_safety，直接执行")
+            logger.warning(f"[SafetyManager] {category}的Hook未实现execute_with_safety,直接执行")
             try:
                 return operation_func(*args, **kwargs)
             except Exception as e:

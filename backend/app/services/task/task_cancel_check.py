@@ -19,7 +19,7 @@ async def task_cancel_check_and_yield(
     task_id: str, next_step: Callable[[], int], session_id: str,
     current_execution_steps: list, current_content: str
 ) -> Optional[str]:
-    """检查取消状态，如果是则生成interrupted SSE事件"""
+    """检查取消状态,如果是则生成interrupted SSE事件"""
     if await check_cancelled(task_id):
         logger.info(f"[InterruptCheck] 任务 {task_id} 取消状态: True")
         incident_step = IncidentStep(

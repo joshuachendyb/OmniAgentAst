@@ -1,8 +1,8 @@
 """
 AI配置解析器 - 统一Fallback逻辑入口
 
-责任：统一所有AI配置相关的fallback逻辑，消除7份分散实现
-设计原则：单一职责、单一入口、集中管理
+责任:统一所有AI配置相关的fallback逻辑,消除7份分散实现
+设计原则:单一职责、单一入口、集中管理
 """
 
 from typing import Dict, Any, Tuple, Optional
@@ -10,13 +10,13 @@ from app.config import Config, get_config
 
 
 class AIConfigResolver:
-    """单一职责：AI配置解析+Fallback，统一7份分散实现"""
+    """单一职责:AI配置解析+Fallback,统一7份分散实现"""
     
     def __init__(self, config: Optional[Config] = None):
         """初始化配置解析器
         
         Args:
-            config: 配置实例，如果为None则使用全局配置
+            config: 配置实例,如果为None则使用全局配置
         """
         self._config = config or get_config()
     
@@ -29,9 +29,9 @@ class AIConfigResolver:
         return self._config.get("ai", {})
     
     def resolve_provider_model(self) -> Tuple[str, str]:
-        """解析当前生效的provider和model，含完整fallback链
+        """解析当前生效的provider和model,含完整fallback链
         
-        核心逻辑：
+        核心逻辑:
         1. 获取配置的provider和model
         2. 验证配置是否有效
         3. 如果无效则使用fallback逻辑
@@ -80,7 +80,7 @@ class AIConfigResolver:
         return model in models
     
     def _fallback_provider_model(self, ai_config: Dict[str, Any]) -> Tuple[str, str]:
-        """Fallback逻辑：查找第一个有效的provider和model
+        """Fallback逻辑:查找第一个有效的provider和model
         
         Args:
             ai_config: AI配置字典
@@ -122,7 +122,7 @@ class AIConfigResolver:
         
         # 检查AI配置块是否为字典
         if not isinstance(ai_config, dict):
-            errors.append("'ai' 配置块格式错误，应为字典类型")
+            errors.append("'ai' 配置块格式错误,应为字典类型")
             return False, "", "", errors
         
         # 获取有效配置
@@ -160,7 +160,7 @@ class AIConfigResolver:
         
         provider_config = ai_config[provider]
         if not isinstance(provider_config, dict):
-            raise ValueError(f"provider {provider} 配置格式错误，应该是字典类型")
+            raise ValueError(f"provider {provider} 配置格式错误,应该是字典类型")
         
         if "models" not in provider_config:
             raise ValueError(f"provider {provider} 缺少 models 配置")
@@ -187,11 +187,3 @@ def get_ai_config_resolver() -> AIConfigResolver:
         _global_resolver = AIConfigResolver()
     return _global_resolver
 
-
-def resolve_provider_model() -> Tuple[str, str]:
-    """便捷函数：解析当前生效的provider和model
-    
-    Returns:
-        (provider, model) 元组
-    """
-    return get_ai_config_resolver().resolve_provider_model()

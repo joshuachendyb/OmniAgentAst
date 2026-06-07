@@ -2,10 +2,10 @@
 """
 XML工具调用适配器
 
-某些模型（如LongCat）返回XML格式工具调用而不是标准OpenAI tool_calls。
+某些模型(如LongCat)返回XML格式工具调用而不是标准OpenAI tool_calls。
 此模块提供XML→JSON转换能力。
 
-从 llm_core.py 拆分出来，遵循SRP原则。
+从 llm_core.py 拆分出来,遵循SRP原则。
 Author: 小沈 - 2026-05-27
 """
 
@@ -21,7 +21,7 @@ def convert_xml_tool_call_to_json(content: str) -> Optional[str]:
     格式: <XXX_tool_call>TOOL_NAME\\n<XXX_arg_key>k</XXX_arg_key>\\n<XXX_arg_value>v</XXX_arg_value>\\n</XXX_tool_call>
 
     Returns:
-        转换后的JSON字符串，如果无匹配返回None
+        转换后的JSON字符串,如果无匹配返回None
     """
     if not content or '<' not in content or '_tool_call>' not in content:
         return None

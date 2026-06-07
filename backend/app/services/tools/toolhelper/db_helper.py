@@ -6,11 +6,11 @@
 【说明】从 support_tool/support_tool_tools.py 迁移 check_db_exists 函数
 
 【分层规范 - 小健 2026-05-27】
-本文件属于【工具层helper】，使用 _response.py 的 build_success/build_error/build_warning
+本文件属于【工具层helper】,使用 _response.py 的 build_success/build_error/build_warning
 禁止使用 agent/tool_result_utils.py 的 create_xxx 函数
 
-包含函数（1个）：
-- check_db_exists: 检查数据库是否存在（公共函数 + LLM Tool）
+包含函数(1个):
+- check_db_exists: 检查数据库是否存在(公共函数 + LLM Tool)
 
 Author: 小沈 - 2026-05-17
 """
@@ -29,9 +29,9 @@ class CheckDbExistsInput(BaseModel):
 
 
 def check_db_exists(db_path: str) -> Dict[str, Any]:
-    """检查数据库是否存在 - 小沈 2026-05-17（从 support_tool_tools.py 迁移）
+    """检查数据库是否存在 - 小沈 2026-05-17(从 support_tool_tools.py 迁移)
     
-    【重构 2026-05-27 小健】DRY原则：使用build_success统一结果格式（工具层规范）
+    【重构 2026-05-27 小健】DRY原则:使用build_success统一结果格式(工具层规范)
     """
     path = Path(db_path)
     if not path.exists():

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-共享工具函数模块（第1层）
+共享工具函数模块(第1层)
 
 简化 2026-06-07: 1个 except 改具体异常
 """
@@ -19,7 +19,7 @@ def _add_reasoning_warning(result: Dict[str, Any]) -> Dict[str, Any]:
         if not reasoning or len(reasoning.strip()) < _REASONING_MIN_LENGTH:
             result["parse_warning"] = (
                 "⚠️ reasoning字段为空或过短(<10字符)。"
-                "有效的reasoning应包含：为什么选择这个工具、参数如何确定。"
+                "有效的reasoning应包含:为什么选择这个工具、参数如何确定。"
             )
     return result
 
@@ -46,7 +46,7 @@ REACT_KEYWORDS = {
 
 
 def _get_all_tool_names():
-    """获取所有已注册工具名 — 动态查询，fallback为最小容错集合"""
+    """获取所有已注册工具名 — 动态查询,fallback为最小容错集合"""
     try:
         from app.services.tools.registry import tool_registry
         tools = tool_registry.list_tools(include_metadata=False)
@@ -163,7 +163,7 @@ def _extract_key_value_pairs(text: str) -> Dict[str, Any]:
 
 
 def _extract_string_value(json_str: str, field_name: str) -> Optional[str]:
-    """从JSON字符串中提取指定字段的字符串值（char-walking方式，处理转义）"""
+    """从JSON字符串中提取指定字段的字符串值(char-walking方式,处理转义)"""
     field_marker = f'"{field_name}"'
     field_start = json_str.find(field_marker)
     if field_start == -1:

@@ -48,6 +48,6 @@ def get_tools_from_registry_by_category(category: ToolCategory) -> Dict[str, Cal
 
 
 def get_tools_from_file_registry() -> Dict[str, Callable]:
-    """从tool_registry获取file工具 — 委托共享函数（消除DRY 小健2026-05-31）"""
+    """从tool_registry获取file工具 — 委托共享函数(消除DRY 小健2026-05-31)"""
     return get_tools_from_registry_by_category(ToolCategory.FILE)
 

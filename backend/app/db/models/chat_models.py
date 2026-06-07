@@ -29,8 +29,8 @@ class Message(BaseModel):
 
 class SessionCreate(BaseModel):
     """创建会话请求"""
-    title: Optional[str] = Field(None, description="会话标题（可选，不提供则自动生成）")
-    is_valid: Optional[bool] = Field(False, description="是否为有效会话（前端用户创建时传入True；测试代码不传默认为False）")
+    title: Optional[str] = Field(None, description="会话标题(可选,不提供则自动生成)")
+    is_valid: Optional[bool] = Field(False, description="是否为有效会话(前端用户创建时传入True;测试代码不传默认为False)")
 
 
 class SessionResponse(BaseModel):
@@ -52,7 +52,7 @@ class SessionListResponse(BaseModel):
 
 
 class BatchTitleResponse(BaseModel):
-    """批量获取会话标题响应（12.1.3节）"""
+    """批量获取会话标题响应(12.1.3节)"""
     sessions: list[dict] = Field(..., description="会话标题信息列表")
 
 
@@ -62,6 +62,6 @@ class MessageResponse(BaseModel):
     session_id: str = Field(..., description="会话 ID")
     role: str = Field(..., description="角色")
     content: str = Field(..., description="消息内容")
-    timestamp: int = Field(..., description="时间戳（毫秒，int类型）")  # 【修复 2026-04-01 小沈】从str改为int
-    execution_steps: Optional[list] = Field(None, description="执行步骤（数组格式）")
-    display_name: Optional[str] = Field(None, description="模型显示名称（记录消息收发时使用的模型）")
+    timestamp: int = Field(..., description="时间戳(毫秒,int类型)")  # 【修复 2026-04-01 小沈】从str改为int
+    execution_steps: Optional[list] = Field(None, description="执行步骤(数组格式)")
+    display_name: Optional[str] = Field(None, description="模型显示名称(记录消息收发时使用的模型)")

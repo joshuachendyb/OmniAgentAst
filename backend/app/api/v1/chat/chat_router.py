@@ -2,10 +2,10 @@
 """
 Chat Router — 路由层入口
 
-task操作统一在 services/task/ 层，本文件只做路由分发
+task操作统一在 services/task/ 层,本文件只做路由分发
 
 Author: 小沈 - 2026-03-26
-统一: 小健 - 2026-05-31 — 删除task wrapper，直接调库
+统一: 小健 - 2026-05-31 — 删除task wrapper,直接调库
 """
 
 from fastapi import APIRouter, Request

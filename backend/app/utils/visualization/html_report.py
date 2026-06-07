@@ -1,5 +1,5 @@
 """
-HTML报告模块 - 生成HTML格式的文件操作报告（含图表）
+HTML报告模块 - 生成HTML格式的文件操作报告(含图表)
 包含 build_html_report_content + generate_html_report
 小沈 2026-05-29 拆分自 file_visualization.py
 """
@@ -14,7 +14,7 @@ def build_html_report_content(
     operations: List[Tuple], op_types: Dict[str, int],
     status_counts: Dict[str, int]
 ) -> str:
-    """纯 HTML 模板渲染，不含任何 DB/IO 副作用
+    """纯 HTML 模板渲染,不含任何 DB/IO 副作用
 
     小沈 2026-05-25 重构拆分
     """
@@ -72,18 +72,18 @@ def build_html_report_content(
 
 def generate_html_report(task_id: str, task_description: str) -> str:
     """
-    生成HTML格式报告（含图表）
+    生成HTML格式报告(含图表)
 
     【小沈修改 2026-03-25】
     - 去掉 file_operation_sessions 表的依赖
     - task_description 作为参数传入
 
     【小沈重构 2026-05-25】
-    - 重构拆分：DB 查询已共享（27.1），HTML 模板提取为 _build_html_report_content
+    - 重构拆分:DB 查询已共享(27.1),HTML 模板提取为 _build_html_report_content
 
     Args:
         task_id: 会话ID
-        task_description: 任务描述（用户消息）
+        task_description: 任务描述(用户消息)
         output_path: 输出路径
 
     Returns:
@@ -103,7 +103,7 @@ def generate_html_report(task_id: str, task_description: str) -> str:
 
     html = build_html_report_content(task_id, task_description, operations, op_types, status_counts)
 
-    # YAGNI 死代码：output_path 从未被实际传入，直接删除文件保存逻辑
-    # 原 L854-859 已删除，调用方 generate_report 从未传 output_path
+    # YAGNI 死代码:output_path 从未被实际传入,直接删除文件保存逻辑
+    # 原 L854-859 已删除,调用方 generate_report 从未传 output_path
 
     return html

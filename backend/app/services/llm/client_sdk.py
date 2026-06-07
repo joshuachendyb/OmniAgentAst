@@ -2,9 +2,9 @@
 LLM 客户端 SDK
 Author: 小沈 - 2026-05-29
 
-基础模块，被 BaseAIService / intent_classifier / capability_detector 调用。
-只支持 OpenAI 兼容格式的 API（/chat/completions 端点）。
-SDK 只管发 HTTP 请求，不处理错误，异常原样抛出。
+基础模块,被 BaseAIService / intent_classifier / capability_detector 调用。
+只支持 OpenAI 兼容格式的 API(/chat/completions 端点)。
+SDK 只管发 HTTP 请求,不处理错误,异常原样抛出。
 """
 
 import httpx
@@ -84,7 +84,7 @@ class LLMClient:
         )
 
     def _default_base_url(self, provider: str) -> str:
-        """根据 provider 返回默认 API 地址（仅 OpenAI 兼容格式）"""
+        """根据 provider 返回默认 API 地址(仅 OpenAI 兼容格式)"""
         urls = {
             "openai": "https://api.openai.com/v1",
             "deepseek": "https://api.deepseek.com",
@@ -103,7 +103,7 @@ class LLMClient:
         tools: Optional[List[Dict]] = None,
         tool_choice: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """非流式 LLM 调用，返回原始响应"""
+        """非流式 LLM 调用,返回原始响应"""
         body = _build_request_body(
             messages=messages, model=self.model,
             max_tokens=max_tokens, temperature=temperature, seed=seed,
@@ -122,7 +122,7 @@ class LLMClient:
         tools: Optional[List[Dict]] = None,
         tool_choice: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
-        """流式 LLM 调用，逐行 yield SSE data 字符串"""
+        """流式 LLM 调用,逐行 yield SSE data 字符串"""
         body = _build_request_body(
             messages=messages, model=self.model,
             max_tokens=max_tokens, temperature=temperature, seed=seed,
@@ -138,15 +138,15 @@ class LLMClient:
                     yield data
 
     def stream(self, method: str, url: str, **kwargs):
-        """获取响应流（返回 async context manager）"""
+        """获取响应流(返回 async context manager)"""
         return self._client.stream(method, url, **kwargs)
 
     async def request(self, method: str, url: str, **kwargs) -> httpx.Response:
-        """发送任意 HTTP 请求（用于非 /chat/completions 路由的重试/探测场景）"""
+        """发送任意 HTTP 请求(用于非 /chat/completions 路由的重试/探测场景)"""
         return await self._client.request(method, url, **kwargs)
 
     async def close(self):
-        """关闭客户端，释放连接池"""
+        """关闭客户端,释放连接池"""
         await self._client.aclose()
 
 
@@ -161,11 +161,11 @@ def create_llm_client(
     创建 LLM 客户端 — 唯一入口
 
     Args:
-        provider: 提供商（openai / deepseek / qwen / groq / ollama）
-        model: 模型名（gpt-4 / deepseek-chat / qwen-plus 等）
+        provider: 提供商(openai / deepseek / qwen / groq / ollama)
+        model: 模型名(gpt-4 / deepseek-chat / qwen-plus 等)
         api_key: API 密钥
-        base_url: API 地址（可选，默认根据 provider 自动设置）
-        timeout: 超时秒数（可选，默认 60）
+        base_url: API 地址(可选,默认根据 provider 自动设置)
+        timeout: 超时秒数(可选,默认 60)
 
     Returns:
         LLMClient 实例

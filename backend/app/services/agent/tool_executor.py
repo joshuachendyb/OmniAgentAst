@@ -2,7 +2,7 @@
 """
 工具执行器 — 统一工具执行接口
 
-融合了原始ToolExecutor.execute()和execute_tool_with_unified_retry()的优点：
+融合了原始ToolExecutor.execute()和execute_tool_with_unified_retry()的优点:
 - 支持tools为None时从registry获取工具实现
 - 支持finish短路
 - 支持not-found判断
@@ -34,7 +34,7 @@ async def execute_tool_with_unified_retry(
     - 支持工具别名查找
     - 调用ToolRetryEngine执行
     """
-    # 1. 如果tools为None，从registry获取工具实现
+    # 1. 如果tools为None,从registry获取工具实现
     if tools is None:
         from app.services.tools.tool_queries import get_implementations_from_registry
         tools = get_implementations_from_registry()

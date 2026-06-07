@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-JSON 策略解析模块（第3层 - 依赖 _utils, _tool_params）
+JSON 策略解析模块(第3层 - 依赖 _utils, _tool_params)
 
 重写记录 — 小欧 2026-06-07:
 - EXC-5: L305 裸 except: → except (json.JSONDecodeError,)
-- EXC-22: L227 except Exception as e → 分类（JSON/属性错误）
+- EXC-22: L227 except Exception as e → 分类(JSON/属性错误)
 
 Author: 小欧 - 2026-06-07
 """
@@ -192,7 +192,7 @@ def _try_extract_last_tool_call(content: str) -> Optional[Dict[str, Any]]:
     data = _try_parse_with_strategies(json_str, get_strategies())
     if data and data.get("tool_name"):
         logger.info(
-            f"[_extract_json_block] 第一个JSON无tool_name，从末尾提取成功: "
+            f"[_extract_json_block] 第一个JSON无tool_name,从末尾提取成功: "
             f"tool_name={data.get('tool_name')}"
         )
         return data

@@ -2,29 +2,29 @@
 
 # -*- coding: utf-8 -*-
 """
-文件辅助函数模块 - 纯内部辅助函数（不暴露给LLM）
+文件辅助函数模块 - 纯内部辅助函数(不暴露给LLM)
 
 【创建时间】2026-05-02 小沈
 【更新时间】2026-05-02 小沈
 
 ================================================================================
-一、模块性质（纯内部辅助函数）
+一、模块性质(纯内部辅助函数)
 ================================================================================
-本模块的函数 **仅作为内部辅助函数**，具有以下特点：
+本模块的函数 **仅作为内部辅助函数**,具有以下特点:
 
 1. **不注册到tool_registry** - 无@register_tool装饰器
 2. **不暴露给LLM** - LLM无法直接调用这些函数
 3. **仅供其他Tool函数内部调用** - 作为公共基础设施
 
 【对比db_helper/】
-- db_helper/: 双重身份（公共函数 + LLM可调用Tool），有@register_tool
-- toolhelper/: 纯内部辅助函数，无@register_tool，不暴露给LLM
+- db_helper/: 双重身份(公共函数 + LLM可调用Tool),有@register_tool
+- toolhelper/: 纯内部辅助函数,无@register_tool,不暴露给LLM
 
 ================================================================================
-二、包含函数（10个）
+二、包含函数(10个)
 ================================================================================
-- extract_archive: 解压文件（zip/tar/tar.gz/tar.bz2）
-- hash_file_tool: 计算文件哈希（MD5/SHA1/SHA256）
+- extract_archive: 解压文件(zip/tar/tar.gz/tar.bz2)
+- hash_file_tool: 计算文件哈希(MD5/SHA1/SHA256)
 - ensure_directory_exists: 确保目录存在
 - check_write_permission: 检查写权限
 - check_read_permission: 检查读权限
@@ -49,7 +49,7 @@ def write_file(file_path, content):
 
 # LLM无法直接调用这些函数
 用户: "帮我检测文件编码"
-LLM: 无法调用get_file_encoding，需调用read_file等Tool
+LLM: 无法调用get_file_encoding,需调用read_file等Tool
 ```
 
 Author: 小沈 - 2026-05-02
@@ -86,7 +86,7 @@ logger = setup_logger(__name__)
 
 
 def _is_safe_path(output_dir: str, member_path: str) -> bool:
-    """检查解压成员路径是否在output_dir内，防止路径遍历攻击 - 小沈 2026-05-05"""
+    """检查解压成员路径是否在output_dir内,防止路径遍历攻击 - 小沈 2026-05-05"""
     target = os.path.normpath(os.path.join(output_dir, member_path))
     return target.startswith(os.path.normpath(output_dir) + os.sep) or target == os.path.normpath(output_dir)
 
@@ -106,7 +106,7 @@ def _resolve_output_dir(archive_path: str, output_dir: Optional[str] = None) -> 
 
 def _extract_zip_archive(archive_path: str, output_dir: str, overwrite: bool,
                          password: Optional[str] = None) -> Dict[str, Any]:
-    """解压zip文件（密码+安全路径+覆盖控制）— 小健 2026-05-25"""
+    """解压zip文件(密码+安全路径+覆盖控制)— 小健 2026-05-25"""
     extracted_count, skipped_count = 0, 0
     with zipfile.ZipFile(archive_path, 'r') as zf:
         if password:
@@ -170,7 +170,7 @@ def extract_archive(
     preserve_permissions: bool = True,
 ) -> Dict[str, Any]:
     """
-    解压压缩文件 - 小沈 2026-05-02；小健 2026-05-25 重构
+    解压压缩文件 - 小沈 2026-05-02;小健 2026-05-25 重构
 
     支持 zip、tar、tar.gz、tar.bz2 格式
     """
@@ -209,7 +209,7 @@ def hash_file_tool(
     计算文件哈希值 - LLM工具层包装函数 - 小沈 2026-05-02
     
     支持 md5、sha1、sha256、sha512
-    内部调用 compute_file_hash 核心函数，添加文件验证和结果包装
+    内部调用 compute_file_hash 核心函数,添加文件验证和结果包装
     """
     try:
         file_path = os.path.abspath(file_path)
@@ -241,7 +241,7 @@ def hash_file_tool(
 
 def ensure_directory_exists(dir_path: str) -> Dict[str, Any]:
     """
-    确保目录存在，不存在则创建 - 小沈 2026-05-02
+    确保目录存在,不存在则创建 - 小沈 2026-05-02
     """
     try:
         dir_path = os.path.abspath(dir_path)
@@ -443,8 +443,8 @@ def move_to_trash(file_path: str) -> Dict[str, Any]:
         send2trash.send2trash(file_path)
         return build_success({"path": file_path, "action": "moved_to_trash"}, "文件已移动到回收站")
     except ImportError:
-        logger.warning("send2trash未安装，无法移动到回收站")
-        return build_error(ERR_FILE_MOVE_TRASH, "send2trash未安装，请先安装: pip install send2trash")
+        logger.warning("send2trash未安装,无法移动到回收站")
+        return build_error(ERR_FILE_MOVE_TRASH, "send2trash未安装,请先安装: pip install send2trash")
     except Exception as e:
         logger.error(f"[move_to_trash] 移动到回收站失败: {e}")
         return build_error(ERR_FILE_MOVE_TRASH, str(e))
@@ -547,8 +547,8 @@ def _get_file_metadata(file_path: str, follow_symlinks: bool = True) -> Dict[str
     """
     获取文件元数据 - 小沈 2026-05-18
     
-    合并 get_file_info + hash_file_tool 的元数据部分，供其他工具内部调用。
-    不作为LLM工具暴露，由各工具的P15返回值承载。
+    合并 get_file_info + hash_file_tool 的元数据部分,供其他工具内部调用。
+    不作为LLM工具暴露,由各工具的P15返回值承载。
     
     Args:
         file_path: 文件路径
@@ -620,7 +620,7 @@ def _get_file_metadata(file_path: str, follow_symlinks: bool = True) -> Dict[str
 # ================================================================================
 
 def _classify_size_dist(size: int) -> str:
-    """文件大小分桶，返回桶名 - 小健 2026-05-25
+    """文件大小分桶,返回桶名 - 小健 2026-05-25
 
     使用场景: _StatsCollector和list_directory共用尺寸分类
     使用示例: _classify_size_dist(500) → "0-1KB"; _classify_size_dist(5_000_000) → "1MB-10MB"
@@ -645,7 +645,7 @@ def _walk_with_timeout(
     recursive: bool = True, max_depth: int = 100000,
     filters: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Path], bool]:
-    """通用目录遍历器，支持超时+深度+过滤 - 小健 2026-05-25
+    """通用目录遍历器,支持超时+深度+过滤 - 小健 2026-05-25
 
     使用场景: _collect_files/_compress_entries/_scan_stats_directory三处复用
     使用示例: _walk_with_timeout(Path("/src"), deadline, callback=collector.record_file)
@@ -698,27 +698,27 @@ async def _collect_files(
     dir_path: Path, recursive: bool,
     deadline: Optional[float] = None, pattern: Optional[str] = None,
 ) -> Tuple[List[Path], bool]:
-    """收集目录下文件列表，支持超时 - 小健 2026-05-25"""
+    """收集目录下文件列表,支持超时 - 小健 2026-05-25"""
     def _sync_collect() -> Tuple[List[Path], bool]:
         result: List[Path] = []
         iterator = dir_path.rglob(pattern or "*") if recursive else dir_path.glob(pattern or "*")
         for fpath in iterator:
             if deadline and time.monotonic() > deadline:
-                logger.warning(f"[_collect_files] 超时，已收集{len(result)}个文件")
+                logger.warning(f"[_collect_files] 超时,已收集{len(result)}个文件")
                 return result, True
             if fpath.is_file():
                 result.append(fpath)
         return result, False
     files, timed_out = await asyncio.to_thread(_sync_collect)
     if timed_out:
-        logger.warning(f"[_collect_files] 文件收集超时，仅处理已收集的{len(files)}个文件")
+        logger.warning(f"[_collect_files] 文件收集超时,仅处理已收集的{len(files)}个文件")
     return files, timed_out
 
 
 def _resolve_name_conflict(
     new_path: Path, strategy: str, max_attempts: int = 100,
 ) -> Tuple[Path, bool]:
-    """解决文件名冲突，返回(最终路径, 是否解决) - 小健 2026-05-25"""
+    """解决文件名冲突,返回(最终路径, 是否解决) - 小健 2026-05-25"""
     if not new_path.exists():
         return new_path, True
     if strategy == "skip":
@@ -737,7 +737,7 @@ def _resolve_name_conflict(
             final_path = new_path.parent / f"{new_path.stem}_{counter}"
         counter += 1
     if counter > max_attempts:
-        logger.error(f"冲突解决失败，超过{max_attempts}次尝试")
+        logger.error(f"冲突解决失败,超过{max_attempts}次尝试")
         return final_path, False
     return final_path, True
 
@@ -785,7 +785,7 @@ async def _process_single_rename(
     ctx: RenameContext,
     file_path: Path, new_name: str, original_name: str,
 ) -> Tuple[Dict[str, Any], int, int, int]:
-    """处理单个文件重命名，返回(op_dict, renamed_delta, skipped_delta, failed_delta) — 小健 2026-05-29 SRP-008"""
+    """处理单个文件重命名,返回(op_dict, renamed_delta, skipped_delta, failed_delta) — 小健 2026-05-29 SRP-008"""
     from app.db.models.operation_enums import OperationType
     if new_name == original_name:
         return {"file": str(file_path), "original_name": original_name, "new_name": new_name,
@@ -796,7 +796,7 @@ async def _process_single_rename(
     if new_path.exists():
         if ctx.conflict_strategy == "skip":
             return {"file": str(file_path), "original_name": original_name, "new_name": new_name,
-                    "status": "skipped", "reason": "目标文件已存在（跳过）", "operation_id": None}, 0, 1, 0
+                    "status": "skipped", "reason": "目标文件已存在(跳过)", "operation_id": None}, 0, 1, 0
         resolved_path, resolved = _resolve_name_conflict(new_path, ctx.conflict_strategy)
         if not resolved and ctx.conflict_strategy != "overwrite":
             return {"file": str(file_path), "original_name": original_name, "new_name": new_name,
@@ -849,7 +849,7 @@ async def batch_rename_impl(ctx: RenameContext) -> Dict[str, Any]:
         renamed_count = skipped_count = failed_count = 0
         for file_path in files_to_process:
             if time.monotonic() > deadline:
-                logger.warning(f"[batch_rename] 总超时，已处理{len(operations)}/{len(files_to_process)}个文件")
+                logger.warning(f"[batch_rename] 总超时,已处理{len(operations)}/{len(files_to_process)}个文件")
                 break
             original_name = file_path.name
             new_name = ctx._regex.sub(ctx.replacement, original_name) if ctx._use_regex else original_name.replace(ctx.pattern, ctx.replacement)
@@ -874,7 +874,7 @@ async def batch_rename_impl(ctx: RenameContext) -> Dict[str, Any]:
 
 
 class _StatsCollector:
-    """目录统计收集器，聚合文件/目录统计 - 小健 2026-05-25"""
+    """目录统计收集器,聚合文件/目录统计 - 小健 2026-05-25"""
 
     def __init__(self):
         self.total_files = 0
@@ -941,7 +941,7 @@ def _scan_stats_directory(
     dir_path: Path, recursive: bool, max_depth: int,
     deadline: float, filters: Optional[Dict[str, Any]],
 ) -> _StatsCollector:
-    """扫描目录收集统计，支持超时+深度+过滤 - 小健 2026-05-25"""
+    """扫描目录收集统计,支持超时+深度+过滤 - 小健 2026-05-25"""
     collector = _StatsCollector()
     _walk_with_timeout(
         dir_path, deadline, callback=collector.record_file,
@@ -960,7 +960,7 @@ def _format_stats_json(stats: Dict[str, Any]) -> Dict[str, Any]:
         result = _format_stats_json(stats)
 
     返回数据说明:
-        - 返回Dict，包含output字段（JSON字符串）
+        - 返回Dict,包含output字段(JSON字符串)
     """
     stats["output"] = json.dumps(stats, indent=2, ensure_ascii=False)
     return stats
@@ -976,7 +976,7 @@ def _format_stats_csv(stats: Dict[str, Any]) -> Dict[str, Any]:
         result = _format_stats_csv(stats)
 
     返回数据说明:
-        - 返回Dict，包含output字段（CSV字符串）
+        - 返回Dict,包含output字段(CSV字符串)
     """
     output = io.StringIO()
     writer = csv.writer(output)
@@ -1016,7 +1016,7 @@ def _format_stats_text(stats: Dict[str, Any]) -> Dict[str, Any]:
         result = _format_stats_text(stats)
 
     返回数据说明:
-        - 返回Dict，包含output字段（文本字符串）
+        - 返回Dict,包含output字段(文本字符串)
     """
     lines = [
         f"目录统计: {stats['directory']}",
@@ -1056,7 +1056,7 @@ def _format_stats_output(stats: Dict[str, Any], output_format: str) -> Dict[str,
         result = _format_stats_output(stats, "csv")
 
     返回数据说明:
-        - 返回Dict，包含格式化后的output字段
+        - 返回Dict,包含格式化后的output字段
     """
     formatters = {
         "json": _format_stats_json,
@@ -1074,7 +1074,7 @@ def _validate_compress_params(
     overwrite: bool, compression_level: int, task_id: Optional[str],
     validate_path_func,
 ) -> Optional[Dict[str, Any]]:
-    """压缩参数校验链，返回None表示通过或error dict - 小健 2026-05-25"""
+    """压缩参数校验链,返回None表示通过或error dict - 小健 2026-05-25"""
     is_valid_src, error_msg_src = validate_path_func(source_path)
     if not is_valid_src:
         return build_error(ERR_PATH_INVALID, f"源路径验证失败: {error_msg_src}")
@@ -1082,18 +1082,18 @@ def _validate_compress_params(
     if not is_valid_dst:
         return build_error(ERR_PATH_INVALID, f"目标路径验证失败: {error_msg_dst}")
     if not overwrite and os.path.exists(output_path):
-        return build_error(ERR_FILE_PATH_EXISTS, f"目标文件已存在: {output_path}，可设置overwrite=true覆盖")
+        return build_error(ERR_FILE_PATH_EXISTS, f"目标文件已存在: {output_path},可设置overwrite=true覆盖")
     if not task_id:
         return build_error(ERR_META_NO_ACTIVE_TASK, "No active task")
     if fmt not in ("zip", "tar.gz"):
-        return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED, f"不支持的压缩格式: {fmt}，支持格式: zip, tar.gz")
+        return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED, f"不支持的压缩格式: {fmt},支持格式: zip, tar.gz")
     if not 0 <= compression_level <= 9:
-        return build_error(ERR_PARAMETER_INVALID, f"无效的压缩级别: {compression_level}，必须是0-9之间的整数")
+        return build_error(ERR_PARAMETER_INVALID, f"无效的压缩级别: {compression_level},必须是0-9之间的整数")
     return None
 
 
 def _compress_entries(source: Path, deadline: float) -> Generator[Tuple[Path, str], None, bool]:
-    """通用文件遍历生成器，yield(path, arcname) → 返回是否超时 - 小健 2026-05-25"""
+    """通用文件遍历生成器,yield(path, arcname) → 返回是否超时 - 小健 2026-05-25"""
     if source.is_file():
         yield source, source.name
         return False
@@ -1109,7 +1109,7 @@ def _write_zip(
     source: Path, destination: Path, compression_level: int,
     password: Optional[str], deadline: float,
 ) -> Tuple[List[str], bool]:
-    """写入zip压缩包，返回(文件列表, 是否超时) - 小健 2026-05-25"""
+    """写入zip压缩包,返回(文件列表, 是否超时) - 小健 2026-05-25"""
     compressed_files: List[str] = []
     compression = zipfile.ZIP_STORED if compression_level == 0 else zipfile.ZIP_DEFLATED
     with zipfile.ZipFile(destination, 'w', compression=compression, compresslevel=compression_level) as zf:
@@ -1124,7 +1124,7 @@ def _write_zip(
 def _write_targz(
     source: Path, destination: Path, deadline: float,
 ) -> Tuple[List[str], bool]:
-    """写入tar.gz压缩包，返回(文件列表, 是否超时) - 小健 2026-05-25"""
+    """写入tar.gz压缩包,返回(文件列表, 是否超时) - 小健 2026-05-25"""
     compressed_files: List[str] = []
     with tarfile.open(destination, 'w:gz') as tf:
         for file_path, arcname in _compress_entries(source, deadline):
@@ -1228,13 +1228,13 @@ async def compress_files_impl(
 
 
 def _get_total_size_sync(path: Path, deadline: float) -> int:
-    """同步计算源路径总大小，支持超时 - 小健 2026-05-25"""
+    """同步计算源路径总大小,支持超时 - 小健 2026-05-25"""
     if path.is_file():
         return path.stat().st_size
     total_size = 0
     for file_path in path.rglob("*"):
         if time.monotonic() > deadline:
-            logger.warning("[_get_total_size_sync] 超时自检触发，提前返回")
+            logger.warning("[_get_total_size_sync] 超时自检触发,提前返回")
             break
         if file_path.is_file():
             total_size += file_path.stat().st_size
@@ -1247,7 +1247,7 @@ def _split_zip_file(zip_path: Path, split_size: int) -> List[Path]:
     
     Args:
         zip_path: zip文件路径
-        split_size: 分卷大小（字节）
+        split_size: 分卷大小(字节)
     
     Returns:
         分割后的文件路径列表
@@ -1293,7 +1293,7 @@ async def copy_file_impl(
         destination_path: 目标路径
         recursive: 是否递归复制目录
         overwrite: 是否覆盖已存在的目标
-        preserve_metadata: 是否保留文件元数据（时间戳等），默认True
+        preserve_metadata: 是否保留文件元数据(时间戳等),默认True
         validate_path_func: 路径验证函数
         task_id: 任务ID
         record_operation_func: 记录操作函数
@@ -1324,7 +1324,7 @@ async def copy_file_impl(
             return build_error(ERR_FILE_NOT_FOUND, f"Source not found: {source_path}")
         
         if dst.exists() and not overwrite:
-            return build_error(ERR_FILE_PATH_EXISTS, f"目标路径已存在: {dst}，复制操作已取消。请设置overwrite=True或指定其他路径。")
+            return build_error(ERR_FILE_PATH_EXISTS, f"目标路径已存在: {dst},复制操作已取消。请设置overwrite=True或指定其他路径。")
         
         operation_id = record_operation_func(
             task_id=task_id,
@@ -1389,7 +1389,7 @@ async def file_statistics_impl(
     if not task_id:
         return build_error(ERR_META_NO_ACTIVE_TASK, "No active task")
     if output_format not in ("json", "csv", "text"):
-        return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED, f"不支持的输出格式: {output_format}，支持格式: json, csv, text")
+        return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED, f"不支持的输出格式: {output_format},支持格式: json, csv, text")
 
     dir_path = Path(directory)
 
@@ -1437,7 +1437,7 @@ def _parse_date_filter(date_value: Any) -> Optional[float]:
         timestamp = _parse_date_filter("2024-01-01")
 
     返回数据说明:
-        - 返回Optional[float]，解析失败返回None
+        - 返回Optional[float],解析失败返回None
     """
     if isinstance(date_value, (int, float)):
         return date_value
@@ -1452,7 +1452,7 @@ def _parse_date_filter(date_value: Any) -> Optional[float]:
 
 def _apply_filters(path: Path, filters: Optional[Dict[str, Any]]) -> bool:
     """
-    应用过滤条件 - 小沈 2026-05-18 从file_statistics.py迁移，小健 2026-05-25 重构
+    应用过滤条件 - 小沈 2026-05-18 从file_statistics.py迁移,小健 2026-05-25 重构
 
     使用场景:
         file_statistics/_walk_with_timeout中过滤文件
@@ -1462,7 +1462,7 @@ def _apply_filters(path: Path, filters: Optional[Dict[str, Any]]) -> bool:
             process(file_path)
 
     返回数据说明:
-        - 返回bool，是否通过过滤
+        - 返回bool,是否通过过滤
     """
     if not filters:
         return True
@@ -1532,7 +1532,7 @@ def _build_checksum_result(
 def _calculate_checksum_sync(
     path: Path, algorithm: str, chunk_size: int, timeout: int,
 ) -> str:
-    """同步分块哈希计算（含超时）。
+    """同步分块哈希计算(含超时)。
 
     小沈 2026-05-25 重构拆分
     使用统一的 compute_file_hash 函数。
@@ -1561,11 +1561,11 @@ async def file_checksum_impl(
     file_checksum工具的实现函数 - 小沈 2026-05-03 修正; 格式统一 - 小沈 2026-05-21
     
     Args:
-        file_path: 要计算哈希的文件路径（必填）
-        algorithm: 哈希算法（可选），默认sha256。可选值：md5、sha1、sha256、sha512
-        verify_hash: 验证哈希值（可选），若提供则自动比对并返回verified状态
-        chunk_size: 分块大小（字节），默认65536，用于大文件流式计算
-        timeout: 超时毫秒数（可选），默认30000，Agent根据文件大小动态调整
+        file_path: 要计算哈希的文件路径(必填)
+        algorithm: 哈希算法(可选),默认sha256。可选值:md5、sha1、sha256、sha512
+        verify_hash: 验证哈希值(可选),若提供则自动比对并返回verified状态
+        chunk_size: 分块大小(字节),默认65536,用于大文件流式计算
+        timeout: 超时毫秒数(可选),默认30000,Agent根据文件大小动态调整
         validate_path_func: 路径验证函数
         task_id: 任务ID
         record_operation_func: 记录操作函数
@@ -1573,7 +1573,7 @@ async def file_checksum_impl(
         get_next_sequence_func: 获取下一个序列号函数
     
     Returns:
-        统一格式的结果字典：{ code, data, message }
+        统一格式的结果字典:{ code, data, message }
     """
     from app.services.safety.file.file_safety import OperationType
 
@@ -1586,10 +1586,10 @@ async def file_checksum_impl(
 
     supported_algorithms = ["md5", "sha1", "sha256", "sha512"]
     if algorithm.lower() not in supported_algorithms:
-        return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED, f"不支持的哈希算法: {algorithm}，支持算法: {', '.join(supported_algorithms)}")
+        return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED, f"不支持的哈希算法: {algorithm},支持算法: {', '.join(supported_algorithms)}")
 
     if chunk_size < 1024 or chunk_size > 1048576:
-        return build_error(ERR_PARAMETER_INVALID, f"无效的分块大小: {chunk_size}，必须在1024到1048576之间")
+        return build_error(ERR_PARAMETER_INVALID, f"无效的分块大小: {chunk_size},必须在1024到1048576之间")
 
     path = Path(file_path)
 
@@ -1655,7 +1655,7 @@ async def get_file_info_impl(
                     _dc = 0
                     for _p in path.rglob("*"):
                         if _time.monotonic() > _gi_deadline:
-                            logger.warning(f"[get_file_info] 超时自检触发，提前返回 file_count={_fc}, dir_count={_dc}")
+                            logger.warning(f"[get_file_info] 超时自检触发,提前返回 file_count={_fc}, dir_count={_dc}")
 
                             break
                         if _p.is_file():

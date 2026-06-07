@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """TaskQueries — 查询服务
 
-只负责查询，不修改数据。
-调用方：API、前端。
+只负责查询,不修改数据。
+调用方:API、前端。
 
 Author: 小沈 - 2026-05-29
 """
@@ -14,7 +14,7 @@ from app.utils.data_utils import parse_json
 
 
 class TaskQueries:
-    """任务查询服务 — 只负责查询，不修改数据"""
+    """任务查询服务 — 只负责查询,不修改数据"""
 
     def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
         """获取单个任务"""
@@ -27,7 +27,7 @@ class TaskQueries:
     def get_recent_tasks(
         self, limit: int = 10, intent: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """最近任务列表，可按意图过滤"""
+        """最近任务列表,可按意图过滤"""
         with db.get_conn("task_tracker") as conn:
             if intent:
                 rows = conn.execute(
@@ -43,7 +43,7 @@ class TaskQueries:
             return [dict(r) for r in rows]
 
     def get_operations(self, task_id: str) -> List[Dict[str, Any]]:
-        """获取任务的所有操作（逆序）"""
+        """获取任务的所有操作(逆序)"""
         with db.get_conn("task_tracker") as conn:
             rows = conn.execute(
                 "SELECT * FROM operations WHERE task_id = ? "

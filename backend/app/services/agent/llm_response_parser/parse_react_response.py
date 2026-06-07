@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-输入处理器 + 解析入口模块（第6层 - 顶层，依赖所有下层模块）
+输入处理器 + 解析入口模块(第6层 - 顶层,依赖所有下层模块)
 """
 
 import re
@@ -20,7 +20,7 @@ from ._keyword_parsers import _determine_parse_type
 # ---------------------------------------------------------------------------
 def _handle_dict_input(output) -> Optional[Dict[str, Any]]:
     if isinstance(output, dict):
-        logger.info(f"[parse_react_response] 检测到dict输入，直接解析")
+        logger.info(f"[parse_react_response] 检测到dict输入,直接解析")
         return _create_action_result_from_dict(output)
     return None
 
@@ -30,7 +30,7 @@ def _handle_dict_input(output) -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 def _handle_list_input(output) -> Optional[Dict[str, Any]]:
     if isinstance(output, list):
-        logger.info(f"[parse_react_response] 检测到list输入，解析数组")
+        logger.info(f"[parse_react_response] 检测到list输入,解析数组")
         return _create_action_result_from_list(output)
     return None
 
@@ -43,7 +43,7 @@ def _handle_json_array_string(output) -> Optional[Dict[str, Any]]:
         try:
             parsed_list = json.loads(output)
             if isinstance(parsed_list, list):
-                logger.info(f"[parse_react_response] 检测到JSON数组字符串，解析为list处理")
+                logger.info(f"[parse_react_response] 检测到JSON数组字符串,解析为list处理")
                 return _create_action_result_from_list(parsed_list)
         except (json.JSONDecodeError, TypeError):
             pass
@@ -116,16 +116,16 @@ def _handle_non_standard_json(output) -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 def _handle_incomplete_json(output: str) -> Optional[Dict[str, Any]]:
-    """处理不完整JSON：检测是否像截断的JSON，尝试正则兜底
+    """处理不完整JSON:检测是否像截断的JSON,尝试正则兜底
     
-    与 Handler #8 的区别：
-    - 本函数：JSON 提取失败后的降级，针对"看起来像截断的JSON"的特定情况
-    - Handler #8：所有 JSON 解析都失败后的最终兜底，针对任意输入
+    与 Handler #8 的区别:
+    - 本函数:JSON 提取失败后的降级,针对"看起来像截断的JSON"的特定情况
+    - Handler #8:所有 JSON 解析都失败后的最终兜底,针对任意输入
     
-    错误处理路径：
-    - 像不完整JSON + 正则成功 → 返回 action（带 warning）
+    错误处理路径:
+    - 像不完整JSON + 正则成功 → 返回 action(带 warning)
     - 像不完整JSON + 正则失败 → 返回 chunk
-    - 不像不完整JSON → 返回 None（交给下一个 handler）
+    - 不像不完整JSON → 返回 None(交给下一个 handler)
     """
     if not re.match(r'^\s*\{\s*"thought":\s*"', output):
         return None
@@ -136,14 +136,14 @@ def _handle_incomplete_json(output: str) -> Optional[Dict[str, Any]]:
         return _add_reasoning_warning(regex_recovered)
 
     thought_text = output.strip()
-    logger.info("检测到不完整JSON格式，返回chunk")
+    logger.info("检测到不完整JSON格式,返回chunk")
     return _build_handler_result("chunk", thought=thought_text)
 
 
 def _handle_finish_tool(json_data: Dict, prefix_text: str) -> Optional[Dict[str, Any]]:
     """处理 tool_name == "finish" 的情况
     
-    错误处理路径：
+    错误处理路径:
     - tool_params.result 存在 → 拼接 prefix_text + result_text
     - tool_params.result 不存在 → 返回空 content
     - prefix_text 为空 → 直接用 result_text
@@ -168,8 +168,8 @@ def _handle_finish_tool(json_data: Dict, prefix_text: str) -> Optional[Dict[str,
 def _handle_implicit_content(json_data: Dict, output: str, prefix_text: str) -> Optional[Dict[str, Any]]:
     """处理有 content/reasoning 但无 tool_name 的隐式解析
     
-    错误处理路径：
-    - output 包含 "Action:" 或 "Answer:" → 返回 None（让后续 handler 处理）
+    错误处理路径:
+    - output 包含 "Action:" 或 "Answer:" → 返回 None(让后续 handler 处理)
     - content 是嵌套 JSON 字符串 → 尝试解析提取内层 content
     - content 解析失败 → 保留原始 content
     """
@@ -183,14 +183,14 @@ def _handle_implicit_content(json_data: Dict, output: str, prefix_text: str) -> 
     content = json_data.get("content", "")
     reasoning = json_data.get("reasoning", "")
 
-    # 尝试解析嵌套的 content JSON（如 content 字段本身是 JSON 字符串）
+    # 尝试解析嵌套的 content JSON(如 content 字段本身是 JSON 字符串)
     if isinstance(content, str) and content.startswith("{"):
         try:
             parsed = json.loads(content)
             if isinstance(parsed, dict):
                 content = parsed.get("content", content)
         except (json.JSONDecodeError, TypeError):
-            pass  # 解析失败，保留原始 content
+            pass  # 解析失败,保留原始 content
 
     return _build_handler_result("implicit", thought=prefix_text or content,
         content=content, reasoning=reasoning, response=content)
@@ -206,7 +206,7 @@ def _handle_mixed_text_json(output) -> Optional[Dict[str, Any]]:
         json_start = output.find("{")
         prefix_text = output[:json_start].strip() if json_start != -1 else ""
 
-    # 没有 JSON 块：尝试不完整 JSON 处理
+    # 没有 JSON 块:尝试不完整 JSON 处理
     if not json_data:
         return _handle_incomplete_json(output)
 
@@ -236,21 +236,21 @@ def _handle_mixed_text_json(output) -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Handler #8: 正则兜底
 # ---------------------------------------------------------------------------
-# Handler #8: 正则兜底（所有 JSON 解析失败后的最终兜底）
-# 与 _handle_incomplete_json 的区别：本 handler 不检查输入格式，直接尝试正则
+# Handler #8: 正则兜底(所有 JSON 解析失败后的最终兜底)
+# 与 _handle_incomplete_json 的区别:本 handler 不检查输入格式,直接尝试正则
 # ---------------------------------------------------------------------------
 def _handle_regex_fallback(output) -> Optional[Dict[str, Any]]:
     if not isinstance(output, str):
         return None
     regex_recovered = _try_regex_tool_call_fallback(output)
     if regex_recovered:
-        logger.info("[parse_react_response] 正则兜底提取到 tool 调用，跳过关键词匹配")
+        logger.info("[parse_react_response] 正则兜底提取到 tool 调用,跳过关键词匹配")
         return _add_reasoning_warning(regex_recovered)
     return None
 
 
 # ---------------------------------------------------------------------------
-# Handler #9: 已知工具名匹配（从内容中提取工具名）
+# Handler #9: 已知工具名匹配(从内容中提取工具名)
 # ---------------------------------------------------------------------------
 def _handle_known_tool_match(output) -> Optional[Dict[str, Any]]:
     if not isinstance(output, str):
@@ -262,7 +262,7 @@ def _handle_known_tool_match(output) -> Optional[Dict[str, Any]]:
     if not known_tool_names:
         return None
 
-    # 构建单个正则，一次匹配所有工具名（O(m) 替代 O(n×m)）
+    # 构建单个正则,一次匹配所有工具名(O(m) 替代 O(n×m))
     escaped_names = [re.escape(name) for name in known_tool_names]
     combined_pattern = rf'(?i)\b({"|".join(escaped_names)})\b'
     match = re.search(combined_pattern, output)
@@ -297,7 +297,7 @@ def _handle_known_tool_match(output) -> Optional[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Handler #10: 关键词匹配（最终兜底）
+# Handler #10: 关键词匹配(最终兜底)
 # ---------------------------------------------------------------------------
 def _handle_keyword_match(output) -> Optional[Dict[str, Any]]:
     logger.info(f"[parse_react_response] 走关键词匹配流程")
@@ -305,7 +305,7 @@ def _handle_keyword_match(output) -> Optional[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# 解析器链配置：按优先级顺序排列
+# 解析器链配置:按优先级顺序排列
 # ---------------------------------------------------------------------------
 _HANDLERS = [
     _handle_dict_input,
@@ -330,7 +330,7 @@ def parse_react_response(output: str) -> Dict[str, Any]:
         if result is not None:
             return result
 
-    logger.error("[parse_react_response] 所有handler返回None，解析器链异常")
+    logger.error("[parse_react_response] 所有handler返回None,解析器链异常")
     return {
         "type": "parse_error",
         "error": "Parser chain exhausted",

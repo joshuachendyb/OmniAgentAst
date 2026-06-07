@@ -2,11 +2,11 @@
 """
 LLM 调用策略模块
 
-两种策略：
-1. TextStrategy：文本模式，直接返回响应文本
-2. ToolsStrategy：Function Calling 模式，通过 tools Schema 约束
+两种策略:
+1. TextStrategy:文本模式,直接返回响应文本
+2. ToolsStrategy:Function Calling 模式,通过 tools Schema 约束
 
-策略在首次LLM调用时确定，后续不再变化。
+策略在首次LLM调用时确定,后续不再变化。
 
 Author: 小沈 - 2026-03-21
 """
@@ -34,11 +34,11 @@ class LLMStrategy(ABC):
         conversation_history: List[Dict[str, str]],
         **kwargs
     ) -> str:
-        """调用 LLM — messages是完整的消息列表（含system/user/assistant/tool）"""
+        """调用 LLM — messages是完整的消息列表(含system/user/assistant/tool)"""
         pass
     
     def _make_parse_error(self, error: str, content: str = "") -> str:
-        """构建parse_error返回（消除5倍内联字典重复）- 小沈 2026-05-24"""
+        """构建parse_error返回(消除5倍内联字典重复)- 小沈 2026-05-24"""
         return json.dumps({
             "type": "parse_error",
             "error": error,
@@ -49,7 +49,7 @@ class LLMStrategy(ABC):
         }, ensure_ascii=False)
     
     def _make_result(self, content: str, tool_name: str, tool_params: dict, reasoning: Any = None, response: str = "") -> str:
-        """构建返回结果（基类方法，供子类使用）- 小沈2026-05-07加response字段"""
+        """构建返回结果(基类方法,供子类使用)- 小沈2026-05-07加response字段"""
         result = {
             "content": content,
             "tool_name": tool_name,
@@ -65,7 +65,7 @@ class TextStrategy(LLMStrategy):
     """
     文本模式
     
-    直接返回响应文本，不使用任何约束
+    直接返回响应文本,不使用任何约束
     适用于简单对话或流式输出
     
     【分层处理架构 C + A + B】
@@ -75,7 +75,7 @@ class TextStrategy(LLMStrategy):
     """
 
     def _extract_llm_content(self, response: Any) -> tuple:
-        """提取LLM响应的文本内容 + error_info + reasoning。三段式：content→dict→str - 北京老陈 2026-05-25"""
+        """提取LLM响应的文本内容 + error_info + reasoning。三段式:content→dict→str - 北京老陈 2026-05-25"""
         error_info = None
         if getattr(response, "error", None):
             error_info = response.error
@@ -103,7 +103,7 @@ class TextStrategy(LLMStrategy):
 
     @staticmethod
     def _build_chunk_data(parsed: Dict, response_reasoning: Optional[str]) -> str:
-        """构造chunk_data结构体，TextStrategy/JsonStrategy共享 - 北京老陈 2026-05-25"""
+        """构造chunk_data结构体,TextStrategy/JsonStrategy共享 - 北京老陈 2026-05-25"""
         chunk_data = {
             "type": "chunk",
             "content": parsed.get("content", ""),
@@ -120,24 +120,24 @@ class TextStrategy(LLMStrategy):
         return json.dumps(chunk_data, ensure_ascii=False)
 
     def _handle_action_response(self, parsed: Dict, reasoning: Optional[str]) -> Optional[str]:
-        """处理action类型。tool_name有效→返回result；缺失→fallthrough返回None - 北京老陈 2026-05-25"""
+        """处理action类型。tool_name有效→返回result;缺失→fallthrough返回None - 北京老陈 2026-05-25"""
         tool_name = parsed.get("tool_name")
         raw_tool_params = parsed.get("tool_params")
         tool_params = raw_tool_params if raw_tool_params is not None else {}
         if tool_name and raw_tool_params is not None:
-            logger.info(f"[TextStrategy] type=action, tool_name和tool_params都有值，直接返回")
+            logger.info(f"[TextStrategy] type=action, tool_name和tool_params都有值,直接返回")
             return self._make_result(
                 content=parsed.get("content", ""),
                 tool_name=tool_name,
                 tool_params=tool_params,
                 reasoning=parsed.get("reasoning")
             )
-        logger.info(f"[TextStrategy] type=action 但 tool_name={tool_name}, tool_params={bool(tool_params)}，继续下一层解析")
+        logger.info(f"[TextStrategy] type=action 但 tool_name={tool_name}, tool_params={bool(tool_params)},继续下一层解析")
         return None
 
     def _resolve_parse_fallback(self, content: str, parsed_type: Optional[str]) -> str:
-        """统一fallback处理：所有解析失败都返回parse_error - 北京老陈 2026-05-25"""
-        logger.info(f"[TextStrategy] parse_react_response返回type={parsed_type}，fallback到parse_error")
+        """统一fallback处理:所有解析失败都返回parse_error - 北京老陈 2026-05-25"""
+        logger.info(f"[TextStrategy] parse_react_response返回type={parsed_type},fallback到parse_error")
         return self._make_parse_error(
             "无法从 LLM 响应中提取工具调用",
             content=content[:200] + ("..." if len(content) > 200 else "")
@@ -150,10 +150,10 @@ class TextStrategy(LLMStrategy):
         conversation_history: List[Dict[str, str]],
         **kwargs
     ) -> str:
-        """调用 LLM（文本模式）— 只返回原始文本，不解析（DRY原则）
+        """调用 LLM(文本模式)— 只返回原始文本,不解析(DRY原则)
         
-        【重构 2026-05-27 小健】遵循设计文档2.3节：
-        - 移除内部parse_react_response调用（违反DRY）
+        【重构 2026-05-27 小健】遵循设计文档2.3节:
+        - 移除内部parse_react_response调用(违反DRY)
         - 直接返回原始LLM文本内容
         - base_react.py作为唯一解析入口调用parse_react_response()
         - 429重试由llm_core传输层统一处理
@@ -172,15 +172,15 @@ class TextStrategy(LLMStrategy):
             _, user_message = get_stream_error_info('empty_response')
             return self._make_parse_error(user_message)
         
-        logger.info(f"[TextStrategy] 返回原始文本，由base_react.py统一解析")
+        logger.info(f"[TextStrategy] 返回原始文本,由base_react.py统一解析")
         return content
     
-    # ===== 方案A：分级错误信息 =====
+    # ===== 方案A:分级错误信息 =====
     ERROR_HINTS = {
         "api_limit": {
             "title": "API调用频繁",
-            "description": "模型访问量过大，已被限流",
-            "suggestion": "请稍后再试，或更换其他模型"
+            "description": "模型访问量过大,已被限流",
+            "suggestion": "请稍后再试,或更换其他模型"
         },
         "timeout": {
             "title": "请求超时",
@@ -212,20 +212,20 @@ class TextStrategy(LLMStrategy):
     def _format_error_hint(self, error: str) -> str:
         """
         【2026-04-10 小沈重构】
-        格式化错误提示信息，使用统一的 error_handler.py 分类
-        复用 resolve_http_error_type 解析HTTP错误码，确保错误分类统一
+        格式化错误提示信息,使用统一的 error_handler.py 分类
+        复用 resolve_http_error_type 解析HTTP错误码,确保错误分类统一
         
         Args:
-            error: 原始错误信息（如 "limit_error", "HTTP 500" 等）
+            error: 原始错误信息(如 "limit_error", "HTTP 500" 等)
         
         Returns:
-            格式化后的错误提示（用户友好的中文提示）
+            格式化后的错误提示(用户友好的中文提示)
         """
         # 【修复 2026-04-10】使用 resolve_http_error_type 解析HTTP错误码
-        # 优先匹配数字错误码（429、500等），保留API返回的真实信息
+        # 优先匹配数字错误码(429、500等),保留API返回的真实信息
         error_type = resolve_http_error_type(str(error))
         
-        # 如果无法解析HTTP错误码，使用 'unknown' 作为后备
+        # 如果无法解析HTTP错误码,使用 'unknown' 作为后备
         if error_type is None:
             error_type = 'unknown'
         
@@ -254,12 +254,12 @@ class ToolsStrategy(LLMStrategy):
         初始化 Function Calling 策略
 
         Args:
-            tools: 工具定义列表，格式参考 OpenAI tools 规范
+            tools: 工具定义列表,格式参考 OpenAI tools 规范
         """
         self.tools = tools or []
 
     async def _fallback_to_text(self, messages: List[Dict], **kwargs) -> str:
-        """fallback到TextStrategy（消除重复3次的内联回退模式）- 小沈 2026-05-24"""
+        """fallback到TextStrategy(消除重复3次的内联回退模式)- 小沈 2026-05-24"""
         text_strategy = TextStrategy()
         if self.tools:
             messages = self._inject_tools_into_messages(messages)
@@ -272,7 +272,7 @@ class ToolsStrategy(LLMStrategy):
         )
 
     def _inject_tools_into_messages(self, messages: List[Dict]) -> List[Dict]:
-        """将tools定义作为文本注入到messages中（fallback到text模式时使用）— 小沈 2026-05-24"""
+        """将tools定义作为文本注入到messages中(fallback到text模式时使用)— 小沈 2026-05-24"""
         if not self.tools:
             return messages
         lines = ["【可用工具】"]
@@ -304,7 +304,7 @@ class ToolsStrategy(LLMStrategy):
         conversation_history: List[Dict[str, str]],
         **kwargs
     ) -> str:
-        """调用 LLM（Function Calling 模式）"""
+        """调用 LLM(Function Calling 模式)"""
         logger.info(f"[ToolsStrategy] call() 被调用, model={getattr(llm_client, 'model', '?')}, tools_count={len(self.tools)}")
         
         if not hasattr(llm_client, 'chat_with_tools'):
@@ -347,9 +347,9 @@ class ToolsStrategy(LLMStrategy):
                         logger.info(f"[Function Calling] Non-list response: {content[:200]}")
                         return content
                 except (json.JSONDecodeError, TypeError) as e:
-                    # 非JSON响应直接给下游parse_react_response统一解析（SRP：策略层只负责调用LLM，不负责解析）
+                    # 非JSON响应直接给下游parse_react_response统一解析(SRP:策略层只负责调用LLM,不负责解析)
                     content = response.content
-                    logger.info(f"[Function Calling] 非JSON响应，原始文本交给parse_react_response解析: {content[:200]}")
+                    logger.info(f"[Function Calling] 非JSON响应,原始文本交给parse_react_response解析: {content[:200]}")
                     return content
             else:
                 logger.warning("[Function Calling] Empty response, falling back to text mode")
@@ -365,14 +365,14 @@ class ToolsStrategy(LLMStrategy):
             return self._make_api_error_response(str(e))
     
     def _make_api_error_response(self, error_msg: str) -> str:
-        """统一API错误响应构建（消除重复DRY #12）- 小健 2026-05-31"""
+        """统一API错误响应构建(消除重复DRY #12)- 小健 2026-05-31"""
         error_type = resolve_http_error_type(error_msg)
         _error_code, error_message = get_stream_error_info(error_type, original_message=error_msg)
         return self._make_parse_error(error_message, content=f"[错误] {error_message}")
     
     @staticmethod
     def _parse_tool_args(func_args: Any) -> Dict[str, Any]:
-        """解析工具参数JSON，失败时返回空dict — 消除重复 小健2026-05-31"""
+        """解析工具参数JSON,失败时返回空dict — 消除重复 小健2026-05-31"""
         try:
             return json.loads(func_args) if isinstance(func_args, str) else func_args
         except (json.JSONDecodeError, TypeError):
@@ -403,7 +403,7 @@ class ToolsStrategy(LLMStrategy):
                 "tool_params": args
             }
         else:
-            # 多个工具调用（执行第一个，其余放入_pending_calls依次执行）
+            # 多个工具调用(执行第一个,其余放入_pending_calls依次执行)
             calls_info = []
             for call in tool_calls:
                 func = call.get("function", {})

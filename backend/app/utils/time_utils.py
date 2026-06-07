@@ -3,12 +3,12 @@
 时间工具函数 — 统一时间戳/步骤计数器入口
 
 【公共函数规范】
-本文件是公共utility模块，所有时间相关公共函数必须在此定义。
-禁止在业务代码（api/v1/、services/等）中重复定义公共函数。
+本文件是公共utility模块,所有时间相关公共函数必须在此定义。
+禁止在业务代码(api/v1/、services/等)中重复定义公共函数。
 
-【小健 2026-05-28】SRP+DRY：从chat_helpers.py提取集中到此
-【小沈 2026-05-28】新增：convert_to_utc/ensure_ts_milliseconds/get_timestamp_ms/get_utc_timestamp
-【小沈 2026-05-29】重命名：ensure_ts_milliseconds → ensure_timestamp_milliseconds（符合命名规范）
+【小健 2026-05-28】SRP+DRY:从chat_helpers.py提取集中到此
+【小沈 2026-05-28】新增:convert_to_utc/ensure_ts_milliseconds/get_timestamp_ms/get_utc_timestamp
+【小沈 2026-05-29】重命名:ensure_ts_milliseconds → ensure_timestamp_milliseconds(符合命名规范)
 
 Author: 小健 - 2026-05-28
 """
@@ -18,17 +18,17 @@ from typing import Any, Callable
 
 
 def create_timestamp() -> int:
-    """生成统一的时间戳（毫秒）"""
+    """生成统一的时间戳(毫秒)"""
     return int(datetime.now().timestamp() * 1000)
 
 
 def get_timestamp_ms() -> int:
-    """获取毫秒时间戳（UTC）"""
+    """获取毫秒时间戳(UTC)"""
     return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
 def get_utc_timestamp() -> str:
-    """获取UTC时间戳，ISO格式"""
+    """获取UTC时间戳,ISO格式"""
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
@@ -61,7 +61,7 @@ def create_step_counter() -> Callable[[], int]:
     创建统一的步骤计数器函数
 
     Returns:
-        返回一个闭包函数，每次调用返回递增的步骤号（从1开始）
+        返回一个闭包函数,每次调用返回递增的步骤号(从1开始)
     """
     step_counter = 0
 
@@ -76,13 +76,13 @@ def create_step_counter() -> Callable[[], int]:
 def timestamp_for_filename() -> str:
     """生成文件名用时间戳: YYYYMMDD_HHMMSS
 
-    消除 8 处独立重复：ai_config/_backup_config.py、tools/desktop/gui_tools.py 等
+    消除 8 处独立重复:ai_config/_backup_config.py、tools/desktop/gui_tools.py 等
     """
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 def now_str(fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
-    """获取当前时间格式字符串，默认 YYYY-MM-DD HH:MM:SS
+    """获取当前时间格式字符串,默认 YYYY-MM-DD HH:MM:SS
 
     消除 43 处散落的重复 datetime.now().strftime(...) 调用
     """

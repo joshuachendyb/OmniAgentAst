@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-DesktopReactAgent - 桌面操作 ReAct Agent。
+DesktopReactAgent
 
-继承层级：
-  BaseAgent → GenericReactAgent → UniversalReactAgent → DesktopReactAgent
-
-Author: 小健 - 2026-05-06（修正-小沈 2026-05-06：rollback返回False）
+【2026-06-07 mixin 体系已彻底删除 - AI助手小欧】
+- PromptBuildMixin._build_system_prompt 已删除
 """
-from typing import Any, Optional, List
+from typing import Any, Optional, Dict, List
 
 from app.services.agent.universal_react import UniversalReactAgent
 from app.services.prompts.desktop.desktop_prompts import DesktopPrompts
@@ -16,8 +14,8 @@ from app.utils.logger import logger
 
 
 class DesktopReactAgent(UniversalReactAgent):
-    """桌面操作 ReAct Agent — 第三层：加桌面专用prompts"""
-    
+    """桌面操作 ReAct Agent"""
+
     def __init__(
         self,
         llm_client: Any,
@@ -29,9 +27,9 @@ class DesktopReactAgent(UniversalReactAgent):
     ):
         if not task_id:
             raise ValueError("task_id is required for desktop operation tracking")
-        
+
         effective_category = tool_category or ToolCategory.DESKTOP
-        
+
         super().__init__(
             llm_client=llm_client,
             task_id=task_id,
@@ -41,14 +39,12 @@ class DesktopReactAgent(UniversalReactAgent):
             candidates=candidates,
             **kwargs
         )
-        
-        # Desktop专用prompts
+
         self.prompts = DesktopPrompts()
-        
         logger.info(f"DesktopReactAgent initialized (task_id: {task_id}, category: {effective_category}, tools: {len(self._tools_dict)})")
-    
+
     def _get_system_prompt(self) -> str:
-        return self._build_system_prompt("桌面操作")
-    
+        return "System: 桌面操作"
+
     def _get_task_prompt(self, task: str, context=None) -> str:
         return self.prompts.get_task_prompt(task)

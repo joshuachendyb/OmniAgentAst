@@ -8,7 +8,7 @@ def _restore_backup_if_needed(
     backup_path: Optional[Path], config_path: Optional[Path],
     restored_flag: List[bool],
 ) -> bool:
-    """恢复备份配置（仅一次）- 小健 2026-05-25"""
+    """恢复备份配置(仅一次)- 小健 2026-05-25"""
     if restored_flag[0]:
         return False
     if not backup_path or not config_path or not backup_path.exists():

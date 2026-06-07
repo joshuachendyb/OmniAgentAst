@@ -2,9 +2,9 @@
 """
 SSE 事件格式化工具函数
 
-提供统一的 SSE 事件格式化功能，用于将各种类型的消息转换为 SSE 格式字符串。
+提供统一的 SSE 事件格式化功能,用于将各种类型的消息转换为 SSE 格式字符串。
 Author: 小沈 - 2026-03-22
-Updated: 2026-05-30 删除 8 个 format_*_sse，format_agent_sse 支持 dict+Step 双输入
+Updated: 2026-05-30 删除 8 个 format_*_sse,format_agent_sse 支持 dict+Step 双输入
 """
 
 import json
@@ -42,18 +42,18 @@ def format_agent_sse(event_or_step, step: int = None, model: str = '', provider:
     """
     统一Agent事件SSE格式化入口
 
-    支持两种输入：
-    1. Step 对象（新代码）：format_agent_sse(step_obj)
-    2. dict：format_agent_sse(event_dict, step, model, provider)
+    支持两种输入:
+    1. Step 对象(新代码):format_agent_sse(step_obj)
+    2. dict:format_agent_sse(event_dict, step, model, provider)
 
     Args:
-        event_or_step: ReasoningStep 子类实例，或 event dict
-        step: 步骤编号（仅 dict 输入时使用）
-        model: 模型名称（仅 dict 输入时使用）
-        provider: 提供商（仅 dict 输入时使用）
+        event_or_step: ReasoningStep 子类实例,或 event dict
+        step: 步骤编号(仅 dict 输入时使用)
+        model: 模型名称(仅 dict 输入时使用)
+        provider: 提供商(仅 dict 输入时使用)
 
     Returns:
-        SSE格式字符串，空字符串表示无需发送
+        SSE格式字符串,空字符串表示无需发送
     """
     if isinstance(event_or_step, dict):
         event_type = event_or_step.get('type', '')

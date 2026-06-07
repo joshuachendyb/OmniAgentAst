@@ -3,14 +3,14 @@ from .models import ConfigResponse, SecurityConfig
 from ._decorators import handle_config_errors
 from app.config import get_config as get_config_instance
 from app.utils.logger import logger
-from app.services.ai_config_resolver import resolve_provider_model
+from app.services.ai_config_resolver import get_ai_config_resolver
 
 
 @router.get("/config", response_model=ConfigResponse)
 @handle_config_errors("获取配置")
 async def get_system_config():
     config = get_config_instance()
-    final_provider, final_model = resolve_provider_model()
+    final_provider, final_model = get_ai_config_resolver().resolve_provider_model()
     ai_config = config.get('ai', {})
     provider_config = ai_config.get(final_provider, {})
     api_key = provider_config.get('api_key', '')

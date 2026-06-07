@@ -15,17 +15,17 @@ from app.services.llm.core import ChatResponse
 
 
 class ToolCallerMixin:
-    """Function Calling（SRP）"""
+    """Function Calling(SRP)"""
 
     async def _cancel_or_wait(self, request_task: asyncio.Task) -> Optional[ChatResponse]:
-        """复制自 llm_core.py 第279-298行 — 心跳循环：1秒间隔检查取消"""
+        """复制自 llm_core.py 第279-298行 — 心跳循环:1秒间隔检查取消"""
         try:
             while not request_task.done():
                 try:
                     await asyncio.wait_for(asyncio.shield(request_task), timeout=1.0)
                 except asyncio.TimeoutError:
                     if self._cancelled:
-                        logger.info("[chat_with_tools] 检测到取消，中断请求")
+                        logger.info("[chat_with_tools] 检测到取消,中断请求")
                         request_task.cancel()
                         try:
                             await request_task
@@ -62,7 +62,7 @@ class ToolCallerMixin:
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto",
     ) -> ChatResponse:
-        """复制自 llm_core.py 第348-381行 — 发送对话请求（使用 Function Calling）"""
+        """复制自 llm_core.py 第348-381行 — 发送对话请求(使用 Function Calling)"""
         try:
             full_content = ""
             full_reasoning = ""

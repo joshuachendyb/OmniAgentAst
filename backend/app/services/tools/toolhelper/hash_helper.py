@@ -3,13 +3,13 @@
 哈希计算公共Helper - 统一哈希算法选择和计算
 
 【创建时间】2026-05-18 小沈
-【说明】从 file_helpers.py 的 hash_file_tool 提取公共逻辑，
+【说明】从 file_helpers.py 的 hash_file_tool 提取公共逻辑,
        供 file_tools.hash_file_tool 和 file_checksum 等复用。
-       不注册到tool_registry，不暴露给LLM。
+       不注册到tool_registry,不暴露给LLM。
 
-包含函数：
-- select_hasher: 统一哈希算法选择（md5/sha1/sha256/sha512）
-- compute_file_hash: 核心哈希计算，返回hexdigest字符串
+包含函数:
+- select_hasher: 统一哈希算法选择(md5/sha1/sha256/sha512)
+- compute_file_hash: 核心哈希计算,返回hexdigest字符串
 - compute_batch_file_hash: 批量哈希计算
 
 Author: 小沈 - 2026-05-18
@@ -28,7 +28,7 @@ def select_hasher(algorithm: str) -> Any:
     """统一哈希算法选择 - 小沈 2026-05-18
 
     Args:
-        algorithm: 哈希算法名称（md5/sha1/sha256/sha512）
+        algorithm: 哈希算法名称(md5/sha1/sha256/sha512)
 
     Returns:
         对应的hashlib哈希对象
@@ -46,7 +46,7 @@ def select_hasher(algorithm: str) -> Any:
     elif algorithm == "sha512":
         return hashlib.sha512()
     else:
-        raise ValueError(f"不支持的哈希算法: {algorithm}，支持: {', '.join(sorted(SUPPORTED_ALGORITHMS))}")
+        raise ValueError(f"不支持的哈希算法: {algorithm},支持: {', '.join(sorted(SUPPORTED_ALGORITHMS))}")
 
 
 def compute_file_hash(
@@ -55,13 +55,13 @@ def compute_file_hash(
     chunk_size: int = 65536,
     timeout_ms: int = None,
 ) -> str:
-    """核心哈希计算，返回hexdigest字符串 - 小沈 2026-05-18
+    """核心哈希计算,返回hexdigest字符串 - 小沈 2026-05-18
 
     Args:
-        file_path: 文件路径（绝对路径）
-        algorithm: 哈希算法（md5/sha1/sha256/sha512）
-        chunk_size: 分块大小，默认64KB
-        timeout_ms: 超时毫秒数，None表示无超时
+        file_path: 文件路径(绝对路径)
+        algorithm: 哈希算法(md5/sha1/sha256/sha512)
+        chunk_size: 分块大小,默认64KB
+        timeout_ms: 超时毫秒数,None表示无超时
 
     Returns:
         hexdigest字符串
@@ -69,7 +69,7 @@ def compute_file_hash(
     Raises:
         FileNotFoundError: 文件不存在
         ValueError: 不支持的算法
-        TimeoutError: 超时（如果timeout_ms不为None）
+        TimeoutError: 超时(如果timeout_ms不为None)
     """
     import time
     hasher = select_hasher(algorithm)
@@ -86,7 +86,7 @@ def compute_file_hash(
             if start_time is not None and timeout_ms is not None:
                 elapsed_ms = (time.time() - start_time) * 1000
                 if elapsed_ms > timeout_ms:
-                    raise TimeoutError(f"哈希计算超时（{timeout_ms}毫秒）")
+                    raise TimeoutError(f"哈希计算超时({timeout_ms}毫秒)")
     
     return hasher.hexdigest()
 
@@ -100,7 +100,7 @@ def compute_batch_file_hash(
 
     Args:
         file_paths: 文件路径列表
-        algorithm: 哈希算法，默认md5（批量场景常用md5）
+        algorithm: 哈希算法,默认md5(批量场景常用md5)
         chunk_size: 分块大小
 
     Returns:

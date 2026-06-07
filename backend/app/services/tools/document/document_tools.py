@@ -4,19 +4,19 @@
 
 【创建时间】2026-05-02 小沈
 【设计依据】按文档第8.3节 Tool 80-82 定义
-【重构 2026-05-18 小健】8个旧函数抽取为内部函数，新增read_document/write_document路由函数
+【重构 2026-05-18 小健】8个旧函数抽取为内部函数,新增read_document/write_document路由函数
 
 【重要】新函数增加规范 - 小沈 2026-05-04
-新增函数时必须同步修改以下3个文件：
-1. *_tools.py: 函数实现（必须有详细注释）
-2. *_schema.py: Pydantic 模型（输入参数定义）
-3. *_register.py: 显式注册（description + examples + input_model）
+新增函数时必须同步修改以下3个文件:
+1. *_tools.py: 函数实现(必须有详细注释)
+2. *_schema.py: Pydantic 模型(输入参数定义)
+3. *_register.py: 显式注册(description + examples + input_model)
 
-包含：
+包含:
 - _read_pdf / _read_docx / _read_xlsx / _read_pptx: 内部读取函数
 - _write_docx / _write_xlsx / _write_pdf / _write_pptx: 内部写入函数
-- read_document: 统一读取路由（按后缀自动选择解析器）
-- write_document: 统一写入路由（按后缀自动选择写入器）
+- read_document: 统一读取路由(按后缀自动选择解析器)
+- write_document: 统一写入路由(按后缀自动选择写入器)
 - convert_document: 文档格式转换
 
 Author: 小沈 - 2026-05-02
@@ -50,7 +50,7 @@ from app.services.tools.tool_constants import SUBPROCESS_TIMEOUT_LONG
 
 
 def _check_pdf_readable(file_path: str) -> Dict[str, Any]:
-    """检查PDF文件是否可读（内部helper） - 小沈 2026-05-18，从env_check_tools.py迁入"""
+    """检查PDF文件是否可读(内部helper) - 小沈 2026-05-18,从env_check_tools.py迁入"""
     path = Path(file_path)
     if not path.exists():
         return build_error(ERR_DOC_READ_PDF, f"文件不存在: {file_path}")
@@ -59,16 +59,16 @@ def _check_pdf_readable(file_path: str) -> Dict[str, Any]:
         with pdfplumber.open(path) as pdf:
             page_count = len(pdf.pages)
         return build_success({"readable": True, "page_count": page_count},
-                f"PDF文件可读，共 {page_count} 页")
+                f"PDF文件可读,共 {page_count} 页")
     except ImportError:
         return build_error(ERR_NO_PDFPLUMBER,
-                "pdfplumber库未安装，请先执行: pip install pdfplumber")
+                "pdfplumber库未安装,请先执行: pip install pdfplumber")
     except Exception as e:
         return build_error(ERR_DOC_READ_PDF, f"PDF文件不可读: {str(e)}")
 
 
 def _check_docx_readable(file_path: str) -> Dict[str, Any]:
-    """检查Word文件是否可读（内部helper） - 小沈 2026-05-18，从env_check_tools.py迁入"""
+    """检查Word文件是否可读(内部helper) - 小沈 2026-05-18,从env_check_tools.py迁入"""
     path = Path(file_path)
     if not path.exists():
         return build_error(ERR_DOC_READ_DOCX, f"文件不存在: {file_path}")
@@ -77,16 +77,16 @@ def _check_docx_readable(file_path: str) -> Dict[str, Any]:
         doc = docx.Document(path)
         para_count = len(doc.paragraphs)
         return build_success({"readable": True, "paragraph_count": para_count},
-                f"Word文件可读，共 {para_count} 段")
+                f"Word文件可读,共 {para_count} 段")
     except ImportError:
         return build_error(ERR_NO_DOCX,
-                "python-docx库未安装，请先执行: pip install python-docx")
+                "python-docx库未安装,请先执行: pip install python-docx")
     except Exception as e:
         return build_error(ERR_DOC_READ_DOCX, f"Word文件不可读: {str(e)}")
 
 
 def _check_xlsx_readable(file_path: str) -> Dict[str, Any]:
-    """检查Excel文件是否可读（内部helper） - 小沈 2026-05-18，从env_check_tools.py迁入"""
+    """检查Excel文件是否可读(内部helper) - 小沈 2026-05-18,从env_check_tools.py迁入"""
     path = Path(file_path)
     if not path.exists():
         return build_error(ERR_DOC_READ_XLSX, f"文件不存在: {file_path}")
@@ -96,16 +96,16 @@ def _check_xlsx_readable(file_path: str) -> Dict[str, Any]:
         sheet_names = wb.sheetnames
         wb.close()
         return build_success({"readable": True, "sheet_names": sheet_names},
-                f"Excel文件可读，共 {len(sheet_names)} 个工作表")
+                f"Excel文件可读,共 {len(sheet_names)} 个工作表")
     except ImportError:
         return build_error(ERR_DOC_NO_OPENPYXL,
-                "openpyxl库未安装，请先执行: pip install openpyxl")
+                "openpyxl库未安装,请先执行: pip install openpyxl")
     except Exception as e:
         return build_error(ERR_DOC_READ_XLSX, f"Excel文件不可读: {str(e)}")
 
 
 def _validate_csv_format(file_path: str) -> Dict[str, Any]:
-    """验证CSV文件格式（内部helper） - 小沈 2026-05-18，从env_check_tools.py迁入"""
+    """验证CSV文件格式(内部helper) - 小沈 2026-05-18,从env_check_tools.py迁入"""
     path = Path(file_path)
     if not path.exists():
         return build_error(ERR_DOC_READ_CSV, f"文件不存在: {file_path}")
@@ -124,7 +124,7 @@ def _validate_csv_format(file_path: str) -> Dict[str, Any]:
                     col_count = len(row)
                 elif len(row) != col_count:
                     if len(row) != 0:
-                        errors.append(f"第{i+1}行列数不一致: 期望{col_count}列，实际{len(row)}列")
+                        errors.append(f"第{i+1}行列数不一致: 期望{col_count}列,实际{len(row)}列")
                 if row_count > 1000:
                     break
     except UnicodeDecodeError:
@@ -150,7 +150,7 @@ def _validate_csv_format(file_path: str) -> Dict[str, Any]:
 
 
 def _validate_chart_data(data: Dict[str, Any]) -> Dict[str, Any]:
-    """验证图表数据格式（内部helper） - 小沈 2026-05-18，从env_check_tools.py迁入"""
+    """验证图表数据格式(内部helper) - 小沈 2026-05-18,从env_check_tools.py迁入"""
     errors = []
     if not isinstance(data, dict):
         errors.append("data必须是字典类型")
@@ -182,9 +182,9 @@ def _read_csv_pandas(
     has_header: bool = True,
     max_rows: int = 1000,
 ) -> Dict[str, Any]:
-    """使用pandas读取CSV文件 - 小沈 2026-05-18（从data_analysis迁入）"""
+    """使用pandas读取CSV文件 - 小沈 2026-05-18(从data_analysis迁入)"""
     if not _check_module("pandas"):
-        return build_error(ERR_NO_PANDAS, "pandas库未安装，请先执行: pip install pandas")
+        return build_error(ERR_NO_PANDAS, "pandas库未安装,请先执行: pip install pandas")
     try:
         import pandas as pd
         path = Path(file_path)
@@ -195,7 +195,7 @@ def _read_csv_pandas(
         columns = df.columns.tolist()
         serialized_rows = _serialize_rows(df)
         dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
-        return build_success({"columns": columns, "rows": serialized_rows, "row_count": len(serialized_rows), "dtypes": dtypes}, f"成功读取CSV文件: {file_path}，共 {len(serialized_rows)} 行数据")
+        return build_success({"columns": columns, "rows": serialized_rows, "row_count": len(serialized_rows), "dtypes": dtypes}, f"成功读取CSV文件: {file_path},共 {len(serialized_rows)} 行数据")
     except Exception as e:
         return build_error(ERR_READ_CSV_DATAFRAME, f"读取CSV文件失败: {str(e)}")
 
@@ -205,11 +205,11 @@ def _read_excel_pandas(
     sheet_name: Optional[str] = None,
     max_rows: int = 1000,
 ) -> Dict[str, Any]:
-    """使用pandas读取Excel文件 - 小沈 2026-05-18（从data_analysis迁入）"""
+    """使用pandas读取Excel文件 - 小沈 2026-05-18(从data_analysis迁入)"""
     if not _check_module("pandas"):
-        return build_error(ERR_NO_PANDAS, "pandas库未安装，请先执行: pip install pandas openpyxl")
+        return build_error(ERR_NO_PANDAS, "pandas库未安装,请先执行: pip install pandas openpyxl")
     if not _check_module("openpyxl"):
-        return build_error(ERR_DOC_NO_OPENPYXL, "openpyxl库未安装，请先执行: pip install openpyxl")
+        return build_error(ERR_DOC_NO_OPENPYXL, "openpyxl库未安装,请先执行: pip install openpyxl")
     try:
         import pandas as pd
         path = Path(file_path)
@@ -220,7 +220,7 @@ def _read_excel_pandas(
         serialized_rows = _serialize_rows(df)
         dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
         actual_sheet = sheet_name if sheet_name else "Sheet1"
-        return build_success({"columns": columns, "rows": serialized_rows, "row_count": len(serialized_rows), "dtypes": dtypes, "sheet_name": actual_sheet}, f"成功读取Excel文件: {file_path}，共 {len(serialized_rows)} 行数据")
+        return build_success({"columns": columns, "rows": serialized_rows, "row_count": len(serialized_rows), "dtypes": dtypes, "sheet_name": actual_sheet}, f"成功读取Excel文件: {file_path},共 {len(serialized_rows)} 行数据")
     except Exception as e:
         return build_error(ERR_READ_EXCEL_DATAFRAME, f"读取Excel文件失败: {str(e)}")
 
@@ -245,13 +245,13 @@ def _parse_pages(pages_str: str) -> List[int]:
 
 
 # ============================================================
-# 内部读取函数（原 read_pdf/read_docx/read_xlsx/read_pptx 逻辑）
+# 内部读取函数(原 read_pdf/read_docx/read_xlsx/read_pptx 逻辑)
 # ============================================================
 
 def _process_page(page, page_num: int,
                   extract_tables: bool, extract_images: bool
                   ) -> Tuple[str, List[Dict], List[Dict]]:
-    """处理单页PDF：返回 (text, tables_data, images_data)
+    """处理单页PDF:返回 (text, tables_data, images_data)
 
     小沈 2026-05-25 重构拆分
     """
@@ -286,17 +286,17 @@ def _build_pdf_result(fp: str, pages_read: List[int], all_text: List[str],
     result = {"text": full_text, "page_count": page_count, "pages_read": pages_read}
     _llm = {"文件": fp, "页数": f"{page_count}页(读取{len(pages_read)}页)",
             "文本长度": f"{len(full_text)}字符", "内容": full_text}
-    msg = f"成功读取PDF文件: {fp}，共读取 {len(pages_read)} 页"
+    msg = f"成功读取PDF文件: {fp},共读取 {len(pages_read)} 页"
     if tables_data:
         result["tables"] = tables_data
         result["table_count"] = len(tables_data)
         _llm["表格数"] = len(tables_data)
-        msg += f"，{len(tables_data)} 个表格"
+        msg += f",{len(tables_data)} 个表格"
     if images_data:
         result["images"] = images_data
         result["image_count"] = len(images_data)
         _llm["图片数"] = len(images_data)
-        msg += f"，{len(images_data)} 张图片"
+        msg += f",{len(images_data)} 张图片"
     return build_success(result, msg, llm_data=_llm)
 
 
@@ -306,12 +306,12 @@ def _read_pdf(
     extract_images: bool = False,
     extract_tables: bool = False
 ) -> Dict[str, Any]:
-    """读取PDF文件并提取文本内容（内部函数） - 小健 2026-05-18
-    【2026-05-25 小沈重构】拆分：逐页提取 → _process_page，结果构建 → _build_pdf_result
+    """读取PDF文件并提取文本内容(内部函数) - 小健 2026-05-18
+    【2026-05-25 小沈重构】拆分:逐页提取 → _process_page,结果构建 → _build_pdf_result
     """
     if not _check_module("pdfplumber"):
         return build_error(ERR_NO_PDFPLUMBER,
-                "pdfplumber库未安装，请先执行: pip install pdfplumber")
+                "pdfplumber库未安装,请先执行: pip install pdfplumber")
 
     try:
         import pdfplumber
@@ -343,10 +343,10 @@ def _read_docx(
     file_path: str,
     extract_tables: bool = False
 ) -> Dict[str, Any]:
-    """读取Word文档并提取文本内容（内部函数） - 小健 2026-05-18"""
+    """读取Word文档并提取文本内容(内部函数) - 小健 2026-05-18"""
     if not _check_module("docx"):
         return build_error(ERR_NO_DOCX,
-                "python-docx库未安装，请先执行: pip install python-docx")
+                "python-docx库未安装,请先执行: pip install python-docx")
 
     try:
         import docx
@@ -381,7 +381,7 @@ def _read_docx(
             "文本长度": f"{len(text)}字符",
             "内容": text,
         }
-        return build_success(result_data, f"成功读取Word文档: {file_path}，共 {len(paragraphs)} 段",
+        return build_success(result_data, f"成功读取Word文档: {file_path},共 {len(paragraphs)} 段",
                 llm_data=_llm)
     except Exception as e:
         return build_error(ERR_DOC_READ_DOCX, f"读取Word文档失败: {str(e)}")
@@ -393,10 +393,10 @@ def _read_xlsx(
     max_rows: int = 1000,
     header: bool = True
 ) -> Dict[str, Any]:
-    """读取Excel文件并提取表格数据（内部函数） - 小健 2026-05-18"""
+    """读取Excel文件并提取表格数据(内部函数) - 小健 2026-05-18"""
     if not _check_module("openpyxl"):
         return build_error(ERR_DOC_NO_OPENPYXL,
-                "openpyxl库未安装，请先执行: pip install openpyxl")
+                "openpyxl库未安装,请先执行: pip install openpyxl")
 
     try:
         from openpyxl import load_workbook
@@ -411,7 +411,7 @@ def _read_xlsx(
         if sheet_name:
             if sheet_name not in sheet_names:
                 wb.close()
-                return build_error(ERR_DOC_READ_XLSX, f"工作表不存在: {sheet_name}，可用工作表: {sheet_names}")
+                return build_error(ERR_DOC_READ_XLSX, f"工作表不存在: {sheet_name},可用工作表: {sheet_names}")
             ws = wb[sheet_name]
         else:
             ws = wb.active
@@ -442,7 +442,7 @@ def _read_xlsx(
                 "rows": rows,
                 "row_count": row_count,
                 "sheet_names": sheet_names,
-            }, f"成功读取Excel文件: {file_path}，工作表: {ws.title}，共 {row_count} 行数据")
+            }, f"成功读取Excel文件: {file_path},工作表: {ws.title},共 {row_count} 行数据")
     except Exception as e:
         return build_error(ERR_DOC_READ_XLSX, f"读取Excel文件失败: {str(e)}")
 
@@ -454,7 +454,7 @@ def _read_csv_stdlib(
     has_header: bool = True,
     max_rows: int = 1000
 ) -> Dict[str, Any]:
-    """使用标准库csv读取CSV文件（内部函数）— 小健 2026-05-18"""
+    """使用标准库csv读取CSV文件(内部函数)— 小健 2026-05-18"""
     try:
         path = Path(file_path)
         if not path.exists():
@@ -491,13 +491,13 @@ def _read_csv_stdlib(
                 "columns": columns,
                 "rows": rows,
                 "row_count": len(rows),
-            }, f"成功读取CSV文件: {file_path}，共 {len(rows)} 行数据")
+            }, f"成功读取CSV文件: {file_path},共 {len(rows)} 行数据")
     except Exception as e:
         return build_error(ERR_DOC_READ_CSV, f"读取CSV文件失败: {str(e)}")
 
 
 def _auto_convert_to_pdf(input_path: str, suffix: str) -> Optional[str]:
-    """自动将旧版Office格式转换为PDF，返回PDF路径或None"""
+    """自动将旧版Office格式转换为PDF,返回PDF路径或None"""
     try:
         tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
         pdf_path = tmp.name
@@ -527,10 +527,10 @@ def _read_pptx(
     file_path: str,
     extract_notes: bool = False
 ) -> Dict[str, Any]:
-    """读取PPT幻灯片（内部函数） - 小健 2026-05-18"""
+    """读取PPT幻灯片(内部函数) - 小健 2026-05-18"""
     if not _check_module("pptx"):
         return build_error(ERR_DOC_NO_PPTX,
-                "python-pptx库未安装，请先执行: pip install python-pptx")
+                "python-pptx库未安装,请先执行: pip install python-pptx")
 
     try:
         from pptx import Presentation
@@ -583,14 +583,14 @@ def _read_pptx(
         if extract_notes and notes_data:
             _llm["备注数"] = len(notes_data)
 
-        return build_success(result_data, f"成功读取PPT文件: {file_path}，共 {len(prs.slides)} 页",
+        return build_success(result_data, f"成功读取PPT文件: {file_path},共 {len(prs.slides)} 页",
                 llm_data=_llm)
     except Exception as e:
         return build_error(ERR_DOC_READ_PPTX, f"读取PPT文件失败: {str(e)}")
 
 
 # ============================================================
-# 内部写入函数（原 write_docx/write_xlsx/write_pdf/write_pptx 逻辑）
+# 内部写入函数(原 write_docx/write_xlsx/write_pdf/write_pptx 逻辑)
 # ============================================================
 
 def _write_docx(
@@ -600,10 +600,10 @@ def _write_docx(
     title: str = None,
     table_data: list = None
 ) -> Dict[str, Any]:
-    """写入Word文档（内部函数） - 小健 2026-05-18"""
+    """写入Word文档(内部函数) - 小健 2026-05-18"""
     if not _check_module("docx"):
         return build_error(ERR_NO_DOCX,
-                "python-docx库未安装，请先执行: pip install python-docx")
+                "python-docx库未安装,请先执行: pip install python-docx")
 
     try:
         import docx
@@ -647,10 +647,10 @@ def _write_xlsx(
     data: dict,
     sheet_name: str = "Sheet1"
 ) -> Dict[str, Any]:
-    """写入Excel文件（内部函数） - 小健 2026-05-18"""
+    """写入Excel文件(内部函数) - 小健 2026-05-18"""
     if not _check_module("openpyxl"):
         return build_error(ERR_DOC_NO_OPENPYXL,
-                "openpyxl库未安装，请先执行: pip install openpyxl")
+                "openpyxl库未安装,请先执行: pip install openpyxl")
 
     try:
         from openpyxl import Workbook
@@ -689,10 +689,10 @@ def _write_pdf(
     paragraphs: list = None,
     table_data: list = None
 ) -> Dict[str, Any]:
-    """写入PDF文档（内部函数） - 小健 2026-05-18"""
+    """写入PDF文档(内部函数) - 小健 2026-05-18"""
     if not _check_module("reportlab"):
         return build_error(ERR_NO_REPORTLAB,
-                "reportlab库未安装，请先执行: pip install reportlab")
+                "reportlab库未安装,请先执行: pip install reportlab")
 
     try:
         from reportlab.lib.pagesizes import A4
@@ -772,10 +772,10 @@ def _write_pptx(
     title: str = None,
     slides: list = None
 ) -> Dict[str, Any]:
-    """写入PPT幻灯片（内部函数） - 小健 2026-05-18"""
+    """写入PPT幻灯片(内部函数) - 小健 2026-05-18"""
     if not _check_module("pptx"):
         return build_error(ERR_DOC_NO_PPTX,
-                "python-pptx库未安装，请先执行: pip install python-pptx")
+                "python-pptx库未安装,请先执行: pip install python-pptx")
     
     try:
         from pptx import Presentation
@@ -814,7 +814,7 @@ def _write_pptx(
         prs.save(path)
         
         return build_success({"file_path": str(path), "slide_count": len(prs.slides)},
-                f"成功写入PPT文件: {file_path}，共 {len(prs.slides)} 页")
+                f"成功写入PPT文件: {file_path},共 {len(prs.slides)} 页")
     except Exception as e:
         return build_error(ERR_DOC_WRITE_PPTX, f"写入PPT文件失败: {str(e)}")
 
@@ -836,8 +836,8 @@ def read_document(
     """读取文档内容 — 小健 2026-05-18
     合并 read_pdf + read_docx + read_pptx + read_xlsx + read_csv
     按文件后缀自动路由到对应解析器
-    支持 .doc 后缀（通过 win32com 降级处理）
-    支持 .csv/.tsv 后缀（use_pandas=True时使用pandas，否则使用标准库csv）
+    支持 .doc 后缀(通过 win32com 降级处理)
+    支持 .csv/.tsv 后缀(use_pandas=True时使用pandas,否则使用标准库csv)
     """
     path = Path(file_path)
     suffix = path.suffix.lower()
@@ -856,7 +856,7 @@ def read_document(
         # 【自动转换 .doc/.xls 2026-05-20 小健】自动调用convert_document转PDF后读取
         pdf_path = _auto_convert_to_pdf(file_path, suffix)
         if pdf_path is None:
-            return build_error(ERR_DOC_CONVERT_FAILED, f"自动转换{suffix}为PDF失败，请手动使用convert_document工具")
+            return build_error(ERR_DOC_CONVERT_FAILED, f"自动转换{suffix}为PDF失败,请手动使用convert_document工具")
         check = _check_pdf_readable(pdf_path)
         if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
             return check
@@ -873,7 +873,7 @@ def read_document(
         # 【自动转换 .doc/.xls 2026-05-20 小健】自动调用convert_document转PDF后读取
         pdf_path = _auto_convert_to_pdf(file_path, suffix)
         if pdf_path is None:
-            return build_error(ERR_DOC_CONVERT_FAILED, f"自动转换{suffix}为PDF失败，请手动使用convert_document工具")
+            return build_error(ERR_DOC_CONVERT_FAILED, f"自动转换{suffix}为PDF失败,请手动使用convert_document工具")
         check = _check_pdf_readable(pdf_path)
         if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
             return check
@@ -973,7 +973,7 @@ def convert_document(
         supported_inputs = ['.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt', '.odt', '.ods']
         
         if src_ext not in supported_inputs:
-            return build_error(ERR_DOC_CONVERT_FAILED, f"不支持的输入格式: {src_ext}，支持: {supported_inputs}")
+            return build_error(ERR_DOC_CONVERT_FAILED, f"不支持的输入格式: {src_ext},支持: {supported_inputs}")
         
         if output_format.lower() != 'pdf':
             return build_error(ERR_DOC_CONVERT_FAILED, "当前仅支持转换为PDF格式")
@@ -996,7 +996,7 @@ def convert_document(
                 break
         
         if not soffice:
-            return build_error(ERR_NO_LIBREOFFICE, "LibreOffice未安装，无法转换。请安装LibreOffice: https://www.libreoffice.org/download/")
+            return build_error(ERR_NO_LIBREOFFICE, "LibreOffice未安装,无法转换。请安装LibreOffice: https://www.libreoffice.org/download/")
         
         out_dir = str(Path(output_path).parent)
         Path(out_dir).mkdir(parents=True, exist_ok=True)

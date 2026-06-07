@@ -6,23 +6,23 @@ MCP文件操作工具集 - 重写版本
 【参考】FastMCP、MarcusJellinghaus、LangChain、Claude官方Tool Use规范
 
 【重要】新函数增加规范 - 小沈 2026-05-04
-新增函数时必须同步修改以下3个文件：
-1. *_tools.py: 函数实现（必须有详细注释）
-2. *_schema.py: Pydantic 模型（输入参数定义）
-3. *_register.py: 显式注册（description + examples + input_model）
+新增函数时必须同步修改以下3个文件:
+1. *_tools.py: 函数实现(必须有详细注释)
+2. *_schema.py: Pydantic 模型(输入参数定义)
+3. *_register.py: 显式注册(description + examples + input_model)
 
-改进点：
+改进点:
 1. 使用Pydantic模型定义参数Schema
-2. 动态白名单（自动添加存在的盘符）
+2. 动态白名单(自动添加存在的盘符)
 3. 自动生成JSON Schema
 4. 添加input_examples示例
 5. 修复search_file_content空pattern安全漏洞
 
-统一返回格式：{status, summary, data, retry_count}
+统一返回格式:{status, summary, data, retry_count}
 
 【分页方案更新】2026-04-03 小沈
-- read_file: 默认读取500行（READ_FILE_DEFAULT_LIMIT = 500）
-- 其他工具: 分页返回（DEFAULT_PAGE_SIZE = 200）
+- read_file: 默认读取500行(READ_FILE_DEFAULT_LIMIT = 500)
+- 其他工具: 分页返回(DEFAULT_PAGE_SIZE = 200)
 """
 
 import asyncio
@@ -43,9 +43,9 @@ from app.services.context_vars import _current_task_id
 
 from app.services.tools._response import build_success, build_error, build_warning
 
-# 【修改】移除分页限制，2026-04-03 小沈
-# 原因：后端必须返回全部真实数据，前端自己控制显示方式（分页/滚动）
-# 前端不再依赖 next-page 接口，后端不再做分页处理
+# 【修改】移除分页限制,2026-04-03 小沈
+# 原因:后端必须返回全部真实数据,前端自己控制显示方式(分页/滚动)
+# 前端不再依赖 next-page 接口,后端不再做分页处理
 
 # 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
 from app.services.tools.tool_constants import (
@@ -76,18 +76,18 @@ from app.utils.logger import logger
 from app.services.tools.tool_constants import TOOL_TIMEOUTS
 from app.utils.tool_result_formatter import format_file_content_llm, format_output_for_llm, build_next_actions, truncate_data_for_frontend, truncate_text, make_json_safe, DEFAULT_MAX_FILE_CHARS  # 小沈-2026-05-15, 2026-05-20增加截断安全, 2026-05-21小健修复make_json_safe缺失
 
-# 【重要】延迟导入，避免循环导入问题
-# file_tools.py 在 tools 模块加载时被导入，此时 agent 还未初始化完成
+# 【重要】延迟导入,避免循环导入问题
+# file_tools.py 在 tools 模块加载时被导入,此时 agent 还未初始化完成
 # 将 agent 服务延迟到实际使用时再导入
 
-# data_file_format 分发常量依赖（21.2，小沈 2026-05-25 实施）
+# data_file_format 分发常量依赖(21.2,小沈 2026-05-25 实施)
 from app.services.tools.toolhelper import data_format_helper as df_tools
 
 
 
 
 # ============================================================
-# 第一部分：分页配置常量
+# 第一部分:分页配置常量
 # ============================================================
 
 
@@ -105,7 +105,7 @@ def _is_binary_file(file_path: str) -> tuple[bool, str]:
     suffix = path.suffix.lower()
     
     if suffix in BINARY_EXTENSIONS:
-        return True, f"文件后缀 '{suffix}' 属于二进制文件类型，禁止使用text工具操作"
+        return True, f"文件后缀 '{suffix}' 属于二进制文件类型,禁止使用text工具操作"
     
     return False, ""
 
@@ -116,9 +116,9 @@ def _remove_readonly(func, path, excinfo):
     func(path)
 
 
-# 【小沈重构 2026-05-25】25.5节：组件1 - 永久删除
+# 【小沈重构 2026-05-25】25.5节:组件1 - 永久删除
 def _force_delete_sync(path: Path, recursive: bool = False) -> bool:
-    """永久删除：目录(如果recursive→rmtree否则rmdir) / 文件→unlink - 小沈重构 2026-05-25"""
+    """永久删除:目录(如果recursive→rmtree否则rmdir) / 文件→unlink - 小沈重构 2026-05-25"""
     try:
         if path.is_dir():
             if recursive:
@@ -135,21 +135,21 @@ def _force_delete_sync(path: Path, recursive: bool = False) -> bool:
         return False
 
 
-# 【小沈重构 2026-05-25】25.5节：组件2 - 回收站删除（回退到永久删除）
+# 【小沈重构 2026-05-25】25.5节:组件2 - 回收站删除(回退到永久删除)
 def _send2trash_sync(path: Path, recursive: bool = False) -> Tuple[bool, str]:
-    """尝试放入回收站，失败则回退到永久删除 - 小沈重构 2026-05-25"""
+    """尝试放入回收站,失败则回退到永久删除 - 小沈重构 2026-05-25"""
     try:
         import send2trash
         send2trash.send2trash(str(path))
         return True, "send2trash"
     except ImportError:
-        logger.warning("send2trash未安装，回退到永久删除")
+        logger.warning("send2trash未安装,回退到永久删除")
     except Exception as e:
-        logger.warning(f"send2trash失败: {e}，回退到永久删除")
+        logger.warning(f"send2trash失败: {e},回退到永久删除")
     return _force_delete_sync(path, recursive), "permanent"
 
 
-# 【小沈重构 2026-05-25】25.5节：组件3 - 构建删除结果
+# 【小沈重构 2026-05-25】25.5节:组件3 - 构建删除结果
 def _build_delete_result(operation_id: str, path: Path, force: bool, method: str) -> dict:
     """构建删除操作的统一返回结果 - 小沈重构 2026-05-25"""
     delete_mode = "永久删除" if force else "放入回收站"
@@ -160,7 +160,7 @@ def _build_delete_result(operation_id: str, path: Path, force: bool, method: str
 
 
 # ============================================================
-# 第二部分：动态白名单
+# 第二部分:动态白名单
 # ============================================================
 
 def _get_default_allowed_paths() -> List[Path]:
@@ -176,7 +176,7 @@ def _get_default_allowed_paths() -> List[Path]:
         Path("/var/tmp"),  # Linux临时目录
     ]
     
-    # Windows盘符（A-J）
+    # Windows盘符(A-J)
     if os.name == 'nt':
         for letter in 'ABCDEFGHIJ':
             drive = Path(f"{letter}:/")
@@ -189,22 +189,22 @@ ALLOWED_PATHS = _get_default_allowed_paths()
 
 
 # ============================================================
-# 第三部分：Pydantic参数模型 + 工具定义
-# 【小沈修改 2026-03-24】从 file_schema.py 统一导入，避免重复定义
+# 第三部分:Pydantic参数模型 + 工具定义
+# 【小沈修改 2026-03-24】从 file_schema.py 统一导入,避免重复定义
 # ============================================================
 # Pydantic模型已统一在 app.services.tools.file.file_schema 中定义
-# 请勿在此文件重复定义模型，直接从 file_schema 导入使用
+# 请勿在此文件重复定义模型,直接从 file_schema 导入使用
 
 
 # ============================================================
-# 第四部分：工具Definition类（自动生成Schema + Examples）
+# 第四部分:工具Definition类(自动生成Schema + Examples)
 # ============================================================
 
 class ToolDefinition:
     """
     工具定义类
     
-    自动从Pydantic模型生成JSON Schema，并添加input_examples
+    自动从Pydantic模型生成JSON Schema,并添加input_examples
     """
     
     def __init__(
@@ -240,7 +240,7 @@ from datetime import datetime
 
 
 # ============================================================
-# 第五部分B：模块级共享函数（函数12/15拆分提取）— 小健 2026-05-25
+# 第五部分B:模块级共享函数(函数12/15拆分提取)— 小健 2026-05-25
 # ============================================================
 
 def _classify_size(size: int) -> str:
@@ -254,7 +254,7 @@ def _classify_size(size: int) -> str:
         bucket = _classify_size(st.st_size)  # 返回 "<1KB"/"1KB-10KB"/"10KB-100KB"/"100KB-1MB"/">1MB"
 
     返回数据说明:
-    - 返回str，分桶名称
+    - 返回str,分桶名称
     """
     if size < 1024: return "<1KB"
     if size < 10240: return "1KB-10KB"
@@ -264,7 +264,7 @@ def _classify_size(size: int) -> str:
 
 
 def _build_entry(item: Path, st: os.stat_result) -> Dict[str, Any]:
-    """构建单个目录条目（供递归/非递归共用，消除25行重复）— 小健 2026-05-25
+    """构建单个目录条目(供递归/非递归共用,消除25行重复)— 小健 2026-05-25
 
     使用场景:
     - list_directory的_list_sync中递归和非递归分支
@@ -274,7 +274,7 @@ def _build_entry(item: Path, st: os.stat_result) -> Dict[str, Any]:
         entry = _build_entry(item, st)
 
     返回数据说明:
-    - 返回Dict，包含name/path/type/size/mtime
+    - 返回Dict,包含name/path/type/size/mtime
     """
     is_dir = item.is_dir()
     return {
@@ -290,7 +290,7 @@ def _scan_directory_sync(
     path: Path, recursive: bool, max_depth: int,
     include_hidden: bool, deadline: float,
 ) -> Tuple[List[Dict], Dict, Dict, Dict]:
-    """同步扫描目录（可被to_thread调用）— 小沈 2026-05-25
+    """同步扫描目录(可被to_thread调用)— 小沈 2026-05-25
 
     使用场景:
     - list_directory的list模式同步扫描
@@ -319,7 +319,7 @@ def _scan_directory_sync(
             return
         if time.monotonic() > deadline:
             _timed_out = True
-            logger.warning(f"[_scan_directory_sync] 超时自检触发，已收集{len(entries)}条，提前返回")
+            logger.warning(f"[_scan_directory_sync] 超时自检触发,已收集{len(entries)}条,提前返回")
             return
         try:
             for item in current_path.iterdir():
@@ -397,7 +397,7 @@ def _count_tree_stats(node: dict) -> tuple:
 
 def _build_list_success(entries: List, total: int, path: Path, statistics: Dict,
                         start_offset: int, max_display: int) -> Dict[str, Any]:
-    """统一构建list模式的成功响应（截断/全量共用）— 小健 2026-05-25
+    """统一构建list模式的成功响应(截断/全量共用)— 小健 2026-05-25
 
     使用场景:
     - list_directory中截断和全量两种分支的统一响应构建
@@ -422,7 +422,7 @@ def _build_list_success(entries: List, total: int, path: Path, statistics: Dict,
     return build_success(
         {"entries": display, "total": total, "directory": str(path),
          "truncated": truncated, "statistics": statistics, "next_page_token": next_token},
-        f"列出目录成功: {path} ({total}项)" + (f"，已截断显示前{max_display}项" if truncated else ""),
+        f"列出目录成功: {path} ({total}项)" + (f",已截断显示前{max_display}项" if truncated else ""),
         llm_data=llm,
         next_actions=build_next_actions([
             ("search_files", "搜索文件", "需要查找特定文件时"),
@@ -434,7 +434,7 @@ _ENCODING_PRIORITY = ["utf-8", "gbk", "gb2312", "utf-8-sig"]
 
 
 def _read_file_safe(file_path: Path) -> List[str]:
-    """多编码尝试读取文件行，OOM防护 + OSError兜底 — 小健 2026-05-25
+    """多编码尝试读取文件行,OOM防护 + OSError兜底 — 小健 2026-05-25
 
     使用场景:
     - grep_file_content中读取搜索文件
@@ -445,7 +445,7 @@ def _read_file_safe(file_path: Path) -> List[str]:
         if not lines: continue
 
     返回数据说明:
-    - 返回List[str]，文件行列表；文件过大或读取失败返回[]
+    - 返回List[str],文件行列表;文件过大或读取失败返回[]
     """
     try:
         size = file_path.stat().st_size
@@ -466,7 +466,7 @@ def _read_file_safe(file_path: Path) -> List[str]:
 def _build_context(lines: List[str], line_no: int,
                    context_lines: Optional[int], after_lines: Optional[int],
                    before_lines: Optional[int]) -> Dict[str, Any]:
-    """构建匹配行的上下文字段，含边界保护 — 小健 2026-05-25
+    """构建匹配行的上下文字段,含边界保护 — 小健 2026-05-25
 
     使用场景:
     - grep_file_content中构建after/before上下文
@@ -475,7 +475,7 @@ def _build_context(lines: List[str], line_no: int,
         ctx = _build_context(lines, line_no, context_lines, after_lines, before_lines)
 
     返回数据说明:
-    - 返回Dict，可能包含after/before键
+    - 返回Dict,可能包含after/before键
     """
     entry = {}
     n = context_lines or after_lines or 0
@@ -517,7 +517,7 @@ def _collect_file_matches(
         file_matches = _collect_file_matches(lines, regex, multiline, head_limit, match_count, ...)
 
     返回数据说明:
-    - 返回List[Dict]，匹配行列表
+    - 返回List[Dict],匹配行列表
     """
     file_matches = []
     if multiline:
@@ -581,7 +581,7 @@ def _grep_files_sync(
 
     for root, dirs, files in os.walk(search_path):
         if time.monotonic() > deadline:
-            logger.warning(f"[_grep_files_sync] 超时自检触发，已匹配{match_count}条，提前返回{len(results)}个文件结果")
+            logger.warning(f"[_grep_files_sync] 超时自检触发,已匹配{match_count}条,提前返回{len(results)}个文件结果")
             break
         filtered_files = [f for f in files if not file_glob or fnmatch.fnmatch(f, file_glob)]
         for filename in filtered_files:
@@ -606,7 +606,7 @@ def _grep_files_sync(
 
 def _format_match_output(file_matches: List, output_mode: Optional[str],
                          file_path: str) -> Optional[Dict]:
-    """根据output_mode格式化单文件结果，返回条目或None — 小健 2026-05-25
+    """根据output_mode格式化单文件结果,返回条目或None — 小健 2026-05-25
 
     使用场景:
     - grep_file_content中3路output_mode分发
@@ -635,7 +635,7 @@ _DEFAULT_PAGE_SIZE = 200
 
 def _paginate_results(all_items: List, page_token: Optional[str],
                       page_size: int = _DEFAULT_PAGE_SIZE) -> tuple:
-    """统一分页：token解码 → 切片 → has_more推导 — 小健 2026-05-25
+    """统一分页:token解码 → 切片 → has_more推导 — 小健 2026-05-25
 
     使用场景:
     - grep_file_content和list_directory中分页逻辑共享
@@ -657,7 +657,7 @@ def _apply_replacement(
     content: str, old_string: str, new_string: str,
     ignore_case: bool = False, replace_all: bool = False,
 ) -> Tuple[str, int]:
-    """精确替换（21.1 组件，小沈 2026-05-25 实施）"""
+    """精确替换(21.1 组件,小沈 2026-05-25 实施)"""
     if ignore_case:
         if replace_all:
             new_content = re_mod.sub(re_mod.escape(old_string), new_string, content, flags=re_mod.IGNORECASE)
@@ -678,7 +678,7 @@ def _apply_replacement(
     return new_content, count
 
 
-# data_file_format 分发映射表（21.2 组件1，小沈 2026-05-25 实施）
+# data_file_format 分发映射表(21.2 组件1,小沈 2026-05-25 实施)
 _FORMAT_DISPATCH = {
     "json":       {"read": df_tools._read_json,       "write": df_tools._write_json},
     "yaml":       {"read": df_tools._parse_yaml,      "write": df_tools._write_yaml},
@@ -690,14 +690,14 @@ _FORMAT_DISPATCH = {
 
 
 # ============================================================
-# 第六部分：FileTools类（重写版）
+# 第六部分:FileTools类(重写版)
 # ============================================================
 
 class FileTools:
     """
     文件操作工具类
     
-    所有工具都集成文件安全机制：
+    所有工具都集成文件安全机制:
     - 操作历史记录
     - 删除文件自动备份到回收站
     - 支持回滚操作
@@ -730,14 +730,14 @@ class FileTools:
             self.safety_manager.register_hook("file", get_file_safety_service())
     
     def _get_next_sequence(self) -> int:
-        """获取下一个操作序号（线程安全）"""
+        """获取下一个操作序号(线程安全)"""
         with self._sequence_lock:
             self._sequence += 1
             return self._sequence
     
     def set_task_id(self, task_id: str):
-        # 【重要】task_id 用于操作追踪和回退，【禁止】使用 session_id
-        # session_id 专用于会话场景，操作追踪必须用 task_id
+        # 【重要】task_id 用于操作追踪和回退,【禁止】使用 session_id
+        # session_id 专用于会话场景,操作追踪必须用 task_id
         self.task_id = task_id
         self._sequence = 0
     
@@ -760,7 +760,7 @@ class FileTools:
         suffix = path.suffix.lower()
 
         if suffix in self.BINARY_EXTENSIONS:
-            return f"不支持通过write_file写入二进制格式文件(.{suffix[1:]})，请使用对应的专业工具操作"
+            return f"不支持通过write_file写入二进制格式文件(.{suffix[1:]}),请使用对应的专业工具操作"
 
         from app.services.tools.toolhelper import content_validation as cv
 
@@ -794,14 +794,14 @@ class FileTools:
             (is_valid, error_message)
         """
         try:
-            # 规范化路径：解析 ..、.、~
+            # 规范化路径:解析 ..、.、~
             real_path = Path(os.path.realpath(os.path.expanduser(file_path)))
             
             # 检查路径是否在白名单内
             for allowed in self.allowed_paths:
                 allowed_real = Path(os.path.realpath(allowed))
-                # 【修复P13】防止前缀绕过：必须验证是真正的子路径
-                # 例如：C:/Users 允许 C:/Users/subdir，但不允许 C:/Usersbackdoor
+                # 【修复P13】防止前缀绕过:必须验证是真正的子路径
+                # 例如:C:/Users 允许 C:/Users/subdir,但不允许 C:/Usersbackdoor
                 try:
                     real_parts = Path(real_path).parts
                     allowed_parts = Path(allowed_real).parts
@@ -813,20 +813,20 @@ class FileTools:
                             continue
                         
                         # 【关键修复】对于驱动器根路径(如C:\ = 1 part = ('C:\',))
-                        # 必须完全相等，不允许 C:\Usersbackdoor 绕过 C:\
-                        # 对于普通目录(如C:/Users = 2+ parts)，允许子目录
+                        # 必须完全相等,不允许 C:\Usersbackdoor 绕过 C:\
+                        # 对于普通目录(如C:/Users = 2+ parts),允许子目录
                         if len(allowed_parts) == 1 and (allowed_parts[0].endswith(':') or allowed_parts[0].endswith(':\\') or allowed_parts[0].endswith(':/')):
-                            # 驱动器根路径：必须完全相等
+                            # 驱动器根路径:必须完全相等
                             if str(real_path) == str(allowed_real) or real_path.parts[0] == allowed_parts[0]:
                                 return True, None
                         else:
-                            # 普通目录：允许子目录或相等路径
+                            # 普通目录:允许子目录或相等路径
                             if len(real_parts) >= len(allowed_parts):
                                 return True, None
                 except (ValueError, OSError):
                     pass
             
-            return False, f"路径 '{file_path}' 不在允许的操作范围内（仅允许：{', '.join(str(p) for p in self.allowed_paths[:5])}...）"
+            return False, f"路径 '{file_path}' 不在允许的操作范围内(仅允许:{', '.join(str(p) for p in self.allowed_paths[:5])}...)"
             
         except Exception as e:
             return False, f"路径验证失败: {str(e)}"
@@ -836,7 +836,7 @@ class FileTools:
         path: Path,
         preferred: Optional[str] = None,
     ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-        """编码检测+同步文件读取，返回 (content, used_encoding, error)
+        """编码检测+同步文件读取,返回 (content, used_encoding, error)
         
         小沈 2026-05-25 重构拆分
         """
@@ -869,7 +869,7 @@ class FileTools:
                 except Exception:
                     continue
             
-            return None, None, f"无法读取文件: {path}，已尝试编码: {encodings_to_try}"
+            return None, None, f"无法读取文件: {path},已尝试编码: {encodings_to_try}"
         except Exception as e:
             return None, None, str(e)
     
@@ -926,32 +926,32 @@ class FileTools:
         """读取文本文件
         
         【小沈重构 2026-05-25】
-        - 重构拆分：提取 _try_read_file_with_encodings / _select_lines
-        - 保持所有分支完整，功能不减少
+        - 重构拆分:提取 _try_read_file_with_encodings / _select_lines
+        - 保持所有分支完整,功能不减少
         
-        参数组合说明：
-        - 无参数：读取全部内容
-        - head=N：读取前N行
-        - tail=N：读取后N行
-        - offset=N, limit=M：从第N行开始读取M行（分页读取）
+        参数组合说明:
+        - 无参数:读取全部内容
+        - head=N:读取前N行
+        - tail=N:读取后N行
+        - offset=N, limit=M:从第N行开始读取M行(分页读取)
         """
         try:
             # 【新增 2026-05-02 小沈】二进制文件保护
             is_binary, binary_reason = _is_binary_file(file_path)
             if is_binary:
-                return build_error(ERR_FILE_READ_BINARY_FILE, f"{binary_reason}。请使用 read_media_file 工具读取媒体文件（图片/音频/视频）。")
+                return build_error(ERR_FILE_READ_BINARY_FILE, f"{binary_reason}。请使用 read_media_file 工具读取媒体文件(图片/音频/视频)。")
             
-            # 【修复 2026-05-01 小沈】参数校验（4合1压缩）
+            # 【修复 2026-05-01 小沈】参数校验(4合1压缩)
             for _name, _val in [("head", head), ("tail", tail), ("offset", offset), ("limit", limit)]:
                 if _val is not None and _val < 1:
-                    return build_error(ERR_PARAM_INVALID, f"{_name}必须>=1，当前值: {_val}")
+                    return build_error(ERR_PARAM_INVALID, f"{_name}必须>=1,当前值: {_val}")
 
             # 验证参数不能同时使用
             if head is not None and tail is not None:
-                return build_error(ERR_PARAM_CONFLICT, "head 和 tail 参数不能同时使用，请只使用其中一个")
+                return build_error(ERR_PARAM_CONFLICT, "head 和 tail 参数不能同时使用,请只使用其中一个")
 
             if (head is not None or tail is not None) and (offset is not None or limit is not None):
-                return build_error(ERR_PARAM_CONFLICT, "head/tail 与 offset/limit 不能同时使用。head/tail用于快捷读取首尾，offset/limit用于分页读取")
+                return build_error(ERR_PARAM_CONFLICT, "head/tail 与 offset/limit 不能同时使用。head/tail用于快捷读取首尾,offset/limit用于分页读取")
 
             # 验证路径合法性
             is_valid, error_msg = self._validate_path(file_path)
@@ -997,7 +997,7 @@ class FileTools:
     
     @staticmethod
     def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
-        """统一编码检测，复用 get_file_encoding
+        """统一编码检测,复用 get_file_encoding
         
         小沈 2026-05-25 重构拆分
         """
@@ -1018,7 +1018,7 @@ class FileTools:
     @staticmethod
     def _write_file_atomic(content: str, path: Path, encoding: str,
                             append: bool, create_parents: bool) -> bool:
-        """原子写入：追加模式直接写，否则临时文件+os.replace
+        """原子写入:追加模式直接写,否则临时文件+os.replace
         
         小沈 2026-05-25 重构拆分
         """
@@ -1051,7 +1051,7 @@ class FileTools:
     
     def _check_write_safety(self, file_path: str, content: str,
                              encoding: Optional[str] = None) -> tuple:
-        """统一前置校验链，返回 (error_or_None, modified_content)
+        """统一前置校验链,返回 (error_or_None, modified_content)
         
         小沈 2026-05-25 重构拆分
         """
@@ -1062,11 +1062,11 @@ class FileTools:
             return f"{reason}。write_text_file 仅支持文本文件。", content
         
         if content and len(content.encode(_enc)) > MAX_READ_SIZE:
-            return f"内容过大，超过写入上限{MAX_READ_SIZE//1024//1024}MB。", content
+            return f"内容过大,超过写入上限{MAX_READ_SIZE//1024//1024}MB。", content
         
         path = Path(file_path)
         if path.suffix.lower() == '.py' and content:
-            fullwidth_map = {'（': '(', '）': ')', '，': ',', '：': ':', '；': ';'}
+            fullwidth_map = {'(': '(', ')': ')', ',': ',', ':': ':', ';': ';'}
             for fw, hw in fullwidth_map.items():
                 content = content.replace(fw, hw)
         
@@ -1087,7 +1087,7 @@ class FileTools:
         old_size = path.stat().st_size if path.exists() and path.is_file() else 0
         new_size = len(content.encode(_enc))
         if old_size > 1024 and new_size > 0 and new_size < old_size * 0.20:
-            return f"数据保护：新内容({new_size}字节)远小于原始内容({old_size}字节)", content
+            return f"数据保护:新内容({new_size}字节)远小于原始内容({old_size}字节)", content
         
         return None, content
     
@@ -1103,8 +1103,8 @@ class FileTools:
         """写入文本文件
         
         【小沈重构 2026-05-25】
-        - 重构拆分：提取 _detect_file_encoding_for_write / _write_file_atomic / _check_write_safety
-        - 保持所有分支完整，功能不减少
+        - 重构拆分:提取 _detect_file_encoding_for_write / _write_file_atomic / _check_write_safety
+        - 保持所有分支完整,功能不减少
         """
         error, content = self._check_write_safety(file_path, text, encoding)
         if error:
@@ -1146,7 +1146,7 @@ class FileTools:
                     ])
                 )
             else:
-                return build_error(ERR_FILE_WRITE_FAILED, "写入文件失败，safety拦截")
+                return build_error(ERR_FILE_WRITE_FAILED, "写入文件失败,safety拦截")
 
         except Exception as e:
             logger.error(f"Failed to write file {file_path}: {e}")
@@ -1163,14 +1163,14 @@ class FileTools:
         include_hidden: bool = False,
     ) -> Dict[str, Any]:
         """列出目录内容 — 小沈 2026-05-19, 2026-05-25 小健重构拆分
-        P11统一入口：list/tree/statistics三合一
+        P11统一入口:list/tree/statistics三合一
         """
         if format not in ("list", "tree"):
-            return build_error(ERR_PARAM_INVALID, f"format只支持'list'或'tree'，当前值: '{format}'")
+            return build_error(ERR_PARAM_INVALID, f"format只支持'list'或'tree',当前值: '{format}'")
         if max_depth < 1:
-            return build_error(ERR_PARAM_INVALID, f"max_depth必须>=1，当前值: {max_depth}")
+            return build_error(ERR_PARAM_INVALID, f"max_depth必须>=1,当前值: {max_depth}")
         if sortBy not in ("name", "size", "mtime"):
-            return build_error(ERR_PARAM_INVALID, f"sortBy只支持'name'/'size'/'mtime'，当前值: '{sortBy}'")
+            return build_error(ERR_PARAM_INVALID, f"sortBy只支持'name'/'size'/'mtime',当前值: '{sortBy}'")
 
         if format == "tree":
             tree_result = await self._get_directory_tree(dir_path=dir_path, max_depth=max_depth)
@@ -1238,8 +1238,8 @@ class FileTools:
         recursive: bool = False,
         force: bool = False
     ) -> Dict[str, Any]:
-        """删除文件或目录 - 小健 2026-05-03 默认放入回收站，force=True永久删除
-        【小沈重构 2026-05-25】25.5节：骨架~30行，闭包拆分为3个独立函数"""
+        """删除文件或目录 - 小健 2026-05-03 默认放入回收站,force=True永久删除
+        【小沈重构 2026-05-25】25.5节:骨架~30行,闭包拆分为3个独立函数"""
 
         # 验证路径合法性
         is_valid, error_msg = self._validate_path(file_path)
@@ -1250,12 +1250,12 @@ class FileTools:
 
         try:
             if not path.exists():
-                return build_success(None, f"文件不存在，无需删除(P16幂等): {file_path}")
+                return build_success(None, f"文件不存在,无需删除(P16幂等): {file_path}")
 
             if not self.task_id:
                 self.task_id = _current_task_id.get(None)
             if not self.task_id:
-                return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID，请先创建一个任务")
+                return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID,请先创建一个任务")
 
             operation_id = self.safety_manager.record_operation("file",
                 task_id=self.task_id,
@@ -1279,7 +1279,7 @@ class FileTools:
             if is_ok:
                 return _build_delete_result(operation_id, path, force, method)
             else:
-                return build_error(ERR_FILE_DELETE_FAILED, "删除文件失败，safety拦截")
+                return build_error(ERR_FILE_DELETE_FAILED, "删除文件失败,safety拦截")
 
         except Exception as e:
             logger.error(f"Failed to delete {file_path}: {e}")
@@ -1312,7 +1312,7 @@ class FileTools:
             if not self.task_id:
                 self.task_id = _current_task_id.get(None)
             if not self.task_id:
-                return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID，请先创建一个任务")
+                return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID,请先创建一个任务")
 
             operation_id = self.safety_manager.record_operation("file",
                 task_id=self.task_id,
@@ -1326,7 +1326,7 @@ class FileTools:
             def _move_sync():
                 if dst.exists():
                     if not overwrite:
-                        raise FileExistsError(f"目标路径已存在: {dst}，移动操作已取消。请设置overwrite=True或指定其他路径。")
+                        raise FileExistsError(f"目标路径已存在: {dst},移动操作已取消。请设置overwrite=True或指定其他路径。")
                     if dst.is_dir():
                         shutil.rmtree(str(dst))
                     else:
@@ -1364,12 +1364,12 @@ class FileTools:
         type: Optional[Literal["file", "directory"]] = None,
         page_token: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """搜索文件名 — 小沈 2026-05-19 精简参数(9→7)；小健 2026-05-25 重构"""
+        """搜索文件名 — 小沈 2026-05-19 精简参数(9→7);小健 2026-05-25 重构"""
         is_valid, error_msg = self._validate_path(search_dir)
         if not is_valid:
             return build_error(ERR_PATH_INVALID, error_msg)
         if not pattern or not pattern.strip():
-            return build_error(ERR_PARAM_INVALID, "文件名匹配模式不能为空，请提供有效的文件名模式")
+            return build_error(ERR_PARAM_INVALID, "文件名匹配模式不能为空,请提供有效的文件名模式")
         path = Path(os.path.expanduser(search_dir))
         if not path.exists():
             return build_error(ERR_FILE_NOT_FOUND, f"搜索目录不存在: {search_dir}")
@@ -1383,7 +1383,7 @@ class FileTools:
             nonlocal seen_files
             for root, dirs, files in os.walk(path):
                 if time.monotonic() > deadline:
-                    logger.warning(f"[search_files] 超时自检触发，提前返回{len(all_matches)}个匹配")
+                    logger.warning(f"[search_files] 超时自检触发,提前返回{len(all_matches)}个匹配")
                     break
                 if not recursive:
                     dirs.clear()
@@ -1597,7 +1597,7 @@ class FileTools:
         self,
         file_path: str,
     ) -> Dict[str, Any]:
-        """读取媒体文件，返回Base64编码"""
+        """读取媒体文件,返回Base64编码"""
         try:
             is_valid, error_msg = self._validate_path(file_path)
             if not is_valid:
@@ -1611,11 +1611,11 @@ class FileTools:
 
             file_size = path.stat().st_size
             if file_size > MAX_MEDIA_READ_SIZE:
-                return build_error(ERR_FILE_READ_TOO_LARGE, f"媒体文件过大({file_size}字节)，超过读取上限{MAX_MEDIA_READ_SIZE//1024//1024}MB")
+                return build_error(ERR_FILE_READ_TOO_LARGE, f"媒体文件过大({file_size}字节),超过读取上限{MAX_MEDIA_READ_SIZE//1024//1024}MB")
 
             suffix = path.suffix.lower()
             if suffix == '.pdf':
-                return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED, "PDF文件请使用 read_document 工具读取，read_media_file 不支持PDF")
+                return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED, "PDF文件请使用 read_document 工具读取,read_media_file 不支持PDF")
 
             mime_map = {
                 ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
@@ -1652,11 +1652,11 @@ class FileTools:
         if not file_paths:
             return build_error(ERR_PARAM_INVALID, "文件路径列表为空")
 
-        # 【修复 2026-05-01 小沈】OOM防护：批量文件数上限
+        # 【修复 2026-05-01 小沈】OOM防护:批量文件数上限
         if len(file_paths) > MAX_BATCH_FILE_COUNT:
-            return build_error(ERR_PARAM_INVALID, f"批量读取文件数({len(file_paths)})超过上限{MAX_BATCH_FILE_COUNT}，请分批读取")
+            return build_error(ERR_PARAM_INVALID, f"批量读取文件数({len(file_paths)})超过上限{MAX_BATCH_FILE_COUNT},请分批读取")
 
-        # 【修复 2026-05-01 小沈】B1: 添加Semaphore并发限制，防止大量文件并发读取耗尽文件句柄
+        # 【修复 2026-05-01 小沈】B1: 添加Semaphore并发限制,防止大量文件并发读取耗尽文件句柄
         semaphore = asyncio.Semaphore(20)
 
         async def _read_single(fp: str) -> Dict[str, Any]:
@@ -1673,22 +1673,22 @@ class FileTools:
                 if not path.exists():
                     return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {fp}", data={"file_path": fp})
 
-                # 【修复 2026-05-01 小沈】OOM防护：单文件大小预检
+                # 【修复 2026-05-01 小沈】OOM防护:单文件大小预检
                 try:
                     if path.stat().st_size > MAX_READ_SIZE:
-                        return build_error(ERR_FILE_READ_TOO_LARGE, f"文件过大({path.stat().st_size}字节)，超过读取上限{MAX_READ_SIZE//1024//1024}MB: {fp}", data={"file_path": fp})
+                        return build_error(ERR_FILE_READ_TOO_LARGE, f"文件过大({path.stat().st_size}字节),超过读取上限{MAX_READ_SIZE//1024//1024}MB: {fp}", data={"file_path": fp})
                 except OSError as e:
                     return build_error(ERR_FILE_READ, f"{e}: {fp}", data={"file_path": fp})
 
                 try:
                     for enc in ["utf-8", "gbk", "gb2312", "utf-8-sig"]:
                         try:
-                            # 【修复 2026-04-30 小沈】用with语句读取，避免文件句柄泄漏
+                            # 【修复 2026-04-30 小沈】用with语句读取,避免文件句柄泄漏
                             def _read_with(e=enc):
                                 with open(path, 'r', encoding=e, errors='replace') as f:
                                     return f.read()
                             content = await asyncio.to_thread(_read_with)
-                            # 【修复 小沈 2026-05-19】同_read_text_file：errors='replace'导致utf-8不抛异常
+                            # 【修复 小沈 2026-05-19】同_read_text_file:errors='replace'导致utf-8不抛异常
                             if '\ufffd' in content:
                                 continue
                             return build_success({"file_path": fp, "content": content, "encoding": enc, "file_size": path.stat().st_size}, f"读取成功: {fp}")
@@ -1700,7 +1700,7 @@ class FileTools:
 
         results = await asyncio.gather(*[_read_single(fp) for fp in file_paths])
         success_count = sum(1 for r in results if r.get("code") == "SUCCESS")
-        # 【修复 小健 2026-05-16】llm_data包含每个文件内容，≤5K全给，>5K给前800字符预览
+        # 【修复 小健 2026-05-16】llm_data包含每个文件内容,≤5K全给,>5K给前800字符预览
         _llm_files = []
         for r in results:
             _rd = r.get("data", {})
@@ -1734,9 +1734,9 @@ class FileTools:
         dry_run: bool = False,
         encoding: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """精确替换文件中的字符串（21.1 重构，小沈 2026-05-25 实施）"""
+        """精确替换文件中的字符串(21.1 重构,小沈 2026-05-25 实施)"""
         if not old_string:
-            return build_error(ERR_PARAM_INVALID, "old_string不能为空，空字符串替换会导致内容爆炸")
+            return build_error(ERR_PARAM_INVALID, "old_string不能为空,空字符串替换会导致内容爆炸")
 
         if not self.task_id:
             self.task_id = _current_task_id.get(None)
@@ -1756,7 +1756,7 @@ class FileTools:
                 return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {file_path}")
             if path.stat().st_size > MAX_READ_SIZE:
                 return build_error(ERR_FILE_READ_TOO_LARGE,
-                    f"文件过大({path.stat().st_size}字节)，超过替换上限{MAX_READ_SIZE//1024//1024}MB")
+                    f"文件过大({path.stat().st_size}字节),超过替换上限{MAX_READ_SIZE//1024//1024}MB")
 
             operation_id = self.safety_manager.record_operation("file",
                 task_id=self.task_id, operation_type=OperationType.MODIFY,
@@ -1785,7 +1785,7 @@ class FileTools:
                 operation_func=_replace_sync
             )
             if not success:
-                return build_error(ERR_FILE_REPLACE_FAILED, "文件替换失败，safety拦截")
+                return build_error(ERR_FILE_REPLACE_FAILED, "文件替换失败,safety拦截")
 
             data = {
                 "replaced_count": replace_result['count'],
@@ -1811,9 +1811,9 @@ class FileTools:
 
     @staticmethod
     def _read_file_with_encodings_sync(path: Path, preferred: Optional[str] = None) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-        """同步读取文件，自动尝试编码 - 小健 2026-05-25
+        """同步读取文件,自动尝试编码 - 小健 2026-05-25
 
-        复用自 _try_read_file_with_encodings（L709）的同步版本，
+        复用自 _try_read_file_with_encodings(L709)的同步版本,
         供 _edit_sync 等同步闭包使用。
         """
         encodings_to_try = [preferred] if preferred else []
@@ -1827,14 +1827,14 @@ class FileTools:
                 return content, enc, None
             except Exception:
                 continue
-        return None, None, f"无法读取文件: {path}，已尝试编码: {encodings_to_try}"
+        return None, None, f"无法读取文件: {path},已尝试编码: {encodings_to_try}"
 
     @staticmethod
     def _apply_single_edit(content: str, edit: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
-        """对内容执行一次编辑，返回 (新内容, 编辑结果)。
+        """对内容执行一次编辑,返回 (新内容, 编辑结果)。
 
         小沈 2026-05-25 重构拆分
-        消除 R1a-c 的 3 路 if-elif 重复（行1926-1934）。
+        消除 R1a-c 的 3 路 if-elif 重复(行1926-1934)。
         YAGNI: 不再返回 old_text/new_text——调用方仅需知悉编辑是否成功。
 
         edit: {"oldText": str, "newText": str}
@@ -1864,8 +1864,8 @@ class FileTools:
             success = self._execute_edit_sync(path, edits, dry_run, encoding, edit_result)
 
         返回数据说明:
-            - 返回bool，True表示成功
-            - edit_result会被填充编辑结果（applied_edits/total_edits/results/preview/dry_run/used_enc）
+            - 返回bool,True表示成功
+            - edit_result会被填充编辑结果(applied_edits/total_edits/results/preview/dry_run/used_enc)
         """
         content, used_enc, err_msg = FileTools._read_file_with_encodings_sync(path, encoding)
         if err_msg:
@@ -1897,7 +1897,7 @@ class FileTools:
         dry_run: bool = False,
         encoding: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """高级编辑文件，支持多处编辑和预览（内部方法） — 小健 2026-05-25 重构拆分
+        """高级编辑文件,支持多处编辑和预览(内部方法) — 小健 2026-05-25 重构拆分
 
         使用场景:
             edit_file工具内部调用
@@ -1906,7 +1906,7 @@ class FileTools:
             result = await self._apply_edits('test.py', [{'oldText': 'old', 'newText': 'new'}])
 
         返回数据说明:
-            - 返回Dict，包含applied_edits/total_edits/results/preview/dry_run/encoding/operation_id
+            - 返回Dict,包含applied_edits/total_edits/results/preview/dry_run/encoding/operation_id
         """
         try:
             is_valid, error_msg = self._validate_path(file_path)
@@ -1916,7 +1916,7 @@ class FileTools:
             if not self.task_id:
                 self.task_id = _current_task_id.get(None)
             if not self.task_id:
-                return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID，请先创建一个任务")
+                return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID,请先创建一个任务")
 
             is_binary, binary_reason = _is_binary_file(file_path)
             if is_binary:
@@ -1927,7 +1927,7 @@ class FileTools:
                 return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {file_path}")
 
             if path.stat().st_size > MAX_READ_SIZE:
-                return build_error(ERR_FILE_READ_TOO_LARGE, f"文件过大({path.stat().st_size}字节)，超过编辑上限{MAX_READ_SIZE//1024//1024}MB")
+                return build_error(ERR_FILE_READ_TOO_LARGE, f"文件过大({path.stat().st_size}字节),超过编辑上限{MAX_READ_SIZE//1024//1024}MB")
 
             operation_id = self.safety_manager.record_operation("file",
                 task_id=self.task_id,
@@ -1956,7 +1956,7 @@ class FileTools:
                     },
                     f"已应用 {edit_result['applied_edits']}/{edit_result['total_edits']} 处编辑"
                 )
-            return build_error(ERR_FILE_EDIT_FAILED, "文件编辑失败，safety拦截")
+            return build_error(ERR_FILE_EDIT_FAILED, "文件编辑失败,safety拦截")
         except Exception as e:
             logger.error(f"edit_file failed: {file_path}: {e}")
             return build_error(ERR_FILE_EDIT_FAILED, str(e))
@@ -2008,7 +2008,7 @@ class FileTools:
                     "has_more": has_more,
                     "next_page_token": next_page_token,
                 },
-                f"搜索完成，匹配{total_matches}行，涉及{total}个文件",
+                f"搜索完成,匹配{total_matches}行,涉及{total}个文件",
                 llm_data={
                     "模式": pattern, "搜索目录": str(search_path),
                     "匹配文件数": total, "匹配行数": total_matches,
@@ -2024,9 +2024,9 @@ class FileTools:
             return build_error(ERR_FILE_CONTENT_SEARCH_FAILED, str(e))
 
     async def get_directory_tree(self, dir_path: str) -> Dict[str, Any]:
-        """获取目录树（委托给 _get_directory_tree 实现）
+        """获取目录树(委托给 _get_directory_tree 实现)
 
-        规范：§11.10 浏览器禁止执行write、chmod等shell操作
+        规范:§11.10 浏览器禁止执行write、chmod等shell操作
         通过 path_utils.validate_and_normalize 实现安全路径检查
         """
         return await self._get_directory_tree(dir_path)
@@ -2066,12 +2066,12 @@ class FileTools:
                 # 【修复 2026-05-01 小沈】条目数上限防护
                 if entry_count[0] >= MAX_PAGE_SIZE:
                     return None
-                # 【修复 2026-05-01 小沈】符号链接循环防护：跳过符号链接目录
+                # 【修复 2026-05-01 小沈】符号链接循环防护:跳过符号链接目录
                 if current_path.is_dir() and current_path.is_symlink():
                     return None
                 if time.monotonic() > _tree_deadline:
                     _tree_timed_out = True
-                    logger.warning(f"[get_directory_tree] 超时自检触发，已收集{entry_count[0]}条，提前返回")
+                    logger.warning(f"[get_directory_tree] 超时自检触发,已收集{entry_count[0]}条,提前返回")
                     return None
                 name = current_path.name
                 for pattern in excludes:
@@ -2107,7 +2107,7 @@ class FileTools:
             return build_error(ERR_FILE_LIST_DIR_FAILED, str(e))
 
     # ============================================================
-    # 第九部分：精简合并工具（v2.0）— 小沈 2026-05-18
+    # 第九部分:精简合并工具(v2.0)— 小沈 2026-05-18
     # ============================================================
 
     async def read_file(
@@ -2120,17 +2120,17 @@ class FileTools:
         encoding: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        读取文本文件（统一入口）— 小沈 2026-05-18
+        读取文本文件(统一入口)— 小沈 2026-05-18
         【小沈 2026-05-19】合并file_path+file_paths→file_paths
 
-        P11统一入口：合并 read_text_file + read_batch_file
-        - 传1个路径：单文件模式，支持 head/tail/offset/limit 分页
-        - 传多个路径：批量模式，每个文件返回完整内容
+        P11统一入口:合并 read_text_file + read_batch_file
+        - 传1个路径:单文件模式,支持 head/tail/offset/limit 分页
+        - 传多个路径:批量模式,每个文件返回完整内容
 
-        P15返回值全面化：单文件返回content/encoding/file_size/total_lines；批量返回results列表
+        P15返回值全面化:单文件返回content/encoding/file_size/total_lines;批量返回results列表
         """
         if not file_paths:
-            return build_error(ERR_PARAM_INVALID, "file_paths不能为空，至少提供1个文件路径")
+            return build_error(ERR_PARAM_INVALID, "file_paths不能为空,至少提供1个文件路径")
 
         # 单文件模式
         if len(file_paths) == 1:
@@ -2143,7 +2143,7 @@ class FileTools:
                 encoding=encoding
             )
 
-        # 批量模式：忽略行控制参数
+        # 批量模式:忽略行控制参数
         return await self._read_batch_file(file_paths=file_paths)
 
     async def edit_file(
@@ -2158,17 +2158,17 @@ class FileTools:
     ) -> Dict[str, Any]:
         """
         编辑文本文件 — 小沈 2026-05-19 精简参数(8→7)
-        P17互斥：old_string和edits不能同时传入
+        P17互斥:old_string和edits不能同时传入
         """
-        ignore_case = False  # ⚠️ 警告: 已从Schema移除，硬编码默认False，后续视需求决定是否恢复
+        ignore_case = False  # ⚠️ 警告: 已从Schema移除,硬编码默认False,后续视需求决定是否恢复
         # P17互斥校验
         if old_string and edits:
-            return build_error(ERR_PARAM_INVALID, "old_string和edits不能同时使用（P17互斥校验）")
+            return build_error(ERR_PARAM_INVALID, "old_string和edits不能同时使用(P17互斥校验)")
 
         if not old_string and not edits:
             return build_error(ERR_PARAM_INVALID, "old_string或edits至少填一个")
 
-        # 单处替换模式：调用precise_replace_in_file逻辑
+        # 单处替换模式:调用precise_replace_in_file逻辑
         if old_string:
             return await self._precise_replace_in_file(
                 file_path=file_path,
@@ -2180,7 +2180,7 @@ class FileTools:
                 encoding=encoding
             )
 
-        # 多处编辑模式：调用edit_text_file逻辑
+        # 多处编辑模式:调用edit_text_file逻辑
         else:
             return await self._apply_edits(
                 file_path=file_path,
@@ -2198,7 +2198,7 @@ class FileTools:
         pattern: Optional[str] = None,
         replacement: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """重命名文件 — 小沈 2026-05-19 精简参数(9→6)，小健 2026-05-19 补充batch模式缺失参数"""
+        """重命名文件 — 小沈 2026-05-19 精简参数(9→6),小健 2026-05-19 补充batch模式缺失参数"""
         recursive = False
         preview = False
         conflict_strategy: Literal["skip", "overwrite", "append_number"] = "skip"
@@ -2232,14 +2232,14 @@ class FileTools:
         if os.name == 'nt' and any(c in _illegal_chars for c in new_name):
             return build_error(ERR_PARAM_INVALID, f"新名称包含Windows非法字符: {set(c for c in new_name if c in _illegal_chars)}")
 
-        # 计算新路径（同目录改名）
+        # 计算新路径(同目录改名)
         src = Path(file_path)
 
         if src.name == new_name:
             return build_success({"new_path": str(src), "old_path": str(src)}, "新名称与原名相同(P16幂等)")
 
         if "/" in new_name or "\\" in new_name:
-            return build_error(ERR_PARAM_INVALID, "新名称不能包含路径分隔符（rename_file仅支持同目录改名）。如需跨目录移动请使用move_file。")
+            return build_error(ERR_PARAM_INVALID, "新名称不能包含路径分隔符(rename_file仅支持同目录改名)。如需跨目录移动请使用move_file。")
 
         dst = src.parent / new_name
 
@@ -2267,7 +2267,7 @@ class FileTools:
         - action="extract": source=压缩包路径, destination=解压目标目录(可选)
         """
         if action not in ("compress", "extract"):
-            return build_error(ERR_PARAM_INVALID, f"不支持的action: {action}，可选: compress/extract")
+            return build_error(ERR_PARAM_INVALID, f"不支持的action: {action},可选: compress/extract")
 
         if action == "compress":
             if not source:
@@ -2313,22 +2313,22 @@ class FileTools:
         """
         文件操作统一入口 — 小沈 2026-05-18
 
-        P11统一入口：合并 move_file + copy_file + delete_file
-        - action="move": 移动文件/目录（原子操作 shutil.move，同盘瞬间完成）
-        - action="copy": 复制文件/目录（shutil.copy2，preserve_metadata=True保留时间戳/权限）
-        - action="delete": 删除文件/目录（默认send2trash放入回收站，force=True永久删除）
+        P11统一入口:合并 move_file + copy_file + delete_file
+        - action="move": 移动文件/目录(原子操作 shutil.move,同盘瞬间完成)
+        - action="copy": 复制文件/目录(shutil.copy2,preserve_metadata=True保留时间戳/权限)
+        - action="delete": 删除文件/目录(默认send2trash放入回收站,force=True永久删除)
 
-        P17互斥校验：action只能是"move"/"copy"/"delete"
-        P17必填参数校验：move/copy需要destination，delete不需要
-        P16幂等性：
+        P17互斥校验:action只能是"move"/"copy"/"delete"
+        P17必填参数校验:move/copy需要destination,delete不需要
+        P16幂等性:
           - delete: 文件已不存在→返回SUCCESS
           - move: 源和目标相同→返回SUCCESS
           - copy: 源和目标相同且内容一致→返回SUCCESS
-        P15返回值全面化：返回action/source/destination/deleted_path/bytes_transferred/checksum
+        P15返回值全面化:返回action/source/destination/deleted_path/bytes_transferred/checksum
         """
         # P17互斥校验
         if action not in ("move", "copy", "delete"):
-            return build_error(ERR_PARAM_INVALID, f"不支持的action: {action}，可选: move/copy/delete")
+            return build_error(ERR_PARAM_INVALID, f"不支持的action: {action},可选: move/copy/delete")
 
         # P17按action校验必填参数
         if action in ("move", "copy"):
@@ -2369,7 +2369,7 @@ class FileTools:
         result: Dict[str, Any], action: str,
         detected_format: str, file_path: str,
     ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
-        """构建 data_file_format 的统一返回数据 + llm_data（21.2 组件2，小沈 2026-05-25 实施）"""
+        """构建 data_file_format 的统一返回数据 + llm_data(21.2 组件2,小沈 2026-05-25 实施)"""
         if result.get("code", "").startswith("ERR_"):
             return build_error(ERR_DOC_DATA_FORMAT_FAILED, result.get("message", "未知错误")), None
 
@@ -2408,11 +2408,11 @@ class FileTools:
         encoding: str = "utf-8",
         indent: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """结构化配置格式统一入口（21.2 重构，小沈 2026-05-25 实施）"""
+        """结构化配置格式统一入口(21.2 重构,小沈 2026-05-25 实施)"""
         from app.services.tools.toolhelper import data_format_helper as df_tools
 
         if action not in ("read", "write"):
-            return build_error(ERR_PARAM_INVALID, f"不支持的action: {action}，可选: read/write")
+            return build_error(ERR_PARAM_INVALID, f"不支持的action: {action},可选: read/write")
         if not file_path:
             return build_error(ERR_PARAM_INVALID, "file_path是必填参数")
 
@@ -2431,7 +2431,7 @@ class FileTools:
             detected = _ext_map.get(ext)
         if not detected:
             return build_error(ERR_DOC_FORMAT_NOT_DETECTED,
-                f"无法识别文件格式: {file_path}，请通过format参数指定")
+                f"无法识别文件格式: {file_path},请通过format参数指定")
 
         if action == "write":
             if detected in ("ini", "xml", "properties"):
@@ -2467,7 +2467,7 @@ class FileTools:
             return build_error(ERR_DOC_DATA_FORMAT_FAILED, str(e))
 
 def _match_fnmatch(name: str, pattern: str, ignore_case: bool) -> bool:
-    """统一封装fnmatch，消除if-else三元组重复 — 小健 2026-05-25"""
+    """统一封装fnmatch,消除if-else三元组重复 — 小健 2026-05-25"""
     return fnmatch.fnmatch(name, pattern) if ignore_case else fnmatch.fnmatchcase(name, pattern)
 
 
@@ -2497,7 +2497,7 @@ def _collect_entry_result(relative_path: str, name: str, fpath: Path, all_matche
 
 def _paginate_search(all_matches: List, path: str, llm_preview: List,
                        page_size: int, start_offset: int) -> Dict:
-    """分页+build_success统一构建，生成next_page_token支持游标续页 — 小健 2026-05-25"""
+    """分页+build_success统一构建,生成next_page_token支持游标续页 — 小健 2026-05-25"""
     total = len(all_matches)
     has_more = total > page_size
     page = all_matches[:page_size] if has_more else all_matches
@@ -2506,7 +2506,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
         "pattern": "", "search_dir": path, "matches": page, "total": total,
         "page": 1, "total_pages": (total + page_size - 1) // page_size if has_more else 1,
         "page_size": page_size, "next_page_token": next_page_token, "has_more": has_more,
-    }, f"搜索完成，共{total}个匹配",
+    }, f"搜索完成,共{total}个匹配",
        llm_data={"模式": "", "搜索目录": path, "匹配数": total,
                  "文件预览": [m.get("path","") if isinstance(m,dict) else str(m) for m in llm_preview[:20]],
                  "has_more": has_more},
@@ -2514,7 +2514,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
 
 
 # ============================================================
-# 第七部分：工具函数导出
+# 第七部分:工具函数导出
 # ============================================================
 
 def get_file_tools(task_id: Optional[str] = None) -> FileTools:
@@ -2523,7 +2523,7 @@ def get_file_tools(task_id: Optional[str] = None) -> FileTools:
 
 
 # ============================================================
-# 第八部分：分页支持函数（原第九部分）
+# 第八部分:分页支持函数(原第九部分)
 # ============================================================
 
 def encode_page_token(offset: int) -> str:
@@ -2535,7 +2535,7 @@ def decode_page_token(token: str) -> int:
     """解码页码令牌"""
     try:
         return int(base64.b64decode(token.encode()).decode())
-    except Exception:  # 【修复C2 2026-05-01 小沈】移除冗余ValueError（Exception已包含）
+    except Exception:  # 【修复C2 2026-05-01 小沈】移除冗余ValueError(Exception已包含)
         return 0
 
 

@@ -4,8 +4,8 @@
 【创建时间】2026-04-30 小沈
 【设计依据】跨分类工具访问设计方案 v1.5 §3.1.2-第6点
 
-继承 BasePrompts 基类，提供时间日期场景的完整 System Prompt。
-与 FileOperationPrompts 同等详细级别，包含：
+继承 BasePrompts 基类,提供时间日期场景的完整 System Prompt。
+与 FileOperationPrompts 同等详细级别,包含:
 - Agent 角色定义
 - 可用工具详细说明
 - 参数命名规则
@@ -28,7 +28,7 @@ class TimePrompts(BasePrompts):
     def get_system_prompt(self) -> str:
         """获取增强版系统Prompt"""
         system_info = get_system_prompt_string(include_commands=False)  # 【修复 2026-05-14 小沈】TimeAgent不注入命令格式
-        logger.info(f"[TimePrompts] get_system_prompt() 被调用，中间层已注入系统信息，长度: {len(system_info)}")
+        logger.info(f"[TimePrompts] get_system_prompt() 被调用,中间层已注入系统信息,长度: {len(system_info)}")
 
         return system_info + """
 
@@ -97,7 +97,7 @@ Example 3: 检查是否工作日
 {"thought": "用户问明天是否工作日", "reasoning": "使用query_calendar检查", "tool_name": "query_calendar", "tool_params": {"check_type": "workday", "date": "2026-05-19"}}
 
 Example 4: 完成任务
-{"thought": "已获取结果，任务完成", "reasoning": "无更多操作", "tool_name": "finish", "tool_params": {"result": "今天是2026年5月18日"}}
+{"thought": "已获取结果,任务完成", "reasoning": "无更多操作", "tool_name": "finish", "tool_params": {"result": "今天是2026年5月18日"}}
 """
 
 
@@ -118,7 +118,7 @@ Example 4: 完成任务
 
 Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
-请完成此时间日期任务，按以下步骤：
+请完成此时间日期任务,按以下步骤:
 1. 分析需要什么时间操作
 2. 使用合适的时间工具
 3. 用中文提供时间信息"""

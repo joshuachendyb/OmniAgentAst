@@ -2,13 +2,13 @@
 """
 工具结果格式化模块 — 小沈 2026-05-21
 
-提供两条输出路径：
+提供两条输出路径:
 - format_llm_observation(): 给LLM看的observation文本
 - _format_frontend_event(): 给前端SSE事件的dict
 
-设计原则：
-- 工具自控：通过llm_data字段控制给LLM的数据量，格式化层不做业务截断
-- 安全兜底：仅在data极端大时防json.dumps OOM
+设计原则:
+- 工具自控:通过llm_data字段控制给LLM的数据量,格式化层不做业务截断
+- 安全兜底:仅在data极端大时防json.dumps OOM
 """
 
 import json
@@ -18,7 +18,7 @@ from app.constants import SUCCESS_CODE, LLM_SAFE_LIMIT
 
 
 def _prevent_json_oom(data: Any, limit: int) -> Any:
-    """防JSON序列化OOM：仅防 json.dumps OOM，非业务截断 — 小沈 2026-05-27"""
+    """防JSON序列化OOM:仅防 json.dumps OOM,非业务截断 — 小沈 2026-05-27"""
     if isinstance(data, dict):
         if len(data) > limit:
             keys = list(data.keys())[:limit]
@@ -32,7 +32,7 @@ def _prevent_json_oom(data: Any, limit: int) -> Any:
 def _get_failure_hint(tool_name: str, tool_params: Optional[dict] = None) -> str:
     """工具执行失败时获取替代建议 — 小健 2026-05-24
 
-    优先从tool_registry获取工具自定义提示，
+    优先从tool_registry获取工具自定义提示,
     无自定义提示时返回通用重试建议。
 
     重写 EXC-20: 异常分类 (ImportError/AttributeError/JSON)
@@ -47,7 +47,7 @@ def _get_failure_hint(tool_name: str, tool_params: Optional[dict] = None) -> str
     except (ImportError, AttributeError, json.JSONDecodeError, TypeError) as e:
         from app.utils.logger import logger as _logger
         _logger.debug(f"[_get_failure_hint] 工具提示获取失败: {e}")
-    return "请尝试其他可用工具，不要重复调用同一失败操作。"
+    return "请尝试其他可用工具,不要重复调用同一失败操作。"
 
 
 def extract_status(result: dict) -> str:
@@ -68,7 +68,7 @@ def extract_status(result: dict) -> str:
 
 
 def build_execution_result_dict(execution_result: Dict[str, Any]) -> Dict[str, Any]:
-    """从工具返回结果构建统一格式dict（供StepFactory使用）— 小健 2026-05-24
+    """从工具返回结果构建统一格式dict(供StepFactory使用)— 小健 2026-05-24
 
     统一主工具和并行工具的execution_result_dict构建逻辑。
     """
@@ -103,7 +103,7 @@ def _format_next_actions(result: dict, text: str) -> str:
             if desc:
                 line += f" - {desc}"
             if when:
-                line += f"（{when}）"
+                line += f"({when})"
             if params:
                 line += f" 参数建议: {params}"
         elif isinstance(na, tuple) and len(na) >= 2:
@@ -156,7 +156,7 @@ def _format_error_observation(result: dict, tool_name: str = "", tool_params: Op
 def format_llm_observation(result: dict, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
     """
     格式化工具结果为LLM observation文本 — 小沈 2026-05-21
-    更新 2026-05-22 小健：合入next_actions拼接逻辑（从base_react.py搬入）
+    更新 2026-05-22 小健:合入next_actions拼接逻辑(从base_react.py搬入)
     """
     code = result.get("code", SUCCESS_CODE)
 

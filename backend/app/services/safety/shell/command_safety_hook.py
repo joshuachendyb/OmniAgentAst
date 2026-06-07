@@ -2,14 +2,14 @@
 """
 Shell安全检查Hook — 将CommandParser分析层适配为SafetyHook接口
 
-【小健 2026-05-27】2.28安全检查入口统一：
-CommandParser是"分析层"安全（评分+解析），适配为SafetyHook后
+【小健 2026-05-27】2.28安全检查入口统一:
+CommandParser是"分析层"安全(评分+解析),适配为SafetyHook后
 可通过SafetyManager.check("shell", action, params)统一调度。
 
-设计原则：
-- ISP：CommandSafetyHook只实现check()，不实现execute_with_safety()
-  （shell命令不需要备份/回滚等执行层安全）
-- OCP：CommandParser本身不变，适配器模式包装
+设计原则:
+- ISP:CommandSafetyHook只实现check(),不实现execute_with_safety()
+  (shell命令不需要备份/回滚等执行层安全)
+- OCP:CommandParser本身不变,适配器模式包装
 """
 from typing import Any, Dict, Optional
 
@@ -24,11 +24,11 @@ class CommandSafetyHook(SafetyHook):
         self._parser = parser or get_command_parser()
 
     def check(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """安全检查：解析命令语义，返回风险评分
+        """安全检查:解析命令语义,返回风险评分
 
         Args:
             action: 命令/操作名称
-            params: 操作参数（应含"command"键）
+            params: 操作参数(应含"command"键)
 
         Returns:
             {"is_safe": bool, "risk_score": float, "message": str, "semantics": dict}

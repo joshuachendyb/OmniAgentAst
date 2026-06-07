@@ -34,7 +34,7 @@ async def chat(self, message: str, history: Optional[List[Dict]] = None) -> Chat
                 break
         if not has_non_reasoning_content and full_reasoning:
             full_content = full_reasoning
-            logger.info(f"[chat] 无普通content，使用reasoning_content作为fallback")
+            logger.info(f"[chat] 无普通content,使用reasoning_content作为fallback")
         logger.info(
             f"[chat] 聚合结果, model={self.model}, "
             f"full_content长度={len(full_content)}, "

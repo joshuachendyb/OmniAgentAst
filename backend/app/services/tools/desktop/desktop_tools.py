@@ -1,30 +1,30 @@
 # -*- coding: utf-8 -*-
 """
-DESKTOP Tools - 桌面工具实现（窗口管理）
+DESKTOP Tools - 桌面工具实现(窗口管理)
 
 【架构规范】2026-04-29 小沈
 
 【重要】新函数增加规范 - 小沈 2026-05-04
-新增函数时必须同步修改以下3个文件：
-1. *_tools.py: 函数实现（必须有详细注释）
-2. *_schema.py: Pydantic 模型（输入参数定义）
-3. *_register.py: 显式注册（description + examples + input_model）
+新增函数时必须同步修改以下3个文件:
+1. *_tools.py: 函数实现(必须有详细注释)
+2. *_schema.py: Pydantic 模型(输入参数定义)
+3. *_register.py: 显式注册(description + examples + input_model)
 
 【工具列表】窗口管理工具
-1. window_info - 窗口信息查询（合并list_windows+get_window_info）
-2. window_control - 统一窗口控制（合并set_window_state+focus_window+resize_window）
+1. window_info - 窗口信息查询(合并list_windows+get_window_info)
+2. window_control - 统一窗口控制(合并set_window_state+focus_window+resize_window)
 3. mouse_control - 统一鼠标控制
 4. keyboard_control - 统一键盘控制
 5. screen_capture - 统一屏幕截图
 6. clipboard_control - 统一剪贴板控制
 
 创建时间: 2026-04-29
-【修正 2026-05-05 小沈】小健检查发现的问题：
+【修正 2026-05-05 小沈】小健检查发现的问题:
 1. pywin32未安装/非Windows时模块加载崩溃 → 改为try/except惰性导入 + HAS_WIN32标志
 2. 裸except(7处) → 改为 except Exception
 3. 错误码"ERROR" → 统一为 ERR_XXX
 4. 多窗口匹配只取第一个 → 加 matched_count 提示
-5. action缺少枚举约束 → Schema改Literal（在schema.py中）
+5. action缺少枚举约束 → Schema改Literal(在schema.py中)
 6. 删除死代码 target_hwnd / _is_window_visible
 7. 重复定义 find_window_callback → 抽取 _find_windows_by_title 公共函数
 """
@@ -55,7 +55,7 @@ if platform.system() == "Windows":
         _HAS_WIN32 = True
     except ImportError:
         _HAS_WIN32 = False
-        logger.warning("pywin32未安装，桌面工具将不可用。请执行: pip install pywin32")
+        logger.warning("pywin32未安装,桌面工具将不可用。请执行: pip install pywin32")
 
 
 def _enum_windows_callback(hwnd: int, windows: List[Dict]) -> bool:
@@ -148,7 +148,7 @@ def window_info(
             }
             msg = f"获取窗口信息成功: {title}"
             if len(matched_hwnds) > 1:
-                msg += f"（共匹配到 {len(matched_hwnds)} 个窗口，返回第一个）"
+                msg += f"(共匹配到 {len(matched_hwnds)} 个窗口,返回第一个)"
             return build_success(info, msg,
                 next_actions=build_next_actions([("window_control", "控制该窗口", "需要操作窗口时")]))
         except Exception as e:
@@ -156,14 +156,14 @@ def window_info(
             return build_error(ERR_DESKTOP_GET_WINDOW_INFO, f"获取窗口信息失败: {str(e)}")
 
     else:
-        return build_error(ERR_INVALID_ACTION, f"不支持的action: {action}，可选: list/info",
+        return build_error(ERR_INVALID_ACTION, f"不支持的action: {action},可选: list/info",
             next_actions=build_next_actions([("window_info", "查看用法", "确认参数", {"action": "list"})]))
 
 
 def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
     """设置窗口状态 - 小沈 2026-04-29, 修正 2026-05-05
 
-    【2026-05-17 小沈】保留旧实现，供 window_control 内部调用
+    【2026-05-17 小沈】保留旧实现,供 window_control 内部调用
     """
     err = check_win32_platform()
     if err:
@@ -172,7 +172,7 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
     try:
         valid_actions = ["maximize", "minimize", "restore", "topmost", "unpin"]
         if action not in valid_actions:
-            return build_error(ERR_INVALID_ACTION, f"无效的操作: {action}，支持的操作为: {valid_actions}")
+            return build_error(ERR_INVALID_ACTION, f"无效的操作: {action},支持的操作为: {valid_actions}")
 
         matched_hwnds = find_windows_by_title(window_title)
 
@@ -201,7 +201,7 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
             msg = f"已取消置顶窗口: {title}"
 
         if len(matched_hwnds) > 1:
-            msg += f"（共匹配到 {len(matched_hwnds)} 个窗口，操作了第一个）"
+            msg += f"(共匹配到 {len(matched_hwnds)} 个窗口,操作了第一个)"
 
         return build_success(
             {
@@ -219,7 +219,7 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
         return build_error(ERR_WINDOW_SET_STATE, f"设置窗口状态失败: {str(e)}")
 
 
-# ========== 统一入口函数（26→10精简方案） ==========
+# ========== 统一入口函数(26→10精简方案) ==========
 
 def window_control(
     window_title: str,
@@ -264,7 +264,7 @@ def mouse_control(
     合并 click + move + scroll
     action: "click"|"move"|"scroll"|"position"
     """
-    # ⚠️ 警告: 以下参数已从Schema移除，硬编码默认值，后续视需求决定是否恢复
+    # ⚠️ 警告: 以下参数已从Schema移除,硬编码默认值,后续视需求决定是否恢复
     click_type: Literal["single", "double"] = "single"
     duration: float = 0
     if action == "click":
@@ -280,7 +280,7 @@ def mouse_control(
         from app.services.tools.toolhelper.gui_helper import _get_mouse_position
         result = _get_mouse_position()
     else:
-        return build_error(ERR_INVALID_ACTION, f"无效的鼠标操作: {action}，支持: click/move/scroll/position",
+        return build_error(ERR_INVALID_ACTION, f"无效的鼠标操作: {action},支持: click/move/scroll/position",
             next_actions=build_next_actions([("tool_help", "查看mouse_control参数", "确认可用操作时")]))
 
     if result.get("code") == "SUCCESS":
@@ -314,7 +314,7 @@ def keyboard_control(
         key_list = [k.strip() for k in text_or_keys.split(",")]
         result = _key_combo(keys=key_list)
     else:
-        return build_error(ERR_INVALID_ACTION, f"无效的键盘操作: {action}，支持: type/shortcut/combo",
+        return build_error(ERR_INVALID_ACTION, f"无效的键盘操作: {action},支持: type/shortcut/combo",
             next_actions=build_next_actions([("tool_help", "查看keyboard_control参数", "确认可用操作时")]))
 
     if result.get("code") == "SUCCESS":
@@ -334,8 +334,8 @@ def screen_capture(
     """统一屏幕截图入口 - 小沈 2026-05-17
 
     合并 screenshot + snapshot
-    优先mss（多显示器），降级pyautogui
-    当指定display参数时使用snapshot（多显示器），否则使用screenshot
+    优先mss(多显示器),降级pyautogui
+    当指定display参数时使用snapshot(多显示器),否则使用screenshot
     """
     if display is not None:
         from app.services.tools.desktop.gui_tools import _snapshot
@@ -373,7 +373,7 @@ def clipboard_control(
 
         result = _write_clipboard(content=content)
     else:
-        return build_error(ERR_INVALID_ACTION, f"无效的剪贴板操作: {action}，支持: read/write",
+        return build_error(ERR_INVALID_ACTION, f"无效的剪贴板操作: {action},支持: read/write",
             next_actions=build_next_actions([("tool_help", "查看clipboard_control参数", "确认可用操作时")]))
 
     if result.get("code") == "SUCCESS":

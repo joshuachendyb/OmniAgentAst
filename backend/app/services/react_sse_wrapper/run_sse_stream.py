@@ -2,7 +2,7 @@
 """
 _run_sse_stream — 纯SSE流运行器
 
-task操作统一在 API层（chat_stream_v2）处理，本文件不碰
+task操作统一在 API层(chat_stream_v2)处理,本文件不碰
 
 Author: 小沈 - 2026-05-31
 统一: 小健 - 2026-05-31 — 删除所有task操作
@@ -41,7 +41,7 @@ async def run_sse_stream(
             task_id=task_id, candidates=candidates,
         )
     except ValueError:
-        logger.info(f"[ChatOp] intent_type='{intent_type}' 无专用Agent，使用通用TextStrategy兜底")
+        logger.info(f"[ChatOp] intent_type='{intent_type}' 无专用Agent,使用通用TextStrategy兜底")
         from app.services.agent.llm_strategies import TextStrategy
         strategy = TextStrategy() if ai_service else None
         agent = GenericReactAgent(llm_client=llm_client, task_id=task_id, strategy=strategy)

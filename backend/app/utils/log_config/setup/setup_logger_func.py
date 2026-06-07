@@ -59,7 +59,7 @@ def setup_logger(name: str) -> logging.Logger:
 
         if not file_handler:
             log_file = _get_log_file_path()
-            warnings.warn(f"创建SafeRotatingFileHandler失败，使用普通FileHandler")
+            warnings.warn(f"创建SafeRotatingFileHandler失败,使用普通FileHandler")
             file_handler = logging.FileHandler(log_file, encoding='utf-8')
             file_handler.setFormatter(formatter)
             file_handler.setLevel(log_level)

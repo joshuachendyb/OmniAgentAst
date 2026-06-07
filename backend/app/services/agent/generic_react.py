@@ -2,7 +2,7 @@
 """
 通用TextStrategy兜底Agent — 小沈 2026-05-25 / 小欧 2026-05-28 从 react_sse_wrapper.py 提取
 
-当 AgentFactory.create 失败时的回退 Agent，直接使用 LLM 文本策略。
+当 AgentFactory.create 失败时的回退 Agent,直接使用 LLM 文本策略。
 """
 
 from app.services.agent.base_react import BaseAgent
@@ -40,7 +40,7 @@ class GenericReactAgent(BaseAgent):
         )
 
     def _get_system_prompt(self):
-        return "你是一个有用的AI助手，直接回答用户的问题。"
+        return "你是一个有用的AI助手,直接回答用户的问题。"
 
     def _get_task_prompt(self, task, context=None):
         return task

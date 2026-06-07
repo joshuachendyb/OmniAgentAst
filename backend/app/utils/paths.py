@@ -2,14 +2,14 @@
 """
 路径辅助函数 — 统一配置文件路径计算
 
-【3.21修复 北京老陈 2026-05-31】消除"config/config.yaml"路径片段重复，
+【3.21修复 北京老陈 2026-05-31】消除"config/config.yaml"路径片段重复,
 所有模块统一调用 get_config_path() 获取配置路径。
 """
 
 from pathlib import Path
 from typing import Optional
 
-# 项目根目录缓存（基于当前文件位置推算）
+# 项目根目录缓存(基于当前文件位置推算)
 _PROJECT_ROOT: Optional[Path] = None
 
 
@@ -28,7 +28,7 @@ def get_config_path(filename: str = "config.yaml") -> str:
     """统一配置路径获取
     
     Args:
-        filename: 配置文件名，默认"config.yaml"
+        filename: 配置文件名,默认"config.yaml"
     
     Returns:
         配置文件的完整路径字符串

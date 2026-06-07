@@ -14,10 +14,10 @@ from app.utils.logger import logger
 
 class MetricType(Enum):
     """指标类型"""
-    COUNTER = "counter"    # 计数器，只增不减
-    GAUGE = "gauge"        # 仪表，可增可减
-    HISTOGRAM = "histogram"  # 直方图，统计分布
-    SUMMARY = "summary"    # 摘要，分位数计算
+    COUNTER = "counter"    # 计数器,只增不减
+    GAUGE = "gauge"        # 仪表,可增可减
+    HISTOGRAM = "histogram"  # 直方图,统计分布
+    SUMMARY = "summary"    # 摘要,分位数计算
 
 
 @dataclass
@@ -38,7 +38,7 @@ class MetricsCollector:
         初始化指标收集器
         
         Args:
-            retention_period: 指标保留时间（秒），默认1小时
+            retention_period: 指标保留时间(秒),默认1小时
         """
         self.metrics: Dict[str, List[Metric]] = defaultdict(list)
         self.retention_period = retention_period
@@ -87,7 +87,7 @@ class MetricsCollector:
                 if metric.timestamp > cutoff_time
             ]
             
-            # 如果列表为空，删除该键
+            # 如果列表为空,删除该键
             if not self.metrics[name]:
                 del self.metrics[name]
     
@@ -96,7 +96,7 @@ class MetricsCollector:
         获取指标数据
         
         Args:
-            name: 指标名称，如果为None则返回所有指标
+            name: 指标名称,如果为None则返回所有指标
         
         Returns:
             指标数据字典
@@ -110,7 +110,7 @@ class MetricsCollector:
         获取指标摘要
         
         Returns:
-            指标摘要字典，包含计数、总和、平均值等
+            指标摘要字典,包含计数、总和、平均值等
         """
         summary = {}
         
@@ -129,7 +129,7 @@ class MetricsCollector:
                 "timestamp": metrics_list[-1].timestamp.isoformat(),
             }
             
-            # 如果是直方图类型，添加分位数计算
+            # 如果是直方图类型,添加分位数计算
             if metrics_list[0].type == MetricType.HISTOGRAM:
                 sorted_values = sorted(values)
                 summary[name]["p50"] = sorted_values[int(len(sorted_values) * 0.5)]

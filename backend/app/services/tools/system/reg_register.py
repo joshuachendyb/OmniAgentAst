@@ -2,8 +2,8 @@
 """
 REGISTRY Register - 注册表工具注册点
 
-【2026-05-18 小沈】3→1：reg_read/reg_write/reg_delete合并为registry_control(action路由)
-原3个函数保留为内部函数，由registry_control按action分发
+【2026-05-18 小沈】3→1:reg_read/reg_write/reg_delete合并为registry_control(action路由)
+原3个函数保留为内部函数,由registry_control按action分发
 
 创建时间: 2026-05-02
 更新时间: 2026-05-18 小沈 - 3→1合并

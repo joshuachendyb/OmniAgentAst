@@ -111,7 +111,7 @@ def get_raw_metrics(name: Optional[str] = None) -> Dict[str, List[Metric]]:
     获取原始指标数据
     
     Args:
-        name: 指标名称，如果为None则返回所有指标
+        name: 指标名称,如果为None则返回所有指标
     
     Returns:
         原始指标数据

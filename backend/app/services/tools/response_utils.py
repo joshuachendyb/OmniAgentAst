@@ -2,8 +2,8 @@
 """
 工具返回结构查询函数 — 小健 2026-05-29
 
-【SRP拆分】从_response.py拆出，职责：查询/判断返回状态
-_response.py负责构建，本文件负责查询
+【SRP拆分】从_response.py拆出,职责:查询/判断返回状态
+_response.py负责构建,本文件负责查询
 
 使用场景:
   from app.services.tools.response_utils import is_success, is_error

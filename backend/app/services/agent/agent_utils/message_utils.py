@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Message工具函数 — 纯函数，无状态
+Message工具函数 — 纯函数,无状态
 
-从 message_builder.py 拆出，遵循 SRP：
-- MessageBuilder：状态管理（conversation_history 写/裁剪）
-- message_utils：无状态工具函数（消息构建/注入/Schema生成）
+从 message_builder.py 拆出,遵循 SRP:
+- MessageBuilder:状态管理(conversation_history 写/裁剪)
+- message_utils:无状态工具函数(消息构建/注入/Schema生成)
 
 Author: 小沈 - 2026-05-28
 """
@@ -16,11 +16,11 @@ from app.utils.common import format_param_value
 
 
 def build_llm_messages(message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
-    """LLM层消息列表拼接 — DRY原则：统一入口
+    """LLM层消息列表拼接 — DRY原则:统一入口
 
-    【重构 2026-05-27 小健】替代llm_core._build_messages()，
-    消除消息构建逻辑分散两处（DRY）。
-    LLM层只应接收已构建好的messages，不应自行组装（SLAP）。
+    【重构 2026-05-27 小健】替代llm_core._build_messages(),
+    消除消息构建逻辑分散两处(DRY)。
+    LLM层只应接收已构建好的messages,不应自行组装(SLAP)。
     """
     if not message and history:
         return list(history)
@@ -43,7 +43,7 @@ def inject_tools_info(
     """注入工具信息到 history_dicts
 
     替代 react_agent_mixin.py L339-363
-    在第一个非system消息前插入，LLM最先看到工具信息。
+    在第一个非system消息前插入,LLM最先看到工具信息。
     """
     if not tools_content:
         return history_dicts
@@ -62,19 +62,19 @@ def inject_schema_text(
     history_dicts: List[Dict[str, Any]],
     schema_text: str
 ) -> List[Dict[str, Any]]:
-    """注入Schema文本（仅TextStrategy使用）— 替代 react_agent_mixin.py L381-390"""
+    """注入Schema文本(仅TextStrategy使用)— 替代 react_agent_mixin.py L381-390"""
     if not schema_text:
         return history_dicts
     return list(history_dicts) + [{"role": "system", "content": schema_text}]
 
 
 def build_schema_text(openai_tools: List[Dict]) -> str:
-    """将openai_tools转换为文本格式（方案C）— 迁入自 react_agent_mixin.py L252-292
+    """将openai_tools转换为文本格式(方案C)— 迁入自 react_agent_mixin.py L252-292
     小沈 2026-05-21
     """
     if not openai_tools:
         return ""
-    lines = ["【Tools Schema参考（仅作参考，实际调用仍以JSON格式返回）】:"]
+    lines = ["【Tools Schema参考(仅作参考,实际调用仍以JSON格式返回)】:"]
     for tool in openai_tools:
         func = tool.get("function", {})
         name = func.get("name", "")

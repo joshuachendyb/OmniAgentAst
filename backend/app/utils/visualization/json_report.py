@@ -21,7 +21,7 @@ def generate_json_report(task_id: str, task_description: str, output_path: Optio
 
     Args:
         task_id: 会话ID
-        task_description: 任务描述（用户消息）
+        task_description: 任务描述(用户消息)
         output_path: 输出路径
 
     Returns:

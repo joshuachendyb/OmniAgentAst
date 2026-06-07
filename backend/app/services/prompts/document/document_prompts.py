@@ -5,7 +5,7 @@ DocumentPrompts - 文档读写 Prompt模板
 P2优先级
 
 Author: 小健 - 2026-05-06
-【2026-05-18 小沈】更新工具列表：8合2路由重构，移除旧工具名
+【2026-05-18 小沈】更新工具列表:8合2路由重构,移除旧工具名
 """
 from datetime import datetime
 
@@ -108,7 +108,7 @@ Example 4: 任务完成
             "- ❌ file (correct: file_path)\n"
             "- ❌ name (correct: file_name)\n"
             "- ❌ data for write (correct: content)\n"
-            "- ❌ 旧工具名 read_pdf/read_docx/read_xlsx/read_pptx/write_docx/write_xlsx/write_pdf/write_pptx (已废弃，用read_document/write_document)"
+            "- ❌ 旧工具名 read_pdf/read_docx/read_xlsx/read_pptx/write_docx/write_xlsx/write_pdf/write_pptx (已废弃,用read_document/write_document)"
         )
         return auto_reminder + forbidden
 
@@ -117,7 +117,7 @@ Example 4: 任务完成
 
 Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
-请完成此文檔处理任务，按以下步骤：
+请完成此文檔处理任务,按以下步骤:
 1. 分析需要的文档操作
 2. 使用合适的文档工具
 3. 用中文总结文档处理结果"""

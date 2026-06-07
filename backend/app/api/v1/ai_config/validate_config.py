@@ -20,7 +20,7 @@ async def validate_config(request: ConfigValidateRequest):
         logger.info(f"配置已保存: provider={final_provider}, model={final_model}")
         return ConfigValidateResponse(
             valid=True,
-            message=f"配置已保存，将在首次使用时验证 {final_provider} ({final_model})",
+            message=f"配置已保存,将在首次使用时验证 {final_provider} ({final_model})",
             model=final_model
         )
     except Exception as e:

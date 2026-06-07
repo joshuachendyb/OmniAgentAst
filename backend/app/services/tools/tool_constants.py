@@ -6,7 +6,7 @@
 """
 
 # ============================================================
-# 1. 工具超时配置（从 tool_meta.py 迁移）
+# 1. 工具超时配置(从 tool_meta.py 迁移)
 # ============================================================
 
 TOOL_TIMEOUTS = {
@@ -42,20 +42,20 @@ TOOL_TIMEOUTS = {
 }
 
 # ============================================================
-# 1.1 Subprocess/HTTP超时配置（从各工具文件硬编码迁移）— 北京老陈 2026-05-31
+# 1.1 Subprocess/HTTP超时配置(从各工具文件硬编码迁移)— 北京老陈 2026-05-31
 # ============================================================
 
-# subprocess执行超时（秒）
+# subprocess执行超时(秒)
 SUBPROCESS_TIMEOUT_DEFAULT = 10    # 通用subprocess执行超时
-SUBPROCESS_TIMEOUT_SHORT = 5       # 短时subprocess（shell communicate、代码执行）
-SUBPROCESS_TIMEOUT_VERY_SHORT = 3  # 极短subprocess（process wait）
-SUBPROCESS_TIMEOUT_LONG = 60       # 长时subprocess（文档转换等耗时操作）
+SUBPROCESS_TIMEOUT_SHORT = 5       # 短时subprocess(shell communicate、代码执行)
+SUBPROCESS_TIMEOUT_VERY_SHORT = 3  # 极短subprocess(process wait)
+SUBPROCESS_TIMEOUT_LONG = 60       # 长时subprocess(文档转换等耗时操作)
 
-# httpx请求超时（秒）
+# httpx请求超时(秒)
 HTTPX_TIMEOUT_DEFAULT = 5.0        # 通用httpx请求超时
 
 # ============================================================
-# 2. 文件工具配置（从 file_tools.py 迁移）
+# 2. 文件工具配置(从 file_tools.py 迁移)
 # ============================================================
 
 READ_FILE_DEFAULT_LIMIT = 500
@@ -76,7 +76,7 @@ BINARY_EXTENSIONS = {
 }
 
 # ============================================================
-# 3. 工具注册模块映射（从 lazy_loader.py 迁移）
+# 3. 工具注册模块映射(从 lazy_loader.py 迁移)
 # ============================================================
 
 CATEGORY_MODULES = {
@@ -90,7 +90,7 @@ CATEGORY_MODULES = {
 }
 
 # ============================================================
-# 4. 网络工具配置（从 http_client_sdk.py 迁移）
+# 4. 网络工具配置(从 http_client_sdk.py 迁移)
 # ============================================================
 
 DEFAULT_TIMEOUT_SEC = 30.0
@@ -98,7 +98,7 @@ NETWORK_MAX_CONNECTIONS = 100
 NETWORK_MAX_KEEPALIVE = 20
 
 # ============================================================
-# 6. 注册表工具映射（从 reg_tools.py 迁移）
+# 6. 注册表工具映射(从 reg_tools.py 迁移)
 # ============================================================
 
 HIVE_MAP = {
@@ -110,7 +110,7 @@ HIVE_MAP = {
 }
 
 # ============================================================
-# 7. 工具内容质量（从 content_quality.py 迁移）
+# 7. 工具内容质量(从 content_quality.py 迁移)
 # ============================================================
 
 SELF_REF_KEYWORDS = [
@@ -128,7 +128,7 @@ SELF_REF_THRESHOLD_SHORT = 0.4
 SHORT_CONTENT_LENGTH = 50
 
 # ============================================================
-# 8. 工具安全模式（从 shell_helper/exec_helper 迁移）
+# 8. 工具安全模式(从 shell_helper/exec_helper 迁移)
 # ============================================================
 
 SHELL_INJECTION_PATTERNS = [
@@ -153,7 +153,7 @@ DANGEROUS_PATTERNS = [
 ]
 
 # ============================================================
-# 9. 工具日期/哈希辅助（从 date_helper/hash_helper 迁移）
+# 9. 工具日期/哈希辅助(从 date_helper/hash_helper 迁移)
 # ============================================================
 
 QINGMING_DATES = {
@@ -165,7 +165,7 @@ QINGMING_DATES = {
 SUPPORTED_ALGORITHMS = {"md5", "sha1", "sha256", "sha512"}
 
 # ============================================================
-# 10. 工具重试配置（从 tool_config.py 迁移）
+# 10. 工具重试配置(从 tool_config.py 迁移)
 # ============================================================
 
 TOOL_RETRY_MAX = {

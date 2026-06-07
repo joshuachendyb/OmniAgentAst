@@ -5,7 +5,7 @@
 【创建时间】2026-05-25 小健
 【用途】为file_tools.py提供内容格式验证功能
 
-包含：
+包含:
 - validate_json_content: 验证JSON内容格式
 - validate_csv_content: 验证CSV内容格式
 - validate_xml_content: 验证XML内容格式
@@ -66,7 +66,7 @@ def validate_csv_content(content: str, max_check_lines: int = 1000) -> Optional[
             if row:
                 row_lengths.append(len(row))
         if row_lengths and len(set(row_lengths)) > 1:
-            return f"CSV格式警告: 列数不一致(发现{set(row_lengths)}种列数)，写入可能导致数据错位"
+            return f"CSV格式警告: 列数不一致(发现{set(row_lengths)}种列数),写入可能导致数据错位"
         return None
     except Exception as e:
         return f"CSV格式验证失败: {str(e)[:100]}"
@@ -137,9 +137,9 @@ def validate_python_content(content: str, file_path: Optional[str] = None) -> Op
     except SyntaxError as e:
         error_msg = f"Python语法验证失败: 第{e.lineno}行 - {e.msg}"
         if "unterminated string literal" in e.msg:
-            error_msg += "；建议：转义字符串请使用raw string r'...'，如 r'\\\\' 代替 '\\\\'"
+            error_msg += ";建议:转义字符串请使用raw string r'...',如 r'\\\\' 代替 '\\\\'"
         elif "invalid character" in e.msg:
-            error_msg += "；建议：Python不支持全角标点，请使用半角括号()、逗号,、冒号:、分号;"
+            error_msg += ";建议:Python不支持全角标点,请使用半角括号()、逗号,、冒号:、分号;"
         elif "invalid escape sequence" in e.msg:
-            error_msg += "；建议：请在字符串前加r前缀使用raw string，或将转义字符双写如 \\\\d → r'\\d'"
+            error_msg += ";建议:请在字符串前加r前缀使用raw string,或将转义字符双写如 \\\\d → r'\\d'"
         return error_msg

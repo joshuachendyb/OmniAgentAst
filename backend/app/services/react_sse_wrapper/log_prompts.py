@@ -39,7 +39,7 @@ async def log_prompts(
     )
     if intent_type in ("", "generic", "chat"):
         prompts_instance = None
-        source_name = "通用意图：无系统Prompt"
+        source_name = "通用意图:无系统Prompt"
     else:
         try:
             from app.services.agent.agent_config import resolve_agent_config

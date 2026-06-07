@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-工具类型&意图类型定义 — 单一定义源（OCP：新增分类/意图只需在此文件添加）
+工具类型&意图类型定义 — 单一定义源(OCP:新增分类/意图只需在此文件添加)
 - ToolCategory + IntentType 枚举
 - INTENT_TO_CATEGORY / CATEGORY_ORDER / CATEGORY_NAMES / INTENT_MAPPING / CRSS_TYPE_KEYWORDS 全部从此自动派生
 
@@ -15,7 +15,7 @@ from enum import Enum
 
 
 # ====================================================================
-# 一、意图类型枚举（name 必须与 ToolCategory 成员一一对应）
+# 一、意图类型枚举(name 必须与 ToolCategory 成员一一对应)
 # ====================================================================
 
 class IntentType(str, Enum):
@@ -32,15 +32,15 @@ class IntentType(str, Enum):
 
 
 # ====================================================================
-# 二、工具分类枚举（单一定义源）
+# 二、工具分类枚举(单一定义源)
 # ====================================================================
 
 class ToolCategory(Enum):
     """
     工具分类枚举
 
-    每个成员携带 (value, intent_keys, order, name_cn)：
-    - intent_keys: 可映射到该分类的意图名称列表（小写）
+    每个成员携带 (value, intent_keys, order, name_cn):
+    - intent_keys: 可映射到该分类的意图名称列表(小写)
     - order: 显示排序
     - name_cn: 中文名称
 
@@ -85,7 +85,7 @@ CATEGORY_NAMES: Dict[ToolCategory, str] = {cat: cat.name_cn for cat in ToolCateg
 
 # ====================================================================
 # 三、CRSS 意图注册 — CRSS名称 → (IntentType成员名, 关键词数据)
-# 新增/删除 CRSS 意图只需在此编辑，INTENT_MAPPING/CRSS_TYPE_KEYWORDS 自动派生
+# 新增/删除 CRSS 意图只需在此编辑,INTENT_MAPPING/CRSS_TYPE_KEYWORDS 自动派生
 # ====================================================================
 
 _CRSS_REGISTRY: Dict[str, tuple[str, dict]] = {
@@ -95,7 +95,7 @@ _CRSS_REGISTRY: Dict[str, tuple[str, dict]] = {
                                         r'\bcp\b', r'\bmv\b', r'\brm\b', r'\bmkdir\b', r'\btouch\b'],
                            "chinese_keywords": ['文件', '目录', '文件夹', '路径', '磁盘', 'C盘', 'D盘', 'E盘']}),
 
-    # SYSTEM 相关 → IntentType.SYSTEM（多个CRSS名映射到同一意图）
+    # SYSTEM 相关 → IntentType.SYSTEM(多个CRSS名映射到同一意图)
     "SHELL":          ("SYSTEM", {"keywords": [r'\bnpm\b', r'\bpip\b', r'\bnode\b', r'\bgcc\b', r'\bpython\b',
                                                 r'\bgit\b', r'\bdocker\b', r'\bgradle\b'],
                                    "chinese_keywords": ['终端', '命令', '脚本']}),

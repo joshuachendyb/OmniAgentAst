@@ -12,7 +12,7 @@ from typing import Optional
 
 logging.raiseExceptions = False
 
-# 延迟导入，避免循环依赖（_create_handler_for_logger 内部使用）
+# 延迟导入,避免循环依赖(_create_handler_for_logger 内部使用)
 from .config import LogConfig
 
 LOG_DIR = Path(__file__).parent.parent.parent.parent / "logs"
@@ -20,7 +20,7 @@ LOG_DIR.mkdir(exist_ok=True)
 
 
 class SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
-    """安全的轮转文件处理器，捕获轮转错误避免程序崩溃"""
+    """安全的轮转文件处理器,捕获轮转错误避免程序崩溃"""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -28,11 +28,11 @@ class SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
         self._logger_name = None
 
     def set_logger_name(self, name: str):
-        """设置logger名称，用于获取对应的logger进行Handler替换"""
+        """设置logger名称,用于获取对应的logger进行Handler替换"""
         self._logger_name = name
 
     def _check_and_rotate_by_date(self):
-        """检查日期变化，必要时轮转日志文件"""
+        """检查日期变化,必要时轮转日志文件"""
 
         today = datetime.now().strftime('%Y-%m-%d')
 
@@ -80,15 +80,15 @@ def _get_log_file_path() -> Path:
 
 def _create_handler_for_logger(logger_name: str, level: int = None, formatter: logging.Formatter = None) -> Optional[SafeRotatingFileHandler]:
     """
-    为指定logger创建新的文件处理器（使用当前日期的文件名）
+    为指定logger创建新的文件处理器(使用当前日期的文件名)
 
     Args:
         logger_name: logger名称
-        level: 日志级别（可选）
-        formatter: 日志格式（可选）
+        level: 日志级别(可选)
+        formatter: 日志格式(可选)
 
     Returns:
-        SafeRotatingFileHandler: 新的文件处理器，失败返回None
+        SafeRotatingFileHandler: 新的文件处理器,失败返回None
     """
     try:
         log_file = _get_log_file_path()

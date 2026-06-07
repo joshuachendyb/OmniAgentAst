@@ -23,10 +23,10 @@ class MetricSummary(BaseModel):
     avg: float = Field(..., description="平均值")
     latest: float = Field(..., description="最新值")
     timestamp: str = Field(..., description="时间戳")
-    p50: Optional[float] = Field(None, description="50分位数（仅直方图）")
-    p90: Optional[float] = Field(None, description="90分位数（仅直方图）")
-    p95: Optional[float] = Field(None, description="95分位数（仅直方图）")
-    p99: Optional[float] = Field(None, description="99分位数（仅直方图）")
+    p50: Optional[float] = Field(None, description="50分位数(仅直方图)")
+    p90: Optional[float] = Field(None, description="90分位数(仅直方图)")
+    p95: Optional[float] = Field(None, description="95分位数(仅直方图)")
+    p99: Optional[float] = Field(None, description="99分位数(仅直方图)")
 
 class MetricsResponse(BaseModel):
     """指标响应"""
@@ -37,7 +37,7 @@ class MetricsResponse(BaseModel):
 
 class ResetMetricsRequest(BaseModel):
     """重置指标请求"""
-    confirm: bool = Field(..., description="确认重置，必须为True")
+    confirm: bool = Field(..., description="确认重置,必须为True")
 
 class ResetMetricsResponse(BaseModel):
     """重置指标响应"""
@@ -51,7 +51,7 @@ async def get_metrics():
     """
     获取监控指标摘要
     
-    返回当前运行时的性能指标，包括：
+    返回当前运行时的性能指标,包括:
     - HTTP请求总数、持续时间、大小
     - 错误总数
     - 请求进行中的数量
@@ -78,9 +78,9 @@ async def get_raw_metrics_endpoint(name: Optional[str] = None):
     获取原始指标数据
     
     Args:
-        name: 指标名称，如果不提供则返回所有指标
+        name: 指标名称,如果不提供则返回所有指标
         
-    返回原始指标数据，包含每个数据点的时间戳和标签
+    返回原始指标数据,包含每个数据点的时间戳和标签
     """
     raw_metrics = get_raw_metrics(name)
     return {

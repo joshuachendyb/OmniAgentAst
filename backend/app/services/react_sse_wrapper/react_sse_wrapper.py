@@ -2,10 +2,10 @@
 """
 React SSE Wrapper — 主入口
 
-从 react_sse_wrapper.py 拆出，遵循 SRP：
+从 react_sse_wrapper.py 拆出,遵循 SRP:
 - 各功能函数独立文件
 - 本文件只保留 generate_sse_stream 和 generate_sse_stream_with_retry
-- task操作全部在 run_sse_stream 层处理，本文件不碰
+- task操作全部在 run_sse_stream 层处理,本文件不碰
 
 Author: 小沈 - 2026-03-26
 重构: 小健 - 2026-05-31 — task操作全部移入run_sse_stream层
@@ -48,15 +48,15 @@ async def generate_sse_stream(
     config: SSEConfig,
     current_execution_steps: Optional[List[Dict]] = None
 ) -> AsyncGenerator[str, None]:
-    """SSE 流式生成器 — 主入口，不碰task操作"""
+    """SSE 流式生成器 — 主入口,不碰task操作"""
     if current_execution_steps is None:
         current_execution_steps = []
     if config.next_step is None:
         config.next_step = create_step_counter()
 
     if config.ai_service is None:
-        raise ValueError("[AIServiceFactory] react_sse_wrapper 禁止创建 ai_service，必须由 chat_router 传入")
-    logger.info(f"[AIServiceFactory] 使用 router 传入的 ai_service（复用）")
+        raise ValueError("[AIServiceFactory] react_sse_wrapper 禁止创建 ai_service,必须由 chat_router 传入")
+    logger.info(f"[AIServiceFactory] 使用 router 传入的 ai_service(复用)")
 
     llm_call_count = 0
     agent_llm_holder: Dict[str, Any] = {"n": 0}
@@ -91,7 +91,7 @@ async def generate_sse_stream(
             yield sse_event
 
     except Exception as e:
-        logger.error(f"流式响应异常：task_id={config.task_id}, error={e}", exc_info=True)
+        logger.error(f"流式响应异常:task_id={config.task_id}, error={e}", exc_info=True)
         from app.services.react_sse_wrapper.yield_error_sse import yield_error_sse
         error_response = await yield_error_sse(
             error_type="stream_error", error_label="流式响应异常", log_tag="[SSE]",
@@ -119,13 +119,13 @@ async def generate_sse_stream_with_retry(
         except (asyncio.TimeoutError, ConnectionError, httpx.RemoteProtocolError,
                 httpx.ConnectError, httpx.ReadTimeout) as e:
             if retry_engine.exhausted:
-                logger.error(f"[SSE重试] 耗尽，放弃: {e}")
+                logger.error(f"[SSE重试] 耗尽,放弃: {e}")
                 error_data = {"type": "error", "error": {"type": "connection_error",
-                    "message": "SSE连接失败，重试耗尽", "detail": str(e)}}
+                    "message": "SSE连接失败,重试耗尽", "detail": str(e)}}
                 yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
                 return
             delay = retry_engine.current_delay
-            logger.warning(f"[SSE重试] 第{retry_engine.attempt_count}次，等待{delay:.0f}s: {e}")
+            logger.warning(f"[SSE重试] 第{retry_engine.attempt_count}次,等待{delay:.0f}s: {e}")
             await asyncio.sleep(delay)
             retry_engine.record_attempt()
         except Exception as e:

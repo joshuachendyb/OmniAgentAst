@@ -46,7 +46,7 @@ def get_service(config_path: Optional[str] = None) -> BaseAIService:
 
     provider_config = ai_config.get(final_provider, {})
     if not provider_config:
-        raise ValueError(f"provider {final_provider} 的配置为空，请检查 config.yaml")
+        raise ValueError(f"provider {final_provider} 的配置为空,请检查 config.yaml")
 
     _instance = BaseAIService(
         api_key=(provider_config.get("api_key") or "").strip(),

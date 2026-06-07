@@ -2,8 +2,8 @@
 """
 Meta 工具实现 - tool_help / tool_search
 
-【2026-05-17 小沈】新建：精简方案13.12节
-- tool_help: 查询单个工具的详细用法（name/category/description/params/examples）
+【2026-05-17 小沈】新建:精简方案13.12节
+- tool_help: 查询单个工具的详细用法(name/category/description/params/examples)
 - tool_search: 按关键词搜索匹配的工具列表
 """
 
@@ -45,7 +45,7 @@ def tool_help(tool_name: str) -> Dict[str, Any]:
         similar = [n for n in available if tool_name.lower() in n.lower()]
         return build_error(
             ERR_TOOL_NOT_FOUND,
-            f"工具 '{tool_name}' 不存在，请检查名称或使用 tool_search 搜索",
+            f"工具 '{tool_name}' 不存在,请检查名称或使用 tool_search 搜索",
             data={"similar_names": similar[:10], "total_tools": len(available)},
             llm_data={"similar_names": similar[:5], "total_tools": len(available)},
             next_actions=build_next_actions([
@@ -85,7 +85,7 @@ def tool_help(tool_name: str) -> Dict[str, Any]:
 
     return build_success(
         data,
-        f"工具 '{metadata.name}' 用法查询成功（{metadata.category.value}类）",
+        f"工具 '{metadata.name}' 用法查询成功({metadata.category.value}类)",
         llm_data=llm_result,
         next_actions=build_next_actions([
             ("tool_search", "按关键词搜索其他工具", "需要模糊查找工具时"),
@@ -109,7 +109,7 @@ def tool_search(query: str) -> Dict[str, Any]:
     if not query.strip():
         return build_error(
             ERR_DOC_QUERY_EMPTY,
-            "搜索关键词不能为空，请提供描述性关键词",
+            "搜索关键词不能为空,请提供描述性关键词",
             next_actions=build_next_actions([
                 ("tool_help", "查询单个工具用法", "已知工具名时"),
             ]),
@@ -158,7 +158,7 @@ def tool_search(query: str) -> Dict[str, Any]:
 
     return build_success(
         data,
-        f"找到 {len(scored)} 个相关工具，返回前 {len(top_results)} 个",
+        f"找到 {len(scored)} 个相关工具,返回前 {len(top_results)} 个",
         llm_data=llm_data,
         next_actions=build_next_actions([
             ("tool_help", "查看匹配工具的详细用法", "需要了解具体工具参数时"),
@@ -169,7 +169,7 @@ def tool_search(query: str) -> Dict[str, Any]:
 def _pipeline_error(code: str, msg: str, step: Optional[int] = None,
                     tool: Optional[str] = None, data: Optional[Dict] = None,
                     llm_data: Optional[Dict] = None) -> Dict[str, Any]:
-    """统一pipeline错误响应，附加next_actions — 小健 2026-05-25"""
+    """统一pipeline错误响应,附加next_actions — 小健 2026-05-25"""
     actions = []
     if tool:
         actions.append(("tool_help", "查看工具参数", "不确定参数时", {"tool_name": tool}))
@@ -191,7 +191,7 @@ def _timeout_error(step_idx: int, tool_name: str, timeout_val: int,
     })
     return build_error(
         ERR_PIPELINE_TIMEOUT,
-        f"步骤{step_idx + 1}({tool_name})执行超时（{timeout_val}秒），请增大timeout_per_step或简化操作",
+        f"步骤{step_idx + 1}({tool_name})执行超时({timeout_val}秒),请增大timeout_per_step或简化操作",
         data=error_data,
         llm_data={"failed_step": step_idx + 1, "tool": tool_name, "timeout": timeout_val,
                    "completed_steps": len(done_results)},
@@ -204,10 +204,10 @@ def _timeout_error(step_idx: int, tool_name: str, timeout_val: int,
 
 
 def _run_tool_with_timeout(impl: Callable, params: Dict, timeout: int) -> Any:
-    """统一工具执行分发：async/sync + timeout — 小健 2026-05-25
+    """统一工具执行分发:async/sync + timeout — 小健 2026-05-25
 
     使用场景:
-    - pipeline中执行每步工具，支持async和sync工具
+    - pipeline中执行每步工具,支持async和sync工具
     - 超时抛出TimeoutError
 
     使用示例:
@@ -235,7 +235,7 @@ def _run_tool_with_timeout(impl: Callable, params: Dict, timeout: int) -> Any:
 
 def _process_step_result(result: Dict, i: int, tool_name: str,
                          results: List, context: Dict, stop_on_error: bool) -> Optional[Dict]:
-    """处理单步结果，返回None继续或error dict停止 — 小健 2026-05-25
+    """处理单步结果,返回None继续或error dict停止 — 小健 2026-05-25
 
     使用场景:
     - pipeline中处理每步工具的执行结果
@@ -246,7 +246,7 @@ def _process_step_result(result: Dict, i: int, tool_name: str,
 
     返回数据说明:
     - None: 继续
-    - Dict: 错误响应，应立即返回
+    - Dict: 错误响应,应立即返回
     """
     step_data = result.get("data")
     step_llm = result.get("llm_data")
@@ -264,7 +264,7 @@ def _process_step_result(result: Dict, i: int, tool_name: str,
             "results": results,
         })
         return _pipeline_error(ERR_PIPELINE_STOPPED,
-            f"管道已在步骤{i+1}({tool_name})停止: {result.get('message')}，可设置stop_on_error=False继续执行",
+            f"管道已在步骤{i+1}({tool_name})停止: {result.get('message')},可设置stop_on_error=False继续执行",
             step=i+1, tool=tool_name, data=error_data,
             llm_data={"failed_step": i+1, "tool": tool_name, "error_code": result.get("code"),
                        "error_message": result.get("message"), "completed_steps": len(results)})
@@ -286,7 +286,7 @@ def _inject_context(params: Dict, context: Dict, tool_name: str) -> Dict:
         params = _inject_context(step.get("params", {}), context, tool_name)
 
     返回数据说明:
-    - 返回Dict，注入后的参数字典
+    - 返回Dict,注入后的参数字典
     """
     if not context:
         return params
@@ -304,7 +304,7 @@ def _inject_context(params: Dict, context: Dict, tool_name: str) -> Dict:
 
 
 def _validate_step(step: Any, i: int, steps_list: List) -> Optional[Dict]:
-    """校验单步格式，返回错误dict或None — 小沈 2026-05-25
+    """校验单步格式,返回错误dict或None — 小沈 2026-05-25
 
     使用场景:
     - pipeline中步骤校验
@@ -316,11 +316,11 @@ def _validate_step(step: Any, i: int, steps_list: List) -> Optional[Dict]:
 
     返回数据说明:
     - None: 校验通过
-    - Dict: 错误响应，应立即返回
+    - Dict: 错误响应,应立即返回
     """
     if not isinstance(step, dict):
         return _pipeline_error(ERR_INVALID_STEP,
-            f"步骤{i+1}格式无效，应为对象，当前类型: {type(step).__name__}",
+            f"步骤{i+1}格式无效,应为对象,当前类型: {type(step).__name__}",
             llm_data={"failed_step": i + 1, "error": f"步骤类型错误: {type(step).__name__}"})
     tool_name = step.get("tool")
     if not tool_name:
@@ -331,7 +331,7 @@ def _validate_step(step: Any, i: int, steps_list: List) -> Optional[Dict]:
         available = list(tool_registry._tools.keys())
         similar = [n for n in available if tool_name.lower() in n.lower()]
         return _pipeline_error(ERR_TOOL_NOT_FOUND,
-            f"步骤{i+1}: 工具 '{tool_name}' 不存在，请用 tool_search 查找正确名称",
+            f"步骤{i+1}: 工具 '{tool_name}' 不存在,请用 tool_search 查找正确名称",
             tool=tool_name,
             data={"similar_tools": similar[:5]},
             llm_data={"failed_step": i + 1, "tool": tool_name, "similar_tools": similar[:3]})
@@ -348,15 +348,15 @@ def pipeline(steps: str, stop_on_error: bool = True, timeout_per_step: int = 60)
     """
     定义工具执行管道 — 小沈 2026-05-17, 2026-05-22 新增timeout_per_step, 2026-05-25 小健重构拆分
 
-    将多个工具按顺序编排执行，前一步的输出自动成为后一步的输入。
+    将多个工具按顺序编排执行,前一步的输出自动成为后一步的输入。
 
     Args:
         steps: JSON格式的工具执行步骤列表
-        stop_on_error: 某步失败时是否停止管道，默认True
-        timeout_per_step: 每步执行超时时间（秒），默认60秒
+        stop_on_error: 某步失败时是否停止管道,默认True
+        timeout_per_step: 每步执行超时时间(秒),默认60秒
 
     Returns:
-        执行结果，包含steps(步骤数)和results(每步结果)
+        执行结果,包含steps(步骤数)和results(每步结果)
     """
     try:
         if isinstance(steps, (list, dict)):
@@ -365,14 +365,14 @@ def pipeline(steps: str, stop_on_error: bool = True, timeout_per_step: int = 60)
             steps_list = json.loads(steps)
     except json.JSONDecodeError as e:
         return _pipeline_error(ERR_INVALID_JSON,
-            f"steps参数不是有效的JSON格式: {str(e)}，请检查JSON语法")
+            f"steps参数不是有效的JSON格式: {str(e)},请检查JSON语法")
     except TypeError as e:
         return _pipeline_error(ERR_INVALID_JSON,
-            f"steps参数类型错误: {str(e)}，需要JSON字符串或列表")
+            f"steps参数类型错误: {str(e)},需要JSON字符串或列表")
 
     if not isinstance(steps_list, list):
         return _pipeline_error(ERR_META_INVALID_FORMAT,
-            f"steps必须是JSON数组格式，当前类型: {type(steps_list).__name__}")
+            f"steps必须是JSON数组格式,当前类型: {type(steps_list).__name__}")
 
     context: Dict[str, Any] = {}
     results: List[Dict] = []
@@ -386,7 +386,7 @@ def pipeline(steps: str, stop_on_error: bool = True, timeout_per_step: int = 60)
         impl = tool_registry.get_implementation(tool_name)
         if not impl:
             return _pipeline_error(ERR_META_TOOL_IMPL_NOT_FOUND,
-                f"步骤{i+1}: 工具 '{tool_name}' 无法获取实现，请检查工具是否正确注册",
+                f"步骤{i+1}: 工具 '{tool_name}' 无法获取实现,请检查工具是否正确注册",
                 tool=tool_name,
                 llm_data={"failed_step": i + 1, "tool": tool_name})
         params = _inject_context(step.get("params", {}), context, tool_name)
@@ -396,7 +396,7 @@ def pipeline(steps: str, stop_on_error: bool = True, timeout_per_step: int = 60)
             return _timeout_error(i, tool_name, timeout_per_step, results, steps, stop_on_error)
         except TypeError as e:
             return _pipeline_error(ERR_PARAM_MISMATCH,
-                f"步骤{i+1}({tool_name})参数不匹配: {str(e)}，请用 tool_help 查看正确参数",
+                f"步骤{i+1}({tool_name})参数不匹配: {str(e)},请用 tool_help 查看正确参数",
                 tool=tool_name,
                 data={"step": i+1, "tool": tool_name, "error": str(e)},
                 llm_data={"failed_step": i + 1, "tool": tool_name, "error": str(e)})
@@ -444,11 +444,11 @@ async def batch_process(
     max_files: int = 500,
     exist_ok: bool = True,
 ) -> Dict[str, Any]:
-    """批量处理文件 — 小沈 2026-05-22 （从file移入meta）
-    对匹配glob模式的所有文件执行同一操作（rename/delete/copy）。
+    """批量处理文件 — 小沈 2026-05-22 (从file移入meta)
+    对匹配glob模式的所有文件执行同一操作(rename/delete/copy)。
     """
     if max_files < 1 or max_files > 10000:
-        return build_error(ERR_PARAM_INVALID, f"max_files必须在1-10000之间，当前值：{max_files}")
+        return build_error(ERR_PARAM_INVALID, f"max_files必须在1-10000之间,当前值:{max_files}")
 
     files = glob_module.glob(source_pattern, recursive=True)
     files = [f for f in files if os.path.isfile(f)][:max_files]
@@ -466,7 +466,7 @@ async def batch_process(
     if dry_run:
         return build_success(
             truncate_data_for_frontend(plan),
-            f"【预览模式】将 {action} {len(files)} 个文件，使用实际执行确认",
+            f"【预览模式】将 {action} {len(files)} 个文件,使用实际执行确认",
             llm_data={"action": action, "file_count": len(files), "files": files[:5]},
             next_actions=build_next_actions([
                 ("batch_process", "确认执行以上操作", "预览结果符合预期时",
@@ -496,7 +496,7 @@ async def batch_process(
                 dest = os.path.join(target_dir, os.path.basename(f))
                 shutil.copy2(f, dest)
             else:
-                return build_error(ERR_PARAM_INVALID, f"不支持的action: {action}，可选: rename/delete/copy")
+                return build_error(ERR_PARAM_INVALID, f"不支持的action: {action},可选: rename/delete/copy")
             results["success"] += 1
         except Exception as e:
             results["failed"] += 1

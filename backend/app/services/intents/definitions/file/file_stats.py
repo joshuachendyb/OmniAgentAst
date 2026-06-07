@@ -7,7 +7,7 @@ File Intent 统计数据模块 (File Intent Statistics)
 从 session.py 和 models/file_operations/__init__.py 提取 file 意图特有的统计字段
 迁移到 intents/definitions/file/
 
-file 意图特有统计字段：
+file 意图特有统计字段:
 - rolled_back_count: 已回滚操作数
 - report_generated: 是否已生成可视化报告
 - report_path: 报告文件路径
@@ -25,8 +25,8 @@ class FileSessionStats(BaseModel):
     file 意图特有统计
     
     记录 file 意图会话特有的统计信息。
-    通用统计字段（如 total_operations, success_count, failed_count）
-    放在 SessionRecord 中，此处只放 file 特有的字段。
+    通用统计字段(如 total_operations, success_count, failed_count)
+    放在 SessionRecord 中,此处只放 file 特有的字段。
     """
     rolled_back_count: int = Field(
         default=0, 

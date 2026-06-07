@@ -3,23 +3,23 @@
 Shell 工具函数模块 - Shell命令执行工具
 
 【创建时间】2026-04-29 小沈
-【规范】2026-05-02 小沈 移除 @register_tool 装饰器，改由 shell_register.py 显式注册
+【规范】2026-05-02 小沈 移除 @register_tool 装饰器,改由 shell_register.py 显式注册
 
 【重要】新函数增加规范 - 小沈 2026-05-04
-新增函数时必须同步修改以下3个文件：
-1. shell_tools.py: 函数实现（必须有详细注释）
-2. shell_schema.py: Pydantic 模型（输入参数定义）
-3. shell_register.py: 显式注册（description + examples + input_model）
+新增函数时必须同步修改以下3个文件:
+1. shell_tools.py: 函数实现(必须有详细注释)
+2. shell_schema.py: Pydantic 模型(输入参数定义)
+3. shell_register.py: 显式注册(description + examples + input_model)
 
-【2026-05-17 小健】LLM工具: 8→4，降级3个+合并2个
-LLM可见工具（4个）：
-- execute_shell_command: 执行Shell命令（支持后台运行，cwd参数替代change_directory）
-- find_command: 查找命令路径（合并check_command_available+locate_command）
-- shell_session: 后台Shell会话管理（合并get_shell_output+terminate_shell）
+【2026-05-17 小健】LLM工具: 8→4,降级3个+合并2个
+LLM可见工具(4个):
+- execute_shell_command: 执行Shell命令(支持后台运行,cwd参数替代change_directory)
+- find_command: 查找命令路径(合并check_command_available+locate_command)
+- shell_session: 后台Shell会话管理(合并get_shell_output+terminate_shell)
 
-内部辅助函数（不注册LLM）：
-- _get_working_directory: 获取当前工作目录（已降级，execute_shell_command内部使用）
-- _check_path_exists: 检查路径是否存在（已降级，内部工具可用）
+内部辅助函数(不注册LLM):
+- _get_working_directory: 获取当前工作目录(已降级,execute_shell_command内部使用)
+- _check_path_exists: 检查路径是否存在(已降级,内部工具可用)
 - _check_shell_injection: Shell注入安全检查
 - _read_stream_nonblocking: 非阻塞流读取
 - cleanup_background_shells: 批量终止后台Shell
@@ -55,7 +55,7 @@ _background_shells: Dict[str, Dict[str, Any]] = {}
 
 
 def _decode_output(data: Optional[bytes]) -> str:
-    """统一解码字节输出，utf-8→gbk→空 双编码回退。"""
+    """统一解码字节输出,utf-8→gbk→空 双编码回退。"""
     if not data:
         return ""
     try:
@@ -69,7 +69,7 @@ def _decode_output(data: Optional[bytes]) -> str:
 
 def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
                          timed_out: bool, timeout: int = 30000) -> dict:
-    """统一构建 shell 执行结果（超时/成功/失败 3 路）。"""
+    """统一构建 shell 执行结果(超时/成功/失败 3 路)。"""
     data = truncate_data_for_frontend({
         "stdout": stdout_str, "stderr": stderr_str, "returncode": returncode,
     })
@@ -77,17 +77,17 @@ def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
 
     if timed_out:
         return build_error(ERR_SHELL_TIMEOUT,
-            f"命令执行超时（{timeout}毫秒），可增大timeout参数重试",
+            f"命令执行超时({timeout}毫秒),可增大timeout参数重试",
             data=data, llm_data=llm_data,
             next_actions=build_next_actions([
                 ("execute_shell_command", "增大超时重试", "需要更长时间执行时")]))
     if returncode == 0:
-        message = "命令执行成功（有警告输出）" if stderr_str.strip() else "命令执行成功"
+        message = "命令执行成功(有警告输出)" if stderr_str.strip() else "命令执行成功"
         return build_success(data, message, llm_data=llm_data,
             next_actions=build_next_actions([
                 ("execute_shell_command", "继续执行后续命令", "需要执行更多命令时"),
                 ("find_command", "查找命令路径", "需要确认命令是否存在时")]))
-    return build_error(ERR_SHELL_EXEC, f"命令执行失败（退出码{returncode}），请检查命令语法和参数",
+    return build_error(ERR_SHELL_EXEC, f"命令执行失败(退出码{returncode}),请检查命令语法和参数",
         data=data, llm_data=llm_data,
         next_actions=build_next_actions([
             ("execute_shell_command", "重新执行命令", "修改命令后重试时"),
@@ -112,7 +112,7 @@ def _run_shell_background(
     }
     return build_success(
         {"shell_id": shell_id, "is_running": True, "started_at": datetime.now().isoformat()},
-        f"命令已在后台启动，shell_id: {shell_id}",
+        f"命令已在后台启动,shell_id: {shell_id}",
         next_actions=build_next_actions([
             ("shell_session", "读取后台命令输出", "需要查看命令执行结果时",
              {"shell_id": shell_id, "action": "output"})]))
@@ -126,7 +126,7 @@ def execute_shell_command(
     # V1: 参数校验
     if shell_type not in ("powershell", "cmd", None):
         return build_error(ERR_PARAMETER_INVALID,
-            f"shell_type仅支持powershell/cmd，当前值: '{shell_type}'")
+            f"shell_type仅支持powershell/cmd,当前值: '{shell_type}'")
     if not command or not command.strip():
         return build_error(ERR_PARAMETER_EMPTY, "command不能为空")
     if cwd is not None and not os.path.isdir(cwd):
@@ -147,7 +147,7 @@ def execute_shell_command(
         logger.warning(f"[Shell安全] 拦截高风险命令: {command[:200]}")
         return build_error(ERR_SHELL_INJECTION, injection_error)
 
-    # S2: 语义安全检查（通过SafetyManager统一调度）
+    # S2: 语义安全检查(通过SafetyManager统一调度)
     safety_check = get_safety_manager().check("shell", "execute_shell_command", {"command": command})
     if not safety_check.get("is_safe", True):
         logger.warning(f"[Shell安全] 语义分析风险: {safety_check.get('message')}")
@@ -180,7 +180,7 @@ def execute_shell_command(
 
 
 def _get_working_directory() -> dict:
-    """获取当前工作目录（内部辅助函数，不注册LLM）- 小健 2026-05-17 降级自 get_working_directory"""
+    """获取当前工作目录(内部辅助函数,不注册LLM)- 小健 2026-05-17 降级自 get_working_directory"""
     try:
         return build_success({"path": os.getcwd()}, "成功获取当前工作目录")
     except Exception as e:
@@ -188,7 +188,7 @@ def _get_working_directory() -> dict:
 
 
 def _check_path_exists(path: str) -> dict:
-    """检查路径是否存在（内部辅助函数，不注册LLM）- 小健 2026-05-17 降级自 check_path_exists"""
+    """检查路径是否存在(内部辅助函数,不注册LLM)- 小健 2026-05-17 降级自 check_path_exists"""
     try:
         exists = os.path.exists(path)
         is_file = os.path.isfile(path) if exists else False
@@ -218,7 +218,7 @@ def find_command(command: str, all_paths: bool = False) -> dict:
             if available:
                 return build_success(
                     {"available": True, "command": command, "path": cmd_path},
-                    f"命令 '{command}' 可用，路径: {cmd_path}",
+                    f"命令 '{command}' 可用,路径: {cmd_path}",
                     next_actions=build_next_actions([
                         ("execute_shell_command", "执行该命令", "确认命令可用后需要执行时", {"command": command}),
                     ])
@@ -261,7 +261,7 @@ def find_command(command: str, all_paths: bool = False) -> dict:
 
 
 def cleanup_background_shells() -> int:
-    """终止所有后台shell进程（服务器关闭时调用）- 小健 2026-05-13"""
+    """终止所有后台shell进程(服务器关闭时调用)- 小健 2026-05-13"""
     count = 0
     shell_ids = list(_background_shells.keys())
     for shell_id in shell_ids:
@@ -300,7 +300,7 @@ def shell_session(
         stdout_str = _read_stream_nonblocking(process.stdout, "utf-8")
         stderr_str = _read_stream_nonblocking(process.stderr, "utf-8")
         is_running = process.poll() is None
-        # 【修复 小沈 2026-05-19】进程已退出时自动清理，防止内存泄漏
+        # 【修复 小沈 2026-05-19】进程已退出时自动清理,防止内存泄漏
         if not is_running:
             _background_shells.pop(shell_id, None)
         if filter:
@@ -363,7 +363,7 @@ def shell_session(
             ])
         )
     else:
-        return build_error(ERR_INVALID_ACTION, f"无效的操作类型: {action}，必须是 output 或 terminate")
+        return build_error(ERR_INVALID_ACTION, f"无效的操作类型: {action},必须是 output 或 terminate")
 from app.constants import (
     ERR_INVALID_ACTION,
     ERR_PARAMETER_EMPTY,

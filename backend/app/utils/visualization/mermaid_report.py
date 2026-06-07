@@ -12,7 +12,7 @@ from app.utils.logger import logger
 
 def generate_mermaid_report(task_id: str, output_path: Optional[Path] = None) -> str:
     """
-    生成Mermaid格式报告（流程图）
+    生成Mermaid格式报告(流程图)
 
     Args:
         task_id: 会话ID

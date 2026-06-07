@@ -2,10 +2,10 @@
 """
 start_step - 发送 start 步骤的独立函数
 
-统一方法：所有 API 调用 start 步骤时都使用此函数
+统一方法:所有 API 调用 start 步骤时都使用此函数
 避免在多个文件中重复 start 发送逻辑
 
-【设计文档参考】：omni-对话预处理及Agent的流程设计文档-小沈-2026-03-25.md 阶段4
+【设计文档参考】:omni-对话预处理及Agent的流程设计文档-小沈-2026-03-25.md 阶段4
 
 Author: 小沈 - 2026-03-26
 Updated: 小欧 - 2026-05-30 返回 StartStep 对象
@@ -27,24 +27,24 @@ async def send_start_step(
     session_id: str,
 ) -> StartStep:
     """
-    发送 start 步骤的独立函数（统一方法）
+    发送 start 步骤的独立函数(统一方法)
     
-    职责：
+    职责:
     1. 构建 StartStep 对象
     2. 保存 to_dict() 到 current_execution_steps
     3. 保存到数据库
     4. 返回 StartStep 对象
     
-    参数：
-    - ai_service: AI 服务实例（用于获取 provider/model）
+    参数:
+    - ai_service: AI 服务实例(用于获取 provider/model)
     - task_id: 任务ID
     - next_step: 获取步骤号函数
-    - user_message: 用户消息（完整显示，不截断）
+    - user_message: 用户消息(完整显示,不截断)
     - security_check_result: 安全检查结果
     - current_execution_steps: 执行步骤列表
-    - session_id: 会话ID（用于保存到数据库）
+    - session_id: 会话ID(用于保存到数据库)
     
-    返回：
+    返回:
     - StartStep 对象
     """
     start_step = StartStep(

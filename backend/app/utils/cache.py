@@ -2,16 +2,16 @@
 """
 通用LRU缓存模块
 
-功能：提供通用的LRU缓存实现，支持并发访问、异常处理和日志记录
+功能:提供通用的LRU缓存实现,支持并发访问、异常处理和日志记录
 
-设计原则：
-- SRP：职责单一，只负责缓存管理
-- DRY：复用现有数据结构（OrderedDict）
-- KISS：实现简单，易于理解
-- OCP：可扩展，支持配置参数
+设计原则:
+- SRP:职责单一,只负责缓存管理
+- DRY:复用现有数据结构(OrderedDict)
+- KISS:实现简单,易于理解
+- OCP:可扩展,支持配置参数
 
-作者：小沈
-创建时间：2026-05-30
+作者:小沈
+创建时间:2026-05-30
 """
 
 import hashlib
@@ -26,11 +26,11 @@ from app.utils.logger import logger
 class LRUCache:
     """通用LRU缓存
     
-    特点：
-    1. 线程安全：使用threading.Lock保证并发安全
-    2. 异常处理：缓存异常不影响主流程
-    3. 日志记录：异常必须记录，统计定期记录
-    4. 自动清理：LRU策略，防止内存泄漏
+    特点:
+    1. 线程安全:使用threading.Lock保证并发安全
+    2. 异常处理:缓存异常不影响主流程
+    3. 日志记录:异常必须记录,统计定期记录
+    4. 自动清理:LRU策略,防止内存泄漏
     """
     
     def __init__(self, max_size: int = 1000, log_interval: int = 100):
@@ -39,7 +39,7 @@ class LRUCache:
         
         Args:
             max_size: 最大缓存条目数
-            log_interval: 日志记录间隔（操作次数）
+            log_interval: 日志记录间隔(操作次数)
         """
         self._cache: OrderedDict = OrderedDict()
         self._max_size = max_size
@@ -56,7 +56,7 @@ class LRUCache:
             key: 缓存key
             
         Returns:
-            缓存值，未命中返回None
+            缓存值,未命中返回None
         """
         try:
             with self._lock:
@@ -149,6 +149,6 @@ def make_cache_key(data: Any) -> str:
         data_str = json.dumps(data, sort_keys=True, ensure_ascii=False)
         return hashlib.md5(data_str.encode()).hexdigest()
     except Exception as e:
-        # 生成key失败时，使用默认key
+        # 生成key失败时,使用默认key
         logger.error(f"[LRUCache] make_cache_key异常: {e}")
         return str(id(data))

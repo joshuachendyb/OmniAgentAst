@@ -4,13 +4,13 @@ File Intent 意图定义模块 (File Intent Definition)
 
 【创建时间】2026-03-21 小沈
 【迁移说明】
-根据架构设计文档 4.1 节，创建 file 意图定义对象
+根据架构设计文档 4.1 节,创建 file 意图定义对象
 迁移到 intents/definitions/file/
 
-意图定义包含：
+意图定义包含:
 - name: 意图名称 ("file")
 - description: 意图描述
-- keywords: 关键词列表（用于分类）
+- keywords: 关键词列表(用于分类)
 - tools: 关联的工具名称列表
 - safety_checker: 安全检查器名称
 
@@ -25,7 +25,7 @@ class FileIntent(BaseModel):
     """
     file 意图定义
     
-    定义文件操作意图的元数据，包括：
+    定义文件操作意图的元数据,包括:
     - 意图名称和描述
     - 用于意图分类的关键词
     - 关联的文件操作工具

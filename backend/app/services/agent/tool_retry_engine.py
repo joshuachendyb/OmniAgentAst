@@ -3,10 +3,10 @@
 统一工具重试引擎
 
 【分层规范 - 小健 2026-05-27】
-本文件属于【Agent编排层】，使用 tool_result_utils.py 的 create_xxx 函数
-禁止使用 _response.py 的 build_xxx 函数（那是工具层用的）
+本文件属于【Agent编排层】,使用 tool_result_utils.py 的 create_xxx 函数
+禁止使用 _response.py 的 build_xxx 函数(那是工具层用的)
 
-负责统一处理工具执行的重试逻辑，消除双重实现
+负责统一处理工具执行的重试逻辑,消除双重实现
 Author: 小沈 - 2026-05-27
 """
 
@@ -16,6 +16,7 @@ from typing import Any, Callable, Dict, Optional
 
 from app.utils.logger import logger
 from app.utils.error_classifier import UnifiedErrorClassifier
+from app.utils.retry_engine import RetryEngine, BackoffStrategy
 from app.services.tools.tool_constants import TOOL_TIMEOUTS, TOOL_RETRY_MAX, TOOL_RETRY_BACKOFF, TOOL_RETRYABLE_ERRORS
 from app.services.agent.agent_utils.tool_result_factory import create_tool_result, create_error_tool_result
 
@@ -39,8 +40,8 @@ class ToolRetryEngine:
         初始化工具重试引擎
         
         Args:
-            tools: 工具名称到工具函数的映射字典（可选）
-            如果未传入，从registry获取
+            tools: 工具名称到工具函数的映射字典(可选)
+            如果未传入,从registry获取
         """
         if tools is not None:
             self.available_tools = tools
@@ -50,7 +51,7 @@ class ToolRetryEngine:
     
     def normalize_params(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
         """
-        参数规范化：基于tool_registry的input_schema校验
+        参数规范化:基于tool_registry的input_schema校验
 
         Args:
             action: 工具名称
@@ -63,7 +64,7 @@ class ToolRetryEngine:
         """
         params = action_input.copy()
 
-        # 从tool_registry获取input_schema，支持所有tool类型
+        # 从tool_registry获取input_schema,支持所有tool类型
         try:
             from app.services.tools.registry import tool_registry
             metadata = tool_registry.get_tool(action)
@@ -79,7 +80,7 @@ class ToolRetryEngine:
                             f"param={key}={val_str}, 期望参数={sorted(valid_params)}"
                         )
                         invalid_keys.append(key)
-                # 删除非法参数，防止传给函数报 unexpected keyword argument
+                # 删除非法参数,防止传给函数报 unexpected keyword argument
                 for key in invalid_keys:
                     del params[key]
         except (ImportError, AttributeError) as e:
@@ -92,12 +93,12 @@ class ToolRetryEngine:
         """
         统一单次工具调用
         
-        修复：纯同步工具通过 to_thread 移出事件循环，wait_for 超时保护生效。
+        修复:纯同步工具通过 to_thread 移出事件循环,wait_for 超时保护生效。
         
         Args:
             tool: 工具函数
             normalized_input: 规范化后的参数
-            timeout: 超时时间（秒）
+            timeout: 超时时间(秒)
         
         Returns:
             工具执行结果
@@ -120,7 +121,7 @@ class ToolRetryEngine:
         统一构建重试相关错误响应
         
         消除 4 处重复 {code, data, message, retry_count, metadata} 构建。
-        retry_count 统一为"已完成的重试次数"（不含首次尝试）。
+        retry_count 统一为"已完成的重试次数"(不含首次尝试)。
         """
         return create_error_tool_result(
             code=code,
@@ -132,7 +133,7 @@ class ToolRetryEngine:
         )
     
     def _lookup_tool(self, action: str, tool: Optional[Callable] = None) -> Optional[Callable]:
-        """查找工具函数，不存在时返回None（错误已处理）— 提取自execute_tool_with_retry 小健2026-05-31"""
+        """查找工具函数,不存在时返回None(错误已处理)— 提取自execute_tool_with_retry 小健2026-05-31"""
         if tool is not None:
             return tool
         tool = self.available_tools.get(action)
@@ -145,7 +146,7 @@ class ToolRetryEngine:
         return impl
     
     def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable) -> Optional[Dict[str, Any]]:
-        """验证并归一化参数，无效时返回None — 提取自execute_tool_with_retry 小健2026-05-31"""
+        """验证并归一化参数,无效时返回None — 提取自execute_tool_with_retry 小健2026-05-31"""
         sig = inspect.signature(tool)
         required = [
             p.name for p in sig.parameters.values()
@@ -175,12 +176,12 @@ class ToolRetryEngine:
         tool: Optional[Callable] = None,
     ) -> Dict[str, Any]:
         """
-        统一工具执行方法（带重试逻辑）
+        统一工具执行方法(带重试逻辑)
         
         Args:
             action: 工具名称
             action_input: 工具参数
-            tool: 可选传入的工具函数，如果为None则从available_tools获取
+            tool: 可选传入的工具函数,如果为None则从available_tools获取
         
         Returns:
             执行结果字典
@@ -220,44 +221,53 @@ class ToolRetryEngine:
         # 3. 获取重试配置
         max_retries, backoff_factor, retryable_errors, timeout = self._get_retry_config(action)
         
-        # 4. 执行重试循环
-        attempt_count = 0
+        # 4. 创建RetryEngine统一退避策略
+        def _is_tool_retryable(e: Exception) -> bool:
+            error_category = UnifiedErrorClassifier.classify(e)
+            return error_category.is_retryable or error_category.name.lower() in retryable_errors
+        
+        engine = RetryEngine(
+            max_retries=max_retries,
+            backoff_strategy=BackoffStrategy.EXPONENTIAL,
+            backoff_factor=backoff_factor,
+            retryable_check=_is_tool_retryable,
+        )
+        
+        # 5. 执行重试循环(使用RetryEngine统一退避策略)
         last_error: Optional[Exception] = None
         
-        while attempt_count <= max_retries:
+        while engine.attempt_count <= max_retries:
             try:
                 result = await self._execute_tool_once(found_tool, normalized_input, timeout)
                 return create_tool_result(
                     data=result,
                     message="Tool execution succeeded",
-                    retry_count=attempt_count
+                    retry_count=engine.attempt_count
                 )
                 
             except Exception as e:
-                # EXC-19 修复: 异常分类 (网络/超时/通用) - 不变
                 last_error = e
                 error_category = UnifiedErrorClassifier.classify(e)
-                attempt_count += 1
+                attempt = engine.record_attempt()
 
                 logger.warning(
-                    f"[重试] action={action} 尝试{attempt_count}/{max_retries} "
+                    f"[重试] action={action} 尝试{attempt}/{max_retries} "
                     f"失败: {error_category.description} - {str(e)[:100]}",
                     exc_info=True
                 )
                 
-                if not (error_category.is_retryable or error_category.name.lower() in retryable_errors) \
-                   or attempt_count >= max_retries:
+                if not _is_tool_retryable(e) or engine.exhausted:
                     return self._build_retry_error(
                         f"ERR_{error_category.name}",
                         f"{error_category.description}: {str(e)[:200]}",
-                        attempt_count - 1, error_type=error_category.name.lower(),
+                        attempt - 1, error_type=error_category.name.lower(),
                     )
                 
-                await asyncio.sleep(backoff_factor ** (attempt_count - 1))
+                await asyncio.sleep(engine.current_delay)
         
         return self._build_retry_error(
             ERR_UNKNOWN, str(last_error)[:200] if last_error else "Unknown error",
-            attempt_count - 1,
+            engine.attempt_count - 1,
         )
 
 
@@ -266,7 +276,7 @@ _tool_retry_engine: Optional[ToolRetryEngine] = None
 
 
 def _get_tool_retry_engine() -> ToolRetryEngine:
-    """获取工具重试引擎（全局单例）"""
+    """获取工具重试引擎(全局单例)"""
     global _tool_retry_engine
     if _tool_retry_engine is None:
         _tool_retry_engine = ToolRetryEngine()

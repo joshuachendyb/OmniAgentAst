@@ -1,16 +1,16 @@
 """
 统一意图映射模块
 
-责任：意图字符串→IntentType/ToolCategory 的运行时映射
-数据定义已全部移至 app.services.tools.tool_types（OCP 单一定义源）
-本模块仅保留 INTENT_ALIASES（用户输入别名）和映射函数
+责任:意图字符串→IntentType/ToolCategory 的运行时映射
+数据定义已全部移至 app.services.tools.tool_types(OCP 单一定义源)
+本模块仅保留 INTENT_ALIASES(用户输入别名)和映射函数
 """
 
 from typing import Dict, List, Tuple
 from app.services.tools.tool_types import ToolCategory, IntentType, INTENT_MAPPING
 
 
-# 意图别名映射（小写，用于用户输入匹配）
+# 意图别名映射(小写,用于用户输入匹配)
 INTENT_ALIASES: Dict[str, IntentType] = {
     # FILE
     "file": IntentType.FILE,
@@ -69,42 +69,42 @@ def _map_intent_to_agent(intent_str: str) -> Tuple[IntentType, ToolCategory]:
     将意图字符串映射到统一的意图类型和工具分类
 
     Args:
-        intent_str: 意图字符串（来自CRSS或用户输入）
+        intent_str: 意图字符串(来自CRSS或用户输入)
 
     Returns:
-        (intent_type, tool_category) 元组，ToolCategory由IntentType.category派生
+        (intent_type, tool_category) 元组,ToolCategory由IntentType.category派生
 
     Raises:
         ValueError: 如果意图无法识别
     """
-    # 首先尝试精确匹配（大写，来自CRSS）
+    # 首先尝试精确匹配(大写,来自CRSS)
     if intent_str.upper() in INTENT_MAPPING:
         intent_type = INTENT_MAPPING[intent_str.upper()]
         return (intent_type, intent_type.category)
 
-    # 然后尝试别名匹配（小写，来自用户输入）
+    # 然后尝试别名匹配(小写,来自用户输入)
     intent_lower = intent_str.lower()
     if intent_lower in INTENT_ALIASES:
         intent_type = INTENT_ALIASES[intent_lower]
         return (intent_type, intent_type.category)
 
-    # 如果都无法匹配，默认为SYSTEM
+    # 如果都无法匹配,默认为SYSTEM
     return (IntentType.SYSTEM, ToolCategory.SYSTEM)
 
 
 def get_crss_intent_names() -> List[str]:
-    """获取CRSS使用的意图名称列表（大写）"""
+    """获取CRSS使用的意图名称列表(大写)"""
     return list(INTENT_MAPPING.keys())
 
 
 def get_agent_intent_names() -> List[str]:
-    """获取Agent配置使用的意图名称列表（小写）"""
+    """获取Agent配置使用的意图名称列表(小写)"""
     return [intent_type.value for intent_type in IntentType]
 
 
 def resolve_category(intent_str: str) -> ToolCategory:
     """
-    解析意图字符串到ToolCategory（兼容现有接口）
+    解析意图字符串到ToolCategory(兼容现有接口)
 
     Args:
         intent_str: 意图字符串
@@ -126,6 +126,6 @@ def get_aliases_for_intent(intent_type: IntentType) -> List[str]:
 
 
 def normalize_intent(intent_str: str) -> str:
-    """规范化意图字符串（转换为标准的意图类型字符串）"""
+    """规范化意图字符串(转换为标准的意图类型字符串)"""
     intent_type, _ = _map_intent_to_agent(intent_str)
     return intent_type.value

@@ -37,7 +37,7 @@ async def route_with_fallback(user_input: str) -> Dict:
         return result
 
     logger.info(
-        f"[RouteFallback] CRSS无匹配或模糊，进入LLM兜底阶段2. "
+        f"[RouteFallback] CRSS无匹配或模糊,进入LLM兜底阶段2. "
         f"primary={primary}, candidates={candidates}"
     )
 
@@ -63,6 +63,6 @@ async def route_with_fallback(user_input: str) -> Dict:
             f"conf={llm_confidence}, corrected='{result['corrected']}'"
         )
     except Exception as e:
-        logger.warning(f"[RouteFallback] LLM兜底失败: {e}，使用CRSS结果")
+        logger.warning(f"[RouteFallback] LLM兜底失败: {e},使用CRSS结果")
 
     return result

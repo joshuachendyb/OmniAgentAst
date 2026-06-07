@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-DESKTOP Register - 桌面工具注册点（26→10精简方案）
+DESKTOP Register - 桌面工具注册点(26→10精简方案)
 
 【架构规范】2026-04-29 小沈
-【2026-05-17 小沈】26→10精简：统一注册10个LLM可见工具
+【2026-05-17 小沈】26→10精简:统一注册10个LLM可见工具
 
-【工具列表】统一DESKTOP工具（10→9精简，Ch19）- 小沈 2026-05-22
-1. window_info - 窗口信息查询（合并list_windows+get_window_info）
-2. window_control - 统一窗口控制（合并set_window_state+focus_window+resize_window）
-3. mouse_control - 统一鼠标控制（合并click+move+scroll）
-4. keyboard_control - 统一键盘控制（合并type_text+shortcut+key_combo）
-5. screen_capture - 统一屏幕截图（合并screenshot+snapshot）
-6. clipboard_control - 统一剪贴板控制（合并read_clipboard+write_clipboard）
+【工具列表】统一DESKTOP工具(10→9精简,Ch19)- 小沈 2026-05-22
+1. window_info - 窗口信息查询(合并list_windows+get_window_info)
+2. window_control - 统一窗口控制(合并set_window_state+focus_window+resize_window)
+3. mouse_control - 统一鼠标控制(合并click+move+scroll)
+4. keyboard_control - 统一键盘控制(合并type_text+shortcut+key_combo)
+5. screen_capture - 统一屏幕截图(合并screenshot+snapshot)
+6. clipboard_control - 统一剪贴板控制(合并read_clipboard+write_clipboard)
 7. screen_record - 录制屏幕
 8. ocr - OCR识别
 9. send_notification - 发送通知
@@ -59,8 +59,8 @@ DESKTOP_TOOL_DESCRIPTIONS = {
     "window_info": """统一窗口信息查询 - 合并list_windows + get_window_info功能。
 
 【使用场景】
-- 列出所有窗口（action="list"，可选 include_minimized/filter_title 筛选）
-- 获取单个窗口的详细信息（action="info"，需指定 window_title）
+- 列出所有窗口(action="list",可选 include_minimized/filter_title 筛选)
+- 获取单个窗口的详细信息(action="info",需指定 window_title)
 
 【使用示例】【常用名转换说明】
 - 列出窗口/list_windows → window_info(action="list")
@@ -92,7 +92,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
     "mouse_control": """统一鼠标控制 - 合并click + move + scroll + get_mouse_position功能。
 
 【使用场景】
-- 点击（action="click"）/ 移动（action="move"）/ 滚动（action="scroll"）/ 获取位置（action="position"）
+- 点击(action="click")/ 移动(action="move")/ 滚动(action="scroll")/ 获取位置(action="position")
 
 【重要】需要安装 pyautogui 库
 
@@ -109,7 +109,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
     "keyboard_control": """统一键盘控制 - 合并type_text + shortcut + key_combo功能。
 
 【使用场景】
-- 输入文本（action="type"）/ 快捷键（action="shortcut"）/ 组合键（action="combo"）
+- 输入文本(action="type")/ 快捷键(action="shortcut")/ 组合键(action="combo")
 
 【重要】需要安装 pyautogui 库
 
@@ -127,7 +127,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
 【使用场景】
 - 截取全屏 / 截取区域 / 多显示器快照
 
-【重要】优先使用mss库（多显示器），降级pyautogui
+【重要】优先使用mss库(多显示器),降级pyautogui
 
 【使用示例】【常用名转换说明】
 - 截取全屏/screenshot → screen_capture()
@@ -141,7 +141,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
     "clipboard_control": """统一剪贴板控制 - 合并read_clipboard + write_clipboard功能。
 
 【使用场景】
-- 读取剪贴板（action="read"）/ 写入剪贴板（action="write"）
+- 读取剪贴板(action="read")/ 写入剪贴板(action="write")
 
 【使用示例】【常用名转换说明】
 - 读取/read_clipboard → clipboard_control(action="read")
@@ -163,7 +163,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
 - 录制30秒: {"duration": 30}
 - 高清录制: {"duration": 60, "output_path": "D:/output/demo.mp4", "fps": 30}""",
 
-    "ocr": """从图片中识别文字（OCR）。
+    "ocr": """从图片中识别文字(OCR)。
 
 【使用场景】
 - 从图片中提取文字内容
@@ -253,7 +253,7 @@ DESKTOP_TOOL_EXAMPLES = {
 
 def _register_desktop_tools():
     """
-    【2026-05-17 小沈】26→10精简方案：注册统一DESKTOP分类的10个LLM可见工具
+    【2026-05-17 小沈】26→10精简方案:注册统一DESKTOP分类的10个LLM可见工具
     使用 Pydantic 模型自动生成 OpenAI Schema
     """
     tool_methods = {

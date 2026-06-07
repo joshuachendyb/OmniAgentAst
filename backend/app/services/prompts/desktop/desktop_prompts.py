@@ -2,10 +2,10 @@
 """
 DesktopPrompts - 桌面操作 Prompt模板
 
-P1优先级：截图/窗口操作参数特殊
+P1优先级:截图/窗口操作参数特殊
 
 Author: 小健 - 2026-05-06
-【2026-05-19 小沈】全面重写：10个精简工具（26→10），工具名/参数名与desktop_schema.py对齐
+【2026-05-19 小沈】全面重写:10个精简工具(26→10),工具名/参数名与desktop_schema.py对齐
 """
 from datetime import datetime
 
@@ -113,7 +113,7 @@ Example 4: 任务完成
 
 Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
-请完成此桌面操作任务，按以下步骤：
+请完成此桌面操作任务,按以下步骤:
 1. 识别目标窗口或应用
 2. 使用合适的桌面工具
 3. 用中文确认桌面操作结果"""

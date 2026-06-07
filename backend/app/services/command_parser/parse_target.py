@@ -1,10 +1,10 @@
 """
-方案2：操作对象解析 parse_operation_target_v2 + 置信度计算
+方案2:操作对象解析 parse_operation_target_v2 + 置信度计算
 
-设计文档：CRSS评分系统深度分析与改进方案-2026-04-20.md 3.2节
+设计文档:CRSS评分系统深度分析与改进方案-2026-04-20.md 3.2节
 
-创建时间：2026-04-20
-编写人：小沈
+创建时间:2026-04-20
+编写人:小沈
 """
 
 import re
@@ -16,7 +16,7 @@ from app.constants import TARGET_WEIGHTS
 
 def parse_operation_target(command: str) -> str:
     """
-    解析操作对象类型（原版v1）
+    解析操作对象类型(原版v1)
     """
     return parse_operation_target_v2(command)[0]
 
@@ -26,7 +26,7 @@ def parse_operation_target_v2(command: str) -> Tuple[str, float, List[Dict[str, 
     改进的操作对象解析 v2.0
     
     设计文档3.2节 330-368行
-    改进：
+    改进:
     1. 使用优先级队列而不是字典遍历
     2. 添加上下文理解
     3. 返回所有匹配结果和置信度
@@ -37,7 +37,7 @@ def parse_operation_target_v2(command: str) -> Tuple[str, float, List[Dict[str, 
     command_lower = command.lower().strip()
     matches = []
     
-    # 1. 定义优先级顺序（从高到低）
+    # 1. 定义优先级顺序(从高到低)
     priority_order = ['SYSTEM', 'PROJECT', 'USER', 'TEMP']
     
     # 2. 按优先级检查所有模式
@@ -55,7 +55,7 @@ def parse_operation_target_v2(command: str) -> Tuple[str, float, List[Dict[str, 
                     'confidence': confidence
                 })
     
-    # 3. 如果没有匹配，返回默认值
+    # 3. 如果没有匹配,返回默认值
     if not matches:
         return 'USER', 1.0, []
     
@@ -70,10 +70,10 @@ def calculate_pattern_confidence(pattern: str, match, command: str) -> float:
     计算模式匹配置信度
     
     设计文档3.2节 369-405行
-    考虑因素：
+    考虑因素:
     1. 匹配长度占命令长度的比例
-    2. 匹配位置（开头、中间、结尾）
-    3. 模式的特异性（正则表达式的复杂度）
+    2. 匹配位置(开头、中间、结尾)
+    3. 模式的特异性(正则表达式的复杂度)
     """
     match_length = len(match.group())
     command_length = len(command)
@@ -81,7 +81,7 @@ def calculate_pattern_confidence(pattern: str, match, command: str) -> float:
     # 匹配长度比例
     length_ratio = match_length / command_length
     
-    # 匹配位置权重（开头和结尾更重要）
+    # 匹配位置权重(开头和结尾更重要)
     match_start = match.start()
     position_weight = 1.0
     if match_start == 0:  # 开头匹配
@@ -89,7 +89,7 @@ def calculate_pattern_confidence(pattern: str, match, command: str) -> float:
     elif match.end() == command_length:  # 结尾匹配
         position_weight = 1.1
     
-    # 模式特异性（正则表达式越复杂，置信度越高）
+    # 模式特异性(正则表达式越复杂,置信度越高)
     specificity = 1.0
     if '\\' in pattern:  # 包含转义字符
         specificity = 1.1

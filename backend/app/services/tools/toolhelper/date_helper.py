@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-日期时间通用解析与计算Helper（不暴露给LLM）
+日期时间通用解析与计算Helper(不暴露给LLM)
 
 【创建时间】2026-05-18 小沈
 【P13提取】从 time_tools.py 提取5个内部函数
 
-函数清单：
-- parse_datetime_any: 通用时间解析（datetime/int/float/str → datetime）
-- parse_datetime_string: 字符串时间解析（ISO/中文/数字提取）
-- is_holiday: 日期是否为假日，返回(bool, holiday_name)
+函数清单:
+- parse_datetime_any: 通用时间解析(datetime/int/float/str → datetime)
+- parse_datetime_string: 字符串时间解析(ISO/中文/数字提取)
+- is_holiday: 日期是否为假日,返回(bool, holiday_name)
 - calc_next_n_workday: 计算下N个工作日
 - resolve_timezone: 解析时区字符串
 """
@@ -23,7 +23,7 @@ from app.services.tools.tool_constants import QINGMING_DATES
 
 
 def parse_datetime_any(value: Any) -> Optional[datetime]:
-    """通用时间解析：支持datetime/int/float/str → datetime（带时区）"""
+    """通用时间解析:支持datetime/int/float/str → datetime(带时区)"""
     try:
         if isinstance(value, datetime):
             return value.astimezone()
@@ -38,11 +38,11 @@ def parse_datetime_any(value: Any) -> Optional[datetime]:
 
 
 def parse_datetime_string(date_str: str) -> Optional[datetime]:
-    """字符串时间解析：支持ISO/常见中文格式/数字提取"""
+    """字符串时间解析:支持ISO/常见中文格式/数字提取"""
     try:
         date_str = date_str.strip()
 
-        # 方法1：尝试ISO格式（带冒号时区）
+        # 方法1:尝试ISO格式(带冒号时区)
         try:
             s = re.sub(r'([+-]\d{2}):(\d{2})$', r'\1\2', date_str)
             if s != date_str:
@@ -50,13 +50,13 @@ def parse_datetime_string(date_str: str) -> Optional[datetime]:
         except ValueError:
             pass
 
-        # 方法2：尝试直接ISO格式
+        # 方法2:尝试直接ISO格式
         try:
             return datetime.fromisoformat(date_str)
         except ValueError:
             pass
 
-        # 方法3：尝试常见格式
+        # 方法3:尝试常见格式
         formats = [
             "%Y-%m-%d %H:%M:%S",
             "%Y-%m-%d",
@@ -77,7 +77,7 @@ def parse_datetime_string(date_str: str) -> Optional[datetime]:
             except ValueError:
                 continue
 
-        # 方法4：尝试提取数字
+        # 方法4:尝试提取数字
         numbers = re.findall(r'\d+', date_str)
         if len(numbers) >= 3:
             try:
@@ -98,7 +98,7 @@ def parse_datetime_string(date_str: str) -> Optional[datetime]:
 
 
 def is_holiday(date_obj) -> Tuple[bool, Optional[str]]:
-    """判断日期是否为假日，返回(是否假日, 节日名称) — 小健 2026-05-25 重构拆分
+    """判断日期是否为假日,返回(是否假日, 节日名称) — 小健 2026-05-25 重构拆分
 
     使用场景:
         time_tools中判断工作日/节假日
@@ -107,7 +107,7 @@ def is_holiday(date_obj) -> Tuple[bool, Optional[str]]:
         is_holiday, name = is_holiday(datetime(2024, 1, 1))
 
     返回数据说明:
-        - 返回Tuple[bool, Optional[str]]，(True, "元旦")表示是节假日
+        - 返回Tuple[bool, Optional[str]],(True, "元旦")表示是节假日
     """
     try:
         dt = date_obj if hasattr(date_obj, 'month') else None
@@ -133,13 +133,13 @@ def _is_solar_holiday(month_day: Tuple[int, int], year: int) -> Optional[str]:
     """判断公历假日 — 小健 2026-05-25 重构拆分
 
     使用场景:
-        is_holiday中判断公历节日（含清明节）
+        is_holiday中判断公历节日(含清明节)
 
     使用示例:
         holiday = _is_solar_holiday((1, 1), 2024)
 
     返回数据说明:
-        - 返回Optional[str]，节日名称或None
+        - 返回Optional[str],节日名称或None
     """
     solar_holidays = {
         (1, 1): "元旦", (2, 14): "情人节", (3, 8): "妇女节",
@@ -169,7 +169,7 @@ def _is_lunar_holiday(date_obj) -> Optional[str]:
         holiday = _is_lunar_holiday(datetime(2024, 2, 10))
 
     返回数据说明:
-        - 返回Optional[str]，节日名称或None
+        - 返回Optional[str],节日名称或None
     """
     try:
         from lunarcalendar import Converter
@@ -177,11 +177,11 @@ def _is_lunar_holiday(date_obj) -> Optional[str]:
         lunar = Converter.Solar2Lunar(solar_date)
         lunar_month_day = (lunar.month, lunar.day)
         lunar_holidays = {
-            (1, 1): "春节（农历正月初一）", (1, 15): "元宵节（农历正月十五）",
-            (5, 5): "端午节（农历五月初五）", (7, 7): "七夕节（农历七月初七）",
-            (7, 15): "中元节（农历七月十五）", (8, 15): "中秋节（农历八月十五）",
-            (9, 9): "重阳节（农历九月初九）", (12, 8): "腊八节（农历十二月初八）",
-            (12, 30): "除夕（农历十二月三十）",
+            (1, 1): "春节(农历正月初一)", (1, 15): "元宵节(农历正月十五)",
+            (5, 5): "端午节(农历五月初五)", (7, 7): "七夕节(农历七月初七)",
+            (7, 15): "中元节(农历七月十五)", (8, 15): "中秋节(农历八月十五)",
+            (9, 9): "重阳节(农历九月初九)", (12, 8): "腊八节(农历十二月初八)",
+            (12, 30): "除夕(农历十二月三十)",
         }
         return lunar_holidays.get(lunar_month_day)
     except Exception:
@@ -189,7 +189,7 @@ def _is_lunar_holiday(date_obj) -> Optional[str]:
 
 
 def calc_next_n_workday(start_date, n: int) -> list:
-    """计算从start_date往后第N个工作日的日期列表（ISO格式字符串）"""
+    """计算从start_date往后第N个工作日的日期列表(ISO格式字符串)"""
     try:
         current_date = start_date + timedelta(days=1)
         found_count = 0
@@ -213,7 +213,7 @@ def calc_next_n_workday(start_date, n: int) -> list:
 
 
 def resolve_timezone(tz_str: str):
-    """解析时区字符串：IANA名称(Asia/Shanghai) 或 ±HH:MM格式(+08:00)"""
+    """解析时区字符串:IANA名称(Asia/Shanghai) 或 ±HH:MM格式(+08:00)"""
     import pytz
     try:
         return pytz.timezone(tz_str)

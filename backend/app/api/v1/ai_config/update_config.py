@@ -44,15 +44,15 @@ async def update_config(config_update: ConfigUpdate):
         if backup_path and backup_path.exists():
             try:
                 backup_path.unlink()
-                logger.info(f"验证成功，已删除备份文件：{backup_path}")
+                logger.info(f"验证成功,已删除备份文件:{backup_path}")
             except Exception as e:
-                logger.warning(f"删除备份文件失败：{e}")
+                logger.warning(f"删除备份文件失败:{e}")
         AIServiceFactory.clear_backup_paths()
 
         current_provider = config_data.get('ai', {}).get('provider', '')
         current_model = config_data.get('ai', {}).get('model', '')
         return {
-            "success": True, "message": "配置更新成功，请验证服务可用性",
+            "success": True, "message": "配置更新成功,请验证服务可用性",
             "updated_fields": config_update.dict(exclude_none=True), "warnings": warnings,
             "backup_path": str(backup_path), "current_provider": current_provider, "current_model": current_model,
         }
@@ -66,5 +66,5 @@ async def update_config(config_update: ConfigUpdate):
         _restore_backup_if_needed(backup_path, config_path, restored)
         if backup_path:
             backup_path.unlink(missing_ok=True)
-        logger.error(f"更新配置失败：{e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="更新配置失败，请稍后重试")
+        logger.error(f"更新配置失败:{e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="更新配置失败,请稍后重试")

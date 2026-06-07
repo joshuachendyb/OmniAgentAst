@@ -5,18 +5,18 @@ DATABASE Tools - 数据库工具实现
 【架构规范】2026-04-29 小沈
 
 【重要】新函数增加规范 - 小沈 2026-05-04
-新增函数时必须同步修改以下3个文件：
-1. *_tools.py: 函数实现（必须有详细注释）
-2. *_schema.py: Pydantic 模型（输入参数定义）
-3. *_register.py: 显式注册（description + examples + input_model）
+新增函数时必须同步修改以下3个文件:
+1. *_tools.py: 函数实现(必须有详细注释)
+2. *_schema.py: Pydantic 模型(输入参数定义)
+3. *_register.py: 显式注册(description + examples + input_model)
 
-【工具列表】（共3个）
+【工具列表】(共3个)
 1. query_sql - 执行只读SQL查询
 2. execute_sql - 执行写操作SQL
 3. get_db_schema - 获取数据库表结构
 
 【2026-04-29 小健审查修复】
-- 添加真实数据库连接支持：SQLite文件、MySQL、PostgreSQL
+- 添加真实数据库连接支持:SQLite文件、MySQL、PostgreSQL
 
 创建时间: 2026-04-29
 """
@@ -34,7 +34,7 @@ from app.services.tools._response import build_success, build_error, build_warni
 
 
 def _get_connection(connection_type: str, connection_string: Optional[str], db_path: Optional[str], timeout: int = 30000):
-    """获取数据库连接，返回 (conn, engine_or_none, error_message)"""
+    """获取数据库连接,返回 (conn, engine_or_none, error_message)"""
     try:
         if connection_type == "sqlite":
             if db_path:
@@ -43,7 +43,7 @@ def _get_connection(connection_type: str, connection_string: Optional[str], db_p
                 return sqlite3.connect(":memory:", timeout=timeout / 1000), None, None
         elif connection_type in ("mysql", "postgresql"):
             if not connection_string:
-                return None, None, f"错误：{connection_type} 需要提供 connection_string"
+                return None, None, f"错误:{connection_type} 需要提供 connection_string"
             
             try:
                 from sqlalchemy import create_engine
@@ -54,7 +54,7 @@ def _get_connection(connection_type: str, connection_string: Optional[str], db_p
                 )
                 return engine.connect(), engine, None
             except ImportError:
-                return None, None, f"错误：{connection_type} 需要安装 sqlalchemy 和对应驱动"
+                return None, None, f"错误:{connection_type} 需要安装 sqlalchemy 和对应驱动"
             except Exception as e:
                 return None, None, f"连接失败: {str(e)}"
         else:
@@ -88,12 +88,12 @@ def query_sql(
 
     Args:
         sql: SQL 查询语句。仅支持 SELECT/SHOW/DESCRIBE 等只读操作
-        connection_type: 数据库类型：sqlite/mysql/postgresql
+        connection_type: 数据库类型:sqlite/mysql/postgresql
         connection_string: MySQL/PostgreSQL 连接字符串
         db_path: SQLite 数据库文件路径
-        limit: 最大返回行数，默认50
-        timeout: 超时毫秒数，默认15000
-        output_format: 输出格式，table(默认) 或 json
+        limit: 最大返回行数,默认50
+        timeout: 超时毫秒数,默认15000
+        output_format: 输出格式,table(默认) 或 json
 
     Returns:
         Dict with code, data, message
@@ -105,7 +105,7 @@ def query_sql(
         sql_upper = sql.strip().upper()
         
         if not sql_upper.startswith(("SELECT", "SHOW", "DESCRIBE", "PRAGMA", "WITH", "EXPLAIN")):
-            return build_error(ERR_READ_ONLY_VIOLATION, f"错误：只允许 SELECT/SHOW/DESCRIBE 等只读操作，当前语句以 {sql.split()[0] if sql.split() else '未知'} 开头",
+            return build_error(ERR_READ_ONLY_VIOLATION, f"错误:只允许 SELECT/SHOW/DESCRIBE 等只读操作,当前语句以 {sql.split()[0] if sql.split() else '未知'} 开头",
                 next_actions=build_next_actions([
                     ("execute_sql", "执行写操作", "需要修改数据时"),
                     ("get_db_schema", "查看表结构", "确认字段名时"),
@@ -136,7 +136,7 @@ def query_sql(
         if limit > 0 and len(results) > limit:
             results = results[:limit]
         
-        # output_format 已从Schema移除，固定使用table格式
+        # output_format 已从Schema移除,固定使用table格式
         table_str = _format_table(columns, results)
         return build_success(
             truncate_data_for_frontend({
@@ -145,7 +145,7 @@ def query_sql(
                 "total": len(results),
                 "table": table_str
             }),
-            f"查询成功，返回 {len(results)} 行数据",
+            f"查询成功,返回 {len(results)} 行数据",
             llm_data={
                 "列": columns, "行数": len(results),
                 "行预览": make_json_safe(results[:10], max_str_len=150)
@@ -195,7 +195,7 @@ def _check_sql_safety(sql: str, dry_run: bool) -> Tuple[bool, Optional[str], Opt
             warnings.append(f"危险操作: {dangerous_to_show}")
         if 'NO_WHERE' in dangerous_matches:
             warnings.append("缺少 WHERE 条件")
-        return True, f"警告：检测到危险操作 {'+'.join(warnings)}，已拦截执行。可使用dry_run=true预演", dangerous_matches
+        return True, f"警告:检测到危险操作 {'+'.join(warnings)},已拦截执行。可使用dry_run=true预演", dangerous_matches
     return False, None, None
 
 
@@ -203,7 +203,7 @@ def _rollback_and_return(conn, error_type: str, error: Exception) -> Dict[str, A
     """统一回滚连接并返回错误。
 
     小沈 2026-05-25 重构拆分
-    消除 E1a/E1b 的回滚+错误返回模式重复2次（行279-283 和 290-294）。
+    消除 E1a/E1b 的回滚+错误返回模式重复2次(行279-283 和 290-294)。
     """
     if conn:
         try:
@@ -238,14 +238,14 @@ def execute_sql(
             return build_warning(
                 "WARNING_DB_SAFETY",
                 warning_msg,
-                data={"detected": dangerous_list, "suggestion": "检测到危险操作，建议使用 dry_run=true 先验证"},
+                data={"detected": dangerous_list, "suggestion": "检测到危险操作,建议使用 dry_run=true 先验证"},
                 next_actions=_SQL_NEXT_ACTIONS
             )
 
         if dry_run:
             return build_success(
                 {"sql": sql, "dry_run": True, "syntax_valid": True},
-                "预演模式：语法验证通过，实际未执行",
+                "预演模式:语法验证通过,实际未执行",
                 next_actions=_SQL_NEXT_ACTIONS
             )
 
@@ -268,7 +268,7 @@ def execute_sql(
                 conn.rollback()
                 return build_warning(
                     "WARNING_DB_SAFETY",
-                    f"警告：影响行数 {affected_rows} > 10000，已自动回滚",
+                    f"警告:影响行数 {affected_rows} > 10000,已自动回滚",
                     data={"affected_rows": affected_rows, "action": "rollback"}
                 )
 
@@ -276,7 +276,7 @@ def execute_sql(
 
         return build_success(
             {"affected_rows": affected_rows, "sql": sql},
-            f"执行成功，影响行数: {affected_rows}",
+            f"执行成功,影响行数: {affected_rows}",
             next_actions=_SQL_NEXT_ACTIONS
         )
 
@@ -289,7 +289,7 @@ def execute_sql(
 
 
 def _get_tables(conn, connection_type: str, db_name: Optional[str]) -> List[str]:
-    """获取表列表（2路SQL） — 小沈 2026-05-25 重构"""
+    """获取表列表(2路SQL) — 小沈 2026-05-25 重构"""
     if connection_type in ("mysql", "postgresql"):
         from sqlalchemy import text
         result = conn.execute(text("SELECT table_name FROM information_schema.tables WHERE table_schema = :db_name"),
@@ -301,7 +301,7 @@ def _get_tables(conn, connection_type: str, db_name: Optional[str]) -> List[str]
 
 
 def _get_columns(conn, connection_type: str, table_name: str) -> List[Dict]:
-    """获取列信息（2路SQL） — 小沈 2026-05-25 重构"""
+    """获取列信息(2路SQL) — 小沈 2026-05-25 重构"""
     if connection_type in ("mysql", "postgresql"):
         from sqlalchemy import text as sa_text
         result = conn.execute(sa_text("SELECT column_name, data_type, is_nullable, column_key, column_default FROM information_schema.columns WHERE table_name=:t"), {"t": table_name})
@@ -312,7 +312,7 @@ def _get_columns(conn, connection_type: str, table_name: str) -> List[Dict]:
 
 
 def _get_indexes(conn, connection_type: str, table_name: str) -> List[Dict]:
-    """获取索引信息（2路SQL） — 小沈 2026-05-25 重构"""
+    """获取索引信息(2路SQL) — 小沈 2026-05-25 重构"""
     if connection_type in ("mysql", "postgresql"):
         from sqlalchemy import text as sa_text2
         result = conn.execute(sa_text2("SELECT index_name, non_unique FROM information_schema.statistics WHERE table_name=:t GROUP BY index_name, non_unique"), {"t": table_name})
@@ -323,7 +323,7 @@ def _get_indexes(conn, connection_type: str, table_name: str) -> List[Dict]:
 
 
 def _filter_tables(tables: List[str], table_name: Optional[str], filter_pattern: Optional[str]) -> List[str]:
-    """表名过滤：精确匹配优先，fnmatch降级，20表截断 — 小沈 2026-05-25 重构"""
+    """表名过滤:精确匹配优先,fnmatch降级,20表截断 — 小沈 2026-05-25 重构"""
     if table_name:
         tables = [t for t in tables if t == table_name]
         if not tables:
@@ -362,7 +362,7 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
             md += "\n"
 
         return build_success({"tables": schema_info, "total": len(schema_info), "markdown": md},
-                              f"获取成功，共 {len(schema_info)} 个表",
+                              f"获取成功,共 {len(schema_info)} 个表",
                               next_actions=build_next_actions([("query_sql", "查询表数据", "需要查看数据时")]))
 
     except sqlite3.Error as e:

@@ -35,7 +35,7 @@ async def task_interrupt_check(
     task_id: str,
     next_step: Optional[Callable[[], int]] = None
 ) -> tuple:
-    """检查任务是否被中断，如果是则返回中断消息"""
+    """检查任务是否被中断,如果是则返回中断消息"""
     if await check_cancelled(task_id):
         step_value = next_step() if next_step else None
         incident_step = IncidentStep(
@@ -51,7 +51,7 @@ async def task_pause_check(
     task_id: str,
     next_step: Optional[Callable[[], int]] = None
 ) -> AsyncGenerator[str, None]:
-    """检查任务是否被暂停，如果是则发送paused事件并等待恢复"""
+    """检查任务是否被暂停,如果是则发送paused事件并等待恢复"""
     while True:
         if await check_cancelled(task_id):
             return

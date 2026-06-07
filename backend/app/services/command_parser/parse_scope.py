@@ -1,10 +1,10 @@
 """
 影响范围解析 parse_impact_scope
 
-设计文档：CRSS评分系统深度分析与改进方案-2026-04-20.md
+设计文档:CRSS评分系统深度分析与改进方案-2026-04-20.md
 
-创建时间：2026-04-20
-编写人：小沈
+创建时间:2026-04-20
+编写人:小沈
 """
 
 import re
@@ -28,7 +28,7 @@ def parse_impact_scope(command: str) -> str:
     
     command_lower = command.lower().strip()
     
-    # 检查系统级（最危险）
+    # 检查系统级(最危险)
     for pattern in SCOPE_PATTERNS['SYSTEM']:
         if re.search(pattern, command_lower):
             return 'SYSTEM'

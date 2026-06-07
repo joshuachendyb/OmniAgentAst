@@ -33,7 +33,7 @@ async def update_session(session_id: str, update_data: SessionUpdate):
             if mode == "optimistic":
                 if cursor.rowcount == 0:
                     logger.warning(f"版本冲突: session_id={session_id}, client_version={update_data.version}")
-                    raise HTTPException(status_code=409, detail="会话已被其他用户修改，请刷新后重试")
+                    raise HTTPException(status_code=409, detail="会话已被其他用户修改,请刷新后重试")
                 cursor.execute("SELECT id, title, version FROM chat_sessions WHERE id = ?", (session_id,))
                 session = cursor.fetchone()
                 current_version = session["version"]
@@ -49,4 +49,4 @@ async def update_session(session_id: str, update_data: SessionUpdate):
         raise
     except Exception as e:
         logger.error(f"更新会话失败: session_id={session_id}, error={str(e)}")
-        raise HTTPException(status_code=500, detail="更新会话失败，请重试")
+        raise HTTPException(status_code=500, detail="更新会话失败,请重试")

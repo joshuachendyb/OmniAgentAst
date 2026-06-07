@@ -2,11 +2,11 @@
 """
 LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05-27
 
-职责：定义LLM层的响应数据类（ChatResponse、StreamChunk）、
-重试上下文（_StreamRetryContext）、异常解析（_resolve_exception）。
+职责:定义LLM层的响应数据类(ChatResponse、StreamChunk)、
+重试上下文(_StreamRetryContext)、异常解析(_resolve_exception)。
 
-拆分原则：数据/辅助定义与BaseAIService主服务类分离，遵循SRP。
-对外透明：llm_core.py重新导出这些类，外部import路径不变。
+拆分原则:数据/辅助定义与BaseAIService主服务类分离,遵循SRP。
+对外透明:llm_core.py重新导出这些类,外部import路径不变。
 """
 
 from typing import List, Dict, Optional

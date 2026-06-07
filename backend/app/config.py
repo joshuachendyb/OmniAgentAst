@@ -1,6 +1,6 @@
 """
 配置管理模块
-统一管理应用配置，支持从YAML文件和环境变量加载
+统一管理应用配置,支持从YAML文件和环境变量加载
 """
 
 import os
@@ -12,23 +12,23 @@ class Config:
     """配置管理类"""
 
     _config_data: Optional[Dict[str, Any]] = None
-    _config_mtime: Optional[float] = None  # 配置文件修改时间，用于缓存检测
+    _config_mtime: Optional[float] = None  # 配置文件修改时间,用于缓存检测
     
     def _load_config(self):
-        """加载配置文件 - 带缓存优化（双保险）"""
+        """加载配置文件 - 带缓存优化(双保险)"""
         config_path = self._get_config_path()
         
-        # ⭐ 保险1：文件不存在时处理
+        # ⭐ 保险1:文件不存在时处理
         if not config_path.exists():
             raise FileNotFoundError(
                 f"配置文件不存在: {config_path}。"
                 "请在前端创建配置文件或手动创建 config/config.yaml"
             )
         
-        # ⭐ 保险2：时间戳检查 - 如果缓存存在且mtime相同，使用缓存
+        # ⭐ 保险2:时间戳检查 - 如果缓存存在且mtime相同,使用缓存
         new_mtime = config_path.stat().st_mtime
         if self._config_data is not None and self._config_mtime == new_mtime:
-            # 配置文件未变更，使用缓存
+            # 配置文件未变更,使用缓存
             return
         
         # 从文件加载配置
@@ -38,7 +38,7 @@ class Config:
             
             # 配置文件不能为空
             if not self._config_data:
-                raise ValueError("配置文件为空，请检查 config/config.yaml")
+                raise ValueError("配置文件为空,请检查 config/config.yaml")
         except (yaml.YAMLError, ValueError) as e:
             raise RuntimeError(
                 f"加载配置文件失败: {e}。"
@@ -57,12 +57,12 @@ class Config:
         if env_path:
             return Path(env_path)
 
-        # 延迟导入：避免 utils/paths.py 依赖 config 导致循环导入
+        # 延迟导入:避免 utils/paths.py 依赖 config 导致循环导入
         from app.utils.paths import get_config_path
         return Path(get_config_path())
     
     def _apply_env_overrides(self):
-        """应用环境变量覆盖 — 通用模式：{PROVIDER}_API_KEY 自动匹配 — 小健 2026-05-24"""
+        """应用环境变量覆盖 — 通用模式:{PROVIDER}_API_KEY 自动匹配 — 小健 2026-05-24"""
         ai_config = self._config_data.get('ai', {})
         
         for provider_name, provider_config in ai_config.items():
@@ -86,7 +86,7 @@ class Config:
         获取配置项
         
         Args:
-            key: 配置键，支持点号分隔（如 'ai.provider'）
+            key: 配置键,支持点号分隔(如 'ai.provider')
             default: 默认值
             
         Returns:
@@ -103,28 +103,7 @@ class Config:
         
         return value
     
-    def get_ai_config(self, provider: Optional[str] = None) -> Dict[str, Any]:
-        """
-        获取AI配置
-        
-        Args:
-            provider: 提供商名称，如果不指定则使用默认提供商
-            
-        Returns:
-            AI配置字典
-        """
-        if provider is None:
-            provider = self.get('ai.provider')
-            if not provider:
-                ai_config = self.get('ai', {})
-                for key, val in ai_config.items():
-                    if isinstance(val, dict) and val.get('models'):
-                        provider = key
-                        break
-                provider = provider or 'zhipuai'
-        
-        return self.get(f'ai.{provider}', {})
-    
+
     def get_max_steps(self, default: int = 100) -> int:
         """
         获取max_steps配置 - 统一入口
@@ -139,7 +118,7 @@ class Config:
     
     def reload(self):
         """重新加载配置 - 强制清空缓存"""
-        # 清空缓存，强制重新加载
+        # 清空缓存,强制重新加载
         self._config_data = None
         self._config_mtime = None
         self._load_config()

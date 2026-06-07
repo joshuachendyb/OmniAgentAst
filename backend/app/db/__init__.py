@@ -1,9 +1,9 @@
 """DB SDK
 
-管理3个SQLite数据库：
+管理3个SQLite数据库:
 - chat_history.db: 对话会话和消息
 - operations.db: 文件操作和任务记录
-- tool_observer.db: 工具调用审计（后续实现）
+- tool_observer.db: 工具调用审计(后续实现)
 
 使用方式:
     from app.db import db

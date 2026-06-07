@@ -1,15 +1,15 @@
-# 消息管理API路由（单条消息 CRUD）
-# 编程人：小沈
-# 创建时间：2026-05-28
+# 消息管理API路由(单条消息 CRUD)
+# 编程人:小沈
+# 创建时间:2026-05-28
 
 """
 消息管理API路由
 
-管理会话内单条消息（一问一答）：
+管理会话内单条消息(一问一答):
 1. 获取会话消息历史 - GET /sessions/{session_id}/messages
 2. 保存消息 - POST /sessions/{session_id}/messages
 
-对话/任务回合管理（含 execution_steps）已迁移至 conversation.py
+对话/任务回合管理(含 execution_steps)已迁移至 conversation.py
 """
 
 import json
@@ -34,7 +34,7 @@ router = APIRouter()
 @router.get("/sessions/{session_id}/messages")
 @handle_api_errors("获取会话消息")
 async def get_session_messages(session_id: str):
-    """获取会话消息历史（21.3 重构，小沈 2026-05-25 实施）"""
+    """获取会话消息历史(21.3 重构,小沈 2026-05-25 实施)"""
     with db.get_conn("chat") as conn:
         cursor = conn.cursor()
 
@@ -77,9 +77,9 @@ async def get_session_messages(session_id: str):
 
 class MessageCreate(BaseModel):
     """创建消息请求"""
-    role: str = Field(..., description="角色：user/assistant/system")
+    role: str = Field(..., description="角色:user/assistant/system")
     content: str = Field(..., description="消息内容")
-    display_name: Optional[str] = Field(None, description="模型显示名称（可选，记录消息收发时使用的模型）")
+    display_name: Optional[str] = Field(None, description="模型显示名称(可选,记录消息收发时使用的模型)")
     execution_steps: Optional[list] = Field(None, description="执行步骤详情列表")
     client_os: Optional[str] = Field(None, description="客户端操作系统")
     browser: Optional[str] = Field(None, description="浏览器类型")
@@ -88,7 +88,7 @@ class MessageCreate(BaseModel):
 
 
 def _try_mark_valid(cursor, session_id: str) -> None:
-    """如果会话之前is_valid=False，尝试自愈标记为True — 小健 2026-05-25"""
+    """如果会话之前is_valid=False,尝试自愈标记为True — 小健 2026-05-25"""
     cursor.execute("SELECT is_valid FROM chat_sessions WHERE id = ?", (session_id,))
     row = cursor.fetchone()
     if row and not row[0]:
@@ -97,7 +97,7 @@ def _try_mark_valid(cursor, session_id: str) -> None:
 
 
 def _track_user_message(session_id: str, message_id: str) -> None:
-    """线程安全地存储user_message_id，覆盖旧值 — 小健 2026-05-25"""
+    """线程安全地存储user_message_id,覆盖旧值 — 小健 2026-05-25"""
     track_user_message(session_id, message_id)
     logger.info(f"[save_message] 记录user消息ID: {message_id}, 会话: {session_id}")
 

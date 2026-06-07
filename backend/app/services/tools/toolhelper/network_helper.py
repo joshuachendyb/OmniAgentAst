@@ -5,18 +5,18 @@
 【创建时间】2026-05-17 小沈
 【说明】从 support_tool/support_tool_tools.py 迁移 check_network_connectivity 和 validate_url 函数
        从 network/network_tools.py 迁移 _html_to_markdown 和 _decode_bing_redirect_url
-       这些函数作为内部Helper，不注册到tool_registry，仅供Agent内部代码调用
+       这些函数作为内部Helper,不注册到tool_registry,仅供Agent内部代码调用
 
 【分层规范 - 小健 2026-05-27】
-本文件属于【工具层helper】，使用 _response.py 的 build_success/build_error/build_warning
+本文件属于【工具层helper】,使用 _response.py 的 build_success/build_error/build_warning
 禁止使用 agent/tool_result_utils.py 的 create_xxx 函数
 
-包含函数（5个）：
-- _check_network: 检查网络连通性（内部Helper）
-- _validate_url: 验证URL格式（内部Helper）
-- _html_to_markdown: 简易HTML转Markdown（内部Helper）- 小沈 2026-05-17
-- _decode_bing_redirect_url: 解码Bing跳转URL（内部Helper）- 小沈 2026-05-17
-- well_known_ports: 常用端口映射表（内部常量）- 小健 2026-05-18
+包含函数(5个):
+- _check_network: 检查网络连通性(内部Helper)
+- _validate_url: 验证URL格式(内部Helper)
+- _html_to_markdown: 简易HTML转Markdown(内部Helper)- 小沈 2026-05-17
+- _decode_bing_redirect_url: 解码Bing跳转URL(内部Helper)- 小沈 2026-05-17
+- well_known_ports: 常用端口映射表(内部常量)- 小健 2026-05-18
 
 Author: 小沈 - 2026-05-17
 """
@@ -34,15 +34,15 @@ from app.services.tools._response import build_success, build_error
 
 
 def _check_network() -> Dict[str, Any]:
-    """检查网络连通性（内部Helper） - 小沈 2026-05-17（从 support_tool_tools.py 迁移）
+    """检查网络连通性(内部Helper) - 小沈 2026-05-17(从 support_tool_tools.py 迁移)
 
-    测试与公共DNS服务器的连通性，返回连通状态和延迟。
+    测试与公共DNS服务器的连通性,返回连通状态和延迟。
 
     Returns:
         Dict[str, Any]: {code, data, message}
         - data.connected: 网络是否连通(bool)
-        - data.host: 连通的测试主机(str，连通时)
-        - data.latency_ms: 延迟毫秒数(float，连通时)
+        - data.host: 连通的测试主机(str,连通时)
+        - data.latency_ms: 延迟毫秒数(float,连通时)
     """
     test_hosts = [
         ("dns.google", 53),
@@ -58,7 +58,7 @@ def _check_network() -> Dict[str, Any]:
             sock.connect((host, port))
             latency = (time.time() - t1) * 1000
             sock.close()
-            return build_success({"connected": True, "host": host, "latency_ms": round(latency, 2)}, f"网络连通，延迟: {latency:.1f}ms")
+            return build_success({"connected": True, "host": host, "latency_ms": round(latency, 2)}, f"网络连通,延迟: {latency:.1f}ms")
         except (socket.timeout, socket.error, OSError):
             continue
 
@@ -66,9 +66,9 @@ def _check_network() -> Dict[str, Any]:
 
 
 def _validate_url(url: str) -> Dict[str, Any]:
-    """验证URL格式（内部Helper） - 小沈 2026-05-17（从 support_tool_tools.py 迁移）
+    """验证URL格式(内部Helper) - 小沈 2026-05-17(从 support_tool_tools.py 迁移)
 
-    检查URL是否包含有效的scheme和netloc，scheme是否在允许列表中。
+    检查URL是否包含有效的scheme和netloc,scheme是否在允许列表中。
 
     Args:
         url: 要验证的URL字符串
@@ -109,8 +109,8 @@ __all__ = [
 
 
 def _html_to_markdown(html: str) -> str:
-    """简易HTML转Markdown - 小沈 2026-05-17（从 network_tools.py 迁移）
-    纯文本转换逻辑，不依赖网络模块状态；document分类HTML处理可复用。
+    """简易HTML转Markdown - 小沈 2026-05-17(从 network_tools.py 迁移)
+    纯文本转换逻辑,不依赖网络模块状态;document分类HTML处理可复用。
     """
     text = html
     text = SCRIPT_TAG_PATTERN.sub('', text)
@@ -145,9 +145,9 @@ def _html_to_markdown(html: str) -> str:
 
 
 def _decode_bing_redirect_url(url: str) -> str:
-    """解码Bing ck/a跳转链接，提取真实URL - 小沈 2026-05-17（从 network_tools.py 迁移）
+    """解码Bing ck/a跳转链接,提取真实URL - 小沈 2026-05-17(从 network_tools.py 迁移)
     Bing使用 https://www.bing.com/ck/a?!&&p=<hash>&u=<base64_url> 格式的跳转链接
-    纯URL解码逻辑，独立可复用。
+    纯URL解码逻辑,独立可复用。
     """
     if "bing.com/ck/a" not in url:
         return url

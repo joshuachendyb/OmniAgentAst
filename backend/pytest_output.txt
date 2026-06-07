@@ -1,0 +1,24 @@
+ImportError while loading conftest 'G:\OmniAgentAs-desk\backend\tests\conftest.py'.
+tests\conftest.py:8: in <module>
+    from app.services.agent.universal_react import UniversalReactAgent
+app\services\__init__.py:1: in <module>
+    from app.services.factory import AIServiceFactory
+app\services\factory\__init__.py:14: in <module>
+    from app.services.factory.close_instance import close_instance
+app\services\factory\close_instance.py:11: in <module>
+    from app.services.llm_core import BaseAIService
+app\services\llm_core\__init__.py:11: in <module>
+    from app.services.llm_core.llm_core import BaseAIService, ChatResponse, StreamChunk
+app\services\llm_core\llm_core.py:19: in <module>
+    from app.services.llm.core import (
+app\services\llm\__init__.py:40: in <module>
+    from app.services.llm.request_builder import (
+app\services\llm\request_builder.py:13: in <module>
+    from app.services.agent.agent_utils.message_utils import build_llm_messages
+app\services\agent\__init__.py:14: in <module>
+    from .base_react.base_react import BaseAgent
+app\services\agent\base_react\__init__.py:11: in <module>
+    from app.services.agent.base_react.base_react import BaseAgent
+app\services\agent\base_react\base_react.py:22: in <module>
+    from app.services.agent.mixins.react_handler_mixin import ReActHandlerMixin
+E   ModuleNotFoundError: No module named 'app.services.agent.mixins'

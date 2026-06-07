@@ -3,17 +3,17 @@
 通用工具公共Helper - 截断、路径安全、平台检查、Windows命令执行
 
 【创建时间】2026-05-18 小沈
-【说明】从各工具文件中提取的通用模式，供任意分类工具调用。
-       不注册到tool_registry，不暴露给LLM。
+【说明】从各工具文件中提取的通用模式,供任意分类工具调用。
+       不注册到tool_registry,不暴露给LLM。
 
 【分层规范 - 小健 2026-05-27】
-本文件属于【工具层helper】，使用 _response.py 的 build_success/build_error/build_warning
+本文件属于【工具层helper】,使用 _response.py 的 build_success/build_error/build_warning
 禁止使用 agent/tool_result_utils.py 的 create_xxx 函数
 
-包含函数：
+包含函数:
 - safe_path_join: 安全路径拼接 + 防路径遍历
 - check_windows_platform: 统一Windows平台检查
-- run_windows_command: 统一Windows命令执行器（默认GBK编码）
+- run_windows_command: 统一Windows命令执行器(默认GBK编码)
 
 Author: 小沈 - 2026-05-18
 """
@@ -45,7 +45,7 @@ def safe_path_join(base_dir: str, *paths: str) -> Optional[str]:
         *paths: 要拼接的路径片段
 
     Returns:
-        拼接后的绝对路径，如果检测到路径遍历则返回None
+        拼接后的绝对路径,如果检测到路径遍历则返回None
     """
     try:
         result = os.path.normpath(os.path.join(base_dir, *paths))
@@ -64,12 +64,12 @@ def run_windows_command(
 ) -> Dict[str, Any]:
     """统一Windows命令执行器 - 小沈 2026-05-18
 
-    默认GBK编码，替代 system_tools 中4处 subprocess.run(... encoding='gbk') 模式。
+    默认GBK编码,替代 system_tools 中4处 subprocess.run(... encoding='gbk') 模式。
 
     Args:
-        cmd: 命令列表，如 ["schtasks", "/query", "/fo", "LIST"]
+        cmd: 命令列表,如 ["schtasks", "/query", "/fo", "LIST"]
         timeout: 超时秒数
-        encoding: 输出编码，默认gbk（Windows中文环境）
+        encoding: 输出编码,默认gbk(Windows中文环境)
 
     Returns:
         build_success/build_error 统一格式

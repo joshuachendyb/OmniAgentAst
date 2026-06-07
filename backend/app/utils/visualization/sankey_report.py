@@ -15,7 +15,7 @@ from app.utils.logger import logger
 
 def generate_sankey_data(task_id: str, output_path: Optional[Path] = None) -> List[FlowData]:
     """
-    生成Sankey图数据（文件流向图）
+    生成Sankey图数据(文件流向图)
 
     Args:
         task_id: 会话ID

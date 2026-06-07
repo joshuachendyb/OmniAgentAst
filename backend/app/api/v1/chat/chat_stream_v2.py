@@ -2,7 +2,7 @@
 """
 chat_stream_v2 — API层入口
 
-task操作只在本层处理：register → interrupt检查 → pause检查 → stream → cancel检查 → cleanup
+task操作只在本层处理:register → interrupt检查 → pause检查 → stream → cancel检查 → cleanup
 
 统一: 小健 - 2026-05-31
 """

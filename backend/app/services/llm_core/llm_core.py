@@ -1,11 +1,11 @@
 """
 LLM 核心模块 — 类骨架
 
-从 llm_core.py 拆出，遵循 SRP：
+从 llm_core.py 拆出,遵循 SRP:
 - chat / chat_stream / chat_with_tools_stream / chat_with_tools → 独立文件
 - 本文件只保留 BaseAIService 类定义、__init__、辅助方法
 
-作者：小沈
+作者:小沈
 """
 
 import asyncio
@@ -128,7 +128,7 @@ class BaseAIService(ChatStreamMixin, ChatWithToolsStreamMixin, ToolCallerMixin):
             detector = CapabilityDetector(self.api_base, self.api_key, self.model)
             self._supports_reasoning = await detector.detect_reasoning_support()
         except Exception as e:
-            logger.warning(f"[reasoning探测] 探测失败，默认不支持: {e}")
+            logger.warning(f"[reasoning探测] 探测失败,默认不支持: {e}")
             self._supports_reasoning = False
         logger.info(f"[reasoning探测] model={self.model}, supports_reasoning={self._supports_reasoning}")
         return self._supports_reasoning

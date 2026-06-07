@@ -3,17 +3,17 @@
 LLM服务包
 
 提供LLM调用的核心能力和模型适配器。
-从 llm_core.py 拆分出来，遵循SRP原则。
+从 llm_core.py 拆分出来,遵循SRP原则。
 
-包结构：
-- core.py: 数据类（ChatResponse、StreamChunk）+ 重试上下文
+包结构:
+- core.py: 数据类(ChatResponse、StreamChunk)+ 重试上下文
 - stream_parser.py: SSE流解析 + HTTP错误处理
 - request_builder.py: 请求体构建 + 消息构建
 - model_adapters/: 模型特定兼容
   - xml_adapter: XML工具调用转JSON
   - reasoning: reasoning_content处理
 
-注意：BaseAIService仍在llm_core.py中。
+注意:BaseAIService仍在llm_core.py中。
 """
 
 from app.services.llm.model_adapters import (

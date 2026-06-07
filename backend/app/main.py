@@ -107,7 +107,7 @@ async def startup_event():
     """应用启动时注册工具 + 启动后台任务"""
     db.init()
 
-    # 全量注册工具（确保首次请求时可用）
+    # 全量注册工具(确保首次请求时可用)
     from app.services.tools import ensure_tools_registered
     ensure_tools_registered()
 

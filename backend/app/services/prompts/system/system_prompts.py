@@ -26,7 +26,7 @@ def _build_category_header(name: str, count: int, desc: str = "") -> str:
         header = _build_category_header(name, count, desc)
 
     返回数据说明:
-    - 返回str，分类标题行
+    - 返回str,分类标题行
     """
     return f"# {name} 工具 ({count}个){' - ' + desc if desc else ''}\n"
 
@@ -67,12 +67,12 @@ def _build_examples(count: int = 4) -> str:
         {"thought": "需要搜索文件", "reasoning": "使用 search_files 工具", "tool_name": "search_files", "tool_params": {"pattern": "*.py", "search_dir": "/home"}},
         {"thought": "需要读取文件内容", "reasoning": "使用 read_file 工具", "tool_name": "read_file", "tool_params": {"file_path": "/path/to/file"}},
         {"thought": "执行命令", "reasoning": "调用execute_shell_command", "tool_name": "execute_shell_command", "tool_params": {"command": "dir"}},
-        {"thought": "任务完成", "reasoning": "结果已返回，无更多操作", "tool_name": "finish", "tool_params": {"result": "任务完成"}},
+        {"thought": "任务完成", "reasoning": "结果已返回,无更多操作", "tool_name": "finish", "tool_params": {"result": "任务完成"}},
     ]
 
-    lines = ["  以下是一些 ReAct 调用示例："]
+    lines = ["  以下是一些 ReAct 调用示例:"]
     for i, ex in enumerate(_EXAMPLE_TEMPLATES[:count], 1):
-        lines.append(f"  示例{i}：{json.dumps(ex, ensure_ascii=False, indent=6)}")
+        lines.append(f"  示例{i}:{json.dumps(ex, ensure_ascii=False, indent=6)}")
     return "\n".join(lines)
 
 
@@ -121,7 +121,7 @@ class SystemPrompts(BasePrompts):
 
 Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
-请完成此系统信息任务，按以下步骤：
+请完成此系统信息任务,按以下步骤:
 1. 分析需要什么系统信息
 2. 使用合适的系统工具
 3. 用中文总结系统信息"""

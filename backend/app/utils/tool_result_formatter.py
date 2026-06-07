@@ -3,15 +3,15 @@
 工具结果格式化公共函数 - 小沈 2026-05-15
 
 【公共函数规范】
-本文件是公共utility模块，所有工具结果格式化公共函数必须在此定义。
-禁止在业务代码（services/tools/等）中重复定义公共函数。
-调用方统一从此处导入：from app.utils.tool_result_formatter import xxx
+本文件是公共utility模块,所有工具结果格式化公共函数必须在此定义。
+禁止在业务代码(services/tools/等)中重复定义公共函数。
+调用方统一从此处导入:from app.utils.tool_result_formatter import xxx
 
-原则：
-  - 工具自己负责结果格式化（LLM数据+前端数据）
+原则:
+  - 工具自己负责结果格式化(LLM数据+前端数据)
   - 共性截断/格式化逻辑抽到此模块复用
-  - llm_data：≤阈值全给，超阈值截断但保留关键结构
-  - data：完整结构化数据给前端渲染
+  - llm_data:≤阈值全给,超阈值截断但保留关键结构
+  - data:完整结构化数据给前端渲染
 """
 import json
 from typing import Any, Dict, List, Optional
@@ -34,7 +34,7 @@ _truncate_cache = LRUCache(max_size=1000, log_interval=100)
 
 
 def truncate_text(text: str, max_chars: int, suffix: str = None) -> tuple:
-    """通用文本截断，返回(截断后文本, 是否截断) 小沈-2026-05-15"""
+    """通用文本截断,返回(截断后文本, 是否截断) 小沈-2026-05-15"""
     if not text:
         return text, False
     if len(text) <= max_chars:
@@ -45,20 +45,20 @@ def truncate_text(text: str, max_chars: int, suffix: str = None) -> tuple:
 
 def format_output_for_llm(stdout: str, stderr: str, max_chars: int = DEFAULT_MAX_OUTPUT_CHARS) -> dict:
     """格式化命令/代码执行输出为llm_data 小沈-2026-05-15
-    【修复 小健 2026-05-16】不再对半砍stdout/stderr，按实际大小分配额度"""
+    【修复 小健 2026-05-16】不再对半砍stdout/stderr,按实际大小分配额度"""
     result = {}
     stdout_len = len(stdout) if stdout else 0
     stderr_len = len(stderr) if stderr else 0
     total_len = stdout_len + stderr_len
 
-    # 总量不超限，全给
+    # 总量不超限,全给
     if total_len <= max_chars:
         if stdout:
             result["stdout"] = stdout
         if stderr:
             result["stderr"] = stderr
     else:
-        # 按实际大小比例分配额度，至少给1K
+        # 按实际大小比例分配额度,至少给1K
         if stdout_len > 0:
             stdout_budget = max(1000, int(max_chars * stdout_len / total_len))
             txt, tr = truncate_text(stdout, stdout_budget)
@@ -87,7 +87,7 @@ def format_file_content_llm(content: str, max_chars: int = DEFAULT_MAX_FILE_CHAR
 def make_json_safe(data, max_depth: int = 5, max_str_len: int = 500):
     """递归截断JSON数据防止超大dump 小沈-2026-05-15
     
-    使用 truncate_text 进行字符串截断，避免重复实现。
+    使用 truncate_text 进行字符串截断,避免重复实现。
     """
     if max_depth <= 0:
         return "..."
@@ -106,14 +106,14 @@ def make_json_safe(data, max_depth: int = 5, max_str_len: int = 500):
 def truncate_data_for_frontend(data: dict, max_chars: int = DEFAULT_MAX_DATA_CHARS) -> dict:
     """DATA通道截断安全函数 - 小沈 2026-05-20
     
-    优化：延迟检查 + 通用LRU缓存
-    - 快速估算：不序列化就能判断大概大小
-    - 延迟检查：小数据直接返回，大数据才完整检查
-    - 缓存：避免重复计算
+    优化:延迟检查 + 通用LRU缓存
+    - 快速估算:不序列化就能判断大概大小
+    - 延迟检查:小数据直接返回,大数据才完整检查
+    - 缓存:避免重复计算
     
-    原则：前端需要完整结构化数据，但1M上限防OOM
+    原则:前端需要完整结构化数据,但1M上限防OOM
     - 不超限 → 原样返回
-    - 超限 → 递归截断大文本字段，标注原文长度
+    - 超限 → 递归截断大文本字段,标注原文长度
     """
     try:
         # 生成缓存key
@@ -124,7 +124,7 @@ def truncate_data_for_frontend(data: dict, max_chars: int = DEFAULT_MAX_DATA_CHA
         if cached_result is not None:
             return cached_result
         
-        # 快速估算：如果数据简单，直接返回
+        # 快速估算:如果数据简单,直接返回
         estimated_size = _quick_estimate(data)
         if estimated_size < max_chars // 2:
             _truncate_cache.set(cache_key, data)
@@ -147,9 +147,9 @@ def truncate_data_for_frontend(data: dict, max_chars: int = DEFAULT_MAX_DATA_CHA
 
 
 def _quick_estimate(data: Any) -> int:
-    """快速估算数据大小（不序列化）
+    """快速估算数据大小(不序列化)
     
-    算法：
+    算法:
     - dict: 键数量 × 100 + 值总长度
     - list: 元素数量 × 平均元素大小
     - str: 直接返回长度
@@ -170,7 +170,7 @@ def _quick_estimate(data: Any) -> int:
     if isinstance(data, (list, tuple)):
         if len(data) == 0:
             return 2  # 空列表 "[]"
-        # 采样估算：取前3个元素
+        # 采样估算:取前3个元素
         sample_size = min(3, len(data))
         sample_total = sum(_quick_estimate(item) for item in data[:sample_size])
         avg_item_size = sample_total // sample_size
@@ -203,7 +203,7 @@ def _truncate_data_recursive(data, budget: int) -> dict:
 
 
 def build_next_actions(actions: list) -> list:
-    """构建next_actions列表，§11.3 P15返回值自解释规范 小沈-2026-05-19
+    """构建next_actions列表,§11.3 P15返回值自解释规范 小沈-2026-05-19
 
     每个action格式: (tool, description, when[, params])
     - tool: 推荐调用的工具名(str)

@@ -2,7 +2,7 @@
 """
 Task 系统模块入口
 
-导出：
+导出:
 - Registry: register_task, check_cancelled, check_paused, check_was_paused,
             set_cancelled, set_paused, set_resumed, set_was_paused,
             get_cancel_request_time, get_task_status, is_task_running,
@@ -10,7 +10,7 @@ Task 系统模块入口
 - cancel_task: 取消任务
 - pause_task: 暂停任务
 - resume_task: 恢复任务
-- TaskTracker: 任务追踪器（DB持久化）
+- TaskTracker: 任务追踪器(DB持久化)
 - TaskQueries: 查询服务
 
 统一: 小健 - 2026-05-31

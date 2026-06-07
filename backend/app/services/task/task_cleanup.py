@@ -22,6 +22,6 @@ async def task_cleanup(
     )
     cleaned = await registry_cleanup(task_id)
     if cleaned:
-        logger.info(f"[Cleanup] 任务 {task_id} 正常完成，已清理")
+        logger.info(f"[Cleanup] 任务 {task_id} 正常完成,已清理")
     else:
-        logger.info(f"[Cleanup] 任务 {task_id} 已被中断，保留记录")
+        logger.info(f"[Cleanup] 任务 {task_id} 已被中断,保留记录")
