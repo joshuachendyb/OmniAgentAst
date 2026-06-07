@@ -49,47 +49,8 @@ class ToolRetryEngine:
             from app.services.tools.tool_queries import get_implementations_from_registry
             self.available_tools = get_implementations_from_registry()
     
-    def normalize_params(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        参数规范化:基于tool_registry的input_schema校验
-
-        Args:
-            action: 工具名称
-            action_input: 原始参数
-
-        Returns:
-            规范化后的参数
-
-        重写 EXC-18: 异常分类 (ImportError/AttributeError)
-        """
-        params = action_input.copy()
-
-        # 从tool_registry获取input_schema,支持所有tool类型
-        try:
-            from app.services.tools.registry import tool_registry
-            metadata = tool_registry.get_tool(action)
-            if metadata and metadata.input_schema:
-                valid_params = set(metadata.input_schema.get("properties", {}).keys())
-                invalid_keys = []
-                for key in list(params.keys()):
-                    if key not in valid_params:
-                        val = params[key]
-                        val_str = str(val)[:50] + "..." if len(str(val)) > 50 else str(val)
-                        logger.warning(
-                            f"[参数监控] action={action}, 非标准参数名: "
-                            f"param={key}={val_str}, 期望参数={sorted(valid_params)}"
-                        )
-                        invalid_keys.append(key)
-                # 删除非法参数,防止传给函数报 unexpected keyword argument
-                for key in invalid_keys:
-                    del params[key]
-        except (ImportError, AttributeError) as e:
-            logger.warning(f"[参数监控] action={action}, 获取schema失败(导入/属性): {e}", exc_info=True)
-
-        return params
-    
     async def _execute_tool_once(self, tool: Callable, normalized_input: Dict[str, Any], 
-                               timeout: float) -> Any:
+                                timeout: float) -> Any:
         """
         统一单次工具调用
         
@@ -215,26 +176,6 @@ class ToolRetryEngine:
                 message=f"Missing required parameter(s): {', '.join(missing)}",
                 retry_count=0,
                 error_message=f"缺少必需参数：{', '.join(missing)}",
-                error_type="invalid_params"
-            )
-        
-        # 2. 参数验证
-        normalized_input = self._validate_params(action, action_input, found_tool)
-        if normalized_input is None:
-            sig = inspect.signature(found_tool)
-            required = [
-                p.name for p in sig.parameters.values()
-                if p.default == inspect.Parameter.empty
-                and p.name != 'self'
-                and p.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
-            ]
-            raw_input = self.normalize_params(action, action_input)
-            missing = [p for p in required if p not in raw_input]
-            return create_error_tool_result(
-                code=ERR_MISSING_PARAM,
-                message=f"Missing required parameter(s): {', '.join(missing)}",
-                retry_count=0,
-                error_message=f"缺少必需参数: {', '.join(missing)}",
                 error_type="invalid_params"
             )
         
