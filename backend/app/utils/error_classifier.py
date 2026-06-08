@@ -188,6 +188,63 @@ class UnifiedErrorClassifier:
     """统一错误分类器"""
     
     @staticmethod
+    def _check_special_errors(error: Exception) -> Optional[ErrorCategory]:
+        """检查特殊错误 - 小沈 2026-06-08"""
+        if IdleTimeoutError and isinstance(error, IdleTimeoutError):
+            return ErrorCategory.IDLE_TIMEOUT
+        return None
+    
+    @staticmethod
+    def _check_httpx_errors(error_type: str) -> Optional[ErrorCategory]:
+        """检查HTTPX错误 - 小沈 2026-06-08"""
+        if error_type in HTTPX_EXCEPTION_TO_ERROR_TYPE:
+            return HTTPX_EXCEPTION_TO_ERROR_TYPE[error_type]
+        return None
+    
+    @staticmethod
+    def _check_builtin_errors(error: Exception) -> Optional[ErrorCategory]:
+        """检查内置错误 - 小沈 2026-06-08"""
+        if isinstance(error, asyncio.TimeoutError):
+            return ErrorCategory.TIMEOUT
+        elif isinstance(error, PermissionError):
+            return ErrorCategory.PERMISSION_DENIED
+        elif isinstance(error, FileNotFoundError):
+            return ErrorCategory.FILE_NOT_FOUND
+        elif isinstance(error, (ValueError, TypeError)):
+            return ErrorCategory.INVALID_PARAMS
+        elif isinstance(error, (KeyError, AttributeError)):
+            return ErrorCategory.TOOL_NOT_FOUND
+        return None
+    
+    @staticmethod
+    def _check_pattern_errors(error_type: str, error_msg: str) -> Optional[ErrorCategory]:
+        """检查模式错误 - 小沈 2026-06-08"""
+        for entry in PATTERN_ERROR_ENTRIES:
+            if error_type in entry["types"] or any(kw in error_msg for kw in entry["keywords"]):
+                return entry["category"]
+        return None
+    
+    @staticmethod
+    def _check_http_status_errors(error_msg: str) -> Optional[ErrorCategory]:
+        """检查HTTP状态码错误 - 小沈 2026-06-08"""
+        for status_code, error_category in HTTP_STATUS_TO_ERROR_TYPE.items():
+            if str(status_code) in error_msg:
+                return error_category
+        return None
+    
+    @staticmethod
+    def _check_keyword_errors(error_msg: str) -> Optional[ErrorCategory]:
+        """检查关键词错误 - 小沈 2026-06-08"""
+        msg_lower = error_msg.lower()
+        if "rate limit" in msg_lower or "too many requests" in msg_lower or "limit_error" in msg_lower:
+            return ErrorCategory.API_RATE_LIMIT
+        if "auth" in msg_lower or "unauthorized" in msg_lower:
+            return ErrorCategory.API_UNAUTHORIZED
+        if "forbidden" in msg_lower:
+            return ErrorCategory.API_FORBIDDEN
+        return None
+    
+    @staticmethod
     def classify_error(error: Exception) -> ErrorCategory:
         """
         分类异常类型
@@ -201,45 +258,29 @@ class UnifiedErrorClassifier:
         error_type = type(error).__name__
         error_msg = str(error).lower()
         
-        # 特殊处理:IdleTimeoutError
-        if IdleTimeoutError and isinstance(error, IdleTimeoutError):
-            return ErrorCategory.IDLE_TIMEOUT
+        category = UnifiedErrorClassifier._check_special_errors(error)
+        if category:
+            return category
         
-        # 检查HTTPX异常
-        if error_type in HTTPX_EXCEPTION_TO_ERROR_TYPE:
-            return HTTPX_EXCEPTION_TO_ERROR_TYPE[error_type]
+        category = UnifiedErrorClassifier._check_httpx_errors(error_type)
+        if category:
+            return category
         
-        # 检查内置异常类型
-        if isinstance(error, asyncio.TimeoutError):
-            return ErrorCategory.TIMEOUT
-        elif isinstance(error, PermissionError):
-            return ErrorCategory.PERMISSION_DENIED
-        elif isinstance(error, FileNotFoundError):
-            return ErrorCategory.FILE_NOT_FOUND
-        elif isinstance(error, (ValueError, TypeError)):
-            return ErrorCategory.INVALID_PARAMS
-        elif isinstance(error, (KeyError, AttributeError)):
-            return ErrorCategory.TOOL_NOT_FOUND
+        category = UnifiedErrorClassifier._check_builtin_errors(error)
+        if category:
+            return category
         
-        # 检查字符串模式匹配
-        for entry in PATTERN_ERROR_ENTRIES:
-            if error_type in entry["types"] or \
-               any(kw in error_msg for kw in entry["keywords"]):
-                return entry["category"]
+        category = UnifiedErrorClassifier._check_pattern_errors(error_type, error_msg)
+        if category:
+            return category
         
-        # 检查HTTP状态码
-        for status_code, error_category in HTTP_STATUS_TO_ERROR_TYPE.items():
-            if str(status_code) in error_msg:
-                return error_category
+        category = UnifiedErrorClassifier._check_http_status_errors(error_msg)
+        if category:
+            return category
         
-        # 关键词匹配
-        msg_lower = error_msg.lower()
-        if "rate limit" in msg_lower or "too many requests" in msg_lower or "limit_error" in msg_lower:
-            return ErrorCategory.API_RATE_LIMIT
-        if "auth" in msg_lower or "unauthorized" in msg_lower:
-            return ErrorCategory.API_UNAUTHORIZED
-        if "forbidden" in msg_lower:
-            return ErrorCategory.API_FORBIDDEN
+        category = UnifiedErrorClassifier._check_keyword_errors(error_msg)
+        if category:
+            return category
         
         return ErrorCategory.UNKNOWN
     
