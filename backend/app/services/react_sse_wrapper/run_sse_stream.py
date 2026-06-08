@@ -45,7 +45,7 @@ async def run_sse_stream(
         raise
 
     try:
-        async for event in agent.run_stream(
+        async for event in agent.run_react_cycle(
             task=last_message, context=None,
             task_id=task_id,
         ):

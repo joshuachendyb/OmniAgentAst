@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-run_stream — ReAct 循环核心
+run_react_cycle — ReAct 循环核心
 
 小健 - 2026-06-08 替换空占位:实现完整ReAct循环
 原文件是死占位,yield not_implemented,导致Agent完全不可用。
@@ -28,7 +28,7 @@ from app.services.agent.steps import (
 from app.services.agent.types import AgentStatus
 
 
-async def run_stream(
+async def run_react_cycle(
     self,
     task: str,
     context: Optional[Dict[str, Any]] = None,
@@ -188,7 +188,7 @@ async def run_stream(
                 break
 
     except Exception as e:
-        logger.error(f"[run_stream] 异常: {e}", exc_info=True)
+        logger.error(f"[run_react_cycle] 异常: {e}", exc_info=True)
         yield self._exit_with_error(
             step=step_counter,
             error_type="runtime_error",

@@ -47,7 +47,7 @@ class MessageBuilder:
         self.MAX_CONTEXT_CHARS = max_context_chars
 
     def reset_per_run(self) -> None:
-        """每次 run_stream 仅重置 conversation_history,缓存和计数保留跨会话"""
+        """每次 run_react_cycle 仅重置 conversation_history,缓存和计数保留跨会话"""
         self.conversation_history = []
         self.temp_history = []
 

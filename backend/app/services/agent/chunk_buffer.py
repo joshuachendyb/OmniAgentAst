@@ -2,7 +2,7 @@
 """
 ChunkBuffer — chunk拼接、阈值检测、flush管理 — 小沈 2026-05-25
 
-消除 run_stream 和 react_sse_wrapper 中3处重复的chunk flush逻辑。
+消除 run_react_cycle 和 react_sse_wrapper 中3处重复的chunk flush逻辑。
 """
 
 # 【3.9修复 北京老陈 2026-05-31】阈值统一从constants.py读取
@@ -17,7 +17,7 @@ class ChunkBuffer:
     """管理chunk拼接、阈值检测、flush到message_builder
 
     使用场景:
-        - run_stream中chunk内容的累积和阈值检测
+        - run_react_cycle中chunk内容的累积和阈值检测
         - react_sse_wrapper中SSE chunk的累积逻辑
         - 所有需要"累积→阈值检测→flush"模式的场景
 
