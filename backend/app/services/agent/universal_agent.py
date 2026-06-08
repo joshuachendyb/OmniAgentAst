@@ -10,7 +10,7 @@ Updated: 小沈 - 2026-06-08 清理空壳
 """
 from typing import Any, List, Optional, Dict
 
-from app.services.agent.base_react import BaseAgent
+from app.services.agent.core_agent import BaseAgent
 from app.services.agent.agent_config import AgentConfig
 from app.services.agent.types import AgentResult
 from app.services.tools.tool_types import ToolCategory
