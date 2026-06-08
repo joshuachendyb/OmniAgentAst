@@ -75,7 +75,6 @@ def generate_text_report(task_id: str, task_description: str) -> str:
     Args:
         task_id: 任务ID
         task_description: 任务描述(用户消息)
-        output_path: 输出路径(可选)
 
     Returns:
         报告文本内容

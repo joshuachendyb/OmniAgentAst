@@ -1,7 +1,7 @@
 from collections import OrderedDict
 
 
-def __ordered_dict(data: dict) -> OrderedDict:
+def _ordered_dict(data: dict) -> OrderedDict:
     if not isinstance(data, dict):
         return data
     result = OrderedDict()

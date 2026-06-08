@@ -3,7 +3,6 @@
 common_patterns — 常用正则模式
 
 小健 - 2026-06-08 从 network_helper.py 迁入，统一复用
-替代已删除的 app.utils.common_patterns 模块
 """
 import re
 

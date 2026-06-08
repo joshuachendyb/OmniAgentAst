@@ -137,8 +137,8 @@ class LLMClient:
                         break
                     yield data
 
-    def stream(self, method: str, url: str, **kwargs):
-        """获取响应流(返回 async context manager)"""
+    def raw_stream(self, method: str, url: str, **kwargs):
+        """获取原始HTTP响应流(返回 async context manager),避免与 chat_stream 混淆"""
         return self._client.stream(method, url, **kwargs)
 
     async def request(self, method: str, url: str, **kwargs) -> httpx.Response:

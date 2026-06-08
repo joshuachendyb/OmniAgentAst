@@ -84,10 +84,9 @@ def generate_html_report(task_id: str, task_description: str) -> str:
     Args:
         task_id: 会话ID
         task_description: 任务描述(用户消息)
-        output_path: 输出路径
 
     Returns:
-        HTML报告文件路径
+        HTML报告内容字符串
     """
     operations = query_file_operations(task_id)
 

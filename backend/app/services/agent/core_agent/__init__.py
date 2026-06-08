@@ -3,7 +3,7 @@
 core_agent 模块 — Agent核心架构
 
 - base_agent.py: Agent类骨架
-- react_loop.py: ReAct循环核心算法
+- react_cycle.py: ReAct循环核心算法
 - agent_initializer.py: Agent初始化逻辑
 - tool_manager.py: 工具加载和管理
 - step_emitter.py: 步骤发射和Task追踪

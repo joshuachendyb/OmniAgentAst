@@ -1,4 +1,3 @@
-import shutil
 from pathlib import Path
 from app.utils.logger import logger
 from app.utils.time_utils import timestamp_for_filename

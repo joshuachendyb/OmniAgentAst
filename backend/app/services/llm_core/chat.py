@@ -3,6 +3,7 @@
 chat — 从 llm_core.py 拆出
 
 复制来源: llm_core.py 第220-264行
+注意: 本函数通过 BaseAIService.chat = chat 绑定为类方法,self 参数是正确的
 Author: 小沈 - 2026-05-31
 """
 

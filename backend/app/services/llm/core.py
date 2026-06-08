@@ -72,7 +72,7 @@ class _StreamRetryContext:
     async def __aenter__(self):
         self.service._ensure_client()
         self._response_ctx, response = await self._engine.execute_async_context(
-            ctx_factory=lambda: self.service._llm_sdk.stream(
+            ctx_factory=lambda: self.service._llm_sdk.raw_stream(
                 "POST", self.url, headers=self.headers, json=self.json_body
             ),
             result_check=lambda r: self.service._is_rate_limit_status(r.status_code),
