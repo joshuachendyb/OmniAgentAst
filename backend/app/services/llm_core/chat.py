@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-chat — 从 llm_core.py 拆出
+chat — 从 llm_core.py 拆出的 chat 方法
 
 复制来源: llm_core.py 第220-264行
-注意: 本函数通过 BaseAIService.chat = chat 绑定为类方法,self 参数是正确的
+通过 BaseAIService.chat = aggregate_chat_response 绑定为类方法
 Author: 小沈 - 2026-05-31
 """
 
@@ -13,8 +13,8 @@ from app.utils.logger import logger
 from app.services.llm.core import ChatResponse
 
 
-async def chat(self, message: str, history: Optional[List[Dict]] = None) -> ChatResponse:
-    """复制自 llm_core.py 第220-264行"""
+async def aggregate_chat_response(self, message: str, history: Optional[List[Dict]] = None) -> ChatResponse:
+    """聚合流式chunk为完整ChatResponse — 通过 BaseAIService.chat = aggregate_chat_response 绑定"""
     try:
         full_content = ""
         full_reasoning = ""
