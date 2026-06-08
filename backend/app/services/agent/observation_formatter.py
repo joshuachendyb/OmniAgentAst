@@ -117,42 +117,70 @@ def _format_next_actions(result: dict, text: str) -> str:
     return text + "\n".join(na_lines)
 
 
-def _format_success_observation(result: dict) -> str:
-    """格式化成功结果 — 从format_llm_observation提取 小健2026-05-31"""
+def _extract_display_data(result: dict) -> Any:
+    """提取display_data — 小沈 2026-06-08"""
     display_data = result.get("llm_data") or result.get("data")
     if display_data is None:
         from app.utils.logger import logger as _logger
         _logger.warning("[OBS-001] format_llm_observation: llm_data和data均为空")
-    LLM_SAFE_LIMIT_LOCAL = LLM_SAFE_LIMIT
-    text = f"Observation: success - {result.get('message', '')}"
+    return display_data
+
+
+def _build_base_text(result: dict, status: str) -> str:
+    """构建基础文本 — 小沈 2026-06-08"""
+    return f"Observation: {status} - {result.get('message', '')}"
+
+
+def _append_warning(text: str, result: dict) -> str:
+    """追加warning — 小沈 2026-06-08"""
     if result.get("warning"):
-        text += f"\n⚠ 警告: {result['warning']}"
-    if display_data:
-        if isinstance(display_data, (dict, list)):
-            display_data = _prevent_json_oom(display_data, LLM_SAFE_LIMIT_LOCAL)
-        text += f"\n数据: {json.dumps(display_data, ensure_ascii=False)}"
+        return text + f"\n⚠ 警告: {result['warning']}"
+    return text
+
+
+def _append_data(text: str, display_data: Any) -> str:
+    """追加data — 小沈 2026-06-08"""
+    if not display_data:
+        return text
+    if isinstance(display_data, (dict, list)):
+        display_data = _prevent_json_oom(display_data, LLM_SAFE_LIMIT)
+    return text + f"\n数据: {json.dumps(display_data, ensure_ascii=False)}"
+
+
+def _format_success_observation(result: dict) -> str:
+    """格式化成功结果 — 小沈 2026-06-08 重构"""
+    display_data = _extract_display_data(result)
+    text = _build_base_text(result, "success")
+    text = _append_warning(text, result)
+    text = _append_data(text, display_data)
     return _format_next_actions(result, text)
 
 
 def _format_warning_observation(result: dict) -> str:
-    """格式化警告结果 — 从format_llm_observation提取 小健2026-05-31"""
-    LLM_SAFE_LIMIT_LOCAL = LLM_SAFE_LIMIT
-    text = f"Observation: warning - {result.get('message', '')}"
+    """格式化警告结果 — 小沈 2026-06-08 重构"""
+    text = _build_base_text(result, "warning")
     if result.get("data"):
         data = result["data"]
         if isinstance(data, (dict, list)):
-            data = _prevent_json_oom(data, LLM_SAFE_LIMIT_LOCAL)
+            data = _prevent_json_oom(data, LLM_SAFE_LIMIT)
         text += f"\n部分数据: {json.dumps(data, ensure_ascii=False)}"
     return _format_next_actions(result, text)
 
 
+def _append_hint(text: str, tool_name: str, tool_params: Optional[dict]) -> str:
+    """追加hint — 小沈 2026-06-08"""
+    if not tool_name:
+        return text
+    hint = _get_failure_hint(tool_name, tool_params)
+    if hint:
+        return text + f"\n{hint}"
+    return text
+
+
 def _format_error_observation(result: dict, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
-    """格式化错误结果 — 从format_llm_observation提取 小健2026-05-31"""
+    """格式化错误结果 — 小沈 2026-06-08 重构"""
     text = f"Observation: error [{result.get('code', '')}] - {result.get('message', '')}"
-    if tool_name:
-        hint = _get_failure_hint(tool_name, tool_params)
-        if hint:
-            text += f"\n{hint}"
+    text = _append_hint(text, tool_name, tool_params)
     return _format_next_actions(result, text)
 
 

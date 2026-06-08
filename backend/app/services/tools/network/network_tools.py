@@ -41,6 +41,7 @@ from urllib.parse import urlencode, urlparse, urlunparse
 
 import httpx
 from app.utils.logger import logger
+from app.utils.json_utils import parse_json
 
 from app.services.tools.toolhelper.network_helper import (  # 小健 2026-05-18
     well_known_ports, _html_to_markdown, _decode_bing_redirect_url,
@@ -96,9 +97,7 @@ def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
         body_json_len = len(json.dumps(body, ensure_ascii=False))
 
     if isinstance(body, str) and len(body) > 5000:
-        try:
-            json.loads(body)
-        except (json.JSONDecodeError, ValueError):
+        if not parse_json(body):
             body = body[:4000] + f"\n...[截断 {len(body)-4000} 字符]"
 
     if isinstance(body, (dict, list)) and body_json_len <= 5000:
@@ -588,7 +587,7 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: O
             if not result_text.startswith("{"):
                 _search_failed(engine, "返回数据非JSON")
                 return None
-            parsed = json.loads(result_text)
+            parsed = parse_json(result_text, raise_on_error=True)
             results = []
             for r in parsed.get("results", [])[:num_results]:
                 title, url = r.get("title", ""), r.get("url", "")

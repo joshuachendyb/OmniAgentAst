@@ -25,7 +25,47 @@ from app.services.task.task_cleanup import task_cleanup
 from app.services.react_sse_wrapper.run_sse_stream import run_sse_stream
 
 
+async def _check_and_yield_interrupt(task_id: str) -> tuple:
+    """检查中断并返回结果 — 小沈 2026-06-08"""
+    is_interrupted, interrupt_msg = await task_interrupt_check(task_id)
+    return is_interrupted, interrupt_msg
+
+
+async def _yield_pause_events(task_id: str):
+    """yield暂停事件 — 小沈 2026-06-08"""
+    async for pause_event in task_pause_check(task_id):
+        yield pause_event
+
+
+async def _yield_start_step(ai_service, task_id, next_step, user_input, execution_steps, session_id):
+    """yield start步骤 — 小沈 2026-06-08"""
+    async for event in step_start(ai_service, task_id, next_step, user_input, execution_steps, session_id):
+        yield event
+
+
+async def _yield_sse_stream_with_cancel_check(
+    task_id, next_step, session_id, execution_steps, current_content,
+    intent_type, ai_service, candidates, user_input, llm_call_count_holder
+):
+    """yield SSE流并检查取消 — 小沈 2026-06-08"""
+    async for sse_chunk in run_sse_stream(
+        intent_type=intent_type, llm_client=ai_service, task_id=task_id,
+        ai_service=ai_service, candidates=candidates, last_message=user_input,
+        next_step=next_step,
+        session_id=session_id, current_execution_steps=execution_steps,
+        current_content=current_content, llm_call_count_holder=llm_call_count_holder,
+    ):
+        cancelled_sse = await task_cancel_check_and_yield(
+            task_id, next_step, session_id, execution_steps, current_content
+        )
+        if cancelled_sse:
+            yield cancelled_sse
+            break
+        yield sse_chunk
+
+
 async def chat_stream_v2(request: ChatRequest):
+    """API层入口 — 小沈 2026-06-08 重构"""
     if not request.messages:
         return PlainTextResponse(
             content=create_error_response(error_type="invalid_request", error_message="消息列表不能为空"),
@@ -39,6 +79,7 @@ async def chat_stream_v2(request: ChatRequest):
     session_id = request.session_id or str(uuid.uuid4())
 
     async def generate():
+        """生成器 — 小沈 2026-06-08 重构"""
         task_id = str(uuid.uuid4())
         next_step = create_step_counter()
         execution_steps = []
@@ -48,31 +89,22 @@ async def chat_stream_v2(request: ChatRequest):
         try:
             await register_task(task_id, ai_service)
 
-            is_interrupted, interrupt_msg = await task_interrupt_check(task_id)
+            is_interrupted, interrupt_msg = await _check_and_yield_interrupt(task_id)
             if is_interrupted:
                 yield interrupt_msg
                 await task_cleanup(task_id, 0)
                 return
 
-            async for pause_event in task_pause_check(task_id):
+            async for pause_event in _yield_pause_events(task_id):
                 yield pause_event
 
-            async for event in step_start(ai_service, task_id, next_step, user_input, execution_steps, session_id):
+            async for event in _yield_start_step(ai_service, task_id, next_step, user_input, execution_steps, session_id):
                 yield event
 
-            async for sse_chunk in run_sse_stream(
-                intent_type=intent_type, llm_client=ai_service, task_id=task_id,
-                ai_service=ai_service, candidates=candidates, last_message=user_input,
-                next_step=next_step,
-                session_id=session_id, current_execution_steps=execution_steps,
-                current_content=current_content, llm_call_count_holder=llm_call_count_holder,
+            async for sse_chunk in _yield_sse_stream_with_cancel_check(
+                task_id, next_step, session_id, execution_steps, current_content,
+                intent_type, ai_service, candidates, user_input, llm_call_count_holder
             ):
-                cancelled_sse = await task_cancel_check_and_yield(
-                    task_id, next_step, session_id, execution_steps, current_content
-                )
-                if cancelled_sse:
-                    yield cancelled_sse
-                    break
                 yield sse_chunk
 
         except Exception as e:

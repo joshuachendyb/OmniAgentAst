@@ -121,27 +121,51 @@ def _extract_json_block_simple(output: str) -> Optional[Dict]:
     return None
 
 
-def _handle_mixed_text_json(output) -> Optional[Dict[str, Any]]:
-    if not isinstance(output, str):
-        return None
+def _extract_json_and_prefix(output: str) -> tuple:
+    """提取JSON块和前缀文本 — 小沈 2026-06-08"""
     json_data = _extract_json_block_simple(output)
     prefix_text = ""
     if json_data:
         json_start = output.find("{")
         prefix_text = output[:json_start].strip() if json_start != -1 else ""
-    if not json_data:
-        return _build_handler_result("chunk", thought=output.strip())
+    return json_data, prefix_text
+
+
+def _build_chunk_result(output: str) -> Dict[str, Any]:
+    """构建chunk结果 — 小沈 2026-06-08"""
+    return _build_handler_result("chunk", thought=output.strip())
+
+
+def _build_action_result(json_data: Dict, prefix_text: str, output: str) -> Dict[str, Any]:
+    """构建action结果 — 小沈 2026-06-08"""
     tool_name = json_data.get("tool_name")
     tool_params = json_data.get("tool_params", {})
     if not isinstance(tool_params, dict):
         tool_params = {}
+    extracted = json_data.get("content", "") or prefix_text
+    params = _process_tool_params(tool_params, tool_name, output)
+    return _build_handler_result("action", thought=json_data.get("thought", ""),
+        content=extracted, tool_name=tool_name, tool_params=params)
+
+
+def _handle_mixed_text_json(output) -> Optional[Dict[str, Any]]:
+    """处理混合文本JSON — 小沈 2026-06-08 重构"""
+    if not isinstance(output, str):
+        return None
+    
+    json_data, prefix_text = _extract_json_and_prefix(output)
+    
+    if not json_data:
+        return _build_chunk_result(output)
+    
+    tool_name = json_data.get("tool_name")
+    
     if tool_name == "finish":
         return _handle_finish_tool(json_data, prefix_text)
+    
     if tool_name:
-        extracted = json_data.get("content", "") or prefix_text
-        params = _process_tool_params(tool_params, tool_name, output)
-        return _build_handler_result("action", thought=json_data.get("thought", ""),
-            content=extracted, tool_name=tool_name, tool_params=params)
+        return _build_action_result(json_data, prefix_text, output)
+    
     return _handle_implicit_content(json_data, output, prefix_text)
 
 

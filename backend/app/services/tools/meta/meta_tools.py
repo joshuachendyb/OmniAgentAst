@@ -23,6 +23,7 @@ from app.utils.tool_result_formatter import (
     make_json_safe,
 )
 from app.utils.logger import logger
+from app.utils.json_utils import parse_json
 from app.services.tools._response import build_success, build_error
 
 
@@ -362,7 +363,7 @@ def pipeline(steps: str, stop_on_error: bool = True, timeout_per_step: int = 60)
         if isinstance(steps, (list, dict)):
             steps_list = steps
         else:
-            steps_list = json.loads(steps)
+            steps_list = parse_json(steps, raise_on_error=True)
     except json.JSONDecodeError as e:
         return _pipeline_error(ERR_INVALID_JSON,
             f"steps参数不是有效的JSON格式: {str(e)},请检查JSON语法")

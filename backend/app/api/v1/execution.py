@@ -10,6 +10,7 @@ from typing import Optional, Any, Dict
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from app.utils.time_utils import create_timestamp
+from app.utils.json_utils import parse_json
 from app.db import db
 from app.api.v1.conversation.models import ExecutionStep
 
@@ -62,20 +63,19 @@ async def _generate_execution_stream(session_id: str):
                 # AI回复
                 if execution_steps_json:
                     # 有执行步骤,解析并发送
-                    try:
-                        steps = json.loads(execution_steps_json)
-                        if isinstance(steps, list):
-                            for step in steps:
-                                step_type = step.get('type', 'thought')
-                                step_data = ExecutionStep(
-                                    step_type=step_type,
-                                    content=step.get('content', ''),
-                                    tool=step.get('tool', ''),
-                                    params=step.get('params', {}),
-                                    result=step.get('result'),
-                                    timestamp=step.get('timestamp', create_timestamp())
-                                ).to_dict()
-                                yield f"event: step\ndata: {json.dumps(step_data, ensure_ascii=False)}\n\n"
+                    steps = parse_json(execution_steps_json, label="execution_steps")
+                    if steps and isinstance(steps, list):
+                        for step in steps:
+                            step_type = step.get('type', 'thought')
+                            step_data = ExecutionStep(
+                                step_type=step_type,
+                                content=step.get('content', ''),
+                                tool=step.get('tool', ''),
+                                params=step.get('params', {}),
+                                result=step.get('result'),
+                                timestamp=step.get('timestamp', create_timestamp())
+                            ).to_dict()
+                            yield f"event: step\ndata: {json.dumps(step_data, ensure_ascii=False)}\n\n"
                                 # 添加小延迟,模拟流式输出
                                 await asyncio.sleep(0.1)
                         else:

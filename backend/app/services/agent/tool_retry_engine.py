@@ -36,30 +36,33 @@ class ToolRetryEngine:
     def __init__(self, tools: Dict[str, Callable]):
         self._tools = tools
     
-    async def _execute_tool_once(self, tool: Callable, normalized_input: Dict[str, Any], 
-                                timeout: float) -> Any:
-        """
-        统一单次工具调用
-        
-        修复:纯同步工具通过 to_thread 移出事件循环,wait_for 超时保护生效。
-        
-        Args:
-            tool: 工具函数
-            normalized_input: 规范化后的参数
-            timeout: 超时时间(秒)
-        
-        Returns:
-            工具执行结果
-        """
-        if inspect.iscoroutinefunction(tool):
-            return await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
-
+    def _is_async_tool(self, tool: Callable) -> bool:
+        """判断是否异步工具 — 小沈 2026-06-08"""
+        return inspect.iscoroutinefunction(tool)
+    
+    async def _execute_async_tool(self, tool: Callable, params: Dict[str, Any], timeout: float) -> Any:
+        """执行异步工具 — 小沈 2026-06-08"""
+        return await asyncio.wait_for(tool(**params), timeout=timeout)
+    
+    async def _execute_sync_tool(self, tool: Callable, params: Dict[str, Any], timeout: float) -> Any:
+        """执行同步工具 — 小沈 2026-06-08"""
         result = await asyncio.wait_for(
-            asyncio.to_thread(lambda: tool(**normalized_input)), timeout=timeout
+            asyncio.to_thread(lambda: tool(**params)), timeout=timeout
         )
         if inspect.iscoroutine(result):
             return await asyncio.wait_for(result, timeout=timeout)
         return result
+    
+    async def _execute_tool_once(self, tool: Callable, normalized_input: Dict[str, Any], 
+                                timeout: float) -> Any:
+        """
+        统一单次工具调用 — 小沈 2026-06-08 重构
+        
+        修复:纯同步工具通过 to_thread 移出事件循环,wait_for 超时保护生效。
+        """
+        if self._is_async_tool(tool):
+            return await self._execute_async_tool(tool, normalized_input, timeout)
+        return await self._execute_sync_tool(tool, normalized_input, timeout)
     
     def _build_retry_error(
         self, code: str, message: str, retry_count: int,
@@ -133,9 +136,8 @@ class ToolRetryEngine:
                 self._tools[action] = tool
         return tool
     
-    def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable) -> Optional[Dict[str, Any]]:
-        """验证参数（非法参数+必需参数）"""
-        params = action_input.copy()
+    def _check_invalid_params(self, action: str, params: Dict[str, Any]) -> bool:
+        """检查非法参数 — 小沈 2026-06-08"""
         try:
             from app.services.tools.registry import tool_registry
             metadata = tool_registry.get_tool(action)
@@ -143,10 +145,13 @@ class ToolRetryEngine:
                 valid_params = set(metadata.input_schema.get("properties", {}).keys())
                 invalid_keys = [k for k in params if k not in valid_params]
                 if invalid_keys:
-                    return None
+                    return False
         except (ImportError, AttributeError) as e:
             logger.warning(f"[参数监控] action={action}, 获取 schema 失败：{e}", exc_info=True)
-        
+        return True
+    
+    def _check_missing_params(self, tool: Callable, params: Dict[str, Any]) -> bool:
+        """检查缺失参数 — 小沈 2026-06-08"""
         sig = inspect.signature(tool)
         required = [
             p.name for p in sig.parameters.values()
@@ -155,13 +160,59 @@ class ToolRetryEngine:
             and p.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
         ]
         missing = [p for p in required if p not in params]
-        if missing:
+        return len(missing) == 0
+    
+    def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable) -> Optional[Dict[str, Any]]:
+        """验证参数（非法参数+必需参数）— 小沈 2026-06-08 重构"""
+        params = action_input.copy()
+        
+        if not self._check_invalid_params(action, params):
+            return None
+        
+        if not self._check_missing_params(tool, params):
             return None
         
         return params
     
+    def _should_retry(self, e: Exception, retryable_errors: list, engine: RetryEngine) -> bool:
+        """判断是否应该重试 — 小沈 2026-06-08"""
+        error_category = UnifiedErrorClassifier.classify_error(e)
+        is_retryable = error_category.is_retryable or error_category.name.lower() in retryable_errors
+        return is_retryable and not engine.exhausted
+    
+    async def _execute_single_attempt(self, tool: Callable, params: Dict[str, Any], timeout: float, 
+                                      engine: RetryEngine, max_retries: int, action: str,
+                                      retryable_errors: list) -> Optional[Dict[str, Any]]:
+        """执行单次尝试 — 小沈 2026-06-08"""
+        try:
+            result = await self._execute_tool_once(tool, params, timeout)
+            return create_tool_result(
+                data=result,
+                message="Tool execution succeeded",
+                retry_count=engine.attempt_count
+            )
+        except Exception as e:
+            error_category = UnifiedErrorClassifier.classify_error(e)
+            attempt = engine.record_attempt()
+
+            logger.warning(
+                f"[重试] action={action} 尝试{attempt}/{max_retries} "
+                f"失败：{error_category.description} - {str(e)[:100]}",
+                exc_info=True
+            )
+            
+            if not self._should_retry(e, retryable_errors, engine):
+                return self._build_retry_error(
+                    f"ERR_{error_category.name}",
+                    f"{error_category.description}: {str(e)[:200]}",
+                    attempt - 1, error_type=error_category.name.lower(),
+                )
+            
+            await asyncio.sleep(engine.current_delay)
+            return None
+    
     async def _execute_with_retry(self, action: str, params: Dict[str, Any], tool: Callable) -> Dict[str, Any]:
-        """带重试执行工具"""
+        """带重试执行工具 — 小沈 2026-06-08 重构"""
         max_retries, backoff_factor, retryable_errors, timeout = self._get_retry_config(action)
         
         def _is_tool_retryable(e: Exception) -> bool:
@@ -178,33 +229,11 @@ class ToolRetryEngine:
         last_error: Optional[Exception] = None
         
         while engine.attempt_count <= max_retries:
-            try:
-                result = await self._execute_tool_once(tool, params, timeout)
-                return create_tool_result(
-                    data=result,
-                    message="Tool execution succeeded",
-                    retry_count=engine.attempt_count
-                )
-                
-            except Exception as e:
-                last_error = e
-                error_category = UnifiedErrorClassifier.classify_error(e)
-                attempt = engine.record_attempt()
-
-                logger.warning(
-                    f"[重试] action={action} 尝试{attempt}/{max_retries} "
-                    f"失败：{error_category.description} - {str(e)[:100]}",
-                    exc_info=True
-                )
-                
-                if not _is_tool_retryable(e) or engine.exhausted:
-                    return self._build_retry_error(
-                        f"ERR_{error_category.name}",
-                        f"{error_category.description}: {str(e)[:200]}",
-                        attempt - 1, error_type=error_category.name.lower(),
-                    )
-                
-                await asyncio.sleep(engine.current_delay)
+            result = await self._execute_single_attempt(
+                tool, params, timeout, engine, max_retries, action, retryable_errors
+            )
+            if result is not None:
+                return result
         
         return self._build_retry_error(
             ERR_UNKNOWN, str(last_error)[:200] if last_error else "Unknown error",

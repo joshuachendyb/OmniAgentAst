@@ -119,9 +119,9 @@ Example 4: 任务完成
             格式化的观察Prompt
         """
         # 如果observation是JSON字符串,尝试解析
-        try:
-            obs_dict = json.loads(observation) if isinstance(observation, str) else observation
-        except (json.JSONDecodeError, TypeError):
+        from app.utils.json_utils import parse_json
+        obs_dict = parse_json(observation) if isinstance(observation, str) else observation
+        if obs_dict is None:
             obs_dict = {}
         
         if obs_dict.get("success", False):
