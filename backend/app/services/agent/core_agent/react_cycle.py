@@ -57,37 +57,73 @@ async def _execute_and_emit_observation(agent, step: int, tool_name: str, tool_p
     """执行工具并产出observation — 小沈 2026-06-08"""
     result = await agent._execute_tool(tool_name, tool_params)
 
+    obs_text = _build_observation_text(agent, tool_name, tool_params, result)
+
+    _update_executed_summary(agent, tool_name, result)
+
     yield agent._step_emitter.emit(ObservationStep(
         step=step + 1,
-        observation=str(result),
+        observation=obs_text,
         tool_name=tool_name,
         tool_params={},
     ))
 
 
-def _update_message_builder(agent, result):
-    """更新message_builder — 小沈 2026-06-08"""
-    if hasattr(agent, 'message_builder') and agent.message_builder:
-        agent.message_builder.add_observation(observation_text=str(result))
+def _build_observation_text(agent, tool_name: str, tool_params: Dict, result) -> str:
+    """构建observation文本 — 小沈 2026-06-09"""
+    from app.services.agent.observation_formatter import format_llm_observation, build_execution_result_dict
+    if isinstance(result, dict):
+        exec_result = build_execution_result_dict(result)
+        return format_llm_observation(exec_result, tool_name=tool_name, tool_params=tool_params)
+    return f"Observation: {str(result)}"
+
+
+def _update_executed_summary(agent, tool_name: str, result):
+    """更新已执行工具汇总 — 小沈 2026-06-09"""
+    if not hasattr(agent, '_executed_tool_summary'):
+        agent._executed_tool_summary = []
+    if isinstance(result, dict):
+        from app.services.agent.observation_formatter import extract_status
+        status = extract_status(result)
     else:
+        status = "success"
+    agent._executed_tool_summary.append(f"{tool_name}→{status}")
+
+
+def _update_message_builder(agent, result, tool_name: str = "", tool_params: Dict = None):
+    """更新message_builder — 小沈 2026-06-09"""
+    if not hasattr(agent, 'message_builder') or not agent.message_builder:
         logger.warning("[react_cycle] message_builder不存在，跳过observation记录")
+        return
+
+    obs_text = _build_observation_text(agent, tool_name, tool_params or {}, result)
+    llm_call_count = getattr(agent, 'llm_call_count', 0)
+    agent.message_builder.add_observation(obs_text, llm_call_count=llm_call_count)
 
 
 async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
-    """处理action类型 — 产出thought+action+observation — 小沈 2026-06-08 重构"""
+    """处理action类型 — 产出thought+action+observation — 小沈 2026-06-09 重构"""
     tool_name, tool_params = _extract_action_params(parsed)
     step = step_counter[0]
-    result = None
 
     async for event in _emit_thought_and_action(agent, step, tool_name, tool_params, parsed):
         yield event
 
-    async for event in _execute_and_emit_observation(agent, step, tool_name, tool_params):
-        yield event
-        if "observation" in str(type(event)):
-            result = event.observation
+    result = await agent._execute_tool(tool_name, tool_params)
 
-    _update_message_builder(agent, result)
+    obs_text = _build_observation_text(agent, tool_name, tool_params, result)
+    _update_executed_summary(agent, tool_name, result)
+
+    yield agent._step_emitter.emit(ObservationStep(
+        step=step + 1,
+        observation=obs_text,
+        tool_name=tool_name,
+        tool_params={},
+    ))
+
+    _update_message_builder(agent, result, tool_name=tool_name, tool_params=tool_params)
+    agent.message_builder.add_assistant(llm_response)
+
     step_counter[0] = step + 1
 
 
