@@ -10,6 +10,10 @@ from typing import Type, List, Dict, Optional, Any
 from app.services.tools.tool_types import ToolCategory
 from app.services.prompts.base_prompt_template import BasePrompts
 
+# 默认Agent统一使用UniversalAgent — 小欧 2026-06-08 消除重复
+_DEFAULT_AGENT_MODULE = "app.services.agent.universal_agent"
+_DEFAULT_AGENT_CLASS = "UniversalAgent"
+
 
 @dataclass
 class AgentConfig:
@@ -19,8 +23,8 @@ class AgentConfig:
     prompt_module: str
     prompt_class_name: str
     category_display_name: str
-    agent_module: str = ""
-    agent_class_name: str = ""
+    agent_module: str = _DEFAULT_AGENT_MODULE
+    agent_class_name: str = _DEFAULT_AGENT_CLASS
     rollback_enabled: bool = False
     max_steps: int = 100
 
@@ -51,8 +55,6 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_module="app.services.prompts.file.file_prompts",
         prompt_class_name="FileOperationPrompts",
         category_display_name="文件操作",
-        agent_module="app.services.agent.universal_agent",
-        agent_class_name="UniversalAgent",
         rollback_enabled=True,
     ),
     "system": AgentConfig(
@@ -61,8 +63,6 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_module="app.services.prompts.system.system_prompts",
         prompt_class_name="SystemPrompts",
         category_display_name="系统操作",
-        agent_module="app.services.agent.universal_agent",
-        agent_class_name="UniversalAgent",
     ),
     "network": AgentConfig(
         intent_type="network",
@@ -70,8 +70,6 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_module="app.services.prompts.network.network_prompts",
         prompt_class_name="NetworkPrompts",
         category_display_name="网络通信",
-        agent_module="app.services.agent.universal_agent",
-        agent_class_name="UniversalAgent",
     ),
     "document": AgentConfig(
         intent_type="document",
@@ -79,8 +77,6 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_module="app.services.prompts.document.document_prompts",
         prompt_class_name="DocumentPrompts",
         category_display_name="文档读写",
-        agent_module="app.services.agent.universal_agent",
-        agent_class_name="UniversalAgent",
     ),
     "desktop": AgentConfig(
         intent_type="desktop",
@@ -88,8 +84,6 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_module="app.services.prompts.desktop.desktop_prompts",
         prompt_class_name="DesktopPrompts",
         category_display_name="桌面操作",
-        agent_module="app.services.agent.universal_agent",  # 【修复P0-3 2026-06-08 小沈】改为UniversalAgent，删除DesktopAgent
-        agent_class_name="UniversalAgent",  # 遵守DRY、复用优先原则
     ),
 }
 

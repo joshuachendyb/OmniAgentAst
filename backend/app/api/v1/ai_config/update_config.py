@@ -2,9 +2,7 @@ from . import router
 from .models import ConfigUpdate
 from .field_handlers import FIELD_HANDLERS
 from ._helpers import get_config_path, read_yaml_config, write_yaml_config
-from ._backup_config import _backup_config
-from ._auto_fix_and_validate import _auto_fix_and_validate
-from ._restore_backup_if_needed import _restore_backup_if_needed
+from ._helpers import _backup_config, _auto_fix_and_validate, _restore_backup_if_needed
 from fastapi import HTTPException
 from app.config import get_config as get_config_instance
 from app.services import clear_backup_paths

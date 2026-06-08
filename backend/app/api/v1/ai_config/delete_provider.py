@@ -1,6 +1,6 @@
 from . import router
 from ._helpers import get_config_path, read_yaml_config, write_yaml_config, reload_ai_config
-from ._decorators import handle_config_errors
+from ._helpers import handle_config_errors
 from ._validators import ensure_provider_exists
 from fastapi import HTTPException
 from app.utils.response_utils import api_success
