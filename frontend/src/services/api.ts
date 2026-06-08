@@ -843,32 +843,12 @@ interface TaskControlResponse {
 }
 
 /**
- * 分页数据响应类型
- */
-interface NextPageResponse {
-  success: boolean;
-  data?: unknown;
-  next_page_token?: string;
-  has_more: boolean;
-}
-
-/**
  * 用户确认请求类型
  */
 interface ConfirmRequest {
   task_id: string;
   confirmed: boolean;
   modified_command?: string;
-}
-
-/**
- * 分页数据请求类型
- */
-interface NextPageRequest {
-  task_id: string;
-  tool_name: string;
-  tool_params?: Record<string, unknown>;
-  next_page_token: string;
 }
 
 /**
@@ -950,32 +930,6 @@ export const taskControlApi = {
     return response.data;
   },
 
-  /**
-   * 请求分页数据
-   * POST /api/v1/chat/stream/next-page
-   * 
-   * @param taskId 任务ID
-   * @param toolName 工具名称
-   * @param toolParams 工具参数（如 dir_path）
-   * @param nextPageToken 分页令牌
-   * @returns 分页数据结果
-   */
-  nextPage: async (
-    taskId: string, 
-    toolName: string, 
-    toolParams: Record<string, unknown>,
-    nextPageToken: string
-  ): Promise<NextPageResponse> => {
-    const body: NextPageRequest = {
-      task_id: taskId,
-      tool_name: toolName,
-      tool_params: toolParams,
-      next_page_token: nextPageToken,
-    };
-    
-    const response = await api.post<NextPageResponse>('/chat/stream/next-page', body);
-    return response.data;
-  },
 };
 
 export default api;

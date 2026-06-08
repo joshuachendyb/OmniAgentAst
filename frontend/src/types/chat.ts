@@ -279,15 +279,6 @@ export interface TaskControlResponse {
   message: string;
 }
 
-/**
- * 分页响应
- */
-export interface NextPageResponse {
-  success: boolean;
-  data?: unknown;
-  next_page_token?: string;
-  has_more: boolean;
-}
 
 // ============================================================
 // NewChatContainer 专用类型 - 小新 2026-03-13
