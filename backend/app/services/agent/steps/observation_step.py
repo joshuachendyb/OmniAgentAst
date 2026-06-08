@@ -69,6 +69,8 @@ class ObservationStep(ReasoningStep):
         """
         ReasoningStep.__init__(self, step, timestamp)
         
+        self._tool_name = tool_name
+        self._tool_params = tool_params
         self._observation = observation
         self._return_direct = return_direct
         self._execution_status = execution_status
