@@ -10,14 +10,8 @@ from app.utils.visualization.common import query_file_operations, count_op_stats
 from app.utils.logger import logger
 
 
-def build_text_report_lines(
-    task_id: str, task_description: str,
-    operations: List[Tuple], stats: Dict[str, int]
-) -> List[str]:
-    """构建文本报告的所有行(纯格式化,无 DB/IO 副作用)
-
-    小沈 2026-05-25 重构拆分
-    """
+def _build_header(task_id: str, task_description: str, operations: List[Tuple]) -> List[str]:
+    """构建报告头部 - 小沈 2026-06-08"""
     lines = []
     lines.append("文件操作报告")
     lines.append("=" * 50)
@@ -27,6 +21,12 @@ def build_text_report_lines(
     lines.append(f"开始时间: {operations[0][6] if operations else ''}")
     lines.append(f"完成时间: 未完成")
     lines.append("")
+    return lines
+
+
+def _build_stats_section(stats: Dict[str, int]) -> List[str]:
+    """构建统计信息 - 小沈 2026-06-08"""
+    lines = []
     lines.append("-" * 80)
     lines.append("操作统计:")
     lines.append(f"  - 总操作数: {stats['total']}")
@@ -35,7 +35,12 @@ def build_text_report_lines(
     lines.append(f"  - 已回滚: {stats['rolled_back']}")
     lines.append("-" * 80)
     lines.append("")
+    return lines
 
+
+def _build_operations_detail(operations: List[Tuple]) -> List[str]:
+    """构建操作详情 - 小沈 2026-06-08"""
+    lines = []
     for i, (op_type, src, dst, status, size, is_dir, created_at, error) in enumerate(operations, 1):
         lines.append(f"[{i}] {op_type.upper()}")
         lines.append(f"    状态: {status}")
@@ -51,10 +56,32 @@ def build_text_report_lines(
             lines.append(f"    错误信息: {error}")
         lines.append(f"    执行时间: {created_at}")
         lines.append("")
+    return lines
 
+
+def _build_footer() -> List[str]:
+    """构建报告尾部 - 小沈 2026-06-08"""
+    lines = []
     lines.append("=" * 80)
     lines.append("报告生成时间: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     lines.append("=" * 80)
+    return lines
+
+
+def build_text_report_lines(
+    task_id: str, task_description: str,
+    operations: List[Tuple], stats: Dict[str, int]
+) -> List[str]:
+    """构建文本报告的所有行(纯格式化,无 DB/IO 副作用)
+
+    小沈 2026-05-25 重构拆分
+    小沈 2026-06-08 拆分为4个独立函数,符合SRP
+    """
+    lines = []
+    lines.extend(_build_header(task_id, task_description, operations))
+    lines.extend(_build_stats_section(stats))
+    lines.extend(_build_operations_detail(operations))
+    lines.extend(_build_footer())
     return lines
 
 

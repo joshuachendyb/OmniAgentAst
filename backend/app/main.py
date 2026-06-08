@@ -102,15 +102,19 @@ app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 app.include_router(task_queries_router, prefix="/api/v1", tags=["task-queries"])
 
 
-@app.on_event("startup")
-async def startup_event():
-    """应用启动时注册工具 + 启动后台任务"""
+async def _init_database():
+    """初始化数据库 - 小沈 2026-06-08"""
     db.init()
 
-    # 全量注册工具(确保首次请求时可用)
+
+def _register_tools():
+    """注册工具 - 小沈 2026-06-08"""
     from app.services.tools import ensure_tools_registered
     ensure_tools_registered()
 
+
+def _start_cleanup_task():
+    """启动清理任务 - 小沈 2026-06-08"""
     async def cleanup_task():
         """定期清理过期任务"""
         while True:
@@ -119,20 +123,37 @@ async def startup_event():
             except Exception as e:
                 logger.error(f"清理过期任务失败: {e}")
             await asyncio.sleep(3600)
-
+    
     asyncio.create_task(cleanup_task())
     logger.info("后台清理任务已启动")
+
+
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时注册工具 + 启动后台任务"""
+    await _init_database()
+    _register_tools()
+    _start_cleanup_task()
+
+
+async def _reset_factory():
+    """重置工厂 - 小沈 2026-06-08"""
+    from app.services.factory import reset
+    await reset()
+
+
+def _cleanup_shells():
+    """清理shell进程 - 小沈 2026-06-08"""
+    from app.services.tools.shell.shell_tools import cleanup_background_shells
+    count = cleanup_background_shells()
+    logger.info(f"已清理 {count} 个后台shell进程")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """应用关闭时清理资源"""
-    from app.services.factory import reset
-    await reset()
-
-    from app.services.tools.shell.shell_tools import cleanup_background_shells
-    count = cleanup_background_shells()
-    logger.info(f"已清理 {count} 个后台shell进程")
+    await _reset_factory()
+    _cleanup_shells()
 
 
 @app.get("/")

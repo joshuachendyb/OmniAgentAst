@@ -18,37 +18,54 @@ _instance: Optional[BaseAIService] = None
 _current_provider: str = ""
 
 
-def get_service(config_path: Optional[str] = None) -> BaseAIService:
-    """拷贝自 factory.py 第204-250行"""
-    global _instance, _current_provider
-
+def _get_resolver_and_config():
+    """获取resolver和配置 - 小沈 2026-06-08"""
     from app.services.ai_config_resolver import get_ai_config_resolver
     resolver = get_ai_config_resolver()
     final_provider, final_model = resolver.resolve_provider_model()
     ai_config = resolver.get_ai_config()
+    return resolver, final_provider, final_model, ai_config
 
+
+def _validate_provider_model(final_provider: str, final_model: str) -> None:
+    """验证provider和model - 小沈 2026-06-08"""
     if not final_provider:
         raise ValueError("未找到有效的AI provider配置")
     if not final_model:
         raise ValueError("未找到有效的AI model配置")
 
-    if _instance is not None and _current_provider == final_provider and _instance.model == final_model:
-        return _instance
 
+def _check_cache_valid(final_provider: str, final_model: str) -> bool:
+    """检查缓存是否有效 - 小沈 2026-06-08"""
+    return _instance is not None and _current_provider == final_provider and _instance.model == final_model
+
+
+def _cleanup_old_instance() -> None:
+    """清理旧实例 - 小沈 2026-06-08"""
+    global _instance, _current_provider
     old_instance = _instance
     _instance = None
-    _current_provider = final_provider
     close_instance_sync(old_instance)
 
+
+def _log_service_creation(final_provider: str, final_model: str) -> None:
+    """记录服务创建日志 - 小沈 2026-06-08"""
     log_msg = f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}"
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {log_msg}")
     logger.info(log_msg)
 
+
+def _get_provider_config(ai_config: dict, final_provider: str) -> dict:
+    """获取provider配置 - 小沈 2026-06-08"""
     provider_config = ai_config.get(final_provider, {})
     if not provider_config:
         raise ValueError(f"provider {final_provider} 的配置为空,请检查 config.yaml")
+    return provider_config
 
-    _instance = BaseAIService(
+
+def _create_service_instance(provider_config: dict, final_provider: str, final_model: str) -> BaseAIService:
+    """创建服务实例 - 小沈 2026-06-08"""
+    return BaseAIService(
         api_key=(provider_config.get("api_key") or "").strip(),
         model=final_model,
         api_base=(provider_config.get("api_base") or "https://api.openai.com/v1").strip(),
@@ -58,5 +75,26 @@ def get_service(config_path: Optional[str] = None) -> BaseAIService:
         temperature=float(provider_config.get("temperature", 0.7)),
         seed=provider_config.get("seed", None),
     )
+
+
+def get_service(config_path: Optional[str] = None) -> BaseAIService:
+    """拷贝自 factory.py 第204-250行"""
+    global _instance, _current_provider
+
+    _, final_provider, final_model, ai_config = _get_resolver_and_config()
+    
+    _validate_provider_model(final_provider, final_model)
+    
+    if _check_cache_valid(final_provider, final_model):
+        return _instance
+    
+    _current_provider = final_provider
+    _cleanup_old_instance()
+    
+    _log_service_creation(final_provider, final_model)
+    
+    provider_config = _get_provider_config(ai_config, final_provider)
+    
+    _instance = _create_service_instance(provider_config, final_provider, final_model)
 
     return _instance

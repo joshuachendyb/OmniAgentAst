@@ -34,3 +34,6 @@ backend/test_verify_*
 
 # node_modules
 frontend/node_modules/
+
+# config (contains API keys)
+config/

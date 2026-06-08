@@ -56,6 +56,21 @@ class MetricsCollector:
             "errors_total": MetricType.COUNTER,
         }
     
+    def _get_metric_type(self, name: str) -> Optional[Any]:
+        """获取指标类型 - 小沈 2026-06-08"""
+        metric_type = self._metrics_config.get(name)
+        if not metric_type:
+            logger.warning(f"未注册的指标名称: {name}")
+        return metric_type
+    
+    def _create_metric(self, name: str, metric_type, value: float, labels: Optional[Dict[str, str]]) -> Metric:
+        """创建指标对象 - 小沈 2026-06-08"""
+        return Metric(name=name, type=metric_type, value=value, labels=labels)
+    
+    def _add_metric(self, name: str, metric: Metric) -> None:
+        """添加指标到列表 - 小沈 2026-06-08"""
+        self.metrics[name].append(metric)
+    
     def record_metric(self, name: str, value: float, labels: Optional[Dict[str, str]] = None):
         """
         记录指标
@@ -65,15 +80,13 @@ class MetricsCollector:
             value: 指标值
             labels: 标签字典
         """
-        metric_type = self._metrics_config.get(name)
+        metric_type = self._get_metric_type(name)
         if not metric_type:
-            logger.warning(f"未注册的指标名称: {name}")
             return
         
-        metric = Metric(name=name, type=metric_type, value=value, labels=labels)
-        self.metrics[name].append(metric)
+        metric = self._create_metric(name, metric_type, value, labels)
+        self._add_metric(name, metric)
         
-        # 清理过期指标
         self._cleanup_old_metrics()
     
     def _cleanup_old_metrics(self):
