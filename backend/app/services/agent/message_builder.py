@@ -69,18 +69,16 @@ class MessageBuilder:
         """
         self.conversation_history.append({"role": "assistant", "content": content})
 
-    def add_observation(self, observation_text: str, llm_call_count: int = 0, fc_context: Optional[Dict] = None) -> None:
-        """追加observation消息 — 含智能截断 + [Observation]前缀归一化 + trim
-        
-        fc_context: ToolsStrategy下FC协议上下文,含tool_calls和tool_call_id。
-        有fc_context时按OpenAI FC协议注入assistant(tool_calls)+tool(tool_call_id),
-        模型能识别"工具已被处理",不会重复调用。
-        """
+    def _prepare_observation_text(self, observation_text: str, llm_call_count: int) -> str:
+        """准备observation文本 — 截断+归一化 — 小沈 2026-06-08"""
         budget = self._get_observation_budget(llm_call_count)
         if len(observation_text) > budget:
             observation_text = self._smart_truncate(observation_text, budget=budget)
         observation_text = self._normalize_observation_prefix(observation_text)
-        
+        return observation_text
+
+    def _append_observation(self, observation_text: str, fc_context: Optional[Dict] = None) -> None:
+        """追加observation消息 — 小沈 2026-06-08"""
         if fc_context and fc_context.get("tool_call_id"):
             tool_call_id = fc_context["tool_call_id"]
             tool_calls = fc_context.get("tool_calls")
@@ -89,6 +87,16 @@ class MessageBuilder:
             self.conversation_history.append({"role": "tool", "content": observation_text, "tool_call_id": tool_call_id})
         else:
             self.conversation_history.append({"role": "system", "content": observation_text})
+
+    def add_observation(self, observation_text: str, llm_call_count: int = 0, fc_context: Optional[Dict] = None) -> None:
+        """追加observation消息 — 含智能截断 + [Observation]前缀归一化 + trim — 小沈 2026-06-08 重构
+        
+        fc_context: ToolsStrategy下FC协议上下文,含tool_calls和tool_call_id。
+        有fc_context时按OpenAI FC协议注入assistant(tool_calls)+tool(tool_call_id),
+        模型能识别"工具已被处理",不会重复调用。
+        """
+        observation_text = self._prepare_observation_text(observation_text, llm_call_count)
+        self._append_observation(observation_text, fc_context)
         self.trim_history()
 
     def add_parse_error(self, error_msg: str) -> None:

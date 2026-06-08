@@ -5,7 +5,7 @@ validate_config — 从 factory.py 拷出
 拷贝来源: factory.py 第163-202行
 """
 
-from typing import Optional
+from typing import Optional, Tuple
 
 import os
 

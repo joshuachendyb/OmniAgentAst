@@ -16,7 +16,7 @@ async def task_cleanup(
 ) -> None:
     """任务完成后清理"""
     logger.info(
-        f"[LLM Total Counter] ====== Conversation finished, total LLM calls: {reported_llm} ======"
+        f"[LLM Total Counter] ====== Conversation finished, total LLM calls: {llm_call_count} ======"
     )
     cleaned = await registry_cleanup(task_id)
     if cleaned:
