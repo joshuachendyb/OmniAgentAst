@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-工具结果格式化模块 — 小沈 2026-05-21
+observation_formatter — 工具结果格式化为LLM observation文本
+
+原名: tool_result_formatter.py (与 utils/tool_result_formatter.py 同名造成混淆)
+重命名: 2026-06-08 小欧 — SRP: 本模块只负责格式化LLM observation，不负责截断/格式化通用逻辑
 
 提供两条输出路径:
 - format_llm_observation(): 给LLM看的observation文本
