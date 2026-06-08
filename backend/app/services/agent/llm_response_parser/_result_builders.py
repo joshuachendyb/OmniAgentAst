@@ -99,7 +99,7 @@ def _build_action_from_fc_format(data: Dict, output: str) -> Dict[str, Any]:
         "response": response,
     }
 
-    logger.info(f"[parse_react_response] FC格式转换: name={tool_name} → type={result['type']}")
+    logger.info(f"[parse_llm_response] FC格式转换: name={tool_name} → type={result['type']}")
     return _add_reasoning_warning(result)
 
 
@@ -224,14 +224,14 @@ def _convert_function_calling_items(items: List[Dict]) -> List[Dict]:
 
 def _create_action_result_from_list(data: List) -> Dict[str, Any]:
     if not data:
-        logger.info(f"[parse_react_response] list为空,返回parse_error")
+        logger.info(f"[parse_llm_response] list为空,返回parse_error")
         return _make_action_result_dict(
             "parse_error", "", "", None, None, "", "Empty list input from LLM"
         )
 
     valid_items = [item for item in data if isinstance(item, dict)]
     if not valid_items:
-        logger.info(f"[parse_react_response] list中无有效dict元素,返回parse_error")
+        logger.info(f"[parse_llm_response] list中无有效dict元素,返回parse_error")
         return _make_action_result_dict(
             "parse_error", "", "", None, None, "", "No valid dict items in list"
         )
@@ -242,7 +242,7 @@ def _create_action_result_from_list(data: List) -> Dict[str, Any]:
         converted = _convert_function_calling_items(valid_items)
         last_converted = converted[-1]
         pending_calls = converted[:-1]
-        logger.info(f"[parse_react_response] list检测到Function Calling格式({len(converted)}个)")
+        logger.info(f"[parse_llm_response] list检测到Function Calling格式({len(converted)}个)")
         last_item = {
             "tool_name": last_converted["name"],
             "tool_params": last_converted["args"],
@@ -253,7 +253,7 @@ def _create_action_result_from_list(data: List) -> Dict[str, Any]:
         if pending_calls:
             last_item["_pending_calls"] = pending_calls
 
-    logger.info(f"[parse_react_response] list解析成功,使用最后一个元素")
+    logger.info(f"[parse_llm_response] list解析成功,使用最后一个元素")
     return _create_action_result_from_dict(last_item)
 
 
