@@ -231,35 +231,9 @@ class RetryEngine:
         self._attempt_count = 0
 
 
-def create_rate_limit_retry_engine(
-    max_retries: int = 3,
-    backoff_factor: float = 2.0,
-    is_rate_limit_fn: Optional[Callable[[Exception], bool]] = None,
-) -> RetryEngine:
-    """
-    创建429限流重试引擎
-
-    专门处理HTTP 429限流重试,指数退避+max_retries=3。
-    统一llm_core._post_with_retry()和_StreamRetryContext的核心429重试逻辑。
-
-    Args:
-        max_retries: 最大重试次数
-        backoff_factor: 退避因子
-        is_rate_limit_fn: 判断是否为限流异常的函数
-
-    Returns:
-        配置好的RetryEngine实例
-    """
-    return RetryEngine(
-        max_retries=max_retries,
-        backoff_strategy=BackoffStrategy.EXPONENTIAL,
-        backoff_factor=backoff_factor,
-        retryable_check=is_rate_limit_fn,
-    )
-
 
 __all__ = [
     "BackoffStrategy",
     "RetryEngine",
-    "create_rate_limit_retry_engine",
+
 ]

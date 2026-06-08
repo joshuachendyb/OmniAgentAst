@@ -167,20 +167,3 @@ def format_llm_observation(result: dict, tool_name: str = "", tool_params: Optio
     else:
         return _format_error_observation(result, tool_name, tool_params)
 
-
-def _format_frontend_event(result: dict) -> dict:
-    """格式化工具结果为前端SSE事件 — 小沈 2026-05-21"""
-    event = {
-        "code": result.get("code", "SUCCESS"),
-        "message": result.get("message", ""),
-        "data": result.get("data"),
-        "retry_count": result.get("retry_count", 0),
-        "return_direct": result.get("return_direct", False),
-    }
-    if result.get("warning"):
-        event["warning"] = result["warning"]
-    if result.get("next_actions"):
-        event["next_actions"] = result["next_actions"]
-    if result.get("attachment"):
-        event["attachment"] = result["attachment"]
-    return event

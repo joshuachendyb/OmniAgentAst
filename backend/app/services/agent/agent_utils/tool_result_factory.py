@@ -152,31 +152,7 @@ def create_warning_tool_result(
     return result
 
 
-DEFAULT_TOOL_RESULT: Dict[str, Any] = create_tool_result()
-DEFAULT_ERROR_RESULT: Dict[str, Any] = create_error_tool_result()
-DEFAULT_WARNING_RESULT: Dict[str, Any] = create_warning_tool_result()
-DEFAULT_TIMEOUT_RESULT: Dict[str, Any] = create_error_tool_result(
-    code="TIMEOUT", message="执行超时", error_message="执行超时", error_type="timeout"
-)
-DEFAULT_PARAM_ERROR_RESULT: Dict[str, Any] = create_error_tool_result(
-    code="ERR_INVALID_PARAMS", message="参数错误", error_message="无效参数", error_type="invalid_params"
-)
-DEFAULT_TOOL_NOT_FOUND_RESULT: Dict[str, Any] = create_error_tool_result(
-    code="ERR_TOOL_NOT_FOUND", message="工具未找到", error_message="工具未找到", error_type="tool_not_found"
-)
-DEFAULT_PERMISSION_ERROR_RESULT: Dict[str, Any] = create_error_tool_result(
-    code="ERR_PERMISSION_DENIED", message="权限不足", error_message="权限不足", error_type="permission_denied"
-)
-
-
 __all__ = [
-    "DEFAULT_TOOL_RESULT",
-    "DEFAULT_ERROR_RESULT",
-    "DEFAULT_WARNING_RESULT",
-    "DEFAULT_TIMEOUT_RESULT",
-    "DEFAULT_PARAM_ERROR_RESULT",
-    "DEFAULT_TOOL_NOT_FOUND_RESULT",
-    "DEFAULT_PERMISSION_ERROR_RESULT",
     "create_tool_result",
     "create_error_tool_result",
     "create_warning_tool_result",

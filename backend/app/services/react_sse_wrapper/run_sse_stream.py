@@ -63,8 +63,8 @@ async def run_sse_stream(
             elif event_type == 'chunk':
                 current_content = event_dict.get('content', current_content)
 
-            # 格式化SSE(仅format，不parse)
-            sse_data = format_agent_sse(event)
+            # 格式化SSE(仅format，已用event_dict避免二次to_dict)
+            sse_data = format_agent_sse(event_dict)
 
             # yield SSE
             if sse_data:

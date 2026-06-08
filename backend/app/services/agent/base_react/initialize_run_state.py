@@ -40,7 +40,5 @@ def initialize_run_state(
     except Exception as _e:
         logger.debug(f"[工具名验证] 获取工具列表失败: {_e}, 仅允许finish")
 
-    from app.services.agent.base_react.agent_initializer import AgentInitializer
-    AgentInitializer._init_task_tracking(self, enable=True, description=task)
 
     return chunk_buffer, valid_tool_names

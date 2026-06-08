@@ -19,7 +19,7 @@ async def chat(self, message: str, history: Optional[List[Dict]] = None) -> Chat
         full_reasoning = ""
         has_non_reasoning_content = False
         stream_error = None
-        async for chunk in self.chat_stream(message, history):
+        async for chunk in self.chat_with_tools_stream(message, history):
             if chunk.content:
                 if getattr(chunk, "is_reasoning", False):
                     full_reasoning += chunk.content

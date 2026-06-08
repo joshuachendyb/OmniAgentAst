@@ -104,7 +104,9 @@ def resolve_agent_config(intent_type: str) -> AgentConfig:
     raise ValueError(f"Unknown intent_type: {intent_type}")
 
 
-def get_all_intent_types() -> List[str]:
-    """获取所有 intent_type"""
-    from app.services.intents.intent_mapper import get_agent_intent_names
-    return get_agent_intent_names()
+def get_all_intent_types() -> list:
+    """返回所有注册的 intent_type 列表
+    小健 - 2026-06-08 修复缺失函数
+    """
+    return list(AGENT_REGISTRY.keys())
+

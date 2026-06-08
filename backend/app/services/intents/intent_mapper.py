@@ -15,9 +15,6 @@ def _lookup_intent(intent_str: str) -> Optional[IntentType]:
     return INTENT_MAPPING.get(key)
 
 
-def get_crss_intent_names() -> List[str]:
-    return list(INTENT_MAPPING.keys())
-
 
 def get_agent_intent_names() -> List[str]:
     return [intent_type.value for intent_type in IntentType]

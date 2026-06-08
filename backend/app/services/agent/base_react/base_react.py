@@ -134,3 +134,12 @@ class BaseAgent(ABC):
 
     def record_operation(self, operation_type: str, **kwargs):
         self._step_emitter.record_operation(operation_type, **kwargs)
+
+    def _create_cancelled_chunk(self):
+        """创建取消chunk — 委托给llm_client
+        小健 - 2026-06-08 修复P0: run_stream需要此方法
+        """
+        if hasattr(self, 'llm_client') and self.llm_client:
+            return self.llm_client._create_cancelled_chunk()
+        from app.services.llm.stream_parser import create_cancelled_chunk
+        return create_cancelled_chunk(getattr(self, 'model', 'unknown'))

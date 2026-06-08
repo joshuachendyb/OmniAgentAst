@@ -290,11 +290,7 @@ class MessageBuilder:
         return result
 
     @staticmethod
-    def _is_error_obs(content: str) -> bool:
-        """判断observation是否为错误 — 替代 base_react.py L1262-1264"""
-        return "error" in content.lower() or "timeout" in content.lower() or "fail" in content.lower()
 
-    @staticmethod
     def _dedup_by_fingerprint(obs_list: List[Dict]) -> List[Dict]:
         """基于指纹去重observation — 替代 base_react.py L1267-1278
 

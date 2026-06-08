@@ -96,8 +96,6 @@ class BasePrompts(ABC):
 - 始终用中文回复用户
 - 工具返回错误时,向用户解释错误并建议替代方案"""
 
-    # 【2026-05-07 小沈】终止规则已合并到OUTPUT_FORMAT - 2026-05-10 小沈
-    FINISH_RULE = ""
 
     @abstractmethod
     def get_system_prompt(self) -> str:
