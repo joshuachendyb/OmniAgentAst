@@ -96,7 +96,6 @@ async def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_st
         step=step_num,
         error_type=error_type,
         error_message=str(e),
-        error_label=error_label,
     )
     current_execution_steps.append(error_step.to_dict())
     await save_execution_steps_to_db(session_id, current_execution_steps, error_label)
