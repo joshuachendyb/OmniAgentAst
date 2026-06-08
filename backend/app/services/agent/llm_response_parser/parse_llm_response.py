@@ -44,16 +44,14 @@ def _handle_json_array_string(output) -> Optional[Dict[str, Any]]:
 def _handle_empty_input(output) -> Optional[Dict[str, Any]]:
     if not output or not isinstance(output, str):
         thought = "(Implicit) Empty response"
-        return {
-            "type": "parse_error",
-            "error": "Empty or non-string response from LLM",
-            "thought": thought,
-            "content": thought,
-            "reasoning": thought,
-            "tool_name": None,
-            "tool_params": None,
-            "response": ""
-        }
+        return _build_handler_result(
+            type_="parse_error",
+            thought=thought,
+            content=thought,
+            reasoning=thought,
+            error="Empty or non-string response from LLM",
+            response=""
+        )
     return None
 
 
@@ -187,13 +185,11 @@ def parse_llm_response(output: str) -> Dict[str, Any]:
         result = handler(output)
         if result is not None:
             return result
-    return {
-        "type": "parse_error",
-        "error": "Parser chain exhausted",
-        "thought": "(Implicit) Internal error",
-        "content": "",
-        "reasoning": "",
-        "tool_name": None,
-        "tool_params": None,
-        "response": ""
-    }
+    return _build_handler_result(
+        type_="parse_error",
+        thought="(Implicit) Internal error",
+        content="",
+        reasoning="",
+        error="Parser chain exhausted",
+        response=""
+    )

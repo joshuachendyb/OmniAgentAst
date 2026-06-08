@@ -80,7 +80,8 @@ async def parse_sse_stream(
             if choices:
                 delta = choices[0].get("delta", {})
                 content = delta.get("content", "") or ""
-                reasoning_content = delta.get("reasoning_content", "") or ""
+                from app.services.llm.model_adapters.reasoning import extract_reasoning_from_chunk
+                reasoning_content = extract_reasoning_from_chunk(delta) or ""
 
                 if content:
                     _content_total += len(content)
