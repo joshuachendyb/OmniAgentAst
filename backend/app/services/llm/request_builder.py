@@ -10,7 +10,6 @@ Author: 小健 - 2026-05-27
 
 from typing import List, Dict, Optional
 
-from app.services.agent.agent_utils.message_utils import build_llm_messages
 
 
 def build_request_body(
@@ -47,22 +46,6 @@ def build_request_body(
     return body
 
 
-def build_messages(message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
-    """构建消息列表 — 委托给MessageBuilder统一入口 — 小健 2026-05-27
-
-    DRY原则:LLM层不自行组装消息列表,委托给MessageBuilder。
-
-    Args:
-        message: 用户消息
-        history: 历史消息列表
-
-    Returns:
-        消息列表
-    """
-    return build_llm_messages(message, history)
-
-
 __all__ = [
     "build_request_body",
-    "build_messages",
 ]

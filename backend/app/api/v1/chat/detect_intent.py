@@ -1,22 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-detect_intent — 纯CRSS意图检测
+detect_intent — 纯CRSS意图检测,走直线
 
-Author: 小沈 - 2026-06-07
+直接调crss_scorer.detect_intent_v2,无中间层
+
+Author: 小沈 - 2026-06-08
 """
 
 from typing import Tuple, List
 
-from app.api.v1.chat.route_with_fallback import route_with_fallback
+from app.services.intents.crss_scorer import detect_intent_v2
+from app.utils.logger import logger
 
 
 async def detect_intent(user_input: str) -> Tuple[str, str, float, List[str]]:
-    """纯CRSS意图检测,无LLM兜底"""
-    intent_info = await route_with_fallback(user_input)
-    intent_value = intent_info["intent"]
-    source = intent_info.get("source", "unknown")
-    conf = intent_info["confidence"]
-    candidates = [c.value for c in intent_info.get("candidates", []) if c]
-    if intent_value is not None:
-        return intent_value.value, source, conf, candidates
-    return "system", source, conf, candidates
+    primary, candidates, confidence = detect_intent_v2(user_input)
+    if primary is not None:
+        logger.info(f"[detect_intent] CRSS → intent={primary.value}, conf={confidence}")
+        return primary.value, "crss", confidence, [c.value for c in candidates if c]
+    logger.info(f"[detect_intent] CRSS无匹配, confidence={confidence}")
+    return "system", "crss_no_match", confidence, []

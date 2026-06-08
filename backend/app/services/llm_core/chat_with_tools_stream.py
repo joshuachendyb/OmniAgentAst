@@ -13,7 +13,7 @@ from typing import List, Dict, Any, Optional, AsyncGenerator
 from app.utils.logger import logger
 from app.services.llm.core import StreamChunk
 from app.services.llm.stream_parser import parse_sse_stream, handle_http_error_stream
-from app.services.llm.request_builder import build_messages
+from app.services.agent.agent_utils.message_utils import build_llm_messages
 
 
 class ChatWithToolsStreamMixin:
@@ -30,7 +30,7 @@ class ChatWithToolsStreamMixin:
         self.reset_cancel()
 
         try:
-            messages = build_messages(message, history)
+            messages = build_llm_messages(message, history)
 
             request_json = {"model": self.model, "messages": messages, "stream": True}
             if tools:
