@@ -15,7 +15,6 @@ from typing import List, Dict, Optional, AsyncGenerator, Any
 
 from app.utils.logger import logger
 from app.utils.retry_engine import RetryEngine, BackoffStrategy
-from app.utils.retry import create_network_retry_engine
 from app.services.llm.core import (
     ChatResponse, StreamChunk, _StreamRetryContext, _resolve_exception,
 )
@@ -49,7 +48,6 @@ class BaseAIService(ChatWithToolsStreamMixin, ToolCallerMixin):
         self.timeout = int(timeout_value)
         self._cancelled = False
         self._current_response: Optional[httpx.Response] = None
-        self._network_engine = create_network_retry_engine()
 
     def _ensure_client(self):
         if self._llm_sdk is None:
