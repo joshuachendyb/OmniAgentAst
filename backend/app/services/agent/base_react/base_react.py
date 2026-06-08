@@ -73,6 +73,31 @@ class BaseAgent(ABC):
     async def _get_llm_response(self) -> str:
         return await self._call_llm()
 
+    async def _call_llm(self) -> str:
+        """调用LLM — 聚合chat_with_tools_stream返回完整响应
+        小健 - 2026-06-08 实现ReAct循环的LLM调用
+        """
+        from app.services.agent.agent_utils.message_utils import build_llm_messages
+        messages = build_llm_messages("", self.message_builder.conversation_history)
+        
+        # 如果有tools策略且定义了openai_tools，使用Function Calling
+        if hasattr(self, 'openai_tools') and self.openai_tools:
+            tools = self.openai_tools
+        else:
+            tools = None
+        
+        full_content = ""
+        async for chunk in self.llm_client.chat_with_tools_stream(
+            message="", history=messages, tools=tools,
+        ):
+            if chunk.stream_error:
+                raise Exception(chunk.stream_error)
+            if chunk.content:
+                full_content += chunk.content
+            if chunk.is_done:
+                break
+        return full_content.strip() or full_content
+
     @abstractmethod
     def _get_system_prompt(self) -> str:
         pass
