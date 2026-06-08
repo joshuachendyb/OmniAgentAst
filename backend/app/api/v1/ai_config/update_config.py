@@ -7,7 +7,7 @@ from ._auto_fix_and_validate import _auto_fix_and_validate
 from ._restore_backup_if_needed import _restore_backup_if_needed
 from fastapi import HTTPException
 from app.config import get_config as get_config_instance
-from app.services import AIServiceFactory
+from app.services import clear_backup_paths
 from app.utils.logger import logger
 
 
@@ -47,7 +47,7 @@ async def update_config(config_update: ConfigUpdate):
                 logger.info(f"验证成功,已删除备份文件:{backup_path}")
             except Exception as e:
                 logger.warning(f"删除备份文件失败:{e}")
-        AIServiceFactory.clear_backup_paths()
+        clear_backup_paths()
 
         current_provider = config_data.get('ai', {}).get('provider', '')
         current_model = config_data.get('ai', {}).get('model', '')

@@ -174,6 +174,12 @@ class ToolRegistry:
         """获取所有工具实现"""
         return self._implementations.copy()
 
+    
+    def get_implementations_by_category(self, category: ToolCategory) -> Dict[str, Callable]:
+        """按分类一次遍历获取 {name: implementation}，消除N+1查询 — 小沈 2026-06-08"""
+        tool_names = self._categories.get(category, [])
+        return {name: self._implementations[name] for name in tool_names if name in self._implementations}
+
     def __len__(self) -> int:
         """返回已注册工具数量"""
         return len(self._tools)
