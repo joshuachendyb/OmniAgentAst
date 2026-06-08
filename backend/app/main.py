@@ -127,8 +127,8 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """应用关闭时清理资源"""
-    from app.services.factory import AIServiceFactory
-    await AIServiceFactory.reset()
+    from app.services.factory import reset
+    await reset()
 
     from app.services.tools.shell.shell_tools import cleanup_background_shells
     count = cleanup_background_shells()

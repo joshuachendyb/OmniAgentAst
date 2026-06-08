@@ -2,6 +2,8 @@
 """
 factory — 从 factory.py 拆出的职责
 
+小健 - 2026-06-08 清理:删除AIServiceFactory死代码
+
 - ConfigValidationResult: 模型
 - close_instance/close_instance_sync: 服务生命周期
 - get_config_path: 配置路径
@@ -23,10 +25,8 @@ from app.services.factory.get_service_for_model import get_service_for_model
 from app.services.factory.set_backup_paths import set_backup_paths
 from app.services.factory.get_backup_paths import get_backup_paths
 from app.services.factory.clear_backup_paths import clear_backup_paths
-from app.services.factory.ai_service_factory import AIServiceFactory
 
 __all__ = [
-    "AIServiceFactory",
     "ConfigValidationResult",
     "close_instance", "close_instance_sync", "get_config_path",
     "make_validation_error", "validate_credentials", "validate_config",

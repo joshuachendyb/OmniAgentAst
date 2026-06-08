@@ -25,6 +25,7 @@ from app.services.agent.base_react.tool_manager import ToolManager
 from app.services.agent.base_react.step_emitter import StepEmitter
 from app.services.agent.base_react.run_stream import run_stream
 from app.services.agent.base_react.initialize_run_state import initialize_run_state
+from app.services.agent.tool_retry_engine import ToolRetryEngine
 
 
 class BaseAgent(ABC):
@@ -48,6 +49,7 @@ class BaseAgent(ABC):
         AgentInitializer._init_messages(self)
         self._tool_manager = ToolManager(self)
         self._tool_manager.init_tools()
+        self._retry_engine = ToolRetryEngine(self._tools_dict)
         self._init_llm_strategies()
         AgentInitializer._init_task_tracking(self, enable=rollback_enabled)
         AgentInitializer._init_candidates(self, candidates)
@@ -58,8 +60,7 @@ class BaseAgent(ABC):
 
 
     async def _execute_tool(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
-        from app.services.agent.tool_executor import execute_tool_with_unified_retry
-        return await execute_tool_with_unified_retry(action, action_input, self._tools_dict)
+        return await self._retry_engine.execute_tool_with_retry(action, action_input)
 
     @property
     def conversation_history(self) -> List[Dict[str, str]]:

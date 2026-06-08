@@ -1,6 +1,6 @@
 from fastapi import HTTPException
 from app.utils.logger import logger
-from app.services import AIServiceFactory
+from app.services import reset
 
 
 def _update_provider(config_data: dict, update) -> None:
@@ -8,5 +8,5 @@ def _update_provider(config_data: dict, update) -> None:
     if update.ai_provider not in ai_config:
         raise HTTPException(status_code=400, detail=f"不支持的提供商: {update.ai_provider}")
     config_data['ai']['provider'] = update.ai_provider
-    AIServiceFactory.reset()
+    reset()
     logger.info(f"更新AI Provider: {update.ai_provider}")

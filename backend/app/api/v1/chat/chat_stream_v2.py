@@ -11,7 +11,7 @@ task操作只在本层处理:register → interrupt检查 → pause检查 → st
 import uuid
 from fastapi.responses import StreamingResponse, PlainTextResponse
 
-from app.services import AIServiceFactory
+from app.services import get_service
 from app.utils.logger import logger
 from app.chat_stream import create_error_response, save_execution_steps_to_db
 from app.api.v1.chat.models import ChatRequest
@@ -35,7 +35,7 @@ async def chat_stream_v2(request: ChatRequest):
     user_input = request.messages[-1].content
     intent_type, source, confidence, candidates = await detect_intent(user_input)
     logger.debug(f"[chat_stream_v2] 意图检测: {intent_type} (source={source}, confidence={confidence})")
-    ai_service = AIServiceFactory.get_service()
+    ai_service = get_service()
     session_id = request.session_id or str(uuid.uuid4())
 
     async def generate():

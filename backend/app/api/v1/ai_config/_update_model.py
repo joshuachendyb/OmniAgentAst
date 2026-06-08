@@ -1,5 +1,5 @@
 from app.utils.logger import logger
-from app.services import AIServiceFactory
+from app.services import reset
 
 
 def _update_model(config_data: dict, update) -> None:
@@ -13,4 +13,4 @@ def _update_model(config_data: dict, update) -> None:
     if provider in config_data.get('ai', {}):
         config_data['ai']['model'] = update.ai_model
         logger.info(f"更新AI Model: {update.ai_model} (provider={provider})")
-        AIServiceFactory.reset()
+        reset()

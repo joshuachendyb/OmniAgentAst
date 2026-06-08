@@ -8,14 +8,14 @@ from typing import Any, Optional
 
 import yaml
 
-from app.services import AIServiceFactory
+from app.services import get_config_path, reset
 from app.utils.logger import logger
 from ._write_yaml_with_order import _write_yaml_with_order
 
 
 def get_config_path() -> Path:
     """获取配置文件路径(缓存式调用)"""
-    return Path(AIServiceFactory.get_config_path())
+    return Path(get_config_path())
 
 
 def read_yaml_config(config_path: Path) -> dict:
@@ -36,7 +36,7 @@ def reload_ai_config() -> None:
     from app.config import get_config as get_config_instance
     config_obj = get_config_instance()
     config_obj._load_config()
-    AIServiceFactory.reset()
+    reset()
 
 
 def _set_app_field(config_data: dict, field_name: str, value: Any, display_name: str = "") -> None:
