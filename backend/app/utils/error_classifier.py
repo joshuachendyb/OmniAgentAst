@@ -290,42 +290,7 @@ class UnifiedErrorClassifier:
         }
     
     @staticmethod
-    def is_network_or_api_error(error_message: str) -> Tuple[bool, Optional[str]]:
-        """
-        判断错误是否为网络/API错误
-        
-        Args:
-            error_message: 错误消息字符串
-            
-        Returns:
-            (is_network, error_type) 元组
-        """
-        if not error_message:
-            return (False, None)
-        
-        error_lower = error_message.lower()
-        
-        network_patterns = [
-            ("connection", "connection_error"),
-            ("timeout", "timeout"),
-            ("network", "network_error"),
-            ("http 429", "rate_limit"),
-            ("rate limit", "rate_limit"),
-            ("http 401", "unauthorized"),
-            ("unauthorized", "unauthorized"),
-            ("http 403", "forbidden"),
-            ("forbidden", "forbidden"),
-            ("http 5", "server_error"),
-            ("internal server error", "server_error"),
-        ]
-        
-        for pattern, error_type in network_patterns:
-            if pattern in error_lower:
-                return (True, error_type)
-        
-        return (False, None)
-    
-    @staticmethod
+
     def extract_api_error_detail(error_message: str) -> str:
         """从API错误JSON中提取message/type/param/code — 小欧 2026-06-07
         
@@ -348,25 +313,3 @@ class UnifiedErrorClassifier:
             if m and (key != "param" or m.group(1)):
                 parts.append(f"{key}={m.group(1)}")
         return ", ".join(parts)
-        
-        # 检查HTTP状态码
-        for match in re.finditer(r'\b(\d{3})\b', error_message):
-            code = int(match.group(1))
-            if code in HTTP_STATUS_TO_ERROR_TYPE:
-                error_category = HTTP_STATUS_TO_ERROR_TYPE[code]
-                is_network = (
-                    error_category.value.startswith("api_error_") and error_category != ErrorCategory.API_BAD_REQUEST
-                    or error_category in [ErrorCategory.NETWORK, ErrorCategory.CONNECT, ErrorCategory.PROTOCOL, ErrorCategory.TIMEOUT]
-                )
-                return (is_network, error_category.value)
-        
-        msg_lower = error_message.lower()
-        # 关键词匹配
-        if "rate limit" in msg_lower or "too many requests" in msg_lower or "limit_error" in msg_lower:
-            return (True, ErrorCategory.API_RATE_LIMIT.value)
-        if "auth" in msg_lower or "unauthorized" in msg_lower:
-            return (False, ErrorCategory.API_UNAUTHORIZED.value)
-        if "forbidden" in msg_lower:
-            return (False, ErrorCategory.API_FORBIDDEN.value)
-        
-        return (False, None)

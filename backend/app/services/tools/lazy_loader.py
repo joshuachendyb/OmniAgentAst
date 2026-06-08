@@ -72,27 +72,7 @@ def ensure_tools_registered() -> None:
         logger.warning(f"[Tools] 部分分类注册失败,已注册{len(_registered_categories)}个分类,下次调用将重试")
 
 
-def reset_registered_state() -> None:
-    """重置注册状态(仅用于测试) - 小健 2026-05-14
-    
-    在测试套件中重置注册状态,用于隔离测试。
-    """
-    from app.services.tools.registry import tool_registry
-    global _tools_registered
-    _tools_registered = False
-    _registered_categories.clear()
-    tool_registry._tools.clear()
-    tool_registry._categories.clear()
-    tool_registry._implementations.clear()
-
-
-def is_tools_registered() -> bool:
-    """检查工具是否已注册"""
-    return _tools_registered
-
 
 __all__ = [
     "ensure_tools_registered",
-    "is_tools_registered",
-    "reset_registered_state",
 ]

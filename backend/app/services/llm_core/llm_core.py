@@ -19,7 +19,7 @@ from app.services.llm.core import (
     ChatResponse, StreamChunk, _StreamRetryContext, _resolve_exception,
 )
 from app.services.llm.stream_parser import create_cancelled_chunk
-from app.services.llm.request_builder import build_request_body
+
 from app.services.llm.client_sdk import create_llm_client
 from app.constants import DEFAULT_LLM_TIMEOUT, RATE_LIMIT_STATUS_CODES
 
@@ -59,14 +59,6 @@ class BaseAIService(ChatWithToolsStreamMixin, ToolCallerMixin):
                 timeout=self.timeout,
             )
 
-    async def __call__(self, message: str, history: Optional[List[Dict]] = None) -> "ChatResponse":
-        return await self.chat(message, history)
-
-    def _build_request_body(self, messages: List[Dict]) -> Dict:
-        return build_request_body(
-            messages, model=self.model, max_tokens=self.max_tokens,
-            temperature=self.temperature, seed=self.seed, stream=True
-        )
 
     def cancel(self):
         logger.info(f"[BaseAIService.cancel] 正在强制取消请求, model={self.model}")
@@ -108,9 +100,6 @@ class BaseAIService(ChatWithToolsStreamMixin, ToolCallerMixin):
 
     chat = chat
 
-    async def chat_stream(self, message: str, history=None):
-        async for chunk in self.chat_with_tools_stream(message, history):
-            yield chunk
 
     def _build_api_url(self) -> str:
         return f"{self.api_base}/chat/completions"

@@ -111,8 +111,7 @@ async def run_stream(
 
                 # 将observation加入conversation history供LLM下一轮使用
                 self.message_builder.add_observation(
-                    tool_name=tool_name,
-                    result=result,
+                    observation_text=str(result)
                 )
 
             elif parsed_type == "answer" or parsed_type == "implicit":

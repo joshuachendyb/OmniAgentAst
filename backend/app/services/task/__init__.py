@@ -39,7 +39,7 @@ from app.services.task.task_resume import resume_task
 from app.services.task.task_cleanup import task_cleanup
 from app.services.task.task_cancel_check import task_cancel_check_and_yield
 from app.services.task.task_incident_check import (
-    create_incident_data,
+
     task_interrupt_check,
     task_pause_check,
 )
@@ -69,7 +69,7 @@ __all__ = [
     "resume_task",
     "task_cleanup",
     "task_cancel_check_and_yield",
-    "create_incident_data",
+
     "task_interrupt_check",
     "task_pause_check",
     # tracker/queries

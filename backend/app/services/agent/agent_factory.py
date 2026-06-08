@@ -48,11 +48,4 @@ class AgentFactory:
             candidates=candidates,
             **kwargs
         )
-    
-    @classmethod
-    def list_available_agents(cls) -> Dict[str, str]:
-        """列出所有可用的Agent"""
-        return {
-            config.intent_type: config.agent_class_name or "UnknownAgent"
-            for config in AGENT_REGISTRY.values()
-        }
+

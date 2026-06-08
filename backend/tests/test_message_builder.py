@@ -12,7 +12,7 @@ MessageBuilder 单元测试 — 小沈 2026-05-21
 import pytest
 import json
 from app.services.agent.message_builder import MessageBuilder
-from app.services.agent.agent_utils.message_utils import build_observation_text, inject_tools_info, inject_schema_text
+from app.services.agent.agent_utils.message_utils import build_observation_text, inject_tools_info
 
 
 # =============================================================================
@@ -242,24 +242,6 @@ class TestInjectToolsInfo:
         result = inject_tools_info(history, "【工具】info")
         assert len(result) == 3
         assert result[-1] == {"role": "system", "content": "【工具】info"}
-
-
-class TestInjectSchemaText:
-    """inject_schema_text() 测试"""
-
-    def test_inject_appends_schema(self):
-        """Schema 文本应追加到末尾"""
-        history = [{"role": "system", "content": "sys"}]
-        result = inject_schema_text(history, "【Schema】params")
-        assert len(result) == 2
-        assert "【Schema】" in result[1]["content"]
-
-    def test_inject_no_text_no_change(self):
-        """schema_text 为空时不修改"""
-        history = [{"role": "system", "content": "sys"}]
-        result = inject_schema_text(history, "")
-        assert result == history
-
 
 
 # =============================================================================
