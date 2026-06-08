@@ -9,7 +9,7 @@ run_stream — ReAct 循环核心
 1. initialize_run_state — 初始化状态
 2. while steps < max_steps:
    a. _call_llm → LLM响应
-   b. parse_react_response → 解析为dict
+   b. parse_llm_response → 解析为dict
    c. 根据type产出Step并yield
    d. action → _execute_tool → 追加observation
 3. final → yield final step
@@ -19,7 +19,7 @@ run_stream — ReAct 循环核心
 from typing import Any, Dict, Optional, AsyncGenerator
 
 from app.utils.logger import logger
-from app.services.agent.llm_response_parser import parse_react_response
+from app.services.agent.llm_response_parser import parse_llm_response
 from app.services.agent.steps import (
     StartStep, ThoughtStep, ActionToolStep,
     ObservationStep, FinalStep, ErrorStep,
@@ -60,7 +60,7 @@ async def run_stream(
                 break
 
             # 4. 解析LLM响应
-            parsed = parse_react_response(llm_response)
+            parsed = parse_llm_response(llm_response)
             parsed_type = parsed.get("type", "parse_error")
 
             # 4a. reasoning chunk（如果LLM返回了思考过程）
