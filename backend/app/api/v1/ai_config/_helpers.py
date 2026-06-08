@@ -1,21 +1,83 @@
-"""ai_config 包内部公用函数 — 配置路径 / YAML 读写 / 通用字段更新
+"""ai_config 包内部公用函数 — YAML读写/配置修复/验证/备份/装饰器
 
-【小健 2026-05-31】新建:从各 endpoint 文件中提取公共模式
+原分散文件: _ordered_dict.py, _write_yaml_with_order.py, _backup_config.py,
+_restore_backup_if_needed.py, _fix_config_common_issues.py, _auto_fix_and_validate.py,
+_validate_config_integrity.py, _decorators.py
+F10合并: 小欧 - 2026-06-08
 """
 
-from pathlib import Path
-from typing import Any, Optional
-
+import shutil
 import yaml
+from collections import OrderedDict
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
-from app.services import get_config_path, reset
+from app.services import get_config_path as _get_config_path, reset
 from app.utils.logger import logger
-from ._write_yaml_with_order import _write_yaml_with_order
+from app.utils.response_utils import handle_api_errors as handle_config_errors
 
+
+# ====================================================================
+# 装饰器
+# ====================================================================
+
+__all__ = ["handle_config_errors"]
+
+
+# ====================================================================
+# YAML 有序写入
+# ====================================================================
+
+def _ordered_dict(data: dict) -> OrderedDict:
+    if not isinstance(data, dict):
+        return data
+    result = OrderedDict()
+    if 'ai' in data:
+        ai_data = data['ai']
+        ai_ordered = OrderedDict()
+        if 'provider' in ai_data:
+            ai_ordered['provider'] = ai_data['provider']
+        if 'model' in ai_data:
+            ai_ordered['model'] = ai_data['model']
+        for key in sorted(ai_data.keys()):
+            if key not in ('provider', 'model'):
+                value = ai_data[key]
+                if isinstance(value, dict):
+                    ai_ordered[key] = _ordered_dict(value)
+                else:
+                    ai_ordered[key] = value
+        result['ai'] = ai_ordered
+    for key in sorted(data.keys()):
+        if key != 'ai':
+            value = data[key]
+            if isinstance(value, dict):
+                result[key] = _ordered_dict(value)
+            else:
+                result[key] = value
+    return result
+
+
+def _represent_ordereddict(dumper, data):
+    return dumper.represent_dict(data.items())
+
+
+yaml.add_representer(OrderedDict, _represent_ordereddict)
+
+
+def _write_yaml_with_order(file_path: str, data: dict):
+    """使用OrderedDict写入YAML,保持特定顺序"""
+    ordered_data = _ordered_dict(data)
+    with open(file_path, 'w', encoding='utf-8') as f:
+        yaml.dump(ordered_data, f, allow_unicode=True, default_flow_style=False)
+
+
+# ====================================================================
+# 配置路径 / 读写
+# ====================================================================
 
 def get_config_path() -> Path:
     """获取配置文件路径(缓存式调用)"""
-    return Path(get_config_path())
+    return Path(_get_config_path())
 
 
 def read_yaml_config(config_path: Path) -> dict:
@@ -40,6 +102,141 @@ def reload_ai_config() -> None:
 
 
 def _set_app_field(config_data: dict, field_name: str, value: Any, display_name: str = "") -> None:
-    """设置 app 下单一字段,替换 _update_theme / _update_language"""
+    """设置 app 下单一字段"""
     config_data.setdefault('app', {})[field_name] = value
     logger.info(f"更新{display_name or field_name}: {value}")
+
+
+# ====================================================================
+# 备份 / 恢复
+# ====================================================================
+
+def _backup_config(config_path: Path) -> Path:
+    """备份配置文件"""
+    from app.services.tools.toolhelper.file_helpers import backup_file
+    result = backup_file(str(config_path), suffix=".backup")
+    if result.get("code") != "SUCCESS":
+        raise RuntimeError(f"配置文件备份失败: {result.get('message', '')}")
+    bp = Path(result["data"]["backup_path"])
+    logger.info(f"配置文件已备份: {bp}")
+    return bp
+
+
+def _restore_backup_if_needed(
+    backup_path: Optional[Path], config_path: Optional[Path],
+    restored_flag: List[bool],
+) -> bool:
+    """恢复备份配置(仅一次)"""
+    if restored_flag[0]:
+        return False
+    if not backup_path or not config_path or not backup_path.exists():
+        return False
+    try:
+        shutil.copy2(str(backup_path), str(config_path))
+        restored_flag[0] = True
+        logger.warning(f"已从备份恢复配置: {backup_path}")
+        return True
+    except Exception as e:
+        logger.error(f"备份恢复失败: {e}")
+        return False
+
+
+# ====================================================================
+# 配置修复
+# ====================================================================
+
+def _fix_config_common_issues(config_data: Dict[str, Any]) -> Dict[str, Any]:
+    """自动修复常见的配置问题(删除provider下废弃的model字段)"""
+    ai_config = config_data.get('ai', {})
+    for provider_name in ai_config.keys():
+        if provider_name == 'provider' or provider_name == 'model':
+            continue
+        provider_data = ai_config.get(provider_name, {})
+        if isinstance(provider_data, dict) and 'model' in provider_data:
+            del provider_data['model']
+            logger.info(f"已删除 provider '{provider_name}' 下废弃的 model 字段")
+    return config_data
+
+
+# ====================================================================
+# 配置验证
+# ====================================================================
+
+def _validate_config_integrity(config_data: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
+    """完整验证配置文件完整性: (是否通过, 错误列表, 警告列表)"""
+    errors = []
+    warnings = []
+    ai_config = config_data.get('ai', {})
+
+    if 'provider' not in ai_config:
+        errors.append("缺少 ai.provider 字段")
+    if 'model' not in ai_config:
+        errors.append("缺少 ai.model 字段")
+    if errors:
+        return False, errors, warnings
+
+    selected_provider = ai_config['provider']
+    selected_model = ai_config['model']
+
+    if selected_provider not in ai_config:
+        errors.append(f"provider '{selected_provider}' 不存在")
+        return False, errors, warnings
+
+    provider_config = ai_config[selected_provider]
+
+    if 'api_base' not in provider_config:
+        errors.append(f"provider '{selected_provider}' 缺少 api_base 字段")
+    if 'api_key' not in provider_config:
+        errors.append(f"provider '{selected_provider}' 缺少 api_key 字段")
+    if errors:
+        return False, errors, warnings
+
+    if 'models' not in provider_config:
+        errors.append(f"provider '{selected_provider}' 缺少 models 列表")
+        return False, errors, warnings
+
+    models_list = provider_config['models']
+
+    if selected_model not in models_list:
+        errors.append(f"model '{selected_model}' 不在 provider '{selected_provider}' 的 models 列表中")
+        return False, errors, warnings
+
+    for provider_name in ai_config.keys():
+        if provider_name == 'provider' or provider_name == 'model':
+            continue
+        provider_data = ai_config.get(provider_name, {})
+        if isinstance(provider_data, dict) and 'model' in provider_data:
+            warnings.append(f"provider '{provider_name}' 下有废弃的 model 字段,建议删除")
+
+    return True, errors, warnings
+
+
+# ====================================================================
+# 自动修复 + 验证
+# ====================================================================
+
+def _auto_fix_and_validate(
+    config_data: dict, config_path: Path, backup_path: Optional[Path],
+    original_config_data: dict,
+) -> Tuple[bool, List[str], List[str], Optional[Dict[str, Any]]]:
+    """自动修复+验证,失败则恢复备份"""
+    from app.config import get_config as get_config_instance
+    config_data = _fix_config_common_issues(config_data)
+    is_valid, errors, warnings = _validate_config_integrity(config_data)
+    if not is_valid:
+        _restore_backup_if_needed(backup_path, config_path, [False])
+        get_config_instance().reload()
+        if backup_path and backup_path.exists():
+            try:
+                backup_path.unlink()
+            except Exception:
+                pass
+        original_ai = original_config_data.get('ai', {})
+        fail_result = {
+            "success": False, "message": "配置验证失败", "errors": errors, "warnings": warnings,
+            "backup_path": str(backup_path) if backup_path else None,
+            "current_provider": original_ai.get('provider', 'unknown'),
+            "current_model": original_ai.get('model', 'unknown'),
+        }
+        return False, errors, warnings, fail_result
+    return True, [], warnings, None

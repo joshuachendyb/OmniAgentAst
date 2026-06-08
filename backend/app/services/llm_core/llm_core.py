@@ -60,16 +60,13 @@ class BaseAIService(ChatWithToolsStreamMixin, ToolCallerMixin):
             )
 
 
-    def cancel(self):
+    async def cancel(self):
         logger.info(f"[BaseAIService.cancel] 正在强制取消请求, model={self.model}")
         self._cancelled = True
         if self._current_response:
             try:
                 if hasattr(self._current_response, 'aclose'):
-                    try:
-                        asyncio.get_event_loop().run_until_complete(self._current_response.aclose())
-                    except RuntimeError:
-                        pass
+                    await self._current_response.aclose()
                 else:
                     self._current_response.close()
                 logger.info("[BaseAIService.cancel] HTTP响应已强制关闭")

@@ -3,20 +3,18 @@
 task_cleanup — 任务完成后清理
 
 统一: 小健 - 2026-05-31
+F4修复: 删除agent_llm_holder -> 小欧 2026-06-08
 """
 
-from typing import Dict, Any
 from app.utils.logger import logger
 from app.services.task.task_registry import cleanup_task as registry_cleanup
 
 
 async def task_cleanup(
     task_id: str,
-    agent_llm_holder: Dict[str, Any],
-    llm_call_count: int,
+    llm_call_count: int = 0,
 ) -> None:
     """任务完成后清理"""
-    reported_llm = agent_llm_holder.get("n", 0) if agent_llm_holder.get("n", 0) > 0 else llm_call_count
     logger.info(
         f"[LLM Total Counter] ====== Conversation finished, total LLM calls: {reported_llm} ======"
     )

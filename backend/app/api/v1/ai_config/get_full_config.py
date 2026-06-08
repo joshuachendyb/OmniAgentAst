@@ -1,6 +1,6 @@
 from . import router
 from .models import FullConfigResponse, ProviderInfo
-from ._decorators import handle_config_errors
+from ._helpers import handle_config_errors
 from app.services.ai_config_resolver import get_ai_config_resolver
 
 

@@ -66,5 +66,8 @@ class BaseAgent(ABC):
         from app.services.llm.stream_parser import create_cancelled_chunk
         return create_cancelled_chunk(getattr(self, 'model', 'unknown'))
 
-    # P2-16: 猴子补丁 → 正常方法 — 小欧 2026-06-08
-    run_react_cycle = run_react_cycle
+    async def run_react_cycle(self, task, context=None, max_steps=None, task_id=None):
+        """委托给独立模块的 run_react_cycle 实现"""
+        from app.services.agent.core_agent.react_cycle import run_react_cycle as _run
+        async for event in _run(self, task, context, max_steps, task_id):
+            yield event

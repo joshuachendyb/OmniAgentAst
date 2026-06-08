@@ -1,7 +1,7 @@
 from . import router
 from .models import ConfigPathResponse
 from ._helpers import get_config_path
-from ._decorators import handle_config_errors
+from ._helpers import handle_config_errors
 
 
 @router.get("/config/path", response_model=ConfigPathResponse)
