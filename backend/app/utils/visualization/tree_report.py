@@ -5,11 +5,71 @@
 """
 import json
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 
 from app.utils.visualization.common import OperationNode
 from app.db import db
 from app.utils.logger import logger
+
+
+def _query_tree_operations(task_id: str) -> List[Tuple]:
+    """查询树形操作记录 - 小沈 2026-06-08"""
+    with db.get_conn("operations") as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT operation_id, operation_type, source_path, destination_path, status
+            FROM file_operations WHERE task_id = ?
+            ORDER BY sequence_number ASC
+        ''', (task_id,))
+        return cursor.fetchall()
+
+
+def _build_tree_nodes(task_id: str, task_description: str, operations: List[Tuple]) -> OperationNode:
+    """构建树节点 - 小沈 2026-06-08"""
+    root = OperationNode(
+        id=task_id,
+        type="session",
+        name=task_description,
+        status="completed"
+    )
+    
+    for op_id, op_type, src, dst, status in operations:
+        node = OperationNode(
+            id=op_id,
+            type=op_type,
+            name=Path(src).name if src else (Path(dst).name if dst else "unknown"),
+            source=src,
+            destination=dst,
+            status=status
+        )
+        root.children.append(node)
+    
+    return root
+
+
+def _node_to_dict(node: OperationNode) -> dict:
+    """节点转字典 - 小沈 2026-06-08"""
+    result = {
+        "id": node.id,
+        "type": node.type,
+        "name": node.name,
+        "status": node.status
+    }
+    if node.source:
+        result["source"] = node.source
+    if node.destination:
+        result["destination"] = node.destination
+    if node.children:
+        result["children"] = [_node_to_dict(child) for child in node.children]
+    return result
+
+
+def _save_tree_json(tree_dict: dict, path: Path) -> None:
+    """保存树形JSON到文件 - 小沈 2026-06-08"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(tree_dict, ensure_ascii=False, indent=2), encoding='utf-8')
+    logger.info(f"Tree structure saved: {path}")
 
 
 def generate_tree_structure(task_id: str, task_description: str) -> OperationNode:
@@ -27,38 +87,12 @@ def generate_tree_structure(task_id: str, task_description: str) -> OperationNod
     Returns:
         根节点
     """
-    with db.get_conn("operations") as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_id, operation_type, source_path, destination_path, status
-            FROM file_operations WHERE task_id = ?
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-
-        operations = cursor.fetchall()
-
+    operations = _query_tree_operations(task_id)
+    
     if not operations:
         return None
-
-    root = OperationNode(
-        id=task_id,
-        type="session",
-        name=task_description,
-        status="completed"
-    )
-
-    for op_id, op_type, src, dst, status in operations:
-        node = OperationNode(
-            id=op_id,
-            type=op_type,
-            name=Path(src).name if src else (Path(dst).name if dst else "unknown"),
-            source=src,
-            destination=dst,
-            status=status
-        )
-        root.children.append(node)
-
-    return root
+    
+    return _build_tree_nodes(task_id, task_description, operations)
 
 
 def export_tree_to_json(task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
@@ -80,28 +114,10 @@ def export_tree_to_json(task_id: str, task_description: str, output_path: Option
     if not root:
         return "{}"
 
-    def node_to_dict(node: OperationNode) -> dict:
-        result = {
-            "id": node.id,
-            "type": node.type,
-            "name": node.name,
-            "status": node.status
-        }
-        if node.source:
-            result["source"] = node.source
-        if node.destination:
-            result["destination"] = node.destination
-        if node.children:
-            result["children"] = [node_to_dict(child) for child in node.children]
-        return result
-
-    tree_dict = node_to_dict(root)
+    tree_dict = _node_to_dict(root)
     json_str = json.dumps(tree_dict, ensure_ascii=False, indent=2)
 
     if output_path:
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json_str, encoding='utf-8')
-        logger.info(f"Tree structure saved: {output_path}")
+        _save_tree_json(tree_dict, output_path)
 
     return json_str

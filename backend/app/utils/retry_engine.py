@@ -123,6 +123,52 @@ class RetryEngine:
         raise last_error
 
 
+    async def _wait_before_retry(self, error: Optional[Exception]) -> None:
+        """等待重试 - 小沈 2026-06-08"""
+        delay = self._calculate_delay(self._attempt_count)
+        if self._on_retry:
+            self._on_retry(self._attempt_count, error)
+        else:
+            if error is None:
+                logger.warning(f"[RetryEngine] 结果需重试 {self._attempt_count}/{self._max_retries},{delay:.0f}s后重试")
+            else:
+                logger.warning(f"[RetryEngine] 异常重试 {self._attempt_count}/{self._max_retries}: {str(error)[:100]}")
+        await asyncio.sleep(delay)
+
+    async def _try_context(self, ctx_factory: Callable, result_check: Callable[[Any], bool]) -> tuple:
+        """尝试执行上下文操作 - 小沈 2026-06-08"""
+        ctx = ctx_factory()
+        result = await ctx.__aenter__()
+        self._attempt_count += 1
+
+        if not result_check(result):
+            return ctx, result
+
+        await ctx.__aexit__(None, None, None)
+
+        if self._attempt_count >= self._max_retries:
+            logger.error(f"[RetryEngine] 重试耗尽 {self._attempt_count}/{self._max_retries},返回最后结果")
+            return None, result
+
+        await self._wait_before_retry(None)
+        return None, None
+
+    async def _handle_context_exception(self, ctx, error: Exception):
+        """处理上下文异常 - 小沈 2026-06-08"""
+        if ctx is not None:
+            await ctx.__aexit__(type(error), error, error.__traceback__)
+        
+        if not self._is_retryable(error):
+            return error
+
+        self._attempt_count += 1
+        await self._wait_before_retry(error)
+
+        if self._attempt_count >= self._max_retries:
+            raise error
+
+        return None
+
     async def execute_async_context(
         self,
         ctx_factory: Callable,
@@ -153,51 +199,14 @@ class RetryEngine:
 
         while self._attempt_count <= self._max_retries:
             try:
-                ctx = ctx_factory()
-                result = await ctx.__aenter__()
-                self._attempt_count += 1
-
-                if not result_check(result):
+                ctx, result = await self._try_context(ctx_factory, result_check)
+                if result is not None:
                     return ctx, result
-
-                await ctx.__aexit__(None, None, None)
-                ctx = None
-
-                if self._attempt_count >= self._max_retries:
-                    logger.error(
-                        f"[RetryEngine] 重试耗尽 {self._attempt_count}/{self._max_retries},返回最后结果"
-                    )
-                    return ctx, result
-
-                delay = self._calculate_delay(self._attempt_count)
-                if self._on_retry:
-                    self._on_retry(self._attempt_count, None)
-                else:
-                    logger.warning(
-                        f"[RetryEngine] 结果需重试 {self._attempt_count}/{self._max_retries},{delay:.0f}s后重试"
-                    )
-                await asyncio.sleep(delay)
-
             except Exception as e:
-                if ctx is not None:
-                    await ctx.__aexit__(type(e), e, e.__traceback__)
-                    ctx = None
-                if not self._is_retryable(e):
-                    raise
-
-                self._attempt_count += 1
-                if self._on_retry:
-                    self._on_retry(self._attempt_count, e)
-                else:
-                    logger.warning(
-                        f"[RetryEngine] 异常重试 {self._attempt_count}/{self._max_retries}: {str(e)[:100]}"
-                    )
-
-                if self._attempt_count >= self._max_retries:
-                    raise
-
-                delay = self._calculate_delay(self._attempt_count)
-                await asyncio.sleep(delay)
+                exc = await self._handle_context_exception(ctx, e)
+                if exc is not None:
+                    raise exc
+                ctx = None
 
         return ctx, result
 

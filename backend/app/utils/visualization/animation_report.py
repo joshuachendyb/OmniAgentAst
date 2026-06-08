@@ -55,12 +55,17 @@ def build_animation_data(operations_data: List[Dict[str, Any]],
     返回数据说明:
     - operations/task_description/total_operations/success_count/error_count/operation_types
     """
-    success_count = sum(1 for op in operations_data if op.get("status") == "success")
-    error_count = sum(1 for op in operations_data if op.get("status") != "success")
+    success_count = 0
     operation_types: Dict[str, int] = {}
+    
     for op in operations_data:
+        if op.get("status") == "success":
+            success_count += 1
         op_type = op.get("type", "unknown")
         operation_types[op_type] = operation_types.get(op_type, 0) + 1
+    
+    error_count = len(operations_data) - success_count
+    
     return {
         "operations": operations_data,
         "task_description": task_description,
@@ -141,6 +146,21 @@ def render_animation_html(anim_data: Dict[str, Any], task_id: str) -> str:
     )
 
 
+def _save_html_file(content: str, path: Path) -> None:
+    """保存HTML内容到文件 — 小沈 2026-06-08
+    
+    使用场景:
+        generate_animation_script中保存HTML到指定路径
+    
+    使用示例:
+        _save_html_file(html_content, output_path)
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding='utf-8')
+    logger.info(f"Animation report saved: {path}")
+
+
 def generate_animation_script(task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
     """
     生成动画展示脚本(HTML + JavaScript)— 小沈 2026-03-25, 2026-05-25 小健重构拆分
@@ -162,9 +182,6 @@ def generate_animation_script(task_id: str, task_description: str, output_path: 
     html_content = render_animation_html(anim_data, task_id)
 
     if output_path:
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(html_content, encoding='utf-8')
-        logger.info(f"Animation report saved: {output_path}")
+        _save_html_file(html_content, output_path)
 
     return html_content
