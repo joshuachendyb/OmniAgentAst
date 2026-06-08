@@ -33,8 +33,8 @@ async def chat_stream_v2(request: ChatRequest):
         )
 
     user_input = request.messages[-1].content
-    intent_type, source, confidence, candidates = await detect_intent(user_input)
-    logger.debug(f"[chat_stream_v2] 意图检测: {intent_type} (source={source}, confidence={confidence})")
+    intent_type, confidence, candidates = detect_intent(user_input)
+    logger.debug(f"[chat_stream_v2] 意图检测: {intent_type} (confidence={confidence})")
     ai_service = get_service()
     session_id = request.session_id or str(uuid.uuid4())
 
@@ -42,7 +42,7 @@ async def chat_stream_v2(request: ChatRequest):
         task_id = str(uuid.uuid4())
         next_step = create_step_counter()
         execution_steps = []
-        agent_llm_holder = {"n": 0}
+        llm_call_count_holder = [0]
         current_content = ""
 
         try:
@@ -51,13 +51,11 @@ async def chat_stream_v2(request: ChatRequest):
             is_interrupted, interrupt_msg = await task_interrupt_check(task_id)
             if is_interrupted:
                 yield interrupt_msg
-                await save_execution_steps_to_db(session_id, execution_steps, current_content or "")
-                await task_cleanup(task_id, agent_llm_holder, 0)
+                await task_cleanup(task_id, 0)
                 return
 
             async for pause_event in task_pause_check(task_id):
                 yield pause_event
-                await save_execution_steps_to_db(session_id, execution_steps, current_content or "")
 
             async for event in step_start(ai_service, task_id, next_step, user_input, execution_steps, session_id):
                 yield event
@@ -67,7 +65,7 @@ async def chat_stream_v2(request: ChatRequest):
                 ai_service=ai_service, candidates=candidates, last_message=user_input,
                 next_step=next_step,
                 session_id=session_id, current_execution_steps=execution_steps,
-                current_content=current_content, agent_llm_holder=agent_llm_holder,
+                current_content=current_content, llm_call_count_holder=llm_call_count_holder,
             ):
                 cancelled_sse = await task_cancel_check_and_yield(
                     task_id, next_step, session_id, execution_steps, current_content
@@ -81,6 +79,6 @@ async def chat_stream_v2(request: ChatRequest):
             logger.error(f"[chat_stream_v2] Error: {e}", exc_info=True)
             yield create_error_response(error_type="router_error", error_message=f"路由异常: {str(e)}")
         finally:
-            await task_cleanup(task_id, agent_llm_holder, 0)
+            await task_cleanup(task_id, llm_call_count_holder[0])
 
     return StreamingResponse(generate(), media_type="text/event-stream")

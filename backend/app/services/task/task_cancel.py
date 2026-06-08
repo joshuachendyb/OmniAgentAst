@@ -31,7 +31,7 @@ async def cancel_task(task_id: str, session_id=None) -> dict:
     ai_service = await get_task_field(task_id, "ai_service")
     if ai_service:
         try:
-            ai_service.cancel()
+            await ai_service.cancel()
             logger.info(f"[Task Cancelled] 任务 {task_id} HTTP连接已强制关闭")
         except Exception as e:
             logger.error(f"[Task Cancelled] 关闭HTTP连接失败: {e}")

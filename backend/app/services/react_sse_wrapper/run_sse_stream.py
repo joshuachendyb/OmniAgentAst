@@ -24,7 +24,7 @@ async def run_sse_stream(
     session_id: str,
     current_execution_steps: List,
     current_content: str,
-    agent_llm_holder: Optional[Dict[str, Any]] = None,
+    llm_call_count_holder: list = None,
 ) -> AsyncGenerator[str, None]:
     """纯SSE流运行器 — 直接to_dict(), final时批量保存"""
     from app.services.agent.agent_factory import AgentFactory
@@ -82,8 +82,8 @@ async def run_sse_stream(
         )
         yield error_response
     finally:
-        if agent_llm_holder is not None and agent is not None:
-            agent_llm_holder["n"] = getattr(agent, "llm_call_count", 0)
+        if llm_call_count_holder is not None and agent is not None:
+            llm_call_count_holder[0] = getattr(agent, "llm_call_count", 0)
 
 
 async def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_step, ai_service, current_execution_steps, session_id):

@@ -2,9 +2,6 @@
 """
 UniversalAgent — 配置驱动的通用 Agent
 
-【待实现】mixin体系删除后ReAct循环逻辑未迁移，run_react_cycle()目前是占位符。
-当前AgentFactory.create()创建的Agent调用run()会返回not_implemented错误。
-
 Author: 小沈 - 2026-06-07
 Updated: 小沈 - 2026-06-08 清理空壳
 """

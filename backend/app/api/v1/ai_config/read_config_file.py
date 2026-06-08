@@ -1,6 +1,6 @@
 from . import router
 from ._helpers import get_config_path
-from ._decorators import handle_config_errors
+from ._helpers import handle_config_errors
 from fastapi import HTTPException
 
 

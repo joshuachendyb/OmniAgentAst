@@ -36,7 +36,9 @@ async def register_task(task_id: str, ai_service: Any) -> None:
             "created_at": datetime.now(),
             "ai_service": ai_service,
             "_task": asyncio.current_task(),
+            "_pause_event": asyncio.Event(),
         }
+        _running_tasks[task_id]["_pause_event"].set()
 
 
 async def cleanup_task(task_id: str) -> bool:
@@ -118,6 +120,13 @@ async def pop_task_field(task_id: str, field: str) -> Any:
         return None
 
 
+async def get_pause_event(task_id: str) -> Optional[asyncio.Event]:
+    """获取任务的暂停事件 — 用于事件驱动等待"""
+    async with _running_tasks_lock:
+        task = _running_tasks.get(task_id)
+        return task.get("_pause_event") if task else None
+
+
 async def get_task_field(task_id: str, field: str) -> Any:
     """读取任务的一个字段"""
     async with _running_tasks_lock:
@@ -151,6 +160,9 @@ async def set_paused(task_id: str) -> dict:
             return {"success": False, "message": f"任务 {task_id} 已被中断,无法暂停"}
         task["paused"] = True
         task["status"] = "paused"
+        pause_event = task.get("_pause_event")
+        if pause_event:
+            pause_event.clear()
         return {"success": True, "message": f"任务 {task_id} 已暂停"}
 
 
@@ -166,6 +178,9 @@ async def set_resumed(task_id: str) -> dict:
             return {"success": False, "message": f"任务 {task_id} 未暂停,无法恢复"}
         task["paused"] = False
         task["status"] = "running"
+        pause_event = task.get("_pause_event")
+        if pause_event:
+            pause_event.set()
         return {"success": True, "message": f"任务 {task_id} 已继续"}
 
 
