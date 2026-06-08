@@ -227,6 +227,16 @@ class ToolRegistry:
         """返回分类→工具名列表映射(copy防外部修改)— 小沈 2026-05-25"""
         return {k: list(v) for k, v in self._categories.items()}
 
+    def to_openai_tools(self, category: Optional[ToolCategory] = None) -> list:
+        """生成OpenAI API格式的tools定义 — 委托给tool_description.to_openai_tools — 小沈 2026-06-09"""
+        from app.services.tools.tool_description import to_openai_tools
+        return to_openai_tools(self, category=category)
+
+    def generate_param_reminder(self, category: Optional[ToolCategory] = None, style: str = "code") -> str:
+        """自动生成Parameter Reminder — 委托给tool_description.generate_param_reminder — 小沈 2026-06-09"""
+        from app.services.tools.tool_description import generate_param_reminder
+        return generate_param_reminder(self, category=category, style=style)
+
 
 # 全局工具注册表实例
 tool_registry = ToolRegistry()

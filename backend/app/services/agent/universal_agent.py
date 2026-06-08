@@ -64,9 +64,178 @@ class UniversalAgent(BaseAgent):
             )
 
     def _get_system_prompt(self) -> str:
-        if hasattr(self, 'config') and self.config:
-            return f"System: {self.config.category_display_name}"
-        return "System: 通用助手"
+        if not hasattr(self, 'prompts') or not self.prompts:
+            return "System: 通用助手"
+        base_prompt = self.prompts.build_full_system_prompt()
+        candidates_hint = self._build_candidates_hint()
+        cross_tool_hint = self._build_cross_tool_hint()
+        parts = [base_prompt]
+        if candidates_hint:
+            parts.append(candidates_hint)
+        if cross_tool_hint:
+            parts.append(cross_tool_hint)
+        return "\n\n".join(parts)
+
+    def _build_candidates_hint(self) -> str:
+        if not self._candidates:
+            return ""
+        from app.services.agent.agent_config import resolve_agent_config
+        names = []
+        for c in self._candidates:
+            cfg = resolve_agent_config(c)
+            if cfg:
+                names.append(f"{cfg.category_display_name}({c})")
+        if not names:
+            return ""
+        return f"【候选意图】用户任务可能属于以下分类: {', '.join(names)}。如当前工具无法完成,可尝试其他分类的工具。"
+
+    def _build_cross_tool_hint(self) -> str:
+        loaded = getattr(self, '_loaded_categories', set())
+        if len(loaded) <= 1:
+            return ""
+        from app.services.agent.agent_config import AGENT_REGISTRY
+        loaded_names = []
+        for intent_type, cfg in AGENT_REGISTRY.items():
+            if cfg.category.value in loaded:
+                loaded_names.append(cfg.category_display_name)
+        if not loaded_names:
+            return ""
+        return f"【跨分类工具】当前已加载多分类工具: {', '.join(loaded_names)}。可跨分类调用工具完成任务。"
 
     def _get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
         return self.prompts.get_task_prompt(task)
+
+    def _on_session_init(self, task: str, context: Optional[Dict[str, Any]] = None):
+        pass
+
+    def _on_before_loop(self, sys_prompt: str, task_prompt: str, context: Optional[Dict[str, Any]] = None):
+        pass
+
+    def _on_after_loop(self):
+        pass
+
+    def _complete_tracked_task(self, success: bool):
+        self._step_emitter.complete_task(success)
+
+    async def _execute_tool(self, tool_name: str, tool_params: Dict[str, Any]) -> Dict[str, Any]:
+        return await self._retry_engine.execute_tool_with_retry(tool_name, tool_params)
+
+    async def _call_llm(self) -> str:
+        self.llm_call_count += 1
+        self.message_builder.trim_history()
+
+        messages = self.message_builder.prepare_messages_for_llm()
+
+        executed_summary = self._build_executed_tool_summary()
+        if executed_summary:
+            messages.append({"role": "system", "content": executed_summary})
+
+        openai_tools = self._get_openai_tools()
+
+        if openai_tools:
+            return await self._call_llm_fc(messages, openai_tools)
+        return await self._call_llm_text(messages)
+
+    def _get_openai_tools(self) -> list:
+        if hasattr(self, '_cached_openai_tools') and self._cached_openai_tools:
+            return self._cached_openai_tools
+        from app.services.tools.tool_description import to_openai_tools
+        from app.services.tools.registry import tool_registry
+        category = getattr(self, 'tool_category', None)
+        self._cached_openai_tools = to_openai_tools(tool_registry, category=category)
+        return self._cached_openai_tools
+
+    async def _call_llm_fc(self, messages: list, openai_tools: list) -> str:
+        try:
+            response = await self.llm_client.chat(
+                messages=messages,
+                tools=openai_tools,
+                tool_choice="auto",
+            )
+        except Exception as e:
+            logger.warning(f"[FC] chat_with_tools失败,降级text: {e}")
+            return await self._call_llm_text(messages)
+
+        choices = response.get("choices", [])
+        if not choices:
+            return ""
+
+        msg = choices[0].get("message", {})
+        tool_calls = msg.get("tool_calls", [])
+        content = msg.get("content", "")
+
+        if tool_calls:
+            return self._format_tool_calls(tool_calls, content)
+
+        if content:
+            return content
+
+        return '{"thought": "任务完成", "tool_name": "finish", "tool_params": {}}'
+
+    async def _call_llm_text(self, messages: list) -> str:
+        try:
+            response = await self.llm_client.chat(messages=messages)
+        except Exception as e:
+            logger.error(f"[text] chat调用失败: {e}")
+            return ""
+
+        choices = response.get("choices", [])
+        if not choices:
+            return ""
+
+        content = choices[0].get("message", {}).get("content", "")
+        return content or ""
+
+    def _format_tool_calls(self, tool_calls: list, content: str = "") -> str:
+        if not tool_calls:
+            return '{"thought": "任务完成", "tool_name": "finish", "tool_params": {}}'
+
+        if len(tool_calls) == 1:
+            func = tool_calls[0].get("function", {})
+            tool_name = func.get("name", "")
+            try:
+                import json
+                tool_params = json.loads(func.get("arguments", "{}"))
+            except (json.JSONDecodeError, TypeError):
+                tool_params = {}
+            thought = content.strip() if content else f"Calling tool: {tool_name}"
+            return json.dumps({
+                "thought": thought,
+                "reasoning": f"FC调用: {tool_name}",
+                "tool_name": tool_name,
+                "tool_params": tool_params,
+            }, ensure_ascii=False)
+
+        import json
+        first = tool_calls[0]
+        func = first.get("function", {})
+        tool_name = func.get("name", "")
+        try:
+            tool_params = json.loads(func.get("arguments", "{}"))
+        except (json.JSONDecodeError, TypeError):
+            tool_params = {}
+        pending = []
+        for tc in tool_calls[1:]:
+            f = tc.get("function", {})
+            try:
+                args = json.loads(f.get("arguments", "{}"))
+            except (json.JSONDecodeError, TypeError):
+                args = {}
+            pending.append({"tool_name": f.get("name", ""), "tool_params": args})
+        thought = content.strip() if content else f"Calling {len(tool_calls)} tools"
+        return json.dumps({
+            "thought": thought,
+            "reasoning": f"FC调用: {tool_name} +{len(pending)} pending",
+            "tool_name": tool_name,
+            "tool_params": tool_params,
+            "_pending_calls": pending,
+        }, ensure_ascii=False)
+
+    def _build_executed_tool_summary(self) -> str:
+        if not hasattr(self, '_executed_tool_summary') or not self._executed_tool_summary:
+            return ""
+        done = [s for s in self._executed_tool_summary if '→success' in s]
+        if not done:
+            return ""
+        return ("【已执行工具(勿重复)】" + "; ".join(done[-8:])
+                + "\n注意:上述工具已成功执行,结果已在Observation中,禁止再次调用!")
