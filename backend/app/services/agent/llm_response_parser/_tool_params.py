@@ -14,6 +14,33 @@ from ._utils import _extract_json_with_balanced_braces, _extract_string_value
 # 【24.1.4 组件2/3 常量】已迁移到 constants.py — 北京老陈 2026-05-30
 from app.constants import TOOL_NAME_FALLBACK_KEYS, TOOL_PARAMS_FALLBACK_KEYS
 
+# P3-5: 硬编码映射表提取为模块级常量 — 小欧 2026-06-08
+_NON_PARAM_FIELDS = frozenset({
+    "reasoning", "thought", "type", "tool_name",
+    "action", "action_input", "extra_field", "metadata", "context",
+})
+_PARAM_NAME_PATTERN = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+_CAMEL_TO_SNAKE = {
+    "filePath": "file_path",
+    "filePath2": "file_path",
+    "dirPath": "dir_path",
+    "dirPath2": "dir_path",
+    "sourcePath": "source_path",
+    "sourcePath2": "source_path",
+    "destinationPath": "destination_path",
+    "destinationPath2": "destination_path",
+    "filePattern": "file_pattern",
+    "filePattern2": "file_pattern",
+    "offset2": "offset",
+    "limit2": "limit",
+    "Content": "content",
+    "FilePath": "file_path",
+    "DirPath": "dir_path",
+    "SourcePath": "source_path",
+    "DestinationPath": "destination_path",
+    "FilePattern": "file_pattern",
+}
+
 
 # 【24.1.4 组件1】统一 action 结果构建(消除 2 个 return dict 的 6 字段重复)
 def _build_action_result(type_: str, tool_name: str, tool_params: Dict[str, Any],
@@ -75,39 +102,11 @@ def _filter_tool_params(tool_params: Dict) -> Dict:
     if not tool_params or not isinstance(tool_params, dict):
         return {}
 
-    NON_PARAM_FIELDS = {
-        "reasoning", "thought", "type", "tool_name",
-        "action", "action_input", "extra_field", "metadata", "context",
-    }
-
-    param_name_pattern = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
-
-    CAMEL_TO_SNAKE = {
-        "filePath": "file_path",
-        "filePath2": "file_path",
-        "dirPath": "dir_path",
-        "dirPath2": "dir_path",
-        "sourcePath": "source_path",
-        "sourcePath2": "source_path",
-        "destinationPath": "destination_path",
-        "destinationPath2": "destination_path",
-        "filePattern": "file_pattern",
-        "filePattern2": "file_pattern",
-        "offset2": "offset",
-        "limit2": "limit",
-        "Content": "content",
-        "FilePath": "file_path",
-        "DirPath": "dir_path",
-        "SourcePath": "source_path",
-        "DestinationPath": "destination_path",
-        "FilePattern": "file_pattern",
-    }
-
     filtered = {}
     for k, v in tool_params.items():
-        if k not in NON_PARAM_FIELDS:
-            if param_name_pattern.match(k):
-                normalized_k = CAMEL_TO_SNAKE.get(k, k)
+        if k not in _NON_PARAM_FIELDS:
+            if _PARAM_NAME_PATTERN.match(k):
+                normalized_k = _CAMEL_TO_SNAKE.get(k, k)
                 if normalized_k not in filtered:
                     filtered[normalized_k] = v
                 else:
@@ -209,49 +208,8 @@ def _extract_content_value_from_json_str(json_str: str) -> Optional[str]:
     return _extract_string_value(json_str, "content")
 
 
-def _extract_params_by_regex_from_json_str(json_str: str) -> Optional[Dict[str, Any]]:
-    params = {}
-
-    tp_start = json_str.find('"tool_params"')
-    if tp_start == -1:
-        return None
-
-    brace_start = json_str.find('{', tp_start)
-    if brace_start == -1:
-        return None
-
-    tp_json, _ = _extract_json_with_balanced_braces(json_str[brace_start:])
-    if not tp_json:
-        return None
-
-    try:
-        return json.loads(tp_json)
-    except json.JSONDecodeError:
-        pass
-
-    file_path_match = re.search(r'"file_path"\s*:\s*"([^"]+)"', tp_json)
-    if file_path_match:
-        params["file_path"] = file_path_match.group(1)
-
-    content_val = _extract_string_value(tp_json, "content")
-    if content_val is not None:
-        params["content"] = content_val
-
-    result_val = _extract_string_value(tp_json, "result")
-    if result_val is not None:
-        params["result"] = result_val
-
-    other_params = ["dir_path", "source_path", "destination_path", "file_pattern", "pattern", "offset", "limit", "encoding"]
-    for p in other_params:
-        pattern = rf'"{p}"\s*:\s*"([^"]+)"'
-        match = re.search(pattern, tp_json)
-        if match:
-            params[p] = match.group(1)
-
-    return params if params else None
-
-
 def _extract_params_by_regex(text: str) -> Optional[Dict[str, Any]]:
+    """正则兜底提取工具参数 — P2-12 合并 _extract_params_by_regex_from_json_str 字段覆盖"""
     params = {}
 
     file_path_patterns = [
@@ -278,5 +236,15 @@ def _extract_params_by_regex(text: str) -> Optional[Dict[str, Any]]:
     content_val = _extract_string_value(text, "content")
     if content_val is not None:
         params["content"] = content_val
+
+    result_val = _extract_string_value(text, "result")
+    if result_val is not None:
+        params["result"] = result_val
+
+    for p in ("dir_path", "source_path", "destination_path", "file_pattern",
+              "pattern", "offset", "limit", "encoding"):
+        match = re.search(rf'"{p}"\s*:\s*"([^"]+)"', text)
+        if match:
+            params[p] = match.group(1)
 
     return params if params else None

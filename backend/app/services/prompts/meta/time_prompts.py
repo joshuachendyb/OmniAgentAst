@@ -113,15 +113,11 @@ Example 4: 完成任务
         )
         return auto_reminder + forbidden
 
-    def get_task_prompt(self, task: str) -> str:
-        return f"""Task: {task}
+    def _get_domain_name(self) -> str:
+        return "时间日期"
 
-Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-
-请完成此时间日期任务,按以下步骤:
-1. 分析需要什么时间操作
-2. 使用合适的时间工具
-3. 用中文提供时间信息"""
+    def _get_domain_steps(self) -> str:
+        return "1. 分析需要什么时间操作\n2. 使用合适的时间工具\n3. 用中文提供时间信息"
 
     def get_safety_reminder(self) -> str:
         return ""

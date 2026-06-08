@@ -88,8 +88,8 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_module="app.services.prompts.desktop.desktop_prompts",
         prompt_class_name="DesktopPrompts",
         category_display_name="桌面操作",
-        agent_module="app.services.agent.desktop_agent",
-        agent_class_name="DesktopAgent",
+        agent_module="app.services.agent.universal_agent",  # 【修复P0-3 2026-06-08 小沈】改为UniversalAgent，删除DesktopAgent
+        agent_class_name="UniversalAgent",  # 遵守DRY、复用优先原则
     ),
 }
 

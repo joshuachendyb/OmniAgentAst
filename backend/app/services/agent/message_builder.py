@@ -133,65 +133,53 @@ class MessageBuilder:
     # =========================================================================
 
     def trim_history(self) -> None:
-        """容量感知的对话历史裁剪 — 替代 base_react.py _trim_history()
-
-        【优化-延迟裁剪机制 — 小沈 2026-05-20】:
-        估算当前总字符长度,仅当超过 MAX_CONTEXT_CHARS 的 80% 时触发裁剪,
-        否则直接跳过。
-
-        【已知局限 — 小沈 2026-05-21】:
-        本方法只移除 role=system 且内容含 [Observation] 标记的 observation 消息。
-        system/user/assistant 三类消息不会被删除。因此若 conversation_history
-        中不含 observation,即使超过80%阈值也不会真正裁剪。后续如需增强可考虑:
-        1. 对 assistant 消息按时间倒序裁剪
-        2. 合并相邻短消息
-        """
+        """容量感知的对话历史裁剪 — P2-8 SLAP拆分"""
         total = self._total_chars(self.conversation_history)
         if total < self.MAX_CONTEXT_CHARS * 0.8:
-            return  # 快速跳过
-
-        # 超过80%阈值,执行裁剪
-        budget = int(self.MAX_CONTEXT_CHARS * 0.7)
-        system_msgs = []
-        obs_list = []
-        assistant_msgs = []
-
-        for msg in self.conversation_history:
-            role = msg.get("role", "")
-            if role == "system" and not self._is_observation_role(msg):
-                system_msgs.append(msg)
-            elif self._is_observation_role(msg):
-                obs_list.append(msg)
-            elif role == "assistant":
-                assistant_msgs.append(msg)
-            else:
-                system_msgs.append(msg)
-
+            return
         if len(self.conversation_history) <= 2:
             return
 
-        # 去重observation
-        obs_list = self._dedup_by_fingerprint(obs_list)
-        # 保留最新assistant
-        assistant_msgs = assistant_msgs[-10:]
-
-        # 用最新的observation
-        obs_list = obs_list[-30:]
-
-        # 从最旧的开始移除observation,直到满足预算
-        while obs_list and self._total_chars(system_msgs + obs_list + assistant_msgs) > budget:
-            obs_list.pop(0)
-
-        rebuilt = system_msgs + obs_list + assistant_msgs
-        # FC协议配对裁剪:role:tool必须有对应role:assistant(tool_calls),反之亦然
-        rebuilt = self._trim_fc_pairs(rebuilt)
-        # 确保至少有 system + user
-        if len(rebuilt) >= 2:
+        system_msgs, obs_list, assistant_msgs = self._classify_messages()
+        budget = int(self.MAX_CONTEXT_CHARS * 0.7)
+        trimmed_obs = self._trim_to_budget(obs_list, assistant_msgs, budget)
+        rebuilt = self._rebuild_and_validate(system_msgs, trimmed_obs, assistant_msgs)
+        if rebuilt is not None:
             self.conversation_history = rebuilt
-        # 如果裁剪过头了,保留至少最近几条
-        elif len(self.conversation_history) > 10:
-            self.conversation_history = (self.conversation_history[:2]
-                                        + self.conversation_history[-8:])
+
+    def _classify_messages(self):
+        """将消息分类为 system / observation / assistant 三组"""
+        system_msgs = []
+        obs_list = []
+        assistant_msgs = []
+        for msg in self.conversation_history:
+            role = msg.get("role", "")
+            if role == "assistant":
+                assistant_msgs.append(msg)
+            elif self._is_observation_role(msg):
+                obs_list.append(msg)
+            else:
+                system_msgs.append(msg)
+        return system_msgs, obs_list, assistant_msgs
+
+    def _trim_to_budget(self, obs_list, assistant_msgs, budget):
+        """去重+截断observation,保留最新assistant,直到满足预算"""
+        obs_list = self._dedup_by_fingerprint(obs_list)
+        assistant_msgs = assistant_msgs[-10:]
+        obs_list = obs_list[-30:]
+        while obs_list and self._total_chars(obs_list) > budget:
+            obs_list.pop(0)
+        return obs_list
+
+    def _rebuild_and_validate(self, system_msgs, obs_list, assistant_msgs):
+        """重组消息列表并验证FC配对完整性,返回None表示无需更新"""
+        rebuilt = system_msgs + obs_list + assistant_msgs
+        rebuilt = self._trim_fc_pairs(rebuilt)
+        if len(rebuilt) >= 2:
+            return rebuilt
+        if len(self.conversation_history) > 10:
+            return self.conversation_history[:2] + self.conversation_history[-8:]
+        return None
 
     # =========================================================================
     # 第四组:observation 截断辅助

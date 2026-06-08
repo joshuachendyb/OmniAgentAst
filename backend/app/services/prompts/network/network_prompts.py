@@ -83,21 +83,14 @@ Example 4: 任务完成
         )
         return auto_reminder + forbidden
 
-    def get_task_prompt(self, task: str) -> str:
-        return f"""Task: {task}
+    def _get_domain_name(self) -> str:
+        return "网络"
 
-Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+    def _get_domain_steps(self) -> str:
+        return "1. 分析需要的网络操作(HTTP请求、下载、搜索、连通性测试)\n2. 使用正确参数的合适网络工具\n3. 用中文报告网络诊断结果"
 
-请完成此网络任务,按以下步骤:
-1. 分析需要的网络操作(HTTP请求、下载、搜索、连通性测试)
-2. 使用正确参数的合适网络工具
-3. 用中文报告网络诊断结果
-
-Remember:
-- URL必须包含scheme(http://或https://)
-- POST/PUT用json_body参数(NOT data/params)
-- 使用timeout避免挂起
-- 失败两次后换不同方法"""
+    def _get_domain_extra_notes(self) -> str:
+        return "Remember:\n- URL必须包含scheme(http://或https://)\n- POST/PUT用json_body参数(NOT data/params)\n- 使用timeout避免挂起\n- 失败两次后换不同方法"
 
     def get_safety_reminder(self) -> str:
         return "⚠️ Network Safety: Validate URL parameters to avoid injection risks. Use HTTPS for sensitive data."

@@ -15,33 +15,39 @@ class Config:
     _config_mtime: Optional[float] = None  # 配置文件修改时间,用于缓存检测
     
     def _load_config(self):
-        """加载配置文件 - 带缓存优化
+        """加载配置文件（高层编排，只负责流程控制）
         
-【修复 P2-2 2026-06-08 小沈】
-消除 mtime 检查的竞态条件问题
-原代码第 28-32 行：两次检查之间文件可能被修改
-"""
+        【修复S-2 2026-06-08 小沈】拆分为私有方法，遵守SLAP原则
+        """
         config_path = self._get_config_path()
         
-        # 检查 1: 文件不存在处理
+        self._check_config_exists(config_path)
+        
+        if self._is_cache_valid(config_path):
+            return
+        
+        self._load_from_file(config_path)
+        self._apply_env_overrides()
+    
+    def _check_config_exists(self, config_path: Path) -> None:
+        """检查配置文件是否存在"""
         if not config_path.exists():
             raise FileNotFoundError(
                 f"配置文件不存在：{config_path}。"
                 "请在前端创建配置文件或手动创建 config/config.yaml"
             )
-        
-        # 检查 2: 时间戳检查 - 如果缓存存在且 mtime 相同，使用缓存
-        # 【修复 P2-2】重新读取 mtime，确保使用最新值
+    
+    def _is_cache_valid(self, config_path: Path) -> bool:
+        """检查缓存是否有效"""
         new_mtime = config_path.stat().st_mtime
-        if self._config_data is not None and self._config_mtime == new_mtime:
-            return  # 配置文件未变更，使用缓存
-        
-        # 从文件加载配置
+        return self._config_data is not None and self._config_mtime == new_mtime
+    
+    def _load_from_file(self, config_path: Path) -> None:
+        """从文件加载配置"""
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 self._config_data = yaml.safe_load(f)
             
-            # 配置文件不能为空
             if not self._config_data:
                 raise ValueError("配置文件为空，请检查 config/config.yaml")
         except (yaml.YAMLError, ValueError) as e:
@@ -50,11 +56,7 @@ class Config:
                 "请检查 config/config.yaml 格式是否正确"
             )
         
-        # 更新 mtime
-        self._config_mtime = new_mtime
-        
-        # 环境变量覆盖
-        self._apply_env_overrides()
+        self._config_mtime = config_path.stat().st_mtime
     
     def _get_config_path(self) -> Path:
         """获取配置文件路径"""

@@ -19,7 +19,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.utils.time_utils import create_timestamp
 from app.utils.counter_utils import create_step_counter
-from app.services.agent.steps import StartStep, StepFactory
+from app.services.agent.steps import StartStep, ErrorStep, FinalStep
 from app.utils.error_classifier import UnifiedErrorClassifier
 from app.utils.error_parser import extract_api_error_detail
 from app.utils.logger import logger
@@ -76,8 +76,10 @@ def create_error_response(
     retry_after: Optional[int] = None,
     step: Optional[int] = None
 ) -> str:
-    """创建统一的错误响应格式 — 使用 ErrorStep + format_agent_sse"""
-    error_step = StepFactory.create_error_step(
+    """创建统一的错误响应格式 — 使用 ErrorStep + format_agent_sse
+    【修复P0-4 2026-06-08 小沈】删除StepFactory，直接调用ErrorStep构造函数
+    """
+    error_step = ErrorStep(
         step=step or 0,
         error_type=error_type,
         error_message=error_message,
@@ -85,8 +87,7 @@ def create_error_response(
         provider=provider,
         recoverable=recoverable or False,
         retry_after=retry_after,
-        details=details,
-        stack=stack
+        context={"details": details, "stack": stack} if details or stack else None
     )
     return format_agent_sse(error_step)
 
@@ -103,32 +104,6 @@ def get_error_info(error: Exception) -> Dict[str, Any]:
         "retry_after": 5 if info["retryable"] else None,
     }
 
-
-def get_stream_error_info(error_type: str, original_message: str = None) -> tuple[str, str]:
-    """根据错误类型获取错误码和用户友好的错误信息，委托给UnifiedErrorClassifier"""
-    error_code, default_message = UnifiedErrorClassifier.classify_error_message(error_type, original_message)
-    
-    if original_message and original_message.strip():
-        original_info = extract_api_error_detail(original_message)
-        if original_info:
-            message = f"{default_message}\n原始信息: {original_info}"
-        else:
-            message = default_message
-    else:
-        message = default_message
-    
-    return error_code, message
-
-
-def resolve_http_error_type(error_message: str) -> Optional[str]:
-    """从错误消息字符串中解析并返回 HTTP 错误类型标识，委托给UnifiedErrorClassifier"""
-    if not error_message:
-        return None
-    
-    category = UnifiedErrorClassifier.classify_error(error_message)
-    if category.value == "unknown":
-        return None
-    return category.value
 
 
 # ====================================================================
@@ -187,8 +162,10 @@ def create_final_response(
     model: Optional[str] = None,
     thought: str = '',
 ) -> str:
-    """创建最终的SSE响应 — 使用 FinalStep + format_agent_sse"""
-    final_step = StepFactory.create_final_step(
+    """创建最终的SSE响应 — 使用 FinalStep + format_agent_sse
+    【修复P0-4 2026-06-08 小沈】删除StepFactory，直接调用FinalStep构造函数
+    """
+    final_step = FinalStep(
         step=step or 0,
         response=content,
         thought=thought,
@@ -211,7 +188,7 @@ async def send_start_step(
     current_execution_steps: List[Dict[str, Any]],
     session_id: str,
 ) -> StartStep:
-    """发送 start 步骤的独立函数(统一方法)"""
+    """发送 start 步骤 — P2-19 使用StartStep统一构建"""
     start_step = StartStep(
         step=next_step(),
         display_name=f"{ai_service.provider} ({ai_service.model})",
@@ -226,9 +203,6 @@ async def send_start_step(
             'blocked': security_check_result.get('blocked', False)
         }
     )
-    
     current_execution_steps.append(start_step.to_dict())
-    
     await save_execution_steps_to_db(session_id, current_execution_steps, "")
-    
     return start_step

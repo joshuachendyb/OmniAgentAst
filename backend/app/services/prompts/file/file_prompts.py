@@ -34,10 +34,6 @@ from app.utils.logger import logger
 class FileOperationPrompts(BasePrompts):
     """文件操作Prompt模板类"""
 
-    def _build_tool_descriptions(self, category: str, tools: List[str]) -> str:
-        """从 ToolRegistry 动态生成工具描述字符串 — 委托到 BasePrompts.build_tool_descriptions"""
-        return self.build_tool_descriptions(tools, category_label=category.upper())
-
     def get_system_prompt(self) -> str:
         """获取增强版系统Prompt - 小沈 2026-05-25 重构拆分"""
         system_info = get_system_prompt_string(include_commands=False)
@@ -62,7 +58,7 @@ class FileOperationPrompts(BasePrompts):
             "rename_file", "file_operation", "archive_tool",
             "read_media_file", "data_file_format",
         ]
-        tool_descriptions = self._build_tool_descriptions("file", tools)
+        tool_descriptions = self.build_tool_descriptions(tools, category_label="FILE")
 
         prompt = f"{system_info}\n\n# File Operation Tools\n\n{tool_descriptions}"
 
@@ -96,32 +92,20 @@ Example 4: 任务完成
 
 林凡是一名普通的大学生..."""
 
+    def _get_domain_name(self) -> str:
+        return "文件管理"
+
+    def _get_domain_steps(self) -> str:
+        return "1. 分析需要做什么操作\n2. 使用合适的工具完成任务\n3. 用中文总结结果"
+
+    def _get_domain_extra_notes(self) -> str:
+        return "Remember:\n- 不要将思考内容传入text参数\n- text参数必须是实际的文件内容"
+
     def get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
-        """
-        获取任务Prompt
-        
-        Args:
-            task_description: 任务描述
-            context: 额外上下文信息
-            
-        Returns:
-            格式化的任务Prompt
-        """
-        base_prompt = f"""Task: {task}
-
-Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-
-请完成此文件管理任务,按以下步骤:
-1. 分析需要做什么操作
-2. 使用合适的工具完成任务
-3. 用中文总结结果
-
-Remember:
-- 不要将思考内容传入text参数
-- text参数必须是实际的文件内容"""
+        """文件管理任务 — 覆盖基类以支持context参数"""
+        base_prompt = super().get_task_prompt(task)
         if context:
             base_prompt += f"\n\nAdditional context:\n{context}"
-        
         return base_prompt
 
     def get_observation_prompt(self, observation: str) -> str:

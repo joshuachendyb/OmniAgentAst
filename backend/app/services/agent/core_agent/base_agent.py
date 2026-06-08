@@ -66,6 +66,5 @@ class BaseAgent(ABC):
         from app.services.llm.stream_parser import create_cancelled_chunk
         return create_cancelled_chunk(getattr(self, 'model', 'unknown'))
 
-
-# 将独立函数 run_react_cycle 绑定为 BaseAgent 的方法
-BaseAgent.run_react_cycle = run_react_cycle
+    # P2-16: 猴子补丁 → 正常方法 — 小欧 2026-06-08
+    run_react_cycle = run_react_cycle

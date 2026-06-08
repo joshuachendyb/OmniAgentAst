@@ -87,19 +87,18 @@ async def run_sse_stream(
 
 
 async def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_step, ai_service, current_execution_steps, session_id):
-    """内联错误SSE生成(避免外部模块依赖)"""
-    from app.chat_stream import save_execution_steps_to_db, format_sse_event
+    """内联错误SSE生成(避免外部模块依赖) — P2-18 使用ErrorStep替代手工dict"""
+    from app.chat_stream import save_execution_steps_to_db, format_agent_sse
+    from app.services.agent.steps import ErrorStep
 
-    # 保存错误步骤
-    current_execution_steps.append({
-        'type': 'error',
-        'error': str(e),
-        'step': next_step(),
-    })
+    step_num = next_step()
+    error_step = ErrorStep(
+        step=step_num,
+        error_type=error_type,
+        error_message=str(e),
+        error_label=error_label,
+    )
+    current_execution_steps.append(error_step.to_dict())
     await save_execution_steps_to_db(session_id, current_execution_steps, error_label)
 
-    return format_sse_event('error', next_step(), {
-        'error': str(e),
-        'error_type': error_type,
-        'error_label': error_label,
-    })
+    return format_agent_sse(error_step)
