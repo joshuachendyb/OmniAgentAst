@@ -16,21 +16,6 @@ from app.services.prompts.middle import get_system_prompt as get_system_prompt_s
 from app.utils.logger import logger
 
 
-def _build_category_header(name: str, count: int, desc: str = "") -> str:
-    """统一构建分类标题 - 小健 2026-05-25
-
-    使用场景:
-    - get_system_prompt中构建分类标题
-
-    使用示例:
-        header = _build_category_header(name, count, desc)
-
-    返回数据说明:
-    - 返回str,分类标题行
-    """
-    return f"# {name} 工具 ({count}个){' - ' + desc if desc else ''}\n"
-
-
 def _build_tool_descriptions(category: str, tool_names: List[str]) -> str:
     """从工具名称列表构建分类工具描述 — 委托到 BasePrompts.build_tool_descriptions — 小沈 2026-05-27"""
     from app.services.prompts.base_prompt_template import BasePrompts
@@ -98,7 +83,8 @@ class SystemPrompts(BasePrompts):
         parts = [system_info]
         for category, desc in categories:
             tool_names = tool_registry.get_categories().get(category, [])
-            parts.append(_build_category_header(category.value, len(tool_names), desc))
+            header = f"# {category.value} 工具 ({len(tool_names)}个){' - ' + desc if desc else ''}\n"
+            parts.append(header)
             parts.append(_build_tool_descriptions(category.value, tool_names))
         parts.append(_build_examples(6))
 
@@ -116,15 +102,11 @@ class SystemPrompts(BasePrompts):
         )
         return auto_reminder + forbidden
 
-    def get_task_prompt(self, task: str) -> str:
-        return f"""Task: {task}
+    def _get_domain_name(self) -> str:
+        return "系统信息"
 
-Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-
-请完成此系统信息任务,按以下步骤:
-1. 分析需要什么系统信息
-2. 使用合适的系统工具
-3. 用中文总结系统信息"""
+    def _get_domain_steps(self) -> str:
+        return "1. 分析需要什么系统信息\n2. 使用合适的系统工具\n3. 用中文总结系统信息"
 
     def get_safety_reminder(self) -> str:
         return "⚠️ System Safety: Registry write/delete operations are destructive and irreversible. Confirm before execution."

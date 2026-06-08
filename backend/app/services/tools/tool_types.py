@@ -164,15 +164,8 @@ class ToolMetadata:
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
 
-    def __post_init__(self):
-        if self.dependencies is None:
-            self.dependencies = []
-        if self.examples is None:
-            self.examples = []
-        if self.created_at is None:
-            self.created_at = datetime.now()
-        if self.updated_at is None:
-            self.updated_at = self.created_at
+    # 【修复N-1 2026-06-08 小沈】删除__post_init__向后兼容代码
+    # dataclass的field(default_factory=...)已经处理了默认值，无需__post_init__
 
     def get_failure_hint(self, tool_params: Optional[dict] = None) -> str:
         """获取工具失败时的替代建议 — 小健 2026-05-24"""

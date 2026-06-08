@@ -107,34 +107,32 @@ class ObservationStep(ReasoningStep):
     
     def is_done(self) -> bool:
         return self._return_direct
-    
-    def to_dict(self) -> Dict[str, Any]:
-        base_dict = ReasoningStep.to_dict(self)
-        
-        # 【改造 2026-05-22 小沈】observation改为JSON对象,符合第13章设计方案
-        # 【修复 2026-05-22 小资】summary为空时使用error_message或默认值,避免前端渲染失败
+
+    def _build_observation_obj(self) -> Dict[str, Any]:
+        """构建observation对象 — P3-7 提取to_dict逻辑"""
         summary_text = self._observation or self._summary or self._error_message or "执行完成"
-        observation_obj = {
+        obj = {
             "summary": summary_text,
             "tool_name": self._tool_name or "unknown",
             "tool_params": self._tool_params or {},
             "return_direct": self._return_direct or False,
         }
-        
         if self._execution_status:
-            observation_obj["execution_status"] = self._execution_status
+            obj["execution_status"] = self._execution_status
         if self._error_message:
-            observation_obj["error_message"] = self._error_message
+            obj["error_message"] = self._error_message
         if self._warning:
-            observation_obj["warning"] = self._warning
+            obj["warning"] = self._warning
         if self._next_actions:
-            observation_obj["next_actions"] = self._next_actions
+            obj["next_actions"] = self._next_actions
         if self._attachment is not None:
-            observation_obj["attachment"] = self._attachment
-        
-        d = {"observation": observation_obj}
+            obj["attachment"] = self._attachment
+        return obj
+
+    def to_dict(self) -> Dict[str, Any]:
+        base_dict = ReasoningStep.to_dict(self)
+        d = {"observation": self._build_observation_obj()}
         if self._code:
             d["code"] = self._code
-        
         base_dict.update(d)
         return base_dict

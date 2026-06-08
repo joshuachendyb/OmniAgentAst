@@ -116,8 +116,30 @@ class BasePrompts(ABC):
 
 
     def get_task_prompt(self, task: str) -> str:
-        """获取任务描述 Prompt"""
-        return f"Task: {task}\n\nPlease think step by step and use the available tools to complete this task."
+        """获取任务描述 Prompt — P2-21: 公共模式(Task+时间+分类指令)"""
+        from datetime import datetime
+        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        domain = self._get_domain_name()
+        steps = self._get_domain_steps()
+        extra = self._get_domain_extra_notes()
+        parts = [
+            f"Task: {task}",
+            f"\nCurrent time: {time_str}",
+            f"\n请完成此{domain}任务,按以下步骤:",
+            steps,
+        ]
+        if extra:
+            parts.append(f"\n{extra}")
+        return "\n".join(parts)
+
+    def _get_domain_name(self) -> str:
+        return "通用"
+
+    def _get_domain_steps(self) -> str:
+        return "1. 分析需要什么操作\n2. 使用合适的工具\n3. 用中文总结结果"
+
+    def _get_domain_extra_notes(self) -> str:
+        return ""
 
     def get_observation_prompt(self, observation: str) -> str:
         """获取观察结果 Prompt"""

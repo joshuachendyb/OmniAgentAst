@@ -80,59 +80,50 @@ def _is_negated(keyword: str, text: str) -> bool:
     return not has_non_negated and text.find(keyword) >= 0
 
 
-def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
-    """
-    双维度CRSS加权评分
-
-    流程:
-    1. 计算类型分(CRSS_TYPE_KEYWORDS匹配)
-    2. 计算动作分(ACTION_DEFINITIONS匹配)
-    3. 最终分 = 类型分 × (1 + 动作兼容系数)
-    4. 无类型分时 → 动作推断类型分(兜底)
-    5. 归一化到[0,1)
-
-    Returns:
-        Dict[ToolCategory, float] 置信度从高到低排序
-    """
-    if not command or not command.strip():
-        return {}
-
-    command_lower = command.lower().strip()
-    type_raw: Dict[ToolCategory, float] = {}
-
-    # ===== 步骤1: 类型分(由 INTENT_MAPPING 驱动,CRSS_TYPE_KEYWORDS 为可选数据)=====
+def _calculate_type_scores(command: str) -> Dict[ToolCategory, float]:
+    """计算类型维度分数（中层抽象）"""
+    type_raw = {}
     for type_name in INTENT_MAPPING:
         kw = CRSS_TYPE_KEYWORDS.get(type_name, {})
         cat = resolve_category(type_name)
-        score = _match_keywords(kw.get("keywords", []), kw.get("chinese_keywords", []), command_lower)
+        score = _match_keywords(kw.get("keywords", []), kw.get("chinese_keywords", []), command)
         if score > 0:
             type_raw[cat] = type_raw.get(cat, 0) + score
             logger.info(f"[CRSS] 类型匹配 {type_name}=+{score}")
+    return type_raw
 
-    # ===== 步骤2: 动作分 =====
+
+def _calculate_action_scores(command: str) -> Dict[str, float]:
+    """计算动作维度分数（中层抽象）"""
     action_scores = {}
     for action_name, defn in ACTION_DEFINITIONS.items():
         action_score = 0
         for kw in defn["keywords"]:
-            if kw in command_lower:
+            if kw in command:
                 action_score += 0.5
-            elif _ascii_word_boundary_match(kw, command_lower):
+            elif _ascii_word_boundary_match(kw, command):
                 action_score += 0.5
         if action_score > 0:
             action_scores[action_name] = action_score
             logger.info(f"[CRSS] 动作匹配 {action_name}=+{action_score}")
+    return action_scores
 
-    # ===== 步骤3: 双维度合成 =====
-    final_raw: Dict[ToolCategory, float] = {}
 
-    if type_raw:
-        # 有类型分 → 用动作兼容矩阵调制(支持多分类,各分类独立计算)
-        for cat, type_score in type_raw.items():
-            final_raw[cat] = type_score  # 基础类型分
+def _merge_scores(
+    type_scores: Dict[ToolCategory, float],
+    action_scores: Dict[str, float]
+) -> Dict[ToolCategory, float]:
+    """双维度合成（高层抽象）"""
+    final_raw = {}
+    
+    if type_scores:
+        # 有类型分 → 用动作兼容矩阵调制
+        for cat, type_score in type_scores.items():
+            final_raw[cat] = type_score
             for action_name, action_score in action_scores.items():
                 action_def = ACTION_DEFINITIONS[action_name]
                 compat = action_def["compatibility"].get(cat, 0.3)
-                final_raw[cat] += type_score * compat * CRSS_ACTION_MODULATION_FACTOR  # 动作调制
+                final_raw[cat] += type_score * compat * CRSS_ACTION_MODULATION_FACTOR
     elif action_scores:
         # 无类型分 → 用动作反推类型
         for action_name, action_score in action_scores.items():
@@ -142,17 +133,48 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
                     final_raw[cat] = final_raw.get(cat, 0) + action_score * CRSS_ACTION_INFERENCE_WEIGHT
         if final_raw:
             logger.info(f"[CRSS] 无类型匹配,动作推断类型: {[c.value for c in final_raw.keys()]}")
+    
+    return final_raw
 
-    if not final_raw:
-        return {}
 
-    # ===== 步骤4: 归一化 =====
-    scores = {}
-    for cat, raw in final_raw.items():
+def _normalize_scores(scores: Dict[ToolCategory, float]) -> Dict[ToolCategory, float]:
+    """归一化到[0,1)（底层抽象）"""
+    normalized = {}
+    for cat, raw in scores.items():
         adjusted = 1.0 - (2.0 ** (-raw))
-        scores[cat] = round(adjusted, 4)
+        normalized[cat] = round(adjusted, 4)
+    return dict(sorted(normalized.items(), key=lambda x: -x[1]))
 
-    return dict(sorted(scores.items(), key=lambda x: -x[1]))
+
+def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
+    """
+    计算意图分数（高层编排，只负责流程控制）
+    
+    【修复P0-7 2026-06-08 小沈】提取函数，统一抽象层，遵守SLAP原则
+    
+    流程:
+    1. 计算类型分
+    2. 计算动作分
+    3. 双维度合成
+    4. 归一化
+    
+    Returns:
+        Dict[ToolCategory, float] 置信度从高到低排序
+    """
+    if not command or not command.strip():
+        return {}
+    
+    command_lower = command.lower().strip()
+    
+    # 高层逻辑：四步流程（统一抽象层）
+    type_scores = _calculate_type_scores(command_lower)
+    action_scores = _calculate_action_scores(command_lower)
+    final_scores = _merge_scores(type_scores, action_scores)
+    
+    if not final_scores:
+        return {}
+    
+    return _normalize_scores(final_scores)
 
 
 def detect_intent_v2(command: str) -> Tuple[Optional[ToolCategory], List[ToolCategory], float]:

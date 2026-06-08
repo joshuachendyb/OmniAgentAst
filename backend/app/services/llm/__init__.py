@@ -8,7 +8,7 @@ LLM服务包
 包结构:
 - core.py: 数据类(ChatResponse、StreamChunk)+ 重试上下文
 - stream_parser.py: SSE流解析 + HTTP错误处理
-- request_builder.py: 请求体构建 + 消息构建
+- client_sdk.py: LLM客户端SDK
 - model_adapters/: 模型特定兼容
   - xml_adapter: XML工具调用转JSON
   - reasoning: reasoning_content处理
@@ -37,10 +37,6 @@ from app.services.llm.stream_parser import (
     create_error_chunk,
 )
 
-from app.services.llm.request_builder import (
-    build_request_body,
-)
-
 __all__ = [
     "convert_xml_tool_call_to_json",
     "is_xml_tool_call",
@@ -54,5 +50,4 @@ __all__ = [
     "handle_http_error_stream",
     "create_cancelled_chunk",
     "create_error_chunk",
-    "build_request_body",
 ]

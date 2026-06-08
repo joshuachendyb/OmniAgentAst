@@ -108,15 +108,11 @@ Example 4: 任务完成
         from app.services.tools.tool_types import ToolCategory
         return tool_registry.generate_param_reminder(category=ToolCategory.DESKTOP)
 
-    def get_task_prompt(self, task: str) -> str:
-        return f"""Task: {task}
+    def _get_domain_name(self) -> str:
+        return "桌面操作"
 
-Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-
-请完成此桌面操作任务,按以下步骤:
-1. 识别目标窗口或应用
-2. 使用合适的桌面工具
-3. 用中文确认桌面操作结果"""
+    def _get_domain_steps(self) -> str:
+        return "1. 识别目标窗口或应用\n2. 使用合适的桌面工具\n3. 用中文确认桌面操作结果"
 
     def get_safety_reminder(self) -> str:
         return "⚠️ Desktop Safety: Only interact with visible windows. Do NOT attempt to access system-level windows."

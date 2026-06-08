@@ -64,61 +64,100 @@ class ToolRegistry:
         failure_hint_fn: Optional[Callable] = None,
     ) -> Dict[str, Any]:
         """
-        注册工具
+        注册工具（单一入口，委托给私有方法）
         
-        Args:
-            name: 工具名称
-            description: 工具描述
-            category: 工具分类
-            implementation: 工具实现函数
-            version: 版本号
-            dependencies: 依赖的其他工具
-            input_model: Pydantic 模型类,自动生成 input_schema
-            input_schema: 输入参数Schema(当没有 input_model 时使用)
-            output_schema: 输出结果Schema
-            examples: 使用示例
-            expose_to_llm: 是否暴露给LLM(默认True),为False时工具仅作为内部辅助函数不发送给LLM - 小沈2026-05-02
-        
-        Returns:
-            {"status": "success"} or {"status": "error", "error": "..."}
-        
-        Raises:
-            ValueError: 如果工具已注册(首次注册时)
+        【修复P0-5 2026-06-08 小沈】拆分为私有方法，遵守SRP原则
         """
         input_schema = _generate_input_schema(input_model, input_schema)
-
-        # 更新路径
+        
+        # 职责1：更新已存在工具
         if name in self._tools:
-            _update_tool_metadata(self._tools[name],
-                description=description, version=version, category=category,
-                input_schema=input_schema, output_schema=output_schema, examples=examples)
-            self._implementations[name] = implementation
-            return {"status": "success"}
-
-        # 依赖验证
+            return self._update_existing_tool(
+                name, description, category, implementation, 
+                input_schema, output_schema, examples, version
+            )
+        
+        # 职责2：验证依赖
+        self._validate_dependencies(dependencies)
+        
+        # 职责3：注册新工具
+        return self._register_new_tool(
+            name, description, category, implementation, 
+            input_schema, output_schema, examples, version, 
+            dependencies, expose_to_llm, next_actions, failure_hint_fn
+        )
+    
+    def _update_existing_tool(
+        self,
+        name: str,
+        description: str,
+        category: ToolCategory,
+        implementation: Callable,
+        input_schema: Optional[Dict],
+        output_schema: Optional[Dict],
+        examples: Optional[List[Dict]],
+        version: str
+    ) -> Dict[str, Any]:
+        """更新已注册工具"""
+        _update_tool_metadata(
+            self._tools[name],
+            description=description,
+            version=version,
+            category=category,
+            input_schema=input_schema,
+            output_schema=output_schema,
+            examples=examples
+        )
+        self._implementations[name] = implementation
+        return {"status": "success"}
+    
+    def _validate_dependencies(self, dependencies: Optional[List[str]]) -> None:
+        """验证工具依赖"""
         if dependencies:
             missing = [dep for dep in dependencies if dep not in self._tools]
             if missing:
                 raise ValueError(f"Missing dependencies: {missing}")
-
-        # 新建路径
+    
+    def _register_new_tool(
+        self,
+        name: str,
+        description: str,
+        category: ToolCategory,
+        implementation: Callable,
+        input_schema: Optional[Dict],
+        output_schema: Optional[Dict],
+        examples: Optional[List[Dict]],
+        version: str,
+        dependencies: Optional[List[str]],
+        expose_to_llm: bool,
+        next_actions: Optional[Dict[str, Any]],
+        failure_hint_fn: Optional[Callable]
+    ) -> Dict[str, Any]:
+        """注册新工具"""
         metadata = ToolMetadata(
-            name=name, description=description, category=category, version=version,
-            dependencies=dependencies or [], input_schema=input_schema or {},
-            output_schema=output_schema or {}, examples=examples or [],
-            expose_to_llm=expose_to_llm, next_actions=next_actions or {},
+            name=name,
+            description=description,
+            category=category,
+            version=version,
+            dependencies=dependencies or [],
+            input_schema=input_schema or {},
+            output_schema=output_schema or {},
+            examples=examples or [],
+            expose_to_llm=expose_to_llm,
+            next_actions=next_actions or {},
             failure_hint_fn=failure_hint_fn,
         )
         self._tools[name] = metadata
         self._implementations[name] = implementation
-
+        self._update_category_index(category, name)
+        logger.info(f"Tool registered: {name} (category: {category.value})")
+        return {"status": "success"}
+    
+    def _update_category_index(self, category: ToolCategory, name: str) -> None:
+        """更新分类索引"""
         self._categories.setdefault(category, [])
         if name not in self._categories[category]:
             self._categories[category].append(name)
-
-        metadata.updated_at = datetime.now()
-        logger.info(f"Tool registered: {name} (category: {category.value})")
-        return {"status": "success"}
     
 
     def get_tool(self, name: str) -> Optional[ToolMetadata]:

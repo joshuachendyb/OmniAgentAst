@@ -71,9 +71,9 @@ def extract_status(result: dict) -> str:
 
 
 def build_execution_result_dict(execution_result: Dict[str, Any]) -> Dict[str, Any]:
-    """从工具返回结果构建统一格式dict(供StepFactory使用)— 小健 2026-05-24
+    """从工具返回结果构建统一格式dict — 小健 2026-05-24
 
-    统一主工具和并行工具的execution_result_dict构建逻辑。
+    【修复P0-4 2026-06-08 小沈】删除StepFactory引用，直接调用Step构造函数
     """
     _status = extract_status(execution_result)
     return {

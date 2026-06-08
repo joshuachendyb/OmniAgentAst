@@ -112,12 +112,8 @@ Example 4: 任务完成
         )
         return auto_reminder + forbidden
 
-    def get_task_prompt(self, task: str) -> str:
-        return f"""Task: {task}
+    def _get_domain_name(self) -> str:
+        return "文檔处理"
 
-Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-
-请完成此文檔处理任务,按以下步骤:
-1. 分析需要的文档操作
-2. 使用合适的文档工具
-3. 用中文总结文档处理结果"""
+    def _get_domain_steps(self) -> str:
+        return "1. 分析需要的文档操作\n2. 使用合适的文档工具\n3. 用中文总结文档处理结果"

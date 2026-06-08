@@ -10,7 +10,7 @@ Author: 小沈 - 2026-05-31
 
 from typing import Any, Dict, Optional
 
-from app.services.agent.steps import StepFactory, IncidentStep
+from app.services.agent.steps import ErrorStep, IncidentStep
 from app.services.agent.types import AgentStatus
 from app.utils.logger import logger
 
@@ -27,9 +27,11 @@ class StepEmitter:
         return step
 
     def exit_with_error(self, step_count: int, error_type: str, error_message: str, recoverable: bool = False) -> 'ReasoningStep':
-        """复制自 base_react.py 第436-449行 — 创建error_step并返回Step对象"""
+        """复制自 base_react.py 第436-449行 — 创建error_step并返回Step对象
+        【修复P0-4 2026-06-08 小沈】删除StepFactory，直接调用ErrorStep构造函数
+        """
         self.agent.status = AgentStatus.FAILED
-        error_step = StepFactory.create_error_step(
+        error_step = ErrorStep(
             step=step_count,
             error_type=error_type,
             error_message=error_message,

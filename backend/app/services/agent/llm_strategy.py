@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional
 
 from app.utils.logger import logger
-from app.chat_stream import resolve_http_error_type, get_stream_error_info
+from app.utils.error_classifier import UnifiedErrorClassifier
 
 
 class LLMStrategy(ABC):
@@ -76,24 +76,13 @@ class TextStrategy(LLMStrategy):
                 error_hint = self._format_error_hint(error_info)
                 logger.warning(f"[LLM Response] Error hint: {error_hint}")
                 return self._make_parse_error(error_hint)
-            _, user_message = get_stream_error_info('empty_response')
+            _, user_message = UnifiedErrorClassifier.classify_error_message('empty_response')
             return self._make_parse_error(user_message)
         
         return content
     
-    ERROR_HINTS = {
-        "api_limit": {"title": "API调用频繁", "description": "模型访问量过大,已被限流", "suggestion": "请稍后再试,或更换其他模型"},
-        "timeout": {"title": "请求超时", "description": "AI响应时间过长", "suggestion": "请检查网络后重试"},
-        "connect": {"title": "网络连接失败", "description": "无法连接到AI服务", "suggestion": "请检查网络后重试"},
-        "auth": {"title": "API认证失败", "description": "API密钥无效或已过期", "suggestion": "请检查API密钥是否有效"},
-        "quota": {"title": "API额度不足", "description": "账户余额或调用配额已用尽", "suggestion": "请充值后重试"},
-        "unknown": {"title": "服务暂时不可用", "description": "发生了未知错误", "suggestion": "请稍后重试"}
-    }
-    
     def _format_error_hint(self, error: str) -> str:
-        error_type = resolve_http_error_type(str(error))
-        if error_type is None:
-            error_type = 'unknown'
-        error_code, user_message = get_stream_error_info(error_type, original_message=str(error))
-        logger.info(f"[LLM Error] 原始错误: {error}, 分类: {error_type}, 提示: {user_message}")
+        category = UnifiedErrorClassifier.classify_error(str(error))
+        _, user_message = UnifiedErrorClassifier.classify_error_message(category.value, original_message=str(error))
+        logger.info(f"[LLM Error] 原始错误: {error}, 分类: {category.value}, 提示: {user_message}")
         return f"⚠️ {user_message}"

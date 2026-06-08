@@ -94,33 +94,47 @@ class ToolRetryEngine:
         action: str,
         action_input: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """统一工具执行方法 (查找+参数验证+重试)"""
-        # 1. finish短路
+        """统一工具执行方法（单一入口，委托给私有方法）
+        
+        【修复P1-2 2026-06-08 小沈】拆分为私有方法，遵守SRP原则
+        """
         if action == "finish":
-            return create_tool_result(
-                data=action_input.get("result"),
-                message=action_input.get("result", "Task completed"),
-                retry_count=0
+            return self._handle_finish(action_input)
+        
+        tool = self._find_tool(action)
+        if tool is None:
+            return create_error_tool_result(
+                code=ERR_TOOL_NOT_FOUND, data=None,
+                message=f"Unknown tool: {action}. Available tools: {list(self._tools.keys())}",
+                retry_count=0, error_message=f"工具 '{action}' 未找到", error_type="tool_not_found"
             )
-
-        # 2. 查找工具 (先查self._tools，再查registry别名)
+        
+        params = self._validate_params(action, action_input, tool)
+        if params is None:
+            return params
+        
+        return await self._execute_with_retry(action, params, tool)
+    
+    def _handle_finish(self, action_input: Dict[str, Any]) -> Dict[str, Any]:
+        """处理finish短路"""
+        return create_tool_result(
+            data=action_input.get("result"),
+            message=action_input.get("result", "Task completed"),
+            retry_count=0
+        )
+    
+    def _find_tool(self, action: str) -> Optional[Callable]:
+        """查找工具"""
         tool = self._tools.get(action)
         if tool is None:
             from app.services.tools.registry import tool_registry
             tool = tool_registry.get_implementation(action)
             if tool is not None:
                 self._tools[action] = tool
-            else:
-                return create_error_tool_result(
-                    code=ERR_TOOL_NOT_FOUND,
-                    data=None,
-                    message=f"Unknown tool: {action}. Available tools: {list(self._tools.keys())}",
-                    retry_count=0,
-                    error_message=f"工具 '{action}' 未找到",
-                    error_type="tool_not_found"
-                )
-        
-        # 3. 参数验证 — 非法参数直接报错
+        return tool
+    
+    def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable) -> Optional[Dict[str, Any]]:
+        """验证参数（非法参数+必需参数）"""
         params = action_input.copy()
         try:
             from app.services.tools.registry import tool_registry
@@ -129,17 +143,10 @@ class ToolRetryEngine:
                 valid_params = set(metadata.input_schema.get("properties", {}).keys())
                 invalid_keys = [k for k in params if k not in valid_params]
                 if invalid_keys:
-                    return create_error_tool_result(
-                        code=ERR_INVALID_PARAMS,
-                        message=f"Invalid parameter(s): {', '.join(invalid_keys)}. Valid: {sorted(valid_params)}",
-                        retry_count=0,
-                        error_message=f"非法参数：{', '.join(invalid_keys)}",
-                        error_type="invalid_params"
-                    )
+                    return None
         except (ImportError, AttributeError) as e:
             logger.warning(f"[参数监控] action={action}, 获取 schema 失败：{e}", exc_info=True)
         
-        # 4. 检查必需参数
         sig = inspect.signature(tool)
         required = [
             p.name for p in sig.parameters.values()
@@ -149,15 +156,12 @@ class ToolRetryEngine:
         ]
         missing = [p for p in required if p not in params]
         if missing:
-            return create_error_tool_result(
-                code=ERR_MISSING_PARAM,
-                message=f"Missing required parameter(s): {', '.join(missing)}",
-                retry_count=0,
-                error_message=f"缺少必需参数：{', '.join(missing)}",
-                error_type="invalid_params"
-            )
+            return None
         
-        # 5. 执行工具 (带重试)
+        return params
+    
+    async def _execute_with_retry(self, action: str, params: Dict[str, Any], tool: Callable) -> Dict[str, Any]:
+        """带重试执行工具"""
         max_retries, backoff_factor, retryable_errors, timeout = self._get_retry_config(action)
         
         def _is_tool_retryable(e: Exception) -> bool:
