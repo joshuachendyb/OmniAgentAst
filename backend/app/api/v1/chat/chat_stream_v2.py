@@ -19,7 +19,7 @@ from app.api.v1.chat.detect_intent import detect_intent
 from app.api.v1.chat.step_start import step_start
 from app.utils.time_utils import create_step_counter
 from app.services.task.task_registry import register_task
-from app.services.task.task_incident_check import task_interrupt_check, task_pause_check
+from app.services.task.task_interrupt_check import task_interrupt_check, task_pause_check
 from app.services.task.task_cancel_check import task_cancel_check_and_yield
 from app.services.task.task_cleanup import task_cleanup
 from app.services.react_sse_wrapper.run_sse_stream import run_sse_stream

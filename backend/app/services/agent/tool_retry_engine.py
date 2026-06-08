@@ -24,6 +24,7 @@ from app.services.agent.agent_utils.tool_result_factory import create_tool_resul
 
 from app.constants import (
     ERR_MISSING_PARAM,
+    ERR_INVALID_PARAMS,
     ERR_TOOL_NOT_FOUND,
     ERR_UNKNOWN,
 )
@@ -129,7 +130,7 @@ class ToolRetryEngine:
                 invalid_keys = [k for k in params if k not in valid_params]
                 if invalid_keys:
                     return create_error_tool_result(
-                        code=ERR_MISSING_PARAM,
+                        code=ERR_INVALID_PARAMS,
                         message=f"Invalid parameter(s): {', '.join(invalid_keys)}. Valid: {sorted(valid_params)}",
                         retry_count=0,
                         error_message=f"非法参数：{', '.join(invalid_keys)}",

@@ -38,7 +38,7 @@ from app.services.task.task_pause import pause_task
 from app.services.task.task_resume import resume_task
 from app.services.task.task_cleanup import task_cleanup
 from app.services.task.task_cancel_check import task_cancel_check_and_yield
-from app.services.task.task_incident_check import (
+from app.services.task.task_interrupt_check import (
 
     task_interrupt_check,
     task_pause_check,

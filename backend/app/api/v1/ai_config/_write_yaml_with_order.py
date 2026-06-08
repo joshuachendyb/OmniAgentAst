@@ -1,6 +1,6 @@
 import yaml
 from collections import OrderedDict
-from ._ordered_dict import __ordered_dict as _ordered_dict
+from ._ordered_dict import _ordered_dict
 
 
 def _represent_ordereddict(dumper, data):

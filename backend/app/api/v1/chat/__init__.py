@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-chat_router — API层入口
+chat — Chat API模块
 
 小健 - 2026-06-07 清理:删除step_react_loop和route(死代码)
 

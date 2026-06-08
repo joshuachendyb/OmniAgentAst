@@ -3,7 +3,7 @@
 chat_stream — SSE事件流处理统一模块
 
 合并来源:
-- chat_stream/error_handler.py (create_error_response, resolve_http_error_type, get_stream_error_info, get_function_call_error_info)
+- chat_stream/error_handler.py (create_error_response, resolve_http_error_type, get_stream_error_info, get_error_info)
 - chat_stream/sse_formatter.py (format_sse_event, format_agent_sse)
 - chat_stream/message_saver/ (save_execution_steps_to_db)
 - chat_stream/chat_helpers.py (create_final_response)
@@ -89,8 +89,8 @@ def create_error_response(
     return format_agent_sse(error_step)
 
 
-def get_function_call_error_info(error: Exception) -> Dict[str, Any]:
-    """获取Function Calling错误信息，委托给UnifiedErrorClassifier"""
+def get_error_info(error: Exception) -> Dict[str, Any]:
+    """获取错误信息，委托给UnifiedErrorClassifier"""
     info = UnifiedErrorClassifier.get_error_info(error)
     category = info["category"]
     return {
@@ -181,13 +181,9 @@ async def save_execution_steps_to_db(
 def create_final_response(
     content: str,
     step: Optional[int] = None,
-    display_name: Optional[str] = None,
     provider: Optional[str] = None,
     model: Optional[str] = None,
-    is_finished: bool = True,
     thought: str = '',
-    is_streaming: bool = False,
-    is_reasoning: bool = False
 ) -> str:
     """创建最终的SSE响应 — 使用 FinalStep + format_agent_sse"""
     final_step = StepFactory.create_final_step(

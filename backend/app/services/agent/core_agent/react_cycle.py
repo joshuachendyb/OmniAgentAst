@@ -71,7 +71,7 @@ async def run_react_cycle(
                     content=reasoning,
                     is_reasoning=True,
                 )
-                yield self._emit_step(chunk)
+                yield self._step_emitter.emit(chunk)
 
             # 4b. 根据类型处理
             if parsed_type == "action" and parsed.get("tool_name"):
@@ -87,7 +87,7 @@ async def run_react_cycle(
                     thought=parsed.get("thought", ""),
                     reasoning=reasoning or "",
                 )
-                yield self._emit_step(thought)
+                yield self._step_emitter.emit(thought)
 
                 # 产出 action step
                 action = ActionToolStep(
@@ -95,7 +95,7 @@ async def run_react_cycle(
                     tool_name=tool_name,
                     tool_params=tool_params,
                 )
-                yield self._emit_step(action)
+                yield self._step_emitter.emit(action)
 
                 # 执行工具
                 result = await self._execute_tool(tool_name, tool_params)
@@ -107,7 +107,7 @@ async def run_react_cycle(
                     execution_result=result,
                     tool_name=tool_name,
                 )
-                yield self._emit_step(observation)
+                yield self._step_emitter.emit(observation)
 
                 # 将observation加入conversation history供LLM下一轮使用
                 self.message_builder.add_observation(
@@ -121,7 +121,7 @@ async def run_react_cycle(
 
                 # 产出 thought step（如果有思考）
                 if thought:
-                    yield self._emit_step(ThoughtStep(
+                    yield self._step_emitter.emit(ThoughtStep(
                         step=step_counter,
                         content=thought,
                         thought=thought,
@@ -135,7 +135,7 @@ async def run_react_cycle(
                     thought=thought,
                     reasoning=reasoning or "",
                 )
-                yield self._emit_step(final)
+                yield self._step_emitter.emit(final)
 
                 self.status = AgentStatus.COMPLETED
                 break
@@ -147,20 +147,20 @@ async def run_react_cycle(
                     step=step_counter,
                     content=content,
                 )
-                emitted = self._emit_step(chunk)
+                emitted = self._step_emitter.emit(chunk)
 
                 # 累积到chunk buffer
                 if chunk_buffer:
-                    chunk_buffer.add_chunk(content)
-                    if chunk_buffer.is_full:
+                    chunk_buffer.append(content)
+                    if chunk_buffer.should_promote():
                         accumulated = chunk_buffer.flush()
                         if accumulated:
                             step_counter += 1
-                            yield self._emit_step(ThoughtStep(
+                            yield self._step_emitter.emit(ThoughtStep(
                                 step=step_counter,
                                 content=f"Accumulated {len(accumulated)} chunks",
                             ))
-                            yield self._emit_step(ChunkStep(
+                            yield self._step_emitter.emit(ChunkStep(
                                 step=step_counter + 1,
                                 content=accumulated,
                             ))
@@ -169,7 +169,7 @@ async def run_react_cycle(
             elif parsed_type == "parse_error":
                 # 4e. 解析错误
                 error_msg = parsed.get("error", "Unknown parse error")
-                yield self._exit_with_error(
+                yield self._step_emitter.exit_with_error(
                     step=step_counter,
                     error_type="parse_error",
                     error_message=error_msg,
@@ -179,7 +179,7 @@ async def run_react_cycle(
 
             else:
                 # 4f. 未知类型
-                yield self._exit_with_error(
+                yield self._step_emitter.exit_with_error(
                     step=step_counter,
                     error_type="unknown_parse_type",
                     error_message=f"Unknown parsed type: {parsed_type}",
@@ -189,7 +189,7 @@ async def run_react_cycle(
 
     except Exception as e:
         logger.error(f"[run_react_cycle] 异常: {e}", exc_info=True)
-        yield self._exit_with_error(
+        yield self._step_emitter.exit_with_error(
             step=step_counter,
             error_type="runtime_error",
             error_message=str(e),

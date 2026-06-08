@@ -23,9 +23,14 @@ def validate_config(config_path: Optional[str] = None) -> ConfigValidationResult
 
     from app.services.ai_config_resolver import get_ai_config_resolver
     resolver = get_ai_config_resolver()
-    is_valid, final_provider, final_model, error_messages = resolver.validate_config()
+    try:
+        final_provider, final_model = resolver.resolve_provider_model()
+        error_messages = []
+    except ValueError as e:
+        final_provider, final_model = None, None
+        error_messages = [str(e)]
 
-    if not is_valid:
+    if error_messages:
         return make_validation_error(
             f"配置验证失败: {len(error_messages)} 个错误",
             provider=final_provider or "unknown",
