@@ -1,3 +1,93 @@
+v0.15.0
+
+更新时间: 2026-06-09 06:36:19
+
+## v0.14.10→v0.15.0 变更汇总 - 小沈-2026-06-09
+
+### 一、refactor 重构——后端核心代码全面重构(1 个大 commit)
+
+| 模块 | 变更内容 |
+|------|---------|
+| agent/ | base_react→core_agent重命名,消除react_loop/react术语误导 |
+| chat路由 | chat_stream目录合并为单文件,删除react_sse_wrapper旧文件 |
+| preprocessing/safety | 代码规范化+死代码清理 |
+| command_parser/llm_response_parser | import排序+格式化+死代码清理 |
+| message_saver | 统一重构 |
+
+### 二、refactor 重构——agent目录烂代码清理(v0.14.10已记录,延续)
+
+- base_react.py/react_handler_mixin.py/steps.py/types.py合并
+- 80+死import删除,2个严重bug修复
+
+### 三、refactor 重构——命名统一(6 个 commit)
+
+| 变更 | 说明 |
+|------|------|
+| Agent类命名 | React→Agent,消除react术语误导 |
+| base_react→core_agent | 文件/类名统一 |
+| agent_loop.py | 消除react_loop术语 |
+| react_cycle.py | 函数名统一为run_react_cycle |
+| parse_llm_response.py | 函数和文件重命名 |
+| chat→aggregate_chat_response | 函数名语义化 |
+
+### 四、fix bug——全面修复命名/文档/API不匹配(3 个 commit)
+
+- 26个命名/文档/API不匹配问题修复
+- 31个命名问题修复
+- 10大代码规范23个问题修复
+- 10大流程代码规范修复(F1-F10)
+- ThoughtStep.to_dict崩溃修复
+- run_stream完整ReAct循环实现
+- common_patterns模块缺失修复
+- 并发锁/参数验证/工具查找问题修复
+- system_prompts.py import缩进修复
+
+### 五、refactor 重构——死代码清理(6 个 commit)
+
+| 删除项 | 说明 |
+|--------|------|
+| AIServiceFactory | 纯空壳类+28个空壳委托 |
+| _network_engine | 死代码 |
+| yield_error_sse | 空壳函数 |
+| _init_tools | base_react.py不再使用的方法 |
+| _RateLimitError/_post_with_retry | llm_core.py不再使用 |
+| normalize_params/_validate_params/_lookup_tool | 不再使用的辅助方法 |
+| SecurityProvider | 未使用 |
+| nextPage函数 | 未使用 |
+
+### 六、refactor 重构——复用优先修复(2 个 commit)
+
+- 使用_build_handler_result和extract_reasoning_from_chunk复用
+- retry_engine/collector/visualization优化
+
+### 七、tests 测试(2 个 commit)
+
+- 修复21个失败测试+error_label bug+observation_step.py _tool_name存储
+- 修复test_tool_executor_fallback迁移至ToolRetryEngine
+
+### 八、docs 文档(4 个 commit)
+
+- 更新后端/前端代码深度分析报告
+- 更新全链路E2E集成测试方案v1.1
+- 简化API端点文档+补充Router分组设计说明
+- 更新代码规范审查报告
+
+### 九、chore 杂项(3 个 commit)
+
+- 更新.gitignore添加tests/reports/logs/pytest/dist/node_modules等忽略规则
+- 从git索引移除已被.gitignore忽略的测试文件
+- 删除临时测试脚本
+
+### 净效果
+
+- 47 个 commit
+- Agent命名体系全面统一(React→Agent)
+- 死代码大量删除
+- 21个测试修复通过
+- 10大原则全面遵守
+
+---
+
 v0.14.10
 
 更新时间: 2026-06-07 22:30:00
