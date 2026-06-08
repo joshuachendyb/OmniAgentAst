@@ -25,7 +25,7 @@ from app.constants import DEFAULT_LLM_TIMEOUT, RATE_LIMIT_STATUS_CODES
 
 from app.services.llm_core.chat_with_tools_stream import ChatWithToolsStreamMixin
 from app.services.llm_core.tool_caller import ToolCallerMixin
-from app.services.llm_core.chat import chat
+from app.services.llm_core.chat import aggregate_chat_response
 
 
 class BaseAIService(ChatWithToolsStreamMixin, ToolCallerMixin):
@@ -98,7 +98,7 @@ class BaseAIService(ChatWithToolsStreamMixin, ToolCallerMixin):
     def _create_cancelled_chunk(self) -> StreamChunk:
         return create_cancelled_chunk(self.model)
 
-    chat = chat
+    chat = aggregate_chat_response
 
 
     def _build_api_url(self) -> str:
