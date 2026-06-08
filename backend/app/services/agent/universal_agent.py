@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-UniversalReactAgent — 配置驱动的通用 ReAct Agent
+UniversalAgent — 配置驱动的通用 Agent
 
 【待实现】mixin体系删除后ReAct循环逻辑未迁移，run_stream()目前是占位符。
 当前AgentFactory.create()创建的Agent调用run()会返回not_implemented错误。
@@ -17,8 +17,8 @@ from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 
-class UniversalReactAgent(BaseAgent):
-    """配置驱动的通用 ReAct Agent"""
+class UniversalAgent(BaseAgent):
+    """配置驱动的通用 Agent"""
 
     def __init__(
         self,
@@ -59,11 +59,11 @@ class UniversalReactAgent(BaseAgent):
             self.config = config
             self.prompts = config.prompt_class()
             logger.info(
-                f"UniversalReactAgent initialized (intent={config.intent_type}, task_id={task_id}, category={effective_category})"
+                f"UniversalAgent initialized (intent={config.intent_type}, task_id={task_id}, category={effective_category})"
             )
         else:
             logger.info(
-                f"UniversalReactAgent initialized (task_id={task_id}, category={effective_category})"
+                f"UniversalAgent initialized (task_id={task_id}, category={effective_category})"
             )
 
     def _get_system_prompt(self) -> str:

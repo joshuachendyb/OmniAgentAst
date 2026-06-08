@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-DesktopReactAgent
+DesktopAgent
 
 """
 from typing import Any, Optional, Dict, List
 
-from app.services.agent.universal_react import UniversalReactAgent
+from app.services.agent.universal_agent import UniversalAgent
 from app.services.prompts.desktop.desktop_prompts import DesktopPrompts
 from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 
-class DesktopReactAgent(UniversalReactAgent):
-    """桌面操作 ReAct Agent"""
+class DesktopAgent(UniversalAgent):
+    """桌面操作 Agent"""
 
     def __init__(
         self,
@@ -39,7 +39,7 @@ class DesktopReactAgent(UniversalReactAgent):
         )
 
         self.prompts = DesktopPrompts()
-        logger.info(f"DesktopReactAgent initialized (task_id: {task_id}, category: {effective_category}, tools: {len(self._tools_dict)})")
+        logger.info(f"DesktopAgent initialized (task_id: {task_id}, category: {effective_category}, tools: {len(self._tools_dict)})")
 
     def _get_system_prompt(self) -> str:
         return "System: 桌面操作"
