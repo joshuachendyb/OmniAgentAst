@@ -39,7 +39,6 @@ from app.services.llm.stream_parser import (
 
 from app.services.llm.request_builder import (
     build_request_body,
-    build_messages,
 )
 
 __all__ = [
@@ -56,5 +55,4 @@ __all__ = [
     "create_cancelled_chunk",
     "create_error_chunk",
     "build_request_body",
-    "build_messages",
 ]

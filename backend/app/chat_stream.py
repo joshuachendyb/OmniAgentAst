@@ -5,7 +5,7 @@ chat_stream — SSE事件流处理统一模块
 合并来源:
 - chat_stream/error_handler.py (create_error_response, resolve_http_error_type, get_stream_error_info, get_function_call_error_info)
 - chat_stream/sse_formatter.py (format_sse_event, format_agent_sse)
-- chat_stream/message_saver/ (save_execution_steps_to_db, add_step_and_save, parse_and_save_sse)
+- chat_stream/message_saver/ (save_execution_steps_to_db)
 - chat_stream/chat_helpers.py (create_final_response)
 - chat_stream/start_step.py (send_start_step)
 
@@ -172,32 +172,6 @@ async def save_execution_steps_to_db(
             logger.warning(f"[Save] 会话不存在,已标记跳过: session_id={session_id}")
         else:
             logger.error(f"[Save] 保存失败: {e}", exc_info=True)
-
-
-async def add_step_and_save(
-    current_execution_steps: List[Dict],
-    step: Dict,
-    session_id: Optional[str],
-    content: Optional[str] = None
-) -> None:
-    """添加步骤并保存"""
-    current_execution_steps.append(step)
-    await save_execution_steps_to_db(session_id, current_execution_steps, content or "")
-
-
-async def parse_and_save_sse(
-    sse_data: str,
-    current_execution_steps: List[Dict],
-    session_id: str,
-    current_content: str = ""
-) -> Dict:
-    """解析SSE数据并保存"""
-    if sse_data.startswith("data: "):
-        sse_data = sse_data[6:]
-    step_data = json.loads(sse_data)
-    current_execution_steps.append(step_data)
-    await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
-    return step_data
 
 
 # ====================================================================

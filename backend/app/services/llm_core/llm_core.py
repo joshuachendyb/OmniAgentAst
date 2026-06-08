@@ -24,14 +24,12 @@ from app.services.llm.request_builder import build_request_body
 from app.services.llm.client_sdk import create_llm_client
 from app.constants import DEFAULT_LLM_TIMEOUT, RATE_LIMIT_STATUS_CODES
 
-from app.services.llm_core.chat_stream import ChatStreamMixin
 from app.services.llm_core.chat_with_tools_stream import ChatWithToolsStreamMixin
 from app.services.llm_core.tool_caller import ToolCallerMixin
 from app.services.llm_core.chat import chat
 
 
-
-class BaseAIService(ChatStreamMixin, ChatWithToolsStreamMixin, ToolCallerMixin):
+class BaseAIService(ChatWithToolsStreamMixin, ToolCallerMixin):
     """通用AI服务 — 只保留骨架"""
 
     def __init__(self, api_key: str, model: str, api_base: str, provider: str = "", timeout: int = DEFAULT_LLM_TIMEOUT,
@@ -111,6 +109,10 @@ class BaseAIService(ChatStreamMixin, ChatWithToolsStreamMixin, ToolCallerMixin):
         return create_cancelled_chunk(self.model)
 
     chat = chat
+
+    async def chat_stream(self, message: str, history=None):
+        async for chunk in self.chat_with_tools_stream(message, history):
+            yield chunk
 
     def _build_api_url(self) -> str:
         return f"{self.api_base}/chat/completions"
