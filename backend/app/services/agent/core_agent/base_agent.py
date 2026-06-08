@@ -20,11 +20,11 @@ from app.constants import MAX_CONTEXT_CHARS
 from app.utils.logger import logger
 from app.services.agent.chunk_buffer import ChunkBuffer
 
-from app.services.agent.base_react.agent_initializer import AgentInitializer
-from app.services.agent.base_react.tool_manager import ToolManager
-from app.services.agent.base_react.step_emitter import StepEmitter
-from app.services.agent.base_react.run_stream import run_stream
-from app.services.agent.base_react.initialize_run_state import initialize_run_state
+from app.services.agent.core_agent.agent_initializer import AgentInitializer
+from app.services.agent.core_agent.tool_manager import ToolManager
+from app.services.agent.core_agent.step_emitter import StepEmitter
+from app.services.agent.core_agent.react_cycle import run_stream
+from app.services.agent.core_agent.initialize_run_state import initialize_run_state
 from app.services.agent.tool_retry_engine import ToolRetryEngine
 
 

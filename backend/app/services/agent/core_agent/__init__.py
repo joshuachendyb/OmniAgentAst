@@ -12,6 +12,6 @@ core_agent 模块 — Agent核心架构
 Author: 小沈 - 2026-06-08
 """
 from .base_agent import BaseAgent
-from .react_loop import run_stream
+from .react_cycle import run_stream
 
 __all__ = ["BaseAgent", "run_stream"]
