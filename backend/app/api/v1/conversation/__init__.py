@@ -12,7 +12,7 @@ conversation — 从 conversation.py 拆出的职责
 """
 
 from app.api.v1.conversation.assistant_message_id_allocator import AssistantMessageIdAllocator
-from app.utils.common import extract_metadata_from_steps
+from app.utils.display_utils import extract_metadata_from_steps
 from app.api.v1.conversation.ensure_session_exists import ensure_session_exists
 from app.api.v1.conversation.insert_assistant_message import insert_assistant_message
 from app.api.v1.conversation.update_message_fields import update_message_fields

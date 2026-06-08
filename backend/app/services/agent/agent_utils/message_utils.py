@@ -12,7 +12,7 @@ Author: 小沈 - 2026-05-28
 from typing import Any, Dict, List, Optional
 
 from app.services.agent.tool_result_formatter import format_llm_observation
-from app.utils.common import format_param_value
+from app.utils.display_utils import format_param_value
 
 
 def build_llm_messages(message: str, history: Optional[List[Dict]] = None) -> List[Dict]:

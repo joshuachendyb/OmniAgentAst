@@ -34,7 +34,8 @@ from .incident_step import IncidentStep
 from .start_step import StartStep
 from .factory import StepFactory
 
-from app.utils.time_utils import create_timestamp, create_step_counter
+from app.utils.time_utils import create_timestamp
+from app.utils.counter_utils import create_step_counter
 
 __all__ = [
     "ReasoningStep",

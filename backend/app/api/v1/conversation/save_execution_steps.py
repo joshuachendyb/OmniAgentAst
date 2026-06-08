@@ -12,7 +12,7 @@ from app.db import db
 from app.api.v1.message_id_tracker import _user_message_ids, _message_ids_lock
 from app.api.v1.conversation.assistant_message_id_allocator import AssistantMessageIdAllocator
 from app.api.v1.conversation.ensure_session_exists import ensure_session_exists
-from app.utils.common import extract_metadata_from_steps
+from app.utils.display_utils import extract_metadata_from_steps
 from app.api.v1.conversation.insert_assistant_message import insert_assistant_message
 from app.api.v1.conversation.update_message_fields import update_message_fields
 from app.api.v1.conversation.update_session_message_count import update_session_message_count

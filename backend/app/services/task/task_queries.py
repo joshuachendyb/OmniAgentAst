@@ -10,7 +10,7 @@ Author: 小沈 - 2026-05-29
 from typing import Optional, Dict, Any, List
 
 from app.db import db
-from app.utils.data_utils import parse_json
+from app.utils.json_utils import parse_json
 
 
 class TaskQueries:

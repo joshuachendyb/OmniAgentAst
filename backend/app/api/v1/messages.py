@@ -21,9 +21,9 @@ from pydantic import BaseModel, Field
 from app.utils.logger import logger
 from app.utils.response_utils import handle_api_errors
 from app.utils.display_name_cache import get_cached_display_name
-from app.utils.common import extract_display_name_from_steps
+from app.utils.display_utils import extract_display_name_from_steps
 from app.utils.time_utils import convert_to_utc, ensure_timestamp_milliseconds, get_timestamp_ms
-from app.utils.data_utils import parse_json
+from app.utils.json_utils import parse_json
 from app.db import db
 from app.db.models.chat_models import MessageResponse
 from app.api.v1.message_id_tracker import track_user_message, get_user_message_id
