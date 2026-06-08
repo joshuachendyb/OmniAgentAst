@@ -6,17 +6,17 @@
  * Phase 2 P2 优化：路由懒加载 - 减少首屏 bundle 大小
  *
  * @author 小新
- * @version 3.1.0
+ * @version 3.2.0
  * @since 2026-02-17
  * @update 2026-02-18 集成React Router，支持多页面路由 - by 小新
  * @update 2026-04-12 添加路由懒加载 - by 小强
+ * @update 2026-06-09 删除未使用的SecurityProvider - by 小沈
  */
 
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import AppLayout from './components/Layout';
 import NewChatContainer from './components/Chat/NewChatContainer';
-import { SecurityProvider } from './contexts/SecurityContext';
 import { AppProvider } from './contexts/AppContext';
 
 // 路由懒加载 - 减少首屏 bundle 大小
@@ -67,6 +67,7 @@ const RouterContent: React.FC = () => {
  * 应用主组件
  *
  * 变更记录：
+ * - v3.2.0 (2026-06-09 by 小沈): 删除未使用的SecurityProvider
  * - v3.0.0 (2026-02-18 by 小新): 集成React Router，支持多页面路由
  * - v2.0.0 (2026-02-17 by 小新): 重构为左右分栏布局，使用AppLayout组件
  * - v1.0.0: 初始版本，单栏布局
@@ -74,11 +75,9 @@ const RouterContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <BrowserRouter unstable_useTransitions={false}>
-      <SecurityProvider>
-        <AppProvider>
-          <RouterContent />
-        </AppProvider>
-      </SecurityProvider>
+      <AppProvider>
+        <RouterContent />
+      </AppProvider>
     </BrowserRouter>
   );
 };
