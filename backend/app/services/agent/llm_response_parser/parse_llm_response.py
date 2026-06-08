@@ -79,7 +79,8 @@ def _handle_finish_tool(json_data: Dict, prefix_text: str) -> Optional[Dict[str,
     else:
         content = prefix_text or result_text or ""
     thought = prefix_text or json_data.get("thought", "")
-    return _build_handler_result("answer", thought=thought, content=content, response=content)
+    reasoning = json_data.get("reasoning", "")
+    return _build_handler_result("answer", thought=thought, content=content, reasoning=reasoning, response=content)
 
 
 def _handle_implicit_content(json_data: Dict, output: str, prefix_text: str) -> Optional[Dict[str, Any]]:
