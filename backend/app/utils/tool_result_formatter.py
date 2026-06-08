@@ -103,6 +103,26 @@ def make_json_safe(data, max_depth: int = 5, max_str_len: int = 500):
     return data
 
 
+def _get_cached_result(cache_key: str) -> Optional[dict]:
+    """获取缓存结果 - 小沈 2026-06-08"""
+    return _truncate_cache.get(cache_key)
+
+
+def _should_skip_truncation(data: dict, max_chars: int) -> bool:
+    """判断是否需要截断 - 小沈 2026-06-08
+    
+    优化:延迟检查
+    - 快速估算:不序列化就能判断大概大小
+    - 延迟检查:小数据直接返回,大数据才完整检查
+    """
+    estimated_size = _quick_estimate(data)
+    if estimated_size < max_chars // 2:
+        return True
+    
+    json_str = json.dumps(data, ensure_ascii=False)
+    return len(json_str) <= max_chars
+
+
 def truncate_data_for_frontend(data: dict, max_chars: int = DEFAULT_MAX_DATA_CHARS) -> dict:
     """DATA通道截断安全函数 - 小沈 2026-05-20
     
@@ -116,23 +136,13 @@ def truncate_data_for_frontend(data: dict, max_chars: int = DEFAULT_MAX_DATA_CHA
     - 超限 → 递归截断大文本字段,标注原文长度
     """
     try:
-        # 生成缓存key
         cache_key = make_cache_key(data)
         
-        # 检查缓存
-        cached_result = _truncate_cache.get(cache_key)
-        if cached_result is not None:
-            return cached_result
+        cached = _get_cached_result(cache_key)
+        if cached is not None:
+            return cached
         
-        # 快速估算:如果数据简单,直接返回
-        estimated_size = _quick_estimate(data)
-        if estimated_size < max_chars // 2:
-            _truncate_cache.set(cache_key, data)
-            return data
-        
-        # 完整检查
-        json_str = json.dumps(data, ensure_ascii=False)
-        if len(json_str) <= max_chars:
+        if _should_skip_truncation(data, max_chars):
             _truncate_cache.set(cache_key, data)
             return data
         

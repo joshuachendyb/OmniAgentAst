@@ -57,12 +57,26 @@ def count_op_stats(operations: List[Tuple]) -> Dict[str, int]:
     """统计操作状态分布,返回 {total, success, failed, rolled_back}
 
     小沈 2026-05-25 重构拆分
+    小沈 2026-06-08 优化:从3次遍历改为1次遍历
     """
+    success = 0
+    failed = 0
+    rolled_back = 0
+    
+    for op in operations:
+        status = op[3]
+        if status == "success":
+            success += 1
+        elif status == "failed":
+            failed += 1
+        if "rollback" in str(status):
+            rolled_back += 1
+    
     return {
         "total": len(operations),
-        "success": sum(1 for op in operations if op[3] == "success"),
-        "failed": sum(1 for op in operations if op[3] == "failed"),
-        "rolled_back": sum(1 for op in operations if "rollback" in str(op[3])),
+        "success": success,
+        "failed": failed,
+        "rolled_back": rolled_back,
     }
 
 

@@ -105,6 +105,28 @@ class MetricsCollector:
             return {name: self.metrics.get(name, [])}
         return dict(self.metrics)
     
+    def _calculate_basic_stats(self, values: List[float], metrics_list: List[Metric]) -> dict:
+        """计算基础统计 - 小沈 2026-06-08"""
+        return {
+            "count": len(values),
+            "sum": sum(values),
+            "min": min(values),
+            "max": max(values),
+            "avg": sum(values) / len(values),
+            "latest": metrics_list[-1].value,
+            "timestamp": metrics_list[-1].timestamp.isoformat(),
+        }
+    
+    def _calculate_percentiles(self, values: List[float]) -> dict:
+        """计算分位数 - 小沈 2026-06-08"""
+        sorted_values = sorted(values)
+        return {
+            "p50": sorted_values[int(len(sorted_values) * 0.5)],
+            "p90": sorted_values[int(len(sorted_values) * 0.9)],
+            "p95": sorted_values[int(len(sorted_values) * 0.95)],
+            "p99": sorted_values[int(len(sorted_values) * 0.99)],
+        }
+    
     def get_summary(self) -> Dict[str, Dict[str, Any]]:
         """
         获取指标摘要
@@ -117,25 +139,12 @@ class MetricsCollector:
         for name, metrics_list in self.metrics.items():
             if not metrics_list:
                 continue
-                
-            values = [metric.value for metric in metrics_list]
-            summary[name] = {
-                "count": len(values),
-                "sum": sum(values),
-                "min": min(values),
-                "max": max(values),
-                "avg": sum(values) / len(values),
-                "latest": metrics_list[-1].value,
-                "timestamp": metrics_list[-1].timestamp.isoformat(),
-            }
             
-            # 如果是直方图类型,添加分位数计算
+            values = [metric.value for metric in metrics_list]
+            summary[name] = self._calculate_basic_stats(values, metrics_list)
+            
             if metrics_list[0].type == MetricType.HISTOGRAM:
-                sorted_values = sorted(values)
-                summary[name]["p50"] = sorted_values[int(len(sorted_values) * 0.5)]
-                summary[name]["p90"] = sorted_values[int(len(sorted_values) * 0.9)]
-                summary[name]["p95"] = sorted_values[int(len(sorted_values) * 0.95)]
-                summary[name]["p99"] = sorted_values[int(len(sorted_values) * 0.99)]
+                summary[name].update(self._calculate_percentiles(values))
         
         return summary
     
