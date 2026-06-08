@@ -1,6 +1,6 @@
 from . import router
 from .models import ConfigResponse, SecurityConfig
-from ._decorators import handle_config_errors
+from ._helpers import handle_config_errors
 from app.config import get_config as get_config_instance
 from app.utils.logger import logger
 from app.services.ai_config_resolver import get_ai_config_resolver

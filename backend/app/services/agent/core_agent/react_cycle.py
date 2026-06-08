@@ -2,9 +2,6 @@
 """
 run_react_cycle — ReAct 循环核心
 
-小健 - 2026-06-08 替换空占位:实现完整ReAct循环
-原文件是死占位,yield not_implemented,导致Agent完全不可用。
-
 逻辑流程:
 1. initialize_run_state — 初始化状态
 2. while steps < max_steps:
@@ -16,8 +13,9 @@ run_react_cycle — ReAct 循环核心
 
 小健 2026-06-08
 P2-5: if/elif → 注册式分派 — 小欧 2026-06-08
+F4修复: _handle_action拆分SRP + _call_llm空保护 + step_counter用int — 小欧 2026-06-08
 """
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional
 from collections import OrderedDict
 
 from app.utils.logger import logger
@@ -30,19 +28,18 @@ from app.services.agent.steps import (
 from app.services.agent.types import AgentStatus
 
 
-async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: List[int], chunk_buffer):
+async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
     """处理action类型 — 产出thought+action+observation"""
     tool_name = parsed["tool_name"]
     tool_params = parsed.get("tool_params", {})
     step = step_counter[0]
-    thought_content = parsed.get("thought", "")
-    
+
     yield agent._step_emitter.emit(ThoughtStep(
         step=step,
-        content=thought_content,
+        content=parsed.get("thought", ""),
         tool_name=tool_name,
         tool_params=tool_params,
-        thought=thought_content,
+        thought=parsed.get("thought", ""),
         reasoning=parsed.get("reasoning", ""),
     ))
 
@@ -63,11 +60,11 @@ async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: L
     if hasattr(agent, 'message_builder') and agent.message_builder:
         agent.message_builder.add_observation(observation_text=str(result))
     else:
-        logger.warning(f"[react_cycle] message_builder不存在，跳过observation记录")
+        logger.warning("[react_cycle] message_builder不存在，跳过observation记录")
     step_counter[0] = step + 1
 
 
-async def _handle_answer(agent, parsed: Dict, llm_response: str, step_counter: List[int], chunk_buffer):
+async def _handle_answer(agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
     """处理answer/implicit类型"""
     step = step_counter[0]
     content = parsed.get("content", "") or llm_response.strip()
@@ -85,7 +82,7 @@ async def _handle_answer(agent, parsed: Dict, llm_response: str, step_counter: L
     agent.status = AgentStatus.COMPLETED
 
 
-async def _handle_chunk(agent, parsed: Dict, llm_response: str, step_counter: List[int], chunk_buffer):
+async def _handle_chunk(agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
     """处理chunk类型"""
     step = step_counter[0]
     content = parsed.get("content", llm_response.strip())
@@ -106,7 +103,7 @@ async def _handle_chunk(agent, parsed: Dict, llm_response: str, step_counter: Li
                 ))
 
 
-async def _handle_parse_error(agent, parsed: Dict, llm_response: str, step_counter: List[int], chunk_buffer):
+async def _handle_parse_error(agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
     """处理parse_error类型"""
     yield agent._step_emitter.exit_with_error(
         step=step_counter[0], error_type="parse_error",
@@ -115,7 +112,7 @@ async def _handle_parse_error(agent, parsed: Dict, llm_response: str, step_count
     agent.status = AgentStatus.FAILED
 
 
-async def _handle_unknown(agent, parsed: Dict, llm_response: str, step_counter: List[int], chunk_buffer):
+async def _handle_unknown(agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
     """处理未知类型"""
     yield agent._step_emitter.exit_with_error(
         step=step_counter[0], error_type="unknown_parse_type",
@@ -156,6 +153,15 @@ async def run_react_cycle(
             step_counter[0] += 1
 
             llm_response = await self._call_llm()
+
+            if not llm_response or not isinstance(llm_response, str):
+                logger.error(f"[run_react_cycle] _call_llm返回无效响应: {type(llm_response)}")
+                yield self._step_emitter.exit_with_error(
+                    step=step_counter[0], error_type="empty_response",
+                    error_message="LLM返回空响应",
+                )
+                self.status = AgentStatus.FAILED
+                break
 
             if self._cancelled:
                 yield self._create_cancelled_chunk()
