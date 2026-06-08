@@ -8,7 +8,7 @@
 from collections import defaultdict
 from typing import Dict, List, Optional, Any
 from app.services.tools.tool_types import ToolCategory, CATEGORY_ORDER, CATEGORY_NAMES
-from app.utils.common import format_param_value
+from app.utils.display_utils import format_param_value
 
 
 def _group_tools_by_category(

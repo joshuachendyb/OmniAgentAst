@@ -17,7 +17,7 @@ from app.chat_stream import create_error_response, save_execution_steps_to_db
 from app.api.v1.chat.models import ChatRequest
 from app.api.v1.chat.detect_intent import detect_intent
 from app.api.v1.chat.step_start import step_start
-from app.utils.time_utils import create_step_counter
+from app.utils.counter_utils import create_step_counter
 from app.services.task.task_registry import register_task
 from app.services.task.task_interrupt_check import task_interrupt_check, task_pause_check
 from app.services.task.task_cancel_check import task_cancel_check_and_yield

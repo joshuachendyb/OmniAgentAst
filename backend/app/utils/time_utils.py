@@ -14,7 +14,7 @@ Author: 小健 - 2026-05-28
 """
 
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any
 
 
 def create_timestamp() -> int:
@@ -56,31 +56,6 @@ def ensure_timestamp_milliseconds(ts_value: Any) -> int:
         return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
-def create_step_counter() -> Callable[[], int]:
-    """
-    创建统一的步骤计数器函数
-
-    Returns:
-        返回一个闭包函数,每次调用返回递增的步骤号(从1开始)
-    """
-    step_counter = 0
-
-    def next_step() -> int:
-        nonlocal step_counter
-        step_counter += 1
-        return step_counter
-
-    return next_step
-
-
-def timestamp_for_filename() -> str:
-    """生成文件名用时间戳: YYYYMMDD_HHMMSS
-
-    消除 8 处独立重复:ai_config/_backup_config.py、tools/desktop/gui_tools.py 等
-    """
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
-
-
 def now_str(fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
     """获取当前时间格式字符串,默认 YYYY-MM-DD HH:MM:SS
 
@@ -95,7 +70,6 @@ __all__ = [
     "get_utc_timestamp",
     "convert_to_utc",
     "ensure_timestamp_milliseconds",
-    "create_step_counter",
     "timestamp_for_filename",
     "now_str",
 ]

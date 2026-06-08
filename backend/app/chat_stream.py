@@ -17,7 +17,8 @@ import json
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from app.utils.time_utils import create_timestamp, create_step_counter
+from app.utils.time_utils import create_timestamp
+from app.utils.counter_utils import create_step_counter
 from app.services.agent.steps import StartStep, StepFactory
 from app.utils.error_classifier import UnifiedErrorClassifier
 from app.utils.logger import logger
