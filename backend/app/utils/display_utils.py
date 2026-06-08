@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-通用公共函数 — 未归类的公共函数集中于此
+display_utils — display_name相关公共函数
 
 【公共函数规范】
-本文件是公共utility模块,所有未归类的公共函数必须在此定义。
+本文件是公共utility模块,所有display_name相关公共函数必须在此定义。
 禁止在业务代码(api/v1/、services/等)中重复定义公共函数。
-调用方统一从此处导入:from app.utils.common import xxx
+调用方统一从此处导入:from app.utils.display_utils import xxx
 
 Author: 小沈 - 2026-05-28
 """

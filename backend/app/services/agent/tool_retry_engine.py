@@ -161,7 +161,7 @@ class ToolRetryEngine:
         max_retries, backoff_factor, retryable_errors, timeout = self._get_retry_config(action)
         
         def _is_tool_retryable(e: Exception) -> bool:
-            error_category = UnifiedErrorClassifier.classify(e)
+            error_category = UnifiedErrorClassifier.classify_error(e)
             return error_category.is_retryable or error_category.name.lower() in retryable_errors
         
         engine = RetryEngine(
@@ -184,7 +184,7 @@ class ToolRetryEngine:
                 
             except Exception as e:
                 last_error = e
-                error_category = UnifiedErrorClassifier.classify(e)
+                error_category = UnifiedErrorClassifier.classify_error(e)
                 attempt = engine.record_attempt()
 
                 logger.warning(

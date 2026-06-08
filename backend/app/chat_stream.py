@@ -21,6 +21,7 @@ from app.utils.time_utils import create_timestamp
 from app.utils.counter_utils import create_step_counter
 from app.services.agent.steps import StartStep, StepFactory
 from app.utils.error_classifier import UnifiedErrorClassifier
+from app.utils.error_parser import extract_api_error_detail
 from app.utils.logger import logger
 from app.constants import INVALID_SESSION_IDS_MAX
 
@@ -108,7 +109,7 @@ def get_stream_error_info(error_type: str, original_message: str = None) -> tupl
     error_code, default_message = UnifiedErrorClassifier.classify_error_message(error_type, original_message)
     
     if original_message and original_message.strip():
-        original_info = UnifiedErrorClassifier.extract_api_error_detail(original_message)
+        original_info = extract_api_error_detail(original_message)
         if original_info:
             message = f"{default_message}\n原始信息: {original_info}"
         else:

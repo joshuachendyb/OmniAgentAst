@@ -64,6 +64,11 @@ def now_str(fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
     return datetime.now().strftime(fmt)
 
 
+def timestamp_for_filename() -> str:
+    """生成文件名时间戳 YYYYMMDD_HHMMSS"""
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
 __all__ = [
     "create_timestamp",
     "get_timestamp_ms",
