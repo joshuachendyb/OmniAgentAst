@@ -60,6 +60,8 @@ class ThoughtStep(ReasoningStep):
         self._content = content
         self._thought = thought or content
         self._reasoning = reasoning
+        self._tool_name = tool_name
+        self._tool_params = tool_params or {}
     
     def get_type(self) -> str:
         return "thought"
