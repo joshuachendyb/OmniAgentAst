@@ -1,0 +1,206 @@
+# -*- coding: utf-8 -*-
+"""
+action_handler — action类型处理（SRP拆分）
+
+ActionHandler类: 4个职责单一的方法
+- check_safety: 安全检查 → 返回(events, blocked?)
+- wait_confirmation: HITL确认 → 返回(events, rejected?)
+- execute_tools: 工具执行 → 返回results
+- build_observation: 构建observation → 返回events
+
+小沈 2026-06-09
+"""
+import asyncio
+from typing import Dict, List, Any, Tuple
+
+from app.utils.logger import logger
+from app.services.agent.steps import ThoughtStep, ActionToolStep, ObservationStep, ErrorStep, IncidentStep
+from app.services.agent.agent_utils.message_utils import build_observation_text
+
+_SENSITIVE_FIELDS = {"password", "token", "api_key", "secret", "authorization", "credential"}
+
+
+class ActionHandler:
+
+    async def check_safety(self, agent, all_calls: List[Dict], step: int) -> Tuple[List, bool]:
+        """安全检查 — 返回(events, blocked) — 小沈 2026-06-09"""
+        from app.services.safety.tool_safety_checker import get_tool_safety_checker
+
+        events = []
+        safety_checker = get_tool_safety_checker()
+
+        for call in all_calls:
+            safety_result = safety_checker.check_before_execute(call["tool_name"], call["tool_params"])
+
+            if safety_result.get("blocked"):
+                events.append(agent._step_emitter.emit(ErrorStep(
+                    step=step,
+                    error_type="blocked",
+                    error_message=safety_result["message"]
+                )))
+                return events, True
+
+        return events, False
+
+    async def wait_confirmation(self, agent, all_calls: List[Dict], step: int) -> Tuple[List, bool]:
+        """HITL确认 — 返回(events, rejected) — 小沈 2026-06-09"""
+        from app.services.safety.tool_safety_checker import get_tool_safety_checker
+        from app.api.v1.chat.confirm_operation import create_confirmation, wait_for_confirmation_result
+
+        events = []
+        safety_checker = get_tool_safety_checker()
+
+        for call in all_calls:
+            safety_result = safety_checker.check_before_execute(call["tool_name"], call["tool_params"])
+
+            if safety_result.get("requires_confirmation"):
+                desensitized_params = {k: v for k, v in call["tool_params"].items()
+                                       if k not in _SENSITIVE_FIELDS}
+
+                confirm_id = await create_confirmation(agent.task_id)
+
+                events.append(agent._step_emitter.emit(IncidentStep(
+                    step=step,
+                    incident_value="authorization_required",
+                    message=f"需要用户确认工具执行: {call['tool_name']}",
+                    data={
+                        "confirm_id": confirm_id,
+                        "tool_name": call["tool_name"],
+                        "params": desensitized_params,
+                        "safety_level": safety_result["safety_level"],
+                    },
+                )))
+
+                auth = await wait_for_confirmation_result(confirm_id, timeout=60)
+
+                if not auth.get("confirmed"):
+                    events.append(agent._step_emitter.emit(ErrorStep(
+                        step=step,
+                        error_type="user_rejected",
+                        error_message=f"用户拒绝执行工具: {call['tool_name']}"
+                    )))
+                    return events, True
+
+        return events, False
+
+    async def execute_tools(self, agent, all_calls: List[Dict], is_parallel: bool,
+                            tool_name: str, tool_params: Dict) -> List[Any]:
+        """工具执行 — 返回results — 小沈 2026-06-09"""
+        if is_parallel:
+            tasks = [agent._execute_tool(c["tool_name"], c["tool_params"]) for c in all_calls]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+        else:
+            result = await agent._execute_tool(tool_name, tool_params)
+            results = [result]
+        return results
+
+    async def build_observation(self, agent, all_calls: List[Dict], results: List[Any], step: int,
+                                tool_name: str, tool_params: Dict, is_parallel: bool,
+                                pending_calls: List, action_steps: List,
+                                llm_response: str) -> List:
+        """构建observation — 先发射ActionToolStep(带result),再发射ObservationStep — 小沈 2026-06-09"""
+        events = []
+
+        for call, result in zip(all_calls, results):
+            action_step = ActionToolStep(
+                step=step,
+                tool_name=call["tool_name"],
+                tool_params=call["tool_params"],
+            )
+            action_step._execution_result = result
+            action_steps.append(action_step)
+            events.append(agent._step_emitter.emit(action_step))
+
+        obs_parts = []
+        for call, result in zip(all_calls, results):
+            if isinstance(result, Exception):
+                obs_text = f"Observation: 工具{call['tool_name']}执行异常: {result}"
+                agent._update_executed_tool_summary(call["tool_name"], {"code": "error", "message": str(result)}, call["tool_params"])
+            else:
+                obs_text = build_observation_text(result, call["tool_name"], call["tool_params"])
+                agent._update_executed_tool_summary(call["tool_name"], result, call["tool_params"])
+            obs_parts.append(obs_text)
+            try:
+                _update_message_builder(agent, result if not isinstance(result, Exception) else {"code": "error"}, tool_name=call["tool_name"], tool_params=call["tool_params"])
+            except Exception as e:
+                logger.warning(f"[action_handler] _update_message_builder异常: {e}")
+
+        if not obs_parts:
+            obs_parts = ["Observation: 无结果"]
+
+        merged_obs = "\n\n".join(obs_parts) if len(obs_parts) > 1 else obs_parts[0]
+
+        first_result = results[0] if results else {}
+        events.append(agent._step_emitter.emit(ObservationStep(
+            step=step,
+            observation=merged_obs,
+            tool_name=tool_name,
+            tool_params=tool_params,
+            execution_status=first_result.get("code", "") if isinstance(first_result, dict) else "",
+            code=first_result.get("code", "") if isinstance(first_result, dict) else "",
+            warning=first_result.get("warning") if isinstance(first_result, dict) else None,
+            attachment=first_result.get("attachment") if isinstance(first_result, dict) else None,
+            next_actions=first_result.get("next_actions") if isinstance(first_result, dict) else None,
+        )))
+
+        agent.message_builder.add_assistant(llm_response)
+
+        return events
+
+    async def handle(self, agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
+        """完整action处理流程 — async generator — 小沈 2026-06-09"""
+        tool_name = parsed["tool_name"]
+        tool_params = parsed.get("tool_params", {})
+        pending_calls = parsed.get("_pending_calls", [])
+        step = step_counter[0]
+
+        all_calls = [{"tool_name": tool_name, "tool_params": tool_params}]
+        all_calls.extend(pending_calls)
+        is_parallel = len(all_calls) > 1
+
+        yield agent._step_emitter.emit(ThoughtStep(
+            step=step,
+            content=parsed.get("thought", ""),
+            tool_name=tool_name,
+            tool_params=tool_params,
+            thought=parsed.get("thought", ""),
+            reasoning=parsed.get("reasoning", ""),
+        ))
+
+        safety_events, blocked = await self.check_safety(agent, all_calls, step)
+        for event in safety_events:
+            yield event
+        if blocked:
+            return
+
+        confirm_events, rejected = await self.wait_confirmation(agent, all_calls, step)
+        for event in confirm_events:
+            yield event
+        if rejected:
+            return
+
+        results = await self.execute_tools(agent, all_calls, is_parallel, tool_name, tool_params)
+
+        action_steps: List[ActionToolStep] = []
+        obs_events = await self.build_observation(
+            agent, all_calls, results, step,
+            tool_name, tool_params, is_parallel, pending_calls,
+            action_steps, llm_response,
+        )
+        for event in obs_events:
+            yield event
+
+
+def _update_message_builder(agent, result, tool_name: str = "", tool_params: Dict = None):
+    """更新message_builder — 小沈 2026-06-09"""
+    if not hasattr(agent, 'message_builder') or not agent.message_builder:
+        logger.warning("[action_handler] message_builder不存在，跳过observation记录")
+        return
+
+    obs_text = build_observation_text(result, tool_name, tool_params or {})
+    llm_call_count = getattr(agent, 'llm_call_count', 0)
+    agent.message_builder.add_observation(obs_text, llm_call_count=llm_call_count)
+
+
+action_handler = ActionHandler()
+handle_action = action_handler.handle
