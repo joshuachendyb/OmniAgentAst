@@ -1,3 +1,75 @@
+v0.15.2
+
+更新时间: 2026-06-10 01:52:30
+
+## v0.15.1→v0.15.2 变更汇总 - 小沈-2026-06-10
+
+### P4-01 薄调度重构(5 commit)
+
+| 文件 | 变更 |
+|------|------|
+| handlers/ (5个) | 新增handler模块，业务逻辑从react_cycle.py移出 |
+| react_cycle.py | 薄调度重构(16+/250-)，_TYPE_HANDLERS分派 |
+| AGENTS.md | 删除已不存在的LLM classifier fallback描述 |
+| factory/ (多个) | backup_paths合并3文件+get_service加锁+validate_config优化 |
+| message_id_tracker.py | api/v1/→services/迁移 |
+
+### 死代码清理+Safety模块重构(6 commit)
+
+| 文件 | 变更 |
+|------|------|
+| tool_safety_checker.py | 新增工具安全检查器(SafetyManager剥离) |
+| manager.py | 删除已废弃SafetyManager(212行) |
+| file_operation_safety.py | 删除废弃SafetyHook继承 |
+| shell_tools.py | import路径safety.manager→safety.tool_safety_checker |
+| file_tools.py | 删除废弃get_hook/register_hook调用 |
+| llm_core.py | 删除196-224行死代码(return后重复代码) |
+
+### CancelledError+DB异常保护(2 commit)
+
+| 文件 | 变更 |
+|------|------|
+| run_sse_stream.py | CancelledError生成IncidentStep+finally块DB异常保护 |
+| task_cancel_check.py | 防重复append interrupted step |
+
+### 异步修复+HTTP阻塞暂停(4 commit)
+
+| 文件 | 变更 |
+|------|------|
+| confirm_operation.py | get_event_loop→get_running_loop, CLEANUP_INTERVAL 10秒 |
+| close_instance_sync.py | get_running_loop() + fallback |
+| llm_core.py | HTTP阻塞期间定期检查取消/暂停状态+重试 |
+| client_sdk.py | request_stream添加cancel_check参数 |
+| universal_agent.py | LLM请求添加pause_event参数 |
+
+### 线程安全+工具配置(4 commit)
+
+| 文件 | 变更 |
+|------|------|
+| get_service.py | threading.Lock + double-checked locking |
+| constants.py | 新增MAX_CHUNKS_WITHOUT_PROMOTE常量 |
+| chunk_buffer.py | max_without_promote可配置(从constants读取) |
+| tool_manager.py | refresh_fc_tools废弃(UniversalAgent无tools_strategy) |
+
+### 工具函数调整(5 commit)
+
+| 文件 | 变更 |
+|------|------|
+| time_utils.py | 时间工具函数优化 |
+| data_format_helper.py | 新增write_yaml_ordered公共接口 |
+| file_helpers.py | 导入路径调整 |
+| file_visualization.py | 文件可视化调整 |
+| api.ts | Confirm接口改为confirm_id+trust_session |
+
+### 其他(3 commit)
+
+| 文件 | 变更 |
+|------|------|
+| .gitignore | 修复编码损坏+添加插件模型-research/忽略 |
+| models.py | 删除ChatRequest.task_id字段 |
+
+---
+
 v0.15.1
 
 更新时间: 2026-06-09 15:28:15
