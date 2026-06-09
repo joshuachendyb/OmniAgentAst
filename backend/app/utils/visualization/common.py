@@ -3,6 +3,7 @@
 包含 OperationNode, FlowData 数据类及 _query_file_operations, _count_op_stats, _format_size
 小沈 2026-05-29 拆分自 file_visualization.py
 """
+import json
 from pathlib import Path
 from typing import List, Dict, Tuple
 from dataclasses import dataclass
@@ -87,3 +88,12 @@ def format_size(size_bytes: int) -> str:
             return f"{size_bytes:.2f} {unit}"
         size_bytes /= 1024.0
     return f"{size_bytes:.2f} TB"
+
+
+def save_json_file(data: dict, path: Path, logger_name: str = "report") -> str:
+    """保存JSON到文件 - 小沈 2026-06-09 提取自 json_report/tree_report 的重复代码"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+    logger.info(f"{logger_name} saved: {path}")
+    return str(path)

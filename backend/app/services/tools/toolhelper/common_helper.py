@@ -37,6 +37,30 @@ def _check_module(module_name: str) -> bool:
     return available
 
 
+def _decode_bytes_safe(data: Any, encodings: Optional[list] = None) -> str:
+    """安全解码bytes为str - 小沈 2026-06-09 统一 shell_tools._decode_output + code_execution_tools._safe_decode
+    
+    Args:
+        data: bytes、str或None
+        encodings: 尝试的编码列表,默认['utf-8', 'gbk', 'latin-1']
+    
+    Returns:
+        str: 解码后的字符串(已统一替换\\r\\n为\\n)
+    """
+    if data is None:
+        return ""
+    if isinstance(data, str):
+        return data.replace('\r\n', '\n')
+    if isinstance(data, bytes):
+        for enc in (encodings or ['utf-8', 'gbk', 'latin-1']):
+            try:
+                return data.decode(enc).replace('\r\n', '\n')
+            except (UnicodeDecodeError, LookupError):
+                continue
+        return data.decode('latin-1').replace('\r\n', '\n')
+    return str(data)
+
+
 def safe_path_join(base_dir: str, *paths: str) -> Optional[str]:
     """安全路径拼接 + 防路径遍历 - 小沈 2026-05-18
 
@@ -96,6 +120,7 @@ def run_windows_command(
 
 __all__ = [
     "_check_module",
+    "_decode_bytes_safe",
     "safe_path_join",
     "run_windows_command",
 ]

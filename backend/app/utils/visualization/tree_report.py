@@ -65,11 +65,9 @@ def _node_to_dict(node: OperationNode) -> dict:
 
 
 def _save_tree_json(tree_dict: dict, path: Path) -> None:
-    """保存树形JSON到文件 - 小沈 2026-06-08"""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(tree_dict, ensure_ascii=False, indent=2), encoding='utf-8')
-    logger.info(f"Tree structure saved: {path}")
+    """保存树形JSON到文件 - 小沈 2026-06-09 复用 common.save_json_file"""
+    from app.utils.visualization.common import save_json_file as _save
+    _save(tree_dict, path, logger_name="Tree structure")
 
 
 def generate_tree_structure(task_id: str, task_description: str) -> OperationNode:

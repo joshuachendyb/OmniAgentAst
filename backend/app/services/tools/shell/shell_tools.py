@@ -40,6 +40,7 @@ from app.utils.tool_result_formatter import format_output_for_llm, build_next_ac
 from app.utils.logger import logger  # 小健-2026-05-19 修复BUG-001: logger未导入
 from app.services.tools._response import build_success, build_error
 from app.services.tools.toolhelper.shell_helper import _check_shell_injection, _read_stream_nonblocking
+from app.services.tools.toolhelper.common_helper import _decode_bytes_safe
 from app.services.safety.manager import get_safety_manager
 # 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
 from app.services.tools.tool_constants import (
@@ -55,16 +56,8 @@ _background_shells: Dict[str, Dict[str, Any]] = {}
 
 
 def _decode_output(data: Optional[bytes]) -> str:
-    """统一解码字节输出,utf-8→gbk→空 双编码回退。"""
-    if not data:
-        return ""
-    try:
-        return data.decode("utf-8")
-    except (UnicodeDecodeError, AttributeError):
-        try:
-            return data.decode("gbk")
-        except (UnicodeDecodeError, AttributeError):
-            return ""
+    """统一解码字节输出 - 小沈 2026-06-09 委托给 toolhelper.common_helper._decode_bytes_safe"""
+    return _decode_bytes_safe(data)
 
 
 def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
