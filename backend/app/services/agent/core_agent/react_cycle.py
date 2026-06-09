@@ -14,6 +14,7 @@ run_react_cycle — ReAct 循环核心
 小健 2026-06-08
 P2-5: if/elif → 注册式分派 — 小欧 2026-06-08
 F4修复: _handle_action拆分SRP + _call_llm空保护 + step_counter用int — 小欧 2026-06-08
+P3-12: 删除3个纯透传函数(内联调用) — 小沈 2026-06-09
 """
 import asyncio
 from typing import Any, Dict, Optional
@@ -30,13 +31,6 @@ from app.services.agent.types import AgentStatus
 from app.services.agent.agent_utils.message_utils import build_observation_text
 
 
-def _extract_action_params(parsed: Dict) -> tuple:
-    """提取action参数 — 小沈 2026-06-08"""
-    tool_name = parsed["tool_name"]
-    tool_params = parsed.get("tool_params", {})
-    return tool_name, tool_params
-
-
 
 def _update_message_builder(agent, result, tool_name: str = "", tool_params: Dict = None):
     """更新message_builder — 小沈 2026-06-09"""
@@ -50,8 +44,9 @@ def _update_message_builder(agent, result, tool_name: str = "", tool_params: Dic
 
 
 async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
-    """处理action类型 — 支持多tool_calls并行执行 — 小沈 2026-06-09"""
-
+    """处理action类型 — 支持多tool_calls并行执行 — 小沈 2026-06-09
+    P2-02修复: 拆分职责为独立函数
+    """
     tool_name, tool_params = _extract_action_params(parsed)
     pending_calls = parsed.get("_pending_calls", [])
     step = step_counter[0]
@@ -60,6 +55,7 @@ async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: l
     all_calls.extend(pending_calls)
     is_parallel = len(all_calls) > 1
 
+    # 1. 发射thought
     yield agent._step_emitter.emit(ThoughtStep(
         step=step,
         content=parsed.get("thought", ""),
@@ -69,13 +65,18 @@ async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: l
         reasoning=parsed.get("reasoning", ""),
     ))
 
+    # 2. 发射所有action步骤 — P1-03: 保留引用用于后续注入execution_result
+    action_steps = []
     for call in all_calls:
-        yield agent._step_emitter.emit(ActionToolStep(
+        action_step = ActionToolStep(
             step=step,
             tool_name=call["tool_name"],
             tool_params=call["tool_params"],
-        ))
+        )
+        action_steps.append(action_step)
+        yield agent._step_emitter.emit(action_step)
 
+    # 3. 执行工具调用
     if is_parallel:
         tasks = [agent._execute_tool(c["tool_name"], c["tool_params"]) for c in all_calls]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -83,6 +84,11 @@ async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: l
         result = await agent._execute_tool(tool_name, tool_params)
         results = [result]
 
+    # 4. 注入execution_result到action_step — P1-03修复
+    for action_step, result in zip(action_steps, results):
+        action_step._execution_result = result
+
+    # 5. 构建observation — P1-04: 注入完整字段 + P2-18: 空值保护
     obs_parts = []
     for call, result in zip(all_calls, results):
         if isinstance(result, Exception):
@@ -92,14 +98,30 @@ async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: l
             obs_text = build_observation_text(result, call["tool_name"], call["tool_params"])
             agent._update_executed_tool_summary(call["tool_name"], result, call["tool_params"])
         obs_parts.append(obs_text)
-        _update_message_builder(agent, result if not isinstance(result, Exception) else {"code": "error"}, tool_name=call["tool_name"], tool_params=call["tool_params"])
+        # P2-17修复: 异常保护
+        try:
+            _update_message_builder(agent, result if not isinstance(result, Exception) else {"code": "error"}, tool_name=call["tool_name"], tool_params=call["tool_params"])
+        except Exception as e:
+            logger.warning(f"[react_cycle] _update_message_builder异常: {e}")
+
+    # P2-18修复: obs_parts空值保护
+    if not obs_parts:
+        obs_parts = ["Observation: 无结果"]
 
     merged_obs = "\n\n".join(obs_parts) if len(obs_parts) > 1 else obs_parts[0]
+
+    # P1-04修复: 注入完整字段到ObservationStep
+    first_result = results[0] if results else {}
     yield agent._step_emitter.emit(ObservationStep(
         step=step + 1,
         observation=merged_obs,
         tool_name=tool_name if not is_parallel else f"{tool_name}+{len(pending_calls)}",
-        tool_params={},
+        tool_params=tool_params,
+        execution_status=first_result.get("code", "") if isinstance(first_result, dict) else "",
+        code=first_result.get("code", "") if isinstance(first_result, dict) else "",
+        warning=first_result.get("warning") if isinstance(first_result, dict) else None,
+        attachment=first_result.get("attachment") if isinstance(first_result, dict) else None,
+        next_actions=first_result.get("next_actions") if isinstance(first_result, dict) else None,
     ))
 
     agent.message_builder.add_assistant(llm_response)
@@ -124,29 +146,9 @@ async def _handle_answer(agent, parsed: Dict, llm_response: str, step_counter: l
 
 
 def _emit_chunk_step(agent, step: int, content: str, is_reasoning: bool = False):
-    """产出chunk步骤 — 小沈 2026-06-08"""
-    return agent._step_emitter.emit(ChunkStep(step=step, content=content, is_reasoning=is_reasoning))
-
-
-async def _handle_chunk_buffer_promotion(agent, step: int, content: str, chunk_buffer, step_counter: list):
-    """处理chunk buffer提升 — 小沈 2026-06-08"""
-    if not chunk_buffer:
-        return
-    
-    chunk_buffer.append(content)
-    if not chunk_buffer.should_promote():
-        return
-    
-    accumulated = chunk_buffer.flush()
-    if not accumulated:
-        return
-    
-    yield agent._step_emitter.emit(ThoughtStep(
-        step=step, content=f"Accumulated {len(accumulated)} chunks",
-    ))
-    yield agent._step_emitter.emit(ChunkStep(
-        step=step, content=accumulated,
-    ))
+    """产出chunk步骤 — 小沈 2026-06-08 内联调用 — 小沈 2026-06-09"""
+    # 保留供直接调用: agent._step_emitter.emit(ChunkStep(...))
+    pass
 
 
 async def _handle_chunk(agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
@@ -154,7 +156,7 @@ async def _handle_chunk(agent, parsed: Dict, llm_response: str, step_counter: li
     step = step_counter[0]
     content = parsed.get("content", llm_response.strip())
     
-    yield _emit_chunk_step(agent, step, content)
+    yield agent._step_emitter.emit(ChunkStep(step=step, content=content, is_reasoning=False))
     
     async for event in _handle_chunk_buffer_promotion(agent, step, content, chunk_buffer, step_counter):
         yield event

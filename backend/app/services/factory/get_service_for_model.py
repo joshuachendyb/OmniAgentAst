@@ -5,6 +5,7 @@ get_service_for_model — 从 factory.py 拷出
 拷贝来源: factory.py 第264-323行
 
 【小欧 2026-06-09】委托到 get_service.py 共享函数，消除重复
+P1-07/P2-07修复: 使用公开set_instance替代私有变量访问
 """
 
 from typing import Optional
@@ -14,6 +15,7 @@ from app.services.factory.get_service import (
     _create_service_instance,
     _log_service_creation,
     _cleanup_old_instance,
+    set_instance,
 )
 
 logger = setup_logger("OmniAgentAst.AIServiceFactory")
@@ -35,10 +37,8 @@ def _get_provider_config_safe(resolver, provider: str, model: str) -> dict:
         raise ValueError(str(e))
 
 
-def get_service_for_model(provider: str, model: str, config_path: Optional[str] = None):
-    """拷贝自 factory.py 第264-323行"""
-    import app.services.factory.get_service as gs
-
+def get_service_for_model(provider: str, model: str):
+    """P2-07修复: 使用set_instance替代直接操作私有变量; P2-09: 删除未使用的config_path"""
     resolver, ai_config = _get_resolver_and_ai_config()
     
     provider_config = _get_provider_config_safe(resolver, provider, model)
@@ -50,6 +50,7 @@ def get_service_for_model(provider: str, model: str, config_path: Optional[str] 
     if not provider_config:
         provider_config = {}
     
-    gs._instance = _create_service_instance(provider_config, provider, model)
+    instance = _create_service_instance(provider_config, provider, model)
+    set_instance(instance, provider)
 
-    return gs._instance
+    return instance

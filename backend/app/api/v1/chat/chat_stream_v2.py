@@ -48,7 +48,7 @@ async def chat_stream_v2(request: ChatRequest):
         next_step = create_step_counter()
         execution_steps = []
         llm_call_count_holder = [0]
-        current_content = ""
+        current_content_holder = [""]  # P1-02修复: list holder,run_sse_stream内部可修改
 
         try:
             await register_task(task_id, ai_service)
@@ -70,10 +70,10 @@ async def chat_stream_v2(request: ChatRequest):
                 candidates=candidates, last_message=user_input,
                 next_step=next_step,
                 session_id=session_id, current_execution_steps=execution_steps,
-                current_content=current_content, llm_call_count_holder=llm_call_count_holder,
+                current_content_holder=current_content_holder, llm_call_count_holder=llm_call_count_holder,
             ):
                 cancelled_sse = await task_cancel_check_and_yield(
-                    task_id, next_step, session_id, execution_steps, current_content
+                    task_id, next_step, session_id, execution_steps, current_content_holder[0]
                 )
                 if cancelled_sse:
                     yield cancelled_sse

@@ -22,13 +22,20 @@ async def cancel_task(task_id: str, session_id=None) -> dict:
     interrupt_time = datetime.now()
     logger.info(f"[TaskControl] 取消任务 {task_id}")
 
-    # 弹出 asyncio.Task 对象并真正取消
+    # 1. 先设置cancelled状态(含时间戳) — P1-01修复: 先设标志再cancel
+    success = await set_cancelled(
+        task_id,
+        interrupt_time=interrupt_time.isoformat(),
+        cancel_request_time=interrupt_time.timestamp(),
+    )
+
+    # 2. 弹出 asyncio.Task 对象并真正取消
     running_task = await pop_task_field(task_id, "_task")
     if running_task is not None and not running_task.done():
         running_task.cancel()
         logger.info(f"[Task Cancelled] 任务 {task_id} asyncio.Task.cancel() 已调用")
 
-    # 强制关闭HTTP连接(兜底)
+    # 3. 强制关闭HTTP连接(兜底)
     ai_service = await get_task_field(task_id, "ai_service")
     if ai_service:
         try:
@@ -36,13 +43,6 @@ async def cancel_task(task_id: str, session_id=None) -> dict:
             logger.info(f"[Task Cancelled] 任务 {task_id} HTTP连接已强制关闭")
         except Exception as e:
             logger.error(f"[Task Cancelled] 关闭HTTP连接失败: {e}")
-
-    # 设置cancelled状态(含时间戳)
-    success = await set_cancelled(
-        task_id,
-        interrupt_time=interrupt_time.isoformat(),
-        cancel_request_time=interrupt_time.timestamp(),
-    )
 
     if success:
         logger.info(f"[Task Cancelled] 任务 {task_id} 已标记为cancelled,保留记录")

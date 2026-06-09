@@ -22,7 +22,7 @@ async def run_sse_stream(
     next_step: Callable[[], int],
     session_id: str,
     current_execution_steps: List,
-    current_content: str,
+    current_content_holder: list,
     llm_call_count_holder: list = None,
 ) -> AsyncGenerator[str, None]:
     """纯SSE流运行器 — 直接to_dict(), final时批量保存"""
@@ -56,11 +56,11 @@ async def run_sse_stream(
             if event_dict:
                 current_execution_steps.append(event_dict)
 
-            # 更新current_content
+            # 更新current_content — P1-02修复: 通过holder引用同步
             if event_type == 'final':
-                current_content = event_dict.get('response', current_content) or current_content
+                current_content_holder[0] = event_dict.get('response', current_content_holder[0]) or current_content_holder[0]
             elif event_type == 'chunk':
-                current_content = event_dict.get('content', current_content)
+                current_content_holder[0] = event_dict.get('content', current_content_holder[0])
 
             # 格式化SSE(仅format，已用event_dict避免二次to_dict)
             sse_data = format_agent_sse(event_dict)
@@ -71,7 +71,7 @@ async def run_sse_stream(
 
         # final时批量保存一次
         if current_execution_steps:
-            await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
+            await save_execution_steps_to_db(session_id, current_execution_steps, current_content_holder[0])
 
     except Exception as e:
         error_response = await _yield_error_sse(
