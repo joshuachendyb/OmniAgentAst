@@ -169,7 +169,8 @@ export type StatusValue = 'interrupted' | 'paused' | 'resumed' | 'retrying';
  * 【修改 2026-06-09 小沈】直接使用具体类型，不再使用incident_value
  */
 export interface StatusMessage {
-  type: StatusValue;  // 直接使用具体类型（interrupted/paused/resumed/retrying）
+  type: 'incident';
+  incident_value: StatusValue;
   message: string;
   timestamp: string; // 必填，时间戳
   wait_time?: number; // 仅 retrying 时可选，重试等待秒数
@@ -232,7 +233,7 @@ export function isErrorMessage(msg: StreamMessage): msg is ErrorMessage {
 }
 
 export function isStatusMessage(msg: StreamMessage): msg is StatusMessage {
-  return msg.type === 'interrupted' || msg.type === 'paused' || msg.type === 'resumed' || msg.type === 'retrying';
+  return msg.type === 'incident';
 }
 
 // ============================================================
