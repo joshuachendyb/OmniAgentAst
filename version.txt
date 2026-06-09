@@ -1,3 +1,81 @@
+v0.15.1
+
+更新时间: 2026-06-09 15:28:15
+
+## v0.15.0→v0.15.1 变更汇总 - 小沈-2026-06-09
+
+### 一、refactor 重构——Agent/SDK/Service三层统一为request/request_stream方法(6个commit)
+
+| 模块 | 变更内容 |
+|------|---------|
+| SDK层 | chat/chat_stream重构为request/request_stream |
+| Service层 | 统一为request/request_stream/chat方法 |
+| Agent调用 | 统一为request/request_stream方法 |
+| llm_core导出 | 更新为新方法 |
+
+### 二、refactor 重构——死代码清理(6个commit)
+
+| 删除项 | 说明 |
+|--------|------|
+| chat.py / chat_with_tools_stream.py / tool_caller.py | 整文件删除 |
+| REACT_KEYWORDS / _get_all_tool_names | 旧策略删除 |
+| sse_retry.py | 功能合并到network_retry.py |
+| get_config_path.py / compute_file_hash.py | 功能合并到其他模块 |
+| tool_queries.py | 功能合并到tool_registry |
+
+### 三、refactor 重构——10大原则修复(9个commit)
+
+| 原则 | 修复内容 |
+|------|---------|
+| 复用优先 | 9个违反复用优先问题修复(parse_json统一、公用函数抽取等) |
+| DRY | _format_tool_calls消除3次重复parse_json、extract_data_summary抽取公用 |
+| KISS | 简化Step类、API层、Task模型、删除冗余文件 |
+| SRP | Agent状态管理移入Agent、参数验证职责清晰 |
+
+### 四、refactor 重构——ToolCategory分类重构(3个commit)
+
+| 变更 | 说明 |
+|------|------|
+| ToolCategory重命名 | 5分类重命名，消除语义模糊 |
+| SYSTEM拆分为FUND_RUNTIME+NET_PROCESS | 职责更清晰 |
+| batch_process归入FILE | 消除边界模糊 |
+
+### 五、refactor 重构——universal_agent流式架构重构(1个commit)
+
+- 全流式架构重写
+
+### 六、fix bug——修复(8个commit)
+
+| 修复项 | 说明 |
+|--------|------|
+| incident恢复 | 后端发incident+incident_value前端switch分发 |
+| useChatFacade | 删除整对象deps使useMemo生效 |
+| 10项代码质量修复 | bare except/死代码/超时/状态 |
+| 后端第二轮审查6项修复 | R1-1/R1-2/R3-1/R5-1/R10-2/R10-4 |
+| sse.ts重复is_reasoning检查 | 删除重复检查 |
+| useChatFacade修复useMemo依赖项 | perf优化 |
+| _handle_finish_tool补充reasoning传递 | finish时前端可显示推理过程 |
+
+### 七、docs 文档(7个commit)
+
+- LLM核心架构重构实践报告
+- LLM核心架构代码核查报告
+- 重写实施修改方案(10大原则版)
+- LLM核心架构深度分析&对比分析
+- Agent2.5设计文档精简
+- 代码5原则分析报告更新
+- 代码核查调试笔记
+
+### 净效果
+
+- 40+ commit
+- Agent/SDK/Service三层统一命名
+- 死代码大量删除
+- 10大原则全面遵守
+- 全部测试通过
+
+---
+
 v0.15.0
 
 更新时间: 2026-06-09 06:36:19
