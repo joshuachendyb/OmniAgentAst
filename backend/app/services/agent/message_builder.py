@@ -78,7 +78,7 @@ class MessageBuilder:
         return observation_text
 
     def _append_observation(self, observation_text: str, fc_context: Optional[Dict] = None) -> None:
-        """追加observation消息 — 小沈 2026-06-08"""
+        """追加observation消息 — 小沈 2026-06-09 方案G: role=system→user+[Tool Result]"""
         if fc_context and fc_context.get("tool_call_id"):
             tool_call_id = fc_context["tool_call_id"]
             tool_calls = fc_context.get("tool_calls")
@@ -86,7 +86,7 @@ class MessageBuilder:
                 self.conversation_history.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
             self.conversation_history.append({"role": "tool", "content": observation_text, "tool_call_id": tool_call_id})
         else:
-            self.conversation_history.append({"role": "system", "content": observation_text})
+            self.conversation_history.append({"role": "user", "content": f"[Tool Result]\n{observation_text}"})
 
     def add_observation(self, observation_text: str, llm_call_count: int = 0, fc_context: Optional[Dict] = None) -> None:
         """追加observation消息 — 含智能截断 + [Observation]前缀归一化 + trim — 小沈 2026-06-08 重构
@@ -237,17 +237,16 @@ class MessageBuilder:
 
     @staticmethod
     def _is_observation_role(msg: Dict) -> bool:
-        """判断消息是否为observation — 替代 base_react.py L1252-1254
+        """判断消息是否为observation — 小沈 2026-06-09 方案G: 识别role=user+[Tool Result]
 
         三种形式:
-        1. text策略: role=system + content含[Observation]
+        1. text策略: role=user + content含[Tool Result]
         2. tools策略(FC协议): role=tool(与assistant(tool_calls)配对)
-           MSG-003 小沈 2026-05-24: 不再校验tool_call_id,空tool_call_id也被识别
         """
         if msg.get("role") == "tool":
             return True
         content = msg.get("content", "")
-        return msg.get("role") == "system" and ("[Observation]" in content or "Observation:" in content)
+        return msg.get("role") == "user" and "[Tool Result]" in content
 
     @staticmethod
     def _trim_fc_pairs(messages: List[Dict]) -> List[Dict]:

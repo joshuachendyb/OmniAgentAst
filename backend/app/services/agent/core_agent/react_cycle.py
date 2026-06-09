@@ -15,6 +15,7 @@ run_react_cycle — ReAct 循环核心
 P2-5: if/elif → 注册式分派 — 小欧 2026-06-08
 F4修复: _handle_action拆分SRP + _call_llm空保护 + step_counter用int — 小欧 2026-06-08
 """
+import asyncio
 from typing import Any, Dict, Optional
 from collections import OrderedDict
 
@@ -35,38 +36,6 @@ def _extract_action_params(parsed: Dict) -> tuple:
     return tool_name, tool_params
 
 
-async def _emit_thought_and_action(agent, step: int, tool_name: str, tool_params: Dict, parsed: Dict):
-    """产出thought和action步骤 — 小沈 2026-06-08"""
-    yield agent._step_emitter.emit(ThoughtStep(
-        step=step,
-        content=parsed.get("thought", ""),
-        tool_name=tool_name,
-        tool_params=tool_params,
-        thought=parsed.get("thought", ""),
-        reasoning=parsed.get("reasoning", ""),
-    ))
-
-    yield agent._step_emitter.emit(ActionToolStep(
-        step=step,
-        tool_name=tool_name,
-        tool_params=tool_params,
-    ))
-
-
-async def _execute_and_emit_observation(agent, step: int, tool_name: str, tool_params: Dict):
-    """执行工具并产出observation — 小沈 2026-06-08"""
-    result = await agent._execute_tool(tool_name, tool_params)
-
-    obs_text = _build_observation_text(agent, tool_name, tool_params, result)
-
-    _update_executed_summary(agent, tool_name, result)
-
-    yield agent._step_emitter.emit(ObservationStep(
-        step=step + 1,
-        observation=obs_text,
-        tool_name=tool_name,
-        tool_params={},
-    ))
 
 
 def _build_observation_text(agent, tool_name: str, tool_params: Dict, result) -> str:
@@ -78,16 +47,45 @@ def _build_observation_text(agent, tool_name: str, tool_params: Dict, result) ->
     return f"Observation: {str(result)}"
 
 
-def _update_executed_summary(agent, tool_name: str, result):
-    """更新已执行工具汇总 — 小沈 2026-06-09"""
+def _update_executed_summary(agent, tool_name: str, result, tool_params: Dict = None):
+    """更新已执行工具汇总(含数据摘要) — 小沈 2026-06-09 方案H"""
     if not hasattr(agent, '_executed_tool_summary'):
         agent._executed_tool_summary = []
     if isinstance(result, dict):
         from app.services.agent.observation_formatter import extract_status
         status = extract_status(result)
+        data_summary = _extract_data_summary(result)
     else:
         status = "success"
-    agent._executed_tool_summary.append(f"{tool_name}→{status}")
+        data_summary = ""
+    entry = f"{tool_name}→{status}"
+    if data_summary:
+        entry += f"|{data_summary}"
+    agent._executed_tool_summary.append(entry)
+
+
+def _extract_data_summary(result: dict) -> str:
+    """从工具结果提取数据摘要(≤60字符) — 小沈 2026-06-09"""
+    data = result.get("data")
+    if not data:
+        return ""
+    if isinstance(data, str):
+        return data[:60]
+    if isinstance(data, dict):
+        keys = list(data.keys())[:5]
+        parts = []
+        for k in keys:
+            v = data[k]
+            if isinstance(v, (str, int, float, bool)):
+                parts.append(f"{k}={str(v)[:20]}")
+            elif isinstance(v, list):
+                parts.append(f"{k}=[{len(v)}项]")
+            elif isinstance(v, dict):
+                parts.append(f"{k}={{...}}")
+        return "; ".join(parts)[:60]
+    if isinstance(data, list):
+        return f"[{len(data)}项]"
+    return ""
 
 
 def _update_message_builder(agent, result, tool_name: str = "", tool_params: Dict = None):
@@ -102,28 +100,59 @@ def _update_message_builder(agent, result, tool_name: str = "", tool_params: Dic
 
 
 async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
-    """处理action类型 — 产出thought+action+observation — 小沈 2026-06-09 重构"""
+    """处理action类型 — 支持多tool_calls并行执行 — 小沈 2026-06-09"""
+
     tool_name, tool_params = _extract_action_params(parsed)
+    pending_calls = parsed.get("_pending_calls", [])
     step = step_counter[0]
 
-    async for event in _emit_thought_and_action(agent, step, tool_name, tool_params, parsed):
-        yield event
+    all_calls = [{"tool_name": tool_name, "tool_params": tool_params}]
+    all_calls.extend(pending_calls)
+    is_parallel = len(all_calls) > 1
 
-    result = await agent._execute_tool(tool_name, tool_params)
+    yield agent._step_emitter.emit(ThoughtStep(
+        step=step,
+        content=parsed.get("thought", ""),
+        tool_name=tool_name,
+        tool_params=tool_params,
+        thought=parsed.get("thought", ""),
+        reasoning=parsed.get("reasoning", ""),
+    ))
 
-    obs_text = _build_observation_text(agent, tool_name, tool_params, result)
-    _update_executed_summary(agent, tool_name, result)
+    for call in all_calls:
+        yield agent._step_emitter.emit(ActionToolStep(
+            step=step,
+            tool_name=call["tool_name"],
+            tool_params=call["tool_params"],
+        ))
 
+    if is_parallel:
+        tasks = [agent._execute_tool(c["tool_name"], c["tool_params"]) for c in all_calls]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+    else:
+        result = await agent._execute_tool(tool_name, tool_params)
+        results = [result]
+
+    obs_parts = []
+    for call, result in zip(all_calls, results):
+        if isinstance(result, Exception):
+            obs_text = f"Observation: 工具{call['tool_name']}执行异常: {result}"
+            _update_executed_summary(agent, call["tool_name"], {"code": "error", "message": str(result)}, call["tool_params"])
+        else:
+            obs_text = _build_observation_text(agent, call["tool_name"], call["tool_params"], result)
+            _update_executed_summary(agent, call["tool_name"], result, call["tool_params"])
+        obs_parts.append(obs_text)
+        _update_message_builder(agent, result if not isinstance(result, Exception) else {"code": "error"}, tool_name=call["tool_name"], tool_params=call["tool_params"])
+
+    merged_obs = "\n\n".join(obs_parts) if len(obs_parts) > 1 else obs_parts[0]
     yield agent._step_emitter.emit(ObservationStep(
         step=step + 1,
-        observation=obs_text,
-        tool_name=tool_name,
+        observation=merged_obs,
+        tool_name=tool_name if not is_parallel else f"{tool_name}+{len(pending_calls)}",
         tool_params={},
     ))
 
-    _update_message_builder(agent, result, tool_name=tool_name, tool_params=tool_params)
     agent.message_builder.add_assistant(llm_response)
-
     step_counter[0] = step + 1
 
 
