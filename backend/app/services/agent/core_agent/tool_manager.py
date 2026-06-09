@@ -7,7 +7,6 @@ Author: 小沈 - 2026-06-07
 
 from typing import Set
 
-from app.services.tools.tool_queries import get_tools_from_registry_by_category
 from app.services.tools.registry import tool_registry
 from app.services.tools.tool_types import ToolCategory
 from app.constants import META_TOOL_NAMES
@@ -37,14 +36,14 @@ class ToolManager:
 
         # ② 加载分类工具
         if self.agent.tool_category:
-            category_tools = get_tools_from_registry_by_category(tool_registry, self.agent.tool_category)
+            category_tools = tool_registry.get_implementations_by_category(self.agent.tool_category)
             self.agent._tools_dict.update(category_tools)
 
         # ③ 声明式: 额外加载config.extra_categories中的分类工具
         config = getattr(self.agent, 'config', None)
         if config and config.extra_categories:
             for extra_cat in config.extra_categories:
-                extra_tools = get_tools_from_registry_by_category(tool_registry, extra_cat)
+                extra_tools = tool_registry.get_implementations_by_category(extra_cat)
                 self.agent._tools_dict.update(extra_tools)
                 self.agent._loaded_categories.add(extra_cat.value)
                 logger.info(f"[ToolManager] 额外加载{extra_cat.value}分类{len(extra_tools)}个工具")
@@ -74,7 +73,7 @@ class ToolManager:
             return
 
         logger.info(f"[动态加载] 原因: {reason},加载意图: {intent_type},分类: {category.value}")
-        new_tools = get_tools_from_registry_by_category(tool_registry, category)
+        new_tools = tool_registry.get_implementations_by_category(category)
 
         self.agent._tools_dict.update(new_tools)
         self.agent._loaded_categories.add(category.value)

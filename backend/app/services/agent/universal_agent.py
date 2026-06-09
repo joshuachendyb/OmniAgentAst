@@ -148,6 +148,10 @@ class UniversalAgent(BaseAgent):
         self._cached_openai_tools = tool_registry.to_openai_tools(category=category)
         return self._cached_openai_tools
 
+    def invalidate_tool_cache(self):
+        """P2-14修复: 清除工具缓存,工具注册/注销后调用"""
+        self._cached_openai_tools = []
+
     async def _call_llm_fc(self, messages: list, openai_tools: list) -> str:
         try:
             response = await self.llm_client.chat(
