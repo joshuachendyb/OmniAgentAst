@@ -13,6 +13,7 @@ import asyncio
 from typing import AsyncGenerator
 
 from app.utils.logger import logger
+from app.utils.json_utils import parse_json
 from app.services.llm.core import StreamChunk
 
 
@@ -75,7 +76,10 @@ async def parse_sse_stream(
             return
 
         try:
-            data = json.loads(data_str)
+            data = parse_json(data_str)
+            if data is None:
+                logger.debug(f"[{log_tag}] JSON解析失败: {data_str[:100]}")
+                continue
             choices = data.get("choices", [])
             if choices:
                 delta = choices[0].get("delta", {})

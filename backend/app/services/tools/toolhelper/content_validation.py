@@ -19,6 +19,8 @@ from io import StringIO
 from typing import Optional
 import xml.etree.ElementTree as ET
 
+from app.utils.json_utils import parse_json
+
 
 def validate_json_content(content: str) -> Optional[str]:
     """验证JSON内容格式 — 小健 2026-05-25
@@ -36,7 +38,7 @@ def validate_json_content(content: str) -> Optional[str]:
         - 返回str表示错误信息
     """
     try:
-        json.loads(content)
+        parse_json(content, raise_on_error=True)
         return None
     except json.JSONDecodeError as e:
         return f"JSON格式验证失败: 第{e.lineno}行第{e.colno}列 - {e.msg}"
