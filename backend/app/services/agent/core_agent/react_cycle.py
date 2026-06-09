@@ -207,10 +207,19 @@ _DEFAULT_HANDLER = _handle_unknown
 
 
 async def _process_single_step(agent, step_counter: list, chunk_buffer) -> bool:
-    """处理单步循环 — 返回是否应该继续 — 小沈 2026-06-08"""
+    """处理单步循环 — 返回是否应该继续 — 小沈 2026-06-09 支持流式chunk"""
     step_counter[0] += 1
 
-    llm_response = await agent._call_llm()
+    llm_response = None
+    async for chunk_or_response in agent._call_llm():
+        chunk_type, chunk_data = chunk_or_response
+        
+        if chunk_type == "chunk":
+            # 流式输出chunk给前端
+            yield agent._step_emitter.emit(chunk_data)
+        elif chunk_type == "response":
+            # 完整响应
+            llm_response = chunk_data
 
     if not llm_response or not isinstance(llm_response, str):
         logger.error(f"[run_react_cycle] _call_llm返回无效响应: {type(llm_response)}")
@@ -261,8 +270,13 @@ async def run_react_cycle(
         while step_counter[0] < max_steps:
             async for event in _process_single_step(agent, step_counter, chunk_buffer):
                 yield event
-            
+
             if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
+                break
+
+            # R10-4修复: chunk累积超时强制停止,防止LLM持续返回chunk导致无限循环 — 小沈 2026-06-09
+            if chunk_buffer.should_force_stop():
+                logger.warning(f"[run_react_cycle] chunk累积超时({step_counter[0]}步),强制停止")
                 break
 
     except Exception as e:

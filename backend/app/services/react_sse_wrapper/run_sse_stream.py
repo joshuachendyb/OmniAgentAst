@@ -8,9 +8,11 @@ _run_sse_stream — 纯SSE流运行器
 Author: 小沈 - 2026-05-31
 """
 
+import asyncio
 from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 
 from app.utils.logger import logger
+from app.services.agent.types import AgentStatus
 
 
 async def run_sse_stream(
@@ -35,15 +37,12 @@ async def run_sse_stream(
     error_type = f'{intent_type}_operation_error'
 
     try:
+        # R1-2修复: AgentFactory.create移入try块,确保失败时finally能保存 — 小沈 2026-06-09
         agent = AgentFactory.create(
             intent_type=intent_type, llm_client=llm_client,
             task_id=task_id, candidates=candidates,
         )
-    except ValueError as e:
-        logger.error(f"[ChatOp] intent_type='{intent_type}' 无专用Agent: {e}")
-        raise
 
-    try:
         async for event in agent.run_react_cycle(
             task=last_message, context=None,
             task_id=task_id,
@@ -69,6 +68,12 @@ async def run_sse_stream(
             if sse_data:
                 yield sse_data
 
+    except asyncio.CancelledError:
+        # R3-1修复: CancelledError不是Exception子类,需单独捕获 — 小沈 2026-06-09
+        logger.info(f"[SSE] 任务 {task_id} 被取消(CancelledError)")
+        if agent is not None:
+            agent.status = AgentStatus.COMPLETED
+
     except Exception as e:
         error_response = await _yield_error_sse(
             error_type=error_type, error_label=error_label, log_tag=log_tag,
@@ -76,11 +81,12 @@ async def run_sse_stream(
             current_execution_steps=current_execution_steps, session_id=session_id,
         )
         yield error_response
+
     finally:
-        # 【修改 2026-06-09 小沈】统一保存入口：正常和取消都走这里
+        # 统一保存入口：正常、异常、取消都走这里
         if current_execution_steps:
             await save_execution_steps_to_db(session_id, current_execution_steps, current_content_holder[0])
-        
+
         if llm_call_count_holder is not None and agent is not None:
             llm_call_count_holder[0] = getattr(agent, "llm_call_count", 0)
 

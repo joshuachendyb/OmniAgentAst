@@ -19,7 +19,7 @@ from app.api.v1.chat.detect_intent import detect_intent
 from app.api.v1.chat.step_start import step_start
 from app.utils.counter_utils import create_step_counter
 from app.services.task.task_registry import register_task
-from app.services.task.task_interrupt_check import task_interrupt_check, task_pause_check
+from app.services.task.task_interrupt_check import task_interrupt_check, task_pause_check_and_yield
 from app.services.task.task_cancel_check import task_cancel_check_and_yield
 from app.services.task.task_cleanup import task_cleanup
 from app.services.react_sse_wrapper.run_sse_stream import run_sse_stream
@@ -59,9 +59,6 @@ async def chat_stream_v2(request: ChatRequest):
                 await task_cleanup(task_id, 0)
                 return
 
-            async for pause_event in task_pause_check(task_id):
-                yield pause_event
-
             async for event in step_start(ai_service, task_id, next_step, user_input, execution_steps, session_id):
                 yield event
 
@@ -72,6 +69,10 @@ async def chat_stream_v2(request: ChatRequest):
                 session_id=session_id, current_execution_steps=execution_steps,
                 current_content_holder=current_content_holder, llm_call_count_holder=llm_call_count_holder,
             ):
+                # R1-1修复: 每次迭代检查暂停状态 — 小沈 2026-06-09
+                async for pause_event in task_pause_check_and_yield(task_id, next_step):
+                    yield pause_event
+
                 cancelled_sse = await task_cancel_check_and_yield(
                     task_id, next_step, session_id, execution_steps, current_content_holder[0]
                 )

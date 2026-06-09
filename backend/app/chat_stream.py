@@ -177,10 +177,10 @@ async def send_start_step(
     next_step: Callable,
     user_message: str,
     security_check_result: Dict[str, Any],
-    current_execution_steps: List[Dict[str, Any]],
-    session_id: str,
 ) -> StartStep:
-    """发送 start 步骤 — P2-19 使用StartStep统一构建"""
+    """发送 start 步骤 — P2-19 使用StartStep统一构建
+    R10-2修复: 删除未使用的current_execution_steps和session_id参数 — 小沈 2026-06-09
+    """
     start_step = StartStep(
         step=next_step(),
         display_name=f"{ai_service.provider} ({ai_service.model})",
@@ -195,5 +195,4 @@ async def send_start_step(
             'blocked': security_check_result.get('blocked', False)
         }
     )
-    # P2-05修复: 移除提前append,由run_sse_stream统一处理
     return start_step
