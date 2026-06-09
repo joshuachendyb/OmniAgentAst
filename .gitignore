@@ -20,6 +20,7 @@ backend/logs/
 backend/pt*.txt
 backend/pt.txt
 backend/json_backup/
+backup/
 
 # frontend build
 frontend/dist/
