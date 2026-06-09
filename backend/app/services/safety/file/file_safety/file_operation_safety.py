@@ -1,17 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-FileOperationSafety — 从 file_safety.py 拷出
+FileOperationSafety — 文件操作安全服务
 
-拷贝来源: file_safety.py 第42-554行(类骨架)
+小沈 - 2026-06-09 删除SafetyHook继承(SafetyHook已删除)
 """
 
-from app.services.safety.manager import SafetyHook
 from app.services.safety.file.file_safety.config import FileSafetyConfig
 from app.utils.logger import logger
 
 
-class FileOperationSafety(SafetyHook):
-    """拷贝自 file_safety.py 第42-554行 — 类骨架"""
+class FileOperationSafety:
 
     def __init__(self):
         self.config = FileSafetyConfig()
