@@ -27,7 +27,7 @@ class _PendingConfirmation:
 _CONFIRM_TIMEOUT = 60  # 统一超时（与wait_for_confirmation默认timeout一致）
 _pending_confirmations: Dict[str, _PendingConfirmation] = {}
 _last_cleanup_time: float = 0.0  # 上次清理时间戳
-_CLEANUP_INTERVAL = 30.0  # 清理间隔（秒）
+_CLEANUP_INTERVAL = 10  # 【修复P1-3 2026-06-09 小沈】30秒→10秒，更频繁清理
 
 
 def _cleanup_stale_confirmations():
@@ -35,7 +35,7 @@ def _cleanup_stale_confirmations():
     global _last_cleanup_time
     now = time.time()
     
-    # 频率限制：每30秒最多清理一次
+    # 频率限制：每_CLEANUP_INTERVAL秒最多清理一次
     if now - _last_cleanup_time < _CLEANUP_INTERVAL:
         return
     
@@ -76,14 +76,16 @@ async def confirm_operation(request: Request):
     return {"success": True}
 
 
-def create_confirmation(task_id: str) -> str:
+async def create_confirmation(task_id: str) -> str:
     """
     创建确认请求，返回confirm_id
     
     在react_cycle中调用，先创建再发射IncidentStep
+    
+    【修复 2026-06-09 小沈】使用get_running_loop替代get_event_loop
     """
     confirm_id = f"{task_id}:{uuid4().hex[:8]}"
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     future = loop.create_future()
     _pending_confirmations[confirm_id] = _PendingConfirmation(
         future=future, created_at=time.time()
