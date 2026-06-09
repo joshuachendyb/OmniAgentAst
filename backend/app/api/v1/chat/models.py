@@ -22,5 +22,4 @@ class ChatRequest(BaseModel):
     temperature: Optional[float] = Field(default=0.7, ge=0, le=2, description="温度参数")
     provider: Optional[str] = Field(default=None, description="前端指定的提供商")
     model: Optional[str] = Field(default=None, description="前端指定的模型")
-    task_id: Optional[str] = Field(default=None, description="前端指定的任务ID")
     session_id: Optional[str] = Field(default=None, description="会话ID")
