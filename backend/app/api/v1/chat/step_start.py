@@ -16,8 +16,10 @@ async def step_start(ai_service, task_id, next_step, user_input, execution_steps
         start_step = await send_start_step(
             ai_service=ai_service, task_id=task_id, next_step=next_step,
             user_message=user_input, security_check_result={},
-            current_execution_steps=execution_steps, session_id=session_id,
         )
-        yield format_agent_sse(start_step.to_dict())
+        # R5-1修复: start_step追加到execution_steps,确保保存到DB — 小沈 2026-06-09
+        start_dict = start_step.to_dict()
+        execution_steps.append(start_dict)
+        yield format_agent_sse(start_dict)
     except Exception as e:
         yield create_error_response(error_type="start_failed", error_message=f"start步骤失败: {e}")
