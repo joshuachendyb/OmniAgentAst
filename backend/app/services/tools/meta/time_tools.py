@@ -6,19 +6,18 @@
 - 本文件从 app/tools/time_tools.py 迁移而来
 
 【2026-05-02 小沈重构】
-- 移除所有 @register_tool 装饰器，注册由 time_register.py 显式完成
+- 移除所有 @register_tool 装饰器,注册由 time_register.py 显式完成
 - 移除 register_tool/ToolCategory 导入
-- 移除 Pydantic 模型导入（模型由 time_register.py 导入）
+- 移除 Pydantic 模型导入(模型由 time_register.py 导入)
 
 【2026-05-18 小沈重构】16→7精简
-- 16个公开函数改为内部函数（加下划线前缀）
-- 新增7个公开函数：get_time, time_add, time_diff, query_calendar, timezone_convert, timer
-- 旧函数委托保留（P9向下兼容）
+- 16个公开函数改为内部函数(加下划线前缀)
+- 新增7个公开函数:get_time, time_add, time_diff, query_calendar, timezone_convert, timer
 
-包含（重构后7个公开工具）：
+包含(重构后7个公开工具):
 - get_time: 统一入口(action=now/format/to_timestamp/from_timestamp)
-- time_add: 时间加减（增强：months用relativedelta + weekday/isoweekday）
-- time_diff: 时间差值（增强：is_after/is_before/is_equal/diff_seconds_signed）
+- time_add: 时间加减(增强:months用relativedelta + weekday/isoweekday)
+- time_diff: 时间差值(增强:is_after/is_before/is_equal/diff_seconds_signed)
 - query_calendar: 日期综合检查(check_type=weekend/holiday/workday/next_workday)
 - timezone_convert: 时区转换(direction=utc_to_local/local_to_utc/any)
 - timer: 定时器管理(action=set/clear/list)
@@ -33,15 +32,22 @@ import json;
 from datetime import datetime, timedelta, timezone;
 from typing import Dict, Any, Optional, Callable, Awaitable, List, Union, Literal;
 import re;
+from app.utils.common_patterns import UTC_OFFSET_PATTERN
 from app.utils.logger import logger;
-from app.services.tools.tool_result_utils import build_next_actions, truncate_data_for_frontend;
+from app.utils.time_utils import get_timestamp_ms
+from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend;
 from app.services.tools._response import build_success, build_error
+# 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
+from app.services.tools.tool_constants import HTTPX_TIMEOUT_DEFAULT
 from app.services.tools.toolhelper.date_helper import (
     parse_datetime_any as _parse_datetime_any,
     parse_datetime_string as _parse_datetime_string,
     is_holiday as _is_holiday,
     calc_next_n_workday as _calc_next_n_workday,
     resolve_timezone as _resolve_timezone,
+
+
+
 );
 
 
@@ -60,7 +66,7 @@ _timer_events: List[Dict[str, Any]] = [];  # 存储触发事件
 
 
 # ===========================================================
-# 内部函数（原16个公开函数，加下划线前缀）— 小沈 2026-05-18
+# 内部函数(原16个公开函数,加下划线前缀)— 小沈 2026-05-18
 # ===========================================================
 
 def _get_current_time(
@@ -132,7 +138,7 @@ def _get_current_time(
                     "isoweekday": now.isoweekday(),
                     "locale": locale
                 },
-                "成功获取当前时间（使用默认时区）",
+                "成功获取当前时间(使用默认时区)",
                 llm_data={
                     "iso": now.isoformat(),
                     "format": formatted,
@@ -141,7 +147,7 @@ def _get_current_time(
             )
         except Exception as e2:
             return build_error(
-                "ERR_TIME_NOW",
+                ERR_TIME_NOW,
                 f"获取当前时间失败: {str(e2)}",
                 next_actions=build_next_actions([
                     ("get_time", "重试获取时间", "需要重新获取时间时"),
@@ -152,7 +158,6 @@ def _get_current_time(
 def _time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None) -> Dict[str, Any]:
     """格式化时间戳 — 小沈 2026-05-18"""
     try:
-        from datetime import timezone
         # 1. 确定要格式化的datetime
         if timestamp is None:
             dt = datetime.now().astimezone()
@@ -164,7 +169,7 @@ def _time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None)
             dt = _parse_datetime_string(timestamp)
             if dt is None:
                 return build_error(
-                    "ERR_META_TIME_FORMAT",
+                    ERR_META_TIME_FORMAT,
                     f"无法解析时间字符串: {timestamp}",
                     next_actions=build_next_actions([
                         ("get_time", "获取当前时间", "解析失败时获取当前时间"),
@@ -174,7 +179,7 @@ def _time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None)
             dt = timestamp.astimezone() if timestamp.tzinfo else timestamp.astimezone()
         else:
             return build_error(
-                "ERR_META_TIME_FORMAT",
+                ERR_META_TIME_FORMAT,
                 f"不支持的时间戳类型: {type(timestamp)}",
                 next_actions=build_next_actions([
                     ("get_time", "获取当前时间", "类型不支持时获取当前时间"),
@@ -202,7 +207,7 @@ def _time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None)
         )
     except Exception as e:
         return build_error(
-            "ERR_META_TIME_FORMAT",
+            ERR_META_TIME_FORMAT,
             f"格式化时间失败: {str(e)}",
             next_actions=build_next_actions([
                 ("get_time", "获取当前时间", "格式化失败时获取当前时间"),
@@ -211,13 +216,13 @@ def _time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None)
 
 
 def _time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
-    """计算两个时间之间的差值，返回人性化描述 — 小沈 2026-05-18"""
+    """计算两个时间之间的差值,返回人性化描述 — 小沈 2026-05-18"""
     try:
         # 1. 解析开始时间
         start_dt = _parse_datetime_any(start)
         if start_dt is None:
             return build_error(
-                "ERR_TIME_DIFF",
+                ERR_TIME_DIFF,
                 f"无法解析开始时间: {start} (类型: {type(start).__name__})",
                 next_actions=build_next_actions([("get_time", "获取当前时间", "时间解析失败时")]),
             )
@@ -232,7 +237,7 @@ def _time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
             end_dt = _parse_datetime_any(end)
             if end_dt is None:
                 return build_error(
-                    "ERR_TIME_DIFF",
+                    ERR_TIME_DIFF,
                     f"无法解析结束时间: {end} (类型: {type(end).__name__})",
                     next_actions=build_next_actions([("get_time", "获取当前时间", "时间解析失败时")]),
                 )
@@ -243,7 +248,7 @@ def _time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
         # 3. 计算差值
         delta = end_dt - start_dt
         total_seconds = abs(delta.total_seconds())
-        # is_future: 结束时间是否在未来（相对于当前时间）
+        # is_future: 结束时间是否在未来(相对于当前时间)
         now = datetime.now().astimezone()
         is_future = end_dt > now  # end在未来 → True
 
@@ -285,7 +290,7 @@ def _time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
         )
     except Exception as e:
         return build_error(
-            "ERR_TIME_DIFF",
+            ERR_TIME_DIFF,
             f"计算时间差失败: {str(e)}",
             next_actions=build_next_actions([
                 ("get_time", "获取当前时间", "时间解析失败时"),
@@ -296,14 +301,14 @@ def _time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
 def _error_timer_set(reason: str) -> Dict[str, Any]:
     """统一构建定时器设置错误 — 小健 2026-05-25"""
     return build_error(
-        "ERR_TIMER_SET",
+        ERR_TIMER_SET,
         reason,
         next_actions=build_next_actions([("timer", "重试设置定时器", "需要重新设置时")]),
     )
 
 
 async def _invoke_timer_callback(timer_id: str, callback: str, callback_data: Optional[Dict] = None) -> Dict[str, Any]:
-    """执行定时器回调，返回 event — 小健 2026-05-25"""
+    """执行定时器回调,返回 event — 小健 2026-05-25"""
     event = {
         "timer_id": timer_id,
         "triggered_at": datetime.now().astimezone().isoformat(),
@@ -318,7 +323,7 @@ async def _invoke_timer_callback(timer_id: str, callback: str, callback_data: Op
             event["executed_as"] = "log_message"
         else:
             import httpx
-            resp = httpx.get(callback, timeout=5.0)
+            resp = httpx.get(callback, timeout=HTTPX_TIMEOUT_DEFAULT)
             event["executed_as"] = "http_call"
             event["http_status"] = resp.status_code
     except httpx.TimeoutException:
@@ -333,7 +338,7 @@ async def _invoke_timer_callback(timer_id: str, callback: str, callback_data: Op
 
 
 async def _timer_set(delay: float, callback: str, callback_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """设置定时器，在延迟后执行回调 — 小沈 2026-05-25 重构"""
+    """设置定时器,在延迟后执行回调 — 小沈 2026-05-25 重构"""
     global _timer_counter
 
     if delay <= 0:
@@ -342,7 +347,7 @@ async def _timer_set(delay: float, callback: str, callback_data: Optional[Dict[s
         return _error_timer_set("延迟时间不能超过24小时")
 
     _timer_counter += 1
-    timer_id = f"timer_{_timer_counter}_{int(datetime.now().timestamp())}"
+    timer_id = f"timer_{_timer_counter}_{get_timestamp_ms()}"
     trigger_at = datetime.now().astimezone() + timedelta(seconds=delay)
 
     _timer_callbacks[timer_id] = {
@@ -362,19 +367,19 @@ async def _timer_set(delay: float, callback: str, callback_data: Optional[Dict[s
     return build_success({
         "timer_id": timer_id, "delay": delay,
         "trigger_at": trigger_at.strftime("%Y-%m-%d %H:%M:%S"),
-        "message": f"定时器已设置，{int(delay / 60)}分钟后提醒",
+        "message": f"定时器已设置,{int(delay / 60)}分钟后提醒",
     }, "定时器设置成功",
         llm_data={"timer_id": timer_id, "trigger_at": trigger_at.strftime("%Y-%m-%d %H:%M:%S")},
     )
 
 
 async def _timer_clear(timer_id: str) -> Dict[str, Any]:
-    """清除（取消）定时器 — 小沈 2026-05-18"""
+    """清除(取消)定时器 — 小沈 2026-05-18"""
     try:
         if timer_id not in _timers:
             return build_success(
                 {"timer_id": timer_id, "cancelled": False},
-                f"定时器 {timer_id} 已触发或不存在，无需取消",
+                f"定时器 {timer_id} 已触发或不存在,无需取消",
                 llm_data={"timer_id": timer_id, "cancelled": False},
             )
 
@@ -395,7 +400,7 @@ async def _timer_clear(timer_id: str) -> Dict[str, Any]:
         )
     except Exception as e:
         return build_error(
-            "ERR_TIMER_CLEAR",
+            ERR_TIMER_CLEAR,
             f"清除定时器失败: {str(e)}",
             next_actions=build_next_actions([
                 ("timer", "列出定时器", "需要查看现有定时器时", {"action": "list"}),
@@ -410,7 +415,7 @@ def _time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[s
         utc_dt = _parse_datetime_any(utc_time)
         if utc_dt is None:
             return build_error(
-                "ERR_META_TIME_CONVERT",
+                ERR_META_TIME_CONVERT,
                 f"无法解析UTC时间: {utc_time}",
                 next_actions=build_next_actions([("timezone_convert", "重试时区转换", "需要重新转换时")]),
             )
@@ -421,15 +426,15 @@ def _time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[s
 
         # 2. 转换到目标时区
         if target_tz:
-            # 优先尝试IANA时区名称（如"Asia/Shanghai"、"America/New_York"）
+            # 优先尝试IANA时区名称(如"Asia/Shanghai"、"America/New_York")
             try:
                 import pytz
                 try:
                     tz = pytz.timezone(target_tz)
                     local_dt = utc_dt.astimezone(tz)
                 except Exception:
-                    # 方法2：失败再尝试±HH:MM格式
-                    if re.match(r'^[+-]\d{2}:\d{2}$', target_tz):
+                    # 方法2:失败再尝试±HH:MM格式
+                    if UTC_OFFSET_PATTERN.match(target_tz):
                         sign = -1 if target_tz[0] == '-' else 1
                         offset_hours = int(target_tz[1:3])
                         offset_minutes = int(target_tz[4:6])
@@ -454,7 +459,7 @@ def _time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[s
         )
     except Exception as e:
         return build_error(
-            "ERR_META_TIME_CONVERT",
+            ERR_META_TIME_CONVERT,
             f"时区转换失败: {str(e)}",
             next_actions=build_next_actions([
                 ("timezone_convert", "重试时区转换", "需要重新转换时"),
@@ -469,7 +474,7 @@ def _time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict
         local_dt = _parse_datetime_any(local_time)
         if local_dt is None:
             return build_error(
-                "ERR_META_TIME_CONVERT",
+                ERR_META_TIME_CONVERT,
                 f"无法解析本地时间: {local_time}",
                 next_actions=build_next_actions([("timezone_convert", "重试时区转换", "需要重新转换时")]),
             )
@@ -486,13 +491,13 @@ def _time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict
                         local_dt = local_dt.astimezone(tz)
                 except Exception:
                     # 失败再尝试±HH:MM格式
-                    if re.match(r'^[+-]\d{2}:\d{2}$', source_tz):
+                    if UTC_OFFSET_PATTERN.match(source_tz):
                         sign = -1 if source_tz[0] == '-' else 1
                         offset_hours = int(source_tz[1:3])
                         offset_minutes = int(source_tz[4:6])
                         tz = timezone(timedelta(hours=sign*offset_hours, minutes=sign*offset_minutes))
                         local_dt = local_dt.replace(tzinfo=tz)
-                    # 其他情况，保持原样（使用本地时区）
+                    # 其他情况,保持原样(使用本地时区)
             except Exception:
                 pass
 
@@ -510,7 +515,7 @@ def _time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict
         )
     except Exception as e:
         return build_error(
-            "ERR_META_TIME_CONVERT",
+            ERR_META_TIME_CONVERT,
             f"时区转换失败: {str(e)}",
             next_actions=build_next_actions([
                 ("timezone_convert", "重试时区转换", "需要重新转换时"),
@@ -529,7 +534,7 @@ def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, 
             start_dt = _parse_datetime_any(start)
             if start_dt is None:
                 return build_error(
-                    "ERR_TIME_ADD",
+                    ERR_TIME_ADD,
                     f"无法解析基准时间: {start}",
                     next_actions=build_next_actions([("get_time", "获取当前时间", "基准时间解析失败时")]),
                 )
@@ -556,8 +561,8 @@ def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, 
                 new_dt = start_dt + timedelta(days=delta * 30)
         else:
             return build_error(
-                "ERR_TIME_ADD",
-                f"不支持的单位: {unit}，可选: days/hours/minutes/seconds/months",
+                ERR_TIME_ADD,
+                f"不支持的单位: {unit},可选: days/hours/minutes/seconds/months",
                 next_actions=build_next_actions([("tool_help", "查看time_add用法", "不确定unit时", {"tool_name": "time_add"})]),
             )
 
@@ -572,13 +577,13 @@ def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, 
         }
         return build_success(
             result_data,
-            f"成功计算时间（{delta} {unit}后）",
+            f"成功计算时间({delta} {unit}后)",
             llm_data={"result_time": result_data["result_time"], "iso": result_data["iso"], "unit_used": unit},
         )
 
     except Exception as e:
         return build_error(
-            "ERR_TIME_ADD",
+            ERR_TIME_ADD,
             f"时间加减失败: {str(e)}",
             next_actions=build_next_actions([
                 ("get_time", "获取当前时间", "计算失败时获取当前时间"),
@@ -587,7 +592,7 @@ def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, 
 
 
 def _timer_list(limit: int = 10) -> Dict[str, Any]:
-    """查询定时器列表：返回当前所有活跃的定时器 — 小沈 2026-05-18"""
+    """查询定时器列表:返回当前所有活跃的定时器 — 小沈 2026-05-18"""
     try:
         # 获取当前所有定时器
         timers = []
@@ -613,7 +618,7 @@ def _timer_list(limit: int = 10) -> Dict[str, Any]:
         )
     except Exception as e:
         return build_error(
-            "ERR_TIMER_LIST",
+            ERR_TIMER_LIST,
             f"获取定时器列表失败: {str(e)}",
             next_actions=build_next_actions([
                 ("timer", "重试定时器操作", "需要重新操作时"),
@@ -622,14 +627,14 @@ def _timer_list(limit: int = 10) -> Dict[str, Any]:
 
 
 def _time_to_timestamp(time: Any, unit: str = "seconds") -> Dict[str, Any]:
-    """时间转时间戳：将时间转换为Unix时间戳 — 小沈 2026-05-18"""
+    """时间转时间戳:将时间转换为Unix时间戳 — 小沈 2026-05-18"""
     try:
         # 解析时间
         dt = _parse_datetime_any(time)
 
         if dt is None:
             return build_error(
-                "ERR_TIME_TO_TIMESTAMP",
+                ERR_TIME_TO_TIMESTAMP,
                 f"无法解析time: {time}",
                 next_actions=build_next_actions([("get_time", "获取当前时间戳", "解析失败时获取当前时间")]),
             )
@@ -662,7 +667,7 @@ def _time_to_timestamp(time: Any, unit: str = "seconds") -> Dict[str, Any]:
         )
     except Exception as e:
         return build_error(
-            "ERR_TIME_TO_TIMESTAMP",
+            ERR_TIME_TO_TIMESTAMP,
             f"时间转换失败: {str(e)}",
             next_actions=build_next_actions([
                 ("get_time", "获取当前时间戳", "转换失败时获取当前时间"),
@@ -671,21 +676,21 @@ def _time_to_timestamp(time: Any, unit: str = "seconds") -> Dict[str, Any]:
 
 
 def _timestamp_to_time(timestamp: Union[int, float], target_tz: str = "+08:00") -> Dict[str, Any]:
-    """时间戳转时间：将Unix时间戳转换为时间 — 小沈 2026-05-18"""
+    """时间戳转时间:将Unix时间戳转换为时间 — 小沈 2026-05-18"""
     try:
         # 解析时间戳
         try:
             ts = float(timestamp)
         except (ValueError, TypeError):
             return build_error(
-                "ERR_TIMESTAMP_TO_TIME",
+                ERR_TIMESTAMP_TO_TIME,
                 f"无法解析timestamp: {timestamp}",
                 next_actions=build_next_actions([("get_time", "获取当前时间", "时间戳解析失败时")]),
             )
 
         # 解析目标时区
         try:
-            if re.match(r'^[+-]\d{2}:\d{2}$', target_tz):
+            if UTC_OFFSET_PATTERN.match(target_tz):
                 sign = -1 if target_tz[0] == '-' else 1
                 offset_hours = int(target_tz[1:3])
                 offset_minutes = int(target_tz[4:6])
@@ -697,6 +702,7 @@ def _timestamp_to_time(timestamp: Union[int, float], target_tz: str = "+08:00") 
                 except Exception:
                     try:
                         import pytz
+
                         tz = pytz.timezone(target_tz)
                     except Exception:
                         tz = timezone.utc
@@ -718,7 +724,7 @@ def _timestamp_to_time(timestamp: Union[int, float], target_tz: str = "+08:00") 
         )
     except Exception as e:
         return build_error(
-            "ERR_TIMESTAMP_TO_TIME",
+            ERR_TIMESTAMP_TO_TIME,
             f"时间戳转换失败: {str(e)}",
             next_actions=build_next_actions([
                 ("get_time", "获取当前时间", "转换失败时获取当前时间"),
@@ -727,19 +733,19 @@ def _timestamp_to_time(timestamp: Union[int, float], target_tz: str = "+08:00") 
 
 
 def _time_next_n_workday(start: Optional[Union[int, float, str]] = None, n: int = 1) -> Dict[str, Any]:
-    """下N个工作日：计算从起始日期往后第N个工作日的日期 — 小沈 2026-05-18"""
+    """下N个工作日:计算从起始日期往后第N个工作日的日期 — 小沈 2026-05-18"""
     try:
         dt = _parse_datetime_any(start) if start else datetime.now().astimezone()
         if dt is None:
-            return build_error("ERR_META_CALENDAR_NEXT_N_WORKDAY", f"无法解析start: {start}", next_actions=build_next_actions([("query_calendar", "检查日期", "需要重新检查日期时")]))
+            return build_error(ERR_META_CALENDAR_NEXT_N_WORKDAY, f"无法解析start: {start}", next_actions=build_next_actions([("query_calendar", "检查日期", "需要重新检查日期时")]))
         result_dates = _calc_next_n_workday(dt.date(), n)
         return build_success(result_dates, f"第{n}个工作日: {result_dates[0] if result_dates else None}", llm_data={"next_workday": result_dates[0] if result_dates else None, "n": n})
     except Exception as e:
-        return build_error("ERR_META_CALENDAR_NEXT_N_WORKDAY", f"计算失败: {str(e)}", next_actions=build_next_actions([("query_calendar", "检查日期", "需要重新检查日期时")]))
+        return build_error(ERR_META_CALENDAR_NEXT_N_WORKDAY, f"计算失败: {str(e)}", next_actions=build_next_actions([("query_calendar", "检查日期", "需要重新检查日期时")]))
 
 
 # ===========================================================
-# 7个公开函数（精简后）— 小沈 2026-05-18
+# 7个公开函数(精简后)— 小沈 2026-05-18
 # ===========================================================
 
 def get_time(
@@ -759,14 +765,14 @@ def get_time(
             result = _time_format(timestamp=time_value, pattern=format)
         elif action == "to_timestamp":
             if time_value is None:
-                return build_error("ERR_META_TIME_FORMAT", "action='to_timestamp'时time_value必填", next_actions=build_next_actions([("get_time", "获取当前时间", "time_value缺失时")]))
+                return build_error(ERR_META_TIME_FORMAT, "action='to_timestamp'时time_value必填", next_actions=build_next_actions([("get_time", "获取当前时间", "time_value缺失时")]))
             result = _time_to_timestamp(time=time_value, unit="seconds")
         elif action == "from_timestamp":
             if time_value is None:
-                return build_error("ERR_META_TIME_FORMAT", "action='from_timestamp'时time_value必填", next_actions=build_next_actions([("get_time", "获取当前时间", "time_value缺失时")]))
+                return build_error(ERR_META_TIME_FORMAT, "action='from_timestamp'时time_value必填", next_actions=build_next_actions([("get_time", "获取当前时间", "time_value缺失时")]))
             result = _timestamp_to_time(timestamp=time_value, target_tz=target_tz or "+08:00")
         else:
-            return build_error("ERR_INVALID_ACTION", f"不支持的action: {action}，可选: now/format/to_timestamp/from_timestamp", next_actions=build_next_actions([("tool_help", "查看get_time用法", "不确定action时", {"tool_name": "get_time"})]))
+            return build_error(ERR_INVALID_ACTION, f"不支持的action: {action},可选: now/format/to_timestamp/from_timestamp", next_actions=build_next_actions([("tool_help", "查看get_time用法", "不确定action时", {"tool_name": "get_time"})]))
 
         if result.get("code") == "SUCCESS":
             result["next_actions"] = build_next_actions([
@@ -776,7 +782,7 @@ def get_time(
             ])
         return result
     except Exception as e:
-        return build_error("ERR_META_TIME_FORMAT", f"处理失败: {str(e)}", next_actions=build_next_actions([("get_time", "重试获取时间", "需要重新获取时")]))
+        return build_error(ERR_META_TIME_FORMAT, f"处理失败: {str(e)}", next_actions=build_next_actions([("get_time", "重试获取时间", "需要重新获取时")]))
 
 
 def time_add(delta: float, start: Optional[Union[int, float, str]] = None, unit: Literal["days", "hours", "minutes", "seconds", "months"] = "days") -> Dict[str, Any]:
@@ -789,7 +795,7 @@ def time_add(delta: float, start: Optional[Union[int, float, str]] = None, unit:
             result["next_actions"] = build_next_actions([("get_time", "获取当前时间", "计算失败时")])
         return result
 
-    # 增加weekday/isoweekday字段（P15一致）
+    # 增加weekday/isoweekday字段(P15一致)
     data = result["data"]
     result_time_str = data.get("result_time") or data.get("iso", "")
     dt = _parse_datetime_any(result_time_str)
@@ -808,7 +814,7 @@ def time_add(delta: float, start: Optional[Union[int, float, str]] = None, unit:
 
 def time_diff(start: Union[int, float, str], end: Optional[Union[int, float, str]] = None) -> Dict[str, Any]:
     """计算时间差值 — 小沈 2026-05-18
-    P15增强: 新增is_after/is_before/is_equal/diff_seconds_signed，替代time_compare
+    P15增强: 新增is_after/is_before/is_equal/diff_seconds_signed,替代time_compare
     """
     result = _time_diff(start=start, end=end)
     if result["code"] != "SUCCESS":
@@ -816,7 +822,7 @@ def time_diff(start: Union[int, float, str], end: Optional[Union[int, float, str
             result["next_actions"] = build_next_actions([("get_time", "获取当前时间", "时间解析失败时")])
         return result
 
-    # 从_time_diff的结果中提取信息，增加time_compare功能
+    # 从_time_diff的结果中提取信息,增加time_compare功能
     data = result["data"]
 
     # 计算有符号差值和比较信息
@@ -855,7 +861,7 @@ def query_calendar(
     try:
         dt = _parse_datetime_any(date) if date else datetime.now().astimezone()
         if dt is None:
-            return build_error("ERR_TIME_DATE", f"无法解析日期: {date}", next_actions=build_next_actions([("query_calendar", "重试日期检查", "日期格式错误时")]))
+            return build_error(ERR_TIME_DATE, f"无法解析日期: {date}", next_actions=build_next_actions([("query_calendar", "重试日期检查", "日期格式错误时")]))
 
         date_obj = dt.date()
         isoweekday = dt.isoweekday()
@@ -881,18 +887,18 @@ def query_calendar(
         elif check_type == "weekend":
             msg = "周末" if is_weekend else "非周末"
         elif check_type == "holiday":
-            msg = f"节假日：{holiday_name}" if is_hol else "非节假日"
+            msg = f"节假日:{holiday_name}" if is_hol else "非节假日"
         elif check_type == "workday":
-            msg = "工作日" if is_workday else f"非工作日（{'周末' if is_weekend else '节假日：' + str(holiday_name)}）"
+            msg = "工作日" if is_workday else f"非工作日({'周末' if is_weekend else '节假日:' + str(holiday_name)})"
         else:
-            return build_error("ERR_META_INVALID_CHECK_TYPE", f"不支持的check_type: {check_type}，可选: weekend/holiday/workday/next_workday", next_actions=build_next_actions([("tool_help", "查看query_calendar用法", "不确定check_type时", {"tool_name": "query_calendar"})]))
+            return build_error(ERR_META_INVALID_CHECK_TYPE, f"不支持的check_type: {check_type},可选: weekend/holiday/workday/next_workday", next_actions=build_next_actions([("tool_help", "查看query_calendar用法", "不确定check_type时", {"tool_name": "query_calendar"})]))
 
         return build_success(result_data, msg, llm_data={"date": result_data["date"], "is_weekend": is_weekend, "is_holiday": is_hol, "is_workday": is_workday, "holiday_name": holiday_name}, next_actions=build_next_actions([
             ("time_add", "计算下一个工作日偏移", "需要排程计算时"),
             ("query_calendar", "检查其他日期属性", "需要判断其他日期时"),
         ]))
     except Exception as e:
-        return build_error("ERR_TIME_DATE", f"检查失败: {str(e)}", next_actions=build_next_actions([("query_calendar", "重试日期检查", "需要重新检查时")]))
+        return build_error(ERR_TIME_DATE, f"检查失败: {str(e)}", next_actions=build_next_actions([("query_calendar", "重试日期检查", "需要重新检查时")]))
 
 
 def timezone_convert(
@@ -902,10 +908,10 @@ def timezone_convert(
 ) -> Dict[str, Any]:
     """时区转换 — 小沈 2026-05-19 参数精简5→3(砍source_tz+target_tz)
     P11统一入口: direction="utc_to_local"|"local_to_utc"|"any"
-    direction=any时tz为源时区，目标为本地时区
+    direction=any时tz为源时区,目标为本地时区
     """
-    source_tz = None  # ⚠️ 警告: 已从Schema移除，未使用，后续视需求决定是否恢复
-    target_tz = None  # ⚠️ 警告: 已从Schema移除，未使用，后续视需求决定是否恢复
+    source_tz = None  # ⚠️ 警告: 已从Schema移除,未使用,后续视需求决定是否恢复
+    target_tz = None  # ⚠️ 警告: 已从Schema移除,未使用,后续视需求决定是否恢复
     try:
         if direction == "utc_to_local":
             result = _time_utc_to_local(utc_time=time_value, target_tz=tz)
@@ -913,14 +919,14 @@ def timezone_convert(
             result = _time_local_to_utc(local_time=time_value, source_tz=tz)
         elif direction == "any":
             if not tz:
-                return build_error("ERR_TIME_TZ", "direction='any'时tz(源时区)必填", next_actions=build_next_actions([("timezone_convert", "重试时区转换", "需要指定时区时")]))
+                return build_error(ERR_TIME_TZ, "direction='any'时tz(源时区)必填", next_actions=build_next_actions([("timezone_convert", "重试时区转换", "需要指定时区时")]))
             utc_result = _time_local_to_utc(local_time=time_value, source_tz=tz)
             if utc_result["code"] != "SUCCESS":
                 return utc_result
             utc_str = utc_result["data"].get("iso", utc_result["data"].get("utc_time", ""))
             result = _time_utc_to_local(utc_time=utc_str, target_tz=None)
         else:
-            return build_error("ERR_INVALID_DIRECTION", f"不支持的direction: {direction}，可选: utc_to_local/local_to_utc/any", next_actions=build_next_actions([("tool_help", "查看timezone_convert用法", "不确定direction时", {"tool_name": "timezone_convert"})]))
+            return build_error(ERR_INVALID_DIRECTION, f"不支持的direction: {direction},可选: utc_to_local/local_to_utc/any", next_actions=build_next_actions([("tool_help", "查看timezone_convert用法", "不确定direction时", {"tool_name": "timezone_convert"})]))
 
         if result.get("code") == "SUCCESS":
             result["next_actions"] = build_next_actions([
@@ -929,7 +935,7 @@ def timezone_convert(
             ])
         return result
     except Exception as e:
-        return build_error("ERR_TIME_TZ", f"时区转换失败: {str(e)}", next_actions=build_next_actions([("timezone_convert", "重试时区转换", "需要重新转换时")]))
+        return build_error(ERR_TIME_TZ, f"时区转换失败: {str(e)}", next_actions=build_next_actions([("timezone_convert", "重试时区转换", "需要重新转换时")]))
 
 
 async def timer(
@@ -941,23 +947,23 @@ async def timer(
     """定时器管理 — 小沈 2026-05-19 参数精简6→4(砍callback_data+limit)
     P11统一入口: action="set"|"clear"|"list"
     """
-    callback_data = None  # ⚠️ 警告: 已从Schema移除，硬编码默认值，后续视需求决定是否恢复
-    limit = 10  # ⚠️ 警告: 已从Schema移除，硬编码默认值，后续视需求决定是否恢复
+    callback_data = None  # ⚠️ 警告: 已从Schema移除,硬编码默认值,后续视需求决定是否恢复
+    limit = 10  # ⚠️ 警告: 已从Schema移除,硬编码默认值,后续视需求决定是否恢复
     try:
         if action == "set":
             if delay is None or delay <= 0:
-                return build_error("ERR_TIMER_PARAM", "delay必须大于0", next_actions=build_next_actions([("timer", "重试设置定时器", "需要重新设置时")]))
+                return build_error(ERR_TIMER_PARAM, "delay必须大于0", next_actions=build_next_actions([("timer", "重试设置定时器", "需要重新设置时")]))
             if not callback:
-                return build_error("ERR_TIMER_PARAM", "callback必填", next_actions=build_next_actions([("timer", "重试设置定时器", "需要重新设置时")]))
+                return build_error(ERR_TIMER_PARAM, "callback必填", next_actions=build_next_actions([("timer", "重试设置定时器", "需要重新设置时")]))
             result = await _timer_set(delay=delay, callback=callback, callback_data=callback_data)
         elif action == "clear":
             if not timer_id:
-                return build_error("ERR_TIMER_PARAM", "timer_id必填", next_actions=build_next_actions([("timer", "列出定时器", "需要查看现有定时器时", {"action": "list"})]))
+                return build_error(ERR_TIMER_PARAM, "timer_id必填", next_actions=build_next_actions([("timer", "列出定时器", "需要查看现有定时器时", {"action": "list"})]))
             result = await _timer_clear(timer_id=timer_id)
         elif action == "list":
             result = _timer_list(limit=limit)
         else:
-            return build_error("ERR_INVALID_ACTION", f"不支持的action: {action}，可选: set/clear/list", next_actions=build_next_actions([("tool_help", "查看timer用法", "不确定action时", {"tool_name": "timer"})]))
+            return build_error(ERR_INVALID_ACTION, f"不支持的action: {action},可选: set/clear/list", next_actions=build_next_actions([("tool_help", "查看timer用法", "不确定action时", {"tool_name": "timer"})]))
 
         if isinstance(result, dict) and result.get("code") == "SUCCESS":
             result["next_actions"] = build_next_actions([
@@ -965,6 +971,25 @@ async def timer(
             ])
         return result
     except Exception as e:
-        return build_error("ERR_TIMER_SET", f"定时器操作失败: {str(e)}", next_actions=build_next_actions([("timer", "重试定时器操作", "需要重新操作时")]))
+        return build_error(ERR_TIMER_SET, f"定时器操作失败: {str(e)}", next_actions=build_next_actions([("timer", "重试定时器操作", "需要重新操作时")]))
 
 
+from app.constants import (
+    ERR_INVALID_ACTION,
+    ERR_INVALID_DIRECTION,
+    ERR_META_CALENDAR_NEXT_N_WORKDAY,
+    ERR_META_INVALID_CHECK_TYPE,
+    ERR_META_TIME_CONVERT,
+    ERR_META_TIME_FORMAT,
+    ERR_TIMER_CLEAR,
+    ERR_TIMER_LIST,
+    ERR_TIMER_PARAM,
+    ERR_TIMER_SET,
+    ERR_TIMESTAMP_TO_TIME,
+    ERR_TIME_ADD,
+    ERR_TIME_DATE,
+    ERR_TIME_DIFF,
+    ERR_TIME_NOW,
+    ERR_TIME_TO_TIMESTAMP,
+    ERR_TIME_TZ,
+)

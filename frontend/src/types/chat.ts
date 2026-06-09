@@ -166,8 +166,7 @@ export type StatusValue = 'interrupted' | 'paused' | 'resumed' | 'retrying';
 /**
  * status类型 - 执行状态
  * 发送时机：状态变化时（暂停、恢复、中断、重试）
- * 【2026-03-11 重命名】status_value -> incident_value
- * 【2026-03-14 小查修复】按API文档要求补充完整字段（5个字段）
+ * 【恢复 2026-06-09 北京老陈指令】恢复incident_value机制
  */
 export interface StatusMessage {
   type: 'incident';
@@ -279,15 +278,6 @@ export interface TaskControlResponse {
   message: string;
 }
 
-/**
- * 分页响应
- */
-export interface NextPageResponse {
-  success: boolean;
-  data?: unknown;
-  next_page_token?: string;
-  has_more: boolean;
-}
 
 // ============================================================
 // NewChatContainer 专用类型 - 小新 2026-03-13

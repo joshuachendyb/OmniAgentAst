@@ -2,15 +2,16 @@
 """
 REGISTRY Register - 注册表工具注册点
 
-【2026-05-18 小沈】3→1：reg_read/reg_write/reg_delete合并为registry_control(action路由)
-原3个函数保留为内部函数，由registry_control按action分发
+【2026-05-18 小沈】3→1:reg_read/reg_write/reg_delete合并为registry_control(action路由)
+原3个函数保留为内部函数,由registry_control按action分发
 
 创建时间: 2026-05-02
 更新时间: 2026-05-18 小沈 - 3→1合并
 """
 
 import logging
-from app.services.tools.registry import ToolCategory, tool_registry
+from app.services.tools.registry import tool_registry
+from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 from app.services.tools.system.reg_schema import (
@@ -72,7 +73,7 @@ def _register_registry_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.SYSTEM,
+            category=ToolCategory.NET_PROCESS,
             implementation=method,
             version="1.0.0",
             input_model=input_model,
@@ -83,8 +84,5 @@ def _register_registry_tools():
             f"使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, "
             f"examples: {len(examples)}个"
         )
-
-
-_initialized = False
 
 __all__ = ["_register_registry_tools"]

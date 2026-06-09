@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """SYSTEM 模块 - 系统信息 + 环境变量工具
 
-【2026-05-18 小沈】Environment工具迁入，旧函数service_list/start/stop/task_list/create/delete删除
+【2026-05-18 小沈】Environment工具迁入,旧函数service_list/start/stop/task_list/create/delete删除
 """
 
 from app.services.tools.system.system_register import *

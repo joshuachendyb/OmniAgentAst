@@ -2,24 +2,20 @@
 """
 AgentFactory - 智能体工厂
 
-改造后：使用声明式配置注册表创建 Agent
-- UniversalReactAgent 处理 file/system/network/document
-- DesktopReactAgent 独立处理 desktop
+小健 - 2026-06-08 修复P2: 消除desktop硬编码分支,统一走config.agent_class创建
 
 Author: 小强 - 2026-05-23
 """
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional
 
-from app.services.agent.agent_config import resolve_agent_config, AgentConfig, AGENT_REGISTRY, get_all_intent_types
-from app.services.agent.universal_react import UniversalReactAgent
-from app.services.agent.desktop_react import DesktopReactAgent
-from app.services.agent.base_react import BaseAgent, DEFAULT_MAX_STEPS
-from app.services.tools.registry import ToolCategory
+from app.services.agent.agent_config import resolve_agent_config, AGENT_REGISTRY
+from app.services.agent.core_agent import BaseAgent
+from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 
 class AgentFactory:
-    """智能体工厂 — 基于声明式配置"""
+    """智能体工厂 — 基于声明式配置,无硬编码分支"""
     
     @classmethod
     def create(
@@ -28,59 +24,28 @@ class AgentFactory:
         llm_client: Any = None,
         task_id: str = "",
         tool_category: Optional[ToolCategory] = None,
-        max_steps: int = DEFAULT_MAX_STEPS,
         candidates: Optional[List[str]] = None,
         **kwargs
     ) -> BaseAgent:
-        """
-        创建 Agent 实例
-        
-        Args:
-            intent_type: 意图类型（含别名，如 "time" → "system"）
-            llm_client: LLM 客户端
-            task_id: 任务ID
-            tool_category: 工具分类（可选，由配置自动决定）
-            max_steps: 最大步数
-            candidates: 候选意图列表
-            **kwargs: 其他参数
-        """
+        """创建 Agent 实例 — 统一入口,config决定一切"""
         config = resolve_agent_config(intent_type)
         
         logger.info(
             f"[AgentFactory] intent_type={intent_type} → "
-            f"config.intent={config.intent_type}, category={config.category}, "
-            f"rollback={config.rollback_enabled}"
+            f"config.intent={config.intent_type}, category={config.category}"
         )
         
-        if config.intent_type == "desktop":
-            return DesktopReactAgent(
-                llm_client=llm_client,
-                task_id=task_id,
-                tool_category=tool_category,
-                max_steps=max_steps,
-                candidates=candidates,
-                **kwargs
-            )
+        agent_class = config.agent_class
+        if agent_class is None:
+            raise ValueError(f"Agent class not configured for intent_type: {intent_type}")
         
-        return UniversalReactAgent(
+        # 统一传入config,不再分desktop特殊路径
+        return agent_class(
             llm_client=llm_client,
             task_id=task_id,
             config=config,
             tool_category=tool_category,
-            max_steps=max_steps,
             candidates=candidates,
             **kwargs
         )
-    
-    @classmethod
-    def list_available_agents(cls) -> Dict[str, str]:
-        """列出所有可用的Agent"""
-        result = {}
-        for config in AGENT_REGISTRY.values():
-            result[config.intent_type] = "UniversalReactAgent" if config.intent_type != "desktop" else "DesktopReactAgent"
-            for alias in config.aliases:
-                result[alias] = result[config.intent_type]
-        return result
-
-
 

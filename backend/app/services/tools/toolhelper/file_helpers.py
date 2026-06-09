@@ -1,28 +1,30 @@
+
+
 # -*- coding: utf-8 -*-
 """
-文件辅助函数模块 - 纯内部辅助函数（不暴露给LLM）
+文件辅助函数模块 - 纯内部辅助函数(不暴露给LLM)
 
 【创建时间】2026-05-02 小沈
 【更新时间】2026-05-02 小沈
 
 ================================================================================
-一、模块性质（纯内部辅助函数）
+一、模块性质(纯内部辅助函数)
 ================================================================================
-本模块的函数 **仅作为内部辅助函数**，具有以下特点：
+本模块的函数 **仅作为内部辅助函数**,具有以下特点:
 
 1. **不注册到tool_registry** - 无@register_tool装饰器
 2. **不暴露给LLM** - LLM无法直接调用这些函数
 3. **仅供其他Tool函数内部调用** - 作为公共基础设施
 
 【对比db_helper/】
-- db_helper/: 双重身份（公共函数 + LLM可调用Tool），有@register_tool
-- toolhelper/: 纯内部辅助函数，无@register_tool，不暴露给LLM
+- db_helper/: 双重身份(公共函数 + LLM可调用Tool),有@register_tool
+- toolhelper/: 纯内部辅助函数,无@register_tool,不暴露给LLM
 
 ================================================================================
-二、包含函数（10个）
+二、包含函数(10个)
 ================================================================================
-- extract_archive: 解压文件（zip/tar/tar.gz/tar.bz2）
-- get_file_hash: 计算文件哈希（MD5/SHA1/SHA256）
+- extract_archive: 解压文件(zip/tar/tar.gz/tar.bz2)
+- hash_file_tool: 计算文件哈希(MD5/SHA1/SHA256)
 - ensure_directory_exists: 确保目录存在
 - check_write_permission: 检查写权限
 - check_read_permission: 检查读权限
@@ -47,7 +49,7 @@ def write_file(file_path, content):
 
 # LLM无法直接调用这些函数
 用户: "帮我检测文件编码"
-LLM: 无法调用get_file_encoding，需调用read_file等Tool
+LLM: 无法调用get_file_encoding,需调用read_file等Tool
 ```
 
 Author: 小沈 - 2026-05-02
@@ -65,21 +67,30 @@ import asyncio
 import json
 import csv
 import io
+import time as _time
 import time
 import tempfile
+import filecmp
 from pathlib import Path
+from collections import Counter
 from datetime import datetime, timedelta
+from app.utils.time_utils import timestamp_for_filename
 from typing import Optional, Dict, Any, Tuple, List, Generator, Callable
-import logging
-from app.services.tools.toolhelper.hash_helper import select_hasher
+from dataclasses import dataclass, field
+from app.services.tools.toolhelper.hash_helper import select_hasher, compute_file_hash
+from app.services.tools._response import build_success, build_error
+from app.utils.logger import setup_logger
 
-logger = logging.getLogger(__name__)
+
+logger = setup_logger(__name__)
 
 
 def _is_safe_path(output_dir: str, member_path: str) -> bool:
-    """检查解压成员路径是否在output_dir内，防止路径遍历攻击 - 小沈 2026-05-05"""
-    target = os.path.normpath(os.path.join(output_dir, member_path))
-    return target.startswith(os.path.normpath(output_dir) + os.sep) or target == os.path.normpath(output_dir)
+    """检查解压成员路径是否在output_dir内,防止路径遍历攻击 - 小沈 2026-05-05
+    小欧 2026-06-09 委托到 safe_path_join 消除重复逻辑
+    """
+    from app.services.tools.toolhelper.common_helper import safe_path_join
+    return safe_path_join(output_dir, member_path) is not None
 
 
 def _resolve_output_dir(archive_path: str, output_dir: Optional[str] = None) -> str:
@@ -97,7 +108,7 @@ def _resolve_output_dir(archive_path: str, output_dir: Optional[str] = None) -> 
 
 def _extract_zip_archive(archive_path: str, output_dir: str, overwrite: bool,
                          password: Optional[str] = None) -> Dict[str, Any]:
-    """解压zip文件（密码+安全路径+覆盖控制）— 小健 2026-05-25"""
+    """解压zip文件(密码+安全路径+覆盖控制)— 小健 2026-05-25"""
     extracted_count, skipped_count = 0, 0
     with zipfile.ZipFile(archive_path, 'r') as zf:
         if password:
@@ -161,101 +172,95 @@ def extract_archive(
     preserve_permissions: bool = True,
 ) -> Dict[str, Any]:
     """
-    解压压缩文件 - 小沈 2026-05-02；小健 2026-05-25 重构
+    解压压缩文件 - 小沈 2026-05-02;小健 2026-05-25 重构
 
     支持 zip、tar、tar.gz、tar.bz2 格式
     """
     try:
         if not os.path.exists(archive_path):
-            return {"success": False, "error": f"压缩文件不存在: {archive_path}"}
+            return build_error(ERR_FILE_EXTRACT, f"压缩文件不存在: {archive_path}")
         out_dir = _resolve_output_dir(archive_path, output_dir)
         os.makedirs(out_dir, exist_ok=True)
         lower_path = archive_path.lower()
 
         if lower_path.endswith('.zip'):
-            return _extract_zip_archive(archive_path, out_dir, overwrite, password)
-        if lower_path.endswith('.tar.gz') or lower_path.endswith('.tgz'):
-            return _extract_tar_archive(archive_path, out_dir, overwrite, preserve_permissions, 'r:gz', 'tar.gz')
-        if lower_path.endswith('.tar.bz2') or lower_path.endswith('.tbz2'):
-            return _extract_tar_archive(archive_path, out_dir, overwrite, preserve_permissions, 'r:bz2', 'tar.bz2')
-        if lower_path.endswith('.tar'):
-            return _extract_tar_archive(archive_path, out_dir, overwrite, preserve_permissions, 'r', 'tar')
-        return {"success": False, "error": f"不支持的压缩格式: {archive_path}"}
+            result = _extract_zip_archive(archive_path, out_dir, overwrite, password)
+        elif lower_path.endswith('.tar.gz') or lower_path.endswith('.tgz'):
+            result = _extract_tar_archive(archive_path, out_dir, overwrite, preserve_permissions, 'r:gz', 'tar.gz')
+        elif lower_path.endswith('.tar.bz2') or lower_path.endswith('.tbz2'):
+            result = _extract_tar_archive(archive_path, out_dir, overwrite, preserve_permissions, 'r:bz2', 'tar.bz2')
+        elif lower_path.endswith('.tar'):
+            result = _extract_tar_archive(archive_path, out_dir, overwrite, preserve_permissions, 'r', 'tar')
+        else:
+            return build_error(ERR_FILE_EXTRACT, f"不支持的压缩格式: {archive_path}")
+        return build_success(result, f"解压成功: {archive_path}")
     except zipfile.BadZipFile:
-        return {"success": False, "error": "无效的ZIP文件或密码错误"}
+        return build_error(ERR_FILE_EXTRACT, "无效的ZIP文件或密码错误")
     except tarfile.TarError as e:
-        return {"success": False, "error": f"TAR文件错误: {str(e)}"}
+        return build_error(ERR_FILE_EXTRACT, f"TAR文件错误: {str(e)}")
     except Exception as e:
         logger.error(f"[extract_archive] 解压失败: {e}")
-        return {"success": False, "error": str(e)}
+        return build_error(ERR_FILE_EXTRACT, str(e))
 
 
-def get_file_hash(
+def hash_file_tool(
     file_path: str,
     algorithm: str = "sha256",
 ) -> Dict[str, Any]:
     """
-    计算文件哈希值 - 小沈 2026-05-02
+    计算文件哈希值 - LLM工具层包装函数 - 小沈 2026-05-02
     
     支持 md5、sha1、sha256、sha512
+    内部调用 compute_file_hash 核心函数,添加文件验证和结果包装
     """
     try:
         file_path = os.path.abspath(file_path)
-        
+
         if not os.path.exists(file_path):
-            return {"success": False, "error": f"文件不存在: {file_path}"}
-        
+            return build_error(ERR_FILE_HASH, f"文件不存在: {file_path}")
+
         if not os.path.isfile(file_path):
-            return {"success": False, "error": f"不是文件: {file_path}"}
-        
-        try:
-            hasher = select_hasher(algorithm)
-        except ValueError:
-            return {"success": False, "error": f"不支持的算法: {algorithm}"}
-        
-        chunk_size = 65536
+            return build_error(ERR_FILE_HASH, f"不是文件: {file_path}")
+
+        # 调用核心哈希计算函数
+        hash_value = compute_file_hash(file_path, algorithm)
         file_size = os.path.getsize(file_path)
-        
-        with open(file_path, 'rb') as f:
-            while True:
-                chunk = f.read(chunk_size)
-                if not chunk:
-                    break
-                hasher.update(chunk)
-        
-        return {
-            "success": True,
+
+        return build_success({
             "file_path": file_path,
             "algorithm": algorithm,
-            "hash": hasher.hexdigest(),
+            "hash": hash_value,
             "file_size": file_size
-        }
-    
+        }, "哈希计算成功")
+
+    except ValueError as e:
+        # 算法不支持错误
+        return build_error(ERR_FILE_HASH, str(e))
     except Exception as e:
-        logger.error(f"[get_file_hash] 计算哈希失败: {e}")
-        return {"success": False, "error": str(e)}
+        logger.error(f"[hash_file_tool] 计算哈希失败: {e}")
+        return build_error(ERR_FILE_HASH, str(e))
 
 
 def ensure_directory_exists(dir_path: str) -> Dict[str, Any]:
     """
-    确保目录存在，不存在则创建 - 小沈 2026-05-02
+    确保目录存在,不存在则创建 - 小沈 2026-05-02
     """
     try:
         dir_path = os.path.abspath(dir_path)
         
         if os.path.exists(dir_path):
             if os.path.isdir(dir_path):
-                return {"success": True, "path": dir_path, "created": False}
+                return build_success({"path": dir_path, "created": False}, "目录已存在")
             else:
-                return {"success": False, "error": f"路径存在但不是目录: {dir_path}"}
+                return build_error(ERR_FILE_PATH_NOT_DIR, f"路径存在但不是目录: {dir_path}")
         
         os.makedirs(dir_path, exist_ok=True)
         
-        return {"success": True, "path": dir_path, "created": True}
+        return build_success({"path": dir_path, "created": True}, "目录创建成功")
     
     except Exception as e:
         logger.error(f"[ensure_directory_exists] 创建目录失败: {e}")
-        return {"success": False, "error": str(e)}
+        return build_error(ERR_FILE_CREATE_DIR, str(e))
 
 
 def check_write_permission(path: str) -> Dict[str, Any]:
@@ -267,23 +272,23 @@ def check_write_permission(path: str) -> Dict[str, Any]:
         
         if os.path.isfile(path):
             writable = os.access(path, os.W_OK)
-            return {"success": True, "path": path, "writable": writable, "type": "file"}
+            return build_success({"path": path, "writable": writable, "type": "file"}, "写权限检查完成")
         
         elif os.path.isdir(path):
             writable = os.access(path, os.W_OK)
-            return {"success": True, "path": path, "writable": writable, "type": "directory"}
+            return build_success({"path": path, "writable": writable, "type": "directory"}, "写权限检查完成")
         
         else:
             parent = os.path.dirname(path)
             if parent and os.path.exists(parent):
                 writable = os.access(parent, os.W_OK)
-                return {"success": True, "path": path, "writable": writable, "type": "new_file"}
+                return build_success({"path": path, "writable": writable, "type": "new_file"}, "写权限检查完成")
             else:
-                return {"success": True, "path": path, "writable": False, "type": "new_file"}
+                return build_success({"path": path, "writable": False, "type": "new_file"}, "写权限检查完成")
     
     except Exception as e:
         logger.error(f"[check_write_permission] 检查权限失败: {e}")
-        return {"success": False, "error": str(e)}
+        return build_error(ERR_FILE_CHECK_PERMISSION, str(e))
 
 
 def check_read_permission(path: str) -> Dict[str, Any]:
@@ -294,54 +299,52 @@ def check_read_permission(path: str) -> Dict[str, Any]:
         path = os.path.abspath(path)
         
         if not os.path.exists(path):
-            return {"success": True, "path": path, "readable": False, "exists": False}
+            return build_success({"path": path, "readable": False, "exists": False}, "读权限检查完成")
         
         readable = os.access(path, os.R_OK)
         path_type = "file" if os.path.isfile(path) else "directory"
         
-        return {"success": True, "path": path, "readable": readable, "exists": True, "type": path_type}
+        return build_success({"path": path, "readable": readable, "exists": True, "type": path_type}, "读权限检查完成")
     
     except Exception as e:
         logger.error(f"[check_read_permission] 检查权限失败: {e}")
-        return {"success": False, "error": str(e)}
+        return build_error(ERR_FILE_CHECK_PERMISSION, str(e))
 
 
 def get_file_encoding(file_path: str) -> Dict[str, Any]:
     """
-    检测文件编码 - 小沈 2026-05-02
+    检测文件编码 - 小沈 2026-05-02; 小沈 2026-06-09 委托给 data_format_helper._detect_encoding
+    小欧 2026-06-09 消除BOM检测重复，复用 _detect_encoding
+    
+    在 _detect_encoding 基础上增加丰富fallback编码列表。
     """
+    from app.services.tools.toolhelper.data_format_helper import _detect_encoding
     try:
         file_path = os.path.abspath(file_path)
-        
         if not os.path.exists(file_path):
-            return {"success": False, "error": f"文件不存在: {file_path}"}
-        
+            return build_error(ERR_FILE_ENCODING, f"文件不存在: {file_path}")
+
+        # 用 _detect_encoding 检测BOM和基本编码(读4字节)
+        detected = _detect_encoding(file_path)
+        if detected in ("utf-8-sig", "utf-16-le", "utf-16-be"):
+            return build_success({"file_path": file_path, "encoding": detected, "confidence": 1.0}, "编码检测完成")
+
+        # 丰富fallback编码列表(读10K字节，弥补_detect_encoding仅读4字节的限制)
         common_encodings = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'big5', 'utf-16', 'utf-16-le', 'utf-16-be', 'latin-1']
-        
         with open(file_path, 'rb') as f:
             raw_data = f.read(10000)
-        
-        if raw_data.startswith(b'\xef\xbb\xbf'):
-            return {"success": True, "file_path": file_path, "encoding": "utf-8-sig", "confidence": 1.0}
-        
-        if raw_data.startswith(b'\xff\xfe'):
-            return {"success": True, "file_path": file_path, "encoding": "utf-16-le", "confidence": 1.0}
-        
-        if raw_data.startswith(b'\xfe\xff'):
-            return {"success": True, "file_path": file_path, "encoding": "utf-16-be", "confidence": 1.0}
-        
         for encoding in common_encodings:
             try:
                 raw_data.decode(encoding)
-                return {"success": True, "file_path": file_path, "encoding": encoding, "confidence": 0.9}
+                return build_success({"file_path": file_path, "encoding": encoding, "confidence": 0.9}, "编码检测完成")
             except UnicodeDecodeError:
                 continue
-        
-        return {"success": True, "file_path": file_path, "encoding": "utf-8", "confidence": 0.5}
-    
+
+        return build_success({"file_path": file_path, "encoding": "utf-8", "confidence": 0.5}, "编码检测完成(低置信度)")
+
     except Exception as e:
         logger.error(f"[get_file_encoding] 检测编码失败: {e}")
-        return {"success": False, "error": str(e)}
+        return build_error(ERR_FILE_ENCODING, str(e))
 
 
 def get_mime_type(file_path: str) -> Dict[str, Any]:
@@ -352,7 +355,7 @@ def get_mime_type(file_path: str) -> Dict[str, Any]:
         file_path = os.path.abspath(file_path)
         
         if not os.path.exists(file_path):
-            return {"success": False, "error": f"文件不存在: {file_path}"}
+            return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {file_path}")
         
         mime_type, encoding = mimetypes.guess_type(file_path)
         
@@ -379,16 +382,15 @@ def get_mime_type(file_path: str) -> Dict[str, Any]:
             
             mime_type = common_types.get(ext, 'application/octet-stream')
         
-        return {
-            "success": True,
+        return build_success({
             "file_path": file_path,
             "mime_type": mime_type,
             "encoding": encoding
-        }
+        }, "MIME类型获取成功")
     
     except Exception as e:
         logger.error(f"[get_mime_type] 获取MIME类型失败: {e}")
-        return {"success": False, "error": str(e)}
+        return build_error(ERR_FILE_MIME_TYPE, str(e))
 
 
 def backup_file(
@@ -401,35 +403,31 @@ def backup_file(
     """
     try:
         file_path = os.path.abspath(file_path)
-        
         if not os.path.exists(file_path):
-            return {"success": False, "error": f"文件不存在: {file_path}"}
-        
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
+            return build_error(ERR_FILE_BACKUP, f"文件不存在: {file_path}")
+
+        timestamp = timestamp_for_filename()
         file_name = os.path.basename(file_path)
         backup_name = f"{file_name}{suffix}_{timestamp}"
-        
+
         if backup_dir is None:
             backup_dir = os.path.dirname(file_path)
         else:
             backup_dir = os.path.abspath(backup_dir)
             os.makedirs(backup_dir, exist_ok=True)
-        
+
         backup_path = os.path.join(backup_dir, backup_name)
-        
         shutil.copy2(file_path, backup_path)
-        
-        return {
-            "success": True,
+
+        return build_success({
             "original_path": file_path,
             "backup_path": backup_path,
             "backup_size": os.path.getsize(backup_path)
-        }
-    
+        }, f"备份成功: {backup_path}")
+
     except Exception as e:
         logger.error(f"[backup_file] 备份失败: {e}")
-        return {"success": False, "error": str(e)}
+        return build_error(ERR_FILE_BACKUP, str(e))
 
 
 def move_to_trash(file_path: str) -> Dict[str, Any]:
@@ -439,69 +437,18 @@ def move_to_trash(file_path: str) -> Dict[str, Any]:
     file_path = os.path.abspath(file_path)
     
     if not os.path.exists(file_path):
-        return {"success": False, "error": f"文件不存在: {file_path}"}
+        return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {file_path}")
     
     try:
         import send2trash
         send2trash.send2trash(file_path)
-        return {"success": True, "path": file_path, "action": "moved_to_trash"}
+        return build_success({"path": file_path, "action": "moved_to_trash"}, "文件已移动到回收站")
     except ImportError:
-        logger.warning("send2trash未安装，无法移动到回收站")
-        return {"success": False, "error": "send2trash未安装，请先安装: pip install send2trash"}
+        logger.warning("send2trash未安装,无法移动到回收站")
+        return build_error(ERR_FILE_MOVE_TRASH, "send2trash未安装,请先安装: pip install send2trash")
     except Exception as e:
         logger.error(f"[move_to_trash] 移动到回收站失败: {e}")
-        return {"success": False, "error": str(e)}
-
-
-def validate_command(command: str) -> Dict[str, Any]:
-    """
-    验证命令安全性 - 小沈 2026-05-02
-    """
-    try:
-        dangerous_patterns = [
-            r'rm\s+-rf\s+/',
-            r'del\s+/\s+',
-            r'format\s+',
-            r'fdisk\s+',
-            r'mkfs\s+',
-            r'dd\s+if=',
-            r'>\s*/dev/sd',
-            r'shutdown\s+',
-            r'reboot\s+',
-            r'init\s+0',
-            r'halt\s+',
-            r'poweroff\s+',
-        ]
-        
-        is_dangerous = False
-        matched_pattern = None
-        
-        for pattern in dangerous_patterns:
-            if re.search(pattern, command, re.IGNORECASE):
-                is_dangerous = True
-                matched_pattern = pattern
-                break
-        
-        dangerous_commands = ['format', 'fdisk', 'mkfs', 'dd', 'shutdown', 'reboot', 'halt', 'poweroff', 'init']
-        command_parts = command.split()
-        base_command = command_parts[0] if command_parts else ''
-        
-        is_dangerous_cmd = base_command.lower() in dangerous_commands
-        
-        safe = not is_dangerous and not is_dangerous_cmd
-        
-        return {
-            "success": True,
-            "command": command,
-            "safe": safe,
-            "is_dangerous": is_dangerous or is_dangerous_cmd,
-            "matched_pattern": matched_pattern,
-            "base_command": base_command
-        }
-    
-    except Exception as e:
-        logger.error(f"[validate_command] 验证命令失败: {e}")
-        return {"success": False, "error": str(e)}
+        return build_error(ERR_FILE_MOVE_TRASH, str(e))
 
 
 def check_shell_running(shell_id: str, background_shells: Dict) -> Dict[str, Any]:
@@ -510,32 +457,31 @@ def check_shell_running(shell_id: str, background_shells: Dict) -> Dict[str, Any
     """
     try:
         if shell_id not in background_shells:
-            return {"success": True, "shell_id": shell_id, "exists": False, "running": False}
+            return build_success({"shell_id": shell_id, "exists": False, "running": False}, "Shell状态检查完成")
         
         shell_info = background_shells[shell_id]
         process = shell_info.get("process")
         
         if process is None:
-            return {"success": True, "shell_id": shell_id, "exists": True, "running": False}
+            return build_success({"shell_id": shell_id, "exists": True, "running": False}, "Shell状态检查完成")
         
         is_running = process.poll() is None
         
-        return {
-            "success": True,
+        return build_success({
             "shell_id": shell_id,
             "exists": True,
             "running": is_running,
             "returncode": process.returncode if not is_running else None
-        }
+        }, "Shell状态检查完成")
     
     except Exception as e:
         logger.error(f"[check_shell_running] 检查Shell状态失败: {e}")
-        return {"success": False, "error": str(e)}
+        return build_error(ERR_SHELL_CHECK_RUNNING, str(e))
 
 
 __all__ = [
     "extract_archive",
-    "get_file_hash",
+    "hash_file_tool",
     "ensure_directory_exists",
     "check_write_permission",
     "check_read_permission",
@@ -543,21 +489,16 @@ __all__ = [
     "get_mime_type",
     "backup_file",
     "move_to_trash",
-    "validate_command",
     "check_shell_running",
-    "get_file_metadata",
-    "calculate_distribution",
-    "is_binary_file",
-    "is_content_identical",
 ]
 
 
-def get_file_metadata(file_path: str, follow_symlinks: bool = True) -> Dict[str, Any]:
+def _get_file_metadata(file_path: str, follow_symlinks: bool = True) -> Dict[str, Any]:
     """
     获取文件元数据 - 小沈 2026-05-18
     
-    合并 get_file_info + get_file_hash 的元数据部分，供其他工具内部调用。
-    不作为LLM工具暴露，由各工具的P15返回值承载。
+    合并 get_file_info + hash_file_tool 的元数据部分,供其他工具内部调用。
+    不作为LLM工具暴露,由各工具的P15返回值承载。
     
     Args:
         file_path: 文件路径
@@ -566,17 +507,15 @@ def get_file_metadata(file_path: str, follow_symlinks: bool = True) -> Dict[str,
     Returns:
         包含完整元数据的字典
     """
-    from datetime import datetime
-    
     try:
         file_path = os.path.abspath(file_path)
         path = Path(file_path)
-        
+
         if not path.exists():
-            return {"success": False, "error": f"文件不存在: {file_path}"}
-        
+            return build_error(ERR_FILE_METADATA, f"文件不存在: {file_path}")
+
         stat = path.stat(follow_symlinks=follow_symlinks)
-        
+
         metadata = {
             "path": str(path.absolute()),
             "name": path.name,
@@ -589,7 +528,7 @@ def get_file_metadata(file_path: str, follow_symlinks: bool = True) -> Dict[str,
             "is_writable": os.access(path, os.W_OK),
             "is_executable": os.access(path, os.X_OK),
         }
-        
+
         if not follow_symlinks and path.is_symlink():
             metadata["is_symlink"] = True
             try:
@@ -598,7 +537,7 @@ def get_file_metadata(file_path: str, follow_symlinks: bool = True) -> Dict[str,
                 metadata["symlink_target"] = None
         else:
             metadata["is_symlink"] = path.is_symlink()
-        
+
         if path.is_file():
             metadata["extension"] = path.suffix
             metadata["parent_directory"] = str(path.parent)
@@ -616,171 +555,14 @@ def get_file_metadata(file_path: str, follow_symlinks: bool = True) -> Dict[str,
             except (OSError, PermissionError):
                 metadata["file_count"] = None
                 metadata["dir_count"] = None
-        
-        return {"success": True, "metadata": metadata}
-    
+
+        return build_success({"metadata": metadata}, "元数据获取成功")
+
     except Exception as e:
         logger.error(f"[get_file_metadata] 获取元数据失败: {e}")
-        return {"success": False, "error": str(e)}
+        return build_error(ERR_FILE_METADATA, str(e))
 
 
-def calculate_distribution(
-    entries: list,
-    filters: Optional[Dict] = None
-) -> Dict[str, Any]:
-    """
-    计算文件类型/大小/深度分布 - 小沈 2026-05-18
-    
-    原file_statistics核心逻辑，合入list_directory P15增强返回值。
-    
-    Args:
-        entries: 文件条目列表，每项需含 name/size/type 字段
-        filters: 过滤条件（如 {"min_size": 1024, "extensions": [".py"]}）
-    
-    Returns:
-        包含 file_types/size_distribution/depth_distribution 的字典
-    """
-    from collections import Counter
-    
-    try:
-        if filters:
-            min_size = filters.get("min_size", 0)
-            extensions = filters.get("extensions", [])
-            
-            filtered_entries = []
-            for entry in entries:
-                if entry.get("size", 0) < min_size:
-                    continue
-                if extensions:
-                    ext = os.path.splitext(entry.get("name", ""))[1].lower()
-                    if ext not in extensions:
-                        continue
-                filtered_entries.append(entry)
-            entries = filtered_entries
-        
-        file_types = Counter()
-        size_distribution = Counter()
-        depth_distribution = Counter()
-        
-        for entry in entries:
-            if entry.get("type") == "file":
-                name = entry.get("name", "")
-                size = entry.get("size", 0)
-                
-                ext = os.path.splitext(name)[1].lower()
-                if ext:
-                    file_types[ext] += 1
-                else:
-                    file_types["<no_ext>"] += 1
-                
-                if size < 1024:
-                    size_distribution["<1KB"] += 1
-                elif size < 10240:
-                    size_distribution["1KB-10KB"] += 1
-                elif size < 1024 * 1024:
-                    size_distribution["10KB-1MB"] += 1
-                else:
-                    size_distribution[">1MB"] += 1
-            
-            path = entry.get("path", entry.get("name", ""))
-            depth = path.count(os.sep) if path else 0
-            depth_distribution[f"depth_{depth}"] += 1
-        
-        return {
-            "success": True,
-            "file_types": dict(file_types),
-            "size_distribution": dict(size_distribution),
-            "depth_distribution": dict(depth_distribution),
-            "total_files": sum(1 for e in entries if e.get("type") == "file"),
-            "total_dirs": sum(1 for e in entries if e.get("type") == "directory"),
-        }
-    
-    except Exception as e:
-        logger.error(f"[calculate_distribution] 计算分布失败: {e}")
-        return {"success": False, "error": str(e)}
-
-
-def is_binary_file(file_path: str) -> bool:
-    """
-    检测文件是否为二进制文件 - 小沈 2026-05-18
-    
-    Args:
-        file_path: 文件路径
-    
-    Returns:
-        True表示二进制文件，False表示文本文件
-    """
-    try:
-        file_path = os.path.abspath(file_path)
-        
-        if not os.path.exists(file_path):
-            return False
-        
-        if not os.path.isfile(file_path):
-            return False
-        
-        text_chars = bytearray({7, 8, 9, 10, 12, 13, 27} | set(range(0x20, 0x100)) - {0x7f})
-        
-        with open(file_path, 'rb') as f:
-            chunk = f.read(1024)
-            if not chunk:
-                return False
-            
-            return bool(chunk.translate(None, text_chars))
-    
-    except Exception as e:
-        logger.error(f"[is_binary_file] 检测失败: {e}")
-        return False
-
-
-def is_content_identical(
-    src: str,
-    dst: str,
-    strict: bool = False,
-    threshold_mb: int = 1
-) -> bool:
-    """
-    判断两文件内容是否一致 - 小沈 2026-05-18
-    
-    支持幂等性设计（P16）：
-    - 小文件（<1MB）：完整字节对比
-    - 大文件（≥1MB）：size + mtime 快速判断
-    - strict模式：强制计算checksum对比
-    
-    Args:
-        src: 源文件路径
-        dst: 目标文件路径
-        strict: 是否严格模式（强制checksum对比）
-        threshold_mb: 大文件阈值（MB）
-    
-    Returns:
-        True表示内容一致
-    """
-    import filecmp
-    
-    try:
-        src_path = os.path.abspath(src)
-        dst_path = os.path.abspath(dst)
-        
-        if not os.path.exists(src_path) or not os.path.exists(dst_path):
-            return False
-        
-        src_stat = os.stat(src_path)
-        dst_stat = os.stat(dst_path)
-        
-        if src_stat.st_size != dst_stat.st_size:
-            return False
-        
-        threshold_bytes = threshold_mb * 1024 * 1024
-        
-        if src_stat.st_size >= threshold_bytes and not strict:
-            return src_stat.st_mtime == dst_stat.st_mtime
-        
-        return filecmp.cmp(src_path, dst_path, shallow=False)
-    
-    except Exception as e:
-        logger.error(f"[is_content_identical] 判断失败: {e}")
-        return False
 
 
 # ================================================================================
@@ -788,7 +570,7 @@ def is_content_identical(
 # ================================================================================
 
 def _classify_size_dist(size: int) -> str:
-    """文件大小分桶，返回桶名 - 小健 2026-05-25
+    """文件大小分桶,返回桶名 - 小健 2026-05-25
 
     使用场景: _StatsCollector和list_directory共用尺寸分类
     使用示例: _classify_size_dist(500) → "0-1KB"; _classify_size_dist(5_000_000) → "1MB-10MB"
@@ -813,7 +595,7 @@ def _walk_with_timeout(
     recursive: bool = True, max_depth: int = 100000,
     filters: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Path], bool]:
-    """通用目录遍历器，支持超时+深度+过滤 - 小健 2026-05-25
+    """通用目录遍历器,支持超时+深度+过滤 - 小健 2026-05-25
 
     使用场景: _collect_files/_compress_entries/_scan_stats_directory三处复用
     使用示例: _walk_with_timeout(Path("/src"), deadline, callback=collector.record_file)
@@ -866,27 +648,27 @@ async def _collect_files(
     dir_path: Path, recursive: bool,
     deadline: Optional[float] = None, pattern: Optional[str] = None,
 ) -> Tuple[List[Path], bool]:
-    """收集目录下文件列表，支持超时 - 小健 2026-05-25"""
+    """收集目录下文件列表,支持超时 - 小健 2026-05-25"""
     def _sync_collect() -> Tuple[List[Path], bool]:
         result: List[Path] = []
         iterator = dir_path.rglob(pattern or "*") if recursive else dir_path.glob(pattern or "*")
         for fpath in iterator:
             if deadline and time.monotonic() > deadline:
-                logger.warning(f"[_collect_files] 超时，已收集{len(result)}个文件")
+                logger.warning(f"[_collect_files] 超时,已收集{len(result)}个文件")
                 return result, True
             if fpath.is_file():
                 result.append(fpath)
         return result, False
     files, timed_out = await asyncio.to_thread(_sync_collect)
     if timed_out:
-        logger.warning(f"[_collect_files] 文件收集超时，仅处理已收集的{len(files)}个文件")
+        logger.warning(f"[_collect_files] 文件收集超时,仅处理已收集的{len(files)}个文件")
     return files, timed_out
 
 
 def _resolve_name_conflict(
     new_path: Path, strategy: str, max_attempts: int = 100,
 ) -> Tuple[Path, bool]:
-    """解决文件名冲突，返回(最终路径, 是否解决) - 小健 2026-05-25"""
+    """解决文件名冲突,返回(最终路径, 是否解决) - 小健 2026-05-25"""
     if not new_path.exists():
         return new_path, True
     if strategy == "skip":
@@ -905,7 +687,7 @@ def _resolve_name_conflict(
             final_path = new_path.parent / f"{new_path.stem}_{counter}"
         counter += 1
     if counter > max_attempts:
-        logger.error(f"冲突解决失败，超过{max_attempts}次尝试")
+        logger.error(f"冲突解决失败,超过{max_attempts}次尝试")
         return final_path, False
     return final_path, True
 
@@ -922,13 +704,38 @@ def _rename_file_sync(src: Path, dst: Path, conflict_strategy: str):
         return str(e)
 
 
+@dataclass
+class RenameContext:
+    """批量重命名上下文 — 13参数→1参数封装 — 小健 2026-05-29"""
+    directory: str
+    pattern: str
+    replacement: str
+    recursive: bool = False
+    preview: bool = False
+    conflict_strategy: str = "skip"
+    validate_path_func: Optional[Callable] = None
+    task_id: Optional[str] = None
+    record_operation_func: Optional[Callable] = None
+    execute_with_safety_func: Optional[Callable] = None
+    get_next_sequence_func: Optional[Callable] = None
+    _regex: Optional[Any] = field(init=False, repr=False, default=None)
+    _use_regex: bool = field(init=False, repr=False, default=False)
+
+    def __post_init__(self):
+        if self.pattern:
+            try:
+                self._regex = re.compile(self.pattern)
+                self._use_regex = True
+            except re.error:
+                self._regex = None
+                self._use_regex = False
+
+
 async def _process_single_rename(
+    ctx: RenameContext,
     file_path: Path, new_name: str, original_name: str,
-    conflict_strategy: str, preview: bool, task_id: Optional[str],
-    record_operation_func, execute_with_safety_func, get_next_sequence_func,
-    use_regex: bool, regex: Optional[re.Pattern], pattern: str, replacement: str,
 ) -> Tuple[Dict[str, Any], int, int, int]:
-    """处理单个文件重命名，返回(op_dict, renamed_delta, skipped_delta, failed_delta) - 小健 2026-05-25"""
+    """处理单个文件重命名,返回(op_dict, renamed_delta, skipped_delta, failed_delta) — 小健 2026-05-29 SRP-008"""
     from app.db.models.operation_enums import OperationType
     if new_name == original_name:
         return {"file": str(file_path), "original_name": original_name, "new_name": new_name,
@@ -937,25 +744,25 @@ async def _process_single_rename(
     conflict_resolved = False
     final_new_path = new_path
     if new_path.exists():
-        if conflict_strategy == "skip":
+        if ctx.conflict_strategy == "skip":
             return {"file": str(file_path), "original_name": original_name, "new_name": new_name,
-                    "status": "skipped", "reason": "目标文件已存在（跳过）", "operation_id": None}, 0, 1, 0
-        resolved_path, resolved = _resolve_name_conflict(new_path, conflict_strategy)
-        if not resolved and conflict_strategy != "overwrite":
+                    "status": "skipped", "reason": "目标文件已存在(跳过)", "operation_id": None}, 0, 1, 0
+        resolved_path, resolved = _resolve_name_conflict(new_path, ctx.conflict_strategy)
+        if not resolved and ctx.conflict_strategy != "overwrite":
             return {"file": str(file_path), "original_name": original_name, "new_name": new_name,
-                    "status": "skipped", "reason": f"冲突解决失败: {conflict_strategy}", "operation_id": None}, 0, 1, 0
+                    "status": "skipped", "reason": f"冲突解决失败: {ctx.conflict_strategy}", "operation_id": None}, 0, 1, 0
         final_new_path = resolved_path
         conflict_resolved = resolved
     operation_id = None
-    if record_operation_func:
-        operation_id = record_operation_func(
-            task_id=task_id, operation_type=OperationType.RENAME,
+    if ctx.record_operation_func:
+        operation_id = ctx.record_operation_func(
+            task_id=ctx.task_id, operation_type=OperationType.RENAME,
             source_path=file_path, destination_path=final_new_path,
-            sequence_number=get_next_sequence_func())
-    if not preview:
+            sequence_number=ctx.get_next_sequence_func())
+    if not ctx.preview:
         rename_result = await asyncio.to_thread(
-            execute_with_safety_func, operation_id=operation_id,
-            operation_func=lambda _s=file_path, _d=final_new_path: _rename_file_sync(_s, _d, conflict_strategy))
+            ctx.execute_with_safety_func, operation_id=operation_id,
+            operation_func=lambda _s=file_path, _d=final_new_path: _rename_file_sync(_s, _d, ctx.conflict_strategy))
         if rename_result is True:
             return {"file": str(file_path), "original_name": original_name, "new_name": final_new_path.name,
                     "new_path": str(final_new_path), "status": "renamed", "operation_id": operation_id,
@@ -969,78 +776,55 @@ async def _process_single_rename(
                 "operation_id": None}, 1, 0, 0
 
 
-async def batch_rename_impl(
-    directory: str,
-    pattern: str,
-    replacement: str,
-    recursive: bool = False,
-    preview: bool = False,
-    conflict_strategy: str = "skip",
-    validate_path_func=None,
-    safety_service=None,
-    task_id: Optional[str] = None,
-    record_operation_func=None,
-    execute_with_safety_func=None,
-    get_next_sequence_func=None,
-) -> Dict[str, Any]:
-    """批量重命名 - 小沈 2026-05-21, 重构 小健 2026-05-25"""
-    is_valid, error_msg = validate_path_func(directory)
+async def batch_rename_impl(ctx: RenameContext) -> Dict[str, Any]:
+    """批量重命名 — 12参数→1参数 — 小健 2026-05-29 SRP-008"""
+    is_valid, error_msg = ctx.validate_path_func(ctx.directory)
     if not is_valid:
-        return {"code": "ERR_PATH_INVALID", "data": None, "message": f"目录路径验证失败: {error_msg}"}
-    if not task_id:
-        return {"code": "ERR_META_NO_TASK", "data": None, "message": "No active task"}
-    dir_path = Path(directory)
+        return build_error(ERR_PATH_INVALID, f"目录路径验证失败: {error_msg}")
+    if not ctx.task_id:
+        return build_error(ERR_META_NO_ACTIVE_TASK, "No active task")
+    dir_path = Path(ctx.directory)
 
     try:
         if not dir_path.exists():
-            return {"code": "ERR_FILE_DIRECTORY_NOT_FOUND", "data": None, "message": f"目录不存在: {directory}"}
+            return build_error(ERR_FILE_DIRECTORY_NOT_FOUND, f"目录不存在: {ctx.directory}")
         if not dir_path.is_dir():
-            return {"code": "ERR_FILE_PATH_NOT_DIR", "data": None, "message": f"路径不是目录: {directory}"}
+            return build_error(ERR_FILE_PATH_NOT_DIR, f"路径不是目录: {ctx.directory}")
 
-        try:
-            regex = re.compile(pattern)
-            use_regex = True
-        except re.error:
-            regex = None
-            use_regex = False
-
-        from app.services.tools.tool_meta import get_timeout as _get_timeout
-        deadline = time.monotonic() + _get_timeout("batch_rename") - 2
-        files_to_process, _ = await _collect_files(dir_path, recursive, deadline)
+        from app.services.tools.tool_constants import TOOL_TIMEOUTS
+        deadline = time.monotonic() + TOOL_TIMEOUTS.get("batch_rename", TOOL_TIMEOUTS["default"]) - 2
+        files_to_process, _ = await _collect_files(dir_path, ctx.recursive, deadline)
 
         operations = []
         renamed_count = skipped_count = failed_count = 0
         for file_path in files_to_process:
             if time.monotonic() > deadline:
-                logger.warning(f"[batch_rename] 总超时，已处理{len(operations)}/{len(files_to_process)}个文件")
+                logger.warning(f"[batch_rename] 总超时,已处理{len(operations)}/{len(files_to_process)}个文件")
                 break
             original_name = file_path.name
-            new_name = regex.sub(replacement, original_name) if use_regex else original_name.replace(pattern, replacement)
-            op, rd, sd, fd = await _process_single_rename(
-                file_path, new_name, original_name, conflict_strategy, preview, task_id,
-                record_operation_func, execute_with_safety_func, get_next_sequence_func,
-                use_regex, regex, pattern, replacement)
+            new_name = ctx._regex.sub(ctx.replacement, original_name) if ctx._use_regex else original_name.replace(ctx.pattern, ctx.replacement)
+            op, rd, sd, fd = await _process_single_rename(ctx, file_path, new_name, original_name)
             operations.append(op)
             renamed_count += rd
             skipped_count += sd
             failed_count += fd
 
         result = {
-            "directory": str(dir_path), "pattern": pattern, "replacement": replacement,
-            "use_regex": use_regex, "recursive": recursive, "preview_mode": preview,
-            "conflict_strategy": conflict_strategy, "total_files": len(files_to_process),
+            "directory": str(dir_path), "pattern": ctx.pattern, "replacement": ctx.replacement,
+            "use_regex": ctx._use_regex, "recursive": ctx.recursive, "preview_mode": ctx.preview,
+            "conflict_strategy": ctx.conflict_strategy, "total_files": len(files_to_process),
             "renamed_files": renamed_count, "skipped_files": skipped_count,
             "failed_files": failed_count, "operations": operations,
         }
-        return {"code": "SUCCESS", "data": result,
-                "message": "批量重命名预览" if preview else f"批量重命名完成: {renamed_count}个文件已重命名"}
+        return build_success(result,
+                "批量重命名预览" if ctx.preview else f"批量重命名完成: {renamed_count}个文件已重命名")
 
     except Exception as e:
-        return {"code": "ERR_RENAME_FAILED", "data": None, "message": f"批量重命名失败: {str(e)}"}
+        return build_error(ERR_FILE_RENAME_FAILED, f"批量重命名失败: {str(e)}")
 
 
 class _StatsCollector:
-    """目录统计收集器，聚合文件/目录统计 - 小健 2026-05-25"""
+    """目录统计收集器,聚合文件/目录统计 - 小健 2026-05-25"""
 
     def __init__(self):
         self.total_files = 0
@@ -1107,7 +891,7 @@ def _scan_stats_directory(
     dir_path: Path, recursive: bool, max_depth: int,
     deadline: float, filters: Optional[Dict[str, Any]],
 ) -> _StatsCollector:
-    """扫描目录收集统计，支持超时+深度+过滤 - 小健 2026-05-25"""
+    """扫描目录收集统计,支持超时+深度+过滤 - 小健 2026-05-25"""
     collector = _StatsCollector()
     _walk_with_timeout(
         dir_path, deadline, callback=collector.record_file,
@@ -1126,7 +910,7 @@ def _format_stats_json(stats: Dict[str, Any]) -> Dict[str, Any]:
         result = _format_stats_json(stats)
 
     返回数据说明:
-        - 返回Dict，包含output字段（JSON字符串）
+        - 返回Dict,包含output字段(JSON字符串)
     """
     stats["output"] = json.dumps(stats, indent=2, ensure_ascii=False)
     return stats
@@ -1142,7 +926,7 @@ def _format_stats_csv(stats: Dict[str, Any]) -> Dict[str, Any]:
         result = _format_stats_csv(stats)
 
     返回数据说明:
-        - 返回Dict，包含output字段（CSV字符串）
+        - 返回Dict,包含output字段(CSV字符串)
     """
     output = io.StringIO()
     writer = csv.writer(output)
@@ -1182,7 +966,7 @@ def _format_stats_text(stats: Dict[str, Any]) -> Dict[str, Any]:
         result = _format_stats_text(stats)
 
     返回数据说明:
-        - 返回Dict，包含output字段（文本字符串）
+        - 返回Dict,包含output字段(文本字符串)
     """
     lines = [
         f"目录统计: {stats['directory']}",
@@ -1222,7 +1006,7 @@ def _format_stats_output(stats: Dict[str, Any], output_format: str) -> Dict[str,
         result = _format_stats_output(stats, "csv")
 
     返回数据说明:
-        - 返回Dict，包含格式化后的output字段
+        - 返回Dict,包含格式化后的output字段
     """
     formatters = {
         "json": _format_stats_json,
@@ -1240,26 +1024,26 @@ def _validate_compress_params(
     overwrite: bool, compression_level: int, task_id: Optional[str],
     validate_path_func,
 ) -> Optional[Dict[str, Any]]:
-    """压缩参数校验链，返回None表示通过或error dict - 小健 2026-05-25"""
+    """压缩参数校验链,返回None表示通过或error dict - 小健 2026-05-25"""
     is_valid_src, error_msg_src = validate_path_func(source_path)
     if not is_valid_src:
-        return {"code": "ERR_PATH_INVALID", "data": None, "message": f"源路径验证失败: {error_msg_src}"}
+        return build_error(ERR_PATH_INVALID, f"源路径验证失败: {error_msg_src}")
     is_valid_dst, error_msg_dst = validate_path_func(output_path)
     if not is_valid_dst:
-        return {"code": "ERR_PATH_INVALID", "data": None, "message": f"目标路径验证失败: {error_msg_dst}"}
+        return build_error(ERR_PATH_INVALID, f"目标路径验证失败: {error_msg_dst}")
     if not overwrite and os.path.exists(output_path):
-        return {"code": "ERR_FILE_EXISTS", "data": None, "message": f"目标文件已存在: {output_path}，可设置overwrite=true覆盖"}
+        return build_error(ERR_FILE_PATH_EXISTS, f"目标文件已存在: {output_path},可设置overwrite=true覆盖")
     if not task_id:
-        return {"code": "ERR_META_NO_TASK", "data": None, "message": "No active task"}
+        return build_error(ERR_META_NO_ACTIVE_TASK, "No active task")
     if fmt not in ("zip", "tar.gz"):
-        return {"code": "ERR_DOC_UNSUPPORTED_FORMAT", "data": None, "message": f"不支持的压缩格式: {fmt}，支持格式: zip, tar.gz"}
+        return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED, f"不支持的压缩格式: {fmt},支持格式: zip, tar.gz")
     if not 0 <= compression_level <= 9:
-        return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": f"无效的压缩级别: {compression_level}，必须是0-9之间的整数"}
+        return build_error(ERR_PARAMETER_INVALID, f"无效的压缩级别: {compression_level},必须是0-9之间的整数")
     return None
 
 
 def _compress_entries(source: Path, deadline: float) -> Generator[Tuple[Path, str], None, bool]:
-    """通用文件遍历生成器，yield(path, arcname) → 返回是否超时 - 小健 2026-05-25"""
+    """通用文件遍历生成器,yield(path, arcname) → 返回是否超时 - 小健 2026-05-25"""
     if source.is_file():
         yield source, source.name
         return False
@@ -1275,7 +1059,7 @@ def _write_zip(
     source: Path, destination: Path, compression_level: int,
     password: Optional[str], deadline: float,
 ) -> Tuple[List[str], bool]:
-    """写入zip压缩包，返回(文件列表, 是否超时) - 小健 2026-05-25"""
+    """写入zip压缩包,返回(文件列表, 是否超时) - 小健 2026-05-25"""
     compressed_files: List[str] = []
     compression = zipfile.ZIP_STORED if compression_level == 0 else zipfile.ZIP_DEFLATED
     with zipfile.ZipFile(destination, 'w', compression=compression, compresslevel=compression_level) as zf:
@@ -1290,7 +1074,7 @@ def _write_zip(
 def _write_targz(
     source: Path, destination: Path, deadline: float,
 ) -> Tuple[List[str], bool]:
-    """写入tar.gz压缩包，返回(文件列表, 是否超时) - 小健 2026-05-25"""
+    """写入tar.gz压缩包,返回(文件列表, 是否超时) - 小健 2026-05-25"""
     compressed_files: List[str] = []
     with tarfile.open(destination, 'w:gz') as tf:
         for file_path, arcname in _compress_entries(source, deadline):
@@ -1330,14 +1114,13 @@ async def compress_files_impl(
     password: Optional[str] = None,
     split_size: Optional[int] = None,
     validate_path_func=None,
-    safety_service=None,
     task_id: Optional[str] = None,
     record_operation_func=None,
     execute_with_safety_func=None,
     get_next_sequence_func=None,
 ) -> Dict[str, Any]:
     """compress_files工具的实现函数 - 小健 2026-05-25 重构"""
-    from app.services.safety.file.file_safety import OperationType
+    from app.db.models.operation_enums import OperationType
 
     validation_error = _validate_compress_params(
         source_path, output_path, format, overwrite, compression_level, task_id, validate_path_func)
@@ -1349,7 +1132,7 @@ async def compress_files_impl(
 
     try:
         if not source.exists():
-            return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"源路径不存在: {source_path}"}
+            return build_error(ERR_FILE_NOT_FOUND, f"源路径不存在: {source_path}")
 
         destination.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1359,8 +1142,8 @@ async def compress_files_impl(
             sequence_number=get_next_sequence_func(),
         )
 
-        from app.services.tools.tool_meta import get_timeout as _get_timeout
-        _cf_deadline = time.monotonic() + _get_timeout("compress_files") - 2
+        from app.services.tools.tool_constants import TOOL_TIMEOUTS
+        _cf_deadline = time.monotonic() + TOOL_TIMEOUTS.get("compress_files", TOOL_TIMEOUTS["default"]) - 2
 
         original_size = _get_total_size_sync(source, _cf_deadline)
 
@@ -1386,22 +1169,22 @@ async def compress_files_impl(
             execute_with_safety_func, operation_id=operation_id, operation_func=_compress_sync)
 
         if result:
-            return {"code": "SUCCESS", "data": {"operation_id": operation_id, **result},
-                    "message": f"压缩完成: {result.get('file_count', 0)}个文件"}
-        return {"code": "ERR_FILE_COMPRESS_FAILED", "data": None, "message": "压缩失败"}
+            return build_success({"operation_id": operation_id, **result},
+                    f"压缩完成: {result.get('file_count', 0)}个文件")
+        return build_error(ERR_FILE_COMPRESS_FAILED, "压缩失败")
 
     except Exception as e:
-        return {"code": "ERR_FILE_COMPRESS_FAILED", "data": None, "message": f"压缩失败: {str(e)}"}
+        return build_error(ERR_FILE_COMPRESS_FAILED, f"压缩失败: {str(e)}")
 
 
 def _get_total_size_sync(path: Path, deadline: float) -> int:
-    """同步计算源路径总大小，支持超时 - 小健 2026-05-25"""
+    """同步计算源路径总大小,支持超时 - 小健 2026-05-25"""
     if path.is_file():
         return path.stat().st_size
     total_size = 0
     for file_path in path.rglob("*"):
         if time.monotonic() > deadline:
-            logger.warning("[_get_total_size_sync] 超时自检触发，提前返回")
+            logger.warning("[_get_total_size_sync] 超时自检触发,提前返回")
             break
         if file_path.is_file():
             total_size += file_path.stat().st_size
@@ -1414,7 +1197,7 @@ def _split_zip_file(zip_path: Path, split_size: int) -> List[Path]:
     
     Args:
         zip_path: zip文件路径
-        split_size: 分卷大小（字节）
+        split_size: 分卷大小(字节)
     
     Returns:
         分割后的文件路径列表
@@ -1446,7 +1229,6 @@ async def copy_file_impl(
     recursive: bool,
     overwrite: bool,
     validate_path_func,
-    safety_service,
     task_id: Optional[str],
     record_operation_func,
     execute_with_safety_func,
@@ -1461,9 +1243,8 @@ async def copy_file_impl(
         destination_path: 目标路径
         recursive: 是否递归复制目录
         overwrite: 是否覆盖已存在的目标
-        preserve_metadata: 是否保留文件元数据（时间戳等），默认True
+        preserve_metadata: 是否保留文件元数据(时间戳等),默认True
         validate_path_func: 路径验证函数
-        safety_service: 安全服务
         task_id: 任务ID
         record_operation_func: 记录操作函数
         execute_with_safety_func: 安全执行函数
@@ -1472,28 +1253,28 @@ async def copy_file_impl(
     Returns:
         统一格式的结果字典
     """
-    from app.services.safety.file.file_safety import OperationType
+    from app.db.models.operation_enums import OperationType
     
     is_valid_src, error_msg_src = validate_path_func(source_path)
     if not is_valid_src:
-        return {"code": "ERR_PATH_INVALID", "data": None, "message": f"源路径{error_msg_src}"}
+        return build_error(ERR_PATH_INVALID, f"源路径{error_msg_src}")
     
     is_valid_dst, error_msg_dst = validate_path_func(destination_path)
     if not is_valid_dst:
-        return {"code": "ERR_PATH_INVALID", "data": None, "message": f"目标路径{error_msg_dst}"}
+        return build_error(ERR_PATH_INVALID, f"目标路径{error_msg_dst}")
     
     if not task_id:
-        return {"code": "ERR_META_NO_TASK", "data": None, "message": "No active task"}
+        return build_error(ERR_META_NO_ACTIVE_TASK, "No active task")
     
     src = Path(source_path)
     dst = Path(destination_path)
     
     try:
         if not src.exists():
-            return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"Source not found: {source_path}"}
+            return build_error(ERR_FILE_NOT_FOUND, f"Source not found: {source_path}")
         
         if dst.exists() and not overwrite:
-            return {"code": "ERR_FILE_EXISTS", "data": None, "message": f"目标路径已存在: {dst}，复制操作已取消。请设置overwrite=True或指定其他路径。"}
+            return build_error(ERR_FILE_PATH_EXISTS, f"目标路径已存在: {dst},复制操作已取消。请设置overwrite=True或指定其他路径。")
         
         operation_id = record_operation_func(
             task_id=task_id,
@@ -1529,12 +1310,12 @@ async def copy_file_impl(
         )
         
         if success:
-            return {"code": "SUCCESS", "data": {"operation_id": operation_id, "source": str(src), "destination": str(dst)}, "message": f"Copied: {src.name} -> {dst}"}
+            return build_success({"operation_id": operation_id, "source": str(src), "destination": str(dst)}, f"Copied: {src.name} -> {dst}")
         else:
-            return {"code": "ERR_FILE_COPY_FAILED", "data": None, "message": "Failed to copy file"}
+            return build_error(ERR_FILE_COPY_FAILED, "Failed to copy file")
             
     except Exception as e:
-        return {"code": "ERR_FILE_COPY_FAILED", "data": None, "message": str(e)}
+        return build_error(ERR_FILE_COPY_FAILED, str(e))
 
 
 async def file_statistics_impl(
@@ -1544,30 +1325,29 @@ async def file_statistics_impl(
     filters: Optional[Dict[str, Any]] = None,
     output_format: str = "json",
     validate_path_func=None,
-    safety_service=None,
     task_id: Optional[str] = None,
     record_operation_func=None,
     execute_with_safety_func=None,
     get_next_sequence_func=None,
 ) -> Dict[str, Any]:
     """file_statistics工具的实现函数 - 小健 2026-05-25 重构"""
-    from app.services.safety.file.file_safety import OperationType
+    from app.db.models.operation_enums import OperationType
 
     is_valid, error_msg = validate_path_func(directory)
     if not is_valid:
-        return {"code": "ERR_PATH_INVALID", "data": None, "message": f"目录路径验证失败: {error_msg}"}
+        return build_error(ERR_PATH_INVALID, f"目录路径验证失败: {error_msg}")
     if not task_id:
-        return {"code": "ERR_META_NO_TASK", "data": None, "message": "No active task"}
+        return build_error(ERR_META_NO_ACTIVE_TASK, "No active task")
     if output_format not in ("json", "csv", "text"):
-        return {"code": "ERR_DOC_UNSUPPORTED_FORMAT", "data": None, "message": f"不支持的输出格式: {output_format}，支持格式: json, csv, text"}
+        return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED, f"不支持的输出格式: {output_format},支持格式: json, csv, text")
 
     dir_path = Path(directory)
 
     try:
         if not dir_path.exists():
-            return {"code": "ERR_FILE_DIRECTORY_NOT_FOUND", "data": None, "message": f"目录不存在: {directory}"}
+            return build_error(ERR_FILE_DIRECTORY_NOT_FOUND, f"目录不存在: {directory}")
         if not dir_path.is_dir():
-            return {"code": "ERR_FILE_PATH_NOT_DIR", "data": None, "message": f"路径不是目录: {directory}"}
+            return build_error(ERR_FILE_PATH_NOT_DIR, f"路径不是目录: {directory}")
 
         operation_id = record_operation_func(
             task_id=task_id, operation_type=OperationType.STATISTICS,
@@ -1575,8 +1355,8 @@ async def file_statistics_impl(
             sequence_number=get_next_sequence_func(),
         )
 
-        from app.services.tools.tool_meta import get_timeout as _get_timeout
-        _stat_deadline = time.monotonic() + _get_timeout("file_statistics") - 2
+        from app.services.tools.tool_constants import TOOL_TIMEOUTS
+        _stat_deadline = time.monotonic() + TOOL_TIMEOUTS.get("file_statistics", TOOL_TIMEOUTS["default"]) - 2
 
         def _statistics_sync():
             start_time = time.time()
@@ -1589,12 +1369,12 @@ async def file_statistics_impl(
             execute_with_safety_func, operation_id=operation_id, operation_func=_statistics_sync)
 
         if result:
-            return {"code": "SUCCESS", "data": {"operation_id": operation_id, **result},
-                    "message": f"文件统计完成: {result.get('total_files', 0)}个文件, {result.get('total_directories', 0)}个目录"}
-        return {"code": "ERR_STATISTICS_FAILED", "data": None, "message": "文件统计失败"}
+            return build_success({"operation_id": operation_id, **result},
+                    f"文件统计完成: {result.get('total_files', 0)}个文件, {result.get('total_directories', 0)}个目录")
+        return build_error(ERR_STATISTICS_FAILED, "文件统计失败")
 
     except Exception as e:
-        return {"code": "ERR_STATISTICS_FAILED", "data": None, "message": f"文件统计失败: {str(e)}"}
+        return build_error(ERR_STATISTICS_FAILED, f"文件统计失败: {str(e)}")
 
 
 def _parse_date_filter(date_value: Any) -> Optional[float]:
@@ -1607,13 +1387,12 @@ def _parse_date_filter(date_value: Any) -> Optional[float]:
         timestamp = _parse_date_filter("2024-01-01")
 
     返回数据说明:
-        - 返回Optional[float]，解析失败返回None
+        - 返回Optional[float],解析失败返回None
     """
     if isinstance(date_value, (int, float)):
         return date_value
     elif isinstance(date_value, str):
         try:
-            from datetime import datetime
             dt = datetime.fromisoformat(date_value.replace('Z', '+00:00'))
             return dt.timestamp()
         except (ValueError, TypeError):
@@ -1623,7 +1402,7 @@ def _parse_date_filter(date_value: Any) -> Optional[float]:
 
 def _apply_filters(path: Path, filters: Optional[Dict[str, Any]]) -> bool:
     """
-    应用过滤条件 - 小沈 2026-05-18 从file_statistics.py迁移，小健 2026-05-25 重构
+    应用过滤条件 - 小沈 2026-05-18 从file_statistics.py迁移,小健 2026-05-25 重构
 
     使用场景:
         file_statistics/_walk_with_timeout中过滤文件
@@ -1633,7 +1412,7 @@ def _apply_filters(path: Path, filters: Optional[Dict[str, Any]]) -> bool:
             process(file_path)
 
     返回数据说明:
-        - 返回bool，是否通过过滤
+        - 返回bool,是否通过过滤
     """
     if not filters:
         return True
@@ -1703,24 +1482,17 @@ def _build_checksum_result(
 def _calculate_checksum_sync(
     path: Path, algorithm: str, chunk_size: int, timeout: int,
 ) -> str:
-    """同步分块哈希计算（含超时）。
+    """同步分块哈希计算(含超时)。
 
     小沈 2026-05-25 重构拆分
-    提取自原 file_checksum_impl 嵌套函数，复用 select_hasher。
+    使用统一的 compute_file_hash 函数。
     """
-    import time
-    start_time = time.time()
-    timeout_sec = timeout / 1000.0
-    hash_obj = select_hasher(algorithm)
-    with open(path, 'rb') as f:
-        while True:
-            chunk = f.read(chunk_size)
-            if not chunk:
-                break
-            hash_obj.update(chunk)
-            if time.time() - start_time > timeout_sec:
-                raise TimeoutError(f"哈希计算超时（{timeout}毫秒）")
-    return hash_obj.hexdigest()
+    return compute_file_hash(
+        file_path=str(path),
+        algorithm=algorithm,
+        chunk_size=chunk_size,
+        timeout_ms=timeout
+    )
 
 
 async def file_checksum_impl(
@@ -1730,7 +1502,6 @@ async def file_checksum_impl(
     chunk_size: int = 65536,
     timeout: int = 30000,
     validate_path_func=None,
-    safety_service=None,
     task_id: Optional[str] = None,
     record_operation_func=None,
     execute_with_safety_func=None,
@@ -1740,45 +1511,44 @@ async def file_checksum_impl(
     file_checksum工具的实现函数 - 小沈 2026-05-03 修正; 格式统一 - 小沈 2026-05-21
     
     Args:
-        file_path: 要计算哈希的文件路径（必填）
-        algorithm: 哈希算法（可选），默认sha256。可选值：md5、sha1、sha256、sha512
-        verify_hash: 验证哈希值（可选），若提供则自动比对并返回verified状态
-        chunk_size: 分块大小（字节），默认65536，用于大文件流式计算
-        timeout: 超时毫秒数（可选），默认30000，Agent根据文件大小动态调整
+        file_path: 要计算哈希的文件路径(必填)
+        algorithm: 哈希算法(可选),默认sha256。可选值:md5、sha1、sha256、sha512
+        verify_hash: 验证哈希值(可选),若提供则自动比对并返回verified状态
+        chunk_size: 分块大小(字节),默认65536,用于大文件流式计算
+        timeout: 超时毫秒数(可选),默认30000,Agent根据文件大小动态调整
         validate_path_func: 路径验证函数
-        safety_service: 安全服务
         task_id: 任务ID
         record_operation_func: 记录操作函数
         execute_with_safety_func: 安全执行函数
         get_next_sequence_func: 获取下一个序列号函数
     
     Returns:
-        统一格式的结果字典：{ code, data, message }
+        统一格式的结果字典:{ code, data, message }
     """
-    from app.services.safety.file.file_safety import OperationType
+    from app.db.models.operation_enums import OperationType
 
     is_valid, error_msg = validate_path_func(file_path)
     if not is_valid:
-        return {"code": "ERR_PATH_INVALID", "data": None, "message": f"文件路径验证失败: {error_msg}"}
+        return build_error(ERR_PATH_INVALID, f"文件路径验证失败: {error_msg}")
 
     if not task_id:
-        return {"code": "ERR_META_NO_TASK", "data": None, "message": "No active task"}
+        return build_error(ERR_META_NO_ACTIVE_TASK, "No active task")
 
     supported_algorithms = ["md5", "sha1", "sha256", "sha512"]
     if algorithm.lower() not in supported_algorithms:
-        return {"code": "ERR_DOC_UNSUPPORTED_FORMAT", "data": None, "message": f"不支持的哈希算法: {algorithm}，支持算法: {', '.join(supported_algorithms)}"}
+        return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED, f"不支持的哈希算法: {algorithm},支持算法: {', '.join(supported_algorithms)}")
 
     if chunk_size < 1024 or chunk_size > 1048576:
-        return {"code": "ERR_PARAMETER_INVALID", "data": None, "message": f"无效的分块大小: {chunk_size}，必须在1024到1048576之间"}
+        return build_error(ERR_PARAMETER_INVALID, f"无效的分块大小: {chunk_size},必须在1024到1048576之间")
 
     path = Path(file_path)
 
     try:
         if not path.exists():
-            return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"文件不存在: {file_path}"}
+            return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {file_path}")
 
         if not path.is_file():
-            return {"code": "ERR_PATH_NOT_FILE", "data": None, "message": f"路径不是文件: {file_path}"}
+            return build_error(ERR_FILE_PATH_NOT_FILE, f"路径不是文件: {file_path}")
 
         operation_id = record_operation_func(
             task_id=task_id,
@@ -1796,14 +1566,14 @@ async def file_checksum_impl(
                 operation_func=lambda: _calculate_checksum_sync(path, algorithm, chunk_size, timeout),
             )
         except TimeoutError:
-            return {"code": "ERR_FILE_CHECKSUM_TIMEOUT", "data": None, "message": f"计算超时({timeout}ms)"}
+            return build_error(ERR_FILE_CHECKSUM_TIMEOUT, f"计算超时({timeout}ms")
         elapsed_ms = int((time.perf_counter() - start) * 1000)
 
         return _build_checksum_result(checksum, algorithm, str(path),
                                        path.stat().st_size, elapsed_ms, verify_hash)
 
     except Exception as e:
-        return {"code": "ERR_FILE_CHECKSUM_FAILED", "data": None, "message": f"哈希计算失败: {str(e)}"}
+        return build_error(ERR_FILE_CHECKSUM_FAILED, f"哈希计算失败: {str(e)}")
 
 async def get_file_info_impl(
     file_path: str,
@@ -1813,30 +1583,30 @@ async def get_file_info_impl(
     """获取文件信息 - 小健 2026-05-02 增加follow_symlinks; 格式统一 - 小沈 2026-05-21"""
     is_valid, error_msg = validate_path_func(file_path)
     if not is_valid:
-        return {"code": "ERR_PATH_INVALID", "data": None, "message": error_msg}
+        return build_error(ERR_PATH_INVALID, error_msg)
     
     path = Path(file_path)
     
     try:
         if not path.exists():
-            return {"code": "ERR_FILE_NOT_FOUND", "data": None, "message": f"File not found: {file_path}"}
+            return build_error(ERR_FILE_NOT_FOUND, f"File not found: {file_path}")
         
         def _get_info_sync():
-            meta_result = get_file_metadata(file_path, follow_symlinks)
-            if not meta_result.get("success"):
-                raise RuntimeError(meta_result.get("error", "获取文件元数据失败"))
-            info = meta_result["metadata"]
+            meta_result = _get_file_metadata(file_path, follow_symlinks)
+            if meta_result.get("code") != "SUCCESS":
+                raise RuntimeError(meta_result.get("message", "获取文件元数据失败"))
+            info = meta_result["data"]["metadata"]
             
             if path.is_dir():
                 try:
-                    import time as _time
-                    from app.services.tools.tool_meta import get_timeout as _get_timeout
-                    _gi_deadline = _time.monotonic() + _get_timeout("get_file_info") - 2
+                    from app.services.tools.tool_constants import TOOL_TIMEOUTS
+                    _gi_deadline = _time.monotonic() + TOOL_TIMEOUTS.get("get_file_info", TOOL_TIMEOUTS["default"]) - 2
                     _fc = 0
                     _dc = 0
                     for _p in path.rglob("*"):
                         if _time.monotonic() > _gi_deadline:
-                            import logging; logging.getLogger(__name__).warning(f"[get_file_info] 超时自检触发，提前返回 file_count={_fc}, dir_count={_dc}")
+                            logger.warning(f"[get_file_info] 超时自检触发,提前返回 file_count={_fc}, dir_count={_dc}")
+
                             break
                         if _p.is_file():
                             _fc += 1
@@ -1852,7 +1622,37 @@ async def get_file_info_impl(
         
         info = await asyncio.to_thread(_get_info_sync)
         
-        return {"code": "SUCCESS", "data": {"info": info}, "message": "获取文件信息成功"}
+        return build_success({"info": info}, "获取文件信息成功")
         
     except Exception as e:
-        return {"code": "ERR_FILE_INFO", "data": None, "message": f"获取文件信息失败: {str(e)}"}
+        return build_error(ERR_FILE_INFO, f"获取文件信息失败: {str(e)}")
+from app.constants import (
+    ERR_DOC_FORMAT_NOT_SUPPORTED,
+    ERR_FILE_BACKUP,
+    ERR_FILE_CALCULATE_DISTRIBUTION,
+    ERR_FILE_CHECKSUM_FAILED,
+    ERR_FILE_CHECKSUM_TIMEOUT,
+    ERR_FILE_CHECK_PERMISSION,
+    ERR_FILE_COMPRESS_FAILED,
+    ERR_FILE_COPY_FAILED,
+    ERR_FILE_CREATE_DIR,
+    ERR_FILE_DIRECTORY_NOT_FOUND,
+    ERR_FILE_ENCODING,
+    ERR_FILE_EXTRACT,
+    ERR_FILE_HASH,
+    ERR_FILE_INFO,
+    ERR_FILE_METADATA,
+    ERR_FILE_MIME_TYPE,
+    ERR_FILE_MOVE_TRASH,
+    ERR_FILE_NOT_FOUND,
+    ERR_FILE_PATH_EXISTS,
+    ERR_FILE_PATH_NOT_DIR,
+    ERR_FILE_PATH_NOT_FILE,
+    ERR_FILE_RENAME_FAILED,
+    ERR_META_NO_ACTIVE_TASK,
+    ERR_PARAMETER_INVALID,
+    ERR_PATH_INVALID,
+    ERR_SHELL_CHECK_RUNNING,
+    ERR_SHELL_VALIDATE_COMMAND,
+    ERR_STATISTICS_FAILED,
+)

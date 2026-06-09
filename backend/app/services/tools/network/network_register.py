@@ -5,27 +5,24 @@ Network Register - 网络通信工具注册点
 【架构规范】2026-04-29 小沈
 - network_register.py 作为网络工具的注册点
 - 使用 registry.py 的 tool_registry.register() 显式注册
-- 使用 Pydantic 模型注册，自动生成 OpenAI Schema
+- 使用 Pydantic 模型注册,自动生成 OpenAI Schema
 
-【工具列表】（共5个）— 【2026-05-17 小沈】P1: 6→5，ping+port_check→network_diagnose
+【工具列表】(共5个)— 【2026-05-17 小沈】P1: 6→5,ping+port_check→network_diagnose
 1. http_request - 发起HTTP请求
 2. download_file - 下载文件到本地
 3. fetch_webpage - 获取和处理网页内容
 4. search_web - 搜索网络获取最新信息
-5. network_diagnose - 网络连通性诊断（合并ping+port_check）
-
-已取消注册（向下兼容，函数仍保留）：
-- ping → 合入 network_diagnose(mode="ping")
-- port_check → 合入 network_diagnose(mode="port")
+5. network_diagnose - 网络连通性诊断(合并ping+port_check)
 
 创建时间: 2026-04-29
 更新时间: 2026-05-17 小沈
 """
 
 # ============================================================
-# 网络工具注册 - 使用 Pydantic 模型（按文档设计）
+# 网络工具注册 - 使用 Pydantic 模型(按文档设计)
 # ============================================================
-from app.services.tools.registry import register_tool, ToolCategory, tool_registry
+from app.services.tools.registry import register_tool, tool_registry
+from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 from typing import Optional
 
@@ -33,14 +30,14 @@ from typing import Optional
 def _http_request_failure_hint(tool_params: Optional[dict] = None) -> str:
     """http_request失败时的国内替代URL提示 — 小健 2026-05-24"""
     failed_url = (tool_params or {}).get("url", "")
-    hint = "⚠️ 网络请求失败。如果是访问国外服务超时，请换用国内可达的替代地址：\n"
+    hint = "⚠️ 网络请求失败。如果是访问国外服务超时,请换用国内可达的替代地址:\n"
     hint += "  - 查公网IP → 用 https://httpbin.org/ip 或 https://myip.ipip.net\n"
     hint += "  - 查IP详情 → 用 https://ipapi.co/json/ 或 https://ip.sb/api/\n"
     hint += "  - DNS查询 → 用 https://dns.alidns.com/resolve?name=域名&type=A\n"
     hint += "  - 网络连通 → 用 ping 测试国内域名(如 baidu.com)\n"
     if failed_url:
         hint += f"  失败URL: {failed_url}\n"
-    hint += "请勿重复请求同一失败URL！"
+    hint += "请勿重复请求同一失败URL!"
     return hint
 
 # 导入 Pydantic 模型
@@ -52,7 +49,6 @@ from app.services.tools.network.network_schema import (
     NetworkDiagnoseInput,
 )
 
-# 导入工具函数
 from app.services.tools.network.network_tools import (
     http_request,
     download_file,
@@ -61,9 +57,12 @@ from app.services.tools.network.network_tools import (
     network_diagnose,
 )
 
+from app.services.tools.system.system_tools import net_connections
+from app.services.tools.system.system_schema import NetConnectionsInput
+
 # 工具描述
 NETWORK_TOOL_DESCRIPTIONS = {
-    "http_request": """发送 HTTP 请求到指定的 URL，支持 GET、POST、PUT、DELETE、PATCH 等方法。
+    "http_request": """发送 HTTP 请求到指定的 URL,支持 GET、POST、PUT、DELETE、PATCH 等方法。
 
 【使用场景】
 - 当用户需要调用 REST API 时使用
@@ -73,32 +72,32 @@ NETWORK_TOOL_DESCRIPTIONS = {
 【重要】返回响应的状态码、响应头和响应体
 
 【使用示例】
-- GET请求：http_request(url="https://api.example.com/users", method="GET")
-- POST请求：http_request(url="https://api.example.com/users", method="POST", headers={"Content-Type":"application/json"}, json_body={"name":"张三"})
-- 带重试：http_request(url="https://api.example.com/users", retry=5)
+- GET请求:http_request(url="https://api.example.com/users", method="GET")
+- POST请求:http_request(url="https://api.example.com/users", method="POST", headers={"Content-Type":"application/json"}, json_body={"name":"张三"})
+- 带重试:http_request(url="https://api.example.com/users", retry=5)
 
 【返回数据说明】
-- code: 状态码，SUCCESS或ERR_NETWORK_INVALID_PARAM/ERR_INVALID_URL/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_TIMEOUT/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
-- data: 成功时为对象，失败时为None；成功时包含 status_code(HTTP状态码)、headers(响应头字典)、body(响应体，JSON自动解析为对象，否则为文本字符串)；HTTP错误时包含 status_code和body
+- code: 状态码,SUCCESS或ERR_NETWORK_INVALID_PARAM/ERR_INVALID_URL/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_TIMEOUT/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
+- data: 成功时为对象,失败时为None;成功时包含 status_code(HTTP状态码)、headers(响应头字典)、body(响应体,JSON自动解析为对象,否则为文本字符串);HTTP错误时包含 status_code和body
 - message: 结果描述信息""",
-    "download_file": """从 URL 下载文件到本地，支持大文件流式下载。
+    "download_file": """从 URL 下载文件到本地,支持大文件流式下载。
 
 【使用场景】
 - 当用户需要下载文件时使用
 - 当用户想要下载图片、视频、安装包等文件时使用
 - 当用户需要指定保存路径时使用
 
-【重要】返回下载结果，包含文件路径、下载大小、进度百分比
+【重要】返回下载结果,包含文件路径、下载大小、进度百分比
 
 【使用示例】
-- 简单下载：download_file(url="https://example.com/file.zip", destination_path="D:/Downloads/file.zip")
-- 带认证下载：download_file(url="https://private.com/file.zip", destination_path="D:/Downloads/file.zip", headers={"Authorization":"Bearer token"})
+- 简单下载:download_file(url="https://example.com/file.zip", destination_path="D:/Downloads/file.zip")
+- 带认证下载:download_file(url="https://private.com/file.zip", destination_path="D:/Downloads/file.zip", headers={"Authorization":"Bearer token"})
 
 【返回数据说明】
-- code: 状态码，SUCCESS或ERR_INVALID_URL/ERR_NETWORK_INVALID_PATH/ERR_NETWORK_CREATE_DIR/ERR_NETWORK_WRITE_FILE/ERR_NETWORK_TIMEOUT/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
-- data: 成功时为对象，失败时为None；成功时包含 file_path(文件绝对路径)、file_size(本次下载字节数)、total_size(文件总字节数)、progress_percent(进度百分比0-100)、content_type(内容类型)
+- code: 状态码,SUCCESS或ERR_INVALID_URL/ERR_NETWORK_INVALID_PATH/ERR_NETWORK_CREATE_DIR/ERR_NETWORK_WRITE_FILE/ERR_NETWORK_TIMEOUT/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
+- data: 成功时为对象,失败时为None;成功时包含 file_path(文件绝对路径)、file_size(本次下载字节数)、total_size(文件总字节数)、progress_percent(进度百分比0-100)、content_type(内容类型)
 - message: 结果描述信息""",
-    "fetch_webpage": """获取和处理网页内容，支持多种格式提取和智能内容提取。
+    "fetch_webpage": """获取和处理网页内容,支持多种格式提取和智能内容提取。
 
 【使用场景】
 - 当用户需要获取网页内容时使用
@@ -108,31 +107,31 @@ NETWORK_TOOL_DESCRIPTIONS = {
 【重要】返回网页的文本内容和提取格式
 
 【使用示例】
-- 获取网页：fetch_webpage(url="https://example.com", prompt="提取页面标题和主要内容")
-- JS渲染：fetch_webpage(url="https://example.com", js_render=true)
+- 获取网页:fetch_webpage(url="https://example.com", prompt="提取页面标题和主要内容")
+- JS渲染:fetch_webpage(url="https://example.com", js_render=true)
 
 【返回数据说明】
-- code: 状态码，SUCCESS或ERR_INVALID_URL/ERR_NETWORK_JS_RENDER/ERR_NETWORK_TIMEOUT/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
-- data: 成功时为对象，失败时为None；成功时包含 url(请求地址)、content(提取的网页内容文本)、format(提取格式markdown/html/text)、content_type(响应内容类型)、status_code(HTTP状态码)、truncated(是否因max_tokens截断)；有prompt时额外包含 prompt(AI提取指令)和note(提示需LLM后处理)
+- code: 状态码,SUCCESS或ERR_INVALID_URL/ERR_NETWORK_JS_RENDER/ERR_NETWORK_TIMEOUT/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
+- data: 成功时为对象,失败时为None;成功时包含 url(请求地址)、content(提取的网页内容文本)、format(提取格式markdown/html/text)、content_type(响应内容类型)、status_code(HTTP状态码)、truncated(是否因max_tokens截断);有prompt时额外包含 prompt(AI提取指令)和note(提示需LLM后处理)
 - message: 结果描述信息""",
-    "search_web": """搜索网络获取最新信息（使用Bing中国搜索，国内可用）。
+    "search_web": """搜索网络获取最新信息(使用Bing中国搜索,国内可用)。
 
 【使用场景】
 - 当用户需要搜索网络获取最新信息时使用
 - 当用户想要查询实时数据或新闻时使用
 - 当用户需要获取网上最新的技术文档时使用
 
-【重要】返回搜索结果列表，包含标题、URL 和摘要
-【注意】num_results参数建议：概览类查询用5~8，深度调研类用15~20，默认10
+【重要】返回搜索结果列表,包含标题、URL 和摘要
+【注意】num_results参数建议:概览类查询用5~8,深度调研类用15~20,默认10
 
 【使用示例】
-- 简单搜索：search_web(query="OpenAI function calling")
-- 限定域名：search_web(query="React 19 新特性", allowed_domains=["github.com","react.dev"])
-- 限结果数：search_web(query="AI paper 2025", num_results=15)
+- 简单搜索:search_web(query="OpenAI function calling")
+- 限定域名:search_web(query="React 19 新特性", allowed_domains=["github.com","react.dev"])
+- 限结果数:search_web(query="AI paper 2025", num_results=15)
 
 【返回数据说明】
-- code: 状态码，SUCCESS或ERR_PARAM_INVALID/ERR_NETWORK_UNKNOWN
-- data: 成功时为对象，失败时为None；成功时包含 query(搜索关键词)、results(搜索结果列表，每项含title标题/url链接/snippet摘要/source来源引擎)、total(结果总数)、engine(使用的搜索引擎DuckDuckGo或Bing)、language(语言)
+- code: 状态码,SUCCESS或ERR_PARAM_INVALID/ERR_NETWORK_UNKNOWN
+- data: 成功时为对象,失败时为None;成功时包含 query(搜索关键词)、results(搜索结果列表,每项含title标题/url链接/snippet摘要/source来源引擎)、total(结果总数)、engine(使用的搜索引擎DuckDuckGo或Bing)、language(语言)
 - message: 结果描述信息""",
     "network_diagnose": """网络连通性诊断 - 合并ping + port_check功能。
 
@@ -142,7 +141,7 @@ NETWORK_TOOL_DESCRIPTIONS = {
 - 当用户需要检查端口是否开放时使用
 - 当用户需要诊断网络问题时使用
 
-【重要】mode="ping"执行ICMP可达性检测(主机级)，mode="port"执行TCP端口检测(服务级)
+【重要】mode="ping"执行ICMP可达性检测(主机级),mode="port"执行TCP端口检测(服务级)
 
 【使用示例】【常用名转换说明】
 - ping测试/ping → network_diagnose(host="8.8.8.8")
@@ -150,9 +149,27 @@ NETWORK_TOOL_DESCRIPTIONS = {
 - 多次ping → network_diagnose(host="baidu.com", count=10)
 
 【返回数据说明】
-- mode="ping"时：data包含host(目标主机)、packets_sent/received/lost(包统计)、loss_rate(丢包率)、min/avg/max_latency(延迟ms)、is_reachable(是否可达)
-- mode="port"时：data包含host、port、is_open(是否开放)、service(已知服务名)
-- 失败时data为null""",
+- mode="ping"时:data包含host(目标主机)、packets_sent/received/lost(包统计)、loss_rate(丢包率)、min/avg/max_latency(延迟ms)、is_reachable(是否可达)
+ - mode="port"时:data包含host、port、is_open(是否开放)、service(已知服务名)
+ - 失败时data为null""",
+    "net_connections": """获取网络连接列表,支持按类型(TCP/UDP)、状态(ESTABLISHED/LISTEN)、端口过滤,可获取关联进程信息。
+
+使用场景:
+- 当用户需要查看当前网络连接时使用
+- 当用户需要排查端口占用问题时使用
+- 当用户需要查看某个端口的连接状态时使用
+
+【重要】最多返回200条连接记录;process_info=True可获取关联进程名和路径
+
+使用示例:
+- 查看所有连接:{}
+- 查看TCP已建立连接:{"kind": "tcp", "state": "established"}
+- 查看端口8080的连接:{"filter_port": 8080, "process_info": true}
+
+返回数据说明:
+- code: 状态码,SUCCESS/ERR_PERMISSION_DENIED/ERR_SYSTEM_NET_CONN
+- data: 成功时含connections(连接列表)、total(连接总数)、kind(连接类型)、filter_port(过滤端口);失败时为null
+- message: 状态描述信息""",
 }
 
 # 工具名到实现函数的映射
@@ -162,6 +179,7 @@ NETWORK_TOOL_IMPLEMENTATIONS = {
     "fetch_webpage": fetch_webpage,
     "search_web": search_web,
     "network_diagnose": network_diagnose,
+    "net_connections": net_connections,
 }
 
 # 工具名到 Pydantic 模型的映射
@@ -171,6 +189,7 @@ NETWORK_TOOL_INPUT_MODELS = {
     "fetch_webpage": FetchWebpageInput,
     "search_web": SearchWebInput,
     "network_diagnose": NetworkDiagnoseInput,
+    "net_connections": NetConnectionsInput,
 }
 
 # 使用示例
@@ -196,10 +215,15 @@ NETWORK_TOOL_EXAMPLES = {
         {"host": "baidu.com", "count": 10},
         {"host": "127.0.0.1", "mode": "port", "port": 8000},
     ],
+    "net_connections": [
+        {},
+        {"kind": "tcp", "state": "established"},
+        {"filter_port": 8080, "process_info": True},
+    ],
 }
 
 # ============================================================
-# 注册网络工具（按架构规范）
+# 注册网络工具(按架构规范)
 # ============================================================
 def _register_network_tools():
     """注册所有网络工具"""
@@ -212,7 +236,7 @@ def _register_network_tools():
             description=NETWORK_TOOL_DESCRIPTIONS[tool_name],
             implementation=NETWORK_TOOL_IMPLEMENTATIONS[tool_name],
             input_model=input_model,
-            category=ToolCategory.NETWORK,
+            category=ToolCategory.NET_PROCESS,
             examples=examples,
             failure_hint_fn=failure_hint_fn,
         )
@@ -220,9 +244,8 @@ def _register_network_tools():
             f"[network_register] 已注册工具: {tool_name}, 使用 Pydantic 模型: {input_model.__name__}, examples: {len(examples)}个"
         )
 
-# 【Phase 1修复 小健 2026-05-14】删除模块级注册代码，改为ensure_tools_registered统一调用
-# 原代码：import时自动执行register_network_tools()，破坏按需注册
-# 现在：导出register函数供ensure_tools_registered显式调用
-_initialized = False  # 保留守护变量，供显式调用时使用
+# 【Phase 1修复 小健 2026-05-14】删除模块级注册代码,改为ensure_tools_registered统一调用
+# 原代码:import时自动执行register_network_tools(),破坏按需注册
+# 现在:导出register函数供ensure_tools_registered显式调用
 
 __all__ = ["_register_network_tools"]

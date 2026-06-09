@@ -11,21 +11,21 @@ Document Register - 文档读写工具注册点
 - 8个旧工具合并为 read_document + write_document
 - analyze_data/filter_data/generate_chart 从 data_analysis_register 迁入
 - 共6个LLM工具
-【2026-05-18 小沈】Database工具迁入（query_sql/execute_sql/get_db_schema）
+【2026-05-18 小沈】Database工具迁入(query_sql/execute_sql/get_db_schema)
 
-【工具列表】（共9个）
-1. read_document - 统一读取文档（按后缀路由）
-2. write_document - 统一写入文档（按后缀路由）
+【工具列表】(共9个)
+1. read_document - 统一读取文档(按后缀路由)
+2. write_document - 统一写入文档(按后缀路由)
 3. convert_document - 文档格式转换
-4. analyze_data - 对数据集进行统计分析（迁入）
-5. filter_data - 按条件筛选/过滤数据（迁入）
-6. generate_chart - 生成数据可视化图表（迁入）
-7. query_sql - 执行只读SQL查询（迁入）
-8. execute_sql - 执行写操作SQL（迁入）
-9. get_db_schema - 获取数据库结构元数据（迁入）
+4. analyze_data - 对数据集进行统计分析(迁入)
+5. filter_data - 按条件筛选/过滤数据(迁入)
+6. generate_chart - 生成数据可视化图表(迁入)
+7. query_sql - 执行只读SQL查询(迁入)
+8. execute_sql - 执行写操作SQL(迁入)
+9. get_db_schema - 获取数据库结构元数据(迁入)
 
 【注册说明】
-- 使用 Pydantic 模型注册，自动生成 OpenAI Schema
+- 使用 Pydantic 模型注册,自动生成 OpenAI Schema
 - 导入 document_register 时自动触发注册
 
 创建时间: 2026-05-02
@@ -33,7 +33,8 @@ Document Register - 文档读写工具注册点
 """
 
 import logging
-from app.services.tools.registry import ToolCategory, tool_registry
+from app.services.tools.registry import tool_registry
+from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 from app.services.tools.document.document_schema import (
@@ -72,19 +73,19 @@ from app.services.tools.document.database_tools import (
 )
 
 DESCRIPTIONS = {
-    "read_document": """统一读取文档内容，按文件后缀自动路由到对应解析器 - 合并read_pdf + read_docx + read_xlsx + read_pptx + read_csv功能。旧版 .doc/.xls 自动转换为PDF后读取（需安装LibreOffice）。
+    "read_document": """统一读取文档内容,按文件后缀自动路由到对应解析器 - 合并read_pdf + read_docx + read_xlsx + read_pptx + read_csv功能。旧版 .doc/.xls 自动转换为PDF后读取(需安装LibreOffice)。
 
 【使用场景】
 - 当用户需要读取任意格式文档内容时使用
-- Agent无需判断文件格式，工具自动按后缀选择解析器
+- Agent无需判断文件格式,工具自动按后缀选择解析器
 - 支持提取表格等
 
 【支持的格式】
-- .pdf → PDF解析（支持页码范围、提取表格）
-- .docx → Word解析（支持提取表格）
-- .xlsx → Excel解析（支持指定工作表、最大行数）
+- .pdf → PDF解析(支持页码范围、提取表格)
+- .docx → Word解析(支持提取表格)
+- .xlsx → Excel解析(支持指定工作表、最大行数)
 - .pptx → PPT解析
-- .csv/.tsv → CSV解析（支持分隔符、编码）
+- .csv/.tsv → CSV解析(支持分隔符、编码)
 
 【使用示例】【常用名转换说明】
 - 读PDF/read_pdf → read_document(file_path="D:/report.pdf")
@@ -95,22 +96,22 @@ DESCRIPTIONS = {
 - 分页读取 → read_document(file_path="D:/report.pdf", pages="1-3", extract_tables=true)
 
 【返回数据说明】
-- code: SUCCESS / ERR_FILE_NOT_FOUND / ERR_UNSUPPORTED_FORMAT
-- data: 文档内容（格式因文件类型而异）
+- code: SUCCESS / ERR_FILE_NOT_FOUND / ERR_DOC_FORMAT_NOT_SUPPORTED
+- data: 文档内容(格式因文件类型而异)
 - message: 操作结果消息""",
 
-    "write_document": """统一写入文档，按文件后缀自动路由到对应写入器 - 合并write_docx + write_xlsx + write_pdf + write_pptx功能。
+    "write_document": """统一写入文档,按文件后缀自动路由到对应写入器 - 合并write_docx + write_xlsx + write_pdf + write_pptx功能。
 
 【使用场景】
 - 当用户需要生成任意格式文档时使用
-- Agent无需判断输出格式，工具自动按后缀选择写入器
+- Agent无需判断输出格式,工具自动按后缀选择写入器
 - 支持标题、段落、表格、幻灯片等
 
 【支持的格式】
-- .docx → Word写入（支持标题、段落、表格）
-- .xlsx → Excel写入（支持表头+行数据）
-- .pdf → PDF写入（支持标题、段落、表格）
-- .pptx → PPT写入（支持标题、幻灯片列表）
+- .docx → Word写入(支持标题、段落、表格)
+- .xlsx → Excel写入(支持表头+行数据)
+- .pdf → PDF写入(支持标题、段落、表格)
+- .pptx → PPT写入(支持标题、幻灯片列表)
 
 【使用示例】【常用名转换说明】
 - 写Word/write_docx → write_document(file_path="D:/report.docx", title="测试报告", content="内容")
@@ -119,11 +120,11 @@ DESCRIPTIONS = {
 - 写PPT/write_pptx → write_document(file_path="D:/slides.pptx", title="项目汇报")
 
 【返回数据说明】
-- code: SUCCESS / ERR_UNSUPPORTED_FORMAT
+- code: SUCCESS / ERR_DOC_FORMAT_NOT_SUPPORTED
 - data: { file_path }
 - message: 操作结果消息""",
 
-    "convert_document": """文档格式转换（Word/Excel/PPT → PDF）。
+    "convert_document": """文档格式转换(Word/Excel/PPT → PDF)。
 
 【使用场景】
 - 当用户需要将文档转换为PDF时使用
@@ -131,24 +132,24 @@ DESCRIPTIONS = {
 - 当用户需要分享不可编辑的文档时使用
 
 【支持格式】
-- .docx/.doc → PDF（Word文档）
-- .xlsx/.xls → PDF（Excel表格）
-- .pptx/.ppt → PDF（PPT演示文稿）
-- .odt → PDF（OpenDocument文本）
-- .ods → PDF（OpenDocument表格）
+- .docx/.doc → PDF(Word文档)
+- .xlsx/.xls → PDF(Excel表格)
+- .pptx/.ppt → PDF(PPT演示文稿)
+- .odt → PDF(OpenDocument文本)
+- .ods → PDF(OpenDocument表格)
 
-【重要】需要安装LibreOffice（https://www.libreoffice.org/download/）
+【重要】需要安装LibreOffice(https://www.libreoffice.org/download/)
 
 【使用示例】
-- docx转pdf：convert_document(input_path="D:/report.docx", output_format="pdf")
-- xlsx转pdf指定路径：convert_document(input_path="D:/sales.xlsx", output_format="pdf", output_path="D:/output/sales.pdf")
+- docx转pdf:convert_document(input_path="D:/report.docx", output_format="pdf")
+- xlsx转pdf指定路径:convert_document(input_path="D:/sales.xlsx", output_format="pdf", output_path="D:/output/sales.pdf")
 
 【返回数据说明】
 - code: SUCCESS / ERR_CONVERT_FAILED / ERR_NO_LIBREOFFICE
 - data: { input_path, output_path }
 - message: 操作结果消息""",
 
-    "analyze_data": """对数据集进行统计分析，返回描述性统计信息。
+    "analyze_data": """对数据集进行统计分析,返回描述性统计信息。
 
 【使用场景】
 - 当用户需要对数据进行统计分析时使用
@@ -158,15 +159,15 @@ DESCRIPTIONS = {
 【重要】需要安装 pandas 库
 
 【使用示例】
-- 基础统计：analyze_data(data=[{"name":"A","value":10},{"name":"B","value":20}])
-- 文件统计：analyze_data(data="D:/data/users.csv", operations=["mean","max"])
+- 基础统计:analyze_data(data=[{"name":"A","value":10},{"name":"B","value":20}])
+- 文件统计:analyze_data(data="D:/data/users.csv", operations=["mean","max"])
 
 【返回数据说明】
 - code: SUCCESS / ERR_ANALYZE_DATA / ERR_NO_PANDAS
-- data: 统计分析结果（包含row_count、columns、statistics/grouped_statistics等）
+- data: 统计分析结果(包含row_count、columns、statistics/grouped_statistics等)
 - message: 操作结果消息""",
 
-    "filter_data": """按条件筛选/过滤数据，支持多条件组合。
+    "filter_data": """按条件筛选/过滤数据,支持多条件组合。
 
 【使用场景】
 - 当用户说"筛选年龄大于30的记录"时使用
@@ -175,8 +176,8 @@ DESCRIPTIONS = {
 - 当用户需要按条件过滤数据时使用
 
 【使用示例】
-- 条件筛选：filter_data(data=[{"name":"A","age":25},{"name":"B","age":35}], conditions=[{"column":"age","operator":"gt","value":30}])
-- 文件筛选排序：filter_data(data="D:/data/users.csv", conditions=[{"column":"city","operator":"eq","value":"北京"}], sort_by="age", top_n=10)
+- 条件筛选:filter_data(data=[{"name":"A","age":25},{"name":"B","age":35}], conditions=[{"column":"age","operator":"gt","value":30}])
+- 文件筛选排序:filter_data(data="D:/data/users.csv", conditions=[{"column":"city","operator":"eq","value":"北京"}], sort_by="age", top_n=10)
 
 【返回数据说明】
 - code: SUCCESS / ERR_FILTER_INVALID
@@ -190,55 +191,55 @@ DESCRIPTIONS = {
 - 当用户想要生成柱状图、折线图、饼图等图表时使用
 - 当用户需要生成报告中的图表时使用
 
-【重要】需要安装 matplotlib 库（pip install matplotlib）
+【重要】需要安装 matplotlib 库(pip install matplotlib)
 
 【使用示例】
-- 柱状图：generate_chart(data={"labels":["A","B"],"values":[10,20]}, chart_type="bar", title="销售统计")
-- 折线图指定路径：generate_chart(data={"labels":["1月","2月"],"values":[100,200]}, chart_type="line", output_path="D:/output/chart.png")
+- 柱状图:generate_chart(data={"labels":["A","B"],"values":[10,20]}, chart_type="bar", title="销售统计")
+- 折线图指定路径:generate_chart(data={"labels":["1月","2月"],"values":[100,200]}, chart_type="line", output_path="D:/output/chart.png")
 
 【返回数据说明】
 - code: SUCCESS / ERR_CHART_GENERATE / ERR_NO_MATPLOTLIB
 - data: 输出图片路径
 - message: 操作结果消息""",
 
-    # 【2026-05-18 小沈】Database工具描述（从database_register迁入）
-    "query_sql": """执行只读SQL查询（SELECT/SHOW/DESCRIBE），返回结果集。
+    # 【2026-05-18 小沈】Database工具描述(从database_register迁入)
+    "query_sql": """执行只读SQL查询(SELECT/SHOW/DESCRIBE),返回结果集。
 
 【使用场景】
 - 当用户需要查询数据库数据时使用
 - 当用户需要分析表数据时使用
 - 当需要执行只读操作时使用
 
-【重要】强制只读，写操作返回错误。超时自动触发EXPLAIN分析。
+【重要】强制只读,写操作返回错误。超时自动触发EXPLAIN分析。
 
 【使用示例】
-- 查询数据：query_sql(sql="SELECT * FROM users LIMIT 10")
-- 指定数据库：query_sql(sql="SELECT * FROM users", connection_type="sqlite", db_path="D:/data/app.db")
+- 查询数据:query_sql(sql="SELECT * FROM users LIMIT 10")
+- 指定数据库:query_sql(sql="SELECT * FROM users", connection_type="sqlite", db_path="D:/data/app.db")
 
 【返回数据说明】
 - code: SUCCESS / ERR_READ_ONLY_VIOLATION / ERR_DB_CONNECTION / ERR_SQL_EXEC
 - data: { columns, rows, total }
 - message: 操作结果消息""",
 
-    "execute_sql": """执行写操作SQL（INSERT/UPDATE/DELETE/DDL）。
+    "execute_sql": """执行写操作SQL(INSERT/UPDATE/DELETE/DDL)。
 
 【使用场景】
 - 当用户需要修改数据库数据时使用
 - 当用户需要执行CREATE TABLE等DDL时使用
 - 当需要执行写操作时使用
 
-【重要】仅支持单语句自动提交。高风险操作（DROP/TRUNCATE）自动拦截。
+【重要】仅支持单语句自动提交。高风险操作(DROP/TRUNCATE)自动拦截。
 
 【使用示例】
-- 插入数据：execute_sql(sql="INSERT INTO logs (msg) VALUES ('test')")
-- 预演删除：execute_sql(sql="DELETE FROM temp_data WHERE created_at < '2024-01-01'", dry_run=true)
+- 插入数据:execute_sql(sql="INSERT INTO logs (msg) VALUES ('test')")
+- 预演删除:execute_sql(sql="DELETE FROM temp_data WHERE created_at < '2024-01-01'", dry_run=true)
 
 【返回数据说明】
 - code: SUCCESS / WARNING / ERR_DB_CONNECTION / ERR_SQL_EXEC / ERR_EXEC_FAILED
 - data: { affected_rows, sql }
 - message: 操作结果消息""",
 
-    "get_db_schema": """获取数据库结构元数据，包括表名、字段、类型、索引、外键。
+    "get_db_schema": """获取数据库结构元数据,包括表名、字段、类型、索引、外键。
 
 【使用场景】
 - 当用户需要查看数据库表结构时使用
@@ -246,8 +247,8 @@ DESCRIPTIONS = {
 - 当用户需要生成DDL时使用
 
 【使用示例】
-- 按模式过滤：get_db_schema(filter_pattern="user%")
-- 指定表：get_db_schema(table_name="users")
+- 按模式过滤:get_db_schema(filter_pattern="user%")
+- 指定表:get_db_schema(table_name="users")
 
 【返回数据说明】
 - code: SUCCESS / ERR_DB_CONNECTION / ERR_SQL_EXEC / ERR_SCHEMA_FAILED
@@ -327,7 +328,7 @@ TOOL_IMPLEMENTATIONS = {
 
 
 def _register_document_tools():
-    """注册所有文档读写工具 — 小健 2026-05-18 共9个LLM工具（含Database迁入）"""
+    """注册所有文档读写工具 — 小健 2026-05-18 共9个LLM工具(含Database迁入)"""
     for name, func in TOOL_IMPLEMENTATIONS.items():
         desc = DESCRIPTIONS.get(name, "")
         input_model = TOOL_INPUT_MODELS.get(name)
@@ -336,7 +337,7 @@ def _register_document_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.DOCUMENT,
+            category=ToolCategory.DOC_CONTENT,
             implementation=func,
             version="1.0.0",
             input_model=input_model,

@@ -664,11 +664,8 @@ export const useSSE = (
     setReconnectStatus('connecting');
 
     try {
-      // 多意图重构配置: 0=旧端点, 1=新端点(v2)
-      const USE_NEW_ROUTER = 1; // 可配置：0 或 1
-      const url = USE_NEW_ROUTER
-        ? `${config.baseURL}/chat/stream/v2`
-        : `${config.baseURL}/chat/stream`;
+      // 聊天流式传输端点
+      const url = `${config.baseURL}/chat/stream`;
       const controller = new AbortController();
       abortControllerRef.current = controller; // 【修复 2026-05-11 小健】保存到ref，disconnect时可abort
       const timeoutId = setTimeout(() => controller.abort(), 180000); // 180s超时，qwen2.5:1.5b CPU首次推理约2分钟
@@ -1052,8 +1049,7 @@ const processSSEData = (
       is_reasoning:
         rawData.is_reasoning === true ||
         rawData.is_reasoning === 'true' ||
-        rawData.is_reasoning === 1 ||
-        rawData.is_reasoning === 'true',
+        rawData.is_reasoning === 1,
       // reasoning: rawData.reasoning || "",  // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
 
       timestamp: timestampValue,
@@ -1634,6 +1630,77 @@ const processSSEData = (
           step.timestamp = rawData.timestamp as number;
         }
         // 【小查修复2026-03-13】添加wait_time字段（仅retrying使用）
+        if (rawData.wait_time !== undefined) {
+          step.wait_time = rawData.wait_time;
+        }
+        break;
+      }
+
+      // 【修改 2026-06-09 小沈】直接处理interrupted/paused/resumed/retrying类型，不再处理incident
+      case 'interrupted':
+      case 'paused':
+      case 'resumed':
+      case 'retrying': {
+        const stepNum = rawData.step || 1;
+        console.log(
+          `%c[STEP] [type=${rawData.type}] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`,
+          'color: red; font-weight: bold;'
+        );
+        const statusMessage = rawData.message || '';
+        
+        // 直接使用rawData.type作为step.type
+        step.type = rawData.type as ExecutionStep['type'];
+        step.content = statusMessage;
+
+        // 统一调用onStep（所有类型都需要添加到executionSteps）
+        setExecutionSteps((prev) => {
+          const newSteps = [...prev, step];
+          handlers.executionStepsRef.current = newSteps;
+          setTimeout(() => {
+            try {
+              saveStepsToStorage?.(newSteps);
+            } catch (e) {
+              console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
+            }
+          }, 0);
+          return newSteps;
+        });
+        onStep?.(step);
+
+        // 根据type调用对应的回调
+        switch (rawData.type) {
+          case 'interrupted':
+            onShowSteps?.(true);
+            onComplete?.(
+              responseBufferRef.current,
+              undefined,
+              handlers.executionStepsRef.current
+            );
+            setIsReceiving(false);
+            setIsConnected(false);
+            break;
+          case 'paused':
+            onPaused?.();
+            break;
+          case 'resumed':
+            onResumed?.();
+            break;
+          case 'retrying':
+            onRetry?.(rawData.message || '正在重试...', rawData.wait_time);
+            break;
+          default:
+            console.warn('[SSE] 未知的type:', rawData.type);
+            onRetry?.(
+              rawData.message || `事件: ${rawData.type}`,
+              rawData.wait_time
+            );
+            break;
+        }
+        // 添加timestamp字段
+        if (rawData.timestamp) {
+          step.timestamp = rawData.timestamp as number;
+        }
+        // 添加wait_time字段（仅retrying使用）
         if (rawData.wait_time !== undefined) {
           step.wait_time = rawData.wait_time;
         }

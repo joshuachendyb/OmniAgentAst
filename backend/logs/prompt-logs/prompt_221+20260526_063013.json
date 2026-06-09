@@ -1,0 +1,220 @@
+{
+  "基本信息": {
+    "时间戳": "2026-05-26 06:30:13",
+    "会话ID": "d0b2ca77-fb90-44d9-9126-cab543626cf0",
+    "用户消息ID": "221",
+    "AI消息ID": "待生成",
+    "用户消息": "检查 E盘的情况",
+    "日志文件": "G:\\OmniAgentAs-desk\\backend\\logs\\prompt-logs\\prompt_221+20260526_063013.json"
+  },
+  "Prompt组装过程": [
+    {
+      "步骤": "中间层注入-服务器OS信息",
+      "类型": "系统Prompt",
+      "来源": "system_adapter.py:generate_system_prompt()",
+      "内容": "【当前系统】\nWindows\n\n【路径格式】\n- 当前系统: C:\\Users\\xxx\\file.txt 或 C:/Users/xxx/file.txt\n\n【路径规则】\n- 必须使用绝对路径（禁止相对路径如 ./file.txt）\n- 禁止用 ~ 表示家目录\n- ❌ 路径中的中文字符必须原样保留，禁止翻译或转换！用户说\"E:\\下载\\科幻小说\"就用\"E:\\下载\\科幻小说\"，禁止改成\"E:\\download\\sci-fi-novel\"\n",
+      "内容长度": 218,
+      "时间戳": "2026-05-26 06:30:13",
+      "轮次": 1,
+      "详情": {
+        "系统信息长度": 218,
+        "包含内容": "服务器OS、路径格式、命令格式"
+      }
+    },
+    {
+      "步骤": "系统Prompt生成",
+      "类型": "系统Prompt",
+      "来源": "file_prompts.py",
+      "内容": "【当前系统】\nWindows\n\n【路径格式】\n- 当前系统: C:\\Users\\xxx\\file.txt 或 C:/Users/xxx/file.txt\n\n【路径规则】\n- 必须使用绝对路径（禁止相对路径如 ./file.txt）\n- 禁止用 ~ 表示家目录\n- ❌ 路径中的中文字符必须原样保留，禁止翻译或转换！用户说\"E:\\下载\\科幻小说\"就用\"E:\\下载\\科幻小说\"，禁止改成\"E:\\download\\sci-fi-novel\"\n\n\n# File Operation Tools\n\n1. read_file - 读取文本文件（统一入口）- 合并read_text_file + read_batch_file功能。\n\n使用方式：\n- 单文件读取：file_paths传入1个路径，支持head/tail/offset/limit分页\n- 批量读取：file_paths传入多个路径，返回完整内容\n\n使用示例：【常用名转换说明】\n- 单文件/read_text_file → read_file(file_paths=[\"D:/test.txt\"])\n- 分页读取 → read_file(file_paths=[\"D:/test.txt\"], head=10, limit=100)\n- 批量/read_batch_file → read_file(file_paths=[\"D:/a.txt\", \"D:/b.txt\"])\n\n返回数据说明：\n- 单文件：data.content/data.total_lines/data.encoding/data.file_size\n- 批量：data.results/data.success_count/data.failed_count\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: read_file(file_paths=['D:/project/main.py'])\n\n2. write_text_file - 写入或追加文本文件内容，支持中文、编码自动检测、追加模式。仅支持文本文件。\n\n使用场景：\n- 创建新文件并写入内容\n- 在已有文件末尾追加内容\n\n【重要】text参数必须传入实际文件内容，禁止传入思考/计划/状态描述\n\n使用示例：\n- 创建文件：{\"file_path\": \"D:/output/result.txt\", \"text\": \"Hello World\"}\n- 追加日志：{\"file_path\": \"D:/logs/app.log\", \"text\": \"[2026-05-18] Done\", \"append\": true}\n\n返回数据说明：\n- data.success/data.file_path/data.bytes_written/data.encoding\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: write_text_file(file_path=\"D:/output/test.txt\", text=\"Hello World\")\n\n3. list_directory - 列出目录内容（统一入口）- 合并list_directory + get_directory_tree + file_statistics功能。\n\n使用方式：\n- format=\"list\"：扁平列表（含文件大小/修改时间）\n- format=\"tree\"：JSON树结构\n- 始终返回statistics统计信息\n\n使用示例：【常用名转换说明】\n- 列出文件/list_directory → list_directory(dir_path=\"D:/project\")\n- 递归列出 → list_directory(dir_path=\"D:/project\", recursive=true, max_depth=3)\n- 树结构/get_directory_tree → list_directory(dir_path=\"D:/project\", format=\"tree\")\n- 统计信息/file_statistics → list_directory(dir_path=\"D:/project\", format=\"list\")\n\n返回数据说明：\n- data.success/data.entries(list)/data.tree(tree)/data.statistics(统计)\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: list_directory(dir_path=\"D:/project\")\n\n4. search_files - 递归搜索匹配模式的文件/目录，支持中文文件名。search_dir为必填项。\n\n使用示例：\n- 搜索Python文件：{\"pattern\": \"**/*.py\", \"search_dir\": \"D:/project\"}\n- 只搜目录：{\"pattern\": \"src\", \"search_dir\": \"D:/project\", \"type\": \"directory\"}\n\n返回数据说明：\n- data.success/data.matches/data.total/data.has_more\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: search_files(pattern=\"**/*.py\", search_dir=\"D:/project\")\n\n5. grep_file_content - 基于ripgrep的内容搜索，支持正则表达式和中文搜索。\n\n使用示例：\n- 简单搜索：{\"pattern\": \"def read_file\", \"search_dir\": \"D:/backend\"}\n- 搜索TS文件：{\"pattern\": \"class.*Component\", \"search_dir\": \"D:/frontend\", \"glob\": \"*.tsx\"}\n- 带上下文：{\"pattern\": \"TODO\", \"search_dir\": \"D:/src\", \"context\": {\"around\": 3}}\n\n返回数据说明：\n- data.success/data.matches/data.total_files/data.total_matches\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: grep_file_content(pattern=\"def read_file\", search_dir=\"D:/backend\")\n\n6. edit_file - 编辑文本文件 - 合并precise_replace_in_file + edit_text_file功能。\n\n使用方式：\n- 单处替换：old_string + new_string\n- 多处编辑：edits数组\n- 预览：dry_run=true\n\n【重要】old_string和edits不能同时传入\n\n使用示例：【常用名转换说明】\n- 单处替换/precise_replace_in_file → edit_file(file_path=\"D:/main.py\", old_string=\"old\", new_string=\"new\")\n- 替换所有 → edit_file(file_path=\"D:/main.py\", old_string=\"old\", new_string=\"new\", replace_all=true)\n- 多处编辑/edit_text_file → edit_file(file_path=\"D:/main.py\", edits=[{\"oldText\":\"old\",\"newText\":\"new\"}])\n- 预览修改 → edit_file(file_path=\"D:/main.py\", old_string=\"old\", new_string=\"new\", dry_run=true)\n\n返回数据说明：\n- data.success/data.replaced_count(单处)/data.applied_edits(多处)/data.preview(dry_run)\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: edit_file(file_path=\"D:/main.py\", old_string=\"def old():\", new_string=\"def new():\")\n\n7. rename_file - 重命名文件 - 合并rename_file + batch_rename功能。\n\n使用方式：\n- mode=\"single\"：单文件重命名，需file_path + new_name\n- mode=\"batch\"：批量正则重命名，需directory + pattern + replacement\n\n使用示例：【常用名转换说明】\n- 单文件/rename_file → rename_file(file_path=\"D:/old.txt\", new_name=\"new.txt\")\n- 批量/batch_rename → rename_file(mode=\"batch\", directory=\"D:/files\", pattern=\"file_(\\d+).txt\", replacement=\"renamed_\\1.txt\")\n\n返回数据说明：\n- data.success/data.new_path(单文件)/data.operations(批量)\n   - When to use: \n   - Parameters: description, properties, title, type\n   - Returns: {}\n   - Examples: rename_file(file_path=\"D:/old.txt\", new_name=\"new.txt\")\n\n8. file_operation - 文件操作统一入口 - 合并move_file + copy_file + delete_file等文件处理功能。\n\n使用方式：\n- action=\"move\"：移动文件\n- action=\"copy\"：复制文件（备份）\n- action=\"delete\"：删除文件（可放回收站）\n\n使用示例：【常用名转换说明】\n- 移动/move_file → file_operation(action=\"move\", source=\"D:/a.txt\", destination=\"E:/b.txt\")\n- 复制/copy_file → file_operation(action=\"copy\", source=\"D:/a.txt\", destination=\"D:/backup/a.txt\")\n- 删除/delete_file → file_operation(action=\"delete\", source=\"D:/temp.txt\")\n- 备份/backup_file → file_operation(action=\"copy\", source=\"D:/original.txt\", destination=\"D:/backup.txt\")\n- 恢复/restore_backup → file_operation(action=\"copy\", source=\"D:/backup.txt\", destination=\"D:/original.txt\")\n- 永久删除 → file_operation(action=\"delete\", source=\"D:/temp\", force=true, recursive=true)\n\n返回数据说明：\n- data.success/data.action/data.source/data.destination\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: file_operation(action=\"move\", source=\"D:/a.txt\", destination=\"E:/b.txt\")\n\n9. archive_tool - 压缩/解压工具 - 合并compress_files + extract_archive + test_archive功能。支持zip/tar/tar.gz/tar.bz2格式。\n\n使用方式：\n- action=\"compress\"：压缩文件/目录\n- action=\"extract\"：解压到指定目录\n- action=\"test\"：验证压缩包完整性\n\n使用示例：【常用名转换说明】\n- 压缩/compress_files → archive_tool(action=\"compress\", source=\"D:/project\", destination=\"D:/backup.zip\")\n- 解压/extract_archive → archive_tool(action=\"extract\", source=\"D:/backup.zip\", destination=\"D:/output\")\n- 验证/test_archive → archive_tool(action=\"test\", source=\"D:/backup.zip\")\n- 压缩目录/zip_files → archive_tool(action=\"compress\", source=\"D:/project\", destination=\"D:/project.zip\")\n- 解压/unzip → archive_tool(action=\"extract\", source=\"D:/project.zip\", destination=\"D:/extracted\")\n\n返回数据说明：\n- data.success/data.compressed_size(压缩)/data.extracted_files(解压)\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: archive_tool(action=\"compress\", source=\"D:/project\", destination=\"D:/backup.zip\")\n\n10. read_media_file - 读取图片、音频、视频文件，返回Base64编码数据和MIME类型。PDF文件请使用 read_document 工具。\n\n使用示例：\n- 读取图片：{\"file_path\": \"D:/screenshot.png\"}\n- 读取音频：{\"file_path\": \"D:/notification.mp3\"}\n- 读取PDF：{\"file_path\": \"D:/report.pdf\"}\n\n返回数据说明：\n- data.success/data.data(Base64)/data.mime_type/data.file_size\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: read_media_file(file_path=\"D:/screenshot.png\")\n\n11. data_file_format - 结构化配置文件读写 - 合并read_json + write_json + read_yaml + write_yaml等功能。\n\n支持格式：JSON/YAML/TOML/INI/XML/Properties\n⚠️ CSV/Excel使用read_document工具\n⚠️ write模式仅支持JSON/YAML/TOML，INI/XML/Properties暂不支持写入\n\n使用示例：【常用名转换说明】\n- 读JSON/read_json → data_file_format(action=\"read\", file_path=\"D:/config.json\")\n- 写JSON/write_json → data_file_format(action=\"write\", file_path=\"D:/config.json\", data={\"key\":\"value\"})\n- 读YAML/read_yaml → data_file_format(action=\"read\", file_path=\"D:/config.yaml\")\n- 写YAML/write_yaml → data_file_format(action=\"write\", file_path=\"D:/config.yaml\", data={\"key\":\"value\"})\n- 读TOML → data_file_format(action=\"read\", file_path=\"D:/config.toml\")\n- 读INI/read_config → data_file_format(action=\"read\", file_path=\"D:/config.ini\")\n\n返回数据说明：\n- data.success/data.data(读取)/data.format/data.bytes_written(写入)\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: data_file_format(action=\"read\", file_path=\"D:/config.json\")\n\n【Tool Call Examples】:\nExample 1: 读取文件\n{\"thought\": \"用户要读取配置文件\", \"reasoning\": \"调用read_file单文件模式\", \"tool_name\": \"read_file\", \"tool_params\": {\"file_paths\": [\"C:/config.json\"]}}\n\nExample 2: 搜索文件内容\n{\"thought\": \"搜索包含TODO的Python文件\", \"reasoning\": \"使用grep_file_content搜索\", \"tool_name\": \"grep_file_content\", \"tool_params\": {\"pattern\": \"TODO\", \"search_dir\": \"D:/project\", \"glob\": \"*.py\"}}\n\nExample 3: 写入文件\n{\"thought\": \"用户要写入新文件\", \"reasoning\": \"使用write_text_file写入\", \"tool_name\": \"write_text_file\", \"tool_params\": {\"file_path\": \"D:/output.txt\", \"text\": \"Hello World\"}}\n\nExample 4: 任务完成\n{\"thought\": \"文件操作已完成\", \"reasoning\": \"全部操作成功，结果已返回\", \"tool_name\": \"finish\", \"tool_params\": {\"result\": \"已读取配置文件并完成搜索\"}}\n\n\n【⚠️ P17互斥参数规则 - 极其重要】:\n- read_file: file_paths传1个路径=单文件, 传多个=批量\n- edit_file: old_string 和 edits 不能同时使用\n- rename_file: path 和 directory 不能同时使用\n- archive_tool: compress模式需要source+destination，extract模式需要source\n- file_operation: move/copy需要destination，delete不需要\n\n【⚠️ write_text_file text规则 - 极其重要】:\n- text参数必须传入实际的文件内容（代码、文本、正文等）\n- ❌ 绝对禁止将你的思考/计划/状态确认当作text传入\n- ❌ 错误示例: text=\"已成功创建并写入第一章，需要继续创建第二章\"\n- ✅ 正确示例: text=\"第一章：觉醒\n\n林凡是一名普通的大学生...\n\n【Response Format - 必须遵守】:\n必须使用JSON格式输出，只能返回以下两种情况之一：\n\n情况1：调用工具（继续执行）\n{\n  \"thought\": \"分析当前状态和下一步决策\",\n  \"reasoning\": \"为什么选这个工具、参数如何确定\",\n  \"tool_name\": \"get_current_time\",\n  \"tool_params\": {\"action\": \"now\"}\n}\n\n情况2：任务完成（退出循环）\n{\n  \"thought\": \"任务已完成\",\n  \"reasoning\": \"完成说明\",\n  \"tool_name\": \"finish\",\n  \"tool_params\": {\"result\": \"最终结果\"}\n}\n\n【字段要求】：\n- thought: 必需\n- reasoning: 必需\n- tool_name: 必需（实际工具名或finish）\n- tool_params: 必需（参数对象或{}）\n\n【禁止项】：\n- ❌ 禁止同时返回多个tool_name\n- ❌ 禁止tool_name存在但tool_params缺失\n- ❌ 禁止使用 [TOOL_CALL] 格式（如：[TOOL_CALL]{{...}}[/TOOL_CALL]）\n- ❌ 禁止使用XML标签格式（如：&lt;longcat_tool_call&gt; &lt;arg_key&gt;等任何XML/HTML标签）\n- ❌ 禁止在content中嵌入工具调用（工具调用必须通过tool_name+tool_params字段）\n- ❌ 禁止使用任意自定义标签或特殊标记包裹工具名和参数\n\n【示例】：\n{\"thought\": \"用户询问时间\", \"reasoning\": \"调用get_current_time\", \"tool_name\": \"get_current_time\", \"tool_params\": {\"format\": \"%Y-%m-%d\"}}\n{\"thought\": \"已完成\", \"tool_name\": \"finish\", \"tool_params\": {\"result\": \"当前时间是2026-05-09\"}}\n\n【SAFETY WARNING】:\n⚠️ 任务完成时必须返回 tool_name=\"finish\"，否则会进入死循环。\n\n【Tool Call Rules - 极其重要】:\n- 确认用户意图后，立即调用对应工具，不要在thought中反复讨论该用哪个工具\n- reasoning字段简短说明选择理由即可（1-2句），不要写长篇分析\n- ❌ 禁止：在thought中列举多个工具比较优缺点而不调用\n- ❌ 禁止：在thought中分析参数是否必填而不调用\n- ✅ 正确：确认意图→直接调用→根据结果决定下一步\n- 始终用中文回复用户\n- 工具返回错误时，向用户解释错误并建议替代方案\n\nSafety reminders:\n1. Be careful when writing files - existing content will be overwritten\n2. text parameter must contain actual file content, NOT your thoughts/plans\n\nIf an operation fails:\n1. Check if backup exists (file operations are backed up automatically)\n2. Use the rollback functionality to undo the operation\n3. Verify the file has been restored correctly\n\n\n【避免重复规则】\n- 同一命令/URL成功后不要重复执行（结果不会变）\n- 同一命令/URL失败3次后必须换工具或换URL，禁止再试同方式\n- 已获取的信息直接使用，不需要重新获取\n- 失败后优先尝试替代方法，而非反复重试同一方法",
+      "内容长度": 10862,
+      "时间戳": "2026-05-26 06:30:13",
+      "轮次": 1,
+      "详情": {
+        "intent_type": "file",
+        "confidence": 0.95,
+        "note": "含OUTPUT_FORMAT(含退出规则)+TOOL_CALL_RULES+SAFETY+ROLLBACK"
+      }
+    },
+    {
+      "步骤": "任务Prompt生成",
+      "类型": "任务Prompt",
+      "来源": "file_prompts.py:get_task_prompt()",
+      "内容": "检查 E盘的情况",
+      "内容长度": 8,
+      "时间戳": "2026-05-26 06:30:13",
+      "轮次": 1,
+      "上下文": {
+        "intent_type": "file",
+        "confidence": 0.95
+      }
+    },
+    {
+      "步骤": "中间层注入-服务器OS信息",
+      "类型": "系统Prompt",
+      "来源": "system_adapter.py:generate_system_prompt()",
+      "内容": "【当前系统】\nWindows\n\n【路径格式】\n- 当前系统: C:\\Users\\xxx\\file.txt 或 C:/Users/xxx/file.txt\n\n【路径规则】\n- 必须使用绝对路径（禁止相对路径如 ./file.txt）\n- 禁止用 ~ 表示家目录\n- ❌ 路径中的中文字符必须原样保留，禁止翻译或转换！用户说\"E:\\下载\\科幻小说\"就用\"E:\\下载\\科幻小说\"，禁止改成\"E:\\download\\sci-fi-novel\"\n",
+      "内容长度": 218,
+      "时间戳": "2026-05-26 06:30:13",
+      "轮次": 1,
+      "详情": {
+        "系统信息长度": 218,
+        "包含内容": "服务器OS、路径格式、命令格式"
+      }
+    },
+    {
+      "步骤": "工具执行结果",
+      "类型": "观察结果Prompt",
+      "来源": "工具执行结果: list_directory",
+      "内容": "Observation: success - 列出目录成功: E:\\ (7项)\n数据: {\"目录\": \"E:\\\\\", \"总数\": 7, \"条目预览\": [\"$RECYCLE.BIN\", \"30AI编程工具\", \"Appsw\", \"ollama\", \"System Volume Information\", \"wsl\", \"配置文件\"]}\n推荐下一步操作:\n  1. search_files - 搜索文件（需要查找特定文件时）\n  2. read_file - 读取文件（需要查看文件内容时）",
+      "内容长度": 246,
+      "时间戳": "2026-05-26 06:30:26",
+      "轮次": 1,
+      "工具参数": {
+        "dir_path": "E:/",
+        "recursive": false,
+        "format": "list"
+      }
+    }
+  ],
+  "LLM调用记录": [
+    {
+      "轮次": 1,
+      "调用类型": "tools",
+      "模型": "unknown",
+      "提供商": "unknown",
+      "消息统计": {
+        "system": 1,
+        "user": 1
+      },
+      "消息总数": 2,
+      "消息摘要": [
+        {
+          "序号": 1,
+          "角色": "system",
+          "内容长度": 10968,
+          "内容摘要": "【当前系统】\nWindows\n\n【路径格式】\n- 当前系统: C:\\Users\\xxx\\file.txt 或 C:/Users/xxx/file.txt\n\n【路径规则】\n- 必须使用绝对路径（禁止相对路径如 ./file.txt）\n- 禁止用 ~ 表示家目录\n- ❌ 路径中的中文字符必须原样保留，禁止翻译或转换！用户说\"E:\\下载\\科幻小说\"就用\"E:\\下载\\科幻小说\"，禁止改成\"E:\\downl..."
+        },
+        {
+          "序号": 2,
+          "角色": "user",
+          "内容长度": 155,
+          "内容摘要": "Task: 检查 E盘的情况\n\nCurrent time: 2026-05-26 06:30:13\n\n请完成此文件管理任务，按以下步骤：\n1. 分析需要做什么操作\n2. 使用合适的工具完成任务\n3. 用中文总结结果\n\nRemember:\n- 不要将思考内容传入text参数\n- text参数必须是实际的文件内容"
+        }
+      ],
+      "完整消息列表": [
+        {
+          "role": "system",
+          "content": "【当前系统】\nWindows\n\n【路径格式】\n- 当前系统: C:\\Users\\xxx\\file.txt 或 C:/Users/xxx/file.txt\n\n【路径规则】\n- 必须使用绝对路径（禁止相对路径如 ./file.txt）\n- 禁止用 ~ 表示家目录\n- ❌ 路径中的中文字符必须原样保留，禁止翻译或转换！用户说\"E:\\下载\\科幻小说\"就用\"E:\\下载\\科幻小说\"，禁止改成\"E:\\download\\sci-fi-novel\"\n\n\n# File Operation Tools\n\n1. read_file - 读取文本文件（统一入口）- 合并read_text_file + read_batch_file功能。\n\n使用方式：\n- 单文件读取：file_paths传入1个路径，支持head/tail/offset/limit分页\n- 批量读取：file_paths传入多个路径，返回完整内容\n\n使用示例：【常用名转换说明】\n- 单文件/read_text_file → read_file(file_paths=[\"D:/test.txt\"])\n- 分页读取 → read_file(file_paths=[\"D:/test.txt\"], head=10, limit=100)\n- 批量/read_batch_file → read_file(file_paths=[\"D:/a.txt\", \"D:/b.txt\"])\n\n返回数据说明：\n- 单文件：data.content/data.total_lines/data.encoding/data.file_size\n- 批量：data.results/data.success_count/data.failed_count\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: read_file(file_paths=['D:/project/main.py'])\n\n2. write_text_file - 写入或追加文本文件内容，支持中文、编码自动检测、追加模式。仅支持文本文件。\n\n使用场景：\n- 创建新文件并写入内容\n- 在已有文件末尾追加内容\n\n【重要】text参数必须传入实际文件内容，禁止传入思考/计划/状态描述\n\n使用示例：\n- 创建文件：{\"file_path\": \"D:/output/result.txt\", \"text\": \"Hello World\"}\n- 追加日志：{\"file_path\": \"D:/logs/app.log\", \"text\": \"[2026-05-18] Done\", \"append\": true}\n\n返回数据说明：\n- data.success/data.file_path/data.bytes_written/data.encoding\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: write_text_file(file_path=\"D:/output/test.txt\", text=\"Hello World\")\n\n3. list_directory - 列出目录内容（统一入口）- 合并list_directory + get_directory_tree + file_statistics功能。\n\n使用方式：\n- format=\"list\"：扁平列表（含文件大小/修改时间）\n- format=\"tree\"：JSON树结构\n- 始终返回statistics统计信息\n\n使用示例：【常用名转换说明】\n- 列出文件/list_directory → list_directory(dir_path=\"D:/project\")\n- 递归列出 → list_directory(dir_path=\"D:/project\", recursive=true, max_depth=3)\n- 树结构/get_directory_tree → list_directory(dir_path=\"D:/project\", format=\"tree\")\n- 统计信息/file_statistics → list_directory(dir_path=\"D:/project\", format=\"list\")\n\n返回数据说明：\n- data.success/data.entries(list)/data.tree(tree)/data.statistics(统计)\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: list_directory(dir_path=\"D:/project\")\n\n4. search_files - 递归搜索匹配模式的文件/目录，支持中文文件名。search_dir为必填项。\n\n使用示例：\n- 搜索Python文件：{\"pattern\": \"**/*.py\", \"search_dir\": \"D:/project\"}\n- 只搜目录：{\"pattern\": \"src\", \"search_dir\": \"D:/project\", \"type\": \"directory\"}\n\n返回数据说明：\n- data.success/data.matches/data.total/data.has_more\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: search_files(pattern=\"**/*.py\", search_dir=\"D:/project\")\n\n5. grep_file_content - 基于ripgrep的内容搜索，支持正则表达式和中文搜索。\n\n使用示例：\n- 简单搜索：{\"pattern\": \"def read_file\", \"search_dir\": \"D:/backend\"}\n- 搜索TS文件：{\"pattern\": \"class.*Component\", \"search_dir\": \"D:/frontend\", \"glob\": \"*.tsx\"}\n- 带上下文：{\"pattern\": \"TODO\", \"search_dir\": \"D:/src\", \"context\": {\"around\": 3}}\n\n返回数据说明：\n- data.success/data.matches/data.total_files/data.total_matches\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: grep_file_content(pattern=\"def read_file\", search_dir=\"D:/backend\")\n\n6. edit_file - 编辑文本文件 - 合并precise_replace_in_file + edit_text_file功能。\n\n使用方式：\n- 单处替换：old_string + new_string\n- 多处编辑：edits数组\n- 预览：dry_run=true\n\n【重要】old_string和edits不能同时传入\n\n使用示例：【常用名转换说明】\n- 单处替换/precise_replace_in_file → edit_file(file_path=\"D:/main.py\", old_string=\"old\", new_string=\"new\")\n- 替换所有 → edit_file(file_path=\"D:/main.py\", old_string=\"old\", new_string=\"new\", replace_all=true)\n- 多处编辑/edit_text_file → edit_file(file_path=\"D:/main.py\", edits=[{\"oldText\":\"old\",\"newText\":\"new\"}])\n- 预览修改 → edit_file(file_path=\"D:/main.py\", old_string=\"old\", new_string=\"new\", dry_run=true)\n\n返回数据说明：\n- data.success/data.replaced_count(单处)/data.applied_edits(多处)/data.preview(dry_run)\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: edit_file(file_path=\"D:/main.py\", old_string=\"def old():\", new_string=\"def new():\")\n\n7. rename_file - 重命名文件 - 合并rename_file + batch_rename功能。\n\n使用方式：\n- mode=\"single\"：单文件重命名，需file_path + new_name\n- mode=\"batch\"：批量正则重命名，需directory + pattern + replacement\n\n使用示例：【常用名转换说明】\n- 单文件/rename_file → rename_file(file_path=\"D:/old.txt\", new_name=\"new.txt\")\n- 批量/batch_rename → rename_file(mode=\"batch\", directory=\"D:/files\", pattern=\"file_(\\d+).txt\", replacement=\"renamed_\\1.txt\")\n\n返回数据说明：\n- data.success/data.new_path(单文件)/data.operations(批量)\n   - When to use: \n   - Parameters: description, properties, title, type\n   - Returns: {}\n   - Examples: rename_file(file_path=\"D:/old.txt\", new_name=\"new.txt\")\n\n8. file_operation - 文件操作统一入口 - 合并move_file + copy_file + delete_file等文件处理功能。\n\n使用方式：\n- action=\"move\"：移动文件\n- action=\"copy\"：复制文件（备份）\n- action=\"delete\"：删除文件（可放回收站）\n\n使用示例：【常用名转换说明】\n- 移动/move_file → file_operation(action=\"move\", source=\"D:/a.txt\", destination=\"E:/b.txt\")\n- 复制/copy_file → file_operation(action=\"copy\", source=\"D:/a.txt\", destination=\"D:/backup/a.txt\")\n- 删除/delete_file → file_operation(action=\"delete\", source=\"D:/temp.txt\")\n- 备份/backup_file → file_operation(action=\"copy\", source=\"D:/original.txt\", destination=\"D:/backup.txt\")\n- 恢复/restore_backup → file_operation(action=\"copy\", source=\"D:/backup.txt\", destination=\"D:/original.txt\")\n- 永久删除 → file_operation(action=\"delete\", source=\"D:/temp\", force=true, recursive=true)\n\n返回数据说明：\n- data.success/data.action/data.source/data.destination\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: file_operation(action=\"move\", source=\"D:/a.txt\", destination=\"E:/b.txt\")\n\n9. archive_tool - 压缩/解压工具 - 合并compress_files + extract_archive + test_archive功能。支持zip/tar/tar.gz/tar.bz2格式。\n\n使用方式：\n- action=\"compress\"：压缩文件/目录\n- action=\"extract\"：解压到指定目录\n- action=\"test\"：验证压缩包完整性\n\n使用示例：【常用名转换说明】\n- 压缩/compress_files → archive_tool(action=\"compress\", source=\"D:/project\", destination=\"D:/backup.zip\")\n- 解压/extract_archive → archive_tool(action=\"extract\", source=\"D:/backup.zip\", destination=\"D:/output\")\n- 验证/test_archive → archive_tool(action=\"test\", source=\"D:/backup.zip\")\n- 压缩目录/zip_files → archive_tool(action=\"compress\", source=\"D:/project\", destination=\"D:/project.zip\")\n- 解压/unzip → archive_tool(action=\"extract\", source=\"D:/project.zip\", destination=\"D:/extracted\")\n\n返回数据说明：\n- data.success/data.compressed_size(压缩)/data.extracted_files(解压)\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: archive_tool(action=\"compress\", source=\"D:/project\", destination=\"D:/backup.zip\")\n\n10. read_media_file - 读取图片、音频、视频文件，返回Base64编码数据和MIME类型。PDF文件请使用 read_document 工具。\n\n使用示例：\n- 读取图片：{\"file_path\": \"D:/screenshot.png\"}\n- 读取音频：{\"file_path\": \"D:/notification.mp3\"}\n- 读取PDF：{\"file_path\": \"D:/report.pdf\"}\n\n返回数据说明：\n- data.success/data.data(Base64)/data.mime_type/data.file_size\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: read_media_file(file_path=\"D:/screenshot.png\")\n\n11. data_file_format - 结构化配置文件读写 - 合并read_json + write_json + read_yaml + write_yaml等功能。\n\n支持格式：JSON/YAML/TOML/INI/XML/Properties\n⚠️ CSV/Excel使用read_document工具\n⚠️ write模式仅支持JSON/YAML/TOML，INI/XML/Properties暂不支持写入\n\n使用示例：【常用名转换说明】\n- 读JSON/read_json → data_file_format(action=\"read\", file_path=\"D:/config.json\")\n- 写JSON/write_json → data_file_format(action=\"write\", file_path=\"D:/config.json\", data={\"key\":\"value\"})\n- 读YAML/read_yaml → data_file_format(action=\"read\", file_path=\"D:/config.yaml\")\n- 写YAML/write_yaml → data_file_format(action=\"write\", file_path=\"D:/config.yaml\", data={\"key\":\"value\"})\n- 读TOML → data_file_format(action=\"read\", file_path=\"D:/config.toml\")\n- 读INI/read_config → data_file_format(action=\"read\", file_path=\"D:/config.ini\")\n\n返回数据说明：\n- data.success/data.data(读取)/data.format/data.bytes_written(写入)\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: data_file_format(action=\"read\", file_path=\"D:/config.json\")\n\n【Tool Call Examples】:\nExample 1: 读取文件\n{\"thought\": \"用户要读取配置文件\", \"reasoning\": \"调用read_file单文件模式\", \"tool_name\": \"read_file\", \"tool_params\": {\"file_paths\": [\"C:/config.json\"]}}\n\nExample 2: 搜索文件内容\n{\"thought\": \"搜索包含TODO的Python文件\", \"reasoning\": \"使用grep_file_content搜索\", \"tool_name\": \"grep_file_content\", \"tool_params\": {\"pattern\": \"TODO\", \"search_dir\": \"D:/project\", \"glob\": \"*.py\"}}\n\nExample 3: 写入文件\n{\"thought\": \"用户要写入新文件\", \"reasoning\": \"使用write_text_file写入\", \"tool_name\": \"write_text_file\", \"tool_params\": {\"file_path\": \"D:/output.txt\", \"text\": \"Hello World\"}}\n\nExample 4: 任务完成\n{\"thought\": \"文件操作已完成\", \"reasoning\": \"全部操作成功，结果已返回\", \"tool_name\": \"finish\", \"tool_params\": {\"result\": \"已读取配置文件并完成搜索\"}}\n\n\n【⚠️ P17互斥参数规则 - 极其重要】:\n- read_file: file_paths传1个路径=单文件, 传多个=批量\n- edit_file: old_string 和 edits 不能同时使用\n- rename_file: path 和 directory 不能同时使用\n- archive_tool: compress模式需要source+destination，extract模式需要source\n- file_operation: move/copy需要destination，delete不需要\n\n【⚠️ write_text_file text规则 - 极其重要】:\n- text参数必须传入实际的文件内容（代码、文本、正文等）\n- ❌ 绝对禁止将你的思考/计划/状态确认当作text传入\n- ❌ 错误示例: text=\"已成功创建并写入第一章，需要继续创建第二章\"\n- ✅ 正确示例: text=\"第一章：觉醒\n\n林凡是一名普通的大学生...\n\n【Response Format - 必须遵守】:\n必须使用JSON格式输出，只能返回以下两种情况之一：\n\n情况1：调用工具（继续执行）\n{\n  \"thought\": \"分析当前状态和下一步决策\",\n  \"reasoning\": \"为什么选这个工具、参数如何确定\",\n  \"tool_name\": \"get_current_time\",\n  \"tool_params\": {\"action\": \"now\"}\n}\n\n情况2：任务完成（退出循环）\n{\n  \"thought\": \"任务已完成\",\n  \"reasoning\": \"完成说明\",\n  \"tool_name\": \"finish\",\n  \"tool_params\": {\"result\": \"最终结果\"}\n}\n\n【字段要求】：\n- thought: 必需\n- reasoning: 必需\n- tool_name: 必需（实际工具名或finish）\n- tool_params: 必需（参数对象或{}）\n\n【禁止项】：\n- ❌ 禁止同时返回多个tool_name\n- ❌ 禁止tool_name存在但tool_params缺失\n- ❌ 禁止使用 [TOOL_CALL] 格式（如：[TOOL_CALL]{{...}}[/TOOL_CALL]）\n- ❌ 禁止使用XML标签格式（如：&lt;longcat_tool_call&gt; &lt;arg_key&gt;等任何XML/HTML标签）\n- ❌ 禁止在content中嵌入工具调用（工具调用必须通过tool_name+tool_params字段）\n- ❌ 禁止使用任意自定义标签或特殊标记包裹工具名和参数\n\n【示例】：\n{\"thought\": \"用户询问时间\", \"reasoning\": \"调用get_current_time\", \"tool_name\": \"get_current_time\", \"tool_params\": {\"format\": \"%Y-%m-%d\"}}\n{\"thought\": \"已完成\", \"tool_name\": \"finish\", \"tool_params\": {\"result\": \"当前时间是2026-05-09\"}}\n\n【SAFETY WARNING】:\n⚠️ 任务完成时必须返回 tool_name=\"finish\"，否则会进入死循环。\n\n【Tool Call Rules - 极其重要】:\n- 确认用户意图后，立即调用对应工具，不要在thought中反复讨论该用哪个工具\n- reasoning字段简短说明选择理由即可（1-2句），不要写长篇分析\n- ❌ 禁止：在thought中列举多个工具比较优缺点而不调用\n- ❌ 禁止：在thought中分析参数是否必填而不调用\n- ✅ 正确：确认意图→直接调用→根据结果决定下一步\n- 始终用中文回复用户\n- 工具返回错误时，向用户解释错误并建议替代方案\n\nSafety reminders:\n1. Be careful when writing files - existing content will be overwritten\n2. text parameter must contain actual file content, NOT your thoughts/plans\n\nIf an operation fails:\n1. Check if backup exists (file operations are backed up automatically)\n2. Use the rollback functionality to undo the operation\n3. Verify the file has been restored correctly\n\n\n【避免重复规则】\n- 同一命令/URL成功后不要重复执行（结果不会变）\n- 同一命令/URL失败3次后必须换工具或换URL，禁止再试同方式\n- 已获取的信息直接使用，不需要重新获取\n- 失败后优先尝试替代方法，而非反复重试同一方法\n\n【候选意图】已识别出以下可能的意图类别: file。你可以根据实际任务需要，访问任意候选分类的工具。\n\n【注意】除了文件操作工具，你还可以使用其他分类的工具。根据任务需要自由选择合适的工具，不受初始分类限制。"
+        },
+        {
+          "role": "user",
+          "content": "Task: 检查 E盘的情况\n\nCurrent time: 2026-05-26 06:30:13\n\n请完成此文件管理任务，按以下步骤：\n1. 分析需要做什么操作\n2. 使用合适的工具完成任务\n3. 用中文总结结果\n\nRemember:\n- 不要将思考内容传入text参数\n- text参数必须是实际的文件内容"
+        }
+      ],
+      "时间戳": "2026-05-26 06:30:18",
+      "额外参数": {
+        "max_steps": 100,
+        "use_function_calling": true,
+        "trim_info": null,
+        "total_chars": 11123
+      },
+      "返回内容": "{\"thought\": \"Calling tool: list_directory\", \"tool_name\": \"list_directory\", \"tool_params\": {\"dir_path\": \"E:/\", \"recursive\": false, \"format\": \"list\"}}",
+      "返回类型": "thought",
+      "结束原因": "stop"
+    },
+    {
+      "轮次": 1,
+      "类型": "LLM返回",
+      "返回类型": "thought",
+      "内容": "{\"thought\": \"Calling tool: list_directory\", \"tool_name\": \"list_directory\", \"tool_params\": {\"dir_path\": \"E:/\", \"recursive\": false, \"format\": \"list\"}}",
+      "内容长度": 148,
+      "结束原因": "stop"
+    },
+    {
+      "轮次": 2,
+      "调用类型": "tools",
+      "模型": "unknown",
+      "提供商": "unknown",
+      "消息统计": {
+        "system": 1,
+        "user": 1,
+        "assistant": 2,
+        "tool": 1
+      },
+      "消息总数": 5,
+      "消息摘要": [
+        {
+          "序号": 1,
+          "角色": "system",
+          "内容长度": 10968,
+          "内容摘要": "【当前系统】\nWindows\n\n【路径格式】\n- 当前系统: C:\\Users\\xxx\\file.txt 或 C:/Users/xxx/file.txt\n\n【路径规则】\n- 必须使用绝对路径（禁止相对路径如 ./file.txt）\n- 禁止用 ~ 表示家目录\n- ❌ 路径中的中文字符必须原样保留，禁止翻译或转换！用户说\"E:\\下载\\科幻小说\"就用\"E:\\下载\\科幻小说\"，禁止改成\"E:\\downl..."
+        },
+        {
+          "序号": 2,
+          "角色": "user",
+          "内容长度": 155,
+          "内容摘要": "Task: 检查 E盘的情况\n\nCurrent time: 2026-05-26 06:30:13\n\n请完成此文件管理任务，按以下步骤：\n1. 分析需要做什么操作\n2. 使用合适的工具完成任务\n3. 用中文总结结果\n\nRemember:\n- 不要将思考内容传入text参数\n- text参数必须是实际的文件内容"
+        },
+        {
+          "序号": 3,
+          "角色": "assistant",
+          "内容长度": 148,
+          "内容摘要": "{\"thought\": \"Calling tool: list_directory\", \"tool_name\": \"list_directory\", \"tool_params\": {\"dir_path\": \"E:/\", \"recursive\": false, \"format\": \"list\"}}"
+        },
+        {
+          "序号": 4,
+          "角色": "assistant",
+          "内容长度": 0,
+          "内容摘要": ""
+        },
+        {
+          "序号": 5,
+          "角色": "tool",
+          "内容长度": 247,
+          "内容摘要": "[Observation] success - 列出目录成功: E:\\ (7项)\n数据: {\"目录\": \"E:\\\\\", \"总数\": 7, \"条目预览\": [\"$RECYCLE.BIN\", \"30AI编程工具\", \"Appsw\", \"ollama\", \"System Volume Information\", \"wsl\", \"配置文件\"]}\n推荐下一步操作:\n  1. search_files - 搜..."
+        }
+      ],
+      "完整消息列表": [
+        {
+          "role": "system",
+          "content": "【当前系统】\nWindows\n\n【路径格式】\n- 当前系统: C:\\Users\\xxx\\file.txt 或 C:/Users/xxx/file.txt\n\n【路径规则】\n- 必须使用绝对路径（禁止相对路径如 ./file.txt）\n- 禁止用 ~ 表示家目录\n- ❌ 路径中的中文字符必须原样保留，禁止翻译或转换！用户说\"E:\\下载\\科幻小说\"就用\"E:\\下载\\科幻小说\"，禁止改成\"E:\\download\\sci-fi-novel\"\n\n\n# File Operation Tools\n\n1. read_file - 读取文本文件（统一入口）- 合并read_text_file + read_batch_file功能。\n\n使用方式：\n- 单文件读取：file_paths传入1个路径，支持head/tail/offset/limit分页\n- 批量读取：file_paths传入多个路径，返回完整内容\n\n使用示例：【常用名转换说明】\n- 单文件/read_text_file → read_file(file_paths=[\"D:/test.txt\"])\n- 分页读取 → read_file(file_paths=[\"D:/test.txt\"], head=10, limit=100)\n- 批量/read_batch_file → read_file(file_paths=[\"D:/a.txt\", \"D:/b.txt\"])\n\n返回数据说明：\n- 单文件：data.content/data.total_lines/data.encoding/data.file_size\n- 批量：data.results/data.success_count/data.failed_count\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: read_file(file_paths=['D:/project/main.py'])\n\n2. write_text_file - 写入或追加文本文件内容，支持中文、编码自动检测、追加模式。仅支持文本文件。\n\n使用场景：\n- 创建新文件并写入内容\n- 在已有文件末尾追加内容\n\n【重要】text参数必须传入实际文件内容，禁止传入思考/计划/状态描述\n\n使用示例：\n- 创建文件：{\"file_path\": \"D:/output/result.txt\", \"text\": \"Hello World\"}\n- 追加日志：{\"file_path\": \"D:/logs/app.log\", \"text\": \"[2026-05-18] Done\", \"append\": true}\n\n返回数据说明：\n- data.success/data.file_path/data.bytes_written/data.encoding\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: write_text_file(file_path=\"D:/output/test.txt\", text=\"Hello World\")\n\n3. list_directory - 列出目录内容（统一入口）- 合并list_directory + get_directory_tree + file_statistics功能。\n\n使用方式：\n- format=\"list\"：扁平列表（含文件大小/修改时间）\n- format=\"tree\"：JSON树结构\n- 始终返回statistics统计信息\n\n使用示例：【常用名转换说明】\n- 列出文件/list_directory → list_directory(dir_path=\"D:/project\")\n- 递归列出 → list_directory(dir_path=\"D:/project\", recursive=true, max_depth=3)\n- 树结构/get_directory_tree → list_directory(dir_path=\"D:/project\", format=\"tree\")\n- 统计信息/file_statistics → list_directory(dir_path=\"D:/project\", format=\"list\")\n\n返回数据说明：\n- data.success/data.entries(list)/data.tree(tree)/data.statistics(统计)\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: list_directory(dir_path=\"D:/project\")\n\n4. search_files - 递归搜索匹配模式的文件/目录，支持中文文件名。search_dir为必填项。\n\n使用示例：\n- 搜索Python文件：{\"pattern\": \"**/*.py\", \"search_dir\": \"D:/project\"}\n- 只搜目录：{\"pattern\": \"src\", \"search_dir\": \"D:/project\", \"type\": \"directory\"}\n\n返回数据说明：\n- data.success/data.matches/data.total/data.has_more\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: search_files(pattern=\"**/*.py\", search_dir=\"D:/project\")\n\n5. grep_file_content - 基于ripgrep的内容搜索，支持正则表达式和中文搜索。\n\n使用示例：\n- 简单搜索：{\"pattern\": \"def read_file\", \"search_dir\": \"D:/backend\"}\n- 搜索TS文件：{\"pattern\": \"class.*Component\", \"search_dir\": \"D:/frontend\", \"glob\": \"*.tsx\"}\n- 带上下文：{\"pattern\": \"TODO\", \"search_dir\": \"D:/src\", \"context\": {\"around\": 3}}\n\n返回数据说明：\n- data.success/data.matches/data.total_files/data.total_matches\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: grep_file_content(pattern=\"def read_file\", search_dir=\"D:/backend\")\n\n6. edit_file - 编辑文本文件 - 合并precise_replace_in_file + edit_text_file功能。\n\n使用方式：\n- 单处替换：old_string + new_string\n- 多处编辑：edits数组\n- 预览：dry_run=true\n\n【重要】old_string和edits不能同时传入\n\n使用示例：【常用名转换说明】\n- 单处替换/precise_replace_in_file → edit_file(file_path=\"D:/main.py\", old_string=\"old\", new_string=\"new\")\n- 替换所有 → edit_file(file_path=\"D:/main.py\", old_string=\"old\", new_string=\"new\", replace_all=true)\n- 多处编辑/edit_text_file → edit_file(file_path=\"D:/main.py\", edits=[{\"oldText\":\"old\",\"newText\":\"new\"}])\n- 预览修改 → edit_file(file_path=\"D:/main.py\", old_string=\"old\", new_string=\"new\", dry_run=true)\n\n返回数据说明：\n- data.success/data.replaced_count(单处)/data.applied_edits(多处)/data.preview(dry_run)\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: edit_file(file_path=\"D:/main.py\", old_string=\"def old():\", new_string=\"def new():\")\n\n7. rename_file - 重命名文件 - 合并rename_file + batch_rename功能。\n\n使用方式：\n- mode=\"single\"：单文件重命名，需file_path + new_name\n- mode=\"batch\"：批量正则重命名，需directory + pattern + replacement\n\n使用示例：【常用名转换说明】\n- 单文件/rename_file → rename_file(file_path=\"D:/old.txt\", new_name=\"new.txt\")\n- 批量/batch_rename → rename_file(mode=\"batch\", directory=\"D:/files\", pattern=\"file_(\\d+).txt\", replacement=\"renamed_\\1.txt\")\n\n返回数据说明：\n- data.success/data.new_path(单文件)/data.operations(批量)\n   - When to use: \n   - Parameters: description, properties, title, type\n   - Returns: {}\n   - Examples: rename_file(file_path=\"D:/old.txt\", new_name=\"new.txt\")\n\n8. file_operation - 文件操作统一入口 - 合并move_file + copy_file + delete_file等文件处理功能。\n\n使用方式：\n- action=\"move\"：移动文件\n- action=\"copy\"：复制文件（备份）\n- action=\"delete\"：删除文件（可放回收站）\n\n使用示例：【常用名转换说明】\n- 移动/move_file → file_operation(action=\"move\", source=\"D:/a.txt\", destination=\"E:/b.txt\")\n- 复制/copy_file → file_operation(action=\"copy\", source=\"D:/a.txt\", destination=\"D:/backup/a.txt\")\n- 删除/delete_file → file_operation(action=\"delete\", source=\"D:/temp.txt\")\n- 备份/backup_file → file_operation(action=\"copy\", source=\"D:/original.txt\", destination=\"D:/backup.txt\")\n- 恢复/restore_backup → file_operation(action=\"copy\", source=\"D:/backup.txt\", destination=\"D:/original.txt\")\n- 永久删除 → file_operation(action=\"delete\", source=\"D:/temp\", force=true, recursive=true)\n\n返回数据说明：\n- data.success/data.action/data.source/data.destination\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: file_operation(action=\"move\", source=\"D:/a.txt\", destination=\"E:/b.txt\")\n\n9. archive_tool - 压缩/解压工具 - 合并compress_files + extract_archive + test_archive功能。支持zip/tar/tar.gz/tar.bz2格式。\n\n使用方式：\n- action=\"compress\"：压缩文件/目录\n- action=\"extract\"：解压到指定目录\n- action=\"test\"：验证压缩包完整性\n\n使用示例：【常用名转换说明】\n- 压缩/compress_files → archive_tool(action=\"compress\", source=\"D:/project\", destination=\"D:/backup.zip\")\n- 解压/extract_archive → archive_tool(action=\"extract\", source=\"D:/backup.zip\", destination=\"D:/output\")\n- 验证/test_archive → archive_tool(action=\"test\", source=\"D:/backup.zip\")\n- 压缩目录/zip_files → archive_tool(action=\"compress\", source=\"D:/project\", destination=\"D:/project.zip\")\n- 解压/unzip → archive_tool(action=\"extract\", source=\"D:/project.zip\", destination=\"D:/extracted\")\n\n返回数据说明：\n- data.success/data.compressed_size(压缩)/data.extracted_files(解压)\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: archive_tool(action=\"compress\", source=\"D:/project\", destination=\"D:/backup.zip\")\n\n10. read_media_file - 读取图片、音频、视频文件，返回Base64编码数据和MIME类型。PDF文件请使用 read_document 工具。\n\n使用示例：\n- 读取图片：{\"file_path\": \"D:/screenshot.png\"}\n- 读取音频：{\"file_path\": \"D:/notification.mp3\"}\n- 读取PDF：{\"file_path\": \"D:/report.pdf\"}\n\n返回数据说明：\n- data.success/data.data(Base64)/data.mime_type/data.file_size\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: read_media_file(file_path=\"D:/screenshot.png\")\n\n11. data_file_format - 结构化配置文件读写 - 合并read_json + write_json + read_yaml + write_yaml等功能。\n\n支持格式：JSON/YAML/TOML/INI/XML/Properties\n⚠️ CSV/Excel使用read_document工具\n⚠️ write模式仅支持JSON/YAML/TOML，INI/XML/Properties暂不支持写入\n\n使用示例：【常用名转换说明】\n- 读JSON/read_json → data_file_format(action=\"read\", file_path=\"D:/config.json\")\n- 写JSON/write_json → data_file_format(action=\"write\", file_path=\"D:/config.json\", data={\"key\":\"value\"})\n- 读YAML/read_yaml → data_file_format(action=\"read\", file_path=\"D:/config.yaml\")\n- 写YAML/write_yaml → data_file_format(action=\"write\", file_path=\"D:/config.yaml\", data={\"key\":\"value\"})\n- 读TOML → data_file_format(action=\"read\", file_path=\"D:/config.toml\")\n- 读INI/read_config → data_file_format(action=\"read\", file_path=\"D:/config.ini\")\n\n返回数据说明：\n- data.success/data.data(读取)/data.format/data.bytes_written(写入)\n   - When to use: \n   - Parameters: description, properties, required, title, type\n   - Returns: {}\n   - Examples: data_file_format(action=\"read\", file_path=\"D:/config.json\")\n\n【Tool Call Examples】:\nExample 1: 读取文件\n{\"thought\": \"用户要读取配置文件\", \"reasoning\": \"调用read_file单文件模式\", \"tool_name\": \"read_file\", \"tool_params\": {\"file_paths\": [\"C:/config.json\"]}}\n\nExample 2: 搜索文件内容\n{\"thought\": \"搜索包含TODO的Python文件\", \"reasoning\": \"使用grep_file_content搜索\", \"tool_name\": \"grep_file_content\", \"tool_params\": {\"pattern\": \"TODO\", \"search_dir\": \"D:/project\", \"glob\": \"*.py\"}}\n\nExample 3: 写入文件\n{\"thought\": \"用户要写入新文件\", \"reasoning\": \"使用write_text_file写入\", \"tool_name\": \"write_text_file\", \"tool_params\": {\"file_path\": \"D:/output.txt\", \"text\": \"Hello World\"}}\n\nExample 4: 任务完成\n{\"thought\": \"文件操作已完成\", \"reasoning\": \"全部操作成功，结果已返回\", \"tool_name\": \"finish\", \"tool_params\": {\"result\": \"已读取配置文件并完成搜索\"}}\n\n\n【⚠️ P17互斥参数规则 - 极其重要】:\n- read_file: file_paths传1个路径=单文件, 传多个=批量\n- edit_file: old_string 和 edits 不能同时使用\n- rename_file: path 和 directory 不能同时使用\n- archive_tool: compress模式需要source+destination，extract模式需要source\n- file_operation: move/copy需要destination，delete不需要\n\n【⚠️ write_text_file text规则 - 极其重要】:\n- text参数必须传入实际的文件内容（代码、文本、正文等）\n- ❌ 绝对禁止将你的思考/计划/状态确认当作text传入\n- ❌ 错误示例: text=\"已成功创建并写入第一章，需要继续创建第二章\"\n- ✅ 正确示例: text=\"第一章：觉醒\n\n林凡是一名普通的大学生...\n\n【Response Format - 必须遵守】:\n必须使用JSON格式输出，只能返回以下两种情况之一：\n\n情况1：调用工具（继续执行）\n{\n  \"thought\": \"分析当前状态和下一步决策\",\n  \"reasoning\": \"为什么选这个工具、参数如何确定\",\n  \"tool_name\": \"get_current_time\",\n  \"tool_params\": {\"action\": \"now\"}\n}\n\n情况2：任务完成（退出循环）\n{\n  \"thought\": \"任务已完成\",\n  \"reasoning\": \"完成说明\",\n  \"tool_name\": \"finish\",\n  \"tool_params\": {\"result\": \"最终结果\"}\n}\n\n【字段要求】：\n- thought: 必需\n- reasoning: 必需\n- tool_name: 必需（实际工具名或finish）\n- tool_params: 必需（参数对象或{}）\n\n【禁止项】：\n- ❌ 禁止同时返回多个tool_name\n- ❌ 禁止tool_name存在但tool_params缺失\n- ❌ 禁止使用 [TOOL_CALL] 格式（如：[TOOL_CALL]{{...}}[/TOOL_CALL]）\n- ❌ 禁止使用XML标签格式（如：&lt;longcat_tool_call&gt; &lt;arg_key&gt;等任何XML/HTML标签）\n- ❌ 禁止在content中嵌入工具调用（工具调用必须通过tool_name+tool_params字段）\n- ❌ 禁止使用任意自定义标签或特殊标记包裹工具名和参数\n\n【示例】：\n{\"thought\": \"用户询问时间\", \"reasoning\": \"调用get_current_time\", \"tool_name\": \"get_current_time\", \"tool_params\": {\"format\": \"%Y-%m-%d\"}}\n{\"thought\": \"已完成\", \"tool_name\": \"finish\", \"tool_params\": {\"result\": \"当前时间是2026-05-09\"}}\n\n【SAFETY WARNING】:\n⚠️ 任务完成时必须返回 tool_name=\"finish\"，否则会进入死循环。\n\n【Tool Call Rules - 极其重要】:\n- 确认用户意图后，立即调用对应工具，不要在thought中反复讨论该用哪个工具\n- reasoning字段简短说明选择理由即可（1-2句），不要写长篇分析\n- ❌ 禁止：在thought中列举多个工具比较优缺点而不调用\n- ❌ 禁止：在thought中分析参数是否必填而不调用\n- ✅ 正确：确认意图→直接调用→根据结果决定下一步\n- 始终用中文回复用户\n- 工具返回错误时，向用户解释错误并建议替代方案\n\nSafety reminders:\n1. Be careful when writing files - existing content will be overwritten\n2. text parameter must contain actual file content, NOT your thoughts/plans\n\nIf an operation fails:\n1. Check if backup exists (file operations are backed up automatically)\n2. Use the rollback functionality to undo the operation\n3. Verify the file has been restored correctly\n\n\n【避免重复规则】\n- 同一命令/URL成功后不要重复执行（结果不会变）\n- 同一命令/URL失败3次后必须换工具或换URL，禁止再试同方式\n- 已获取的信息直接使用，不需要重新获取\n- 失败后优先尝试替代方法，而非反复重试同一方法\n\n【候选意图】已识别出以下可能的意图类别: file。你可以根据实际任务需要，访问任意候选分类的工具。\n\n【注意】除了文件操作工具，你还可以使用其他分类的工具。根据任务需要自由选择合适的工具，不受初始分类限制。"
+        },
+        {
+          "role": "user",
+          "content": "Task: 检查 E盘的情况\n\nCurrent time: 2026-05-26 06:30:13\n\n请完成此文件管理任务，按以下步骤：\n1. 分析需要做什么操作\n2. 使用合适的工具完成任务\n3. 用中文总结结果\n\nRemember:\n- 不要将思考内容传入text参数\n- text参数必须是实际的文件内容"
+        },
+        {
+          "role": "assistant",
+          "content": "{\"thought\": \"Calling tool: list_directory\", \"tool_name\": \"list_directory\", \"tool_params\": {\"dir_path\": \"E:/\", \"recursive\": false, \"format\": \"list\"}}"
+        },
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "type": "function",
+              "id": "1a168c08e60a4c0bb4a1c700f97d0c78",
+              "function": {
+                "name": "list_directory",
+                "arguments": "{\"dir_path\": \"E:/\", \"recursive\": false, \"format\": \"list\"}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "content": "[Observation] success - 列出目录成功: E:\\ (7项)\n数据: {\"目录\": \"E:\\\\\", \"总数\": 7, \"条目预览\": [\"$RECYCLE.BIN\", \"30AI编程工具\", \"Appsw\", \"ollama\", \"System Volume Information\", \"wsl\", \"配置文件\"]}\n推荐下一步操作:\n  1. search_files - 搜索文件（需要查找特定文件时）\n  2. read_file - 读取文件（需要查看文件内容时）",
+          "tool_call_id": "1a168c08e60a4c0bb4a1c700f97d0c78"
+        }
+      ],
+      "时间戳": "2026-05-26 06:30:27",
+      "额外参数": {
+        "max_steps": 100,
+        "use_function_calling": true,
+        "trim_info": null,
+        "total_chars": 11706
+      }
+    }
+  ]
+}

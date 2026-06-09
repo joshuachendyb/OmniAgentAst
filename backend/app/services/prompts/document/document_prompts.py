@@ -5,12 +5,12 @@ DocumentPrompts - 文档读写 Prompt模板
 P2优先级
 
 Author: 小健 - 2026-05-06
-【2026-05-18 小沈】更新工具列表：8合2路由重构，移除旧工具名
+【2026-05-18 小沈】更新工具列表:8合2路由重构,移除旧工具名
 """
 from datetime import datetime
 
-from app.services.prompts.BasePromptTemplate import BasePrompts
-from app.services.prompts.middle import get_system_prompt as get_system_info
+from app.services.prompts.base_prompt_template import BasePrompts
+from app.services.prompts.middle import get_system_prompt as get_system_prompt_string
 from app.utils.logger import logger
 
 
@@ -18,7 +18,7 @@ class DocumentPrompts(BasePrompts):
     """文档读写 Prompt模板类"""
     
     def get_system_prompt(self) -> str:
-        system_info = get_system_info(include_commands=False)
+        system_info = get_system_prompt_string(include_commands=False)
         return system_info + """
 You are a professional document operations assistant. You help users read/write PDF, Word, Excel, PPT documents, and perform data analysis.
 
@@ -100,23 +100,20 @@ Example 4: 任务完成
         return "⚠️ Document Safety: write_document overwrites existing files. Read before write to confirm."
 
     def get_parameter_reminder(self) -> str:
-        from app.services.tools.registry import tool_registry, ToolCategory
-        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.DOCUMENT)
+        from app.services.tools.registry import tool_registry
+        from app.services.tools.tool_types import ToolCategory
+        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.DOC_CONTENT)
         forbidden = (
             "\n\nFORBIDDEN parameter names - DO NOT use:\n"
             "- ❌ file (correct: file_path)\n"
             "- ❌ name (correct: file_name)\n"
             "- ❌ data for write (correct: content)\n"
-            "- ❌ 旧工具名 read_pdf/read_docx/read_xlsx/read_pptx/write_docx/write_xlsx/write_pdf/write_pptx (已废弃，用read_document/write_document)"
+            "- ❌ 旧工具名 read_pdf/read_docx/read_xlsx/read_pptx/write_docx/write_xlsx/write_pdf/write_pptx (已废弃,用read_document/write_document)"
         )
         return auto_reminder + forbidden
 
-    def get_task_prompt(self, task: str) -> str:
-        return f"""Task: {task}
+    def _get_domain_name(self) -> str:
+        return "文檔处理"
 
-Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-
-请完成此文檔处理任务，按以下步骤：
-1. 分析需要的文档操作
-2. 使用合适的文档工具
-3. 用中文总结文档处理结果"""
+    def _get_domain_steps(self) -> str:
+        return "1. 分析需要的文档操作\n2. 使用合适的文档工具\n3. 用中文总结文档处理结果"

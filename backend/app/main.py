@@ -3,46 +3,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from datetime import datetime
 import traceback
-from pathlib import Path
+from app.utils.time_utils import get_utc_timestamp
+import os
+import logging
+import asyncio
 
-# 【已废弃】chat_non_stream 已不使用，前端已改用 sse.ts 流式聊天 V2
-# from app.api.v1 import health, chat_non_stream, chat2, init_model_select, file_operations, config, sessions, security, execution, metrics
-# 【阶段6废弃端点但保留代码】chat2.py 已移至 backup/chat2.py
-# cleanup_expired_tasks 已迁移到 react_sse_wrapper.py
-from app.api.v1 import health, init_model_select, operation_history, routes, sessions, security, execution, metrics
-# 兼容导入
-config = routes
-# chat_stream 暂时禁用，使用 chat_router 替代
+from app.api.v1 import health, ai_config, sessions, messages, conversation, execution, metrics
+from app.api.v1.chat import router as chat_router, task_router
+from app.api.v1.task_queries import router as task_queries_router
 from app.utils.logger import logger
 from app.utils.monitoring import setup_monitoring
+from app.constants import DEFAULT_CORS_ORIGINS
+from app.utils.version import get_version
+from app.services.task.task_registry import cleanup_expired_tasks
+from app.db import db
 
-# 只过滤uvicorn的访问日志，不影响应用日志
-import logging
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
-# 配置日志 - 使用统一的 logger 配置，不再使用 basicConfig
-# 日志统一在 app/utils/logger.py 中配置
-
-def get_version() -> str:
-    """从version.txt读取版本号"""
-    try:
-        current_file = Path(__file__).resolve()
-        backend_dir = current_file.parent.parent
-        project_root = backend_dir.parent
-        version_file = project_root / "version.txt"
-        
-        if version_file.exists():
-            with open(version_file, 'r', encoding='utf-8') as f:
-                version = f.readline().strip()
-            print(f"[Version] read version: {version}")
-            return version.lstrip('v')
-    except Exception as e:
-        pass
-    return "0.13.36"
-
 app_version = get_version()
+print(app_version)
 
 app = FastAPI(
     title="OmniAgentAst API",
@@ -51,10 +31,6 @@ app = FastAPI(
 )
 
 logger.info("Backend v" + app_version + " started")
-
-# CORS配置 - 显式指定前端源，避免通配符与credentials冲突
-import os
-from app.constants import DEFAULT_CORS_ORIGINS
 
 _cors_origins_str = os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS)
 _cors_origins = [origin.strip() for origin in _cors_origins_str.split(",") if origin.strip()]
@@ -69,6 +45,7 @@ app.add_middleware(
 
 setup_monitoring(app)
 
+
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     logger.error(f"HTTP Exception: {exc.status_code} - {exc.detail}")
@@ -78,9 +55,10 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
             "success": False,
             "error": exc.detail,
             "status_code": exc.status_code,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": get_utc_timestamp()
         }
     )
+
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -91,56 +69,52 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "success": False,
             "error": "请求参数验证失败",
             "details": exc.errors(),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": get_utc_timestamp()
         }
     )
+
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     error_msg = str(exc)
     error_trace = traceback.format_exc()
-    
     logger.error(f"Unhandled Exception: {error_msg}\n{error_trace}")
-    
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
             "success": False,
             "error": "服务器内部错误",
             "message": error_msg if app.debug else "请联系管理员",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": get_utc_timestamp()
         }
     )
 
+
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
-# 【已废弃】chat_non_stream.py 已不使用，前端已改用 sse.ts 流式聊天 V2
-# app.include_router(chat_non_stream.router, prefix="/api/v1", tags=["chat"])
-# 【暂时禁用】使用 chat2 替代 chat_stream（待验证后决定是否删除）
-# app.include_router(chat_stream.router, prefix="/api/v1", tags=["chat"])
-# 【阶段6废弃】chat2.py 端点已废弃，使用 chat_router (V2) 替代
-# app.include_router(chat2.router, prefix="/api/v1", tags=["chat"])
-# 【Stage 5 新增】chat_router - 6步完整流程版本
-from app.services.chat_router import router as chat_router_router, task_router
-app.include_router(chat_router_router, prefix="/api/v1", tags=["chat"])
+app.include_router(chat_router, prefix="/api/v1", tags=["chat"])
 app.include_router(task_router, prefix="/api/v1", tags=["chat"])
-app.include_router(init_model_select.router, prefix="/api/v1", tags=["chat"])
-app.include_router(operation_history.router, prefix="/api/v1", tags=["operation-history"])
-app.include_router(config.router, prefix="/api/v1", tags=["config"])
+app.include_router(ai_config.router, prefix="/api/v1", tags=["config"])
 app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
-app.include_router(security.router, prefix="/api/v1", tags=["security"])
+app.include_router(messages.router, prefix="/api/v1", tags=["sessions"])
+app.include_router(conversation.router, prefix="/api/v1", tags=["conversation"])
 app.include_router(execution.router, prefix="/api/v1", tags=["execution"])
 app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
+app.include_router(task_queries_router, prefix="/api/v1", tags=["task-queries"])
 
 
-# 【阶段6更新】cleanup_expired_tasks 改为从 react_sse_wrapper 导入
-import asyncio
-from app.services.react_sse_wrapper import cleanup_expired_tasks
-# 【Phase 1修复 小健 2026-05-14】删除模块级import，改为函数内import
-# from app.services.tools.shell.shell_tools import cleanup_background_shells
+async def _init_database():
+    """初始化数据库 - 小沈 2026-06-08"""
+    db.init()
 
-@app.on_event("startup")
-async def startup_event():
-    """应用启动时启动后台任务"""
+
+def _register_tools():
+    """注册工具 - 小沈 2026-06-08"""
+    from app.services.tools import ensure_tools_registered
+    ensure_tools_registered()
+
+
+def _start_cleanup_task():
+    """启动清理任务 - 小沈 2026-06-08"""
     async def cleanup_task():
         """定期清理过期任务"""
         while True:
@@ -148,20 +122,38 @@ async def startup_event():
                 await cleanup_expired_tasks()
             except Exception as e:
                 logger.error(f"清理过期任务失败: {e}")
-            await asyncio.sleep(3600)  # 每小时执行一次
+            await asyncio.sleep(3600)
     
-    # 启动后台任务
     asyncio.create_task(cleanup_task())
     logger.info("后台清理任务已启动")
 
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """应用关闭时清理后台shell进程"""
-    # 【Phase 1修复 小健 2026-05-14】函数内import避免触发register
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时注册工具 + 启动后台任务"""
+    await _init_database()
+    _register_tools()
+    _start_cleanup_task()
+
+
+async def _reset_factory():
+    """重置工厂 - 小沈 2026-06-08"""
+    from app.services.factory import reset
+    await reset()
+
+
+def _cleanup_shells():
+    """清理shell进程 - 小沈 2026-06-08"""
     from app.services.tools.shell.shell_tools import cleanup_background_shells
     count = cleanup_background_shells()
     logger.info(f"已清理 {count} 个后台shell进程")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时清理资源"""
+    await _reset_factory()
+    _cleanup_shells()
 
 
 @app.get("/")

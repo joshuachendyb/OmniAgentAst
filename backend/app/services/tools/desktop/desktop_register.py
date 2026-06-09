@@ -1,27 +1,26 @@
 # -*- coding: utf-8 -*-
 """
-DESKTOP Register - 桌面工具注册点（26→10精简方案）
+DESKTOP Register - 桌面工具注册点
 
 【架构规范】2026-04-29 小沈
-【2026-05-17 小沈】26→10精简：统一注册10个LLM可见工具
+【2026-05-17 小沈】26→10精简:统一注册10个LLM可见工具
+【2026-06-09 小沈】删除边缘工具:screen_record/ocr/send_notification,10→6
 
-【工具列表】统一DESKTOP工具（10→9精简，Ch19）- 小沈 2026-05-22
-1. window_info - 窗口信息查询（合并list_windows+get_window_info）
-2. window_control - 统一窗口控制（合并set_window_state+focus_window+resize_window）
-3. mouse_control - 统一鼠标控制（合并click+move+scroll）
-4. keyboard_control - 统一键盘控制（合并type_text+shortcut+key_combo）
-5. screen_capture - 统一屏幕截图（合并screenshot+snapshot）
-6. clipboard_control - 统一剪贴板控制（合并read_clipboard+write_clipboard）
-7. screen_record - 录制屏幕
-8. ocr - OCR识别
-9. send_notification - 发送通知
+【工具列表】统一SCREEN分类工具(6个)
+1. window_info - 窗口信息查询(合并list_windows+get_window_info)
+2. window_control - 统一窗口控制(合并set_window_state+focus_window+resize_window)
+3. mouse_control - 统一鼠标控制(合并click+move+scroll)
+4. keyboard_control - 统一键盘控制(合并type_text+shortcut+key_combo)
+5. screen_capture - 统一屏幕截图(合并screenshot+snapshot)
+6. clipboard_control - 统一剪贴板控制(合并read_clipboard+write_clipboard)
 
 创建时间: 2026-04-29
-更新时间: 2026-05-17
+更新时间: 2026-06-09
 """
 
 import logging
-from app.services.tools.registry import ToolCategory, tool_registry
+from app.services.tools.registry import tool_registry
+from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 from app.services.tools.desktop.desktop_schema import (
@@ -42,24 +41,13 @@ from app.services.tools.desktop.desktop_tools import (
     clipboard_control,
 )
 
-from app.services.tools.desktop.gui_tools import (
-    screen_record,
-    ocr,
-    send_notification,
-)
-
-from app.services.tools.desktop.gui_schema import (
-    ScreenRecordInput,
-    OcrInput,
-    SendNotificationInput,
-)
 
 DESKTOP_TOOL_DESCRIPTIONS = {
     "window_info": """统一窗口信息查询 - 合并list_windows + get_window_info功能。
 
 【使用场景】
-- 列出所有窗口（action="list"，可选 include_minimized/filter_title 筛选）
-- 获取单个窗口的详细信息（action="info"，需指定 window_title）
+- 列出所有窗口(action="list",可选 include_minimized/filter_title 筛选)
+- 获取单个窗口的详细信息(action="info",需指定 window_title)
 
 【使用示例】【常用名转换说明】
 - 列出窗口/list_windows → window_info(action="list")
@@ -91,7 +79,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
     "mouse_control": """统一鼠标控制 - 合并click + move + scroll + get_mouse_position功能。
 
 【使用场景】
-- 点击（action="click"）/ 移动（action="move"）/ 滚动（action="scroll"）/ 获取位置（action="position"）
+- 点击(action="click")/ 移动(action="move")/ 滚动(action="scroll")/ 获取位置(action="position")
 
 【重要】需要安装 pyautogui 库
 
@@ -108,7 +96,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
     "keyboard_control": """统一键盘控制 - 合并type_text + shortcut + key_combo功能。
 
 【使用场景】
-- 输入文本（action="type"）/ 快捷键（action="shortcut"）/ 组合键（action="combo"）
+- 输入文本(action="type")/ 快捷键(action="shortcut")/ 组合键(action="combo")
 
 【重要】需要安装 pyautogui 库
 
@@ -126,7 +114,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
 【使用场景】
 - 截取全屏 / 截取区域 / 多显示器快照
 
-【重要】优先使用mss库（多显示器），降级pyautogui
+【重要】优先使用mss库(多显示器),降级pyautogui
 
 【使用示例】【常用名转换说明】
 - 截取全屏/screenshot → screen_capture()
@@ -140,7 +128,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
     "clipboard_control": """统一剪贴板控制 - 合并read_clipboard + write_clipboard功能。
 
 【使用场景】
-- 读取剪贴板（action="read"）/ 写入剪贴板（action="write"）
+- 读取剪贴板(action="read")/ 写入剪贴板(action="write")
 
 【使用示例】【常用名转换说明】
 - 读取/read_clipboard → clipboard_control(action="read")
@@ -148,43 +136,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
 
 【返回数据说明】
 - read: data.content
-- write: data.success""",
-
-    "screen_record": """录制屏幕视频。
-
-【使用场景】
-- 录制屏幕操作过程
-- 制作操作教程或演示视频
-
-【重要】需要安装 mss + PIL + numpy + imageio 库
-
-【示例】
-- 录制30秒: {"duration": 30}
-- 高清录制: {"duration": 60, "output_path": "D:/output/demo.mp4", "fps": 30}""",
-
-    "ocr": """从图片中识别文字（OCR）。
-
-【使用场景】
-- 从图片中提取文字内容
-- 识别截图中的文字
-
-【重要】需要安装 pytesseract 库和 Tesseract OCR 引擎
-
-【示例】
-- 英文识别: {"image_path": "D:/images/screenshot.png"}
-- 中文识别: {"image_path": "D:/images/screenshot.png", "language": "chi_sim"}""",
-
-    "send_notification": """发送 Windows 系统通知。
-
-【使用场景】
-- 发送系统通知提醒
-- 通知用户操作完成
-
-【重要】需要安装 win10toast 库
-
-【示例】
-- 发送通知: {"title": "任务完成", "message": "数据处理已完成"}
-- 自定义时长: {"title": "提醒", "message": "请检查结果", "duration": 10}""",
+ - write: data.success""",
 }
 
 DESKTOP_TOOL_INPUT_MODELS = {
@@ -194,9 +146,7 @@ DESKTOP_TOOL_INPUT_MODELS = {
     "keyboard_control": KeyboardControlInput,
     "screen_capture": ScreenCaptureInput,
     "clipboard_control": ClipboardControlInput,
-    "screen_record": ScreenRecordInput,
-    "ocr": OcrInput,
-    "send_notification": SendNotificationInput,
+
 }
 
 DESKTOP_TOOL_EXAMPLES = {
@@ -235,26 +185,12 @@ DESKTOP_TOOL_EXAMPLES = {
         {"action": "read"},
         {"action": "write", "content": "Hello World"},
     ],
-    "screen_record": [
-        {"duration": 30},
-        {"duration": 60, "output_path": "D:/output/demo.mp4", "fps": 30},
-    ],
-    "ocr": [
-        {"image_path": "D:/images/screenshot.png"},
-        {"image_path": "D:/images/screenshot.png", "language": "chi_sim"},
-    ],
-    "send_notification": [
-        {"title": "任务完成", "message": "文件已成功保存"},
-        {"title": "提醒", "message": "请检查结果", "duration": 10},
-    ],
+
 }
 
 
 def _register_desktop_tools():
-    """
-    【2026-05-17 小沈】26→10精简方案：注册统一DESKTOP分类的10个LLM可见工具
-    使用 Pydantic 模型自动生成 OpenAI Schema
-    """
+    """注册SCREEN分类工具(6个) — 小沈 2026-06-09 删除边缘工具"""
     tool_methods = {
         "window_info": window_info,
         "window_control": window_control,
@@ -262,9 +198,6 @@ def _register_desktop_tools():
         "keyboard_control": keyboard_control,
         "screen_capture": screen_capture,
         "clipboard_control": clipboard_control,
-        "screen_record": screen_record,
-        "ocr": ocr,
-        "send_notification": send_notification,
     }
 
     for name, method in tool_methods.items():
@@ -275,7 +208,7 @@ def _register_desktop_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.DESKTOP,
+            category=ToolCategory.SCREEN,
             implementation=method,
             version="1.0.0",
             input_model=input_model,
@@ -286,8 +219,5 @@ def _register_desktop_tools():
             f"使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, "
             f"examples: {len(examples)}个"
         )
-
-
-_initialized = False
 
 __all__ = ["_register_desktop_tools"]

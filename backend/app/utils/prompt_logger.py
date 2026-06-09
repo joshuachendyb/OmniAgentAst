@@ -1,21 +1,21 @@
 """
 Prompt 日志记录器 - 记录 Prompt 组装全过程
 
-【功能】记录每次请求的 prompt 组装过程，便于调试和分析
-【存放】backend/logs/prompt-logs/ 目录下，每次请求一个 JSON 文件
-【格式】JSON 文件，可用文本编辑器查看
+【功能】记录每次请求的 prompt 组装过程,便于调试和分析
+【存放】backend/logs/prompt-logs/ 目录下,每次请求一个 JSON 文件
+【格式】JSON 文件,可用文本编辑器查看
 
 创建时间: 2026-03-24 18:30:00
 作者: 小沈
 版本: v1.1
-更新说明: v1.1 小健 - 修复并发安全问题，使用线程局部存储
+更新说明: v1.1 小健 - 修复并发安全问题,使用线程局部存储
 """
 
 import json
 import os
 import uuid
 import threading
-from datetime import datetime
+from app.utils.time_utils import now_str, timestamp_for_filename
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -25,12 +25,12 @@ from app.utils.logger import logger
 class PromptLogger:
     """Prompt 日志记录器 - 记录每次请求的 prompt 组装过程
     
-    【并发安全】使用线程局部存储，每个线程/请求独立的日志数据
+    【并发安全】使用线程局部存储,每个线程/请求独立的日志数据
     """
     
     def __init__(self):
         """初始化日志目录"""
-        # 日志目录：backend/logs/prompt-logs/
+        # 日志目录:backend/logs/prompt-logs/
         self.log_dir = Path(__file__).parent.parent.parent / "logs" / "prompt-logs"
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
@@ -67,15 +67,15 @@ class PromptLogger:
             user_message: 用户消息内容
             user_message_id: 用户消息ID
             session_id: 会话ID
-            ai_message_id: AI消息ID（可选，后续更新）
+            ai_message_id: AI消息ID(可选,后续更新)
         
         Returns:
             日志文件路径
         """
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        file_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = now_str()
+        file_timestamp = timestamp_for_filename()
         
-        # 生成文件名：prompt_{message_id}+{YYYYMMDD_HHMMSS}.json
+        # 生成文件名:prompt_{message_id}+{YYYYMMDD_HHMMSS}.json
         filename = f"prompt_{user_message_id}+{file_timestamp}.json"
         log_file_path = self.log_dir / filename
         
@@ -118,9 +118,9 @@ class PromptLogger:
         记录系统 Prompt 生成过程
         
         Args:
-            step_name: 步骤名称（如：系统Prompt生成、中间层注入）
+            step_name: 步骤名称(如:系统Prompt生成、中间层注入)
             prompt_content: Prompt 内容
-            source: 来源说明（如：system_adapter.py）
+            source: 来源说明(如:system_adapter.py)
             details: 额外详情
             round_number: LLM调用轮次 【2026-05-15 小健】
         """
@@ -134,7 +134,7 @@ class PromptLogger:
             "来源": source,
             "内容": prompt_content,
             "内容长度": len(prompt_content),
-            "时间戳": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "时间戳": now_str()
         }
         if round_number > 0:
             entry["轮次"] = round_number
@@ -168,7 +168,7 @@ class PromptLogger:
             "来源": "file_prompts.py:get_task_prompt()",
             "内容": task_content,
             "内容长度": len(task_content),
-            "时间戳": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "时间戳": now_str()
         }
         if round_number > 0:
             entry["轮次"] = round_number
@@ -195,7 +195,7 @@ class PromptLogger:
             messages: 发送给 LLM 的完整消息列表
             model: 模型名称
             provider: 提供商
-            call_type: 调用类型（text/tools/response_format）
+            call_type: 调用类型(text/tools/response_format)
             extra_params: 额外参数
         """
         current_log = self._get_current_log()
@@ -208,7 +208,7 @@ class PromptLogger:
             role = msg.get("role", "unknown")
             message_stats[role] = message_stats.get(role, 0) + 1
         
-        # 只记录消息摘要，避免内存问题
+        # 只记录消息摘要,避免内存问题
         message_summaries = []
         for i, msg in enumerate(messages):
             role = msg.get("role", "unknown")
@@ -229,7 +229,7 @@ class PromptLogger:
             "消息总数": len(messages),
             "消息摘要": message_summaries,
             "完整消息列表": messages,  # 保留完整列表用于调试
-            "时间戳": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "时间戳": now_str()
         }
         
         if extra_params:
@@ -251,7 +251,7 @@ class PromptLogger:
         Args:
             round_number: 调用轮次
             response_content: LLM返回的内容
-            response_type: 返回类型（text/tools/thought/action_tool等）
+            response_type: 返回类型(text/tools/thought/action_tool等)
             finish_reason: 结束原因
             extra_info: 额外信息
         """
@@ -266,7 +266,7 @@ class PromptLogger:
             "轮次": round_number,
             "类型": "LLM返回",
             "返回类型": response_type,
-            "内容": response_content[:2000] if response_content else "",  # 【优化 小健 2026-05-15】截断阈值提升至2000，匹配常见工具输出
+            "内容": response_content[:2000] if response_content else "",  # 【优化 小健 2026-05-15】截断阈值提升至2000,匹配常见工具输出
             "内容长度": len(response_content) if response_content else 0,
             "结束原因": finish_reason,
         }
@@ -274,7 +274,7 @@ class PromptLogger:
         if extra_info:
             entry["额外信息"] = extra_info
 
-        # 查找对应的LLM调用记录，更新其返回信息
+        # 查找对应的LLM调用记录,更新其返回信息
         for call_entry in reversed(current_log.get("LLM调用记录", [])):
             if call_entry.get("轮次") == round_number:
                 call_entry["返回内容"] = response_content[:2000] if response_content else ""  # 同步提升至2000
@@ -312,7 +312,7 @@ class PromptLogger:
             "来源": f"工具执行结果: {tool_name}" if tool_name else "工具执行结果",
             "内容": observation_content,
             "内容长度": len(observation_content),
-            "时间戳": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "时间戳": now_str()
         }
         if round_number > 0:
             entry["轮次"] = round_number
@@ -348,7 +348,7 @@ class PromptLogger:
             "来源": source or f"工具: {tool_name}",
             "内容": prompt_content,
             "内容长度": len(prompt_content),
-            "时间戳": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "时间戳": now_str()
         }
         if round_number > 0:
             entry["轮次"] = round_number
@@ -361,7 +361,7 @@ class PromptLogger:
         log_file_path = self._get_log_file_path()
         
         if not current_log or not log_file_path:
-            logger.warning("[PromptLogger] 保存失败：没有当前日志数据")
+            logger.warning("[PromptLogger] 保存失败:没有当前日志数据")
             return
         
         try:

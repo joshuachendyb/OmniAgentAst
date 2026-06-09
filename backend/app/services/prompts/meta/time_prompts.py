@@ -4,8 +4,8 @@
 【创建时间】2026-04-30 小沈
 【设计依据】跨分类工具访问设计方案 v1.5 §3.1.2-第6点
 
-继承 BasePrompts 基类，提供时间日期场景的完整 System Prompt。
-与 FileOperationPrompts 同等详细级别，包含：
+继承 BasePrompts 基类,提供时间日期场景的完整 System Prompt。
+与 FileOperationPrompts 同等详细级别,包含:
 - Agent 角色定义
 - 可用工具详细说明
 - 参数命名规则
@@ -17,8 +17,8 @@ Author: 小沈 - 2026-04-30
 from datetime import datetime
 from typing import Dict, Any, Optional
 
-from app.services.prompts.BasePromptTemplate import BasePrompts
-from app.services.prompts.middle import get_system_prompt as get_system_info
+from app.services.prompts.base_prompt_template import BasePrompts
+from app.services.prompts.middle import get_system_prompt as get_system_prompt_string
 from app.utils.logger import logger
 
 
@@ -27,18 +27,16 @@ class TimePrompts(BasePrompts):
 
     def get_system_prompt(self) -> str:
         """获取增强版系统Prompt"""
-        system_info = get_system_info(include_commands=False)  # 【修复 2026-05-14 小沈】TimeAgent不注入命令格式
-        logger.info(f"[TimePrompts] get_system_prompt() 被调用，中间层已注入系统信息，长度: {len(system_info)}")
+        system_info = get_system_prompt_string(include_commands=False)  # 【修复 2026-05-14 小沈】TimeAgent不注入命令格式
+        logger.info(f"[TimePrompts] get_system_prompt() 被调用,中间层已注入系统信息,长度: {len(system_info)}")
 
         return system_info + """
 
 You are a professional time and date assistant. You help users query time, format dates, calculate time differences, manage timers, and handle timezone conversions.
 
-You also have access to tools from other categories (file, shell, network, etc.) when needed.
-
 【Available TIME Tools — 共6个】:
 
-1. get_time - 统一时间入口
+1. get_time - Query and format time
    - action="now": get current time, action="format": format time, action="to_timestamp": to timestamp, action="from_timestamp": timestamp to time
    - Returns: iso, timestamp, formatted, timezone, weekday, isoweekday
    - When to use: "现在几点了", "今天星期几", "当前时间戳", "格式化时间", "转时间戳"
@@ -97,12 +95,13 @@ Example 3: 检查是否工作日
 {"thought": "用户问明天是否工作日", "reasoning": "使用query_calendar检查", "tool_name": "query_calendar", "tool_params": {"check_type": "workday", "date": "2026-05-19"}}
 
 Example 4: 完成任务
-{"thought": "已获取结果，任务完成", "reasoning": "无更多操作", "tool_name": "finish", "tool_params": {"result": "今天是2026年5月18日"}}
+{"thought": "已获取结果,任务完成", "reasoning": "无更多操作", "tool_name": "finish", "tool_params": {"result": "今天是2026年5月18日"}}
 """
 
 
     def get_parameter_reminder(self) -> str:
-        from app.services.tools.registry import tool_registry, ToolCategory
+        from app.services.tools.registry import tool_registry
+        from app.services.tools.tool_types import ToolCategory
         auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.META)
         forbidden = (
             "\n\nFORBIDDEN parameter names - DO NOT use:\n"
@@ -112,15 +111,11 @@ Example 4: 完成任务
         )
         return auto_reminder + forbidden
 
-    def get_task_prompt(self, task: str) -> str:
-        return f"""Task: {task}
+    def _get_domain_name(self) -> str:
+        return "时间日期"
 
-Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-
-请完成此时间日期任务，按以下步骤：
-1. 分析需要什么时间操作
-2. 使用合适的时间工具
-3. 用中文提供时间信息"""
+    def _get_domain_steps(self) -> str:
+        return "1. 分析需要什么时间操作\n2. 使用合适的时间工具\n3. 用中文提供时间信息"
 
     def get_safety_reminder(self) -> str:
         return ""
