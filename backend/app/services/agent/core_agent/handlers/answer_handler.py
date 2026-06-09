@@ -1,0 +1,33 @@
+# -*- coding: utf-8 -*-
+"""
+answer_handler — answer/implicit类型处理
+
+从react_cycle.py拷出_handle_answer函数，保持业务逻辑不变
+
+Author: 小沈 - 2026-06-09
+"""
+from typing import Dict
+
+from app.services.agent.steps import ThoughtStep, FinalStep
+from app.services.agent.types import AgentStatus
+
+
+async def handle_answer(agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
+    """处理answer/implicit类型
+    
+    从react_cycle.py第190-205行拷出，保持业务逻辑不变
+    """
+    step = step_counter[0]
+    content = parsed.get("content", "") or llm_response.strip()
+    thought = parsed.get("thought", content)
+    reasoning = parsed.get("reasoning", "")
+
+    if thought:
+        yield agent._step_emitter.emit(ThoughtStep(
+            step=step, content=thought, thought=thought, reasoning=reasoning,
+        ))
+
+    yield agent._step_emitter.emit(FinalStep(
+        step=step, response=content, thought=thought,
+    ))
+    agent.status = AgentStatus.COMPLETED
