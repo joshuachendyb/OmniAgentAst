@@ -159,10 +159,10 @@ class SafetyManager:
             except Exception as e:
                 logger.warning(f"[SafetyManager] 写入检查失败: {e}")
         
-        # Shell/Python/JS执行：代码注入检查
+        # Shell/代码执行：代码注入检查
         # 动态获取FUND_RUNTIME分类下的代码执行工具
         fund_runtime_tools = set(all_categories.get(ToolCategory.FUND_RUNTIME, []))
-        code_exec_tools = {"execute_shell_command", "execute_python", "execute_js"} & fund_runtime_tools
+        code_exec_tools = {"execute_shell_command", "execute_code"} & fund_runtime_tools
         if tool_name in code_exec_tools:
             try:
                 from app.services.tools.tool_constants import DANGEROUS_PATTERNS
