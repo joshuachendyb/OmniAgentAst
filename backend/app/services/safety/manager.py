@@ -14,6 +14,10 @@ from uuid import uuid4
 from app.utils.logger import logger
 from app.services.tools.tool_types import ToolSafetyLevel, DEFAULT_SAFETY_POLICY
 
+# 需要特殊安全检查的工具名 — 小沈 2026-06-09
+_WRITE_TOOL_NAME = "write_text_file"
+_CODE_EXEC_TOOLS = {"execute_shell_command", "execute_code"}
+
 
 class SafetyHook:
     """
@@ -148,7 +152,7 @@ class SafetyManager:
                 logger.warning(f"[SafetyManager] 路径检查失败: {e}")
         
         # 写入工具：内容质量检查
-        if tool_name == "write_text_file":
+        if tool_name == _WRITE_TOOL_NAME:
             try:
                 from app.services.tools.file.file_tools import FileTools
                 content = params.get("content", "")
@@ -162,7 +166,7 @@ class SafetyManager:
         # Shell/代码执行：代码注入检查
         # 动态获取FUND_RUNTIME分类下的代码执行工具
         fund_runtime_tools = set(all_categories.get(ToolCategory.FUND_RUNTIME, []))
-        code_exec_tools = {"execute_shell_command", "execute_code"} & fund_runtime_tools
+        code_exec_tools = _CODE_EXEC_TOOLS & fund_runtime_tools
         if tool_name in code_exec_tools:
             try:
                 import re

@@ -30,6 +30,9 @@ from app.services.agent.steps import (
 from app.services.agent.types import AgentStatus
 from app.services.agent.agent_utils.message_utils import build_observation_text
 
+# 敏感字段列表（脱敏用）— 小沈 2026-06-09
+_SENSITIVE_FIELDS = {"password", "token", "api_key", "secret", "authorization", "credential"}
+
 
 
 def _update_message_builder(agent, result, tool_name: str = "", tool_params: Dict = None):
@@ -66,27 +69,12 @@ async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: l
         reasoning=parsed.get("reasoning", ""),
     ))
 
-    # 2. 发射所有action步骤 — P1-03: 保留引用用于后续注入execution_result
-    action_steps = []
-    for call in all_calls:
-        action_step = ActionToolStep(
-            step=step,
-            tool_name=call["tool_name"],
-            tool_params=call["tool_params"],
-        )
-        action_steps.append(action_step)
-        yield agent._step_emitter.emit(action_step)
-
-    # 【v3.4新增】Layer 2+3安全检查 — 小沈 2026-06-09
-    # 【v3.5修复】合并双重循环为单循环 — 小沈 2026-06-09
+    # 2. Layer 2+3安全检查 — 先检查再发射action — 小沈 2026-06-09
     from app.services.safety.manager import get_safety_manager
-    from app.api.v1.chat.confirm_operation import wait_for_confirmation
+    from app.api.v1.chat.confirm_operation import create_confirmation, wait_for_confirmation_result
     from app.services.agent.steps import IncidentStep
     
     safety_manager = get_safety_manager()
-    
-    # 敏感字段列表（脱敏用）
-    _SENSITIVE_FIELDS = {"password", "token", "api_key", "secret", "authorization", "credential"}
     
     for call in all_calls:
         safety_result = safety_manager.check_tool_safety(call["tool_name"], call["tool_params"])
@@ -106,18 +94,24 @@ async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: l
             desensitized_params = {k: v for k, v in call["tool_params"].items() 
                                    if k not in _SENSITIVE_FIELDS}
             
+            # 先创建确认请求，获取confirm_id
+            confirm_id = create_confirmation(agent.task_id)
+            
+            # 发射authorization_required事件，携带confirm_id
             yield agent._step_emitter.emit(IncidentStep(
                 step=step,
                 incident_value="authorization_required",
                 message=f"需要用户确认工具执行: {call['tool_name']}",
                 data={
+                    "confirm_id": confirm_id,
                     "tool_name": call["tool_name"],
                     "params": desensitized_params,
                     "safety_level": safety_result["safety_level"],
                 },
             ))
             
-            auth = await wait_for_confirmation(agent.task_id, timeout=60)
+            # 等待用户确认结果
+            auth = await wait_for_confirmation_result(confirm_id, timeout=60)
             
             if not auth.get("confirmed"):
                 yield agent._step_emitter.emit(ErrorStep(
@@ -131,7 +125,18 @@ async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: l
             # if auth.get("trust_session"):
             #     session_trust.add_trust(agent.task_id, call["tool_name"], call["tool_params"])
 
-    # 3. 执行工具调用
+    # 3. 安全检查通过，发射所有action步骤
+    action_steps = []
+    for call in all_calls:
+        action_step = ActionToolStep(
+            step=step,
+            tool_name=call["tool_name"],
+            tool_params=call["tool_params"],
+        )
+        action_steps.append(action_step)
+        yield agent._step_emitter.emit(action_step)
+
+    # 4. 执行工具调用
     if is_parallel:
         tasks = [agent._execute_tool(c["tool_name"], c["tool_params"]) for c in all_calls]
         results = await asyncio.gather(*tasks, return_exceptions=True)

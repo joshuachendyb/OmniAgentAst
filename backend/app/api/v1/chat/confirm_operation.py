@@ -10,6 +10,7 @@ import asyncio
 import time
 from dataclasses import dataclass
 from typing import Dict
+from uuid import uuid4
 
 from fastapi import Request
 
@@ -52,43 +53,64 @@ async def confirm_operation(request: Request):
     前端调用此接口回传用户选择
     """
     body = await request.json()
-    task_id = body.get("task_id")
+    confirm_id = body.get("confirm_id")
     confirmed = body.get("confirmed", True)
     trust_session = body.get("trust_session", False)
     
-    entry = _pending_confirmations.get(task_id)
-    if entry and not entry.future.done():
-        entry.future.set_result({"confirmed": confirmed, "trust_session": trust_session})
+    if not confirm_id:
+        return {"success": False, "error": "missing confirm_id"}
+    
+    entry = _pending_confirmations.get(confirm_id)
+    if entry is None:
+        return {"success": False, "error": "confirm_id not found or already processed"}
+    
+    if entry.future.done():
+        return {"success": False, "error": "confirmation already resolved"}
+    
+    entry.future.set_result({"confirmed": confirmed, "trust_session": trust_session})
     
     _cleanup_stale_confirmations()  # 每次confirm时清理
     
-    logger.info(f"[HITL] 用户确认: task_id={task_id}, confirmed={confirmed}, trust_session={trust_session}")
+    logger.info(f"[HITL] 用户确认: confirm_id={confirm_id}, confirmed={confirmed}, trust_session={trust_session}")
     
     return {"success": True}
 
 
-async def wait_for_confirmation(task_id: str, timeout: int = 60) -> Dict:
+def create_confirmation(task_id: str) -> str:
     """
-    等待用户确认
+    创建确认请求，返回confirm_id
+    
+    在react_cycle中调用，先创建再发射IncidentStep
+    """
+    confirm_id = f"{task_id}:{uuid4().hex[:8]}"
+    loop = asyncio.get_event_loop()
+    future = loop.create_future()
+    _pending_confirmations[confirm_id] = _PendingConfirmation(
+        future=future, created_at=time.time()
+    )
+    return confirm_id
+
+
+async def wait_for_confirmation_result(confirm_id: str, timeout: int = 60) -> Dict:
+    """
+    等待用户确认结果
     
     在react_cycle中调用，等待前端弹窗的用户选择
     
     Returns:
         {"confirmed": bool, "trust_session": bool}
     """
-    loop = asyncio.get_running_loop()  # Python 3.10+兼容
-    future = loop.create_future()
-    _pending_confirmations[task_id] = _PendingConfirmation(
-        future=future, created_at=time.time()
-    )
+    entry = _pending_confirmations.get(confirm_id)
+    if entry is None:
+        return {"confirmed": False, "trust_session": False}
     
     try:
-        return await asyncio.wait_for(future, timeout=timeout)
+        return await asyncio.wait_for(entry.future, timeout=timeout)
     except asyncio.TimeoutError:
-        logger.warning(f"[HITL] 确认超时: task_id={task_id}, timeout={timeout}s")
+        logger.warning(f"[HITL] 确认超时: confirm_id={confirm_id}, timeout={timeout}s")
         return {"confirmed": False, "trust_session": False}
     finally:
-        _pending_confirmations.pop(task_id, None)  # 保证清理
+        _pending_confirmations.pop(confirm_id, None)  # 保证清理
 
 
 __all__ = ["confirm_operation", "wait_for_confirmation"]

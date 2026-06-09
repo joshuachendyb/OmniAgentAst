@@ -258,6 +258,8 @@ def register_tool(
     output_schema: Optional[Dict] = None,
     examples: Optional[List[Dict]] = None,
     expose_to_llm: bool = True,
+    safety_level: ToolSafetyLevel = ToolSafetyLevel.SAFE,  # v3.4新增
+    action_safety_map: Optional[Dict[str, ToolSafetyLevel]] = None,  # v3.4新增
 ):
     """
     工具注册装饰器
@@ -285,6 +287,8 @@ def register_tool(
             output_schema=output_schema,
             examples=examples,
             expose_to_llm=expose_to_llm,
+            safety_level=safety_level,
+            action_safety_map=action_safety_map,
         )
         return func
     
