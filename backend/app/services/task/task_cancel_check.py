@@ -32,5 +32,5 @@ async def task_cancel_check_and_yield(
         logger.info(f"[Step incident] 发送incident步骤(interrupted)")
         current_execution_steps.append(incident_step.to_dict())
         await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
-        return format_agent_sse(incident_step)
+        return format_agent_sse(incident_step.to_dict())
     return None
