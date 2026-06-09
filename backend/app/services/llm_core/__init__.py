@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-llm_core 模块 — 从 llm_core.py 拆出的职责
+llm_core 模块 — BaseAIService
 
-- chat_stream: 流式对话
-- chat_with_tools_stream: Function Calling流式对话
-- tool_caller: Function Calling
-- _core: BaseAIService 核心类
+重构: request/request_stream/chat + mode参数 - 小沈 2026-06-09
 """
 
 from app.services.llm_core.llm_core import BaseAIService, ChatResponse, StreamChunk
