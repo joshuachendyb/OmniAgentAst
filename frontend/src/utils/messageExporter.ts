@@ -79,16 +79,16 @@ export const exportMessage = async (
     content: message.content,
   };
 
+  // 【修改 2026-06-09 小沈】检查interrupted/paused/resumed/retrying类型，不再检查incident
   const hasIncident = hasSteps && message.executionSteps?.some(
-    (step) => step.type === 'incident'
+    (step) => ['interrupted', 'paused', 'resumed', 'retrying'].includes(step.type)
   );
 
   if (hasIncident) {
     exportData.incidentSteps = message.executionSteps?.filter(
-      (step) => step.type === 'incident'
+      (step) => ['interrupted', 'paused', 'resumed', 'retrying'].includes(step.type)
     ).map(step => ({
-      type: step.incident_value || 'incident',
-      incident_value: step.incident_value,
+      type: step.type,  // 直接使用type字段
       message: step.content || (step as unknown as Record<string, unknown>).message,
       timestamp: formatTimestamp((step as unknown as Record<string, unknown>).timestamp as number),
       wait_time: (step as unknown as Record<string, unknown>).wait_time as number | undefined,
@@ -192,16 +192,6 @@ export const exportMessage = async (
           return {
             ...baseExport,
             step: step.step,
-            incident_value: stepExt.incident_value || step.type,
-            wait_time: stepExt.wait_time
-          };
-        case 'incident':
-          return {
-            ...baseExport,
-            step: step.step,
-            type: stepExt.incident_value || 'incident',
-            incident_value: stepExt.incident_value,
-            message: step.content || stepExt.message,
             wait_time: stepExt.wait_time
           };
         case 'start':

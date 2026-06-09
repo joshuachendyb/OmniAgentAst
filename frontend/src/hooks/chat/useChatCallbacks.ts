@@ -141,17 +141,16 @@ export const useChatCallbacks = (
 
   const onStep = useCallback((step: ExecutionStep) => {
     // 【中断检测】记录是否收到了interrupted事件（这个要在中断判断之前，因为中断开启后就被忽略了）
-    if (step.type === "interrupted" || (step.type === "incident" && (step as ExecutionStep).incident_value === "interrupted")) {
+    // 【修改 2026-06-09 小沈】直接检查step.type === "interrupted"，不需要检查incident_value
+    if (step.type === "interrupted") {
       hasReceivedInterruptEventRef.current = true;
       console.log("[中断] 收到 interrupted 事件");
     }
     
     // ✅ 如果正在中断中，只显示 interrupted 事件，跳过其他事件
     if (interruptInProgressRef.current) {
-      // 只允许 incident(interrupted) 事件通过，其他都忽略
-      // 【小沈修复 2026-04-24】后端type固定为incident，通过incident_value区分
-      const isInterruptEvent = step.type === "incident" && (step as ExecutionStep).incident_value === "interrupted";
-      if (!isInterruptEvent) {
+      // 只允许 interrupted 事件通过，其他都忽略
+      if (step.type !== "interrupted") {
         console.log(`[中断] 忽略中断过程中收到的事件: ${step.type}`);
         return;
       }
@@ -185,14 +184,7 @@ export const useChatCallbacks = (
       return;
     }
     
-    // ⭐ 累积到ref，不触发重渲染
-    streamingStepsRef.current = [...streamingStepsRef.current, step];
-    
-    // 【修复】第一个step时streamingStepsRef还是空的，需要用当前step
-    const currentSteps = streamingStepsRef.current.length > 0 
-      ? streamingStepsRef.current 
-      : [step];
-    
+    // 【修改 2026-06-09 小沈】删除streamingStepsRef累积逻辑，直接用state更新
     // 实时更新UI，每次都更新
     setMessages((prev) => {
       const lastMessage = prev[prev.length - 1];
@@ -210,7 +202,7 @@ export const useChatCallbacks = (
           role: "assistant",
           content: step.content || (step.type === "error" ? step.error_message || "执行出错" : "🤔 AI 正在思考..."),
           timestamp: step.timestamp ? new Date(step.timestamp) : new Date(),
-          executionSteps: currentSteps,
+          executionSteps: [step],  // 直接使用当前step
           isStreaming: step.type !== "error" && step.type !== "final",
           model: step.model,
           provider: step.provider,
@@ -224,7 +216,7 @@ export const useChatCallbacks = (
       const updated = [...prev];
       updated[updated.length - 1] = {
         ...lastMessage,
-        executionSteps: currentSteps,
+        executionSteps: [...(lastMessage.executionSteps || []), step],  // 直接追加到现有steps
         // final/error 时必须设置 isStreaming=false，停止 DynamicStatusDisplay
         isStreaming: step.type !== "error" && step.type !== "final" 
           ? lastMessage.isStreaming 
@@ -247,8 +239,6 @@ export const useChatCallbacks = (
     hasReceivedInterruptEventRef,
     isPausedRef,
     displayBufferRef,
-    streamingStepsRef,
-    executionStepsRef,
     logFlagsRef,
   ]);
 
@@ -355,26 +345,9 @@ export const useChatCallbacks = (
         // 【小强修复 2026-03-18】修复竞争条件导致的final/steps丢失问题
         // 问题：onStep异步更新message.executionSteps，onComplete可能在其完成前执行，导致覆盖
         // 解决：优先使用message中已有的executionSteps（如果更长），否则使用SSE传递的
-        const sseSteps = executionStepsFromSSE || executionStepsRef.current || [];
-        const msgSteps = lastMessage.executionSteps || [];
-        // 选择更长的那个，避免覆盖已存在的数据
-        const latestSteps = msgSteps.length >= sseSteps.length ? msgSteps : sseSteps;
-        
-        // 【调试日志】说明：为什么有两个steps数量？
-        // - SSE传递的steps：本次对话实时收到的步骤数量（比如：start → thought → chunk → final）
-        // - message已有的steps：这个消息之前保存的步骤数量（比如：历史会话加载进来的）
-        // - 最终选择：取两者中更多的那个来保存（确保不丢失数据）
-        console.log("📊 type=%s AI完成 实时=%d 历史=%d 保存=%d", sseSteps.length, msgSteps.length, latestSteps.length);
-        
-        // 【小健修复 2026-04-13】优先使用streamingContentRef累积内容，确保不丢失
+        // 【修改 2026-06-09 小沈】直接使用message中的executionSteps，删除三源合并逻辑
         const finalContent = streamingContentRef.current || finalResponse;
-        
-        // 【小健修复 2026-04-13】优先使用streamingStepsRef累积步骤，再与SSE和message比较
-        const refSteps = streamingStepsRef.current || [];
-        // 取三者中最长的，确保不丢失任何数据
-        const allSteps = [refSteps, executionStepsFromSSE || [], msgSteps];
-        const finalSteps = allSteps.reduce((longest, curr) => 
-          curr.length > longest.length ? curr : longest, []);
+        const finalSteps = lastMessage.executionSteps || [];
         
         updated[updated.length - 1] = {
           ...lastMessage,
@@ -390,7 +363,7 @@ export const useChatCallbacks = (
           display_name: metadataObj.display_name || lastMessage.display_name,
           executionSteps: finalSteps,
         };
-        console.log("  └─ ✅ 已更新 (ref累积+SSE+历史) steps:", finalSteps.length, "| last3:", finalSteps.slice(-3).map((s: ExecutionStep) => s.type).join(","));
+        console.log("  └─ ✅ 已更新 steps:", finalSteps.length, "| last3:", finalSteps.slice(-3).map((s: ExecutionStep) => s.type).join(","));
         return updated;
       }
       return prev;
@@ -488,9 +461,7 @@ export const useChatCallbacks = (
     sessionId,
     // Refs dependencies
     currentSessionIdRef,
-    executionStepsRef,
     streamingContentRef,
-    streamingStepsRef,
     waitTimerRef,
   ]);
 
@@ -529,11 +500,7 @@ export const useChatCallbacks = (
     setMessages((prev) => {
       const lastMessage = prev[prev.length - 1];
       if (lastMessage && lastMessage.role === "assistant") {
-        // 【小强修复 2026-03-18】修复竞争条件 - 选择更长的executionSteps
-        const refSteps = executionStepsRef.current || [];
-        const msgSteps = lastMessage.executionSteps || [];
-        const latestSteps = msgSteps.length >= refSteps.length ? msgSteps : refSteps;
-        
+        // 【修改 2026-06-09 小沈】直接使用message中的executionSteps
         const updated = [...prev];
         updated[updated.length - 1] = {
           ...lastMessage,
@@ -542,7 +509,7 @@ export const useChatCallbacks = (
           content: ((errorObj as unknown) as Record<string, unknown>).error_message as string || ((errorObj as unknown) as Record<string, unknown>).message as string || "未知错误",
           isError: true,
           isStreaming: false,
-          executionSteps: latestSteps,
+          executionSteps: lastMessage.executionSteps || [],  // 直接使用message中的steps
           // 【小沈修改2026-04-16】删除details/stack/retryable，后端已删除
           errorType: errorObj.error_type,
           errorMessage: ((errorObj as unknown) as Record<string, unknown>).error_message as string || ((errorObj as unknown) as Record<string, unknown>).message as string || "",  // 【小沈修改2026-04-15】优先使用error_message
