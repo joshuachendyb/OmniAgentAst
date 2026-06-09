@@ -166,7 +166,7 @@ export type StatusValue = 'interrupted' | 'paused' | 'resumed' | 'retrying';
 /**
  * status类型 - 执行状态
  * 发送时机：状态变化时（暂停、恢复、中断、重试）
- * 【修改 2026-06-09 小沈】直接使用具体类型，不再使用incident_value
+ * 【恢复 2026-06-09 北京老陈指令】恢复incident_value机制
  */
 export interface StatusMessage {
   type: 'incident';
