@@ -23,6 +23,13 @@ async def task_cancel_check_and_yield(
 ) -> Optional[str]:
     """检查取消状态,如果是则生成interrupted SSE事件"""
     if await check_cancelled(task_id):
+        # R3-2修复: 检查是否已有interrupted step,防止CancelledError路径重复append — 小沈 2026-06-09
+        has_interrupted = any(
+            s.get('incident_value') == 'interrupted' for s in current_execution_steps
+        )
+        if has_interrupted:
+            logger.info(f"[InterruptCheck] 任务 {task_id} 已有interrupted step,跳过")
+            return None
         logger.info(f"[InterruptCheck] 任务 {task_id} 取消状态: True")
         incident_step = IncidentStep(
             step=next_step(),
