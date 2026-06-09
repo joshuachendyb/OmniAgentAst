@@ -63,7 +63,7 @@ def _detect_encoding(path: Path, default: str = "utf-8") -> str:
                     raw.decode("utf-8")
                     return "utf-8"
                 except UnicodeDecodeError:
-                    return "gbk"
+                    return "latin-1"  # P2-16修复: latin-1是通用fallback,不会抛异常
     except Exception:
         return default
 
