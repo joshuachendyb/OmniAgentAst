@@ -27,7 +27,7 @@ async def task_interrupt_check(
             incident_value='interrupted',
             message='任务已被中断'
         )
-        return True, format_agent_sse(incident_step)
+        return True, format_agent_sse(incident_step.to_dict())
     return False, ""
 
 
@@ -53,7 +53,7 @@ async def task_pause_check(
                 incident_value='paused',
                 message='任务已暂停'
             )
-            yield format_agent_sse(incident_step)
+            yield format_agent_sse(incident_step.to_dict())
 
         await pause_event.wait()
 
@@ -67,4 +67,4 @@ async def task_pause_check(
             incident_value='resumed',
             message='任务已恢复'
         )
-        yield format_agent_sse(incident_step)
+        yield format_agent_sse(incident_step.to_dict())
