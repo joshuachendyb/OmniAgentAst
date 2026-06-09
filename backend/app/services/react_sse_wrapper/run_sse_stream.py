@@ -17,7 +17,6 @@ async def run_sse_stream(
     intent_type: str,
     llm_client,
     task_id: str,
-    ai_service,
     candidates: list,
     last_message: str,
     next_step: Callable[[], int],
@@ -49,9 +48,9 @@ async def run_sse_stream(
             task=last_message, context=None,
             task_id=task_id,
         ):
-            # 直接to_dict()，不走SSE字符串往返
-            event_dict = event.to_dict() if hasattr(event, 'to_dict') else event
-            event_type = event_dict.get('type', '') if isinstance(event_dict, dict) else ''
+            # 直接to_dict() — dict则直接用（某些agent实现直接yield dict）
+            event_dict = event if isinstance(event, dict) else event.to_dict()
+            event_type = event_dict.get('type', '')
 
             # 累积execution_steps
             if event_dict:
@@ -77,7 +76,7 @@ async def run_sse_stream(
     except Exception as e:
         error_response = await _yield_error_sse(
             error_type=error_type, error_label=error_label, log_tag=log_tag,
-            task_id=task_id, e=e, next_step=next_step, ai_service=ai_service,
+            task_id=task_id, e=e, next_step=next_step,
             current_execution_steps=current_execution_steps, session_id=session_id,
         )
         yield error_response
@@ -86,7 +85,7 @@ async def run_sse_stream(
             llm_call_count_holder[0] = getattr(agent, "llm_call_count", 0)
 
 
-async def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_step, ai_service, current_execution_steps, session_id):
+async def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_step, current_execution_steps, session_id):
     """内联错误SSE生成(避免外部模块依赖) — P2-18 使用ErrorStep替代手工dict"""
     from app.chat_stream import save_execution_steps_to_db, format_agent_sse
     from app.services.agent.steps import ErrorStep
@@ -100,4 +99,4 @@ async def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_st
     current_execution_steps.append(error_step.to_dict())
     await save_execution_steps_to_db(session_id, current_execution_steps, error_label)
 
-    return format_agent_sse(error_step)
+    return format_agent_sse(error_step.to_dict())

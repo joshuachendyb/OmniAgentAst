@@ -44,21 +44,13 @@ def format_sse_event(event_type: str, step: int, data: Dict[str, Any]) -> str:
     return f"data: {json.dumps(base, ensure_ascii=False)}\n\n"
 
 
-def format_agent_sse(event_or_step, step: int = None, model: str = '', provider: str = '') -> str:
-    """统一Agent事件SSE格式化入口，支持Step对象和dict两种输入"""
-    if isinstance(event_or_step, dict):
-        event_type = event_or_step.get('type', '')
-        step_num = step or event_or_step.get('step', 0)
-        data = event_or_step
-    else:
-        event_type = event_or_step.get_type()
-        step_num = event_or_step.step
-        data = event_or_step.to_dict()
-
+def format_agent_sse(step_dict: dict, step: int = None) -> str:
+    """Agent步骤dict → SSE字符串，只接受dict输入"""
+    event_type = step_dict.get('type', '')
+    step_num = step or step_dict.get('step', 0)
     if not event_type:
         return ''
-
-    return format_sse_event(event_type, step_num, data)
+    return format_sse_event(event_type, step_num, step_dict)
 
 
 # ====================================================================
@@ -89,7 +81,7 @@ def create_error_response(
         retry_after=retry_after,
         context={"details": details, "stack": stack} if details or stack else None
     )
-    return format_agent_sse(error_step)
+    return format_agent_sse(error_step.to_dict())
 
 
 def get_error_info(error: Exception) -> Dict[str, Any]:
@@ -172,7 +164,7 @@ def create_final_response(
         model=model,
         provider=provider
     )
-    return format_agent_sse(final_step)
+    return format_agent_sse(final_step.to_dict())
 
 
 # ====================================================================
@@ -204,5 +196,4 @@ async def send_start_step(
         }
     )
     current_execution_steps.append(start_step.to_dict())
-    await save_execution_steps_to_db(session_id, current_execution_steps, "")
     return start_step

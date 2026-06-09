@@ -8,7 +8,7 @@ F10合并: 小欧 - 2026-06-08
 
 import shutil
 import yaml
-from collections import OrderedDict
+
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -28,47 +28,12 @@ __all__ = ["handle_config_errors"]
 # YAML 有序写入
 # ====================================================================
 
-def _ordered_dict(data: dict) -> OrderedDict:
-    if not isinstance(data, dict):
-        return data
-    result = OrderedDict()
-    if 'ai' in data:
-        ai_data = data['ai']
-        ai_ordered = OrderedDict()
-        if 'provider' in ai_data:
-            ai_ordered['provider'] = ai_data['provider']
-        if 'model' in ai_data:
-            ai_ordered['model'] = ai_data['model']
-        for key in sorted(ai_data.keys()):
-            if key not in ('provider', 'model'):
-                value = ai_data[key]
-                if isinstance(value, dict):
-                    ai_ordered[key] = _ordered_dict(value)
-                else:
-                    ai_ordered[key] = value
-        result['ai'] = ai_ordered
-    for key in sorted(data.keys()):
-        if key != 'ai':
-            value = data[key]
-            if isinstance(value, dict):
-                result[key] = _ordered_dict(value)
-            else:
-                result[key] = value
-    return result
-
-
-def _represent_ordereddict(dumper, data):
-    return dumper.represent_dict(data.items())
-
-
-yaml.add_representer(OrderedDict, _represent_ordereddict)
-
-
 def _write_yaml_with_order(file_path: str, data: dict):
-    """使用OrderedDict写入YAML,保持特定顺序"""
-    ordered_data = _ordered_dict(data)
-    with open(file_path, 'w', encoding='utf-8') as f:
-        yaml.dump(ordered_data, f, allow_unicode=True, default_flow_style=False)
+    """使用OrderedDict写入YAML,保持特定顺序 - 小沈 2026-06-09 复用"""
+    from app.services.tools.toolhelper.data_format_helper import _write_yaml_ordered
+    result = _write_yaml_ordered(file_path, data)
+    if result.get("code") != "SUCCESS":
+        raise Exception(result.get("message"))
 
 
 # ====================================================================
