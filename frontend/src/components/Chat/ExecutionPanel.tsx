@@ -523,7 +523,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
             }
           }
 
-          // incident类型已废弃，后端直接发送 interrupted/paused/resumed/retrying
+          // 【恢复 2026-06-09 北京老陈指令】恢复incident类型渲染
 
           case "error":
             return (
