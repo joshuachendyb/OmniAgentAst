@@ -42,6 +42,10 @@ async def run_sse_stream(
             intent_type=intent_type, llm_client=llm_client,
             task_id=task_id, candidates=candidates,
         )
+        
+        # 【修复 2026-06-09 小沈】设置task_id，支持HTTP阻塞期间的取消检查
+        if hasattr(llm_client, 'set_task_id'):
+            llm_client.set_task_id(task_id)
 
         async for event in agent.run_react_cycle(
             task=last_message, context=None,
@@ -70,7 +74,14 @@ async def run_sse_stream(
 
     except asyncio.CancelledError:
         # R3-1修复: CancelledError不是Exception子类,需单独捕获 — 小沈 2026-06-09
+        # R3-2修复: 在finally保存前创建IncidentStep(interrupted),防止step丢失 — 小沈 2026-06-09
         logger.info(f"[SSE] 任务 {task_id} 被取消(CancelledError)")
+        from app.services.agent.steps import IncidentStep
+        interrupted_step = IncidentStep(
+            step=next_step(), incident_value='interrupted', message='任务已被中断'
+        )
+        current_execution_steps.append(interrupted_step.to_dict())
+        yield format_agent_sse(interrupted_step.to_dict())
         if agent is not None:
             agent.status = AgentStatus.COMPLETED
 
@@ -84,8 +95,13 @@ async def run_sse_stream(
 
     finally:
         # 统一保存入口：正常、异常、取消都走这里
+        # 终止step包括: FinalStep / ErrorStep(blocked,user_rejected,parse_error,
+        # empty_response,runtime_error) / IncidentStep(interrupted)
         if current_execution_steps:
-            await save_execution_steps_to_db(session_id, current_execution_steps, current_content_holder[0])
+            try:
+                await save_execution_steps_to_db(session_id, current_execution_steps, current_content_holder[0])
+            except Exception as save_err:
+                logger.error(f"[SSE] DB保存失败(steps={len(current_execution_steps)}): {save_err}", exc_info=True)
 
         if llm_call_count_holder is not None and agent is not None:
             llm_call_count_holder[0] = getattr(agent, "llm_call_count", 0)
