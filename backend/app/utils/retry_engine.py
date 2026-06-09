@@ -241,8 +241,20 @@ class RetryEngine:
 
 
 
+def create_retry_engine(
+    max_retries: int = 3,
+    backoff_factor: float = 2.0,
+) -> RetryEngine:
+    """创建标准重试引擎 — 消除 network_retry/sse_retry 完全重复 — 小欧 2026-06-09"""
+    return RetryEngine(
+        max_retries=max_retries,
+        backoff_strategy=BackoffStrategy.EXPONENTIAL,
+        backoff_factor=backoff_factor,
+    )
+
+
 __all__ = [
     "BackoffStrategy",
     "RetryEngine",
-
+    "create_retry_engine",
 ]
