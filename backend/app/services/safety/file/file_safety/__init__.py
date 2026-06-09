@@ -22,7 +22,7 @@ file_safety — 从 file_safety.py 拆出的职责
 
 from app.services.safety.file.file_safety.config import FileSafetyConfig
 from app.services.safety.file.file_safety.file_operation_safety import FileOperationSafety
-from app.services.safety.file.file_safety.compute_file_hash import compute_file_hash
+from app.services.tools.toolhelper.hash_helper import compute_file_hash
 from app.services.safety.file.file_safety.row_to_operation_record import row_to_operation_record
 from app.services.safety.file.file_safety.backup_to_recycle_bin import backup_to_recycle_bin
 from app.services.safety.file.file_safety.record_operation import record_operation
