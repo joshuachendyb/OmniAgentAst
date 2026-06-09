@@ -846,9 +846,9 @@ interface TaskControlResponse {
  * 用户确认请求类型
  */
 interface ConfirmRequest {
-  task_id: string;
+  confirm_id: string;
   confirmed: boolean;
-  modified_command?: string;
+  trust_session?: boolean;
 }
 
 /**
@@ -907,23 +907,23 @@ export const taskControlApi = {
    * 用户确认操作
    * POST /api/v1/chat/stream/confirm
    * 
-   * @param taskId 任务ID
+   * @param confirmId 确认ID
    * @param confirmed 用户选择：true=确认执行，false=拒绝执行
-   * @param modifiedCommand 可选，修改后的命令
+   * @param trustSession 可选，是否信任本次会话
    * @returns 确认结果
    */
   confirm: async (
-    taskId: string, 
+    confirmId: string, 
     confirmed: boolean, 
-    modifiedCommand?: string
+    trustSession?: boolean
   ): Promise<TaskControlResponse> => {
     const body: ConfirmRequest = {
-      task_id: taskId,
+      confirm_id: confirmId,
       confirmed: confirmed,
     };
     
-    if (modifiedCommand) {
-      body.modified_command = modifiedCommand;
+    if (trustSession !== undefined) {
+      body.trust_session = trustSession;
     }
     
     const response = await api.post<TaskControlResponse>('/chat/stream/confirm', body);
