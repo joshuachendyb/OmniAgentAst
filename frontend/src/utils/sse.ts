@@ -1047,8 +1047,7 @@ const processSSEData = (
       is_reasoning:
         rawData.is_reasoning === true ||
         rawData.is_reasoning === 'true' ||
-        rawData.is_reasoning === 1 ||
-        rawData.is_reasoning === 'true',
+        rawData.is_reasoning === 1,
       // reasoning: rawData.reasoning || "",  // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
 
       timestamp: timestampValue,
