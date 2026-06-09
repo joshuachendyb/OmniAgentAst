@@ -70,14 +70,14 @@ async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: l
     ))
 
     # 2. Layer 2+3安全检查 — 先检查再发射action — 小沈 2026-06-09
-    from app.services.safety.manager import get_safety_manager
+    from app.services.safety.tool_safety_checker import get_tool_safety_checker
     from app.api.v1.chat.confirm_operation import create_confirmation, wait_for_confirmation_result
     from app.services.agent.steps import IncidentStep
     
-    safety_manager = get_safety_manager()
+    safety_checker = get_tool_safety_checker()
     
     for call in all_calls:
-        safety_result = safety_manager.check_tool_safety(call["tool_name"], call["tool_params"])
+        safety_result = safety_checker.check_before_execute(call["tool_name"], call["tool_params"])
         
         # 被拦截的操作（优先级最高）
         if safety_result.get("blocked"):
@@ -95,7 +95,7 @@ async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: l
                                    if k not in _SENSITIVE_FIELDS}
             
             # 先创建确认请求，获取confirm_id
-            confirm_id = create_confirmation(agent.task_id)
+            confirm_id = await create_confirmation(agent.task_id)
             
             # 发射authorization_required事件，携带confirm_id
             yield agent._step_emitter.emit(IncidentStep(
