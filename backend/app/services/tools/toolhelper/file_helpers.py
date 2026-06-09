@@ -451,56 +451,6 @@ def move_to_trash(file_path: str) -> Dict[str, Any]:
         return build_error(ERR_FILE_MOVE_TRASH, str(e))
 
 
-def validate_command(command: str) -> Dict[str, Any]:
-    """
-    验证命令安全性 - 小沈 2026-05-02
-    """
-    try:
-        dangerous_patterns = [
-            r'rm\s+-rf\s+/',
-            r'del\s+/\s+',
-            r'format\s+',
-            r'fdisk\s+',
-            r'mkfs\s+',
-            r'dd\s+if=',
-            r'>\s*/dev/sd',
-            r'shutdown\s+',
-            r'reboot\s+',
-            r'init\s+0',
-            r'halt\s+',
-            r'poweroff\s+',
-        ]
-        
-        is_dangerous = False
-        matched_pattern = None
-        
-        for pattern in dangerous_patterns:
-            if re.search(pattern, command, re.IGNORECASE):
-                is_dangerous = True
-                matched_pattern = pattern
-                break
-        
-        dangerous_commands = ['format', 'fdisk', 'mkfs', 'dd', 'shutdown', 'reboot', 'halt', 'poweroff', 'init']
-        command_parts = command.split()
-        base_command = command_parts[0] if command_parts else ''
-        
-        is_dangerous_cmd = base_command.lower() in dangerous_commands
-        
-        safe = not is_dangerous and not is_dangerous_cmd
-        
-        return build_success({
-            "command": command,
-            "safe": safe,
-            "is_dangerous": is_dangerous or is_dangerous_cmd,
-            "matched_pattern": matched_pattern,
-            "base_command": base_command
-        }, "命令验证完成")
-    
-    except Exception as e:
-        logger.error(f"[validate_command] 验证命令失败: {e}")
-        return build_error(ERR_SHELL_VALIDATE_COMMAND, str(e))
-
-
 def check_shell_running(shell_id: str, background_shells: Dict) -> Dict[str, Any]:
     """
     检查Shell是否运行 - 小沈 2026-05-02
@@ -539,7 +489,6 @@ __all__ = [
     "get_mime_type",
     "backup_file",
     "move_to_trash",
-    "validate_command",
     "check_shell_running",
 ]
 
@@ -1171,7 +1120,7 @@ async def compress_files_impl(
     get_next_sequence_func=None,
 ) -> Dict[str, Any]:
     """compress_files工具的实现函数 - 小健 2026-05-25 重构"""
-    from app.services.safety.file.file_safety import OperationType
+    from app.db.models.operation_enums import OperationType
 
     validation_error = _validate_compress_params(
         source_path, output_path, format, overwrite, compression_level, task_id, validate_path_func)
@@ -1304,7 +1253,7 @@ async def copy_file_impl(
     Returns:
         统一格式的结果字典
     """
-    from app.services.safety.file.file_safety import OperationType
+    from app.db.models.operation_enums import OperationType
     
     is_valid_src, error_msg_src = validate_path_func(source_path)
     if not is_valid_src:
@@ -1382,7 +1331,7 @@ async def file_statistics_impl(
     get_next_sequence_func=None,
 ) -> Dict[str, Any]:
     """file_statistics工具的实现函数 - 小健 2026-05-25 重构"""
-    from app.services.safety.file.file_safety import OperationType
+    from app.db.models.operation_enums import OperationType
 
     is_valid, error_msg = validate_path_func(directory)
     if not is_valid:
@@ -1576,7 +1525,7 @@ async def file_checksum_impl(
     Returns:
         统一格式的结果字典:{ code, data, message }
     """
-    from app.services.safety.file.file_safety import OperationType
+    from app.db.models.operation_enums import OperationType
 
     is_valid, error_msg = validate_path_func(file_path)
     if not is_valid:

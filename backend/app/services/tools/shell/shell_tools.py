@@ -55,11 +55,6 @@ from app.services.tools.tool_constants import (
 _background_shells: Dict[str, Dict[str, Any]] = {}
 
 
-def _decode_output(data: Optional[bytes]) -> str:
-    """统一解码字节输出 - 小沈 2026-06-09 委托给 toolhelper.common_helper._decode_bytes_safe"""
-    return _decode_bytes_safe(data)
-
-
 def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
                          timed_out: bool, timeout: int = 30000) -> dict:
     """统一构建 shell 执行结果(超时/成功/失败 3 路)。"""
@@ -158,8 +153,8 @@ def execute_shell_command(
             try: stdout_bytes, stderr_bytes = proc.communicate(timeout=SUBPROCESS_TIMEOUT_SHORT)
             except subprocess.TimeoutExpired: stdout_bytes, stderr_bytes = b"", b""
 
-        stdout_str = _decode_output(stdout_bytes)
-        stderr_str = _decode_output(stderr_bytes)
+        stdout_str = _decode_bytes_safe(stdout_bytes)
+        stderr_str = _decode_bytes_safe(stderr_bytes)
         returncode = proc.returncode if proc.returncode is not None else -1
 
         return _build_shell_result(returncode, stdout_str, stderr_str, timed_out, timeout=timeout)

@@ -60,15 +60,6 @@ from app.services.tools.network.network_tools import (
 from app.services.tools.system.system_tools import net_connections
 from app.services.tools.system.system_schema import NetConnectionsInput
 
-# 导入工具函数
-from app.services.tools.network.network_tools import (
-    http_request,
-    download_file,
-    fetch_webpage,
-    search_web,
-    network_diagnose,
-)
-
 # 工具描述
 NETWORK_TOOL_DESCRIPTIONS = {
     "http_request": """发送 HTTP 请求到指定的 URL,支持 GET、POST、PUT、DELETE、PATCH 等方法。
