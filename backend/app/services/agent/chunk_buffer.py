@@ -6,11 +6,7 @@ ChunkBuffer — chunk拼接、阈值检测、flush管理 — 小沈 2026-05-25
 """
 
 # 【3.9修复 北京老陈 2026-05-31】阈值统一从constants.py读取
-from app.constants import MAX_CONSECUTIVE_CHUNKS
-
-# chunk累积超时:连续收到多少个chunk未触发promote则强制停止
-# 防止LLM持续返回chunk导致无限循环
-MAX_CHUNKS_WITHOUT_PROMOTE = 50
+from app.constants import MAX_CONSECUTIVE_CHUNKS, MAX_CHUNKS_WITHOUT_PROMOTE  # noqa: F401 - 作为默认值使用
 
 
 class ChunkBuffer:
@@ -38,10 +34,11 @@ class ChunkBuffer:
     Author: 小沈 2026-05-25
     """
 
-    def __init__(self, max_consecutive: int = MAX_CONSECUTIVE_CHUNKS):
+    def __init__(self, max_consecutive: int = MAX_CONSECUTIVE_CHUNKS, max_without_promote: int = MAX_CHUNKS_WITHOUT_PROMOTE):
         self.buffer: str = ""
         self.consecutive_count: int = 0
         self.max_consecutive: int = max_consecutive
+        self.max_without_promote: int = max_without_promote  # 【修复P2-2 2026-06-09 小沈】可配置
 
     def append(self, content: str) -> None:
         self.buffer += content
@@ -57,7 +54,7 @@ class ChunkBuffer:
         【3.9修复 北京老陈 2026-05-31】防止LLM持续返回chunk导致无限循环
         只有连续chunk未触发promote时才计数,promote后重置
         """
-        return self.consecutive_count >= MAX_CHUNKS_WITHOUT_PROMOTE
+        return self.consecutive_count >= self.max_without_promote
 
     def flush(self) -> str:
         """清空buffer并返回内容 — 纯buffer管理
