@@ -328,9 +328,6 @@ export const useChatFacade = (options?: { baseURL?: string; sessionId?: string |
     // ===== Refs =====
     chatState.waitTimerRef, chatState.executionStepsRef, chatState.isPausedRef,
     chatState.hasReceivedInterruptEventRef, chatState.interruptInProgressRef,
-    // ===== 兼容旧引用（整对象）=====
-    chatState, chatCallbacks, chatStreaming,
-    chatSession, chatPersistence, chatSend, chatTaskControl,
   ]);
 };
 
