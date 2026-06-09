@@ -5,10 +5,10 @@ get_service — 从 factory.py 拷出
 拷贝来源: factory.py 第204-250行
 """
 
-from datetime import datetime
 from typing import Optional
 
 from app.utils.logger import setup_logger
+from app.utils.time_utils import now_str
 from app.services.llm_core import BaseAIService
 from app.services.factory.close_instance_sync import close_instance_sync
 
@@ -40,18 +40,19 @@ def _check_cache_valid(final_provider: str, final_model: str) -> bool:
     return _instance is not None and _current_provider == final_provider and _instance.model == final_model
 
 
-def _cleanup_old_instance() -> None:
-    """清理旧实例 - 小沈 2026-06-08"""
+def _cleanup_old_instance(new_provider: str = "") -> None:
+    """清理旧实例 - 小沈 2026-06-08; 小欧 2026-06-09 新增new_provider参数"""
     global _instance, _current_provider
     old_instance = _instance
     _instance = None
+    _current_provider = new_provider
     close_instance_sync(old_instance)
 
 
 def _log_service_creation(final_provider: str, final_model: str) -> None:
     """记录服务创建日志 - 小沈 2026-06-08"""
     log_msg = f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}"
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {log_msg}")
+    print(f"[{now_str('%H:%M:%S')}] {log_msg}")
     logger.info(log_msg)
 
 
@@ -88,8 +89,7 @@ def get_service(config_path: Optional[str] = None) -> BaseAIService:
     if _check_cache_valid(final_provider, final_model):
         return _instance
     
-    _current_provider = final_provider
-    _cleanup_old_instance()
+    _cleanup_old_instance(final_provider)
     
     _log_service_creation(final_provider, final_model)
     

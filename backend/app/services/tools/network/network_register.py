@@ -245,7 +245,7 @@ def _register_network_tools():
             description=NETWORK_TOOL_DESCRIPTIONS[tool_name],
             implementation=NETWORK_TOOL_IMPLEMENTATIONS[tool_name],
             input_model=input_model,
-            category=ToolCategory.NETWORK,
+            category=ToolCategory.NET_PROCESS,
             examples=examples,
             failure_hint_fn=failure_hint_fn,
         )

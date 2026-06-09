@@ -54,8 +54,10 @@ def _detect_encoding(path: Path, default: str = "utf-8") -> str:
             raw = f.read(4)
             if raw.startswith(b'\xef\xbb\xbf'):
                 return "utf-8-sig"
-            elif raw.startswith(b'\xff\xfe') or raw.startswith(b'\xfe\xff'):
-                return "utf-16"
+            elif raw.startswith(b'\xff\xfe'):
+                return "utf-16-le"
+            elif raw.startswith(b'\xfe\xff'):
+                return "utf-16-be"
             else:
                 try:
                     raw.decode("utf-8")

@@ -63,7 +63,8 @@ def _build_footer() -> List[str]:
     """构建报告尾部 - 小沈 2026-06-08"""
     lines = []
     lines.append("=" * 80)
-    lines.append("报告生成时间: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    from app.utils.time_utils import now_str
+    lines.append("报告生成时间: " + now_str())
     lines.append("=" * 80)
     return lines
 

@@ -102,7 +102,7 @@ Example 4: 任务完成
     def get_parameter_reminder(self) -> str:
         from app.services.tools.registry import tool_registry
         from app.services.tools.tool_types import ToolCategory
-        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.DOCUMENT)
+        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.DOC_CONTENT)
         forbidden = (
             "\n\nFORBIDDEN parameter names - DO NOT use:\n"
             "- ❌ file (correct: file_path)\n"

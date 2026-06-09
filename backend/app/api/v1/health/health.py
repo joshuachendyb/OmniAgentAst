@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request
-from datetime import datetime, timezone
 from pydantic import BaseModel
+from app.utils.time_utils import get_utc_timestamp
 
 router = APIRouter()
 
@@ -23,7 +23,7 @@ async def health_check(request: Request):
     """
     return HealthResponse(
         status="healthy",
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=get_utc_timestamp(),
         version=request.app.version
     )
 
@@ -34,5 +34,5 @@ async def echo(request: EchoRequest):
     """
     return EchoResponse(
         received=request.message,
-        timestamp=datetime.now(timezone.utc).isoformat()
+        timestamp=get_utc_timestamp()
     )

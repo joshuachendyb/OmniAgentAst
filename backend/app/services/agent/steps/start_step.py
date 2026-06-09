@@ -20,6 +20,9 @@ class StartStep(ReasoningStep):
     - security_check: 安全检查结果
     """
 
+    TYPE: str = "start"
+    IS_DONE: bool = True
+
     def __init__(
         self,
         step: int,
@@ -39,9 +42,6 @@ class StartStep(ReasoningStep):
         self._task_id = task_id
         self._user_message = user_message
         self._security_check = security_check
-
-    def get_type(self) -> str:
-        return "start"
 
     def get_content(self) -> str:
         return self._user_message
@@ -70,17 +70,12 @@ class StartStep(ReasoningStep):
     def security_check(self) -> Dict[str, Any]:
         return self._security_check
 
-    def is_done(self) -> bool:
-        return True
-
-    def to_dict(self) -> Dict[str, Any]:
-        base_dict = ReasoningStep.to_dict(self)
-        base_dict.update({
+    def _extra_fields(self) -> Dict[str, Any]:
+        return {
             "display_name": self._display_name,
             "provider": self._provider,
             "model": self._model,
             "task_id": self._task_id,
             "user_message": self._user_message,
             "security_check": self._security_check,
-        })
-        return base_dict
+        }

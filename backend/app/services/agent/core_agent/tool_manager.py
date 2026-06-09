@@ -55,17 +55,15 @@ class ToolManager:
         self._agent_cache[key] = value
 
     def load_by_intent(self, intent_type: str, reason: str = ""):
-        """动态加载某个意图的工具"""
-        if intent_type in self.agent._loaded_categories:
-            return
-
-        logger.info(f"[动态加载] 原因: {reason},加载意图: {intent_type}")
-
         from app.services.intents.intent_mapper import resolve_category
         category = resolve_category(intent_type)
         if not category:
             logger.warning(f"[动态加载] 意图'{intent_type}'无对应工具分类")
             return
+        if category.value in self.agent._loaded_categories:
+            return
+
+        logger.info(f"[动态加载] 原因: {reason},加载意图: {intent_type},分类: {category.value}")
         new_tools = get_tools_from_registry_by_category(tool_registry, category)
 
         self.agent._tools_dict.update(new_tools)

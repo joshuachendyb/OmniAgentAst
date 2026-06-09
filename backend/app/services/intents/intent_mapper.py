@@ -22,7 +22,7 @@ def get_agent_intent_names() -> List[str]:
 
 def resolve_category(intent_str: str) -> ToolCategory:
     intent = _lookup_intent(intent_str)
-    return intent.category if intent else ToolCategory.SYSTEM
+    return intent.category if intent else ToolCategory.FUND_RUNTIME
 
 
 def normalize_intent(intent_str: str) -> str:

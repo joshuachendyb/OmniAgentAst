@@ -29,6 +29,8 @@ class ObservationStep(ReasoningStep):
     
     设计依据:13.2.2.2节具体实现类设计
     """
+
+    TYPE: str = "observation"
     
     def __init__(
         self,
@@ -46,27 +48,6 @@ class ObservationStep(ReasoningStep):
         error_message: str = "",
         timestamp: Optional[int] = None
     ):
-        """
-        初始化ObservationStep
-        
-        职责:传递执行详细信息(code/warning/next_actions/attachment/summary/error_message),
-        业务数据(data)由ActionToolStep负责,不重复。
-        
-        Args:
-            step: 步骤序号
-            tool_name: 工具名称
-            tool_params: 工具参数
-            observation: 观察结果文本(summary)
-            return_direct: 是否直接返回
-            execution_status: 执行状态
-            code: 原始错误码
-            warning: 警告文本
-            attachment: 二进制附件
-            next_actions: 推荐下一步操作
-            summary: 执行摘要(给前端展示用)
-            error_message: 错误信息(给前端展示用)
-            timestamp: 时间戳(毫秒)
-        """
         ReasoningStep.__init__(self, step, timestamp)
         
         self._tool_name = tool_name
@@ -81,37 +62,29 @@ class ObservationStep(ReasoningStep):
         self._summary = summary
         self._error_message = error_message
     
-    def get_type(self) -> str:
-        return "observation"
-    
     def get_content(self) -> str:
         return self._observation
     
     @property
     def observation(self) -> str:
-        """获取观察结果"""
         return self._observation
     
     @property
     def return_direct(self) -> bool:
-        """获取是否直接返回"""
         return self._return_direct
     
     @property
     def summary(self) -> str:
-        """获取执行摘要"""
         return self._summary
     
     @property
     def error_message(self) -> str:
-        """获取错误信息"""
         return self._error_message
     
     def is_done(self) -> bool:
         return self._return_direct
 
     def _build_observation_obj(self) -> Dict[str, Any]:
-        """构建observation对象 — P3-7 提取to_dict逻辑"""
         summary_text = self._observation or self._summary or self._error_message or "执行完成"
         obj = {
             "summary": summary_text,
@@ -131,10 +104,8 @@ class ObservationStep(ReasoningStep):
             obj["attachment"] = self._attachment
         return obj
 
-    def to_dict(self) -> Dict[str, Any]:
-        base_dict = ReasoningStep.to_dict(self)
-        d = {"observation": self._build_observation_obj()}
+    def _extra_fields(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {"observation": self._build_observation_obj()}
         if self._code:
             d["code"] = self._code
-        base_dict.update(d)
-        return base_dict
+        return d

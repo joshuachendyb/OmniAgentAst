@@ -17,6 +17,8 @@ class IncidentStep(ReasoningStep):
     - content: 内容(可选,默认等于message)
     """
 
+    TYPE: str = "incident"
+
     def __init__(
         self,
         step: int,
@@ -30,9 +32,6 @@ class IncidentStep(ReasoningStep):
         self._incident_value = incident_value
         self._message = message
         self._content = content or message
-
-    def get_type(self) -> str:
-        return "incident"
 
     def get_content(self) -> str:
         return self._message
@@ -49,14 +48,9 @@ class IncidentStep(ReasoningStep):
     def incident_content(self) -> str:
         return self._content
 
-    def is_done(self) -> bool:
-        return False
-
-    def to_dict(self) -> Dict[str, Any]:
-        base_dict = ReasoningStep.to_dict(self)
-        base_dict.update({
+    def _extra_fields(self) -> Dict[str, Any]:
+        return {
             "incident_value": self._incident_value,
             "message": self._message,
             "content": self._content,
-        })
-        return base_dict
+        }

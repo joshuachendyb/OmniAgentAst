@@ -7,11 +7,10 @@
 
 Author: 小欧 - 2026-06-07
 """
-import json as _json
-import json
 from typing import Dict, Any, Optional, List
 
 from app.utils.logger import logger
+from app.utils.json_utils import parse_json
 from ._utils import _add_reasoning_warning, _normalize_result_to_str, _build_handler_result, _make_action_result_dict
 from ._tool_params import _process_tool_params
 
@@ -45,16 +44,27 @@ def _build_type_result(data: Dict, type_: str) -> Dict[str, Any]:
     )
 
 
+def _build_action_result(type_: str, thought: str, content: str, reasoning: str,
+                         tool_name: Optional[str], tool_params: Optional[Dict],
+                         response: Any, pending_calls: Optional[List] = None) -> Dict[str, Any]:
+    """统一构建action结果字典 - 小欧 2026-06-09"""
+    result = {
+        "type": type_, "thought": thought, "content": content,
+        "reasoning": reasoning, "tool_name": tool_name,
+        "tool_params": tool_params, "response": response,
+    }
+    if pending_calls:
+        result["_pending_calls"] = pending_calls
+    return result
+
+
 def _build_action_from_fc_format(data: Dict, output: str) -> Dict[str, Any]:
     tool_name = data["name"]
     is_finish = tool_name == "finish"
 
     raw_args = data.get("arguments", data.get("args", {}))
     if isinstance(raw_args, str):
-        try:
-            raw_args = json.loads(raw_args)
-        except (json.JSONDecodeError, TypeError):
-            raw_args = {}
+        raw_args = parse_json(raw_args) or {}
     if not isinstance(raw_args, dict):
         raw_args = {}
 
@@ -66,15 +76,12 @@ def _build_action_from_fc_format(data: Dict, output: str) -> Dict[str, Any]:
 
     processed_params = None if is_finish else _process_tool_params(raw_args, tool_name, output)
 
-    result = {
-        "type": "answer" if is_finish else "action",
-        "thought": data.get("thought", ""),
-        "content": data.get("thought", ""),
-        "reasoning": data.get("reasoning", ""),
-        "tool_name": None if is_finish else tool_name,
-        "tool_params": processed_params,
-        "response": response,
-    }
+    result = _build_action_result(
+        "answer" if is_finish else "action",
+        data.get("thought", ""), data.get("thought", ""),
+        data.get("reasoning", ""),
+        None if is_finish else tool_name, processed_params, response
+    )
 
     logger.info(f"[parse_llm_response] FC格式转换: name={tool_name} → type={result['type']}")
     return _add_reasoning_warning(result)
@@ -95,18 +102,14 @@ def _build_action_from_new_format(data: Dict, output: str) -> Dict[str, Any]:
         raw_params, tool_name, output
     )
 
-    result = {
-        "type": "answer" if is_finish else "action",
-        "thought": data.get("content", data.get("thought", "")),
-        "content": data.get("content", data.get("thought", "")),
-        "reasoning": data.get("reasoning", ""),
-        "tool_name": None if is_finish else tool_name,
-        "tool_params": processed_tool_params,
-        "response": response
-    }
-    if "_pending_calls" in data:
-        result["_pending_calls"] = data["_pending_calls"]
-    return result
+    return _build_action_result(
+        "answer" if is_finish else "action",
+        data.get("content", data.get("thought", "")),
+        data.get("content", data.get("thought", "")),
+        data.get("reasoning", ""),
+        None if is_finish else tool_name, processed_tool_params, response,
+        data.get("_pending_calls")
+    )
 
 
 def _build_action_from_old_format(data: Dict, output: str = "") -> Dict[str, Any]:
@@ -123,18 +126,13 @@ def _build_action_from_old_format(data: Dict, output: str = "") -> Dict[str, Any
     processed_tool_params = None if is_finish else _process_tool_params(
         raw_params, action_name, output
     )
-    result = {
-        "type": "answer" if is_finish else "action",
-        "thought": data.get("thought", ""),
-        "content": data.get("thought", ""),
-        "reasoning": data.get("reasoning", ""),
-        "tool_name": None if is_finish else action_name,
-        "tool_params": processed_tool_params,
-        "response": response
-    }
-    if "_pending_calls" in data:
-        result["_pending_calls"] = data["_pending_calls"]
-    return result
+    return _build_action_result(
+        "answer" if is_finish else "action",
+        data.get("thought", ""), data.get("thought", ""),
+        data.get("reasoning", ""),
+        None if is_finish else action_name, processed_tool_params, response,
+        data.get("_pending_calls")
+    )
 
 
 def _resolve_return_type(data: Dict) -> Dict[str, Any]:
@@ -198,9 +196,8 @@ def _create_action_result_from_list(data: List) -> Dict[str, Any]:
         func = valid_items[0].get("function", {})
         fname = func.get("name", "") if isinstance(func, dict) else ""
         fargs_str = func.get("arguments", "{}") if isinstance(func, dict) else "{}"
-        try:
-            fargs = _json.loads(fargs_str) if isinstance(fargs_str, str) else (fargs_str or {})
-        except (_json.JSONDecodeError, TypeError):
+        fargs = parse_json(fargs_str) if isinstance(fargs_str, str) else (fargs_str or {})
+        if fargs is None:
             fargs = {}
         pending_calls = [{"name": fname, "args": fargs}] if len(valid_items) > 1 else []
         logger.info(f"[parse_llm_response] list检测到Function Calling格式")

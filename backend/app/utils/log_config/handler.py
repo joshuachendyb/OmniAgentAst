@@ -9,6 +9,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from app.utils.time_utils import now_str
 
 logging.raiseExceptions = False
 
@@ -24,17 +25,15 @@ class SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._current_date = datetime.now().strftime('%Y-%m-%d')
+        self._current_date = now_str('%Y-%m-%d')
         self._logger_name = None
 
     def set_logger_name(self, name: str):
-        """设置logger名称,用于获取对应的logger进行Handler替换"""
         self._logger_name = name
 
     def _check_and_rotate_by_date(self):
-        """检查日期变化,必要时轮转日志文件"""
 
-        today = datetime.now().strftime('%Y-%m-%d')
+        today = now_str('%Y-%m-%d')
 
         if self._current_date != today:
             old_date = self._current_date
@@ -74,8 +73,7 @@ class SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
 
 
 def _get_log_file_path() -> Path:
-    """获取当日日志文件路径"""
-    return LOG_DIR / f"app_{datetime.now().strftime('%Y-%m-%d')}.log"
+    return LOG_DIR / f"app_{now_str('%Y-%m-%d')}.log"
 
 
 def _create_handler_for_logger(logger_name: str, level: int = None, formatter: logging.Formatter = None) -> Optional[SafeRotatingFileHandler]:

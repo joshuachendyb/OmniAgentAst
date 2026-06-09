@@ -8,6 +8,7 @@ cancel_task — 取消任务
 from datetime import datetime
 from app.services.task.task_registry import set_cancelled, pop_task_field, get_task_field
 from app.utils.logger import logger
+from app.utils.response_utils import api_success, api_failure
 
 
 async def cancel_task(task_id: str, session_id=None) -> dict:
@@ -45,12 +46,7 @@ async def cancel_task(task_id: str, session_id=None) -> dict:
 
     if success:
         logger.info(f"[Task Cancelled] 任务 {task_id} 已标记为cancelled,保留记录")
-        return {
-            "success": True,
-            "message": f"任务 {task_id} 已中断",
-            "task_status": "cancelled",
-            "interrupt_time": interrupt_time.isoformat()
-        }
+        return api_success(message=f"任务 {task_id} 已中断", task_status="cancelled", interrupt_time=interrupt_time.isoformat())
     else:
         logger.warning(f"[TaskControl] 任务 {task_id} 不存在,可能已结束")
-        return {"success": False, "message": f"任务 {task_id} 不存在", "task_status": "not_found"}
+        return api_failure(message=f"任务 {task_id} 不存在", task_status="not_found")

@@ -28,7 +28,7 @@ class IntentType(str, Enum):
 
     @property
     def category(self) -> "ToolCategory":
-        return ToolCategory[self.name]
+        return INTENT_TO_CATEGORY.get(self.value, ToolCategory.FUND_RUNTIME)
 
 
 # ====================================================================
@@ -48,10 +48,10 @@ class ToolCategory(Enum):
     新增分类只需添加一个枚举成员 —— 小健 2026-05-31
     """
     FILE = ("file", ["file"], 0, "文件操作工具")
-    SYSTEM = ("system", ["shell", "system", "time", "meta", "env", "environment", "code_execution"], 1, "系统/Shell/时间/环境工具")
-    NETWORK = ("network", ["network"], 2, "网络通信工具")
-    DESKTOP = ("desktop", ["desktop"], 3, "桌面工具")
-    DOCUMENT = ("document", ["document", "database", "data_analysis"], 4, "文档(含数据分析与数据库)工具")
+    FUND_RUNTIME = ("fund_runtime", ["shell", "system", "time", "meta", "env", "environment", "code_execution"], 1, "基础运行时工具")
+    NET_PROCESS = ("net_process", ["network", "process", "service", "registry"], 2, "网络与进程工具")
+    SCREEN = ("screen", ["desktop", "screen", "window"], 3, "屏幕交互工具")
+    DOC_CONTENT = ("doc_content", ["document", "database", "data_analysis", "content"], 4, "文档内容工具")
 
     def __new__(cls, value, intent_keys, order, name_cn):
         member = object.__new__(cls)

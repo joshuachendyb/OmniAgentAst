@@ -276,7 +276,7 @@ def _register_desktop_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.DESKTOP,
+            category=ToolCategory.SCREEN,
             implementation=method,
             version="1.0.0",
             input_model=input_model,
