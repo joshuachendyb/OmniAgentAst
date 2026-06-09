@@ -106,9 +106,9 @@ _INVALID_SESSION_IDS: set = set()
 
 
 def _get_user_message_id(session_id: str) -> Optional[int]:
-    """获取用户消息ID — 延迟导入避免循环依赖"""
-    from app.api.v1 import messages as _messages
-    return _messages.get_user_message_id(session_id)
+    """获取用户消息ID — P1-08/P2-04修复: 从独立模块导入,避免循环依赖"""
+    from app.api.v1.message_id_tracker import get_user_message_id
+    return get_user_message_id(session_id)
 
 
 async def save_execution_steps_to_db(
@@ -195,5 +195,5 @@ async def send_start_step(
             'blocked': security_check_result.get('blocked', False)
         }
     )
-    current_execution_steps.append(start_step.to_dict())
+    # P2-05修复: 移除提前append,由run_sse_stream统一处理
     return start_step
