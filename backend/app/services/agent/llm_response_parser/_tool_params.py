@@ -42,9 +42,9 @@ _CAMEL_TO_SNAKE = {
 }
 
 
-# 【24.1.4 组件1】统一 action 结果构建(消除 2 个 return dict 的 6 字段重复)
-def _build_action_result(type_: str, tool_name: str, tool_params: Dict[str, Any],
-                          thought: str, error: Optional[str] = None) -> Dict[str, Any]:
+# 【24.1.4 组件1】统一 action 结果构建(消除 2 个 return dict 的 6 字段重复) — 小欧 2026-06-09 重命名避免与 _utils.py 冲突
+def _make_action_result_dict(type_: str, tool_name: str, tool_params: Dict[str, Any],
+                           thought: str, error: Optional[str] = None) -> Dict[str, Any]:
     return {
         "type": type_,
         "thought": thought,

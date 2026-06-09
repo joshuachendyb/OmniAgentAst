@@ -311,27 +311,32 @@ def check_read_permission(path: str) -> Dict[str, Any]:
 
 def get_file_encoding(file_path: str) -> Dict[str, Any]:
     """
-    检测文件编码 - 小沈 2026-05-02
+    检测文件编码 - 小沈 2026-05-02; 小沈 2026-06-09 委托给 data_format_helper._detect_encoding
+    
+    在 _detect_encoding 基础上增加丰富fallback编码列表。
     """
+    from data_format_helper import _detect_encoding
     try:
         file_path = os.path.abspath(file_path)
         if not os.path.exists(file_path):
             return build_error(ERR_FILE_ENCODING, f"文件不存在: {file_path}")
 
-        common_encodings = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'big5', 'utf-16', 'utf-16-le', 'utf-16-be', 'latin-1']
-
+        # 读取前4字节检测BOM
         with open(file_path, 'rb') as f:
-            raw_data = f.read(10000)
+            raw_data = f.read(4)
 
+        # BOM检测(与 _detect_encoding 共享的逻辑)
         if raw_data.startswith(b'\xef\xbb\xbf'):
             return build_success({"file_path": file_path, "encoding": "utf-8-sig", "confidence": 1.0}, "编码检测完成")
-
         if raw_data.startswith(b'\xff\xfe'):
             return build_success({"file_path": file_path, "encoding": "utf-16-le", "confidence": 1.0}, "编码检测完成")
-
         if raw_data.startswith(b'\xfe\xff'):
             return build_success({"file_path": file_path, "encoding": "utf-16-be", "confidence": 1.0}, "编码检测完成")
 
+        # 丰富fallback编码列表
+        common_encodings = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'big5', 'utf-16', 'utf-16-le', 'utf-16-be', 'latin-1']
+        with open(file_path, 'rb') as f:
+            raw_data = f.read(10000)
         for encoding in common_encodings:
             try:
                 raw_data.decode(encoding)

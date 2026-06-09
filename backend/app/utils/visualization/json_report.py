@@ -7,21 +7,8 @@ import json
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from app.db import db
 from app.utils.logger import logger
-
-
-def _query_operations(task_id: str) -> List[Tuple]:
-    """查询操作记录 - 小沈 2026-06-08"""
-    with db.get_conn("operations") as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_type, source_path, destination_path, status,
-                   file_size, is_directory, created_at, error_message
-            FROM file_operations WHERE task_id = ?
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-        return cursor.fetchall()
+from app.utils.visualization.common import query_file_operations
 
 
 def _build_report_data(task_id: str, task_description: str, operations: List[Tuple]) -> dict:
@@ -53,12 +40,9 @@ def _build_report_data(task_id: str, task_description: str, operations: List[Tup
 
 
 def _save_json_file(data: dict, path: Path) -> str:
-    """保存JSON到文件 - 小沈 2026-06-08"""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
-    logger.info(f"JSON report saved: {path}")
-    return str(path)
+    """保存JSON到文件 - 小沈 2026-06-09 复用 common.save_json_file"""
+    from app.utils.visualization.common import save_json_file as _save
+    return _save(data, path, logger_name="JSON report")
 
 
 def generate_json_report(task_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
@@ -77,7 +61,7 @@ def generate_json_report(task_id: str, task_description: str, output_path: Optio
     Returns:
         JSON报告文件路径
     """
-    operations = _query_operations(task_id)
+    operations = query_file_operations(task_id)
     
     if not operations:
         logger.warning(f"No operations found for session: {task_id}")

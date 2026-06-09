@@ -44,6 +44,7 @@ from app.services.tools.shell.code_execution_schema import (
 from app.utils.tool_result_formatter import format_output_for_llm, build_next_actions, truncate_data_for_frontend  # 小沈-2026-05-15, 小沈-2026-05-20
 from app.services.tools._response import build_success, build_error
 from app.utils.logger import setup_logger
+from app.services.tools.toolhelper.common_helper import _decode_bytes_safe
 
 
 
@@ -52,33 +53,11 @@ logger = setup_logger(__name__)
 
 
 def _safe_decode(data, encodings=None):
-    """安全解码bytes或返回str - 小沈 2026-05-06
+    """安全解码bytes或返回str - 小沈 2026-05-06 委托给 toolhelper.common_helper._decode_bytes_safe
     
-    解决Windows下subprocess stdout/stderr编码问题:
-    - 如果data是str,直接返回
-    - 如果data是bytes,按encodings列表依次尝试解码
-    - 如果data是None,返回空字符串
-    - 统一将Windows的\\r\\n行尾转为\\n,保证跨平台一致性
-    
-    Args:
-        data: bytes、str或None
-        encodings: 尝试的编码列表,默认['utf-8', 'gbk', 'latin-1']
-    
-    Returns:
-        str: 解码后的字符串
+    保留函数名以便向后兼容，内部委托给统一实现。
     """
-    if data is None:
-        return ""
-    if isinstance(data, str):
-        return data.replace('\r\n', '\n')
-    if isinstance(data, bytes):
-        for enc in (encodings or ['utf-8', 'gbk', 'latin-1']):
-            try:
-                return data.decode(enc).replace('\r\n', '\n')
-            except (UnicodeDecodeError, LookupError):
-                continue
-        return data.decode('latin-1').replace('\r\n', '\n')
-    return str(data)
+    return _decode_bytes_safe(data, encodings=encodings)
 
 
 def _get_utf8_env():
