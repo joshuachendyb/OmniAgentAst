@@ -8,7 +8,7 @@ collect_file_info — 从 file_safety.py 拷出
 from pathlib import Path
 from typing import Dict, Any
 
-from app.services.safety.file.file_safety.compute_file_hash import compute_file_hash
+from app.services.tools.toolhelper.hash_helper import compute_file_hash
 
 
 def collect_file_info(path: Path) -> Dict[str, Any]:

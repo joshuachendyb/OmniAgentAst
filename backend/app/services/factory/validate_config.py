@@ -10,7 +10,7 @@ from typing import Optional, Tuple
 import os
 
 from app.services.factory.models import ConfigValidationResult
-from app.services.factory.get_config_path import get_config_path
+from app.utils.paths import get_config_path
 from app.services.factory.make_validation_error import make_validation_error
 from app.services.factory.validate_credentials import validate_credentials
 
