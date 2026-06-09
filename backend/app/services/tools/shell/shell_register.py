@@ -19,7 +19,7 @@ Shell Register - Shell工具注册点
 """
 
 from app.services.tools.registry import register_tool, tool_registry
-from app.services.tools.tool_types import ToolCategory
+from app.services.tools.tool_types import ToolCategory, ToolSafetyLevel
 from app.utils.logger import logger
 
 from app.services.tools.shell.shell_schema import (
@@ -146,8 +146,25 @@ def _register_shell_tools():
     【2026-05-17 小沈】8→5,find_command替代check_command_available+locate_command(-1),
                         shell_session替代get_shell_output+terminate_shell(-1)
     【2026-05-22 小沈】5→4,合并execute_python+execute_javascript→execute_code
+    【v3.4新增 2026-06-09 小沈】添加安全级别标注
     使用 Pydantic 模型自动生成 OpenAI Schema
     """
+    # 【v3.4新增】安全级别配置
+    safety_levels = {
+        "execute_shell_command": ToolSafetyLevel.DANGEROUS,
+        "find_command": ToolSafetyLevel.READ_ONLY,
+        "shell_session": ToolSafetyLevel.SAFE,
+        "execute_code": ToolSafetyLevel.DANGEROUS_SANDBOX,
+    }
+    
+    # 【v3.4新增】action级安全覆盖（execute_shell_command的read/write分级）
+    action_safety_maps = {
+        "execute_shell_command": {
+            "read": ToolSafetyLevel.READ_ONLY,
+            "write": ToolSafetyLevel.DESTRUCTIVE,
+        },
+    }
+    
     tool_methods = {
         "execute_shell_command": execute_shell_command,
         "find_command": find_command,
@@ -168,8 +185,10 @@ def _register_shell_tools():
             version="1.0.0",
             input_model=input_model,
             examples=examples,
+            safety_level=safety_levels.get(name, ToolSafetyLevel.SAFE),  # 【v3.4新增】
+            action_safety_map=action_safety_maps.get(name),  # 【v3.4新增】
         )
-        logger.info(f"[shell_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个")
+        logger.info(f"[shell_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个, safety: {safety_levels.get(name, ToolSafetyLevel.SAFE).value}")
 
 
 

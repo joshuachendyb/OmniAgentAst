@@ -77,6 +77,59 @@ async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: l
         action_steps.append(action_step)
         yield agent._step_emitter.emit(action_step)
 
+    # 【v3.4新增】Layer 2+3安全检查 — 小沈 2026-06-09
+    # 【v3.5修复】合并双重循环为单循环 — 小沈 2026-06-09
+    from app.services.safety.manager import get_safety_manager
+    from app.api.v1.chat.confirm_operation import wait_for_confirmation
+    from app.services.agent.steps import IncidentStep
+    
+    safety_manager = get_safety_manager()
+    
+    # 敏感字段列表（脱敏用）
+    _SENSITIVE_FIELDS = {"password", "token", "api_key", "secret", "authorization", "credential"}
+    
+    for call in all_calls:
+        safety_result = safety_manager.check_tool_safety(call["tool_name"], call["tool_params"])
+        
+        # 被拦截的操作（优先级最高）
+        if safety_result.get("blocked"):
+            yield agent._step_emitter.emit(ErrorStep(
+                step=step,
+                error_type="blocked",
+                error_message=safety_result["message"]
+            ))
+            return
+        
+        # 需要确认的操作
+        if safety_result.get("requires_confirmation"):
+            # 脱敏参数
+            desensitized_params = {k: v for k, v in call["tool_params"].items() 
+                                   if k not in _SENSITIVE_FIELDS}
+            
+            yield agent._step_emitter.emit(IncidentStep(
+                step=step,
+                incident_value="authorization_required",
+                data={
+                    "tool_name": call["tool_name"],
+                    "params": desensitized_params,
+                    "safety_level": safety_result["safety_level"],
+                },
+            ))
+            
+            auth = await wait_for_confirmation(agent.task_id, timeout=60)
+            
+            if not auth.get("confirmed"):
+                yield agent._step_emitter.emit(ErrorStep(
+                    step=step,
+                    error_type="user_rejected",
+                    error_message=f"用户拒绝执行工具: {call['tool_name']}"
+                ))
+                return
+            
+            # TODO: Session Trust机制（待实施）
+            # if auth.get("trust_session"):
+            #     session_trust.add_trust(agent.task_id, call["tool_name"], call["tool_params"])
+
     # 3. 执行工具调用
     if is_parallel:
         tasks = [agent._execute_tool(c["tool_name"], c["tool_params"]) for c in all_calls]
