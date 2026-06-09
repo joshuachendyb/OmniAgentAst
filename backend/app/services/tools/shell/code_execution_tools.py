@@ -52,20 +52,12 @@ from app.services.tools.toolhelper.common_helper import _decode_bytes_safe
 logger = setup_logger(__name__)
 
 
-def _safe_decode(data, encodings=None):
-    """安全解码bytes或返回str - 小沈 2026-05-06 委托给 toolhelper.common_helper._decode_bytes_safe
-    
-    保留函数名以便向后兼容，内部委托给统一实现。
-    """
-    return _decode_bytes_safe(data, encodings=encodings)
-
-
 def _get_utf8_env():
     """获取强制UTF-8的环境变量副本 - 小沈 2026-05-06
     
     设置PYTHONUTF8=1和PYTHONIOENCODING=utf-8,
     确保Python解释器用UTF-8模式读取源文件和输出。
-    Node.js不受这些变量影响,但stdout解码走_safe_decode。
+    Node.js不受这些变量影响,但stdout解码走_decode_bytes_safe。
     """
     env = os.environ.copy()
     env['PYTHONUTF8'] = '1'
@@ -129,8 +121,8 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
                 env=_get_utf8_env()
             )
 
-            stdout_str = _safe_decode(result.stdout)
-            stderr_str = _safe_decode(result.stderr)
+            stdout_str = _decode_bytes_safe(result.stdout)
+            stderr_str = _decode_bytes_safe(result.stderr)
 
             if result.returncode == 0:
                 if stderr_str and stderr_str.strip():
@@ -170,8 +162,8 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
                 )
 
         except subprocess.TimeoutExpired as e:
-            _partial_stdout = _safe_decode(e.stdout)
-            _partial_stderr = _safe_decode(e.stderr)
+            _partial_stdout = _decode_bytes_safe(e.stdout)
+            _partial_stderr = _decode_bytes_safe(e.stderr)
             return build_error(
                 ERR_EXEC_TIMEOUT,
                 f"Python代码执行超时({timeout}秒),可增大timeout或优化代码性能",
@@ -250,13 +242,13 @@ def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str]
                 env=_get_utf8_env()
             )
 
-            stdout_str = _safe_decode(result.stdout)
-            stderr_str = _safe_decode(result.stderr)
+            stdout_str = _decode_bytes_safe(result.stdout)
+            stderr_str = _decode_bytes_safe(result.stderr)
             return _build_js_exec_result(stdout_str, stderr_str, result.returncode, timeout)
 
         except subprocess.TimeoutExpired as e:
-            _partial_stdout = _safe_decode(e.stdout)
-            _partial_stderr = _safe_decode(e.stderr)
+            _partial_stdout = _decode_bytes_safe(e.stdout)
+            _partial_stderr = _decode_bytes_safe(e.stderr)
             return build_error(
                 ERR_EXEC_TIMEOUT,
                 f"JavaScript代码执行超时({timeout}秒),可增大timeout或优化代码性能",

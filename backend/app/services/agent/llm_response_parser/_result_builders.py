@@ -7,6 +7,7 @@
 
 Author: 小欧 - 2026-06-07
 """
+import json
 from typing import Dict, Any, Optional, List
 
 from app.utils.logger import logger
@@ -180,14 +181,14 @@ def _create_action_result_from_list(data: List) -> Dict[str, Any]:
     if not data:
         logger.info(f"[parse_llm_response] list为空,返回parse_error")
         return _make_action_result_dict(
-            "parse_error", "", "", None, None, "", "Empty list input from LLM"
+            "parse_error", "", "", "", None, None, "", "Empty list input from LLM"
         )
 
     valid_items = [item for item in data if isinstance(item, dict)]
     if not valid_items:
         logger.info(f"[parse_llm_response] list中无有效dict元素,返回parse_error")
         return _make_action_result_dict(
-            "parse_error", "", "", None, None, "", "No valid dict items in list"
+            "parse_error", "", "", "", None, None, "", "No valid dict items in list"
         )
 
     last_item = valid_items[-1]

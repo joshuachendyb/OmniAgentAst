@@ -9,6 +9,7 @@ from typing import Set
 
 from app.services.tools.tool_queries import get_tools_from_registry_by_category
 from app.services.tools.registry import tool_registry
+from app.services.tools.tool_types import ToolCategory
 from app.constants import META_TOOL_NAMES
 from app.utils.logger import logger
 
@@ -21,7 +22,7 @@ class ToolManager:
         self._agent_cache = {}
 
     def init_tools(self):
-        """初始化工具:meta工具 + 分类工具"""
+        """初始化工具:meta工具 + 分类工具 + 核心工具(方案A)"""
         self.agent._tools_dict = {}
         self.agent._loaded_categories: Set[str] = set()
         if self.agent.tool_category:
@@ -38,6 +39,13 @@ class ToolManager:
         if self.agent.tool_category:
             category_tools = get_tools_from_registry_by_category(tool_registry, self.agent.tool_category)
             self.agent._tools_dict.update(category_tools)
+
+        # ③ 方案A: FUND_RUNTIME意图额外加载FILE分类(核心工具)
+        if self.agent.tool_category == ToolCategory.FUND_RUNTIME:
+            file_tools = get_tools_from_registry_by_category(tool_registry, ToolCategory.FILE)
+            self.agent._tools_dict.update(file_tools)
+            self.agent._loaded_categories.add(ToolCategory.FILE.value)
+            logger.info(f"[ToolManager] FUND_RUNTIME额外加载FILE分类{len(file_tools)}个工具")
 
         logger.info(f"[ToolManager] 初始化完成,共{len(self.agent._tools_dict)}个工具,分类={self.agent._loaded_categories}")
 
