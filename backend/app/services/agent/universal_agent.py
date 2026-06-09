@@ -11,7 +11,9 @@ from app.services.agent.core_agent import BaseAgent
 from app.services.agent.agent_config import AgentConfig
 from app.services.agent.types import AgentResult
 from app.services.tools.tool_types import ToolCategory
+import json
 from app.utils.logger import logger
+from app.utils.json_utils import parse_json
 
 
 class UniversalAgent(BaseAgent):
@@ -193,11 +195,7 @@ class UniversalAgent(BaseAgent):
         if len(tool_calls) == 1:
             func = tool_calls[0].get("function", {})
             tool_name = func.get("name", "")
-            try:
-                import json
-                tool_params = json.loads(func.get("arguments", "{}"))
-            except (json.JSONDecodeError, TypeError):
-                tool_params = {}
+            tool_params = parse_json(func.get("arguments", "{}")) or {}
             thought = content.strip() if content else f"Calling tool: {tool_name}"
             return json.dumps({
                 "thought": thought,
@@ -206,21 +204,14 @@ class UniversalAgent(BaseAgent):
                 "tool_params": tool_params,
             }, ensure_ascii=False)
 
-        import json
         first = tool_calls[0]
         func = first.get("function", {})
         tool_name = func.get("name", "")
-        try:
-            tool_params = json.loads(func.get("arguments", "{}"))
-        except (json.JSONDecodeError, TypeError):
-            tool_params = {}
+        tool_params = parse_json(func.get("arguments", "{}")) or {}
         pending = []
         for tc in tool_calls[1:]:
             f = tc.get("function", {})
-            try:
-                args = json.loads(f.get("arguments", "{}"))
-            except (json.JSONDecodeError, TypeError):
-                args = {}
+            args = parse_json(f.get("arguments", "{}")) or {}
             pending.append({"tool_name": f.get("name", ""), "tool_params": args})
         thought = content.strip() if content else f"Calling {len(tool_calls)} tools"
         return json.dumps({

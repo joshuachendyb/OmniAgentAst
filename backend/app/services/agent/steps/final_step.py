@@ -34,6 +34,9 @@ class FinalStep(ReasoningStep):
     - is_reasoning: 是否在推理中
     - display_name: 模型显示名称
     """
+
+    TYPE: str = "final"
+    IS_DONE: bool = True
     
     def __init__(
         self,
@@ -74,9 +77,6 @@ class FinalStep(ReasoningStep):
         self._is_reasoning = is_reasoning
         self._display_name = display_name or (f"{provider} ({model})" if provider and model else provider or model or "")
     
-    def get_type(self) -> str:
-        return "final"
-    
     def get_content(self) -> str:
         return self._response
     
@@ -112,12 +112,8 @@ class FinalStep(ReasoningStep):
     def display_name(self) -> str:
         return self._display_name
     
-    def is_done(self) -> bool:
-        return True
-    
-    def to_dict(self) -> Dict[str, Any]:
-        base_dict = ReasoningStep.to_dict(self)
-        base_dict.update({
+    def _extra_fields(self) -> Dict[str, Any]:
+        return {
             "response": self._response,
             "thought": self._thought,
             "model": self._model,
@@ -126,5 +122,4 @@ class FinalStep(ReasoningStep):
             "is_streaming": self._is_streaming,
             "is_reasoning": self._is_reasoning,
             "display_name": self._display_name,
-        })
-        return base_dict
+        }

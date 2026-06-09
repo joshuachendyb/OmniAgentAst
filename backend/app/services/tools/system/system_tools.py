@@ -36,6 +36,7 @@ from pathlib import Path
 import json as json_module
 
 from app.utils.logger import logger
+from app.utils.time_utils import now_str
 from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, make_json_safe
 from app.services.tools._response import build_success, build_error  # 小沈 2026-05-20
 from app.services.tools.tool_constants import TOOL_TIMEOUTS
@@ -628,7 +629,7 @@ def _log_message(
                 "message": message,
                 "logger_name": logger_name,
                 "log_file": log_file,
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "timestamp": now_str(),
             }, f"日志记录成功 [{level.upper()}] [{logger_name}] {message}")
     
     except Exception as e:

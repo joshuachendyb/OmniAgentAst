@@ -33,6 +33,8 @@ class ActionToolStep(ReasoningStep):
     
     设计依据:13.2.2.2节具体实现类设计
     """
+
+    TYPE: str = "action_tool"
     
     def __init__(
         self,
@@ -66,7 +68,6 @@ class ActionToolStep(ReasoningStep):
             timestamp: 时间戳(毫秒)
         """
 
-        # 调用ReasoningStep初始化
         ReasoningStep.__init__(self, step, timestamp)
         
         self._execution_status = execution_status
@@ -76,57 +77,42 @@ class ActionToolStep(ReasoningStep):
         self._action_retry_count = action_retry_count
         self._execution_time_ms = execution_time_ms
     
-    def get_type(self) -> str:
-        return "action_tool"
-    
     def get_content(self) -> str:
         return self._summary or self._error_message
     
     @property
     def execution_status(self) -> str:
-        """获取执行状态"""
         return self._execution_status
     
     @property
     def summary(self) -> str:
-        """获取执行摘要"""
         return self._summary
     
     @property
     def execution_result(self) -> Any:
-        """获取执行结果数据"""
         return self._execution_result
     
     @property
     def error_message(self) -> str:
-        """获取错误信息"""
         return self._error_message
     
     @property
     def action_retry_count(self) -> int:
-        """获取重试次数"""
         return self._action_retry_count
     
     @property
     def execution_time_ms(self) -> int:
-        """获取执行耗时"""
         return self._execution_time_ms
     
     @property
     def is_error(self) -> bool:
-        """是否执行失败"""
         return self._execution_status == "error"
     
-    def is_done(self) -> bool:
-        return False
-    
-    def to_dict(self) -> Dict[str, Any]:
-        base_dict = ReasoningStep.to_dict(self)
-        base_dict.update({
+    def _extra_fields(self) -> Dict[str, Any]:
+        return {
             "execution_status": self._execution_status,
             "execution_result": self._execution_result,
             "raw_data": self._execution_result,
             "action_retry_count": self._action_retry_count,
             "execution_time_ms": self._execution_time_ms,
-                                })
-        return base_dict
+        }

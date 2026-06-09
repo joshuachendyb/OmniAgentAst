@@ -90,7 +90,8 @@ def _backup_registry(root_key: str, sub_key: str, session_id: str) -> str:
         return _registry_session_backup[backup_key]
     
     backup_dir = tempfile.gettempdir()
-    backup_file = os.path.join(backup_dir, f"reg_backup_{session_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.reg")
+    from app.utils.time_utils import timestamp_for_filename
+    backup_file = os.path.join(backup_dir, f"reg_backup_{session_id}_{timestamp_for_filename()}.reg")
     
     try:
         export_key = f"{root_key}\\{sub_key}"

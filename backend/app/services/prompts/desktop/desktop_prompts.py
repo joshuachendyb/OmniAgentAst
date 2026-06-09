@@ -106,7 +106,7 @@ Example 4: 任务完成
     def get_parameter_reminder(self) -> str:
         from app.services.tools.registry import tool_registry
         from app.services.tools.tool_types import ToolCategory
-        return tool_registry.generate_param_reminder(category=ToolCategory.DESKTOP)
+        return tool_registry.generate_param_reminder(category=ToolCategory.SCREEN)
 
     def _get_domain_name(self) -> str:
         return "桌面操作"

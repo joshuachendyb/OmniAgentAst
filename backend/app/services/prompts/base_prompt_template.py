@@ -117,8 +117,8 @@ class BasePrompts(ABC):
 
     def get_task_prompt(self, task: str) -> str:
         """获取任务描述 Prompt — P2-21: 公共模式(Task+时间+分类指令)"""
-        from datetime import datetime
-        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        from app.utils.time_utils import now_str
+        time_str = now_str()
         domain = self._get_domain_name()
         steps = self._get_domain_steps()
         extra = self._get_domain_extra_notes()

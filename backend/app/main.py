@@ -3,8 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from datetime import datetime
 import traceback
+from app.utils.time_utils import get_utc_timestamp
 import os
 import logging
 import asyncio
@@ -55,7 +55,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
             "success": False,
             "error": exc.detail,
             "status_code": exc.status_code,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": get_utc_timestamp()
         }
     )
 
@@ -69,7 +69,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "success": False,
             "error": "请求参数验证失败",
             "details": exc.errors(),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": get_utc_timestamp()
         }
     )
 
@@ -85,7 +85,7 @@ async def general_exception_handler(request: Request, exc: Exception):
             "success": False,
             "error": "服务器内部错误",
             "message": error_msg if app.debug else "请联系管理员",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": get_utc_timestamp()
         }
     )
 

@@ -75,9 +75,7 @@ class SystemPrompts(BasePrompts):
         from app.services.tools.tool_types import ToolCategory
 
         categories = [
-            (ToolCategory.SYSTEM, "系统信息/文件操作"),
-            (ToolCategory.SHELL, "命令执行"),
-            (ToolCategory.META, "时间/工具/管道")
+            (ToolCategory.FUND_RUNTIME, "基础运行时(命令/时间/工具/系统信息)"),
         ]
 
         parts = [system_info]
@@ -93,7 +91,7 @@ class SystemPrompts(BasePrompts):
     def get_parameter_reminder(self) -> str:
         from app.services.tools.registry import tool_registry
         from app.services.tools.tool_types import ToolCategory
-        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.SYSTEM)
+        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.FUND_RUNTIME)
         forbidden = (
             "\n\nFORBIDDEN parameter names - DO NOT use:\n"
             "- ❌ cmd (correct: command)\n"

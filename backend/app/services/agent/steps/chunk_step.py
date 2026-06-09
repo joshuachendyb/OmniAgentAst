@@ -33,6 +33,8 @@ class ChunkStep(ReasoningStep):
     - model: 模型名称
     - provider: 提供商
     """
+
+    TYPE: str = "chunk"
     
     def __init__(
         self,
@@ -70,9 +72,6 @@ class ChunkStep(ReasoningStep):
         self._model = model
         self._provider = provider
     
-    def get_type(self) -> str:
-        return "chunk"
-    
     def get_content(self) -> str:
         return self._content
     
@@ -100,17 +99,12 @@ class ChunkStep(ReasoningStep):
     def provider(self) -> str:
         return self._provider
     
-    def is_done(self) -> bool:
-        return False
-    
-    def to_dict(self) -> Dict[str, Any]:
-        base_dict = ReasoningStep.to_dict(self)
-        base_dict.update({
+    def _extra_fields(self) -> Dict[str, Any]:
+        return {
             "is_reasoning": self._is_reasoning,
             "thought": self._thought,
             "reasoning": self._reasoning,
             "_thinking": self._thinking,
             "model": self._model,
             "provider": self._provider,
-        })
-        return base_dict
+        }

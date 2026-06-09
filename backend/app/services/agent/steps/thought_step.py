@@ -30,6 +30,8 @@ class ThoughtStep(ReasoningStep):
     
     设计依据:13.2.2.2节具体实现类设计
     """
+
+    TYPE: str = "thought"
     
     def __init__(
         self,
@@ -41,20 +43,6 @@ class ThoughtStep(ReasoningStep):
         reasoning: str = "",
         timestamp: Optional[int] = None
     ):
-        """
-        初始化ThoughtStep
-        
-        Args:
-            step: 步骤序号
-            content: 思考内容摘要(用户可见)
-            tool_name: 工具名称
-            tool_params: 工具参数
-            thought: 详细思考内容
-            reasoning: 推理过程
-            timestamp: 时间戳(毫秒)
-        """
-
-        # 调用ReasoningStep初始化
         ReasoningStep.__init__(self, step, timestamp)
         
         self._content = content
@@ -63,36 +51,25 @@ class ThoughtStep(ReasoningStep):
         self._tool_name = tool_name
         self._tool_params = tool_params or {}
     
-    def get_type(self) -> str:
-        return "thought"
-    
     def get_content(self) -> str:
         return self._content
     
     @property
     def content(self) -> str:
-        """获取思考内容摘要"""
         return self._content
     
     @property
     def thought(self) -> str:
-        """获取详细思考内容"""
         return self._thought
     
     @property
     def reasoning(self) -> str:
-        """获取推理过程"""
         return self._reasoning
     
-    def is_done(self) -> bool:
-        return False
-    
-    def to_dict(self) -> Dict[str, Any]:
-        base_dict = ReasoningStep.to_dict(self)
-        base_dict.update({
+    def _extra_fields(self) -> Dict[str, Any]:
+        return {
             "thought": self._thought,
             "reasoning": self._reasoning,
             "tool_name": self._tool_name,
             "tool_params": self._tool_params,
-        })
-        return base_dict
+        }

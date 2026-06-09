@@ -59,16 +59,14 @@ def _read_stream_nonblocking(stream, encoding: str = "utf-8") -> str:
     
     if not bytes_data:
         return ""
-    
-    try:
-        return bytes_data.decode(encoding)
-    except UnicodeDecodeError:
-        for fallback_enc in ["utf-8", "gbk", "gb2312", "latin-1"]:
-            try:
-                return bytes_data.decode(fallback_enc)
-            except UnicodeDecodeError:
-                continue
-        return bytes_data.decode("latin-1")
+
+    from app.services.tools.toolhelper.common_helper import _decode_bytes_safe
+    if encoding != "utf-8":
+        try:
+            return bytes_data.decode(encoding)
+        except UnicodeDecodeError:
+            pass
+    return _decode_bytes_safe(bytes_data)
 
 
 __all__ = [

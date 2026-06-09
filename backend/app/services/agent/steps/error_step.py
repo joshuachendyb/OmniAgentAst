@@ -30,6 +30,9 @@ class ErrorStep(ReasoningStep):
     
     设计依据:13.2.2.2节具体实现类设计
     """
+
+    TYPE: str = "error"
+    IS_DONE: bool = True
     
     def __init__(
         self,
@@ -79,73 +82,55 @@ class ErrorStep(ReasoningStep):
         self._details = details
         self._stack = stack
     
-    def get_type(self) -> str:
-        return "error"
-    
     def get_content(self) -> str:
         return self._error_message
     
     @property
     def error_type(self) -> str:
-        """获取错误类型"""
         return self._error_type
     
     @property
     def error_message(self) -> str:
-        """获取错误信息"""
         return self._error_message
     
     @property
     def recoverable(self) -> bool:
-        """获取是否可恢复"""
         return self._recoverable
     
     @property
     def model(self) -> Optional[str]:
-        """获取模型名称"""
         return self._model
     
     @property
     def provider(self) -> Optional[str]:
-        """获取提供商"""
         return self._provider
     
     @property
     def reasoning(self) -> str:
-        """获取思考过程"""
         return self._reasoning
     
     @property
     def is_reasoning(self) -> bool:
-        """获取是否推理中"""
         return self._is_reasoning
     
     @property
     def context(self) -> Optional[Dict[str, Any]]:
-        """获取错误上下文"""
         return self._context
     
     @property
     def retry_after(self) -> Optional[int]:
-        """获取重试等待秒数"""
         return self._retry_after
     
     @property
     def details(self) -> Optional[str]:
-        """获取详细错误信息"""
         return self._details
     
     @property
     def stack(self) -> Optional[str]:
-        """获取堆栈信息"""
         return self._stack
     
-    def is_done(self) -> bool:
-        return True
-    
-    def to_dict(self) -> Dict[str, Any]:
-        base_dict = ReasoningStep.to_dict(self)
-        base_dict.update({
+    def _extra_fields(self) -> Dict[str, Any]:
+        return {
             "error_type": self._error_type,
             "error_message": self._error_message,
             "recoverable": self._recoverable,
@@ -157,5 +142,4 @@ class ErrorStep(ReasoningStep):
             "retry_after": self._retry_after,
             "details": self._details,
             "stack": self._stack,
-        })
-        return base_dict
+        }

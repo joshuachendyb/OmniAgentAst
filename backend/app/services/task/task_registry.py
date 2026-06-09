@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 from app.utils.logger import logger
 from app.constants import TASK_TIMEOUT
+from app.utils.response_utils import api_success, api_failure
 
 # ============================================================
 # 数据存储(本文件私有,外部禁止直接访问)
@@ -155,15 +156,15 @@ async def set_paused(task_id: str) -> dict:
     async with _running_tasks_lock:
         task = _running_tasks.get(task_id)
         if not task:
-            return {"success": False, "message": f"任务 {task_id} 不存在"}
+            return api_failure(message=f"任务 {task_id} 不存在")
         if task.get("cancelled"):
-            return {"success": False, "message": f"任务 {task_id} 已被中断,无法暂停"}
+            return api_failure(message=f"任务 {task_id} 已被中断,无法暂停")
         task["paused"] = True
         task["status"] = "paused"
         pause_event = task.get("_pause_event")
         if pause_event:
             pause_event.clear()
-        return {"success": True, "message": f"任务 {task_id} 已暂停"}
+        return api_success(message=f"任务 {task_id} 已暂停")
 
 
 async def set_resumed(task_id: str) -> dict:
@@ -171,17 +172,17 @@ async def set_resumed(task_id: str) -> dict:
     async with _running_tasks_lock:
         task = _running_tasks.get(task_id)
         if not task:
-            return {"success": False, "message": f"任务 {task_id} 不存在"}
+            return api_failure(message=f"任务 {task_id} 不存在")
         if task.get("cancelled"):
-            return {"success": False, "message": f"任务 {task_id} 已被中断,无法恢复"}
+            return api_failure(message=f"任务 {task_id} 已被中断,无法恢复")
         if not task.get("paused"):
-            return {"success": False, "message": f"任务 {task_id} 未暂停,无法恢复"}
+            return api_failure(message=f"任务 {task_id} 未暂停,无法恢复")
         task["paused"] = False
         task["status"] = "running"
         pause_event = task.get("_pause_event")
         if pause_event:
             pause_event.set()
-        return {"success": True, "message": f"任务 {task_id} 已继续"}
+        return api_success(message=f"任务 {task_id} 已继续")
 
 
 async def set_was_paused(task_id: str, value: bool) -> None:

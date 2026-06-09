@@ -9,8 +9,8 @@ Author: 小沈 - 2026-06-07
 """
 
 import re
-import json
 from typing import Dict, Any, Optional
+from app.utils.json_utils import parse_json
 
 from app.utils.logger import logger
 from ._utils import _add_reasoning_warning, _normalize_result_to_str, _build_handler_result, _extract_json_with_balanced_braces
@@ -32,12 +32,9 @@ def _handle_list_input(output) -> Optional[Dict[str, Any]]:
 
 def _handle_json_array_string(output) -> Optional[Dict[str, Any]]:
     if isinstance(output, str) and output.strip().startswith("["):
-        try:
-            parsed_list = json.loads(output)
-            if isinstance(parsed_list, list):
-                return _create_action_result_from_list(parsed_list)
-        except (json.JSONDecodeError, TypeError):
-            pass
+        parsed_list = parse_json(output)
+        if isinstance(parsed_list, list):
+            return _create_action_result_from_list(parsed_list)
     return None
 
 
@@ -58,14 +55,10 @@ def _handle_empty_input(output) -> Optional[Dict[str, Any]]:
 def _handle_standard_json(output) -> Optional[Dict[str, Any]]:
     if not isinstance(output, str):
         return None
-    try:
-        data = json.loads(output)
-    except (json.JSONDecodeError, TypeError):
-        return None
+    data = parse_json(output)
     if not isinstance(data, dict):
         return None
-    result = _process_json_result(data, output)
-    return result
+    return _process_json_result(data, output)
 
 
 def _handle_finish_tool(json_data: Dict, prefix_text: str) -> Optional[Dict[str, Any]]:
@@ -92,18 +85,14 @@ def _handle_implicit_content(json_data: Dict, output: str, prefix_text: str) -> 
     content = json_data.get("content", "")
     reasoning = json_data.get("reasoning", "")
     if isinstance(content, str) and content.startswith("{"):
-        try:
-            parsed = json.loads(content)
-            if isinstance(parsed, dict):
-                content = parsed.get("content", content)
-        except (json.JSONDecodeError, TypeError):
-            pass
+        parsed = parse_json(content)
+        if isinstance(parsed, dict):
+            content = parsed.get("content", content)
     return _build_handler_result("implicit", thought=prefix_text or content,
         content=content, reasoning=reasoning, response=content)
 
 
 def _extract_json_block_simple(output: str) -> Optional[Dict]:
-    """简单JSON块提取:找最后一个平衡花括号对"""
     last_brace = output.rfind("{")
     if last_brace == -1:
         return None
@@ -111,12 +100,9 @@ def _extract_json_block_simple(output: str) -> Optional[Dict]:
     json_str, _ = _extract_json_with_balanced_braces(substr)
     if not json_str:
         return None
-    try:
-        data = json.loads(json_str)
-        if isinstance(data, dict):
-            return data
-    except (json.JSONDecodeError, TypeError):
-        pass
+    data = parse_json(json_str)
+    if isinstance(data, dict):
+        return data
     return None
 
 

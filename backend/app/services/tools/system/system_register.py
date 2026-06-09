@@ -253,37 +253,39 @@ SYSTEM_TOOL_EXAMPLES = {
 
 
 def _register_system_tools():
-    """注册所有系统信息工具 - 【2026-05-18 小沈】含Environment迁入工具"""
-    tool_methods = {
+    """注册系统工具 — 查询类归FUND_RUNTIME,管理类归NET_PROCESS — 小沈 2026-06-09"""
+    fund_runtime_tools = {
         "get_system_info": get_system_info,
         "event_log": event_log,
         "list_processes": list_processes,
+        "get_env": get_env,
+    }
+    net_process_tools = {
         "kill_process": kill_process,
         "service_control": service_control,
         "task_control": task_control,
-        "get_env": get_env,
         "set_env": set_env,
     }
 
-    for name, method in tool_methods.items():
+    for name, method in fund_runtime_tools.items():
         desc = SYSTEM_TOOL_DESCRIPTIONS.get(name, "")
         input_model = SYSTEM_TOOL_INPUT_MODELS.get(name)
         examples = SYSTEM_TOOL_EXAMPLES.get(name, [])
-
         tool_registry.register(
-            name=name,
-            description=desc,
-            category=ToolCategory.SYSTEM,
-            implementation=method,
-            version="1.0.0",
-            input_model=input_model,
-            examples=examples,
+            name=name, description=desc, category=ToolCategory.FUND_RUNTIME,
+            implementation=method, version="1.0.0", input_model=input_model, examples=examples,
         )
-        logger.info(
-            f"[system_register] 已注册工具: {name}, "
-            f"使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, "
-            f"examples: {len(examples)}个"
+        logger.info(f"[system_register] 已注册工具(FUND_RUNTIME): {name}")
+
+    for name, method in net_process_tools.items():
+        desc = SYSTEM_TOOL_DESCRIPTIONS.get(name, "")
+        input_model = SYSTEM_TOOL_INPUT_MODELS.get(name)
+        examples = SYSTEM_TOOL_EXAMPLES.get(name, [])
+        tool_registry.register(
+            name=name, description=desc, category=ToolCategory.NET_PROCESS,
+            implementation=method, version="1.0.0", input_model=input_model, examples=examples,
         )
+        logger.info(f"[system_register] 已注册工具(NET_PROCESS): {name}")
 
     # 【修复 2026-05-18 小沈】调用reg_register注册reg_read/reg_write/reg_delete
     from app.services.tools.system.reg_register import _register_registry_tools

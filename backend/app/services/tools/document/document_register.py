@@ -337,7 +337,7 @@ def _register_document_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.DOCUMENT,
+            category=ToolCategory.DOC_CONTENT,
             implementation=func,
             version="1.0.0",
             input_model=input_model,

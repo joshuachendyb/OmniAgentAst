@@ -86,9 +86,11 @@ logger = setup_logger(__name__)
 
 
 def _is_safe_path(output_dir: str, member_path: str) -> bool:
-    """检查解压成员路径是否在output_dir内,防止路径遍历攻击 - 小沈 2026-05-05"""
-    target = os.path.normpath(os.path.join(output_dir, member_path))
-    return target.startswith(os.path.normpath(output_dir) + os.sep) or target == os.path.normpath(output_dir)
+    """检查解压成员路径是否在output_dir内,防止路径遍历攻击 - 小沈 2026-05-05
+    小欧 2026-06-09 委托到 safe_path_join 消除重复逻辑
+    """
+    from app.services.tools.toolhelper.common_helper import safe_path_join
+    return safe_path_join(output_dir, member_path) is not None
 
 
 def _resolve_output_dir(archive_path: str, output_dir: Optional[str] = None) -> str:
@@ -312,28 +314,22 @@ def check_read_permission(path: str) -> Dict[str, Any]:
 def get_file_encoding(file_path: str) -> Dict[str, Any]:
     """
     检测文件编码 - 小沈 2026-05-02; 小沈 2026-06-09 委托给 data_format_helper._detect_encoding
+    小欧 2026-06-09 消除BOM检测重复，复用 _detect_encoding
     
     在 _detect_encoding 基础上增加丰富fallback编码列表。
     """
-    from data_format_helper import _detect_encoding
+    from app.services.tools.toolhelper.data_format_helper import _detect_encoding
     try:
         file_path = os.path.abspath(file_path)
         if not os.path.exists(file_path):
             return build_error(ERR_FILE_ENCODING, f"文件不存在: {file_path}")
 
-        # 读取前4字节检测BOM
-        with open(file_path, 'rb') as f:
-            raw_data = f.read(4)
+        # 用 _detect_encoding 检测BOM和基本编码(读4字节)
+        detected = _detect_encoding(file_path)
+        if detected in ("utf-8-sig", "utf-16-le", "utf-16-be"):
+            return build_success({"file_path": file_path, "encoding": detected, "confidence": 1.0}, "编码检测完成")
 
-        # BOM检测(与 _detect_encoding 共享的逻辑)
-        if raw_data.startswith(b'\xef\xbb\xbf'):
-            return build_success({"file_path": file_path, "encoding": "utf-8-sig", "confidence": 1.0}, "编码检测完成")
-        if raw_data.startswith(b'\xff\xfe'):
-            return build_success({"file_path": file_path, "encoding": "utf-16-le", "confidence": 1.0}, "编码检测完成")
-        if raw_data.startswith(b'\xfe\xff'):
-            return build_success({"file_path": file_path, "encoding": "utf-16-be", "confidence": 1.0}, "编码检测完成")
-
-        # 丰富fallback编码列表
+        # 丰富fallback编码列表(读10K字节，弥补_detect_encoding仅读4字节的限制)
         common_encodings = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'big5', 'utf-16', 'utf-16-le', 'utf-16-be', 'latin-1']
         with open(file_path, 'rb') as f:
             raw_data = f.read(10000)
