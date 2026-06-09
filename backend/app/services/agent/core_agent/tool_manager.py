@@ -81,7 +81,7 @@ class ToolManager:
         new_tool_names = sorted(new_tools.keys())
         logger.info(f"[动态加载] 已加载{intent_type}分类的{len(new_tool_names)}个工具")
 
-        self.refresh_fc_tools(category)
+        self.refresh_fc_tools(category)  # no-op for UniversalAgent, kept for interface compat
 
         self._clear_cache('_cached_schema_text', '_cached_tools_content', '_last_injected_categories', '_cached_openai_tools')
 
@@ -90,9 +90,6 @@ class ToolManager:
         return self.agent._tools_dict
 
     def refresh_fc_tools(self, category):
-        """刷新FC通道的tools定义"""
-        if hasattr(self.agent, 'tools_strategy') and self.agent.tools_strategy is not None and hasattr(self.agent, 'openai_tools') and self.agent.openai_tools:
-            new_openai_tools = tool_registry.to_openai_tools(category=category)
-            self.agent.openai_tools.extend([t for t in new_openai_tools if t not in self.agent.openai_tools])
-            self.agent.tools_strategy.tools = self.agent.openai_tools
-            logger.info(f"[FC刷新] tools定义已更新,当前{len(self.agent.openai_tools)}个")
+        """FC通道tools刷新 — 已废弃，保留接口兼容旧测试
+        【P2-5修复 2026-06-09 小沈】UniversalAgent无tools_strategy，此方法为空操作
+        """
