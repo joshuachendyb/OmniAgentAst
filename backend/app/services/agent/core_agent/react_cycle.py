@@ -45,9 +45,10 @@ def _update_message_builder(agent, result, tool_name: str = "", tool_params: Dic
 
 async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
     """处理action类型 — 支持多tool_calls并行执行 — 小沈 2026-06-09
-    P2-02修复: 拆分职责为独立函数
+    P2-02修复: 删除_extract_action_params纯委托,直接内联 — 小沈 2026-06-09
     """
-    tool_name, tool_params = _extract_action_params(parsed)
+    tool_name = parsed["tool_name"]
+    tool_params = parsed.get("tool_params", {})
     pending_calls = parsed.get("_pending_calls", [])
     step = step_counter[0]
 
@@ -145,19 +146,34 @@ async def _handle_answer(agent, parsed: Dict, llm_response: str, step_counter: l
     agent.status = AgentStatus.COMPLETED
 
 
-def _emit_chunk_step(agent, step: int, content: str, is_reasoning: bool = False):
-    """产出chunk步骤 — 小沈 2026-06-08 内联调用 — 小沈 2026-06-09"""
-    # 保留供直接调用: agent._step_emitter.emit(ChunkStep(...))
-    pass
+async def _handle_chunk_buffer_promotion(agent, step: int, content: str, chunk_buffer, step_counter: list):
+    """处理chunk buffer提升 — 小沈 2026-06-08"""
+    if not chunk_buffer:
+        return
+
+    chunk_buffer.append(content)
+    if not chunk_buffer.should_promote():
+        return
+
+    accumulated = chunk_buffer.flush()
+    if not accumulated:
+        return
+
+    yield agent._step_emitter.emit(ThoughtStep(
+        step=step, content=f"Accumulated {len(accumulated)} chunks",
+    ))
+    yield agent._step_emitter.emit(ChunkStep(
+        step=step, content=accumulated,
+    ))
 
 
 async def _handle_chunk(agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
     """处理chunk类型 — 小沈 2026-06-08 重构"""
     step = step_counter[0]
     content = parsed.get("content", llm_response.strip())
-    
+
     yield agent._step_emitter.emit(ChunkStep(step=step, content=content, is_reasoning=False))
-    
+
     async for event in _handle_chunk_buffer_promotion(agent, step, content, chunk_buffer, step_counter):
         yield event
 
