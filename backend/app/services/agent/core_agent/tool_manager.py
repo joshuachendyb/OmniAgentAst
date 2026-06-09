@@ -22,7 +22,7 @@ class ToolManager:
         self._agent_cache = {}
 
     def init_tools(self):
-        """初始化工具:meta工具 + 分类工具 + 核心工具(方案A)"""
+        """初始化工具:meta工具 + 分类工具 + 额外分类工具(声明式配置)"""
         self.agent._tools_dict = {}
         self.agent._loaded_categories: Set[str] = set()
         if self.agent.tool_category:
@@ -40,12 +40,14 @@ class ToolManager:
             category_tools = get_tools_from_registry_by_category(tool_registry, self.agent.tool_category)
             self.agent._tools_dict.update(category_tools)
 
-        # ③ 方案A: FUND_RUNTIME意图额外加载FILE分类(核心工具)
-        if self.agent.tool_category == ToolCategory.FUND_RUNTIME:
-            file_tools = get_tools_from_registry_by_category(tool_registry, ToolCategory.FILE)
-            self.agent._tools_dict.update(file_tools)
-            self.agent._loaded_categories.add(ToolCategory.FILE.value)
-            logger.info(f"[ToolManager] FUND_RUNTIME额外加载FILE分类{len(file_tools)}个工具")
+        # ③ 声明式: 额外加载config.extra_categories中的分类工具
+        config = getattr(self.agent, 'config', None)
+        if config and config.extra_categories:
+            for extra_cat in config.extra_categories:
+                extra_tools = get_tools_from_registry_by_category(tool_registry, extra_cat)
+                self.agent._tools_dict.update(extra_tools)
+                self.agent._loaded_categories.add(extra_cat.value)
+                logger.info(f"[ToolManager] 额外加载{extra_cat.value}分类{len(extra_tools)}个工具")
 
         logger.info(f"[ToolManager] 初始化完成,共{len(self.agent._tools_dict)}个工具,分类={self.agent._loaded_categories}")
 
@@ -82,7 +84,7 @@ class ToolManager:
 
         self.refresh_fc_tools(category)
 
-        self._clear_cache('_cached_schema_text', '_cached_tools_content', '_last_injected_categories')
+        self._clear_cache('_cached_schema_text', '_cached_tools_content', '_last_injected_categories', '_cached_openai_tools')
 
     def get_tools(self) -> dict:
         """获取工具字典"""
