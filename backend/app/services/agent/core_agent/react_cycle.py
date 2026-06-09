@@ -109,6 +109,7 @@ async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: l
             yield agent._step_emitter.emit(IncidentStep(
                 step=step,
                 incident_value="authorization_required",
+                message=f"需要用户确认工具执行: {call['tool_name']}",
                 data={
                     "tool_name": call["tool_name"],
                     "params": desensitized_params,
