@@ -98,3 +98,19 @@ def get_service(config_path: Optional[str] = None) -> BaseAIService:
     _instance = _create_service_instance(provider_config, final_provider, final_model)
 
     return _instance
+
+
+def reset_instance():
+    """P1-07修复: 公开reset方法,替代直接操作私有变量"""
+    global _instance, _current_provider
+    old = _instance
+    _instance = None
+    _current_provider = ""
+    return old
+
+
+def set_instance(instance, provider=""):
+    """P1-07修复: 公开set方法,替代直接操作私有变量"""
+    global _instance, _current_provider
+    _instance = instance
+    _current_provider = provider

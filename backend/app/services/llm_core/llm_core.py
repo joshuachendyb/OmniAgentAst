@@ -95,7 +95,9 @@ class BaseAIService(ChatWithToolsStreamMixin, ToolCallerMixin):
     def _create_cancelled_chunk(self) -> StreamChunk:
         return create_cancelled_chunk(self.model)
 
-    chat = aggregate_chat_response
+    def chat(self, message, history, tools=None):
+        """Chat with LLM — 委托给独立函数"""
+        return aggregate_chat_response(self, message, history, tools)
 
 
     def _build_api_url(self) -> str:

@@ -78,7 +78,10 @@ class ToolRegistry:
             )
         
         # 职责2：验证依赖
-        self._validate_dependencies(dependencies)
+        if dependencies:
+            missing = [dep for dep in dependencies if dep not in self._tools]
+            if missing:
+                raise ValueError(f"Missing dependencies: {missing}")
         
         # 职责3：注册新工具
         return self._register_new_tool(
@@ -110,13 +113,6 @@ class ToolRegistry:
         )
         self._implementations[name] = implementation
         return {"status": "success"}
-    
-    def _validate_dependencies(self, dependencies: Optional[List[str]]) -> None:
-        """验证工具依赖"""
-        if dependencies:
-            missing = [dep for dep in dependencies if dep not in self._tools]
-            if missing:
-                raise ValueError(f"Missing dependencies: {missing}")
     
     def _register_new_tool(
         self,

@@ -113,7 +113,8 @@ class ToolRetryEngine:
             )
         
         params = self._validate_params(action, action_input, tool)
-        if params is None:
+        # P1-05修复: _validate_params现在返回错误字典而非None,需检查code字段
+        if isinstance(params, dict) and params.get("code") and params.get("code") != "SUCCESS":
             return params
         
         return await self._execute_with_retry(action, params, tool)
@@ -127,13 +128,11 @@ class ToolRetryEngine:
         )
     
     def _find_tool(self, action: str) -> Optional[Callable]:
-        """查找工具"""
+        """查找工具 — P2-15修复: 兜底不写入self._tools"""
         tool = self._tools.get(action)
         if tool is None:
             from app.services.tools.registry import tool_registry
             tool = tool_registry.get_implementation(action)
-            if tool is not None:
-                self._tools[action] = tool
         return tool
     
     def _are_params_valid(self, action: str, params: Dict[str, Any]) -> bool:
@@ -163,17 +162,23 @@ class ToolRetryEngine:
         missing = [p for p in required if p not in params]
         return len(missing) == 0
     
-    def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable) -> Optional[Dict[str, Any]]:
-        """验证参数（非法参数+必需参数）— 小沈 2026-06-08 重构"""
+    def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable):
+        """验证参数（非法参数+必需参数）— P1-05修复: 返回错误字典而非None"""
         params = action_input.copy()
         
         if not self._are_params_valid(action, params):
-            logger.warning(f"[参数验证] action={action} 含非法参数, keys={list(params.keys())}")
-            return None
+            return self._build_retry_error(
+                ERR_INVALID_PARAMS,
+                f"参数验证失败: {action} 含非法参数, keys={list(params.keys())}",
+                0, error_type="invalid_params",
+            )
         
         if not self._check_missing_params(tool, params):
-            logger.warning(f"[参数验证] action={action} 缺少必需参数")
-            return None
+            return self._build_retry_error(
+                ERR_MISSING_PARAM,
+                f"缺少必需参数: {action}",
+                0, error_type="missing_param",
+            )
         
         return params
     
@@ -215,7 +220,7 @@ class ToolRetryEngine:
             return None
     
     async def _execute_with_retry(self, action: str, params: Dict[str, Any], tool: Callable) -> Dict[str, Any]:
-        """带重试执行工具 — 小沈 2026-06-08 重构"""
+        """带重试执行工具 — P1-06修复: 捕获last_error"""
         max_retries, backoff_factor, retryable_errors, timeout = self._get_retry_config(action)
         
         def _is_tool_retryable(e: Exception) -> bool:
@@ -237,6 +242,8 @@ class ToolRetryEngine:
             )
             if result is not None:
                 return result
+            # P1-06修复: 记录最后一次异常
+            last_error = Exception(f"重试耗尽: {action}, attempts={engine.attempt_count}")
         
         return self._build_retry_error(
             ERR_UNKNOWN, str(last_error)[:200] if last_error else "Unknown error",

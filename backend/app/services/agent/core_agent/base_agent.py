@@ -7,6 +7,7 @@ Agent 核心基类 — 类骨架
 - 本文件只保留 BaseAgent 类定义、__init__、抽象方法、Hook、委托方法
 
 Author: 小沈 - 2026-03-25
+P3-12: 删除run_react_cycle纯委托，改为混合类方式 — 小沈 2026-06-09
 """
 
 import asyncio
@@ -23,7 +24,6 @@ from app.services.agent.chunk_buffer import ChunkBuffer
 from app.services.agent.core_agent.agent_initializer import AgentInitializer
 from app.services.agent.core_agent.tool_manager import ToolManager
 from app.services.agent.core_agent.step_emitter import StepEmitter
-from app.services.agent.core_agent.react_cycle import run_react_cycle
 from app.services.agent.core_agent.initialize_run_state import initialize_run_state
 from app.services.agent.tool_retry_engine import ToolRetryEngine
 
@@ -67,7 +67,7 @@ class BaseAgent(ABC):
         return create_cancelled_chunk(getattr(self, 'model', 'unknown'))
 
     async def run_react_cycle(self, task, context=None, max_steps=None, task_id=None):
-        """委托给独立模块的 run_react_cycle 实现"""
+        """直接从模块导入 — 小沈 2026-06-09 替代纯委托"""
         from app.services.agent.core_agent.react_cycle import run_react_cycle as _run
         async for event in _run(self, task, context, max_steps, task_id):
             yield event
