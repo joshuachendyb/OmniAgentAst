@@ -139,12 +139,13 @@ class UniversalAgent(BaseAgent):
         return await self._call_llm_text(messages)
 
     def _get_openai_tools(self) -> list:
+        """获取OpenAI格式工具定义 — 小沈 2026-06-09 统一导入方式"""
         if hasattr(self, '_cached_openai_tools') and self._cached_openai_tools:
             return self._cached_openai_tools
-        from app.services.tools.tool_description import to_openai_tools
+        
         from app.services.tools.registry import tool_registry
         category = getattr(self, 'tool_category', None)
-        self._cached_openai_tools = to_openai_tools(tool_registry, category=category)
+        self._cached_openai_tools = tool_registry.to_openai_tools(category=category)
         return self._cached_openai_tools
 
     async def _call_llm_fc(self, messages: list, openai_tools: list) -> str:
@@ -189,38 +190,67 @@ class UniversalAgent(BaseAgent):
         return content or ""
 
     def _format_tool_calls(self, tool_calls: list, content: str = "") -> str:
+        """格式化function calling工具调用 — 小沈 2026-06-09 消除重复"""
         if not tool_calls:
             return '{"thought": "任务完成", "tool_name": "finish", "tool_params": {}}'
-
-        if len(tool_calls) == 1:
-            func = tool_calls[0].get("function", {})
-            tool_name = func.get("name", "")
-            tool_params = parse_json(func.get("arguments", "{}")) or {}
-            thought = content.strip() if content else f"Calling tool: {tool_name}"
+        
+        def _parse_single_call(tc: dict) -> dict:
+            func = tc.get("function", {})
+            return {
+                "name": func.get("name", ""),
+                "params": parse_json(func.get("arguments", "{}")) or {}
+            }
+        
+        parsed_calls = [_parse_single_call(tc) for tc in tool_calls]
+        first_call = parsed_calls[0]
+        
+        if len(parsed_calls) == 1:
+            thought = content.strip() if content else f"Calling tool: {first_call['name']}"
             return json.dumps({
                 "thought": thought,
-                "reasoning": f"FC调用: {tool_name}",
-                "tool_name": tool_name,
-                "tool_params": tool_params,
+                "reasoning": f"FC调用: {first_call['name']}",
+                "tool_name": first_call["name"],
+                "tool_params": first_call["params"],
             }, ensure_ascii=False)
-
-        first = tool_calls[0]
-        func = first.get("function", {})
-        tool_name = func.get("name", "")
-        tool_params = parse_json(func.get("arguments", "{}")) or {}
-        pending = []
-        for tc in tool_calls[1:]:
-            f = tc.get("function", {})
-            args = parse_json(f.get("arguments", "{}")) or {}
-            pending.append({"tool_name": f.get("name", ""), "tool_params": args})
+        
+        pending = [
+            {"tool_name": c["name"], "tool_params": c["params"]} 
+            for c in parsed_calls[1:]
+        ]
         thought = content.strip() if content else f"Calling {len(tool_calls)} tools"
         return json.dumps({
             "thought": thought,
-            "reasoning": f"FC调用: {tool_name} +{len(pending)} pending",
-            "tool_name": tool_name,
-            "tool_params": tool_params,
+            "reasoning": f"FC调用: {first_call['name']} +{len(pending)} pending",
+            "tool_name": first_call["name"],
+            "tool_params": first_call["params"],
             "_pending_calls": pending,
         }, ensure_ascii=False)
+
+    def _update_executed_tool_summary(self, tool_name: str, result: dict, tool_params: dict = None):
+        """更新已执行工具汇总（含数据摘要）— 小沈 2026-06-09
+        
+        Args:
+            tool_name: 工具名称
+            result: 工具执行结果
+            tool_params: 工具参数（可选）
+        """
+        if not hasattr(self, '_executed_tool_summary'):
+            self._executed_tool_summary = []
+        
+        from app.services.agent.observation_formatter import extract_status
+        from app.utils.data_utils import extract_data_summary
+        
+        if isinstance(result, dict):
+            status = extract_status(result)
+            data_summary = extract_data_summary(result.get("data"))
+        else:
+            status = "success"
+            data_summary = ""
+        
+        entry = f"{tool_name}→{status}"
+        if data_summary:
+            entry += f"|{data_summary}"
+        self._executed_tool_summary.append(entry)
 
     def _build_executed_tool_summary(self) -> str:
         if not hasattr(self, '_executed_tool_summary') or not self._executed_tool_summary:
