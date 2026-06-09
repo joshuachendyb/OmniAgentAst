@@ -49,6 +49,17 @@ from app.services.tools.network.network_schema import (
     NetworkDiagnoseInput,
 )
 
+from app.services.tools.network.network_tools import (
+    http_request,
+    download_file,
+    fetch_webpage,
+    search_web,
+    network_diagnose,
+)
+
+from app.services.tools.system.system_tools import net_connections
+from app.services.tools.system.system_schema import NetConnectionsInput
+
 # 导入工具函数
 from app.services.tools.network.network_tools import (
     http_request,
@@ -148,8 +159,26 @@ NETWORK_TOOL_DESCRIPTIONS = {
 
 【返回数据说明】
 - mode="ping"时:data包含host(目标主机)、packets_sent/received/lost(包统计)、loss_rate(丢包率)、min/avg/max_latency(延迟ms)、is_reachable(是否可达)
-- mode="port"时:data包含host、port、is_open(是否开放)、service(已知服务名)
-- 失败时data为null""",
+ - mode="port"时:data包含host、port、is_open(是否开放)、service(已知服务名)
+ - 失败时data为null""",
+    "net_connections": """获取网络连接列表,支持按类型(TCP/UDP)、状态(ESTABLISHED/LISTEN)、端口过滤,可获取关联进程信息。
+
+使用场景:
+- 当用户需要查看当前网络连接时使用
+- 当用户需要排查端口占用问题时使用
+- 当用户需要查看某个端口的连接状态时使用
+
+【重要】最多返回200条连接记录;process_info=True可获取关联进程名和路径
+
+使用示例:
+- 查看所有连接:{}
+- 查看TCP已建立连接:{"kind": "tcp", "state": "established"}
+- 查看端口8080的连接:{"filter_port": 8080, "process_info": true}
+
+返回数据说明:
+- code: 状态码,SUCCESS/ERR_PERMISSION_DENIED/ERR_SYSTEM_NET_CONN
+- data: 成功时含connections(连接列表)、total(连接总数)、kind(连接类型)、filter_port(过滤端口);失败时为null
+- message: 状态描述信息""",
 }
 
 # 工具名到实现函数的映射
@@ -159,6 +188,7 @@ NETWORK_TOOL_IMPLEMENTATIONS = {
     "fetch_webpage": fetch_webpage,
     "search_web": search_web,
     "network_diagnose": network_diagnose,
+    "net_connections": net_connections,
 }
 
 # 工具名到 Pydantic 模型的映射
@@ -168,6 +198,7 @@ NETWORK_TOOL_INPUT_MODELS = {
     "fetch_webpage": FetchWebpageInput,
     "search_web": SearchWebInput,
     "network_diagnose": NetworkDiagnoseInput,
+    "net_connections": NetConnectionsInput,
 }
 
 # 使用示例
@@ -192,6 +223,11 @@ NETWORK_TOOL_EXAMPLES = {
         {"host": "8.8.8.8", "mode": "port", "port": 53},
         {"host": "baidu.com", "count": 10},
         {"host": "127.0.0.1", "mode": "port", "port": 8000},
+    ],
+    "net_connections": [
+        {},
+        {"kind": "tcp", "state": "established"},
+        {"filter_port": 8080, "process_info": True},
     ],
 }
 

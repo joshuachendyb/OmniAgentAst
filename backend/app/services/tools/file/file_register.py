@@ -17,6 +17,7 @@ F8  rename_file        — 合并rename_file + batch_rename
 F9  archive_tool       — 合并compress_files + extract_archive
 F10 file_operation     — 合并move_file + copy_file + delete_file
 F11 data_file_format   — 合并json/yaml/toml/ini/xml/properties
+F12 batch_process      — 批量文件处理(从meta迁入,本质是文件操作)
 
 
 创建时间: 2026-04-26
@@ -38,6 +39,9 @@ from app.services.tools.file.file_schema import (
     SearchFilesInput,
     WriteTextFileInput,
 )
+
+from app.services.tools.meta.meta_schema import BatchProcessInput
+from app.services.tools.meta.meta_tools import batch_process
 
 from app.services.tools.file.file_tools import FileTools, get_file_tools
 from app.services.tools.registry import tool_registry
@@ -207,6 +211,22 @@ FILE_TOOL_DESCRIPTIONS = {
 
 返回数据说明:
 - data.success/data.data(读取)/data.format/data.bytes_written(写入)""",
+    "batch_process": """批量处理文件 - 合并batch_rename + batch_delete + batch_copy功能。按glob模式匹配文件,执行rename/delete/copy操作。默认dry_run=True预览保护,确认后执行。
+
+【使用场景】
+- "把所有.txt改成.md":批量重命名
+- "清空所有.log临时文件":批量删除
+- "把所有备份文件拷贝到归档目录":批量复制
+
+【使用示例】【常用名转换说明】
+- 重命名/batch_rename → batch_process(source_pattern="*.txt", action="rename", target_pattern="*.md")
+- 删除/batch_delete → batch_process(source_pattern="logs/*.log", action="delete", dry_run=false)
+- 复制/batch_copy → batch_process(source_pattern="backup/*.bak", action="copy", target_dir="D:/archive/")
+
+【返回数据说明】
+- matched_count: 匹配文件数
+- processed_count: 处理文件数
+- operations: 操作详情列表""",
 }
 
 
@@ -260,6 +280,10 @@ FILE_TOOL_EXAMPLES = {
         {"action": "read", "file_path": "D:/config.json"},
         {"action": "write", "file_path": "D:/config.yaml", "data": {"key": "value"}},
     ],
+    "batch_process": [
+        {"source_pattern": "*.txt", "action": "rename", "target_pattern": "*.md", "dry_run": True},
+        {"source_pattern": "logs/*.log", "action": "delete", "dry_run": False, "max_files": 100},
+    ],
 }
 
 
@@ -279,6 +303,7 @@ TOOL_INPUT_MODELS = {
     "archive_tool": ArchiveToolInput,
     "file_operation": FileOperationInput,
     "data_file_format": DataFileFormatInput,
+    "batch_process": BatchProcessInput,
 }
 
 
@@ -287,7 +312,7 @@ TOOL_INPUT_MODELS = {
 # ============================================================
 
 def _register_file_tools():
-    """注册11个文件工具 — 小沈 2026-05-18"""
+    """注册12个文件工具 — 小沈 2026-06-09 batch_process从meta迁入"""
 
     ft = None
 
@@ -310,7 +335,9 @@ def _register_file_tools():
         "archive_tool": lambda **kw: _get_ft().archive_tool(**kw),
         "file_operation": lambda **kw: _get_ft().file_operation(**kw),
         "data_file_format": lambda **kw: _get_ft().data_file_format(**kw),
+        "batch_process": batch_process,
     }
+
 
     for name, method in tool_methods.items():
         desc = FILE_TOOL_DESCRIPTIONS.get(name, "")
