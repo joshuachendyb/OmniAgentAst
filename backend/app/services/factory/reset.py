@@ -3,19 +3,11 @@
 reset — 从 factory.py 拷出
 
 拷贝来源: factory.py 第252-262行
+P1-07/P2-07修复: 使用公开reset_instance替代直接操作私有变量
 """
 
 from app.services.factory.close_instance_sync import close_instance_sync
-from app.services.factory.get_service import _instance, _current_provider
-
-
-def _clear_global_state() -> None:
-    """清空全局状态 - 小沈 2026-06-08"""
-    import app.services.factory.get_service as gs
-    old = gs._instance
-    gs._instance = None
-    gs._current_provider = ""
-    return old
+from app.services.factory.get_service import reset_instance
 
 
 def _log_reset() -> None:
@@ -25,6 +17,6 @@ def _log_reset() -> None:
 
 def reset():
     """拷贝自 factory.py 第252-262行"""
-    old = _clear_global_state()
+    old = reset_instance()
     close_instance_sync(old)
     _log_reset()

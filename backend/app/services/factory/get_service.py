@@ -78,8 +78,8 @@ def _create_service_instance(provider_config: dict, final_provider: str, final_m
     )
 
 
-def get_service(config_path: Optional[str] = None) -> BaseAIService:
-    """拷贝自 factory.py 第204-250行"""
+def get_service() -> BaseAIService:
+    """拷贝自 factory.py 第204-250行 — P2-09修复: 删除未使用的config_path"""
     global _instance, _current_provider
 
     _, final_provider, final_model, ai_config = _get_resolver_and_config()

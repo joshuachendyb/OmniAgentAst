@@ -23,7 +23,7 @@ def _check_config_exists(actual_path: str) -> Optional[ConfigValidationResult]:
 
 
 def _resolve_provider_model() -> Tuple[Optional[str], Optional[str], list]:
-    """解析provider和model - 小沈 2026-06-08"""
+    """解析provider和model — P2-08修复: 复用resolver实例"""
     from app.services.ai_config_resolver import get_ai_config_resolver
     resolver = get_ai_config_resolver()
     try:
@@ -44,7 +44,7 @@ def _make_provider_model_error(errors: list, provider: Optional[str], model: Opt
 
 
 def _validate_credentials(provider: str) -> Tuple[list, list]:
-    """验证凭证 - 小沈 2026-06-08"""
+    """验证凭证 — P2-08修复: 复用resolver实例"""
     from app.services.ai_config_resolver import get_ai_config_resolver
     resolver = get_ai_config_resolver()
     return validate_credentials(resolver.get_ai_config(), provider)
