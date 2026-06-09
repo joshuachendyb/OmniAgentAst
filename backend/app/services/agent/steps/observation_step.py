@@ -84,28 +84,25 @@ class ObservationStep(ReasoningStep):
     def is_done(self) -> bool:
         return self._return_direct
 
-    def _build_observation_obj(self) -> Dict[str, Any]:
+    def _extra_fields(self) -> Dict[str, Any]:
         summary_text = self._observation or self._summary or self._error_message or "执行完成"
-        obj = {
+        obs: Dict[str, Any] = {
             "summary": summary_text,
             "tool_name": self._tool_name or "unknown",
             "tool_params": self._tool_params or {},
             "return_direct": self._return_direct or False,
         }
         if self._execution_status:
-            obj["execution_status"] = self._execution_status
+            obs["execution_status"] = self._execution_status
         if self._error_message:
-            obj["error_message"] = self._error_message
+            obs["error_message"] = self._error_message
         if self._warning:
-            obj["warning"] = self._warning
+            obs["warning"] = self._warning
         if self._next_actions:
-            obj["next_actions"] = self._next_actions
+            obs["next_actions"] = self._next_actions
         if self._attachment is not None:
-            obj["attachment"] = self._attachment
-        return obj
-
-    def _extra_fields(self) -> Dict[str, Any]:
-        d: Dict[str, Any] = {"observation": self._build_observation_obj()}
+            obs["attachment"] = self._attachment
+        d: Dict[str, Any] = {"observation": obs}
         if self._code:
             d["code"] = self._code
         return d
