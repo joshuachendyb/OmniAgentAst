@@ -38,47 +38,6 @@ def _extract_action_params(parsed: Dict) -> tuple:
 
 
 
-def _update_executed_summary(agent, tool_name: str, result, tool_params: Dict = None):
-    """更新已执行工具汇总(含数据摘要) — 小沈 2026-06-09 方案H"""
-    if not hasattr(agent, '_executed_tool_summary'):
-        agent._executed_tool_summary = []
-    if isinstance(result, dict):
-        from app.services.agent.observation_formatter import extract_status
-        status = extract_status(result)
-        data_summary = _extract_data_summary(result)
-    else:
-        status = "success"
-        data_summary = ""
-    entry = f"{tool_name}→{status}"
-    if data_summary:
-        entry += f"|{data_summary}"
-    agent._executed_tool_summary.append(entry)
-
-
-def _extract_data_summary(result: dict) -> str:
-    """从工具结果提取数据摘要(≤60字符) — 小沈 2026-06-09"""
-    data = result.get("data")
-    if not data:
-        return ""
-    if isinstance(data, str):
-        return data[:60]
-    if isinstance(data, dict):
-        keys = list(data.keys())[:5]
-        parts = []
-        for k in keys:
-            v = data[k]
-            if isinstance(v, (str, int, float, bool)):
-                parts.append(f"{k}={str(v)[:20]}")
-            elif isinstance(v, list):
-                parts.append(f"{k}=[{len(v)}项]")
-            elif isinstance(v, dict):
-                parts.append(f"{k}={{...}}")
-        return "; ".join(parts)[:60]
-    if isinstance(data, list):
-        return f"[{len(data)}项]"
-    return ""
-
-
 def _update_message_builder(agent, result, tool_name: str = "", tool_params: Dict = None):
     """更新message_builder — 小沈 2026-06-09"""
     if not hasattr(agent, 'message_builder') or not agent.message_builder:
@@ -128,10 +87,10 @@ async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: l
     for call, result in zip(all_calls, results):
         if isinstance(result, Exception):
             obs_text = f"Observation: 工具{call['tool_name']}执行异常: {result}"
-            _update_executed_summary(agent, call["tool_name"], {"code": "error", "message": str(result)}, call["tool_params"])
+            agent._update_executed_tool_summary(call["tool_name"], {"code": "error", "message": str(result)}, call["tool_params"])
         else:
             obs_text = build_observation_text(result, call["tool_name"], call["tool_params"])
-            _update_executed_summary(agent, call["tool_name"], result, call["tool_params"])
+            agent._update_executed_tool_summary(call["tool_name"], result, call["tool_params"])
         obs_parts.append(obs_text)
         _update_message_builder(agent, result if not isinstance(result, Exception) else {"code": "error"}, tool_name=call["tool_name"], tool_params=call["tool_params"])
 
@@ -144,7 +103,6 @@ async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: l
     ))
 
     agent.message_builder.add_assistant(llm_response)
-    step_counter[0] = step + 1
 
 
 async def _handle_answer(agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
@@ -183,13 +141,11 @@ async def _handle_chunk_buffer_promotion(agent, step: int, content: str, chunk_b
     if not accumulated:
         return
     
-    next_step = step + 1
-    step_counter[0] = next_step
     yield agent._step_emitter.emit(ThoughtStep(
-        step=next_step, content=f"Accumulated {len(accumulated)} chunks",
+        step=step, content=f"Accumulated {len(accumulated)} chunks",
     ))
     yield agent._step_emitter.emit(ChunkStep(
-        step=next_step + 1, content=accumulated,
+        step=step, content=accumulated,
     ))
 
 
@@ -249,6 +205,7 @@ async def _process_single_step(agent, step_counter: list, chunk_buffer) -> bool:
 
     if agent._cancelled:
         yield agent._create_cancelled_chunk()
+        agent.status = AgentStatus.COMPLETED
         return
 
     parsed = parse_llm_response(llm_response)
@@ -277,7 +234,7 @@ async def run_react_cycle(
     if max_steps is None:
         max_steps = get_config().get_max_steps()
 
-    chunk_buffer, _ = self._initialize_run_state(task, task_id, context)
+    chunk_buffer = self._initialize_run_state(task, task_id, context)
 
     step_counter = [0]
     self.status = AgentStatus.RUNNING
