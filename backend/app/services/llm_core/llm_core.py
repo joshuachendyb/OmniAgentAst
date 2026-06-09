@@ -16,7 +16,7 @@ from typing import List, Dict, Optional, AsyncGenerator, Any
 from app.utils.logger import logger
 from app.utils.retry_engine import RetryEngine, BackoffStrategy
 from app.services.llm.core import (
-    ChatResponse, StreamChunk, _StreamRetryContext, _resolve_exception,
+    ChatResponse, StreamChunk, _resolve_exception,
 )
 from app.services.llm.stream_parser import create_cancelled_chunk
 
@@ -83,9 +83,6 @@ class BaseAIService(ChatWithToolsStreamMixin, ToolCallerMixin):
         return status_code in self.RATE_LIMIT_STATUS_CODES
 
 
-    def _stream_with_retry(self, url: str, headers: dict, json_body: dict, max_retries: int = 3, retry_delay: float = 2.0):
-        return _StreamRetryContext(self, url, headers, json_body, max_retries, retry_delay)
-
     def _create_stream_error_chunk(self, e: Exception) -> StreamChunk:
         msg, err_type = _resolve_exception(e)
         if err_type == "unknown_error":
@@ -99,12 +96,6 @@ class BaseAIService(ChatWithToolsStreamMixin, ToolCallerMixin):
         """Chat with LLM — 委托给独立函数"""
         return aggregate_chat_response(self, message, history, tools)
 
-
-    def _build_api_url(self) -> str:
-        return f"{self.api_base}/chat/completions"
-
-    def _build_request_headers(self) -> dict:
-        return {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
 
     async def close(self):
         if self._llm_sdk:
