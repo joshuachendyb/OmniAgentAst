@@ -22,6 +22,7 @@
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `safe_truncate` | 安全截断数据 | data, limit | 截断后的数据 |
+| `extract_data_summary` | **【v0.13.34新增】** 从数据提取摘要（用于日志、调试、状态汇总） | data, max_chars | 摘要字符串 |
 | `parse_json` | 解析JSON字符串 | json_str, label | 解析结果或None |
 
 ### 1.2 时间处理（time_utils.py）
@@ -87,6 +88,7 @@
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `build_llm_messages` | 构建LLM消息列表 | message, history | list |
+| `build_observation_text` | 构建观察文本 | execution_result, tool_name, tool_params | str |
 | `inject_tools_info` | 注入工具信息 | history_dicts, tools_content | list |
 | `inject_schema_text` | 注入Schema文本 | history_dicts, schema_text | list |
 | `build_schema_text` | 构建Schema文本 | openai_tools | str |
@@ -148,5 +150,12 @@ def my_parse_json(json_str):
 
 ---
 
-**最后更新时间**: 2026-05-29 07:50:00
+**最后更新时间**: 2026-06-09 15:45:00
 **维护人**: 小沈
+
+## 版本历史
+
+| 版本 | 时间 | 更新内容 | 作者 |
+|------|------|---------|------|
+| v1.1 | 2026-06-09 15:45:00 | 新增extract_data_summary函数 | 小沈 |
+| v1.0 | 2026-05-29 07:50:00 | 初始版本 | 小沈 |
