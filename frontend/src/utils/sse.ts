@@ -471,7 +471,7 @@ export const useSSE = (
   // ⭐ 新增：重试回调 - 【小查修复2026-03-13】添加wait_time参数
   onRetry?: (message: string, waitTime?: number) => void,
   // 【v3.4新增 2026-06-09 小沈】授权请求回调
-  onAuthorizationRequired?: (data: { tool_name: string; params: Record<string, unknown>; safety_level: string }) => void,
+  onAuthorizationRequired?: (data: { confirm_id: string; tool_name: string; params: Record<string, unknown>; safety_level: string }) => void,
 ): UseSSEReturn => {
   const [isConnected, setIsConnected] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
@@ -976,7 +976,7 @@ const processSSEData = (
     onResumed?: () => void;
     onShowSteps?: (show: boolean) => void;
     onRetry?: (message: string, waitTime?: number) => void;
-    onAuthorizationRequired?: (data: { tool_name: string; params: Record<string, unknown>; safety_level: string }) => void;
+    onAuthorizationRequired?: (data: { confirm_id: string; tool_name: string; params: Record<string, unknown>; safety_level: string }) => void;
     setCurrentResponse: React.Dispatch<React.SetStateAction<string>>;
     responseBufferRef: React.MutableRefObject<string>;
     setIsReceiving: React.Dispatch<React.SetStateAction<boolean>>;

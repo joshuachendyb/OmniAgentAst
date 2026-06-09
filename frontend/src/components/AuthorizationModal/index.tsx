@@ -23,6 +23,7 @@ import { WarningOutlined, ExclamationCircleOutlined, StopOutlined } from '@ant-d
 const { Text, Title } = Typography;
 
 export interface AuthorizationRequest {
+  confirmId: string;
   toolName: string;
   params: Record<string, unknown>;
   safetyLevel: string;

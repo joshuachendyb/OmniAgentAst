@@ -1,7 +1,7 @@
-import React, { useEffect, useCallback, useState } from "react";
+import React, { useEffect, useCallback, useState, useRef } from "react";
 import { message, Card } from "antd";
 import { useSearchParams } from "react-router-dom";
-import { API_BASE_URL } from "../../services/api";
+import { API_BASE_URL, taskControlApi } from "../../services/api";
 import {
   STORAGE_KEY,
 } from "../../utils/chatHistory";
@@ -73,6 +73,7 @@ const NewChatContainer: React.FC = () => {
 
   // 【v3.4新增 2026-06-09 小沈】授权弹窗状态
   const [authorizationPending, setAuthorizationPending] = useState<AuthorizationRequest | null>(null);
+  const authorizationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 【v3.4新增 2026-06-09 小沈】授权请求回调（从useChatCallbacks传递）
   useEffect(() => {
@@ -81,6 +82,7 @@ const NewChatContainer: React.FC = () => {
       // 后端发送snake_case字段，前端AuthorizationModal使用camelCase
       const rawData = event.detail;
       setAuthorizationPending({
+        confirmId: rawData.confirm_id as string,
         toolName: rawData.tool_name as string,
         params: (rawData.params ?? {}) as Record<string, unknown>,
         safetyLevel: rawData.safety_level as string,
@@ -92,6 +94,32 @@ const NewChatContainer: React.FC = () => {
       window.removeEventListener('authorization_required', handleAuthorizationRequired as EventListener);
     };
   }, []);
+
+  // 【v3.4新增 2026-06-09 小沈】授权超时自动关闭（60秒与后端一致）
+  useEffect(() => {
+    if (authorizationPending) {
+      authorizationTimeoutRef.current = setTimeout(() => {
+        console.warn('[Authorization] 前端超时，自动拒绝');
+        // 直接发送reject请求，不调用handleAuthorizationConfirm避免循环依赖
+        fetch(`${API_BASE_URL}/chat/stream/confirm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            confirm_id: authorizationPending.confirmId,
+            confirmed: false,
+            trust_session: false,
+          }),
+        }).catch(() => { /* 超时reject失败忽略 */ });
+        setAuthorizationPending(null);
+      }, 60000);
+    }
+    return () => {
+      if (authorizationTimeoutRef.current) {
+        clearTimeout(authorizationTimeoutRef.current);
+        authorizationTimeoutRef.current = null;
+      }
+    };
+  }, [authorizationPending]);
 
   // chatPersistence 直接使用（restoreState）
 
@@ -347,25 +375,17 @@ const NewChatContainer: React.FC = () => {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/chat/stream/confirm`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          task_id: sessionId,
-          confirmed,
-          trust_session: trustSession,
-        }),
-      });
-
-      if (!response.ok) {
-        console.error('[Authorization] 授权确认失败:', response.status);
-      }
+      await taskControlApi.confirm(
+        authorizationPending.confirmId,
+        confirmed,
+        trustSession
+      );
     } catch (error) {
       console.error('[Authorization] 确认失败:', error);
     } finally {
       setAuthorizationPending(null);
     }
-  }, [authorizationPending, sessionId]);
+  }, [authorizationPending]);
 
   return (
     <Card
