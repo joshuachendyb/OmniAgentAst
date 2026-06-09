@@ -6,6 +6,7 @@ get_service — 从 factory.py 拷出
 """
 
 from typing import Optional
+import threading
 
 from app.utils.logger import setup_logger
 from app.utils.time_utils import now_str
@@ -16,6 +17,7 @@ logger = setup_logger("OmniAgentAst.AIServiceFactory")
 
 _instance: Optional[BaseAIService] = None
 _current_provider: str = ""
+_instance_lock = threading.Lock()  # 【修复P1-1 2026-06-09 小沈】多线程部署安全
 
 
 def _get_resolver_and_config():
@@ -79,7 +81,9 @@ def _create_service_instance(provider_config: dict, final_provider: str, final_m
 
 
 def get_service() -> BaseAIService:
-    """拷贝自 factory.py 第204-250行 — P2-09修复: 删除未使用的config_path"""
+    """拷贝自 factory.py 第204-250行 — P2-09修复: 删除未使用的config_path
+    【修复P1-1 2026-06-09 小沈】threading.Lock保护多线程安全
+    """
     global _instance, _current_provider
 
     _, final_provider, final_model, ai_config = _get_resolver_and_config()
@@ -89,28 +93,38 @@ def get_service() -> BaseAIService:
     if _check_cache_valid(final_provider, final_model):
         return _instance
     
-    _cleanup_old_instance(final_provider)
-    
-    _log_service_creation(final_provider, final_model)
-    
-    provider_config = _get_provider_config(ai_config, final_provider)
-    
-    _instance = _create_service_instance(provider_config, final_provider, final_model)
+    with _instance_lock:
+        # double-checked locking
+        if _check_cache_valid(final_provider, final_model):
+            return _instance
+        _cleanup_old_instance(final_provider)
+        
+        _log_service_creation(final_provider, final_model)
+        
+        provider_config = _get_provider_config(ai_config, final_provider)
+        
+        _instance = _create_service_instance(provider_config, final_provider, final_model)
 
     return _instance
 
 
 def reset_instance():
-    """P1-07修复: 公开reset方法,替代直接操作私有变量"""
+    """P1-07修复: 公开reset方法,替代直接操作私有变量
+    【修复P1-1 2026-06-09 小沈】threading.Lock保护
+    """
     global _instance, _current_provider
-    old = _instance
-    _instance = None
-    _current_provider = ""
+    with _instance_lock:
+        old = _instance
+        _instance = None
+        _current_provider = ""
     return old
 
 
 def set_instance(instance, provider=""):
-    """P1-07修复: 公开set方法,替代直接操作私有变量"""
+    """P1-07修复: 公开set方法,替代直接操作私有变量
+    【修复P1-1 2026-06-09 小沈】threading.Lock保护
+    """
     global _instance, _current_provider
-    _instance = instance
-    _current_provider = provider
+    with _instance_lock:
+        _instance = instance
+        _current_provider = provider
