@@ -87,7 +87,7 @@ async def run_sse_stream(
 
 async def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_step, current_execution_steps, session_id):
     """内联错误SSE生成(避免外部模块依赖) — P2-18 使用ErrorStep替代手工dict"""
-    from app.chat_stream import save_execution_steps_to_db, format_agent_sse
+    from app.chat_stream import format_agent_sse
     from app.services.agent.steps import ErrorStep
 
     step_num = next_step()
@@ -97,6 +97,5 @@ async def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_st
         error_message=str(e),
     )
     current_execution_steps.append(error_step.to_dict())
-    await save_execution_steps_to_db(session_id, current_execution_steps, error_label)
-
+    # 【修改 2026-06-09 小沈】删除_save调用，统一在finally块中保存
     return format_agent_sse(error_step.to_dict())
