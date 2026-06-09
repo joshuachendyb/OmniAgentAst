@@ -122,8 +122,12 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         seed: Optional[int] = None,
+        cancel_check: Optional[callable] = None,
     ) -> AsyncGenerator[str, None]:
-        """流式请求 - 统一入口 - 小沈 2026-06-09"""
+        """流式请求 - 统一入口 - 小沈 2026-06-09
+        
+        【修复 2026-06-09 小沈】添加cancel_check参数，支持HTTP阻塞期间的取消检查
+        """
         body = _build_request_body(
             messages=messages, model=self.model, mode=mode,
             max_tokens=max_tokens, temperature=temperature, seed=seed,
@@ -132,6 +136,8 @@ class LLMClient:
         async with self._client.stream("POST", "/chat/completions", json=body) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
+                if cancel_check and cancel_check():
+                    return
                 if line.startswith("data: "):
                     data = line[6:]
                     if data.strip() == "[DONE]":
