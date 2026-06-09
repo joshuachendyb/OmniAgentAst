@@ -123,11 +123,7 @@ class UniversalAgent(BaseAgent):
         return await self._retry_engine.execute_tool_with_retry(tool_name, tool_params)
 
     async def _call_llm(self):
-        """调用LLM — 流式输出chunk给前端 - 小沈 2026-06-09
-        
-        Returns:
-            AsyncGenerator[str, None]: yield chunk content, 最后return完整响应
-        """
+        """调用LLM — 流式输出chunk给前端 - 小沈 2026-06-09"""
         self.llm_call_count += 1
         self.message_builder.trim_history()
 
@@ -140,31 +136,26 @@ class UniversalAgent(BaseAgent):
         openai_tools = self._get_openai_tools()
 
         if openai_tools:
-            async for chunk_or_response in self._call_llm_fc_stream(messages, openai_tools):
-                yield chunk_or_response
+            async for item in self._call_llm_fc_stream(messages, openai_tools):
+                yield item
         else:
-            async for chunk_or_response in self._call_llm_text_stream(messages):
-                yield chunk_or_response
+            async for item in self._call_llm_text_stream(messages):
+                yield item
 
     async def _call_llm_fc_stream(self, messages: list, openai_tools: list):
-        """FC模式流式调用 — 实时输出思考过程 - 小沈 2026-06-09
-        
-        Yields:
-            str: chunk content (中间结果)
-        Returns:
-            str: 完整响应 (最后)
-        """
+        """FC模式流式调用 — 实时输出思考过程 - 小沈 2026-06-09"""
         from app.services.agent.steps import ChunkStep
-        
+        from app.utils.json_utils import parse_json
+
         full_content = ""
         full_reasoning = ""
         stream_error = None
         chunk_step_count = 0
 
         try:
-            async for chunk in self.llm_client.chat_with_tools_stream(
-                message="", 
-                history=messages, 
+            async for chunk in self.llm_client.request_stream(
+                messages=messages,
+                mode="tools",
                 tools=openai_tools,
                 tool_choice="auto",
             ):
@@ -176,7 +167,6 @@ class UniversalAgent(BaseAgent):
                     chunk_step_count += 1
                     if getattr(chunk, "is_reasoning", False):
                         full_reasoning += chunk.content
-                        # yield reasoning chunk给前端
                         yield ("chunk", ChunkStep(
                             step=self.llm_call_count,
                             content=chunk.content,
@@ -184,7 +174,6 @@ class UniversalAgent(BaseAgent):
                         ))
                     else:
                         full_content += chunk.content
-                        # yield content chunk给前端
                         yield ("chunk", ChunkStep(
                             step=self.llm_call_count,
                             content=chunk.content,
@@ -197,8 +186,7 @@ class UniversalAgent(BaseAgent):
             logger.info(f"[FC] 流式调用完成, content_len={len(full_content)}, reasoning_len={len(full_reasoning)}, chunks={chunk_step_count}")
 
         except Exception as e:
-            logger.warning(f"[FC] chat_with_tools_stream失败,降级text: {e}")
-            # 降级为非流式text
+            logger.warning(f"[FC] request_stream失败,降级text: {e}")
             response = await self._call_llm_text_nostream(messages)
             yield ("response", response)
             return
@@ -209,18 +197,12 @@ class UniversalAgent(BaseAgent):
             yield ("response", response)
             return
 
-        # 解析FC结果
         if full_content:
-            try:
-                from app.utils.json_utils import parse_json
-                parsed = parse_json(full_content)
-                if parsed and "tool_name" in parsed:
-                    yield ("response", full_content)
-                    return
-            except (ValueError, TypeError):
-                pass
+            parsed = parse_json(full_content)
+            if parsed and "tool_name" in parsed:
+                yield ("response", full_content)
+                return
 
-        # 如果没有解析出tool_calls，尝试从reasoning中提取
         if full_reasoning and not full_content:
             full_content = full_reasoning
 
@@ -229,16 +211,15 @@ class UniversalAgent(BaseAgent):
     async def _call_llm_text_stream(self, messages: list):
         """Text模式流式调用 — 实时输出内容 - 小沈 2026-06-09"""
         from app.services.agent.steps import ChunkStep
-        
+
         full_content = ""
         full_reasoning = ""
         chunk_step_count = 0
 
         try:
-            async for chunk in self.llm_client.chat_with_tools_stream(
-                message="",
-                history=messages,
-                tools=None,
+            async for chunk in self.llm_client.request_stream(
+                messages=messages,
+                mode="text",
             ):
                 if chunk.stream_error:
                     logger.error(f"[text] 流式错误: {chunk.stream_error}")
@@ -267,7 +248,7 @@ class UniversalAgent(BaseAgent):
             logger.info(f"[text] 流式调用完成, content_len={len(full_content)}, reasoning_len={len(full_reasoning)}, chunks={chunk_step_count}")
 
         except Exception as e:
-            logger.error(f"[text] chat_with_tools_stream失败,降级text: {e}")
+            logger.error(f"[text] request_stream失败,降级text: {e}")
             response = await self._call_llm_text_nostream(messages)
             yield ("response", response)
             return
@@ -280,10 +261,13 @@ class UniversalAgent(BaseAgent):
     async def _call_llm_text_nostream(self, messages: list) -> str:
         """Text模式非流式调用(降级用) - 小沈 2026-06-09"""
         try:
-            response = await self.llm_client.chat(messages=messages)
+            response = await self.llm_client.request(messages=messages, mode="text")
         except Exception as e:
-            logger.error(f"[text] chat调用失败: {e}")
+            logger.error(f"[text] request调用失败: {e}")
             return ""
+
+        if isinstance(response, str):
+            return response
 
         choices = response.get("choices", [])
         if not choices:
