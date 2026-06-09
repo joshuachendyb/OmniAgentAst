@@ -45,6 +45,7 @@ class BaseAIService:
         self.timeout = int(timeout_value)
         self._cancelled = False
         self._current_response: Optional[httpx.Response] = None
+        self.task_id: Optional[str] = None
 
     def _ensure_client(self):
         if self._llm_sdk is None:
@@ -72,6 +73,19 @@ class BaseAIService:
     def reset_cancel(self):
         self._cancelled = False
         self._current_response = None
+
+    def set_task_id(self, task_id: str):
+        """设置任务ID，用于HTTP阻塞期间的取消检查 — 小沈 2026-06-09"""
+        self.task_id = task_id
+
+    async def _check_task_cancelled_or_paused(self) -> bool:
+        """检查任务是否被取消或暂停 — 小沈 2026-06-09"""
+        if not self.task_id:
+            return self._cancelled
+        from app.services.task.task_registry import check_cancelled, check_paused
+        is_cancelled = await check_cancelled(self.task_id)
+        is_paused = await check_paused(self.task_id)
+        return is_cancelled or is_paused or self._cancelled
 
     RATE_LIMIT_STATUS_CODES = RATE_LIMIT_STATUS_CODES
 
@@ -134,7 +148,10 @@ class BaseAIService:
         tools: Optional[List[Dict]] = None,
         tool_choice: str = "auto",
     ) -> AsyncGenerator[StreamChunk, None]:
-        """流式请求 - SSE服务层/Agent用 - 小沈 2026-06-09"""
+        """流式请求 - SSE服务层/Agent用 - 小沈 2026-06-09
+        
+        【修复 2026-06-09 小沈】HTTP阻塞期间定期检查取消/暂停状态
+        """
         self.reset_cancel()
         self._ensure_client()
 
@@ -152,9 +169,39 @@ class BaseAIService:
                     temperature=self.temperature,
                     seed=self.seed,
                 ):
-                    if self._cancelled:
+                    if await self._check_task_cancelled_or_paused():
                         yield self._create_cancelled_chunk()
                         return
+
+                    chunk = self._parse_sse_data(data_str)
+                    if chunk:
+                        yield chunk
+                        if chunk.is_done:
+                            return
+
+                yield StreamChunk(content="", model=self.model, is_done=True)
+                return
+
+            except Exception as e:
+                if self._should_retry(e) and retry_count < max_retries:
+                    retry_count += 1
+                    wait_time = 2 ** retry_count
+                    logger.warning(f"[request_stream] 重试 {retry_count}/{max_retries}, 等待{wait_time}秒, 错误: {e}")
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    yield self._create_stream_error_chunk(e)
+                    return
+
+                    # 【v3.5修复】暂停检查 — LLM流式过程中也响应暂停
+                    if pause_event and not pause_event.is_set():
+                        try:
+                            await asyncio.wait_for(pause_event.wait(), timeout=300)
+                        except asyncio.TimeoutError:
+                            pass
+                        if self._cancelled:
+                            yield self._create_cancelled_chunk()
+                            return
 
                     chunk = self._parse_sse_data(data_str)
                     if chunk:
