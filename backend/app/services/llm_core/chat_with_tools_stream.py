@@ -11,7 +11,6 @@ from typing import List, Dict, Any, Optional, AsyncGenerator
 
 from app.utils.logger import logger
 from app.services.llm.core import StreamChunk
-from app.services.llm.stream_parser import parse_sse_stream, handle_http_error_stream
 from app.services.agent.agent_utils.message_utils import build_llm_messages
 
 
@@ -46,8 +45,6 @@ class ChatWithToolsStreamMixin:
         max_retries: int = 3,
     ) -> AsyncGenerator[StreamChunk, None]:
         """流式调用+重试逻辑 - 小沈 2026-06-09"""
-        from app.utils.retry import create_network_retry_engine
-
         retry_count = 0
         while retry_count <= max_retries:
             try:

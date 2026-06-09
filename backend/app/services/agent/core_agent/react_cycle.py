@@ -277,6 +277,7 @@ async def run_react_cycle(
             # R10-4修复: chunk累积超时强制停止,防止LLM持续返回chunk导致无限循环 — 小沈 2026-06-09
             if chunk_buffer.should_force_stop():
                 logger.warning(f"[run_react_cycle] chunk累积超时({step_counter[0]}步),强制停止")
+                agent.status = AgentStatus.COMPLETED
                 break
 
     except Exception as e:

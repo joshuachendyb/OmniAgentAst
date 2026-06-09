@@ -14,14 +14,13 @@ import httpx
 from typing import List, Dict, Optional, AsyncGenerator, Any
 
 from app.utils.logger import logger
-from app.utils.retry_engine import RetryEngine, BackoffStrategy
 from app.services.llm.core import (
     ChatResponse, StreamChunk, _resolve_exception,
 )
 from app.services.llm.stream_parser import create_cancelled_chunk
 
 from app.services.llm.client_sdk import create_llm_client
-from app.constants import DEFAULT_LLM_TIMEOUT, RATE_LIMIT_STATUS_CODES
+from app.constants import DEFAULT_LLM_TIMEOUT
 
 from app.services.llm_core.chat_with_tools_stream import ChatWithToolsStreamMixin
 from app.services.llm_core.tool_caller import ToolCallerMixin
@@ -76,11 +75,6 @@ class BaseAIService(ChatWithToolsStreamMixin, ToolCallerMixin):
     def reset_cancel(self):
         self._cancelled = False
         self._current_response = None
-
-    RATE_LIMIT_STATUS_CODES = RATE_LIMIT_STATUS_CODES
-
-    def _is_rate_limit_status(self, status_code: int) -> bool:
-        return status_code in self.RATE_LIMIT_STATUS_CODES
 
 
     def _create_stream_error_chunk(self, e: Exception) -> StreamChunk:

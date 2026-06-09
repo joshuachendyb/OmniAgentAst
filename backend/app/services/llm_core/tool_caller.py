@@ -6,7 +6,6 @@ tool_caller — 调用SDK层实现FC
 Author: 小沈 - 2026-05-31
 """
 
-import asyncio
 from typing import List, Dict, Any, Optional
 
 from app.utils.logger import logger
@@ -15,44 +14,6 @@ from app.services.llm.core import ChatResponse
 
 class ToolCallerMixin:
     """Function Calling(SRP)"""
-
-    async def _cancel_or_wait(self, request_task: asyncio.Task) -> Optional[ChatResponse]:
-        """心跳循环:1秒间隔检查取消 - 小沈 2026-06-09"""
-        try:
-            while not request_task.done():
-                try:
-                    await asyncio.wait_for(asyncio.shield(request_task), timeout=1.0)
-                except asyncio.TimeoutError:
-                    if self._cancelled:
-                        logger.info("[chat_with_tools] 检测到取消,中断请求")
-                        request_task.cancel()
-                        try:
-                            await request_task
-                        except asyncio.CancelledError:
-                            pass
-                        return ChatResponse(content="", model=self.model, provider=self.provider, error="任务已取消")
-        except asyncio.CancelledError:
-            return ChatResponse(content="", model=self.model, provider=self.provider, error="任务已取消")
-        if self._cancelled:
-            return ChatResponse(content="", model=self.model, provider=self.provider, error="任务已取消")
-        return None
-
-    def _response_or_error(
-        self,
-        content: str = "",
-        error: str = "",
-        tool_calls: Optional[List] = None,
-        reasoning: str = "",
-    ) -> ChatResponse:
-        """统一构建 ChatResponse - 小沈 2026-06-09"""
-        return ChatResponse(
-            content=content,
-            model=self.model,
-            provider=self.provider,
-            error=error,
-            tool_calls=tool_calls,
-            reasoning=reasoning,
-        )
 
     async def chat_with_tools(
         self,
