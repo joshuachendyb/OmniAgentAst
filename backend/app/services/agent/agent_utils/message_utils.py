@@ -11,9 +11,6 @@ Author: 小沈 - 2026-05-28
 
 from typing import Any, Dict, List, Optional
 
-from app.services.agent.observation_formatter import format_llm_observation
-from app.utils.display_utils import format_param_value
-
 
 def build_llm_messages(message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
     """LLM层消息列表拼接 — DRY原则:统一入口
@@ -31,9 +28,23 @@ def build_llm_messages(message: str, history: Optional[List[Dict]] = None) -> Li
     return messages
 
 
-def build_observation_text(execution_result: dict, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
-    """根据工具执行结果构建observation文本"""
-    return format_llm_observation(execution_result, tool_name, tool_params)
+def build_observation_text(execution_result, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
+    """根据工具执行结果构建observation文本 — 小沈 2026-06-09 增强
+    
+    Args:
+        execution_result: 工具执行结果（dict或其他类型）
+        tool_name: 工具名称
+        tool_params: 工具参数
+    
+    Returns:
+        observation文本
+    """
+    from app.services.agent.observation_formatter import format_llm_observation, build_execution_result_dict
+    
+    if isinstance(execution_result, dict):
+        exec_result = build_execution_result_dict(execution_result)
+        return format_llm_observation(exec_result, tool_name=tool_name, tool_params=tool_params)
+    return f"Observation: {str(execution_result)}"
 
 
 def inject_tools_info(

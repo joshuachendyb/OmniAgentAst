@@ -8,7 +8,8 @@ import re
 import json
 from typing import Dict, Any, Optional
 
-from ._utils import _extract_json_with_balanced_braces, _extract_string_value
+from ._utils import _extract_json_with_balanced_braces, _extract_string_value, _make_action_result_dict
+from app.utils.json_utils import parse_json
 
 
 # 【24.1.4 组件2/3 常量】已迁移到 constants.py — 北京老陈 2026-05-30
@@ -40,21 +41,6 @@ _CAMEL_TO_SNAKE = {
     "DestinationPath": "destination_path",
     "FilePattern": "file_pattern",
 }
-
-
-# 【24.1.4 组件1】统一 action 结果构建(消除 2 个 return dict 的 6 字段重复) — 小欧 2026-06-09 重命名避免与 _utils.py 冲突
-def _make_action_result_dict(type_: str, tool_name: str, tool_params: Dict[str, Any],
-                           thought: str, error: Optional[str] = None) -> Dict[str, Any]:
-    return {
-        "type": type_,
-        "thought": thought,
-        "content": thought,
-        "reasoning": thought,
-        "tool_name": tool_name,
-        "tool_params": tool_params,
-        "response": None,
-        "error": error,
-    }
 
 
 # 【24.1.4 组件2】从 tool_params 兜底提取工具名(消除 M1a 3 个连续 if)
@@ -132,26 +118,24 @@ def _extract_tool_params_from_thought(thought: str, tool_name: str = None) -> Di
     json_text, _ = _extract_json_with_balanced_braces(thought)
 
     if json_text:
-        try:
-            parsed = json.loads(json_text)
+        parsed = parse_json(json_text, raise_on_error=False)
+        if parsed:
             if "tool_params" in parsed:
                 return parsed["tool_params"]
             if "params" in parsed:
                 return parsed["params"]
             if "tool_name" not in parsed:
                 return parsed
-        except json.JSONDecodeError:
-            json_text_escaped = json_text.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
-            try:
-                parsed = json.loads(json_text_escaped)
-                if "tool_params" in parsed:
-                    return parsed["tool_params"]
-                if "params" in parsed:
-                    return parsed["params"]
-                if "tool_name" not in parsed:
-                    return parsed
-            except json.JSONDecodeError:
-                pass
+        
+        json_text_escaped = json_text.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
+        parsed = parse_json(json_text_escaped, raise_on_error=False)
+        if parsed:
+            if "tool_params" in parsed:
+                return parsed["tool_params"]
+            if "params" in parsed:
+                return parsed["params"]
+            if "tool_name" not in parsed:
+                return parsed
 
     return {}
 
@@ -171,23 +155,20 @@ def _extract_tool_params_from_text(content: str, tool_start_pos: int) -> Optiona
     if not json_text:
         return None
 
-    try:
-        parsed = json.loads(json_text)
+    parsed = parse_json(json_text, raise_on_error=False)
+    if parsed:
         if "tool_params" in parsed:
             return parsed["tool_params"]
         elif isinstance(parsed, dict):
             return {k: v for k, v in parsed.items() if k not in ["reasoning", "thought", "type", "tool_name", "action", "action_input", "extra_field", "metadata", "context"]}
-    except json.JSONDecodeError:
-        pass
-
-    try:
-        inner_start = json_text.find('{', json_text.find('tool_params'))
-        if inner_start != -1:
-            inner_json, _ = _extract_json_with_balanced_braces(json_text[inner_start:])
-            if inner_json:
-                return json.loads(inner_json)
-    except json.JSONDecodeError:
-        pass
+    
+    inner_start = json_text.find('{', json_text.find('tool_params'))
+    if inner_start != -1:
+        inner_json, _ = _extract_json_with_balanced_braces(json_text[inner_start:])
+        if inner_json:
+            parsed = parse_json(inner_json, raise_on_error=False)
+            if parsed:
+                return parsed
 
     params = _extract_params_by_regex(search_text)
     if params:
