@@ -18,8 +18,8 @@ from typing import Any
 
 
 def create_timestamp() -> int:
-    """生成统一的时间戳(毫秒)"""
-    return int(datetime.now().timestamp() * 1000)
+    """生成统一的时间戳(毫秒, UTC) — 小沈 2026-06-09 统一UTC"""
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
 def get_timestamp_ms() -> int:

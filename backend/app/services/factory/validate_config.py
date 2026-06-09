@@ -22,10 +22,11 @@ def _check_config_exists(actual_path: str) -> Optional[ConfigValidationResult]:
     return None
 
 
-def _resolve_provider_model() -> Tuple[Optional[str], Optional[str], list]:
-    """解析provider和model — P2-08修复: 复用resolver实例"""
-    from app.services.ai_config_resolver import get_ai_config_resolver
-    resolver = get_ai_config_resolver()
+def _resolve_provider_model(resolver=None) -> Tuple[Optional[str], Optional[str], list]:
+    """解析provider和model — 小沈 2026-06-09 接受外部resolver"""
+    if resolver is None:
+        from app.services.ai_config_resolver import get_ai_config_resolver
+        resolver = get_ai_config_resolver()
     try:
         provider, model = resolver.resolve_provider_model()
         return provider, model, []
@@ -43,10 +44,11 @@ def _make_provider_model_error(errors: list, provider: Optional[str], model: Opt
     )
 
 
-def _validate_credentials(provider: str) -> Tuple[list, list]:
-    """验证凭证 — P2-08修复: 复用resolver实例"""
-    from app.services.ai_config_resolver import get_ai_config_resolver
-    resolver = get_ai_config_resolver()
+def _validate_credentials(provider: str, resolver=None) -> Tuple[list, list]:
+    """验证凭证 — 小沈 2026-06-09 接受外部resolver"""
+    if resolver is None:
+        from app.services.ai_config_resolver import get_ai_config_resolver
+        resolver = get_ai_config_resolver()
     return validate_credentials(resolver.get_ai_config(), provider)
 
 
@@ -71,18 +73,21 @@ def _make_success_result(provider: str, model: str, cred_errors: list, cred_warn
 
 
 def validate_config(config_path: Optional[str] = None) -> ConfigValidationResult:
-    """拷贝自 factory.py 第163-202行"""
+    """拷贝自 factory.py 第163-202行 — 小沈 2026-06-09 resolver复用"""
     actual_path = get_config_path(config_path)
     
     error = _check_config_exists(actual_path)
     if error:
         return error
     
-    provider, model, errors = _resolve_provider_model()
+    from app.services.ai_config_resolver import get_ai_config_resolver
+    resolver = get_ai_config_resolver()
+    
+    provider, model, errors = _resolve_provider_model(resolver)
     if errors:
         return _make_provider_model_error(errors, provider, model)
     
-    cred_errors, cred_warnings = _validate_credentials(provider)
+    cred_errors, cred_warnings = _validate_credentials(provider, resolver)
     if cred_errors:
         return _make_credentials_error(cred_errors, cred_warnings, provider, model)
     

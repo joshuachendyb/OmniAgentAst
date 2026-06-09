@@ -326,8 +326,9 @@ def get_file_encoding(file_path: str) -> Dict[str, Any]:
 
         # 用 _detect_encoding 检测BOM和基本编码(读4字节)
         detected = _detect_encoding(file_path)
-        if detected in ("utf-8-sig", "utf-16-le", "utf-16-be"):
-            return build_success({"file_path": file_path, "encoding": detected, "confidence": 1.0}, "编码检测完成")
+        if detected in ("utf-8-sig", "utf-16-le", "utf-16-be", "utf-8"):
+            confidence = 1.0 if detected != "utf-8" else 0.95
+            return build_success({"file_path": file_path, "encoding": detected, "confidence": confidence}, "编码检测完成")
 
         # 丰富fallback编码列表(读10K字节，弥补_detect_encoding仅读4字节的限制)
         common_encodings = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'big5', 'utf-16', 'utf-16-le', 'utf-16-be', 'latin-1']

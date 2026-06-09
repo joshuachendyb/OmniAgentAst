@@ -12,9 +12,9 @@ from typing import Optional
 
 from app.utils.logger import setup_logger
 from app.services.factory.get_service import (
-    _create_service_instance,
-    _log_service_creation,
-    _cleanup_old_instance,
+    create_service_instance,
+    log_service_creation,
+    cleanup_old_instance,
     set_instance,
 )
 
@@ -43,14 +43,14 @@ def get_service_for_model(provider: str, model: str):
     
     provider_config = _get_provider_config_safe(resolver, provider, model)
     
-    _cleanup_old_instance(provider)
+    cleanup_old_instance(provider)
     
-    _log_service_creation(provider, model)
+    log_service_creation(provider, model)
     
     if not provider_config:
         provider_config = {}
     
-    instance = _create_service_instance(provider_config, provider, model)
+    instance = create_service_instance(provider_config, provider, model)
     set_instance(instance, provider)
 
     return instance
