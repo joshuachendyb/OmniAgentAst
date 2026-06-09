@@ -34,7 +34,7 @@ class IncidentStep(ReasoningStep):
         self._content = content or message
 
     def get_content(self) -> str:
-        return self._message
+        return self._content
 
     @property
     def incident_value(self) -> str:
@@ -52,5 +52,4 @@ class IncidentStep(ReasoningStep):
         return {
             "incident_value": self._incident_value,
             "message": self._message,
-            "content": self._content,
         }
