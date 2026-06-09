@@ -41,6 +41,7 @@ CIRCUIT_BREAKER_SUCCESS_THRESHOLD = 3
 
 DEFAULT_MAX_STEPS = 100
 MAX_CONSECUTIVE_CHUNKS = 5
+MAX_CHUNKS_WITHOUT_PROMOTE = 50
 
 # ============================================================
 # 3. 网络与超时
