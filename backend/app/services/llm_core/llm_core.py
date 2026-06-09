@@ -193,36 +193,6 @@ class BaseAIService:
                     yield self._create_stream_error_chunk(e)
                     return
 
-                    # 【v3.5修复】暂停检查 — LLM流式过程中也响应暂停
-                    if pause_event and not pause_event.is_set():
-                        try:
-                            await asyncio.wait_for(pause_event.wait(), timeout=300)
-                        except asyncio.TimeoutError:
-                            pass
-                        if self._cancelled:
-                            yield self._create_cancelled_chunk()
-                            return
-
-                    chunk = self._parse_sse_data(data_str)
-                    if chunk:
-                        yield chunk
-                        if chunk.is_done:
-                            return
-
-                yield StreamChunk(content="", model=self.model, is_done=True)
-                return
-
-            except Exception as e:
-                if self._should_retry(e) and retry_count < max_retries:
-                    retry_count += 1
-                    wait_time = 2 ** retry_count
-                    logger.warning(f"[request_stream] 重试 {retry_count}/{max_retries}, 等待{wait_time}秒, 错误: {e}")
-                    await asyncio.sleep(wait_time)
-                    continue
-                else:
-                    yield self._create_stream_error_chunk(e)
-                    return
-
     async def chat(
         self,
         message: str,
