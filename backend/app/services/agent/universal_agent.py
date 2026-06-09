@@ -122,7 +122,12 @@ class UniversalAgent(BaseAgent):
     async def _execute_tool(self, tool_name: str, tool_params: Dict[str, Any]) -> Dict[str, Any]:
         return await self._retry_engine.execute_tool_with_retry(tool_name, tool_params)
 
-    async def _call_llm(self) -> str:
+    async def _call_llm(self):
+        """调用LLM — 流式输出chunk给前端 - 小沈 2026-06-09
+        
+        Returns:
+            AsyncGenerator[str, None]: yield chunk content, 最后return完整响应
+        """
         self.llm_call_count += 1
         self.message_builder.trim_history()
 
@@ -135,8 +140,156 @@ class UniversalAgent(BaseAgent):
         openai_tools = self._get_openai_tools()
 
         if openai_tools:
-            return await self._call_llm_fc(messages, openai_tools)
-        return await self._call_llm_text(messages)
+            async for chunk_or_response in self._call_llm_fc_stream(messages, openai_tools):
+                yield chunk_or_response
+        else:
+            async for chunk_or_response in self._call_llm_text_stream(messages):
+                yield chunk_or_response
+
+    async def _call_llm_fc_stream(self, messages: list, openai_tools: list):
+        """FC模式流式调用 — 实时输出思考过程 - 小沈 2026-06-09
+        
+        Yields:
+            str: chunk content (中间结果)
+        Returns:
+            str: 完整响应 (最后)
+        """
+        from app.services.agent.steps import ChunkStep
+        
+        full_content = ""
+        full_reasoning = ""
+        stream_error = None
+        chunk_step_count = 0
+
+        try:
+            async for chunk in self.llm_client.chat_with_tools_stream(
+                message="", 
+                history=messages, 
+                tools=openai_tools,
+                tool_choice="auto",
+            ):
+                if chunk.stream_error:
+                    stream_error = chunk.stream_error
+                    break
+
+                if chunk.content:
+                    chunk_step_count += 1
+                    if getattr(chunk, "is_reasoning", False):
+                        full_reasoning += chunk.content
+                        # yield reasoning chunk给前端
+                        yield ("chunk", ChunkStep(
+                            step=self.llm_call_count,
+                            content=chunk.content,
+                            is_reasoning=True,
+                        ))
+                    else:
+                        full_content += chunk.content
+                        # yield content chunk给前端
+                        yield ("chunk", ChunkStep(
+                            step=self.llm_call_count,
+                            content=chunk.content,
+                            is_reasoning=False,
+                        ))
+
+                if chunk.is_done:
+                    break
+
+            logger.info(f"[FC] 流式调用完成, content_len={len(full_content)}, reasoning_len={len(full_reasoning)}, chunks={chunk_step_count}")
+
+        except Exception as e:
+            logger.warning(f"[FC] chat_with_tools_stream失败,降级text: {e}")
+            # 降级为非流式text
+            response = await self._call_llm_text_nostream(messages)
+            yield ("response", response)
+            return
+
+        if stream_error:
+            logger.error(f"[FC] 流式错误: {stream_error}")
+            response = await self._call_llm_text_nostream(messages)
+            yield ("response", response)
+            return
+
+        # 解析FC结果
+        if full_content:
+            try:
+                from app.utils.json_utils import parse_json
+                parsed = parse_json(full_content)
+                if parsed and "tool_name" in parsed:
+                    yield ("response", full_content)
+                    return
+            except:
+                pass
+
+        # 如果没有解析出tool_calls，尝试从reasoning中提取
+        if full_reasoning and not full_content:
+            full_content = full_reasoning
+
+        yield ("response", full_content.strip() or '{"thought": "任务完成", "tool_name": "finish", "tool_params": {}}')
+
+    async def _call_llm_text_stream(self, messages: list):
+        """Text模式流式调用 — 实时输出内容 - 小沈 2026-06-09"""
+        from app.services.agent.steps import ChunkStep
+        
+        full_content = ""
+        full_reasoning = ""
+        chunk_step_count = 0
+
+        try:
+            async for chunk in self.llm_client.chat_with_tools_stream(
+                message="",
+                history=messages,
+                tools=None,
+            ):
+                if chunk.stream_error:
+                    logger.error(f"[text] 流式错误: {chunk.stream_error}")
+                    break
+
+                if chunk.content:
+                    chunk_step_count += 1
+                    if getattr(chunk, "is_reasoning", False):
+                        full_reasoning += chunk.content
+                        yield ("chunk", ChunkStep(
+                            step=self.llm_call_count,
+                            content=chunk.content,
+                            is_reasoning=True,
+                        ))
+                    else:
+                        full_content += chunk.content
+                        yield ("chunk", ChunkStep(
+                            step=self.llm_call_count,
+                            content=chunk.content,
+                            is_reasoning=False,
+                        ))
+
+                if chunk.is_done:
+                    break
+
+            logger.info(f"[text] 流式调用完成, content_len={len(full_content)}, reasoning_len={len(full_reasoning)}, chunks={chunk_step_count}")
+
+        except Exception as e:
+            logger.error(f"[text] chat_with_tools_stream失败: {e}")
+            yield ("response", "")
+            return
+
+        if not full_content and full_reasoning:
+            full_content = full_reasoning
+
+        yield ("response", full_content.strip())
+
+    async def _call_llm_text_nostream(self, messages: list) -> str:
+        """Text模式非流式调用(降级用) - 小沈 2026-06-09"""
+        try:
+            response = await self.llm_client.chat(messages=messages)
+        except Exception as e:
+            logger.error(f"[text] chat调用失败: {e}")
+            return ""
+
+        choices = response.get("choices", [])
+        if not choices:
+            return ""
+
+        content = choices[0].get("message", {}).get("content", "")
+        return content or ""
 
     def _get_openai_tools(self) -> list:
         """获取OpenAI格式工具定义 — 小沈 2026-06-09 统一导入方式"""
@@ -152,46 +305,9 @@ class UniversalAgent(BaseAgent):
         """P2-14修复: 清除工具缓存,工具注册/注销后调用"""
         self._cached_openai_tools = []
 
-    async def _call_llm_fc(self, messages: list, openai_tools: list) -> str:
-        try:
-            response = await self.llm_client.chat(
-                messages=messages,
-                tools=openai_tools,
-                tool_choice="auto",
-            )
-        except Exception as e:
-            logger.warning(f"[FC] chat_with_tools失败,降级text: {e}")
-            return await self._call_llm_text(messages)
-
-        choices = response.get("choices", [])
-        if not choices:
-            return ""
-
-        msg = choices[0].get("message", {})
-        tool_calls = msg.get("tool_calls", [])
-        content = msg.get("content", "")
-
-        if tool_calls:
-            return self._format_tool_calls(tool_calls, content)
-
-        if content:
-            return content
-
-        return '{"thought": "任务完成", "tool_name": "finish", "tool_params": {}}'
-
-    async def _call_llm_text(self, messages: list) -> str:
-        try:
-            response = await self.llm_client.chat(messages=messages)
-        except Exception as e:
-            logger.error(f"[text] chat调用失败: {e}")
-            return ""
-
-        choices = response.get("choices", [])
-        if not choices:
-            return ""
-
-        content = choices[0].get("message", {}).get("content", "")
-        return content or ""
+    def set_stream_chunk_handler(self, handler):
+        """设置流式chunk处理器 — 用于前端实时输出 - 小沈 2026-06-09"""
+        self._stream_chunk_handler = handler
 
     def _format_tool_calls(self, tool_calls: list, content: str = "") -> str:
         """格式化function calling工具调用 — 小沈 2026-06-09 消除重复"""
