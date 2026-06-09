@@ -77,6 +77,7 @@ export interface UseChatCallbacksReturn {
   onResumed: () => void;
   onShowSteps: (show: boolean) => void;
   onRetry: (message: string, waitTime?: number) => void;
+  onAuthorizationRequired: (data: { tool_name: string; params: Record<string, unknown>; safety_level: string }) => void;
 }
 
 /**
@@ -637,6 +638,13 @@ export const useChatCallbacks = (
 
   // ==================== 返回值 ====================
 
+  // 【v3.4新增 2026-06-09 小沈】授权请求回调
+  const onAuthorizationRequired = useCallback((data: { tool_name: string; params: Record<string, unknown>; safety_level: string }) => {
+    console.log('[Authorization] 收到授权请求:', data);
+    // 触发授权弹窗（通过自定义事件通知NewChatContainer）
+    window.dispatchEvent(new CustomEvent('authorization_required', { detail: data }));
+  }, []);
+
   return {
     onStep,
     onChunk,
@@ -646,5 +654,6 @@ export const useChatCallbacks = (
     onResumed,
     onShowSteps,
     onRetry,
+    onAuthorizationRequired,  // 【v3.4新增】
   };
 };

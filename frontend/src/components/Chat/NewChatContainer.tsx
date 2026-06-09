@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from "react";
+import React, { useEffect, useCallback, useState } from "react";
 import { message, Card } from "antd";
 import { useSearchParams } from "react-router-dom";
 import { API_BASE_URL } from "../../services/api";
@@ -10,6 +10,7 @@ import ChatInput from "./ChatInput";
 import MessageArea from './MessageArea';
 import ChatHeader from './ChatHeader';
 import ChatToolbar from './ChatToolbar';
+import AuthorizationModal, { AuthorizationRequest } from '../AuthorizationModal';
 import { useChatFacade } from '../../hooks/chat/useChatFacade';
 import { useLoadingMessage } from '../../hooks/useLoadingMessage';
 import { useBeforeUnload } from '../../hooks/useBeforeUnload';
@@ -69,6 +70,28 @@ const NewChatContainer: React.FC = () => {
 
   // 解构chatSend
   const { handleSend } = chatSend;
+
+  // 【v3.4新增 2026-06-09 小沈】授权弹窗状态
+  const [authorizationPending, setAuthorizationPending] = useState<AuthorizationRequest | null>(null);
+
+  // 【v3.4新增 2026-06-09 小沈】授权请求回调（从useChatCallbacks传递）
+  useEffect(() => {
+    // 通过自定义事件监听授权请求
+    const handleAuthorizationRequired = (event: CustomEvent<Record<string, unknown>>) => {
+      // 后端发送snake_case字段，前端AuthorizationModal使用camelCase
+      const rawData = event.detail;
+      setAuthorizationPending({
+        toolName: rawData.tool_name as string,
+        params: (rawData.params ?? {}) as Record<string, unknown>,
+        safetyLevel: rawData.safety_level as string,
+      });
+    };
+    
+    window.addEventListener('authorization_required', handleAuthorizationRequired as EventListener);
+    return () => {
+      window.removeEventListener('authorization_required', handleAuthorizationRequired as EventListener);
+    };
+  }, []);
 
   // chatPersistence 直接使用（restoreState）
 
@@ -317,6 +340,33 @@ const NewChatContainer: React.FC = () => {
     setShowExecution(!showExecution);
   }, [showExecution, setShowExecution]);
 
+  // 【v3.4新增 2026-06-09 小沈】授权确认处理
+  const handleAuthorizationConfirm = useCallback(async (confirmed: boolean, trustSession: boolean) => {
+    if (!authorizationPending) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/chat/stream/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task_id: sessionId,
+          confirmed,
+          trust_session: trustSession,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error('[Authorization] 授权确认失败:', response.status);
+      }
+    } catch (error) {
+      console.error('[Authorization] 确认失败:', error);
+    } finally {
+      setAuthorizationPending(null);
+    }
+  }, [authorizationPending, sessionId]);
+
   return (
     <Card
       styles={{ body: { padding: "0 4px 4px" } }}
@@ -368,6 +418,12 @@ const NewChatContainer: React.FC = () => {
         onSend={handleSend}
         onInterrupt={handleInterrupt}
         onTogglePause={handleTogglePause}
+      />
+
+      <AuthorizationModal
+        visible={!!authorizationPending}
+        request={authorizationPending}
+        onConfirm={handleAuthorizationConfirm}
       />
     </Card>
   );

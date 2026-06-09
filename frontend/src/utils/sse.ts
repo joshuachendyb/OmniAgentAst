@@ -469,7 +469,9 @@ export const useSSE = (
   onResumed?: () => void,
   onShowSteps?: (show: boolean) => void, // 新增：控制步骤显示/隐藏
   // ⭐ 新增：重试回调 - 【小查修复2026-03-13】添加wait_time参数
-  onRetry?: (message: string, waitTime?: number) => void
+  onRetry?: (message: string, waitTime?: number) => void,
+  // 【v3.4新增 2026-06-09 小沈】授权请求回调
+  onAuthorizationRequired?: (data: { tool_name: string; params: Record<string, unknown>; safety_level: string }) => void,
 ): UseSSEReturn => {
   const [isConnected, setIsConnected] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
@@ -736,6 +738,7 @@ export const useSSE = (
                 onResumed,
                 onShowSteps,
                 onRetry,
+                onAuthorizationRequired,
                 setCurrentResponse,
                 responseBufferRef,
                 setIsReceiving,
@@ -772,6 +775,7 @@ export const useSSE = (
               onResumed,
               onShowSteps,
               onRetry,
+              onAuthorizationRequired,
               setCurrentResponse,
               responseBufferRef,
               setIsReceiving,
@@ -972,6 +976,7 @@ const processSSEData = (
     onResumed?: () => void;
     onShowSteps?: (show: boolean) => void;
     onRetry?: (message: string, waitTime?: number) => void;
+    onAuthorizationRequired?: (data: { tool_name: string; params: Record<string, unknown>; safety_level: string }) => void;
     setCurrentResponse: React.Dispatch<React.SetStateAction<string>>;
     responseBufferRef: React.MutableRefObject<string>;
     setIsReceiving: React.Dispatch<React.SetStateAction<boolean>>;
@@ -1587,6 +1592,11 @@ const processSSEData = (
 
         // 根据incident_value调用对应的回调
         switch (statusValue) {
+          case 'authorization_required':
+            // 【v3.4新增 2026-06-09 小沈】HITL授权请求
+            console.log('[SSE] 收到授权请求:', rawData.data);
+            handlers.onAuthorizationRequired?.(rawData.data);
+            break;
           case 'interrupted':
             // 【小强修复 2026-04-10】添加 onShowSteps?.(true)，确保中断时步骤列表显示
             onShowSteps?.(true);

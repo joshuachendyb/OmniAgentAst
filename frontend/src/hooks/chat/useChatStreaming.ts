@@ -95,7 +95,7 @@ export const useChatStreaming = (
   config: SSEConfig
 ): UseChatStreamingReturn => {
   const { sessionId, setSessionId } = state;
-  const { onStep, onChunk, onComplete, onError, onPaused, onResumed, onShowSteps, onRetry } = callbacks;
+  const { onStep, onChunk, onComplete, onError, onPaused, onResumed, onShowSteps, onRetry, onAuthorizationRequired } = callbacks;
   
   // 使用useSSE Hook
   const {
@@ -119,7 +119,8 @@ export const useChatStreaming = (
     onPaused,
     onResumed,
     onShowSteps,
-    onRetry
+    onRetry,
+    onAuthorizationRequired  // 【v3.4新增 2026-06-09 小沈】
   );
   
   // 从state中获取Refs
