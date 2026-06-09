@@ -6,16 +6,15 @@ _initialize_run_state — 从 base_react.py 拆出
 Author: 小沈 - 2026-05-31
 """
 
-from typing import Any, Dict, Optional, Tuple, Set
+from typing import Any, Dict, Optional
 
 from app.services.agent.types import AgentStatus
 from app.services.agent.chunk_buffer import ChunkBuffer
-from app.utils.logger import logger
 
 
 def initialize_run_state(
     self, task: str, task_id: Optional[str], context: Optional[Dict[str, Any]] = None
-) -> Tuple[ChunkBuffer, Set[str]]:
+) -> ChunkBuffer:
     """复制自 base_react.py 第295-338行"""
     self.steps = []
     self.message_builder.reset_per_run()
@@ -32,13 +31,4 @@ def initialize_run_state(
     self.message_builder.init_history(sys_prompt, task_prompt)
     self.conversation_history = self.message_builder.conversation_history
 
-    chunk_buffer = ChunkBuffer(self.max_consecutive_chunks)
-    valid_tool_names: Set[str] = {"finish"}
-    try:
-        from app.services.tools.registry import tool_registry
-        valid_tool_names = {t["name"] for t in tool_registry.list_tools()} | {"finish"}
-    except Exception as _e:
-        logger.debug(f"[工具名验证] 获取工具列表失败: {_e}, 仅允许finish")
-
-
-    return chunk_buffer, valid_tool_names
+    return ChunkBuffer(self.max_consecutive_chunks)

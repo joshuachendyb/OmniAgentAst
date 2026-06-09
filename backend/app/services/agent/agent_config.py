@@ -27,6 +27,7 @@ class AgentConfig:
     agent_class_name: str = _DEFAULT_AGENT_CLASS
     rollback_enabled: bool = False
     max_steps: int = 100
+    extra_categories: List[ToolCategory] = field(default_factory=list)
 
     _prompt_class: Optional[Type[BasePrompts]] = field(default=None, repr=False)
     _agent_class: Optional[Any] = field(default=None, repr=False)
@@ -63,6 +64,7 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_module="app.services.prompts.system.system_prompts",
         prompt_class_name="SystemPrompts",
         category_display_name="基础运行时",
+        extra_categories=[ToolCategory.FILE],
     ),
     "network": AgentConfig(
         intent_type="network",

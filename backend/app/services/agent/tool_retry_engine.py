@@ -136,8 +136,8 @@ class ToolRetryEngine:
                 self._tools[action] = tool
         return tool
     
-    def _check_invalid_params(self, action: str, params: Dict[str, Any]) -> bool:
-        """检查非法参数 — 小沈 2026-06-08"""
+    def _are_params_valid(self, action: str, params: Dict[str, Any]) -> bool:
+        """验证参数是否合法 — 小沈 2026-06-08"""
         try:
             from app.services.tools.registry import tool_registry
             metadata = tool_registry.get_tool(action)
@@ -145,6 +145,7 @@ class ToolRetryEngine:
                 valid_params = set(metadata.input_schema.get("properties", {}).keys())
                 invalid_keys = [k for k in params if k not in valid_params]
                 if invalid_keys:
+                    logger.warning(f"[参数验证] action={action} 含非法字段: {invalid_keys}")
                     return False
         except (ImportError, AttributeError) as e:
             logger.warning(f"[参数监控] action={action}, 获取 schema 失败：{e}", exc_info=True)
@@ -166,10 +167,12 @@ class ToolRetryEngine:
         """验证参数（非法参数+必需参数）— 小沈 2026-06-08 重构"""
         params = action_input.copy()
         
-        if not self._check_invalid_params(action, params):
+        if not self._are_params_valid(action, params):
+            logger.warning(f"[参数验证] action={action} 含非法参数, keys={list(params.keys())}")
             return None
         
         if not self._check_missing_params(tool, params):
+            logger.warning(f"[参数验证] action={action} 缺少必需参数")
             return None
         
         return params
