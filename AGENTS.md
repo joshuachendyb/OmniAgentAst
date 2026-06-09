@@ -84,7 +84,7 @@ npm run test:e2e     # Playwright
 
 ### Backend: `backend/app/main.py` → FastAPI
 
-**Request flow**: `chat_router.py` → CRSS regex scoring (stage 1) → LLM classifier fallback (stage 2) → `AgentFactory.create(intent_type)` → Agent subclasses → ReAct loop → SSE
+**Request flow**: `chat_router.py` → CRSS regex scoring → `AgentFactory.create(intent_type)` → Agent subclasses → ReAct loop → SSE
 
 **Agent system** (`backend/app/services/agent/`):
 - `base_react.py` — `BaseAgent(ABC)` (ReAct loop core)
