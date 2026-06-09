@@ -79,7 +79,7 @@ export interface SSEMetadata {
 export interface ExecutionStep {
   // === 通用字段 ===
   // ⭐ 新增action_tool类型，替换原来的action
-  // 【修改 2026-06-09 小沈】删除'incident'类型，后端直接发送具体类型（interrupted/paused/resumed/retrying）
+  // 【小沈修复2026-03-28】后端type固定为'incident'，通过incident_value区分具体类型
   type:
     | 'thought'
     | 'action_tool'
@@ -87,6 +87,7 @@ export interface ExecutionStep {
     | 'chunk'
     | 'final'
     | 'error'
+    | 'incident'
     | 'interrupted'
     | 'start'
     | 'paused'
@@ -154,7 +155,8 @@ export interface ExecutionStep {
   reasoning?: string; // 思考过程内容（当 is_reasoning=true 时使用）
 
   // === 错误/中断字段 ===
-  // 【修改 2026-06-09 小沈】删除incident_value字段，后端直接发送具体类型
+  // 【小沈修复2026-03-28】后端incident类型使用incident_value区分具体类型
+  incident_value?: string; // incident 类型的具体值（interrupted/paused/resumed/retrying）
   error_message?: string; // error 类型的错误信息 【修改2026-04-15】优先使用error_message
   message?: string; // interrupted 类型的中断信息
 
@@ -1544,6 +1546,93 @@ const processSSEData = (
         });
         onStep?.(step);
         onShowSteps?.(true);
+        break;
+      }
+
+      // 【小查修复2026-03-10】新增：incident类型处理（后端发送type='incident'，incident_value字段）
+      // 【2026-03-11 重命名】status_value -> incident_value
+      // 【小强优化 2026-03-18】统一调用onStep，避免重复
+      case 'incident': {
+        const statusValue = rawData.incident_value;
+        const stepNum = rawData.step || 1;
+        console.log(
+          `%c[STEP] [type=incident] [incident_type=${statusValue}] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`,
+          'color: red; font-weight: bold;'
+        );
+        const statusMessage = rawData.message || '';
+        // 【小沈修复 2026-04-24】保持type为incident，通过incident_value区分具体类型
+        // 后端发送格式: type="incident", incident_value="interrupted/paused/resumed/retrying"
+        // 前端需要保持这个格式，不能直接把type改成具体类型，否则会影响后续判断
+        step.type = 'incident';
+        step.incident_value = statusValue;
+        step.content = statusMessage;
+
+        // 统一调用onStep（所有incident类型都需要添加到executionSteps）
+        // 【小强修复 2026-04-03】incident步骤也需要保存到sessionStorage，否则页面切换后丢失
+        // 【小强修改 2026-04-10】使用 setTimeout 延迟保存，不阻塞 UI
+        setExecutionSteps((prev) => {
+          const newSteps = [...prev, step];
+          handlers.executionStepsRef.current = newSteps;
+          // 【小强修改 2026-04-10】使用 setTimeout 延迟保存，不阻塞 UI
+          setTimeout(() => {
+            try {
+              saveStepsToStorage?.(newSteps);
+            } catch (e) {
+              console.warn('[SSE] sessionStorage 保存失败，可能容量不足:', e);
+            }
+          }, 0);
+          return newSteps;
+        });
+        onStep?.(step);
+
+        // 根据incident_value调用对应的回调
+        switch (statusValue) {
+          case 'interrupted':
+            // 【小强修复 2026-04-10】添加 onShowSteps?.(true)，确保中断时步骤列表显示
+            onShowSteps?.(true);
+            // 【小沈修复 2026-04-27】必须传当前的steps，否则前端的16个steps会丢失
+            onComplete?.(
+              responseBufferRef.current,
+              undefined,
+              handlers.executionStepsRef.current
+            );
+            setIsReceiving(false);
+            setIsConnected(false);
+            break;
+          case 'paused':
+            onPaused?.();
+            break;
+          case 'resumed':
+            onResumed?.();
+            break;
+          case 'retrying':
+            // 【小查修复2026-03-13】传递wait_time给重试回调
+            onRetry?.(rawData.message || '正在重试...', rawData.wait_time);
+            break;
+          case 'rate_limit':
+            // 【新增 小健 2026-05-16】429限流提示，复用retry回调显示
+            onRetry?.(
+              rawData.message || 'API限流，正在退避重试...',
+              rawData.wait_time
+            );
+            break;
+          default:
+            // 【修复 小健 2026-05-16】未知incident也显示给用户，不丢弃
+            console.warn('[SSE] 未知的incident_value:', statusValue);
+            onRetry?.(
+              rawData.message || `事件: ${statusValue}`,
+              rawData.wait_time
+            );
+            break;
+        }
+        // 添加timestamp字段
+        if (rawData.timestamp) {
+          step.timestamp = rawData.timestamp as number;
+        }
+        // 【小查修复2026-03-13】添加wait_time字段（仅retrying使用）
+        if (rawData.wait_time !== undefined) {
+          step.wait_time = rawData.wait_time;
+        }
         break;
       }
 

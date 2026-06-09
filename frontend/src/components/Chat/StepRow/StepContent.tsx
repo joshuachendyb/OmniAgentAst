@@ -543,8 +543,10 @@ const StepContent: React.FC<StepContentProps> = ({
           }
         />
       )}
-      {/* 【修改 2026-06-09 小沈】直接检查step.type，不需要检查incident_value */}
-      {step.type === 'interrupted' && (
+      {(step.type === 'interrupted' ||
+        (step.type === 'incident' &&
+          (step as ExecutionStep & Record<string, unknown>).incident_value ===
+            'interrupted')) && (
         <div style={getStepStyle('interrupted' as StepType)}>
           <span
             style={getStepContentStyle('interrupted' as StepType, 'primary')}
@@ -553,21 +555,30 @@ const StepContent: React.FC<StepContentProps> = ({
           </span>
         </div>
       )}
-      {step.type === 'paused' && (
+      {(step.type === 'paused' ||
+        (step.type === 'incident' &&
+          (step as ExecutionStep & Record<string, unknown>).incident_value ===
+            'paused')) && (
         <div style={getStepStyle('paused' as StepType)}>
           <span style={getStepContentStyle('paused' as StepType, 'primary')}>
             {step.content || '任务已暂停，可恢复继续'}
           </span>
         </div>
       )}
-      {step.type === 'resumed' && (
+      {(step.type === 'resumed' ||
+        (step.type === 'incident' &&
+          (step as ExecutionStep & Record<string, unknown>).incident_value ===
+            'resumed')) && (
         <div style={getStepStyle('resumed' as StepType)}>
           <span style={getStepContentStyle('resumed' as StepType, 'primary')}>
             {step.content || '任务已恢复'}
           </span>
         </div>
       )}
-      {step.type === 'retrying' && (
+      {(step.type === 'retrying' ||
+        (step.type === 'incident' &&
+          (step as ExecutionStep & Record<string, unknown>).incident_value ===
+            'retrying')) && (
         <div style={getStepStyle('retrying' as StepType)}>
           <span style={getStepContentStyle('retrying' as StepType, 'primary')}>
             {step.content || '正在重试...'}
