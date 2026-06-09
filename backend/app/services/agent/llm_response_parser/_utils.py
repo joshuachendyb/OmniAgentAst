@@ -37,21 +37,6 @@ def _normalize_result_to_str(raw_result) -> str:
         return ""
 
 
-REACT_KEYWORDS = {
-    "thought": r"(?:Thought|思考|推理):\s*",
-    "action": r"(?:Action|行动|工具调用|(?:调用|使用|执行)\s+|(?:工具|函数)\s*为):\s*",
-    "action_input": r"(?:Action Input|工具参数|输入|参数):\s*",
-    "answer": r"(?:Answer|回答|最终答案|结论):\s*",
-}
-
-
-def _get_all_tool_names():
-    """获取所有已注册工具名"""
-    from app.services.tools.registry import tool_registry
-    tools = tool_registry.list_tools(include_metadata=False)
-    return [t["name"] if isinstance(t, dict) else t for t in tools]
-
-
 def _build_handler_result(type_: str, thought: str = "", content: str = "",
                            reasoning: str = "", tool_name: Optional[str] = None,
                            tool_params: Optional[Dict] = None,
