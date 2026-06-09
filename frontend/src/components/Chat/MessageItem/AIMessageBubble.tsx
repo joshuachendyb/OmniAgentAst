@@ -257,12 +257,10 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = memo(({
 
           {/* 执行步骤 - 框层合并后直接使用子组件 */}
           {stepData.sortedSteps.map((step, index) => {
-            // 处理incident类型
-            const castStep = step as ExecutionStep;
-            const stepType = castStep.incident_value || step.type;
-            const effectiveType = step.type === 'incident' ? stepType : step.type;
-            const label = STEP_LABEL_MAP[effectiveType] || STEP_LABEL_MAP[step.type] || "步骤";
-            const icon = STEP_ICON_MAP[effectiveType] || STEP_ICON_MAP[step.type] || "";
+            // 【修改 2026-06-09 小沈】直接使用step.type，不需要转换
+            const effectiveType = step.type;
+            const label = STEP_LABEL_MAP[effectiveType] || "步骤";
+            const icon = STEP_ICON_MAP[effectiveType] || "";
             const badgeStyle = getStepBadgeStyle(effectiveType as StepType);
             const labelStyle = getStepLabelStyle(effectiveType as StepType);
             

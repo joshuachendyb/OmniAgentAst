@@ -65,8 +65,8 @@ const StepHeader: React.FC<StepHeaderProps> = ({
   label, 
   icon: _icon 
 }) => {
-  // 获取对应的Ant Design图标
-  const effectiveType = step.type === 'incident' ? (step as ExecutionStep).incident_value || 'incident' : step.type;
+  // 【修改 2026-06-09 小沈】直接使用step.type，不需要转换
+  const effectiveType = step.type;
   const stepIcon = stepIconMap[effectiveType] || stepIconMap.thought || null;
   
   return (
