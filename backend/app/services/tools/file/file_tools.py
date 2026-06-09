@@ -717,17 +717,15 @@ class FileTools:
     }
     
     def __init__(self, task_id: Optional[str] = None):
-        from app.services.safety.file.file_safety import get_file_safety_service
-        from app.services.safety.manager import get_safety_manager
+        from app.services.safety.tool_safety_checker import get_tool_safety_checker
         
-        self.safety_manager = get_safety_manager()
+        self.safety_manager = get_tool_safety_checker()
         self.task_id = task_id or _current_task_id.get(None)
         self._sequence = 0
         self._sequence_lock = threading.Lock()
         self.allowed_paths = ALLOWED_PATHS.copy()
-        
-        if self.safety_manager.get_hook("file") is None:
-            self.safety_manager.register_hook("file", get_file_safety_service())
+        # 【修复P0-2 2026-06-09 小沈】删除已废弃的get_hook/register_hook调用
+        # 安全检查已由SafetyManager._check_existing_safety_capabilities统一处理
     
     def _get_next_sequence(self) -> int:
         """获取下一个操作序号(线程安全)"""
