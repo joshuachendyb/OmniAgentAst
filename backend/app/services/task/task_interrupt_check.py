@@ -6,9 +6,10 @@ task_incident_check — 中断/暂停检查并生成SSE事件
 统一: 小健 - 2026-05-31
 """
 
+import asyncio
 from typing import Optional, Callable, AsyncGenerator
 
-
+from app.utils.logger import logger
 from app.chat_stream import format_agent_sse
 from app.services.agent.steps import IncidentStep
 from app.services.task.task_registry import check_cancelled, check_paused, check_was_paused, set_was_paused, get_pause_event
@@ -99,8 +100,13 @@ async def task_pause_check_and_yield(
         )
         yield format_agent_sse(incident_step.to_dict())
 
-    # 等待恢复
-    await pause_event.wait()
+    # 等待恢复 — 添加超时防止永久挂起,小健 2026-06-09
+    try:
+        await asyncio.wait_for(pause_event.wait(), timeout=300)
+    except asyncio.TimeoutError:
+        logger.warning(f"[task_pause_check_and_yield] 任务{task_id}暂停超时(300s),自动恢复")
+        await set_was_paused(task_id, False)
+        return
 
     if await check_cancelled(task_id):
         return

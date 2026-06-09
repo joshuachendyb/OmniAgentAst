@@ -217,7 +217,7 @@ class UniversalAgent(BaseAgent):
                 if parsed and "tool_name" in parsed:
                     yield ("response", full_content)
                     return
-            except:
+            except (ValueError, TypeError):
                 pass
 
         # 如果没有解析出tool_calls，尝试从reasoning中提取
@@ -267,8 +267,9 @@ class UniversalAgent(BaseAgent):
             logger.info(f"[text] 流式调用完成, content_len={len(full_content)}, reasoning_len={len(full_reasoning)}, chunks={chunk_step_count}")
 
         except Exception as e:
-            logger.error(f"[text] chat_with_tools_stream失败: {e}")
-            yield ("response", "")
+            logger.error(f"[text] chat_with_tools_stream失败,降级text: {e}")
+            response = await self._call_llm_text_nostream(messages)
+            yield ("response", response)
             return
 
         if not full_content and full_reasoning:
@@ -304,47 +305,6 @@ class UniversalAgent(BaseAgent):
     def invalidate_tool_cache(self):
         """P2-14修复: 清除工具缓存,工具注册/注销后调用"""
         self._cached_openai_tools = []
-
-    def set_stream_chunk_handler(self, handler):
-        """设置流式chunk处理器 — 用于前端实时输出 - 小沈 2026-06-09"""
-        self._stream_chunk_handler = handler
-
-    def _format_tool_calls(self, tool_calls: list, content: str = "") -> str:
-        """格式化function calling工具调用 — 小沈 2026-06-09 消除重复"""
-        if not tool_calls:
-            return '{"thought": "任务完成", "tool_name": "finish", "tool_params": {}}'
-        
-        def _parse_single_call(tc: dict) -> dict:
-            func = tc.get("function", {})
-            return {
-                "name": func.get("name", ""),
-                "params": parse_json(func.get("arguments", "{}")) or {}
-            }
-        
-        parsed_calls = [_parse_single_call(tc) for tc in tool_calls]
-        first_call = parsed_calls[0]
-        
-        if len(parsed_calls) == 1:
-            thought = content.strip() if content else f"Calling tool: {first_call['name']}"
-            return json.dumps({
-                "thought": thought,
-                "reasoning": f"FC调用: {first_call['name']}",
-                "tool_name": first_call["name"],
-                "tool_params": first_call["params"],
-            }, ensure_ascii=False)
-        
-        pending = [
-            {"tool_name": c["name"], "tool_params": c["params"]} 
-            for c in parsed_calls[1:]
-        ]
-        thought = content.strip() if content else f"Calling {len(tool_calls)} tools"
-        return json.dumps({
-            "thought": thought,
-            "reasoning": f"FC调用: {first_call['name']} +{len(pending)} pending",
-            "tool_name": first_call["name"],
-            "tool_params": first_call["params"],
-            "_pending_calls": pending,
-        }, ensure_ascii=False)
 
     def _update_executed_tool_summary(self, tool_name: str, result: dict, tool_params: dict = None):
         """更新已执行工具汇总（含数据摘要）— 小沈 2026-06-09
