@@ -232,7 +232,7 @@ export function isErrorMessage(msg: StreamMessage): msg is ErrorMessage {
 }
 
 export function isStatusMessage(msg: StreamMessage): msg is StatusMessage {
-  return msg.type === 'incident';
+  return msg.type === 'interrupted' || msg.type === 'paused' || msg.type === 'resumed' || msg.type === 'retrying';
 }
 
 // ============================================================
