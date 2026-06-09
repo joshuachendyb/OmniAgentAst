@@ -237,5 +237,12 @@ class UniversalAgent(BaseAgent):
         done = [s for s in self._executed_tool_summary if '→success' in s]
         if not done:
             return ""
-        return ("【已执行工具(勿重复)】" + "; ".join(done[-8:])
+        parts = []
+        for entry in done[-8:]:
+            if '|' in entry:
+                tool_status, data_hint = entry.split('|', 1)
+                parts.append(f"{tool_status}({data_hint})")
+            else:
+                parts.append(entry)
+        return ("【已执行工具(勿重复)】" + "; ".join(parts)
                 + "\n注意:上述工具已成功执行,结果已在Observation中,禁止再次调用!")

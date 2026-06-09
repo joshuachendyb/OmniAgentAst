@@ -1,11 +1,11 @@
 # Agent 2.5 待实施设计（已实现部分已删除）
 
 **创建时间**: 2026-05-22 09:59:55
-**版本**: v3.0
+**版本**: v3.1
 **编写人**: 小健
 **更新人**: 小沈
-**更新时间**: 2026-06-09 07:14:52
-**更新说明**: 删除所有已实现章节(§四Agent合并/§七代码清理/§五方案C+D)，只保留未实施且有价值的部分
+**更新时间**: 2026-06-09 08:19:00
+**更新说明**: §二四层安全体系全面重写：加入当前安全现状分析(5个漏洞)、更新架构图(标注已实现/必须/建议)、修正工具分级表(对照实际代码)、更新实施方案(基于实际代码结构)、标注已实施部分(方案G/H)
 
 ---
 
@@ -13,6 +13,7 @@
 
 | 版本 | 时间 | 作者 | 更新内容 |
 |------|------|------|---------|
+| v3.1 | 2026-06-09 08:19:00 | 小沈 | §二四层安全体系全面重写：加入当前安全现状分析(5个漏洞)、更新架构图(标注已实现/必须/建议)、修正工具分级表(对照实际代码)、更新实施方案(基于实际代码结构：SafetyManager扩展/confirm端点填充/IncidentStep复用)、标注已实施部分(方案G/H)；§一更新已实施状态(方案F已覆盖/G已实施/H已实施) |
 | v3.0 | 2026-06-09 07:14:52 | 小沈 | 删除已实现章节：§四Agent合并(已实施)、§七代码清理(大部分已实施)、§五方案C/D(已实施)；删除已放弃章节：§三Semantic Router(500ms延迟不可接受)、§二TextCorrectorV2(当前CRSS够用优先级低)；保留§五重复执行消除(A/B/E/F/G/H)、§六四层安全体系、§八实施路线图、§十前端改造、§九未解决问题 |
 | v2.1 | 2026-05-25 12:13:12 | 小健 | Phase编号对齐§八路线图 |
 | v2.0 | 2026-05-25 11:45:09 | 北京老陈 | 北京老陈审核定稿 |
@@ -27,11 +28,15 @@
 | Agent合并(原§四) | ✅ 已完成 | UniversalAgent+AgentConfig+AgentFactory |
 | 代码清理(原§七) | ✅ 大部分完成 | mixins/parsers/llm_strategies/strategy_manager等已删除 |
 | 重复执行消除C/D | ✅ 已完成 | 工具概要去重+trim_history宽泛延迟裁剪 |
+| 重复执行消除F | ✅ 已完成 | 并行执行实现已覆盖observation完整数据 |
+| 重复执行消除G | ✅ 已完成 | Observation角色优化 role=system→user+[Tool Result] |
+| 重复执行消除H | ✅ 已完成 | 任务进度摘要 _extract_data_summary+_build_executed_tool_summary增强 |
 | TextCorrectorV2(原§二) | ❌ 放弃 | 当前CRSS<1ms够用，模糊检测优先级低 |
 | Semantic Router(原§三) | ❌ 放弃 | ~500ms延迟不可接受，CRSS正则<1ms且准确率够用 |
-| 重复执行消除A/B/E/F/G/H | ⏳ 待实施 | 失败计数器+成功缓存+Prompt规则+并行修复+角色优化+进度摘要 |
-| 四层安全体系(原§六) | ⏳ 待实施 | ToolSafetyLevel+HITL+ToolObserver |
-| 前端HITL(原§十) | ⏳ 待实施 | 确认弹窗+授权API+Session Trust |
+| 重复执行消除A/B/E | ⏳ 待实施 | 失败计数器+成功缓存+Prompt规则(已在base_prompt中) |
+| 四层安全体系Layer2+3 | ⏳ 待实施 | ToolSafetyLevel+HITL(必须实施) |
+| 四层安全体系Layer4 | ⏳ 待实施 | ToolObserver审计(建议实施) |
+| 前端HITL | ⏳ 待实施 | 确认弹窗+授权API+Session Trust |
 
 ---
 
@@ -100,52 +105,26 @@ AVOID_REPEAT_RULES = """
 
 **效果**：LLM在prompt层面就知道"不要重复"。Prompt规则为软约束，LLM可能不遵守，需配合方案A/B硬约束兜底。
 
-### 1.5 方案F: 并行调用Observation修复 (P1)
+### 1.5 方案F: 并行调用Observation修复 (P1) — ✅ 已实施
+
+并行执行实现（react_cycle.py _handle_action）已覆盖：每个并行结果走`_build_observation_text`→`format_llm_observation`，返回完整数据而非仅summary。方案F描述的问题在新实现中不存在。
+
+### 1.6 方案G: Observation角色优化 (P2) — ✅ 已实施
 
 ```python
-# 当前(有缺陷):
-self._add_observation_to_history(
-    f"Observation: {status} - {summary}"
-)
-
-# 修复后(与主工具逻辑对齐):
-p_obs_text = f"Observation: {status} - {summary}"
-if status == 'success' and data:
-    p_obs_text += f"\n实际数据: {data}"
-elif status not in ('success', 'warning'):
-    p_alt_hint = self._build_alternative_tools_hint(tool_name)
-    if p_alt_hint:
-        p_obs_text += f"\n{p_alt_hint}"
-
-self._add_observation_to_history(p_obs_text)
+# 已实施(message_builder.py _append_observation):
+# role="system" → role="user", content="[Tool Result]\n{observation}"
+# _is_observation_role 同步更新：识别 role=user + [Tool Result]
 ```
 
-### 1.6 方案G: Observation角色优化 (P2)
+**效果**：LLM将observation视为用户消息而非系统规则，更重视工具返回结果。
+
+### 1.7 方案H: 任务进度摘要机制 (P2) — ✅ 已实施
 
 ```python
-# 当前：
-self.conversation_history.append({"role": "system", "content": observation})
-
-# 优化为(需多LLM测试验证):
-self.conversation_history.append({
-    "role": "user",
-    "content": f"[Tool Result]\n{observation}"
-})
-```
-
-**效果**：避免LLM将system消息误认为是规则指令而忽略。（效果未验证，见§三未解决问题）
-
-### 1.7 方案H: 任务进度摘要机制 (P2)
-
-```python
-# 简化版：在observation中注入进度标记
-if exec_status == 'success':
-    observation_text += "\n[已完成: 获取内网IP信息]"
-
-# 每轮LLM调用前注入进度摘要
-if self._collected_info:
-    progress = "【已获取信息】" + "; ".join(f"{k}={v}" for k,v in self._collected_info.items())
-    history_dicts.append({"role": "system", "content": progress})
+# 已实施(react_cycle.py _update_executed_summary + _extract_data_summary):
+# 记录数据摘要：list_directory→success|[3项]
+# _build_executed_tool_summary 输出含数据摘要
 ```
 
 ### 1.8 组合效果预估
