@@ -165,12 +165,13 @@ class SafetyManager:
         code_exec_tools = {"execute_shell_command", "execute_code"} & fund_runtime_tools
         if tool_name in code_exec_tools:
             try:
+                import re
                 from app.services.tools.tool_constants import DANGEROUS_PATTERNS
                 code = params.get("command") or params.get("code") or ""
-                for pattern in DANGEROUS_PATTERNS:
-                    if pattern.search(code):
+                for pattern_str, desc in DANGEROUS_PATTERNS:
+                    if re.search(pattern_str, code):
                         return {"is_safe": False, "risk_score": 1.0, "blocked": True,
-                                "message": f"检测到危险模式: {pattern.pattern}"}
+                                "message": f"检测到危险模式: {desc}"}
             except Exception as e:
                 logger.warning(f"[SafetyManager] 代码注入检查失败: {e}")
         
