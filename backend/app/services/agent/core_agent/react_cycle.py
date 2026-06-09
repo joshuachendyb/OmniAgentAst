@@ -225,7 +225,7 @@ async def _process_single_step(agent, step_counter: list, chunk_buffer) -> bool:
 
 
 async def run_react_cycle(
-    self,
+    agent,
     task: str,
     context: Optional[Dict[str, Any]] = None,
     max_steps: Optional[int] = None,
@@ -236,26 +236,26 @@ async def run_react_cycle(
     if max_steps is None:
         max_steps = get_config().get_max_steps()
 
-    chunk_buffer = self._initialize_run_state(task, task_id, context)
+    chunk_buffer = agent._initialize_run_state(task, task_id, context)
 
     step_counter = [0]
-    self.status = AgentStatus.RUNNING
+    agent.status = AgentStatus.RUNNING
 
     try:
         while step_counter[0] < max_steps:
-            async for event in _process_single_step(self, step_counter, chunk_buffer):
+            async for event in _process_single_step(agent, step_counter, chunk_buffer):
                 yield event
             
-            if self.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
+            if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
                 break
 
     except Exception as e:
         logger.error(f"[run_react_cycle] 异常: {e}", exc_info=True)
-        yield self._step_emitter.exit_with_error(
+        yield agent._step_emitter.exit_with_error(
             step=step_counter[0], error_type="runtime_error", error_message=str(e),
         )
-        self.status = AgentStatus.FAILED
+        agent.status = AgentStatus.FAILED
 
     finally:
-        self._on_after_loop()
-        self._complete_tracked_task(self.status == AgentStatus.COMPLETED)
+        agent._on_after_loop()
+        agent._complete_tracked_task(agent.status == AgentStatus.COMPLETED)
