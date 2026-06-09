@@ -5,19 +5,19 @@ SYSTEM Register - 系统信息工具注册点
 【架构规范】2026-04-29 小沈
 
 【2026-05-18 小沈】继续精简:list_env合入get_env,reg×3合入registry_control
-- 保留 get_system_info, net_connections, event_log, list_processes, kill_process
+- 保留 get_system_info, event_log, list_processes, kill_process
 - 保留 service_control, task_control
 - 保留 get_env(action=get/list), set_env(action=set/delete)
 - registry_control(action=read/write/delete)在reg_register.py注册
+- net_connections迁入network分类(2026-06-09 小沈)
 
-【工具列表】(LLM可见10个,本文件注册7个 + reg_register注册1个 + env迁入2个)
+【工具列表】(LLM可见9个,本文件注册6个 + reg_register注册1个 + env迁入2个)
 1. get_system_info - 获取系统信息
-2. net_connections - 获取网络连接列表
-3. event_log - 获取系统事件日志
-4. list_processes - 列出所有进程
-5. kill_process - 终止指定进程
-6. service_control - 服务统一控制(start/stop/restart/list)
-7. task_control - 计划任务统一控制(create/delete/list)
+2. event_log - 获取系统事件日志
+3. list_processes - 列出所有进程
+4. kill_process - 终止指定进程
+5. service_control - 服务统一控制(start/stop/restart/list)
+6. task_control - 计划任务统一控制(create/delete/list)
 + reg_read, reg_write, reg_delete(reg_register.py注册)
 
 创建时间: 2026-04-29
@@ -30,20 +30,17 @@ from app.utils.logger import logger
 
 from app.services.tools.system.system_schema import (
     GetSystemInfoInput,
-    NetConnectionsInput,
     EventLogInput,
     ListProcessesInput,
     KillProcessInput,
     ServiceControlInput,
     TaskControlInput,
-    # 【2026-05-18 小沈】Environment工具Schema(从environment模块迁入)
     GetEnvInput,
     SetEnvInput,
 )
 
 from app.services.tools.system.system_tools import (
     get_system_info,
-    net_connections,
     event_log,
     list_processes,
     kill_process,
@@ -74,25 +71,7 @@ SYSTEM_TOOL_DESCRIPTIONS = {
 
 返回数据说明
 【重要】返回按info_type分类的系统信息,all类型返回全部
-- data: 成功时含basic/cpu/memory/disk/network;按info_type返回对应子集""",
-    "net_connections": """获取网络连接列表,支持按类型(TCP/UDP)、状态(ESTABLISHED/LISTEN)、端口过滤,可获取关联进程信息。
-
-使用场景:
-- 当用户需要查看当前网络连接时使用
-- 当用户需要排查端口占用问题时使用
-- 当用户需要查看某个端口的连接状态时使用
-
-【重要】最多返回200条连接记录;process_info=True可获取关联进程名和路径
-
-使用示例:
-- 查看所有连接:{}
-- 查看TCP已建立连接:{"kind": "tcp", "state": "established"}
-- 查看端口8080的连接:{"filter_port": 8080, "process_info": true}
-
-返回数据说明:
-- code: 状态码,SUCCESS/ERR_PERMISSION_DENIED/ERR_SYSTEM_NET_CONN
-- data: 成功时含connections(连接列表)、total(连接总数)、kind(连接类型)、filter_port(过滤端口);失败时为null
-- message: 状态描述信息""",
+ - data: 成功时含basic/cpu/memory/disk/network;按info_type返回对应子集""",
     "event_log": """获取系统事件日志(Windows事件查看器/Linux syslog),支持按级别、来源、时间范围过滤。
 
 使用场景:
@@ -217,7 +196,6 @@ SYSTEM_TOOL_DESCRIPTIONS = {
 # 模型映射
 SYSTEM_TOOL_INPUT_MODELS = {
     "get_system_info": GetSystemInfoInput,
-    "net_connections": NetConnectionsInput,
     "event_log": EventLogInput,
     "list_processes": ListProcessesInput,
     "kill_process": KillProcessInput,
@@ -233,11 +211,6 @@ SYSTEM_TOOL_EXAMPLES = {
         {"info_type": "all"},
         {"info_type": "cpu"},
         {"info_type": "memory"},
-    ],
-    "net_connections": [
-        {},
-        {"kind": "tcp", "state": "established"},
-        {"filter_port": 8080, "process_info": True},
     ],
     "event_log": [
         {},
@@ -283,13 +256,11 @@ def _register_system_tools():
     """注册所有系统信息工具 - 【2026-05-18 小沈】含Environment迁入工具"""
     tool_methods = {
         "get_system_info": get_system_info,
-        "net_connections": net_connections,
         "event_log": event_log,
         "list_processes": list_processes,
         "kill_process": kill_process,
         "service_control": service_control,
         "task_control": task_control,
-        # 【2026-05-18 小沈】Environment工具(从environment模块迁入注册)
         "get_env": get_env,
         "set_env": set_env,
     }
