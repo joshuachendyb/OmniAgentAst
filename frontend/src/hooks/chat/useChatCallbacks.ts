@@ -551,9 +551,7 @@ export const useChatCallbacks = (
     // Refs dependencies
     isPausedRef,
     displayBufferRef,
-    executionStepsRef,
     streamingContentRef,
-    streamingStepsRef,
     waitTimerRef,
   ]);
 
