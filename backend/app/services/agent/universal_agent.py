@@ -280,18 +280,25 @@ class UniversalAgent(BaseAgent):
         return content or ""
 
     def _get_openai_tools(self) -> list:
-        """获取OpenAI格式工具定义 — 小沈 2026-06-09 统一导入方式"""
-        if hasattr(self, '_cached_openai_tools') and self._cached_openai_tools:
-            return self._cached_openai_tools
+        """获取OpenAI格式工具定义 — 小沈 2026-06-09 添加TTL缓存过期"""
+        import time
+        current_time = time.time()
+        cache_ts = getattr(self, '_cache_timestamp', 0)
+        cache_ttl = getattr(self, '_cache_ttl', 300)
+        cached = getattr(self, '_cached_openai_tools', None)
+        if cached and current_time - cache_ts < cache_ttl:
+            return cached
         
         from app.services.tools.registry import tool_registry
         category = getattr(self, 'tool_category', None)
         self._cached_openai_tools = tool_registry.to_openai_tools(category=category)
+        self._cache_timestamp = current_time
         return self._cached_openai_tools
 
     def invalidate_tool_cache(self):
         """P2-14修复: 清除工具缓存,工具注册/注销后调用"""
-        self._cached_openai_tools = []
+        self._cached_openai_tools = None
+        self._cache_timestamp = 0
 
     def _update_executed_tool_summary(self, tool_name: str, result: dict, tool_params: dict = None):
         """更新已执行工具汇总（含数据摘要）— 小沈 2026-06-09

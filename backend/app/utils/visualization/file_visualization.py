@@ -18,22 +18,18 @@ from app.utils.visualization.animation_report import generate_animation_script
 from app.utils.logger import logger
 
 
-def generate_all_reports(task_id: str, task_description: str, output_dir: Optional[Path] = None) -> Dict[str, Path]:
+def generate_all_reports(task_id: str, task_description: str, output_dir: Path) -> Dict[str, Path]:
     """
     生成所有类型的报告
 
     Args:
         task_id: 会话ID
         task_description: 任务描述(用户消息)
-        output_dir: 输出目录
+        output_dir: 输出目录(必填,调用方负责传入)
 
     Returns:
         报告文件路径字典
     """
-    if output_dir is None:
-        from app.services.safety.file.file_safety import FileSafetyConfig
-        output_dir = FileSafetyConfig.REPORT_PATH / task_id
-
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 

@@ -9,6 +9,7 @@ task操作只在本层处理:register → interrupt检查 → pause检查 → st
 """
 
 import uuid
+from dataclasses import dataclass
 from fastapi.responses import StreamingResponse, PlainTextResponse
 
 from app.services import get_service
@@ -23,6 +24,12 @@ from app.services.task.task_interrupt_check import task_interrupt_check, task_pa
 from app.services.task.task_cancel_check import task_cancel_check_and_yield
 from app.services.task.task_cleanup import task_cleanup
 from app.services.react_sse_wrapper.run_sse_stream import run_sse_stream
+
+
+@dataclass
+class StreamState:
+    llm_call_count: int = 0
+    current_content: str = ""
 
 
 # 无包装函数: 直接调 task_interrupt_check / task_pause_check / step_start / run_sse_stream
@@ -47,8 +54,7 @@ async def chat_stream_v2(request: ChatRequest):
         task_id = str(uuid.uuid4())
         next_step = create_step_counter()
         execution_steps = []
-        llm_call_count_holder = [0]
-        current_content_holder = [""]  # P1-02修复: list holder,run_sse_stream内部可修改
+        state = StreamState()
 
         try:
             await register_task(task_id, ai_service)
@@ -67,14 +73,14 @@ async def chat_stream_v2(request: ChatRequest):
                 candidates=candidates, last_message=user_input,
                 next_step=next_step,
                 session_id=session_id, current_execution_steps=execution_steps,
-                current_content_holder=current_content_holder, llm_call_count_holder=llm_call_count_holder,
+                stream_state=state,
             ):
                 # R1-1修复: 每次迭代检查暂停状态 — 小沈 2026-06-09
                 async for pause_event in task_pause_check_and_yield(task_id, next_step):
                     yield pause_event
 
                 cancelled_sse = await task_cancel_check_and_yield(
-                    task_id, next_step, session_id, execution_steps, current_content_holder[0]
+                    task_id, next_step, session_id, execution_steps, state.current_content
                 )
                 if cancelled_sse:
                     yield cancelled_sse
@@ -85,6 +91,6 @@ async def chat_stream_v2(request: ChatRequest):
             logger.error(f"[chat_stream_v2] Error: {e}", exc_info=True)
             yield create_error_response(error_type="router_error", error_message=f"路由异常: {str(e)}")
         finally:
-            await task_cleanup(task_id, llm_call_count_holder[0])
+            await task_cleanup(task_id, state.llm_call_count)
 
     return StreamingResponse(generate(), media_type="text/event-stream")

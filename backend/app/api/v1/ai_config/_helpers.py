@@ -30,8 +30,8 @@ __all__ = ["handle_config_errors"]
 
 def _write_yaml_with_order(file_path: str, data: dict):
     """使用OrderedDict写入YAML,保持特定顺序 - 小沈 2026-06-09 复用"""
-    from app.services.tools.toolhelper.data_format_helper import _write_yaml_ordered
-    result = _write_yaml_ordered(file_path, data)
+    from app.services.tools.toolhelper.data_format_helper import write_yaml_ordered
+    result = write_yaml_ordered(file_path, data)
     if result.get("code") != "SUCCESS":
         raise Exception(result.get("message"))
 

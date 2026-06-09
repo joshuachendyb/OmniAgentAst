@@ -128,3 +128,18 @@ def set_instance(instance, provider=""):
     with _instance_lock:
         _instance = instance
         _current_provider = provider
+
+
+def create_service_instance(provider_config: dict, final_provider: str, final_model: str) -> BaseAIService:
+    """公开接口：创建服务实例 — 小沈 2026-06-09"""
+    return _create_service_instance(provider_config, final_provider, final_model)
+
+
+def log_service_creation(final_provider: str, final_model: str) -> None:
+    """公开接口：记录服务创建日志 — 小沈 2026-06-09"""
+    _log_service_creation(final_provider, final_model)
+
+
+def cleanup_old_instance(new_provider: str = "") -> None:
+    """公开接口：清理旧实例 — 小沈 2026-06-09"""
+    _cleanup_old_instance(new_provider)

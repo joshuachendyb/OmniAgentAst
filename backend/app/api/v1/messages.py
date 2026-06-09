@@ -26,7 +26,7 @@ from app.utils.time_utils import convert_to_utc, ensure_timestamp_milliseconds, 
 from app.utils.json_utils import parse_json
 from app.db import db
 from app.db.models.chat_models import MessageResponse
-from app.api.v1.message_id_tracker import track_user_message, get_user_message_id
+from app.services.message_id_tracker import track_user_message, get_user_message_id
 
 router = APIRouter()
 

@@ -23,9 +23,7 @@ from app.services.factory.validate_config import validate_config
 from app.services.factory.get_service import get_service
 from app.services.factory.reset import reset
 from app.services.factory.get_service_for_model import get_service_for_model
-from app.services.factory.set_backup_paths import set_backup_paths
-from app.services.factory.get_backup_paths import get_backup_paths
-from app.services.factory.clear_backup_paths import clear_backup_paths
+from app.services.factory.backup_paths import set_backup_paths, get_backup_paths, clear_backup_paths
 
 __all__ = [
     "ConfigValidationResult",

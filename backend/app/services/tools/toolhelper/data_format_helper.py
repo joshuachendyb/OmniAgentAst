@@ -266,6 +266,11 @@ def _write_yaml_ordered(file_path: str, data: Any, encoding: str = "utf-8", inde
         return build_error(ERR_WRITE_YAML, f"写入YAML失败: {str(e)}")
 
 
+def write_yaml_ordered(file_path: str, data: Any, encoding: str = "utf-8", indent: int = 2) -> Dict[str, Any]:
+    """公共接口：使用OrderedDict写入YAML — 小沈 2026-06-09"""
+    return _write_yaml_ordered(file_path, data, encoding, indent)
+
+
 def _parse_toml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
     """读取TOML文件内容 - 小沈 2026-05-04"""
     try:
