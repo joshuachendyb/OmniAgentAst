@@ -5,6 +5,33 @@ LLM响应解析 — 简化版
 只保留核心解析:dict/list/空值/标准JSON/混合文本JSON
 删除:非标准JSON策略、正则兜底、关键词匹配、已知工具名匹配
 
+【流程图 - 小沈 2026-06-09】
+输入(str) → _HANDLERS链式调用
+  ├─ _handle_empty_input → 空输入处理
+  ├─ _handle_dict_input → dict直接返回
+  ├─ _handle_list_input → list处理
+  ├─ _handle_json_array_string → JSON数组字符串
+  ├─ _handle_standard_json → 标准JSON提取
+  └─ _handle_mixed_text_json → 混合文本JSON
+       ↓
+  _extract_json_with_balanced_braces → JSON提取
+       ↓
+  _process_json_result → 结果处理
+       ├─ _build_type_result → type字段处理
+       ├─ _build_action_from_new_format → 新格式action
+       ├─ _build_action_from_fc_format → function calling格式
+       └─ _build_action_from_old_format → 旧格式action
+            ↓
+  _process_tool_params → 参数处理
+       ├─ _normalize_tool_params_content → 内容归一化
+       └─ _filter_tool_params → 参数过滤
+
+【分层职责】
+- parse_llm_response.py: 主入口，HANDLERS分派
+- _utils.py: 通用工具函数（JSON提取、字符串处理）
+- _tool_params.py: 工具参数处理（归一化、过滤）
+- _result_builders.py: 结果构建（type/action/answer等）
+
 Author: 小沈 - 2026-06-07
 """
 

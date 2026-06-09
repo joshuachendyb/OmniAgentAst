@@ -27,6 +27,7 @@ from app.services.agent.steps import (
     ChunkStep,
 )
 from app.services.agent.types import AgentStatus
+from app.services.agent.agent_utils.message_utils import build_observation_text
 
 
 def _extract_action_params(parsed: Dict) -> tuple:
@@ -35,16 +36,6 @@ def _extract_action_params(parsed: Dict) -> tuple:
     tool_params = parsed.get("tool_params", {})
     return tool_name, tool_params
 
-
-
-
-def _build_observation_text(agent, tool_name: str, tool_params: Dict, result) -> str:
-    """构建observation文本 — 小沈 2026-06-09"""
-    from app.services.agent.observation_formatter import format_llm_observation, build_execution_result_dict
-    if isinstance(result, dict):
-        exec_result = build_execution_result_dict(result)
-        return format_llm_observation(exec_result, tool_name=tool_name, tool_params=tool_params)
-    return f"Observation: {str(result)}"
 
 
 def _update_executed_summary(agent, tool_name: str, result, tool_params: Dict = None):
@@ -94,7 +85,7 @@ def _update_message_builder(agent, result, tool_name: str = "", tool_params: Dic
         logger.warning("[react_cycle] message_builder不存在，跳过observation记录")
         return
 
-    obs_text = _build_observation_text(agent, tool_name, tool_params or {}, result)
+    obs_text = build_observation_text(result, tool_name, tool_params or {})
     llm_call_count = getattr(agent, 'llm_call_count', 0)
     agent.message_builder.add_observation(obs_text, llm_call_count=llm_call_count)
 
@@ -139,7 +130,7 @@ async def _handle_action(agent, parsed: Dict, llm_response: str, step_counter: l
             obs_text = f"Observation: 工具{call['tool_name']}执行异常: {result}"
             _update_executed_summary(agent, call["tool_name"], {"code": "error", "message": str(result)}, call["tool_params"])
         else:
-            obs_text = _build_observation_text(agent, call["tool_name"], call["tool_params"], result)
+            obs_text = build_observation_text(result, call["tool_name"], call["tool_params"])
             _update_executed_summary(agent, call["tool_name"], result, call["tool_params"])
         obs_parts.append(obs_text)
         _update_message_builder(agent, result if not isinstance(result, Exception) else {"code": "error"}, tool_name=call["tool_name"], tool_params=call["tool_params"])

@@ -27,6 +27,7 @@ import hashlib
 from typing import Any, Dict, List, Optional
 
 from app.constants import MAX_CONTEXT_CHARS, OBSERVATION_BUDGET_DECAY, OBSERVATION_BUDGET_MAX, OBSERVATION_BUDGET_MIN, TEMP_HISTORY_CHAR_LIMIT
+from app.utils.text_utils import smart_truncate_text
 
 
 
@@ -73,7 +74,7 @@ class MessageBuilder:
         """准备observation文本 — 截断+归一化 — 小沈 2026-06-08"""
         budget = self._get_observation_budget(llm_call_count)
         if len(observation_text) > budget:
-            observation_text = self._smart_truncate(observation_text, budget=budget)
+            observation_text = smart_truncate_text(observation_text, budget=budget)
         observation_text = self._normalize_observation_prefix(observation_text)
         return observation_text
 
@@ -200,27 +201,7 @@ class MessageBuilder:
         return min(budget, OBSERVATION_BUDGET_MAX)
 
     @staticmethod
-    def _smart_truncate(content: str, budget: int, head_ratio: float = None) -> str:
-        """智能截断 — 替代 base_react.py L1384-1428"""
-        if head_ratio is None:
-            head_ratio = MessageBuilder.OBSERVATION_HEAD_RATIO
-        if len(content) <= budget:
-            return content
-        # 【修复 小健 2026-05-24】P2-12: budget极小时确保返回不超预算
-        OMISSION_TEXT_LEN = 50
-        if budget <= OMISSION_TEXT_LEN + 10:
-            return content[:budget]
-        head_budget = int(budget * head_ratio)
-        tail_budget = budget - head_budget - OMISSION_TEXT_LEN
-        head = content[:head_budget]
-        tail = content[-tail_budget:] if tail_budget > 0 else ""
-        result = f"{head}\n... [中间省略 {len(content) - budget} 字符] ...\n{tail}"
-        # 【修复 小健 2026-05-24】P2-12: 硬截断确保不超预算
-        if len(result) > budget:
-            result = result[:budget]
-        return result
 
-    @staticmethod
     def _normalize_observation_prefix(text: str) -> str:
         """确保observation文本以 [Observation] 开头 — 替代 base_react.py 前缀处理"""
         # 【修复 小健 2026-05-24】P1-7: 防止双重[Observation]前缀

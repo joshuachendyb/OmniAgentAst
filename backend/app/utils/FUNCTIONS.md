@@ -68,14 +68,25 @@
 
 ---
 
-## 二、Agent层（app/services/agent/agent_utils/）
+## 二、工具层（app/services/tools/）
+
+### 2.1 工具返回构建（_response.py）
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `build_success` | 构建成功响应 | data, message, warning, llm_data, next_actions, ... | dict |
+| `build_error` | 构建错误响应 | code, message, data, ... | dict |
+| `build_warning` | 构建警告响应 | code, message, data, ... | dict |
+
+---
+
+## 三、Agent层（app/services/agent/agent_utils/）
 
 ### 2.1 消息工具（message_utils.py）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `build_llm_messages` | 构建LLM消息列表 | message, history | list |
-| `build_observation_text` | 构建观察文本 | execution_result, tool_name, tool_params | str |
 | `inject_tools_info` | 注入工具信息 | history_dicts, tools_content | list |
 | `inject_schema_text` | 注入Schema文本 | history_dicts, schema_text | list |
 | `build_schema_text` | 构建Schema文本 | openai_tools | str |

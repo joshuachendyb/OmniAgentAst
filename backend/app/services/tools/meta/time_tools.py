@@ -34,6 +34,7 @@ from typing import Dict, Any, Optional, Callable, Awaitable, List, Union, Litera
 import re;
 from app.utils.common_patterns import UTC_OFFSET_PATTERN
 from app.utils.logger import logger;
+from app.utils.time_utils import get_timestamp_ms
 from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend;
 from app.services.tools._response import build_success, build_error
 # 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
@@ -346,7 +347,7 @@ async def _timer_set(delay: float, callback: str, callback_data: Optional[Dict[s
         return _error_timer_set("延迟时间不能超过24小时")
 
     _timer_counter += 1
-    timer_id = f"timer_{_timer_counter}_{int(datetime.now().timestamp())}"
+    timer_id = f"timer_{_timer_counter}_{get_timestamp_ms()}"
     trigger_at = datetime.now().astimezone() + timedelta(seconds=delay)
 
     _timer_callbacks[timer_id] = {
