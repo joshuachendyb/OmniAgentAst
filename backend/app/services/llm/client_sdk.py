@@ -2,9 +2,11 @@
 LLM 客户端 SDK
 Author: 小沈 - 2026-05-29
 
-基础模块,被 BaseAIService / intent_classifier / capability_detector 调用。
+基础模块,被 BaseAIService 调用。
 只支持 OpenAI 兼容格式的 API(/chat/completions 端点)。
 SDK 只管发 HTTP 请求,不处理错误,异常原样抛出。
+
+重构: chat/chat_stream → request/request_stream + mode参数 - 小沈 2026-06-09
 """
 
 import httpx
@@ -20,11 +22,10 @@ from app.constants import (
 )
 
 
-# ===== 请求体构建 =====
-
 def _build_request_body(
     messages: List[Dict],
     model: str,
+    mode: str = "text",
     max_tokens: Optional[int] = None,
     temperature: Optional[float] = None,
     seed: Optional[int] = None,
@@ -32,7 +33,7 @@ def _build_request_body(
     tool_choice: Optional[str] = None,
     stream: bool = False,
 ) -> Dict:
-    """统一构建 LLM 请求体"""
+    """统一构建 LLM 请求体 - 小沈 2026-06-09"""
     body = {"model": model, "messages": messages}
     if max_tokens is not None:
         body["max_tokens"] = max_tokens
@@ -42,17 +43,15 @@ def _build_request_body(
         body["seed"] = seed
     if stream:
         body["stream"] = True
-    if tools:
+    if mode == "tools" and tools:
         body["tools"] = tools
-    if tool_choice:
-        body["tool_choice"] = tool_choice
+        if tool_choice:
+            body["tool_choice"] = tool_choice
     return body
 
 
-# ===== LLM 客户端 =====
-
 class LLMClient:
-    """LLM 客户端实例"""
+    """LLM 客户端实例 - 小沈 2026-06-09"""
 
     def __init__(
         self,
@@ -84,7 +83,7 @@ class LLMClient:
         )
 
     def _default_base_url(self, provider: str) -> str:
-        """根据 provider 返回默认 API 地址(仅 OpenAI 兼容格式)"""
+        """根据 provider 返回默认 API 地址 - 小沈 2026-06-09"""
         urls = {
             "openai": "https://api.openai.com/v1",
             "deepseek": "https://api.deepseek.com",
@@ -94,18 +93,19 @@ class LLMClient:
         }
         return urls.get(provider, "")
 
-    async def chat(
+    async def request(
         self,
         messages: List[Dict],
+        mode: str = "text",
+        tools: Optional[List[Dict]] = None,
+        tool_choice: str = "auto",
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         seed: Optional[int] = None,
-        tools: Optional[List[Dict]] = None,
-        tool_choice: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """非流式 LLM 调用,返回原始响应"""
+        """非流式请求 - 统一入口 - 小沈 2026-06-09"""
         body = _build_request_body(
-            messages=messages, model=self.model,
+            messages=messages, model=self.model, mode=mode,
             max_tokens=max_tokens, temperature=temperature, seed=seed,
             tools=tools, tool_choice=tool_choice, stream=False,
         )
@@ -113,18 +113,19 @@ class LLMClient:
         response.raise_for_status()
         return response.json()
 
-    async def chat_stream(
+    async def request_stream(
         self,
         messages: List[Dict],
+        mode: str = "text",
+        tools: Optional[List[Dict]] = None,
+        tool_choice: str = "auto",
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         seed: Optional[int] = None,
-        tools: Optional[List[Dict]] = None,
-        tool_choice: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
-        """流式 LLM 调用,逐行 yield SSE data 字符串"""
+        """流式请求 - 统一入口 - 小沈 2026-06-09"""
         body = _build_request_body(
-            messages=messages, model=self.model,
+            messages=messages, model=self.model, mode=mode,
             max_tokens=max_tokens, temperature=temperature, seed=seed,
             tools=tools, tool_choice=tool_choice, stream=True,
         )
@@ -138,15 +139,15 @@ class LLMClient:
                     yield data
 
     def raw_stream(self, method: str, url: str, **kwargs):
-        """获取原始HTTP响应流(返回 async context manager),避免与 chat_stream 混淆"""
+        """获取原始HTTP响应流 - 小沈 2026-06-09"""
         return self._client.stream(method, url, **kwargs)
 
-    async def request(self, method: str, url: str, **kwargs) -> httpx.Response:
-        """发送任意 HTTP 请求(用于非 /chat/completions 路由的重试/探测场景)"""
+    async def http_request(self, method: str, url: str, **kwargs) -> httpx.Response:
+        """发送任意 HTTP 请求 - 小沈 2026-06-09"""
         return await self._client.request(method, url, **kwargs)
 
     async def close(self):
-        """关闭客户端,释放连接池"""
+        """关闭客户端,释放连接池 - 小沈 2026-06-09"""
         await self._client.aclose()
 
 
@@ -157,17 +158,5 @@ def create_llm_client(
     base_url: Optional[str] = None,
     timeout: Optional[int] = None,
 ) -> LLMClient:
-    """
-    创建 LLM 客户端 — 唯一入口
-
-    Args:
-        provider: 提供商(openai / deepseek / qwen / groq / ollama)
-        model: 模型名(gpt-4 / deepseek-chat / qwen-plus 等)
-        api_key: API 密钥
-        base_url: API 地址(可选,默认根据 provider 自动设置)
-        timeout: 超时秒数(可选,默认 60)
-
-    Returns:
-        LLMClient 实例
-    """
+    """创建 LLM 客户端 — 唯一入口 - 小沈 2026-06-09"""
     return LLMClient(provider=provider, model=model, api_key=api_key, base_url=base_url, timeout=timeout)
