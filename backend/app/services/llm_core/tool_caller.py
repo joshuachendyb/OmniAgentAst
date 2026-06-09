@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-tool_caller — 从 llm_core.py 拆出
+tool_caller — 调用SDK层实现FC
 
-复制来源: llm_core.py 第279-305行 (_cancel_or_wait, _response_or_error),
-          第348-381行 (chat_with_tools)
+重构：Service层调用SDK层，消除重复代码 - 小沈 2026-06-09
 Author: 小沈 - 2026-05-31
 """
 
@@ -18,7 +17,7 @@ class ToolCallerMixin:
     """Function Calling(SRP)"""
 
     async def _cancel_or_wait(self, request_task: asyncio.Task) -> Optional[ChatResponse]:
-        """复制自 llm_core.py 第279-298行 — 心跳循环:1秒间隔检查取消"""
+        """心跳循环:1秒间隔检查取消 - 小沈 2026-06-09"""
         try:
             while not request_task.done():
                 try:
@@ -45,7 +44,7 @@ class ToolCallerMixin:
         tool_calls: Optional[List] = None,
         reasoning: str = "",
     ) -> ChatResponse:
-        """复制自 llm_core.py 第300-305行 — 统一构建 ChatResponse"""
+        """统一构建 ChatResponse - 小沈 2026-06-09"""
         return ChatResponse(
             content=content,
             model=self.model,
@@ -62,12 +61,13 @@ class ToolCallerMixin:
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto",
     ) -> ChatResponse:
-        """复制自 llm_core.py 第348-381行 — 发送对话请求(使用 Function Calling)"""
+        """非流式FC对话 — 调用SDK层chat() - 小沈 2026-06-09"""
         try:
             full_content = ""
             full_reasoning = ""
             has_non_reasoning_content = False
             stream_error = None
+
             async for chunk in self.chat_with_tools_stream(message, history, tools, tool_choice):
                 if chunk.content:
                     if getattr(chunk, "is_reasoning", False):
@@ -81,11 +81,15 @@ class ToolCallerMixin:
                     stream_error = chunk.stream_error
                 if chunk.is_done:
                     break
+
             if not has_non_reasoning_content and full_reasoning:
                 full_content = full_reasoning
+
             if stream_error:
                 return ChatResponse(content="", model=self.model, provider=self.provider, error=stream_error)
+
             return ChatResponse(content=full_content, model=self.model, provider=self.provider, reasoning=full_reasoning)
+
         except Exception as e:
             logger.error(f"[chat_with_tools] 异常: {e}")
             return ChatResponse(content="", model=self.model, provider=self.provider, error=str(e))

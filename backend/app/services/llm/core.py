@@ -2,8 +2,7 @@
 """
 LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05-27
 
-职责:定义LLM层的响应数据类(ChatResponse、StreamChunk)、
-重试上下文(_StreamRetryContext)、异常解析(_resolve_exception)。
+职责:定义LLM层的响应数据类(ChatResponse、StreamChunk)、异常解析(_resolve_exception)。
 
 拆分原则:数据/辅助定义与BaseAIService主服务类分离,遵循SRP。
 对外透明:llm_core.py重新导出这些类,外部import路径不变。
@@ -12,7 +11,6 @@ LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05
 from typing import List, Dict, Optional
 
 from app.utils.logger import logger
-from app.utils.retry import create_network_retry_engine
 
 
 def _resolve_exception(e: Exception) -> tuple:
@@ -53,40 +51,8 @@ class StreamChunk:
         self.is_reasoning = is_reasoning
 
 
-class _StreamRetryContext:
-    """流式请求429重试上下文管理器 — 委托到RetryEngine统一退避策略 — 小沈 2026-05-27"""
-
-    def __init__(self, service, url, headers, json_body, max_retries=3, retry_delay=2.0):
-        self.service = service
-        self.url = url
-        self.headers = headers
-        self.json_body = json_body
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
-        self._response_ctx = None
-        self._engine = create_network_retry_engine(
-            max_retries=max_retries,
-            backoff_factor=retry_delay,
-        )
-
-    async def __aenter__(self):
-        self.service._ensure_client()
-        self._response_ctx, response = await self._engine.execute_async_context(
-            ctx_factory=lambda: self.service._llm_sdk.raw_stream(
-                "POST", self.url, headers=self.headers, json=self.json_body
-            ),
-            result_check=lambda r: self.service._is_rate_limit_status(r.status_code),
-        )
-        return response
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self._response_ctx:
-            return await self._response_ctx.__aexit__(exc_type, exc_val, exc_tb)
-
-
 __all__ = [
     "ChatResponse",
     "StreamChunk",
-    "_StreamRetryContext",
     "_resolve_exception",
 ]
