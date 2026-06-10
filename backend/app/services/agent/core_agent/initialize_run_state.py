@@ -18,7 +18,6 @@ def initialize_run_state(
     """复制自 base_react.py 第295-338行"""
     self.steps = []
     self.message_builder.reset_per_run()
-    self.conversation_history = self.message_builder.conversation_history
     self.status = AgentStatus.THINKING
     self.llm_call_count = 0
     if task_id:
@@ -29,6 +28,5 @@ def initialize_run_state(
     task_prompt = self._get_task_prompt(task, context)
     self._on_before_loop(sys_prompt, task_prompt, context)
     self.message_builder.init_history(sys_prompt, task_prompt)
-    self.conversation_history = self.message_builder.conversation_history
 
     return ChunkBuffer(self.max_consecutive_chunks)

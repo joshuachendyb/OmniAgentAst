@@ -228,7 +228,6 @@ class PromptLogger:
             "消息统计": message_stats,
             "消息总数": len(messages),
             "消息摘要": message_summaries,
-            "完整消息列表": messages,  # 保留完整列表用于调试
             "时间戳": now_str()
         }
         

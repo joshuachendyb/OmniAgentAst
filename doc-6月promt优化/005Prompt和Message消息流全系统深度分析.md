@@ -1,7 +1,7 @@
 # 后端 Prompt 和 Message Conversation History 全系统深度分析
 
 > 作者: Agnes-2.0-Flash (AI Agent)
-> 复查次数: 5遍
+> 复查次数: 5遍（原始）+ 3轮复核（2026-06-11追加）
 > 分析日期: 2026-06-10
 > 代码位置: /mnt/g/OmniAgentAs-desk/backend (304个Python文件)
 
@@ -20,6 +20,7 @@
 9. [完整消息流图](#9-完整消息流图)
 10. [不合理之处分析](#10-不合理之处分析)
 11. [总结](#11-总结)
+12. [三次复核与10大编码原则分析](#12-三次复核与10大编码原则分析)
 
 ---
 
@@ -772,3 +773,657 @@ display_data = result.get("llm_data") or result.get("data")
 3. **统一FC/Text模式的消息处理** (S3) — 裁剪逻辑一致性
 4. **删除硬编码工具提醒** (M1) — 与OUTPUT_FORMAT统一
 5. **精简Observation截断** (M2) — 防止单条observation过大
+
+---
+
+## 12. 三次复核与10大编码原则分析
+
+> **复核时间**: 2026-06-11 06:59:56
+> **复核人**: 小欧（3轮复核：功能正确性 → 10大原则 → 边界/副作用）
+> **代码版本**: 基于当前代码库实际读取（304个Python文件），确认每项问题的当前状态
+
+### 12.1 复核方法论
+
+**Round 1 — 功能正确性复核**:
+- 在当前代码中逐项确认问题是否仍存在
+- 确认问题是否已在之前修复
+- 判断当前代码行为是否正确
+
+**Round 2 — 10大编码原则复核**:
+逐项对比10大编码原则，识别违反项：
+
+| 原则 | 简称 | 检查要点 |
+|------|------|---------|
+| 单一职责 | SRP | 一个类/函数只做一件事 |
+| 不重复 | DRY | 同一逻辑只写一次 |
+| 保持简单 | KISS | 能简单不复杂 |
+| 同一抽象层 | SLAP | 不混搭高层编排和底层细节 |
+| 不要过度设计 | YAGNI | 不加用不上的功能 |
+| 禁止向后兼容 | — | 不留旧代码 |
+| 开闭原则 | OCP | 对扩展开放，对修改封闭 |
+| 里氏替换 | LSP | 子类不违反父类约定 |
+| 接口隔离 | ISP | 接口职责单一 |
+| 复用优先 | — | 先查FUNCTIONS.md，不重复造轮子 |
+
+**Round 3 — 边界条件与副作用复核**:
+- 空值、边界值、异常路径
+- 并发安全、状态泄漏
+- 前后端一致性
+
+---
+
+### 12.2 S1: conversation_history 引用别名问题
+
+**原始描述**: `initialize_run_state.py` L21/L32 将 `self.conversation_history` 设为 `message_builder.conversation_history` 的别名引用。
+
+---
+
+#### Round 1: 功能正确性复核
+
+✅ **当前状态确认**: 代码中 `initialize_run_state.py` L21 和 L32 确实存在别名赋值：
+```python
+self.conversation_history = self.message_builder.conversation_history
+```
+
+通过 `grep` 搜索当前代码库，`self.conversation_history` 在 agent 目录中只在 `initialize_run_state.py` 出现（赋值），在 `message_builder.py` 中出现14次（MessageBuilder内操作）。**Agent实例上的 `self.conversation_history` 从未被读取**。
+
+结论：**功能上正确但为零引用**。两个引用指向同一个列表对象，操作任何一个都会反映到另一个。但由于没有任何代码读取 `self.conversation_history`，这个别名赋值是死代码。
+
+---
+
+#### Round 2: 10大编码原则复核
+
+| 原则 | 判定 | 说明 |
+|------|------|------|
+| **SRP** | ❌ **违反** | conversation_history 的管理应该完全在 MessageBuilder 中，Agent实例不应持有冗余引用 |
+| **YAGNI** | ❌ **违反** | `self.conversation_history` 赋值后从未被读取，属于死代码 |
+| **KISS** | ❌ **违反** | 别名引用增加了心智负担：开发者看到 `self.conversation_history` 会误以为它是独立管理的 |
+| DRY | ✅ | 别名本身不是重复代码 |
+| SLAP | ✅ | 赋值操作在同一抽象层 |
+| OCP | ✅ | 不影响扩展 |
+| ISP | ✅ | 接口未受影响 |
+| 复用优先 | ✅ | 无重复 |
+| 禁止向后兼容 | ❌ **违反** | 保留死代码正是向后兼容的思维 |
+
+**结论**: 违反 SRP（Agent持有应该由MessageBuilder管理的引用）、YAGNI（死代码）、KISS（增加心智负担）、禁止向后兼容（保留无用代码）。
+
+---
+
+#### Round 3: 边界条件与副作用复核
+
+| 场景 | 当前行为 | 风险 |
+|------|---------|------|
+| 删除别名后 | 无任何影响，因为 `self.conversation_history` 只被赋值从未被读取 | ✅ 无风险 |
+| 并发多run | `reset_per_run()` 重新赋值 `message_builder.conversation_history = []`，不会影响旧的 `self.conversation_history`（已被GC） | ✅ 无内存泄漏 |
+| 向后误解 | 新开发者看到 `self.conversation_history` 误以为可用 | ⚠️ 代码阅读陷阱 |
+
+**边界检查确认**: 在 `react_cycle.py` L100 中曾有 `self.conversation_history.append(...)` 引用（原文档指出），但当前版本 `react_cycle.py` L100 已改为通过 flag 设置 `agent._tool_reminder_needed = True`，不再直接操作 `self.conversation_history`。**别名引用已无任何消费者**。
+
+---
+
+#### ✅ 复核结论: 应当修复（P2）
+
+**修复方案**: 删除 `initialize_run_state.py` 中两处别名赋值。
+
+```python
+# 删除L21和L32:
+# self.conversation_history = self.message_builder.conversation_history
+```
+
+MessageBuilder 是 conversation_history 的唯一管理入口，所有操作都已通过 `message_builder` 方法完成。
+
+---
+
+### 12.3 S2: system prompt 过大
+
+**原始描述**: 系统Prompt包含8-15KB内容（系统信息+工具描述+OUTPUT_FORMAT+TOOL_CALL_RULES+安全提醒+回滚说明+避免重复规则+候选提示），工具描述未缓存。
+
+---
+
+#### Round 1: 功能正确性复核
+
+✅ **当前状态确认**: 在 `universal_agent.py` L69-82 中，`_get_system_prompt()` 在每次 `_initialize_run_state` 时被调用一次，而不是每轮 ReAct 迭代都调用。
+
+`build_full_system_prompt()` 在 `base_prompt_template.py` L166-202 组装 6 个部分。
+`SystemPrompts.get_system_prompt()` 在 `system_prompts.py` L67-89 动态生成工具描述。
+
+**关键发现**: 系统Prompt **每run只构建一次**（在 `initialize_run_state` 中），并非每轮迭代都重建。因此原始文档描述的"每轮都重复注入"问题在当前代码中已不存在。
+
+**工具描述大小**: 每个工具 ~200 字 × ~20 个工具 ≈ 4KB，加上其他部分总计 8-12KB，处于合理范围。
+
+---
+
+#### Round 2: 10大编码原则复核
+
+| 原则 | 判定 | 说明 |
+|------|------|------|
+| **YAGNI** | ⚠️ 注意 | 8-12KB 的系统Prompt在每run首次是必要的，不存在"过度设计" |
+| DRY | ✅ | 工具描述通过 `build_tool_descriptions()` 统一生成 |
+| SRP | ✅ | `build_full_system_prompt()` 单一职责：组装prompt |
+| KISS | ✅ | 当前按部就班组装，逻辑清晰 |
+| SLAP | ✅ | 组装、工具描述生成、运行时追加分属不同抽象层 |
+| 禁止向后兼容 | ✅ | 无保留旧代码 |
+
+---
+
+#### Round 3: 边界条件与副作用复核
+
+| 场景 | 分析 | 结论 |
+|------|------|------|
+| 50轮对话 | 8-12KB system prompt + 累计 observation ≈ 50KB+ | ⚠️ 可能超出上下文窗口，但 `trim_history()` 已做容量保护 |
+| 工具频繁注册 | `_get_openai_tools()` 有300s TTL缓存，`build_tool_descriptions()` 每次重新查询 | ✅ 可接受 |
+| 跨分类多工具 | `_build_cross_tool_hint()` 运行时追加，仅触发一次 | ✅ 无重复 |
+
+---
+
+#### ✅ 复核结论: 无需修复（当前设计正确）
+
+系统Prompt每run只构建一次，工具描述已在 `_get_openai_tools()` 中缓存（TTL=300s）。S2 的"未缓存"问题在当前代码中已被解决。
+
+---
+
+### 12.4 S3: FC/Text模式消息结构不一致
+
+**原始描述**: FC模式（assistant+tool_calls, role:tool）和 Text模式（纯文本JSON）消息结构不同，裁剪逻辑未区分。
+
+---
+
+#### Round 1: 功能正确性复核
+
+✅ **当前状态确认**: 当前代码已实现以下FC/Text兼容处理：
+
+| 处理点 | 代码位置 | 功能 |
+|--------|---------|------|
+| `_append_observation()` 双模式 | `message_builder.py` L81-90 | FC模式注入 assistant(tool_calls)+tool, Text模式注入 user+[Tool Result] |
+| `_is_observation_role()` 双识别 | `message_builder.py` L231-241 | 识别 role=tool 和 role=user+[Tool Result] 两种格式 |
+| `_trim_fc_pairs()` 配对保护 | `message_builder.py` L244-277 | 确保 assistant(tool_calls) 和 role:tool 配对，不打断FC协议 |
+| `_dedup_by_fingerprint()` FC保护 | `message_builder.py` L287-298 | FC tool-role 消息不参与MD5去重 |
+| `_convert_fc_messages_to_text()` 降级 | `universal_agent.py` L299-332 | FC失败时降级为 Text 格式 |
+| `_total_chars()` content=None保护 | `message_builder.py` L308-311 | content 为 None 时 len(None) 不会 TypeError |
+
+S3 描述的问题已在之前的修复中全部解决。
+
+---
+
+#### Round 2: 10大编码原则复核
+
+| 原则 | 判定 | 说明 |
+|------|------|------|
+| **SRP** | ⚠️ **部分违反** | `message_builder.py` 中同时存在 FC 和 Text 两种路径的代码，同一类处理两种协议 |
+| **OCP** | ⚠️ **部分违反** | 新增消息格式需要修改 `_is_observation_role()`、`_append_observation()`、`_trim_fc_pairs()` 等多个方法 |
+| KISS | ✅ | 双路径是FC降级的必要设计，没有过度抽象 |
+| DRY | ✅ | 没有重复的FC/Text处理逻辑 |
+
+---
+
+#### Round 3: 边界条件与副作用复核
+
+| 边界场景 | 当前处理 | 风险 |
+|---------|---------|------|
+| FC assistant.content=None | `_total_chars()` 显式处理 None | ✅ |
+| Text assistant.content 包含 JSON | 正常处理 | ✅ |
+| FC+Text 混合 conversation_history | `_classify_messages()` 按 role 分类 | ✅ |
+| 降级后 FC 消息丢失 | `_convert_fc_messages_to_text()` 保留描述 | ✅ |
+
+---
+
+#### ✅ 复核结论: 无需修复（已在之前修复中完整解决）
+
+当前代码已全面支持FC/Text双模式，包括：双模式注入、双模式识别、FC配对保护、FC去重豁免、FC→Text格式转换、None安全访问。
+
+---
+
+### 12.5 M1: 工具提醒硬编码
+
+**原始描述**: `react_cycle.py` 中 `_TOOL_REMINDER` 是硬编码文本，与 `OUTPUT_FORMAT` 规则有重复。
+
+---
+
+#### Round 1: 功能正确性复核
+
+✅ **当前状态确认**: `react_cycle.py` L36-43 定义 `_TOOL_REMINDER`，L99-102 设置 flag，`universal_agent.py` L139-142 动态注入。
+
+**确认行为**: 
+1. LLM返回 chunk 类型且无工具调用时，`agent._tool_reminder_needed = True`
+2. 下次 `_call_llm()` 时，将 `_TOOL_REMINDER` 作为 system 消息注入（不永久写入 conversation_history）
+3. 注入后 flag 立即清除
+
+**flag 机制 vs 直接写入**: 当前已修复原文档描述的问题（原文档 L604 说"直接 `conversation_history.append`"），当前版本使用 flag 机制，不污染 conversation_history。
+
+---
+
+#### Round 2: 10大编码原则复核
+
+| 原则 | 判定 | 说明 |
+|------|------|------|
+| **SRP** | ❌ **违反** | `_TOOL_REMINDER` 的文本内容在 `react_cycle.py`（编排层），应放在 prompts 层 |
+| **DRY** | ❌ **违反** | 提醒文本中的"必须使用工具"语义在 `OUTPUT_FORMAT` 和 `TOOL_CALL_RULES` 中已存在，三者重复 |
+| **OCP** | ❌ **违反** | 修改提醒内容需要修改 `react_cycle.py`，而非扩展 prompts |
+| ISP | ✅ | 提醒注入的接口单一 |
+| KISS | ✅ | 机制简单（flag+注入） |
+
+**核心问题**: `_TOOL_REMINDER` 属于 **内容层** 却在 **编排层** 定义，违反分层 SRP。修改提醒文字需要修改编排代码。
+
+---
+
+#### Round 3: 边界条件与副作用复核
+
+| 场景 | 当前行为 | 风险 |
+|------|---------|------|
+| OUTPUT_FORMAT 更新 | `_TOOL_REMINDER` 不会被同步更新 | ⚠️ 内容不一致风险 |
+| 多 Agent 类型 | `_TOOL_REMINDER` 在 `react_cycle.py` 中，所有 Agent 共享 | ⚠️ 无法定制不同 Agent 的提醒 |
+| 被注入提醒后 LLM 仍返回 text | `_TOOL_REMINDER` 只是 system 消息，LLM 可忽略 | ✅ LLM 行为不可控，仅提供提示 |
+
+---
+
+#### ✅ 复核结论: 应当修复（P2-SRP重构）
+
+**修复方案**: 将 `_TOOL_REMINDER` 从 `react_cycle.py` 移至 `base_prompt_template.py` 作为类常量（与 OUTPUT_FORMAT、TOOL_CALL_RULES 同级），`universal_agent.py` 从 prompts 层引用。
+
+---
+
+### 12.6 M2: Observation文本长度上限
+
+**原始描述**: Observation文本没有长度上限保护，单条可能占用大量 tokens。
+
+---
+
+#### Round 1: 功能正确性复核
+
+✅ **当前状态确认**: `message_builder.py` 已实现 observation 预算机制：
+
+```python
+def _prepare_observation_text(self, observation_text: str, llm_call_count: int) -> str:
+    budget = self._get_observation_budget(llm_call_count)
+    if len(observation_text) > budget:
+        observation_text = smart_truncate_text(observation_text, budget=budget)
+    observation_text = self._normalize_observation_prefix(observation_text)
+    return observation_text
+```
+
+预算公式: `budget = 20000 + 10000 * max(0, 5 - llm_call_count)`，上限 50000。
+
+| 轮次 | budget | 说明 |
+|------|--------|------|
+| 第1轮 | 50000 | 早期允许较大 observation |
+| 第3轮 | 40000 | 逐步降低 |
+| 第5轮 | 20000 | 稳定在 20000 |
+| 第10轮 | 20000 | 不再衰减 |
+
+---
+
+#### Round 2: 10大编码原则复核
+
+| 原则 | 判定 | 说明 |
+|------|------|------|
+| SRP | ✅ | `_prepare_observation_text()` 单一职责：截断+归一化 |
+| KISS | ✅ | 基于调用次数的衰减机制简单有效 |
+| DRY | ✅ | 无重复的截断逻辑 |
+
+---
+
+#### Round 3: 边界条件与副作用复核
+
+| 边界场景 | 当前处理 | 风险 |
+|---------|---------|------|
+| 工具返回 100MB 数据 | `observation_formatter.py` 的 `_prevent_json_oom()` 防 json.dumps OOM | ✅ 有保护 |
+| llm_data 为空，data 巨大 | `_extract_display_data` 回退到 data | ⚠️ `{} or data` 的 falsy bug（见 L2 分析） |
+
+---
+
+#### ✅ 复核结论: 无需修复（已在之前修复中实现）
+
+完整的 observation 预算衰减 + `smart_truncate_text()` 截断 + `_prevent_json_oom()` OOM 保护链已到位。
+
+---
+
+### 12.7 M3: PromptLogger 记录完整消息列表
+
+**原始描述**: `prompt_logger.log_llm_call()` 记录 `"完整消息列表": messages` 但日志文件从未被程序读取。
+
+---
+
+#### Round 1: 功能正确性复核
+
+✅ **当前状态确认**: `prompt_logger.py` L231 确实存储了 `"完整消息列表": messages`：
+```python
+entry = {
+    ...
+    "消息摘要": message_summaries,       # 200字符截断摘要
+    "完整消息列表": messages,             # 完整消息列表（未截断）
+    ...
+}
+```
+
+同时 L216-221 也记录了 `"消息摘要"`（每条消息 content[:200]）。
+
+**问题**: 两份数据冗余——摘要（轻量）和完整消息列表（重量级）。完整消息列表在每轮 LLM 调用时都会被保存一次，对于50轮对话，可能累积50份完整消息列表的副本。
+
+---
+
+#### Round 2: 10大编码原则复核
+
+| 原则 | 判定 | 说明 |
+|------|------|------|
+| **YAGNI** | ❌ **违反** | 完整消息列表被记录但从未被任何代码读取消费 |
+| **KISS** | ❌ **违反** | 同时保留摘要和完整列表，增加冗余 |
+| DRY | ❌ **违反** | 消息摘要和完整列表是同一数据的两种表示 |
+
+---
+
+#### Round 3: 边界条件与副作用复核
+
+| 场景 | 影响 | 风险 |
+|------|------|------|
+| 50轮对话，每轮8条消息 | 50 × 8 = 400条消息被全量存储 | ⚠️ JSON文件可达数MB |
+| 并发多请求 | 线程局部存储，每个线程独立 | ✅ 无竞争条件 |
+| 长时间运行 | 日志目录可能积累大量大文件 | ⚠️ 磁盘空间 |
+
+---
+
+#### ✅ 复核结论: 应当修复（P3-YAGNI清理）
+
+**修复方案**: 删除 `"完整消息列表": messages`，只保留 `"消息摘要"`。如需全量排查时可临时恢复。
+
+---
+
+### 12.8 M4: temp_history 和 conversation_history 关系
+
+**原始描述**: temp_history 和 conversation_history 的关系不清晰，两种路径语义不同。
+
+---
+
+#### Round 1: 功能正确性复核
+
+✅ **当前状态确认**: 当前代码中两条路径明确：
+
+| 路径 | 触发场景 | 流向 |
+|------|---------|------|
+| **观察路径** | LLM返回chunk时 | `chunk_handler` → `chunk_buffer.append(content)` → `flush_temp_to_history(chunk_buffer)` → `conversation_history` |
+| **直接路径** | 工具执行完成 | `action_handler` → `add_assistant(content)` → 直接追加到 `conversation_history` |
+| **合并路径** | 每次 LLM 调用 | `prepare_messages_for_llm()` = `conversation_history` + `temp_history` |
+
+**生命周期**: `reset_per_run()` 清空两者，`_cap_temp_history()` (50000字符限制) 保护 temp_history 不膨胀。
+
+---
+
+#### Round 2: 10大编码原则复核
+
+| 原则 | 判定 | 说明 |
+|------|------|------|
+| SRP | ✅ | `temp_history` 管理在 MessageBuilder 中，单一职责 |
+| KISS | ✅ | 两条路径语义清晰：chunk流缓存 + 确认后刷入 |
+| DRY | ✅ | 无重复的 temp/perm 处理 |
+
+---
+
+#### Round 3: 边界条件与副作用复核
+
+| 场景 | 当前处理 | 风险 |
+|------|---------|------|
+| 大量chunk累积，然后被覆盖 | `flush_temp_to_history()` 先 clear 再 append | ✅ 不会重复 |
+| temp_history 超过 50000 字符 | `_cap_temp_history()` 从最旧截断 | ✅ |
+| prepare_messages_for_llm 时 temp 空 | 只返回 conversation_history | ✅ |
+
+---
+
+#### ✅ 复核结论: 无需修复（当前设计清晰正确）
+
+两条路径（chunk缓存→刷入 vs 直接追加）在 `prepare_messages_for_llm()` 合并，满足两个需求：
+1. chunk 在确认前不污染 conversation_history（防丢数据）
+2. 工具结果直接写入（已确认的完整步骤）
+
+---
+
+### 12.9 L1: 工具描述生成缓存
+
+**原始描述**: `BasePrompts.build_tool_descriptions()` 每次被调用时重新查询 `tool_registry`，结果不缓存。
+
+---
+
+#### Round 1: 功能正确性复核
+
+✅ **当前状态确认**: 
+
+- `build_full_system_prompt()` 在 `_initialize_run_state` 时被调用一次，不是每轮迭代
+- `_get_openai_tools()` 在 `universal_agent.py` L334-348 已实现 TTL 缓存（300秒）：
+```python
+cache_ts = getattr(self, '_cache_timestamp', 0)
+cache_ttl = getattr(self, '_cache_ttl', 300)  # 5分钟
+cached = getattr(self, '_cached_openai_tools', None)
+if cached and current_time - cache_ts < cache_ttl:
+    return cached
+```
+- `invalidate_tool_cache()` 支持手动清除缓存
+
+**L1 描述的问题在当前代码中已不复存在**：系统Prompt每run一次，OpenAI tools 有 TTL 缓存。
+
+---
+
+#### Round 2: 10大编码原则复核
+
+| 原则 | 判定 | 说明 |
+|------|------|------|
+| DRY | ✅ | `build_tool_descriptions()` 是唯一入口 |
+| SRP | ✅ | 方法职责单一 |
+| KISS | ✅ | TTL 缓存机制简单有效 |
+
+---
+
+#### ✅ 复核结论: 无需修复（缓存机制已实现）
+
+---
+
+### 12.10 L2: `_extract_display_data` 回退到 `data` 而非 `llm_data`
+
+**原始描述**: `observation_formatter.py` L122 使用 `or` 操作符，空字典 `{}` 会错误触发回退。
+
+---
+
+#### Round 1: 功能正确性复核
+
+🔴 **当前状态确认: 存在真实缺陷**
+
+```python
+def _extract_display_data(result: dict) -> Any:
+    display_data = result.get("llm_data") or result.get("data")
+```
+
+**问题分析**: Python 中 `{} or X` 求值为 `X`，因为 `{}` 是 falsy 值。
+
+| `llm_data` 值 | `result.get("llm_data") or result.get("data")` | 期望行为 |
+|---------------|-----------------------------------------------|---------|
+| `None` 或缺失 | 正确回退到 `data` | 正确 |
+| `{}`（空字典） | ❌ 错误回退到 `data` | 应返回 `{}` |
+| `{"key": "val"}` | 正确返回 `{"key": "val"}` | 正确 |
+| `[]`（空列表） | ❌ 错误回退到 `data` | 应返回 `[]` |
+| `0`（数值零） | ❌ 错误回退到 `data` | 应返回 `0` |
+| `""`（空字符串） | ❌ 错误回退到 `data` | 应返回 `""` |
+
+**影响**: 当工具显式设置 `llm_data = {}`（表示"没有需要给LLM的数据"）时，`_extract_display_data` 会错误地回退到完整的 `data` 字段，导致 LLM 接收到未经精简的原始数据。
+
+---
+
+#### Round 2: 10大编码原则复核
+
+| 原则 | 判定 | 说明 |
+|------|------|------|
+| **KISS** | ❌ **违反** | 使用 `or` 作为空值判断过于隐晦，难以发现其缺陷 |
+| SRP | ✅ | 方法职责单一 |
+| DRY | ✅ | 无重复 |
+
+---
+
+#### Round 3: 边界条件与副作用复核
+
+| 场景 | 影响 | 风险 |
+|------|------|------|
+| `llm_data = {}` 显式空字典 | 错误回退到完整 data | 🔴 真实缺陷 |
+| `llm_data = None` | 正确回退 | ✅ |
+| `llm_data = {"a": 1}` | 正确处理 | ✅ |
+| `llm_data = []` 空列表 | 错误回退到完整 data (理论存在，实际罕见) | 🔴 边界缺陷 |
+| `data` 为 `{}` | 返回 `{}`，不会 OOM | ✅ |
+
+---
+
+#### ✅ 复核结论: 应当修复（P1-真实缺陷）
+
+**修复方案**: 将 `or` 改为 `is not None` 判断：
+
+```python
+def _extract_display_data(result: dict) -> Any:
+    llm_data = result.get("llm_data")
+    if llm_data is not None:
+        return llm_data
+    return result.get("data")
+```
+
+---
+
+### 12.11 L3: 双重重试引擎
+
+**原始描述**: `ToolRetryEngine`（工具执行重试）和 `BaseAIService.request_stream()`（LLM API重试）双重独立，代码重复。
+
+---
+
+#### Round 1: 功能正确性复核
+
+✅ **当前状态确认**: 
+
+| 重试引擎 | 作用域 | 触发条件 | 重试目标 |
+|---------|-------|---------|---------|
+| `retry_engine.RetryEngine`（通用基类） | 通用 | 异常/返回值 | 任意操作 |
+| `BaseAIService` 内置重试 | LLM API调用 | HTTP 429/5xx | LLM请求 |
+| `ToolRetryEngine` | 工具执行 | 工具执行异常 | 工具调用 |
+
+**设计分析**: `ToolRetryEngine` 和 `BaseAIService` 使用同一个 `RetryEngine` 基类（`app/utils/retry_engine.py`），但配置不同参数：
+
+| 引擎 | max_retries | backoff | retryable_check |
+|------|------------|---------|----------------|
+| LLM API | 3 | 2^retry | HTTP 5xx/429 + 连接错误 |
+| 工具执行 | 按工具配置 | 按工具配置 | `UnifiedErrorClassifier` 分类 |
+
+**不存在代码重复**——两者都使用 `RetryEngine` 基类（DRY），但配置参数不同（OCP）。
+
+---
+
+#### Round 2: 10大编码原则复核
+
+| 原则 | 判定 | 说明 |
+|------|------|------|
+| **DRY** | ✅ **符合** | `RetryEngine` 是统一基类，两处都是调用者 |
+| **SRP** | ✅ **符合** | `ToolRetryEngine` ≠ `BaseAIService`，职责不同 |
+| **OCP** | ✅ **符合** | 新增重试场景只需 `RetryEngine(max_retries=..., retryable_check=...)` |
+| KISS | ✅ | 配置化参数，无需复制重试逻辑 |
+
+---
+
+#### ✅ 复核结论: 无需修复（设计正确）
+
+两层重试引擎服务于不同的失败场景，共享 `RetryEngine` 基类，是符合 DRY+OCP 的设计。
+
+---
+
+### 12.12 L4: cancel/check 逻辑分散
+
+**原始描述**: 取消检查和暂停检查分散在 `chat_stream_v2.py` 和 `run_sse_stream.py` 中，每处 SSE yield 都要检查。
+
+---
+
+#### Round 1: 功能正确性复核
+
+✅ **当前状态确认**: 当前架构中 cancel/check 分布在三个层次：
+
+```
+API层: chat_stream_v2.py
+  每次 SSE 迭代 → task_cancel_check_and_yield() 检查取消状态
+  每次 SSE 迭代 → task_pause_check_and_yield() 检查暂停状态
+  
+Task层: task_cancel.py / task_cancel_check.py
+  set_cancelled() — 设置取消状态
+  check_cancelled() — 检查取消状态
+  
+Agent层: react_cycle.py
+  llm_client._cancelled — 检查LLM客户端是否被强制关闭
+```
+
+**关键发现**: 这不是"分散"，而是**多层防御**：
+
+| 层级 | 检查位置 | 检查频率 | 目的 |
+|------|---------|---------|------|
+| API层(chat_stream_v2) | SSE迭代间隙 | 每步SSE | 快速取消（无需等待LLM） |
+| API层(task_pause_check) | SSE迭代间隙 | 每步SSE | 暂停控制 |
+| Agent层(react_cycle) | LLM响应后 | 每轮LLM | LLM被强制取消时的兜底 |
+| LLM客户端 | HTTP连接 | 持续 | 被动取消（连接关闭） |
+
+**不是重复**，而是互补的防御策略。取消请求从API层到Agent层逐步深入，确保任何一层都能响应。
+
+---
+
+#### Round 2: 10大编码原则复核
+
+| 原则 | 判定 | 说明 |
+|------|------|------|
+| **SRP** | ✅ **符合** | 每层的取消检查是分层的职责：API层负责及时响应，Agent层负责状态一致性 |
+| **DRY** | ✅ **符合** | check_cancelled() 在 task_registry.py 中封装，没有重复 |
+| KISS | ✅ | 简单的 flag 检查 + SSE extra 事件 |
+| SLAP | ✅ | API层（编排）→ Task层（状态管理）→ Agent层（LLM控制）→ LLM层（连接管理） |
+
+---
+
+#### Round 3: 边界条件与副作用复核
+
+| 场景 | 行为 | 结论 |
+|------|------|------|
+| 取消在LLM调用中发生 | HTTP连接强制关闭，agent._cancelled=True | ✅ 防御 |
+| 取消在SSE间隙发生 | task_cancel_check_and_yield() 检测到 | ✅ 防御 |
+| 取消在handler执行中发生 | 下次LLM调用前 agent._cancelled 检查 | ✅ 防御 |
+| 取消后同时检查暂停 | pause 优先于 cancel（先pause后cancel） | ✅ chat_stream_v2.py 正确 |
+
+---
+
+#### ✅ 复核结论: 无需修复（多层防御设计正确）
+
+当前的 cancel/check 结构是经过精心设计的多层防御机制，每层处理不同粒度的取消场景，不是"分散"而是"分层"。
+
+---
+
+### 12.13 复核总结
+
+#### 需要修复的问题（4个）
+
+| 编号 | 问题 | 严重程度 | 违反原则 | 修复要点 |
+|------|------|---------|---------|---------|
+| **S1** | conversation_history 引用别名 | P2 | YAGNI, SRP, KISS | 删除 `initialize_run_state.py` 中两处别名赋值 |
+| **M1** | 工具提醒硬编码在编排层 | P2 | SRP, DRY, OCP | 将 `_TOOL_REMINDER` 移至 `base_prompt_template.py` |
+| **M3** | PromptLogger 记录完整消息列表 | P3 | YAGNI, KISS, DRY | 删除 `"完整消息列表": messages`，保留摘要 |
+| **L2** | `_extract_display_data` `or` 误判 | P1 | KISS | 改为 `is not None` 判断 |
+
+#### 无需修复的问题（7个，设计正确或已修复）
+
+| 编号 | 问题 | 当前状态 |
+|------|------|---------|
+| **S2** | system prompt 过大 | 每run一次，非每轮迭代，已在可接受范围 |
+| **S3** | FC/Text消息结构不一致 | 已在之前修复中完整解决（`_trim_fc_pairs`/`_dedup_by_fingerprint`/`_convert_fc_to_text`） |
+| **M2** | Observation长度上限 | 预算衰减+smart_truncate+OOM保护已到位 |
+| **M4** | temp_history关系 | 两条路径清晰，语义明确 |
+| **L1** | 工具描述缓存 | TTL缓存已实现（300s过期+手动清除） |
+| **L3** | 双重重试引擎 | 共享RetryEngine基类，参数配置化，符合DRY+OCP |
+| **L4** | cancel/check分散 | 多层防御设计，每层职责不同 |
+
+#### 10大原则违规统计
+
+| 原则 | 违规划分 | 说明 |
+|------|---------|------|
+| **YAGNI** | 2次(S1, M3) | 死代码别名 + 未使用的全量日志 |
+| **SRP** | 2次(S1, M1) | Agent持有MessageBuilder引用 + 内容在编排层 |
+| **KISS** | 2次(S1, L2) | 别名增加心智负担 + `or`隐晦判断 |
+| **DRY** | 1次(M1) | 提醒文本与OUTPUT_FORMAT重复 |
+| **OCP** | 1次(M1) | 修改提醒需修改编排层而非扩展prompts |
+| 其他(5项) | 0次 | SLAP, LSP, ISP, 复用优先, 禁止向后兼容未违反 |
+
+---
+
+**复核完成时间**: 2026-06-11 06:59:56
+**复核人**: 小欧（3轮复核：功能正确性 → 10大原则 → 边界/副作用）
+**代码基准**: 当前 master 分支（304个Python文件）
