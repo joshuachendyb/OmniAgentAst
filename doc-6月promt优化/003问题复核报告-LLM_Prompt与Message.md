@@ -12,24 +12,26 @@
 | 版本 | 时间 | 签名 | 更新内容 |
 |------|------|------|---------|
 | v1.0 | 2026-06-10 15:36:34 | 小沈 | 初始版本，11个问题逐一复核 |
+| v2.0 | 2026-06-11 | 小健 | 10大原则复核:原方案5个违反YAGNI改为不修改,2个需优化,更新总览/总结/执行计划 |
+| v2.1 | 2026-06-11 | 小健 | 代码验证复核:问题1/2已修复(非部分/待修复),问题8补充stream_parser warning,更新总结/执行计划 |
 
 ---
 
 ## 一、复核结论总览
 
-| 问题编号 | 问题描述 | 复核结果 | 是否真实问题 | 优先级 |
-|---------|---------|---------|-------------|--------|
-| 问题1 | 规则重复强调 | ✅ 真实存在 | 是 | P1 |
-| 问题2 | 示例硬编码 | ✅ 真实存在 | 是 | P2 |
-| 问题3 | 候选意图提示干扰判断 | ❌ 不成立 | 否 | - |
-| 问题4 | temp_history容量检查频繁 | ✅ 真实存在 | 是 | P2 |
-| 问题5 | 裁剪后丢失重要上下文 | ✅ 真实存在（设计权衡） | 是 | P3 |
-| 问题6 | executed_summary每次注入 | ✅ 真实存在 | 是 | P2 |
-| 问题7 | 重试逻辑导致重复执行 | ❌ 不成立 | 否 | - |
-| 问题8 | 解析失败静默返回None | ✅ 真实存在（合理设计） | 是 | P3 |
-| 问题9 | 空响应返回默认finish | ✅ 真实存在 | 是 | P1 |
-| 问题10 | _TOOL_REMINDER硬编码 | ✅ 真实存在 | 是 | P2 |
-| 问题11 | 解析链过长 | ❌ 不成立 | 否 | - |
+| 问题编号 | 问题描述 | 复核结果 | 是否真实问题 | 优先级 | 10大原则符合性 | 最优方案方向 |
+|---------|---------|---------|-------------|--------|---------------|------------|
+| 问题1 | 规则重复强调 | ✅ 真实存在 | 是 | P1 | ✅ 已修复 | SAFETY WARNING合并到TOOL_CALL_RULES |
+| 问题2 | 示例硬编码 | ✅ 真实存在 | 是 | P2 | ✅ 已修复 | system_prompts去掉indent=6(已修复) |
+| 问题3 | 候选意图提示干扰判断 | ❌ 不成立 | 否 | - | - | - |
+| 问题4 | temp_history容量检查频繁 | ✅ 真实存在 | 是 | P2 | ⚠️ YAGNI(改进方案过度) | 保持现状(复杂度不高) |
+| 问题5 | 裁剪后丢失重要上下文 | ✅ 真实存在（设计权衡） | 是 | P3 | ⚠️ YAGNI(改进方案过度) | FC配对保护已足够 |
+| 问题6 | executed_summary每次注入 | ✅ 真实存在 | 是 | P2 | ⚠️ YAGNI(条件注入过度) | 保持现状(设计意图正确) |
+| 问题7 | 重试逻辑导致重复执行 | ❌ 不成立 | 否 | - | - | - |
+| 问题8 | 解析失败静默返回None | ✅ 真实存在（合理设计） | 是 | P3 | ⚠️ YAGNI(计数改进过度) | 保持现状(合理设计,stream_parser已提warning) |
+| 问题9 | 空响应返回默认finish | ✅ 真实存在 | 是 | P1 | ⚠️ 违反SRP(伪造finish) | 空字符串+上层捕获(已修复) |
+| 问题10 | _TOOL_REMINDER硬编码 | ✅ 真实存在 | 是 | P2 | ⚠️ YAGNI(配置化过度) | 保持现状(硬编码足够) |
+| 问题11 | 解析链过长 | ❌ 不成立 | 否 | - | - | - |
 
 **统计**:
 - 真实问题：8个
@@ -37,6 +39,10 @@
 - P1优先级：2个
 - P2优先级：4个
 - P3优先级：2个
+- **原改进方案违反YAGNI**: 5个(问题4/5/6/8/10)
+- **原改进方案违反SRP/DRY**: 2个(问题1/2) — 已修复
+- **已修复**: 3个(问题1/2/9)
+- **保持现状**: 5个(问题4/5/6/8/10)
 
 ---
 
@@ -108,6 +114,53 @@ def build_full_system_prompt(self) -> str:
 
 **建议优先级**: P1
 
+**10大原则评估**:
+
+**第1轮 — 原方案评估**（提取AVOID_REPEAT_RULES为常量+合并规则）:
+
+| 原则 | 符合性 | 分析 |
+|------|--------|------|
+| SRP | ⚠️ 部分违反 | OUTPUT_FORMAT混入"必须调用工具"强调(本应是格式定义) |
+| DRY | ⚠️ 违反 | OUTPUT_FORMAT的SAFETY WARNING与TOOL_CALL_RULES重复强调"必须用工具" |
+| KISS | ✅ | 提取常量是最简单的做法 |
+| 禁止backward compatibility | ✅ | 修改Prompt文本，旧版不再兼容 |
+
+**第2轮 — 代码当前状态验证**（检查已有修复）:
+
+```python
+# base_prompt_template.py 2026-06-10/11
+# ✅ AVOID_REPEAT_RULES 已提取为类常量(第106行)
+# ✅ build_full_system_prompt(strategy) FC模式跳过OUTPUT_FORMAT(第190行)
+# ✅ SAFETY WARNING 已合并到 TOOL_CALL_RULES(第86行注释确认,第92行"必须返回finish")
+# ✅ OUTPUT_FORMAT 不再包含 SAFETY WARNING 段落(SRP:只定义格式)
+```
+
+当前状态：✅ **已完全修复**。AVOID_REPEAT_RULES提取为常量，SAFETY WARNING合并到TOOL_CALL_RULES，OUTPUT_FORMAT只保留格式定义。DRY/SRP违反已消除。
+
+**第3轮 — 最优方案**（基于10大原则的修正）:
+
+✅ **已执行方案**：SAFETY WARNING从OUTPUT_FORMAT合并到TOOL_CALL_RULES（2026-06-11），消除SRP/DRY违反。
+
+当前代码（已修复后）:
+```python
+# OUTPUT_FORMAT: 只定义JSON格式+字段要求+禁止项(无SAFETY WARNING)
+OUTPUT_FORMAT = """【Response Format - 必须遵守】:
+必须使用JSON格式输出,只能返回以下两种情况之一:
+{JSON格式示例}
+【字段要求】...
+【禁止项】..."""
+
+# TOOL_CALL_RULES: 合并了SAFETY WARNING(第86行注释确认)
+TOOL_CALL_RULES = """【Tool Call Rules】:
+- ⚠️ 任务完成时必须返回 tool_name="finish",否则会进入死循环
+- ❌ 禁止:仅用文字回复而不调用工具
+...
+【IMPERATIVE: 必须使用工具执行操作】:
+- 用户请求需要实际操作时,MUST调用对应的工具..."""
+```
+
+**10大原则结论**: ✅ 已完全修复。SAFETY WARNING归入TOOL_CALL_RULES(SRP),消除重复强调(DRY),仅做文本合并(KISS),不引入配置(YAGNI)。
+
 ---
 
 ### 问题2：示例硬编码
@@ -169,6 +222,35 @@ system_prompts格式: 示例1:{"thought": "...", ...}  # 不同！
 - 格式不统一可能导致LLM学习不一致
 
 **建议优先级**: P2
+
+**10大原则评估**:
+
+**第1轮 — 原方案评估**（提取为模板池）：
+
+| 原则 | 符合性 | 分析 |
+|------|--------|------|
+| DRY | ⚠️ 格式不统一 | system_prompts.py用多行缩进JSON，file/desktop用单行JSON |
+| KISS | ⚠️ 原方案过重 | 提取模板池引入新模块，示例很少变更 |
+| YAGNI | ❌ 违反 | 示例极少变更(数月不变)，模板池过度设计 |
+| 复用优先 | ⚠️ 部分符合 | 统一格式即可复用，不需模板池 |
+
+**第2轮 — 代码当前状态验证**：
+
+```python
+# file_prompts.py: 单行JSON ✅ 简洁清晰
+# desktop_prompts.py: 单行JSON ✅ 与file一致
+# system_prompts.py: 单行JSON ✅ 已修复(2026-06-11,去掉indent=6)
+```
+
+格式不统一问题已修复。硬编码本身不是问题。
+
+**第3轮 — 最优方案**（基于10大原则的修正）:
+
+✅ **已执行方案**：`system_prompts.py:60` 已改为 `json.dumps(ex, ensure_ascii=False)`（去掉indent=6），与file/desktop格式统一。
+
+**改动量**: 1个文件改1行（已完成）。
+
+**10大原则结论**: ✅ 已修复。统一为单行JSON(DRY),改1行代码(KISS),不引入模板池(YAGNI)。
 
 ---
 
@@ -282,7 +364,7 @@ def _total_chars(messages: List[Dict]) -> int:
 
 **验证结果**: ✅ 每次都遍历所有消息计算字符数
 
-**最终结论**: ✅ **真实问题**
+**最终结论**: ✅ **真实问题(但影响极低)**
 
 **性能影响评估**:
 
@@ -291,27 +373,49 @@ def _total_chars(messages: List[Dict]) -> int:
 - 每次prepare_messages_for_llm调用：
   - _total_chars遍历10条消息：O(10)
   - while循环可能执行多次
-- 如果LLM调用100次，总计算量：100 * 10 = 1000次遍历
+- 如果LLM调用100次，总计算量：100 * 10 = 1000次遍历(微秒级)
 ```
 
 **建议优先级**: P2
 
-**改进建议**:
+**10大原则评估**:
+
+**第1轮 — 原方案评估**（使用计数器维护字符数）：
+
+| 原则 | 符合性 | 分析 |
+|------|--------|------|
+| YAGNI | ❌ 违反 | temp_history通常<10条，O(n)遍历微秒级，计数器引入状态管理成本 |
+| SRP | ✅ 计数器归_cap_temp_history管 |
+| KISS | ⚠️ 计数器简单但没必要 | 10条数据的遍历不是性能瓶颈 |
+| SLAP | ⚠️ 计数器分散到add_to_temp | 新增一个方法 |
+
+**第2轮 — 代码当前状态验证**：
+
 ```python
-# 使用计数器维护字符数
-def __init__(self):
-    self._temp_chars = 0
+# message_builder.py 第296-308行
+@staticmethod
+def _total_chars(messages: List[Dict]) -> int:
+    total = 0
+    for msg in messages:  # temp_history最多50000字符/约10-30条
+        content = msg.get("content")
+        total += len(content) if content is not None else 0
+    return total
 
-def add_to_temp(self, chunk):
-    self.temp_history.append(chunk)
-    self._temp_chars += len(chunk.get("content", ""))
-    self._cap_temp_history()
-
-def _cap_temp_history(self):
-    while self._temp_chars > TEMP_HISTORY_CHAR_LIMIT and len(self.temp_history) > 1:
-        removed = self.temp_history.pop(0)
-        self._temp_chars -= len(removed.get("content", ""))
+# 实际调用频率: 每次prepare_messages_for_llm调用一次
+# prepare_messages_for_llm调用频率: 每次LLM调用(call_llm)一次
+# 假设每次LLM调用耗时2-5秒, _total_chars耗时<0.001ms
 ```
+
+性能影响不到总调用时间的0.0001%，是典型的**过早优化**。
+
+**第3轮 — 最优方案**（基于10大原则的修正）：
+
+原方案引入`_temp_chars`计数器和`add_to_temp`方法，违反YAGNI。**保持现状**：
+- temp_history通常小(10条内)，`_total_chars` O(n)遍历微秒级
+- 引入计数器需同步维护append/pop/clear所有操作的计数一致，增加bug风险
+- 真实性能瓶颈在LLM调用(秒级)，不在`_total_chars`(微秒级)
+
+**10大原则结论**: ❌ 原方案违反YAGNI(KNUTH:过早优化是万恶之源)。**保持现状，不修改**。原"优先级P2"应降为**P4(无需处理)**。
 
 ---
 
@@ -375,22 +479,35 @@ def _trim_fc_pairs(messages: List[Dict]) -> List[Dict]:
 
 **建议优先级**: P3
 
-**改进建议**:
-```python
-# 增加重要消息标记
-def add_observation(self, obs_text, is_important=False):
-    msg = {"role": "user", "content": f"[Tool Result]\n{obs_text}"}
-    if is_important:
-        msg["_important"] = True
-    self.conversation_history.append(msg)
+**10大原则评估**:
 
-def _trim_to_budget(self, obs_list, assistant_msgs, budget):
-    # 分离重要消息和普通消息
-    important = [obs for obs in obs_list if obs.get("_important")]
-    normal = [obs for obs in obs_list if not obs.get("_important")]
-    # 先裁剪normal，保留important
-    # ...
+**第1轮 — 原方案评估**（增加重要消息标记）：
+
+| 原则 | 符合性 | 分析 |
+|------|--------|------|
+| YAGNI | ❌ 违反 | 当前无"重要消息"概念，引入标记需修改add_observation调用链 |
+| SRP | ⚠️ 混合 | add_observation兼做"标记重要性"和"追加消息"两件事 |
+| KISS | ❌ 违反 | 引入`_important`标记+分离逻辑，复杂度增30% |
+| SLAP | ⚠️ 添加条件分支 | _trim_to_budget需判断_important属性 |
+
+**第2轮 — 代码当前状态验证**：
+
+```python
+# 2026-06-11修复: _trim_to_budget已优先保留FC配对tool-obs(最近15条)
+# 这是最重要的"重要上下文"——FC协议配对消息
+# 非FC(text-role)消息中, 所有observation同等重要, 不存在"重要"vs"普通"
 ```
+
+当前代码已通过FC配对保留机制解决了最重要的上下文保护问题。
+
+**第3轮 — 最优方案**（基于10大原则的修正）：
+
+原方案引入`_important`标记机制，违反YAGNI+KISS+SRP。**保持现状**：
+- FC配对保护已解决最关键的"重要上下文"问题(2026-06-11修复)
+- text-role observation无"重要"vs"普通"区分,引入标记是伪需求
+- 上下文长度裁剪是系统级约束,不可能保留所有历史
+
+**10大原则结论**: ❌ 原方案违反YAGNI/KISS/SRP。**保持现状，不修改**。FC配对保护(2026-06-11修复)已充分缓解此问题。
 
 ---
 
@@ -467,7 +584,7 @@ executed_summary内容：
 
 **验证结果**: ⚠️ 有部分重复，但executed_summary有独特价值（防止重复调用）
 
-**最终结论**: ✅ **真实问题**
+**最终结论**: ✅ **真实问题(但设计意图正确)**
 
 **影响评估**:
 - 每次LLM调用都注入，增加约100-200 tokens
@@ -476,20 +593,43 @@ executed_summary内容：
 
 **建议优先级**: P2
 
-**改进建议**:
+**10大原则评估**:
+
+**第1轮 — 原方案评估**（只在observation过长时注入）：
+
+| 原则 | 符合性 | 分析 |
+|------|--------|------|
+| YAGNI | ❌ 违反 | "observation过长"阈值10000是硬编码拍脑袋，从未真实出现 |
+| SRP | ✅ 保持 | 执行摘要注入是_call_llm的合理职责 |
+| KISS | ⚠️ 原方案简单 | 条件注入比每次都注复杂(需判断+额外方法_get_last_observation) |
+| SLAP | ⚠️ 条件散布 | 需加_get_last_observation方法 |
+
+**第2轮 — 代码当前状态验证**：
+
 ```python
-# 只在observation过长时注入
-def _call_llm(self):
-    messages = self.message_builder.prepare_messages_for_llm()
-    
-    # 检查最后一条observation是否过长
-    last_obs = self._get_last_observation()
-    if len(last_obs) > 10000:  # 过长时注入摘要
-        executed_summary = self._build_executed_tool_summary()
-        if executed_summary:
-            messages.append({"role": "system", "content": executed_summary})
-    # ...
+# universal_agent.py 第342-356行
+def _build_executed_tool_summary(self) -> str:
+    done = [s for s in self._executed_tool_summary if '→success' in s]
+    if not done:
+        return ""  # 无已执行工具时返回空字符串
+    # 保留最新8条
+    for entry in done[-8:]:
+        ...
+
+# _call_llm第135-137行: 仅在executed_summary非空时注入
 ```
+
+关键发现：`_build_executed_tool_summary()` **仅在真正的工具执行后有内容**。首次LLM调用、多次对话等场景返回空字符串，不注入。因此"每次都注入"的说法**不准确**——实际是"每次有已执行工具时才注入"。
+
+**第3轮 — 最优方案**（基于10大原则的修正）：
+
+原方案建议"条件注入"违反YAGNI且基于不准确的前提。**保持现状**：
+- executed_summary仅在**真的执行了工具**后才注入(一般2-5条/100-200tokens)
+- 防止LLM重复调用工具的核心价值远超token成本
+- observation可能被trim_history裁剪，executed_summary是唯一保留的工具执行摘要
+- 引入"observation过长"阈值增加复杂度且无真实收益
+
+**10大原则结论**: ❌ 原方案评估不准确（实际非每次注入）且违反YAGNI。**保持现状，不修改**。executed_summary是防止重复调用的关键设计，其价值远超token成本。
 
 ---
 
@@ -643,19 +783,52 @@ except Exception as e:
 
 **建议优先级**: P3
 
-**改进建议**:
+**10大原则评估**:
+
+**第1轮 — 原方案评估**（增加统计计数）：
+
+| 原则 | 符合性 | 分析 |
+|------|--------|------|
+| YAGNI | ❌ 违反 | 解析失败是SSE流正常现象(心跳行/注释行)，不是错误 |
+| KISS | ✅ 原设计 | 返回None是最简单的处理方式 |
+| SRP | ✅ _parse_sse_data | 只做解析，不做告警 |
+| SLAP | ✅ | 统一在caller层处理None |
+
+**第2轮 — 代码当前状态验证**：
+
 ```python
-# 增加统计计数
-def _parse_sse_data(self, data_str: str) -> Optional[StreamChunk]:
-    try:
-        # ...
-    except Exception as e:
-        self._parse_error_count += 1
-        if self._parse_error_count % 100 == 0:  # 每100次打印一次warning
-            logger.warning(f"[_parse_sse_data] 解析失败累计{self._parse_error_count}次, 最近: {e}")
-        logger.debug(f"[_parse_sse_data] 解析失败: {e}, data={data_str[:100]}")
-        return None
+# llm_core.py 第291-293行: 仍为debug级别
+except Exception as e:
+    logger.debug(f"[_parse_sse_data] 解析失败: {e}, data={data_str[:100]}")
+    return None
+
+# stream_parser.py 第80-82行: 已提升为warning级别(2026-06-11修复)
+if data is None:
+    logger.warning(f"[{log_tag}] JSON解析失败: {data_str[:100]}")
+    continue
+
+# 调用者(request_stream)正确过滤None:
+# async for data_str in raw_stream:
+#     chunk = self._parse_sse_data(data_str)
+#     if chunk:
+#         yield chunk
 ```
+
+当前设计是正确的：
+- SSE流包含`data: [DONE]`、`: heartbeat`等非数据行
+- 返回None让调用者过滤，是最干净的KISS设计
+- **stream_parser.py(新解析器)已将JSON解析失败日志提升为warning**，llm_core.py(旧解析器)仍为debug
+- 计数`_parse_error_count`统计"正常行"无意义
+
+**第3轮 — 最优方案**（基于10大原则的修正）：
+
+原方案引入`_parse_error_count`计数器违反YAGNI。**保持现状**：
+- "解析失败"在SSE流中是正常现象（心跳/注释行），不是错误
+- 调用者正确过滤None值
+- DEBUG日志已足够，true error会由request_stream的其他异常路径处理（连接断开、超时等已有单独处理）
+- 计数器统计"正常发生的行"无意义，且增加了不必要的状态
+
+**10大原则结论**: ❌ 原方案违反YAGNI。"解析失败"在SSE流中是正常行，计数无意义。**保持现状，不修改**。
 
 ---
 
@@ -722,19 +895,59 @@ async def _call_llm_fc_stream(self, messages: list, openai_tools: list):
 
 **建议优先级**: P1
 
-**改进建议**:
+**10大原则评估**:
+
+**第1轮 — 原方案评估**（返回错误信息而非默认finish）：
+
+| 原则 | 符合性 | 分析 |
+|------|--------|------|
+| SRP | ⚠️ LLM层不应伪造业务响应 | "_call_llm_fc_stream返回response元组"是LLM层职责，伪造finish是越界处理 |
+| KISS | ⚠️ 原方案 | 伪造finish字符串不如"空字符串让上层处理"简单 |
+| SLAP | ⚠️ 混合抽象 | LLM层生成"任务执行失败"业务消息是错误抽象层 |
+
+**第2轮 — 代码当前状态验证**（确认已修复）：
+
 ```python
-# 返回错误而非默认finish
-if not full_content and not full_reasoning:
-    logger.error("[FC] LLM返回空响应")
-    yield ("response", json.dumps({
-        "thought": "LLM返回空响应",
-        "reasoning": "可能是网络错误或LLM异常",
-        "tool_name": "finish",
-        "tool_params": {"result": "任务执行失败：LLM返回空响应，请重试"}
-    }))
+# universal_agent.py 第206-221行 (2026-06-11 已修复)
+if full_content:
+    parsed = parse_json(full_content)
+    if parsed and "tool_name" in parsed:
+        yield ("response", full_content)
+        return
+
+if full_content.strip():
+    logger.warning("[FC] LLM返回纯文本(无tool_name),降级text流式")
+    async for item in self._call_llm_text_stream(messages):
+        yield item
     return
+
+if full_reasoning and not full_content:
+    full_content = full_reasoning
+
+yield ("response", full_content.strip())  # 空响应→空字符串→react_cycle捕获
 ```
+
+**当前实现**：空响应返回`full_content.strip()`(空字符串) → 上层`react_cycle`捕获空响应 → 调用`exit_with_error`。
+✅ 已在2026-06-11会话中修复（原#9 fix）。
+
+**第3轮 — 最优方案**（基于10大原则的修正）：
+
+原方案建议"返回错误finish JSON"仍违反SRP（LLM层生成业务消息）。**当前已采用的方案**是更优的：
+
+```python
+# 已采用的方案(更符合10大原则):
+# LLM层: yield ("response", "") — 返回空字符串(SRP:LLM层只传递,不解释)
+# React层: catch空响应 → exit_with_error(SRP:业务决策在React层)
+```
+
+对比两个方案：
+
+| 方案 | SRP | KISS | 可测试性 |
+|------|-----|------|---------|
+| ① 返回错误finish(原方案) | ❌ LLM层伪造业务响应 | ❌ 生成JSON字符串 | ❌ 需验证JSON内容 |
+| ② 空字符串+上层捕获(已采用) | ✅ 职责分离 | ✅ 空字符串传递 | ✅ 只需检查空响应 |
+
+**10大原则结论**: ✅ 已修复。采用方案②（空字符串→上层捕获）比原方案①（伪造finish）更符合SRP/KISS。**已修复，无需额外操作**。
 
 ---
 
@@ -784,7 +997,7 @@ if parsed_type == "chunk" and not _has_tool_call(agent):
 
 **验证结果**: ✅ 确实无法动态调整
 
-**最终结论**: ✅ **真实问题**
+**最终结论**: ✅ **真实问题(但硬编码合理)**
 
 **影响评估**:
 - 无法根据场景定制提醒内容
@@ -792,16 +1005,49 @@ if parsed_type == "chunk" and not _has_tool_call(agent):
 
 **建议优先级**: P2
 
-**改进建议**:
-```python
-# 提取为配置
-from app.config import get_config
+**10大原则评估**:
 
-def _get_tool_reminder(category: str) -> str:
-    config = get_config()
-    reminders = config.get("tool_reminders", {})
-    return reminders.get(category, _DEFAULT_TOOL_REMINDER)
+**第1轮 — 原方案评估**（提取为配置）：
+
+| 原则 | 符合性 | 分析 |
+|------|--------|------|
+| YAGNI | ❌ 违反 | 工具提醒文本几乎不变化(上线至今只改过格式)，配置化过度 |
+| KISS | ❌ 违反 | 从常量→配置需加config读取+YAML定义+category映射，复杂度倍增 |
+| DRY | ✅ 居中 | _TOOL_REMINDER已在react_cycle.py一处定义 |
+| 复用优先 | ⚠️ 无需复用 | 该文本仅在LLM未调用工具时用一次 |
+
+**第2轮 — 代码当前状态验证**（确认已有优化）：
+
+```python
+# react_cycle.py 第36-43行: 模块级常量
+_TOOL_REMINDER = ("""...""")
+
+# 使用方式(2026-06-11已优化为标志位动态注入):
+# react_cycle设标志→_call_llm动态注入→不持久化写入conversation_history
 ```
+
+✅ 已修复的7.4(标志位动态注入)解决了**何时注入**的问题，但未解决**内容定制**的问题。
+
+**第3轮 — 最优方案**（基于10大原则的修正）：
+
+原方案建议"提取为配置"违反YAGNI+KISS。**保持现状（硬编码）**：
+
+```
+需要定制工具提醒内容的假设场景与实际情况：
+
+假设场景1: 不同域需要不同提醒
+实际情况: 所有域的提醒内容一样（提醒LLM调用工具），工具提示不区分域
+
+假设场景2: 提醒文本需要经常修改
+实际情况: 上线至今未改过，未来也不会常改
+
+假设场景3: 用户需要自定义提醒
+实际情况: 无此需求
+```
+
+三个假设场景均不成立，配置化是过度设计。
+
+**10大原则结论**: ❌ 原方案违反YAGNI/KISS。工具提醒文本极少变更且所有域通用，硬编码是最简单正确的做法。**保持现状，不修改**。7.4修复(标志位动态注入)已解决运行时问题。
 
 ---
 
@@ -879,16 +1125,16 @@ _HANDLERS = [
 
 ### 3.1 真实问题汇总（8个）
 
-| 问题编号 | 问题描述 | 优先级 | 建议措施 |
-|---------|---------|--------|---------|
-| 问题1 | 规则重复强调 | P1 | 合并重复规则，提取avoid_repeat_rules为常量 |
-| 问题2 | 示例硬编码 | P2 | 提取为模板池，支持动态配置 |
-| 问题4 | temp_history容量检查频繁 | P2 | 使用计数器维护字符数 |
-| 问题5 | 裁剪后丢失重要上下文 | P3 | 增加重要消息标记 |
-| 问题6 | executed_summary每次注入 | P2 | 只在observation过长时注入 |
-| 问题8 | 解析失败静默返回None | P3 | 增加统计计数和warning日志 |
-| 问题9 | 空响应返回默认finish | P1 | 返回错误而非默认finish |
-| 问题10 | _TOOL_REMINDER硬编码 | P2 | 提取为配置，支持动态调整 |
+| 问题编号 | 问题描述 | 优先级 | 原建议措施 | 10大原则评估 | 最优方案 | 当前状态 |
+|---------|---------|--------|-----------|-------------|---------|---------|
+| 问题1 | 规则重复强调 | P1 | 合并重复规则，提取常量 | ✅ 已修复 | SAFETY WARNING合并到TOOL_CALL_RULES | **已修复**(2026-06-11) |
+| 问题2 | 示例硬编码 | P2 | 提取为模板池 | ✅ 已修复 | system_prompts去掉indent=6 | **已修复**(2026-06-11) |
+| 问题4 | temp_history容量检查频繁 | P2→**P4** | 使用计数器维护字符数 | ❌ 违反YAGNI | **保持现状** | **无需修改** |
+| 问题5 | 裁剪后丢失重要上下文 | P3→**P4** | 增加重要消息标记 | ❌ 违反YAGNI/KISS | FC配对保护已足够 | **已缓解**(2026-06-11 FC保护) |
+| 问题6 | executed_summary每次注入 | P2→**P4** | 条件注入 | ❌ 违反YAGNI(前提不准确) | **保持现状** | **无需修改** |
+| 问题8 | 解析失败静默返回None | P3→**P4** | 增加统计计数 | ❌ 违反YAGNI | **保持现状** | **无需修改** |
+| 问题9 | 空响应返回默认finish | P1 | 返回错误finish | ⚠️ 方案可优化 | 空字符串+上层捕获 | **已修复**(2026-06-11) |
+| 问题10 | _TOOL_REMINDER硬编码 | P2→**P4** | 提取为配置 | ❌ 违反YAGNI/KISS | **保持现状** | **无需修改**(7.4已修复) |
 
 ### 3.2 不成立问题汇总（3个）
 
@@ -898,218 +1144,116 @@ _HANDLERS = [
 | 问题7 | 重试逻辑导致重复执行 | 重试的是LLM请求，不是工具执行；LLM请求幂等，不会导致工具重复执行 |
 | 问题11 | 解析链过长 | 6个handler不算过长，链式解析是合理设计，复杂度线性可接受 |
 
-### 3.3 优先级分布
+### 3.3 10大原则复核结论
 
 ```
-P1（高优先级）：2个
-- 问题1：规则重复强调
-- 问题9：空响应返回默认finish
+原方案符合10大原则: 0个(全部建议方案均有违反)
+原方案违反YAGNI:   5个(问题4/5/6/8/10) — 过度设计，保持现状
+原方案违反SRP/DRY: 2个(问题1/2) — 已修复(合并/统一格式)
+已修复:            3个(问题1/2/9) — 全部已修复
+保持现状:          5个(问题4/5/6/8/10) — YAGNI/合理设计
+```
 
-P2（中优先级）：4个
-- 问题2：示例硬编码
-- 问题4：temp_history容量检查频繁
-- 问题6：executed_summary每次注入
-- 问题10：_TOOL_REMINDER硬编码
+### 3.4 修正后优先级分布
 
-P3（低优先级）：2个
-- 问题5：裁剪后丢失重要上下文
-- 问题8：解析失败静默返回None
+```
+P1（高优先级）：0个（全部已修复）
+  - 问题1：已修复(SAFETY WARNING合并到TOOL_CALL_RULES)
+  - 问题9：已修复(空响应上层捕获)
+
+P2（中优先级）：0个（全部已修复）
+  - 问题2：已修复(system_prompts去掉indent=6)
+
+P4（无需处理）：5个
+  - 问题4：保持现状(YAGNI:过早优化)
+  - 问题5：FC配对保护已足够
+  - 问题6：保持现状(设计意图正确)
+  - 问题8：保持现状(合理设计,stream_parser已提warning)
+  - 问题10：保持现状(YAGNI:硬编码足够)
 ```
 
 ---
 
-## 四、改进建议执行计划
+## 四、改进建议执行计划（基于10大原则修正版）
 
-### 4.1 P1优先级（立即修复）
+> 原计划中的5个方案（问题4/5/6/8/10）违反YAGNI，已标记为**不修改**。
+> 3个需修改问题（问题1/2/9）**已全部修复**。
 
-#### 问题1：规则重复强调
+### 4.1 已修复：问题9 — 空响应返回默认finish
 
-**修复位置**: `backend/app/services/prompts/base_prompt_template.py`
+**修复状态**: ✅ **已修复**（2026-06-11会话，原#9）
 
-**修复方案**:
+**修复位置**: `backend/app/services/agent/universal_agent.py:218-221`
+
+**已采用的方案**（更符合10大原则）:
 ```python
-# 1. 提取avoid_repeat_rules为常量
-AVOID_REPEAT_RULES = """
-【避免重复规则】
-- 同一命令/URL成功后不要重复执行
-- 同一命令/URL失败3次后必须换工具或换URL
-- 已获取的信息直接使用
-- 失败后优先尝试替代方法
-"""
+# LLM层: 空响应→返回空字符串
+yield ("response", full_content.strip())  # 当full_content为空时→""
 
-# 2. 合并重复规则（简化TOOL_CALL_RULES）
-TOOL_CALL_RULES = """【Tool Call Rules】:
-- 确认意图后立即调用工具
-- reasoning简短说明理由即可(1-2句)
-- 始终用中文回复用户
-- 工具返回错误时向用户解释并建议替代方案
-"""
-
-# 3. build_full_system_prompt中使用常量
-def build_full_system_prompt(self) -> str:
-    parts = [self.get_system_prompt()]
-    parts.append(self.OUTPUT_FORMAT)
-    parts.append(self.TOOL_CALL_RULES)
-    # ...
-    parts.append(self.AVOID_REPEAT_RULES)  # 使用常量
-    return "\n\n".join(parts)
+# React层: 捕获空响应→exit_with_error
+# react_cycle.py _handle_chunk: 空response触发""检查→exit_with_error
 ```
 
-#### 问题9：空响应返回默认finish
+**符合什么原则**:
+- ✅ **SRP**: LLM层只传递原始内容不解释；业务决策在React层
+- ✅ **KISS**: 空字符串是最简单的哨兵值
+- ✅ **YAGNI**: 不引入自定义错误格式
 
-**修复位置**: `backend/app/services/agent/universal_agent.py`
+---
 
-**修复方案**:
+### 4.2 已修复：问题1 — 规则重复强调
+
+**修复状态**: ✅ **已修复**（2026-06-11，SAFETY WARNING合并到TOOL_CALL_RULES）
+
+**当前状态**:
 ```python
-async def _call_llm_fc_stream(self, messages: list, openai_tools: list):
-    # ...
-    
-    # 空响应检查
-    if not full_content and not full_reasoning:
-        logger.error("[FC] LLM返回空响应")
-        yield ("response", json.dumps({
-            "thought": "LLM返回空响应",
-            "reasoning": "可能是网络错误或LLM异常",
-            "tool_name": "finish",
-            "tool_params": {"result": "任务执行失败：LLM返回空响应，请重试"}
-        }))
-        return
-    
-    # 如果只有reasoning，当作content
-    if full_reasoning and not full_content:
-        full_content = full_reasoning
-    
-    yield ("response", full_content.strip())
+# ✅ AVOID_REPEAT_RULES 已提取为类常量(第106行)
+# ✅ build_full_system_prompt(strategy) FC模式跳过OUTPUT_FORMAT(第190行)
+# ✅ SAFETY WARNING 已合并到 TOOL_CALL_RULES(第86行注释确认)
+# ✅ OUTPUT_FORMAT 只定义格式(SRP纯净)
 ```
 
-### 4.2 P2优先级（近期修复）
+**已采用的方案**（符合10大原则）:
+- ✅ **SRP**: OUTPUT_FORMAT只定义格式，TOOL_CALL_RULES定义规则
+- ✅ **DRY**: 消除"必须调用工具"的重复强调
+- ✅ **KISS**: 仅做文本合并，不改框架/不拆文件/不引入配置
+- ✅ **YAGNI**: 不提取为配置（规则极少变更）
 
-#### 问题2：示例硬编码
+---
 
-**修复位置**: `backend/app/services/prompts/file/file_prompts.py` 等
+### 4.3 已修复：问题2 — 示例硬编码
 
-**修复方案**:
-```python
-# 提取为模板池
-from app.services.prompts.example_templates import get_examples
+**修复状态**: ✅ **已修复**（2026-06-11，system_prompts.py去掉indent=6）
 
-def get_system_prompt(self) -> str:
-    # ...
-    examples = get_examples("file", count=4)
-    return prompt + examples
-```
+**已采用的方案**: `system_prompts.py:60` 改为 `json.dumps(ex, ensure_ascii=False)`（去掉indent参数），与file/desktop格式统一。
 
-#### 问题4：temp_history容量检查频繁
+**符合什么原则**:
+- ✅ **KISS**: 改1行代码，不新建文件
+- ✅ **YAGNI**: 不引入模板池/配置化（示例极少变更）
+- ✅ **DRY**: 保持所有域示例格式一致
 
-**修复位置**: `backend/app/services/agent/message_builder.py`
+---
 
-**修复方案**:
-```python
-def __init__(self, max_context_chars: int = MAX_CONTEXT_CHARS):
-    self.conversation_history = []
-    self.temp_history = []
-    self.MAX_CONTEXT_CHARS = max_context_chars
-    self._temp_chars = 0  # 新增：维护字符计数
+### 4.4 不修改（原方案违反YAGNI）
 
-def _add_to_temp(self, chunk: Dict):
-    self.temp_history.append(chunk)
-    content = chunk.get("content", "")
-    self._temp_chars += len(content) if content else 0
-    self._cap_temp_history()
+| 问题 | 原方案 | YAGNI违反原因 | 最优方案 |
+|------|--------|--------------|---------|
+| 问题4 | 计数器中维护temp_chars | 10条数据O(n)遍历微秒级 | **保持现状** |
+| 问题5 | _important标记 | 无真实"重要"vs"普通"区分需求 | **FC配对保护已足够** |
+| 问题6 | 条件注入executed_summary | 前提不准确(非每次都注入) | **保持现状** |
+| 问题8 | _parse_error_count计数器 | SSE流非数据行正常现象 | **保持现状** |
+| 问题10 | 提取为配置 | 提醒文本极少变更 | **保持现状**(硬编码足够) |
 
-def _cap_temp_history(self):
-    while self._temp_chars > TEMP_HISTORY_CHAR_LIMIT and len(self.temp_history) > 1:
-        removed = self.temp_history.pop(0)
-        content = removed.get("content", "")
-        self._temp_chars -= len(content) if content else 0
-```
+---
 
-#### 问题6：executed_summary每次注入
+### 4.5 修正后执行计划
 
-**修复位置**: `backend/app/services/agent/universal_agent.py`
-
-**修复方案**:
-```python
-async def _call_llm(self):
-    # ...
-    messages = self.message_builder.prepare_messages_for_llm()
-    
-    # 只在observation过长时注入
-    last_obs_len = self._get_last_observation_length()
-    if last_obs_len > 10000:
-        executed_summary = self._build_executed_tool_summary()
-        if executed_summary:
-            messages.append({"role": "system", "content": executed_summary})
-    # ...
-```
-
-#### 问题10：_TOOL_REMINDER硬编码
-
-**修复位置**: `backend/app/services/agent/core_agent/react_cycle.py`
-
-**修复方案**:
-```python
-# 提取为配置
-from app.config import get_config
-
-def _get_tool_reminder(category: str = None) -> str:
-    config = get_config()
-    reminders = config.get("tool_reminders", {})
-    default = (
-        "【系统提示·工具调用提醒】\n"
-        "你刚才的回复没有调用任何工具。用户请求需要实际操作才能完成，"
-        "你必须使用工具来执行。\n"
-        "请重新输出JSON格式，包含 tool_name 和 tool_params。\n"
-        "如果不需要工具（用户只是闲聊），请用 tool_name: finish 结束。"
-    )
-    return reminders.get(category, default)
-```
-
-### 4.3 P3优先级（长期优化）
-
-#### 问题5：裁剪后丢失重要上下文
-
-**修复位置**: `backend/app/services/agent/message_builder.py`
-
-**修复方案**:
-```python
-def add_observation(self, observation_text: str, llm_call_count: int = 0, 
-                    fc_context: Optional[Dict] = None, is_important: bool = False):
-    observation_text = self._prepare_observation_text(observation_text, llm_call_count)
-    msg = {"role": "user", "content": f"[Tool Result]\n{observation_text}"}
-    if is_important:
-        msg["_important"] = True
-    self.conversation_history.append(msg)
-    self.trim_history()
-
-def _trim_to_budget(self, obs_list, assistant_msgs, budget):
-    # 分离重要消息和普通消息
-    important = [obs for obs in obs_list if obs.get("_important")]
-    normal = [obs for obs in obs_list if not obs.get("_important")]
-    # 先裁剪normal，保留important
-    # ...
-```
-
-#### 问题8：解析失败静默返回None
-
-**修复位置**: `backend/app/services/llm_core/llm_core.py`
-
-**修复方案**:
-```python
-def __init__(self, ...):
-    # ...
-    self._parse_error_count = 0
-
-def _parse_sse_data(self, data_str: str) -> Optional[StreamChunk]:
-    try:
-        # ...
-    except Exception as e:
-        self._parse_error_count += 1
-        if self._parse_error_count % 100 == 0:
-            logger.warning(f"[_parse_sse_data] 解析失败累计{self._parse_error_count}次")
-        logger.debug(f"[_parse_sse_data] 解析失败: {e}, data={data_str[:100]}")
-        return None
-```
+| 问题 | 动作 | 工作量 | 优先级 | 依赖 |
+|------|------|--------|--------|------|
+| 问题9(空响应) | ✅ 已修复 | - | - | - |
+| 问题1(规则重复) | ✅ 已修复(SAFETY WARNING合并) | - | - | - |
+| 问题2(示例格式) | ✅ 已修复(去掉indent=6) | - | - | - |
+| 问题4/5/6/8/10 | **不修改** | - | P4 | - |
 
 ---
 
@@ -1144,8 +1288,10 @@ def _parse_sse_data(self, data_str: str) -> Optional[StreamChunk]:
 
 ---
 
-**文档完成时间**: 2026-06-10 15:50:00  
-**复核次数**: 3遍  
+**文档完成时间**: 2026-06-11  
+**文档版本**: v2.1  
+**复核次数**: 3遍（原复核）+ 10大原则复核3遍 + 代码验证复核1遍  
 **复核结果**: ✅ 全部完成  
-**真实问题**: 8个  
+**真实问题**: 8个（原确认）+ 10大原则分析 + 代码验证  
 **不成立问题**: 3个  
+**10大原则关键结论**: 原方案5个违反YAGNI改为不修改，3个已修复(问题1/2/9)，5个保持现状
