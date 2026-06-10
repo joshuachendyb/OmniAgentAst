@@ -193,13 +193,15 @@ class UniversalAgent(BaseAgent):
 
         except Exception as e:
             logger.warning(f"[FC] request_stream异常,降级text流式: {e}")
-            async for item in self._call_llm_text_stream(messages):
+            text_messages = self._convert_fc_messages_to_text(messages)
+            async for item in self._call_llm_text_stream(text_messages):
                 yield item
             return
 
         if stream_error:
             logger.error(f"[FC] 流式错误,降级text流式: {stream_error}")
-            async for item in self._call_llm_text_stream(messages):
+            text_messages = self._convert_fc_messages_to_text(messages)
+            async for item in self._call_llm_text_stream(text_messages):
                 yield item
             return
 
@@ -211,7 +213,8 @@ class UniversalAgent(BaseAgent):
 
         if full_content.strip():
             logger.warning("[FC] LLM返回纯文本(无tool_name),降级text流式")
-            async for item in self._call_llm_text_stream(messages):
+            text_messages = self._convert_fc_messages_to_text(messages)
+            async for item in self._call_llm_text_stream(text_messages):
                 yield item
             return
 
@@ -291,6 +294,42 @@ class UniversalAgent(BaseAgent):
             return choices[0].get("message", {}).get("content", "") or ""
 
         return ""
+
+    @staticmethod
+    def _convert_fc_messages_to_text(messages: list) -> list:
+        """将FC配对(assistant+tool_calls, role:tool)转为Text格式 — 小欧 2026-06-11 P7修复
+
+        Text模式LLM无法理解FC协议的assistant(tool_calls)和role:tool消息,
+        降级前统一转为assistant(描述)+user([Tool Result])格式。
+        """
+        result = []
+        i = 0
+        while i < len(messages):
+            msg = messages[i]
+            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                tool_calls = msg.get("tool_calls", [])
+                tc_descs = []
+                for tc in tool_calls:
+                    fn = tc.get("function", {}) if isinstance(tc.get("function"), dict) else {}
+                    tc_descs.append(fn.get("name", "unknown"))
+                result.append({
+                    "role": "assistant",
+                    "content": f"[Tool calls: {', '.join(tc_descs)}]"
+                })
+                i += 1
+                while i < len(messages) and messages[i].get("role") == "tool":
+                    tool_content = messages[i].get("content", "")
+                    if tool_content:
+                        result.append({
+                            "role": "user",
+                            "content": f"[Tool Result]\n{tool_content}"
+                        })
+                    i += 1
+                continue
+            else:
+                result.append(msg)
+                i += 1
+        return result
 
     def _get_openai_tools(self) -> list:
         """获取OpenAI格式工具定义 — 小沈 2026-06-09 添加TTL缓存过期"""

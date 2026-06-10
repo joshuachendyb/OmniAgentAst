@@ -174,7 +174,12 @@ class MessageBuilder:
     def _trim_to_budget(self, obs_list, assistant_msgs, budget):
         """去重+截断observation,优先保留FC配对obs(tool-role),非FC text-obs先裁剪"""
         obs_list = self._dedup_by_fingerprint(obs_list)
-        assistant_msgs = assistant_msgs[-10:]
+        # P4: 优先保留含tool_calls的assistant消息,保护FC配对完整性 — 小欧 2026-06-11
+        tool_call_msgs = [m for m in assistant_msgs if m.get("tool_calls")]
+        text_msgs = [m for m in assistant_msgs if not m.get("tool_calls")]
+        tool_call_msgs = tool_call_msgs[-10:]
+        text_msgs = text_msgs[-5:]
+        assistant_msgs = text_msgs + tool_call_msgs
         obs_list = obs_list[-30:]
         # 分离tool-role(FC配对)和text-role(非FC),优先保留FC配对obs
         tool_obs = [o for o in obs_list if o.get("role") == "tool"]

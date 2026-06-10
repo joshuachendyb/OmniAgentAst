@@ -6,6 +6,7 @@ P1优先级:截图/窗口操作参数特殊
 
 Author: 小健 - 2026-05-06
 【2026-05-19 小沈】全面重写:10个精简工具(26→10),工具名/参数名与desktop_schema.py对齐
+P1修复 — 小欧 2026-06-11: 硬编码工具描述改为build_tool_descriptions()动态生成(DRY+OCP)
 """
 from datetime import datetime
 
@@ -19,87 +20,30 @@ class DesktopPrompts(BasePrompts):
     
     def get_system_prompt(self) -> str:
         system_info = get_system_prompt_string(include_commands=False)
-        return system_info + """
+        tools = [
+            "window_info", "window_control", "mouse_control",
+            "keyboard_control", "screen_capture", "clipboard_control",
+            "screen_record", "ocr", "send_notification",
+        ]
+        tool_descriptions = self.build_tool_descriptions(tools, category_label="DESKTOP")
+        return f"""{system_info}
 You are a professional desktop operations assistant. You help users manage windows, control mouse/keyboard, capture screens, use clipboard, and interact with the GUI.
 
-【Available DESKTOP Tools — 共9个】:
-
-=== Window Management ===
-1. window_info - Query window information
-   - 使用场景: list all windows, get single window details
-   - Returns: list of window info or single window details
-   - Examples:
-     * window_info(action="list")
-     * window_info(action="info", window_title="Chrome")
-
-2. window_control - Control window state
-   - 使用场景: focus, resize, maximize, minimize, restore window
-   - Returns: success status, message
-   - Examples:
-     * window_control(window_title="Notepad", action="maximize")
-     * window_control(window_title="Chrome", action="focus")
-
-=== Mouse & Keyboard ===
-3. mouse_control - Control mouse actions
-   - 使用场景: click, move, scroll, get mouse position
-   - Returns: coordinates, success status
-   - Examples:
-     * mouse_control(action="click")
-     * mouse_control(action="move", x=100, y=200)
-     * mouse_control(action="position")
-
-4. keyboard_control - Control keyboard input
-   - 使用场景: type text, send shortcuts, key combos (ctrl+shift+esc)
-   - Returns: success status, message
-   - Examples:
-     * keyboard_control(action="type", text_or_keys="Hello World")
-     * keyboard_control(action="shortcut", text_or_keys="ctrl+c")
-
-=== Screen & Clipboard ===
-5. screen_capture - Capture screen
-   - 使用场景: take screenshots, capture screen regions
-   - Returns: image path, dimensions
-   - Examples:
-     * screen_capture()
-     * screen_capture(region={"x": 0, "y": 0, "width": 800, "height": 600})
-
-6. clipboard_control - Control clipboard
-   - 使用场景: read or write clipboard text
-   - Returns: clipboard content (read) or success status (write)
-   - Examples:
-     * clipboard_control(action="read")
-     * clipboard_control(action="write", content="copied text")
-
-7. screen_record - Record screen
-   - 使用场景: record primary display, max 300s
-   - Returns: video path, duration
-   - Examples:
-     * screen_record(duration=30)
-
-8. ocr - OCR text recognition
-   - 使用场景: extract text from image
-   - Returns: recognized text, confidence
-   - Examples:
-     * ocr(image_path="D:/screenshot.png")
-
-9. send_notification - Send desktop notification
-   - 使用场景: send system notification to user
-   - Returns: success status
-   - Examples:
-     * send_notification(title="提醒", message="任务完成")
+【Available DESKTOP Tools】:
+{tool_descriptions}
 
 【Tool Call Examples】:
 Example 1: 列出窗口
-{"thought": "用户要查看所有打开的窗口", "reasoning": "使用window_info列出窗口", "tool_name": "window_info", "tool_params": {"action": "list"}}
+{{"thought": "用户要查看所有打开的窗口", "reasoning": "使用window_info列出窗口", "tool_name": "window_info", "tool_params": {{"action": "list"}}}}
 
 Example 2: 最大化窗口
-{"thought": "用户要最大化记事本", "reasoning": "使用window_control设置窗口状态", "tool_name": "window_control", "tool_params": {"window_title": "Notepad", "action": "maximize"}}
+{{"thought": "用户要最大化记事本", "reasoning": "使用window_control设置窗口状态", "tool_name": "window_control", "tool_params": {{"window_title": "Notepad", "action": "maximize"}}}}
 
 Example 3: 截图
-{"thought": "用户要截取屏幕", "reasoning": "使用screen_capture", "tool_name": "screen_capture", "tool_params": {}}
+{{"thought": "用户要截取屏幕", "reasoning": "使用screen_capture", "tool_name": "screen_capture", "tool_params": {{}}}}
 
 Example 4: 任务完成
-{"thought": "桌面操作已完成", "reasoning": "操作成功", "tool_name": "finish", "tool_params": {"result": "已最大化Notepad窗口"}}
+{{"thought": "桌面操作已完成", "reasoning": "操作成功", "tool_name": "finish", "tool_params": {{"result": "已最大化Notepad窗口"}}}}
 """
     
 
