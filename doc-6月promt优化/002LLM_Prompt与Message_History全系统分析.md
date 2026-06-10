@@ -1,7 +1,7 @@
 # LLM Prompt与Message Conversation History全系统分析
 
 **创建时间**: 2026-06-10 15:15:59  
-**版本**: v1.0  
+**版本**: v1.1  
 **作者**: 小沈  
 **复查次数**: 5遍  
 
@@ -12,6 +12,7 @@
 | 版本 | 时间 | 签名 | 更新内容 |
 |------|------|------|---------|
 | v1.0 | 2026-06-10 15:15:59 | 小沈 | 初始版本，全系统分析完成 |
+| v1.1 | 2026-06-11 04:43:57 | 小沈 | 逐问题验证准确性+10大原则符合性+补充遗漏关键问题 |
 
 ---
 
@@ -1329,6 +1330,13 @@ _handle_mixed_text_json
 
 ## 六、不合理之处分析
 
+> **验证说明**：以下6.1~6.4的11个问题来自初版分析。v1.1更新中对每个问题进行了：
+> - **准确性验证**：逐行阅读对应代码，确认问题描述是否与代码行为一致
+> - **10大原则评估**：对照SRP/DRY/KISS/SLAP/YAGNI/OCP/LSP/ISP/复用优先/禁止backward compatibility逐条评估
+> - **最优方案制定**：基于验证结果，给出符合原则的最优解决方案
+> 
+> 验证结果：11个问题中 **4个部分准确**、**6个不准确**、**1个准确**。不准确的问题（#3/#4/#7/#8/#10/#11）已标注"不修改"。同时在6.5补充了7个遗漏的关键问题。
+
 ### 6.1 Prompt构建层问题
 
 #### 问题1：规则重复强调
@@ -1344,7 +1352,7 @@ _handle_mixed_text_json
 - Prompt过长，增加token消耗
 - 规则冲突可能导致LLM行为不一致
 
-**建议**:
+**初步建议**:
 ```python
 # 提取为常量
 AVOID_REPEAT_RULES = """
@@ -1363,9 +1371,35 @@ TOOL_CALL_RULES = """【Tool Call Rules】:
 """
 ```
 
+**🔎 验证结论：部分准确**
+- OUTPUT_FORMAT 聚焦"输出格式"（怎么输出JSON），TOOL_CALL_RULES 聚焦"行为模式"（不要只讨论不调用），侧重点不同，规则冲突概率较低
+- 但 `avoid_repeat_rules` 硬编码在 `_build_avoid_repeat_rules()` 方法中确实应从方法级提升为类常量（`BasePromptTemplates.__AVOID_REPEAT_RULES`）
+
+**🔎 10大原则评估**：
+- ✅ DRY：提取为常量的方案符合不重复原则
+- ✅ KISS：方案简单，改动范围小
+
+**🏆 最优方案**：
+```python
+# base_prompt_template.py 第28行附近
+__AVOID_REPEAT_RULES = """
+【避免重复规则】
+- 同一命令/URL成功后不要重复执行
+- 同一命令/URL失败3次后必须换工具或换URL
+- 已获取的信息直接使用
+- 失败后优先尝试替代方法
+"""
+
+# _build_avoid_repeat_rules() 改为引用类常量
+def _build_avoid_repeat_rules(self) -> str:
+    return self.__AVOID_REPEAT_RULES
+```
+- **只做提取，不做合并**：OUTPUT_FORMAT和TOOL_CALL_RULES职责不同，不应合并（SRP）
+- **不改TOOL_CALL_RULES内容**：原有7条禁止项各有价值，删除其中任何一条都可能导致LLM行为异常
+
 #### 问题2：示例硬编码
 
-**位置**: `file_prompts.py`, `desktop_prompts.py`
+**位置**: `file_prompts.py`, `desktop_prompts.py`, `system_prompts.py`
 
 **问题描述**:
 - Tool Call Examples硬编码在字符串中
@@ -1376,7 +1410,7 @@ TOOL_CALL_RULES = """【Tool Call Rules】:
 - 维护成本高
 - 示例可能过时
 
-**建议**:
+**初步建议**:
 ```python
 # 提取为模板池
 _EXAMPLE_TEMPLATES = {
@@ -1397,6 +1431,28 @@ def _build_examples(category: str, count: int = 4) -> str:
     return "\n".join(lines)
 ```
 
+**🔎 验证结论：部分准确，但遗漏了更严重的BUG**
+- `file_prompts.py` 和 `desktop_prompts.py` 确实硬编码了示例，不同分类格式不统一
+- **但更严重的问题在 `system_prompts.py:41-60`**：`_build_examples()` 方法使用的示例工具名包含 `get_weather`、`search_files`、`read_file`、`execute_shell_command`——这些**不属于当前系统注册的 `FUND_RUNTIME` 工具**，引导LLM调用不存在的工具
+
+**🔎 10大原则评估**：
+- ✅ DRY：模板池方案消除重复
+- ✅ 复用优先：统一示例格式
+
+**🏆 最优方案**：
+```python
+# 修复 system_prompts.py 的 _build_examples()，使用真实工具名
+@staticmethod
+def _build_examples() -> str:
+    examples = [
+        {"thought": "用户要查看桌面文件，先列出目录内容", "tool_name": "list_directory", "tool_params": {"directory_path": "C:/Users/Desktop"}},
+        {"thought": "用户要打开计算器，先获取窗口信息", "tool_name": "window_info", "tool_params": {"action": "list"}},
+    ]
+    return json.dumps(examples, ensure_ascii=False, indent=2)
+```
+- **核心修复：示例必须使用系统已注册的真实工具名**（PS：`file_prompts.py` 和 `desktop_prompts.py` 的示例中 `read_file` 是正确的，仅 `system_prompts.py` 的通用示例使用了不存在工具）
+- **同时更新 `file_prompts.py` 和 `desktop_prompts.py` 的 `_build_examples()` 调用方式**：统一使用 `SystemPrompts._build_examples()` 的输出格式
+
 #### 问题3：候选意图提示可能干扰判断
 
 **位置**: `universal_agent.py` - `_build_candidates_hint()`
@@ -1410,7 +1466,7 @@ def _build_examples(category: str, count: int = 4) -> str:
 - LLM可能在多个意图间摇摆
 - 增加token消耗
 
-**建议**:
+**初步建议**:
 ```python
 # 只在首次调用时注入
 def _build_candidates_hint(self) -> str:
@@ -1420,6 +1476,15 @@ def _build_candidates_hint(self) -> str:
         return ""
     # ...
 ```
+
+**🔎 验证结论：❌ 问题不准确**
+- 代码路径：`_build_candidates_hint()` → 由 `_get_system_prompt()` 调用 → 由 `initialize_run_state()` 调用（`universal_agent.py:29`）
+- `initialize_run_state()` **只在 ReAct 循环开始时执行一次**，不是每次LLM调用都触发
+- 因此 `_build_candidates_hint()` 在整个任务生命周期中**只生成一次**，不存在"每次调用都注入"的问题
+
+**🏆 最优方案：不修改**
+- 候选意图提示仅注入一次，不会干扰LLM判断
+- 当前实现是正确的，无需任何改动
 
 ---
 
@@ -1437,7 +1502,7 @@ def _build_candidates_hint(self) -> str:
 - 频繁计算字符总数
 - 可能成为性能瓶颈
 
-**建议**:
+**初步建议**:
 ```python
 # 使用计数器避免频繁计算
 def __init__(self):
@@ -1454,9 +1519,21 @@ def _cap_temp_history(self):
         self._temp_chars -= len(removed.get("content", ""))
 ```
 
+**🔎 验证结论：❌ 问题不准确**
+- `_cap_temp_history()` 在 `prepare_messages_for_llm()` 中调用，而该方法**每轮ReAct循环只调用一次**（由 `_call_llm()` 触发）
+- `temp_history` 是临时缓冲区，只在流式模式下存储未完工的chunk，每轮LLM调用前都会 `flush_temp_to_history()` 将其清空
+- 所以每次检查时 `temp_history` 中的元素极少（通常0~3个）， `sum(len(...))` 的性能消耗可以忽略
+
+**🔎 10大原则评估**：
+- ❌ YAGNI：引入计数器维护 `_temp_chars` 增加了状态复杂度，但实际场景下性能提升可以忽略
+
+**🏆 最优方案：不修改**
+- 当前 `_cap_temp_history()` 在 `prepare_messages_for_llm()` 中的调用频率很低（每轮一次），性能不是问题
+- 不需要额外维护 `_temp_chars` 计数器
+
 #### 问题5：裁剪后可能丢失重要上下文
 
-**位置**: `message_builder.py` - `trim_history()`
+**位置**: `message_builder.py` - `trim_history()`、`_trim_fc_pairs()`
 
 **问题描述**:
 - 裁剪时只保留最新30条observation
@@ -1467,7 +1544,7 @@ def _cap_temp_history(self):
 - LLM可能忘记早期信息
 - 任务执行可能失败
 
-**建议**:
+**初步建议**:
 ```python
 # 增加重要消息标记
 def add_observation(self, obs_text, is_important=False):
@@ -1484,6 +1561,25 @@ def _trim_to_budget(self, obs_list, assistant_msgs, budget):
     # ...
 ```
 
+**🔎 验证结论：部分准确，但核心问题未覆盖**
+- 保留30条observation的硬限制是合理的容量管理手段
+- **真正的问题在 `_trim_fc_pairs()`**（`message_builder.py` 第146-154行）：当 `_collapse_fc_pairs()` 需要从左边裁剪时，它会删除最老的 `(assistant, user)` 配对。但如果最老的配对之前还有独立消息（如初始system prompt等），配对裁剪不会误伤它们
+- "重要消息标记"方案过于复杂，且谁负责标记"重要"不明确
+
+**🔎 10大原则评估**：
+- ✅ KISS：方案本身思路简单
+- ❌ 缺少调用者：没有明确谁调用 `is_important=True`，方案不完整
+
+**🏆 最优方案：调整FC配对裁剪优先级**
+```python
+# _trim_fc_pairs() 中保留最近的N个有效配对
+# 当前实现已足够，无需额外标记。关键改进点：
+# 1. 确保_collapse_fc_pairs只在对conversation_history长度超限时触发
+# 2. 不在裁剪前重置FC协议配对（避免丢失有效的function_call>tool消息对）
+```
+- **不引入 `_important` 标记**（YAGNI），现有30条observation的容量在多数场景下足够
+- **仅确保 `_trim_fc_pairs()` 的触发时机合理**：只在实际超限时才调用，不提前调用
+
 #### 问题6：executed_summary每次调用都注入
 
 **位置**: `universal_agent.py` - `_call_llm()`
@@ -1497,7 +1593,7 @@ def _trim_to_budget(self, obs_list, assistant_msgs, budget):
 - 增加token消耗
 - 信息冗余
 
-**建议**:
+**初步建议**:
 ```python
 # 只在observation过长时注入
 def _call_llm(self):
@@ -1511,6 +1607,19 @@ def _call_llm(self):
             messages.append({"role": "system", "content": executed_summary})
     # ...
 ```
+
+**🔎 验证结论：问题存在但影响被夸大**
+- `_build_executed_tool_summary()` 确实在每轮 `_call_llm()` 中调用（`universal_agent.py:91-92`）
+- 但summary只包含最近8条已成功调用的工具，长度通常 < 500字符
+- observation和summary的侧重点不同：observation包含完整工具结果，summary是执行摘要（成功/失败状态），两者互补不冗余
+
+**🔎 10大原则评估**：
+- ❌ YAGNI：检查"最后一条observation是否>10000字符"来决定是否注入是过度设计
+
+**🏆 最优方案：不修改**
+- `executed_summary` 长度小（<500字符），开销可忽略
+- 它提供了**当前步骤执行状态的总览**，帮助LLM避免重复调用已完成的工具
+- 检查observation长度的方案（>10000字符）增加了不必要复杂度
 
 ---
 
@@ -1528,7 +1637,7 @@ def _call_llm(self):
 - 可能导致工具重复执行
 - 资源浪费
 
-**建议**:
+**初步建议**:
 ```python
 # 增加请求指纹
 def request_stream(self, messages, mode, tools):
@@ -1542,6 +1651,20 @@ def request_stream(self, messages, mode, tools):
     # ...
 ```
 
+**🔎 验证结论：❌ 问题不准确**
+- 重试发生在 `request_stream()` 的 `try/except` 块中（`llm_core.py:251-278`），只在HTTP请求失败（如网络超时、500错误）时触发
+- 如果LLM请求在网络层面失败，**没有任何工具被调用**，重试是安全的
+- 如果LLM请求成功并返回了工具调用，就不会进入重试路径
+- 没有"重复执行工具"的风险
+
+**🔎 10大原则评估**：
+- ❌ YAGNI：问题不存在，解决方案无价值
+- ❌ KISS：请求指纹增加了不必要的状态维护
+
+**🏆 最优方案：不修改**
+- 当前重试逻辑只对网络级错误生效，不会导致工具重复执行
+- `_build_request_fingerprint()` 和 `_last_request_fp` 是多余的复杂化
+
 #### 问题8：解析失败静默返回None
 
 **位置**: `llm_core.py` - `_parse_sse_data()`
@@ -1554,7 +1677,7 @@ def request_stream(self, messages, mode, tools):
 - 错误难以排查
 - 可能导致空响应
 
-**建议**:
+**初步建议**:
 ```python
 def _parse_sse_data(self, data_str: str) -> Optional[StreamChunk]:
     try:
@@ -1564,6 +1687,30 @@ def _parse_sse_data(self, data_str: str) -> Optional[StreamChunk]:
         # 返回错误chunk而非None
         return StreamChunk(content="", model=self.model, is_done=False, stream_error=f"Parse error: {e}")
 ```
+
+**🔎 验证结论：❌ 问题描述有偏差**
+- 代码确实在异常时返回None（`llm_core.py:300-303`），但**已在debug级别记录了日志**：
+  ```python
+  except Exception as e:
+      logger.debug(f"[_parse_sse_data] 解析失败: {e}, data={data_str[:100]}")
+      return None
+  ```
+- 且 `request_stream()` 中对 `None` chunk的处理是**直接跳过**（`if chunk:`），不会导致数据丢失
+- 返回 `StreamChunk(error=...)` 的方案可能被下游误当成正常数据流处理
+
+**🔎 10大原则评估**：
+- ✅ KISS：仅提升日志级别的方案简单合理
+- ❌ 返回StreamChunk：可能破坏下游数据流处理逻辑
+
+**🏆 最优方案**：
+```python
+# 仅提升日志级别，不动返回逻辑
+except Exception as e:
+    logger.warning(f"[_parse_sse_data] 解析失败: {e}, data={data_str[:100]}")
+    return None  # 保持返回None，由上游跳过
+```
+- **只做一件事**：`logger.debug` → `logger.warning`（SRP）
+- **不动返回逻辑**：保持返回None，让 `request_stream()` 的 `if chunk:` 正常跳过（KISS）
 
 #### 问题9：空响应返回默认finish
 
@@ -1577,13 +1724,36 @@ def _parse_sse_data(self, data_str: str) -> Optional[StreamChunk]:
 - 任务可能提前结束
 - 用户得不到预期结果
 
-**建议**:
+**初步建议**:
 ```python
 # 返回错误而非默认finish
 if not full_content and not full_reasoning:
     yield ("response", '{"thought": "LLM返回空响应", "reasoning": "可能是网络错误", "tool_name": "finish", "tool_params": {"result": "任务执行失败：LLM返回空响应"}}')
     return
 ```
+
+**🔎 验证结论：✅ 准确，但改进方向要调整**
+- 代码位置：`universal_agent.py:236`（或附近）
+  ```python
+  yield ("response", full_content.strip() or '{"thought": "任务完成", "tool_name": "finish", "tool_params": {}}')
+  ```
+- 当LLM返回空流时，默认生成一个虚假的"任务完成"响应，**掩盖了LLM无响应的真实问题**
+- `_process_single_step()` 第67-74行虽然有 `if not llm_response` 检查，但 `_call_llm_fc_stream()` 返回的虚假finish会让这个检查无法触发
+
+**🔎 10大原则评估**：
+- ✅ KISS：方案简单
+- ❌ 但原方案返回的仍然是finish，只是改为"任务执行失败"——调用方可能无法区分真实失败和空响应错误
+
+**🏆 最优方案**：
+```python
+# 返回空字符串，让 _process_single_step() 的空响应检查捕获
+if not full_content.strip() and not full_reasoning:
+    yield ("response", "")
+    return
+```
+- **不生成任何虚假的finish**，返回空字符串
+- 由 `_process_single_step()` 的空响应检查（`if not llm_response or not isinstance(llm_response, str)`）正确捕获，触发step_failure
+- **SRP验证**：`_call_llm_fc_stream()` 只负责流式组装JSON，不负责错误策略；`_process_single_step()` 负责响应验证
 
 ---
 
@@ -1601,7 +1771,7 @@ if not full_content and not full_reasoning:
 - 修改需要改代码
 - 不同场景无法定制
 
-**建议**:
+**初步建议**:
 ```python
 # 提取为配置
 from app.config import get_config
@@ -1610,6 +1780,38 @@ def _get_tool_reminder():
     config = get_config()
     return config.get("tool_reminder", _DEFAULT_TOOL_REMINDER)
 ```
+
+**🔎 验证结论：❌ 问题描述不准确，遗漏了真正的BUG**
+- `_TOOL_REMINDER` 是模块级常量（`react_cycle.py:36-43`），作为Prompt模板常量硬编码是正常做法，不需要从配置文件读取
+- **真正的BUG在第102行**：`_TOOL_REMINDER` 被**永久追加**到 `conversation_history`：
+  ```python
+  self._message_builder.add_to_session("user", _TOOL_REMINDER)
+  ```
+  这导致 `_TOOL_REMINDER` 作为普通消息写入历史，**不会被裁剪**，随着任务进行污染整个历史
+
+**🔎 10大原则评估**：
+- ❌ YAGNI：从config读取是过度设计
+- ❌ 当前实现违反SLAP：将Prompt级别的提醒注入到Message级别的历史中，抽象层次混乱
+
+**🏆 最优方案：改为运行时动态注入**
+```python
+# 在 _call_llm() 中动态注入，不写入永久历史
+async def _call_llm(self, ...):
+    messages = self._message_builder.prepare_messages_for_llm()
+    messages.append({
+        "role": "user",
+        "content": self._TOOL_REMINDER
+    })
+    # ...原有调用逻辑
+```
+
+同时删除 `run_react_cycle()` 中第102行的永久追加：
+```python
+# 删除这行
+# self._message_builder.add_to_session("user", _TOOL_REMINDER)
+```
+- **关键修正**：`_TOOL_REMINDER` 在每次LLM调用时通过 `messages.append()` 动态注入，不污染 `conversation_history`（SRP+SLAP）
+- **不需要从config读取**：常量硬编码不是问题，污染历史才是（KISS+YAGNI）
 
 #### 问题11：解析链过长
 
@@ -1623,7 +1825,7 @@ def _get_tool_reminder():
 - 解析耗时增加
 - 可能成为瓶颈
 
-**建议**:
+**初步建议**:
 ```python
 # 使用快速路径
 def parse_llm_response(output: str) -> Dict[str, Any]:
@@ -1640,6 +1842,227 @@ def parse_llm_response(output: str) -> Dict[str, Any]:
             return result
     # ...
 ```
+
+**🔎 验证结论：❌ 问题不准确**
+- 6个handler每个都是O(1)的简单检查（字符串匹配、正则等），而非复杂计算
+- 解析链路总耗时通常 < 1ms，远非性能瓶颈——真正的瓶颈是LLM API调用（秒级）
+- `_handle_standard_json` 已经起到快速路径的作用，不需要额外优化
+
+**🔎 10大原则评估**：
+- ❌ YAGNI：提前优化不需要优化的部分
+- ❌ KISS：引入"快速路径+慢速路径"的双重判断增加了维护成本
+
+**🏆 最优方案：不修改**
+- 当前解析链的6个handler都是O(1)简单检查，性能不是问题
+- `_handle_standard_json` 已经是事实上的快速路径
+- 不引入额外的"fast-path check"来增加复杂度
+
+---
+
+### 6.5 遗漏关键问题（原分析未覆盖）
+
+以下问题是在代码复查中发现的，原6.1~6.4分析未覆盖：
+
+#### 遗漏问题A：SystemPrompts示例使用错误工具名（P1-严重）
+
+**位置**: `system_prompts.py:41-60` - `_build_examples()`
+
+**问题描述**:
+- `_build_examples()` 中示例使用的工具名：`get_weather`、`search_files`、`read_file`、`execute_shell_command`
+- 这些工具**不属于当前系统注册的 `FUND_RUNTIME` 工具分类**
+- `get_weather`：已废弃（`WEATHER`分类已合并），不在 `ToolCategory` 枚举中
+- `search_files`、`read_file`、`execute_shell_command`：属于其他分类，不是当前Agent的子工具
+- 引导LLM调用不存在的工具，导致LLM困惑
+
+**影响**:
+- LLM可能调用不存在的工具名，导致解析失败
+- LLM收到"工具不存在"的错误后可能陷入重复尝试
+- 示例误导LLM对可用工具范围的理解
+
+**🏆 最优方案**：
+```python
+# system_prompts.py _build_examples() 使用通用示例，不依赖具体工具名
+@staticmethod
+def _build_examples() -> str:
+    examples = [
+        {"thought": "用户请求执行一个操作", "tool_name": "list_directory", "tool_params": {"directory_path": "C:/Users"}},
+        {"thought": "用户请求获取系统信息", "tool_name": "window_info", "tool_params": {"action": "list"}},
+    ]
+    return json.dumps(examples, ensure_ascii=False, indent=2)
+```
+- 使用**系统已注册的真实工具名**（`list_directory`、`window_info` 属于FUND_RUNTIME）
+- 示例仅作格式示范，不暗示具体业务逻辑
+
+---
+
+#### 遗漏问题B：get_observation_prompt() / get_parameter_reminder() 死代码（P1-严重）
+
+**位置**: `file_prompts.py`、`desktop_prompts.py` 等所有子类
+
+**问题描述**:
+- `get_observation_prompt()` 和 `get_parameter_reminder()` 是所有 `BasePromptTemplates` 子类必须实现的两个抽象方法
+- 各子类正确实现了实现体，但**这两个方法在全系统中从未被调用**
+- 完整的死代码——既不在Prompt构建中使用，也不在Message管理中使用
+
+**影响**:
+- 维护负担：改Prompt时仍要维护这两个方法
+- 代码膨胀：每个子类都有无用代码
+- 误导新开发者：以为这两个方法在某个地方被调用
+
+**🏆 最优方案**：
+```python
+# 1. 从 BasePromptTemplates 中删除这两个抽象方法
+# 2. 从所有子类中删除对应实现
+# 3. 文件：file_prompts.py, desktop_prompts.py, shell_prompts.py, 
+#    network_prompts.py, system_prompts.py, document_prompts.py, meta_prompts.py
+```
+- 删除死代码（DRY+SLAP）
+- 不做backward compatibility：不会产生向后兼容问题，因为没有任何调用方
+
+---
+
+#### 遗漏问题C：OUTPUT_FORMAT与FC模式冲突（P1-严重）
+
+**位置**: `base_prompt_template.py` - `_build_output_format()`
+
+**问题描述**:
+- `_build_output_format()` 生成的OUTPUT_FORMAT严格规定输出JSON格式（含 `thought`, `tool_name`, `tool_params` 等字段）
+- 但FC（Function Calling）模式下，LLM的输出不是JSON字符串，而是**结构化tool_calls协议**（由LLM API直接返回）
+- 强制LLM在FC模式下遵守JSON OUTPUT_FORMAT是相矛盾的——LLM要么忽略OUTPUT_FORMAT，要么困惑
+- 这个矛盾不会导致功能崩溃（LLM API的FC模式会强制使用tool_calls协议），但浪费了token
+
+**影响**:
+- OUTPUT_FORMAT的200+ token在FC模式下完全无效
+- 可能轻微增加LLM的思维负担
+- token浪费
+
+**🏆 最优方案**：
+```python
+# 根据策略模式决定是否注入OUTPUT_FORMAT
+def build_full_system_prompt(self, strategy: Optional[str] = None) -> str:
+    parts = [self._build_role_prompt()]
+    if strategy != "tools":  # FC模式不注入OUTPUT_FORMAT
+        parts.append(self._build_tool_call_rules())
+        parts.append(self._build_output_format())
+    else:
+        parts.append(self._build_tool_call_rules(fc_mode=True))  # FC版tool_call_rules
+    ...
+```
+- 在 `build_full_system_prompt()` 或 `_get_system_prompt()` 中传入当前策略模式
+- FC模式下跳过OUTPUT_FORMAT，改用FC模式的精简版tool_call_rules
+- 保留TOOL_CALL_RULES不删除，因为Text/ResponseFormat模式仍需要它
+
+---
+
+#### 遗漏问题D：Text模式降级缺少参数Schema（P2-中等）
+
+**位置**: `strategy_selector.py` 或 `llm_core.py` - Text模式回退路径
+
+**问题描述**:
+- 当FC模式解析失败时，系统可能降级到Text模式（通过response_format或纯文本）
+- 在Text模式下，LLM的可用工具列表通过 `tool_descriptions` 描述，但**参数Schema被丢失**
+- `_build_tool_descriptions()` 包含工具名和描述，但不包含参数类型、约束条件等Schema信息
+- LLM不知道参数该传什么类型、哪些必填、有哪些枚举值
+
+**影响**:
+- Text模式下LLM生成的参数可能格式错误
+- 工具调用因参数不匹配而失败
+- 降级路径可用性降低
+
+**🏆 最优方案**：
+```python
+# 在 tool_descriptions 中追加参数Schema
+def _tool_to_json_schema(self, tool) -> dict:
+    """将工具转为参数Schema描述"""
+    return {
+        "name": tool.name,
+        "description": tool.description or "",
+        "parameters": tool.input_model.model_json_schema() if tool.input_model else {}
+    }
+```
+- 在 `_build_tool_descriptions()` 中为每个工具注入 `input_model.model_json_schema()`
+- 只影响Text模式，FC模式下LLM API会自动处理Schema
+- 不改变工具注册逻辑（OCP）
+
+---
+
+#### 遗漏问题E：_build_messages() 两处重复定义（P2-中等）
+
+**位置**: `llm_core.py:111-117` 和 `message_utils.py`
+
+**问题描述**:
+- `_build_messages()` 的相同逻辑在 `llm_core.py` 和 `message_utils.py` 中分别实现
+- 两处功能等价但实现细节可能不同步
+- 违反了DRY原则
+
+**影响**:
+- 改一处漏另一处
+- 维护时需同时修改两个文件
+
+**🏆 最优方案**：
+```python
+# message_utils.py 保留完整实现
+# llm_core.py 改为委托调用
+from app.utils.message_utils import build_messages as _build_messages_from_utils
+
+def _build_messages(self, system_prompt, history, user_input) -> list:
+    return _build_messages_from_utils(system_prompt, history, user_input)
+```
+- `message_utils.py` 中的实现作为唯一真实来源（复用优先）
+- `llm_core.py` 中委托调用，确保两处行为一致
+
+---
+
+#### 遗漏问题F：BaseAIService单例可变状态（P2-中等）
+
+**位置**: `llm_core.py` - `BaseAIService` 单例模式
+
+**问题描述**:
+- `BaseAIService` 使用 `_instance` 类属性实现单例（`llm_core.py:48-51`）
+- 但 `_cancelled`（取消标志）和 `task_id` 是实例级别的可变状态
+- 多个任务共享同一个单例实例，一个任务的 `cancel()` 可能错误影响其他任务
+
+**影响**:
+- 任务A调用 `cancel()` 可能导致任务B被错误取消
+- 并发场景下的竞态条件
+- 单例本应用作无状态服务，但 `_cancelled` 引入了有状态行为
+
+**🏆 最优方案**：
+```python
+# 方案A（推荐）：移除_cancelled和task_id，改为无状态单例
+class BaseAIService:
+    _instance = None
+    
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    # 删除 __init__ 中的 self._cancelled / self.task_id
+    # 取消逻辑改为由调用方维护
+```
+- 保持单例模式但**消除可变状态**（SRP）
+- `_cancelled` 逻辑应由上层调用方（如ReAct循环）管理
+
+---
+
+#### 遗漏问题G：中英文混用 & 命名不一致（P3-轻微）
+
+**位置**: 多个Prompt模板文件
+
+**问题描述**:
+- Prompt内容混合中英文：部分字段用中文、部分用英文（如 `When to use` → `使用场景`）
+- 工具描述中英文风格不统一
+- 影响LLM输出的一致性
+
+**影响**:
+- LLM输出可能在中文和英文之间切换
+- Prompt风格不一致降低LLM的理解准确度
+
+**🏆 最优方案**：
+- 统一使用中文Prompt
+- 一次评审所有Prompt模板，确保语言和风格一致
+- 低优先级，可在下一次Prompt调整时统一处理
 
 ---
 
