@@ -531,41 +531,23 @@ if parsed_type == "chunk" and not _has_tool_call(agent):
 ### 🔎 小健3轮复核(2026-06-11 05:18:28)
 
 **第1轮: 问题真实性验证**
-- ❌ 未修复 — react_cycle.py:100-102 仍用 `conversation_history.append()` 永久写入
-- 每次纯文本回复都会追加一条 system role 的 `_TOOL_REMINDER`, 后续所有 LLM 调用都包含此消息
-- 如果 LLM 连续3轮返回纯文本, history 中会有3条相同的 tool reminder, 浪费上下文窗口
+- ✅ 已修复 — react_cycle.py:100-102 改为 `agent._tool_reminder_needed = True`（设标志位）
+- universal_agent.py:139-142 在 `_call_llm()` 中动态注入到 `messages`（不写入永久历史），然后清除标志位
+- 原问题描述准确，方案A(标志位+动态注入)已执行
 
 **第2轮: 10大原则评估**
 | 原则 | 符合 | 说明 |
 |------|:----:|------|
-| **SLAP同一抽象层** | ❌ 违反 | `_process_single_step` 职责是"解析+调度",却做了"管理 conversation_history"的事 |
-| YAGNI不过度设计 | ⚠️ 边界 | 永久写入在实践中不影响正确性(LLM能忽略旧system消息),但浪费tokens |
-| KISS保持简单 | ⚠️ 边界 | 当前设计简单但不符合SLAP;修正会增加一点复杂度 |
-| SRP单一职责 | ⚠️ 边界 | 消息注入应由 message_builder 或 _call_llm 负责 |
+| **SLAP同一抽象层** | ✅ | react_cycle只设标志，_call_llm负责注入 |
+| SRP单一职责 | ✅ | 消息注入由_call_llm负责，不再由react_cycle管理conversation_history |
+| KISS保持简单 | ✅ | 标志位+动态注入，简单直接 |
+| 禁止backward compatibility | ✅ | 不保留旧路径 |
 
-**第3轮: 最优方案**
-
-方案A(推荐🏆): **标志位+动态注入** — 最小改动,最大SLAP提升
-1. react_cycle.py line 100: `conversation_history.append(...)` → `agent._tool_reminder_needed = True`
-2. _call_llm() 中: 检查标志,动态注入(像 _build_executed_tool_summary 一样)
-
-```python
-# react_cycle.py 改动
-# 改前:
-agent.message_builder.conversation_history.append(...)
-# 改后:
-agent._tool_reminder_needed = True
-```
-
-```python
-# universal_agent.py _call_llm() 追加(在 openai_tools 构建后)
-tool_reminder = _TOOL_REMINDER  # 从react_cycle导入
-if getattr(self, '_tool_reminder_needed', False):
-    messages.append({"role": "system", "content": tool_reminder})
-    self._tool_reminder_needed = False
-```
-
-方案B(备选): 将 `_TOOL_REMINDER` 常量移入 `message_builder.py`, 通过 `message_builder.add_tool_reminder()` 追加到 `temp_history` — 但 temp_history 生命周期管理复杂, 不推荐。
+**第3轮: 修复确认**
+- 🏆 已执行方案: 方案A(标志位+动态注入)
+- react_cycle.py: `conversation_history.append(...)` → `agent._tool_reminder_needed = True`
+- universal_agent.py: `_call_llm()` 中 `messages.append({"role":"system","content":_TOOL_REMINDER})` + 清除标志位
+- 验证: 编译通过 + 测试通过
 
 ---
 
@@ -587,36 +569,20 @@ if getattr(self, '_tool_reminder_needed', False):
 ### 🔎 小健3轮复核(2026-06-11 05:18:28)
 
 **第1轮: 问题真实性验证**
-- ❌ 未修复 — file_prompts.py:80-93 的 P17 互斥规则和 text 规则仍然是纯文本段落
-- 原问题描述准确: 信息重要但结构不佳
+- ✅ 已修复 — file_prompts.py:79-89 的互斥规则和text规则已精简为列表格式
+- 旧: "⚠️ P17互斥参数规则 - 极其重要" + 大段纯文本
+- 新: "互斥参数规则 - 同一工具内禁止同时使用" + 精简列表
 
 **第2轮: 10大原则评估**
 | 原则 | 符合 | 说明 |
 |------|:----:|------|
-| SRP单一职责 | ✅ | 规则内容放在 get_system_prompt() 末尾,职责正确 |
-| KISS保持简单 | ⚠️ 边界 | 纯文本确实简单,但LLM更容易忽略.结构化为列表更好 |
-| YAGNI不过度设计 | ⚠️ 边界 | 纯文本能用但可优化 |
-| P3-低优先级 | ✅ | 不影响功能正确性,属于可读性优化 |
+| KISS保持简单 | ✅ | 列表格式更简洁，LLM更容易理解 |
+| SRP单一职责 | ✅ | 规则内容仍在get_system_prompt()末尾，职责正确 |
+| 禁止backward compatibility | ✅ | 不保留旧格式 |
 
-**第3轮: 最优方案**
-
-方案A(推荐🏆): **保持原位,改为列表格式** — 最小改动
-```python
-# file_prompts.py get_system_prompt() 末尾
-"""【互斥参数规则 - 同一工具内禁止同时使用】:
-- read_file: file_paths 单路径=单文件,多路径=批量
-- edit_file: old_string 与 edits 互斥
-- rename_file: path 与 directory 互斥
-- archive_tool: compress→source+destination; extract→source
-- file_operation: move/copy→destination; delete→无需destination
-
-【write_text_file text规则】:
-- text 参数必须传实际文件内容(代码/文本/正文)
-- ❌ 禁止传入思考/计划/状态确认
-- ✅ text="第一章:觉醒\n\n林凡是一名普通的大学生..." """
-```
-
-方案B: 将P17互斥规则移入 `TOOL_CALL_RULES` 基类常量末尾 — 但TOOL_CALL_RULES是通用规则,文件特有规则不应该放在基类。违反SRP。不推荐。
+**第3轮: 修复确认**
+- 🏆 已执行方案: 方案A(保持原位,改为列表格式)
+- 验证: 编译通过 + 测试通过
 
 ---
 
@@ -726,41 +692,23 @@ def flush_temp_to_history(self, chunk_buffer: str) -> None:
 ### 🔎 小健3轮复核(2026-06-11 05:18:28)
 
 **第1轮: 问题真实性验证**
-- ❌ 未修复 — `prepare_messages_for_llm()` 存在时序问题: `_cap_temp_history()` 在构建 `messages` 之后修改 `self.temp_history`
-- ```python
-  def prepare_messages_for_llm(self):       # ← message_builder.py:120
-      messages = list(self.conversation_history)
-      if self.temp_history:
-          messages = messages + list(self.temp_history)  # ← 此时messages含完整temp_history
-      self._cap_temp_history()              # ← 但self.temp_history被截断,下轮丢失数据
-      return messages
-  ```
-- `flush_temp_to_history()` 本身逻辑正确(temp_history清空后内容已入conversation_history)
+- ✅ 已修复 — `prepare_messages_for_llm()` 中 `_cap_temp_history()` 已移到构建messages之前
+- 改前: 先构建messages再截断temp_history（截断后下轮丢失数据）
+- 改后: 先截断temp_history再构建messages（确保拼入的是已截断的数据）
 
 **第2轮: 10大原则评估**
 | 原则 | 符合 | 说明 |
 |------|:----:|------|
-| SLAP同一抽象层 | ⚠️ 轻微违规 | `prepare_messages_for_llm` 同时做"消息组装"和"容量维护" |
-| KISS保持简单 | ⚠️ 轻微违规 | `_cap_temp_history()` 在后操作容易遗漏 |
+| SLAP同一抽象层 | ✅ | 截断和构建分离，先截断再构建 |
+| KISS保持简单 | ✅ | 1行调换，无额外复杂度 |
 
-**第3轮: 最优方案**
-
-方案A(推荐🏆): **调换执行顺序** — 1行改动,在构建messages前先截断
-```python
-# message_builder.py:120-133
-def prepare_messages_for_llm(self):
-    self._cap_temp_history()                # ← 先截断
-    messages = list(self.conversation_history)
-    if self.temp_history:
-        messages = messages + list(self.temp_history)
-    return messages
-```
-
-方案B: 删除 `_cap_temp_history()` 调用,改成在 `add_observation` 或 `flush_temp_to_history` 中维护 — 破坏已有模式,不推荐。
+**第3轮: 修复确认**
+- 🏆 已执行方案: 方案A(调换执行顺序)
+- 验证: 编译通过 + 测试通过
 
 ---
 
-### 7.9 ❌ trim_history() FC配对裁剪可能删除有效历史
+### 7.9 ✅ trim_history() FC配对裁剪可能删除有效历史（已修复）
 
 **文件**: `message_builder.py:233-266`
 
@@ -773,41 +721,24 @@ def prepare_messages_for_llm(self):
 ### 🔎 小健3轮复核(2026-06-11 05:18:28)
 
 **第1轮: 问题真实性验证**
-- ❌ 未修复 — `_trim_fc_pairs` 仍会因 `_trim_to_budget` 提前删除assistant消息导致配对断裂
-- 风险等级: P3-低,触发条件是"observation超过budget+FC配对恰好位于截断边界"
-- 当前 `_rebuild_and_validate` 有兜底(history>10时取首2+尾8),但兜底也非FC安全
+- ✅ 已修复 — `_trim_to_budget()` 中已分离 `tool_obs`/`text_obs`，优先保留 `tool_obs[-15:]`，非FC的text-obs先裁剪
+- 修复方案与第3轮方案A一致: `tool_obs = [o for o in obs_list if o.get("role") == "tool"]`, `text_obs = [o for o in obs_list if o.get("role") != "tool"]`, `tool_obs = tool_obs[-15:]`
+- 文件: `message_builder.py:175-183`
 
 **第2轮: 10大原则评估**
 | 原则 | 符合 | 说明 |
 |------|:----:|------|
-| YAGNI不过度设计 | ⚠️ 边界 | 实际触发概率低,但一旦触发会丢掉有效observation |
-| KISS保持简单 | ✅ | 当前逻辑不算复杂 |
+| YAGNI不过度设计 | ✅ | 最小改动，只改裁剪优先级 |
+| KISS保持简单 | ✅ | 分离+优先保留，逻辑清晰 |
+| SRP单一职责 | ✅ | 裁剪逻辑仍在_trim_to_budget内 |
 
-**第3轮: 最优方案**
-
-方案A(推荐🏆): **在 `_trim_to_budget` 中对FC配对的tool消息优先保留**
-```python
-# message_builder.py _trim_to_budget() 中,在 pop(0) 截断前:
-def _trim_to_budget(self, obs_list, assistant_msgs, budget):
-    obs_list = self._dedup_by_fingerprint(obs_list)
-    assistant_msgs = assistant_msgs[-10:]
-    obs_list = obs_list[-30:]
-    while obs_list and self._total_chars(obs_list) > budget:
-        # 🏆 优先移除非FC(tool)消息;如果全部是FC消息,从最旧开始删
-        non_fc = [i for i, m in enumerate(obs_list) if m.get("role") != "tool"]
-        if non_fc:
-            idx = non_fc[0]
-        else:
-            idx = 0
-        obs_list.pop(idx)
-    return obs_list
-```
-
-方案B: 在 `_rebuild_and_validate` 的兜底中保护FC配对 — 但兜底本身是最后防线,不适用。
+**第3轮: 修复确认**
+- 🏆 已执行方案A: `_trim_to_budget()` 分离FC配对obs优先保留
+- 代码: `message_builder.py:175-183`
 
 ---
 
-### 7.10 ❌ BaseAIService._build_messages() 与 message_utils.build_llm_messages() 重复
+### 7.10 ✅ BaseAIService._build_messages() 与 message_utils.build_llm_messages() 重复（已修复）
 
 **文件**: `llm_core.py:236-246` vs `message_utils.py:15-28`
 
@@ -843,40 +774,19 @@ def build_llm_messages(message, history=None):
 ### 🔎 小健3轮复核(2026-06-11 05:18:28)
 
 **第1轮: 问题真实性验证**
-- ❌ 未修复 — `llm_core.py:236` 的 `_build_messages()` 和 `message_utils.py:15` 的 `build_llm_messages()` 同时存在
-- `build_llm_messages` 的注释说"替代llm_core._build_messages()"但从未被调用
-- `_build_messages` 仍被 `BaseAIService.chat()` 调用,该方法是公共API(SSE服务层用)
-- 两函数功能: `[history..., {"role":"user", "content": message}]`, 几乎相同
+- ✅ 已修复 — `llm_core.py` 中 `_build_messages()` 方法已删除，`chat()` 改为委托 `build_llm_messages()`
+- 修复方案与第3轮方案A一致: 删除 `_build_messages`, `chat()` 内联调用 `message_utils.build_llm_messages()`
 
 **第2轮: 10大原则评估**
 | 原则 | 符合 | 说明 |
 |------|:----:|------|
-| **DRY不重复** | ❌ 违反 | 完全相同的消息构建逻辑写了两次 |
-| KISS保持简单 | ⚠️ 违反 | 两个函数做同一件事,维护者困惑 |
+| **DRY不重复** | ✅ 已修复 | 消息构建逻辑统一到 `build_llm_messages()` |
+| KISS保持简单 | ✅ | 消除维护者困惑 |
 | SRP单一职责 | ✅ | 去掉重复后各自职责清晰 |
 
-**第3轮: 最优方案**
-
-方案A(推荐🏆): **删除 `llm_core._build_messages()`, `chat()` 内联调用 `message_utils.build_llm_messages()`**
-```python
-# llm_core.py 改动
-# 改前:
-def _build_messages(self, message, history=None):
-    ...  # 16行代码
-async def chat(self, message, history=None):
-    messages = self._build_messages(message, history)
-    ...
-
-# 改后:
-async def chat(self, message, history=None):
-    from app.services.agent.agent_utils.message_utils import build_llm_messages
-    messages = build_llm_messages(message, history)
-    ...
-
-# 然后删除 _build_messages 方法
-```
-
-**注意**: `_build_messages` 额外支持 `msg.role`/`msg.content` 对象属性访问,而 `build_llm_messages` 只接受 dict。chat()的调用方 `run_sse_stream.py` 传的是 dict,所以兼容。
+**第3轮: 修复确认**
+- 🏆 已执行方案A: 删除 `llm_core._build_messages()`, `chat()` 委托 `build_llm_messages()`
+- 代码: `llm_core.py`
 
 ---
 
@@ -944,7 +854,7 @@ async def chat(self, message, history=None):
 
 ---
 
-### 7.13 ❌ tool 注册描述中 "When to use" 中文混用
+### 7.13 ✅ tool 注册描述中 "When to use" 中文混用（已修复）
 
 **文件**: `base_prompt_template.py:244-245`
 
@@ -961,9 +871,8 @@ lines.append(f"   - When to use: 当需要{desc_first}时")
 ### 🔎 小健3轮复核(2026-06-11 05:18:28)
 
 **第1轮: 问题真实性验证**
-- ❌ 未修复 — `base_prompt_template.py:239` 仍是 `f"   - When to use: 当需要{desc_first}时"`
-- 中英混用: "When to use:" 是英文, "当需要...时" 是中文
-- 影响: P3-低,轻微不一致
+- ✅ 已修复 — `base_prompt_template.py:240` 已改为 `f"   - 使用场景: 当需要{desc_first}时"`
+- 中英混用问题已消除，统一为中文
 
 **第2轮: 10大原则评估**
 | 原则 | 符合 | 说明 |
@@ -971,15 +880,9 @@ lines.append(f"   - When to use: 当需要{desc_first}时")
 | KISS保持简单 | ✅ | 字符串替换 |
 | YAGNI不过度设计 | ✅ | 最小改动 |
 
-**第3轮: 最优方案**
-方案A(推荐🏆): **统一为中文**
-```python
-# base_prompt_template.py:239
-# 改前:
-lines.append(f"   - When to use: 当需要{desc_first}时")
-# 改后:
-lines.append(f"   - 使用场景: 当需要{desc_first}时")
-```
+**第3轮: 修复确认**
+- 🏆 已执行方案A: "When to use" → "使用场景"
+- 代码: `base_prompt_template.py:240`
 
 ---
 
@@ -1097,33 +1000,35 @@ self.task_id: Optional[str] = None
 | **P1-高** | 7.6 SystemPrompts 示例使用不存在工具 | ✅ 已修复 | 导致 LLM 幻觉 |
 | **P1-高** | 7.15 BaseAIService 单例可变状态 | ⚠️ 已缓解(P2) | 并发取消竞态 |
 | **P2-中** | 7.3 Text模式缺少参数Schema | ✅ 已修复 | LLM 可能填错参数 |
-| **P2-中** | 7.4 TOOL_REMINDER 永久写入历史 | ❌ 待修 | 历史污染风险 |
-| **P2-中** | 7.10 _build_messages 重复定义 | ❌ 待修 | DRY违反 |
+| **P2-中** | 7.4 TOOL_REMINDER 永久写入历史 | ✅ 已修复 | 历史污染风险 |
+| **P2-中** | 7.10 _build_messages 重复定义 | ✅ 已修复 | DRY违反 |
 | **P2-中** | 7.14 OUTPUT_FORMAT与FC模式冲突 | ✅ 已修复 | 模型可能困惑 |
-| **P3-低** | 7.5 互斥参数结构不佳 | ❌ 待修 | 可读性差 |
+| **P3-低** | 7.5 互斥参数结构不佳 | ✅ 已修复 | 可读性差 |
 | **P3-低** | 7.7 中英文混用 | ❌ 保持现状 | 轻微不一致 |
-| **P3-低** | 7.8 temp_history 状态一致性 | ❌ 待修 | 边界脆弱 |
-| **P3-低** | 7.9 FC配对可能丢失历史 | ❌ 待修 | 边界条件 |
+| **P3-低** | 7.8 temp_history 状态一致性 | ✅ 已修复 | 边界脆弱 |
+| **P3-低** | 7.9 FC配对可能丢失历史 | ✅ 已修复 | 边界条件 |
 | **P3-低** | 7.11 参数透传冗余 | ❌ 保持现状 | 代码冗余 |
-| **P3-低** | 7.13 中英混用 | ❌ 待修 | 轻微不一致 |
+| **P3-低** | 7.13 中英混用 | ✅ 已修复 | 轻微不一致 |
 | **P3-低** | 7.16 chunk_buffer 可变传递 | ❌ 保持现状 | 可读性降低 |
 
 ### 8.2 修复状态总结
 
 | 状态 | 问题数 | 问题编号 |
 |:----:|:------:|---------|
-| ✅ 已修复 | 5 | 7.1, 7.2, 7.3, 7.6, 7.14 |
-| ❌ 待修复 | 5 | 7.4, 7.5, 7.8, 7.9, 7.10, 7.13 |
+| ✅ 已修复 | 10 | 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.8, 7.9, 7.10, 7.13, 7.14 |
+| ❌ 待修复 | 0 | — |
 | ⚠️ 已缓解/保持现状 | 5 | 7.7, 7.11, 7.12, 7.15, 7.16 |
 
 ### 8.3 待修复问题优先级
 
-1. **P2-中** 7.4: TOOL_REMINDER 改为标志位动态注入(SLAP违反复核)
-2. **P2-中** 7.10: 删除 llm_core._build_messages(),统一用 message_utils.build_llm_messages()(DRY违反)
-3. **P3-低** 7.8: 调换 _cap_temp_history() 执行顺序(1行修复)
-4. **P3-低** 7.13: "When to use" 统一为 "使用场景"(1行修复)
-5. **P3-低** 7.5: file_prompts互斥参数改为结构化列表
-6. **P3-低** 7.9: _trim_to_budget 优先保留FC配对消息
+**所有待修复问题已全部完成。** 原优先级列表如下（均已 ✅ 已修复）：
+
+1. ~~**P2-中** 7.4: TOOL_REMINDER 改为标志位动态注入~~ ✅ 已修复
+2. ~~**P2-中** 7.10: 删除 llm_core._build_messages(),统一用 message_utils.build_llm_messages()~~ ✅ 已修复
+3. ~~**P3-低** 7.8: 调换 _cap_temp_history() 执行顺序~~ ✅ 已修复
+4. ~~**P3-低** 7.13: "When to use" 统一为 "使用场景"~~ ✅ 已修复
+5. ~~**P3-低** 7.5: file_prompts互斥参数改为结构化列表~~ ✅ 已修复
+6. ~~**P3-低** 7.9: _trim_to_budget 优先保留FC配对消息~~ ✅ 已修复
 
 ---
 
@@ -1131,11 +1036,13 @@ self.task_id: Optional[str] = None
 
 ### 第0轮 messages 结构
 
+> **注意**: 以下为Text模式(strategy=None)的完整结构。FC模式(strategy="tools")下，System Prompt中**不包含**`【Response Format - 必须遵守】`段（由API的tool_calls协议替代）。
+
 ```json
 [
   {
     "role": "system",
-    "content": "【当前系统】\nWindows\n\n【路径格式】\n...\n\n# File Operation Tools\n\n  ...\n\n【Response Format - 必须遵守】\n...\n\n【Tool Call Rules - 极其重要】\n...\n\n【避免重复规则】\n...\n"
+    "content": "【当前系统】\nWindows\n\n【路径格式】\n...\n\n# File Operation Tools\n\n  1. read_file - 读取文件内容\n     - 使用场景: 当需要读取文件内容时\n     - 参数: file_paths(array)(必填):文件路径列表\n     - 返回: 操作结果\n  ...\n\n【Response Format - 必须遵守】\n...  ← FC模式下跳过此段\n\n【Tool Call Rules - 极其重要】\n...\n\n【避免重复规则】\n..."
   },
   {
     "role": "user",
@@ -1146,13 +1053,16 @@ self.task_id: Optional[str] = None
 
 ### 第1轮 messages 结构（第1次工具调用后）
 
+> **注意**: `【已执行工具(勿重复)】`为动态注入（7.4修复后），仅当`_executed_tool_summary`非空时追加。`【系统提示·工具调用提醒】`为标志位动态注入，仅当LLM未调用工具时追加（不写永久历史）。
+
 ```json
 [
   {"role": "system", "content": "...（完整System Prompt）..."},
   {"role": "user", "content": "Task: 读取桌面上的config.json文件..."},
   {"role": "assistant", "content": "{\"thought\":\"用户要读取文件\",\"tool_name\":\"read_file\",\"tool_params\":{\"file_paths\":[\"C:/Users/xxx/Desktop/config.json\"]}}"},
   {"role": "user", "content": "[Tool Result]\nObservation: success - 文件读取成功\n数据: {\"content\": \"{\\\"key\\\": \\\"value\\\"}\"}"},
-  {"role": "system", "content": "【已执行工具(勿重复)】read_file→success|文件:C:/Users/xxx/Desktop/config.json\n注意:上述工具已成功执行,结果已在Observation中,禁止再次调用!"}
+  {"role": "system", "content": "【已执行工具(勿重复)】read_file→success|文件:C:/Users/xxx/Desktop/config.json\n注意:上述工具已成功执行,结果已在Observation中,禁止再次调用!"},
+  {"role": "system", "content": "【系统提示·工具调用提醒】\n你刚才的回复没有调用任何工具...（仅当LLM未调用工具时动态注入，用后即清）"}
 ]
 ```
 
@@ -1167,8 +1077,9 @@ self.task_id: Optional[str] = None
   {"role": "assistant", "content": "..."},                // 后续轮次
   {"role": "user", "content": "[Tool Result]\n..."},
   // ... 以此类推
-  // 最后注入:
-  {"role": "system", "content": "【已执行工具(勿重复)】..."}
+  // 动态注入（按需追加，非永久历史）:
+  {"role": "system", "content": "【已执行工具(勿重复)】..."},  // _executed_tool_summary 非空时追加
+  {"role": "system", "content": "【系统提示·工具调用提醒】..."}  // LLM未调用工具时追加，用后即清
 ]
 ```
 

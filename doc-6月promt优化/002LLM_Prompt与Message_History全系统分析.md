@@ -1,7 +1,7 @@
 # LLM Prompt与Message Conversation History全系统分析
 
 **创建时间**: 2026-06-10 15:15:59  
-**版本**: v1.1  
+**版本**: v1.2  
 **作者**: 小沈  
 **复查次数**: 5遍  
 
@@ -13,6 +13,7 @@
 |------|------|------|---------|
 | v1.0 | 2026-06-10 15:15:59 | 小沈 | 初始版本，全系统分析完成 |
 | v1.1 | 2026-06-11 04:43:57 | 小沈 | 逐问题验证准确性+10大原则符合性+补充遗漏关键问题 |
+| v1.2 | 2026-06-11 | 小健 | 逐问题修复复核，标注修复状态（✅已修复/⚠️未修复/✅不修改） |
 
 ---
 
@@ -1496,6 +1497,9 @@ def _build_candidates_hint(self) -> str:
 - 候选意图提示仅注入一次，不会干扰LLM判断
 - 当前实现是正确的，无需任何改动
 
+> **📋 修复复核（小健 2026-06-11）**：
+> - ✅ **不修改（正确）**：`_build_candidates_hint()` 仅在 `_get_system_prompt()` 中调用，而 `_get_system_prompt()` 只在 `initialize_run_state()` 时执行一次，不存在"每次调用都注入"的问题
+
 ---
 
 ### 6.2 Message管理层问题
@@ -1540,6 +1544,9 @@ def _cap_temp_history(self):
 **🏆 最优方案：不修改**
 - 当前 `_cap_temp_history()` 在 `prepare_messages_for_llm()` 中的调用频率很低（每轮一次），性能不是问题
 - 不需要额外维护 `_temp_chars` 计数器
+
+> **📋 修复复核（小健 2026-06-11）**：
+> - ✅ **不修改（正确）**：`_cap_temp_history()` 每轮只调用一次，temp_history元素极少（0~3个），性能可忽略
 
 #### 问题5：裁剪后可能丢失重要上下文
 
@@ -1590,6 +1597,9 @@ def _trim_to_budget(self, obs_list, assistant_msgs, budget):
 - **不引入 `_important` 标记**（YAGNI），现有30条observation的容量在多数场景下足够
 - **仅确保 `_trim_fc_pairs()` 的触发时机合理**：只在实际超限时才调用，不提前调用
 
+> **📋 修复复核（小健 2026-06-11）**：
+> - ✅ **不修改（正确）**：30条observation硬限制是合理的容量管理，`_important`标记方案缺少调用者（谁标记"重要"），不引入
+
 #### 问题6：executed_summary每次调用都注入
 
 **位置**: `universal_agent.py` - `_call_llm()`
@@ -1630,6 +1640,9 @@ def _call_llm(self):
 - `executed_summary` 长度小（<500字符），开销可忽略
 - 它提供了**当前步骤执行状态的总览**，帮助LLM避免重复调用已完成的工具
 - 检查observation长度的方案（>10000字符）增加了不必要复杂度
+
+> **📋 修复复核（小健 2026-06-11）**：
+> - ✅ **不修改（正确）**：executed_summary长度<500字符，与observation互补不冗余，YAGNI原则不引入额外判断
 
 ---
 
@@ -1674,6 +1687,9 @@ def request_stream(self, messages, mode, tools):
 **🏆 最优方案：不修改**
 - 当前重试逻辑只对网络级错误生效，不会导致工具重复执行
 - `_build_request_fingerprint()` 和 `_last_request_fp` 是多余的复杂化
+
+> **📋 修复复核（小健 2026-06-11）**：
+> - ✅ **不修改（正确）**：重试只在HTTP请求失败时触发，此时无工具被调用，不存在重复执行风险
 
 #### 问题8：解析失败静默返回None
 
@@ -1722,6 +1738,10 @@ except Exception as e:
 - **只做一件事**：`logger.debug` → `logger.warning`（SRP）
 - **不动返回逻辑**：保持返回None，让 `request_stream()` 的 `if chunk:` 正常跳过（KISS）
 
+> **📋 修复复核（小健 2026-06-11）**：
+> - ✅ **已修复**：`stream_parser.py:81` 的 `logger.debug` 已改为 `logger.warning`
+> - ✅ **10大原则符合**：KISS（只改日志级别，不动返回逻辑）
+
 #### 问题9：空响应返回默认finish
 
 **位置**: `universal_agent.py` - `_call_llm_fc_stream()`
@@ -1764,6 +1784,12 @@ if not full_content.strip() and not full_reasoning:
 - **不生成任何虚假的finish**，返回空字符串
 - 由 `_process_single_step()` 的空响应检查（`if not llm_response or not isinstance(llm_response, str)`）正确捕获，触发step_failure
 - **SRP验证**：`_call_llm_fc_stream()` 只负责流式组装JSON，不负责错误策略；`_process_single_step()` 负责响应验证
+
+> **📋 修复复核（小健 2026-06-11）**：
+> - ✅ **已修复**：`universal_agent.py:216` 已改为 `yield ("response", full_content.strip())`，不再强制返回finish
+> - ✅ **修复方式正确**：空响应时返回空字符串，由 `_process_single_step()` 的空响应检查捕获
+> - ✅ **10大原则符合**：SRP（_call_llm_fc_stream不负责错误策略）、KISS（删除虚假finish）、禁止backward（不保留旧逻辑）
+> - ⚠️ **注意**：同时新增了纯文本降级逻辑（L207-211），FC返回纯文本时降级text流式重新生成，不再强制finish
 
 ---
 
@@ -1823,6 +1849,11 @@ async def _call_llm(self, ...):
 - **关键修正**：`_TOOL_REMINDER` 在每次LLM调用时通过 `messages.append()` 动态注入，不污染 `conversation_history`（SRP+SLAP）
 - **不需要从config读取**：常量硬编码不是问题，污染历史才是（KISS+YAGNI）
 
+> **📋 修复复核（小健 2026-06-11）**：
+> - ✅ **已修复**：`react_cycle.py:102` 已改为 `agent._tool_reminder_needed = True`（设标志位，不写永久历史）
+> - ✅ **动态注入**：`universal_agent.py:139-142` 在 `_call_llm()` 中通过 `messages.append()` 动态注入，然后清除标志位
+> - ✅ **10大原则符合**：SLAP（Prompt级提醒不再注入到Message级历史）、SRP（react_cycle只设标志，_call_llm负责注入）、KISS（标志位+动态注入）
+
 #### 问题11：解析链过长
 
 **位置**: `parse_llm_response.py`
@@ -1867,6 +1898,9 @@ def parse_llm_response(output: str) -> Dict[str, Any]:
 - `_handle_standard_json` 已经是事实上的快速路径
 - 不引入额外的"fast-path check"来增加复杂度
 
+> **📋 修复复核（小健 2026-06-11）**：
+> - ✅ **不修改（正确）**：6个handler均为O(1)简单检查，总耗时<1ms，LLM API调用是真正瓶颈（秒级）
+
 ---
 
 ### 6.5 遗漏关键问题（原分析未覆盖）
@@ -1903,6 +1937,9 @@ def _build_examples() -> str:
 - 使用**系统已注册的真实工具名**（`list_directory`、`window_info` 属于FUND_RUNTIME）
 - 示例仅作格式示范，不暗示具体业务逻辑
 
+> **📋 修复复核（小健 2026-06-11）**：
+> - ✅ **已修复**：与问题#2合并修复，`_EXAMPLE_TEMPLATES` 已替换为 `get_time`/`query_calendar`/`get_system_info`/`list_processes`
+
 ---
 
 #### 遗漏问题B：get_observation_prompt() / get_parameter_reminder() 死代码（P1-严重）
@@ -1928,6 +1965,11 @@ def _build_examples() -> str:
 ```
 - 删除死代码（DRY+SLAP）
 - 不做backward compatibility：不会产生向后兼容问题，因为没有任何调用方
+
+> **📋 修复复核（小健 2026-06-11）**：
+> - ✅ **已修复**：`get_parameter_reminder()` 和 `get_observation_prompt()` 已从 `BasePrompts` 基类和所有子类中删除
+> - ✅ **修复方式正确**：grep确认全系统无任何调用方，删除安全
+> - ✅ **10大原则符合**：DRY（删除无用代码）、YAGNI（不需要的接口不保留）、禁止backward（彻底删除不保留）
 
 ---
 
@@ -1962,6 +2004,11 @@ def build_full_system_prompt(self, strategy: Optional[str] = None) -> str:
 - FC模式下跳过OUTPUT_FORMAT，改用FC模式的精简版tool_call_rules
 - 保留TOOL_CALL_RULES不删除，因为Text/ResponseFormat模式仍需要它
 
+> **📋 修复复核（小健 2026-06-11）**：
+> - ✅ **已修复**：`build_full_system_prompt(strategy)` 新增 `strategy` 参数，FC模式（`strategy="tools"`）时跳过OUTPUT_FORMAT
+> - ✅ **修复方式正确**：`universal_agent.py:73` 根据 `tool_category` 决定策略，`base_prompt_template.py:190` 用 `if strategy != "tools"` 条件注入
+> - ✅ **10大原则符合**：OCP（新增参数有默认值不破坏现有调用）、SRP（FC/Text策略分离）、KISS（简单条件判断）
+
 ---
 
 #### 遗漏问题D：Text模式降级缺少参数Schema（P2-中等）
@@ -1994,6 +2041,11 @@ def _tool_to_json_schema(self, tool) -> dict:
 - 只影响Text模式，FC模式下LLM API会自动处理Schema
 - 不改变工具注册逻辑（OCP）
 
+> **📋 修复复核（小健 2026-06-11）**：
+> - ✅ **已修复**：`base_prompt_template.py:244-255` 的 `build_tool_descriptions()` 已增加参数类型、必填标记、参数描述
+> - ✅ **修复方式正确**：每个参数输出格式为 `pname(ptype)(必填):desc`，LLM可获知参数类型和约束
+> - ✅ **10大原则符合**：DRY（从input_schema自动提取）、KISS（简单格式化）
+
 ---
 
 #### 遗漏问题E：_build_messages() 两处重复定义（P2-中等）
@@ -2020,6 +2072,10 @@ def _build_messages(self, system_prompt, history, user_input) -> list:
 ```
 - `message_utils.py` 中的实现作为唯一真实来源（复用优先）
 - `llm_core.py` 中委托调用，确保两处行为一致
+
+> **📋 修复复核（小健 2026-06-11）**：
+> - ✅ **问题已不存在**：`llm_core/` 拆分后，`llm_core.py` 中已无 `_build_messages` 方法，只有 `message_utils.py` 中的 `build_llm_messages()`
+> - ✅ DRY原则已满足：无重复定义
 
 ---
 
@@ -2054,6 +2110,11 @@ class BaseAIService:
 - 保持单例模式但**消除可变状态**（SRP）
 - `_cancelled` 逻辑应由上层调用方（如ReAct循环）管理
 
+> **📋 修复复核（小健 2026-06-11）**：
+> - ⚠️ **不修复（P2-可接受风险）**：`BaseAIService` 仍有 `_cancelled` 和 `task_id` 实例级可变状态
+> - **风险评估**：当前为单用户桌面应用，并发请求概率极低；`_check_task_cancelled_or_paused()` 已优先使用 `task_registry` 检查（L85-87），`_cancelled` 仅作为本地fallback
+> - **如需修复**：将 `_cancelled` 改为 `task_registry` 统一管理，消除实例级可变状态
+
 ---
 
 #### 遗漏问题G：中英文混用 & 命名不一致（P3-轻微）
@@ -2073,6 +2134,10 @@ class BaseAIService:
 - 统一使用中文Prompt
 - 一次评审所有Prompt模板，确保语言和风格一致
 - 低优先级，可在下一次Prompt调整时统一处理
+
+> **📋 修复复核（小健 2026-06-11）**：
+> - ✅ **已修复**：`base_prompt_template.py:255-256` 的 "Parameters" → "参数"、"Returns: 返回操作结果" → "返回: 操作结果"
+> - ✅ **10大原则符合**：KISS（统一为中文标签）、DRY（格式一致）
 
 ---
 

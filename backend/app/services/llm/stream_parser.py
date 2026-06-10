@@ -78,7 +78,7 @@ async def parse_sse_stream(
         try:
             data = parse_json(data_str)
             if data is None:
-                logger.debug(f"[{log_tag}] JSON解析失败: {data_str[:100]}")
+                logger.warning(f"[{log_tag}] JSON解析失败: {data_str[:100]}")
                 continue
             choices = data.get("choices", [])
             if choices:
