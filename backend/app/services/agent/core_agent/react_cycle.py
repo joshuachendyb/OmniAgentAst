@@ -16,7 +16,7 @@ from collections import OrderedDict
 
 from app.utils.logger import logger
 from app.services.agent.llm_response_parser import parse_llm_response
-from app.services.agent.steps import ChunkStep
+from app.services.agent.steps import ChunkStep, FinalStep
 from app.services.agent.types import AgentStatus
 from app.services.agent.core_agent.handlers import (
     handle_action, handle_answer, handle_chunk,
@@ -58,6 +58,11 @@ async def _process_single_step(agent, step_counter: list, chunk_buffer) -> Async
 
     if getattr(getattr(agent, 'llm_client', None), '_cancelled', False):
         yield agent._create_cancelled_chunk()
+        yield agent._step_emitter.emit(FinalStep(
+            step=step_counter[0],
+            response="任务已被中断",
+            thought="",
+        ))
         agent.status = AgentStatus.COMPLETED
         return
 
@@ -113,5 +118,18 @@ async def run_react_cycle(
         agent.status = AgentStatus.FAILED
 
     finally:
+        # FAILED时补发FinalStep，保证前端/测试始终收到final事件 — 小沈 2026-06-10
+        if agent.status == AgentStatus.FAILED and agent.steps:
+            last_err = None
+            for s in reversed(agent.steps):
+                if hasattr(s, '_error_message') and getattr(s, '_error_message', None):
+                    last_err = s._error_message
+                    break
+            yield agent._step_emitter.emit(FinalStep(
+                step=step_counter[0],
+                response=last_err or "任务执行失败",
+                thought="",
+            ))
+
         agent._on_after_loop()
         agent._complete_tracked_task(agent.status == AgentStatus.COMPLETED)

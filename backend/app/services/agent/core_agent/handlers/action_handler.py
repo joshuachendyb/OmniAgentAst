@@ -77,12 +77,19 @@ class ActionHandler:
     async def execute_tools(self, agent, all_calls: List[Dict], is_parallel: bool,
                             tool_name: str, tool_params: Dict) -> List[Any]:
         """工具执行 — 返回results — 小沈 2026-06-09"""
+        import time
+        start_time = time.time()
+        
         if is_parallel:
             tasks = [agent._execute_tool(c["tool_name"], c["tool_params"]) for c in all_calls]
             results = await asyncio.gather(*tasks, return_exceptions=True)
         else:
             result = await agent._execute_tool(tool_name, tool_params)
             results = [result]
+        
+        elapsed = time.time() - start_time
+        tool_names = [c["tool_name"] for c in all_calls]
+        logger.info(f"[action_handler] 工具执行完成: tools={tool_names}, 耗时={elapsed:.2f}s")
         return results
 
     async def build_observation(self, agent, all_calls: List[Dict], results: List[Any], step: int,

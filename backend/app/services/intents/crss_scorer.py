@@ -89,7 +89,7 @@ def _calculate_type_scores(command: str) -> Dict[ToolCategory, float]:
         score = _match_keywords(kw.get("keywords", []), kw.get("chinese_keywords", []), command)
         if score > 0:
             type_raw[cat] = type_raw.get(cat, 0) + score
-            logger.info(f"[CRSS] 类型匹配 {type_name}=+{score}")
+            logger.debug(f"[CRSS] 类型匹配 {type_name}=+{score}")
     return type_raw
 
 
@@ -105,7 +105,7 @@ def _calculate_action_scores(command: str) -> Dict[str, float]:
                 action_score += 0.5
         if action_score > 0:
             action_scores[action_name] = action_score
-            logger.info(f"[CRSS] 动作匹配 {action_name}=+{action_score}")
+            logger.debug(f"[CRSS] 动作匹配 {action_name}=+{action_score}")
     return action_scores
 
 

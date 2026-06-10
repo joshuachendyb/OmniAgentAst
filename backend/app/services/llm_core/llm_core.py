@@ -152,14 +152,20 @@ class BaseAIService:
         
         【修复 2026-06-09 小沈】HTTP阻塞期间定期检查取消/暂停状态
         """
+        import time
+        start_time = time.time()
+        chunk_count = 0
+        
         self.reset_cancel()
         self._ensure_client()
 
+        import json as _json
         retry_count = 0
         max_retries = 3
 
         while retry_count <= max_retries:
             try:
+                tool_call_accumulator = {}
                 async for data_str in self._llm_sdk.request_stream(
                     messages=messages,
                     mode=mode,
@@ -173,11 +179,35 @@ class BaseAIService:
                         yield self._create_cancelled_chunk()
                         return
 
+                    # 跨chunk聚合tool_calls — 小沈 2026-06-10
+                    tc_data = self._extract_tool_calls(data_str)
+                    for idx, entry in tc_data.items():
+                        tool_call_accumulator.setdefault(idx, {"name": "", "arguments": ""})
+                        if entry.get("name"):
+                            tool_call_accumulator[idx]["name"] = entry["name"]
+                        if entry.get("arguments"):
+                            tool_call_accumulator[idx]["arguments"] += entry["arguments"]
+
                     chunk = self._parse_sse_data(data_str)
                     if chunk:
+                        chunk_count += 1
                         yield chunk
                         if chunk.is_done:
+                            elapsed = time.time() - start_time
+                            logger.info(f"[LLM] 流式请求完成: model={self.model}, 耗时={elapsed:.2f}s, chunks={chunk_count}")
                             return
+
+                # 流结束后，如有聚合的tool_calls，转成JSON内容注入 — 小沈 2026-06-10
+                if tool_call_accumulator:
+                    for idx in sorted(tool_call_accumulator):
+                        tc = tool_call_accumulator[idx]
+                        if tc["name"]:
+                            try:
+                                params = _json.loads(tc["arguments"]) if tc["arguments"] else {}
+                            except _json.JSONDecodeError:
+                                params = {}
+                            action_json = _json.dumps({"tool_name": tc["name"], "tool_params": params})
+                            yield StreamChunk(content=action_json, model=self.model, is_done=False, is_reasoning=False)
 
                 yield StreamChunk(content="", model=self.model, is_done=True)
                 return
@@ -214,6 +244,35 @@ class BaseAIService:
                     messages.append({"role": msg.role, "content": msg.content})
         messages.append({"role": "user", "content": message})
         return messages
+
+    def _extract_tool_calls(self, data_str: str) -> Dict[int, Dict]:
+        """从原始SSE data中提取tool_calls增量 — 小沈 2026-06-10"""
+        from app.utils.json_utils import parse_json
+        try:
+            data = parse_json(data_str)
+            if not data:
+                return {}
+            choices = data.get("choices", [])
+            if not choices:
+                return {}
+            delta = choices[0].get("delta", {})
+            raw_tool_calls = delta.get("tool_calls", [])
+            if not raw_tool_calls:
+                return {}
+            result = {}
+            for tc in raw_tool_calls:
+                idx = tc.get("index", 0)
+                entry = {}
+                func = tc.get("function", {})
+                if func.get("name"):
+                    entry["name"] = func["name"]
+                if func.get("arguments"):
+                    entry["arguments"] = func["arguments"]
+                if entry:
+                    result[idx] = entry
+            return result
+        except Exception:
+            return {}
 
     def _parse_sse_data(self, data_str: str) -> Optional[StreamChunk]:
         """解析SSE data字符串为StreamChunk - 小沈 2026-06-09"""
