@@ -125,11 +125,11 @@ class MessageBuilder:
 
         MSG-001 小沈 2026-05-24: temp_history加入字符容量限制,从最旧开始移除
         """
+        # temp_history容量保护:总字符超50000时从最旧截断,再构建messages
+        self._cap_temp_history()
         messages = list(self.conversation_history)
         if self.temp_history:
             messages = messages + list(self.temp_history)
-        # temp_history容量保护:总字符超50000时从最旧截断
-        self._cap_temp_history()
         return messages
 
     def _cap_temp_history(self):
