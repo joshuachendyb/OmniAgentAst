@@ -99,19 +99,6 @@ Example 4: 任务完成
     def get_safety_reminder(self) -> str:
         return "⚠️ Document Safety: write_document overwrites existing files. Read before write to confirm."
 
-    def get_parameter_reminder(self) -> str:
-        from app.services.tools.registry import tool_registry
-        from app.services.tools.tool_types import ToolCategory
-        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.DOC_CONTENT)
-        forbidden = (
-            "\n\nFORBIDDEN parameter names - DO NOT use:\n"
-            "- ❌ file (correct: file_path)\n"
-            "- ❌ name (correct: file_name)\n"
-            "- ❌ data for write (correct: content)\n"
-            "- ❌ 旧工具名 read_pdf/read_docx/read_xlsx/read_pptx/write_docx/write_xlsx/write_pdf/write_pptx (已废弃,用read_document/write_document)"
-        )
-        return auto_reminder + forbidden
-
     def _get_domain_name(self) -> str:
         return "文檔处理"
 

@@ -47,12 +47,12 @@ def _build_examples(count: int = 4) -> str:
     - 返回str, 示例块
     """
     _EXAMPLE_TEMPLATES = [
-        {"thought": "用户想了解天气", "reasoning": "需要使用天气工具", "tool_name": "get_weather", "tool_params": {"city": "北京"}},
-        {"thought": "用户问了一个简单问题", "reasoning": "直接回答即可", "tool_name": "finish", "tool_params": {"result": "答案"}},
-        {"thought": "需要搜索文件", "reasoning": "使用 search_files 工具", "tool_name": "search_files", "tool_params": {"pattern": "*.py", "search_dir": "/home"}},
-        {"thought": "需要读取文件内容", "reasoning": "使用 read_file 工具", "tool_name": "read_file", "tool_params": {"file_path": "/path/to/file"}},
-        {"thought": "执行命令", "reasoning": "调用execute_shell_command", "tool_name": "execute_shell_command", "tool_params": {"command": "dir"}},
-        {"thought": "任务完成", "reasoning": "结果已返回,无更多操作", "tool_name": "finish", "tool_params": {"result": "任务完成"}},
+        {"thought": "分析:用户需要询问当前时间", "reasoning": "用户直接询问时间,调用时间工具即可", "tool_name": "get_time", "tool_params": {"action": "now"}},
+        {"thought": "分析:用户询问今天是否工作日", "reasoning": "需要查询日历确认日期属性", "tool_name": "query_calendar", "tool_params": {"date": "2026-06-11", "check_type": "workday"}},
+        {"thought": "分析:用户想查看系统配置", "reasoning": "需要获取系统信息", "tool_name": "get_system_info", "tool_params": {"info_type": "os"}},
+        {"thought": "分析:用户需要查看进程状态", "reasoning": "列出进程列表", "tool_name": "list_processes", "tool_params": {"filter": "python"}},
+        {"thought": "分析:用户问题可直接回答", "reasoning": "直接回答", "tool_name": "finish", "tool_params": {"result": "答案"}},
+        {"thought": "分析:任务已完成", "reasoning": "结果已返回,无更多操作", "tool_name": "finish", "tool_params": {"result": "任务完成"}},
     ]
 
     lines = ["  以下是一些 ReAct 调用示例:"]
@@ -87,18 +87,6 @@ class SystemPrompts(BasePrompts):
         parts.append(_build_examples(6))
 
         return "\n".join(parts)
-
-    def get_parameter_reminder(self) -> str:
-        from app.services.tools.registry import tool_registry
-        from app.services.tools.tool_types import ToolCategory
-        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.FUND_RUNTIME)
-        forbidden = (
-            "\n\nFORBIDDEN parameter names - DO NOT use:\n"
-            "- ❌ cmd (correct: command)\n"
-            "- ❌ dir (correct: working_directory)\n"
-            "- ❌ cwd (correct: working_directory)"
-        )
-        return auto_reminder + forbidden
 
     def _get_domain_name(self) -> str:
         return "系统信息"
