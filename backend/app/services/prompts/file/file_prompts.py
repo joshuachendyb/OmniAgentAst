@@ -76,21 +76,17 @@ Example 3: 写入文件
 Example 4: 任务完成
 {"thought": "文件操作已完成", "reasoning": "全部操作成功,结果已返回", "tool_name": "finish", "tool_params": {"result": "已读取配置文件并完成搜索"}}
 
+【互斥参数规则 - 同一工具内禁止同时使用】:
+- read_file: file_paths 单路径=单文件,多路径=批量
+- edit_file: old_string 与 edits 互斥
+- rename_file: path 与 directory 互斥
+- archive_tool: compress→source+destination; extract→source
+- file_operation: move/copy→destination; delete→无需destination
 
-【⚠️ P17互斥参数规则 - 极其重要】:
-- read_file: file_paths传1个路径=单文件, 传多个=批量
-- edit_file: old_string 和 edits 不能同时使用
-- rename_file: path 和 directory 不能同时使用
-- archive_tool: compress模式需要source+destination,extract模式需要source
-- file_operation: move/copy需要destination,delete不需要
-
-【⚠️ write_text_file text规则 - 极其重要】:
-- text参数必须传入实际的文件内容(代码、文本、正文等)
-- ❌ 绝对禁止将你的思考/计划/状态确认当作text传入
-- ❌ 错误示例: text="已成功创建并写入第一章,需要继续创建第二章"
-- ✅ 正确示例: text="第一章:觉醒
-
-林凡是一名普通的大学生..."""
+【write_text_file text规则】:
+- text 参数必须传实际文件内容(代码/文本/正文)
+- ❌ 禁止传入思考/计划/状态确认
+- ✅ text=\"第一章:觉醒\\n\\n林凡是一名普通的大学生...\""""
 
     def _get_domain_name(self) -> str:
         return "文件管理"
