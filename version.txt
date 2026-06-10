@@ -1,99 +1,365 @@
-# 系统分析优化 - 版本历史
+v0.15.2
 
-## v0.14.1 2026-04-02
+更新时间: 2026-06-10 01:52:30
 
-### 变更说明
+## v0.15.1→v0.15.2 变更汇总 - 小沈-2026-06-10
 
-#### 本次核心优化
+### P4-01 薄调度重构(5 commit)
 
-**1. 提示管理混乱问题 - 已修复**
-- **问题**：每个意图类型都有独立提示文件，无统一管理
-- **解决方案**：建立中央提示管理器
-- **文件变更**：
-  - 新增: `backend/app/services/prompts/prompt_manager.py`
-  - 修改: `backend/app/services/prompts/file/file_prompts.py`
-  - 修改: `backend/app/services/prompts/system/system_prompts.py`
-  - 修改: `backend/app/services/prompts/network/network_prompts.py`
-  - 修改: `backend/app/services/prompts/desktop/desktop_prompts.py`
-  - 修改: `backend/app/services/prompts/document/document_prompts.py`
+| 文件 | 变更 |
+|------|------|
+| handlers/ (5个) | 新增handler模块，业务逻辑从react_cycle.py移出 |
+| react_cycle.py | 薄调度重构(16+/250-)，_TYPE_HANDLERS分派 |
+| AGENTS.md | 删除已不存在的LLM classifier fallback描述 |
+| factory/ (多个) | backup_paths合并3文件+get_service加锁+validate_config优化 |
+| message_id_tracker.py | api/v1/→services/迁移 |
 
-**2. 会话历史查询效率低 - 概念性修复**
-- **问题**：执行步骤JSON存储，查询性能差
-- **解决方案**：概念性设计分片存储方案
-- **文件变更**：
-  - 新增: 概念设计文档
-  - 修改: 会话历史查询相关代码
+### 死代码清理+Safety模块重构(6 commit)
 
-**3. 错误处理分散 - 已修复**
-- **问题**：每个Agent有自己的错误处理，分类不统一
-- **解决方案**：建立统一错误处理体系
-- **文件变更**：
-  - 新增: `backend/app/utils/error_handler.py`
-  - 修改: 原有错误处理文件
+| 文件 | 变更 |
+|------|------|
+| tool_safety_checker.py | 新增工具安全检查器(SafetyManager剥离) |
+| manager.py | 删除已废弃SafetyManager(212行) |
+| file_operation_safety.py | 删除废弃SafetyHook继承 |
+| shell_tools.py | import路径safety.manager→safety.tool_safety_checker |
+| file_tools.py | 删除废弃get_hook/register_hook调用 |
+| llm_core.py | 删除196-224行死代码(return后重复代码) |
 
-#### 4. 文档优化 - 已完成
+### CancelledError+DB异常保护(2 commit)
 
-- **新增**: `OmniAgentAs-desk_系统分析报告.md` - 完整系统分析
-- **新增**: `本次优化执行摘要.md` - 执行摘要
-- **修改**: `version.txt` - 记录变更
+| 文件 | 变更 |
+|------|------|
+| run_sse_stream.py | CancelledError生成IncidentStep+finally块DB异常保护 |
+| task_cancel_check.py | 防重复append interrupted step |
 
-#### 5. 代码质量提升
+### 异步修复+HTTP阻塞暂停(4 commit)
 
-- **新增**: 提示管理器
-- **新增**: 错误处理基类
-- **优化**: 代码结构
-- **优化**: 文档注释
+| 文件 | 变更 |
+|------|------|
+| confirm_operation.py | get_event_loop→get_running_loop, CLEANUP_INTERVAL 10秒 |
+| close_instance_sync.py | get_running_loop() + fallback |
+| llm_core.py | HTTP阻塞期间定期检查取消/暂停状态+重试 |
+| client_sdk.py | request_stream添加cancel_check参数 |
+| universal_agent.py | LLM请求添加pause_event参数 |
 
-### 变更统计
+### 线程安全+工具配置(4 commit)
 
-| 文件类型 | 新增 | 修改 | 删除 |
-|----------|------|------|------|
-| Python文件 | 2个 | 8个 | 0个 |
-| Markdown文档 | 2个 | 0个 | 0个 |
-| SQL脚本 | 0个 | 1个 | 0个 |
-| 配置文件 | 0个 | 1个 | 0个 |
+| 文件 | 变更 |
+|------|------|
+| get_service.py | threading.Lock + double-checked locking |
+| constants.py | 新增MAX_CHUNKS_WITHOUT_PROMOTE常量 |
+| chunk_buffer.py | max_without_promote可配置(从constants读取) |
+| tool_manager.py | refresh_fc_tools废弃(UniversalAgent无tools_strategy) |
 
-### 关键指标
+### 工具函数调整(5 commit)
 
-| 指标 | 当前 | 目标 | 状态 |
-|------|------|------|------|
-| 提示加载时间 | 50ms/个 | 5ms/个 | ✅ 概念实现 |
-| 历史查询时间 | 500ms | 50ms | 🔄 分片设计 |
-| 错误处理一致性 | 60% | 100% | ✅ 统一体系 |
-| 可维护性 | 低 | 高 | ✅ 中期优化 |
+| 文件 | 变更 |
+|------|------|
+| time_utils.py | 时间工具函数优化 |
+| data_format_helper.py | 新增write_yaml_ordered公共接口 |
+| file_helpers.py | 导入路径调整 |
+| file_visualization.py | 文件可视化调整 |
+| api.ts | Confirm接口改为confirm_id+trust_session |
 
-### 本周完成
+### 其他(3 commit)
 
-✅ **提示管理混乱** - 创建统一管理器
-✅ **历史查询效率** - 分片设计完成
-✅ **错误处理统一** - 建立基类
-✅ **文档记录** - 完整分析报告
-
-### 下周计划
-
-🔄 **提示管理器实现** - 具体代码开发
-🔄 **历史查询优化** - 数据库索引
-🔄 **错误处理完善** - 完整功能实现
-🔄 **编写测试** - 单元测试覆盖
-
-### 执行摘要
-
-本次优化重点解决系统三大核心问题：
-
-1. **提示模板管理混乱** → 建立中央管理器
-2. **历史查询效率低** → 分片存储设计
-3. **错误处理不统一** → 建立统一体系
-
-所有变更均已提交到版本控制，详细变更日志见 `version.txt`。
-
-### 版本历史
-
-| 版本 | 时间 | 更新内容 | 作者 |
-|------|------|---------|------|
-| v0.14.1 | 2026-04-02 | 系统分析优化，提示管理、历史查询、错误处理优化 | 资深专家小沈 |
+| 文件 | 变更 |
+|------|------|
+| .gitignore | 修复编码损坏+添加插件模型-research/忽略 |
+| models.py | 删除ChatRequest.task_id字段 |
 
 ---
 
-*本文档记录了本次系统分析优化的全部变更，包括问题识别、解决方案、文件变更、执行进度和关键指标。*
+v0.15.1
 
-*更新时间: 2026-04-02 14:00:00*
+更新时间: 2026-06-09 15:28:15
+
+## v0.15.0→v0.15.1 变更汇总 - 小沈-2026-06-09
+
+### 一、refactor 重构——Agent/SDK/Service三层统一为request/request_stream方法(6个commit)
+
+| 模块 | 变更内容 |
+|------|---------|
+| SDK层 | chat/chat_stream重构为request/request_stream |
+| Service层 | 统一为request/request_stream/chat方法 |
+| Agent调用 | 统一为request/request_stream方法 |
+| llm_core导出 | 更新为新方法 |
+
+### 二、refactor 重构——死代码清理(6个commit)
+
+| 删除项 | 说明 |
+|--------|------|
+| chat.py / chat_with_tools_stream.py / tool_caller.py | 整文件删除 |
+| REACT_KEYWORDS / _get_all_tool_names | 旧策略删除 |
+| sse_retry.py | 功能合并到network_retry.py |
+| get_config_path.py / compute_file_hash.py | 功能合并到其他模块 |
+| tool_queries.py | 功能合并到tool_registry |
+
+### 三、refactor 重构——10大原则修复(9个commit)
+
+| 原则 | 修复内容 |
+|------|---------|
+| 复用优先 | 9个违反复用优先问题修复(parse_json统一、公用函数抽取等) |
+| DRY | _format_tool_calls消除3次重复parse_json、extract_data_summary抽取公用 |
+| KISS | 简化Step类、API层、Task模型、删除冗余文件 |
+| SRP | Agent状态管理移入Agent、参数验证职责清晰 |
+
+### 四、refactor 重构——ToolCategory分类重构(3个commit)
+
+| 变更 | 说明 |
+|------|------|
+| ToolCategory重命名 | 5分类重命名，消除语义模糊 |
+| SYSTEM拆分为FUND_RUNTIME+NET_PROCESS | 职责更清晰 |
+| batch_process归入FILE | 消除边界模糊 |
+
+### 五、refactor 重构——universal_agent流式架构重构(1个commit)
+
+- 全流式架构重写
+
+### 六、fix bug——修复(8个commit)
+
+| 修复项 | 说明 |
+|--------|------|
+| incident恢复 | 后端发incident+incident_value前端switch分发 |
+| useChatFacade | 删除整对象deps使useMemo生效 |
+| 10项代码质量修复 | bare except/死代码/超时/状态 |
+| 后端第二轮审查6项修复 | R1-1/R1-2/R3-1/R5-1/R10-2/R10-4 |
+| sse.ts重复is_reasoning检查 | 删除重复检查 |
+| useChatFacade修复useMemo依赖项 | perf优化 |
+| _handle_finish_tool补充reasoning传递 | finish时前端可显示推理过程 |
+
+### 七、docs 文档(7个commit)
+
+- LLM核心架构重构实践报告
+- LLM核心架构代码核查报告
+- 重写实施修改方案(10大原则版)
+- LLM核心架构深度分析&对比分析
+- Agent2.5设计文档精简
+- 代码5原则分析报告更新
+- 代码核查调试笔记
+
+### 净效果
+
+- 40+ commit
+- Agent/SDK/Service三层统一命名
+- 死代码大量删除
+- 10大原则全面遵守
+- 全部测试通过
+
+---
+
+v0.15.0
+
+更新时间: 2026-06-09 06:36:19
+
+## v0.14.10→v0.15.0 变更汇总 - 小沈-2026-06-09
+
+### 一、refactor 重构——后端核心代码全面重构(1 个大 commit)
+
+| 模块 | 变更内容 |
+|------|---------|
+| agent/ | base_react→core_agent重命名,消除react_loop/react术语误导 |
+| chat路由 | chat_stream目录合并为单文件,删除react_sse_wrapper旧文件 |
+| preprocessing/safety | 代码规范化+死代码清理 |
+| command_parser/llm_response_parser | import排序+格式化+死代码清理 |
+| message_saver | 统一重构 |
+
+### 二、refactor 重构——agent目录烂代码清理(v0.14.10已记录,延续)
+
+- base_react.py/react_handler_mixin.py/steps.py/types.py合并
+- 80+死import删除,2个严重bug修复
+
+### 三、refactor 重构——命名统一(6 个 commit)
+
+| 变更 | 说明 |
+|------|------|
+| Agent类命名 | React→Agent,消除react术语误导 |
+| base_react→core_agent | 文件/类名统一 |
+| agent_loop.py | 消除react_loop术语 |
+| react_cycle.py | 函数名统一为run_react_cycle |
+| parse_llm_response.py | 函数和文件重命名 |
+| chat→aggregate_chat_response | 函数名语义化 |
+
+### 四、fix bug——全面修复命名/文档/API不匹配(3 个 commit)
+
+- 26个命名/文档/API不匹配问题修复
+- 31个命名问题修复
+- 10大代码规范23个问题修复
+- 10大流程代码规范修复(F1-F10)
+- ThoughtStep.to_dict崩溃修复
+- run_stream完整ReAct循环实现
+- common_patterns模块缺失修复
+- 并发锁/参数验证/工具查找问题修复
+- system_prompts.py import缩进修复
+
+### 五、refactor 重构——死代码清理(6 个 commit)
+
+| 删除项 | 说明 |
+|--------|------|
+| AIServiceFactory | 纯空壳类+28个空壳委托 |
+| _network_engine | 死代码 |
+| yield_error_sse | 空壳函数 |
+| _init_tools | base_react.py不再使用的方法 |
+| _RateLimitError/_post_with_retry | llm_core.py不再使用 |
+| normalize_params/_validate_params/_lookup_tool | 不再使用的辅助方法 |
+| SecurityProvider | 未使用 |
+| nextPage函数 | 未使用 |
+
+### 六、refactor 重构——复用优先修复(2 个 commit)
+
+- 使用_build_handler_result和extract_reasoning_from_chunk复用
+- retry_engine/collector/visualization优化
+
+### 七、tests 测试(2 个 commit)
+
+- 修复21个失败测试+error_label bug+observation_step.py _tool_name存储
+- 修复test_tool_executor_fallback迁移至ToolRetryEngine
+
+### 八、docs 文档(4 个 commit)
+
+- 更新后端/前端代码深度分析报告
+- 更新全链路E2E集成测试方案v1.1
+- 简化API端点文档+补充Router分组设计说明
+- 更新代码规范审查报告
+
+### 九、chore 杂项(3 个 commit)
+
+- 更新.gitignore添加tests/reports/logs/pytest/dist/node_modules等忽略规则
+- 从git索引移除已被.gitignore忽略的测试文件
+- 删除临时测试脚本
+
+### 净效果
+
+- 47 个 commit
+- Agent命名体系全面统一(React→Agent)
+- 死代码大量删除
+- 21个测试修复通过
+- 10大原则全面遵守
+
+---
+
+v0.14.10
+
+更新时间: 2026-06-07 22:30:00
+
+## v0.14.9→v0.14.10 变更汇总 - AI助手小欧-2026-06-07
+
+### 一、refactor 重构——回滚 v0.14.9 过度拆分(本次 1 个 commit)
+
+v0.14.9 把 base_react.py / react_handler_mixin.py 拆分为 package 目录(19 个 commit)，
+本次按 10 大原则(YAGNI/KISS)回滚 4 个过度拆分子目录，合并为单文件：
+
+| 子目录→单文件 | 原文件数 | 删除/合并内容 | 违反原则 |
+|---------------|---------|---------------|---------|
+| `agent/base_react/`→`base_react.py` | 7→1 | agent_initializer / initialize_run_state / run_stream / step_emitter / tool_manager 全部合并 | YAGNI:一个基类拆 7 个文件 |
+| `agent/mixins/react_handler_mixin/`→`mixins/react_handler_mixin.py` | 12→1 | 11 个方法合并到 1 个 mixin 类 | YAGNI:每个方法一个文件 |
+| `agent/steps/`→`steps.py` | 11→1 | 9 个 step 子类 + factory + base 合并 | YAGNI:每个类一个文件 |
+| `agent/types/`→`types.py` | 3→1 | AgentStatus 枚举 + AgentResult dataclass 合并 | YAGNI:枚举单独成文件 |
+
+### 二、refactor 重构——删除纯死代码(1 个 commit)
+
+| 文件 | 大小 | 删除原因 |
+|------|------|---------|
+| `mixins/protocols.py` | 1186 bytes | 0 引用 Protocol 接口约束,YAGNI/ISP 违反 |
+| `app/utils/type_guards.py` | — | 撤销 TYPE-3/4 时新建的过度工程,功能已内联 |
+| `agent/llm_strategies_pkg/` | 整个目录 | 撤销 ARCH-2 时新建的 19 行 re-export 包 |
+| `mixins/react_handler_mixin/session_lifecycle_mixin.py` | — | 撤销 ARCH-3 时新建的 Session 拆分 |
+
+### 三、refactor 重构——删 llm_response_parser/__init__.py 中 80+ 死 import
+
+| 操作 | 行数变化 |
+|------|---------|
+| 原 110 行(`__init__.py` 从 6 子模块 import 80+ 内部 helper) | 110 |
+| 修复后 5 行(只保留 `from .parse_react_response import parse_react_response`) | 5 |
+| 同时删除死变量 `STRATEGIES = get_strategies()` | -1 |
+
+### 四、fix bug——撤销过度工程时漏改的严重 bug(2 个)
+
+| # | 文件 | Bug | 违反原则 |
+|---|------|-----|---------|
+| 1 | `message_builder.py:266-267` | 调 `_collect_paired_ids` 未定义函数(撤销 TYPE-6 漏改),运行必崩 NameError | KISS/修复未闭环 |
+| 2 | `base_react.py:206` | `if True:` 包装(我自己合并时留下),无意义缩进 | YAGNI/KISS |
+
+### 五、refactor 重构——死代码清理(YAGNI)
+
+| 类型 | 数量 | 详情 |
+|------|------|------|
+| `getattr` 死代码 | 5 处 | react_handler_mixin.py / prompt_build_mixin.py 的 model/provider 永远为 None/'unknown' |
+| kwargs 死循环 | 1 处 | base_react.py `for key in ('model', 'provider', ...): setattr(...)` 永远不触发 |
+| class 体内未用 import | 1 处 | llm_strategies.py `from ... import _get_all_tool_names` 从未使用 |
+| 未使用 import | 13 个文件 | 13 个文件的未使用 import(agent_factory/chunk_buffer/desktop_react/steps/strategy_manager/tool_result_formatter/tool_retry_engine/universal_react/llm_response_parser/_tool_params/llm_response_parser/_utils/mixins/react_agent_mixin/mixins/tool_step_mixin) |
+
+### 六、refactor 重构——原则违反修复
+
+| 原则 | 修复内容 | 位置 |
+|------|---------|------|
+| KISS/YAGNI | 13 处 `_val = ...` 包装→直接 return | react_handler_mixin.py |
+| DRY | 4 次 if not 重复→`next()` 单行 | react_handler_mixin.py::_handle_completion_type |
+| 防御性编程 | 20+ 处 `except Exception`→具体异常分类(httpx/JSON/IO/Attribute/Type) | 10 个文件 |
+
+### 七、refactor 重构——撤销的过度工程(10 项)
+
+| 撤销项 | 原过度工程 | 撤销后 |
+|--------|-----------|--------|
+| ARCH-2 | `llm_strategies_pkg/` 19 行 re-export 包 | 恢复 llm_strategies.py 原 420 行 |
+| ARCH-3 | `session_lifecycle_mixin.py` Session 拆分 | 内联到 base_react.py |
+| ARCH-5 | `set/clear_tool_retry_engine` 注入 | 恢复全局单例 |
+| DRY-2 | `_build_failure_result` 函数抽取 | 恢复内联 |
+| DRY-3 | `_resolve_answer_response` 函数抽取 | 恢复 3 次 if not 内联(后又用 next() 简化) |
+| TYPE-3 | `type_guards.validate_data_dict` 统一 | 恢复 isinstance 检查 |
+| TYPE-4 | `from ... import validate_data_dict` | 恢复无 type guard |
+| TYPE-6 | `_collect_paired_ids/_filter_by_paired_ids` 拆分 | 恢复内联(并修复漏改 bug) |
+| @_safe_parse_json 装饰器 | 抽装饰器 | 恢复内联 try/except |
+| `app/utils/type_guards.py` | 新建公用工具 | 删除文件 |
+
+### 八、docs 文档——本次清理总结报告(1 个)
+
+| 文件 | 大小 | 内容 |
+|------|------|------|
+| `doc/agent目录代码清理总结报告-小欧-2026-06-07.md` | 21KB | 14 章节,记录 2026-06-07 烂代码清理全过程 |
+
+### 净效果
+
+- agent 目录文件数:73→32(-41)
+- agent 目录总行数:5000+→2567(-约 2500,**减少约 50%**)
+- git diff:58 文件,+215/-2907(**净删 2692 行**)
+- py_compile 验证:21 个 .py 全部通过
+- 核心类 import 验证:21 个全部通过
+- FastAPI app 加载:成功(v0.14.10)
+- 无 NameError/ImportError/AttributeError
+
+### 10 大原则遵守
+
+- ✅ SRP:不再让一个函数/枚举单独成文件
+- ✅ DRY:4 次 if not→next() 单行
+- ✅ KISS:13 处 _val 包装+1 处 if True+80+ 死 import 全部删除
+- ✅ SLAP:工具层/Agent 层职责清晰
+- ✅ YAGNI:33 过度拆分+5 处 getattr+kwargs 死循环+13 个死 import 全部删除
+- ✅ 禁止 backward compat:全部彻底清除,不留兼容代码
+- ✅ OCP:不再为"未来扩展"拆文件
+- ✅ ISP:删 protocols.py 过度接口约束
+- ✅ 复用优先:agent_utils 3 个公用工具文件保留
+
+### 验证清单
+
+- ✅ 21 个 .py 文件 `python -m py_compile` 全部通过
+- ✅ 21 个核心类/函数 import 测试通过
+- ✅ FastAPI app 加载成功(版本 v0.14.10)
+- ✅ 无 NameError/ImportError/AttributeError
+- ✅ git diff 净删除 2692 行,无新增复杂抽象
+
+### 剩余可改进项(待用户决策)
+
+- agent_utils/ 3 文件是否合并(公用工具,保留)
+- llm_response_parser/_xxx.py 5 文件合并(内部 helper,保留)
+- pytest 完整测试(跑前用户可决策)
+- git push 到远程(等用户决定)
+
+---
+
+更新时间: 2026-06-07 22:30:00
+更新人: AI助手小欧
+
+---
+
+## v0.14.8→v0.14.9 变更汇总 - 小沈-2026-06-01
