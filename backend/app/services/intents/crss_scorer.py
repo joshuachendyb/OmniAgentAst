@@ -46,10 +46,10 @@ from app.services.intents.intent_mapper import resolve_category
 
 
 def _match_keywords(keywords: list, chinese_keywords: list, text: str) -> float:
-    """计算关键词匹配总分(中文+2.0/个,英文+1.0/个)"""
+    """计算关键词匹配总分(中文+2.0/个,英文+1.0/个) — 小沈 2026-06-10 中文大小写不敏感"""
     score = 0
     for kw in chinese_keywords:
-        if kw in text and not _is_negated(kw, text):
+        if kw.lower() in text and not _is_negated(kw, text):
             score += 2.0
     for pattern in keywords:
         # 【修复 小健 2026-05-24】P2-16: 只去掉\b边界标记,其他反斜杠转义保留原样
@@ -64,12 +64,14 @@ def _match_keywords(keywords: list, chinese_keywords: list, text: str) -> float:
 def _is_negated(keyword: str, text: str) -> bool:
     """检查中文关键词前是否有否定前缀 - 小健 2026-05-13
     【修复 小健 2026-05-24】P2-15: 检查所有出现位置,若存在未被否定的出现则返回False
+    小沈 2026-06-10: 中文大小写不敏感(text已lower,keyword也lower)
     """
     negation_words = ["不", "没", "别", "勿", "无", "未", "非", "没有", "不要", "不用"]
     start = 0
     has_non_negated = False
+    keyword_lower = keyword.lower()
     while True:
-        idx = text.find(keyword, start)
+        idx = text.find(keyword_lower, start)
         if idx < 0:
             break
         prefix = text[max(0, idx - 2):idx].strip()
