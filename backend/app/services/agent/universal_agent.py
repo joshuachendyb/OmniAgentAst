@@ -136,6 +136,11 @@ class UniversalAgent(BaseAgent):
         if executed_summary:
             messages.append({"role": "system", "content": executed_summary})
 
+        if getattr(self, '_tool_reminder_needed', False):
+            from app.services.agent.core_agent.react_cycle import _TOOL_REMINDER
+            messages.append({"role": "system", "content": _TOOL_REMINDER})
+            self._tool_reminder_needed = False
+
         openai_tools = self._get_openai_tools()
 
         if not openai_tools:

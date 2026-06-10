@@ -96,10 +96,10 @@ async def _process_single_step(agent, step_counter: list, chunk_buffer) -> Async
     async for event in handler(agent, parsed, llm_response, step_counter, chunk_buffer):
         yield event
 
-    # 工具提醒: FC模式下LLM返回纯文本(无tool_name),注入提醒,下次LLM调用时包含此消息 — 小沈 2026-06-10
+    # 工具提醒: 设标志位,由_call_llm()动态注入(不永久写入conversation_history) — 小沈 2026-06-11
     if parsed_type == "chunk" and not _has_tool_call(agent):
-        logger.warning(f"[react_cycle] LLM text-only response (step {step_counter[0]}), injecting tool reminder")
-        agent.message_builder.conversation_history.append({"role": "system", "content": _TOOL_REMINDER})
+        logger.warning(f"[react_cycle] LLM text-only response (step {step_counter[0]}), set tool_reminder flag")
+        agent._tool_reminder_needed = True
 
 
 async def run_react_cycle(
