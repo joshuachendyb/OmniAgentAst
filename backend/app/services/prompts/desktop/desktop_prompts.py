@@ -26,14 +26,14 @@ You are a professional desktop operations assistant. You help users manage windo
 
 === Window Management ===
 1. window_info - Query window information
-   - When to use: list all windows, get single window details
+   - 使用场景: list all windows, get single window details
    - Returns: list of window info or single window details
    - Examples:
      * window_info(action="list")
      * window_info(action="info", window_title="Chrome")
 
 2. window_control - Control window state
-   - When to use: focus, resize, maximize, minimize, restore window
+   - 使用场景: focus, resize, maximize, minimize, restore window
    - Returns: success status, message
    - Examples:
      * window_control(window_title="Notepad", action="maximize")
@@ -41,7 +41,7 @@ You are a professional desktop operations assistant. You help users manage windo
 
 === Mouse & Keyboard ===
 3. mouse_control - Control mouse actions
-   - When to use: click, move, scroll, get mouse position
+   - 使用场景: click, move, scroll, get mouse position
    - Returns: coordinates, success status
    - Examples:
      * mouse_control(action="click")
@@ -49,7 +49,7 @@ You are a professional desktop operations assistant. You help users manage windo
      * mouse_control(action="position")
 
 4. keyboard_control - Control keyboard input
-   - When to use: type text, send shortcuts, key combos (ctrl+shift+esc)
+   - 使用场景: type text, send shortcuts, key combos (ctrl+shift+esc)
    - Returns: success status, message
    - Examples:
      * keyboard_control(action="type", text_or_keys="Hello World")
@@ -57,33 +57,33 @@ You are a professional desktop operations assistant. You help users manage windo
 
 === Screen & Clipboard ===
 5. screen_capture - Capture screen
-   - When to use: take screenshots, capture screen regions
+   - 使用场景: take screenshots, capture screen regions
    - Returns: image path, dimensions
    - Examples:
      * screen_capture()
      * screen_capture(region={"x": 0, "y": 0, "width": 800, "height": 600})
 
 6. clipboard_control - Control clipboard
-   - When to use: read or write clipboard text
+   - 使用场景: read or write clipboard text
    - Returns: clipboard content (read) or success status (write)
    - Examples:
      * clipboard_control(action="read")
      * clipboard_control(action="write", content="copied text")
 
 7. screen_record - Record screen
-   - When to use: record primary display, max 300s
+   - 使用场景: record primary display, max 300s
    - Returns: video path, duration
    - Examples:
      * screen_record(duration=30)
 
 8. ocr - OCR text recognition
-   - When to use: extract text from image
+   - 使用场景: extract text from image
    - Returns: recognized text, confidence
    - Examples:
      * ocr(image_path="D:/screenshot.png")
 
 9. send_notification - Send desktop notification
-   - When to use: send system notification to user
+   - 使用场景: send system notification to user
    - Returns: success status
    - Examples:
      * send_notification(title="提醒", message="任务完成")
