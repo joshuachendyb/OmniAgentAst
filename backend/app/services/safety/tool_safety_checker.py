@@ -26,15 +26,6 @@ _SKIP_SAFETY = os.environ.get("_OMNIAGENT_SKIP_SAFETY", "0") == "1"
 class ToolSafetyChecker:
     """工具执行前安全检查 — 安全级别判定 + 已知风险检测"""
 
-    def record_operation(self, category: str, **kwargs) -> str:
-        """统一操作记录（兼容旧代码 self.safety_manager.record_operation 调用）"""
-        from app.services.safety.file.file_safety.record_operation import record_operation as _record_op
-        return _record_op(**kwargs)
-
-    def execute_with_safety(self, category: str, operation_id: str, operation_func, *args, **kwargs) -> bool:
-        """统一安全执行（兼容旧代码 self.safety_manager.execute_with_safety 调用）"""
-        from app.services.safety.file.file_safety.execute_with_safety import execute_with_safety as _exec_safe
-        return _exec_safe(operation_id, operation_func, *args, **kwargs)
 
     def check_before_execute(self, tool_name: str, params: Optional[Dict] = None) -> Dict[str, Any]:
         """
