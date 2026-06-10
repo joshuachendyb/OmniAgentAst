@@ -1,3 +1,24 @@
+v0.15.3
+
+更新时间: 2026-06-10 12:00:00
+
+## v0.15.2→v0.15.3 变更汇总 - 小沈-2026-06-10
+
+### HITL确认机制修复 + 日志优化 + 性能统计
+
+| 文件 | 变更 |
+|------|------|
+| action_handler.py | check_safety_and_confirm改为async generator, IncidentStep先yield再等确认; 使用agent.status判断停止 |
+| crss_scorer.py | 类型/动作匹配日志 info→debug |
+| react_cycle.py | handler产出事件日志 info→debug |
+| llm_core.py | 添加流式请求耗时+chunk数统计 |
+| file_prompts.py | 无意义'被调用'日志 info→debug |
+| time_prompts.py | 无意义'被调用'日志 info→debug |
+| system_adapter.py | 无意义'被调用'日志 info→debug |
+| error_handler.py | parse_error时尝试作为最终回答(FC模式LLM直接回答) |
+| run_sse_stream.py | 参数类型标注 Optional[list] |
+| pytest.ini | 添加e2e_full_link/asyncio markers |
+
 v0.15.2
 
 更新时间: 2026-06-10 01:52:30

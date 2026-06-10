@@ -26,6 +26,16 @@ _SKIP_SAFETY = os.environ.get("_OMNIAGENT_SKIP_SAFETY", "0") == "1"
 class ToolSafetyChecker:
     """工具执行前安全检查 — 安全级别判定 + 已知风险检测"""
 
+    def record_operation(self, category: str, **kwargs) -> str:
+        """统一操作记录（兼容旧代码 self.safety_manager.record_operation 调用）"""
+        from app.services.safety.file.file_safety.record_operation import record_operation as _record_op
+        return _record_op(**kwargs)
+
+    def execute_with_safety(self, category: str, operation_id: str, operation_func, *args, **kwargs) -> bool:
+        """统一安全执行（兼容旧代码 self.safety_manager.execute_with_safety 调用）"""
+        from app.services.safety.file.file_safety.execute_with_safety import execute_with_safety as _exec_safe
+        return _exec_safe(operation_id, operation_func, *args, **kwargs)
+
     def check_before_execute(self, tool_name: str, params: Optional[Dict] = None) -> Dict[str, Any]:
         """
         执行前安全检查入口
@@ -99,11 +109,13 @@ class ToolSafetyChecker:
         if tool_name == _WRITE_RISK_TOOL:
             try:
                 from app.services.tools.file.file_tools import FileTools
-                content = params.get("content", "")
-                path = params.get("path", "")
-                is_safe, msg = FileTools._check_write_safety(content, path)
-                if not is_safe:
-                    return {"is_safe": False, "risk_score": 0.8, "blocked": True, "message": f"写入污染: {msg}"}
+                # write_text_file 使用 file_path 和 text 参数名 — 小沈 2026-06-10
+                file_path = params.get("file_path", "")
+                text = params.get("text", "")
+                ft = FileTools()
+                error, _ = ft._check_write_safety(file_path, text)
+                if error:
+                    return {"is_safe": False, "risk_score": 0.8, "blocked": True, "message": f"写入污染: {error}"}
             except Exception as e:
                 logger.warning(f"[ToolSafetyChecker] 写入检查失败: {e}")
 
@@ -136,3 +148,4 @@ def get_tool_safety_checker() -> ToolSafetyChecker:
 
 
 __all__ = ["ToolSafetyChecker", "get_tool_safety_checker", "ToolSafetyLevel", "DEFAULT_SAFETY_POLICY"]
+

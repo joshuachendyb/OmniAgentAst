@@ -129,9 +129,9 @@ def execute_shell_command(
     executable = None if shell_type == "cmd" else (
         shutil.which("powershell.exe") or shutil.which("pwsh.exe") or "powershell.exe")
 
-    # 安全检查(ToolSafetyChecker统一调度)
+    # 安全检查(ToolSafetyChecker统一调度) — 小沈 2026-06-10 修复:只读blocked字段,勿用is_safe(confirmation也会设false)
     safety_check = get_tool_safety_checker().check_before_execute("execute_shell_command", {"command": command})
-    if not safety_check.get("is_safe", True):
+    if safety_check.get("blocked", False):
         logger.warning(f"[Shell安全] 拦截: {safety_check.get('message')}")
         return build_error(ERR_SHELL_INJECTION, safety_check.get("message", "命令不安全"))
 

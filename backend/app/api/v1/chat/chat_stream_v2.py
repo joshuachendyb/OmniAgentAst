@@ -24,6 +24,7 @@ from app.services.task.task_interrupt_check import task_interrupt_check, task_pa
 from app.services.task.task_cancel_check import task_cancel_check_and_yield
 from app.services.task.task_cleanup import task_cleanup
 from app.services.react_sse_wrapper.run_sse_stream import run_sse_stream
+from app.services.context_vars import _current_task_id
 
 
 @dataclass
@@ -52,6 +53,7 @@ async def chat_stream_v2(request: ChatRequest):
     async def generate():
         """生成器 — 小沈 2026-06-08 重构"""
         task_id = str(uuid.uuid4())
+        _current_task_id.set(task_id)
         next_step = create_step_counter()
         execution_steps = []
         state = StreamState()

@@ -121,7 +121,7 @@ _CRSS_REGISTRY: Dict[str, tuple[str, dict]] = {
     "FILE":   ("FILE",   {"keywords": [r'\bls\b', r'\bdir\b', r'\bcd\b', r'\bpwd\b',
                                         r'\bcat\b', r'\bgrep\b', r'\bfind\b', r'\btree\b',
                                         r'\bcp\b', r'\bmv\b', r'\brm\b', r'\bmkdir\b', r'\btouch\b'],
-                           "chinese_keywords": ['文件', '目录', '文件夹', '路径', '磁盘', 'C盘', 'D盘', 'E盘']}),
+                           "chinese_keywords": ['文件', '目录', '文件夹', '路径', '磁盘', 'c盘', 'd盘', 'e盘']}),
 
     # SYSTEM 相关 → IntentType.SYSTEM(多个CRSS名映射到同一意图)
     "SHELL":          ("SYSTEM", {"keywords": [r'\bnpm\b', r'\bpip\b', r'\bnode\b', r'\bgcc\b', r'\bpython\b',

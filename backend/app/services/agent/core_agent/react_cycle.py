@@ -33,6 +33,23 @@ _TYPE_HANDLERS: OrderedDict[str, callable] = OrderedDict([
 ])
 _DEFAULT_HANDLER = handle_unknown
 
+_TOOL_REMINDER = (
+    "【系统提示·工具调用提醒】\n"
+    "你刚才的回复没有调用任何工具。用户请求需要实际操作才能完成，"
+    "你必须使用工具来执行。\n"
+    "请重新输出JSON格式，包含 tool_name 和 tool_params。\n"
+    '示例: {"thought": "分析", "reasoning": "理由", "tool_name": "write_text_file", "tool_params": {"file_path": "D:/test.txt", "text": "hello"}}\n'
+    "如果不需要工具（用户只是闲聊），请用 tool_name: finish 结束。"
+)
+
+
+def _has_tool_call(agent) -> bool:
+    """检查当前run中是否已有工具调用 — 小沈 2026-06-10"""
+    for s in getattr(agent, 'steps', []) or []:
+        if hasattr(s, 'tool_name') and getattr(s, 'tool_name', None):
+            return True
+    return False
+
 
 async def _process_single_step(agent, step_counter: list, chunk_buffer) -> AsyncGenerator:
     """处理单步循环 — async generator — 小沈 2026-06-09 支持流式chunk"""
@@ -78,6 +95,11 @@ async def _process_single_step(agent, step_counter: list, chunk_buffer) -> Async
     handler = _TYPE_HANDLERS.get(parsed_type, _DEFAULT_HANDLER)
     async for event in handler(agent, parsed, llm_response, step_counter, chunk_buffer):
         yield event
+
+    # 工具提醒: FC模式下LLM返回纯文本(无tool_name),注入提醒,下次LLM调用时包含此消息 — 小沈 2026-06-10
+    if parsed_type == "chunk" and not _has_tool_call(agent):
+        logger.warning(f"[react_cycle] LLM text-only response (step {step_counter[0]}), injecting tool reminder")
+        agent.message_builder.conversation_history.append({"role": "system", "content": _TOOL_REMINDER})
 
 
 async def run_react_cycle(
