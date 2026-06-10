@@ -5,9 +5,12 @@
 重写记录 — 小欧 2026-06-07:
 - TYPE-3: 4次 isinstance(data, dict) 用 type_guards.validate_data_dict 统一
 
+P3修复 — 小欧 2026-06-11:
+- 移除旧格式(action+action_input)和FC格式(name+arguments)支持
+- 只保留tool_name+tool_params格式(禁止向后兼容)
+
 Author: 小欧 - 2026-06-07
 """
-import json
 from typing import Dict, Any, Optional, List
 
 from app.utils.logger import logger
@@ -23,12 +26,6 @@ def _process_json_result(data: Dict, output: str) -> Optional[Dict[str, Any]]:
 
     if "tool_name" in data:
         return _build_action_from_new_format(data, output)
-
-    if "name" in data and ("arguments" in data or "args" in data):
-        return _build_action_from_fc_format(data, output)
-
-    if "action" in data:
-        return _build_action_from_old_format(data, output)
 
     return None
 
@@ -59,35 +56,6 @@ def _build_action_result(type_: str, thought: str, content: str, reasoning: str,
     return result
 
 
-def _build_action_from_fc_format(data: Dict, output: str) -> Dict[str, Any]:
-    tool_name = data["name"]
-    is_finish = tool_name == "finish"
-
-    raw_args = data.get("arguments", data.get("args", {}))
-    if isinstance(raw_args, str):
-        raw_args = parse_json(raw_args) or {}
-    if not isinstance(raw_args, dict):
-        raw_args = {}
-
-    if is_finish and raw_args.get("result"):
-        raw_result = raw_args["result"]
-        response = _normalize_result_to_str(raw_result)
-    else:
-        response = ""
-
-    processed_params = None if is_finish else _process_tool_params(raw_args, tool_name, output)
-
-    result = _build_action_result(
-        "answer" if is_finish else "action",
-        data.get("thought", ""), data.get("thought", ""),
-        data.get("reasoning", ""),
-        None if is_finish else tool_name, processed_params, response
-    )
-
-    logger.info(f"[parse_llm_response] FC格式转换: name={tool_name} → type={result['type']}")
-    return _add_reasoning_warning(result)
-
-
 def _build_action_from_new_format(data: Dict, output: str) -> Dict[str, Any]:
     tool_name = data["tool_name"]
     is_finish = tool_name == "finish"
@@ -109,29 +77,6 @@ def _build_action_from_new_format(data: Dict, output: str) -> Dict[str, Any]:
         data.get("content", data.get("thought", "")),
         data.get("reasoning", ""),
         None if is_finish else tool_name, processed_tool_params, response,
-        data.get("_pending_calls")
-    )
-
-
-def _build_action_from_old_format(data: Dict, output: str = "") -> Dict[str, Any]:
-    action_name = data["action"]
-    is_finish = action_name == "finish"
-
-    if is_finish and data.get("action_input", {}).get("result"):
-        raw_result = data["action_input"]["result"]
-        response = _normalize_result_to_str(raw_result)
-    else:
-        response = ""
-
-    raw_params = data.get("action_input", data.get("args", {}))
-    processed_tool_params = None if is_finish else _process_tool_params(
-        raw_params, action_name, output
-    )
-    return _build_action_result(
-        "answer" if is_finish else "action",
-        data.get("thought", ""), data.get("thought", ""),
-        data.get("reasoning", ""),
-        None if is_finish else action_name, processed_tool_params, response,
         data.get("_pending_calls")
     )
 
@@ -169,10 +114,6 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
     explicit_type = data.get("type")
     if explicit_type in ("parse_error", "answer", "chunk"):
         return _build_type_result(data, explicit_type)
-
-    if "action" in data and "tool_name" not in data:
-        output = json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
-        return _build_action_from_old_format(data, output)
 
     return _resolve_return_type(data)
 

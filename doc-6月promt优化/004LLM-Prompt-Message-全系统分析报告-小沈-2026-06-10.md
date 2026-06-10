@@ -1,9 +1,10 @@
 # LLM Prompt / Message / Conversation History 全系统分析报告
 
 **创建时间**: 2026-06-10 15:40:46
-**版本**: v1.0
+**版本**: v1.1
 **分析人**: 小沈
-**复查次数**: 5轮
+**初始复查**: 5轮（v1.0）
+**10原则复核**: 3轮×12问题（v1.1）
 **项目**: OmniAgentAs-desk
 
 ---
@@ -13,6 +14,7 @@
 | 版本 | 时间 | 签名 | 更新内容 |
 |------|------|------|---------|
 | v1.0 | 2026-06-10 15:40:46 | 小沈 | 初始版本：全系统分析LLM prompt/message/conversation history |
+| v1.1 | 2026-06-11 06:38:39 | 小沈 | 新增10大原则复核：P1-P12逐一3轮复核+10大原则评估，更新优先级结论 |
 
 ---
 
@@ -86,6 +88,31 @@
 | **observation_formatter** | `agent/observation_formatter.py` | 工具结果→LLM observation文本格式化 |
 | **react_cycle** | `agent/core_agent/react_cycle.py` | ReAct循环核心：调度+类型分派 |
 | **initialize_run_state** | `agent/core_agent/initialize_run_state.py` | run级别状态初始化 |
+
+---
+
+### 1.3 10大原则复核总览（2026-06-11 小沈追加）
+
+| 问题 | 问题简述 | 3轮复核结论 | 违反原则 | 处理建议 |
+|------|---------|------------|---------|---------|
+| **P1** | 网络/文档/桌面硬编码工具描述 | 真实问题，但与动态生成各有优劣 | DRY, OCP | 改为build_tool_descriptions() + 保留特有示例 |
+| **P2** | 部分缺少reasoning示例 | 低优先级，不影响功能 | — | 统一示例格式，不紧急 |
+| **P3** | OUTPUT_FORMAT与解析逻辑差异 | **严重问题** | KISS, SLAP, 禁止backward compatibility | 移除旧格式支持，只保留tool_name格式 |
+| **P4** | assistant保留策略[-10:] | 真实问题，FC模式需要保护 | SLAP | 优先保护含tool_calls的assistant消息 |
+| **P5** | observation去重基于MD5 | **当前方案合理，不修改** | — | 当前方案符合KISS+YAGNI，语义去重过度设计 |
+| **P6** | temp_history生命周期模糊 | **当前设计合理** | — | 明确文档说明，不改代码 |
+| **P7** | FC降级丢失tool_calls上下文 | **严重问题** | SLAP | 降级前将FC配对转为Text格式 |
+| **P8** | executed_summary注入为system | **非问题，API允许** | — | 不改（OpenAI允许system消息在任意位置） |
+| **P9** | 解析器chunk降级过于宽松 | **当前行为正确** | — | 不修改（Text模式输出文本=chunk是正常流程） |
+| **P10** | 参数类型转换丢失信息 | 低优先级 | SLAP | 保留原始类型，延迟到工具执行层字符串化 |
+| **P11** | sessionStorage异步保存 | 前端问题 | — | 不修改（前端范围，本报告专注后端） |
+| **P12** | timestamp处理分散 | 前端问题 | — | 不修改（前端范围，本报告专注后端） |
+
+**结论速览**：
+- ✅ **需要修复**：P1, P3, P4, P7（4个问题）
+- ✅ **当前合理，不修改**：P5, P6, P8, P9（4个问题）
+- ⚠️ **低优先级**：P2, P10（2个问题）
+- 🔘 **前端问题**：P11, P12（2个问题）
 
 ---
 
@@ -450,6 +477,18 @@ _process_tool_params(tool_params, tool_name, output)
 
 **建议**: 统一使用`BasePrompts.build_tool_descriptions()`动态生成，保持一致性。
 
+**10大原则评估（2026-06-11 小沈复核3轮）**:
+
+| 轮次 | 复核内容 | 结论 |
+|------|---------|------|
+| 第1轮 | 正确性：3个文件硬编码vs1个文件动态生成→不一致 | 真实问题，但build_tool_descriptions()丢失"使用场景"和"示例"信息 |
+| 第2轮 | 10原则：DRY❌(工具描述重复), OCP❌(增删改需改2处), YAGNI✅(工具描述极少变化) | 动态生成更符合OCP，但信息量下降是关键权衡 |
+| 第3轮 | 边界/副作用：动态生成依赖ToolRegistry→初始化失败时空描述；硬编码版本无此风险 | 硬编码≈无外部依赖，稳定性更高 |
+
+**最终结论**：
+- ✅ **采纳建议，但方案修正为**：使用`build_tool_descriptions()`生成基础描述结构（name+desc+params），保留各模板特有"使用场景/分组/示例"作为硬编码补充
+- **理由**：DRY原则要求消除重复，但纯粹动态生成会丢失信息量；混合方案兼顾OCP和信息丰富度
+
 #### 问题 P2: 部分Prompt模板缺少reasoning字段示例
 
 **现状**: `file_prompts.py`已升级添加reasoning字段示例（2026-04-14小沈），但`network_prompts.py`、`document_prompts.py`、`desktop_prompts.py`的示例中reasoning字段过于简略。
@@ -457,6 +496,18 @@ _process_tool_params(tool_params, tool_name, output)
 **问题**: LLM可能不理解reasoning字段的要求，输出空或过短的reasoning。
 
 **建议**: 统一所有意图模板的示例格式，确保reasoning字段有实质内容。
+
+**10大原则评估（2026-06-11 小沈复核3轮）**:
+
+| 轮次 | 复核内容 | 结论 |
+|------|---------|------|
+| 第1轮 | 正确性：file_prompts有完整reasoning示例，其他3个文件过于简略 | 影响Prompt质量，不影响功能正确性 |
+| 第2轮 | 10原则：KISS✅(不同模板可自有风格), YAGNI⚠️(reasoning字段是否有实质影响待验证) | LLM即使没看明白示例也会输出reasoning（由system prompt总体要求驱动） |
+| 第3轮 | 边界/副作用：示例只是参考，LLM实际行为由OUTPUT_FORMAT+TOOL_CALL_RULES约束 | 影响极小，属于Prompt细节优化 |
+
+**最终结论**：
+- ⚠️ **低优先级，暂不修改**
+- **理由**：纯Prompt质量优化，不影响功能正确性；当系统决定统一调整Prompt时一并处理
 
 #### 问题 P3: OUTPUT_FORMAT与实际解析逻辑存在语义差异
 
@@ -467,6 +518,19 @@ _process_tool_params(tool_params, tool_name, output)
 **问题**: Prompt告诉LLM一种格式，但解析器支持多种格式，导致LLM可能输出不规范的格式也能通过解析。
 
 **建议**: 要么在Prompt中说明多种格式都接受，要么在解析器中限制只接受新格式。
+
+**10大原则评估（2026-06-11 小沈复核3轮）**:
+
+| 轮次 | 复核内容 | 结论 |
+|------|---------|------|
+| 第1轮 | 正确性：OUTPUT_FORMAT只教`tool_name`+`tool_params`，但parser实际支持3种格式(new/FC/old) | **真正的语义不一致问题**，LLM可输出不规范格式仍被解析 |
+| 第2轮 | 10原则：KISS❌(一个格式教法三个解析法), SLAP❌(Prompt与解析器约定不同层), 禁止backward compatibility✅(应移除旧格式支持) | **禁止向后兼容原则**要求移除old/FC格式支持 |
+| 第3轮 | 边界/副作用：移除old/FC格式后，旧测试数据需更新；当前没有agent使用旧格式生成新消息 | **安全移除**，无生产影响 |
+
+**最终结论**：
+- ✅ **需要修复** — 根据**禁止backward compatibility原则**，在解析器中移除`action`+`action_input`(old)和`name`+`arguments`(FC)格式支持，只保留`tool_name`+`tool_params`格式
+- **修改范围**：`llm_response_parser/_result_builders.py`中删除_handle_old_format和_handle_fc_format分支
+- **测试影响**：更新相关测试用例
 
 ### 7.2 Conversation History管理的不合理
 
@@ -481,6 +545,18 @@ _process_tool_params(tool_params, tool_name, output)
 
 **建议**: 保留策略应考虑FC配对完整性，优先保留有tool_calls的assistant消息。
 
+**10大原则评估（2026-06-11 小沈复核3轮）**:
+
+| 轮次 | 复核内容 | 结论 |
+|------|---------|------|
+| 第1轮 | 正确性：`assistant_msgs[-10:]`确实简单粗暴；当前已有的`_trim_fc_pairs`仅保护observation侧，未保护assistant侧 | FC模式下assistant消息含tool_calls字段，截断后对应role:tool变为孤儿 |
+| 第2轮 | 10原则：KISS✅([-10:]简单直接), SLAP❌(FC模式下assistant+tool_calls配对应在同一裁剪策略中保护) | 需要将assistant(tool_calls)纳入FC配对保护范围 |
+| 第3轮 | 边界/副作用：极端情况assistant全部含tool_calls→保留全部→裁剪失效 | 限制保留含tool_calls的assistant不超过最近10条 |
+
+**最终结论**：
+- ✅ **需要修复** — 修改trim_history逻辑：对assistant消息按"含tool_calls优先"排序，确保FC配对在裁剪后仍完整
+- **修改范围**：`message_builder.py`中trim_history()调整assistant_msgs筛选逻辑
+
 #### 问题 P5: observation去重基于MD5指纹不够精确
 
 **现状**: `_dedup_by_fingerprint` 使用`md5(content.encode())[:16]`作为指纹。
@@ -490,6 +566,18 @@ _process_tool_params(tool_params, tool_name, output)
 - FC协议消息跳过去重（`role=tool`），但Text策略的重复observation不会被去重
 
 **建议**: 考虑基于tool_name+tool_params的语义去重，或保留时间戳信息辅助判断。
+
+**10大原则评估（2026-06-11 小沈复核3轮）**:
+
+| 轮次 | 复核内容 | 结论 |
+|------|---------|------|
+| 第1轮 | 正确性：MD5(content)去重针对observation文本（工具执行结果），"相同内容不同语义"的说法牵强 | 同工具同内容=重复信息，去重合理；FC协议的role:tool已跳过去重 |
+| 第2轮 | 10原则：KISS✅(MD5简单高效), YAGNI❌(语义去重是过度设计，收益极低) | **建议方案违反YAGNI** — 工具返回相同结果就是重复，无需语义判断 |
+| 第3轮 | 边界/副作用：MD5碰撞概率2^(-64)，可忽略；空内容时所有空observation被去重→合理 | 当前方案完全满足需求 |
+
+**最终结论**：
+- 🚫 **不修改** — 当前`_dedup_by_fingerprint`方案符合KISS原则
+- **理由**：原建议的"语义去重"违反YAGNI，收益极低(0.01%场景)且复杂度大增；MD5去重已满足需求
 
 #### 问题 P6: temp_history与conversation_history的分离不够清晰
 
@@ -501,6 +589,18 @@ _process_tool_params(tool_params, tool_name, output)
 **问题**: temp_history的生命周期管理不够明确，可能出现数据丢失。
 
 **建议**: 明确temp_history的语义：是"等待确认的assistant消息"还是"流式输出缓冲"，统一管理逻辑。
+
+**10大原则评估（2026-06-11 小沈复核3轮）**:
+
+| 轮次 | 复核内容 | 结论 |
+|------|---------|------|
+| 第1轮 | 正确性：temp_history=流式chunk缓冲，conversation_history=正式历史，职责分离清晰 | 当前语义已明确：temp=临时缓冲，conv=正式消息 |
+| 第2轮 | 10原则：KISS✅(temp/conv分离直白), SRP✅(各管各的), SLAP✅(_cap_temp_history在prepare时执行合理) | **设计合理，无需修改** |
+| 第3轮 | 边界/副作用：极端长流式输出>50000 chars→_cap_temp_history从最旧chunk清理→最新chunk保留 | 容量保护行为正确，"数据丢失"属于正常保护行为 |
+
+**最终结论**：
+- 🚫 **不修改** — 当前设计符合KISS/SRP/SLAP原则
+- **改进建议**：在代码注释中明确说明`temp_history=流式输出缓冲`语义，避免未来开发者困惑
 
 ### 7.3 LLM调用链的不合理
 
@@ -515,6 +615,18 @@ _process_tool_params(tool_params, tool_name, output)
 
 **建议**: 降级时需要清理FC协议消息，或在Text模式下重新构建消息列表。
 
+**10大原则评估（2026-06-11 小沈复核3轮）**:
+
+| 轮次 | 复核内容 | 结论 |
+|------|---------|------|
+| 第1轮 | 正确性：FC降级到Text时，messages中残留FC配对(assistant+tool_calls, role:tool) | Text模式LLM看不到FC格式，FC配对变成"不明角色"消息，可能混淆 |
+| 第2轮 | 10原则：SRP✅(FC/Text模式各司其职), SLAP❌(降级路径没有清理模式相关状态) | 降级是跨模式状态转换，应在转换时清理旧模式残留 |
+| 第3轮 | 边界/副作用：将FC配对转为role:user+[Tool Result]格式后→Text模式LLM正常理解 | 转换是安全的，只影响消息格式不影响语义 |
+
+**最终结论**：
+- ✅ **需要修复** — 在`_call_llm_fc_stream`降级到`_call_llm_text_stream`前，将FC配对消息统一转为Text格式(role:user+[Tool Result])
+- **修改范围**：`universal_agent.py`中_call_llm_fc_stream降级路径，增加消息格式转换
+
 #### 问题 P8: _build_executed_tool_summary注入为system角色
 
 **现状**: `messages.append({"role": "system", "content": executed_summary})`
@@ -524,6 +636,18 @@ _process_tool_params(tool_params, tool_name, output)
 - 可能导致LLM误解消息角色
 
 **建议**: 将已执行工具信息追加到System Prompt末尾，或作为user消息注入。
+
+**10大原则评估（2026-06-11 小沈复核3轮）**:
+
+| 轮次 | 复核内容 | 结论 |
+|------|---------|------|
+| 第1轮 | 正确性：`messages.append({"role":"system","content":executed_summary})` | 验证OpenAI API：system消息允许在任何位置（非违规），只是语义上"角色定义"vs"执行摘要"不匹配 |
+| 第2轮 | 10原则：KISS✅(直接append最简单), SRP⚠️(用system角色承载"工具摘要"语义错位但不影响功能) | **不是违反API规范**，只是语义上不够优雅 |
+| 第3轮 | 边界/副作用：改为追加到System Prompt末尾→需要重建消息或修改system prompt字符串 | 修改成本>收益，当前方案不影响功能正确性 |
+
+**最终结论**：
+- 🚫 **不修改** — 当前方案不影响功能正确性
+- **理由**：OpenAI等主流API允许system消息在任意位置；用system角色承载辅助信息虽语义不纯粹但实践中广泛使用；改到user角色或追加到system prompt末尾的收益极低
 
 ### 7.4 响应解析链的不合理
 
@@ -536,6 +660,18 @@ _process_tool_params(tool_params, tool_name, output)
 - chunk_handler会将chunk内容追加到chunk_buffer，最终可能被提升为implicit
 
 **建议**: 对于明显不是工具调用的文本（如纯英文段落），应直接作为answer处理而非chunk。
+
+**10大原则评估（2026-06-11 小沈复核3轮）**:
+
+| 轮次 | 复核内容 | 结论 |
+|------|---------|------|
+| 第1轮 | 正确性：Text模式LLM输出自然语言→无法提取JSON→chunk是正常流程 | **不是降级问题**，而是Text模式的常规路径 | 
+| 第2轮 | 10原则：KISS✅(Text→chunk累积→implicit, 流程清晰), SLAP✅(chunk=流式片段, 语义正确) | 当前行为完全符合chunk的语义定义 |
+| 第3轮 | 边界/副作用：LLM输出纯文本→chunk累积→ChunkBuffer触发阈值→flush为implicit→最终返回 | 整个链条正确：chunk→implicit是正常Text模式输出路径 |
+
+**最终结论**：
+- 🚫 **不修改** — 当前行为是Text模式的正确路径
+- **理由**：chunk的语义就是"流式内容片段"，非JSON文本就是LLM的自然语言输出，经ChunkBuffer累积后产生implicit响应；如果提前判断为answer，会打乱流式输出的渐进式渲染
 
 #### 问题 P10: _normalize_tool_params_content的类型转换可能丢失信息
 
@@ -551,6 +687,18 @@ if isinstance(field_value, (list, dict)):
 
 **建议**: 保留原始类型，仅在最终工具调用时进行序列化。
 
+**10大原则评估（2026-06-11 小沈复核3轮）**:
+
+| 轮次 | 复核内容 | 结论 |
+|------|---------|------|
+| 第1轮 | 正确性：`json.dumps(list/dict)`→字符串→下游工具收到字符串需要再解析 | 如果工具需要接收number/bool，当前的确发生类型丢失 |
+| 第2轮 | 10原则：KISS✅(json.dumps简单), SLAP❌(类型转换发生在解析层但影响执行层) | 参数类型转换应该在离调用点最近的地方做 |
+| 第3轮 | 边界/副作用：实际观察所有工具接收的参数→大多数接受字符串参数（内部二次解析），仅少数需要原始类型 | 影响范围小，但确实存在隐患 |
+
+**最终结论**：
+- ⚠️ **低优先级，建议优化** — 将类型转换从解析层延迟到`tool_executor.execute_tool()`层
+- **理由**：遵循SLAP原则，解析层保持原始类型，字符串化在工具执行层；实际影响小但设计上更清晰
+
 ### 7.5 前端SSE处理的不合理
 
 #### 问题 P11: sessionStorage备份可能导致数据不一致
@@ -562,6 +710,18 @@ if isinstance(field_value, (list, dict)):
 - 多个步骤快速到达时，保存可能只保存了中间状态
 
 **建议**: 使用防抖(debounce)机制，确保保存的是最终状态。
+
+**10大原则评估（2026-06-11 小沈复核3轮）**:
+
+| 轮次 | 复核内容 | 结论 |
+|------|---------|------|
+| 第1轮 | 正确性：setTimeout(0)异步保存→快步骤只保存中间态→刷新丢失最后步骤 | 真实的前端数据一致性问题 |
+| 第2轮 | 10原则：本报告专注后端分析，前端问题仅做记录 | 不在后端优化范围内 |
+| 第3轮 | 影响评估：低概率场景（用户恰好刷新在渲染间隙），不影响核心功能 | 低风险度 |
+
+**最终结论**：
+- 🔘 **前端问题，本报告不做修改**
+- **理由**: 前端范围，本报告专注后端Prompt/Message/History分析
 
 #### 问题 P12: 前端timestamp处理逻辑分散
 
@@ -580,6 +740,18 @@ if (typeof rawData.timestamp === 'number') {
 - 前端的fallback到`Date.now()`掩盖了后端问题
 
 **建议**: 后端统一使用ISO字符串格式，前端简化解析逻辑。
+
+**10大原则评估（2026-06-11 小沈复核3轮）**:
+
+| 轮次 | 复核内容 | 结论 |
+|------|---------|------|
+| 第1轮 | 正确性：前端有复杂的类型判断(number→Date, string→parse, Date.now() fallback) | 后端格式统一可大幅简化前端 |
+| 第2轮 | 10原则：本报告专注后端分析，前端问题仅做记录 | 不在后端优化范围内 |
+| 第3轮 | 影响评估：不影响功能正确性，只是代码质量优化 | 低风险度 |
+
+**最终结论**：
+- 🔘 **前端问题，本报告不做修改**
+- **理由**: 前端范围，本报告专注后端Prompt/Message/History分析
 
 ---
 
@@ -617,22 +789,34 @@ if (typeof rawData.timestamp === 'number') {
 
 ## 九、总结与建议优先级 2026-06-10 15:40:46
 
-### 9.1 按优先级排序的问题清单
+### 9.1 按优先级排序的问题清单（10大原则复核后 2026-06-11 小沈更新）
 
-| 优先级 | 问题 | 影响范围 | 建议 |
-|--------|------|---------|------|
-| **P0** | P3: OUTPUT_FORMAT与解析逻辑语义差异 | 所有意图 | 统一Prompt与解析器的格式约定 |
-| **P1** | P1: 网络/文档/桌面Prompt硬编码 | 3个意图 | 统一使用build_tool_descriptions() |
-| **P1** | P7: FC降级丢失tool_calls上下文 | FC模式 | 降级时清理FC消息 |
-| **P1** | P4: assistant消息保留策略 | History管理 | 考虑FC配对完整性 |
-| **P2** | P2: 部分Prompt缺少reasoning示例 | 3个意图 | 统一示例格式 |
-| **P2** | P8: tool_summary注入为system角色 | LLM调用 | 改为追加到System Prompt |
-| **P2** | P9: 解析器chunk降级过于宽松 | 响应解析 | 区分纯文本vs工具调用 |
-| **P3** | P5: observation去重不够精确 | History管理 | 基于语义去重 |
-| **P3** | P6: temp_history生命周期不明确 | History管理 | 统一管理逻辑 |
-| **P3** | P10: 参数类型转换丢失信息 | 响应解析 | 保留原始类型 |
-| **P3** | P11: sessionStorage异步保存 | 前端 | 使用debounce |
-| **P3** | P12: timestamp处理分散 | 前端 | 后端统一格式 |
+| 优先级 | 问题 | 10原则复盘结论 | 处理建议 | 状态 |
+|--------|------|---------------|---------|------|
+| **P0** | P3: OUTPUT_FORMAT与解析逻辑语义差异 | 违反KISS+SLAP+禁止backward compatibility | 移除旧格式(action+action_input, name+arguments)支持，只保留tool_name+tool_params | ✅ 需修复 |
+| **P1** | P7: FC降级丢失tool_calls上下文 | 违反SLAP(降级路径未清理旧模式状态) | 降级前将FC配对(assistant+tool_calls, role:tool)统一转为Text格式(role:user+[Tool Result]) | ✅ 需修复 |
+| **P1** | P4: assistant消息保留策略[-10:] | 违反SLAP(FC模式下assistant含tool_calls应受保护) | 修改trim_history：含tool_calls的assistant消息优先保留 | ✅ 需修复 |
+| **P1** | P1: 硬编码工具描述 | 违反DRY+OCP(工具描述在ToolRegistry和Prompt中重复) | 使用build_tool_descriptions()做基础结构，保留各模板特有场景/示例 | ✅ 需修复 |
+| **P3** | P10: 参数类型转换丢失信息 | 违反SLAP(类型转换在解析层但影响执行层) | 延迟到tool_executor.execute_tool()层字符串化 | ⚠️ 建议优化 |
+| **P3** | P2: 缺少reasoning示例 | 纯Prompt优化，不影响功能 | 统一格式化但不紧急 | ⚠️ 可暂缓 |
+| **—** | P5: observation去重基于MD5 | 符合KISS+YAGNI(当前方案合理) | **不修改**，原语义去重建议违反YAGNI | 🚫 不修 |
+| **—** | P6: temp_history生命周期 | 符合KISS+SRP+SLAP(当前设计合理) | **不修改**，仅建议加注释 | 🚫 不修 |
+| **—** | P8: tool_summary注入system角色 | OpenAI API允许system消息在任意位置 | **不修改**，当前方案不影响功能 | 🚫 不修 |
+| **—** | P9: 解析器chunk降级宽松 | 符合KISS+SLAP(Text→chunk是正常路径) | **不修改**，当前行为正确 | 🚫 不修 |
+| **—** | P11: sessionStorage异步保存 | 前端问题 | 由前端专案处理 | 🔘 前端 |
+| **—** | P12: timestamp处理分散 | 前端问题 | 由前端专案处理 | 🔘 前端 |
+
+### 9.2 10原则复核关键发现
+
+1. **P5/P6/P8/P9被原文档判定为问题，但10原则复核后判定为"当前合理，不修改"**
+   - P5: MD5去重足够，语义去重是YAGNI过度设计
+   - P6: temp_history/conv_history分离清晰，设计合理
+   - P8: OpenAI API允许system消息任意位置，非规范问题
+   - P9: chunk降级是Text模式正常行为，非降级问题
+
+2. **P3的修复优先级最高** — 违反禁止backward compatibility原则，应移除旧格式支持
+
+3. **P7的修复范围最关键** — FC降级是真实的生产故障路径（网络波动时触发）
 
 ### 9.2 设计亮点
 
@@ -646,6 +830,8 @@ if (typeof rawData.timestamp === 'number') {
 ---
 
 **报告完成时间**: 2026-06-10 15:40:46
+**报告更新时间**: 2026-06-11 06:38:39（v1.1 10大原则复核）
 **执行人**: 小沈
-**复查轮数**: 5轮
+**初始复查轮数**: 5轮（v1.0）
+**10原则复核轮数**: 3轮×12问题（v1.1）
 **涉及文件数**: 30+个核心文件

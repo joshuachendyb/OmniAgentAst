@@ -5,6 +5,7 @@ NetworkPrompts - 网络通信 Prompt模板
 P0优先级:URL/参数易错,超时重试策略需引导
 
 Author: 小健 - 2026-05-06
+P1修复 — 小欧 2026-06-11: 硬编码工具描述改为build_tool_descriptions()动态生成(DRY+OCP)
 """
 from datetime import datetime
 
@@ -18,55 +19,26 @@ class NetworkPrompts(BasePrompts):
     
     def get_system_prompt(self) -> str:
         system_info = get_system_prompt_string(include_commands=False)  # 【修复 2026-05-14 小沈】NetworkAgent不注入命令格式,避免LLM幻觉调execute_shell_command
-        return system_info + """
+        tools = ["http_request", "download_file", "fetch_webpage", "search_web", "network_diagnose"]
+        tool_descriptions = self.build_tool_descriptions(tools, category_label="NETWORK")
+        return f"""{system_info}
 You are a professional network operations assistant. You help users make HTTP requests, download files, fetch web content, search the web, test connectivity, and check ports.
 
-【Available NETWORK Tools — 共5个】:
-
-1. http_request - Send HTTP request
-   - 使用场景: GET/POST/PUT/DELETE requests, API calls
-   - Returns: status_code, headers, body, elapsed_time
-   - Examples:
-     * http_request(url="https://api.example.com/data", method="GET")
-     * http_request(url="https://api.example.com/users", method="POST", json_body={"name": "test"})
-
-2. download_file - Download file from URL
-   - 使用场景: download files, save remote content to disk
-   - Returns: file_path, file_size, content_type
-   - Examples:
-     * download_file(url="https://example.com/file.zip", destination_path="D:\\downloads\\file.zip")
-
-3. fetch_webpage - Fetch and extract webpage content
-   - 使用场景: read webpage text, extract content from URL
-   - Returns: title, content, links, metadata
-   - Examples:
-     * fetch_webpage(url="https://example.com", extract_format="markdown")
-
-4. search_web - Search the web
-   - 使用场景: search for information, find URLs, get current data
-   - Returns: results with title, url, snippet
-   - Examples:
-     * search_web(query="Python async tutorial", num_results=5)
-
-5. network_diagnose - Network connectivity diagnostics
-   - 使用场景: ping test, port check
-   - Returns: reachable, latency, packet_loss, port_status
-   - Examples:
-     * network_diagnose(host="8.8.8.8")
-     * network_diagnose(host="localhost", mode="port", port=8080)
+【Available NETWORK Tools】:
+{tool_descriptions}
 
 【Tool Call Examples】:
 Example 1: GET请求
-{"thought": "用户要获取接口数据", "reasoning": "使用http_request执行GET请求", "tool_name": "http_request", "tool_params": {"url": "https://api.example.com/users", "method": "GET"}}
+{{"thought": "用户要获取接口数据", "reasoning": "使用http_request执行GET请求", "tool_name": "http_request", "tool_params": {{"url": "https://api.example.com/users", "method": "GET"}}}}
 
 Example 2: POST请求
-{"thought": "用户要创建资源", "reasoning": "使用http_request执行POST请求,json_body传数据", "tool_name": "http_request", "tool_params": {"url": "https://api.example.com/users", "method": "POST", "json_body": {"name": "test"}}}
+{{"thought": "用户要创建资源", "reasoning": "使用http_request执行POST请求,json_body传数据", "tool_name": "http_request", "tool_params": {{"url": "https://api.example.com/users", "method": "POST", "json_body": {{"name": "test"}}}}}}
 
 Example 3: 网络诊断
-{"thought": "用户要测试网络连通性", "reasoning": "使用network_diagnose测试ping", "tool_name": "network_diagnose", "tool_params": {"host": "baidu.com", "count": 4}}
+{{"thought": "用户要测试网络连通性", "reasoning": "使用network_diagnose测试ping", "tool_name": "network_diagnose", "tool_params": {{"host": "baidu.com", "count": 4}}}}
 
 Example 4: 任务完成
-{"thought": "网络请求已完成", "reasoning": "请求成功,数据已返回", "tool_name": "finish", "tool_params": {"result": "获取到100条数据"}}
+{{"thought": "网络请求已完成", "reasoning": "请求成功,数据已返回", "tool_name": "finish", "tool_params": {{"result": "获取到100条数据"}}}}
 """
     
 
