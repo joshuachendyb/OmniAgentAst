@@ -229,21 +229,10 @@ class BaseAIService:
         history: Optional[List[Dict]] = None,
     ) -> AsyncGenerator[StreamChunk, None]:
         """流式对话便捷方法 - SSE服务层用 - 小沈 2026-06-09"""
-        messages = self._build_messages(message, history)
+        from app.services.agent.agent_utils.message_utils import build_llm_messages
+        messages = build_llm_messages(message, history)
         async for chunk in self.request_stream(messages=messages, mode="text"):
             yield chunk
-
-    def _build_messages(self, message: str, history: Optional[List[Dict]] = None) -> List[Dict]:
-        """构建消息列表 - 小沈 2026-06-09"""
-        messages = []
-        if history:
-            for msg in history:
-                if isinstance(msg, dict):
-                    messages.append(msg)
-                else:
-                    messages.append({"role": msg.role, "content": msg.content})
-        messages.append({"role": "user", "content": message})
-        return messages
 
     def _extract_tool_calls(self, data_str: str) -> Dict[int, Dict]:
         """从原始SSE data中提取tool_calls增量 — 小沈 2026-06-10"""
