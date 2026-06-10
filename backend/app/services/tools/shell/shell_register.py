@@ -188,7 +188,7 @@ def _register_shell_tools():
             safety_level=safety_levels.get(name, ToolSafetyLevel.SAFE),  # 【v3.4新增】
             action_safety_map=action_safety_maps.get(name),  # 【v3.4新增】
         )
-        logger.info(f"[shell_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个, safety: {safety_levels.get(name, ToolSafetyLevel.SAFE).value}")
+        logger.debug(f"[shell_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个, safety: {safety_levels.get(name, ToolSafetyLevel.SAFE).value}")
 
 
 

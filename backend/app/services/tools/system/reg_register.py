@@ -79,7 +79,7 @@ def _register_registry_tools():
             input_model=input_model,
             examples=examples,
         )
-        logger.info(
+        logger.debug(
             f"[registry_register] 已注册工具: {name}, "
             f"使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, "
             f"examples: {len(examples)}个"

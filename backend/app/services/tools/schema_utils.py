@@ -81,7 +81,7 @@ def _generate_input_schema(input_model: Optional[Type[BaseModel]], input_schema:
     try:
         schema = input_model.model_json_schema()
         schema = _fix_schema_types(schema)
-        logger.info(f"[ToolRegistry.register] 从 Pydantic 模型生成 input_schema")
+        logger.debug(f"[ToolRegistry.register] 从 Pydantic 模型生成 input_schema")
         return schema
     except Exception as e:
         logger.error(f"[ToolRegistry.register] 从 Pydantic 模型生成 Schema 失败: {e}")

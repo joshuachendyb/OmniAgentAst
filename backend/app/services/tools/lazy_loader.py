@@ -54,20 +54,23 @@ def ensure_tools_registered() -> None:
         return
 
     from app.utils.logger import logger
+    from app.services.tools.registry import tool_registry
     _failed = False
     for cat_name, (module_path, register_func) in CATEGORY_MODULES.items():
         if cat_name not in _registered_categories:
             try:
+                count_before = len(tool_registry._tools)
                 _import_and_register(module_path, register_func)
+                count_after = len(tool_registry._tools)
                 _registered_categories.add(cat_name)
-                logger.info(f"[Tools] 全量注册分类: {cat_name}")
+                logger.info(f"[Tools] 分类 {cat_name} 注册完成, {count_after - count_before}个工具")
             except Exception as e:
                 logger.error(f"[Tools] 注册分类{cat_name}失败: {e}")
                 _failed = True
-    # 【修复 问题5 小沈 2026-05-15】有分类注册失败时不标记完成
     if not _failed:
         _tools_registered = True
-        logger.info(f"[Tools] 全部工具已注册完成,共{len(_registered_categories)}个分类")
+        total_tools = len(tool_registry._tools)
+        logger.info(f"[Tools] 全部注册完成, {total_tools}个工具, {len(_registered_categories)}个分类")
     else:
         logger.warning(f"[Tools] 部分分类注册失败,已注册{len(_registered_categories)}个分类,下次调用将重试")
 

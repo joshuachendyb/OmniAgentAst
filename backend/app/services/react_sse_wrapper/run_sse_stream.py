@@ -25,8 +25,8 @@ async def run_sse_stream(
     session_id: str,
     current_execution_steps: List,
     stream_state: Any = None,
-    current_content_holder: list = None,
-    llm_call_count_holder: list = None,
+    current_content_holder: Optional[list] = None,
+    llm_call_count_holder: Optional[list] = None,
 ) -> AsyncGenerator[str, None]:
     """纯SSE流运行器 — 小沈 2026-06-09 支持StreamState"""
     from app.services.agent.agent_factory import AgentFactory

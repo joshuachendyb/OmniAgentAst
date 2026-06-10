@@ -384,7 +384,7 @@ def _register_file_tools():
             action_safety_map=action_safety_maps.get(name),  # 【v3.4新增】
         )
 
-        logger.info(
+        logger.debug(
             f"[file_register] 已注册工具: {name}, Pydantic模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个, safety: {safety_levels.get(name, ToolSafetyLevel.SAFE).value}"
         )
 

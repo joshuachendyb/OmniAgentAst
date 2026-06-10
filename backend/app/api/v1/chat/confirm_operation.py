@@ -24,7 +24,7 @@ class _PendingConfirmation:
     created_at: float
 
 
-_CONFIRM_TIMEOUT = 60  # 统一超时（与wait_for_confirmation默认timeout一致）
+_CONFIRM_TIMEOUT = 120  # 增加到120s — 修复SSE延迟导致的超时（auth事件yield到客户端需60s）— 小沈 2026-06-10
 _pending_confirmations: Dict[str, _PendingConfirmation] = {}
 _last_cleanup_time: float = 0.0  # 上次清理时间戳
 _CLEANUP_INTERVAL = 10  # 【修复P1-3 2026-06-09 小沈】30秒→10秒，更频繁清理
@@ -93,7 +93,7 @@ async def create_confirmation(task_id: str) -> str:
     return confirm_id
 
 
-async def wait_for_confirmation_result(confirm_id: str, timeout: int = 60) -> Dict:
+async def wait_for_confirmation_result(confirm_id: str, timeout: int = 120) -> Dict:
     """
     等待用户确认结果
     
@@ -115,4 +115,4 @@ async def wait_for_confirmation_result(confirm_id: str, timeout: int = 60) -> Di
         _pending_confirmations.pop(confirm_id, None)  # 保证清理
 
 
-__all__ = ["confirm_operation", "wait_for_confirmation"]
+__all__ = ["confirm_operation", "create_confirmation", "wait_for_confirmation_result"]

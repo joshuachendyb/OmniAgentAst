@@ -13,7 +13,7 @@ from app.utils.time_utils import now_str
 from app.services.llm_core import BaseAIService
 from app.services.factory.close_instance_sync import close_instance_sync
 
-logger = setup_logger("OmniAgentAst.AIServiceFactory")
+logger = setup_logger(__name__)
 
 _instance: Optional[BaseAIService] = None
 _current_provider: str = ""

@@ -2,16 +2,17 @@
 """
 action_handler — action类型处理（SRP拆分）
 
-ActionHandler类: 4个职责单一的方法
-- check_safety: 安全检查 → 返回(events, blocked?)
-- wait_confirmation: HITL确认 → 返回(events, rejected?)
+ActionHandler类: 3个职责单一的方法
+- check_safety_and_confirm: 安全检查+HITL确认(async generator,IncidentStep先yield再等确认)
 - execute_tools: 工具执行 → 返回results
 - build_observation: 构建observation → 返回events
 
 小沈 2026-06-09
+小沈 2026-06-10 合并check_safety+wait_confirmation,消除重复check_before_execute调用
+小沈 2026-06-10 修复HITL bug: check_safety_and_confirm改为async generator,IncidentStep先yield再等确认
 """
 import asyncio
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any
 
 from app.utils.logger import logger
 from app.services.agent.steps import ThoughtStep, ActionToolStep, ObservationStep, ErrorStep, IncidentStep
@@ -22,36 +23,26 @@ _SENSITIVE_FIELDS = {"password", "token", "api_key", "secret", "authorization", 
 
 class ActionHandler:
 
-    async def check_safety(self, agent, all_calls: List[Dict], step: int) -> Tuple[List, bool]:
-        """安全检查 — 返回(events, blocked) — 小沈 2026-06-09"""
+    async def check_safety_and_confirm(self, agent, all_calls: List[Dict], step: int):
+        """安全检查+HITL确认 — async generator: IncidentStep先yield给前端,再等确认 — 小沈 2026-06-10
+        
+        yield 事件给SSE流，return True=应停止, False=可继续
+        """
         from app.services.safety.tool_safety_checker import get_tool_safety_checker
+        from app.api.v1.chat.confirm_operation import create_confirmation, wait_for_confirmation_result
 
-        events = []
         safety_checker = get_tool_safety_checker()
 
         for call in all_calls:
             safety_result = safety_checker.check_before_execute(call["tool_name"], call["tool_params"])
 
             if safety_result.get("blocked"):
-                events.append(agent._step_emitter.emit(ErrorStep(
+                yield agent._step_emitter.emit(ErrorStep(
                     step=step,
                     error_type="blocked",
                     error_message=safety_result["message"]
-                )))
-                return events, True
-
-        return events, False
-
-    async def wait_confirmation(self, agent, all_calls: List[Dict], step: int) -> Tuple[List, bool]:
-        """HITL确认 — 返回(events, rejected) — 小沈 2026-06-09"""
-        from app.services.safety.tool_safety_checker import get_tool_safety_checker
-        from app.api.v1.chat.confirm_operation import create_confirmation, wait_for_confirmation_result
-
-        events = []
-        safety_checker = get_tool_safety_checker()
-
-        for call in all_calls:
-            safety_result = safety_checker.check_before_execute(call["tool_name"], call["tool_params"])
+                ))
+                return
 
             if safety_result.get("requires_confirmation"):
                 desensitized_params = {k: v for k, v in call["tool_params"].items()
@@ -59,7 +50,7 @@ class ActionHandler:
 
                 confirm_id = await create_confirmation(agent.task_id)
 
-                events.append(agent._step_emitter.emit(IncidentStep(
+                yield agent._step_emitter.emit(IncidentStep(
                     step=step,
                     incident_value="authorization_required",
                     message=f"需要用户确认工具执行: {call['tool_name']}",
@@ -69,19 +60,17 @@ class ActionHandler:
                         "params": desensitized_params,
                         "safety_level": safety_result["safety_level"],
                     },
-                )))
+                ))
 
-                auth = await wait_for_confirmation_result(confirm_id, timeout=60)
+                auth = await wait_for_confirmation_result(confirm_id, timeout=120)
 
                 if not auth.get("confirmed"):
-                    events.append(agent._step_emitter.emit(ErrorStep(
+                    yield agent._step_emitter.emit(ErrorStep(
                         step=step,
                         error_type="user_rejected",
                         error_message=f"用户拒绝执行工具: {call['tool_name']}"
-                    )))
-                    return events, True
-
-        return events, False
+                    ))
+                    return
 
     async def execute_tools(self, agent, all_calls: List[Dict], is_parallel: bool,
                             tool_name: str, tool_params: Dict) -> List[Any]:
@@ -167,16 +156,13 @@ class ActionHandler:
             reasoning=parsed.get("reasoning", ""),
         ))
 
-        safety_events, blocked = await self.check_safety(agent, all_calls, step)
-        for event in safety_events:
+        should_stop = False
+        async for event in self.check_safety_and_confirm(agent, all_calls, step):
             yield event
-        if blocked:
-            return
-
-        confirm_events, rejected = await self.wait_confirmation(agent, all_calls, step)
-        for event in confirm_events:
-            yield event
-        if rejected:
+            if hasattr(event, 'error_type') or (hasattr(event, 'incident_value') and event.incident_value == 'authorization_required'):
+                if hasattr(event, 'error_type'):
+                    should_stop = True
+        if should_stop:
             return
 
         results = await self.execute_tools(agent, all_calls, is_parallel, tool_name, tool_params)

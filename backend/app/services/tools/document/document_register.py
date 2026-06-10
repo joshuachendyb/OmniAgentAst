@@ -343,7 +343,7 @@ def _register_document_tools():
             input_model=input_model,
             examples=examples,
         )
-        logger.info(
+        logger.debug(
             f"[document_register] 已注册工具: {name}, "
             f"Pydantic模型: {input_model.__name__ if input_model else 'None'}, "
             f"examples: {len(examples)}个"
