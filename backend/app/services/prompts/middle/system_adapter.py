@@ -189,7 +189,7 @@ def get_system_prompt(include_commands: bool = True) -> str:
     - 其他Agent调用时传include_commands=False(避免LLM幻觉调execute_shell_command)
     """
     adapter = get_system_adapter()
-    logger.info(f"[Prompt中间层] get_system_prompt() 被调用, 服务器OS: {adapter.get_system_name()}, include_commands={include_commands}")
+    logger.debug(f"[Prompt中间层] OS={adapter.get_system_name()}, include_commands={include_commands}")
     return adapter.generate_system_prompt(include_commands=include_commands)
 
 

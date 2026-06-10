@@ -9,13 +9,24 @@ Author: 小沈 - 2026-06-09
 from typing import Dict
 
 from app.services.agent.types import AgentStatus
+from app.services.agent.steps import FinalStep
 
 
 async def handle_parse_error(agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
     """处理parse_error类型
     
-    从react_cycle.py第240-246行拷出，保持业务逻辑不变
+    LLM返回了非JSON文本时（FC模式下LLM直接回答），应以文本作为最终回答完成，
+    而非报错FAILED。— 小沈 2026-06-10
     """
+    if llm_response and isinstance(llm_response, str) and len(llm_response.strip()) > 5:
+        yield agent._step_emitter.emit(FinalStep(
+            step=step_counter[0],
+            response=llm_response.strip(),
+            thought=parsed.get("error", ""),
+        ))
+        agent.status = AgentStatus.COMPLETED
+        return
+
     yield agent._step_emitter.exit_with_error(
         step_count=step_counter[0], error_type="parse_error",
         error_message=parsed.get("error", "Unknown parse error"),

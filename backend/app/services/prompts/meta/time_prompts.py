@@ -28,7 +28,7 @@ class TimePrompts(BasePrompts):
     def get_system_prompt(self) -> str:
         """获取增强版系统Prompt"""
         system_info = get_system_prompt_string(include_commands=False)  # 【修复 2026-05-14 小沈】TimeAgent不注入命令格式
-        logger.info(f"[TimePrompts] get_system_prompt() 被调用,中间层已注入系统信息,长度: {len(system_info)}")
+        logger.debug(f"[TimePrompts] 系统信息长度: {len(system_info)}")
 
         return system_info + """
 

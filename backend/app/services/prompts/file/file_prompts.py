@@ -37,7 +37,7 @@ class FileOperationPrompts(BasePrompts):
     def get_system_prompt(self) -> str:
         """获取增强版系统Prompt - 小沈 2026-05-25 重构拆分"""
         system_info = get_system_prompt_string(include_commands=False)
-        logger.info(f"[FileOperationPrompts] get_system_prompt() 被调用,中间层已注入系统信息,长度: {len(system_info)}")
+        logger.debug(f"[FilePrompts] 系统信息长度: {len(system_info)}")
 
         from app.utils.prompt_logger import get_prompt_logger
         prompt_logger = get_prompt_logger()
