@@ -1397,6 +1397,11 @@ def _build_avoid_repeat_rules(self) -> str:
 - **只做提取，不做合并**：OUTPUT_FORMAT和TOOL_CALL_RULES职责不同，不应合并（SRP）
 - **不改TOOL_CALL_RULES内容**：原有7条禁止项各有价值，删除其中任何一条都可能导致LLM行为异常
 
+> **📋 修复复核（小健 2026-06-11）**：
+> - ✅ **已修复**：`AVOID_REPEAT_RULES` 已提取为 `BasePrompts` 类常量（`base_prompt_template.py:106`）
+> - ✅ **修复方式正确**：`build_full_system_prompt()` 中 `parts.append(self.AVOID_REPEAT_RULES)` 引用类常量，不再硬编码
+> - ✅ **10大原则符合**：DRY（常量只定义一次）、KISS（简单提取）、禁止backward（删除方法内硬编码）
+
 #### 问题2：示例硬编码
 
 **位置**: `file_prompts.py`, `desktop_prompts.py`, `system_prompts.py`
@@ -1452,6 +1457,11 @@ def _build_examples() -> str:
 ```
 - **核心修复：示例必须使用系统已注册的真实工具名**（PS：`file_prompts.py` 和 `desktop_prompts.py` 的示例中 `read_file` 是正确的，仅 `system_prompts.py` 的通用示例使用了不存在工具）
 - **同时更新 `file_prompts.py` 和 `desktop_prompts.py` 的 `_build_examples()` 调用方式**：统一使用 `SystemPrompts._build_examples()` 的输出格式
+
+> **📋 修复复核（小健 2026-06-11）**：
+> - ✅ **已修复**：`system_prompts.py:49-56` 的 `_EXAMPLE_TEMPLATES` 已替换为真实工具名（`get_time`/`query_calendar`/`get_system_info`/`list_processes`）
+> - ✅ **修复方式正确**：所有示例工具名均属于 `FUND_RUNTIME` 分类，不再引用不存在的工具
+> - ✅ **10大原则符合**：DRY（模板池统一格式）、KISS（只改数据不改逻辑）
 
 #### 问题3：候选意图提示可能干扰判断
 
