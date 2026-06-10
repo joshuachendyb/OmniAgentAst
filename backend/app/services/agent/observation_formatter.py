@@ -118,8 +118,11 @@ def _format_next_actions(result: dict, text: str) -> str:
 
 
 def _extract_display_data(result: dict) -> Any:
-    """提取display_data — 小沈 2026-06-08"""
-    display_data = result.get("llm_data") or result.get("data")
+    """提取display_data — 小沈 2026-06-08 | P1修复: or→is not None(空字典误回退) — 小欧 2026-06-11"""
+    llm_data = result.get("llm_data")
+    if llm_data is not None:
+        return llm_data
+    return result.get("data")
     if display_data is None:
         from app.utils.logger import logger as _logger
         _logger.warning("[OBS-001] format_llm_observation: llm_data和data均为空")

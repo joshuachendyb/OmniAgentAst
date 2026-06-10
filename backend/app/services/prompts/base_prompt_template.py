@@ -107,6 +107,16 @@ class BasePrompts(ABC):
 - 已获取的信息直接使用,不需要重新获取
 - 失败后优先尝试替代方法,而非反复重试同一方法"""
 
+    # 【2026-06-11 小欧】M1修复:从react_cycle.py移入,与OUTPUT_FORMAT/TOOL_CALL_RULES同级
+    TOOL_REMINDER = (
+        "【系统提示·工具调用提醒】\n"
+        "你刚才的回复没有调用任何工具。用户请求需要实际操作才能完成，"
+        "你必须使用工具来执行。\n"
+        "请重新输出JSON格式，包含 tool_name 和 tool_params。\n"
+        '示例: {"thought": "分析", "reasoning": "理由", "tool_name": "write_text_file", "tool_params": {"file_path": "D:/test.txt", "text": "hello"}}\n'
+        "如果不需要工具（用户只是闲聊），请用 tool_name: finish 结束。"
+    )
+
 
     @abstractmethod
     def get_system_prompt(self) -> str:

@@ -22,6 +22,7 @@ from app.services.agent.core_agent.handlers import (
     handle_action, handle_answer, handle_chunk,
     handle_parse_error, handle_unknown,
 )
+from app.services.prompts.base_prompt_template import BasePrompts
 
 
 _TYPE_HANDLERS: OrderedDict[str, callable] = OrderedDict([
@@ -33,14 +34,7 @@ _TYPE_HANDLERS: OrderedDict[str, callable] = OrderedDict([
 ])
 _DEFAULT_HANDLER = handle_unknown
 
-_TOOL_REMINDER = (
-    "【系统提示·工具调用提醒】\n"
-    "你刚才的回复没有调用任何工具。用户请求需要实际操作才能完成，"
-    "你必须使用工具来执行。\n"
-    "请重新输出JSON格式，包含 tool_name 和 tool_params。\n"
-    '示例: {"thought": "分析", "reasoning": "理由", "tool_name": "write_text_file", "tool_params": {"file_path": "D:/test.txt", "text": "hello"}}\n'
-    "如果不需要工具（用户只是闲聊），请用 tool_name: finish 结束。"
-)
+_TOOL_REMINDER = BasePrompts.TOOL_REMINDER
 
 
 def _has_tool_call(agent) -> bool:
