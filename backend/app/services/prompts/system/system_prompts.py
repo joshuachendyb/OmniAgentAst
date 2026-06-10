@@ -57,7 +57,7 @@ def _build_examples(count: int = 4) -> str:
 
     lines = ["  以下是一些 ReAct 调用示例:"]
     for i, ex in enumerate(_EXAMPLE_TEMPLATES[:count], 1):
-        lines.append(f"  示例{i}:{json.dumps(ex, ensure_ascii=False, indent=6)}")
+        lines.append(f"  示例{i}:{json.dumps(ex, ensure_ascii=False)}")
     return "\n".join(lines)
 
 
