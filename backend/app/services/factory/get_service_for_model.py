@@ -18,7 +18,7 @@ from app.services.factory.get_service import (
     set_instance,
 )
 
-logger = setup_logger("OmniAgentAst.AIServiceFactory")
+logger = setup_logger(__name__)
 
 
 def _get_resolver_and_ai_config():

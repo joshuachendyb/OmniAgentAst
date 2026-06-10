@@ -12,7 +12,7 @@ from app.utils.log_config.setup.setup_logger_func import setup_logger
 from app.utils.log_config.setup.api_logger import APILogger
 
 api_logger = APILogger()
-logger = setup_logger("OmniAgentAst")
+logger = setup_logger(__name__)
 
 __all__ = [
     "setup_file_handler",

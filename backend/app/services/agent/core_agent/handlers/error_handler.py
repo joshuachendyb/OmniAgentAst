@@ -17,7 +17,7 @@ async def handle_parse_error(agent, parsed: Dict, llm_response: str, step_counte
     从react_cycle.py第240-246行拷出，保持业务逻辑不变
     """
     yield agent._step_emitter.exit_with_error(
-        step=step_counter[0], error_type="parse_error",
+        step_count=step_counter[0], error_type="parse_error",
         error_message=parsed.get("error", "Unknown parse error"),
     )
     agent.status = AgentStatus.FAILED
@@ -29,7 +29,7 @@ async def handle_unknown(agent, parsed: Dict, llm_response: str, step_counter: l
     从react_cycle.py第249-255行拷出，保持业务逻辑不变
     """
     yield agent._step_emitter.exit_with_error(
-        step=step_counter[0], error_type="unknown_parse_type",
+        step_count=step_counter[0], error_type="unknown_parse_type",
         error_message=f"Unknown parsed type: {parsed.get('type', 'unknown')}",
     )
     agent.status = AgentStatus.FAILED

@@ -31,6 +31,8 @@ from app.services.agent.tool_retry_engine import ToolRetryEngine
 class BaseAgent(ABC):
     """Agent 核心基类 — 只保留骨架"""
 
+    _initialize_run_state = initialize_run_state
+
     def __init__(
         self,
         llm_client: Any,

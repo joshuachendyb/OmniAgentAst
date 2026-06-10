@@ -10,7 +10,7 @@ from typing import Optional
 from app.utils.logger import setup_logger
 from app.services.llm_core import BaseAIService
 
-logger = setup_logger("OmniAgentAst.AIServiceFactory")
+logger = setup_logger(__name__)
 
 
 def close_instance_sync(instance: Optional[BaseAIService]) -> None:

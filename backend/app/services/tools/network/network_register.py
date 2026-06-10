@@ -240,7 +240,7 @@ def _register_network_tools():
             examples=examples,
             failure_hint_fn=failure_hint_fn,
         )
-        logger.info(
+        logger.debug(
             f"[network_register] 已注册工具: {tool_name}, 使用 Pydantic 模型: {input_model.__name__}, examples: {len(examples)}个"
         )
 

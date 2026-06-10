@@ -291,7 +291,7 @@ def _register_meta_tools():
             input_model=input_model,
             examples=examples,
         )
-        logger.info(f"[meta_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个")
+        logger.debug(f"[meta_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个")
 
 
 __all__ = ["_register_meta_tools"]

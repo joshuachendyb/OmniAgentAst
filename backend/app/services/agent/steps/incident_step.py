@@ -38,8 +38,8 @@ class IncidentStep(ReasoningStep):
         self._data = data or {}
 
     def get_type(self) -> str:
-        """直接返回incident_value作为type，简化前端转换"""
-        return self._incident_value
+        """返回固定"incident"，前端用incident_value区分具体类型"""
+        return "incident"
 
     def get_content(self) -> str:
         return self._content
@@ -61,8 +61,9 @@ class IncidentStep(ReasoningStep):
         return self._data
 
     def _extra_fields(self) -> Dict[str, Any]:
-        """返回message和data字段"""
+        """返回incident_value、message和data字段，供前端通过incident_value区分类型"""
         extra = {
+            "incident_value": self._incident_value,
             "message": self._message,
         }
         if self._data:

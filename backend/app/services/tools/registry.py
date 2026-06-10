@@ -154,7 +154,7 @@ class ToolRegistry:
         self._tools[name] = metadata
         self._implementations[name] = implementation
         self._update_category_index(category, name)
-        logger.info(f"Tool registered: {name} (category: {category.value}, safety: {safety_level.value})")
+        logger.debug(f"Tool registered: {name} (category: {category.value}, safety: {safety_level.value})")
         return {"status": "success"}
     
     def _update_category_index(self, category: ToolCategory, name: str) -> None:

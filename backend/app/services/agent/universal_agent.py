@@ -14,7 +14,7 @@ from app.services.tools.tool_types import ToolCategory
 import json
 from app.utils.logger import logger
 from app.utils.json_utils import parse_json
-from app.services.task.task_registry import get_pause_event
+
 
 
 class UniversalAgent(BaseAgent):
@@ -159,7 +159,6 @@ class UniversalAgent(BaseAgent):
                 mode="tools",
                 tools=openai_tools,
                 tool_choice="auto",
-                pause_event=await get_pause_event(self.task_id),
             ):
                 if chunk.stream_error:
                     stream_error = chunk.stream_error
@@ -222,7 +221,6 @@ class UniversalAgent(BaseAgent):
             async for chunk in self.llm_client.request_stream(
                 messages=messages,
                 mode="text",
-                pause_event=await get_pause_event(self.task_id),
             ):
                 if chunk.stream_error:
                     logger.error(f"[text] 流式错误: {chunk.stream_error}")
@@ -272,12 +270,16 @@ class UniversalAgent(BaseAgent):
         if isinstance(response, str):
             return response
 
-        choices = response.get("choices", [])
-        if not choices:
-            return ""
+        if hasattr(response, 'content'):
+            return response.content or ""
 
-        content = choices[0].get("message", {}).get("content", "")
-        return content or ""
+        if isinstance(response, dict):
+            choices = response.get("choices", [])
+            if not choices:
+                return ""
+            return choices[0].get("message", {}).get("content", "") or ""
+
+        return ""
 
     def _get_openai_tools(self) -> list:
         """获取OpenAI格式工具定义 — 小沈 2026-06-09 添加TTL缓存过期"""
