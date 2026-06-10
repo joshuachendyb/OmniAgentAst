@@ -79,27 +79,24 @@ class BasePrompts(ABC):
 
 【示例】:
 {"thought": "用户询问时间", "reasoning": "调用get_current_time", "tool_name": "get_current_time", "tool_params": {"format": "%Y-%m-%d"}}
-{"thought": "已完成", "tool_name": "finish", "tool_params": {"result": "当前时间是2026-05-09"}}
-
-【SAFETY WARNING】:
-⚠️ 任务完成时必须返回 tool_name="finish",否则会进入死循环。"""
+{"thought": "已完成", "tool_name": "finish", "tool_params": {"result": "当前时间是2026-05-09"}}"""
 
     # 【2026-05-07 小沈】通用Tool Call Rules
     # 【2026-06-10 小沈】增强:强制工具调用规则
-    TOOL_CALL_RULES = """【Tool Call Rules - 极其重要】:
-- 确认用户意图后,立即调用对应工具,不要在thought中反复讨论该用哪个工具
-- reasoning字段简短说明选择理由即可(1-2句),不要写长篇分析
-- ❌ 禁止:在thought中列举多个工具比较优缺点而不调用
-- ❌ 禁止:在thought中分析参数是否必填而不调用
+    # 【2026-06-11 小健】合并SAFETY WARNING(原在OUTPUT_FORMAT),消除SRP/DRY违反
+    TOOL_CALL_RULES = """【Tool Call Rules】:
+- 确认用户意图后立即调用工具,不要在thought中反复讨论该用哪个工具
+- reasoning简短说明选择理由即可(1-2句),不要写长篇分析
 - ❌ 禁止:仅用文字回复而不调用工具 — 用户请求需要实际操作时,MUST调用工具
 - ✅ 正确:确认意图→直接调用→根据结果决定下一步
+- ⚠️ 任务完成时必须返回 tool_name="finish",否则会进入死循环
 - 始终用中文回复用户
-- 工具返回错误时,向用户解释错误并建议替代方案
+- 工具返回错误时向用户解释错误并建议替代方案
 
 【IMPERATIVE: 必须使用工具执行操作】:
-- 当用户要求创建/写入/读取/修改文件时,你MUST调用对应的文件工具(write_text_file / read_file 等)
+- 用户请求需要实际操作时,MUST调用对应的工具(非闲聊场景)
 - 不得仅回复"好的,我将..."之类的文字确认而不调用工具
-- 只有在任务完成需要总结结果时,才能使用 tool_name="finish" 结束
+- 只有任务完成总结结果时,才能使用 tool_name="finish" 结束
 - 如果不确定用什么工具,选择最合理的工具并调用,不要用文字回复代替"""
 
     # 【2026-06-11 小沈】避免重复规则 — 提取为类常量(#1 fix)
