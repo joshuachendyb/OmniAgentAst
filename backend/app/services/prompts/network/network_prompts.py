@@ -70,19 +70,6 @@ Example 4: 任务完成
 """
     
 
-    def get_parameter_reminder(self) -> str:
-        from app.services.tools.registry import tool_registry
-        from app.services.tools.tool_types import ToolCategory
-        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.NET_PROCESS)
-        forbidden = (
-            "\n\nFORBIDDEN parameter names - DO NOT use:\n"
-            "- ❌ data / params (correct: json_body)\n"
-            "- ❌ address / host_url (correct: url)\n"
-            "- ❌ path / file_path / save_path (correct: destination_path)\n"
-            "- ❌ q / keyword (correct: query)"
-        )
-        return auto_reminder + forbidden
-
     def _get_domain_name(self) -> str:
         return "网络"
 

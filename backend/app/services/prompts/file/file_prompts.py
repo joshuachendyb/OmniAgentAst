@@ -108,41 +108,6 @@ Example 4: 任务完成
             base_prompt += f"\n\nAdditional context:\n{context}"
         return base_prompt
 
-    def get_observation_prompt(self, observation: str) -> str:
-        """
-        格式化观察结果Prompt
-        
-        Args:
-            observation: 工具执行结果(字符串格式)
-            
-        Returns:
-            格式化的观察Prompt
-        """
-        # 如果observation是JSON字符串,尝试解析
-        from app.utils.json_utils import parse_json
-        obs_dict = parse_json(observation) if isinstance(observation, str) else observation
-        if obs_dict is None:
-            obs_dict = {}
-        
-        if obs_dict.get("success", False):
-            result = obs_dict.get("result", {})
-            return f"""Observation: The operation was successful.
-
-Result details:
-- Operation: {result.get('operation_type', 'unknown')}
-- File: {result.get('file_path', 'N/A')}
-- Additional info: {result.get('message', 'No additional information')}
-
-What's your next step?"""
-        else:
-            error = obs_dict.get("error", "Unknown error")
-            return f"""Observation: The operation failed.
-
-Error: {error}
-
-Please reconsider your approach and suggest an alternative action."""
-
-
     def get_rollback_instructions(self) -> str:
         """获取回滚指令Prompt"""
         return """If an operation fails:
@@ -155,20 +120,3 @@ Please reconsider your approach and suggest an alternative action."""
         return """Safety reminders:
 1. Be careful when writing files - existing content will be overwritten
 2. text parameter must contain actual file content, NOT your thoughts/plans"""
-    
-    def get_parameter_reminder(self) -> str:
-        from app.services.tools.registry import tool_registry
-        from app.services.tools.tool_types import ToolCategory
-        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.FILE)
-        forbidden = (
-            "\n\nCommon mistakes to avoid:\n"
-            "- ❌ directory_path (use: dir_path)\n"
-            "- ❌ filepath (use: file_path)\n"
-            "- ❌ content for write (use: text)\n"
-            "- ❌ file_pattern for search (use: pattern)\n"
-            "- ❌ path for search_dir (use: search_dir)\n"
-            "- ❌ src/dst (use: source/destination)\n"
-            "- ❌ read_text_file (use: read_file)\n"
-            "- ❌ write_file (use: write_text_file)"
-        )
-        return auto_reminder + forbidden

@@ -16,12 +16,12 @@
   ④ get_safety_reminder()      — 分类特有:安全提醒(子类覆盖,默认空)
   ⑤ get_rollback_instructions()— 公共:回滚说明
   
-  注:⑥ get_parameter_reminder() 已去掉,由方案C(_tools_to_schema_text)替代
-     ⑦ FINISH_RULE 已合并到 OUTPUT_FORMAT(2026-05-10 小沈)
+   注:⑥ FINISH_RULE 已合并到 OUTPUT_FORMAT(2026-05-10 小沈)
+      (get_parameter_reminder/get_observation_prompt 已于2026-06-11删除,死代码)
 
-  运行时由Agent._build_system_prompt()追加:
-  ⑧ _build_candidates_hint()   — 动态:候选意图提示
-  ⑨ _build_cross_tool_hint()   — 动态:跨分类工具提示
+   运行时由Agent._build_system_prompt()追加:
+   ⑦ _build_candidates_hint()   — 动态:候选意图提示
+   ⑧ _build_cross_tool_hint()   — 动态:跨分类工具提示
 
 Author: 小沈 - 2026-03-21
 """
@@ -39,9 +39,7 @@ class BasePrompts(ABC):
     
     子类可选覆盖:
     - get_task_prompt()        → 获取任务描述 Prompt
-    - get_observation_prompt() → 获取观察结果 Prompt
     - get_safety_reminder()    → 获取安全提醒
-    - get_parameter_reminder() → 获取参数命名提醒
     """
 
     # 【2026-05-07 小沈】统一JSON输出格式(对齐react_output_parser.py解析逻辑)
@@ -104,6 +102,14 @@ class BasePrompts(ABC):
 - 只有在任务完成需要总结结果时,才能使用 tool_name="finish" 结束
 - 如果不确定用什么工具,选择最合理的工具并调用,不要用文字回复代替"""
 
+    # 【2026-06-11 小沈】避免重复规则 — 提取为类常量(#1 fix)
+    AVOID_REPEAT_RULES = """
+【避免重复规则】
+- 同一命令/URL成功后不要重复执行(结果不会变)
+- 同一命令/URL失败3次后必须换工具或换URL,禁止再试同方式
+- 已获取的信息直接使用,不需要重新获取
+- 失败后优先尝试替代方法,而非反复重试同一方法"""
+
 
     @abstractmethod
     def get_system_prompt(self) -> str:
@@ -149,16 +155,8 @@ class BasePrompts(ABC):
     def _get_domain_extra_notes(self) -> str:
         return ""
 
-    def get_observation_prompt(self, observation: str) -> str:
-        """获取观察结果 Prompt"""
-        return f"Observation: {observation}\n\n"
-
     def get_safety_reminder(self) -> str:
         """获取安全提醒(子类覆盖)"""
-        return ""
-
-    def get_parameter_reminder(self) -> str:
-        """获取参数命名提醒(子类覆盖)"""
         return ""
 
     def get_rollback_instructions(self) -> str:
@@ -168,26 +166,29 @@ class BasePrompts(ABC):
 2. If possible, try an alternative approach (call another tool or use finish to report error)
 3. Report the error to the user clearly"""
 
-    def build_full_system_prompt(self) -> str:
+    def build_full_system_prompt(self, strategy: Optional[str] = None) -> str:
         """
         构建完整的系统 Prompt(唯一组装入口)
         
         组装顺序:
         ① get_system_prompt()       — 分类特有(角色+工具+示例)
-        ② OUTPUT_FORMAT             — 公共:JSON输出格式(含退出规则)
+        ② OUTPUT_FORMAT             — 公共:JSON输出格式(FC模式跳过,由API生成)
         ③ TOOL_CALL_RULES           — 公共:工具调用规则
         ④ get_safety_reminder()     — 分类特有:安全提醒
         ⑤ get_rollback_instructions()— 公共:回滚说明
+        ⑥ AVOID_REPEAT_RULES        — 公共:避免重复操作
         
-        注:⑥ get_parameter_reminder() 已去掉,由方案C(_tools_to_schema_text)替代
-           ⑦ FINISH_RULE 已合并到 OUTPUT_FORMAT
+        Args:
+            strategy: "tools"(FC模式,跳过OUTPUT_FORMAT), None(默认,包含OUTPUT_FORMAT)
         
         Returns:
             完整的 System Prompt
         """
         parts = [self.get_system_prompt()]
         
-        parts.append(self.OUTPUT_FORMAT)
+
+        if strategy != "tools":
+            parts.append(self.OUTPUT_FORMAT)
         parts.append(self.TOOL_CALL_RULES)
         
         safety = self.get_safety_reminder()
@@ -198,14 +199,8 @@ class BasePrompts(ABC):
         if rollback:
             parts.append(rollback)
         
-        # 【修复 U3 小沈 2026-05-15】避免重复规则
-        avoid_repeat_rules = """
-【避免重复规则】
-- 同一命令/URL成功后不要重复执行(结果不会变)
-- 同一命令/URL失败3次后必须换工具或换URL,禁止再试同方式
-- 已获取的信息直接使用,不需要重新获取
-- 失败后优先尝试替代方法,而非反复重试同一方法"""
-        parts.append(avoid_repeat_rules)
+
+        parts.append(self.AVOID_REPEAT_RULES)
         
         return "\n\n".join(parts)
 
@@ -247,7 +242,17 @@ class BasePrompts(ABC):
             input_schema = getattr(t, 'input_schema', None) or {}
             params = input_schema.get('properties', {})
             if params:
-                lines.append(f"   - Parameters: {', '.join(params.keys())}")
+                required = input_schema.get('required', [])
+                parts = []
+                for pname, pinfo in params.items():
+                    ptype = pinfo.get('type', 'any')
+                    mark = '(必填)' if pname in required else ''
+                    param_desc = pinfo.get('description', '')
+                    if param_desc:
+                        parts.append(f"{pname}({ptype}){mark}:{param_desc}")
+                    else:
+                        parts.append(f"{pname}({ptype}){mark}")
+                lines.append(f"   - Parameters: {'; '.join(parts)}")
             lines.append(f"   - Returns: 返回操作结果")
             lines.append("")
 
