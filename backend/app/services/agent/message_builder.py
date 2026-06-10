@@ -172,13 +172,19 @@ class MessageBuilder:
         return system_msgs, obs_list, assistant_msgs
 
     def _trim_to_budget(self, obs_list, assistant_msgs, budget):
-        """去重+截断observation,保留最新assistant,直到满足预算"""
+        """去重+截断observation,优先保留FC配对obs(tool-role),非FC text-obs先裁剪"""
         obs_list = self._dedup_by_fingerprint(obs_list)
         assistant_msgs = assistant_msgs[-10:]
         obs_list = obs_list[-30:]
-        while obs_list and self._total_chars(obs_list) > budget:
-            obs_list.pop(0)
-        return obs_list
+        # 分离tool-role(FC配对)和text-role(非FC),优先保留FC配对obs
+        tool_obs = [o for o in obs_list if o.get("role") == "tool"]
+        text_obs = [o for o in obs_list if o.get("role") != "tool"]
+        # 先裁text-obs(非FC),保留最近15条tool-obs(FC配对)
+        tool_obs = tool_obs[-15:]
+        combined = text_obs + tool_obs
+        while combined and self._total_chars(combined) > budget:
+            combined.pop(0)
+        return combined
 
     def _rebuild_and_validate(self, system_msgs, obs_list, assistant_msgs):
         """重组消息列表并验证FC配对完整性,返回None表示无需更新"""
