@@ -237,7 +237,7 @@ class BasePrompts(ABC):
             desc = t.description or ""
             desc_first = desc.split(',')[0] if ',' in desc else desc
             lines.append(f"{idx}. {t.name} - {desc}")
-            lines.append(f"   - When to use: 当需要{desc_first}时")
+            lines.append(f"   - 使用场景: 当需要{desc_first}时")
 
             input_schema = getattr(t, 'input_schema', None) or {}
             params = input_schema.get('properties', {})
@@ -252,8 +252,8 @@ class BasePrompts(ABC):
                         parts.append(f"{pname}({ptype}){mark}:{param_desc}")
                     else:
                         parts.append(f"{pname}({ptype}){mark}")
-                lines.append(f"   - Parameters: {'; '.join(parts)}")
-            lines.append(f"   - Returns: 返回操作结果")
+                lines.append(f"   - 参数: {'; '.join(parts)}")
+            lines.append(f"   - 返回: 操作结果")
             lines.append("")
 
         return "\n".join(lines)
