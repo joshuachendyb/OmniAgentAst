@@ -1,9 +1,9 @@
 # LLM Prompt 与 Message 全系统分析报告
 
 **创建时间**: 2026-06-10 15:17:04
-**版本**: v1.0
+**版本**: v1.1
 **编写人**: 小沈
-**审核人**: 
+**审核人**: 小健
 **分析范围**: 从用户输入到 LLM API 调用的完整 Prompt/Message 构建链路
 
 ---
@@ -13,6 +13,7 @@
 | 版本 | 时间 | 作者 | 更新内容 |
 |------|------|------|---------|
 | v1.0 | 2026-06-10 15:17:04 | 小沈 | 初始版本，全系统分析 |
+| v1.1 | 2026-06-11 05:18:28 | 小健 | 全问题3轮复核+X原则评估+已修复验证+未修复最优方案 |
 
 ---
 
@@ -413,6 +414,27 @@ def get_observation_prompt(self, observation: str) -> str:
 
 ---
 
+### 🔎 小健3轮复核(2026-06-11 05:18:28)
+
+**第1轮: 问题真实性验证**
+- ✅ 已修复 — 该方法和 file_prompts.py 中的子类覆盖已在 commit 90c30e5a 中删除
+- grep 确认当前代码库无 `get_observation_prompt` 引用
+- 原问题描述准确属实
+
+**第2轮: 10大原则验证**
+| 原则 | 符合 | 说明 |
+|------|:----:|------|
+| ISP接口隔离 | ✅ | 删除无用方法后接口更精简 |
+| YAGNI不过度设计 | ✅ | 死代码正是YAGNI反例 |
+| 禁止backward compatibility | ✅ | 无调用方,删除无影响 |
+
+**第3轮: 修复确认**
+- 🏆 已执行方案: 删除 BasePrompts.get_observation_prompt() + file_prompts.py 子类覆盖
+- commit: `90c30e5a refactor: 删除prompt层死代码+Prompt优化`
+- 验证: 编译通过 + 测试通过
+
+---
+
 ### 7.2 ❌ System Prompt 中 get_parameter_reminder() 未使用
 
 **文件**: `base_prompt_template.py:160-162`
@@ -430,6 +452,27 @@ def get_parameter_reminder(self) -> str:
 
 ---
 
+### 🔎 小健3轮复核(2026-06-11 05:18:28)
+
+**第1轮: 问题真实性验证**
+- ✅ 已修复 — 该抽象方法+6个子类覆盖已在 commit 90c30e5a 中删除
+- grep 确认当前代码库无 `get_parameter_reminder` 引用(基类注释提及"已删除"除外)
+- 原问题描述准确,是最大规模的死代码(7个文件,共~120行)
+
+**第2轮: 10大原则验证**
+| 原则 | 符合 | 说明 |
+|------|:----:|------|
+| ISP接口隔离 | ✅ | 基类接口精简,子类不需覆盖无用方法 |
+| DRY不重复 | ✅ | 7个同名方法本身就违反DRY(构造相似的reminder) |
+| YAGNI不过度设计 | ✅ | 方案C(_tools_to_schema_text)已替代此功能 |
+
+**第3轮: 修复确认**
+- 🏆 已执行方案: 删除 BasePrompts.get_parameter_reminder() + 6个子类(file/time/network/document/desktop/system)覆盖
+- commit: `90c30e5a refactor: 删除prompt层死代码+Prompt优化`
+- 验证: 编译通过 + 测试通过
+
+---
+
 ### 7.3 ❌ System Prompt 结构缺少统一 schema/text 切换时的字段说明
 
 **问题**: 当 `_call_llm_fc_stream()` 的 `mode="tools"` 时，API 通过 `tools` 数组提供工具 Schema。但当降级到 `_call_llm_text_stream()` 时，System Prompt 中没有工具的 JSON Schema 描述（只有 `TOOL_CALL_RULES` 的通用规则和分类下的示例），LLM 可能不知道参数的精确格式。
@@ -441,6 +484,28 @@ def get_parameter_reminder(self) -> str:
 **影响**: Text 模式下 LLM 可能漏填必填参数、填错参数类型。
 
 **建议**: 在 System Prompt 的 OUTPUT_FORMAT 或 TOOL_CALL_RULES 中增加工具参数的 JSON Schema 描述（精简版），或者在 Text 模式降级时注入 schema 信息（`inject_schema_text()` 已在 `message_utils.py` 中有定义但未被 `_call_llm_text_stream` 调用）。
+
+---
+
+### 🔎 小健3轮复核(2026-06-11 05:18:28)
+
+**第1轮: 问题真实性验证**
+- ✅ 已修复 — `build_tool_descriptions()` 现已为每个参数输出 type/required/description
+- 当前输出示例: `path(string)(必填):文件路径`
+- 原问题描述准确: Text模式之前只有参数名列表
+
+**第2轮: 10大原则验证**
+| 原则 | 符合 | 说明 |
+|------|:----:|------|
+| SRP单一职责 | ✅ | 工具描述函数本就应该包含参数信息 |
+| KISS保持简单 | ✅ | 遍历input_schema.get('properties')拼装 |
+| YAGNI不过度设计 | ✅ | 不引入新类/新注入机制,在现有描述中增强 |
+| DRY不重复 | ✅ | `build_tool_descriptions`已是统一入口 |
+
+**第3轮: 修复确认**
+- 🏆 已执行方案: 在 `build_tool_descriptions()` 中追加参数类型(type)、必填标记(required)、描述(description)
+- commit: `90c30e5a refactor: 删除prompt层死代码+Prompt优化`
+- 验证: 编译通过 + 测试通过
 
 ---
 
@@ -463,6 +528,47 @@ if parsed_type == "chunk" and not _has_tool_call(agent):
 
 ---
 
+### 🔎 小健3轮复核(2026-06-11 05:18:28)
+
+**第1轮: 问题真实性验证**
+- ❌ 未修复 — react_cycle.py:100-102 仍用 `conversation_history.append()` 永久写入
+- 每次纯文本回复都会追加一条 system role 的 `_TOOL_REMINDER`, 后续所有 LLM 调用都包含此消息
+- 如果 LLM 连续3轮返回纯文本, history 中会有3条相同的 tool reminder, 浪费上下文窗口
+
+**第2轮: 10大原则评估**
+| 原则 | 符合 | 说明 |
+|------|:----:|------|
+| **SLAP同一抽象层** | ❌ 违反 | `_process_single_step` 职责是"解析+调度",却做了"管理 conversation_history"的事 |
+| YAGNI不过度设计 | ⚠️ 边界 | 永久写入在实践中不影响正确性(LLM能忽略旧system消息),但浪费tokens |
+| KISS保持简单 | ⚠️ 边界 | 当前设计简单但不符合SLAP;修正会增加一点复杂度 |
+| SRP单一职责 | ⚠️ 边界 | 消息注入应由 message_builder 或 _call_llm 负责 |
+
+**第3轮: 最优方案**
+
+方案A(推荐🏆): **标志位+动态注入** — 最小改动,最大SLAP提升
+1. react_cycle.py line 100: `conversation_history.append(...)` → `agent._tool_reminder_needed = True`
+2. _call_llm() 中: 检查标志,动态注入(像 _build_executed_tool_summary 一样)
+
+```python
+# react_cycle.py 改动
+# 改前:
+agent.message_builder.conversation_history.append(...)
+# 改后:
+agent._tool_reminder_needed = True
+```
+
+```python
+# universal_agent.py _call_llm() 追加(在 openai_tools 构建后)
+tool_reminder = _TOOL_REMINDER  # 从react_cycle导入
+if getattr(self, '_tool_reminder_needed', False):
+    messages.append({"role": "system", "content": tool_reminder})
+    self._tool_reminder_needed = False
+```
+
+方案B(备选): 将 `_TOOL_REMINDER` 常量移入 `message_builder.py`, 通过 `message_builder.add_tool_reminder()` 追加到 `temp_history` — 但 temp_history 生命周期管理复杂, 不推荐。
+
+---
+
 ### 7.5 ❌ file_prompts.py 中互斥参数和 text 规则信息过多但结构不佳
 
 **文件**: `file_prompts.py:80-93`
@@ -475,6 +581,42 @@ if parsed_type == "chunk" and not _has_tool_call(agent):
 **建议**: 
 - 将互斥参数规则移到 `TOOL_CALL_RULES` 或新建一个独立章节
 - 使用结构化格式（如 Markdown 表格或列表）而不是纯文本段落
+
+---
+
+### 🔎 小健3轮复核(2026-06-11 05:18:28)
+
+**第1轮: 问题真实性验证**
+- ❌ 未修复 — file_prompts.py:80-93 的 P17 互斥规则和 text 规则仍然是纯文本段落
+- 原问题描述准确: 信息重要但结构不佳
+
+**第2轮: 10大原则评估**
+| 原则 | 符合 | 说明 |
+|------|:----:|------|
+| SRP单一职责 | ✅ | 规则内容放在 get_system_prompt() 末尾,职责正确 |
+| KISS保持简单 | ⚠️ 边界 | 纯文本确实简单,但LLM更容易忽略.结构化为列表更好 |
+| YAGNI不过度设计 | ⚠️ 边界 | 纯文本能用但可优化 |
+| P3-低优先级 | ✅ | 不影响功能正确性,属于可读性优化 |
+
+**第3轮: 最优方案**
+
+方案A(推荐🏆): **保持原位,改为列表格式** — 最小改动
+```python
+# file_prompts.py get_system_prompt() 末尾
+"""【互斥参数规则 - 同一工具内禁止同时使用】:
+- read_file: file_paths 单路径=单文件,多路径=批量
+- edit_file: old_string 与 edits 互斥
+- rename_file: path 与 directory 互斥
+- archive_tool: compress→source+destination; extract→source
+- file_operation: move/copy→destination; delete→无需destination
+
+【write_text_file text规则】:
+- text 参数必须传实际文件内容(代码/文本/正文)
+- ❌ 禁止传入思考/计划/状态确认
+- ✅ text="第一章:觉醒\n\n林凡是一名普通的大学生..." """
+```
+
+方案B: 将P17互斥规则移入 `TOOL_CALL_RULES` 基类常量末尾 — 但TOOL_CALL_RULES是通用规则,文件特有规则不应该放在基类。违反SRP。不推荐。
 
 ---
 
@@ -502,6 +644,31 @@ _EXAMPLE_TEMPLATES = [
 
 ---
 
+### 🔎 小健3轮复核(2026-06-11 05:18:28)
+
+**第1轮: 问题真实性验证**
+- ✅ 已修复 — `_build_examples()` 中的6个示例现在全部使用 FUND_RUNTIME 的真实注册工具
+- 工具名对照:
+  | 旧(错误) | 新(正确) | FUND_RUNTIME已注册 |
+  |----------|---------|:------------------:|
+  | get_weather | get_time | ✅ |
+  | search_files | get_system_info | ✅ |
+  | read_file | list_processes | ✅ |
+  | execute_shell_command | query_calendar | ✅ |
+
+**第2轮: 10大原则验证**
+| 原则 | 符合 | 说明 |
+|------|:----:|------|
+| KISS保持简单 | ✅ | 只有字符串替换,无逻辑变更 |
+| 禁止backward compatibility | ✅ | 修复错误行为,不是兼容问题 |
+
+**第3轮: 修复确认**
+- 🏆 已执行方案: 修改 `_EXAMPLE_TEMPLATES` 中的6个示例,全部使用 FUND_RUNTIME 真实已注册工具
+- commit: `90c30e5a refactor: 删除prompt层死代码+Prompt优化`
+- 验证: 编译通过 + 测试通过
+
+---
+
 ### 7.7 ❌ System Prompt 中 candidates_hint 和 cross_tool_hint 使用中文术语
 
 **问题**: 
@@ -516,6 +683,24 @@ _EXAMPLE_TEMPLATES = [
 **影响**: 英文的 System Prompt 中混入中文段落，可能影响非中文 LLM 的理解一致性。但考虑到 LLM 最终需要中文回复，倒不算严重问题。
 
 **建议**: 保持现状或统一为英文（取决于 LLM 的偏好语言）。
+
+---
+
+### 🔎 小健3轮复核(2026-06-11 05:18:28)
+
+**第1轮: 问题真实性验证**
+- ❌ 未修复 — `_build_candidates_hint()` 和 `_build_cross_tool_hint()` 仍是全中文段落
+- 影响: System Prompt 以中文为主(角色定义+规则都是中文),这两段中文与整体一致,实际影响为P3-低
+
+**第2轮: 10大原则评估**
+| 原则 | 符合 | 说明 |
+|------|:----:|------|
+| YAGNI不过度设计 | ✅ | 整体Prompt已在用中文,这两段中文不影响一致性 |
+| KISS保持简单 | ✅ | 当前状态就是最简单的 |
+
+**第3轮: 最优方案**
+- 🏆 **建议: 保持现状** — System Prompt 整体语言是中文,这两段中文与之一致
+- 如果未来前端界面语言切换为英文,再统一调整
 
 ---
 
@@ -538,6 +723,43 @@ def flush_temp_to_history(self, chunk_buffer: str) -> None:
 
 ---
 
+### 🔎 小健3轮复核(2026-06-11 05:18:28)
+
+**第1轮: 问题真实性验证**
+- ❌ 未修复 — `prepare_messages_for_llm()` 存在时序问题: `_cap_temp_history()` 在构建 `messages` 之后修改 `self.temp_history`
+- ```python
+  def prepare_messages_for_llm(self):       # ← message_builder.py:120
+      messages = list(self.conversation_history)
+      if self.temp_history:
+          messages = messages + list(self.temp_history)  # ← 此时messages含完整temp_history
+      self._cap_temp_history()              # ← 但self.temp_history被截断,下轮丢失数据
+      return messages
+  ```
+- `flush_temp_to_history()` 本身逻辑正确(temp_history清空后内容已入conversation_history)
+
+**第2轮: 10大原则评估**
+| 原则 | 符合 | 说明 |
+|------|:----:|------|
+| SLAP同一抽象层 | ⚠️ 轻微违规 | `prepare_messages_for_llm` 同时做"消息组装"和"容量维护" |
+| KISS保持简单 | ⚠️ 轻微违规 | `_cap_temp_history()` 在后操作容易遗漏 |
+
+**第3轮: 最优方案**
+
+方案A(推荐🏆): **调换执行顺序** — 1行改动,在构建messages前先截断
+```python
+# message_builder.py:120-133
+def prepare_messages_for_llm(self):
+    self._cap_temp_history()                # ← 先截断
+    messages = list(self.conversation_history)
+    if self.temp_history:
+        messages = messages + list(self.temp_history)
+    return messages
+```
+
+方案B: 删除 `_cap_temp_history()` 调用,改成在 `add_observation` 或 `flush_temp_to_history` 中维护 — 破坏已有模式,不推荐。
+
+---
+
 ### 7.9 ❌ trim_history() FC配对裁剪可能删除有效历史
 
 **文件**: `message_builder.py:233-266`
@@ -545,6 +767,43 @@ def flush_temp_to_history(self, chunk_buffer: str) -> None:
 **问题**: `_trim_fc_pairs` 对 `assistant.tool_calls ↔ tool` 配对进行检查，不匹配就双方都删除。但如果某条 `assistant` 消息在历史裁剪中被删除了（因为它在保留的最后10条之外），对应的 `tool` 消息就失去了配对，也会被删除。这可能导致 observation 历史的丢失。
 
 **建议**: 在 `_rebuild_and_validate` 中确保重组后的 history 长度够长，或对 FC 配对消息有特殊的保留优先级。
+
+---
+
+### 🔎 小健3轮复核(2026-06-11 05:18:28)
+
+**第1轮: 问题真实性验证**
+- ❌ 未修复 — `_trim_fc_pairs` 仍会因 `_trim_to_budget` 提前删除assistant消息导致配对断裂
+- 风险等级: P3-低,触发条件是"observation超过budget+FC配对恰好位于截断边界"
+- 当前 `_rebuild_and_validate` 有兜底(history>10时取首2+尾8),但兜底也非FC安全
+
+**第2轮: 10大原则评估**
+| 原则 | 符合 | 说明 |
+|------|:----:|------|
+| YAGNI不过度设计 | ⚠️ 边界 | 实际触发概率低,但一旦触发会丢掉有效observation |
+| KISS保持简单 | ✅ | 当前逻辑不算复杂 |
+
+**第3轮: 最优方案**
+
+方案A(推荐🏆): **在 `_trim_to_budget` 中对FC配对的tool消息优先保留**
+```python
+# message_builder.py _trim_to_budget() 中,在 pop(0) 截断前:
+def _trim_to_budget(self, obs_list, assistant_msgs, budget):
+    obs_list = self._dedup_by_fingerprint(obs_list)
+    assistant_msgs = assistant_msgs[-10:]
+    obs_list = obs_list[-30:]
+    while obs_list and self._total_chars(obs_list) > budget:
+        # 🏆 优先移除非FC(tool)消息;如果全部是FC消息,从最旧开始删
+        non_fc = [i for i, m in enumerate(obs_list) if m.get("role") != "tool"]
+        if non_fc:
+            idx = non_fc[0]
+        else:
+            idx = 0
+        obs_list.pop(idx)
+    return obs_list
+```
+
+方案B: 在 `_rebuild_and_validate` 的兜底中保护FC配对 — 但兜底本身是最后防线,不适用。
 
 ---
 
@@ -581,6 +840,46 @@ def build_llm_messages(message, history=None):
 
 ---
 
+### 🔎 小健3轮复核(2026-06-11 05:18:28)
+
+**第1轮: 问题真实性验证**
+- ❌ 未修复 — `llm_core.py:236` 的 `_build_messages()` 和 `message_utils.py:15` 的 `build_llm_messages()` 同时存在
+- `build_llm_messages` 的注释说"替代llm_core._build_messages()"但从未被调用
+- `_build_messages` 仍被 `BaseAIService.chat()` 调用,该方法是公共API(SSE服务层用)
+- 两函数功能: `[history..., {"role":"user", "content": message}]`, 几乎相同
+
+**第2轮: 10大原则评估**
+| 原则 | 符合 | 说明 |
+|------|:----:|------|
+| **DRY不重复** | ❌ 违反 | 完全相同的消息构建逻辑写了两次 |
+| KISS保持简单 | ⚠️ 违反 | 两个函数做同一件事,维护者困惑 |
+| SRP单一职责 | ✅ | 去掉重复后各自职责清晰 |
+
+**第3轮: 最优方案**
+
+方案A(推荐🏆): **删除 `llm_core._build_messages()`, `chat()` 内联调用 `message_utils.build_llm_messages()`**
+```python
+# llm_core.py 改动
+# 改前:
+def _build_messages(self, message, history=None):
+    ...  # 16行代码
+async def chat(self, message, history=None):
+    messages = self._build_messages(message, history)
+    ...
+
+# 改后:
+async def chat(self, message, history=None):
+    from app.services.agent.agent_utils.message_utils import build_llm_messages
+    messages = build_llm_messages(message, history)
+    ...
+
+# 然后删除 _build_messages 方法
+```
+
+**注意**: `_build_messages` 额外支持 `msg.role`/`msg.content` 对象属性访问,而 `build_llm_messages` 只接受 dict。chat()的调用方 `run_sse_stream.py` 传的是 dict,所以兼容。
+
+---
+
 ### 7.11 ❌ BaseAIService.callback 参数传递冗余
 
 **问题**: `BaseAIService` 的 `request()` 和 `request_stream()` 方法都接收 `mode`, `tools`, `tool_choice` 三个参数，这些参数被层层透传（`universal_agent → BaseAIService → LLMClient`）。M 但这些参数在 `LLMClient._build_request_body()` 中只对 `mode=="tools"` 时有意义，对 `mode=="text"` 时 `tools` 和 `tool_choice` 被忽略。
@@ -588,6 +887,26 @@ def build_llm_messages(message, history=None):
 **影响**: 参数透传层数多，修改时需要改多个文件。
 
 **建议**: 考虑用 `LLMRequestConfig` 数据类封装这些参数，减少透传参数个数。
+
+---
+
+### 🔎 小健3轮复核(2026-06-11 05:18:28)
+
+**第1轮: 问题真实性验证**
+- ❌ 未修复 — mode/tools/tool_choice 仍逐层透传(`_call_llm → _call_llm_fc_stream → client_sdk._build_request_body`)
+- 透传层级: universal_agent → BaseAIService.request_stream → LLMClient.request_stream → _build_request_body
+- 影响: P3-低,实际上不影响功能正确性
+
+**第2轮: 10大原则评估**
+| 原则 | 符合 | 说明 |
+|------|:----:|------|
+| **YAGNI不过度设计** | ✅ | 引入数据类会增加复杂度,当前透传可用 |
+| **KISS保持简单** | ✅ | 保持独立参数是Python惯用做法 |
+| SLAP同一抽象层 | ⚠️ 轻微 | 透传多但抽象层一致 |
+
+**第3轮: 最优方案**
+- 🏆 **建议: 保持现状** — `mode`/`tools`/`tool_choice` 3个参数透传不算多,引入数据类会增加复杂性却不带来实质收益
+- 当参数增加到5个以上时才考虑封装
 
 ---
 
@@ -605,6 +924,26 @@ def build_llm_messages(message, history=None):
 
 ---
 
+### 🔎 小健3轮复核(2026-06-11 05:18:28)
+
+**第1轮: 问题真实性验证**
+- ❌ 未修复 — 职责边界模糊但实际运行正确
+- 数据流: `observation_formatter.format_llm_observation()` → `"Observation: success - ..."` → `message_builder._normalize_observation_prefix()` → `"[Observation] success - ..."`
+- `_normalize_observation_prefix()` 已经有防双重前缀逻辑(检查已在"[Observation]"开头的跳过)
+
+**第2轮: 10大原则评估**
+| 原则 | 符合 | 说明 |
+|------|:----:|------|
+| SRP单一职责 | ⚠️ 边界 | 两个模块都参与前缀处理,但各自功能清晰 |
+| KISS保持简单 | ✅ | 当前现状最简单,加一层抽象反而复杂 |
+| YAGNI不过度设计 | ✅ | 不是bug,不需要修改 |
+
+**第3轮: 最优方案**
+- 🏆 **建议: 保持现状 + 文档说明** — 当前虽然职责边界模糊,但 `_normalize_observation_prefix` 已正确兜底
+- 只需要在 `observation_formatter.py` 和 `message_builder.py` 添加文档注释说明前缀处理的分工即可
+
+---
+
 ### 7.13 ❌ tool 注册描述中 "When to use" 中文混用
 
 **文件**: `base_prompt_template.py:244-245`
@@ -619,6 +958,31 @@ lines.append(f"   - When to use: 当需要{desc_first}时")
 
 ---
 
+### 🔎 小健3轮复核(2026-06-11 05:18:28)
+
+**第1轮: 问题真实性验证**
+- ❌ 未修复 — `base_prompt_template.py:239` 仍是 `f"   - When to use: 当需要{desc_first}时"`
+- 中英混用: "When to use:" 是英文, "当需要...时" 是中文
+- 影响: P3-低,轻微不一致
+
+**第2轮: 10大原则评估**
+| 原则 | 符合 | 说明 |
+|------|:----:|------|
+| KISS保持简单 | ✅ | 字符串替换 |
+| YAGNI不过度设计 | ✅ | 最小改动 |
+
+**第3轮: 最优方案**
+方案A(推荐🏆): **统一为中文**
+```python
+# base_prompt_template.py:239
+# 改前:
+lines.append(f"   - When to use: 当需要{desc_first}时")
+# 改后:
+lines.append(f"   - 使用场景: 当需要{desc_first}时")
+```
+
+---
+
 ### 7.14 ❌ System Prompt 中 OUTPUT_FORMAT 强制 JSON 格式但 FC 模式下不需要
 
 **问题**: `OUTPUT_FORMAT` 常量强制 LLM 使用 JSON 格式输出（`{"thought":..., "tool_name":..., ...}`），但 FC 模式（`mode="tools"`）下 LLM 使用 OpenAI 的 function calling 协议输出 `tool_calls`，与 JSON 格式不同。
@@ -626,6 +990,27 @@ lines.append(f"   - When to use: 当需要{desc_first}时")
 **影响**: 当使用支持 FC 的模型时，System Prompt 中要求 JSON 的输出格式可能造成 LLM 的困惑——它应该输出 `tool_calls` 还是 JSON？
 
 **建议**: 在 `mode="tools"` 时，System Prompt 的 `OUTPUT_FORMAT` 应调整为 FC 模式的说明，而非 JSON 格式的说明。或者统一仅使用 Text 模式（完全去掉 FC 模式）。
+
+---
+
+### 🔎 小健3轮复核(2026-06-11 05:18:28)
+
+**第1轮: 问题真实性验证**
+- ✅ 已修复 — `build_full_system_prompt(strategy)` 在 `strategy="tools"` 时跳过 `OUTPUT_FORMAT`
+- 实际效果: FC模式下System Prompt减少约200+ token(删除整个OUTPUT_FORMAT段落)
+- 采用"跳过"而非"替换为FC说明"方案,因为FC协议格式由API的tool_calls定义,不需要prompt描述
+
+**第2轮: 10大原则验证**
+| 原则 | 符合 | 说明 |
+|------|:----:|------|
+| OCP开闭原则 | ✅ | `build_full_system_prompt` 加了参数但不改原有行为 |
+| YAGNI不过度设计 | ✅ | 不引入FC专用OUTPUT_FORMAT,跳过即可 |
+| KISS保持简单 | ✅ | `if strategy != "tools": parts.append(...)` |
+
+**第3轮: 修复确认**
+- 🏆 已执行方案: `build_full_system_prompt(strategy)` + universal_agent 传 `strategy="tools"`
+- commit: `90c30e5a refactor` + `d90481c1a fix`
+- 验证: 编译通过 + 测试通过
 
 ---
 
@@ -649,6 +1034,27 @@ self.task_id: Optional[str] = None
 
 ---
 
+### 🔎 小健3轮复核(2026-06-11 05:18:28)
+
+**第1轮: 问题真实性验证**
+- ✅ 已缓解 — `get_service.py` 已实现 `threading.Lock` + double-checked locking
+- `reset_instance()` / `set_instance()` / `cleanup_old_instance()` 等公开API完整
+- 但 `BaseAIService` 内部 `_cancelled` 和 `_current_response` 仍是实例可变状态
+- 风险等级: P1→P2,锁降低了并发风险但未完全消除
+
+**第2轮: 10大原则验证**
+| 原则 | 符合 | 说明 |
+|------|:----:|------|
+| KISS保持简单 | ⚠️ 边界 | 单例+双重检查锁是标准模式,复杂但必要 |
+| YAGNI不过度设计 | ✅ | 多会话并发的场景确实需要线程安全 |
+| 禁止backward compatibility | ✅ | 保持现有API不变 |
+
+**第3轮: 最优方案**
+- 🏆 **建议: 保持当前实现** — `threading.Lock` + task_registry.check_cancelled(task_id)的组合已充分缓解
+- 如果需要完全消除风险,需架构级变更(BaseAIService改为无状态工厂+每个请求独立实例) — 超出本次优化范围
+
+---
+
 ### 7.16 ❌ react_cycle 中 `_process_single_step` 的 `chunk_buffer` 传递
 
 **问题**: `_process_single_step()` 接收 `chunk_buffer` 参数，但 `chunk_buffer` 是可变对象，由 `run_react_cycle` 创建并在循环中共享。`chunk_handler.py` 中的 `handle_chunk_buffer_promotion()` 修改了 `chunk_buffer` 的内部状态。这种隐式状态修改增加了理解难度。
@@ -659,33 +1065,65 @@ self.task_id: Optional[str] = None
 
 ---
 
+### 🔎 小健3轮复核(2026-06-11 05:18:28)
+
+**第1轮: 问题真实性验证**
+- ❌ 未修复 — `chunk_buffer` 仍是从 `initialize_run_state()` 返回的可变对象,在循环中共享修改
+- `chunk_handler.py` 的 `handle_chunk_buffer_promotion()` 直接修改 chunk_buffer 内部状态
+- 影响: P3-低,可读性问题而非功能bug
+
+**第2轮: 10大原则评估**
+| 原则 | 符合 | 说明 |
+|------|:----:|------|
+| SLAP同一抽象层 | ⚠️ 违反 | handler修改chunk_buffer状态,隐式耦合 |
+| KISS保持简单 | ⚠️ 边界 | 可变对象共享是简单但危险的模式 |
+| YAGNI不过度设计 | ⚠️ 边界 | 修改为不可变模式增加复杂度 |
+
+**第3轮: 最优方案**
+- 🏆 **建议: 保持现状** — 当前 chunk_buffer 可变对象模式是Python常见模式(类似list/dict作为默认参数),虽然不完美但实际风险低
+- 修改为不可变模式(每次返回新状态)需要重构 `handle_chunk_buffer_promotion` 和所有调用方,收益不足以 justify 成本
+- 如未来需要,可以在重构 chunk_buffer 时统一改为不可变 FrozenChunkBuffer 模式
+
+---
+
 ## 八、重点关注问题总结
 
 ### 8.1 严重程度分类
 
-| 级别 | 问题 | 影响 |
-|------|------|------|
-| **P1-高** | 7.1 get_observation_prompt() 死代码 | 维护陷阱 |
-| **P1-高** | 7.2 get_parameter_reminder() 死代码 | 维护陷阱，误导新开发者 |
-| **P1-高** | 7.6 SystemPrompts 示例使用不存在工具 | 导致 LLM 幻觉 |
-| **P1-高** | 7.15 BaseAIService 单例可变状态 | 并发取消竞态 |
-| **P2-中** | 7.3 Text模式缺少参数Schema | LLM 可能填错参数 |
-| **P2-中** | 7.4 TOOL_REMINDER 永久写入历史 | 历史污染风险 |
-| **P2-中** | 7.10 _build_messages 重复定义 | DRY违反 |
-| **P2-中** | 7.14 OUTPUT_FORMAT与FC模式冲突 | 模型可能困惑 |
-| **P3-低** | 7.5 互斥参数结构不佳 | 可读性差 |
-| **P3-低** | 7.7 中英文混用 | 轻微不一致 |
-| **P3-低** | 7.8 temp_history 状态一致性 | 边界脆弱 |
-| **P3-低** | 7.9 FC配对可能丢失历史 | 边界条件 |
-| **P3-低** | 7.11 参数透传冗余 | 代码冗余 |
-| **P3-低** | 7.13 中英混用 | 轻微不一致 |
+| 级别 | 问题 | 状态 | 影响 |
+|------|------|:----:|------|
+| **P1-高** | 7.1 get_observation_prompt() 死代码 | ✅ 已修复 | 维护陷阱 |
+| **P1-高** | 7.2 get_parameter_reminder() 死代码 | ✅ 已修复 | 维护陷阱，误导新开发者 |
+| **P1-高** | 7.6 SystemPrompts 示例使用不存在工具 | ✅ 已修复 | 导致 LLM 幻觉 |
+| **P1-高** | 7.15 BaseAIService 单例可变状态 | ⚠️ 已缓解(P2) | 并发取消竞态 |
+| **P2-中** | 7.3 Text模式缺少参数Schema | ✅ 已修复 | LLM 可能填错参数 |
+| **P2-中** | 7.4 TOOL_REMINDER 永久写入历史 | ❌ 待修 | 历史污染风险 |
+| **P2-中** | 7.10 _build_messages 重复定义 | ❌ 待修 | DRY违反 |
+| **P2-中** | 7.14 OUTPUT_FORMAT与FC模式冲突 | ✅ 已修复 | 模型可能困惑 |
+| **P3-低** | 7.5 互斥参数结构不佳 | ❌ 待修 | 可读性差 |
+| **P3-低** | 7.7 中英文混用 | ❌ 保持现状 | 轻微不一致 |
+| **P3-低** | 7.8 temp_history 状态一致性 | ❌ 待修 | 边界脆弱 |
+| **P3-低** | 7.9 FC配对可能丢失历史 | ❌ 待修 | 边界条件 |
+| **P3-低** | 7.11 参数透传冗余 | ❌ 保持现状 | 代码冗余 |
+| **P3-低** | 7.13 中英混用 | ❌ 待修 | 轻微不一致 |
+| **P3-低** | 7.16 chunk_buffer 可变传递 | ❌ 保持现状 | 可读性降低 |
 
-### 8.2 建议优先修复
+### 8.2 修复状态总结
 
-1. **P1-高** 7.6: 修正 SystemPrompts._build_examples() 使用正确工具
-2. **P1-高** 7.1/7.2: 删除死代码 `get_observation_prompt()` 和 `get_parameter_reminder()`
-3. **P2-中** 7.3: Text模式注入工具 Schema
-4. **P2-中** 7.4: TOOL_REMINDER 改为动态注入
+| 状态 | 问题数 | 问题编号 |
+|:----:|:------:|---------|
+| ✅ 已修复 | 5 | 7.1, 7.2, 7.3, 7.6, 7.14 |
+| ❌ 待修复 | 5 | 7.4, 7.5, 7.8, 7.9, 7.10, 7.13 |
+| ⚠️ 已缓解/保持现状 | 5 | 7.7, 7.11, 7.12, 7.15, 7.16 |
+
+### 8.3 待修复问题优先级
+
+1. **P2-中** 7.4: TOOL_REMINDER 改为标志位动态注入(SLAP违反复核)
+2. **P2-中** 7.10: 删除 llm_core._build_messages(),统一用 message_utils.build_llm_messages()(DRY违反)
+3. **P3-低** 7.8: 调换 _cap_temp_history() 执行顺序(1行修复)
+4. **P3-低** 7.13: "When to use" 统一为 "使用场景"(1行修复)
+5. **P3-低** 7.5: file_prompts互斥参数改为结构化列表
+6. **P3-低** 7.9: _trim_to_budget 优先保留FC配对消息
 
 ---
 
@@ -745,8 +1183,11 @@ self.task_id: Optional[str] = None
 | 第3遍 | 2026-06-10 15:19 | 小沈 | 0 | 数据流追踪验证 |
 | 第4遍 | 2026-06-10 15:20 | 小沈 | 0 | 代码引用检查 |
 | 第5遍 | 2026-06-10 15:21 | 小沈 | 0 | 全文通读校验 |
+| **第6遍** | **2026-06-11 05:18** | **小健** | **16** | **全问题逐题3轮复核+X原则评估+最优方案** |
 
 ---
 
 **文档完成时间**: 2026-06-10 15:21:00
+**版本v1.1更新时间**: 2026-06-11 05:18:28
+**版本v1.1更新人**: 小健
 **编写人**: 小沈
