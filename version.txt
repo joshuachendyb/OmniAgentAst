@@ -1,18 +1,73 @@
+
 v0.15.3
 
-更新时间: 2026-06-10 19:20:19
+更新时间: 2026-06-10 19:27:46
 
 ## v0.15.2→v0.15.3 变更汇总 - 小沈-2026-06-10
 
-### docs 文档(2 commit)
+### feat——FC模式工具调用增强 + intent映射修复 + 中文大小写不敏感(1 commit)
 
 | 文件 | 变更 |
 |------|------|
-| version.txt | 回滚到v0.15.2正确版本 |
-| doc-6月发展/ (6个) | 新增LLM-Prompt与Message系统分析文档 |
-| notes/ | 新增系统分析报告 |
-| debug_auth_flow.py | 新增认证流程调试脚本 |
-| explore_prompts.py | 新增Prompt探索脚本 |
+| detect_intent.py | 添加ToolCategory.value→intent_type映射(doc_content→document等) |
+| chat_stream_v2.py | 设置_current_task_id context variable |
+| react_cycle.py | FC模式LLM纯文本时注入工具调用提醒 |
+| crss_scorer.py | 中文关键词大小写不敏感(使用kw.lower()) |
+| tool_types.py | C盘/D盘/E盘改为小写 |
+| shell_tools.py | 安全检查改用blocked字段(不用is_safe) |
+| tool_safety_checker.py | write_text_file参数名修复 + 添加兼容方法 |
+| base_prompt_template.py | TOOL_CALL_RULES增强强制工具调用规则 |
+| task_cancel.py | 删除直接Task.cancel(),让ReAct自然发现cancelled状态 |
+
+### refactor——HITL确认机制修复 + 日志优化 + 性能统计(1 commit)
+
+| 文件 | 变更 |
+|------|------|
+| action_handler.py | check_safety_and_confirm改为async generator,IncidentStep先yield再等确认 |
+| action_handler.py | 使用agent.status判断停止,消除isinstance检查(SLAP) |
+| crss_scorer/react_cycle/prompts多个 | 日志info→debug优化,减少冗余日志 |
+| llm_core.py | 添加流式请求耗时+chunk数统计 |
+| action_handler.py | 添加工具执行耗时统计 |
+| error_handler.py | parse_error时尝试作为最终回答(FC模式LLM直接回答) |
+| pytest.ini | 添加e2e_full_link/asyncio markers |
+
+### refactor——safety确认改用AgentStatus.FAILED(1 commit)
+
+| 文件 | 变更 |
+|------|------|
+| action_handler.py | safety确认逻辑改为AgentStatus.FAILED |
+| tool_safety_checker.py | 新增相关支持方法 |
+
+### refactor——factory重构+handlers调整+tools注册表更新(1 commit)
+
+| 文件 | 变更 |
+|------|------|
+| handlers/ (action/error) | 处理逻辑重构 |
+| factory/ (多个) | 工厂方法调整 |
+| tools/register (6个) | 注册表统一更新 |
+| log_config/ (setup) | 日志配置整理 |
+| doc/ | 新增backend-code-logic-review v2分析文档 |
+
+### refactor——删除tool_safety_checker死代码(YAGNI)(1 commit)
+
+| 文件 | 变更 |
+|------|------|
+| tool_safety_checker.py | 删除record_operation/execute_with_safety未调用方法 |
+
+### docs——新增LLM-Prompt与Message系统分析文档及调试脚本(1 commit)
+
+| 文件 | 说明 |
+|------|------|
+| doc/LLM-Prompt与Message目录(7个文件) | 分析报告+调试脚本+深度分析 |
+
+### 净效果
+
+- 9个有效commit
+- FC模式工具调用增强
+- HITL确认机制完善
+- 日志冗余大幅减少
+- 性能统计能力新增
+- 全部测试通过
 
 ---
 
