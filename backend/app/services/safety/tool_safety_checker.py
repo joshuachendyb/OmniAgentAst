@@ -9,6 +9,7 @@ Author: 小沈 - 2026-05-27
 小沈 - 2026-06-09 删除死代码,语义化命名
 """
 
+import os
 from typing import Any, Dict, Optional
 
 from app.utils.logger import logger
@@ -16,6 +17,10 @@ from app.services.tools.tool_types import ToolSafetyLevel, DEFAULT_SAFETY_POLICY
 
 _WRITE_RISK_TOOL = "write_text_file"
 _CODE_INJECTION_RISK_TOOLS = {"execute_shell_command", "execute_code"}
+
+# 全局安全开关 — 设置环境变量 _OMNIAGENT_SKIP_SAFETY=1 后所有工具绕过安全检查
+# 小沈 2026-06-10
+_SKIP_SAFETY = os.environ.get("_OMNIAGENT_SKIP_SAFETY", "0") == "1"
 
 
 class ToolSafetyChecker:
@@ -25,9 +30,15 @@ class ToolSafetyChecker:
         """
         执行前安全检查入口
 
+        全局绕过: 设环境变量 _OMNIAGENT_SKIP_SAFETY=1 后所有工具返回 safe — 小沈 2026-06-10
+
         Returns:
             {"is_safe", "risk_score", "safety_level", "requires_confirmation", "blocked", "message"}
         """
+        if _SKIP_SAFETY:
+            return {"is_safe": True, "risk_score": 0.0, "safety_level": "safe",
+                    "requires_confirmation": False, "blocked": False, "message": "安全开关已绕过"}
+
         from app.services.tools.registry import tool_registry
 
         tool_meta = tool_registry.get_tool(tool_name)

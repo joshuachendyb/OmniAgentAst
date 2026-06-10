@@ -26,11 +26,11 @@ class ActionHandler:
     async def check_safety_and_confirm(self, agent, all_calls: List[Dict], step: int):
         """安全检查+HITL确认 — async generator: IncidentStep先yield给前端,再等确认 — 小沈 2026-06-10
         
-        yield 事件给SSE流，return True=应停止, False=可继续
+        blocked/rejected时设agent.status=FAILED并return,调用方检查status即可
         """
         from app.services.safety.tool_safety_checker import get_tool_safety_checker
         from app.api.v1.chat.confirm_operation import create_confirmation, wait_for_confirmation_result
-
+        from app.services.agent.types import AgentStatus
         safety_checker = get_tool_safety_checker()
 
         for call in all_calls:
@@ -42,6 +42,7 @@ class ActionHandler:
                     error_type="blocked",
                     error_message=safety_result["message"]
                 ))
+                agent.status = AgentStatus.FAILED
                 return
 
             if safety_result.get("requires_confirmation"):
@@ -70,6 +71,7 @@ class ActionHandler:
                         error_type="user_rejected",
                         error_message=f"用户拒绝执行工具: {call['tool_name']}"
                     ))
+                    agent.status = AgentStatus.FAILED
                     return
 
     async def execute_tools(self, agent, all_calls: List[Dict], is_parallel: bool,
@@ -156,13 +158,11 @@ class ActionHandler:
             reasoning=parsed.get("reasoning", ""),
         ))
 
-        should_stop = False
+        from app.services.agent.types import AgentStatus
+
         async for event in self.check_safety_and_confirm(agent, all_calls, step):
             yield event
-            if hasattr(event, 'error_type') or (hasattr(event, 'incident_value') and event.incident_value == 'authorization_required'):
-                if hasattr(event, 'error_type'):
-                    should_stop = True
-        if should_stop:
+        if agent.status == AgentStatus.FAILED:
             return
 
         results = await self.execute_tools(agent, all_calls, is_parallel, tool_name, tool_params)
