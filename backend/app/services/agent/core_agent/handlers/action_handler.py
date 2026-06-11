@@ -90,6 +90,13 @@ class ActionHandler:
         elapsed = time.time() - start_time
         tool_names = [c["tool_name"] for c in all_calls]
         logger.info(f"[action_handler] 工具执行完成: tools={tool_names}, 耗时={elapsed:.2f}s")
+        
+        for call, result in zip(all_calls, results):
+            if isinstance(result, Exception):
+                logger.info(f"[action_handler] 工具原始结果: tool={call['tool_name']}, params={call['tool_params']}, result=ERROR({result})")
+            else:
+                logger.info(f"[action_handler] 工具原始结果: tool={call['tool_name']}, params={call['tool_params']}, result={result}")
+        
         return results
 
     async def build_observation(self, agent, all_calls: List[Dict], results: List[Any], step: int,
