@@ -2137,58 +2137,12 @@ add_observation(obs_text, llm_call_count, fc_context)
 | ReAct | `run_react_cycle()` | 循环调度逻辑不变 |
 | ReAct | `handle_action()` / `handle_answer()` | handler逻辑基本不变 |
 
-### 7.8 改造实施顺序建议
 
-```
-第一轮: 彻底删除（可安全删除，不影响FC主路径）
-  ① OUTPUT_FORMAT 常量
-  ② TOOL_REMINDER 常量 + _tool_reminder_needed逻辑
-  ③ _call_llm_text_stream()
-  ④ _call_llm_text_nostream()
-  ⑤ _convert_fc_messages_to_text()
-  ⑥ llm_response_parser/ 整个目录
-
-第二轮: 简化（去掉不必要的分支）
-  ⑦ _append_observation() → 只留FC分支, fc_context必传
-  ⑧ _is_observation_role() → 只检查role="tool"
-  ⑨ _trim_to_budget() → 删除FC/Text分离
-  ⑩ _dedup_by_fingerprint() → 删除
-  ⑪ OUTOUT_FORMAT示例精简（finish示例）
-  ⑫ TOOL_CALL_RULES精简（移除finish引用）
-
-第三轮: 核心改造（改变数据流）
-  ⑬ _extract_tool_calls() → 增加id捕获
-  ⑭ tool_call_accumulator → 增加id存储
-  ⑮ _call_llm_fc_stream() → 删除Text降级, yield dict
-  ⑯ _process_single_step() → 简化, 不用parse_llm_response
-  ⑰ action_handler.py → fc_context传递链路打通
-  ⑱ _get_system_prompt() / build_full_system_prompt() → 移除strategy
-
-第四轮: 验证
-  ⑲ 所有单元测试
-  ⑳ 实际场景跑测（FC只走tool_calls, FC返回文本=finish）
-
-```
-3.5 补充修改（6.9节分析）:
-   ㉑ client_sdk.py → 删mode参数+always tools
-   ㉒ llm_core.py → chat()删mode="text"
-   ㉓ llm_core.py → request()/request_stream()删mode参数
-   ㉔ prompt_logger.py → call_type默认值改为"tools"
-```
-
-```
-第四轮前补充（测试文件）:
-   ㉕ conftest.py → MockLLMClient mock改为FC流式格式
-   ㉖ test_react_cycle.py → _call_llm mock改为FC格式
-   ㉗ test_react_cycle_business.py → _call_llm mock改为FC格式
-   ㉘ test_shell_security.py → 删除Text模式测试用例
-```
-
-### 7.9 全系统文件检查清单（补充第2/3/4/5章未覆盖范围）
+### 7.8 全系统文件检查清单（补充第2/3/4/5章未覆盖范围）
 
 **设计约束**: 从系统从开始运行的地方开始检查，修改为支持FC模式的，除了第2/3/4/5章已分析的Prompt/Message/LLM/ReAct层，还有哪些需要修改清理，都一并考虑到。不留死角，不保留死代码，不向后兼容。
 
-#### 7.9.1 系统入口→出口完整调用链
+#### 7.8.1 系统入口→出口完整调用链
 
 ```
 API路由层 (chat_router.py)
@@ -2233,7 +2187,7 @@ message_builder.add_observation()    ← 第3章已覆盖 (fc_context必传)
 conversation_history (FC格式)
 ```
 
-#### 7.9.2 第4章未覆盖的文件分析
+#### 7.8.2 第4章未覆盖的文件分析
 
 **A. `backend/app/services/llm/client_sdk.py`（核心遗漏）**
 
@@ -2270,9 +2224,9 @@ def _build_request_body(messages, model, tools=None, tool_choice=None, ...):
 | L226-234 | `chat()`方法硬编码`mode="text"` | 删`mode="text"`参数 |
 | L104-142 | `request()`方法`mode`参数 | 删`mode`参数 |
 | L144-224 | `request_stream()`方法`mode`参数 | 删`mode`参数 |
-| L237-264 | `_extract_tool_calls()`缺失`id`捕获 | 增加`id`字段（6.4.1已覆盖）|
+| L237-264 | `_extract_tool_calls()`缺失`id`捕获 | 增加`id`字段（7.4.1已覆盖）|
 
-#### 7.9.3 工具与辅助层
+#### 7.8.3 工具与辅助层
 
 **A. `backend/app/utils/prompt_logger.py` — `call_type`参数**
 
@@ -2295,7 +2249,7 @@ def _build_request_body(messages, model, tools=None, tool_choice=None, ...):
 | L27-37 | `ChatResponse.tool_calls` | **无需修改**。数据类，兼容FC协议。 |
 | L40-51 | `StreamChunk` | **无需修改**。数据类，无mode逻辑。 |
 
-#### 7.9.4 测试文件影响清单
+#### 7.8.4 测试文件影响清单
 
 **铁律**: 测试文件中的mock、断言必须与FC-only架构保持一致，不能保留Text模式模拟。
 
@@ -2308,7 +2262,7 @@ def _build_request_body(messages, model, tools=None, tool_choice=None, ...):
 | `tests/conftest_e2e.py` | L125,258,389,595-615 | FC `tool_calls` 期望SSE结构 | 保留 |
 | `tests/test_e2e_full_link.py` | 多处 | `tool_calls` 断言（~50处） | 保留 |
 
-#### 7.9.5 清理清单总表（补充6.6删除清单）
+#### 7.8.5 清理清单总表（补充7.6删除清单）
 
 | 层级 | 文件 | 删除/修改内容 | 行数 | 优先级 |
 |------|------|-------------|------|--------|
@@ -2324,8 +2278,56 @@ def _build_request_body(messages, model, tools=None, tool_choice=None, ...):
 | Tests | `test_shell_security.py` | Text模式测试用例 | ~30 | P2 |
 | **合计补充** | | | **~97行** | |
 
-> **注**: 本章6.9节的删除/修改量 + 6.6节的443行 = **总计约540行**的变更量。
+### 7.9 改造实施顺序建议
 
+**设计原则**: 依赖前置，每批次内部原子化完成（中间不可提交），批次间可以提交验证。
+
+```
+第一轮: 核心改造（原子批次，必须一次性完成）
+  ⑬ _extract_tool_calls() → 增加id捕获
+  ⑭ tool_call_accumulator → 增加id存储
+  ⑮ _call_llm_fc_stream() → yield协议变更 ("response", str)→dict, 删除Text降级
+  ⑯ _process_single_step() → 不再使用parse_llm_response()
+  ⑥ 删除 llm_response_parser/ 整个目录（现在可以安全删除）
+  ⑰ action_handler.py → fc_context传递链路打通
+
+第二轮: SDK/LLM Core改造（依赖第一轮的yield协议）
+  ㉑ client_sdk.py → 删mode参数, tools不为None时始终注入body
+  ㉒ llm_core.py → chat()删mode="text"硬编码
+  ㉓ llm_core.py → request()/request_stream()删mode参数
+
+第三轮: 安全删除（完全独立，不改变数据流）
+  ① OUTPUT_FORMAT 常量
+  ② TOOL_REMINDER 常量 + _tool_reminder_needed逻辑
+  ③ _call_llm_text_stream()
+  ④ _call_llm_text_nostream()
+  ⑤ _convert_fc_messages_to_text()
+  ⑪ OUTPUT_FORMAT示例精简（删除finish相关示例）
+  ⑫ TOOL_CALL_RULES精简（移除finish引用）
+  ⑱ _get_system_prompt() / build_full_system_prompt() → 移除strategy
+
+第四轮: 简化（去掉不必要的分支）
+  ⑦ _append_observation() → 只留FC分支, fc_context必传
+  ⑧ _is_observation_role() → 只检查role="tool"
+  ⑨ _trim_to_budget() → 删除FC/Text分离
+  ⑩ _dedup_by_fingerprint() → 删除
+
+第五轮: 杂项
+  ㉔ prompt_logger.py → call_type默认值"text"→"tools"
+
+第六轮: 测试文件更新
+  ㉕ conftest.py → MockLLMClient mock改为FC流式格式
+  ㉖ test_react_cycle.py → _call_llm mock改为FC格式
+  ㉗ test_react_cycle_business.py → _call_llm mock改为FC格式
+  ㉘ test_shell_security.py → 删除Text模式测试用例
+
+第七轮: 验证
+  ⑲ 所有单元测试
+  ⑳ 实际场景跑测（FC只走tool_calls, FC返回文本=直接作为answer处理）
+```
+
+
+> **注**: 本章7.9节的删除/修改量 + 7.6节的443行 = **总计约540行**的变更量。
 ---
 
 **文档完成时间**: 2026-06-11 09:19:07  
