@@ -70,8 +70,7 @@ class UniversalAgent(BaseAgent):
         if not hasattr(self, 'prompts') or not self.prompts:
             return "System: 通用助手"
 
-        strategy = "tools" if self.tool_category is not None else None
-        base_prompt = self.prompts.build_full_system_prompt(strategy=strategy)
+        base_prompt = self.prompts.build_full_system_prompt()
         candidates_hint = self._build_candidates_hint()
         cross_tool_hint = self._build_cross_tool_hint()
         parts = [base_prompt]
@@ -135,11 +134,6 @@ class UniversalAgent(BaseAgent):
         executed_summary = self._build_executed_tool_summary()
         if executed_summary:
             messages.append({"role": "system", "content": executed_summary})
-
-        if getattr(self, '_tool_reminder_needed', False):
-            from app.services.prompts.base_prompt_template import BasePrompts
-            messages.append({"role": "system", "content": BasePrompts.TOOL_REMINDER})
-            self._tool_reminder_needed = False
 
         openai_tools = self._get_openai_tools()
 
@@ -332,7 +326,8 @@ class UniversalAgent(BaseAgent):
         return result
 
     def _get_openai_tools(self) -> list:
-        """获取OpenAI格式工具定义 — 小沈 2026-06-09 添加TTL缓存过期"""
+        """获取OpenAI格式工具定义 — 小沈 2026-06-09 添加TTL缓存过期
+        P0修复: 多分类加载时传category=None,确保extra_tools对LLM可见 — 小沈 2026-06-11"""
         import time
         current_time = time.time()
         cache_ts = getattr(self, '_cache_timestamp', 0)
@@ -342,7 +337,10 @@ class UniversalAgent(BaseAgent):
             return cached
         
         from app.services.tools.registry import tool_registry
+        loaded = getattr(self, '_loaded_categories', set())
         category = getattr(self, 'tool_category', None)
+        if len(loaded) > 1:
+            category = None
         self._cached_openai_tools = tool_registry.to_openai_tools(category=category)
         self._cache_timestamp = current_time
         return self._cached_openai_tools

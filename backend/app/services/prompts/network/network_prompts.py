@@ -36,9 +36,6 @@ Example 2: POST请求
 
 Example 3: 网络诊断
 {{"thought": "用户要测试网络连通性", "reasoning": "使用network_diagnose测试ping", "tool_name": "network_diagnose", "tool_params": {{"host": "baidu.com", "count": 4}}}}
-
-Example 4: 任务完成
-{{"thought": "网络请求已完成", "reasoning": "请求成功,数据已返回", "tool_name": "finish", "tool_params": {{"result": "获取到100条数据"}}}}
 """
     
 

@@ -41,9 +41,6 @@ Example 2: 读取Excel
 
 Example 3: 查询数据库
 {{"thought": "用户要查询数据", "reasoning": "使用query_sql", "tool_name": "query_sql", "tool_params": {{"sql": "SELECT * FROM users"}}}}
-
-Example 4: 任务完成
-{{"thought": "已获取结果", "reasoning": "文档处理完成", "tool_name": "finish", "tool_params": {{"result": "文档内容如下..."}}}}
 """
     
 
