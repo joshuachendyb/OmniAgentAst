@@ -22,8 +22,6 @@
 增强时间: 2026-03-24
 升级reasoning时间: 2026-04-14
 """
-from typing import Dict, Any, Optional
-
 from app.services.prompts.base_prompt_template import BasePrompts
 
 
@@ -57,28 +55,23 @@ class FileOperationPrompts(BasePrompts):
         return f"""# File Operation Tools
 
 {tool_descriptions}
-【Tool Call Examples】:
-Example 1: 读取文件
-{{"thought": "用户要读取配置文件", "reasoning": "调用read_file单文件模式", "tool_name": "read_file", "tool_params": {{"file_paths": ["C:/config.json"]}}}}
+【调用决策示例】:
+用户: "读取C:/config.json"
+→ 判断: 单文件读取 → 调用read_file(file_paths=["C:/config.json"])
 
-Example 2: 搜索文件内容
-{{"thought": "搜索包含TODO的Python文件", "reasoning": "使用grep_file_content搜索", "tool_name": "grep_file_content", "tool_params": {{"pattern": "TODO", "search_dir": "D:/project", "glob": "*.py"}}}}
+用户: "搜索D:/project下所有包含TODO的Python文件"
+→ 判断: 内容搜索+文件过滤 → 调用grep_file_content(pattern="TODO", search_dir="D:/project", glob="*.py")
 
-Example 3: 写入文件
-{{"thought": "用户要写入新文件", "reasoning": "使用write_text_file写入", "tool_name": "write_text_file", "tool_params": {{"file_path": "D:/output.txt", "text": "Hello World"}}}}"""
+用户: "把Hello World写入D:/output.txt"
+→ 判断: 写入新文件 → 调用write_text_file(file_path="D:/output.txt", text="Hello World")"""
 
     def _get_domain_name(self) -> str:
         return "文件管理"
 
     def _get_domain_steps(self) -> str:
-        return "1. 分析需要做什么操作\n2. 使用合适的工具完成任务\n3. 用中文总结结果"
-
-    def get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
-        """文件管理任务 — 覆盖基类以支持context参数"""
-        base_prompt = super().get_task_prompt(task)
-        if context:
-            base_prompt += f"\n\nAdditional context:\n{context}"
-        return base_prompt
+        return ("1. 确定操作类型(读取/写入/搜索/编辑/删除)\n"
+                "2. 检查路径是否存在,选择合适的文件工具\n"
+                "3. 执行操作并用中文总结结果")
 
     def get_rollback_instructions(self) -> str:
         """获取回滚指令Prompt - 小沈 2026-06-11 英文→中文"""
