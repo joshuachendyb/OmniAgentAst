@@ -23,8 +23,7 @@ MessageBuilder 实例生命周期必须与 Agent 实例强绑定,
 - build_schema_text() → message_utils.build_schema_text()
 """
 
-import hashlib
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from app.constants import MAX_CONTEXT_CHARS, OBSERVATION_BUDGET_DECAY, OBSERVATION_BUDGET_MAX, OBSERVATION_BUDGET_MIN, TEMP_HISTORY_CHAR_LIMIT
 from app.utils.text_utils import smart_truncate_text
@@ -58,6 +57,8 @@ class MessageBuilder:
 
     def init_history(self, sys_prompt: str, task_prompt: str) -> None:
         """初始化conversation_history — 替代base_react.py L368-369"""
+        if not task_prompt or not task_prompt.strip():
+            raise ValueError("task_prompt不能为空")
         self.conversation_history = [
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": task_prompt}
@@ -78,33 +79,26 @@ class MessageBuilder:
         observation_text = self._normalize_observation_prefix(observation_text)
         return observation_text
 
-    def _append_observation(self, observation_text: str, fc_context: Optional[Dict] = None) -> None:
-        """追加observation消息 — 小沈 2026-06-09 方案G: role=system→user+[Tool Result]"""
-        if fc_context and fc_context.get("tool_call_id"):
-            tool_call_id = fc_context["tool_call_id"]
-            tool_calls = fc_context.get("tool_calls")
-            if tool_calls:
-                self.conversation_history.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
-            self.conversation_history.append({"role": "tool", "content": observation_text, "tool_call_id": tool_call_id})
-        else:
-            self.conversation_history.append({"role": "user", "content": f"[Tool Result]\n{observation_text}"})
+    def _append_observation(self, observation_text: str, fc_context: Dict) -> None:
+        """追加FC协议observation消息 — fc_context必传 — FC-only重构 2026-06-11 小沈"""
+        tool_call_id = fc_context["tool_call_id"]
+        tool_calls = fc_context.get("tool_calls")
+        if tool_calls:
+            self.conversation_history.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
+        self.conversation_history.append({"role": "tool", "content": observation_text, "tool_call_id": tool_call_id})
 
-    def add_observation(self, observation_text: str, llm_call_count: int = 0, fc_context: Optional[Dict] = None) -> None:
-        """追加observation消息 — 含智能截断 + [Observation]前缀归一化 + trim — 小沈 2026-06-08 重构
-        
-        fc_context: ToolsStrategy下FC协议上下文,含tool_calls和tool_call_id。
-        有fc_context时按OpenAI FC协议注入assistant(tool_calls)+tool(tool_call_id),
-        模型能识别"工具已被处理",不会重复调用。
-        """
+    def add_observation(self, observation_text: str, llm_call_count: int, fc_context: Dict) -> None:
+        """FC-only: fc_context必传 — 重构 2026-06-11 小沈"""
         observation_text = self._prepare_observation_text(observation_text, llm_call_count)
         self._append_observation(observation_text, fc_context)
         self.trim_history()
 
-    def add_parse_error(self, error_msg: str) -> None:
-        """追加解析错误到history — 替代base_react.py L643"""
+    def add_parse_error(self, error_msg: str, fc_context: Dict) -> None:
+        """追加解析错误到history — FC-only: fc_context必传"""
         self.add_observation(
             f"Parse Error: {error_msg}. Please ensure your response follows the ReAct format.",
-            llm_call_count=0
+            llm_call_count=0,
+            fc_context=fc_context,
         )
 
     def flush_temp_to_history(self, chunk_buffer: str) -> None:
@@ -172,21 +166,10 @@ class MessageBuilder:
         return system_msgs, obs_list, assistant_msgs
 
     def _trim_to_budget(self, obs_list, assistant_msgs, budget):
-        """去重+截断observation,优先保留FC配对obs(tool-role),非FC text-obs先裁剪"""
-        obs_list = self._dedup_by_fingerprint(obs_list)
-        # P4: 优先保留含tool_calls的assistant消息,保护FC配对完整性 — 小欧 2026-06-11
-        tool_call_msgs = [m for m in assistant_msgs if m.get("tool_calls")]
-        text_msgs = [m for m in assistant_msgs if not m.get("tool_calls")]
-        tool_call_msgs = tool_call_msgs[-10:]
-        text_msgs = text_msgs[-5:]
-        assistant_msgs = text_msgs + tool_call_msgs
+        """FC-only: 统一裁剪,无FC/Text分离 — 重构 2026-06-11 小沈"""
         obs_list = obs_list[-30:]
-        # 分离tool-role(FC配对)和text-role(非FC),优先保留FC配对obs
-        tool_obs = [o for o in obs_list if o.get("role") == "tool"]
-        text_obs = [o for o in obs_list if o.get("role") != "tool"]
-        # 先裁text-obs(非FC),保留最近15条tool-obs(FC配对)
-        tool_obs = tool_obs[-15:]
-        combined = text_obs + tool_obs
+        assistant_msgs = assistant_msgs[-15:]
+        combined = obs_list + assistant_msgs
         while combined and self._total_chars(combined) > budget:
             combined.pop(0)
         return combined
@@ -229,16 +212,8 @@ class MessageBuilder:
 
     @staticmethod
     def _is_observation_role(msg: Dict) -> bool:
-        """判断消息是否为observation — 小沈 2026-06-09 方案G: 识别role=user+[Tool Result]
-
-        三种形式:
-        1. text策略: role=user + content含[Tool Result]
-        2. tools策略(FC协议): role=tool(与assistant(tool_calls)配对)
-        """
-        if msg.get("role") == "tool":
-            return True
-        content = msg.get("content", "")
-        return msg.get("role") == "user" and "[Tool Result]" in content
+        """FC-only: observation只有role=tool一种形式 — 重构 2026-06-11 小沈"""
+        return msg.get("role") == "tool"
 
     @staticmethod
     def _trim_fc_pairs(messages: List[Dict]) -> List[Dict]:
@@ -274,27 +249,6 @@ class MessageBuilder:
                     result.append(msg)
             else:
                 result.append(msg)
-        return result
-
-    @staticmethod
-
-    def _dedup_by_fingerprint(obs_list: List[Dict]) -> List[Dict]:
-        """基于指纹去重observation — 替代 base_react.py L1267-1278
-
-        FC协议消息(role:tool+tool_call_id)不参与去重:
-        同工具重复调用时content可能相同但tool_call_id不同,去重会断裂配对。
-        """
-        seen = set()
-        result = []
-        for obs in obs_list:
-            if obs.get("role") == "tool" and obs.get("tool_call_id"):
-                result.append(obs)
-                continue
-            content = obs.get("content", "")
-            fp = hashlib.md5(content.encode()).hexdigest()[:16]
-            if fp not in seen:
-                seen.add(fp)
-                result.append(obs)
         return result
 
     @staticmethod

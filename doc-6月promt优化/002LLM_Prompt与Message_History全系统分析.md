@@ -17,6 +17,7 @@
 | v1.3 | 2026-06-11 09:19:07 | 小沈 | 新增FC-only全系统文件检查清单（补充第2/3/4/5章未覆盖范围）|
 | v1.4 | 2026-06-11 09:37:46 | 小沈 | 六↔七章节号互换；新增7.1.1降级路径必要性分析 |
 | v1.5 | 2026-06-11 | 小沈 | 7.5.5补充_utils.py/_tool_params.py；7.5.6补充fc_context构建代码+L144删除说明；7.8.4精确区分mock类型；第三章新增P0历史污染问题；第五章新增3个P2问题 |
+| v1.6 | 2026-06-11 14:30:00 | 小健 | 7.5.7补充审核发现6个问题（#1 fc_context死代码 #2 L144多余消息 #3 handler不写入history #4 yield协议变更崩溃P0 #5 answer_handler.strip依赖 #6 trim分离逻辑），推荐方案A保持str类型
 
 ---
 ## 一、核心架构总览
@@ -2364,6 +2365,17 @@ def _build_request_body(messages, model, tools=None, tool_choice=None, ...):
 | Tests | `test_shell_security.py` | Text模式测试用例 | ~30 | P2 |
 | **合计补充** | | | **~97行** | |
 
+#### 7.8.6 重构后待修复问题
+
+以下问题因与FC-only重构流程有依赖关系，需在重构完成后修复：
+
+| 问题 | 严重程度 | 原因 | 涉及文件 |
+|------|---------|------|---------|
+| chunk_buffer提升与add_observation时序冲突 | P2 | FC-only会改chunk/observation流程，现在修可能白做 | `chunk_handler.py`, `message_builder.py` |
+| 前端SSE error事件缺少timestamp字段 | P2 | FC-only可能统一Step事件格式，现在修可能被覆盖 | 前端SSE handler |
+
+> 详见第三章3.1节（P0已修复）和第五章5.1节（P2-1已修复）。
+
 ### 7.9 改造实施顺序建议
 
 **设计原则**: 依赖前置，每批次内部原子化完成（中间不可提交），批次间可以提交验证。
@@ -2411,9 +2423,227 @@ def _build_request_body(messages, model, tools=None, tool_choice=None, ...):
 ```
 
 
-> **注**: 本章7.9节的删除/修改量 + 7.6节的443行 = **总计约540行**的变更量。
 ---
 
-**文档完成时间**: 2026-06-11 09:19:07  
-**复查次数**: 5遍  
-**复查结果**: ✅ 全部通过  
+## 七.10 补充发现（审核确认）
+
+**创建时间**: 2026-06-11 14:30:00  
+**作者**: 小健（代码深度审查）  
+**用途**: 核实第7章方案中遗漏的关键问题及修改方法
+
+---
+
+### 7.10.1 问题 #1: `fc_context`始终为None，FC分支是死代码 — 已确认
+
+**代码事实**:
+
+1. `action_handler.py:195` — `_update_message_builder()`调用`add_observation()`时**不传fc_context**：
+   ```python
+   agent.message_builder.add_observation(obs_text, llm_call_count=llm_call_count)
+   # ^ 没有fc_context参数！
+   ```
+
+2. `message_builder.py:94-101` — `add_observation()`默认`fc_context=None`：
+   ```python
+   def add_observation(self, observation_text: str, llm_call_count: int = 0, fc_context: Optional[Dict] = None) -> None:
+       ...
+       self._append_observation(observation_text, fc_context)
+   ```
+
+3. `message_builder.py:83-90` — `_append_observation()`当fc_context=None时走Text分支：
+   ```python
+   if fc_context and fc_context.get("tool_call_id"):
+       # FC协议分支 → 永远不会执行！
+   else:
+       # Text模式分支 → 永远走这里
+       self.conversation_history.append({"role": "user", "content": f"[Tool Result]\n{observation_text}"})
+   ```
+
+**结论**: FC分支是**死代码**。当前conversation_history中所有observation都是`role=user + [Tool Result]`格式，没有任何一个observation是FC格式的`role=tool + tool_call_id`。
+
+**修改方案**: （与7.3.1-7.3.2一致）
+- `action_handler.py:_update_message_builder()`签名增加fc_context参数
+- 调用`add_observation()`时传入fc_context
+- `message_builder.py:add_observation()`fc_context改为必传
+- `message_builder.py:_append_observation()`删除Text分支
+
+---
+
+### 7.10.2 问题 #2: `add_assistant()`在action路径写入多余消息 — 已确认
+
+**代码事实**（`action_handler.py:144`）：
+```python
+agent.message_builder.add_assistant(llm_response)
+```
+
+这段代码在`build_observation()`（处理action工具调用）中被调用，`llm_response`是`{"tool_name": "read_file", ...}`这样的JSON字符串。
+
+**问题**:
+1. FC协议下assistant(tool_calls)应由`_append_observation()`通过FC协议格式添加（role=assistant with tool_calls）
+2. 但L144写入了一条多余的Text格式assistant消息（role=assistant, content=JSON字符串）
+3. 这条消息会在后续LLM调用时被包含在messages里，造成冗余
+
+**修改方案**:
+- 删除`action_handler.py:L144`的`add_assistant(llm_response)`调用
+- FC-only下assistant消息由`_append_observation()`以FC协议格式添加（见7.3.3）
+- finish/chat场景下LLM返回纯文本，才由`add_assistant()`存储
+
+---
+
+### 7.10.3 问题 #3: `answer_handler`和`error_handler`不写入conversation_history — 已确认（严重）
+
+**代码事实**:
+
+1. `answer_handler.py:15-33` — `handle_answer()`只发射`ThoughtStep`和`FinalStep`，**不调任何write操作**：
+   ```python
+   async def handle_answer(agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
+       # 只发射事件，不写入conversation_history
+       yield agent._step_emitter.emit(FinalStep(...))
+       agent.status = AgentStatus.COMPLETED
+   ```
+
+2. `error_handler.py:15-28` — `handle_parse_error()`只发射`FinalStep`，**不写入conversation_history**：
+   ```python
+   if llm_response and isinstance(llm_response, str) and len(llm_response.strip()) > 5:
+       yield agent._step_emitter.emit(FinalStep(response=llm_response.strip(), ...))
+       agent.status = AgentStatus.COMPLETED
+   ```
+
+3. `chunk_handler.py:14-25` — `handle_chunk()`只发射`ChunkStep`，**不写入conversation_history**：
+   ```python
+   async def handle_chunk(agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
+       yield agent._step_emitter.emit(ChunkStep(...))
+       async for event in handle_chunk_buffer_promotion(...):
+           yield event
+   ```
+
+**结论**: answer、parse_error、chunk三种handler都不写入conversation_history。只有action路径（`action_handler.py:144`）才写入。
+
+**文档第6.1节Step 10示例显示conversation_history包含finish消息，但实际代码不写入。**
+
+**修改方案**: （FC-only下LLM文本回复=answer，不需要额外处理。但需确认历史对话场景下是否需要保留最后的answer消息。）
+
+- FC-only方案：answer场景LLM返回纯文本（最终答案），conversation_history不需要写入assistant消息，因为这是最终回复
+- 但如果需要保留对话历史（如多轮对话），则需要在`handle_answer()`中添加：
+  ```python
+  agent.message_builder.add_assistant(llm_response.strip())
+  ```
+- 同样`handle_parse_error()`和`handle_chunk()`也需考虑是否需要写入
+
+**建议**: FC-only下，answer/parse_error/chat场景都是"最终回复"，不需要写入conversation_history作为工具调用上下文。但如果前端需要显示最后一条assistant消息（用于export JSON），则需要在每个handler结尾统一写入。
+
+---
+
+### 7.10.4 问题 #4: `_call_llm_fc_stream()` yield协议变更导致3个handler崩溃 — 已确认（严重P0）
+
+**代码事实**:
+
+1. `react_cycle.py:90` — handler调用签名：
+   ```python
+   async for event in handler(agent, parsed, llm_response, step_counter, chunk_buffer):
+       yield event
+   ```
+   第三个参数`llm_response`当前是**str**（LLM原始响应）。
+
+2. `answer_handler.py:21` — 使用`llm_response.strip()`：
+   ```python
+   content = parsed.get("content", "") or llm_response.strip()
+   # ^ 如果llm_response是dict，.strip()会AttributeError崩溃
+   ```
+
+3. `error_handler.py:21` — 使用`isinstance(llm_response, str)`和`llm_response.strip()`：
+   ```python
+   if llm_response and isinstance(llm_response, str) and len(llm_response.strip()) > 5:
+   # ^ 如果llm_response是dict，isinstance检查会返回False，但.strip()调用在条件内
+   ```
+
+4. `chunk_handler.py:20` — 使用`llm_response.strip()`：
+   ```python
+   content = parsed.get("content", llm_response.strip())
+   # ^ 如果llm_response是dict，.strip()会AttributeError崩溃
+   ```
+
+**结论**: 文档7.4.4假设`_call_llm_fc_stream()` yield协议从`("response", str)`变为`("response", dict)`。如果`llm_response`从str变成dict，**3个handler（answer/error/chunk）都会崩溃**，因为它们的第3个参数期望是str，尝试`.strip()`操作。
+
+**修改方案**:
+
+**方案A（推荐）**: 保持`llm_response`为str，在dict中用额外字段传递解析结果。
+```python
+# _call_llm_fc_stream() FC-only
+parsed = parse_json(full_content)
+if parsed and "tool_name" in parsed:
+    yield ("response", full_content)  # 仍传str
+    return
+# 无tool_name → 这是LLM的最终答复(answer)
+yield ("response", full_content.strip())  # 仍传str
+```
+`_process_single_step()`仍然调用`parse_llm_response()`，但简化逻辑：
+```python
+# 如果LLM返回的是纯JSON且有tool_name → action
+# 如果LLM返回的是纯文本 → answer
+# 删除parse_llm_response()的混合解析链，改用简单的parse_json + 字段检查
+```
+
+**方案B（风险高）**: 变更yield协议为dict，同时修改所有handler签名。
+```python
+# 每个handler签名的第3个参数改为Optional[Dict]
+async def handle_answer(agent, parsed: Dict, llm_response: Optional[Dict], ...):
+    content = llm_response.get("content", "") if llm_response else ""
+```
+- 需要修改3个handler文件（answer_handler.py、error_handler.py、chunk_handler.py）
+- 需要修改handler调用处的参数传递
+
+**推荐方案A**：不变更yield协议，保持`llm_response`为str，避免handler签名变更。
+
+---
+
+### 7.10.5 问题 #5: `answer_handler`依赖`llm_response.strip()`作为fallback — 已确认
+
+**代码事实**（`answer_handler.py:21`）：
+```python
+content = parsed.get("content", "") or llm_response.strip()
+```
+
+当前`llm_response`是str，所以`.strip()`有效。但如果按方案B变更协议，这段代码需要重写。
+
+如果按方案A保持`llm_response`为str，这段代码不需要修改。
+
+---
+
+### 7.10.6 问题 #6: `message_builder.py:_trim_to_budget()`的FC配对保护逻辑 — 已确认保留
+
+**代码事实**（`message_builder.py:174-192`）：
+```python
+def _trim_to_budget(self, obs_list, assistant_msgs, budget):
+    # 分离tool_call_msgs和text_msgs
+    tool_call_msgs = [m for m in assistant_msgs if m.get("tool_calls")]
+    text_msgs = [m for m in assistant_msgs if not m.get("tool_calls")]
+    # 分离tool_obs和text_obs
+    tool_obs = [o for o in obs_list if o.get("role") == "tool"]
+    text_obs = [o for o in obs_list if o.get("role") != "tool"]
+```
+
+**结论**: FC-only下`assistant_msgs`不会再有`text_msgs`（因为没有Text模式写入），`obs_list`不会再有`text_obs`（因为没有`role=user + [Tool Result]`）。所以这些分离逻辑在FC-only后会自动简化为：全部保留为tool类型。
+
+**修改方案**: （与7.3.5一致）删除分离逻辑，统一按时间裁剪。
+
+---
+
+### 7.10.7 总结：补充发现的问题
+
+| # | 问题 | 严重程度 | 结论 |
+|---|------|---------|------|
+| #1 | `fc_context`始终为None，FC分支是死代码 | P0 | 已确认，修改方案与7.3.1-7.3.2一致 |
+| #2 | `add_assistant()`在action路径写入多余消息 | P1 | 已确认，需删除L144调用 |
+| #3 | `answer_handler`/`error_handler`/`chunk_handler`不写入conversation_history | P1 | 已确认，FC-only下answer视为最终回复，不需要写入；如需要导出JSON则需补充 |
+| #4 | yield协议变更导致3个handler崩溃 | **P0（严重）** | 已确认，**推荐方案A：保持str类型，不变更yield协议** |
+| #5 | `answer_handler`依赖`llm_response.strip()` fallback | P1 | 依赖#4的修复方案 |
+| #6 | `_trim_to_budget()`分离逻辑在FC-only后自动简化 | P3 | 已确认，修改方案与7.3.5一致 |
+
+**最严重的遗漏是#4**：handler签名依赖`llm_response`为str，文档7.4.4的yield协议变更会导致系统崩溃。推荐保持str类型，不变更协议。
+
+---
+
+**补充审核完成时间**: 2026-06-11 14:30:00  
+**审核人**: 小健  
+**审核结果**: ✅ 6个问题全部核实确认，修改方案已补充  

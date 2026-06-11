@@ -32,14 +32,16 @@ def _prevent_json_oom(data: Any, limit: int) -> Any:
     return data
 
 
-def _get_failure_hint(tool_name: str, tool_params: Optional[dict] = None) -> str:
+def _get_failure_hint(tool_name: str, tool_params: Optional[dict] = None, result: Optional[dict] = None) -> str:
     """工具执行失败时获取替代建议 — 小健 2026-05-24
 
     优先从tool_registry获取工具自定义提示,
-    无自定义提示时返回通用重试建议。
+    无自定义提示时按错误类型返回差异化建议。
 
     重写 EXC-20: 异常分类 (ImportError/AttributeError/JSON)
+    更新 小沈 2026-06-11: 按result.code分类返回差异化提示
     """
+    # 1. 优先从tool_registry获取自定义提示
     try:
         from app.services.tools.registry import tool_registry
         meta = tool_registry.get_tool(tool_name)
@@ -50,6 +52,23 @@ def _get_failure_hint(tool_name: str, tool_params: Optional[dict] = None) -> str
     except (ImportError, AttributeError, json.JSONDecodeError, TypeError) as e:
         from app.utils.logger import logger as _logger
         _logger.debug(f"[_get_failure_hint] 工具提示获取失败: {e}")
+
+    # 2. 按错误码返回差异化提示
+    if result:
+        code = result.get("code", "")
+        if isinstance(code, str):
+            hints = {
+                "ERR_FILE_NOT_FOUND": "文件或目录不存在,请检查路径是否正确。",
+                "ERR_PERMISSION_DENIED": "权限不足,请检查文件访问权限。",
+                "ERR_TIMEOUT": "操作超时,请稍后重试或检查网络连接。",
+                "ERR_NETWORK": "网络连接失败,请检查网络状态后重试。",
+                "ERR_INVALID_PARAMS": "参数格式不正确,请检查参数类型和格式。",
+            }
+            for prefix, hint in hints.items():
+                if code.startswith(prefix):
+                    return hint
+
+    # 3. 兜底通用提示
     return "请尝试其他可用工具,不要重复调用同一失败操作。"
 
 
@@ -122,11 +141,11 @@ def _extract_display_data(result: dict) -> Any:
     llm_data = result.get("llm_data")
     if llm_data is not None:
         return llm_data
-    return result.get("data")
-    if display_data is None:
+    data = result.get("data")
+    if data is None:
         from app.utils.logger import logger as _logger
         _logger.warning("[OBS-001] format_llm_observation: llm_data和data均为空")
-    return display_data
+    return data
 
 
 def _build_base_text(result: dict, status: str) -> str:
@@ -170,11 +189,11 @@ def _format_warning_observation(result: dict) -> str:
     return _format_next_actions(result, text)
 
 
-def _append_hint(text: str, tool_name: str, tool_params: Optional[dict]) -> str:
+def _append_hint(text: str, tool_name: str, tool_params: Optional[dict], result: Optional[dict] = None) -> str:
     """追加hint — 小沈 2026-06-08"""
     if not tool_name:
         return text
-    hint = _get_failure_hint(tool_name, tool_params)
+    hint = _get_failure_hint(tool_name, tool_params, result)
     if hint:
         return text + f"\n{hint}"
     return text
@@ -183,7 +202,7 @@ def _append_hint(text: str, tool_name: str, tool_params: Optional[dict]) -> str:
 def _format_error_observation(result: dict, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
     """格式化错误结果 — 小沈 2026-06-08 重构"""
     text = f"Observation: error [{result.get('code', '')}] - {result.get('message', '')}"
-    text = _append_hint(text, tool_name, tool_params)
+    text = _append_hint(text, tool_name, tool_params, result)
     return _format_next_actions(result, text)
 
 

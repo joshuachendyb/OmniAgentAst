@@ -73,9 +73,6 @@ Example 2: 搜索文件内容
 Example 3: 写入文件
 {"thought": "用户要写入新文件", "reasoning": "使用write_text_file写入", "tool_name": "write_text_file", "tool_params": {"file_path": "D:/output.txt", "text": "Hello World"}}
 
-Example 4: 任务完成
-{"thought": "文件操作已完成", "reasoning": "全部操作成功,结果已返回", "tool_name": "finish", "tool_params": {"result": "已读取配置文件并完成搜索"}}
-
 【互斥参数规则 - 同一工具内禁止同时使用】:
 - read_file: file_paths 单路径=单文件,多路径=批量
 - edit_file: old_string 与 edits 互斥

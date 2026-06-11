@@ -22,7 +22,6 @@ from app.services.agent.core_agent.handlers import (
     handle_action, handle_answer, handle_chunk,
     handle_parse_error, handle_unknown,
 )
-from app.services.prompts.base_prompt_template import BasePrompts
 
 
 _TYPE_HANDLERS: OrderedDict[str, callable] = OrderedDict([
@@ -33,16 +32,6 @@ _TYPE_HANDLERS: OrderedDict[str, callable] = OrderedDict([
     ("parse_error", handle_parse_error),
 ])
 _DEFAULT_HANDLER = handle_unknown
-
-_TOOL_REMINDER = BasePrompts.TOOL_REMINDER
-
-
-def _has_tool_call(agent) -> bool:
-    """检查当前run中是否已有工具调用 — 小沈 2026-06-10"""
-    for s in getattr(agent, 'steps', []) or []:
-        if hasattr(s, 'tool_name') and getattr(s, 'tool_name', None):
-            return True
-    return False
 
 
 async def _process_single_step(agent, step_counter: list, chunk_buffer) -> AsyncGenerator:
@@ -89,11 +78,6 @@ async def _process_single_step(agent, step_counter: list, chunk_buffer) -> Async
     handler = _TYPE_HANDLERS.get(parsed_type, _DEFAULT_HANDLER)
     async for event in handler(agent, parsed, llm_response, step_counter, chunk_buffer):
         yield event
-
-    # 工具提醒: 设标志位,由_call_llm()动态注入(不永久写入conversation_history) — 小沈 2026-06-11
-    if parsed_type == "chunk" and not _has_tool_call(agent):
-        logger.warning(f"[react_cycle] LLM text-only response (step {step_counter[0]}), set tool_reminder flag")
-        agent._tool_reminder_needed = True
 
 
 async def run_react_cycle(

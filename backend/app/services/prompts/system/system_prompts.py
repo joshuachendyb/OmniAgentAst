@@ -51,8 +51,6 @@ def _build_examples(count: int = 4) -> str:
         {"thought": "分析:用户询问今天是否工作日", "reasoning": "需要查询日历确认日期属性", "tool_name": "query_calendar", "tool_params": {"date": "2026-06-11", "check_type": "workday"}},
         {"thought": "分析:用户想查看系统配置", "reasoning": "需要获取系统信息", "tool_name": "get_system_info", "tool_params": {"info_type": "os"}},
         {"thought": "分析:用户需要查看进程状态", "reasoning": "列出进程列表", "tool_name": "list_processes", "tool_params": {"filter": "python"}},
-        {"thought": "分析:用户问题可直接回答", "reasoning": "直接回答", "tool_name": "finish", "tool_params": {"result": "答案"}},
-        {"thought": "分析:任务已完成", "reasoning": "结果已返回,无更多操作", "tool_name": "finish", "tool_params": {"result": "任务完成"}},
     ]
 
     lines = ["  以下是一些 ReAct 调用示例:"]

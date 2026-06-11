@@ -41,9 +41,6 @@ Example 2: 最大化窗口
 
 Example 3: 截图
 {{"thought": "用户要截取屏幕", "reasoning": "使用screen_capture", "tool_name": "screen_capture", "tool_params": {{}}}}
-
-Example 4: 任务完成
-{{"thought": "桌面操作已完成", "reasoning": "操作成功", "tool_name": "finish", "tool_params": {{"result": "已最大化Notepad窗口"}}}}
 """
     
 
