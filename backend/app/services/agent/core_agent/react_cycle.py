@@ -10,44 +10,40 @@ P2-5: if/elif → 注册式分派 — 小欧 2026-06-08
 F4修复: _handle_action拆分SRP + _call_llm空保护 + step_counter用int — 小欧 2026-06-08
 P3-12: 删除3个纯透传函数(内联调用) — 小沈 2026-06-09
 P4-01: 薄调度重构，业务逻辑移至handlers/ — 小沈 2026-06-09
+FC-only重构: 删除parse_llm_response/TOOL_REMINDER/_has_tool_call, yield dict — 小沈 2026-06-11
 """
 from typing import Any, Dict, Optional, AsyncGenerator
 from collections import OrderedDict
 
 from app.utils.logger import logger
-from app.services.agent.llm_response_parser import parse_llm_response
 from app.services.agent.steps import ChunkStep, FinalStep
 from app.services.agent.types import AgentStatus
 from app.services.agent.core_agent.handlers import (
-    handle_action, handle_answer, handle_chunk,
-    handle_parse_error, handle_unknown,
+    handle_action, handle_answer,
 )
 
 
 _TYPE_HANDLERS: OrderedDict[str, callable] = OrderedDict([
     ("action", handle_action),
     ("answer", handle_answer),
-    ("implicit", handle_answer),
-    ("chunk", handle_chunk),
-    ("parse_error", handle_parse_error),
 ])
-_DEFAULT_HANDLER = handle_unknown
+_DEFAULT_HANDLER = handle_answer
 
 
 async def _process_single_step(agent, step_counter: list, chunk_buffer) -> AsyncGenerator:
-    """处理单步循环 — async generator — 小沈 2026-06-09 支持流式chunk"""
+    """处理单步循环 — FC-only: llm_response为dict,无需parse_llm_response — 小沈 2026-06-11"""
     step_counter[0] += 1
 
     llm_response = None
     async for chunk_or_response in agent._call_llm():
         chunk_type, chunk_data = chunk_or_response
-        
+
         if chunk_type == "chunk":
             yield agent._step_emitter.emit(chunk_data)
         elif chunk_type == "response":
             llm_response = chunk_data
 
-    if not llm_response or not isinstance(llm_response, str):
+    if not llm_response or not isinstance(llm_response, dict):
         logger.error(f"[run_react_cycle] _call_llm返回无效响应: {type(llm_response)}")
         yield agent._step_emitter.exit_with_error(
             step_count=step_counter[0], error_type="empty_response",
@@ -66,17 +62,9 @@ async def _process_single_step(agent, step_counter: list, chunk_buffer) -> Async
         agent.status = AgentStatus.COMPLETED
         return
 
-    parsed = parse_llm_response(llm_response)
-    parsed_type = parsed.get("type", "parse_error")
-
-    reasoning = parsed.get("reasoning")
-    if reasoning:
-        yield agent._step_emitter.emit(ChunkStep(
-            step=step_counter[0], content=reasoning, is_reasoning=True,
-        ))
-
+    parsed_type = llm_response.get("type", "answer")
     handler = _TYPE_HANDLERS.get(parsed_type, _DEFAULT_HANDLER)
-    async for event in handler(agent, parsed, llm_response, step_counter, chunk_buffer):
+    async for event in handler(agent, llm_response, "", step_counter, chunk_buffer):
         yield event
 
 

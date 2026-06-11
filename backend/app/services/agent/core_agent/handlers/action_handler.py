@@ -95,8 +95,8 @@ class ActionHandler:
     async def build_observation(self, agent, all_calls: List[Dict], results: List[Any], step: int,
                                 tool_name: str, tool_params: Dict, is_parallel: bool,
                                 pending_calls: List, action_steps: List,
-                                llm_response: str) -> List:
-        """构建observation — 先发射ActionToolStep(带result),再发射ObservationStep — 小沈 2026-06-09"""
+                                llm_response: str, fc_context: Dict = None) -> List:
+        """构建observation — FC-only: 传递fc_context,删除add_assistant — 小沈 2026-06-11"""
         events = []
 
         for call, result in zip(all_calls, results):
@@ -110,7 +110,7 @@ class ActionHandler:
             events.append(agent._step_emitter.emit(action_step))
 
         obs_parts = []
-        for call, result in zip(all_calls, results):
+        for idx, (call, result) in enumerate(zip(all_calls, results)):
             if isinstance(result, Exception):
                 obs_text = f"Observation: 工具{call['tool_name']}执行异常: {result}"
                 agent._update_executed_tool_summary(call["tool_name"], {"code": "error", "message": str(result)}, call["tool_params"])
@@ -119,7 +119,8 @@ class ActionHandler:
                 agent._update_executed_tool_summary(call["tool_name"], result, call["tool_params"])
             obs_parts.append(obs_text)
             try:
-                _update_message_builder(agent, result if not isinstance(result, Exception) else {"code": "error"}, tool_name=call["tool_name"], tool_params=call["tool_params"])
+                call_fc_context = fc_context or {}
+                _update_message_builder(agent, result if not isinstance(result, Exception) else {"code": "error"}, tool_name=call["tool_name"], tool_params=call["tool_params"], fc_context=call_fc_context)
             except Exception as e:
                 logger.warning(f"[action_handler] _update_message_builder异常: {e}")
 
@@ -141,15 +142,15 @@ class ActionHandler:
             next_actions=first_result.get("next_actions") if isinstance(first_result, dict) else None,
         )))
 
-        agent.message_builder.add_assistant(llm_response)
-
+        # FC-only: assistant消息由_append_observation()以FC协议格式添加,不在此处添加
         return events
 
     async def handle(self, agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
-        """完整action处理流程 — async generator — 小沈 2026-06-09"""
+        """完整action处理流程 — FC-only: 提取fc_context传递 — 小沈 2026-06-11"""
         tool_name = parsed["tool_name"]
         tool_params = parsed.get("tool_params", {})
         pending_calls = parsed.get("_pending_calls", [])
+        fc_context = parsed.get("fc_context", {})
         step = step_counter[0]
 
         all_calls = [{"tool_name": tool_name, "tool_params": tool_params}]
@@ -178,21 +179,21 @@ class ActionHandler:
         obs_events = await self.build_observation(
             agent, all_calls, results, step,
             tool_name, tool_params, is_parallel, pending_calls,
-            action_steps, llm_response,
+            action_steps, llm_response, fc_context=fc_context,
         )
         for event in obs_events:
             yield event
 
 
-def _update_message_builder(agent, result, tool_name: str = "", tool_params: Dict = None):
-    """更新message_builder — 小沈 2026-06-09"""
+def _update_message_builder(agent, result, tool_name: str = "", tool_params: Dict = None, fc_context: Dict = None):
+    """更新message_builder — FC-only: fc_context必传 — 小沈 2026-06-11"""
     if not hasattr(agent, 'message_builder') or not agent.message_builder:
         logger.warning("[action_handler] message_builder不存在，跳过observation记录")
         return
 
     obs_text = build_observation_text(result, tool_name, tool_params or {})
     llm_call_count = getattr(agent, 'llm_call_count', 0)
-    agent.message_builder.add_observation(obs_text, llm_call_count=llm_call_count)
+    agent.message_builder.add_observation(obs_text, llm_call_count=llm_call_count, fc_context=fc_context or {})
 
 
 action_handler = ActionHandler()
