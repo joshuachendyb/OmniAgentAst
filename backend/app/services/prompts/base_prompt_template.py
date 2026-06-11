@@ -44,7 +44,8 @@ class BasePrompts(ABC):
 
     # 【2026-05-07 小沈】统一JSON输出格式(对齐react_output_parser.py解析逻辑)
     # 【2026-05-10 小沈】合并FINISH_RULE到OUTPUT_FORMAT,统一两种返回情况 - 小健审查
-    OUTPUT_FORMAT = """【Response Format - 必须遵守】:
+    # 【2026-06-11 小沈】重构:从TOOL_CALL_RULES分离格式规则,消除SRP/DRY违反
+    OUTPUT_FORMAT = """【Response Format - Text模式必须遵守】:
 必须使用JSON格式输出,只能返回以下两种情况之一:
 
 情况1:调用工具(继续执行)
@@ -84,7 +85,8 @@ class BasePrompts(ABC):
     # 【2026-05-07 小沈】通用Tool Call Rules
     # 【2026-06-10 小沈】增强:强制工具调用规则
     # 【2026-06-11 小健】合并SAFETY WARNING(原在OUTPUT_FORMAT),消除SRP/DRY违反
-    TOOL_CALL_RULES = """【Tool Call Rules】:
+    # 【2026-06-11 小沈】重构:剥离格式规则到OUTPUT_FORMAT,只保留行为规则 — 小沈审查
+    TOOL_CALL_RULES = """【Tool Call Rules - 工具调用行为规范】:
 - 确认用户意图后立即调用工具,不要在thought中反复讨论该用哪个工具
 - reasoning简短说明选择理由即可(1-2句),不要写长篇分析
 - ❌ 禁止:仅用文字回复而不调用工具 — 用户请求需要实际操作时,MUST调用工具
