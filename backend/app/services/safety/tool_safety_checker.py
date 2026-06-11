@@ -18,9 +18,11 @@ from app.services.tools.tool_types import ToolSafetyLevel, DEFAULT_SAFETY_POLICY
 _WRITE_RISK_TOOL = "write_text_file"
 _CODE_INJECTION_RISK_TOOLS = {"execute_shell_command", "execute_code"}
 
-# 全局安全开关 — 设置环境变量 _OMNIAGENT_SKIP_SAFETY=1 后所有工具绕过安全检查
-# 小沈 2026-06-10
-_SKIP_SAFETY = os.environ.get("_OMNIAGENT_SKIP_SAFETY", "0") == "1"
+# 全局安全开关 — 运行时读取环境变量,支持动态切换
+# 小沈 2026-06-11 修复: import时求值改为运行时读取
+def _is_skip_safety() -> bool:
+    """运行时检查安全开关 — 支持测试中动态切换"""
+    return os.environ.get("_OMNIAGENT_SKIP_SAFETY", "0") == "1"
 
 
 class ToolSafetyChecker:
@@ -36,7 +38,7 @@ class ToolSafetyChecker:
         Returns:
             {"is_safe", "risk_score", "safety_level", "requires_confirmation", "blocked", "message"}
         """
-        if _SKIP_SAFETY:
+        if _is_skip_safety():
             return {"is_safe": True, "risk_score": 0.0, "safety_level": "safe",
                     "requires_confirmation": False, "blocked": False, "message": "安全开关已绕过"}
 
@@ -89,18 +91,19 @@ class ToolSafetyChecker:
         if tool_name in file_tools:
             try:
                 from app.services.tools.file.file_tools import FileTools
-                path = params.get("path") or params.get("source_path") or params.get("target_path")
+                path = params.get("path") or params.get("source_path") or params.get("target_path") or params.get("file_path") or params.get("directory")
                 if path:
                     is_valid, msg = FileTools._validate_path(path)
                     if not is_valid:
                         return {"is_safe": False, "risk_score": 1.0, "blocked": True, "message": f"路径越权: {msg}"}
             except Exception as e:
-                logger.warning(f"[ToolSafetyChecker] 路径检查失败: {e}")
+                logger.error(f"[ToolSafetyChecker] 路径检查异常,阻止执行: {e}")
+                return {"is_safe": False, "risk_score": 1.0, "blocked": True,
+                        "message": f"安全检查异常(已阻止): {e}"}
 
         if tool_name == _WRITE_RISK_TOOL:
             try:
                 from app.services.tools.file.file_tools import FileTools
-                # write_text_file 使用 file_path 和 text 参数名 — 小沈 2026-06-10
                 file_path = params.get("file_path", "")
                 text = params.get("text", "")
                 ft = FileTools()
@@ -108,7 +111,9 @@ class ToolSafetyChecker:
                 if error:
                     return {"is_safe": False, "risk_score": 0.8, "blocked": True, "message": f"写入污染: {error}"}
             except Exception as e:
-                logger.warning(f"[ToolSafetyChecker] 写入检查失败: {e}")
+                logger.error(f"[ToolSafetyChecker] 写入检查异常,阻止执行: {e}")
+                return {"is_safe": False, "risk_score": 1.0, "blocked": True,
+                        "message": f"安全检查异常(已阻止): {e}"}
 
         fund_runtime_tools = set(all_categories.get(ToolCategory.FUND_RUNTIME, []))
         code_injection_tools = _CODE_INJECTION_RISK_TOOLS & fund_runtime_tools
@@ -122,7 +127,9 @@ class ToolSafetyChecker:
                         return {"is_safe": False, "risk_score": 1.0, "blocked": True,
                                 "message": f"代码注入: {desc}"}
             except Exception as e:
-                logger.warning(f"[ToolSafetyChecker] 代码注入检查失败: {e}")
+                logger.error(f"[ToolSafetyChecker] 代码注入检查异常,阻止执行: {e}")
+                return {"is_safe": False, "risk_score": 1.0, "blocked": True,
+                        "message": f"安全检查异常(已阻止): {e}"}
 
         return None
 
