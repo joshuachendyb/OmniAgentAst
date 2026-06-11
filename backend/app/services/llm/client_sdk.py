@@ -6,7 +6,7 @@ Author: 小沈 - 2026-05-29
 只支持 OpenAI 兼容格式的 API(/chat/completions 端点)。
 SDK 只管发 HTTP 请求,不处理错误,异常原样抛出。
 
-重构: chat/chat_stream → request/request_stream + mode参数 - 小沈 2026-06-09
+FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-06-11
 """
 
 import httpx
@@ -25,7 +25,6 @@ from app.constants import (
 def _build_request_body(
     messages: List[Dict],
     model: str,
-    mode: str = "text",
     max_tokens: Optional[int] = None,
     temperature: Optional[float] = None,
     seed: Optional[int] = None,
@@ -33,7 +32,7 @@ def _build_request_body(
     tool_choice: Optional[str] = None,
     stream: bool = False,
 ) -> Dict:
-    """统一构建 LLM 请求体 - 小沈 2026-06-09"""
+    """统一构建 LLM 请求体 — FC-only: 无mode参数 — 小沈 2026-06-11"""
     body = {"model": model, "messages": messages}
     if max_tokens is not None:
         body["max_tokens"] = max_tokens
@@ -43,7 +42,7 @@ def _build_request_body(
         body["seed"] = seed
     if stream:
         body["stream"] = True
-    if mode == "tools" and tools:
+    if tools:
         body["tools"] = tools
         if tool_choice:
             body["tool_choice"] = tool_choice
@@ -96,16 +95,15 @@ class LLMClient:
     async def request(
         self,
         messages: List[Dict],
-        mode: str = "text",
         tools: Optional[List[Dict]] = None,
         tool_choice: str = "auto",
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         seed: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """非流式请求 - 统一入口 - 小沈 2026-06-09"""
+        """非流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11"""
         body = _build_request_body(
-            messages=messages, model=self.model, mode=mode,
+            messages=messages, model=self.model,
             max_tokens=max_tokens, temperature=temperature, seed=seed,
             tools=tools, tool_choice=tool_choice, stream=False,
         )
@@ -116,7 +114,6 @@ class LLMClient:
     async def request_stream(
         self,
         messages: List[Dict],
-        mode: str = "text",
         tools: Optional[List[Dict]] = None,
         tool_choice: str = "auto",
         max_tokens: Optional[int] = None,
@@ -124,12 +121,9 @@ class LLMClient:
         seed: Optional[int] = None,
         cancel_check: Optional[callable] = None,
     ) -> AsyncGenerator[str, None]:
-        """流式请求 - 统一入口 - 小沈 2026-06-09
-        
-        【修复 2026-06-09 小沈】添加cancel_check参数，支持HTTP阻塞期间的取消检查
-        """
+        """流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11"""
         body = _build_request_body(
-            messages=messages, model=self.model, mode=mode,
+            messages=messages, model=self.model,
             max_tokens=max_tokens, temperature=temperature, seed=seed,
             tools=tools, tool_choice=tool_choice, stream=True,
         )

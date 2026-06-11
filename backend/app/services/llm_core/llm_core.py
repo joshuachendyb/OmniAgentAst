@@ -104,16 +104,14 @@ class BaseAIService:
     async def request(
         self,
         messages: List[Dict],
-        mode: str = "text",
         tools: Optional[List[Dict]] = None,
         tool_choice: str = "auto",
     ) -> ChatResponse:
-        """非流式请求 - Agent用 - 小沈 2026-06-09"""
+        """非流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11"""
         self._ensure_client()
         try:
             response = await self._llm_sdk.request(
                 messages=messages,
-                mode=mode,
                 tools=tools,
                 tool_choice=tool_choice,
                 max_tokens=self.max_tokens,
@@ -144,14 +142,10 @@ class BaseAIService:
     async def request_stream(
         self,
         messages: List[Dict],
-        mode: str = "text",
         tools: Optional[List[Dict]] = None,
         tool_choice: str = "auto",
     ) -> AsyncGenerator[StreamChunk, None]:
-        """流式请求 - SSE服务层/Agent用 - 小沈 2026-06-09
-        
-        【修复 2026-06-09 小沈】HTTP阻塞期间定期检查取消/暂停状态
-        """
+        """流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11"""
         import time
         start_time = time.time()
         chunk_count = 0
@@ -168,7 +162,6 @@ class BaseAIService:
                 tool_call_accumulator = {}
                 async for data_str in self._llm_sdk.request_stream(
                     messages=messages,
-                    mode=mode,
                     tools=tools,
                     tool_choice=tool_choice,
                     max_tokens=self.max_tokens,
@@ -179,10 +172,12 @@ class BaseAIService:
                         yield self._create_cancelled_chunk()
                         return
 
-                    # 跨chunk聚合tool_calls — 小沈 2026-06-10
+                    # 跨chunk聚合tool_calls — FC-only: 含id — 小沈 2026-06-11
                     tc_data = self._extract_tool_calls(data_str)
                     for idx, entry in tc_data.items():
-                        tool_call_accumulator.setdefault(idx, {"name": "", "arguments": ""})
+                        tool_call_accumulator.setdefault(idx, {"id": None, "name": "", "arguments": ""})
+                        if entry.get("id"):
+                            tool_call_accumulator[idx]["id"] = entry["id"]
                         if entry.get("name"):
                             tool_call_accumulator[idx]["name"] = entry["name"]
                         if entry.get("arguments"):
@@ -206,7 +201,19 @@ class BaseAIService:
                                 params = _json.loads(tc["arguments"]) if tc["arguments"] else {}
                             except _json.JSONDecodeError:
                                 params = {}
-                            action_json = _json.dumps({"tool_name": tc["name"], "tool_params": params})
+                            action_json = _json.dumps({
+                                "tool_name": tc["name"],
+                                "tool_params": params,
+                                "tool_call_id": tc.get("id"),
+                                "tool_calls": [{
+                                    "id": tc.get("id"),
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc["name"],
+                                        "arguments": tc.get("arguments", "")
+                                    }
+                                }]
+                            })
                             yield StreamChunk(content=action_json, model=self.model, is_done=False, is_reasoning=False)
 
                 yield StreamChunk(content="", model=self.model, is_done=True)
@@ -228,14 +235,14 @@ class BaseAIService:
         message: str,
         history: Optional[List[Dict]] = None,
     ) -> AsyncGenerator[StreamChunk, None]:
-        """流式对话便捷方法 - SSE服务层用 - 小沈 2026-06-09"""
+        """流式对话便捷方法 — FC-only: 无mode参数 — 小沈 2026-06-11"""
         from app.services.agent.agent_utils.message_utils import build_llm_messages
         messages = build_llm_messages(message, history)
-        async for chunk in self.request_stream(messages=messages, mode="text"):
+        async for chunk in self.request_stream(messages=messages):
             yield chunk
 
     def _extract_tool_calls(self, data_str: str) -> Dict[int, Dict]:
-        """从原始SSE data中提取tool_calls增量 — 小沈 2026-06-10"""
+        """从SSE delta中提取tool_calls增量 — FC-only: 含id捕获 — 小沈 2026-06-11"""
         from app.utils.json_utils import parse_json
         try:
             data = parse_json(data_str)
@@ -252,6 +259,8 @@ class BaseAIService:
             for tc in raw_tool_calls:
                 idx = tc.get("index", 0)
                 entry = {}
+                if tc.get("id"):
+                    entry["id"] = tc["id"]
                 func = tc.get("function", {})
                 if func.get("name"):
                     entry["name"] = func["name"]

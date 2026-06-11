@@ -125,7 +125,7 @@ class UniversalAgent(BaseAgent):
         return await self._retry_engine.execute_tool_with_retry(tool_name, tool_params)
 
     async def _call_llm(self):
-        """调用LLM — FC优先,降级text流式 — 小沈 2026-06-11"""
+        """调用LLM — 纯FC模式 — FC-only重构 2026-06-11 小沈"""
         self.llm_call_count += 1
         self.message_builder.trim_history()
 
@@ -144,8 +144,9 @@ class UniversalAgent(BaseAgent):
             yield item
 
     async def _call_llm_fc_stream(self, messages: list, openai_tools: list):
-        """FC模式流式调用 — 异常/纯文本降级text流式 — 小沈 2026-06-11"""
+        """FC模式流式调用 — 纯FC,无降级 — FC-only重构 2026-06-11 小沈"""
         from app.services.agent.steps import ChunkStep
+        from app.utils.json_utils import parse_json
 
         full_content = ""
         full_reasoning = ""
@@ -155,9 +156,7 @@ class UniversalAgent(BaseAgent):
         try:
             async for chunk in self.llm_client.request_stream(
                 messages=messages,
-                mode="tools",
-                tools=openai_tools,
-                tool_choice="auto",
+                tools=openai_tools, tool_choice="auto",
             ):
                 if chunk.stream_error:
                     stream_error = chunk.stream_error
@@ -167,163 +166,36 @@ class UniversalAgent(BaseAgent):
                     chunk_step_count += 1
                     if getattr(chunk, "is_reasoning", False):
                         full_reasoning += chunk.content
-                        yield ("chunk", ChunkStep(
-                            step=self.llm_call_count,
-                            content=chunk.content,
-                            is_reasoning=True,
-                        ))
+                        yield ("chunk", ChunkStep(step=self.llm_call_count, content=chunk.content, is_reasoning=True))
                     else:
                         full_content += chunk.content
-                        yield ("chunk", ChunkStep(
-                            step=self.llm_call_count,
-                            content=chunk.content,
-                            is_reasoning=False,
-                        ))
+                        yield ("chunk", ChunkStep(step=self.llm_call_count, content=chunk.content, is_reasoning=False))
 
                 if chunk.is_done:
                     break
-
-            logger.info(f"[FC] 流式完成, content_len={len(full_content)}, reasoning_len={len(full_reasoning)}, chunks={chunk_step_count}")
-
         except Exception as e:
-            logger.warning(f"[FC] request_stream异常,降级text流式: {e}")
-            text_messages = self._convert_fc_messages_to_text(messages)
-            async for item in self._call_llm_text_stream(text_messages):
-                yield item
+            logger.error(f"[FC] 流式异常: {e}")
+            yield ("response", {"type": "answer", "content": f"LLM调用异常: {e}"})
             return
 
         if stream_error:
-            logger.error(f"[FC] 流式错误,降级text流式: {stream_error}")
-            text_messages = self._convert_fc_messages_to_text(messages)
-            async for item in self._call_llm_text_stream(text_messages):
-                yield item
+            logger.error(f"[FC] 流式错误: {stream_error}")
+            yield ("response", {"type": "answer", "content": f"LLM流式错误: {stream_error}"})
             return
 
-        if full_content:
-            parsed = parse_json(full_content)
-            if parsed and "tool_name" in parsed:
-                yield ("response", full_content)
-                return
-
-        if full_content.strip():
-            logger.warning("[FC] LLM返回纯文本(无tool_name),降级text流式")
-            text_messages = self._convert_fc_messages_to_text(messages)
-            async for item in self._call_llm_text_stream(text_messages):
-                yield item
+        # 判断是action还是answer
+        parsed = parse_json(full_content)
+        if parsed and "tool_name" in parsed:
+            fc_context = {
+                "tool_call_id": parsed.get("tool_call_id"),
+                "tool_calls": parsed.get("tool_calls", [])
+            }
+            yield ("response", {"type": "action", "fc_context": fc_context, **parsed})
             return
 
-        if full_reasoning and not full_content:
-            full_content = full_reasoning
-
-        yield ("response", full_content.strip())
-
-    async def _call_llm_text_stream(self, messages: list):
-        """Text模式流式调用 — 实时输出内容 - 小沈 2026-06-09"""
-        from app.services.agent.steps import ChunkStep
-
-        full_content = ""
-        full_reasoning = ""
-        chunk_step_count = 0
-
-        try:
-            async for chunk in self.llm_client.request_stream(
-                messages=messages,
-                mode="text",
-            ):
-                if chunk.stream_error:
-                    logger.error(f"[text] 流式错误: {chunk.stream_error}")
-                    break
-
-                if chunk.content:
-                    chunk_step_count += 1
-                    if getattr(chunk, "is_reasoning", False):
-                        full_reasoning += chunk.content
-                        yield ("chunk", ChunkStep(
-                            step=self.llm_call_count,
-                            content=chunk.content,
-                            is_reasoning=True,
-                        ))
-                    else:
-                        full_content += chunk.content
-                        yield ("chunk", ChunkStep(
-                            step=self.llm_call_count,
-                            content=chunk.content,
-                            is_reasoning=False,
-                        ))
-
-                if chunk.is_done:
-                    break
-
-            logger.info(f"[text] 流式调用完成, content_len={len(full_content)}, reasoning_len={len(full_reasoning)}, chunks={chunk_step_count}")
-
-        except Exception as e:
-            logger.error(f"[text] request_stream失败,降级text: {e}")
-            response = await self._call_llm_text_nostream(messages)
-            yield ("response", response)
-            return
-
-        if not full_content and full_reasoning:
-            full_content = full_reasoning
-
-        yield ("response", full_content.strip())
-
-    async def _call_llm_text_nostream(self, messages: list) -> str:
-        """Text模式非流式调用(降级用) - 小沈 2026-06-09"""
-        try:
-            response = await self.llm_client.request(messages=messages, mode="text")
-        except Exception as e:
-            logger.error(f"[text] request调用失败: {e}")
-            return ""
-
-        if isinstance(response, str):
-            return response
-
-        if hasattr(response, 'content'):
-            return response.content or ""
-
-        if isinstance(response, dict):
-            choices = response.get("choices", [])
-            if not choices:
-                return ""
-            return choices[0].get("message", {}).get("content", "") or ""
-
-        return ""
-
-    @staticmethod
-    def _convert_fc_messages_to_text(messages: list) -> list:
-        """将FC配对(assistant+tool_calls, role:tool)转为Text格式 — 小欧 2026-06-11 P7修复
-
-        Text模式LLM无法理解FC协议的assistant(tool_calls)和role:tool消息,
-        降级前统一转为assistant(描述)+user([Tool Result])格式。
-        """
-        result = []
-        i = 0
-        while i < len(messages):
-            msg = messages[i]
-            if msg.get("role") == "assistant" and msg.get("tool_calls"):
-                tool_calls = msg.get("tool_calls", [])
-                tc_descs = []
-                for tc in tool_calls:
-                    fn = tc.get("function", {}) if isinstance(tc.get("function"), dict) else {}
-                    tc_descs.append(fn.get("name", "unknown"))
-                result.append({
-                    "role": "assistant",
-                    "content": f"[Tool calls: {', '.join(tc_descs)}]"
-                })
-                i += 1
-                while i < len(messages) and messages[i].get("role") == "tool":
-                    tool_content = messages[i].get("content", "")
-                    if tool_content:
-                        result.append({
-                            "role": "user",
-                            "content": f"[Tool Result]\n{tool_content}"
-                        })
-                    i += 1
-                continue
-            else:
-                result.append(msg)
-                i += 1
-        return result
+        # 无tool_name → 这是LLM的最终答复(answer)
+        content = full_content or full_reasoning or ""
+        yield ("response", {"type": "answer", "content": content, "thought": ""})
 
     def _get_openai_tools(self) -> list:
         """获取OpenAI格式工具定义 — 小沈 2026-06-09 添加TTL缓存过期

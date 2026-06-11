@@ -184,7 +184,7 @@ class PromptLogger:
         messages: List[Dict[str, str]] = None,
         model: str = "",
         provider: str = "",
-        call_type: str = "text",
+        call_type: str = "tools",
         extra_params: Optional[Dict[str, Any]] = None
     ):
         """
