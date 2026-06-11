@@ -2284,19 +2284,17 @@ def _build_request_body(messages, model, tools=None, tool_choice=None, ...):
 
 ```
 第一轮: 核心改造（原子批次，必须一次性完成）
+  ⑥ 删除 llm_response_parser/ 整个目录（须在⑯之后执行）
   ⑬ _extract_tool_calls() → 增加id捕获
   ⑭ tool_call_accumulator → 增加id存储
-  ⑮ _call_llm_fc_stream() → yield协议变更 ("response", str)→dict, 删除Text降级
+  ⑮ _call_llm_fc_stream() → yield协议变更 ("response", str)→dict, 删除Text降级, 不再传mode
   ⑯ _process_single_step() → 不再使用parse_llm_response()
-  ⑥ 删除 llm_response_parser/ 整个目录（现在可以安全删除）
   ⑰ action_handler.py → fc_context传递链路打通
-
-第二轮: SDK/LLM Core改造（依赖第一轮的yield协议）
-  ㉑ client_sdk.py → 删mode参数, tools不为None时始终注入body
+  ㉑ client_sdk.py → _build_request_body()删mode参数
   ㉒ llm_core.py → chat()删mode="text"硬编码
   ㉓ llm_core.py → request()/request_stream()删mode参数
 
-第三轮: 安全删除（完全独立，不改变数据流）
+第二轮: 安全删除（完全独立，不改变数据流）
   ① OUTPUT_FORMAT 常量
   ② TOOL_REMINDER 常量 + _tool_reminder_needed逻辑
   ③ _call_llm_text_stream()
@@ -2306,22 +2304,22 @@ def _build_request_body(messages, model, tools=None, tool_choice=None, ...):
   ⑫ TOOL_CALL_RULES精简（移除finish引用）
   ⑱ _get_system_prompt() / build_full_system_prompt() → 移除strategy
 
-第四轮: 简化（去掉不必要的分支）
+第三轮: 简化（去掉不必要的分支）
   ⑦ _append_observation() → 只留FC分支, fc_context必传
   ⑧ _is_observation_role() → 只检查role="tool"
   ⑨ _trim_to_budget() → 删除FC/Text分离
   ⑩ _dedup_by_fingerprint() → 删除
 
-第五轮: 杂项
+第四轮: 杂项
   ㉔ prompt_logger.py → call_type默认值"text"→"tools"
 
-第六轮: 测试文件更新
+第五轮: 测试文件更新
   ㉕ conftest.py → MockLLMClient mock改为FC流式格式
   ㉖ test_react_cycle.py → _call_llm mock改为FC格式
   ㉗ test_react_cycle_business.py → _call_llm mock改为FC格式
   ㉘ test_shell_security.py → 删除Text模式测试用例
 
-第七轮: 验证
+第六轮: 验证
   ⑲ 所有单元测试
   ⑳ 实际场景跑测（FC只走tool_calls, FC返回文本=直接作为answer处理）
 ```
