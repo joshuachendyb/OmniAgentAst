@@ -1,4 +1,29 @@
 
+v0.15.8
+
+更新时间: 2026-06-11
+
+## v0.15.7→v0.15.8 变更汇总 - 小沈-2026-06-11
+
+### fix——四层安全体系修复:P0平行调用丢失+P1字段重复+P2 fc_context共用(1 commit)
+
+| 问题 | 严重性 | 修复 |
+|------|--------|------|
+| P0 `_pending_calls` 从未赋值（平行工具调用全部静默丢失） | 🔴 | `_call_llm_fc_stream` 从 `tool_calls` 数组提取非primary调用 → `_pending_calls` |
+| P1 `ToolMetadata.critical_notes`/`forbidden` 字段重复定义 | 🟡 | 删除第1块重复定义（第2块覆盖第1块） |
+| P2 平行调用所有tool result共用同一个 `tool_call_id` | 🔵 | `build_observation` 按 `_tool_call_id` 构建各call独有 `per_call_fc` |
+| `tool_retry_engine.py` finish分支死代码 | 🔵 | FC-only删除finish短路逻辑 |
+| `tool_safety_checker.py` 安全隐患 | 🔵 | import时求值→运行时读取；异常时阻止执行而非仅warn |
+
+### 净效果
+
+- 平行工具调用可正常工作（多个tool_calls不再静默丢弃）
+- FC协议配对正确（每个tool result对应自己的tool_call_id）
+- 字段定义去重
+- 1085测试全部通过，0回归
+
+---
+
 v0.15.7
 
 更新时间: 2026-06-11
