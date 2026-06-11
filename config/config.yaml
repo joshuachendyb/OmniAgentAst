@@ -99,6 +99,7 @@ longcat:
     - LongCat-2.0-Preview
   timeout: 120
 security:
+  enabled: true
   commandBlacklist: ""
   commandWhitelist: ""
   confirmDangerousOps: true
