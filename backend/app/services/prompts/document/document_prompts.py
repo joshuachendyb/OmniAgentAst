@@ -29,19 +29,21 @@ class DocumentPrompts(BasePrompts):
         return f"""【Available DOCUMENT Tools】:
 {tool_descriptions}
 
-【Tool Call Examples】:
-Example 1: 读取文档
-{{"thought": "用户要读取Word文档", "reasoning": "使用read_document", "tool_name": "read_document", "tool_params": {{"file_path": "C:/docs/test.docx"}}}}
+【调用决策示例】:
+用户: "读取C:/docs/test.docx"
+→ 判断: Word文档读取 → 调用read_document(file_path="C:/docs/test.docx")
 
-Example 2: 读取Excel
-{{"thought": "用户要读取Excel数据", "reasoning": "调用read_document读取", "tool_name": "read_document", "tool_params": {{"file_path": "C:/data/sales.xlsx"}}}}
+用户: "查看C:/data/sales.xlsx的数据"
+→ 判断: Excel读取 → 调用read_document(file_path="C:/data/sales.xlsx")
 
-Example 3: 查询数据库
-{{"thought": "用户要查询数据", "reasoning": "使用query_sql", "tool_name": "query_sql", "tool_params": {{"sql": "SELECT * FROM users"}}}}"""
+用户: "查询用户表数据"
+→ 判断: SQL查询 → 调用query_sql(sql="SELECT * FROM users")"""
     
 
     def get_safety_reminder(self) -> str:
-        return "write_document会覆盖已有文件,写入前先读取确认内容"
+        return ("文档操作安全:\n"
+                "- write_document会覆盖已有文件,写入前先读取确认\n"
+                "- execute_sql前确认SQL语句正确性")
 
     def _get_domain_name(self) -> str:
         return "文檔处理"

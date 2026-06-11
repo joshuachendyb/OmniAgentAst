@@ -24,25 +24,30 @@ class NetworkPrompts(BasePrompts):
         return f"""【Available NETWORK Tools】:
 {tool_descriptions}
 
-【Tool Call Examples】:
-Example 1: GET请求
-{{"thought": "用户要获取接口数据", "reasoning": "使用http_request执行GET请求", "tool_name": "http_request", "tool_params": {{"url": "https://api.example.com/users", "method": "GET"}}}}
+【调用决策示例】:
+用户: "获取https://api.example.com/users的数据"
+→ 判断: GET请求 → 调用http_request(url="https://api.example.com/users", method="GET")
 
-Example 2: POST请求
-{{"thought": "用户要创建资源", "reasoning": "使用http_request执行POST请求,json_body传数据", "tool_name": "http_request", "tool_params": {{"url": "https://api.example.com/users", "method": "POST", "json_body": {{"name": "test"}}}}}}
+用户: "创建一个用户"
+→ 判断: POST+JSON → 调用http_request(url="...", method="POST", json_body={{"name":"test"}})
 
-Example 3: 网络诊断
-{{"thought": "用户要测试网络连通性", "reasoning": "使用network_diagnose测试ping", "tool_name": "network_diagnose", "tool_params": {{"host": "baidu.com", "count": 4}}}}"""
+用户: "测试到baidu.com的连通性"
+→ 判断: 网络诊断 → 调用network_diagnose(host="baidu.com", count=4)"""
     
 
     def _get_domain_name(self) -> str:
         return "网络"
 
     def _get_domain_steps(self) -> str:
-        return "1. 分析需要的网络操作(HTTP请求、下载、搜索、连通性测试)\n2. 使用正确参数的合适网络工具\n3. 用中文报告网络诊断结果"
+        return ("1. 判断操作类型(HTTP请求/下载/搜索/诊断)\n"
+                "2. 确保URL包含scheme(http/https),选择合适工具\n"
+                "3. 用中文报告结果,失败时说明原因")
 
     def _get_domain_extra_notes(self) -> str:
         return "- URL必须包含scheme(http://或https://)\n- POST/PUT用json_body参数(NOT data/params)\n- 使用timeout避免挂起\n- 失败两次后换不同方法"
 
     def get_safety_reminder(self) -> str:
-        return "网络操作安全:URL参数需验证防注入,敏感数据使用HTTPS"
+        return ("网络操作安全:\n"
+                "- URL必须包含scheme(http://或https://)\n"
+                "- POST/PUT用json_body参数\n"
+                "- 敏感数据使用HTTPS")

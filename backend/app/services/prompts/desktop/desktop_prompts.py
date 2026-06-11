@@ -29,15 +29,15 @@ class DesktopPrompts(BasePrompts):
         return f"""【Available DESKTOP Tools】:
 {tool_descriptions}
 
-【Tool Call Examples】:
-Example 1: 列出窗口
-{{"thought": "用户要查看所有打开的窗口", "reasoning": "使用window_info列出窗口", "tool_name": "window_info", "tool_params": {{"action": "list"}}}}
+【调用决策示例】:
+用户: "查看所有打开的窗口"
+→ 判断: 窗口列表 → 调用window_info(action="list")
 
-Example 2: 最大化窗口
-{{"thought": "用户要最大化记事本", "reasoning": "使用window_control设置窗口状态", "tool_name": "window_control", "tool_params": {{"window_title": "Notepad", "action": "maximize"}}}}
+用户: "最大化记事本"
+→ 判断: 窗口控制 → 调用window_control(window_title="Notepad", action="maximize")
 
-Example 3: 截图
-{{"thought": "用户要截取屏幕", "reasoning": "使用screen_capture", "tool_name": "screen_capture", "tool_params": {{}}}}"""
+用户: "截取屏幕"
+→ 判断: 屏幕截图 → 调用screen_capture()"""
     
 
     def _get_domain_name(self) -> str:
@@ -47,4 +47,6 @@ Example 3: 截图
         return "1. 识别目标窗口或应用\n2. 使用合适的桌面工具\n3. 用中文确认桌面操作结果"
 
     def get_safety_reminder(self) -> str:
-        return "仅操作可见窗口,禁止访问系统级窗口"
+        return ("桌面操作安全:\n"
+                "- 仅操作可见窗口,禁止访问系统级窗口\n"
+                "- 键盘控制前确认目标窗口正确")
