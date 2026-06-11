@@ -211,11 +211,13 @@ class UniversalAgent(BaseAgent):
                             "tool_params": extra_params,
                             "_tool_call_id": tc_id,
                         })
+            logger.info(f"[FC] LLM原始响应(action): {full_content}")
             yield ("response", {"type": "action", "fc_context": fc_context, "_pending_calls": _pending_calls, **parsed})
             return
 
         # 无tool_name → 这是LLM的最终答复(answer)
         content = full_content or full_reasoning or ""
+        logger.info(f"[FC] LLM原始响应(answer): {content}")
         yield ("response", {"type": "answer", "content": content, "thought": ""})
 
     def _get_openai_tools(self) -> list:
