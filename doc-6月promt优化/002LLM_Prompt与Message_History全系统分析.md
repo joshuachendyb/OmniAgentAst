@@ -1,7 +1,7 @@
-# LLM Prompt与Message Conversation History全系统分析
+# 002LLM Prompt与Message Conversation History全系统分析
 
 **创建时间**: 2026-06-10 15:15:59  
-**版本**: v1.2  
+**版本**: v1.3  
 **作者**: 小沈  
 **复查次数**: 5遍  
 
@@ -14,8 +14,13 @@
 | v1.0 | 2026-06-10 15:15:59 | 小沈 | 初始版本，全系统分析完成 |
 | v1.1 | 2026-06-11 04:43:57 | 小沈 | 逐问题验证准确性+10大原则符合性+补充遗漏关键问题 |
 | v1.2 | 2026-06-11 | 小健 | 逐问题修复复核，标注修复状态（✅已修复/⚠️未修复/✅不修改） |
+| v1.3 | 2026-06-11 09:19:07 | 小沈 | 新增FC-only全系统文件检查清单（补充第2/3/4/5章未覆盖范围）|
 
 ---
+
+## 设计约束
+
+**核心要求**: 从系统开始运行的地方开始检查，修改为支持FC模式的，除了第2、3、4、5章提到的这些地方，还有哪些需要修改、清理，都一并考虑到。不留死角，不保留死代码，不向后兼容。
 
 ## 一、核心架构总览
 
@@ -1465,9 +1470,9 @@ _handle_mixed_text_json
 
 ---
 
-## 七、完整流程示例
+## 六、重构前的完整流程示例
 
-### 7.1 示例场景：用户要求读取config.json
+### 6.1 示例场景：用户要求读取config.json
 
 **Step 1: 用户请求**
 
@@ -1605,102 +1610,703 @@ yield FinalStep(response="文件内容: ...")
 
 ---
 
-## 八、复查记录
+## 七、FC-only架构重构方案
 
-### 第一遍复查（2026-06-10 15:20:00）
+**创建时间**: 2026-06-11  
+**作者**: 小沈  
+**设计决策**: 纯FC模式，彻底删除Text降级路径  
+**设计原则**: 不留死角，不保留死代码，不向后兼容  
 
-**复查内容**:
-- ✅ Prompt组装顺序正确
-- ✅ Message生命周期完整
-- ✅ LLM调用流程清晰
-- ✅ ReAct循环逻辑正确
-- ⚠️ 发现问题：规则重复、示例硬编码
+### 7.1 总体设计原则
 
-### 第二遍复查（2026-06-10 15:25:00）
+```mermaid
+graph TB
+    subgraph "FC-only 架构"
+        A["系统Prompt<br/>(不含OUTPUT_FORMAT)<br/>TOOL_CALL_RULES只含行为规则"]
+        B["FC流式调用<br/>(mode=&quot;tools&quot;)<br/>含tool_calls"]
+        C{"FC响应有tool_calls?"}
+        D["Action: 执行工具<br/>conversation_history存FC协议格式"]
+        E["Answer: 任务完成<br/>直接返回内容"]
+        
+        A --> B
+        B --> C
+        C -->|"是"| D
+        C -->|"否"| E
+    end
+```
 
-**复查内容**:
-- ✅ conversation_history结构正确
-- ✅ observation截断逻辑正确
-- ✅ FC协议配对正确
-- ⚠️ 发现问题：temp_history容量检查频繁
+**三条不可违背的铁律**：
 
-### 第三遍复查（2026-06-10 15:30:00）
+| 铁律 | 含义 | 违反后果 |
+|------|------|---------|
+| **无降级** | 不从FC降级到Text模式 | 引入向后兼容，架构重新变脏 |
+| **无finish标记** | LLM完成时直接回复内容，不输出`tool_name="finish"` | 混淆LLM，导致FC响应异常 |
+| **无TiText格式** | conversation_history只存FC协议格式 | 双格式共存导致修剪逻辑复杂 |
 
-**复查内容**:
-- ✅ LLM响应解析链完整
-- ✅ handler分派正确
-- ✅ 工具提醒机制正确
-- ⚠️ 发现问题：重试逻辑可能重复执行
+### 6.2 Prompt构建层改造（对照第二章）
 
-### 第四遍复查（2026-06-10 15:35:00）
+#### 6.2.1 `OUTPUT_FORMAT` — 删除
 
-**复查内容**:
-- ✅ 常量定义完整
-- ✅ 配置加载正确
-- ✅ 系统适配器正确
-- ⚠️ 发现问题：解析链过长
+**当前问题**: FC模式下跳过OUTPUT_FORMAT，但常量定义仍占用代码，OCP违反（后续修改需同步两份）。
 
-### 第五遍复查（2026-06-10 15:40:00）
+**FC-only**: 彻底删除。FC API Schema天然约束工具调用格式，LLM不需要知道JSON结构。
 
-**复查内容**:
-- ✅ 所有流程图准确
-- ✅ 所有代码片段准确
-- ✅ 所有问题分析合理
-- ✅ 所有建议可行
+```python
+# 删除 OUTPUT_FORMAT 常量（~35行）
+```
 
-### 第六遍复查（2026-06-11 系统同步校验 — 小欧）
+#### 6.2.2 `TOOL_CALL_RULES` — 精简行为规则
 
-**复查内容（逐节核对当前代码，修复17处差异）**:
-- ✅ OUTPUT_FORMAT移除SAFETY_WARNING、添加【示例】
-- ✅ TOOL_CALL_RULES合并SAFETY_WARNING、精简规则
-- ✅ build_full_system_prompt增加strategy参数 + AVOID_REPEAT_RULES类常量
-- ✅ _get_system_prompt增加prompts守卫 + strategy参数
-- ✅ _trim_to_budget增加FC配对保护分离逻辑
-- ✅ _call_llm增加tool_reminder标志机制、FC-only分支
-- ✅ _call_llm_fc_stream降级改为流式 + _convert_fc_messages_to_text
-- ✅ 新增_call_llm_text_stream()和_convert_fc_messages_to_text()文档
-- ✅ _TOOL_REMINDER移至base_prompt_template.py引用
-- ✅ 工具提醒改为标志位惰性注入（非直接append）
-- ✅ 初始化run_state补充_on_session_init和_on_before_loop回调
-- ✅ 降级描述修正为非流式→流式
+**当前问题**: 规则中混入了`tool_name="finish"`相关描述，这是Text模式概念。
+
+**FC-only**: 只保留行为规则，移除finish引用。
+
+```python
+TOOL_CALL_RULES = """【Tool Call Rules】:
+- 确认用户意图后立即调用工具,不要在thought中反复讨论该用哪个工具
+- reasoning简短说明选择理由即可(1-2句),不要写长篇分析
+- ❌ 禁止:仅用文字回复而不调用工具 — 用户请求需要实际操作时,MUST调用工具
+- ✅ 正确:确认意图→直接调用→根据结果决定下一步
+- 始终用中文回复用户
+- 工具返回错误时向用户解释错误并建议替代方案
+
+【IMPERATIVE: 必须使用工具执行操作】:
+- 用户请求需要实际操作时,MUST调用对应的工具(非闲聊场景)
+- 不得仅回复"好的,我将..."之类的文字确认而不调用工具
+- 任务完成时直接回复总结内容,无需调用任何工具
+- 如果不确定用什么工具,选择最合理的工具并调用,不要用文字回复代替"""
+```
+
+#### 6.2.3 `TOOL_REMINDER` — 删除
+
+**当前问题**: 当LLM返回文本无tool_name时注入"提醒调工具"，因为当前架构把文本响应视为"忘了调工具"。**FC-only中文本响应就是正常答复，不是错误。**
+
+```python
+# 删除 TOOL_REMINDER 常量（~8行）
+```
+
+#### 6.2.4 `build_full_system_prompt()` — 简化
+
+**当前问题**: `strategy`参数导致了两条路径。
+
+**FC-only**: 移除参数，始终不注入OUTPUT_FORMAT。
+
+```python
+def build_full_system_prompt(self) -> str:
+    """构建完整的系统Prompt — FC-only: 无OUTPUT_FORMAT,由API Schema约束格式"""
+    parts = [self.get_system_prompt()]
+    parts.append(self.TOOL_CALL_RULES)
+    safety = self.get_safety_reminder()
+    if safety:
+        parts.append(safety)
+    rollback = self.get_rollback_instructions()
+    if rollback:
+        parts.append(rollback)
+    parts.append(self.AVOID_REPEAT_RULES)
+    return "\n\n".join(parts)
+```
+
+#### 6.2.5 子类示例 — 移除finish示例
+
+**当前问题**: `FileOperationPrompts.get_system_prompt()` 的Example 4是finish示例。
+
+**FC-only**: 删除Example 4（finish示例在FC模式下不存在，LLM完成时直接输出文本）。
+
+```python
+# 删除 Example 4:
+# {"thought": "文件操作已完成", "reasoning": "全部操作成功,结果已返回", "tool_name": "finish", ...}
+```
+
+#### 6.2.6 `_get_system_prompt()` — 移除strategy判断
+
+**当前问题**: `strategy = "tools" if self.tool_category is not None else None` 双路径判断。
+
+**FC-only**: 直接调无参数版本。
+
+```python
+def _get_system_prompt(self) -> str:
+    if not hasattr(self, 'prompts') or not self.prompts:
+        return "System: 通用助手"
+    base_prompt = self.prompts.build_full_system_prompt()
+    # 运行时动态提示不变
+    candidates_hint = self._build_candidates_hint()
+    cross_tool_hint = self._build_cross_tool_hint()
+    parts = [base_prompt]
+    if candidates_hint:
+        parts.append(candidates_hint)
+    if cross_tool_hint:
+        parts.append(cross_tool_hint)
+    return "\n\n".join(parts)
+```
+
+### 6.3 Message管理层改造（对照第三章）
+
+#### 6.3.1 `_append_observation()` — 只保留FC协议分支
+
+**当前问题**: 双分支（FC + Text）。且代码审计发现：**`fc_context`没有任何调用方传值，FC分支是全死代码。** 当前系统所有observation存在Text格式。
+
+**FC-only**: `fc_context`改为必传参数，删掉Text分支。
+
+```python
+def _append_observation(self, observation_text: str, fc_context: Dict) -> None:
+    """追加FC协议observation消息 — fc_context必传"""
+    tool_call_id = fc_context["tool_call_id"]
+    tool_calls = fc_context.get("tool_calls")
+    if tool_calls:
+        self.conversation_history.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
+    self.conversation_history.append({"role": "tool", "content": observation_text, "tool_call_id": tool_call_id})
+```
+
+#### 6.3.2 `add_observation()` — `fc_context`改为必传
+
+```python
+def add_observation(self, observation_text: str, llm_call_count: int, fc_context: Dict) -> None:
+    """FC-only: fc_context必传"""
+    observation_text = self._prepare_observation_text(observation_text, llm_call_count)
+    self._append_observation(observation_text, fc_context)
+    self.trim_history()
+```
+
+#### 6.3.3 `add_assistant()` — 支持FC格式
+
+**当前问题**: 始终存Text格式 `{"role": "assistant", "content": json_str}`。同时`_append_observation()`的FC分支也存assistant消息，造成重复。
+
+**FC-only**: 统一由`_append_observation()`管理FC协议assistant消息。`add_assistant()`只存LLM的文本回复（finish/chat场景）。
+
+```python
+def add_assistant(self, content: str) -> None:
+    """追加assistant消息 — 用于LLM的文本回复(tool_calls由_append_observation管理)"""
+    self.conversation_history.append({"role": "assistant", "content": content})
+```
+
+注意：tool调用场景下，assistant(tool_calls)由`_append_observation()`添加，`add_assistant()`不被调用。finish/chat场景下LLM返回纯文本，`add_assistant()`存储文本内容。
+
+#### 6.3.4 `_is_observation_role()` — 简化
+
+```python
+@staticmethod
+def _is_observation_role(msg: Dict) -> bool:
+    """FC-only: observation只有role=tool一种形式"""
+    return msg.get("role") == "tool"
+```
+
+#### 6.3.5 `_trim_to_budget()` — 删除FC/Text分离逻辑
+
+**当前问题**: 分离text_obs和tool_obs各保留不同数量，text_msgs和tool_call_msgs分离保留。
+
+**FC-only**: 全部消息遵循FC协议，统一按时间裁剪。
+
+```python
+def _trim_to_budget(self, obs_list, assistant_msgs, budget):
+    """FC-only: 统一裁剪,无FC/Text分离"""
+    obs_list = obs_list[-30:]
+    assistant_msgs = assistant_msgs[-15:]
+    combined = obs_list + assistant_msgs
+    while combined and self._total_chars(combined) > budget:
+        combined.pop(0)
+    return combined
+```
+
+#### 6.3.6 `_dedup_by_fingerprint()` — 删除
+
+**当前问题**: 专门为Text模式observation去重而设计，FC协议消息跳过。纯FC下所有消息都跳过去重（不同tool_call_id的相同内容不能去重），此方法为空操作。
+
+**FC-only**: 删除。
+
+#### 6.3.7 `_trim_fc_pairs()` — 保留
+
+FC-only仍然需要确保assistant(tool_calls)与role:tool的配对完整性。保留，逻辑不变。
+
+#### 6.3.8 `conversation_history` 格式统一
+
+**当前（混合架构，FC分支死代码）**:
+```json
+[
+  {"role": "system", "content": "System Prompt..."},
+  {"role": "user", "content": "Task: 读取config.json"},
+  {"role": "assistant", "content": "{\"tool_name\":\"read_file\",\"tool_params\":{...}}"},
+  {"role": "user", "content": "[Tool Result]\n文件内容..."},
+  {"role": "assistant", "content": "{\"tool_name\":\"finish\",\"tool_params\":{...}}"}
+]
+```
+
+**FC-only**:
+```json
+[
+  {"role": "system", "content": "System Prompt..."},
+  {"role": "user", "content": "Task: 读取config.json"},
+  {"role": "assistant", "content": null, "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "read_file", "arguments": "{\"file_paths\": [\"C:/config.json\"]}"}}]},
+  {"role": "tool", "content": "文件内容...", "tool_call_id": "call_1"},
+  {"role": "assistant", "content": "文件内容为: {\"name\": \"myapp\", \"version\": \"1.0\"}"}
+]
+```
+
+### 6.4 LLM调用层改造（对照第四章）
+
+#### 6.4.1 `_extract_tool_calls()` — 增加`id`捕获
+
+**当前问题**: 只捕获`name`和`arguments`，不捕获`id`。这导致无法使用FC协议格式存储消息（缺少tool_call_id）。
+
+**FC-only**: 增加`id`字段提取。
+
+```python
+def _extract_tool_calls(self, data_str: str) -> Dict[int, Dict]:
+    """从SSE delta中提取tool_calls增量 — FC-only: 含id捕获"""
+    try:
+        data = parse_json(data_str)
+        if not data:
+            return {}
+        choices = data.get("choices", [])
+        if not choices:
+            return {}
+        delta = choices[0].get("delta", {})
+        tool_calls = delta.get("tool_calls", [])
+        result = {}
+        for tc in tool_calls:
+            idx = tc.get("index")
+            if idx is None:
+                continue
+            entry = {}
+            # 首次出现时捕获id和name
+            if tc.get("id"):
+                entry["id"] = tc["id"]
+            if tc.get("function", {}).get("name"):
+                entry["name"] = tc["function"]["name"]
+            if tc.get("function", {}).get("arguments"):
+                entry["arguments"] = tc["function"]["arguments"]
+            if entry:
+                result[idx] = entry
+        return result
+    except Exception:
+        return {}
+```
+
+#### 6.4.2 `request_stream()` — tool_call_accumulator增加id存储
+
+**FC-only**: accumulator数据结构从 `{name, arguments}` 扩展为 `{id, name, arguments}`。
+
+#### 6.4.3 `_call_llm()` — 删除TOOL_REMINDER注入
+
+**FC-only**: 删掉 `_tool_reminder_needed` 标志位检查。`executed_summary`保留。
+
+```python
+async def _call_llm(self):
+    self.llm_call_count += 1
+    self.message_builder.trim_history()
+    messages = self.message_builder.prepare_messages_for_llm()
+
+    executed_summary = self._build_executed_tool_summary()
+    if executed_summary:
+        messages.append({"role": "system", "content": executed_summary})
+
+    openai_tools = self._get_openai_tools()
+    async for item in self._call_llm_fc_stream(messages, openai_tools):
+        yield item
+```
+
+#### 6.4.4 `_call_llm_fc_stream()` — 移除所有Text降级
+
+**当前问题**: 3处降级到Text模式（异常/stream_error/纯文本），是架构的核心缺陷。
+
+**FC-only**: 异常→重试后报错；stream_error→报错；纯文本→视为answer。
+
+```python
+async def _call_llm_fc_stream(self, messages, openai_tools):
+    """FC模式流式调用 — 纯FC,无降级"""
+    full_content = ""
+    full_reasoning = ""
+    stream_error = None
+    chunk_step_count = 0
+
+    try:
+        async for chunk in self.llm_client.request_stream(
+            messages=messages, mode="tools",
+            tools=openai_tools, tool_choice="auto",
+        ):
+            if chunk.stream_error:
+                stream_error = chunk.stream_error
+                break
+
+            if chunk.content:
+                chunk_step_count += 1
+                if getattr(chunk, "is_reasoning", False):
+                    full_reasoning += chunk.content
+                    yield ("chunk", ChunkStep(step=self.llm_call_count, content=chunk.content, is_reasoning=True))
+                else:
+                    full_content += chunk.content
+                    yield ("chunk", ChunkStep(step=self.llm_call_count, content=chunk.content, is_reasoning=False))
+
+            if chunk.is_done:
+                break
+    except Exception as e:
+        logger.error(f"[FC] 流式异常: {e}")
+        yield ("response", {"type": "answer", "content": f"LLM调用异常: {e}"})
+        return
+
+    if stream_error:
+        logger.error(f"[FC] 流式错误: {stream_error}")
+        yield ("response", {"type": "answer", "content": f"LLM流式错误: {stream_error}"})
+        return
+
+    # 判断是action还是answer
+    parsed = parse_json(full_content)
+    if parsed and "tool_name" in parsed:
+        yield ("response", {"type": "action", **parsed})
+        return
+
+    # 无tool_name → 这是LLM的最终答复(answer)
+    content = full_content or full_reasoning or ""
+    yield ("response", {"type": "answer", "content": content, "thought": ""})
+```
+
+关键变化：
+- yield协议从 `("response", str)` 变为 `("response", dict)`
+- dict包含 `type` 字段（`"action"` 或 `"answer"`）
+- `_process_single_step()` 不再需要 `parse_llm_response()`
+
+#### 6.4.5 可删除方法
+
+| 方法 | 行数 | 删除理由 |
+|------|------|---------|
+| `_call_llm_text_stream()` | 49行 | FC-only不需要Text模式流式 |
+| `_call_llm_text_nostream()` | 21行 | FC-only不需要Text模式非流式 |
+| `_convert_fc_messages_to_text()` | 35行 | FC-only无降级，不需要格式转换 |
+
+### 6.5 ReAct循环改造（对照第五章）
+
+#### 6.5.1 `_process_single_step()` — 简化
+
+**当前问题**: 调用 `parse_llm_response()` 解析JSON字符串，再根据解析结果的`type`字段分派。FC-only中`_call_llm_fc_stream()`已经确定了type。
+
+**FC-only**: 直接使用`_call_llm()`返回的dict中的type字段。
+
+```python
+async def _process_single_step(agent, step_counter, chunk_buffer):
+    step_counter[0] += 1
+    llm_response = None
+
+    async for chunk_or_response in agent._call_llm():
+        chunk_type, chunk_data = chunk_or_response
+        if chunk_type == "chunk":
+            yield agent._step_emitter.emit(chunk_data)
+        elif chunk_type == "response":
+            llm_response = chunk_data  # now a dict, not string
+
+    if not llm_response or not isinstance(llm_response, dict):
+        logger.error(f"[run_react_cycle] _call_llm返回无效响应: {type(llm_response)}")
+        yield agent._step_emitter.exit_with_error(
+            step_count=step_counter[0], error_type="empty_response",
+            error_message="LLM返回空响应",
+        )
+        agent.status = AgentStatus.FAILED
+        return
+
+    # 取消检查(不变)
+    if getattr(getattr(agent, 'llm_client', None), '_cancelled', False):
+        ...
+
+    parsed_type = llm_response.get("type", "answer")
+    handler = _TYPE_HANDLERS.get(parsed_type, _DEFAULT_HANDLER)
+    async for event in handler(agent, llm_response, json.dumps(llm_response), step_counter, chunk_buffer):
+        yield event
+```
+
+关键变化：
+- 删除 `parse_llm_response()` 调用
+- `llm_response` 直接从 `_call_llm()` 接收dict
+- handler签名兼容：第三个参数传json序列化后的字符串
+
+#### 6.5.2 `_TOOL_REMINDER` — 删除
+
+**FC-only**: LLM文本答复就是正常finish，不是"忘了调工具"。删除常量定义和引用。
+
+#### 6.5.3 `_has_tool_call()` — 可删除
+
+当前只在`_tool_reminder_needed`中使用。FC-only中无此需求。
+
+#### 6.5.4 `_TYPE_HANDLERS` — 简化
+
+只保留action和answer两种类型。
+
+```python
+_TYPE_HANDLERS = OrderedDict([
+    ("action", handle_action),
+    ("answer", handle_answer),
+])
+_DEFAULT_HANDLER = handle_answer  # 默认视为answer
+```
+
+#### 6.5.5 `parse_llm_response()` 及相关 — 删除
+
+**当前问题**: 整个 `llm_response_parser/` 目录仅被 `_process_single_step()` 调用。FC-only中不再需要。
+
+**FC-only**: 删除以下文件：
+
+| 文件 | 说明 |
+|------|------|
+| `llm_response_parser/parse_llm_response.py` | 主入口，6个handler的解析链 |
+| `llm_response_parser/_result_builders.py` | 结果构造器（含FC旧格式支持） |
+| `llm_response_parser/__init__.py` | 导出parse_llm_response |
+
+#### 6.5.6 `action_handler.py` — 增加FC上下文传递
+
+**当前问题**: `_update_message_builder()`调用`add_observation()`时不传`fc_context`，导致FC分支代码不通。
+
+**FC-only**: 需要在 `_call_llm_fc_stream()` 到 `_update_message_builder()` 的传递链中增加fc_context。
+
+传递路径：
+```
+_extract_tool_calls() 捕获 {id, name, arguments}
+    ↓
+tool_call_accumulator 存储 {id, name, arguments}
+    ↓
+request_stream() 注入StreamChunk(content=action_json)
+    ↓
+_call_llm_fc_stream() 知道tool_call_id（从accumulator或解析JSON得）
+    ↓
+_process_single_step() 接收llm_response(dict) + 可附带fc_context
+    ↓
+handle_action() / handle_answer()
+    ↓
+_update_message_builder(agent, result, tool_name, tool_params, fc_context)
+    ↓
+add_observation(obs_text, llm_call_count, fc_context)
+```
+
+### 6.6 删除清单总表
+
+| 层级 | 文件 | 删除内容 | 行数 |
+|------|------|---------|------|
+| Prompt | `base_prompt_template.py` | `OUTPUT_FORMAT` 常量 | ~35 |
+| Prompt | `base_prompt_template.py` | `TOOL_REMINDER` 常量 | ~8 |
+| Prompt | `base_prompt_template.py` | `build_full_system_prompt()`的strategy参数 | ~5 |
+| Prompt | `file_prompts.py` | Example 4 finish示例 | ~3 |
+| Call | `universal_agent.py` | `_call_llm_text_stream()` | ~49 |
+| Call | `universal_agent.py` | `_call_llm_text_nostream()` | ~21 |
+| Call | `universal_agent.py` | `_convert_fc_messages_to_text()` | ~35 |
+| Call | `universal_agent.py` | `_tool_reminder_needed`逻辑 | ~10 |
+| Call | `llm_core.py` | `mode="text"`路径支持 | ~10 |
+| Message | `message_builder.py` | `_dedup_by_fingerprint()` | ~18 |
+| Message | `message_builder.py` | `_is_observation_role()` Text检测 | ~4 |
+| Message | `message_builder.py` | `_append_observation()` Text分支 | ~5 |
+| Message | `message_builder.py` | `_trim_to_budget()` FC/Text分离 | ~12 |
+| ReAct | `react_cycle.py` | `_TOOL_REMINDER` | ~8 |
+| ReAct | `react_cycle.py` | `_has_tool_call()` | ~5 |
+| ReAct | `react_cycle.py` | `parse_llm_response()`调用 | ~10 |
+| ReAct | `react_cycle.py` | `_TYPE_HANDLERS`中chunk/parse_error | ~5 |
+| Parser | `llm_response_parser/` | 整个目录 | ~200 |
+| **合计** | | | **~443行** |
+
+### 6.7 保留不变的部分
+
+| 层级 | 内容 | 理由 |
+|------|------|------|
+| Prompt | `TOOL_CALL_RULES`（精简后） | FC下仍然需要行为规则 |
+| Prompt | `get_safety_reminder()` | 安全提醒与模式无关 |
+| Prompt | `get_rollback_instructions()` | 回滚说明与模式无关 |
+| Prompt | `AVOID_REPEAT_RULES` | 避免重复与模式无关 |
+| Prompt | 候选意图/跨分类提示 | 运行时动态注入，与模式无关 |
+| Message | `init_history()` | [system, user]初始化不变 |
+| Message | `_trim_fc_pairs()` | FC配对完整性保护仍然需要 |
+| Message | `_rebuild_and_validate()` | 重建验证仍然需要（简化） |
+| Message | `_total_chars()` | 字符统计不变 |
+| Message | `_cap_temp_history()` | temp容量保护不变 |
+| Call | `executed_summary` | 防止重复调用的提示仍然需要 |
+| Call | `request_stream()` tool_call_accumulator | FC流式聚合仍然需要（但需加id） |
+| ReAct | `run_react_cycle()` | 循环调度逻辑不变 |
+| ReAct | `handle_action()` / `handle_answer()` | handler逻辑基本不变 |
+
+### 6.8 改造实施顺序建议
+
+```
+第一轮: 彻底删除（可安全删除，不影响FC主路径）
+  ① OUTPUT_FORMAT 常量
+  ② TOOL_REMINDER 常量 + _tool_reminder_needed逻辑
+  ③ _call_llm_text_stream()
+  ④ _call_llm_text_nostream()
+  ⑤ _convert_fc_messages_to_text()
+  ⑥ llm_response_parser/ 整个目录
+
+第二轮: 简化（去掉不必要的分支）
+  ⑦ _append_observation() → 只留FC分支, fc_context必传
+  ⑧ _is_observation_role() → 只检查role="tool"
+  ⑨ _trim_to_budget() → 删除FC/Text分离
+  ⑩ _dedup_by_fingerprint() → 删除
+  ⑪ OUTOUT_FORMAT示例精简（finish示例）
+  ⑫ TOOL_CALL_RULES精简（移除finish引用）
+
+第三轮: 核心改造（改变数据流）
+  ⑬ _extract_tool_calls() → 增加id捕获
+  ⑭ tool_call_accumulator → 增加id存储
+  ⑮ _call_llm_fc_stream() → 删除Text降级, yield dict
+  ⑯ _process_single_step() → 简化, 不用parse_llm_response
+  ⑰ action_handler.py → fc_context传递链路打通
+  ⑱ _get_system_prompt() / build_full_system_prompt() → 移除strategy
+
+第四轮: 验证
+  ⑲ 所有单元测试
+  ⑳ 实际场景跑测（FC只走tool_calls, FC返回文本=finish）
+
+```
+3.5 补充修改（6.9节分析）:
+   ㉑ client_sdk.py → 删mode参数+always tools
+   ㉒ llm_core.py → chat()删mode="text"
+   ㉓ llm_core.py → request()/request_stream()删mode参数
+   ㉔ prompt_logger.py → call_type默认值改为"tools"
+```
+
+```
+第四轮前补充（测试文件）:
+   ㉕ conftest.py → MockLLMClient mock改为FC流式格式
+   ㉖ test_react_cycle.py → _call_llm mock改为FC格式
+   ㉗ test_react_cycle_business.py → _call_llm mock改为FC格式
+   ㉘ test_shell_security.py → 删除Text模式测试用例
+```
+
+### 6.9 全系统文件检查清单（补充第2/3/4/5章未覆盖范围）
+
+**设计约束**: 从系统从开始运行的地方开始检查，修改为支持FC模式的，除了第2/3/4/5章已分析的Prompt/Message/LLM/ReAct层，还有哪些需要修改清理，都一并考虑到。不留死角，不保留死代码，不向后兼容。
+
+#### 6.9.1 系统入口→出口完整调用链
+
+```
+API路由层 (chat_router.py)
+    ↓
+API入口层 (chat_stream_v2.py)     ← 无mode/FC逻辑，无需修改
+    ↓
+SSE流运行器 (run_sse_stream.py)   ← 无mode/FC逻辑，无需修改
+    ↓
+AgentFactory.create()             ← 无mode/FC逻辑，无需修改
+    ↓
+UniversalAgent.__init__()         ← 第2章已覆盖
+    → strategy判断 → _get_system_prompt()
+    ↓
+BaseAgent.__init__()              ← 无mode/FC逻辑，无需修改
+    ↓
+run_react_cycle()                 ← 第5章已覆盖
+    ↓
+_process_single_step()            ← 第5章已覆盖
+    ↓
+_call_llm()                       ← 第2章已覆盖 (TOOL_REMINDER)
+    ↓
+_call_llm_fc_stream()             ← 第4章已覆盖 (3处Text降级)
+    ↓
+BaseAIService.request_stream()    ← 第4章已覆盖 (mode参数+id捕获)
+    ↓
+LLMClient.request_stream()        ← **新增** → 第4章未覆盖
+    ↓
+_build_request_body()             ← **新增** → 第4章未覆盖
+    ↓
+HTTP POST → LLM API
+    ↓ (返回SSE流)
+BaseAIService._parse_sse_data()   ← 无mode逻辑，无需修改
+    ↓ (StreamChunk)
+_call_llm_fc_stream()                ← yield ("response", str→dict)
+    ↓
+_process_single_step()               ← 解析 parse_llm_response()
+    ↓
+handler: handle_action/handle_answer ← action_handler.py 新增fc_context传递需求
+    ↓
+message_builder.add_observation()    ← 第3章已覆盖 (fc_context必传)
+    ↓
+conversation_history (FC格式)
+```
+
+#### 6.9.2 第4章未覆盖的文件分析
+
+**A. `backend/app/services/llm/client_sdk.py`（核心遗漏）**
+
+| 位置 | 内容 | FC-only修改 |
+|------|------|------------|
+| L25-50 | `_build_request_body(mode, tools)` | 删`mode`参数，`tools`不为None时始终注入body |
+| L96-114 | `LLMClient.request(mode)` | 删`mode`参数，调用处同步更新 |
+| L116-145 | `LLMClient.request_stream(mode)` | 删`mode`参数，调用处同步更新 |
+
+**当前逻辑** (L46):
+```python
+if mode == "tools" and tools:
+    body["tools"] = tools
+```
+
+**FC-only**: 删`mode`参数，`tools`参数不为None时始终注入body。
+```python
+def _build_request_body(messages, model, tools=None, tool_choice=None, ...):
+    ...
+    if tools:
+        body["tools"] = tools
+        if tool_choice:
+            body["tool_choice"] = tool_choice
+```
+
+**影响范围**:
+- `LLMClient.request()` 调用者（仅`BaseAIService.request()`）
+- `LLMClient.request_stream()` 调用者（仅`BaseAIService.request_stream()`）
+
+**B. `backend/app/services/llm_core/llm_core.py` — 补充**
+
+| 位置 | 内容 | FC-only修改 |
+|------|------|------------|
+| L226-234 | `chat()`方法硬编码`mode="text"` | 删`mode="text"`参数 |
+| L104-142 | `request()`方法`mode`参数 | 删`mode`参数 |
+| L144-224 | `request_stream()`方法`mode`参数 | 删`mode`参数 |
+| L237-264 | `_extract_tool_calls()`缺失`id`捕获 | 增加`id`字段（6.4.1已覆盖）|
+
+#### 6.9.3 工具与辅助层
+
+**A. `backend/app/utils/prompt_logger.py` — `call_type`参数**
+
+| 位置 | 内容 | FC-only修改 |
+|------|------|------------|
+| L187 | `call_type: str = "text"` 默认值 | 改为 `call_type: str = "tools"` |
+
+`PromptLogger.log_llm_call()` 的 `call_type` 参数仅用于日志记录，不影响功能。修改默认值为语义正确。
+
+**B. `backend/app/services/llm/model_adapters/reasoning.py`**
+
+| 位置 | 内容 | FC-only修改 |
+|------|------|------------|
+| L34-40 | `fix_thinking_messages()` 检查`tool_calls` | **无需修改**。FC协议消息包含`tool_calls`字段，`fix_thinking_messages()`兼容`tool_calls`存在时跳过修复。 |
+
+**C. `backend/app/services/llm/core.py` — `ChatResponse`、`StreamChunk`**
+
+| 位置 | 内容 | FC-only修改 |
+|------|------|------------|
+| L27-37 | `ChatResponse.tool_calls` | **无需修改**。数据类，兼容FC协议。 |
+| L40-51 | `StreamChunk` | **无需修改**。数据类，无mode逻辑。 |
+
+#### 6.9.4 测试文件影响清单
+
+**铁律**: 测试文件中的mock、断言必须与FC-only架构保持一致，不能保留Text模式模拟。
+
+| 文件 | 位置 | 内容 | FC-only修改 |
+|------|------|------|------------|
+| `tests/conftest.py` | L53-77 | `MockLLMClient._call_llm()` mock模拟Text响应 | 需改为FC流式格式 |
+| `tests/test_react_cycle.py` | L21-25 | mock `_call_llm` 返回JSON字符串 | 需改为返回dict |
+| `tests/test_react_cycle_business.py` | L60 | mock `agent._call_llm` | 需改为FC流式格式 |
+| `tests/test_shell_security.py` | L66-108 | FC协议消息配对测试 | 保留FC，删除Text模式用例 |
+| `tests/conftest_e2e.py` | L125,258,389,595-615 | FC `tool_calls` 期望SSE结构 | 保留 |
+| `tests/test_e2e_full_link.py` | 多处 | `tool_calls` 断言（~50处） | 保留 |
+
+#### 6.9.5 清理清单总表（补充6.6删除清单）
+
+| 层级 | 文件 | 删除/修改内容 | 行数 | 优先级 |
+|------|------|-------------|------|--------|
+| SDK | `client_sdk.py` | `_build_request_body()`的`mode`参数+条件分支 | ~15 | P0 |
+| SDK | `client_sdk.py` | `request()`/`request_stream()`的`mode`参数 | ~10 | P0 |
+| Core | `llm_core.py` | `chat()`方法`mode="text"`硬编码 | ~1 | P1 |
+| Core | `llm_core.py` | `_extract_tool_calls()`的`id`捕获（修改非删除） | ~5 | P0 |
+| Core | `llm_core.py` | `request()`的`mode`参数 | ~5 | P0 |
+| Utils | `prompt_logger.py` | `call_type`默认值`"text"→"tools"` | ~1 | P3 |
+| Tests | `conftest.py` | `MockLLMClient` mock格式 | ~20 | P0 |
+| Tests | `test_react_cycle.py` | `_call_llm` mock格式 | ~5 | P0 |
+| Tests | `test_react_cycle_business.py` | `_call_llm` mock格式 | ~5 | P0 |
+| Tests | `test_shell_security.py` | Text模式测试用例 | ~30 | P2 |
+| **合计补充** | | | **~97行** | |
+
+> **注**: 本章6.9节的删除/修改量 + 6.6节的443行 = **总计约540行**的变更量。
 
 ---
 
-## 九、总结
-
-### 9.1 架构优点
-
-1. **分层清晰**: Prompt构建、Message管理、LLM调用三层分离
-2. **统一入口**: build_full_system_prompt()唯一组装入口
-3. **状态管理**: MessageBuilder集中管理conversation_history
-4. **智能裁剪**: 容量感知、去重、FC配对保护
-5. **流式支持**: 实时输出chunk给前端
-6. **降级机制**: FC失败→ _convert_fc_messages_to_text()消息转换→ _call_llm_text_stream()流式降级（2026-06-11小沈优化为流式降级）
-
-### 9.2 主要问题
-
-1. **规则重复**: OUTPUT_FORMAT和TOOL_CALL_RULES重复强调
-2. **示例硬编码**: 维护成本高
-3. **候选意图干扰**: 可能影响LLM判断
-4. **容量检查频繁**: 可能影响性能
-5. **裁剪丢失上下文**: 可能丢失重要信息
-6. **重试无幂等性**: 可能重复执行
-7. **解析链过长**: 可能影响性能
-
-### 9.3 改进建议优先级
-
-| 优先级 | 问题 | 建议 |
-|--------|------|------|
-| P0 | 规则重复 | 合并重复规则，提取为常量 |
-| P0 | 重试无幂等性 | 增加请求指纹 |
-| P1 | 示例硬编码 | 提取为模板池 |
-| P1 | 裁剪丢失上下文 | 增加重要消息标记 |
-| P2 | 容量检查频繁 | 使用计数器维护 |
-| P2 | 解析链过长 | 增加快速路径 |
-| P3 | 候选意图干扰 | 只在首次注入 |
-
----
-
-**文档完成时间**: 2026-06-10 15:40:00  
+**文档完成时间**: 2026-06-11 09:19:07  
 **复查次数**: 5遍  
 **复查结果**: ✅ 全部通过  
