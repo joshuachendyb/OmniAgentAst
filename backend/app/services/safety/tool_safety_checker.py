@@ -18,11 +18,16 @@ from app.services.tools.tool_types import ToolSafetyLevel, DEFAULT_SAFETY_POLICY
 _WRITE_RISK_TOOL = "write_text_file"
 _CODE_INJECTION_RISK_TOOLS = {"execute_shell_command", "execute_code"}
 
-# 全局安全开关 — 运行时读取环境变量,支持动态切换
-# 小沈 2026-06-11 修复: import时求值改为运行时读取
+# 安全开关 — 唯一入口: config.yaml security.enabled
+# 关闭: config.yaml 设 security.enabled: false
+# 启用: config.yaml 设 security.enabled: true (默认)
 def _is_skip_safety() -> bool:
-    """运行时检查安全开关 — 支持测试中动态切换"""
-    return os.environ.get("_OMNIAGENT_SKIP_SAFETY", "0") == "1"
+    """运行时检查安全开关 — 只读 config.yaml security.enabled"""
+    try:
+        from app.config import get_config
+        return not get_config().get("security.enabled", True)
+    except Exception:
+        return False
 
 
 class ToolSafetyChecker:
@@ -33,7 +38,7 @@ class ToolSafetyChecker:
         """
         执行前安全检查入口
 
-        全局绕过: 设环境变量 _OMNIAGENT_SKIP_SAFETY=1 后所有工具返回 safe — 小沈 2026-06-10
+        安全开关: config.yaml security.enabled=false 时跳过所有检查
 
         Returns:
             {"is_safe", "risk_score", "safety_level", "requires_confirmation", "blocked", "message"}
