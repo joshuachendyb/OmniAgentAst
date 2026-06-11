@@ -12,25 +12,16 @@ conversation_history操作集中管理。
 MessageBuilder 实例生命周期必须与 Agent 实例强绑定,
 严禁全局共享单例,防止多会话并发状态污染。
 
-【19.8 修正 — 小沈 2026-05-21】:
-- add_assistant() 不自动调 trim_history(),由 _call_llm 统一调度
-
-【2026-05-28 拆分 — 小沈】:
-- build_llm_messages() → message_utils.build_llm_messages()
-- build_observation_text() → message_utils.build_observation_text()
-- inject_tools_info() → message_utils.inject_tools_info()
-- inject_schema_text() → message_utils.inject_schema_text()
-- build_schema_text() → message_utils.build_schema_text()
+【FC-only重构 — 小沈 2026-06-11】:
+- 删除 add_assistant / flush_temp_to_history / add_parse_error
+- _append_observation 只存FC协议格式(role=assistant tool_calls + role=tool)
+- _trim_to_budget 统一裁剪,按原始顺序重排
 """
 
 from typing import Any, Dict, List
 
 from app.constants import MAX_CONTEXT_CHARS, OBSERVATION_BUDGET_DECAY, OBSERVATION_BUDGET_MAX, OBSERVATION_BUDGET_MIN, TEMP_HISTORY_CHAR_LIMIT
 from app.utils.text_utils import smart_truncate_text
-
-
-
-
 
 
 class MessageBuilder:
@@ -64,13 +55,6 @@ class MessageBuilder:
             {"role": "user", "content": task_prompt}
         ]
 
-    def add_assistant(self, content: str) -> None:
-        """追加assistant消息 — 替代8处散落的append
-        
-        【19.8修正】不自动调 trim_history(),由 _call_llm 统一调度。
-        """
-        self.conversation_history.append({"role": "assistant", "content": content})
-
     def _prepare_observation_text(self, observation_text: str, llm_call_count: int) -> str:
         """准备observation文本 — 截断+归一化 — 小沈 2026-06-08"""
         budget = self._get_observation_budget(llm_call_count)
@@ -80,11 +64,23 @@ class MessageBuilder:
         return observation_text
 
     def _append_observation(self, observation_text: str, fc_context: Dict) -> None:
-        """追加FC协议observation消息 — fc_context必传 — FC-only重构 2026-06-11 小沈"""
-        tool_call_id = fc_context["tool_call_id"]
-        tool_calls = fc_context.get("tool_calls")
-        if tool_calls:
+        """追加FC协议observation消息 — fc_context必传 — FC-only重构 2026-06-11 小沈
+
+        FC协议要求: assistant(tool_calls)必须在role:tool之前,且每个tool_call_id唯一。
+        始终添加assistant消息,确保配对完整。重复tool_call_id跳过assistant以避免重复。
+        """
+        tool_call_id = fc_context.get("tool_call_id", "")
+        tool_calls = fc_context.get("tool_calls", [])
+        # 检查是否已有相同tool_call_id的assistant消息(并行工具调用场景)
+        has_existing_assistant = any(
+            msg.get("role") == "assistant" and
+            any(tc.get("id") == tool_call_id for tc in (msg.get("tool_calls") or []))
+            for msg in self.conversation_history
+        ) if tool_call_id else False
+        if tool_calls and not has_existing_assistant:
             self.conversation_history.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
+        elif tool_call_id and not has_existing_assistant:
+            self.conversation_history.append({"role": "assistant", "content": None, "tool_calls": []})
         self.conversation_history.append({"role": "tool", "content": observation_text, "tool_call_id": tool_call_id})
 
     def add_observation(self, observation_text: str, llm_call_count: int, fc_context: Dict) -> None:
@@ -92,20 +88,6 @@ class MessageBuilder:
         observation_text = self._prepare_observation_text(observation_text, llm_call_count)
         self._append_observation(observation_text, fc_context)
         self.trim_history()
-
-    def add_parse_error(self, error_msg: str, fc_context: Dict) -> None:
-        """追加解析错误到history — FC-only: fc_context必传"""
-        self.add_observation(
-            f"Parse Error: {error_msg}. Please ensure your response follows the ReAct format.",
-            llm_call_count=0,
-            fc_context=fc_context,
-        )
-
-    def flush_temp_to_history(self, chunk_buffer: str) -> None:
-        """将chunk_buffer从temp_history刷入正式history — 替代L558-562/L689-693"""
-        self.temp_history.clear()
-        if chunk_buffer:
-            self.add_assistant(chunk_buffer)
 
     # =========================================================================
     # 第二组:每轮 LLM 调用的消息组装
@@ -136,7 +118,7 @@ class MessageBuilder:
     # =========================================================================
 
     def trim_history(self) -> None:
-        """容量感知的对话历史裁剪 — P2-8 SLAP拆分"""
+        """容量感知的对话历史裁剪 — budget包含system_msgs"""
         total = self._total_chars(self.conversation_history)
         if total < self.MAX_CONTEXT_CHARS * 0.8:
             return
@@ -144,9 +126,10 @@ class MessageBuilder:
             return
 
         system_msgs, obs_list, assistant_msgs = self._classify_messages()
-        budget = int(self.MAX_CONTEXT_CHARS * 0.7)
-        trimmed_obs = self._trim_to_budget(obs_list, assistant_msgs, budget)
-        rebuilt = self._rebuild_and_validate(system_msgs, trimmed_obs, assistant_msgs)
+        system_chars = self._total_chars(system_msgs)
+        available_budget = max(10000, int(self.MAX_CONTEXT_CHARS * 0.7) - system_chars)
+        trimmed = self._trim_to_budget(obs_list, assistant_msgs, available_budget)
+        rebuilt = self._rebuild_and_validate(system_msgs, trimmed)
         if rebuilt is not None:
             self.conversation_history = rebuilt
 
@@ -166,17 +149,53 @@ class MessageBuilder:
         return system_msgs, obs_list, assistant_msgs
 
     def _trim_to_budget(self, obs_list, assistant_msgs, budget):
-        """FC-only: 统一裁剪,无FC/Text分离 — 重构 2026-06-11 小沈"""
-        obs_list = obs_list[-30:]
-        assistant_msgs = assistant_msgs[-15:]
-        combined = obs_list + assistant_msgs
-        while combined and self._total_chars(combined) > budget:
-            combined.pop(0)
-        return combined
+        """FC-only: 从最新往最旧扫,按配对收集,简洁高效
 
-    def _rebuild_and_validate(self, system_msgs, obs_list, assistant_msgs):
-        """重组消息列表并验证FC配对完整性,返回None表示无需更新"""
-        rebuilt = system_msgs + obs_list + assistant_msgs
+        策略: 从最后一条消息往前遍历,遇到tool就找其配对assistant一起保留,
+        遇到独立消息直接保留,直到budget用完。剩余的全部丢弃。
+        """
+        tool_to_assistant = {}
+        for msg in assistant_msgs:
+            for tc in (msg.get("tool_calls") or []):
+                if tc.get("id"):
+                    tool_to_assistant[tc["id"]] = msg
+
+        # 按原始顺序排列 obs+assistant
+        original_order = {id(msg): i for i, msg in enumerate(self.conversation_history)}
+        all_msgs = sorted(obs_list + assistant_msgs, key=lambda m: original_order.get(id(m), 0))
+
+        kept = []
+        used_chars = 0
+        i = len(all_msgs) - 1
+
+        while i >= 0:
+            msg = all_msgs[i]
+            tc_id = msg.get("tool_call_id", "")
+
+            if msg.get("role") == "tool" and tc_id and tc_id in tool_to_assistant:
+                asst = tool_to_assistant[tc_id]
+                pair_chars = self._total_chars([asst, msg])
+                if used_chars + pair_chars <= budget:
+                    kept.append(msg)
+                    kept.append(asst)
+                    used_chars += pair_chars
+                i -= 1
+                continue
+
+            msg_chars = self._total_chars([msg])
+            if used_chars + msg_chars <= budget:
+                kept.append(msg)
+                used_chars += msg_chars
+            else:
+                break
+            i -= 1
+
+        kept.reverse()
+        return kept
+
+    def _rebuild_and_validate(self, system_msgs, trimmed_msgs):
+        """重组消息列表并验证FC配对完整性 — FC-only: trimmed已含obs+assistant"""
+        rebuilt = system_msgs + trimmed_msgs
         rebuilt = self._trim_fc_pairs(rebuilt)
         if len(rebuilt) >= 2:
             return rebuilt
@@ -195,7 +214,6 @@ class MessageBuilder:
         return min(budget, OBSERVATION_BUDGET_MAX)
 
     @staticmethod
-
     def _normalize_observation_prefix(text: str) -> str:
         """确保observation文本以 [Observation] 开头 — 替代 base_react.py 前缀处理"""
         # 【修复 小健 2026-05-24】P1-7: 防止双重[Observation]前缀
@@ -253,14 +271,17 @@ class MessageBuilder:
 
     @staticmethod
     def _total_chars(messages: List[Dict]) -> int:
-        """计算消息列表总字符数 — 替代 base_react.py L1281-1283
+        """计算消息列表总字符数 — 含tool_calls JSON
 
         FC模式下assistant消息content可为None(tool_calls协议),
-        msg.get("content", "")在key存在但值为None时返回None而非默认值,
-        len(None)会TypeError。必须显式处理None。
+        但tool_calls包含JSON负载(tool名/参数/id),必须计入预算。
         """
+        import json
         total = 0
         for msg in messages:
             content = msg.get("content")
             total += len(content) if content is not None else 0
+            tool_calls = msg.get("tool_calls")
+            if tool_calls:
+                total += len(json.dumps(tool_calls, ensure_ascii=False))
         return total

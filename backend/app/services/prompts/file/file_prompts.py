@@ -34,45 +34,9 @@ from app.utils.logger import logger
 class FileOperationPrompts(BasePrompts):
     """文件操作Prompt模板类"""
 
-    def get_system_prompt(self) -> str:
-        """获取增强版系统Prompt - 小沈 2026-05-25 重构拆分"""
-        system_info = get_system_prompt_string(include_commands=False)
-        logger.debug(f"[FilePrompts] 系统信息长度: {len(system_info)}")
-
-        from app.utils.prompt_logger import get_prompt_logger
-        prompt_logger = get_prompt_logger()
-        prompt_logger.log_system_prompt(
-            step_name="中间层注入-服务器OS信息",
-            prompt_content=system_info,
-            source="system_adapter.py:generate_system_prompt()",
-            details={
-                "系统信息长度": len(system_info),
-                "包含内容": "服务器OS、路径格式、命令格式"
-            },
-            round_number=1
-        )
-
-        tools = [
-            "read_file", "write_text_file", "list_directory",
-            "search_files", "grep_file_content", "edit_file",
-            "rename_file", "file_operation", "archive_tool",
-            "read_media_file", "data_file_format",
-        ]
-        tool_descriptions = self.build_tool_descriptions(tools, category_label="FILE")
-
-        prompt = f"{system_info}\n\n# File Operation Tools\n\n{tool_descriptions}"
-
-        return prompt + """
-【Tool Call Examples】:
-Example 1: 读取文件
-{"thought": "用户要读取配置文件", "reasoning": "调用read_file单文件模式", "tool_name": "read_file", "tool_params": {"file_paths": ["C:/config.json"]}}
-
-Example 2: 搜索文件内容
-{"thought": "搜索包含TODO的Python文件", "reasoning": "使用grep_file_content搜索", "tool_name": "grep_file_content", "tool_params": {"pattern": "TODO", "search_dir": "D:/project", "glob": "*.py"}}
-
-Example 3: 写入文件
-{"thought": "用户要写入新文件", "reasoning": "使用write_text_file写入", "tool_name": "write_text_file", "tool_params": {"file_path": "D:/output.txt", "text": "Hello World"}}
-
+    def get_core_system_prompt(self) -> str:
+        """获取核心系统Prompt(角色+业务规则) - 小沈 2026-06-11 系统信息提到Base公共层"""
+        return """
 【互斥参数规则 - 同一工具内禁止同时使用】:
 - read_file: file_paths 单路径=单文件,多路径=批量
 - edit_file: old_string 与 edits 互斥
@@ -84,6 +48,28 @@ Example 3: 写入文件
 - text 参数必须传实际文件内容(代码/文本/正文)
 - ❌ 禁止传入思考/计划/状态确认
 - ✅ text=\"第一章:觉醒\\n\\n林凡是一名普通的大学生...\""""
+
+    def get_tool_details(self) -> str:
+        """获取工具描述和示例(FC模式下由Schema承载,可选跳过) - 小沈 2026-06-11"""
+        tools = [
+            "read_file", "write_text_file", "list_directory",
+            "search_files", "grep_file_content", "edit_file",
+            "rename_file", "file_operation", "archive_tool",
+            "read_media_file", "data_file_format",
+        ]
+        tool_descriptions = self.build_tool_descriptions(tools, category_label="FILE")
+        return f"""# File Operation Tools
+
+{tool_descriptions}
+【Tool Call Examples】:
+Example 1: 读取文件
+{{"thought": "用户要读取配置文件", "reasoning": "调用read_file单文件模式", "tool_name": "read_file", "tool_params": {{"file_paths": ["C:/config.json"]}}}}
+
+Example 2: 搜索文件内容
+{{"thought": "搜索包含TODO的Python文件", "reasoning": "使用grep_file_content搜索", "tool_name": "grep_file_content", "tool_params": {{"pattern": "TODO", "search_dir": "D:/project", "glob": "*.py"}}}}
+
+Example 3: 写入文件
+{{"thought": "用户要写入新文件", "reasoning": "使用write_text_file写入", "tool_name": "write_text_file", "tool_params": {{"file_path": "D:/output.txt", "text": "Hello World"}}}}"""
 
     def _get_domain_name(self) -> str:
         return "文件管理"
@@ -102,14 +88,11 @@ Example 3: 写入文件
         return base_prompt
 
     def get_rollback_instructions(self) -> str:
-        """获取回滚指令Prompt"""
-        return """If an operation fails:
-1. Check if backup exists (file operations are backed up automatically)
-2. Use the rollback functionality to undo the operation
-3. Verify the file has been restored correctly"""
+        """获取回滚指令Prompt - 小沈 2026-06-11 英文→中文"""
+        return """操作失败时的处理步骤:
+1. 检查是否有备份(文件操作已自动备份)
+2. 使用回滚功能撤销操作
+3. 验证文件已正确恢复"""
 
     def get_safety_reminder(self) -> str:
-        """获取安全提醒Prompt"""
-        return """Safety reminders:
-1. Be careful when writing files - existing content will be overwritten
-2. text parameter must contain actual file content, NOT your thoughts/plans"""
+        return "写入文件会覆盖已有内容,写入前确认是否要覆盖"

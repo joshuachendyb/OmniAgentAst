@@ -120,7 +120,7 @@ class ActionHandler:
             obs_parts.append(obs_text)
             try:
                 call_fc_context = fc_context or {}
-                _update_message_builder(agent, result if not isinstance(result, Exception) else {"code": "error"}, tool_name=call["tool_name"], tool_params=call["tool_params"], fc_context=call_fc_context)
+                _update_message_builder(agent, obs_text, call_fc_context)
             except Exception as e:
                 logger.warning(f"[action_handler] _update_message_builder异常: {e}")
 
@@ -185,13 +185,12 @@ class ActionHandler:
             yield event
 
 
-def _update_message_builder(agent, result, tool_name: str = "", tool_params: Dict = None, fc_context: Dict = None):
-    """更新message_builder — FC-only: fc_context必传 — 小沈 2026-06-11"""
+def _update_message_builder(agent, obs_text: str, fc_context: Dict = None):
+    """更新message_builder — FC-only: 直接传入已构建的obs_text — 小沈 2026-06-11"""
     if not hasattr(agent, 'message_builder') or not agent.message_builder:
         logger.warning("[action_handler] message_builder不存在，跳过observation记录")
         return
 
-    obs_text = build_observation_text(result, tool_name, tool_params or {})
     llm_call_count = getattr(agent, 'llm_call_count', 0)
     agent.message_builder.add_observation(obs_text, llm_call_count=llm_call_count, fc_context=fc_context or {})
 

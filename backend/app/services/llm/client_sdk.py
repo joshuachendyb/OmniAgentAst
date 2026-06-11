@@ -138,14 +138,6 @@ class LLMClient:
                         break
                     yield data
 
-    def raw_stream(self, method: str, url: str, **kwargs):
-        """获取原始HTTP响应流 - 小沈 2026-06-09"""
-        return self._client.stream(method, url, **kwargs)
-
-    async def http_request(self, method: str, url: str, **kwargs) -> httpx.Response:
-        """发送任意 HTTP 请求 - 小沈 2026-06-09"""
-        return await self._client.request(method, url, **kwargs)
-
     async def close(self):
         """关闭客户端,释放连接池 - 小沈 2026-06-09"""
         await self._client.aclose()

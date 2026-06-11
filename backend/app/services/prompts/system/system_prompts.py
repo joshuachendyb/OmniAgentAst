@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-SystemPrompts - 系统信息 Prompt模板
+SystemPrompts - 系统 Prompt模板
 
 P2优先级
+角色说明: SYSTEM是兜底意图,涵盖命令执行/系统查询/时间操作/文件管理
 
 Author: 小健 - 2026-05-06
 重构 2026-05-25 - 小健
+【重写】2026-06-11 小沈 — 补全真实能力范围,修正"只查不执行"的角色偏差
 """
 import json
 from datetime import datetime
@@ -60,15 +62,19 @@ def _build_examples(count: int = 4) -> str:
 
 
 class SystemPrompts(BasePrompts):
-    """系统信息 Prompt模板类"""
+    """系统 Prompt模板类"""
 
-    def get_system_prompt(self) -> str:
-        """获取系统提示词 - 小健 2026-05-25 重构
+    def get_core_system_prompt(self) -> str:
+        """获取核心系统Prompt - 小沈 2026-06-11 重写"""
+        return """你是一个系统全能助手,负责命令执行、系统查询、时间操作和文件管理。
 
-        返回:
-            str: 系统提示词字符串
-        """
-        system_info = get_system_prompt_string(include_commands=False)
+【操作规则】:
+- 查询类: 直接执行,无需确认
+- 执行命令/运行代码: 先说明,等用户确认后再执行
+- 删除/覆写/修改配置: 必须先获用户明确同意"""
+
+    def get_tool_details(self) -> str:
+        """获取工具描述和示例(FC模式下可选跳过) - 小沈 2026-06-11"""
         from app.services.tools.registry import tool_registry
         from app.services.tools.tool_types import ToolCategory
 
@@ -76,7 +82,7 @@ class SystemPrompts(BasePrompts):
             (ToolCategory.FUND_RUNTIME, "基础运行时(命令/时间/工具/系统信息)"),
         ]
 
-        parts = [system_info]
+        parts = []
         for category, desc in categories:
             tool_names = tool_registry.get_categories().get(category, [])
             header = f"# {category.value} 工具 ({len(tool_names)}个){' - ' + desc if desc else ''}\n"
@@ -87,10 +93,12 @@ class SystemPrompts(BasePrompts):
         return "\n".join(parts)
 
     def _get_domain_name(self) -> str:
-        return "系统信息"
+        return "系统"
 
     def _get_domain_steps(self) -> str:
-        return "1. 分析需要什么系统信息\n2. 使用合适的系统工具\n3. 用中文总结系统信息"
+        return ("1. 判断用户需求类型\n"
+                "2. 按操作规则执行(查询直接做,执行先确认,删除必须用户同意)\n"
+                "3. 用中文总结结果")
 
     def get_safety_reminder(self) -> str:
-        return "⚠️ System Safety: Registry write/delete operations are destructive and irreversible. Confirm before execution."
+        return ""

@@ -17,14 +17,15 @@ from app.utils.logger import logger
 class NetworkPrompts(BasePrompts):
     """网络通信 Prompt模板类"""
     
-    def get_system_prompt(self) -> str:
-        system_info = get_system_prompt_string(include_commands=False)  # 【修复 2026-05-14 小沈】NetworkAgent不注入命令格式,避免LLM幻觉调execute_shell_command
+    def get_core_system_prompt(self) -> str:
+        """获取核心系统Prompt - 小沈 2026-06-11 系统信息提到Base公共层"""
+        return "You are a professional network operations assistant. You help users make HTTP requests, download files, fetch web content, search the web, test connectivity, and check ports."
+
+    def get_tool_details(self) -> str:
+        """获取工具描述和示例(FC模式下可选跳过) - 小沈 2026-06-11"""
         tools = ["http_request", "download_file", "fetch_webpage", "search_web", "network_diagnose"]
         tool_descriptions = self.build_tool_descriptions(tools, category_label="NETWORK")
-        return f"""{system_info}
-You are a professional network operations assistant. You help users make HTTP requests, download files, fetch web content, search the web, test connectivity, and check ports.
-
-【Available NETWORK Tools】:
+        return f"""【Available NETWORK Tools】:
 {tool_descriptions}
 
 【Tool Call Examples】:
@@ -35,8 +36,7 @@ Example 2: POST请求
 {{"thought": "用户要创建资源", "reasoning": "使用http_request执行POST请求,json_body传数据", "tool_name": "http_request", "tool_params": {{"url": "https://api.example.com/users", "method": "POST", "json_body": {{"name": "test"}}}}}}
 
 Example 3: 网络诊断
-{{"thought": "用户要测试网络连通性", "reasoning": "使用network_diagnose测试ping", "tool_name": "network_diagnose", "tool_params": {{"host": "baidu.com", "count": 4}}}}
-"""
+{{"thought": "用户要测试网络连通性", "reasoning": "使用network_diagnose测试ping", "tool_name": "network_diagnose", "tool_params": {{"host": "baidu.com", "count": 4}}}}"""
     
 
     def _get_domain_name(self) -> str:

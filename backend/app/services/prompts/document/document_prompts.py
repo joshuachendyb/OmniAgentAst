@@ -18,18 +18,19 @@ from app.utils.logger import logger
 class DocumentPrompts(BasePrompts):
     """文档读写 Prompt模板类"""
     
-    def get_system_prompt(self) -> str:
-        system_info = get_system_prompt_string(include_commands=False)
+    def get_core_system_prompt(self) -> str:
+        """获取核心系统Prompt - 小沈 2026-06-11 系统信息提到Base公共层"""
+        return "You are a professional document operations assistant. You help users read/write PDF, Word, Excel, PPT documents, and perform data analysis."
+
+    def get_tool_details(self) -> str:
+        """获取工具描述和示例(FC模式下可选跳过) - 小沈 2026-06-11"""
         tools = [
             "read_document", "write_document", "convert_document",
             "analyze_data", "filter_data", "generate_chart",
             "query_sql", "execute_sql", "get_db_schema",
         ]
         tool_descriptions = self.build_tool_descriptions(tools, category_label="DOCUMENT")
-        return f"""{system_info}
-You are a professional document operations assistant. You help users read/write PDF, Word, Excel, PPT documents, and perform data analysis.
-
-【Available DOCUMENT Tools】:
+        return f"""【Available DOCUMENT Tools】:
 {tool_descriptions}
 
 【Tool Call Examples】:
@@ -40,8 +41,7 @@ Example 2: 读取Excel
 {{"thought": "用户要读取Excel数据", "reasoning": "调用read_document读取", "tool_name": "read_document", "tool_params": {{"file_path": "C:/data/sales.xlsx"}}}}
 
 Example 3: 查询数据库
-{{"thought": "用户要查询数据", "reasoning": "使用query_sql", "tool_name": "query_sql", "tool_params": {{"sql": "SELECT * FROM users"}}}}
-"""
+{{"thought": "用户要查询数据", "reasoning": "使用query_sql", "tool_name": "query_sql", "tool_params": {{"sql": "SELECT * FROM users"}}}}"""
     
 
     def get_safety_reminder(self) -> str:

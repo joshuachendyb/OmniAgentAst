@@ -58,6 +58,9 @@ class UniversalAgent(BaseAgent):
         if config:
             self.config = config
             self.prompts = config.prompt_class()
+            # FC-only模式: 跳过Prompt中的工具描述和示例(由FC Schema承载)
+            if config.exclude_tool_details_from_prompt:
+                self.prompts.include_tool_details = False
             logger.info(
                 f"UniversalAgent initialized (intent={config.intent_type}, task_id={task_id}, category={effective_category})"
             )
@@ -187,7 +190,7 @@ class UniversalAgent(BaseAgent):
         parsed = parse_json(full_content)
         if parsed and "tool_name" in parsed:
             fc_context = {
-                "tool_call_id": parsed.get("tool_call_id"),
+                "tool_call_id": parsed.get("tool_call_id") or "",
                 "tool_calls": parsed.get("tool_calls", [])
             }
             yield ("response", {"type": "action", "fc_context": fc_context, **parsed})
@@ -240,7 +243,7 @@ class UniversalAgent(BaseAgent):
             status = extract_status(result)
             data_summary = extract_data_summary(result.get("data"))
         else:
-            status = "success"
+            status = "unknown"
             data_summary = ""
         
         entry = f"{tool_name}→{status}"
