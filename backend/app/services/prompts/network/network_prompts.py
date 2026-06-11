@@ -7,11 +7,7 @@ P0优先级:URL/参数易错,超时重试策略需引导
 Author: 小健 - 2026-05-06
 P1修复 — 小欧 2026-06-11: 硬编码工具描述改为build_tool_descriptions()动态生成(DRY+OCP)
 """
-from datetime import datetime
-
 from app.services.prompts.base_prompt_template import BasePrompts
-from app.services.prompts.middle import get_system_prompt as get_system_prompt_string
-from app.utils.logger import logger
 
 
 class NetworkPrompts(BasePrompts):
@@ -19,7 +15,7 @@ class NetworkPrompts(BasePrompts):
     
     def get_core_system_prompt(self) -> str:
         """获取核心系统Prompt - 小沈 2026-06-11 系统信息提到Base公共层"""
-        return "You are a professional network operations assistant. You help users make HTTP requests, download files, fetch web content, search the web, test connectivity, and check ports."
+        return "你是一个网络操作助手,负责HTTP请求、文件下载、网页内容获取、网络搜索、连通性测试和端口检查。"
 
     def get_tool_details(self) -> str:
         """获取工具描述和示例(FC模式下可选跳过) - 小沈 2026-06-11"""
@@ -46,7 +42,7 @@ Example 3: 网络诊断
         return "1. 分析需要的网络操作(HTTP请求、下载、搜索、连通性测试)\n2. 使用正确参数的合适网络工具\n3. 用中文报告网络诊断结果"
 
     def _get_domain_extra_notes(self) -> str:
-        return "Remember:\n- URL必须包含scheme(http://或https://)\n- POST/PUT用json_body参数(NOT data/params)\n- 使用timeout避免挂起\n- 失败两次后换不同方法"
+        return "- URL必须包含scheme(http://或https://)\n- POST/PUT用json_body参数(NOT data/params)\n- 使用timeout避免挂起\n- 失败两次后换不同方法"
 
     def get_safety_reminder(self) -> str:
-        return "⚠️ Network Safety: Validate URL parameters to avoid injection risks. Use HTTPS for sensitive data."
+        return "网络操作安全:URL参数需验证防注入,敏感数据使用HTTPS"

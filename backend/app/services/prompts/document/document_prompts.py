@@ -8,11 +8,7 @@ Author: 小健 - 2026-05-06
 【2026-05-18 小沈】更新工具列表:8合2路由重构,移除旧工具名
 P1修复 — 小欧 2026-06-11: 硬编码工具描述改为build_tool_descriptions()动态生成(DRY+OCP)
 """
-from datetime import datetime
-
 from app.services.prompts.base_prompt_template import BasePrompts
-from app.services.prompts.middle import get_system_prompt as get_system_prompt_string
-from app.utils.logger import logger
 
 
 class DocumentPrompts(BasePrompts):
@@ -20,7 +16,7 @@ class DocumentPrompts(BasePrompts):
     
     def get_core_system_prompt(self) -> str:
         """获取核心系统Prompt - 小沈 2026-06-11 系统信息提到Base公共层"""
-        return "You are a professional document operations assistant. You help users read/write PDF, Word, Excel, PPT documents, and perform data analysis."
+        return "你是一个文档处理助手,负责PDF/Word/Excel/PPT文档的读写和数据分析。"
 
     def get_tool_details(self) -> str:
         """获取工具描述和示例(FC模式下可选跳过) - 小沈 2026-06-11"""
@@ -45,7 +41,7 @@ Example 3: 查询数据库
     
 
     def get_safety_reminder(self) -> str:
-        return "⚠️ Document Safety: write_document overwrites existing files. Read before write to confirm."
+        return "write_document会覆盖已有文件,写入前先读取确认内容"
 
     def _get_domain_name(self) -> str:
         return "文檔处理"
