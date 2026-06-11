@@ -97,13 +97,7 @@ class ToolRetryEngine:
         action: str,
         action_input: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """统一工具执行方法（单一入口，委托给私有方法）
-        
-        【修复P1-2 2026-06-08 小沈】拆分为私有方法，遵守SRP原则
-        """
-        if action == "finish":
-            return self._handle_finish(action_input)
-        
+        """统一工具执行方法 — FC-only: 无finish分支"""
         tool = self._find_tool(action)
         if tool is None:
             return create_error_tool_result(
@@ -118,14 +112,6 @@ class ToolRetryEngine:
             return params
         
         return await self._execute_with_retry(action, params, tool)
-    
-    def _handle_finish(self, action_input: Dict[str, Any]) -> Dict[str, Any]:
-        """处理finish短路"""
-        return create_tool_result(
-            data=action_input.get("result"),
-            message=action_input.get("result", "Task completed"),
-            retry_count=0
-        )
     
     def _find_tool(self, action: str) -> Optional[Callable]:
         """查找工具 — P2-15修复: 兜底不写入self._tools"""

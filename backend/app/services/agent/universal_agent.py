@@ -193,7 +193,25 @@ class UniversalAgent(BaseAgent):
                 "tool_call_id": parsed.get("tool_call_id") or "",
                 "tool_calls": parsed.get("tool_calls", [])
             }
-            yield ("response", {"type": "action", "fc_context": fc_context, **parsed})
+            # 从tool_calls提取平行调用 — 小沈 2026-06-11 修复P0:_pending_calls从未赋值
+            _pending_calls = []
+            raw_tool_calls = parsed.get("tool_calls", [])
+            if len(raw_tool_calls) > 1:
+                primary_id = parsed.get("tool_call_id", "")
+                for tc in raw_tool_calls:
+                    tc_id = tc.get("id", "")
+                    if tc_id and tc_id != primary_id:
+                        func = tc.get("function", {})
+                        try:
+                            extra_params = json.loads(func.get("arguments", "{}"))
+                        except (json.JSONDecodeError, TypeError):
+                            extra_params = {}
+                        _pending_calls.append({
+                            "tool_name": func.get("name", ""),
+                            "tool_params": extra_params,
+                            "_tool_call_id": tc_id,
+                        })
+            yield ("response", {"type": "action", "fc_context": fc_context, "_pending_calls": _pending_calls, **parsed})
             return
 
         # 无tool_name → 这是LLM的最终答复(answer)

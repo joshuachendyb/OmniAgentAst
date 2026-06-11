@@ -96,7 +96,8 @@ class ActionHandler:
                                 tool_name: str, tool_params: Dict, is_parallel: bool,
                                 pending_calls: List, action_steps: List,
                                 llm_response: str, fc_context: Dict = None) -> List:
-        """构建observation — FC-only: 传递fc_context,删除add_assistant — 小沈 2026-06-11"""
+        """构建observation — FC-only: 传递fc_context,删除add_assistant — 小沈 2026-06-11
+        【修复 2026-06-11 小沈】平行调用各result用各自的tool_call_id"""
         events = []
 
         for call, result in zip(all_calls, results):
@@ -119,8 +120,15 @@ class ActionHandler:
                 agent._update_executed_tool_summary(call["tool_name"], result, call["tool_params"])
             obs_parts.append(obs_text)
             try:
-                call_fc_context = fc_context or {}
-                _update_message_builder(agent, obs_text, call_fc_context)
+                # 为每个call构建独有fc_context — 修复平行调用共用tool_call_id
+                _fc = fc_context or {}
+                tc_id = call.get("_tool_call_id", "")
+                if tc_id and _fc.get("tool_calls"):
+                    matching = [tc for tc in _fc["tool_calls"] if tc.get("id") == tc_id]
+                    per_call_fc = {"tool_call_id": tc_id, "tool_calls": matching or _fc["tool_calls"]}
+                else:
+                    per_call_fc = _fc
+                _update_message_builder(agent, obs_text, per_call_fc)
             except Exception as e:
                 logger.warning(f"[action_handler] _update_message_builder异常: {e}")
 
@@ -149,12 +157,21 @@ class ActionHandler:
         """完整action处理流程 — FC-only: 提取fc_context传递 — 小沈 2026-06-11"""
         tool_name = parsed["tool_name"]
         tool_params = parsed.get("tool_params", {})
-        pending_calls = parsed.get("_pending_calls", [])
-        fc_context = parsed.get("fc_context", {})
         step = step_counter[0]
 
-        all_calls = [{"tool_name": tool_name, "tool_params": tool_params}]
-        all_calls.extend(pending_calls)
+        pending_calls = parsed.get("_pending_calls", [])
+        fc_context = parsed.get("fc_context", {})
+        all_calls = [{
+            "tool_name": tool_name,
+            "tool_params": tool_params,
+            "_tool_call_id": fc_context.get("tool_call_id", "") if fc_context else "",
+        }]
+        for pc in pending_calls:
+            all_calls.append({
+                "tool_name": pc["tool_name"],
+                "tool_params": pc["tool_params"],
+                "_tool_call_id": pc.get("_tool_call_id", ""),
+            })
         is_parallel = len(all_calls) > 1
 
         yield agent._step_emitter.emit(ThoughtStep(
