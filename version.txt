@@ -1,4 +1,31 @@
 
+v0.15.7
+
+更新时间: 2026-06-11
+
+## v0.15.6→v0.15.7 变更汇总 - 小沈-2026-06-11
+
+### feat——Prompt优化:项目上下文注入+环境信息+工具critical_notes+FC消息类型安全(1 commit)
+
+| 文件 | 变更 |
+|------|------|
+| prompts/project_context.py | 新增—读取README.md注入系统Prompt |
+| prompts/middle/system_adapter.py | 新增环境信息(工作目录/Git检测/日期) |
+| prompts/base_prompt_template.py | _get_project_context→委派load_project_context; build_tool_descriptions输出critical_notes/usage_hint/forbidden |
+| universal_agent.py | 删除重复的_build_project_context(已由BasePrompts统一注入) |
+| tools/tool_types.py | ToolMetadata新增critical_notes/usage_hint/forbidden字段 |
+| agent_utils/fc_message_types.py | 新增—FC消息Pydantic模型(SystemMessage/UserMessage/AssistantMessage/ToolResultMessage) |
+| agent/message_builder.py | init_history/_append_observation改用typed models构建 |
+
+### 净效果
+
+- 项目上下文由BasePrompts统一注入(READMEmd),消除UniversalAgent重复注入
+- 工具描述新增⚠注意事项/💡使用提示/🚫禁止用法
+- FC消息构造通过Pydantic模型验证,类型安全
+- 490非E2E测试全部通过,0回归
+
+---
+
 v0.15.6
 
 更新时间: 2026-06-11

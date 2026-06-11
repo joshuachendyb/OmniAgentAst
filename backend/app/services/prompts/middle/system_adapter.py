@@ -6,10 +6,12 @@
 
 创建时间: 2026-03-24 17:25:00
 作者: 小沈
-版本: v1.0
+版本: v1.1 — 2026-06-11 小沈 增加工作目录/Git状态/日期
 """
 import functools
+import os
 import platform
+from datetime import date
 from typing import Dict, Any
 from app.utils.logger import logger
 
@@ -126,6 +128,31 @@ class SystemAdapter:
         """获取当前系统的命令格式"""
         return self.COMMANDS.get(self.system, self.COMMANDS["Linux"])
     
+    @staticmethod
+    def _check_is_git_repo(path: str) -> bool:
+        """向上搜索.git目录 — 小沈 2026-06-11"""
+        current = os.path.abspath(path)
+        for _ in range(5):
+            if os.path.isdir(os.path.join(current, ".git")):
+                return True
+            parent = os.path.dirname(current)
+            if parent == current:
+                break
+            current = parent
+        return False
+
+    def _get_environment_info(self) -> str:
+        """获取环境信息(工作目录/Git状态/日期) — 小沈 2026-06-11"""
+        cwd = os.getcwd()
+        today = date.today().strftime("%Y-%m-%d")
+        is_git = self._check_is_git_repo(cwd)
+        git_status = "是" if is_git else "否"
+        return f"""【环境信息】
+- 工作目录: {cwd}
+- Git仓库: {git_status}
+- 当前日期: {today}
+"""
+
     def generate_system_prompt(self, include_commands: bool = True) -> str:
         """
         生成系统信息Prompt - 嵌入到工具Prompt的开头
@@ -133,6 +160,7 @@ class SystemAdapter:
         【修复 2026-05-14 小沈】加include_commands参数
         - ShellAgent: include_commands=True(它的工具就是shell,需要命令格式提示)
         - 其他Agent: include_commands=False(避免LLM看到ipconfig/curl暗示后幻觉调execute_shell_command)
+        【增强 2026-06-11 小沈】增加环境信息(工作目录/Git状态/日期)
         
         Args:
             include_commands: 是否注入【命令格式】段,默认True
@@ -142,8 +170,9 @@ class SystemAdapter:
         """
         system_name = self.get_system_name()
         path_format = self.get_path_format()
+        env_info = self._get_environment_info()
         
-        prompt = f"""【当前系统】
+        prompt = env_info + f"""【当前系统】
 {system_name}
 
 【路径格式】
