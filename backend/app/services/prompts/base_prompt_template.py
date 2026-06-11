@@ -10,24 +10,24 @@
 定义各意图 Prompt 的基类接口和公共规则,各意图的 Prompt 继承此类。
 统一管理 System Prompt 的组装顺序,确保所有Agent的prompt结构一致。
 
-组装架构(唯一入口:build_full_system_prompt()):
-   ① _get_system_info()         — 公共:系统信息(OS/路径规则,所有意图共享)
-   ② get_core_system_prompt()   — 分类特有:角色定义 + 业务规则(必选)
-   ③ get_tool_details()         — 可选:工具描述 + 示例(由include_tool_details控制)
-   ④ TOOL_CALL_RULES            — 公共:工具调用规则(直接调用,禁止反复讨论)
-   ⑤ get_safety_reminder()      — 分类特有:安全提醒(子类覆盖,默认空)
-   ⑥ get_rollback_instructions()— 公共:回滚说明
-   ⑦ AVOID_REPEAT_RULES         — 公共:避免重复操作
+组装架构(build_full_system_prompt):
+① _get_system_info()         — 公共:系统信息(OS/路径规则,所有意图共享)
+② get_core_system_prompt()   — 分类特有:角色定义 + 业务规则(必选)
+③ get_tool_details()         — 可选:工具描述 + 示例(由include_tool_details控制)
+④ TOOL_CALL_RULES            — 公共:工具调用规则(直接调用,禁止反复讨论)
+⑤ get_safety_reminder()      — 分类特有:安全提醒(子类覆盖,默认空)
+⑥ get_rollback_instructions()— 公共:回滚说明
+⑦ AVOID_REPEAT_RULES         — 公共:避免重复操作
 
-   运行时由Agent._build_system_prompt()追加:
-   ⑧ _build_candidates_hint()   — 动态:候选意图提示
-   ⑨ _build_cross_tool_hint()   — 动态:跨分类工具提示
+UniversalAgent._get_system_prompt() 追加:
+⑧ _build_candidates_hint()   — 动态:候选意图提示
+⑨ _build_cross_tool_hint()   — 动态:跨分类工具提示
 
 Author: 小沈 - 2026-03-21
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import List
 
 
 class BasePrompts(ABC):
@@ -42,8 +42,7 @@ class BasePrompts(ABC):
     - get_task_prompt()       → 获取任务描述 Prompt
     - get_safety_reminder()   → 获取安全提醒
     
-    get_system_prompt() 保持为 get_core_system_prompt() + get_tool_details() 的组合,
-    向后兼容,外部调用不变。
+    完整 Prompt 组装入口: build_full_system_prompt()
     
     Author: 小沈 - 2026-06-11 拆分core/tool_details
     """
@@ -68,7 +67,7 @@ class BasePrompts(ABC):
     TOOL_CALL_RULES = """【Tool Call Rules - 工具调用行为规范】:
 - 确认用户意图后立即调用工具,不要在thought中反复讨论该用哪个工具
 - reasoning简短说明选择理由即可(1-2句),不要写长篇分析
-- ❌ 禁止:仅用文字回复而不调用工具 — 用户请求需要实际操作时,MUST调用工具
+- ❌ 禁止:仅用文字回复而不调用工具 — 用户请求需要实际操作时必须调用工具
 - ✅ 正确:确认意图→直接调用→根据结果决定下一步
 - 任务完成时直接回复总结内容,无需调用任何工具
 - 如果不确定用什么工具,选择最合理的工具并调用,不要用文字回复代替
@@ -115,21 +114,6 @@ class BasePrompts(ABC):
             工具描述和示例字符串,默认为空
         """
         return ""
-
-    def get_system_prompt(self) -> str:
-        """
-        获取完整系统级 Prompt(向后兼容)
-        
-        组合: _get_system_info() + get_core_system_prompt() + get_tool_details()
-        
-        Returns:
-            完整系统 Prompt 字符串
-        """
-        parts = [self._get_system_info(), self.get_core_system_prompt()]
-        details = self.get_tool_details()
-        if details:
-            parts.append(details)
-        return "\n\n".join(parts)
 
     def _get_system_info(self) -> str:
         """获取系统信息(中间层注入),所有意图共享 — 小沈 2026-06-11 抽取到公共层"""

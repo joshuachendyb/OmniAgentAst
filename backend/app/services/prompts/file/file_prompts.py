@@ -22,13 +22,9 @@
 增强时间: 2026-03-24
 升级reasoning时间: 2026-04-14
 """
-from datetime import datetime
-from typing import List, Dict, Any, Optional
-import json
+from typing import Dict, Any, Optional
 
 from app.services.prompts.base_prompt_template import BasePrompts
-from app.services.prompts.middle import get_system_prompt as get_system_prompt_string
-from app.utils.logger import logger
 
 
 class FileOperationPrompts(BasePrompts):
@@ -76,9 +72,6 @@ Example 3: 写入文件
 
     def _get_domain_steps(self) -> str:
         return "1. 分析需要做什么操作\n2. 使用合适的工具完成任务\n3. 用中文总结结果"
-
-    def _get_domain_extra_notes(self) -> str:
-        return "Remember:\n- 不要将思考内容传入text参数\n- text参数必须是实际的文件内容"
 
     def get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
         """文件管理任务 — 覆盖基类以支持context参数"""

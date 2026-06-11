@@ -10,12 +10,9 @@ Author: 小健 - 2026-05-06
 【重写】2026-06-11 小沈 — 补全真实能力范围,修正"只查不执行"的角色偏差
 """
 import json
-from datetime import datetime
 from typing import Dict, List
 
 from app.services.prompts.base_prompt_template import BasePrompts
-from app.services.prompts.middle import get_system_prompt as get_system_prompt_string
-from app.utils.logger import logger
 
 
 def _build_tool_descriptions(category: str, tool_names: List[str]) -> str:
