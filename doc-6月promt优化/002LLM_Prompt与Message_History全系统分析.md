@@ -1,7 +1,7 @@
 # 002LLM Prompt与Message Conversation History全系统分析
 
 **创建时间**: 2026-06-10 15:15:59  
-**版本**: v1.4  
+**版本**: v1.5  
 **作者**: 小沈  
 **复查次数**: 5遍  
 
@@ -16,6 +16,7 @@
 | v1.2 | 2026-06-11 | 小健 | 逐问题修复复核，标注修复状态（✅已修复/⚠️未修复/✅不修改） |
 | v1.3 | 2026-06-11 09:19:07 | 小沈 | 新增FC-only全系统文件检查清单（补充第2/3/4/5章未覆盖范围）|
 | v1.4 | 2026-06-11 09:37:46 | 小沈 | 六↔七章节号互换；新增7.1.1降级路径必要性分析 |
+| v1.5 | 2026-06-11 | 小沈 | 7.5.5补充_utils.py/_tool_params.py；7.5.6补充fc_context构建代码+L144删除说明；7.8.4精确区分mock类型；第三章新增P0历史污染问题；第五章新增3个P2问题 |
 
 ---
 ## 一、核心架构总览
@@ -853,6 +854,14 @@ conversation_history结构示例:
 ]
 ```
 
+**⚠️ 问题 P0: task为空时历史消息污染** — 小沈 2026-06-11
+
+`init_history()`将`task_prompt`直接存入`conversation_history[1]`（user消息），未校验`task`是否为空。若调用方传入空字符串`""`，`_get_task_prompt()`仍会返回带时间戳和模板的非空字符串（如`"Task: \nCurrent time: ...\n请完成此文件管理任务..."`），但核心任务内容为空。后续LLM基于空任务推理，产出无意义结果，且该空user消息在`trim_history()`中不会被裁剪（因`len<=2`保护），永久污染conversation_history。
+
+**触发路径**: `chat_router.py` → `agent.run(task="")` → `initialize_run_state()` → `_get_task_prompt("")` → `init_history(sys_prompt, "Task: \n...")`
+
+**修复建议**: `init_history()`中增加`task`非空校验，空任务时抛出`ValueError`或返回默认提示。
+
 ---
 
 ## 四、LLM调用层详细分析
@@ -1400,6 +1409,18 @@ TOOL_REMINDER = (
 - ✅ 工具提醒采用惰性注入（设标志位→_call_llm()动态注入），不永久写入conversation_history
 - ✅ TOOL_REMINDER与OUTPUT_FORMAT/TOOL_CALL_RULES同级（base_prompt_template.py），消除硬编码
 - ⚠️ **问题**: TOOL_REMINDER与OUTPUT_FORMAT规则部分重复
+
+**⚠️ 问题 P2-1: observation_formatter fallback提示不精准** — 小沈 2026-06-11
+
+`_get_failure_hint()`（observation_formatter.py L35-53）在`tool_registry`未注册工具或获取异常时，返回通用兜底提示`"请尝试其他可用工具,不要重复调用同一失败操作。"`。该提示未区分错误类型（网络超时/权限不足/参数错误），LLM可能反复重试同一无效操作。建议根据`result.get("code")`分类返回差异化提示。
+
+**⚠️ 问题 P2-2: chunk_buffer提升与add_observation时序冲突** — 小沈 2026-06-11
+
+`handle_chunk()`（chunk_handler.py L14-25）在累积chunk后调用`handle_chunk_buffer_promotion()`，该函数仅发射`ThoughtStep`和`ChunkStep`事件，**不写入conversation_history**。但`flush_temp_to_history()`（message_builder.py L110-114）将累积文本通过`add_assistant()`写入history。若`flush_temp_to_history()`在`add_observation()`之前调用，LLM会看到一条孤立的assistant文本消息（无对应tool_call），可能产生幻觉推理。需确认`flush_temp_to_history()`的调用时序。
+
+**⚠️ 问题 P2-3: 前端SSE error事件缺少timestamp字段** — 小沈 2026-06-11
+
+`exit_with_error()`（step_emitter相关）产出的error类型Step事件中，`timestamp`字段使用`new Date()`生成前端本地时间，而非后端`StreamChunk.timestamp`。当前端与后端时区不一致时，导出的JSON中error步骤的timestamp与其他步骤（使用后端时间）偏差可达8小时。建议error事件统一使用后端传入的timestamp。
 
 ---
 
@@ -2067,31 +2088,96 @@ _DEFAULT_HANDLER = handle_answer  # 默认视为answer
 |------|------|
 | `llm_response_parser/parse_llm_response.py` | 主入口，6个handler的解析链 |
 | `llm_response_parser/_result_builders.py` | 结果构造器（含FC旧格式支持） |
+| `llm_response_parser/_utils.py` | 内部工具函数（parse_json等，约168行） |
+| `llm_response_parser/_tool_params.py` | 工具参数处理（约231行） |
 | `llm_response_parser/__init__.py` | 导出parse_llm_response |
+
+> 注：以上5个文件全部仅被`llm_response_parser/`内部引用，无外部依赖，可安全整目录删除。
 
 #### 7.5.6 `action_handler.py` — 增加FC上下文传递
 
-**当前问题**: `_update_message_builder()`调用`add_observation()`时不传`fc_context`，导致FC分支代码不通。
+**当前问题**: `_update_message_builder()`调用`add_observation()`时不传`fc_context`，导致FC分支代码不通。且`build_observation()` L144调用`add_assistant(llm_response)`会在tool调用路径写入重复assistant消息。
 
 **FC-only**: 需要在 `_call_llm_fc_stream()` 到 `_update_message_builder()` 的传递链中增加fc_context。
 
-传递路径：
+**A. fc_context构建代码**
+
+`action_json`必须包含`tool_call_id`和FC格式`tool_calls`数组，否则后续handler无法构建fc_context。
+
+当前`llm_core.py` action_json构建（丢失id）：
+```python
+# llm_core.py L209 — 当前代码
+action_json = _json.dumps({"tool_name": tc["name"], "tool_params": params})
+```
+
+FC-only改为：
+```python
+# llm_core.py L209 — FC-only
+action_json = _json.dumps({
+    "tool_name": tc["name"],
+    "tool_params": params,
+    "tool_call_id": tc.get("id"),           # 新增:传递tool_call_id
+    "tool_calls": [{                          # 新增:FC协议格式数组
+        "id": tc.get("id"),
+        "type": "function",
+        "function": {
+            "name": tc["name"],
+            "arguments": tc.get("arguments", "")
+        }
+    }]
+})
+```
+
+`_call_llm_fc_stream()`解析后yield dict需附带fc_context：
+```python
+# _call_llm_fc_stream() FC-only
+parsed = parse_json(full_content)
+if parsed and "tool_name" in parsed:
+    fc_context = {
+        "tool_call_id": parsed.get("tool_call_id"),
+        "tool_calls": parsed.get("tool_calls", [])
+    }
+    yield ("response", {"type": "action", "fc_context": fc_context, **parsed})
+    return
+```
+
+**B. 传递路径**
 ```
 _extract_tool_calls() 捕获 {id, name, arguments}
     ↓
 tool_call_accumulator 存储 {id, name, arguments}
     ↓
-request_stream() 注入StreamChunk(content=action_json)
+request_stream() 注入StreamChunk(content=action_json)  ← action_json含tool_call_id+FC格式tool_calls
     ↓
-_call_llm_fc_stream() 知道tool_call_id（从accumulator或解析JSON得）
+_call_llm_fc_stream() 解析full_content → dict(含fc_context)
     ↓
-_process_single_step() 接收llm_response(dict) + 可附带fc_context
+_process_single_step() 接收llm_response(dict，含fc_context)
     ↓
-handle_action() / handle_answer()
+handle_action() 提取fc_context传给_update_message_builder
     ↓
 _update_message_builder(agent, result, tool_name, tool_params, fc_context)
     ↓
 add_observation(obs_text, llm_call_count, fc_context)
+```
+
+**C. build_observation() 适配**
+
+需在`build_observation()`循环中为每个tool_call单独构建fc_context，并删除L144的`add_assistant(llm_response)`调用：
+
+```python
+# action_handler.py build_observation() FC-only
+for idx, call in enumerate(all_calls):
+    # ... 执行工具 ...
+    # 为每个tool_call构建独立fc_context
+    fc_context = {
+        "tool_call_id": call.get("tool_call_id"),
+        "tool_calls": call.get("tool_calls", [])
+    }
+    _update_message_builder(agent, result, tool_name=call["tool_name"], tool_params=call["tool_params"], fc_context=fc_context)
+    # ... 事件产出 ...
+
+# ❌ 删除 L144: agent.message_builder.add_assistant(llm_response)
+# FC-only下assistant消息由_append_observation()以FC协议格式添加，不需要文本JSON格式的assistant消息
 ```
 
 ### 7.6 删除清单总表
@@ -2255,9 +2341,9 @@ def _build_request_body(messages, model, tools=None, tool_choice=None, ...):
 
 | 文件 | 位置 | 内容 | FC-only修改 |
 |------|------|------|------------|
-| `tests/conftest.py` | L53-77 | `MockLLMClient._call_llm()` mock模拟Text响应 | 需改为FC流式格式 |
-| `tests/test_react_cycle.py` | L21-25 | mock `_call_llm` 返回JSON字符串 | 需改为返回dict |
-| `tests/test_react_cycle_business.py` | L60 | mock `agent._call_llm` | 需改为FC流式格式 |
+| `tests/conftest.py` | L53-77 | `MockLLMClient._call_llm()` — LLM客户端层mock | **无需改FC格式**。它mock的是`client_sdk`层的`_call_llm()`方法（返回str），不涉及Agent层的`_call_llm()`生成器。如果`client_sdk`删`mode`参数，此mock不受影响（它不实现`request_stream`）。 |
+| `tests/test_react_cycle.py` | L21-25 | `agent._call_llm = AsyncMock(return_value=llm_response)` | **需改**。`_process_single_step()`现在`async for chunk in agent._call_llm()`遍历生成器。需改为yield tuples：`_call_llm = AsyncMock(return_value=aiter([("chunk", "content"), ("response", dict)]))` |
+| `tests/test_react_cycle_business.py` | L60 | `agent._call_llm = AsyncMock(return_value='{"tool_name":...}')` | **需改**。同上，需改为yield FC格式dict，且`_process_single_step()`删除`parse_llm_response()`后直接用dict |
 | `tests/test_shell_security.py` | L66-108 | FC协议消息配对测试 | 保留FC，删除Text模式用例 |
 | `tests/conftest_e2e.py` | L125,258,389,595-615 | FC `tool_calls` 期望SSE结构 | 保留 |
 | `tests/test_e2e_full_link.py` | 多处 | `tool_calls` 断言（~50处） | 保留 |
