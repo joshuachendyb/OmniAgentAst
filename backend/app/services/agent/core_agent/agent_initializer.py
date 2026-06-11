@@ -11,7 +11,6 @@ from typing import Any, Optional, List
 
 from app.services.agent.types import AgentStatus
 from app.services.agent.message_builder import MessageBuilder
-from app.constants import MAX_CONTEXT_CHARS
 from app.services.tools.tool_types import ToolCategory
 
 
@@ -54,11 +53,12 @@ class AgentInitializer:
 
     @staticmethod
     def _init_messages(agent):
-        """复制自 base_react.py 第127-131行 — 初始化消息构建相关属性"""
+        """初始化消息构建 — 从配置读取max_context_chars"""
         from app.services.agent.steps import ReasoningStep
-        # 【步骤2.10】步骤历史管理:使用ReasoningStep类型
+        from app.config import get_config
         agent.steps: List[ReasoningStep] = []
-        agent.message_builder = MessageBuilder(max_context_chars=MAX_CONTEXT_CHARS)
+        max_context_chars = get_config().get_max_context_chars()
+        agent.message_builder = MessageBuilder(max_context_chars=max_context_chars)
 
     @staticmethod
     def _init_task_tracking(agent, enable: bool, description: str = ""):

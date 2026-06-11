@@ -28,6 +28,7 @@ class AgentConfig:
     rollback_enabled: bool = False
     max_steps: int = 100
     extra_categories: List[ToolCategory] = field(default_factory=list)
+    exclude_tool_details_from_prompt: bool = False
 
     _prompt_class: Optional[Type[BasePrompts]] = field(default=None, repr=False)
     _agent_class: Optional[Any] = field(default=None, repr=False)
@@ -57,6 +58,7 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_class_name="FileOperationPrompts",
         category_display_name="文件操作",
         rollback_enabled=True,
+        exclude_tool_details_from_prompt=True,
     ),
     "system": AgentConfig(
         intent_type="system",
@@ -65,6 +67,7 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_class_name="SystemPrompts",
         category_display_name="基础运行时",
         extra_categories=[ToolCategory.FILE],
+        exclude_tool_details_from_prompt=True,
     ),
     "network": AgentConfig(
         intent_type="network",
@@ -72,6 +75,7 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_module="app.services.prompts.network.network_prompts",
         prompt_class_name="NetworkPrompts",
         category_display_name="网络与进程",
+        exclude_tool_details_from_prompt=True,
     ),
     "document": AgentConfig(
         intent_type="document",
@@ -79,6 +83,7 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_module="app.services.prompts.document.document_prompts",
         prompt_class_name="DocumentPrompts",
         category_display_name="文档内容",
+        exclude_tool_details_from_prompt=True,
     ),
     "desktop": AgentConfig(
         intent_type="desktop",
@@ -86,6 +91,7 @@ AGENT_REGISTRY: Dict[str, AgentConfig] = {
         prompt_module="app.services.prompts.desktop.desktop_prompts",
         prompt_class_name="DesktopPrompts",
         category_display_name="屏幕交互",
+        exclude_tool_details_from_prompt=True,
     ),
 }
 

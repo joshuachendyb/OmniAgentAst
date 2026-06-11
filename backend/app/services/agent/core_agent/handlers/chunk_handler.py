@@ -17,7 +17,7 @@ async def handle_chunk(agent, parsed: Dict, llm_response: str, step_counter: lis
     从react_cycle.py第229-237行拷出，保持业务逻辑不变
     """
     step = step_counter[0]
-    content = parsed.get("content", llm_response.strip())
+    content = parsed.get("content", "")
 
     yield agent._step_emitter.emit(ChunkStep(step=step, content=content, is_reasoning=False))
 

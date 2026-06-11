@@ -114,14 +114,18 @@ class Config:
     def get_max_steps(self, default: int = 100) -> int:
         """
         获取max_steps配置 - 统一入口
-        
+
         Args:
             default: 默认值
-            
+
         Returns:
             max_steps值
         """
         return self.get('app.max_steps', default)
+
+    def get_max_context_chars(self, default: int = 500000) -> int:
+        """获取max_context_chars配置 — 对话历史字符上限"""
+        return self.get('app.max_context_chars', default)
     
     def reload(self):
         """重新加载配置 - 强制清空缓存"""

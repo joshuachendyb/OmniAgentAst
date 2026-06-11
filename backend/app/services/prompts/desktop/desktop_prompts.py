@@ -18,18 +18,19 @@ from app.utils.logger import logger
 class DesktopPrompts(BasePrompts):
     """桌面操作 Prompt模板类"""
     
-    def get_system_prompt(self) -> str:
-        system_info = get_system_prompt_string(include_commands=False)
+    def get_core_system_prompt(self) -> str:
+        """获取核心系统Prompt - 小沈 2026-06-11 系统信息提到Base公共层"""
+        return "You are a professional desktop operations assistant. You help users manage windows, control mouse/keyboard, capture screens, use clipboard, and interact with the GUI."
+
+    def get_tool_details(self) -> str:
+        """获取工具描述和示例(FC模式下可选跳过) - 小沈 2026-06-11"""
         tools = [
             "window_info", "window_control", "mouse_control",
             "keyboard_control", "screen_capture", "clipboard_control",
             "screen_record", "ocr", "send_notification",
         ]
         tool_descriptions = self.build_tool_descriptions(tools, category_label="DESKTOP")
-        return f"""{system_info}
-You are a professional desktop operations assistant. You help users manage windows, control mouse/keyboard, capture screens, use clipboard, and interact with the GUI.
-
-【Available DESKTOP Tools】:
+        return f"""【Available DESKTOP Tools】:
 {tool_descriptions}
 
 【Tool Call Examples】:
@@ -40,8 +41,7 @@ Example 2: 最大化窗口
 {{"thought": "用户要最大化记事本", "reasoning": "使用window_control设置窗口状态", "tool_name": "window_control", "tool_params": {{"window_title": "Notepad", "action": "maximize"}}}}
 
 Example 3: 截图
-{{"thought": "用户要截取屏幕", "reasoning": "使用screen_capture", "tool_name": "screen_capture", "tool_params": {{}}}}
-"""
+{{"thought": "用户要截取屏幕", "reasoning": "使用screen_capture", "tool_name": "screen_capture", "tool_params": {{}}}}"""
     
 
     def _get_domain_name(self) -> str:

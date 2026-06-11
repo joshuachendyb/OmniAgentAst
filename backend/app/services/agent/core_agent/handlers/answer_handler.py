@@ -13,12 +13,20 @@ from app.services.agent.types import AgentStatus
 
 
 async def handle_answer(agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
-    """处理answer/implicit类型
-    
-    从react_cycle.py第190-205行拷出，保持业务逻辑不变
-    """
+    """处理answer类型 — FC-only: 空内容视为错误"""
     step = step_counter[0]
-    content = parsed.get("content", "") or llm_response.strip()
+    content = parsed.get("content", "")
+
+    if not content:
+        from app.utils.logger import logger
+        logger.warning(f"[handle_answer] LLM返回空内容(step={step})")
+        yield agent._step_emitter.exit_with_error(
+            step_count=step, error_type="empty_answer",
+            error_message="LLM返回空内容",
+        )
+        agent.status = AgentStatus.FAILED
+        return
+
     thought = parsed.get("thought", content)
     reasoning = parsed.get("reasoning", "")
 

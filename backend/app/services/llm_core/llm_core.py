@@ -17,7 +17,7 @@ from app.constants import DEFAULT_LLM_TIMEOUT, RATE_LIMIT_STATUS_CODES
 
 
 class BaseAIService:
-    """通用AI服务 — request/request_stream/chat + mode参数 - 小沈 2026-06-09"""
+    """通用AI服务 — request/request_stream/chat — FC-only重构 2026-06-11 小沈"""
 
     def __init__(
         self,

@@ -11,15 +11,17 @@
 统一管理 System Prompt 的组装顺序,确保所有Agent的prompt结构一致。
 
 组装架构(唯一入口:build_full_system_prompt()):
-  ① get_system_prompt()        — 分类特有:角色定义 + 工具详情 + 示例
-  ② TOOL_CALL_RULES            — 公共:工具调用规则(直接调用,禁止反复讨论)
-  ③ get_safety_reminder()      — 分类特有:安全提醒(子类覆盖,默认空)
-  ④ get_rollback_instructions()— 公共:回滚说明
-  ⑤ AVOID_REPEAT_RULES         — 公共:避免重复操作
+   ① _get_system_info()         — 公共:系统信息(OS/路径规则,所有意图共享)
+   ② get_core_system_prompt()   — 分类特有:角色定义 + 业务规则(必选)
+   ③ get_tool_details()         — 可选:工具描述 + 示例(由include_tool_details控制)
+   ④ TOOL_CALL_RULES            — 公共:工具调用规则(直接调用,禁止反复讨论)
+   ⑤ get_safety_reminder()      — 分类特有:安全提醒(子类覆盖,默认空)
+   ⑥ get_rollback_instructions()— 公共:回滚说明
+   ⑦ AVOID_REPEAT_RULES         — 公共:避免重复操作
 
    运行时由Agent._build_system_prompt()追加:
-   ⑥ _build_candidates_hint()   — 动态:候选意图提示
-   ⑦ _build_cross_tool_hint()   — 动态:跨分类工具提示
+   ⑧ _build_candidates_hint()   — 动态:候选意图提示
+   ⑨ _build_cross_tool_hint()   — 动态:跨分类工具提示
 
 Author: 小沈 - 2026-03-21
 """
@@ -33,57 +35,123 @@ class BasePrompts(ABC):
     Prompt 模板基类(抽象)
     
     子类必须实现:
-    - get_system_prompt()      → 获取系统级 Prompt(角色+工具+示例)
+    - get_core_system_prompt() → 获取系统级 Prompt(角色+业务规则)
     
     子类可选覆盖:
-    - get_task_prompt()        → 获取任务描述 Prompt
-    - get_safety_reminder()    → 获取安全提醒
+    - get_tool_details()      → 工具描述+示例(FC模式可跳过,由Schema承载)
+    - get_task_prompt()       → 获取任务描述 Prompt
+    - get_safety_reminder()   → 获取安全提醒
+    
+    get_system_prompt() 保持为 get_core_system_prompt() + get_tool_details() 的组合,
+    向后兼容,外部调用不变。
+    
+    Author: 小沈 - 2026-06-11 拆分core/tool_details
     """
+
+    def __init__(self):
+        self._include_tool_details = True
+
+    @property
+    def include_tool_details(self) -> bool:
+        return self._include_tool_details
+
+    @include_tool_details.setter
+    def include_tool_details(self, value: bool):
+        self._include_tool_details = value
 
     # 【2026-05-07 小沈】通用Tool Call Rules
     # 【2026-06-10 小沈】增强:强制工具调用规则
     # 【2026-06-11 小健】合并SAFETY WARNING(原在OUTPUT_FORMAT),消除SRP/DRY违反
     # 【2026-06-11 小沈】重构:剥离格式规则到OUTPUT_FORMAT,只保留行为规则 — 小沈审查
     # 【FC-only重构 2026-06-11 小沈】移除finish引用,任务完成时直接回复内容
+    # 【2026-06-11 小沈】精简:去重"不能只回文字"2句→1句,移除"失败后换方法"(移入AVOID_REPEAT_RULES)
     TOOL_CALL_RULES = """【Tool Call Rules - 工具调用行为规范】:
 - 确认用户意图后立即调用工具,不要在thought中反复讨论该用哪个工具
 - reasoning简短说明选择理由即可(1-2句),不要写长篇分析
 - ❌ 禁止:仅用文字回复而不调用工具 — 用户请求需要实际操作时,MUST调用工具
 - ✅ 正确:确认意图→直接调用→根据结果决定下一步
-- 始终用中文回复用户
-- 工具返回错误时向用户解释错误并建议替代方案
-
-【IMPERATIVE: 必须使用工具执行操作】:
-- 用户请求需要实际操作时,MUST调用对应的工具(非闲聊场景)
-- 不得仅回复"好的,我将..."之类的文字确认而不调用工具
 - 任务完成时直接回复总结内容,无需调用任何工具
-- 如果不确定用什么工具,选择最合理的工具并调用,不要用文字回复代替"""
+- 如果不确定用什么工具,选择最合理的工具并调用,不要用文字回复代替
+- 始终用中文回复用户"""
 
-    # 【2026-06-11 小沈】避免重复规则 — 提取为类常量(#1 fix)
+    # 【2026-06-11 小沈】避免重复规则
+    # 【2026-06-11 小沈】修正:合并"失败后换方法"(移自TOOL_CALL_RULES),
+    #    修复第2条"3次后换"vs第4条"立即换"的矛盾,
+    #    统一为"失败就换,3次不同方法都失败则停"
     AVOID_REPEAT_RULES = """
 【避免重复规则】
 - 同一命令/URL成功后不要重复执行(结果不会变)
-- 同一命令/URL失败3次后必须换工具或换URL,禁止再试同方式
 - 已获取的信息直接使用,不需要重新获取
-- 失败后优先尝试替代方法,而非反复重试同一方法"""
+- 失败后优先尝试替代方法,而非反复重试同一方法
+- 连续3次不同方法都失败,停止尝试并向用户报告"""
 
     @abstractmethod
-    def get_system_prompt(self) -> str:
+    def get_core_system_prompt(self) -> str:
         """
-        获取系统级 Prompt(分类特有内容)
+        获取核心系统 Prompt(子类必须实现)
         
-        只包含本分类特有的内容:
+        包含本分类特有的核心内容:
         - Agent 角色定义
-        - 可用工具详细说明
-        - Tool Call Examples(JSON格式示例)
+        - 领域特定的业务规则(如文件互斥参数、text参数规则)
         
-        不包含公共规则(TOOL_CALL_RULES等由基类统一注入)
+        不包含:
+        - 工具描述(get_tool_details() 提供)
+        - 示例(get_tool_details() 提供)
+        - 公共规则(TOOL_CALL_RULES等由基类统一注入)
         
         Returns:
-            系统 Prompt 字符串
+            核心 Prompt 字符串
         """
         pass
 
+    def get_tool_details(self) -> str:
+        """
+        获取工具描述和示例(可选,FC模式可跳过)
+        
+        子类可覆盖此方法返回工具描述+示例,
+        由 build_full_system_prompt(include_tool_details=...) 控制是否加载。
+        
+        Returns:
+            工具描述和示例字符串,默认为空
+        """
+        return ""
+
+    def get_system_prompt(self) -> str:
+        """
+        获取完整系统级 Prompt(向后兼容)
+        
+        组合: _get_system_info() + get_core_system_prompt() + get_tool_details()
+        
+        Returns:
+            完整系统 Prompt 字符串
+        """
+        parts = [self._get_system_info(), self.get_core_system_prompt()]
+        details = self.get_tool_details()
+        if details:
+            parts.append(details)
+        return "\n\n".join(parts)
+
+    def _get_system_info(self) -> str:
+        """获取系统信息(中间层注入),所有意图共享 — 小沈 2026-06-11 抽取到公共层"""
+        from app.services.prompts.middle import get_system_prompt as get_system_prompt_string
+        from app.utils.logger import logger
+
+        system_info = get_system_prompt_string(include_commands=False)
+        logger.debug(f"[{self.__class__.__name__}] 系统信息长度: {len(system_info)}")
+
+        from app.utils.prompt_logger import get_prompt_logger
+        prompt_logger = get_prompt_logger()
+        prompt_logger.log_system_prompt(
+            step_name="中间层注入-服务器OS信息",
+            prompt_content=system_info,
+            source=f"{self.__class__.__name__}._get_system_info()",
+            details={
+                "系统信息长度": len(system_info),
+                "包含内容": "服务器OS、路径格式、命令格式"
+            },
+            round_number=1
+        )
+        return system_info
 
     def get_task_prompt(self, task: str) -> str:
         """获取任务描述 Prompt — P2-21: 公共模式(Task+时间+分类指令)"""
@@ -116,26 +184,41 @@ class BasePrompts(ABC):
         return ""
 
     def get_rollback_instructions(self) -> str:
-        """获取回滚说明(公共)"""
-        return """If an operation fails:
-1. Analyze why the operation failed
-2. If possible, try an alternative approach (call another tool or use finish to report error)
-3. Report the error to the user clearly"""
+        """获取回滚说明(公共) - 小沈 2026-06-11 英文→中文"""
+        return """操作失败时的处理步骤:
+1. 分析失败原因
+2. 尝试替代方法(调用其他工具或向用户报告)
+3. 向用户清晰报告错误信息"""
 
-    def build_full_system_prompt(self) -> str:
+    def build_full_system_prompt(self, include_tool_details: bool = None) -> str:
         """构建完整的系统Prompt — FC-only: 无OUTPUT_FORMAT,由API Schema约束格式
 
+        Args:
+            include_tool_details: 是否包含工具描述和示例.
+                None=使用实例属性 self._include_tool_details 的值.
+                True/False=覆盖实例属性.
+
         组装顺序:
-        ① get_system_prompt()       — 分类特有(角色+工具+示例)
-        ② TOOL_CALL_RULES           — 公共:工具调用规则
-        ③ get_safety_reminder()     — 分类特有:安全提醒
-        ④ get_rollback_instructions()— 公共:回滚说明
-        ⑤ AVOID_REPEAT_RULES        — 公共:避免重复操作
+        ① _get_system_info()        — 公共:系统信息(OS/路径规则)
+        ② get_core_system_prompt() — 分类特有(角色+业务规则)
+        ③ get_tool_details()       — 可选:工具描述+示例(由include_tool_details控制)
+        ④ TOOL_CALL_RULES          — 公共:工具调用规则
+        ⑤ get_safety_reminder()    — 分类特有:安全提醒
+        ⑥ get_rollback_instructions()— 公共:回滚说明
+        ⑦ AVOID_REPEAT_RULES       — 公共:避免重复操作
 
         Returns:
             完整的 System Prompt
         """
-        parts = [self.get_system_prompt()]
+        if include_tool_details is not None:
+            self._include_tool_details = include_tool_details
+
+        parts = [self._get_system_info()]
+        parts.append(self.get_core_system_prompt())
+        if self._include_tool_details:
+            tool_part = self.get_tool_details()
+            if tool_part:
+                parts.append(tool_part)
         parts.append(self.TOOL_CALL_RULES)
 
         safety = self.get_safety_reminder()
