@@ -23,6 +23,11 @@ from typing import Any, Dict, List
 from app.constants import MAX_CONTEXT_CHARS, OBSERVATION_BUDGET_DECAY, OBSERVATION_BUDGET_MAX, OBSERVATION_BUDGET_MIN, TEMP_HISTORY_CHAR_LIMIT
 from app.utils.text_utils import smart_truncate_text
 
+from app.services.agent.agent_utils.fc_message_types import (
+    FcMessage, SystemMessage, UserMessage, AssistantMessage, ToolResultMessage,
+    message_to_dict, dict_to_message,
+)
+
 
 class MessageBuilder:
     """Prompt/Message组装的统一入口"""
@@ -51,8 +56,8 @@ class MessageBuilder:
         if not task_prompt or not task_prompt.strip():
             raise ValueError("task_prompt不能为空")
         self.conversation_history = [
-            {"role": "system", "content": sys_prompt},
-            {"role": "user", "content": task_prompt}
+            message_to_dict(SystemMessage(content=sys_prompt)),
+            message_to_dict(UserMessage(content=task_prompt)),
         ]
 
     def _prepare_observation_text(self, observation_text: str, llm_call_count: int) -> str:
@@ -78,10 +83,10 @@ class MessageBuilder:
             for msg in self.conversation_history
         ) if tool_call_id else False
         if tool_calls and not has_existing_assistant:
-            self.conversation_history.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
+            self.conversation_history.append(message_to_dict(AssistantMessage(tool_calls=tool_calls)))
         elif tool_call_id and not has_existing_assistant:
-            self.conversation_history.append({"role": "assistant", "content": None, "tool_calls": []})
-        self.conversation_history.append({"role": "tool", "content": observation_text, "tool_call_id": tool_call_id})
+            self.conversation_history.append(message_to_dict(AssistantMessage(tool_calls=[])))
+        self.conversation_history.append(message_to_dict(ToolResultMessage(content=observation_text, tool_call_id=tool_call_id)))
 
     def add_observation(self, observation_text: str, llm_call_count: int, fc_context: Dict) -> None:
         """FC-only: fc_context必传 — 重构 2026-06-11 小沈"""
@@ -92,6 +97,22 @@ class MessageBuilder:
     # =========================================================================
     # 第二组:每轮 LLM 调用的消息组装
     # =========================================================================
+
+    def export_messages_as_typed(self) -> List[FcMessage]:
+        """导出类型化的 FC 消息列表 — 小沈 2026-06-11"""
+        from app.services.agent.agent_utils.fc_message_types import dict_to_message
+        result = []
+        for msg in self.conversation_history:
+            try:
+                result.append(dict_to_message(msg))
+            except (ValueError, TypeError):
+                result.append(SystemMessage(content=str(msg)))
+        for msg in self.temp_history:
+            try:
+                result.append(dict_to_message(msg))
+            except (ValueError, TypeError):
+                result.append(SystemMessage(content=str(msg)))
+        return result
 
     def prepare_messages_for_llm(self) -> List[Dict[str, Any]]:
         """准备发给LLM的完整消息列表 — 合并原split+merge+assemble

@@ -141,6 +141,14 @@ class BasePrompts(ABC):
         )
         return system_info
 
+    def _get_project_context(self) -> str:
+        """加载项目上下文(README.md) — 小沈 2026-06-11"""
+        from app.services.prompts.project_context import load_project_context
+        ctx = load_project_context()
+        if not ctx:
+            return ""
+        return f"【项目上下文】:\n{ctx}"
+
     def get_task_prompt(self, task: str) -> str:
         """获取任务描述 Prompt — P2-21: 公共模式(Task+时间+分类指令)"""
         from app.utils.time_utils import now_str
@@ -181,27 +189,25 @@ class BasePrompts(ABC):
     def build_full_system_prompt(self, include_tool_details: bool = None) -> str:
         """构建完整的系统Prompt — FC-only: 无OUTPUT_FORMAT,由API Schema约束格式
 
-        Args:
-            include_tool_details: 是否包含工具描述和示例.
-                None=使用实例属性 self._include_tool_details 的值.
-                True/False=覆盖实例属性.
-
         组装顺序:
         ① _get_system_info()        — 公共:系统信息(OS/路径规则)
-        ② get_core_system_prompt() — 分类特有(角色+业务规则)
-        ③ get_tool_details()       — 可选:工具描述+示例(由include_tool_details控制)
-        ④ TOOL_CALL_RULES          — 公共:工具调用规则
-        ⑤ get_safety_reminder()    — 分类特有:安全提醒
-        ⑥ get_rollback_instructions()— 公共:回滚说明
-        ⑦ AVOID_REPEAT_RULES       — 公共:避免重复操作
-
-        Returns:
-            完整的 System Prompt
+        ② _get_project_context()    — 公共:项目上下文(README.md)
+        ③ get_core_system_prompt() — 分类特有(角色+业务规则)
+        ④ get_tool_details()       — 可选:工具描述+示例
+        ⑤ TOOL_CALL_RULES          — 公共:工具调用规则
+        ⑥ get_safety_reminder()    — 分类特有:安全提醒
+        ⑦ get_rollback_instructions()— 公共:回滚说明
+        ⑧ AVOID_REPEAT_RULES       — 公共:避免重复操作
         """
         if include_tool_details is not None:
             self._include_tool_details = include_tool_details
 
         parts = [self._get_system_info()]
+
+        project_ctx = self._get_project_context()
+        if project_ctx:
+            parts.append(project_ctx)
+
         parts.append(self.get_core_system_prompt())
         if self._include_tool_details:
             tool_part = self.get_tool_details()
@@ -270,7 +276,24 @@ class BasePrompts(ABC):
                     else:
                         parts.append(f"{pname}({ptype}){mark}")
                 lines.append(f"   - 参数: {'; '.join(parts)}")
+
+            critical = getattr(t, 'critical_notes', '')
+            if critical:
+                lines.append(f"   - ⚠️ CRITICAL: {critical}")
+            forbidden = getattr(t, 'forbidden', '')
+            if forbidden:
+                lines.append(f"   - ❌ FORBIDDEN: {forbidden}")
+
             lines.append(f"   - 返回: 操作结果")
+
+            _meta = getattr(t, 'metadata', None)
+            if _meta:
+                if _meta.critical_notes:
+                    lines.append(f"   ⚠ 注意: {_meta.critical_notes}")
+                if _meta.usage_hint:
+                    lines.append(f"   💡 提示: {_meta.usage_hint}")
+                if _meta.forbidden:
+                    lines.append(f"   🚫 禁止: {_meta.forbidden}")
             lines.append("")
 
         return "\n".join(lines)

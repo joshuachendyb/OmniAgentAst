@@ -194,7 +194,15 @@ class ToolMetadata:
     
     # 【v3.4新增】Layer 2安全级别字段 — 小沈 2026-06-09
     safety_level: ToolSafetyLevel = ToolSafetyLevel.SAFE
-    action_safety_map: Optional[Dict[str, ToolSafetyLevel]] = None  # action级覆盖（如execute_shell_command的read/write分级）
+    action_safety_map: Optional[Dict[str, ToolSafetyLevel]] = None
+    # 【FC-only新增】工具关键注意事项 — 借鉴OpenCode critical_notes
+    critical_notes: str = ""   # 关键注意事项(如"必须先读取文件")
+    forbidden: str = ""        # 禁止使用方式(如"禁止传入思考内容")
+
+    # 【借鉴OpenCode】工具使用注意事项 — 小沈 2026-06-11
+    critical_notes: str = ""      # 关键注意事项（LLM必须知道的风险/限制）
+    usage_hint: str = ""          # 使用提示（最佳实践）
+    forbidden: str = ""           # 禁止用法（什么情况下不能使用此工具）
 
     def get_failure_hint(self, tool_params: Optional[dict] = None) -> str:
         """获取工具失败时的替代建议 — 小健 2026-05-24"""
