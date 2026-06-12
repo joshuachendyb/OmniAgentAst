@@ -48,7 +48,7 @@
 | **Handler** | `core_agent/handlers/action_handler.py`, `answer_handler.py`, `chunk_handler.py`, `error_handler.py` |
 | **Message管理** | `message_builder.py`, `agent_utils/message_utils.py`, `agent_utils/fc_message_types.py` |
 | **Prompt基类** | `base_prompt_template.py` |
-| **Prompt子类** | `file/file_prompts.py`, `system/system_prompts.py`, `network/network_prompts.py`, `desktop/desktop_prompts.py`, `document/document_prompts.py`, `meta/time_prompts.py` |
+| **Prompt子类** | ~~`file/file_prompts.py`~~(已删), `system/system_prompts.py`, `network/network_prompts.py`, `desktop/desktop_prompts.py`, `document/document_prompts.py`, `meta/time_prompts.py` |
 | **中间层** | `middle/system_adapter.py`, `middle/__init__.py` |
 | **Observation** | `observation_formatter.py`, `agent_utils/message_utils.py` |
 | **LLM响应解析** | `universal_agent.py`中内联JSON解析（parse_llm_response.py已于2026-06-11删除） |
@@ -70,7 +70,7 @@
 │  用户输入 → API路由 → detect_intent() → intent_type + candidates     │
 │    │                                                                 │
 │    ▼ AgentFactory.create() → UniversalAgent                          │
-│    │  └─ config.prompt_class = FileOperationPrompts (举例)           │
+│    │  └─ config.prompt_class = SystemPrompts (举例,File已删除)       │
 │    │  └─ config.exclude_tool_details_from_prompt 控制是否跳过工具描述 │
 │    │                                                                 │
 │    ▼ agent._initialize_run_state()                                   │
