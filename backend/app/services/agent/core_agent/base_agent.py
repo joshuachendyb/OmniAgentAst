@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, AsyncGenerator, Set, Tuple
 
 from app.services.agent.types import AgentStatus
 from app.services.agent.steps import ReasoningStep, IncidentStep
-from app.services.tools.tool_types import ToolCategory
+
 from app.constants import MAX_CONTEXT_CHARS
 from app.utils.logger import logger
 from app.services.agent.chunk_buffer import ChunkBuffer
@@ -37,19 +37,19 @@ class BaseAgent(ABC):
         self,
         llm_client: Any,
         task_id: str,
-        tool_category: Optional[ToolCategory] = None,
         max_steps: Optional[int] = None,
         rollback_enabled: bool = True,
+        initial_categories=None,
         **kwargs
     ):
         AgentInitializer._init_llm(self, llm_client, **kwargs)
         if max_steps is None:
             from app.config import get_config
             max_steps = get_config().get_max_steps()
-        AgentInitializer._init_state(self, task_id, tool_category, max_steps)
+        AgentInitializer._init_state(self, task_id, max_steps)
         AgentInitializer._init_messages(self)
         self._tool_manager = ToolManager(self)
-        self._tool_manager.init_tools()
+        self._tool_manager.init_tools(initial_categories=initial_categories)
         self._retry_engine = ToolRetryEngine(self._tools_dict)
         AgentInitializer._init_task_tracking(self, enable=rollback_enabled)
         self._step_emitter = StepEmitter(self)

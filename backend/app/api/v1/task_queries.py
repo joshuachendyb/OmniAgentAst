@@ -25,10 +25,9 @@ def get_task(task_id: str):
 @router.get("/tasks")
 def get_recent_tasks(
     limit: int = Query(default=10, ge=1, le=100),
-    intent: Optional[str] = Query(default=None),
 ):
     """最近任务列表"""
-    return _queries.get_recent_tasks(limit=limit, intent=intent)
+    return _queries.get_recent_tasks(limit=limit)
 
 
 @router.get("/tasks/{task_id}/operations")

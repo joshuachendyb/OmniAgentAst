@@ -5,53 +5,48 @@ UniversalAgent — 配置驱动的通用 Agent
 Author: 小沈 - 2026-06-07
 Updated: 小沈 - 2026-06-12 tool_calls原生消费,移除JSON roundtrip
 """
-from typing import Any, List, Optional, Dict
+from typing import Any, List, Optional, Dict, Set
 
 from app.services.agent.core_agent import BaseAgent
-from app.services.agent.agent_config import AgentConfig
 from app.services.agent.types import AgentResult
 from app.services.tools.tool_types import ToolCategory
+from app.services.prompts.system.system_prompts import SystemPrompts
 from app.utils.logger import logger
 
 
+_INITIAL_CATEGORIES: Set[ToolCategory] = {ToolCategory.FILE, ToolCategory.FUND_RUNTIME}
+
+
 class UniversalAgent(BaseAgent):
-    """配置驱动的通用 Agent"""
+    """通用 Agent — 初始加载 FILE + FUND_RUNTIME 工具,注册全部"""
 
     def __init__(
         self,
         llm_client: Any,
         task_id: str,
-        config: Optional[AgentConfig] = None,
-        tool_category: Optional[ToolCategory] = None,
         max_steps: Optional[int] = None,
+        initial_categories=None,
         **kwargs
     ):
         if not task_id:
             raise ValueError("task_id is required for operation tracking")
 
-        effective_category = tool_category
         if max_steps is None:
-            if config and config.max_steps:
-                effective_max_steps = config.max_steps
-            else:
-                from app.config import get_config
-                effective_max_steps = get_config().get_max_steps()
-        else:
-            effective_max_steps = max_steps
-        rollback_enabled = config.rollback_enabled if config else True
+            from app.config import get_config
+            max_steps = get_config().get_max_steps()
+
+        if initial_categories is None:
+            initial_categories = _INITIAL_CATEGORIES
 
         super().__init__(
             llm_client=llm_client,
             task_id=task_id,
-            tool_category=effective_category,
-            max_steps=effective_max_steps,
-            rollback_enabled=rollback_enabled,
+            max_steps=max_steps,
+            initial_categories=initial_categories,
             **kwargs
         )
 
-        if config:
-            self.config = config
-            self.prompts = config.prompt_class()
+        self.prompts = SystemPrompts()
 
         logger.info(
             f"UniversalAgent initialized (task_id={task_id})"
@@ -162,8 +157,7 @@ class UniversalAgent(BaseAgent):
         yield ("response", {"type": "answer", "content": content, "thought": ""})
 
     def _get_openai_tools(self) -> list:
-        """获取OpenAI格式工具定义 — 小沈 2026-06-09 添加TTL缓存过期
-        P0修复: 多分类加载时传category=None,确保extra_tools对LLM可见 — 小沈 2026-06-11"""
+        """获取已加载分类的OpenAI格式工具定义,含TTL缓存"""
         import time
         current_time = time.time()
         cache_ts = getattr(self, '_cache_timestamp', 0)
@@ -171,13 +165,10 @@ class UniversalAgent(BaseAgent):
         cached = getattr(self, '_cached_openai_tools', None)
         if cached and current_time - cache_ts < cache_ttl:
             return cached
-        
+
         from app.services.tools.registry import tool_registry
         loaded = getattr(self, '_loaded_categories', set())
-        category = getattr(self, 'tool_category', None)
-        if len(loaded) > 1:
-            category = None
-        self._cached_openai_tools = tool_registry.to_openai_tools(category=category)
+        self._cached_openai_tools = tool_registry.to_openai_tools(categories=loaded) if loaded else []
         self._cache_timestamp = current_time
         return self._cached_openai_tools
 
