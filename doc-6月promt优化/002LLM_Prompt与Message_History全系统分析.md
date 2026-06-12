@@ -87,10 +87,10 @@ _call_llm()                                            │
     ├─ yield ChunkStep（文本）+ ChunkStep（reasoning） │
     └─ yield Response（dict: action/answer）           │
     ↓                                                  │
-  [内联JSON解析 — 无parse_llm_response]                │
+  [tool_calls原生消费 — 无JSON roundtrip]              │
   _call_llm_fc_stream() 内判断:                        │
-    └─ 有tool_name → action（含fc_context）              │
-    └─ 无tool_name → answer                             │
+    └─ 有chunk.tool_calls → action（原生dict）           │
+    └─ 无chunk.tool_calls → answer                      │
     ↓                                                  │
 handler分派（_TYPE_HANDLERS注册式）                    │
     ├─ action → 执行工具                               │
@@ -368,14 +368,13 @@ class UniversalAgent:
             yield item
 
     async def _call_llm_fc_stream(self, messages: list, openai_tools: list):
-        """FC模式流式调用 — 纯FC,无降级 — FC-only重构 2026-06-11 小沈"""
+        """FC模式流式调用 — tool_calls原生消费,不经过JSON roundtrip — 小沈 2026-06-12"""
         from app.services.agent.steps import ChunkStep
-        from app.utils.json_utils import parse_json
 
         full_content = ""
         full_reasoning = ""
+        tool_calls_result = None
         stream_error = None
-        chunk_step_count = 0
 
         try:
             async for chunk in self.llm_client.request_stream(
@@ -386,8 +385,10 @@ class UniversalAgent:
                     stream_error = chunk.stream_error
                     break
 
+                if chunk.tool_calls:
+                    tool_calls_result = chunk.tool_calls
+
                 if chunk.content:
-                    chunk_step_count += 1
                     if getattr(chunk, "is_reasoning", False):
                         full_reasoning += chunk.content
                         yield ("chunk", ChunkStep(step=self.llm_call_count, content=chunk.content, is_reasoning=True))
@@ -407,51 +408,31 @@ class UniversalAgent:
             yield ("response", {"type": "answer", "content": f"LLM流式错误: {stream_error}"})
             return
 
-        # 判断是action还是answer
-        parsed = parse_json(full_content)
-        # 容错: 文本+JSON混合,按"tool_name"标记向前定位{再括号匹配
-        if not parsed and full_content:
-            _tn = full_content.find('"tool_name"')
-            if _tn >= 0:
-                _open = full_content.rfind('{', 0, _tn)
-                if _open >= 0:
-                    _depth = 0
-                    for _j in range(_open, len(full_content)):
-                        if full_content[_j] == '{':
-                            _depth += 1
-                        elif full_content[_j] == '}':
-                            _depth -= 1
-                            if _depth == 0:
-                                parsed = parse_json(full_content[_open:_j+1])
-                                break
-        if parsed and "tool_name" in parsed:
+        if tool_calls_result:
+            first = tool_calls_result[0]
             fc_context = {
-                "tool_call_id": parsed.get("tool_call_id") or "",
-                "tool_calls": parsed.get("tool_calls", [])
+                "tool_call_id": first.get("tool_call_id", ""),
+                "tool_calls": first.get("tool_calls", []),
             }
-            # 从tool_calls提取平行调用 — 小沈 2026-06-11 修复P0:_pending_calls从未赋值
             _pending_calls = []
-            raw_tool_calls = parsed.get("tool_calls", [])
-            if len(raw_tool_calls) > 1:
-                primary_id = parsed.get("tool_call_id", "")
-                for tc in raw_tool_calls:
-                    tc_id = tc.get("id", "")
-                    if tc_id and tc_id != primary_id:
-                        func = tc.get("function", {})
-                        try:
-                            extra_params = json.loads(func.get("arguments", "{}"))
-                        except (json.JSONDecodeError, TypeError):
-                            extra_params = {}
-                        _pending_calls.append({
-                            "tool_name": func.get("name", ""),
-                            "tool_params": extra_params,
-                            "_tool_call_id": tc_id,
-                        })
-            logger.info(f"[FC] LLM原始响应(action): {full_content}")
-            yield ("response", {"type": "action", "fc_context": fc_context, "_pending_calls": _pending_calls, **parsed})
+            for tc in tool_calls_result[1:]:
+                _pending_calls.append({
+                    "tool_name": tc["tool_name"],
+                    "tool_params": tc["tool_params"],
+                    "_tool_call_id": tc.get("tool_call_id", ""),
+                })
+            logger.info(f"[FC] LLM原始响应(action): tool={first['tool_name']}, parallel={len(_pending_calls)}")
+            yield ("response", {
+                "type": "action",
+                "fc_context": fc_context,
+                "_pending_calls": _pending_calls,
+                "tool_name": first["tool_name"],
+                "tool_params": first["tool_params"],
+                "tool_call_id": first.get("tool_call_id", ""),
+                "tool_calls": first.get("tool_calls", []),
+            })
             return
 
-        # 无tool_name → 这是LLM的最终答复(answer)
         content = full_content or full_reasoning or ""
         logger.info(f"[FC] LLM原始响应(answer): {content}")
         yield ("response", {"type": "answer", "content": content, "thought": ""})
@@ -487,23 +468,21 @@ class UniversalAgent:
 ```
 
 **分析**:
-- ✅ 注入已执行工具汇总，防止重复调用
-- ✅ FC优先：所有场景都过FC流式（2026-06-11小沈重构：无工具时由API处理）
-- ✅ 工具提醒惰性注入：不永久写入conversation_history，通过标志位动态注入（2026-06-11小沈）
-- ⚠️ **问题**: executed_summary在每次调用时都注入，可能增加上下文长度
+- ✅ FC-only: 所有场景都过FC流式，无text降级
+- ✅ _build_executed_tool_summary / _build_candidates_hint / _build_cross_tool_hint **已移除**（2026-06-12 北京老陈）
+- ✅ _call_llm() 只做 prepare + get_tools + stream，职责单一
 
-**_call_llm_fc_stream()实现（FC-only）**:
+**_call_llm_fc_stream()实现（FC-only — 2026-06-12 tool_calls原生消费）**:
 
 ```python
 async def _call_llm_fc_stream(self, messages: list, openai_tools: list):
-    """FC模式流式调用 — 纯FC,无降级 — FC-only重构 2026-06-11 小沈"""
+    """FC模式流式调用 — tool_calls原生消费,不经过JSON roundtrip — 小沈 2026-06-12"""
     from app.services.agent.steps import ChunkStep
-    from app.utils.json_utils import parse_json
 
     full_content = ""
     full_reasoning = ""
+    tool_calls_result = None
     stream_error = None
-    chunk_step_count = 0
 
     try:
         async for chunk in self.llm_client.request_stream(
@@ -514,8 +493,10 @@ async def _call_llm_fc_stream(self, messages: list, openai_tools: list):
                 stream_error = chunk.stream_error
                 break
 
+            if chunk.tool_calls:
+                tool_calls_result = chunk.tool_calls
+
             if chunk.content:
-                chunk_step_count += 1
                 if getattr(chunk, "is_reasoning", False):
                     full_reasoning += chunk.content
                     yield ("chunk", ChunkStep(step=self.llm_call_count, content=chunk.content, is_reasoning=True))
@@ -535,68 +516,47 @@ async def _call_llm_fc_stream(self, messages: list, openai_tools: list):
         yield ("response", {"type": "answer", "content": f"LLM流式错误: {stream_error}"})
         return
 
-    # 判断是action还是answer
-    parsed = parse_json(full_content)
-    # 容错: 文本+JSON混合,按"tool_name"标记向前定位{再括号匹配
-    if not parsed and full_content:
-        _tn = full_content.find('"tool_name"')
-        if _tn >= 0:
-            _open = full_content.rfind('{', 0, _tn)
-            if _open >= 0:
-                _depth = 0
-                for _j in range(_open, len(full_content)):
-                    if full_content[_j] == '{':
-                        _depth += 1
-                    elif full_content[_j] == '}':
-                        _depth -= 1
-                        if _depth == 0:
-                            parsed = parse_json(full_content[_open:_j+1])
-                            break
-    if parsed and "tool_name" in parsed:
+    if tool_calls_result:
+        first = tool_calls_result[0]
         fc_context = {
-            "tool_call_id": parsed.get("tool_call_id") or "",
-            "tool_calls": parsed.get("tool_calls", [])
+            "tool_call_id": first.get("tool_call_id", ""),
+            "tool_calls": first.get("tool_calls", []),
         }
-        # 从tool_calls提取平行调用
         _pending_calls = []
-        raw_tool_calls = parsed.get("tool_calls", [])
-        if len(raw_tool_calls) > 1:
-            primary_id = parsed.get("tool_call_id", "")
-            for tc in raw_tool_calls:
-                tc_id = tc.get("id", "")
-                if tc_id and tc_id != primary_id:
-                    func = tc.get("function", {})
-                    try:
-                        extra_params = json.loads(func.get("arguments", "{}"))
-                    except (json.JSONDecodeError, TypeError):
-                        extra_params = {}
-                    _pending_calls.append({
-                        "tool_name": func.get("name", ""),
-                        "tool_params": extra_params,
-                        "_tool_call_id": tc_id,
-                    })
-        logger.info(f"[FC] LLM原始响应(action): {full_content}")
-        yield ("response", {"type": "action", "fc_context": fc_context, "_pending_calls": _pending_calls, **parsed})
+        for tc in tool_calls_result[1:]:
+            _pending_calls.append({
+                "tool_name": tc["tool_name"],
+                "tool_params": tc["tool_params"],
+                "_tool_call_id": tc.get("tool_call_id", ""),
+            })
+        logger.info(f"[FC] LLM原始响应(action): tool={first['tool_name']}, parallel={len(_pending_calls)}")
+        yield ("response", {
+            "type": "action",
+            "fc_context": fc_context,
+            "_pending_calls": _pending_calls,
+            "tool_name": first["tool_name"],
+            "tool_params": first["tool_params"],
+            "tool_call_id": first.get("tool_call_id", ""),
+            "tool_calls": first.get("tool_calls", []),
+        })
         return
 
-    # 无tool_name → 最终答复(answer)
     content = full_content or full_reasoning or ""
     logger.info(f"[FC] LLM原始响应(answer): {content}")
     yield ("response", {"type": "answer", "content": content, "thought": ""})
 ```
 
-**分析**:
-- ✅ 实时输出chunk给前端（content+reasoning双通道）
-- ✅ FC-only: 无降级路径，异常/stream_error直接返回error answer
-- ✅ 内联JSON解析：不再依赖 `parse_llm_response.py`
+**FC-only重构变更**:
+- ✅ `chunk.tool_calls` 原生消费，绕过JSON roundtrip（6步→4步）
+- ✅ 删除 `parse_json()` + bracket matching fallback
+- ✅ 删除 `chunk_step_count` 计数器（无用）
+- ✅ 删除 `from app.utils.json_utils import parse_json`
 - ✅ 返回dict格式响应（含fc_context），供handler直接使用
-- ✅ 支持平行调用提取（从tool_calls解析_pending_calls）
-
-**FC-only重构删除**（2026-06-11）:
-- 删除 `_call_llm_text_stream()` 方法
-- 删除 `_convert_fc_messages_to_text()` 方法
-- 删除 `mode` 参数（`request_stream` 不再有 `mode` 参数）
-- 删除 `BaseAIService` 中间层
+- ✅ 支持平行调用提取（从 `tool_calls_result[1:]` 直接取）
+- ❌ 删除 `_call_llm_text_stream()` 方法
+- ❌ 删除 `_convert_fc_messages_to_text()` 方法
+- ❌ 删除 `mode` 参数
+- ❌ 删除 `BaseAIService` 中间层
 
 ---
 
@@ -736,10 +696,10 @@ _DEFAULT_HANDLER = handle_answer
 
 **原文件**: `backend/app/services/agent/llm_response_parser/parse_llm_response.py`
 
-**重构时删除**（2026-06-11 小沈）:
+**重构时删除**（2026-06-11~12 小沈）:
 - `parse_llm_response.py` 文件及目录整体删除
-- JSON解析内联到 `_call_llm_fc_stream()` 中（`app/services/agent/universal_agent.py`）
-- 原6步解析链（dict→list→JSONArray→Empty→StandardJSON→MixedText）简化为单次 `parse_json()` + 容错括号匹配
+- JSON roundtrip 替换为 `chunk.tool_calls` 原生消费（2026-06-12 小沈），不再需要 `parse_json()`
+- 原6步解析链（dict→list→JSONArray→Empty→StandardJSON→MixedText）→ `parse_json()` → 直接消费 `chunk.tool_calls`
 - 解析结果类型从5种（action/answer/implicit/chunk/parse_error）精简为2种（action/answer）
 
 ---
@@ -782,7 +742,7 @@ sys_prompt = self._get_system_prompt()
 # ② _get_project_context()    — 项目上下文(README.md)
 # ③ get_core_system_prompt() — 角色+业务规则
 # ④ TOOL_CALL_RULES(safety合并) — 回答要求+停止条件+执行效率
-# ※ candidates_hint+cross_tool_hint 在_call_llm()每轮注入
+# ※ candidates_hint+cross_tool_hint 已移除(2026-06-12 北京老陈)
 
 task_prompt = self._get_task_prompt("读取C:/config.json文件内容")
 self._on_before_loop(sys_prompt, task_prompt, context)  # loop前回调
