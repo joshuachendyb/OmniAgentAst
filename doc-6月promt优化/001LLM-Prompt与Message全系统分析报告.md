@@ -51,7 +51,7 @@
 | **Prompt子类** | ~~`file/file_prompts.py`~~(已删), `system/system_prompts.py`, `network/network_prompts.py`, `desktop/desktop_prompts.py`, `document/document_prompts.py`, `meta/time_prompts.py` |
 | **中间层** | `middle/system_adapter.py`, `middle/__init__.py` |
 | **Observation** | `observation_formatter.py`, `agent_utils/message_utils.py` |
-| **LLM响应解析** | `universal_agent.py`中内联JSON解析（parse_llm_response.py已于2026-06-11删除） |
+| **LLM响应解析** | `universal_agent.py`中`chunk.tool_calls`原生消费（parse_llm_response.py已于2026-06-11删除，2026-06-12去JSON roundtrip） |
 | **LLM SDK** | `llm/client_sdk.py` |
 | **Prompt日志** | `utils/prompt_logger.py` |
 | **工具相关** | `constants.py`, `utils/time_utils.py` |
@@ -79,7 +79,7 @@
 │    │  │   + get_core_system_prompt()                                 │
 │    │  │   + TOOL_CALL_RULES(safety合并)                              │
 │    │  │   ※ FC-only: 4段,无OUTPUT_FORMAT（API Schema约束格式）      │
-│    │  │   ※ candidates_hint+cross_tool_hint移至_call_llm每轮注入    │
+│    │  │   ※ ~~candidates_hint+cross_tool_hint~~ 已移除（FC协议已覆盖）│
 │    │  │                                                              │
 │    │  ├─ _get_task_prompt() → get_task_prompt(task)                  │
 │    │  │   = "Task: xxx\nCurrent time: yyy\n请完成...\n步骤..."       │
@@ -101,8 +101,8 @@
 │    │   │  └─ llm_client.request_stream(messages, tools)             │
 │    │   │     └─ LLMClient → POST /chat/completions {tools}          │
 │    │   │                                                             │
-│    │   ├─ _call_llm_fc_stream() 内联JSON解析（无parse_llm_response） │
-│    │   │  → 判断 tool_name 存在？action:answer                        │
+│    │   ├─ _call_llm_fc_stream() tool_calls原生消费（无JSON roundtrip）│
+│    │   │  → chunk.tool_calls存在？action(原生dict):answer             │
 │    │   │                                                             │
 │    │   └─ handler 注册式分派（_TYPE_HANDLERS）                       │
 │    │      ├─ action_handler: → message_builder.add_observation()     │
@@ -119,7 +119,7 @@
 - System Prompt 组装改为 8 段（含 `_get_system_info()` + `_get_project_context()`）
 - `OUTPUT_FORMAT`/`TOOL_REMINDER` 已删除
 - `_call_llm()` 纯FC流式，无Text降级路径
-- `parse_llm_response.py` 已删除，内联在 `_call_llm_fc_stream()` 中
+- `parse_llm_response.py` 已删除，`_call_llm_fc_stream()` 消费 `chunk.tool_calls`
 - Observation 使用FC协议（`role: assistant(tool_calls)` + `role: tool`）
 
 **关键更新（v2.1）**:
@@ -243,7 +243,7 @@ Windows
 | ③ | `get_core_system_prompt()` | 业务规则（分类特有） |
 | ④ | `TOOL_CALL_RULES`(safety合并) | 回答要求+停止条件+执行效率+安全提醒 |
 
-**v2.1移除**: 无 `get_tool_details()` 段、无 `get_rollback_instructions()` 段、无 `AVOID_REPEAT_RULES` 段、无 `candidates_hint`/`cross_tool_hint` 段（移至 `_call_llm` 每轮注入）。
+**v2.1移除**: 无 `get_tool_details()` 段、无 `get_rollback_instructions()` 段、无 `AVOID_REPEAT_RULES` 段；`candidates_hint`/`cross_tool_hint` 移至 `_call_llm` 每轮注入后亦已移除。
 
 ---
 
@@ -317,7 +317,6 @@ self.MAX_CONTEXT_CHARS = max_context_chars             # 上下文容量上限
 | `user` | init_history() 第2条 | Task Prompt | 始终在第2位 |
 | `assistant` + `tool_calls` | _append_observation() FC协议 | content=None | FC协议工具调用（内含tool_call_id+function） |
 | `tool` | _append_observation() FC协议 | observation文本 | FC协议工具结果（tool_call_id配对） |
-| `system` | _call_llm() | 已执行工具摘要 | 每次调用动态注入（不写永久历史） |
 
 **FC-only 变更**:
 - 删除: `add_assistant()`（不再需要，FC协议由_append_observation统一处理）
@@ -364,7 +363,7 @@ def prepare_messages_for_llm(self) -> List[Dict[str, Any]]:
     return messages
 ```
 
-### 5.6 _call_llm() 注入已执行工具摘要（FC-only）
+### 5.6 _call_llm() — 纯FC精简调用
 
 **文件**: `universal_agent.py:127-152`
 
@@ -374,38 +373,18 @@ async def _call_llm(self):
     self.llm_call_count += 1
     self.message_builder.trim_history()
     messages = self.message_builder.prepare_messages_for_llm()
-    
-    executed_summary = self._build_executed_tool_summary()
-    if executed_summary:
-        messages.append({"role": "system", "content": executed_summary})
-    
-    # Inject hints each round — FC-only v2.1 2026-06-12
-    candidates_hint = self._build_candidates_hint()
-    if candidates_hint:
-        messages.append({"role": "system", "content": candidates_hint})
-    cross_tool_hint = self._build_cross_tool_hint()
-    if cross_tool_hint:
-        messages.append({"role": "system", "content": cross_tool_hint})
-    
     openai_tools = self._get_openai_tools()
     if not openai_tools:
         logger.error(f"[call_llm] 无可用工具, category={self.tool_category}")
-    
     async for item in self._call_llm_fc_stream(messages, openai_tools):
         yield item
 ```
 
-**FC-only变更（v2.1新增）**:
+**FC-only变更**:
 - 删除 TOOL_REMINDER 惰性注入（2026-06-11）
 - 删除 Text模式降级分支
-- 统一走 `_call_llm_fc_stream()`
-- candidates_hint + cross_tool_hint 从系统提示移入每轮动态注入（2026-06-12）
-
-已执行工具摘要内容示例:
-```
-【已执行工具(勿重复)】read_file→success|路径:D:/config.json; search_files→success|结果:2个文件
-注意:上述工具已成功执行,结果已在Observation中,禁止再次调用!
-```
+- 删除 _build_executed_tool_summary / _build_candidates_hint / _build_cross_tool_hint（2026-06-12 北京老陈）
+- _call_llm() 只做 prepare + get_tools + stream，职责单一
 
 ### 5.7 历史裁剪 trim_history()（FC-only）
 
@@ -443,13 +422,13 @@ universal_agent._call_llm()   ← 纯FC模式
       │       
       ├→ 异常: yield ("response", {"type": "answer", "content": f"LLM调用异常: {e}"})
       ├→ stream_error: yield ("response", {"type": "answer", "content": f"LLM流式错误: ..."})
-      └→ 正常: 内联JSON解析 → action/answer 分派
+      └→ 正常: chunk.tool_calls 原生 → action/answer 分派
 ```
 
 **关键变更（FC-only重构 2026-06-11）**:
 - 删除: `_call_llm_text_stream()` （不再存在）
 - 删除: `_convert_fc_messages_to_text()` （不再存在）
-- 删除: `parse_llm_response.py` （不再存在，解析逻辑内联在 `_call_llm_fc_stream()`）
+- 删除: `parse_llm_response.py` （不再存在，`chunk.tool_calls` 原生消费）
 - 删除: `mode` 参数 （`request_stream` 不再有 mode 参数）
 
 ### 6.2 请求体构建
@@ -482,7 +461,7 @@ def _build_request_body(
 |------|-------------------|
 | **请求体** | `{messages, tools, tool_choice:"auto"}` |
 | **LLM响应** | delta.tool_calls + delta.content 混合流 |
-| **解析** | SSE流聚合 → `is_reasoning` 分流 → 内联JSON解析 |
+| **解析** | SSE流聚合 → `is_reasoning` 分流 → `chunk.tool_calls` 原生消费 |
 | **异常** | yield answer + error message，不降级 |
 | **stream_error** | yield answer + error message，不降级 |
 | **无降级** | FC-only: 没有Text模式兜底，异常时直接返回错误信息 |
@@ -522,8 +501,7 @@ def _build_request_body(
     {"id": "call_xxx", "type": "function",
      "function": {"name": "read_file", "arguments": "{\"file_paths\": [\"C:/Users/xxx/Desktop/config.json\"]}"}}
   ]},
-  {"role": "tool", "content": "[Observation] success - 文件读取成功\n数据: {\"content\": \"...\"}", "tool_call_id": "call_xxx"},
-  {"role": "system", "content": "【已执行工具(勿重复)】read_file→success|文件:C:/Users/xxx/Desktop/config.json\n注意:上述工具已成功执行,结果已在Observation中,禁止再次调用!"}
+  {"role": "tool", "content": "[Observation] success - 文件读取成功\n数据: {\"content\": \"...\"}", "tool_call_id": "call_xxx"}
 ]
 ```
 
@@ -543,9 +521,6 @@ def _build_request_body(
   {"role": "tool", "content": "[Observation] ...", "tool_call_id": "..."},
   {"role": "assistant", "tool_calls": [{...}]},              // 后续轮次
   {"role": "tool", "content": "[Observation] ...", "tool_call_id": "..."},
-  // ... 以此类推
-  // 动态注入（按需追加，非永久历史）:
-  {"role": "system", "content": "【已执行工具(勿重复)】..."},  // _executed_tool_summary 非空时追加
 ]
 ```
 
@@ -553,7 +528,7 @@ def _build_request_body(
 - 所有 observation 使用 `role: tool` + `tool_call_id`
 - 所有 assistant 工具调用使用 `tool_calls` 协议
 - 无 `user + [Tool Result]` 形式
-- 无 `TOOL_REMINDER` system消息
+- 无 `【已执行工具摘要】` system消息
 - `_trim_fc_pairs()` 保证配对完整性
 
 ---
