@@ -133,25 +133,14 @@ NETWORK_TOOL_DESCRIPTIONS = {
 - code: 状态码,SUCCESS或ERR_PARAM_INVALID/ERR_NETWORK_UNKNOWN
 - data: 成功时为对象,失败时为None;成功时包含 query(搜索关键词)、results(搜索结果列表,每项含title标题/url链接/snippet摘要/source来源引擎)、total(结果总数)、engine(使用的搜索引擎DuckDuckGo或Bing)、language(语言)
 - message: 结果描述信息""",
-    "network_diagnose": """网络连通性诊断 - 合并ping + port_check功能。
+    "network_diagnose": """支持网络连通性诊断功能。
+mode参数决定操作类型:
+- ping: ICMP可达性检测(主机级),host(可选count/timeout)
+- port: TCP端口检测(服务级),host+port(可选timeout)
 
-【使用场景】
-- 当用户需要检测网络是否连通时使用
-- 当用户需要ping测试主机可达性时使用
-- 当用户需要检查端口是否开放时使用
-- 当用户需要诊断网络问题时使用
-
-【重要】mode="ping"执行ICMP可达性检测(主机级),mode="port"执行TCP端口检测(服务级)
-
-【使用示例】【常用名转换说明】
-- ping测试/ping → network_diagnose(host="8.8.8.8")
-- 端口检测/port_check → network_diagnose(host="8.8.8.8", mode="port", port=53)
-- 多次ping → network_diagnose(host="baidu.com", count=10)
-
-【返回数据说明】
-- mode="ping"时:data包含host(目标主机)、packets_sent/received/lost(包统计)、loss_rate(丢包率)、min/avg/max_latency(延迟ms)、is_reachable(是否可达)
- - mode="port"时:data包含host、port、is_open(是否开放)、service(已知服务名)
- - 失败时data为null""",
+使用示例:
+- ping测试 → network_diagnose(host="8.8.8.8")
+- 端口检测 → network_diagnose(host="8.8.8.8", mode="port", port=53)""",
     "net_connections": """获取网络连接列表,支持按类型(TCP/UDP)、状态(ESTABLISHED/LISTEN)、端口过滤,可获取关联进程信息。
 
 使用场景:

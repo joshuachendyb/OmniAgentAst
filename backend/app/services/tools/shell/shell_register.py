@@ -90,21 +90,14 @@ SHELL_TOOL_DESCRIPTIONS = {
 
 【返回数据说明】
 - data含stdout(标准输出)、stderr(标准错误)、returncode(返回码)""",
-    "shell_session": """管理后台Shell会话 - 合并get_shell_output + terminate_shell功能。读取输出或终止会话。
+    "shell_session": """支持后台Shell会话管理功能。
+action参数决定操作类型:
+- output: 读取后台命令输出,shell_id(可选filter/max_lines)
+- terminate: 终止后台会话,shell_id(可选force)
 
-【使用场景】
-- action="output":读取后台命令输出(默认),返回尾部最新输出
-- action="terminate":终止后台会话
-
-【使用示例】【常用名转换说明】
-- 读取输出/get_shell_output → shell_session(shell_id="shell_abc123")
-- 过滤输出 → shell_session(shell_id="shell_abc123", filter="ERROR|FAIL")
-- 终止会话/terminate_shell → shell_session(shell_id="shell_abc123", action="terminate")
-- 强制终止 → shell_session(shell_id="shell_abc123", action="terminate", force=true)
-
-【返回数据说明】
-- action=output时:data含shell_id/stdout/stderr/is_running
-- action=terminate时:data含shell_id/terminated/force/returncode""",
+使用示例:
+- 读取输出 → shell_session(shell_id="shell_abc123")
+- 终止会话 → shell_session(shell_id="shell_abc123", action="terminate")""",
 }
 
 SHELL_TOOL_EXAMPLES = {

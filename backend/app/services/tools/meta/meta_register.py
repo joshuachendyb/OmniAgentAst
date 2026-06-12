@@ -97,26 +97,17 @@ META_TOOL_DESCRIPTIONS = {
 - completed_steps: 完成步骤数
 - results: 每步执行结果(含step/tool/code/message/data)
 - 当某步失败时(若stop_on_error=True)返回ERR_PIPELINE_STOPPED""",
-    "get_time": """时间操作统一入口 - 合并get_current_time + format_time + timestamp_convert功能。
+    "get_time": """支持时间获取/格式化/转换操作功能。
+action参数决定操作类型:
+- now: 获取当前时间(可选format/timezone)
+- format: 格式化时间,time_value(可选format)
+- to_timestamp: 时间字符串→Unix时间戳,time_value
+- from_timestamp: Unix时间戳→时间字符串,time_value(可选target_tz)
 
-【使用场景】
-- 获取当前时间(action="now")
-- 格式化时间字符串(action="format")
-- 时间戳→时间字符串(action="from_timestamp")
-- 时间字符串→时间戳(action="to_timestamp")
-
-【使用示例】【常用名转换说明】
-- 当前时间/get_current_time → get_time(action="now")
-- 时间戳转换 → get_time(action="to_timestamp", time_value="2026-05-18 10:00:00")
-- 格式化 → get_time(action="format", time_value="2026-05-18 10:00:00", format_str="%Y年%m月%d日")
-
-【返回数据说明】
-- iso: ISO格式时间字符串
-- timestamp: Unix时间戳(秒)
-- format/formatted: 格式化后的时间字符串
-- timezone: 时区信息
-- weekday: 星期名称
-- isoweckday: ISO星期编号(1=周一,7=周日)""",
+使用示例:
+- 当前时间 → get_time(action="now")
+- 转时间戳 → get_time(action="to_timestamp", time_value="2026-05-18 10:00:00")
+- 格式化 → get_time(action="format", time_value="2026-05-18 10:00:00", format="%Y年%m月%d日")""",
     "time_add": """时间加减运算。
 
 【使用场景】
@@ -151,59 +142,36 @@ META_TOOL_DESCRIPTIONS = {
 - is_future: 目标时间是否在未来
 - is_after/is_before/is_equal: 比较结果
 - diff_seconds_signed: 带符号的秒数差值""",
-    "query_calendar": """日期综合检查。
+    "query_calendar": """支持日期类型综合检查功能。
+check_type参数决定检查类型:
+- weekend: 判断是否为周末,date
+- holiday: 判断是否为节假日,date
+- workday: 判断是否为工作日,date
+- next_workday: 计算下N个工作日,date(可选n)
 
-【使用场景】
-- 判断是否为周末(check_type="weekend")
-- 判断是否为节假日(check_type="holiday")
-- 判断是否为工作日(check_type="workday")
-- 计算下N个工作日(check_type="next_workday")
-
-【使用示例】【常用名转换说明】
-- 检查周末/check_date → query_calendar(date="2026-05-18", check_type="weekend")
+使用示例:
+- 检查周末 → query_calendar(date="2026-05-18", check_type="weekend")
 - 检查节假日 → query_calendar(date="2026-05-01", check_type="holiday")
-- 下个工作日 → query_calendar(date="2026-05-18", check_type="next_workday")
+- 下个工作日 → query_calendar(date="2026-05-18", check_type="next_workday")""",
+    "timezone_convert": """支持时区转换功能。
+direction参数决定转换方向:
+- utc_to_local: UTC时间→本地时间,time_value(可选tz)
+- local_to_utc: 本地时间→UTC时间,time_value(可选tz)
+- any: 任意源时区→本地时间,time_value+tz
 
-【返回数据说明】
-- date/weekday/isoweckday: 日期及星期信息
-- is_weekend: 是否周末
-- is_holiday: 是否节假日
-- holiday_name: 节假日名称(如有)
-- is_workday: 是否工作日
-- next_workdays/next_workday_first: 下N个工作日(check_type=next_workday时)""",
-    "timezone_convert": """时区转换。
+使用示例:
+- UTC转本地 → timezone_convert(time_value="2026-05-18 10:00:00", direction="utc_to_local", tz="Asia/Shanghai")
+- 任意时区转换 → timezone_convert(time_value="2026-05-18 10:00:00", direction="any", tz="Asia/Shanghai")""",
+    "timer": """支持定时器的set/clear/list操作功能。
+action参数决定操作类型:
+- set: 设置定时器,delay+callback
+- clear: 清除定时器,timer_id
+- list: 列出所有定时器
 
-【使用场景】
-- UTC转本地时间(direction="utc_to_local",tz=目标时区)
-- 本地转UTC(direction="local_to_utc",tz=源时区)
-- 任意源时区转本地(direction="any",tz=源时区,此时tz必填)
-
-【使用示例】
-- UTC转本地:timezone_convert(time_value="2026-05-18 10:00:00", direction="utc_to_local", tz="Asia/Shanghai")
-- 任意时区转换:timezone_convert(time_value="2026-05-18 10:00:00", direction="any", tz="Asia/Shanghai")
-
-【返回数据说明】
-- utc_to_local: local_time, timezone, utc_original
-- local_to_utc: utc_time, iso, timestamp
- - any: 目标时区的时间, iso, timestamp""",
-    "timer": """定时器管理 - 合并set_timer + clear_timer + list_timers功能。
-
-【使用场景】
-- 设置定时提醒(action="set",delay和callback必填)
-- 清除定时器(action="clear",timer_id必填)
-- 列出所有定时器(action="list")
-
-【使用示例】【常用名转换说明】
-- 设置/set_timer → timer(action="set", delay=180, callback="提醒用户喝水")
-- 清除/clear_timer → timer(action="clear", timer_id="timer_001")
-- 列出/list_timers → timer(action="list")
-
-【返回数据说明】
-- set: timer_id, delay, trigger_at, message
-- clear: timer_id, cancelled
-- list: 定时器数组
-
-【callback说明】支持三种模式:文本消息(记录日志)、URL(httpx回调)、其他内容""",
+使用示例:
+- 设置 → timer(action="set", delay=180, callback="提醒用户喝水")
+- 清除 → timer(action="clear", timer_id="timer_001")
+- 列出 → timer(action="list")""",
 }
 
 META_TOOL_EXAMPLES = {
