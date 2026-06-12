@@ -86,8 +86,7 @@ def execute_code(
     elif language == "javascript":
         return _execute_javascript(code=code, timeout=timeout, working_dir=working_dir, safety_check=safety_check)
     else:
-        return build_error(ERR_PARAM_INVALID, f"不支持的语言: {language},可选: python/javascript",
-            next_actions=build_next_actions([("tool_help", "查看execute_code参数", "确认可用语言", {"tool_name": "execute_code"})]))
+        return build_error(ERR_PARAM_INVALID, f"不支持的语言: {language},可选: python/javascript")
 
 
 def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = None, safety_check: bool = True) -> dict:

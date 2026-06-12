@@ -112,10 +112,7 @@ def query_sql(
         
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
-            return build_error(ERR_DB_CONNECTION, conn_error,
-                next_actions=build_next_actions([
-                    ("tool_help", "查看query_sql参数", "检查连接参数时", {"tool_name": "query_sql"}),
-                ]))
+            return build_error(ERR_DB_CONNECTION, conn_error)
         
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
@@ -159,13 +156,11 @@ def query_sql(
         return build_error(ERR_SQL_EXEC, f"SQL执行错误: {str(e)}",
             next_actions=build_next_actions([
                 ("get_db_schema", "查看表结构", "确认字段名是否正确时"),
-                ("tool_help", "查看query_sql用法", "检查SQL语法时", {"tool_name": "query_sql"}),
             ]))
     except Exception as e:
         return build_error(ERR_QUERY_FAILED, f"执行失败: {str(e)}",
             next_actions=build_next_actions([
                 ("get_db_schema", "查看表结构", "确认表是否存在时"),
-                ("tool_help", "查看query_sql用法", "检查参数时", {"tool_name": "query_sql"}),
             ]))
     finally:
         _close_connection(conn, engine)
@@ -215,7 +210,6 @@ def _rollback_and_return(conn, error_type: str, error: Exception) -> Dict[str, A
 
 _SQL_NEXT_ACTIONS = build_next_actions([
     ("query_sql", "查询 SQL 数据库", "需要重新查询时"),
-    ("tool_help", "查看 execute_sql 用法", "需要帮助时", {"tool_name": "execute_sql"}),
 ])
 
 
