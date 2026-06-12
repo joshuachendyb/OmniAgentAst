@@ -25,21 +25,14 @@ class TaskQueries:
             return dict(row) if row else None
 
     def get_recent_tasks(
-        self, limit: int = 10, intent: Optional[str] = None
+        self, limit: int = 10
     ) -> List[Dict[str, Any]]:
-        """最近任务列表,可按意图过滤"""
+        """最近任务列表"""
         with db.get_conn("task_tracker") as conn:
-            if intent:
-                rows = conn.execute(
-                    "SELECT * FROM tasks WHERE intent = ? "
-                    "ORDER BY created_at DESC LIMIT ?",
-                    (intent, limit),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?",
-                    (limit,),
-                ).fetchall()
+            rows = conn.execute(
+                "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
             return [dict(r) for r in rows]
 
     def get_operations(self, task_id: str) -> List[Dict[str, Any]]:

@@ -16,7 +16,6 @@ from app.services import get_service
 from app.utils.logger import logger
 from app.chat_stream import create_error_response
 from app.api.v1.chat.models import ChatRequest
-from app.api.v1.chat.detect_intent import detect_intent
 from app.api.v1.chat.step_start import step_start
 from app.utils.counter_utils import create_step_counter
 from app.services.task.task_registry import register_task
@@ -45,8 +44,6 @@ async def chat_stream_v2(request: ChatRequest):
         )
 
     user_input = request.messages[-1].content
-    intent_type, confidence, candidates = detect_intent(user_input)
-    logger.debug(f"[chat_stream_v2] 意图检测: {intent_type} (confidence={confidence})")
     ai_service = get_service()
     session_id = request.session_id or str(uuid.uuid4())
 
@@ -71,8 +68,8 @@ async def chat_stream_v2(request: ChatRequest):
                 yield event
 
             async for sse_chunk in run_sse_stream(
-                intent_type=intent_type, llm_client=ai_service, task_id=task_id,
-                candidates=candidates, last_message=user_input,
+                llm_client=ai_service, task_id=task_id,
+                last_message=user_input,
                 next_step=next_step,
                 session_id=session_id, current_execution_steps=execution_steps,
                 stream_state=state,

@@ -5,13 +5,11 @@ Agent 配置注册表 — 声明式定义
 Author: 小沈 - 2026-06-07
 """
 from dataclasses import dataclass, field
-from typing import Type, List, Dict, Optional, Any
+from typing import Type, List, Optional, Any
 
-from app.services.tools.tool_types import ToolCategory
 from app.services.prompts.base_prompt_template import BasePrompts
-from app.utils.logger import logger
 
-# 默认Agent统一使用UniversalAgent — 小欧 2026-06-08 消除重复
+
 _DEFAULT_AGENT_MODULE = "app.services.agent.universal_agent"
 _DEFAULT_AGENT_CLASS = "UniversalAgent"
 
@@ -19,16 +17,13 @@ _DEFAULT_AGENT_CLASS = "UniversalAgent"
 @dataclass
 class AgentConfig:
     """Agent 配置项"""
-    intent_type: str
-    category: ToolCategory
-    prompt_module: str
-    prompt_class_name: str
-    category_display_name: str
+    prompt_module: str = "app.services.prompts.system.system_prompts"
+    prompt_class_name: str = "SystemPrompts"
+    category_display_name: str = "通用助手"
     agent_module: str = _DEFAULT_AGENT_MODULE
     agent_class_name: str = _DEFAULT_AGENT_CLASS
     rollback_enabled: bool = False
     max_steps: int = 100
-    extra_categories: List[ToolCategory] = field(default_factory=list)
 
     _prompt_class: Optional[Type[BasePrompts]] = field(default=None, repr=False)
     _agent_class: Optional[Any] = field(default=None, repr=False)
@@ -50,53 +45,5 @@ class AgentConfig:
         return self._agent_class
 
 
-AGENT_REGISTRY: Dict[str, AgentConfig] = {
-    "system": AgentConfig(
-        intent_type="system",
-        category=ToolCategory.SYSTEM,
-        prompt_module="app.services.prompts.system.system_prompts",
-        prompt_class_name="SystemPrompts",
-        category_display_name="系统管理",
-        extra_categories=[ToolCategory.FILE],
-    ),
-    "network": AgentConfig(
-        intent_type="network",
-        category=ToolCategory.NET_PROCESS,
-        prompt_module="app.services.prompts.network.network_prompts",
-        prompt_class_name="NetworkPrompts",
-        category_display_name="网络与进程",
-    ),
-    "document": AgentConfig(
-        intent_type="document",
-        category=ToolCategory.DOC_CONTENT,
-        prompt_module="app.services.prompts.document.document_prompts",
-        prompt_class_name="DocumentPrompts",
-        category_display_name="文档内容",
-    ),
-    "desktop": AgentConfig(
-        intent_type="desktop",
-        category=ToolCategory.SCREEN,
-        prompt_module="app.services.prompts.desktop.desktop_prompts",
-        prompt_class_name="DesktopPrompts",
-        category_display_name="屏幕交互",
-    ),
-}
-
-
-def resolve_agent_config(intent_type: str) -> AgentConfig:
-    """根据 intent_type 解析 Agent 配置(精确匹配,无别名)"""
-    from app.services.intents.intent_mapper import normalize_intent
-    normalized_intent = normalize_intent(intent_type)
-    config = AGENT_REGISTRY.get(normalized_intent)
-    if config is not None:
-        return config
-    logger.warning(f"[resolve_agent_config] 未知intent_type: {intent_type}, fallback到system")
-    return AGENT_REGISTRY["system"]
-
-
-def get_all_intent_types() -> list:
-    """返回所有注册的 intent_type 列表
-    小健 - 2026-06-08 修复缺失函数
-    """
-    return list(AGENT_REGISTRY.keys())
+DEFAULT_AGENT_CONFIG = AgentConfig()
 

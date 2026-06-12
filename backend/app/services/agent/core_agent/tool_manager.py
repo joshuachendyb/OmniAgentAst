@@ -20,32 +20,36 @@ class ToolManager:
         self.agent = agent
 
     def init_tools(self):
-        """初始化工具:meta工具 + 分类工具 + 额外分类工具(声明式配置)"""
+        """初始化工具:tool_category为None时加载全部分类(无意图模式)"""
         self.agent._tools_dict = {}
         self.agent._loaded_categories: Set[str] = set()
-        if self.agent.tool_category:
-            self.agent._loaded_categories.add(self.agent.tool_category.value)
 
-        # ① 始终加载meta工具(基础能力)
+        # ① 始终加载meta工具
         meta_tool_names = list(META_TOOL_NAMES) if isinstance(META_TOOL_NAMES, (list, tuple, set)) else []
         for name in meta_tool_names:
             impl = tool_registry.get_implementation(name)
             if impl:
                 self.agent._tools_dict[name] = impl
 
-        # ② 加载分类工具
-        if self.agent.tool_category:
+        # ② 无tool_category → 加载全部分类(CRSS移除后)
+        if not self.agent.tool_category:
+            for cat in ToolCategory:
+                cat_tools = tool_registry.get_implementations_by_category(cat)
+                self.agent._tools_dict.update(cat_tools)
+                self.agent._loaded_categories.add(cat.value)
+        else:
+            # ③ 有tool_category → 只加载该分类
+            self.agent._loaded_categories.add(self.agent.tool_category.value)
             category_tools = tool_registry.get_implementations_by_category(self.agent.tool_category)
             self.agent._tools_dict.update(category_tools)
 
-        # ③ 声明式: 额外加载config.extra_categories中的分类工具
-        config = getattr(self.agent, 'config', None)
-        if config and config.extra_categories:
-            for extra_cat in config.extra_categories:
-                extra_tools = tool_registry.get_implementations_by_category(extra_cat)
-                self.agent._tools_dict.update(extra_tools)
-                self.agent._loaded_categories.add(extra_cat.value)
-                logger.info(f"[ToolManager] 额外加载{extra_cat.value}分类{len(extra_tools)}个工具")
+            # ④ 额外加载config.extra_categories
+            config = getattr(self.agent, 'config', None)
+            if config and hasattr(config, 'extra_categories') and config.extra_categories:
+                for extra_cat in config.extra_categories:
+                    extra_tools = tool_registry.get_implementations_by_category(extra_cat)
+                    self.agent._tools_dict.update(extra_tools)
+                    self.agent._loaded_categories.add(extra_cat.value)
 
         logger.info(f"[ToolManager] 初始化完成,共{len(self.agent._tools_dict)}个工具,分类={self.agent._loaded_categories}")
 
