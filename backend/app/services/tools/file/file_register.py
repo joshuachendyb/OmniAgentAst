@@ -5,19 +5,17 @@ File Register - 文件工具注册点(精简版 v2.0)
 【架构规范】2026-04-26 小沈
 【精简时间】2026-05-18 小沈 — 第17章工具精简:26→11
 
-11个工具清单(F1-F11):
-F1  read_file          — 合并read_text_file + read_batch_file
+10个工具清单(F1-F10):
+F1  read_text_file     — 读取文本文件
 F2  write_text_file    — 写文本文件
 F3  read_media_file    — 读媒体文件
-F4  edit_file          — 合并precise_replace_in_file + edit_text_file
-F5  list_directory     — 合并list_directory + get_directory_tree + file_statistics
+F4  edit_text_file     — 编辑文本文件
+F5  list_directory     — 列出目录内容
 F6  search_files       — 搜索文件名
 F7  grep_file_content  — 搜索文件内容
-F8  rename_file        — 合并rename_file + batch_rename
-F9  archive_tool       — 合并compress_files + extract_archive
-F10 file_operation     — 合并move_file + copy_file + delete_file
-F11 data_file_format   — 合并json/yaml/toml/ini/xml/properties
-F12 batch_process      — 批量文件处理(从meta迁入,本质是文件操作)
+F8  archive_tool       — 压缩/解压
+F9  file_operation     — 文件操作(move/copy/delete/rename)
+F10 data_file_format   — 结构化配置文件读写
 
 
 创建时间: 2026-04-26
@@ -29,19 +27,15 @@ import logging
 from app.services.tools.file.file_schema import (
     ArchiveToolInput,
     DataFileFormatInput,
-    EditFileInput,
+    EditTextFileInput,
     FileOperationInput,
     GrepFileContentInput,
     ListDirectoryInput,
-    ReadFileInput,
+    ReadTextFileInput,
     ReadMediaFileInput,
-    RenameFileInput,
     SearchFilesInput,
     WriteTextFileInput,
 )
-
-from app.services.tools.meta.meta_schema import BatchProcessInput
-from app.services.tools.meta.meta_tools import batch_process
 
 from app.services.tools.file.file_tools import FileTools, get_file_tools
 from app.services.tools.registry import tool_registry
@@ -50,38 +44,13 @@ from app.utils.logger import logger
 
 
 # ============================================================
-# 工具描述(11个)
+# 工具描述(10个)
 # ============================================================
 
 FILE_TOOL_DESCRIPTIONS = {
-    "read_file": """读取文本文,支持读取单文件和批量文本文件
+    "read_text_file": """读取文本文件。支持分页读取(head/tail/offset/limit)。encoding默认utf-8,读取失败自动尝试gbk。""",
 
-使用方式:
-- 单文件读取:file_paths传入1个路径,支持head/tail/offset/limit分页
-- 批量读取:file_paths传入路径数组.读取整个文件
-使用示例:
-- 单文件全部读取 read_file(file_paths=["D:/test.txt"])
-- 单文件的分页读取 -> read_file(file_paths=["D:/test.txt"], head=10, limit=100)
-- 批量读文本文件 read_file(file_paths=["D:/a.txt", "D:/b.txt"])
-
-返回数据说明:
-- 单文件:data.content/data.total_lines/data.encoding/data.file_size
-- 批量:data.results/data.success_count/data.failed_count""",
-
-    "write_text_file": """写入或追加文本文件内容,支持中文、编码自动检测、追加模式。仅支持文本文件。
-
-使用场景:
-- 创建新文件并写入内容
-- 在已有文件末尾追加内容
-
-重要: content参数必须传入实际文件内容,禁止传入思考/计划/状态描述
-
-使用示例:
-- 创建文件:{"file_path": "D:/output/result.txt", "content": "Hello World"}
-- 追加日志:{"file_path": "D:/logs/app.log", "content": "[2026-05-18] Done", "append": true}
-
-返回数据说明:
-- data.success/data.file_path/data.bytes_written/data.encoding""",
+    "write_text_file": """写文本文件：创建新文件或追加内容。自动检测编码，支持中文路径。content 参数传入实际文件内容（禁止传入思考/状态描述），append=True 追加到末尾。""",
 
     "read_media_file": """读取图片、音频、视频文件,返回Base64编码数据和MIME类型。PDF文件请使用 read_document 工具。
 
@@ -93,23 +62,7 @@ FILE_TOOL_DESCRIPTIONS = {
 返回数据说明:
 - data.success/data.data(Base64)/data.mime_type/data.file_size""",
 
-    "edit_file": """编辑文本文件 - 合并precise_replace_in_file + edit_text_file功能。
-
-使用方式:
-- 单处替换:old_string + new_string
-- 多处编辑:edits数组
-- 预览:dry_run=true
-
-【重要】old_string和edits不能同时传入
-
-使用示例:【常用名转换说明】
-- 单处替换/precise_replace_in_file → edit_file(file_path="D:/main.py", old_string="old", new_string="new")
-- 替换所有 → edit_file(file_path="D:/main.py", old_string="old", new_string="new", replace_all=true)
-- 多处编辑/edit_text_file → edit_file(file_path="D:/main.py", edits=[{"oldText":"old","newText":"new"}])
-- 预览修改 → edit_file(file_path="D:/main.py", old_string="old", new_string="new", dry_run=true)
-
-返回数据说明:
-- data.success/data.replaced_count(单处)/data.applied_edits(多处)/data.preview(dry_run)""",
+    "edit_text_file": """替换文本文件中的内容。old_string定位被替换文本,new_string替换为的内容。replace_all替换所有匹配项,dry_run仅预览。""",
 
     "list_directory": """列出目录内容(统一入口)- 合并list_directory + get_directory_tree + file_statistics功能。
 
@@ -139,25 +92,12 @@ FILE_TOOL_DESCRIPTIONS = {
     "grep_file_content": """基于ripgrep的内容搜索,支持正则表达式和中文搜索。
 
 使用示例:
-- 简单搜索:{"pattern": "def read_file", "search_dir": "D:/backend"}
+- 简单搜索:{"pattern": "def read_text_file", "search_dir": "D:/backend"}
 - 搜索TS文件:{"pattern": "class.*Component", "search_dir": "D:/frontend", "glob": "*.tsx"}
 - 带上下文:{"pattern": "TODO", "search_dir": "D:/src", "context": {"around": 3}}
 
 返回数据说明:
 - data.success/data.matches/data.total_files/data.total_matches""",
-
-    "rename_file": """重命名文件 - 合并rename_file + batch_rename功能。
-
-使用方式:
-- mode="single":单文件重命名,需file_path + new_name
-- mode="batch":批量正则重命名,需directory + pattern + replacement
-
-使用示例:【常用名转换说明】
-- 单文件/rename_file → rename_file(file_path="D:/old.txt", new_name="new.txt")
-- 批量/batch_rename → rename_file(mode="batch", directory="D:/files", pattern="file_(\\d+).txt", replacement="renamed_\\1.txt")
-
-返回数据说明:
-- data.success/data.new_path(单文件)/data.operations(批量)""",
 
     "archive_tool": """压缩/解压工具 - 合并compress_files + extract_archive + test_archive功能。支持zip/tar/tar.gz/tar.bz2格式。
 
@@ -176,20 +116,19 @@ FILE_TOOL_DESCRIPTIONS = {
 返回数据说明:
 - data.success/data.compressed_size(压缩)/data.extracted_files(解压)""",
 
-    "file_operation": """文件操作统一入口 - 合并move_file + copy_file + delete_file等文件处理功能。
+    "file_operation": """文件操作统一入口 - move/copy/delete/rename。
 
 使用方式:
 - action="move":移动文件
-- action="copy":复制文件(备份)
+- action="copy":复制文件
 - action="delete":删除文件(可放回收站)
+- action="rename":重命名文件
 
-使用示例:【常用名转换说明】
-- 移动/move_file → file_operation(action="move", source="D:/a.txt", destination="E:/b.txt")
-- 复制/copy_file → file_operation(action="copy", source="D:/a.txt", destination="D:/backup/a.txt")
-- 删除/delete_file → file_operation(action="delete", source="D:/temp.txt")
-- 备份/backup_file → file_operation(action="copy", source="D:/original.txt", destination="D:/backup.txt")
-- 恢复/restore_backup → file_operation(action="copy", source="D:/backup.txt", destination="D:/original.txt")
-- 永久删除 → file_operation(action="delete", source="D:/temp", force=true, recursive=true)
+使用示例:
+- 移动 → file_operation(action="move", source="D:/a.txt", destination="E:/b.txt")
+- 复制 → file_operation(action="copy", source="D:/a.txt", destination="D:/backup/a.txt")
+- 删除 → file_operation(action="delete", source="D:/temp.txt")
+- 重命名 → file_operation(action="rename", source="D:/old.txt", destination="D:/new.txt")
 
 返回数据说明:
 - data.success/data.action/data.source/data.destination""",
@@ -210,34 +149,17 @@ FILE_TOOL_DESCRIPTIONS = {
 
 返回数据说明:
 - data.success/data.data(读取)/data.format/data.bytes_written(写入)""",
-    "batch_process": """批量处理文件 - 合并batch_rename + batch_delete + batch_copy功能。按glob模式匹配文件,执行rename/delete/copy操作。默认dry_run=True预览保护,确认后执行。
-
-【使用场景】
-- "把所有.txt改成.md":批量重命名
-- "清空所有.log临时文件":批量删除
-- "把所有备份文件拷贝到归档目录":批量复制
-
-【使用示例】【常用名转换说明】
-- 重命名/batch_rename → batch_process(source_pattern="*.txt", action="rename", target_pattern="*.md")
-- 删除/batch_delete → batch_process(source_pattern="logs/*.log", action="delete", dry_run=false)
-- 复制/batch_copy → batch_process(source_pattern="backup/*.bak", action="copy", target_dir="D:/archive/")
-
-【返回数据说明】
-- matched_count: 匹配文件数
-- processed_count: 处理文件数
-- operations: 操作详情列表""",
 }
 
 
 # ============================================================
-# 工具示例(11个)
+# 工具示例(10个)
 # ============================================================
 
 FILE_TOOL_EXAMPLES = {
-    "read_file": [
-        {"file_paths": ["D:/project/main.py"]},
-        {"file_paths": ["D:/project/main.py"], "head": 10},
-        {"file_paths": ["D:/a.txt", "D:/b.txt"]},
+    "read_text_file": [
+        {"file_path": "D:/project/main.py"},
+        {"file_path": "D:/project/main.py", "head": 10},
     ],
     "write_text_file": [
         {"file_path": "D:/output/test.txt", "content": "Hello World"},
@@ -246,9 +168,9 @@ FILE_TOOL_EXAMPLES = {
     "read_media_file": [
         {"file_path": "D:/screenshot.png"},
     ],
-    "edit_file": [
+    "edit_text_file": [
         {"file_path": "D:/main.py", "old_string": "def old():", "new_string": "def new():"},
-        {"file_path": "D:/main.py", "edits": [{"oldText": "old", "newText": "new"}]},
+        {"file_path": "D:/main.py", "old_string": "import os", "new_string": "import sys"},
     ],
     "list_directory": [
         {"dir_path": "D:/project"},
@@ -259,12 +181,8 @@ FILE_TOOL_EXAMPLES = {
         {"pattern": "**/*.py", "search_dir": "D:/project"},
     ],
     "grep_file_content": [
-        {"pattern": "def read_file", "search_dir": "D:/backend"},
+        {"pattern": "def read_text_file", "search_dir": "D:/backend"},
         {"pattern": "TODO", "search_dir": "D:/src", "context": {"around": 3}},
-    ],
-    "rename_file": [
-        {"file_path": "D:/old.txt", "new_name": "new.txt"},
-        {"mode": "batch", "directory": "D:/files", "pattern": "file_(\\\\d+).txt", "replacement": "renamed_\\\\1.txt"},
     ],
     "archive_tool": [
         {"action": "compress", "source": "D:/project", "destination": "D:/backup.zip"},
@@ -279,30 +197,24 @@ FILE_TOOL_EXAMPLES = {
         {"action": "read", "file_path": "D:/config.json"},
         {"action": "write", "file_path": "D:/config.yaml", "data": {"key": "value"}},
     ],
-    "batch_process": [
-        {"source_pattern": "*.txt", "action": "rename", "target_pattern": "*.md", "dry_run": True},
-        {"source_pattern": "logs/*.log", "action": "delete", "dry_run": False, "max_files": 100},
-    ],
 }
 
 
 # ============================================================
-# 工具名到Pydantic模型的映射(11个)
+# 工具名到Pydantic模型的映射(10个)
 # ============================================================
 
 TOOL_INPUT_MODELS = {
-    "read_file": ReadFileInput,
+    "read_text_file": ReadTextFileInput,
     "write_text_file": WriteTextFileInput,
     "read_media_file": ReadMediaFileInput,
-    "edit_file": EditFileInput,
+    "edit_text_file": EditTextFileInput,
     "list_directory": ListDirectoryInput,
     "search_files": SearchFilesInput,
     "grep_file_content": GrepFileContentInput,
-    "rename_file": RenameFileInput,
     "archive_tool": ArchiveToolInput,
     "file_operation": FileOperationInput,
     "data_file_format": DataFileFormatInput,
-    "batch_process": BatchProcessInput,
 }
 
 
@@ -312,7 +224,7 @@ TOOL_INPUT_MODELS = {
 
 def _register_file_tools():
     """
-    注册12个文件工具 — 小沈 2026-06-09 batch_process从meta迁入
+    注册10个文件工具 — 小沈 2026-06-09
     【v3.4新增 2026-06-09 小沈】添加安全级别标注
     """
 
@@ -326,34 +238,30 @@ def _register_file_tools():
         return ft
 
     tool_methods = {
-        "read_file": lambda **kw: _get_ft().read_file(**kw),
+        "read_text_file": lambda **kw: _get_ft().read_text_file(**kw),
         "write_text_file": lambda **kw: _get_ft().write_text_file(**kw),
         "read_media_file": lambda **kw: _get_ft().read_media_file(**kw),
-        "edit_file": lambda **kw: _get_ft().edit_file(**kw),
+        "edit_text_file": lambda **kw: _get_ft().edit_text_file(**kw),
         "list_directory": lambda **kw: _get_ft().list_directory(**kw),
         "search_files": lambda **kw: _get_ft().search_files(**kw),
         "grep_file_content": lambda **kw: _get_ft().grep_file_content(**kw),
-        "rename_file": lambda **kw: _get_ft().rename_file(**kw),
         "archive_tool": lambda **kw: _get_ft().archive_tool(**kw),
         "file_operation": lambda **kw: _get_ft().file_operation(**kw),
         "data_file_format": lambda **kw: _get_ft().data_file_format(**kw),
-        "batch_process": batch_process,
     }
     
     # 【v3.4新增】安全级别配置
     safety_levels = {
-        "read_file": ToolSafetyLevel.READ_ONLY,
+        "read_text_file": ToolSafetyLevel.READ_ONLY,
         "write_text_file": ToolSafetyLevel.SAFE,
         "read_media_file": ToolSafetyLevel.READ_ONLY,
-        "edit_file": ToolSafetyLevel.SAFE,
+        "edit_text_file": ToolSafetyLevel.SAFE,
         "list_directory": ToolSafetyLevel.READ_ONLY,
         "search_files": ToolSafetyLevel.READ_ONLY,
         "grep_file_content": ToolSafetyLevel.READ_ONLY,
-        "rename_file": ToolSafetyLevel.SAFE,
         "archive_tool": ToolSafetyLevel.SAFE,
         "file_operation": ToolSafetyLevel.SAFE,  # move/copy=SAFE, delete=DESTRUCTIVE(action级)
         "data_file_format": ToolSafetyLevel.SAFE,
-        "batch_process": ToolSafetyLevel.SAFE,
     }
     
     # 【v3.4新增】action级安全覆盖（file_operation的delete分级）
@@ -361,6 +269,7 @@ def _register_file_tools():
         "file_operation": {
             "move": ToolSafetyLevel.SAFE,
             "copy": ToolSafetyLevel.SAFE,
+            "rename": ToolSafetyLevel.SAFE,
             "delete": ToolSafetyLevel.DESTRUCTIVE,
         },
     }

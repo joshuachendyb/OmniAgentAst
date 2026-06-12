@@ -2,9 +2,6 @@
 """
 Shell 工具参数 Schema 定义
 
-【创建时间】2026-04-29 小沈
-【设计依据】按2026-04-29新增工具规范流程
-
 职责:
 定义 shell 工具的 Pydantic 模型。
 
@@ -15,13 +12,7 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 
 
-# 【2026-05-19 小沈】ExecutePythonInput/ExecuteJavascriptInput 已迁移至
-# code_execution_schema.py,此处不再重复定义,避免Schema分歧。
-# shell_register.py 显式从 code_execution_schema.py import 这两个类。
-
-
 class ExecuteShellCommandInput(BaseModel):
-    """execute_shell_command 工具的输入参数 — 小沈 2026-05-19 精简8→6"""
     command: str = Field(
         ..., description="要执行的命令。如 \"dir\"、\"ls -la\"、\"python script.py\" 等"
     )
@@ -45,9 +36,6 @@ class ExecuteShellCommandInput(BaseModel):
 
 
 class FindCommandInput(BaseModel):
-    """find_command 工具的输入参数 - 小沈 2026-05-17
-    合并 check_command_available + locate_command
-    """
     command: str = Field(
         ..., description="要查找的命令名称,如 python、git、npm、node"
     )
@@ -58,10 +46,6 @@ class FindCommandInput(BaseModel):
 
 
 class ShellSessionInput(BaseModel):
-    """shell_session 工具的输入参数 — 小沈 2026-05-19 精简8→5
-    action="output": 读取输出(filter/max_lines生效)
-    action="terminate": 终止会话(force生效)
-    """
     shell_id: str = Field(
         ..., description="后台Shell会话ID,由 execute_shell_command 的 run_in_background=true 时返回"
     )

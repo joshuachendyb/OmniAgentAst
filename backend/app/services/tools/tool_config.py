@@ -48,7 +48,7 @@ class ToolConfig:
     
     使用方式:
         config = ToolConfig()
-        aliases = config.get_aliases("read_file")
+        aliases = config.get_aliases("read_text_file")
     """
     
     # 【3.21修复 北京老陈 2026-05-31】路径统一到utils/paths.py

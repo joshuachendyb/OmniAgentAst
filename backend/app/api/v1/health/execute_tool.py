@@ -22,7 +22,7 @@ async def execute_tool(request: ToolExecuteRequest):
     """
     直接执行工具的测试接口
     用法: POST /api/v1/tool/execute
-    Body: {"tool_name": "read_file", "params": {"path": "app/main.py"}}
+    Body: {"tool_name": "read_text_file", "params": {"path": "app/main.py"}}
     """
     from app.services.tools import tool_registry
 

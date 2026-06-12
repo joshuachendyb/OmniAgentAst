@@ -2,13 +2,6 @@
 """
 Data Analysis 工具参数 Schema 定义
 
-【创建时间】2026-05-02 小沈
-【设计依据】按文档第8.2节 Tool 77-79 定义
-【2026-05-19 小沈】参数精简:
-- GenerateChartInput: 9→6(砍rotation+color+figure_size)
-- AnalyzeDataInput: 8→6(砍sort_ascending+encoding)
-- FilterDataInput: 8→6(砍sort_ascending+encoding)
-
 职责:
 定义 data_analysis 分类的工具参数 Pydantic 模型。
 
@@ -20,7 +13,6 @@ from typing import Optional, Dict, Any, List, Union, Literal
 
 
 class GenerateChartInput(BaseModel):
-    """generate_chart 工具的输入参数 - 小沈 2026-05-19 参数精简9→6(砍rotation+color+figure_size)"""
     data: Dict[str, Any] = Field(
         ...,
         description="图表数据(JSON 格式)。如 {\"labels\": [\"A\", \"B\", \"C\"], \"values\": [10, 20, 30]}"
@@ -48,7 +40,6 @@ class GenerateChartInput(BaseModel):
 
 
 class AnalyzeDataInput(BaseModel):
-    """analyze_data 工具的输入参数 - 小沈 2026-05-19 参数精简8→6(砍sort_ascending+encoding)"""
     data: Union[str, List[Dict[str, Any]]] = Field(
         ...,
         description="要分析的数据。可以是数组或CSV文件路径"
@@ -76,7 +67,6 @@ class AnalyzeDataInput(BaseModel):
 
 
 class FilterDataInput(BaseModel):
-    """filter_data 工具的输入参数 - 小沈 2026-05-19 参数精简8→6(砍sort_ascending+encoding)"""
     data: Union[str, List[Dict[str, Any]]] = Field(
         ...,
         description="要筛选的数据。可以是数组或CSV/Excel文件路径"

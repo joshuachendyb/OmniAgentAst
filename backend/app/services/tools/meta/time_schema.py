@@ -1,31 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-Time Intent 工具参数 Schema 定义
-
-【创建时间】2026-04-29 小沈
-【最后更新】2026-05-18 小沈 — 16→7精简:新增7个统一入口Schema,旧Schema标注弃用
-【2026-05-19 小沈】参数精简:
-- GetTimeInput: 7→5(砍locale+unit)
-- TimezoneConvertInput: 5→3(砍source_tz+target_tz)
-- TimerInput: 6→4(砍callback_data+limit)
+Time 工具参数 Schema 定义
 
 职责:
 定义 time 意图的工具参数 Pydantic 模型,作为独立的 Schema 定义文件。
 
 Author: 小沈 - 2026-04-29
-Updated: 小沈 2026-05-19
 """
 
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, Union, Literal
 
 
-# ===========================================================
-# 新Schema(7个精简工具)— 小沈 2026-05-18
-# ===========================================================
-
 class GetTimeInput(BaseModel):
-    """get_time统一入口Schema — 小沈 2026-05-19 参数精简7→5(砍locale+unit)"""
     action: Literal["now", "format", "to_timestamp", "from_timestamp"] = Field(
         default="now",
         description="操作类型:now=获取当前时间,format=格式化时间,to_timestamp=转时间戳,from_timestamp=时间戳转时间。默认为now"
@@ -49,7 +36,6 @@ class GetTimeInput(BaseModel):
 
 
 class TimeAddInput(BaseModel):
-    """time_add 时间加减Schema — 小沈 2026-05-18"""
     delta: float = Field(
         ...,
         description="偏移量。正数=增加,负数=减少。例如 delta=3 表示加3,delta=-2 表示减2。必填参数"
@@ -65,7 +51,6 @@ class TimeAddInput(BaseModel):
 
 
 class TimeDiffInput(BaseModel):
-    """time_diff 时间差值Schema — 小沈 2026-05-18"""
     start: Union[int, float, str] = Field(
         ...,
         description="开始时间。支持:int/float=Unix时间戳(秒),str=日期字符串。必填参数"
@@ -77,7 +62,6 @@ class TimeDiffInput(BaseModel):
 
 
 class QueryCalendarInput(BaseModel):
-    """query_calendar日期综合检查Schema — 小沈 2026-05-18"""
     date: Optional[Union[int, float, str]] = Field(
         default=None,
         description="日期值,支持:int/float=Unix时间戳(秒),str=日期字符串。默认为当前日期"
@@ -93,7 +77,6 @@ class QueryCalendarInput(BaseModel):
 
 
 class TimezoneConvertInput(BaseModel):
-    """timezone_convert时区转换Schema — 小沈 2026-05-19 参数精简5→3(砍source_tz+target_tz)"""
     time_value: Union[int, float, str] = Field(
         ...,
         description="时间值。支持:int/float=Unix时间戳(秒),str=日期字符串。必填参数"
@@ -109,7 +92,6 @@ class TimezoneConvertInput(BaseModel):
 
 
 class TimerInput(BaseModel):
-    """timer定时器管理Schema — 小沈 2026-05-19 参数精简6→4(砍callback_data+limit)"""
     action: Literal["set", "clear", "list"] = Field(
         ...,
         description="操作类型:set=设置定时器,clear=清除定时器,list=列出定时器。必填参数"
@@ -129,3 +111,12 @@ class TimerInput(BaseModel):
         description="定时器ID(action=clear时必填)"
     )
 
+
+__all__ = [
+    "GetTimeInput",
+    "TimeAddInput",
+    "TimeDiffInput",
+    "QueryCalendarInput",
+    "TimezoneConvertInput",
+    "TimerInput",
+]

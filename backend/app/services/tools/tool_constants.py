@@ -10,12 +10,11 @@
 # ============================================================
 
 TOOL_TIMEOUTS = {
-    "rename_file": 30,
     "list_directory": 10,
     "search_files": 60,
     "grep_file_content": 60,
     "read_media_file": 30,
-    "edit_file": 30,
+    "edit_text_file": 30,
     "archive_tool": 60,
     "execute_shell_command": 35,
     "execute_python": 120,
