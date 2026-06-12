@@ -1,23 +1,45 @@
 
 v0.15.9
 
-更新时间: 2026-06-11
+更新时间: 2026-06-12
 
-## v0.15.8→v0.15.9 变更汇总 - 小沈-2026-06-11
+## v0.15.8→v0.15.9 变更汇总 - 小沈-2026-06-12
+
+### refactor: 安全开关从环境变量改为config.yaml配置(security.enabled) (1 commit)
+
+| 文件 | 变更 |
+|------|------|
+| tool_safety_checker.py | 安全开关从环境变量读取改为config.yaml配置(security.enabled) |
+| config/config.yaml | 新增security.enabled配置项 |
 
 ### fix+docs: 补全LLM/工具原始日志记录 + E2E测试方案全面重写 (1 commit)
 
-#### 代码修改
-- action_handler.py: 工具执行后记录完整原始参数和结果到app log
-- universal_agent.py: LLM响应记录完整原始内容(action/answer)到app log
+| 文件 | 变更 |
+|------|------|
+| action_handler.py | 工具执行后记录完整原始参数和结果到app log |
+| universal_agent.py | LLM响应记录完整原始内容(action/answer)到app log |
+| doc/E2E测试方案 | 全面重写:第三~七章+98个用例+辅助函数+铁律(严禁批量) |
 
-#### E2E测试方案重写
-- 第三章: 测试前(A清除旧脚本/B逐个编写/C系统就绪含重启后端+安全开关)→测试中(步骤1-4.5含错误处理)→测试后(步骤5-9含三方一致性+步骤合理性)
-- 第四章: 98个用例全部重写,每用例含用户输入+预期过程+通过标准+失败标准,消除用例间依赖,统一E盘路径,前置测试数据统一创建
-- 第五章: 补充get_session_count/cleanup_test_data辅助函数,模板说明5个需修改部分
-- 第六章: 增加杀后台重启步骤
-- 第七章: 报告格式对齐验证标准
-- 铁律: 严禁批量跑测试用例,一次只跑一个
+### fix: write_text_file参数text→content + 工具描述增强 + CRSS关键词扩展 + JSON解析容错 (1 commit)
+
+| 文件 | 变更 |
+|------|------|
+| file_schema.py/file_tools.py/file_register.py/file_prompts.py | write_text_file参数text→content统一 |
+| tool_safety_checker.py | write_text_file参数名修复 |
+| document_register.py/document_schema.py | 工具描述增强/简化 |
+| file_register.py | 简化描述，统一示例格式 |
+| tool_types.py | CRSS关键词扩展(FILE增加扩展名/压缩/搜索等) |
+| universal_agent.py | JSON解析容错(文本+JSON混合时括号匹配) |
+
+### 净效果
+
+- 安全开关从环境变量改为config.yaml配置
+- LLM/工具原始日志完整记录
+- E2E测试方案全面重写
+- write_text_file参数统一(text→content)
+- 工具描述增强+CRSS关键词扩展
+- JSON解析容错增强
+- 全部测试通过，0回归
 
 ---
 
