@@ -42,7 +42,7 @@ class GenerateChartInput(BaseModel):
 class AnalyzeDataInput(BaseModel):
     data: Union[str, List[Dict[str, Any]]] = Field(
         ...,
-        description="要分析的数据。可以是数组或CSV文件路径"
+        description="要分析的数据。可以是数组或CSV/XLSX/XLS文件路径"
     )
     operations: Optional[List[str]] = Field(
         default=None,

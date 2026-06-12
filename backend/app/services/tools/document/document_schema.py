@@ -9,11 +9,11 @@ Author: 小沈 - 2026-05-02
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, Any, List, Dict, Literal
+from typing import Optional, Any, List, Dict, Literal, Union
 
 
 class ReadDocumentInput(BaseModel):
-    file_path: str = Field(..., description="文档路径。仅支持: .pdf/.docx/.xlsx/.pptx/.csv/.tsv;旧版 .doc/.xls 自动转换为PDF后读取。⚠️ 纯文本(.txt/.py/.json/.md等)请使用 read_text_file 工具")
+    file_path: str = Field(..., description="文档路径。仅支持: .pdf/.docx/.xlsx/.pptx/.csv/.tsv/.json;旧版 .doc/.xls 自动转换为PDF后读取。⚠️ 纯文本(.txt/.py/.json/.md等)请使用 read_text_file 工具")
     pages: Optional[str] = Field(default=None, description="PDF页码范围(如'1-3,5',仅PDF有效)")
     extract_tables: bool = Field(default=False, description="是否提取表格(PDF/DOCX有效)")
     sheet_name: Optional[str] = Field(default=None, description="Excel工作表名(仅XLSX有效)")
@@ -29,7 +29,7 @@ class WriteDocumentInput(BaseModel):
     paragraphs: Optional[List[str]] = Field(default=None, description="段落列表(DOCX/PDF有效)")
     title: Optional[str] = Field(default=None, description="文档标题(DOCX/PDF/PPTX有效)")
     table_data: Optional[List] = Field(default=None, description="表格数据二维数组(DOCX/PDF有效)")
-    data: Optional[Dict[str, Any]] = Field(default=None, description="写入的数据。XLSX格式: {\"headers\": [\"列1\",\"列2\"], \"rows\": [[\"a\",\"b\"]]};DOCX格式: {\"title\": \"标题\", \"content\": [{\"type\": \"paragraph\", \"text\": \"段落内容\"}]};PDF暂不支持写入")
+    data: Optional[Union[Dict[str, Any], List]] = Field(default=None, description="写入的数据。XLSX格式: dict={\"headers\": [\"列1\",\"列2\"], \"rows\": [[\"a\",\"b\"]]}或list=[[\"a\",\"b\"]]自动推断headers;DOCX格式: {\"title\": \"标题\", \"content\": [{\"type\": \"paragraph\", \"text\": \"段落内容\"}]};PDF暂不支持写入")
     sheet_name: str = Field(default="Sheet1", description="Excel工作表名(XLSX有效)")
     slides: Optional[List[Dict[str, str]]] = Field(default=None, description="PPT幻灯片列表(PPTX有效)")
 

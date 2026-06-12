@@ -408,27 +408,22 @@ def registry_control(
     Returns:
         {code, data, message}
     """
-    # ⚠️ 警告: 以下参数已从Schema移除,硬编码默认值,后续视需求决定是否恢复
-    output_format: str = "auto"
-    backup_before_write: bool = True
-    backup_before_delete: bool = True
-    dry_run: bool = False
     if not key_path:
         return build_error(ERR_REG_INVALID_PARAM, "key_path不能为空")
 
     if action == "read":
-        result = reg_read(key_path=key_path, value_name=value_name, hive=hive, output_format=output_format)
+        result = reg_read(key_path=key_path, value_name=value_name, hive=hive, output_format="auto")
     elif action == "write":
         if not value_name:
             return build_error(ERR_REG_INVALID_PARAM, "action='write'时value_name必填")
         if value is None:
             return build_error(ERR_REG_INVALID_PARAM, "action='write'时value必填")
         result = reg_write(key_path=key_path, value_name=value_name, value=value,
-                        value_type=value_type, backup_before_write=backup_before_write,
-                        dry_run=dry_run, hive=hive)
+                        value_type=value_type, backup_before_write=True,
+                        dry_run=False, hive=hive)
     elif action == "delete":
         result = reg_delete(key_path=key_path, value_name=value_name,
-                         backup_before_delete=backup_before_delete, recursive=recursive, hive=hive)
+                         backup_before_delete=True, recursive=recursive, hive=hive)
     else:
         return build_error(ERR_REG_INVALID_PARAM, f"无效的action: {action},支持: read/write/delete")
 

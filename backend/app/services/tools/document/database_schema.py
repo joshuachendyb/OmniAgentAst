@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class QuerySqlInput(BaseModel):
     sql: str = Field(
         ...,
-        description="SQL 查询语句。工具强制只读:仅允许 SELECT/SHOW/DESCRIBE,写入操作返回错误。必填参数"
+        description="SQL 查询语句。工具强制只读:仅允许 SELECT/SHOW/DESCRIBE/PRAGMA/WITH/EXPLAIN,写入操作返回错误。必填参数"
     )
     limit: int = Field(
         default=50, ge=1, le=10000,

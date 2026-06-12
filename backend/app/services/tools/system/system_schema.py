@@ -27,7 +27,7 @@ from typing import Optional, List, Literal, Dict, Any
 class GetSystemInfoInput(BaseModel):
     info_type: Optional[Literal["basic", "cpu", "memory", "disk", "network", "all"]] = Field(
         default="all",
-        description="要获取的系统信息类型,默认all。basic=OS/主机名/架构等,cpu=核心数/频率/使用率,memory=总量/可用/使用率,disk=各分区空间/使用率,network=接口名/IP/MAC,all=以上全部"
+        description="要获取的系统信息类型,默认all。basic=OS/主机名/架构等,cpu=核心数/频率/使用率,memory=总量/可用/使用率,disk=各分区空间/使用率,network=IO计数器(bytes_sent/bytes_recv/packets),all=以上全部"
     )
 
 
@@ -187,7 +187,7 @@ class SetEnvInput(BaseModel):
     name: str = Field(..., description="环境变量名称。如 \"MY_VARIABLE\"、\"CONFIG_PATH\"、\"PATH\"")
     value: Optional[str] = Field(default=None, description="环境变量值。action=\"set\"时必填,action=\"delete\"时忽略")
     scope: Literal["user", "system", "process"] = Field(default="process", description="作用域。可选值:process/user/system。默认process")
-    append_mode: bool = Field(default=False, description="追加模式。若 name 为 PATH 或 CLASSPATH,Agent 自动设true。默认false")
+    append_mode: bool = Field(default=False, description="追加模式。设为true时若变量已存在则在原值后追加;设为false时覆盖原值。默认false")
     action: Literal["set", "delete"] = Field(default="set", description="操作类型。\"set\"=设置变量(默认),\"delete\"=删除变量")
 
 

@@ -4,7 +4,7 @@ Meta 工具 Schema - Pydantic 输入模型
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, Literal
+from typing import Optional, Literal, List, Dict, Any, Union
 
 
 class ToolHelpInput(BaseModel):
@@ -12,11 +12,11 @@ class ToolHelpInput(BaseModel):
 
 
 class ToolSearchInput(BaseModel):
-    query: str = Field(..., description="自然语言描述需求。如 '查找重复文件' '读取Excel数据'")
+    query: str = Field(..., description="关键词搜索。按工具名/description分词匹配,支持中英文。如 '查找重复文件' '读取Excel数据'")
 
 
 class PipelineInput(BaseModel):
-    steps: str = Field(..., description='JSON格式工具步骤数组。每个元素: {"tool":"工具名"(必填), "params":{参数字典}(可选)}。前一步输出data自动注入后一步params。如 [{"tool":"read_csv","params":{"file_path":"data.csv"}},{"tool":"analyze_data","params":{}}]')
+    steps: Union[str, List[Dict[str, Any]]] = Field(..., description='JSON格式工具步骤数组。每个元素: {"tool":"工具名"(必填), "params":{参数字典}(可选)}。前一步输出data自动注入后一步params。如 [{"tool":"read_csv","params":{"file_path":"data.csv"}},{"tool":"analyze_data","params":{}}]')
     stop_on_error: bool = Field(default=True, description="某步失败时是否停止管道")
     timeout_per_step: int = Field(default=60, description="每步执行超时时间(秒),超时则报错停止管道。默认60秒")
 

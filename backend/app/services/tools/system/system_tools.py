@@ -139,8 +139,6 @@ def net_connections(
     使用psutil获取网络连接信息。
     支持按类型、状态、端口过滤。
     """
-    # ⚠️ 警告: 以下参数已从Schema移除,硬编码默认值,后续视需求决定是否恢复
-    resolve_dns: bool = False
     try:
         # 小健 2026-05-19: tcp/udp应包含inet4+inet6
         conn_kind_map = {
@@ -225,8 +223,6 @@ def event_log(
     
     Windows使用wevtutil命令,Linux使用journalctl。
     """
-    # ⚠️ 警告: 以下参数已从Schema移除,硬编码默认值,后续视需求决定是否恢复
-    event_id: Optional[List[int]] = None
     try:
         time_map = {
             "10m": timedelta(minutes=10),
@@ -450,7 +446,6 @@ def list_processes(
     - filter_name: 进程名称过滤(可选)
     - filter_pid: PID过滤(可选)
     - sort_by: 排序字段(可选),默认pid
-    - descending: 降序排序(可选),默认False
     - max_results: 最大返回数(可选),默认100
     
     【2026-05-17 小沈】修正S1: 删除limit参数(与max_results重复)
@@ -458,16 +453,13 @@ def list_processes(
     Returns:
         {code, data, message}
     """
-    # ⚠️ 警告: 以下参数已从Schema移除,硬编码默认值,后续视需求决定是否恢复
-    status: Optional[str] = None
-    descending: bool = False
     try:
         processes = []
 
         for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'exe', 'cmdline', 'status', 'create_time', 'username']):
             try:
                 proc_info = proc.info
-                if not _filter_process(proc_info, filter_name, filter_pid, user, status):
+                if not _filter_process(proc_info, filter_name, filter_pid, user):
                     continue
                 processes.append(_format_process(proc_info))
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
@@ -480,7 +472,7 @@ def list_processes(
             "memory": lambda x: x["memory_percent"],
         }
         if sort_by in sort_keys:
-            processes.sort(key=sort_keys[sort_by], reverse=descending)
+            processes.sort(key=sort_keys[sort_by], reverse=False)
         else:
             processes.sort(key=sort_keys["pid"], reverse=False)
 

@@ -323,7 +323,7 @@ class DataFileFormatInput(BaseModel):
         default=None,
         description="强制指定格式:json/yaml/toml/ini/xml/properties。不填则根据文件扩展名自动检测"
     )
-    data: Optional[Union[dict, list]] = Field(
+    data: Optional[Any] = Field(
         default=None,
         description="write模式要写入的数据。JSON/YAML/TOML格式传dict或list,Properties传dict。INI/XML暂不支持写入。read模式不填此字段"
     )
