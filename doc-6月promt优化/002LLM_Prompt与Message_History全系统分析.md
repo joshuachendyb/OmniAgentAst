@@ -201,68 +201,14 @@ def build_full_system_prompt(self, include_tool_details: bool = None) -> str:
 
 ---
 
-### 2.2 FileOperationPrompts子类（file_prompts.py）
+### 2.2 FileOperationPrompts子类（file_prompts.py）— 已删除
 
-**文件路径**: `backend/app/services/prompts/file/file_prompts.py`
+**文件路径**: ~~`backend/app/services/prompts/file/file_prompts.py`~~ **已删除**
 
-**核心职责**:
-- 定义文件操作Agent的System Prompt
-- 提供get_core_system_prompt()（角色+业务规则）
-- 提供get_tool_details()（工具描述+示例，FC模式可选）
-
-**FC-only重构（2026-06-11）**: `get_system_prompt()` 拆分为 `get_core_system_prompt()` + `get_tool_details()`。系统信息由基类 `_get_system_info()` 统一注入。
-
-**get_core_system_prompt()实现**:
-
-```python
-def get_core_system_prompt(self) -> str:
-    """获取核心系统Prompt(角色+业务规则) - 小沈 2026-06-11 系统信息提到Base公共层"""
-    return """
-【互斥参数规则 - 同一工具内禁止同时使用】:
-- read_file: file_paths 单路径=单文件,多路径=批量
-- edit_file: old_string 与 edits 互斥
-- rename_file: path 与 directory 互斥
-- archive_tool: compress→source+destination; extract→source
-- file_operation: move/copy→destination; delete→无需destination
-
-【write_text_file content规则】:
-- content 参数必须传实际文件内容(代码/文本/正文)
-- ❌ 禁止传入思考/计划/状态确认
-- ✅ content=\"第一章:觉醒\\n\\n林凡是一名普通的大学生...\""""
-```
-
-**get_tool_details()实现**:
-
-```python
-def get_tool_details(self) -> str:
-    """获取工具描述和示例(FC模式下由Schema承载,可选跳过) - 小沈 2026-06-11"""
-    tools = [
-        "read_file", "write_text_file", "list_directory",
-        "search_files", "grep_file_content", "edit_file",
-        "rename_file", "file_operation", "archive_tool",
-        "read_media_file", "data_file_format",
-    ]
-    tool_descriptions = self.build_tool_descriptions(tools, category_label="FILE")
-    return f"""# File Operation Tools
-
-{tool_descriptions}
-【调用决策示例】:
-用户: "读取C:/config.json"
-→ 判断: 单文件读取 → 调用read_file(file_paths=["C:/config.json"])
-
-用户: "搜索D:/project下所有包含TODO的Python文件"
-→ 判断: 内容搜索+文件过滤 → 调用grep_file_content(pattern="TODO", search_dir="D:/project", glob="*.py")
-
-用户: "把Hello World写入D:/output.txt"
-→ 判断: 写入新文件 → 调用write_text_file(file_path="D:/output.txt", content="Hello World")"""
-```
-
-**分析**:
-- ✅ 动态生成工具描述，避免硬编码
-- ✅ SRP分离：get_core_system_prompt()只负责业务规则，get_tool_details()只负责工具描述+示例
-- ✅ 系统信息由基类 `_get_system_info()` 统一注入，各子类不再自行 `get_system_prompt_string()`
-- ✅ FC模式可选跳过 `get_tool_details()`（由 `include_tool_details` 控制）
-- ⚠️ **问题**: 示例硬编码在字符串中，应提取为模板池
+**删除原因** (2026-06-12 北京老陈):
+- CRSS返回 FILE 主意图时直接走 system agent，无需独立 file agent
+- FILE 工具已通过 system agent 的 `extra_categories=[ToolCategory.FILE]` 加载
+- `AGENT_REGISTRY["file"]` 已移除，`detect_intent.py` 映射 `"file"` → `"system"`
 
 ---
 
@@ -828,10 +774,10 @@ agent = AgentFactory.create(intent_type="file", task_id="xxx")
 **Step 3: Agent初始化**
 
 ```python
-# UniversalAgent.__init__()
-config = resolve_agent_config("file")
-self.prompts = FileOperationPrompts()
-self.tool_category = ToolCategory.FILE
+# UniversalAgent.__init__() — FileOperationPrompts已删除,示例仅供参考
+# config = resolve_agent_config("system")
+# self.prompts = SystemPrompts()
+# self.tool_category = ToolCategory.FUND_RUNTIME
 ```
 
 **Step 4: 初始化运行状态**
