@@ -31,7 +31,7 @@ TOOL_TIMEOUTS = {
     "download_file": 60,
     "fetch_webpage": 30,
     "network_diagnose": 30,
-    "get_time": 5,
+    "time_now": 5,
     "time_add": 5,
     "time_diff": 5,
     "query_calendar": 15,

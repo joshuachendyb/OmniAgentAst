@@ -70,7 +70,6 @@ def generate_chart(
         if not labels or not values:
             return build_error(ERR_DOC_CHART_GENERATE, "数据格式错误,需要包含 labels 和 values 字段",
                 next_actions=build_next_actions([
-                    ("tool_help", "查看generate_chart参数", "确认数据格式时", {"tool_name": "generate_chart"}),
                     ("analyze_data", "先分析数据", "确认可用字段时"),
                 ]))
 
@@ -117,7 +116,6 @@ def generate_chart(
     except Exception as e:
         return build_error(ERR_DOC_CHART_GENERATE, f"生成图表失败: {str(e)}",
             next_actions=build_next_actions([
-                ("tool_help", "查看generate_chart用法", "检查参数时", {"tool_name": "generate_chart"}),
                 ("filter_data", "尝试筛选数据后重试", "数据量过大时"),
             ]))
 
@@ -234,10 +232,7 @@ def analyze_data(
         elif isinstance(data, list):
             df = pd.DataFrame(data)
         else:
-            return build_error(ERR_DOC_ANALYZE_DATA, "data参数必须是CSV文件路径或数据数组",
-                next_actions=build_next_actions([
-                    ("tool_help", "查看analyze_data参数", "确认数据格式时", {"tool_name": "analyze_data"}),
-                ]))
+            return build_error(ERR_DOC_ANALYZE_DATA, "data参数必须是CSV文件路径或数据数组")
 
         total_count = len(df)
         numeric_cols = df.select_dtypes(include="number").columns.tolist()
@@ -279,7 +274,6 @@ def analyze_data(
     except Exception as e:
         return build_error(ERR_DOC_ANALYZE_DATA, f"数据分析失败: {str(e)}",
             next_actions=build_next_actions([
-                ("tool_help", "查看analyze_data用法", "检查参数时", {"tool_name": "analyze_data"}),
                 ("filter_data", "先筛选数据", "数据量过大需要分批处理时"),
             ]))
 
@@ -303,9 +297,7 @@ def _load_data_to_df(data: Union[str, List[Dict[str, Any]]],
         return {"df": pd.read_csv(data, nrows=max_rows)}
     if isinstance(data, list):
         return {"df": pd.DataFrame(data)}
-    return {"error": build_error(ERR_FILTER_INVALID, "data参数必须是文件路径或数据数组",
-        next_actions=build_next_actions([
-            ("tool_help", "查看filter_data参数", "确认数据格式时", {"tool_name": "filter_data"})]))}
+    return {"error": build_error(ERR_FILTER_INVALID, "data参数必须是文件路径或数据数组")}
 
 
 def _build_condition_mask(df: pd.DataFrame, conditions: List[Dict[str, Any]]) -> dict:
@@ -327,7 +319,6 @@ def _build_condition_mask(df: pd.DataFrame, conditions: List[Dict[str, Any]]) ->
             return {"error": build_error(ERR_FILTER_INVALID,
                 f"条件缺少column字段: {cond}",
                 next_actions=build_next_actions([
-                    ("tool_help", "查看filter_data参数", "确认条件格式时", {"tool_name": "filter_data"}),
                     ("analyze_data", "先分析数据", "了解可用字段时")]))}
         if column not in df.columns:
             warnings.append(f"列'{column}'不存在,已跳过")
@@ -422,7 +413,6 @@ def filter_data(
     except Exception as e:
         return build_error(ERR_FILTER_INVALID, f"数据筛选失败: {str(e)}",
             next_actions=build_next_actions([
-                ("tool_help", "查看filter_data用法", "检查参数时", {"tool_name": "filter_data"}),
                 ("analyze_data", "先分析数据概览", "确认数据内容时")]))
 from app.constants import (
     ERR_DOC_ANALYZE_DATA,

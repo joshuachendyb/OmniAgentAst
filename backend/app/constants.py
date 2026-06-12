@@ -447,8 +447,8 @@ TASK_TIMEOUT = timedelta(hours=1)
 # ============================================================
 
 META_TOOL_NAMES = [
-    'tool_help', 'tool_search', 'pipeline',
-    'get_time', 'time_add', 'time_diff', 'query_calendar',
+    'tool_search',
+    'time_now', 'time_add', 'time_diff', 'query_calendar',
     'timer',
 ]
 

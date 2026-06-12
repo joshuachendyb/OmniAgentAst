@@ -147,7 +147,7 @@ def to_openai_tools(registry, category: Optional[ToolCategory] = None) -> list:
     for name, meta in sorted(registry._tools.items(), key=lambda x: x[0]):
         if not meta.expose_to_llm:
             continue
-        if category and meta.category != category:
+        if category and meta.category != category and meta.category != ToolCategory.FUND_RUNTIME:
             continue
         func_def = {
             "name": meta.name,

@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, Union, Literal
 
 
-class GetTimeInput(BaseModel):
+class TimeNowInput(BaseModel):
     action: Literal["now", "format", "to_timestamp", "from_timestamp"] = Field(
         default="now",
         description="操作类型:now=获取当前时间,format=格式化时间,to_timestamp=转时间戳,from_timestamp=时间戳转时间。默认为now"
@@ -98,7 +98,7 @@ class TimerInput(BaseModel):
 
 
 __all__ = [
-    "GetTimeInput",
+    "TimeNowInput",
     "TimeAddInput",
     "TimeDiffInput",
     "QueryCalendarInput",
