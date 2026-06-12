@@ -17,8 +17,8 @@ from typing import Optional, Any, List, Dict, Literal
 
 
 class ReadDocumentInput(BaseModel):
-    """read_document 工具的输入参数 — 小沈 2026-05-19 参数精简11→8(砍extract_images+extract_notes+use_pandas)"""
-    file_path: str = Field(..., description="文档路径。支持 .pdf/.docx/.xlsx/.pptx/.csv/.tsv;旧版 .doc/.xls 自动转换为PDF后读取(需安装LibreOffice)")
+    """read_document 工具的输入参数 (砍extract_images+extract_notes+use_pandas)"""
+    file_path: str = Field(..., description="文档路径。仅支持: .pdf/.docx/.xlsx/.pptx/.csv/.tsv;旧版 .doc/.xls 自动转换为PDF后读取。⚠️ 纯文本(.txt/.py/.json/.md等)请使用 read_file 工具")
     pages: Optional[str] = Field(default=None, description="PDF页码范围(如'1-3,5',仅PDF有效)")
     extract_tables: bool = Field(default=False, description="是否提取表格(PDF/DOCX有效)")
     sheet_name: Optional[str] = Field(default=None, description="Excel工作表名(仅XLSX有效)")
@@ -30,7 +30,7 @@ class ReadDocumentInput(BaseModel):
 
 class WriteDocumentInput(BaseModel):
     """write_document 工具的输入参数 — 小健 2026-05-18"""
-    file_path: str = Field(..., description="输出路径。支持 .docx/.xlsx/.pdf/.pptx")
+    file_path: str = Field(..., description="输出路径。仅支持办公格式: .docx/.xlsx/.pdf/.pptx。⚠️ 不支持 .txt!写入文本文件请使用 write_text_file 工具")
     content: Optional[str] = Field(default=None, description="正文内容(DOCX/PDF有效)")
     paragraphs: Optional[List[str]] = Field(default=None, description="段落列表(DOCX/PDF有效)")
     title: Optional[str] = Field(default=None, description="文档标题(DOCX/PDF/PPTX有效)")

@@ -38,10 +38,10 @@ class FileOperationPrompts(BasePrompts):
 - archive_tool: compress→source+destination; extract→source
 - file_operation: move/copy→destination; delete→无需destination
 
-【write_text_file text规则】:
-- text 参数必须传实际文件内容(代码/文本/正文)
+【write_text_file content规则】:
+- content 参数必须传实际文件内容(代码/文本/正文)
 - ❌ 禁止传入思考/计划/状态确认
-- ✅ text=\"第一章:觉醒\\n\\n林凡是一名普通的大学生...\""""
+- ✅ content=\"第一章:觉醒\\n\\n林凡是一名普通的大学生...\""""
 
     def get_tool_details(self) -> str:
         """获取工具描述和示例(FC模式下由Schema承载,可选跳过) - 小沈 2026-06-11"""
@@ -63,7 +63,7 @@ class FileOperationPrompts(BasePrompts):
 → 判断: 内容搜索+文件过滤 → 调用grep_file_content(pattern="TODO", search_dir="D:/project", glob="*.py")
 
 用户: "把Hello World写入D:/output.txt"
-→ 判断: 写入新文件 → 调用write_text_file(file_path="D:/output.txt", text="Hello World")"""
+→ 判断: 写入新文件 → 调用write_text_file(file_path="D:/output.txt", content="Hello World")"""
 
     def _get_domain_name(self) -> str:
         return "文件管理"

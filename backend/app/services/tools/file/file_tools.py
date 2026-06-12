@@ -1092,7 +1092,7 @@ class FileTools:
     async def write_text_file(
         self,
         file_path: str,
-        text: str,
+        content: str,
         encoding: Optional[str] = None,
         append: bool = False,
         create_parents: bool = True,
@@ -1104,12 +1104,12 @@ class FileTools:
         - 重构拆分:提取 _detect_file_encoding_for_write / _write_file_atomic / _check_write_safety
         - 保持所有分支完整,功能不减少
         """
-        error, content = self._check_write_safety(file_path, text, encoding)
+        error, checked_content = self._check_write_safety(file_path, content, encoding)
         if error:
             return build_error(ERR_FILE_CONTENT_BLOCKED, error)
         
         if unescape:
-            content = content.replace("\\\\", "\\").replace("\\n", "\n").replace("\\\"", "\"")
+            checked_content = checked_content.replace("\\\\", "\\").replace("\\n", "\n").replace("\\\"", "\"")
         
         encoding = encoding or self._detect_file_encoding_for_write(file_path, append)
         
@@ -1132,13 +1132,13 @@ class FileTools:
                 self.safety_manager.execute_with_safety,
                 "file",
                 operation_id=operation_id,
-                operation_func=lambda: self._write_file_atomic(content, path, encoding, append, create_parents)
+                operation_func=lambda: self._write_file_atomic(checked_content, path, encoding, append, create_parents)
             )
             
             if success:
                 return build_success(
-                    {"operation_id": operation_id, "file_path": str(path), "bytes_written": len(content.encode(encoding))},
-                    f"写入文件成功: {path} ({len(content.encode(encoding))}字节)",
+                    {"operation_id": operation_id, "file_path": str(path), "bytes_written": len(checked_content.encode(encoding))},
+                    f"写入文件成功: {path} ({len(checked_content.encode(encoding))}字节)",
                     next_actions=build_next_actions([
                         ("read_file", "验证写入结果", "需要确认内容时"),
                     ])
