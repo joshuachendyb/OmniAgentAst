@@ -54,10 +54,10 @@ class AgentConfig:
 AGENT_REGISTRY: Dict[str, AgentConfig] = {
     "system": AgentConfig(
         intent_type="system",
-        category=ToolCategory.FUND_RUNTIME,
+        category=ToolCategory.SYSTEM,
         prompt_module="app.services.prompts.system.system_prompts",
         prompt_class_name="SystemPrompts",
-        category_display_name="基础运行时",
+        category_display_name="系统管理",
         extra_categories=[ToolCategory.FILE],
         exclude_tool_details_from_prompt=True,
     ),

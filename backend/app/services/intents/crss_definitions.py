@@ -11,6 +11,7 @@ ACTION_DEFINITIONS = {
             ToolCategory.FILE: 1.5,
             ToolCategory.DOC_CONTENT: 1.2,
             ToolCategory.FUND_RUNTIME: 0.8,
+            ToolCategory.SYSTEM: 0.8,
             ToolCategory.NET_PROCESS: 0.5,
             ToolCategory.SCREEN: 0.5,
         }
@@ -34,6 +35,7 @@ ACTION_DEFINITIONS = {
         "keywords": ['run', 'exec', 'execute', '运行', '执行', '启动', '编译'],
         "compatibility": {
             ToolCategory.FUND_RUNTIME: 1.5,
+            ToolCategory.SYSTEM: 1.0,
         }
     },
     "query": {
@@ -49,15 +51,17 @@ ACTION_DEFINITIONS = {
         "compatibility": {
             ToolCategory.SCREEN: 1.5,
             ToolCategory.FILE: 1.0,
-            ToolCategory.NET_PROCESS: 0.8,
+            ToolCategory.SYSTEM: 0.8,
+            ToolCategory.NET_PROCESS: 0.5,
         }
     },
     "configure": {
         "keywords": ['set', 'config', 'change', '修改', '设置', '配置', '调整'],
         "compatibility": {
+            ToolCategory.SYSTEM: 1.5,
             ToolCategory.FUND_RUNTIME: 1.2,
             ToolCategory.SCREEN: 1.0,
-            ToolCategory.NET_PROCESS: 1.0,
+            ToolCategory.NET_PROCESS: 0.5,
         }
     },
     "capture": {

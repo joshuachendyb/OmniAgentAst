@@ -49,10 +49,11 @@ class ToolCategory(Enum):
     新增分类只需添加一个枚举成员 —— 小健 2026-05-31
     """
     FILE = ("file", ["file"], 0, "文件操作工具")
-    FUND_RUNTIME = ("fund_runtime", ["shell", "system", "time", "meta", "env", "environment", "code_execution"], 1, "基础运行时工具")
-    NET_PROCESS = ("net_process", ["network", "process", "service", "registry"], 2, "网络与进程工具")
+    FUND_RUNTIME = ("fund_runtime", ["shell", "time", "meta", "code_execution"], 1, "基础运行时工具")
+    NET_PROCESS = ("net_process", ["network"], 2, "网络与进程工具")
     SCREEN = ("screen", ["desktop", "screen", "window"], 3, "屏幕交互工具")
     DOC_CONTENT = ("doc_content", ["document", "database", "data_analysis", "content"], 4, "文档内容工具")
+    SYSTEM = ("system", ["system", "process", "service", "registry", "env", "environment"], 5, "系统管理工具")
 
     def __new__(cls, value, intent_keys, order, name_cn):
         member = object.__new__(cls)

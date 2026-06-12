@@ -42,61 +42,9 @@ from app.services.tools.meta.time_schema import (
 
 
 META_TOOL_DESCRIPTIONS = {
-    "tool_help": """查询指定工具的详细用法信息。
-
-【使用场景】
-- 当Agent需要了解某个工具的具体参数和用法时使用
-- 当用户问"read_csv怎么用"时使用
-- 当需要确认工具是否支持某个参数时使用
-
-【使用示例】
-- 查询工具:tool_help(tool_name="get_time")
-- 查询用法:tool_help(tool_name="read_csv")
-
-【返回数据说明】
-- name: 工具名称
-- category: 所属分类
-- description: 工具描述
-- params: 参数详情(类型、描述、是否必填)
-- examples: 使用示例
-- version: 版本号
-- author: 作者""",
-    "tool_search": """按关键词搜索匹配的工具列表。
-
-【使用场景】
-- 当用户描述需求但不确定用哪个工具时使用
-- 当用户问"有什么工具能读取Excel"时使用
-- 当需要发现可用工具时使用
-
-【使用示例】
-- 搜索工具:tool_search(query="读取CSV文件")
-- 按功能搜索:tool_search(query="时间格式化")
-
-【返回数据说明】
-- query: 搜索关键词
-- matches: 匹配的工具列表(按相关度排序)
-- total_matched: 总匹配数
-- total_tools: 工具总数""",
-    "pipeline": """定义工具执行管道,将多个工具按顺序编排执行。
-
-【使用场景】
-- 当需要连续执行多个工具形成自动化流程时使用
-- 当需要"先A→再B→如果失败则C"的执行链时使用
-- 当需要减少ReAct循环中的推理步数时使用
-
-【重要】
-- steps参数为JSON格式的数组,每个元素包含tool(工具名,必填)和params(参数字典,可选)
-- 前一步的输出data会自动注入后一步的params中(核心特性)
-
-【使用示例】
-- 单步管道:pipeline(steps='[{"tool":"get_time","params":{"action":"now"}}]', stop_on_error=true)
-- 多步管道:pipeline(steps='[{"tool":"read_csv","params":{"file_path":"data.csv"}},{"tool":"analyze_data","params":{}}]')
-
-【返回数据说明】
-- total_steps: 总步骤数
-- completed_steps: 完成步骤数
-- results: 每步执行结果(含step/tool/code/message/data)
-- 当某步失败时(若stop_on_error=True)返回ERR_PIPELINE_STOPPED""",
+    "tool_help": """查询指定工具的详细用法信息。返回工具名称、分类、描述、参数详情(类型/描述/是否必填)、使用示例和版本号。适用场景:当Agent需要了解某个工具的具体参数和用法、确认工具是否支持某个参数时使用。""",
+    "tool_search": """按关键词搜索匹配的工具列表。返回匹配的工具列表(按相关度排序)、总匹配数和工具总数。适用场景:当用户描述需求但不确定用哪个工具、需要发现当前系统有哪些可用工具时使用。""",
+    "pipeline": """定义工具执行管道,将多个工具按顺序编排执行。steps参数为JSON字符串数组,每步包含tool(工具名,必填)和params(参数,可选)。前一步的输出data会自动注入后一步的params中(核心特性)。支持stop_on_error控制是否遇错停止。适用场景:需要连续执行多个工具形成自动化流程(先A→再B→如果失败则C)、减少ReAct循环中的推理步数时使用。""",
     "get_time": """支持时间获取/格式化/转换操作功能。
 action参数决定操作类型:
 - now: 获取当前时间(可选format/timezone)
@@ -108,40 +56,8 @@ action参数决定操作类型:
 - 当前时间 → get_time(action="now")
 - 转时间戳 → get_time(action="to_timestamp", time_value="2026-05-18 10:00:00")
 - 格式化 → get_time(action="format", time_value="2026-05-18 10:00:00", format="%Y年%m月%d日")""",
-    "time_add": """时间加减运算。
-
-【使用场景】
-- 计算N天/小时/分钟后的时间
-- 计算N天/小时/分钟前的时间(delta传负数)
-
-【使用示例】
-- 加7天:time_add(start="2026-05-18 10:00:00", delta=7, unit="days")
-- 减3小时:time_add(start="2026-05-18 10:00:00", delta=-3, unit="hours")
-
-【返回数据说明】
-- result_time: 计算后的时间字符串
-- iso: ISO格式时间
-- timestamp: Unix时间戳
-- tz: 时区
-- unit_used: 实际使用的偏移单位
-- delta_used: 实际使用的偏移量
-- weekday: 星期名称
-- isoweckday: ISO星期编号""",
-    "time_diff": """计算两个时间之间的差值。
-
-【使用场景】
-- 计算两个日期相差几天/小时/分钟
-- 计算距某时间还有多久
-
-【使用示例】
-- 计算差值:time_diff(start="2026-05-01", end="2026-05-18")
-
-【返回数据说明】
-- humanized: 人类可读的差值描述
-- seconds/minutes/hours/days: 各单位的差值
-- is_future: 目标时间是否在未来
-- is_after/is_before/is_equal: 比较结果
-- diff_seconds_signed: 带符号的秒数差值""",
+    "time_add": """时间加减运算。支持按天/小时/分钟/秒/月进行偏移计算。delta为正数表示N个单位后的时间,delta为负数表示N个单位前的时间。返回计算后的时间字符串、ISO格式、Unix时间戳和星期信息。适用场景:需要计算N天/小时/分钟后的时间、计算某个时间点之前的时间时使用。""",
+    "time_diff": """计算两个时间之间的差值。返回人类可读的差值描述以及秒/分钟/小时/天各单位的差值。可判断目标时间是否在未来/过去/相等。适用场景:需要计算两个日期相差几天、计算距某时间还有多久时使用。""",
     "query_calendar": """支持日期类型综合检查功能。
 check_type参数决定检查类型:
 - weekend: 判断是否为周末,date

@@ -92,21 +92,7 @@ action参数决定操作类型:
 - 快捷键 → keyboard_control(action="shortcut", text_or_keys="ctrl+c")
 - 组合键 → keyboard_control(action="combo", text_or_keys="ctrl,shift,esc")""",
 
-    "screen_capture": """统一屏幕截图 - 合并screenshot + snapshot功能。
-
-【使用场景】
-- 截取全屏 / 截取区域 / 多显示器快照
-
-【重要】优先使用mss库(多显示器),降级pyautogui
-
-【使用示例】【常用名转换说明】
-- 截取全屏/screenshot → screen_capture()
-- 截取区域/snapshot → screen_capture(region={"x":0,"y":0,"width":800,"height":600})
-- 多显示器 → screen_capture(display=2)
-- 指定路径 → screen_capture(output_path="D:/output/screenshot.png")
-
-【返回数据说明】
-- data.success/data.image_path/data.width/data.height""",
+    "screen_capture": """截取屏幕截图。支持全屏截图、指定区域截图(region参数,格式为{"x":0,"y":0,"width":800,"height":600})和多显示器截图(display参数)。优先使用mss库(支持多显示器),降级使用pyautogui。不指定输出路径则保存到系统临时目录。返回图片保存路径、宽度和高度。适用场景:需要截取当前屏幕内容用于记录或传递给LLM分析时使用。""",
 
     "clipboard_control": """支持剪贴板的读/写操作功能。
 action参数决定操作类型:

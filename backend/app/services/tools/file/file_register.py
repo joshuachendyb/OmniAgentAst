@@ -48,60 +48,23 @@ from app.utils.logger import logger
 # ============================================================
 
 FILE_TOOL_DESCRIPTIONS = {
-    "read_text_file": """读取文本文件。支持分页读取(head/tail/offset/limit)。encoding默认utf-8,读取失败自动尝试gbk。""",
+    "read_text_file": """读取文本文件。支持分页读取(head/tail/offset/limit)。encoding默认utf-8,读取失败自动尝试gbk。适用场景:需要读取源代码、日志文件、配置文件等纯文本内容时使用。""",
 
-    "write_text_file": """写文本文件：创建新文件或追加内容。自动检测编码，支持中文路径。content 参数传入实际文件内容（禁止传入思考/状态描述），append=True 追加到末尾。""",
+    "write_text_file": """写文本文件：创建新文件或追加内容。自动检测编码，支持中文路径。content 参数传入实际文件内容（禁止传入思考/状态描述），append=True 追加到末尾。适用场景:需要创建或修改代码文件、配置文件、日志文件等文本内容时使用。""",
 
-    "read_media_file": """读取图片、音频、视频文件,返回Base64编码数据和MIME类型。PDF文件请使用 read_document 工具。
+    "read_media_file": """读取图片、音频、视频文件,返回Base64编码数据和MIME类型。自动识别媒体类型,支持常见图片(jpg/png/gif/bmp)、音频(mp3/wav/ogg)和视频(mp4/avi/mkv)格式。不支持PDF文件(PDF请使用read_document工具)。适用场景:需要获取非文本文件内容并将其传递给LLM进行图像识别、音频分析等任务。""",
 
-使用示例:
-- 读取图片:{"file_path": "D:/screenshot.png"}
-- 读取音频:{"file_path": "D:/notification.mp3"}
-- 读取PDF:{"file_path": "D:/report.pdf"}
+    "edit_text_file": """替换文本文件中的内容。old_string定位被替换文本,new_string替换为的内容。replace_all替换所有匹配项,dry_run仅预览。适用场景:需要精确修改代码中的某个函数名、变量引用、配置值时使用。""",
 
-返回数据说明:
-- data.success/data.data(Base64)/data.mime_type/data.file_size""",
+    "list_directory": """列出目录内容,支持扁平列表(format="list")和JSON树结构(format="tree")两种输出格式。list格式返回包含文件大小/修改时间的条目列表,tree格式返回嵌套的JSON目录树。始终返回统计信息(文件数/目录数/总大小)。支持递归列出子目录、按名称/大小/修改时间排序、分页读取,以及过滤隐藏文件。适用场景:需要了解项目目录结构、查看文件大小和修改时间、获取文件统计信息时使用。""",
 
-    "edit_text_file": """替换文本文件中的内容。old_string定位被替换文本,new_string替换为的内容。replace_all替换所有匹配项,dry_run仅预览。""",
+    "search_files": """递归搜索匹配glob模式的文件/目录。search_dir为必填的搜索起始目录。pattern支持glob通配符(*?**)和中文文件名。可指定搜索类型(文件/目录)、递归深度、大小写敏感。分页返回结果,每页包含匹配列表和总数。适用场景:需要按文件名查找特定文件、统计项目中某类文件数量时使用。""",
 
-    "list_directory": """列出目录内容(统一入口)- 合并list_directory + get_directory_tree + file_statistics功能。
-
-使用方式:
-- format="list":扁平列表(含文件大小/修改时间)
-- format="tree":JSON树结构
-- 始终返回statistics统计信息
-
-使用示例:【常用名转换说明】
-- 列出文件/list_directory → list_directory(dir_path="D:/project")
-- 递归列出 → list_directory(dir_path="D:/project", recursive=true, max_depth=3)
-- 树结构/get_directory_tree → list_directory(dir_path="D:/project", format="tree")
-- 统计信息/file_statistics → list_directory(dir_path="D:/project", format="list")
-
-返回数据说明:
-- data.success/data.entries(list)/data.tree(tree)/data.statistics(统计)""",
-
-    "search_files": """递归搜索匹配模式的文件/目录,支持中文文件名。search_dir为必填项。
-
-使用示例:
-- 搜索Python文件:{"pattern": "**/*.py", "search_dir": "D:/project"}
-- 只搜目录:{"pattern": "src", "search_dir": "D:/project", "type": "directory"}
-
-返回数据说明:
-- data.success/data.matches/data.total/data.has_more""",
-
-    "grep_file_content": """基于ripgrep的内容搜索,支持正则表达式和中文搜索。
-
-使用示例:
-- 简单搜索:{"pattern": "def read_text_file", "search_dir": "D:/backend"}
-- 搜索TS文件:{"pattern": "class.*Component", "search_dir": "D:/frontend", "glob": "*.tsx"}
-- 带上下文:{"pattern": "TODO", "search_dir": "D:/src", "context": {"around": 3}}
-
-返回数据说明:
-- data.success/data.matches/data.total_files/data.total_matches""",
+    "grep_file_content": """基于ripgrep在文件中搜索文本内容,支持正则表达式和中文搜索。可指定搜索路径、文件过滤(glob通配符,如"*.py")、匹配前后上下文行数、大小写敏感、多行匹配模式、返回条数限制。分页返回结果,包含匹配行内容、匹配文件和总匹配数。适用场景:需要在代码或文档中查找特定函数定义、关键字、TODO标记,并了解其上下文时使用。""",
 
     "archive_tool": """支持文件的压缩/解压操作功能,支持zip/tar/tar.gz/tar.bz2格式。
 action参数决定操作类型:
-- compress: 压缩文件/目录到归档包,source→destination(可选format/password/exclude_patterns)
+- compress: 压缩文件/目录到归档包,source→destination(可选format/compression_level/password/exclude_patterns)
 - extract: 解压归档包到目录,source→destination(可选password/overwrite)
 
 使用示例:
