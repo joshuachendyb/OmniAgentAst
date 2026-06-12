@@ -9,6 +9,7 @@ from typing import Type, List, Dict, Optional, Any
 
 from app.services.tools.tool_types import ToolCategory
 from app.services.prompts.base_prompt_template import BasePrompts
+from app.utils.logger import logger
 
 # 默认Agent统一使用UniversalAgent — 小欧 2026-06-08 消除重复
 _DEFAULT_AGENT_MODULE = "app.services.agent.universal_agent"
@@ -103,7 +104,8 @@ def resolve_agent_config(intent_type: str) -> AgentConfig:
     config = AGENT_REGISTRY.get(normalized_intent)
     if config is not None:
         return config
-    raise ValueError(f"Unknown intent_type: {intent_type}")
+    logger.warning(f"[resolve_agent_config] 未知intent_type: {intent_type}, fallback到system")
+    return AGENT_REGISTRY["system"]
 
 
 def get_all_intent_types() -> list:
