@@ -1,14 +1,11 @@
 # -*- coding: utf-8 -*-
 # DATABASE Schema - Database Tools Pydantic Models
-# 最后更新: 2026-05-08 小沈 小健 — 全部description改为中文 + "默认为X"格式
-# 【2026-05-19 小沈】参数精简:QuerySqlInput 7→6(砍output_format),ExecuteSqlInput 7→6(砍affected_rows_check),GetDbSchemaInput 8→6(砍output_format+include_details)
 
 from typing import Optional, Literal
 from pydantic import BaseModel, Field
 
 
 class QuerySqlInput(BaseModel):
-    """query_sql 工具输入参数 - 小沈 2026-05-19 参数精简7→6(砍output_format)"""
     sql: str = Field(
         ...,
         description="SQL 查询语句。工具强制只读:仅允许 SELECT/SHOW/DESCRIBE,写入操作返回错误。必填参数"
@@ -36,7 +33,6 @@ class QuerySqlInput(BaseModel):
 
 
 class ExecuteSqlInput(BaseModel):
-    """execute_sql 工具输入参数 - 小沈 2026-05-19 参数精简7→6(砍affected_rows_check)"""
     sql: str = Field(
         ...,
         description="SQL 写入语句。支持 INSERT/UPDATE/DELETE/DDL。必填参数"
@@ -64,7 +60,6 @@ class ExecuteSqlInput(BaseModel):
 
 
 class GetDbSchemaInput(BaseModel):
-    """get_db_schema 工具输入参数 - 小沈 2026-05-19 参数精简8→6(砍output_format+include_details)"""
     db_name: Optional[str] = Field(
         default=None,
         description="目标数据库名称。默认为当前连接数据库"

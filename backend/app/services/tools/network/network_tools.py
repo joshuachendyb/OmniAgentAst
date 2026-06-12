@@ -314,7 +314,7 @@ async def download_file(
             {"file_path": dest_path, "file_size": downloaded, "total_size": total_bytes, "content_type": content_type},
             f"文件下载成功 ({downloaded}/{total_bytes} 字节):{dest_path}",
             llm_data={"路径": dest_path, "大小": downloaded, "类型": content_type},
-            next_actions=build_next_actions([("read_file", "读取下载的文件", "需要查看时")]),
+            next_actions=build_next_actions([("read_text_file", "读取下载的文件", "需要查看时")]),
         )
     except (PermissionError, OSError) as e:
         return build_error(ERR_NETWORK_WRITE_FILE, f"写入文件失败 {dest_path}: {e}")

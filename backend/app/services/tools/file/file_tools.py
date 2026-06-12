@@ -28,6 +28,7 @@ MCP文件操作工具集 - 重写版本
 import asyncio
 import base64
 import fnmatch
+import glob as glob_module
 import inspect
 import os
 import re
@@ -57,16 +58,15 @@ from app.services.tools.tool_constants import (
 from pydantic import BaseModel, Field
 
 from app.services.tools.file.file_schema import (
-    ReadFileInput,
+    ReadTextFileInput,
     WriteTextFileInput,
     ListDirectoryInput,
     SearchFilesInput,
     ReadMediaFileInput,
     GrepFileContentInput,
-    EditFileInput,
+    EditTextFileInput,
     FileOperationInput,
     ArchiveToolInput,
-    RenameFileInput,
     DataFileFormatInput,
 )
 
@@ -194,45 +194,6 @@ ALLOWED_PATHS = _get_default_allowed_paths()
 # ============================================================
 # Pydantic模型已统一在 app.services.tools.file.file_schema 中定义
 # 请勿在此文件重复定义模型,直接从 file_schema 导入使用
-
-
-# ============================================================
-# 第四部分:工具Definition类(自动生成Schema + Examples)
-# ============================================================
-
-class ToolDefinition:
-    """
-    工具定义类
-    
-    自动从Pydantic模型生成JSON Schema,并添加input_examples
-    """
-    
-    def __init__(
-        self,
-        name: str,
-        description: str,
-        input_model: type[BaseModel],
-        examples: Optional[List[Dict[str, Any]]] = None
-    ):
-        self.name = name
-        self.description = description
-        self.input_model = input_model
-        self.examples = examples or []
-    
-    def to_schema(self) -> Dict[str, Any]:
-        """转换为JSON Schema格式"""
-        schema = self.input_model.model_json_schema()
-        # 添加中文描述支持
-        return schema
-    
-    def to_mcp_format(self) -> Dict[str, Any]:
-        """转换为MCP工具格式"""
-        return {
-            "name": self.name,
-            "description": self.description,
-            "input_schema": self.to_schema(),
-            "input_examples": self.examples
-}
 
 
 from datetime import datetime
@@ -426,7 +387,7 @@ def _build_list_success(entries: List, total: int, path: Path, statistics: Dict,
         llm_data=llm,
         next_actions=build_next_actions([
             ("search_files", "搜索文件", "需要查找特定文件时"),
-            ("read_file", "读取文件", "需要查看文件内容时"),
+            ("read_text_file", "读取文件", "需要查看文件内容时"),
         ]))
 
 
@@ -724,7 +685,7 @@ class FileTools:
         self._sequence = 0
         self._sequence_lock = threading.Lock()
         self.allowed_paths = ALLOWED_PATHS.copy()
-        # 【修复P0-2 2026-06-09 小沈】删除已废弃的get_hook/register_hook调用
+        # 删除已废弃的get_hook/register_hook调用
         # 安全检查已由SafetyManager._check_existing_safety_capabilities统一处理
     
     def _get_next_sequence(self) -> int:
@@ -984,7 +945,7 @@ class FileTools:
                 f"读取文件成功: {file_path} ({_data['line_count']}/{_data['total_lines']}行, {file_size}字节, 编码:{used_encoding})",
                 llm_data=_llm,
                 next_actions=build_next_actions([
-                    ("edit_file", "编辑文件", "需要修改内容时"),
+                    ("edit_text_file", "编辑文件", "需要修改内容时"),
                     ("grep_file_content", "搜索文件内容", "需要查找特定内容时"),
                 ])
             )
@@ -1140,7 +1101,7 @@ class FileTools:
                     {"operation_id": operation_id, "file_path": str(path), "bytes_written": len(checked_content.encode(encoding))},
                     f"写入文件成功: {path} ({len(checked_content.encode(encoding))}字节)",
                     next_actions=build_next_actions([
-                        ("read_file", "验证写入结果", "需要确认内容时"),
+                        ("read_text_file", "验证写入结果", "需要确认内容时"),
                     ])
                 )
             else:
@@ -1455,33 +1416,6 @@ class FileTools:
             validate_path_func=self._validate_path,
             follow_symlinks=follow_symlinks,
         )
-
-    async def _batch_rename(
-        self,
-        directory: str,
-        pattern: str,
-        replacement: str,
-        recursive: bool = False,
-        preview: bool = False,
-        conflict_strategy: Literal["skip", "overwrite", "append_number"] = "skip",
-    ) -> Dict[str, Any]:
-        """批量重命名文件"""
-        from app.services.tools.toolhelper.file_helpers import batch_rename_impl, RenameContext
-
-        ctx = RenameContext(
-            directory=directory,
-            pattern=pattern,
-            replacement=replacement,
-            recursive=recursive,
-            preview=preview,
-            conflict_strategy=conflict_strategy,
-            validate_path_func=self._validate_path,
-            task_id=self.task_id,
-            record_operation_func=lambda *a, **kw: self.safety_manager.record_operation("file", *a, **kw),
-            execute_with_safety_func=lambda *a, **kw: self.safety_manager.execute_with_safety("file", *a, **kw),
-            get_next_sequence_func=self._get_next_sequence,
-        )
-        return await batch_rename_impl(ctx)
 
     async def _compress_files(
         self,
@@ -1799,7 +1733,7 @@ class FileTools:
             return build_success(
                 data,
                 f"已替换 {replace_result['count']} 处匹配",
-                next_actions=build_next_actions([("read_file", "验证修改结果", "需要确认修改时")]),
+                next_actions=build_next_actions([("read_text_file", "验证修改结果", "需要确认修改时")]),
             )
 
         except ValueError as e:
@@ -1898,7 +1832,7 @@ class FileTools:
         """高级编辑文件,支持多处编辑和预览(内部方法) — 小健 2026-05-25 重构拆分
 
         使用场景:
-            edit_file工具内部调用
+            内部调用
 
         使用示例:
             result = await self._apply_edits('test.py', [{'oldText': 'old', 'newText': 'new'}])
@@ -1956,7 +1890,7 @@ class FileTools:
                 )
             return build_error(ERR_FILE_EDIT_FAILED, "文件编辑失败,safety拦截")
         except Exception as e:
-            logger.error(f"edit_file failed: {file_path}: {e}")
+            logger.error(f"edit_text_file failed: {file_path}: {e}")
             return build_error(ERR_FILE_EDIT_FAILED, str(e))
 
     async def grep_file_content(
@@ -2014,8 +1948,8 @@ class FileTools:
                     "has_more": has_more,
                 },
                 next_actions=build_next_actions([
-                    ("read_file", "读取匹配行上下文", "需要查看完整内容时"),
-                    ("edit_file", "编辑匹配内容", "需要修改时"),
+                    ("read_text_file", "读取匹配行上下文", "需要查看完整内容时"),
+                    ("edit_text_file", "编辑匹配内容", "需要修改时"),
                 ]),
             )
         except Exception as e:
@@ -2097,7 +2031,7 @@ class FileTools:
                 llm_data={"目录": str(path), "树形结构根节点": tree.get("name",""), "子项数": len(tree.get("children",[]))},
                 next_actions=build_next_actions([
                     ("search_files", "搜索文件", "需要查找特定文件时"),
-                    ("read_file", "读取文件", "需要查看文件内容时"),
+                    ("read_text_file", "读取文件", "需要查看文件内容时"),
                 ])
             )
         except Exception as e:
@@ -2108,144 +2042,42 @@ class FileTools:
     # 第九部分:精简合并工具(v2.0)— 小沈 2026-05-18
     # ============================================================
 
-    async def read_file(
+    async def read_text_file(
         self,
-        file_paths: List[str],
+        file_path: str,
         head: Optional[int] = None,
         tail: Optional[int] = None,
         offset: Optional[int] = None,
         limit: Optional[int] = None,
         encoding: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        读取文本文件(统一入口)— 小沈 2026-05-18
-        【小沈 2026-05-19】合并file_path+file_paths→file_paths
+        return await self._read_text_file(
+            file_path=file_path,
+            head=head,
+            tail=tail,
+            offset=offset,
+            limit=limit,
+            encoding=encoding
+        )
 
-        P11统一入口:合并 read_text_file + read_batch_file
-        - 传1个路径:单文件模式,支持 head/tail/offset/limit 分页
-        - 传多个路径:批量模式,每个文件返回完整内容
-
-        P15返回值全面化:单文件返回content/encoding/file_size/total_lines;批量返回results列表
-        """
-        if not file_paths:
-            return build_error(ERR_PARAM_INVALID, "file_paths不能为空,至少提供1个文件路径")
-
-        # 单文件模式
-        if len(file_paths) == 1:
-            return await self._read_text_file(
-                file_path=file_paths[0],
-                head=head,
-                tail=tail,
-                offset=offset,
-                limit=limit,
-                encoding=encoding
-            )
-
-        # 批量模式:忽略行控制参数
-        return await self._read_batch_file(file_paths=file_paths)
-
-    async def edit_file(
+    async def edit_text_file(
         self,
         file_path: str,
-        old_string: Optional[str] = None,
-        new_string: Optional[str] = None,
-        edits: Optional[List[Dict]] = None,
+        old_string: str,
+        new_string: str = "",
         replace_all: bool = False,
         dry_run: bool = False,
         encoding: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        编辑文本文件 — 小沈 2026-05-19 精简参数(8→7)
-        P17互斥:old_string和edits不能同时传入
-        """
-        ignore_case = False  # ⚠️ 警告: 已从Schema移除,硬编码默认False,后续视需求决定是否恢复
-        # P17互斥校验
-        if old_string and edits:
-            return build_error(ERR_PARAM_INVALID, "old_string和edits不能同时使用(P17互斥校验)")
-
-        if not old_string and not edits:
-            return build_error(ERR_PARAM_INVALID, "old_string或edits至少填一个")
-
-        # 单处替换模式:调用precise_replace_in_file逻辑
-        if old_string:
-            return await self._precise_replace_in_file(
-                file_path=file_path,
-                old_string=old_string,
-                new_string=new_string or "",
-                replace_all=replace_all,
-                ignore_case=ignore_case,
-                dry_run=dry_run,
-                encoding=encoding
-            )
-
-        # 多处编辑模式:调用edit_text_file逻辑
-        else:
-            return await self._apply_edits(
-                file_path=file_path,
-                edits=edits,
-                dry_run=dry_run,
-                encoding=encoding
-            )
-
-    async def rename_file(
-        self,
-        mode: Literal["single", "batch"] = "single",
-        file_path: Optional[str] = None,
-        new_name: Optional[str] = None,
-        directory: Optional[str] = None,
-        pattern: Optional[str] = None,
-        replacement: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """重命名文件 — 小沈 2026-05-19 精简参数(9→6),小健 2026-05-19 补充batch模式缺失参数"""
-        recursive = False
-        preview = False
-        conflict_strategy: Literal["skip", "overwrite", "append_number"] = "skip"
-        # mode分发
-        if mode == "batch":
-            if not directory:
-                return build_error(ERR_PARAM_INVALID, "批量模式(mode=batch)需要提供directory参数")
-            if not pattern:
-                return build_error(ERR_PARAM_INVALID, "批量模式(mode=batch)需要提供pattern参数")
-            if not replacement:
-                return build_error(ERR_PARAM_INVALID, "批量模式(mode=batch)需要提供replacement参数")
-
-            return await self._batch_rename(
-                directory=directory,
-                pattern=pattern,
-                replacement=replacement,
-                recursive=recursive,
-                preview=preview,
-                conflict_strategy=conflict_strategy
-            )
-
-        # mode="single" (默认)
-        if not file_path:
-            return build_error(ERR_PARAM_INVALID, "单文件模式(mode=single)需要提供file_path参数")
-
-        if not new_name:
-            return build_error(ERR_PARAM_INVALID, "单文件模式(mode=single)需要提供new_name参数")
-
-        # 小健 2026-05-19: Windows非法字符校验
-        _illegal_chars = set('<>:"|?*')
-        if os.name == 'nt' and any(c in _illegal_chars for c in new_name):
-            return build_error(ERR_PARAM_INVALID, f"新名称包含Windows非法字符: {set(c for c in new_name if c in _illegal_chars)}")
-
-        # 计算新路径(同目录改名)
-        src = Path(file_path)
-
-        if src.name == new_name:
-            return build_success({"new_path": str(src), "old_path": str(src)}, "新名称与原名相同(P16幂等)")
-
-        if "/" in new_name or "\\" in new_name:
-            return build_error(ERR_PARAM_INVALID, "新名称不能包含路径分隔符(rename_file仅支持同目录改名)。如需跨目录移动请使用move_file。")
-
-        dst = src.parent / new_name
-
-        # 调用move_file实现
-        return await self._move_file(
-            source_path=file_path,
-            destination_path=str(dst),
-            overwrite=False
+        ignore_case = False
+        return await self._precise_replace_in_file(
+            file_path=file_path,
+            old_string=old_string,
+            new_string=new_string,
+            replace_all=replace_all,
+            ignore_case=ignore_case,
+            dry_run=dry_run,
+            encoding=encoding
         )
 
     async def archive_tool(
@@ -2300,7 +2132,7 @@ class FileTools:
 
     async def file_operation(
         self,
-        action: Literal["move", "copy", "delete"],
+        action: Literal["move", "copy", "delete", "rename"],
         source: str,
         destination: Optional[str] = None,
         recursive: bool = False,
@@ -2325,17 +2157,29 @@ class FileTools:
         P15返回值全面化:返回action/source/destination/deleted_path/bytes_transferred/checksum
         """
         # P17互斥校验
-        if action not in ("move", "copy", "delete"):
-            return build_error(ERR_PARAM_INVALID, f"不支持的action: {action},可选: move/copy/delete")
+        if action not in ("move", "copy", "delete", "rename"):
+            return build_error(ERR_PARAM_INVALID, f"不支持的action: {action},可选: move/copy/delete/rename")
 
         # P17按action校验必填参数
-        if action in ("move", "copy"):
+        if action in ("move", "copy", "rename"):
             if not destination:
                 return build_error(ERR_PARAM_INVALID, f"{action}模式需要提供destination")
 
+            if action == "rename":
+                src = Path(source)
+                new_name = Path(destination).name
+                dst = src.parent / new_name
+                if src.name == new_name:
+                    return build_success({"action": "rename", "source": source, "destination": str(dst)}, "新名称相同(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
+                return await self._move_file(
+                    source_path=source,
+                    destination_path=str(dst),
+                    overwrite=overwrite
+                )
+
             if action == "move":
                 if os.path.abspath(source) == os.path.abspath(destination):
-                    return build_success({"action": "move", "source": source, "destination": destination}, "源和目标相同(P16幂等)", next_actions=build_next_actions([("read_file", "验证操作结果", "需要确认时")]))
+                    return build_success({"action": "move", "source": source, "destination": destination}, "源和目标相同(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
                 return await self._move_file(
                     source_path=source,
                     destination_path=destination,
@@ -2343,7 +2187,7 @@ class FileTools:
                 )
             else:  # copy
                 if os.path.abspath(source) == os.path.abspath(destination):
-                    return build_success({"action": "copy", "source": source, "destination": destination}, "源和目标相同(P16幂等)", next_actions=build_next_actions([("read_file", "验证操作结果", "需要确认时")]))
+                    return build_success({"action": "copy", "source": source, "destination": destination}, "源和目标相同(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
                 return await self._copy_file(
                     source_path=source,
                     destination_path=destination,
@@ -2355,7 +2199,7 @@ class FileTools:
         elif action == "delete":
             src_path = Path(source)
             if not src_path.exists():
-                return build_success({"action": "delete", "source": source}, "文件已不存在(P16幂等)", next_actions=build_next_actions([("read_file", "验证操作结果", "需要确认时")]))
+                return build_success({"action": "delete", "source": source}, "文件已不存在(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
             return await self._delete_file(
                 file_path=source,
                 recursive=recursive,
@@ -2395,7 +2239,7 @@ class FileTools:
              "file_path": file_path, "action": action, **suffix},
             f"已{action} {detected_format.upper()}格式文件: {file_path}",
             llm_data=llm_data,
-            next_actions=build_next_actions([("edit_file", "编辑格式化文件", "需要修改时")]),
+            next_actions=build_next_actions([("edit_text_file", "编辑格式化文件", "需要修改时")]),
         ), llm_data
 
     async def data_file_format(
@@ -2508,7 +2352,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
        llm_data={"模式": "", "搜索目录": path, "匹配数": total,
                  "文件预览": [m.get("path","") if isinstance(m,dict) else str(m) for m in llm_preview[:20]],
                  "has_more": has_more},
-       next_actions=build_next_actions([("read_file", "读取找到的文件", "需要查看内容时")]))
+       next_actions=build_next_actions([("read_text_file", "读取找到的文件", "需要查看内容时")]))
 
 
 # ============================================================
@@ -2538,6 +2382,8 @@ def decode_page_token(token: str) -> int:
 
 
 # 文件结束
+
+
 from app.constants import (
     ERR_DOC_DATA_FORMAT_FAILED,
     ERR_DOC_FORMAT_NOT_DETECTED,
@@ -2562,6 +2408,8 @@ from app.constants import (
     ERR_META_NO_ACTIVE_TASK,
     ERR_PARAM_CONFLICT,
     ERR_PARAM_INVALID,
+    ERR_PARAM_MISSING,
+    ERR_NO_MATCH,
     ERR_PATH_INVALID,
     ERR_PATH_NOT_FILE,
 )

@@ -2,9 +2,6 @@
 """
 Code Execution 工具参数 Schema 定义
 
-【创建时间】2026-05-02 小沈
-【2026-05-22 小沈】合并 ExecutePythonInput+ExecuteJavascriptInput → ExecuteCodeInput
-
 职责:
 定义 code_execution 工具的 Pydantic 模型。
 
@@ -16,7 +13,6 @@ from typing import Optional
 
 
 class ExecuteCodeInput(BaseModel):
-    """execute_code 工具的输入参数 — 小沈 2026-05-22 合并python+javascript"""
     code: str = Field(
         ..., description="要执行的代码(字符串),必填参数"
     )

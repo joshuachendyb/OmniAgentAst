@@ -2,9 +2,6 @@
 """
 Network 工具参数 Schema 定义
 
-【创建时间】2026-04-29 小沈
-【设计依据】按2026-04-29新增工具规范流程
-
 职责:
 定义 network 工具的 Pydantic 模型。
 
@@ -16,7 +13,6 @@ from typing import Optional, Dict, Any, List, Literal
 
 
 class HttpRequestInput(BaseModel):
-    """http_request 工具的输入参数 — 小沈 2026-05-19 精简11→8"""
     url: str = Field(
         ..., description="请求的目标URL,如 https://api.example.com/data"
     )
@@ -44,7 +40,6 @@ class HttpRequestInput(BaseModel):
 
 
 class DownloadFileInput(BaseModel):
-    """download_file 工具的输入参数 — 小沈 2026-05-19 精简7→5"""
     url: str = Field(
         ..., description="要下载文件的URL,如 https://example.com/file.zip"
     )
@@ -63,7 +58,6 @@ class DownloadFileInput(BaseModel):
 
 
 class FetchWebpageInput(BaseModel):
-    """fetch_webpage 工具的输入参数 — 小沈 2026-05-19 精简8→7"""
     url: str = Field(
         ..., description="网页URL,如 https://example.com/page"
     )
@@ -88,7 +82,6 @@ class FetchWebpageInput(BaseModel):
 
 
 class SearchWebInput(BaseModel):
-    """search_web 工具的输入参数 — 小沈 2026-05-19 精简7→5"""
     query: str = Field(
         ..., description="搜索查询字符串,支持中英文"
     )
@@ -107,9 +100,6 @@ class SearchWebInput(BaseModel):
 
 
 class NetworkDiagnoseInput(BaseModel):
-    """network_diagnose 工具的输入参数 - 小沈 2026-05-17
-    合并 ping + port_check
-    """
     host: str = Field(
         ..., description="目标主机地址(必填),可以是域名或IP地址,例如 8.8.8.8 或 baidu.com"
     )

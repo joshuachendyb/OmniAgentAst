@@ -2,25 +2,8 @@
 """
 SYSTEM 工具参数 Schema 定义
 
-【创建时间】2026-04-29 小沈
-【设计依据】按2026-04-29新增工具规范流程
-
 职责:
 定义 system 工具的 Pydantic 模型。
-
-【2026-05-18 小沈】继续精简:10→7工具
-- list_env合入get_env(action="list")
-- reg_read/reg_write/reg_delete合入registry_control(action路由)
-- Env_Check 5个验证工具降级为document内部helper(§13.3.4)
-
-【2026-05-19 小沈】参数精简:
-- NetConnectionsInput: 5→4(砍resolve_dns暂未生效)
-- EventLogInput: 6→5(砍event_id暂未生效)
-- ListProcessesInput: 7→5(砍descending+status)
-- ServiceControlInput: 7→5(砍wait_for_started+wait_for_stopped)
-- TaskControlInput: 9→7(砍start_date+folder)
-- GetEnvInput: 7→5(砍default+include_system)
-- SetEnvInput: 6→5(砍exist_ok)
 
 工具列表(7个LLM可见 + 3个Environment迁入 + 1个Registry迁入):
 1. get_system_info - 获取系统信息
@@ -35,9 +18,6 @@ SYSTEM 工具参数 Schema 定义
 10. registry_control - 注册表统一控制(action=read/write/delete)
 
 Author: 小沈 - 2026-04-29
-更新时间: 2026-05-03 小沈 - 修正参数description,准确清晰完整
-更新时间: 2026-05-17 小沈 - 16→10工具重构
-更新时间: 2026-05-19 小沈 - 参数精简
 """
 
 from pydantic import BaseModel, Field
@@ -45,7 +25,6 @@ from typing import Optional, List, Literal, Dict, Any
 
 
 class GetSystemInfoInput(BaseModel):
-    """get_system_info 工具的输入参数 - 小沈 2026-05-03 修正"""
     info_type: Optional[Literal["basic", "cpu", "memory", "disk", "network", "all"]] = Field(
         default="all",
         description="要获取的系统信息类型,默认all。basic=OS/主机名/架构等,cpu=核心数/频率/使用率,memory=总量/可用/使用率,disk=各分区空间/使用率,network=接口名/IP/MAC,all=以上全部"
@@ -53,7 +32,6 @@ class GetSystemInfoInput(BaseModel):
 
 
 class NetConnectionsInput(BaseModel):
-    """net_connections 工具的输入参数 - 小沈 2026-05-19 参数精简5→4(砍resolve_dns暂未生效)"""
     kind: Literal["inet", "tcp", "udp"] = Field(
         default="inet",
         description="连接类型:inet=TCP+UDP(默认),tcp=仅TCP,udp=仅UDP"
@@ -75,7 +53,6 @@ class NetConnectionsInput(BaseModel):
 
 
 class EventLogInput(BaseModel):
-    """event_log 工具的输入参数 - 小沈 2026-05-19 参数精简6→5(砍event_id暂未生效)"""
     log_name: Literal["Application", "System", "Security"] = Field(
         default="System",
         description="日志名称,默认System。System=系统日志,Application=应用日志,Security=安全日志"
@@ -101,7 +78,6 @@ class EventLogInput(BaseModel):
 
 
 class ListProcessesInput(BaseModel):
-    """list_processes 工具的输入参数 - 小沈 2026-05-19 参数精简7→5(砍descending+status)"""
     filter_name: Optional[str] = Field(
         default=None,
         description="按进程名过滤(模糊匹配)"
@@ -128,7 +104,6 @@ class ListProcessesInput(BaseModel):
 
 
 class KillProcessInput(BaseModel):
-    """kill_process 工具的输入参数 - 按文档7.5节定义"""
     pid: int = Field(
         ...,
         ge=1,
@@ -146,16 +121,7 @@ class KillProcessInput(BaseModel):
     )
 
 
-# 【2026-05-18 小健】已废弃Schema已删除:
-# ServiceListInput/ServiceStartInput/ServiceStopInput → 合并入 ServiceControlInput
-# TaskListInput/TaskCreateInput/TaskDeleteInput → 合并入 TaskControlInput
-
-
-# 【2026-05-17 小沈】新增:ServiceControlInput - 服务统一控制入口
 class ServiceControlInput(BaseModel):
-    """service_control 工具的输入参数 - 小沈 2026-05-19 参数精简7→5(砍wait_for_started+wait_for_stopped)
-    合并 service_start/service_stop/service_list,通过action分发
-    """
     action: Literal["start", "stop", "restart", "list"] = Field(
         ...,
         description="操作类型(必填)。可选值:start/stop/restart/list"
@@ -178,11 +144,7 @@ class ServiceControlInput(BaseModel):
     )
 
 
-# 【2026-05-17 小沈】新增:TaskControlInput - 计划任务统一控制入口
 class TaskControlInput(BaseModel):
-    """task_control 工具的输入参数 - 小沈 2026-05-19 参数精简9→7(砍start_date+folder)
-    合并 task_create/task_delete/task_list,通过action分发
-    """
     action: Literal["create", "delete", "list"] = Field(
         ...,
         description="操作类型(必填)。可选值:create/delete/list"
@@ -213,11 +175,7 @@ class TaskControlInput(BaseModel):
     )
 
 
-# 【2026-05-18 小沈】新增:Environment 工具 Schema(从environment模块迁入)
 class GetEnvInput(BaseModel):
-    """get_env 工具的输入参数 - 小沈 2026-05-19 参数精简7→5(砍default+include_system)
-    合并list_env,action="get"|"list"
-    """
     name: Optional[str] = Field(default=None, description="环境变量名称(action=\"get\"时必填)。如 \"PATH\"、\"HOME\"、\"JAVA_HOME\"")
     scope: Literal["process", "user", "system"] = Field(default="process", description="作用域。可选值:process/user/system。默认process")
     expand_vars: bool = Field(default=True, description="是否展开值中的嵌套变量(如 %JAVA_HOME%\\bin)。默认true")
@@ -226,7 +184,6 @@ class GetEnvInput(BaseModel):
 
 
 class SetEnvInput(BaseModel):
-    """set_env 工具的输入参数 - 小沈 2026-05-19 参数精简6→5(砍exist_ok)"""
     name: str = Field(..., description="环境变量名称。如 \"MY_VARIABLE\"、\"CONFIG_PATH\"、\"PATH\"")
     value: Optional[str] = Field(default=None, description="环境变量值。action=\"set\"时必填,action=\"delete\"时忽略")
     scope: Literal["user", "system", "process"] = Field(default="process", description="作用域。可选值:process/user/system。默认process")

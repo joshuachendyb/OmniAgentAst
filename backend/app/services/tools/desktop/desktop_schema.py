@@ -2,24 +2,7 @@
 """
 DESKTOP Schema - 桌面工具 Pydantic 模型
 
-【架构规范】2026-04-29 小沈
-
-【工具列表】统一DESKTOP工具(10→9精简,Ch19)- 小沈 2026-05-22
-1. window_info - 窗口信息查询(合并list_windows+get_window_info)
-2. window_control - 统一窗口控制(合并set_window_state+focus_window+resize_window)
-3. mouse_control - 统一鼠标控制(合并click+move+scroll)
-4. keyboard_control - 统一键盘控制(合并type_text+shortcut+key_combo)
-5. screen_capture - 统一屏幕截图(合并screenshot+snapshot)
-6. clipboard_control - 统一剪贴板控制(合并read_clipboard+write_clipboard)
-7. screen_record - 录制屏幕
-8. ocr - OCR识别
-9. send_notification - 发送通知
-
-【2026-05-19 小沈】参数精简:MouseControlInput 8→6(砍duration+click_type)
-
 创建时间: 2026-04-29
-【修正 2026-05-05 小沈】SetWindowStateInput.action 改为 Literal 约束
-【2026-05-17 小沈】新增统一入口Schema(WindowControlInput等5个)
 """
 
 from typing import Optional, Literal, Dict, List
@@ -27,7 +10,6 @@ from pydantic import BaseModel, Field
 
 
 class WindowInfoInput(BaseModel):
-    """window_info 工具的输入参数 - 窗口信息查询 - 小沈 2026-05-22"""
     action: Literal["list", "info"] = Field(
         description="查询操作:list(列出所有窗口)、info(获取单个窗口详细信息)"
     )
@@ -45,10 +27,7 @@ class WindowInfoInput(BaseModel):
     )
 
 
-# ========== 统一入口Schema(26→10精简方案) - 小沈 2026-05-17 ==========
-
 class WindowControlInput(BaseModel):
-    """window_control 工具的输入参数 - 统一窗口控制 - 小沈 2026-05-17"""
     window_title: str = Field(
         description="窗口标题(大小写不敏感的模糊匹配)"
     )
@@ -66,7 +45,6 @@ class WindowControlInput(BaseModel):
 
 
 class MouseControlInput(BaseModel):
-    """mouse_control 工具的输入参数 - 小沈 2026-05-19 参数精简8→6(砍duration+click_type)"""
     action: Literal["click", "move", "scroll", "position"] = Field(
         description="鼠标操作:click(单击)、move(移动)、scroll(滚动)、position(获取位置)。注意:click仅支持单击"
     )
@@ -93,7 +71,6 @@ class MouseControlInput(BaseModel):
 
 
 class KeyboardControlInput(BaseModel):
-    """keyboard_control 工具的输入参数 - 统一键盘控制 - 小沈 2026-05-17"""
     action: Literal["type", "shortcut", "combo"] = Field(
         description="键盘操作:type(输入文本)、shortcut(快捷键)、combo(组合键)"
     )
@@ -107,7 +84,6 @@ class KeyboardControlInput(BaseModel):
 
 
 class ScreenCaptureInput(BaseModel):
-    """screen_capture 工具的输入参数 - 统一屏幕截图 - 小沈 2026-05-17"""
     output_path: Optional[str] = Field(
         default=None,
         description="输出文件路径(可选)。不传则保存到系统临时目录如<temp>/screenshot_<时间戳>.png"
@@ -123,7 +99,6 @@ class ScreenCaptureInput(BaseModel):
 
 
 class ClipboardControlInput(BaseModel):
-    """clipboard_control 工具的输入参数 - 统一剪贴板控制 - 小沈 2026-05-17"""
     action: Literal["read", "write"] = Field(
         description="剪贴板操作:read(读取)、write(写入)"
     )

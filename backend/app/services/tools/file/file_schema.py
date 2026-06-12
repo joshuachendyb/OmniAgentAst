@@ -1,28 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-File 工具参数 Schema 定义 — 精简版 v2.0
-
-【创建时间】2026-03-21 小沈
-【精简时间】2026-05-18 小沈 — 第17章工具精简:26→11
+File 工具参数 Schema 定义
 
 职责:
-定义 file 分类的11个工具的参数 Pydantic 模型。
-
-11个工具清单(F1-F11):
-F1  read_file          — 合并read_text_file + read_batch_file
-F2  write_text_file    — 写文本文件
-F3  read_media_file    — 读媒体文件
-F4  edit_file          — 合并precise_replace_in_file + edit_text_file
-F5  list_directory     — 合并list_directory + get_directory_tree + file_statistics
-F6  search_files       — 搜索文件名
-F7  grep_file_content  — 搜索文件内容
-F8  rename_file        — 合并rename_file + batch_rename
-F9  archive_tool       — 合并compress_files + extract_archive
-F10 file_operation     — 合并move_file + copy_file + delete_file
-F11 data_file_format   — 合并json/yaml/toml/ini/xml/properties
+定义 file 分类的工具参数 Pydantic 模型。
 
 Author: 小沈 - 2026-03-21
-更新: 小沈 - 2026-05-18 精简为11个工具
 """
 
 from pydantic import BaseModel, Field
@@ -30,22 +13,14 @@ from typing import Optional, List, Dict, Any, Literal, Union
 
 
 # ============================================================
-# F1: read_file — 合并read_text_file + read_batch_file
+# F1: read_text_file — 读取文本文件
 # ============================================================
 
-class ReadFileInput(BaseModel):
-    """read_file 统一入口 — 小沈 2026-05-18
-    
-    合并 read_text_file + read_batch_file
-    - 传入1个路径:单文件模式,支持 head/tail/offset/limit 分页
-    - 传入多个路径:批量模式,每个文件返回完整内容
-    
-    【小沈 2026-05-19】合并file_path+file_paths→file_paths,消除LLM双参数混淆
-    """
-    file_paths: List[str] = Field(
-        min_length=1,
-        max_length=100,
-        description="文件路径列表。传1个路径=单文件模式(支持head/tail/offset/limit分页);传多个=批量模式(读取完整内容)"
+# ⚠️ Pydantic class docstring 会进入 JSON Schema 的 parameters.description 并发给 LLM
+# 禁止在这里写文档字符串。工具描述写在 file_register.py 的 FILE_TOOL_DESCRIPTIONS 里。
+class ReadTextFileInput(BaseModel):
+    file_path: str = Field(
+        description="要读取的文件路径(绝对路径)"
     )
     head: Optional[int] = Field(
         default=None,
@@ -82,7 +57,6 @@ class ReadFileInput(BaseModel):
 # ============================================================
 
 class WriteTextFileInput(BaseModel):
-    """write_text_file 工具的输入参数。content字段写入文件内容,LLM注意使用content而非text"""
     file_path: str = Field(
         description="文件的完整路径(必须是绝对路径,支持中文路径)"
     )
@@ -112,43 +86,29 @@ class WriteTextFileInput(BaseModel):
 # ============================================================
 
 class ReadMediaFileInput(BaseModel):
-    """read_media_file 工具的输入参数"""
     file_path: str = Field(
         description="媒体文件的完整路径。支持图片(JPG/PNG/GIF/BMP/WebP/SVG/ICO/TIFF)、音频(MP3/WAV/OGG/M4A/FLAC/AAC)、视频(MP4/AVI/MOV/MKV)。返回Base64编码数据"
     )
 
 
 # ============================================================
-# F4: edit_file — 合并precise_replace_in_file + edit_text_file
+# F4: edit_text_file — 编辑文本文件
 # ============================================================
 
-class EditFileInput(BaseModel):
-    """edit_file 统一入口 — 小沈 2026-05-19 精简8→7参数
-
-    合并 precise_replace_in_file + edit_text_file
-    - old_string+new_string: 单处精确替换
-    - edits: 多处结构化编辑
-
-    P17互斥校验:old_string 和 edits 不能同时传入
-    """
+class EditTextFileInput(BaseModel):
     file_path: str = Field(
         description="目标文件的绝对路径(仅支持文本文件,二进制文件将被拒绝)"
     )
-    old_string: Optional[str] = Field(
-        default=None,
-        description="待替换的旧字符串(与edits互斥,二选一)"
+    old_string: str = Field(
+        description="待替换的旧字符串(必须唯一，若需替换所有匹配项请设 replace_all=True)"
     )
-    new_string: Optional[str] = Field(
-        default=None,
-        description="替换的新字符串(配合old_string使用)"
-    )
-    edits: Optional[List[Dict[str, str]]] = Field(
-        default=None,
-        description="多处编辑列表,每项含oldText和newText(与old_string互斥,二选一)"
+    new_string: str = Field(
+        default="",
+        description="替换的新字符串。传空字符串 '' 表示删除匹配到的文本"
     )
     replace_all: bool = Field(
         default=False,
-        description="是否替换所有匹配项(仅old_string模式有效),默认False只替换第一个"
+        description="是否替换所有匹配项,默认False只替换第一个"
     )
     dry_run: bool = Field(
         default=False,
@@ -161,17 +121,10 @@ class EditFileInput(BaseModel):
 
 
 # ============================================================
-# F5: list_directory — 合并list_directory + get_directory_tree + file_statistics
+# F5: list_directory — 列出目录内容
 # ============================================================
 
 class ListDirectoryInput(BaseModel):
-    """list_directory 统一入口 — 小沈 2026-05-19 精简8→7参数
-
-    合并 list_directory + get_directory_tree + file_statistics
-    - format="list": 扁平列表(原list_directory)
-    - format="tree": JSON树结构(原get_directory_tree)
-    - 始终返回statistics统计信息(原file_statistics)
-    """
     dir_path: str = Field(
         description="目录路径(绝对路径,必填)。如 D:/项目代码"
     )
@@ -208,7 +161,6 @@ class ListDirectoryInput(BaseModel):
 # ============================================================
 
 class SearchFilesInput(BaseModel):
-    """search_files 工具的输入参数 — 小沈 2026-05-19 精简9→7参数"""
     pattern: str = Field(
         description="文件名匹配模式,支持glob通配符(* ? **)和中文文件名。如 \"*.py\"、\"**/*.ts\"、\"config*\""
     )
@@ -244,7 +196,6 @@ class SearchFilesInput(BaseModel):
 # ============================================================
 
 class GrepFileContentInput(BaseModel):
-    """grep_file_content 工具的输入参数 — 小沈 2026-05-19 精简13→9参数"""
     pattern: str = Field(
         description="正则表达式搜索模式,支持中文内容搜索。如 \"def read_file\" 或 \"class.*Component\""
     )
@@ -283,52 +234,10 @@ class GrepFileContentInput(BaseModel):
 
 
 # ============================================================
-# F8: rename_file — 合并rename_file + batch_rename
-# ============================================================
-
-class RenameFileInput(BaseModel):
-    """rename_file — 小沈 2026-05-19 精简9→6参数
-
-    - mode="single": file_path+new_name 单文件重命名
-    - mode="batch": directory+pattern+replacement 批量正则重命名
-    """
-    mode: Literal["single", "batch"] = Field(
-        default="single",
-        description="模式:single=单文件(file_path+new_name),batch=批量(directory+pattern+replacement)"
-    )
-    file_path: Optional[str] = Field(
-        default=None,
-        description="单文件路径(mode=single时必填)"
-    )
-    new_name: Optional[str] = Field(
-        default=None,
-        description="新文件名(mode=single时必填)。仅文件名,不能含路径分隔符(/或\\),不能含Windows非法字符(<>:\"|?*)"
-    )
-    directory: Optional[str] = Field(
-        default=None,
-        description="批量重命名的目录(mode=batch时必填)"
-    )
-    pattern: Optional[str] = Field(
-        default=None,
-        description="匹配正则表达式(mode=batch时必填)"
-    )
-    replacement: Optional[str] = Field(
-        default=None,
-        description="替换字符串,支持反向引用如 \\1(mode=batch时必填)"
-    )
-
-
-# ============================================================
-# F9: archive_tool — 合并compress_files + extract_archive
+# F9: archive_tool — 压缩/解压
 # ============================================================
 
 class ArchiveToolInput(BaseModel):
-    """archive_tool 统一入口 — 小沈 2026-05-19 精简11→8参数
-
-    合并 compress_files + extract_archive
-    - action="compress": source=源路径, destination=输出压缩包路径
-    - action="extract": source=压缩包路径, destination=解压目标目录(可选)
-    """
     action: Literal["compress", "extract"] = Field(
         description="操作类型:compress(压缩)或 extract(解压)"
     )
@@ -365,26 +274,20 @@ class ArchiveToolInput(BaseModel):
 
 
 # ============================================================
-# F10: file_operation — 合并move_file + copy_file + delete_file
+# F9: file_operation — move/copy/delete/rename
+
 # ============================================================
 
 class FileOperationInput(BaseModel):
-    """file_operation 统一入口 — 小沈 2026-05-18
-
-    合并 move_file + copy_file + delete_file
-    - action="move": 移动文件/目录
-    - action="copy": 复制文件/目录
-    - action="delete": 删除文件/目录
-    """
-    action: Literal["move", "copy", "delete"] = Field(
-        description="操作类型:move(移动)/ copy(复制)/ delete(删除)"
+    action: Literal["move", "copy", "delete", "rename"] = Field(
+        description="操作类型:move(移动)/ copy(复制)/ delete(删除)/ rename(重命名)"
     )
     source: str = Field(
         description="源路径(move/copy: 源文件路径;delete: 要删除的路径)"
     )
     destination: Optional[str] = Field(
         default=None,
-        description="目标路径。move和copy时必须填写(⚠️ delete模式不填),delete时自动忽略此参数"
+        description="目标路径。move/copy/rename时必须填写(⚠️ delete模式不填),delete时自动忽略此参数"
     )
     recursive: bool = Field(
         default=False,
@@ -405,17 +308,10 @@ class FileOperationInput(BaseModel):
 
 
 # ============================================================
-# F11: data_file_format — 合并json/yaml/toml/ini/xml/properties
+# F11: data_file_format — 结构化配置文件读写
 # ============================================================
 
 class DataFileFormatInput(BaseModel):
-    """data_file_format 统一入口 — 小沈 2026-05-18
-
-    统一结构化配置格式(json/yaml/toml/ini/xml/properties)
-    归入File分类(不是data_format分类)
-    注意:CSV/Excel属于Document分类,不在本工具范围内
-    限制:write模式仅支持json/yaml/toml,ini/xml/properties暂不支持写入
-    """
     action: Literal["read", "write"] = Field(
         default="read",
         description="操作类型:read(读取)或 write(写入)"
@@ -443,18 +339,19 @@ class DataFileFormatInput(BaseModel):
 
 
 # ============================================================
-# __all__ — 11个工具的Schema导出
+# ============================================================
+# __all__ — 10个工具的Schema导出
 # ============================================================
 
 __all__ = [
-    "ReadFileInput",
+    "ReadTextFileInput",
     "WriteTextFileInput",
     "ReadMediaFileInput",
-    "EditFileInput",
+    "EditTextFileInput",
     "ListDirectoryInput",
     "SearchFilesInput",
     "GrepFileContentInput",
-    "RenameFileInput",
+
     "ArchiveToolInput",
     "FileOperationInput",
     "DataFileFormatInput",
