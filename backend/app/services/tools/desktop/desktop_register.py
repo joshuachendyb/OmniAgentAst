@@ -43,71 +43,54 @@ from app.services.tools.desktop.desktop_tools import (
 
 
 DESKTOP_TOOL_DESCRIPTIONS = {
-    "window_info": """统一窗口信息查询 - 合并list_windows + get_window_info功能。
+    "window_info": """支持窗口信息查询功能。
+action参数决定操作类型:
+- list: 列出所有窗口(可选include_minimized/filter_title)
+- info: 获取单个窗口详细信息,window_title
 
-【使用场景】
-- 列出所有窗口(action="list",可选 include_minimized/filter_title 筛选)
-- 获取单个窗口的详细信息(action="info",需指定 window_title)
+使用示例:
+- 列出窗口 → window_info(action="list")
+- 窗口详情 → window_info(action="info", window_title="Chrome")""",
 
-【使用示例】【常用名转换说明】
-- 列出窗口/list_windows → window_info(action="list")
-- 含最小化 → window_info(action="list", include_minimized=true)
-- 过滤窗口 → window_info(action="list", filter_title="Chrome")
-- 窗口详情/get_window_info → window_info(action="info", window_title="Chrome")
+    "window_control": """支持窗口控制功能。
+action参数决定操作类型:
+- focus: 聚焦窗口,window_title
+- maximize: 最大化窗口,window_title
+- minimize: 最小化窗口,window_title
+- restore: 还原窗口,window_title
+- resize: 调整窗口大小,window_title(可选width/height)
+- topmost: 窗口置顶,window_title
+- unpin: 取消置顶,window_title
 
-【返回数据说明】
-- list: data.windows(窗口列表)/data.total
-- info: data.hwnd/data.title/data.class_name/data.state/data.position/data.process_id""",
+使用示例:
+- 聚焦 → window_control(action="focus", window_title="Chrome")
+- 最大化 → window_control(action="maximize", window_title="Notepad")
+- 调整大小 → window_control(action="resize", window_title="Chrome", width=1920, height=1080)
+- 置顶 → window_control(action="topmost", window_title="Calculator")""",
 
-    "window_control": """统一窗口控制 - 合并set_window_state + focus_window + resize_window功能。
+    "mouse_control": """支持鼠标控制功能。
+action参数决定操作类型:
+- click: 单击,可选x/y/button(不传坐标则在当前位置点击)
+- move: 移动鼠标,x+y
+- scroll: 滚动,可选direction/amount
+- position: 获取鼠标当前位置
 
-【使用场景】
-- 聚焦/最大化/最小化/还原/置顶/取消置顶/调整大小
+使用示例:
+- 单击 → mouse_control(action="click", x=500, y=300)
+- 移动 → mouse_control(action="move", x=500, y=300)
+- 滚动 → mouse_control(action="scroll", direction="down", amount=3)
+- 获取位置 → mouse_control(action="position")""",
 
-【使用示例】【常用名转换说明】
-- 聚焦/focus_window → window_control(action="focus", window_title="Chrome")
-- 最大化/set_window_state → window_control(action="maximize", window_title="Notepad")
-- 最小化 → window_control(action="minimize", window_title="Notepad")
-- 还原 → window_control(action="restore", window_title="Notepad")
-- 调整大小/resize_window → window_control(action="resize", window_title="Chrome", width=1920, height=1080)
-- 置顶 → window_control(action="topmost", window_title="Calculator")
-- 取消置顶 → window_control(action="unpin", window_title="Calculator")
+    "keyboard_control": """支持键盘控制功能。
+action参数决定操作类型:
+- type: 输入文本,text_or_keys(可选interval)
+- shortcut: 快捷键,text_or_keys(如ctrl+c)
+- combo: 组合键,text_or_keys(逗号分隔如ctrl,shift,esc)
 
-【返回数据说明】
-- data.window_title/data.action/data.hwnd""",
-
-    "mouse_control": """统一鼠标控制 - 合并click + move + scroll + get_mouse_position功能。
-
-【使用场景】
-- 点击(action="click")/ 移动(action="move")/ 滚动(action="scroll")/ 获取位置(action="position")
-
-【重要】需要安装 pyautogui 库
-
-【使用示例】【常用名转换说明】
-- 单击/click → mouse_control(action="click", x=500, y=300)
-- 右击 → mouse_control(action="click", x=500, y=300, button="right")
-- 移动/move → mouse_control(action="move", x=500, y=300)
-- 滚动/scroll → mouse_control(action="scroll", direction="down", amount=3)
-- 获取位置/get_mouse_position → mouse_control(action="position")
-
-【返回数据说明】
-- data.success/data.action/data.position""",
-
-    "keyboard_control": """统一键盘控制 - 合并type_text + shortcut + key_combo功能。
-
-【使用场景】
-- 输入文本(action="type")/ 快捷键(action="shortcut")/ 组合键(action="combo")
-
-【重要】需要安装 pyautogui 库
-
-【使用示例】【常用名转换说明】
-- 输入文本/type_text → keyboard_control(action="type", text_or_keys="Hello World")
-- 模拟打字 → keyboard_control(action="type", text_or_keys="Hello", interval=0.1)
-- 快捷键/shortcut → keyboard_control(action="shortcut", text_or_keys="ctrl+c")
-- 组合键/key_combo → keyboard_control(action="combo", text_or_keys="ctrl,shift,esc")
-
-【返回数据说明】
-- data.success/data.action""",
+使用示例:
+- 输入文本 → keyboard_control(action="type", text_or_keys="Hello World")
+- 快捷键 → keyboard_control(action="shortcut", text_or_keys="ctrl+c")
+- 组合键 → keyboard_control(action="combo", text_or_keys="ctrl,shift,esc")""",
 
     "screen_capture": """统一屏幕截图 - 合并screenshot + snapshot功能。
 
@@ -125,18 +108,14 @@ DESKTOP_TOOL_DESCRIPTIONS = {
 【返回数据说明】
 - data.success/data.image_path/data.width/data.height""",
 
-    "clipboard_control": """统一剪贴板控制 - 合并read_clipboard + write_clipboard功能。
+    "clipboard_control": """支持剪贴板的读/写操作功能。
+action参数决定操作类型:
+- read: 读取剪贴板内容
+- write: 写入剪贴板,content
 
-【使用场景】
-- 读取剪贴板(action="read")/ 写入剪贴板(action="write")
-
-【使用示例】【常用名转换说明】
-- 读取/read_clipboard → clipboard_control(action="read")
-- 写入/write_clipboard → clipboard_control(action="write", content="Hello World")
-
-【返回数据说明】
-- read: data.content
- - write: data.success""",
+使用示例:
+- 读取 → clipboard_control(action="read")
+- 写入 → clipboard_control(action="write", content="Hello World")""",
 }
 
 DESKTOP_TOOL_INPUT_MODELS = {

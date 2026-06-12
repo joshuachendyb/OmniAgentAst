@@ -125,72 +125,44 @@ SYSTEM_TOOL_DESCRIPTIONS = {
 - code: 状态码,SUCCESS/ERR_INVALID_PARAM/ERR_PERMISSION_DENIED/ERR_PERMISSION_DENIED/ERR_SYSTEM_PROCESS_KILL
 - data: 成功时含killed(已终止列表);进程不存在时含idempotent=true;失败时为null
 - message: 状态描述信息""",
-    "service_control": """服务统一控制入口,通过action参数执行start/stop/restart/list操作。
+    "service_control": """支持系统服务的start/stop/restart/list操作功能。
+action参数决定操作类型:
+- start: 启动服务,service_name(可选timeout)
+- stop: 停止服务,service_name(可选force/timeout)
+- restart: 重启服务,service_name(可选force/timeout)
+- list: 列出服务(可选state过滤)
 
-使用场景:
-- 当用户需要启动、停止、重启或查看系统服务时使用
-- 合并原service_start/service_stop/service_restart/service_list四个工具
+使用示例:
+- 列出服务 → service_control(action="list")
+- 启动服务 → service_control(action="start", service_name="mysql")
+- 停止服务 → service_control(action="stop", service_name="nginx")
+- 重启服务 → service_control(action="restart", service_name="apache")""",
+    "task_control": """支持Windows计划任务的create/delete/list操作功能。
+action参数决定操作类型:
+- create: 创建任务,task_name+command+schedule(可选start_time/interval)
+- delete: 删除任务,task_name
+- list: 列出任务(可选state过滤)
 
-【重要】action必填;start/stop/restart需service_name;list可按state过滤
+使用示例:
+- 列出任务 → task_control(action="list")
+- 创建任务 → task_control(action="create", task_name="MyBackup", command="C:\\scripts\\backup.bat", schedule="02:00")
+- 删除任务 → task_control(action="delete", task_name="MyBackup")""",
+    "get_env": """支持环境变量的获取/列出操作功能。
+action参数决定操作类型:
+- get: 获取单个环境变量,name(必填;可选scope/expand_vars)
+- list: 列出所有环境变量(可选prefix/scope)
 
-使用示例:【常用名转换说明】
-- 列出服务/service_list → service_control(action="list")
-- 过滤运行中 → service_control(action="list", state="running")
-- 启动服务/service_start → service_control(action="start", service_name="mysql")
-- 停止服务/service_stop → service_control(action="stop", service_name="nginx")
-- 重启服务/service_restart → service_control(action="restart", service_name="apache")
-- 强制停止 → service_control(action="stop", service_name="nginx", force=true)
+使用示例:
+- 获取单个 → get_env(name="PATH")
+- 列出所有 → get_env(action="list")""",
+    "set_env": """支持环境变量的设置/删除操作功能。
+action参数决定操作类型:
+- set: 设置环境变量,name+value(可选scope/append_mode)
+- delete: 删除环境变量,name(可选scope)
 
-返回数据说明:
-- data: 成功时含services(服务列表)/action/service_name;失败时为null""",
-    "task_control": """计划任务统一控制入口,通过action参数执行create/delete/list操作(Windows专用)。
-
-使用场景:
-- 当用户需要管理Windows计划任务时使用
-- 合并原task_create/task_delete/task_list三个工具
-
-【重要】action必填;create需task_name+command+schedule;delete需task_name;list可按state过滤
-
-使用示例:【常用名转换说明】
-- 列出任务/task_list → task_control(action="list")
-- 创建任务/task_create → task_control(action="create", task_name="MyBackup", command="C:\\scripts\\backup.bat", schedule="02:00")
-- 删除任务/task_delete → task_control(action="delete", task_name="MyBackup")
-
-返回数据说明:
-- list: 含tasks/total/total_matched/platform
-- create: 含task_name/command/schedule/description/user
-- delete: 含task_name/folder/delete_type""",
-    # 【2026-05-19 小沈】Environment工具description
-    "get_env": """获取/列出环境变量,通过action参数执行get/list操作。
-
-使用场景:
-- 获取单个环境变量值(action="get"或默认)
-- 列出所有环境变量(action="list"),支持按前缀过滤
-- 查看PATH/JAVA_HOME等常用环境变量
-
-使用示例:【常用名转换说明】
-- 获取单个/getenv → get_env(name="PATH")
-- 列出所有/list_env → get_env(action="list")
-- 按前缀过滤 → get_env(action="list", prefix="PY")
-
-返回数据说明:
-- get: 含name/value/scope
-- list: 含envs/total/prefix""",
-    "set_env": """设置/删除环境变量,通过action参数执行set/delete操作。
-
-使用场景:
-- 设置环境变量(action="set"或默认)
-- 删除环境变量(action="delete")
-- 追加PATH等变量(append_mode=True)
-
-使用示例:【常用名转换说明】
-- 设置变量/setenv → set_env(name="MY_VAR", value="my_value")
-- 删除变量/delenv → set_env(action="delete", name="MY_VAR")
-- 追加PATH → set_env(name="PATH", value="C:\\new\\path", append_mode=true)
-
-返回数据说明:
-- set: 含name/value/scope/append_mode
-- delete: 含name/scope""",
+使用示例:
+- 设置变量 → set_env(name="MY_VAR", value="my_value")
+- 删除变量 → set_env(action="delete", name="MY_VAR")""",
 }
 
 # 模型映射

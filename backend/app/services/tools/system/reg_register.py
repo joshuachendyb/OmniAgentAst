@@ -23,24 +23,16 @@ from app.services.tools.system.reg_tools import (
 )
 
 REGISTRY_TOOL_DESCRIPTIONS = {
-    "registry_control": """Windows注册表统一控制入口 - 合并reg_read + reg_write + reg_delete功能。通过action参数执行read/write/delete操作。
+    "registry_control": """支持Windows注册表的read/write/delete操作功能。
+action参数决定操作类型:
+- read: 读取注册表值,key_path(可选value_name/hive)
+- write: 写入注册表值,key_path+value_name+value(可选value_type/hive)
+- delete: 删除注册表值或键,key_path(可选value_name/recursive/hive)
 
-【使用场景】
-- 当用户需要读取、写入或删除Windows注册表时使用
-- 仅限Windows平台
-
-【重要】action必填
-
-【使用示例】【常用名转换说明】
-- 读取/reg_read → registry_control(action="read", key_path="Software\\MyApp", value_name="InstallPath")
-- 写入/reg_write → registry_control(action="write", key_path="Software\\MyApp", value_name="Version", value="1.0")
-- 删除值/reg_delete → registry_control(action="delete", key_path="Software\\MyApp", value_name="OldValue")
-- 删除整个键 → registry_control(action="delete", key_path="Software\\MyApp", recursive=true)
-
-【返回数据说明】
-- read: 含key_path/value_name/value/value_type
-- write: 含key_path/value_name/value/value_type/backup
-- delete: 含key_path/action(deleted_value/deleted_key)""",
+使用示例:
+- 读取 → registry_control(action="read", key_path="Software\\MyApp", value_name="InstallPath")
+- 写入 → registry_control(action="write", key_path="Software\\MyApp", value_name="Version", value="1.0")
+- 删除 → registry_control(action="delete", key_path="Software\\MyApp", value_name="OldValue")""",
 }
 
 REGISTRY_TOOL_INPUT_MODELS = {

@@ -99,56 +99,36 @@ FILE_TOOL_DESCRIPTIONS = {
 返回数据说明:
 - data.success/data.matches/data.total_files/data.total_matches""",
 
-    "archive_tool": """压缩/解压工具 - 合并compress_files + extract_archive + test_archive功能。支持zip/tar/tar.gz/tar.bz2格式。
+    "archive_tool": """支持文件的压缩/解压操作功能,支持zip/tar/tar.gz/tar.bz2格式。
+action参数决定操作类型:
+- compress: 压缩文件/目录到归档包,source→destination(可选format/password/exclude_patterns)
+- extract: 解压归档包到目录,source→destination(可选password/overwrite)
 
-使用方式:
-- action="compress":压缩文件/目录
-- action="extract":解压到指定目录
-- action="test":验证压缩包完整性
+使用示例:
+- 压缩 → archive_tool(action="compress", source="D:/project", destination="D:/backup.zip")
+- 解压 → archive_tool(action="extract", source="D:/backup.zip", destination="D:/output")""",
 
-使用示例:【常用名转换说明】
-- 压缩/compress_files → archive_tool(action="compress", source="D:/project", destination="D:/backup.zip")
-- 解压/extract_archive → archive_tool(action="extract", source="D:/backup.zip", destination="D:/output")
-- 验证/test_archive → archive_tool(action="test", source="D:/backup.zip")
-- 压缩目录/zip_files → archive_tool(action="compress", source="D:/project", destination="D:/project.zip")
-- 解压/unzip → archive_tool(action="extract", source="D:/project.zip", destination="D:/extracted")
-
-返回数据说明:
-- data.success/data.compressed_size(压缩)/data.extracted_files(解压)""",
-
-    "file_operation": """文件操作统一入口 - move/copy/delete/rename。
-
-使用方式:
-- action="move":移动文件
-- action="copy":复制文件
-- action="delete":删除文件(可放回收站)
-- action="rename":重命名文件
+    "file_operation": """支持文件的move/copy/delete/rename操作功能。
+action参数决定操作类型:
+- move: 移动文件,source→destination(可选overwrite)
+- copy: 复制,source→destination(目录需recursive=True;可选overwrite/preserve_metadata)
+- delete: 删除,source(非空目录需recursive=True;force=True永久删除,默认回收站)
+- rename: 重命名文件/目录,source旧名→destination新名
 
 使用示例:
 - 移动 → file_operation(action="move", source="D:/a.txt", destination="E:/b.txt")
 - 复制 → file_operation(action="copy", source="D:/a.txt", destination="D:/backup/a.txt")
 - 删除 → file_operation(action="delete", source="D:/temp.txt")
-- 重命名 → file_operation(action="rename", source="D:/old.txt", destination="D:/new.txt")
+- 重命名 → file_operation(action="rename", source="D:/old.txt", destination="D:/new.txt")""",
 
-返回数据说明:
-- data.success/data.action/data.source/data.destination""",
+    "data_file_format": """支持结构化配置文件的读/写操作功能,支持JSON/YAML/TOML/INI/XML/Properties格式。
+action参数决定操作类型:
+- read: 读取配置文件,file_path(自动检测格式;可选format/encoding)
+- write: 写入配置文件,file_path+data(支持JSON/YAML/TOML;可选format/encoding/indent)
 
-    "data_file_format": """结构化配置文件读写 - 合并read_json + write_json + read_yaml + write_yaml等功能。
-
-支持格式:JSON/YAML/TOML/INI/XML/Properties
-⚠️ CSV/Excel使用read_document工具
-⚠️ write模式仅支持JSON/YAML/TOML,INI/XML/Properties暂不支持写入
-
-使用示例:【常用名转换说明】
-- 读JSON/read_json → data_file_format(action="read", file_path="D:/config.json")
-- 写JSON/write_json → data_file_format(action="write", file_path="D:/config.json", data={"key":"value"})
-- 读YAML/read_yaml → data_file_format(action="read", file_path="D:/config.yaml")
-- 写YAML/write_yaml → data_file_format(action="write", file_path="D:/config.yaml", data={"key":"value"})
-- 读TOML → data_file_format(action="read", file_path="D:/config.toml")
-- 读INI/read_config → data_file_format(action="read", file_path="D:/config.ini")
-
-返回数据说明:
-- data.success/data.data(读取)/data.format/data.bytes_written(写入)""",
+使用示例:
+- 读取 → data_file_format(action="read", file_path="D:/config.json")
+- 写入 → data_file_format(action="write", file_path="D:/config.yaml", data={"key":"value"})""",
 }
 
 
