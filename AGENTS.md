@@ -1,9 +1,15 @@
 # AGENTS.md - OmniAgentAs-desk
 
-**Version**: v0.13.33 | **Project**: Full-stack (React+FastAPI) AI agent desktop
 
-> Global rules (roles, timestamps, commit format, versioning, doc style) are in `C:\Users\chend\.config\opencode\AGENTS.md` (auto-loaded).
-> This file contains **project-specific** info only.
+### 1.1 头条铁规：分析问题、写文档、注释、commit规则，升级tag
+**系统**：本机是Windows系统，必须使用Windows系统命令。杜绝使用Linux命令
+**写文档签名规则**：（1）文档名称 +签名+时间； （2）内容签名： 编写人 或者 更新人 + 签名  （3）编辑型文档， 禁止删除历史版本。
+**代码注释规则**：必须 加署名+日期
+**commit标题的规则**:   commit标题必须加：文件名+ 签名+日期
+
+**升级tag**：1..在version.txt文件头部插入从上一个tag以来的所有commit的变更信息，2.打 tag
+
+
 **严禁** 用PowerShell 来操作代码编辑\替换,否则导致代码编码错误
 ---
 

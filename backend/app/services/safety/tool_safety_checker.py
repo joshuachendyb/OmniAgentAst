@@ -34,23 +34,14 @@ class ToolSafetyChecker:
     """工具执行前安全检查 — 安全级别判定 + 已知风险检测"""
 
     def record_operation(self, category: str, **kwargs) -> str:
-        """记录操作（安全重构后简化为生成唯一ID）
-        
-        Warning: 此方法为向后兼容存根,新版安全模型仅做执行前检查。
-        """
-        import uuid
-        return uuid.uuid4().hex[:8]
+        """记录操作 — 委托 file_safety.record_operation 做DB事务"""
+        from app.services.safety.file.file_safety import record_operation as _real_record
+        return _real_record(**kwargs)
 
-    def execute_with_safety(self, category: str, **kwargs) -> Any:
-        """安全执行操作（同步版本，通过to_thread调用）
-        
-        新版安全模块: 执行前安全检查(check_before_execute) + HITL确认机制。
-        此处仅透传执行operation_func,不再包装安全逻辑。
-        """
-        operation_func = kwargs.get("operation_func")
-        if operation_func is not None:
-            return operation_func()
-        return True
+    def execute_with_safety(self, category: str, **kwargs) -> bool:
+        """安全执行 — 委托 file_safety.execute_with_safety 做编排"""
+        from app.services.safety.file.file_safety import execute_with_safety as _real_exec
+        return _real_exec(**kwargs)
 
 
     def check_before_execute(self, tool_name: str, params: Optional[Dict] = None) -> Dict[str, Any]:
@@ -117,7 +108,7 @@ class ToolSafetyChecker:
                 from app.services.tools.file.file_tools import FileTools
                 path = params.get("path") or params.get("source_path") or params.get("target_path") or params.get("file_path") or params.get("directory")
                 if path:
-                    is_valid, msg = FileTools._validate_path(path)
+                    is_valid, msg = FileTools()._validate_path(path)
                     if not is_valid:
                         return {"is_safe": False, "risk_score": 1.0, "blocked": True, "message": f"路径越权: {msg}"}
             except Exception as e:
