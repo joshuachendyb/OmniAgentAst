@@ -321,6 +321,10 @@ TOOL_IMPLEMENTATIONS = {
 
 def _register_document_tools():
     """注册所有文档读写工具 — 小健 2026-05-18 共9个LLM工具(含Database迁入)"""
+    from app.services.tools.tool_types import ToolSafetyLevel
+    safety_levels = {
+        "execute_sql": ToolSafetyLevel.DESTRUCTIVE,
+    }
     for name, func in TOOL_IMPLEMENTATIONS.items():
         desc = DESCRIPTIONS.get(name, "")
         input_model = TOOL_INPUT_MODELS.get(name)
@@ -334,11 +338,12 @@ def _register_document_tools():
             version="1.0.0",
             input_model=input_model,
             examples=examples,
+            safety_level=safety_levels.get(name, ToolSafetyLevel.SAFE),
         )
         logger.debug(
             f"[document_register] 已注册工具: {name}, "
             f"Pydantic模型: {input_model.__name__ if input_model else 'None'}, "
-            f"examples: {len(examples)}个"
+            f"examples: {len(examples)}个, safety: {safety_levels.get(name, ToolSafetyLevel.SAFE).value}"
         )
 
 

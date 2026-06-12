@@ -29,6 +29,6 @@ def detect_intent(user_input: str) -> Tuple[str, float, List[str]]:
     if primary is not None:
         intent = _TOOLCATEGORY_TO_INTENT.get(primary.value, primary.value)
         logger.info(f"[detect_intent] CRSS → intent={intent}, conf={confidence}")
-        return intent, confidence, [c.value for c in candidates if c]
+        return intent, confidence, [_TOOLCATEGORY_TO_INTENT.get(c.value, c.value) for c in candidates if c]
     logger.info(f"[detect_intent] CRSS无匹配, confidence={confidence}")
     return "system", confidence, []
