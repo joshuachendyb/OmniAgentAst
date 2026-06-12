@@ -54,16 +54,15 @@ from app.utils.logger import logger
 # ============================================================
 
 FILE_TOOL_DESCRIPTIONS = {
-    "read_file": """读取文本文件(统一入口)- 合并read_text_file + read_batch_file功能。
+    "read_file": """读取文本文,支持读取单文件和批量文本文件
 
 使用方式:
 - 单文件读取:file_paths传入1个路径,支持head/tail/offset/limit分页
-- 批量读取:file_paths传入多个路径,返回完整内容
-
-使用示例:【常用名转换说明】
-- 单文件/read_text_file → read_file(file_paths=["D:/test.txt"])
-- 分页读取 → read_file(file_paths=["D:/test.txt"], head=10, limit=100)
-- 批量/read_batch_file → read_file(file_paths=["D:/a.txt", "D:/b.txt"])
+- 批量读取:file_paths传入路径数组.读取整个文件
+使用示例:
+- 单文件全部读取 read_file(file_paths=["D:/test.txt"])
+- 单文件的分页读取 -> read_file(file_paths=["D:/test.txt"], head=10, limit=100)
+- 批量读文本文件 read_file(file_paths=["D:/a.txt", "D:/b.txt"])
 
 返回数据说明:
 - 单文件:data.content/data.total_lines/data.encoding/data.file_size
@@ -75,11 +74,11 @@ FILE_TOOL_DESCRIPTIONS = {
 - 创建新文件并写入内容
 - 在已有文件末尾追加内容
 
-【重要】text参数必须传入实际文件内容,禁止传入思考/计划/状态描述
+重要: content参数必须传入实际文件内容,禁止传入思考/计划/状态描述
 
 使用示例:
-- 创建文件:{"file_path": "D:/output/result.txt", "text": "Hello World"}
-- 追加日志:{"file_path": "D:/logs/app.log", "text": "[2026-05-18] Done", "append": true}
+- 创建文件:{"file_path": "D:/output/result.txt", "content": "Hello World"}
+- 追加日志:{"file_path": "D:/logs/app.log", "content": "[2026-05-18] Done", "append": true}
 
 返回数据说明:
 - data.success/data.file_path/data.bytes_written/data.encoding""",
@@ -241,8 +240,8 @@ FILE_TOOL_EXAMPLES = {
         {"file_paths": ["D:/a.txt", "D:/b.txt"]},
     ],
     "write_text_file": [
-        {"file_path": "D:/output/test.txt", "text": "Hello World"},
-        {"file_path": "D:/logs/app.log", "text": "[2026-05-18] Done\\n", "append": True},
+        {"file_path": "D:/output/test.txt", "content": "Hello World"},
+        {"file_path": "D:/logs/app.log", "content": "[2026-05-18] Done\\n", "append": True},
     ],
     "read_media_file": [
         {"file_path": "D:/screenshot.png"},

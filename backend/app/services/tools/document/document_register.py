@@ -73,72 +73,65 @@ from app.services.tools.document.database_tools import (
 )
 
 DESCRIPTIONS = {
-    "read_document": """统一读取文档内容,按文件后缀自动路由到对应解析器 - 合并read_pdf + read_docx + read_xlsx + read_pptx + read_csv功能。旧版 .doc/.xls 自动转换为PDF后读取(需安装LibreOffice)。
+    "read_document": """读取office类文件pdf\docX\doc\xls\xlsx\pptx\csv等格式文件 。
 
-【使用场景】
-- 当用户需要读取任意格式文档内容时使用
-- Agent无需判断文件格式,工具自动按后缀选择解析器
-- 支持提取表格等
+使用场景:
+- 读取officee内的文件内容
+支持的格式:
+- .pdf: PDF解析(支持页码范围、提取表格)
+- .docx: Word解析(支持提取表格)
+- .xlsx: Excel解析(支持指定工作表、最大行数)
+- .pptx: PPT解析
+- .csv/.tsv: CSV解析(支持分隔符、编码)
 
-【支持的格式】
-- .pdf → PDF解析(支持页码范围、提取表格)
-- .docx → Word解析(支持提取表格)
-- .xlsx → Excel解析(支持指定工作表、最大行数)
-- .pptx → PPT解析
-- .csv/.tsv → CSV解析(支持分隔符、编码)
+使用示例:
+- 读PDF/ -> read_document(file_path="D:/report.pdf")
+- 读Word/ -> read_document(file_path="D:/report.docx", extract_tables=true)
+- 读Excel/ -> read_document(file_path="D:/data.xlsx", sheet_name="Sheet2", max_rows=100)
+- 读PPT/ -> read_document(file_path="D:/presentation.pptx")
+- 读CSV/ -> read_document(file_path="D:/data.csv")
+- 分页读取 -> read_document(file_path="D:/report.pdf", pages="1-3", extract_tables=true)
 
-【使用示例】【常用名转换说明】
-- 读PDF/read_pdf → read_document(file_path="D:/report.pdf")
-- 读Word/read_docx → read_document(file_path="D:/report.docx", extract_tables=true)
-- 读Excel/read_xlsx → read_document(file_path="D:/data.xlsx", sheet_name="Sheet2", max_rows=100)
-- 读PPT/read_pptx → read_document(file_path="D:/presentation.pptx")
-- 读CSV/read_csv → read_document(file_path="D:/data.csv")
-- 分页读取 → read_document(file_path="D:/report.pdf", pages="1-3", extract_tables=true)
-
-【返回数据说明】
+返回数据说明:
 - code: SUCCESS / ERR_FILE_NOT_FOUND / ERR_DOC_FORMAT_NOT_SUPPORTED
 - data: 文档内容(格式因文件类型而异)
 - message: 操作结果消息""",
 
-    "write_document": """统一写入文档,按文件后缀自动路由到对应写入器 - 合并write_docx + write_xlsx + write_pdf + write_pptx功能。
+    "write_document": """支持office类文件docx\xlsx\pptx\pdf格式文件写入操作。
 
-【使用场景】
-- 当用户需要生成任意格式文档时使用
-- Agent无需判断输出格式,工具自动按后缀选择写入器
+使用场景:
+- 工具自动按后缀选择写入器
 - 支持标题、段落、表格、幻灯片等
 
-【支持的格式】
-- .docx → Word写入(支持标题、段落、表格)
-- .xlsx → Excel写入(支持表头+行数据)
-- .pdf → PDF写入(支持标题、段落、表格)
-- .pptx → PPT写入(支持标题、幻灯片列表)
+支持的格式:
+- .docx: Word写入(支持标题、段落、表格)
+- .xlsx: Excel写入(支持表头+行数据)
+- .pdf: PDF写入(支持标题、段落、表格)
+- .pptx: PPT写入(支持标题、幻灯片列表)
 
-【使用示例】【常用名转换说明】
-- 写Word/write_docx → write_document(file_path="D:/report.docx", title="测试报告", content="内容")
-- 写Excel/write_xlsx → write_document(file_path="D:/data.xlsx", data={"headers":["姓名","年龄"],"rows":[["张三",25]]})
-- 写PDF/write_pdf → write_document(file_path="D:/report.pdf", title="测试报告", content="报告内容")
-- 写PPT/write_pptx → write_document(file_path="D:/slides.pptx", title="项目汇报")
+使用示例:
+- 写Word/ -> write_document(file_path="D:/report.docx", title="测试报告", content="内容")
+- 写Excel/ -> write_document(file_path="D:/data.xlsx", data={"headers":["姓名","年龄"],"rows":[["张三",25]]})
+- 写PDF/ -> write_document(file_path="D:/report.pdf", title="测试报告", content="报告内容")
+- 写PPT/ -> write_document(file_path="D:/slides.pptx", title="项目汇报")
 
-【返回数据说明】
+返回数据说明:
 - code: SUCCESS / ERR_DOC_FORMAT_NOT_SUPPORTED
 - data: { file_path }
 - message: 操作结果消息""",
 
-    "convert_document": """文档格式转换(Word/Excel/PPT → PDF)。
+    "convert_document": """支持将Word/Excel/PPT文件转换位PDF格式文件。
 
 【使用场景】
 - 当用户需要将文档转换为PDF时使用
-- 当用户说"把这个docx转成pdf"时使用
-- 当用户需要分享不可编辑的文档时使用
 
-【支持格式】
+【支持格式转换
 - .docx/.doc → PDF(Word文档)
 - .xlsx/.xls → PDF(Excel表格)
 - .pptx/.ppt → PDF(PPT演示文稿)
 - .odt → PDF(OpenDocument文本)
 - .ods → PDF(OpenDocument表格)
 
-【重要】需要安装LibreOffice(https://www.libreoffice.org/download/)
 
 【使用示例】
 - docx转pdf:convert_document(input_path="D:/report.docx", output_format="pdf")
@@ -191,7 +184,6 @@ DESCRIPTIONS = {
 - 当用户想要生成柱状图、折线图、饼图等图表时使用
 - 当用户需要生成报告中的图表时使用
 
-【重要】需要安装 matplotlib 库(pip install matplotlib)
 
 【使用示例】
 - 柱状图:generate_chart(data={"labels":["A","B"],"values":[10,20]}, chart_type="bar", title="销售统计")

@@ -188,6 +188,21 @@ class UniversalAgent(BaseAgent):
 
         # 判断是action还是answer
         parsed = parse_json(full_content)
+        # 容错: 文本+JSON混合,按"tool_name"标记向前定位{再括号匹配
+        if not parsed and full_content:
+            _tn = full_content.find('"tool_name"')
+            if _tn >= 0:
+                _open = full_content.rfind('{', 0, _tn)
+                if _open >= 0:
+                    _depth = 0
+                    for _j in range(_open, len(full_content)):
+                        if full_content[_j] == '{':
+                            _depth += 1
+                        elif full_content[_j] == '}':
+                            _depth -= 1
+                            if _depth == 0:
+                                parsed = parse_json(full_content[_open:_j+1])
+                                break
         if parsed and "tool_name" in parsed:
             fc_context = {
                 "tool_call_id": parsed.get("tool_call_id") or "",

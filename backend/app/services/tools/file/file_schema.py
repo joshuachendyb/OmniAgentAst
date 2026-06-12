@@ -82,11 +82,11 @@ class ReadFileInput(BaseModel):
 # ============================================================
 
 class WriteTextFileInput(BaseModel):
-    """write_text_file 工具的输入参数"""
+    """write_text_file 工具的输入参数。content字段写入文件内容,LLM注意使用content而非text"""
     file_path: str = Field(
         description="文件的完整路径(必须是绝对路径,支持中文路径)"
     )
-    text: str = Field(
+    content: str = Field(
         description="要写入文件的文本内容(必须是实际内容,禁止传入思考/计划/状态描述)"
     )
     encoding: Optional[str] = Field(

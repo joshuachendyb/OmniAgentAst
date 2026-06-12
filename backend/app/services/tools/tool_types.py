@@ -120,8 +120,11 @@ _CRSS_REGISTRY: Dict[str, tuple[str, dict]] = {
     # FILE → IntentType.FILE
     "FILE":   ("FILE",   {"keywords": [r'\bls\b', r'\bdir\b', r'\bcd\b', r'\bpwd\b',
                                         r'\bcat\b', r'\bgrep\b', r'\bfind\b', r'\btree\b',
-                                        r'\bcp\b', r'\bmv\b', r'\brm\b', r'\bmkdir\b', r'\btouch\b'],
-                           "chinese_keywords": ['文件', '目录', '文件夹', '路径', '磁盘', 'c盘', 'd盘', 'e盘']}),
+                                        r'\bcp\b', r'\bmv\b', r'\brm\b', r'\bmkdir\b', r'\btouch\b',
+                                         r'\btxt\b', r'\bmd\b', r'\bjson\b', r'\byaml\b', r'\btoml\b', r'\bini\b',
+                                         r'\bzip\b', r'\btar\b', r'\bgz\b', r'\bcompress\b', r'\barchive\b'],
+                           "chinese_keywords": ['文件', '目录', '文件夹', '路径', '磁盘', 'c盘', 'd盘', 'e盘',
+                                                 '压缩', '解压', '归档', '打包', '重命名', '改名', '复制', '拷贝', '移动', '搜索']}),
 
     # SYSTEM 相关 → IntentType.SYSTEM(多个CRSS名映射到同一意图)
     "SHELL":          ("SYSTEM", {"keywords": [r'\bnpm\b', r'\bpip\b', r'\bnode\b', r'\bgcc\b', r'\bpython\b',
@@ -149,8 +152,8 @@ _CRSS_REGISTRY: Dict[str, tuple[str, dict]] = {
                                                     'IP', 'IP地址', 'DNS', '公网IP', '网关', 'WIFI', 'WiFi']}),
 
     # DOCUMENT 相关 → IntentType.DOCUMENT
-    "DOCUMENT": ("DOCUMENT", {"keywords": [r'\bdocx\b', r'\bpdf\b', r'\btxt\b', r'\bmd\b', r'\bcsv\b', r'\bjson\b'],
-                                "chinese_keywords": ['文档', '报告', '笔记', '文本', '文章']}),
+    "DOCUMENT": ("DOCUMENT", {"keywords": [r'\bdocx\b', r'\bpdf\b', r'\bcsv\b', r'\bxlsx\b', r'\bpptx\b'],
+                                 "chinese_keywords": ['文档', '报告', '笔记', '文本', '文章']}),
     "DATABASE": ("DOCUMENT", {"keywords": [r'\bsql\b', r'\bdb\b', r'\bdatabase\b',
                                             r'\bselect\b', r'\binsert\b', r'\bupdate\b', r'\bdelete\b'],
                                 "chinese_keywords": ['数据库', '表', '数据', 'SQL']}),
