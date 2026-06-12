@@ -2,6 +2,7 @@
 LLM 核心模块 — BaseAIService
 
 重构: 删除mixin继承, 统一为request/request_stream/chat + mode参数 - 小沈 2026-06-09
+FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
 """
 
 import asyncio
@@ -145,11 +146,7 @@ class BaseAIService:
         tools: Optional[List[Dict]] = None,
         tool_choice: str = "auto",
     ) -> AsyncGenerator[StreamChunk, None]:
-        """流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11"""
-        import time
-        start_time = time.time()
-        chunk_count = 0
-        
+        """流式请求 — FC-only: tool_calls原生yield,不走JSON roundtrip — 小沈 2026-06-12"""
         self.reset_cancel()
         self._ensure_client()
 
@@ -185,15 +182,11 @@ class BaseAIService:
 
                     chunk = self._parse_sse_data(data_str)
                     if chunk:
-                        chunk_count += 1
                         yield chunk
-                        if chunk.is_done:
-                            elapsed = time.time() - start_time
-                            logger.info(f"[LLM] 流式请求完成: model={self.model}, 耗时={elapsed:.2f}s, chunks={chunk_count}")
-                            return
 
-                # 流结束后，如有聚合的tool_calls，转成JSON内容注入 — 小沈 2026-06-10
+                # 流结束后，如有聚合的tool_calls，原生结构一次性yield — 小沈 2026-06-12
                 if tool_call_accumulator:
+                    tool_calls_list = []
                     for idx in sorted(tool_call_accumulator):
                         tc = tool_call_accumulator[idx]
                         if tc["name"]:
@@ -201,7 +194,7 @@ class BaseAIService:
                                 params = _json.loads(tc["arguments"]) if tc["arguments"] else {}
                             except _json.JSONDecodeError:
                                 params = {}
-                            action_json = _json.dumps({
+                            tool_calls_list.append({
                                 "tool_name": tc["name"],
                                 "tool_params": params,
                                 "tool_call_id": tc.get("id"),
@@ -214,7 +207,8 @@ class BaseAIService:
                                     }
                                 }]
                             })
-                            yield StreamChunk(content=action_json, model=self.model, is_done=False, is_reasoning=False)
+                    yield StreamChunk(content="", model=self.model, is_done=False,
+                                      tool_calls=tool_calls_list)
 
                 yield StreamChunk(content="", model=self.model, is_done=True)
                 return

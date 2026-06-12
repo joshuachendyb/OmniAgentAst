@@ -3,7 +3,7 @@
 UniversalAgent — 配置驱动的通用 Agent
 
 Author: 小沈 - 2026-06-07
-Updated: 小沈 - 2026-06-08 清理空壳
+Updated: 小沈 - 2026-06-12 tool_calls原生消费,移除JSON roundtrip
 """
 from typing import Any, List, Optional, Dict
 
@@ -11,10 +11,7 @@ from app.services.agent.core_agent import BaseAgent
 from app.services.agent.agent_config import AgentConfig
 from app.services.agent.types import AgentResult
 from app.services.tools.tool_types import ToolCategory
-import json
 from app.utils.logger import logger
-from app.utils.json_utils import parse_json
-
 
 
 class UniversalAgent(BaseAgent):
@@ -147,14 +144,13 @@ class UniversalAgent(BaseAgent):
             yield item
 
     async def _call_llm_fc_stream(self, messages: list, openai_tools: list):
-        """FC模式流式调用 — 纯FC,无降级 — FC-only重构 2026-06-11 小沈"""
+        """FC模式流式调用 — tool_calls原生消费,不经过JSON roundtrip — 小沈 2026-06-12"""
         from app.services.agent.steps import ChunkStep
-        from app.utils.json_utils import parse_json
 
         full_content = ""
         full_reasoning = ""
+        tool_calls_result = None
         stream_error = None
-        chunk_step_count = 0
 
         try:
             async for chunk in self.llm_client.request_stream(
@@ -165,8 +161,10 @@ class UniversalAgent(BaseAgent):
                     stream_error = chunk.stream_error
                     break
 
+                if chunk.tool_calls:
+                    tool_calls_result = chunk.tool_calls
+
                 if chunk.content:
-                    chunk_step_count += 1
                     if getattr(chunk, "is_reasoning", False):
                         full_reasoning += chunk.content
                         yield ("chunk", ChunkStep(step=self.llm_call_count, content=chunk.content, is_reasoning=True))
@@ -186,51 +184,31 @@ class UniversalAgent(BaseAgent):
             yield ("response", {"type": "answer", "content": f"LLM流式错误: {stream_error}"})
             return
 
-        # 判断是action还是answer
-        parsed = parse_json(full_content)
-        # 容错: 文本+JSON混合,按"tool_name"标记向前定位{再括号匹配
-        if not parsed and full_content:
-            _tn = full_content.find('"tool_name"')
-            if _tn >= 0:
-                _open = full_content.rfind('{', 0, _tn)
-                if _open >= 0:
-                    _depth = 0
-                    for _j in range(_open, len(full_content)):
-                        if full_content[_j] == '{':
-                            _depth += 1
-                        elif full_content[_j] == '}':
-                            _depth -= 1
-                            if _depth == 0:
-                                parsed = parse_json(full_content[_open:_j+1])
-                                break
-        if parsed and "tool_name" in parsed:
+        if tool_calls_result:
+            first = tool_calls_result[0]
             fc_context = {
-                "tool_call_id": parsed.get("tool_call_id") or "",
-                "tool_calls": parsed.get("tool_calls", [])
+                "tool_call_id": first.get("tool_call_id", ""),
+                "tool_calls": first.get("tool_calls", []),
             }
-            # 从tool_calls提取平行调用 — 小沈 2026-06-11 修复P0:_pending_calls从未赋值
             _pending_calls = []
-            raw_tool_calls = parsed.get("tool_calls", [])
-            if len(raw_tool_calls) > 1:
-                primary_id = parsed.get("tool_call_id", "")
-                for tc in raw_tool_calls:
-                    tc_id = tc.get("id", "")
-                    if tc_id and tc_id != primary_id:
-                        func = tc.get("function", {})
-                        try:
-                            extra_params = json.loads(func.get("arguments", "{}"))
-                        except (json.JSONDecodeError, TypeError):
-                            extra_params = {}
-                        _pending_calls.append({
-                            "tool_name": func.get("name", ""),
-                            "tool_params": extra_params,
-                            "_tool_call_id": tc_id,
-                        })
-            logger.info(f"[FC] LLM原始响应(action): {full_content}")
-            yield ("response", {"type": "action", "fc_context": fc_context, "_pending_calls": _pending_calls, **parsed})
+            for tc in tool_calls_result[1:]:
+                _pending_calls.append({
+                    "tool_name": tc["tool_name"],
+                    "tool_params": tc["tool_params"],
+                    "_tool_call_id": tc.get("tool_call_id", ""),
+                })
+            logger.info(f"[FC] LLM原始响应(action): tool={first['tool_name']}, parallel={len(_pending_calls)}")
+            yield ("response", {
+                "type": "action",
+                "fc_context": fc_context,
+                "_pending_calls": _pending_calls,
+                "tool_name": first["tool_name"],
+                "tool_params": first["tool_params"],
+                "tool_call_id": first.get("tool_call_id", ""),
+                "tool_calls": first.get("tool_calls", []),
+            })
             return
 
-        # 无tool_name → 这是LLM的最终答复(answer)
         content = full_content or full_reasoning or ""
         logger.info(f"[FC] LLM原始响应(answer): {content}")
         yield ("response", {"type": "answer", "content": content, "thought": ""})
