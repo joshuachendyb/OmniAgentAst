@@ -121,10 +121,8 @@ class ActionHandler:
         for idx, (call, result) in enumerate(zip(all_calls, results)):
             if isinstance(result, Exception):
                 obs_text = f"Observation: 工具{call['tool_name']}执行异常: {result}"
-                agent._update_executed_tool_summary(call["tool_name"], {"code": "error", "message": str(result)}, call["tool_params"])
             else:
                 obs_text = build_observation_text(result, call["tool_name"], call["tool_params"])
-                agent._update_executed_tool_summary(call["tool_name"], result, call["tool_params"])
             obs_parts.append(obs_text)
             try:
                 # 为每个call构建独有fc_context — 修复平行调用共用tool_call_id

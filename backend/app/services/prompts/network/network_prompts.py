@@ -46,8 +46,3 @@ class NetworkPrompts(BasePrompts):
     def _get_domain_extra_notes(self) -> str:
         return "- URL必须包含scheme(http://或https://)\n- POST/PUT用json_body参数(NOT data/params)\n- 使用timeout避免挂起\n- 失败两次后换不同方法"
 
-    def get_safety_reminder(self) -> str:
-        return ("网络操作安全:\n"
-                "- URL必须包含scheme(http://或https://)\n"
-                "- POST/PUT用json_body参数\n"
-                "- 敏感数据使用HTTPS")

@@ -40,10 +40,6 @@ class DocumentPrompts(BasePrompts):
 → 判断: SQL查询 → 调用query_sql(sql="SELECT * FROM users")"""
     
 
-    def get_safety_reminder(self) -> str:
-        return ("文档操作安全:\n"
-                "- write_document会覆盖已有文件,写入前先读取确认\n"
-                "- execute_sql前确认SQL语句正确性")
 
     def _get_domain_name(self) -> str:
         return "文檔处理"

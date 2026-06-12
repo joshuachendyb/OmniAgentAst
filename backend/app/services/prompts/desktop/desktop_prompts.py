@@ -46,7 +46,3 @@ class DesktopPrompts(BasePrompts):
     def _get_domain_steps(self) -> str:
         return "1. 识别目标窗口或应用\n2. 使用合适的桌面工具\n3. 用中文确认桌面操作结果"
 
-    def get_safety_reminder(self) -> str:
-        return ("桌面操作安全:\n"
-                "- 仅操作可见窗口,禁止访问系统级窗口\n"
-                "- 键盘控制前确认目标窗口正确")

@@ -105,6 +105,4 @@ Example 4: 完成任务
     def _get_domain_steps(self) -> str:
         return "1. 分析需要什么时间操作\n2. 使用合适的时间工具\n3. 用中文提供时间信息"
 
-    def get_safety_reminder(self) -> str:
-        return ""
 

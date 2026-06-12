@@ -19,7 +19,9 @@
 | v1.5 | 2026-06-11 | 小沈 | 7.5.5补充_utils.py/_tool_params.py；7.5.6补充fc_context构建代码+L144删除说明；7.8.4精确区分mock类型；第三章新增P0历史污染问题；第五章新增3个P2问题 |
 | v1.6 | 2026-06-11 14:30:00 | 小健 | 7.5.7补充审核发现6个问题（#1 fc_context死代码 #2 L144多余消息 #3 handler不写入history #4 yield协议变更崩溃P0 #5 answer_handler.strip依赖 #6 trim分离逻辑），推荐方案A保持str类型
 | v2.0 | 2026-06-12 15:30:00 | 小欧 | FC-only全系统更新：第1章三层架构+图；第2.2 FileOperationPrompts/2.3 SystemAdapter/2.4 universal_agent（删除_call_llm_text_stream/_convert_fc_messages_to_text);第5.1 react_cycle（dict类型+删除parse_llm_response/TOOL_REMINDER/_TYPE_HANDLERS精简）;第5.2 parse_llm_response.py标记删除;第6章流程示例FC-only更新;删除OUTPUT_FORMAT/TOOL_REMINDER引用
-| v2.1 | 2026-06-12 12:22:05 | 小欧 | FC-only精简化改造: TOOL_CALL_RULES合并AVOID_REPEAT_RULES(4条→3段); AVOID_REPEAT_RULES常量删除; build_full_system_prompt从8段→4段(移除rollback/AVOID_REPEAT/get_tool_details可选段, safety合并入规则段); _get_system_prompt简化; candidates_hint+cross_tool_hint移至_call_llm每轮注入; FileOperationPrompts删除get_rollback_instructions覆盖
+| v2.1 | 2026-06-12 12:22:05 | 小欧 | FC-only精简化改造: TOOL_CALL_RULES合并AVOID_REPEAT_RULES(4条→3段); AVOID_REPEAT_RULES常量删除; build_full_system_prompt从8段→4段; candidates_hint+cross_tool_hint移至_call_llm每轮注入 |
+| // | 2026-06-12 北京老陈 | 小欧 | **移除** _build_executed_tool_summary / _build_candidates_hint / _build_cross_tool_hint — FC协议已覆盖，无需prompt hack |
+| // | 2026-06-12 北京老陈 | 小欧 | **移除** AGENT_REGISTRY["file"] + FileOperationPrompts — CRSS返回FILE直接走system agent(已加载FILE工具) |
 
 ---
 ## 一、核心架构总览
@@ -76,9 +78,9 @@ _initialize_run_state()                                │
 _call_llm()                                            │
     ├─ message_builder.prepare_messages_for_llm()      │
     │   └─ 返回 conversation_history + temp_history    │
-    ├─ _build_executed_tool_summary() → system注入     │
-    ├─ _build_candidates_hint()      → system注入[v2.1]│
-    ├─ _build_cross_tool_hint()      → system注入[v2.1]│
+    ├─ ~~_build_executed_tool_summary~~ 已移除          │
+    ├─ ~~_build_candidates_hint~~ 已移除                │
+    ├─ ~~_build_cross_tool_hint~~ 已移除                │
     └─ _call_llm_fc_stream(messages, tools)            │
        └─ llm_client.request_stream(messages, tools)   │
     ↓                                                  │
@@ -128,15 +130,14 @@ TOOL_CALL_RULES = """【回答要求】:
 - reasoning简短(1-2句),不要长篇分析
 - 始终用中文回复
 
-【停止条件 — 满足以下任一即可结束】:
-- 用户请求的操作已全部完成
-- 信息已获取足够,可以回答用户问题
-- 遇到无法解决的错误,已向用户报告原因和建议
+【停止条件】:
+- 用户请求已完成,直接回答用户问题
+- 遇到无法解决的错误,向用户报告原因和建议
 
 【执行效率】:
 - 同一工具成功后不要重复执行
-- 已获取的信息直接使用,不重新获取
-- 失败后换其他工具或方法,不要重试同一操作
+- 已获取的信息直接使用,严禁二次获取
+- 失败后换其他工具或参数,不要重试同一操作
 - 连续3次不同方法都失败→停止尝试,向用户报告"""
 ```
 
@@ -144,6 +145,7 @@ TOOL_CALL_RULES = """【回答要求】:
 - 合并原`AVOID_REPEAT_RULES`为【执行效率】段
 - 移除FC冗余规则#1/#3/#4（FC协议的`tool_choice="auto"`已覆盖"何时调用工具"）
 - 原规则#2（reasoning简短）保留，#5（中文回复）保留
+- **2026-06-12 北京老陈** 精简停止条件/执行效率措辞
 
 **分析**:
 - ✅ 精简为3段：回答要求/停止条件/执行效率，职责清晰
@@ -160,7 +162,7 @@ def build_full_system_prompt(self, include_tool_details: bool = None) -> str:
     ① _get_system_info()        — 公共:系统信息(OS/路径规则)
     ② _get_project_context()    — 公共:项目上下文(README.md)
     ③ get_core_system_prompt() — 分类特有(角色+业务规则)
-    ④ TOOL_CALL_RULES + safety — 公共:回答要求+停止条件+执行效率+安全提醒
+    ④ TOOL_CALL_RULES           — 公共:回答要求+停止条件+执行效率
     """
     if include_tool_details is not None:
         self._include_tool_details = include_tool_details
@@ -172,13 +174,7 @@ def build_full_system_prompt(self, include_tool_details: bool = None) -> str:
         parts.append(project_ctx)
 
     parts.append(self.get_core_system_prompt())
-
-    # Rules section: TOOL_CALL_RULES + safety merged
-    rules = [self.TOOL_CALL_RULES]
-    safety = self.get_safety_reminder()
-    if safety:
-        rules.append(f"【安全提醒】:\n{safety}")
-    parts.append("\n\n".join(rules))
+    parts.append(self.TOOL_CALL_RULES)
 
     return "\n\n".join(parts)
 ```
@@ -188,14 +184,14 @@ def build_full_system_prompt(self, include_tool_details: bool = None) -> str:
 ① _get_system_info()         [公共]     → 系统信息(OS/路径规则)
 ② _get_project_context()     [公共]     → 项目上下文(README.md)
 ③ get_core_system_prompt()  [分类特有] → 角色+业务规则
-④ TOOL_CALL_RULES+safety    [公共]     → 回答要求+停止条件+执行效率+安全提醒
+④ TOOL_CALL_RULES            [公共]     → 回答要求+停止条件+执行效率
 ```
 
 **v2.1移除**:
 - `get_tool_details()` → 由FC Schema承载，不再Prompt中注入
 - `get_rollback_instructions()` → LLM能从`role:tool`错误消息理解失败原因，无需额外指令
 - `AVOID_REPEAT_RULES` → 合并入`TOOL_CALL_RULES`【执行效率】段
-- `get_safety_reminder()` → 从独立段改为附在规则段尾部
+- `get_safety_reminder()` → **已移除**，后续由独立安全机制处理（2026-06-12 北京老陈）
 
 **分析**:
 - ✅ 从8段精简至4段，组装更轻量
@@ -400,31 +396,7 @@ class UniversalAgent:
             return "System: 通用助手"
         return self.prompts.build_full_system_prompt()   # ← v2.1: 直接返回4段,无candidates/cross_tool
 
-    def _build_candidates_hint(self) -> str:
-        if not self._candidates:
-            return ""
-        from app.services.agent.agent_config import resolve_agent_config
-        names = []
-        for c in self._candidates:
-            cfg = resolve_agent_config(c)
-            if cfg:
-                names.append(f"{cfg.category_display_name}({c})")
-        if not names:
-            return ""
-        return f"【候选意图】用户任务可能属于以下分类: {', '.join(names)}。如当前工具无法完成,可尝试其他分类的工具。"
-
-    def _build_cross_tool_hint(self) -> str:
-        loaded = getattr(self, '_loaded_categories', set())
-        if len(loaded) <= 1:
-            return ""
-        from app.services.agent.agent_config import AGENT_REGISTRY
-        loaded_names = []
-        for intent_type, cfg in AGENT_REGISTRY.items():
-            if cfg.category.value in loaded:
-                loaded_names.append(cfg.category_display_name)
-        if not loaded_names:
-            return ""
-        return f"【跨分类工具】当前已加载多分类工具: {', '.join(loaded_names)}。可跨分类调用工具完成任务。"
+    ## ~~_build_candidates_hint~~ / ~~_build_cross_tool_hint~~ 已移除 (2026-06-12 北京老陈)
 
     def _get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
         return self.prompts.get_task_prompt(task)
@@ -450,19 +422,6 @@ class UniversalAgent:
         self.message_builder.trim_history()
 
         messages = self.message_builder.prepare_messages_for_llm()
-
-        executed_summary = self._build_executed_tool_summary()
-        if executed_summary:
-            messages.append({"role": "system", "content": executed_summary})
-
-        # Inject hints each round — FC-only v2.1 2026-06-12
-        candidates_hint = self._build_candidates_hint()
-        if candidates_hint:
-            messages.append({"role": "system", "content": candidates_hint})
-        cross_tool_hint = self._build_cross_tool_hint()
-        if cross_tool_hint:
-            messages.append({"role": "system", "content": cross_tool_hint})
-
         openai_tools = self._get_openai_tools()
 
         if not openai_tools:
@@ -585,47 +544,7 @@ class UniversalAgent:
         self._cached_openai_tools = None
         self._cache_timestamp = 0
 
-    def _update_executed_tool_summary(self, tool_name: str, result: dict, tool_params: dict = None):
-        """更新已执行工具汇总（含数据摘要）— 小沈 2026-06-09
-        
-        Args:
-            tool_name: 工具名称
-            result: 工具执行结果
-            tool_params: 工具参数（可选）
-        """
-        if not hasattr(self, '_executed_tool_summary'):
-            self._executed_tool_summary = []
-        
-        from app.services.agent.observation_formatter import extract_status
-        from app.utils.data_utils import extract_data_summary
-        
-        if isinstance(result, dict):
-            status = extract_status(result)
-            data_summary = extract_data_summary(result.get("data"))
-        else:
-            status = "unknown"
-            data_summary = ""
-        
-        entry = f"{tool_name}→{status}"
-        if data_summary:
-            entry += f"|{data_summary}"
-        self._executed_tool_summary.append(entry)
-
-    def _build_executed_tool_summary(self) -> str:
-        if not hasattr(self, '_executed_tool_summary') or not self._executed_tool_summary:
-            return ""
-        done = [s for s in self._executed_tool_summary if '→success' in s]
-        if not done:
-            return ""
-        parts = []
-        for entry in done[-8:]:
-            if '|' in entry:
-                tool_status, data_hint = entry.split('|', 1)
-                parts.append(f"{tool_status}({data_hint})")
-            else:
-                parts.append(entry)
-        return ("【已执行工具(勿重复)】" + "; ".join(parts)
-                + "\n注意:上述工具已成功执行,结果已在Observation中,禁止再次调用!")
+    ## ~~_update_executed_tool_summary~~ / ~~_build_executed_tool_summary~~ 已移除 (2026-06-12 北京老陈)
 
 # ... 剩余部分与文档一致
 ```

@@ -52,15 +52,6 @@ class AgentConfig:
 
 
 AGENT_REGISTRY: Dict[str, AgentConfig] = {
-    "file": AgentConfig(
-        intent_type="file",
-        category=ToolCategory.FILE,
-        prompt_module="app.services.prompts.file.file_prompts",
-        prompt_class_name="FileOperationPrompts",
-        category_display_name="文件操作",
-        rollback_enabled=True,
-        exclude_tool_details_from_prompt=True,
-    ),
     "system": AgentConfig(
         intent_type="system",
         category=ToolCategory.FUND_RUNTIME,

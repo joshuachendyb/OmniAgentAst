@@ -71,32 +71,6 @@ class UniversalAgent(BaseAgent):
             return "System: 通用助手"
         return self.prompts.build_full_system_prompt()
 
-    def _build_candidates_hint(self) -> str:
-        if not self._candidates:
-            return ""
-        from app.services.agent.agent_config import resolve_agent_config
-        names = []
-        for c in self._candidates:
-            cfg = resolve_agent_config(c)
-            if cfg:
-                names.append(f"{cfg.category_display_name}({c})")
-        if not names:
-            return ""
-        return f"【候选意图】用户任务可能属于以下分类: {', '.join(names)}。如当前工具无法完成,可尝试其他分类的工具。"
-
-    def _build_cross_tool_hint(self) -> str:
-        loaded = getattr(self, '_loaded_categories', set())
-        if len(loaded) <= 1:
-            return ""
-        from app.services.agent.agent_config import AGENT_REGISTRY
-        loaded_names = []
-        for intent_type, cfg in AGENT_REGISTRY.items():
-            if cfg.category.value in loaded:
-                loaded_names.append(cfg.category_display_name)
-        if not loaded_names:
-            return ""
-        return f"【跨分类工具】当前已加载多分类工具: {', '.join(loaded_names)}。可跨分类调用工具完成任务。"
-
     def _get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
         return self.prompts.get_task_prompt(task)
 
@@ -121,19 +95,6 @@ class UniversalAgent(BaseAgent):
         self.message_builder.trim_history()
 
         messages = self.message_builder.prepare_messages_for_llm()
-
-        executed_summary = self._build_executed_tool_summary()
-        if executed_summary:
-            messages.append({"role": "system", "content": executed_summary})
-
-        # Inject hints each round — FC-only 2026-06-12
-        candidates_hint = self._build_candidates_hint()
-        if candidates_hint:
-            messages.append({"role": "system", "content": candidates_hint})
-        cross_tool_hint = self._build_cross_tool_hint()
-        if cross_tool_hint:
-            messages.append({"role": "system", "content": cross_tool_hint})
-
         openai_tools = self._get_openai_tools()
 
         if not openai_tools:
@@ -237,44 +198,4 @@ class UniversalAgent(BaseAgent):
         self._cached_openai_tools = None
         self._cache_timestamp = 0
 
-    def _update_executed_tool_summary(self, tool_name: str, result: dict, tool_params: dict = None):
-        """更新已执行工具汇总（含数据摘要）— 小沈 2026-06-09
-        
-        Args:
-            tool_name: 工具名称
-            result: 工具执行结果
-            tool_params: 工具参数（可选）
-        """
-        if not hasattr(self, '_executed_tool_summary'):
-            self._executed_tool_summary = []
-        
-        from app.services.agent.observation_formatter import extract_status
-        from app.utils.data_utils import extract_data_summary
-        
-        if isinstance(result, dict):
-            status = extract_status(result)
-            data_summary = extract_data_summary(result.get("data"))
-        else:
-            status = "unknown"
-            data_summary = ""
-        
-        entry = f"{tool_name}→{status}"
-        if data_summary:
-            entry += f"|{data_summary}"
-        self._executed_tool_summary.append(entry)
 
-    def _build_executed_tool_summary(self) -> str:
-        if not hasattr(self, '_executed_tool_summary') or not self._executed_tool_summary:
-            return ""
-        done = [s for s in self._executed_tool_summary if '→success' in s]
-        if not done:
-            return ""
-        parts = []
-        for entry in done[-8:]:
-            if '|' in entry:
-                tool_status, data_hint = entry.split('|', 1)
-                parts.append(f"{tool_status}({data_hint})")
-            else:
-                parts.append(entry)
-        return ("【已执行工具(勿重复)】" + "; ".join(parts)
-                + "\n注意:上述工具已成功执行,结果已在Observation中,禁止再次调用!")
