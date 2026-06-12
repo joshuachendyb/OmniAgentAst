@@ -7,7 +7,7 @@ Author: 小沈 - 2026-05-31
 """
 
 import asyncio
-from typing import Any, Optional, List
+from typing import Any, Optional
 
 from app.services.agent.types import AgentStatus
 from app.services.agent.message_builder import MessageBuilder
@@ -62,14 +62,14 @@ class AgentInitializer:
 
     @staticmethod
     def _init_task_tracking(agent, enable: bool, description: str = ""):
-        """初始化Task追踪 — 从 _initialize_run_state 中提取"""
+        """初始化Task追踪"""
         agent._task_tracker = None
         agent._tracked_task_id = None
         if not enable:
             return
         try:
             from app.services.task import get_tracker
-            intent = getattr(agent, '_intent', None) or agent.tool_category.value if agent.tool_category else "unknown"
+            intent = agent.tool_category.value if agent.tool_category else ""
             agent_id = getattr(agent, 'task_id', 'unknown')
             tracker = get_tracker()
             agent._tracked_task_id = tracker.create_task(
@@ -82,7 +82,4 @@ class AgentInitializer:
             from app.utils.logger import logger
             logger.debug(f"[TaskTracker] 创建任务失败: {_e}")
 
-    @staticmethod
-    def _init_candidates(agent, candidates: Optional[List[str]]):
-        """初始化候选意图列表"""
-        agent._candidates = candidates or []
+

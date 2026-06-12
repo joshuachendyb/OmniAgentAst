@@ -119,6 +119,7 @@ class DatabaseManager:
         self._init_task_tracker_db()
         self._migrate_old_tables()
         self._migrate_from_old_db()
+        self._migrate_tasks_drop_check()
         
         # observer数据库按需初始化(后续实现ToolObserver时调用init_observer)
         logger.info("All databases initialized successfully")
@@ -277,10 +278,7 @@ class DatabaseManager:
             conn.executescript('''
                 CREATE TABLE IF NOT EXISTS tasks (
                     task_id          TEXT PRIMARY KEY,
-                    intent           TEXT NOT NULL CHECK(intent IN (
-                        'file', 'shell', 'document', 'code_execution',
-                        'network', 'system', 'desktop', 'time', 'meta'
-                    )),
+                    intent           TEXT NOT NULL DEFAULT '',
                     agent_id         TEXT NOT NULL,
                     task_description TEXT NOT NULL,
                     status           TEXT NOT NULL DEFAULT 'executing',
@@ -293,8 +291,6 @@ class DatabaseManager:
                     created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     completed_at     TIMESTAMP
                 );
-
-                CREATE INDEX IF NOT EXISTS idx_tasks_intent  ON tasks(intent);
                 CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at);
 
                 CREATE TABLE IF NOT EXISTS operations (
@@ -317,6 +313,41 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_ops_task ON operations(task_id);
                 CREATE INDEX IF NOT EXISTS idx_ops_seq  ON operations(task_id, sequence_number);
             ''')
+
+    def _migrate_tasks_drop_check(self):
+        """迁移tasks表:删除intent列的CHECK约束(CRSS移除后)"""
+        try:
+            with self.get_conn("task_tracker") as conn:
+                row = conn.execute(
+                    "SELECT sql FROM sqlite_master WHERE type='table' AND name='tasks'"
+                ).fetchone()
+                if row and 'CHECK' in (row[0] or '').upper():
+                    logger.info("Migrating tasks table: dropping intent CHECK constraint...")
+                    conn.execute("PRAGMA foreign_keys=OFF")
+                    conn.executescript("""
+                        CREATE TABLE tasks_new (
+                            task_id          TEXT PRIMARY KEY,
+                            intent           TEXT NOT NULL DEFAULT '',
+                            agent_id         TEXT NOT NULL,
+                            task_description TEXT NOT NULL,
+                            status           TEXT NOT NULL DEFAULT 'executing',
+                            total_operations INTEGER DEFAULT 0,
+                            success_count    INTEGER DEFAULT 0,
+                            failed_count     INTEGER DEFAULT 0,
+                            rolled_back_count INTEGER DEFAULT 0,
+                            report_generated INTEGER DEFAULT 0,
+                            report_path      TEXT,
+                            created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            completed_at     TIMESTAMP
+                        );
+                        INSERT INTO tasks_new SELECT * FROM tasks;
+                        DROP TABLE tasks;
+                        ALTER TABLE tasks_new RENAME TO tasks;
+                    """)
+                    conn.execute("PRAGMA foreign_keys=ON")
+                    logger.info("Tasks table migration complete")
+        except Exception as e:
+            logger.warning(f"Tasks CHECK migration skipped: {e}")
 
     def _migrate_from_old_db(self):
         """从旧 operations.db 迁移数据到新 task_tracker.db(幂等,失败不阻塞启动)"""

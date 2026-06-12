@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """TaskTracker — 任务生命周期 + 操作管理 + 回滚标记 + 报告
 
-小健 - 2026-06-07 删除VALID_INTENTS硬编码白名单 — 意图由CRSS动态映射
+小健 - 2026-06-07 删除VALID_INTENTS硬编码白名单
 
 调用方:Agent、回滚模块、报告模块。
 所有意图共用同一个持久化 Tracker。

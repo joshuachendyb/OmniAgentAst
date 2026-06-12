@@ -16,10 +16,8 @@ from app.services.agent.types import AgentStatus
 
 
 async def run_sse_stream(
-    intent_type: str,
     llm_client,
     task_id: str,
-    candidates: list,
     last_message: str,
     next_step: Callable[[], int],
     session_id: str,
@@ -29,19 +27,17 @@ async def run_sse_stream(
     llm_call_count_holder: Optional[list] = None,
 ) -> AsyncGenerator[str, None]:
     """纯SSE流运行器 — 小沈 2026-06-09 支持StreamState"""
-    from app.services.agent.agent_factory import AgentFactory
+    from app.services.agent.agent_factory import create_agent
     from app.chat_stream import format_agent_sse, save_execution_steps_to_db
 
     agent = None
-    log_tag = f"[{intent_type.upper()}Op]"
-    error_label = f"{intent_type}操作执行失败"
-    error_type = f'{intent_type}_operation_error'
+    log_tag = "[AgentOp]"
+    error_label = "操作执行失败"
+    error_type = "agent_operation_error"
 
     try:
-        # R1-2修复: AgentFactory.create移入try块,确保失败时finally能保存 — 小沈 2026-06-09
-        agent = AgentFactory.create(
-            intent_type=intent_type, llm_client=llm_client,
-            task_id=task_id, candidates=candidates,
+        agent = create_agent(
+            llm_client=llm_client, task_id=task_id,
         )
         
         # 【修复 2026-06-09 小沈】设置task_id，支持HTTP阻塞期间的取消检查

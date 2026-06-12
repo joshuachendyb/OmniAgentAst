@@ -24,14 +24,12 @@ class UniversalAgent(BaseAgent):
         config: Optional[AgentConfig] = None,
         tool_category: Optional[ToolCategory] = None,
         max_steps: Optional[int] = None,
-        candidates: Optional[List[str]] = None,
         **kwargs
     ):
         if not task_id:
-            intent_type = config.intent_type if config else "unknown"
-            raise ValueError(f"task_id is required for {intent_type} operation tracking")
+            raise ValueError("task_id is required for operation tracking")
 
-        effective_category = tool_category or (config.category if config else None)
+        effective_category = tool_category
         if max_steps is None:
             if config and config.max_steps:
                 effective_max_steps = config.max_steps
@@ -48,20 +46,16 @@ class UniversalAgent(BaseAgent):
             tool_category=effective_category,
             max_steps=effective_max_steps,
             rollback_enabled=rollback_enabled,
-            candidates=candidates,
             **kwargs
         )
 
         if config:
             self.config = config
             self.prompts = config.prompt_class()
-            logger.info(
-                f"UniversalAgent initialized (intent={config.intent_type}, task_id={task_id}, category={effective_category})"
-            )
-        else:
-            logger.info(
-                f"UniversalAgent initialized (task_id={task_id}, category={effective_category})"
-            )
+
+        logger.info(
+            f"UniversalAgent initialized (task_id={task_id})"
+        )
 
     def _get_system_prompt(self) -> str:
         if not hasattr(self, 'prompts') or not self.prompts:

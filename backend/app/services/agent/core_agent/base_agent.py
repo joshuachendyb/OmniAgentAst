@@ -40,7 +40,6 @@ class BaseAgent(ABC):
         tool_category: Optional[ToolCategory] = None,
         max_steps: Optional[int] = None,
         rollback_enabled: bool = True,
-        candidates: Optional[List[str]] = None,
         **kwargs
     ):
         AgentInitializer._init_llm(self, llm_client, **kwargs)
@@ -53,7 +52,6 @@ class BaseAgent(ABC):
         self._tool_manager.init_tools()
         self._retry_engine = ToolRetryEngine(self._tools_dict)
         AgentInitializer._init_task_tracking(self, enable=rollback_enabled)
-        AgentInitializer._init_candidates(self, candidates)
         self._step_emitter = StepEmitter(self)
 
     def record_operation(self, operation_type: str, **kwargs):
