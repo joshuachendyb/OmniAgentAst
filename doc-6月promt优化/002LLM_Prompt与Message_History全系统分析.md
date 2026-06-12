@@ -1,7 +1,7 @@
 # 002LLM Prompt与Message Conversation History全系统分析
 
 **创建时间**: 2026-06-10 15:15:59  
-**版本**: v2.1  
+**版本**: v2.2  
 **作者**: 小沈  
 **复查次数**: 5遍  
 
@@ -20,8 +20,8 @@
 | v1.6 | 2026-06-11 14:30:00 | 小健 | 7.5.7补充审核发现6个问题（#1 fc_context死代码 #2 L144多余消息 #3 handler不写入history #4 yield协议变更崩溃P0 #5 answer_handler.strip依赖 #6 trim分离逻辑），推荐方案A保持str类型
 | v2.0 | 2026-06-12 15:30:00 | 小欧 | FC-only全系统更新：第1章三层架构+图；第2.2 FileOperationPrompts/2.3 SystemAdapter/2.4 universal_agent（删除_call_llm_text_stream/_convert_fc_messages_to_text);第5.1 react_cycle（dict类型+删除parse_llm_response/TOOL_REMINDER/_TYPE_HANDLERS精简）;第5.2 parse_llm_response.py标记删除;第6章流程示例FC-only更新;删除OUTPUT_FORMAT/TOOL_REMINDER引用
 | v2.1 | 2026-06-12 12:22:05 | 小欧 | FC-only精简化改造: TOOL_CALL_RULES合并AVOID_REPEAT_RULES(4条→3段); AVOID_REPEAT_RULES常量删除; build_full_system_prompt从8段→4段; candidates_hint+cross_tool_hint移至_call_llm每轮注入 |
-| // | 2026-06-12 北京老陈 | 小欧 | **移除** _build_executed_tool_summary / _build_candidates_hint / _build_cross_tool_hint — FC协议已覆盖，无需prompt hack |
-| // | 2026-06-12 北京老陈 | 小欧 | **移除** AGENT_REGISTRY["file"] + FileOperationPrompts — CRSS返回FILE直接走system agent(已加载FILE工具) |
+| v2.2 | 2026-06-12 北京老陈 | 小欧 | **移除** _build_executed_tool_summary / _build_candidates_hint / _build_cross_tool_hint — FC协议已覆盖 |
+| v2.2 | 2026-06-12 北京老陈 | 小欧 | **移除** AGENT_REGISTRY["file"] + FileOperationPrompts — CRSS返回FILE直接走system agent |
 
 ---
 ## 一、核心架构总览
