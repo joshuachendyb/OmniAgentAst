@@ -1,7 +1,7 @@
 # 002LLM Prompt与Message Conversation History全系统分析
 
 **创建时间**: 2026-06-10 15:15:59  
-**版本**: v2.0  
+**版本**: v2.1  
 **作者**: 小沈  
 **复查次数**: 5遍  
 
@@ -19,6 +19,7 @@
 | v1.5 | 2026-06-11 | 小沈 | 7.5.5补充_utils.py/_tool_params.py；7.5.6补充fc_context构建代码+L144删除说明；7.8.4精确区分mock类型；第三章新增P0历史污染问题；第五章新增3个P2问题 |
 | v1.6 | 2026-06-11 14:30:00 | 小健 | 7.5.7补充审核发现6个问题（#1 fc_context死代码 #2 L144多余消息 #3 handler不写入history #4 yield协议变更崩溃P0 #5 answer_handler.strip依赖 #6 trim分离逻辑），推荐方案A保持str类型
 | v2.0 | 2026-06-12 15:30:00 | 小欧 | FC-only全系统更新：第1章三层架构+图；第2.2 FileOperationPrompts/2.3 SystemAdapter/2.4 universal_agent（删除_call_llm_text_stream/_convert_fc_messages_to_text);第5.1 react_cycle（dict类型+删除parse_llm_response/TOOL_REMINDER/_TYPE_HANDLERS精简）;第5.2 parse_llm_response.py标记删除;第6章流程示例FC-only更新;删除OUTPUT_FORMAT/TOOL_REMINDER引用
+| v2.1 | 2026-06-12 12:22:05 | 小欧 | FC-only精简化改造: TOOL_CALL_RULES合并AVOID_REPEAT_RULES(4条→3段); AVOID_REPEAT_RULES常量删除; build_full_system_prompt从8段→4段(移除rollback/AVOID_REPEAT/get_tool_details可选段, safety合并入规则段); _get_system_prompt简化; candidates_hint+cross_tool_hint移至_call_llm每轮注入; FileOperationPrompts删除get_rollback_instructions覆盖
 
 ---
 ## 一、核心架构总览
@@ -76,6 +77,8 @@ _call_llm()                                            │
     ├─ message_builder.prepare_messages_for_llm()      │
     │   └─ 返回 conversation_history + temp_history    │
     ├─ _build_executed_tool_summary() → system注入     │
+    ├─ _build_candidates_hint()      → system注入[v2.1]│
+    ├─ _build_cross_tool_hint()      → system注入[v2.1]│
     └─ _call_llm_fc_stream(messages, tools)            │
        └─ llm_client.request_stream(messages, tools)   │
     ↓                                                  │
@@ -118,58 +121,46 @@ handler分派（_TYPE_HANDLERS注册式）                    │
 
 **关键常量**:
 
-#### 2.1.1 TOOL_CALL_RULES（工具调用规则）
+#### 2.1.1 TOOL_CALL_RULES（工具调用规则 — v2.1合并AVOID_REPEAT_RULES）
 
 ```python
-TOOL_CALL_RULES = """【工具调用规则】:
-1. 确认用户意图后立即调用工具,不要反复讨论
-2. reasoning简短(1-2句),不要长篇分析
-3. 用户请求需要实际操作时必须调用工具,不得仅回复文字
-4. 不确定用什么工具时选择最合理的调用,不要用文字代替
-5. 始终用中文回复
+TOOL_CALL_RULES = """【回答要求】:
+- reasoning简短(1-2句),不要长篇分析
+- 始终用中文回复
 
 【停止条件 — 满足以下任一即可结束】:
-- 用户请求的操作已全部完成(文件已读取/写入/搜索完毕等)
+- 用户请求的操作已全部完成
 - 信息已获取足够,可以回答用户问题
-- 遇到无法解决的错误,已向用户报告原因和建议"""
-```
+- 遇到无法解决的错误,已向用户报告原因和建议
 
-**注**: FC-only架构已合并SAFETY WARNING，消除SRP/DRY违反。
-
-**分析**:
-- ✅ 强调立即调用工具，不反复讨论
-- ✅ 明确禁止仅文字回复
-- ✅ 整合SAFETY WARNING消除冗余
-
-#### 2.1.2 AVOID_REPEAT_RULES（避免重复规则 — 类常量）
-
-```python
-AVOID_REPEAT_RULES = """
-【避免重复规则】
-- 同一工具成功后不要重复执行(结果不变)
+【执行效率】:
+- 同一工具成功后不要重复执行
 - 已获取的信息直接使用,不重新获取
 - 失败后换其他工具或方法,不要重试同一操作
-- 注意:调用工具前先检查是否已执行过相同操作(看observation)
 - 连续3次不同方法都失败→停止尝试,向用户报告"""
 ```
 
-**注**: 2026-06-11（小沈）从 build_full_system_prompt() 硬编码提取为类常量，#1 fix。
+**v2.1变更**:
+- 合并原`AVOID_REPEAT_RULES`为【执行效率】段
+- 移除FC冗余规则#1/#3/#4（FC协议的`tool_choice="auto"`已覆盖"何时调用工具"）
+- 原规则#2（reasoning简短）保留，#5（中文回复）保留
 
-#### 2.1.3 build_full_system_prompt()（唯一组装入口）
+**分析**:
+- ✅ 精简为3段：回答要求/停止条件/执行效率，职责清晰
+- ✅ 不再与FC协议语义重叠
+- ✅ 消除SRP/DRY违反（原AVOID_REPEAT_RULES独立常量违反DRY）
+
+#### 2.1.2 build_full_system_prompt()（唯一组装入口 — v2.1精简化版）
 
 ```python
 def build_full_system_prompt(self, include_tool_details: bool = None) -> str:
-    """构建完整的系统Prompt — FC-only: 无OUTPUT_FORMAT,由API Schema约束格式
+    """构建完整的系统Prompt — FC-only版
 
     组装顺序:
     ① _get_system_info()        — 公共:系统信息(OS/路径规则)
     ② _get_project_context()    — 公共:项目上下文(README.md)
     ③ get_core_system_prompt() — 分类特有(角色+业务规则)
-    ④ get_tool_details()       — 可选:工具描述+示例
-    ⑤ TOOL_CALL_RULES          — 公共:工具调用规则
-    ⑥ get_safety_reminder()    — 分类特有:安全提醒
-    ⑦ get_rollback_instructions()— 公共:回滚说明
-    ⑧ AVOID_REPEAT_RULES       — 公共:避免重复操作
+    ④ TOOL_CALL_RULES + safety — 公共:回答要求+停止条件+执行效率+安全提醒
     """
     if include_tool_details is not None:
         self._include_tool_details = include_tool_details
@@ -181,42 +172,36 @@ def build_full_system_prompt(self, include_tool_details: bool = None) -> str:
         parts.append(project_ctx)
 
     parts.append(self.get_core_system_prompt())
-    if self._include_tool_details:
-        tool_part = self.get_tool_details()
-        if tool_part:
-            parts.append(tool_part)
-    parts.append(self.TOOL_CALL_RULES)
 
+    # Rules section: TOOL_CALL_RULES + safety merged
+    rules = [self.TOOL_CALL_RULES]
     safety = self.get_safety_reminder()
     if safety:
-        parts.append(safety)
-
-    rollback = self.get_rollback_instructions()
-    if rollback:
-        parts.append(rollback)
-
-    parts.append(self.AVOID_REPEAT_RULES)
+        rules.append(f"【安全提醒】:\n{safety}")
+    parts.append("\n\n".join(rules))
 
     return "\n\n".join(parts)
 ```
 
-**组装顺序分析**:
+**组装顺序分析（v2.1精简，从8段→4段）**:
 ```
-① _get_system_info()        [公共]     → 系统信息(OS/路径规则)
-② _get_project_context()    [公共]     → 项目上下文(README.md)
-③ get_core_system_prompt() — [分类特有] → 角色+业务规则
-④ get_tool_details()       — [可选]     → 工具描述+示例
-⑤ TOOL_CALL_RULES          [公共]     → 工具调用规则
-⑥ get_safety_reminder()    [分类特有] → 安全提醒
-⑦ get_rollback_instructions() [公共] → 回滚说明
-⑧ AVOID_REPEAT_RULES       [公共]     → 避免重复规则
+① _get_system_info()         [公共]     → 系统信息(OS/路径规则)
+② _get_project_context()     [公共]     → 项目上下文(README.md)
+③ get_core_system_prompt()  [分类特有] → 角色+业务规则
+④ TOOL_CALL_RULES+safety    [公共]     → 回答要求+停止条件+执行效率+安全提醒
 ```
 
+**v2.1移除**:
+- `get_tool_details()` → 由FC Schema承载，不再Prompt中注入
+- `get_rollback_instructions()` → LLM能从`role:tool`错误消息理解失败原因，无需额外指令
+- `AVOID_REPEAT_RULES` → 合并入`TOOL_CALL_RULES`【执行效率】段
+- `get_safety_reminder()` → 从独立段改为附在规则段尾部
+
 **分析**:
-- ✅ 组装顺序合理：先系统信息，后角色定义，再规则约束
+- ✅ 从8段精简至4段，组装更轻量
 - ✅ 公共规则统一注入，避免重复
-- ✅ FC-only架构：无OUTPUT_FORMAT，由API Schema约束格式
-- ✅ AVOID_REPEAT_RULES提取为类常量（2026-06-11小沈修复）
+- ✅ 移除`include_tool_details`逻辑（FC模式不再需要工具描述在Prompt中）
+- ✅ `get_rollback_instructions()` 方法删除（基类和FileOperationPrompts均删除）
 
 ---
 
@@ -413,16 +398,7 @@ class UniversalAgent:
     def _get_system_prompt(self) -> str:
         if not hasattr(self, 'prompts') or not self.prompts:
             return "System: 通用助手"
-
-        base_prompt = self.prompts.build_full_system_prompt()
-        candidates_hint = self._build_candidates_hint()
-        cross_tool_hint = self._build_cross_tool_hint()
-        parts = [base_prompt]
-        if candidates_hint:
-            parts.append(candidates_hint)
-        if cross_tool_hint:
-            parts.append(cross_tool_hint)
-        return "\n\n".join(parts)
+        return self.prompts.build_full_system_prompt()   # ← v2.1: 直接返回4段,无candidates/cross_tool
 
     def _build_candidates_hint(self) -> str:
         if not self._candidates:
@@ -478,6 +454,14 @@ class UniversalAgent:
         executed_summary = self._build_executed_tool_summary()
         if executed_summary:
             messages.append({"role": "system", "content": executed_summary})
+
+        # Inject hints each round — FC-only v2.1 2026-06-12
+        candidates_hint = self._build_candidates_hint()
+        if candidates_hint:
+            messages.append({"role": "system", "content": candidates_hint})
+        cross_tool_hint = self._build_cross_tool_hint()
+        if cross_tool_hint:
+            messages.append({"role": "system", "content": cross_tool_hint})
 
         openai_tools = self._get_openai_tools()
 
@@ -937,16 +921,12 @@ self.tool_category = ToolCategory.FILE
 # _initialize_run_state()
 self._on_session_init(task, context)          # 会话初始化回调
 sys_prompt = self._get_system_prompt()
-# 组装顺序(FC-only,OUTPUT_FORMAT已永久删除):
-# ① system_info (服务器OS信息)
-# ② tool_descriptions (FILE工具描述)
-# ③ Tool Call Examples
-# ④ TOOL_CALL_RULES
-# ⑤ safety_reminder
-# ⑥ rollback_instructions
-# ⑦ AVOID_REPEAT_RULES
-# ⑧ _build_candidates_hint()(动态)
-# ⑨ _build_cross_tool_hint()(动态)
+# 组装顺序(v2.1精简化版,4段):
+# ① _get_system_info()        — 系统信息(OS/路径规则)
+# ② _get_project_context()    — 项目上下文(README.md)
+# ③ get_core_system_prompt() — 角色+业务规则
+# ④ TOOL_CALL_RULES(safety合并) — 回答要求+停止条件+执行效率
+# ※ candidates_hint+cross_tool_hint 在_call_llm()每轮注入
 
 task_prompt = self._get_task_prompt("读取C:/config.json文件内容")
 self._on_before_loop(sys_prompt, task_prompt, context)  # loop前回调

@@ -69,16 +69,7 @@ class UniversalAgent(BaseAgent):
     def _get_system_prompt(self) -> str:
         if not hasattr(self, 'prompts') or not self.prompts:
             return "System: 通用助手"
-
-        base_prompt = self.prompts.build_full_system_prompt()
-        candidates_hint = self._build_candidates_hint()
-        cross_tool_hint = self._build_cross_tool_hint()
-        parts = [base_prompt]
-        if candidates_hint:
-            parts.append(candidates_hint)
-        if cross_tool_hint:
-            parts.append(cross_tool_hint)
-        return "\n\n".join(parts)
+        return self.prompts.build_full_system_prompt()
 
     def _build_candidates_hint(self) -> str:
         if not self._candidates:
@@ -134,6 +125,14 @@ class UniversalAgent(BaseAgent):
         executed_summary = self._build_executed_tool_summary()
         if executed_summary:
             messages.append({"role": "system", "content": executed_summary})
+
+        # Inject hints each round — FC-only 2026-06-12
+        candidates_hint = self._build_candidates_hint()
+        if candidates_hint:
+            messages.append({"role": "system", "content": candidates_hint})
+        cross_tool_hint = self._build_cross_tool_hint()
+        if cross_tool_hint:
+            messages.append({"role": "system", "content": cross_tool_hint})
 
         openai_tools = self._get_openai_tools()
 

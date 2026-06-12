@@ -10,18 +10,13 @@
 定义各意图 Prompt 的基类接口和公共规则,各意图的 Prompt 继承此类。
 统一管理 System Prompt 的组装顺序,确保所有Agent的prompt结构一致。
 
-组装架构(build_full_system_prompt):
+组装架构(build_full_system_prompt) — FC-only版:
 ① _get_system_info()         — 公共:系统信息(OS/路径规则,所有意图共享)
-② get_core_system_prompt()   — 分类特有:角色定义 + 业务规则(必选)
-③ get_tool_details()         — 可选:工具描述 + 示例(由include_tool_details控制)
-④ TOOL_CALL_RULES            — 公共:工具调用规则(直接调用,禁止反复讨论)
-⑤ get_safety_reminder()      — 分类特有:安全提醒(子类覆盖,默认空)
-⑥ get_rollback_instructions()— 公共:回滚说明
-⑦ AVOID_REPEAT_RULES         — 公共:避免重复操作
+② _get_project_context()     — 公共:项目上下文(README.md)
+③ get_core_system_prompt()   — 分类特有:角色定义 + 业务规则(必选)
+④ TOOL_CALL_RULES + safety   — 公共:回答要求+停止条件+执行效率+安全提醒
 
-UniversalAgent._get_system_prompt() 追加:
-⑧ _build_candidates_hint()   — 动态:候选意图提示
-⑨ _build_cross_tool_hint()   — 动态:跨分类工具提示
+_candidates_hint / _cross_tool_hint 在 _call_llm 中每轮注入消息末尾
 
 Author: 小沈 - 2026-03-21
 """
@@ -40,7 +35,7 @@ class BasePrompts(ABC):
     子类可选覆盖:
     - get_tool_details()      → 工具描述+示例(FC模式可跳过,由Schema承载)
     - get_task_prompt()       → 获取任务描述 Prompt
-    - get_safety_reminder()   → 获取安全提醒
+    - get_safety_reminder()   → 获取安全提醒(FC模式合并入TOOL_CALL_RULES段)
     
     完整 Prompt 组装入口: build_full_system_prompt()
     
@@ -58,34 +53,20 @@ class BasePrompts(ABC):
     def include_tool_details(self, value: bool):
         self._include_tool_details = value
 
-    # 【2026-05-07 小沈】通用Tool Call Rules
-    # 【2026-06-10 小沈】增强:强制工具调用规则
-    # 【2026-06-11 小健】合并SAFETY WARNING(原在OUTPUT_FORMAT),消除SRP/DRY违反
-    # 【2026-06-11 小沈】重构:剥离格式规则到OUTPUT_FORMAT,只保留行为规则 — 小沈审查
-    # 【FC-only重构 2026-06-11 小沈】移除finish引用,任务完成时直接回复内容
-    # 【2026-06-11 小沈】精简:去重"不能只回文字"2句→1句,移除"失败后换方法"(移入AVOID_REPEAT_RULES)
-    TOOL_CALL_RULES = """【工具调用规则】:
-1. 确认用户意图后立即调用工具,不要反复讨论
-2. reasoning简短(1-2句),不要长篇分析
-3. 用户请求需要实际操作时必须调用工具,不得仅回复文字
-4. 不确定用什么工具时选择最合理的调用,不要用文字代替
-5. 始终用中文回复
+    # 【FC-only重构 2026-06-12 小沈】合并AVOID_REPEAT_RULES,移除FC冗余规则(#1/#3/#4)
+    TOOL_CALL_RULES = """【回答要求】:
+- reasoning简短(1-2句),不要长篇分析
+- 始终用中文回复
 
 【停止条件 — 满足以下任一即可结束】:
-- 用户请求的操作已全部完成(文件已读取/写入/搜索完毕等)
+- 用户请求的操作已全部完成
 - 信息已获取足够,可以回答用户问题
-- 遇到无法解决的错误,已向用户报告原因和建议"""
+- 遇到无法解决的错误,已向用户报告原因和建议
 
-    # 【2026-06-11 小沈】避免重复规则
-    # 【2026-06-11 小沈】修正:合并"失败后换方法"(移自TOOL_CALL_RULES),
-    #    修复第2条"3次后换"vs第4条"立即换"的矛盾,
-    #    统一为"失败就换,3次不同方法都失败则停"
-    AVOID_REPEAT_RULES = """
-【避免重复规则】
-- 同一工具成功后不要重复执行(结果不变)
+【执行效率】:
+- 同一工具成功后不要重复执行
 - 已获取的信息直接使用,不重新获取
 - 失败后换其他工具或方法,不要重试同一操作
-- 注意:调用工具前先检查是否已执行过相同操作(看observation)
 - 连续3次不同方法都失败→停止尝试,向用户报告"""
 
     @abstractmethod
@@ -176,28 +157,17 @@ class BasePrompts(ABC):
         return ""
 
     def get_safety_reminder(self) -> str:
-        """获取安全提醒(子类覆盖)"""
+        """获取安全提醒(子类覆盖) — FC-only: 合并入TOOL_CALL_RULES段"""
         return ""
 
-    def get_rollback_instructions(self) -> str:
-        """获取回滚说明(公共) - 小沈 2026-06-11 英文→中文"""
-        return """操作失败时的处理步骤:
-1. 分析失败原因
-2. 尝试替代方法(调用其他工具或向用户报告)
-3. 向用户清晰报告错误信息"""
-
     def build_full_system_prompt(self, include_tool_details: bool = None) -> str:
-        """构建完整的系统Prompt — FC-only: 无OUTPUT_FORMAT,由API Schema约束格式
+        """构建完整的系统Prompt — FC-only版
 
         组装顺序:
         ① _get_system_info()        — 公共:系统信息(OS/路径规则)
         ② _get_project_context()    — 公共:项目上下文(README.md)
         ③ get_core_system_prompt() — 分类特有(角色+业务规则)
-        ④ get_tool_details()       — 可选:工具描述+示例
-        ⑤ TOOL_CALL_RULES          — 公共:工具调用规则
-        ⑥ get_safety_reminder()    — 分类特有:安全提醒
-        ⑦ get_rollback_instructions()— 公共:回滚说明
-        ⑧ AVOID_REPEAT_RULES       — 公共:避免重复操作
+        ④ TOOL_CALL_RULES + safety — 公共:回答要求+停止条件+执行效率+安全提醒
         """
         if include_tool_details is not None:
             self._include_tool_details = include_tool_details
@@ -209,21 +179,13 @@ class BasePrompts(ABC):
             parts.append(project_ctx)
 
         parts.append(self.get_core_system_prompt())
-        if self._include_tool_details:
-            tool_part = self.get_tool_details()
-            if tool_part:
-                parts.append(tool_part)
-        parts.append(self.TOOL_CALL_RULES)
 
+        # Rules section: TOOL_CALL_RULES + safety merged
+        rules = [self.TOOL_CALL_RULES]
         safety = self.get_safety_reminder()
         if safety:
-            parts.append(safety)
-
-        rollback = self.get_rollback_instructions()
-        if rollback:
-            parts.append(rollback)
-
-        parts.append(self.AVOID_REPEAT_RULES)
+            rules.append(f"【安全提醒】:\n{safety}")
+        parts.append("\n\n".join(rules))
 
         return "\n\n".join(parts)
 

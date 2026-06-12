@@ -73,12 +73,5 @@ class FileOperationPrompts(BasePrompts):
                 "2. 检查路径是否存在,选择合适的文件工具\n"
                 "3. 执行操作并用中文总结结果")
 
-    def get_rollback_instructions(self) -> str:
-        """获取回滚指令Prompt - 小沈 2026-06-11 英文→中文"""
-        return """操作失败时的处理步骤:
-1. 检查是否有备份(文件操作已自动备份)
-2. 使用回滚功能撤销操作
-3. 验证文件已正确恢复"""
-
     def get_safety_reminder(self) -> str:
         return "写入文件会覆盖已有内容,写入前确认是否要覆盖"
