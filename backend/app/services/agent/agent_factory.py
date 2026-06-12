@@ -2,8 +2,6 @@
 """
 create_agent - 创建 UniversalAgent
 
-CRSS/意图移除后，所有请求走同一个 UniversalAgent，不再按意图分类
-
 Author: 小沈 - 2026-06-13
 """
 from typing import Any, Optional

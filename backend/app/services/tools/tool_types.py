@@ -5,7 +5,6 @@
 - CATEGORY_ORDER / CATEGORY_NAMES 自动派生
 
 拆分自 registry.py — 小沈 2026-05-29
-CRSS/意图移除 — 小沈 2026-06-13
 """
 
 from typing import Dict, List, Optional, Callable, Any

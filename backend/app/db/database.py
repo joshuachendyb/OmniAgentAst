@@ -315,7 +315,7 @@ class DatabaseManager:
             ''')
 
     def _migrate_tasks_drop_check(self):
-        """迁移tasks表:删除intent列的CHECK约束(CRSS移除后)"""
+        """迁移tasks表:删除intent列的CHECK约束"""
         try:
             with self.get_conn("task_tracker") as conn:
                 row = conn.execute(
