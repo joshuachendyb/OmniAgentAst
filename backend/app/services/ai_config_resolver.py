@@ -63,6 +63,23 @@ class AIConfigResolver:
             raise ValueError(f"配置文件中不存在 provider: {provider}")
         return ai_config[provider]
 
+    def validate_config(self) -> tuple:
+        """验证AI配置有效性 — 完全复用已有方法
+        Returns:
+            (is_valid, provider, model, error_messages)
+        """
+        ai_config = self.get_ai_config()
+        provider, model = self._extract_provider_model(ai_config)
+        errors = []
+        try:
+            self._validate_provider_model_not_empty(provider, model)
+            self._validate_provider_exists(ai_config, provider)
+            provider_config = self._get_provider_config(ai_config, provider)
+            self._validate_model_in_list(provider_config, provider, model)
+        except ValueError as e:
+            errors.append(str(e))
+        return (len(errors) == 0, provider or "unknown", model or "", errors)
+
 
 _global_resolver: Optional[AIConfigResolver] = None
 

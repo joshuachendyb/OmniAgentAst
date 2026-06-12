@@ -31,6 +31,16 @@ v0.15.9
 | tool_types.py | CRSS关键词扩展(FILE增加扩展名/压缩/搜索等) |
 | universal_agent.py | JSON解析容错(文本+JSON混合时括号匹配) |
 
+### refactor: validate_config SLAP/DRY修复 + safety stub→真实file_safety委托 (1 commit)
+
+| 文件 | 变更 |
+|------|------|
+| ai_config_resolver.py | validate_config: 内联判断改为复用已有方法(SLAP/DRY) |
+| tool_safety_checker.py | record_operation/execute_with_safety: stub→真实file_safety委托(禁止向后兼容/复用优先) |
+| tool_safety_checker.py | _check_known_risks: FileTools._validate_path()实例方法调用修复 |
+| version.py | version.txt空行跳过(get_version健壮性) |
+| README.md | 版本v0.15.8→v0.15.9, 更新版本历史 |
+
 ### 净效果
 
 - 安全开关从环境变量改为config.yaml配置
@@ -39,7 +49,10 @@ v0.15.9
 - write_text_file参数统一(text→content)
 - 工具描述增强+CRSS关键词扩展
 - JSON解析容错增强
-- 全部测试通过，0回归
+- validate_config SLAP/DRY原则合规修复
+- safety stub→真实file_safety委托(禁止向后兼容/复用优先)
+- version.txt空行跳过(get_version健壮性)
+- P1测试14/14全部通过，0回归
 
 ---
 

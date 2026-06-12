@@ -12,7 +12,10 @@ def get_version() -> str:
 
         if version_file.exists():
             with open(version_file, 'r', encoding='utf-8') as f:
-                version = f.readline().strip()
+                for line in f:
+                    version = line.strip()
+                    if version:
+                        break
             logger.info(f"Successfully read version from version.txt: {version}")
             return version.lstrip('v')
     except Exception as e:
