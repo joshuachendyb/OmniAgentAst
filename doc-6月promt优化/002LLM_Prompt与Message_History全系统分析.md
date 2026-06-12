@@ -197,20 +197,11 @@ def build_full_system_prompt(self, include_tool_details: bool = None) -> str:
 - ✅ 从8段精简至4段，组装更轻量
 - ✅ 公共规则统一注入，避免重复
 - ✅ 移除`include_tool_details`逻辑（FC模式不再需要工具描述在Prompt中）
-- ✅ `get_rollback_instructions()` 方法删除（基类和FileOperationPrompts均删除）
+- ✅ `get_rollback_instructions()` 方法删除
 
 ---
 
-### 2.2 FileOperationPrompts子类（file_prompts.py）— 已删除
 
-**文件路径**: ~~`backend/app/services/prompts/file/file_prompts.py`~~ **已删除**
-
-**删除原因** (2026-06-12 北京老陈):
-- CRSS返回 FILE 主意图时直接走 system agent，无需独立 file agent
-- FILE 工具已通过 system agent 的 `extra_categories=[ToolCategory.FILE]` 加载
-- `AGENT_REGISTRY["file"]` 已移除，`detect_intent.py` 映射 `"file"` → `"system"`
-
----
 
 ### 2.3 SystemAdapter中间层（system_adapter.py）
 
