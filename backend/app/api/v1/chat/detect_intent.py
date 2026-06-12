@@ -16,7 +16,7 @@ from app.utils.logger import logger
 # ToolCategory.value → intent_type name 映射 — 小沈 2026-06-10
 # CRSS返回ToolCategory.value(如"doc_content"),但AGENT_REGISTRY用intent_type名(如"document")
 _TOOLCATEGORY_TO_INTENT = {
-    "file": "file",
+    "file": "system",
     "fund_runtime": "system",
     "net_process": "network",
     "doc_content": "document",

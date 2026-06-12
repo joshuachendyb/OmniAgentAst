@@ -35,7 +35,7 @@ class BasePrompts(ABC):
     子类可选覆盖:
     - get_tool_details()      → 工具描述+示例(FC模式可跳过,由Schema承载)
     - get_task_prompt()       → 获取任务描述 Prompt
-    - get_safety_reminder()   → 获取安全提醒(FC模式合并入TOOL_CALL_RULES段)
+
     
     完整 Prompt 组装入口: build_full_system_prompt()
     
@@ -54,19 +54,19 @@ class BasePrompts(ABC):
         self._include_tool_details = value
 
     # 【FC-only重构 2026-06-12 小沈】合并AVOID_REPEAT_RULES,移除FC冗余规则(#1/#3/#4)
+    # 【精简 2026-06-12 北京老陈】停止条件/执行效率精简表达
     TOOL_CALL_RULES = """【回答要求】:
 - reasoning简短(1-2句),不要长篇分析
 - 始终用中文回复
 
-【停止条件 — 满足以下任一即可结束】:
-- 用户请求的操作已全部完成
-- 信息已获取足够,可以回答用户问题
-- 遇到无法解决的错误,已向用户报告原因和建议
+【停止条件】:
+- 用户请求已完成,直接回答用户问题
+- 遇到无法解决的错误,向用户报告原因和建议
 
 【执行效率】:
 - 同一工具成功后不要重复执行
-- 已获取的信息直接使用,不重新获取
-- 失败后换其他工具或方法,不要重试同一操作
+- 已获取的信息直接使用,严禁二次获取
+- 失败后换其他工具或参数,不要重试同一操作
 - 连续3次不同方法都失败→停止尝试,向用户报告"""
 
     @abstractmethod
@@ -156,10 +156,6 @@ class BasePrompts(ABC):
     def _get_domain_extra_notes(self) -> str:
         return ""
 
-    def get_safety_reminder(self) -> str:
-        """获取安全提醒(子类覆盖) — FC-only: 合并入TOOL_CALL_RULES段"""
-        return ""
-
     def build_full_system_prompt(self, include_tool_details: bool = None) -> str:
         """构建完整的系统Prompt — FC-only版
 
@@ -167,7 +163,7 @@ class BasePrompts(ABC):
         ① _get_system_info()        — 公共:系统信息(OS/路径规则)
         ② _get_project_context()    — 公共:项目上下文(README.md)
         ③ get_core_system_prompt() — 分类特有(角色+业务规则)
-        ④ TOOL_CALL_RULES + safety — 公共:回答要求+停止条件+执行效率+安全提醒
+        ④ TOOL_CALL_RULES           — 公共:回答要求+停止条件+执行效率
         """
         if include_tool_details is not None:
             self._include_tool_details = include_tool_details
@@ -179,13 +175,7 @@ class BasePrompts(ABC):
             parts.append(project_ctx)
 
         parts.append(self.get_core_system_prompt())
-
-        # Rules section: TOOL_CALL_RULES + safety merged
-        rules = [self.TOOL_CALL_RULES]
-        safety = self.get_safety_reminder()
-        if safety:
-            rules.append(f"【安全提醒】:\n{safety}")
-        parts.append("\n\n".join(rules))
+        parts.append(self.TOOL_CALL_RULES)
 
         return "\n\n".join(parts)
 
@@ -193,7 +183,7 @@ class BasePrompts(ABC):
     def build_tool_descriptions(tool_names: List[str], category_label: str = "") -> str:
         """从 ToolRegistry 动态生成工具描述字符串 — 小沈 2026-05-27
 
-        DRY原则:统一 file_prompts 和 system_prompts 中重复的 _build_tool_descriptions。
+        DRY原则:统一各prompt子类中重复的 _build_tool_descriptions。
         新增/修改工具后自动更新 prompt,无需人工维护模板。
 
         Args:

@@ -16,7 +16,8 @@
 | v1.1 | 2026-06-11 05:18:28 | 小健 | 全问题3轮复核+X原则评估+已修复验证+未修复最优方案 |
 | v1.2 | 2026-06-11 (代码同步) | 小欧 | 逐节核对当前代码,修复9处差异 |
 | **v2.0** | **2026-06-12 (代码复核)** | **小欧** | **逐节复核本地代码，更新全部章节以匹配FC-only架构** |
-| **v2.1** | **2026-06-12 12:22:05** | **小欧** | **FC-only精简化改造: TOOL_CALL_RULES合并AVOID_REPEAT_RULES; build_full_system_prompt从8段→4段(移除rollback/AVOID_REPEAT/get_tool_details可选段, safety合并入规则段); candidates_hint+cross_tool_hint移至_call_llm每轮注入** |
+| **v2.1** | **2026-06-12 12:22:05** | **小欧** | **FC-only精简化改造: TOOL_CALL_RULES合并AVOID_REPEAT_RULES; build_full_system_prompt从8段→4段; candidates_hint+cross_tool_hint移至_call_llm每轮注入** |
+| **v2.2** | **2026-06-12 北京老陈** | **小欧** | **移除** AGENT_REGISTRY["file"] + FileOperationPrompts; CRSS返回FILE直接走system agent |
 
 ---
 
@@ -93,9 +94,9 @@
 │    │   ├─ agent._call_llm() → _call_llm_fc_stream（纯FC,无降级）     │
 │    │   │  ├─ message_builder.trim_history()     ← FC-only裁剪        │
 │    │   │  ├─ messages = prepare_messages_for_llm()                   │
-│    │   │  ├─ _build_executed_tool_summary()   ← system注入           │
-│    │   │  ├─ _build_candidates_hint()         ← system注入【v2.1】   │
-│    │   │  ├─ _build_cross_tool_hint()         ← system注入【v2.1】   │
+│    │   │  ├─ ~~_build_executed_tool_summary()~~ 已移除               │
+│    │   │  ├─ ~~_build_candidates_hint()~~       已移除               │
+│    │   │  ├─ ~~_build_cross_tool_hint()~~       已移除               │
 │    │   │  │  ※ 无TOOL_REMINDER（FC-only已移除）                     │
 │    │   │  └─ llm_client.request_stream(messages, tools)             │
 │    │   │     └─ LLMClient → POST /chat/completions {tools}          │
@@ -124,8 +125,9 @@
 **关键更新（v2.1）**:
 - `TOOL_CALL_RULES` 合并 `AVOID_REPEAT_RULES`，移除FC冗余规则（#1/#3/#4）
 - `build_full_system_prompt()` 从8段→4段：移除 `get_tool_details()`(可选)/`rollback_instructions`/`AVOID_REPEAT_RULES`，safety合并入规则段
-- `_get_system_prompt()` 简化，不再追加 `candidates_hint`/`cross_tool_hint`
-- `candidates_hint` + `cross_tool_hint` 移至 `_call_llm()` 每轮注入
+
+**2026-06-12 北京老陈 精简**:
+- `_build_executed_tool_summary()` / `_build_candidates_hint()` / `_build_cross_tool_hint()` **全部移除** — FC协议已覆盖，无需prompt hack
 
 ---
 
@@ -142,7 +144,7 @@ def _get_system_prompt(self) -> str:
     return self.prompts.build_full_system_prompt()   # ← v2.1: 直接返回4段组装,无candidates/cross_tool
 ```
 
-**注（v2.1）**: `candidates_hint` 和 `cross_tool_hint` 不再追加到系统提示中，改为在 `_call_llm()` 每轮消息末尾动态注入。
+**注（v2.1→2026-06-12）**: `candidates_hint` 和 `cross_tool_hint` 曾在`_call_llm()`动态注入，后与 `_build_executed_tool_summary()` 一并移除。
 
 ### 3.2 基类组装顺序
 
@@ -155,20 +157,21 @@ def _get_system_prompt(self) -> str:
 | ① | `_get_system_info()` | 基类方法 | ❌ 否 | 服务器OS/路径格式/环境信息 |
 | ② | `_get_project_context()` | 基类方法 | ❌ 否 | 项目上下文（README.md），有则追加 |
 | ③ | `get_core_system_prompt()` | 子类实现 | ✅ 是 | 分类Agent角色定义 + 业务规则 |
-| ④ | `TOOL_CALL_RULES`(safety合并) | 基类常量 | ❌ 否 | 回答要求+停止条件+执行效率+安全提醒 |
+| ④ | `TOOL_CALL_RULES` | 基类常量 | ❌ 否 | 回答要求+停止条件+执行效率 |
 
 **v2.1移除的段（FC-only精简化）**:
 - `get_tool_details()` → 由FC Schema承载，不再Prompt中注入
 - `get_rollback_instructions()` → LLM自然能从`role:tool`错误消息理解失败原因，无需额外指令
 - `AVOID_REPEAT_RULES` → 合并入`TOOL_CALL_RULES`【执行效率】段
-- `get_safety_reminder()` → 从独立段改为合并入`TOOL_CALL_RULES`尾部
-- `candidates_hint` + `cross_tool_hint` → 移至`_call_llm()`每轮动态注入
+- `get_safety_reminder()` → **已移除**，后续由独立安全机制处理（2026-06-12 北京老陈）
+- `candidates_hint` + `cross_tool_hint` → 移至`_call_llm()`每轮动态注入 → **后已全部移除**
+- `_build_executed_tool_summary()` → **已移除**
 
 **FC-only变更记录（v2.1新增）**:
 - `TOOL_CALL_RULES` 合并 `AVOID_REPEAT_RULES`，移除FC冗余规则#1/#3/#4（2026-06-12）
 - `build_full_system_prompt()` 从8段精简为4段（2026-06-12）
 - `get_rollback_instructions()` 方法删除（2026-06-12）
-- `candidates_hint`/`cross_tool_hint` 移至`_call_llm`每轮注入（2026-06-12）
+- `candidates_hint`/`cross_tool_hint` / `executed_tool_summary` **全部移除**（2026-06-12 北京老陈）
 
 ### 3.3 各分类 get_core_system_prompt() + get_tool_details() 内容概况
 
@@ -220,15 +223,14 @@ Windows
 - reasoning简短(1-2句),不要长篇分析
 - 始终用中文回复
 
-【停止条件 — 满足以下任一即可结束】:
-- 用户请求的操作已全部完成
-- 信息已获取足够,可以回答用户问题
-- 遇到无法解决的错误,已向用户报告原因和建议
+【停止条件】:
+- 用户请求已完成,直接回答用户问题
+- 遇到无法解决的错误,向用户报告原因和建议
 
 【执行效率】:
 - 同一工具成功后不要重复执行
-- 已获取的信息直接使用,不重新获取
-- 失败后换其他工具或方法,不要重试同一操作
+- 已获取的信息直接使用,严禁二次获取
+- 失败后换其他工具或参数,不要重试同一操作
 - 连续3次不同方法都失败→停止尝试,向用户报告
 ```
 

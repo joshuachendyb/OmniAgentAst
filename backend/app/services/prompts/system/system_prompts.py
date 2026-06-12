@@ -97,5 +97,3 @@ class SystemPrompts(BasePrompts):
                 "2. 按操作规则执行(查询直接做,执行先确认,删除必须用户同意)\n"
                 "3. 用中文总结结果")
 
-    def get_safety_reminder(self) -> str:
-        return ""
