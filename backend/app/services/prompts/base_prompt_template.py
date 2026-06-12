@@ -14,9 +14,7 @@
 ① _get_system_info()         — 公共:系统信息(OS/路径规则,所有意图共享)
 ② _get_project_context()     — 公共:项目上下文(README.md)
 ③ get_core_system_prompt()   — 分类特有:角色定义 + 业务规则(必选)
-④ TOOL_CALL_RULES + safety   — 公共:回答要求+停止条件+执行效率+安全提醒
-
-_candidates_hint / _cross_tool_hint 在 _call_llm 中每轮注入消息末尾
+④ TOOL_CALL_RULES             — 公共:回答要求+停止条件
 
 Author: 小沈 - 2026-03-21
 """
@@ -53,21 +51,13 @@ class BasePrompts(ABC):
     def include_tool_details(self, value: bool):
         self._include_tool_details = value
 
-    # 【FC-only重构 2026-06-12 小沈】合并AVOID_REPEAT_RULES,移除FC冗余规则(#1/#3/#4)
-    # 【精简 2026-06-12 北京老陈】停止条件/执行效率精简表达
     TOOL_CALL_RULES = """【回答要求】:
 - reasoning简短(1-2句),不要长篇分析
 - 始终用中文回复
 
 【停止条件】:
 - 用户请求已完成,直接回答用户问题
-- 遇到无法解决的错误,向用户报告原因和建议
-
-【执行效率】:
-- 同一工具成功后不要重复执行
-- 已获取的信息直接使用,严禁二次获取
-- 失败后换其他工具或参数,不要重试同一操作
-- 连续3次不同方法都失败→停止尝试,向用户报告"""
+- 遇到无法解决的错误,向用户报告原因和建议"""
 
     @abstractmethod
     def get_core_system_prompt(self) -> str:
@@ -163,7 +153,7 @@ class BasePrompts(ABC):
         ① _get_system_info()        — 公共:系统信息(OS/路径规则)
         ② _get_project_context()    — 公共:项目上下文(README.md)
         ③ get_core_system_prompt() — 分类特有(角色+业务规则)
-        ④ TOOL_CALL_RULES           — 公共:回答要求+停止条件+执行效率
+        ④ TOOL_CALL_RULES           — 公共:回答要求+停止条件
         """
         if include_tool_details is not None:
             self._include_tool_details = include_tool_details
