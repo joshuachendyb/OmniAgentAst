@@ -93,7 +93,6 @@ def query_sql(
         db_path: SQLite 数据库文件路径
         limit: 最大返回行数,默认50
         timeout: 超时毫秒数,默认15000
-        output_format: 输出格式,table(默认) 或 json
 
     Returns:
         Dict with code, data, message

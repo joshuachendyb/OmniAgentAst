@@ -910,8 +910,6 @@ def timezone_convert(
     P11统一入口: direction="utc_to_local"|"local_to_utc"|"any"
     direction=any时tz为源时区,目标为本地时区
     """
-    source_tz = None  # ⚠️ 警告: 已从Schema移除,未使用,后续视需求决定是否恢复
-    target_tz = None  # ⚠️ 警告: 已从Schema移除,未使用,后续视需求决定是否恢复
     try:
         if direction == "utc_to_local":
             result = _time_utc_to_local(utc_time=time_value, target_tz=tz)
@@ -947,21 +945,19 @@ async def timer(
     """定时器管理 — 小沈 2026-05-19 参数精简6→4(砍callback_data+limit)
     P11统一入口: action="set"|"clear"|"list"
     """
-    callback_data = None  # ⚠️ 警告: 已从Schema移除,硬编码默认值,后续视需求决定是否恢复
-    limit = 10  # ⚠️ 警告: 已从Schema移除,硬编码默认值,后续视需求决定是否恢复
     try:
         if action == "set":
             if delay is None or delay <= 0:
                 return build_error(ERR_TIMER_PARAM, "delay必须大于0", next_actions=build_next_actions([("timer", "重试设置定时器", "需要重新设置时")]))
             if not callback:
                 return build_error(ERR_TIMER_PARAM, "callback必填", next_actions=build_next_actions([("timer", "重试设置定时器", "需要重新设置时")]))
-            result = await _timer_set(delay=delay, callback=callback, callback_data=callback_data)
+            result = await _timer_set(delay=delay, callback=callback, callback_data=None)
         elif action == "clear":
             if not timer_id:
                 return build_error(ERR_TIMER_PARAM, "timer_id必填", next_actions=build_next_actions([("timer", "列出定时器", "需要查看现有定时器时", {"action": "list"})]))
             result = await _timer_clear(timer_id=timer_id)
         elif action == "list":
-            result = _timer_list(limit=limit)
+            result = _timer_list(limit=10)
         else:
             return build_error(ERR_INVALID_ACTION, f"不支持的action: {action},可选: set/clear/list", next_actions=build_next_actions([("tool_help", "查看timer用法", "不确定action时", {"tool_name": "timer"})]))
 

@@ -837,7 +837,7 @@ def read_document(
     合并 read_pdf + read_docx + read_pptx + read_xlsx + read_csv
     按文件后缀自动路由到对应解析器
     支持 .doc 后缀(通过 win32com 降级处理)
-    支持 .csv/.tsv 后缀(use_pandas=True时使用pandas,否则使用标准库csv)
+     支持 .csv/.tsv 后缀
     """
     path = Path(file_path)
     suffix = path.suffix.lower()
