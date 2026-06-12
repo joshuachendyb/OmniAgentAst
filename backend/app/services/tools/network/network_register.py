@@ -62,77 +62,10 @@ from app.services.tools.system.system_schema import NetConnectionsInput
 
 # 工具描述
 NETWORK_TOOL_DESCRIPTIONS = {
-    "http_request": """发送 HTTP 请求到指定的 URL,支持 GET、POST、PUT、DELETE、PATCH 等方法。
-
-【使用场景】
-- 当用户需要调用 REST API 时使用
-- 当用户想要发送 HTTP 请求获取数据或提交数据时使用
-- 当用户需要进行网络请求时使用
-
-【重要】返回响应的状态码、响应头和响应体
-
-【使用示例】
-- GET请求:http_request(url="https://api.example.com/users", method="GET")
-- POST请求:http_request(url="https://api.example.com/users", method="POST", headers={"Content-Type":"application/json"}, json_body={"name":"张三"})
-- 带重试:http_request(url="https://api.example.com/users", retry=5)
-
-【返回数据说明】
-- code: 状态码,SUCCESS或ERR_NETWORK_INVALID_PARAM/ERR_INVALID_URL/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_TIMEOUT/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
-- data: 成功时为对象,失败时为None;成功时包含 status_code(HTTP状态码)、headers(响应头字典)、body(响应体,JSON自动解析为对象,否则为文本字符串);HTTP错误时包含 status_code和body
-- message: 结果描述信息""",
-    "download_file": """从 URL 下载文件到本地,支持大文件流式下载。
-
-【使用场景】
-- 当用户需要下载文件时使用
-- 当用户想要下载图片、视频、安装包等文件时使用
-- 当用户需要指定保存路径时使用
-
-【重要】返回下载结果,包含文件路径、下载大小、进度百分比
-
-【使用示例】
-- 简单下载:download_file(url="https://example.com/file.zip", destination_path="D:/Downloads/file.zip")
-- 带认证下载:download_file(url="https://private.com/file.zip", destination_path="D:/Downloads/file.zip", headers={"Authorization":"Bearer token"})
-
-【返回数据说明】
-- code: 状态码,SUCCESS或ERR_INVALID_URL/ERR_NETWORK_INVALID_PATH/ERR_NETWORK_CREATE_DIR/ERR_NETWORK_WRITE_FILE/ERR_NETWORK_TIMEOUT/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
-- data: 成功时为对象,失败时为None;成功时包含 file_path(文件绝对路径)、file_size(本次下载字节数)、total_size(文件总字节数)、progress_percent(进度百分比0-100)、content_type(内容类型)
-- message: 结果描述信息""",
-    "fetch_webpage": """获取和处理网页内容,支持多种格式提取和智能内容提取。
-
-【使用场景】
-- 当用户需要获取网页内容时使用
-- 当用户想要从网页中提取特定信息时使用
-- 当用户需要将网页转为Markdown格式时使用
-
-【重要】返回网页的文本内容和提取格式
-
-【使用示例】
-- 获取网页:fetch_webpage(url="https://example.com", prompt="提取页面标题和主要内容")
-- JS渲染:fetch_webpage(url="https://example.com", js_render=true)
-
-【返回数据说明】
-- code: 状态码,SUCCESS或ERR_INVALID_URL/ERR_NETWORK_JS_RENDER/ERR_NETWORK_TIMEOUT/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
-- data: 成功时为对象,失败时为None;成功时包含 url(请求地址)、content(提取的网页内容文本)、format(提取格式markdown/html/text)、content_type(响应内容类型)、status_code(HTTP状态码)、truncated(是否因max_tokens截断);有prompt时额外包含 prompt(AI提取指令)和note(提示需LLM后处理)
-- message: 结果描述信息""",
-    "search_web": """搜索网络获取最新信息(使用Bing中国搜索,国内可用)。
-
-【使用场景】
-- 当用户需要搜索网络获取最新信息时使用
-- 当用户想要查询实时数据或新闻时使用
-- 当用户需要获取网上最新的技术文档时使用
-
-【重要】返回搜索结果列表,包含标题、URL 和摘要
-【注意】num_results参数建议:概览类查询用5~8,深度调研类用15~20,默认10
-
-【使用示例】
-- 简单搜索:search_web(query="OpenAI function calling")
-- 限定域名:search_web(query="React 19 新特性", allowed_domains=["github.com","react.dev"])
-- 限结果数:search_web(query="AI paper 2025", num_results=15)
-
-【返回数据说明】
-- code: 状态码,SUCCESS或ERR_PARAM_INVALID/ERR_NETWORK_UNKNOWN
-- data: 成功时为对象,失败时为None;成功时包含 query(搜索关键词)、results(搜索结果列表,每项含title标题/url链接/snippet摘要/source来源引擎)、total(结果总数)、engine(使用的搜索引擎DuckDuckGo或Bing)、language(语言)
-- message: 结果描述信息""",
+    "http_request": """发送HTTP请求到指定URL。支持GET/POST/PUT/DELETE/PATCH等方法,支持自定义请求头、JSON请求体、查询参数、超时设置和重试次数。返回响应的状态码、响应头和响应体(JSON自动解析为对象)。访问国外服务失败时提示可选的国内替代地址。适用场景:需要调用REST API获取数据、提交数据、调用Web服务接口时使用。""",
+    "download_file": """从URL下载文件到本地,支持大文件流式下载。支持自定义请求头(如认证Token)、超时设置。自动创建目标目录。返回文件保存路径、下载字节数、文件总大小、进度百分比和内容类型。适用场景:需要下载网络上的图片、安装包、数据文件等到本地磁盘时使用。""",
+    "fetch_webpage": """获取网页内容并提取正文,支持Markdown/HTML/Text格式输出。当需要从网页中提取特定信息时,可通过prompt参数指定提取指令(由LLM后处理)。支持JavaScript渲染(js_render=True)和超时设置。返回提取的网页内容、格式类型和HTTP状态码。适用场景:需要获取网页文档内容、从网页中提取特定数据、将网页转为Markdown后供LLM阅读时使用。""",
+    "search_web": """使用搜索引擎查询最新信息,默认使用国内可用的Bing中国搜索。支持指定搜索结果数量、限定搜索域名范围。返回搜索结果列表(含标题、URL、摘要)、结果总数和使用的搜索引擎。num_results参数建议:概览类查询用5~8,深度调研类用15~20,默认10。适用场景:需要获取实时信息、新闻动态、技术文档、问题解决方案等最新网络信息时使用。""",
     "network_diagnose": """支持网络连通性诊断功能。
 mode参数决定操作类型:
 - ping: ICMP可达性检测(主机级),host(可选count/timeout)
@@ -141,24 +74,7 @@ mode参数决定操作类型:
 使用示例:
 - ping测试 → network_diagnose(host="8.8.8.8")
 - 端口检测 → network_diagnose(host="8.8.8.8", mode="port", port=53)""",
-    "net_connections": """获取网络连接列表,支持按类型(TCP/UDP)、状态(ESTABLISHED/LISTEN)、端口过滤,可获取关联进程信息。
-
-使用场景:
-- 当用户需要查看当前网络连接时使用
-- 当用户需要排查端口占用问题时使用
-- 当用户需要查看某个端口的连接状态时使用
-
-【重要】最多返回200条连接记录;process_info=True可获取关联进程名和路径
-
-使用示例:
-- 查看所有连接:{}
-- 查看TCP已建立连接:{"kind": "tcp", "state": "established"}
-- 查看端口8080的连接:{"filter_port": 8080, "process_info": true}
-
-返回数据说明:
-- code: 状态码,SUCCESS/ERR_PERMISSION_DENIED/ERR_SYSTEM_NET_CONN
-- data: 成功时含connections(连接列表)、total(连接总数)、kind(连接类型)、filter_port(过滤端口);失败时为null
-- message: 状态描述信息""",
+    "net_connections": """获取当前系统的网络连接列表。支持按连接类型(TCP/UDP)、连接状态(ESTABLISHED/LISTEN等)和端口号过滤。可获取关联进程信息(进程名和PID)。最多返回200条连接记录。适用场景:需要排查端口占用问题、查看某个端口的连接状态、了解当前网络活动情况时使用。""",
 }
 
 # 工具名到实现函数的映射

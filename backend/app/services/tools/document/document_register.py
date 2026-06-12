@@ -73,179 +73,24 @@ from app.services.tools.document.database_tools import (
 )
 
 DESCRIPTIONS = {
-    "read_document": """读取office类文件pdf\docX\doc\xls\xlsx\pptx\csv等格式文件 。
+    "read_document": """读取Office文档内容。按文件后缀自动选择解析器,支持PDF(.pdf,支持页码范围/提取表格)、Word(.docx,支持提取表格)、Excel(.xlsx/.xls,支持指定工作表/最大行数)、PPT(.pptx/.ppt)、CSV/TSV(.csv/.tsv,支持分隔符/编码)。纯文本文件请使用read_text_file工具。适用场景:需要读取PDF/Word/Excel/PPT等非代码文档内容,提取表格数据和分析文本内容时使用。""",
 
-使用场景:
-- 读取officee内的文件内容
-支持的格式:
-- .pdf: PDF解析(支持页码范围、提取表格)
-- .docx: Word解析(支持提取表格)
-- .xlsx: Excel解析(支持指定工作表、最大行数)
-- .pptx: PPT解析
-- .csv/.tsv: CSV解析(支持分隔符、编码)
+    "write_document": """写入Office文档。按文件后缀自动选择写入器,支持Word(.docx,标题/段落/表格)、Excel(.xlsx,表头+行数据)、PDF(.pdf,标题/段落/表格)、PPT(.pptx,标题/幻灯片)。适用场景:需要生成报告文档、导出数据到Excel表格、创建PPT演示文稿时使用。""",
 
-使用示例:
-- 读PDF/ -> read_document(file_path="D:/report.pdf")
-- 读Word/ -> read_document(file_path="D:/report.docx", extract_tables=true)
-- 读Excel/ -> read_document(file_path="D:/data.xlsx", sheet_name="Sheet2", max_rows=100)
-- 读PPT/ -> read_document(file_path="D:/presentation.pptx")
-- 读CSV/ -> read_document(file_path="D:/data.csv")
-- 分页读取 -> read_document(file_path="D:/report.pdf", pages="1-3", extract_tables=true)
+    "convert_document": """将Office文档转换为PDF格式。支持Word(.docx/.doc→PDF)、Excel(.xlsx/.xls→PDF)、PPT(.pptx/.ppt→PDF)以及OpenDocument格式(.odt/.ods→PDF)。需要系统安装LibreOffice。适用场景:需要将文档转为PDF进行分发、归档或打印时使用。""",
 
-返回数据说明:
-- code: SUCCESS / ERR_FILE_NOT_FOUND / ERR_DOC_FORMAT_NOT_SUPPORTED
-- data: 文档内容(格式因文件类型而异)
-- message: 操作结果消息""",
+    "analyze_data": """对数据集进行统计分析。支持直接传入数据列表或CSV/Excel文件路径。可指定统计操作(mean/sum/max/min/count/std/var/median等)、分组字段和对多个数值列进行分析。需要安装pandas库。适用场景:需要获取数据的均值/总和/最值等描述性统计、分析数据分布特征时使用。""",
 
-    "write_document": """支持office类文件docx\xlsx\pptx\pdf格式文件写入操作。
+    "filter_data": """按条件筛选/过滤数据。支持多条件组合,条件含column/operator(eq/ne/gt/gte/lt/lte/in/contains)/value。支持排序(sort_by/descending)、取前N条(top_n)和分页(offset/limit)。数据源可为数据列表或CSV/Excel文件路径。适用场景:需要从数据集中筛选出满足特定条件的记录、排序并取TopN时使用。""",
 
-使用场景:
-- 工具自动按后缀选择写入器
-- 支持标题、段落、表格、幻灯片等
-
-支持的格式:
-- .docx: Word写入(支持标题、段落、表格)
-- .xlsx: Excel写入(支持表头+行数据)
-- .pdf: PDF写入(支持标题、段落、表格)
-- .pptx: PPT写入(支持标题、幻灯片列表)
-
-使用示例:
-- 写Word/ -> write_document(file_path="D:/report.docx", title="测试报告", content="内容")
-- 写Excel/ -> write_document(file_path="D:/data.xlsx", data={"headers":["姓名","年龄"],"rows":[["张三",25]]})
-- 写PDF/ -> write_document(file_path="D:/report.pdf", title="测试报告", content="报告内容")
-- 写PPT/ -> write_document(file_path="D:/slides.pptx", title="项目汇报")
-
-返回数据说明:
-- code: SUCCESS / ERR_DOC_FORMAT_NOT_SUPPORTED
-- data: { file_path }
-- message: 操作结果消息""",
-
-    "convert_document": """支持将Word/Excel/PPT文件转换位PDF格式文件。
-
-【使用场景】
-- 当用户需要将文档转换为PDF时使用
-
-【支持格式转换
-- .docx/.doc → PDF(Word文档)
-- .xlsx/.xls → PDF(Excel表格)
-- .pptx/.ppt → PDF(PPT演示文稿)
-- .odt → PDF(OpenDocument文本)
-- .ods → PDF(OpenDocument表格)
-
-
-【使用示例】
-- docx转pdf:convert_document(input_path="D:/report.docx", output_format="pdf")
-- xlsx转pdf指定路径:convert_document(input_path="D:/sales.xlsx", output_format="pdf", output_path="D:/output/sales.pdf")
-
-【返回数据说明】
-- code: SUCCESS / ERR_CONVERT_FAILED / ERR_NO_LIBREOFFICE
-- data: { input_path, output_path }
-- message: 操作结果消息""",
-
-    "analyze_data": """对数据集进行统计分析,返回描述性统计信息。
-
-【使用场景】
-- 当用户需要对数据进行统计分析时使用
-- 当用户想要获取数据的均值、总和、最大值、最小值等统计信息时使用
-- 当用户需要进行数据分组分析时使用
-
-【重要】需要安装 pandas 库
-
-【使用示例】
-- 基础统计:analyze_data(data=[{"name":"A","value":10},{"name":"B","value":20}])
-- 文件统计:analyze_data(data="D:/data/users.csv", operations=["mean","max"])
-
-【返回数据说明】
-- code: SUCCESS / ERR_ANALYZE_DATA / ERR_NO_PANDAS
-- data: 统计分析结果(包含row_count、columns、statistics/grouped_statistics等)
-- message: 操作结果消息""",
-
-    "filter_data": """按条件筛选/过滤数据,支持多条件组合。
-
-【使用场景】
-- 当用户说"筛选年龄大于30的记录"时使用
-- 当用户说"找出销售额前10的产品"时使用
-- 当用户说"只看北京的数据"时使用
-- 当用户需要按条件过滤数据时使用
-
-【使用示例】
-- 条件筛选:filter_data(data=[{"name":"A","age":25},{"name":"B","age":35}], conditions=[{"column":"age","operator":"gt","value":30}])
-- 文件筛选排序:filter_data(data="D:/data/users.csv", conditions=[{"column":"city","operator":"eq","value":"北京"}], sort_by="age", top_n=10)
-
-【返回数据说明】
-- code: SUCCESS / ERR_FILTER_INVALID
-- data: 包含columns、rows、row_count、original_count、filtered_count
-- message: 操作结果消息""",
-
-    "generate_chart": """使用 matplotlib 生成数据可视化图表。
-
-【使用场景】
-- 当用户需要将数据可视化展示时使用
-- 当用户想要生成柱状图、折线图、饼图等图表时使用
-- 当用户需要生成报告中的图表时使用
-
-
-【使用示例】
-- 柱状图:generate_chart(data={"labels":["A","B"],"values":[10,20]}, chart_type="bar", title="销售统计")
-- 折线图指定路径:generate_chart(data={"labels":["1月","2月"],"values":[100,200]}, chart_type="line", output_path="D:/output/chart.png")
-
-【返回数据说明】
-- code: SUCCESS / ERR_CHART_GENERATE / ERR_NO_MATPLOTLIB
-- data: 输出图片路径
-- message: 操作结果消息""",
+    "generate_chart": """使用matplotlib生成数据可视化图表。支持柱状图(bar)、折线图(line)、饼图(pie)、散点图(scatter)。可指定图表标题、X轴/Y轴标签、图例位置和输出路径。默认保存到系统临时目录。适用场景:需要将数据以图表形式可视化呈现、生成报告配图时使用。""",
 
     # 【2026-05-18 小沈】Database工具描述(从database_register迁入)
-    "query_sql": """执行只读SQL查询(SELECT/SHOW/DESCRIBE),返回结果集。
+    "query_sql": """执行只读SQL查询。支持SELECT/SHOW/DESCRIBE/EXPLAIN/WITH/PRAGMA语句,强制只读,写操作返回错误。超时自动触发EXPLAIN分析。支持SQLite/MySQL/PostgreSQL三种数据库。适用场景:需要查询/分析数据库数据、获取表结构信息、分析查询执行计划时使用。""",
 
-【使用场景】
-- 当用户需要查询数据库数据时使用
-- 当用户需要分析表数据时使用
-- 当需要执行只读操作时使用
+    "execute_sql": """执行写操作SQL。支持INSERT/UPDATE/DELETE/CREATE/ALTER/DROP/TRUNCATE等语句。仅支持单语句,自动提交事务。高风险操作(DROP/TRUNCATE)需确认安全级别。支持dry_run=TRUE预演模式。支持SQLite/MySQL/PostgreSQL三种数据库。适用场景:需要修改数据库数据、创建或修改表结构时使用。""",
 
-【重要】强制只读,写操作返回错误。超时自动触发EXPLAIN分析。
-
-【使用示例】
-- 查询数据:query_sql(sql="SELECT * FROM users LIMIT 10")
-- 指定数据库:query_sql(sql="SELECT * FROM users", connection_type="sqlite", db_path="D:/data/app.db")
-
-【返回数据说明】
-- code: SUCCESS / ERR_READ_ONLY_VIOLATION / ERR_DB_CONNECTION / ERR_SQL_EXEC
-- data: { columns, rows, total }
-- message: 操作结果消息""",
-
-    "execute_sql": """执行写操作SQL(INSERT/UPDATE/DELETE/DDL)。
-
-【使用场景】
-- 当用户需要修改数据库数据时使用
-- 当用户需要执行CREATE TABLE等DDL时使用
-- 当需要执行写操作时使用
-
-【重要】仅支持单语句自动提交。高风险操作(DROP/TRUNCATE)自动拦截。
-
-【使用示例】
-- 插入数据:execute_sql(sql="INSERT INTO logs (msg) VALUES ('test')")
-- 预演删除:execute_sql(sql="DELETE FROM temp_data WHERE created_at < '2024-01-01'", dry_run=true)
-
-【返回数据说明】
-- code: SUCCESS / WARNING / ERR_DB_CONNECTION / ERR_SQL_EXEC / ERR_EXEC_FAILED
-- data: { affected_rows, sql }
-- message: 操作结果消息""",
-
-    "get_db_schema": """获取数据库结构元数据,包括表名、字段、类型、索引、外键。
-
-【使用场景】
-- 当用户需要查看数据库表结构时使用
-- 当用户需要理解表设计时
-- 当用户需要生成DDL时使用
-
-【使用示例】
-- 按模式过滤:get_db_schema(filter_pattern="user%")
-- 指定表:get_db_schema(table_name="users")
-
-【返回数据说明】
-- code: SUCCESS / ERR_DB_CONNECTION / ERR_SQL_EXEC / ERR_SCHEMA_FAILED
-- data: { tables: [{name, columns, indexes}], total }
-- message: 操作结果消息""",
+    "get_db_schema": """获取数据库结构元数据。返回数据库中的表名、字段名/类型/约束、索引和外键信息。支持按表名精确匹配或按模式(filter_pattern,支持SQL LIKE通配符)过滤。支持SQLite/MySQL/PostgreSQL三种数据库。适用场景:需要了解数据库表结构、查看字段定义和索引、生成DDL脚本时使用。""",
 }
 
 EXAMPLES = {

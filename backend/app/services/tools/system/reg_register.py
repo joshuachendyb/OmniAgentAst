@@ -65,7 +65,7 @@ def _register_registry_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.NET_PROCESS,
+            category=ToolCategory.SYSTEM,
             implementation=method,
             version="1.0.0",
             input_model=input_model,
