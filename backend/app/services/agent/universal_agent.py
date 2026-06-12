@@ -55,9 +55,6 @@ class UniversalAgent(BaseAgent):
         if config:
             self.config = config
             self.prompts = config.prompt_class()
-            # FC-only模式: 跳过Prompt中的工具描述和示例(由FC Schema承载)
-            if config.exclude_tool_details_from_prompt:
-                self.prompts.include_tool_details = False
             logger.info(
                 f"UniversalAgent initialized (intent={config.intent_type}, task_id={task_id}, category={effective_category})"
             )
@@ -71,13 +68,10 @@ class UniversalAgent(BaseAgent):
             return "System: 通用助手"
         return self.prompts.build_full_system_prompt()
 
-    def _get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
-        return self.prompts.get_task_prompt(task)
-
     def _on_session_init(self, task: str, context: Optional[Dict[str, Any]] = None):
         pass
 
-    def _on_before_loop(self, sys_prompt: str, task_prompt: str, context: Optional[Dict[str, Any]] = None):
+    def _on_before_loop(self, sys_prompt: str, task: str, context: Optional[Dict[str, Any]] = None):
         pass
 
     def _on_after_loop(self):

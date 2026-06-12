@@ -76,21 +76,6 @@ class QueryCalendarInput(BaseModel):
     )
 
 
-class TimezoneConvertInput(BaseModel):
-    time_value: Union[int, float, str] = Field(
-        ...,
-        description="时间值。支持:int/float=Unix时间戳(秒),str=日期字符串。必填参数"
-    )
-    direction: Literal["utc_to_local", "local_to_utc", "any"] = Field(
-        default="utc_to_local",
-        description="转换方向:utc_to_local=UTC转本地,local_to_utc=本地转UTC,any=任意源→目标。默认为utc_to_local"
-    )
-    tz: Optional[str] = Field(
-        default=None,
-        description="时区,支持IANA名(如Asia/Shanghai)或UTC偏移(如+08:00)。direction=utc_to_local时为目标时区,local_to_utc时为源时区,any时必填(源时区)。默认为本地时区"
-    )
-
-
 class TimerInput(BaseModel):
     action: Literal["set", "clear", "list"] = Field(
         ...,
@@ -117,6 +102,5 @@ __all__ = [
     "TimeAddInput",
     "TimeDiffInput",
     "QueryCalendarInput",
-    "TimezoneConvertInput",
     "TimerInput",
 ]

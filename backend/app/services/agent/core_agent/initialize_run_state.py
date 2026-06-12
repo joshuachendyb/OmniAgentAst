@@ -25,8 +25,7 @@ def initialize_run_state(
 
     self._on_session_init(task, context)
     sys_prompt = self._get_system_prompt()
-    task_prompt = self._get_task_prompt(task, context)
-    self._on_before_loop(sys_prompt, task_prompt, context)
-    self.message_builder.init_history(sys_prompt, task_prompt)
+    self._on_before_loop(sys_prompt, task, context)
+    self.message_builder.init_history(sys_prompt, task)
 
     return ChunkBuffer(self.max_consecutive_chunks)

@@ -149,13 +149,16 @@ def to_openai_tools(registry, category: Optional[ToolCategory] = None) -> list:
             continue
         if category and meta.category != category:
             continue
+        func_def = {
+            "name": meta.name,
+            "description": meta.description,
+            "parameters": meta.input_schema
+        }
+        if meta.examples:
+            func_def["examples"] = meta.examples
         tools.append({
             "type": "function",
-            "function": {
-                "name": meta.name,
-                "description": meta.description,
-                "parameters": meta.input_schema
-            }
+            "function": func_def
         })
 
     return tools

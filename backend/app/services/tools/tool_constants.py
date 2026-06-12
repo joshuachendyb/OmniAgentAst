@@ -35,7 +35,6 @@ TOOL_TIMEOUTS = {
     "time_add": 5,
     "time_diff": 5,
     "query_calendar": 15,
-    "timezone_convert": 5,
     "timer": 30,
     "default": 60,
 }

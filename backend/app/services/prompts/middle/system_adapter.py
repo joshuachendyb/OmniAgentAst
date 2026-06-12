@@ -11,7 +11,6 @@
 import functools
 import os
 import platform
-from datetime import date
 from typing import Dict, Any
 from app.utils.logger import logger
 
@@ -142,15 +141,16 @@ class SystemAdapter:
         return False
 
     def _get_environment_info(self) -> str:
-        """获取环境信息(工作目录/Git状态/日期) — 小沈 2026-06-11"""
+        """获取环境信息(工作目录/Git状态/日期时间) — 小沈 2026-06-11"""
+        from app.utils.time_utils import now_str
         cwd = os.getcwd()
-        today = date.today().strftime("%Y-%m-%d")
+        now = now_str()
         is_git = self._check_is_git_repo(cwd)
         git_status = "是" if is_git else "否"
         return f"""【环境信息】
 - 工作目录: {cwd}
 - Git仓库: {git_status}
-- 当前日期: {today}
+- 当前时间: {now}
 """
 
     def generate_system_prompt(self, include_commands: bool = True) -> str:

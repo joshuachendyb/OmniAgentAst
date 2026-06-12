@@ -28,7 +28,6 @@ from app.services.tools.meta.time_tools import (
     time_add,
     time_diff,
     query_calendar,
-    timezone_convert,
     timer,
 )
 from app.services.tools.meta.time_schema import (
@@ -36,7 +35,6 @@ from app.services.tools.meta.time_schema import (
     TimeAddInput,
     TimeDiffInput,
     QueryCalendarInput,
-    TimezoneConvertInput,
     TimerInput,
 )
 
@@ -69,15 +67,6 @@ check_type参数决定检查类型:
 - 检查周末 → query_calendar(date="2026-05-18", check_type="weekend")
 - 检查节假日 → query_calendar(date="2026-05-01", check_type="holiday")
 - 下个工作日 → query_calendar(date="2026-05-18", check_type="next_workday")""",
-    "timezone_convert": """支持时区转换功能。
-direction参数决定转换方向:
-- utc_to_local: UTC时间→本地时间,time_value(可选tz)
-- local_to_utc: 本地时间→UTC时间,time_value(可选tz)
-- any: 任意源时区→本地时间,time_value+tz
-
-使用示例:
-- UTC转本地 → timezone_convert(time_value="2026-05-18 10:00:00", direction="utc_to_local", tz="Asia/Shanghai")
-- 任意时区转换 → timezone_convert(time_value="2026-05-18 10:00:00", direction="any", tz="Asia/Shanghai")""",
     "timer": """支持定时器的set/clear/list操作功能。
 action参数决定操作类型:
 - set: 设置定时器,delay+callback
@@ -119,10 +108,6 @@ META_TOOL_EXAMPLES = {
     "query_calendar": [
         {"date": "2026-05-18", "check_type": "weekend"},
     ],
-    "timezone_convert": [
-        {"time_value": "2026-05-18 10:00:00", "direction": "utc_to_local", "tz": "Asia/Shanghai"},
-        {"time_value": "2026-05-18 10:00:00", "direction": "any", "tz": "Asia/Shanghai"},
-    ],
 
     "timer": [
         {"action": "set", "delay": 180, "callback": "提醒用户喝水"},
@@ -144,7 +129,6 @@ def _register_meta_tools():
         "time_add": time_add,
         "time_diff": time_diff,
         "query_calendar": query_calendar,
-        "timezone_convert": timezone_convert,
         "timer": timer,
     }
 
@@ -157,7 +141,6 @@ def _register_meta_tools():
         "time_add": TimeAddInput,
         "time_diff": TimeDiffInput,
         "query_calendar": QueryCalendarInput,
-        "timezone_convert": TimezoneConvertInput,
         "timer": TimerInput,
     }
 

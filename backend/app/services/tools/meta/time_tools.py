@@ -14,12 +14,15 @@
 - 16个公开函数改为内部函数(加下划线前缀)
 - 新增7个公开函数:get_time, time_add, time_diff, query_calendar, timezone_convert, timer
 
-包含(重构后7个公开工具):
+【2026-06-12 小沈精简】7→5精简
+- 删除timezone_convert(国内用户几乎不用,YAGNI)
+- 公开工具: get_time, time_add, time_diff, query_calendar, timer
+
+包含(重构后5个公开工具):
 - get_time: 统一入口(action=now/format/to_timestamp/from_timestamp)
 - time_add: 时间加减(增强:months用relativedelta + weekday/isoweekday)
 - time_diff: 时间差值(增强:is_after/is_before/is_equal/diff_seconds_signed)
 - query_calendar: 日期综合检查(check_type=weekend/holiday/workday/next_workday)
-- timezone_convert: 时区转换(direction=utc_to_local/local_to_utc/any)
 - timer: 定时器管理(action=set/clear/list)
 
 Author: 小沈 - 2026-04-25;
@@ -408,120 +411,6 @@ async def _timer_clear(timer_id: str) -> Dict[str, Any]:
         )
 
 
-def _time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[str, Any]:
-    """将UTC时间转换为本地时间或指定时区时间 — 小沈 2026-05-18"""
-    try:
-        # 1. 解析UTC时间
-        utc_dt = _parse_datetime_any(utc_time)
-        if utc_dt is None:
-            return build_error(
-                ERR_META_TIME_CONVERT,
-                f"无法解析UTC时间: {utc_time}",
-                next_actions=build_next_actions([("timezone_convert", "重试时区转换", "需要重新转换时")]),
-            )
-
-        # 确保是UTC时间
-        if utc_dt.tzinfo != timezone.utc:
-            utc_dt = utc_dt.astimezone(timezone.utc);
-
-        # 2. 转换到目标时区
-        if target_tz:
-            # 优先尝试IANA时区名称(如"Asia/Shanghai"、"America/New_York")
-            try:
-                import pytz
-                try:
-                    tz = pytz.timezone(target_tz)
-                    local_dt = utc_dt.astimezone(tz)
-                except Exception:
-                    # 方法2:失败再尝试±HH:MM格式
-                    if UTC_OFFSET_PATTERN.match(target_tz):
-                        sign = -1 if target_tz[0] == '-' else 1
-                        offset_hours = int(target_tz[1:3])
-                        offset_minutes = int(target_tz[4:6])
-                        tz = timezone(timedelta(hours=sign*offset_hours, minutes=sign*offset_minutes))
-                        local_dt = utc_dt.astimezone(tz)
-                    else:
-                        # 默认使用本地时区
-                        local_dt = utc_dt.astimezone()
-            except Exception:
-                local_dt = utc_dt.astimezone()
-        else:
-            local_dt = utc_dt.astimezone()
-
-        return build_success(
-            {
-                "local_time": local_dt.strftime("%Y-%m-%d %H:%M:%S"),
-                "timezone": local_dt.strftime("%z").replace(":", ""),
-                "utc_original": utc_dt.isoformat()
-            },
-            "成功转换时区",
-            llm_data={"local_time": local_dt.strftime("%Y-%m-%d %H:%M:%S"), "timezone": local_dt.strftime("%z").replace(":", "")},
-        )
-    except Exception as e:
-        return build_error(
-            ERR_META_TIME_CONVERT,
-            f"时区转换失败: {str(e)}",
-            next_actions=build_next_actions([
-                ("timezone_convert", "重试时区转换", "需要重新转换时"),
-            ]),
-        )
-
-
-def _time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict[str, Any]:
-    """转换本地时间为UTC时间 — 小沈 2026-05-18"""
-    try:
-        # 1. 解析本地时间
-        local_dt = _parse_datetime_any(local_time)
-        if local_dt is None:
-            return build_error(
-                ERR_META_TIME_CONVERT,
-                f"无法解析本地时间: {local_time}",
-                next_actions=build_next_actions([("timezone_convert", "重试时区转换", "需要重新转换时")]),
-            )
-
-        # 设置源时区
-        if source_tz:
-            try:
-                import pytz
-                try:
-                    tz = pytz.timezone(source_tz)
-                    if local_dt.tzinfo is None:
-                        local_dt = tz.localize(local_dt)
-                    else:
-                        local_dt = local_dt.astimezone(tz)
-                except Exception:
-                    # 失败再尝试±HH:MM格式
-                    if UTC_OFFSET_PATTERN.match(source_tz):
-                        sign = -1 if source_tz[0] == '-' else 1
-                        offset_hours = int(source_tz[1:3])
-                        offset_minutes = int(source_tz[4:6])
-                        tz = timezone(timedelta(hours=sign*offset_hours, minutes=sign*offset_minutes))
-                        local_dt = local_dt.replace(tzinfo=tz)
-                    # 其他情况,保持原样(使用本地时区)
-            except Exception:
-                pass
-
-        # 2. 转换为UTC
-        utc_dt = local_dt.astimezone(timezone.utc);
-
-        return build_success(
-            {
-                "utc_time": utc_dt.strftime("%Y-%m-%d %H:%M:%S"),
-                "iso": utc_dt.isoformat(),
-                "timestamp": int(utc_dt.timestamp())
-            },
-            "成功转换为UTC时间",
-            llm_data={"utc_time": utc_dt.strftime("%Y-%m-%d %H:%M:%S"), "iso": utc_dt.isoformat()},
-        )
-    except Exception as e:
-        return build_error(
-            ERR_META_TIME_CONVERT,
-            f"时区转换失败: {str(e)}",
-            next_actions=build_next_actions([
-                ("timezone_convert", "重试时区转换", "需要重新转换时"),
-            ]),
-        )
-
 
 def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, Any]:
     """时间加减计算 — 小健 2026-05-06 delta必填前置,start可选对齐Schema"""
@@ -901,41 +790,6 @@ def query_calendar(
         return build_error(ERR_TIME_DATE, f"检查失败: {str(e)}", next_actions=build_next_actions([("query_calendar", "重试日期检查", "需要重新检查时")]))
 
 
-def timezone_convert(
-    time_value: Union[int, float, str],
-    direction: Literal["utc_to_local", "local_to_utc", "any"] = "utc_to_local",
-    tz: Optional[str] = None,
-) -> Dict[str, Any]:
-    """时区转换 — 小沈 2026-05-19 参数精简5→3(砍source_tz+target_tz)
-    P11统一入口: direction="utc_to_local"|"local_to_utc"|"any"
-    direction=any时tz为源时区,目标为本地时区
-    """
-    try:
-        if direction == "utc_to_local":
-            result = _time_utc_to_local(utc_time=time_value, target_tz=tz)
-        elif direction == "local_to_utc":
-            result = _time_local_to_utc(local_time=time_value, source_tz=tz)
-        elif direction == "any":
-            if not tz:
-                return build_error(ERR_TIME_TZ, "direction='any'时tz(源时区)必填", next_actions=build_next_actions([("timezone_convert", "重试时区转换", "需要指定时区时")]))
-            utc_result = _time_local_to_utc(local_time=time_value, source_tz=tz)
-            if utc_result["code"] != "SUCCESS":
-                return utc_result
-            utc_str = utc_result["data"].get("iso", utc_result["data"].get("utc_time", ""))
-            result = _time_utc_to_local(utc_time=utc_str, target_tz=None)
-        else:
-            return build_error(ERR_INVALID_DIRECTION, f"不支持的direction: {direction},可选: utc_to_local/local_to_utc/any", next_actions=build_next_actions([("tool_help", "查看timezone_convert用法", "不确定direction时", {"tool_name": "timezone_convert"})]))
-
-        if result.get("code") == "SUCCESS":
-            result["next_actions"] = build_next_actions([
-                ("time_diff", "计算时差", "需要计算两个时区的时间差时"),
-                ("timezone_convert", "继续时区转换", "需要转换到其他时区时"),
-            ])
-        return result
-    except Exception as e:
-        return build_error(ERR_TIME_TZ, f"时区转换失败: {str(e)}", next_actions=build_next_actions([("timezone_convert", "重试时区转换", "需要重新转换时")]))
-
-
 async def timer(
     action: Literal["set", "clear", "list"],
     delay: Optional[float] = None,
@@ -972,10 +826,8 @@ async def timer(
 
 from app.constants import (
     ERR_INVALID_ACTION,
-    ERR_INVALID_DIRECTION,
     ERR_META_CALENDAR_NEXT_N_WORKDAY,
     ERR_META_INVALID_CHECK_TYPE,
-    ERR_META_TIME_CONVERT,
     ERR_META_TIME_FORMAT,
     ERR_TIMER_CLEAR,
     ERR_TIMER_LIST,
@@ -987,5 +839,4 @@ from app.constants import (
     ERR_TIME_DIFF,
     ERR_TIME_NOW,
     ERR_TIME_TO_TIMESTAMP,
-    ERR_TIME_TZ,
 )
