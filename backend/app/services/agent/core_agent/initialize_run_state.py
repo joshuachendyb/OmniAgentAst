@@ -8,6 +8,7 @@ Author: 小沈 - 2026-05-31
 
 from typing import Any, Dict, Optional
 
+from app.constants import MAX_CONSECUTIVE_CHUNKS
 from app.services.agent.types import AgentStatus
 from app.services.agent.chunk_buffer import ChunkBuffer
 from app.utils.prompt_logger import get_prompt_logger
@@ -41,4 +42,15 @@ def initialize_run_state(
     self._on_before_loop(sys_prompt, task, context)
     self.message_builder.init_history(sys_prompt, task)
 
-    return ChunkBuffer(self.max_consecutive_chunks)
+    # 注入会话历史(多轮对话支持) — 北京老陈 2026-06-13
+    if context and isinstance(context, dict):
+        prev = context.get("previous_messages")
+        if prev and isinstance(prev, list):
+            history = self.message_builder.conversation_history
+            for msg in prev:
+                if msg.get("role") in ("user", "assistant") and msg.get("content"):
+                    history.append({"role": msg["role"], "content": msg["content"]})
+            self.message_builder.conversation_history = history
+            self.message_builder.trim_history()
+
+    return ChunkBuffer(MAX_CONSECUTIVE_CHUNKS)

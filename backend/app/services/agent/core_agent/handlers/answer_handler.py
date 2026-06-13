@@ -39,5 +39,5 @@ async def handle_answer(agent, parsed: Dict, chunk_buffer):
         step=step, response=content, thought=thought,
     ))
     # 【修复P0-2】保存assistant回复到对话历史 — 北京老陈 2026-06-13
-    agent.conversation_history.append({"role": "assistant", "content": content})
+    agent.message_builder.conversation_history.append({"role": "assistant", "content": content})
     agent.status = AgentStatus.COMPLETED

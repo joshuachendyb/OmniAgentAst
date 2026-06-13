@@ -75,8 +75,8 @@ class PromptLogger:
         timestamp = now_str()
         file_timestamp = timestamp_for_filename()
         
-        # 生成文件名:prompt_{message_id后5位}_{task_id}+{YYYYMMDD_HHMMSS}.json
-        short_id = user_message_id[-5:] if len(user_message_id) >= 5 else user_message_id
+        # 生成文件名:prompt_{uuid前6位}_{task_id}+{YYYYMMDD_HHMMSS}.json
+        short_id = user_message_id[:6] if len(user_message_id) >= 6 else user_message_id
         filename = f"prompt_{short_id}_{user_message_id}+{file_timestamp}.json"
         log_file_path = self.log_dir / filename
         

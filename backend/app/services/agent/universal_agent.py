@@ -17,7 +17,7 @@ from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
 
 
-_INITIAL_CATEGORIES: Set[ToolCategory] = {ToolCategory.FUND_RUNTIME}
+_INITIAL_CATEGORIES: Set[ToolCategory] = {ToolCategory.FUND_RUNTIME, ToolCategory.FILE}
 
 # tool_search 动态描述配置
 _CATEGORIES_CONFIG_PATH = Path(__file__).resolve().parent.parent / "tools" / "meta" / "tool_categories.json"
@@ -87,7 +87,8 @@ class UniversalAgent(BaseAgent):
         return result
 
     def _auto_inject_from_search(self, result: Dict[str, Any]) -> None:
-        llm_matches = result.get("llm_data", {}).get("matches", [])
+        inner = result.get("data", {})
+        llm_matches = inner.get("llm_data", {}).get("matches", [])
         new_cats = set()
         for m in llm_matches:
             try:

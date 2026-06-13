@@ -9,10 +9,34 @@ Author: 小沈 - 2026-05-31
 """
 
 import asyncio
-from typing import List, AsyncGenerator, Any, Callable
+import sqlite3
+from pathlib import Path
+from typing import List, AsyncGenerator, Any, Callable, Dict
 
 from app.utils.logger import logger
 from app.services.agent.types import AgentStatus
+
+
+_DB_PATH = Path.home() / ".omniagent" / "chat_history.db"
+
+
+def _load_previous_messages(session_id: str) -> List[Dict[str, str]]:
+    """从DB加载会话历史消息(排除当前最新消息,init_history已加) — 北京老陈 2026-06-13"""
+    try:
+        with sqlite3.connect(str(_DB_PATH)) as conn:
+            rows = conn.execute(
+                "SELECT role, content FROM chat_messages "
+                "WHERE session_id=? ORDER BY id ASC",
+                (session_id,),
+            ).fetchall()
+        messages = []
+        for role, content in rows:
+            if role in ("user", "assistant"):
+                messages.append({"role": role, "content": content or ""})
+        # 只返回前 N-1 条(排除最后一条,init_history已加)
+        return messages[:-1] if len(messages) > 1 else []
+    except Exception:
+        return []
 
 
 async def run_sse_stream(
@@ -42,8 +66,15 @@ async def run_sse_stream(
         if hasattr(llm_client, 'set_task_id'):
             llm_client.set_task_id(task_id)
 
+        # 加载会话历史，支持多轮对话 — 北京老陈 2026-06-13
+        context = {}
+        if session_id:
+            prev = _load_previous_messages(session_id)
+            if prev:
+                context["previous_messages"] = prev
+
         async for event in agent.run_react_cycle(
-            task=last_message, context=None,
+            task=last_message, context=context or None,
             task_id=task_id,
         ):
             # 直接to_dict() — dict则直接用（某些agent实现直接yield dict）

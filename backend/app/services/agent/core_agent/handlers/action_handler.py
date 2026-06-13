@@ -149,7 +149,7 @@ async def build_observation(ctx: ObservationContext) -> List:
                 per_call_fc = {"tool_call_id": tc_id, "tool_calls": matching or _fc["tool_calls"]}
             else:
                 per_call_fc = _fc
-            _update_message_builder(ctx.agent, obs_text, per_call_fc)
+            ctx.agent.message_builder.add_observation(obs_text, ctx.agent.llm_call_count, per_call_fc)
         except Exception as e:
             logger.warning(f"[action_handler] _update_message_builder异常: {e}")
 
