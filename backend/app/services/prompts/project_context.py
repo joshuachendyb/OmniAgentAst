@@ -52,7 +52,3 @@ def _detect_project_root() -> str:
         cwd = parent
     return os.getcwd()
 
-
-def clear_project_context_cache():
-    """清理缓存(供测试使用)"""
-    load_project_context.cache_clear()
