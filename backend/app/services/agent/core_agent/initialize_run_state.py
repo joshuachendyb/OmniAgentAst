@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-_initialize_run_state — 从 base_react.py 拆出
+_initialize_run_state — 每次运行前初始化Agent状态
 
-复制来源: base_react.py 第295-338行
+职责: 重置steps/message_builder/status/llm_call_count,注入system prompt和task
 Author: 小沈 - 2026-05-31
 """
 
@@ -15,7 +15,7 @@ from app.services.agent.chunk_buffer import ChunkBuffer
 def initialize_run_state(
     self, task: str, task_id: Optional[str], context: Optional[Dict[str, Any]] = None
 ) -> ChunkBuffer:
-    """复制自 base_react.py 第295-338行"""
+    """初始化每轮运行状态:重置steps/注入system prompt和task"""
     self.steps = []
     self.message_builder.reset_per_run()
     self.status = AgentStatus.THINKING
