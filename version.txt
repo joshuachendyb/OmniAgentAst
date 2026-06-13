@@ -1,4 +1,14 @@
 
+v0.15.11
+
+更新时间: 2026-06-13 09:11:03
+
+## v0.15.10→v0.15.11 变更汇总 - 小沈-2026-06-13
+
+### Revert: 回退YAGNI违规的handle_chunk/handle_parse_error/handle_unknown
+
+原因: 3个handler从未被生产代码调用,仅服务于.gitignore中的测试文件,违反YAGNI原则
+
 v0.15.10
 
 更新时间: 2026-06-13 08:33:35
