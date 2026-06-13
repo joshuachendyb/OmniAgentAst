@@ -41,6 +41,14 @@ class ErrorStep(ReasoningStep):
     def recoverable(self) -> bool:
         return self._recoverable
 
+    @property
+    def model(self) -> Optional[str]:
+        return self._model
+
+    @property
+    def provider(self) -> Optional[str]:
+        return self._provider
+
     def _extra_fields(self) -> Dict[str, Any]:
         extra: Dict[str, Any] = {
             "error_type": self._error_type,
