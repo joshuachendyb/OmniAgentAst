@@ -2,9 +2,8 @@
 """
 Agent 核心基类 — 类骨架
 
-从 base_react.py 拆出,遵循 SRP:
- - run_react_cycle / _initialize_run_state → 独立文件
-- 本文件只保留 BaseAgent 类定义、__init__、抽象方法、Hook、委托方法
+遵循 SRP: 只保留 BaseAgent 类定义、__init__、抽象方法、Hook、委托方法
+run_react_cycle / initialize_run_state → 独立文件
 
 Author: 小沈 - 2026-03-25
 P3-12: 删除run_react_cycle纯委托，改为混合类方式 — 小沈 2026-06-09
@@ -24,14 +23,11 @@ from app.services.agent.chunk_buffer import ChunkBuffer
 from app.services.agent.core_agent.agent_initializer import AgentInitializer
 from app.services.agent.core_agent.tool_manager import ToolManager
 from app.services.agent.core_agent.step_emitter import StepEmitter
-from app.services.agent.core_agent.initialize_run_state import initialize_run_state
 from app.services.agent.tool_retry_engine import ToolRetryEngine
 
 
 class BaseAgent(ABC):
     """Agent 核心基类 — 只保留骨架"""
-
-    _initialize_run_state = initialize_run_state
 
     def __init__(
         self,
