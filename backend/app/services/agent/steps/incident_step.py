@@ -21,6 +21,8 @@ class IncidentStep(ReasoningStep):
     【v3.4新增 2026-06-09 小沈】支持authorization_required事件，携带data字段
     """
 
+    TYPE: str = "incident"
+
     def __init__(
         self,
         step: int,
@@ -36,10 +38,6 @@ class IncidentStep(ReasoningStep):
         self._message = message
         self._content = content or message
         self._data = data or {}
-
-    def get_type(self) -> str:
-        """返回固定"incident"，前端用incident_value区分具体类型"""
-        return "incident"
 
     def get_content(self) -> str:
         return self._content
