@@ -51,54 +51,6 @@ class SystemAdapter:
             "df": "wmic logicaldisk get size,freespace,caption",
             "chmod": "icacls",
         },
-        "Linux": {
-            "list": "ls",
-            "copy": "cp",
-            "move": "mv",
-            "rename": "mv",
-            "delete": "rm",
-            "delete_dir": "rm -rf",
-            "read": "cat",
-            "create_dir": "mkdir",
-            "pwd": "pwd",
-            "echo": "echo",
-            "find_file": "find",
-            "find_content": "grep",
-            "which": "which",
-            "env": "env",
-            "ps": "ps aux",
-            "kill": "kill",
-            "ping": "ping",
-            "netstat": "netstat",
-            "ipconfig": "ifconfig",
-            "curl": "curl",
-            "df": "df -h",
-            "chmod": "chmod",
-        },
-        "Darwin": {
-            "list": "ls",
-            "copy": "cp",
-            "move": "mv",
-            "rename": "mv",
-            "delete": "rm",
-            "delete_dir": "rm -rf",
-            "read": "cat",
-            "create_dir": "mkdir",
-            "pwd": "pwd",
-            "echo": "echo",
-            "find_file": "find",
-            "find_content": "grep",
-            "which": "which",
-            "env": "env",
-            "ps": "ps aux",
-            "kill": "kill",
-            "ping": "ping",
-            "netstat": "netstat",
-            "ipconfig": "ifconfig",
-            "curl": "curl",
-            "df": "df -h",
-            "chmod": "chmod",
-        }
     }
     
     def __init__(self):
@@ -125,7 +77,7 @@ class SystemAdapter:
     
     def get_commands(self) -> Dict[str, str]:
         """获取当前系统的命令格式"""
-        return self.COMMANDS.get(self.system, self.COMMANDS["Linux"])
+        return self.COMMANDS.get(self.system, self.COMMANDS["Windows"])
     
     @staticmethod
     def _check_is_git_repo(path: str) -> bool:

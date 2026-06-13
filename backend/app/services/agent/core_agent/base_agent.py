@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, AsyncGenerator, Set, Tuple
 
 from app.services.agent.types import AgentStatus
-from app.services.agent.steps import ReasoningStep, IncidentStep
+from app.services.agent.steps import ReasoningStep
 
 from app.constants import MAX_CONTEXT_CHARS
 from app.utils.logger import logger

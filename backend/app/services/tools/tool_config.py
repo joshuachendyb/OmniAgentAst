@@ -107,36 +107,6 @@ class ToolConfig:
         aliases = self._config.get("tools", {}).get("aliases", {})
         return aliases.get(tool_name)
     
-    def reload(self) -> bool:
-        """
-        【步骤4】热重载原子性保证
-        先加载到临时变量,再原子替换
-        
-        Returns:
-            是否重新加载成功
-        """
-        config_file = Path(self._config_path)
-        
-        if not config_file.exists():
-            logger.warning(f"Config file not found: {self._config_path}")
-            return False
-        
-        # 检查文件是否修改
-        current_mtime = datetime.fromtimestamp(config_file.stat().st_mtime)
-        if self._last_modified and current_mtime == self._last_modified:
-            return False
-        
-        # 【步骤4】原子性替换:先加载到临时变量
-        temp_config = self._load_config_safe()
-        if temp_config is not None:
-            # 原子替换
-            self._config = temp_config
-            self._last_modified = current_mtime
-            logger.info("Config hot reloaded (atomic)")
-            return True
-        
-        return False
-    
     def _load_config_safe(self) -> Optional[Dict[str, Any]]:
         """安全加载配置(带环境变量处理)"""
         try:

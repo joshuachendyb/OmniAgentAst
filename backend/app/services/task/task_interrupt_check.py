@@ -10,7 +10,6 @@ import asyncio
 from typing import Optional, Callable, AsyncGenerator
 
 from app.utils.logger import logger
-from app.chat_stream import format_agent_sse
 from app.services.agent.steps import IncidentStep
 from app.services.task.task_registry import check_cancelled, check_paused, check_was_paused, set_was_paused, get_pause_event
 
@@ -28,6 +27,7 @@ async def task_interrupt_check(
             incident_value='interrupted',
             message='任务已被中断'
         )
+        from app.chat_stream import format_agent_sse
         return True, format_agent_sse(incident_step.to_dict())
     return False, ""
 
@@ -54,6 +54,7 @@ async def task_pause_check(
                 incident_value='paused',
                 message='任务已暂停'
             )
+            from app.chat_stream import format_agent_sse
             yield format_agent_sse(incident_step.to_dict())
 
         await pause_event.wait()
@@ -68,6 +69,7 @@ async def task_pause_check(
             incident_value='resumed',
             message='任务已恢复'
         )
+        from app.chat_stream import format_agent_sse
         yield format_agent_sse(incident_step.to_dict())
 
 
@@ -98,6 +100,7 @@ async def task_pause_check_and_yield(
             incident_value='paused',
             message='任务已暂停'
         )
+        from app.chat_stream import format_agent_sse
         yield format_agent_sse(incident_step.to_dict())
 
     # 等待恢复 — 添加超时防止永久挂起,小健 2026-06-09
@@ -119,4 +122,5 @@ async def task_pause_check_and_yield(
         incident_value='resumed',
         message='任务已恢复'
     )
+    from app.chat_stream import format_agent_sse
     yield format_agent_sse(incident_step.to_dict())

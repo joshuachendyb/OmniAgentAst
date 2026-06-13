@@ -7,7 +7,7 @@ Tools 模块 - 按功能域组织的工具集
   ToolCategory/ToolMetadata → app.services.tools.tool_types
   resolve_category → app.services.tools.tool_types
   get_* → app.services.tools.tool_queries
-  to_openai_tools/generate_param_reminder/get_all_tools_* → app.services.tools.tool_description
+  to_openai_tools/generate_param_reminder → app.services.tools.tool_description
 """
 
 from app.services.tools.registry import tool_registry, register_tool, ToolRegistry

@@ -6,7 +6,6 @@ Agent初始化逻辑（SRP分离）
 Author: 小沈 - 2026-05-31
 """
 
-import asyncio
 from typing import Any
 
 from app.services.agent.types import AgentStatus
