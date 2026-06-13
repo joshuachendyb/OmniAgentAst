@@ -96,7 +96,7 @@ def get_error_info(error: Exception) -> Dict[str, Any]:
 
 def _get_user_message_id(session_id: str) -> Optional[int]:
     """获取用户消息ID — 小沈 2026-06-09: 从services层导入,消除反向依赖"""
-    from app.services.message_id_tracker import get_user_message_id
+    from app.utils.message_id_tracker import get_user_message_id
     return get_user_message_id(session_id)
 
 

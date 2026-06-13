@@ -73,8 +73,8 @@ class PromptLogger:
         timestamp = now_str()
         file_timestamp = timestamp_for_filename()
         
-        # 延迟导入: utils层不直接依赖services层
-        from app.services.message_id_tracker import get_user_message_id
+        # 延迟导入: 避免循环导入
+        from app.utils.message_id_tracker import get_user_message_id
         user_message_id = get_user_message_id(session_id)
         # AI消息ID = 用户消息ID + 1
         ai_msg_id = (user_message_id + 1) if user_message_id is not None else None
