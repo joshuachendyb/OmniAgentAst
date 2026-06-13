@@ -56,7 +56,6 @@ class PromptLogger:
     def start_request(
         self,
         user_message: str,
-        user_message_id: str,
         session_id: str,
         ai_message_id: Optional[str] = None
     ) -> str:
@@ -65,7 +64,6 @@ class PromptLogger:
         
         Args:
             user_message: 用户消息内容
-            user_message_id: 用户消息ID
             session_id: 会话ID
             ai_message_id: AI消息ID(可选,后续更新)
         
@@ -75,9 +73,16 @@ class PromptLogger:
         timestamp = now_str()
         file_timestamp = timestamp_for_filename()
         
-        # 生成文件名:prompt_{uuid前6位}_{task_id}+{YYYYMMDD_HHMMSS}.json
-        short_id = user_message_id[:6] if len(user_message_id) >= 6 else user_message_id
-        filename = f"prompt_{short_id}_{user_message_id}+{file_timestamp}.json"
+        # 延迟导入: utils层不直接依赖services层
+        from app.services.message_id_tracker import get_user_message_id
+        user_message_id = get_user_message_id(session_id)
+        # AI消息ID = 用户消息ID + 1
+        ai_msg_id = (user_message_id + 1) if user_message_id is not None else None
+        ai_msg_id_str = str(ai_msg_id) if ai_msg_id is not None else "unknown"
+        
+        # 生成文件名:prompt_{AI消息ID后6位}+{YYYYMMDD_HHMMSS}.json
+        short_id = ai_msg_id_str[-6:] if len(ai_msg_id_str) >= 6 else ai_msg_id_str
+        filename = f"prompt_{short_id}+{file_timestamp}.json"
         log_file_path = self.log_dir / filename
         
         # 初始化日志数据
@@ -85,8 +90,8 @@ class PromptLogger:
             "基本信息": {
                 "时间戳": timestamp,
                 "会话ID": session_id,
-                "任务ID": user_message_id,
-                "AI消息ID": ai_message_id or "待生成",
+                "用户消息ID": user_message_id,
+                "AI消息ID": ai_msg_id,
                 "用户消息": user_message,
                 "日志文件": str(log_file_path)
             },
