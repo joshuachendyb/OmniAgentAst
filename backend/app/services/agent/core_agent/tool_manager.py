@@ -39,3 +39,10 @@ class ToolManager:
     def get_tools(self) -> dict:
         """获取工具字典"""
         return self.agent._tools_dict
+
+    def load_category(self, category: ToolCategory) -> None:
+        """动态加载单个分类的工具到_tools_dict"""
+        cat_tools = tool_registry.get_implementations_by_category(category)
+        if cat_tools:
+            self.agent._tools_dict.update(cat_tools)
+            logger.info(f"[ToolManager] 动态加载分类:{category.value}, {len(cat_tools)}个工具")

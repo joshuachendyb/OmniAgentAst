@@ -46,6 +46,7 @@ class UniversalAgent(BaseAgent):
             **kwargs
         )
 
+        self._loaded_categories: Set[ToolCategory] = set(initial_categories)
         self.prompts = SystemPrompts()
 
         logger.info(
@@ -61,7 +62,27 @@ class UniversalAgent(BaseAgent):
         self._step_emitter.complete_task(success)
 
     async def _execute_tool(self, tool_name: str, tool_params: Dict[str, Any]) -> Dict[str, Any]:
-        return await self._retry_engine.execute_tool_with_retry(tool_name, tool_params)
+        result = await self._retry_engine.execute_tool_with_retry(tool_name, tool_params)
+        if tool_name == "tool_search":
+            self._auto_inject_from_search(result)
+        return result
+
+    def _auto_inject_from_search(self, result: Dict[str, Any]) -> None:
+        llm_matches = result.get("llm_data", {}).get("matches", [])
+        new_cats = set()
+        for m in llm_matches:
+            try:
+                cat = ToolCategory(m["category"])
+            except (ValueError, KeyError):
+                continue
+            if cat not in self._loaded_categories:
+                new_cats.add(cat)
+        if not new_cats:
+            return
+        for cat in new_cats:
+            self._loaded_categories.add(cat)
+            self._tool_manager.load_category(cat)
+        self.invalidate_tool_cache()
 
     async def _call_llm(self):
         """调用LLM — 纯FC模式 — FC-only重构 2026-06-11 小沈"""
@@ -158,7 +179,7 @@ class UniversalAgent(BaseAgent):
             return cached
 
         from app.services.tools.registry import tool_registry
-        self._cached_openai_tools = tool_registry.to_openai_tools(categories=_INITIAL_CATEGORIES)
+        self._cached_openai_tools = tool_registry.to_openai_tools(categories=self._loaded_categories)
         self._cache_timestamp = current_time
         return self._cached_openai_tools
 
