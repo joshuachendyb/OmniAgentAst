@@ -11,7 +11,7 @@ task_cancel_check — 取消检查并生成SSE事件
 
 from typing import Optional, Callable
 
-from app.services.agent.steps import IncidentStep
+from app.services.agent.steps import MetaStep
 from app.utils.logger import logger
 from app.services.task.task_registry import check_cancelled
 
@@ -30,13 +30,9 @@ async def task_cancel_check_and_yield(
             logger.info(f"[InterruptCheck] 任务 {task_id} 已有interrupted step,跳过")
             return None
         logger.info(f"[InterruptCheck] 任务 {task_id} 取消状态: True")
-        incident_step = IncidentStep(
-            step=next_step(),
-            incident_value='interrupted',
-            message='任务已被中断'
-        )
+        meta_step = MetaStep(step=next_step(), type="interrupted", message='任务已被中断')
         logger.info(f"[Step incident] 发送incident步骤(interrupted)")
-        current_execution_steps.append(incident_step.to_dict())
+        current_execution_steps.append(meta_step.to_dict())
         # 【删除 2026-06-09 小沈】删除save调用，统一在run_sse_stream的finally块中保存
         from app.chat_stream import format_agent_sse
         return format_agent_sse(incident_step.to_dict())

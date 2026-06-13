@@ -18,7 +18,7 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.utils.time_utils import create_timestamp
-from app.services.agent.steps import StartStep, ErrorStep, FinalStep
+from app.services.agent.steps import MetaStep, ErrorStep, FinalStep
 from app.utils.error_classifier import UnifiedErrorClassifier
 from app.utils.error_parser import extract_api_error_detail
 from app.utils.logger import logger
@@ -176,17 +176,16 @@ async def send_start_step(
     next_step: Callable,
     user_message: str,
     security_check_result: Dict[str, Any],
-) -> StartStep:
-    """发送 start 步骤 — P2-19 使用StartStep统一构建
-    R10-2修复: 删除未使用的current_execution_steps和session_id参数 — 小沈 2026-06-09
-    """
-    start_step = StartStep(
+) -> MetaStep:
+    """发送 start 步骤 — 使用MetaStep统一构建"""
+    start_step = MetaStep(
         step=next_step(),
+        type="start",
+        message=user_message if user_message else "",
         display_name=f"{ai_service.provider} ({ai_service.model})",
         provider=ai_service.provider,
         model=ai_service.model,
         task_id=task_id,
-        user_message=user_message if user_message else "",
         security_check={
             'is_safe': security_check_result.get('is_safe', True),
             'risk_level': security_check_result.get('risk_level'),

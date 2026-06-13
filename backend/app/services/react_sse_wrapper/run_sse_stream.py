@@ -76,10 +76,8 @@ async def run_sse_stream(
         # R3-2修复: 在finally保存前创建IncidentStep(interrupted),防止step丢失 — 小沈 2026-06-09
         # R3-3修复: CancelledError路径补FinalStep,保证客户端收到终态事件 — 小沈 2026-06-10
         logger.info(f"[SSE] 任务 {task_id} 被取消(CancelledError)")
-        from app.services.agent.steps import IncidentStep, FinalStep
-        interrupted_step = IncidentStep(
-            step=next_step(), incident_value='interrupted', message='任务已被中断'
-        )
+        from app.services.agent.steps import MetaStep, FinalStep
+        interrupted_step = MetaStep(step=next_step(), type="interrupted", message='任务已被中断')
         current_execution_steps.append(interrupted_step.to_dict())
         yield format_agent_sse(interrupted_step.to_dict())
         final_step = FinalStep(step=next_step(), response="任务已被中断")
