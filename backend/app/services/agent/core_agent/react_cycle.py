@@ -108,12 +108,13 @@ async def run_react_cycle(
         agent.status = AgentStatus.FAILED
 
     finally:
-        # FAILED时补发FinalStep，保证前端/测试始终收到final事件 — 小沈 2026-06-10
-        if agent.status == AgentStatus.FAILED and agent.steps:
+        # 【修复P1-2】FAILED时始终补发FinalStep — 北京老陈 2026-06-13
+        if agent.status == AgentStatus.FAILED:
             last_err = None
             for s in reversed(agent.steps):
-                if hasattr(s, '_error_message') and getattr(s, '_error_message', None):
-                    last_err = s._error_message
+                err = getattr(s, '_error_message', None)
+                if err:
+                    last_err = err
                     break
             yield agent._step_emitter.emit(FinalStep(
                 step=agent.llm_call_count,

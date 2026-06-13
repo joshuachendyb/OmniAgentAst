@@ -65,11 +65,9 @@ class BaseAgent(ABC):
         pass
 
     def _create_cancelled_chunk(self):
-        """创建取消chunk — 委托给llm_client
-         小健 - 2026-06-08 修复P0: run_react_cycle需要此方法
+        """创建取消chunk — 直接使用stream_parser函数
+         【修复P2-6】移除对llm_client私有方法的依赖 — 北京老陈 2026-06-13
         """
-        if hasattr(self, 'llm_client') and self.llm_client:
-            return self.llm_client._create_cancelled_chunk()
         from app.services.llm.stream_parser import create_cancelled_chunk
         return create_cancelled_chunk(getattr(self, 'model', 'unknown'))
 

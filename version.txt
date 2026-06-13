@@ -1,17 +1,20 @@
-v0.15.14
+v0.16.0
 
-更新时间: 2026-06-13 11:10:00
+更新时间: 2026-06-13 14:59:54
 
-## v0.15.13→v0.15.14 变更汇总 - 小沈-2026-06-13
+## v0.15.14→v0.16.0 变更汇总 - 小沈-2026-06-13
 
-### refactor: agent steps重构+react_sse_wrapper整理+测试专用函数删除
-- Agent steps: meta_step.py新增, tool_step.py(observation_step→tool_step), action_step/incident_step/start_step删除
-- react_sse_wrapper: run_sse_stream.py整理
-- 测试专用函数删除: cache_display_name / clear_project_context_cache
-- 死代码删除: data_utils.py (safe_truncate / extract_data_summary)
-- FUNCTIONS.md同步更新,data_utils节删除,json_utils节新增
-- 文档: 6月agent优化深度分析报告x3
-- ErrorStep: 添加model/provider属性
+### refactor: Step全面重构 - 8文件→6文件，合并MetaStep/ToolStep
+- MetaStep: 合并StartStep+IncidentStep，动态TYPE区分(start/interrupted/paused/resumed/retrying/authorization_required)
+- ToolStep: 合并ActionToolStep+ObservationStep，step_type参数区分(action_tool/observation)
+- ErrorStep: 精简为5字段(删reasoning/context/retry_after/details/stack)
+- ChunkStep: 删_thinking/model/provider
+- FinalStep: 删is_streaming/is_reasoning
+- 删除旧文件: start_step/incident_step/action_step/observation_step.py
+- 更新引用: action_handler/task_interrupt_check/task_cancel_check/run_sse_stream/chat_stream.py
+- chat_stream.create_error_response: 清理已删参数
+- 测试重写: 124 step测试+全部236 step相关测试通过
+- 全量验证: 838 passed, 0 failed
 
 v0.15.13
 

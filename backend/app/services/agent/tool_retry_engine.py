@@ -114,12 +114,7 @@ class ToolRetryEngine:
         return await self._execute_with_retry(action, params, tool)
     
     def _find_tool(self, action: str) -> Optional[Callable]:
-        """查找工具 — P2-15修复: 兜底不写入self._tools"""
-        tool = self._tools.get(action)
-        if tool is None:
-            from app.services.tools.registry import tool_registry
-            tool = tool_registry.get_implementation(action)
-        return tool
+        return self._tools.get(action)
     
     def _are_params_valid(self, action: str, params: Dict[str, Any]) -> bool:
         """验证参数是否合法 — 小沈 2026-06-08"""

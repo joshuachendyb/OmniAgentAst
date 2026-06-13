@@ -14,13 +14,30 @@ action_handler — action类型处理（SRP拆分，模块级函数）
 """
 import asyncio
 import time
+from dataclasses import dataclass, field
 from typing import Dict, List, Any
 
 from app.utils.logger import logger
-from app.services.agent.steps import ThoughtStep, ToolStep, ErrorStep, MetaStep
+from app.services.agent.steps import ThoughtStep, ToolStep, ErrorStep, MetaStep, FinalStep
 from app.services.agent.agent_utils.message_utils import build_observation_text
 
 _SENSITIVE_FIELDS = {"password", "token", "api_key", "secret", "authorization", "credential"}
+
+
+# 【修复P2-5】封装observation构建上下文 — 北京老陈 2026-06-13
+@dataclass
+class ObservationContext:
+    """构建observation所需的上下文 — 遵守ISP原则"""
+    agent: Any
+    all_calls: List[Dict]
+    results: List[Any]
+    step: int
+    tool_name: str
+    tool_params: Dict
+    is_parallel: bool
+    pending_calls: List
+    action_steps: List
+    fc_context: Dict = None
 
 
 
@@ -100,65 +117,61 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
         return results
 
 
-async def build_observation(agent, all_calls: List[Dict], results: List[Any], step: int,
-                            tool_name: str, tool_params: Dict, is_parallel: bool,
-                            pending_calls: List, action_steps: List,
-                            fc_context: Dict = None) -> List:
-        """构建observation — FC-only: 传递fc_context,删除add_assistant — 小沈 2026-06-11
-        【修复 2026-06-11 小沈】平行调用各result用各自的tool_call_id"""
-        events = []
+async def build_observation(ctx: ObservationContext) -> List:
+    """构建observation — FC-only: 传递fc_context,删除add_assistant — 小沈 2026-06-11
+    【修复P2-5】使用ObservationContext封装参数 — 北京老陈 2026-06-13"""
+    events = []
 
-        for call, result in zip(all_calls, results):
-            action_step = ToolStep(
-                step=step,
-                tool_name=call["tool_name"],
-                tool_params=call["tool_params"],
-                execution_result=result,
-            )
-            action_steps.append(action_step)
-            events.append(agent._step_emitter.emit(action_step))
+    for call, result in zip(ctx.all_calls, ctx.results):
+        action_step = ToolStep(
+            step=ctx.step,
+            tool_name=call["tool_name"],
+            tool_params=call["tool_params"],
+            execution_result=result,
+        )
+        ctx.action_steps.append(action_step)
+        events.append(ctx.agent._step_emitter.emit(action_step))
 
-        obs_parts = []
-        for idx, (call, result) in enumerate(zip(all_calls, results)):
-            if isinstance(result, Exception):
-                obs_text = f"Observation: 工具{call['tool_name']}执行异常: {result}"
+    obs_parts = []
+    for idx, (call, result) in enumerate(zip(ctx.all_calls, ctx.results)):
+        if isinstance(result, Exception):
+            obs_text = f"Observation: 工具{call['tool_name']}执行异常: {result}"
+        else:
+            obs_text = build_observation_text(result, call["tool_name"], call["tool_params"])
+        obs_parts.append(obs_text)
+        try:
+            _fc = ctx.fc_context or {}
+            tc_id = call.get("_tool_call_id", "")
+            if tc_id and _fc.get("tool_calls"):
+                matching = [tc for tc in _fc["tool_calls"] if tc.get("id") == tc_id]
+                per_call_fc = {"tool_call_id": tc_id, "tool_calls": matching or _fc["tool_calls"]}
             else:
-                obs_text = build_observation_text(result, call["tool_name"], call["tool_params"])
-            obs_parts.append(obs_text)
-            try:
-                # 为每个call构建独有fc_context — 修复平行调用共用tool_call_id
-                _fc = fc_context or {}
-                tc_id = call.get("_tool_call_id", "")
-                if tc_id and _fc.get("tool_calls"):
-                    matching = [tc for tc in _fc["tool_calls"] if tc.get("id") == tc_id]
-                    per_call_fc = {"tool_call_id": tc_id, "tool_calls": matching or _fc["tool_calls"]}
-                else:
-                    per_call_fc = _fc
-                _update_message_builder(agent, obs_text, per_call_fc)
-            except Exception as e:
-                logger.warning(f"[action_handler] _update_message_builder异常: {e}")
+                per_call_fc = _fc
+            _update_message_builder(ctx.agent, obs_text, per_call_fc)
+        except Exception as e:
+            logger.warning(f"[action_handler] _update_message_builder异常: {e}")
 
-        if not obs_parts:
-            obs_parts = ["Observation: 无结果"]
+    if not obs_parts:
+        obs_parts = ["Observation: 无结果"]
 
-        merged_obs = "\n\n".join(obs_parts) if len(obs_parts) > 1 else obs_parts[0]
+    merged_obs = "\n\n".join(obs_parts) if len(obs_parts) > 1 else obs_parts[0]
 
-        first_result = results[0] if results else {}
-        events.append(agent._step_emitter.emit(ToolStep(
-            step=step,
-            tool_name=tool_name,
-            tool_params=tool_params,
-            step_type="observation",
-            observation=merged_obs,
-            execution_status=first_result.get("code", "") if isinstance(first_result, dict) else "",
-            code=first_result.get("code", "") if isinstance(first_result, dict) else "",
-            warning=first_result.get("warning") if isinstance(first_result, dict) else None,
-            attachment=first_result.get("attachment") if isinstance(first_result, dict) else None,
-            next_actions=first_result.get("next_actions") if isinstance(first_result, dict) else None,
-        )))
+    first_result = ctx.results[0] if ctx.results else {}
+    events.append(ctx.agent._step_emitter.emit(ToolStep(
+        step=ctx.step,
+        tool_name=ctx.tool_name,
+        tool_params=ctx.tool_params,
+        step_type="observation",
+        observation=merged_obs,
+        execution_status=first_result.get("code", "") if isinstance(first_result, dict) else "",
+        code=first_result.get("code", "") if isinstance(first_result, dict) else "",
+        warning=first_result.get("warning") if isinstance(first_result, dict) else None,
+        attachment=first_result.get("attachment") if isinstance(first_result, dict) else None,
+        next_actions=first_result.get("next_actions") if isinstance(first_result, dict) else None,
+        return_direct=first_result.get("return_direct", False) if isinstance(first_result, dict) else False,
+    )))
 
-        # FC-only: assistant消息由_append_observation()以FC协议格式添加,不在此处添加
-        return events
+    return events
 
 
 async def handle_action(agent, parsed: Dict, chunk_buffer):
@@ -200,10 +213,28 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
     results = await execute_tools(agent, all_calls, is_parallel, tool_name, tool_params)
 
     action_steps: List[ToolStep] = []
-    obs_events = await build_observation(
-        agent, all_calls, results, step,
-        tool_name, tool_params, is_parallel, pending_calls,
-        action_steps, fc_context=fc_context,
+    # 【修复P2-5】使用ObservationContext封装参数 — 北京老陈 2026-06-13
+    ctx = ObservationContext(
+        agent=agent,
+        all_calls=all_calls,
+        results=results,
+        step=step,
+        tool_name=tool_name,
+        tool_params=tool_params,
+        is_parallel=is_parallel,
+        pending_calls=pending_calls,
+        action_steps=action_steps,
+        fc_context=fc_context,
     )
+    obs_events = await build_observation(ctx)
     for event in obs_events:
         yield event
+
+    if results and isinstance(results[0], dict) and results[0].get("return_direct"):
+        yield agent._step_emitter.emit(FinalStep(
+            step=step,
+            response=results[0].get("message", ""),
+            thought=parsed.get("thought", ""),
+        ))
+        agent.status = AgentStatus.COMPLETED
+        return

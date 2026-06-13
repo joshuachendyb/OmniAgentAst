@@ -28,8 +28,14 @@ from app.services.context_vars import _current_task_id
 
 @dataclass
 class StreamState:
+    """流式状态 — 【修复P3-5】明确语义 — 北京老陈 2026-06-13"""
     llm_call_count: int = 0
     current_content: str = ""
+    step_events: list = None
+
+    def __post_init__(self):
+        if self.step_events is None:
+            self.step_events = []
 
 
 # 无包装函数: 直接调 task_interrupt_check / task_pause_check / step_start / run_sse_stream

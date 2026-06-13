@@ -7,7 +7,6 @@ observation_formatter — 工具结果格式化为LLM observation文本
 
 提供两条输出路径:
 - format_llm_observation(): 给LLM看的observation文本
-- _format_frontend_event(): 给前端SSE事件的dict
 
 设计原则:
 - 工具自控:通过llm_data字段控制给LLM的数据量,格式化层不做业务截断
@@ -79,8 +78,9 @@ def extract_status(result: dict) -> str:
       SUCCESS        → "success"
       WARNING_*      → "warning"
       ERR_* / 其他   → "error"
+      code缺失/None   → "error"
     """
-    code = result.get("code", SUCCESS_CODE)
+    code = result.get("code")
     if code == SUCCESS_CODE:
         return "warning" if result.get("warning") else "success"
     elif isinstance(code, str) and code.startswith("WARNING_"):
@@ -207,15 +207,14 @@ def _format_error_observation(result: dict, tool_name: str = "", tool_params: Op
 
 
 def format_llm_observation(result: dict, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
-    """
-    格式化工具结果为LLM observation文本 — 小沈 2026-05-21
+    """格式化工具结果为LLM observation文本 — 小沈 2026-05-21
     更新 2026-05-22 小健:合入next_actions拼接逻辑(从base_react.py搬入)
     """
-    code = result.get("code", SUCCESS_CODE)
+    code = result.get("code")
 
     if code == SUCCESS_CODE:
         return _format_success_observation(result)
-    elif code.startswith("WARNING_"):
+    elif isinstance(code, str) and code.startswith("WARNING_"):
         return _format_warning_observation(result)
     else:
         return _format_error_observation(result, tool_name, tool_params)

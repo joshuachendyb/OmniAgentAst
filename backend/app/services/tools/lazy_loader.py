@@ -16,8 +16,6 @@ Tools 懒加载模块(原 registration.py)
 """
 
 
-# 【Phase 1修复 小健 2026-05-14】分阶段注册:删除模块级自动注册,改为显式调用
-_tools_registered = False
 _registered_categories: set = set()
 
 # 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
@@ -46,12 +44,9 @@ def _import_and_register(module_path: str, register_func_name: str) -> None:
 def ensure_tools_registered() -> None:
     """确保所有工具已注册(全量注册) - 小沈 2026-05-15
     
-    【修复 U8】移除categories参数,明确声明为全量注册。
+    无冷启动门闩:每次调用都检查未注册分类,新分类可随时加入CATEGORY_MODULES
     """
-    global _tools_registered, _registered_categories
-
-    if _tools_registered:
-        return
+    global _registered_categories
 
     from app.utils.logger import logger
     from app.services.tools.registry import tool_registry
@@ -67,12 +62,11 @@ def ensure_tools_registered() -> None:
             except Exception as e:
                 logger.error(f"[Tools] 注册分类{cat_name}失败: {e}")
                 _failed = True
-    if not _failed:
-        _tools_registered = True
+    if _failed:
+        logger.warning(f"[Tools] 部分分类注册失败,已注册{len(_registered_categories)}个分类,下次调用将重试")
+    elif _registered_categories:
         total_tools = len(tool_registry._tools)
         logger.info(f"[Tools] 全部注册完成, {total_tools}个工具, {len(_registered_categories)}个分类")
-    else:
-        logger.warning(f"[Tools] 部分分类注册失败,已注册{len(_registered_categories)}个分类,下次调用将重试")
 
 
 __all__ = [

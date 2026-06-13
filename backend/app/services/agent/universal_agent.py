@@ -34,6 +34,9 @@ _CATEGORY_SUMMARIES: Dict[ToolCategory, str] = {
 class UniversalAgent(BaseAgent):
     """通用 Agent — 初始仅加载 FUND_RUNTIME,其余分类通过 tool_search 动态注入"""
 
+    # 【修复P2-1】工具缓存TTL常量 — 北京老陈 2026-06-13
+    TOOL_CACHE_TTL = 300
+
     def __init__(
         self,
         llm_client: Any,
@@ -133,7 +136,11 @@ class UniversalAgent(BaseAgent):
                     break
 
                 if chunk.tool_calls:
-                    tool_calls_result = chunk.tool_calls
+                    # 【修复P1-1】累积tool_calls而非覆盖 — 北京老陈 2026-06-13
+                    if tool_calls_result is None:
+                        tool_calls_result = chunk.tool_calls
+                    else:
+                        tool_calls_result.extend(chunk.tool_calls)
 
                 if chunk.content:
                     if getattr(chunk, "is_reasoning", False):
@@ -189,9 +196,8 @@ class UniversalAgent(BaseAgent):
         import time
         current_time = time.time()
         cache_ts = getattr(self, '_cache_timestamp', 0)
-        cache_ttl = getattr(self, '_cache_ttl', 300)
         cached = getattr(self, '_cached_openai_tools', None)
-        if cached and current_time - cache_ts < cache_ttl:
+        if cached and current_time - cache_ts < self.TOOL_CACHE_TTL:
             return cached
 
         from app.services.tools.registry import tool_registry
@@ -209,8 +215,19 @@ class UniversalAgent(BaseAgent):
         if not _CATEGORIES_CONFIG_PATH.exists():
             return
 
-        with open(_CATEGORIES_CONFIG_PATH, "r", encoding="utf-8") as f:
-            categories_config = json.load(f)
+        # 【修复P1-4】文件内容缓存，避免每次调用都读磁盘 — 北京老陈 2026-06-13
+        import time
+        now = time.time()
+        if not hasattr(self, '_categories_config_cache'):
+            self._categories_config_cache = None
+            self._categories_config_ts = 0
+        if now - self._categories_config_ts < 60:
+            categories_config = self._categories_config_cache
+        else:
+            with open(_CATEGORIES_CONFIG_PATH, "r", encoding="utf-8") as f:
+                categories_config = json.load(f)
+            self._categories_config_cache = categories_config
+            self._categories_config_ts = now
 
         unloaded = [cat for cat in ToolCategory
                     if cat != ToolCategory.FUND_RUNTIME and cat not in self._loaded_categories]

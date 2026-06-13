@@ -25,6 +25,7 @@ class _PendingConfirmation:
 
 
 _CONFIRM_TIMEOUT = 120  # 增加到120s — 修复SSE延迟导致的超时（auth事件yield到客户端需60s）— 小沈 2026-06-10
+MAX_PENDING_CONFIRMATIONS = 100  # 【修复P2-4】最大待确认操作数 — 北京老陈 2026-06-13
 _pending_confirmations: Dict[str, _PendingConfirmation] = {}
 _last_cleanup_time: float = 0.0  # 上次清理时间戳
 _CLEANUP_INTERVAL = 10  # 【修复P1-3 2026-06-09 小沈】30秒→10秒，更频繁清理
@@ -83,7 +84,12 @@ async def create_confirmation(task_id: str) -> str:
     在react_cycle中调用，先创建再发射IncidentStep
     
     【修复 2026-06-09 小沈】使用get_running_loop替代get_event_loop
+    【修复P2-4】添加大小限制 — 北京老陈 2026-06-13
     """
+    _cleanup_stale_confirmations()
+    if len(_pending_confirmations) >= MAX_PENDING_CONFIRMATIONS:
+        raise RuntimeError(f"待确认操作数已达上限({MAX_PENDING_CONFIRMATIONS})")
+
     confirm_id = f"{task_id}:{uuid4().hex[:8]}"
     loop = asyncio.get_running_loop()
     future = loop.create_future()

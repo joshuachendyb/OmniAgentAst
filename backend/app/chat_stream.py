@@ -61,15 +61,10 @@ def create_error_response(
     error_message: str,
     model: Optional[str] = None,
     provider: Optional[str] = None,
-    details: Optional[str] = None,
-    stack: Optional[str] = None,
     recoverable: Optional[bool] = None,
-    retry_after: Optional[int] = None,
     step: Optional[int] = None
 ) -> str:
-    """创建统一的错误响应格式 — 使用 ErrorStep + format_agent_sse
-    【修复P0-4 2026-06-08 小沈】删除StepFactory，直接调用ErrorStep构造函数
-    """
+    """创建统一的错误响应格式 — 使用 ErrorStep + format_agent_sse"""
     error_step = ErrorStep(
         step=step or 0,
         error_type=error_type,
@@ -77,8 +72,6 @@ def create_error_response(
         model=model,
         provider=provider,
         recoverable=recoverable or False,
-        retry_after=retry_after,
-        context={"details": details, "stack": stack} if details or stack else None
     )
     return format_agent_sse(error_step.to_dict())
 

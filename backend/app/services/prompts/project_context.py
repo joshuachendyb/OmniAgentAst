@@ -5,13 +5,14 @@
 Author: 小沈 - 2026-06-11
 """
 import os
-from functools import lru_cache
 
 CONTEXT_FILE = "OmniAgent.md"
 MAX_CHARS = 8000
 
+# 【修复P1-3】手动缓存替代lru_cache，按workdir隔离 — 北京老陈 2026-06-13
+_context_cache: dict = {}
 
-@lru_cache(maxsize=1)
+
 def load_project_context(workdir: str = None) -> str:
     """加载 OmniAgent.md 文件内容 — 小沈 2026-06-11
 
@@ -24,19 +25,25 @@ def load_project_context(workdir: str = None) -> str:
     if workdir is None:
         workdir = _detect_project_root()
 
+    if workdir in _context_cache:
+        return _context_cache[workdir]
+
     filepath = os.path.join(workdir, CONTEXT_FILE)
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read(MAX_CHARS)
     except (FileNotFoundError, PermissionError, IOError):
+        _context_cache[workdir] = ""
         return ""
 
     if not content:
+        _context_cache[workdir] = ""
         return ""
 
     if len(content) >= MAX_CHARS:
         content = content[:MAX_CHARS] + "\n...(截断)"
 
+    _context_cache[workdir] = content
     return content
 
 
