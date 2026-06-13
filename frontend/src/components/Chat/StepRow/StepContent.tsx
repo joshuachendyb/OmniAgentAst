@@ -28,10 +28,7 @@ import {
   Spacing,
   type StepType,
 } from '../../../utils/stepStyles';
-import {
-  formatStepContent,
-  formatReasoningContent,
-} from '../../../utils/stepContentUtils';
+import { formatStepContent } from '../../../utils/stepContentUtils';
 
 interface StepContentProps {
   step: ExecutionStep;
@@ -227,8 +224,7 @@ const StepContent: React.FC<StepContentProps> = ({
         <div style={getStepStyle('start' as StepType)}>
           <div style={getStepTitleStyle('start' as StepType)}>
             🚀 用户消息：
-            {step.user_message ||
-              '(无)'}
+            {step.user_message || '(无)'}
           </div>
           <div
             style={{
@@ -293,9 +289,7 @@ const StepContent: React.FC<StepContentProps> = ({
             )}
             <span style={{ flex: 1 }} />
           </div>
-          {step.provider ||
-          step.model ||
-          step.display_name ? (
+          {step.provider || step.model || step.display_name ? (
             <div
               style={{
                 marginTop: 4,
@@ -345,8 +339,7 @@ const StepContent: React.FC<StepContentProps> = ({
                   </span>
                 </span>
               )}
-              {step
-                .display_name && (
+              {step.display_name && (
                 <span>
                   <span
                     style={{
@@ -362,10 +355,7 @@ const StepContent: React.FC<StepContentProps> = ({
                       fontWeight: FontWeight.MEDIUM,
                     }}
                   >
-                    {
-                      step
-                        .display_name
-                    }
+                    {step.display_name}
                   </span>
                 </span>
               )}
@@ -382,8 +372,7 @@ const StepContent: React.FC<StepContentProps> = ({
             wordBreak: 'break-word',
           }}
         >
-          {step.thought ||
-          step.reasoning ? (
+          {step.thought || step.reasoning ? (
             <div
               style={{
                 marginBottom: 10,
@@ -409,9 +398,7 @@ const StepContent: React.FC<StepContentProps> = ({
                     💭 思考:
                   </span>
                   <span style={{ color: '#666' }}>
-                    {formatStepContent(
-                      step.thought
-                    )}
+                    {formatStepContent(step.thought)}
                   </span>
                 </div>
               )}
@@ -455,10 +442,7 @@ const StepContent: React.FC<StepContentProps> = ({
                       fontWeight: 500,
                     }}
                   >
-                    {formatReasoningContent(
-                      step
-                        .reasoning
-                    )}
+                    {formatStepContent(step.reasoning)}
                   </div>
                 </div>
               )}
@@ -476,8 +460,7 @@ const StepContent: React.FC<StepContentProps> = ({
           >
             {renderToolInfo(
               step.tool_name,
-              step
-                .tool_params as Record<string, unknown>,
+              step.tool_params as Record<string, unknown>,
               {
                 prefix: '⬇️ 下一步：',
                 bgColor: 'transparent',
@@ -499,48 +482,30 @@ const StepContent: React.FC<StepContentProps> = ({
                 borderLeft: '2px solid #d9d9d9',
               }}
             >
-              思考:{' '}
-              {formatStepContent(
-                step.thought
-              )}
+              思考: {formatStepContent(step.thought)}
             </div>
           )}
           <span style={{ fontSize: 13, color: '#333' }}>
-            {formatStepContent(
-              step.response
-            )}
+            {formatStepContent(step.response)}
           </span>
         </div>
       )}
       {step.type === 'error' && (
         <ErrorDetail
-          errorType={
-            step.error_type
-          }
-          errorMessage={
-            step.error_message ||
-            step.message
-          }
+          errorType={step.error_type}
+          errorMessage={step.error_message || step.message}
           errorTimestamp={
             typeof step.timestamp === 'number'
               ? new Date(step.timestamp).toISOString()
               : String(step.timestamp)
           }
-          errorDetails={
-            step.details
-          }
+          errorDetails={step.details}
           errorStack={step.stack}
-          errorRetryAfter={
-            step.retry_after
-          }
+          errorRetryAfter={step.retry_after}
           model={step.model}
           provider={step.provider}
-          errorRecoverable={
-            step.recoverable
-          }
-          errorContext={
-            step.context
-          }
+          errorRecoverable={step.recoverable}
+          errorContext={step.context}
         />
       )}
       {(step.type === 'interrupted' ||
