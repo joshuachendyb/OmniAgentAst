@@ -88,11 +88,7 @@ export interface ExecutionStep {
     | 'final'
     | 'error'
     | 'incident'
-    | 'interrupted'
-    | 'start'
-    | 'paused'
-    | 'resumed'
-    | 'retrying';
+    | 'start';
   content?: string; // 前端显示用：根据type使用不同字段填充小查修复202
 
   // 【6-03-09】添加task_id字段，用于分页请求
@@ -110,14 +106,9 @@ export interface ExecutionStep {
   tool_name?: string; // 【thought类型】LLM思考后决定的下一步动作
   tool_params?: Record<string, unknown>; // 【thought类型】LLM思考后决定的参数
 
-  // === 保留字段（不变）===
-
-  // === 保留字段（不变）===
-  // observation 相关
   step?: number;
   thought?: string;
-  action?: string; // 兼容旧字段
-  observation?: unknown; // 【改造2026-05-22】ObservationData对象或字符串（向后兼容）
+  observation?: unknown; // ObservationData对象或字符串
   result?: string;
   code?: string; // 【新增2026-05-22】状态码（SUCCESS/ERROR/WARNING）
 
@@ -133,9 +124,6 @@ export interface ExecutionStep {
   // 工具执行结果已在 action_tool 阶段完整显示（execution_status/summary/execution_result）
   // 【注意】obs_* 字段已删除，如需使用工具结果请从 action_tool 阶段获取
   // tool_name 已在上面 action_tool 字段定义（第97行），此处不再重复
-
-  // === type=action 旧字段（兼容） ===
-  action_input?: Record<string, unknown>; // 工具调用参数（旧）
 
   // === type=chunk/final/start 字段 ===
   model?: string; // AI模型
@@ -471,7 +459,12 @@ export const useSSE = (
   // ⭐ 新增：重试回调 - 【小查修复2026-03-13】添加wait_time参数
   onRetry?: (message: string, waitTime?: number) => void,
   // 【v3.4新增 2026-06-09 小沈】授权请求回调
-  onAuthorizationRequired?: (data: { confirm_id: string; tool_name: string; params: Record<string, unknown>; safety_level: string }) => void,
+  onAuthorizationRequired?: (data: {
+    confirm_id: string;
+    tool_name: string;
+    params: Record<string, unknown>;
+    safety_level: string;
+  }) => void
 ): UseSSEReturn => {
   const [isConnected, setIsConnected] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
@@ -976,7 +969,12 @@ const processSSEData = (
     onResumed?: () => void;
     onShowSteps?: (show: boolean) => void;
     onRetry?: (message: string, waitTime?: number) => void;
-    onAuthorizationRequired?: (data: { confirm_id: string; tool_name: string; params: Record<string, unknown>; safety_level: string }) => void;
+    onAuthorizationRequired?: (data: {
+      confirm_id: string;
+      tool_name: string;
+      params: Record<string, unknown>;
+      safety_level: string;
+    }) => void;
     setCurrentResponse: React.Dispatch<React.SetStateAction<string>>;
     responseBufferRef: React.MutableRefObject<string>;
     setIsReceiving: React.Dispatch<React.SetStateAction<boolean>>;
@@ -1657,7 +1655,7 @@ const processSSEData = (
           'color: red; font-weight: bold;'
         );
         const statusMessage = rawData.message || '';
-        
+
         // 直接使用rawData.type作为step.type
         step.type = rawData.type as ExecutionStep['type'];
         step.content = statusMessage;
