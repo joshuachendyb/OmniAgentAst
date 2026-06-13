@@ -35,8 +35,8 @@ _CATEGORY_SUMMARIES: Dict[ToolCategory, str] = {
 class UniversalAgent(BaseAgent):
     """通用 Agent — 初始仅加载 FUND_RUNTIME,其余分类通过 tool_search 动态注入"""
 
-    # 【修复P2-1】工具缓存TTL常量 — 北京老陈 2026-06-13
     TOOL_CACHE_TTL = 300
+    _CATEGORIES_CONFIG_CACHE_TTL = 60
 
     def __init__(
         self,
@@ -277,7 +277,7 @@ class UniversalAgent(BaseAgent):
         if not hasattr(self, '_categories_config_cache'):
             self._categories_config_cache = None
             self._categories_config_ts = 0
-        if now - self._categories_config_ts < 60:
+        if now - self._categories_config_ts < self._CATEGORIES_CONFIG_CACHE_TTL:
             categories_config = self._categories_config_cache
         else:
             with open(_CATEGORIES_CONFIG_PATH, "r", encoding="utf-8") as f:

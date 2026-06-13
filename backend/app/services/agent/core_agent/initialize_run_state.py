@@ -14,6 +14,21 @@ from app.services.agent.chunk_buffer import ChunkBuffer
 from app.utils.prompt_logger import get_prompt_logger
 
 
+def _inject_conversation_history(self, context: Optional[Dict[str, Any]]) -> None:
+    """注入会话历史(多轮对话支持) — 北京老陈 2026-06-13"""
+    if not context or not isinstance(context, dict):
+        return
+    prev = context.get("previous_messages")
+    if not prev or not isinstance(prev, list):
+        return
+    history = self.message_builder.conversation_history
+    for msg in prev:
+        if msg.get("role") in ("user", "assistant") and msg.get("content"):
+            history.append({"role": msg["role"], "content": msg["content"]})
+    self.message_builder.conversation_history = history
+    self.message_builder.trim_history()
+
+
 def initialize_run_state(
     self, task: str, task_id: Optional[str], context: Optional[Dict[str, Any]] = None
 ) -> ChunkBuffer:
@@ -41,16 +56,6 @@ def initialize_run_state(
 
     self._on_before_loop(sys_prompt, task, context)
     self.message_builder.init_history(sys_prompt, task)
-
-    # 注入会话历史(多轮对话支持) — 北京老陈 2026-06-13
-    if context and isinstance(context, dict):
-        prev = context.get("previous_messages")
-        if prev and isinstance(prev, list):
-            history = self.message_builder.conversation_history
-            for msg in prev:
-                if msg.get("role") in ("user", "assistant") and msg.get("content"):
-                    history.append({"role": msg["role"], "content": msg["content"]})
-            self.message_builder.conversation_history = history
-            self.message_builder.trim_history()
+    self._inject_conversation_history(context)
 
     return ChunkBuffer(MAX_CONSECUTIVE_CHUNKS)
