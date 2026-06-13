@@ -139,7 +139,7 @@ SUCCESS_CODE = "SUCCESS"
 LLM_SAFE_LIMIT = 100_000
 
 # ============================================================
-# 9. 工具错误码常量 — 小沈 2026-05-26
+# 8. 工具错误码常量 — 小沈 2026-05-26
 #     命名规范: ERR_{MODULE}_{PROBLEM}
 #     MODULE: DOC/FILE/SHELL/META/SYSTEM/DESKTOP/NETWORK/DB/REG/TIMER/TASK/WIN/SYS_ENV/SYS_REG
 #     所有工具返回的错误码统一定义在此,消除散落和命名不一致
@@ -241,7 +241,6 @@ ERR_SYS_REG_INVALID_ROOT_KEY = "ERR_SYS_REG_INVALID_ROOT_KEY"
 ERR_SYS_REG_KEY_NOT_FOUND = "ERR_SYS_REG_KEY_NOT_FOUND"
 ERR_SYS_REG_KEY_NOT_EMPTY = "ERR_SYS_REG_KEY_NOT_EMPTY"
 ERR_SYS_REG_CANNOT_DELETE_ROOT = "ERR_SYS_REG_CANNOT_DELETE_ROOT"
-ERR_SYS_REG_PERMISSION_DENIED = "ERR_SYS_REG_PERMISSION_DENIED"
 ERR_REG_READ_FAILED = "ERR_REG_READ_FAILED"
 ERR_REG_WRITE_FAILED = "ERR_REG_WRITE_FAILED"
 ERR_REG_DELETE_FAILED = "ERR_REG_DELETE_FAILED"
@@ -421,21 +420,14 @@ INVALID_SESSION_IDS_MAX = 500
 MAX_CACHE_SIZE = 1000
 
 # ============================================================
-# 10. LLM解析器工具名/参数名降级映射(从 llm_response_parser 迁移)
-# ============================================================
-
-TOOL_NAME_FALLBACK_KEYS = ["action", "action_tool", "tool_name"]
-TOOL_PARAMS_FALLBACK_KEYS = ["params", "action_input", "actionInput"]
-
-# ============================================================
-# 11. SSE流超时(从 react_sse_wrapper 迁移)
+# 10. SSE流超时(从 react_sse_wrapper 迁移)
 # ============================================================
 
 from datetime import timedelta
 TASK_TIMEOUT = timedelta(hours=1)
 
 # ============================================================
-# 12. Agent meta工具(从 base_react.py 迁移)
+# 11. Agent meta工具
 # ============================================================
 
 META_TOOL_NAMES = [

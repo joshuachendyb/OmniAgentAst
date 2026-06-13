@@ -10,7 +10,6 @@ Agent层公共工具函数目录
 目录结构:
 - tool_result_factory.py: 工具结果统一默认值常量 + Agent层结果工厂
 - message_utils.py: Message工具函数(纯函数,无状态)
-- _utils.py: LLM响应解析器内部工具函数
 
 Author: 小沈 - 2026-05-28
 """

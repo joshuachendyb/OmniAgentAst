@@ -22,14 +22,12 @@ class StepEmitter:
         self.agent = agent
 
     def emit(self, step) -> 'ReasoningStep':
-        """复制自 base_react.py 第427-434行 — 记录步骤并返回Step对象"""
+        """记录步骤到agent.steps并返回Step对象"""
         self.agent.steps.append(step)
         return step
 
     def exit_with_error(self, step_count: int, error_type: str, error_message: str, recoverable: bool = False) -> 'ReasoningStep':
-        """复制自 base_react.py 第436-449行 — 创建error_step并返回Step对象
-        【修复P0-4 2026-06-08 小沈】删除StepFactory，直接调用ErrorStep构造函数
-        """
+        """创建error_step,设置FAILED状态,返回Step对象"""
         self.agent.status = AgentStatus.FAILED
         error_step = ErrorStep(
             step=step_count,
@@ -40,7 +38,7 @@ class StepEmitter:
         return self.emit(error_step)
 
     def complete_task(self, success: bool):
-        """复制自 base_react.py 第471-479行 — Task追踪:完成任务记录"""
+        """Task追踪:完成任务记录"""
         task_tracker = getattr(self.agent, '_task_tracker', None)
         tracked_task_id = getattr(self.agent, '_tracked_task_id', None)
         if task_tracker and tracked_task_id:
@@ -50,7 +48,7 @@ class StepEmitter:
                 logger.debug(f"[TaskTracker] 完成任务失败: {_e}")
 
     def record_operation(self, operation_type: str, **kwargs):
-        """复制自 base_react.py 第481-491行 — Task追踪:记录一次操作"""
+        """Task追踪:记录一次操作"""
         task_tracker = getattr(self.agent, '_task_tracker', None)
         tracked_task_id = getattr(self.agent, '_tracked_task_id', None)
         if task_tracker and tracked_task_id:

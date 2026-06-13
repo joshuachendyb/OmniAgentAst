@@ -4,7 +4,6 @@ ObservationStep类 - 观察步骤
 
 表示工具执行后的观察结果:
 - type: "observation"
-- is_done() = return_direct → 根据工具是否要求直接返回
 
 Author: 小沈
 Date: 2026-04-15
@@ -21,13 +20,10 @@ class ObservationStep(ReasoningStep):
     
     表示工具执行后的观察结果:
     - type: "observation"
-    - is_done() = return_direct → 根据工具是否要求直接返回
     
     字段说明:
     - observation: 观察结果
-    - return_direct: 是否直接返回(工具要求直接返回结果)
-    
-    设计依据:13.2.2.2节具体实现类设计
+    - return_direct: 工具是否要求直接返回(由工具结果传递)
     """
 
     TYPE: str = "observation"
@@ -80,9 +76,6 @@ class ObservationStep(ReasoningStep):
     @property
     def error_message(self) -> str:
         return self._error_message
-    
-    def is_done(self) -> bool:
-        return self._return_direct
 
     def _extra_fields(self) -> Dict[str, Any]:
         summary_text = self._observation or self._summary or self._error_message or "执行完成"
