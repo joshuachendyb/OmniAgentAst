@@ -12,9 +12,9 @@ from app.services.agent.steps import ThoughtStep, FinalStep
 from app.services.agent.types import AgentStatus
 
 
-async def handle_answer(agent, parsed: Dict, step_counter: list, chunk_buffer):
+async def handle_answer(agent, parsed: Dict, chunk_buffer):
     """处理answer类型 — FC-only: 空内容视为错误"""
-    step = step_counter[0]
+    step = agent.llm_call_count
     content = parsed.get("content", "")
 
     if not content:

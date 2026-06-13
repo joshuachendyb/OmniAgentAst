@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Agent初始化逻辑 — 从 base_react.py 拆出
+Agent初始化逻辑（SRP分离）
 
-复制来源: base_react.py 第97-131行 (_init_llm, _init_state, _init_messages)
+职责: 负责Agent的LLM/状态/消息/Task追踪的初始化
 Author: 小沈 - 2026-05-31
 """
 
@@ -18,7 +18,7 @@ class AgentInitializer:
 
     @staticmethod
     def _init_llm(agent, llm_client: Any, **kwargs):
-        """复制自 base_react.py 第97-107行 — 初始化LLM客户端相关属性"""
+        """初始化LLM客户端相关属性"""
         agent.llm_client = llm_client
 
         # 【修复 2026-04-30 小沈】将 **kwargs 中有用的参数 setattr 到 self
