@@ -10,7 +10,7 @@ import asyncio
 from typing import Optional, Callable, AsyncGenerator
 
 from app.utils.logger import logger
-from app.services.agent.steps import IncidentStep
+from app.services.agent.steps import MetaStep
 from app.services.task.task_registry import check_cancelled, check_paused, check_was_paused, set_was_paused, get_pause_event
 
 
@@ -22,13 +22,9 @@ async def task_interrupt_check(
     """检查任务是否被中断,如果是则返回中断消息"""
     if await check_cancelled(task_id):
         step_value = next_step() if next_step else None
-        incident_step = IncidentStep(
-            step=step_value,
-            incident_value='interrupted',
-            message='任务已被中断'
-        )
+        meta_step = MetaStep(step=step_value, type="interrupted", message='任务已被中断')
         from app.chat_stream import format_agent_sse
-        return True, format_agent_sse(incident_step.to_dict())
+        return True, format_agent_sse(meta_step.to_dict())
     return False, ""
 
 
@@ -49,13 +45,9 @@ async def task_pause_check(
         if not await check_was_paused(task_id):
             await set_was_paused(task_id, True)
             step_value = next_step() if next_step else None
-            incident_step = IncidentStep(
-                step=step_value,
-                incident_value='paused',
-                message='任务已暂停'
-            )
+            meta_step = MetaStep(step=step_value, type="paused", message='任务已暂停')
             from app.chat_stream import format_agent_sse
-            yield format_agent_sse(incident_step.to_dict())
+            yield format_agent_sse(meta_step.to_dict())
 
         await pause_event.wait()
 
@@ -64,13 +56,9 @@ async def task_pause_check(
 
         await set_was_paused(task_id, False)
         step_value = next_step() if next_step else None
-        incident_step = IncidentStep(
-            step=step_value,
-            incident_value='resumed',
-            message='任务已恢复'
-        )
+        meta_step = MetaStep(step=step_value, type="resumed", message='任务已恢复')
         from app.chat_stream import format_agent_sse
-        yield format_agent_sse(incident_step.to_dict())
+        yield format_agent_sse(meta_step.to_dict())
 
 
 async def task_pause_check_and_yield(
@@ -95,13 +83,9 @@ async def task_pause_check_and_yield(
     if not await check_was_paused(task_id):
         await set_was_paused(task_id, True)
         step_value = next_step() if next_step else None
-        incident_step = IncidentStep(
-            step=step_value,
-            incident_value='paused',
-            message='任务已暂停'
-        )
+        meta_step = MetaStep(step=step_value, type="paused", message='任务已暂停')
         from app.chat_stream import format_agent_sse
-        yield format_agent_sse(incident_step.to_dict())
+        yield format_agent_sse(meta_step.to_dict())
 
     # 等待恢复 — 添加超时防止永久挂起,小健 2026-06-09
     try:
@@ -117,10 +101,6 @@ async def task_pause_check_and_yield(
     # 发送resumed事件
     await set_was_paused(task_id, False)
     step_value = next_step() if next_step else None
-    incident_step = IncidentStep(
-        step=step_value,
-        incident_value='resumed',
-        message='任务已恢复'
-    )
+    meta_step = MetaStep(step=step_value, type="resumed", message='任务已恢复')
     from app.chat_stream import format_agent_sse
-    yield format_agent_sse(incident_step.to_dict())
+    yield format_agent_sse(meta_step.to_dict())

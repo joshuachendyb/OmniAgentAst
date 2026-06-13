@@ -17,7 +17,7 @@ import time
 from typing import Dict, List, Any
 
 from app.utils.logger import logger
-from app.services.agent.steps import ThoughtStep, ActionToolStep, ObservationStep, ErrorStep, IncidentStep
+from app.services.agent.steps import ThoughtStep, ToolStep, ErrorStep, MetaStep
 from app.services.agent.agent_utils.message_utils import build_observation_text
 
 _SENSITIVE_FIELDS = {"password", "token", "api_key", "secret", "authorization", "credential"}
@@ -51,9 +51,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
 
                 confirm_id = await create_confirmation(agent.task_id)
 
-                yield agent._step_emitter.emit(IncidentStep(
+                yield agent._step_emitter.emit(MetaStep(
                     step=step,
-                    incident_value="authorization_required",
+                    type="authorization_required",
                     message=f"需要用户确认工具执行: {call['tool_name']}",
                     data={
                         "confirm_id": confirm_id,
@@ -109,12 +109,12 @@ async def build_observation(agent, all_calls: List[Dict], results: List[Any], st
         events = []
 
         for call, result in zip(all_calls, results):
-            action_step = ActionToolStep(
+            action_step = ToolStep(
                 step=step,
                 tool_name=call["tool_name"],
                 tool_params=call["tool_params"],
+                execution_result=result,
             )
-            action_step._execution_result = result
             action_steps.append(action_step)
             events.append(agent._step_emitter.emit(action_step))
 
@@ -144,11 +144,12 @@ async def build_observation(agent, all_calls: List[Dict], results: List[Any], st
         merged_obs = "\n\n".join(obs_parts) if len(obs_parts) > 1 else obs_parts[0]
 
         first_result = results[0] if results else {}
-        events.append(agent._step_emitter.emit(ObservationStep(
+        events.append(agent._step_emitter.emit(ToolStep(
             step=step,
-            observation=merged_obs,
             tool_name=tool_name,
             tool_params=tool_params,
+            step_type="observation",
+            observation=merged_obs,
             execution_status=first_result.get("code", "") if isinstance(first_result, dict) else "",
             code=first_result.get("code", "") if isinstance(first_result, dict) else "",
             warning=first_result.get("warning") if isinstance(first_result, dict) else None,
@@ -198,7 +199,7 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
 
     results = await execute_tools(agent, all_calls, is_parallel, tool_name, tool_params)
 
-    action_steps: List[ActionToolStep] = []
+    action_steps: List[ToolStep] = []
     obs_events = await build_observation(
         agent, all_calls, results, step,
         tool_name, tool_params, is_parallel, pending_calls,
