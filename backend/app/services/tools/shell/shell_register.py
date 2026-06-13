@@ -43,7 +43,27 @@ from app.services.tools.shell.code_execution_tools import (
 )
 
 SHELL_TOOL_DESCRIPTIONS = {
-    "execute_shell_command": """在指定Shell环境中执行命令。默认使用Windows PowerShell,可选CMD。支持前台模式(实时等待返回结果)和后台模式(run_in_background=True,返回会话ID供shell_session工具后续读取输出)。前台模式返回stdout/stderr/returncode。适用场景:需要执行系统命令、运行脚本、启动程序、后台启动服务(如npm run dev)时使用。""",
+    "execute_shell_command": """在指定Shell环境中执行命令。默认使用Windows PowerShell,可选CMD。支持前台模式(实时等待返回结果)和后台模式(run_in_background=True,返回会话ID供shell_session工具后续读取输出)。前台模式返回stdout/stderr/returncode。适用场景:需要执行系统命令、运行脚本、启动程序、后台启动服务(如npm run dev)时使用。
+
+【Windows命令参考】常用操作对应的CMD/PowerShell命令:
+- 列目录: dir
+- 读文件: type
+- 复制: copy
+- 移动: move
+- 重命名: ren
+- 删除文件: del
+- 删除目录: rmdir /s /q
+- 创建目录: mkdir
+- 查找文件: dir /s /b
+- 查找内容: findstr
+- 查询路径: where
+- 环境变量: set
+- 进程列表: tasklist
+- 杀进程: taskkill /F /PID
+- 网络状态: netstat
+- IP配置: ipconfig
+- 磁盘信息: wmic logicaldisk get size,freespace,caption
+- 权限修改: icacls""",
     "find_command": """查找系统命令的安装路径,类似于which/where命令。all_paths=False(默认)返回第一个匹配路径,all_paths=True返回全部匹配路径列表。适用场景:需要确认python/git/npm等命令是否已安装、查看命令安装路径、验证开发工具链配置是否正确时使用。""",
     "execute_code": """执行代码片段并返回结果。支持Python(默认)和JavaScript两种语言。内置安全检查拦截危险操作(如文件删除、网络请求等),比直接Shell命令更安全。返回stdout/stderr/returncode。适用场景:需要快速验证代码逻辑、进行数据处理计算、运行简单脚本片段时使用。""",
     "shell_session": """支持后台Shell会话管理功能。

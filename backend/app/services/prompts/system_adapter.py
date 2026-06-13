@@ -1,184 +1,73 @@
 """
-系统信息适配器 - Prompt中间层
+系统信息适配器 — 生成系统自适应的 Prompt 内容
 
-【功能】根据服务器操作系统,生成系统自适应的Prompt内容
-【核心】服务器OS决定路径格式和命令格式
+【功能】根据服务器 OS 生成路径格式提示
+【重构】2026-06-14 小沈 — COMMANDS移至shell_register.execute_shell_command描述
 
-创建时间: 2026-03-24 17:25:00
-作者: 小沈
-版本: v1.1 — 2026-06-11 小沈 增加工作目录/Git状态/日期
+Author: 小沈 - 2026-06-14
 """
 import functools
 import os
 import platform
-from typing import Dict, Any
+
 from app.utils.logger import logger
 
+PATH_FORMATS = {
+    "Windows": "C:\\Users\\xxx\\file.txt 或 C:/Users/xxx/file.txt",
+    "Linux": "/home/xxx/file.txt",
+}
 
-class SystemAdapter:
-    """系统信息适配器 - 生成系统自适应的Prompt内容"""
-    
-    # 路径格式映射
-    PATH_FORMATS = {
-        "Windows": "C:\\Users\\xxx\\file.txt 或 C:/Users/xxx/file.txt",
-        "Linux": "/home/xxx/file.txt",
-        "Darwin": "/Users/xxx/file.txt"
-    }
-    
-    # 命令格式映射
-    COMMANDS = {
-        "Windows": {
-            "list": "dir",
-            "copy": "copy",
-            "move": "move",
-            "rename": "ren",
-            "delete": "del",
-            "delete_dir": "rmdir /s /q",
-            "read": "type",
-            "create_dir": "mkdir",
-            "pwd": "cd",
-            "echo": "echo",
-            "find_file": "dir /s /b",
-            "find_content": "findstr",
-            "which": "where",
-            "env": "set",
-            "ps": "tasklist",
-            "kill": "taskkill /F /PID",
-            "ping": "ping",
-            "netstat": "netstat",
-            "ipconfig": "ipconfig",
-            "curl": "curl",
-            "df": "wmic logicaldisk get size,freespace,caption",
-            "chmod": "icacls",
-        },
-    }
-    
-    def __init__(self):
-        """初始化,获取当前服务器OS"""
-        self.system = self._get_system()
-    
-    def _get_system(self) -> str:
-        """获取服务器操作系统"""
-        system = platform.system()
-        # Darwin -> macOS
-        if system == "Darwin":
-            return "Darwin"
-        return system
-    
-    def get_system_name(self) -> str:
-        """获取系统名称"""
-        if self.system == "Darwin":
-            return "macOS"
-        return self.system
-    
-    def get_path_format(self) -> str:
-        """获取当前系统的路径格式示例"""
-        return self.PATH_FORMATS.get(self.system, "/home/xxx/file.txt")
-    
-    def get_commands(self) -> Dict[str, str]:
-        """获取当前系统的命令格式"""
-        return self.COMMANDS.get(self.system, self.COMMANDS["Windows"])
-    
-    @staticmethod
-    def _check_is_git_repo(path: str) -> bool:
-        """向上搜索.git目录 — 小沈 2026-06-11"""
-        current = os.path.abspath(path)
-        for _ in range(5):
-            if os.path.isdir(os.path.join(current, ".git")):
-                return True
-            parent = os.path.dirname(current)
-            if parent == current:
-                break
-            current = parent
-        return False
 
-    def _get_environment_info(self) -> str:
-        """获取环境信息(工作目录/Git状态/日期时间) — 小沈 2026-06-11"""
-        from app.utils.time_utils import now_str
-        cwd = os.getcwd()
-        now = now_str()
-        is_git = self._check_is_git_repo(cwd)
-        git_status = "是" if is_git else "否"
-        return f"""【环境信息】
+def _detect_os() -> str:
+    return platform.system()
+
+
+def _check_is_git_repo(path: str) -> bool:
+    current = os.path.abspath(path)
+    for _ in range(5):
+        if os.path.isdir(os.path.join(current, ".git")):
+            return True
+        parent = os.path.dirname(current)
+        if parent == current:
+            break
+        current = parent
+    return False
+
+
+def _get_environment_info() -> str:
+    """获取环境信息（工作目录/Git 状态/日期时间）— 小沈 2026-06-11"""
+    from app.utils.time_utils import now_str
+
+    cwd = os.getcwd()
+    now = now_str()
+    is_git = _check_is_git_repo(cwd)
+    git_status = "是" if is_git else "否"
+    return f"""【环境信息】
 - 工作目录: {cwd}
 - Git仓库: {git_status}
 - 当前时间: {now}
 """
 
-    def generate_system_prompt(self, include_commands: bool = True) -> str:
-        """
-        生成系统信息Prompt - 嵌入到工具Prompt的开头
-        
-        【修复 2026-05-14 小沈】加include_commands参数
-        - ShellAgent: include_commands=True(它的工具就是shell,需要命令格式提示)
-        - 其他Agent: include_commands=False(避免LLM看到ipconfig/curl暗示后幻觉调execute_shell_command)
-        【增强 2026-06-11 小沈】增加环境信息(工作目录/Git状态/日期)
-        
-        Args:
-            include_commands: 是否注入【命令格式】段,默认True
-        
-        Returns:
-            格式化的系统信息字符串
-        """
-        system_name = self.get_system_name()
-        path_format = self.get_path_format()
-        env_info = self._get_environment_info()
-        
-        prompt = env_info + f"""【当前系统】
-{system_name}
 
-【路径格式】
-- 当前系统: {path_format}
-"""
-        if include_commands:
-            commands = self.get_commands()
-            cmd_lines = "\n".join(f"- {k}: {v}" for k, v in commands.items())
-            prompt += f"""
-【命令格式】
-{cmd_lines}
-"""
-        
-        prompt += """
-【路径规则】
+_ALWAYS_RULES = """【路径规则】
 - 必须使用绝对路径(禁止相对路径如 ./file.txt)
 - 禁止用 ~ 表示家目录
 - ❌ 路径中的中文字符必须原样保留,禁止翻译或转换!用户说"E:\\下载\\科幻小说"就用"E:\\下载\\科幻小说",禁止改成"E:\\download\\sci-fi-novel"
 """
-        
-        return prompt
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """导出为字典格式"""
-        return {
-            "system": self.get_system_name(),
-            "path_format": self.get_path_format(),
-            "commands": self.get_commands()
-        }
 
 
 @functools.lru_cache(maxsize=1)
-def get_system_adapter() -> SystemAdapter:
-    """获取系统适配器实例(单例)"""
-    return SystemAdapter()
+def get_system_prompt() -> str:
+    """获取系统 Prompt 字符串（带缓存）"""
+    system = _detect_os()
+    path_format = PATH_FORMATS.get(system, "/home/xxx/file.txt")
+    env_info = _get_environment_info()
 
+    logger.debug("[system_adapter] OS=%s", system)
 
-def get_system_prompt(include_commands: bool = True) -> str:
-    """快捷函数:获取系统Prompt字符串
-    
-    【修复 2026-05-14 小沈】加include_commands参数
-    - ShellAgent调用时传include_commands=True
-    - 其他Agent调用时传include_commands=False(避免LLM幻觉调execute_shell_command)
-    """
-    adapter = get_system_adapter()
-    logger.debug(f"[Prompt中间层] OS={adapter.get_system_name()}, include_commands={include_commands}")
-    return adapter.generate_system_prompt(include_commands=include_commands)
-
-
-if __name__ == "__main__":
-    # 测试
-    adapter = SystemAdapter()
-    print(f"当前系统: {adapter.get_system_name()}")
-    print(f"路径格式: {adapter.get_path_format()}")
-    print(f"命令: {adapter.get_commands()}")
-    print("\n生成的Prompt:")
-    print(adapter.generate_system_prompt())
+    return "\n\n".join([
+        env_info,
+        f"【当前系统】\n{system}",
+        f"【路径格式】\n- 当前系统: {path_format}",
+        _ALWAYS_RULES,
+    ])

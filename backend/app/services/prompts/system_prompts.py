@@ -61,7 +61,7 @@ class PromptBuilder:
 
     def _get_system_info(self) -> str:
         """获取系统信息"""
-        system_info = get_system_prompt_string(include_commands=False)
+        system_info = get_system_prompt_string()
         logger.debug(f"[PromptBuilder] 系统信息长度: {len(system_info)}")
 
         prompt_logger = get_prompt_logger()
