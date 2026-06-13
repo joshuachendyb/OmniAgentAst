@@ -1,3 +1,17 @@
+v0.15.14
+
+更新时间: 2026-06-13 11:10:00
+
+## v0.15.13→v0.15.14 变更汇总 - 小沈-2026-06-13
+
+### refactor: agent steps重构+react_sse_wrapper整理+测试专用函数删除
+- Agent steps: meta_step.py新增, tool_step.py(observation_step→tool_step), action_step/incident_step/start_step删除
+- react_sse_wrapper: run_sse_stream.py整理
+- 测试专用函数删除: cache_display_name / clear_project_context_cache
+- 死代码删除: data_utils.py (safe_truncate / extract_data_summary)
+- FUNCTIONS.md同步更新,data_utils节删除,json_utils节新增
+- 文档: 6月agent优化深度分析报告x3
+
 v0.15.13
 
 更新时间: 2026-06-13 14:30:00
