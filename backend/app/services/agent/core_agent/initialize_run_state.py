@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 
 from app.services.agent.types import AgentStatus
 from app.services.agent.chunk_buffer import ChunkBuffer
+from app.utils.prompt_logger import get_prompt_logger
 
 
 def initialize_run_state(
@@ -25,6 +26,18 @@ def initialize_run_state(
 
     self._on_session_init(task, context)
     sys_prompt = self._get_system_prompt()
+
+    prompt_logger = get_prompt_logger()
+    prompt_logger.log_system_prompt(
+        step_name="运行时系统Prompt注入",
+        prompt_content=sys_prompt,
+        source=f"{self.__class__.__name__}._get_system_prompt()",
+    )
+    prompt_logger.log_task_prompt(
+        task_content=task,
+        context=context if context else None,
+    )
+
     self._on_before_loop(sys_prompt, task, context)
     self.message_builder.init_history(sys_prompt, task)
 

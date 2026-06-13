@@ -87,7 +87,8 @@ class BasePrompts(ABC):
         ctx = load_project_context()
         if not ctx:
             return ""
-        return f"【项目上下文】:\n{ctx}"
+        result = f"【项目上下文】:\n{ctx}"
+        return result
 
     def build_full_system_prompt(self) -> str:
         """构建完整的系统Prompt — FC-only版
@@ -107,7 +108,8 @@ class BasePrompts(ABC):
         parts.append(self.get_core_system_prompt())
         parts.append(self.TOOL_CALL_RULES)
 
-        return "\n\n".join(parts)
+        full_prompt = "\n\n".join(parts)
+        return full_prompt
 
 
 __all__ = [

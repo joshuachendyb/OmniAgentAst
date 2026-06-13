@@ -22,7 +22,7 @@ from app.services.agent.steps import MetaStep, ErrorStep, FinalStep
 from app.utils.error_classifier import UnifiedErrorClassifier
 from app.utils.error_parser import extract_api_error_detail
 from app.utils.logger import logger
-from app.constants import INVALID_SESSION_IDS_MAX
+
 
 
 # ====================================================================
@@ -94,9 +94,6 @@ def get_error_info(error: Exception) -> Dict[str, Any]:
 # 消息保存
 # ====================================================================
 
-_INVALID_SESSION_IDS: set = set()
-
-
 def _get_user_message_id(session_id: str) -> Optional[int]:
     """获取用户消息ID — 小沈 2026-06-09: 从services层导入,消除反向依赖"""
     from app.services.message_id_tracker import get_user_message_id
@@ -112,7 +109,7 @@ async def save_execution_steps_to_db(
     """保存execution_steps到DB — 唯一保存入口"""
     from app.api.v1.conversation import save_execution_steps, ExecutionStepsUpdate
 
-    if session_id is None or session_id in _INVALID_SESSION_IDS:
+    if session_id is None:
         return
 
     try:
@@ -128,9 +125,7 @@ async def save_execution_steps_to_db(
         )
     except Exception as e:
         if "会话不存在" in str(e) or "404" in str(e):
-            if len(_INVALID_SESSION_IDS) < INVALID_SESSION_IDS_MAX:
-                _INVALID_SESSION_IDS.add(session_id)
-            logger.warning(f"[Save] 会话不存在,已标记跳过: session_id={session_id}")
+            logger.warning(f"[Save] 会话不存在,跳过本次: session_id={session_id}")
         else:
             logger.error(f"[Save] 保存失败: {e}", exc_info=True)
 

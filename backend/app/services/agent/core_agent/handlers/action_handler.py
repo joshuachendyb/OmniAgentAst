@@ -18,8 +18,10 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Any
 
 from app.utils.logger import logger
+from app.utils.prompt_logger import get_prompt_logger
 from app.services.agent.steps import ThoughtStep, ToolStep, ErrorStep, MetaStep, FinalStep
 from app.services.agent.agent_utils.message_utils import build_observation_text
+from app.db.models.operation_enums import OperationStatus
 
 _SENSITIVE_FIELDS = {"password", "token", "api_key", "secret", "authorization", "credential"}
 
@@ -211,6 +213,31 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
         return
 
     results = await execute_tools(agent, all_calls, is_parallel, tool_name, tool_params)
+
+    prompt_logger = get_prompt_logger()
+    for call, result in zip(all_calls, results):
+        obs_text = str(result) if isinstance(result, Exception) else (
+            result.get("message", str(result)) if isinstance(result, dict) else str(result)
+        )
+        prompt_logger.log_observation(
+            step_name=f"步骤{step}: 工具执行结果",
+            observation_content=obs_text,
+            tool_name=call["tool_name"],
+            tool_params=call["tool_params"],
+            round_number=step,
+        )
+
+    # 记录操作到TaskTracker(调用方传入真实status和error,SRP:不预设成功)
+    for call, result in zip(all_calls, results):
+        is_error = isinstance(result, Exception)
+        if isinstance(result, dict):
+            code = result.get("code", 0)
+            is_failed = code not in (0, "0", "success", None)
+        else:
+            is_failed = is_error
+        op_status = OperationStatus.FAILED.value if (is_error or is_failed) else OperationStatus.SUCCESS.value
+        error_msg = str(result) if (is_error or is_failed) else None
+        agent.record_operation(call["tool_name"], status=op_status, error=error_msg)
 
     action_steps: List[ToolStep] = []
     # 【修复P2-5】使用ObservationContext封装参数 — 北京老陈 2026-06-13

@@ -24,6 +24,7 @@ from app.services.task.task_cancel_check import task_cancel_check_and_yield
 from app.services.task.task_cleanup import task_cleanup
 from app.services.react_sse_wrapper.run_sse_stream import run_sse_stream
 from app.services.context_vars import _current_task_id
+from app.utils.prompt_logger import get_prompt_logger
 
 
 @dataclass
@@ -61,6 +62,9 @@ async def chat_stream_v2(request: ChatRequest):
         execution_steps = []
         state = StreamState()
 
+        prompt_logger = get_prompt_logger()
+        prompt_logger.start_request(user_input, task_id, session_id)
+
         try:
             await register_task(task_id, ai_service)
 
@@ -97,5 +101,6 @@ async def chat_stream_v2(request: ChatRequest):
             yield create_error_response(error_type="router_error", error_message=f"路由异常: {str(e)}")
         finally:
             await task_cleanup(task_id, state.llm_call_count)
+            prompt_logger.save()
 
     return StreamingResponse(generate(), media_type="text/event-stream")

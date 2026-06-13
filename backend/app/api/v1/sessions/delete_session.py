@@ -8,7 +8,7 @@ delete_session — 从 sessions.py 拷出
 from fastapi import APIRouter, HTTPException
 from app.utils.logger import logger
 from app.utils.response_utils import handle_api_errors
-from app.utils.display_name_cache import clear_cached_display_name
+from app.api.v1.messages import display_name_cache
 from app.utils.time_utils import get_utc_timestamp
 from app.db import db
 
@@ -31,6 +31,6 @@ async def delete_session(session_id: str):
             (utc_time, session_id)
         )
 
-    clear_cached_display_name(session_id)
+    display_name_cache.delete(session_id)
     logger.info(f"删除会话成功: id={session_id}")
     return {"success": True, "message": "会话删除成功"}

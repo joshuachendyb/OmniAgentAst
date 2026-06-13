@@ -75,8 +75,9 @@ class PromptLogger:
         timestamp = now_str()
         file_timestamp = timestamp_for_filename()
         
-        # 生成文件名:prompt_{message_id}+{YYYYMMDD_HHMMSS}.json
-        filename = f"prompt_{user_message_id}+{file_timestamp}.json"
+        # 生成文件名:prompt_{message_id后5位}_{task_id}+{YYYYMMDD_HHMMSS}.json
+        short_id = user_message_id[-5:] if len(user_message_id) >= 5 else user_message_id
+        filename = f"prompt_{short_id}_{user_message_id}+{file_timestamp}.json"
         log_file_path = self.log_dir / filename
         
         # 初始化日志数据
@@ -84,7 +85,7 @@ class PromptLogger:
             "基本信息": {
                 "时间戳": timestamp,
                 "会话ID": session_id,
-                "用户消息ID": user_message_id,
+                "任务ID": user_message_id,
                 "AI消息ID": ai_message_id or "待生成",
                 "用户消息": user_message,
                 "日志文件": str(log_file_path)
@@ -242,17 +243,19 @@ class PromptLogger:
         response_content: str = "",
         response_type: str = "text",
         finish_reason: str = "",
-        extra_info: Optional[Dict[str, Any]] = None
+        extra_info: Optional[Dict[str, Any]] = None,
+        raw_response: str = "",
     ):
         """
         记录 LLM 返回结果
         
         Args:
             round_number: 调用轮次
-            response_content: LLM返回的内容
+            response_content: LLM返回的内容(截断版,便于预览)
             response_type: 返回类型(text/tools/thought/action_tool等)
             finish_reason: 结束原因
             extra_info: 额外信息
+            raw_response: 原始响应(完整不截断)
         """
         current_log = self._get_current_log()
         if not current_log:
@@ -260,13 +263,16 @@ class PromptLogger:
         
         if not isinstance(response_content, str):
             response_content = str(response_content) if response_content is not None else ""
-        
+        if not isinstance(raw_response, str):
+            raw_response = str(raw_response) if raw_response is not None else ""
+
+        timestamp = now_str()
         entry = {
             "轮次": round_number,
-            "类型": "LLM返回",
             "返回类型": response_type,
-            "内容": response_content[:2000] if response_content else "",  # 【优化 小健 2026-05-15】截断阈值提升至2000,匹配常见工具输出
-            "内容长度": len(response_content) if response_content else 0,
+            "原始响应时间": timestamp,
+            "解析结果": response_content,
+            "原始响应": raw_response,
             "结束原因": finish_reason,
         }
 
@@ -276,7 +282,9 @@ class PromptLogger:
         # 查找对应的LLM调用记录,更新其返回信息
         for call_entry in reversed(current_log.get("LLM调用记录", [])):
             if call_entry.get("轮次") == round_number:
-                call_entry["返回内容"] = response_content[:2000] if response_content else ""  # 同步提升至2000
+                call_entry["解析结果"] = response_content
+                call_entry["原始响应时间"] = timestamp
+                call_entry["原始响应"] = raw_response
                 call_entry["返回类型"] = response_type
                 call_entry["结束原因"] = finish_reason
                 break

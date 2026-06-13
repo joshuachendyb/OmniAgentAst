@@ -18,14 +18,16 @@ from app.api.v1.conversation.update_message_fields import update_message_fields
 from app.api.v1.conversation.update_session_message_count import update_session_message_count
 from app.api.v1.conversation.models import ExecutionStepsUpdate
 
+# 模块级单例:AssistantMessageIdAllocator复用实例(避免每次调用新建,缓存失效)
+_allocator = AssistantMessageIdAllocator(_user_message_ids, _message_ids_lock)
+
 
 async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdate):
     """拷贝自 conversation.py 第198-221行"""
-    allocator = AssistantMessageIdAllocator(_user_message_ids, _message_ids_lock)
     try:
         with db.get_conn("chat") as conn:
             ensure_session_exists(session_id, conn)
-            message_id, is_new = allocator.allocate(session_id, conn)
+            message_id, is_new = _allocator.allocate(session_id, conn)
             metadata = extract_metadata_from_steps(update_data.execution_steps)
             display_name = metadata.get("display_name")
             if is_new:

@@ -49,8 +49,8 @@ class BaseAgent(ABC):
         AgentInitializer._init_task_tracking(self, enable=True)
         self._step_emitter = StepEmitter(self)
 
-    def record_operation(self, operation_type: str, **kwargs):
-        self._step_emitter.record_operation(operation_type, **kwargs)
+    def record_operation(self, operation_type: str, *, status: Optional[str] = None, **kwargs):
+        self._step_emitter.record_operation(operation_type, status=status, **kwargs)
 
     def _on_session_init(self, task: str, context: Optional[Dict[str, Any]] = None):
         """生命周期Hook: ReAct循环开始前 — 子类可override"""

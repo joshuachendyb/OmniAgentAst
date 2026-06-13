@@ -20,7 +20,8 @@ from pydantic import BaseModel, Field
 
 from app.utils.logger import logger
 from app.utils.response_utils import handle_api_errors
-from app.utils.display_name_cache import get_cached_display_name
+from app.utils.cache import LRUCache
+from app.constants import MAX_CACHE_SIZE
 from app.utils.display_utils import extract_display_name_from_steps
 from app.utils.time_utils import convert_to_utc, ensure_timestamp_milliseconds, get_timestamp_ms
 from app.utils.json_utils import parse_json
@@ -29,6 +30,9 @@ from app.db.models.chat_models import MessageResponse
 from app.services.message_id_tracker import track_user_message, get_user_message_id
 
 router = APIRouter()
+
+# 消息模块共享的 display_name 缓存
+display_name_cache = LRUCache(max_size=MAX_CACHE_SIZE)
 
 
 @router.get("/sessions/{session_id}/messages")
@@ -122,7 +126,7 @@ async def save_message(session_id: str, message: MessageCreate):
 
         display_name_to_save = message.display_name
         if message.role == "assistant" and not display_name_to_save:
-            display_name_to_save = get_cached_display_name(session_id)
+            display_name_to_save = display_name_cache.get(session_id)
 
         execution_steps_json = json.dumps(message.execution_steps) if message.execution_steps else None
         cursor.execute(

@@ -59,14 +59,21 @@ class TaskTracker:
         task_id: str,
         operation_type: str,
         *,
+        status: Optional[str] = None,
         source_path: Optional[str] = None,
         destination_path: Optional[str] = None,
         backup_path: Optional[str] = None,
         file_size: int = 0,
         file_hash: Optional[str] = None,
         details: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None,
     ) -> str:
-        """记录一次操作 → 插入 operations 表"""
+        """记录一次操作 → 插入 operations 表(调用方传入真实status)
+
+        10规范: SRP — 只负责写入,调用方决定status
+                KISS — 不预设成功,不事后修补
+        """
+        op_status = status or OperationStatus.SUCCESS.value
         with db.get_conn("task_tracker") as conn:
             task_row = conn.execute(
                 "SELECT task_id FROM tasks WHERE task_id = ?", (task_id,)
@@ -86,13 +93,13 @@ class TaskTracker:
                 """INSERT INTO operations
                    (operation_id, task_id, operation_type, status,
                     source_path, destination_path, backup_path,
-                    file_size, file_hash, sequence_number, details)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    file_size, file_hash, sequence_number, details, error)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     operation_id,
                     task_id,
                     operation_type,
-                    OperationStatus.SUCCESS.value,
+                    op_status,
                     source_path,
                     destination_path,
                     backup_path,
@@ -100,27 +107,19 @@ class TaskTracker:
                     file_hash,
                     seq_num,
                     json.dumps(details) if details else None,
+                    error,
                 ),
             )
+            if op_status == OperationStatus.FAILED.value:
+                conn.execute(
+                    "UPDATE tasks SET failed_count = failed_count + 1 WHERE task_id = ?",
+                    (task_id,),
+                )
             conn.execute(
                 "UPDATE tasks SET total_operations = total_operations + 1 WHERE task_id = ?",
                 (task_id,),
             )
         return operation_id
-
-    # ===== 状态管理 =====
-
-    def mark_failed(self, task_id: str, operation_id: str, error: str) -> None:
-        """标记某个操作为失败"""
-        with db.get_conn("task_tracker") as conn:
-            conn.execute(
-                "UPDATE operations SET status = ?, error = ? WHERE operation_id = ?",
-                (OperationStatus.FAILED.value, error, operation_id),
-            )
-            conn.execute(
-                "UPDATE tasks SET failed_count = failed_count + 1 WHERE task_id = ?",
-                (task_id,),
-            )
 
     def mark_rolled_back(
         self, task_id: str, op_ids: Optional[List[str]] = None

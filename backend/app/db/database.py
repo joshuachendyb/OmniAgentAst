@@ -173,8 +173,9 @@ class DatabaseManager:
             ''')
             
             # 添加新字段(如果不存在)
-            for field in ["client_os", "browser", "device", "network"]:
-                self._ensure_column(conn, "chat_messages", field, "TEXT")
+            for field in ["client_os", "browser", "device", "network", "reply_to_message_id"]:
+                col_type = "INTEGER" if field == "reply_to_message_id" else "TEXT"
+                self._ensure_column(conn, "chat_messages", field, col_type)
     
     def _init_operations_db(self):
         """初始化操作数据库"""

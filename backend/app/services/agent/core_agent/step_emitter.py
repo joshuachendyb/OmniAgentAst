@@ -47,14 +47,17 @@ class StepEmitter:
             except Exception as _e:
                 logger.debug(f"[TaskTracker] 完成任务失败: {_e}")
 
-    def record_operation(self, operation_type: str, **kwargs):
-        """Task追踪:记录一次操作"""
+    def record_operation(self, operation_type: str, *, status: Optional[str] = None, error: Optional[str] = None, **kwargs):
+        """Task追踪:记录一次操作(调用方传入真实status和error)
+
+        10规范: SRP — 只透传,不判断业务逻辑
+        """
         task_tracker = getattr(self.agent, '_task_tracker', None)
         tracked_task_id = getattr(self.agent, '_tracked_task_id', None)
         if task_tracker and tracked_task_id:
             try:
                 task_tracker.add_operation(
-                    tracked_task_id, operation_type, **kwargs,
+                    tracked_task_id, operation_type, status=status, error=error, **kwargs,
                 )
             except Exception as _e:
                 logger.debug(f"[TaskTracker] 记录操作失败: {_e}")

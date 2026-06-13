@@ -14,6 +14,7 @@ from app.services.agent.types import AgentResult
 from app.services.tools.tool_types import ToolCategory
 from app.services.prompts.system_prompts import SystemPrompts
 from app.utils.logger import logger
+from app.utils.prompt_logger import get_prompt_logger
 
 
 _INITIAL_CATEGORIES: Set[ToolCategory] = {ToolCategory.FUND_RUNTIME}
@@ -111,6 +112,16 @@ class UniversalAgent(BaseAgent):
         messages = self.message_builder.prepare_messages_for_llm()
         openai_tools = self._get_openai_tools()
 
+        prompt_logger = get_prompt_logger()
+        prompt_logger.log_llm_call(
+            round_number=self.llm_call_count,
+            messages=messages,
+            model=getattr(self.llm_client, 'model', 'unknown'),
+            provider=getattr(self.llm_client, 'provider', 'unknown'),
+            call_type="tools",
+            extra_params={"tool_count": len(openai_tools) if openai_tools else 0},
+        )
+
         if not openai_tools:
             logger.error("[call_llm] 无可用工具")
 
@@ -125,12 +136,16 @@ class UniversalAgent(BaseAgent):
         full_reasoning = ""
         tool_calls_result = None
         stream_error = None
+        _raw_chunks: list = []
 
         try:
             async for chunk in self.llm_client.request_stream(
                 messages=messages,
                 tools=openai_tools, tool_choice="auto",
             ):
+                if chunk.raw_data:
+                    _raw_chunks.append(chunk.raw_data)
+
                 if chunk.stream_error:
                     stream_error = chunk.stream_error
                     break
@@ -154,13 +169,33 @@ class UniversalAgent(BaseAgent):
                     break
         except Exception as e:
             logger.error(f"[FC] 流式异常: {e}")
-            yield ("response", {"type": "answer", "content": f"LLM调用异常: {e}"})
+            raw_msg = f"LLM调用异常: {e}"
+            prompt_logger = get_prompt_logger()
+            prompt_logger.log_llm_response(
+                round_number=self.llm_call_count,
+                response_content=raw_msg,
+                raw_response=raw_msg,
+                response_type="answer",
+                finish_reason="error",
+            )
+            yield ("response", {"type": "answer", "content": raw_msg})
             return
 
         if stream_error:
             logger.error(f"[FC] 流式错误: {stream_error}")
-            yield ("response", {"type": "answer", "content": f"LLM流式错误: {stream_error}"})
+            raw_msg = f"LLM流式错误: {stream_error}"
+            prompt_logger = get_prompt_logger()
+            prompt_logger.log_llm_response(
+                round_number=self.llm_call_count,
+                response_content=raw_msg,
+                raw_response=raw_msg,
+                response_type="answer",
+                finish_reason="error",
+            )
+            yield ("response", {"type": "answer", "content": raw_msg})
             return
+
+        complete_raw = "\n".join(_raw_chunks)
 
         if tool_calls_result:
             first = tool_calls_result[0]
@@ -176,6 +211,18 @@ class UniversalAgent(BaseAgent):
                     "_tool_call_id": tc.get("tool_call_id", ""),
                 })
             logger.info(f"[FC] LLM原始响应(action): tool={first['tool_name']}, parallel={len(_pending_calls)}")
+            prompt_logger = get_prompt_logger()
+            prompt_logger.log_llm_response(
+                round_number=self.llm_call_count,
+                response_content=f"tool={first['tool_name']}, params={first['tool_params']}",
+                raw_response=complete_raw,
+                response_type="action",
+                finish_reason="tool_calls",
+                extra_info={
+                    "tool_name": first["tool_name"],
+                    "parallel_calls": len(_pending_calls),
+                },
+            )
             yield ("response", {
                 "type": "action",
                 "fc_context": fc_context,
@@ -189,6 +236,14 @@ class UniversalAgent(BaseAgent):
 
         content = full_content or full_reasoning or ""
         logger.info(f"[FC] LLM原始响应(answer): {content}")
+        prompt_logger = get_prompt_logger()
+        prompt_logger.log_llm_response(
+            round_number=self.llm_call_count,
+            response_content=content,
+            raw_response=complete_raw,
+            response_type="answer",
+            finish_reason="stop",
+        )
         yield ("response", {"type": "answer", "content": content, "thought": ""})
 
     def _get_openai_tools(self) -> list:

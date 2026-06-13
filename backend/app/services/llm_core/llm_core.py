@@ -159,6 +159,7 @@ class BaseAIService:
         while retry_count <= max_retries:
             try:
                 tool_call_accumulator = {}
+                raw_data_buf: list = []
                 async for data_str in self._llm_sdk.request_stream(
                     messages=messages,
                     tools=tools,
@@ -170,6 +171,8 @@ class BaseAIService:
                     if await self._check_task_cancelled_or_paused():
                         yield self._create_cancelled_chunk()
                         return
+
+                    raw_data_buf.append(data_str)
 
                     # 跨chunk聚合tool_calls — FC-only: 含id — 小沈 2026-06-11
                     tc_data = self._extract_tool_calls(data_str)
@@ -187,6 +190,7 @@ class BaseAIService:
                         yield chunk
 
                 # 流结束后，如有聚合的tool_calls，原生结构一次性yield — 小沈 2026-06-12
+                complete_raw = "\n".join(raw_data_buf)
                 if tool_call_accumulator:
                     tool_calls_list = []
                     for idx in sorted(tool_call_accumulator):
@@ -210,9 +214,9 @@ class BaseAIService:
                                 }]
                             })
                     yield StreamChunk(content="", model=self.model, is_done=False,
-                                      tool_calls=tool_calls_list)
+                                      tool_calls=tool_calls_list, raw_data=complete_raw)
 
-                yield StreamChunk(content="", model=self.model, is_done=True)
+                yield StreamChunk(content="", model=self.model, is_done=True, raw_data=complete_raw)
                 return
 
             except Exception as e:
@@ -282,9 +286,14 @@ class BaseAIService:
             reasoning_content = extract_reasoning_from_chunk(delta) or ""
 
             if content:
-                return StreamChunk(content=content, model=self.model, is_done=False, is_reasoning=False)
+                return StreamChunk(content=content, model=self.model, is_done=False, is_reasoning=False, raw_data=data_str)
             if reasoning_content:
-                return StreamChunk(content=reasoning_content, model=self.model, is_done=False, is_reasoning=True)
+                return StreamChunk(content=reasoning_content, model=self.model, is_done=False, is_reasoning=True, raw_data=data_str)
+
+            # tool_calls delta chunk — 带原始数据但不影响下游处理
+            tool_calls_delta = delta.get("tool_calls", [])
+            if tool_calls_delta:
+                return StreamChunk(content="", model=self.model, is_done=False, raw_data=data_str)
 
             return None
 

@@ -53,7 +53,7 @@ class AgentInitializer:
             return
         try:
             from app.services.task import get_tracker
-            agent_id = getattr(agent, 'task_id', 'unknown')
+            agent_id = agent.__class__.__name__
             tracker = get_tracker()
             agent._tracked_task_id = tracker.create_task(
                 agent_id=agent_id,
