@@ -11,6 +11,7 @@ v0.15.14
 - 死代码删除: data_utils.py (safe_truncate / extract_data_summary)
 - FUNCTIONS.md同步更新,data_utils节删除,json_utils节新增
 - 文档: 6月agent优化深度分析报告x3
+- ErrorStep: 添加model/provider属性
 
 v0.15.13
 
