@@ -14,11 +14,11 @@ from app.services.prompts.system.system_prompts import SystemPrompts
 from app.utils.logger import logger
 
 
-_INITIAL_CATEGORIES: Set[ToolCategory] = {ToolCategory.FILE, ToolCategory.FUND_RUNTIME}
+_INITIAL_CATEGORIES: Set[ToolCategory] = {ToolCategory.FUND_RUNTIME}
 
 
 class UniversalAgent(BaseAgent):
-    """通用 Agent — 初始加载 FILE + FUND_RUNTIME 工具,注册全部"""
+    """通用 Agent — 初始仅加载 FUND_RUNTIME,其余分类通过 tool_search 动态注入"""
 
     def __init__(
         self,
