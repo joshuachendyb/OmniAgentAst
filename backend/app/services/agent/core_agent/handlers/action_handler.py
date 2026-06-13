@@ -158,11 +158,11 @@ class ActionHandler:
         # FC-only: assistant消息由_append_observation()以FC协议格式添加,不在此处添加
         return events
 
-    async def handle(self, agent, parsed: Dict, step_counter: list, chunk_buffer):
+    async def handle(self, agent, parsed: Dict, chunk_buffer):
         """完整action处理流程 — FC-only: 提取fc_context传递 — 小沈 2026-06-11"""
         tool_name = parsed["tool_name"]
         tool_params = parsed.get("tool_params", {})
-        step = step_counter[0]
+        step = agent.llm_call_count
 
         pending_calls = parsed.get("_pending_calls", [])
         fc_context = parsed.get("fc_context", {})
