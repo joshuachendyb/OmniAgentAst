@@ -1,6 +1,22 @@
-v0.16.0
+v0.16.1
 
-更新时间: 2026-06-13 14:59:54
+更新时间: 2026-06-13 18:30:00
+
+## v0.16.0→v0.16.1 变更汇总 - 小沈-2026-06-13
+
+### fix: 6个E2E测试Bug修复
+- initialize_run_state.py:44 修复max_consecutive_chunks访问不存在的self属性→改为常量
+- answer_handler.py:42 修复conversation_history访问路径错误→改为message_builder.conversation_history
+- action_handler.py:152 修复调用未定义方法→改为message_builder.add_observation()
+- universal_agent.py:89 修复_auto_inject_from_search读取路径错误→改为result.get("data",{}).get("llm_data")
+- run_sse_stream.py: 初始分类加入FILE→初始可用FILE工具
+- run_sse_stream.py: 多轮对话历史加载→新增_load_previous_messages()+_inject_conversation_history()
+
+### fix: tool_step action_tool保存tool_name/tool_params
+- action_tool类型的_extra_fields()新增tool_name/tool_params字段(之前缺失，导致DB记录字段为空)
+- E2E测试新增3.5节验证铁律，每个测试显式做步骤5+6验证
+- 修复_process_event统计action_tool事件(原错统计thought事件)
+- 移除auto_e2e_verify fixture(验证逻辑移至测试用例显式调用)
 
 ## v0.15.14→v0.16.0 变更汇总 - 小沈-2026-06-13
 
