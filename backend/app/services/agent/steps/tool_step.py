@@ -54,6 +54,8 @@ class ToolStep(ReasoningStep):
     def _extra_fields(self) -> Dict[str, Any]:
         if self.TYPE == "action_tool":
             return {
+                "tool_name": self._tool_name or "",
+                "tool_params": self._tool_params or {},
                 "execution_status": self._execution_status,
                 "execution_result": self._execution_result,
                 "action_retry_count": self._action_retry_count,

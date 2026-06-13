@@ -56,6 +56,6 @@ def initialize_run_state(
 
     self._on_before_loop(sys_prompt, task, context)
     self.message_builder.init_history(sys_prompt, task)
-    self._inject_conversation_history(context)
+    _inject_conversation_history(self, context)
 
     return ChunkBuffer(MAX_CONSECUTIVE_CHUNKS)
