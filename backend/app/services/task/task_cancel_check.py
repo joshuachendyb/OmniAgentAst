@@ -13,7 +13,6 @@ from typing import Optional, Callable
 
 from app.services.agent.steps import IncidentStep
 from app.utils.logger import logger
-from app.chat_stream import format_agent_sse
 from app.services.task.task_registry import check_cancelled
 
 
@@ -39,5 +38,6 @@ async def task_cancel_check_and_yield(
         logger.info(f"[Step incident] 发送incident步骤(interrupted)")
         current_execution_steps.append(incident_step.to_dict())
         # 【删除 2026-06-09 小沈】删除save调用，统一在run_sse_stream的finally块中保存
+        from app.chat_stream import format_agent_sse
         return format_agent_sse(incident_step.to_dict())
     return None

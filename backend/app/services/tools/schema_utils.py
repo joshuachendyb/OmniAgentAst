@@ -12,8 +12,6 @@ from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
 
-_TYPE_ORDER = ["string", "integer", "number", "boolean", "object", "array", "null"]
-
 
 def _fix_schema_types(schema: Dict[str, Any]) -> Dict[str, Any]:
     """修复Pydantic生成的JSON Schema中缺失的type字段 - 小健 2026-05-06, 小沈 2026-05-08, 2026-05-13

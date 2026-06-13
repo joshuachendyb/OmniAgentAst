@@ -21,6 +21,11 @@ Author: 小沈 - 2026-03-21
 
 from abc import ABC, abstractmethod
 
+from app.services.prompts.system_adapter import get_system_prompt as get_system_prompt_string
+from app.utils.logger import logger
+from app.utils.prompt_logger import get_prompt_logger
+from app.services.prompts.project_context import load_project_context
+
 
 class BasePrompts(ABC):
     """
@@ -61,13 +66,9 @@ class BasePrompts(ABC):
 
     def _get_system_info(self) -> str:
         """获取系统信息(中间层注入),所有意图共享 — 小沈 2026-06-11 抽取到公共层"""
-        from app.services.prompts.system_adapter import get_system_prompt as get_system_prompt_string
-        from app.utils.logger import logger
-
         system_info = get_system_prompt_string(include_commands=False)
         logger.debug(f"[{self.__class__.__name__}] 系统信息长度: {len(system_info)}")
 
-        from app.utils.prompt_logger import get_prompt_logger
         prompt_logger = get_prompt_logger()
         prompt_logger.log_system_prompt(
             step_name="中间层注入-服务器OS信息",
@@ -83,7 +84,6 @@ class BasePrompts(ABC):
 
     def _get_project_context(self) -> str:
         """加载项目上下文(README.md) — 小沈 2026-06-11"""
-        from app.services.prompts.project_context import load_project_context
         ctx = load_project_context()
         if not ctx:
             return ""

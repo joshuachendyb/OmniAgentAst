@@ -213,11 +213,6 @@ class ToolRegistry:
         logger.info(f"Tool unregistered: {name}")
         return {"status": "success"}
     
-    def list_all_tools(self) -> Dict[str, Callable]:
-        """获取所有工具实现"""
-        return self._implementations.copy()
-
-    
     def get_implementations_by_category(self, category: ToolCategory) -> Dict[str, Callable]:
         """按分类一次遍历获取 {name: implementation}，消除N+1查询 — 小沈 2026-06-08"""
         tool_names = self._categories.get(category, [])

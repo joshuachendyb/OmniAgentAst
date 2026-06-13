@@ -10,7 +10,7 @@ Author: 小沈 - 2026-05-31
 
 from typing import Any, Dict, Optional
 
-from app.services.agent.steps import ErrorStep, IncidentStep
+from app.services.agent.steps import ErrorStep
 from app.services.agent.types import AgentStatus
 from app.utils.logger import logger
 

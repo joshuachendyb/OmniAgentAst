@@ -126,14 +126,12 @@ class Config:
     def get_max_context_chars(self, default: int = 500000) -> int:
         """获取max_context_chars配置 — 对话历史字符上限"""
         return self.get('app.max_context_chars', default)
-    
+
     def reload(self):
         """重新加载配置 - 强制清空缓存"""
-        # 清空缓存,强制重新加载
         self._config_data = None
         self._config_mtime = None
         self._load_config()
-    
 
 # 全局配置实例
 _config_instance: Optional[Config] = None

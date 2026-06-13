@@ -25,7 +25,7 @@ async def run_sse_stream(
     stream_state: Any = None,
 ) -> AsyncGenerator[str, None]:
     """纯SSE流运行器 — 小沈 2026-06-09 支持StreamState"""
-    from app.services.agent.agent_factory import create_agent
+    from app.services.agent.universal_agent import UniversalAgent
     from app.chat_stream import format_agent_sse, save_execution_steps_to_db
 
     agent = None
@@ -34,7 +34,7 @@ async def run_sse_stream(
     error_type = "agent_operation_error"
 
     try:
-        agent = create_agent(
+        agent = UniversalAgent(
             llm_client=llm_client, task_id=task_id,
         )
         

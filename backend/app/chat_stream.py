@@ -18,7 +18,6 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.utils.time_utils import create_timestamp
-from app.utils.counter_utils import create_step_counter
 from app.services.agent.steps import StartStep, ErrorStep, FinalStep
 from app.utils.error_classifier import UnifiedErrorClassifier
 from app.utils.error_parser import extract_api_error_detail

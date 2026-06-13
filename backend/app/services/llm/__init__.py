@@ -31,8 +31,6 @@ from app.services.llm.core import (
 )
 
 from app.services.llm.stream_parser import (
-    parse_sse_stream,
-    handle_http_error_stream,
     create_cancelled_chunk,
     create_error_chunk,
 )
@@ -46,8 +44,6 @@ __all__ = [
     "ChatResponse",
     "StreamChunk",
     "_resolve_exception",
-    "parse_sse_stream",
-    "handle_http_error_stream",
     "create_cancelled_chunk",
     "create_error_chunk",
 ]

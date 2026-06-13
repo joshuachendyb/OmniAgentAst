@@ -1,7 +1,31 @@
+v0.15.13
 
-v0.15.12
+更新时间: 2026-06-13 14:30:00
 
-更新时间: 2026-06-13 11:25:41
+## v0.15.12→v0.15.13 变更汇总 - 小沈-2026-06-13
+
+### refactor: 全系统死代码清理+不必要的间接层删除+冗余系统合并
+
+Phase1 - 死代码清理:
+- registry.list_all_tools()删除 (无消费者)
+- tool_description.py 删除get_all_tools_summary/detail/_group_tools_by_category (无消费者)
+- tools/response_utils.py删除, is_success/is_error移入_response.py
+- ToolMetadata.author/critical_notes/usage_hint/forbidden字段删除 (从未赋值)
+- ToolConfig.reload()方法删除 (无调用者)
+- schema_utils._TYPE_ORDER删除 (未使用)
+- system_adapter.py 删除Linux/Darwin命令表 (Windows-only)
+- 清理7个文件的未使用导入
+- stream_parser.py 删除parse_sse_stream/handle_http_error_stream (死代码,已有llm_core替代)
+- llm_core/__init__.py 删除ChatResponse/StreamChunk重新导出 (无消费者)
+- utils/retry/包整体删除 (network_retry.py薄包装无消费者)
+
+Phase2 - 删不必要的间接层:
+- AgentFactory删除 (纯透传,直接UniversalAgent)
+- ActionHandler从stateless class转为模块级函数
+
+Phase3 - 修复循环导入:
+- task_cancel_check.py/task_interrupt_check.py format_agent_sse改为懒导入
+- chat_stream.py删除死import create_step_counter
 
 ## v0.15.11→v0.15.12 变更汇总 - 小沈-2026-06-13
 

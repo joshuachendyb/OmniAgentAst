@@ -1,17 +1,14 @@
 """
 统一工具返回结构定义 — 小健 2026-05-21
 
-【10大原则规范 2026-05-30 小健】
-- SRP: 仅提供3个build函数(build_success/error/warning),is_success/is_error已独立到 response_utils.py
-- 禁止向后兼容: is_success/is_error重导出已删除,调用者必须从 response_utils.py 导入
-
 【分层规范 - 小健 2026-05-27】
 本文件属于【工具层】,职责:构建返回dict基础结构(code/data/message + 可选字段)
+以及判断返回状态的查询函数(is_success/is_error)。
 
 三层职责边界(严格遵守):
   _response.py (工具层)
-    → 提供 build_success / build_error / build_warning
-    → 工具函数、helper函数 直接使用这三个函数
+    → 提供 build_success / build_error / build_warning / is_success / is_error
+    → 工具函数、helper函数 直接使用这些函数
     → 禁止使用 agent/tool_result_utils.py 的 create_xxx 函数
 
   tool_result_utils.py (Agent层)
@@ -24,32 +21,8 @@
     → 禁止构建结果,只消费和格式化
 
 违反后果:层级混乱,职责不清,代码审查打回
-
-设计原则:
-  1. 必填字段(code/data/message)始终写入,可选字段仅非默认值时写入
-  2. build_success/build_error/build_warning 三个函数对称完整
-
-字段规范:
-  必填(3个): code, data, message
-  可选(5个): warning, llm_data, next_actions, retry_count, return_direct
-
-使用示例:
-  # 最简成功
-  return build_success({"path": fp}, f"写入成功: {fp}")
-
-  # 带llm_data
-  return build_success(data, msg, llm_data={"摘要": "..."})
-
-  # 带next_actions
-  return build_success(data, msg, next_actions=build_next_actions([...]))
-
-  # 错误
-  return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {fp}")
-
-  # 警告(成功但有风险)
-  return build_warning("WARNING_xxx", "警告消息", data=...)
 """
-from app.constants import ERR_FILE_NOT_FOUND, SUCCESS_CODE
+from app.constants import SUCCESS_CODE
 from typing import Any, Dict, Optional, List
 
 # 必填字段 — 始终写入
@@ -192,6 +165,18 @@ def _add_optionals(result: Dict[str, Any], **kwargs: Any) -> None:
             value = kwargs[field_name]
             if value != default_value:
                 result[field_name] = value
+
+
+def is_success(result: Dict[str, Any]) -> bool:
+    """判断返回是否成功"""
+    code = result.get("code", "")
+    return code == SUCCESS_CODE or code.startswith("WARNING_")
+
+
+def is_error(result: Dict[str, Any]) -> bool:
+    """判断返回是否失败"""
+    code = result.get("code", "")
+    return code.startswith("ERR_")
 
 
 

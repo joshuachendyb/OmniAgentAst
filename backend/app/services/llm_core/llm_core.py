@@ -6,14 +6,19 @@ FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
 """
 
 import asyncio
+import json as _json
 import traceback
 from typing import List, Dict, Optional, AsyncGenerator, Any
 
 import httpx
 from app.utils.logger import logger
+from app.utils.json_utils import parse_json
 from app.services.llm.core import ChatResponse, StreamChunk, _resolve_exception
 from app.services.llm.stream_parser import create_cancelled_chunk
 from app.services.llm.client_sdk import create_llm_client
+from app.services.llm.model_adapters.reasoning import extract_reasoning_from_chunk
+from app.services.task.task_registry import check_cancelled, check_paused
+from app.services.agent.agent_utils.message_utils import build_llm_messages
 from app.constants import DEFAULT_LLM_TIMEOUT, RATE_LIMIT_STATUS_CODES
 
 
@@ -83,7 +88,6 @@ class BaseAIService:
         """检查任务是否被取消或暂停 — 小沈 2026-06-09"""
         if not self.task_id:
             return self._cancelled
-        from app.services.task.task_registry import check_cancelled, check_paused
         is_cancelled = await check_cancelled(self.task_id)
         is_paused = await check_paused(self.task_id)
         return is_cancelled or is_paused or self._cancelled
@@ -127,7 +131,6 @@ class BaseAIService:
             content = msg.get("content", "") or ""
             tool_calls = msg.get("tool_calls", [])
 
-            from app.services.llm.model_adapters.reasoning import extract_reasoning_from_chunk
             reasoning = extract_reasoning_from_chunk(msg) or ""
 
             return ChatResponse(
@@ -150,7 +153,6 @@ class BaseAIService:
         self.reset_cancel()
         self._ensure_client()
 
-        import json as _json
         retry_count = 0
         max_retries = 3
 
@@ -230,14 +232,12 @@ class BaseAIService:
         history: Optional[List[Dict]] = None,
     ) -> AsyncGenerator[StreamChunk, None]:
         """流式对话便捷方法 — FC-only: 无mode参数 — 小沈 2026-06-11"""
-        from app.services.agent.agent_utils.message_utils import build_llm_messages
         messages = build_llm_messages(message, history)
         async for chunk in self.request_stream(messages=messages):
             yield chunk
 
     def _extract_tool_calls(self, data_str: str) -> Dict[int, Dict]:
         """从SSE delta中提取tool_calls增量 — FC-only: 含id捕获 — 小沈 2026-06-11"""
-        from app.utils.json_utils import parse_json
         try:
             data = parse_json(data_str)
             if not data:
@@ -268,9 +268,6 @@ class BaseAIService:
 
     def _parse_sse_data(self, data_str: str) -> Optional[StreamChunk]:
         """解析SSE data字符串为StreamChunk - 小沈 2026-06-09"""
-        from app.utils.json_utils import parse_json
-        from app.services.llm.model_adapters.reasoning import extract_reasoning_from_chunk
-
         try:
             data = parse_json(data_str)
             if data is None:
