@@ -6,6 +6,8 @@ Author: 小沈 - 2026-06-07
 Updated: 小沈 - 2026-06-12 tool_calls原生消费,移除JSON roundtrip
 """
 from typing import Any, List, Optional, Dict, Set
+import json
+from pathlib import Path
 
 from app.services.agent.core_agent import BaseAgent
 from app.services.agent.types import AgentResult
@@ -15,6 +17,18 @@ from app.utils.logger import logger
 
 
 _INITIAL_CATEGORIES: Set[ToolCategory] = {ToolCategory.FUND_RUNTIME}
+
+# tool_search 动态描述配置
+_CATEGORIES_CONFIG_PATH = Path(__file__).resolve().parent.parent / "tools" / "meta" / "tool_categories.json"
+
+# 分类一句话概要 — 用于 tool_search 动态描述
+_CATEGORY_SUMMARIES: Dict[ToolCategory, str] = {
+    ToolCategory.FILE: "文件读写、目录浏览、文件搜索和内容分析",
+    ToolCategory.NET_PROCESS: "HTTP请求、文件下载、网络搜索和连通性测试",
+    ToolCategory.SCREEN: "窗口管理、鼠标/键盘控制、屏幕截图和剪贴板交互",
+    ToolCategory.DOC_CONTENT: "PDF/Word/Excel/PPT文档的读写和数据分析",
+    ToolCategory.SYSTEM: "命令执行、系统查询、进程管理和环境配置",
+}
 
 
 class UniversalAgent(BaseAgent):
@@ -48,6 +62,7 @@ class UniversalAgent(BaseAgent):
 
         self._loaded_categories: Set[ToolCategory] = set(initial_categories)
         self.prompts = SystemPrompts()
+        self._patch_search_desc()
 
         logger.info(
             f"UniversalAgent initialized (task_id={task_id})"
@@ -83,6 +98,7 @@ class UniversalAgent(BaseAgent):
             self._loaded_categories.add(cat)
             self._tool_manager.load_category(cat)
         self.invalidate_tool_cache()
+        self._patch_search_desc()
 
     async def _call_llm(self):
         """调用LLM — 纯FC模式 — FC-only重构 2026-06-11 小沈"""
@@ -187,5 +203,39 @@ class UniversalAgent(BaseAgent):
         """P2-14修复: 清除工具缓存,工具注册/注销后调用"""
         self._cached_openai_tools = None
         self._cache_timestamp = 0
+
+    def _patch_search_desc(self):
+        """动态更新 tool_search 描述: 列出未加载分类的概要+工具名"""
+        if not _CATEGORIES_CONFIG_PATH.exists():
+            return
+
+        with open(_CATEGORIES_CONFIG_PATH, "r", encoding="utf-8") as f:
+            categories_config = json.load(f)
+
+        unloaded = [cat for cat in ToolCategory
+                    if cat != ToolCategory.FUND_RUNTIME and cat not in self._loaded_categories]
+
+        from app.services.tools.registry import tool_registry
+
+        ts_meta = tool_registry.get_tool("tool_search")
+        if not ts_meta:
+            return
+        base_desc = ts_meta.description
+
+        if not unloaded:
+            return
+
+        lines = []
+        for cat in sorted(unloaded, key=lambda c: c.order):
+            cfg = categories_config.get(cat.value, {})
+            summary = cfg.get("summary", cat.name_cn)
+            tools = cfg.get("tools", {})
+            tool_items = list(tools.items())
+            name_str = ", ".join(f"{k}:{v}" for k, v in tool_items[:5])
+            if len(tool_items) > 5:
+                name_str += "..."
+            lines.append(f"- {cat.name_cn}({cat.value}): {summary} [{name_str}]")
+
+        ts_meta.description = base_desc + "\n\n当前未加载分类:\n" + "\n".join(lines)
 
 

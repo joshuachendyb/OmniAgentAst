@@ -1,7 +1,16 @@
 
-v0.15.11
+v0.15.12
 
-更新时间: 2026-06-13 09:11:03
+更新时间: 2026-06-13 11:25:41
+
+## v0.15.11→v0.15.12 变更汇总 - 小沈-2026-06-13
+
+### feat: universal_agent.py tool_search动态描述注入
+
+- 新增tool_categories.json: 各分类summary+每个工具一句话描述
+- 新增_patch_search_desc(): 读取JSON→动态拼装未加载分类列表→写入tool_search.description
+- Agent启动时生成初始列表,注入后自动更新
+- OCP原则: 新增分类只需改JSON,零代码改动
 
 ## v0.15.10→v0.15.11 变更汇总 - 小沈-2026-06-13
 
