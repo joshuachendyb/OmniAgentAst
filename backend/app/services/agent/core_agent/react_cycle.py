@@ -64,7 +64,7 @@ async def _process_single_step(agent, step_counter: list, chunk_buffer) -> Async
 
     parsed_type = llm_response.get("type", "answer")
     handler = _TYPE_HANDLERS.get(parsed_type, _DEFAULT_HANDLER)
-    async for event in handler(agent, llm_response, "", step_counter, chunk_buffer):
+    async for event in handler(agent, llm_response, step_counter, chunk_buffer):
         yield event
 
 

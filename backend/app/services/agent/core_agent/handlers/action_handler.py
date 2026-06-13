@@ -102,7 +102,7 @@ class ActionHandler:
     async def build_observation(self, agent, all_calls: List[Dict], results: List[Any], step: int,
                                 tool_name: str, tool_params: Dict, is_parallel: bool,
                                 pending_calls: List, action_steps: List,
-                                llm_response: str, fc_context: Dict = None) -> List:
+                                fc_context: Dict = None) -> List:
         """构建observation — FC-only: 传递fc_context,删除add_assistant — 小沈 2026-06-11
         【修复 2026-06-11 小沈】平行调用各result用各自的tool_call_id"""
         events = []
@@ -158,7 +158,7 @@ class ActionHandler:
         # FC-only: assistant消息由_append_observation()以FC协议格式添加,不在此处添加
         return events
 
-    async def handle(self, agent, parsed: Dict, llm_response: str, step_counter: list, chunk_buffer):
+    async def handle(self, agent, parsed: Dict, step_counter: list, chunk_buffer):
         """完整action处理流程 — FC-only: 提取fc_context传递 — 小沈 2026-06-11"""
         tool_name = parsed["tool_name"]
         tool_params = parsed.get("tool_params", {})
@@ -201,7 +201,7 @@ class ActionHandler:
         obs_events = await self.build_observation(
             agent, all_calls, results, step,
             tool_name, tool_params, is_parallel, pending_calls,
-            action_steps, llm_response, fc_context=fc_context,
+            action_steps, fc_context=fc_context,
         )
         for event in obs_events:
             yield event

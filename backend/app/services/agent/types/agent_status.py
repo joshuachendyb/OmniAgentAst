@@ -14,7 +14,5 @@ class AgentStatus(Enum):
     IDLE = "idle"
     THINKING = "thinking"
     EXECUTING = "executing"
-    OBSERVING = "observing"
     COMPLETED = "completed"
     FAILED = "failed"
-    ROLLED_BACK = "rolled_back"

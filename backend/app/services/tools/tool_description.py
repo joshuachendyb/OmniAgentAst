@@ -8,6 +8,7 @@
 from collections import defaultdict
 from typing import Dict, List, Optional, Any
 from app.services.tools.tool_types import ToolCategory, CATEGORY_ORDER, CATEGORY_NAMES
+from typing import Set, Optional
 from app.utils.display_utils import format_param_value
 
 
@@ -132,13 +133,13 @@ def get_all_tools_detail(
     return "\n".join(lines)
 
 
-def to_openai_tools(registry, category: Optional[ToolCategory] = None) -> list:
+def to_openai_tools(registry, categories: Optional[Set[ToolCategory]] = None) -> list:
     """
     生成OpenAI API格式的tools定义 - 小沈 2026-05-09
 
     Args:
         registry: ToolRegistry实例
-        category: 工具分类,None=全部
+        categories: 工具分类集合,None=全部
 
     Returns:
         [{"type": "function", "function": {...}}, ...]
@@ -147,7 +148,7 @@ def to_openai_tools(registry, category: Optional[ToolCategory] = None) -> list:
     for name, meta in sorted(registry._tools.items(), key=lambda x: x[0]):
         if not meta.expose_to_llm:
             continue
-        if category and meta.category != category and meta.category != ToolCategory.FUND_RUNTIME:
+        if categories is not None and meta.category not in categories:
             continue
         func_def = {
             "name": meta.name,

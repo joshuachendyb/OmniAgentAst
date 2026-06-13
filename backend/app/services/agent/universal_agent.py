@@ -57,15 +57,6 @@ class UniversalAgent(BaseAgent):
             return "System: 通用助手"
         return self.prompts.build_full_system_prompt()
 
-    def _on_session_init(self, task: str, context: Optional[Dict[str, Any]] = None):
-        pass
-
-    def _on_before_loop(self, sys_prompt: str, task: str, context: Optional[Dict[str, Any]] = None):
-        pass
-
-    def _on_after_loop(self):
-        pass
-
     def _complete_tracked_task(self, success: bool):
         self._step_emitter.complete_task(success)
 
@@ -81,7 +72,7 @@ class UniversalAgent(BaseAgent):
         openai_tools = self._get_openai_tools()
 
         if not openai_tools:
-            logger.error(f"[call_llm] 无可用工具, category={self.tool_category}")
+            logger.error("[call_llm] 无可用工具")
 
         async for item in self._call_llm_fc_stream(messages, openai_tools):
             yield item
@@ -167,8 +158,7 @@ class UniversalAgent(BaseAgent):
             return cached
 
         from app.services.tools.registry import tool_registry
-        loaded = getattr(self, '_loaded_categories', set())
-        self._cached_openai_tools = tool_registry.to_openai_tools(categories=loaded) if loaded else []
+        self._cached_openai_tools = tool_registry.to_openai_tools(categories=_INITIAL_CATEGORIES)
         self._cache_timestamp = current_time
         return self._cached_openai_tools
 
