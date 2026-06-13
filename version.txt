@@ -1,4 +1,45 @@
 
+v0.15.10
+
+更新时间: 2026-06-13 08:33:35
+
+## v0.15.9→v0.15.10 变更汇总 - 小欧-2026-06-13
+
+### refactor: 精简Agent代码(删除dead code+修复导入bug+补充hook方法)
+
+| 文件 | 变更 |
+|------|------|
+| agent_config.py | 删除—AgentConfig不再使用(UniversalAgent统一配置) |
+| agent_factory.py | 删除config依赖,简化参数 |
+| agent_initializer.py | create_task删除intent参数 |
+| base_agent.py | 新增_on_session_init/_on_before_loop/_on_after_loop hook空方法 |
+| handlers/__init__.py | 只保留handle_action/handle_answer导出 |
+| action_handler.py | 删除未使用的llm_response参数 |
+| answer_handler.py | 删除未使用的llm_response参数 |
+| chunk_handler.py | 删除(不再使用) |
+| error_handler.py | 删除(不再使用) |
+| react_cycle.py | handler调用签名同步删除llm_response |
+| tool_manager.py | 删除_loaded_categories追踪 |
+| action_step.py | 删除raw_data重复字段 |
+| agent_status.py | 删除OBSERVING/ROLLED_BACK |
+| universal_agent.py | 删除hook空实现(移入BaseAgent) |
+| run_sse_stream.py | 删除current_content_holder/llm_call_count_holder |
+| task_tracker.py | create_task删除intent参数 |
+| registry.py | to_openai_tools改为categories集合 |
+| tool_description.py | 修复CATEGORY_ORDER/CATEGORY_NAMES错误导入 |
+| retry/__init__.py | 删除agent_retry导出 |
+| agent_retry.py | 删除(不再使用) |
+| prompts(desktop/doc/net/shell) | 删除(已由SystemPrompts统一) |
+
+### 净效果
+
+- 删除7个无用文件,删除5个未使用参数
+- 修复1个运行时ImportError(tool_description错误导入)
+- 修复1个运行时AttributeError(缺少hook方法)
+- 176个相关测试全部通过,0回归
+
+---
+
 v0.15.9
 
 更新时间: 2026-06-12

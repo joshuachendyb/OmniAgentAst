@@ -9,7 +9,7 @@
          查询函数 → tool_queries.py, 格式转换 → tool_description.py
 """
 
-from typing import Dict, List, Optional, Callable, Any, Type
+from typing import Dict, List, Optional, Callable, Any, Type, Set
 from datetime import datetime
 from pydantic import BaseModel
 from app.services.tools.tool_types import ToolCategory, ToolMetadata, ToolSafetyLevel
@@ -231,10 +231,10 @@ class ToolRegistry:
         """返回分类→工具名列表映射(copy防外部修改)— 小沈 2026-05-25"""
         return {k: list(v) for k, v in self._categories.items()}
 
-    def to_openai_tools(self, category: Optional[ToolCategory] = None) -> list:
+    def to_openai_tools(self, categories: Optional[Set[ToolCategory]] = None) -> list:
         """生成OpenAI API格式的tools定义 — 委托给tool_description.to_openai_tools — 小沈 2026-06-09"""
         from app.services.tools.tool_description import to_openai_tools
-        return to_openai_tools(self, category=category)
+        return to_openai_tools(self, categories=categories)
 
     def generate_param_reminder(self, category: Optional[ToolCategory] = None, style: str = "code") -> str:
         """自动生成Parameter Reminder — 委托给tool_description.generate_param_reminder — 小沈 2026-06-09"""

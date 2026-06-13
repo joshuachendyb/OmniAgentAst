@@ -25,7 +25,7 @@ class TaskTracker:
 
     # ===== 任务生命周期 =====
 
-    def create_task(self, intent: str, agent_id: str, description: str) -> str:
+    def create_task(self, agent_id: str, description: str) -> str:
         """创建任务 → 返回 task_id"""
         task_id = f"task-{uuid4().hex}"
         with db.get_conn("task_tracker") as conn:
@@ -33,7 +33,7 @@ class TaskTracker:
                 """INSERT INTO tasks
                    (task_id, intent, agent_id, task_description, status)
                    VALUES (?, ?, ?, ?, ?)""",
-                (task_id, intent, agent_id, description, TaskStatus.EXECUTING.value),
+                (task_id, "", agent_id, description, TaskStatus.EXECUTING.value),
             )
         return task_id
 

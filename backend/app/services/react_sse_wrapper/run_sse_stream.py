@@ -9,7 +9,7 @@ Author: 小沈 - 2026-05-31
 """
 
 import asyncio
-from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
+from typing import List, AsyncGenerator, Any, Callable
 
 from app.utils.logger import logger
 from app.services.agent.types import AgentStatus
@@ -23,8 +23,6 @@ async def run_sse_stream(
     session_id: str,
     current_execution_steps: List,
     stream_state: Any = None,
-    current_content_holder: Optional[list] = None,
-    llm_call_count_holder: Optional[list] = None,
 ) -> AsyncGenerator[str, None]:
     """纯SSE流运行器 — 小沈 2026-06-09 支持StreamState"""
     from app.services.agent.agent_factory import create_agent
@@ -61,14 +59,10 @@ async def run_sse_stream(
                 content = event_dict.get('response', '') or ''
                 if stream_state is not None:
                     stream_state.current_content = content or stream_state.current_content
-                elif current_content_holder is not None:
-                    current_content_holder[0] = content or current_content_holder[0]
             elif event_type == 'chunk':
                 content = event_dict.get('content', '')
                 if stream_state is not None:
                     stream_state.current_content = content or stream_state.current_content
-                elif current_content_holder is not None:
-                    current_content_holder[0] = content or current_content_holder[0]
 
             # 格式化SSE(仅format，已用event_dict避免二次to_dict)
             sse_data = format_agent_sse(event_dict)
@@ -104,20 +98,15 @@ async def run_sse_stream(
 
     finally:
         # 统一保存入口：正常、异常、取消都走这里
-        # 终止step包括: FinalStep / ErrorStep(blocked,user_rejected,parse_error,
-        # empty_response,runtime_error) / IncidentStep(interrupted)
         if current_execution_steps:
             try:
-                saved_content = stream_state.current_content if stream_state else (current_content_holder[0] if current_content_holder else "")
+                saved_content = stream_state.current_content if stream_state else ""
                 await save_execution_steps_to_db(session_id, current_execution_steps, saved_content)
             except Exception as save_err:
                 logger.error(f"[SSE] DB保存失败(steps={len(current_execution_steps)}): {save_err}", exc_info=True)
 
-        if agent is not None:
-            if stream_state is not None:
-                stream_state.llm_call_count = getattr(agent, "llm_call_count", 0)
-            elif llm_call_count_holder is not None:
-                llm_call_count_holder[0] = getattr(agent, "llm_call_count", 0)
+        if agent is not None and stream_state is not None:
+            stream_state.llm_call_count = getattr(agent, "llm_call_count", 0)
 
 
 async def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_step, current_execution_steps, session_id):

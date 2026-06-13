@@ -36,14 +36,6 @@ class AgentInitializer:
         agent.status = AgentStatus.IDLE
         agent.llm_call_count = 0
 
-        # 【重构 2026-05-27 小健】2.22:parse/empty重试委托给RetryEngine
-        from app.utils.retry import create_agent_retry_engine
-        agent._parse_retry_engine, agent._empty_response_retry_engine = create_agent_retry_engine()
-
-        # 【v2.3新增】chunk处理相关属性—所有Agent子类共享
-        from app.constants import MAX_CONSECUTIVE_CHUNKS
-        agent.max_consecutive_chunks = MAX_CONSECUTIVE_CHUNKS  # 连续chunk达此阈值时提升为implicit
-
     @staticmethod
     def _init_messages(agent):
         """初始化消息构建 — 从配置读取max_context_chars"""
@@ -65,7 +57,6 @@ class AgentInitializer:
             agent_id = getattr(agent, 'task_id', 'unknown')
             tracker = get_tracker()
             agent._tracked_task_id = tracker.create_task(
-                intent="",
                 agent_id=agent_id,
                 description=description[:200] if description else "",
             )
@@ -73,5 +64,3 @@ class AgentInitializer:
         except Exception as _e:
             from app.utils.logger import logger
             logger.debug(f"[TaskTracker] 创建任务失败: {_e}")
-
-

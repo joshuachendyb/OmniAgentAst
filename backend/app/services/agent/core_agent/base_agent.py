@@ -38,7 +38,6 @@ class BaseAgent(ABC):
         llm_client: Any,
         task_id: str,
         max_steps: Optional[int] = None,
-        rollback_enabled: bool = True,
         initial_categories=None,
         **kwargs
     ):
@@ -51,11 +50,23 @@ class BaseAgent(ABC):
         self._tool_manager = ToolManager(self)
         self._tool_manager.init_tools(initial_categories=initial_categories)
         self._retry_engine = ToolRetryEngine(self._tools_dict)
-        AgentInitializer._init_task_tracking(self, enable=rollback_enabled)
+        AgentInitializer._init_task_tracking(self, enable=True)
         self._step_emitter = StepEmitter(self)
 
     def record_operation(self, operation_type: str, **kwargs):
         self._step_emitter.record_operation(operation_type, **kwargs)
+
+    def _on_session_init(self, task: str, context: Optional[Dict[str, Any]] = None):
+        """生命周期Hook: ReAct循环开始前 — 子类可override"""
+        pass
+
+    def _on_before_loop(self, sys_prompt: str, task: str, context: Optional[Dict[str, Any]] = None):
+        """生命周期Hook: 构建sys_prompt后,循环开始前 — 子类可override"""
+        pass
+
+    def _on_after_loop(self):
+        """生命周期Hook: ReAct循环结束后 — 子类可override"""
+        pass
 
     def _create_cancelled_chunk(self):
         """创建取消chunk — 委托给llm_client

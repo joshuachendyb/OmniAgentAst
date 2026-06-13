@@ -112,7 +112,6 @@ class ActionToolStep(ReasoningStep):
         return {
             "execution_status": self._execution_status,
             "execution_result": self._execution_result,
-            "raw_data": self._execution_result,
             "action_retry_count": self._action_retry_count,
             "execution_time_ms": self._execution_time_ms,
         }
