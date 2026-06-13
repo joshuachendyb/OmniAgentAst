@@ -19,18 +19,6 @@ from app.constants import MAX_CACHE_SIZE
 _cache = LRUCache(max_size=MAX_CACHE_SIZE)
 
 
-def cache_display_name(session_id: str, display_name: str):
-    """
-    缓存 session_id 对应的 display_name
-    
-    Args:
-        session_id: 会话ID
-        display_name: 模型显示名称(如 "OpenAI (GPT-4)")
-    """
-    _cache.set(session_id, display_name)
-    logger.debug(f"缓存 display_name: session_id={session_id}, display_name={display_name}")
-
-
 def get_cached_display_name(session_id: str) -> Optional[str]:
     """
     从缓存中获取 session_id 对应的 display_name

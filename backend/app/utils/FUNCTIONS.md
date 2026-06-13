@@ -17,15 +17,7 @@
 
 ## 一、全局层（app/utils/）
 
-### 1.1 数据处理（data_utils.py）
-
-| 函数名 | 功能 | 参数 | 返回值 |
-|--------|------|------|--------|
-| `safe_truncate` | 安全截断数据 | data, limit | 截断后的数据 |
-| `extract_data_summary` | **【v0.13.34新增】** 从数据提取摘要（用于日志、调试、状态汇总） | data, max_chars | 摘要字符串 |
-| `parse_json` | 解析JSON字符串 | json_str, label | 解析结果或None |
-
-### 1.2 时间处理（time_utils.py）
+### 1.1 时间处理（time_utils.py）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
@@ -38,7 +30,7 @@
 | `timestamp_for_filename` | **【v0.13.33新增】** 文件名时间戳 YYYYMMDD_HHMMSS | 无 | str |
 | `now_str` | **【v0.13.33新增】** 当前时间格式化字符串，默认 YYYY-MM-DD HH:MM:SS | fmt | str |
 
-### 1.3 通用函数（common.py）
+### 1.2 通用函数（common.py）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
@@ -46,6 +38,12 @@
 | `build_display_name` | 构建显示名称 | provider, model | str |
 | `extract_metadata_from_steps` | 从步骤提取元数据 | execution_steps | dict |
 | `format_param_value` | **【v1.3新增】** 将参数默认值格式化为字符串（供LLM提示文本使用），None→""、bool→"true"/"false" | val | str |
+
+### 1.3 JSON解析（json_utils.py）
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `parse_json` | 解析JSON字符串 | json_str, label, raise_on_error | 解析结果或None |
 
 ### 1.4 响应工具（response_utils.py）【v0.13.33新增】
 
@@ -130,7 +128,7 @@
 
 ```python
 # 有公用函数，直接使用
-from app.utils.data_utils import parse_json
+from app.utils.json_utils import parse_json
 from app.utils.time_utils import ensure_timestamp_milliseconds
 
 result = parse_json(json_str)
