@@ -12,7 +12,7 @@ from pathlib import Path
 from app.services.agent.core_agent import BaseAgent
 from app.services.agent.types import AgentResult
 from app.services.tools.tool_types import ToolCategory
-from app.services.prompts.system_prompts import SystemPrompts
+from app.services.prompts.system_prompts import PromptBuilder
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
 
@@ -65,7 +65,7 @@ class UniversalAgent(BaseAgent):
         )
 
         self._loaded_categories: Set[ToolCategory] = set(initial_categories)
-        self.prompts = SystemPrompts()
+        self.prompts = PromptBuilder()
         self._patch_search_desc()
 
         logger.info(

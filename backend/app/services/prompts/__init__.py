@@ -1,11 +1,9 @@
-"""Prompts 模块 - Prompt 模板"""
+"""Prompts 模块 — PromptBuilder + 系统适配器"""
 
-from .base_prompt_template import BasePrompts
-from .system_prompts import SystemPrompts
+from .system_prompts import PromptBuilder
 from .system_adapter import get_system_prompt
 
 __all__ = [
-    "BasePrompts",
-    "SystemPrompts",
+    "PromptBuilder",
     "get_system_prompt",
 ]

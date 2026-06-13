@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 
 class ToolSearchInput(BaseModel):
-    query: str = Field(..., description="关键词搜索。按工具名/description分词匹配,支持中英文。如 '查找重复文件' '读取Excel数据'")
+    query: str = Field(..., description="先用此工具搜索未加载的工具。BM25全文检索，支持中英文混合。例如:'读取Word文档' 'SQL查询 数据库' '生成图表' '搜索文件' '压缩解压'。输入1-3个核心关键词效果最好。")
 
 
 __all__ = ["ToolSearchInput"]
