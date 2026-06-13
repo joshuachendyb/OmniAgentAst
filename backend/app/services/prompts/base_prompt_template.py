@@ -61,7 +61,7 @@ class BasePrompts(ABC):
 
     def _get_system_info(self) -> str:
         """获取系统信息(中间层注入),所有意图共享 — 小沈 2026-06-11 抽取到公共层"""
-        from app.services.prompts.middle import get_system_prompt as get_system_prompt_string
+        from app.services.prompts.system_adapter import get_system_prompt as get_system_prompt_string
         from app.utils.logger import logger
 
         system_info = get_system_prompt_string(include_commands=False)
