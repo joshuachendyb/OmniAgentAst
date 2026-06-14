@@ -22,6 +22,24 @@ from app.services.agent.agent_utils.message_utils import build_llm_messages
 from app.constants import DEFAULT_LLM_TIMEOUT, RATE_LIMIT_STATUS_CODES
 
 
+def _normalize_tool_params(params: Any) -> Any:
+    """递归归一化tool params — 修复LLM双倍编码: 字符串形式的JSON array/object还
+    原为真实类型. 在 _json.loads(arguments)之后调用,对后续所有工具无感生效 - 小沈 2026-06-14"""
+    if isinstance(params, dict):
+        return {k: _normalize_tool_params(v) for k, v in params.items()}
+    if isinstance(params, list):
+        return [_normalize_tool_params(item) for item in params]
+    if isinstance(params, str) and params.strip():
+        s = params.strip()
+        if s.startswith('[') or s.startswith('{'):
+            try:
+                parsed = _json.loads(s)
+                return _normalize_tool_params(parsed)
+            except _json.JSONDecodeError:
+                pass
+    return params
+
+
 class BaseAIService:
     """通用AI服务 — request/request_stream/chat — FC-only重构 2026-06-11 小沈"""
 
@@ -197,7 +215,7 @@ class BaseAIService:
                         tc = tool_call_accumulator[idx]
                         if tc["name"]:
                             try:
-                                params = _json.loads(tc["arguments"]) if tc["arguments"] else {}
+                                params = _normalize_tool_params(_json.loads(tc["arguments"])) if tc["arguments"] else {}
                             except _json.JSONDecodeError:
                                 params = {}
                             tool_calls_list.append({
@@ -290,10 +308,10 @@ class BaseAIService:
             if reasoning_content:
                 return StreamChunk(content=reasoning_content, model=self.model, is_done=False, is_reasoning=True, raw_data=data_str)
 
-            # tool_calls delta chunk — 带原始数据但不影响下游处理
+            # tool_calls delta — _extract_tool_calls 已处理,跳过冗余空 chunk — 小沈 2026-06-14
             tool_calls_delta = delta.get("tool_calls", [])
             if tool_calls_delta:
-                return StreamChunk(content="", model=self.model, is_done=False, raw_data=data_str)
+                return None
 
             return None
 

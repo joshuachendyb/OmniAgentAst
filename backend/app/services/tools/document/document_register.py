@@ -75,7 +75,7 @@ from app.services.tools.document.database_tools import (
 DESCRIPTIONS = {
     "read_document": """读取Office文档内容。按文件后缀自动选择解析器,支持PDF(.pdf,支持页码范围/提取表格)、Word(.docx,支持提取表格)、Excel(.xlsx/.xls,支持指定工作表/最大行数)、PPT(.pptx/.ppt)、CSV/TSV(.csv/.tsv,支持分隔符/编码)。纯文本文件请使用read_text_file工具。适用场景:需要读取PDF/Word/Excel/PPT等非代码文档内容,提取表格数据和分析文本内容时使用。""",
 
-    "write_document": """写入Office文档。按文件后缀自动选择写入器,支持Word(.docx,标题/段落/表格)、Excel(.xlsx,表头+行数据)、PDF(.pdf,标题/段落/表格)、PPT(.pptx,标题/幻灯片)。适用场景:需要生成报告文档、导出数据到Excel表格、创建PPT演示文稿时使用。""",
+    "write_document": """写入Office文档。按文件后缀自动选择写入器,支持Word(.docx,标题/段落/表格/结构化内容)、Excel(.xlsx,表头+行数据)、PDF(.pdf,标题/段落/表格)、PPT(.pptx,标题/幻灯片)。结构化内容通过data参数传入,格式:{"title":"标题","content":[{"type":"paragraph/h1/h2/table","text":"内容","rows":[[]]}]}。适用场景:需要生成报告文档、导出数据到Excel表格、创建PPT演示文稿时使用。""",
 
     "convert_document": """将Office文档转换为PDF格式。支持Word(.docx/.doc→PDF)、Excel(.xlsx/.xls→PDF)、PPT(.pptx/.ppt→PDF)以及OpenDocument格式(.odt/.ods→PDF)。需要系统安装LibreOffice。适用场景:需要将文档转为PDF进行分发、归档或打印时使用。""",
 
@@ -103,6 +103,7 @@ EXAMPLES = {
     ],
     "write_document": [
         {"file_path": "D:/output/report.docx", "title": "测试报告", "content": "这是测试内容"},
+        {"file_path": "D:/output/report_structured.docx", "data": {"title": "结构化报告", "content": [{"type": "h1", "text": "第一章"}, {"type": "paragraph", "text": "正文内容"}, {"type": "table", "rows": [["列1", "列2"], ["a", "b"]]}]}},
         {"file_path": "D:/output/data.xlsx", "data": {"headers": ["姓名", "年龄"], "rows": [["张三", 25], ["李四", 30]]}},
         {"file_path": "D:/output/report.pdf", "title": "测试报告", "content": "这是报告内容"},
         {"file_path": "D:/output/presentation.pptx", "title": "项目汇报"},

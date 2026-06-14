@@ -1,3 +1,22 @@
+v0.16.3
+
+更新时间: 2026-06-14 14:30:00
+
+## v0.16.2→v0.16.3 变更汇总 - 小沈-2026-06-14
+
+### fix: FC流式架构修复 — G1: llm_content丢失 + G3: 冗余空chunk
+- d7d2fb423: universal_agent.py G1 - fc_context加入llm_content,保留LLM文本到conversation_history
+- d7d2fb423: message_builder.py G1 - AssistantMessage使用llm_content填充content字段
+- d7d2fb423: action_handler.py G1 - 并行工具场景保留llm_content
+- d7d2fb423: llm_core.py G3 - _parse_sse_data跳过tool_calls-only空chunk的yield
+
+### refactor: _normalize_tool_params集中修复+scattered json.loads清理
+- d7d2fb423: llm_core.py 新增_normalize_tool_params(),JSON数组/对象双倍编码集中修复
+- d7d2fb423: document_register.py/tools.py 移除各工具中散落的json.loads()
+- d7d2fb423: FUNCTIONS.md 新增LLM核心层+_normalize_tool_params文档
+
+---
+
 v0.16.2
 
 更新时间: 2026-06-14 09:00:00

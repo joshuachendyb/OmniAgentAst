@@ -147,6 +147,8 @@ async def build_observation(ctx: ObservationContext) -> List:
             if tc_id and _fc.get("tool_calls"):
                 matching = [tc for tc in _fc["tool_calls"] if tc.get("id") == tc_id]
                 per_call_fc = {"tool_call_id": tc_id, "tool_calls": matching or _fc["tool_calls"]}
+                if _fc.get("llm_content"):
+                    per_call_fc["llm_content"] = _fc["llm_content"]
             else:
                 per_call_fc = _fc
             ctx.agent.message_builder.add_observation(obs_text, ctx.agent.llm_call_count, per_call_fc)

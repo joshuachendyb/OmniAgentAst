@@ -83,7 +83,8 @@ class MessageBuilder:
             for msg in self.conversation_history
         ) if tool_call_id else False
         if tool_calls and not has_existing_assistant:
-            self.conversation_history.append(message_to_dict(AssistantMessage(tool_calls=tool_calls)))
+            llm_content = fc_context.get("llm_content", "") or None
+            self.conversation_history.append(message_to_dict(AssistantMessage(content=llm_content, tool_calls=tool_calls)))
         elif tool_call_id and not has_existing_assistant:
             self.conversation_history.append(message_to_dict(AssistantMessage(tool_calls=[])))
         self.conversation_history.append(message_to_dict(ToolResultMessage(content=observation_text, tool_call_id=tool_call_id)))

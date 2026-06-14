@@ -203,6 +203,7 @@ class UniversalAgent(BaseAgent):
             fc_context = {
                 "tool_call_id": first.get("tool_call_id", ""),
                 "tool_calls": first.get("tool_calls", []),
+                "llm_content": full_content,  # 保留LLM输入的文本,写入conversation_history — 小沈 2026-06-14
             }
             _pending_calls = []
             for tc in tool_calls_result[1:]:

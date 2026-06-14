@@ -598,9 +598,11 @@ def _write_docx(
     content: str = None,
     paragraphs: list = None,
     title: str = None,
-    table_data: list = None
+    table_data: list = None,
+    data: dict = None,
 ) -> Dict[str, Any]:
-    """写入Word文档(内部函数) - 小健 2026-05-18"""
+    """写入Word文档(内部函数) - 小健 2026-05-18
+    【修复】支持data参数解析结构化内容: {"title":"...", "content":[{"type":"paragraph","text":"..."}]} - 小沈 2026-06-14"""
     if not _check_module("docx"):
         return build_error(ERR_NO_DOCX,
                 "python-docx库未安装,请先执行: pip install python-docx")
@@ -611,27 +613,47 @@ def _write_docx(
         from docx.shared import Inches, Pt
 
         doc = Document()
-        
+
+        # 【修复】优先解析 data 结构化参数 - 小沈 2026-06-14
+        if data and isinstance(data, dict):
+            if data.get("title") and not title:
+                title = data["title"]
+            if data.get("content"):
+                content = content or data["content"]
+
         if title:
             doc.add_heading(title, 0)
         
-        if paragraphs:
-            for para in paragraphs:
-                doc.add_paragraph(para)
-        
-        if content:
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, str):
+                    doc.add_paragraph(item)
+                elif isinstance(item, dict):
+                    item_type = item.get("type", "paragraph")
+                    item_text = item.get("text", "")
+                    if item_type in ("h1", "heading"):
+                        level = item.get("level", 1)
+                        doc.add_heading(item_text, level)
+                    elif item_type in ("h2", "h3", "h4", "h5"):
+                        level = int(item_type[1]) if item_type[1].isdigit() else 2
+                        doc.add_heading(item_text, level)
+                    elif item_type == "paragraph":
+                        doc.add_paragraph(item_text)
+                    elif item_type == "table":
+                        rows_data = item.get("rows", [])
+                        if rows_data:
+                            t = doc.add_table(rows=len(rows_data), cols=len(rows_data[0]))
+                            for ri, rd in enumerate(rows_data):
+                                for ci, cv in enumerate(rd):
+                                    t.rows[ri].cells[ci].text = str(cv)
+        elif content and isinstance(content, str):
             doc.add_paragraph(content)
         
-        if table_data:
-            for tbl in table_data:
-                if tbl and len(tbl) > 0:
-                    rows = len(tbl)
-                    cols = len(tbl[0]) if tbl[0] else 0
-                    if rows > 0 and cols > 0:
-                        table = doc.add_table(rows=rows, cols=cols)
-                        for i, row_data in enumerate(tbl):
-                            for j, cell_data in enumerate(row_data):
-                                table.rows[i].cells[j].text = str(cell_data if cell_data is not None else "")
+        if paragraphs:
+            for para in paragraphs:
+                para_str = str(para)
+                if para_str.strip():
+                    doc.add_paragraph(para_str)
         
         path = Path(file_path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -925,7 +947,7 @@ def write_document(
     path.parent.mkdir(parents=True, exist_ok=True)
     
     if suffix == ".docx":
-        result = _write_docx(file_path, content=content, paragraphs=paragraphs, title=title, table_data=table_data)
+        result = _write_docx(file_path, content=content, paragraphs=paragraphs, title=title, table_data=table_data, data=data)
     elif suffix == ".xlsx":
         if data is None:
             data = {"headers": [], "rows": []}
