@@ -1,3 +1,16 @@
+v0.16.4
+
+更新时间: 2026-06-14 14:41:23
+
+## v0.16.3→v0.16.4 变更汇总 - 小沈-2026-06-14
+
+### fix: version.txt编码损坏修复+prompt logger & FC架构修复
+- 575380346: version.txt 回滚到 v0.16.3 修复编码损坏
+- f9d26418b: prompt_logger保留完整prompt记录+action_handler/universal_agent/run_sse_stream FC架构修复
+- a098b8ff1: LLM架构实施报告章节序号修正+FC-only内容同步
+
+---
+
 v0.16.3
 
 更新时间: 2026-06-14 14:30:00
