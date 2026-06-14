@@ -297,16 +297,38 @@ export const useChatFacade = (options?: { baseURL?: string; sessionId?: string |
    chatPersistence,
    chatSend,
     chatTaskControl,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [
-    // ✅ 只依赖具体用到的基础值，不是整个对象
-    chatState,
-    chatCallbacks,
-    chatStreaming,
-    chatSession,
-    chatPersistence,
-    chatSend,
-    chatTaskControl,
-  ]); // eslint-disable-line react-hooks/exhaustive-deps
+    // ===== 会话状态 =====
+    chatState.sessionId, chatState.sessionTitle, chatState.sessionVersion,
+    chatState.titleLocked, chatState.editingTitle, chatState.titleInput,
+    chatState.setSessionId, chatState.setSessionTitle, chatState.setSessionVersion,
+    chatState.setTitleLocked, chatState.setEditingTitle, chatState.setTitleInput,
+    chatState.currentSessionIdRef,
+    // ===== 消息状态 =====
+    chatState.messages, chatState.loading, chatState.isRetrying,
+    chatState.setMessages, chatState.setLoading, chatState.setIsRetrying,
+    chatState.messagesRef, chatState.messagesEndRef,
+    // ===== 流式状态 =====
+    chatStreaming.isReceiving, chatStreaming.executionSteps,
+    chatStreaming.serverTaskId, chatStreaming.currentResponse,
+    chatStreaming.setIsReceiving,
+    chatState.isPaused, chatState.waitTime, chatState.setIsPaused, chatState.setWaitTime,
+    // ===== UI状态 =====
+    chatState.showExecution, chatState.useStream, chatState.isInitialized,
+    chatState.sessionJumpLoading, chatState.isMessageListLoading,
+    chatState.setShowExecution, chatState.setUseStream, chatState.setIsInitialized,
+    chatState.setSessionJumpLoading, chatState.setIsMessageListLoading,
+    chatState.userScrolledUpRef, chatState.lastScrollTimeRef,
+    // ===== 操作函数 =====
+    chatSend.handleSend,
+    chatTaskControl.handleInterrupt, chatTaskControl.handleTogglePause,
+    chatSession.initializeSession, chatSession.handleNewSession, chatSession.handleClear,
+    chatPersistence.saveStateWithSSECheck, chatPersistence.saveMessagesToStorage,
+    // ===== Refs =====
+    chatState.waitTimerRef, chatState.executionStepsRef, chatState.isPausedRef,
+    chatState.hasReceivedInterruptEventRef, chatState.interruptInProgressRef,
+  ]);
 };
 
 /**

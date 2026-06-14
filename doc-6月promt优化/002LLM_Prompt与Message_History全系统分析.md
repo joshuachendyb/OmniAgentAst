@@ -1,0 +1,841 @@
+# 002LLM Prompt与Message Conversation History全系统分析
+
+**创建时间**: 2026-06-10 15:15:59  
+**版本**: v2.2  
+**作者**: 小沈  
+**复查次数**: 5遍  
+
+---
+
+## 版本历史
+
+| 版本 | 时间 | 签名 | 更新内容 |
+|------|------|------|---------|
+| v1.0 | 2026-06-10 15:15:59 | 小沈 | 初始版本，全系统分析完成 |
+| v1.1 | 2026-06-11 04:43:57 | 小沈 | 逐问题验证准确性+10大原则符合性+补充遗漏关键问题 |
+| v1.2 | 2026-06-11 | 小健 | 逐问题修复复核，标注修复状态（✅已修复/⚠️未修复/✅不修改） |
+| v1.3 | 2026-06-11 09:19:07 | 小沈 | 新增FC-only全系统文件检查清单（补充第2/3/4/5章未覆盖范围）|
+| v1.4 | 2026-06-11 09:37:46 | 小沈 | 六↔七章节号互换；新增7.1.1降级路径必要性分析 |
+| v1.5 | 2026-06-11 | 小沈 | 7.5.5补充_utils.py/_tool_params.py；7.5.6补充fc_context构建代码+L144删除说明；7.8.4精确区分mock类型；第三章新增P0历史污染问题；第五章新增3个P2问题 |
+| v1.6 | 2026-06-11 14:30:00 | 小健 | 7.5.7补充审核发现6个问题（#1 fc_context死代码 #2 L144多余消息 #3 handler不写入history #4 yield协议变更崩溃P0 #5 answer_handler.strip依赖 #6 trim分离逻辑），推荐方案A保持str类型
+| v2.0 | 2026-06-12 15:30:00 | 小欧 | FC-only全系统更新：第1章三层架构+图；第2.2 FileOperationPrompts/2.3 SystemAdapter/2.4 universal_agent（删除_call_llm_text_stream/_convert_fc_messages_to_text);第5.1 react_cycle（dict类型+删除parse_llm_response/TOOL_REMINDER/_TYPE_HANDLERS精简）;第5.2 parse_llm_response.py标记删除;第6章流程示例FC-only更新;删除OUTPUT_FORMAT/TOOL_REMINDER引用
+| v2.1 | 2026-06-12 12:22:05 | 小欧 | FC-only精简化改造: TOOL_CALL_RULES合并AVOID_REPEAT_RULES(4条→3段); AVOID_REPEAT_RULES常量删除; build_full_system_prompt从8段→4段; candidates_hint+cross_tool_hint移至_call_llm每轮注入 |
+| v2.2 | 2026-06-12 北京老陈 | 小欧 | **移除** _build_executed_tool_summary / _build_candidates_hint / _build_cross_tool_hint — FC协议已覆盖 |
+| v2.2 | 2026-06-12 北京老陈 | 小欧 | **移除** AGENT_REGISTRY["file"] + FileOperationPrompts — CRSS返回FILE直接走system agent |
+
+---
+## 一、核心架构总览
+
+### 1.1 FC-only三层架构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  第一层：Prompt构建层（BasePrompts + 子类）                    │
+│  职责：生成System Prompt + Task Prompt                       │
+│  入口：build_full_system_prompt(include_tool_details)        │
+└─────────────────────────────────────────────────────────────┘
+                             ↓
+┌─────────────────────────────────────────────────────────────┐
+│  第二层：Message管理层（MessageBuilder）                      │
+│  职责：管理conversation_history状态（FC协议）                  │
+│  核心：init_history / add_observation(fc_context必传)        │
+│  ※ add_assistant 已删除（FC协议由_append_observation统一处理）│
+└─────────────────────────────────────────────────────────────┘
+                             ↓
+┌─────────────────────────────────────────────────────────────┐
+│  第三层：LLM调用层（LLMClient）                               │
+│  职责：发送messages给LLM，接收响应                             │
+│  入口：request_stream(messages, tools, tool_choice)          │
+│  ※ BaseAIService中间层已移除                                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 1.2 FC-only架构图
+
+```
+用户请求
+    ↓
+chat_router.py (路由层)
+    ↓
+AgentFactory.create(intent_type)
+    ↓
+UniversalAgent.__init__()
+    ├─ 加载Prompt模板: config.prompt_class()
+    │  └─ config.exclude_tool_details_from_prompt 控制工具描述注入
+    └─ 初始化工具: ToolManager.init_tools()
+    ↓
+run_react_cycle() ─────────────────────────────────────┐
+    ↓                                                  │
+_initialize_run_state()                                │
+    ├─ _get_system_prompt()                            │
+    │   └─ prompts.build_full_system_prompt()          │
+    ├─ _get_task_prompt(task, context)                 │
+    └─ message_builder.init_history(sys, task)         │
+        └─ conversation_history = [system, user]       │
+    ↓                                                  │
+循环开始 ←─────────────────────────────────────────────┤
+    ↓                                                  │
+_call_llm()                                            │
+    ├─ message_builder.prepare_messages_for_llm()      │
+    │   └─ 返回 conversation_history + temp_history    │
+    ├─ ~~_build_executed_tool_summary~~ 已移除          │
+    ├─ ~~_build_candidates_hint~~ 已移除                │
+    ├─ ~~_build_cross_tool_hint~~ 已移除                │
+    └─ _call_llm_fc_stream(messages, tools)            │
+       └─ llm_client.request_stream(messages, tools)   │
+    ↓                                                  │
+    ├─ yield ChunkStep（文本）+ ChunkStep（reasoning） │
+    └─ yield Response（dict: action/answer）           │
+    ↓                                                  │
+  [tool_calls原生消费 — 无JSON roundtrip]              │
+  _call_llm_fc_stream() 内判断:                        │
+    └─ 有chunk.tool_calls → action（原生dict）           │
+    └─ 无chunk.tool_calls → answer                      │
+    ↓                                                  │
+handler分派（_TYPE_HANDLERS注册式）                    │
+    ├─ action → 执行工具                               │
+    │   ├─ yield ThoughtStep                           │
+    │   ├─ check_safety_and_confirm()                  │
+    │   ├─ 执行工具 → result                           │
+    │   ├─ yield ActionToolStep                        │
+    │   ├─ yield ObservationStep                       │
+    │   └─ message_builder.add_observation(fc_context) │
+    │      ← FC协议: assistant(tool_calls) + role:tool │
+    ├─ answer → 任务完成                               │
+    │   └─ yield FinalStep                             │
+    │      agent.status = AgentStatus.COMPLETED        │
+    ↓                                                  │
+判断是否继续循环 ───────────────────────────────────────┘
+```
+
+---
+
+## 二、Prompt构建层详细分析（FC-only架构）
+
+### 2.1 BasePrompts基类（base_prompt_template.py）
+
+**文件路径**: `backend/app/services/prompts/base_prompt_template.py`
+
+**核心职责**:
+- 定义Prompt模板基类接口
+- 统一System Prompt组装顺序
+- 提供公共规则常量
+
+**关键常量**:
+
+#### 2.1.1 TOOL_CALL_RULES（工具调用规则 — v2.1合并AVOID_REPEAT_RULES）
+
+```python
+TOOL_CALL_RULES = """【回答要求】:
+- reasoning简短(1-2句),不要长篇分析
+- 始终用中文回复
+
+【停止条件】:
+- 用户请求已完成,直接回答用户问题
+- 遇到无法解决的错误,向用户报告原因和建议
+
+【执行效率】:
+- 同一工具成功后不要重复执行
+- 已获取的信息直接使用,严禁二次获取
+- 失败后换其他工具或参数,不要重试同一操作
+- 连续3次不同方法都失败→停止尝试,向用户报告"""
+```
+
+**v2.1变更**:
+- 合并原`AVOID_REPEAT_RULES`为【执行效率】段
+- 移除FC冗余规则#1/#3/#4（FC协议的`tool_choice="auto"`已覆盖"何时调用工具"）
+- 原规则#2（reasoning简短）保留，#5（中文回复）保留
+- **2026-06-12 北京老陈** 精简停止条件/执行效率措辞
+
+**分析**:
+- ✅ 精简为3段：回答要求/停止条件/执行效率，职责清晰
+- ✅ 不再与FC协议语义重叠
+- ✅ 消除SRP/DRY违反（原AVOID_REPEAT_RULES独立常量违反DRY）
+
+#### 2.1.2 build_full_system_prompt()（唯一组装入口 — v2.1精简化版）
+
+```python
+def build_full_system_prompt(self, include_tool_details: bool = None) -> str:
+    """构建完整的系统Prompt — FC-only版
+
+    组装顺序:
+    ① _get_system_info()        — 公共:系统信息(OS/路径规则)
+    ② _get_project_context()    — 公共:项目上下文(README.md)
+    ③ get_core_system_prompt() — 分类特有(角色+业务规则)
+    ④ TOOL_CALL_RULES           — 公共:回答要求+停止条件+执行效率
+    """
+    if include_tool_details is not None:
+        self._include_tool_details = include_tool_details
+
+    parts = [self._get_system_info()]
+
+    project_ctx = self._get_project_context()
+    if project_ctx:
+        parts.append(project_ctx)
+
+    parts.append(self.get_core_system_prompt())
+    parts.append(self.TOOL_CALL_RULES)
+
+    return "\n\n".join(parts)
+```
+
+**组装顺序分析（v2.1精简，从8段→4段）**:
+```
+① _get_system_info()         [公共]     → 系统信息(OS/路径规则)
+② _get_project_context()     [公共]     → 项目上下文(README.md)
+③ get_core_system_prompt()  [分类特有] → 角色+业务规则
+④ TOOL_CALL_RULES            [公共]     → 回答要求+停止条件+执行效率
+```
+
+**v2.1移除**:
+- `get_tool_details()` → 由FC Schema承载，不再Prompt中注入
+- `get_rollback_instructions()` → LLM能从`role:tool`错误消息理解失败原因，无需额外指令
+- `AVOID_REPEAT_RULES` → 合并入`TOOL_CALL_RULES`【执行效率】段
+- `get_safety_reminder()` → **已移除**，后续由独立安全机制处理（2026-06-12 北京老陈）
+
+**分析**:
+- ✅ 从8段精简至4段，组装更轻量
+- ✅ 公共规则统一注入，避免重复
+- ✅ 移除`include_tool_details`逻辑（FC模式不再需要工具描述在Prompt中）
+- ✅ `get_rollback_instructions()` 方法删除
+
+---
+
+
+
+### 2.3 SystemAdapter中间层（system_adapter.py）
+
+**文件路径**: `backend/app/services/prompts/middle/system_adapter.py`
+
+**核心职责**:
+- 根据服务器OS生成系统自适应Prompt
+- 提供路径格式、命令格式映射
+
+**generate_system_prompt()实现**:
+
+```python
+def _get_environment_info(self) -> str:
+    """获取环境信息(工作目录/Git状态/日期) — 小沈 2026-06-11"""
+    cwd = os.getcwd()
+    today = date.today().strftime("%Y-%m-%d")
+    is_git = self._check_is_git_repo(cwd)
+    git_status = "是" if is_git else "否"
+    return f"""【环境信息】
+- 工作目录: {cwd}
+- Git仓库: {git_status}
+- 当前日期: {today}
+"""
+
+def generate_system_prompt(self, include_commands: bool = True) -> str:
+    """生成系统信息Prompt"""
+    system_name = self.get_system_name()
+    path_format = self.get_path_format()
+    env_info = self._get_environment_info()
+    
+    prompt = env_info + f"""【当前系统】
+{system_name}
+
+【路径格式】
+- 当前系统: {path_format}
+"""
+    if include_commands:
+        commands = self.get_commands()
+        cmd_lines = "\n".join(f"- {k}: {v}" for k, v in commands.items())
+        prompt += f"""
+【命令格式】
+{cmd_lines}
+"""
+    
+    prompt += """
+【路径规则】
+- 必须使用绝对路径(禁止相对路径如 ./file.txt)
+- 禁止用 ~ 表示家目录
+- ❌ 路径中的中文字符必须原样保留,禁止翻译或转换!
+"""
+    
+    return prompt
+```
+
+**分析**:
+- ✅ 系统自适应，支持Windows/Linux/macOS
+- ✅ include_commands参数控制是否注入命令格式
+- ✅ 路径规则清晰，防止LLM转换中文路径
+- ✅ 使用lru_cache单例，避免重复计算
+- ✅ 2026-06-11新增环境信息（工作目录/Git状态/日期）
+
+---
+
+### 2.4 UniversalAgent的Prompt组装（universal_agent.py）
+
+**文件路径**: `backend/app/services/agent/universal_agent.py`
+
+**核心职责**:
+- 根据ServerConfig加载具体的Prompt类
+- 获取和构建完整的System Prompt
+- 管理对话历史
+- 协调LLM请求和响应
+
+**核心属性**:
+
+```python
+class UniversalAgent:
+    def __init__(
+        self,
+        llm_client: Any,
+        task_id: str,
+        config: Optional[AgentConfig] = None,
+        tool_category: Optional[ToolCategory] = None,
+        max_steps: Optional[int] = None,
+        candidates: Optional[List[str]] = None,
+        **kwargs
+    ):
+        if not task_id:
+            intent_type = config.intent_type if config else "unknown"
+            raise ValueError(f"task_id is required for {intent_type} operation tracking")
+
+        effective_category = tool_category or (config.category if config else None)
+        if max_steps is None:
+            if config and config.max_steps:
+                effective_max_steps = config.max_steps
+            else:
+                from app.config import get_config
+                effective_max_steps = get_config().get_max_steps()
+        else:
+            effective_max_steps = max_steps
+        rollback_enabled = config.rollback_enabled if config else True
+
+        super().__init__(
+            llm_client=llm_client,
+            task_id=task_id,
+            tool_category=effective_category,
+            max_steps=effective_max_steps,
+            rollback_enabled=rollback_enabled,
+            candidates=candidates,
+            **kwargs
+        )
+
+        if config:
+            self.config = config
+            self.prompts = config.prompt_class()
+            # FC-only模式: 跳过Prompt中的工具描述和示例(由FC Schema承载)
+            if config.exclude_tool_details_from_prompt:
+                self.prompts.include_tool_details = False
+            logger.info(
+                f"UniversalAgent initialized (intent={config.intent_type}, task_id={task_id}, category={effective_category})"
+            )
+        else:
+            logger.info(
+                f"UniversalAgent initialized (task_id={task_id}, category={effective_category})"
+            )
+
+    def _get_system_prompt(self) -> str:
+        if not hasattr(self, 'prompts') or not self.prompts:
+            return "System: 通用助手"
+        return self.prompts.build_full_system_prompt()   # ← v2.1: 直接返回4段,无candidates/cross_tool
+
+    ## ~~_build_candidates_hint~~ / ~~_build_cross_tool_hint~~ 已移除 (2026-06-12 北京老陈)
+
+    def _get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
+        return self.prompts.get_task_prompt(task)
+
+    def _on_session_init(self, task: str, context: Optional[Dict[str, Any]] = None):
+        pass
+
+    def _on_before_loop(self, sys_prompt: str, task_prompt: str, context: Optional[Dict[str, Any]] = None):
+        pass
+
+    def _on_after_loop(self):
+        pass
+
+    def _complete_tracked_task(self, success: bool):
+        self._step_emitter.complete_task(success)
+
+    async def _execute_tool(self, tool_name: str, tool_params: Dict[str, Any]) -> Dict[str, Any]:
+        return await self._retry_engine.execute_tool_with_retry(tool_name, tool_params)
+
+    async def _call_llm(self):
+        """调用LLM — 纯FC模式 — FC-only重构 2026-06-11 小沈"""
+        self.llm_call_count += 1
+        self.message_builder.trim_history()
+
+        messages = self.message_builder.prepare_messages_for_llm()
+        openai_tools = self._get_openai_tools()
+
+        if not openai_tools:
+            logger.error(f"[call_llm] 无可用工具, category={self.tool_category}")
+
+        async for item in self._call_llm_fc_stream(messages, openai_tools):
+            yield item
+
+    async def _call_llm_fc_stream(self, messages: list, openai_tools: list):
+        """FC模式流式调用 — tool_calls原生消费,不经过JSON roundtrip — 小沈 2026-06-12"""
+        from app.services.agent.steps import ChunkStep
+
+        full_content = ""
+        full_reasoning = ""
+        tool_calls_result = None
+        stream_error = None
+
+        try:
+            async for chunk in self.llm_client.request_stream(
+                messages=messages,
+                tools=openai_tools, tool_choice="auto",
+            ):
+                if chunk.stream_error:
+                    stream_error = chunk.stream_error
+                    break
+
+                if chunk.tool_calls:
+                    tool_calls_result = chunk.tool_calls
+
+                if chunk.content:
+                    if getattr(chunk, "is_reasoning", False):
+                        full_reasoning += chunk.content
+                        yield ("chunk", ChunkStep(step=self.llm_call_count, content=chunk.content, is_reasoning=True))
+                    else:
+                        full_content += chunk.content
+                        yield ("chunk", ChunkStep(step=self.llm_call_count, content=chunk.content, is_reasoning=False))
+
+                if chunk.is_done:
+                    break
+        except Exception as e:
+            logger.error(f"[FC] 流式异常: {e}")
+            yield ("response", {"type": "answer", "content": f"LLM调用异常: {e}"})
+            return
+
+        if stream_error:
+            logger.error(f"[FC] 流式错误: {stream_error}")
+            yield ("response", {"type": "answer", "content": f"LLM流式错误: {stream_error}"})
+            return
+
+        if tool_calls_result:
+            first = tool_calls_result[0]
+            fc_context = {
+                "tool_call_id": first.get("tool_call_id", ""),
+                "tool_calls": first.get("tool_calls", []),
+            }
+            _pending_calls = []
+            for tc in tool_calls_result[1:]:
+                _pending_calls.append({
+                    "tool_name": tc["tool_name"],
+                    "tool_params": tc["tool_params"],
+                    "_tool_call_id": tc.get("tool_call_id", ""),
+                })
+            logger.info(f"[FC] LLM原始响应(action): tool={first['tool_name']}, parallel={len(_pending_calls)}")
+            yield ("response", {
+                "type": "action",
+                "fc_context": fc_context,
+                "_pending_calls": _pending_calls,
+                "tool_name": first["tool_name"],
+                "tool_params": first["tool_params"],
+                "tool_call_id": first.get("tool_call_id", ""),
+                "tool_calls": first.get("tool_calls", []),
+            })
+            return
+
+        content = full_content or full_reasoning or ""
+        logger.info(f"[FC] LLM原始响应(answer): {content}")
+        yield ("response", {"type": "answer", "content": content, "thought": ""})
+
+    def _get_openai_tools(self) -> list:
+        """获取OpenAI格式工具定义 — 小沈 2026-06-09 添加TTL缓存过期
+        P0修复: 多分类加载时传category=None,确保extra_tools对LLM可见 — 小沈 2026-06-11"""
+        import time
+        current_time = time.time()
+        cache_ts = getattr(self, '_cache_timestamp', 0)
+        cache_ttl = getattr(self, '_cache_ttl', 300)
+        cached = getattr(self, '_cached_openai_tools', None)
+        if cached and current_time - cache_ts < cache_ttl:
+            return cached
+        
+        from app.services.tools.registry import tool_registry
+        loaded = getattr(self, '_loaded_categories', set())
+        category = getattr(self, 'tool_category', None)
+        if len(loaded) > 1:
+            category = None
+        self._cached_openai_tools = tool_registry.to_openai_tools(category=category)
+        self._cache_timestamp = current_time
+        return self._cached_openai_tools
+
+    def invalidate_tool_cache(self):
+        """P2-14修复: 清除工具缓存,工具注册/注销后调用"""
+        self._cached_openai_tools = None
+        self._cache_timestamp = 0
+
+    ## ~~_update_executed_tool_summary~~ / ~~_build_executed_tool_summary~~ 已移除 (2026-06-12 北京老陈)
+
+# ... 剩余部分与文档一致
+```
+
+**分析**:
+- ✅ FC-only: 所有场景都过FC流式，无text降级
+- ✅ _build_executed_tool_summary / _build_candidates_hint / _build_cross_tool_hint **已移除**（2026-06-12 北京老陈）
+- ✅ _call_llm() 只做 prepare + get_tools + stream，职责单一
+
+**_call_llm_fc_stream()实现（FC-only — 2026-06-12 tool_calls原生消费）**:
+
+```python
+async def _call_llm_fc_stream(self, messages: list, openai_tools: list):
+    """FC模式流式调用 — tool_calls原生消费,不经过JSON roundtrip — 小沈 2026-06-12"""
+    from app.services.agent.steps import ChunkStep
+
+    full_content = ""
+    full_reasoning = ""
+    tool_calls_result = None
+    stream_error = None
+
+    try:
+        async for chunk in self.llm_client.request_stream(
+            messages=messages,
+            tools=openai_tools, tool_choice="auto",
+        ):
+            if chunk.stream_error:
+                stream_error = chunk.stream_error
+                break
+
+            if chunk.tool_calls:
+                tool_calls_result = chunk.tool_calls
+
+            if chunk.content:
+                if getattr(chunk, "is_reasoning", False):
+                    full_reasoning += chunk.content
+                    yield ("chunk", ChunkStep(step=self.llm_call_count, content=chunk.content, is_reasoning=True))
+                else:
+                    full_content += chunk.content
+                    yield ("chunk", ChunkStep(step=self.llm_call_count, content=chunk.content, is_reasoning=False))
+
+            if chunk.is_done:
+                break
+    except Exception as e:
+        logger.error(f"[FC] 流式异常: {e}")
+        yield ("response", {"type": "answer", "content": f"LLM调用异常: {e}"})
+        return
+
+    if stream_error:
+        logger.error(f"[FC] 流式错误: {stream_error}")
+        yield ("response", {"type": "answer", "content": f"LLM流式错误: {stream_error}"})
+        return
+
+    if tool_calls_result:
+        first = tool_calls_result[0]
+        fc_context = {
+            "tool_call_id": first.get("tool_call_id", ""),
+            "tool_calls": first.get("tool_calls", []),
+        }
+        _pending_calls = []
+        for tc in tool_calls_result[1:]:
+            _pending_calls.append({
+                "tool_name": tc["tool_name"],
+                "tool_params": tc["tool_params"],
+                "_tool_call_id": tc.get("tool_call_id", ""),
+            })
+        logger.info(f"[FC] LLM原始响应(action): tool={first['tool_name']}, parallel={len(_pending_calls)}")
+        yield ("response", {
+            "type": "action",
+            "fc_context": fc_context,
+            "_pending_calls": _pending_calls,
+            "tool_name": first["tool_name"],
+            "tool_params": first["tool_params"],
+            "tool_call_id": first.get("tool_call_id", ""),
+            "tool_calls": first.get("tool_calls", []),
+        })
+        return
+
+    content = full_content or full_reasoning or ""
+    logger.info(f"[FC] LLM原始响应(answer): {content}")
+    yield ("response", {"type": "answer", "content": content, "thought": ""})
+```
+
+**FC-only重构变更**:
+- ✅ `chunk.tool_calls` 原生消费，绕过JSON roundtrip（6步→4步）
+- ✅ 删除 `parse_json()` + bracket matching fallback
+- ✅ 删除 `chunk_step_count` 计数器（无用）
+- ✅ 删除 `from app.utils.json_utils import parse_json`
+- ✅ 返回dict格式响应（含fc_context），供handler直接使用
+- ✅ 支持平行调用提取（从 `tool_calls_result[1:]` 直接取）
+- ❌ 删除 `_call_llm_text_stream()` 方法
+- ❌ 删除 `_convert_fc_messages_to_text()` 方法
+- ❌ 删除 `mode` 参数
+- ❌ 删除 `BaseAIService` 中间层
+
+---
+
+## 五、ReAct循环详细分析
+
+### 5.1 run_react_cycle()（react_cycle.py）
+
+**文件路径**: `backend/app/services/agent/core_agent/react_cycle.py`
+
+**核心职责**:
+- 循环调度
+- 类型分派
+- 产出Step事件
+
+**实现**:
+
+```python
+async def run_react_cycle(
+    agent,
+    task: str,
+    context: Optional[Dict[str, Any]] = None,
+    max_steps: Optional[int] = None,
+    task_id: Optional[str] = None,
+):
+    """ReAct循环:调用LLM→解析→分派handler→产出Step"""
+    from app.config import get_config
+    if max_steps is None:
+        max_steps = get_config().get_max_steps()
+    
+    # 1. 初始化运行状态
+    chunk_buffer = agent._initialize_run_state(task, task_id, context)
+    
+    step_counter = [0]
+    agent.status = AgentStatus.EXECUTING
+    
+    try:
+        while step_counter[0] < max_steps:
+            # 2. 处理单步循环
+            async for event in _process_single_step(agent, step_counter, chunk_buffer):
+                yield event
+            
+            # 3. 检查是否完成
+            if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
+                break
+            
+            # 4. 检查chunk累积超时
+            if chunk_buffer.should_force_stop():
+                logger.warning(f"[run_react_cycle] chunk累积超时({step_counter[0]}步),强制停止")
+                agent.status = AgentStatus.COMPLETED
+                break
+    
+    except Exception as e:
+        logger.error(f"[run_react_cycle] 异常: {e}", exc_info=True)
+        yield agent._step_emitter.exit_with_error(
+            step_count=step_counter[0], error_type="runtime_error", error_message=str(e),
+        )
+        agent.status = AgentStatus.FAILED
+    
+    finally:
+        # 5. FAILED时补发FinalStep
+        if agent.status == AgentStatus.FAILED and agent.steps:
+            last_err = None
+            for s in reversed(agent.steps):
+                if hasattr(s, '_error_message') and getattr(s, '_error_message', None):
+                    last_err = s._error_message
+                    break
+            yield agent._step_emitter.emit(FinalStep(
+                step=step_counter[0],
+                response=last_err or "任务执行失败",
+                thought="",
+            ))
+        
+        agent._on_after_loop()
+        agent._complete_tracked_task(agent.status == AgentStatus.COMPLETED)
+```
+
+**_process_single_step()实现（FC-only）**:
+
+```python
+async def _process_single_step(agent, step_counter: list, chunk_buffer) -> AsyncGenerator:
+    """处理单步循环 — FC-only: llm_response为dict,无需parse_llm_response — 小沈 2026-06-11"""
+    step_counter[0] += 1
+
+    llm_response = None
+    async for chunk_or_response in agent._call_llm():
+        chunk_type, chunk_data = chunk_or_response
+
+        if chunk_type == "chunk":
+            yield agent._step_emitter.emit(chunk_data)
+        elif chunk_type == "response":
+            llm_response = chunk_data
+
+    if not llm_response or not isinstance(llm_response, dict):
+        logger.error(f"[run_react_cycle] _call_llm返回无效响应: {type(llm_response)}")
+        yield agent._step_emitter.exit_with_error(
+            step_count=step_counter[0], error_type="empty_response",
+            error_message="LLM返回空响应",
+        )
+        agent.status = AgentStatus.FAILED
+        return
+
+    if getattr(getattr(agent, 'llm_client', None), '_cancelled', False):
+        yield agent._create_cancelled_chunk()
+        yield agent._step_emitter.emit(FinalStep(
+            step=step_counter[0],
+            response="任务已被中断",
+            thought="",
+        ))
+        agent.status = AgentStatus.COMPLETED
+        return
+
+    parsed_type = llm_response.get("type", "answer")
+    handler = _TYPE_HANDLERS.get(parsed_type, _DEFAULT_HANDLER)
+    async for event in handler(agent, llm_response, "", step_counter, chunk_buffer):
+        yield event
+```
+
+**_TYPE_HANDLERS映射（FC-only）**:
+
+```python
+_TYPE_HANDLERS: OrderedDict[str, callable] = OrderedDict([
+    ("action", handle_action),
+    ("answer", handle_answer),
+])
+_DEFAULT_HANDLER = handle_answer
+```
+
+**分析**:
+- ✅ 薄调度设计，业务逻辑在handlers
+- ✅ llm_response现在为dict（非str），无需 `parse_llm_response()` 解析
+- ✅ 类型检查改为 `isinstance(llm_response, dict)`（原为 `str`）
+- ✅ 从 `llm_response.get("type")` 直接获取类型，跳过解析层
+- ✅ 删除了 `TOOL_REMINDER`、`_has_tool_call`、工具提醒标志位逻辑
+- ✅ 删除了 `implicit`、`chunk`、`parse_error` 3个handler类型（FC-only下只返回action或answer）
+
+### 5.2 ~~parse_llm_response()~~ **已删除（FC-only重构）**
+
+**原文件**: `backend/app/services/agent/llm_response_parser/parse_llm_response.py`
+
+**重构时删除**（2026-06-11~12 小沈）:
+- `parse_llm_response.py` 文件及目录整体删除
+- JSON roundtrip 替换为 `chunk.tool_calls` 原生消费（2026-06-12 小沈），不再需要 `parse_json()`
+- 原6步解析链（dict→list→JSONArray→Empty→StandardJSON→MixedText）→ `parse_json()` → 直接消费 `chunk.tool_calls`
+- 解析结果类型从5种（action/answer/implicit/chunk/parse_error）精简为2种（action/answer）
+
+---
+
+## 六、重构前的完整流程示例
+
+### 6.1 示例场景：用户要求读取config.json
+
+**Step 1: 用户请求**
+
+```
+用户输入: "读取C:/config.json文件内容"
+```
+
+**Step 2: 路由层处理**
+
+```python
+# chat_stream_v2.py
+intent_type = "file"  # CRSS评分判断
+agent = AgentFactory.create(intent_type="file", task_id="xxx")
+```
+
+**Step 3: Agent初始化**
+
+```python
+# UniversalAgent.__init__() — FileOperationPrompts已删除,示例仅供参考
+# config = resolve_agent_config("system")
+# self.prompts = SystemPrompts()
+# self.tool_category = ToolCategory.FUND_RUNTIME
+```
+
+**Step 4: 初始化运行状态**
+
+```python
+# _initialize_run_state()
+self._on_session_init(task, context)          # 会话初始化回调
+sys_prompt = self._get_system_prompt()
+# 组装顺序(v2.1精简化版,4段):
+# ① _get_system_info()        — 系统信息(OS/路径规则)
+# ② _get_project_context()    — 项目上下文(README.md)
+# ③ get_core_system_prompt() — 角色+业务规则
+# ④ TOOL_CALL_RULES(safety合并) — 回答要求+停止条件+执行效率
+# ※ candidates_hint+cross_tool_hint 已移除(2026-06-12 北京老陈)
+
+task_prompt = self._get_task_prompt("读取C:/config.json文件内容")
+self._on_before_loop(sys_prompt, task_prompt, context)  # loop前回调
+message_builder.init_history(sys_prompt, task_prompt)
+# conversation_history = [
+#   {"role": "system", "content": sys_prompt},
+#   {"role": "user", "content": task_prompt}
+# ]
+```
+
+**Step 5: 第一轮LLM调用（FC-only）**
+
+```python
+# _call_llm() → _call_llm_fc_stream()
+messages = message_builder.prepare_messages_for_llm()
+# messages = [
+#   {"role": "system", "content": sys_prompt},
+#   {"role": "user", "content": task_prompt}
+# ]
+
+# LLM返回(FC-only: i...内联解析,直接返回dict)
+llm_response = {
+  "type": "action",
+  "thought": "用户要读取配置文件",
+  "reasoning": "调用read_file工具",
+  "tool_name": "read_file",
+  "tool_params": {"file_paths": ["C:/config.json"]},
+  "fc_context": {"tool_call_id": "", "tool_calls": []},
+  "_pending_calls": [],
+}
+```
+
+**Step 6: ~~解析LLM响应~~（FC-only: 跳过,llm_response已是dict）**
+
+在FC-only架构中，`llm_response` 已由 `_call_llm_fc_stream()` 内联解析为dict，无需再调用 `parse_llm_response()`。`_process_single_step()` 直接从 `llm_response.get("type")` 获取类型并分派handler。
+
+**Step 7: 执行工具**
+
+```python
+# handle_action()
+result = await agent._execute_tool("read_file", {"file_paths": ["C:/config.json"]})
+# result = {
+#   "code": "SUCCESS",
+#   "data": {"content": '{"name": "myapp", "version": "1.0"}'},
+#   "message": "文件读取成功"
+# }
+```
+
+**Step 8: 构建observation（FC-only）**
+
+```python
+obs_text = build_observation_text(result, "read_file", {"file_paths": ["C:/config.json"]})
+# obs_text = "[Observation] 文件读取成功\n内容: {"name": "myapp", "version": "1.0"}"
+
+# FC-only: add_assistant()已删除,由_append_observation自动构造assistant(tool_calls)配对
+message_builder.add_observation(obs_text, llm_call_count=1, fc_context=llm_response.get("fc_context", {}))
+# conversation_history末尾追加:
+# {"role": "assistant", "tool_calls": [...]}
+# {"role": "tool", "content": "[Observation] 文件读取成功...", "tool_call_id": ""}
+```
+
+**Step 9: 第二轮LLM调用**
+
+```python
+# conversation_history(FC协议格式,role=assistant+tool_calls + role=tool):
+# [
+#   {"role": "system", "content": sys_prompt},
+#   {"role": "user", "content": task_prompt},
+#   {"role": "assistant", "tool_calls": [{"function": {"name": "read_file", "arguments": "..."}}]},
+#   {"role": "tool", "content": "[Observation] 文件读取成功...", "tool_call_id": ""}
+# ]
+
+# LLM返回(FC-only: dict格式)
+llm_response = {
+  "type": "answer",
+  "thought": "文件已成功读取",
+  "content": "文件内容: {"name": "myapp", "version": "1.0"}",
+  "tool_name": "finish",
+}
+```
+
+**Step 10: 解析并结束（FC-only）**
+
+```python
+# FC-only: llm_response已是dict,直接get("type")="answer"
+# _process_single_step()中:
+parsed_type = llm_response.get("type", "answer")  # → "answer"
+handler = _TYPE_HANDLERS.get("answer", _DEFAULT_HANDLER)  # → handle_answer
+
+# handle_answer()
+agent.status = AgentStatus.COMPLETED
+yield FinalStep(response="文件内容: ...")
+```
+
+---
+

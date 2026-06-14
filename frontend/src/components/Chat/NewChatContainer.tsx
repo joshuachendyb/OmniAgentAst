@@ -1,7 +1,7 @@
-import React, { useEffect, useCallback } from "react";
+import React, { useEffect, useCallback, useState, useRef } from "react";
 import { message, Card } from "antd";
 import { useSearchParams } from "react-router-dom";
-import { API_BASE_URL } from "../../services/api";
+import { API_BASE_URL, taskControlApi } from "../../services/api";
 import {
   STORAGE_KEY,
 } from "../../utils/chatHistory";
@@ -10,6 +10,7 @@ import ChatInput from "./ChatInput";
 import MessageArea from './MessageArea';
 import ChatHeader from './ChatHeader';
 import ChatToolbar from './ChatToolbar';
+import AuthorizationModal, { AuthorizationRequest } from '../AuthorizationModal';
 import { useChatFacade } from '../../hooks/chat/useChatFacade';
 import { useLoadingMessage } from '../../hooks/useLoadingMessage';
 import { useBeforeUnload } from '../../hooks/useBeforeUnload';
@@ -69,6 +70,56 @@ const NewChatContainer: React.FC = () => {
 
   // 解构chatSend
   const { handleSend } = chatSend;
+
+  // 【v3.4新增 2026-06-09 小沈】授权弹窗状态
+  const [authorizationPending, setAuthorizationPending] = useState<AuthorizationRequest | null>(null);
+  const authorizationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 【v3.4新增 2026-06-09 小沈】授权请求回调（从useChatCallbacks传递）
+  useEffect(() => {
+    // 通过自定义事件监听授权请求
+    const handleAuthorizationRequired = (event: CustomEvent<Record<string, unknown>>) => {
+      // 后端发送snake_case字段，前端AuthorizationModal使用camelCase
+      const rawData = event.detail;
+      setAuthorizationPending({
+        confirmId: rawData.confirm_id as string,
+        toolName: rawData.tool_name as string,
+        params: (rawData.params ?? {}) as Record<string, unknown>,
+        safetyLevel: rawData.safety_level as string,
+      });
+    };
+    
+    window.addEventListener('authorization_required', handleAuthorizationRequired as EventListener);
+    return () => {
+      window.removeEventListener('authorization_required', handleAuthorizationRequired as EventListener);
+    };
+  }, []);
+
+  // 【v3.4新增 2026-06-09 小沈】授权超时自动关闭（60秒与后端一致）
+  useEffect(() => {
+    if (authorizationPending) {
+      authorizationTimeoutRef.current = setTimeout(() => {
+        console.warn('[Authorization] 前端超时，自动拒绝');
+        // 直接发送reject请求，不调用handleAuthorizationConfirm避免循环依赖
+        fetch(`${API_BASE_URL}/chat/stream/confirm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            confirm_id: authorizationPending.confirmId,
+            confirmed: false,
+            trust_session: false,
+          }),
+        }).catch(() => { /* 超时reject失败忽略 */ });
+        setAuthorizationPending(null);
+      }, 60000);
+    }
+    return () => {
+      if (authorizationTimeoutRef.current) {
+        clearTimeout(authorizationTimeoutRef.current);
+        authorizationTimeoutRef.current = null;
+      }
+    };
+  }, [authorizationPending]);
 
   // chatPersistence 直接使用（restoreState）
 
@@ -317,6 +368,25 @@ const NewChatContainer: React.FC = () => {
     setShowExecution(!showExecution);
   }, [showExecution, setShowExecution]);
 
+  // 【v3.4新增 2026-06-09 小沈】授权确认处理
+  const handleAuthorizationConfirm = useCallback(async (confirmed: boolean, trustSession: boolean) => {
+    if (!authorizationPending) {
+      return;
+    }
+
+    try {
+      await taskControlApi.confirm(
+        authorizationPending.confirmId,
+        confirmed,
+        trustSession
+      );
+    } catch (error) {
+      console.error('[Authorization] 确认失败:', error);
+    } finally {
+      setAuthorizationPending(null);
+    }
+  }, [authorizationPending]);
+
   return (
     <Card
       styles={{ body: { padding: "0 4px 4px" } }}
@@ -368,6 +438,12 @@ const NewChatContainer: React.FC = () => {
         onSend={handleSend}
         onInterrupt={handleInterrupt}
         onTogglePause={handleTogglePause}
+      />
+
+      <AuthorizationModal
+        visible={!!authorizationPending}
+        request={authorizationPending}
+        onConfirm={handleAuthorizationConfirm}
       />
     </Card>
   );

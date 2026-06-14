@@ -1,127 +1,43 @@
-# Python
+pytest_output.txt
+test_output.txt
+*.log
 __pycache__/
 *.pyc
 *.pyo
-*.pyd
-.Python
-
-# Virtual Environment
-venv/
-env/
-.venv/
-
-# IDE
-.vscode/
+.arts/
 .idea/
+.vscode/
 *.swp
-*.swo
-*~
-
-# OS
 .DS_Store
-Thumbs.db
 
-# Test files - comprehensive patterns for all test-related files
-test_*
-*.test.py
-**/test/
-**/tests/
-**/Test/
-**/__tests__/
-**/*.test.*
-**/*.tests.*
-**/*Test.*
-**/*test.*
-**/testing/
-**/TestResults/
-**/test-reports/
-**/.test/
-**/temp_test/
-**/temp_glob_test/
-tools/latex-test/
-.planning/**/TEST-*
-.planning/**/test_*
-.planning/**/*TEST*
-.planning/**/*test*
-.planning/**/TESTING*
-reports/test_task/*.txt
+# test & reports
 backend/tests/
-frontend/tests/
-frontend/src/test/
-frontend/src/tests/
+backend/pytest-of-chend/
+reports/
 
-# Backup files
-*.backup
-*.bak
-*.orig
-
-# Configuration
-config.yaml.backup.*
-config.yaml
-
-# Logs
-*.log
-logs/
-
-# Build
-build/
-dist/
-*.egg-info/
-
-# Node modules
-node_modules/
-frontend/node_modules/
-
-# Vite cache
-.vite/
-frontend/.vite/
-
-# Test reports
-playwright-report/
-test-results/
-frontend/playwright-report/
-frontend/test-results/
-.pytest_cache/
-coverage/
-frontend/coverage/
-
-# Temp and backup
-temp/
+# logs & temp
+backend/logs/
+backend/pt*.txt
+backend/pt.txt
+backend/json_backup/
 backup/
 
-# Build outputs
-dist/
+# frontend build
 frontend/dist/
+frontend/backup/
 
-# Environment files
-.env
-.env.local
-.env.*.local
+# debug tools
+backend/tools/
+backend/verify_fixes.py
 
-# Docker
-.dockerignore
-docker-compose.override.yml
-# Windows special device names
-nul
+# test temp data
+backend/test_verify_*
 
-# Database files
-*.db
-backend/chat_app.db
-backend/data/sessions.db
-backend/data/file_operations.db
+# node_modules
+frontend/node_modules/
 
-# Arts
-.arts/
+# config (contains API keys)
+config/
 
-# Claude
-.claude/
-
-# Pytest temp
-pytest-of-*/
-backend/pytest-of-*/
-json_backup/
-backend/json_backup/
-reports/test_task/*.txt
-
-# Research
+# research docs (not project source)
 插件模型-research/

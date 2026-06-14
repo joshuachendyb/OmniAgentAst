@@ -3,12 +3,13 @@
 数据格式辅助函数模块
 
 【创建时间】2026-05-18 小沈
-【来源】从data_format目录迁入，供file_tools.py调用
+【来源】从data_format目录迁入,供file_tools.py调用
+【恢复 2026-05-29 小沈】恢复被430d1505误删的_read_json/_write_json/_parse_yaml/_write_yaml/_parse_toml/_write_toml/_detect_encoding/_truncate_dict/_read_csv_basic
 
-包含：
+包含:
 - read_json: 读取JSON文件
 - write_json: 写入JSON文件
-- read_csv_basic: 读取CSV文件（基础版）
+- read_csv_basic: 读取CSV文件(基础版)
 - parse_yaml: 读取YAML文件
 - write_yaml: 写入YAML文件
 - parse_toml: 读取TOML文件
@@ -18,59 +19,57 @@
 - parse_properties: 读取Properties文件
 """
 
-import json
+import configparser
 import csv
+import json
+import shutil
 import tempfile
-import logging
+from app.utils.time_utils import timestamp_for_filename
 from typing import Dict, Any, List, Union, Tuple
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
 from app.services.tools._response import build_success, build_error
-
-logger = logging.getLogger(__name__)
+from app.constants import (
+    ERR_DOC_READ_JSON,
+    ERR_NO_PYYAML,
+    ERR_NO_TOMLI,
+    ERR_NO_TOMLI_W,
+    ERR_PARSE_INI,
+    ERR_PARSE_PROPERTIES,
+    ERR_PARSE_TOML,
+    ERR_PARSE_XML,
+    ERR_PARSE_YAML,
+    ERR_READ_CSV_BASIC,
+    ERR_WRITE_JSON,
+    ERR_WRITE_TOML,
+    ERR_WRITE_YAML,
+)
 
 
 def _detect_encoding(path: Path, default: str = "utf-8") -> str:
-    """检测文件编码 — 小健 2026-05-25 重构拆分
-
-    使用场景:
-        _read_json/_read_csv_basic等读取函数复用
-
-    使用示例:
-        encoding = _detect_encoding(Path('test.csv'))
-
-    返回数据说明:
-        - 返回str，检测到的编码
-    """
+    """检测文件编码 - 小沈 2026-05-25 重构新增"""
     try:
         with open(path, "rb") as f:
             raw = f.read(4)
             if raw.startswith(b'\xef\xbb\xbf'):
                 return "utf-8-sig"
-            elif raw.startswith(b'\xff\xfe') or raw.startswith(b'\xfe\xff'):
-                return "utf-16"
+            elif raw.startswith(b'\xff\xfe'):
+                return "utf-16-le"
+            elif raw.startswith(b'\xfe\xff'):
+                return "utf-16-be"
             else:
                 try:
                     raw.decode("utf-8")
                     return "utf-8"
                 except UnicodeDecodeError:
-                    return "gbk"
+                    return "latin-1"  # P2-16修复: latin-1是通用fallback,不会抛异常
     except Exception:
         return default
 
 
 def _truncate_dict(d: Any, max_depth: int = 10, max_list_len: int = 100, current_depth: int = 0) -> Tuple[Any, bool]:
-    """截断嵌套字典/列表 — 小健 2026-05-25 重构拆分
-
-    使用场景:
-        _read_json中限制返回数据深度
-
-    使用示例:
-        truncated_data, is_truncated = _truncate_dict(data, max_depth=10)
-
-    返回数据说明:
-        - 返回Tuple[Any, bool]，截断后的数据和是否被截断
-    """
+    """截断嵌套字典/列表 - 小沈 2026-05-25 重构新增"""
     if current_depth >= max_depth:
         return {"__truncated__": True, "depth": current_depth}, True
     if isinstance(d, dict):
@@ -93,21 +92,11 @@ def _truncate_dict(d: Any, max_depth: int = 10, max_list_len: int = 100, current
 
 
 def _read_json(file_path: str, encoding: str = "auto_detect", max_depth: int = 10) -> Dict[str, Any]:
-    """读取JSON文件内容 — 小健 2026-05-25 重构拆分
-
-    使用场景:
-        data_file_format工具读取JSON文件
-
-    使用示例:
-        result = _read_json('test.json', max_depth=5)
-
-    返回数据说明:
-        - 返回Dict，包含解析后的数据和截断状态
-    """
+    """读取JSON文件内容 - 小沈 2026-05-25 重构"""
     try:
         path = Path(file_path)
         if not path.exists():
-            return build_error("ERR_DOC_READ_JSON", f"文件不存在: {file_path}")
+            return build_error(ERR_DOC_READ_JSON, f"文件不存在: {file_path}")
 
         actual_encoding = _detect_encoding(path) if encoding == "auto_detect" else encoding
         with open(path, "r", encoding=actual_encoding) as f:
@@ -120,26 +109,24 @@ def _read_json(file_path: str, encoding: str = "auto_detect", max_depth: int = 1
         return build_success(
             data,
             f"成功读取JSON文件: {file_path}",
-            llm_data={"文件": file_path, "数据": data, "已截断": truncated},
+            llm_data={"文件": file_path, "内容": data, "已截断": truncated},
             metadata={"truncated": truncated, "max_depth": max_depth, "file_path": file_path},
         )
     except json.JSONDecodeError as e:
-        return build_error("ERR_DOC_READ_JSON", f"JSON解析失败: {str(e)}")
+        return build_error(ERR_DOC_READ_JSON, f"JSON解析失败: {str(e)}")
     except Exception as e:
-        return build_error("ERR_DOC_READ_JSON", f"读取JSON文件失败: {str(e)}")
+        return build_error(ERR_DOC_READ_JSON, f"读取JSON文件失败: {str(e)}")
 
 
 def _write_json(file_path: str, data: Union[Dict[str, Any], List[Any]], encoding: str = "utf-8", indent: int = 2, ensure_ascii: bool = False, backup_before_write: bool = True, create_parents: bool = True) -> Dict[str, Any]:
     """写入数据到JSON文件 - 小沈 2026-05-03, 修正 2026-05-05"""
-    import shutil
-    from datetime import datetime
     try:
         path = Path(file_path)
         backup_created = False
         if backup_before_write and path.exists():
             backup_dir = Path(tempfile.gettempdir()) / "json_backup"
             backup_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = timestamp_for_filename()
             backup_path = backup_dir / f"{path.stem}_{timestamp}{path.suffix}"
             shutil.copy2(path, backup_path)
             backup_created = backup_path.exists()
@@ -149,25 +136,15 @@ def _write_json(file_path: str, data: Union[Dict[str, Any], List[Any]], encoding
             json.dump(data, f, indent=indent, ensure_ascii=ensure_ascii)
         return build_success({"file_path": file_path, "backup_created": backup_created}, f"成功写入JSON文件: {file_path}")
     except Exception as e:
-        return build_error("ERR_WRITE_JSON", f"写入JSON文件失败: {str(e)}")
+        return build_error(ERR_WRITE_JSON, f"写入JSON文件失败: {str(e)}")
 
 
 def _read_csv_basic(file_path: str, encoding: str = "auto_detect", delimiter: str = "auto_detect", has_header: bool = True, max_rows: int = 500, skip_blank_lines: bool = True) -> Dict[str, Any]:
-    """读取CSV文件内容（基础版）- 小健 2026-05-25 重构
-
-    使用场景:
-        data_file_format工具读取CSV文件
-
-    使用示例:
-        result = _read_csv_basic('test.csv', has_header=True)
-
-    返回数据说明:
-        - 返回Dict，包含headers/rows/total_rows
-    """
+    """读取CSV文件内容(基础版)- 小沈 2026-05-25 重构"""
     try:
         path = Path(file_path)
         if not path.exists():
-            return build_error("ERR_READ_CSV_BASIC", f"文件不存在: {file_path}")
+            return build_error(ERR_READ_CSV_BASIC, f"文件不存在: {file_path}")
 
         actual_encoding = _detect_encoding(path) if encoding == "auto_detect" else encoding
 
@@ -202,9 +179,9 @@ def _read_csv_basic(file_path: str, encoding: str = "auto_detect", delimiter: st
                         break
         if not has_header and rows:
             headers = [f"column_{i}" for i in range(len(rows[0]))] if rows else []
-        return build_success({"headers": headers, "rows": rows, "total_rows": len(rows)}, f"成功读取CSV文件: {file_path}，共 {len(rows)} 行")
+        return build_success({"headers": headers, "rows": rows, "total_rows": len(rows)}, f"成功读取CSV文件: {file_path},共 {len(rows)} 行")
     except Exception as e:
-        return build_error("ERR_READ_CSV_BASIC", f"读取CSV文件失败: {str(e)}")
+        return build_error(ERR_READ_CSV_BASIC, f"读取CSV文件失败: {str(e)}")
 
 
 def _parse_yaml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
@@ -213,14 +190,14 @@ def _parse_yaml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
         import yaml
         path = Path(file_path)
         if not path.exists():
-            return build_error("ERR_PARSE_YAML", f"文件不存在: {file_path}")
+            return build_error(ERR_PARSE_YAML, f"文件不存在: {file_path}")
         with open(path, "r", encoding=encoding) as f:
             data = yaml.safe_load(f)
         return build_success(data, f"成功读取YAML文件: {file_path}")
     except ImportError:
-        return build_error("ERR_NO_PYYAML", "PyYAML库未安装，请先执行: pip install pyyaml")
+        return build_error(ERR_NO_PYYAML, "PyYAML未安装,请执行: pip install pyyaml")
     except Exception as e:
-        return build_error("ERR_PARSE_YAML", f"读取YAML失败: {str(e)}")
+        return build_error(ERR_PARSE_YAML, f"读取YAML失败: {str(e)}")
 
 
 def _write_yaml(file_path: str, data: Any, encoding: str = "utf-8", indent: int = 2) -> Dict[str, Any]:
@@ -233,9 +210,65 @@ def _write_yaml(file_path: str, data: Any, encoding: str = "utf-8", indent: int 
             yaml.safe_dump(data, f, allow_unicode=True, indent=indent)
         return build_success({"file_path": file_path}, f"成功写入YAML文件: {file_path}")
     except ImportError:
-        return build_error("ERR_NO_PYYAML", "PyYAML库未安装，请先执行: pip install pyyaml")
+        return build_error(ERR_NO_PYYAML, "PyYAML未安装,请执行: pip install pyyaml")
     except Exception as e:
-        return build_error("ERR_WRITE_YAML", f"写入YAML失败: {str(e)}")
+        return build_error(ERR_WRITE_YAML, f"写入YAML失败: {str(e)}")
+
+
+def _write_yaml_ordered(file_path: str, data: Any, encoding: str = "utf-8", indent: int = 2) -> Dict[str, Any]:
+    """有序Key写入YAML文件(保持特定顺序) - 小沈 2026-06-09
+    
+    合并 app/api/v1/ai_config/_helpers.py 的 _write_yaml_with_order,
+    消除重复YAML写入逻辑。
+    
+    Args:
+        file_path: 文件路径
+        data: 要写入的数据
+        encoding: 编码,默认utf-8
+        indent: 缩进,默认2
+    
+    Returns:
+        统一格式响应dict
+    """
+    try:
+        import yaml
+        from collections import OrderedDict
+        
+        def _ordered_dict(d):
+            """递归构建有序字典,保持ai字段在前"""
+            if not isinstance(d, dict):
+                return d
+            result = OrderedDict()
+            if 'ai' in d:
+                ai_data = d['ai']
+                ai_ordered = OrderedDict()
+                if 'provider' in ai_data:
+                    ai_ordered['provider'] = ai_data['provider']
+                if 'model' in ai_data:
+                    ai_ordered['model'] = ai_data['model']
+                for key in sorted(ai_data.keys()):
+                    if key not in ('provider', 'model'):
+                        ai_ordered[key] = _ordered_dict(ai_data[key]) if isinstance(ai_data[key], dict) else ai_data[key]
+                result['ai'] = ai_ordered
+            for key in sorted(d.keys()):
+                if key != 'ai':
+                    result[key] = _ordered_dict(d[key]) if isinstance(d[key], dict) else d[key]
+            return result
+        
+        path = Path(file_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding=encoding) as f:
+            yaml.dump(_ordered_dict(data), f, allow_unicode=True, default_flow_style=False, indent=indent)
+        return build_success({"file_path": file_path}, f"成功写入YAML文件(有序): {file_path}")
+    except ImportError:
+        return build_error(ERR_NO_PYYAML, "PyYAML未安装,请执行: pip install pyyaml")
+    except Exception as e:
+        return build_error(ERR_WRITE_YAML, f"写入YAML失败: {str(e)}")
+
+
+def write_yaml_ordered(file_path: str, data: Any, encoding: str = "utf-8", indent: int = 2) -> Dict[str, Any]:
+    """公共接口：使用OrderedDict写入YAML — 小沈 2026-06-09"""
+    return _write_yaml_ordered(file_path, data, encoding, indent)
 
 
 def _parse_toml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
@@ -244,14 +277,14 @@ def _parse_toml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
         import tomli
         path = Path(file_path)
         if not path.exists():
-            return build_error("ERR_PARSE_TOML", f"文件不存在: {file_path}")
+            return build_error(ERR_PARSE_TOML, f"文件不存在: {file_path}")
         with open(path, "rb") as f:
             data = tomli.load(f)
         return build_success(data, f"成功读取TOML文件: {file_path}")
     except ImportError:
-        return build_error("ERR_NO_TOMLI", "tomli库未安装，请先执行: pip install tomli")
+        return build_error(ERR_NO_TOMLI, "tomli未安装,请执行: pip install tomli")
     except Exception as e:
-        return build_error("ERR_PARSE_TOML", f"读取TOML失败: {str(e)}")
+        return build_error(ERR_PARSE_TOML, f"读取TOML失败: {str(e)}")
 
 
 def _write_toml(file_path: str, data: Dict[str, Any], encoding: str = "utf-8") -> Dict[str, Any]:
@@ -264,18 +297,17 @@ def _write_toml(file_path: str, data: Dict[str, Any], encoding: str = "utf-8") -
             tomli_w.dump(data, f)
         return build_success({"file_path": file_path}, f"成功写入TOML文件: {file_path}")
     except ImportError:
-        return build_error("ERR_NO_TOMLI_W", "tomli_w库未安装，请先执行: pip install tomli-w")
+        return build_error(ERR_NO_TOMLI_W, "tomli_w未安装,请执行: pip install tomli-w")
     except Exception as e:
-        return build_error("ERR_WRITE_TOML", f"写入TOML失败: {str(e)}")
+        return build_error(ERR_WRITE_TOML, f"写入TOML失败: {str(e)}")
 
 
 def _parse_ini(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
     """读取INI配置文件 - 小沈 2026-05-04"""
     try:
-        import configparser
         path = Path(file_path)
         if not path.exists():
-            return build_error("ERR_PARSE_INI", f"文件不存在: {file_path}")
+            return build_error(ERR_PARSE_INI, f"文件不存在: {file_path}")
         config = configparser.ConfigParser()
         config.read(path, encoding=encoding)
         result = {}
@@ -283,16 +315,15 @@ def _parse_ini(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
             result[section] = dict(config[section])
         return build_success(result, f"成功读取INI文件: {file_path}")
     except Exception as e:
-        return build_error("ERR_PARSE_INI", f"读取INI失败: {str(e)}")
+        return build_error(ERR_PARSE_INI, f"读取INI失败: {str(e)}")
 
 
 def _parse_xml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
     """读取XML文件内容 - 小沈 2026-05-04"""
     try:
-        import xml.etree.ElementTree as ET
         path = Path(file_path)
         if not path.exists():
-            return build_error("ERR_PARSE_XML", f"文件不存在: {file_path}")
+            return build_error(ERR_PARSE_XML, f"文件不存在: {file_path}")
         tree = ET.parse(path)
         root = tree.getroot()
 
@@ -314,7 +345,7 @@ def _parse_xml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
         data = {root.tag: elem_to_dict(root)}
         return build_success(data, f"成功读取XML文件: {file_path}")
     except Exception as e:
-        return build_error("ERR_PARSE_XML", f"读取XML失败: {str(e)}")
+        return build_error(ERR_PARSE_XML, f"读取XML失败: {str(e)}")
 
 
 def _parse_properties(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
@@ -322,7 +353,7 @@ def _parse_properties(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]
     try:
         path = Path(file_path)
         if not path.exists():
-            return build_error("ERR_PARSE_PROPERTIES", f"文件不存在: {file_path}")
+            return build_error(ERR_PARSE_PROPERTIES, f"文件不存在: {file_path}")
         result = {}
         with open(path, "r", encoding=encoding) as f:
             for line in f:
@@ -336,4 +367,4 @@ def _parse_properties(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]
                         result[key.strip()] = val.strip()
         return build_success(result, f"成功读取Properties文件: {file_path}")
     except Exception as e:
-        return build_error("ERR_PARSE_PROPERTIES", f"读取Properties失败: {str(e)}")
+        return build_error(ERR_PARSE_PROPERTIES, f"读取Properties失败: {str(e)}")

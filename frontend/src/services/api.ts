@@ -148,18 +148,6 @@ export const chatApi = {
     return response.data;
   },
 
-  /**
-   * 切换AI提供商 - 已存在API
-   * @author 小新
-   */
-  switchProvider: async (
-    provider: "zhipuai" | "opencode"
-  ): Promise<ValidateResponse> => {
-    const response = await api.post<ValidateResponse>(
-      `/chat/switch/${provider}`
-    );
-    return response.data;
-  },
 };
 
 // ============================================
@@ -855,32 +843,12 @@ interface TaskControlResponse {
 }
 
 /**
- * 分页数据响应类型
- */
-interface NextPageResponse {
-  success: boolean;
-  data?: unknown;
-  next_page_token?: string;
-  has_more: boolean;
-}
-
-/**
  * 用户确认请求类型
  */
 interface ConfirmRequest {
-  task_id: string;
+  confirm_id: string;
   confirmed: boolean;
-  modified_command?: string;
-}
-
-/**
- * 分页数据请求类型
- */
-interface NextPageRequest {
-  task_id: string;
-  tool_name: string;
-  tool_params?: Record<string, unknown>;
-  next_page_token: string;
+  trust_session?: boolean;
 }
 
 /**
@@ -939,55 +907,29 @@ export const taskControlApi = {
    * 用户确认操作
    * POST /api/v1/chat/stream/confirm
    * 
-   * @param taskId 任务ID
+   * @param confirmId 确认ID
    * @param confirmed 用户选择：true=确认执行，false=拒绝执行
-   * @param modifiedCommand 可选，修改后的命令
+   * @param trustSession 可选，是否信任本次会话
    * @returns 确认结果
    */
   confirm: async (
-    taskId: string, 
+    confirmId: string, 
     confirmed: boolean, 
-    modifiedCommand?: string
+    trustSession?: boolean
   ): Promise<TaskControlResponse> => {
     const body: ConfirmRequest = {
-      task_id: taskId,
+      confirm_id: confirmId,
       confirmed: confirmed,
     };
     
-    if (modifiedCommand) {
-      body.modified_command = modifiedCommand;
+    if (trustSession !== undefined) {
+      body.trust_session = trustSession;
     }
     
     const response = await api.post<TaskControlResponse>('/chat/stream/confirm', body);
     return response.data;
   },
 
-  /**
-   * 请求分页数据
-   * POST /api/v1/chat/stream/next-page
-   * 
-   * @param taskId 任务ID
-   * @param toolName 工具名称
-   * @param toolParams 工具参数（如 dir_path）
-   * @param nextPageToken 分页令牌
-   * @returns 分页数据结果
-   */
-  nextPage: async (
-    taskId: string, 
-    toolName: string, 
-    toolParams: Record<string, unknown>,
-    nextPageToken: string
-  ): Promise<NextPageResponse> => {
-    const body: NextPageRequest = {
-      task_id: taskId,
-      tool_name: toolName,
-      tool_params: toolParams,
-      next_page_token: nextPageToken,
-    };
-    
-    const response = await api.post<NextPageResponse>('/chat/stream/next-page', body);
-    return response.data;
-  },
 };
 
 export default api;

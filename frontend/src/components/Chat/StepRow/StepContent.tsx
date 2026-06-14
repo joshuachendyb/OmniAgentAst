@@ -28,10 +28,7 @@ import {
   Spacing,
   type StepType,
 } from '../../../utils/stepStyles';
-import {
-  formatStepContent,
-  formatReasoningContent,
-} from '../../../utils/stepContentUtils';
+import { formatStepContent } from '../../../utils/stepContentUtils';
 
 interface StepContentProps {
   step: ExecutionStep;
@@ -137,10 +134,7 @@ const StepContent: React.FC<StepContentProps> = ({
         (() => {
           // 【改造 2026-05-22 小沈】使用统一渲染组件
           // 【修复 2026-05-22 小资】一次性安全解构，添加完整性验证
-          const obsStep = step as ExecutionStep & {
-            observation?: unknown;
-            code?: string;
-          };
+          const obsStep = step;
 
           // 兼容两种格式，正确处理null（typeof null === 'object'）
           const isObjFormat =
@@ -230,8 +224,7 @@ const StepContent: React.FC<StepContentProps> = ({
         <div style={getStepStyle('start' as StepType)}>
           <div style={getStepTitleStyle('start' as StepType)}>
             🚀 用户消息：
-            {(step as ExecutionStep & Record<string, unknown>).user_message ||
-              '(无)'}
+            {step.user_message || '(无)'}
           </div>
           <div
             style={{
@@ -296,9 +289,7 @@ const StepContent: React.FC<StepContentProps> = ({
             )}
             <span style={{ flex: 1 }} />
           </div>
-          {(step as ExecutionStep & Record<string, unknown>).provider ||
-          (step as ExecutionStep & Record<string, unknown>).model ||
-          (step as ExecutionStep & Record<string, unknown>).display_name ? (
+          {step.provider || step.model || step.display_name ? (
             <div
               style={{
                 marginTop: 4,
@@ -308,7 +299,7 @@ const StepContent: React.FC<StepContentProps> = ({
                 gap: 12,
               }}
             >
-              {(step as ExecutionStep & Record<string, unknown>).provider && (
+              {step.provider && (
                 <span>
                   <span
                     style={{
@@ -324,11 +315,11 @@ const StepContent: React.FC<StepContentProps> = ({
                       fontWeight: FontWeight.MEDIUM,
                     }}
                   >
-                    {(step as ExecutionStep & Record<string, unknown>).provider}
+                    {step.provider}
                   </span>
                 </span>
               )}
-              {(step as ExecutionStep & Record<string, unknown>).model && (
+              {step.model && (
                 <span>
                   <span
                     style={{
@@ -344,12 +335,11 @@ const StepContent: React.FC<StepContentProps> = ({
                       fontWeight: FontWeight.MEDIUM,
                     }}
                   >
-                    {(step as ExecutionStep & Record<string, unknown>).model}
+                    {step.model}
                   </span>
                 </span>
               )}
-              {(step as ExecutionStep & Record<string, unknown>)
-                .display_name && (
+              {step.display_name && (
                 <span>
                   <span
                     style={{
@@ -365,10 +355,7 @@ const StepContent: React.FC<StepContentProps> = ({
                       fontWeight: FontWeight.MEDIUM,
                     }}
                   >
-                    {
-                      (step as ExecutionStep & Record<string, unknown>)
-                        .display_name
-                    }
+                    {step.display_name}
                   </span>
                 </span>
               )}
@@ -385,8 +372,7 @@ const StepContent: React.FC<StepContentProps> = ({
             wordBreak: 'break-word',
           }}
         >
-          {(step as ExecutionStep & Record<string, unknown>).thought ||
-          (step as ExecutionStep & Record<string, unknown>).reasoning ? (
+          {step.thought || step.reasoning ? (
             <div
               style={{
                 marginBottom: 10,
@@ -396,7 +382,7 @@ const StepContent: React.FC<StepContentProps> = ({
               }}
             >
               {/* 【修复 2026-05-05 小沈】thought用小字竖线样式 */}
-              {(step as ExecutionStep & Record<string, unknown>).thought && (
+              {step.thought && (
                 <div
                   style={{
                     marginTop: 8,
@@ -412,14 +398,12 @@ const StepContent: React.FC<StepContentProps> = ({
                     💭 思考:
                   </span>
                   <span style={{ color: '#666' }}>
-                    {formatStepContent(
-                      (step as ExecutionStep & Record<string, unknown>).thought
-                    )}
+                    {formatStepContent(step.thought)}
                   </span>
                 </div>
               )}
               {/* 【修复 2026-05-05 小沈】reasoning用卡片大字样式 */}
-              {(step as ExecutionStep & Record<string, unknown>).reasoning && (
+              {step.reasoning && (
                 <div
                   style={{
                     padding: '12px 16px',
@@ -458,10 +442,7 @@ const StepContent: React.FC<StepContentProps> = ({
                       fontWeight: 500,
                     }}
                   >
-                    {formatReasoningContent(
-                      (step as ExecutionStep & Record<string, unknown>)
-                        .reasoning
-                    )}
+                    {formatStepContent(step.reasoning)}
                   </div>
                 </div>
               )}
@@ -478,9 +459,8 @@ const StepContent: React.FC<StepContentProps> = ({
             }}
           >
             {renderToolInfo(
-              (step as ExecutionStep & Record<string, unknown>).tool_name,
-              (step as ExecutionStep & Record<string, unknown>)
-                .tool_params as Record<string, unknown>,
+              step.tool_name,
+              step.tool_params as Record<string, unknown>,
               {
                 prefix: '⬇️ 下一步：',
                 bgColor: 'transparent',
@@ -491,7 +471,7 @@ const StepContent: React.FC<StepContentProps> = ({
       )}
       {step.type === 'final' && (
         <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-          {(step as ExecutionStep & Record<string, unknown>).thought && (
+          {step.thought && (
             <div
               style={{
                 fontSize: '12px',
@@ -502,48 +482,30 @@ const StepContent: React.FC<StepContentProps> = ({
                 borderLeft: '2px solid #d9d9d9',
               }}
             >
-              思考:{' '}
-              {formatStepContent(
-                (step as ExecutionStep & Record<string, unknown>).thought
-              )}
+              思考: {formatStepContent(step.thought)}
             </div>
           )}
           <span style={{ fontSize: 13, color: '#333' }}>
-            {formatStepContent(
-              (step as ExecutionStep & Record<string, unknown>).response
-            )}
+            {formatStepContent(step.response)}
           </span>
         </div>
       )}
       {step.type === 'error' && (
         <ErrorDetail
-          errorType={
-            (step as ExecutionStep & Record<string, unknown>).error_type
-          }
-          errorMessage={
-            step.error_message ||
-            (step as ExecutionStep & Record<string, unknown>).message
-          }
+          errorType={step.error_type}
+          errorMessage={step.error_message || step.message}
           errorTimestamp={
             typeof step.timestamp === 'number'
               ? new Date(step.timestamp).toISOString()
               : String(step.timestamp)
           }
-          errorDetails={
-            (step as ExecutionStep & Record<string, unknown>).details
-          }
-          errorStack={(step as ExecutionStep & Record<string, unknown>).stack}
-          errorRetryAfter={
-            (step as ExecutionStep & Record<string, unknown>).retry_after
-          }
-          model={(step as ExecutionStep & Record<string, unknown>).model}
-          provider={(step as ExecutionStep & Record<string, unknown>).provider}
-          errorRecoverable={
-            (step as ExecutionStep & Record<string, unknown>).recoverable
-          }
-          errorContext={
-            (step as ExecutionStep & Record<string, unknown>).context
-          }
+          errorDetails={step.details}
+          errorStack={step.stack}
+          errorRetryAfter={step.retry_after}
+          model={step.model}
+          provider={step.provider}
+          errorRecoverable={step.recoverable}
+          errorContext={step.context}
         />
       )}
       {(step.type === 'interrupted' ||

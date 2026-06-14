@@ -1,6 +1,6 @@
 """
 配置管理模块
-统一管理应用配置，支持从YAML文件和环境变量加载
+统一管理应用配置,支持从YAML文件和环境变量加载
 """
 
 import os
@@ -10,69 +10,66 @@ from pathlib import Path
 
 class Config:
     """配置管理类"""
-    
-    _instance: Optional['Config'] = None
+
     _config_data: Optional[Dict[str, Any]] = None
-    _config_mtime: Optional[float] = None  # 配置文件修改时间，用于缓存检测
-    
-    def __new__(cls):
-        """单例模式"""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._load_config()
-        return cls._instance
+    _config_mtime: Optional[float] = None  # 配置文件修改时间,用于缓存检测
     
     def _load_config(self):
-        """加载配置文件 - 带缓存优化（双保险）"""
+        """加载配置文件（高层编排，只负责流程控制）
+        
+        【修复S-2 2026-06-08 小沈】拆分为私有方法，遵守SLAP原则
+        """
         config_path = self._get_config_path()
         
-        # ⭐ 保险1：文件不存在时处理
-        if not config_path.exists():
-            raise FileNotFoundError(
-                f"配置文件不存在: {config_path}。"
-                "请在前端创建配置文件或手动创建 config/config.yaml"
-            )
+        self._check_config_exists(config_path)
         
-        # ⭐ 保险2：时间戳检查 - 如果缓存存在且mtime相同，使用缓存
-        new_mtime = config_path.stat().st_mtime
-        if self._config_data is not None and self._config_mtime == new_mtime:
-            # 配置文件未变更，使用缓存
+        if self._is_cache_valid(config_path):
             return
         
-        # 从文件加载配置
+        self._load_from_file(config_path)
+        self._apply_env_overrides()
+    
+    def _check_config_exists(self, config_path: Path) -> None:
+        """检查配置文件是否存在"""
+        if not config_path.exists():
+            raise FileNotFoundError(
+                f"配置文件不存在：{config_path}。"
+                "请在前端创建配置文件或手动创建 config/config.yaml"
+            )
+    
+    def _is_cache_valid(self, config_path: Path) -> bool:
+        """检查缓存是否有效"""
+        new_mtime = config_path.stat().st_mtime
+        return self._config_data is not None and self._config_mtime == new_mtime
+    
+    def _load_from_file(self, config_path: Path) -> None:
+        """从文件加载配置"""
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 self._config_data = yaml.safe_load(f)
             
-            # 配置文件不能为空
             if not self._config_data:
                 raise ValueError("配置文件为空，请检查 config/config.yaml")
         except (yaml.YAMLError, ValueError) as e:
             raise RuntimeError(
-                f"加载配置文件失败: {e}。"
+                f"加载配置文件失败：{e}。"
                 "请检查 config/config.yaml 格式是否正确"
             )
         
-        # ⭐ 更新mtime
-        self._config_mtime = new_mtime
-        
-        # 环境变量覆盖
-        self._apply_env_overrides()
+        self._config_mtime = config_path.stat().st_mtime
     
     def _get_config_path(self) -> Path:
         """获取配置文件路径"""
-        # 优先使用环境变量指定的路径
         env_path = os.getenv('OMNIAGENT_CONFIG_PATH')
         if env_path:
             return Path(env_path)
-        
-        # 【修复】项目根目录是backend的父目录
-        # backend/app/config.py -> .parent=app -> .parent=backend -> .parent=项目根目录
-        base_dir = Path(__file__).parent.parent.parent
-        return base_dir / "config" / "config.yaml"
+
+        # 延迟导入:避免 utils/paths.py 依赖 config 导致循环导入
+        from app.utils.paths import get_config_path
+        return Path(get_config_path())
     
     def _apply_env_overrides(self):
-        """应用环境变量覆盖 — 通用模式：{PROVIDER}_API_KEY 自动匹配 — 小健 2026-05-24"""
+        """应用环境变量覆盖 — 通用模式:{PROVIDER}_API_KEY 自动匹配 — 小健 2026-05-24"""
         ai_config = self._config_data.get('ai', {})
         
         for provider_name, provider_config in ai_config.items():
@@ -96,7 +93,7 @@ class Config:
         获取配置项
         
         Args:
-            key: 配置键，支持点号分隔（如 'ai.provider'）
+            key: 配置键,支持点号分隔(如 'ai.provider')
             default: 默认值
             
         Returns:
@@ -113,125 +110,35 @@ class Config:
         
         return value
     
-    def get_ai_config(self, provider: Optional[str] = None) -> Dict[str, Any]:
-        """
-        获取AI配置
-        
-        Args:
-            provider: 提供商名称，如果不指定则使用默认提供商
-            
-        Returns:
-            AI配置字典
-        """
-        if provider is None:
-            provider = self.get('ai.provider')
-            if not provider:
-                ai_config = self.get('ai', {})
-                for key, val in ai_config.items():
-                    if isinstance(val, dict) and val.get('models'):
-                        provider = key
-                        break
-                provider = provider or 'zhipuai'
-        
-        return self.get(f'ai.{provider}', {})
-    
-    def get_api_key(self, provider: Optional[str] = None) -> str:
-        """
-        获取API密钥
-        
-        Args:
-            provider: 提供商名称
-            
-        Returns:
-            API密钥
-        """
-        ai_config = self.get_ai_config(provider)
-        return ai_config.get('api_key', '')
-    
+
     def get_max_steps(self, default: int = 100) -> int:
         """
         获取max_steps配置 - 统一入口
-        
+
         Args:
             default: 默认值
-            
+
         Returns:
             max_steps值
         """
         return self.get('app.max_steps', default)
-    
-    def get_ai_provider_model(self) -> tuple[str, str]:
-        """
-        获取AI provider和model（含fallback逻辑）- 统一入口
-        
-        Fallback逻辑（2026-05-14 小健从routes.py移入）：
-        1. 找第一个有models的provider作为fallback
-        2. 检查ai.provider和ai.model是否有效
-        3. 使用有效配置或fallback
-        
-        Returns:
-            (provider, model) 元组
-        """
-        ai_config = self.get('ai', {})
-        
-        # 1. 找fallback provider（第一个有models的）
-        fallback_provider = ''
-        fallback_model = ''
-        for provider_name in ai_config.keys():
-            if provider_name in ('provider', 'model'):
-                continue
-            provider_data = ai_config.get(provider_name, {})
-            if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
-                fallback_provider = provider_name
-                fallback_model = provider_data['models'][0]
-                break
-        
-        # 2. 检查当前配置是否有效
-        selected_provider = ai_config.get('provider', '')
-        selected_model = ai_config.get('model', '')
-        
-        is_valid = (
-            selected_provider and 
-            selected_provider in ai_config and 
-            'models' in ai_config[selected_provider] and 
-            selected_model and 
-            selected_model in ai_config[selected_provider]['models']
-        )
-        
-        # 3. 返回有效配置或fallback
-        if is_valid:
-            return (selected_provider, selected_model)
-        else:
-            return (fallback_provider, fallback_model)
-    
-    def get_log_config(self) -> Dict[str, Any]:
-        """
-        获取日志配置 - 统一入口
-        
-        Returns:
-            日志配置字典
-        """
-        return self.get('logging', {})
-    
+
+    def get_max_context_chars(self, default: int = 500000) -> int:
+        """获取max_context_chars配置 — 对话历史字符上限"""
+        return self.get('app.max_context_chars', default)
+
     def reload(self):
         """重新加载配置 - 强制清空缓存"""
-        # 清空缓存，强制重新加载
         self._config_data = None
         self._config_mtime = None
         self._load_config()
-    
-    @property
-    def raw_config(self) -> Dict[str, Any]:
-        """获取原始配置字典"""
-        return self._config_data.copy()
-
 
 # 全局配置实例
 _config_instance: Optional[Config] = None
 
 def get_config() -> Config:
     """
-    获取配置实例
+    获取配置实例 — 唯一公共API
     
     Returns:
         Config: 配置管理实例
@@ -239,30 +146,5 @@ def get_config() -> Config:
     global _config_instance
     if _config_instance is None:
         _config_instance = Config()
+        _config_instance._load_config()
     return _config_instance
-
-
-# 便捷函数
-def get(key: str, default: Any = None) -> Any:
-    """获取配置项"""
-    return get_config().get(key, default)
-
-def get_ai_config(provider: Optional[str] = None) -> Dict[str, Any]:
-    """获取AI配置"""
-    return get_config().get_ai_config(provider)
-
-def get_api_key(provider: Optional[str] = None) -> str:
-    """获取API密钥"""
-    return get_config().get_api_key(provider)
-
-def get_max_steps(default: int = 100) -> int:
-    """获取max_steps配置"""
-    return get_config().get_max_steps(default)
-
-def get_ai_provider_model() -> tuple[str, str]:
-    """获取AI provider和model（含fallback逻辑）"""
-    return get_config().get_ai_provider_model()
-
-def get_log_config() -> Dict[str, Any]:
-    """获取日志配置"""
-    return get_config().get_log_config()

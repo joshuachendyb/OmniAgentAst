@@ -1,20 +1,23 @@
 # AGENTS.md - OmniAgentAs-desk
 
-**Version**: v0.13.33 | **Project**: Full-stack (React+FastAPI) AI agent desktop
 
-> Global rules (roles, timestamps, commit format, versioning, doc style) are in `C:\Users\chend\.config\opencode\AGENTS.md` (auto-loaded).
-> This file contains **project-specific** info only.
+### 1.1 头条铁规：分析问题、写文档、注释、commit规则，升级tag
+**系统**：本机是Windows系统，必须使用Windows系统命令。杜绝使用Linux命令
+**写文档签名规则**：（1）文档名称 +签名+时间； （2）内容签名： 编写人 或者 更新人 + 签名  （3）编辑型文档， 禁止删除历史版本。
+**代码注释规则**：必须 加署名+日期
+**commit标题的规则**:   commit标题必须加：文件名+ 签名+日期
 
+**升级tag**：1..在version.txt文件头部插入从上一个tag以来的所有commit的变更信息，2.打 tag
+
+
+**严禁** 用PowerShell 来操作代码编辑\替换,否则导致代码编码错误
 ---
 
-## 编码铁规（必须遵守）
+## 编码铁规（必须遵守）--10大原则 — 日常6条 + 重构再加4条
 
-**生效时间**: 2026-05-26 06:40:00 | **适用范围**: 所有代码文件
-**更新人**: 北京老陈
+**适用范围**: 所有代码文件
 
-### 八大原则 — 日常5 + 重构再加3
-
-**日常编码必须遵守以下 5 条**：
+**日常编码必须遵守以下 6 条**：
 
 | 原则 | 说明 | 违反后果 |
 |------|------|---------|
@@ -23,18 +26,31 @@
 | **KISS** — 保持简单 | 能简单不复杂，不提前引入抽象 | 代码绕来绕去看不懂 |
 | **SLAP** — 同一抽象层 | 一个函数不混搭高层编排和底层细节 | 读代码像读天书 |
 | **YAGNI** — 不要过度设计 | 不加用不上的接口/模式/抽象 | 废弃代码越积越多 |
+|禁止backward compatibility|--所有的代码修改,更新 重构 坚决杜绝向后兼容的一起做法|
 
-**代码重构/框架设计时，在上述 5 条基础上再遵守以下 3 条**：
+**代码重构/框架设计时，在上述 6 条基础上再遵守以下 4 条**：
 
 | 原则 | 说明 | 适用场景 |
 |------|------|---------|
 | **OCP** — 开闭原则 | 对扩展开放，对修改封闭 | 库/框架/公共组件设计 |
 | **LSP** — 里氏替换 | 子类不违反父类约定 | 继承体系 |
 | **ISP** — 接口隔离 | 接口职责单一，不塞入不相关方法 | 多实现/插件系统 |
-
+| **复用优先** | 有公用则复用，能够公用的则新建并入库 | 新增函数前必须先查FUNCTIONS.md，禁止局部重造轮子 |
 ### 违反后果
 上述原则是必须遵守的编码纪律。违反者代码被打回重写，直到符合原则为止。
 
+### 公用函数规范（必须遵守）
+
+| 规则 | 说明 |
+|------|------|
+| **先查后建** | 写代码前先查`app/utils/FUNCTIONS.md`清单，有则复用，无则新建 |
+| **分层存放** | 全局层`app/utils/`、Agent层`agent_utils/`、工具层`toolhelper/` |
+| **禁止重复** | 相同逻辑禁止重复实现，必须使用已有公用函数 |
+| **及时更新** | 新建公用函数后必须添加到FUNCTIONS.md清单 |
+
+### 拆分\重构代码方法**规范（必须遵守）
+**核心心原则**：能复制就复制，不重写
+**拆分大文件/函数时** 最安全的做法是**复制原代码逻辑，只改导入路径，不改业务逻辑**。重写会引入新错误，复制能保证行为不变。
 ---
 
 ## System & Platform
@@ -74,7 +90,7 @@ npm run test:e2e     # Playwright
 
 ### Backend: `backend/app/main.py` → FastAPI
 
-**Request flow**: `chat_router.py` → CRSS regex scoring (stage 1) → LLM classifier fallback (stage 2) → `AgentFactory.create(intent_type)` → Agent subclasses → ReAct loop → SSE
+**Request flow**: `chat_router.py` → CRSS regex scoring → `AgentFactory.create(intent_type)` → Agent subclasses → ReAct loop → SSE
 
 **Agent system** (`backend/app/services/agent/`):
 - `base_react.py` — `BaseAgent(ABC)` (ReAct loop core)

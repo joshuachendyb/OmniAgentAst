@@ -1,39 +1,29 @@
 """
 统一工具返回结构定义 — 小健 2026-05-21
 
-设计原则:
-  1. 必填字段(code/data/message)始终写入，可选字段仅非默认值时写入
-  2. build_success/build_error是
-  3. 扩展性：通过**extra_kwargs支持未来新增字段，无需改签名
-  4. 向后兼容：所有工具返回的都是普通dict，消费端无需改动
+【分层规范 - 小健 2026-05-27】
+本文件属于【工具层】,职责:构建返回dict基础结构(code/data/message + 可选字段)
+以及判断返回状态的查询函数(is_success/is_error)。
 
-字段规范:
-  必填(3个): code, data, message
-  可选(5个): warning, llm_data, next_actions, retry_count, return_direct
-  扩展: 任何**extra字段自动追加，未来新增字段无需改此文件
+三层职责边界(严格遵守):
+  _response.py (工具层)
+    → 提供 build_success / build_error / build_warning / is_success / is_error
+    → 工具函数、helper函数 直接使用这些函数
+    → 禁止使用 agent/tool_result_utils.py 的 create_xxx 函数
 
-使用示例:
-  # 最简成功
-  return build_success({"path": fp}, f"写入成功: {fp}")
+  tool_result_utils.py (Agent层)
+    → 提供 create_tool_result / create_error_tool_result / create_warning_tool_result
+    → Agent编排层使用(tool_executor、tool_retry_engine等)
+    → 委托工具层构建,追加Agent层特有字段(error_type、metadata等)
 
-  # 带llm_data
-  return build_success(data, msg, llm_data={"摘要": "..."})
+  tool_result_formatter.py (格式化层)
+    → LLM observation / 前端SSE / extract_status 格式化
+    → 禁止构建结果,只消费和格式化
 
-  # 带next_actions
-  return build_success(data, msg, next_actions=build_next_actions([...]))
-
-  # 错误
-  return build_error("ERR_FILE_NOT_FOUND", f"文件不存在: {fp}")
-
-  # 警告(成功但有风险)
-  return build_success(data, msg, warning="文件较大，内容已截断")
-
-  # 未来扩展(无需改此文件)
-  return build_success(data, msg, new_field_2027="...")
+违反后果:层级混乱,职责不清,代码审查打回
 """
+from app.constants import SUCCESS_CODE
 from typing import Any, Dict, Optional, List
-
-SUCCESS_CODE = "SUCCESS"
 
 # 必填字段 — 始终写入
 _REQUIRED_FIELDS = ("code", "data", "message")
@@ -51,14 +41,15 @@ _OPTIONAL_FIELDS = {
 
 
 def build_success(
-    data: Any,
-    message: str = "操作成功",
+    data: Any = None,
+    message: str = "执行成功",
     warning: Optional[str] = None,
     llm_data: Optional[Dict[str, Any]] = None,
     next_actions: Optional[List[Dict[str, str]]] = None,
     retry_count: int = 0,
     return_direct: bool = False,
     attachment: Optional[Dict[str, Any]] = None,
+    code: Optional[str] = None,
     **extra: Any,
 ) -> Dict[str, Any]:
     """构建成功响应
@@ -71,8 +62,7 @@ def build_success(
         next_actions: 可选推荐后续操作列表
         retry_count: 可选重试次数(默认0不写入)
         return_direct: 可选是否直接返回前端(默认False不写入)
-        attachment: 可选二进制附件(base64图片/文件等，前端渲染)
-        **extra: 未来扩展字段，自动追加到结果中
+        attachment: 可选二进制附件(base64图片/文件等,前端渲染)
 
     Returns:
         统一格式的dict
@@ -87,7 +77,6 @@ def build_success(
                    next_actions=next_actions, retry_count=retry_count,
                    return_direct=return_direct, attachment=attachment)
 
-    # 扩展字段：直接追加
     result.update(extra)
 
     return result
@@ -106,14 +95,13 @@ def build_error(
     """构建错误响应
 
     Args:
-        code: 错误码，必须符合三段式: ERR_MODULE_OPERATION_DETAIL
+        code: 错误码,必须符合三段式: ERR_MODULE_OPERATION_DETAIL
         message: 错误描述
         data: 可选附加错误数据(如校验详情)
         warning: 可选附加警告
         llm_data: 可选给LLM的错误摘要
         next_actions: 可选推荐恢复操作
         attachment: 可选二进制附件
-        **extra: 未来扩展字段
 
     Returns:
         统一格式的dict
@@ -143,16 +131,15 @@ def build_warning(
 ) -> Dict[str, Any]:
     """构建警告响应(部分成功/有风险)
 
-    警告code以WARNING_开头，Agent视为成功但需注意
+    警告code以WARNING_开头,Agent视为成功但需注意
 
     Args:
-        code: 警告码，以WARNING_开头
+        code: 警告码,以WARNING_开头
         message: 警告描述
         data: 部分成功的数据
         llm_data: 可选给LLM的数据
         next_actions: 可选推荐操作
         attachment: 可选二进制附件
-        **extra: 未来扩展字段
 
     Returns:
         统一格式的dict
@@ -163,8 +150,8 @@ def build_warning(
         "message": message,
     }
 
-    _add_optionals(result, llm_data=llm_data, next_actions=next_actions,
-                   attachment=attachment)
+    _add_optionals(result, llm_data=llm_data,
+                   next_actions=next_actions, attachment=attachment)
 
     result.update(extra)
 
@@ -192,20 +179,6 @@ def is_error(result: Dict[str, Any]) -> bool:
     return code.startswith("ERR_")
 
 
-def extract_status(result: Dict[str, Any]) -> str:
-    """从统一格式提取Agent消费的status字段
-
-    Agent消费: status/summary/data/error/llm_data/next_actions
-    """
-    code = result.get("code", SUCCESS_CODE)
-    if code == SUCCESS_CODE:
-        status = "success"
-    elif code.startswith("WARNING_"):
-        status = "warning"
-    else:
-        status = "error"
-
-    return status
 
 
 

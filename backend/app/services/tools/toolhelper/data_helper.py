@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-数据分析辅助函数 — 不注册LLM，仅内部代码调用
+数据分析辅助函数 — 不注册LLM,仅内部代码调用
 
 【创建时间】2026-05-22 小沈
 【来源】从 document_tools.py + data_analysis_tools.py 提取的共享Helper
 
-包含函数：
+包含函数:
 - _serialize_rows: DataFrame行序列化为JSON安全格式
 - _load_dataframe: 统一文件/数组→DataFrame加载
 
@@ -20,7 +20,7 @@ import pandas as pd
 def _serialize_rows(df) -> List[List[Any]]:
     """将DataFrame行数据序列化为JSON安全格式 — 小沈 2026-05-22
     合并 document_tools._serialize_pandas_rows + data_analysis_tools._serialize_rows
-    处理：NaN→None / numpy标量→Python原生类型 / datetime→ISO格式字符串
+    处理:NaN→None / numpy标量→Python原生类型 / datetime→ISO格式字符串
     """
     rows = df.values.tolist()
     serialized_rows = []

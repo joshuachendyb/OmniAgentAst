@@ -2,15 +2,16 @@
 """
 REGISTRY Register - 注册表工具注册点
 
-【2026-05-18 小沈】3→1：reg_read/reg_write/reg_delete合并为registry_control(action路由)
-原3个函数保留为内部函数，由registry_control按action分发
+【2026-05-18 小沈】3→1:reg_read/reg_write/reg_delete合并为registry_control(action路由)
+原3个函数保留为内部函数,由registry_control按action分发
 
 创建时间: 2026-05-02
 更新时间: 2026-05-18 小沈 - 3→1合并
 """
 
 import logging
-from app.services.tools.registry import ToolCategory, tool_registry
+from app.services.tools.registry import tool_registry
+from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 from app.services.tools.system.reg_schema import (
@@ -22,24 +23,16 @@ from app.services.tools.system.reg_tools import (
 )
 
 REGISTRY_TOOL_DESCRIPTIONS = {
-    "registry_control": """Windows注册表统一控制入口 - 合并reg_read + reg_write + reg_delete功能。通过action参数执行read/write/delete操作。
+    "registry_control": """支持Windows注册表的read/write/delete操作功能。
+action参数决定操作类型:
+- read: 读取注册表值,key_path(可选value_name/hive)
+- write: 写入注册表值,key_path+value_name+value(可选value_type/hive)
+- delete: 删除注册表值或键,key_path(可选value_name/recursive/hive)
 
-【使用场景】
-- 当用户需要读取、写入或删除Windows注册表时使用
-- 仅限Windows平台
-
-【重要】action必填
-
-【使用示例】【常用名转换说明】
-- 读取/reg_read → registry_control(action="read", key_path="Software\\MyApp", value_name="InstallPath")
-- 写入/reg_write → registry_control(action="write", key_path="Software\\MyApp", value_name="Version", value="1.0")
-- 删除值/reg_delete → registry_control(action="delete", key_path="Software\\MyApp", value_name="OldValue")
-- 删除整个键 → registry_control(action="delete", key_path="Software\\MyApp", recursive=true)
-
-【返回数据说明】
-- read: 含key_path/value_name/value/value_type
-- write: 含key_path/value_name/value/value_type/backup
-- delete: 含key_path/action(deleted_value/deleted_key)""",
+使用示例:
+- 读取 → registry_control(action="read", key_path="Software\\MyApp", value_name="InstallPath")
+- 写入 → registry_control(action="write", key_path="Software\\MyApp", value_name="Version", value="1.0")
+- 删除 → registry_control(action="delete", key_path="Software\\MyApp", value_name="OldValue")""",
 }
 
 REGISTRY_TOOL_INPUT_MODELS = {
@@ -78,13 +71,10 @@ def _register_registry_tools():
             input_model=input_model,
             examples=examples,
         )
-        logger.info(
+        logger.debug(
             f"[registry_register] 已注册工具: {name}, "
             f"使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, "
             f"examples: {len(examples)}个"
         )
-
-
-_initialized = False
 
 __all__ = ["_register_registry_tools"]

@@ -3,13 +3,17 @@
 窗口管理公共Helper - 统一窗口查找和状态查询
 
 【创建时间】2026-05-18 小沈
-【说明】从 desktop_tools.py 和 gui_tools.py 中提取重复的窗口操作逻辑，
-       供 desktop 分类统一调用。不注册到tool_registry，不暴露给LLM。
+【说明】从 desktop_tools.py 和 gui_tools.py 中提取重复的窗口操作逻辑,
+       供 desktop 分类统一调用。不注册到tool_registry,不暴露给LLM。
 
-包含函数：
-- find_windows_by_title: 统一窗口模糊查找（替代7处重复实现）
+【分层规范 - 小健 2026-05-27】
+本文件属于【工具层helper】,使用 _response.py 的 build_success/build_error/build_warning
+禁止使用 agent/tool_result_utils.py 的 create_xxx 函数
+
+包含函数:
+- find_windows_by_title: 统一窗口模糊查找(替代7处重复实现)
 - get_window_rect: 获取窗口位置大小
-- get_window_state: 获取窗口状态（maximized/minimized/normal）
+- get_window_state: 获取窗口状态(maximized/minimized/normal)
 - check_win32_platform: 检查Windows平台+pywin32依赖
 
 Author: 小沈 - 2026-05-18
@@ -18,9 +22,9 @@ Author: 小沈 - 2026-05-18
 import platform
 from typing import Any, Dict, List, Optional
 
+from app.constants import ERR_DESKTOP_NOT_WINDOWS, ERR_DESKTOP_NO_PYWIN32
 from app.utils.logger import logger
-
-
+from app.services.tools._response import build_error, build_success
 _HAS_WIN32 = False
 _win32gui = None
 _win32con = None
@@ -29,12 +33,15 @@ if platform.system() == "Windows":
     try:
         import win32gui as _win32gui_mod
         import win32con as _win32con_mod
+
+
+
         _win32gui = _win32gui_mod
         _win32con = _win32con_mod
         _HAS_WIN32 = True
     except ImportError:
         _HAS_WIN32 = False
-        logger.warning("pywin32未安装，窗口Helper将不可用。请执行: pip install pywin32")
+        logger.warning("pywin32未安装,窗口Helper将不可用。请执行: pip install pywin32")
 
 
 def check_win32_platform() -> Optional[Dict[str, Any]]:
@@ -42,20 +49,12 @@ def check_win32_platform() -> Optional[Dict[str, Any]]:
 
     Returns:
         None: 平台可用
-        Dict: 错误信息（平台不可用）
+        Dict: 错误信息(平台不可用)
     """
     if platform.system() != "Windows":
-        return {
-            "code": "ERR_DESKTOP_NOT_WINDOWS",
-            "data": None,
-            "message": "此功能仅支持 Windows 系统"
-        }
+        return build_error(ERR_DESKTOP_NOT_WINDOWS, "此功能仅支持 Windows 系统")
     if not _HAS_WIN32:
-        return {
-            "code": "ERR_DESKTOP_NO_PYWIN32",
-            "data": None,
-            "message": "pywin32库未安装，请先执行: pip install pywin32"
-        }
+        return build_error(ERR_DESKTOP_NO_PYWIN32, "pywin32库未安装,请先执行: pip install pywin32")
     return None
 
 
@@ -112,10 +111,10 @@ def get_window_state(hwnd: int) -> str:
 def find_windows_by_title(window_title: str) -> List[int]:
     """按标题模糊匹配查找窗口句柄列表 - 小沈 2026-05-18
 
-    统一窗口查找函数，替代 desktop_tools + gui_tools + gui_helpers 中的7处重复实现。
+    统一窗口查找函数,替代 desktop_tools + gui_tools + gui_helpers 中的7处重复实现。
 
     Args:
-        window_title: 窗口标题（模糊匹配，不区分大小写）
+        window_title: 窗口标题(模糊匹配,不区分大小写)
 
     Returns:
         匹配的窗口句柄列表
@@ -182,3 +181,4 @@ __all__ = [
     "_win32gui",
     "_win32con",
 ]
+
