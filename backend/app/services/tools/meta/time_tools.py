@@ -48,9 +48,7 @@ from app.services.tools.toolhelper.date_helper import (
     is_holiday as _is_holiday,
     calc_next_n_workday as _calc_next_n_workday,
     resolve_timezone as _resolve_timezone,
-
-
-
+    get_holiday_date_by_name as _get_holiday_date_by_name,
 );
 
 
@@ -741,12 +739,48 @@ def query_calendar(
     date: Optional[Union[int, float, str]] = None,
     check_type: Literal["weekend", "holiday", "workday", "next_workday"] = "workday",
     n: int = 1,
+    name: Optional[str] = None,
+    year: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """日期综合检查 — 小沈 2026-05-18
+    """日期综合检查 — 小沈 2026-06-14
     P11统一入口: check_type="weekend"|"holiday"|"workday"|"next_workday"
     P15全面返回: 一次性返回全部日历属性
+    P21新增: name参数支持按节日名称查询(如"端午节""春节""中秋节""国庆节")
     """
     try:
+        # 按节日名称查询(优先级最高,忽略date/check_type)
+        if name:
+            holiday_info = _get_holiday_date_by_name(name, year)
+            if holiday_info is None:
+                return build_error(ERR_TIME_DATE, f"未找到节日名称: {name},支持:端午节/春节/中秋节/元旦/国庆节/劳动节/清明节等",
+                    next_actions=build_next_actions([("query_calendar", "尝试其他节日名称", "需要查找其他节日时")]))
+            date_obj = datetime.strptime(holiday_info["date"], "%Y-%m-%d").date()
+            isoweekday = holiday_info["isoweekday"]
+            is_weekend = isoweekday >= 6
+            is_hol, _ = _is_holiday(date_obj)
+            is_workday = not is_weekend and not is_hol
+            result_data = {
+                "date": holiday_info["date"],
+                "weekday": holiday_info["weekday"],
+                "isoweekday": isoweekday,
+                "is_weekend": is_weekend,
+                "is_holiday": is_hol,
+                "holiday_name": holiday_info["name"],
+                "is_workday": is_workday,
+                "holiday_type": holiday_info["type"],
+                "matched_by_name": name,
+            }
+            msg = f"{holiday_info['name']}: {holiday_info['date']}({holiday_info['weekday']})"
+            return build_success(result_data, msg,
+                llm_data={"date": result_data["date"], "is_weekend": is_weekend, "is_holiday": is_hol,
+                          "is_workday": is_workday, "holiday_name": holiday_info["name"]},
+                next_actions=build_next_actions([
+                    ("query_calendar", "检查该日期的属性", "需要详细判断时", {
+                        "date": holiday_info["date"], "check_type": "holiday"}),
+                    ("time_add", "计算该日期偏移", "需要排程计算时"),
+                ]))
+
+        # 按日期综合检查(原有逻辑)
         dt = _parse_datetime_any(date) if date else datetime.now().astimezone()
         if dt is None:
             return build_error(ERR_TIME_DATE, f"无法解析日期: {date}", next_actions=build_next_actions([("query_calendar", "重试日期检查", "日期格式错误时")]))

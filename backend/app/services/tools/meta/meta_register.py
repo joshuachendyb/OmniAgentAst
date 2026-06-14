@@ -59,10 +59,16 @@ check_type参数决定检查类型:
 - workday: 判断是否为工作日,date
 - next_workday: 计算下N个工作日,date(可选n)
 
+name参数(新增): 按节日名称查询日期,支持公历+农历节日。
+支持:端午节/春节/中秋节/元旦/国庆节/劳动节/清明节/元宵节/七夕节/重阳节/除夕等。
+设置name时date和check_type被忽略。
+
 使用示例:
 - 检查周末 → query_calendar(date="2026-05-18", check_type="weekend")
 - 检查节假日 → query_calendar(date="2026-05-01", check_type="holiday")
-- 下个工作日 → query_calendar(date="2026-05-18", check_type="next_workday")""",
+- 下个工作日 → query_calendar(date="2026-05-18", check_type="next_workday")
+- 节日查询 → query_calendar(name="端午节", year=2026)
+- 节日查询 → query_calendar(name="中秋节", year=2026)""",
     "timer": """支持定时器的set/clear/list操作功能。
 action参数决定操作类型:
 - set: 设置定时器,delay+callback
@@ -96,6 +102,8 @@ META_TOOL_EXAMPLES = {
     ],
     "query_calendar": [
         {"date": "2026-05-18", "check_type": "weekend"},
+        {"name": "端午节", "year": 2026},
+        {"name": "中秋节", "year": 2026},
     ],
     "timer": [
         {"action": "set", "delay": 180, "callback": "提醒用户喝水"},

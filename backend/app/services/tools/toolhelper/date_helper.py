@@ -10,13 +10,14 @@
 - parse_datetime_string: 字符串时间解析(ISO/中文/数字提取)
 - is_holiday: 日期是否为假日,返回(bool, holiday_name)
 - calc_next_n_workday: 计算下N个工作日
+- get_holiday_date_by_name: 按节日名称查找公历日期(新增)
 - resolve_timezone: 解析时区字符串
 """
 
 import re
 from app.utils.common_patterns import UTC_OFFSET_PATTERN
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 # 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
 from app.services.tools.tool_constants import QINGMING_DATES
@@ -210,6 +211,86 @@ def calc_next_n_workday(start_date, n: int) -> list:
         return result_dates
     except Exception:
         return []
+
+
+def get_holiday_date_by_name(name: str, year: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """按节日名称查找公历日期 — 小沈 2026-06-14
+
+    支持公历节日(元旦/劳动节/国庆节等)和农历节日(春节/端午节/中秋节等)的名称查询。
+
+    使用场景:
+        query_calendar(name=...) 中按名称查找节日日期
+
+    使用示例:
+        get_holiday_date_by_name("端午节", 2026) → {"name":"端午节","date":"2026-06-19","type":"lunar"}
+
+    返回数据说明:
+        - 返回 Dict[str,Any],包含 name/date/type 三个字段
+        - type 为 "solar"(公历) / "lunar"(农历) / "qingming"(清明节特殊)
+    """
+    if not name or not isinstance(name, str):
+        return None
+    if year is None:
+        year = datetime.now().year
+
+    solar_map = {
+        "元旦": (1, 1), "情人节": (2, 14), "妇女节": (3, 8),
+        "植树节": (3, 12), "愚人节": (4, 1), "劳动节": (5, 1),
+        "青年节": (5, 4), "儿童节": (6, 1), "建党节": (7, 1),
+        "建军节": (8, 1), "教师节": (9, 10), "国庆节": (10, 1),
+        "平安夜": (12, 24), "圣诞节": (12, 25),
+    }
+    lunar_map = {
+        "春节": (1, 1), "元宵节": (1, 15), "端午节": (5, 5),
+        "七夕节": (7, 7), "中元节": (7, 15), "中秋节": (8, 15),
+        "重阳节": (9, 9), "腊八节": (12, 8), "除夕": (12, 30),
+    }
+    aliases = {
+        "过年": "春节", "端阳": "端午节", "五月节": "端午节",
+        "正月": "春节", "正月十五": "元宵节", "八月十五": "中秋节",
+        "正月正": "春节", "五月初五": "端午节",
+    }
+
+    cleaned = name.strip()
+    if cleaned in aliases:
+        cleaned = aliases[cleaned]
+
+    # 公历节日
+    if cleaned in solar_map:
+        m, d = solar_map[cleaned]
+        dt = datetime(year, m, d)
+        return {"name": cleaned, "date": dt.strftime("%Y-%m-%d"), "type": "solar",
+                "weekday": dt.strftime("%A"), "isoweekday": dt.isoweekday()}
+
+    # 清明节(特殊,每年不同)
+    if cleaned == "清明节":
+        qingming = QINGMING_DATES.get(year, (4, 5))
+        m, d = qingming
+        dt = datetime(year, m, d)
+        return {"name": "清明节", "date": dt.strftime("%Y-%m-%d"), "type": "qingming",
+                "weekday": dt.strftime("%A"), "isoweekday": dt.isoweekday()}
+
+    # 农历节日
+    if cleaned in lunar_map:
+        try:
+            from lunarcalendar import Lunar, Converter
+            m, d = lunar_map[cleaned]
+            lunar = Lunar(year, m, d)
+            solar = Converter.Lunar2Solar(lunar)
+            solar_date = solar.to_date()
+            dt = datetime(solar_date.year, solar_date.month, solar_date.day)
+            return {"name": cleaned, "date": dt.strftime("%Y-%m-%d"), "type": "lunar",
+                    "weekday": dt.strftime("%A"), "isoweekday": dt.isoweekday()}
+        except Exception:
+            return None
+
+    # 模糊匹配: 输入包含已知名称(如"端午"→"端午节")
+    all_keys = list(solar_map.keys()) + list(lunar_map.keys()) + ["清明节"]
+    matches = [k for k in all_keys if cleaned in k]
+    if len(matches) == 1:
+        return get_holiday_date_by_name(matches[0], year)
+
+    return None
 
 
 def resolve_timezone(tz_str: str):
