@@ -75,10 +75,10 @@ class PromptLogger:
         
         # 延迟导入: 避免循环导入
         from app.utils.message_id_tracker import get_user_message_id
-        user_message_id = get_user_message_id(session_id)
+        user_message_id = get_user_message_id(session_id) or self._user_id_from_db(session_id)
         # AI消息ID = 用户消息ID + 1
         ai_msg_id = (user_message_id + 1) if user_message_id is not None else None
-        ai_msg_id_str = str(ai_msg_id) if ai_msg_id is not None else "unknown"
+        ai_msg_id_str = str(ai_msg_id) if ai_msg_id is not None else str(uuid.uuid4())[:6]
         
         # 生成文件名:prompt_{AI消息ID后6位}+{YYYYMMDD_HHMMSS}.json
         short_id = ai_msg_id_str[-6:] if len(ai_msg_id_str) >= 6 else ai_msg_id_str
@@ -106,6 +106,14 @@ class PromptLogger:
         logger.info(f"[PromptLogger] 开始记录请求: {log_file_path}")
         return str(log_file_path)
     
+    def _user_id_from_db(self, sid: str) -> Optional[int]:
+        import sqlite3; from pathlib import Path
+        try:
+            r = sqlite3.connect(str(Path.home()/'.omniagent'/'chat_history.db')).execute(
+                "SELECT id FROM chat_messages WHERE session_id=? AND role='user' ORDER BY id DESC LIMIT 1",(sid,)).fetchone()
+            return r[0] if r else None
+        except: return None
+
     def update_ai_message_id(self, ai_message_id: str):
         """更新 AI 消息 ID"""
         current_log = self._get_current_log()
@@ -284,7 +292,7 @@ class PromptLogger:
         if extra_info:
             entry["额外信息"] = extra_info
 
-        # 查找对应的LLM调用记录,更新其返回信息
+        # 查找对应的LLM调用记录,更新其返回信息 — 北京老陈 2026-06-14
         for call_entry in reversed(current_log.get("LLM调用记录", [])):
             if call_entry.get("轮次") == round_number:
                 call_entry["解析结果"] = response_content
@@ -293,9 +301,24 @@ class PromptLogger:
                 call_entry["返回类型"] = response_type
                 call_entry["结束原因"] = finish_reason
                 break
-        
+
         current_log["LLM调用记录"].append(entry)
-    
+
+    def log_step_yield(self, step_dict: dict, round_number: int = 0):
+        """记录每一步 yield 给前端的 JSON 数据 — 北京老陈 2026-06-14"""
+        current_log = self._get_current_log()
+        if not current_log:
+            return
+        if "步骤产出" not in current_log:
+            current_log["步骤产出"] = []
+        current_log["步骤产出"].append({
+            "轮次": round_number,
+            "步骤": step_dict.get("step", 0),
+            "步骤类型": step_dict.get("type", ""),
+            "数据": step_dict,
+            "时间戳": now_str(),
+        })
+
     def log_observation(
         self,
         step_name: str,

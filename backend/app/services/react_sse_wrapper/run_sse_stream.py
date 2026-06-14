@@ -80,6 +80,8 @@ async def run_sse_stream(
             # 直接to_dict() — dict则直接用（某些agent实现直接yield dict）
             event_dict = event if isinstance(event, dict) else event.to_dict()
             event_type = event_dict.get('type', '')
+            from app.utils.prompt_logger import get_prompt_logger
+            get_prompt_logger().log_step_yield(event_dict, round_number=event_dict.get('step', 0))
 
             # 累积execution_steps
             if event_dict:
@@ -91,9 +93,9 @@ async def run_sse_stream(
                 if stream_state is not None:
                     stream_state.current_content = content or stream_state.current_content
             elif event_type == 'chunk':
-                content = event_dict.get('content', '')
-                if stream_state is not None:
-                    stream_state.current_content = content or stream_state.current_content
+                chunk_text = event_dict.get('content', '')
+                if stream_state is not None and chunk_text:
+                    stream_state.current_content += chunk_text
 
             # 格式化SSE(仅format，已用event_dict避免二次to_dict)
             sse_data = format_agent_sse(event_dict)

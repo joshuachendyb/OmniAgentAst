@@ -197,13 +197,19 @@ class UniversalAgent(BaseAgent):
             return
 
         complete_raw = "\n".join(_raw_chunks)
+        logger.debug(f"[FC] raw_response(raw): {complete_raw}")
 
         if tool_calls_result:
             first = tool_calls_result[0]
+            built_tool_calls = []
+            for tc in tool_calls_result:
+                for call in tc.get("tool_calls", []):
+                    if isinstance(call, dict):
+                        built_tool_calls.append(call)
             fc_context = {
                 "tool_call_id": first.get("tool_call_id", ""),
-                "tool_calls": first.get("tool_calls", []),
-                "llm_content": full_content,  # 保留LLM输入的文本,写入conversation_history — 小沈 2026-06-14
+                "tool_calls": built_tool_calls,
+                "llm_content": full_content,
             }
             _pending_calls = []
             for tc in tool_calls_result[1:]:
@@ -214,10 +220,14 @@ class UniversalAgent(BaseAgent):
                 })
             logger.info(f"[FC] LLM原始响应(action): tool={first['tool_name']}, parallel={len(_pending_calls)}")
             prompt_logger = get_prompt_logger()
+            assembled = {
+                "content": full_content,
+                "tool_calls": built_tool_calls,
+            }
             prompt_logger.log_llm_response(
                 round_number=self.llm_call_count,
-                response_content=f"tool={first['tool_name']}, params={first['tool_params']}",
-                raw_response=complete_raw,
+                response_content=json.dumps(assembled, ensure_ascii=False),
+                raw_response=json.dumps(assembled, ensure_ascii=False),
                 response_type="action",
                 finish_reason="tool_calls",
                 extra_info={
@@ -227,6 +237,7 @@ class UniversalAgent(BaseAgent):
             )
             yield ("response", {
                 "type": "action",
+                "thought": full_content,
                 "fc_context": fc_context,
                 "_pending_calls": _pending_calls,
                 "tool_name": first["tool_name"],
@@ -239,10 +250,11 @@ class UniversalAgent(BaseAgent):
         content = full_content or full_reasoning or ""
         logger.info(f"[FC] LLM原始响应(answer): {content}")
         prompt_logger = get_prompt_logger()
+        assembled = {"content": content}
         prompt_logger.log_llm_response(
             round_number=self.llm_call_count,
             response_content=content,
-            raw_response=complete_raw,
+            raw_response=json.dumps(assembled, ensure_ascii=False),
             response_type="answer",
             finish_reason="stop",
         )

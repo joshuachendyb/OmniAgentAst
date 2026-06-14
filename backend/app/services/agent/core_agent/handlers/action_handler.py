@@ -228,6 +228,12 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
             tool_params=call["tool_params"],
             round_number=step,
         )
+        prompt_logger.log_tool_prompt(
+            tool_name=call["tool_name"],
+            prompt_content=obs_text,
+            source=f"handle_action:{call['tool_name']}",
+            round_number=step,
+        )
 
     # 记录操作到TaskTracker(调用方传入真实status和error,SRP:不预设成功)
     for call, result in zip(all_calls, results):
