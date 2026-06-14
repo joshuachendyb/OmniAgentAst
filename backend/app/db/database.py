@@ -132,6 +132,7 @@ class DatabaseManager:
     def _init_chat_db(self):
         """初始化聊天数据库"""
         with self.get_conn("chat") as conn:
+            # 第1步: 建表(旧表已存在则跳过)
             conn.executescript('''
                 CREATE TABLE IF NOT EXISTS chat_sessions (
                     id TEXT PRIMARY KEY,
@@ -165,17 +166,30 @@ class DatabaseManager:
                     change_reason TEXT,
                     FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
                 );
-                
-                CREATE INDEX IF NOT EXISTS idx_sessions_updated ON chat_sessions(updated_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_sessions_deleted ON chat_sessions(is_deleted);
-                CREATE INDEX IF NOT EXISTS idx_messages_session ON chat_messages(session_id);
-                CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON chat_messages(timestamp);
             ''')
             
-            # 添加新字段(如果不存在)
+            # 第2步: 确保缺失字段存在(旧表迁移)
+            self._ensure_column(conn, "chat_sessions", "message_count", "INTEGER DEFAULT 0")
+            self._ensure_column(conn, "chat_sessions", "is_deleted", "BOOLEAN DEFAULT FALSE")
+            self._ensure_column(conn, "chat_sessions", "is_valid", "BOOLEAN DEFAULT FALSE")
+            self._ensure_column(conn, "chat_sessions", "title_locked", "BOOLEAN DEFAULT FALSE")
+            self._ensure_column(conn, "chat_sessions", "title_updated_at", "TIMESTAMP")
+            self._ensure_column(conn, "chat_sessions", "version", "INTEGER DEFAULT 1")
+            
+            # 确保chat_messages旧表字段存在
+            self._ensure_column(conn, "chat_messages", "timestamp", "TEXT DEFAULT CURRENT_TIMESTAMP")
+            self._ensure_column(conn, "chat_messages", "display_name", "TEXT")
+            
+            # 添加chat_messages新字段(如果不存在)
             for field in ["client_os", "browser", "device", "network", "reply_to_message_id"]:
                 col_type = "INTEGER" if field == "reply_to_message_id" else "TEXT"
                 self._ensure_column(conn, "chat_messages", field, col_type)
+            
+            # 第3步: 建索引(字段已存在,安全)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_updated ON chat_sessions(updated_at DESC)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_deleted ON chat_sessions(is_deleted)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON chat_messages(session_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON chat_messages(timestamp)")
     
     def _init_operations_db(self):
         """初始化操作数据库"""
