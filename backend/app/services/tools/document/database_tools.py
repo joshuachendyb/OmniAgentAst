@@ -24,6 +24,7 @@ DATABASE Tools - 数据库工具实现
 import fnmatch
 import re
 import sqlite3
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Literal, Tuple
 from app.utils.logger import logger
 from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, make_json_safe
@@ -33,14 +34,17 @@ from app.services.tools._response import build_success, build_error, build_warni
 
 
 
+def _get_default_db_path() -> str:
+    """获取应用默认SQLite数据库路径 — 小沈 2026-06-14"""
+    return str(Path.home() / ".omniagent" / "chat_history.db")
+
+
 def _get_connection(connection_type: str, connection_string: Optional[str], db_path: Optional[str], timeout: int = 30000):
     """获取数据库连接,返回 (conn, engine_or_none, error_message)"""
     try:
         if connection_type == "sqlite":
-            if db_path:
-                return sqlite3.connect(db_path, timeout=timeout / 1000), None, None
-            else:
-                return sqlite3.connect(":memory:", timeout=timeout / 1000), None, None
+            path = db_path or _get_default_db_path()
+            return sqlite3.connect(path, timeout=timeout / 1000), None, None
         elif connection_type in ("mysql", "postgresql"):
             if not connection_string:
                 return None, None, f"错误:{connection_type} 需要提供 connection_string"

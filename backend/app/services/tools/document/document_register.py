@@ -86,11 +86,11 @@ DESCRIPTIONS = {
     "generate_chart": """使用matplotlib生成数据可视化图表。支持柱状图(bar)、折线图(line)、饼图(pie)、散点图(scatter)。可指定图表标题、X轴/Y轴标签、图例位置和输出路径。默认保存到系统临时目录。适用场景:需要将数据以图表形式可视化呈现、生成报告配图时使用。""",
 
     # 【2026-05-18 小沈】Database工具描述(从database_register迁入)
-    "query_sql": """执行只读SQL查询。支持SELECT/SHOW/DESCRIBE/EXPLAIN/WITH/PRAGMA语句,强制只读,写操作返回错误。超时自动触发EXPLAIN分析。支持SQLite/MySQL/PostgreSQL三种数据库。适用场景:需要查询/分析数据库数据、获取表结构信息、分析查询执行计划时使用。""",
+    "query_sql": """执行只读SQL查询。支持SELECT/SHOW/DESCRIBE/EXPLAIN/WITH/PRAGMA语句,强制只读,写操作返回错误。超时自动触发EXPLAIN分析。支持SQLite/MySQL/PostgreSQL三种数据库。SQLite可不传db_path,默认连接应用数据库(~/.omniagent/chat_history.db)。适用场景:需要查询/分析数据库数据、获取表结构信息、分析查询执行计划时使用。""",
 
-    "execute_sql": """执行写操作SQL。支持INSERT/UPDATE/DELETE/CREATE/ALTER/DROP/TRUNCATE等语句。仅支持单语句,自动提交事务。高风险操作(DROP/TRUNCATE)需确认安全级别。支持dry_run=TRUE预演模式。支持SQLite/MySQL/PostgreSQL三种数据库。适用场景:需要修改数据库数据、创建或修改表结构时使用。""",
+    "execute_sql": """执行写操作SQL。支持INSERT/UPDATE/DELETE/CREATE/ALTER/DROP/TRUNCATE等语句。仅支持单语句,自动提交事务。高风险操作(DROP/TRUNCATE)需确认安全级别。支持dry_run=TRUE预演模式。支持SQLite/MySQL/PostgreSQL三种数据库。SQLite可不传db_path,默认连接应用数据库(~/.omniagent/chat_history.db)。适用场景:需要修改数据库数据、创建或修改表结构时使用。""",
 
-    "get_db_schema": """获取数据库结构元数据。返回数据库中的表名、字段名/类型/约束、索引和外键信息。支持按表名精确匹配或按模式(filter_pattern,支持SQL LIKE通配符)过滤。支持SQLite/MySQL/PostgreSQL三种数据库。适用场景:需要了解数据库表结构、查看字段定义和索引、生成DDL脚本时使用。""",
+    "get_db_schema": """获取数据库结构元数据。返回数据库中的表名、字段名/类型/约束、索引和外键信息。支持按表名精确匹配或按模式(filter_pattern,支持SQL LIKE通配符)过滤。支持SQLite/MySQL/PostgreSQL三种数据库。SQLite可不传db_path,默认连接应用数据库(~/.omniagent/chat_history.db)。适用场景:需要了解数据库表结构、查看字段定义和索引、生成DDL脚本时使用。""",
 }
 
 EXAMPLES = {
