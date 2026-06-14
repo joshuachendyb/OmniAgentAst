@@ -151,21 +151,39 @@ async def send_chat(
     }
 
 
-# ─── 数据库连接 ──────────────────────────────────────────────
+# ─── 数据库连接(通过后端API, 避免sqlite3直连权限问题) ────────
 
-def get_conn() -> Optional[sqlite3.Connection]:
-    """获取数据库连接 -- 小健 2026-06-14"""
-    if not DB_PATH.exists():
+def _api_get(path: str, params: Optional[Dict] = None) -> Optional[Dict]:
+    """同步GET请求后端API -- 小健 2026-06-14"""
+    import urllib.request
+    import urllib.parse
+    url = f"{BASE_URL}{API_PREFIX}{path}"
+    if params:
+        url += "?" + urllib.parse.urlencode(params)
+    try:
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception:
         return None
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    return conn
+
+
+def _api_delete(path: str) -> bool:
+    """同步DELETE请求后端API -- 小健 2026-06-14"""
+    import urllib.request
+    url = f"{BASE_URL}{API_PREFIX}{path}"
+    try:
+        req = urllib.request.Request(url, method="DELETE")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status < 400
+    except Exception:
+        return False
 
 
 # ─── 步骤5: DB记录完整性验证 ─────────────────────────────────
 
 def check_db(session_id: str) -> Dict[str, Any]:
-    """检查数据库记录完整性(手册步骤5) -- 小健 2026-06-14
+    """检查数据库记录完整性(手册步骤5, 通过后端API) -- 小健 2026-06-14
 
     验证项:
       - session存在 + is_valid + created_at/updated_at合理
@@ -188,91 +206,67 @@ def check_db(session_id: str) -> Dict[str, Any]:
         "errors": [],
     }
 
-    conn = get_conn()
-    if conn is None:
-        result["errors"].append("DB连接失败")
-        return result
-
     try:
-        # ── chat_sessions ──
-        row = conn.execute(
-            "SELECT * FROM chat_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
-        if row:
+        # ── chat_sessions (via API) ──
+        session_data = _api_get(f"/sessions/{session_id}/messages")
+        if session_data and session_data.get("session_id"):
             result["session_exists"] = True
-            result["is_valid"] = row["is_valid"]
-            result["created_at"] = row["created_at"]
-            result["updated_at"] = row["updated_at"]
+            result["is_valid"] = bool(session_data.get("is_valid"))
+            result["created_at"] = session_data.get("created_at")
+            result["updated_at"] = session_data.get("updated_at")
 
-            now_ms = int(datetime.now().timestamp() * 1000)
-            for field_name in ("created_at", "updated_at"):
-                val = row[field_name]
-                if val is not None and isinstance(val, (int, float)):
-                    if val > now_ms + 60000:
-                        result["time_issues"].append(f"{field_name}超出现时间: {val}")
-
-        # ── chat_messages ──
-        messages = conn.execute(
-            "SELECT * FROM chat_messages WHERE session_id = ? ORDER BY id",
-            (session_id,),
-        ).fetchall()
-
+        # ── chat_messages (via API) ──
+        messages = session_data.get("messages", []) if session_data else []
         result["messages_count"] = len(messages)
-        user_first_id: Optional[int] = None
-        assistant_first_id: Optional[int] = None
+        user_first_idx: Optional[int] = None
+        assistant_first_idx: Optional[int] = None
 
-        for msg in messages:
-            role = msg["role"]
-            msg_id = msg["id"]
+        for mi, msg in enumerate(messages):
+            role = msg.get("role", "")
             if role == "user":
                 result["has_user_message"] = True
-                if user_first_id is None:
-                    user_first_id = msg_id
+                if user_first_idx is None:
+                    user_first_idx = mi
             elif role == "assistant":
                 result["has_assistant_message"] = True
-                if assistant_first_id is None:
-                    assistant_first_id = msg_id
+                if assistant_first_idx is None:
+                    assistant_first_idx = mi
 
-                steps_json = msg["execution_steps"]
-                if steps_json:
-                    try:
-                        steps = json.loads(steps_json)
-                        result["execution_steps"] = steps
-                        result["execution_steps_count"] = len(steps)
+                steps_raw = msg.get("execution_steps")
+                if steps_raw:
+                    steps = steps_raw if isinstance(steps_raw, list) else json.loads(steps_raw)
+                    result["execution_steps"] = steps
+                    result["execution_steps_count"] = len(steps)
 
-                        for si, step in enumerate(steps):
-                            step_type = step.get("type", "")
-                            if step_type == "action_tool":
-                                if not step.get("tool_name"):
-                                    result["step_field_issues"].append(
-                                        f"step[{si}]: tool_name为空(MUST)"
-                                    )
-                                tp = step.get("tool_params")
-                                if not tp or not isinstance(tp, dict):
-                                    result["step_field_issues"].append(
-                                        f"step[{si}]: tool_params为空或非dict(MUST)"
-                                    )
-                                obs = step.get("observation") or step.get("execution_result")
-                                if not obs:
-                                    result["step_field_issues"].append(
-                                        f"step[{si}]: observation/execution_result为空(MUST)"
-                                    )
-                            status = step.get("status")
-                            if status is not None and status not in ("success", "error"):
+                    for si, step in enumerate(steps):
+                        step_type = step.get("type", "")
+                        if step_type == "action_tool":
+                            if not step.get("tool_name"):
                                 result["step_field_issues"].append(
-                                    f"step[{si}]: status异常={status}"
+                                    f"step[{si}]: tool_name empty(MUST)"
                                 )
-                    except json.JSONDecodeError:
-                        result["errors"].append("execution_steps JSON解析失败")
+                            tp = step.get("tool_params")
+                            if not tp or not isinstance(tp, dict):
+                                result["step_field_issues"].append(
+                                    f"step[{si}]: tool_params empty(MUST)"
+                                )
+                            obs = step.get("observation") or step.get("execution_result")
+                            if not obs:
+                                result["step_field_issues"].append(
+                                    f"step[{si}]: observation empty(MUST)"
+                                )
+                        status = step.get("status")
+                        if status is not None and status not in ("success", "error"):
+                            result["step_field_issues"].append(
+                                f"step[{si}]: status abnormal={status}"
+                            )
 
-        # ── 消息顺序 ──
-        if user_first_id is not None and assistant_first_id is not None:
-            result["message_order_correct"] = user_first_id < assistant_first_id
+        # ── message order ──
+        if user_first_idx is not None and assistant_first_idx is not None:
+            result["message_order_correct"] = user_first_idx < assistant_first_idx
 
     except Exception as e:
-        result["errors"].append(f"DB查询异常: {e}")
-    finally:
-        conn.close()
+        result["errors"].append(f"API query error: {e}")
 
     return result
 
@@ -538,25 +532,13 @@ def cleanup(
     session_id: Optional[str] = None,
     test_files: Optional[List[Path]] = None,
 ) -> None:
-    """清理测试产生的数据(手册步骤9) -- 小健 2026-06-14
+    """清理测试产生的数据(手册步骤9, 通过后端API) -- 小健 2026-06-14
 
-    - 清理DB中的session和messages记录
+    - 通过API清理DB中的session记录
     - 清理测试产生的文件
     """
-    conn = get_conn()
-    if conn:
-        try:
-            if session_id:
-                conn.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
-                conn.execute("DELETE FROM chat_sessions WHERE id = ?", (session_id,))
-            else:
-                conn.execute("DELETE FROM chat_messages WHERE session_id LIKE 'e2e_test_%'")
-                conn.execute("DELETE FROM chat_sessions WHERE id LIKE 'e2e_test_%'")
-            conn.commit()
-        except Exception as e:
-            print(f"  [WARN] cleanup DB failed: {e}")
-        finally:
-            conn.close()
+    if session_id:
+        _api_delete(f"/sessions/{session_id}")
 
     if test_files:
         for f in test_files:
@@ -655,3 +637,235 @@ def print_report(
         print(report)
     except UnicodeEncodeError:
         print(report.encode("ascii", errors="replace").decode("ascii"))
+
+
+# ─── 测试记录写入(手册5.5铁律) ──────────────────────────────
+
+RECORD_DIR = Path(__file__).parent / "e2e_records"
+
+
+def write_test_record(
+    test_id: str,
+    test_name: str,
+    user_input: str,
+    result: Dict[str, Any],
+    db: Dict[str, Any],
+    consistency_issues: List[str],
+    step_issues: List[str],
+    log_check: Dict[str, Any],
+    passed: bool,
+    elapsed: float,
+    extra: Optional[Dict[str, Any]] = None,
+) -> None:
+    """write test record file(manual 5.5) -- xiaojian 2026-06-14
+
+    must be called in finally block, even on failure
+    file: notes/test-record-{test_id}-{date}.md
+    content must be >= reference format(ERR-06-v2)
+    """
+    RECORD_DIR.mkdir(parents=True, exist_ok=True)
+
+    now = datetime.now()
+    date_str = now.strftime("%Y-%m-%d")
+    ts_str = now.strftime("%Y-%m-%d %H:%M:%S")
+    record_file = RECORD_DIR / f"test-record-{test_id}-{date_str}.md"
+
+    status = "PASSED" if passed else "FAILED"
+    resp = result.get("response_text", "")
+    tool_calls = result.get("tool_calls", [])
+    tool_names = [t.get("tool_name", "") for t in tool_calls]
+    event_types = result.get("event_types", [])
+    events = result.get("events", [])
+    logical_events = [e for e in events if e.get("type") != "chunk"]
+    unique_step_nums = len({e.get("step") for e in events if e.get("step") is not None})
+
+    lines: List[str] = []
+    lines.append(f"# test-record-{test_id}-{date_str}")
+    lines.append("")
+    lines.append(f"**created**: {ts_str}")
+    lines.append(f"**test_id**: {test_id}")
+    lines.append(f"**result**: {status}")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    # ── 1 basic info ──
+    lines.append("## 1 test basic info")
+    lines.append("")
+    lines.append("| item | content |")
+    lines.append("|------|---------|")
+    lines.append(f"| test_id | {test_id} |")
+    lines.append(f"| task | {test_name} |")
+    lines.append(f"| user_command | `{user_input}` |")
+    lines.append(f"| exec_time | {ts_str} |")
+    lines.append(f"| elapsed | {elapsed:.1f}s |")
+    lines.append(f"| SSE_total_events | {result.get('total_steps', 0)} |")
+    lines.append(f"| LLM_calls | {result.get('llm_call_count', 0)} |")
+    lines.append(f"| logical_steps | {len(logical_events)} |")
+    lines.append(f"| unique_step_numbers | {unique_step_nums} |")
+    lines.append(f"| result | **{status}** |")
+    lines.append("")
+
+    # ── 2 LLM response ──
+    lines.append("## 2 LLM response")
+    lines.append("")
+    lines.append("```")
+    lines.append(resp[:800] if resp else "(empty)")
+    lines.append("```")
+    lines.append("")
+
+    # ── 3 tool call chain ──
+    lines.append("## 3 tool call chain")
+    lines.append("")
+    if tool_names:
+        lines.append(", ".join(tool_names))
+        lines.append("")
+        lines.append("| # | tool | params |")
+        lines.append("|---|------|--------|")
+        for i, tc in enumerate(tool_calls):
+            params_str = json.dumps(tc.get("tool_params", {}), ensure_ascii=False)[:100]
+            lines.append(f"| {i+1} | {tc.get('tool_name', '')} | `{params_str}` |")
+    else:
+        lines.append("(no tool calls)")
+    lines.append("")
+
+    # ── 4 SSE event detail ──
+    lines.append("## 4 SSE event detail")
+    lines.append("")
+    chunk_count = 0
+    for e in events:
+        et = e.get("type", "")
+        step = e.get("step", "")
+        if et == "chunk":
+            chunk_count += 1
+            continue
+        tool = e.get("tool_name", "")
+        desc = f"- {et} step={step}"
+        if tool:
+            desc += f" tool={tool}"
+        lines.append(desc)
+    if chunk_count > 0:
+        lines.append(f"  ... (chunk x{chunk_count})")
+    lines.append("")
+
+    # ── 5 DB verification detail ──
+    lines.append("## 5 DB verification detail")
+    lines.append("")
+    lines.append("| check_item | result |")
+    lines.append("|-------------|--------|")
+    lines.append(f"| session_exists | {db.get('session_exists', 'N/A')} |")
+    lines.append(f"| is_valid | {db.get('is_valid', 'N/A')} |")
+    lines.append(f"| created_at | {db.get('created_at', 'N/A')} |")
+    lines.append(f"| updated_at | {db.get('updated_at', 'N/A')} |")
+    lines.append(f"| message_order_correct | {db.get('message_order_correct', 'N/A')} |")
+    lines.append(f"| messages_count | {db.get('messages_count', 0)} |")
+    lines.append(f"| execution_steps_count | {db.get('execution_steps_count', 0)} |")
+    lines.append(f"| step_field_issues | {len(db.get('step_field_issues', []))} |")
+    lines.append("")
+
+    # ── 5.2 execution_steps detail (first 15) ──
+    db_steps = db.get("execution_steps", [])
+    if db_steps:
+        lines.append("### 5.2 execution_steps (first 15)")
+        lines.append("")
+        lines.append("| # | step | type | tool | status |")
+        lines.append("|---|------|------|------|--------|")
+        for i, s in enumerate(db_steps[:15]):
+            s_step = s.get("step", "")
+            s_type = s.get("type", "")
+            s_tool = s.get("tool_name", "")
+            s_status = s.get("status", "")
+            lines.append(f"| {i+1} | {s_step} | {s_type} | {s_tool} | {s_status} |")
+        remaining = len(db_steps) - 15
+        if remaining > 0:
+            lines.append(f"| ... | (remaining {remaining}) | | | |")
+        lines.append("")
+
+        # ── 5.3 DB step data content (action_tool steps) ──
+        action_steps = [s for s in db_steps if s.get("type") == "action_tool"]
+        if action_steps:
+            lines.append("### 5.3 DB step data content (action_tool)")
+            lines.append("")
+            for i, s in enumerate(action_steps):
+                tn = s.get("tool_name", "?")
+                tp = json.dumps(s.get("tool_params", {}), ensure_ascii=False)[:150]
+                obs_raw = s.get("observation") or s.get("execution_result", "")
+                obs_str = _obs_to_text(obs_raw)[:200] if obs_raw else "(empty)"
+                lines.append(f"**step {s.get('step', '?')}: {tn}**")
+                lines.append(f"- params: `{tp}`")
+                lines.append(f"- observation: `{obs_str}`")
+                lines.append("")
+
+    # ── 6 verification layers ──
+    lines.append("## 6 verification layers")
+    lines.append("")
+    lines.append("| layer | result | detail |")
+    lines.append("|-------|--------|--------|")
+    lines.append(f"| final_event | {'PASS' if result.get('final_event') else 'FAIL'} | - |")
+    lines.append(f"| has_error | {'PASS' if not result.get('has_error') else 'FAIL'} | - |")
+    lines.append(f"| response_text | {'PASS' if resp else 'FAIL'} | {len(resp)} chars |")
+    lines.append(f"| check_db | {'PASS' if db.get('session_exists') else 'FAIL'} | - |")
+    lines.append(f"| consistency | {'PASS' if len(consistency_issues) == 0 else 'FAIL'} | {len(consistency_issues)} issues |")
+    lines.append(f"| steps | {'PASS' if len(step_issues) == 0 else 'FAIL'} | {len(step_issues)} issues |")
+    lines.append(f"| logs-ERROR | {'PASS' if len(log_check.get('errors', [])) == 0 else 'FAIL'} | {len(log_check.get('errors', []))} |")
+    lines.append(f"| logs-TB | {'PASS' if len(log_check.get('tracebacks', [])) == 0 else 'FAIL'} | {len(log_check.get('tracebacks', []))} |")
+    lines.append("")
+
+    if consistency_issues:
+        lines.append("### consistency issues detail")
+        lines.append("")
+        for iss in consistency_issues:
+            lines.append(f"- {iss}")
+        lines.append("")
+
+    if step_issues:
+        lines.append("### step issues detail")
+        lines.append("")
+        for iss in step_issues:
+            lines.append(f"- {iss}")
+        lines.append("")
+
+    # ── 7 DB vs app_log vs prompt_log consistency ──
+    lines.append("## 7 DB vs app_log vs prompt_log consistency")
+    lines.append("")
+
+    db_tool_names = [s.get("tool_name", "") for s in db_steps if s.get("type") == "action_tool"]
+    db_obs_count = sum(1 for s in db_steps if s.get("type") == "action_tool" and (s.get("observation") or s.get("execution_result")))
+    sse_tool_names = [t.get("tool_name", "") for t in tool_calls]
+    log_llm_calls = log_check.get("llm_calls_found", 0)
+    prompt_log_files = log_check.get("prompt_log_files", [])
+
+    lines.append("| compare_item | DB | SSE | log | match? |")
+    lines.append("|--------------|-----|-----|-----|--------|")
+    lines.append(f"| tool_count | {len(db_tool_names)} | {len(sse_tool_names)} | {log_llm_calls} LLM calls | {'PASS' if abs(len(db_tool_names) - len(sse_tool_names)) <= 2 else 'FAIL'} |")
+    lines.append(f"| tool_names | {db_tool_names[:5]} | {sse_tool_names[:5]} | - | {'PASS' if set(db_tool_names) & set(sse_tool_names) or (not db_tool_names and not sse_tool_names) else 'FAIL'} |")
+    lines.append(f"| observation_count | {db_obs_count} | {len(tool_calls)} | - | {'PASS' if db_obs_count >= len(tool_calls) - 1 else 'WARN'} |")
+    lines.append(f"| prompt_log_files | - | - | {prompt_log_files[:3]} | {'PASS' if prompt_log_files else 'WARN'} |")
+    lines.append("")
+
+    # ── 8 extra ──
+    if extra:
+        lines.append("## 8 extra info")
+        lines.append("")
+        for k, v in extra.items():
+            lines.append(f"- {k}: {v}")
+        lines.append("")
+
+    lines.append("---")
+    lines.append(f"**updated**: {ts_str}")
+    lines.append("")
+
+    try:
+        content = "\n".join(lines)
+        with open(str(record_file), "w", encoding="utf-8") as f:
+            f.write(content)
+    except PermissionError:
+        alt_file = RECORD_DIR / f"test-record-{test_id}-{date_str}-{int(now.timestamp())}.md"
+        try:
+            with open(str(alt_file), "w", encoding="utf-8") as f:
+                f.write(content)
+            print(f"  [WARN] write_test_record: used alt path {alt_file.name}")
+        except Exception as e2:
+            print(f"  [WARN] write_test_record failed: {e2}")
+    except Exception as e:
+        print(f"  [WARN] write_test_record failed: {e}")

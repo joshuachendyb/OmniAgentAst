@@ -1,0 +1,50 @@
+数据库表: chat_sessions
+查询语句: SELECT * FROM chat_sessions LIMIT 3
+查询时间: 2026-06-14 18:40:43
+返回行数: 3
+
+列名: id, title, is_valid, version, created_at, updated_at, is_deleted, title_locked, title_updated_at, message_count
+
+================================================================================
+
+记录 1:
+  id: b58be88b-0e67-4470-a188-02b357de44fa
+  title: 新会话 2026-06-14 15:21
+  is_valid: 0
+  version: 1
+  created_at: 2026-06-14T07:21:38.400242Z
+  updated_at: 2026-06-14T07:21:38.400242Z
+  is_deleted: 0
+  title_locked: 0
+  title_updated_at: 2026-06-14T07:21:38.400242Z
+  message_count: 0
+
+================================================================================
+
+记录 2:
+  id: 51d0c788-9f9d-42b4-980d-e3a47032d41d
+  title: 新会话 2026-06-14 15:22
+  is_valid: 0
+  version: 1
+  created_at: 2026-06-14T07:22:31.516994Z
+  updated_at: 2026-06-14T07:22:31.516994Z
+  is_deleted: 0
+  title_locked: 0
+  title_updated_at: 2026-06-14T07:22:31.516994Z
+  message_count: 0
+
+================================================================================
+
+记录 3:
+  id: 6c5709d0-51b5-4944-b6b3-3be68fe6e1b1
+  title: 新会话 2026-06-14 15:22
+  is_valid: 0
+  version: 1
+  created_at: 2026-06-14T07:22:52.272106Z
+  updated_at: 2026-06-14T07:22:52.272106Z
+  is_deleted: 0
+  title_locked: 0
+  title_updated_at: 2026-06-14T07:22:52.272106Z
+  message_count: 0
+
+================================================================================
