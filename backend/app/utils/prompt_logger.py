@@ -107,12 +107,17 @@ class PromptLogger:
         return str(log_file_path)
     
     def _user_id_from_db(self, sid: str) -> Optional[int]:
-        import sqlite3; from pathlib import Path
+        """P1修复: 改用db.get_conn() SDK+修复裸except"""
         try:
-            r = sqlite3.connect(str(Path.home()/'.omniagent'/'chat_history.db')).execute(
-                "SELECT id FROM chat_messages WHERE session_id=? AND role='user' ORDER BY id DESC LIMIT 1",(sid,)).fetchone()
-            return r[0] if r else None
-        except: return None
+            from app.db import db
+            with db.get_conn("chat") as conn:
+                row = conn.execute(
+                    "SELECT id FROM chat_messages WHERE session_id=? AND role='user' ORDER BY id DESC LIMIT 1",
+                    (sid,)
+                ).fetchone()
+                return row[0] if row else None
+        except Exception:
+            return None
 
     def update_ai_message_id(self, ai_message_id: str):
         """更新 AI 消息 ID"""

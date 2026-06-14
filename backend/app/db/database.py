@@ -240,33 +240,35 @@ class DatabaseManager:
             ''')
     
     def _ensure_column(self, conn: sqlite3.Connection, table: str, column: str, col_type: str):
-        """确保字段存在(使用PRAGMA查询,不用try/except)"""
-        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
-        col_names = {row["name"].lower() for row in rows}
-        if column.lower() not in col_names:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
-            logger.info(f"Added column {column} to table {table}")
+        """确保字段存在(P1修复: 添加异常处理,失败不中断init)"""
+        try:
+            rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+            col_names = {row["name"].lower() for row in rows}
+            if column.lower() not in col_names:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+                logger.info(f"Added column {column} to table {table}")
+        except Exception as e:
+            logger.warning(f"Ensure column failed [{table}.{column}]: {e}")
     
     def _migrate_old_tables(self):
-        """迁移旧表数据(幂等操作)"""
+        """迁移旧表数据(幂等操作,P1修复: 修正except缩进+列名安全验证)"""
         try:
             with self.get_conn("operations") as conn:
-                # 检查旧表是否存在
                 row = conn.execute(
                     "SELECT name FROM sqlite_master WHERE type='table' AND name='file_operation_sessions'"
                 ).fetchone()
                 
                 if row is None:
-                    return  # 旧表不存在,无需迁移
+                    return
                 
                 logger.info("Migrating data from file_operation_sessions to task_operations...")
                 
-                # 获取旧表结构
                 old_columns = [desc[1] for desc in conn.execute("PRAGMA table_info(file_operation_sessions)").fetchall()]
                 new_columns = [desc[1] for desc in conn.execute("PRAGMA table_info(task_operations)").fetchall()]
                 
-                # 找出交集列
-                common_columns = [col for col in old_columns if col in new_columns]
+                import re
+                safe_name = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+                common_columns = [col for col in old_columns if col in new_columns and safe_name.match(col)]
                 if not common_columns:
                     logger.warning("No common columns found, skipping migration")
                     return
@@ -274,18 +276,15 @@ class DatabaseManager:
                 columns_str = ", ".join(common_columns)
                 placeholders = ", ".join(["?" for _ in common_columns])
                 
-                # 获取旧表数据
                 rows = conn.execute(f"SELECT {columns_str} FROM file_operation_sessions").fetchall()
                 
-                # 复制数据到新表(INSERT OR IGNORE保证幂等)
                 for row in rows:
                     conn.execute(f"INSERT OR IGNORE INTO task_operations ({columns_str}) VALUES ({placeholders})", row)
                 
                 logger.info(f"Migrated {len(rows)} rows")
                 
         except Exception as e:
-                logger.error(f"Migration failed: {e}")
-                # 迁移失败不阻止应用启动
+            logger.error(f"Migration failed: {e}")
 
     def _init_task_tracker_db(self):
         """初始化 Task 追踪数据库(独立库 task_tracker.db)"""
