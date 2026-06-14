@@ -62,25 +62,25 @@ class TimeDiffInput(BaseModel):
 
 
 class QueryCalendarInput(BaseModel):
-    date: Optional[Union[int, float, str]] = Field(
-        default=None,
-        description="日期值,支持:int/float=Unix时间戳(秒),str=日期字符串。默认为当前日期。与name参数互斥"
-    )
-    check_type: Literal["weekend", "holiday", "workday", "next_workday"] = Field(
-        default="workday",
-        description="检查类型:weekend=周末判断,holiday=节假日判断,workday=工作日判断,next_workday=下N个工作日。默认为workday。name参数不为空时忽略此参数"
-    )
-    n: int = Field(
-        default=1,
-        description="第N个工作日(check_type=next_workday时有效)。默认为1"
-    )
     name: Optional[str] = Field(
         default=None,
-        description="节日名称查询,支持:端午节/春节/中秋节/元旦/劳动节/国庆节/清明节等。设置此参数时date和check_type被忽略"
+        description="【推荐】节日名称查询,输入节日名称(如端午节/春节/中秋节/国庆节)一次性返回日期、星期、假期属性,无需逐个日期重复查询。支持端午节/春节/中秋节/元旦/劳动节/国庆节/清明节等"
     )
     year: Optional[int] = Field(
         default=None,
         description="查询年份(默认当年),仅name参数不为空时有效"
+    )
+    date: Optional[Union[int, float, str]] = Field(
+        default=None,
+        description="日期值,支持:int/float=Unix时间戳(秒),str=日期字符串。默认为当前日期。name不为空时此参数被忽略"
+    )
+    check_type: Literal["weekend", "holiday", "workday", "next_workday"] = Field(
+        default="workday",
+        description="检查类型:weekend=周末判断,holiday=节假日判断,workday=工作日判断,next_workday=下N个工作日。默认为workday。name不为空时此参数被忽略"
+    )
+    n: int = Field(
+        default=1,
+        description="第N个工作日(check_type=next_workday时有效)。默认为1"
     )
 
 

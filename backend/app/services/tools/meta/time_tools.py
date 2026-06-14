@@ -775,8 +775,6 @@ def query_calendar(
                 llm_data={"date": result_data["date"], "is_weekend": is_weekend, "is_holiday": is_hol,
                           "is_workday": is_workday, "holiday_name": holiday_info["name"]},
                 next_actions=build_next_actions([
-                    ("query_calendar", "检查该日期的属性", "需要详细判断时", {
-                        "date": holiday_info["date"], "check_type": "holiday"}),
                     ("time_add", "计算该日期偏移", "需要排程计算时"),
                 ]))
 

@@ -52,23 +52,25 @@ action参数决定操作类型:
 - 格式化 → time_now(action="format", time_value="2026-05-18 10:00:00", format="%Y年%m月%d日")""",
     "time_add": """时间加减运算。支持按天/小时/分钟/秒/月进行偏移计算。delta为正数表示N个单位后的时间,delta为负数表示N个单位前的时间。返回计算后的时间字符串、ISO格式、Unix时间戳和星期信息。适用场景:需要计算N天/小时/分钟后的时间、计算某个时间点之前的时间时使用。""",
     "time_diff": """计算两个时间之间的差值。返回人类可读的差值描述以及秒/分钟/小时/天各单位的差值。可判断目标时间是否在未来/过去/相等。适用场景:需要计算两个日期相差几天、计算距某时间还有多久时使用。""",
-    "query_calendar": """支持日期类型综合检查功能。
-check_type参数决定检查类型:
+    "query_calendar": """按节日名称查询日期和假期信息(推荐优先使用name参数)。
+name参数: 输入节日名称(如"端午节""春节""中秋""国庆")，一次性返回日期、星期、是否节假日/工作日等全部属性，无需再逐个日期重复查询。
+支持:端午节/春节/中秋节/元旦/国庆节/劳动节/清明节/元宵节/七夕节/重阳节/除夕等。
+设置name时date和check_type被忽略。首次name查询已包含全部信息，不要再对同一节日逐个日期重复调用。
+
+如不使用name，也可按日期检查:
 - weekend: 判断是否为周末,date
 - holiday: 判断是否为节假日,date
 - workday: 判断是否为工作日,date
 - next_workday: 计算下N个工作日,date(可选n)
 
-name参数(新增): 按节日名称查询日期,支持公历+农历节日。
-支持:端午节/春节/中秋节/元旦/国庆节/劳动节/清明节/元宵节/七夕节/重阳节/除夕等。
-设置name时date和check_type被忽略。
+使用示例(推荐):
+- 节日查询 → query_calendar(name="端午节", year=2026)
+- 节日查询 → query_calendar(name="春节", year=2026)
 
-使用示例:
+使用示例(按日期):
 - 检查周末 → query_calendar(date="2026-05-18", check_type="weekend")
 - 检查节假日 → query_calendar(date="2026-05-01", check_type="holiday")
-- 下个工作日 → query_calendar(date="2026-05-18", check_type="next_workday")
-- 节日查询 → query_calendar(name="端午节", year=2026)
-- 节日查询 → query_calendar(name="中秋节", year=2026)""",
+- 下个工作日 → query_calendar(date="2026-05-18", check_type="next_workday")""",
     "timer": """支持定时器的set/clear/list操作功能。
 action参数决定操作类型:
 - set: 设置定时器,delay+callback
