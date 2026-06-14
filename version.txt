@@ -1,3 +1,26 @@
+v0.16.2
+
+更新时间: 2026-06-14 09:00:00
+
+## v0.16.1→v0.16.2 变更汇总 - 小沈-2026-06-14
+
+### refactor: message_id_tracker跨层依赖消除+prompts/meta扁平化重构
+- 4c3a2e966: message_id_tracker.py从services移到utils层，消除跨层依赖
+- b8eb2db80: 删除services/message_id_tracker.py旧文件
+- d48408a79: prompts+meta 扁平化重构+BM25搜索优化
+- 4fcb55585: COMMANDS从system_adapter移至execute_shell_command描述
+- e6657137e: system_prompts.py重写core prompt仿Hermes标签分层
+
+### feat: query_calendar name参数支持+system_prompt精简
+- 5d947c197: query_calendar新增name参数，支持按节日名称查询(端午节/中秋节等)
+- 1fdd14fcb: system_prompt merge操作规范+工具选择，精简为4章13行
+
+### fix+docs: query_sql默认路径修复+E2E操作手册
+- 5e7249ed8: query_sql默认DB路径修复+废弃方案文件删除
+- 235bc5489: 全链路E2E集成测试操作手册(替代原方案文件)
+
+---
+
 v0.16.1
 
 更新时间: 2026-06-13 18:30:00
@@ -12,11 +35,25 @@ v0.16.1
 - run_sse_stream.py: 初始分类加入FILE→初始可用FILE工具
 - run_sse_stream.py: 多轮对话历史加载→新增_load_previous_messages()+_inject_conversation_history()
 
+### fix: 硬编码60→_CATEGORIES_CONFIG_CACHE_TTL + 抽取_inject_conversation_history
+- ba57fbcb5: universal_agent/initialize_run_state 的60硬编码改为常量 _CATEGORIES_CONFIG_CACHE_TTL
+- 抽取_inject_conversation_history为独立方法
+
+### fix: prompt_logger/chat_stream_v2 message_id取值错误
+- a3ad3ef8a: 修复user_message_id和ai_message_id取值错误
+
+### refactor: 删除display_name_cache.py，LRUCache迁入messages.py
+- 02d4876df: display_name_cache.py删除，LRUCache逻辑迁入messages.py直接持有
+- 新增test_marker.py测试标记工具
+- 多文件性能优化
+
 ### fix: tool_step action_tool保存tool_name/tool_params
 - action_tool类型的_extra_fields()新增tool_name/tool_params字段(之前缺失，导致DB记录字段为空)
 - E2E测试新增3.5节验证铁律，每个测试显式做步骤5+6验证
 - 修复_process_event统计action_tool事件(原错统计thought事件)
 - 移除auto_e2e_verify fixture(验证逻辑移至测试用例显式调用)
+
+- dc38d7652: 移除已跟踪的日志文件
 
 ## v0.15.14→v0.16.0 变更汇总 - 小沈-2026-06-13
 
