@@ -14,37 +14,47 @@ import sys
 from typing import Optional
 
 
+def _pip_install(pkg: str) -> bool:
+    """尝试pip安装，先普通模式失败后自动降级为--user"""
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", pkg, "-q"])
+        return True
+    except subprocess.CalledProcessError:
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", pkg, "-q"])
+            return True
+        except subprocess.CalledProcessError:
+            return False
+
+
 def ensure_dependency(
     import_name: str,
     pip_package: Optional[str] = None,
     pre_install: Optional[list] = None,
 ) -> bool:
-    """确保Python依赖可用，缺失则自动pip安装
+    """确保Python依赖可用，缺失则自动pip安装（普通→--user两级降级）
 
     Args:
         import_name: import时的模块名（如 'win10toast'）
         pip_package: pip包名，默认等于import_name
-        pre_install: 前置依赖列表（如 ['setuptools<70']），这些包先于主包安装
+        pre_install: 前置依赖列表（如 ['setuptools<70']），先于主包安装
 
     Returns:
         bool: True=依赖已可用，False=安装失败
-
-    Usage:
-        if not ensure_dependency("win10toast", pre_install=["setuptools<70"]):
-            return build_error(...)
     """
     if pip_package is None:
         pip_package = import_name
 
     if pre_install:
         for pkg in pre_install:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", pkg, "-q"])
+            _pip_install(pkg)
 
     try:
         __import__(import_name)
         return True
     except ImportError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", pip_package, "-q"])
+        if not _pip_install(pip_package):
+            return False
         try:
             __import__(import_name)
             return True

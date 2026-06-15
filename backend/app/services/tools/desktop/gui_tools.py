@@ -405,7 +405,7 @@ def _write_clipboard(content: str) -> Dict[str, Any]:
 def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, Any]:
     """发送系统通知 - 按文档9.7节定义 小欧 2026-06-16 使用ensure_dependency自动安装"""
     if not ensure_dependency("win10toast", pre_install=["setuptools<70"]):
-        return build_error(ERR_NO_WIN10TOAST, "自动安装win10toast失败,请手动: pip install win10toast")
+        return build_error(ERR_NO_WIN10TOAST, "自动安装win10toast失败")
 
     from win10toast import ToastNotifier
     try:
