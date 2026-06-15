@@ -81,7 +81,7 @@ async def send_chat(
         if not session_id:
             raise RuntimeError("创建session失败")
 
-    await save_user_message(session_id, user_input)
+    user_msg_id = await save_user_message(session_id, user_input)
 
     chat_url = f"{BASE_URL}{API_PREFIX}/chat/stream"
     payload = {
@@ -147,6 +147,7 @@ async def send_chat(
         "total_time_ms": total_time_ms,
         "response_text": response_text,
         "session_id": session_id,
+        "user_msg_id": user_msg_id,
         "event_types": event_types,
     }
 
@@ -391,6 +392,150 @@ def verify_consistency(
     return issues
 
 
+def verify_db_prompt_consistency(
+    session_id: str,
+    user_msg_id: Optional[int] = None,
+) -> List[str]:
+    """验证DB execution_steps与Prompt日志«执行步骤»一致性 -- 小健 2026-06-15
+
+    比较项:
+      - 非chunk步骤数量一致
+      - 同步骤号: type, tool_name, tool_params一致
+      - action_tool步骤的execution_result一致
+    """
+    issues: List[str] = []
+
+    db = check_db(session_id)
+    db_steps = db.get("execution_steps", [])
+    if not db_steps:
+        issues.append("DB无执行步骤数据")
+        return issues
+
+    # 找到prompt日志文件
+    prompt_log_file = None
+    if user_msg_id is not None and PROMPT_LOG_DIR.exists():
+        for pf in sorted(PROMPT_LOG_DIR.glob("prompt_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:50]:
+            try:
+                content = pf.read_text(encoding="utf-8", errors="ignore")
+                if str(user_msg_id) in content:
+                    prompt_log_file = pf
+                    break
+            except Exception:
+                pass
+
+    if not prompt_log_file:
+        issues.append("未找到匹配的Prompt日志文件")
+        return issues
+
+    try:
+        log_data = json.loads(prompt_log_file.read_text(encoding="utf-8", errors="ignore"))
+    except Exception as e:
+        issues.append(f"读取Prompt日志失败: {e}")
+        return issues
+
+    # 获取「执行步骤」节：第四个key
+    log_keys = list(log_data.keys())
+    if len(log_keys) < 4:
+        issues.append(f"Prompt日志缺少执行步骤节, 仅{len(log_keys)}个节")
+        return issues
+    exec_steps_key = log_keys[3]
+    log_steps = log_data.get(exec_steps_key, [])
+
+    if not log_steps:
+        issues.append("Prompt日志«执行步骤»为空")
+        return issues
+
+    # 非chunk/start步骤数对比(prompt日志不含start事件)
+    db_main = [s for s in db_steps if s.get("type") not in ("chunk", "start")]
+    log_main = [s for s in log_steps if s.get("\u6b65\u9aa4\u7c7b\u578b") not in ("chunk", "start")]
+
+    if len(db_main) != len(log_main):
+        issues.append(
+            f"非chunk/start步骤数不一致: DB={len(db_main)}, Prompt日志={len(log_main)}"
+        )
+
+    # 按步骤号分组对比(只对比action_tool)
+    db_by_step: Dict[int, List[Dict]] = {}
+    log_by_step: Dict[int, List[Dict]] = {}
+    for s in db_steps:
+        sn = s.get("step")
+        if sn is not None:
+            db_by_step.setdefault(sn, []).append(s)
+    for s in log_steps:
+        sn = s.get("\u6b65\u9aa4")
+        if sn is not None:
+            log_by_step.setdefault(sn, []).append(s)
+
+    all_step_nums = set(db_by_step.keys()) | set(log_by_step.keys())
+    for sn in sorted(all_step_nums):
+        db_ss = db_by_step.get(sn, [])
+        log_ss = log_by_step.get(sn, [])
+        # type对比
+        # type对比(排除start, prompt日志不含该类型)
+        db_types = sorted([s.get("type", "") for s in db_ss if s.get("type") != "start"])
+        log_types = sorted([s.get("\u6b65\u9aa4\u7c7b\u578b", "") for s in log_ss if s.get("\u6b65\u9aa4\u7c7b\u578b") != "start"])
+        if db_types != log_types:
+            issues.append(f"步骤{sn} type不一致: DB={db_types}, Prompt日志={log_types}")
+
+        # action_tool对比: tool_name + tool_params
+        for db_s in db_ss:
+            if db_s.get("type") != "action_tool":
+                continue
+            db_tn = db_s.get("tool_name", "")
+            db_tp = db_s.get("tool_params", {})
+            if isinstance(db_tp, str):
+                try:
+                    db_tp = json.loads(db_tp)
+                except Exception:
+                    db_tp = {"_raw": db_tp}
+            # 在log_steps找同步骤的同tool
+            matched = False
+            for log_s in log_ss:
+                evt = log_s.get("\u6570\u636e", {})
+                if not isinstance(evt, dict):
+                    continue
+                log_tn = evt.get("tool_name", "")
+                if log_tn != db_tn:
+                    continue
+                log_tp = evt.get("tool_params", {})
+                if str(log_tp) != str(db_tp):
+                    issues.append(
+                        f"步骤{sn} tool_params不一致: DB={db_tp}, Prompt日志={log_tp}"
+                    )
+                matched = True
+                break
+            if not matched:
+                issues.append(f"步骤{sn} tool_name({db_tn})在Prompt日志中未找到")
+
+        # observation对比(仅action_tool)
+        for db_s in db_ss:
+            if db_s.get("type") != "action_tool":
+                continue
+            db_obs = db_s.get("observation") or db_s.get("execution_result", "")
+            for log_s in log_ss:
+                evt = log_s.get("\u6570\u636e", {})
+                if not isinstance(evt, dict):
+                    continue
+                log_obs = evt.get("execution_result") or evt.get("observation") or ""
+                # DB存结构化dict, Prompt日志存summary字符串, 用字符串包含检查
+                db_str = str(db_obs)
+                log_str = str(log_obs)
+                if db_str and log_str:
+                    # 提取DB中的有意义的标识(ERR_CODE, SUCCESS等)
+                    db_upper = ''.join(c for c in db_str if c.isupper() or c == '_')
+                    log_upper = ''.join(c for c in log_str if c.isupper() or c == '_')
+                    if 'ERR' in db_upper and 'ERR' not in log_upper:
+                        issues.append(
+                            f"步骤{sn} observation错误码不匹配: DB含错误码, Prompt日志未含"
+                        )
+                    elif 'SUCCESS' in db_upper and 'SUCCESS' not in log_upper:
+                        issues.append(
+                            f"步骤{sn} observation状态不匹配: DB含SUCCESS, Prompt日志未含"
+                        )
+
+    return issues
+
+
 # ─── 步骤7: 步骤合理性验证 ──────────────────────────────────
 
 def verify_steps(
@@ -436,6 +581,7 @@ def verify_steps(
 def check_logs(
     start_time: Optional[datetime] = None,
     session_id: Optional[str] = None,
+    user_msg_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """检查日志和prompt-logs(手册步骤8) -- 小健 2026-06-14
 
@@ -446,6 +592,8 @@ def check_logs(
       - 有SSE事件发送记录
       - prompt-logs已保存
       - LLM调用次数合理(无死循环)
+
+    匹配规则: user_msg_id > session_id(一轮对话一个prompt日志)
     """
     result: Dict[str, Any] = {
         "errors": [],
@@ -511,9 +659,35 @@ def check_logs(
                 key=lambda p: p.stat().st_mtime,
                 reverse=True,
             )
-            recent = [f for f in prompt_files if f.stat().st_mtime >= (now.timestamp() - 3600)]
-            result["prompt_log_files"] = [f.name for f in recent[:5]]
-            for pf in recent[:5]:
+            if user_msg_id is not None:
+                # 按用户消息ID匹配，一轮对话只对应一个prompt日志
+                matched = []
+                for pf in prompt_files[:50]:
+                    try:
+                        content = pf.read_text(encoding="utf-8", errors="ignore")
+                        if str(user_msg_id) in content:
+                            matched.append(pf)
+                            if len(matched) >= 1:
+                                break
+                    except Exception:
+                        pass
+                recent = matched[:1] if matched else []
+            elif session_id:
+                matched = []
+                for pf in prompt_files[:50]:
+                    try:
+                        content = pf.read_text(encoding="utf-8", errors="ignore")
+                        if session_id in content:
+                            matched.append(pf)
+                            if len(matched) >= 1:
+                                break
+                    except Exception:
+                        pass
+                recent = matched[:1] if matched else []
+            else:
+                recent = [f for f in prompt_files if f.stat().st_mtime >= (now.timestamp() - 3600)]
+            result["prompt_log_files"] = [f.name for f in recent[:1]]
+            for pf in recent[:1]:
                 try:
                     pdata = json.loads(pf.read_text(encoding="utf-8", errors="ignore"))
                     result["llm_calls_found"] += pdata.get("llm_call_count", 0) or 1
@@ -641,7 +815,7 @@ def print_report(
 
 # ─── 测试记录写入(手册5.5铁律) ──────────────────────────────
 
-RECORD_DIR = Path(__file__).parent / "e2e_records"
+RECORD_DIR = Path(__file__).parent.parent.parent / "notes"
 
 
 def write_test_record(
@@ -654,21 +828,21 @@ def write_test_record(
     step_issues: List[str],
     log_check: Dict[str, Any],
     passed: bool,
-    elapsed: float,
+    elapsed: float = 0.0,
     extra: Optional[Dict[str, Any]] = None,
+    dpi: Optional[List[str]] = None,
 ) -> None:
-    """write test record file(manual 5.5) -- xiaojian 2026-06-14
+    """写入测试记录文件（手册5.5）-- 小健 2026-06-14
 
-    must be called in finally block, even on failure
-    file: notes/test-record-{test_id}-{date}.md
-    content must be >= reference format(ERR-06-v2)
+    必须在finally块中调用，即使失败也要写
+    文件: notes/测试记录-{test_id}-{日期}.md
     """
     RECORD_DIR.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now()
     date_str = now.strftime("%Y-%m-%d")
     ts_str = now.strftime("%Y-%m-%d %H:%M:%S")
-    record_file = RECORD_DIR / f"test-record-{test_id}-{date_str}.md"
+    record_file = RECORD_DIR / f"测试记录-{test_id}-{date_str}.md"
 
     status = "PASSED" if passed else "FAILED"
     resp = result.get("response_text", "")
@@ -680,57 +854,56 @@ def write_test_record(
     unique_step_nums = len({e.get("step") for e in events if e.get("step") is not None})
 
     lines: List[str] = []
-    lines.append(f"# test-record-{test_id}-{date_str}")
+    lines.append(f"# 测试记录-{test_id}-{date_str}")
     lines.append("")
-    lines.append(f"**created**: {ts_str}")
-    lines.append(f"**test_id**: {test_id}")
-    lines.append(f"**result**: {status}")
+    lines.append(f"**创建时间**: {ts_str}")
+    lines.append(f"**测试编号**: {test_id}")
+    lines.append(f"**测试结果**: {status}")
     lines.append("")
     lines.append("---")
     lines.append("")
 
-    # ── 1 basic info ──
-    lines.append("## 1 test basic info")
+    # 第1节：测试基本信息
+    lines.append("## 1 测试基本信息")
     lines.append("")
-    lines.append("| item | content |")
-    lines.append("|------|---------|")
-    lines.append(f"| test_id | {test_id} |")
-    lines.append(f"| task | {test_name} |")
-    lines.append(f"| user_command | `{user_input}` |")
-    lines.append(f"| exec_time | {ts_str} |")
-    lines.append(f"| elapsed | {elapsed:.1f}s |")
-    lines.append(f"| SSE_total_events | {result.get('total_steps', 0)} |")
-    lines.append(f"| LLM_calls | {result.get('llm_call_count', 0)} |")
-    lines.append(f"| logical_steps | {len(logical_events)} |")
-    lines.append(f"| unique_step_numbers | {unique_step_nums} |")
-    lines.append(f"| result | **{status}** |")
-    lines.append("")
-
-    # ── 2 LLM response ──
-    lines.append("## 2 LLM response")
-    lines.append("")
-    lines.append("```")
-    lines.append(resp[:800] if resp else "(empty)")
-    lines.append("```")
+    lines.append("| 项目 | 内容 |")
+    lines.append("|------|------|")
+    lines.append(f"| 测试编号 | {test_id} |")
+    lines.append(f"| 任务描述 | {test_name} |")
+    lines.append(f"| 用户命令 | `{user_input}` |")
+    lines.append(f"| 执行时间 | {ts_str} |")
+    lines.append(f"| 执行耗时 | {elapsed:.1f}秒 |")
+    lines.append(f"| SSE总事件数 | {result.get('total_steps', 0)} |")
+    lines.append(f"| LLM调用次数 | {result.get('llm_call_count', 0)} |")
+    lines.append(f"| 逻辑步数 | {len(logical_events)} |")
+    lines.append(f"| 不重复步骤号数 | {unique_step_nums} |")
+    lines.append(f"| 测试结果 | **{status}** |")
     lines.append("")
 
-    # ── 3 tool call chain ──
-    lines.append("## 3 tool call chain")
+    # 第2节：LLM回复内容
+    lines.append("## 2 LLM回复内容")
+    lines.append("")
+    lines.append("```")
+    lines.append(resp[:800] if resp else "(空)")
+    lines.append("```")
+    lines.append("")
+
+    # 第3节：工具调用链
+    lines.append("## 3 工具调用链")
     lines.append("")
     if tool_names:
-        lines.append(", ".join(tool_names))
+        lines.append(" -> ".join(tool_names))
         lines.append("")
-        lines.append("| # | tool | params |")
-        lines.append("|---|------|--------|")
+        lines.append("| 序号 | 工具名 | 参数 |")
+        lines.append("|------|--------|------|")
         for i, tc in enumerate(tool_calls):
             params_str = json.dumps(tc.get("tool_params", {}), ensure_ascii=False)[:100]
             lines.append(f"| {i+1} | {tc.get('tool_name', '')} | `{params_str}` |")
     else:
-        lines.append("(no tool calls)")
+        lines.append("(无工具调用)")
     lines.append("")
-
-    # ── 4 SSE event detail ──
-    lines.append("## 4 SSE event detail")
+    # 第4节：SSE事件详情
+    lines.append("## 4 SSE事件详情")
     lines.append("")
     chunk_count = 0
     for e in events:
@@ -740,36 +913,36 @@ def write_test_record(
             chunk_count += 1
             continue
         tool = e.get("tool_name", "")
-        desc = f"- {et} step={step}"
+        desc = f"- {et} 步骤={step}"
         if tool:
-            desc += f" tool={tool}"
+            desc += f" 工具={tool}"
         lines.append(desc)
     if chunk_count > 0:
         lines.append(f"  ... (chunk x{chunk_count})")
     lines.append("")
 
-    # ── 5 DB verification detail ──
-    lines.append("## 5 DB verification detail")
+    # 第5节：数据库验证详情
+    lines.append("## 5 数据库验证详情")
     lines.append("")
-    lines.append("| check_item | result |")
-    lines.append("|-------------|--------|")
-    lines.append(f"| session_exists | {db.get('session_exists', 'N/A')} |")
-    lines.append(f"| is_valid | {db.get('is_valid', 'N/A')} |")
-    lines.append(f"| created_at | {db.get('created_at', 'N/A')} |")
-    lines.append(f"| updated_at | {db.get('updated_at', 'N/A')} |")
-    lines.append(f"| message_order_correct | {db.get('message_order_correct', 'N/A')} |")
-    lines.append(f"| messages_count | {db.get('messages_count', 0)} |")
-    lines.append(f"| execution_steps_count | {db.get('execution_steps_count', 0)} |")
-    lines.append(f"| step_field_issues | {len(db.get('step_field_issues', []))} |")
+    lines.append("| 检查项 | 结果 |")
+    lines.append("|--------|------|")
+    lines.append(f"| 会话是否存在 | {db.get('session_exists', 'N/A')} |")
+    lines.append(f"| 是否有效 | {db.get('is_valid', 'N/A')} |")
+    lines.append(f"| 创建时间 | {db.get('created_at', 'N/A')} |")
+    lines.append(f"| 更新时间 | {db.get('updated_at', 'N/A')} |")
+    lines.append(f"| 消息顺序正确 | {db.get('message_order_correct', 'N/A')} |")
+    lines.append(f"| 消息数量 | {db.get('messages_count', 0)} |")
+    lines.append(f"| 执行步骤数 | {db.get('execution_steps_count', 0)} |")
+    lines.append(f"| 步骤字段问题数 | {len(db.get('step_field_issues', []))} |")
     lines.append("")
 
-    # ── 5.2 execution_steps detail (first 15) ──
+    # 第5.2节：执行步骤详情（前15条）
     db_steps = db.get("execution_steps", [])
     if db_steps:
-        lines.append("### 5.2 execution_steps (first 15)")
+        lines.append("### 5.2 执行步骤（前15条）")
         lines.append("")
-        lines.append("| # | step | type | tool | status |")
-        lines.append("|---|------|------|------|--------|")
+        lines.append("| 序号 | 步骤号 | 类型 | 工具 | 状态 |")
+        lines.append("|------|--------|------|------|--------|")
         for i, s in enumerate(db_steps[:15]):
             s_step = s.get("step", "")
             s_type = s.get("type", "")
@@ -778,55 +951,68 @@ def write_test_record(
             lines.append(f"| {i+1} | {s_step} | {s_type} | {s_tool} | {s_status} |")
         remaining = len(db_steps) - 15
         if remaining > 0:
-            lines.append(f"| ... | (remaining {remaining}) | | | |")
+            lines.append(f"| ... | (剩余{remaining}条) | | | |")
         lines.append("")
 
-        # ── 5.3 DB step data content (action_tool steps) ──
+        # 第5.3节：步骤数据内容（action_tool步骤）
         action_steps = [s for s in db_steps if s.get("type") == "action_tool"]
         if action_steps:
-            lines.append("### 5.3 DB step data content (action_tool)")
+            lines.append("### 5.3 步骤数据内容(action_tool)")
             lines.append("")
             for i, s in enumerate(action_steps):
                 tn = s.get("tool_name", "?")
                 tp = json.dumps(s.get("tool_params", {}), ensure_ascii=False)[:150]
                 obs_raw = s.get("observation") or s.get("execution_result", "")
-                obs_str = _obs_to_text(obs_raw)[:200] if obs_raw else "(empty)"
-                lines.append(f"**step {s.get('step', '?')}: {tn}**")
-                lines.append(f"- params: `{tp}`")
-                lines.append(f"- observation: `{obs_str}`")
+                obs_str = _obs_to_text(obs_raw)[:200] if obs_raw else "(空)"
+                lines.append(f"**步骤{s.get('step', '?')}: {tn}**")
+                lines.append(f"- 参数: `{tp}`")
+                lines.append(f"- 观察结果: `{obs_str}`")
                 lines.append("")
 
-    # ── 6 verification layers ──
-    lines.append("## 6 verification layers")
+    # DB↔Prompt日志一致性(来自dpi参数或extra)
+    db_prompt_issues = dpi if dpi is not None else (extra or {}).get("DbPromptIssues", [])
+    db_prompt_ok = len(db_prompt_issues) == 0
+    db_prompt_detail = f"{len(db_prompt_issues)}个问题" if db_prompt_issues else "PASS"
+
+    # 第6节：验证结果
+    lines.append("## 6 验证结果")
     lines.append("")
-    lines.append("| layer | result | detail |")
-    lines.append("|-------|--------|--------|")
-    lines.append(f"| final_event | {'PASS' if result.get('final_event') else 'FAIL'} | - |")
-    lines.append(f"| has_error | {'PASS' if not result.get('has_error') else 'FAIL'} | - |")
-    lines.append(f"| response_text | {'PASS' if resp else 'FAIL'} | {len(resp)} chars |")
-    lines.append(f"| check_db | {'PASS' if db.get('session_exists') else 'FAIL'} | - |")
-    lines.append(f"| consistency | {'PASS' if len(consistency_issues) == 0 else 'FAIL'} | {len(consistency_issues)} issues |")
-    lines.append(f"| steps | {'PASS' if len(step_issues) == 0 else 'FAIL'} | {len(step_issues)} issues |")
-    lines.append(f"| logs-ERROR | {'PASS' if len(log_check.get('errors', [])) == 0 else 'FAIL'} | {len(log_check.get('errors', []))} |")
-    lines.append(f"| logs-TB | {'PASS' if len(log_check.get('tracebacks', [])) == 0 else 'FAIL'} | {len(log_check.get('tracebacks', []))} |")
+    lines.append("| 验证项 | 结果 | 说明 |")
+    lines.append("|--------|------|------|")
+    lines.append(f"| final事件 | {'PASS' if result.get('final_event') else 'FAIL'} | - |")
+    lines.append(f"| 是否有错误 | {'PASS' if not result.get('has_error') else 'FAIL'} | - |")
+    lines.append(f"| 回复内容 | {'PASS' if resp else 'FAIL'} | {len(resp)}字 |")
+    lines.append(f"| 数据库验证 | {'PASS' if db.get('session_exists') else 'FAIL'} | - |")
+    lines.append(f"| SSE-DB一致性 | {'PASS' if len(consistency_issues) == 0 else 'FAIL'} | {len(consistency_issues)}个问题 |")
+    lines.append(f"| DB-Prompt日志一致性 | {'PASS' if db_prompt_ok else 'FAIL'} | {db_prompt_detail} |")
+    lines.append(f"| 步骤合理性 | {'PASS' if len(step_issues) == 0 else 'FAIL'} | {len(step_issues)}个问题 |")
+    lines.append(f"| 日志中ERROR | {'PASS' if len(log_check.get('errors', [])) == 0 else 'FAIL'} | {len(log_check.get('errors', []))}条 |")
+    lines.append(f"| 日志中异常堆栈 | {'PASS' if len(log_check.get('tracebacks', [])) == 0 else 'FAIL'} | {len(log_check.get('tracebacks', []))}条 |")
     lines.append("")
 
     if consistency_issues:
-        lines.append("### consistency issues detail")
+        lines.append("### 一致性问题详情")
         lines.append("")
         for iss in consistency_issues:
             lines.append(f"- {iss}")
         lines.append("")
 
     if step_issues:
-        lines.append("### step issues detail")
+        lines.append("### 步骤问题详情")
         lines.append("")
         for iss in step_issues:
             lines.append(f"- {iss}")
         lines.append("")
 
-    # ── 7 DB vs app_log vs prompt_log consistency ──
-    lines.append("## 7 DB vs app_log vs prompt_log consistency")
+    if db_prompt_issues:
+        lines.append("### DB-Prompt日志不一致详情")
+        lines.append("")
+        for iss in db_prompt_issues:
+            lines.append(f"- {iss}")
+        lines.append("")
+
+    # 第7节：三方一致性对比（DB/应用日志/Prompt日志）
+    lines.append("## 7 三方一致性（DB/应用日志/Prompt日志）")
     lines.append("")
 
     db_tool_names = [s.get("tool_name", "") for s in db_steps if s.get("type") == "action_tool"]
@@ -835,24 +1021,26 @@ def write_test_record(
     log_llm_calls = log_check.get("llm_calls_found", 0)
     prompt_log_files = log_check.get("prompt_log_files", [])
 
-    lines.append("| compare_item | DB | SSE | log | match? |")
-    lines.append("|--------------|-----|-----|-----|--------|")
-    lines.append(f"| tool_count | {len(db_tool_names)} | {len(sse_tool_names)} | {log_llm_calls} LLM calls | {'PASS' if abs(len(db_tool_names) - len(sse_tool_names)) <= 2 else 'FAIL'} |")
-    lines.append(f"| tool_names | {db_tool_names[:5]} | {sse_tool_names[:5]} | - | {'PASS' if set(db_tool_names) & set(sse_tool_names) or (not db_tool_names and not sse_tool_names) else 'FAIL'} |")
-    lines.append(f"| observation_count | {db_obs_count} | {len(tool_calls)} | - | {'PASS' if db_obs_count >= len(tool_calls) - 1 else 'WARN'} |")
-    lines.append(f"| prompt_log_files | - | - | {prompt_log_files[:3]} | {'PASS' if prompt_log_files else 'WARN'} |")
+    lines.append("| 对比项 | DB | SSE | 日志 | 是否匹配 |")
+    lines.append("|--------|-----|-----|------|----------|")
+    lines.append(f"| 工具数量 | {len(db_tool_names)} | {len(sse_tool_names)} | {log_llm_calls}次LLM调用 | {'PASS' if abs(len(db_tool_names) - len(sse_tool_names)) <= 2 else 'FAIL'} |")
+    lines.append(f"| 工具名称 | {db_tool_names[:5]} | {sse_tool_names[:5]} | - | {'PASS' if set(db_tool_names) & set(sse_tool_names) or (not db_tool_names and not sse_tool_names) else 'FAIL'} |")
+    lines.append(f"| 观察结果数 | {db_obs_count} | {len(tool_calls)} | - | {'PASS' if db_obs_count >= len(tool_calls) - 1 else 'WARN'} |")
+    lines.append(f"| Prompt日志文件 | - | - | {prompt_log_files} | {'PASS' if prompt_log_files else 'WARN'} |")
     lines.append("")
 
-    # ── 8 extra ──
+    # 第8节：附加信息(排除已在验证表显示的DbPromptIssues)
     if extra:
-        lines.append("## 8 extra info")
+        lines.append("## 8 附加信息")
         lines.append("")
         for k, v in extra.items():
+            if k == "DbPromptIssues":
+                continue
             lines.append(f"- {k}: {v}")
         lines.append("")
 
     lines.append("---")
-    lines.append(f"**updated**: {ts_str}")
+    lines.append(f"**更新时间**: {ts_str}")
     lines.append("")
 
     try:
@@ -860,7 +1048,7 @@ def write_test_record(
         with open(str(record_file), "w", encoding="utf-8") as f:
             f.write(content)
     except PermissionError:
-        alt_file = RECORD_DIR / f"test-record-{test_id}-{date_str}-{int(now.timestamp())}.md"
+        alt_file = RECORD_DIR / f"测试记录-{test_id}-{date_str}-{int(now.timestamp())}.md"
         try:
             with open(str(alt_file), "w", encoding="utf-8") as f:
                 f.write(content)
