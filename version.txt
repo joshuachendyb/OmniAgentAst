@@ -1,3 +1,32 @@
+v0.16.5
+
+更新时间: 2026-06-16 06:27:44
+
+## v0.16.4→v0.16.5 变更汇总 - 小欧-2026-06-16
+
+### fix: database.py P1修复+send_notification注册恢复
+- 04074dfc8: database.py 数据库初始化重构+全链路E2E测试手册更新
+- b9c5ac4f7: database.py+prompt_logger.py P1问题修复(异常处理+列名安全+SDK统一)
+- a29db4308: 删除pytest测试临时数据库文件
+- 5d03f4229: desktop_register.py/desktop_schema.py 恢复send_notification工具注册
+
+### refactor: 报告文件目录重构+E2E测试优化
+- ee14f3fde: 后台报告文件移入reports/目录
+- 2d2084132: 报告文件合并到根目录reports/
+- 7ec5adfa6: 清理后台无用目录(json_backup/pycache/venv) + .gitignore补充
+- ee1819fef: E2E测试优化-新增assert_stream_ended()统一流结束验证+清理临时文件
+
+### docs: E2E测试记录+操作手册更新
+- 21e511de5: 删除临时文件+操作手册更新
+- c6f3d8cf0: E2E测试记录+操作手册更新+代码更新
+- 8433627c0: E2E测试记录+报告更新
+
+### feat: 测试记录更新+send_notification自动安装
+- efd1a7fe6: 代码+文档+测试记录+报告更新
+- 5f7516ec1: gui_tools.py send_notification自动安装win10toast依赖
+
+---
+
 v0.16.4
 
 更新时间: 2026-06-14 14:41:23
