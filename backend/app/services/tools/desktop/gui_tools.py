@@ -402,16 +402,31 @@ def _write_clipboard(content: str) -> Dict[str, Any]:
 # ========== 通知操作(Tool 107)==========
 
 def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, Any]:
-    """发送系统通知 - 按文档9.7节定义"""
+    """发送系统通知 - 按文档9.7节定义 自动安装依赖"""
+    import subprocess
+    import sys as _sys
+
+    try:
+        import pkg_resources
+    except ImportError:
+        subprocess.check_call([_sys.executable, "-m", "pip", "install", "setuptools<70", "-q"])
+
     try:
         from win10toast import ToastNotifier
+    except ImportError:
+        subprocess.check_call([_sys.executable, "-m", "pip", "install", "win10toast", "-q"])
+        try:
+            from win10toast import ToastNotifier
+        except ImportError:
+            return build_error(ERR_NO_WIN10TOAST, "自动安装win10toast失败,请手动: pip install win10toast")
 
+    try:
         toaster = ToastNotifier()
         toaster.show_toast(title, message, duration=duration)
         return build_success({"title": title, "message": message, "duration": duration}, "通知发送成功",
                              next_actions=build_next_actions([]))
-    except ImportError:
-        return build_error(ERR_NO_WIN10TOAST, "需要安装 win10toast 库: pip install win10toast")
+    except Exception as e:
+        return build_error(ERR_NO_WIN10TOAST, f"通知发送失败: {e}")
 from app.constants import (
     ERR_DESKTOP_CLIPBOARD,
     ERR_DESKTOP_MOUSE_CLICK,
