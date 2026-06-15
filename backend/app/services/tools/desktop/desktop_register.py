@@ -5,17 +5,19 @@ DESKTOP Register - 桌面工具注册点
 【架构规范】2026-04-29 小沈
 【2026-05-17 小沈】26→10精简:统一注册10个LLM可见工具
 【2026-06-09 小沈】删除边缘工具:screen_record/ocr/send_notification,10→6
+【2026-06-15 小欧】恢复send_notification注册(函数仍在gui_tools.py),6→7
 
-【工具列表】统一SCREEN分类工具(6个)
+【工具列表】统一SCREEN分类工具(7个)
 1. window_info - 窗口信息查询(合并list_windows+get_window_info)
 2. window_control - 统一窗口控制(合并set_window_state+focus_window+resize_window)
 3. mouse_control - 统一鼠标控制(合并click+move+scroll)
 4. keyboard_control - 统一键盘控制(合并type_text+shortcut+key_combo)
 5. screen_capture - 统一屏幕截图(合并screenshot+snapshot)
 6. clipboard_control - 统一剪贴板控制(合并read_clipboard+write_clipboard)
+7. send_notification - 发送Windows系统通知
 
 创建时间: 2026-04-29
-更新时间: 2026-06-09
+更新时间: 2026-06-15
 """
 
 import logging
@@ -30,6 +32,7 @@ from app.services.tools.desktop.desktop_schema import (
     KeyboardControlInput,
     ScreenCaptureInput,
     ClipboardControlInput,
+    SendNotificationInput,
 )
 
 from app.services.tools.desktop.desktop_tools import (
@@ -40,6 +43,7 @@ from app.services.tools.desktop.desktop_tools import (
     screen_capture,
     clipboard_control,
 )
+from app.services.tools.desktop.gui_tools import send_notification
 
 
 DESKTOP_TOOL_DESCRIPTIONS = {
@@ -102,6 +106,15 @@ action参数决定操作类型:
 使用示例:
 - 读取 → clipboard_control(action="read")
 - 写入 → clipboard_control(action="write", content="Hello World")""",
+
+    "send_notification": """发送Windows系统通知弹窗。
+title: 通知标题
+message: 通知正文
+duration: 显示时长(秒),默认5秒
+
+使用示例:
+- 发送通知 → send_notification(title="AI热点新闻", message="已为您搜索到最新AI行业新闻")
+- 发送通知 → send_notification(title="任务完成", message="全部操作已完成", duration=3)""",
 }
 
 DESKTOP_TOOL_INPUT_MODELS = {
@@ -111,7 +124,7 @@ DESKTOP_TOOL_INPUT_MODELS = {
     "keyboard_control": KeyboardControlInput,
     "screen_capture": ScreenCaptureInput,
     "clipboard_control": ClipboardControlInput,
-
+    "send_notification": SendNotificationInput,
 }
 
 DESKTOP_TOOL_EXAMPLES = {
@@ -151,11 +164,16 @@ DESKTOP_TOOL_EXAMPLES = {
         {"action": "write", "content": "Hello World"},
     ],
 
+    "send_notification": [
+        {"title": "AI热点新闻", "message": "已为您搜索到最新AI行业新闻", "duration": 5},
+        {"title": "任务完成", "message": "全部操作已完成"},
+    ],
+
 }
 
 
 def _register_desktop_tools():
-    """注册SCREEN分类工具(6个) — 小沈 2026-06-09 删除边缘工具"""
+    """注册SCREEN分类工具(7个) — 小沈 2026-06-09 删除边缘工具, 2026-06-15 恢复send_notification"""
     tool_methods = {
         "window_info": window_info,
         "window_control": window_control,
@@ -163,6 +181,7 @@ def _register_desktop_tools():
         "keyboard_control": keyboard_control,
         "screen_capture": screen_capture,
         "clipboard_control": clipboard_control,
+        "send_notification": send_notification,
     }
 
     for name, method in tool_methods.items():

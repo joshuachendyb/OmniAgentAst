@@ -106,3 +106,16 @@ class ClipboardControlInput(BaseModel):
         default=None,
         description="写入内容(action=write时必填,不传则返回ERR_MISSING_PARAM)"
     )
+
+
+class SendNotificationInput(BaseModel):
+    title: str = Field(
+        description="通知标题,例如:'AI热点新闻'"
+    )
+    message: str = Field(
+        description="通知正文,例如:'已为您搜索到最新AI行业新闻'"
+    )
+    duration: int = Field(
+        default=5,
+        description="通知显示时长(秒),默认5秒"
+    )
