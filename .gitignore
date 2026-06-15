@@ -13,7 +13,6 @@ __pycache__/
 # test & reports
 backend/tests/
 backend/pytest-of-chend/
-reports/
 
 # logs & temp
 backend/logs/
