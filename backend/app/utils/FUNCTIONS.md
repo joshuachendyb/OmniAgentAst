@@ -47,7 +47,13 @@
 
 ### 1.4 响应工具（response_utils.py）【v0.13.33新增】
 
-### 1.5 测试标记（test_marker.py）【v0.16.0新增】
+### 1.5 依赖安装（dependency.py）【v0.16.5新增】
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `ensure_dependency` | 确保Python依赖可用，缺失自动安装 | import_name, pip_package, pre_install | bool |
+
+### 1.6 测试标记（test_marker.py）【v0.16.0新增】
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|

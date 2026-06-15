@@ -28,6 +28,7 @@ import time
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 from app.utils.time_utils import timestamp_for_filename
+from app.utils.dependency import ensure_dependency
 
 from app.services.tools._response import build_success, build_error
 from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, truncate_text  # 小沈 2026-05-20
@@ -402,24 +403,11 @@ def _write_clipboard(content: str) -> Dict[str, Any]:
 # ========== 通知操作(Tool 107)==========
 
 def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, Any]:
-    """发送系统通知 - 按文档9.7节定义 自动安装依赖"""
-    import subprocess
-    import sys as _sys
+    """发送系统通知 - 按文档9.7节定义 小欧 2026-06-16 使用ensure_dependency自动安装"""
+    if not ensure_dependency("win10toast", pre_install=["setuptools<70"]):
+        return build_error(ERR_NO_WIN10TOAST, "自动安装win10toast失败,请手动: pip install win10toast")
 
-    try:
-        import pkg_resources
-    except ImportError:
-        subprocess.check_call([_sys.executable, "-m", "pip", "install", "setuptools<70", "-q"])
-
-    try:
-        from win10toast import ToastNotifier
-    except ImportError:
-        subprocess.check_call([_sys.executable, "-m", "pip", "install", "win10toast", "-q"])
-        try:
-            from win10toast import ToastNotifier
-        except ImportError:
-            return build_error(ERR_NO_WIN10TOAST, "自动安装win10toast失败,请手动: pip install win10toast")
-
+    from win10toast import ToastNotifier
     try:
         toaster = ToastNotifier()
         toaster.show_toast(title, message, duration=duration)
