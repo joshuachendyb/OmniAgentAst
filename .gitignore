@@ -3,6 +3,8 @@ test_output.txt
 *.log
 __pycache__/
 *.pyc
+.pytest_cache/
+.venv/
 *.pyo
 .arts/
 .idea/
