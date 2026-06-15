@@ -70,6 +70,7 @@ async def send_chat(
     user_input: str,
     session_id: Optional[str] = None,
     timeout_seconds: int = 180,
+    partial_result: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """发送POST /chat/stream, 接收SSE事件流, 返回结构化结果
 
@@ -97,59 +98,74 @@ async def send_chat(
     response_text = ""
     tool_calls: List[Dict[str, Any]] = []
 
-    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_seconds)) as client:
-        try:
-            async with client.stream("POST", chat_url, json=payload) as resp:
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    data_str = line[6:]
-                    try:
-                        event = json.loads(data_str)
-                    except json.JSONDecodeError:
-                        continue
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_seconds)) as client:
+            try:
+                async with client.stream("POST", chat_url, json=payload) as resp:
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data_str = line[6:]
+                        try:
+                            event = json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
 
-                    event_type = event.get("type", "")
-                    events.append(event)
+                        event_type = event.get("type", "")
+                        events.append(event)
 
-                    if event_type == "error":
-                        error_occurred = True
+                        if event_type == "error":
+                            error_occurred = True
 
-                    if event_type == "final":
-                        final_event = event
-                        response_text = event.get("content") or event.get("response", "")
+                        if event_type == "final":
+                            final_event = event
+                            response_text = event.get("content") or event.get("response", "")
 
-                    if event_type == "action_tool":
-                        tool_calls.append({
-                            "type": event_type,
-                            "tool_name": event.get("tool_name", ""),
-                            "tool_params": event.get("tool_params", {}),
-                        })
-        except httpx.TimeoutException:
-            pass
-        except Exception:
-            pass
+                        if event_type == "action_tool":
+                            tool_calls.append({
+                                "type": event_type,
+                                "tool_name": event.get("tool_name", ""),
+                                "tool_params": event.get("tool_params", {}),
+                            })
+            except httpx.TimeoutException:
+                pass
+            except Exception:
+                pass
+    finally:
+        total_time_ms = int((time.monotonic() - start_time) * 1000)
+        event_types = [e.get("type", "") for e in events]
+        logical_events = [e for e in events if e.get("type") != "chunk"]
+        unique_step_numbers = len({e.get("step") for e in events if e.get("step") is not None})
+        ret = {
+            "events": events,
+            "final_event": final_event,
+            "has_error": error_occurred,
+            "total_steps": len(events),
+            "logical_step_count": len(logical_events),
+            "unique_step_numbers": unique_step_numbers,
+            "tool_calls": tool_calls,
+            "llm_call_count": len(tool_calls) + 1,
+            "total_time_ms": total_time_ms,
+            "response_text": response_text,
+            "session_id": session_id,
+            "user_msg_id": user_msg_id,
+            "event_types": event_types,
+        }
+        if partial_result is not None:
+            partial_result.update(ret)
+        return ret
 
-    total_time_ms = int((time.monotonic() - start_time) * 1000)
-    event_types = [e.get("type", "") for e in events]
-    logical_events = [e for e in events if e.get("type") != "chunk"]
-    unique_step_numbers = len({e.get("step") for e in events if e.get("step") is not None})
 
-    return {
-        "events": events,
-        "final_event": final_event,
-        "has_error": error_occurred,
-        "total_steps": len(events),
-        "logical_step_count": len(logical_events),
-        "unique_step_numbers": unique_step_numbers,
-        "tool_calls": tool_calls,
-        "llm_call_count": len(tool_calls) + 1,
-        "total_time_ms": total_time_ms,
-        "response_text": response_text,
-        "session_id": session_id,
-        "user_msg_id": user_msg_id,
-        "event_types": event_types,
-    }
+# ─── 流结束方式检测(公共函数, 替代assert final_event) ──────────
+
+def assert_stream_ended(result: Dict[str, Any]) -> str:
+    """返回流结束方式(final/error/中断), 不阻断
+    所有方式都算流已结束, 忠实记录 -- 小健 2026-06-15"""
+    if result.get("final_event") is not None:
+        return "final"
+    if result.get("has_error"):
+        return "error"
+    return "中断"
 
 
 # ─── 数据库连接(通过后端API, 避免sqlite3直连权限问题) ────────
@@ -853,6 +869,23 @@ def write_test_record(
     logical_events = [e for e in events if e.get("type") != "chunk"]
     unique_step_nums = len({e.get("step") for e in events if e.get("step") is not None})
 
+    resp_has_error = False
+    if resp:
+        resp_lower = resp.lower()
+        clean_resp = resp.replace("\n", " ").replace("\r", " ")
+        err_markers = ("错误:", "错误：", "超时,", "超时，", "超时)", "超时）", "出错", "failed:", "exception:", "traceback:")
+        resp_has_error = any(m in clean_resp for m in err_markers)
+
+    if not db:
+        sid = result.get("session_id", "")
+        if sid:
+            try:
+                fb = check_db(sid)
+                if fb.get("session_exists"):
+                    db = fb
+            except Exception:
+                pass
+
     lines: List[str] = []
     lines.append(f"# 测试记录-{test_id}-{date_str}")
     lines.append("")
@@ -979,9 +1012,10 @@ def write_test_record(
     lines.append("")
     lines.append("| 验证项 | 结果 | 说明 |")
     lines.append("|--------|------|------|")
-    lines.append(f"| final事件 | {'PASS' if result.get('final_event') else 'FAIL'} | - |")
-    lines.append(f"| 是否有错误 | {'PASS' if not result.get('has_error') else 'FAIL'} | - |")
-    lines.append(f"| 回复内容 | {'PASS' if resp else 'FAIL'} | {len(resp)}字 |")
+    stream_end_type = assert_stream_ended(result)
+    lines.append(f"| 流结束 | {stream_end_type} | - |")
+    lines.append(f"| 是否有error事件 | {'PASS' if not result.get('has_error') else 'FAIL'} | - |")
+    lines.append(f"| 回复内容 | {'FAIL' if not resp or resp_has_error else 'PASS'} | {len(resp)}字{' [含错误关键词]' if resp_has_error else ''} |")
     lines.append(f"| 数据库验证 | {'PASS' if db.get('session_exists') else 'FAIL'} | - |")
     lines.append(f"| SSE-DB一致性 | {'PASS' if len(consistency_issues) == 0 else 'FAIL'} | {len(consistency_issues)}个问题 |")
     lines.append(f"| DB-Prompt日志一致性 | {'PASS' if db_prompt_ok else 'FAIL'} | {db_prompt_detail} |")

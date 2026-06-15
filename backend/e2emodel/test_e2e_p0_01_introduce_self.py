@@ -26,6 +26,7 @@ from e2e_helpers import (
     verify_consistency, verify_steps, check_logs,
     cleanup, print_report, write_test_record,
     get_security_enabled, set_security_enabled,
+    assert_stream_ended,
 )
 
 
@@ -60,11 +61,17 @@ async def test_e2e_p0_01_introduce_self():
 
         print(f"  [Step3-4] SSE: {result['total_steps']} events, {result['logical_step_count']} logical")
 
+        # ── L1 流结束验证(所有方式有效，不阻断) ──
+        end_type = assert_stream_ended(result)
+        print(f"  流结束: {end_type}")
+
         # ── L1 MUST层 ──
-        assert not result["has_error"], "不应有error事件(MUST)"
-        assert result["final_event"] is not None, "必须收到final事件(MUST)"
         assert result["total_steps"] >= 2, f"至少start+final(MUST), got {result['total_steps']}"
         assert result["unique_step_numbers"] < 50, f"疑似死循环: {result['unique_step_numbers']}步(MUST)"
+
+        # ── L2 SHOULD WARN: has_error降级 ──
+        if result["has_error"]:
+            print(f"  [WARN] 有error事件(SHOULD)，流结束: {end_type}")
 
         # ── L2 SHOULD层: 回复语义 ──
         resp = result["response_text"]

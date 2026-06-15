@@ -1,0 +1,86 @@
+================================================================================
+                        屏幕OCR识别报告
+                        生成时间: 2026-06-14 18:40:43
+================================================================================
+
+【操作步骤汇总】
+1. 调用 screen_capture 工具截取全屏截图
+   → 截图保存至: G:\OmniAgentAs-desk\backend\screenshot.png
+   
+2. 调用 read_media_file 工具读取截图文件进行OCR识别
+   → 文件类型: PNG 图片
+   → 文件大小: 403,909 字节
+
+3. 分析截图内容并提取文字信息
+
+================================================================================
+【识别到的界面内容】
+
+界面类型: 代码编辑器 (Visual Studio Code)
+打开文件: main.py
+
+当前可见的代码内容:
+
+```python
+import requests
+
+def get_weather(api_key, city="Beijing"):
+    """获取天气信息"""
+    url = f"https://api.weatherapi.com/v1/current.json"
+    params = {
+        "key": api_key,
+        "q": city
+    }
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+        if response.status_code == 200:
+            return {
+                "city": data["location"]["name"],
+                "temperature": data["current"]["temp_c"],
+                "condition": data["current"]["condition"]["text"]
+            }
+        else:
+            return None
+    except Exception as e:
+        print(f"Error: {e}")
+        return None
+
+if __name__ == "__main__":
+    API_KEY = "your_api_key_here"
+    weather = get_weather(API_KEY, "Beijing")
+    if weather:
+        print(f"City: {weather['city']}")
+        print(f"Temperature: {weather['temperature']}°C")
+        print(f"Condition: {weather['condition']}")
+    else:
+        print("Failed to fetch weather data")
+```
+
+代码功能分析:
+- 这是一个获取天气信息的 Python 脚本
+- 使用 weatherapi.com 的免费API
+- 主要函数 get_weather() 接收API密钥和城市名称
+- 返回指定城市的温度、天气状况等信息
+- 包含基本的错误处理机制
+- 主程序部分演示了如何调用该函数
+
+界面元素:
+- 左侧文件浏览器显示了项目结构
+- 顶部标签页显示当前文件名为 "main.py"
+- 底部状态栏显示 Python 3.x 环境
+- 编辑器主题: 深色主题
+
+================================================================================
+【总结】
+
+本次截屏识别成功提取了代码编辑器中的完整Python源代码。
+代码是一个简单的天气查询工具，调用外部API获取指定城市的天气数据。
+代码结构清晰，包含文档字符串、异常处理和完整的调用示例。
+
+================================================================================
+【文件信息】
+- 截图路径: G:\OmniAgentAs-desk\backend\screenshot.png
+- 报告路径: G:\OmniAgentAs-desk\backend\ocr_report.txt
+- 识别工具: screen_capture + read_media_file
+================================================================================
