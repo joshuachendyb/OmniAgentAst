@@ -131,17 +131,18 @@ class ToolRetryEngine:
             logger.warning(f"[参数监控] action={action}, 获取 schema 失败：{e}", exc_info=True)
         return True
     
-    def _check_missing_params(self, tool: Callable, params: Dict[str, Any]) -> bool:
-        """检查缺失参数 — 小沈 2026-06-08"""
-        sig = inspect.signature(tool)
-        required = [
-            p.name for p in sig.parameters.values()
-            if p.default == inspect.Parameter.empty
-            and p.name != 'self'
-            and p.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
-        ]
-        missing = [p for p in required if p not in params]
-        return len(missing) == 0
+    def _check_missing_params(self, action: str, params: Dict[str, Any]) -> bool:
+        """检查缺失参数 — 读Schema的required字段 — 小欧 2026-06-15"""
+        try:
+            from app.services.tools.registry import tool_registry
+            metadata = tool_registry.get_tool(action)
+            if metadata and metadata.input_schema:
+                required = metadata.input_schema.get("required", [])
+                missing = [p for p in required if p not in params]
+                return len(missing) == 0
+        except (ImportError, AttributeError) as e:
+            logger.warning(f"[_check_missing_params] action={action}, 获取schema失败: {e}", exc_info=True)
+        return True
     
     def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable):
         """验证参数（非法参数+必需参数）— P1-05修复: 返回错误字典而非None"""
@@ -154,7 +155,7 @@ class ToolRetryEngine:
                 0, error_type="invalid_params",
             )
         
-        if not self._check_missing_params(tool, params):
+        if not self._check_missing_params(action, params):
             return self._build_retry_error(
                 ERR_MISSING_PARAM,
                 f"缺少必需参数: {action}",

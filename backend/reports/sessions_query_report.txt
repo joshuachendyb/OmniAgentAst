@@ -1,0 +1,59 @@
+=== sessions表查询操作汇总报告 ===
+
+【操作步骤】
+1. 搜索数据库相关工具，找到 query_sql 工具
+2. 尝试查询 sessions 表，发现该表不存在
+3. 使用 get_db_schema 工具查看数据库结构，发现实际表名为 chat_sessions
+4. 使用 query_sql 查询 chat_sessions 表的前3条记录
+5. 将查询结果保存到 E:\test_dir\query_result.txt
+6. 生成此分析报告并保存到 reports 目录
+
+【数据库信息】
+- 数据库类型: SQLite
+- 数据库文件路径: ~/.omniagent/chat_history.db
+- 实际表名: chat_sessions (非 sessions)
+
+【表结构字段】
+- id: TEXT (主键) - 会话唯一标识
+- title: TEXT - 会话标题
+- is_valid: INTEGER - 是否有效 (0/1)
+- version: INTEGER - 版本号
+- created_at: TIMESTAMP - 创建时间
+- updated_at: TIMESTAMP - 更新时间
+- is_deleted: BOOLEAN - 是否删除
+- title_locked: BOOLEAN - 标题是否锁定
+- title_updated_at: TIMESTAMP - 标题更新时间
+- message_count: INTEGER - 消息数量
+
+【前3条记录分析】
+1. 第一条记录:
+   - ID: b58be88b-0e67-4470-a188-02b357de44fa
+   - 标题: 新会话 2026-06-14 15:21
+   - 创建时间: 2026-06-14T07:21:38.400242Z
+   - 消息数量: 0
+   - 状态: 未删除、未锁定、无效
+
+2. 第二条记录:
+   - ID: 51d0c788-9f9d-42b4-980d-e3a47032d41d
+   - 标题: 新会话 2026-06-14 15:22
+   - 创建时间: 2026-06-14T07:22:31.516994Z
+   - 消息数量: 0
+   - 状态: 未删除、未锁定、无效
+
+3. 第三条记录:
+   - ID: 6c5709d0-51b5-4944-b6b3-3be68fe6e1b1
+   - 标题: 新会话 2026-06-14 15:22
+   - 创建时间: 2026-06-14T07:22:52.272106Z
+   - 消息数量: 0
+   - 状态: 未删除、未锁定、无效
+
+【数据分析】
+- 所有3条记录均为新创建的会话
+- 消息数量均为0，说明这些会话没有消息记录
+- 创建时间间隔约为1分钟
+- 所有会话的is_valid字段均为0，表示这些会话无效
+- 所有会话的is_deleted字段均为0，表示这些会话未被删除
+- 标题均未锁定，可以随时修改
+
+【结论】
+查询成功获取了chat_sessions表的前3条记录。这些记录都是新创建的无效会话，没有消息内容。建议检查会话的有效性状态，可能需要清理这些无效会话。

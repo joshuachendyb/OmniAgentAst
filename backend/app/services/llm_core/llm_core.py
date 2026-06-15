@@ -50,7 +50,7 @@ class BaseAIService:
         api_base: str,
         provider: str = "",
         timeout: int = DEFAULT_LLM_TIMEOUT,
-        max_tokens: int = 4096,
+        max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         seed: Optional[int] = None,
     ):

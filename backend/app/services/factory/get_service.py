@@ -74,7 +74,7 @@ def _create_service_instance(provider_config: dict, final_provider: str, final_m
         api_base=(provider_config.get("api_base") or "https://api.openai.com/v1").strip(),
         provider=final_provider,
         timeout=provider_config.get("timeout", 30),
-        max_tokens=provider_config.get("max_tokens", 4096),
+        max_tokens=provider_config.get("max_tokens"),
         temperature=float(provider_config.get("temperature", 0.7)),
         seed=provider_config.get("seed", None),
     )

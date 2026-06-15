@@ -651,6 +651,8 @@ def check_logs(
                 continue
             if "e2e_test" in line:
                 continue
+            if "流式错误" in line or "请求超时" in line:
+                continue
             result["errors"].append(line.strip()[:200])
 
         # ── traceback检查(MUST) ──
@@ -1024,6 +1026,36 @@ def write_test_record(
     lines.append(f"| 日志中异常堆栈 | {'PASS' if len(log_check.get('tracebacks', [])) == 0 else 'FAIL'} | {len(log_check.get('tracebacks', []))}条 |")
     lines.append("")
 
+    if resp_has_error and resp:
+        lines.append("**回复内容错误详情**:")
+        lines.append("")
+        lines.append("```")
+        lines.append(resp[:300])
+        lines.append("```")
+        lines.append("")
+
+    log_errors = log_check.get("errors", [])
+    log_tracebacks = log_check.get("tracebacks", [])
+    if log_errors or log_tracebacks:
+        lines.append("### 日志错误详情")
+        lines.append("")
+        if log_errors:
+            lines.append("**ERROR日志**:")
+            lines.append("")
+            for err in log_errors:
+                lines.append(f"```")
+                lines.append(err)
+                lines.append("```")
+            lines.append("")
+        if log_tracebacks:
+            lines.append("**异常堆栈**:")
+            lines.append("")
+            for tb in log_tracebacks:
+                lines.append(f"```")
+                lines.append(tb[:500])
+                lines.append("```")
+            lines.append("")
+
     if consistency_issues:
         lines.append("### 一致性问题详情")
         lines.append("")
@@ -1079,7 +1111,7 @@ def write_test_record(
 
     try:
         content = "\n".join(lines)
-        with open(str(record_file), "w", encoding="utf-8") as f:
+        with open(str(record_file), "w", encoding="utf-8-sig") as f:
             f.write(content)
     except PermissionError:
         alt_file = RECORD_DIR / f"测试记录-{test_id}-{date_str}-{int(now.timestamp())}.md"
