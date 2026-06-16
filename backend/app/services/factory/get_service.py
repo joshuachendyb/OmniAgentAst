@@ -10,7 +10,7 @@ import threading
 
 from app.utils.logger import setup_logger
 from app.utils.time_utils import now_str
-from app.services.llm_core import BaseAIService
+from app.services.llm import BaseAIService
 from app.services.factory.close_instance_sync import close_instance_sync
 
 logger = setup_logger(__name__)

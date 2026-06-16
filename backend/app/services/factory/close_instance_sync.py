@@ -8,7 +8,7 @@ close_instance_sync — 从 factory.py 拷出
 from typing import Optional
 
 from app.utils.logger import setup_logger
-from app.services.llm_core import BaseAIService
+from app.services.llm import BaseAIService
 
 logger = setup_logger(__name__)
 
