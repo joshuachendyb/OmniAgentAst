@@ -54,30 +54,9 @@ CATEGORY_NAMES: Dict[ToolCategory, str] = {cat: cat.name_cn for cat in ToolCateg
 
 
 # ====================================================================
-# 四、工具安全级别（Layer 2）— 小沈 2026-06-09
+# （删除Layer 2安全级别枚举 — 2026-06-16 小沈 5级冗余，改用二元安全+check_fn）
+# 参见设计文档: doc-6月发展/5级安全系统清理设计方案-20260616.md
 # ====================================================================
-
-class ToolSafetyLevel(Enum):
-    """
-    工具安全级别五级分级
-    
-    v3.4修复：区分沙箱内危险和系统级危险
-    """
-    READ_ONLY = "read_only"              # 纯读取，无副作用
-    SAFE = "safe"                        # 有副作用但可逆或无害
-    DESTRUCTIVE = "destructive"          # 破坏性操作，不可逆
-    DANGEROUS_SANDBOX = "dangerous_sandbox"  # 沙箱内危险(execute_python/execute_js)
-    DANGEROUS = "dangerous"              # 系统级危险(execute_shell_command/kill_process)
-
-
-# SAFETY_POLICY默认值（配置驱动，支持运行时调整）
-DEFAULT_SAFETY_POLICY = {
-    ToolSafetyLevel.READ_ONLY:          {"needs_confirmation": False, "needs_safety_check": False},
-    ToolSafetyLevel.SAFE:               {"needs_confirmation": False, "needs_safety_check": False},
-    ToolSafetyLevel.DESTRUCTIVE:        {"needs_confirmation": True,  "needs_safety_check": True},
-    ToolSafetyLevel.DANGEROUS_SANDBOX:  {"needs_confirmation": True,  "needs_safety_check": True},
-    ToolSafetyLevel.DANGEROUS:          {"needs_confirmation": True,  "needs_safety_check": True},
-}
 
 
 
@@ -104,9 +83,10 @@ class ToolMetadata:
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
     
-    # 【v3.4新增】Layer 2安全级别字段 — 小沈 2026-06-09
-    safety_level: ToolSafetyLevel = ToolSafetyLevel.SAFE
-    action_safety_map: Optional[Dict[str, ToolSafetyLevel]] = None
+    # 【2026-06-16 小沈】Layer 2安全字段（替代5级枚举）
+    needs_confirmation: bool = False
+    action_confirmation: Optional[Dict[str, bool]] = None
+    check_fn: Optional[Callable] = None
 
 
     def get_failure_hint(self, tool_params: Optional[dict] = None) -> str:
@@ -124,6 +104,4 @@ __all__ = [
     "CATEGORY_ORDER",
     "CATEGORY_NAMES",
     "ToolMetadata",
-    "ToolSafetyLevel",
-    "DEFAULT_SAFETY_POLICY",
 ]

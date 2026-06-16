@@ -39,7 +39,7 @@ from app.services.tools.file.file_schema import (
 
 from app.services.tools.file.file_tools import FileTools, get_file_tools
 from app.services.tools.registry import tool_registry
-from app.services.tools.tool_types import ToolCategory, ToolSafetyLevel
+from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 
@@ -193,28 +193,9 @@ def _register_file_tools():
         "data_file_format": lambda **kw: _get_ft().data_file_format(**kw),
     }
     
-    # 【v3.4新增】安全级别配置
-    safety_levels = {
-        "read_text_file": ToolSafetyLevel.READ_ONLY,
-        "write_text_file": ToolSafetyLevel.SAFE,
-        "read_media_file": ToolSafetyLevel.READ_ONLY,
-        "edit_text_file": ToolSafetyLevel.SAFE,
-        "list_directory": ToolSafetyLevel.READ_ONLY,
-        "search_files": ToolSafetyLevel.READ_ONLY,
-        "grep_file_content": ToolSafetyLevel.READ_ONLY,
-        "archive_tool": ToolSafetyLevel.SAFE,
-        "file_operation": ToolSafetyLevel.SAFE,  # move/copy=SAFE, delete=DESTRUCTIVE(action级)
-        "data_file_format": ToolSafetyLevel.SAFE,
-    }
-    
-    # 【v3.4新增】action级安全覆盖（file_operation的delete分级）
-    action_safety_maps = {
-        "file_operation": {
-            "move": ToolSafetyLevel.SAFE,
-            "copy": ToolSafetyLevel.SAFE,
-            "rename": ToolSafetyLevel.SAFE,
-            "delete": ToolSafetyLevel.DESTRUCTIVE,
-        },
+    # 【2026-06-16 小沈】二元安全配置（替代5级枚举）
+    CONFIRMATION_MAP = {
+        "file_operation": {"delete": True},  # file_operation的delete需要确认
     }
 
 
@@ -231,12 +212,12 @@ def _register_file_tools():
             version="2.0.0",
             input_model=input_model,
             examples=examples,
-            safety_level=safety_levels.get(name, ToolSafetyLevel.SAFE),  # 【v3.4新增】
-            action_safety_map=action_safety_maps.get(name),  # 【v3.4新增】
+            needs_confirmation=False,  # file工具默认不需要确认
+            action_confirmation=CONFIRMATION_MAP.get(name),
         )
 
         logger.debug(
-            f"[file_register] 已注册工具: {name}, Pydantic模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个, safety: {safety_levels.get(name, ToolSafetyLevel.SAFE).value}"
+            f"[file_register] 已注册工具: {name}, Pydantic模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个"
         )
 
 __all__ = [

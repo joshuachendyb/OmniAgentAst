@@ -12,7 +12,7 @@
 from typing import Dict, List, Optional, Callable, Any, Type, Set
 from datetime import datetime
 from pydantic import BaseModel
-from app.services.tools.tool_types import ToolCategory, ToolMetadata, ToolSafetyLevel
+from app.services.tools.tool_types import ToolCategory, ToolMetadata
 from app.services.tools.schema_utils import _generate_input_schema
 from app.utils.logger import setup_logger
 
@@ -62,14 +62,15 @@ class ToolRegistry:
         expose_to_llm: bool = True,
         next_actions: Optional[Dict[str, Any]] = None,
         failure_hint_fn: Optional[Callable] = None,
-        safety_level: ToolSafetyLevel = ToolSafetyLevel.SAFE,  # 【v3.4新增】
-        action_safety_map: Optional[Dict[str, ToolSafetyLevel]] = None,  # 【v3.4新增】
+        needs_confirmation: bool = False,
+        action_confirmation: Optional[Dict[str, bool]] = None,
+        check_fn: Optional[Callable] = None,
     ) -> Dict[str, Any]:
         """
         注册工具（单一入口，委托给私有方法）
         
         【修复P0-5 2026-06-08 小沈】拆分为私有方法，遵守SRP原则
-        【v3.4新增 2026-06-09 小沈】增加safety_level和action_safety_map参数
+        【2026-06-16 小沈】用二元安全参数替代5级枚举
         """
         input_schema = _generate_input_schema(input_model, input_schema)
         
@@ -91,7 +92,7 @@ class ToolRegistry:
             name, description, category, implementation, 
             input_schema, output_schema, examples, version, 
             dependencies, expose_to_llm, next_actions, failure_hint_fn,
-            safety_level, action_safety_map  # 【v3.4新增】
+            needs_confirmation, action_confirmation, check_fn
         )
     
     def _update_existing_tool(
@@ -132,8 +133,9 @@ class ToolRegistry:
         expose_to_llm: bool,
         next_actions: Optional[Dict[str, Any]],
         failure_hint_fn: Optional[Callable],
-        safety_level: ToolSafetyLevel = ToolSafetyLevel.SAFE,  # 【v3.4新增】
-        action_safety_map: Optional[Dict[str, ToolSafetyLevel]] = None,  # 【v3.4新增】
+        needs_confirmation: bool = False,
+        action_confirmation: Optional[Dict[str, bool]] = None,
+        check_fn: Optional[Callable] = None,
     ) -> Dict[str, Any]:
         """注册新工具"""
         metadata = ToolMetadata(
@@ -148,13 +150,14 @@ class ToolRegistry:
             expose_to_llm=expose_to_llm,
             next_actions=next_actions or {},
             failure_hint_fn=failure_hint_fn,
-            safety_level=safety_level,  # 【v3.4新增】
-            action_safety_map=action_safety_map,  # 【v3.4新增】
+            needs_confirmation=needs_confirmation,
+            action_confirmation=action_confirmation,
+            check_fn=check_fn,
         )
         self._tools[name] = metadata
         self._implementations[name] = implementation
         self._update_category_index(category, name)
-        logger.debug(f"Tool registered: {name} (category: {category.value}, safety: {safety_level.value})")
+        logger.debug(f"Tool registered: {name} (category: {category.value}, needs_confirmation: {needs_confirmation})")
         return {"status": "success"}
     
     def _update_category_index(self, category: ToolCategory, name: str) -> None:
@@ -253,8 +256,9 @@ def register_tool(
     output_schema: Optional[Dict] = None,
     examples: Optional[List[Dict]] = None,
     expose_to_llm: bool = True,
-    safety_level: ToolSafetyLevel = ToolSafetyLevel.SAFE,  # v3.4新增
-    action_safety_map: Optional[Dict[str, ToolSafetyLevel]] = None,  # v3.4新增
+    needs_confirmation: bool = False,
+    action_confirmation: Optional[Dict[str, bool]] = None,
+    check_fn: Optional[Callable] = None,
 ):
     """
     工具注册装饰器
@@ -282,8 +286,9 @@ def register_tool(
             output_schema=output_schema,
             examples=examples,
             expose_to_llm=expose_to_llm,
-            safety_level=safety_level,
-            action_safety_map=action_safety_map,
+            needs_confirmation=needs_confirmation,
+            action_confirmation=action_confirmation,
+            check_fn=check_fn,
         )
         return func
     

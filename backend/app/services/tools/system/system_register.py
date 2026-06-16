@@ -25,7 +25,7 @@ SYSTEM Register - 系统信息工具注册点
 """
 
 from app.services.tools.registry import tool_registry
-from app.services.tools.tool_types import ToolCategory, ToolSafetyLevel
+from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 from app.services.tools.system.system_schema import (
@@ -160,17 +160,8 @@ SYSTEM_TOOL_EXAMPLES = {
 
 def _register_system_tools():
     """注册系统工具 — 全部归入SYSTEM — 小欧 2026-06-12"""
-    # 【v3.4新增】安全级别配置 — 北京老陈 2026-06-13
-    safety_levels = {
-        "get_system_info": ToolSafetyLevel.READ_ONLY,
-        "event_log": ToolSafetyLevel.READ_ONLY,
-        "list_processes": ToolSafetyLevel.READ_ONLY,
-        "get_env": ToolSafetyLevel.READ_ONLY,
-        "kill_process": ToolSafetyLevel.DANGEROUS,
-        "service_control": ToolSafetyLevel.DANGEROUS,
-        "task_control": ToolSafetyLevel.DANGEROUS,
-        "set_env": ToolSafetyLevel.DESTRUCTIVE,
-    }
+    # 【2026-06-16 小沈】二元安全配置（替代5级枚举）
+    CONFIRM_TOOLS = {"kill_process", "service_control", "task_control", "set_env"}
 
     system_tools = {
         "get_system_info": get_system_info,
@@ -190,7 +181,7 @@ def _register_system_tools():
         tool_registry.register(
             name=name, description=desc, category=ToolCategory.SYSTEM,
             implementation=method, version="1.0.0", input_model=input_model, examples=examples,
-            safety_level=safety_levels.get(name, ToolSafetyLevel.SAFE),
+            needs_confirmation=(name in CONFIRM_TOOLS),
         )
         logger.info(f"[system_register] 已注册工具(SYSTEM): {name}")
 
