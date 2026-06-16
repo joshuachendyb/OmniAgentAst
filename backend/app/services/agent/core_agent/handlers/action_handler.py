@@ -23,7 +23,7 @@ from app.services.agent.steps import ThoughtStep, ToolStep, ErrorStep, MetaStep,
 from app.services.agent.agent_utils.message_utils import build_observation_text
 from app.db.models.operation_enums import OperationStatus
 
-_SENSITIVE_FIELDS = {"password", "token", "api_key", "secret", "authorization", "credential"}
+from app.services.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS
 
 
 # 【修复P2-5】封装observation构建上下文 — 北京老陈 2026-06-13

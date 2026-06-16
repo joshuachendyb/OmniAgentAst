@@ -110,10 +110,9 @@ class BaseAIService:
         is_paused = await check_paused(self.task_id)
         return is_cancelled or is_paused or self._cancelled
 
-    RATE_LIMIT_STATUS_CODES = RATE_LIMIT_STATUS_CODES
 
     def _is_rate_limit_status(self, status_code: int) -> bool:
-        return status_code in self.RATE_LIMIT_STATUS_CODES
+        return status_code in RATE_LIMIT_STATUS_CODES
 
     def _create_stream_error_chunk(self, e: Exception) -> StreamChunk:
         msg, err_type = _resolve_exception(e)

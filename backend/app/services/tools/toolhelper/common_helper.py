@@ -109,13 +109,13 @@ def run_windows_command(
         if result.returncode == 0:
             return build_success(data={"returncode": result.returncode, "stdout": stdout, "stderr": stderr}, message="命令执行成功")
         else:
-            return build_error(error_code="ERR_COMMAND_FAILED", message=f"命令返回非零退出码({result.returncode})", data={"returncode": result.returncode, "stdout": stdout, "stderr": stderr})
+            return build_error(code="ERR_COMMAND_FAILED", message=f"命令返回非零退出码({result.returncode})", data={"returncode": result.returncode, "stdout": stdout, "stderr": stderr})
     except subprocess.TimeoutExpired:
-        return build_error(error_code="ERR_COMMAND_TIMEOUT", message=f"命令执行超时({timeout}秒): {' '.join(cmd)}")
+        return build_error(code="ERR_COMMAND_TIMEOUT", message=f"命令执行超时({timeout}秒): {' '.join(cmd)}")
     except FileNotFoundError as e:
-        return build_error(error_code="ERR_COMMAND_NOT_FOUND", message=f"命令未找到: {str(e)}")
+        return build_error(code="ERR_COMMAND_NOT_FOUND", message=f"命令未找到: {str(e)}")
     except Exception as e:
-        return build_error(error_code="ERR_COMMAND_FAILED", message=f"命令执行失败: {str(e)}")
+        return build_error(code="ERR_COMMAND_FAILED", message=f"命令执行失败: {str(e)}")
 
 
 __all__ = [

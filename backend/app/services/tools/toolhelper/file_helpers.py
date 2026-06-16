@@ -67,7 +67,7 @@ import asyncio
 import json
 import csv
 import io
-import time as _time
+
 import time
 import tempfile
 import filecmp
@@ -1601,11 +1601,11 @@ async def get_file_info_impl(
             if path.is_dir():
                 try:
                     from app.services.tools.tool_constants import TOOL_TIMEOUTS
-                    _gi_deadline = _time.monotonic() + TOOL_TIMEOUTS.get("get_file_info", TOOL_TIMEOUTS["default"]) - 2
+                    _gi_deadline = time.monotonic() + TOOL_TIMEOUTS.get("get_file_info", TOOL_TIMEOUTS["default"]) - 2
                     _fc = 0
                     _dc = 0
                     for _p in path.rglob("*"):
-                        if _time.monotonic() > _gi_deadline:
+                        if time.monotonic() > _gi_deadline:
                             logger.warning(f"[get_file_info] 超时自检触发,提前返回 file_count={_fc}, dir_count={_dc}")
 
                             break

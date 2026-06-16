@@ -177,3 +177,5 @@ TOOL_RETRY_BACKOFF = {
 TOOL_RETRYABLE_ERRORS = {
     "default": ["timeout"],
 }
+
+SENSITIVE_FIELDS = {"password", "token", "api_key", "secret", "authorization", "credential"}

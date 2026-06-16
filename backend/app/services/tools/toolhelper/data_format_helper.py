@@ -200,14 +200,37 @@ def _parse_yaml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
         return build_error(ERR_PARSE_YAML, f"读取YAML失败: {str(e)}")
 
 
-def _write_yaml(file_path: str, data: Any, encoding: str = "utf-8", indent: int = 2) -> Dict[str, Any]:
-    """写入数据到YAML文件 - 小沈 2026-05-04"""
+def _write_yaml(file_path: str, data: Any, encoding: str = "utf-8", indent: int = 2, ordered: bool = False) -> Dict[str, Any]:
+    """写入数据到YAML文件 - 小沈 2026-05-04; 2026-06-17 合并ordered参数"""
     try:
         import yaml
         path = Path(file_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding=encoding) as f:
-            yaml.safe_dump(data, f, allow_unicode=True, indent=indent)
+            if ordered:
+                from collections import OrderedDict
+                def _order(d):
+                    if not isinstance(d, dict):
+                        return d
+                    result = OrderedDict()
+                    if 'ai' in d:
+                        ai_data = d['ai']
+                        ai_ordered = OrderedDict()
+                        if 'provider' in ai_data:
+                            ai_ordered['provider'] = ai_data['provider']
+                        if 'model' in ai_data:
+                            ai_ordered['model'] = ai_data['model']
+                        for key in sorted(ai_data.keys()):
+                            if key not in ('provider', 'model'):
+                                ai_ordered[key] = _order(ai_data[key]) if isinstance(ai_data[key], dict) else ai_data[key]
+                        result['ai'] = ai_ordered
+                    for key in sorted(d.keys()):
+                        if key != 'ai':
+                            result[key] = _order(d[key]) if isinstance(d[key], dict) else d[key]
+                    return result
+                yaml.dump(_order(data), f, allow_unicode=True, default_flow_style=False, indent=indent)
+            else:
+                yaml.safe_dump(data, f, allow_unicode=True, indent=indent)
         return build_success({"file_path": file_path}, f"成功写入YAML文件: {file_path}")
     except ImportError:
         return build_error(ERR_NO_PYYAML, "PyYAML未安装,请执行: pip install pyyaml")
@@ -215,60 +238,9 @@ def _write_yaml(file_path: str, data: Any, encoding: str = "utf-8", indent: int 
         return build_error(ERR_WRITE_YAML, f"写入YAML失败: {str(e)}")
 
 
-def _write_yaml_ordered(file_path: str, data: Any, encoding: str = "utf-8", indent: int = 2) -> Dict[str, Any]:
-    """有序Key写入YAML文件(保持特定顺序) - 小沈 2026-06-09
-    
-    合并 app/api/v1/ai_config/_helpers.py 的 _write_yaml_with_order,
-    消除重复YAML写入逻辑。
-    
-    Args:
-        file_path: 文件路径
-        data: 要写入的数据
-        encoding: 编码,默认utf-8
-        indent: 缩进,默认2
-    
-    Returns:
-        统一格式响应dict
-    """
-    try:
-        import yaml
-        from collections import OrderedDict
-        
-        def _ordered_dict(d):
-            """递归构建有序字典,保持ai字段在前"""
-            if not isinstance(d, dict):
-                return d
-            result = OrderedDict()
-            if 'ai' in d:
-                ai_data = d['ai']
-                ai_ordered = OrderedDict()
-                if 'provider' in ai_data:
-                    ai_ordered['provider'] = ai_data['provider']
-                if 'model' in ai_data:
-                    ai_ordered['model'] = ai_data['model']
-                for key in sorted(ai_data.keys()):
-                    if key not in ('provider', 'model'):
-                        ai_ordered[key] = _ordered_dict(ai_data[key]) if isinstance(ai_data[key], dict) else ai_data[key]
-                result['ai'] = ai_ordered
-            for key in sorted(d.keys()):
-                if key != 'ai':
-                    result[key] = _ordered_dict(d[key]) if isinstance(d[key], dict) else d[key]
-            return result
-        
-        path = Path(file_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding=encoding) as f:
-            yaml.dump(_ordered_dict(data), f, allow_unicode=True, default_flow_style=False, indent=indent)
-        return build_success({"file_path": file_path}, f"成功写入YAML文件(有序): {file_path}")
-    except ImportError:
-        return build_error(ERR_NO_PYYAML, "PyYAML未安装,请执行: pip install pyyaml")
-    except Exception as e:
-        return build_error(ERR_WRITE_YAML, f"写入YAML失败: {str(e)}")
-
-
 def write_yaml_ordered(file_path: str, data: Any, encoding: str = "utf-8", indent: int = 2) -> Dict[str, Any]:
-    """公共接口：使用OrderedDict写入YAML — 小沈 2026-06-09"""
-    return _write_yaml_ordered(file_path, data, encoding, indent)
+    """公共接口：使用OrderedDict写入YAML — 小沈 2026-06-09; 2026-06-17 复用_write_yaml"""
+    return _write_yaml(file_path, data, encoding, indent, ordered=True)
 
 
 def _parse_toml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:

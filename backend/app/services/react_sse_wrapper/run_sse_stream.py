@@ -50,7 +50,8 @@ async def run_sse_stream(
 ) -> AsyncGenerator[str, None]:
     """纯SSE流运行器 — 小沈 2026-06-09 支持StreamState"""
     from app.services.agent.universal_agent import UniversalAgent
-    from app.chat_stream import format_agent_sse, save_execution_steps_to_db
+    from app.utils.sse_formatter import format_agent_sse
+    from app.chat_stream import save_execution_steps_to_db
 
     agent = None
     log_tag = "[AgentOp]"
@@ -142,7 +143,7 @@ async def run_sse_stream(
 
 async def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_step, current_execution_steps, session_id):
     """内联错误SSE生成(避免外部模块依赖) — P2-18 使用ErrorStep替代手工dict"""
-    from app.chat_stream import format_agent_sse
+    from app.utils.sse_formatter import format_agent_sse
     from app.services.agent.steps import ErrorStep
 
     step_num = next_step()
