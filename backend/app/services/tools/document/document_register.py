@@ -38,14 +38,26 @@ from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 from app.services.tools.document.document_schema import (
-    ReadDocumentInput,
-    WriteDocumentInput,
+    ReadPdfInput,
+    ReadDocxInput,
+    ReadPptxInput,
+    ReadXlsxInput,
+    WriteDocxInput,
+    WriteXlsxInput,
+    WritePdfInput,
+    WritePptxInput,
     ConvertDocumentInput,
 )
 
 from app.services.tools.document.document_tools import (
-    read_document,
-    write_document,
+    read_pdf,
+    read_docx,
+    read_pptx,
+    read_xlsx,
+    write_docx,
+    write_xlsx,
+    write_pdf,
+    write_pptx,
     convert_document,
 )
 
@@ -73,9 +85,21 @@ from app.services.tools.document.database_tools import (
 )
 
 DESCRIPTIONS = {
-    "read_document": """读取Office文档内容。按文件后缀自动选择解析器,支持PDF(.pdf,支持页码范围/提取表格)、Word(.docx,支持提取表格)、Excel(.xlsx/.xls,支持指定工作表/最大行数)、PPT(.pptx/.ppt)、CSV/TSV(.csv/.tsv,支持分隔符/编码)。纯文本文件请使用read_text_file工具。适用场景:需要读取PDF/Word/Excel/PPT等非代码文档内容,提取表格数据和分析文本内容时使用。""",
+    "read_pdf": """读取PDF(.pdf)文件内容。支持页码范围选择(pages参数,如'1-3,5')和表格提取(extract_tables)。适用场景:需要读取PDF文档内容、提取表格数据时使用。""",
 
-    "write_document": """写入Office文档。按文件后缀自动选择写入器,支持Word(.docx,标题/段落/表格/结构化内容)、Excel(.xlsx,表头+行数据)、PDF(.pdf,标题/段落/表格)、PPT(.pptx,标题/幻灯片)。结构化内容通过data参数传入,格式:{"title":"标题","content":[{"type":"paragraph/h1/h2/table","text":"内容","rows":[[]]}]}。适用场景:需要生成报告文档、导出数据到Excel表格、创建PPT演示文稿时使用。""",
+    "read_docx": """读取Word(.docx)文档内容。支持表格提取(extract_tables)。自动降级处理.doc格式(转PDF后读取)。适用场景:需要读取Word文档内容、提取文本和表格时使用。""",
+
+    "read_pptx": """读取PPT(.pptx)演示文稿内容。提取每页幻灯片的文本和备注。适用场景:需要读取PPT内容、提取演讲稿时使用。""",
+
+    "read_xlsx": """读取Excel(.xlsx)/CSV/TSV/JSON数据文件。支持指定工作表、最大行数、编码和分隔符。自动降级处理.xls格式(转PDF后读取)。适用场景:需要读取表格数据、分析数据集时使用。""",
+
+    "write_docx": """写入Word(.docx)文档。支持标题(title)/正文(content)/段落(paragraphs)/表格(table_data)/结构化内容(data)。适用场景:需要生成Word报告、导出文档时使用。""",
+
+    "write_xlsx": """写入Excel(.xlsx)文件。data参数支持dict(headers+rows)或list自动推断headers。可指定工作表名。适用场景:需要导出数据到Excel表格时使用。""",
+
+    "write_pdf": """写入PDF(.pdf)文件。支持标题(title)/正文(content)/段落(paragraphs)/表格(table_data)。适用场景:需要生成PDF报告、归档文档时使用。""",
+
+    "write_pptx": """写入PPT(.pptx)演示文稿。支持标题(title)和幻灯片列表(slides)。适用场景:需要生成PPT演示文稿时使用。""",
 
     "convert_document": """将Office文档转换为PDF格式。支持Word(.docx/.doc→PDF)、Excel(.xlsx/.xls→PDF)、PPT(.pptx/.ppt→PDF)以及OpenDocument格式(.odt/.ods→PDF)。需要系统安装LibreOffice。适用场景:需要将文档转为PDF进行分发、归档或打印时使用。""",
 
@@ -94,18 +118,32 @@ DESCRIPTIONS = {
 }
 
 EXAMPLES = {
-    "read_document": [
+    "read_pdf": [
         {"file_path": "D:/documents/report.pdf"},
         {"file_path": "D:/documents/report.pdf", "pages": "1-3", "extract_tables": True},
+    ],
+    "read_docx": [
+        {"file_path": "D:/documents/report.docx"},
         {"file_path": "D:/documents/report.docx", "extract_tables": True},
-        {"file_path": "D:/data/sales.xlsx", "sheet_name": "Sheet2", "max_rows": 100},
+    ],
+    "read_pptx": [
         {"file_path": "D:/documents/presentation.pptx"},
     ],
-    "write_document": [
+    "read_xlsx": [
+        {"file_path": "D:/data/sales.xlsx", "sheet_name": "Sheet2", "max_rows": 100},
+        {"file_path": "D:/data/sales.csv", "encoding": "gbk"},
+    ],
+    "write_docx": [
         {"file_path": "D:/output/report.docx", "title": "测试报告", "content": "这是测试内容"},
         {"file_path": "D:/output/report_structured.docx", "data": {"title": "结构化报告", "content": [{"type": "h1", "text": "第一章"}, {"type": "paragraph", "text": "正文内容"}, {"type": "table", "rows": [["列1", "列2"], ["a", "b"]]}]}},
+    ],
+    "write_xlsx": [
         {"file_path": "D:/output/data.xlsx", "data": {"headers": ["姓名", "年龄"], "rows": [["张三", 25], ["李四", 30]]}},
+    ],
+    "write_pdf": [
         {"file_path": "D:/output/report.pdf", "title": "测试报告", "content": "这是报告内容"},
+    ],
+    "write_pptx": [
         {"file_path": "D:/output/presentation.pptx", "title": "项目汇报"},
         {"file_path": "D:/output/slides.pptx", "title": "季度总结", "slides": [{"title": "业绩概览", "content": "本季度销售额增长20%"}]},
     ],
@@ -141,8 +179,14 @@ EXAMPLES = {
 }
 
 TOOL_INPUT_MODELS = {
-    "read_document": ReadDocumentInput,
-    "write_document": WriteDocumentInput,
+    "read_pdf": ReadPdfInput,
+    "read_docx": ReadDocxInput,
+    "read_pptx": ReadPptxInput,
+    "read_xlsx": ReadXlsxInput,
+    "write_docx": WriteDocxInput,
+    "write_xlsx": WriteXlsxInput,
+    "write_pdf": WritePdfInput,
+    "write_pptx": WritePptxInput,
     "convert_document": ConvertDocumentInput,
     "analyze_data": AnalyzeDataInput,
     "filter_data": FilterDataInput,
@@ -153,8 +197,14 @@ TOOL_INPUT_MODELS = {
 }
 
 TOOL_IMPLEMENTATIONS = {
-    "read_document": read_document,
-    "write_document": write_document,
+    "read_pdf": read_pdf,
+    "read_docx": read_docx,
+    "read_pptx": read_pptx,
+    "read_xlsx": read_xlsx,
+    "write_docx": write_docx,
+    "write_xlsx": write_xlsx,
+    "write_pdf": write_pdf,
+    "write_pptx": write_pptx,
     "convert_document": convert_document,
     "analyze_data": analyze_data,
     "filter_data": filter_data,
@@ -191,8 +241,14 @@ def _register_document_tools():
 
 __all__ = [
     "_register_document_tools",
-    "read_document",
-    "write_document",
+    "read_pdf",
+    "read_docx",
+    "read_pptx",
+    "read_xlsx",
+    "write_docx",
+    "write_xlsx",
+    "write_pdf",
+    "write_pptx",
     "convert_document",
     "analyze_data",
     "filter_data",

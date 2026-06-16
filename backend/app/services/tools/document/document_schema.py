@@ -12,26 +12,57 @@ from pydantic import BaseModel, Field
 from typing import Optional, Any, List, Dict, Literal, Union
 
 
-class ReadDocumentInput(BaseModel):
-    file_path: str = Field(..., description="文档路径。仅支持: .pdf/.docx/.xlsx/.pptx/.csv/.tsv/.json;旧版 .doc/.xls 自动转换为PDF后读取。⚠️ 纯文本(.txt/.py/.json/.md等)请使用 read_text_file 工具")
-    pages: Optional[str] = Field(default=None, description="PDF页码范围(如'1-3,5',仅PDF有效)")
-    extract_tables: bool = Field(default=False, description="是否提取表格(PDF/DOCX有效)")
+class ReadPdfInput(BaseModel):
+    file_path: str = Field(..., description="PDF文件路径(.pdf)")
+    pages: Optional[str] = Field(default=None, description="页码范围(如'1-3,5')")
+    extract_tables: bool = Field(default=False, description="是否提取表格")
+
+
+class ReadDocxInput(BaseModel):
+    file_path: str = Field(..., description="Word文档路径(.docx)")
+    extract_tables: bool = Field(default=False, description="是否提取表格")
+
+
+class ReadPptxInput(BaseModel):
+    file_path: str = Field(..., description="PPT文件路径(.pptx)")
+
+
+class ReadXlsxInput(BaseModel):
+    file_path: str = Field(..., description="Excel/CSV/TSV/JSON文件路径(.xlsx/.xls/.csv/.tsv/.json)")
     sheet_name: Optional[str] = Field(default=None, description="Excel工作表名(仅XLSX有效)")
-    max_rows: int = Field(default=1000, ge=1, le=10000, description="最大读取行数(XLSX/CSV有效)")
-    header: bool = Field(default=True, description="第一行是否为表头(XLSX/CSV有效)")
+    max_rows: int = Field(default=1000, ge=1, le=10000, description="最大读取行数")
+    header: bool = Field(default=True, description="第一行是否为表头")
     encoding: str = Field(default="utf-8", description="文件编码(仅CSV有效)")
-    delimiter: Optional[str] = Field(default=None, description="CSV分隔符(仅CSV有效,None=自动选择逗号)")
+    delimiter: Optional[str] = Field(default=None, description="CSV分隔符(仅CSV有效)")
 
 
-class WriteDocumentInput(BaseModel):
-    file_path: str = Field(..., description="输出路径。仅支持办公格式: .docx/.xlsx/.pdf/.pptx。⚠️ 不支持 .txt!写入文本文件请使用 write_text_file 工具")
-    content: Optional[str] = Field(default=None, description="正文内容(DOCX/PDF有效)")
-    paragraphs: Optional[List[str]] = Field(default=None, description="段落列表(DOCX/PDF有效)")
-    title: Optional[str] = Field(default=None, description="文档标题(DOCX/PDF/PPTX有效)")
-    table_data: Optional[List] = Field(default=None, description="表格数据二维数组(DOCX/PDF有效)")
-    data: Optional[Union[Dict[str, Any], List]] = Field(default=None, description="写入的数据。XLSX格式: dict={\"headers\": [\"列1\",\"列2\"], \"rows\": [[\"a\",\"b\"]]}或list=[[\"a\",\"b\"]]自动推断headers;DOCX格式: {\"title\": \"标题\", \"content\": [{\"type\": \"paragraph\", \"text\": \"段落内容\"}]};PDF暂不支持写入")
-    sheet_name: str = Field(default="Sheet1", description="Excel工作表名(XLSX有效)")
-    slides: Optional[List[Dict[str, str]]] = Field(default=None, description="PPT幻灯片列表(PPTX有效)")
+class WriteDocxInput(BaseModel):
+    file_path: str = Field(..., description="输出Word文档路径(.docx)")
+    content: Optional[str] = Field(default=None, description="正文内容")
+    paragraphs: Optional[List[str]] = Field(default=None, description="段落列表")
+    title: Optional[str] = Field(default=None, description="文档标题")
+    table_data: Optional[List] = Field(default=None, description="表格数据二维数组")
+    data: Optional[Union[Dict[str, Any], List]] = Field(default=None, description="结构化内容")
+
+
+class WriteXlsxInput(BaseModel):
+    file_path: str = Field(..., description="输出Excel路径(.xlsx)")
+    data: Optional[Union[Dict[str, Any], List]] = Field(default=None, description="写入的数据。dict={\"headers\":[\"列1\"],\"rows\":[[\"a\"]]}或list自动推断headers")
+    sheet_name: str = Field(default="Sheet1", description="工作表名")
+
+
+class WritePdfInput(BaseModel):
+    file_path: str = Field(..., description="输出PDF路径(.pdf)")
+    title: Optional[str] = Field(default=None, description="文档标题")
+    content: Optional[str] = Field(default=None, description="正文内容")
+    paragraphs: Optional[List[str]] = Field(default=None, description="段落列表")
+    table_data: Optional[List] = Field(default=None, description="表格数据二维数组")
+
+
+class WritePptxInput(BaseModel):
+    file_path: str = Field(..., description="输出PPT路径(.pptx)")
+    title: Optional[str] = Field(default=None, description="文档标题")
+    slides: Optional[List[Dict[str, str]]] = Field(default=None, description="幻灯片列表")
 
 
 class ConvertDocumentInput(BaseModel):

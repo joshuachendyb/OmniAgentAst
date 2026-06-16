@@ -34,10 +34,7 @@ import tempfile
 from typing import Dict, Any, List, Optional, Literal, Union, Tuple
 from pathlib import Path
 
-from app.services.tools.document.document_schema import (
-    ReadDocumentInput,
-    WriteDocumentInput,
-)
+
 from app.utils.tool_result_formatter import build_next_actions
 from app.services.tools._response import build_success, build_error, build_warning
 from app.services.tools.toolhelper.common_helper import _check_module
@@ -845,66 +842,110 @@ def _write_pptx(
 # 路由函数 — LLM调用的统一入口
 # ============================================================
 
-def read_document(
+def read_pdf(
     file_path: str,
     pages: Optional[str] = None,
     extract_tables: bool = False,
+) -> Dict[str, Any]:
+    """读取PDF文件 — 小沈 2026-06-16"""
+    check = _check_pdf_readable(file_path)
+    if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
+        return check
+    result = _read_pdf(file_path, pages=pages, extract_tables=extract_tables)
+    if result.get("code") == "SUCCESS":
+        result["next_actions"] = build_next_actions([
+            ("write_pdf", "修改PDF", "需要编辑时"),
+            ("convert_document", "转换格式", "需要转其他格式时"),
+        ])
+    return result
+
+
+def read_docx(
+    file_path: str,
+    extract_tables: bool = False,
+) -> Dict[str, Any]:
+    """读取Word文档 — 小沈 2026-06-16"""
+    path = Path(file_path)
+    suffix = path.suffix.lower()
+
+    if suffix == ".doc":
+        pdf_path = _auto_convert_to_pdf(file_path, suffix)
+        if pdf_path is None:
+            return build_error(ERR_DOC_CONVERT_FAILED, f"自动转换.doc为PDF失败,请手动使用convert_document工具")
+        check = _check_pdf_readable(pdf_path)
+        if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
+            return check
+        result = _read_pdf(pdf_path, extract_tables=extract_tables)
+        _cleanup_temp_pdf(pdf_path)
+        if result.get("code") == "SUCCESS":
+            result["next_actions"] = build_next_actions([
+                ("write_docx", "修改文档", "需要编辑时"),
+                ("convert_document", "转换格式", "需要转PDF时"),
+            ])
+        return result
+
+    check = _check_docx_readable(file_path)
+    if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
+        return check
+    result = _read_docx(file_path, extract_tables=extract_tables)
+    if result.get("code") == "SUCCESS":
+        result["next_actions"] = build_next_actions([
+            ("write_docx", "修改文档", "需要编辑时"),
+            ("convert_document", "转换格式", "需要转PDF时"),
+        ])
+    return result
+
+
+def read_pptx(file_path: str) -> Dict[str, Any]:
+    """读取PPT文件 — 小沈 2026-06-16"""
+    result = _read_pptx(file_path)
+    if result.get("code") == "SUCCESS":
+        result["next_actions"] = build_next_actions([
+            ("write_pptx", "修改PPT", "需要编辑时"),
+            ("convert_document", "转换格式", "需要转PDF时"),
+        ])
+    return result
+
+
+def read_xlsx(
+    file_path: str,
     sheet_name: Optional[str] = None,
     max_rows: int = 1000,
     header: bool = True,
     encoding: str = "utf-8",
     delimiter: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """读取文档内容 — 小健 2026-05-18
-    合并 read_pdf + read_docx + read_pptx + read_xlsx + read_csv
-    按文件后缀自动路由到对应解析器
-    支持 .doc 后缀(通过 win32com 降级处理)
-     支持 .csv/.tsv 后缀
-    """
+    """读取Excel/CSV/TSV/JSON文件 — 小沈 2026-06-16"""
     path = Path(file_path)
     suffix = path.suffix.lower()
-    
-    if suffix == ".pdf":
-        check = _check_pdf_readable(file_path)
-        if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
-            return check
-        result = _read_pdf(file_path, pages=pages, extract_tables=extract_tables)
-    elif suffix == ".docx":
-        check = _check_docx_readable(file_path)
-        if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
-            return check
-        result = _read_docx(file_path, extract_tables=extract_tables)
-    elif suffix == ".doc":
-        # 【自动转换 .doc/.xls 2026-05-20 小健】自动调用convert_document转PDF后读取
+
+    if suffix == ".xls":
         pdf_path = _auto_convert_to_pdf(file_path, suffix)
         if pdf_path is None:
-            return build_error(ERR_DOC_CONVERT_FAILED, f"自动转换{suffix}为PDF失败,请手动使用convert_document工具")
+            return build_error(ERR_DOC_CONVERT_FAILED, f"自动转换.xls为PDF失败,请手动使用convert_document工具")
         check = _check_pdf_readable(pdf_path)
         if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
             return check
-        result = _read_pdf(pdf_path, pages=pages, extract_tables=extract_tables)
+        result = _read_pdf(pdf_path)
         _cleanup_temp_pdf(pdf_path)
-    elif suffix == ".pptx":
-        result = _read_pptx(file_path)
-    elif suffix == ".xlsx":
-        check = _check_xlsx_readable(file_path)
-        if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
-            return check
-        result = _read_xlsx(file_path, sheet_name=sheet_name, max_rows=max_rows, header=header)
-    elif suffix == ".xls":
-        # 【自动转换 .doc/.xls 2026-05-20 小健】自动调用convert_document转PDF后读取
-        pdf_path = _auto_convert_to_pdf(file_path, suffix)
-        if pdf_path is None:
-            return build_error(ERR_DOC_CONVERT_FAILED, f"自动转换{suffix}为PDF失败,请手动使用convert_document工具")
-        check = _check_pdf_readable(pdf_path)
-        if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
-            return check
-        result = _read_pdf(pdf_path, pages=pages, extract_tables=extract_tables)
-        _cleanup_temp_pdf(pdf_path)
-    elif suffix in (".csv", ".tsv"):
+        if result.get("code") == "SUCCESS":
+            result["next_actions"] = build_next_actions([
+                ("write_xlsx", "写入Excel", "需要导出数据时"),
+                ("analyze_data", "分析数据", "需要统计分析时"),
+            ])
+        return result
+
+    if suffix in (".csv", ".tsv"):
         actual_delimiter = "\t" if suffix == ".tsv" else (delimiter or ",")
         result = _read_csv_stdlib(file_path, encoding=encoding, delimiter=actual_delimiter, has_header=header, max_rows=max_rows)
-    elif suffix == ".json":
+        if result.get("code") == "SUCCESS":
+            result["next_actions"] = build_next_actions([
+                ("write_xlsx", "写入Excel", "需要导出数据时"),
+                ("analyze_data", "分析数据", "需要统计分析时"),
+            ])
+        return result
+
+    if suffix == ".json":
         try:
             with open(file_path, 'r', encoding=encoding) as f:
                 json_data = json.load(f)
@@ -916,66 +957,102 @@ def read_document(
                 result = build_success({"format": "json", "content": json_data}, f"读取JSON文件成功: {file_path}")
         except Exception as e:
             result = build_error(ERR_DOC_READ_JSON, f"读取JSON文件失败: {str(e)}")
-    else:
-        return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED, f"不支持的格式: {suffix}。支持: .pdf/.docx/.xlsx/.pptx/.csv/.tsv/.json")
-    
+        if result.get("code") == "SUCCESS":
+            result["next_actions"] = build_next_actions([
+                ("write_xlsx", "写入Excel", "需要导出数据时"),
+                ("analyze_data", "分析数据", "需要统计分析时"),
+            ])
+        return result
+
+    check = _check_xlsx_readable(file_path)
+    if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
+        return check
+    result = _read_xlsx(file_path, sheet_name=sheet_name, max_rows=max_rows, header=header)
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([
-            ("write_document", "修改文档", "需要编辑文档时"),
-            ("convert_document", "转换格式", "需要转PDF/DOCX时"),
-            ("analyze_data", "分析数据", "读取的是数据文件时"),
+            ("write_xlsx", "写入Excel", "需要导出数据时"),
+            ("analyze_data", "分析数据", "需要统计分析时"),
         ])
     return result
 
 
-def write_document(
+def write_docx(
     file_path: str,
     content: Optional[str] = None,
     paragraphs: Optional[List[str]] = None,
     title: Optional[str] = None,
     table_data: Optional[List] = None,
     data: Optional[Union[Dict[str, Any], List]] = None,
-    sheet_name: str = "Sheet1",
-    slides: Optional[List[Dict]] = None,
 ) -> Dict[str, Any]:
-    """写入文档 — 小健 2026-05-18
-    合并 write_docx + write_xlsx + write_pdf + write_pptx
-    按文件后缀自动路由到对应写入器
-    """
-    path = Path(file_path)
-    suffix = path.suffix.lower()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    
-    if suffix == ".docx":
-        result = _write_docx(file_path, content=content, paragraphs=paragraphs, title=title, table_data=table_data, data=data)
-    elif suffix == ".xlsx":
-        if data is None:
-            data = {"headers": [], "rows": []}
-        elif isinstance(data, list):
-            if len(data) > 0 and isinstance(data[0], list):
-                first_row = data[0]
-                data = {"headers": first_row, "rows": data[1:]}
-            elif len(data) > 0 and isinstance(data[0], dict):
-                headers = list(data[0].keys())
-                rows = [list(row.values()) for row in data]
-                data = {"headers": headers, "rows": rows}
-            else:
-                data = {"headers": [], "rows": data}
-        elif isinstance(data, dict) and "headers" not in data and "rows" not in data:
-            headers = list(data.keys())
-            rows = [list(data.values())]
-            data = {"headers": headers, "rows": rows}
-        result = _write_xlsx(file_path, data=data, sheet_name=sheet_name)
-    elif suffix == ".pdf":
-        result = _write_pdf(file_path, title=title, content=content, paragraphs=paragraphs, table_data=table_data)
-    elif suffix == ".pptx":
-        result = _write_pptx(file_path, title=title, slides=slides)
-    else:
-        return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED, f"不支持的输出格式: {suffix}。支持: .docx/.xlsx/.pdf/.pptx")
-    
+    """写入Word文档 — 小沈 2026-06-16"""
+    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+    result = _write_docx(file_path, content=content, paragraphs=paragraphs, title=title, table_data=table_data, data=data)
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([
-            ("read_document", "验证写入结果", "需要确认内容时"),
+            ("read_docx", "验证写入结果", "需要确认内容时"),
+        ])
+    return result
+
+
+def write_xlsx(
+    file_path: str,
+    data: Optional[Union[Dict[str, Any], List]] = None,
+    sheet_name: str = "Sheet1",
+) -> Dict[str, Any]:
+    """写入Excel文件 — 小沈 2026-06-16"""
+    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+    if data is None:
+        data = {"headers": [], "rows": []}
+    elif isinstance(data, list):
+        if len(data) > 0 and isinstance(data[0], list):
+            first_row = data[0]
+            data = {"headers": first_row, "rows": data[1:]}
+        elif len(data) > 0 and isinstance(data[0], dict):
+            headers = list(data[0].keys())
+            rows = [list(row.values()) for row in data]
+            data = {"headers": headers, "rows": rows}
+        else:
+            data = {"headers": [], "rows": data}
+    elif isinstance(data, dict) and "headers" not in data and "rows" not in data:
+        headers = list(data.keys())
+        rows = [list(data.values())]
+        data = {"headers": headers, "rows": rows}
+    result = _write_xlsx(file_path, data=data, sheet_name=sheet_name)
+    if result.get("code") == "SUCCESS":
+        result["next_actions"] = build_next_actions([
+            ("read_xlsx", "验证写入结果", "需要确认内容时"),
+        ])
+    return result
+
+
+def write_pdf(
+    file_path: str,
+    title: Optional[str] = None,
+    content: Optional[str] = None,
+    paragraphs: Optional[List[str]] = None,
+    table_data: Optional[List] = None,
+) -> Dict[str, Any]:
+    """写入PDF文件 — 小沈 2026-06-16"""
+    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+    result = _write_pdf(file_path, title=title, content=content, paragraphs=paragraphs, table_data=table_data)
+    if result.get("code") == "SUCCESS":
+        result["next_actions"] = build_next_actions([
+            ("read_pdf", "验证写入结果", "需要确认内容时"),
+        ])
+    return result
+
+
+def write_pptx(
+    file_path: str,
+    title: Optional[str] = None,
+    slides: Optional[List[Dict[str, str]]] = None,
+) -> Dict[str, Any]:
+    """写入PPT文件 — 小沈 2026-06-16"""
+    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+    result = _write_pptx(file_path, title=title, slides=slides)
+    if result.get("code") == "SUCCESS":
+        result["next_actions"] = build_next_actions([
+            ("read_pptx", "验证写入结果", "需要确认内容时"),
         ])
     return result
 

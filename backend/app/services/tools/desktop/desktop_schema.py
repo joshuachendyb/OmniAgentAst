@@ -15,15 +15,15 @@ class WindowInfoInput(BaseModel):
     )
     window_title: Optional[str] = Field(
         default=None,
-        description="窗口标题(action=info时必填,大小写不敏感的模糊匹配)"
+        description="窗口标题(action=info时【必填】,大小写不敏感的模糊匹配)"
     )
     include_minimized: bool = Field(
         default=False,
-        description="是否包含最小化的窗口(action=list时使用),默认 False"
+        description="是否包含最小化的窗口(仅action=list时使用),默认 False"
     )
     filter_title: Optional[str] = Field(
         default=None,
-        description="按窗口标题过滤(action=list时使用,大小写不敏感的模糊匹配)"
+        description="按窗口标题过滤(仅action=list时使用,大小写不敏感的模糊匹配)"
     )
 
 
@@ -104,7 +104,7 @@ class ClipboardControlInput(BaseModel):
     )
     content: Optional[str] = Field(
         default=None,
-        description="写入内容(action=write时必填,不传则返回ERR_MISSING_PARAM)"
+        description="写入内容(action=write时【必填】)"
     )
 
 

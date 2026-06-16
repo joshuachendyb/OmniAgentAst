@@ -71,7 +71,7 @@ async def test_e2e_p0_02_tool_call():
 
         assert len(result["tool_calls"]) > 0, "必须调用工具(MUST P0-02)"
         tool_names = [t["tool_name"] for t in result["tool_calls"]]
-        write_tools = {"write_text_file", "write_file", "file_operation", "create_file"}
+        write_tools = {"write_text_file", "write_file", "move_file", "copy_file", "delete_file", "rename_file", "create_file"}
         has_write = any(n in write_tools for n in tool_names)
         assert has_write, f"应调用写文件工具(MUST P0-02), 实际: {tool_names}"
 

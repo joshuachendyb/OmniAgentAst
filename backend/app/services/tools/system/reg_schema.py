@@ -5,40 +5,66 @@ REGISTRY 工具参数 Schema 定义
 职责:
 定义 registry 工具的 Pydantic 模型。
 
-工具列表(1个LLM工具):
-1. registry_control - 注册表统一控制入口(action="read"|"write"|"delete")
+工具列表(3个LLM工具):
+1. registry_read - 读取注册表键值
+2. registry_write - 写入注册表键值
+3. registry_delete - 删除注册表键值或子键
 
 Author: 小沈 - 2026-05-02
+更新: 小沈 - 2026-06-16 拆分registry_control为3个独立工具
 """
 
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
 
 
-class RegistryControlInput(BaseModel):
+class RegistryReadInput(BaseModel):
     key_path: str = Field(
-        ..., description="注册表键路径。如 Software\\Microsoft\\Windows\\CurrentVersion。若含根键前缀则自动忽略 hive 参数"
-    )
-    action: Literal["read", "write", "delete"] = Field(
-        ..., description="操作类型:read=读取,write=写入,delete=删除"
+        ..., description="注册表键路径(必填)。如 Software\\Microsoft\\Windows\\CurrentVersion。若含根键前缀则自动忽略 hive 参数"
     )
     value_name: Optional[str] = Field(
-        default=None, description="值名称。action=\"write\"时必填;action=\"read\"/\"delete\"时可选(不填则读取/删除默认值或整个键)"
-    )
-    value: Optional[str] = Field(
-        default=None, description="值数据。仅action=\"write\"时使用"
-    )
-    value_type: Literal["auto_detect", "REG_SZ", "REG_EXPAND_SZ", "REG_DWORD", "REG_QWORD", "REG_BINARY", "REG_MULTI_SZ"] = Field(
-        default="auto_detect", description="值类型。仅action=\"write\"时使用。默认auto_detect。REG_EXPAND_SZ=可扩展字符串(含%VAR%),REG_QWORD=64位整数"
+        default=None, description="值名称(可选)。不填则读取默认值"
     )
     hive: Literal["HKCU", "HKLM", "HKCR", "HKU", "HKCC"] = Field(
-        default="HKCU", description="注册表根键。默认HKCU"
+        default="HKCU", description="注册表根键(可选)。默认HKCU"
+    )
+
+
+class RegistryWriteInput(BaseModel):
+    key_path: str = Field(
+        ..., description="注册表键路径(必填)。如 Software\\MyApp"
+    )
+    value_name: str = Field(
+        ..., description="值名称(必填)。如 Version、InstallPath"
+    )
+    value: str = Field(
+        ..., description="值数据(必填)。如 '1.0'、'C:\\Program Files\\MyApp'"
+    )
+    value_type: Literal["auto_detect", "REG_SZ", "REG_EXPAND_SZ", "REG_DWORD", "REG_QWORD", "REG_BINARY", "REG_MULTI_SZ"] = Field(
+        default="auto_detect", description="值类型(可选)。默认auto_detect。REG_EXPAND_SZ=可扩展字符串(含%VAR%),REG_QWORD=64位整数"
+    )
+    hive: Literal["HKCU", "HKLM", "HKCR", "HKU", "HKCC"] = Field(
+        default="HKCU", description="注册表根键(可选)。默认HKCU"
+    )
+
+
+class RegistryDeleteInput(BaseModel):
+    key_path: str = Field(
+        ..., description="注册表键路径(必填)。如 Software\\MyApp"
+    )
+    value_name: Optional[str] = Field(
+        default=None, description="值名称(可选)。不填则删除整个键"
+    )
+    hive: Literal["HKCU", "HKLM", "HKCR", "HKU", "HKCC"] = Field(
+        default="HKCU", description="注册表根键(可选)。默认HKCU"
     )
     recursive: bool = Field(
-        default=False, description="递归删除子键。仅action=\"delete\"时使用。默认False"
+        default=False, description="递归删除子键(可选)。默认False。键不为空时需设为True才能删除"
     )
 
 
 __all__ = [
-    "RegistryControlInput",
+    "RegistryReadInput",
+    "RegistryWriteInput",
+    "RegistryDeleteInput",
 ]

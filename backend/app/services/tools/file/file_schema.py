@@ -8,7 +8,7 @@ File 工具参数 Schema 定义
 Author: 小沈 - 2026-03-21
 """
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal, Union
 
 
@@ -234,84 +234,77 @@ class GrepFileContentInput(BaseModel):
 
 
 # ============================================================
-# F9: archive_tool — 压缩/解压
+# F8: compress_files — 压缩文件
 # ============================================================
 
-class ArchiveToolInput(BaseModel):
-    action: Literal["compress", "extract"] = Field(
-        description="操作类型:compress(压缩)或 extract(解压)"
-    )
-    source: Optional[str] = Field(
-        default=None,
-        description="源路径。compress=要压缩的文件/目录路径(必填);extract=压缩包路径(必填)"
-    )
-    destination: Optional[str] = Field(
-        default=None,
-        description="目标路径。compress=输出压缩包路径(必填);extract=解压目标目录(可选,默认自动创建同名目录)"
-    )
+class CompressFilesInput(BaseModel):
+    source: str = Field(description="要压缩的文件/目录路径(必填)")
+    destination: str = Field(description="输出压缩包路径(必填)")
     format: Literal["zip", "tar", "tar.gz", "tar.bz2"] = Field(
-        default="zip",
-        description="压缩格式:zip/tar/tar.gz/tar.bz2,默认zip"
+        default="zip", description="压缩格式:zip/tar/tar.gz/tar.bz2,默认zip"
     )
     compression_level: int = Field(
-        default=6,
-        ge=0,
-        le=9,
-        description="压缩级别0-9(0=不压缩,6=平衡,9=最高),默认6"
+        default=6, ge=0, le=9, description="压缩级别0-9(0=不压缩,6=平衡,9=最高),默认6"
     )
-    password: Optional[str] = Field(
-        default=None,
-        description="加密/解密密码(仅ZIP格式支持),可选"
-    )
-    overwrite: bool = Field(
-        default=False,
-        description="是否覆盖已存在文件,默认False"
-    )
+    password: Optional[str] = Field(default=None, description="加密密码(仅ZIP格式支持),可选")
+    overwrite: bool = Field(default=False, description="是否覆盖已存在文件,默认False")
     exclude_patterns: Optional[List[str]] = Field(
-        default=None,
-        description="compress模式:排除的文件/目录模式列表,如 ['node_modules', '__pycache__']"
+        default=None, description="排除的文件/目录模式列表,如 ['node_modules', '__pycache__']"
     )
 
 
 # ============================================================
-# F9: file_operation — move/copy/delete/rename
-
+# F8b: extract_archive — 解压文件
 # ============================================================
 
-class FileOperationInput(BaseModel):
-    action: Literal["move", "copy", "delete", "rename"] = Field(
-        description="操作类型:move(移动)/ copy(复制)/ delete(删除)/ rename(重命名)"
-    )
-    source: str = Field(
-        description="源路径(move/copy: 源文件路径;delete: 要删除的路径)"
-    )
+class ExtractArchiveInput(BaseModel):
+    source: str = Field(description="压缩包路径(必填)")
     destination: Optional[str] = Field(
-        default=None,
-        description="目标路径。move/copy/rename时必须填写(⚠️ delete模式不填),delete时自动忽略此参数"
+        default=None, description="解压目标目录(可选,默认自动创建同名目录)"
     )
-    recursive: bool = Field(
-        default=False,
-        description="是否递归操作(copy目录/delete非空目录时需True),默认False"
-    )
-    overwrite: bool = Field(
-        default=False,
-        description="是否覆盖目标文件(move/copy有效),默认False"
-    )
-    force: bool = Field(
-        default=False,
-        description="仅delete模式有效:True=跳过回收站永久删除,False=放入回收站。默认False"
-    )
-    preserve_metadata: bool = Field(
-        default=True,
-        description="copy模式:是否保留文件元数据(修改时间/访问时间等),默认True"
-    )
+    password: Optional[str] = Field(default=None, description="解密密码(仅ZIP格式支持),可选")
+    overwrite: bool = Field(default=False, description="是否覆盖已存在文件,默认False")
 
-    @model_validator(mode="after")
-    def _check_destination_required(self):
-        """10规范(SRP): 校验rename/move/copy必须提供destination — 小健-2026-06-16"""
-        if self.action in ("move", "copy", "rename") and not self.destination:
-            raise ValueError(f"{self.action}模式必须提供destination参数")
-        return self
+
+# ============================================================
+# F9a: move_file — 移动文件
+# ============================================================
+
+class MoveFileInput(BaseModel):
+    source: str = Field(description="源文件路径(绝对路径)")
+    destination: str = Field(description="目标路径(绝对路径)")
+    overwrite: bool = Field(default=False, description="是否覆盖目标文件,默认False")
+
+
+# ============================================================
+# F9b: copy_file — 复制文件
+# ============================================================
+
+class CopyFileInput(BaseModel):
+    source: str = Field(description="源文件路径(绝对路径)")
+    destination: str = Field(description="目标路径(绝对路径)")
+    recursive: bool = Field(default=False, description="复制目录时需True,默认False")
+    overwrite: bool = Field(default=False, description="是否覆盖目标文件,默认False")
+    preserve_metadata: bool = Field(default=True, description="是否保留文件元数据(修改时间/访问时间等),默认True")
+
+
+# ============================================================
+# F9c: delete_file — 删除文件
+# ============================================================
+
+class DeleteFileInput(BaseModel):
+    source: str = Field(description="要删除的文件/目录路径(绝对路径)")
+    recursive: bool = Field(default=False, description="删除非空目录时需True,默认False")
+    force: bool = Field(default=False, description="True=跳过回收站永久删除,False=放入回收站。默认False")
+
+
+# ============================================================
+# F9d: rename_file — 重命名文件
+# ============================================================
+
+class RenameFileInput(BaseModel):
+    source: str = Field(description="原文件/目录路径(绝对路径)")
+    destination: str = Field(description="新名称(仅文件名,不含目录路径)")
 
 
 # ============================================================
@@ -332,7 +325,7 @@ class DataFileFormatInput(BaseModel):
     )
     data: Optional[Any] = Field(
         default=None,
-        description="write模式要写入的数据。JSON/YAML/TOML格式传dict或list,Properties传dict。INI/XML暂不支持写入。read模式不填此字段"
+        description="写入数据(action=write时【必填】)。JSON/YAML/TOML格式传dict或list,Properties传dict。INI/XML暂不支持写入。action=read时忽略"
     )
     encoding: str = Field(
         default="utf-8",
@@ -340,14 +333,14 @@ class DataFileFormatInput(BaseModel):
     )
     indent: Optional[int] = Field(
         default=None,
-        description="JSON写入时的格式化缩进空格数(默认2),可选。YAML/TOML不支持此参数"
+        description="JSON写入时的格式化缩进空格数(仅action=write且JSON格式时使用),默认2"
     )
 
 
 
 # ============================================================
 # ============================================================
-# __all__ — 10个工具的Schema导出
+# __all__ — 14个工具的Schema导出
 # ============================================================
 
 __all__ = [
@@ -359,7 +352,11 @@ __all__ = [
     "SearchFilesInput",
     "GrepFileContentInput",
 
-    "ArchiveToolInput",
-    "FileOperationInput",
+    "CompressFilesInput",
+    "ExtractArchiveInput",
+    "MoveFileInput",
+    "CopyFileInput",
+    "DeleteFileInput",
+    "RenameFileInput",
     "DataFileFormatInput",
 ]

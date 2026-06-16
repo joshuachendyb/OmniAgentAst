@@ -2,11 +2,10 @@
 """
 REGISTRY Register - 注册表工具注册点
 
-【2026-05-18 小沈】3→1:reg_read/reg_write/reg_delete合并为registry_control(action路由)
-原3个函数保留为内部函数,由registry_control按action分发
+【2026-06-16 小沈】拆分registry_control为registry_read/registry_write/registry_delete
 
 创建时间: 2026-05-02
-更新时间: 2026-05-18 小沈 - 3→1合并
+更新时间: 2026-06-16 小沈 - 1→3拆分
 """
 
 import logging
@@ -15,46 +14,56 @@ from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 from app.services.tools.system.reg_schema import (
-    RegistryControlInput,
+    RegistryReadInput,
+    RegistryWriteInput,
+    RegistryDeleteInput,
 )
 
 from app.services.tools.system.reg_tools import (
-    registry_control,
+    registry_read,
+    registry_write,
+    registry_delete,
 )
 
 REGISTRY_TOOL_DESCRIPTIONS = {
-    "registry_control": """支持Windows注册表的read/write/delete操作功能。
-action参数决定操作类型:
-- read: 读取注册表值,key_path(可选value_name/hive)
-- write: 写入注册表值,key_path+value_name+value(可选value_type/hive)
-- delete: 删除注册表值或键,key_path(可选value_name/recursive/hive)
-
-使用示例:
-- 读取 → registry_control(action="read", key_path="Software\\MyApp", value_name="InstallPath")
-- 写入 → registry_control(action="write", key_path="Software\\MyApp", value_name="Version", value="1.0")
-- 删除 → registry_control(action="delete", key_path="Software\\MyApp", value_name="OldValue")""",
+    "registry_read": """读取Windows注册表键值。必填参数:key_path(注册表键路径,如Software\\Microsoft\\Windows\\CurrentVersion)。可选参数:value_name(值名称,不填读取默认值)、hive(根键HKCU/HKLM/HKCR/HKU/HKCC,默认HKCU)。适用场景:需要查看注册表配置、读取安装路径、获取系统设置时使用。""",
+    "registry_write": """写入Windows注册表键值。必填参数:key_path(键路径)、value_name(值名称)、value(值数据)。可选参数:value_type(值类型,auto_detect/REG_SZ/REG_EXPAND_SZ/REG_DWORD/REG_QWORD/REG_BINARY/REG_MULTI_SZ,默认auto_detect)、hive(根键,默认HKCU)。写入前自动备份。适用场景:需要修改注册表配置、设置程序路径、配置系统参数时使用。需谨慎操作。""",
+    "registry_delete": """删除Windows注册表键值或子键。必填参数:key_path(键路径)。可选参数:value_name(值名称,不填则删除整个键)、hive(根键,默认HKCU)、recursive(递归删除子键,键不为空时需设为True)。删除前自动备份。适用场景:需要移除注册表项、清理无效配置时使用。需谨慎操作。""",
 }
 
 REGISTRY_TOOL_INPUT_MODELS = {
-    "registry_control": RegistryControlInput,
+    "registry_read": RegistryReadInput,
+    "registry_write": RegistryWriteInput,
+    "registry_delete": RegistryDeleteInput,
 }
 
 REGISTRY_TOOL_EXAMPLES = {
-    "registry_control": [
-        {"action": "read", "key_path": "Software\\Microsoft\\Windows\\CurrentVersion", "value_name": "ProductName"},
-        {"action": "read", "key_path": "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders", "value_name": "Desktop", "hive": "HKCU"},
-        {"action": "write", "key_path": "Software\\MyTestApp", "value_name": "TestValue", "value": "Hello World", "value_type": "REG_SZ"},
-        {"action": "write", "key_path": "Software\\MyTestApp", "value_name": "TestNumber", "value": "12345", "value_type": "REG_DWORD"},
-        {"action": "delete", "key_path": "Software\\MyTestApp", "value_name": "TestValue"},
-        {"action": "delete", "key_path": "Software\\TempTest", "recursive": True},
+    "registry_read": [
+        {"key_path": "Software\\Microsoft\\Windows\\CurrentVersion", "value_name": "ProductName"},
+        {"key_path": "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders", "value_name": "Desktop", "hive": "HKCU"},
+        {"key_path": "Software\\MyApp"},
+    ],
+    "registry_write": [
+        {"key_path": "Software\\MyTestApp", "value_name": "TestValue", "value": "Hello World", "value_type": "REG_SZ"},
+        {"key_path": "Software\\MyTestApp", "value_name": "TestNumber", "value": "12345", "value_type": "REG_DWORD"},
+        {"key_path": "Software\\MyApp", "value_name": "InstallPath", "value": "C:\\Program Files\\MyApp"},
+    ],
+    "registry_delete": [
+        {"key_path": "Software\\MyTestApp", "value_name": "TestValue"},
+        {"key_path": "Software\\TempTest", "recursive": True},
+        {"key_path": "Software\\MyApp", "value_name": "OldSetting", "hive": "HKLM"},
     ],
 }
 
 
 def _register_registry_tools():
-    """注册注册表工具 - 【2026-05-18 小沈】3→1合并为registry_control"""
+    """注册注册表工具 - 【2026-06-16 小沈】1→3拆分为registry_read/registry_write/registry_delete"""
+    CONFIRM_TOOLS = {"registry_write", "registry_delete"}
+
     tool_methods = {
-        "registry_control": registry_control,
+        "registry_read": registry_read,
+        "registry_write": registry_write,
+        "registry_delete": registry_delete,
     }
 
     for name, method in tool_methods.items():
@@ -70,6 +79,7 @@ def _register_registry_tools():
             version="1.0.0",
             input_model=input_model,
             examples=examples,
+            needs_confirmation=(name in CONFIRM_TOOLS),
         )
         logger.debug(
             f"[registry_register] 已注册工具: {name}, "

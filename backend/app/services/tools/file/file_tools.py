@@ -65,8 +65,12 @@ from app.services.tools.file.file_schema import (
     ReadMediaFileInput,
     GrepFileContentInput,
     EditTextFileInput,
-    FileOperationInput,
-    ArchiveToolInput,
+    CompressFilesInput,
+    ExtractArchiveInput,
+    MoveFileInput,
+    CopyFileInput,
+    DeleteFileInput,
+    RenameFileInput,
     DataFileFormatInput,
 )
 
@@ -2080,131 +2084,112 @@ class FileTools:
             encoding=encoding
         )
 
-    async def archive_tool(
+    async def compress_files(
         self,
-        action: Literal["compress", "extract"],
-        source: Optional[str] = None,
-        destination: Optional[str] = None,
+        source: str,
+        destination: str,
         format: str = "zip",
         compression_level: int = 6,
         password: Optional[str] = None,
         overwrite: bool = False,
         exclude_patterns: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """
-        压缩/解压工具 — 小沈 2026-05-19 精简参数(11→8)
-        - action="compress": source=源路径, destination=输出压缩包路径
-        - action="extract": source=压缩包路径, destination=解压目标目录(可选)
-        """
-        if action not in ("compress", "extract"):
-            return build_error(ERR_PARAM_INVALID, f"不支持的action: {action},可选: compress/extract")
+        """压缩文件/目录 — 小沈 2026-06-16"""
+        return await self._compress_files(
+            source_path=source,
+            output_path=destination,
+            format=format,
+            exclude_patterns=exclude_patterns,
+            compression_level=compression_level,
+            overwrite=overwrite,
+            password=password
+        )
 
-        if action == "compress":
-            if not source:
-                return build_error(ERR_PARAM_INVALID, "compress模式需要提供source")
-            if not destination:
-                return build_error(ERR_PARAM_INVALID, "compress模式需要提供destination")
-
-            return await self._compress_files(
-                source_path=source,
-                output_path=destination,
-                format=format,
-                exclude_patterns=exclude_patterns,
-                compression_level=compression_level,
-                overwrite=overwrite,
-                password=password
-            )
-
-        elif action == "extract":
-            if not source:
-                return build_error(ERR_PARAM_INVALID, "extract模式需要提供source")
-
-            result = await self._extract_archive(
-                archive_path=source,
-                output_dir=destination,
-                overwrite=overwrite,
-                password=password,
-                preserve_permissions=True
-            )
-            if "data" not in result:
-                return build_error(ERR_FILE_EXTRACT, result.get("message", "解压失败"))
-            return result
-
-    async def file_operation(
+    async def extract_archive(
         self,
-        action: Literal["move", "copy", "delete", "rename"],
         source: str,
         destination: Optional[str] = None,
+        password: Optional[str] = None,
+        overwrite: bool = False,
+    ) -> Dict[str, Any]:
+        """解压归档包 — 小沈 2026-06-16"""
+        result = await self._extract_archive(
+            archive_path=source,
+            output_dir=destination,
+            overwrite=overwrite,
+            password=password,
+            preserve_permissions=True
+        )
+        if "data" not in result:
+            return build_error(ERR_FILE_EXTRACT, result.get("message", "解压失败"))
+        return result
+
+    async def move_file(
+        self,
+        source: str,
+        destination: str,
+        overwrite: bool = False,
+    ) -> Dict[str, Any]:
+        """移动文件/目录 — 小沈 2026-06-16"""
+        if os.path.abspath(source) == os.path.abspath(destination):
+            return build_success({"action": "move", "source": source, "destination": destination}, "源和目标相同(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
+        return await self._move_file(
+            source_path=source,
+            destination_path=destination,
+            overwrite=overwrite
+        )
+
+    async def copy_file(
+        self,
+        source: str,
+        destination: str,
         recursive: bool = False,
         overwrite: bool = False,
-        force: bool = False,
         preserve_metadata: bool = True,
     ) -> Dict[str, Any]:
-        """
-        文件操作统一入口 — 小沈 2026-05-18
+        """复制文件/目录 — 小沈 2026-06-16"""
+        if os.path.abspath(source) == os.path.abspath(destination):
+            return build_success({"action": "copy", "source": source, "destination": destination}, "源和目标相同(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
+        return await self._copy_file(
+            source_path=source,
+            destination_path=destination,
+            recursive=recursive,
+            overwrite=overwrite,
+            preserve_metadata=preserve_metadata
+        )
 
-        P11统一入口:合并 move_file + copy_file + delete_file
-        - action="move": 移动文件/目录(原子操作 shutil.move,同盘瞬间完成)
-        - action="copy": 复制文件/目录(shutil.copy2,preserve_metadata=True保留时间戳/权限)
-        - action="delete": 删除文件/目录(默认send2trash放入回收站,force=True永久删除)
+    async def delete_file(
+        self,
+        source: str,
+        recursive: bool = False,
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """删除文件/目录 — 小沈 2026-06-16"""
+        src_path = Path(source)
+        if not src_path.exists():
+            return build_success({"action": "delete", "source": source}, "文件已不存在(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
+        return await self._delete_file(
+            file_path=source,
+            recursive=recursive,
+            force=force
+        )
 
-        P17互斥校验:action只能是"move"/"copy"/"delete"
-        P17必填参数校验:move/copy需要destination,delete不需要
-        P16幂等性:
-          - delete: 文件已不存在→返回SUCCESS
-          - move: 源和目标相同→返回SUCCESS
-          - copy: 源和目标相同且内容一致→返回SUCCESS
-        P15返回值全面化:返回action/source/destination/deleted_path/bytes_transferred/checksum
-        """
-        # P17互斥校验
-        if action not in ("move", "copy", "delete", "rename"):
-            return build_error(ERR_PARAM_INVALID, f"不支持的action: {action},可选: move/copy/delete/rename")
-
-        # P17按action校验必填参数
-        if action in ("move", "copy", "rename"):
-            if not destination:
-                return build_error(ERR_PARAM_INVALID, f"{action}模式需要提供destination")
-
-            if action == "rename":
-                src = Path(source)
-                new_name = Path(destination).name
-                dst = src.parent / new_name
-                if src.name == new_name:
-                    return build_success({"action": "rename", "source": source, "destination": str(dst)}, "新名称相同(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
-                return await self._move_file(
-                    source_path=source,
-                    destination_path=str(dst),
-                    overwrite=overwrite
-                )
-
-            if action == "move":
-                if os.path.abspath(source) == os.path.abspath(destination):
-                    return build_success({"action": "move", "source": source, "destination": destination}, "源和目标相同(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
-                return await self._move_file(
-                    source_path=source,
-                    destination_path=destination,
-                    overwrite=overwrite
-                )
-            else:  # copy
-                if os.path.abspath(source) == os.path.abspath(destination):
-                    return build_success({"action": "copy", "source": source, "destination": destination}, "源和目标相同(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
-                return await self._copy_file(
-                    source_path=source,
-                    destination_path=destination,
-                    recursive=recursive,
-                    overwrite=overwrite,
-                    preserve_metadata=preserve_metadata
-                )
-
-        elif action == "delete":
-            src_path = Path(source)
-            if not src_path.exists():
-                return build_success({"action": "delete", "source": source}, "文件已不存在(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
-            return await self._delete_file(
-                file_path=source,
-                recursive=recursive,
-                force=force
-            )
+    async def rename_file(
+        self,
+        source: str,
+        destination: str,
+    ) -> Dict[str, Any]:
+        """重命名文件/目录 — 小沈 2026-06-16"""
+        src = Path(source)
+        new_name = Path(destination).name
+        dst = src.parent / new_name
+        if src.name == new_name:
+            return build_success({"action": "rename", "source": source, "destination": str(dst)}, "新名称相同(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
+        return await self._move_file(
+            source_path=source,
+            destination_path=str(dst),
+            overwrite=False
+        )
 
     @staticmethod
     def _build_format_result(

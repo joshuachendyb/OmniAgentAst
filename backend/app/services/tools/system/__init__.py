@@ -8,11 +8,15 @@ from app.services.tools.system.system_register import *
 from app.services.tools.system.system_tools import (
     get_system_info,
     service_control,
-    task_control,
+    create_task,
+    delete_task,
+    list_tasks,
 )
 from app.services.tools.system.reg_register import *
 from app.services.tools.system.reg_tools import (
-    registry_control,
+    registry_read,
+    registry_write,
+    registry_delete,
 )
 from app.services.tools.system.env_tools import (
     get_env,
@@ -22,8 +26,12 @@ from app.services.tools.system.env_tools import (
 __all__ = [
     "get_system_info",
     "service_control",
-    "task_control",
-    "registry_control",
+    "create_task",
+    "delete_task",
+    "list_tasks",
+    "registry_read",
+    "registry_write",
+    "registry_delete",
     "get_env",
     "set_env",
 ]

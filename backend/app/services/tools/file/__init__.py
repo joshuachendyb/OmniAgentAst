@@ -25,7 +25,11 @@ __all__ = [
     "ListDirectoryInput",
     "SearchFilesInput",
     "GrepFileContentInput",
-    "ArchiveToolInput",
-    "FileOperationInput",
+    "CompressFilesInput",
+    "ExtractArchiveInput",
+    "MoveFileInput",
+    "CopyFileInput",
+    "DeleteFileInput",
+    "RenameFileInput",
     "DataFileFormatInput",
 ]

@@ -6,8 +6,14 @@
 
 from app.services.tools.document.document_register import *
 from app.services.tools.document.document_tools import (
-    read_document,
-    write_document,
+    read_pdf,
+    read_docx,
+    read_pptx,
+    read_xlsx,
+    write_docx,
+    write_xlsx,
+    write_pdf,
+    write_pptx,
     convert_document,
 )
 from app.services.tools.document.data_analysis_tools import (
@@ -22,8 +28,14 @@ from app.services.tools.document.database_tools import (
 )
 
 __all__ = [
-    "read_document",
-    "write_document",
+    "read_pdf",
+    "read_docx",
+    "read_pptx",
+    "read_xlsx",
+    "write_docx",
+    "write_xlsx",
+    "write_pdf",
+    "write_pptx",
     "convert_document",
     "analyze_data",
     "filter_data",

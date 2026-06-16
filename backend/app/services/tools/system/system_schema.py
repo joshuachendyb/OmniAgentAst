@@ -124,11 +124,11 @@ class KillProcessInput(BaseModel):
 class ServiceControlInput(BaseModel):
     action: Literal["start", "stop", "restart", "list"] = Field(
         ...,
-        description="操作类型(必填)。可选值:start/stop/restart/list"
+        description="操作类型(必填)。start=启动服务,stop=停止服务,restart=重启服务,list=列出服务"
     )
     service_name: Optional[str] = Field(
         default=None,
-        description="服务名称。start/stop/restart时必填;list时可选(用于名称过滤)。如 MySQL、nginx"
+        description="服务名称。start/stop/restart时【必填】;list时可选(用于名称过滤)。如 MySQL、nginx"
     )
     state: Optional[Literal["running", "stopped", "all"]] = Field(
         default="all",
@@ -140,55 +140,65 @@ class ServiceControlInput(BaseModel):
     )
     timeout: int = Field(
         default=30, ge=1, le=300,
-        description="等待服务操作的超时时间(秒)。默认30秒"
+        description="等待服务操作的超时时间(秒,仅start/stop/restart时使用)。默认30秒"
     )
 
 
-class TaskControlInput(BaseModel):
-    action: Literal["create", "delete", "list"] = Field(
+class CreateTaskInput(BaseModel):
+    task_name: str = Field(
         ...,
-        description="操作类型(必填)。可选值:create/delete/list"
+        description="计划任务名称(必填)。如 MyBackup"
     )
-    task_name: Optional[str] = Field(
-        default=None,
-        description="任务名称。create/delete时必填;list时可选(用于名称过滤)"
+    command: str = Field(
+        ...,
+        description="要执行的命令或程序路径(必填)。如 C:\\scripts\\backup.bat"
     )
-    command: Optional[str] = Field(
-        default=None,
-        description="要执行的命令或程序路径(仅create时必填)。如 C:\\scripts\\backup.bat"
-    )
-    schedule: Optional[str] = Field(
-        default=None,
-        description="计划执行时间(仅create时必填)。格式:'HH:MM'(每日)、'HH:MM /day N'(每周)、'HH:MM /monthly DD'(每月)"
+    schedule: str = Field(
+        ...,
+        description="计划执行时间(必填)。格式:'HH:MM'(每日)、'HH:MM /day N'(每周)、'HH:MM /monthly DD'(每月)"
     )
     start_time: Optional[str] = Field(
         default=None,
-        description="起始时间(仅create时可选)。如 '08:00'"
+        description="起始时间(可选)。如 '08:00'"
     )
     interval: Optional[int] = Field(
         default=None,
-        description="重复间隔分钟数(仅create时可选)"
+        description="重复间隔分钟数(可选)"
+    )
+
+
+class DeleteTaskInput(BaseModel):
+    task_name: str = Field(
+        ...,
+        description="要删除的计划任务名称(必填)。如 MyBackup"
+    )
+
+
+class ListTasksInput(BaseModel):
+    task_name: Optional[str] = Field(
+        default=None,
+        description="按任务名称过滤(模糊匹配,可选)"
     )
     state: Optional[Literal["ready", "running", "disabled", "all"]] = Field(
         default="all",
-        description="状态过滤(仅list时使用)。可选值:ready/running/disabled/all(默认)"
+        description="状态过滤(可选)。可选值:ready/running/disabled/all(默认)"
     )
 
 
 class GetEnvInput(BaseModel):
-    name: Optional[str] = Field(default=None, description="环境变量名称(action=\"get\"时必填)。如 \"PATH\"、\"HOME\"、\"JAVA_HOME\"")
+    name: Optional[str] = Field(default=None, description="环境变量名称(action=get时【必填】)。如 PATH、HOME、JAVA_HOME")
     scope: Literal["process", "user", "system"] = Field(default="process", description="作用域。可选值:process/user/system。默认process")
-    expand_vars: bool = Field(default=True, description="是否展开值中的嵌套变量(如 %JAVA_HOME%\\bin)。默认true")
-    action: Literal["get", "list"] = Field(default="get", description="操作类型。\"get\"=获取单个变量(默认),\"list\"=列出所有变量")
-    prefix: Optional[str] = Field(default=None, description="环境变量名前缀过滤(仅action=\"list\"有效)。例如 PY、JAVA")
+    expand_vars: bool = Field(default=True, description="是否展开值中的嵌套变量(如 %%JAVA_HOME%%\\bin,仅action=get时使用)。默认true")
+    action: Literal["get", "list"] = Field(default="get", description="操作类型。get=获取单个变量(默认),list=列出所有变量")
+    prefix: Optional[str] = Field(default=None, description="环境变量名前缀过滤(仅action=list时使用)。例如 PY、JAVA")
 
 
 class SetEnvInput(BaseModel):
-    name: str = Field(..., description="环境变量名称。如 \"MY_VARIABLE\"、\"CONFIG_PATH\"、\"PATH\"")
-    value: Optional[str] = Field(default=None, description="环境变量值。action=\"set\"时必填,action=\"delete\"时忽略")
+    name: str = Field(..., description="环境变量名称(必填)。如 MY_VARIABLE、CONFIG_PATH、PATH")
+    value: Optional[str] = Field(default=None, description="环境变量值(action=set时【必填】,action=delete时忽略)")
     scope: Literal["user", "system", "process"] = Field(default="process", description="作用域。可选值:process/user/system。默认process")
-    append_mode: bool = Field(default=False, description="追加模式。设为true时若变量已存在则在原值后追加;设为false时覆盖原值。默认false")
-    action: Literal["set", "delete"] = Field(default="set", description="操作类型。\"set\"=设置变量(默认),\"delete\"=删除变量")
+    append_mode: bool = Field(default=False, description="追加模式(仅action=set时使用)。设为true时若变量已存在则在原值后追加;设为false时覆盖原值。默认false")
+    action: Literal["set", "delete"] = Field(default="set", description="操作类型。set=设置变量(默认),delete=删除变量")
 
 
 __all__ = [
@@ -198,7 +208,9 @@ __all__ = [
     "ListProcessesInput",
     "KillProcessInput",
     "ServiceControlInput",
-    "TaskControlInput",
+    "CreateTaskInput",
+    "DeleteTaskInput",
+    "ListTasksInput",
     "GetEnvInput",
     "SetEnvInput",
 ]

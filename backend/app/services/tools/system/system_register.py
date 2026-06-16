@@ -34,7 +34,9 @@ from app.services.tools.system.system_schema import (
     ListProcessesInput,
     KillProcessInput,
     ServiceControlInput,
-    TaskControlInput,
+    CreateTaskInput,
+    DeleteTaskInput,
+    ListTasksInput,
     GetEnvInput,
     SetEnvInput,
 )
@@ -45,7 +47,9 @@ from app.services.tools.system.system_tools import (
     list_processes,
     kill_process,
     service_control,
-    task_control,
+    create_task,
+    delete_task,
+    list_tasks,
 )
 
 from app.services.tools.system.env_tools import (
@@ -61,29 +65,22 @@ SYSTEM_TOOL_DESCRIPTIONS = {
     "kill_process": """终止指定PID的进程。默认优雅终止(SIGTERM),超时后自动升级为强制终止(SIGKILL)。force=True跳过等待直接强制终止。进程已不存在时幂等返回成功(不报错)。适用场景:需要结束卡死或无响应的进程、释放被占用资源、强制终止无法正常关闭的进程时使用。需谨慎操作。""",
     "service_control": """支持系统服务的start/stop/restart/list操作功能。
 action参数决定操作类型:
-- start: 启动服务,service_name(可选timeout)
-- stop: 停止服务,service_name(可选force/timeout)
-- restart: 重启服务,service_name(可选force/timeout)
-- list: 列出服务(可选state过滤)
+- start: 启动服务,service_name【必填】(可选timeout)
+- stop: 停止服务,service_name【必填】(可选force/timeout)
+- restart: 重启服务,service_name【必填】(可选force/timeout)
+- list: 列出服务(可选state/service_name过滤)
 
 使用示例:
 - 列出服务 → service_control(action="list")
 - 启动服务 → service_control(action="start", service_name="mysql")
 - 停止服务 → service_control(action="stop", service_name="nginx")
 - 重启服务 → service_control(action="restart", service_name="apache")""",
-    "task_control": """支持Windows计划任务的create/delete/list操作功能。
-action参数决定操作类型:
-- create: 创建任务,task_name+command+schedule(可选start_time/interval)
-- delete: 删除任务,task_name
-- list: 列出任务(可选state过滤)
-
-使用示例:
-- 列出任务 → task_control(action="list")
-- 创建任务 → task_control(action="create", task_name="MyBackup", command="C:\\scripts\\backup.bat", schedule="02:00")
-- 删除任务 → task_control(action="delete", task_name="MyBackup")""",
+    "create_task": """创建Windows计划任务(.bat/.exe等)。必填参数:task_name(任务名)、command(命令或程序路径,如C:\\scripts\\backup.bat)、schedule(计划时间,格式HH:MM每日/HH:MM /day N每周/HH:MM /monthly DD每月)。可选参数:start_time(起始时间)、interval(重复间隔分钟数)。适用场景:需要定时执行脚本、定期备份、周期性维护任务时使用。""",
+    "delete_task": """删除Windows计划任务。必填参数:task_name(要删除的计划任务名称)。删除前会先查询确认任务存在。适用场景:需要移除不再需要的计划任务时使用。需谨慎操作。""",
+    "list_tasks": """列出Windows计划任务。可选参数:task_name(按名称模糊过滤)、state(状态过滤,ready/running/disabled/all,默认all)。适用场景:需要查看所有计划任务、按名称查找特定任务、按状态筛选任务时使用。""",
     "get_env": """支持环境变量的获取/列出操作功能。
 action参数决定操作类型:
-- get: 获取单个环境变量,name(必填;可选scope/expand_vars)
+- get: 获取单个环境变量,name【必填】(可选scope/expand_vars)
 - list: 列出所有环境变量(可选prefix/scope)
 
 使用示例:
@@ -91,8 +88,8 @@ action参数决定操作类型:
 - 列出所有 → get_env(action="list")""",
     "set_env": """支持环境变量的设置/删除操作功能。
 action参数决定操作类型:
-- set: 设置环境变量,name+value(可选scope/append_mode)
-- delete: 删除环境变量,name(可选scope)
+- set: 设置环境变量,name【必填】+value【必填】(可选scope/append_mode)
+- delete: 删除环境变量,name【必填】(可选scope)
 
 使用示例:
 - 设置变量 → set_env(name="MY_VAR", value="my_value")
@@ -106,7 +103,9 @@ SYSTEM_TOOL_INPUT_MODELS = {
     "list_processes": ListProcessesInput,
     "kill_process": KillProcessInput,
     "service_control": ServiceControlInput,
-    "task_control": TaskControlInput,
+    "create_task": CreateTaskInput,
+    "delete_task": DeleteTaskInput,
+    "list_tasks": ListTasksInput,
     "get_env": GetEnvInput,
     "set_env": SetEnvInput,
 }
@@ -139,11 +138,18 @@ SYSTEM_TOOL_EXAMPLES = {
         {"action": "stop", "service_name": "nginx", "force": True},
         {"action": "restart", "service_name": "mysql"},
     ],
-    "task_control": [
-        {"action": "list"},
-        {"action": "list", "state": "running"},
-        {"action": "create", "task_name": "MyBackup", "command": "C:\\scripts\\backup.bat", "schedule": "02:00"},
-        {"action": "delete", "task_name": "MyBackup"},
+    "create_task": [
+        {"task_name": "MyBackup", "command": "C:\\scripts\\backup.bat", "schedule": "02:00"},
+        {"task_name": "WeeklyReport", "command": "C:\\scripts\\report.bat", "schedule": "08:00 /day 1", "start_time": "08:00"},
+        {"task_name": "HourlyCheck", "command": "C:\\scripts\\check.bat", "schedule": "09:00", "interval": 60},
+    ],
+    "delete_task": [
+        {"task_name": "MyBackup"},
+    ],
+    "list_tasks": [
+        {},
+        {"state": "running"},
+        {"task_name": "Backup"},
     ],
     # 【2026-05-19 小沈】Environment工具示例(已精简:砍default/include_system/exist_ok)
     "get_env": [
@@ -161,7 +167,7 @@ SYSTEM_TOOL_EXAMPLES = {
 def _register_system_tools():
     """注册系统工具 — 全部归入SYSTEM — 小欧 2026-06-12"""
     # 【2026-06-16 小沈】二元安全配置（替代5级枚举）
-    CONFIRM_TOOLS = {"kill_process", "service_control", "task_control", "set_env"}
+    CONFIRM_TOOLS = {"kill_process", "service_control", "create_task", "delete_task", "set_env"}
 
     system_tools = {
         "get_system_info": get_system_info,
@@ -170,7 +176,9 @@ def _register_system_tools():
         "get_env": get_env,
         "kill_process": kill_process,
         "service_control": service_control,
-        "task_control": task_control,
+        "create_task": create_task,
+        "delete_task": delete_task,
+        "list_tasks": list_tasks,
         "set_env": set_env,
     }
 

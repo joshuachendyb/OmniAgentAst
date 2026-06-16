@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-File Register - 文件工具注册点(精简版 v2.0)
+File Register - 文件工具注册点 v3.0
 
 【架构规范】2026-04-26 小沈
 【精简时间】2026-05-18 小沈 — 第17章工具精简:26→11
+【拆分时间】2026-06-16 小沈 — 组合工具拆分:archive_tool→2, file_operation→4
 
-10个工具清单(F1-F10):
+14个工具清单(F1-F14):
 F1  read_text_file     — 读取文本文件
 F2  write_text_file    — 写文本文件
 F3  read_media_file    — 读媒体文件
@@ -13,26 +14,35 @@ F4  edit_text_file     — 编辑文本文件
 F5  list_directory     — 列出目录内容
 F6  search_files       — 搜索文件名
 F7  grep_file_content  — 搜索文件内容
-F8  archive_tool       — 压缩/解压
-F9  file_operation     — 文件操作(move/copy/delete/rename)
-F10 data_file_format   — 结构化配置文件读写
+F8  compress_files     — 压缩文件
+F9  extract_archive    — 解压文件
+F10 move_file          — 移动文件
+F11 copy_file          — 复制文件
+F12 delete_file        — 删除文件
+F13 rename_file        — 重命名文件
+F14 data_file_format   — 结构化配置文件读写
 
 
 创建时间: 2026-04-26
 精简时间: 2026-05-18
+拆分时间: 2026-06-16
 """
 
 import logging
 
 from app.services.tools.file.file_schema import (
-    ArchiveToolInput,
+    CompressFilesInput,
+    CopyFileInput,
     DataFileFormatInput,
+    DeleteFileInput,
     EditTextFileInput,
-    FileOperationInput,
+    ExtractArchiveInput,
     GrepFileContentInput,
     ListDirectoryInput,
+    MoveFileInput,
     ReadTextFileInput,
     ReadMediaFileInput,
+    RenameFileInput,
     SearchFilesInput,
     WriteTextFileInput,
 )
@@ -44,7 +54,7 @@ from app.utils.logger import logger
 
 
 # ============================================================
-# 工具描述(10个)
+# 工具描述(14个)
 # ============================================================
 
 FILE_TOOL_DESCRIPTIONS = {
@@ -52,7 +62,7 @@ FILE_TOOL_DESCRIPTIONS = {
 
     "write_text_file": """写文本文件：创建新文件或追加内容。自动检测编码，支持中文路径。content 参数传入实际文件内容（禁止传入思考/状态描述），append=True 追加到末尾。适用场景:需要创建或修改代码文件、配置文件、日志文件等文本内容时使用。""",
 
-    "read_media_file": """读取图片、音频、视频文件,返回Base64编码数据和MIME类型。自动识别媒体类型,支持常见图片(jpg/png/gif/bmp)、音频(mp3/wav/ogg)和视频(mp4/avi/mkv)格式。不支持PDF文件(PDF请使用read_document工具)。适用场景:需要获取非文本文件内容并将其传递给LLM进行图像识别、音频分析等任务。""",
+    "read_media_file": """读取图片、音频、视频文件,返回Base64编码数据和MIME类型。自动识别媒体类型,支持常见图片(jpg/png/gif/bmp)、音频(mp3/wav/ogg)和视频(mp4/avi/mkv)格式。不支持PDF文件(PDF请使用read_pdf工具)。适用场景:需要获取非文本文件内容并将其传递给LLM进行图像识别、音频分析等任务。""",
 
     "edit_text_file": """替换文本文件中的内容。old_string定位被替换文本,new_string替换为的内容。replace_all替换所有匹配项,dry_run仅预览。适用场景:需要精确修改代码中的某个函数名、变量引用、配置值时使用。""",
 
@@ -62,32 +72,28 @@ FILE_TOOL_DESCRIPTIONS = {
 
     "grep_file_content": """基于ripgrep在文件中搜索文本内容,支持正则表达式和中文搜索。可指定搜索路径、文件过滤(glob通配符,如"*.py")、匹配前后上下文行数、大小写敏感、多行匹配模式、返回条数限制。分页返回结果,包含匹配行内容、匹配文件和总匹配数。适用场景:需要在代码或文档中查找特定函数定义、关键字、TODO标记,并了解其上下文时使用。""",
 
-    "archive_tool": """支持文件的压缩/解压操作功能,支持zip/tar/tar.gz/tar.bz2格式。
-action参数决定操作类型:
-- compress: 压缩文件/目录到归档包,source→destination(可选format/compression_level/password/exclude_patterns)
-- extract: 解压归档包到目录,source→destination(可选password/overwrite)
+    "compress_files": """压缩文件或目录为归档包。支持zip/tar/tar.gz/tar.bz2格式,可设置压缩级别(0-9)和加密密码(ZIP专用)。可排除指定文件/目录模式。适用场景:需要备份文件、打包项目、减小文件体积时使用。
+使用示例: compress_files(source="D:/project", destination="D:/backup.zip")""",
 
-使用示例:
-- 压缩 → archive_tool(action="compress", source="D:/project", destination="D:/backup.zip")
-- 解压 → archive_tool(action="extract", source="D:/backup.zip", destination="D:/output")""",
+    "extract_archive": """解压归档包到指定目录。支持zip/tar/tar.gz/tar.bz2格式,支持加密解压(ZIP专用)。destination可选,不填则自动创建同名目录。适用场景:需要解压下载的压缩包、恢复备份时使用。
+使用示例: extract_archive(source="D:/backup.zip", destination="D:/output")""",
 
-    "file_operation": """支持文件的move/copy/delete/rename操作功能。
-action参数决定操作类型:
-- move: 移动文件,source→destination(可选overwrite)
-- copy: 复制,source→destination(目录需recursive=True;可选overwrite/preserve_metadata)
-- delete: 删除,source(非空目录需recursive=True;force=True永久删除,默认回收站)
-- rename: 重命名文件/目录,source旧名→destination新名
+    "move_file": """移动文件或目录。同盘移动为原子操作(瞬间完成),跨盘移动先复制后删除。overwrite=True覆盖已存在目标。适用场景:需要整理文件位置、迁移文件时使用。
+使用示例: move_file(source="D:/a.txt", destination="E:/b.txt")""",
 
-使用示例:
-- 移动 → file_operation(action="move", source="D:/a.txt", destination="E:/b.txt")
-- 复制 → file_operation(action="copy", source="D:/a.txt", destination="D:/backup/a.txt")
-- 删除 → file_operation(action="delete", source="D:/temp.txt")
-- 重命名 → file_operation(action="rename", source="D:/old.txt", destination="D:/new.txt")""",
+    "copy_file": """复制文件或目录。复制目录需recursive=True。preserve_metadata=True保留修改时间/访问时间等元数据。overwrite=True覆盖已存在目标。适用场景:需要备份文件、复制模板时使用。
+使用示例: copy_file(source="D:/a.txt", destination="D:/backup/a.txt")""",
+
+    "delete_file": """删除文件或目录。默认放入回收站(可恢复),force=True永久删除(不可恢复)。删除非空目录需recursive=True。文件已不存在时返回成功(幂等)。适用场景:需要清理临时文件、删除过期数据时使用。
+使用示例: delete_file(source="D:/temp.txt")""",
+
+    "rename_file": """重命名文件或目录。destination只需提供新文件名(不含目录路径),在同一目录下重命名。适用场景:需要修改文件名、规范化命名时使用。
+使用示例: rename_file(source="D:/old.txt", destination="new.txt")""",
 
     "data_file_format": """支持结构化配置文件的读/写操作功能,支持JSON/YAML/TOML/INI/XML/Properties格式。
 action参数决定操作类型:
-- read: 读取配置文件,file_path(自动检测格式;可选format/encoding)
-- write: 写入配置文件,file_path+data(支持JSON/YAML/TOML;可选format/encoding/indent)
+- read: 读取配置文件,file_path【必填】(自动检测格式;可选format/encoding)
+- write: 写入配置文件,file_path【必填】+data【必填】(支持JSON/YAML/TOML;可选format/encoding/indent)
 
 使用示例:
 - 读取 → data_file_format(action="read", file_path="D:/config.json")
@@ -96,7 +102,7 @@ action参数决定操作类型:
 
 
 # ============================================================
-# 工具示例(10个)
+# 工具示例(14个)
 # ============================================================
 
 FILE_TOOL_EXAMPLES = {
@@ -127,14 +133,23 @@ FILE_TOOL_EXAMPLES = {
         {"pattern": "def read_text_file", "search_dir": "D:/backend"},
         {"pattern": "TODO", "search_dir": "D:/src", "context": {"around": 3}},
     ],
-    "archive_tool": [
-        {"action": "compress", "source": "D:/project", "destination": "D:/backup.zip"},
-        {"action": "extract", "source": "D:/backup.zip", "destination": "D:/extracted"},
+    "compress_files": [
+        {"source": "D:/project", "destination": "D:/backup.zip"},
     ],
-    "file_operation": [
-        {"action": "move", "source": "D:/a.txt", "destination": "E:/b.txt"},
-        {"action": "copy", "source": "D:/a.txt", "destination": "D:/backup/a.txt"},
-        {"action": "delete", "source": "D:/temp.txt"},
+    "extract_archive": [
+        {"source": "D:/backup.zip", "destination": "D:/extracted"},
+    ],
+    "move_file": [
+        {"source": "D:/a.txt", "destination": "E:/b.txt"},
+    ],
+    "copy_file": [
+        {"source": "D:/a.txt", "destination": "D:/backup/a.txt"},
+    ],
+    "delete_file": [
+        {"source": "D:/temp.txt"},
+    ],
+    "rename_file": [
+        {"source": "D:/old.txt", "destination": "new.txt"},
     ],
     "data_file_format": [
         {"action": "read", "file_path": "D:/config.json"},
@@ -144,7 +159,7 @@ FILE_TOOL_EXAMPLES = {
 
 
 # ============================================================
-# 工具名到Pydantic模型的映射(10个)
+# 工具名到Pydantic模型的映射(14个)
 # ============================================================
 
 TOOL_INPUT_MODELS = {
@@ -155,8 +170,12 @@ TOOL_INPUT_MODELS = {
     "list_directory": ListDirectoryInput,
     "search_files": SearchFilesInput,
     "grep_file_content": GrepFileContentInput,
-    "archive_tool": ArchiveToolInput,
-    "file_operation": FileOperationInput,
+    "compress_files": CompressFilesInput,
+    "extract_archive": ExtractArchiveInput,
+    "move_file": MoveFileInput,
+    "copy_file": CopyFileInput,
+    "delete_file": DeleteFileInput,
+    "rename_file": RenameFileInput,
     "data_file_format": DataFileFormatInput,
 }
 
@@ -167,8 +186,7 @@ TOOL_INPUT_MODELS = {
 
 def _register_file_tools():
     """
-    注册10个文件工具 — 小沈 2026-06-09
-    【v3.4新增 2026-06-09 小沈】添加安全级别标注
+    注册14个文件工具 — 小沈 2026-06-16
     """
 
     ft = None
@@ -188,14 +206,17 @@ def _register_file_tools():
         "list_directory": lambda **kw: _get_ft().list_directory(**kw),
         "search_files": lambda **kw: _get_ft().search_files(**kw),
         "grep_file_content": lambda **kw: _get_ft().grep_file_content(**kw),
-        "archive_tool": lambda **kw: _get_ft().archive_tool(**kw),
-        "file_operation": lambda **kw: _get_ft().file_operation(**kw),
+        "compress_files": lambda **kw: _get_ft().compress_files(**kw),
+        "extract_archive": lambda **kw: _get_ft().extract_archive(**kw),
+        "move_file": lambda **kw: _get_ft().move_file(**kw),
+        "copy_file": lambda **kw: _get_ft().copy_file(**kw),
+        "delete_file": lambda **kw: _get_ft().delete_file(**kw),
+        "rename_file": lambda **kw: _get_ft().rename_file(**kw),
         "data_file_format": lambda **kw: _get_ft().data_file_format(**kw),
     }
     
-    # 【2026-06-16 小沈】二元安全配置（替代5级枚举）
     CONFIRMATION_MAP = {
-        "file_operation": {"delete": True},  # file_operation的delete需要确认
+        "delete_file": True,
     }
 
 
@@ -212,8 +233,7 @@ def _register_file_tools():
             version="2.0.0",
             input_model=input_model,
             examples=examples,
-            needs_confirmation=False,  # file工具默认不需要确认
-            action_confirmation=CONFIRMATION_MAP.get(name),
+            needs_confirmation=bool(CONFIRMATION_MAP.get(name, False)),
         )
 
         logger.debug(
@@ -228,6 +248,4 @@ __all__ = [
     "FILE_TOOL_EXAMPLES",
 ]
 
-
-from app.services.tools.file.file_tools import FileTools, get_file_tools
 

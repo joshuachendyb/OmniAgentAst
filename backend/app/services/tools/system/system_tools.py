@@ -1432,56 +1432,142 @@ def service_control(
     return result
 
 
-# 【2026-05-17 小沈】统一入口函数:task_control - 合并task_create/task_delete/task_list
-def task_control(
-    action: Literal["create", "delete", "list"],
-    task_name: Optional[str] = None,
-    command: Optional[str] = None,
-    schedule: Optional[str] = None,
+def create_task(
+    task_name: str,
+    command: str,
+    schedule: str,
     start_time: Optional[str] = None,
     interval: Optional[int] = None,
-    state: str = "all",
 ) -> dict:
     """
-    计划任务统一控制入口 - 小沈 2026-05-17
+    创建Windows计划任务 - 小沈 2026-06-16
     
-    通过action参数分发到原task_create/task_delete/task_list实现。
+    使用schtasks /create命令创建计划任务。
+    schedule格式:'HH:MM'(每日)、'HH:MM /day N'(每周)、'HH:MM /monthly DD'(每月)
     
     Args:
-        action: 操作类型,"create"|"delete"|"list"
-        task_name: 任务名称(create/delete时必填)
-        command: 执行命令(create时必填)
-        schedule: 计划时间(create时必填),格式'HH:MM'或'HH:MM /day N'或'HH:MM /monthly DD'
-        start_time: 起始时间(create时可选)
-        interval: 重复间隔分钟数(create时可选)
-        state: 状态过滤(list时使用),ready/running/disabled/all,默认all
+        task_name: 计划任务名称(必填)
+        command: 要执行的命令或程序路径(必填)
+        schedule: 计划时间(必填)
+        start_time: 起始时间(可选)
+        interval: 重复间隔分钟数(可选)
     
     Returns:
         {code, data, message}
     """
-    if action == "list":
-        result = _task_list(filter_name=task_name, filter_status=state)
-    elif action == "create":
-        if not task_name or not command or not schedule:
-            return build_error(ERR_PARAMETER_INVALID, "create操作必须提供task_name、command、schedule")
-        result = _task_create(
-            task_name=task_name,
-            command=command,
-            schedule=schedule,
-            start_time=start_time,
-            start_date=None,  # 已从Schema移除,硬编码为None
-            interval=interval,
-        )
-    elif action == "delete":
-        if not task_name:
-            return build_error(ERR_PARAMETER_INVALID, "delete操作必须提供task_name")
-        result = _task_delete(task_name=task_name, folder=None)  # folder已从Schema移除,硬编码为None
-    else:
-        return build_error(ERR_PARAMETER_INVALID, f"不支持的action: {action},可选: create/delete/list")
+    try:
+        if platform.system() != "Windows":
+            return build_error(ERR_DESKTOP_PLATFORM_NOT_SUPPORTED, "create_task 仅支持Windows系统")
 
-    if result.get("code") == "SUCCESS":
-        result["next_actions"] = build_next_actions([("task_control", "验证任务状态", "需要确认操作结果时", {"action": "list"})])
-    return result
+        cmd = _build_schtasks_create_cmd(
+            task_name, command, schedule,
+            None, None, start_time, None, interval)
+
+        result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
+
+        if result.returncode != 0:
+            return build_error(ERR_TASK_CREATE, f"创建计划任务失败: {result.stderr.strip() or result.stdout.strip()}")
+
+        return build_success({
+                "task_name": task_name,
+                "command": command,
+                "schedule": schedule,
+            }, f"计划任务 {task_name} 创建成功", next_actions=build_next_actions([("list_tasks", "验证任务已创建", "需要确认创建结果时")]))
+
+    except subprocess.TimeoutExpired:
+        return build_error(ERR_SHELL_TIMEOUT, "创建计划任务超时")
+    except FileNotFoundError:
+        return build_error(ERR_SHELL_COMMAND_NOT_FOUND, "schtasks命令不存在")
+    except Exception as e:
+        logger.error(f"[create_task] 创建计划任务失败: {e}")
+        return build_error(ERR_TASK_CREATE, f"创建计划任务失败: {str(e)}")
+
+
+def delete_task(
+    task_name: str,
+) -> dict:
+    """
+    删除Windows计划任务 - 小沈 2026-06-16
+    
+    使用schtasks /delete命令删除计划任务。
+    
+    Args:
+        task_name: 要删除的计划任务名称(必填)
+    
+    Returns:
+        {code, data, message}
+    """
+    try:
+        if platform.system() != "Windows":
+            return build_error(ERR_DESKTOP_PLATFORM_NOT_SUPPORTED, "delete_task 仅支持Windows系统")
+
+        query_cmd = ["schtasks", "/query", "/tn", task_name]
+        query_result = subprocess.run(query_cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=SUBPROCESS_TIMEOUT_DEFAULT)
+
+        if query_result.returncode != 0:
+            return build_error(ERR_TASK_NOT_FOUND, f"计划任务 {task_name} 不存在")
+
+        cmd = ["schtasks", "/delete", "/tn", task_name, "/f"]
+
+        result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
+
+        if result.returncode != 0:
+            return build_error(ERR_TASK_DELETE, f"删除计划任务失败: {result.stderr.strip() or result.stdout.strip()}")
+
+        return build_success({
+                "task_name": task_name,
+            }, f"计划任务 {task_name} 已删除", next_actions=build_next_actions([("list_tasks", "验证任务已删除", "需要确认删除结果时")]))
+
+    except subprocess.TimeoutExpired:
+        return build_error(ERR_SHELL_TIMEOUT, "删除计划任务超时")
+    except FileNotFoundError:
+        return build_error(ERR_SHELL_COMMAND_NOT_FOUND, "schtasks命令不存在")
+    except Exception as e:
+        logger.error(f"[delete_task] 删除计划任务失败: {e}")
+        return build_error(ERR_TASK_DELETE, f"删除计划任务失败: {str(e)}")
+
+
+def list_tasks(
+    task_name: Optional[str] = None,
+    state: str = "all",
+) -> dict:
+    """
+    列出Windows计划任务 - 小沈 2026-06-16
+    
+    使用schtasks query命令列出计划任务。
+    
+    Args:
+        task_name: 按任务名称过滤(模糊匹配,可选)
+        state: 状态过滤(ready/running/disabled/all),默认all
+    
+    Returns:
+        {code, data, message}
+    """
+    try:
+        if platform.system() != "Windows":
+            return build_error(ERR_DESKTOP_PLATFORM_NOT_SUPPORTED, "list_tasks 仅支持Windows系统")
+
+        stdout = _run_schtasks_query()
+        tasks = _parse_task_entries(stdout)
+        limited, matched = _filter_tasks(tasks, task_name, state, 100)
+        llm = _build_task_llm(limited, len(tasks), matched, 100)
+
+        return build_success({
+            "tasks": limited,
+            "total": len(limited),
+            "total_matched": len(tasks),
+            "platform": "Windows",
+        }, f"找到 {len(tasks)} 个计划任务,返回前 {len(limited)} 个", llm_data=llm)
+
+    except subprocess.TimeoutExpired:
+        return build_error(ERR_SHELL_TIMEOUT, "获取计划任务列表超时")
+    except ValueError as e:
+        return build_error(ERR_TASK_EMPTY, str(e))
+    except FileNotFoundError:
+        return build_error(ERR_SHELL_COMMAND_NOT_FOUND, "schtasks 命令不存在")
+    except Exception as e:
+        logger.error(f"[list_tasks] 获取计划任务列表失败: {e}")
+        return build_error(ERR_TASK_LIST, f"获取计划任务列表失败: {str(e)}")
 from app.constants import (
     ERR_DESKTOP_PLATFORM_NOT_SUPPORTED,
     ERR_PARAMETER_INVALID,
