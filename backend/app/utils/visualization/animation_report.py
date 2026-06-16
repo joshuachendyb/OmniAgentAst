@@ -9,37 +9,14 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from jinja2 import Environment, FileSystemLoader
 
-from app.db import db
+
 from app.utils.logger import logger
 
 
 def query_animation_operations(task_id: str) -> List[Dict[str, Any]]:
-    """查询指定task_id的文件操作记录(动画用)— 小健 2026-05-25
-
-    使用场景:
-    - generate_animation_script中查询操作历史
-
-    使用示例:
-        operations_data = query_animation_operations(task_id)
-
-    返回数据说明:
-    - 返回List[Dict[str, Any]],每个元素包含type/source/destination/status/timestamp
-    - 如果无操作记录,返回空列表
-    """
-    with db.get_conn("operations") as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_type, source_path, destination_path, status, created_at
-            FROM file_operations WHERE task_id = ?
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-        rows = cursor.fetchall()
-    if not rows:
-        return []
-    return [
-        {"type": op_type, "source": src, "destination": dst, "status": status, "timestamp": created_at}
-        for op_type, src, dst, status, created_at in rows
-    ]
+    """查询指定task_id的文件操作记录(动画用)— 小健 2026-05-25; 2026-06-17 改为调用service层"""
+    from app.services.safety.file.file_safety.operation_queries import query_animation_operations
+    return query_animation_operations(task_id)
 
 
 def build_animation_data(operations_data: List[Dict[str, Any]],

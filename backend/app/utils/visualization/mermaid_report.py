@@ -6,7 +6,7 @@ Mermaid报告模块 - 生成Mermaid格式流程图报告
 from pathlib import Path
 from typing import Optional
 
-from app.db import db
+
 from app.utils.logger import logger
 
 
@@ -21,15 +21,8 @@ def generate_mermaid_report(task_id: str, output_path: Optional[Path] = None) ->
     Returns:
         Mermaid报告文件路径
     """
-    with db.get_conn("operations") as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_type, source_path, destination_path, status, sequence_number
-            FROM file_operations WHERE task_id = ?
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-
-        operations = cursor.fetchall()
+    from app.services.safety.file.file_safety.operation_queries import query_mermaid_operations
+    operations = query_mermaid_operations(task_id)
 
     mermaid_content = "graph TD\n"
     mermaid_content += f"    Start([开始]) --> Op0\n"

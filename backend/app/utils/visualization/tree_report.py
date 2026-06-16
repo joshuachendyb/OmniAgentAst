@@ -8,20 +8,14 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from app.utils.visualization.common import OperationNode
-from app.db import db
+
 from app.utils.logger import logger
 
 
 def _query_tree_operations(task_id: str) -> List[Tuple]:
-    """查询树形操作记录 - 小沈 2026-06-08"""
-    with db.get_conn("operations") as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_id, operation_type, source_path, destination_path, status
-            FROM file_operations WHERE task_id = ?
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-        return cursor.fetchall()
+    """查询树形操作记录 - 小沈 2026-06-08; 2026-06-17 改为调用service层"""
+    from app.services.safety.file.file_safety.operation_queries import query_tree_operations
+    return query_tree_operations(task_id)
 
 
 def _build_tree_nodes(task_id: str, task_description: str, operations: List[Tuple]) -> OperationNode:

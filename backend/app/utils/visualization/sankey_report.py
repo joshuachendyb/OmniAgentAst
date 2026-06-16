@@ -9,20 +9,14 @@ from typing import List, Optional, Tuple
 from dataclasses import asdict
 
 from app.utils.visualization.common import FlowData
-from app.db import db
+
 from app.utils.logger import logger
 
 
 def _query_sankey_operations(task_id: str) -> List[Tuple]:
-    """查询Sankey操作记录 - 小沈 2026-06-08"""
-    with db.get_conn("operations") as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_type, source_path, destination_path, status
-            FROM file_operations WHERE task_id = ? AND status = 'success'
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-        return cursor.fetchall()
+    """查询Sankey操作记录 - 小沈 2026-06-08; 2026-06-17 改为调用service层"""
+    from app.services.safety.file.file_safety.operation_queries import query_sankey_operations
+    return query_sankey_operations(task_id)
 
 
 def _build_flow_data(op_type: str, src: str, dst: str) -> Optional[FlowData]:

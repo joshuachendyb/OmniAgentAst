@@ -5,7 +5,7 @@ HTML报告模块 - 生成HTML格式的文件操作报告(含图表)
 """
 from typing import List, Dict, Tuple
 
-from app.utils.visualization.common import query_file_operations
+
 from app.utils.logger import logger
 
 
@@ -88,6 +88,7 @@ def generate_html_report(task_id: str, task_description: str) -> str:
     Returns:
         HTML报告内容字符串
     """
+    from app.services.safety.file.file_safety.operation_queries import query_file_operations
     operations = query_file_operations(task_id)
 
     if not operations:

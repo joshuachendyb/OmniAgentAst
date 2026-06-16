@@ -1,14 +1,15 @@
 """
-可视化公共模块 - 数据类与共享查询/工具函数
-包含 OperationNode, FlowData 数据类及 _query_file_operations, _count_op_stats, _format_size
+可视化公共模块 - 数据类与共享工具函数
+包含 OperationNode, FlowData 数据类及 count_op_stats, format_size, save_json_file
+
 小沈 2026-05-29 拆分自 file_visualization.py
+小沈 2026-06-17 删除db依赖,query_file_operations下沉到service层
 """
 import json
 from pathlib import Path
 from typing import List, Dict, Tuple
 from dataclasses import dataclass
 
-from app.db import db
 from app.utils.logger import logger
 
 
@@ -35,23 +36,6 @@ class FlowData:
     target: str
     value: int
     label: str
-
-
-def query_file_operations(task_id: str) -> List[Tuple]:
-    """查询 file_operations 表,返回所有操作记录(与 generate_html_report 共享)
-
-    小沈 2026-05-25 重构拆分
-    """
-    with db.get_conn("operations") as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT operation_type, source_path, destination_path, status,
-                   file_size, is_directory, created_at, error_message
-            FROM file_operations WHERE task_id = ?
-            ORDER BY sequence_number ASC
-        ''', (task_id,))
-        operations = cursor.fetchall()
-    return operations
 
 
 def count_op_stats(operations: List[Tuple]) -> Dict[str, int]:
