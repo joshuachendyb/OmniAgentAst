@@ -1,8 +1,8 @@
 v0.16.5
 
-更新时间: 2026-06-16 06:27:44
+更新时间: 2026-06-16 20:34:44
 
-## v0.16.4→v0.16.5 变更汇总 - 小欧-2026-06-16
+## v0.16.4→v0.16.5 变更汇总 - 小沈-2026-06-16
 
 ### fix: database.py P1修复+send_notification注册恢复
 - 04074dfc8: database.py 数据库初始化重构+全链路E2E测试手册更新
@@ -13,7 +13,7 @@ v0.16.5
 ### refactor: 报告文件目录重构+E2E测试优化
 - ee14f3fde: 后台报告文件移入reports/目录
 - 2d2084132: 报告文件合并到根目录reports/
-- 7ec5adfa6: 清理后台无用目录(json_backup/pycache/venv) + .gitignore补充
+- 7ec5adfa6: 清理后台无用目录(json_backup/pycache/venc) + .gitignore补充
 - ee1819fef: E2E测试优化-新增assert_stream_ended()统一流结束验证+清理临时文件
 
 ### docs: E2E测试记录+操作手册更新
@@ -24,6 +24,44 @@ v0.16.5
 ### feat: 测试记录更新+send_notification自动安装
 - efd1a7fe6: 代码+文档+测试记录+报告更新
 - 5f7516ec1: gui_tools.py send_notification自动安装win10toast依赖
+
+### refactor: send_notification重构+5级安全系统清理
+- 3a6b3f12a: gui_tools.py/dependency.py/FUNCTIONS.md 抽取ensure_dependency公用函数+重构send_notification
+- 5c092c6ab: dependency.py 两级降级安装(普通→--user)+send_notification去用户提示
+- da5d33738: 5级安全系统清理-二元安全+check_fn实现
+
+### fix: XC-10/Sessions/并发ID/网络搜索修复
+- 6544b0f0d: XC-10修复 - 增加observation预算并保留首次observation
+- 68c7c9730: sessions.py create_session_endpoint参数缺Pydantic类型注解导致标题永远走默认值
+- baf88464e: assistant_message_id_allocator+file_schema修复并发ID冲突和rename缺destination参数
+- 8c0975cfe: network_tools.py search_web添加提示字段防止LLM重复搜索
+
+### docs: XC-10/P6测试/操作手册更新
+- 3c9a416fa: XC-10分析文档+测试记录+gitignore更新
+- 059b1225e: 更新操作手册P6/P7/P8测试场景设计
+- 5ae4a2f87: P6测试记录ERR-01~08全部PASSED
+
+### docs: TaskMemory设计方案
+- 7209b0c3e: TaskMemory设计方案-从agent.steps派生通用工作记忆
+- 742cde964: 移动TaskMemory设计方案到doc-6月发展目录
+
+### docs: 三系统tool机制分析(5 commits)
+- 9a28ef979: 新增三系统工具注册架构对比分析
+- f1a9f361e: 三系统tool机制分析文档
+- cf499c3c3: 三系统tool机制分析-3轮复核修正12处错误+可借鉴技术总结
+- da5d33738: 5级安全系统清理-二元安全+check_fn实现
+- f3e4c1f44: 新的tool安全机制及前端对应处理文档
+- 4d033d1a4: 三系统tool机制分析-全篇安全体系更新5级→二元安全
+- bfab7184d: 三系统tool机制分析-修复注册参数计数15→16+删除第11章复核报告
+
+### docs: 组合工具拆分分析(2 commits)
+- c8c3e93bd: 组合工具拆分分析文档-2遍分析
+- ceae4761d: 组合工具拆分分析+会话记录+测试记录(E2E)
+
+### docs: 全网大清理(3 commits)
+- 02e876ff0: 清理无用临时文件(截图/缓存/旧日志/临时脚本)
+- 6c65704e2: 清理无用调试笔记/报告/一次性脚本
+- 750c0b156: 清理无用文档+reports+tool-scripts，合并doc目录
 
 ---
 
