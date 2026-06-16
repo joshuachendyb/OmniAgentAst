@@ -8,7 +8,7 @@ File 工具参数 Schema 定义
 Author: 小沈 - 2026-03-21
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List, Dict, Any, Literal, Union
 
 
@@ -305,6 +305,13 @@ class FileOperationInput(BaseModel):
         default=True,
         description="copy模式:是否保留文件元数据(修改时间/访问时间等),默认True"
     )
+
+    @model_validator(mode="after")
+    def _check_destination_required(self):
+        """10规范(SRP): 校验rename/move/copy必须提供destination — 小健-2026-06-16"""
+        if self.action in ("move", "copy", "rename") and not self.destination:
+            raise ValueError(f"{self.action}模式必须提供destination参数")
+        return self
 
 
 # ============================================================
