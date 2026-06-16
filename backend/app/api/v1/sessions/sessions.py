@@ -12,7 +12,10 @@ Author: 小沈 - 2026-02-17
 from fastapi import APIRouter, Query
 from typing import Optional
 
+from typing import Optional
+
 from app.api.v1.sessions.session_update import SessionUpdate
+from app.db.models.chat_models import SessionCreate
 from app.api.v1.sessions.create_session import create_session
 from app.api.v1.sessions.list_sessions import list_sessions
 from app.api.v1.sessions.update_session import update_session
@@ -23,7 +26,7 @@ router = APIRouter()
 
 
 @router.post("/sessions")
-async def create_session_endpoint(session_create=None):
+async def create_session_endpoint(session_create: Optional[SessionCreate] = None):
     return await create_session(session_create)
 
 
