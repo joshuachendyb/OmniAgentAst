@@ -23,7 +23,7 @@ async def task_interrupt_check(
     if await check_cancelled(task_id):
         step_value = next_step() if next_step else None
         meta_step = MetaStep(step=step_value, type="interrupted", message='任务已被中断')
-        from app.chat_stream import format_agent_sse
+        from app.utils.sse_formatter import format_agent_sse
         return True, format_agent_sse(meta_step.to_dict())
     return False, ""
 
@@ -46,7 +46,7 @@ async def task_pause_check(
             await set_was_paused(task_id, True)
             step_value = next_step() if next_step else None
             meta_step = MetaStep(step=step_value, type="paused", message='任务已暂停')
-            from app.chat_stream import format_agent_sse
+            from app.utils.sse_formatter import format_agent_sse
             yield format_agent_sse(meta_step.to_dict())
 
         await pause_event.wait()
@@ -57,7 +57,7 @@ async def task_pause_check(
         await set_was_paused(task_id, False)
         step_value = next_step() if next_step else None
         meta_step = MetaStep(step=step_value, type="resumed", message='任务已恢复')
-        from app.chat_stream import format_agent_sse
+        from app.utils.sse_formatter import format_agent_sse
         yield format_agent_sse(meta_step.to_dict())
 
 
@@ -65,9 +65,7 @@ async def task_pause_check_and_yield(
     task_id: str,
     next_step: Optional[Callable[[], int]] = None
 ) -> AsyncGenerator[str, None]:
-    """流式循环内暂停检查 — 每次迭代调用,非阻塞检查暂停状态
-    R1-1修复: 确保流式过程中暂停请求生效 — 小沈 2026-06-09
-    """
+    """流式循环内暂停检查 — 每次迭代调用,非阻塞检查暂停状态"""
     if await check_cancelled(task_id):
         return
 
@@ -79,15 +77,13 @@ async def task_pause_check_and_yield(
     if not is_paused:
         return
 
-    # 发送paused事件
     if not await check_was_paused(task_id):
         await set_was_paused(task_id, True)
         step_value = next_step() if next_step else None
         meta_step = MetaStep(step=step_value, type="paused", message='任务已暂停')
-        from app.chat_stream import format_agent_sse
+        from app.utils.sse_formatter import format_agent_sse
         yield format_agent_sse(meta_step.to_dict())
 
-    # 等待恢复 — 添加超时防止永久挂起,小健 2026-06-09
     try:
         await asyncio.wait_for(pause_event.wait(), timeout=300)
     except asyncio.TimeoutError:
@@ -98,9 +94,8 @@ async def task_pause_check_and_yield(
     if await check_cancelled(task_id):
         return
 
-    # 发送resumed事件
     await set_was_paused(task_id, False)
     step_value = next_step() if next_step else None
     meta_step = MetaStep(step=step_value, type="resumed", message='任务已恢复')
-    from app.chat_stream import format_agent_sse
+    from app.utils.sse_formatter import format_agent_sse
     yield format_agent_sse(meta_step.to_dict())

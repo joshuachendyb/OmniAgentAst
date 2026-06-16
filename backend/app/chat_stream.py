@@ -4,13 +4,14 @@ chat_stream — SSE事件流处理统一模块
 
 合并来源:
 - chat_stream/error_handler.py (create_error_response, resolve_http_error_type, get_stream_error_info, get_error_info)
-- chat_stream/sse_formatter.py (format_sse_event, format_agent_sse)
+- chat_stream/sse_formatter.py (format_sse_event, format_agent_sse) → 已下沉到 app.utils.sse_formatter
 - chat_stream/message_saver/ (save_execution_steps_to_db)
 - chat_stream/chat_helpers.py (create_final_response)
 - chat_stream/start_step.py (send_start_step)
 
 合并人: 小沈 - 2026-06-08
 SLAP原则: 所有SSE流式事件相关函数统一在此模块，不再分散到子模块
+更新: 小沈 - 2026-06-17 format_sse_event/format_agent_sse下沉到utils,消除反向依赖
 """
 
 import json
@@ -18,38 +19,19 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.utils.time_utils import create_timestamp
+from app.utils.sse_formatter import format_sse_event, format_agent_sse
 from app.services.agent.steps import MetaStep, ErrorStep, FinalStep
 from app.utils.error_classifier import UnifiedErrorClassifier
 from app.utils.error_parser import extract_api_error_detail
 from app.utils.logger import logger
 
 
-
 # ====================================================================
-# SSE格式化工具
+# SSE格式化工具 — 已下沉到 app.utils.sse_formatter,此处re-export保持兼容
 # ====================================================================
 
-def format_sse_event(event_type: str, step: int, data: Dict[str, Any]) -> str:
-    """统一格式化 SSE 事件"""
-    base = {
-        'type': event_type,
-        'step': step
-    }
-    if 'timestamp' in data:
-        base['timestamp'] = data['timestamp']
-    else:
-        base['timestamp'] = create_timestamp()
-    base.update(data)
-    return f"data: {json.dumps(base, ensure_ascii=False)}\n\n"
-
-
-def format_agent_sse(step_dict: dict, step: int = None) -> str:
-    """Agent步骤dict → SSE字符串，只接受dict输入"""
-    event_type = step_dict.get('type', '')
-    step_num = step or step_dict.get('step', 0)
-    if not event_type:
-        return ''
-    return format_sse_event(event_type, step_num, step_dict)
+# format_sse_event / format_agent_sse 已移至 app.utils.sse_formatter
+# 此处通过顶部 import 重新导出,现有引用无需修改
 
 
 # ====================================================================
