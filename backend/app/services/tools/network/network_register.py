@@ -68,8 +68,8 @@ NETWORK_TOOL_DESCRIPTIONS = {
     "search_web": """使用搜索引擎查询最新信息,默认使用国内可用的Bing中国搜索。支持指定搜索结果数量、限定搜索域名范围。返回搜索结果列表(含标题、URL、摘要)、结果总数和使用的搜索引擎。num_results参数建议:概览类查询用5~8,深度调研类用15~20,默认10。适用场景:需要获取实时信息、新闻动态、技术文档、问题解决方案等最新网络信息时使用。""",
     "network_diagnose": """支持网络连通性诊断功能。
 mode参数决定操作类型:
-- ping: ICMP可达性检测(主机级),host(可选count/timeout)
-- port: TCP端口检测(服务级),host+port(可选timeout)
+- ping: ICMP可达性检测(主机级),host【必填】(可选count/timeout)
+- port: TCP端口检测(服务级),host【必填】+port【必填】(可选timeout)
 
 使用示例:
 - ping测试 → network_diagnose(host="8.8.8.8")

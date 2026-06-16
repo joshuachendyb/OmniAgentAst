@@ -51,16 +51,16 @@ class ShellSessionInput(BaseModel):
     )
     action: Literal["output", "terminate"] = Field(
         default="output",
-        description="操作类型:output=读取输出,terminate=终止会话"
+        description="操作类型:output=读取输出(默认),terminate=终止会话"
     )
     filter: Optional[str] = Field(
-        default=None, description="输出过滤正则表达式(action=output时生效)。如 'ERROR|FAIL'"
+        default=None, description="输出过滤正则表达式(仅action=output时使用)。如 ERROR|FAIL"
     )
     max_lines: int = Field(
-        default=1000, ge=1, le=10000, description="最大返回行数(action=output时生效)。默认1000,返回尾部最新输出"
+        default=1000, ge=1, le=10000, description="最大返回行数(仅action=output时使用)。默认1000,返回尾部最新输出"
     )
     force: bool = Field(
-        default=False, description="强制终止(action=terminate时生效)。优雅终止失败时Agent自动设true"
+        default=False, description="强制终止(仅action=terminate时使用)。优雅终止失败时Agent自动设true"
     )
 
 

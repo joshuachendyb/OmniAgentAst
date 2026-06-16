@@ -110,13 +110,13 @@ class NetworkDiagnoseInput(BaseModel):
     port: Optional[int] = Field(
         default=None,
         ge=1, le=65535,
-        description="目标端口号。mode='port'时必填(范围1-65535),mode='ping'时忽略"
+        description="目标端口号(mode=port时【必填】,范围1-65535;mode=ping时忽略)"
     )
     count: int = Field(
-        default=4, ge=1, le=20, description="ping次数。mode='ping'时生效,默认4次,最大20次"
+        default=4, ge=1, le=20, description="ping次数(仅mode=ping时生效),默认4次,最大20次"
     )
     timeout: int = Field(
-        default=5, ge=1, le=30, description="超时时间(秒),默认5秒,最长30秒。mode='ping'时每个ping包的等待时间,mode='port'时每次TCP连接的超时"
+        default=5, ge=1, le=30, description="超时时间(秒),默认5秒,最长30秒。mode=ping时每个ping包的等待时间,mode=port时TCP连接超时"
     )
 
 

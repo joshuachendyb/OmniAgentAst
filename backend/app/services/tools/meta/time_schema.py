@@ -19,19 +19,19 @@ class TimeNowInput(BaseModel):
     )
     time_value: Optional[Union[int, float, str]] = Field(
         default=None,
-        description="时间值。支持:int/float=Unix时间戳(秒),str=日期字符串。action=to_timestamp/from_timestamp时必填,action=format时不传则使用当前时间,action=now时忽略"
+        description="时间值。支持:int/float=Unix时间戳(秒),str=日期字符串。action=to_timestamp/from_timestamp时【必填】,action=format时不传则使用当前时间,action=now时忽略"
     )
     format: Optional[str] = Field(
         default=None,
-        description="Python strftime格式字符串,如 %Y-%m-%d %H:%M:%S。默认为 %Y-%m-%d %H:%M:%S。action=now/format时生效"
+        description="Python strftime格式字符串(仅action=now/format时使用),如 %%Y-%%m-%%d %%H:%%M:%%S。默认为 %%Y-%%m-%%d %%H:%%M:%%S"
     )
     timezone: Optional[str] = Field(
         default=None,
-        description="时区(action=now时有效),如 Asia/Shanghai、America/New_York。默认为系统时区"
+        description="时区(仅action=now时使用),如 Asia/Shanghai、America/New_York。默认为系统时区"
     )
     target_tz: Optional[str] = Field(
         default=None,
-        description="目标时区(action=from_timestamp时有效),如 Asia/Shanghai 或 +08:00。默认为 +08:00"
+        description="目标时区(仅action=from_timestamp时使用),如 Asia/Shanghai 或 +08:00。默认为 +08:00"
     )
 
 
@@ -93,15 +93,15 @@ class TimerInput(BaseModel):
         default=None,
         ge=1,
         le=86400,
-        description="延迟秒数(action=set时必填,1~86400即最长24小时)"
+        description="延迟秒数(action=set时【必填】,1~86400即最长24小时)"
     )
     callback: Optional[str] = Field(
         default=None,
-        description="定时器触发内容(action=set时必填)。支持三种模式:文本消息(记录日志)、URL(httpx回调)、其他内容"
+        description="定时器触发内容(action=set时【必填】)。支持三种模式:文本消息(记录日志)、URL(httpx回调)、其他内容"
     )
     timer_id: Optional[str] = Field(
         default=None,
-        description="定时器ID(action=clear时必填)"
+        description="定时器ID(action=clear时【必填】)"
     )
 
 

@@ -50,7 +50,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
     "window_info": """支持窗口信息查询功能。
 action参数决定操作类型:
 - list: 列出所有窗口(可选include_minimized/filter_title)
-- info: 获取单个窗口详细信息,window_title
+- info: 获取单个窗口详细信息,window_title【必填】
 
 使用示例:
 - 列出窗口 → window_info(action="list")
@@ -101,7 +101,7 @@ action参数决定操作类型:
     "clipboard_control": """支持剪贴板的读/写操作功能。
 action参数决定操作类型:
 - read: 读取剪贴板内容
-- write: 写入剪贴板,content
+- write: 写入剪贴板,content【必填】
 
 使用示例:
 - 读取 → clipboard_control(action="read")
