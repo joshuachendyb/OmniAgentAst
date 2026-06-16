@@ -572,14 +572,17 @@ def verify_steps(
 
     steps = db["execution_steps"]
 
-    # ── 步骤编号连续性(仅检查action_tool步骤) ──
+    # ── 步骤编号连续性(仅检查action_tool步骤,允许并行调用共享step号) ──
+    # 小欧 2026-06-16: LLM可以在一次响应中返回多个并行tool_call,共享同一个step号
     tool_step_nums = [
         s.get("step") for s in steps
         if s.get("type") == "action_tool" and s.get("step") is not None
     ]
     if len(tool_step_nums) >= 2:
         for i in range(len(tool_step_nums) - 1):
-            if tool_step_nums[i + 1] <= tool_step_nums[i]:
+            # 允许并行调用: 相同step号是正常的(如step=1下有read_text_file和list_directory)
+            # 只检查严格递减的情况(如1->0, 2->1)
+            if tool_step_nums[i + 1] < tool_step_nums[i]:
                 issues.append(f"工具步骤编号不递增: {tool_step_nums[i]}->{tool_step_nums[i+1]}")
 
     # ── observation完整性 ──

@@ -175,6 +175,7 @@ class MessageBuilder:
 
         策略: 从最后一条消息往前遍历,遇到tool就找其配对assistant一起保留,
         遇到独立消息直接保留,直到budget用完。剩余的全部丢弃。
+        小欧 2026-06-16: 保留每种工具的首次observation，防止LLM忘记已搜索过。
         """
         tool_to_assistant = {}
         for msg in assistant_msgs:
@@ -185,6 +186,18 @@ class MessageBuilder:
         # 按原始顺序排列 obs+assistant
         original_order = {id(msg): i for i, msg in enumerate(self.conversation_history)}
         all_msgs = sorted(obs_list + assistant_msgs, key=lambda m: original_order.get(id(m), 0))
+
+        # 小欧 2026-06-16: 识别每种工具的首次observation
+        first_tool_obs = {}
+        for msg in obs_list:
+            tool_call_id = msg.get("tool_call_id", "")
+            if tool_call_id:
+                assistant = tool_to_assistant.get(tool_call_id)
+                if assistant:
+                    for tc in assistant.get("tool_calls", []):
+                        tool_name = tc.get("function", {}).get("name", "")
+                        if tool_name and tool_name not in first_tool_obs:
+                            first_tool_obs[tool_name] = msg
 
         kept = []
         used_chars = 0
@@ -197,7 +210,9 @@ class MessageBuilder:
             if msg.get("role") == "tool" and tc_id and tc_id in tool_to_assistant:
                 asst = tool_to_assistant[tc_id]
                 pair_chars = self._total_chars([asst, msg])
-                if used_chars + pair_chars <= budget:
+                # 小欧 2026-06-16: 首次observation强制保留
+                is_first_obs = msg in first_tool_obs.values()
+                if is_first_obs or used_chars + pair_chars <= budget:
                     kept.append(msg)
                     kept.append(asst)
                     used_chars += pair_chars
