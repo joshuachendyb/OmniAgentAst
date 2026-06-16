@@ -49,7 +49,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
         blocked/rejected时设agent.status=FAILED并return,调用方检查status即可
         """
         from app.services.safety.tool_safety_checker import get_tool_safety_checker
-        from app.api.v1.chat.confirm_operation import create_confirmation, wait_for_confirmation_result
+        from app.services.task.hitl_confirmation import create_confirmation, wait_for_confirmation_result
         safety_checker = get_tool_safety_checker()
 
         for call in all_calls:
