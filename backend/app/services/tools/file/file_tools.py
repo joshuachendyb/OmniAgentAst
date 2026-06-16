@@ -164,32 +164,10 @@ def _build_delete_result(operation_id: str, path: Path, force: bool, method: str
 
 
 # ============================================================
-# 第二部分:动态白名单
+# 第二部分:动态白名单 — 小沈 2026-06-17 迁移至path_validator
 # ============================================================
 
-def _get_default_allowed_paths() -> List[Path]:
-    """
-    获取默认允许的路径列表
-    
-    【改进】动态添加所有存在的盘符
-    2026-03-19 小强
-    """
-    paths = [
-        Path.home(),  # 用户主目录
-        Path("/tmp"),  # Linux临时目录
-        Path("/var/tmp"),  # Linux临时目录
-    ]
-    
-    # Windows盘符(A-J)
-    if os.name == 'nt':
-        for letter in 'ABCDEFGHIJ':
-            drive = Path(f"{letter}:/")
-            if drive.exists():
-                paths.append(drive)
-    
-    return paths
-
-ALLOWED_PATHS = _get_default_allowed_paths()
+from app.services.safety.file.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
 
 
 # ============================================================
@@ -682,15 +660,14 @@ class FileTools:
     }
     
     def __init__(self, task_id: Optional[str] = None):
-        from app.services.safety.tool_safety_checker import get_tool_safety_checker
-        
-        self.safety_manager = get_tool_safety_checker()
+        from app.services.safety.file.file_safety import record_operation as _record_op, execute_with_safety as _exec_with_safety
+
+        self._record_operation = _record_op
+        self._execute_with_safety = _exec_with_safety
         self.task_id = task_id or _current_task_id.get(None)
         self._sequence = 0
         self._sequence_lock = threading.Lock()
         self.allowed_paths = ALLOWED_PATHS.copy()
-        # 删除已废弃的get_hook/register_hook调用
-        # 安全检查已由SafetyManager._check_existing_safety_capabilities统一处理
     
     def _get_next_sequence(self) -> int:
         """获取下一个操作序号(线程安全)"""
@@ -742,57 +719,8 @@ class FileTools:
         return None
 
     def _validate_path(self, file_path: str) -> tuple[bool, Optional[str]]:
-        """
-        验证文件路径是否合法
-        
-        【改进】2026-03-19 小强
-        - 使用 os.path.realpath 规范化路径
-        - 处理 ~ 和 .. 等特殊路径
-        - 前缀匹配判断
-        
-        Args:
-            file_path: 文件路径
-            
-        Returns:
-            (is_valid, error_message)
-        """
-        try:
-            # 规范化路径:解析 ..、.、~
-            real_path = Path(os.path.realpath(os.path.expanduser(file_path)))
-            
-            # 检查路径是否在白名单内
-            for allowed in self.allowed_paths:
-                allowed_real = Path(os.path.realpath(allowed))
-                # 【修复P13】防止前缀绕过:必须验证是真正的子路径
-                # 例如:C:/Users 允许 C:/Users/subdir,但不允许 C:/Usersbackdoor
-                try:
-                    real_parts = Path(real_path).parts
-                    allowed_parts = Path(allowed_real).parts
-                    
-                    # 检查是否完全匹配开头
-                    if len(real_parts) >= len(allowed_parts):
-                        prefix_match = all(real_parts[i] == allowed_parts[i] for i in range(len(allowed_parts)))
-                        if not prefix_match:
-                            continue
-                        
-                        # 【关键修复】对于驱动器根路径(如C:\ = 1 part = ('C:\',))
-                        # 必须完全相等,不允许 C:\Usersbackdoor 绕过 C:\
-                        # 对于普通目录(如C:/Users = 2+ parts),允许子目录
-                        if len(allowed_parts) == 1 and (allowed_parts[0].endswith(':') or allowed_parts[0].endswith(':\\') or allowed_parts[0].endswith(':/')):
-                            # 驱动器根路径:必须完全相等
-                            if str(real_path) == str(allowed_real) or real_path.parts[0] == allowed_parts[0]:
-                                return True, None
-                        else:
-                            # 普通目录:允许子目录或相等路径
-                            if len(real_parts) >= len(allowed_parts):
-                                return True, None
-                except (ValueError, OSError):
-                    pass
-            
-            return False, f"路径 '{file_path}' 不在允许的操作范围内(仅允许:{', '.join(str(p) for p in self.allowed_paths[:5])}...)"
-            
-        except Exception as e:
-            return False, f"路径验证失败: {str(e)}"
+        """验证文件路径是否合法 — 小沈 2026-06-17 委托path_validator"""
+        return _validate_path_impl(file_path, self.allowed_paths)
     
     async def _try_read_file_with_encodings(
         self,
@@ -1086,7 +1014,7 @@ class FileTools:
         path = Path(file_path)
         
         try:
-            operation_id = self.safety_manager.record_operation("file",
+            operation_id = self._record_operation(
                 task_id=self.task_id,
                 operation_type=OperationType.CREATE,
                 destination_path=path,
@@ -1094,7 +1022,7 @@ class FileTools:
             )
             
             success = await asyncio.to_thread(
-                self.safety_manager.execute_with_safety,
+                self._execute_with_safety,
                 "file",
                 operation_id=operation_id,
                 operation_func=lambda: self._write_file_atomic(checked_content, path, encoding, append, create_parents)
@@ -1220,7 +1148,7 @@ class FileTools:
             if not self.task_id:
                 return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID,请先创建一个任务")
 
-            operation_id = self.safety_manager.record_operation("file",
+            operation_id = self._record_operation(
                 task_id=self.task_id,
                 operation_type=OperationType.DELETE,
                 source_path=path,
@@ -1233,7 +1161,7 @@ class FileTools:
                 return _send2trash_sync(path, recursive)
 
             is_ok, method = await asyncio.to_thread(
-                self.safety_manager.execute_with_safety,
+                self._execute_with_safety,
                 "file",
                 operation_id=operation_id,
                 operation_func=_delete_sync
@@ -1277,7 +1205,7 @@ class FileTools:
             if not self.task_id:
                 return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID,请先创建一个任务")
 
-            operation_id = self.safety_manager.record_operation("file",
+            operation_id = self._record_operation(
                 task_id=self.task_id,
                 operation_type=OperationType.MOVE,
                 source_path=src,
@@ -1299,7 +1227,7 @@ class FileTools:
                 return True
             
             success = await asyncio.to_thread(
-                self.safety_manager.execute_with_safety,
+                self._execute_with_safety,
                 "file",
                 operation_id=operation_id,
                 operation_func=_move_sync
@@ -1402,8 +1330,8 @@ class FileTools:
             preserve_metadata=preserve_metadata,
             validate_path_func=self._validate_path,
             task_id=self.task_id,
-            record_operation_func=lambda *a, **kw: self.safety_manager.record_operation("file", *a, **kw),
-            execute_with_safety_func=lambda *a, **kw: self.safety_manager.execute_with_safety("file", *a, **kw),
+            record_operation_func=self._record_operation,
+            execute_with_safety_func=self._execute_with_safety,
             get_next_sequence_func=self._get_next_sequence,
         )
 
@@ -1444,8 +1372,8 @@ class FileTools:
             password=password,
             validate_path_func=self._validate_path,
             task_id=self.task_id,
-            record_operation_func=lambda *a, **kw: self.safety_manager.record_operation("file", *a, **kw),
-            execute_with_safety_func=lambda *a, **kw: self.safety_manager.execute_with_safety("file", *a, **kw),
+            record_operation_func=self._record_operation,
+            execute_with_safety_func=self._execute_with_safety,
             get_next_sequence_func=self._get_next_sequence,
         )
 
@@ -1500,8 +1428,8 @@ class FileTools:
             output_format=output_format,
             validate_path_func=self._validate_path,
             task_id=self.task_id,
-            record_operation_func=lambda *a, **kw: self.safety_manager.record_operation("file", *a, **kw),
-            execute_with_safety_func=lambda *a, **kw: self.safety_manager.execute_with_safety("file", *a, **kw),
+            record_operation_func=self._record_operation,
+            execute_with_safety_func=self._execute_with_safety,
             get_next_sequence_func=self._get_next_sequence,
         )
 
@@ -1524,8 +1452,8 @@ class FileTools:
             timeout=timeout,
             validate_path_func=self._validate_path,
             task_id=self.task_id,
-            record_operation_func=lambda *a, **kw: self.safety_manager.record_operation("file", *a, **kw),
-            execute_with_safety_func=lambda *a, **kw: self.safety_manager.execute_with_safety("file", *a, **kw),
+            record_operation_func=self._record_operation,
+            execute_with_safety_func=self._execute_with_safety,
             get_next_sequence_func=self._get_next_sequence,
         )
 
@@ -1694,7 +1622,7 @@ class FileTools:
                 return build_error(ERR_FILE_READ_TOO_LARGE,
                     f"文件过大({path.stat().st_size}字节),超过替换上限{MAX_READ_SIZE//1024//1024}MB")
 
-            operation_id = self.safety_manager.record_operation("file",
+            operation_id = self._record_operation(
                 task_id=self.task_id, operation_type=OperationType.MODIFY,
                 destination_path=path, sequence_number=self._get_next_sequence(),
             )
@@ -1715,7 +1643,7 @@ class FileTools:
                 return True
 
             success = await asyncio.to_thread(
-                self.safety_manager.execute_with_safety,
+                self._execute_with_safety,
                 "file",
                 operation_id=operation_id,
                 operation_func=_replace_sync
@@ -1865,7 +1793,7 @@ class FileTools:
             if path.stat().st_size > MAX_READ_SIZE:
                 return build_error(ERR_FILE_READ_TOO_LARGE, f"文件过大({path.stat().st_size}字节),超过编辑上限{MAX_READ_SIZE//1024//1024}MB")
 
-            operation_id = self.safety_manager.record_operation("file",
+            operation_id = self._record_operation(
                 task_id=self.task_id,
                 operation_type=OperationType.MODIFY,
                 destination_path=path,
@@ -1874,7 +1802,7 @@ class FileTools:
 
             edit_result = {}
             success = await asyncio.to_thread(
-                self.safety_manager.execute_with_safety,
+                self._execute_with_safety,
                 "file",
                 operation_id=operation_id,
                 operation_func=lambda: self._execute_edit_sync(path, edits, dry_run, encoding, edit_result)

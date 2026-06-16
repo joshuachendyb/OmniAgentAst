@@ -2,15 +2,9 @@
 """Tools/File 模块 - 文件操作工具集"""
 
 from app.services.tools.file.file_register import *
+from app.services.safety.file.path_validator import ALLOWED_PATHS, get_default_allowed_paths
 from app.services.tools.file.file_tools import (
-    # 常量
-    PAGE_SIZE,
-    MAX_PAGE_SIZE,
-    ALLOWED_PATHS,
-    _get_default_allowed_paths,
-    # 类
     FileTools,
-    # 工具函数
     encode_page_token,
     decode_page_token,
     get_file_tools,
