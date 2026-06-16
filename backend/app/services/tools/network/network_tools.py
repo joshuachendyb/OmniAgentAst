@@ -680,6 +680,7 @@ async def search_web(
                 "查询词": query,
                 "结果数量": len(results),
                 "搜索结果": llm_results if llm_results else "无相关结果",
+                "提示": f"搜索完成，共{len(results)}条结果。可直接使用结果，无需重复搜索。",
             },
             next_actions=build_next_actions([("fetch_webpage", "打开搜索结果链接", "需要查看某个搜索结果的详细内容时")]),
         )
