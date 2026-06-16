@@ -10,6 +10,16 @@ Author: 小沈 - 2026-06-09
 """
 
 
+def truncate_text(text: str, max_chars: int, suffix: str = None) -> tuple:
+    """通用尾部截断,返回(截断后文本, 是否截断) — 小沈 2026-06-17 从tool_result_formatter迁入"""
+    if not text:
+        return text, False
+    if len(text) <= max_chars:
+        return text, False
+    tail = suffix or f"\n...[截断 {len(text) - max_chars} 字符]"
+    return text[:max_chars] + tail, True
+
+
 def smart_truncate_text(content: str, budget: int, head_ratio: float = 0.6) -> str:
     """智能截断文本 — 小沈 2026-06-09 提取为公用函数
     
@@ -46,5 +56,6 @@ def smart_truncate_text(content: str, budget: int, head_ratio: float = 0.6) -> s
 
 
 __all__ = [
+    "truncate_text",
     "smart_truncate_text",
 ]

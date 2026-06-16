@@ -21,27 +21,14 @@ from app.services.factory.get_service import (
 logger = setup_logger(__name__)
 
 
-def _get_resolver_and_ai_config():
-    """获取resolver和AI配置 - 小沈 2026-06-08"""
-    from app.services.ai_config_resolver import get_ai_config_resolver
-    resolver = get_ai_config_resolver()
-    ai_config = resolver.get_ai_config()
-    return resolver, ai_config
-
-
-def _get_provider_config_safe(resolver, provider: str, model: str) -> dict:
-    """安全获取provider配置 - 小沈 2026-06-08"""
-    try:
-        return resolver.get_service_config(provider, model)
-    except ValueError as e:
-        raise ValueError(str(e))
-
 
 def get_service_for_model(provider: str, model: str):
     """P2-07修复: 使用set_instance替代直接操作私有变量; P2-09: 删除未使用的config_path"""
-    resolver, ai_config = _get_resolver_and_ai_config()
+    from app.services.ai_config_resolver import get_ai_config_resolver
+    resolver = get_ai_config_resolver()
+    ai_config = resolver.get_ai_config()
     
-    provider_config = _get_provider_config_safe(resolver, provider, model)
+    provider_config = resolver.get_service_config(provider, model)
     
     cleanup_old_instance(provider)
     

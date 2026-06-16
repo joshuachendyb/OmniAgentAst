@@ -205,15 +205,11 @@ class ToolRetryEngine:
         """带重试执行工具 — P1-06修复: 捕获last_error"""
         max_retries, backoff_factor, retryable_errors, timeout = self._get_retry_config(action)
         
-        def _is_tool_retryable(e: Exception) -> bool:
-            error_category = UnifiedErrorClassifier.classify_error(e)
-            return error_category.is_retryable or error_category.name.lower() in retryable_errors
-        
         engine = RetryEngine(
             max_retries=max_retries,
             backoff_strategy=BackoffStrategy.EXPONENTIAL,
             backoff_factor=backoff_factor,
-            retryable_check=_is_tool_retryable,
+            retryable_check=lambda e: self._should_retry(e, retryable_errors, engine),
         )
         
         last_error: Optional[Exception] = None

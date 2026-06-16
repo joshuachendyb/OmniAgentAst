@@ -319,12 +319,9 @@ class BaseAIService:
             return None
 
     def _should_retry(self, e: Exception) -> bool:
-        """判断是否应该重试 - 小沈 2026-06-09"""
-        if isinstance(e, httpx.HTTPStatusError):
-            return e.response.status_code in [429, 500, 502, 503, 504]
-        if isinstance(e, (httpx.ConnectError, httpx.ReadError, httpx.WriteError)):
-            return True
-        return False
+        """判断是否应该重试 — 委托给UnifiedErrorClassifier - 小沈 2026-06-17"""
+        from app.utils.error_classifier import UnifiedErrorClassifier
+        return UnifiedErrorClassifier.classify_error(e).is_retryable
 
     async def close(self):
         if self._llm_sdk:

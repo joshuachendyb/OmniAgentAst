@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-task_incident_check — 中断/暂停检查并生成SSE事件
+task_interrupt_check — 中断/暂停检查并生成SSE事件
 
 从 chat_stream/incident_handler.py 移入
 统一: 小健 - 2026-05-31
+小沈 2026-06-17 DRY: 合并task_pause_check/task_pause_check_and_yield, 提取_emit_step_sse
 """
 
 import asyncio
@@ -11,8 +12,13 @@ from typing import Optional, Callable, AsyncGenerator
 
 from app.utils.logger import logger
 from app.services.agent.steps import MetaStep
+from app.utils.sse_formatter import format_agent_sse
 from app.services.task.task_registry import check_cancelled, check_paused, check_was_paused, set_was_paused, get_pause_event
 
+
+def _emit_step_sse(step: Optional[int], step_type: str, message: str) -> str:
+    """MetaStep→SSE字符串 工厂函数 — 小沈 2026-06-17 DRY"""
+    return format_agent_sse(MetaStep(step=step, type=step_type, message=message).to_dict())
 
 
 async def task_interrupt_check(
@@ -22,50 +28,22 @@ async def task_interrupt_check(
     """检查任务是否被中断,如果是则返回中断消息"""
     if await check_cancelled(task_id):
         step_value = next_step() if next_step else None
-        meta_step = MetaStep(step=step_value, type="interrupted", message='任务已被中断')
-        from app.utils.sse_formatter import format_agent_sse
-        return True, format_agent_sse(meta_step.to_dict())
+        return True, _emit_step_sse(step_value, "interrupted", '任务已被中断')
     return False, ""
 
 
 async def task_pause_check(
     task_id: str,
-    next_step: Optional[Callable[[], int]] = None
+    next_step: Optional[Callable[[], int]] = None,
+    timeout: Optional[float] = None,
 ) -> AsyncGenerator[str, None]:
-    """检查任务是否被暂停,如果是则发送paused事件并等待恢复 — 流式开始前调用"""
-    if await check_cancelled(task_id):
-        return
+    """检查任务是否被暂停,如果是则发送paused事件并等待恢复
 
-    pause_event = await get_pause_event(task_id)
-    if pause_event is None:
-        return
+    timeout=None: 无限等待(流式开始前调用)
+    timeout=300: 带超时等待(流式循环内调用)
 
-    is_paused = await check_paused(task_id)
-    if is_paused:
-        if not await check_was_paused(task_id):
-            await set_was_paused(task_id, True)
-            step_value = next_step() if next_step else None
-            meta_step = MetaStep(step=step_value, type="paused", message='任务已暂停')
-            from app.utils.sse_formatter import format_agent_sse
-            yield format_agent_sse(meta_step.to_dict())
-
-        await pause_event.wait()
-
-        if await check_cancelled(task_id):
-            return
-
-        await set_was_paused(task_id, False)
-        step_value = next_step() if next_step else None
-        meta_step = MetaStep(step=step_value, type="resumed", message='任务已恢复')
-        from app.utils.sse_formatter import format_agent_sse
-        yield format_agent_sse(meta_step.to_dict())
-
-
-async def task_pause_check_and_yield(
-    task_id: str,
-    next_step: Optional[Callable[[], int]] = None
-) -> AsyncGenerator[str, None]:
-    """流式循环内暂停检查 — 每次迭代调用,非阻塞检查暂停状态"""
+    小沈 2026-06-17 合并task_pause_check/task_pause_check_and_yield
+    """
     if await check_cancelled(task_id):
         return
 
@@ -80,14 +58,15 @@ async def task_pause_check_and_yield(
     if not await check_was_paused(task_id):
         await set_was_paused(task_id, True)
         step_value = next_step() if next_step else None
-        meta_step = MetaStep(step=step_value, type="paused", message='任务已暂停')
-        from app.utils.sse_formatter import format_agent_sse
-        yield format_agent_sse(meta_step.to_dict())
+        yield _emit_step_sse(step_value, "paused", '任务已暂停')
 
     try:
-        await asyncio.wait_for(pause_event.wait(), timeout=300)
+        if timeout:
+            await asyncio.wait_for(pause_event.wait(), timeout=timeout)
+        else:
+            await pause_event.wait()
     except asyncio.TimeoutError:
-        logger.warning(f"[task_pause_check_and_yield] 任务{task_id}暂停超时(300s),自动恢复")
+        logger.warning(f"[task_pause_check] 任务{task_id}暂停超时({timeout}s),自动恢复")
         await set_was_paused(task_id, False)
         return
 
@@ -96,6 +75,13 @@ async def task_pause_check_and_yield(
 
     await set_was_paused(task_id, False)
     step_value = next_step() if next_step else None
-    meta_step = MetaStep(step=step_value, type="resumed", message='任务已恢复')
-    from app.utils.sse_formatter import format_agent_sse
-    yield format_agent_sse(meta_step.to_dict())
+    yield _emit_step_sse(step_value, "resumed", '任务已恢复')
+
+
+async def task_pause_check_and_yield(
+    task_id: str,
+    next_step: Optional[Callable[[], int]] = None
+) -> AsyncGenerator[str, None]:
+    """流式循环内暂停检查 — 委托给task_pause_check(timeout=300) — 小沈 2026-06-17"""
+    async for event in task_pause_check(task_id, next_step, timeout=300):
+        yield event
