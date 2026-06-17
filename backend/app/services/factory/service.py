@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-get_service — 从 factory.py 拷出
+service — 服务创建与获取
 
-拷贝来源: factory.py 第204-250行
+合并: get_service + get_service_for_model
+小沈 2026-06-17
 """
 
 from typing import Optional
@@ -11,7 +12,7 @@ import threading
 from app.utils.logger import setup_logger
 from app.utils.time_utils import now_str
 from app.services.llm import BaseAIService
-from app.services.factory.close_instance_sync import close_instance_sync
+from app.services.factory.lifecycle import close_instance_sync
 
 logger = setup_logger(__name__)
 
@@ -81,7 +82,8 @@ def create_service_instance(provider_config: dict, final_provider: str, final_mo
 
 
 def get_service() -> BaseAIService:
-    """拷贝自 factory.py 第204-250行 — P2-09修复: 删除未使用的config_path
+    """获取服务实例 — 小沈 2026-06-08
+    P2-09修复: 删除未使用的config_path
     【修复P1-1 2026-06-09 小沈】threading.Lock保护多线程安全
     """
     global _instance, _current_provider
@@ -108,7 +110,8 @@ def get_service() -> BaseAIService:
 
 
 def reset_instance():
-    """P1-07修复: 公开reset方法,替代直接操作私有变量
+    """重置实例 — 小沈 2026-06-08
+    P1-07修复: 公开reset方法,替代直接操作私有变量
     【修复P1-1 2026-06-09 小沈】threading.Lock保护
     """
     global _instance, _current_provider
@@ -120,10 +123,34 @@ def reset_instance():
 
 
 def set_instance(instance, provider=""):
-    """P1-07修复: 公开set方法,替代直接操作私有变量
+    """设置实例 — 小沈 2026-06-08
+    P1-07修复: 公开set方法,替代直接操作私有变量
     【修复P1-1 2026-06-09 小沈】threading.Lock保护
     """
     global _instance, _current_provider
     with _instance_lock:
         _instance = instance
         _current_provider = provider
+
+
+def get_service_for_model(provider: str, model: str):
+    """获取指定provider/model的服务实例 — 小沈 2026-06-08
+    P2-07修复: 使用set_instance替代直接操作私有变量; P2-09: 删除未使用的config_path
+    """
+    from app.services.ai_config_resolver import get_ai_config_resolver
+    resolver = get_ai_config_resolver()
+    ai_config = resolver.get_ai_config()
+    
+    provider_config = resolver.get_service_config(provider, model)
+    
+    cleanup_old_instance(provider)
+    
+    log_service_creation(provider, model)
+    
+    if not provider_config:
+        provider_config = {}
+    
+    instance = create_service_instance(provider_config, provider, model)
+    set_instance(instance, provider)
+
+    return instance
