@@ -25,11 +25,13 @@ class ToolCategory(Enum):
     - name_cn: 中文名称
     """
     FILE = ("file", 0, "文件操作工具")
-    FUND_RUNTIME = ("fund_runtime", 1, "基础运行时工具")
-    NET_PROCESS = ("net_process", 2, "网络与进程工具")
-    SCREEN = ("screen", 3, "屏幕交互工具")
-    DOC_CONTENT = ("doc_content", 4, "文档内容工具")
-    SYSTEM = ("system", 5, "系统管理工具")
+    FUNDAMENTAL = ("fundamental", 1, "基础工具")
+    SHELL = ("shell", 2, "命令执行工具")
+    NETWORK = ("network", 3, "网络请求工具")
+    DESKTOP = ("desktop", 4, "桌面交互工具")
+    DOCUMENT = ("document", 5, "文档操作工具")
+    DATA = ("data", 6, "数据处理工具")
+    SYSTEM = ("system", 7, "系统管理工具")
 
     def __new__(cls, value, order, name_cn):
         member = object.__new__(cls)

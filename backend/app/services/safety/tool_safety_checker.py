@@ -129,8 +129,8 @@ class ToolSafetyChecker:
                 return {"is_safe": False, "blocked": True,
                         "message": f"安全检查异常(已阻止): {e}"}
 
-        fund_runtime_tools = set(all_categories.get(ToolCategory.FUND_RUNTIME, []))
-        code_injection_tools = _CODE_INJECTION_RISK_TOOLS & fund_runtime_tools
+        shell_tools = set(all_categories.get(ToolCategory.SHELL, []))
+        code_injection_tools = _CODE_INJECTION_RISK_TOOLS & shell_tools
         if tool_name in code_injection_tools:
             try:
                 from app.services.tools.tool_constants import DANGEROUS_PATTERNS

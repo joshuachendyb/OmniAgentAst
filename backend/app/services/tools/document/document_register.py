@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Document Register - 文档读写工具注册点
+Document Register - 文档读写+数据处理工具注册点
 
 【架构规范】2026-05-02 小沈
-- document_register.py 作为文档工具的注册点
+- document_register.py 作为文档+数据工具的注册点
 - 实际工具实现在 document_tools.py 中
 - 使用 registry.py 的 tool_registry.register() 显式注册
 
@@ -12,24 +12,35 @@ Document Register - 文档读写工具注册点
 - analyze_data/filter_data/generate_chart 从 data_analysis_register 迁入
 - 共6个LLM工具
 【2026-05-18 小沈】Database工具迁入(query_sql/execute_sql/get_db_schema)
+【2026-06-17 小沈】拆分DOC_CONTENT→DOCUMENT+DATA，按职责分类
 
-【工具列表】(共9个)
-1. read_document - 统一读取文档(按后缀路由)
-2. write_document - 统一写入文档(按后缀路由)
-3. convert_document - 文档格式转换
-4. analyze_data - 对数据集进行统计分析(迁入)
-5. filter_data - 按条件筛选/过滤数据(迁入)
-6. generate_chart - 生成数据可视化图表(迁入)
-7. query_sql - 执行只读SQL查询(迁入)
-8. execute_sql - 执行写操作SQL(迁入)
-9. get_db_schema - 获取数据库结构元数据(迁入)
+【工具列表】(共15个)
+
+文档操作工具(9个) → DOCUMENT分类:
+1. read_pdf - 读取PDF文档
+2. read_docx - 读取Word文档
+3. read_pptx - 读取PPT文档
+4. read_xlsx - 读取Excel文档
+5. write_docx - 写入Word文档
+6. write_xlsx - 写入Excel文档
+7. write_pdf - 写入PDF文档
+8. write_pptx - 写入PPT文档
+9. convert_document - 文档格式转换
+
+数据处理工具(6个) → DATA分类:
+10. analyze_data - 数据统计分析
+11. filter_data - 数据筛选过滤
+12. generate_chart - 图表可视化
+13. query_sql - SQL查询
+14. execute_sql - SQL写操作
+15. get_db_schema - 数据库结构查询
 
 【注册说明】
 - 使用 Pydantic 模型注册,自动生成 OpenAI Schema
-- 导入 document_register 时自动触发注册
+- 文档工具注册到DOCUMENT分类，数据工具注册到DATA分类
 
 创建时间: 2026-05-02
-更新时间: 2026-05-18 小健
+更新时间: 2026-06-17 小沈
 """
 
 from app.services.tools.registry import tool_registry
@@ -215,24 +226,39 @@ TOOL_IMPLEMENTATIONS = {
 
 
 def _register_document_tools():
-    """注册所有文档读写工具 — 小健 2026-05-18 共9个LLM工具(含Database迁入)"""
+    """注册文档操作工具(9个DOCUMENT分类) + 数据处理工具(6个DATA分类) — 小沈 2026-06-17"""
+    # 文档操作工具 → DOCUMENT分类
+    DOCUMENT_TOOLS = [
+        "read_pdf", "read_docx", "read_pptx", "read_xlsx",
+        "write_docx", "write_xlsx", "write_pdf", "write_pptx",
+        "convert_document",
+    ]
+    # 数据处理工具 → DATA分类
+    DATA_TOOLS = [
+        "analyze_data", "filter_data", "generate_chart",
+        "query_sql", "execute_sql", "get_db_schema",
+    ]
+
     for name, func in TOOL_IMPLEMENTATIONS.items():
         desc = DESCRIPTIONS.get(name, "")
         input_model = TOOL_INPUT_MODELS.get(name)
         examples = EXAMPLES.get(name, [])
+        # 根据工具名选择分类
+        cat = ToolCategory.DOCUMENT if name in DOCUMENT_TOOLS else ToolCategory.DATA
 
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.DOC_CONTENT,
+            category=cat,
             implementation=func,
             version="1.0.0",
             input_model=input_model,
             examples=examples,
-            needs_confirmation=(name == "execute_sql"),  # execute_sql需要确认
+            needs_confirmation=(name == "execute_sql"),
         )
         logger.debug(
             f"[document_register] 已注册工具: {name}, "
+            f"分类: {cat.value}, "
             f"Pydantic模型: {input_model.__name__ if input_model else 'None'}, "
             f"examples: {len(examples)}个"
         )

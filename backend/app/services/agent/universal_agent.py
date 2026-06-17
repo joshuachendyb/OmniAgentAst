@@ -20,11 +20,11 @@ from app.services.agent.tool_executor import execute_tool
 from app.services.agent.tool_cache_manager import get_openai_tools, invalidate_tool_cache, patch_search_desc
 
 
-_INITIAL_CATEGORIES: Set[ToolCategory] = {ToolCategory.FUND_RUNTIME, ToolCategory.FILE}
+_INITIAL_CATEGORIES: Set[ToolCategory] = {ToolCategory.FUNDAMENTAL, ToolCategory.SHELL, ToolCategory.FILE}
 
 
 class UniversalAgent(BaseAgent):
-    """通用 Agent — 初始仅加载 FUND_RUNTIME,其余分类通过 tool_search 动态注入"""
+    """通用 Agent — 初始仅加载 FUNDAMENTAL+SHELL+FILE,其余分类通过 tool_search 动态注入"""
 
     TOOL_CACHE_TTL = 300
     _CATEGORIES_CONFIG_CACHE_TTL = 60

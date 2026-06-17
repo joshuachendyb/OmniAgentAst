@@ -1,4 +1,24 @@
 {
+  "fundamental": {
+    "summary": "工具搜索、时间获取/加减/差值计算、节日日历查询、定时器管理",
+    "tools": {
+      "tool_search": "搜索并注入未加载的工具，按关键词在全部工具中做BM25全文检索",
+      "time_now": "获取当前时间、格式化时间、时间戳转换",
+      "time_add": "时间加减运算，支持按天/小时/分钟/秒/月偏移",
+      "time_diff": "计算两个时间之间的差值",
+      "query_calendar": "按节日名称查询日期和假期信息，或按日期检查周末/节假日/工作日",
+      "timer": "定时器的set/clear/list操作"
+    }
+  },
+  "shell": {
+    "summary": "系统命令执行、命令查找、代码执行、后台会话管理",
+    "tools": {
+      "execute_shell_command": "在指定Shell环境中执行命令，支持前台/后台模式",
+      "find_command": "查找系统命令的安装路径，类似于which/where命令",
+      "execute_code": "执行Python/JavaScript代码片段，内置安全检查",
+      "shell_session": "后台Shell会话管理，支持读取输出和终止会话"
+    }
+  },
   "file": {
     "summary": "文本文件读写编辑、目录内容浏览、按文件名/内容模式搜索、文件压缩归档、格式转换和文件移动复制删除等全面文件操作",
     "tools": {
@@ -6,15 +26,19 @@
       "write_text_file": "写入文本文件，创建新文件或追加内容",
       "list_directory": "列出目录内容，支持扁平或树状结构",
       "search_files": "递归搜索匹配glob模式的文件",
-      "file_operation": "文件移动/复制/删除/重命名操作",
       "grep_file_content": "基于正则表达式搜索文件中的文本内容",
       "read_media_file": "读取图片/音频/视频文件，返回Base64编码",
       "edit_text_file": "替换文本文件中的指定内容",
-      "archive_tool": "压缩/解压文件，支持zip/tar格式",
+      "compress_files": "压缩文件，支持zip/tar格式",
+      "extract_archive": "解压文件，支持zip/tar格式",
+      "move_file": "移动文件到目标位置",
+      "copy_file": "复制文件到目标位置",
+      "delete_file": "删除文件（需确认）",
+      "rename_file": "重命名文件",
       "data_file_format": "结构化配置文件读写，支持JSON/YAML/CSV/XML格式"
     }
   },
-  "net_process": {
+  "network": {
     "summary": "HTTP请求发送、文件下载、网页内容获取、网络搜索引擎查询、网络连通性诊断和端口检查、系统网络连接列表查询",
     "tools": {
       "http_request": "发送HTTP请求，支持GET/POST/PUT/DELETE和自定义请求头",
@@ -25,28 +49,40 @@
       "net_connections": "获取系统网络连接列表，支持按状态/协议过滤"
     }
   },
-  "screen": {
-    "summary": "窗口信息查询和控制、鼠标点击/移动/滚动、键盘输入/快捷键/组合键、屏幕截图和剪贴板读写等桌面交互操作",
+  "desktop": {
+    "summary": "窗口信息查询和控制、鼠标点击/移动/滚动、键盘输入/快捷键/组合键、屏幕截图和剪贴板读写、系统通知等桌面交互操作",
     "tools": {
       "window_info": "查询窗口信息，支持列出所有窗口或获取单个窗口详情",
       "window_control": "控制窗口状态，支持聚焦/最大化/最小化/还原/置顶",
       "mouse_control": "控制鼠标，支持点击/移动/滚动和获取当前位置",
       "keyboard_control": "控制键盘，支持输入文本/执行快捷键/组合键",
       "screen_capture": "截取屏幕截图，支持全屏/指定区域/多显示器",
-      "clipboard_control": "读取或写入系统剪贴板内容"
+      "clipboard_control": "读取或写入系统剪贴板内容",
+      "send_notification": "发送Windows系统通知弹窗"
     }
   },
-  "doc_content": {
-    "summary": "Office文档读写转换、数据集统计分析、数据筛选过滤、图表可视化生成、SQL数据库查询和执行、数据库结构获取",
+  "document": {
+    "summary": "PDF/Word/Excel/PPT文档的读取、写入和格式转换",
     "tools": {
-      "read_document": "读取Office文档(PDF/Word/Excel/PPT)，按后缀自动选择解析器",
-      "write_document": "写入Office文档，支持Word/Excel/PDF/PPT格式",
-      "convert_document": "Office文档转换为PDF格式",
+      "read_pdf": "读取PDF文件内容，支持页码范围和表格提取",
+      "read_docx": "读取Word文档内容，支持表格提取",
+      "read_pptx": "读取PPT演示文稿内容，提取文本和备注",
+      "read_xlsx": "读取Excel/CSV/TSV/JSON数据文件",
+      "write_docx": "写入Word文档，支持标题/正文/表格/结构化内容",
+      "write_xlsx": "写入Excel文件，支持自动推断headers",
+      "write_pdf": "写入PDF文件，支持标题/正文/表格",
+      "write_pptx": "写入PPT演示文稿，支持标题和幻灯片列表",
+      "convert_document": "Office文档转换为PDF格式"
+    }
+  },
+  "data": {
+    "summary": "数据集统计分析、数据筛选过滤、图表可视化生成、SQL数据库查询和执行、数据库结构获取",
+    "tools": {
       "analyze_data": "数据集统计分析，支持均值/总和/最值/标准差等聚合计算",
       "filter_data": "按条件筛选过滤数据，支持多条件组合和排除",
       "generate_chart": "使用matplotlib生成数据可视化图表，支持折线图/柱状图/饼图等",
       "query_sql": "执行只读SQL查询(SELECT)，支持SQLite/MySQL/PostgreSQL",
-      "execute_sql": "执行写操作SQL(INSERT/UPDATE/DELETE/CREATE)",
+      "execute_sql": "执行写操作SQL(INSERT/UPDATE/DELETE/CREATE)，需确认",
       "get_db_schema": "获取数据库表结构、字段、索引和外键等元数据"
     }
   },
@@ -58,10 +94,14 @@
       "list_processes": "列出系统所有进程，支持按名称或PID过滤",
       "kill_process": "终止指定PID的进程，支持优雅终止或强制终止",
       "service_control": "Windows服务启动/停止/重启/状态查询",
-      "task_control": "Windows计划任务创建/删除/查询/立即执行",
+      "create_task": "创建Windows计划任务",
+      "delete_task": "删除Windows计划任务",
+      "list_tasks": "列出Windows计划任务",
       "get_env": "获取指定环境变量值或列出所有环境变量",
       "set_env": "设置或删除环境变量",
-      "registry_control": "Windows注册表读取/写入/删除键值操作"
+      "registry_read": "读取Windows注册表键值",
+      "registry_write": "写入Windows注册表键值，需确认",
+      "registry_delete": "删除Windows注册表键值，需确认"
     }
   }
 }
