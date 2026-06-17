@@ -11,13 +11,14 @@ from typing import Set, Optional
 from app.utils.display_utils import format_param_value
 
 
-def to_openai_tools(registry, categories: Optional[Set[ToolCategory]] = None) -> list:
+def to_openai_tools(registry, categories: Optional[Set[ToolCategory]] = None, strict: bool = True) -> list:
     """
     生成OpenAI API格式的tools定义 - 小沈 2026-05-09
 
     Args:
         registry: ToolRegistry实例
         categories: 工具分类集合,None=全部
+        strict: 是否启用strict模式(强制arguments符合Schema) - 小沈 2026-06-17
 
     Returns:
         [{"type": "function", "function": {...}}, ...]
@@ -31,7 +32,8 @@ def to_openai_tools(registry, categories: Optional[Set[ToolCategory]] = None) ->
         func_def = {
             "name": meta.name,
             "description": meta.description,
-            "parameters": meta.input_schema
+            "parameters": meta.input_schema,
+            "strict": strict,
         }
         if meta.examples:
             func_def["examples"] = meta.examples

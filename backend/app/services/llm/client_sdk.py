@@ -31,8 +31,9 @@ def _build_request_body(
     tools: Optional[List[Dict]] = None,
     tool_choice: Optional[str] = None,
     stream: bool = False,
+    parallel_tool_calls: Optional[bool] = None,
 ) -> Dict:
-    """统一构建 LLM 请求体 — FC-only: 无mode参数 — 小沈 2026-06-11"""
+    """统一构建 LLM 请求体 — FC-only: 无mode参数 — 小沈 2026-06-11; 小沈 2026-06-17 新增parallel_tool_calls"""
     body = {"model": model, "messages": messages}
     if max_tokens is not None:
         body["max_tokens"] = max_tokens
@@ -46,6 +47,18 @@ def _build_request_body(
         body["tools"] = tools
         if tool_choice:
             body["tool_choice"] = tool_choice
+        
+        if parallel_tool_calls is None:
+            FILE_TOOLS = {
+                "read_text_file", "write_text_file", "edit_text_file",
+                "move_file", "copy_file", "delete_file", "rename_file",
+                "compress_files", "extract_archive",
+            }
+            tool_names = {t["function"]["name"] for t in tools}
+            parallel_tool_calls = not bool(tool_names & FILE_TOOLS)
+        
+        body["parallel_tool_calls"] = parallel_tool_calls
+    
     return body
 
 
