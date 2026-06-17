@@ -60,8 +60,11 @@ async def run_sse_stream(
         )
         
         # 【2026-06-17 小沈】注入停止检查回调，消除llm→task反向依赖
+        # 修复: check_cancelled/check_paused是async，不能用lambda的or短路(会跳过check_paused)
         if hasattr(llm_client, 'set_stop_check'):
-            llm_client.set_stop_check(lambda: check_cancelled(task_id) or check_paused(task_id))
+            async def _stop_check():
+                return await check_cancelled(task_id) or await check_paused(task_id)
+            llm_client.set_stop_check(_stop_check)
 
         # 加载会话历史，支持多轮对话 — 北京老陈 2026-06-13
         context = {}

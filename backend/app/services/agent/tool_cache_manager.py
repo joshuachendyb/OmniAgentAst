@@ -46,12 +46,12 @@ def patch_search_desc(agent):
     if not _CATEGORIES_CONFIG_PATH.exists():
         return
 
-        categories_config = agent._categories_config_cache.get()
+    categories_config = agent._categories_config_cache.get()
+    if categories_config is None:
+        categories_config = read_json_file(_CATEGORIES_CONFIG_PATH)
         if categories_config is None:
-            categories_config = read_json_file(_CATEGORIES_CONFIG_PATH)
-            if categories_config is None:
-                return
-            agent._categories_config_cache.set(categories_config)
+            return
+        agent._categories_config_cache.set(categories_config)
 
     unloaded = [cat for cat in ToolCategory
                 if cat != ToolCategory.FUND_RUNTIME and cat not in agent._loaded_categories]
