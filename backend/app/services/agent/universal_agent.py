@@ -15,6 +15,7 @@ from app.services.tools.tool_types import ToolCategory
 from app.services.prompts.system_prompts import PromptBuilder
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
+from app.utils.cache import TTLCache
 
 
 _INITIAL_CATEGORIES: Set[ToolCategory] = {ToolCategory.FUND_RUNTIME, ToolCategory.FILE}
@@ -66,6 +67,8 @@ class UniversalAgent(BaseAgent):
 
         self._loaded_categories: Set[ToolCategory] = set(initial_categories)
         self.prompts = PromptBuilder()
+        self._tool_cache = TTLCache(ttl=self.TOOL_CACHE_TTL)
+        self._categories_config_cache = TTLCache(ttl=self._CATEGORIES_CONFIG_CACHE_TTL)
         self._patch_search_desc()
 
         logger.info(
@@ -261,42 +264,30 @@ class UniversalAgent(BaseAgent):
         yield ("response", {"type": "answer", "content": content, "thought": ""})
 
     def _get_openai_tools(self) -> list:
-        """获取已加载分类的OpenAI格式工具定义,含TTL缓存"""
-        import time
-        current_time = time.time()
-        cache_ts = getattr(self, '_cache_timestamp', 0)
-        cached = getattr(self, '_cached_openai_tools', None)
-        if cached and current_time - cache_ts < self.TOOL_CACHE_TTL:
+        """获取已加载分类的OpenAI格式工具定义,含TTL缓存 — 小沈 2026-06-17 改用TTLCache"""
+        cached = self._tool_cache.get()
+        if cached is not None:
             return cached
 
         from app.services.tools.registry import tool_registry
-        self._cached_openai_tools = tool_registry.to_openai_tools(categories=self._loaded_categories)
-        self._cache_timestamp = current_time
-        return self._cached_openai_tools
+        tools = tool_registry.to_openai_tools(categories=self._loaded_categories)
+        self._tool_cache.set(tools)
+        return tools
 
     def invalidate_tool_cache(self):
         """P2-14修复: 清除工具缓存,工具注册/注销后调用"""
-        self._cached_openai_tools = None
-        self._cache_timestamp = 0
+        self._tool_cache.invalidate()
 
     def _patch_search_desc(self):
-        """动态更新 tool_search 描述: 列出未加载分类的概要+工具名"""
+        """动态更新 tool_search 描述: 列出未加载分类的概要+工具名 — 小沈 2026-06-17 改用TTLCache"""
         if not _CATEGORIES_CONFIG_PATH.exists():
             return
 
-        # 【修复P1-4】文件内容缓存，避免每次调用都读磁盘 — 北京老陈 2026-06-13
-        import time
-        now = time.time()
-        if not hasattr(self, '_categories_config_cache'):
-            self._categories_config_cache = None
-            self._categories_config_ts = 0
-        if now - self._categories_config_ts < self._CATEGORIES_CONFIG_CACHE_TTL:
-            categories_config = self._categories_config_cache
-        else:
+        categories_config = self._categories_config_cache.get()
+        if categories_config is None:
             with open(_CATEGORIES_CONFIG_PATH, "r", encoding="utf-8") as f:
                 categories_config = json.load(f)
-            self._categories_config_cache = categories_config
-            self._categories_config_ts = now
+            self._categories_config_cache.set(categories_config)
 
         unloaded = [cat for cat in ToolCategory
                     if cat != ToolCategory.FUND_RUNTIME and cat not in self._loaded_categories]
