@@ -108,22 +108,25 @@ npm run test:e2e     # Playwright
 **Request flow**: `chat_router.py` → CRSS regex scoring → `AgentFactory.create(intent_type)` → Agent subclasses → ReAct loop → SSE
 
 **Agent system** (`backend/app/services/agent/`):
-- `base_react.py` — `BaseAgent(ABC)` (ReAct loop core)
-- `mixins/react_agent_mixin.py` — `ReactAgentMixin` (tool loading, step management)
-- **Agent subclasses**: inherit `ReactAgentMixin, BaseAgent`; each differs in Prompt + Category
-- `agent_factory.py` — intent_type → Agent class mapping
-- `react_output_parser.py` — LLM response parsing chain
-- `parsers/` — **@deprecated**. Use `react_output_parser.py` instead.
-- `strategy_selector.py` — LLM strategy: `text` / `response_format` / `tools`
+- `core_agent/` — `react_cycle.py`(循环调度), `handlers/`(action/answer处理), `initialize_run_state.py`
+- `agent_utils/` — Agent层公共函数(message_utils, fc_message_types)
+- `steps/` — Step类型定义(ThoughtStep, ToolStep, FinalStep等)
+- `types/` — AgentStatus枚举, ObservationContext等
 
 **Tool registry** (`backend/app/services/tools/`):
 - `registry.py` — `ToolRegistry` singleton, `ToolCategory` enum
 - `__init__.py` — `ensure_tools_registered()` loads all tools
-- Categories: `file`, `shell`, `network`, `system`, `desktop`, `document`, `meta`
-- Merged categories: TIME→META, ENVIRONMENT→SYSTEM, DATABASE→DOCUMENT, CODE_EXECUTION→SHELL
+- Categories: `file`, `shell`, `network`, `system`, `desktop`, `document`, `meta`, `win_registry`
 - Each `{category}/` has: `{category}_register.py`, `{category}_tools.py`, `{category}_schema.py` (+ optional extras)
 
-**Safety**: `command_security.py` (at `services/`, not `safety/`) — blacklist-based command safety check
+**LLM client** (`backend/app/services/llm/`):
+- `client_sdk.py` — LLMClient(httpx封装)
+- `core.py` — BaseAIService(基类)
+- `stream_parser.py` — 流式响应解析
+
+**Safety** (`backend/app/services/safety/`):
+- `tool_safety_checker.py` — 工具执行前安全检查
+- `file_safety/` — 文件操作安全(备份/回滚/查询)
 
 **Prompt logging**: `backend/logs/prompt-logs/`
 
@@ -145,24 +148,22 @@ OmniAgentAs-desk/
 │   │   ├── api/v1/             # REST endpoints
 │   │   ├── main.py             # FastAPI entrypoint
 │   │   ├── config.py           # YAML+env config loader
-│   │   ├── models/             # SQLAlchemy + Pydantic
+│   │   ├── db/models/          # SQLAlchemy + Pydantic
 │   │   ├── services/
-│   │   │   ├── agent/          # Agent subclasses, base_react, mixins/, types/
-│   │   │   ├── tools/          # Tool categories
-│   │   │   ├── preprocessing/  # Intent classifier
-│   │   │   ├── intents/        # Intent definitions + CRSS scorer
-│   │   │   ├── safety/         # Safety checks (placeholder)
-│   │   │   └── llm_core.py     # LLM client
-│   │   └── utils/
+│   │   │   ├── agent/          # core_agent/, agent_utils/, steps/, types/
+│   │   │   ├── tools/          # Tool categories (file/shell/network/...)
+│   │   │   ├── llm/            # LLM client (client_sdk.py, core.py, stream_parser.py)
+│   │   │   ├── safety/         # file_safety/, tool_safety_checker.py
+│   │   │   ├── task/           # task_tracker.py, task_control.py
+│   │   │   └── react_sse_wrapper/  # run_sse_stream.py, chat_stream.py
+│   │   └── utils/              # 公共工具函数
 │   ├── tests/                  # pytest
-│   ├── tools/                  # test/debug scripts
 │   └── ~/.omniagent/           # SQLite DBs (chat_history.db, operations.db)
 ├── frontend/
 │   ├── src/
 │   └── package.json
 ├── config/                     # YAML configs
-├── doc-agent2.0/               # Agent 2.0 redesign docs
-├── doc/                        # system design docs
+├── doc/                        # design docs
 ├── notes/                      # debug notes
 ├── version.txt                 # append-only version history
 └── AGENTS.md
