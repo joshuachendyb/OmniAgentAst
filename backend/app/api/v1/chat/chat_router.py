@@ -12,7 +12,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from app.api.v1.chat.models import ChatRequest
-from app.api.v1.chat.chat_stream_v2 import chat_stream_v2
+from app.api.v1.chat.chat_stream import chat_stream
 from app.api.v1.chat.confirm_operation import confirm_operation
 from app.api.v1.chat.validate_chat_config import validate_chat_config
 
@@ -22,7 +22,7 @@ task_router = APIRouter()
 
 @router.post("/chat/stream")
 async def chat_stream_endpoint(request: ChatRequest):
-    return await chat_stream_v2(request)
+    return await chat_stream(request)
 
 
 @task_router.post("/chat/stream/cancel/{task_id}")

@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-chat_stream_v2 — API层入口
+chat_stream — API层入口
 
 小健 - 2026-06-07 清理:删除save_step_to_db调用,改用统一save_execution_steps_to_db
 task操作只在本层处理:register → interrupt检查 → pause检查 → stream → cancel检查 → cleanup
 
 统一: 小健 - 2026-05-31
+更新: 小健 - 2026-06-17 重命名chat_stream_v2→chat_stream，删除版本后缀
 """
 
 import uuid
@@ -42,7 +43,7 @@ class StreamState:
 # 无包装函数: 直接调 task_interrupt_check / task_pause_check / step_start / run_sse_stream
 
 
-async def chat_stream_v2(request: ChatRequest):
+async def chat_stream(request: ChatRequest):
     """API层入口 — 小沈 2026-06-08 重构"""
     if not request.messages:
         return PlainTextResponse(
@@ -97,7 +98,7 @@ async def chat_stream_v2(request: ChatRequest):
                 yield sse_chunk
 
         except Exception as e:
-            logger.error(f"[chat_stream_v2] Error: {e}", exc_info=True)
+            logger.error(f"[chat_stream] Error: {e}", exc_info=True)
             yield create_error_response(error_type="router_error", error_message=f"路由异常: {str(e)}")
         finally:
             await task_cleanup(task_id, state.llm_call_count)
