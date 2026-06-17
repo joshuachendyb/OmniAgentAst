@@ -30,8 +30,10 @@ class ToolCategory(Enum):
     NETWORK = ("network", 3, "网络请求工具")
     DESKTOP = ("desktop", 4, "桌面交互工具")
     DOCUMENT = ("document", 5, "文档操作工具")
-    DATA = ("data", 6, "数据处理工具")
+    DATAANALYSIS = ("dataanalysis", 6, "数据分析工具")
     SYSTEM = ("system", 7, "系统管理工具")
+    TIMER = ("timer", 8, "定时器工具")
+    WIN_REGISTRY = ("win_registry", 9, "注册表工具")
 
     def __new__(cls, value, order, name_cn):
         member = object.__new__(cls)
