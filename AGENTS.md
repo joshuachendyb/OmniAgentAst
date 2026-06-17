@@ -7,7 +7,7 @@
 **代码注释规则**：必须 加署名+日期
 **commit标题的规则**: commit标题格式 `<type>: <description> - <签名>-<日期>`，types: feat/fix/refactor/perf/test/docs
 
-**升级tag**：1..在version.txt文件头部插入从上一个tag以来的所有commit的变更信息，2.打 tag
+**打tag**：1..在version.txt文件头部插入从上一个tag以来的所有commit的变更信息，2.打 tag
 
 
 **严禁** 用PowerShell 来操作代码编辑\替换,否则导致代码编码错误
@@ -196,6 +196,12 @@ OmniAgentAs-desk/
 | **`_loaded_categories`** | Per-agent set for tool loading. Initialized to `{current_category, support_tool}`. |
 
 ---
+##  编码口诀-严格遵守
+SRP 一件事，DRY 写一次
+KISS-DIRECT 简单直接，SLAP 同层级
+YAGNI 不过度，禁止向后兼容
+OCP 开封闭，LSP 子替父
+ISP 接口窄，复用先查库
 
 ## Git Workflow
 
@@ -204,7 +210,7 @@ OmniAgentAs-desk/
 # types: feat/fix/refactor/perf/test/docs
 
 # Tag (PATCH only without asking):
-# 1. Insert commit summary into version.txt (project root, append at top)
+# 1. Insert 从上一个tag以来的所有commit summary into version.txt (project root, append at top)
 # 2. git tag v{major}.{minor}.{patch+1}
 ```
 
