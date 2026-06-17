@@ -7,14 +7,14 @@ import json
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from app.utils.visualization.common import OperationNode
+from app.services.visualization.common import OperationNode
 
 from app.utils.logger import logger
 
 
 def _query_tree_operations(task_id: str) -> List[Tuple]:
     """查询树形操作记录 - 小沈 2026-06-08; 2026-06-17 改为调用service层"""
-    from app.services.safety.file.file_safety.operation_queries import query_tree_operations
+    from app.services.safety.file_safety.operation_queries import query_tree_operations
     return query_tree_operations(task_id)
 
 
@@ -60,7 +60,7 @@ def _node_to_dict(node: OperationNode) -> dict:
 
 def _save_tree_json(tree_dict: dict, path: Path) -> None:
     """保存树形JSON到文件 - 小沈 2026-06-09 复用 common.save_json_file"""
-    from app.utils.visualization.common import save_json_file as _save
+    from app.services.visualization.common import save_json_file as _save
     _save(tree_dict, path, logger_name="Tree structure")
 
 

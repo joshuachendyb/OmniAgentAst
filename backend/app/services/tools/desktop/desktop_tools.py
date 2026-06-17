@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 DESKTOP Tools - 桌面工具实现(窗口管理)
+【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
 
 【架构规范】2026-04-29 小沈
 
@@ -33,7 +34,7 @@ import platform
 from typing import Any, Dict, List, Optional, Literal
 from app.utils.logger import logger
 from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
-from app.services.tools._response import build_success, build_error
+from app.services.tools.tool_response import build_success, build_error
 from app.services.tools.toolhelper.window_helper import check_win32_platform, get_window_rect, get_window_state, find_windows_by_title  # 小沈 2026-05-22
 
 

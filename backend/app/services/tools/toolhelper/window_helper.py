@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 窗口管理公共Helper - 统一窗口查找和状态查询
+【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
 
 【创建时间】2026-05-18 小沈
 【说明】从 desktop_tools.py 和 gui_tools.py 中提取重复的窗口操作逻辑,
@@ -24,7 +25,7 @@ from typing import Any, Dict, List, Optional
 
 from app.constants import ERR_DESKTOP_NOT_WINDOWS, ERR_DESKTOP_NO_PYWIN32
 from app.utils.logger import logger
-from app.services.tools._response import build_error, build_success
+from app.services.tools.tool_response import build_error, build_success
 _HAS_WIN32 = False
 _win32gui = None
 _win32con = None

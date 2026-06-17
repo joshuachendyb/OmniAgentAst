@@ -85,6 +85,7 @@ CATEGORY_MODULES = {
     "desktop": ("app.services.tools.desktop", "_register_desktop_tools"),
     "document": ("app.services.tools.document", "_register_document_tools"),
     "meta": ("app.services.tools.meta", "_register_meta_tools"),
+    "win_registry": ("app.services.tools.win_registry", "_register_registry_tools"),
 }
 
 # ============================================================

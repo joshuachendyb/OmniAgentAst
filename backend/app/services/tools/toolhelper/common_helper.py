@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 通用工具公共Helper - 截断、路径安全、平台检查、Windows命令执行
+【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
 
 【创建时间】2026-05-18 小沈
 【说明】从各工具文件中提取的通用模式,供任意分类工具调用。
@@ -23,7 +24,7 @@ import platform
 import subprocess
 from app.constants import ERR_DESKTOP_NOT_WINDOWS
 from typing import Any, Dict, Optional, Tuple
-from app.services.tools._response import build_error, build_success
+from app.services.tools.tool_response import build_error, build_success
 
 
 def _check_module(module_name: str) -> bool:

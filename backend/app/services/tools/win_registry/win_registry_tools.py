@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 REGISTRY 工具函数模块 - Windows注册表操作工具
+【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
 
 【创建时间】2026-05-02 小沈
 【更新时间】2026-06-16 小沈 - 拆分registry_control为registry_read/registry_write/registry_delete
@@ -28,7 +29,7 @@ from app.constants import (ERR_REG_DELETE_FAILED, ERR_REG_INVALID_PARAM, ERR_REG
 
 from app.utils.logger import logger
 from app.utils.tool_result_formatter import build_next_actions  # 小沈 2026-05-19
-from app.services.tools._response import build_success, build_error
+from app.services.tools.tool_response import build_success, build_error
 # 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
 from app.services.tools.tool_constants import SUBPROCESS_TIMEOUT_DEFAULT
 

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 网络辅助函数模块 - 网络相关的内部辅助函数
+【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
 
 【创建时间】2026-05-17 小沈
 【说明】从 support_tool/support_tool_tools.py 迁移 check_network_connectivity 和 validate_url 函数
@@ -33,7 +34,7 @@ from app.utils.common_patterns import (
     HTML_TAG_PATTERN, SCRIPT_TAG_PATTERN,
     STYLE_TAG_PATTERN, MULTI_WHITESPACE_PATTERN,
 )
-from app.services.tools._response import build_success, build_error
+from app.services.tools.tool_response import build_success, build_error
 
 
 def _check_network() -> Dict[str, Any]:

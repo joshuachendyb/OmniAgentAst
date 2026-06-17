@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ENV 工具函数模块 - 环境变量工具
+【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
 
 【创建时间】2026-04-29 小沈
 【规范】按新规范使用 Pydantic 模型注册
@@ -28,7 +29,7 @@ from typing import Optional, Dict, Any, List, Tuple
 
 from app.utils.logger import logger
 from app.utils.tool_result_formatter import build_next_actions  # 小沈 2026-05-19
-from app.services.tools._response import build_success, build_error
+from app.services.tools.tool_response import build_success, build_error
 
 
 

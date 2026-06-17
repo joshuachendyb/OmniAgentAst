@@ -1,5 +1,6 @@
 """
 MCP文件操作工具集 - 重写版本
+【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
 # 【拨乱反正 2026-05-28 小沈】session→task 命名修正
 
 【重构日期】2026-03-19 小强
@@ -731,7 +732,7 @@ class FileTools:
         小沈 2026-05-25 重构拆分
         """
         try:
-            from app.services.tools.toolhelper.file_helpers import get_file_encoding
+            from app.services.tools.toolhelper.file_helper import get_file_encoding
             
             if preferred:
                 encodings_to_try = [preferred]
@@ -899,7 +900,7 @@ class FileTools:
             return "utf-8"
         
         try:
-            from app.services.tools.toolhelper.file_helpers import get_file_encoding
+            from app.services.tools.toolhelper.file_helper import get_file_encoding
             result = get_file_encoding(file_path)
             return result.get("data", {}).get("encoding", "utf-8")
         except Exception:
@@ -961,7 +962,7 @@ class FileTools:
                 content = content.replace(fw, hw)
         
         if content:
-            from app.services.tools.toolhelper.content_quality import check_content_quality
+            from app.utils.content_quality import check_content_quality
             quality = check_content_quality(content=content, file_path=file_path)
             if quality.get("is_thought_leak"):
                 return quality["warning"], content
@@ -1319,7 +1320,7 @@ class FileTools:
         preserve_metadata: bool = True,
     ) -> Dict[str, Any]:
         """复制文件或目录 - 小健 2026-05-02 增加preserve_metadata"""
-        from app.services.tools.toolhelper.file_helpers import copy_file_impl
+        from app.services.tools.toolhelper.file_helper import copy_file_impl
 
         return await copy_file_impl(
             source_path=source_path,
@@ -1340,7 +1341,7 @@ class FileTools:
         follow_symlinks: bool = True,
     ) -> Dict[str, Any]:
         """获取文件信息 - 小健 2026-05-02 增加follow_symlinks"""
-        from app.services.tools.toolhelper.file_helpers import get_file_info_impl
+        from app.services.tools.toolhelper.file_helper import get_file_info_impl
 
         return await get_file_info_impl(
             file_path=file_path,
@@ -1359,7 +1360,7 @@ class FileTools:
         password: Optional[str] = None,
     ) -> Dict[str, Any]:
         """压缩文件或目录"""
-        from app.services.tools.toolhelper.file_helpers import compress_files_impl
+        from app.services.tools.toolhelper.file_helper import compress_files_impl
 
         return await compress_files_impl(
             source_path=source_path,
@@ -1385,7 +1386,7 @@ class FileTools:
         preserve_permissions: bool = True,
     ) -> Dict[str, Any]:
         """解压压缩文件"""
-        from app.services.tools.toolhelper.file_helpers import extract_archive as _extract_archive
+        from app.services.tools.toolhelper.file_helper import extract_archive as _extract_archive
         return _extract_archive(
             archive_path=archive_path,
             output_dir=output_dir,
@@ -1402,7 +1403,7 @@ class FileTools:
         timeout: int = 30000,
     ) -> Dict[str, Any]:
         """计算文件哈希值"""
-        from app.services.tools.toolhelper.file_helpers import hash_file_tool
+        from app.services.tools.toolhelper.file_helper import hash_file_tool
         return hash_file_tool(
             file_path=file_path,
             algorithm=algorithm,
@@ -1417,7 +1418,7 @@ class FileTools:
         output_format: str = "json",
     ) -> Dict[str, Any]:
         """统计文件系统信息"""
-        from app.services.tools.toolhelper.file_helpers import file_statistics_impl
+        from app.services.tools.toolhelper.file_helper import file_statistics_impl
 
         return await file_statistics_impl(
             directory=directory,
@@ -1441,7 +1442,7 @@ class FileTools:
         timeout: int = 30000,
     ) -> Dict[str, Any]:
         """计算文件校验和"""
-        from app.services.tools.toolhelper.file_helpers import file_checksum_impl
+        from app.services.tools.toolhelper.file_helper import file_checksum_impl
 
         return await file_checksum_impl(
             file_path=file_path,

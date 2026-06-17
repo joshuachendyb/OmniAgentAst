@@ -78,7 +78,7 @@ def _set_app_field(config_data: dict, field_name: str, value: Any, display_name:
 
 def _backup_config(config_path: Path) -> Path:
     """备份配置文件"""
-    from app.services.tools.toolhelper.file_helpers import backup_file
+    from app.services.tools.toolhelper.file_helper import backup_file
     result = backup_file(str(config_path), suffix=".backup")
     if result.get("code") != "SUCCESS":
         raise RuntimeError(f"配置文件备份失败: {result.get('message', '')}")

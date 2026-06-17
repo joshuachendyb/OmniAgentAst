@@ -3,6 +3,7 @@
 # -*- coding: utf-8 -*-
 """
 文件辅助函数模块 - 纯内部辅助函数(不暴露给LLM)
+【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
 
 【创建时间】2026-05-02 小沈
 【更新时间】2026-05-02 小沈
@@ -78,7 +79,7 @@ from app.utils.time_utils import timestamp_for_filename
 from typing import Optional, Dict, Any, Tuple, List, Generator, Callable
 from dataclasses import dataclass, field
 from app.services.tools.toolhelper.hash_helper import select_hasher, compute_file_hash
-from app.services.tools._response import build_success, build_error
+from app.services.tools.tool_response import build_success, build_error
 from app.utils.logger import setup_logger
 
 
@@ -1474,7 +1475,7 @@ def _build_checksum_result(
     else:
         message = f"{algorithm.upper()} 校验和: {checksum}"
 
-    from app.services.tools._response import build_success
+    from app.services.tools.tool_response import build_success
     return build_success(data, message,
         llm_data={"校验算法": algorithm, "校验值": checksum, "验证结果": data.get("verify_result")},
     )

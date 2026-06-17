@@ -14,7 +14,7 @@ from fastapi.responses import StreamingResponse, PlainTextResponse
 
 from app.services import get_service
 from app.utils.logger import logger
-from app.chat_stream import create_error_response
+from app.services.react_sse_wrapper.chat_stream import create_error_response
 from app.api.v1.chat.models import ChatRequest
 from app.api.v1.chat.step_start import step_start
 from app.utils.counter_utils import create_step_counter

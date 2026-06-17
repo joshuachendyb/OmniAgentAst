@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Meta 工具实现 - tool_search (BM25 全文检索)
+【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
 
 【2026-05-17 小沈】新建
 【2026-06-12 小沈】删除tool_help/pipeline(YAGNI,FC Schema已覆盖),仅保留tool_search
@@ -15,7 +16,7 @@ from app.services.tools.registry import tool_registry
 from app.utils.tool_result_formatter import (
     truncate_data_for_frontend,
 )
-from app.services.tools._response import build_success, build_error
+from app.services.tools.tool_response import build_success, build_error
 
 
 # ── 分词 ──────────────────────────────────────────────────────────

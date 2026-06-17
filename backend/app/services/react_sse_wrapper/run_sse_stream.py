@@ -51,7 +51,7 @@ async def run_sse_stream(
     """纯SSE流运行器 — 小沈 2026-06-09 支持StreamState"""
     from app.services.agent.universal_agent import UniversalAgent
     from app.utils.sse_formatter import format_agent_sse
-    from app.chat_stream import save_execution_steps_to_db
+    from app.services.react_sse_wrapper.chat_stream import save_execution_steps_to_db
 
     agent = None
     log_tag = "[AgentOp]"

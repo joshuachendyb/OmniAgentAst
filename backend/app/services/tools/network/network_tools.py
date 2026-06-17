@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Network 工具函数模块 - 网络通信工具
+【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
 
 【创建时间】2026-04-29 小沈
 【规范】按新规范使用 Pydantic 模型注册
@@ -74,7 +75,7 @@ from app.constants import (
     ERR_SHELL_COMMAND_NOT_FOUND,
     RETRYABLE_HTTP_STATUS_CODES,
 )
-from app.services.tools._response import build_success, build_error
+from app.services.tools.tool_response import build_success, build_error
 from app.constants import SUCCESS_CODE
 
 def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:

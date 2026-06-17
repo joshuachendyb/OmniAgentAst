@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 数据格式辅助函数模块
+【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
 
 【创建时间】2026-05-18 小沈
 【来源】从data_format目录迁入,供file_tools.py调用
@@ -29,7 +30,7 @@ from typing import Dict, Any, List, Union, Tuple
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from app.services.tools._response import build_success, build_error
+from app.services.tools.tool_response import build_success, build_error
 from app.constants import (
     ERR_DOC_READ_JSON,
     ERR_NO_PYYAML,

@@ -7,8 +7,8 @@
 - 禁止向后兼容: monitoring.py旧入口已删除,统一从 monitoring/ 包导入
 """
 
-from app.utils.monitoring.collector import MetricType, Metric, MetricsCollector
-from app.utils.monitoring.middleware import (
+from app.services.monitoring.collector import MetricType, Metric, MetricsCollector
+from app.services.monitoring.middleware import (
     MonitoringMiddleware,
     setup_monitoring,
     get_metrics_summary,

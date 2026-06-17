@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 GUI操作工具函数模块
+【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
 
 【创建时间】2026-05-02 小沈
 【设计依据】按文档第9章 Tool 92-104 定义
@@ -30,7 +31,7 @@ from pathlib import Path
 from app.utils.time_utils import timestamp_for_filename
 from app.utils.dependency import ensure_dependency
 
-from app.services.tools._response import build_success, build_error
+from app.services.tools.tool_response import build_success, build_error
 from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, truncate_text  # 小沈 2026-05-20
 
 

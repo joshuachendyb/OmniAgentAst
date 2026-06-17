@@ -11,10 +11,10 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from app.utils.time_utils import timestamp_for_filename
-from app.utils.visualization.text_report import generate_text_report
-from app.utils.visualization.tree_report import export_tree_to_json
-from app.utils.visualization.sankey_report import generate_sankey_data
-from app.utils.visualization.animation_report import generate_animation_script
+from app.services.visualization.text_report import generate_text_report
+from app.services.visualization.tree_report import export_tree_to_json
+from app.services.visualization.sankey_report import generate_sankey_data
+from app.services.visualization.animation_report import generate_animation_script
 from app.utils.logger import logger
 
 

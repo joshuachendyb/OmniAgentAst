@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 SYSTEM 工具函数模块 - 系统信息工具
+【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
 
 【创建时间】2026-04-29 小沈
 【规范】按新规范使用 Pydantic 模型注册
@@ -38,7 +39,7 @@ import json as json_module
 from app.utils.logger import logger
 from app.utils.time_utils import now_str
 from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, make_json_safe
-from app.services.tools._response import build_success, build_error  # 小沈 2026-05-20
+from app.services.tools.tool_response import build_success, build_error  # 小沈 2026-05-20
 from app.services.tools.tool_constants import TOOL_TIMEOUTS
 # 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
 from app.services.tools.tool_constants import SUBPROCESS_TIMEOUT_DEFAULT

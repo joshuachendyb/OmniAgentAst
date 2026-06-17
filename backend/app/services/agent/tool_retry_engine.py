@@ -20,7 +20,7 @@ from app.utils.logger import logger
 from app.utils.error_classifier import UnifiedErrorClassifier
 from app.utils.retry_engine import RetryEngine, BackoffStrategy
 from app.services.tools.tool_constants import TOOL_TIMEOUTS, TOOL_RETRY_MAX, TOOL_RETRY_BACKOFF, TOOL_RETRYABLE_ERRORS
-from app.services.agent.agent_utils.tool_result_factory import create_tool_result, create_error_tool_result
+from app.services.tools.tool_response import build_success, build_error
 
 from app.constants import (
     ERR_MISSING_PARAM,
@@ -74,13 +74,12 @@ class ToolRetryEngine:
         消除 4 处重复 {code, data, message, retry_count, metadata} 构建。
         retry_count 统一为"已完成的重试次数"(不含首次尝试)。
         """
-        return create_error_tool_result(
+        return build_error(
             code=code,
-            data=None,
             message=message,
             retry_count=retry_count,
             error_message=message,
-            error_type=error_type or "unknown"
+            error_type=error_type or "unknown",
         )
     
     def _get_retry_config(self, action: str):
@@ -100,10 +99,12 @@ class ToolRetryEngine:
         """统一工具执行方法 — FC-only: 无finish分支"""
         tool = self._find_tool(action)
         if tool is None:
-            return create_error_tool_result(
-                code=ERR_TOOL_NOT_FOUND, data=None,
+            return build_error(
+                code=ERR_TOOL_NOT_FOUND,
                 message=f"Unknown tool: {action}. Available tools: {list(self._tools.keys())}",
-                retry_count=0, error_message=f"工具 '{action}' 未找到", error_type="tool_not_found"
+                retry_count=0,
+                error_message=f"工具 '{action}' 未找到",
+                error_type="tool_not_found",
             )
         
         params = self._validate_params(action, action_input, tool)
@@ -176,10 +177,10 @@ class ToolRetryEngine:
         """执行单次尝试 — 小沈 2026-06-08"""
         try:
             result = await self._execute_tool_once(tool, params, timeout)
-            return create_tool_result(
+            return build_success(
                 data=result,
                 message="Tool execution succeeded",
-                retry_count=engine.attempt_count
+                retry_count=engine.attempt_count,
             )
         except Exception as e:
             error_category = UnifiedErrorClassifier.classify_error(e)

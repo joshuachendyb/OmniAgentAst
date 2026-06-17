@@ -1,26 +1,19 @@
 """
 统一工具返回结构定义 — 小健 2026-05-21
 
-【分层规范 - 小健 2026-05-27】
+【两层规范 - 小健 2026-06-17】三层→两层简化,删除tool_result_factory中间层
 本文件属于【工具层】,职责:构建返回dict基础结构(code/data/message + 可选字段)
 以及判断返回状态的查询函数(is_success/is_error)。
 
-三层职责边界(严格遵守):
-  _response.py (工具层)
+两层职责边界:
+  tool_response.py (构建层) ← 本文件
     → 提供 build_success / build_error / build_warning / is_success / is_error
-    → 工具函数、helper函数 直接使用这些函数
-    → 禁止使用 agent/tool_result_utils.py 的 create_xxx 函数
-
-  tool_result_utils.py (Agent层)
-    → 提供 create_tool_result / create_error_tool_result / create_warning_tool_result
-    → Agent编排层使用(tool_executor、tool_retry_engine等)
-    → 委托工具层构建,追加Agent层特有字段(error_type、metadata等)
+    → 工具函数、helper函数、Agent编排层 统一使用这些函数
+    → 通过 **extra 支持任意扩展字段(error_type/metadata等)
 
   tool_result_formatter.py (格式化层)
     → LLM observation / 前端SSE / extract_status 格式化
     → 禁止构建结果,只消费和格式化
-
-违反后果:层级混乱,职责不清,代码审查打回
 """
 from app.constants import SUCCESS_CODE
 from typing import Any, Dict, Optional, List

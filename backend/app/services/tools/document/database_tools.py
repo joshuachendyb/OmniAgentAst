@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 DATABASE Tools - 数据库工具实现
+【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
 
 【架构规范】2026-04-29 小沈
 
@@ -28,7 +29,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Literal, Tuple
 from app.utils.logger import logger
 from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, make_json_safe
-from app.services.tools._response import build_success, build_error, build_warning
+from app.services.tools.tool_response import build_success, build_error, build_warning
 
 
 

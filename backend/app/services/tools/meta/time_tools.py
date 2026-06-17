@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 时间工具函数模块 - 为普通用户提供时间相关功能
+【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
 
 【迁移说明】2026-04-26 小沈
 - 本文件从 app/tools/time_tools.py 迁移而来
@@ -39,7 +40,7 @@ from app.utils.common_patterns import UTC_OFFSET_PATTERN
 from app.utils.logger import logger;
 from app.utils.time_utils import get_timestamp_ms
 from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend;
-from app.services.tools._response import build_success, build_error
+from app.services.tools.tool_response import build_success, build_error
 # 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
 from app.services.tools.tool_constants import HTTPX_TIMEOUT_DEFAULT
 from app.services.tools.toolhelper.date_helper import (

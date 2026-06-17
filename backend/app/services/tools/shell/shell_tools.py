@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Shell 工具函数模块 - Shell命令执行工具
+【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
 
 【创建时间】2026-04-29 小沈
 【规范】2026-05-02 小沈 移除 @register_tool 装饰器,改由 shell_register.py 显式注册
@@ -38,7 +39,7 @@ import re as _re
 
 from app.utils.tool_result_formatter import format_output_for_llm, build_next_actions, truncate_data_for_frontend
 from app.utils.logger import logger  # 小健-2026-05-19 修复BUG-001: logger未导入
-from app.services.tools._response import build_success, build_error
+from app.services.tools.tool_response import build_success, build_error
 from app.services.tools.toolhelper.shell_helper import _check_shell_injection, _read_stream_nonblocking
 from app.services.tools.toolhelper.common_helper import _decode_bytes_safe
 from app.services.safety.tool_safety_checker import get_tool_safety_checker

@@ -14,7 +14,7 @@ import re
 from typing import Any, Dict, Optional
 
 from app.utils.logger import logger
-from app.services.safety.file.path_validator import validate_path
+from app.services.safety.path_validator import validate_path
 
 _WRITE_RISK_TOOL = "write_text_file"
 _CODE_INJECTION_RISK_TOOLS = {"execute_shell_command", "execute_code"}

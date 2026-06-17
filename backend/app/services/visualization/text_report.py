@@ -6,7 +6,7 @@
 from typing import List, Dict, Tuple
 from datetime import datetime
 
-from app.utils.visualization.common import count_op_stats, format_size
+from app.services.visualization.common import count_op_stats, format_size
 from app.utils.logger import logger
 
 
@@ -107,7 +107,7 @@ def generate_text_report(task_id: str, task_description: str) -> str:
     Returns:
         报告文本内容
     """
-    from app.services.safety.file.file_safety.operation_queries import query_file_operations
+    from app.services.safety.file_safety.operation_queries import query_file_operations
     operations = query_file_operations(task_id)
     if not operations:
         logger.warning(f"No operations found for session: {task_id}")

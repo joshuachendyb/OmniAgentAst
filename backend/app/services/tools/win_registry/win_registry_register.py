@@ -12,13 +12,13 @@ from app.services.tools.registry import tool_registry
 from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
-from app.services.tools.system.reg_schema import (
+from app.services.tools.win_registry.win_registry_schema import (
     RegistryReadInput,
     RegistryWriteInput,
     RegistryDeleteInput,
 )
 
-from app.services.tools.system.reg_tools import (
+from app.services.tools.win_registry.win_registry_tools import (
     registry_read,
     registry_write,
     registry_delete,

@@ -20,7 +20,7 @@
   - 其他类型:需要中文占比 > 70% + 自我指涉检测率高(保守策略)
 
 Usage:
-    from app.services.tools.content_quality import check_content_quality
+    from app.utils.content_quality import check_content_quality
 
     result = check_content_quality(
         content="已成功创建并写入第一章内容。现在需要继续创建第二章...",

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 GUI Helper - GUI内部辅助函数集合(不暴露给LLM)
+【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
 
 【创建时间】2026-05-17 小沈
 【设计依据】按工具精简方案13.6节,将gui_helpers的7个检查函数迁移到此
@@ -29,7 +30,7 @@ import importlib
 import subprocess
 from typing import Any, Callable, Dict, List, Optional
 
-from app.services.tools._response import build_success, build_error
+from app.services.tools.tool_response import build_success, build_error
 from app.utils.logger import logger
 from app.services.tools.toolhelper.window_helper import find_windows_by_title
 # 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py

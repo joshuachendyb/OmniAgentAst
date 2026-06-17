@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any
 from app.utils.time_utils import get_utc_timestamp
 
-from app.utils.monitoring import get_metrics_summary, get_raw_metrics, reset_metrics
+from app.services.monitoring import get_metrics_summary, get_raw_metrics, reset_metrics
 from app.utils.logger import logger
 from app.utils.response_utils import handle_api_errors
 

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Code Execution 工具函数模块 - 代码执行工具
+【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
 
 【创建时间】2026-05-02 小沈
 【2026-05-02 小沈重构】移除 @register_tool 装饰器,改为显式注册
@@ -42,7 +43,7 @@ from app.services.tools.shell.code_execution_schema import (
     ExecuteCodeInput,
 )
 from app.utils.tool_result_formatter import format_output_for_llm, build_next_actions, truncate_data_for_frontend  # 小沈-2026-05-15, 小沈-2026-05-20
-from app.services.tools._response import build_success, build_error
+from app.services.tools.tool_response import build_success, build_error
 from app.utils.logger import setup_logger
 from app.services.tools.toolhelper.common_helper import _decode_bytes_safe
 

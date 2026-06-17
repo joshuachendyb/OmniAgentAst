@@ -13,7 +13,7 @@ from app.api.v1 import health, ai_config, sessions, messages, conversation, exec
 from app.api.v1.chat import router as chat_router, task_router
 from app.api.v1.task_queries import router as task_queries_router
 from app.utils.logger import logger
-from app.utils.monitoring import setup_monitoring
+from app.services.monitoring import setup_monitoring
 from app.constants import DEFAULT_CORS_ORIGINS
 from app.utils.version import get_version
 from app.services.task.task_registry import cleanup_expired_tasks
