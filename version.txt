@@ -1,3 +1,74 @@
+v0.16.6
+
+更新时间: 2026-06-18 07:51:38
+
+## v0.16.5→v0.16.6 变更汇总 - 小欧-2026-06-18
+
+### refactor: 工具分类名目录名对齐(11分类, TIMER/WIN_REGISTRY独立)
+- 29d33d9b5: tool_types.py+tool_constants.py+注册文件 目录名分类名一致，DATA→DATAANALYSIS, meta→fundamental, timer独立, win_registry独立
+
+### fix: Schema交叉核验+set_window_state修复+文档清理
+- 50779b17f: desktop/file/shell 全量Schema↔Implementation参数交叉核验匹配+set_window_state next_actions移除已删info动作
+
+### feat: stream_options+parallel_tool_calls+组合工具拆分
+- f86c7aa43: stream_options新增include_usage获取token用量统计
+- 7994ab2b2: 新增parallel_tool_calls+strict模式+工具选择铁律
+- 8119299d9: 组合工具拆分Phase1+2 — 14+6个单工具
+- 05bd10212: 新增read_json_file公用函数
+- 1a1a776fb: 11个组合工具Schema描述+条件必填参数标注【必填】
+
+### refactor: universal_agent拆分为4文件+ToolLoader重命名+模块合并+反向依赖消除
+- 04fd29873: universal_agent拆分为4文件
+- 2f4747eae: ToolManager→ToolLoader重命名
+- 779a14c06: 删除tool_config.py死代码
+- c2f2c27ae: factory/ 11文件合并为6个
+- e242a4aed: 重构tool分类系统
+- d0770e8f0: chat_stream_v2→chat_stream重命名
+- 3c364555e: 内联缓存→TTLCache通用类(DRY)
+- c9b44e783: 消除visualization→safety反向依赖
+- 0e187ac3e: 消除llm→task反向依赖
+- ff5cc1825: task模块MetaStep→dict+读写分离
+- 9a54b0b97: 清理build_next_actions间接导出
+- 793b401d1: ToolMetadata清理5废字段
+- 58d4adac0: lazy_loader简化+file_register/shell__init__导出修复
+- 37397bf2f: initialize_run_state参数名self→agent
+- 981e31ff0: action_handler导入AgentStatus修复
+- d67f98f14: 10大规范5项修正(DRY/KISS/SLAP/YAGNI/OCP)
+- 19f03f86c: 后端目录结构11项规范修正
+- 85d5927f3: llm_core目录合并入llm
+- 2b7a5774d: visualization的db查询下沉到service层
+- f7e1ec897: SSE格式化函数下沉到utils
+- 10292d9af: HITL确认逻辑从API层下沉到service层
+- d81fc1b0a: 打破safety↔tools循环依赖
+- b0c778171: 第2批代码规范修正(7项)
+- fbe4f58f0: 7项代码规范修正
+
+### fix: 多项Bug修复
+- db8e8991e: tool_cache_manager缩进错误+async lambda短路
+- 71dbdb521: desktop_tools导入名+system_register破损导入
+- 82f048c36: 9项代码规范修正(冗余/重复import/异常黑洞等)
+- 94b4bf24e: 移除误提交的测试文件
+
+### docs: 文档整理+报告更新+AGENTS.md统一
+- a6a96c1cf: 合并戒律文档/移动Tool分析文档
+- b9b3bd85e: 整理后端文档
+- 3ce440791: 更新后端代码审查报告问题跟踪
+- 9faa8ad10: 清理doc-6月发展目录中已迁移的文档
+- 8b9078a3a: 重组文档目录结构
+- 21bf9b502: 整理文档-移动消息段大全+API对比+根因分析
+- bda3b6e73: 更新后端代码审查报告
+- bcab6bbef: 更新AGENTS.md架构描述
+- 7fa372b3d: AGENTS.md新增编码口诀+修正标签说明
+- 6155ffc4b: AGENTS.md统一commit格式规则
+- 9629cc8ad: AGENTS.md架构描述更新
+- 1d12da8df: 编码铁规更新(KISS-DIRECT简单直接原则)
+- a81f5078d: commit格式增加文件名字段
+- 831ecfbb6: 后端代码深度分析报告
+- c25eec9b9: 组合工具拆分分析文档v1.4
+- 991bceb90: 清理已迁移的过时文档(5个文件删除)
+
+---
+
 v0.16.5
 
 更新时间: 2026-06-16 20:34:44
