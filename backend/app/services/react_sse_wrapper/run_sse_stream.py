@@ -13,6 +13,7 @@ from typing import List, AsyncGenerator, Any, Callable, Dict
 
 from app.utils.logger import logger
 from app.services.agent.types import AgentStatus
+from app.services.task.task_state_queries import check_cancelled, check_paused
 
 
 def _load_previous_messages(session_id: str) -> List[Dict[str, str]]:
@@ -58,9 +59,9 @@ async def run_sse_stream(
             llm_client=llm_client, task_id=task_id,
         )
         
-        # 【修复 2026-06-09 小沈】设置task_id，支持HTTP阻塞期间的取消检查
-        if hasattr(llm_client, 'set_task_id'):
-            llm_client.set_task_id(task_id)
+        # 【2026-06-17 小沈】注入停止检查回调，消除llm→task反向依赖
+        if hasattr(llm_client, 'set_stop_check'):
+            llm_client.set_stop_check(lambda: check_cancelled(task_id) or check_paused(task_id))
 
         # 加载会话历史，支持多轮对话 — 北京老陈 2026-06-13
         context = {}

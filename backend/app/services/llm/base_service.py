@@ -8,7 +8,7 @@ FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
 import asyncio
 import json as _json
 import traceback
-from typing import List, Dict, Optional, AsyncGenerator, Any
+from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 
 import httpx
 from app.utils.logger import logger
@@ -17,8 +17,7 @@ from app.services.llm.core import ChatResponse, StreamChunk, _resolve_exception
 from app.services.llm.stream_parser import create_cancelled_chunk
 from app.services.llm.client_sdk import create_llm_client
 from app.services.llm.model_adapters.reasoning import extract_reasoning_from_chunk
-from app.services.task.task_registry import check_cancelled, check_paused
-from app.services.agent.agent_utils.message_utils import build_llm_messages
+
 from app.constants import DEFAULT_LLM_TIMEOUT, RATE_LIMIT_STATUS_CODES
 
 
@@ -69,7 +68,7 @@ class BaseAIService:
         self.timeout = int(timeout_value)
         self._cancelled = False
         self._current_response: Optional[httpx.Response] = None
-        self.task_id: Optional[str] = None
+        self._stop_check: Optional[Callable] = None
 
     def _ensure_client(self):
         if self._llm_sdk is None:
@@ -98,17 +97,15 @@ class BaseAIService:
         self._cancelled = False
         self._current_response = None
 
-    def set_task_id(self, task_id: str):
-        """设置任务ID，用于HTTP阻塞期间的取消检查 — 小沈 2026-06-09"""
-        self.task_id = task_id
+    def set_stop_check(self, check_fn: Callable):
+        """设置停止检查回调 — 由调用方注入，消除llm→task反向依赖 — 小沈 2026-06-17"""
+        self._stop_check = check_fn
 
-    async def _check_task_cancelled_or_paused(self) -> bool:
-        """检查任务是否被取消或暂停 — 小沈 2026-06-09"""
-        if not self.task_id:
-            return self._cancelled
-        is_cancelled = await check_cancelled(self.task_id)
-        is_paused = await check_paused(self.task_id)
-        return is_cancelled or is_paused or self._cancelled
+    async def _check_stop(self) -> bool:
+        """检查是否应该停止 — 优先调用注入的回调，否则检查本地_cancelled — 小沈 2026-06-17"""
+        if self._stop_check:
+            return await self._stop_check()
+        return self._cancelled
 
 
     def _is_rate_limit_status(self, status_code: int) -> bool:
@@ -185,7 +182,7 @@ class BaseAIService:
                     temperature=self.temperature,
                     seed=self.seed,
                 ):
-                    if await self._check_task_cancelled_or_paused():
+                    if await self._check_stop():
                         yield self._create_cancelled_chunk()
                         return
 
@@ -247,15 +244,6 @@ class BaseAIService:
                     yield self._create_stream_error_chunk(e)
                     return
 
-    async def chat(
-        self,
-        message: str,
-        history: Optional[List[Dict]] = None,
-    ) -> AsyncGenerator[StreamChunk, None]:
-        """流式对话便捷方法 — FC-only: 无mode参数 — 小沈 2026-06-11"""
-        messages = build_llm_messages(message, history)
-        async for chunk in self.request_stream(messages=messages):
-            yield chunk
 
     def _extract_tool_calls(self, data_str: str) -> Dict[int, Dict]:
         """从SSE delta中提取tool_calls增量 — FC-only: 含id捕获 — 小沈 2026-06-11"""
