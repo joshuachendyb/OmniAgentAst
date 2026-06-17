@@ -11,8 +11,8 @@ from app.constants import META_TOOL_NAMES
 from app.utils.logger import logger
 
 
-class ToolManager:
-    """工具加载和管理"""
+class ToolLoader:
+    """工具加载和管理 — 小沈 2026-06-17 改名ToolManager→ToolLoader"""
 
     def __init__(self, agent):
         self.agent = agent
@@ -34,7 +34,7 @@ class ToolManager:
             cat_tools = tool_registry.get_implementations_by_category(cat)
             self.agent._tools_dict.update(cat_tools)
 
-        logger.info(f"[ToolManager] 初始化完成,共{len(self.agent._tools_dict)}个工具")
+        logger.info(f"[ToolLoader] 初始化完成,共{len(self.agent._tools_dict)}个工具")
 
     def get_tools(self) -> dict:
         """获取工具字典"""
@@ -45,4 +45,4 @@ class ToolManager:
         cat_tools = tool_registry.get_implementations_by_category(category)
         if cat_tools:
             self.agent._tools_dict.update(cat_tools)
-            logger.info(f"[ToolManager] 动态加载分类:{category.value}, {len(cat_tools)}个工具")
+            logger.info(f"[ToolLoader] 动态加载分类:{category.value}, {len(cat_tools)}个工具")
