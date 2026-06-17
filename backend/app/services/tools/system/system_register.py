@@ -193,9 +193,6 @@ def _register_system_tools():
         )
         logger.info(f"[system_register] 已注册工具(SYSTEM): {name}")
 
-    # 【修复 2026-05-18 小沈】调用reg_register注册reg_read/reg_write/reg_delete
-    from app.services.tools.system.reg_register import _register_registry_tools
-    _register_registry_tools()
 
 
 

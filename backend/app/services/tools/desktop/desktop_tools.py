@@ -33,7 +33,8 @@ DESKTOP Tools - 桌面工具实现(窗口管理)
 import platform
 from typing import Any, Dict, List, Optional, Literal
 from app.utils.logger import logger
-from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
+from app.utils.tool_result_formatter import truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
+from app.utils.next_actions_builder import build_next_actions
 from app.services.tools.tool_response import build_success, build_error
 from app.services.tools.toolhelper.window_helper import check_win32_platform, get_window_rect, get_window_state, find_windows_by_title  # 小沈 2026-05-22
 
@@ -234,10 +235,10 @@ def window_control(
     action: "focus"|"resize"|"maximize"|"minimize"|"restore"|"topmost"|"unpin"
     """
     if action == "focus":
-        from app.services.tools.desktop.gui_tools import _focus_window
+        from app.services.tools.desktop.desktop_gui_tools import _focus_window
         result = _focus_window(window_title)
     elif action == "resize":
-        from app.services.tools.desktop.gui_tools import _resize_window
+        from app.services.tools.desktop.desktop_gui_tools import _resize_window
         result = _resize_window(window_title, width=width, height=height)
     else:
         result = set_window_state(window_title, action)
@@ -268,13 +269,13 @@ def mouse_control(
     click_type: Literal["single", "double"] = "single"
     duration: float = 0
     if action == "click":
-        from app.services.tools.desktop.gui_tools import _click
+        from app.services.tools.desktop.desktop_gui_tools import _click
         result = _click(x=x, y=y, button=button, click_type=click_type)
     elif action == "move":
-        from app.services.tools.desktop.gui_tools import _move
+        from app.services.tools.desktop.desktop_gui_tools import _move
         result = _move(x=x, y=y, duration=duration)
     elif action == "scroll":
-        from app.services.tools.desktop.gui_tools import _scroll
+        from app.services.tools.desktop.desktop_gui_tools import _scroll
         result = _scroll(direction=direction, amount=amount)
     elif action == "position":
         from app.services.tools.toolhelper.gui_helper import _get_mouse_position
@@ -302,13 +303,13 @@ def keyboard_control(
     action: "type"|"shortcut"|"combo"
     """
     if action == "type":
-        from app.services.tools.desktop.gui_tools import _type_text
+        from app.services.tools.desktop.desktop_gui_tools import _type_text
         result = _type_text(text=text_or_keys, interval=interval)
     elif action == "shortcut":
-        from app.services.tools.desktop.gui_tools import _shortcut
+        from app.services.tools.desktop.desktop_gui_tools import _shortcut
         result = _shortcut(keys=text_or_keys)
     elif action == "combo":
-        from app.services.tools.desktop.gui_tools import _key_combo
+        from app.services.tools.desktop.desktop_gui_tools import _key_combo
         key_list = [k.strip() for k in text_or_keys.split(",")]
         result = _key_combo(keys=key_list)
     else:
@@ -331,10 +332,10 @@ def screen_capture(
     当指定display参数时使用snapshot(多显示器),否则使用screenshot
     """
     if display is not None:
-        from app.services.tools.desktop.gui_tools import _snapshot
+        from app.services.tools.desktop.desktop_gui_tools import _snapshot
         result = _snapshot(display=display)
     else:
-        from app.services.tools.desktop.gui_tools import _screenshot
+        from app.services.tools.desktop.desktop_gui_tools import _screenshot
         result = _screenshot(output_path=output_path, region=region)
 
     if result.get("code") == "SUCCESS":
@@ -352,12 +353,12 @@ def clipboard_control(
     action: "read"|"write"
     """
     if action == "read":
-        from app.services.tools.desktop.gui_tools import _read_clipboard
+        from app.services.tools.desktop.desktop_gui_tools import _read_clipboard
         result = _read_clipboard()
     elif action == "write":
         if content is None:
             return build_error(ERR_MISSING_PARAM, "写入剪贴板需要提供content参数")
-        from app.services.tools.desktop.gui_tools import _write_clipboard
+        from app.services.tools.desktop.desktop_gui_tools import _write_clipboard
 
         result = _write_clipboard(content=content)
     else:
