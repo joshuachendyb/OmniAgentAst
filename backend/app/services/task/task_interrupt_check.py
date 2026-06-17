@@ -5,20 +5,27 @@ task_interrupt_check — 中断/暂停检查并生成SSE事件
 从 chat_stream/incident_handler.py 移入
 统一: 小健 - 2026-05-31
 小沈 2026-06-17 DRY: 合并task_pause_check/task_pause_check_and_yield, 提取_emit_step_sse
+小健 2026-06-17 用简单dict替代MetaStep，消除task→agent循环依赖
 """
 
 import asyncio
 from typing import Optional, Callable, AsyncGenerator
 
 from app.utils.logger import logger
-from app.services.agent.steps import MetaStep
+from app.utils.time_utils import create_timestamp
 from app.utils.sse_formatter import format_agent_sse
-from app.services.task.task_registry import check_cancelled, check_paused, check_was_paused, set_was_paused, get_pause_event
+from app.services.task.task_state_queries import check_cancelled, check_paused, check_was_paused, get_pause_event
+from app.services.task.task_registry import set_was_paused
+
+
+def _build_step_dict(step: Optional[int], step_type: str, message: str) -> dict:
+    """构建step字典 — 替代MetaStep.to_dict()，消除对agent/steps的依赖 — 小健 2026-06-17"""
+    return {"type": step_type, "step": step, "timestamp": create_timestamp(), "content": message}
 
 
 def _emit_step_sse(step: Optional[int], step_type: str, message: str) -> str:
-    """MetaStep→SSE字符串 工厂函数 — 小沈 2026-06-17 DRY"""
-    return format_agent_sse(MetaStep(step=step, type=step_type, message=message).to_dict())
+    """step→SSE字符串 — 小沈 2026-06-17 DRY"""
+    return format_agent_sse(_build_step_dict(step, step_type, message))
 
 
 async def task_interrupt_check(
