@@ -39,12 +39,13 @@ async def call_llm(agent):
 
 
 async def call_llm_fc_stream(agent, messages: list, openai_tools: list):
-    """FC模式流式调用 — tool_calls原生消费,不经过JSON roundtrip — 小沈 2026-06-12"""
+    """FC模式流式调用 — tool_calls原生消费,不经过JSON roundtrip — 小沈 2026-06-12; 小健 2026-06-17 新增usage"""
     full_content = ""
     full_reasoning = ""
     tool_calls_result = None
     stream_error = None
     _raw_chunks: list = []
+    usage_data = None
 
     try:
         async for chunk in agent.llm_client.request_stream(
@@ -73,6 +74,8 @@ async def call_llm_fc_stream(agent, messages: list, openai_tools: list):
                     yield ("chunk", ChunkStep(step=agent.llm_call_count, content=chunk.content, is_reasoning=False))
 
             if chunk.is_done:
+                if chunk.usage:
+                    usage_data = chunk.usage
                 break
     except Exception as e:
         logger.error(f"[FC] 流式异常: {e}")
@@ -139,6 +142,7 @@ async def call_llm_fc_stream(agent, messages: list, openai_tools: list):
             extra_info={
                 "tool_name": first["tool_name"],
                 "parallel_calls": len(_pending_calls),
+                "usage": usage_data,
             },
         )
         yield ("response", {
@@ -157,11 +161,13 @@ async def call_llm_fc_stream(agent, messages: list, openai_tools: list):
     logger.info(f"[FC] LLM原始响应(answer): {content}")
     prompt_logger = get_prompt_logger()
     assembled = {"content": content}
+    extra_info = {"usage": usage_data} if usage_data else None
     prompt_logger.log_llm_response(
         round_number=agent.llm_call_count,
         response_content=content,
         raw_response=json.dumps(assembled, ensure_ascii=False),
         response_type="answer",
         finish_reason="stop",
+        extra_info=extra_info,
     )
     yield ("response", {"type": "answer", "content": content, "thought": ""})

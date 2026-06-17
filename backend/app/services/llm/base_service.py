@@ -163,17 +163,19 @@ class BaseAIService:
         tools: Optional[List[Dict]] = None,
         tool_choice: str = "auto",
     ) -> AsyncGenerator[StreamChunk, None]:
-        """流式请求 — FC-only: tool_calls原生yield,不走JSON roundtrip — 小沈 2026-06-12"""
+        """流式请求 — FC-only: tool_calls原生yield,不走JSON roundtrip — 小沈 2026-06-12; 小健 2026-06-17 新增usage"""
         self.reset_cancel()
         self._ensure_client()
 
         retry_count = 0
         max_retries = 3
+        stream_options = {"include_usage": True}
 
         while retry_count <= max_retries:
             try:
                 tool_call_accumulator = {}
                 raw_data_buf: list = []
+                usage_data = None
                 async for data_str in self._llm_sdk.request_stream(
                     messages=messages,
                     tools=tools,
@@ -181,12 +183,17 @@ class BaseAIService:
                     max_tokens=self.max_tokens,
                     temperature=self.temperature,
                     seed=self.seed,
+                    stream_options=stream_options,
                 ):
                     if await self._check_stop():
                         yield self._create_cancelled_chunk()
                         return
 
                     raw_data_buf.append(data_str)
+
+                    usage_from_chunk = self._extract_usage(data_str)
+                    if usage_from_chunk:
+                        usage_data = usage_from_chunk
 
                     # 跨chunk聚合tool_calls — FC-only: 含id — 小沈 2026-06-11
                     tc_data = self._extract_tool_calls(data_str)
@@ -230,7 +237,7 @@ class BaseAIService:
                     yield StreamChunk(content="", model=self.model, is_done=False,
                                       tool_calls=tool_calls_list, raw_data=complete_raw)
 
-                yield StreamChunk(content="", model=self.model, is_done=True, raw_data=complete_raw)
+                yield StreamChunk(content="", model=self.model, is_done=True, raw_data=complete_raw, usage=usage_data)
                 return
 
             except Exception as e:
@@ -274,6 +281,19 @@ class BaseAIService:
             return result
         except Exception:
             return {}
+
+    def _extract_usage(self, data_str: str) -> Optional[Dict]:
+        """从SSE data中提取usage(token用量) — 小健 2026-06-17"""
+        try:
+            data = parse_json(data_str)
+            if not data:
+                return None
+            usage = data.get("usage")
+            if usage and isinstance(usage, dict):
+                return usage
+            return None
+        except Exception:
+            return None
 
     def _parse_sse_data(self, data_str: str) -> Optional[StreamChunk]:
         """解析SSE data字符串为StreamChunk - 小沈 2026-06-09"""
