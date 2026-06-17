@@ -44,6 +44,7 @@
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `parse_json` | 解析JSON字符串 | json_str, label, raise_on_error | 解析结果或None |
+| `read_json_file` | **【v1.4新增】** 读取JSON文件 | file_path, label, raise_on_error | 解析结果或None |
 
 ### 1.4 响应工具（response_utils.py）【v0.13.33新增】
 
