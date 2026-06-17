@@ -239,6 +239,7 @@ def _register_file_tools():
         )
 
 __all__ = [
+    "_register_file_tools",
     "FileTools",
     "get_file_tools",
     "FILE_TOOL_DESCRIPTIONS",

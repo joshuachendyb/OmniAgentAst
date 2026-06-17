@@ -23,22 +23,10 @@ from app.services.tools.tool_constants import CATEGORY_MODULES
 
 
 def _import_and_register(module_path: str, register_func_name: str) -> None:
-    """导入模块并调用注册函数 - 小健 2026-05-14"""
+    """导入模块并调用注册函数 — 小健 2026-05-14; 小沈 2026-06-17 简化"""
     module = __import__(module_path, fromlist=[register_func_name])
-    register_func = getattr(module, register_func_name, None)
-    if register_func:
-        register_func()
-    else:
-        # 如果__init__.py没导出register函数,尝试从register模块获取
-        register_module_name = module_path.rsplit(".", 1)[1] + "_register"
-        register_module_path = f"{module_path}.{register_module_name}"
-        try:
-            register_module = __import__(register_module_path, fromlist=[register_func_name])
-            register_func = getattr(register_module, register_func_name)
-            register_func()
-        except Exception as e:
-            from app.utils.logger import logger
-            logger.warning(f"[Tools] 无法找到注册函数 {register_func_name}: {e}")
+    register_func = getattr(module, register_func_name)
+    register_func()
 
 
 def ensure_tools_registered() -> None:

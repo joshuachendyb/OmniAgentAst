@@ -4,7 +4,7 @@
 【2026-05-22 小沈】合并execute_python+execute_javascript→execute_code
 """
 
-from app.services.tools.shell import shell_register
+from app.services.tools.shell.shell_register import _register_shell_tools
 from app.services.tools.shell import shell_tools
 
 from app.services.tools.shell.shell_tools import (
@@ -17,6 +17,7 @@ from app.services.tools.shell.code_execution_tools import (
 )
 
 __all__ = [
+    "_register_shell_tools",
     "execute_shell_command",
     "find_command",
     "shell_session",
