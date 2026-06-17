@@ -20,7 +20,6 @@ DESKTOP Register - 桌面工具注册点
 更新时间: 2026-06-15
 """
 
-import logging
 from app.services.tools.registry import tool_registry
 from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger
@@ -43,7 +42,7 @@ from app.services.tools.desktop.desktop_tools import (
     screen_capture,
     clipboard_control,
 )
-from app.services.tools.desktop.gui_tools import send_notification
+from app.services.tools.desktop.desktop_gui_tools import send_notification
 
 
 DESKTOP_TOOL_DESCRIPTIONS = {

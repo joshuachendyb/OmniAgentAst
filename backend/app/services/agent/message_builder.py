@@ -32,9 +32,7 @@ from app.services.agent.agent_utils.fc_message_types import (
 class MessageBuilder:
     """Prompt/Message组装的统一入口"""
 
-    # ===== 观测文本构建常量(从base_react.py搬入)=====
-    OBSERVATION_BUDGET_DECAY = OBSERVATION_BUDGET_DECAY
-    OBSERVATION_BUDGET_MIN = OBSERVATION_BUDGET_MIN
+    # ===== 观测文本构建常量(从base_react.py搬入) — 小沈 2026-06-17 删除冗余X=X =====
     OBSERVATION_HEAD_RATIO = 0.6
 
     def __init__(self, max_context_chars: int = MAX_CONTEXT_CHARS):
@@ -247,7 +245,7 @@ class MessageBuilder:
     @staticmethod
     def _get_observation_budget(llm_call_count: int) -> int:
         """计算observation可用预算 — 替代 base_react.py L1378-1382"""
-        budget = MessageBuilder.OBSERVATION_BUDGET_MIN + MessageBuilder.OBSERVATION_BUDGET_DECAY * max(0, 5 - llm_call_count)
+        budget = OBSERVATION_BUDGET_MIN + OBSERVATION_BUDGET_DECAY * max(0, 5 - llm_call_count)
         return min(budget, OBSERVATION_BUDGET_MAX)
 
     @staticmethod

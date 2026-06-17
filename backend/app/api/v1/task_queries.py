@@ -5,7 +5,6 @@
 Author: 小沈 - 2026-05-29
 """
 
-from typing import Optional
 from fastapi import APIRouter, Query
 from app.services.task import TaskQueries
 

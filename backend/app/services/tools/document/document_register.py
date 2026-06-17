@@ -32,7 +32,6 @@ Document Register - 文档读写工具注册点
 更新时间: 2026-05-18 小健
 """
 
-import logging
 from app.services.tools.registry import tool_registry
 from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger

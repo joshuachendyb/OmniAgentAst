@@ -8,7 +8,6 @@ REGISTRY Register - 注册表工具注册点
 更新时间: 2026-06-16 小沈 - 1→3拆分
 """
 
-import logging
 from app.services.tools.registry import tool_registry
 from app.services.tools.tool_types import ToolCategory
 from app.utils.logger import logger

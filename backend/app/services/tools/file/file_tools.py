@@ -31,7 +31,6 @@ import fnmatch
 import glob as glob_module
 import inspect
 import os
-import re
 import re as re_mod
 import shutil
 import tempfile
@@ -42,7 +41,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, get_type_hints
 
 from app.services.context_vars import _current_task_id
 
-from app.services.tools._response import build_success, build_error, build_warning
+from app.services.tools.tool_response import build_success, build_error, build_warning
 
 # 【修改】移除分页限制,2026-04-03 小沈
 # 原因:后端必须返回全部真实数据,前端自己控制显示方式(分页/滚动)
@@ -167,7 +166,7 @@ def _build_delete_result(operation_id: str, path: Path, force: bool, method: str
 # 第二部分:动态白名单 — 小沈 2026-06-17 迁移至path_validator
 # ============================================================
 
-from app.services.safety.file.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
+from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
 
 
 # ============================================================
@@ -660,7 +659,7 @@ class FileTools:
     }
     
     def __init__(self, task_id: Optional[str] = None):
-        from app.services.safety.file.file_safety import record_operation as _record_op, execute_with_safety as _exec_with_safety
+        from app.services.safety.file_safety import record_operation as _record_op, execute_with_safety as _exec_with_safety
 
         self._record_operation = _record_op
         self._execute_with_safety = _exec_with_safety

@@ -94,8 +94,9 @@ class ToolMetadata:
         if self.failure_hint_fn:
             try:
                 return self.failure_hint_fn(tool_params)
-            except Exception:
-                pass
+            except Exception as e:
+                from app.utils.logger import logger
+                logger.warning(f"[ToolMetadata] failure_hint_fn 异常: {e}")
         return ""
 
 
