@@ -5,7 +5,7 @@
 **系统**：本机是Windows系统，必须使用Windows系统命令。杜绝使用Linux命令
 **写文档签名规则**：（1）文档名称 +签名+时间； （2）内容签名： 编写人 或者 更新人 + 签名  （3）编辑型文档， 禁止删除历史版本。
 **代码注释规则**：必须 加署名+日期
-**commit标题的规则**:   commit标题必须加：文件名+ 签名+日期
+**commit标题的规则**: commit标题格式 `<type>: <description> - <签名>-<日期>`，types: feat/fix/refactor/perf/test/docs
 
 **升级tag**：1..在version.txt文件头部插入从上一个tag以来的所有commit的变更信息，2.打 tag
 
@@ -192,10 +192,8 @@ OmniAgentAs-desk/
 |---------|--------|
 | **httpx version lock** | `httpx==0.26.0` + `httpcore==1.0.1` required. Don't upgrade. |
 | **Duplicate `__all__`** | Register files may have 2 `__all__` defs (second overwrites first). |
-| **`parsers/` is deprecated** | All files in `agent/parsers/` marked @deprecated. Use `react_output_parser.py` chain instead. |
 | **Tool impl vs registration** | Functions in `{cat}_tools.py`, registration in `{cat}_register.py`. Don't confuse them. |
 | **`_loaded_categories`** | Per-agent set for tool loading. Initialized to `{current_category, support_tool}`. |
-| **`check_date` renamed to `query_calendar`** | Old name no longer exists. |
 
 ---
 
