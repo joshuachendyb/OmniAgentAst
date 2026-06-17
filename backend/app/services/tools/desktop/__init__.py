@@ -1,21 +1,41 @@
 # -*- coding: utf-8 -*-
-"""DESKTOP Tools - 桌面工具模块(26→10精简方案)- 小沈 2026-05-17"""
+"""DESKTOP Tools - 桌面工具模块 — 小欧 2026-06-17"""
 
 from app.services.tools.desktop.desktop_register import *
 from app.services.tools.desktop.desktop_tools import (
     window_info,
-    window_control,
-    mouse_control,
+    window_focus,
+    window_resize,
+    window_maximize,
+    window_minimize,
+    window_restore,
+    window_topmost,
+    window_unpin,
+    mouse_click,
+    mouse_move,
+    mouse_scroll,
+    mouse_position,
     keyboard_control,
     screen_capture,
-    clipboard_control,
+    clipboard_read,
+    clipboard_write,
 )
 
 __all__ = [
     "window_info",
-    "window_control",
-    "mouse_control",
+    "window_focus",
+    "window_resize",
+    "window_maximize",
+    "window_minimize",
+    "window_restore",
+    "window_topmost",
+    "window_unpin",
+    "mouse_click",
+    "mouse_move",
+    "mouse_scroll",
+    "mouse_position",
     "keyboard_control",
     "screen_capture",
-    "clipboard_control",
+    "clipboard_read",
+    "clipboard_write",
 ]

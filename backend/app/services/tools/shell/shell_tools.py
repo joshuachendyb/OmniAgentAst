@@ -164,6 +164,29 @@ def execute_shell_command(
         return build_error(ERR_SHELL_EXCEPTION, f"命令执行异常: {str(e)}")
 
 
+def execute_shell_command_foreground(
+    command: str, shell_type: Optional[str] = "powershell",
+    timeout: int = 30000, cwd: Optional[str] = None,
+    env_vars: Optional[dict] = None,
+) -> dict:
+    """前台执行Shell命令,等待完成 — 小欧 2026-06-17"""
+    return execute_shell_command(
+        command=command, shell_type=shell_type, timeout=timeout,
+        run_in_background=False, cwd=cwd, env_vars=env_vars,
+    )
+
+
+def execute_shell_command_background(
+    command: str, shell_type: Optional[str] = "powershell",
+    cwd: Optional[str] = None, env_vars: Optional[dict] = None,
+) -> dict:
+    """后台执行Shell命令,立即返回shell_id — 小欧 2026-06-17"""
+    return execute_shell_command(
+        command=command, shell_type=shell_type, timeout=30000,
+        run_in_background=True, cwd=cwd, env_vars=env_vars,
+    )
+
+
 def _get_working_directory() -> dict:
     """获取当前工作目录(内部辅助函数,不注册LLM)- 小健 2026-05-17 降级自 get_working_directory"""
     try:

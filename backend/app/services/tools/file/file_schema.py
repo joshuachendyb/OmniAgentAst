@@ -308,14 +308,10 @@ class RenameFileInput(BaseModel):
 
 
 # ============================================================
-# F11: data_file_format — 结构化配置文件读写
+# F11a: read_data_file — 读取结构化配置文件
 # ============================================================
 
-class DataFileFormatInput(BaseModel):
-    action: Literal["read", "write"] = Field(
-        default="read",
-        description="操作类型:read(读取)或 write(写入)"
-    )
+class ReadDataFileInput(BaseModel):
     file_path: str = Field(
         description="文件路径(必须是绝对路径)"
     )
@@ -323,9 +319,26 @@ class DataFileFormatInput(BaseModel):
         default=None,
         description="强制指定格式:json/yaml/toml/ini/xml/properties。不填则根据文件扩展名自动检测"
     )
-    data: Optional[Any] = Field(
+    encoding: str = Field(
+        default="utf-8",
+        description="文件编码,默认utf-8"
+    )
+
+
+# ============================================================
+# F11b: write_data_file — 写入结构化配置文件
+# ============================================================
+
+class WriteDataFileInput(BaseModel):
+    file_path: str = Field(
+        description="文件路径(必须是绝对路径)"
+    )
+    data: Any = Field(
+        description="写入数据。JSON/YAML/TOML格式传dict或list,Properties传dict。INI/XML暂不支持写入"
+    )
+    format: Optional[Literal["json", "yaml", "toml"]] = Field(
         default=None,
-        description="写入数据(action=write时【必填】)。JSON/YAML/TOML格式传dict或list,Properties传dict。INI/XML暂不支持写入。action=read时忽略"
+        description="强制指定格式:json/yaml/toml。不填则根据文件扩展名自动检测"
     )
     encoding: str = Field(
         default="utf-8",
@@ -333,14 +346,14 @@ class DataFileFormatInput(BaseModel):
     )
     indent: Optional[int] = Field(
         default=None,
-        description="JSON写入时的格式化缩进空格数(仅action=write且JSON格式时使用),默认2"
+        description="JSON写入时的格式化缩进空格数,默认2"
     )
 
 
 
 # ============================================================
 # ============================================================
-# __all__ — 14个工具的Schema导出
+# __all__ — 15个工具的Schema导出
 # ============================================================
 
 __all__ = [
@@ -358,5 +371,6 @@ __all__ = [
     "CopyFileInput",
     "DeleteFileInput",
     "RenameFileInput",
-    "DataFileFormatInput",
+    "ReadDataFileInput",
+    "WriteDataFileInput",
 ]

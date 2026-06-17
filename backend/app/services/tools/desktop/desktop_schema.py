@@ -10,64 +10,103 @@ from pydantic import BaseModel, Field
 
 
 class WindowInfoInput(BaseModel):
-    action: Literal["list", "info"] = Field(
-        description="查询操作:list(列出所有窗口)、info(获取单个窗口详细信息)"
-    )
-    window_title: Optional[str] = Field(
-        default=None,
-        description="窗口标题(action=info时【必填】,大小写不敏感的模糊匹配)"
-    )
     include_minimized: bool = Field(
         default=False,
-        description="是否包含最小化的窗口(仅action=list时使用),默认 False"
+        description="是否包含最小化的窗口,默认 False"
     )
     filter_title: Optional[str] = Field(
         default=None,
-        description="按窗口标题过滤(仅action=list时使用,大小写不敏感的模糊匹配)"
+        description="按窗口标题过滤(大小写不敏感的模糊匹配)"
     )
 
 
-class WindowControlInput(BaseModel):
+class WindowFocusInput(BaseModel):
     window_title: str = Field(
         description="窗口标题(大小写不敏感的模糊匹配)"
     )
-    action: Literal["focus", "resize", "maximize", "minimize", "restore", "topmost", "unpin"] = Field(
-        description="窗口操作:focus(聚焦)、resize(调整大小)、maximize(最大化)、minimize(最小化)、restore(还原)、topmost(置顶)、unpin(取消置顶)"
+
+
+class WindowResizeInput(BaseModel):
+    window_title: str = Field(
+        description="窗口标题(大小写不敏感的模糊匹配)"
     )
-    width: Optional[int] = Field(
-        default=None,
-        description="窗口宽度(仅resize时使用),单位为像素。不传则保持原宽度"
+    width: int = Field(
+        default=800,
+        description="窗口宽度,单位为像素"
     )
-    height: Optional[int] = Field(
-        default=None,
-        description="窗口高度(仅resize时使用),单位为像素。不传则保持原高度"
+    height: int = Field(
+        default=600,
+        description="窗口高度,单位为像素"
     )
 
 
-class MouseControlInput(BaseModel):
-    action: Literal["click", "move", "scroll", "position"] = Field(
-        description="鼠标操作:click(单击)、move(移动)、scroll(滚动)、position(获取位置)。注意:click仅支持单击"
+class WindowMaximizeInput(BaseModel):
+    window_title: str = Field(
+        description="窗口标题(大小写不敏感的模糊匹配)"
     )
+
+
+class WindowMinimizeInput(BaseModel):
+    window_title: str = Field(
+        description="窗口标题(大小写不敏感的模糊匹配)"
+    )
+
+
+class WindowRestoreInput(BaseModel):
+    window_title: str = Field(
+        description="窗口标题(大小写不敏感的模糊匹配)"
+    )
+
+
+class WindowTopmostInput(BaseModel):
+    window_title: str = Field(
+        description="窗口标题(大小写不敏感的模糊匹配)"
+    )
+
+
+class WindowUnpinInput(BaseModel):
+    window_title: str = Field(
+        description="窗口标题(大小写不敏感的模糊匹配)"
+    )
+
+
+class MouseClickInput(BaseModel):
     x: Optional[int] = Field(
         default=None,
-        description="X坐标(click/move时使用)。click不传则在当前鼠标位置点击"
+        description="X坐标,不传则在当前鼠标位置点击"
     )
     y: Optional[int] = Field(
         default=None,
-        description="Y坐标(click/move时使用)。click不传则在当前鼠标位置点击"
+        description="Y坐标,不传则在当前鼠标位置点击"
     )
-    button: Optional[Literal["left", "right", "middle"]] = Field(
+    button: Literal["left", "right", "middle"] = Field(
         default="left",
-        description="鼠标按钮(click时使用):left/right/middle,默认left"
+        description="鼠标按钮:left/right/middle,默认left"
     )
-    direction: Optional[Literal["up", "down"]] = Field(
+
+
+class MouseMoveInput(BaseModel):
+    x: int = Field(
+        description="目标X坐标"
+    )
+    y: int = Field(
+        description="目标Y坐标"
+    )
+
+
+class MouseScrollInput(BaseModel):
+    direction: Literal["up", "down"] = Field(
         default="down",
-        description="滚动方向(scroll时使用):up/down,默认down"
+        description="滚动方向:up/down,默认down"
     )
-    amount: Optional[int] = Field(
+    amount: int = Field(
         default=3,
-        description="滚动单位(scroll时使用),默认3"
+        description="滚动单位,默认3"
     )
+
+
+class MousePositionInput(BaseModel):
+    pass
 
 
 class KeyboardControlInput(BaseModel):
@@ -98,13 +137,13 @@ class ScreenCaptureInput(BaseModel):
     )
 
 
-class ClipboardControlInput(BaseModel):
-    action: Literal["read", "write"] = Field(
-        description="剪贴板操作:read(读取)、write(写入)"
-    )
-    content: Optional[str] = Field(
-        default=None,
-        description="写入内容(action=write时【必填】)"
+class ClipboardReadInput(BaseModel):
+    pass
+
+
+class ClipboardWriteInput(BaseModel):
+    content: str = Field(
+        description="要写入剪贴板的内容"
     )
 
 
@@ -119,3 +158,24 @@ class SendNotificationInput(BaseModel):
         default=5,
         description="通知显示时长(秒),默认5秒"
     )
+
+
+__all__ = [
+    "WindowInfoInput",
+    "WindowFocusInput",
+    "WindowResizeInput",
+    "WindowMaximizeInput",
+    "WindowMinimizeInput",
+    "WindowRestoreInput",
+    "WindowTopmostInput",
+    "WindowUnpinInput",
+    "MouseClickInput",
+    "MouseMoveInput",
+    "MouseScrollInput",
+    "MousePositionInput",
+    "KeyboardControlInput",
+    "ScreenCaptureInput",
+    "ClipboardReadInput",
+    "ClipboardWriteInput",
+    "SendNotificationInput",
+]

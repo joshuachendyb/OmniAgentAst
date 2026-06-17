@@ -5,8 +5,9 @@ File Register - 文件工具注册点 v3.0
 【架构规范】2026-04-26 小沈
 【精简时间】2026-05-18 小沈 — 第17章工具精简:26→11
 【拆分时间】2026-06-16 小沈 — 组合工具拆分:archive_tool→2, file_operation→4
+【拆分时间】2026-06-17 小欧 — data_file_format→2: read_data_file, write_data_file
 
-14个工具清单(F1-F14):
+15个工具清单(F1-F15):
 F1  read_text_file     — 读取文本文件
 F2  write_text_file    — 写文本文件
 F3  read_media_file    — 读媒体文件
@@ -20,18 +21,21 @@ F10 move_file          — 移动文件
 F11 copy_file          — 复制文件
 F12 delete_file        — 删除文件
 F13 rename_file        — 重命名文件
-F14 data_file_format   — 结构化配置文件读写
+F14 read_data_file     — 读取结构化配置文件
+F15 write_data_file    — 写入结构化配置文件
 
 
 创建时间: 2026-04-26
 精简时间: 2026-05-18
 拆分时间: 2026-06-16
+更新时间: 2026-06-17
 """
 
 from app.services.tools.file.file_schema import (
     CompressFilesInput,
     CopyFileInput,
-    DataFileFormatInput,
+    ReadDataFileInput,
+    WriteDataFileInput,
     DeleteFileInput,
     EditTextFileInput,
     ExtractArchiveInput,
@@ -52,7 +56,7 @@ from app.utils.logger import logger
 
 
 # ============================================================
-# 工具描述(14个)
+# 工具描述(15个)
 # ============================================================
 
 FILE_TOOL_DESCRIPTIONS = {
@@ -88,19 +92,14 @@ FILE_TOOL_DESCRIPTIONS = {
     "rename_file": """重命名文件或目录。destination只需提供新文件名(不含目录路径),在同一目录下重命名。适用场景:需要修改文件名、规范化命名时使用。
 使用示例: rename_file(source="D:/old.txt", destination="new.txt")""",
 
-    "data_file_format": """支持结构化配置文件的读/写操作功能,支持JSON/YAML/TOML/INI/XML/Properties格式。
-action参数决定操作类型:
-- read: 读取配置文件,file_path【必填】(自动检测格式;可选format/encoding)
-- write: 写入配置文件,file_path【必填】+data【必填】(支持JSON/YAML/TOML;可选format/encoding/indent)
+    "read_data_file": """读取结构化配置文件,支持JSON/YAML/TOML/INI/XML/Properties格式。file_path为必填。自动检测格式(通过扩展名),也可通过format参数指定。适用场景:需要读取配置文件内容进行查看或分析时使用。""",
 
-使用示例:
-- 读取 → data_file_format(action="read", file_path="D:/config.json")
-- 写入 → data_file_format(action="write", file_path="D:/config.yaml", data={"key":"value"})""",
+    "write_data_file": """写入结构化配置文件,支持JSON/YAML/TOML格式。file_path和data均为必填。不支持INI/XML/Properties格式写入。自动检测格式(通过扩展名),也可通过format参数指定。适用场景:需要创建或修改配置文件时使用。""",
 }
 
 
 # ============================================================
-# 工具示例(14个)
+# 工具示例(15个)
 # ============================================================
 
 FILE_TOOL_EXAMPLES = {
@@ -149,15 +148,19 @@ FILE_TOOL_EXAMPLES = {
     "rename_file": [
         {"source": "D:/old.txt", "destination": "new.txt"},
     ],
-    "data_file_format": [
-        {"action": "read", "file_path": "D:/config.json"},
-        {"action": "write", "file_path": "D:/config.yaml", "data": {"key": "value"}},
+    "read_data_file": [
+        {"file_path": "D:/config.json"},
+        {"file_path": "D:/config.yaml"},
+    ],
+    "write_data_file": [
+        {"file_path": "D:/config.yaml", "data": {"key": "value"}},
+        {"file_path": "D:/config.json", "data": {"key": "value"}, "indent": 2},
     ],
 }
 
 
 # ============================================================
-# 工具名到Pydantic模型的映射(14个)
+# 工具名到Pydantic模型的映射(15个)
 # ============================================================
 
 TOOL_INPUT_MODELS = {
@@ -174,7 +177,8 @@ TOOL_INPUT_MODELS = {
     "copy_file": CopyFileInput,
     "delete_file": DeleteFileInput,
     "rename_file": RenameFileInput,
-    "data_file_format": DataFileFormatInput,
+    "read_data_file": ReadDataFileInput,
+    "write_data_file": WriteDataFileInput,
 }
 
 
@@ -184,7 +188,7 @@ TOOL_INPUT_MODELS = {
 
 def _register_file_tools():
     """
-    注册14个文件工具 — 小沈 2026-06-16
+    注册15个文件工具 — 小欧 2026-06-17
     """
 
     ft = None
@@ -210,7 +214,8 @@ def _register_file_tools():
         "copy_file": lambda **kw: _get_ft().copy_file(**kw),
         "delete_file": lambda **kw: _get_ft().delete_file(**kw),
         "rename_file": lambda **kw: _get_ft().rename_file(**kw),
-        "data_file_format": lambda **kw: _get_ft().data_file_format(**kw),
+        "read_data_file": lambda **kw: _get_ft().read_data_file(**kw),
+        "write_data_file": lambda **kw: _get_ft().write_data_file(**kw),
     }
     
     CONFIRMATION_MAP = {

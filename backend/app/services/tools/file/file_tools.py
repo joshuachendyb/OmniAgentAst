@@ -71,7 +71,8 @@ from app.services.tools.file.file_schema import (
     CopyFileInput,
     DeleteFileInput,
     RenameFileInput,
-    DataFileFormatInput,
+    ReadDataFileInput,
+    WriteDataFileInput,
 )
 
 # 【小沈重构 2026-05-22】数据库配置迁移至 app/db/
@@ -2156,26 +2157,44 @@ class FileTools:
             next_actions=build_next_actions([("edit_text_file", "编辑格式化文件", "需要修改时")]),
         ), llm_data
 
-    async def data_file_format(
-        self, file_path: str,
-        action: Literal["read", "write"] = "read",
-        format: Optional[str] = None,
-        data: Optional[Any] = None,
-        encoding: str = "utf-8",
-        indent: Optional[int] = None,
+    async def _data_format_exec(
+        self, file_path: str, action: str, detected: str,
+        encoding: str, data: Optional[Any] = None, indent: Optional[int] = None
     ) -> Dict[str, Any]:
-        """结构化配置格式统一入口(21.2 重构,小沈 2026-05-25 实施)"""
-        from app.services.tools.toolhelper import data_format_helper as df_tools
+        """内部执行:格式检测+分发调度 — 小欧 2026-06-17"""
+        dispatch = _FORMAT_DISPATCH.get(detected)
+        if not dispatch:
+            return build_error(ERR_PARAM_INVALID, f"不支持的格式: {detected}")
+        func = dispatch[action]
+        if func is None:
+            return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED,
+                f"{detected.upper()}格式暂不支持{action}操作")
+        try:
+            kwargs = {"file_path": file_path, "encoding": encoding}
+            if action == "write":
+                kwargs["data"] = data
+                if detected == "json":
+                    kwargs["indent"] = indent or 2
+                elif detected == "yaml" and indent is not None:
+                    kwargs["indent"] = indent
+            result = await asyncio.to_thread(func, **kwargs)
+            resp, _ = self._build_format_result(result, action, detected, file_path)
+            return resp
+        except Exception as e:
+            logger.error(f"[_data_format_exec] 执行失败: {e}")
+            return build_error(ERR_DOC_DATA_FORMAT_FAILED, str(e))
 
-        if action not in ("read", "write"):
-            return build_error(ERR_PARAM_INVALID, f"不支持的action: {action},可选: read/write")
+    async def read_data_file(
+        self, file_path: str,
+        format: Optional[str] = None,
+        encoding: str = "utf-8",
+    ) -> Dict[str, Any]:
+        """读取结构化配置文件 — 小欧 2026-06-17"""
         if not file_path:
             return build_error(ERR_PARAM_INVALID, "file_path是必填参数")
-
         is_valid, err = self._validate_path(file_path)
         if not is_valid:
             return build_error(ERR_PATH_INVALID, err)
-
         detected = format
         if not detected:
             ext = os.path.splitext(file_path)[1].lower()
@@ -2188,39 +2207,37 @@ class FileTools:
         if not detected:
             return build_error(ERR_DOC_FORMAT_NOT_DETECTED,
                 f"无法识别文件格式: {file_path},请通过format参数指定")
+        return await self._data_format_exec(file_path, "read", detected, encoding)
 
-        if action == "write":
-            if detected in ("ini", "xml", "properties"):
-                return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED,
-                    f"{detected.upper()}格式暂不支持写入")
-            if data is None:
-                return build_error(ERR_PARAM_INVALID, "write模式需要提供data参数")
-
-        dispatch = _FORMAT_DISPATCH.get(detected)
-        if not dispatch:
-            return build_error(ERR_PARAM_INVALID, f"不支持的格式: {detected}")
-
-        func = dispatch[action]
-        if func is None:
+    async def write_data_file(
+        self, file_path: str, data: Any,
+        format: Optional[str] = None,
+        encoding: str = "utf-8",
+        indent: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """写入结构化配置文件 — 小欧 2026-06-17"""
+        if not file_path:
+            return build_error(ERR_PARAM_INVALID, "file_path是必填参数")
+        if data is None:
+            return build_error(ERR_PARAM_INVALID, "data是必填参数")
+        is_valid, err = self._validate_path(file_path)
+        if not is_valid:
+            return build_error(ERR_PATH_INVALID, err)
+        detected = format
+        if not detected:
+            ext = os.path.splitext(file_path)[1].lower()
+            _ext_map = {
+                ".json": "json", ".yaml": "yaml", ".yml": "yaml",
+                ".toml": "toml",
+            }
+            detected = _ext_map.get(ext)
+        if not detected:
+            return build_error(ERR_DOC_FORMAT_NOT_DETECTED,
+                f"无法识别文件格式: {file_path},请通过format参数指定")
+        if detected in ("ini", "xml", "properties"):
             return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED,
-                f"{detected.upper()}格式暂不支持{action}操作")
-
-        try:
-            kwargs = {"file_path": file_path, "encoding": encoding}
-            if action == "write":
-                kwargs["data"] = data
-                if detected == "json":
-                    kwargs["indent"] = indent or 2
-                elif detected == "yaml" and indent is not None:
-                    kwargs["indent"] = indent
-
-            result = await asyncio.to_thread(func, **kwargs)
-            resp, _ = self._build_format_result(result, action, detected, file_path)
-            return resp
-
-        except Exception as e:
-            logger.error(f"[data_file_format] 执行失败: {e}")
-            return build_error(ERR_DOC_DATA_FORMAT_FAILED, str(e))
+                f"{detected.upper()}格式暂不支持写入")
+        return await self._data_format_exec(file_path, "write", detected, encoding, data, indent)
 
 def _match_fnmatch(name: str, pattern: str, ignore_case: bool) -> bool:
     """统一封装fnmatch,消除if-else三元组重复 — 小健 2026-05-25"""

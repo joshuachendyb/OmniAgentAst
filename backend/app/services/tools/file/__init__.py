@@ -25,5 +25,6 @@ __all__ = [
     "CopyFileInput",
     "DeleteFileInput",
     "RenameFileInput",
-    "DataFileFormatInput",
+    "ReadDataFileInput",
+    "WriteDataFileInput",
 ]
