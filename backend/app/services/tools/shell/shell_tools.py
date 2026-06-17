@@ -37,7 +37,8 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 import re as _re
 
-from app.utils.tool_result_formatter import format_output_for_llm, build_next_actions, truncate_data_for_frontend
+from app.utils.tool_result_formatter import format_output_for_llm, truncate_data_for_frontend
+from app.utils.next_actions_builder import build_next_actions
 from app.utils.logger import logger  # 小健-2026-05-19 修复BUG-001: logger未导入
 from app.services.tools.tool_response import build_success, build_error
 from app.services.tools.toolhelper.shell_helper import _check_shell_injection, _read_stream_nonblocking

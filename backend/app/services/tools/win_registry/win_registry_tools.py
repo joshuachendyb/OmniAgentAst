@@ -28,7 +28,8 @@ from app.constants import (ERR_REG_DELETE_FAILED, ERR_REG_INVALID_PARAM, ERR_REG
     ERR_SYS_REG_KEY_NOT_FOUND)
 
 from app.utils.logger import logger
-from app.utils.tool_result_formatter import build_next_actions  # 小沈 2026-05-19
+
+from app.utils.next_actions_builder import build_next_actions
 from app.services.tools.tool_response import build_success, build_error
 # 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
 from app.services.tools.tool_constants import SUBPROCESS_TIMEOUT_DEFAULT

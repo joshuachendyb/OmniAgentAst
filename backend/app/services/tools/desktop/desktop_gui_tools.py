@@ -32,7 +32,8 @@ from app.utils.time_utils import timestamp_for_filename
 from app.utils.dependency import ensure_dependency
 
 from app.services.tools.tool_response import build_success, build_error
-from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, truncate_text  # 小沈 2026-05-20
+from app.utils.tool_result_formatter import truncate_data_for_frontend, truncate_text  # 小沈 2026-05-20
+from app.utils.next_actions_builder import build_next_actions
 
 
 

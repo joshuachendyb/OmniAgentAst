@@ -49,7 +49,8 @@ from app.services.tools.toolhelper.network_helper import (  # 小健 2026-05-18
     _validate_url, _check_network,  # 小沈 2026-05-25 提升到模块级,消除3处函数内重复import
 )
 from app.services.tools.network.http_client_sdk import create_http_client, HTTPClient  # 小沈 2026-05-29
-from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
+from app.utils.tool_result_formatter import truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
+from app.utils.next_actions_builder import build_next_actions
 from app.constants import (
     BROWSER_USER_AGENT,
     DEFAULT_MAX_DOC_CHARS,

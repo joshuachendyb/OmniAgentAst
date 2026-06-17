@@ -78,7 +78,8 @@ from app.services.tools.file.file_schema import (
 from app.db.models.operation_enums import OperationType
 from app.utils.logger import logger
 from app.services.tools.tool_constants import TOOL_TIMEOUTS
-from app.utils.tool_result_formatter import format_file_content_llm, format_output_for_llm, build_next_actions, truncate_data_for_frontend, truncate_text, make_json_safe, DEFAULT_MAX_FILE_CHARS  # 小沈-2026-05-15, 2026-05-20增加截断安全, 2026-05-21小健修复make_json_safe缺失
+from app.utils.tool_result_formatter import format_file_content_llm, format_output_for_llm, truncate_data_for_frontend, truncate_text, make_json_safe, DEFAULT_MAX_FILE_CHARS  # 小沈-2026-05-15, 2026-05-20增加截断安全, 2026-05-21小健修复make_json_safe缺失
+from app.utils.next_actions_builder import build_next_actions
 
 # 【重要】延迟导入,避免循环导入问题
 # file_tools.py 在 tools 模块加载时被导入,此时 agent 还未初始化完成

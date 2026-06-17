@@ -36,7 +36,7 @@ from typing import Dict, Any, List, Optional, Literal, Union, Tuple
 from pathlib import Path
 
 
-from app.utils.tool_result_formatter import build_next_actions
+from app.utils.next_actions_builder import build_next_actions
 from app.services.tools.tool_response import build_success, build_error, build_warning
 from app.services.tools.toolhelper.common_helper import _check_module
 from app.services.tools.toolhelper.data_helper import _serialize_rows

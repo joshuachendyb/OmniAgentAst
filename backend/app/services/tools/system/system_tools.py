@@ -38,7 +38,8 @@ import json as json_module
 
 from app.utils.logger import logger
 from app.utils.time_utils import now_str
-from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend, make_json_safe
+from app.utils.tool_result_formatter import truncate_data_for_frontend, make_json_safe
+from app.utils.next_actions_builder import build_next_actions
 from app.services.tools.tool_response import build_success, build_error  # 小沈 2026-05-20
 from app.services.tools.tool_constants import TOOL_TIMEOUTS
 # 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py

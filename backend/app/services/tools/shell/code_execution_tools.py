@@ -42,7 +42,8 @@ import re as re_mod
 from app.services.tools.shell.code_execution_schema import (
     ExecuteCodeInput,
 )
-from app.utils.tool_result_formatter import format_output_for_llm, build_next_actions, truncate_data_for_frontend  # 小沈-2026-05-15, 小沈-2026-05-20
+from app.utils.tool_result_formatter import format_output_for_llm, truncate_data_for_frontend  # 小沈-2026-05-15, 小沈-2026-05-20
+from app.utils.next_actions_builder import build_next_actions
 from app.services.tools.tool_response import build_success, build_error
 from app.utils.logger import setup_logger
 from app.services.tools.toolhelper.common_helper import _decode_bytes_safe

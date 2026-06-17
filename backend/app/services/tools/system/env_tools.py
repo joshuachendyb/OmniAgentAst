@@ -28,7 +28,8 @@ import winreg
 from typing import Optional, Dict, Any, List, Tuple
 
 from app.utils.logger import logger
-from app.utils.tool_result_formatter import build_next_actions  # 小沈 2026-05-19
+
+from app.utils.next_actions_builder import build_next_actions
 from app.services.tools.tool_response import build_success, build_error
 
 

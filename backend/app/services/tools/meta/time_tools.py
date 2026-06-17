@@ -39,7 +39,8 @@ import re;
 from app.utils.common_patterns import UTC_OFFSET_PATTERN
 from app.utils.logger import logger;
 from app.utils.time_utils import get_timestamp_ms
-from app.utils.tool_result_formatter import build_next_actions, truncate_data_for_frontend;
+from app.utils.tool_result_formatter import truncate_data_for_frontend;
+from app.utils.next_actions_builder import build_next_actions
 from app.services.tools.tool_response import build_success, build_error
 # 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
 from app.services.tools.tool_constants import HTTPX_TIMEOUT_DEFAULT
