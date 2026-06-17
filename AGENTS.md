@@ -202,6 +202,7 @@ KISS-DIRECT 简单直接，SLAP 同层级
 YAGNI 不过度，禁止向后兼容
 OCP 开封闭，LSP 子替父
 ISP 接口窄，复用先查库
+拆分和合并代码-先复制代码后修改
 
 ## Git Workflow
 
