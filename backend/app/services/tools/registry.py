@@ -10,7 +10,6 @@
 """
 
 from typing import Dict, List, Optional, Callable, Any, Type, Set
-from datetime import datetime
 from pydantic import BaseModel
 from app.services.tools.tool_types import ToolCategory, ToolMetadata
 from app.services.tools.schema_utils import _generate_input_schema
@@ -24,7 +23,6 @@ def _update_tool_metadata(metadata: ToolMetadata, **kwargs) -> None:
     for key, value in kwargs.items():
         if value is not None:
             setattr(metadata, key, value)
-    metadata.updated_at = datetime.now()
 
 
 class ToolRegistry:
@@ -54,13 +52,10 @@ class ToolRegistry:
         category: ToolCategory,
         implementation: Callable,
         version: str = "1.0.0",
-        dependencies: Optional[List[str]] = None,
         input_model: Optional[Type[BaseModel]] = None,
         input_schema: Optional[Dict] = None,
-        output_schema: Optional[Dict] = None,
         examples: Optional[List[Dict]] = None,
         expose_to_llm: bool = True,
-        next_actions: Optional[Dict[str, Any]] = None,
         failure_hint_fn: Optional[Callable] = None,
         needs_confirmation: bool = False,
         action_confirmation: Optional[Dict[str, bool]] = None,
@@ -78,20 +73,14 @@ class ToolRegistry:
         if name in self._tools:
             return self._update_existing_tool(
                 name, description, category, implementation, 
-                input_schema, output_schema, examples, version
+                input_schema, examples, version
             )
         
-        # 职责2：验证依赖
-        if dependencies:
-            missing = [dep for dep in dependencies if dep not in self._tools]
-            if missing:
-                raise ValueError(f"Missing dependencies: {missing}")
-        
-        # 职责3：注册新工具
+        # 职责2：注册新工具
         return self._register_new_tool(
             name, description, category, implementation, 
-            input_schema, output_schema, examples, version, 
-            dependencies, expose_to_llm, next_actions, failure_hint_fn,
+            input_schema, examples, version, 
+            expose_to_llm, failure_hint_fn,
             needs_confirmation, action_confirmation, check_fn
         )
     
@@ -102,7 +91,6 @@ class ToolRegistry:
         category: ToolCategory,
         implementation: Callable,
         input_schema: Optional[Dict],
-        output_schema: Optional[Dict],
         examples: Optional[List[Dict]],
         version: str
     ) -> Dict[str, Any]:
@@ -113,7 +101,6 @@ class ToolRegistry:
             version=version,
             category=category,
             input_schema=input_schema,
-            output_schema=output_schema,
             examples=examples
         )
         self._implementations[name] = implementation
@@ -126,12 +113,9 @@ class ToolRegistry:
         category: ToolCategory,
         implementation: Callable,
         input_schema: Optional[Dict],
-        output_schema: Optional[Dict],
         examples: Optional[List[Dict]],
         version: str,
-        dependencies: Optional[List[str]],
         expose_to_llm: bool,
-        next_actions: Optional[Dict[str, Any]],
         failure_hint_fn: Optional[Callable],
         needs_confirmation: bool = False,
         action_confirmation: Optional[Dict[str, bool]] = None,
@@ -143,12 +127,9 @@ class ToolRegistry:
             description=description,
             category=category,
             version=version,
-            dependencies=dependencies or [],
             input_schema=input_schema or {},
-            output_schema=output_schema or {},
             examples=examples or [],
             expose_to_llm=expose_to_llm,
-            next_actions=next_actions or {},
             failure_hint_fn=failure_hint_fn,
             needs_confirmation=needs_confirmation,
             action_confirmation=action_confirmation,
@@ -250,10 +231,8 @@ def register_tool(
     description: str = "",
     category: ToolCategory = ToolCategory.FILE,
     version: str = "1.0.0",
-    dependencies: Optional[List[str]] = None,
     input_model: Optional[Type[BaseModel]] = None,
     input_schema: Optional[Dict] = None,
-    output_schema: Optional[Dict] = None,
     examples: Optional[List[Dict]] = None,
     expose_to_llm: bool = True,
     needs_confirmation: bool = False,
@@ -280,10 +259,8 @@ def register_tool(
             category=category,
             implementation=func,
             version=version,
-            dependencies=dependencies,
             input_model=input_model,
             input_schema=input_schema,
-            output_schema=output_schema,
             examples=examples,
             expose_to_llm=expose_to_llm,
             needs_confirmation=needs_confirmation,

@@ -9,7 +9,6 @@
 
 from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
 
 
@@ -73,15 +72,10 @@ class ToolMetadata:
     description: str
     category: ToolCategory
     version: str = "1.0.0"
-    dependencies: List[str] = field(default_factory=list)
     input_schema: Dict[str, Any] = field(default_factory=dict)
-    output_schema: Dict[str, Any] = field(default_factory=dict)
     examples: List[Dict[str, Any]] = field(default_factory=list)
     expose_to_llm: bool = True
-    next_actions: Dict[str, Any] = field(default_factory=dict)
     failure_hint_fn: Optional[Callable] = None
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
     
     # 【2026-06-16 小沈】Layer 2安全字段（替代5级枚举）
     needs_confirmation: bool = False
