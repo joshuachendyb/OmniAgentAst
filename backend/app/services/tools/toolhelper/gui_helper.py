@@ -117,49 +117,53 @@ except ImportError:
 
 # ========== 辅助函数 ==========
 
-def _get_mouse_position() -> Dict[str, Any]:
-    """获取当前鼠标位置 - 小沈 2026-05-17
-
-    迁移自 gui_helpers.get_mouse_position
-    """
+def _try_win32_or_pyautogui(win32_func, pyautogui_func, err_code, no_dep_msg):
+    """WIN32优先→PYAUTOGUI回退的统一双路调用 — 小健 2026-06-17"""
     if WIN32_AVAILABLE:
         try:
-            point = _win32api_mod.GetCursorPos()
-            return build_success({"x": point[0], "y": point[1]}, f"鼠标位置: ({point[0]}, {point[1]})")
+            return win32_func()
         except Exception as e:
-            return build_error(ERR_DESKTOP_GET_MOUSE_POSITION, f"获取失败: {str(e)}")
+            return build_error(err_code, f"获取失败: {str(e)}")
 
     if PYAUTOGUI_AVAILABLE:
         try:
-            x, y = _pyautogui_mod.position()
-            return build_success({"x": x, "y": y}, f"鼠标位置: ({x}, {y})")
+            return pyautogui_func()
         except Exception as e:
-            return build_error(ERR_DESKTOP_GET_MOUSE_POSITION, f"获取失败: {str(e)}")
+            return build_error(err_code, f"获取失败: {str(e)}")
 
-    return build_error(ERR_DESKTOP_NO_DEPENDENCY, "无依赖库可用(win32api/pyautogui均未安装),无法获取鼠标位置")
+    return build_error(ERR_DESKTOP_NO_DEPENDENCY, no_dep_msg)
+
+
+def _get_mouse_position() -> Dict[str, Any]:
+    """获取当前鼠标位置 - 小沈 2026-05-17"""
+    return _try_win32_or_pyautogui(
+        lambda: build_success(
+            {"x": (p := _win32api_mod.GetCursorPos())[0], "y": p[1]},
+            f"鼠标位置: ({p[0]}, {p[1]})",
+        ),
+        lambda: build_success(
+            {"x": (pos := _pyautogui_mod.position())[0], "y": pos[1]},
+            f"鼠标位置: ({pos[0]}, {pos[1]})",
+        ),
+        ERR_DESKTOP_GET_MOUSE_POSITION,
+        "无依赖库可用(win32api/pyautogui均未安装),无法获取鼠标位置",
+    )
 
 
 def _check_screen_size() -> Dict[str, Any]:
-    """检查屏幕分辨率 - 小沈 2026-05-17
-
-    迁移自 gui_helpers.check_screen_size
-    """
-    if WIN32_AVAILABLE:
-        try:
-            width = _win32api_mod.GetSystemMetrics(_win32con_mod.SM_CXSCREEN)
-            height = _win32api_mod.GetSystemMetrics(_win32con_mod.SM_CYSCREEN)
-            return build_success({"width": width, "height": height}, f"屏幕分辨率: {width}x{height}")
-        except Exception as e:
-            return build_error(ERR_DESKTOP_CHECK_SCREEN_SIZE, f"获取失败: {str(e)}")
-
-    if PYAUTOGUI_AVAILABLE:
-        try:
-            size = _pyautogui_mod.size()
-            return build_success({"width": size.width, "height": size.height}, f"屏幕分辨率: {size.width}x{size.height}")
-        except Exception as e:
-            return build_error(ERR_DESKTOP_CHECK_SCREEN_SIZE, f"获取失败: {str(e)}")
-
-    return build_error(ERR_DESKTOP_NO_DEPENDENCY, "无依赖库可用(win32api/pyautogui均未安装),无法获取屏幕分辨率")
+    """检查屏幕分辨率 - 小沈 2026-05-17"""
+    return _try_win32_or_pyautogui(
+        lambda: build_success(
+            {"width": (w := _win32api_mod.GetSystemMetrics(_win32con_mod.SM_CXSCREEN)), "height": _win32api_mod.GetSystemMetrics(_win32con_mod.SM_CYSCREEN)},
+            f"屏幕分辨率: {w}x{_win32api_mod.GetSystemMetrics(_win32con_mod.SM_CYSCREEN)}",
+        ),
+        lambda: build_success(
+            {"width": (s := _pyautogui_mod.size()).width, "height": s.height},
+            f"屏幕分辨率: {s.width}x{s.height}",
+        ),
+        ERR_DESKTOP_CHECK_SCREEN_SIZE,
+        "无依赖库可用(win32api/pyautogui均未安装),无法获取屏幕分辨率",
+    )
 
 
 def _check_window_exists(window_title: str) -> Dict[str, Any]:

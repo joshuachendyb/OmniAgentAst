@@ -9,21 +9,17 @@ Author: 小沈 - 2026-05-31
 """
 
 import asyncio
-import sqlite3
-from pathlib import Path
 from typing import List, AsyncGenerator, Any, Callable, Dict
 
 from app.utils.logger import logger
 from app.services.agent.types import AgentStatus
 
 
-_DB_PATH = Path.home() / ".omniagent" / "chat_history.db"
-
-
 def _load_previous_messages(session_id: str) -> List[Dict[str, str]]:
-    """从DB加载会话历史消息(排除当前最新消息,init_history已加) — 北京老陈 2026-06-13"""
+    """从DB加载会话历史消息 — 小健 2026-06-17 委托db层，消除SQLite越界"""
+    from app.db import db
     try:
-        with sqlite3.connect(str(_DB_PATH)) as conn:
+        with db.get_conn("chat") as conn:
             rows = conn.execute(
                 "SELECT role, content FROM chat_messages "
                 "WHERE session_id=? ORDER BY id ASC",
@@ -33,7 +29,6 @@ def _load_previous_messages(session_id: str) -> List[Dict[str, str]]:
         for role, content in rows:
             if role in ("user", "assistant"):
                 messages.append({"role": role, "content": content or ""})
-        # 只返回前 N-1 条(排除最后一条,init_history已加)
         return messages[:-1] if len(messages) > 1 else []
     except Exception:
         return []

@@ -264,52 +264,46 @@ def ensure_directory_exists(dir_path: str) -> Dict[str, Any]:
         return build_error(ERR_FILE_CREATE_DIR, str(e))
 
 
-def check_write_permission(path: str) -> Dict[str, Any]:
-    """
-    检查写权限 - 小沈 2026-05-02
+def check_permission(path: str, mode: str = "write") -> Dict[str, Any]:
+    """检查文件/目录权限 — 小健 2026-06-17 合并check_read/write_permission
+
+    Args:
+        path: 文件/目录路径
+        mode: "read" 或 "write"
     """
     try:
         path = os.path.abspath(path)
-        
-        if os.path.isfile(path):
-            writable = os.access(path, os.W_OK)
-            return build_success({"path": path, "writable": writable, "type": "file"}, "写权限检查完成")
-        
-        elif os.path.isdir(path):
-            writable = os.access(path, os.W_OK)
-            return build_success({"path": path, "writable": writable, "type": "directory"}, "写权限检查完成")
-        
+        access_flag = os.R_OK if mode == "read" else os.W_OK
+        perm_key = "readable" if mode == "read" else "writable"
+
+        if mode == "read":
+            if not os.path.exists(path):
+                return build_success({"path": path, perm_key: False, "exists": False}, "权限检查完成")
+            result = {"path": path, perm_key: os.access(path, access_flag), "exists": True,
+                      "type": "file" if os.path.isfile(path) else "directory"}
         else:
-            parent = os.path.dirname(path)
-            if parent and os.path.exists(parent):
-                writable = os.access(parent, os.W_OK)
-                return build_success({"path": path, "writable": writable, "type": "new_file"}, "写权限检查完成")
+            if os.path.isfile(path):
+                result = {"path": path, perm_key: os.access(path, access_flag), "type": "file"}
+            elif os.path.isdir(path):
+                result = {"path": path, perm_key: os.access(path, access_flag), "type": "directory"}
             else:
-                return build_success({"path": path, "writable": False, "type": "new_file"}, "写权限检查完成")
-    
+                parent = os.path.dirname(path)
+                result = {"path": path, perm_key: os.access(parent, access_flag) if parent and os.path.exists(parent) else False, "type": "new_file"}
+
+        return build_success(result, "权限检查完成")
     except Exception as e:
-        logger.error(f"[check_write_permission] 检查权限失败: {e}")
+        logger.error(f"[check_permission] 检查权限失败: {e}")
         return build_error(ERR_FILE_CHECK_PERMISSION, str(e))
+
+
+def check_write_permission(path: str) -> Dict[str, Any]:
+    """检查写权限 — 委托check_permission — 小健 2026-06-17"""
+    return check_permission(path, mode="write")
 
 
 def check_read_permission(path: str) -> Dict[str, Any]:
-    """
-    检查读权限 - 小沈 2026-05-02
-    """
-    try:
-        path = os.path.abspath(path)
-        
-        if not os.path.exists(path):
-            return build_success({"path": path, "readable": False, "exists": False}, "读权限检查完成")
-        
-        readable = os.access(path, os.R_OK)
-        path_type = "file" if os.path.isfile(path) else "directory"
-        
-        return build_success({"path": path, "readable": readable, "exists": True, "type": path_type}, "读权限检查完成")
-    
-    except Exception as e:
-        logger.error(f"[check_read_permission] 检查权限失败: {e}")
-        return build_error(ERR_FILE_CHECK_PERMISSION, str(e))
+    """检查读权限 — 委托check_permission — 小健 2026-06-17"""
+    return check_permission(path, mode="read")
 
 
 def get_file_encoding(file_path: str) -> Dict[str, Any]:

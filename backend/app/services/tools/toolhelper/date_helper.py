@@ -23,6 +23,30 @@ from typing import Any, Dict, Optional, Tuple
 # 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
 from app.services.tools.tool_constants import QINGMING_DATES
 
+SOLAR_HOLIDAYS = {
+    (1, 1): "元旦", (2, 14): "情人节", (3, 8): "妇女节",
+    (3, 12): "植树节", (4, 1): "愚人节", (5, 1): "劳动节",
+    (5, 4): "青年节", (6, 1): "儿童节", (7, 1): "建党节",
+    (8, 1): "建军节", (9, 10): "教师节", (10, 1): "国庆节",
+    (12, 24): "平安夜", (12, 25): "圣诞节",
+}
+
+SOLAR_HOLIDAY_NAMES = {v: k for k, v in SOLAR_HOLIDAYS.items()}
+
+LUNAR_HOLIDAYS = {
+    (1, 1): "春节", (1, 15): "元宵节", (5, 5): "端午节",
+    (7, 7): "七夕节", (7, 15): "中元节", (8, 15): "中秋节",
+    (9, 9): "重阳节", (12, 8): "腊八节", (12, 30): "除夕",
+}
+
+LUNAR_HOLIDAY_NAMES = {v: k for k, v in LUNAR_HOLIDAYS.items()}
+
+HOLIDAY_ALIASES = {
+    "过年": "春节", "端阳": "端午节", "五月节": "端午节",
+    "正月": "春节", "正月十五": "元宵节", "八月十五": "中秋节",
+    "正月正": "春节", "五月初五": "端午节",
+}
+
 
 def parse_datetime_any(value: Any) -> Optional[datetime]:
     """通用时间解析:支持datetime/int/float/str → datetime(带时区)"""
@@ -143,16 +167,8 @@ def _is_solar_holiday(month_day: Tuple[int, int], year: int) -> Optional[str]:
     返回数据说明:
         - 返回Optional[str],节日名称或None
     """
-    solar_holidays = {
-        (1, 1): "元旦", (2, 14): "情人节", (3, 8): "妇女节",
-        (3, 12): "植树节", (4, 1): "愚人节", (5, 1): "劳动节",
-        (5, 4): "青年节", (6, 1): "儿童节", (7, 1): "建党节",
-        (8, 1): "建军节", (9, 10): "教师节", (10, 1): "国庆节",
-        (12, 24): "平安夜", (12, 25): "圣诞节",
-    }
-
-    if month_day in solar_holidays:
-        return solar_holidays[month_day]
+    if month_day in SOLAR_HOLIDAYS:
+        return SOLAR_HOLIDAYS[month_day]
 
     qingming = QINGMING_DATES.get(year, (4, 5))
     if month_day == qingming:
@@ -178,14 +194,7 @@ def _is_lunar_holiday(date_obj) -> Optional[str]:
         solar_date = date_obj.date() if hasattr(date_obj, 'date') else date_obj
         lunar = Converter.Solar2Lunar(solar_date)
         lunar_month_day = (lunar.month, lunar.day)
-        lunar_holidays = {
-            (1, 1): "春节(农历正月初一)", (1, 15): "元宵节(农历正月十五)",
-            (5, 5): "端午节(农历五月初五)", (7, 7): "七夕节(农历七月初七)",
-            (7, 15): "中元节(农历七月十五)", (8, 15): "中秋节(农历八月十五)",
-            (9, 9): "重阳节(农历九月初九)", (12, 8): "腊八节(农历十二月初八)",
-            (12, 30): "除夕(农历十二月三十)",
-        }
-        return lunar_holidays.get(lunar_month_day)
+        return LUNAR_HOLIDAYS.get(lunar_month_day)
     except Exception:
         return None
 
@@ -234,31 +243,12 @@ def get_holiday_date_by_name(name: str, year: Optional[int] = None) -> Optional[
     if year is None:
         year = datetime.now().year
 
-    solar_map = {
-        "元旦": (1, 1), "情人节": (2, 14), "妇女节": (3, 8),
-        "植树节": (3, 12), "愚人节": (4, 1), "劳动节": (5, 1),
-        "青年节": (5, 4), "儿童节": (6, 1), "建党节": (7, 1),
-        "建军节": (8, 1), "教师节": (9, 10), "国庆节": (10, 1),
-        "平安夜": (12, 24), "圣诞节": (12, 25),
-    }
-    lunar_map = {
-        "春节": (1, 1), "元宵节": (1, 15), "端午节": (5, 5),
-        "七夕节": (7, 7), "中元节": (7, 15), "中秋节": (8, 15),
-        "重阳节": (9, 9), "腊八节": (12, 8), "除夕": (12, 30),
-    }
-    aliases = {
-        "过年": "春节", "端阳": "端午节", "五月节": "端午节",
-        "正月": "春节", "正月十五": "元宵节", "八月十五": "中秋节",
-        "正月正": "春节", "五月初五": "端午节",
-    }
-
     cleaned = name.strip()
-    if cleaned in aliases:
-        cleaned = aliases[cleaned]
+    if cleaned in HOLIDAY_ALIASES:
+        cleaned = HOLIDAY_ALIASES[cleaned]
 
-    # 公历节日
-    if cleaned in solar_map:
-        m, d = solar_map[cleaned]
+    if cleaned in SOLAR_HOLIDAY_NAMES:
+        m, d = SOLAR_HOLIDAY_NAMES[cleaned]
         dt = datetime(year, m, d)
         return {"name": cleaned, "date": dt.strftime("%Y-%m-%d"), "type": "solar",
                 "weekday": dt.strftime("%A"), "isoweekday": dt.isoweekday()}
@@ -272,10 +262,10 @@ def get_holiday_date_by_name(name: str, year: Optional[int] = None) -> Optional[
                 "weekday": dt.strftime("%A"), "isoweekday": dt.isoweekday()}
 
     # 农历节日
-    if cleaned in lunar_map:
+    if cleaned in LUNAR_HOLIDAY_NAMES:
         try:
             from lunarcalendar import Lunar, Converter
-            m, d = lunar_map[cleaned]
+            m, d = LUNAR_HOLIDAY_NAMES[cleaned]
             lunar = Lunar(year, m, d)
             solar = Converter.Lunar2Solar(lunar)
             solar_date = solar.to_date()
@@ -286,7 +276,7 @@ def get_holiday_date_by_name(name: str, year: Optional[int] = None) -> Optional[
             return None
 
     # 模糊匹配: 输入包含已知名称(如"端午"→"端午节")
-    all_keys = list(solar_map.keys()) + list(lunar_map.keys()) + ["清明节"]
+    all_keys = list(SOLAR_HOLIDAY_NAMES.keys()) + list(LUNAR_HOLIDAY_NAMES.keys()) + ["清明节"]
     matches = [k for k in all_keys if cleaned in k]
     if len(matches) == 1:
         return get_holiday_date_by_name(matches[0], year)

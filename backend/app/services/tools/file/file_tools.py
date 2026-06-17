@@ -50,7 +50,7 @@ from app.services.tools.tool_response import build_success, build_error, build_w
 
 # 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
 from app.services.tools.tool_constants import (
-    READ_FILE_DEFAULT_LIMIT, DEFAULT_PAGE_SIZE, PAGE_SIZE, MAX_PAGE_SIZE,
+    READ_FILE_DEFAULT_LIMIT, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE,
     MAX_READ_SIZE, MAX_MEDIA_READ_SIZE, MAX_BATCH_FILE_COUNT,
     MAX_SEARCH_FILE_SIZE, BINARY_EXTENSIONS,
 )

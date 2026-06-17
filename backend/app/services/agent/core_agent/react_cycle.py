@@ -13,8 +13,8 @@ P4-01: 薄调度重构，业务逻辑移至handlers/ — 小沈 2026-06-09
 FC-only重构: 删除parse_llm_response/TOOL_REMINDER/_has_tool_call, yield dict — 小沈 2026-06-11
 P0-01: 删除step_counter list hack,使用agent.llm_call_count — 小沈 2026-06-13
 """
+
 from typing import Any, Dict, Optional, AsyncGenerator
-from collections import OrderedDict
 
 from app.utils.logger import logger
 from app.services.agent.steps import ChunkStep, FinalStep
@@ -25,11 +25,35 @@ from app.services.agent.core_agent.handlers import (
 )
 
 
-_TYPE_HANDLERS: OrderedDict[str, callable] = OrderedDict([
-    ("action", handle_action),
-    ("answer", handle_answer),
-])
-_DEFAULT_HANDLER = handle_answer
+def _dispatch_handler(agent, llm_response, chunk_buffer):
+    """按type分派handler — 小健 2026-06-17 if/elif替代2-entry注册表"""
+    parsed_type = llm_response.get("type", "answer")
+    if parsed_type == "action":
+        return handle_action(agent, llm_response, chunk_buffer)
+    return handle_answer(agent, llm_response, chunk_buffer)
+
+
+def _ensure_failed_final_step(agent):
+    """FAILED时补发FinalStep — 小健 2026-06-17 从finally提取"""
+    if agent.status != AgentStatus.FAILED:
+        return
+    last_err = None
+    for s in reversed(agent.steps):
+        err = getattr(s, '_error_message', None)
+        if err:
+            last_err = err
+            break
+    return FinalStep(
+        step=agent.llm_call_count,
+        response=last_err or "任务执行失败",
+        thought="",
+    )
+
+
+def _finalize_cycle(agent):
+    """循环后收尾: 状态回调+任务追踪 — 小健 2026-06-17 从finally提取"""
+    agent._on_after_loop()
+    agent._complete_tracked_task(agent.status == AgentStatus.COMPLETED)
 
 
 async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
@@ -65,9 +89,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         agent.status = AgentStatus.COMPLETED
         return
 
-    parsed_type = llm_response.get("type", "answer")
-    handler = _TYPE_HANDLERS.get(parsed_type, _DEFAULT_HANDLER)
-    async for event in handler(agent, llm_response, chunk_buffer):
+    async for event in _dispatch_handler(agent, llm_response, chunk_buffer):
         yield event
 
 
@@ -108,19 +130,7 @@ async def run_react_cycle(
         agent.status = AgentStatus.FAILED
 
     finally:
-        # 【修复P1-2】FAILED时始终补发FinalStep — 北京老陈 2026-06-13
-        if agent.status == AgentStatus.FAILED:
-            last_err = None
-            for s in reversed(agent.steps):
-                err = getattr(s, '_error_message', None)
-                if err:
-                    last_err = err
-                    break
-            yield agent._step_emitter.emit(FinalStep(
-                step=agent.llm_call_count,
-                response=last_err or "任务执行失败",
-                thought="",
-            ))
-
-        agent._on_after_loop()
-        agent._complete_tracked_task(agent.status == AgentStatus.COMPLETED)
+        failed_step = _ensure_failed_final_step(agent)
+        if failed_step:
+            yield agent._step_emitter.emit(failed_step)
+        _finalize_cycle(agent)

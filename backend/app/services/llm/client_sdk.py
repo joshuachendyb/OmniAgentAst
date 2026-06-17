@@ -81,16 +81,24 @@ class LLMClient:
             base_url=self._base_url,
         )
 
+    _DEFAULT_URLS = {
+        "openai": "https://api.openai.com/v1",
+        "deepseek": "https://api.deepseek.com",
+        "qwen": "https://dashscope.aliyuncs.com/compatible-mode",
+        "groq": "https://api.groq.com/openai",
+        "ollama": "http://localhost:11434",
+    }
+
     def _default_base_url(self, provider: str) -> str:
-        """根据 provider 返回默认 API 地址 - 小沈 2026-06-09"""
-        urls = {
-            "openai": "https://api.openai.com/v1",
-            "deepseek": "https://api.deepseek.com",
-            "qwen": "https://dashscope.aliyuncs.com/compatible-mode",
-            "groq": "https://api.groq.com/openai",
-            "ollama": "http://localhost:11434",
-        }
-        return urls.get(provider, "")
+        """根据 provider 返回默认 API 地址 — 小健 2026-06-17 OCP: 优先配置,其次硬编码默认"""
+        try:
+            from app.config import get_config
+            custom_urls = get_config().get("llm", {}).get("provider_urls", {})
+            if provider in custom_urls:
+                return custom_urls[provider]
+        except Exception:
+            pass
+        return self._DEFAULT_URLS.get(provider, "")
 
     async def request(
         self,
