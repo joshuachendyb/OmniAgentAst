@@ -88,7 +88,7 @@ def generate_html_report(task_id: str, task_description: str) -> str:
     Returns:
         HTML报告内容字符串
     """
-    from app.services.safety.file_safety.operation_queries import query_file_operations
+    from app.db.operation_queries import query_file_operations
     operations = query_file_operations(task_id)
 
     if not operations:

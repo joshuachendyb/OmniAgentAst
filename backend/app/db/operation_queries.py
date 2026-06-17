@@ -1,9 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-文件操作查询 — 所有file_operations表只读查询 — 小健 2026-06-17
+文件操作查询 — 所有file_operations表只读查询
+
+从 app/services/safety/file_safety/operation_queries.py 迁移至 db/
+原因: 纯SQL查询函数，不含安全逻辑，应属于数据访问层而非安全层
 
 合并自: row_to_operation_record, get_operation, get_session_operations,
         get_operation_task_id + 原有5个visualization query函数
+
+Author: 小健 - 2026-06-17
 """
 from typing import List, Tuple, Dict, Any, Optional
 

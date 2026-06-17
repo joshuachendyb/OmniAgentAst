@@ -14,7 +14,7 @@ from app.utils.logger import logger
 
 def _query_tree_operations(task_id: str) -> List[Tuple]:
     """查询树形操作记录 - 小沈 2026-06-08; 2026-06-17 改为调用service层"""
-    from app.services.safety.file_safety.operation_queries import query_tree_operations
+    from app.db.operation_queries import query_tree_operations
     return query_tree_operations(task_id)
 
 

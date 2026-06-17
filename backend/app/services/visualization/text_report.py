@@ -107,7 +107,7 @@ def generate_text_report(task_id: str, task_description: str) -> str:
     Returns:
         报告文本内容
     """
-    from app.services.safety.file_safety.operation_queries import query_file_operations
+    from app.db.operation_queries import query_file_operations
     operations = query_file_operations(task_id)
     if not operations:
         logger.warning(f"No operations found for session: {task_id}")

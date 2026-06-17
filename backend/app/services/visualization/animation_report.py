@@ -15,7 +15,7 @@ from app.utils.logger import logger
 
 def query_animation_operations(task_id: str) -> List[Dict[str, Any]]:
     """查询指定task_id的文件操作记录(动画用)— 小健 2026-05-25; 2026-06-17 改为调用service层"""
-    from app.services.safety.file_safety.operation_queries import query_animation_operations
+    from app.db.operation_queries import query_animation_operations
     return query_animation_operations(task_id)
 
 

@@ -21,7 +21,7 @@ def generate_mermaid_report(task_id: str, output_path: Optional[Path] = None) ->
     Returns:
         Mermaid报告文件路径
     """
-    from app.services.safety.file_safety.operation_queries import query_mermaid_operations
+    from app.db.operation_queries import query_mermaid_operations
     operations = query_mermaid_operations(task_id)
 
     mermaid_content = "graph TD\n"
