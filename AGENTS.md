@@ -206,7 +206,7 @@ ISP 接口窄，复用先查库
 ## Git Workflow
 
 ```bash
-# Commit format: <type>: <description> - <签名>-<日期>
+# Commit format: <type>:<文件名> <description> - <签名>-<日期>
 # types: feat/fix/refactor/perf/test/docs
 
 # Tag (PATCH only without asking):
