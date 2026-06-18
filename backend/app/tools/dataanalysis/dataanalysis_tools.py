@@ -41,19 +41,16 @@ logger = setup_logger(__name__)
 
 
 def generate_chart(
-    data: Dict[str, Any],
+    data: Union[str, Dict[str, Any]],
     chart_type: Literal["bar", "line", "pie", "scatter"] = "bar",
     title: Optional[str] = None,
     x_label: Optional[str] = None,
     y_label: Optional[str] = None,
     output_path: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """使用matplotlib生成数据可视化图表 - 小沈 2026-05-02, 修正 2026-05-05"""
-    from app.tools.document.document_tools import _validate_chart_data
-    validation = _validate_chart_data(data)
-    if validation["code"] != "SUCCESS" or not validation["data"].get("valid", False):
-        return validation
-
+    """使用matplotlib生成数据可视化图表 - 小沈 2026-05-02, 修正 2026-05-05
+    【2026-06-18 小健】修改output_path逻辑：文件路径→原文件目录，字典→必须指定output_path
+    """
     if not _check_module("matplotlib"):
         return build_error(ERR_NO_MATPLOTLIB, "matplotlib库未安装,请先执行: pip install matplotlib",
             next_actions=build_next_actions([
@@ -65,8 +62,42 @@ def generate_chart(
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
-        labels = data.get("labels", [])
-        values = data.get("values", [])
+        source_file_dir = None
+        chart_data = None
+        
+        if isinstance(data, str):
+            path = Path(data)
+            if not path.exists():
+                return build_error(ERR_DOC_CHART_GENERATE, f"文件不存在: {data}",
+                    next_actions=build_next_actions([
+                        ("search_files", "搜索文件", "确认文件路径时", {"pattern": path.name}),
+                    ]))
+            source_file_dir = str(path.parent)
+            
+            import pandas as pd
+            if data.endswith('.xlsx') or data.endswith('.xls'):
+                df = pd.read_excel(data, engine="openpyxl")
+            else:
+                df = pd.read_csv(data)
+            
+            if len(df.columns) < 2:
+                return build_error(ERR_DOC_CHART_GENERATE, "数据至少需要2列(标签列+数值列)")
+            
+            labels = df.iloc[:, 0].tolist()
+            values = df.iloc[:, 1].tolist()
+            chart_data = {"labels": labels, "values": values}
+        elif isinstance(data, dict):
+            chart_data = data
+        else:
+            return build_error(ERR_DOC_CHART_GENERATE, "data参数必须是文件路径(str)或图表数据(dict)")
+
+        from app.tools.document.document_tools import _validate_chart_data
+        validation = _validate_chart_data(chart_data)
+        if validation["code"] != "SUCCESS" or not validation["data"].get("valid", False):
+            return validation
+
+        labels = chart_data.get("labels", [])
+        values = chart_data.get("values", [])
 
         if not labels or not values:
             return build_error(ERR_DOC_CHART_GENERATE, "数据格式错误,需要包含 labels 和 values 字段",
@@ -76,8 +107,14 @@ def generate_chart(
 
         if output_path is None:
             timestamp = timestamp_for_filename()
-            temp_dir = tempfile.gettempdir()
-            output_path = os.path.join(temp_dir, f"chart_{timestamp}.png")
+            if source_file_dir:
+                output_path = os.path.join(source_file_dir, f"chart_{timestamp}.png")
+            else:
+                return build_error(ERR_DOC_CHART_GENERATE, 
+                    "data为字典时必须指定output_path参数",
+                    next_actions=build_next_actions([
+                        ("generate_chart", "重新生成图表", "指定output_path时"),
+                    ]))
 
         fig, ax = plt.subplots(figsize=(10, 6))
 
