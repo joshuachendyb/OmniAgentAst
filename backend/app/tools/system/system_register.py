@@ -178,7 +178,7 @@ def _register_system_tools():
             needs_confirmation=(name in CONFIRM_TOOLS),
             dependencies=SYSTEM_TOOL_DEPENDENCIES.get(name, []),
         )
-        logger.info(f"[system_register] 已注册工具(SYSTEM): {name}")
+        logger.debug(f"[system_register] 已注册工具(SYSTEM): {name}")
 
 
 
