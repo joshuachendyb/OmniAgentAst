@@ -15,14 +15,6 @@ from app.utils.logger import logger
 
 _CATEGORIES_CONFIG_PATH = Path(__file__).resolve().parent.parent / "tools" / "fundamental" / "tool_categories.json"
 
-_CATEGORY_SUMMARIES: Dict[ToolCategory, str] = {
-    ToolCategory.FILE: "文件读写、目录浏览、文件搜索和内容分析",
-    ToolCategory.NETWORK: "HTTP请求、文件下载、网络搜索和连通性测试",
-    ToolCategory.DESKTOP: "窗口管理、鼠标/键盘控制、屏幕截图和剪贴板交互",
-    ToolCategory.DOCUMENT: "PDF/Word/Excel/PPT文档的读写和转换",
-    ToolCategory.DATAANALYSIS: "数据统计分析、图表可视化、SQL数据库查询",
-    ToolCategory.SYSTEM: "系统查询、进程管理、服务控制和环境配置",
-}
 
 
 def get_openai_tools(agent) -> list:

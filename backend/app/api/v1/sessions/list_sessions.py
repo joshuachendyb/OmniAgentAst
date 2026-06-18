@@ -7,7 +7,7 @@ list_sessions — 从 sessions.py 拷出
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import Query
 from app.utils.logger import logger
 from app.utils.response_utils import handle_api_errors
 from app.db import db

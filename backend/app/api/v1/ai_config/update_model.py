@@ -4,6 +4,7 @@ from ._helpers import load_config, save_config
 from ._helpers import handle_config_errors
 from ._validators import ensure_provider_exists
 from app.utils.response_utils import api_success
+from fastapi import HTTPException
 
 
 @router.put("/config/provider/{provider_name}/model/{old_model_name}")
@@ -16,12 +17,10 @@ async def update_model(provider_name: str, old_model_name: str, data: ModelAddRe
     new_model_name = ' '.join(data.model.split())
 
     if old_model_name not in models:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail=f"模型 {old_model_name} 不存在")
     if new_model_name == old_model_name:
         return api_success("模型名称未改变")
     if new_model_name in models:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=f"模型 {new_model_name} 已存在")
 
     index = models.index(old_model_name)

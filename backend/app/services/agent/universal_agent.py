@@ -40,9 +40,6 @@ class UniversalAgent(BaseAgent):
         if not task_id:
             raise ValueError("task_id is required for operation tracking")
 
-        if max_steps is None:
-            from app.config import get_config
-            max_steps = get_config().get_max_steps()
 
         if initial_categories is None:
             initial_categories = _INITIAL_CATEGORIES

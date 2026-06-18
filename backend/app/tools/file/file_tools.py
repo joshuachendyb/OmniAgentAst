@@ -652,15 +652,7 @@ class FileTools:
     - 详细的参数验证
     """
     
-    BINARY_EXTENSIONS = {
-        '.xlsx', '.xls', '.docx', '.doc', '.pptx', '.ppt',
-        '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.webp',
-        '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
-        '.exe', '.dll', '.so', '.dylib',
-        '.mp3', '.mp4', '.wav', '.avi', '.mov', '.mkv',
-        '.sqlite', '.db', '.pyc', '.pyd', '.class',
-    }
-    
+
     def __init__(self, task_id: Optional[str] = None):
         from app.services.safety.file_safety import record_operation as _record_op, execute_with_safety as _exec_with_safety
 
@@ -701,7 +693,7 @@ class FileTools:
         path = Path(file_path)
         suffix = path.suffix.lower()
 
-        if suffix in self.BINARY_EXTENSIONS:
+        if suffix in BINARY_EXTENSIONS:
             return f"不支持通过write_file写入二进制格式文件(.{suffix[1:]}),请使用对应的专业工具操作"
 
         from app.tools.toolhelper import content_validation as cv

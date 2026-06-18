@@ -5,7 +5,7 @@ get_session_titles_batch — 从 sessions.py 拷出
 拷贝来源: sessions.py 第345-421行
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import HTTPException, Query
 from app.utils.logger import logger
 from app.utils.response_utils import handle_api_errors
 from app.utils.time_utils import convert_to_utc

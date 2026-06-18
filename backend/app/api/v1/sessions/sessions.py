@@ -12,7 +12,6 @@ Author: 小沈 - 2026-02-17
 from fastapi import APIRouter, Query
 from typing import Optional
 
-from typing import Optional
 
 from app.api.v1.sessions.session_update import SessionUpdate
 from app.db.models.chat_models import SessionCreate
