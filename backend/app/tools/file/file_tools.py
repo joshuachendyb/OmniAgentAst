@@ -989,10 +989,7 @@ async def write_text_file(
         if success:
             return build_success(
                 {"operation_id": operation_id, "file_path": str(path), "bytes_written": len(checked_content.encode(encoding))},
-                f"写入文件成功: {path} ({len(checked_content.encode(encoding))}字节)",
-                next_actions=build_next_actions([
-                    ("read_text_file", "验证写入结果", "需要确认内容时"),
-                ])
+                f"写入文件成功: {path} ({len(checked_content.encode(encoding))}字节)"
             )
         else:
             return build_error(ERR_FILE_WRITE_FAILED, "写入文件失败,safety拦截")
@@ -1618,7 +1615,7 @@ async def _precise_replace_in_file(
             return build_success(
                 data,
                 f"已替换 {replace_result['count']} 处匹配",
-                next_actions=build_next_actions([("read_text_file", "验证修改结果", "需要确认修改时")]),
+
             )
 
         except ValueError as e:
@@ -2009,7 +2006,7 @@ async def move_file(
 ) -> Dict[str, Any]:
     """移动文件/目录 — 小沈 2026-06-16"""
     if os.path.abspath(source) == os.path.abspath(destination):
-        return build_success({"action": "move", "source": source, "destination": destination}, "源和目标相同(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
+        return build_success({"action": "move", "source": source, "destination": destination}, "源和目标相同(P16幂等)")
     return await _move_file(
         source_path=source,
         destination_path=destination,
@@ -2025,7 +2022,7 @@ async def copy_file(
 ) -> Dict[str, Any]:
     """复制文件/目录 — 小沈 2026-06-16"""
     if os.path.abspath(source) == os.path.abspath(destination):
-        return build_success({"action": "copy", "source": source, "destination": destination}, "源和目标相同(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
+        return build_success({"action": "copy", "source": source, "destination": destination}, "源和目标相同(P16幂等)")
     return await _copy_file(
         source_path=source,
         destination_path=destination,
@@ -2042,7 +2039,7 @@ async def delete_file(
     """删除文件/目录 — 小沈 2026-06-16"""
     src_path = Path(source)
     if not src_path.exists():
-        return build_success({"action": "delete", "source": source}, "文件已不存在(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
+        return build_success({"action": "delete", "source": source}, "文件已不存在(P16幂等)")
     return await _delete_file(
         file_path=source,
         recursive=recursive,
@@ -2058,7 +2055,7 @@ async def rename_file(
     new_name = Path(destination).name
     dst = src.parent / new_name
     if src.name == new_name:
-        return build_success({"action": "rename", "source": source, "destination": str(dst)}, "新名称相同(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
+        return build_success({"action": "rename", "source": source, "destination": str(dst)}, "新名称相同(P16幂等)")
     return await _move_file(
         source_path=source,
         destination_path=str(dst),

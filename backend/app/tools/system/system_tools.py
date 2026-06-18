@@ -559,13 +559,13 @@ def kill_process(
                 "final_status": final_status,
             })
             
-            return build_success({"killed": killed_list}, f"进程 {pid} ({proc_info['name']}) {final_status}", next_actions=build_next_actions([("list_processes", "验证进程已终止", "需要确认终止结果时")]))
+            return build_success({"killed": killed_list}, f"进程 {pid} ({proc_info['name']}) {final_status}")
         
         # 小健 2026-05-19: 删除按名称批量终止的死代码分支(pid是必填int, else永远不可达, 且引用未定义name变量)
     
     # 【2026-05-17 小沈】修正S6: kill_process幂等化 - NoSuchProcess返回成功而非报错
     except psutil.NoSuchProcess:
-        return build_success({"killed": [], "idempotent": True}, f"进程 {pid} 已不存在(幂等:视为已终止)", next_actions=build_next_actions([("list_processes", "验证进程已终止", "需要确认终止结果时")]))
+        return build_success({"killed": [], "idempotent": True}, f"进程 {pid} 已不存在(幂等:视为已终止)")
     except psutil.AccessDenied:
         return build_error(ERR_PERMISSION_DENIED, f"无权限终止进程 {pid},请尝试使用管理员权限")
     except Exception as e:
@@ -1344,7 +1344,7 @@ def create_task(
                 "task_name": task_name,
                 "command": command,
                 "schedule": schedule,
-            }, f"计划任务 {task_name} 创建成功", next_actions=build_next_actions([("list_tasks", "验证任务已创建", "需要确认创建结果时")]))
+            }, f"计划任务 {task_name} 创建成功")
 
     except subprocess.TimeoutExpired:
         return build_error(ERR_SHELL_TIMEOUT, "创建计划任务超时")
@@ -1388,7 +1388,7 @@ def delete_task(
 
         return build_success({
                 "task_name": task_name,
-            }, f"计划任务 {task_name} 已删除", next_actions=build_next_actions([("list_tasks", "验证任务已删除", "需要确认删除结果时")]))
+            }, f"计划任务 {task_name} 已删除")
 
     except subprocess.TimeoutExpired:
         return build_error(ERR_SHELL_TIMEOUT, "删除计划任务超时")

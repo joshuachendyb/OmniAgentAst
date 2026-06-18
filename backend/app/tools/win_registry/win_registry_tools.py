@@ -257,7 +257,7 @@ def registry_write(key_path: str, value_name: str, value: str, value_type: str =
 
         logger.info(f"[registry_write] 写入成功: {full_root_key}\\{sub_key}\\{value_name}")
         return build_success({"key_path": f"{full_root_key}\\{sub_key}", "value_name": value_name,
-                              "value": value, "value_type": actual_type}, "写入成功", next_actions=build_next_actions([("registry_read", "验证写入结果", "需要确认写入是否成功时")]))
+                              "value": value, "value_type": actual_type}, "写入成功")
     except PermissionError:
         logger.error(f"[registry_write] 权限不足: {key_path}")
         return build_error(ERR_REG_PERMISSION_DENIED, f"权限不足: {key_path}")
@@ -338,7 +338,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
             }
             logger.info(f"[registry_delete] 成功删除子键: {full_root_key}\\{sub_key}")
 
-        return build_success(result_data, "删除成功", next_actions=build_next_actions([("registry_read", "验证删除结果", "需要确认删除是否成功时")]))
+        return build_success(result_data, "删除成功")
 
     except FileNotFoundError:
         error_msg = f"注册表键或值不存在: {key_path}"
