@@ -1945,125 +1945,125 @@ async def read_text_file(
             encoding=encoding
         )
 
-    async def edit_text_file(
-        file_path: str,
-        old_string: str,
-        new_string: str = "",
-        replace_all: bool = False,
-        dry_run: bool = False,
-        encoding: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        ignore_case = False
-        return await _precise_replace_in_file(
-            file_path=file_path,
-            old_string=old_string,
-            new_string=new_string,
-            replace_all=replace_all,
-            ignore_case=ignore_case,
-            dry_run=dry_run,
-            encoding=encoding
-        )
+async def edit_text_file(
+    file_path: str,
+    old_string: str,
+    new_string: str = "",
+    replace_all: bool = False,
+    dry_run: bool = False,
+    encoding: Optional[str] = None,
+) -> Dict[str, Any]:
+    ignore_case = False
+    return await _precise_replace_in_file(
+        file_path=file_path,
+        old_string=old_string,
+        new_string=new_string,
+        replace_all=replace_all,
+        ignore_case=ignore_case,
+        dry_run=dry_run,
+        encoding=encoding
+    )
 
-    async def compress_files(
-        source: str,
-        destination: str,
-        format: str = "zip",
-        compression_level: int = 6,
-        password: Optional[str] = None,
-        overwrite: bool = False,
-        exclude_patterns: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
-        """压缩文件/目录 — 小沈 2026-06-16"""
-        return await _compress_files(
-            source_path=source,
-            output_path=destination,
-            format=format,
-            exclude_patterns=exclude_patterns,
-            compression_level=compression_level,
-            overwrite=overwrite,
-            password=password
-        )
+async def compress_files(
+    source: str,
+    destination: str,
+    format: str = "zip",
+    compression_level: int = 6,
+    password: Optional[str] = None,
+    overwrite: bool = False,
+    exclude_patterns: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """压缩文件/目录 — 小沈 2026-06-16"""
+    return await _compress_files(
+        source_path=source,
+        output_path=destination,
+        format=format,
+        exclude_patterns=exclude_patterns,
+        compression_level=compression_level,
+        overwrite=overwrite,
+        password=password
+    )
 
-    async def extract_archive(
-        source: str,
-        destination: Optional[str] = None,
-        password: Optional[str] = None,
-        overwrite: bool = False,
-    ) -> Dict[str, Any]:
-        """解压归档包 — 小沈 2026-06-16"""
-        result = await _extract_archive(
-            archive_path=source,
-            output_dir=destination,
-            overwrite=overwrite,
-            password=password,
-            preserve_permissions=True
-        )
-        if "data" not in result:
-            return build_error(ERR_FILE_EXTRACT, result.get("message", "解压失败"))
-        return result
+async def extract_archive(
+    source: str,
+    destination: Optional[str] = None,
+    password: Optional[str] = None,
+    overwrite: bool = False,
+) -> Dict[str, Any]:
+    """解压归档包 — 小沈 2026-06-16"""
+    result = await _extract_archive(
+        archive_path=source,
+        output_dir=destination,
+        overwrite=overwrite,
+        password=password,
+        preserve_permissions=True
+    )
+    if "data" not in result:
+        return build_error(ERR_FILE_EXTRACT, result.get("message", "解压失败"))
+    return result
 
-    async def move_file(
-        source: str,
-        destination: str,
-        overwrite: bool = False,
-    ) -> Dict[str, Any]:
-        """移动文件/目录 — 小沈 2026-06-16"""
-        if os.path.abspath(source) == os.path.abspath(destination):
-            return build_success({"action": "move", "source": source, "destination": destination}, "源和目标相同(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
-        return await _move_file(
-            source_path=source,
-            destination_path=destination,
-            overwrite=overwrite
-        )
+async def move_file(
+    source: str,
+    destination: str,
+    overwrite: bool = False,
+) -> Dict[str, Any]:
+    """移动文件/目录 — 小沈 2026-06-16"""
+    if os.path.abspath(source) == os.path.abspath(destination):
+        return build_success({"action": "move", "source": source, "destination": destination}, "源和目标相同(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
+    return await _move_file(
+        source_path=source,
+        destination_path=destination,
+        overwrite=overwrite
+    )
 
-    async def copy_file(
-        source: str,
-        destination: str,
-        recursive: bool = False,
-        overwrite: bool = False,
-        preserve_metadata: bool = True,
-    ) -> Dict[str, Any]:
-        """复制文件/目录 — 小沈 2026-06-16"""
-        if os.path.abspath(source) == os.path.abspath(destination):
-            return build_success({"action": "copy", "source": source, "destination": destination}, "源和目标相同(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
-        return await _copy_file(
-            source_path=source,
-            destination_path=destination,
-            recursive=recursive,
-            overwrite=overwrite,
-            preserve_metadata=preserve_metadata
-        )
+async def copy_file(
+    source: str,
+    destination: str,
+    recursive: bool = False,
+    overwrite: bool = False,
+    preserve_metadata: bool = True,
+) -> Dict[str, Any]:
+    """复制文件/目录 — 小沈 2026-06-16"""
+    if os.path.abspath(source) == os.path.abspath(destination):
+        return build_success({"action": "copy", "source": source, "destination": destination}, "源和目标相同(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
+    return await _copy_file(
+        source_path=source,
+        destination_path=destination,
+        recursive=recursive,
+        overwrite=overwrite,
+        preserve_metadata=preserve_metadata
+    )
 
-    async def delete_file(
-        source: str,
-        recursive: bool = False,
-        force: bool = False,
-    ) -> Dict[str, Any]:
-        """删除文件/目录 — 小沈 2026-06-16"""
-        src_path = Path(source)
-        if not src_path.exists():
-            return build_success({"action": "delete", "source": source}, "文件已不存在(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
-        return await _delete_file(
-            file_path=source,
-            recursive=recursive,
-            force=force
-        )
+async def delete_file(
+    source: str,
+    recursive: bool = False,
+    force: bool = False,
+) -> Dict[str, Any]:
+    """删除文件/目录 — 小沈 2026-06-16"""
+    src_path = Path(source)
+    if not src_path.exists():
+        return build_success({"action": "delete", "source": source}, "文件已不存在(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
+    return await _delete_file(
+        file_path=source,
+        recursive=recursive,
+        force=force
+    )
 
-    async def rename_file(
-        source: str,
-        destination: str,
-    ) -> Dict[str, Any]:
-        """重命名文件/目录 — 小沈 2026-06-16"""
-        src = Path(source)
-        new_name = Path(destination).name
-        dst = src.parent / new_name
-        if src.name == new_name:
-            return build_success({"action": "rename", "source": source, "destination": str(dst)}, "新名称相同(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
-        return await _move_file(
-            source_path=source,
-            destination_path=str(dst),
-            overwrite=False
-        )
+async def rename_file(
+    source: str,
+    destination: str,
+) -> Dict[str, Any]:
+    """重命名文件/目录 — 小沈 2026-06-16"""
+    src = Path(source)
+    new_name = Path(destination).name
+    dst = src.parent / new_name
+    if src.name == new_name:
+        return build_success({"action": "rename", "source": source, "destination": str(dst)}, "新名称相同(P16幂等)", next_actions=build_next_actions([("read_text_file", "验证操作结果", "需要确认时")]))
+    return await _move_file(
+        source_path=source,
+        destination_path=str(dst),
+        overwrite=False
+    )
 
 
 def _build_format_result(
@@ -2233,13 +2233,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
        next_actions=build_next_actions([("read_text_file", "读取找到的文件", "需要查看内容时")]))
 
 
-# ============================================================
-# 第七部分:工具函数导出
-# ============================================================
 
-def get_file_tools(task_id: Optional[str] = None) -> FileTools:
-    """获取文件工具实例"""
-    return FileTools(task_id)
 
 
 # ============================================================
