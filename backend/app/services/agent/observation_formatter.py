@@ -206,8 +206,14 @@ def _append_hint(text: str, tool_name: str, tool_params: Optional[dict], result:
 
 
 def _format_error_observation(result: dict, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
-    """格式化错误结果 — 小沈 2026-06-08 重构"""
+    """格式化错误结果 — 小沈 2026-06-08 重构
+    2026-06-19 小欧 修复: error路径未显示data/llm_data,导致LLM看不到stderr而盲目重试"""
     text = f"Observation: error [{result.get('code', '')}] - {result.get('message', '')}"
+    display_data = _extract_display_data(result)
+    if display_data:
+        if isinstance(display_data, (dict, list)):
+            display_data = _prevent_json_oom(display_data, LLM_SAFE_LIMIT)
+        text += f"\n错误详情: {json.dumps(display_data, ensure_ascii=False)}"
     text = _append_hint(text, tool_name, tool_params, result)
     return _format_next_actions(result, text)
 
