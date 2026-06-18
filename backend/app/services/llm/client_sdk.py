@@ -20,6 +20,7 @@ from app.constants import (
     LLM_MAX_CONNECTIONS,
     LLM_MAX_KEEPALIVE,
 )
+from app.tools.tool_constants import FILE_OPERATION_TOOLS
 
 
 def _build_request_body(
@@ -52,13 +53,8 @@ def _build_request_body(
             body["tool_choice"] = tool_choice
         
         if parallel_tool_calls is None:
-            FILE_TOOLS = {
-                "read_text_file", "write_text_file", "edit_text_file",
-                "move_file", "copy_file", "delete_file", "rename_file",
-                "compress_files", "extract_archive",
-            }
             tool_names = {t["function"]["name"] for t in tools}
-            parallel_tool_calls = not bool(tool_names & FILE_TOOLS)
+            parallel_tool_calls = not bool(tool_names & FILE_OPERATION_TOOLS)
         
         body["parallel_tool_calls"] = parallel_tool_calls
     
