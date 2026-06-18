@@ -3,22 +3,18 @@
 tool_cache_manager — 工具缓存管理
 
 从universal_agent拆出 — 小沈 2026-06-17
+【2026-06-18 小健】删除 tool_categories.json，直接从 registry 获取工具信息（DRY原则）
 """
-
-from app.utils.json_utils import read_json_file
-from pathlib import Path
-from typing import Dict
 
 from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 
-_CATEGORIES_CONFIG_PATH = Path(__file__).resolve().parent.parent / "tools" / "fundamental" / "tool_categories.json"
-
-
 
 def get_openai_tools(agent) -> list:
-    """获取已加载分类的OpenAI格式工具定义,含TTL缓存 — 小沈 2026-06-17 改用TTLCache"""
+    """获取已注入分类的OpenAI格式工具定义,含TTL缓存 — 小沈 2026-06-17 改用TTLCache
+    注意：这里获取的是已注入(inject)给LLM的工具，不是所有已注册(register)的工具
+    """
     cached = agent._tool_cache.get()
     if cached is not None:
         return cached
@@ -35,39 +31,48 @@ def invalidate_tool_cache(agent):
 
 
 def patch_search_desc(agent):
-    """动态更新 tool_search 描述: 列出未加载分类的概要+工具名 — 小沈 2026-06-17 改用TTLCache"""
-    if not _CATEGORIES_CONFIG_PATH.exists():
-        return
-
-    categories_config = agent._categories_config_cache.get()
-    if categories_config is None:
-        categories_config = read_json_file(_CATEGORIES_CONFIG_PATH)
-        if categories_config is None:
-            return
-        agent._categories_config_cache.set(categories_config)
-
-    unloaded = [cat for cat in ToolCategory
-                if cat not in {ToolCategory.FUNDAMENTAL, ToolCategory.SHELL} and cat not in agent._loaded_categories]
-
+    """动态更新 tool_search 描述: 列出未加载分类的工具信息
+    
+    【设计原则】
+    - DRY: 直接从 tool_registry 获取工具信息，无重复数据
+    - KISS-DIRECT: 逻辑直线，无中间文件
+    - 动态生成: 每次根据 agent._loaded_categories 实时计算
+    
+    【2026-06-18 小健】删除 tool_categories.json，改为直接从 registry 获取
+    """
     from app.tools.registry import tool_registry
-
+    
+    unloaded = [
+        cat for cat in ToolCategory
+        if cat not in {ToolCategory.FUNDAMENTAL, ToolCategory.SHELL}
+        and cat not in agent._loaded_categories
+    ]
+    
+    if not unloaded:
+        return
+    
     ts_meta = tool_registry.get_tool("tool_search")
     if not ts_meta:
         return
+    
     base_desc = ts_meta.description
-
-    if not unloaded:
-        return
-
     lines = []
+    
     for cat in sorted(unloaded, key=lambda c: c.order):
-        cfg = categories_config.get(cat.value, {})
-        summary = cfg.get("summary", cat.name_cn)
-        tools = cfg.get("tools", {})
-        tool_items = list(tools.items())
-        name_str = ", ".join(f"{k}:{v}" for k, v in tool_items[:5])
-        if len(tool_items) > 5:
-            name_str += "..."
-        lines.append(f"- {cat.name_cn}({cat.value}): {summary} [{name_str}]")
-
-    ts_meta.description = base_desc + "\n\n当前未加载分类:\n" + "\n".join(lines)
+        tools_in_cat = [
+            (name, meta.description[:50])
+            for name, meta in tool_registry._tools.items()
+            if meta.category == cat
+        ]
+        
+        if not tools_in_cat:
+            continue
+        
+        tool_str = ", ".join(f"{name}:{desc}" for name, desc in tools_in_cat[:5])
+        if len(tools_in_cat) > 5:
+            tool_str += "..."
+        
+        lines.append(f"- {cat.name_cn}({cat.value}): {tool_str}")
+    
+    if lines:
+        ts_meta.description = base_desc + "\n\n当前未加载分类:\n" + "\n".join(lines)
