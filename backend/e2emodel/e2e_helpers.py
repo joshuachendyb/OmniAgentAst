@@ -11,6 +11,7 @@
   步骤10 日志检查        → check_logs()          已实现
   步骤11 清理与记录      → write_test_record()   已实现
   步骤6 门禁-记录验证    → verify_test_record_exists() 已实现
+  3.4 Prompt日志vsDB对比  → verify_db_prompt_consistency() 已实现; write_test_record()自动调用
   3.4 流结束             → assert_stream_ended() 已实现
   3.4 错误事件           → result["has_error"]   已实现
   3.4 回复含错误关键词   → write_test_record() resp_has_error 已实现
@@ -1129,6 +1130,16 @@ def write_test_record(
             except Exception:
                 pass
 
+    # 自动调用 Prompt日志 vs DB步骤对比（用例脚本无需手动调用）
+    if dpi is None:
+        _sid = result.get("session_id", "")
+        _umid = result.get("user_msg_id")
+        if _sid:
+            try:
+                dpi = verify_db_prompt_consistency(_sid, _umid)
+            except Exception:
+                dpi = []
+
     lines: List[str] = []
     lines.append(f"# 测试记录-{test_id}-{date_str}")
     lines.append("")
@@ -1267,6 +1278,14 @@ def write_test_record(
     lines.append(f"| 日志中异常堆栈 | {'PASS' if len(log_check.get('tracebacks', [])) == 0 else 'FAIL'} | {len(log_check.get('tracebacks', []))}条 |")
     lines.append("")
     
+    # DB-Prompt日志不一致详情
+    if db_prompt_issues:
+        lines.append("### DB-Prompt日志不一致详情")
+        lines.append("")
+        for i, issue in enumerate(db_prompt_issues):
+            lines.append(f"{i+1}. {issue}")
+        lines.append("")
+
     if not passed and error_info:
         lines.append("## 失败详情")
         lines.append("")
