@@ -28,14 +28,14 @@ from app.utils.logger import logger
 # 每个工具对应的第三方依赖包列表
 TOOL_DEPENDENCIES = {
     "read_pdf": ["pdfplumber"],
-    "read_docx": ["python-docx"],
+    "read_docx": ["python-docx", "pywin32"],
     "read_pptx": ["python-pptx"],
-    "read_xlsx": ["pandas", "openpyxl"],
+    "read_xlsx": ["pandas", "openpyxl", "pywin32"],
     "write_docx": ["python-docx"],
     "write_xlsx": ["pandas", "openpyxl"],
     "write_pdf": ["reportlab", "pdfplumber"],  # 可能需要reportlab用于生成PDF
     "write_pptx": ["python-pptx"],
-    "convert_document": [],  # 使用内置库
+    "convert_document": ["pywin32"],
 }
 
 
@@ -65,14 +65,14 @@ from app.tools.document.document_tools import (
 
 DESCRIPTIONS = {
     "read_pdf": """读取PDF(.pdf)文件内容。支持页码范围选择(pages参数,如'1-3,5')和表格提取(extract_tables)。适用场景:需要读取PDF文档内容、提取表格数据时使用。""",
-    "read_docx": """读取Word(.docx)文档内容。支持表格提取(extract_tables)。自动降级处理.doc格式(转PDF后读取)。适用场景:需要读取Word文档内容、提取文本和表格时使用。""",
+    "read_docx": """读取Word(.docx)文档内容。支持表格提取(extract_tables)。.doc格式需系统安装Word或LibreOffice进行转换。适用场景:需要读取Word文档内容、提取文本和表格时使用。""",
     "read_pptx": """读取PPT(.pptx)演示文稿内容。提取每页幻灯片的文本和备注。适用场景:需要读取PPT内容、提取演讲稿时使用。""",
-    "read_xlsx": """读取Excel(.xlsx)/CSV/TSV/JSON数据文件。支持指定工作表、最大行数、编码和分隔符。自动降级处理.xls格式(转PDF后读取)。适用场景:需要读取表格数据、分析数据集时使用。""",
+    "read_xlsx": """读取Excel(.xlsx)/CSV/TSV/JSON数据文件。支持指定工作表、最大行数、编码和分隔符。.xls格式需系统安装Excel或LibreOffice进行转换。适用场景:需要读取表格数据、分析数据集时使用。""",
     "write_docx": """写入Word(.docx)文档。支持标题(title)/正文(content)/段落(paragraphs)/表格(table_data)/结构化内容(data)。适用场景:需要生成Word报告、导出文档时使用。""",
     "write_xlsx": """写入Excel(.xlsx)文件。data参数支持dict(headers+rows)或list自动推断headers。可指定工作表名。适用场景:需要导出数据到Excel表格时使用。""",
     "write_pdf": """写入PDF(.pdf)文件。支持标题(title)/正文(content)/段落(paragraphs)/表格(table_data)。适用场景:需要生成PDF报告、归档文档时使用。""",
     "write_pptx": """写入PPT(.pptx)演示文稿。支持标题(title)和幻灯片列表(slides)。适用场景:需要生成PPT演示文稿时使用。""",
-    "convert_document": """将Office文档转换为PDF格式。支持Word(.docx/.doc→PDF)、Excel(.xlsx/.xls→PDF)、PPT(.pptx/.ppt→PDF)以及OpenDocument格式(.odt/.ods→PDF)。需要系统安装LibreOffice。适用场景:需要将文档转为PDF进行分发、归档或打印时使用。""",
+    "convert_document": """将Office文档转换为PDF格式。支持Word(.docx/.doc→PDF)、Excel(.xlsx/.xls→PDF)、PPT(.pptx/.ppt→PDF)以及OpenDocument格式(.odt/.ods→PDF)。需要系统安装Microsoft Office或LibreOffice。适用场景:需要将文档转为PDF进行分发、归档或打印时使用。""",
 }
 
 EXAMPLES = {
