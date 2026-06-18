@@ -15,11 +15,12 @@ from app.utils.prompt_logger import get_prompt_logger
 
 async def call_llm(agent):
     """调用LLM — 纯FC模式 — FC-only重构 2026-06-11 小沈"""
+    from app.services.agent.tool_cache_manager import get_openai_tools
     agent.llm_call_count += 1
     agent.message_builder.trim_history()
 
     messages = agent.message_builder.prepare_messages_for_llm()
-    openai_tools = agent._get_openai_tools()
+    openai_tools = get_openai_tools(agent)
 
     prompt_logger = get_prompt_logger()
     prompt_logger.log_llm_call(

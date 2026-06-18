@@ -20,6 +20,7 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any]) -> Di
 
 def auto_inject_from_search(agent, result: Dict[str, Any]) -> None:
     """从tool_search结果自动注入分类"""
+    from app.services.agent.tool_cache_manager import invalidate_tool_cache, patch_search_desc
     inner = result.get("data", {})
     llm_matches = inner.get("llm_data", {}).get("matches", [])
     new_cats: Set[ToolCategory] = set()
@@ -35,5 +36,5 @@ def auto_inject_from_search(agent, result: Dict[str, Any]) -> None:
     for cat in new_cats:
         agent._loaded_categories.add(cat)
         agent._tool_loader.load_category(cat)
-    agent.invalidate_tool_cache()
-    agent._patch_search_desc()
+    invalidate_tool_cache(agent)
+    patch_search_desc(agent)

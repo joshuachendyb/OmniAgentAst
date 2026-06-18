@@ -15,9 +15,7 @@ from app.services.prompts.system_prompts import PromptBuilder
 from app.utils.logger import logger
 from app.utils.cache import TTLCache
 
-from app.services.agent.llm_caller import call_llm
-from app.services.agent.tool_executor import execute_tool
-from app.services.agent.tool_cache_manager import get_openai_tools, invalidate_tool_cache, patch_search_desc
+from app.services.agent.tool_cache_manager import patch_search_desc
 
 
 _INITIAL_CATEGORIES: Set[ToolCategory] = {ToolCategory.FUNDAMENTAL, ToolCategory.SHELL, ToolCategory.FILE}
@@ -67,21 +65,6 @@ class UniversalAgent(BaseAgent):
             return "System: 通用助手"
         return self.prompts.build_full_system_prompt()
 
-    def _complete_tracked_task(self, success: bool):
-        self._step_emitter.complete_task(success)
-
-    async def _execute_tool(self, tool_name: str, tool_params: Dict[str, Any]) -> Dict[str, Any]:
-        return await execute_tool(self, tool_name, tool_params)
-
-    async def _call_llm(self):
-        async for item in call_llm(self):
-            yield item
-
-    def _get_openai_tools(self) -> list:
-        return get_openai_tools(self)
-
-    def invalidate_tool_cache(self):
-        invalidate_tool_cache(self)
 
     def _patch_search_desc(self):
         patch_search_desc(self)

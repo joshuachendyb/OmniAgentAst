@@ -98,13 +98,14 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
 async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                         tool_name: str, tool_params: Dict) -> List[Any]:
         """工具执行 — 返回results — 小沈 2026-06-09"""
+        from app.services.agent.tool_executor import execute_tool
         start_time = time.time()
         
         if is_parallel:
-            tasks = [agent._execute_tool(c["tool_name"], c["tool_params"]) for c in all_calls]
+            tasks = [execute_tool(agent, c["tool_name"], c["tool_params"]) for c in all_calls]
             results = await asyncio.gather(*tasks, return_exceptions=True)
         else:
-            result = await agent._execute_tool(tool_name, tool_params)
+            result = await execute_tool(agent, tool_name, tool_params)
             results = [result]
         
         elapsed = time.time() - start_time

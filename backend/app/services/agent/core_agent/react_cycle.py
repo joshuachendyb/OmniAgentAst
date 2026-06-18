@@ -53,14 +53,15 @@ def _ensure_failed_final_step(agent):
 def _finalize_cycle(agent):
     """循环后收尾: 状态回调+任务追踪 — 小健 2026-06-17 从finally提取"""
     agent._on_after_loop()
-    agent._complete_tracked_task(agent.status == AgentStatus.COMPLETED)
+    agent._step_emitter.complete_task(agent.status == AgentStatus.COMPLETED)
 
 
 async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
     """处理单步循环 — FC-only: llm_response为dict,无需parse_llm_response — 小沈 2026-06-11"""
 
+    from app.services.agent.llm_caller import call_llm
     llm_response = None
-    async for chunk_or_response in agent._call_llm():
+    async for chunk_or_response in call_llm(agent):
         chunk_type, chunk_data = chunk_or_response
 
         if chunk_type == "chunk":

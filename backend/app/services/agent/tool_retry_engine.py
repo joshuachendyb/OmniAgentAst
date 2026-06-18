@@ -36,33 +36,22 @@ class ToolRetryEngine:
     def __init__(self, tools: Dict[str, Callable]):
         self._tools = tools
     
-    def _is_async_tool(self, tool: Callable) -> bool:
-        """判断是否异步工具 — 小沈 2026-06-08"""
-        return inspect.iscoroutinefunction(tool)
-    
-    async def _execute_async_tool(self, tool: Callable, params: Dict[str, Any], timeout: float) -> Any:
-        """执行异步工具 — 小沈 2026-06-08"""
-        return await asyncio.wait_for(tool(**params), timeout=timeout)
-    
-    async def _execute_sync_tool(self, tool: Callable, params: Dict[str, Any], timeout: float) -> Any:
-        """执行同步工具 — 小沈 2026-06-08"""
-        result = await asyncio.wait_for(
-            asyncio.to_thread(lambda: tool(**params)), timeout=timeout
-        )
-        if inspect.iscoroutine(result):
-            return await asyncio.wait_for(result, timeout=timeout)
-        return result
-    
     async def _execute_tool_once(self, tool: Callable, normalized_input: Dict[str, Any], 
                                 timeout: float) -> Any:
         """
         统一单次工具调用 — 小沈 2026-06-08 重构
+        小健 2026-06-18 内联_is_async_tool/_execute_async_tool/_execute_sync_tool
         
         修复:纯同步工具通过 to_thread 移出事件循环,wait_for 超时保护生效。
         """
-        if self._is_async_tool(tool):
-            return await self._execute_async_tool(tool, normalized_input, timeout)
-        return await self._execute_sync_tool(tool, normalized_input, timeout)
+        if inspect.iscoroutinefunction(tool):
+            return await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
+        result = await asyncio.wait_for(
+            asyncio.to_thread(lambda: tool(**normalized_input)), timeout=timeout
+        )
+        if inspect.iscoroutine(result):
+            return await asyncio.wait_for(result, timeout=timeout)
+        return result
     
     def _build_retry_error(
         self, code: str, message: str, retry_count: int,
@@ -114,50 +103,36 @@ class ToolRetryEngine:
         
         return await self._execute_with_retry(action, params, tool)
     
-    def _are_params_valid(self, action: str, params: Dict[str, Any]) -> bool:
-        """验证参数是否合法 — 小沈 2026-06-08"""
+    def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable):
+        """验证参数（非法参数+必需参数）— P1-05修复: 返回错误字典而非None
+        小健 2026-06-18 合并_are_params_valid和_check_missing_params为一次查询"""
+        params = action_input.copy()
+        
         try:
             from app.tools.registry import tool_registry
             metadata = tool_registry.get_tool(action)
             if metadata and metadata.input_schema:
-                valid_params = set(metadata.input_schema.get("properties", {}).keys())
+                input_schema = metadata.input_schema
+                valid_params = set(input_schema.get("properties", {}).keys())
                 invalid_keys = [k for k in params if k not in valid_params]
                 if invalid_keys:
                     logger.warning(f"[参数验证] action={action} 含非法字段: {invalid_keys}")
-                    return False
-        except (ImportError, AttributeError) as e:
-            logger.warning(f"[参数监控] action={action}, 获取 schema 失败：{e}", exc_info=True)
-        return True
-    
-    def _check_missing_params(self, action: str, params: Dict[str, Any]) -> bool:
-        """检查缺失参数 — 读Schema的required字段 — 小欧 2026-06-15"""
-        try:
-            from app.tools.registry import tool_registry
-            metadata = tool_registry.get_tool(action)
-            if metadata and metadata.input_schema:
-                required = metadata.input_schema.get("required", [])
+                    return self._build_retry_error(
+                        ERR_INVALID_PARAMS,
+                        f"参数验证失败: {action} 含非法参数, keys={list(params.keys())}",
+                        0, error_type="invalid_params",
+                    )
+                
+                required = input_schema.get("required", [])
                 missing = [p for p in required if p not in params]
-                return len(missing) == 0
+                if missing:
+                    return self._build_retry_error(
+                        ERR_MISSING_PARAM,
+                        f"缺少必需参数: {action}",
+                        0, error_type="missing_param",
+                    )
         except (ImportError, AttributeError) as e:
-            logger.warning(f"[_check_missing_params] action={action}, 获取schema失败: {e}", exc_info=True)
-        return True
-    
-    def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable):
-        """验证参数（非法参数+必需参数）— P1-05修复: 返回错误字典而非None"""
-        params = action_input.copy()
-        
-        if not self._are_params_valid(action, params):
-            return self._build_retry_error(
-                ERR_INVALID_PARAMS,
-                f"参数验证失败: {action} 含非法参数, keys={list(params.keys())}",
-                0, error_type="invalid_params",
-            )
-        
-        if not self._check_missing_params(action, params):
-            return self._build_retry_error(
-                ERR_MISSING_PARAM,
-                f"缺少必需参数: {action}",
-                0, error_type="missing_param",
+            logger.warning(f"[参数验证] action={action}, 获取schema失败: {e}", exc_info=True)
             )
         
         return params
