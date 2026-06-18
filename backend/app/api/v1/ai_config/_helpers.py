@@ -30,7 +30,7 @@ __all__ = ["handle_config_errors"]
 
 def _write_yaml_with_order(file_path: str, data: dict):
     """使用OrderedDict写入YAML,保持特定顺序 - 小沈 2026-06-09 复用"""
-    from app.services.tools.toolhelper.data_format_helper import write_yaml_ordered
+    from app.tools.toolhelper.data_format_helper import write_yaml_ordered
     result = write_yaml_ordered(file_path, data)
     if result.get("code") != "SUCCESS":
         raise Exception(result.get("message"))
@@ -78,7 +78,7 @@ def _set_app_field(config_data: dict, field_name: str, value: Any, display_name:
 
 def _backup_config(config_path: Path) -> Path:
     """备份配置文件"""
-    from app.services.tools.toolhelper.file_helper import backup_file
+    from app.tools.toolhelper.file_helper import backup_file
     result = backup_file(str(config_path), suffix=".backup")
     if result.get("code") != "SUCCESS":
         raise RuntimeError(f"配置文件备份失败: {result.get('message', '')}")

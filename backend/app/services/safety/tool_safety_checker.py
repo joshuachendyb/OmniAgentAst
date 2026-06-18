@@ -46,7 +46,7 @@ class ToolSafetyChecker:
                     "blocked": False, "message": "安全开关已绕过",
                     "safety_level": "safe"}
 
-        from app.services.tools.registry import tool_registry
+        from app.tools.registry import tool_registry
 
         tool_meta = tool_registry.get_tool(tool_name)
         if tool_meta is None:
@@ -95,8 +95,8 @@ class ToolSafetyChecker:
     @staticmethod
     def _check_known_risks(tool_name: str, params: Dict) -> Optional[Dict]:
         """已知风险检测：路径越权 / 写入大小保护 / 代码注入 — 小沈 2026-06-17 改用path_validator"""
-        from app.services.tools.registry import tool_registry
-        from app.services.tools.tool_types import ToolCategory
+        from app.tools.registry import tool_registry
+        from app.tools.tool_types import ToolCategory
 
         all_categories = tool_registry.get_categories()
         file_tools = set(all_categories.get(ToolCategory.FILE, []))
@@ -133,7 +133,7 @@ class ToolSafetyChecker:
         code_injection_tools = _CODE_INJECTION_RISK_TOOLS & shell_tools
         if tool_name in code_injection_tools:
             try:
-                from app.services.tools.tool_constants import DANGEROUS_PATTERNS
+                from app.tools.tool_constants import DANGEROUS_PATTERNS
                 code = params.get("command") or params.get("code") or ""
                 for pattern_str, desc in DANGEROUS_PATTERNS:
                     if re.search(pattern_str, code):

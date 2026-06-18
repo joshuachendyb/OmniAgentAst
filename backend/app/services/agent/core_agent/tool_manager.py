@@ -5,8 +5,8 @@
 Author: 小沈 - 2026-06-07
 """
 
-from app.services.tools.registry import tool_registry
-from app.services.tools.tool_types import ToolCategory
+from app.tools.registry import tool_registry
+from app.tools.tool_types import ToolCategory
 from app.constants import META_TOOL_NAMES
 from app.utils.logger import logger
 

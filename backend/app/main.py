@@ -109,7 +109,7 @@ async def _init_database():
 
 def _register_tools():
     """注册工具 - 小沈 2026-06-08"""
-    from app.services.tools import ensure_tools_registered
+    from app.tools import ensure_tools_registered
     ensure_tools_registered()
 
 
@@ -144,7 +144,7 @@ async def _reset_factory():
 
 def _cleanup_shells():
     """清理shell进程 - 小沈 2026-06-08"""
-    from app.services.tools.shell.shell_tools import cleanup_background_shells
+    from app.tools.shell.shell_tools import cleanup_background_shells
     count = cleanup_background_shells()
     logger.info(f"已清理 {count} 个后台shell进程")
 

@@ -9,7 +9,7 @@ from app.utils.json_utils import read_json_file
 from pathlib import Path
 from typing import Dict
 
-from app.services.tools.tool_types import ToolCategory
+from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 
@@ -31,7 +31,7 @@ def get_openai_tools(agent) -> list:
     if cached is not None:
         return cached
 
-    from app.services.tools.registry import tool_registry
+    from app.tools.registry import tool_registry
     tools = tool_registry.to_openai_tools(categories=agent._loaded_categories)
     agent._tool_cache.set(tools)
     return tools
@@ -57,7 +57,7 @@ def patch_search_desc(agent):
     unloaded = [cat for cat in ToolCategory
                 if cat not in {ToolCategory.FUNDAMENTAL, ToolCategory.SHELL} and cat not in agent._loaded_categories]
 
-    from app.services.tools.registry import tool_registry
+    from app.tools.registry import tool_registry
 
     ts_meta = tool_registry.get_tool("tool_search")
     if not ts_meta:

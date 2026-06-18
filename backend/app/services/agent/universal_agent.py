@@ -10,7 +10,7 @@ from typing import Any, List, Optional, Dict, Set
 
 from app.services.agent.core_agent import BaseAgent
 from app.services.agent.types import AgentResult
-from app.services.tools.tool_types import ToolCategory
+from app.tools.tool_types import ToolCategory
 from app.services.prompts.system_prompts import PromptBuilder
 from app.utils.logger import logger
 from app.utils.cache import TTLCache

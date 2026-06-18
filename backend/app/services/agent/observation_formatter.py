@@ -42,7 +42,7 @@ def _get_failure_hint(tool_name: str, tool_params: Optional[dict] = None, result
     """
     # 1. 优先从tool_registry获取自定义提示
     try:
-        from app.services.tools.registry import tool_registry
+        from app.tools.registry import tool_registry
         meta = tool_registry.get_tool(tool_name)
         if meta and hasattr(meta, 'get_failure_hint'):
             hint = meta.get_failure_hint(tool_params)

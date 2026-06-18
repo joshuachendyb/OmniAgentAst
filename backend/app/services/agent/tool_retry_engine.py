@@ -19,8 +19,8 @@ from typing import Any, Callable, Dict, Optional
 from app.utils.logger import logger
 from app.utils.error_classifier import UnifiedErrorClassifier
 from app.utils.retry_engine import RetryEngine, BackoffStrategy
-from app.services.tools.tool_constants import TOOL_TIMEOUTS, TOOL_RETRY_MAX, TOOL_RETRY_BACKOFF, TOOL_RETRYABLE_ERRORS
-from app.services.tools.tool_response import build_success, build_error
+from app.tools.tool_constants import TOOL_TIMEOUTS, TOOL_RETRY_MAX, TOOL_RETRY_BACKOFF, TOOL_RETRYABLE_ERRORS
+from app.tools.tool_response import build_success, build_error
 
 from app.constants import (
     ERR_MISSING_PARAM,
@@ -120,7 +120,7 @@ class ToolRetryEngine:
     def _are_params_valid(self, action: str, params: Dict[str, Any]) -> bool:
         """验证参数是否合法 — 小沈 2026-06-08"""
         try:
-            from app.services.tools.registry import tool_registry
+            from app.tools.registry import tool_registry
             metadata = tool_registry.get_tool(action)
             if metadata and metadata.input_schema:
                 valid_params = set(metadata.input_schema.get("properties", {}).keys())
@@ -135,7 +135,7 @@ class ToolRetryEngine:
     def _check_missing_params(self, action: str, params: Dict[str, Any]) -> bool:
         """检查缺失参数 — 读Schema的required字段 — 小欧 2026-06-15"""
         try:
-            from app.services.tools.registry import tool_registry
+            from app.tools.registry import tool_registry
             metadata = tool_registry.get_tool(action)
             if metadata and metadata.input_schema:
                 required = metadata.input_schema.get("required", [])

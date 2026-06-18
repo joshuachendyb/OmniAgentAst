@@ -522,7 +522,7 @@ class TestExecuteTool:
         """执行未注册工具返回错误"""
         mock_tool_registry.get_implementation.return_value = None
 
-        with patch("app.services.tools.tool_registry", mock_tool_registry):
+        with patch("app.tools.tool_registry", mock_tool_registry):
             req = ToolExecuteRequest(tool_name="nonexistent_tool", params={})
             result = asyncio_run(execute_tool(req))
             assert result.success is False
@@ -536,7 +536,7 @@ class TestExecuteTool:
 
         mock_tool_registry.get_implementation.return_value = sync_read_file
 
-        with patch("app.services.tools.tool_registry", mock_tool_registry):
+        with patch("app.tools.tool_registry", mock_tool_registry):
             req = ToolExecuteRequest(tool_name="read_file", params={"path": "app/main.py"})
             result = asyncio_run(execute_tool(req))
             assert result.success is True
@@ -551,7 +551,7 @@ class TestExecuteTool:
 
         mock_tool_registry.get_implementation.return_value = async_list_dir
 
-        with patch("app.services.tools.tool_registry", mock_tool_registry):
+        with patch("app.tools.tool_registry", mock_tool_registry):
             req = ToolExecuteRequest(tool_name="list_directory", params={"path": "/tmp"})
             result = await execute_tool(req)
             assert result.success is True
@@ -564,7 +564,7 @@ class TestExecuteTool:
 
         mock_tool_registry.get_implementation.return_value = func_with_required
 
-        with patch("app.services.tools.tool_registry", mock_tool_registry):
+        with patch("app.tools.tool_registry", mock_tool_registry):
             req = ToolExecuteRequest(tool_name="test_func", params={})
             result = asyncio_run(execute_tool(req))
             assert result.success is False
@@ -577,7 +577,7 @@ class TestExecuteTool:
 
         mock_tool_registry.get_implementation.return_value = func_that_fails
 
-        with patch("app.services.tools.tool_registry", mock_tool_registry):
+        with patch("app.tools.tool_registry", mock_tool_registry):
             req = ToolExecuteRequest(tool_name="failing_tool", params={})
             result = asyncio_run(execute_tool(req))
             assert result.success is False
@@ -590,7 +590,7 @@ class TestExecuteTool:
 
         mock_tool_registry.get_implementation.return_value = func_returns_string
 
-        with patch("app.services.tools.tool_registry", mock_tool_registry):
+        with patch("app.tools.tool_registry", mock_tool_registry):
             req = ToolExecuteRequest(tool_name="string_tool", params={})
             result = asyncio_run(execute_tool(req))
             assert result.success is True
@@ -603,7 +603,7 @@ class TestExecuteTool:
 
         mock_tool_registry.get_implementation.return_value = simple_echo
 
-        with patch("app.services.tools.tool_registry", mock_tool_registry):
+        with patch("app.tools.tool_registry", mock_tool_registry):
             req = ToolExecuteRequest(tool_name="echo_tool", params={})
             result = asyncio_run(execute_tool(req))
             assert result.success is True
@@ -640,7 +640,7 @@ class TestExecuteTool:
 
         mock_tool_registry.get_implementation.return_value = complex_handler
 
-        with patch("app.services.tools.tool_registry", mock_tool_registry):
+        with patch("app.tools.tool_registry", mock_tool_registry):
             req = ToolExecuteRequest(
                 tool_name="handler",
                 params={"data": {"items": [1, 2, 3, 4, 5]}}
@@ -656,7 +656,7 @@ class TestExecuteTool:
 
         mock_tool_registry.get_implementation.return_value = simple_func
 
-        with patch("app.services.tools.tool_registry", mock_tool_registry):
+        with patch("app.tools.tool_registry", mock_tool_registry):
             req = ToolExecuteRequest(tool_name="simple", params={})
             result = asyncio_run(execute_tool(req))
             assert result.error == ""
@@ -856,7 +856,7 @@ class TestBoundaryConditions:
         mock_tool_registry.get_implementation.return_value = None
         tool_name = "my_special_tool"
 
-        with patch("app.services.tools.tool_registry", mock_tool_registry):
+        with patch("app.tools.tool_registry", mock_tool_registry):
             req = ToolExecuteRequest(tool_name=tool_name, params={})
             result = asyncio_run(execute_tool(req))
             assert tool_name in result.error

@@ -7,7 +7,7 @@ tool_executor — 工具执行逻辑
 
 from typing import Any, Dict, Set
 
-from app.services.tools.tool_types import ToolCategory
+from app.tools.tool_types import ToolCategory
 
 
 async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any]) -> Dict[str, Any]:

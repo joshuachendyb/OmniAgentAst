@@ -43,7 +43,7 @@ import re
 from typing import Dict, Optional
 
 # 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
-from app.services.tools.tool_constants import (
+from app.tools.tool_constants import (
     SELF_REF_KEYWORDS, CODE_EXTENSIONS, DOC_EXTENSIONS,
     SELF_REF_THRESHOLD_NORMAL, SELF_REF_THRESHOLD_SHORT, SHORT_CONTENT_LENGTH,
 )
