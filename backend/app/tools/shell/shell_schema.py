@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 # Merged schema - 小欧 2026-06-18
+# 【2026-06-18 小健】删除两个包装器schema，违反YAGNI原则
 
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
-from typing import Optional
 
 class ExecuteShellCommandInput(BaseModel):
     command: str = Field(
@@ -28,41 +28,6 @@ class ExecuteShellCommandInput(BaseModel):
     )
 
 
-class ExecuteShellCommandForegroundInput(BaseModel):
-    command: str = Field(
-        ..., description="要执行的命令。如 \"dir\"、\"python script.py\" 等"
-    )
-    shell_type: Optional[Literal["powershell", "cmd"]] = Field(
-        default="powershell",
-        description="执行环境:powershell(默认)或cmd。Windows系统推荐powershell"
-    )
-    timeout: int = Field(
-        default=30000, ge=1, le=600000, description="超时毫秒数,默认30000(30秒)。最小1毫秒,最大600000(10分钟)"
-    )
-    cwd: Optional[str] = Field(
-        default=None, description="工作目录。Agent根据上下文智能设置"
-    )
-    env_vars: Optional[dict] = Field(
-        default=None, description="额外环境变量字典。如 {\"PYTHONIOENCODING\": \"utf-8\"}"
-    )
-
-
-class ExecuteShellCommandBackgroundInput(BaseModel):
-    command: str = Field(
-        ..., description="要在后台运行的命令。如 \"npm run dev\"、\"python server.py\" 等长期运行命令"
-    )
-    shell_type: Optional[Literal["powershell", "cmd"]] = Field(
-        default="powershell",
-        description="执行环境:powershell(默认)或cmd。Windows系统推荐powershell"
-    )
-    cwd: Optional[str] = Field(
-        default=None, description="工作目录。Agent根据上下文智能设置"
-    )
-    env_vars: Optional[dict] = Field(
-        default=None, description="额外环境变量字典。如 {\"PYTHONIOENCODING\": \"utf-8\"}"
-    )
-
-
 class FindCommandInput(BaseModel):
     command: str = Field(
         ..., description="要查找的命令名称,如 python、git、npm、node"
@@ -75,7 +40,7 @@ class FindCommandInput(BaseModel):
 
 class ShellSessionInput(BaseModel):
     shell_id: str = Field(
-        ..., description="后台Shell会话ID,由 execute_shell_command_background 返回"
+        ..., description="后台Shell会话ID,由 execute_shell_command(run_in_background=True) 返回"
     )
     action: Literal["output", "terminate"] = Field(
         default="output",
@@ -114,8 +79,7 @@ class ExecuteCodeInput(BaseModel):
 
 __all__ = [
     "ExecuteShellCommandInput",
-    "ExecuteShellCommandForegroundInput",
-    "ExecuteShellCommandBackgroundInput",
+
     "FindCommandInput",
     "ShellSessionInput",
     "ExecuteCodeInput",
