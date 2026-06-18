@@ -81,3 +81,12 @@ def save_json_file(data: dict, path: Path, logger_name: str = "report") -> str:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
     logger.info(f"{logger_name} saved: {path}")
     return str(path)
+
+
+def save_text_file(content: str, path: Path, logger_name: str = "report") -> str:
+    """保存文本到文件 — 小欧 2026-06-18 DRY: 提取自mermaid_report的重复代码"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding='utf-8')
+    logger.info(f"{logger_name} saved: {path}")
+    return str(path)

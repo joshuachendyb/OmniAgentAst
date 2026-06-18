@@ -2,15 +2,13 @@
 Sankey报告模块 - 生成文件流向Sankey图数据
 包含 generate_sankey_data
 小沈 2026-05-29 拆分自 file_visualization.py
+小欧 2026-06-18 DRY: 使用common.save_json_file替代_save_sankey_json
 """
-import json
 from pathlib import Path
 from typing import List, Optional, Tuple
 from dataclasses import asdict
 
-from app.services.visualization.common import FlowData
-
-from app.utils.logger import logger
+from app.services.visualization.common import FlowData, save_json_file
 
 
 def _query_sankey_operations(task_id: str) -> List[Tuple]:
@@ -55,15 +53,6 @@ def _build_sankey_flows(operations: List[Tuple]) -> List[FlowData]:
     return flows
 
 
-def _save_sankey_json(flows: List[FlowData], path: Path) -> None:
-    """保存Sankey数据到文件 - 小沈 2026-06-08"""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    flows_dict = [asdict(f) for f in flows]
-    path.write_text(json.dumps(flows_dict, ensure_ascii=False, indent=2), encoding='utf-8')
-    logger.info(f"Sankey data saved: {path}")
-
-
 def generate_sankey_data(task_id: str, output_path: Optional[Path] = None) -> List[FlowData]:
     """
     生成Sankey图数据(文件流向图)
@@ -79,6 +68,7 @@ def generate_sankey_data(task_id: str, output_path: Optional[Path] = None) -> Li
     flows = _build_sankey_flows(operations)
     
     if output_path:
-        _save_sankey_json(flows, output_path)
+        flows_dict = [asdict(f) for f in flows]
+        save_json_file(flows_dict, output_path, logger_name="Sankey")
     
     return flows

@@ -2,12 +2,12 @@
 Mermaid报告模块 - 生成Mermaid格式流程图报告
 包含 generate_mermaid_report
 小沈 2026-05-29 拆分自 file_visualization.py
+小欧 2026-06-18 DRY: 使用common.save_text_file替代内联保存逻辑
 """
 from pathlib import Path
 from typing import Optional
 
-
-from app.utils.logger import logger
+from app.services.visualization.common import save_text_file
 
 
 def generate_mermaid_report(task_id: str, output_path: Optional[Path] = None) -> str:
@@ -55,10 +55,6 @@ def generate_mermaid_report(task_id: str, output_path: Optional[Path] = None) ->
     mermaid_content += "classDef blocked fill:#fff3cd,stroke:#ffc107\n"
 
     if output_path:
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(mermaid_content, encoding='utf-8')
-        logger.info(f"Mermaid report saved: {output_path}")
-        return str(output_path)
+        return save_text_file(mermaid_content, output_path, logger_name="Mermaid")
 
     return mermaid_content
