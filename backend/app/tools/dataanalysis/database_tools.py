@@ -36,16 +36,13 @@ from app.tools.tool_response import build_success, build_error, build_warning
 
 
 
-def _get_default_db_path() -> str:
-    """获取应用默认SQLite数据库路径 — 小沈 2026-06-14"""
-    return str(Path.home() / ".omniagent" / "chat_history.db")
-
-
 def _get_connection(connection_type: str, connection_string: Optional[str], db_path: Optional[str], timeout: int = 30000):
     """获取数据库连接,返回 (conn, engine_or_none, error_message)"""
     try:
         if connection_type == "sqlite":
-            path = db_path or _get_default_db_path()
+            if not db_path:
+                return None, None, "SQLite必须提供db_path参数,禁止默认连接应用数据库"
+            path = db_path
             return sqlite3.connect(path, timeout=timeout / 1000), None, None
         elif connection_type in ("mysql", "postgresql"):
             if not connection_string:
