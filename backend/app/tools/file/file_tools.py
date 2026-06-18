@@ -1298,125 +1298,125 @@ async def _get_file_info(
 
         return await get_file_info_impl(
             file_path=file_path,
-            validate_path_func=self._validate_path,
+            validate_path_func=_validate_path,
             follow_symlinks=follow_symlinks,
         )
 
-    async def _compress_files(
-        self,
-        source_path: str,
-        output_path: str,
-        format: str = "zip",
-        exclude_patterns: Optional[List[str]] = None,
-        compression_level: int = 6,
-        overwrite: bool = False,
-        password: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """压缩文件或目录"""
-        from app.tools.toolhelper.file_helper import compress_files_impl
 
-        return await compress_files_impl(
-            source_path=source_path,
-            output_path=output_path,
-            format=format,
-            exclude_patterns=exclude_patterns,
-            compression_level=compression_level,
-            overwrite=overwrite,
-            password=password,
-            validate_path_func=self._validate_path,
-            task_id=self.task_id,
-            record_operation_func=self._record_operation,
-            execute_with_safety_func=self._execute_with_safety,
-            get_next_sequence_func=self._get_next_sequence,
+async def _compress_files(
+    source_path: str,
+    output_path: str,
+    format: str = "zip",
+    exclude_patterns: Optional[List[str]] = None,
+    compression_level: int = 6,
+    overwrite: bool = False,
+    password: Optional[str] = None,
+) -> Dict[str, Any]:
+    """压缩文件或目录"""
+    from app.tools.toolhelper.file_helper import compress_files_impl
+
+    return await compress_files_impl(
+        source_path=source_path,
+        output_path=output_path,
+        format=format,
+        exclude_patterns=exclude_patterns,
+        compression_level=compression_level,
+        overwrite=overwrite,
+        password=password,
+        validate_path_func=_validate_path,
+        task_id=_current_task_id.get(),
+        record_operation_func=record_operation,
+        execute_with_safety_func=execute_with_safety,
+        get_next_sequence_func=lambda: 0,
         )
 
-    async def _extract_archive(
-        self,
-        archive_path: str,
-        output_dir: Optional[str] = None,
-        overwrite: bool = False,
-        password: Optional[str] = None,
-        preserve_permissions: bool = True,
-    ) -> Dict[str, Any]:
-        """解压压缩文件"""
-        from app.tools.toolhelper.file_helper import extract_archive as _extract_archive
-        return _extract_archive(
-            archive_path=archive_path,
-            output_dir=output_dir,
-            overwrite=overwrite,
-            password=password,
-            preserve_permissions=preserve_permissions,
-        )
 
-    async def _get_file_hash(
-        self,
-        file_path: str,
-        algorithm: str = "sha256",
-        verify_against: Optional[str] = None,
-        timeout: int = 30000,
-    ) -> Dict[str, Any]:
-        """计算文件哈希值"""
-        from app.tools.toolhelper.file_helper import hash_file_tool
-        return hash_file_tool(
-            file_path=file_path,
-            algorithm=algorithm,
-        )
+async def _extract_archive(
+    archive_path: str,
+    output_dir: Optional[str] = None,
+    overwrite: bool = False,
+    password: Optional[str] = None,
+    preserve_permissions: bool = True,
+) -> Dict[str, Any]:
+    """解压压缩文件"""
+    from app.tools.toolhelper.file_helper import extract_archive as _extract_archive_impl
+    return _extract_archive_impl(
+        archive_path=archive_path,
+        output_dir=output_dir,
+        overwrite=overwrite,
+        password=password,
+        preserve_permissions=preserve_permissions,
+    )
 
-    async def _file_statistics(
-        self,
-        directory: str,
-        recursive: bool = True,
-        max_depth: int = 100000,
-        filters: Optional[Dict[str, Any]] = None,
-        output_format: str = "json",
-    ) -> Dict[str, Any]:
-        """统计文件系统信息"""
-        from app.tools.toolhelper.file_helper import file_statistics_impl
 
-        return await file_statistics_impl(
-            directory=directory,
-            recursive=recursive,
-            max_depth=max_depth,
-            filters=filters,
-            output_format=output_format,
-            validate_path_func=self._validate_path,
-            task_id=self.task_id,
-            record_operation_func=self._record_operation,
-            execute_with_safety_func=self._execute_with_safety,
-            get_next_sequence_func=self._get_next_sequence,
-        )
+async def _get_file_hash(
+    file_path: str,
+    algorithm: str = "sha256",
+    verify_against: Optional[str] = None,
+    timeout: int = 30000,
+) -> Dict[str, Any]:
+    """计算文件哈希值"""
+    from app.tools.toolhelper.file_helper import hash_file_tool
+    return hash_file_tool(
+        file_path=file_path,
+        algorithm=algorithm,
+    )
 
-    async def _file_checksum(
-        self,
-        file_path: str,
-        algorithm: str = "sha256",
-        verify_hash: Optional[str] = None,
-        chunk_size: int = 65536,
-        timeout: int = 30000,
-    ) -> Dict[str, Any]:
-        """计算文件校验和"""
-        from app.tools.toolhelper.file_helper import file_checksum_impl
 
-        return await file_checksum_impl(
-            file_path=file_path,
-            algorithm=algorithm,
-            verify_hash=verify_hash,
-            chunk_size=chunk_size,
-            timeout=timeout,
-            validate_path_func=self._validate_path,
-            task_id=self.task_id,
-            record_operation_func=self._record_operation,
-            execute_with_safety_func=self._execute_with_safety,
-            get_next_sequence_func=self._get_next_sequence,
-        )
+async def _file_statistics(
+    directory: str,
+    recursive: bool = True,
+    max_depth: int = 100000,
+    filters: Optional[Dict[str, Any]] = None,
+    output_format: str = "json",
+) -> Dict[str, Any]:
+    """统计文件系统信息"""
+    from app.tools.toolhelper.file_helper import file_statistics_impl
 
-    async def read_media_file(
-        self,
-        file_path: str,
-    ) -> Dict[str, Any]:
+    return await file_statistics_impl(
+        directory=directory,
+        recursive=recursive,
+        max_depth=max_depth,
+        filters=filters,
+        output_format=output_format,
+        validate_path_func=_validate_path,
+        task_id=_current_task_id.get(),
+        record_operation_func=record_operation,
+        execute_with_safety_func=execute_with_safety,
+        get_next_sequence_func=lambda: 0,
+    )
+
+
+async def _file_checksum(
+    file_path: str,
+    algorithm: str = "sha256",
+    verify_hash: Optional[str] = None,
+    chunk_size: int = 65536,
+    timeout: int = 30000,
+) -> Dict[str, Any]:
+    """计算文件校验和"""
+    from app.tools.toolhelper.file_helper import file_checksum_impl
+
+    return await file_checksum_impl(
+        file_path=file_path,
+        algorithm=algorithm,
+        verify_hash=verify_hash,
+        chunk_size=chunk_size,
+        timeout=timeout,
+        validate_path_func=_validate_path,
+        task_id=_current_task_id.get(),
+        record_operation_func=record_operation,
+        execute_with_safety_func=execute_with_safety,
+        get_next_sequence_func=lambda: 0,
+    )
+
+
+async def read_media_file(
+    file_path: str,
+) -> Dict[str, Any]:
         """读取媒体文件,返回Base64编码"""
         try:
-            is_valid, error_msg = self._validate_path(file_path)
+            is_valid, error_msg = _validate_path(file_path)
             if not is_valid:
                 return build_error(ERR_PATH_INVALID, error_msg)
 
@@ -1461,87 +1461,88 @@ async def _get_file_info(
             logger.error(f"read_media_file failed: {file_path}: {e}")
             return build_error(ERR_FILE_READ_FAILED, str(e))
 
-    async def _read_batch_file(
-        self,
-        file_paths: List[str],
-    ) -> Dict[str, Any]:
-        """同时读取多个文本文件 - 小沈 2026-05-01"""
-        if not file_paths:
-            return build_error(ERR_PARAM_INVALID, "文件路径列表为空")
 
-        # 【修复 2026-05-01 小沈】OOM防护:批量文件数上限
-        if len(file_paths) > MAX_BATCH_FILE_COUNT:
-            return build_error(ERR_PARAM_INVALID, f"批量读取文件数({len(file_paths)})超过上限{MAX_BATCH_FILE_COUNT},请分批读取")
+async def _read_batch_file(
+    file_paths: List[str],
+) -> Dict[str, Any]:
+    """同时读取多个文本文件 - 小沈 2026-05-01"""
+    if not file_paths:
+        return build_error(ERR_PARAM_INVALID, "文件路径列表为空")
 
-        # 【修复 2026-05-01 小沈】B1: 添加Semaphore并发限制,防止大量文件并发读取耗尽文件句柄
-        semaphore = asyncio.Semaphore(20)
+    # 【修复 2026-05-01 小沈】OOM防护:批量文件数上限
+    if len(file_paths) > MAX_BATCH_FILE_COUNT:
+        return build_error(ERR_PARAM_INVALID, f"批量读取文件数({len(file_paths)})超过上限{MAX_BATCH_FILE_COUNT},请分批读取")
 
-        async def _read_single(fp: str) -> Dict[str, Any]:
-            async with semaphore:
-                # 【新增 2026-05-02 小沈】二进制文件保护
-                is_binary, binary_reason = _is_binary_file(fp)
-                if is_binary:
-                    return build_error(ERR_FILE_READ, f"{binary_reason}。已跳过该文件。: {fp}", data={"file_path": fp})
+    # 【修复 2026-05-01 小沈】B1: 添加Semaphore并发限制,防止大量文件并发读取耗尽文件句柄
+    semaphore = asyncio.Semaphore(20)
 
-                is_valid, error_msg = self._validate_path(fp)
-                if not is_valid:
-                    return build_error(ERR_FILE_READ, f"{error_msg}: {fp}", data={"file_path": fp})
-                path = Path(fp)
-                if not path.exists():
-                    return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {fp}", data={"file_path": fp})
+    async def _read_single(fp: str) -> Dict[str, Any]:
+        async with semaphore:
+            # 【新增 2026-05-02 小沈】二进制文件保护
+            is_binary, binary_reason = _is_binary_file(fp)
+            if is_binary:
+                return build_error(ERR_FILE_READ, f"{binary_reason}。已跳过该文件。: {fp}", data={"file_path": fp})
 
-                # 【修复 2026-05-01 小沈】OOM防护:单文件大小预检
-                try:
-                    if path.stat().st_size > MAX_READ_SIZE:
-                        return build_error(ERR_FILE_READ_TOO_LARGE, f"文件过大({path.stat().st_size}字节),超过读取上限{MAX_READ_SIZE//1024//1024}MB: {fp}", data={"file_path": fp})
-                except OSError as e:
-                    return build_error(ERR_FILE_READ, f"{e}: {fp}", data={"file_path": fp})
+            is_valid, error_msg = _validate_path(fp)
+            if not is_valid:
+                return build_error(ERR_FILE_READ, f"{error_msg}: {fp}", data={"file_path": fp})
+            path = Path(fp)
+            if not path.exists():
+                return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {fp}", data={"file_path": fp})
 
-                try:
-                    for enc in ["utf-8", "gbk", "gb2312", "utf-8-sig"]:
-                        try:
-                            # 【修复 2026-04-30 小沈】用with语句读取,避免文件句柄泄漏
-                            def _read_with(e=enc):
-                                with open(path, 'r', encoding=e, errors='replace') as f:
-                                    return f.read()
-                            content = await asyncio.to_thread(_read_with)
-                            # 【修复 小沈 2026-05-19】同_read_text_file:errors='replace'导致utf-8不抛异常
-                            if '\ufffd' in content:
-                                continue
-                            return build_success({"file_path": fp, "content": content, "encoding": enc, "file_size": path.stat().st_size}, f"读取成功: {fp}")
-                        except Exception:
+            # 【修复 2026-05-01 小沈】OOM防护:单文件大小预检
+            try:
+                if path.stat().st_size > MAX_READ_SIZE:
+                    return build_error(ERR_FILE_READ_TOO_LARGE, f"文件过大({path.stat().st_size}字节),超过读取上限{MAX_READ_SIZE//1024//1024}MB: {fp}", data={"file_path": fp})
+            except OSError as e:
+                return build_error(ERR_FILE_READ, f"{e}: {fp}", data={"file_path": fp})
+
+            try:
+                for enc in ["utf-8", "gbk", "gb2312", "utf-8-sig"]:
+                    try:
+                        # 【修复 2026-04-30 小沈】用with语句读取,避免文件句柄泄漏
+                        def _read_with(e=enc):
+                            with open(path, 'r', encoding=e, errors='replace') as f:
+                                return f.read()
+                        content = await asyncio.to_thread(_read_with)
+                        # 【修复 小沈 2026-05-19】同_read_text_file:errors='replace'导致utf-8不抛异常
+                        if '\ufffd' in content:
                             continue
-                    return build_error(ERR_FILE_READ_FAILED, f"无法解码文件: {fp}", data={"file_path": fp})
-                except Exception as e:
-                    return build_error(ERR_FILE_READ, f"{e}: {fp}", data={"file_path": fp})
+                        return build_success({"file_path": fp, "content": content, "encoding": enc, "file_size": path.stat().st_size}, f"读取成功: {fp}")
+                    except Exception:
+                        continue
+                return build_error(ERR_FILE_READ_FAILED, f"无法解码文件: {fp}", data={"file_path": fp})
+            except Exception as e:
+                return build_error(ERR_FILE_READ, f"{e}: {fp}", data={"file_path": fp})
 
-        results = await asyncio.gather(*[_read_single(fp) for fp in file_paths])
-        success_count = sum(1 for r in results if r.get("code") == "SUCCESS")
-        # 【修复 小健 2026-05-16】llm_data包含每个文件内容,≤5K全给,>5K给前800字符预览
-        _llm_files = []
-        for r in results:
-            _rd = r.get("data", {})
-            if r.get("code") == "SUCCESS":
-                content = _rd.get("content", "")
-                if len(content) <= 5000:
-                    _llm_files.append({"路径": _rd.get("file_path", ""), "内容": content})
-                else:
-                    _llm_files.append({"路径": _rd.get("file_path", ""), "内容预览": content[:800], "总长度": f"{len(content)}字符"})
+    results = await asyncio.gather(*[_read_single(fp) for fp in file_paths])
+    success_count = sum(1 for r in results if r.get("code") == "SUCCESS")
+    # 【修复 小健 2026-05-16】llm_data包含每个文件内容,≤5K全给,>5K给前800字符预览
+    _llm_files = []
+    for r in results:
+        _rd = r.get("data", {})
+        if r.get("code") == "SUCCESS":
+            content = _rd.get("content", "")
+            if len(content) <= 5000:
+                _llm_files.append({"路径": _rd.get("file_path", ""), "内容": content})
             else:
-                _llm_files.append({"路径": _rd.get("file_path", ""), "失败": r.get("message", "未知错误")})
-        _llm = {
-            "总数": f"{len(results)}个文件",
-            "成功": f"{success_count}个",
-            "失败": f"{len(results) - success_count}个",
-            "文件详情": _llm_files,
-        }
-        return build_success(
-            {"results": results, "total": len(results), "success_count": success_count, "failed_count": len(results) - success_count},
-            f"批量读取完成: 成功{success_count}个, 失败{len(results) - success_count}个",
-            llm_data=_llm,
-        )
+                _llm_files.append({"路径": _rd.get("file_path", ""), "内容预览": content[:800], "总长度": f"{len(content)}字符"})
+        else:
+            _llm_files.append({"路径": _rd.get("file_path", ""), "失败": r.get("message", "未知错误")})
+    _llm = {
+        "总数": f"{len(results)}个文件",
+        "成功": f"{success_count}个",
+        "失败": f"{len(results) - success_count}个",
+        "文件详情": _llm_files,
+    }
+    return build_success(
+        {"results": results, "total": len(results), "success_count": success_count, "failed_count": len(results) - success_count},
+        f"批量读取完成: 成功{success_count}个, 失败{len(results) - success_count}个",
+        llm_data=_llm,
+    )
 
-    async def _precise_replace_in_file(
+
+async def _precise_replace_in_file(
         self,
         file_path: str,
         old_string: str,
@@ -1625,319 +1626,321 @@ async def _get_file_info(
         except Exception as e:
             return build_error(ERR_FILE_REPLACE_FAILED, f"替换失败: {e}")
 
-    @staticmethod
-    def _read_file_with_encodings_sync(path: Path, preferred: Optional[str] = None) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-        """同步读取文件,自动尝试编码 - 小健 2026-05-25
 
-        复用自 _try_read_file_with_encodings(L709)的同步版本,
-        供 _edit_sync 等同步闭包使用。
-        """
-        encodings_to_try = [preferred] if preferred else []
-        encodings_to_try.extend(["utf-8", "gbk", "gb2312", "utf-8-sig"])
-        for enc in encodings_to_try:
-            if enc is None:
-                continue
-            try:
-                with open(path, 'r', encoding=enc, errors='replace') as f:
-                    content = f.read()
-                return content, enc, None
-            except Exception:
-                continue
-        return None, None, f"无法读取文件: {path},已尝试编码: {encodings_to_try}"
+def _read_file_with_encodings_sync(path: Path, preferred: Optional[str] = None) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """同步读取文件,自动尝试编码 - 小健 2026-05-25
 
-    @staticmethod
-    def _apply_single_edit(content: str, edit: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
-        """对内容执行一次编辑,返回 (新内容, 编辑结果)。
+    复用自 _try_read_file_with_encodings(L709)的同步版本,
+    供 _edit_sync 等同步闭包使用。
+    """
+    encodings_to_try = [preferred] if preferred else []
+    encodings_to_try.extend(["utf-8", "gbk", "gb2312", "utf-8-sig"])
+    for enc in encodings_to_try:
+        if enc is None:
+            continue
+        try:
+            with open(path, 'r', encoding=enc, errors='replace') as f:
+                content = f.read()
+            return content, enc, None
+        except Exception:
+            continue
+    return None, None, f"无法读取文件: {path},已尝试编码: {encodings_to_try}"
 
-        小沈 2026-05-25 重构拆分
-        消除 R1a-c 的 3 路 if-elif 重复(行1926-1934)。
+
+def _apply_single_edit(content: str, edit: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+    """对内容执行一次编辑,返回 (新内容, 编辑结果)。
+
+    小沈 2026-05-25 重构拆分
+    消除 R1a-c 的 3 路 if-elif 重复(行1926-1934)。
         YAGNI: 不再返回 old_text/new_text——调用方仅需知悉编辑是否成功。
 
         edit: {"oldText": str, "newText": str}
         返回 edit_result: {ok, reason} 或 {ok}
         """
-        old_text = edit.get("oldText", "")
-        new_text = edit.get("newText", "")
+    old_text = edit.get("oldText", "")
+    new_text = edit.get("newText", "")
 
-        if not old_text:
-            return content, {"ok": False, "reason": "oldText 为空"}
+    if not old_text:
+        return content, {"ok": False, "reason": "oldText 为空"}
 
-        idx = content.find(old_text)
-        if idx == -1:
-            return content, {"ok": False, "reason": f"未找到匹配: {old_text[:50]}"}
+    idx = content.find(old_text)
+    if idx == -1:
+        return content, {"ok": False, "reason": f"未找到匹配: {old_text[:50]}"}
 
-        new_content = content[:idx] + new_text + content[idx + len(old_text):]
-        return new_content, {"ok": True}
+    new_content = content[:idx] + new_text + content[idx + len(old_text):]
+    return new_content, {"ok": True}
 
-    def _execute_edit_sync(self, path: Path, edits: List[Dict], dry_run: bool, encoding: Optional[str], edit_result: Dict) -> bool:
-        """执行文件编辑同步操作 — 小健 2026-05-25 重构拆分
 
-        使用场景:
-            _apply_edits中作为同步操作函数传递给safety.execute_with_safety
+def _execute_edit_sync(path: Path, edits: List[Dict], dry_run: bool, encoding: Optional[str], edit_result: Dict) -> bool:
+    """执行文件编辑同步操作 — 小健 2026-05-25 重构拆分
 
-        使用示例:
-            edit_result = {}
-            success = self._execute_edit_sync(path, edits, dry_run, encoding, edit_result)
+    使用场景:
+        _apply_edits中作为同步操作函数传递给safety.execute_with_safety
 
-        返回数据说明:
-            - 返回bool,True表示成功
-            - edit_result会被填充编辑结果(applied_edits/total_edits/results/preview/dry_run/used_enc)
-        """
-        content, used_enc, err_msg = FileTools._read_file_with_encodings_sync(path, encoding)
-        if err_msg:
-            raise ValueError(err_msg)
+    使用示例:
+        edit_result = {}
+        success = _execute_edit_sync(path, edits, dry_run, encoding, edit_result)
 
-        modified = content
-        results = []
-        for i, edit in enumerate(edits):
-            modified, result = FileTools._apply_single_edit(modified, edit)
-            result["index"] = i
-            results.append(result)
+    返回数据说明:
+        - 返回bool,True表示成功
+        - edit_result会被填充编辑结果(applied_edits/total_edits/results/preview/dry_run/used_enc)
+    """
+    content, used_enc, err_msg = _read_file_with_encodings_sync(path, encoding)
+    if err_msg:
+        raise ValueError(err_msg)
 
-        applied = sum(1 for r in results if r["ok"])
-        if not dry_run and applied > 0:
-            self._write_file_atomic(modified, path, used_enc, append=False, create_parents=False)
+    modified = content
+    results = []
+    for i, edit in enumerate(edits):
+        modified, result = _apply_single_edit(modified, edit)
+        result["index"] = i
+        results.append(result)
 
-        edit_result['applied_edits'] = applied
-        edit_result['total_edits'] = len(edits)
-        edit_result['results'] = results
-        edit_result['preview'] = modified if dry_run else None
-        edit_result['dry_run'] = dry_run
-        edit_result['used_enc'] = used_enc
-        return True
+    applied = sum(1 for r in results if r["ok"])
+    if not dry_run and applied > 0:
+        _write_file_atomic(modified, path, used_enc, append=False, create_parents=False)
 
-    async def _apply_edits(
-        self,
-        file_path: str,
-        edits: List[Dict[str, str]],
-        dry_run: bool = False,
-        encoding: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """高级编辑文件,支持多处编辑和预览(内部方法) — 小健 2026-05-25 重构拆分
+    edit_result['applied_edits'] = applied
+    edit_result['total_edits'] = len(edits)
+    edit_result['results'] = results
+    edit_result['preview'] = modified if dry_run else None
+    edit_result['dry_run'] = dry_run
+    edit_result['used_enc'] = used_enc
+    return True
 
-        使用场景:
-            内部调用
 
-        使用示例:
-            result = await self._apply_edits('test.py', [{'oldText': 'old', 'newText': 'new'}])
+async def _apply_edits(
+    file_path: str,
+    edits: List[Dict[str, str]],
+    dry_run: bool = False,
+    encoding: Optional[str] = None,
+) -> Dict[str, Any]:
+    """高级编辑文件,支持多处编辑和预览(内部方法) — 小健 2026-05-25 重构拆分
 
-        返回数据说明:
-            - 返回Dict,包含applied_edits/total_edits/results/preview/dry_run/encoding/operation_id
-        """
-        try:
-            is_valid, error_msg = self._validate_path(file_path)
-            if not is_valid:
-                return build_error(ERR_PATH_INVALID, error_msg)
+    使用场景:
+        内部调用
 
-            if not self.task_id:
-                self.task_id = _current_task_id.get(None)
-            if not self.task_id:
-                return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID,请先创建一个任务")
+    使用示例:
+        result = await _apply_edits('test.py', [{'oldText': 'old', 'newText': 'new'}])
 
-            is_binary, binary_reason = _is_binary_file(file_path)
-            if is_binary:
-                return build_error(ERR_FILE_READ_BINARY_FILE, f"{binary_reason}。请使用对应的专业工具操作二进制文件。")
+    返回数据说明:
+        - 返回Dict,包含applied_edits/total_edits/results/preview/dry_run/encoding/operation_id
+    """
+    try:
+        is_valid, error_msg = _validate_path(file_path)
+        if not is_valid:
+            return build_error(ERR_PATH_INVALID, error_msg)
 
-            path = Path(file_path)
-            if not path.exists():
-                return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {file_path}")
+        task_id = _current_task_id.get()
+        if not task_id:
+            return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID,请先创建一个任务")
 
-            if path.stat().st_size > MAX_READ_SIZE:
-                return build_error(ERR_FILE_READ_TOO_LARGE, f"文件过大({path.stat().st_size}字节),超过编辑上限{MAX_READ_SIZE//1024//1024}MB")
+        is_binary, binary_reason = _is_binary_file(file_path)
+        if is_binary:
+            return build_error(ERR_FILE_READ_BINARY_FILE, f"{binary_reason}。请使用对应的专业工具操作二进制文件。")
 
-            operation_id = self._record_operation(
-                task_id=self.task_id,
-                operation_type=OperationType.MODIFY,
-                destination_path=path,
-                sequence_number=self._get_next_sequence()
-            )
+        path = Path(file_path)
+        if not path.exists():
+            return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {file_path}")
 
-            edit_result = {}
-            success = await asyncio.to_thread(
-                self._execute_with_safety,
-                operation_id,
-                operation_func=lambda: self._execute_edit_sync(path, edits, dry_run, encoding, edit_result)
-            )
-            if success:
-                return build_success(
-                    {
-                        "applied_edits": edit_result['applied_edits'],
-                        "total_edits": edit_result['total_edits'],
-                        "results": edit_result['results'],
-                        "preview": edit_result['preview'],
-                        "dry_run": edit_result['dry_run'],
-                        "encoding": edit_result['used_enc'],
-                        "operation_id": operation_id,
-                    },
-                    f"已应用 {edit_result['applied_edits']}/{edit_result['total_edits']} 处编辑"
-                )
-            return build_error(ERR_FILE_EDIT_FAILED, "文件编辑失败,safety拦截")
-        except Exception as e:
-            logger.error(f"edit_text_file failed: {file_path}: {e}")
-            return build_error(ERR_FILE_EDIT_FAILED, str(e))
+        if path.stat().st_size > MAX_READ_SIZE:
+            return build_error(ERR_FILE_READ_TOO_LARGE, f"文件过大({path.stat().st_size}字节),超过编辑上限{MAX_READ_SIZE//1024//1024}MB")
 
-    async def grep_file_content(
-        self,
-        pattern: str,
-        search_dir: Optional[str] = None,
-        output_mode: Optional[Literal["content", "files_with_matches", "count"]] = None,
-        glob: Optional[str] = None,
-        context: Optional[Dict[str, int]] = None,
-        ignore_case: bool = True,
-        multiline: bool = False,
-        head_limit: Optional[int] = None,
-        page_token: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """基于正则的内容搜索 — 小沈 2026-05-19, 2026-05-25 小健重构拆分"""
-        after_lines = before_lines = context_lines = None
-        if context:
-            after_lines = context.get("after")
-            before_lines = context.get("before")
-            context_lines = context.get("around")
-        try:
-            search_path = Path(search_dir).resolve() if search_dir else Path.cwd().resolve()
-            is_valid, error_msg = self._validate_path(str(search_path))
-            if not is_valid:
-                return build_error(ERR_PATH_INVALID, error_msg)
-            if not pattern:
-                return build_error(ERR_PARAM_INVALID, "搜索模式不能为空")
+        operation_id = record_operation(
+            task_id=task_id,
+            operation_type=OperationType.MODIFY,
+            destination_path=path,
+            sequence_number=0
+        )
 
-            deadline = time.monotonic() + TOOL_TIMEOUTS.get("grep_file_content", TOOL_TIMEOUTS["default"]) - 2
-            matches, total_matches = await asyncio.to_thread(
-                _grep_files_sync, search_path, pattern, glob, output_mode,
-                ignore_case, multiline, head_limit, context_lines, after_lines, before_lines, deadline
-            )
-
-            total = len(matches)
-            page_results, next_page_token = _paginate_results(matches, page_token, DEFAULT_PAGE_SIZE)
-            has_more = next_page_token is not None
-
+        edit_result = {}
+        success = await asyncio.to_thread(
+            execute_with_safety,
+            operation_id,
+            operation_func=lambda: _execute_edit_sync(path, edits, dry_run, encoding, edit_result)
+        )
+        if success:
             return build_success(
                 {
-                    "matches": page_results,
-                    "total_files": total,
-                    "total_matches": total_matches,
-                    "pattern": pattern,
-                    "search_dir": str(search_path),
-                    "output_mode": output_mode or "content",
-                    "has_more": has_more,
-                    "next_page_token": next_page_token,
+                    "applied_edits": edit_result['applied_edits'],
+                    "total_edits": edit_result['total_edits'],
+                    "results": edit_result['results'],
+                    "preview": edit_result['preview'],
+                    "dry_run": edit_result['dry_run'],
+                    "encoding": edit_result['used_enc'],
+                    "operation_id": operation_id,
                 },
-                f"搜索完成,匹配{total_matches}行,涉及{total}个文件",
-                llm_data={
-                    "模式": pattern, "搜索目录": str(search_path),
-                    "匹配文件数": total, "匹配行数": total_matches,
-                    "预览": make_json_safe(page_results[:10], max_str_len=200),
-                    "has_more": has_more,
-                },
-                next_actions=build_next_actions([
-                    ("read_text_file", "读取匹配行上下文", "需要查看完整内容时"),
-                    ("edit_text_file", "编辑匹配内容", "需要修改时"),
-                ]),
+                f"已应用 {edit_result['applied_edits']}/{edit_result['total_edits']} 处编辑"
             )
-        except Exception as e:
-            return build_error(ERR_FILE_CONTENT_SEARCH_FAILED, str(e))
+        return build_error(ERR_FILE_EDIT_FAILED, "文件编辑失败,safety拦截")
+    except Exception as e:
+        logger.error(f"edit_text_file failed: {file_path}: {e}")
+        return build_error(ERR_FILE_EDIT_FAILED, str(e))
 
-    async def get_directory_tree(self, dir_path: str) -> Dict[str, Any]:
-        """获取目录树(委托给 _get_directory_tree 实现)
+
+async def grep_file_content(
+    pattern: str,
+    search_dir: Optional[str] = None,
+    output_mode: Optional[Literal["content", "files_with_matches", "count"]] = None,
+    glob: Optional[str] = None,
+    context: Optional[Dict[str, int]] = None,
+    ignore_case: bool = True,
+    multiline: bool = False,
+    head_limit: Optional[int] = None,
+    page_token: Optional[str] = None,
+) -> Dict[str, Any]:
+    """基于正则的内容搜索 — 小沈 2026-05-19, 2026-05-25 小健重构拆分"""
+    after_lines = before_lines = context_lines = None
+    if context:
+        after_lines = context.get("after")
+        before_lines = context.get("before")
+        context_lines = context.get("around")
+    try:
+        search_path = Path(search_dir).resolve() if search_dir else Path.cwd().resolve()
+        is_valid, error_msg = _validate_path(str(search_path))
+        if not is_valid:
+            return build_error(ERR_PATH_INVALID, error_msg)
+        if not pattern:
+            return build_error(ERR_PARAM_INVALID, "搜索模式不能为空")
+
+        deadline = time.monotonic() + TOOL_TIMEOUTS.get("grep_file_content", TOOL_TIMEOUTS["default"]) - 2
+        matches, total_matches = await asyncio.to_thread(
+            _grep_files_sync, search_path, pattern, glob, output_mode,
+            ignore_case, multiline, head_limit, context_lines, after_lines, before_lines, deadline
+        )
+
+        total = len(matches)
+        page_results, next_page_token = _paginate_results(matches, page_token, DEFAULT_PAGE_SIZE)
+        has_more = next_page_token is not None
+
+        return build_success(
+            {
+                "matches": page_results,
+                "total_files": total,
+                "total_matches": total_matches,
+                "pattern": pattern,
+                "search_dir": str(search_path),
+                "output_mode": output_mode or "content",
+                "has_more": has_more,
+                "next_page_token": next_page_token,
+            },
+            f"搜索完成,匹配{total_matches}行,涉及{total}个文件",
+            llm_data={
+                "模式": pattern, "搜索目录": str(search_path),
+                "匹配文件数": total, "匹配行数": total_matches,
+                "预览": make_json_safe(page_results[:10], max_str_len=200),
+                "has_more": has_more,
+            },
+            next_actions=build_next_actions([
+                ("read_text_file", "读取匹配行上下文", "需要查看完整内容时"),
+                ("edit_text_file", "编辑匹配内容", "需要修改时"),
+            ]),
+        )
+    except Exception as e:
+        return build_error(ERR_FILE_CONTENT_SEARCH_FAILED, str(e))
+
+
+async def get_directory_tree(dir_path: str) -> Dict[str, Any]:
+    """获取目录树(委托给 _get_directory_tree 实现)
 
         规范:§11.10 浏览器禁止执行write、chmod等shell操作
         通过 path_utils.validate_and_normalize 实现安全路径检查
         """
-        return await self._get_directory_tree(dir_path)
+    return await _get_directory_tree(dir_path)
 
-    async def _get_directory_tree(
-        self,
-        dir_path: str,
-        excludePatterns: Optional[List[str]] = None,
-        max_depth: Optional[int] = None,
-    ) -> Dict[str, Any]:
-        """获取目录的递归JSON树结构 - 小沈 2026-05-01"""
-        try:
-            is_valid, error_msg = self._validate_path(dir_path)
-            if not is_valid:
-                return build_error(ERR_PATH_INVALID, error_msg)
 
-            path = Path(dir_path)
-            if not path.exists():
-                return build_error(ERR_FILE_DIRECTORY_NOT_FOUND, f"目录不存在: {dir_path}")
-            if not path.is_dir():
-                return build_error(ERR_FILE_PATH_NOT_DIR, f"不是目录: {dir_path}")
+async def _get_directory_tree(
+    dir_path: str,
+    excludePatterns: Optional[List[str]] = None,
+    max_depth: Optional[int] = None,
+) -> Dict[str, Any]:
+    """获取目录的递归JSON树结构 - 小沈 2026-05-01"""
+    try:
+        is_valid, error_msg = _validate_path(dir_path)
+        if not is_valid:
+            return build_error(ERR_PATH_INVALID, error_msg)
 
-            # 【修复 2026-05-01 小沈】默认max_depth防止无限递归
-            effective_max_depth = max_depth if max_depth is not None else 10
-            excludes = excludePatterns or []
-            entry_count = [0]
-            # 【修复 2026-05-10 小健】超时自检
-            _tree_deadline = time.monotonic() + TOOL_TIMEOUTS.get("get_directory_tree", TOOL_TIMEOUTS["default"]) - 2
-            _tree_timed_out = False
+        path = Path(dir_path)
+        if not path.exists():
+            return build_error(ERR_FILE_DIRECTORY_NOT_FOUND, f"目录不存在: {dir_path}")
+        if not path.is_dir():
+            return build_error(ERR_FILE_PATH_NOT_DIR, f"不是目录: {dir_path}")
 
-            def _build_tree(current_path: Path, depth: int = 0) -> Optional[Dict[str, Any]]:
-                nonlocal _tree_timed_out
-                if _tree_timed_out:
+        # 【修复 2026-05-01 小沈】默认max_depth防止无限递归
+        effective_max_depth = max_depth if max_depth is not None else 10
+        excludes = excludePatterns or []
+        entry_count = [0]
+        # 【修复 2026-05-10 小健】超时自检
+        _tree_deadline = time.monotonic() + TOOL_TIMEOUTS.get("get_directory_tree", TOOL_TIMEOUTS["default"]) - 2
+        _tree_timed_out = False
+
+        def _build_tree(current_path: Path, depth: int = 0) -> Optional[Dict[str, Any]]:
+            nonlocal _tree_timed_out
+            if _tree_timed_out:
+                return None
+            if depth > effective_max_depth:
+                return None
+            # 【修复 2026-05-01 小沈】条目数上限防护
+            if entry_count[0] >= MAX_PAGE_SIZE:
+                return None
+            # 【修复 2026-05-01 小沈】符号链接循环防护:跳过符号链接目录
+            if current_path.is_dir() and current_path.is_symlink():
+                return None
+            if time.monotonic() > _tree_deadline:
+                _tree_timed_out = True
+                logger.warning(f"[get_directory_tree] 超时自检触发,已收集{entry_count[0]}条,提前返回")
+                return None
+            name = current_path.name
+            for pattern in excludes:
+                if fnmatch.fnmatch(name, pattern):
                     return None
-                if depth > effective_max_depth:
-                    return None
-                # 【修复 2026-05-01 小沈】条目数上限防护
-                if entry_count[0] >= MAX_PAGE_SIZE:
-                    return None
-                # 【修复 2026-05-01 小沈】符号链接循环防护:跳过符号链接目录
-                if current_path.is_dir() and current_path.is_symlink():
-                    return None
-                if time.monotonic() > _tree_deadline:
-                    _tree_timed_out = True
-                    logger.warning(f"[get_directory_tree] 超时自检触发,已收集{entry_count[0]}条,提前返回")
-                    return None
-                name = current_path.name
-                for pattern in excludes:
-                    if fnmatch.fnmatch(name, pattern):
-                        return None
-                if current_path.is_file():
-                    entry_count[0] += 1
-                    return {"name": name, "type": "file"}
-                try:
-                    children = []
-                    for item in sorted(current_path.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
-                        child = _build_tree(item, depth + 1)
-                        if child is not None:
-                            children.append(child)
-                    entry_count[0] += 1
-                    return {"name": name, "type": "directory", "children": children}
-                except (PermissionError, OSError):
-                    return {"name": name, "type": "directory", "children": []}
+            if current_path.is_file():
+                entry_count[0] += 1
+                return {"name": name, "type": "file"}
+            try:
+                children = []
+                for item in sorted(current_path.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+                    child = _build_tree(item, depth + 1)
+                    if child is not None:
+                        children.append(child)
+                entry_count[0] += 1
+                return {"name": name, "type": "directory", "children": children}
+            except (PermissionError, OSError):
+                return {"name": name, "type": "directory", "children": []}
 
-            tree = await asyncio.to_thread(_build_tree, path)
-            tree = tree or {"name": path.name, "type": "directory", "children": []}
-            return build_success(
-                {"tree": tree, "root": str(path)},
-                f"已获取目录树: {dir_path}",
-                llm_data={"目录": str(path), "树形结构根节点": tree.get("name",""), "子项数": len(tree.get("children",[]))},
-                next_actions=build_next_actions([
-                    ("search_files", "搜索文件", "需要查找特定文件时"),
-                    ("read_text_file", "读取文件", "需要查看文件内容时"),
-                ])
-            )
-        except Exception as e:
-            logger.error(f"get_directory_tree failed: {dir_path}: {e}")
-            return build_error(ERR_FILE_LIST_DIR_FAILED, str(e))
+        tree = await asyncio.to_thread(_build_tree, path)
+        tree = tree or {"name": path.name, "type": "directory", "children": []}
+        return build_success(
+            {"tree": tree, "root": str(path)},
+            f"已获取目录树: {dir_path}",
+            llm_data={"目录": str(path), "树形结构根节点": tree.get("name",""), "子项数": len(tree.get("children",[]))},
+            next_actions=build_next_actions([
+                ("search_files", "搜索文件", "需要查找特定文件时"),
+                ("read_text_file", "读取文件", "需要查看文件内容时"),
+            ])
+        )
+    except Exception as e:
+        logger.error(f"get_directory_tree failed: {dir_path}: {e}")
+        return build_error(ERR_FILE_LIST_DIR_FAILED, str(e))
 
-    # ============================================================
-    # 第九部分:精简合并工具(v2.0)— 小沈 2026-05-18
-    # ============================================================
 
-    async def read_text_file(
-        file_path: str,
-        head: Optional[int] = None,
-        tail: Optional[int] = None,
-        offset: Optional[int] = None,
-        limit: Optional[int] = None,
-        encoding: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        return await _read_text_file(
-            file_path=file_path,
-            head=head,
-            tail=tail,
-            offset=offset,
+# ============================================================
+# 第九部分:精简合并工具(v2.0)— 小沈 2026-05-18
+# ============================================================
+
+async def read_text_file(
+    file_path: str,
+    head: Optional[int] = None,
+    tail: Optional[int] = None,
+    offset: Optional[int] = None,
+    limit: Optional[int] = None,
+    encoding: Optional[str] = None,
+) -> Dict[str, Any]:
+    return await _read_text_file(
+        file_path=file_path,
+        head=head,
+        tail=tail,
+        offset=offset,
             limit=limit,
             encoding=encoding
         )
@@ -2069,116 +2072,119 @@ def _build_format_result(
 ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
     """构建 data_file_format 的统一返回数据 + llm_data(21.2 组件2,小沈 2026-05-25 实施)"""
     if result.get("code", "").startswith("ERR_"):
-            return build_error(ERR_DOC_DATA_FORMAT_FAILED, result.get("message", "未知错误")), None
+        return build_error(ERR_DOC_DATA_FORMAT_FAILED, result.get("message", "未知错误")), None
 
-        result_data = result.get("data", result)
-        suffix = {}
+    result_data = result.get("data", result)
+    suffix = {}
 
-        if action == "write":
-            try:
-                suffix["bytes_written"] = os.path.getsize(file_path)
-            except Exception:
-                pass
-
-        llm_data = None
-        if action == "read":
-            llm_data = {"格式": detected_format, "文件": file_path, "动作": "read"}
-            if isinstance(result_data, dict):
-                llm_data["键"] = list(result_data.keys())[:30]
-                llm_data["顶层项数"] = len(result_data)
-            elif isinstance(result_data, list):
-                llm_data["项数"] = len(result_data)
-                llm_data["预览"] = make_json_safe(result_data[:5], max_str_len=200)
-
-        return build_success(
-            {"data": result_data, "format": detected_format,
-             "file_path": file_path, "action": action, **suffix},
-            f"已{action} {detected_format.upper()}格式文件: {file_path}",
-            llm_data=llm_data,
-            next_actions=build_next_actions([("edit_text_file", "编辑格式化文件", "需要修改时")]),
-        ), llm_data
-
-    async def _data_format_exec(
-        self, file_path: str, action: str, detected: str,
-        encoding: str, data: Optional[Any] = None, indent: Optional[int] = None
-    ) -> Dict[str, Any]:
-        """内部执行:格式检测+分发调度 — 小欧 2026-06-17"""
-        dispatch = _FORMAT_DISPATCH.get(detected)
-        if not dispatch:
-            return build_error(ERR_PARAM_INVALID, f"不支持的格式: {detected}")
-        func = dispatch[action]
-        if func is None:
-            return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED,
-                f"{detected.upper()}格式暂不支持{action}操作")
+    if action == "write":
         try:
-            kwargs = {"file_path": file_path, "encoding": encoding}
-            if action == "write":
-                kwargs["data"] = data
-                if detected == "json":
-                    kwargs["indent"] = indent or 2
-                elif detected == "yaml" and indent is not None:
-                    kwargs["indent"] = indent
-            result = await asyncio.to_thread(func, **kwargs)
-            resp, _ = self._build_format_result(result, action, detected, file_path)
-            return resp
-        except Exception as e:
-            logger.error(f"[_data_format_exec] 执行失败: {e}")
-            return build_error(ERR_DOC_DATA_FORMAT_FAILED, str(e))
+            suffix["bytes_written"] = os.path.getsize(file_path)
+        except Exception:
+            pass
 
-    async def read_data_file(
-        self, file_path: str,
-        format: Optional[str] = None,
-        encoding: str = "utf-8",
-    ) -> Dict[str, Any]:
-        """读取结构化配置文件 — 小欧 2026-06-17"""
-        if not file_path:
-            return build_error(ERR_PARAM_INVALID, "file_path是必填参数")
-        is_valid, err = self._validate_path(file_path)
-        if not is_valid:
-            return build_error(ERR_PATH_INVALID, err)
-        detected = format
-        if not detected:
-            ext = os.path.splitext(file_path)[1].lower()
-            _ext_map = {
-                ".json": "json", ".yaml": "yaml", ".yml": "yaml",
-                ".toml": "toml", ".ini": "ini", ".cfg": "ini",
-                ".xml": "xml", ".properties": "properties",
-            }
-            detected = _ext_map.get(ext)
-        if not detected:
-            return build_error(ERR_DOC_FORMAT_NOT_DETECTED,
-                f"无法识别文件格式: {file_path},请通过format参数指定")
-        return await self._data_format_exec(file_path, "read", detected, encoding)
+    llm_data = None
+    if action == "read":
+        llm_data = {"格式": detected_format, "文件": file_path, "动作": "read"}
+        if isinstance(result_data, dict):
+            llm_data["键"] = list(result_data.keys())[:30]
+            llm_data["顶层项数"] = len(result_data)
+        elif isinstance(result_data, list):
+            llm_data["项数"] = len(result_data)
+            llm_data["预览"] = make_json_safe(result_data[:5], max_str_len=200)
 
-    async def write_data_file(
-        self, file_path: str, data: Any,
-        format: Optional[str] = None,
-        encoding: str = "utf-8",
-        indent: Optional[int] = None,
-    ) -> Dict[str, Any]:
-        """写入结构化配置文件 — 小欧 2026-06-17"""
-        if not file_path:
-            return build_error(ERR_PARAM_INVALID, "file_path是必填参数")
-        if data is None:
-            return build_error(ERR_PARAM_INVALID, "data是必填参数")
-        is_valid, err = self._validate_path(file_path)
-        if not is_valid:
-            return build_error(ERR_PATH_INVALID, err)
-        detected = format
-        if not detected:
-            ext = os.path.splitext(file_path)[1].lower()
-            _ext_map = {
-                ".json": "json", ".yaml": "yaml", ".yml": "yaml",
-                ".toml": "toml",
-            }
-            detected = _ext_map.get(ext)
-        if not detected:
-            return build_error(ERR_DOC_FORMAT_NOT_DETECTED,
-                f"无法识别文件格式: {file_path},请通过format参数指定")
-        if detected in ("ini", "xml", "properties"):
-            return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED,
-                f"{detected.upper()}格式暂不支持写入")
-        return await self._data_format_exec(file_path, "write", detected, encoding, data, indent)
+    return build_success(
+        {"data": result_data, "format": detected_format,
+         "file_path": file_path, "action": action, **suffix},
+        f"已{action} {detected_format.upper()}格式文件: {file_path}",
+        llm_data=llm_data,
+        next_actions=build_next_actions([("edit_text_file", "编辑格式化文件", "需要修改时")]),
+    ), llm_data
+
+
+async def _data_format_exec(
+    file_path: str, action: str, detected: str,
+    encoding: str, data: Optional[Any] = None, indent: Optional[int] = None
+) -> Dict[str, Any]:
+    """内部执行:格式检测+分发调度 — 小欧 2026-06-17"""
+    dispatch = _FORMAT_DISPATCH.get(detected)
+    if not dispatch:
+        return build_error(ERR_PARAM_INVALID, f"不支持的格式: {detected}")
+    func = dispatch[action]
+    if func is None:
+        return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED,
+            f"{detected.upper()}格式暂不支持{action}操作")
+    try:
+        kwargs = {"file_path": file_path, "encoding": encoding}
+        if action == "write":
+            kwargs["data"] = data
+            if detected == "json":
+                kwargs["indent"] = indent or 2
+            elif detected == "yaml" and indent is not None:
+                kwargs["indent"] = indent
+        result = await asyncio.to_thread(func, **kwargs)
+        resp, _ = _build_format_result(result, action, detected, file_path)
+        return resp
+    except Exception as e:
+        logger.error(f"[_data_format_exec] 执行失败: {e}")
+        return build_error(ERR_DOC_DATA_FORMAT_FAILED, str(e))
+
+
+async def read_data_file(
+    file_path: str,
+    format: Optional[str] = None,
+    encoding: str = "utf-8",
+) -> Dict[str, Any]:
+    """读取结构化配置文件 — 小欧 2026-06-17"""
+    if not file_path:
+        return build_error(ERR_PARAM_INVALID, "file_path是必填参数")
+    is_valid, err = _validate_path(file_path)
+    if not is_valid:
+        return build_error(ERR_PATH_INVALID, err)
+    detected = format
+    if not detected:
+        ext = os.path.splitext(file_path)[1].lower()
+        _ext_map = {
+            ".json": "json", ".yaml": "yaml", ".yml": "yaml",
+            ".toml": "toml", ".ini": "ini", ".cfg": "ini",
+            ".xml": "xml", ".properties": "properties",
+        }
+        detected = _ext_map.get(ext)
+    if not detected:
+        return build_error(ERR_DOC_FORMAT_NOT_DETECTED,
+            f"无法识别文件格式: {file_path},请通过format参数指定")
+    return await _data_format_exec(file_path, "read", detected, encoding)
+
+
+async def write_data_file(
+    file_path: str, data: Any,
+    format: Optional[str] = None,
+    encoding: str = "utf-8",
+    indent: Optional[int] = None,
+) -> Dict[str, Any]:
+    """写入结构化配置文件 — 小欧 2026-06-17"""
+    if not file_path:
+        return build_error(ERR_PARAM_INVALID, "file_path是必填参数")
+    if data is None:
+        return build_error(ERR_PARAM_INVALID, "data是必填参数")
+    is_valid, err = _validate_path(file_path)
+    if not is_valid:
+        return build_error(ERR_PATH_INVALID, err)
+    detected = format
+    if not detected:
+        ext = os.path.splitext(file_path)[1].lower()
+        _ext_map = {
+            ".json": "json", ".yaml": "yaml", ".yml": "yaml",
+            ".toml": "toml",
+        }
+        detected = _ext_map.get(ext)
+    if not detected:
+        return build_error(ERR_DOC_FORMAT_NOT_DETECTED,
+            f"无法识别文件格式: {file_path},请通过format参数指定")
+    if detected in ("ini", "xml", "properties"):
+        return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED,
+            f"{detected.upper()}格式暂不支持写入")
+    return await _data_format_exec(file_path, "write", detected, encoding, data, indent)
 
 def _match_fnmatch(name: str, pattern: str, ignore_case: bool) -> bool:
     """统一封装fnmatch,消除if-else三元组重复 — 小健 2026-05-25"""

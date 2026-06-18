@@ -49,7 +49,12 @@ from app.tools.file.file_schema import (
     WriteTextFileInput,
 )
 
-from app.tools.file.file_tools import FileTools, get_file_tools
+from app.tools.file.file_tools import (
+    read_text_file, write_text_file, read_media_file, edit_text_file,
+    list_directory, search_files, grep_file_content, compress_files,
+    extract_archive, move_file, copy_file, delete_file, rename_file,
+    read_data_file, write_data_file,
+)
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
@@ -199,40 +204,30 @@ TOOL_INPUT_MODELS = {
 
 def _register_file_tools():
     """
-    注册15个文件工具 — 小欧 2026-06-17
+    注册15个文件工具 — 小健 2026-06-18 函数式设计重构
     """
 
-    ft = None
-
-    def _get_ft():
-        nonlocal ft
-        if ft is None:
-            from app.tools.file.file_tools import FileTools
-            ft = FileTools()
-        return ft
-
     tool_methods = {
-        "read_text_file": lambda **kw: _get_ft().read_text_file(**kw),
-        "write_text_file": lambda **kw: _get_ft().write_text_file(**kw),
-        "read_media_file": lambda **kw: _get_ft().read_media_file(**kw),
-        "edit_text_file": lambda **kw: _get_ft().edit_text_file(**kw),
-        "list_directory": lambda **kw: _get_ft().list_directory(**kw),
-        "search_files": lambda **kw: _get_ft().search_files(**kw),
-        "grep_file_content": lambda **kw: _get_ft().grep_file_content(**kw),
-        "compress_files": lambda **kw: _get_ft().compress_files(**kw),
-        "extract_archive": lambda **kw: _get_ft().extract_archive(**kw),
-        "move_file": lambda **kw: _get_ft().move_file(**kw),
-        "copy_file": lambda **kw: _get_ft().copy_file(**kw),
-        "delete_file": lambda **kw: _get_ft().delete_file(**kw),
-        "rename_file": lambda **kw: _get_ft().rename_file(**kw),
-        "read_data_file": lambda **kw: _get_ft().read_data_file(**kw),
-        "write_data_file": lambda **kw: _get_ft().write_data_file(**kw),
+        "read_text_file": read_text_file,
+        "write_text_file": write_text_file,
+        "read_media_file": read_media_file,
+        "edit_text_file": edit_text_file,
+        "list_directory": list_directory,
+        "search_files": search_files,
+        "grep_file_content": grep_file_content,
+        "compress_files": compress_files,
+        "extract_archive": extract_archive,
+        "move_file": move_file,
+        "copy_file": copy_file,
+        "delete_file": delete_file,
+        "rename_file": rename_file,
+        "read_data_file": read_data_file,
+        "write_data_file": write_data_file,
     }
     
     CONFIRMATION_MAP = {
         "delete_file": True,
     }
-
 
     for name, method in tool_methods.items():
         desc = FILE_TOOL_DESCRIPTIONS.get(name, "")
@@ -257,8 +252,6 @@ def _register_file_tools():
 
 __all__ = [
     "_register_file_tools",
-    "FileTools",
-    "get_file_tools",
     "FILE_TOOL_DESCRIPTIONS",
     "TOOL_INPUT_MODELS",
     "FILE_TOOL_EXAMPLES",
