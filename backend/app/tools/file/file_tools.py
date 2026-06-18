@@ -1538,7 +1538,6 @@ async def _read_batch_file(
 
 
 async def _precise_replace_in_file(
-        self,
         file_path: str,
         old_string: str,
         new_string: str,
@@ -1547,13 +1546,13 @@ async def _precise_replace_in_file(
         dry_run: bool = False,
         encoding: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """精确替换文件中的字符串(21.1 重构,小沈 2026-05-25 实施)"""
+        """精确替换文件中的字符串(21.1 重构,小沈 2026-05-25 实施)
+        2026-06-19 小健 修复: 移除self参数,改为独立函数调用"""
         if not old_string:
             return build_error(ERR_PARAM_INVALID, "old_string不能为空,空字符串替换会导致内容爆炸")
 
-        if not self.task_id:
-            self.task_id = _current_task_id.get(None)
-        if not self.task_id:
+        task_id = _current_task_id.get(None)
+        if not task_id:
             return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID")
 
         is_binary, reason = _is_binary_file(file_path)
@@ -1561,7 +1560,7 @@ async def _precise_replace_in_file(
             return build_error(ERR_FILE_READ_BINARY_FILE, f"{reason}。请使用专业工具操作二进制文件。")
 
         try:
-            is_valid, err = self._validate_path(file_path)
+            is_valid, err = _validate_path(file_path)
             if not is_valid:
                 return build_error(ERR_PATH_INVALID, err)
             path = Path(file_path)
@@ -1571,12 +1570,12 @@ async def _precise_replace_in_file(
                 return build_error(ERR_FILE_READ_TOO_LARGE,
                     f"文件过大({path.stat().st_size}字节),超过替换上限{MAX_READ_SIZE//1024//1024}MB")
 
-            operation_id = self._record_operation(
-                task_id=self.task_id, operation_type=OperationType.MODIFY,
-                destination_path=path, sequence_number=self._get_next_sequence(),
+            operation_id = record_operation(
+                task_id=task_id, operation_type=OperationType.MODIFY,
+                destination_path=path, sequence_number=0,
             )
 
-            content, used_enc, err_msg = await self._try_read_file_with_encodings(path, encoding)
+            content, used_enc, err_msg = await _try_read_file_with_encodings(path, encoding)
             if err_msg:
                 raise ValueError(err_msg)
 
@@ -1588,11 +1587,11 @@ async def _precise_replace_in_file(
                 replace_result['used_enc'] = used_enc
                 if dry_run:
                     return True
-                self._write_file_atomic(new_content, path, used_enc, append=False, create_parents=False)
+                _write_file_atomic(new_content, path, used_enc, append=False, create_parents=False)
                 return True
 
             success = await asyncio.to_thread(
-                self._execute_with_safety,
+                execute_with_safety,
                 operation_id,
                 operation_func=_replace_sync
             )
