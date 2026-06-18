@@ -25,17 +25,24 @@ from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 # 文档工具依赖配置 — 小健 2026-06-18
-# 每个工具对应的第三方依赖包列表
+# 注意：pip包名与import名不一致时必须用字典格式指定import_name
 TOOL_DEPENDENCIES = {
     "read_pdf": ["pdfplumber"],
-    "read_docx": ["python-docx", "pywin32"],
-    "read_pptx": ["python-pptx"],
-    "read_xlsx": ["pandas", "openpyxl", "pywin32"],
-    "write_docx": ["python-docx"],
+    "read_docx": [
+        {"import_name": "docx", "pip_package": "python-docx"},
+        {"import_name": "win32com", "pip_package": "pywin32"},
+    ],
+    "read_pptx": [{"import_name": "pptx", "pip_package": "python-pptx"}],
+    "read_xlsx": [
+        "pandas",
+        "openpyxl",
+        {"import_name": "win32com", "pip_package": "pywin32"},
+    ],
+    "write_docx": [{"import_name": "docx", "pip_package": "python-docx"}],
     "write_xlsx": ["pandas", "openpyxl"],
-    "write_pdf": ["reportlab", "pdfplumber"],  # 可能需要reportlab用于生成PDF
-    "write_pptx": ["python-pptx"],
-    "convert_document": ["pywin32"],
+    "write_pdf": ["reportlab", "pdfplumber"],
+    "write_pptx": [{"import_name": "pptx", "pip_package": "python-pptx"}],
+    "convert_document": [{"import_name": "win32com", "pip_package": "pywin32"}],
 }
 
 
