@@ -9,7 +9,7 @@ DESKTOP Register - 桌面工具注册点
 【2026-06-17 小欧】组合工具拆分:window_control→7个,mouse_control→4个,clipboard_control→2个,window_info去info
 【2026-06-18 小健】添加DESKTOP_TOOL_DEPENDENCIES常量管理工具依赖
 
-【工具列表】(17个) → DESKTOP分类:
+【工具列表】(16个) → DESKTOP分类:
 1. window_info - 列出所有窗口 (依赖: pygetwindow)
 2. window_focus - 聚焦窗口 (依赖: pygetwindow)
 3. window_resize - 调整窗口大小 (依赖: pygetwindow)
@@ -26,7 +26,8 @@ DESKTOP Register - 桌面工具注册点
 14. screen_capture - 屏幕截图 (依赖: pyautogui)
 15. clipboard_read - 读取剪贴板 (依赖: pyperclip)
 16. clipboard_write - 写入剪贴板 (依赖: pyperclip)
-17. send_notification - 系统通知 (依赖: win10toast)
+
+【2026-06-18 小健】send_notification移入FUNDAMENTAL分类
 
 创建时间: 2026-04-29
 更新时间: 2026-06-18 小健
@@ -55,9 +56,7 @@ DESKTOP_TOOL_DEPENDENCIES = {
     "screen_capture": ["pyautogui"],
     "clipboard_read": ["pyperclip"],
     "clipboard_write": ["pyperclip"],
-    "send_notification": [
-        {"import_name": "win10toast", "pip_package": "win10toast", "pre_install": ["setuptools<70"]}
-    ],
+
 }
 
 from app.tools.desktop.desktop_schema import (
@@ -77,7 +76,6 @@ from app.tools.desktop.desktop_schema import (
     ScreenCaptureInput,
     ClipboardReadInput,
     ClipboardWriteInput,
-    SendNotificationInput,
 )
 
 from app.tools.desktop.desktop_tools import (
@@ -98,7 +96,6 @@ from app.tools.desktop.desktop_tools import (
     clipboard_read,
     clipboard_write,
 )
-from app.tools.desktop.desktop_gui_tools import send_notification
 
 
 DESKTOP_TOOL_DESCRIPTIONS = {
@@ -143,14 +140,6 @@ action参数决定操作类型:
 
     "clipboard_write": """将指定文本内容写入系统剪贴板。content参数为必填的写入内容。适用场景:需要将文本复制到剪贴板供其他程序粘贴时使用。""",
 
-    "send_notification": """发送Windows系统通知弹窗。
-title: 通知标题
-message: 通知正文
-duration: 显示时长(秒),默认5秒
-
-使用示例:
-- 发送通知 → send_notification(title="AI热点新闻", message="已为您搜索到最新AI行业新闻")
-- 发送通知 → send_notification(title="任务完成", message="全部操作已完成", duration=3)""",
 }
 
 DESKTOP_TOOL_INPUT_MODELS = {
@@ -170,7 +159,7 @@ DESKTOP_TOOL_INPUT_MODELS = {
     "screen_capture": ScreenCaptureInput,
     "clipboard_read": ClipboardReadInput,
     "clipboard_write": ClipboardWriteInput,
-    "send_notification": SendNotificationInput,
+
 }
 
 DESKTOP_TOOL_EXAMPLES = {
@@ -233,16 +222,12 @@ DESKTOP_TOOL_EXAMPLES = {
         {"content": "Hello World"},
     ],
 
-    "send_notification": [
-        {"title": "AI热点新闻", "message": "已为您搜索到最新AI行业新闻", "duration": 5},
-        {"title": "任务完成", "message": "全部操作已完成"},
-    ],
 
 }
 
 
 def _register_desktop_tools():
-    """注册DESKTOP分类工具(17个) — 小欧 2026-06-17 拆分组合工具"""
+    """注册DESKTOP分类工具(16个) — 小欧 2026-06-17 拆分组合工具"""
     tool_methods = {
         "window_info": window_info,
         "window_focus": window_focus,
@@ -260,7 +245,6 @@ def _register_desktop_tools():
         "screen_capture": screen_capture,
         "clipboard_read": clipboard_read,
         "clipboard_write": clipboard_write,
-        "send_notification": send_notification,
     }
 
     for name, method in tool_methods.items():

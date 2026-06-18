@@ -12,16 +12,17 @@ SYSTEM Register - 系统信息工具注册点
 - net_connections迁入network分类(2026-06-09 小沈)
 【2026-06-18 小健】添加SYSTEM_TOOL_DEPENDENCIES常量管理工具依赖
 
-【工具列表】(LLM可见9个,本文件注册6个 + reg_register注册1个 + env迁入2个)
-1. get_system_info - 获取系统信息 (依赖: psutil)
-2. event_log - 获取系统事件日志 (依赖: psutil)
-3. list_processes - 列出所有进程 (依赖: psutil)
-4. kill_process - 终止指定进程 (依赖: psutil)
-5. service_control - 服务统一控制(start/stop/restart/list) (依赖: psutil)
-6. task_control - 计划任务统一控制(create/delete/list) (无第三方依赖)
+【工具列表】(LLM可见8个,本文件注册5个 + reg_register注册1个 + env迁入2个)
+1. event_log - 获取系统事件日志 (依赖: psutil)
+2. list_processes - 列出所有进程 (依赖: psutil)
+3. kill_process - 终止指定进程 (依赖: psutil)
+4. service_control - 服务统一控制(start/stop/restart/list) (依赖: psutil)
+5. task_control - 计划任务统一控制(create/delete/list) (无第三方依赖)
 + get_env - 获取环境变量 (无第三方依赖)
 + set_env - 设置环境变量 (无第三方依赖)
 + reg_read, reg_write, reg_delete(reg_register.py注册)
+
+【2026-06-18 小健】get_system_info移入FUNDAMENTAL分类
 
 创建时间: 2026-04-29
 更新时间: 2026-06-18 小健
@@ -34,7 +35,7 @@ from app.utils.logger import logger
 # 系统工具依赖配置 — 小健 2026-06-18
 # 每个工具对应的第三方依赖包列表
 SYSTEM_TOOL_DEPENDENCIES = {
-    "get_system_info": ["psutil"],
+
     "event_log": ["psutil"],
     "list_processes": ["psutil"],
     "kill_process": ["psutil"],
@@ -45,7 +46,6 @@ SYSTEM_TOOL_DEPENDENCIES = {
 }
 
 from app.tools.system.system_schema import (
-    GetSystemInfoInput,
     EventLogInput,
     ListProcessesInput,
     KillProcessInput,
@@ -58,7 +58,6 @@ from app.tools.system.system_schema import (
 )
 
 from app.tools.system.system_tools import (
-    get_system_info,
     event_log,
     list_processes,
     kill_process,
@@ -75,7 +74,7 @@ from app.tools.system.env_tools import (
 
 # 工具描述
 SYSTEM_TOOL_DESCRIPTIONS = {
-    "get_system_info": """获取系统完整信息,支持按类型获取:info_type="basic"(OS/主机名/架构)、"cpu"(核心数/频率/使用率)、"memory"(总量/可用/使用率)、"disk"(各分区空间/使用率)、"network"(IO计数器)、"all"(以上全部,默认)。适用场景:需要诊断系统问题(CPU占用高、内存不足、磁盘空间满)、了解系统硬件规格时使用。""",
+
     "event_log": """获取系统事件日志。Windows使用wevtutil,Linux使用journalctl。支持日志名称(Application/System/Security)、事件级别(critical/error/warning/info)、时间范围(10m/1h/24h/7d)和来源应用名过滤。默认返回System日志,级别error,时间范围1h。适用场景:需要查看系统错误日志、诊断系统问题、审计系统安全事件时使用。""",
     "list_processes": """列出系统所有进程。支持按进程名(模糊匹配)、PID(精确匹配)和用户名过滤。可按CPU占用/内存占用/名称/PID排序。默认最多返回100条,按PID排序。适用场景:需要查看系统进程状态、查找资源占用高的进程、按名称定位特定进程时使用。""",
     "kill_process": """终止指定PID的进程。默认优雅终止(SIGTERM),超时后自动升级为强制终止(SIGKILL)。force=True跳过等待直接强制终止。进程已不存在时幂等返回成功(不报错)。适用场景:需要结束卡死或无响应的进程、释放被占用资源、强制终止无法正常关闭的进程时使用。需谨慎操作。""",
@@ -114,7 +113,7 @@ action参数决定操作类型:
 
 # 模型映射
 SYSTEM_TOOL_INPUT_MODELS = {
-    "get_system_info": GetSystemInfoInput,
+
     "event_log": EventLogInput,
     "list_processes": ListProcessesInput,
     "kill_process": KillProcessInput,
@@ -128,11 +127,7 @@ SYSTEM_TOOL_INPUT_MODELS = {
 
 # 使用示例
 SYSTEM_TOOL_EXAMPLES = {
-    "get_system_info": [
-        {"info_type": "all"},
-        {"info_type": "cpu"},
-        {"info_type": "memory"},
-    ],
+
     "event_log": [
         {},
         {"log_name": "Application", "max_events": 20},
@@ -186,7 +181,7 @@ def _register_system_tools():
     CONFIRM_TOOLS = {"kill_process", "service_control", "create_task", "delete_task", "set_env"}
 
     system_tools = {
-        "get_system_info": get_system_info,
+
         "event_log": event_log,
         "list_processes": list_processes,
         "get_env": get_env,

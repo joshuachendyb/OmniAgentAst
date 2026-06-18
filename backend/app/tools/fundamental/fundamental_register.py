@@ -4,12 +4,14 @@ FUNDAMENTAL Register — 基础工具注册点
 
 【2026-06-18 小欧】从 meta/ 迁入, 匹配 ToolCategory.FUNDAMENTAL
 
-5个工具:
+7个工具:
 - tool_search — BM25全文检索搜索工具
 - time_now — 获取当前时间
 - time_add — 时间加减运算
 - time_diff — 时间差值计算
 - query_calendar — 节日/日期查询
+- get_system_info — 获取系统信息 (从SYSTEM迁入)
+- send_notification — 发送系统通知 (从DESKTOP迁入)
 """
 
 from app.tools.registry import tool_registry
@@ -17,11 +19,16 @@ from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 # 基础工具依赖配置 — 小健 2026-06-18
-# 基础工具使用内置库，无第三方依赖
 FUNDAMENTAL_TOOL_DEPENDENCIES = {
-    tool_name: [] for tool_name in [
-        "tool_search", "time_now", "time_add", "time_diff", "query_calendar"
-    ]
+    "tool_search": [],  # 使用内置库
+    "time_now": [],  # 使用内置库
+    "time_add": [],  # 使用内置库
+    "time_diff": [],  # 使用内置库
+    "query_calendar": [],  # 使用内置库
+    "get_system_info": ["psutil"],  # 从SYSTEM迁入
+    "send_notification": [  # 从DESKTOP迁入
+        {"import_name": "win10toast", "pip_package": "win10toast", "pre_install": ["setuptools<70"]}
+    ],
 }
 
 from app.tools.fundamental.fundamental_schema import (
@@ -40,6 +47,10 @@ from app.tools.fundamental.time_tools import (
     time_diff,
     query_calendar,
 )
+from app.tools.system.system_schema import GetSystemInfoInput
+from app.tools.system.system_tools import get_system_info
+from app.tools.desktop.desktop_schema import SendNotificationInput
+from app.tools.desktop.desktop_gui_tools import send_notification
 
 
 FUNDAMENTAL_TOOL_DESCRIPTIONS = {
@@ -52,25 +63,16 @@ FUNDAMENTAL_TOOL_DESCRIPTIONS = {
     "time_now": """获取当前系统时间。支持自定义格式(format参数,Python strftime格式)和时区(timezone参数,如Asia/Shanghai)。不传参数则返回默认格式(%Y-%m-%d %H:%M:%S)的系统当前时间。适用场景:需要获取当前时间、获取特定时区时间时使用。""",
     "time_add": """时间加减运算。支持按天/小时/分钟/秒/月进行偏移计算。delta为正数表示N个单位后的时间,delta为负数表示N个单位前的时间。返回计算后的时间字符串、ISO格式、Unix时间戳和星期信息。适用场景:需要计算N天/小时/分钟后的时间、计算某个时间点之前的时间时使用。""",
     "time_diff": """计算两个时间之间的差值。返回人类可读的差值描述以及秒/分钟/小时/天各单位的差值。可判断目标时间是否在未来/过去/相等。适用场景:需要计算两个日期相差几天、计算距某时间还有多久时使用。""",
-    "query_calendar": """按节日名称查询日期和假期信息(推荐优先使用name参数)。
-name参数: 输入节日名称(如"端午节""春节""中秋""国庆")，一次性返回日期、星期、是否节假日/工作日等全部属性，无需再逐个日期重复查询。
-支持:端午节/春节/中秋节/元旦/国庆节/劳动节/清明节/元宵节/七夕节/重阳节/除夕等。
-设置name时date和check_type被忽略。首次name查询已包含全部信息，不要再对同一节日逐个日期重复调用。
+    "query_calendar": """按节日名称查询日期和假期信息。支持节日查询(name)和日期检查(check_type)。适用场景:查询节日日期、检查日期类型(周末/节假日/工作日)。""",
+    "get_system_info": """获取系统完整信息,支持按类型获取:info_type="basic"(OS/主机名/架构)、"cpu"(核心数/频率/使用率)、"memory"(总量/可用/使用率)、"disk"(各分区空间/使用率)、"network"(IO计数器)、"all"(以上全部,默认)。适用场景:需要诊断系统问题(CPU占用高、内存不足、磁盘空间满)、了解系统硬件规格时使用。""",
+    "send_notification": """发送Windows系统通知弹窗。
+title: 通知标题
+message: 通知正文
+duration: 显示时长(秒),默认5秒
 
-如不使用name，也可按日期检查:
-- weekend: 判断是否为周末,date
-- holiday: 判断是否为节假日,date
-- workday: 判断是否为工作日,date
-- next_workday: 计算下N个工作日,date(可选n)
-
-使用示例(推荐):
-- 节日查询 → query_calendar(name="端午节", year=2026)
-- 节日查询 → query_calendar(name="春节", year=2026)
-
-使用示例(按日期):
-- 检查周末 → query_calendar(date="2026-05-18", check_type="weekend")
-- 检查节假日 → query_calendar(date="2026-05-01", check_type="holiday")
-- 下个工作日 → query_calendar(date="2026-05-18", check_type="next_workday")""",
+使用示例:
+- 发送通知 → send_notification(title="AI热点新闻", message="已为您搜索到最新AI行业新闻")
+- 发送通知 → send_notification(title="任务完成", message="全部操作已完成", duration=3)""",
 }
 
 FUNDAMENTAL_TOOL_EXAMPLES = {
@@ -98,17 +100,28 @@ FUNDAMENTAL_TOOL_EXAMPLES = {
         {"name": "端午节", "year": 2026},
         {"name": "中秋节", "year": 2026},
     ],
+    "get_system_info": [
+        {"info_type": "all"},
+        {"info_type": "cpu"},
+        {"info_type": "memory"},
+    ],
+    "send_notification": [
+        {"title": "AI热点新闻", "message": "已为您搜索到最新AI行业新闻", "duration": 5},
+        {"title": "任务完成", "message": "全部操作已完成"},
+    ],
 }
 
 
 def _register_fundamental_tools():
-    """注册5个基础工具到FUNDAMENTAL分类 — 小欧 2026-06-18"""
+    """注册7个基础工具到FUNDAMENTAL分类 — 小健 2026-06-18"""
     tool_methods = {
         "tool_search": tool_search,
         "time_now": time_now,
         "time_add": time_add,
         "time_diff": time_diff,
         "query_calendar": query_calendar,
+        "get_system_info": get_system_info,
+        "send_notification": send_notification,
     }
 
     TOOL_INPUT_MODELS = {
@@ -117,6 +130,8 @@ def _register_fundamental_tools():
         "time_add": TimeAddInput,
         "time_diff": TimeDiffInput,
         "query_calendar": QueryCalendarInput,
+        "get_system_info": GetSystemInfoInput,
+        "send_notification": SendNotificationInput,
     }
 
     for name, method in tool_methods.items():
@@ -144,4 +159,6 @@ __all__ = [
     "time_add",
     "time_diff",
     "query_calendar",
+    "get_system_info",
+    "send_notification",
 ]
