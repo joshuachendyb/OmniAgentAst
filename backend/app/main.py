@@ -120,7 +120,7 @@ def _start_cleanup_task():
 @app.on_event("startup")
 async def startup_event():
     """应用启动时注册工具 + 启动后台任务 — 小健 2026-06-18 内联透传函数"""
-    await db.init()
+    db.init()
     from app.tools import ensure_tools_registered
     ensure_tools_registered()
     _start_cleanup_task()
