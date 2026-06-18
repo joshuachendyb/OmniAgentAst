@@ -26,9 +26,7 @@ FUNDAMENTAL_TOOL_DEPENDENCIES = {
     "time_diff": [],  # 使用内置库
     "query_calendar": [],  # 使用内置库
     "get_system_info": ["psutil"],  # 从SYSTEM迁入
-    "send_notification": [  # 从DESKTOP迁入
-        {"import_name": "win10toast", "pip_package": "win10toast", "pre_install": ["setuptools<70"]}
-    ],
+    "send_notification": ["win10toast"],
 }
 
 from app.tools.fundamental.fundamental_schema import (
@@ -64,7 +62,7 @@ FUNDAMENTAL_TOOL_DESCRIPTIONS = {
     "time_add": """时间加减运算。支持按天/小时/分钟/秒/月进行偏移计算。delta为正数表示N个单位后的时间,delta为负数表示N个单位前的时间。返回计算后的时间字符串、ISO格式、Unix时间戳和星期信息。适用场景:需要计算N天/小时/分钟后的时间、计算某个时间点之前的时间时使用。""",
     "time_diff": """计算两个时间之间的差值。返回人类可读的差值描述以及秒/分钟/小时/天各单位的差值。可判断目标时间是否在未来/过去/相等。适用场景:需要计算两个日期相差几天、计算距某时间还有多久时使用。""",
     "query_calendar": """按节日名称查询日期和假期信息。支持节日查询(name)和日期检查(check_type)。适用场景:查询节日日期、检查日期类型(周末/节假日/工作日)。""",
-    "get_system_info": """获取系统完整信息,支持按类型获取:info_type="basic"(OS/主机名/架构)、"cpu"(核心数/频率/使用率)、"memory"(总量/可用/使用率)、"disk"(各分区空间/使用率)、"network"(IO计数器)、"all"(以上全部,默认)。适用场景:需要诊断系统问题(CPU占用高、内存不足、磁盘空间满)、了解系统硬件规格时使用。""",
+    "get_system_info": """获取系统完整信息,支持按类型获取:info_type="basic"(OS/主机名/架构)、"cpu"(核心数/频率/使用率)、"memory"(总量/可用/使用率)、"disk"(各分区空间/使用率)、"network"(IO计数器)、"all"(以上全部,默认)。需要安装psutil库。适用场景:需要诊断系统问题(CPU占用高、内存不足、磁盘空间满)、了解系统硬件规格时使用。""",
     "send_notification": """发送Windows系统通知弹窗。
 title: 通知标题
 message: 通知正文
