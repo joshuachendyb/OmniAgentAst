@@ -1,6 +1,45 @@
 """E2E测试公共函数: 所有E2E测试脚本共用的辅助函数和验证逻辑
 
-手册对照: 步骤5(DB完整性) + 步骤6(SSE-DB一致性) + 步骤7(合理性) + 步骤8(日志) + 步骤9(清理)
+手册步骤与核心函数对照 (小欧 2026-06-18 梳理):
+  步骤 1 记录起始状态    → record_test_baseline() 已实现(DB count+日志大小)
+  步骤 2 发送用户请求    → send_chat()           已实现
+  步骤 3 SSE事件解析     → send_chat()           已实现
+  步骤 4 验证事件流      → assert_stream_ended() 已实现
+  步骤 7 DB记录完整性    → check_db()            已实现
+  步骤 8 SSE-DB一致性    → verify_consistency()  已实现
+  步骤 9 步骤合理性      → verify_steps()        已实现(编号+observation)
+  步骤10 日志检查        → check_logs()          已实现
+  步骤11 清理与记录      → write_test_record()   已实现
+  步骤6 门禁-记录验证    → verify_test_record_exists() 已实现
+  3.4 流结束             → assert_stream_ended() 已实现
+  3.4 错误事件           → result["has_error"]   已实现
+  3.4 回复含错误关键词   → write_test_record() resp_has_error 已实现
+  3.4 事件总数           → 测试脚本 assert total_steps < 50 已实现
+  3.4 LLM调用次数        → check_logs() llm_calls_found 已实现
+  3.4 DB session记录     → check_db() session_exists 已实现
+  3.4 DB messages记录    → check_db() has_user/assistant_message 已实现
+  3.4 DB steps记录       → check_db() step_field_issues 已实现
+  3.4 SSE vs DB步骤数    → verify_consistency() 偏差≤2 已实现
+  3.4 SSE vs DB核心字段  → verify_consistency() tool_name+obs 已实现
+  3.4 回复语义(长度)     → verify_response_quality()  已实现
+  3.4 步骤顺序           → verify_steps() 编号递增 已实现
+  3.4 日志级别           → check_logs() ERROR检查 已实现
+  3.4 响应时间           → verify_response_time()     已实现
+  3.5 铁律1 显式调用     → 测试脚本模板中规范 已实现
+  3.5 铁律2 结果可见     → 测试脚本 print+assert 已实现
+  3.5 铁律3 步骤7验证    → check_db() 已实现
+  3.5 铁律4 步骤8验证    → verify_consistency() 已实现
+  3.5 铁律5 日志检查     → check_logs() 已实现
+  3.5 铁律6 不满足标FAIL → 测试脚本 assert 已实现
+
+未实现/需手动:
+  步骤 5 错误处理        → 分类/分析/修复需人工
+  步骤 6 门禁-调用链分析 → [CALL CHAIN]输出数据,判断需人工
+  步骤 9 工具选择合理性  → 语义判断需人工
+  步骤 9 参数正确性      → 路径/关键词正确性需人工
+  3.4 工具选择(大类匹配) → 工具大类是否匹配意图需人工
+  3.4 参数正确性         → 关键参数是否正确需人工
+  3.4 回复语义(相关性)   → 与指令是否相关需人工
 
 -- 小健 2026-06-14
 """
@@ -114,6 +153,103 @@ def ensure_backend_ready() -> bool:
         return False
 
 
+# ─── 步骤1: 记录测试起始状态 (record_test_baseline) ─────────────
+# 小欧 2026-06-18 新增: 手册步骤1未实现项自动化
+
+def record_test_baseline() -> Dict[str, Any]:
+    """手册步骤1: 记录测试起始状态(DB base count + 日志文件大小)
+
+    返回:
+      - db_session_count: 当前DB会话总数
+      - log_file_size: 当前app日志文件大小(bytes)
+      - log_file: 日志文件路径
+    -- 小欧 2026-06-18
+    """
+    baseline: Dict[str, Any] = {
+        "db_session_count": 0,
+        "log_file_size": 0,
+        "log_file": "",
+    }
+
+    # DB会话数
+    try:
+        session_data = _api_get("/sessions")
+        if session_data and isinstance(session_data, list):
+            baseline["db_session_count"] = len(session_data)
+        elif session_data and isinstance(session_data, dict):
+            sessions = session_data.get("sessions", [])
+            baseline["db_session_count"] = len(sessions)
+    except Exception:
+        pass
+
+    # 日志文件大小
+    today = datetime.now().strftime("%Y-%m-%d")
+    log_file = LOG_DIR / f"app_{today}.log"
+    if log_file.exists():
+        baseline["log_file_size"] = log_file.stat().st_size
+        baseline["log_file"] = str(log_file)
+
+    return baseline
+
+
+# ─── 步骤1+3.4: 响应质量验证 (verify_response_quality) ─────────
+# 小欧 2026-06-18 新增: 手册3.4"回复语义"未实现项自动化
+
+def verify_response_quality(result: Dict[str, Any]) -> List[str]:
+    """手册3.4: 回复质量验证(长度+关键词)
+
+    验证项:
+      - 回复长度 > 10字(SHOULD)
+      - 回复不含错误关键词(MAY)
+    -- 小欧 2026-06-18
+    """
+    issues: List[str] = []
+    resp = result.get("response_text", "")
+
+    if not resp or not resp.strip():
+        issues.append("回复为空(MUST)")
+        return issues
+
+    resp_len = len(resp.strip())
+    if resp_len <= 10:
+        issues.append(f"回复过短({resp_len}字, 要求>10字)(SHOULD)")
+
+    clean = resp.replace("\n", " ").replace("\r", " ")
+    err_markers = ("错误:", "错误：", "超时,", "超时，", "超时)", "超时）", "出错", "failed:", "exception:", "traceback:")
+    if any(m in clean for m in err_markers):
+        issues.append("回复含错误关键词(MAY)")
+
+    return issues
+
+
+# ─── 步骤1+3.4: 响应时间验证 (verify_response_time) ────────────
+# 小欧 2026-06-18 新增: 手册3.4"响应时间"未实现项自动化
+
+def verify_response_time(result: Dict[str, Any]) -> List[str]:
+    """手册3.4: 响应时间验证(单步<120s, 多步<600s)
+
+    验证项:
+      - 单步任务总耗时 < 120s(SHOULD)
+      - 多步任务总耗时 < 600s(SHOULD)
+    -- 小欧 2026-06-18
+    """
+    issues: List[str] = []
+    total_ms = result.get("total_time_ms", 0)
+    total_s = total_ms / 1000.0
+    tool_count = len(result.get("tool_calls", []))
+
+    if tool_count <= 1:
+        # 单步: <120s
+        if total_s >= 120:
+            issues.append(f"单步响应超时({total_s:.1f}s, 要求<120s)(SHOULD)")
+    else:
+        # 多步: <600s
+        if total_s >= 600:
+            issues.append(f"多步响应超时({total_s:.1f}s, 要求<600s)(SHOULD)")
+
+    return issues
+
+
 # ─── Session管理 ─────────────────────────────────────────────
 
 async def create_session() -> Optional[str]:
@@ -137,7 +273,7 @@ async def save_user_message(session_id: str, content: str) -> Optional[int]:
     return None
 
 
-# ─── SSE事件收集(核心) ───────────────────────────────────────
+# ─── 步骤2+3: 发送用户请求 + SSE事件解析 (send_chat) ─────────
 
 async def send_chat(
     user_input: str,
@@ -145,7 +281,7 @@ async def send_chat(
     timeout_seconds: int = 180,
     partial_result: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """发送POST /chat/stream, 接收SSE事件流, 返回结构化结果
+    """手册步骤2+3: 发送POST /chat/stream, 接收SSE事件流, 返回结构化结果
 
     模拟真实前端流程: 创建session -> POST /messages保存user消息 -> POST /chat/stream
     -- 小健 2026-06-14
@@ -229,7 +365,7 @@ async def send_chat(
         return ret
 
 
-# ─── 流结束方式检测(公共函数, 替代assert final_event) ──────────
+# ─── 步骤4: 验证事件流正确性 (assert_stream_ended) ─────────────
 
 def assert_stream_ended(result: Dict[str, Any]) -> str:
     """返回流结束方式(final/error/中断), 不阻断
@@ -270,10 +406,10 @@ def _api_delete(path: str) -> bool:
         return False
 
 
-# ─── 步骤5: DB记录完整性验证 ─────────────────────────────────
+# ─── 步骤7: DB记录完整性验证 (check_db) ────────────────────────
 
 def check_db(session_id: str) -> Dict[str, Any]:
-    """检查数据库记录完整性(手册步骤5, 通过后端API) -- 小健 2026-06-14
+    """手册步骤7: 检查数据库记录完整性(通过后端API) -- 小健 2026-06-14
 
     验证项:
       - session存在 + is_valid + created_at/updated_at合理
@@ -381,12 +517,12 @@ def _obs_to_text(obs) -> str:
     return str(obs)
 
 
-# ─── 步骤6: SSE vs DB一致性验证 ──────────────────────────────
+# ─── 步骤8: SSE vs DB一致性验证 (verify_consistency) ────────────
 
 def verify_consistency(
     result: Dict[str, Any], session_id: str
 ) -> List[str]:
-    """验证SSE事件与DB记录的一致性(手册步骤6) -- 小健 2026-06-14
+    """手册步骤8: 验证SSE事件与DB记录的一致性 -- 小健 2026-06-14
 
     验证项:
       - tool_calls数量一致(偏差<=2)
@@ -625,12 +761,12 @@ def verify_db_prompt_consistency(
     return issues
 
 
-# ─── 步骤7: 步骤合理性验证 ──────────────────────────────────
+# ─── 步骤9: 步骤合理性验证 (verify_steps) ──────────────────────
 
 def verify_steps(
     result: Dict[str, Any], session_id: str
 ) -> List[str]:
-    """验证步骤合理性(手册步骤7) -- 小健 2026-06-14
+    """手册步骤9: 验证步骤合理性 -- 小健 2026-06-14
 
     验证项:
       - 步骤编号连续递增
@@ -668,14 +804,14 @@ def verify_steps(
     return issues
 
 
-# ─── 步骤8: 日志检查 ────────────────────────────────────────
+# ─── 步骤10: 日志检查 (check_logs) ─────────────────────────────
 
 def check_logs(
     start_time: Optional[datetime] = None,
     session_id: Optional[str] = None,
     user_msg_id: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """检查日志和prompt-logs(手册步骤8) -- 小健 2026-06-14
+    """手册步骤10: 检查日志和prompt-logs -- 小健 2026-06-14
 
     验证项:
       - 无ERROR级别日志
@@ -794,13 +930,13 @@ def check_logs(
     return result
 
 
-# ─── 步骤9: 清理 ────────────────────────────────────────────
+# ─── 步骤11: 清理 (cleanup) ────────────────────────────────────
 
 def cleanup(
     session_id: Optional[str] = None,
     test_files: Optional[List[Path]] = None,
 ) -> None:
-    """清理测试产生的数据(手册步骤9, 通过后端API) -- 小健 2026-06-14
+    """手册步骤11: 清理测试产生的数据(通过后端API) -- 小健 2026-06-14
 
     - 通过API清理DB中的session记录
     - 清理测试产生的文件
@@ -907,7 +1043,7 @@ def print_report(
         print(report.encode("ascii", errors="replace").decode("ascii"))
 
 
-# ─── 测试记录写入(手册5.5铁律) ──────────────────────────────
+# ─── 步骤6+11: 门禁记录验证 + 测试记录写入 ───────────────────
 
 RECORD_DIR = Path(__file__).parent.parent.parent / "notes"
 
@@ -944,7 +1080,7 @@ def write_test_record(
     dpi: Optional[List[str]] = None,
     error_info: Optional[str] = None,
 ) -> Optional[Path]:
-    """写入测试记录文件（手册5.5）-- 小健 2026-06-18
+    """手册步骤6+11: 写入测试记录文件 + 输出[CALL CHAIN]+[RECORD OK] -- 小健 2026-06-18
 
     必须在finally块中调用，即使失败也要写
     文件: notes/测试记录-{test_id}-{日期}.md
