@@ -21,10 +21,10 @@
 from datetime import datetime
 
 import pytest
-from e2e_helpers import (
+from e2emodel.e2e_helpers import (
     ensure_backend_ready, send_chat, check_db,
     verify_consistency, verify_steps, check_logs,
-    cleanup, print_report, write_test_record,
+    print_report, write_test_record,
     get_security_enabled, set_security_enabled,
     assert_stream_ended,
 )
@@ -47,6 +47,7 @@ async def test_e2e_p0_01_introduce_self():
     si = []
     lc = {"errors": [], "tracebacks": []}
     elapsed = 0.0
+    error_info = None
 
     try:
         assert ensure_backend_ready(), "后端未启动(手册6.1)"
@@ -120,17 +121,23 @@ async def test_e2e_p0_01_introduce_self():
 
         passed = True
 
-    except Exception:
+    except Exception as e:
         passed = False
+        import traceback
+        error_info = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+        print(f"  [FAIL] 异常: {error_info[:500]}")
+        if sid:
+            lc = check_logs(test_start, sid)
         raise
     finally:
         if orig_security is not None:
             set_security_enabled(orig_security)
-        cleanup(session_id=sid)
+
         write_test_record(
             "E2E-P0-01", "核心链路验证-自我介绍",
             "详细介绍一下你自己，你能做什么",
             r or {}, db, ci, si, lc, passed, elapsed,
+            error_info=error_info,
         )
 
     print(f"\n  [DONE] E2E-P0-01 {'PASSED' if passed else 'FAILED'}")
