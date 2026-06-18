@@ -30,9 +30,6 @@ from app.tools.shell.shell_schema import (
     ExecuteShellCommandBackgroundInput,
     FindCommandInput,
     ShellSessionInput,
-)
-
-# Merged into shell_schema
     ExecuteCodeInput,
 )
 

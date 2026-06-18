@@ -18,6 +18,10 @@ from app.utils.logger import logger
 
 from app.tools.fundamental.fundamental_schema import (
     ToolSearchInput,
+    TimeNowInput,
+    TimeAddInput,
+    TimeDiffInput,
+    QueryCalendarInput,
 )
 from app.tools.fundamental.fundamental_tools import (
     tool_search,
@@ -27,12 +31,6 @@ from app.tools.fundamental.time_tools import (
     time_add,
     time_diff,
     query_calendar,
-)
-# Merged into fundamental_schema
-    TimeNowInput,
-    TimeAddInput,
-    TimeDiffInput,
-    QueryCalendarInput,
 )
 
 

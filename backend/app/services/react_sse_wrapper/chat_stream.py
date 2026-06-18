@@ -145,7 +145,7 @@ async def send_start_step(
     security_check_result: Dict[str, Any],
 ) -> MetaStep:
     """发送 start 步骤 — 使用MetaStep统一构建"""
-    start_step = MetaStep(
+    return MetaStep(
         step=next_step(),
         type="start",
         message=user_message if user_message else "",
@@ -160,4 +160,3 @@ async def send_start_step(
             'blocked': security_check_result.get('blocked', False)
         }
     )
-    return start_step

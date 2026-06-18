@@ -21,18 +21,15 @@ from app.tools.dataanalysis.dataanalysis_schema import (
     AnalyzeDataInput,
     FilterDataInput,
     GenerateChartInput,
+    QuerySqlInput,
+    ExecuteSqlInput,
+    GetDbSchemaInput,
 )
 
 from app.tools.dataanalysis.dataanalysis_tools import (
     analyze_data,
     filter_data,
     generate_chart,
-)
-
-# Merged into dataanalysis_schema
-    QuerySqlInput,
-    ExecuteSqlInput,
-    GetDbSchemaInput,
 )
 
 from app.tools.dataanalysis.database_tools import (

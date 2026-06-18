@@ -17,6 +17,7 @@
 import hashlib
 import json
 import threading
+import time
 from collections import OrderedDict
 from typing import Any, Dict, Optional
 
@@ -163,14 +164,12 @@ class TTLCache:
 
     def get(self) -> Optional[Any]:
         """返回缓存值(TTL未过期)或None"""
-        import time
         if self._value is not None and time.time() - self._timestamp < self._ttl:
             return self._value
         return None
 
     def set(self, value: Any):
         """更新缓存值和时间戳"""
-        import time
         self._value = value
         self._timestamp = time.time()
 

@@ -787,6 +787,41 @@ def _write_pdf(
         return build_error(ERR_WRITE_PDF, f"写入PDF文档失败: {str(e)}")
 
 
+def _build_pptx_presentation(title: str, slides: list):
+    """构建PPT内容 — 小欧 2026-06-18 从_write_pptx提取"""
+    from pptx import Presentation
+    from pptx.util import Pt
+
+    prs = Presentation()
+
+    if title:
+        title_slide_layout = prs.slide_layouts[0]
+        slide = prs.slides.add_slide(title_slide_layout)
+        title_shape = slide.shapes.title
+        title_shape.text = title
+
+    if slides:
+        for slide_data in slides:
+            slide_title = slide_data.get("title", "幻灯片")
+            content = slide_data.get("content", "")
+
+            content_layout = prs.slide_layouts[1]
+            slide = prs.slides.add_slide(content_layout)
+
+            if slide.shapes.title:
+                slide.shapes.title.text = slide_title
+
+            for shape in slide.shapes:
+                if shape.has_text_frame and not shape.text_frame.text.strip():
+                    text_frame = shape.text_frame
+                    text_frame.clear()
+                    p = text_frame.paragraphs[0]
+                    p.text = content
+                    p.font.size = Pt(18)
+                    break
+    return prs
+
+
 def _write_pptx(
     file_path: str,
     title: str = None,
@@ -796,43 +831,13 @@ def _write_pptx(
     if not _check_module("pptx"):
         return build_error(ERR_DOC_NO_PPTX,
                 "python-pptx库未安装,请先执行: pip install python-pptx")
-    
+
     try:
-        from pptx import Presentation
-        from pptx.util import Inches, Pt
-        
-        prs = Presentation()
-        
-        if title:
-            title_slide_layout = prs.slide_layouts[0]
-            slide = prs.slides.add_slide(title_slide_layout)
-            title_shape = slide.shapes.title
-            title_shape.text = title
-        
-        if slides:
-            for slide_data in slides:
-                slide_title = slide_data.get("title", "幻灯片")
-                content = slide_data.get("content", "")
-                
-                content_layout = prs.slide_layouts[1]
-                slide = prs.slides.add_slide(content_layout)
-                
-                if slide.shapes.title:
-                    slide.shapes.title.text = slide_title
-                
-                for shape in slide.shapes:
-                    if shape.has_text_frame and not shape.text_frame.text.strip():
-                        text_frame = shape.text_frame
-                        text_frame.clear()
-                        p = text_frame.paragraphs[0]
-                        p.text = content
-                        p.font.size = Pt(18)
-                        break
-        
+        prs = _build_pptx_presentation(title, slides)
         path = Path(file_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         prs.save(path)
-        
+
         return build_success({"file_path": str(path), "slide_count": len(prs.slides)},
                 f"成功写入PPT文件: {file_path},共 {len(prs.slides)} 页")
     except Exception as e:

@@ -115,6 +115,17 @@ def window_info(
         return build_error(ERR_WINDOW_LIST, f"获取窗口列表失败: {str(e)}")
 
 
+_WINDOW_ACTIONS = {
+    "maximize": (_win32gui.ShowWindow, (_win32con.SW_MAXIMIZE,), "已最大化窗口"),
+    "minimize": (_win32gui.ShowWindow, (_win32con.SW_MINIMIZE,), "已最小化窗口"),
+    "restore":  (_win32gui.ShowWindow, (_win32con.SW_RESTORE,), "已还原窗口"),
+    "topmost":  (_win32gui.SetWindowPos, (_win32con.HWND_TOPMOST, 0, 0, 0, 0,
+                                          _win32con.SWP_NOMOVE | _win32con.SWP_NOSIZE), "已置顶窗口"),
+    "unpin":    (_win32gui.SetWindowPos, (_win32con.HWND_NOTOPMOST, 0, 0, 0, 0,
+                                          _win32con.SWP_NOMOVE | _win32con.SWP_NOSIZE), "已取消置顶窗口"),
+}
+
+
 def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
     """设置窗口状态 - 小沈 2026-04-29, 修正 2026-05-05
 
@@ -125,9 +136,8 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
         return err
 
     try:
-        valid_actions = ["maximize", "minimize", "restore", "topmost", "unpin"]
-        if action not in valid_actions:
-            return build_error(ERR_INVALID_ACTION, f"无效的操作: {action},支持的操作为: {valid_actions}")
+        if action not in _WINDOW_ACTIONS:
+            return build_error(ERR_INVALID_ACTION, f"无效的操作: {action},支持的操作为: {list(_WINDOW_ACTIONS.keys())}")
 
         matched_hwnds = find_windows_by_title(window_title)
 
@@ -137,23 +147,9 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
         hwnd = matched_hwnds[0]
         title = _win32gui.GetWindowText(hwnd)
 
-        if action == "maximize":
-            _win32gui.ShowWindow(hwnd, _win32con.SW_MAXIMIZE)
-            msg = f"已最大化窗口: {title}"
-        elif action == "minimize":
-            _win32gui.ShowWindow(hwnd, _win32con.SW_MINIMIZE)
-            msg = f"已最小化窗口: {title}"
-        elif action == "restore":
-            _win32gui.ShowWindow(hwnd, _win32con.SW_RESTORE)
-            msg = f"已还原窗口: {title}"
-        elif action == "topmost":
-            _win32gui.SetWindowPos(hwnd, _win32con.HWND_TOPMOST, 0, 0, 0, 0,
-                                   _win32con.SWP_NOMOVE | _win32con.SWP_NOSIZE)
-            msg = f"已置顶窗口: {title}"
-        elif action == "unpin":
-            _win32gui.SetWindowPos(hwnd, _win32con.HWND_NOTOPMOST, 0, 0, 0, 0,
-                                   _win32con.SWP_NOMOVE | _win32con.SWP_NOSIZE)
-            msg = f"已取消置顶窗口: {title}"
+        func, args, msg_fmt = _WINDOW_ACTIONS[action]
+        func(hwnd, *args)
+        msg = f"{msg_fmt}: {title}"
 
         if len(matched_hwnds) > 1:
             msg += f"(共匹配到 {len(matched_hwnds)} 个窗口,操作了第一个)"

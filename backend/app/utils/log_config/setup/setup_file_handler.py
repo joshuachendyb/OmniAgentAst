@@ -18,10 +18,9 @@ from app.utils.log_config.config import LogConfig
 def setup_file_handler() -> SafeRotatingFileHandler:
     """拷贝自 setup.py 第27-36行"""
     log_file = _get_log_file_path()
-    _file_handler = SafeRotatingFileHandler(
+    return SafeRotatingFileHandler(
         log_file,
         maxBytes=LogConfig.get_max_bytes(),
         backupCount=LogConfig.get_backup_count(),
         encoding='utf-8'
     )
-    return _file_handler

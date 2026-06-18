@@ -302,8 +302,8 @@ def _get_tables(conn, connection_type: str, db_name: Optional[str]) -> List[str]
 def _get_columns(conn, connection_type: str, table_name: str) -> List[Dict]:
     """获取列信息(2路SQL) — 小沈 2026-05-25 重构"""
     if connection_type in ("mysql", "postgresql"):
-        from sqlalchemy import text as sa_text
-        result = conn.execute(sa_text("SELECT column_name, data_type, is_nullable, column_key, column_default FROM information_schema.columns WHERE table_name=:t"), {"t": table_name})
+        from sqlalchemy import text
+        result = conn.execute(text("SELECT column_name, data_type, is_nullable, column_key, column_default FROM information_schema.columns WHERE table_name=:t"), {"t": table_name})
         return [{"name": r[0], "type": r[1], "nullable": r[2] == "YES", "pk": r[3] == "PRI", "default": r[4]} for r in result]
     cursor = conn.cursor()
     cursor.execute(f"PRAGMA table_info('{table_name}')")
@@ -313,8 +313,8 @@ def _get_columns(conn, connection_type: str, table_name: str) -> List[Dict]:
 def _get_indexes(conn, connection_type: str, table_name: str) -> List[Dict]:
     """获取索引信息(2路SQL) — 小沈 2026-05-25 重构"""
     if connection_type in ("mysql", "postgresql"):
-        from sqlalchemy import text as sa_text2
-        result = conn.execute(sa_text2("SELECT index_name, non_unique FROM information_schema.statistics WHERE table_name=:t GROUP BY index_name, non_unique"), {"t": table_name})
+        from sqlalchemy import text
+        result = conn.execute(text("SELECT index_name, non_unique FROM information_schema.statistics WHERE table_name=:t GROUP BY index_name, non_unique"), {"t": table_name})
         return [{"name": r[0], "unique": not bool(r[1])} for r in result]
     cursor = conn.cursor()
     cursor.execute(f"PRAGMA index_list('{table_name}')")

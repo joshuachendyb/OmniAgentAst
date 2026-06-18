@@ -117,9 +117,6 @@ class BaseAIService:
             logger.error(f"[{_resolve_exception.__name__}] 未知异常: {e}, 类型: {type(e).__name__}, 堆栈: {traceback.format_exc()}")
         return StreamChunk(content="", model=self.model, is_done=True, stream_error=msg, stream_error_type=err_type)
 
-    def _create_cancelled_chunk(self) -> StreamChunk:
-        return create_cancelled_chunk(self.model)
-
     async def request(
         self,
         messages: List[Dict],
@@ -186,7 +183,7 @@ class BaseAIService:
                     stream_options=stream_options,
                 ):
                     if await self._check_stop():
-                        yield self._create_cancelled_chunk()
+                        yield create_cancelled_chunk(self.model)
                         return
 
                     raw_data_buf.append(data_str)

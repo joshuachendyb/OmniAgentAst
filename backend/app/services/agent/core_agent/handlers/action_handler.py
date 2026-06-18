@@ -179,32 +179,61 @@ async def build_observation(ctx: ObservationContext) -> List:
     return events
 
 
-async def handle_action(agent, parsed: Dict, chunk_buffer):
-    """完整action处理流程 — FC-only: 提取fc_context传递 — 小沈 2026-06-11"""
+def _build_call_list(parsed: Dict) -> tuple:
+    """构建工具调用列表 — 小欧 2026-06-18 从handle_action提取"""
     tool_name = parsed["tool_name"]
     tool_params = parsed.get("tool_params", {})
-    step = agent.llm_call_count
-
-    pending_calls = parsed.get("_pending_calls", [])
     fc_context = parsed.get("fc_context", {})
+    pending_calls = parsed.get("_pending_calls", [])
+
     all_calls = [{
-        "tool_name": tool_name,
-        "tool_params": tool_params,
+        "tool_name": tool_name, "tool_params": tool_params,
         "_tool_call_id": fc_context.get("tool_call_id", "") if fc_context else "",
     }]
-    for pc in pending_calls:
-        all_calls.append({
-            "tool_name": pc["tool_name"],
-            "tool_params": pc["tool_params"],
-            "_tool_call_id": pc.get("_tool_call_id", ""),
-        })
-    is_parallel = len(all_calls) > 1
+    all_calls.extend({
+        "tool_name": pc["tool_name"], "tool_params": pc["tool_params"],
+        "_tool_call_id": pc.get("_tool_call_id", ""),
+    } for pc in pending_calls)
+
+    return tool_name, tool_params, fc_context, pending_calls, all_calls, len(all_calls) > 1
+
+
+def _log_tool_results(step: int, all_calls: list, results: list, agent):
+    """记录工具执行结果到prompt logger和task tracker — 小欧 2026-06-18"""
+    prompt_logger = get_prompt_logger()
+    for call, result in zip(all_calls, results):
+        obs_text = str(result) if isinstance(result, Exception) else (
+            result.get("message", str(result)) if isinstance(result, dict) else str(result)
+        )
+        prompt_logger.log_observation(
+            step_name=f"步骤{step}: 工具执行结果", observation_content=obs_text,
+            tool_name=call["tool_name"], tool_params=call["tool_params"], round_number=step,
+        )
+        prompt_logger.log_tool_prompt(
+            tool_name=call["tool_name"], prompt_content=obs_text,
+            source=f"handle_action:{call['tool_name']}", round_number=step,
+        )
+
+    for call, result in zip(all_calls, results):
+        is_error = isinstance(result, Exception)
+        if isinstance(result, dict):
+            code = result.get("code", 0)
+            is_failed = code not in (0, "0", "success", None)
+        else:
+            is_failed = is_error
+        op_status = OperationStatus.FAILED.value if (is_error or is_failed) else OperationStatus.SUCCESS.value
+        agent.record_operation(call["tool_name"], status=op_status, error=str(result) if (is_error or is_failed) else None)
+
+
+async def handle_action(agent, parsed: Dict, chunk_buffer):
+    """完整action处理流程 — FC-only: 提取fc_context传递 — 小沈 2026-06-11"""
+    tool_name, tool_params, fc_context, pending_calls, all_calls, is_parallel = _build_call_list(parsed)
+    step = agent.llm_call_count
 
     yield agent._step_emitter.emit(ThoughtStep(
         step=step,
         content=parsed.get("thought", ""),
-        tool_name=tool_name,
-        tool_params=tool_params,
+        tool_name=tool_name, tool_params=tool_params,
         thought=parsed.get("thought", ""),
         reasoning=parsed.get("reasoning", ""),
     ))
@@ -217,60 +246,20 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
 
     results = await execute_tools(agent, all_calls, is_parallel, tool_name, tool_params)
 
-    prompt_logger = get_prompt_logger()
-    for call, result in zip(all_calls, results):
-        obs_text = str(result) if isinstance(result, Exception) else (
-            result.get("message", str(result)) if isinstance(result, dict) else str(result)
-        )
-        prompt_logger.log_observation(
-            step_name=f"步骤{step}: 工具执行结果",
-            observation_content=obs_text,
-            tool_name=call["tool_name"],
-            tool_params=call["tool_params"],
-            round_number=step,
-        )
-        prompt_logger.log_tool_prompt(
-            tool_name=call["tool_name"],
-            prompt_content=obs_text,
-            source=f"handle_action:{call['tool_name']}",
-            round_number=step,
-        )
+    _log_tool_results(step, all_calls, results, agent)
 
-    # 记录操作到TaskTracker(调用方传入真实status和error,SRP:不预设成功)
-    for call, result in zip(all_calls, results):
-        is_error = isinstance(result, Exception)
-        if isinstance(result, dict):
-            code = result.get("code", 0)
-            is_failed = code not in (0, "0", "success", None)
-        else:
-            is_failed = is_error
-        op_status = OperationStatus.FAILED.value if (is_error or is_failed) else OperationStatus.SUCCESS.value
-        error_msg = str(result) if (is_error or is_failed) else None
-        agent.record_operation(call["tool_name"], status=op_status, error=error_msg)
-
-    action_steps: List[ToolStep] = []
-    # 【修复P2-5】使用ObservationContext封装参数 — 北京老陈 2026-06-13
     ctx = ObservationContext(
-        agent=agent,
-        all_calls=all_calls,
-        results=results,
-        step=step,
-        tool_name=tool_name,
-        tool_params=tool_params,
-        is_parallel=is_parallel,
-        pending_calls=pending_calls,
-        action_steps=action_steps,
-        fc_context=fc_context,
+        agent=agent, all_calls=all_calls, results=results, step=step,
+        tool_name=tool_name, tool_params=tool_params,
+        is_parallel=is_parallel, pending_calls=pending_calls,
+        action_steps=[], fc_context=fc_context,
     )
-    obs_events = await build_observation(ctx)
-    for event in obs_events:
+    for event in await build_observation(ctx):
         yield event
 
     if results and isinstance(results[0], dict) and results[0].get("return_direct"):
         yield agent._step_emitter.emit(FinalStep(
-            step=step,
-            response=results[0].get("message", ""),
+            step=step, response=results[0].get("message", ""),
             thought=parsed.get("thought", ""),
         ))
         agent.status = AgentStatus.COMPLETED
-        return

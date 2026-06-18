@@ -24,10 +24,9 @@ class LogConfig:
     @classmethod
     def get_log_level(cls) -> str:
         """获取日志级别"""
-        level = cls._config.get('logging.level', 'INFO')
         if cls._config.get('app.debug', False):
             return "DEBUG"
-        return level
+        return cls._config.get('logging.level', 'INFO')
 
     @classmethod
     def get_max_bytes(cls) -> int:

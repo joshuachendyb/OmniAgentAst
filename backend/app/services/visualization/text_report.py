@@ -115,9 +115,4 @@ def generate_text_report(task_id: str, task_description: str) -> str:
 
     stats = count_op_stats(operations)
     lines = build_text_report_lines(task_id, task_description, operations, stats)
-    report_text = "\n".join(lines)
-
-    # YAGNI 死代码:output_path 从未被实际传入,直接删除保存逻辑
-    # 原 L157-161 已删除,调用方从未传 output_path
-
-    return report_text
+    return "\n".join(lines)

@@ -101,9 +101,4 @@ def generate_html_report(task_id: str, task_description: str) -> str:
         if op[3] in status_counts:
             status_counts[op[3]] += 1
 
-    html = build_html_report_content(task_id, task_description, operations, op_types, status_counts)
-
-    # YAGNI 死代码:output_path 从未被实际传入,直接删除文件保存逻辑
-    # 原 L854-859 已删除,调用方 generate_report 从未传 output_path
-
-    return html
+    return build_html_report_content(task_id, task_description, operations, op_types, status_counts)

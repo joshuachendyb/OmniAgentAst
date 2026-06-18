@@ -97,7 +97,7 @@ class ToolRetryEngine:
         action_input: Dict[str, Any],
     ) -> Dict[str, Any]:
         """统一工具执行方法 — FC-only: 无finish分支"""
-        tool = self._find_tool(action)
+        tool = self._tools.get(action)
         if tool is None:
             return build_error(
                 code=ERR_TOOL_NOT_FOUND,
@@ -113,9 +113,6 @@ class ToolRetryEngine:
             return params
         
         return await self._execute_with_retry(action, params, tool)
-    
-    def _find_tool(self, action: str) -> Optional[Callable]:
-        return self._tools.get(action)
     
     def _are_params_valid(self, action: str, params: Dict[str, Any]) -> bool:
         """验证参数是否合法 — 小沈 2026-06-08"""

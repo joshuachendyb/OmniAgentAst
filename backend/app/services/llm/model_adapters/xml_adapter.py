@@ -44,12 +44,10 @@ def convert_xml_tool_call_to_json(content: str) -> Optional[str]:
         val = arg_values[i] if i < len(arg_values) else ''
         tool_params[key.strip()] = val.strip()
 
-    result = json.dumps({
+    return json.dumps({
         "tool_name": tool_name,
         "tool_params": tool_params
     }, ensure_ascii=False)
-
-    return result
 
 
 def is_xml_tool_call(content: str) -> bool:

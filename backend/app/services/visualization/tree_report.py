@@ -107,9 +107,7 @@ def export_tree_to_json(task_id: str, task_description: str, output_path: Option
         return "{}"
 
     tree_dict = _node_to_dict(root)
-    json_str = json.dumps(tree_dict, ensure_ascii=False, indent=2)
-
     if output_path:
         _save_tree_json(tree_dict, output_path)
 
-    return json_str
+    return json.dumps(tree_dict, ensure_ascii=False, indent=2)

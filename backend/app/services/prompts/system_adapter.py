@@ -18,10 +18,6 @@ PATH_FORMATS = {
 }
 
 
-def _detect_os() -> str:
-    return platform.system()
-
-
 def _check_is_git_repo(path: str) -> bool:
     current = os.path.abspath(path)
     for _ in range(5):
@@ -59,7 +55,7 @@ _ALWAYS_RULES = """【路径规则】
 @functools.lru_cache(maxsize=1)
 def get_system_prompt() -> str:
     """获取系统 Prompt 字符串（带缓存）"""
-    system = _detect_os()
+    system = platform.system()
     path_format = PATH_FORMATS.get(system, "/home/xxx/file.txt")
     env_info = _get_environment_info()
 

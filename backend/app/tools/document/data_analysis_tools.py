@@ -26,7 +26,6 @@ import json
 import tempfile
 from typing import Dict, Any, List, Union, Optional, Literal, Tuple
 from pathlib import Path
-import pandas as pd
 from app.utils.time_utils import timestamp_for_filename
 from app.utils.tool_result_formatter import truncate_data_for_frontend, make_json_safe
 from app.utils.next_actions_builder import build_next_actions

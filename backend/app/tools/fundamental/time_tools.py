@@ -257,16 +257,15 @@ def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, 
         if start_dt.tzinfo is None:
             start_dt = start_dt.replace(tzinfo=timezone.utc).astimezone()
 
-        # 2. 根据单位计算新时间
         unit = unit.lower()
-        if unit == "days":
-            new_dt = start_dt + timedelta(days=delta)
-        elif unit == "hours":
-            new_dt = start_dt + timedelta(hours=delta)
-        elif unit == "minutes":
-            new_dt = start_dt + timedelta(minutes=delta)
-        elif unit == "seconds":
-            new_dt = start_dt + timedelta(seconds=delta)
+        _DELTA_BUILDERS = {
+            "days": timedelta(days=delta),
+            "hours": timedelta(hours=delta),
+            "minutes": timedelta(minutes=delta),
+            "seconds": timedelta(seconds=delta),
+        }
+        if unit in _DELTA_BUILDERS:
+            new_dt = start_dt + _DELTA_BUILDERS[unit]
         elif unit == "months":
             try:
                 from dateutil.relativedelta import relativedelta
