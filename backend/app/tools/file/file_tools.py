@@ -905,9 +905,17 @@ def _check_write_safety(file_path: str, content: str,
     """统一前置校验链,返回 (error_or_None, modified_content)
     
     小沈 2026-05-25 重构拆分
+    小健 2026-06-19 新增content类型检查:dict/list→json.dumps,其他→str()
     """
     _enc = encoding or "utf-8"
-    
+
+    if not isinstance(content, str):
+        import json as _json
+        if isinstance(content, (dict, list)):
+            content = _json.dumps(content, ensure_ascii=False, indent=2)
+        else:
+            content = str(content)
+
     is_binary, reason = _is_binary_file(file_path)
     if is_binary:
         return f"{reason}。write_text_file 仅支持文本文件。", content

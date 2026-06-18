@@ -357,6 +357,7 @@ async def send_chat(
             "llm_call_count": len(tool_calls) + 1,
             "total_time_ms": total_time_ms,
             "response_text": response_text,
+            "reply": response_text,
             "session_id": session_id,
             "user_msg_id": user_msg_id,
             "event_types": event_types,
@@ -1080,6 +1081,7 @@ def write_test_record(
     extra: Optional[Dict[str, Any]] = None,
     dpi: Optional[List[str]] = None,
     error_info: Optional[str] = None,
+    test_title: Optional[str] = None,
 ) -> Optional[Path]:
     """手册步骤6+11: 写入测试记录文件 + 输出[CALL CHAIN]+[RECORD OK] -- 小健 2026-06-18
 
@@ -1091,6 +1093,8 @@ def write_test_record(
     v2.1增强: 返回记录文件路径；写入后验证文件存在；失败时尝试备用路径
     -- 小欧 2026-06-18
     """
+    if test_title:
+        test_name = test_title
     # 注册待写入记录（超时保护）
     register_pending_record(
         test_id, test_name, user_input, result, db,
