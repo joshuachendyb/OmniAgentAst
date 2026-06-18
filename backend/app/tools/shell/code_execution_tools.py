@@ -39,7 +39,7 @@ import tempfile
 from typing import Optional
 import re as re_mod
 
-from app.tools.shell.code_execution_schema import (
+from app.tools.shell.shell_schema import (
     ExecuteCodeInput,
 )
 from app.utils.tool_result_formatter import format_output_for_llm, truncate_data_for_frontend  # 小沈-2026-05-15, 小沈-2026-05-20

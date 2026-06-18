@@ -32,7 +32,7 @@ from app.tools.shell.shell_schema import (
     ShellSessionInput,
 )
 
-from app.tools.shell.code_execution_schema import (
+# Merged into shell_schema
     ExecuteCodeInput,
 )
 

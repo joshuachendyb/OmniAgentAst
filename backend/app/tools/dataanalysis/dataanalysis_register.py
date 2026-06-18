@@ -29,7 +29,7 @@ from app.tools.dataanalysis.dataanalysis_tools import (
     generate_chart,
 )
 
-from app.tools.dataanalysis.database_schema import (
+# Merged into dataanalysis_schema
     QuerySqlInput,
     ExecuteSqlInput,
     GetDbSchemaInput,
