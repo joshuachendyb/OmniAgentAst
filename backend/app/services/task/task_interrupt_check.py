@@ -12,20 +12,15 @@ import asyncio
 from typing import Optional, Callable, AsyncGenerator
 
 from app.utils.logger import logger
-from app.utils.time_utils import create_timestamp
 from app.utils.sse_formatter import format_agent_sse
 from app.services.task.task_state_queries import check_cancelled, check_paused, check_was_paused, get_pause_event
 from app.services.task.task_registry import set_was_paused
-
-
-def _build_step_dict(step: Optional[int], step_type: str, message: str) -> dict:
-    """构建step字典 — 替代MetaStep.to_dict()，消除对agent/steps的依赖 — 小健 2026-06-17"""
-    return {"type": step_type, "step": step, "timestamp": create_timestamp(), "content": message}
+from app.services.task.task_utils import build_step_dict
 
 
 def _emit_step_sse(step: Optional[int], step_type: str, message: str) -> str:
     """step→SSE字符串 — 小沈 2026-06-17 DRY"""
-    return format_agent_sse(_build_step_dict(step, step_type, message))
+    return format_agent_sse(build_step_dict(step, step_type, message))
 
 
 async def task_interrupt_check(
