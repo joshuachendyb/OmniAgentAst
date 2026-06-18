@@ -912,6 +912,23 @@ def print_report(
 RECORD_DIR = Path(__file__).parent.parent.parent / "notes"
 
 
+def verify_test_record_exists(test_id: str) -> bool:
+    """验证测试记录文件是否存在 -- 小欧 2026-06-18
+    
+    每个测试跑完后必须调用此函数确认记录已生成。
+    返回True表示记录存在，False表示记录缺失（严重问题）。
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+    record_file = RECORD_DIR / f"测试记录-{test_id}-{today}.md"
+    exists = record_file.exists()
+    if exists:
+        size = record_file.stat().st_size
+        print(f"  [RECORD] {record_file.name} ({size} bytes)")
+    else:
+        print(f"  [RECORD FAIL] {record_file.name} NOT FOUND!")
+    return exists
+
+
 def write_test_record(
     test_id: str,
     test_name: str,
@@ -926,7 +943,7 @@ def write_test_record(
     extra: Optional[Dict[str, Any]] = None,
     dpi: Optional[List[str]] = None,
     error_info: Optional[str] = None,
-) -> None:
+) -> Optional[Path]:
     """写入测试记录文件（手册5.5）-- 小健 2026-06-18
 
     必须在finally块中调用，即使失败也要写
@@ -934,6 +951,8 @@ def write_test_record(
     
     v1.9增强: error_info参数记录异常详情(类型+消息+堆栈)
     v2.0增强: 超时保护 - 注册待写入记录，进程异常终止时由atexit/signal写入
+    v2.1增强: 返回记录文件路径；写入后验证文件存在；失败时尝试备用路径
+    -- 小欧 2026-06-18
     """
     # 注册待写入记录（超时保护）
     register_pending_record(
@@ -1205,20 +1224,38 @@ def write_test_record(
     lines.append(f"**更新时间**: {ts_str}")
     lines.append("")
 
+    written_path: Optional[Path] = None
     try:
         content = "\n".join(lines)
         with open(str(record_file), "w", encoding="utf-8-sig") as f:
             f.write(content)
+        written_path = record_file
     except PermissionError:
         alt_file = RECORD_DIR / f"测试记录-{test_id}-{date_str}-{int(now.timestamp())}.md"
         try:
             with open(str(alt_file), "w", encoding="utf-8") as f:
                 f.write(content)
+            written_path = alt_file
             print(f"  [WARN] write_test_record: used alt path {alt_file.name}")
         except Exception as e2:
             print(f"  [WARN] write_test_record failed: {e2}")
     except Exception as e:
         print(f"  [WARN] write_test_record failed: {e}")
 
+    # 验证记录文件是否真正写入成功
+    if written_path and written_path.exists():
+        size = written_path.stat().st_size
+        print(f"  [RECORD OK] {written_path.name} ({size} bytes)")
+    else:
+        print(f"  [RECORD FAIL] {test_id} 记录文件未生成!")
+
+    # 输出调用链
+    if tool_names:
+        chain = " -> ".join(tool_names)
+        print(f"  [CALL CHAIN] {chain}")
+    else:
+        print(f"  [CALL CHAIN] (无工具调用)")
+
     # 正常完成，移除待写入记录
     remove_pending_record(test_id)
+    return written_path
