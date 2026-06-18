@@ -5,16 +5,89 @@
 -- 小健 2026-06-14
 """
 
+import atexit
 import json
 import re
+import signal
 import socket
 import sqlite3
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
+
+
+# ─── 超时保护机制（手册5.5铁律：即使超时也要写记录）──────────────
+# 小健 2026-06-18 添加
+
+_pending_records: List[Dict[str, Any]] = []
+
+
+def _flush_pending_records():
+    """进程退出时写入所有未完成的测试记录"""
+    for rec in _pending_records:
+        try:
+            _write_record_file(**rec)
+        except Exception:
+            pass
+    _pending_records.clear()
+
+
+atexit.register(_flush_pending_records)
+
+
+def _signal_handler(signum, frame):
+    """信号处理：进程被终止前写入记录"""
+    _flush_pending_records()
+    sys.exit(1)
+
+
+for _sig in (signal.SIGTERM, signal.SIGINT):
+    try:
+        signal.signal(_sig, _signal_handler)
+    except (OSError, ValueError):
+        pass
+
+
+def register_pending_record(
+    test_id: str,
+    test_name: str,
+    user_input: str,
+    result: Dict[str, Any],
+    db: Dict[str, Any],
+    consistency_issues: List[str],
+    step_issues: List[str],
+    log_check: Dict[str, Any],
+    passed: bool,
+    elapsed: float = 0.0,
+    extra: Optional[Dict[str, Any]] = None,
+    dpi: Optional[List[str]] = None,
+    error_info: Optional[str] = None,
+):
+    """注册一个待写入的测试记录（超时保护）"""
+    _pending_records.append({
+        "test_id": test_id,
+        "test_name": test_name,
+        "user_input": user_input,
+        "result": result,
+        "db": db,
+        "consistency_issues": consistency_issues,
+        "step_issues": step_issues,
+        "log_check": log_check,
+        "passed": passed,
+        "elapsed": elapsed,
+        "extra": extra,
+        "dpi": dpi,
+        "error_info": error_info,
+    })
+
+
+def remove_pending_record(test_id: str):
+    """测试正常完成时移除待写入记录"""
+    _pending_records[:] = [r for r in _pending_records if r.get("test_id") != test_id]
 
 
 # ─── 常量 ─────────────────────────────────────────────────────
@@ -860,7 +933,14 @@ def write_test_record(
     文件: notes/测试记录-{test_id}-{日期}.md
     
     v1.9增强: error_info参数记录异常详情(类型+消息+堆栈)
+    v2.0增强: 超时保护 - 注册待写入记录，进程异常终止时由atexit/signal写入
     """
+    # 注册待写入记录（超时保护）
+    register_pending_record(
+        test_id, test_name, user_input, result, db,
+        consistency_issues, step_issues, log_check,
+        passed, elapsed, extra, dpi, error_info,
+    )
     RECORD_DIR.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now()
@@ -1139,3 +1219,6 @@ def write_test_record(
             print(f"  [WARN] write_test_record failed: {e2}")
     except Exception as e:
         print(f"  [WARN] write_test_record failed: {e}")
+
+    # 正常完成，移除待写入记录
+    remove_pending_record(test_id)

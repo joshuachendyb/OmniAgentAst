@@ -1017,8 +1017,7 @@ class FileTools:
             
             success = await asyncio.to_thread(
                 self._execute_with_safety,
-                "file",
-                operation_id=operation_id,
+                operation_id,
                 operation_func=lambda: self._write_file_atomic(checked_content, path, encoding, append, create_parents)
             )
             
@@ -1156,8 +1155,7 @@ class FileTools:
 
             is_ok, method = await asyncio.to_thread(
                 self._execute_with_safety,
-                "file",
-                operation_id=operation_id,
+                operation_id,
                 operation_func=_delete_sync
             )
 
@@ -1222,8 +1220,7 @@ class FileTools:
             
             success = await asyncio.to_thread(
                 self._execute_with_safety,
-                "file",
-                operation_id=operation_id,
+                operation_id,
                 operation_func=_move_sync
             )
 
@@ -1638,8 +1635,7 @@ class FileTools:
 
             success = await asyncio.to_thread(
                 self._execute_with_safety,
-                "file",
-                operation_id=operation_id,
+                operation_id,
                 operation_func=_replace_sync
             )
             if not success:
@@ -1797,8 +1793,7 @@ class FileTools:
             edit_result = {}
             success = await asyncio.to_thread(
                 self._execute_with_safety,
-                "file",
-                operation_id=operation_id,
+                operation_id,
                 operation_func=lambda: self._execute_edit_sync(path, edits, dry_run, encoding, edit_result)
             )
             if success:
