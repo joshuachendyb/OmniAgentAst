@@ -38,16 +38,16 @@ from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 # 桌面工具依赖配置 — 小健 2026-06-18
-# 每个工具对应的第三方依赖包列表，支持版本指定
+# 注意：pywin32的import名是win32com/win32gui
 DESKTOP_TOOL_DEPENDENCIES = {
-    "window_info": ["pywin32"],
-    "window_focus": ["pywin32"],
-    "window_resize": ["pywin32"],
-    "window_maximize": ["pywin32"],
-    "window_minimize": ["pywin32"],
-    "window_restore": ["pywin32"],
-    "window_topmost": ["pywin32"],
-    "window_unpin": ["pywin32"],
+    "window_info": [{"import_name": "win32gui", "pip_package": "pywin32"}],
+    "window_focus": [{"import_name": "win32gui", "pip_package": "pywin32"}],
+    "window_resize": [{"import_name": "win32gui", "pip_package": "pywin32"}],
+    "window_maximize": [{"import_name": "win32gui", "pip_package": "pywin32"}],
+    "window_minimize": [{"import_name": "win32gui", "pip_package": "pywin32"}],
+    "window_restore": [{"import_name": "win32gui", "pip_package": "pywin32"}],
+    "window_topmost": [{"import_name": "win32gui", "pip_package": "pywin32"}],
+    "window_unpin": [{"import_name": "win32gui", "pip_package": "pywin32"}],
     "mouse_click": ["pyautogui"],
     "mouse_move": ["pyautogui"],
     "mouse_scroll": ["pyautogui"],
