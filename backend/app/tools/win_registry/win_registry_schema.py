@@ -1,9 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-REGISTRY 工具参数 Schema 定义
+REGISTRY Schema - 注册表工具参数模型
 
-职责:
-定义 registry 工具的 Pydantic 模型。
+【Schema Docstring 规范】小健 2026-06-18
+一般情况下，严禁给Schema类加docstring。
+仅在以下情况可以添加：
+1. 函数使用过于复杂，需要详细说明
+2. 多action的tool，需要说明不同action的用法
+3. 添加的是tool描述的增强信息，不是冗余信息
+
+禁止：
+- 重复register.py中的描述
+- 添加过于冗长的说明
+- 添加与参数无关的内容
 
 工具列表(3个LLM工具):
 1. registry_read - 读取注册表键值
