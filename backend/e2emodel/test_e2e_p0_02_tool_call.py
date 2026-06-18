@@ -37,7 +37,7 @@ async def test_e2e_p0_02_tool_call():
     """P0-02: 工具调用通路验证 - 创建文件"""
 
     test_start = datetime.now()
-    passed = False; r = {}; sid = None; db = {}; ci = []; si = []; dpi = []; lc = {"errors":[],"tracebacks":[]}
+    passed = False; r = {}; sid = None; db = {}; ci = []; si = []; dpi = []; lc = {"errors":[],"tracebacks":[]}; error_info = None
     user_input = "在E盘创建一个e2e_test_p0.txt，内容为hello"
 
     if TEST_FILE.exists():
@@ -124,13 +124,21 @@ async def test_e2e_p0_02_tool_call():
 
         passed = True
 
+    except Exception as e:
+        passed = False
+        import traceback
+        error_info = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+        print(f"  [FAIL] 异常: {error_info[:500]}")
+        if sid:
+            lc = check_logs(test_start, sid)
+        raise
     finally:
         if TEST_FILE.exists():
             TEST_FILE.unlink(missing_ok=True)
-        write_test_record("E2E-P0-02", "工具调用通路验证", user_input, r, db, ci, si, lc, passed, r.get("total_time_ms", 0)/1000.0 if r else 0, dpi=dpi)
+        write_test_record("E2E-P0-02", "工具调用通路验证", user_input, r, db, ci, si, lc, passed, r.get("total_time_ms", 0)/1000.0 if r else 0, dpi=dpi, error_info=error_info)
         if orig_security is not None:
             set_security_enabled(orig_security)
-        cleanup(session_id=sid)
+
 
     if passed:
         print(f"\n  [DONE] E2E-P0-02 PASSED")
