@@ -78,37 +78,12 @@ SYSTEM_TOOL_DESCRIPTIONS = {
     "event_log": """获取系统事件日志。Windows使用wevtutil,Linux使用journalctl。支持日志名称(Application/System/Security)、事件级别(critical/error/warning/info)、时间范围(10m/1h/24h/7d)和来源应用名过滤。默认返回System日志,级别error,时间范围1h。适用场景:需要查看系统错误日志、诊断系统问题、审计系统安全事件时使用。""",
     "list_processes": """列出系统所有进程。支持按进程名(模糊匹配)、PID(精确匹配)和用户名过滤。可按CPU占用/内存占用/名称/PID排序。默认最多返回100条,按PID排序。适用场景:需要查看系统进程状态、查找资源占用高的进程、按名称定位特定进程时使用。""",
     "kill_process": """终止指定PID的进程。默认优雅终止(SIGTERM),超时后自动升级为强制终止(SIGKILL)。force=True跳过等待直接强制终止。进程已不存在时幂等返回成功(不报错)。适用场景:需要结束卡死或无响应的进程、释放被占用资源、强制终止无法正常关闭的进程时使用。需谨慎操作。""",
-    "service_control": """支持系统服务的start/stop/restart/list操作功能。
-action参数决定操作类型:
-- start: 启动服务,service_name【必填】(可选timeout)
-- stop: 停止服务,service_name【必填】(可选force/timeout)
-- restart: 重启服务,service_name【必填】(可选force/timeout)
-- list: 列出服务(可选state/service_name过滤)
-
-使用示例:
-- 列出服务 → service_control(action="list")
-- 启动服务 → service_control(action="start", service_name="mysql")
-- 停止服务 → service_control(action="stop", service_name="nginx")
-- 重启服务 → service_control(action="restart", service_name="apache")""",
+    "service_control": """系统服务控制工具。支持服务的启动、停止、重启和列表查询。适用场景:需要管理系统服务、查看服务状态时使用。""",
     "create_task": """创建Windows计划任务(.bat/.exe等)。必填参数:task_name(任务名)、command(命令或程序路径,如C:\\scripts\\backup.bat)、schedule(计划时间,格式HH:MM每日/HH:MM /day N每周/HH:MM /monthly DD每月)。可选参数:start_time(起始时间)、interval(重复间隔分钟数)。适用场景:需要定时执行脚本、定期备份、周期性维护任务时使用。""",
     "delete_task": """删除Windows计划任务。必填参数:task_name(要删除的计划任务名称)。删除前会先查询确认任务存在。适用场景:需要移除不再需要的计划任务时使用。需谨慎操作。""",
     "list_tasks": """列出Windows计划任务。可选参数:task_name(按名称模糊过滤)、state(状态过滤,ready/running/disabled/all,默认all)。适用场景:需要查看所有计划任务、按名称查找特定任务、按状态筛选任务时使用。""",
-    "get_env": """支持环境变量的获取/列出操作功能。
-action参数决定操作类型:
-- get: 获取单个环境变量,name【必填】(可选scope/expand_vars)
-- list: 列出所有环境变量(可选prefix/scope)
-
-使用示例:
-- 获取单个 → get_env(name="PATH")
-- 列出所有 → get_env(action="list")""",
-    "set_env": """支持环境变量的设置/删除操作功能。
-action参数决定操作类型:
-- set: 设置环境变量,name【必填】+value【必填】(可选scope/append_mode)
-- delete: 删除环境变量,name【必填】(可选scope)
-
-使用示例:
-- 设置变量 → set_env(name="MY_VAR", value="my_value")
-- 删除变量 → set_env(action="delete", name="MY_VAR")""",
+    "get_env": """环境变量获取工具。支持获取单个环境变量或列出所有环境变量。适用场景:需要查看环境变量值、检查配置时使用。""",
+    "set_env": """环境变量设置工具。支持设置或删除环境变量。适用场景:需要配置环境变量、修改变量值时使用。""",
 }
 
 # 模型映射

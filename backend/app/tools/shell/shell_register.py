@@ -74,14 +74,7 @@ SHELL_TOOL_DESCRIPTIONS = {
 
     "find_command": """查找系统命令的安装路径,类似于which/where命令。all_paths=False(默认)返回第一个匹配路径,all_paths=True返回全部匹配路径列表。适用场景:需要确认python/git/npm等命令是否已安装、查看命令安装路径、验证开发工具链配置是否正确时使用。""",
     "execute_code": """执行代码片段并返回结果。支持Python(默认)和JavaScript两种语言。内置安全检查拦截危险操作(如文件删除、网络请求等),比直接Shell命令更安全。返回stdout/stderr/returncode。适用场景:需要快速验证代码逻辑、进行数据处理计算、运行简单脚本片段时使用。""",
-    "shell_session": """支持后台Shell会话管理功能。
-action参数决定操作类型:
-- output: 读取后台命令输出,shell_id(可选filter/max_lines)
-- terminate: 终止后台会话,shell_id(可选force)
-
-使用示例:
-- 读取输出 → shell_session(shell_id="shell_abc123")
-- 终止会话 → shell_session(shell_id="shell_abc123", action="terminate")""",
+    "shell_session": """后台Shell会话管理工具。支持读取后台命令输出和终止会话。适用场景:需要查看后台命令执行结果、终止长期运行的后台进程时使用。""",
 }
 
 SHELL_TOOL_EXAMPLES = {

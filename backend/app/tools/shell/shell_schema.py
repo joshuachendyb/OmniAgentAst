@@ -54,6 +54,16 @@ class FindCommandInput(BaseModel):
 
 
 class ShellSessionInput(BaseModel):
+    """后台Shell会话管理工具
+    
+    【action参数】决定操作类型：
+    - output: 读取后台命令输出
+    - terminate: 终止后台会话
+    
+    【使用示例】
+    - 读取输出 → shell_session(shell_id="shell_abc123")
+    - 终止会话 → shell_session(shell_id="shell_abc123", action="terminate")
+    """
     shell_id: str = Field(
         ..., description="后台Shell会话ID,由 execute_shell_command(run_in_background=True) 返回"
     )

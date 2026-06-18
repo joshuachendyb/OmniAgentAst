@@ -109,6 +109,16 @@ class SearchWebInput(BaseModel):
 
 
 class NetworkDiagnoseInput(BaseModel):
+    """网络连通性诊断工具
+    
+    【mode参数】决定诊断类型：
+    - ping: ICMP可达性检测(主机级)
+    - port: TCP端口检测(服务级)
+    
+    【使用示例】
+    - ping测试 → network_diagnose(host="8.8.8.8")
+    - 端口检测 → network_diagnose(host="8.8.8.8", mode="port", port=53)
+    """
     host: str = Field(
         ..., description="目标主机地址(必填),可以是域名或IP地址,例如 8.8.8.8 或 baidu.com"
     )

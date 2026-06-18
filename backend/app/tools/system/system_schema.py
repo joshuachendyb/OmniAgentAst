@@ -131,6 +131,20 @@ class KillProcessInput(BaseModel):
 
 
 class ServiceControlInput(BaseModel):
+    """系统服务控制工具
+    
+    【action参数】决定操作类型：
+    - start: 启动服务
+    - stop: 停止服务
+    - restart: 重启服务
+    - list: 列出服务
+    
+    【使用示例】
+    - 列出服务 → service_control(action="list")
+    - 启动服务 → service_control(action="start", service_name="mysql")
+    - 停止服务 → service_control(action="stop", service_name="nginx")
+    - 重启服务 → service_control(action="restart", service_name="apache")
+    """
     action: Literal["start", "stop", "restart", "list"] = Field(
         ...,
         description="操作类型(必填)。start=启动服务,stop=停止服务,restart=重启服务,list=列出服务"
@@ -195,6 +209,16 @@ class ListTasksInput(BaseModel):
 
 
 class GetEnvInput(BaseModel):
+    """环境变量获取工具
+    
+    【action参数】决定操作类型：
+    - get: 获取单个环境变量
+    - list: 列出所有环境变量
+    
+    【使用示例】
+    - 获取单个 → get_env(name="PATH")
+    - 列出所有 → get_env(action="list")
+    """
     name: Optional[str] = Field(default=None, description="环境变量名称(action=get时【必填】)。如 PATH、HOME、JAVA_HOME")
     scope: Literal["process", "user", "system"] = Field(default="process", description="作用域。可选值:process/user/system。默认process")
     expand_vars: bool = Field(default=True, description="是否展开值中的嵌套变量(如 %%JAVA_HOME%%\\bin,仅action=get时使用)。默认true")
@@ -203,6 +227,16 @@ class GetEnvInput(BaseModel):
 
 
 class SetEnvInput(BaseModel):
+    """环境变量设置工具
+    
+    【action参数】决定操作类型：
+    - set: 设置环境变量
+    - delete: 删除环境变量
+    
+    【使用示例】
+    - 设置变量 → set_env(name="MY_VAR", value="my_value")
+    - 删除变量 → set_env(action="delete", name="MY_VAR")
+    """
     name: str = Field(..., description="环境变量名称(必填)。如 MY_VARIABLE、CONFIG_PATH、PATH")
     value: Optional[str] = Field(default=None, description="环境变量值(action=set时【必填】,action=delete时忽略)")
     scope: Literal["user", "system", "process"] = Field(default="process", description="作用域。可选值:process/user/system。默认process")

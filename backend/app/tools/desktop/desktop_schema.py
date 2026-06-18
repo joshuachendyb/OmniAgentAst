@@ -122,6 +122,18 @@ class MousePositionInput(BaseModel):
 
 
 class KeyboardControlInput(BaseModel):
+    """键盘控制工具
+    
+    【action参数】决定操作类型：
+    - type: 输入文本
+    - shortcut: 执行快捷键
+    - combo: 执行组合键
+    
+    【使用示例】
+    - 输入文本 → keyboard_control(action="type", text_or_keys="Hello World")
+    - 快捷键 → keyboard_control(action="shortcut", text_or_keys="ctrl+c")
+    - 组合键 → keyboard_control(action="combo", text_or_keys="ctrl,shift,esc")
+    """
     action: Literal["type", "shortcut", "combo"] = Field(
         description="键盘操作:type(输入文本)、shortcut(快捷键)、combo(组合键)"
     )
