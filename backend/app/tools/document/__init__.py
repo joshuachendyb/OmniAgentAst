@@ -16,12 +16,12 @@ from app.tools.document.document_tools import (
     write_pptx,
     convert_document,
 )
-from app.tools.document.data_analysis_tools import (
+from app.tools.dataanalysis.dataanalysis_tools import (
     analyze_data,
     filter_data,
     generate_chart,
 )
-from app.tools.document.database_tools import (
+from app.tools.dataanalysis.database_tools import (
     query_sql,
     execute_sql,
     get_db_schema,
