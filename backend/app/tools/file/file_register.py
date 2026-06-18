@@ -78,7 +78,7 @@ FILE_TOOL_DEPENDENCIES = {
 FILE_TOOL_DESCRIPTIONS = {
     "read_text_file": """读取文本文件。支持分页读取(head/tail/offset/limit)。encoding默认utf-8,读取失败自动尝试gbk。适用场景:需要读取源代码、日志文件、配置文件等纯文本内容时使用。""",
 
-    "write_text_file": """写文本文件：创建新文件或追加内容。自动检测编码，支持中文路径。content 参数传入实际文件内容（禁止传入思考/状态描述），append=True 追加到末尾。适用场景:需要创建或修改代码文件、配置文件、日志文件等文本内容时使用。""",
+    "write_text_file": """写文本文件：创建新文件或追加内容。自动检测编码，支持中文路径，自动创建父目录。content 参数传入实际文件内容（禁止传入思考/状态描述），append=True 追加到末尾。适用场景:需要创建或修改代码文件、配置文件、日志文件等文本内容时使用。""",
 
     "read_media_file": """读取图片、音频、视频文件,返回Base64编码数据和MIME类型。自动识别媒体类型,支持常见图片(jpg/png/gif/bmp)、音频(mp3/wav/ogg)和视频(mp4/avi/mkv)格式。不支持PDF文件(PDF请使用read_pdf工具)。适用场景:需要获取非文本文件内容并将其传递给LLM进行图像识别、音频分析等任务。""",
 

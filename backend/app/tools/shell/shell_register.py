@@ -70,7 +70,8 @@ SHELL_TOOL_DESCRIPTIONS = {
 - 网络状态: netstat
 - IP配置: ipconfig
 - 磁盘信息: wmic logicaldisk get size,freespace,caption
-- 权限修改: icacls""",
+- 权限修改: icacls
+【注意】默认PowerShell环境，CMD专属语法(如if exist)不兼容，需设置shell_type=cmd""",
 
     "find_command": """查找系统命令的安装路径,类似于which/where命令。all_paths=False(默认)返回第一个匹配路径,all_paths=True返回全部匹配路径列表。适用场景:需要确认python/git/npm等命令是否已安装、查看命令安装路径、验证开发工具链配置是否正确时使用。""",
     "execute_code": """执行代码片段并返回结果。支持Python(默认)和JavaScript两种语言。内置安全检查拦截危险操作(如文件删除、网络请求等),比直接Shell命令更安全。返回stdout/stderr/returncode。适用场景:需要快速验证代码逻辑、进行数据处理计算、运行简单脚本片段时使用。""",
