@@ -3,25 +3,41 @@
 Document Register - 文档操作工具注册点（仅DOCUMENT分类）
 
 【2026-06-18 小欧】DATAANALYSIS 6个工具已迁出到 dataanalysis/ 独立目录
+【2026-06-18 小健】添加TOOL_DEPENDENCIES常量管理工具依赖
 
 【工具列表】(共9个) → DOCUMENT分类:
-1. read_pdf - 读取PDF文档
-2. read_docx - 读取Word文档
-3. read_pptx - 读取PPT文档
-4. read_xlsx - 读取Excel文档
-5. write_docx - 写入Word文档
-6. write_xlsx - 写入Excel文档
-7. write_pdf - 写入PDF文档
-8. write_pptx - 写入PPT文档
-9. convert_document - 文档格式转换
+1. read_pdf - 读取PDF文档 (依赖: pdfplumber)
+2. read_docx - 读取Word文档 (依赖: python-docx)
+3. read_pptx - 读取PPT文档 (依赖: python-pptx)
+4. read_xlsx - 读取Excel文档 (依赖: pandas, openpyxl)
+5. write_docx - 写入Word文档 (依赖: python-docx)
+6. write_xlsx - 写入Excel文档 (依赖: pandas, openpyxl)
+7. write_pdf - 写入PDF文档 (依赖: reportlab, pdfplumber)
+8. write_pptx - 写入PPT文档 (依赖: python-pptx)
+9. convert_document - 文档格式转换 (无第三方依赖)
 
 创建时间: 2026-05-02
-更新时间: 2026-06-18 小欧
+更新时间: 2026-06-18 小健
 """
 
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
+
+# 文档工具依赖配置 — 小健 2026-06-18
+# 每个工具对应的第三方依赖包列表
+TOOL_DEPENDENCIES = {
+    "read_pdf": ["pdfplumber"],
+    "read_docx": ["python-docx"],
+    "read_pptx": ["python-pptx"],
+    "read_xlsx": ["pandas", "openpyxl"],
+    "write_docx": ["python-docx"],
+    "write_xlsx": ["pandas", "openpyxl"],
+    "write_pdf": ["reportlab", "pdfplumber"],  # 可能需要reportlab用于生成PDF
+    "write_pptx": ["python-pptx"],
+    "convert_document": [],  # 使用内置库
+}
+
 
 from app.tools.document.document_schema import (
     ReadPdfInput,
@@ -122,7 +138,7 @@ TOOL_INPUT_MODELS = {
 
 def _register_document_tools():
     """注册9个文档操作工具到DOCUMENT分类 — 小欧 2026-06-18"""
-
+    
     for name, func in TOOL_IMPLEMENTATIONS.items():
         desc = DESCRIPTIONS.get(name, "")
         input_model = TOOL_INPUT_MODELS.get(name)
@@ -136,6 +152,7 @@ def _register_document_tools():
             version="1.0.0",
             input_model=input_model,
             examples=examples,
+            dependencies=TOOL_DEPENDENCIES.get(name, []),
         )
         logger.debug(
             f"[document_register] \u5df2\u6ce8\u518c\u5de5\u5177: {name}, "

@@ -10,23 +10,39 @@ SYSTEM Register - 系统信息工具注册点
 - 保留 get_env(action=get/list), set_env(action=set/delete)
 - registry_control(action=read/write/delete)在reg_register.py注册
 - net_connections迁入network分类(2026-06-09 小沈)
+【2026-06-18 小健】添加SYSTEM_TOOL_DEPENDENCIES常量管理工具依赖
 
 【工具列表】(LLM可见9个,本文件注册6个 + reg_register注册1个 + env迁入2个)
-1. get_system_info - 获取系统信息
-2. event_log - 获取系统事件日志
-3. list_processes - 列出所有进程
-4. kill_process - 终止指定进程
-5. service_control - 服务统一控制(start/stop/restart/list)
-6. task_control - 计划任务统一控制(create/delete/list)
+1. get_system_info - 获取系统信息 (依赖: psutil)
+2. event_log - 获取系统事件日志 (依赖: psutil)
+3. list_processes - 列出所有进程 (依赖: psutil)
+4. kill_process - 终止指定进程 (依赖: psutil)
+5. service_control - 服务统一控制(start/stop/restart/list) (依赖: psutil)
+6. task_control - 计划任务统一控制(create/delete/list) (无第三方依赖)
++ get_env - 获取环境变量 (无第三方依赖)
++ set_env - 设置环境变量 (无第三方依赖)
 + reg_read, reg_write, reg_delete(reg_register.py注册)
 
 创建时间: 2026-04-29
-更新时间: 2026-05-17 小沈 - 16→10工具重构
+更新时间: 2026-06-18 小健
 """
 
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
+
+# 系统工具依赖配置 — 小健 2026-06-18
+# 每个工具对应的第三方依赖包列表
+SYSTEM_TOOL_DEPENDENCIES = {
+    "get_system_info": ["psutil"],
+    "event_log": ["psutil"],
+    "list_processes": ["psutil"],
+    "kill_process": ["psutil"],
+    "service_control": ["psutil"],
+    "task_control": [],  # 使用内置库
+    "get_env": [],  # 使用内置os库
+    "set_env": [],  # 使用内置os库
+}
 
 from app.tools.system.system_schema import (
     GetSystemInfoInput,
@@ -190,6 +206,7 @@ def _register_system_tools():
             name=name, description=desc, category=ToolCategory.SYSTEM,
             implementation=method, version="1.0.0", input_model=input_model, examples=examples,
             needs_confirmation=(name in CONFIRM_TOOLS),
+            dependencies=SYSTEM_TOOL_DEPENDENCIES.get(name, []),
         )
         logger.info(f"[system_register] 已注册工具(SYSTEM): {name}")
 

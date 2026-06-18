@@ -14,14 +14,25 @@ import sys
 from typing import Optional
 
 
-def _pip_install(pkg: str) -> bool:
-    """尝试pip安装，先普通模式失败后自动降级为--user"""
+def _pip_install(pkg: str, version: Optional[str] = None) -> bool:
+    """尝试pip安装，先普通模式失败后自动降级为--user
+    
+    Args:
+        pkg: 包名，如 'httpx'
+        version: 版本号，如 '==0.26.0'，可选
+    """
+    install_cmd = [sys.executable, "-m", "pip", "install", "-q"]
+    if version:
+        pkg_with_version = f"{pkg}{version}"
+    else:
+        pkg_with_version = pkg
+    
     try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", pkg, "-q"])
+        subprocess.check_call(install_cmd + [pkg_with_version])
         return True
     except subprocess.CalledProcessError:
         try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", pkg, "-q"])
+            subprocess.check_call(install_cmd + ["--user", pkg_with_version])
             return True
         except subprocess.CalledProcessError:
             return False
@@ -30,6 +41,7 @@ def _pip_install(pkg: str) -> bool:
 def ensure_dependency(
     import_name: str,
     pip_package: Optional[str] = None,
+    version: Optional[str] = None,
     pre_install: Optional[list] = None,
 ) -> bool:
     """确保Python依赖可用，缺失则自动pip安装（普通→--user两级降级）
@@ -37,6 +49,7 @@ def ensure_dependency(
     Args:
         import_name: import时的模块名（如 'win10toast'）
         pip_package: pip包名，默认等于import_name
+        version: 版本号，如 '==0.26.0'，可选
         pre_install: 前置依赖列表（如 ['setuptools<70']），先于主包安装
 
     Returns:
@@ -53,7 +66,7 @@ def ensure_dependency(
         __import__(import_name)
         return True
     except ImportError:
-        if not _pip_install(pip_package):
+        if not _pip_install(pip_package, version):
             return False
         try:
             __import__(import_name)

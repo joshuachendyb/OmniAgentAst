@@ -54,6 +54,17 @@ from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
+# 文件工具依赖配置 — 小健 2026-06-18
+# 文件工具使用内置库，无第三方依赖
+FILE_TOOL_DEPENDENCIES = {
+    tool_name: [] for tool_name in [
+        "read_text_file", "write_text_file", "read_media_file", "edit_text_file",
+        "list_directory", "search_files", "grep_file_content", "compress_files",
+        "extract_archive", "move_file", "copy_file", "delete_file", "rename_file",
+        "read_data_file", "write_data_file"
+    ]
+}
+
 
 # ============================================================
 # 工具描述(15个)
@@ -236,6 +247,7 @@ def _register_file_tools():
             version="2.0.0",
             input_model=input_model,
             examples=examples,
+            dependencies=FILE_TOOL_DEPENDENCIES.get(name, []),
             needs_confirmation=bool(CONFIRMATION_MAP.get(name, False)),
         )
 

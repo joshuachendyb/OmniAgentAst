@@ -7,7 +7,7 @@
 拆分自 registry.py — 小沈 2026-05-29
 """
 
-from typing import Dict, List, Optional, Callable, Any
+from typing import Dict, List, Optional, Callable, Any, Union
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -85,6 +85,9 @@ class ToolMetadata:
     needs_confirmation: bool = False
     action_confirmation: Optional[Dict[str, bool]] = None
     check_fn: Optional[Callable] = None
+    
+    # 【2026-06-18 小健】工具依赖管理
+    dependencies: List[Union[str, Dict[str, Any]]] = field(default_factory=list)
 
 
     def get_failure_hint(self, tool_params: Optional[dict] = None) -> str:

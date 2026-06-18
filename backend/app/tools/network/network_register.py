@@ -26,6 +26,17 @@ from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 from typing import Optional
 
+# 网络工具依赖配置 — 小健 2026-06-18
+# 每个工具对应的第三方依赖包列表
+# 注意：httpx必须使用0.26.0版本，httpcore必须使用1.0.1版本（AGENTS.md明确要求）
+NETWORK_TOOL_DEPENDENCIES = {
+    "http_request": ["httpx==0.26.0", "httpcore==1.0.1"],
+    "download_file": ["httpx==0.26.0", "httpcore==1.0.1"],
+    "fetch_webpage": ["httpx==0.26.0", "httpcore==1.0.1"],
+    "search_web": ["httpx==0.26.0", "httpcore==1.0.1"],
+    "network_diagnose": [],  # 使用内置库
+}
+
 
 def _http_request_failure_hint(tool_params: Optional[dict] = None) -> str:
     """http_request失败时的国内替代URL提示 — 小健 2026-05-24"""
@@ -144,6 +155,7 @@ def _register_network_tools():
             category=ToolCategory.NETWORK,
             examples=examples,
             failure_hint_fn=failure_hint_fn,
+            dependencies=NETWORK_TOOL_DEPENDENCIES.get(tool_name, []),
         )
         logger.debug(
             f"[network_register] 已注册工具: {tool_name}, 使用 Pydantic 模型: {input_model.__name__}, examples: {len(examples)}个"

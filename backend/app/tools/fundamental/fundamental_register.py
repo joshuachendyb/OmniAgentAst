@@ -16,6 +16,14 @@ from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
+# 基础工具依赖配置 — 小健 2026-06-18
+# 基础工具使用内置库，无第三方依赖
+FUNDAMENTAL_TOOL_DEPENDENCIES = {
+    tool_name: [] for tool_name in [
+        "tool_search", "time_now", "time_add", "time_diff", "query_calendar"
+    ]
+}
+
 from app.tools.fundamental.fundamental_schema import (
     ToolSearchInput,
     TimeNowInput,
@@ -124,6 +132,7 @@ def _register_fundamental_tools():
             version="1.0.0",
             input_model=input_model,
             examples=examples,
+            dependencies=FUNDAMENTAL_TOOL_DEPENDENCIES.get(name, []),
         )
         logger.debug(f"[fundamental_register] 已注册工具: {name}, Pydantic模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个")
 

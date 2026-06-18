@@ -9,11 +9,12 @@
          查询函数 → tool_queries.py, 格式转换 → tool_description.py
 """
 
-from typing import Dict, List, Optional, Callable, Any, Type, Set
+from typing import Dict, List, Optional, Callable, Any, Type, Set, Union
 from pydantic import BaseModel
 from app.tools.tool_types import ToolCategory, ToolMetadata
 from app.tools.schema_utils import _generate_input_schema
 from app.utils.logger import setup_logger
+from app.utils.dependency import ensure_dependency
 
 logger = setup_logger(__name__)
 
@@ -45,6 +46,68 @@ class ToolRegistry:
         self._categories: Dict[ToolCategory, List[str]] = {}
         self._implementations: Dict[str, Callable] = {}
     
+    def _check_dependencies(self, dependencies: List[Union[str, Dict[str, Any]]], tool_name: str) -> bool:
+        """检查并安装工具依赖 — 小健 2026-06-18
+        
+        Args:
+            dependencies: 依赖包列表，可以是字符串或字典
+                字符串格式: 'pandas' 或 'httpx==0.26.0'
+                字典格式: {
+                    'import_name': 'win10toast', 
+                    'pip_package': 'win10toast', 
+                    'version': '==0.10.0',
+                    'pre_install': ['setuptools<70']
+                }
+            tool_name: 工具名称，用于日志记录
+        
+        Returns:
+            bool: True=所有依赖都可用，False=有依赖安装失败
+        """
+        if not dependencies:
+            return True
+        
+        all_available = True
+        for dep in dependencies:
+            if isinstance(dep, str):
+                # 简单字符串格式，可能包含版本号
+                if "==" in dep:
+                    # 格式: 'httpx==0.26.0'
+                    parts = dep.split("==")
+                    if len(parts) == 2:
+                        import_name = parts[0]
+                        version = f"=={parts[1]}"
+                        if not ensure_dependency(import_name, version=version):
+                            logger.warning(f"[ToolRegistry] 工具 '{tool_name}' 依赖 '{dep}' 安装失败，工具可能不可用")
+                            all_available = False
+                    else:
+                        logger.error(f"[ToolRegistry] 工具 '{tool_name}' 依赖格式错误: {dep}")
+                        all_available = False
+                else:
+                    # 格式: 'pandas' (无版本号)
+                    if not ensure_dependency(dep):
+                        logger.warning(f"[ToolRegistry] 工具 '{tool_name}' 依赖 '{dep}' 安装失败，工具可能不可用")
+                        all_available = False
+            elif isinstance(dep, dict):
+                # 字典格式，支持完整参数
+                import_name = dep.get('import_name', dep.get('pip_package', ''))
+                pip_package = dep.get('pip_package', import_name)
+                version = dep.get('version')
+                pre_install = dep.get('pre_install')
+                
+                if not import_name:
+                    logger.error(f"[ToolRegistry] 工具 '{tool_name}' 依赖配置错误: {dep}")
+                    all_available = False
+                    continue
+                
+                if not ensure_dependency(import_name, pip_package, version, pre_install):
+                    logger.warning(f"[ToolRegistry] 工具 '{tool_name}' 依赖 '{import_name}{version if version else ''}' 安装失败，工具可能不可用")
+                    all_available = False
+            else:
+                logger.error(f"[ToolRegistry] 工具 '{tool_name}' 依赖格式错误: {dep}")
+                all_available = False
+        
+        return all_available
+    
     def register(
         self,
         name: str,
@@ -60,20 +123,26 @@ class ToolRegistry:
         needs_confirmation: bool = False,
         action_confirmation: Optional[Dict[str, bool]] = None,
         check_fn: Optional[Callable] = None,
+        dependencies: Optional[List[Union[str, Dict[str, Any]]]] = None,
     ) -> Dict[str, Any]:
         """
         注册工具（单一入口，委托给私有方法）
         
         【修复P0-5 2026-06-08 小沈】拆分为私有方法，遵守SRP原则
         【2026-06-16 小沈】用二元安全参数替代5级枚举
+        【2026-06-18 小健】添加依赖管理参数
         """
         input_schema = _generate_input_schema(input_model, input_schema)
+        
+        # 检查并安装依赖
+        deps = dependencies or []
+        self._check_dependencies(deps, name)
         
         # 职责1：更新已存在工具
         if name in self._tools:
             return self._update_existing_tool(
                 name, description, category, implementation, 
-                input_schema, examples, version
+                input_schema, examples, version, deps
             )
         
         # 职责2：注册新工具
@@ -81,7 +150,7 @@ class ToolRegistry:
             name, description, category, implementation, 
             input_schema, examples, version, 
             expose_to_llm, failure_hint_fn,
-            needs_confirmation, action_confirmation, check_fn
+            needs_confirmation, action_confirmation, check_fn, deps
         )
     
     def _update_existing_tool(
@@ -92,7 +161,8 @@ class ToolRegistry:
         implementation: Callable,
         input_schema: Optional[Dict],
         examples: Optional[List[Dict]],
-        version: str
+        version: str,
+        dependencies: List[Union[str, Dict[str, Any]]]
     ) -> Dict[str, Any]:
         """更新已注册工具"""
         _update_tool_metadata(
@@ -101,7 +171,8 @@ class ToolRegistry:
             version=version,
             category=category,
             input_schema=input_schema,
-            examples=examples
+            examples=examples,
+            dependencies=dependencies
         )
         self._implementations[name] = implementation
         return {"status": "success"}
@@ -120,6 +191,7 @@ class ToolRegistry:
         needs_confirmation: bool = False,
         action_confirmation: Optional[Dict[str, bool]] = None,
         check_fn: Optional[Callable] = None,
+        dependencies: List[Union[str, Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """注册新工具"""
         metadata = ToolMetadata(
@@ -134,11 +206,12 @@ class ToolRegistry:
             needs_confirmation=needs_confirmation,
             action_confirmation=action_confirmation,
             check_fn=check_fn,
+            dependencies=dependencies or [],
         )
         self._tools[name] = metadata
         self._implementations[name] = implementation
         self._update_category_index(category, name)
-        logger.debug(f"Tool registered: {name} (category: {category.value}, needs_confirmation: {needs_confirmation})")
+        logger.debug(f"Tool registered: {name} (category: {category.value}, needs_confirmation: {needs_confirmation}, dependencies: {dependencies})")
         return {"status": "success"}
     
     def _update_category_index(self, category: ToolCategory, name: str) -> None:
@@ -238,6 +311,7 @@ def register_tool(
     needs_confirmation: bool = False,
     action_confirmation: Optional[Dict[str, bool]] = None,
     check_fn: Optional[Callable] = None,
+    dependencies: Optional[List[Union[str, Dict[str, Any]]]] = None,
 ):
     """
     工具注册装饰器
@@ -247,7 +321,8 @@ def register_tool(
             name="list_directory",
             description="列出目录内容",
             category=ToolCategory.FILE,
-            input_model=ListDirectoryInput
+            input_model=ListDirectoryInput,
+            dependencies=["pandas", "matplotlib"]  # 可选依赖列表
         )
         async def list_directory(params): ...
     """
@@ -266,6 +341,7 @@ def register_tool(
             needs_confirmation=needs_confirmation,
             action_confirmation=action_confirmation,
             check_fn=check_fn,
+            dependencies=dependencies,
         )
         return func
     

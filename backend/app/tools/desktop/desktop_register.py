@@ -7,33 +7,58 @@ DESKTOP Register - 桌面工具注册点
 【2026-06-09 小沈】删除边缘工具:screen_record/ocr/send_notification,10→6
 【2026-06-15 小欧】恢复send_notification注册,6→7
 【2026-06-17 小欧】组合工具拆分:window_control→7个,mouse_control→4个,clipboard_control→2个,window_info去info
+【2026-06-18 小健】添加DESKTOP_TOOL_DEPENDENCIES常量管理工具依赖
 
-【工具列表】(14个)
-1. window_info - 列出所有窗口
-2. window_focus - 聚焦窗口
-3. window_resize - 调整窗口大小
-4. window_maximize - 最大化窗口
-5. window_minimize - 最小化窗口
-6. window_restore - 还原窗口
-7. window_topmost - 窗口置顶
-8. window_unpin - 取消置顶
-9. mouse_click - 鼠标单击
-10. mouse_move - 移动鼠标
-11. mouse_scroll - 鼠标滚轮
-12. mouse_position - 获取鼠标位置
-13. clipboard_read - 读取剪贴板
-14. clipboard_write - 写入剪贴板
-15. keyboard_control - 键盘控制(不变)
-16. screen_capture - 屏幕截图(不变)
-17. send_notification - 系统通知(不变)
+【工具列表】(17个) → DESKTOP分类:
+1. window_info - 列出所有窗口 (依赖: pygetwindow)
+2. window_focus - 聚焦窗口 (依赖: pygetwindow)
+3. window_resize - 调整窗口大小 (依赖: pygetwindow)
+4. window_maximize - 最大化窗口 (依赖: pygetwindow)
+5. window_minimize - 最小化窗口 (依赖: pygetwindow)
+6. window_restore - 还原窗口 (依赖: pygetwindow)
+7. window_topmost - 窗口置顶 (依赖: pygetwindow)
+8. window_unpin - 取消置顶 (依赖: pygetwindow)
+9. mouse_click - 鼠标单击 (依赖: pyautogui)
+10. mouse_move - 移动鼠标 (依赖: pyautogui)
+11. mouse_scroll - 鼠标滚轮 (依赖: pyautogui)
+12. mouse_position - 获取鼠标位置 (依赖: pyautogui)
+13. keyboard_control - 键盘控制 (依赖: pyautogui)
+14. screen_capture - 屏幕截图 (依赖: pyautogui)
+15. clipboard_read - 读取剪贴板 (依赖: pyperclip)
+16. clipboard_write - 写入剪贴板 (依赖: pyperclip)
+17. send_notification - 系统通知 (依赖: win10toast)
 
 创建时间: 2026-04-29
-更新时间: 2026-06-17
+更新时间: 2026-06-18 小健
 """
 
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
+
+# 桌面工具依赖配置 — 小健 2026-06-18
+# 每个工具对应的第三方依赖包列表，支持版本指定
+DESKTOP_TOOL_DEPENDENCIES = {
+    "window_info": ["pygetwindow"],
+    "window_focus": ["pygetwindow"],
+    "window_resize": ["pygetwindow"],
+    "window_maximize": ["pygetwindow"],
+    "window_minimize": ["pygetwindow"],
+    "window_restore": ["pygetwindow"],
+    "window_topmost": ["pygetwindow"],
+    "window_unpin": ["pygetwindow"],
+    "mouse_click": ["pyautogui"],
+    "mouse_move": ["pyautogui"],
+    "mouse_scroll": ["pyautogui"],
+    "mouse_position": ["pyautogui"],
+    "keyboard_control": ["pyautogui"],
+    "screen_capture": ["pyautogui"],
+    "clipboard_read": ["pyperclip"],
+    "clipboard_write": ["pyperclip"],
+    "send_notification": [
+        {"import_name": "win10toast", "pip_package": "win10toast", "pre_install": ["setuptools<70"]}
+    ],
+}
 
 from app.tools.desktop.desktop_schema import (
     WindowInfoInput,
@@ -251,6 +276,7 @@ def _register_desktop_tools():
             version="1.0.0",
             input_model=input_model,
             examples=examples,
+            dependencies=DESKTOP_TOOL_DEPENDENCIES.get(name, []),
         )
         logger.debug(
             f"[desktop_register] 已注册工具: {name}, "

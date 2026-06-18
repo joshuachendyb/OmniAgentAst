@@ -143,7 +143,7 @@ def _convert_pd_value(val: Any) -> Any:
 
 
 def _compute_stats(
-    df: pd.DataFrame,
+    df: "pd.DataFrame",
     numeric_cols: List[str],
     operations: List[str],
     all_ops: List[str],
@@ -301,7 +301,7 @@ def _load_data_to_df(data: Union[str, List[Dict[str, Any]]],
     return {"error": build_error(ERR_FILTER_INVALID, "data参数必须是文件路径或数据数组")}
 
 
-def _build_condition_mask(df: pd.DataFrame, conditions: List[Dict[str, Any]]) -> dict:
+def _build_condition_mask(df: "pd.DataFrame", conditions: List[Dict[str, Any]]) -> dict:
     """构建过滤掩码,返回 {"mask": pd.Series, "warnings": List[str]}。"""
     operator_map = {
         "eq": "__eq__", "ne": "__ne__", "gt": "__gt__",

@@ -3,19 +3,32 @@
 DATAANALYSIS Register — 数据分析工具注册点
 
 【2026-06-18 小欧】从 document/ 独立为 dataanalysis/ 目录
+【2026-06-18 小健】添加TOOL_DEPENDENCIES常量管理工具依赖
 
 6个工具:
-- analyze_data    — 数据统计分析
-- filter_data     — 数据筛选过滤
-- generate_chart  — 图表可视化
-- query_sql       — SQL只读查询
-- execute_sql     — SQL写操作
-- get_db_schema   — 数据库结构查询
+- analyze_data    — 数据统计分析 (依赖: pandas)
+- filter_data     — 数据筛选过滤 (依赖: pandas)
+- generate_chart  — 图表可视化 (依赖: pandas, matplotlib)
+- query_sql       — SQL只读查询 (依赖: pandas)
+- execute_sql     — SQL写操作 (无第三方依赖)
+- get_db_schema   — 数据库结构查询 (无第三方依赖)
 """
 
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
+
+# 数据分析工具依赖配置 — 小健 2026-06-18
+# 每个工具对应的第三方依赖包列表
+TOOL_DEPENDENCIES = {
+    "analyze_data": ["pandas"],
+    "filter_data": ["pandas"],
+    "generate_chart": ["pandas", "matplotlib"],
+    "query_sql": ["pandas"],
+    "execute_sql": [],  # 使用内置sqlite3
+    "get_db_schema": [],  # 使用内置sqlite3
+}
+
 
 from app.tools.dataanalysis.dataanalysis_schema import (
     AnalyzeDataInput,
@@ -119,6 +132,7 @@ def _register_dataanalysis_tools():
             input_model=input_model,
             examples=examples,
             needs_confirmation=(name == "execute_sql"),
+            dependencies=TOOL_DEPENDENCIES.get(name, []),
         )
         logger.debug(
             f"[dataanalysis_register] \u5df2\u6ce8\u518c\u5de5\u5177: {name}, "

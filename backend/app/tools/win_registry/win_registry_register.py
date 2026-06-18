@@ -12,6 +12,14 @@ from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
+# 注册表工具依赖配置 — 小健 2026-06-18
+# 注册表工具使用内置库，无第三方依赖
+REGISTRY_TOOL_DEPENDENCIES = {
+    tool_name: [] for tool_name in [
+        "registry_read", "registry_write", "registry_delete"
+    ]
+}
+
 from app.tools.win_registry.win_registry_schema import (
     RegistryReadInput,
     RegistryWriteInput,
@@ -79,6 +87,7 @@ def _register_registry_tools():
             input_model=input_model,
             examples=examples,
             needs_confirmation=(name in CONFIRM_TOOLS),
+            dependencies=REGISTRY_TOOL_DEPENDENCIES.get(name, []),
         )
         logger.debug(
             f"[registry_register] 已注册工具: {name}, "

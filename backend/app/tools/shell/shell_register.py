@@ -24,6 +24,16 @@ from app.tools.registry import register_tool, tool_registry
 from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
+# Shell工具依赖配置 — 小健 2026-06-18
+# Shell工具使用内置库，无第三方依赖
+SHELL_TOOL_DEPENDENCIES = {
+    tool_name: [] for tool_name in [
+        "execute_shell_command", "execute_shell_command_foreground",
+        "execute_shell_command_background", "find_command", "check_file_permissions",
+        "get_system_info"
+    ]
+}
+
 from app.tools.shell.shell_schema import (
     ExecuteShellCommandInput,
     ExecuteShellCommandForegroundInput,
@@ -165,6 +175,7 @@ def _register_shell_tools():
             examples=examples,
             needs_confirmation=(name in ("execute_shell_command", "execute_shell_command_foreground", "execute_shell_command_background")),
             action_confirmation=CONFIRMATION_MAP.get(name),
+            dependencies=SHELL_TOOL_DEPENDENCIES.get(name, []),
         )
         logger.debug(f"[shell_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个")
 
