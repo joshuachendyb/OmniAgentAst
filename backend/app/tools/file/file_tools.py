@@ -980,11 +980,9 @@ async def write_text_file(
             sequence_number=0
         )
         
-        success = await asyncio.to_thread(
-            execute_with_safety,
-            operation_id,
-            operation_func=lambda: _write_file_atomic(checked_content, path, encoding, append, create_parents)
-        )
+        def _do_write():
+            return execute_with_safety(operation_id, lambda: _write_file_atomic(checked_content, path, encoding, append, create_parents))
+        success = await asyncio.to_thread(_do_write)
         
         if success:
             return build_success(
