@@ -18,7 +18,9 @@ class ToolLoader:
         self.agent = agent
 
     def init_tools(self, initial_categories=None):
-        """初始化工具:仅加载initial_categories指定的分类+meta工具"""
+        """初始化工具:仅注入initial_categories指定的分类+meta工具给LLM
+        注意：所有工具已在启动时注册(register)，这里只是注入(inject)给LLM使用
+        """
         self.agent._tools_dict = {}
 
         # ① 始终加载meta工具
