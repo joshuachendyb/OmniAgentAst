@@ -69,27 +69,22 @@ def get_error_info(error: Exception) -> Dict[str, Any]:
 # 消息保存
 # ====================================================================
 
-def _get_user_message_id(session_id: str) -> Optional[int]:
-    """获取用户消息ID — 小沈 2026-06-09: 从services层导入,消除反向依赖"""
-    from app.utils.message_id_tracker import get_user_message_id
-    return get_user_message_id(session_id)
-
-
 async def save_execution_steps_to_db(
     session_id: Optional[str],
     execution_steps: List[Dict],
     content: Optional[str] = None,
     user_message_id: Optional[int] = None
 ) -> None:
-    """保存execution_steps到DB — 唯一保存入口"""
+    """保存execution_steps到DB — 唯一保存入口 — 小健 2026-06-18 内联_get_user_message_id"""
     from app.api.v1.conversation import save_execution_steps, ExecutionStepsUpdate
+    from app.utils.message_id_tracker import get_user_message_id
 
     if session_id is None:
         return
 
     try:
         if user_message_id is None:
-            user_message_id = _get_user_message_id(session_id)
+            user_message_id = get_user_message_id(session_id)
         result = await save_execution_steps(
             session_id,
             ExecutionStepsUpdate(

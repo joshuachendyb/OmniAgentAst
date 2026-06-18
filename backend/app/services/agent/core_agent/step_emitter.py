@@ -16,7 +16,7 @@ from app.utils.logger import logger
 
 
 class StepEmitter:
-    """步骤发射和Task追踪(SRP)"""
+    """步骤发射和Task追踪(SRP) — 小健 2026-06-18 提取_get_tracker消除DRY"""
 
     def __init__(self, agent):
         self.agent = agent
@@ -37,10 +37,16 @@ class StepEmitter:
         )
         return self.emit(error_step)
 
+    def _get_tracker(self):
+        """获取task_tracker和tracked_task_id — 小健 2026-06-18 DRY提取"""
+        return (
+            getattr(self.agent, '_task_tracker', None),
+            getattr(self.agent, '_tracked_task_id', None),
+        )
+
     def complete_task(self, success: bool):
         """Task追踪:完成任务记录"""
-        task_tracker = getattr(self.agent, '_task_tracker', None)
-        tracked_task_id = getattr(self.agent, '_tracked_task_id', None)
+        task_tracker, tracked_task_id = self._get_tracker()
         if task_tracker and tracked_task_id:
             try:
                 task_tracker.complete_task(tracked_task_id, success=success)
@@ -52,8 +58,7 @@ class StepEmitter:
 
         10规范: SRP — 只透传,不判断业务逻辑
         """
-        task_tracker = getattr(self.agent, '_task_tracker', None)
-        tracked_task_id = getattr(self.agent, '_tracked_task_id', None)
+        task_tracker, tracked_task_id = self._get_tracker()
         if task_tracker and tracked_task_id:
             try:
                 task_tracker.add_operation(

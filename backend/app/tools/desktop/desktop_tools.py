@@ -183,65 +183,52 @@ def window_focus(window_title: str) -> Dict[str, Any]:
     return result
 
 
+def _add_window_next_actions(result: Dict[str, Any]) -> Dict[str, Any]:
+    """统一添加窗口操作next_actions — 小健 2026-06-18 DRY提取"""
+    if "next_actions" in result:
+        return result
+    if result.get("code") == "SUCCESS":
+        result["next_actions"] = build_next_actions([("window_info", "确认窗口状态", "需要验证操作结果时")])
+    else:
+        result["next_actions"] = build_next_actions([("window_info", "查看当前窗口列表", "确认窗口名称是否正确时")])
+    return result
+
+
 def window_resize(window_title: str, width: int = 800, height: int = 600) -> Dict[str, Any]:
     """调整窗口大小 — 小欧 2026-06-17"""
     from app.tools.desktop.desktop_gui_tools import _resize_window
     result = _resize_window(window_title, width=width, height=height)
-    if result.get("code") == "SUCCESS" and "next_actions" not in result:
-        result["next_actions"] = build_next_actions([("window_info", "确认窗口状态", "需要验证操作结果时")])
-    elif result.get("code") != "SUCCESS" and "next_actions" not in result:
-        result["next_actions"] = build_next_actions([("window_info", "查看当前窗口列表", "确认窗口名称是否正确时")])
-    return result
+    return _add_window_next_actions(result)
 
 
 def window_maximize(window_title: str) -> Dict[str, Any]:
     """最大化窗口 — 小欧 2026-06-17"""
     result = set_window_state(window_title, "maximize")
-    if result.get("code") == "SUCCESS" and "next_actions" not in result:
-        result["next_actions"] = build_next_actions([("window_info", "确认窗口状态", "需要验证操作结果时")])
-    elif result.get("code") != "SUCCESS" and "next_actions" not in result:
-        result["next_actions"] = build_next_actions([("window_info", "查看当前窗口列表", "确认窗口名称是否正确时")])
-    return result
+    return _add_window_next_actions(result)
 
 
 def window_minimize(window_title: str) -> Dict[str, Any]:
     """最小化窗口 — 小欧 2026-06-17"""
     result = set_window_state(window_title, "minimize")
-    if result.get("code") == "SUCCESS" and "next_actions" not in result:
-        result["next_actions"] = build_next_actions([("window_info", "确认窗口状态", "需要验证操作结果时")])
-    elif result.get("code") != "SUCCESS" and "next_actions" not in result:
-        result["next_actions"] = build_next_actions([("window_info", "查看当前窗口列表", "确认窗口名称是否正确时")])
-    return result
+    return _add_window_next_actions(result)
 
 
 def window_restore(window_title: str) -> Dict[str, Any]:
     """还原窗口 — 小欧 2026-06-17"""
     result = set_window_state(window_title, "restore")
-    if result.get("code") == "SUCCESS" and "next_actions" not in result:
-        result["next_actions"] = build_next_actions([("window_info", "确认窗口状态", "需要验证操作结果时")])
-    elif result.get("code") != "SUCCESS" and "next_actions" not in result:
-        result["next_actions"] = build_next_actions([("window_info", "查看当前窗口列表", "确认窗口名称是否正确时")])
-    return result
+    return _add_window_next_actions(result)
 
 
 def window_topmost(window_title: str) -> Dict[str, Any]:
     """窗口置顶 — 小欧 2026-06-17"""
     result = set_window_state(window_title, "topmost")
-    if result.get("code") == "SUCCESS" and "next_actions" not in result:
-        result["next_actions"] = build_next_actions([("window_info", "确认窗口状态", "需要验证操作结果时")])
-    elif result.get("code") != "SUCCESS" and "next_actions" not in result:
-        result["next_actions"] = build_next_actions([("window_info", "查看当前窗口列表", "确认窗口名称是否正确时")])
-    return result
+    return _add_window_next_actions(result)
 
 
 def window_unpin(window_title: str) -> Dict[str, Any]:
     """取消窗口置顶 — 小欧 2026-06-17"""
     result = set_window_state(window_title, "unpin")
-    if result.get("code") == "SUCCESS" and "next_actions" not in result:
-        result["next_actions"] = build_next_actions([("window_info", "确认窗口状态", "需要验证操作结果时")])
-    elif result.get("code") != "SUCCESS" and "next_actions" not in result:
-        result["next_actions"] = build_next_actions([("window_info", "查看当前窗口列表", "确认窗口名称是否正确时")])
-    return result
+    return _add_window_next_actions(result)
 
 
 # ========== 鼠标控制 — 4个独立函数 ==========

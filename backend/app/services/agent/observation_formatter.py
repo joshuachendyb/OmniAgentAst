@@ -169,24 +169,30 @@ def _append_data(text: str, display_data: Any) -> str:
     return text + f"\n数据: {json.dumps(display_data, ensure_ascii=False)}"
 
 
+def _format_result_observation(result: dict, status: str, use_llm_data: bool = True) -> str:
+    """统一格式化成功/警告结果 — 小健 2026-06-18 DRY合并"""
+    text = _build_base_text(result, status)
+    if status == "success":
+        display_data = _extract_display_data(result) if use_llm_data else result.get("data")
+        text = _append_warning(text, result)
+        text = _append_data(text, display_data)
+    else:
+        if result.get("data"):
+            data = result["data"]
+            if isinstance(data, (dict, list)):
+                data = _prevent_json_oom(data, LLM_SAFE_LIMIT)
+            text += f"\n部分数据: {json.dumps(data, ensure_ascii=False)}"
+    return _format_next_actions(result, text)
+
+
 def _format_success_observation(result: dict) -> str:
     """格式化成功结果 — 小沈 2026-06-08 重构"""
-    display_data = _extract_display_data(result)
-    text = _build_base_text(result, "success")
-    text = _append_warning(text, result)
-    text = _append_data(text, display_data)
-    return _format_next_actions(result, text)
+    return _format_result_observation(result, "success", use_llm_data=True)
 
 
 def _format_warning_observation(result: dict) -> str:
     """格式化警告结果 — 小沈 2026-06-08 重构"""
-    text = _build_base_text(result, "warning")
-    if result.get("data"):
-        data = result["data"]
-        if isinstance(data, (dict, list)):
-            data = _prevent_json_oom(data, LLM_SAFE_LIMIT)
-        text += f"\n部分数据: {json.dumps(data, ensure_ascii=False)}"
-    return _format_next_actions(result, text)
+    return _format_result_observation(result, "warning", use_llm_data=False)
 
 
 def _append_hint(text: str, tool_name: str, tool_params: Optional[dict], result: Optional[dict] = None) -> str:

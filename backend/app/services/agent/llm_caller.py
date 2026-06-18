@@ -73,6 +73,16 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
     })
 
 
+def _yield_error_response(error_msg: str, agent):
+    """统一错误响应构建 — 小健 2026-06-18 DRY提取"""
+    logger.error(f"[FC] {error_msg}")
+    get_prompt_logger().log_llm_response(
+        round_number=agent.llm_call_count, response_content=error_msg,
+        raw_response=error_msg, response_type="answer", finish_reason="error",
+    )
+    return ("response", {"type": "answer", "content": error_msg})
+
+
 def _build_answer_response(content, usage_data, agent):
     """构建answer类型响应并日志 — 小欧 2026-06-18 从call_llm_fc_stream提取"""
     logger.info(f"[FC] LLM原始响应(answer): {content}")
@@ -126,23 +136,11 @@ async def call_llm_fc_stream(agent, messages: list, openai_tools: list):
                     usage_data = chunk.usage
                 break
     except Exception as e:
-        logger.error(f"[FC] 流式异常: {e}")
-        raw_msg = f"LLM调用异常: {e}"
-        get_prompt_logger().log_llm_response(
-            round_number=agent.llm_call_count, response_content=raw_msg,
-            raw_response=raw_msg, response_type="answer", finish_reason="error",
-        )
-        yield ("response", {"type": "answer", "content": raw_msg})
+        yield _yield_error_response(f"LLM调用异常: {e}", agent)
         return
 
     if stream_error:
-        logger.error(f"[FC] 流式错误: {stream_error}")
-        raw_msg = f"LLM流式错误: {stream_error}"
-        get_prompt_logger().log_llm_response(
-            round_number=agent.llm_call_count, response_content=raw_msg,
-            raw_response=raw_msg, response_type="answer", finish_reason="error",
-        )
-        yield ("response", {"type": "answer", "content": raw_msg})
+        yield _yield_error_response(f"LLM流式错误: {stream_error}", agent)
         return
 
     complete_raw = "\n".join(_raw_chunks)

@@ -32,9 +32,8 @@ async def create_session(session_create: Optional[SessionCreate] = None):
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
             (session_id, title, utc_time, utc_time, False, utc_time, 1, is_valid)
         )
-        logger.info(f"创建会话(使用新字段): id={session_id}, title={title}, is_valid={is_valid}")
 
-    logger.info(f"创建会话成功: id={session_id}, title={title}")
+    logger.info(f"创建会话成功: id={session_id}, title={title}, is_valid={is_valid}")
 
     return SessionResponse(
         session_id=session_id,

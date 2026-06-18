@@ -14,7 +14,7 @@ from app.utils.time_utils import create_timestamp
 
 
 class ReasoningStep(ABC):
-    """所有Step类的抽象基类"""
+    """所有Step类的抽象基类 — 小健 2026-06-18 添加model/provider property"""
 
     TYPE: str = ""
     IS_DONE: bool = False
@@ -22,6 +22,8 @@ class ReasoningStep(ABC):
     def __init__(self, step: int, timestamp: Optional[int] = None):
         self._step = step
         self._timestamp = timestamp or create_timestamp()
+        self._model: Optional[str] = None
+        self._provider: Optional[str] = None
 
     @property
     def step(self) -> int:
@@ -31,14 +33,30 @@ class ReasoningStep(ABC):
     def timestamp(self) -> int:
         return self._timestamp
 
-    def get_type(self) -> str:
+    @property
+    def model(self) -> Optional[str]:
+        return self._model
+
+    @property
+    def provider(self) -> Optional[str]:
+        return self._provider
+
+    @property
+    def type(self) -> str:
+        """类型property — 小健 2026-06-18"""
         return self.TYPE
+
+    def get_type(self) -> str:
+        """兼容旧代码"""
+        return self.type
 
     @abstractmethod
     def get_content(self) -> str:
         pass
 
+    @property
     def is_done(self) -> bool:
+        """是否完成property — 小健 2026-06-18"""
         return self.IS_DONE
 
     def _extra_fields(self) -> Dict[str, Any]:

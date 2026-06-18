@@ -200,7 +200,7 @@ def _build_call_list(parsed: Dict) -> tuple:
 
 
 def _log_tool_results(step: int, all_calls: list, results: list, agent):
-    """记录工具执行结果到prompt logger和task tracker — 小欧 2026-06-18"""
+    """记录工具执行结果到prompt logger和task tracker — 小欧 2026-06-18; 小健 2026-06-18 合并两个循环"""
     prompt_logger = get_prompt_logger()
     for call, result in zip(all_calls, results):
         obs_text = str(result) if isinstance(result, Exception) else (
@@ -214,8 +214,7 @@ def _log_tool_results(step: int, all_calls: list, results: list, agent):
             tool_name=call["tool_name"], prompt_content=obs_text,
             source=f"handle_action:{call['tool_name']}", round_number=step,
         )
-
-    for call, result in zip(all_calls, results):
+        
         is_error = isinstance(result, Exception)
         if isinstance(result, dict):
             code = result.get("code", 0)

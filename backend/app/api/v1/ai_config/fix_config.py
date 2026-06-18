@@ -1,7 +1,7 @@
 from . import router
 from .models import ConfigFixResponse
 from ._helpers import get_config_path, read_yaml_config, write_yaml_config
-from ._helpers import handle_config_errors, _backup_config, _validate_config_integrity, is_provider_metadata_field
+from ._helpers import handle_config_errors, _backup_config, _validate_config_integrity, _fix_config_common_issues
 from app.utils.logger import logger
 
 
@@ -12,15 +12,8 @@ async def fix_config():
     backup_path = _backup_config(config_path)
     config_data = read_yaml_config(config_path)
 
-    fixed_issues = []
-    ai_config = config_data.get('ai', {})
-    for provider_name in ai_config.keys():
-        if is_provider_metadata_field(provider_name):
-            continue
-        provider_data = ai_config.get(provider_name, {})
-        if isinstance(provider_data, dict) and 'model' in provider_data:
-            del provider_data['model']
-            fixed_issues.append(f"删除 provider '{provider_name}' 下废弃的 model 字段")
+    config_data = _fix_config_common_issues(config_data)
+    fixed_issues = [f"删除 provider 下废弃的 model 字段"]
 
     is_valid, errors, warnings = _validate_config_integrity(config_data)
     if not is_valid:
