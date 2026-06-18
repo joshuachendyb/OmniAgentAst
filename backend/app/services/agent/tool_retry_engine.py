@@ -149,6 +149,10 @@ class ToolRetryEngine:
         """执行单次尝试 — 小沈 2026-06-08"""
         try:
             result = await self._execute_tool_once(tool, params, timeout)
+            # 工具自身返回ERR_时原样返回,不包build_success — 小欧 2026-06-18
+            if isinstance(result, dict) and result.get("code", "").startswith("ERR_"):
+                result["retry_count"] = engine.attempt_count
+                return result
             return build_success(
                 data=result,
                 message="Tool execution succeeded",
