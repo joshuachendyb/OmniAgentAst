@@ -1,3 +1,66 @@
+v0.16.8
+
+更新时间: 2026-06-18 16:10:00
+
+## v0.16.7→v0.16.8 变更汇总 - 小欧-2026-06-18
+
+### refactor: 10大原则代码优化(13项)
+- 67c832382: P1-1 operation_commands.py SRP拆分(recorder/executor/rollback/cleanup) - 小欧
+- 0c26f2239: P1-2 database.py SRP拆分(db_initializer/database.py精简为连接管理) - 小欧
+- c54cd40df: P1-4 _build_step_dict重复提取到task_utils.py - 小欧
+- 9cd3835c5: P1-5 provider过滤逻辑重复5次提取is_provider_metadata_field到_helpers.py - 小欧
+- 0898cc29a: P1-6 CRUD模式重复提取load_config/save_config到_helpers.py - 小欧
+- c82064b8e: P2-7/8 sankey/mermaid DRY修复(使用common.save_json_file/save_text_file) - 小欧
+- 8aa1e3ae3: FILE_TOOLS硬编码移到tool_constants.py(FILE_OPERATION_TOOLS) - 小欧
+- 3149a8521: document目录整合+system_tools删除_log_message - 小欧
+- 44b8464fb: KISS-DIRECT透传函数内联(7文件)+审查报告更新 - 小欧
+- 4b271be48: DRY修复+类型安全+基类property统一(5文件)+审查报告更新 - 小欧
+- e4ea3847b: DRY删除tool_categories.json改为从registry获取 - 小欧
+- c3efd5aaf: shell删除两个包装器YAGNI(shell_register/shell_tools) - 小欧
+- 053856f0d: get_system_info/send_notification移至FUNDAMENTAL分类+依赖配置 - 小欧
+- ba68abf69: 工具描述优化-多action工具schema增强+register简化(6个工具) - 小健
+
+### feat: 新功能(2项)
+- 521b2055a: 工具依赖管理系统(registry添加dependencies参数+dependency.py版本支持+各register配置依赖) - 小欧
+- bfc937cc0: generate_chart支持文件路径输入(xlsx/csv)+output_path增强 - 小欧
+
+### fix: 代码修复(8项)
+- 71b6ffd57: database_tools.py删除默认DB路径(security:禁止默认连接应用数据库) - 小沈
+- 23faa0508: dataanalysis_schema.py db_path标注(必填) - 小沈
+- c0557e112: document_schema.py db_path标注(必填) - 小沈
+- 4a75006f3: dataanalysis_register.py修正SQL示例参数(db_path必填,描述更新) - 小沈
+- f5a160fef: desktop_register.py窗口工具依赖pygetwindow→pywin32, screen_capture追加mss - 小健
+- 0dd81ce8e: document_register.py添加pywin32依赖(转换兼容),修正.doc/.xls兼容描述 - 小健
+- 6ffb9e08c: fundamental_register.py简化send_notification依赖格式,get_system_info标注psutil - 小健
+- 3f240c5f2: timer_register.py删除过期注释(httpx版本锁定已在dependency.py统一管理) - 小健
+
+### docs: 文档更新(11项)
+- 927f156e2: 10原则分析报告+ai_config/sessions代码评估报告 - 小欧
+- 8a9bfd511: 10原则审查报告标注已处理项(4.4/5.4/5.5/P0) - 小欧
+- dfcd304f6: 移动系统Tool按分类分析报告到doc-优化目录 - 小欧
+- e1dda3b81: 更新注释(register/inject概念区分+删除tool_executor语法错误) - 小欧
+- 7f6763d3a: 更新系统Tool按分类分析报告+E2E测试记录 - 小欧
+- 599f044b6: 添加Schema Docstring规范+增强QueryCalendarInput/Desktop模式说明 - 小欧
+- 6ba8feccc: 工具FC调用消息组装流程说明更新(通知指令/自动去重/子参数) - 小欧
+- 1892a4fed: 系统Tool按分类分析报告更新至v2.3(工具迁移+删除包装器,80→77) - 小欧
+- baabc2ccf: 全链路E2E集成测试-操作手册P3/P4重排至最低优先级+章节去重 - 小健
+- 97e79e750: TOOL_CHECK_REPORT.md新增Tool描述与参数检查报告(77工具10分类) - 小健
+- 90b19967d: 全链路E2E集成测试-操作手册P1/P2改为多工具真实工作场景(5+4场景覆盖24工具) - 小健
+- a05226bfe: E2E操作手册前置准备增强+P3多工具场景改造(19工具5场景) - 小健
+
+### test: 测试修复(6项)
+- aa69b5769: 修复测试(is_done改为property/database/db_initializer导入/react_cycle call_llm mock) - 小欧
+- e197d914f: e2e_helpers.py添加error_info参数增强失败详情记录(v1.9) - 小健
+- f92f904f4: test_e2e_p0_01修正import路径+error_info异常详情跟踪 - 小健
+- ae71810ce: test_e2e_p0_02修正import路径+error_info异常详情跟踪 - 小健
+- aa3e10175: test_e2e_p0_03修正import路径+error_info异常详情跟踪 - 小健
+- d53466adf: test_e2e_p0_04修正import路径+error_info异常详情跟踪 - 小健
+
+### 合计
+- refactor: 14项 | feat: 2项 | fix: 8项 | docs: 12项 | test: 6项 = 共42项
+
+---
+
 v0.16.7
 
 更新时间: 2026-06-18 08:49:01
