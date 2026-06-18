@@ -852,11 +852,14 @@ def write_test_record(
     elapsed: float = 0.0,
     extra: Optional[Dict[str, Any]] = None,
     dpi: Optional[List[str]] = None,
+    error_info: Optional[str] = None,
 ) -> None:
-    """写入测试记录文件（手册5.5）-- 小健 2026-06-14
+    """写入测试记录文件（手册5.5）-- 小健 2026-06-18
 
     必须在finally块中调用，即使失败也要写
     文件: notes/测试记录-{test_id}-{日期}.md
+    
+    v1.9增强: error_info参数记录异常详情(类型+消息+堆栈)
     """
     RECORD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -1028,6 +1031,16 @@ def write_test_record(
     lines.append(f"| 日志中ERROR | {'PASS' if len(log_check.get('errors', [])) == 0 else 'FAIL'} | {len(log_check.get('errors', []))}条 |")
     lines.append(f"| 日志中异常堆栈 | {'PASS' if len(log_check.get('tracebacks', [])) == 0 else 'FAIL'} | {len(log_check.get('tracebacks', []))}条 |")
     lines.append("")
+    
+    if not passed and error_info:
+        lines.append("## 失败详情")
+        lines.append("")
+        lines.append("**异常信息**:")
+        lines.append("")
+        lines.append("```")
+        lines.append(error_info[:1000])
+        lines.append("```")
+        lines.append("")
 
     if resp_has_error and resp:
         lines.append("**回复内容错误详情**:")
