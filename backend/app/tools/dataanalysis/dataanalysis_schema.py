@@ -124,7 +124,7 @@ class QuerySqlInput(BaseModel):
     )
     db_path: Optional[str] = Field(
         default=None,
-        description="SQLite 数据库文件路径。示例:D:/data/app.db"
+        description="SQLite 数据库文件路径(必填)。示例:D:/data/app.db"
     )
 
 
@@ -151,7 +151,7 @@ class ExecuteSqlInput(BaseModel):
     )
     db_path: Optional[str] = Field(
         default=None,
-        description="SQLite 数据库文件路径。示例:D:/data/app.db"
+        description="SQLite 数据库文件路径(必填)。示例:D:/data/app.db"
     )
 
 
@@ -178,7 +178,7 @@ class GetDbSchemaInput(BaseModel):
     )
     db_path: Optional[str] = Field(
         default=None,
-        description="SQLite 数据库文件路径。示例:D:/data/app.db"
+        description="SQLite 数据库文件路径(必填)。示例:D:/data/app.db"
     )
 
 
