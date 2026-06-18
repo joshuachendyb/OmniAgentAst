@@ -37,7 +37,7 @@ async def test_e2e_p0_03_multi_step_reasoning():
     """P0-03: 多步推理通路 - 读文件再回复内容"""
 
     test_start = datetime.now()
-    passed = False; r = {}; sid = None; db = {}; ci = []; si = []; dpi = []; lc = {"errors":[],"tracebacks":[]}
+    passed = False; r = {}; sid = None; db = {}; ci = []; si = []; dpi = []; lc = {"errors":[],"tracebacks":[]}; error_info = None
     user_input = "读取E:\\test_dir\\test.txt的内容，然后告诉我里面写了什么"
 
     orig_security = get_security_enabled()
@@ -126,11 +126,19 @@ async def test_e2e_p0_03_multi_step_reasoning():
 
         passed = True
 
+    except Exception as e:
+        passed = False
+        import traceback
+        error_info = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+        print(f"  [FAIL] 异常: {error_info[:500]}")
+        if sid:
+            lc = check_logs(test_start, sid)
+        raise
     finally:
-        write_test_record("E2E-P0-03", "multi-step reasoning-read file", user_input, r, db, ci, si, lc, passed, r.get("total_time_ms", 0)/1000.0 if r else 0, dpi=dpi)
+        write_test_record("E2E-P0-03", "multi-step reasoning-read file", user_input, r, db, ci, si, lc, passed, r.get("total_time_ms", 0)/1000.0 if r else 0, dpi=dpi, error_info=error_info)
         if orig_security is not None:
             set_security_enabled(orig_security)
-        cleanup(session_id=sid)
+
 
     if passed:
         print(f"\n  [DONE] E2E-P0-03 PASSED")
