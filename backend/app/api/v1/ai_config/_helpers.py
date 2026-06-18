@@ -72,6 +72,27 @@ def _set_app_field(config_data: dict, field_name: str, value: Any, display_name:
     logger.info(f"更新{display_name or field_name}: {value}")
 
 
+def is_provider_metadata_field(field_name: str) -> bool:
+    """检查字段是否是provider元数据字段（provider/model），用于遍历ai配置时跳过 — 小欧 2026-06-18"""
+    return field_name in ('provider', 'model')
+
+
+def load_config() -> tuple:
+    """加载配置的公共函数 — 小欧 2026-06-18
+    返回: (config_path, config)
+    """
+    config_path = get_config_path()
+    config = read_yaml_config(config_path)
+    return config_path, config
+
+
+def save_config(config_path: str, config: dict) -> None:
+    """保存配置的公共函数 — 小欧 2026-06-18
+    """
+    write_yaml_config(config_path, config)
+    reload_ai_config()
+
+
 # ====================================================================
 # 备份 / 恢复
 # ====================================================================
@@ -114,7 +135,7 @@ def _fix_config_common_issues(config_data: Dict[str, Any]) -> Dict[str, Any]:
     """自动修复常见的配置问题(删除provider下废弃的model字段)"""
     ai_config = config_data.get('ai', {})
     for provider_name in ai_config.keys():
-        if provider_name == 'provider' or provider_name == 'model':
+        if is_provider_metadata_field(provider_name):
             continue
         provider_data = ai_config.get(provider_name, {})
         if isinstance(provider_data, dict) and 'model' in provider_data:
@@ -167,7 +188,7 @@ def _validate_config_integrity(config_data: Dict[str, Any]) -> Tuple[bool, List[
         return False, errors, warnings
 
     for provider_name in ai_config.keys():
-        if provider_name == 'provider' or provider_name == 'model':
+        if is_provider_metadata_field(provider_name):
             continue
         provider_data = ai_config.get(provider_name, {})
         if isinstance(provider_data, dict) and 'model' in provider_data:

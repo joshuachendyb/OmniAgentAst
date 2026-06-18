@@ -1,5 +1,6 @@
 from . import router
 from .models import ModelInfo, ModelListResponse
+from ._helpers import is_provider_metadata_field
 from app.services.ai_config_resolver import get_ai_config_resolver
 from app.utils.logger import logger
 
@@ -13,7 +14,7 @@ async def get_model_list():
         models = []
         model_id = 1
         for provider_name in ai_config.keys():
-            if provider_name == 'provider' or provider_name == 'model':
+            if is_provider_metadata_field(provider_name):
                 continue
             provider_data = ai_config.get(provider_name, {})
             if not isinstance(provider_data, dict):

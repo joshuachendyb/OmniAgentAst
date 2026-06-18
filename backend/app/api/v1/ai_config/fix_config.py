@@ -1,7 +1,7 @@
 from . import router
 from .models import ConfigFixResponse
 from ._helpers import get_config_path, read_yaml_config, write_yaml_config
-from ._helpers import handle_config_errors, _backup_config, _validate_config_integrity
+from ._helpers import handle_config_errors, _backup_config, _validate_config_integrity, is_provider_metadata_field
 from app.utils.logger import logger
 
 
@@ -15,7 +15,7 @@ async def fix_config():
     fixed_issues = []
     ai_config = config_data.get('ai', {})
     for provider_name in ai_config.keys():
-        if provider_name == 'provider' or provider_name == 'model':
+        if is_provider_metadata_field(provider_name):
             continue
         provider_data = ai_config.get(provider_name, {})
         if isinstance(provider_data, dict) and 'model' in provider_data:
