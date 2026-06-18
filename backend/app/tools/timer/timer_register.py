@@ -13,7 +13,7 @@ from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 # 定时器工具依赖配置 — 小健 2026-06-18
-# 注意：httpx必须使用0.26.0版本，httpcore必须使用1.0.1版本（AGENTS.md明确要求）
+
 TIMER_TOOL_DEPENDENCIES = {
     "timer_set": ["httpx==0.26.0", "httpcore==1.0.1"],
     "timer_clear": ["httpx==0.26.0", "httpcore==1.0.1"],
