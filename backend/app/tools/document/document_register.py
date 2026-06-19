@@ -5,7 +5,7 @@ Document Register - 文档操作工具注册点（仅DOCUMENT分类）
 【2026-06-18 小欧】DATAANALYSIS 6个工具已迁出到 dataanalysis/ 独立目录
 【2026-06-18 小健】添加TOOL_DEPENDENCIES常量管理工具依赖
 
-【工具列表】(共9个) → DOCUMENT分类:
+【工具列表】(共8个) → DOCUMENT分类:
 1. read_pdf - 读取PDF文档 (依赖: pdfplumber)
 2. read_docx - 读取Word文档 (依赖: python-docx)
 3. read_pptx - 读取PPT文档 (依赖: python-pptx)

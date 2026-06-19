@@ -14,9 +14,8 @@
 3. *_register.py: 显式注册(description + examples + input_model)
 
 包含:
-- _read_pdf / _read_docx / _read_xlsx / _read_pptx: 内部读取函数
+- _read_pdf / _read_docx / _read_xlsx / _read_xls / _read_pptx: 内部读取函数
 - _write_docx / _write_xlsx / _write_pdf / _write_pptx: 内部写入函数
-- convert_document: 文档格式转换
 
 Author: 小沈 - 2026-05-02
 【新增 2026-05-05 小沈】write_pdf, convert_document
@@ -24,9 +23,7 @@ Author: 小沈 - 2026-05-02
 """
 
 import csv
-import json
 import os
-import platform
 import shutil
 import subprocess
 import tempfile
@@ -37,7 +34,6 @@ from pathlib import Path
 from app.utils.next_actions_builder import build_next_actions
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.toolhelper.common_helper import _check_module
-from app.tools.toolhelper.data_helper import _serialize_rows
 # 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
 from app.tools.tool_constants import SUBPROCESS_TIMEOUT_LONG
 
@@ -106,51 +102,7 @@ def _check_xlsx_readable(file_path: str) -> Dict[str, Any]:
                 data={"error": str(e), "file_path": file_path})
 
 
-def _validate_csv_format(file_path: str) -> Dict[str, Any]:
-    """验证CSV文件格式(内部helper) - 小沈 2026-05-18,从env_check_tools.py迁入"""
-    path = Path(file_path)
-    if not path.exists():
-        return build_error(ERR_DOC_READ_CSV, f"文件不存在: {file_path}",
-                data={"file_path": file_path})
-    if not path.suffix.lower() in (".csv", ".tsv", ".txt"):
-        return build_error(ERR_DOC_READ_CSV, "文件扩展名不是CSV格式",
-                data={"suffix": path.suffix.lower()})
 
-    errors = []
-    try:
-        with open(path, "r", encoding="utf-8", newline="") as f:
-            reader = csv.reader(f)
-            row_count = 0
-            col_count = None
-            for i, row in enumerate(reader):
-                row_count += 1
-                if col_count is None:
-                    col_count = len(row)
-                elif len(row) != col_count:
-                    if len(row) != 0:
-                        errors.append(f"第{i+1}行列数不一致: 期望{col_count}列,实际{len(row)}列")
-                if row_count > 1000:
-                    break
-    except UnicodeDecodeError:
-        try:
-            with open(path, "r", encoding="gbk", newline="") as f:
-                reader = csv.reader(f)
-                row_count = 0
-                for _ in reader:
-                    row_count += 1
-                    if row_count > 1000:
-                        break
-        except Exception as e:
-            errors.append(f"文件编码错误: {str(e)}")
-    except Exception as e:
-        errors.append(f"文件读取错误: {str(e)}")
-
-    is_valid = len(errors) == 0
-    if is_valid:
-        return build_success({"valid": True}, "CSV格式正确")
-    else:
-        return build_error(ERR_DOC_READ_CSV, f"CSV格式有 {len(errors)} 个问题",
-                data={"valid": False, "errors": errors})
 
 
 def _validate_chart_data(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -179,58 +131,7 @@ def _validate_chart_data(data: Dict[str, Any]) -> Dict[str, Any]:
                 data={"valid": False, "errors": errors})
 
 
-def _read_csv_pandas(
-    file_path: str,
-    encoding: str = "utf-8",
-    delimiter: str = ",",
-    has_header: bool = True,
-    max_rows: int = 1000,
-) -> Dict[str, Any]:
-    """使用pandas读取CSV文件 - 小沈 2026-05-18(从data_analysis迁入)"""
-    if not _check_module("pandas"):
-        return build_error(ERR_NO_PANDAS, "pandas库未安装,请先执行: pip install pandas")
-    try:
-        import pandas as pd
-        path = Path(file_path)
-        if not path.exists():
-            return build_error(ERR_READ_CSV_DATAFRAME, f"文件不存在: {file_path}",
-                    data={"file_path": file_path})
-        header = 0 if has_header else None
-        df = pd.read_csv(path, encoding=encoding, delimiter=delimiter, header=header, nrows=max_rows)
-        columns = df.columns.tolist()
-        serialized_rows = _serialize_rows(df)
-        dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
-        return build_success({"columns": columns, "rows": serialized_rows, "row_count": len(serialized_rows), "dtypes": dtypes}, f"成功读取CSV文件: {file_path},共 {len(serialized_rows)} 行数据")
-    except Exception as e:
-        return build_error(ERR_READ_CSV_DATAFRAME, f"读取CSV文件失败: {str(e)}",
-                data={"error": str(e), "file_path": file_path})
 
-
-def _read_excel_pandas(
-    file_path: str,
-    sheet_name: Optional[str] = None,
-    max_rows: int = 1000,
-) -> Dict[str, Any]:
-    """使用pandas读取Excel文件 - 小沈 2026-05-18(从data_analysis迁入)"""
-    if not _check_module("pandas"):
-        return build_error(ERR_NO_PANDAS, "pandas库未安装,请先执行: pip install pandas openpyxl")
-    if not _check_module("openpyxl"):
-        return build_error(ERR_DOC_NO_OPENPYXL, "openpyxl库未安装,请先执行: pip install openpyxl")
-    try:
-        import pandas as pd
-        path = Path(file_path)
-        if not path.exists():
-            return build_error(ERR_READ_EXCEL_DATAFRAME, f"文件不存在: {file_path}",
-                    data={"file_path": file_path})
-        df = pd.read_excel(path, sheet_name=sheet_name if sheet_name else 0, nrows=max_rows, engine="openpyxl")
-        columns = df.columns.tolist()
-        serialized_rows = _serialize_rows(df)
-        dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
-        actual_sheet = sheet_name if sheet_name else "Sheet1"
-        return build_success({"columns": columns, "rows": serialized_rows, "row_count": len(serialized_rows), "dtypes": dtypes, "sheet_name": actual_sheet}, f"成功读取Excel文件: {file_path},共 {len(serialized_rows)} 行数据")
-    except Exception as e:
-        return build_error(ERR_READ_EXCEL_DATAFRAME, f"读取Excel文件失败: {str(e)}",
-                data={"error": str(e), "file_path": file_path})
 
 
 def _parse_pages(pages_str: str) -> List[int]:
@@ -479,7 +380,7 @@ def _read_xls(
             return build_error(ERR_DOC_READ_XLSX, f"文件不存在: {file_path}",
                     data={"file_path": file_path})
 
-        wb = xlrd.open_workbook(str(path))
+        wb = xlrd.open_workbook_xls(str(path))
         sheet_names = wb.sheet_names()
         ws = wb.sheet_by_index(0)
 
@@ -759,7 +660,7 @@ def _write_pdf(
     title: str = None,
     paragraphs=None,
 ) -> Dict[str, Any]:
-    """写入PDF文档(内部函数) - 小欧 2026-06-19 重构为3参数+嵌套函数"""
+    """写入PDF文档(内部函数) — 小欧 2026-06-19 重构嵌套函数"""
     if not _check_module("reportlab"):
         return build_error(ERR_NO_REPORTLAB,
                 "reportlab库未安装,请先执行: pip install reportlab")
@@ -772,51 +673,54 @@ def _write_pdf(
         from reportlab.lib import colors
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
+    except ImportError:
+        return build_error(ERR_NO_REPORTLAB, "reportlab库导入失败")
 
-        def _add_content_item(elements, item, chinese_style, title_style):
-            """处理单个PDF内容元素(嵌套函数,可访问reportlab导入) - 小欧 2026-06-19"""
-            if isinstance(item, str):
-                if item.strip():
-                    elements.append(Paragraph(item, chinese_style))
-                    elements.append(Spacer(1, 3*mm))
-            elif isinstance(item, dict):
-                item_type = item.get("type", "paragraph")
-                item_text = item.get("text", "")
-                if item_type in ("h1", "heading"):
-                    heading_style = ParagraphStyle('h1', parent=chinese_style,
-                        fontSize=18, spaceBefore=12, spaceAfter=6)
-                    elements.append(Paragraph(item_text, heading_style))
-                    elements.append(Spacer(1, 3*mm))
-                elif item_type in ("h2", "h3", "h4", "h5"):
-                    fs = max(18 - int(item_type[1]) * 2, 12)
-                    h_style = ParagraphStyle(f'h{item_type[1]}', parent=chinese_style,
-                        fontSize=fs, spaceBefore=8, spaceAfter=4)
-                    elements.append(Paragraph(item_text, h_style))
-                    elements.append(Spacer(1, 2*mm))
-                elif item_type == "paragraph":
-                    elements.append(Paragraph(item_text, chinese_style))
-                    elements.append(Spacer(1, 3*mm))
-                elif item_type == "table":
-                    rows_data = item.get("rows", [])
-                    if rows_data and len(rows_data) > 0:
-                        try:
-                            t = Table(rows_data)
-                            t.setStyle(TableStyle([
-                                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                                ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
-                                ('FONTSIZE', (0, 0), (-1, -1), 9),
-                            ]))
-                            elements.append(t)
-                            elements.append(Spacer(1, 5*mm))
-                        except Exception:
-                            pass
-            else:
-                text = str(item)
-                if text.strip():
-                    elements.append(Paragraph(text, chinese_style))
-                    elements.append(Spacer(1, 3*mm))
+    def _add_content_item(elements, item, chinese_style, title_style):
+        """处理单个PDF内容元素 — 小欧 2026-06-19"""
+        if isinstance(item, str):
+            if item.strip():
+                elements.append(Paragraph(item, chinese_style))
+                elements.append(Spacer(1, 3*mm))
+        elif isinstance(item, dict):
+            item_type = item.get("type", "paragraph")
+            item_text = item.get("text", "")
+            if item_type in ("h1", "heading"):
+                heading_style = ParagraphStyle('h1', parent=chinese_style,
+                    fontSize=18, spaceBefore=12, spaceAfter=6)
+                elements.append(Paragraph(item_text, heading_style))
+                elements.append(Spacer(1, 3*mm))
+            elif item_type in ("h2", "h3", "h4", "h5"):
+                fs = max(18 - int(item_type[1]) * 2, 12)
+                h_style = ParagraphStyle(f'h{item_type[1]}', parent=chinese_style,
+                    fontSize=fs, spaceBefore=8, spaceAfter=4)
+                elements.append(Paragraph(item_text, h_style))
+                elements.append(Spacer(1, 2*mm))
+            elif item_type == "paragraph":
+                elements.append(Paragraph(item_text, chinese_style))
+                elements.append(Spacer(1, 3*mm))
+            elif item_type == "table":
+                rows_data = item.get("rows", [])
+                if rows_data and len(rows_data) > 0:
+                    try:
+                        t = Table(rows_data)
+                        t.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+                            ('FONTSIZE', (0, 0), (-1, -1), 9),
+                        ]))
+                        elements.append(t)
+                        elements.append(Spacer(1, 5*mm))
+                    except Exception:
+                        pass
+        else:
+            text = str(item)
+            if text.strip():
+                elements.append(Paragraph(text, chinese_style))
+                elements.append(Spacer(1, 3*mm))
 
+    try:
         path = Path(file_path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1049,56 +953,20 @@ def read_pptx(file_name: str) -> Dict[str, Any]:
 
 
 def read_xlsx(file_name: str) -> Dict[str, Any]:
-    """读取Excel/CSV/TSV/JSON文件 — 小沈 2026-06-19 加.xls"""
+    """读取Excel/CSV文件 — 小沈 2026-06-19 修.xls检查"""
     path = Path(file_name)
     suffix = path.suffix.lower()
 
-    if suffix in (".csv", ".tsv"):
-        actual_delimiter = "\t" if suffix == ".tsv" else ","
-        result = _read_csv_stdlib(file_name, encoding="utf-8", delimiter=actual_delimiter, has_header=True, max_rows=10000)
-        if result.get("code") == "SUCCESS":
-            result["next_actions"] = build_next_actions([
-                ("write_xlsx", "写入Excel", "需要导出数据时"),
-                ("analyze_data", "分析数据", "需要统计分析时"),
-            ])
-        return result
-
-    if suffix == ".json":
-        try:
-            with open(file_name, 'r', encoding="utf-8") as f:
-                json_data = json.load(f)
-            if isinstance(json_data, list) and len(json_data) > 0 and isinstance(json_data[0], dict):
-                columns = list(json_data[0].keys())
-                rows = [[item.get(c) for c in columns] for item in json_data[:10000]]
-                result = build_success({"format": "json_table", "columns": columns, "rows": rows, "row_count": len(rows)}, f"读取JSON文件成功: {file_name}")
-            else:
-                result = build_success({"format": "json", "content": json_data}, f"读取JSON文件成功: {file_name}")
-        except Exception as e:
-            result = build_error(ERR_DOC_READ_JSON, f"读取JSON文件成功: {str(e)}",
-                    data={"error": str(e), "file_name": file_name})
-        if result.get("code") == "SUCCESS":
-            result["next_actions"] = build_next_actions([
-                ("write_xlsx", "写入Excel", "需要导出数据时"),
-                ("analyze_data", "分析数据", "需要统计分析时"),
-            ])
-        return result
-
-    if suffix == ".xls":
+    if suffix == ".csv":
+        result = _read_csv_stdlib(file_name, encoding="utf-8", delimiter=",", has_header=True, max_rows=10000)
+    elif suffix == ".xls":
+        result = _read_xls(file_name, max_rows=10000)
+    else:
         check = _check_xlsx_readable(file_name)
         if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
             return check
-        result = _read_xls(file_name, max_rows=10000)
-        if result.get("code") == "SUCCESS":
-            result["next_actions"] = build_next_actions([
-                ("write_xlsx", "写入Excel", "需要导出数据时"),
-                ("analyze_data", "分析数据", "需要统计分析时"),
-            ])
-        return result
+        result = _read_xlsx(file_name, max_rows=10000)
 
-    check = _check_xlsx_readable(file_name)
-    if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
-        return check
-    result = _read_xlsx(file_name, max_rows=10000)
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([
             ("write_xlsx", "写入Excel", "需要导出数据时"),
@@ -1185,23 +1053,17 @@ def write_pptx(
 from app.constants import (
     ERR_DOC_CHART_GENERATE,
     ERR_DOC_CONVERT_FAILED,
-    ERR_DOC_FORMAT_NOT_SUPPORTED,
     ERR_DOC_NO_OPENPYXL,
     ERR_DOC_NO_PPTX,
     ERR_DOC_READ_CSV,
     ERR_DOC_READ_DOCX,
-    ERR_DOC_READ_JSON,
     ERR_DOC_READ_PDF,
     ERR_DOC_READ_PPTX,
     ERR_DOC_READ_XLSX,
     ERR_DOC_WRITE_PPTX,
     ERR_NO_DOCX,
-    ERR_NO_LIBREOFFICE,
-    ERR_NO_PANDAS,
     ERR_NO_PDFPLUMBER,
     ERR_NO_REPORTLAB,
-    ERR_READ_CSV_DATAFRAME,
-    ERR_READ_EXCEL_DATAFRAME,
     ERR_WRITE_DOCX,
     ERR_WRITE_PDF,
     ERR_WRITE_XLSX,
