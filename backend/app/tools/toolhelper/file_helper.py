@@ -68,6 +68,7 @@ import asyncio
 import json
 import csv
 import io
+import glob
 
 import time
 import tempfile
@@ -1038,15 +1039,20 @@ def _validate_compress_params(
     return None
 
 
+def _has_wildcard(path_str: str) -> bool:
+    """检查路径是否包含通配符 - 小欧 2026-06-19"""
+    return any(c in path_str for c in ('*', '?', '[', ']'))
+
+
 def _compress_entries(source: Path, deadline: float) -> Generator[Tuple[Path, str], None, bool]:
     """通用文件遍历生成器,yield(path, arcname) → 返回是否超时 - 小健 2026-05-25
     支持通配符(如*.txt),展开后所有文件打入同一压缩包 - 小健 2026-06-19
     """
-    import glob as glob_mod
     source_str = str(source)
-    if any(c in source_str for c in ('*', '?', '[', ']')):
-        base_dir = Path(glob_mod.glob(source_str)[0]).parent if glob_mod.glob(source_str) else source.parent
-        for matched in sorted(glob_mod.glob(source_str)):
+    if _has_wildcard(source_str):
+        matched_paths = glob.glob(source_str)
+        base_dir = Path(matched_paths[0]).parent if matched_paths else source.parent
+        for matched in sorted(matched_paths):
             matched_path = Path(matched)
             if matched_path.is_file():
                 yield matched_path, matched_path.name
@@ -1068,6 +1074,15 @@ def _compress_entries(source: Path, deadline: float) -> Generator[Tuple[Path, st
     return False
 
 
+def _write_zip_entries(
+    zf, source: Path, deadline: float, compressed_files: List[str],
+) -> None:
+    """写入压缩条目，抽取公共循环避免DRY违反 - 小欧 2026-06-19"""
+    for file_path, arcname in _compress_entries(source, deadline):
+        zf.write(file_path, arcname)
+        compressed_files.append(str(file_path))
+
+
 def _write_zip(
     source: Path, destination: Path, compression_level: int,
     password: Optional[str], deadline: float,
@@ -1082,15 +1097,11 @@ def _write_zip(
         with pyzipper.AESZipFile(destination, 'w', compression=compression, compresslevel=compression_level) as zf:
             zf.setpassword(password.encode('utf-8'))
             zf.setencryption(pyzipper.WZ_AES)
-            for file_path, arcname in _compress_entries(source, deadline):
-                zf.write(file_path, arcname)
-                compressed_files.append(str(file_path))
+            _write_zip_entries(zf, source, deadline, compressed_files)
     else:
         compression = zipfile.ZIP_STORED if compression_level == 0 else zipfile.ZIP_DEFLATED
         with zipfile.ZipFile(destination, 'w', compression=compression, compresslevel=compression_level) as zf:
-            for file_path, arcname in _compress_entries(source, deadline):
-                zf.write(file_path, arcname)
-                compressed_files.append(str(file_path))
+            _write_zip_entries(zf, source, deadline, compressed_files)
     return compressed_files, False
 
 
@@ -1159,10 +1170,8 @@ async def compress_files_impl(
     destination = Path(output_path)
 
     try:
-        import glob as glob_mod
-        has_wildcard = any(c in source_path for c in ('*', '?', '[', ']'))
-        if has_wildcard:
-            if not glob_mod.glob(source_path):
+        if _has_wildcard(source_path):
+            if not glob.glob(source_path):
                 return build_error(ERR_FILE_NOT_FOUND, f"通配符无匹配: {source_path}")
         elif not source.exists():
             return build_error(ERR_FILE_NOT_FOUND, f"源路径不存在: {source_path}")
@@ -1214,11 +1223,10 @@ def _get_total_size_sync(path: Path, deadline: float) -> int:
     """同步计算源路径总大小,支持超时 - 小健 2026-05-25
     支持通配符 - 小健 2026-06-19
     """
-    import glob as glob_mod
     path_str = str(path)
-    if any(c in path_str for c in ('*', '?', '[', ']')):
+    if _has_wildcard(path_str):
         total_size = 0
-        for matched in glob_mod.glob(path_str):
+        for matched in glob.glob(path_str):
             matched_path = Path(matched)
             if matched_path.is_file():
                 total_size += matched_path.stat().st_size

@@ -393,15 +393,20 @@ async def start_chat_stream_async(
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(300)) as client:
                 async with client.stream("POST", chat_url, json=payload) as resp:
-                    async for line in resp.aiter_lines():
-                        if line.startswith("data: "):
-                            try:
-                                event = json.loads(line[6:])
-                                result["events"].append(event)
-                                if event.get("type") == "start" and event.get("task_id"):
-                                    result["task_id"] = event["task_id"]
-                            except json.JSONDecodeError:
-                                continue
+                    try:
+                        async for line in resp.aiter_lines():
+                            if line.startswith("data: "):
+                                try:
+                                    event = json.loads(line[6:])
+                                    result["events"].append(event)
+                                    if event.get("type") == "start" and event.get("task_id"):
+                                        result["task_id"] = event["task_id"]
+                                except json.JSONDecodeError:
+                                    continue
+                    except asyncio.CancelledError:
+                        pass
+        except asyncio.CancelledError:
+            pass
         except Exception as e:
             result["error"] = str(e)
             print(f"  [SSE ERROR] {type(e).__name__}: {e}")
