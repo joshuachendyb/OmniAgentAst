@@ -9,6 +9,7 @@ task操作只在本层处理:register → interrupt检查 → pause检查 → st
 更新: 小健 - 2026-06-17 重命名chat_stream_v2→chat_stream，删除版本后缀
 """
 
+import asyncio
 import uuid
 from dataclasses import dataclass
 from fastapi.responses import StreamingResponse, PlainTextResponse
@@ -22,6 +23,7 @@ from app.utils.counter_utils import create_step_counter
 from app.services.task.task_registry import register_task
 from app.services.task.task_interrupt_check import task_interrupt_check, task_pause_check_and_yield
 from app.services.task.task_cancel_check import task_cancel_check_and_yield
+from app.services.task.task_state_queries import check_cancelled
 from app.services.task.task_cleanup import task_cleanup
 from app.services.react_sse_wrapper.run_sse_stream import run_sse_stream
 from app.services.context_vars import _current_task_id
@@ -85,8 +87,24 @@ async def chat_stream(request: ChatRequest):
                 session_id=session_id, current_execution_steps=execution_steps,
                 stream_state=state,
             )
+            # 小健 2026-06-19: 独立cancel轮询协程,不依赖agent yield事件
+            _cancel_detected = False
+
+            async def _cancel_poller():
+                nonlocal _cancel_detected
+                while not _cancel_detected:
+                    await asyncio.sleep(1)
+                    if await check_cancelled(task_id):
+                        _cancel_detected = True
+                        logger.info(f"[chat_stream] cancel轮询检测到取消,关闭sse_stream")
+                        await sse_stream.aclose()
+                        return
+
+            poller_task = asyncio.create_task(_cancel_poller())
             try:
                 async for sse_chunk in sse_stream:
+                    if _cancel_detected:
+                        break
                     # R1-1修复: 每次迭代检查暂停状态 — 小沈 2026-06-09
                     async for pause_event in task_pause_check_and_yield(task_id, next_step):
                         yield pause_event
@@ -99,6 +117,12 @@ async def chat_stream(request: ChatRequest):
                         break
                     yield sse_chunk
             finally:
+                _cancel_detected = True
+                poller_task.cancel()
+                try:
+                    await poller_task
+                except asyncio.CancelledError:
+                    pass
                 # 小健 2026-06-19: 必须关闭生成器,确保finally块执行(保存execution_steps到DB)
                 await sse_stream.aclose()
 

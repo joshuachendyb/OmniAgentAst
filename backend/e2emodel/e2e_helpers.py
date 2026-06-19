@@ -377,8 +377,12 @@ async def start_chat_stream_async(
 
     用于TR测试场景: 需要后台读取SSE事件,然后中途cancel/pause
     修复: 异常不再吞掉,通过error字段暴露 -- 小健 2026-06-19
+    修复: 与send_chat一致,先保存user消息到DB -- 小健 2026-06-19
     """
     import asyncio
+
+    # 与send_chat一致: 先保存user消息到DB
+    await save_user_message(session_id, user_input)
 
     prefix = api_prefix or API_PREFIX
     chat_url = f"{BASE_URL}{prefix}/chat/stream"
