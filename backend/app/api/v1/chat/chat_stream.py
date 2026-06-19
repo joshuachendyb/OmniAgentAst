@@ -78,24 +78,29 @@ async def chat_stream(request: ChatRequest):
             async for event in step_start(ai_service, task_id, next_step, user_input, execution_steps, session_id):
                 yield event
 
-            async for sse_chunk in run_sse_stream(
+            sse_stream = run_sse_stream(
                 llm_client=ai_service, task_id=task_id,
                 last_message=user_input,
                 next_step=next_step,
                 session_id=session_id, current_execution_steps=execution_steps,
                 stream_state=state,
-            ):
-                # R1-1修复: 每次迭代检查暂停状态 — 小沈 2026-06-09
-                async for pause_event in task_pause_check_and_yield(task_id, next_step):
-                    yield pause_event
+            )
+            try:
+                async for sse_chunk in sse_stream:
+                    # R1-1修复: 每次迭代检查暂停状态 — 小沈 2026-06-09
+                    async for pause_event in task_pause_check_and_yield(task_id, next_step):
+                        yield pause_event
 
-                cancelled_sse = await task_cancel_check_and_yield(
-                    task_id, next_step, session_id, execution_steps, state.current_content
-                )
-                if cancelled_sse:
-                    yield cancelled_sse
-                    break
-                yield sse_chunk
+                    cancelled_sse = await task_cancel_check_and_yield(
+                        task_id, next_step, session_id, execution_steps, state.current_content
+                    )
+                    if cancelled_sse:
+                        yield cancelled_sse
+                        break
+                    yield sse_chunk
+            finally:
+                # 小健 2026-06-19: 必须关闭生成器,确保finally块执行(保存execution_steps到DB)
+                await sse_stream.aclose()
 
         except Exception as e:
             logger.error(f"[chat_stream] Error: {e}", exc_info=True)

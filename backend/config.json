@@ -1,0 +1,18 @@
+{
+  "data_source": {
+    "path": "E:\\test_dir\\data.csv",
+    "format": "csv",
+    "encoding": "utf-8",
+    "description": "月度销售数据文件",
+    "columns": [
+      "月份",
+      "销售额",
+      "成本",
+      "利润"
+    ]
+  },
+  "metadata": {
+    "created_at": "2026-06-19T10:59:21",
+    "version": "1.0"
+  }
+}

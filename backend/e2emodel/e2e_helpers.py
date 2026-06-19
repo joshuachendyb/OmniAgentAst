@@ -367,6 +367,60 @@ async def send_chat(
         return ret
 
 
+# ─── 流式SSE启动(用于TR测试: 需要后台读取+中途cancel) ────────
+# 小健 2026-06-19 从TR-02~05提取,修复异常吞掉问题
+
+async def start_chat_stream_async(
+    session_id: str, user_input: str, api_prefix: str = "",
+) -> Dict[str, Any]:
+    """启动chat SSE流,返回(task_id, events, bg_task, error)
+
+    用于TR测试场景: 需要后台读取SSE事件,然后中途cancel/pause
+    修复: 异常不再吞掉,通过error字段暴露 -- 小健 2026-06-19
+    """
+    import asyncio
+
+    prefix = api_prefix or API_PREFIX
+    chat_url = f"{BASE_URL}{prefix}/chat/stream"
+    payload = {
+        "messages": [{"role": "user", "content": user_input}],
+        "stream": True,
+        "session_id": session_id,
+    }
+    result: Dict[str, Any] = {"task_id": None, "events": [], "error": None}
+
+    async def _stream_reader():
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(300)) as client:
+                async with client.stream("POST", chat_url, json=payload) as resp:
+                    async for line in resp.aiter_lines():
+                        if line.startswith("data: "):
+                            try:
+                                event = json.loads(line[6:])
+                                result["events"].append(event)
+                                if event.get("type") == "start" and event.get("task_id"):
+                                    result["task_id"] = event["task_id"]
+                            except json.JSONDecodeError:
+                                continue
+        except Exception as e:
+            result["error"] = str(e)
+            print(f"  [SSE ERROR] {type(e).__name__}: {e}")
+
+    bg_task = asyncio.create_task(_stream_reader())
+    # 等待task_id出现,最多10秒
+    for _ in range(20):
+        if result["task_id"]:
+            break
+        await asyncio.sleep(0.5)
+
+    return {
+        "task_id": result["task_id"],
+        "events": result["events"],
+        "bg_task": bg_task,
+        "error": result["error"],
+    }
+
+
 # ─── 步骤4: 验证事件流正确性 (assert_stream_ended) ─────────────
 
 def assert_stream_ended(result: Dict[str, Any]) -> str:

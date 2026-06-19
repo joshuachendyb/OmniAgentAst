@@ -242,16 +242,18 @@ class PromptLogger:
             })
         
         # 记录工具定义(完整 JSON Schema) — 小欧 2026-06-19
+        # 注意:工具描述有2层——function.description(register.py)和parameters.description(Pydantic class docstring)
         tools_summary = None
         if tools:
             tools_summary = []
             for t in tools:
                 func = t.get("function", t)
+                params = func.get("parameters", {})
                 tool_info = {
                     "名称": func.get("name", ""),
-                    "描述": func.get("description", ""),
+                    "工具描述": func.get("description", ""),
+                    "Schema描述": params.get("description"),  # Pydantic class docstring
                 }
-                params = func.get("parameters", {})
                 if params:
                     props = params.get("properties", {})
                     required = set(params.get("required", []) or [])

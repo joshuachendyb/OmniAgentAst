@@ -56,22 +56,6 @@ class StreamChunk:
         self.raw_data = raw_data
         self.usage = usage
 
-    def to_dict(self) -> Dict:
-        """小健 2026-06-19: StreamChunk转dict,兼容run_sse_stream的to_dict调用"""
-        d: Dict = {"type": "chunk", "content": self.content, "model": self.model}
-        if self.is_done:
-            d["is_done"] = True
-        if self.stream_error:
-            d["stream_error"] = self.stream_error
-            d["stream_error_type"] = self.stream_error_type
-        if self.is_reasoning:
-            d["is_reasoning"] = True
-        if self.tool_calls:
-            d["tool_calls"] = self.tool_calls
-        if self.usage:
-            d["usage"] = self.usage
-        return d
-
 
 __all__ = [
     "ChatResponse",

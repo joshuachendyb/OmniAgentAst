@@ -1,0 +1,7 @@
+"processing:\n  input_file: \"E:\\\\test_dir\\\\data.csv\"\n  output_format: \"json\"\
+  \n  encoding: \"utf-8\"\n\nfilters:\n  date_range:\n    start: \"2025-11\"\n   \
+  \ end: \"2026-06\"\n  min_sales: 0\n  min_profit: 0\n\naggregation:\n  group_by:\
+  \ \"month\"\n  metrics:\n    - sum\n    - avg\n    - max\n    - min\n\nanalysis:\n\
+  \  enable_trend: true\n  enable_forecast: false\n  forecast_months: 3\n  confidence_level:\
+  \ 0.95\n\nlogging:\n  level: \"INFO\"\n  file: \"logs\\\\process.log\"\n  max_size_mb:\
+  \ 10\n  backup_count: 3"

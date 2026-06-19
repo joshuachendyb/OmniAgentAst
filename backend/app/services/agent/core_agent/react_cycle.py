@@ -60,12 +60,21 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
     """处理单步循环 — FC-only: llm_response为dict,无需parse_llm_response — 小沈 2026-06-11"""
 
     from app.services.agent.llm_caller import call_llm
+    from app.services.agent.steps import ChunkStep
     llm_response = None
     async for chunk_or_response in call_llm(agent):
         chunk_type, chunk_data = chunk_or_response
 
         if chunk_type == "chunk":
-            yield agent._step_emitter.emit(chunk_data)
+            # 小健 2026-06-19: StreamChunk转ChunkStep,确保emit返回Step对象
+            content = chunk_data.content if hasattr(chunk_data, 'content') else str(chunk_data)
+            is_reasoning = getattr(chunk_data, 'is_reasoning', False)
+            chunk_step = ChunkStep(
+                step=agent.llm_call_count,
+                content=content,
+                is_reasoning=is_reasoning,
+            )
+            yield agent._step_emitter.emit(chunk_step)
         elif chunk_type == "response":
             llm_response = chunk_data
 
