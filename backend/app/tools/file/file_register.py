@@ -60,15 +60,16 @@ from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
 # 文件工具依赖配置 — 小健 2026-06-18
-# 文件工具使用内置库，无第三方依赖
+# compress_files的pyzipper是可选依赖(仅加密ZIP时需要) — 小健 2026-06-19
 FILE_TOOL_DEPENDENCIES = {
     tool_name: [] for tool_name in [
         "read_text_file", "write_text_file", "read_media_file", "edit_text_file",
-        "list_directory", "search_files", "grep_file_content", "compress_files",
+        "list_directory", "search_files", "grep_file_content",
         "extract_archive", "move_file", "copy_file", "delete_file", "rename_file",
         "read_data_file", "write_data_file"
     ]
 }
+FILE_TOOL_DEPENDENCIES["compress_files"] = ["pyzipper"]
 
 
 # ============================================================
@@ -90,8 +91,8 @@ FILE_TOOL_DESCRIPTIONS = {
 
     "grep_file_content": """基于ripgrep在文件中搜索文本内容,支持正则表达式和中文搜索。可指定搜索路径、文件过滤(glob通配符,如"*.py")、匹配前后上下文行数、大小写敏感、多行匹配模式、返回条数限制。分页返回结果,包含匹配行内容、匹配文件和总匹配数。适用场景:需要在代码或文档中查找特定函数定义、关键字、TODO标记,并了解其上下文时使用。""",
 
-    "compress_files": """压缩文件或目录为归档包。支持zip/tar/tar.gz/tar.bz2格式,可设置压缩级别(0-9)和加密密码(ZIP专用)。可排除指定文件/目录模式。适用场景:需要备份文件、打包项目、减小文件体积时使用。
-使用示例: compress_files(source="D:/project", destination="D:/backup.zip")""",
+    "compress_files": """压缩文件或目录为归档包。支持zip/tar/tar.gz/tar.bz2格式,可设置压缩级别(0-9)。ZIP格式支持密码加密(password参数)。
+适用场景:需要备份文件、打包项目、减小文件体积、创建加密压缩包时使用。""",
 
     "extract_archive": """解压归档包到指定目录。支持zip/tar/tar.gz/tar.bz2格式,支持加密解压(ZIP专用)。destination可选,不填则自动创建同名目录。适用场景:需要解压下载的压缩包、恢复备份时使用。
 使用示例: extract_archive(source="D:/backup.zip", destination="D:/output")""",
@@ -148,6 +149,7 @@ FILE_TOOL_EXAMPLES = {
     ],
     "compress_files": [
         {"source": "D:/project", "destination": "D:/backup.zip"},
+        {"source": "D:/secret.txt", "destination": "D:/secret_encrypted.zip", "password": "my_password"},
     ],
     "extract_archive": [
         {"source": "D:/backup.zip", "destination": "D:/extracted"},

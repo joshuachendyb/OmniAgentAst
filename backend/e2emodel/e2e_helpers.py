@@ -1095,6 +1095,10 @@ def write_test_record(
     """
     if test_title:
         test_name = test_title
+    # 兼容处理: consistency_issues可能传入tool_calls(dict列表)而非issues(string列表)
+    # dict列表代表tool_calls,不是一致性问题,应视为空问题 -- 小健 2026-06-19
+    if consistency_issues and isinstance(consistency_issues[0], dict):
+        consistency_issues = []
     # 注册待写入记录（超时保护）
     register_pending_record(
         test_id, test_name, user_input, result, db,
@@ -1188,7 +1192,7 @@ def write_test_record(
         lines.append("| 序号 | 工具名 | 参数 |")
         lines.append("|------|--------|------|")
         for i, tc in enumerate(tool_calls):
-            params_str = json.dumps(tc.get("tool_params", {}), ensure_ascii=False)[:100]
+            params_str = json.dumps(tc.get("tool_params", {}), ensure_ascii=False)
             lines.append(f"| {i+1} | {tc.get('tool_name', '')} | `{params_str}` |")
     else:
         lines.append("(无工具调用)")

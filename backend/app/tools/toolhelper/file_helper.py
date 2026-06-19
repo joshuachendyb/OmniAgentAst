@@ -1055,15 +1055,25 @@ def _write_zip(
     source: Path, destination: Path, compression_level: int,
     password: Optional[str], deadline: float,
 ) -> Tuple[List[str], bool]:
-    """写入zip压缩包,返回(文件列表, 是否超时) - 小健 2026-05-25"""
+    """写入zip压缩包,返回(文件列表, 是否超时) - 小健 2026-05-25
+    有密码时使用pyzipper实现真正的AES加密ZIP -- 小健 2026-06-19
+    """
     compressed_files: List[str] = []
-    compression = zipfile.ZIP_STORED if compression_level == 0 else zipfile.ZIP_DEFLATED
-    with zipfile.ZipFile(destination, 'w', compression=compression, compresslevel=compression_level) as zf:
-        if password:
+    if password:
+        import pyzipper
+        compression = pyzipper.ZIP_STORED if compression_level == 0 else pyzipper.ZIP_DEFLATED
+        with pyzipper.AESZipFile(destination, 'w', compression=compression, compresslevel=compression_level) as zf:
             zf.setpassword(password.encode('utf-8'))
-        for file_path, arcname in _compress_entries(source, deadline):
-            zf.write(file_path, arcname)
-            compressed_files.append(str(file_path))
+            zf.setencryption(pyzipper.WZ_AES)
+            for file_path, arcname in _compress_entries(source, deadline):
+                zf.write(file_path, arcname)
+                compressed_files.append(str(file_path))
+    else:
+        compression = zipfile.ZIP_STORED if compression_level == 0 else zipfile.ZIP_DEFLATED
+        with zipfile.ZipFile(destination, 'w', compression=compression, compresslevel=compression_level) as zf:
+            for file_path, arcname in _compress_entries(source, deadline):
+                zf.write(file_path, arcname)
+                compressed_files.append(str(file_path))
     return compressed_files, False
 
 
@@ -1117,6 +1127,14 @@ async def compress_files_impl(
 ) -> Dict[str, Any]:
     """compress_files工具的实现函数 - 小健 2026-05-25 重构"""
     from app.db.models.operation_enums import OperationType
+    from app.tools.toolhelper.common_helper import _check_module
+
+    # 小健 2026-06-19: ZIP格式缺失密码时默认用aes-256
+    if format == "zip" and not password:
+        password = "aes-256"
+
+    if password and not _check_module("pyzipper"):
+        return build_error(ERR_NO_PYZIPPER, "pyzipper库未安装,无法创建加密ZIP,请先执行: pip install pyzipper")
 
     validation_error = _validate_compress_params(
         source_path, output_path, format, overwrite, compression_level, task_id, validate_path_func)

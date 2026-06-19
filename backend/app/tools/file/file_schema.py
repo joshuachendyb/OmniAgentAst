@@ -255,7 +255,7 @@ class CompressFilesInput(BaseModel):
     compression_level: int = Field(
         default=6, ge=0, le=9, description="压缩级别0-9(0=不压缩,6=平衡,9=最高),默认6"
     )
-    password: Optional[str] = Field(default=None, description="加密密码(仅ZIP格式支持),可选")
+    password: Optional[str] = Field(default=None, description="ZIP加密密码,设置后创建AES-256加密ZIP,仅ZIP格式支持,可选")
     overwrite: bool = Field(default=False, description="是否覆盖已存在文件,默认False")
     exclude_patterns: Optional[List[str]] = Field(
         default=None, description="排除的文件/目录模式列表,如 ['node_modules', '__pycache__']"
