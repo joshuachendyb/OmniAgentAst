@@ -184,6 +184,9 @@ class GetDbSchemaInput(BaseModel):
 
 
 __all__ = [
+    "GenerateChartInput",
+    "AnalyzeDataInput",
+    "FilterDataInput",
     "QuerySqlInput",
     "ExecuteSqlInput",
     "GetDbSchemaInput",

@@ -39,7 +39,7 @@ class ExecuteShellCommandInput(BaseModel):
         default=None, description="工作目录。Agent根据上下文智能设置"
     )
     env_vars: Optional[dict] = Field(
-        default=None, description="额外环境变量字典,将与系统环境变量合并。如 {\"PYTHONIOENCODING\": \"utf-8\", \"NODE_ENV\": \"production\"}"
+        default=None, description="额外环境变量字典,将与系统环境变量合并。注意PYTHONIOENCODING=utf-8已在服务端自动设置,无需重复传入。如 {\"NODE_ENV\": \"production\", \"MY_VAR\": \"value\"}"
     )
 
 

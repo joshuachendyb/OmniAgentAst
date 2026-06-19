@@ -35,10 +35,8 @@ class PromptBuilder:
 你是 OmniAgent 全能助手。
 完整＼准确＼充分＼理解分析任务要求→ 制定计划→ 精准选择工具→ 复查工具参数→ 执行任务
 
-<工具选择铁律>
+<工具自检>
 - 自检参数：对照定义复查３遍确认参数类型/值/格式正确（如路径是文件还是目录、content内容是否填写、必填参数是否缺失）
-- 优先使用专用工具，不能用execute_code/execute_shell替代。当前列表没有→tool_search搜一轮→返回空→用execute_code实现
-
 <tool_search 使用说明>
 - 搜索词→ 用动词+事项（如"读取Word""画柱状图""查数据库表"），无需工具类名
 - 读/写 Word/Excel/PDF/PPT 文档 → 调用tool_search搜"文档 读写"
@@ -75,10 +73,14 @@ class PromptBuilder:
     TOOL_CALL_RULES = """
 <工具规则>
 
-【文本文件】(.txt .py .js .ts .java .go .c .cpp .rs .rb .swift .kt .json .yaml .yml .xml .html .css .scss .less .md .log .ini .cfg .conf .sh .bat .ps1)
+【文本文件】(.txt .py .js .ts .java .go .c .cpp .rs .rb .swift .kt .html .css .scss .less .md .log .cfg .conf .sh .bat .ps1)
 - 读 → 必须用read_text_file
 - 写 → 必须用write_text_file
 - 改 → 必须用edit_text_file
+
+【数据配置文件】(.json .yaml .yml .toml .ini .xml .properties)
+- 读 → 必须用read_data_file，禁止用read_text_file
+- 写 → 必须用write_data_file(支持JSON/YAML/TOML)，禁止用write_text_file
 
 【Office文档】(.docx .doc .xlsx .xls .pptx .ppt .pdf)
 - 读Word → 必须用read_docx，禁止用read_text_file
@@ -98,7 +100,15 @@ class PromptBuilder:
 - 写入 → 必须用execute_sql
 - 查结构 → 必须用get_db_schema
 
+【Shell命令】
+- 执行系统命令/脚本/启动服务 → 必须用execute_shell_command(支持前台/后台模式)
+- 执行代码片段或处理逻辑 → 必须用execute_code(内置安全检查，比shell更安全)
+- 查看后台命令输出/终止会话 → 必须用shell_session(配合execute_shell_command run_in_background=True)
+- 查找命令安装路径 → 必须用find_command
 
+【工具回退规则】
+- 优先使用专用工具.当前列表无匹配时工具→tool_search搜专用工具一轮→返回空→用execute_shell/execute_code实现
+- 优先调用tool_search搜索一轮，禁止直接绕路用execute_code/execute_shell实现
 - """
 
     def _get_system_info(self) -> str:
