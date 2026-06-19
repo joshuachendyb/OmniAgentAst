@@ -22,62 +22,46 @@ from typing import Optional, Literal
 from typing import Optional, Dict, Any, List, Union, Literal
 
 class ReadPdfInput(BaseModel):
-    file_path: str = Field(..., description="PDF文件路径(.pdf)")
-    pages: Optional[str] = Field(default=None, description="页码范围(如'1-3,5')")
-    extract_tables: bool = Field(default=False, description="是否提取表格")
+    file_name: str = Field(..., description="PDF文件路径")
 
 
 class ReadDocxInput(BaseModel):
-    file_path: str = Field(..., description="Word文档路径(.docx)")
-    extract_tables: bool = Field(default=False, description="是否提取表格")
+    file_name: str = Field(..., description="Word文档路径")
 
 
 class ReadPptxInput(BaseModel):
-    file_path: str = Field(..., description="PPT文件路径(.pptx)")
+    file_name: str = Field(..., description="PPT文件路径")
 
 
 class ReadXlsxInput(BaseModel):
-    file_path: str = Field(..., description="Excel/CSV/TSV/JSON文件路径(.xlsx/.xls/.csv/.tsv/.json)")
-    sheet_name: Optional[str] = Field(default=None, description="Excel工作表名(仅XLSX有效)")
-    max_rows: int = Field(default=1000, ge=1, le=10000, description="最大读取行数")
-    header: bool = Field(default=True, description="第一行是否为表头")
-    encoding: str = Field(default="utf-8", description="文件编码(仅CSV有效)")
-    delimiter: Optional[str] = Field(default=None, description="CSV分隔符(仅CSV有效)")
+    file_name: str = Field(..., description="数据文件路径(.xlsx/.csv/.tsv/.json/.xls)")
+
+
+_PARAGRAPHS_DESC = "正文内容。3种格式: str=纯文本, list=[str|dict,...]混合内容, dict={\"title\":\"标题\",\"content\":[...]}. dict元素支持:\ntype=heading/h1~h5(标题),type=paragraph(段落),type=table(表格,需rows字段)"
 
 
 class WriteDocxInput(BaseModel):
-    file_path: str = Field(..., description="输出Word文档路径(.docx)")
-    content: Optional[str] = Field(default=None, description="正文内容")
-    paragraphs: Optional[List[str]] = Field(default=None, description="段落列表,每个元素是一个独立段落。传字符串数组['p1','p2'],不是JSON字符串")
+    file_name: str = Field(..., description="Word文件路径")
     title: Optional[str] = Field(default=None, description="文档标题")
-    table_data: Optional[List] = Field(default=None, description="表格数据二维数组")
-    data: Optional[Union[Dict[str, Any], List]] = Field(default=None, description="结构化内容")
+    paragraphs: Optional[Union[str, List, Dict]] = Field(default=None, description=_PARAGRAPHS_DESC)
 
 
 class WriteXlsxInput(BaseModel):
-    file_path: str = Field(..., description="输出Excel路径(.xlsx)")
-    data: Optional[Union[Dict[str, Any], List]] = Field(default=None, description="写入的数据。dict={\"headers\":[\"列1\"],\"rows\":[[\"a\"]]}或list自动推断headers")
+    file_name: str = Field(..., description="Excel文件路径")
+    data: Optional[Union[Dict[str, Any], List]] = Field(default=None, description="写入的数据。支持3格式: dict格式{\"headers\":[\"列1\"],\"rows\":[[\"a\"]]}, list of list格式[[\"列1\",\"列2\"],[\"a\",\"b\"]](首行做headers), list of dict格式[{\"列1\":\"a\"}](key做headers)")
     sheet_name: str = Field(default="Sheet1", description="工作表名")
 
 
 class WritePdfInput(BaseModel):
-    file_path: str = Field(..., description="输出PDF路径(.pdf)")
+    file_name: str = Field(..., description="PDF文件路径")
     title: Optional[str] = Field(default=None, description="文档标题")
-    content: Optional[str] = Field(default=None, description="正文内容")
-    paragraphs: Optional[List[str]] = Field(default=None, description="段落列表,每个元素是一个独立段落。传字符串数组['p1','p2'],不是JSON字符串")
-    table_data: Optional[List] = Field(default=None, description="表格数据二维数组")
+    paragraphs: Optional[Union[str, List, Dict]] = Field(default=None, description=_PARAGRAPHS_DESC)
 
 
+_SLIDE_DESC = "幻灯片列表。每项Dict支持: type(0=封面/1=内容/2=两栏), title(标题), subtitle(副标题,仅封面), content(str纯文本或list混合内容,支持str段落和dict type=paragraph/bullets), tables(独立表格List[List[List]])"
 class WritePptxInput(BaseModel):
-    file_path: str = Field(..., description="输出PPT路径(.pptx)")
-    title: Optional[str] = Field(default=None, description="文档标题")
-    slides: Optional[List[Dict[str, str]]] = Field(default=None, description="幻灯片列表")
-
-
-class ConvertDocumentInput(BaseModel):
-    input_path: str = Field(..., description="输入文件路径。支持.docx/.doc/.xlsx/.xls/.pptx/.ppt/.odt/.ods格式")
-    output_format: Literal["pdf"] = Field(default="pdf", description="目标格式。可选值:pdf")
-    output_path: Optional[str] = Field(default=None, description="输出文件保存路径,含文件名和扩展名。如 D:/output.pdf。不填则自动在原文件同目录生成同名文件,扩展名为目标格式")
+    file_name: str = Field(..., description="PPT文件路径")
+    slides: Optional[List[Dict]] = Field(default=None, description=_SLIDE_DESC)
 
 
 class QuerySqlInput(BaseModel):

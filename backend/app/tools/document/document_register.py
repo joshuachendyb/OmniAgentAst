@@ -14,7 +14,6 @@ Document Register - 文档操作工具注册点（仅DOCUMENT分类）
 6. write_xlsx - 写入Excel文档 (依赖: pandas, openpyxl)
 7. write_pdf - 写入PDF文档 (依赖: reportlab, pdfplumber)
 8. write_pptx - 写入PPT文档 (依赖: python-pptx)
-9. convert_document - 文档格式转换 (无第三方依赖)
 
 创建时间: 2026-05-02
 更新时间: 2026-06-18 小健
@@ -30,19 +29,17 @@ TOOL_DEPENDENCIES = {
     "read_pdf": ["pdfplumber"],
     "read_docx": [
         {"import_name": "docx", "pip_package": "python-docx"},
-        {"import_name": "win32com", "pip_package": "pywin32"},
     ],
     "read_pptx": [{"import_name": "pptx", "pip_package": "python-pptx"}],
     "read_xlsx": [
         "pandas",
         "openpyxl",
-        {"import_name": "win32com", "pip_package": "pywin32"},
+        "xlrd",
     ],
     "write_docx": [{"import_name": "docx", "pip_package": "python-docx"}],
     "write_xlsx": ["pandas", "openpyxl"],
     "write_pdf": ["reportlab", "pdfplumber"],
     "write_pptx": [{"import_name": "pptx", "pip_package": "python-pptx"}],
-    "convert_document": [{"import_name": "win32com", "pip_package": "pywin32"}],
 }
 
 
@@ -55,7 +52,6 @@ from app.tools.document.document_schema import (
     WriteXlsxInput,
     WritePdfInput,
     WritePptxInput,
-    ConvertDocumentInput,
 )
 
 from app.tools.document.document_tools import (
@@ -67,54 +63,50 @@ from app.tools.document.document_tools import (
     write_xlsx,
     write_pdf,
     write_pptx,
-    convert_document,
 )
 
 DESCRIPTIONS = {
-    "read_pdf": """读取PDF(.pdf)文件内容。支持页码范围选择(pages参数,如'1-3,5')和表格提取(extract_tables)。适用场景:需要读取PDF文档内容、提取表格数据时使用。""",
-    "read_docx": """读取Word(.docx)文档内容。支持表格提取(extract_tables)。.doc格式需系统安装Word或LibreOffice进行转换。适用场景:需要读取Word文档内容、提取文本和表格时使用。""",
-    "read_pptx": """读取PPT(.pptx)演示文稿内容。提取每页幻灯片的文本和备注。适用场景:需要读取PPT内容、提取演讲稿时使用。""",
-    "read_xlsx": """读取Excel(.xlsx)/CSV/TSV/JSON数据文件。支持指定工作表、最大行数、编码和分隔符。.xls格式需系统安装Excel或LibreOffice进行转换。适用场景:需要读取表格数据、分析数据集时使用。""",
-    "write_docx": """写入Word(.docx)文档。支持标题(title)/正文(content)/段落(paragraphs)/表格(table_data)/结构化内容(data)。适用场景:需要生成Word报告、导出文档时使用。""",
+    "read_pdf": """读取PDF(.pdf)文件内容。自动提取文本、表格和图片。适用场景:需要读取PDF文档内容时使用。""",
+    "read_docx": """读取Word(.docx/.doc)文档内容。自动提取文本和表格。适用场景:需要读取Word文档内容时使用。""",
+    "read_pptx": """读取PPT(.pptx)演示文稿内容。自动提取每页文本和备注。适用场景:需要读取PPT内容时使用。""",
+    "read_xlsx": """读取Excel(.xls/.xlsx/.csv)文件。自动检测编码和分隔符,自动识别表头。适用场景:需要读取表格数据时使用。""",
+    "write_docx": """写入Word(.docx)文档。支持3参数: file_name/title/paragraphs。paragraphs支持3格式: str=纯文本, list=[str|dict,...]混合内容(str=段落,dict支持type=heading/h1~h5/paragraph/table), dict={"title":"标题","content":[...]}结构化文档。适用场景:需要生成Word报告、导出文档时使用。""",
     "write_xlsx": """写入Excel(.xlsx)文件。data参数支持dict(headers+rows)或list自动推断headers。可指定工作表名。适用场景:需要导出数据到Excel表格时使用。""",
-    "write_pdf": """写入PDF(.pdf)文件。支持标题(title)/正文(content)/段落(paragraphs)/表格(table_data)。适用场景:需要生成PDF报告、归档文档时使用。""",
-    "write_pptx": """写入PPT(.pptx)演示文稿。支持标题(title)和幻灯片列表(slides)。适用场景:需要生成PPT演示文稿时使用。""",
-    "convert_document": """将Office文档转换为PDF格式。支持Word(.docx/.doc→PDF)、Excel(.xlsx/.xls→PDF)、PPT(.pptx/.ppt→PDF)以及OpenDocument格式(.odt/.ods→PDF)。需要系统安装Microsoft Office或LibreOffice。适用场景:需要将文档转为PDF进行分发、归档或打印时使用。""",
+    "write_pdf": """写入PDF(.pdf)文件。支持3参数: file_name/title/paragraphs。paragraphs支持3格式: str=纯文本, list=[str|dict,...]混合内容(str=段落,dict支持type=heading/h1~h5/paragraph/table), dict={"title":"标题","content":[...]}结构化文档。适用场景:需要生成PDF报告、归档文档时使用。""",
+    "write_pptx": """写入PPT(.pptx)演示文稿。支持2参数: file_name/slides。slides列表每项支持: type(0=封面/1=内容/2=两栏), title(标题), subtitle(副标题仅封面), content(str纯文本或list混合内容支持str段落和dict type=paragraph/bullets), tables(独立表格)。适用场景:需要生成PPT演示文稿时使用。""",
+
 }
 
 EXAMPLES = {
     "read_pdf": [
-        {"file_path": "D:/documents/report.pdf"},
-        {"file_path": "D:/documents/report.pdf", "pages": "1-3", "extract_tables": True},
+        {"file_name": "D:/documents/report.pdf"},
     ],
     "read_docx": [
-        {"file_path": "D:/documents/report.docx"},
-        {"file_path": "D:/documents/report.docx", "extract_tables": True},
+        {"file_name": "D:/documents/report.docx"},
+        {"file_name": "D:/documents/report.doc"},
     ],
     "read_pptx": [
-        {"file_path": "D:/documents/presentation.pptx"},
+        {"file_name": "D:/documents/presentation.pptx"},
     ],
     "read_xlsx": [
-        {"file_path": "D:/data/sales.xlsx", "sheet_name": "Sheet2", "max_rows": 100},
-        {"file_path": "D:/data/sales.csv", "encoding": "gbk"},
+        {"file_name": "D:/data/sales.xlsx"},
+        {"file_name": "D:/data/sales.xls"},
+        {"file_name": "D:/data/sales.csv"},
     ],
     "write_docx": [
-        {"file_path": "D:/output/report.docx", "title": "\u6d4b\u8bd5\u62a5\u544a", "content": "\u8fd9\u662f\u6d4b\u8bd5\u5185\u5bb9"},
-        {"file_path": "D:/output/report_structured.docx", "data": {"title": "\u7ed3\u6784\u5316\u62a5\u544a", "content": [{"type": "h1", "text": "\u7b2c\u4e00\u7ae0"}, {"type": "paragraph", "text": "\u6b63\u6587\u5185\u5bb9"}, {"type": "table", "rows": [["\u52171", "\u52172"], ["a", "b"]]}]}},
+        {"file_name": "D:/output/report.docx", "title": "\u6d4b\u8bd5\u62a5\u544a", "paragraphs": "\u8fd9\u662f\u6d4b\u8bd5\u5185\u5bb9"},
+        {"file_name": "D:/output/report_structured.docx", "paragraphs": {"title": "\u7ed3\u6784\u5316\u62a5\u544a", "content": [{"type": "h1", "text": "\u7b2c\u4e00\u7ae0"}, {"type": "paragraph", "text": "\u6b63\u6587\u5185\u5bb9"}, {"type": "table", "rows": [["\u52171", "\u52172"], ["a", "b"]]}]}},
     ],
     "write_xlsx": [
-        {"file_path": "D:/output/data.xlsx", "data": {"headers": ["\u59d3\u540d", "\u5e74\u9f84"], "rows": [["\u5f20\u4e09", 25], ["\u674e\u56db", 30]]}},
+        {"file_name": "D:/output/data.xlsx", "data": {"headers": ["\u59d3\u540d", "\u5e74\u9f84"], "rows": [["\u5f20\u4e09", 25], ["\u674e\u56db", 30]]}},
     ],
     "write_pdf": [
-        {"file_path": "D:/output/report.pdf", "title": "\u6d4b\u8bd5\u62a5\u544a", "content": "\u8fd9\u662f\u62a5\u544a\u5185\u5bb9"},
+        {"file_name": "D:/output/report.pdf", "title": "\u6d4b\u8bd5\u62a5\u544a", "paragraphs": "\u8fd9\u662f\u62a5\u544a\u5185\u5bb9"},
+        {"file_name": "D:/output/structured_report.pdf", "paragraphs": [{"type": "h1", "text": "\u7b2c\u4e00\u7ae0"}, "\u6b63\u6587\u5185\u5bb9"]},
     ],
     "write_pptx": [
-        {"file_path": "D:/output/presentation.pptx", "title": "\u9879\u76ee\u6c47\u62a5"},
-        {"file_path": "D:/output/slides.pptx", "title": "\u5b63\u5ea6\u603b\u7ed3", "slides": [{"title": "\u4e1a\u7ee9\u6982\u89c8", "content": "\u672c\u5b63\u5ea6\u9500\u552e\u989d\u589e\u957f20%"}]},
-    ],
-    "convert_document": [
-        {"input_path": "D:/documents/report.docx", "output_format": "pdf"},
-        {"input_path": "D:/data/sales.xlsx", "output_format": "pdf", "output_path": "D:/output/sales.pdf"},
+        {"file_name": "D:/output/cover.pptx", "slides": [{"type": "cover", "title": "\u9879\u76ee\u6c47\u62a5", "subtitle": "\u5c0f\u7ec4"}]},
+        {"file_name": "D:/output/slides.pptx", "slides": [{"title": "\u4e1a\u7ee9\u6982\u89c8", "content": ["\u672c\u5b63\u5ea6\u9500\u552e\u989d\u589e\u957f20%", {"type": "bullets", "items": ["\u652f\u51fa\u63a7\u5236", "\u5ba2\u6237\u589e\u957f"]}]}]},
     ],
 }
 
@@ -127,7 +119,6 @@ TOOL_IMPLEMENTATIONS = {
     "write_xlsx": write_xlsx,
     "write_pdf": write_pdf,
     "write_pptx": write_pptx,
-    "convert_document": convert_document,
 }
 
 TOOL_INPUT_MODELS = {
@@ -139,12 +130,11 @@ TOOL_INPUT_MODELS = {
     "write_xlsx": WriteXlsxInput,
     "write_pdf": WritePdfInput,
     "write_pptx": WritePptxInput,
-    "convert_document": ConvertDocumentInput,
 }
 
 
 def _register_document_tools():
-    """注册9个文档操作工具到DOCUMENT分类 — 小欧 2026-06-18"""
+    """注册8个文档操作工具到DOCUMENT分类 — 小欧 2026-06-19"""
     
     for name, func in TOOL_IMPLEMENTATIONS.items():
         desc = DESCRIPTIONS.get(name, "")
@@ -178,5 +168,4 @@ __all__ = [
     "write_xlsx",
     "write_pdf",
     "write_pptx",
-    "convert_document",
 ]

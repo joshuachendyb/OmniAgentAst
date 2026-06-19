@@ -14,7 +14,6 @@ from app.tools.document.document_tools import (
     write_xlsx,
     write_pdf,
     write_pptx,
-    convert_document,
 )
 from app.tools.dataanalysis.dataanalysis_tools import (
     analyze_data,
@@ -36,7 +35,6 @@ __all__ = [
     "write_xlsx",
     "write_pdf",
     "write_pptx",
-    "convert_document",
     "analyze_data",
     "filter_data",
     "generate_chart",

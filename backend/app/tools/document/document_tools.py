@@ -5,7 +5,7 @@
 
 【创建时间】2026-05-02 小沈
 【设计依据】按文档第8.3节 Tool 80-82 定义
-【重构 2026-05-18 小健】8个旧函数抽取为内部函数,新增read_document/write_document路由函数
+【重构 2026-05-18 小健】8个旧函数抽取为内部函数
 
 【重要】新函数增加规范 - 小沈 2026-05-04
 新增函数时必须同步修改以下3个文件:
@@ -16,8 +16,6 @@
 包含:
 - _read_pdf / _read_docx / _read_xlsx / _read_pptx: 内部读取函数
 - _write_docx / _write_xlsx / _write_pdf / _write_pptx: 内部写入函数
-- read_document: 统一读取路由(按后缀自动选择解析器)
-- write_document: 统一写入路由(按后缀自动选择写入器)
 - convert_document: 文档格式转换
 
 Author: 小沈 - 2026-05-02
@@ -464,6 +462,47 @@ def _read_xlsx(
                 data={"error": str(e), "file_path": file_path})
 
 
+def _read_xls(
+    file_path: str,
+    max_rows: int = 1000,
+) -> Dict[str, Any]:
+    """读取旧版Excel(.xls)文件(内部函数) - 小沈 2026-06-19"""
+    if not _check_module("xlrd"):
+        return build_error(ERR_DOC_READ_XLSX, "xlrd库未安装,请先执行: pip install xlrd",
+                data={"file_path": file_path})
+
+    try:
+        import xlrd
+
+        path = Path(file_path)
+        if not path.exists():
+            return build_error(ERR_DOC_READ_XLSX, f"文件不存在: {file_path}",
+                    data={"file_path": file_path})
+
+        wb = xlrd.open_workbook(str(path))
+        sheet_names = wb.sheet_names()
+        ws = wb.sheet_by_index(0)
+
+        headers = []
+        rows = []
+        for i in range(min(ws.nrows, max_rows)):
+            row_data = [ws.cell_value(i, j) for j in range(ws.ncols)]
+            if i == 0:
+                headers = [str(h) if h else f"column_{j}" for j, h in enumerate(row_data)]
+            else:
+                rows.append(row_data)
+
+        return build_success({
+                "headers": headers,
+                "rows": rows,
+                "row_count": len(rows),
+                "sheet_names": sheet_names,
+            }, f"成功读取Excel文件: {file_path},共 {len(rows)} 行数据")
+    except Exception as e:
+        return build_error(ERR_DOC_READ_XLSX, f"读取Excel文件失败: {str(e)}",
+                data={"error": str(e), "file_path": file_path})
+
+
 def _read_csv_stdlib(
     file_path: str,
     encoding: str = "utf-8",
@@ -516,31 +555,7 @@ def _read_csv_stdlib(
                 data={"error": str(e), "file_path": file_path})
 
 
-def _auto_convert_to_pdf(input_path: str, suffix: str) -> Optional[str]:
-    """自动将旧版Office格式转换为PDF,返回PDF路径或None"""
-    try:
-        tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-        pdf_path = tmp.name
-        tmp.close()
-        result = convert_document(input_path, output_path=pdf_path)
-        if result.get("code") != "SUCCESS":
-            try:
-                os.unlink(pdf_path)
-            except:
-                pass
-            return None
-        return pdf_path
-    except Exception:
-        return None
 
-
-def _cleanup_temp_pdf(pdf_path: str) -> None:
-    """清理临时PDF文件"""
-    try:
-        if os.path.isfile(pdf_path):
-            os.unlink(pdf_path)
-    except:
-        pass
 
 
 def _read_pptx(
@@ -612,80 +627,86 @@ def _read_pptx(
 
 
 # ============================================================
+# 公用函数 — paragraphs 解析 + 内容元素处理
+# ============================================================
+
+def _resolve_paragraphs(paragraphs):
+    """解析paragraphs参数: 统一输出为 (title_from_dict, content_list) - 小欧 2026-06-19"""
+    title = None
+    items = []
+
+    if isinstance(paragraphs, str):
+        items = [paragraphs]
+    elif isinstance(paragraphs, list):
+        items = paragraphs
+    elif isinstance(paragraphs, dict):
+        title = paragraphs.get("title")
+        content = paragraphs.get("content", [])
+        items = content if isinstance(content, list) else [content]
+
+    return title, items
+
+
+def _add_docx_content_item(doc, item):
+    """处理单个Word内容元素(list中的str或dict) - 小欧 2026-06-19"""
+    if isinstance(item, str):
+        if item.strip():
+            doc.add_paragraph(item)
+    elif isinstance(item, dict):
+        item_type = item.get("type", "paragraph")
+        item_text = item.get("text", "")
+        if item_type in ("h1", "heading"):
+            doc.add_heading(item_text, item.get("level", 1))
+        elif item_type in ("h2", "h3", "h4", "h5"):
+            doc.add_heading(item_text, level=int(item_type[1]))
+        elif item_type == "paragraph":
+            doc.add_paragraph(item_text)
+        elif item_type == "table":
+            rows_data = item.get("rows", [])
+            if rows_data:
+                t = doc.add_table(rows=len(rows_data), cols=len(rows_data[0]))
+                for ri, rd in enumerate(rows_data):
+                    for ci, cv in enumerate(rd):
+                        t.rows[ri].cells[ci].text = str(cv)
+    else:
+        text = str(item)
+        if text.strip():
+            doc.add_paragraph(text)
+
+
+# ============================================================
 # 内部写入函数(原 write_docx/write_xlsx/write_pdf/write_pptx 逻辑)
 # ============================================================
 
 def _write_docx(
     file_path: str,
-    content: str = None,
-    paragraphs: list = None,
     title: str = None,
-    table_data: list = None,
-    data: dict = None,
+    paragraphs=None,
 ) -> Dict[str, Any]:
-    """写入Word文档(内部函数) - 小健 2026-05-18
-    【修复】支持data参数解析结构化内容: {"title":"...", "content":[{"type":"paragraph","text":"..."}]} - 小沈 2026-06-14"""
+    """写入Word文档(内部函数) - 小欧 2026-06-19 重构为3参数"""
     if not _check_module("docx"):
         return build_error(ERR_NO_DOCX,
                 "python-docx库未安装,请先执行: pip install python-docx")
 
     try:
-        import docx
         from docx import Document
-        from docx.shared import Inches, Pt
 
         doc = Document()
 
-        # 【修复】优先解析 data 结构化参数 - 小沈 2026-06-14
-        if data and isinstance(data, dict):
-            if data.get("title") and not title:
-                title = data["title"]
-            if data.get("content"):
-                content = content or data["content"]
-
         if title:
             doc.add_heading(title, 0)
-        
-        if isinstance(content, list):
-            for item in content:
-                if isinstance(item, str):
-                    doc.add_paragraph(item)
-                elif isinstance(item, dict):
-                    item_type = item.get("type", "paragraph")
-                    item_text = item.get("text", "")
-                    if item_type in ("h1", "heading"):
-                        level = item.get("level", 1)
-                        doc.add_heading(item_text, level)
-                    elif item_type in ("h2", "h3", "h4", "h5"):
-                        level = int(item_type[1]) if item_type[1].isdigit() else 2
-                        doc.add_heading(item_text, level)
-                    elif item_type == "paragraph":
-                        doc.add_paragraph(item_text)
-                    elif item_type == "table":
-                        rows_data = item.get("rows", [])
-                        if rows_data:
-                            t = doc.add_table(rows=len(rows_data), cols=len(rows_data[0]))
-                            for ri, rd in enumerate(rows_data):
-                                for ci, cv in enumerate(rd):
-                                    t.rows[ri].cells[ci].text = str(cv)
-        elif content and isinstance(content, str):
-            doc.add_paragraph(content)
-        
-        if paragraphs:
-            if isinstance(paragraphs, str):
-                try:
-                    paragraphs = json.loads(paragraphs)
-                except (json.JSONDecodeError, ValueError):
-                    paragraphs = [paragraphs]
-            for para in paragraphs:
-                para_str = str(para)
-                if para_str.strip():
-                    doc.add_paragraph(para_str)
-        
+
+        if paragraphs is not None:
+            dict_title, items = _resolve_paragraphs(paragraphs)
+            if dict_title and not title:
+                doc.add_heading(dict_title, 0)
+            for item in items:
+                _add_docx_content_item(doc, item)
+
         path = Path(file_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         doc.save(path)
-        
+
         return build_success({"file_path": str(path)}, f"成功写入Word文档: {file_path}")
     except Exception as e:
         return build_error(ERR_WRITE_DOCX, f"写入Word文档失败: {str(e)}",
@@ -736,11 +757,9 @@ def _write_xlsx(
 def _write_pdf(
     file_path: str,
     title: str = None,
-    content: str = None,
-    paragraphs: list = None,
-    table_data: list = None
+    paragraphs=None,
 ) -> Dict[str, Any]:
-    """写入PDF文档(内部函数) - 小健 2026-05-18"""
+    """写入PDF文档(内部函数) - 小欧 2026-06-19 重构为3参数+嵌套函数"""
     if not _check_module("reportlab"):
         return build_error(ERR_NO_REPORTLAB,
                 "reportlab库未安装,请先执行: pip install reportlab")
@@ -753,6 +772,50 @@ def _write_pdf(
         from reportlab.lib import colors
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
+
+        def _add_content_item(elements, item, chinese_style, title_style):
+            """处理单个PDF内容元素(嵌套函数,可访问reportlab导入) - 小欧 2026-06-19"""
+            if isinstance(item, str):
+                if item.strip():
+                    elements.append(Paragraph(item, chinese_style))
+                    elements.append(Spacer(1, 3*mm))
+            elif isinstance(item, dict):
+                item_type = item.get("type", "paragraph")
+                item_text = item.get("text", "")
+                if item_type in ("h1", "heading"):
+                    heading_style = ParagraphStyle('h1', parent=chinese_style,
+                        fontSize=18, spaceBefore=12, spaceAfter=6)
+                    elements.append(Paragraph(item_text, heading_style))
+                    elements.append(Spacer(1, 3*mm))
+                elif item_type in ("h2", "h3", "h4", "h5"):
+                    fs = max(18 - int(item_type[1]) * 2, 12)
+                    h_style = ParagraphStyle(f'h{item_type[1]}', parent=chinese_style,
+                        fontSize=fs, spaceBefore=8, spaceAfter=4)
+                    elements.append(Paragraph(item_text, h_style))
+                    elements.append(Spacer(1, 2*mm))
+                elif item_type == "paragraph":
+                    elements.append(Paragraph(item_text, chinese_style))
+                    elements.append(Spacer(1, 3*mm))
+                elif item_type == "table":
+                    rows_data = item.get("rows", [])
+                    if rows_data and len(rows_data) > 0:
+                        try:
+                            t = Table(rows_data)
+                            t.setStyle(TableStyle([
+                                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                                ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+                                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                            ]))
+                            elements.append(t)
+                            elements.append(Spacer(1, 5*mm))
+                        except Exception:
+                            pass
+            else:
+                text = str(item)
+                if text.strip():
+                    elements.append(Paragraph(text, chinese_style))
+                    elements.append(Spacer(1, 3*mm))
 
         path = Path(file_path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -783,41 +846,13 @@ def _write_pdf(
             elements.append(Paragraph(title, title_style))
             elements.append(Spacer(1, 10*mm))
 
-        if content:
-            elements.append(Paragraph(content, chinese_style))
-            elements.append(Spacer(1, 5*mm))
-
-        if paragraphs:
-            if isinstance(paragraphs, str):
-                try:
-                    paragraphs = json.loads(paragraphs)
-                except (json.JSONDecodeError, ValueError):
-                    paragraphs = [paragraphs]
-            for para in paragraphs:
-                elements.append(Paragraph(str(para), chinese_style))
-                elements.append(Spacer(1, 3*mm))
-
-        if table_data:
-            if isinstance(table_data, str):
-                try:
-                    table_data = json.loads(table_data)
-                except (json.JSONDecodeError, ValueError):
-                    table_data = None
-            if table_data:
-                for tbl in table_data:
-                    if tbl and len(tbl) > 0:
-                        try:
-                            t = Table(tbl)
-                            t.setStyle(TableStyle([
-                                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                                ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
-                                ('FONTSIZE', (0, 0), (-1, -1), 9),
-                            ]))
-                            elements.append(t)
-                            elements.append(Spacer(1, 5*mm))
-                        except Exception:
-                            pass
+        if paragraphs is not None:
+            dict_title, items = _resolve_paragraphs(paragraphs)
+            if dict_title and not title:
+                elements.append(Paragraph(dict_title, title_style))
+                elements.append(Spacer(1, 10*mm))
+            for item in items:
+                _add_content_item(elements, item, chinese_style, title_style)
 
         if not elements:
             elements.append(Paragraph(" ", chinese_style))
@@ -830,59 +865,106 @@ def _write_pdf(
                 data={"error": str(e), "file_path": file_path})
 
 
-def _build_pptx_presentation(title: str, slides: list):
-    """构建PPT内容 — 小欧 2026-06-18 从_write_pptx提取"""
-    from pptx import Presentation
-    from pptx.util import Pt
+def _select_layout(prs, slide_type):
+    """选布局 — 小欧 2026-06-19"""
+    m = {0: 0, "cover": 0, 1: 1, "content": 1, 2: 2, "two": 2}
+    return prs.slide_layouts[m.get(slide_type, 1)]
 
+
+def _add_pptx_content(slide, content):
+    """处理正文到 content placeholder — 小欧 2026-06-19"""
+    body = None
+    for sh in slide.placeholders:
+        idx = sh.placeholder_format.idx
+        if idx == 1:
+            continue
+        if idx >= 2:
+            body = sh.text_frame; break
+    if body is None:
+        return
+
+    if isinstance(content, str):
+        body.paragraphs[0].text = content
+    elif isinstance(content, list):
+        for i, item in enumerate(content):
+            if isinstance(item, str):
+                p = body.paragraphs[0] if i == 0 else body.add_paragraph()
+                p.text = item
+            elif isinstance(item, dict):
+                t = item.get("type", "paragraph")
+                txt = item.get("text", "")
+                if t == "paragraph":
+                    p = body.paragraphs[0] if i == 0 else body.add_paragraph()
+                    p.text = txt
+                elif t == "bullets":
+                    for j, b in enumerate(item.get("items", [])):
+                        p = body.paragraphs[0] if (i == 0 and j == 0) else body.add_paragraph()
+                        p.text = str(b); p.level = 1
+
+
+def _add_pptx_table(slide, table_data):
+    """添加表格到幻灯片(独立shape) — 小欧 2026-06-19"""
+    if not table_data or not table_data[0]:
+        return
+    rows, cols = len(table_data), len(table_data[0])
+    from pptx.util import Inches
+    left, top, width, height = Inches(1), Inches(2), Inches(6), Inches(0.4 * rows)
+    tbl = slide.shapes.add_table(rows, cols, left, top, width, height).table
+    for ri, row in enumerate(table_data):
+        for ci, val in enumerate(row):
+            tbl.cell(ri, ci).text = str(val)
+
+
+def _add_pptx_slide(prs, slide_data):
+    """添加一页幻灯片 — 小欧 2026-06-19"""
+    slide_type = slide_data.get("type", 1)
+    title = slide_data.get("title", "")
+    subtitle = slide_data.get("subtitle", "")
+    content = slide_data.get("content")
+    tables = slide_data.get("tables")
+
+    layout = _select_layout(prs, slide_type)
+    slide = prs.slides.add_slide(layout)
+
+    if title and slide.shapes.title:
+        slide.shapes.title.text = title
+
+    if subtitle and slide_type in (0, "cover"):
+        for shape in slide.placeholders:
+            if shape.placeholder_format.idx == 1:
+                shape.text = subtitle; break
+
+    if content:
+        _add_pptx_content(slide, content)
+
+    if tables:
+        for td in tables:
+            _add_pptx_table(slide, td)
+
+
+def _build_pptx_presentation(slides: list):
+    """构建全部幻灯片 — 小欧 2026-06-19（重写，无title参数）"""
+    from pptx import Presentation
     prs = Presentation()
 
-    if title:
-        title_slide_layout = prs.slide_layouts[0]
-        slide = prs.slides.add_slide(title_slide_layout)
-        title_shape = slide.shapes.title
-        title_shape.text = title
-
     if slides:
-        if isinstance(slides, str):
-            try:
-                slides = json.loads(slides)
-            except (json.JSONDecodeError, ValueError):
-                slides = None
-        if slides:
-            for slide_data in slides:
-                slide_title = slide_data.get("title", "幻灯片")
-                content = slide_data.get("content", "")
+        for slide_data in slides:
+            _add_pptx_slide(prs, slide_data)
 
-                content_layout = prs.slide_layouts[1]
-                slide = prs.slides.add_slide(content_layout)
-
-                if slide.shapes.title:
-                    slide.shapes.title.text = slide_title
-
-                for shape in slide.shapes:
-                    if shape.has_text_frame and not shape.text_frame.text.strip():
-                        text_frame = shape.text_frame
-                        text_frame.clear()
-                        p = text_frame.paragraphs[0]
-                        p.text = content
-                        p.font.size = Pt(18)
-                        break
     return prs
 
 
 def _write_pptx(
     file_path: str,
-    title: str = None,
     slides: list = None
 ) -> Dict[str, Any]:
-    """写入PPT幻灯片(内部函数) - 小健 2026-05-18"""
+    """写入PPT幻灯片(内部函数) - 小欧 2026-06-19 重构为2参数(无title)"""
     if not _check_module("pptx"):
         return build_error(ERR_DOC_NO_PPTX,
                 "python-pptx库未安装,请先执行: pip install python-pptx")
 
     try:
-        prs = _build_pptx_presentation(title, slides)
+        prs = _build_pptx_presentation(slides)
         path = Path(file_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         prs.save(path)
@@ -898,104 +980,82 @@ def _write_pptx(
 # 路由函数 — LLM调用的统一入口
 # ============================================================
 
-def read_pdf(
-    file_path: str,
-    pages: Optional[str] = None,
-    extract_tables: bool = False,
-) -> Dict[str, Any]:
-    """读取PDF文件 — 小沈 2026-06-16"""
-    check = _check_pdf_readable(file_path)
+def read_pdf(file_name: str) -> Dict[str, Any]:
+    """读取PDF文件 — 小沈 2026-06-19"""
+    check = _check_pdf_readable(file_name)
     if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
         return check
-    result = _read_pdf(file_path, pages=pages, extract_tables=extract_tables)
+    result = _read_pdf(file_name, extract_images=True, extract_tables=True)
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([
             ("write_pdf", "修改PDF", "需要编辑时"),
-            ("convert_document", "转换格式", "需要转其他格式时"),
         ])
     return result
 
 
-def read_docx(
-    file_path: str,
-    extract_tables: bool = False,
-) -> Dict[str, Any]:
-    """读取Word文档 — 小沈 2026-06-16"""
-    path = Path(file_path)
+def read_docx(file_name: str) -> Dict[str, Any]:
+    """读取Word文档 — 小沈 2026-06-19 加pandoc转.doc"""
+    path = Path(file_name)
     suffix = path.suffix.lower()
 
     if suffix == ".doc":
-        pdf_path = _auto_convert_to_pdf(file_path, suffix)
-        if pdf_path is None:
-            return build_error(ERR_DOC_CONVERT_FAILED, f"自动转换.doc为PDF失败,请手动使用convert_document工具",
-                    data={"file_path": file_path})
-        check = _check_pdf_readable(pdf_path)
-        if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
-            return check
-        result = _read_pdf(pdf_path, extract_tables=extract_tables)
-        _cleanup_temp_pdf(pdf_path)
-        if result.get("code") == "SUCCESS":
-            result["next_actions"] = build_next_actions([
-                ("write_docx", "修改文档", "需要编辑时"),
-                ("convert_document", "转换格式", "需要转PDF时"),
-            ])
-        return result
+        pandoc = shutil.which("pandoc")
+        if not pandoc:
+            return build_error(ERR_DOC_CONVERT_FAILED, "读取.doc文件需要安装pandoc转换工具。请在终端运行: winget install JohnMacFarlane.Pandoc",
+                    data={"file_name": file_name})
+        tmp = tempfile.NamedTemporaryFile(suffix=".docx", delete=False)
+        tmp_path = tmp.name
+        tmp.close()
+        try:
+            subprocess.run([pandoc, file_name, "-o", tmp_path], capture_output=True, text=True,
+                         timeout=SUBPROCESS_TIMEOUT_LONG, check=True)
+            check = _check_docx_readable(tmp_path)
+            if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
+                return check
+            result = _read_docx(tmp_path, extract_tables=True)
+            if result.get("code") == "SUCCESS":
+                result["next_actions"] = build_next_actions([
+                    ("write_docx", "修改文档", "需要编辑时"),
+                ])
+            return result
+        except subprocess.CalledProcessError as e:
+            return build_error(ERR_DOC_CONVERT_FAILED, f"pandoc转换.doc失败: {e.stderr}",
+                    data={"stderr": e.stderr, "file_name": file_name})
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except:
+                pass
 
-    check = _check_docx_readable(file_path)
+    check = _check_docx_readable(file_name)
     if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
         return check
-    result = _read_docx(file_path, extract_tables=extract_tables)
+    result = _read_docx(file_name, extract_tables=True)
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([
             ("write_docx", "修改文档", "需要编辑时"),
-            ("convert_document", "转换格式", "需要转PDF时"),
         ])
     return result
 
 
-def read_pptx(file_path: str) -> Dict[str, Any]:
-    """读取PPT文件 — 小沈 2026-06-16"""
-    result = _read_pptx(file_path)
+def read_pptx(file_name: str) -> Dict[str, Any]:
+    """读取PPT文件 — 小沈 2026-06-19"""
+    result = _read_pptx(file_name, extract_notes=True)
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([
             ("write_pptx", "修改PPT", "需要编辑时"),
-            ("convert_document", "转换格式", "需要转PDF时"),
         ])
     return result
 
 
-def read_xlsx(
-    file_path: str,
-    sheet_name: Optional[str] = None,
-    max_rows: int = 1000,
-    header: bool = True,
-    encoding: str = "utf-8",
-    delimiter: Optional[str] = None,
-) -> Dict[str, Any]:
-    """读取Excel/CSV/TSV/JSON文件 — 小沈 2026-06-16"""
-    path = Path(file_path)
+def read_xlsx(file_name: str) -> Dict[str, Any]:
+    """读取Excel/CSV/TSV/JSON文件 — 小沈 2026-06-19 加.xls"""
+    path = Path(file_name)
     suffix = path.suffix.lower()
 
-    if suffix == ".xls":
-        pdf_path = _auto_convert_to_pdf(file_path, suffix)
-        if pdf_path is None:
-            return build_error(ERR_DOC_CONVERT_FAILED, f"自动转换.xls为PDF失败,请手动使用convert_document工具",
-                    data={"file_path": file_path})
-        check = _check_pdf_readable(pdf_path)
-        if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
-            return check
-        result = _read_pdf(pdf_path)
-        _cleanup_temp_pdf(pdf_path)
-        if result.get("code") == "SUCCESS":
-            result["next_actions"] = build_next_actions([
-                ("write_xlsx", "写入Excel", "需要导出数据时"),
-                ("analyze_data", "分析数据", "需要统计分析时"),
-            ])
-        return result
-
     if suffix in (".csv", ".tsv"):
-        actual_delimiter = "\t" if suffix == ".tsv" else (delimiter or ",")
-        result = _read_csv_stdlib(file_path, encoding=encoding, delimiter=actual_delimiter, has_header=header, max_rows=max_rows)
+        actual_delimiter = "\t" if suffix == ".tsv" else ","
+        result = _read_csv_stdlib(file_name, encoding="utf-8", delimiter=actual_delimiter, has_header=True, max_rows=10000)
         if result.get("code") == "SUCCESS":
             result["next_actions"] = build_next_actions([
                 ("write_xlsx", "写入Excel", "需要导出数据时"),
@@ -1005,17 +1065,17 @@ def read_xlsx(
 
     if suffix == ".json":
         try:
-            with open(file_path, 'r', encoding=encoding) as f:
+            with open(file_name, 'r', encoding="utf-8") as f:
                 json_data = json.load(f)
             if isinstance(json_data, list) and len(json_data) > 0 and isinstance(json_data[0], dict):
                 columns = list(json_data[0].keys())
-                rows = [[item.get(c) for c in columns] for item in json_data[:max_rows]]
-                result = build_success({"format": "json_table", "columns": columns, "rows": rows, "row_count": len(rows)}, f"读取JSON文件成功: {file_path}")
+                rows = [[item.get(c) for c in columns] for item in json_data[:10000]]
+                result = build_success({"format": "json_table", "columns": columns, "rows": rows, "row_count": len(rows)}, f"读取JSON文件成功: {file_name}")
             else:
-                result = build_success({"format": "json", "content": json_data}, f"读取JSON文件成功: {file_path}")
+                result = build_success({"format": "json", "content": json_data}, f"读取JSON文件成功: {file_name}")
         except Exception as e:
-            result = build_error(ERR_DOC_READ_JSON, f"读取JSON文件失败: {str(e)}",
-                    data={"error": str(e), "file_path": file_path})
+            result = build_error(ERR_DOC_READ_JSON, f"读取JSON文件成功: {str(e)}",
+                    data={"error": str(e), "file_name": file_name})
         if result.get("code") == "SUCCESS":
             result["next_actions"] = build_next_actions([
                 ("write_xlsx", "写入Excel", "需要导出数据时"),
@@ -1023,10 +1083,22 @@ def read_xlsx(
             ])
         return result
 
-    check = _check_xlsx_readable(file_path)
+    if suffix == ".xls":
+        check = _check_xlsx_readable(file_name)
+        if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
+            return check
+        result = _read_xls(file_name, max_rows=10000)
+        if result.get("code") == "SUCCESS":
+            result["next_actions"] = build_next_actions([
+                ("write_xlsx", "写入Excel", "需要导出数据时"),
+                ("analyze_data", "分析数据", "需要统计分析时"),
+            ])
+        return result
+
+    check = _check_xlsx_readable(file_name)
     if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
         return check
-    result = _read_xlsx(file_path, sheet_name=sheet_name, max_rows=max_rows, header=header)
+    result = _read_xlsx(file_name, max_rows=10000)
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([
             ("write_xlsx", "写入Excel", "需要导出数据时"),
@@ -1036,16 +1108,13 @@ def read_xlsx(
 
 
 def write_docx(
-    file_path: str,
-    content: Optional[str] = None,
-    paragraphs: Optional[List[str]] = None,
+    file_name: str,
     title: Optional[str] = None,
-    table_data: Optional[List] = None,
-    data: Optional[Union[Dict[str, Any], List]] = None,
+    paragraphs: Optional[Union[str, List, Dict]] = None,
 ) -> Dict[str, Any]:
-    """写入Word文档 — 小沈 2026-06-16"""
-    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
-    result = _write_docx(file_path, content=content, paragraphs=paragraphs, title=title, table_data=table_data, data=data)
+    """写入Word文档 — 小欧 2026-06-19 改3参数"""
+    Path(file_name).parent.mkdir(parents=True, exist_ok=True)
+    result = _write_docx(file_name, title=title, paragraphs=paragraphs)
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([
             ("read_docx", "验证写入结果", "需要确认内容时"),
@@ -1054,12 +1123,12 @@ def write_docx(
 
 
 def write_xlsx(
-    file_path: str,
+    file_name: str,
     data: Optional[Union[Dict[str, Any], List]] = None,
     sheet_name: str = "Sheet1",
 ) -> Dict[str, Any]:
     """写入Excel文件 — 小沈 2026-06-16"""
-    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(file_name).parent.mkdir(parents=True, exist_ok=True)
     if data is None:
         data = {"headers": [], "rows": []}
     elif isinstance(data, list):
@@ -1076,7 +1145,7 @@ def write_xlsx(
         headers = list(data.keys())
         rows = [list(data.values())]
         data = {"headers": headers, "rows": rows}
-    result = _write_xlsx(file_path, data=data, sheet_name=sheet_name)
+    result = _write_xlsx(file_name, data=data, sheet_name=sheet_name)
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([
             ("read_xlsx", "验证写入结果", "需要确认内容时"),
@@ -1085,15 +1154,13 @@ def write_xlsx(
 
 
 def write_pdf(
-    file_path: str,
+    file_name: str,
     title: Optional[str] = None,
-    content: Optional[str] = None,
-    paragraphs: Optional[List[str]] = None,
-    table_data: Optional[List] = None,
+    paragraphs: Optional[Union[str, List, Dict]] = None,
 ) -> Dict[str, Any]:
-    """写入PDF文件 — 小沈 2026-06-16"""
-    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
-    result = _write_pdf(file_path, title=title, content=content, paragraphs=paragraphs, table_data=table_data)
+    """写入PDF文件 — 小欧 2026-06-19 改3参数"""
+    Path(file_name).parent.mkdir(parents=True, exist_ok=True)
+    result = _write_pdf(file_name, title=title, paragraphs=paragraphs)
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([
             ("read_pdf", "验证写入结果", "需要确认内容时"),
@@ -1102,13 +1169,12 @@ def write_pdf(
 
 
 def write_pptx(
-    file_path: str,
-    title: Optional[str] = None,
-    slides: Optional[List[Dict[str, str]]] = None,
+    file_name: str,
+    slides: Optional[List[Dict]] = None,
 ) -> Dict[str, Any]:
-    """写入PPT文件 — 小沈 2026-06-16"""
-    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
-    result = _write_pptx(file_path, title=title, slides=slides)
+    """写入PPT文件 — 小欧 2026-06-19 改2参数(无title)"""
+    Path(file_name).parent.mkdir(parents=True, exist_ok=True)
+    result = _write_pptx(file_name, slides=slides)
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([
             ("read_pptx", "验证写入结果", "需要确认内容时"),
@@ -1116,90 +1182,6 @@ def write_pptx(
     return result
 
 
-def convert_document(
-    input_path: str,
-    output_format: Literal["pdf"] = "pdf",
-    output_path: Optional[str] = None
-) -> Dict[str, Any]:
-    """文档格式转换 - 小健 2026-05-06 output_format改可选对齐Schema"""
-    try:
-        src = Path(input_path)
-        if not src.exists():
-            return build_error(ERR_DOC_CONVERT_FAILED, f"文件不存在: {input_path}",
-                    data={"input_path": input_path})
-        
-        src_ext = src.suffix.lower()
-        supported_inputs = ['.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt', '.odt', '.ods']
-        
-        if src_ext not in supported_inputs:
-            return build_error(ERR_DOC_CONVERT_FAILED, f"不支持的输入格式: {src_ext},支持: {supported_inputs}",
-                    data={"src_ext": src_ext, "supported_inputs": supported_inputs})
-        
-        if output_format.lower() != 'pdf':
-            return build_error(ERR_DOC_CONVERT_FAILED, "当前仅支持转换为PDF格式",
-                    data={"output_format": output_format})
-        
-        if output_path is None:
-            output_path = str(src.with_suffix('.pdf'))
-        
-         
-        soffice_paths = [
-            r"C:\Program Files\LibreOffice\program\soffice.exe",
-            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
-        ]
-        if platform.system() != 'Windows':
-            soffice_paths = ["/usr/bin/soffice", "/usr/local/bin/soffice"]
-        
-        soffice = None
-        for p in soffice_paths:
-            if Path(p).exists():
-                soffice = p
-                break
-        
-        if not soffice:
-            return build_error(ERR_NO_LIBREOFFICE, "LibreOffice未安装,无法转换。请安装LibreOffice: https://www.libreoffice.org/download/")
-        
-        out_dir = str(Path(output_path).parent)
-        Path(out_dir).mkdir(parents=True, exist_ok=True)
-        
-        cmd = [
-            soffice,
-            "--headless",
-            "--convert-to", "pdf",
-            "--outdir", out_dir,
-            str(src)
-        ]
-        
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_LONG)
-        
-        if result.returncode != 0:
-            return build_error(ERR_DOC_CONVERT_FAILED, f"LibreOffice转换失败: {result.stderr}",
-                    data={"stderr": result.stderr, "input_path": input_path})
-        
-        expected_pdf = Path(out_dir) / src.with_suffix('.pdf').name
-        if not expected_pdf.exists():
-            return build_error(ERR_DOC_CONVERT_FAILED, "转换后PDF文件未生成",
-                    data={"output_path": output_path, "input_path": input_path})
-        
-        if output_path != str(expected_pdf):
-            shutil.move(str(expected_pdf), output_path)
-        
-        return build_success({"input_path": str(src), "output_path": output_path},
-                f"成功转换: {src_ext} → .pdf",
-                next_actions=build_next_actions([
-                    ("read_document", "读取转换后文件", "需要查看结果时"),
-                ]))
-    except Exception as e:
-        return build_error(ERR_DOC_CONVERT_FAILED, f"文档转换失败: {str(e)}",
-                data={"error": str(e), "input_path": input_path})
-
-
-# === 公开接口定义 — 小健 2026-05-18 ===
-__all__ = [
-    "read_document",
-    "write_document",
-    "convert_document",
-]
 from app.constants import (
     ERR_DOC_CHART_GENERATE,
     ERR_DOC_CONVERT_FAILED,
