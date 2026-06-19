@@ -1,3 +1,42 @@
+v0.16.10
+
+更新时间: 2026-06-19 14:20:28
+
+## v0.16.9→v0.16.10 变更汇总 - 北京老陈-2026-06-19
+
+### feat: 新功能(3项)
+- 17afd3d96: prompt_logger记录完整工具Schema+llm_caller传递tools数组 - 小欧
+- 5fef592c9: compress_files AES-256加密 + 默认密码aes-256 - 小健
+- c340a98f6: chat_stream+e2e_helpers代码更新+基础测试脚本 - 北京老陈
+
+### fix: 代码修复(6项)
+- 718355ae1: E2E测试问题修复-Shell语法/压缩加密/通配符/SSE终态/验证框架 - 小健
+- 587e70232: prompt_logger记录工具Schema描述(parameters.description),修复遗漏schema docstring - 小欧
+- 2cf1ddb28: shell工具E4/E6代码及LLM信息完善 - 小欧
+- 9ccc8deb5: shell工具3个输出完整性问题 - 小欧
+- 5f07102ee: 补充所有工具build_error的data参数 - 小欧
+- fba9904cc: error observation缺失data/llm_data导致LLM盲目重试 - 小欧
+
+### refactor: 代码重构(9项)
+- 3c96bf424: 抽取_has_wildcard公用以消除压缩模块DRY违反+提取_write_zip_entries消除for循环重复 - 小欧
+- 6a1afcd09: 精简工具实现代码 - 小欧
+- 2c11f9720: file_tools.py content类型自动转JSON+e2e_helpers增强+操作手册P4移入4.4 - chendyg
+- 47ede9273: 系统Prompt结构重整+3处文字修正 - chendyg
+- e235c41df: 系统Prompt工具失败恢复规则+write_text_file/shell描述优化 - chendyg
+- 26aa7e942: file_tools.py _precise_replace_in_file移除self参数+E2E操作手册新增代码错误检查验证项 - chendyg
+- 40bca7b85: write_text_file提取_do_write内部函数简化asyncio.to_thread调用 - chendyg
+- f1804dbb2: 优化工具描述+系统Prompt+修复dataanalysis_schema.__all__ - 小欧
+- e2c29a4d6: E2E测试记录+操作手册更新 - 北京老陈
+
+### docs: 文档更新(2项)
+- 9740c18e2: 整理notes目录，旧测试记录移入doc-测试与审查 - 小欧
+- 33b58fe02: 删除notes下全部E2E测试记录(62个文件) - 北京老陈
+
+### fix: 系统注册(1项)
+- 6b53d20b3: system_register.py 统一注册日志级别为debug - 小欧
+
+---
+
 v0.16.9
 
 更新时间: 2026-06-18 20:30:00
