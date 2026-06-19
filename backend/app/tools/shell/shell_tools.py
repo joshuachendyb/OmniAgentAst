@@ -58,7 +58,8 @@ _background_shells: Dict[str, Dict[str, Any]] = {}
 
 
 def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
-                         timed_out: bool, timeout: int = 30000) -> dict:
+                         timed_out: bool, timeout: int = 30000,
+                         shell_type: str = "powershell") -> dict:
     """统一构建 shell 执行结果(超时/成功/失败 3 路)。"""
     data = truncate_data_for_frontend({
         "stdout": stdout_str, "stderr": stderr_str, "returncode": returncode,
@@ -67,7 +68,7 @@ def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
 
     if timed_out:
         return build_error(ERR_SHELL_TIMEOUT,
-            f"命令执行超时({timeout}毫秒),可增大timeout参数重试",
+            f"命令执行超时({timeout}毫秒),shell_type={shell_type},可增大timeout参数重试",
             data=data, llm_data=llm_data,
             next_actions=build_next_actions([
                 ("execute_shell_command", "增大超时重试", "需要更长时间执行时")]))
@@ -77,10 +78,10 @@ def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
             next_actions=build_next_actions([
                 ("execute_shell_command", "继续执行后续命令", "需要执行更多命令时"),
                 ("find_command", "查找命令路径", "需要确认命令是否存在时")]))
-    return build_error(ERR_SHELL_EXEC, f"命令执行失败(退出码{returncode}),请检查命令语法和参数",
+    return build_error(ERR_SHELL_EXEC, f"命令执行失败(退出码{returncode}),当前shell_type={shell_type}",
         data=data, llm_data=llm_data,
         next_actions=build_next_actions([
-            ("execute_shell_command", "重新执行命令", "修改命令后重试时"),
+            ("execute_shell_command", "修改命令后重试", "修正命令后重新执行时"),
             ("find_command", "查找命令路径", "需要确认命令是否存在时")]))
 
 
@@ -160,7 +161,7 @@ def execute_shell_command(
         stderr_str = _decode_bytes_safe(stderr_bytes)
         returncode = proc.returncode if proc.returncode is not None else -1
 
-        return _build_shell_result(returncode, stdout_str, stderr_str, timed_out, timeout=timeout)
+        return _build_shell_result(returncode, stdout_str, stderr_str, timed_out, timeout=timeout, shell_type=shell_type)
     except Exception as e:
         return build_error(ERR_SHELL_EXCEPTION, f"命令执行异常: {str(e)}", data={"command": command[:200]})
 
@@ -307,6 +308,8 @@ def shell_session(
         resp_data = truncate_data_for_frontend(
             {"shell_id": shell_id, "stdout": stdout_str, "stderr": stderr_str, "is_running": is_running, "returncode": returncode})
         llm_data = format_output_for_llm(stdout_str, stderr_str)
+        llm_data["is_running"] = is_running
+        llm_data["returncode"] = returncode
         if is_running:
             return build_success(resp_data, "后台命令输出", llm_data=llm_data,
                 next_actions=build_next_actions([
