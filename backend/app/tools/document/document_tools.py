@@ -34,8 +34,25 @@ from pathlib import Path
 from app.utils.next_actions_builder import build_next_actions
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.toolhelper.common_helper import _check_module
-# 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
 from app.tools.tool_constants import SUBPROCESS_TIMEOUT_LONG
+from app.constants import (
+    ERR_DOC_CHART_GENERATE,
+    ERR_DOC_CONVERT_FAILED,
+    ERR_DOC_NO_OPENPYXL,
+    ERR_DOC_NO_PPTX,
+    ERR_DOC_READ_CSV,
+    ERR_DOC_READ_DOCX,
+    ERR_DOC_READ_PDF,
+    ERR_DOC_READ_PPTX,
+    ERR_DOC_READ_XLSX,
+    ERR_DOC_WRITE_PPTX,
+    ERR_NO_DOCX,
+    ERR_NO_PDFPLUMBER,
+    ERR_NO_REPORTLAB,
+    ERR_WRITE_DOCX,
+    ERR_WRITE_PDF,
+    ERR_WRITE_XLSX,
+)
 
 
 
@@ -194,7 +211,7 @@ def _build_pdf_result(fp: str, pages_read: List[int], all_text: List[str],
     full_text = "\n\n".join(all_text)
     result = {"text": full_text, "page_count": page_count, "pages_read": pages_read}
     _llm = {"文件": fp, "页数": f"{page_count}页(读取{len(pages_read)}页)",
-            "文本长度": f"{len(full_text)}字符", "内容": full_text}
+            "文本长度": f"{len(full_text)}字符", "内容": full_text[:2000]}
     msg = f"成功读取PDF文件: {fp},共读取 {len(pages_read)} 页"
     if tables_data:
         result["tables"] = tables_data
@@ -291,7 +308,7 @@ def _read_docx(
             "文件": file_path,
             "段落数": len(paragraphs),
             "文本长度": f"{len(text)}字符",
-            "内容": text,
+            "内容": text[:2000],
         }
         return build_success(result_data, f"成功读取Word文档: {file_path},共 {len(paragraphs)} 段",
                 llm_data=_llm)
@@ -419,8 +436,7 @@ def _read_csv_stdlib(
                     data={"file_path": file_path})
         
         rows = []
-        columns = []
-        # 小健 2026-05-19: 多编码尝试回退(utf-8→gbk→gb2312→latin-1)
+        headers = []
         encodings_to_try = [encoding, "gbk", "gb2312", "latin-1"] if encoding == "utf-8" else [encoding, "utf-8", "latin-1"]
         read_ok = False
         for enc in encodings_to_try:
@@ -432,9 +448,9 @@ def _read_csv_stdlib(
                             break
                         if i == 0:
                             if has_header:
-                                columns = row
+                                headers = row
                             else:
-                                columns = [f"col_{j}" for j in range(len(row))]
+                                headers = [f"col_{j}" for j in range(len(row))]
                                 rows.append(row)
                         else:
                             rows.append(row)
@@ -447,7 +463,7 @@ def _read_csv_stdlib(
                     data={"file_path": file_path, "encodings_tried": encodings_to_try})
         
         return build_success({
-                "columns": columns,
+                "headers": headers,
                 "rows": rows,
                 "row_count": len(rows),
             }, f"成功读取CSV文件: {file_path},共 {len(rows)} 行数据")
@@ -515,7 +531,7 @@ def _read_pptx(
             "文件": file_path,
             "幻灯片数": len(prs.slides),
             "文本总长度": f"{_total_text}字符",
-            "幻灯片内容": [{"页码": s["slide_num"], "文本": s.get("text", "")} for s in slides_data],
+            "幻灯片内容": [{"页码": s["slide_num"], "文本": s.get("text", "")[:500]} for s in slides_data],
         }
         if extract_notes and notes_data:
             _llm["备注数"] = len(notes_data)
@@ -776,7 +792,7 @@ def _select_layout(prs, slide_type):
 
 
 def _add_pptx_content(slide, content):
-    """处理正文到 content placeholder — 小欧 2026-06-19"""
+    """处理正文到 content placeholder — 小欧 2026-06-19, 小健 2026-06-20 DRY修复"""
     body = None
     for sh in slide.placeholders:
         idx = sh.placeholder_format.idx
@@ -787,28 +803,32 @@ def _add_pptx_content(slide, content):
     if body is None:
         return
 
+    def _get_para(is_first: bool):
+        return body.paragraphs[0] if is_first else body.add_paragraph()
+
     if isinstance(content, str):
         body.paragraphs[0].text = content
     elif isinstance(content, list):
-        for i, item in enumerate(content):
+        first_slot = True
+        for item in content:
             if isinstance(item, str):
-                p = body.paragraphs[0] if i == 0 else body.add_paragraph()
+                p = _get_para(first_slot); first_slot = False
                 p.text = item
             elif isinstance(item, dict):
                 t = item.get("type", "paragraph")
                 txt = item.get("text", "")
                 if t == "paragraph":
-                    p = body.paragraphs[0] if i == 0 else body.add_paragraph()
+                    p = _get_para(first_slot); first_slot = False
                     p.text = txt
                 elif t == "bullets":
-                    for j, b in enumerate(item.get("items", [])):
-                        p = body.paragraphs[0] if (i == 0 and j == 0) else body.add_paragraph()
+                    for b in item.get("items", []):
+                        p = _get_para(first_slot); first_slot = False
                         p.text = str(b); p.level = 1
 
 
 def _add_pptx_table(slide, table_data):
-    """添加表格到幻灯片(独立shape) — 小欧 2026-06-19"""
-    if not table_data or not table_data[0]:
+    """添加表格到幻灯片(独立shape) — 小欧 2026-06-19, 小健 2026-06-20 空检查修复"""
+    if not table_data or not table_data[0] or len(table_data[0]) == 0:
         return
     rows, cols = len(table_data), len(table_data[0])
     from pptx.util import Inches
@@ -928,7 +948,7 @@ def read_docx(file_name: str) -> Dict[str, Any]:
         finally:
             try:
                 os.unlink(tmp_path)
-            except:
+            except OSError:
                 pass
 
     check = _check_docx_readable(file_name)
@@ -1049,22 +1069,3 @@ def write_pptx(
         ])
     return result
 
-
-from app.constants import (
-    ERR_DOC_CHART_GENERATE,
-    ERR_DOC_CONVERT_FAILED,
-    ERR_DOC_NO_OPENPYXL,
-    ERR_DOC_NO_PPTX,
-    ERR_DOC_READ_CSV,
-    ERR_DOC_READ_DOCX,
-    ERR_DOC_READ_PDF,
-    ERR_DOC_READ_PPTX,
-    ERR_DOC_READ_XLSX,
-    ERR_DOC_WRITE_PPTX,
-    ERR_NO_DOCX,
-    ERR_NO_PDFPLUMBER,
-    ERR_NO_REPORTLAB,
-    ERR_WRITE_DOCX,
-    ERR_WRITE_PDF,
-    ERR_WRITE_XLSX,
-)
