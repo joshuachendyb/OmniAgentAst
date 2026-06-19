@@ -49,6 +49,14 @@ _ALWAYS_RULES = """【路径规则】
 - 必须使用绝对路径(禁止相对路径如 ./file.txt)
 - 禁止用 ~ 表示家目录
 - ❌ 路径中的中文字符必须原样保留,禁止翻译或转换!用户说"E:\\下载\\科幻小说"就用"E:\\下载\\科幻小说",禁止改成"E:\\download\\sci-fi-novel"
+
+【Shell环境】
+- 本机为Windows PowerShell环境，必须使用PowerShell语法
+- 禁止CMD语法: if exist、mkdir无-Force、&&链接、del、rmdir等
+- 创建目录: New-Item -ItemType Directory -Force
+- 条件判断: if(-not(Test-Path "路径")) { ... }
+- 命令链接用分号; 不用&&
+- 执行Python代码用execute_code工具，不要用python -c
 """
 
 

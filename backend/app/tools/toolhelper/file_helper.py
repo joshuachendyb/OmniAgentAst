@@ -1039,7 +1039,24 @@ def _validate_compress_params(
 
 
 def _compress_entries(source: Path, deadline: float) -> Generator[Tuple[Path, str], None, bool]:
-    """通用文件遍历生成器,yield(path, arcname) → 返回是否超时 - 小健 2026-05-25"""
+    """通用文件遍历生成器,yield(path, arcname) → 返回是否超时 - 小健 2026-05-25
+    支持通配符(如*.txt),展开后所有文件打入同一压缩包 - 小健 2026-06-19
+    """
+    import glob as glob_mod
+    source_str = str(source)
+    if any(c in source_str for c in ('*', '?', '[', ']')):
+        base_dir = Path(glob_mod.glob(source_str)[0]).parent if glob_mod.glob(source_str) else source.parent
+        for matched in sorted(glob_mod.glob(source_str)):
+            matched_path = Path(matched)
+            if matched_path.is_file():
+                yield matched_path, matched_path.name
+            elif matched_path.is_dir():
+                for item in matched_path.rglob("*"):
+                    if time.monotonic() > deadline:
+                        return True
+                    if item.is_file():
+                        yield item, str(item.relative_to(base_dir))
+        return False
     if source.is_file():
         yield source, source.name
         return False
@@ -1129,9 +1146,6 @@ async def compress_files_impl(
     from app.db.models.operation_enums import OperationType
     from app.tools.toolhelper.common_helper import _check_module
 
-    # 小健 2026-06-19: ZIP格式缺失密码时默认用aes-256
-    if format == "zip" and not password:
-        password = "aes-256"
 
     if password and not _check_module("pyzipper"):
         return build_error(ERR_NO_PYZIPPER, "pyzipper库未安装,无法创建加密ZIP,请先执行: pip install pyzipper")
@@ -1145,7 +1159,12 @@ async def compress_files_impl(
     destination = Path(output_path)
 
     try:
-        if not source.exists():
+        import glob as glob_mod
+        has_wildcard = any(c in source_path for c in ('*', '?', '[', ']'))
+        if has_wildcard:
+            if not glob_mod.glob(source_path):
+                return build_error(ERR_FILE_NOT_FOUND, f"通配符无匹配: {source_path}")
+        elif not source.exists():
             return build_error(ERR_FILE_NOT_FOUND, f"源路径不存在: {source_path}")
 
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -1192,7 +1211,25 @@ async def compress_files_impl(
 
 
 def _get_total_size_sync(path: Path, deadline: float) -> int:
-    """同步计算源路径总大小,支持超时 - 小健 2026-05-25"""
+    """同步计算源路径总大小,支持超时 - 小健 2026-05-25
+    支持通配符 - 小健 2026-06-19
+    """
+    import glob as glob_mod
+    path_str = str(path)
+    if any(c in path_str for c in ('*', '?', '[', ']')):
+        total_size = 0
+        for matched in glob_mod.glob(path_str):
+            matched_path = Path(matched)
+            if matched_path.is_file():
+                total_size += matched_path.stat().st_size
+            elif matched_path.is_dir():
+                for file_path in matched_path.rglob("*"):
+                    if time.monotonic() > deadline:
+                        logger.warning("[_get_total_size_sync] 超时自检触发,提前返回")
+                        break
+                    if file_path.is_file():
+                        total_size += file_path.stat().st_size
+        return total_size
     if path.is_file():
         return path.stat().st_size
     total_size = 0

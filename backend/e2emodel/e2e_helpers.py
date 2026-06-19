@@ -1112,8 +1112,19 @@ def write_test_record(
     ts_str = now.strftime("%Y-%m-%d %H:%M:%S")
     record_file = RECORD_DIR / f"测试记录-{test_id}-{date_str}.md"
 
-    status = "PASSED" if passed else "FAILED"
+    # DB-Prompt一致性FAIL则整体FAILED -- 小健 2026-06-19
+    if passed and dpi is not None and len(dpi) > 0:
+        passed = False
+    # 回复含错误关键词则整体FAILED -- 小健 2026-06-19
     resp = result.get("response_text", "")
+    resp_has_error = False
+    if resp:
+        resp_lower = resp.lower()
+        clean_resp = resp.replace("\n", " ").replace("\r", " ")
+        err_markers = ("错误:", "错误：", "超时,", "超时，", "超时)", "超时）", "出错", "failed:", "exception:", "traceback:", "llm流式错误", "api请求参数错误", "errorcode", "error_code")
+        resp_has_error = any(m in clean_resp for m in err_markers)
+    if passed and resp_has_error:
+        passed = False
     tool_calls = result.get("tool_calls", [])
     tool_names = [t.get("tool_name", "") for t in tool_calls]
     event_types = result.get("event_types", [])
@@ -1121,12 +1132,6 @@ def write_test_record(
     logical_events = [e for e in events if e.get("type") != "chunk"]
     unique_step_nums = len({e.get("step") for e in events if e.get("step") is not None})
 
-    resp_has_error = False
-    if resp:
-        resp_lower = resp.lower()
-        clean_resp = resp.replace("\n", " ").replace("\r", " ")
-        err_markers = ("错误:", "错误：", "超时,", "超时，", "超时)", "超时）", "出错", "failed:", "exception:", "traceback:")
-        resp_has_error = any(m in clean_resp for m in err_markers)
 
     if not db:
         sid = result.get("session_id", "")
@@ -1153,6 +1158,7 @@ def write_test_record(
     lines.append("")
     lines.append(f"**创建时间**: {ts_str}")
     lines.append(f"**测试编号**: {test_id}")
+    status = "PASSED" if passed else "FAILED"
     lines.append(f"**测试结果**: {status}")
     lines.append("")
     lines.append("---")
@@ -1281,6 +1287,8 @@ def write_test_record(
     lines.append(f"| 数据库验证 | {'PASS' if db.get('session_exists') else 'FAIL'} | - |")
     lines.append(f"| SSE-DB一致性 | {'PASS' if len(consistency_issues) == 0 else 'FAIL'} | {len(consistency_issues)}个问题 |")
     lines.append(f"| DB-Prompt日志一致性 | {'PASS' if db_prompt_ok else 'FAIL'} | {db_prompt_detail} |")
+    step_field_issues = db.get("step_field_issues", [])
+    lines.append(f"| 步骤字段完整性 | {'PASS' if len(step_field_issues) == 0 else 'FAIL'} | {len(step_field_issues)}个问题 |")
     lines.append(f"| 步骤合理性 | {'PASS' if len(step_issues) == 0 else 'FAIL'} | {len(step_issues)}个问题 |")
     lines.append(f"| 日志中ERROR | {'PASS' if len(log_check.get('errors', [])) == 0 else 'FAIL'} | {len(log_check.get('errors', []))}条 |")
     lines.append(f"| 日志中异常堆栈 | {'PASS' if len(log_check.get('tracebacks', [])) == 0 else 'FAIL'} | {len(log_check.get('tracebacks', []))}条 |")

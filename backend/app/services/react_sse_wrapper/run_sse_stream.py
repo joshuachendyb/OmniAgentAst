@@ -126,6 +126,13 @@ async def run_sse_stream(
             current_execution_steps=current_execution_steps, session_id=session_id,
         )
         yield error_response
+        # 小健 2026-06-19: error后补发FinalStep,保证客户端收到终态事件
+        from app.services.agent.steps import FinalStep
+        final_step = FinalStep(step=next_step(), response=f"执行异常: {str(e)[:200]}")
+        current_execution_steps.append(final_step.to_dict())
+        yield format_agent_sse(final_step.to_dict())
+        if agent is not None:
+            agent.status = AgentStatus.FAILED
 
     finally:
         # 统一保存入口：正常、异常、取消都走这里

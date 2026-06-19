@@ -91,8 +91,7 @@ FILE_TOOL_DESCRIPTIONS = {
 
     "grep_file_content": """基于ripgrep在文件中搜索文本内容,支持正则表达式和中文搜索。可指定搜索路径、文件过滤(glob通配符,如"*.py")、匹配前后上下文行数、大小写敏感、多行匹配模式、返回条数限制。分页返回结果,包含匹配行内容、匹配文件和总匹配数。适用场景:需要在代码或文档中查找特定函数定义、关键字、TODO标记,并了解其上下文时使用。""",
 
-    "compress_files": """压缩文件或目录为归档包。支持zip/tar/tar.gz/tar.bz2格式,可设置压缩级别(0-9)。ZIP格式支持密码加密(password参数)。
-适用场景:需要备份文件、打包项目、减小文件体积、创建加密压缩包时使用。""",
+    "compress_files": """压缩文件或目录为归档包。支持zip/tar/tar.gz/tar.bz2格式,可设置压缩级别(0-9)。ZIP格式支持密码加密(password参数)。source支持通配符(如D:/logs/*.log),展开后所有匹配文件打入同一压缩包。适用场景:需要备份文件、打包项目、减小文件体积、创建加密压缩包时使用。""",
 
     "extract_archive": """解压归档包到指定目录。支持zip/tar/tar.gz/tar.bz2格式,支持加密解压(ZIP专用)。destination可选,不填则自动创建同名目录。适用场景:需要解压下载的压缩包、恢复备份时使用。
 使用示例: extract_archive(source="D:/backup.zip", destination="D:/output")""",

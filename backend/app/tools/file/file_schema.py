@@ -247,7 +247,7 @@ class GrepFileContentInput(BaseModel):
 # ============================================================
 
 class CompressFilesInput(BaseModel):
-    source: str = Field(description="要压缩的文件/目录路径(必填)")
+    source: str = Field(description="要压缩的文件/目录路径(必填),支持通配符如*.txt")
     destination: str = Field(description="输出压缩包路径(必填)")
     format: Literal["zip", "tar", "tar.gz", "tar.bz2"] = Field(
         default="zip", description="压缩格式:zip/tar/tar.gz/tar.bz2,默认zip"
