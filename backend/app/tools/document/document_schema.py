@@ -48,7 +48,7 @@ class ReadXlsxInput(BaseModel):
 class WriteDocxInput(BaseModel):
     file_path: str = Field(..., description="输出Word文档路径(.docx)")
     content: Optional[str] = Field(default=None, description="正文内容")
-    paragraphs: Optional[List[str]] = Field(default=None, description="段落列表")
+    paragraphs: Optional[List[str]] = Field(default=None, description="段落列表,每个元素是一个独立段落。传字符串数组['p1','p2'],不是JSON字符串")
     title: Optional[str] = Field(default=None, description="文档标题")
     table_data: Optional[List] = Field(default=None, description="表格数据二维数组")
     data: Optional[Union[Dict[str, Any], List]] = Field(default=None, description="结构化内容")
@@ -64,7 +64,7 @@ class WritePdfInput(BaseModel):
     file_path: str = Field(..., description="输出PDF路径(.pdf)")
     title: Optional[str] = Field(default=None, description="文档标题")
     content: Optional[str] = Field(default=None, description="正文内容")
-    paragraphs: Optional[List[str]] = Field(default=None, description="段落列表")
+    paragraphs: Optional[List[str]] = Field(default=None, description="段落列表,每个元素是一个独立段落。传字符串数组['p1','p2'],不是JSON字符串")
     table_data: Optional[List] = Field(default=None, description="表格数据二维数组")
 
 

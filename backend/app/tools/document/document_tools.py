@@ -672,6 +672,11 @@ def _write_docx(
             doc.add_paragraph(content)
         
         if paragraphs:
+            if isinstance(paragraphs, str):
+                try:
+                    paragraphs = json.loads(paragraphs)
+                except (json.JSONDecodeError, ValueError):
+                    paragraphs = [paragraphs]
             for para in paragraphs:
                 para_str = str(para)
                 if para_str.strip():
@@ -783,25 +788,36 @@ def _write_pdf(
             elements.append(Spacer(1, 5*mm))
 
         if paragraphs:
+            if isinstance(paragraphs, str):
+                try:
+                    paragraphs = json.loads(paragraphs)
+                except (json.JSONDecodeError, ValueError):
+                    paragraphs = [paragraphs]
             for para in paragraphs:
                 elements.append(Paragraph(str(para), chinese_style))
                 elements.append(Spacer(1, 3*mm))
 
         if table_data:
-            for tbl in table_data:
-                if tbl and len(tbl) > 0:
-                    try:
-                        t = Table(tbl)
-                        t.setStyle(TableStyle([
-                            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                            ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
-                            ('FONTSIZE', (0, 0), (-1, -1), 9),
-                        ]))
-                        elements.append(t)
-                        elements.append(Spacer(1, 5*mm))
-                    except Exception:
-                        pass
+            if isinstance(table_data, str):
+                try:
+                    table_data = json.loads(table_data)
+                except (json.JSONDecodeError, ValueError):
+                    table_data = None
+            if table_data:
+                for tbl in table_data:
+                    if tbl and len(tbl) > 0:
+                        try:
+                            t = Table(tbl)
+                            t.setStyle(TableStyle([
+                                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                                ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+                                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                            ]))
+                            elements.append(t)
+                            elements.append(Spacer(1, 5*mm))
+                        except Exception:
+                            pass
 
         if not elements:
             elements.append(Paragraph(" ", chinese_style))
@@ -828,24 +844,30 @@ def _build_pptx_presentation(title: str, slides: list):
         title_shape.text = title
 
     if slides:
-        for slide_data in slides:
-            slide_title = slide_data.get("title", "幻灯片")
-            content = slide_data.get("content", "")
+        if isinstance(slides, str):
+            try:
+                slides = json.loads(slides)
+            except (json.JSONDecodeError, ValueError):
+                slides = None
+        if slides:
+            for slide_data in slides:
+                slide_title = slide_data.get("title", "幻灯片")
+                content = slide_data.get("content", "")
 
-            content_layout = prs.slide_layouts[1]
-            slide = prs.slides.add_slide(content_layout)
+                content_layout = prs.slide_layouts[1]
+                slide = prs.slides.add_slide(content_layout)
 
-            if slide.shapes.title:
-                slide.shapes.title.text = slide_title
+                if slide.shapes.title:
+                    slide.shapes.title.text = slide_title
 
-            for shape in slide.shapes:
-                if shape.has_text_frame and not shape.text_frame.text.strip():
-                    text_frame = shape.text_frame
-                    text_frame.clear()
-                    p = text_frame.paragraphs[0]
-                    p.text = content
-                    p.font.size = Pt(18)
-                    break
+                for shape in slide.shapes:
+                    if shape.has_text_frame and not shape.text_frame.text.strip():
+                        text_frame = shape.text_frame
+                        text_frame.clear()
+                        p = text_frame.paragraphs[0]
+                        p.text = content
+                        p.font.size = Pt(18)
+                        break
     return prs
 
 
