@@ -34,6 +34,7 @@ from app.utils.time_utils import timestamp_for_filename
 from app.tools.tool_response import build_success, build_error
 from app.utils.tool_result_formatter import truncate_data_for_frontend, truncate_text  # 小沈 2026-05-20
 from app.utils.next_actions_builder import build_next_actions
+from app.tools.toolhelper.common_helper import _check_module  # 小健 2026-06-19 send_notification需要
 
 
 
@@ -64,7 +65,7 @@ def _click(
         pyautogui.click(x=x, y=y, button=button, clicks=clicks)
         return build_success({"x": x, "y": y, "button": button, "click_type": click_type}, f"点击完成: ({x}, {y}) {button} {click_type}")
     except Exception as e:
-        return build_error(ERR_DESKTOP_MOUSE_CLICK, f"点击失败: {str(e)}")
+        return build_error(ERR_DESKTOP_MOUSE_CLICK, f"点击失败: {str(e)}", data={"error": str(e)})
 
 
 def _move(x: int, y: int, duration: float = 0) -> Dict[str, Any]:
@@ -76,7 +77,7 @@ def _move(x: int, y: int, duration: float = 0) -> Dict[str, Any]:
         pyautogui.moveTo(x, y, duration=duration)
         return build_success({"x": x, "y": y}, f"鼠标移动到: ({x}, {y})")
     except Exception as e:
-        return build_error(ERR_FILE_MOVE_FAILED, f"移动失败: {str(e)}")
+        return build_error(ERR_FILE_MOVE_FAILED, f"移动失败: {str(e)}", data={"error": str(e)})
 
 
 def _scroll(direction: str, amount: int = 3) -> Dict[str, Any]:
@@ -89,7 +90,7 @@ def _scroll(direction: str, amount: int = 3) -> Dict[str, Any]:
         pyautogui.scroll(scroll_amount)
         return build_success({"direction": direction, "amount": amount}, f"滚动完成: {direction} {amount}单位")
     except Exception as e:
-        return build_error(ERR_DESKTOP_MOUSE_SCROLL, f"滚动失败: {str(e)}")
+        return build_error(ERR_DESKTOP_MOUSE_SCROLL, f"滚动失败: {str(e)}", data={"error": str(e)})
 
 
 # ========== 键盘操作 ==========
@@ -107,7 +108,7 @@ def _type_text(text: str, interval: float = 0) -> Dict[str, Any]:
             pyautogui.write(text)
         return build_success({"text_length": len(text)}, f"输入文本完成: {len(text)}个字符")
     except Exception as e:
-        return build_error(ERR_KEYBOARD_TYPE, f"输入文本失败: {str(e)}")
+        return build_error(ERR_KEYBOARD_TYPE, f"输入文本失败: {str(e)}", data={"error": str(e)})
 
 
 def _shortcut(keys: str) -> Dict[str, Any]:
@@ -120,7 +121,7 @@ def _shortcut(keys: str) -> Dict[str, Any]:
         pyautogui.hotkey(*key_list)
         return build_success({"keys": keys}, f"快捷键执行完成: {keys}")
     except Exception as e:
-        return build_error(ERR_KEYBOARD_SHORTCUT, f"快捷键执行失败: {str(e)}")
+        return build_error(ERR_KEYBOARD_SHORTCUT, f"快捷键执行失败: {str(e)}", data={"error": str(e)})
 
 
 def _key_combo(keys: List[str], action: str = "press") -> Dict[str, Any]:
@@ -139,7 +140,7 @@ def _key_combo(keys: List[str], action: str = "press") -> Dict[str, Any]:
                 pyautogui.keyUp(key)
         return build_success({"keys": keys, "action": action}, f"按键操作完成: {keys} {action}")
     except Exception as e:
-        return build_error(ERR_KEY_COMBO, f"按键操作失败: {str(e)}")
+        return build_error(ERR_KEY_COMBO, f"按键操作失败: {str(e)}", data={"error": str(e)})
 
 
 # ========== 屏幕操作 ==========
@@ -165,7 +166,7 @@ def _screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[
         img.save(output_path)
         return build_success({"image_path": output_path}, f"截图保存到: {output_path}")
     except Exception as e:
-        return build_error(ERR_SCREENSHOT, f"截图失败: {str(e)}")
+        return build_error(ERR_SCREENSHOT, f"截图失败: {str(e)}", data={"error": str(e)})
 
 
 def _snapshot(display: int = 1) -> Dict[str, Any]:
@@ -200,7 +201,7 @@ def _snapshot(display: int = 1) -> Dict[str, Any]:
             pil_img.save(output_path)
         return build_success({"image_path": output_path, "display": display, "monitors": len(monitors) - 1}, f"快照保存到: {output_path}")
     except Exception as e:
-        return build_error(ERR_SCREEN_SNAPSHOT, f"快照失败: {str(e)}")
+        return build_error(ERR_SCREEN_SNAPSHOT, f"快照失败: {str(e)}", data={"error": str(e)})
 
 
 def screen_record(duration: int, output_path: Optional[str] = None, fps: int = 15) -> Dict[str, Any]:
@@ -245,7 +246,7 @@ def screen_record(duration: int, output_path: Optional[str] = None, fps: int = 1
         return build_success({"output_path": output_path, "duration": duration, "fps": fps}, f"录制完成: {output_path}",
                              next_actions=build_next_actions([]))
     except Exception as e:
-        return build_error(ERR_SCREEN_RECORD, f"录制失败: {str(e)}")
+        return build_error(ERR_SCREEN_RECORD, f"录制失败: {str(e)}", data={"error": str(e)})
 
 
 # ========== 窗口操作 ==========
@@ -273,9 +274,9 @@ def _focus_window(title: str) -> Dict[str, Any]:
             win32gui.SetForegroundWindow(target_hwnd)
             return build_success({"title": title, "hwnd": target_hwnd}, f"窗口已聚焦: {title}")
         else:
-            return build_error(ERR_WINDOW_NOT_FOUND, f"未找到窗口: {title}")
+            return build_error(ERR_WINDOW_NOT_FOUND, f"未找到窗口: {title}", data={"window_title": title})
     except Exception as e:
-        return build_error(ERR_FOCUS_WINDOW, f"聚焦窗口失败: {str(e)}")
+        return build_error(ERR_FOCUS_WINDOW, f"聚焦窗口失败: {str(e)}", data={"error": str(e)})
 
 
 def _resize_window(title: str, width: int = None, height: int = None) -> Dict[str, Any]:
@@ -296,7 +297,7 @@ def _resize_window(title: str, width: int = None, height: int = None) -> Dict[st
         win32gui.EnumWindows(_enum_cb, None)
 
         if not target_hwnd:
-            return build_error(ERR_WINDOW_NOT_FOUND, f"未找到窗口: {title}")
+            return build_error(ERR_WINDOW_NOT_FOUND, f"未找到窗口: {title}", data={"window_title": title})
 
         left, top, right, bottom = win32gui.GetWindowRect(target_hwnd)
         curr_width = right - left
@@ -308,7 +309,7 @@ def _resize_window(title: str, width: int = None, height: int = None) -> Dict[st
         win32gui.MoveWindow(target_hwnd, left, top, new_width, new_height, True)
         return build_success({"title": title, "width": new_width, "height": new_height}, f"窗口大小调整完成: {new_width}x{new_height}")
     except Exception as e:
-        return build_error(ERR_WINDOW_RESIZE, f"调整窗口大小失败: {str(e)}")
+        return build_error(ERR_WINDOW_RESIZE, f"调整窗口大小失败: {str(e)}", data={"error": str(e)})
 
 
 # ========== OCR操作 ==========
@@ -323,7 +324,7 @@ def ocr(image_path: str, language: str = "eng") -> Dict[str, Any]:
     try:
         path = Path(image_path)
         if not path.exists():
-            return build_error(ERR_OCR, f"图片文件不存在: {image_path}")
+            return build_error(ERR_OCR, f"图片文件不存在: {image_path}", data={"file_path": image_path})
 
         img = Image.open(image_path)
         text = pytesseract.image_to_string(img, lang=language)
@@ -334,7 +335,7 @@ def ocr(image_path: str, language: str = "eng") -> Dict[str, Any]:
                              llm_data={"字符数": len(text), "语言": language, "文本预览": _llm_text},
                              next_actions=build_next_actions([("screen_capture", "重新截图", "需要识别其他区域时")]))
     except Exception as e:
-        return build_error(ERR_OCR, f"OCR识别失败: {str(e)}")
+        return build_error(ERR_OCR, f"OCR识别失败: {str(e)}", data={"error": str(e)})
 
 
 # ========== 剪贴板操作(Tool 105-106)==========
@@ -366,7 +367,7 @@ def _read_clipboard() -> Dict[str, Any]:
                 _llm["截断"] = f"原文{len(text)}字符"
             return build_success({"text": text}, "剪贴板读取成功", llm_data=_llm)
         except Exception as e:
-            return build_error(ERR_DESKTOP_CLIPBOARD, f"读取剪贴板失败: {str(e)}")
+            return build_error(ERR_DESKTOP_CLIPBOARD, f"读取剪贴板失败: {str(e)}", data={"error": str(e)})
 
 
 def _write_clipboard(content: str) -> Dict[str, Any]:
@@ -399,7 +400,7 @@ def _write_clipboard(content: str) -> Dict[str, Any]:
                 kernel32.GlobalFree(h_mem)
                 return build_error(ERR_DESKTOP_CLIPBOARD, "内存锁定失败")
         except Exception as e:
-            return build_error(ERR_DESKTOP_CLIPBOARD, f"写入剪贴板失败: {str(e)}")
+            return build_error(ERR_DESKTOP_CLIPBOARD, f"写入剪贴板失败: {str(e)}", data={"error": str(e)})
 
 
 # ========== 通知操作(Tool 107)==========
@@ -416,7 +417,7 @@ def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, 
         return build_success({"title": title, "message": message, "duration": duration}, "通知发送成功",
                              next_actions=build_next_actions([]))
     except Exception as e:
-        return build_error(ERR_NO_WIN10TOAST, f"通知发送失败: {e}")
+        return build_error(ERR_NO_WIN10TOAST, f"通知发送失败: {e}", data={"error": str(e)})
 from app.constants import (
     ERR_DESKTOP_CLIPBOARD,
     ERR_DESKTOP_MOUSE_CLICK,

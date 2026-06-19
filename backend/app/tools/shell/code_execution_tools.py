@@ -88,7 +88,7 @@ def execute_code(
     elif language == "javascript":
         return _execute_javascript(code=code, timeout=timeout, working_dir=working_dir, safety_check=safety_check)
     else:
-        return build_error(ERR_PARAM_INVALID, f"不支持的语言: {language},可选: python/javascript")
+        return build_error(ERR_PARAM_INVALID, f"不支持的语言: {language},可选: python/javascript", data={"language": language})
 
 
 def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = None, safety_check: bool = True) -> dict:
@@ -96,12 +96,12 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
     【2026-05-17 小沈】增加safety_check参数,P12组合复用:自动调用_validate_code_safety进行安全检查
     【2026-05-18 小沈】P16幂等性:working_dir不存在时自动创建(makedirs exist_ok=True)"""
     if not code or not code.strip():
-        return build_error(ERR_SHELL_EXEC_EMPTY_CODE, "code不能为空,请提供要执行的Python代码")
+        return build_error(ERR_SHELL_EXEC_EMPTY_CODE, "code不能为空,请提供要执行的Python代码", data={"language": "python"})
     if working_dir is not None and not os.path.isdir(working_dir):
         try:
             os.makedirs(working_dir, exist_ok=True)
         except OSError as e:
-            return build_error(ERR_SHELL_EXEC_INVALID_DIR, f"工作目录创建失败: {working_dir}, 错误: {e}")
+            return build_error(ERR_SHELL_EXEC_INVALID_DIR, f"工作目录创建失败: {working_dir}, 错误: {e}", data={"working_dir": working_dir})
     # P12: 执行前自动调用安全检查(不暴露给LLM)
     if safety_check:
         from app.tools.toolhelper.exec_helper import _validate_code_safety
@@ -186,9 +186,9 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
                 logger.warning(f"删除临时文件失败: {temp_file}, 错误: {e}")
 
     except FileNotFoundError:
-        return build_error(ERR_SHELL_EXEC_PYTHON_NOT_FOUND, "未找到Python环境,请确认Python已安装且在PATH中")
+        return build_error(ERR_SHELL_EXEC_PYTHON_NOT_FOUND, "未找到Python环境,请确认Python已安装且在PATH中", data={"language": "python"})
     except Exception as e:
-        return build_error(ERR_EXEC_PYTHON, f"Python代码执行失败: {str(e)}")
+        return build_error(ERR_EXEC_PYTHON, f"Python代码执行失败: {str(e)}", data={"language": "python"})
 
 
 # 【小健修复 2026-05-25】提取为模块级常量 + 独立函数(25.4审计发现:设计要求提取但被内联)
@@ -215,18 +215,18 @@ def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str]
 
     # 【小沈重构 2026-05-25】25.4节:组件1 - 安全检查
     if not code or not code.strip():
-        return build_error(ERR_SHELL_EXEC_EMPTY_CODE, "code不能为空,请提供要执行的JavaScript代码")
+        return build_error(ERR_SHELL_EXEC_EMPTY_CODE, "code不能为空,请提供要执行的JavaScript代码", data={"language": "javascript"})
 
     if safety_check:
         err = _js_safety_check(code)
         if err:
-            return build_error(ERR_UNSAFE_CODE, err)
+            return build_error(ERR_UNSAFE_CODE, err, data={"language": "javascript"})
 
     if working_dir is not None and not os.path.isdir(working_dir):
         try:
             os.makedirs(working_dir, exist_ok=True)
         except OSError as e:
-            return build_error(ERR_SHELL_EXEC_INVALID_DIR, f"工作目录创建失败: {working_dir}, 错误: {e}")
+            return build_error(ERR_SHELL_EXEC_INVALID_DIR, f"工作目录创建失败: {working_dir}, 错误: {e}", data={"working_dir": working_dir})
 
     # 【小沈重构 2026-05-25】25.4节:执行 + 结果构建
     try:
@@ -271,9 +271,9 @@ def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str]
                 logger.warning(f"删除临时文件失败: {temp_file}, 错误: {e}")
 
     except FileNotFoundError:
-        return build_error(ERR_SHELL_EXEC_NODE_NOT_FOUND, "未找到Node.js环境,请先安装Node.js")
+        return build_error(ERR_SHELL_EXEC_NODE_NOT_FOUND, "未找到Node.js环境,请先安装Node.js", data={"language": "javascript"})
     except Exception as e:
-        return build_error(ERR_EXEC_JS, f"JavaScript代码执行失败: {str(e)}")
+        return build_error(ERR_EXEC_JS, f"JavaScript代码执行失败: {str(e)}", data={"language": "javascript"})
 
 
 # 【小沈重构 2026-05-25】25.4节:组件2 - 统一构建JS执行结果,消除3处输出处理重复

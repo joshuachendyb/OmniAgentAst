@@ -112,7 +112,7 @@ def window_info(
         )
     except Exception as e:
         logger.error(f"window_info list error: {e}")
-        return build_error(ERR_WINDOW_LIST, f"获取窗口列表失败: {str(e)}")
+        return build_error(ERR_WINDOW_LIST, f"获取窗口列表失败: {str(e)}", data={"error": str(e)})
 
 
 _WINDOW_ACTIONS = {
@@ -137,12 +137,12 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
 
     try:
         if action not in _WINDOW_ACTIONS:
-            return build_error(ERR_INVALID_ACTION, f"无效的操作: {action},支持的操作为: {list(_WINDOW_ACTIONS.keys())}")
+            return build_error(ERR_INVALID_ACTION, f"无效的操作: {action},支持的操作为: {list(_WINDOW_ACTIONS.keys())}", data={"action": action})
 
         matched_hwnds = find_windows_by_title(window_title)
 
         if not matched_hwnds:
-            return build_error(ERR_WINDOW_NOT_FOUND, f"未找到窗口: {window_title}")
+            return build_error(ERR_WINDOW_NOT_FOUND, f"未找到窗口: {window_title}", data={"window_title": window_title})
 
         hwnd = matched_hwnds[0]
         title = _win32gui.GetWindowText(hwnd)
@@ -167,7 +167,7 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"set_window_state error: {e}")
-        return build_error(ERR_WINDOW_SET_STATE, f"设置窗口状态失败: {str(e)}")
+        return build_error(ERR_WINDOW_SET_STATE, f"设置窗口状态失败: {str(e)}", data={"error": str(e)})
 
 
 # ========== 窗口控制 — 7个独立函数 ==========
@@ -298,7 +298,7 @@ def keyboard_control(
         key_list = [k.strip() for k in text_or_keys.split(",")]
         result = _key_combo(keys=key_list)
     else:
-        return build_error(ERR_INVALID_ACTION, f"无效的键盘操作: {action},支持: type/shortcut/combo")
+        return build_error(ERR_INVALID_ACTION, f"无效的键盘操作: {action},支持: type/shortcut/combo", data={"action": action})
 
     if result.get("code") == "SUCCESS":
         result["next_actions"] = build_next_actions([("screen_capture", "截图查看效果", "需要确认操作结果时")])

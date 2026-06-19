@@ -51,7 +51,8 @@ def _check_pdf_readable(file_path: str) -> Dict[str, Any]:
     """检查PDF文件是否可读(内部helper) - 小沈 2026-05-18,从env_check_tools.py迁入"""
     path = Path(file_path)
     if not path.exists():
-        return build_error(ERR_DOC_READ_PDF, f"文件不存在: {file_path}")
+        return build_error(ERR_DOC_READ_PDF, f"文件不存在: {file_path}",
+                data={"file_path": file_path})
     try:
         import pdfplumber
         with pdfplumber.open(path) as pdf:
@@ -62,14 +63,16 @@ def _check_pdf_readable(file_path: str) -> Dict[str, Any]:
         return build_error(ERR_NO_PDFPLUMBER,
                 "pdfplumber库未安装,请先执行: pip install pdfplumber")
     except Exception as e:
-        return build_error(ERR_DOC_READ_PDF, f"PDF文件不可读: {str(e)}")
+        return build_error(ERR_DOC_READ_PDF, f"PDF文件不可读: {str(e)}",
+                data={"error": str(e), "file_path": file_path})
 
 
 def _check_docx_readable(file_path: str) -> Dict[str, Any]:
     """检查Word文件是否可读(内部helper) - 小沈 2026-05-18,从env_check_tools.py迁入"""
     path = Path(file_path)
     if not path.exists():
-        return build_error(ERR_DOC_READ_DOCX, f"文件不存在: {file_path}")
+        return build_error(ERR_DOC_READ_DOCX, f"文件不存在: {file_path}",
+                data={"file_path": file_path})
     try:
         import docx
         doc = docx.Document(path)
@@ -80,14 +83,16 @@ def _check_docx_readable(file_path: str) -> Dict[str, Any]:
         return build_error(ERR_NO_DOCX,
                 "python-docx库未安装,请先执行: pip install python-docx")
     except Exception as e:
-        return build_error(ERR_DOC_READ_DOCX, f"Word文件不可读: {str(e)}")
+        return build_error(ERR_DOC_READ_DOCX, f"Word文件不可读: {str(e)}",
+                data={"error": str(e), "file_path": file_path})
 
 
 def _check_xlsx_readable(file_path: str) -> Dict[str, Any]:
     """检查Excel文件是否可读(内部helper) - 小沈 2026-05-18,从env_check_tools.py迁入"""
     path = Path(file_path)
     if not path.exists():
-        return build_error(ERR_DOC_READ_XLSX, f"文件不存在: {file_path}")
+        return build_error(ERR_DOC_READ_XLSX, f"文件不存在: {file_path}",
+                data={"file_path": file_path})
     try:
         from openpyxl import load_workbook
         wb = load_workbook(path, read_only=True)
@@ -99,16 +104,19 @@ def _check_xlsx_readable(file_path: str) -> Dict[str, Any]:
         return build_error(ERR_DOC_NO_OPENPYXL,
                 "openpyxl库未安装,请先执行: pip install openpyxl")
     except Exception as e:
-        return build_error(ERR_DOC_READ_XLSX, f"Excel文件不可读: {str(e)}")
+        return build_error(ERR_DOC_READ_XLSX, f"Excel文件不可读: {str(e)}",
+                data={"error": str(e), "file_path": file_path})
 
 
 def _validate_csv_format(file_path: str) -> Dict[str, Any]:
     """验证CSV文件格式(内部helper) - 小沈 2026-05-18,从env_check_tools.py迁入"""
     path = Path(file_path)
     if not path.exists():
-        return build_error(ERR_DOC_READ_CSV, f"文件不存在: {file_path}")
+        return build_error(ERR_DOC_READ_CSV, f"文件不存在: {file_path}",
+                data={"file_path": file_path})
     if not path.suffix.lower() in (".csv", ".tsv", ".txt"):
-        return build_error(ERR_DOC_READ_CSV, "文件扩展名不是CSV格式")
+        return build_error(ERR_DOC_READ_CSV, "文件扩展名不是CSV格式",
+                data={"suffix": path.suffix.lower()})
 
     errors = []
     try:
@@ -187,7 +195,8 @@ def _read_csv_pandas(
         import pandas as pd
         path = Path(file_path)
         if not path.exists():
-            return build_error(ERR_READ_CSV_DATAFRAME, f"文件不存在: {file_path}")
+            return build_error(ERR_READ_CSV_DATAFRAME, f"文件不存在: {file_path}",
+                    data={"file_path": file_path})
         header = 0 if has_header else None
         df = pd.read_csv(path, encoding=encoding, delimiter=delimiter, header=header, nrows=max_rows)
         columns = df.columns.tolist()
@@ -195,7 +204,8 @@ def _read_csv_pandas(
         dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
         return build_success({"columns": columns, "rows": serialized_rows, "row_count": len(serialized_rows), "dtypes": dtypes}, f"成功读取CSV文件: {file_path},共 {len(serialized_rows)} 行数据")
     except Exception as e:
-        return build_error(ERR_READ_CSV_DATAFRAME, f"读取CSV文件失败: {str(e)}")
+        return build_error(ERR_READ_CSV_DATAFRAME, f"读取CSV文件失败: {str(e)}",
+                data={"error": str(e), "file_path": file_path})
 
 
 def _read_excel_pandas(
@@ -212,7 +222,8 @@ def _read_excel_pandas(
         import pandas as pd
         path = Path(file_path)
         if not path.exists():
-            return build_error(ERR_READ_EXCEL_DATAFRAME, f"文件不存在: {file_path}")
+            return build_error(ERR_READ_EXCEL_DATAFRAME, f"文件不存在: {file_path}",
+                    data={"file_path": file_path})
         df = pd.read_excel(path, sheet_name=sheet_name if sheet_name else 0, nrows=max_rows, engine="openpyxl")
         columns = df.columns.tolist()
         serialized_rows = _serialize_rows(df)
@@ -220,7 +231,8 @@ def _read_excel_pandas(
         actual_sheet = sheet_name if sheet_name else "Sheet1"
         return build_success({"columns": columns, "rows": serialized_rows, "row_count": len(serialized_rows), "dtypes": dtypes, "sheet_name": actual_sheet}, f"成功读取Excel文件: {file_path},共 {len(serialized_rows)} 行数据")
     except Exception as e:
-        return build_error(ERR_READ_EXCEL_DATAFRAME, f"读取Excel文件失败: {str(e)}")
+        return build_error(ERR_READ_EXCEL_DATAFRAME, f"读取Excel文件失败: {str(e)}",
+                data={"error": str(e), "file_path": file_path})
 
 
 def _parse_pages(pages_str: str) -> List[int]:
@@ -316,7 +328,8 @@ def _read_pdf(
 
         path = Path(file_path)
         if not path.exists():
-            return build_error(ERR_DOC_READ_PDF, f"文件不存在: {file_path}")
+            return build_error(ERR_DOC_READ_PDF, f"文件不存在: {file_path}",
+                    data={"file_path": file_path})
 
         all_text, pages_read, tables_data, images_data = [], [], [], []
         with pdfplumber.open(path) as pdf:
@@ -334,7 +347,8 @@ def _read_pdf(
 
         return _build_pdf_result(file_path, pages_read, all_text, tables_data, images_data, page_count)
     except Exception as e:
-        return build_error(ERR_DOC_READ_PDF, f"读取PDF文件失败: {str(e)}")
+        return build_error(ERR_DOC_READ_PDF, f"读取PDF文件失败: {str(e)}",
+                data={"error": str(e), "file_path": file_path})
 
 
 def _read_docx(
@@ -351,7 +365,8 @@ def _read_docx(
 
         path = Path(file_path)
         if not path.exists():
-            return build_error(ERR_DOC_READ_DOCX, f"文件不存在: {file_path}")
+            return build_error(ERR_DOC_READ_DOCX, f"文件不存在: {file_path}",
+                    data={"file_path": file_path})
 
         doc = docx.Document(path)
         paragraphs = [para.text for para in doc.paragraphs]
@@ -382,7 +397,8 @@ def _read_docx(
         return build_success(result_data, f"成功读取Word文档: {file_path},共 {len(paragraphs)} 段",
                 llm_data=_llm)
     except Exception as e:
-        return build_error(ERR_DOC_READ_DOCX, f"读取Word文档失败: {str(e)}")
+        return build_error(ERR_DOC_READ_DOCX, f"读取Word文档失败: {str(e)}",
+                data={"error": str(e), "file_path": file_path})
 
 
 def _read_xlsx(
@@ -401,7 +417,8 @@ def _read_xlsx(
 
         path = Path(file_path)
         if not path.exists():
-            return build_error(ERR_DOC_READ_XLSX, f"文件不存在: {file_path}")
+            return build_error(ERR_DOC_READ_XLSX, f"文件不存在: {file_path}",
+                    data={"file_path": file_path})
 
         wb = load_workbook(path, read_only=True, data_only=True)
         sheet_names = wb.sheetnames
@@ -409,7 +426,8 @@ def _read_xlsx(
         if sheet_name:
             if sheet_name not in sheet_names:
                 wb.close()
-                return build_error(ERR_DOC_READ_XLSX, f"工作表不存在: {sheet_name},可用工作表: {sheet_names}")
+                return build_error(ERR_DOC_READ_XLSX, f"工作表不存在: {sheet_name},可用工作表: {sheet_names}",
+                        data={"sheet_name": sheet_name, "available_sheets": sheet_names})
             ws = wb[sheet_name]
         else:
             ws = wb.active
@@ -442,7 +460,8 @@ def _read_xlsx(
                 "sheet_names": sheet_names,
             }, f"成功读取Excel文件: {file_path},工作表: {ws.title},共 {row_count} 行数据")
     except Exception as e:
-        return build_error(ERR_DOC_READ_XLSX, f"读取Excel文件失败: {str(e)}")
+        return build_error(ERR_DOC_READ_XLSX, f"读取Excel文件失败: {str(e)}",
+                data={"error": str(e), "file_path": file_path})
 
 
 def _read_csv_stdlib(
@@ -456,7 +475,8 @@ def _read_csv_stdlib(
     try:
         path = Path(file_path)
         if not path.exists():
-            return build_error(ERR_DOC_READ_CSV, f"文件不存在: {file_path}")
+            return build_error(ERR_DOC_READ_CSV, f"文件不存在: {file_path}",
+                    data={"file_path": file_path})
         
         rows = []
         columns = []
@@ -483,7 +503,8 @@ def _read_csv_stdlib(
             except UnicodeDecodeError:
                 continue
         if not read_ok:
-            return build_error(ERR_DOC_READ_CSV, f"读取CSV文件失败: 编码不匹配(尝试了{encodings_to_try})")
+            return build_error(ERR_DOC_READ_CSV, f"读取CSV文件失败: 编码不匹配(尝试了{encodings_to_try})",
+                    data={"file_path": file_path, "encodings_tried": encodings_to_try})
         
         return build_success({
                 "columns": columns,
@@ -491,7 +512,8 @@ def _read_csv_stdlib(
                 "row_count": len(rows),
             }, f"成功读取CSV文件: {file_path},共 {len(rows)} 行数据")
     except Exception as e:
-        return build_error(ERR_DOC_READ_CSV, f"读取CSV文件失败: {str(e)}")
+        return build_error(ERR_DOC_READ_CSV, f"读取CSV文件失败: {str(e)}",
+                data={"error": str(e), "file_path": file_path})
 
 
 def _auto_convert_to_pdf(input_path: str, suffix: str) -> Optional[str]:
@@ -535,7 +557,8 @@ def _read_pptx(
 
         path = Path(file_path)
         if not path.exists():
-            return build_error(ERR_DOC_READ_PPTX, f"文件不存在: {file_path}")
+            return build_error(ERR_DOC_READ_PPTX, f"文件不存在: {file_path}",
+                    data={"file_path": file_path})
 
         prs = Presentation(path)
         slides_data = []
@@ -584,7 +607,8 @@ def _read_pptx(
         return build_success(result_data, f"成功读取PPT文件: {file_path},共 {len(prs.slides)} 页",
                 llm_data=_llm)
     except Exception as e:
-        return build_error(ERR_DOC_READ_PPTX, f"读取PPT文件失败: {str(e)}")
+        return build_error(ERR_DOC_READ_PPTX, f"读取PPT文件失败: {str(e)}",
+                data={"error": str(e), "file_path": file_path})
 
 
 # ============================================================
@@ -659,7 +683,8 @@ def _write_docx(
         
         return build_success({"file_path": str(path)}, f"成功写入Word文档: {file_path}")
     except Exception as e:
-        return build_error(ERR_WRITE_DOCX, f"写入Word文档失败: {str(e)}")
+        return build_error(ERR_WRITE_DOCX, f"写入Word文档失败: {str(e)}",
+                data={"error": str(e), "file_path": file_path})
 
 
 def _write_xlsx(
@@ -699,7 +724,8 @@ def _write_xlsx(
         return build_success({"file_path": str(path), "row_count": len(data.get("rows", []))},
                 f"成功写入Excel文件: {file_path}")
     except Exception as e:
-        return build_error(ERR_WRITE_XLSX, f"写入Excel文件失败: {str(e)}")
+        return build_error(ERR_WRITE_XLSX, f"写入Excel文件失败: {str(e)}",
+                data={"error": str(e), "file_path": file_path})
 
 
 def _write_pdf(
@@ -784,7 +810,8 @@ def _write_pdf(
 
         return build_success({"file_path": str(path)}, f"成功写入PDF文档: {file_path}")
     except Exception as e:
-        return build_error(ERR_WRITE_PDF, f"写入PDF文档失败: {str(e)}")
+        return build_error(ERR_WRITE_PDF, f"写入PDF文档失败: {str(e)}",
+                data={"error": str(e), "file_path": file_path})
 
 
 def _build_pptx_presentation(title: str, slides: list):
@@ -841,7 +868,8 @@ def _write_pptx(
         return build_success({"file_path": str(path), "slide_count": len(prs.slides)},
                 f"成功写入PPT文件: {file_path},共 {len(prs.slides)} 页")
     except Exception as e:
-        return build_error(ERR_DOC_WRITE_PPTX, f"写入PPT文件失败: {str(e)}")
+        return build_error(ERR_DOC_WRITE_PPTX, f"写入PPT文件失败: {str(e)}",
+                data={"error": str(e), "file_path": file_path})
 
 
 # ============================================================
@@ -877,7 +905,8 @@ def read_docx(
     if suffix == ".doc":
         pdf_path = _auto_convert_to_pdf(file_path, suffix)
         if pdf_path is None:
-            return build_error(ERR_DOC_CONVERT_FAILED, f"自动转换.doc为PDF失败,请手动使用convert_document工具")
+            return build_error(ERR_DOC_CONVERT_FAILED, f"自动转换.doc为PDF失败,请手动使用convert_document工具",
+                    data={"file_path": file_path})
         check = _check_pdf_readable(pdf_path)
         if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
             return check
@@ -928,7 +957,8 @@ def read_xlsx(
     if suffix == ".xls":
         pdf_path = _auto_convert_to_pdf(file_path, suffix)
         if pdf_path is None:
-            return build_error(ERR_DOC_CONVERT_FAILED, f"自动转换.xls为PDF失败,请手动使用convert_document工具")
+            return build_error(ERR_DOC_CONVERT_FAILED, f"自动转换.xls为PDF失败,请手动使用convert_document工具",
+                    data={"file_path": file_path})
         check = _check_pdf_readable(pdf_path)
         if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
             return check
@@ -962,7 +992,8 @@ def read_xlsx(
             else:
                 result = build_success({"format": "json", "content": json_data}, f"读取JSON文件成功: {file_path}")
         except Exception as e:
-            result = build_error(ERR_DOC_READ_JSON, f"读取JSON文件失败: {str(e)}")
+            result = build_error(ERR_DOC_READ_JSON, f"读取JSON文件失败: {str(e)}",
+                    data={"error": str(e), "file_path": file_path})
         if result.get("code") == "SUCCESS":
             result["next_actions"] = build_next_actions([
                 ("write_xlsx", "写入Excel", "需要导出数据时"),
@@ -1072,16 +1103,19 @@ def convert_document(
     try:
         src = Path(input_path)
         if not src.exists():
-            return build_error(ERR_DOC_CONVERT_FAILED, f"文件不存在: {input_path}")
+            return build_error(ERR_DOC_CONVERT_FAILED, f"文件不存在: {input_path}",
+                    data={"input_path": input_path})
         
         src_ext = src.suffix.lower()
         supported_inputs = ['.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt', '.odt', '.ods']
         
         if src_ext not in supported_inputs:
-            return build_error(ERR_DOC_CONVERT_FAILED, f"不支持的输入格式: {src_ext},支持: {supported_inputs}")
+            return build_error(ERR_DOC_CONVERT_FAILED, f"不支持的输入格式: {src_ext},支持: {supported_inputs}",
+                    data={"src_ext": src_ext, "supported_inputs": supported_inputs})
         
         if output_format.lower() != 'pdf':
-            return build_error(ERR_DOC_CONVERT_FAILED, "当前仅支持转换为PDF格式")
+            return build_error(ERR_DOC_CONVERT_FAILED, "当前仅支持转换为PDF格式",
+                    data={"output_format": output_format})
         
         if output_path is None:
             output_path = str(src.with_suffix('.pdf'))
@@ -1117,11 +1151,13 @@ def convert_document(
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_LONG)
         
         if result.returncode != 0:
-            return build_error(ERR_DOC_CONVERT_FAILED, f"LibreOffice转换失败: {result.stderr}")
+            return build_error(ERR_DOC_CONVERT_FAILED, f"LibreOffice转换失败: {result.stderr}",
+                    data={"stderr": result.stderr, "input_path": input_path})
         
         expected_pdf = Path(out_dir) / src.with_suffix('.pdf').name
         if not expected_pdf.exists():
-            return build_error(ERR_DOC_CONVERT_FAILED, "转换后PDF文件未生成")
+            return build_error(ERR_DOC_CONVERT_FAILED, "转换后PDF文件未生成",
+                    data={"output_path": output_path, "input_path": input_path})
         
         if output_path != str(expected_pdf):
             shutil.move(str(expected_pdf), output_path)
@@ -1132,7 +1168,8 @@ def convert_document(
                     ("read_document", "读取转换后文件", "需要查看结果时"),
                 ]))
     except Exception as e:
-        return build_error(ERR_DOC_CONVERT_FAILED, f"文档转换失败: {str(e)}")
+        return build_error(ERR_DOC_CONVERT_FAILED, f"文档转换失败: {str(e)}",
+                data={"error": str(e), "input_path": input_path})
 
 
 # === 公开接口定义 — 小健 2026-05-18 ===

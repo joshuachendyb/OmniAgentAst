@@ -69,6 +69,7 @@ def generate_chart(
             path = Path(data)
             if not path.exists():
                 return build_error(ERR_DOC_CHART_GENERATE, f"文件不存在: {data}",
+                    data={"file_path": data},
                     next_actions=build_next_actions([
                         ("search_files", "搜索文件", "确认文件路径时", {"pattern": path.name}),
                     ]))
@@ -153,6 +154,7 @@ def generate_chart(
         return result
     except Exception as e:
         return build_error(ERR_DOC_CHART_GENERATE, f"生成图表失败: {str(e)}",
+            data={"error": str(e)},
             next_actions=build_next_actions([
                 ("filter_data", "尝试筛选数据后重试", "数据量过大时"),
             ]))
@@ -250,6 +252,7 @@ def analyze_data(
             path = Path(data)
             if not path.exists():
                 return build_error(ERR_DOC_ANALYZE_DATA, f"文件不存在: {data}",
+                    data={"file_path": data},
                     next_actions=build_next_actions([
                         ("search_files", "搜索文件", "确认文件路径时", {"pattern": Path(data).name}),
                         ("list_directory", "查看目录", "确认目录内容时", {"dir_path": str(Path(data).parent)}),
@@ -311,6 +314,7 @@ def analyze_data(
         )
     except Exception as e:
         return build_error(ERR_DOC_ANALYZE_DATA, f"数据分析失败: {str(e)}",
+            data={"error": str(e)},
             next_actions=build_next_actions([
                 ("filter_data", "先筛选数据", "数据量过大需要分批处理时"),
             ]))
@@ -323,6 +327,7 @@ def _load_data_to_df(data: Union[str, List[Dict[str, Any]]],
         path = Path(data)
         if not path.exists():
             return {"error": build_error(ERR_FILTER_INVALID, f"文件不存在: {data}",
+                data={"file_path": data},
                 next_actions=build_next_actions([
                     ("search_files", "搜索文件", "确认文件路径时", {"pattern": path.name})]))}
         if data.endswith('.xlsx'):
@@ -356,6 +361,7 @@ def _build_condition_mask(df: "pd.DataFrame", conditions: List[Dict[str, Any]]) 
         if not column:
             return {"error": build_error(ERR_FILTER_INVALID,
                 f"条件缺少column字段: {cond}",
+                data={"condition": cond},
                 next_actions=build_next_actions([
                     ("analyze_data", "先分析数据", "了解可用字段时")]))}
         if column not in df.columns:
@@ -450,6 +456,7 @@ def filter_data(
         )
     except Exception as e:
         return build_error(ERR_FILTER_INVALID, f"数据筛选失败: {str(e)}",
+            data={"error": str(e)},
             next_actions=build_next_actions([
                 ("analyze_data", "先分析数据概览", "确认数据内容时")]))
 from app.constants import (

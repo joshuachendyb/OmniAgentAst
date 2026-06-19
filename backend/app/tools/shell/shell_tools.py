@@ -116,11 +116,11 @@ def execute_shell_command(
     # V1: 参数校验
     if shell_type not in ("powershell", "cmd", None):
         return build_error(ERR_PARAMETER_INVALID,
-            f"shell_type仅支持powershell/cmd,当前值: '{shell_type}'")
+            f"shell_type仅支持powershell/cmd,当前值: '{shell_type}'", data={"shell_type": shell_type})
     if not command or not command.strip():
-        return build_error(ERR_PARAMETER_EMPTY, "command不能为空")
+        return build_error(ERR_PARAMETER_EMPTY, "command不能为空", data={"command": command})
     if cwd is not None and not os.path.isdir(cwd):
-        return build_error(ERR_PARAMETER_INVALID, f"工作目录不存在: {cwd}")
+        return build_error(ERR_PARAMETER_INVALID, f"工作目录不存在: {cwd}", data={"cwd": cwd})
 
     timeout_sec = timeout / 1000.0
     env = None
@@ -135,7 +135,7 @@ def execute_shell_command(
     safety_check = get_tool_safety_checker().check_before_execute("execute_shell_command", {"command": command})
     if safety_check.get("blocked", False):
         logger.warning(f"[Shell安全] 拦截: {safety_check.get('message')}")
-        return build_error(ERR_SHELL_INJECTION, safety_check.get("message", "命令不安全"))
+        return build_error(ERR_SHELL_INJECTION, safety_check.get("message", "命令不安全"), data={"command": command[:200]})
 
     # B1: 后台模式
     if run_in_background:
@@ -161,7 +161,7 @@ def execute_shell_command(
 
         return _build_shell_result(returncode, stdout_str, stderr_str, timed_out, timeout=timeout)
     except Exception as e:
-        return build_error(ERR_SHELL_EXCEPTION, f"命令执行异常: {str(e)}")
+        return build_error(ERR_SHELL_EXCEPTION, f"命令执行异常: {str(e)}", data={"command": command[:200]})
 
 
 
@@ -184,7 +184,7 @@ def _check_path_exists(path: str) -> dict:
             "路径存在" if exists else "路径不存在"
         )
     except Exception as e:
-        return build_error(ERR_SHELL_CHECK_PATH, f"检查路径失败: {str(e)}")
+        return build_error(ERR_SHELL_CHECK_PATH, f"检查路径失败: {str(e)}", data={"path": path})
 
 def find_command(command: str, all_paths: bool = False) -> dict:
     """查找系统命令路径 - 小沈 2026-05-17
@@ -243,7 +243,7 @@ def find_command(command: str, all_paths: bool = False) -> dict:
                     f"命令 '{command}' 不可用"
                 )
     except Exception as e:
-        return build_error(ERR_SHELL_FIND_COMMAND, f"查找命令失败: {str(e)}")
+        return build_error(ERR_SHELL_FIND_COMMAND, f"查找命令失败: {str(e)}", data={"command": command})
 
 
 def cleanup_background_shells() -> int:
@@ -279,10 +279,10 @@ def shell_session(
     if action == "output":
         shell_info = _background_shells.get(shell_id)
         if not shell_info:
-            return build_error(ERR_SHELL_NOT_FOUND, f"后台Shell会话不存在: {shell_id}")
+            return build_error(ERR_SHELL_NOT_FOUND, f"后台Shell会话不存在: {shell_id}", data={"shell_id": shell_id})
         process = shell_info.get("process")
         if not process:
-            return build_error(ERR_SHELL_NOT_FOUND, f"后台Shell会话无进程: {shell_id}")
+            return build_error(ERR_SHELL_NOT_FOUND, f"后台Shell会话无进程: {shell_id}", data={"shell_id": shell_id})
         stdout_str = _read_stream_nonblocking(process.stdout, "utf-8")
         stderr_str = _read_stream_nonblocking(process.stderr, "utf-8")
         is_running = process.poll() is None
@@ -313,7 +313,7 @@ def shell_session(
     elif action == "terminate":
         shell_info = _background_shells.get(shell_id)
         if not shell_info:
-            return build_error(ERR_SHELL_NOT_FOUND, f"后台Shell会话不存在: {shell_id}")
+            return build_error(ERR_SHELL_NOT_FOUND, f"后台Shell会话不存在: {shell_id}", data={"shell_id": shell_id})
         process = shell_info.get("process")
         if not process:
             _background_shells.pop(shell_id, None)
@@ -349,7 +349,7 @@ def shell_session(
             ])
         )
     else:
-        return build_error(ERR_INVALID_ACTION, f"无效的操作类型: {action},必须是 output 或 terminate")
+        return build_error(ERR_INVALID_ACTION, f"无效的操作类型: {action},必须是 output 或 terminate", data={"action": action})
 from app.constants import (
     ERR_INVALID_ACTION,
     ERR_PARAMETER_EMPTY,

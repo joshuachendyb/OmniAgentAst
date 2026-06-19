@@ -115,8 +115,8 @@ def query_sql(
         
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
-            return build_error(ERR_DB_CONNECTION, conn_error)
-        
+            return build_error(ERR_DB_CONNECTION, conn_error, data={"error": conn_error})
+
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
             engine = conn.engine
@@ -157,11 +157,13 @@ def query_sql(
             
     except sqlite3.Error as e:
         return build_error(ERR_SQL_EXEC, f"SQL执行错误: {str(e)}",
+            data={"error": str(e)},
             next_actions=build_next_actions([
                 ("get_db_schema", "查看表结构", "确认字段名是否正确时"),
             ]))
     except Exception as e:
         return build_error(ERR_QUERY_FAILED, f"执行失败: {str(e)}",
+            data={"error": str(e)},
             next_actions=build_next_actions([
                 ("get_db_schema", "查看表结构", "确认表是否存在时"),
             ]))
@@ -208,7 +210,7 @@ def _rollback_and_return(conn, error_type: str, error: Exception) -> Dict[str, A
         except Exception:
             pass
     logger.error(f"[execute_sql] {error_type}: {error}")
-    return build_error(error_type, str(error), next_actions=_SQL_NEXT_ACTIONS)
+    return build_error(error_type, str(error), data={"error": str(error)}, next_actions=_SQL_NEXT_ACTIONS)
 
 
 _SQL_NEXT_ACTIONS = build_next_actions([
@@ -247,7 +249,7 @@ def execute_sql(
 
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
-            return build_error(ERR_DB_CONNECTION, conn_error, next_actions=_SQL_NEXT_ACTIONS)
+            return build_error(ERR_DB_CONNECTION, conn_error, data={"error": conn_error}, next_actions=_SQL_NEXT_ACTIONS)
 
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
@@ -337,12 +339,12 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
     try:
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path)
         if conn is None:
-            return build_error(ERR_DB_CONNECTION, conn_error)
+            return build_error(ERR_DB_CONNECTION, conn_error, data={"error": conn_error})
 
         tables = _get_tables(conn, connection_type, db_name)
         tables = _filter_tables(tables, table_name, filter_pattern)
         if table_name and not tables:
-            return build_error(ERR_DOC_DB_TABLE_NOT_FOUND, f"表不存在: {table_name}")
+            return build_error(ERR_DOC_DB_TABLE_NOT_FOUND, f"表不存在: {table_name}", data={"table_name": table_name})
 
         schema_info = []
         for t in tables:
@@ -362,9 +364,9 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
                               next_actions=build_next_actions([("query_sql", "查询表数据", "需要查看数据时")]))
 
     except sqlite3.Error as e:
-        return build_error(ERR_SQL_EXEC, f"SQLite错误: {e}")
+        return build_error(ERR_SQL_EXEC, f"SQLite错误: {e}", data={"error": str(e)})
     except Exception as e:
-        return build_error(ERR_SCHEMA_FAILED, f"执行失败: {e}")
+        return build_error(ERR_SCHEMA_FAILED, f"执行失败: {e}", data={"error": str(e)})
     finally:
         _close_connection(conn, engine)
 

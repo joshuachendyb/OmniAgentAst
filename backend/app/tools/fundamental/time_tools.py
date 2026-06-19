@@ -141,6 +141,7 @@ def _get_current_time(
             return build_error(
                 ERR_TIME_NOW,
                 f"获取当前时间失败: {str(e2)}",
+                data={"timezone": timezone, "format": format},
                 next_actions=build_next_actions([
                     ("time_now", "重试获取时间", "需要重新获取时间时"),
                 ]),
@@ -159,6 +160,7 @@ def _time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
             return build_error(
                 ERR_TIME_DIFF,
                 f"无法解析开始时间: {start} (类型: {type(start).__name__})",
+                data={"start": str(start)},
                 next_actions=build_next_actions([("time_now", "获取当前时间", "时间解析失败时")]),
             )
         # 确保是offset-aware
@@ -174,6 +176,7 @@ def _time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
                 return build_error(
                     ERR_TIME_DIFF,
                     f"无法解析结束时间: {end} (类型: {type(end).__name__})",
+                    data={"end": str(end)},
                     next_actions=build_next_actions([("time_now", "获取当前时间", "时间解析失败时")]),
                 )
             # 确保是offset-aware
@@ -227,6 +230,7 @@ def _time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
         return build_error(
             ERR_TIME_DIFF,
             f"计算时间差失败: {str(e)}",
+            data={"start": str(start), "end": str(end)},
             next_actions=build_next_actions([
                 ("time_now", "获取当前时间", "时间解析失败时"),
             ]),
@@ -250,6 +254,7 @@ def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, 
                 return build_error(
                     ERR_TIME_ADD,
                     f"无法解析基准时间: {start}",
+                    data={"start": str(start), "delta": delta, "unit": unit},
                     next_actions=build_next_actions([("time_now", "获取当前时间", "基准时间解析失败时")]),
                 )
 
@@ -276,6 +281,7 @@ def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, 
             return build_error(
                 ERR_TIME_ADD,
                 f"不支持的单位: {unit},可选: days/hours/minutes/seconds/months",
+                data={"unit": unit, "delta": delta},
             )
 
         # 3. 格式化返回
@@ -297,6 +303,7 @@ def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, 
         return build_error(
             ERR_TIME_ADD,
             f"时间加减失败: {str(e)}",
+            data={"delta": delta, "unit": unit, "start": str(start)},
             next_actions=build_next_actions([
                 ("time_now", "获取当前时间", "计算失败时获取当前时间"),
             ]),
@@ -327,7 +334,7 @@ def time_now(
             ])
         return result
     except Exception as e:
-        return build_error(ERR_META_TIME_FORMAT, f"处理失败: {str(e)}", next_actions=build_next_actions([("time_now", "重试获取时间", "需要重新获取时")]))
+        return build_error(ERR_META_TIME_FORMAT, f"处理失败: {str(e)}", data={"format": format, "timezone": timezone}, next_actions=build_next_actions([("time_now", "重试获取时间", "需要重新获取时")]))
 
 
 def time_add(delta: float, start: Optional[Union[int, float, str]] = None, unit: Literal["days", "hours", "minutes", "seconds", "months"] = "days") -> Dict[str, Any]:
@@ -412,6 +419,7 @@ def query_calendar(
             holiday_info = _get_holiday_date_by_name(name, year)
             if holiday_info is None:
                 return build_error(ERR_TIME_DATE, f"未找到节日名称: {name},支持:端午节/春节/中秋节/元旦/国庆节/劳动节/清明节等",
+                    data={"name": name, "year": year},
                     next_actions=build_next_actions([("query_calendar", "尝试其他节日名称", "需要查找其他节日时")]))
             date_obj = datetime.strptime(holiday_info["date"], "%Y-%m-%d").date()
             isoweekday = holiday_info["isoweekday"]
@@ -440,7 +448,7 @@ def query_calendar(
         # 按日期综合检查(原有逻辑)
         dt = _parse_datetime_any(date) if date else datetime.now().astimezone()
         if dt is None:
-            return build_error(ERR_TIME_DATE, f"无法解析日期: {date}", next_actions=build_next_actions([("query_calendar", "重试日期检查", "日期格式错误时")]))
+            return build_error(ERR_TIME_DATE, f"无法解析日期: {date}", data={"date": str(date)}, next_actions=build_next_actions([("query_calendar", "重试日期检查", "日期格式错误时")]))
 
         date_obj = dt.date()
         isoweekday = dt.isoweekday()
@@ -470,14 +478,14 @@ def query_calendar(
         elif check_type == "workday":
             msg = "工作日" if is_workday else f"非工作日({'周末' if is_weekend else '节假日:' + str(holiday_name)})"
         else:
-            return build_error(ERR_META_INVALID_CHECK_TYPE, f"不支持的check_type: {check_type},可选: weekend/holiday/workday/next_workday")
+            return build_error(ERR_META_INVALID_CHECK_TYPE, f"不支持的check_type: {check_type},可选: weekend/holiday/workday/next_workday", data={"check_type": check_type})
 
         return build_success(result_data, msg, llm_data={"date": result_data["date"], "is_weekend": is_weekend, "is_holiday": is_hol, "is_workday": is_workday, "holiday_name": holiday_name}, next_actions=build_next_actions([
             ("time_add", "计算下一个工作日偏移", "需要排程计算时"),
             ("query_calendar", "检查其他日期属性", "需要判断其他日期时"),
         ]))
     except Exception as e:
-        return build_error(ERR_TIME_DATE, f"检查失败: {str(e)}", next_actions=build_next_actions([("query_calendar", "重试日期检查", "需要重新检查时")]))
+        return build_error(ERR_TIME_DATE, f"检查失败: {str(e)}", data={"date": str(date), "check_type": check_type}, next_actions=build_next_actions([("query_calendar", "重试日期检查", "需要重新检查时")]))
 
 
 

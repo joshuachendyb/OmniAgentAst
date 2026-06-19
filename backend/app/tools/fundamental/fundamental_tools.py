@@ -119,7 +119,7 @@ def tool_search(query: str) -> Dict[str, Any]:
         匹配的工具列表
     """
     if not query.strip():
-        return build_error(ERR_DOC_QUERY_EMPTY, "搜索关键词不能为空")
+        return build_error(ERR_DOC_QUERY_EMPTY, "搜索关键词不能为空", data={"query": query})
 
     all_tools = tool_registry._tools
     if not all_tools:

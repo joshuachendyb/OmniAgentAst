@@ -789,40 +789,40 @@ async def _read_text_file(
         # 【新增 2026-05-02 小沈】二进制文件保护
         is_binary, binary_reason = _is_binary_file(file_path)
         if is_binary:
-            return build_error(ERR_FILE_READ_BINARY_FILE, f"{binary_reason}。请使用 read_media_file 工具读取媒体文件(图片/音频/视频)。")
+            return build_error(ERR_FILE_READ_BINARY_FILE, f"{binary_reason}。请使用 read_media_file 工具读取媒体文件(图片/音频/视频)。", data={"file_path": file_path})
         
         # 【修复 2026-05-01 小沈】参数校验(4合1压缩)
         for _name, _val in [("head", head), ("tail", tail), ("offset", offset), ("limit", limit)]:
             if _val is not None and _val < 1:
-                return build_error(ERR_PARAM_INVALID, f"{_name}必须>=1,当前值: {_val}")
+                return build_error(ERR_PARAM_INVALID, f"{_name}必须>=1,当前值: {_val}", data={_name: _val})
 
         # 验证参数不能同时使用
         if head is not None and tail is not None:
-            return build_error(ERR_PARAM_CONFLICT, "head 和 tail 参数不能同时使用,请只使用其中一个")
+            return build_error(ERR_PARAM_CONFLICT, "head 和 tail 参数不能同时使用,请只使用其中一个", data={"head": head, "tail": tail})
 
         if (head is not None or tail is not None) and (offset is not None or limit is not None):
-            return build_error(ERR_PARAM_CONFLICT, "head/tail 与 offset/limit 不能同时使用。head/tail用于快捷读取首尾,offset/limit用于分页读取")
+            return build_error(ERR_PARAM_CONFLICT, "head/tail 与 offset/limit 不能同时使用。head/tail用于快捷读取首尾,offset/limit用于分页读取", data={"head": head, "tail": tail, "offset": offset, "limit": limit})
 
         # 验证路径合法性
         is_valid, error_msg = _validate_path(file_path)
         if not is_valid:
-            return build_error(ERR_PATH_INVALID, error_msg)
+            return build_error(ERR_PATH_INVALID, error_msg, data={"file_path": file_path})
 
         path = Path(file_path)
         if not path.exists():
-            return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {file_path}")
+            return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {file_path}", data={"file_path": file_path})
 
         if not path.is_file():
-            return build_error(ERR_PATH_NOT_FILE, f"路径不是文件: {file_path}")
+            return build_error(ERR_PATH_NOT_FILE, f"路径不是文件: {file_path}", data={"file_path": file_path})
 
         # 尝试编码读取
         file_size = path.stat().st_size
         if file_size > MAX_READ_SIZE:
-            return build_error(ERR_FILE_READ_TOO_LARGE, f"文件过大({file_size}字节)。请使用 head/tail 分段读取。")
+            return build_error(ERR_FILE_READ_TOO_LARGE, f"文件过大({file_size}字节)。请使用 head/tail 分段读取。", data={"file_path": file_path, "file_size": file_size})
         
         content, used_encoding, error = await _try_read_file_with_encodings(path, encoding)
         if error:
-            return build_error(ERR_FILE_READ_FAILED, error)
+            return build_error(ERR_FILE_READ_FAILED, error, data={"error": error, "file_path": file_path})
         
         lines = content.splitlines(keepends=True)
         _data = _select_lines(lines, head, tail, offset, limit)
@@ -843,7 +843,7 @@ async def _read_text_file(
 
     except Exception as e:
         logger.error(f"read_text_file failed: {file_path}: {e}")
-        return build_error(ERR_FILE_READ_FAILED, str(e))
+        return build_error(ERR_FILE_READ_FAILED, str(e), data={"error": str(e), "file_path": file_path})
 
 
 def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
@@ -967,7 +967,7 @@ async def write_text_file(
     """
     error, checked_content = _check_write_safety(file_path, content, encoding)
     if error:
-        return build_error(ERR_FILE_CONTENT_BLOCKED, error)
+        return build_error(ERR_FILE_CONTENT_BLOCKED, error, data={"file_path": file_path, "error": error})
     
     if unescape:
         checked_content = checked_content.replace("\\\\", "\\").replace("\\n", "\n").replace("\\\"", "\"")
@@ -976,7 +976,7 @@ async def write_text_file(
     
     task_id = _current_task_id.get()
     if not task_id:
-        return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID")
+        return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID", data={"file_path": file_path})
     
     path = Path(file_path)
     
@@ -998,11 +998,11 @@ async def write_text_file(
                 f"写入文件成功: {path} ({len(checked_content.encode(encoding))}字节)"
             )
         else:
-            return build_error(ERR_FILE_WRITE_FAILED, "写入文件失败,safety拦截")
+            return build_error(ERR_FILE_WRITE_FAILED, "写入文件失败,safety拦截", data={"file_path": file_path})
 
     except Exception as e:
         logger.error(f"Failed to write file {file_path}: {e}")
-        return build_error(ERR_FILE_WRITE_FAILED, str(e))
+        return build_error(ERR_FILE_WRITE_FAILED, str(e), data={"error": str(e), "file_path": file_path})
 
 
 async def list_directory(
@@ -1018,11 +1018,11 @@ async def list_directory(
     P11统一入口:list/tree/statistics三合一
     """
     if format not in ("list", "tree"):
-        return build_error(ERR_PARAM_INVALID, f"format只支持'list'或'tree',当前值: '{format}'")
+        return build_error(ERR_PARAM_INVALID, f"format只支持'list'或'tree',当前值: '{format}'", data={"format": format})
     if max_depth < 1:
-        return build_error(ERR_PARAM_INVALID, f"max_depth必须>=1,当前值: {max_depth}")
+        return build_error(ERR_PARAM_INVALID, f"max_depth必须>=1,当前值: {max_depth}", data={"max_depth": max_depth})
     if sortBy not in ("name", "size", "mtime"):
-        return build_error(ERR_PARAM_INVALID, f"sortBy只支持'name'/'size'/'mtime',当前值: '{sortBy}'")
+        return build_error(ERR_PARAM_INVALID, f"sortBy只支持'name'/'size'/'mtime',当前值: '{sortBy}'", data={"sortBy": sortBy})
 
     if format == "tree":
         tree_result = await _get_directory_tree(dir_path=dir_path, max_depth=max_depth)
@@ -1035,7 +1035,7 @@ async def list_directory(
 
     is_valid, error_msg = _validate_path(dir_path)
     if not is_valid:
-        return build_error(ERR_PATH_INVALID, error_msg)
+        return build_error(ERR_PATH_INVALID, error_msg, data={"file_path": dir_path})
 
     path = Path(dir_path)
     start_offset = 0
@@ -1043,13 +1043,13 @@ async def list_directory(
         try:
             start_offset = decode_page_token(page_token)
         except Exception as e:
-            return build_error(ERR_PARAM_INVALID, f"Invalid page token: {e}")
+            return build_error(ERR_PARAM_INVALID, f"Invalid page token: {e}", data={"page_token": page_token})
 
     try:
         if not path.exists():
-            return build_error(ERR_FILE_NOT_FOUND, f"Directory not found: {dir_path}")
+            return build_error(ERR_FILE_NOT_FOUND, f"Directory not found: {dir_path}", data={"file_path": dir_path})
         if not path.is_dir():
-            return build_error(ERR_FILE_PATH_NOT_DIR, f"Not a directory: {dir_path}")
+            return build_error(ERR_FILE_PATH_NOT_DIR, f"Not a directory: {dir_path}", data={"file_path": dir_path})
 
         deadline = time.monotonic() + TOOL_TIMEOUTS.get("list_directory", TOOL_TIMEOUTS["default"]) - 2
         all_entries, stats, file_types, size_distribution = await asyncio.to_thread(
@@ -1082,7 +1082,7 @@ async def list_directory(
 
     except Exception as e:
         logger.error(f"Failed to list directory {dir_path}: {e}")
-        return build_error(ERR_FILE_LIST_DIR_FAILED, str(e))
+        return build_error(ERR_FILE_LIST_DIR_FAILED, str(e), data={"error": str(e), "file_path": dir_path})
 
 
 async def _delete_file(
@@ -1096,7 +1096,7 @@ async def _delete_file(
     # 验证路径合法性
     is_valid, error_msg = _validate_path(file_path)
     if not is_valid:
-        return build_error(ERR_PATH_INVALID, error_msg)
+        return build_error(ERR_PATH_INVALID, error_msg, data={"file_path": file_path})
 
     path = Path(file_path)
 
@@ -1106,7 +1106,7 @@ async def _delete_file(
 
         task_id = _current_task_id.get()
         if not task_id:
-            return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID,请先创建一个任务")
+            return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID,请先创建一个任务", data={"file_path": file_path})
 
         operation_id = record_operation(
             task_id=task_id,
@@ -1129,11 +1129,11 @@ async def _delete_file(
         if is_ok:
             return _build_delete_result(operation_id, path, force, method)
         else:
-            return build_error(ERR_FILE_DELETE_FAILED, "删除文件失败,safety拦截")
+            return build_error(ERR_FILE_DELETE_FAILED, "删除文件失败,safety拦截", data={"file_path": file_path})
 
     except Exception as e:
         logger.error(f"Failed to delete {file_path}: {e}")
-        return build_error(ERR_FILE_DELETE_FAILED, str(e))
+        return build_error(ERR_FILE_DELETE_FAILED, str(e), data={"error": str(e), "file_path": file_path})
 
 
 async def _move_file(
@@ -1145,23 +1145,23 @@ async def _move_file(
     # 验证源路径
     is_valid_src, error_msg_src = _validate_path(source_path)
     if not is_valid_src:
-        return build_error(ERR_PATH_INVALID, f"源路径{error_msg_src}")
+        return build_error(ERR_PATH_INVALID, f"源路径{error_msg_src}", data={"file_path": source_path})
 
     # 验证目标路径
     is_valid_dst, error_msg_dst = _validate_path(destination_path)
     if not is_valid_dst:
-        return build_error(ERR_PATH_INVALID, f"目标路径{error_msg_dst}")
+        return build_error(ERR_PATH_INVALID, f"目标路径{error_msg_dst}", data={"file_path": destination_path})
     
     src = Path(source_path)
     dst = Path(destination_path)
     
     try:
         if not src.exists():
-            return build_error(ERR_FILE_NOT_FOUND, f"源文件不存在: {source_path}")
+            return build_error(ERR_FILE_NOT_FOUND, f"源文件不存在: {source_path}", data={"file_path": source_path})
         
         task_id = _current_task_id.get()
         if not task_id:
-            return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID,请先创建一个任务")
+            return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID,请先创建一个任务", data={"file_path": source_path})
 
         operation_id = record_operation(
             task_id=task_id,
@@ -1195,11 +1195,11 @@ async def _move_file(
                 {"operation_id": operation_id, "source": str(src), "destination": str(dst)},
                 f"已移动: {src.name} -> {dst}"
             )
-        return build_error(ERR_FILE_MOVE_FAILED, "移动文件失败")
+        return build_error(ERR_FILE_MOVE_FAILED, "移动文件失败", data={"source": str(source_path), "destination": str(destination_path)})
 
     except Exception as e:
         logger.error(f"Failed to move {source_path} -> {destination_path}: {e}")
-        return build_error(ERR_FILE_MOVE_FAILED, str(e))
+        return build_error(ERR_FILE_MOVE_FAILED, str(e), data={"error": str(e), "source": str(source_path), "destination": str(destination_path)})
 
 
 async def search_files(
@@ -1214,12 +1214,12 @@ async def search_files(
     """搜索文件名 — 小沈 2026-05-19 精简参数(9→7);小健 2026-05-25 重构"""
     is_valid, error_msg = _validate_path(search_dir)
     if not is_valid:
-        return build_error(ERR_PATH_INVALID, error_msg)
+        return build_error(ERR_PATH_INVALID, error_msg, data={"file_path": search_dir})
     if not pattern or not pattern.strip():
-        return build_error(ERR_PARAM_INVALID, "文件名匹配模式不能为空,请提供有效的文件名模式")
+        return build_error(ERR_PARAM_INVALID, "文件名匹配模式不能为空,请提供有效的文件名模式", data={"pattern": pattern})
     path = Path(os.path.expanduser(search_dir))
     if not path.exists():
-        return build_error(ERR_FILE_NOT_FOUND, f"搜索目录不存在: {search_dir}")
+        return build_error(ERR_FILE_NOT_FOUND, f"搜索目录不存在: {search_dir}", data={"file_path": search_dir})
 
     deadline = time.monotonic() + TOOL_TIMEOUTS.get("search_files", TOOL_TIMEOUTS["default"]) - 2
     all_matches, llm_preview = [], []
@@ -1262,7 +1262,7 @@ async def search_files(
     try:
         await asyncio.to_thread(_search_sync)
     except Exception as e:
-        return build_error(ERR_FILE_SEARCH_FAILED, f"搜索失败: {e}")
+        return build_error(ERR_FILE_SEARCH_FAILED, f"搜索失败: {e}", data={"error": str(e), "file_path": search_dir})
 
     all_matches.sort(key=lambda x: x.get("name", ""))
     return _paginate_search(all_matches, search_dir, llm_preview, DEFAULT_PAGE_SIZE, start_offset)
@@ -1421,21 +1421,21 @@ async def read_media_file(
         try:
             is_valid, error_msg = _validate_path(file_path)
             if not is_valid:
-                return build_error(ERR_PATH_INVALID, error_msg)
+                return build_error(ERR_PATH_INVALID, error_msg, data={"file_path": file_path})
 
             path = Path(file_path)
             if not path.exists():
-                return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {file_path}")
+                return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {file_path}", data={"file_path": file_path})
             if not path.is_file():
-                return build_error(ERR_PATH_NOT_FILE, f"路径不是文件: {file_path}")
+                return build_error(ERR_PATH_NOT_FILE, f"路径不是文件: {file_path}", data={"file_path": file_path})
 
             file_size = path.stat().st_size
             if file_size > MAX_MEDIA_READ_SIZE:
-                return build_error(ERR_FILE_READ_TOO_LARGE, f"媒体文件过大({file_size}字节),超过读取上限{MAX_MEDIA_READ_SIZE//1024//1024}MB")
+                return build_error(ERR_FILE_READ_TOO_LARGE, f"媒体文件过大({file_size}字节),超过读取上限{MAX_MEDIA_READ_SIZE//1024//1024}MB", data={"file_path": file_path, "file_size": file_size})
 
             suffix = path.suffix.lower()
             if suffix == '.pdf':
-                return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED, "PDF文件请使用 read_document 工具读取,read_media_file 不支持PDF")
+                return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED, "PDF文件请使用 read_document 工具读取,read_media_file 不支持PDF", data={"file_path": file_path})
 
             mime_map = {
                 ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
@@ -1462,7 +1462,7 @@ async def read_media_file(
             )
         except Exception as e:
             logger.error(f"read_media_file failed: {file_path}: {e}")
-            return build_error(ERR_FILE_READ_FAILED, str(e))
+            return build_error(ERR_FILE_READ_FAILED, str(e), data={"error": str(e), "file_path": file_path})
 
 
 async def _read_batch_file(
@@ -1470,11 +1470,11 @@ async def _read_batch_file(
 ) -> Dict[str, Any]:
     """同时读取多个文本文件 - 小沈 2026-05-01"""
     if not file_paths:
-        return build_error(ERR_PARAM_INVALID, "文件路径列表为空")
+        return build_error(ERR_PARAM_INVALID, "文件路径列表为空", data={"file_paths": file_paths})
 
     # 【修复 2026-05-01 小沈】OOM防护:批量文件数上限
     if len(file_paths) > MAX_BATCH_FILE_COUNT:
-        return build_error(ERR_PARAM_INVALID, f"批量读取文件数({len(file_paths)})超过上限{MAX_BATCH_FILE_COUNT},请分批读取")
+        return build_error(ERR_PARAM_INVALID, f"批量读取文件数({len(file_paths)})超过上限{MAX_BATCH_FILE_COUNT},请分批读取", data={"count": len(file_paths), "max": MAX_BATCH_FILE_COUNT})
 
     # 【修复 2026-05-01 小沈】B1: 添加Semaphore并发限制,防止大量文件并发读取耗尽文件句柄
     semaphore = asyncio.Semaphore(20)
@@ -1557,26 +1557,26 @@ async def _precise_replace_in_file(
         """精确替换文件中的字符串(21.1 重构,小沈 2026-05-25 实施)
         2026-06-19 小健 修复: 移除self参数,改为独立函数调用"""
         if not old_string:
-            return build_error(ERR_PARAM_INVALID, "old_string不能为空,空字符串替换会导致内容爆炸")
+            return build_error(ERR_PARAM_INVALID, "old_string不能为空,空字符串替换会导致内容爆炸", data={"file_path": file_path})
 
         task_id = _current_task_id.get(None)
         if not task_id:
-            return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID")
+            return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID", data={"file_path": file_path})
 
         is_binary, reason = _is_binary_file(file_path)
         if is_binary:
-            return build_error(ERR_FILE_READ_BINARY_FILE, f"{reason}。请使用专业工具操作二进制文件。")
+            return build_error(ERR_FILE_READ_BINARY_FILE, f"{reason}。请使用专业工具操作二进制文件。", data={"file_path": file_path})
 
         try:
             is_valid, err = _validate_path(file_path)
             if not is_valid:
-                return build_error(ERR_PATH_INVALID, err)
+                return build_error(ERR_PATH_INVALID, err, data={"file_path": file_path})
             path = Path(file_path)
             if not path.exists():
-                return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {file_path}")
+                return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {file_path}", data={"file_path": file_path})
             if path.stat().st_size > MAX_READ_SIZE:
                 return build_error(ERR_FILE_READ_TOO_LARGE,
-                    f"文件过大({path.stat().st_size}字节),超过替换上限{MAX_READ_SIZE//1024//1024}MB")
+                    f"文件过大({path.stat().st_size}字节),超过替换上限{MAX_READ_SIZE//1024//1024}MB", data={"file_path": file_path, "file_size": path.stat().st_size})
 
             operation_id = record_operation(
                 task_id=task_id, operation_type=OperationType.MODIFY,
@@ -1604,7 +1604,7 @@ async def _precise_replace_in_file(
                 operation_func=_replace_sync
             )
             if not success:
-                return build_error(ERR_FILE_REPLACE_FAILED, "文件替换失败,safety拦截")
+                return build_error(ERR_FILE_REPLACE_FAILED, "文件替换失败,safety拦截", data={"file_path": str(path)})
 
             data = {
                 "replaced_count": replace_result['count'],
@@ -1624,9 +1624,9 @@ async def _precise_replace_in_file(
             )
 
         except ValueError as e:
-            return build_error(ERR_FILE_REPLACE_FAILED, str(e))
+            return build_error(ERR_FILE_REPLACE_FAILED, str(e), data={"error": str(e), "file_path": file_path})
         except Exception as e:
-            return build_error(ERR_FILE_REPLACE_FAILED, f"替换失败: {e}")
+            return build_error(ERR_FILE_REPLACE_FAILED, f"替换失败: {e}", data={"error": str(e), "file_path": file_path})
 
 
 def _read_file_with_encodings_sync(path: Path, preferred: Optional[str] = None) -> Tuple[Optional[str], Optional[str], Optional[str]]:
@@ -1731,22 +1731,22 @@ async def _apply_edits(
     try:
         is_valid, error_msg = _validate_path(file_path)
         if not is_valid:
-            return build_error(ERR_PATH_INVALID, error_msg)
+            return build_error(ERR_PATH_INVALID, error_msg, data={"file_path": file_path})
 
         task_id = _current_task_id.get()
         if not task_id:
-            return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID,请先创建一个任务")
+            return build_error(ERR_META_NO_ACTIVE_TASK, "当前没有活跃任务ID,请先创建一个任务", data={"file_path": file_path})
 
         is_binary, binary_reason = _is_binary_file(file_path)
         if is_binary:
-            return build_error(ERR_FILE_READ_BINARY_FILE, f"{binary_reason}。请使用对应的专业工具操作二进制文件。")
+            return build_error(ERR_FILE_READ_BINARY_FILE, f"{binary_reason}。请使用对应的专业工具操作二进制文件。", data={"file_path": file_path})
 
         path = Path(file_path)
         if not path.exists():
-            return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {file_path}")
+            return build_error(ERR_FILE_NOT_FOUND, f"文件不存在: {file_path}", data={"file_path": file_path})
 
         if path.stat().st_size > MAX_READ_SIZE:
-            return build_error(ERR_FILE_READ_TOO_LARGE, f"文件过大({path.stat().st_size}字节),超过编辑上限{MAX_READ_SIZE//1024//1024}MB")
+            return build_error(ERR_FILE_READ_TOO_LARGE, f"文件过大({path.stat().st_size}字节),超过编辑上限{MAX_READ_SIZE//1024//1024}MB", data={"file_path": file_path, "file_size": path.stat().st_size})
 
         operation_id = record_operation(
             task_id=task_id,
@@ -1774,10 +1774,10 @@ async def _apply_edits(
                 },
                 f"已应用 {edit_result['applied_edits']}/{edit_result['total_edits']} 处编辑"
             )
-        return build_error(ERR_FILE_EDIT_FAILED, "文件编辑失败,safety拦截")
+        return build_error(ERR_FILE_EDIT_FAILED, "文件编辑失败,safety拦截", data={"file_path": file_path})
     except Exception as e:
         logger.error(f"edit_text_file failed: {file_path}: {e}")
-        return build_error(ERR_FILE_EDIT_FAILED, str(e))
+        return build_error(ERR_FILE_EDIT_FAILED, str(e), data={"error": str(e), "file_path": file_path})
 
 
 async def grep_file_content(
@@ -1801,9 +1801,9 @@ async def grep_file_content(
         search_path = Path(search_dir).resolve() if search_dir else Path.cwd().resolve()
         is_valid, error_msg = _validate_path(str(search_path))
         if not is_valid:
-            return build_error(ERR_PATH_INVALID, error_msg)
+            return build_error(ERR_PATH_INVALID, error_msg, data={"file_path": str(search_path)})
         if not pattern:
-            return build_error(ERR_PARAM_INVALID, "搜索模式不能为空")
+            return build_error(ERR_PARAM_INVALID, "搜索模式不能为空", data={"pattern": pattern})
 
         deadline = time.monotonic() + TOOL_TIMEOUTS.get("grep_file_content", TOOL_TIMEOUTS["default"]) - 2
         matches, total_matches = await asyncio.to_thread(
@@ -1839,7 +1839,7 @@ async def grep_file_content(
             ]),
         )
     except Exception as e:
-        return build_error(ERR_FILE_CONTENT_SEARCH_FAILED, str(e))
+        return build_error(ERR_FILE_CONTENT_SEARCH_FAILED, str(e), data={"error": str(e), "pattern": pattern, "search_dir": str(search_dir)})
 
 
 async def get_directory_tree(dir_path: str) -> Dict[str, Any]:
@@ -1860,13 +1860,13 @@ async def _get_directory_tree(
     try:
         is_valid, error_msg = _validate_path(dir_path)
         if not is_valid:
-            return build_error(ERR_PATH_INVALID, error_msg)
+            return build_error(ERR_PATH_INVALID, error_msg, data={"file_path": dir_path})
 
         path = Path(dir_path)
         if not path.exists():
-            return build_error(ERR_FILE_DIRECTORY_NOT_FOUND, f"目录不存在: {dir_path}")
+            return build_error(ERR_FILE_DIRECTORY_NOT_FOUND, f"目录不存在: {dir_path}", data={"file_path": dir_path})
         if not path.is_dir():
-            return build_error(ERR_FILE_PATH_NOT_DIR, f"不是目录: {dir_path}")
+            return build_error(ERR_FILE_PATH_NOT_DIR, f"不是目录: {dir_path}", data={"file_path": dir_path})
 
         # 【修复 2026-05-01 小沈】默认max_depth防止无限递归
         effective_max_depth = max_depth if max_depth is not None else 10
@@ -1923,7 +1923,7 @@ async def _get_directory_tree(
         )
     except Exception as e:
         logger.error(f"get_directory_tree failed: {dir_path}: {e}")
-        return build_error(ERR_FILE_LIST_DIR_FAILED, str(e))
+        return build_error(ERR_FILE_LIST_DIR_FAILED, str(e), data={"error": str(e), "file_path": dir_path})
 
 
 # ============================================================
@@ -2001,7 +2001,7 @@ async def extract_archive(
         preserve_permissions=True
     )
     if "data" not in result:
-        return build_error(ERR_FILE_EXTRACT, result.get("message", "解压失败"))
+        return build_error(ERR_FILE_EXTRACT, result.get("message", "解压失败"), data={"archive_path": source})
     return result
 
 async def move_file(
@@ -2074,7 +2074,7 @@ def _build_format_result(
 ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
     """构建 data_file_format 的统一返回数据 + llm_data(21.2 组件2,小沈 2026-05-25 实施)"""
     if result.get("code", "").startswith("ERR_"):
-        return build_error(ERR_DOC_DATA_FORMAT_FAILED, result.get("message", "未知错误")), None
+        return build_error(ERR_DOC_DATA_FORMAT_FAILED, result.get("message", "未知错误"), data={"file_path": file_path}), None
 
     result_data = result.get("data", result)
     suffix = {}
@@ -2111,11 +2111,11 @@ async def _data_format_exec(
     """内部执行:格式检测+分发调度 — 小欧 2026-06-17"""
     dispatch = _FORMAT_DISPATCH.get(detected)
     if not dispatch:
-        return build_error(ERR_PARAM_INVALID, f"不支持的格式: {detected}")
+        return build_error(ERR_PARAM_INVALID, f"不支持的格式: {detected}", data={"format": detected, "file_path": file_path})
     func = dispatch[action]
     if func is None:
         return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED,
-            f"{detected.upper()}格式暂不支持{action}操作")
+            f"{detected.upper()}格式暂不支持{action}操作", data={"format": detected, "action": action, "file_path": file_path})
     try:
         kwargs = {"file_path": file_path, "encoding": encoding}
         if action == "write":
@@ -2129,7 +2129,7 @@ async def _data_format_exec(
         return resp
     except Exception as e:
         logger.error(f"[_data_format_exec] 执行失败: {e}")
-        return build_error(ERR_DOC_DATA_FORMAT_FAILED, str(e))
+        return build_error(ERR_DOC_DATA_FORMAT_FAILED, str(e), data={"error": str(e), "file_path": file_path})
 
 
 async def read_data_file(
@@ -2139,10 +2139,10 @@ async def read_data_file(
 ) -> Dict[str, Any]:
     """读取结构化配置文件 — 小欧 2026-06-17"""
     if not file_path:
-        return build_error(ERR_PARAM_INVALID, "file_path是必填参数")
+        return build_error(ERR_PARAM_INVALID, "file_path是必填参数", data={"file_path": file_path})
     is_valid, err = _validate_path(file_path)
     if not is_valid:
-        return build_error(ERR_PATH_INVALID, err)
+        return build_error(ERR_PATH_INVALID, err, data={"file_path": file_path})
     detected = format
     if not detected:
         ext = os.path.splitext(file_path)[1].lower()
@@ -2154,7 +2154,7 @@ async def read_data_file(
         detected = _ext_map.get(ext)
     if not detected:
         return build_error(ERR_DOC_FORMAT_NOT_DETECTED,
-            f"无法识别文件格式: {file_path},请通过format参数指定")
+            f"无法识别文件格式: {file_path},请通过format参数指定", data={"file_path": file_path})
     return await _data_format_exec(file_path, "read", detected, encoding)
 
 
@@ -2166,12 +2166,12 @@ async def write_data_file(
 ) -> Dict[str, Any]:
     """写入结构化配置文件 — 小欧 2026-06-17"""
     if not file_path:
-        return build_error(ERR_PARAM_INVALID, "file_path是必填参数")
+        return build_error(ERR_PARAM_INVALID, "file_path是必填参数", data={"file_path": file_path})
     if data is None:
-        return build_error(ERR_PARAM_INVALID, "data是必填参数")
+        return build_error(ERR_PARAM_INVALID, "data是必填参数", data={"data": data})
     is_valid, err = _validate_path(file_path)
     if not is_valid:
-        return build_error(ERR_PATH_INVALID, err)
+        return build_error(ERR_PATH_INVALID, err, data={"file_path": file_path})
     detected = format
     if not detected:
         ext = os.path.splitext(file_path)[1].lower()
@@ -2182,10 +2182,10 @@ async def write_data_file(
         detected = _ext_map.get(ext)
     if not detected:
         return build_error(ERR_DOC_FORMAT_NOT_DETECTED,
-            f"无法识别文件格式: {file_path},请通过format参数指定")
+            f"无法识别文件格式: {file_path},请通过format参数指定", data={"file_path": file_path})
     if detected in ("ini", "xml", "properties"):
         return build_error(ERR_DOC_FORMAT_NOT_SUPPORTED,
-            f"{detected.upper()}格式暂不支持写入")
+            f"{detected.upper()}格式暂不支持写入", data={"format": detected, "file_path": file_path})
     return await _data_format_exec(file_path, "write", detected, encoding, data, indent)
 
 def _match_fnmatch(name: str, pattern: str, ignore_case: bool) -> bool:

@@ -29,9 +29,10 @@ _timer_callbacks: Dict[str, Dict[str, Any]] = {}
 _timer_events: list[Dict[str, Any]] = []
 
 
-def _error_timer_set(reason: str) -> Dict[str, Any]:
+def _error_timer_set(reason: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     return build_error(
         ERR_TIMER_SET, reason,
+        data=data or {},
         next_actions=build_next_actions([("timer_set", "重试设置定时器", "需要重新设置时")]),
     )
 
@@ -63,9 +64,9 @@ async def _invoke_timer_callback(timer_id: str, callback: str) -> Dict[str, Any]
 async def _timer_set(delay: float, callback: str) -> Dict[str, Any]:
     global _timer_counter
     if delay <= 0:
-        return _error_timer_set("延迟时间必须大于0")
+        return _error_timer_set("延迟时间必须大于0", data={"delay": delay})
     if delay > 86400:
-        return _error_timer_set("延迟时间不能超过24小时")
+        return _error_timer_set("延迟时间不能超过24小时", data={"delay": delay})
 
     _timer_counter += 1
     timer_id = f"timer_{_timer_counter}_{get_timestamp_ms()}"
@@ -105,6 +106,7 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
         return result
     except Exception as e:
         return build_error(ERR_TIMER_SET, f"定时器设置失败: {str(e)}",
+            data={"delay": delay, "callback": callback},
             next_actions=build_next_actions([("timer_set", "重试", "需要重新设置时")]))
 
 
@@ -129,6 +131,7 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
         )
     except Exception as e:
         return build_error(ERR_TIMER_CLEAR, f"清除定时器失败: {str(e)}",
+            data={"timer_id": timer_id},
             next_actions=build_next_actions([("timer_list", "列出定时器", "需要查看现有定时器时")]))
 
 
@@ -155,6 +158,7 @@ def timer_list() -> Dict[str, Any]:
         )
     except Exception as e:
         return build_error(ERR_TIMER_LIST, f"获取定时器列表失败: {str(e)}",
+            data={},
             next_actions=build_next_actions([("timer_set", "重试", "需要重新操作时")]))
 
 

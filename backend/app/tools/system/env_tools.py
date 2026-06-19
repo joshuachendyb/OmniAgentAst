@@ -60,7 +60,7 @@ def _list_env_vars(prefix: Optional[str] = None) -> dict:
             next_actions=build_next_actions([("set_env", "设置环境变量", "需要修改环境变量时")]))
     except Exception as e:
         logger.error(f"[list_env] 列出环境变量失败: {e}")
-        return build_error(ERR_SYS_ENV_LIST, f"列出环境变量失败: {str(e)}")
+        return build_error(ERR_SYS_ENV_LIST, f"列出环境变量失败: {str(e)}", data={"prefix": prefix})
 
 
 def _get_env_by_scope(name: str, scope: str) -> Optional[str]:
@@ -105,12 +105,12 @@ def get_env(name: Optional[str] = None, scope: str = "process",
         {code, data, message}
     """
     if action not in ("get", "list"):
-        return build_error(ERR_SYS_ENV_INVALID_ACTION, f"无效的action: {action},支持: get/list")
+        return build_error(ERR_SYS_ENV_INVALID_ACTION, f"无效的action: {action},支持: get/list", data={"action": action})
     if action == "list":
         return _list_env_vars(prefix)
 
     if not name:
-        return build_error(ERR_SYS_ENV_INVALID_NAME, "action='get'时name参数必填")
+        return build_error(ERR_SYS_ENV_INVALID_NAME, "action='get'时name参数必填", data={"action": action})
 
     try:
         value = _get_env_by_scope(name, scope)
@@ -128,7 +128,7 @@ def get_env(name: Optional[str] = None, scope: str = "process",
 
     except Exception as e:
         logger.error(f"[get_env] 获取环境变量失败: {e}")
-        return build_error(ERR_SYS_ENV_GET, f"获取环境变量失败: {str(e)}")
+        return build_error(ERR_SYS_ENV_GET, f"获取环境变量失败: {str(e)}", data={"name": name})
 
 
 def _env_success(name: str, value: Any, scope: str, deleted: bool = False,
@@ -222,15 +222,15 @@ def set_env(name: str, value: Optional[str] = None, scope: str = "process",
         {code, data, message}
     """
     if not name or not name.strip():
-        return build_error(ERR_SYS_ENV_INVALID_NAME, "环境变量名称不能为空")
+        return build_error(ERR_SYS_ENV_INVALID_NAME, "环境变量名称不能为空", data={"action": action})
     if action not in ("set", "delete"):
-        return build_error(ERR_SYS_ENV_INVALID_ACTION, f"无效的action: {action}")
+        return build_error(ERR_SYS_ENV_INVALID_ACTION, f"无效的action: {action}", data={"action": action})
     if action == "delete":
         return _delete_env(name, scope)
     if value is None:
-        return build_error(ERR_SYS_ENV_INVALID_VALUE, "环境变量值不能为None")
+        return build_error(ERR_SYS_ENV_INVALID_VALUE, "环境变量值不能为None", data={"name": name})
     if scope not in ("process", "user", "system"):
-        return build_error(ERR_SYS_ENV_INVALID_SCOPE, f"无效的作用域: {scope}")
+        return build_error(ERR_SYS_ENV_INVALID_SCOPE, f"无效的作用域: {scope}", data={"scope": scope})
 
     existing = _read_env(name, scope)
     if existing == value:
