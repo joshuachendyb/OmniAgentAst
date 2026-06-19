@@ -61,6 +61,7 @@ def _get_failure_hint(tool_name: str, tool_params: Optional[dict] = None, result
                 "ERR_PERMISSION_DENIED": "权限不足,请检查文件访问权限。",
                 "ERR_TIMEOUT": "操作超时,请稍后重试或检查网络连接。",
                 "ERR_NETWORK": "网络连接失败,请检查网络状态后重试。",
+                "ERR_MISSING_PARAM": "缺少必需参数,请补充完整参数后重试。",
                 "ERR_INVALID_PARAMS": "参数格式不正确,请检查参数类型和格式。",
             }
             for prefix, hint in hints.items():

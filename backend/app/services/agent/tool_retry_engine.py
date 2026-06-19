@@ -128,7 +128,7 @@ class ToolRetryEngine:
                 if missing:
                     return self._build_retry_error(
                         ERR_MISSING_PARAM,
-                        f"缺少必需参数: {action}",
+                        f"缺少必需参数: {action}, 缺失: {missing}",
                         0, error_type="missing_param",
                     )
         except (ImportError, AttributeError) as e:

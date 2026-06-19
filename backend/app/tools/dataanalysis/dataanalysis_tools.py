@@ -24,6 +24,7 @@ Author: 小沈 - 2026-05-02
 import os
 import json
 import tempfile
+import pandas as pd
 from typing import Dict, Any, List, Union, Optional, Literal, Tuple
 from pathlib import Path
 from app.utils.time_utils import timestamp_for_filename
@@ -75,7 +76,6 @@ def generate_chart(
                     ]))
             source_file_dir = str(path.parent)
             
-            import pandas as pd
             if data.endswith('.xlsx') or data.endswith('.xls'):
                 df = pd.read_excel(data, engine="openpyxl")
             else:
@@ -171,7 +171,6 @@ def _convert_pd_value(val: Any) -> Any:
     有 .item() 的 numpy 类型 → val.item()
     其他 → val
     """
-    import pandas as pd
     if isinstance(val, pd.Series):
         return {k: _convert_pd_value(v) for k, v in val.items()}
     if pd.isna(val):
@@ -195,7 +194,6 @@ def _compute_stats(
     消除 G1a(分组, 原L198-217)和 G1b(非分组, 原L219-233)两套完全重复的循环。
     内部调用 _convert_pd_value 统一 NA 转换。
     """
-    import pandas as pd
     if group_by and group_by in df.columns:
         grouped = df.groupby(group_by)[numeric_cols]
         result = {}
@@ -242,8 +240,6 @@ def analyze_data(
             ]))
 
     try:
-        import pandas as pd
-
         all_ops = ["mean", "sum", "count", "min", "max", "std"]
         if operations is None:
             operations = all_ops
@@ -398,8 +394,6 @@ def filter_data(
     sort_by: Optional[str] = None,
     top_n: Optional[int] = None,
 ) -> Dict[str, Any]:
-    import pandas as pd
-
     if not _check_module("pandas"):
         return build_error(ERR_NO_PANDAS, "pandas库未安装,请先执行: pip install pandas",
             next_actions=build_next_actions([("tool_search", "搜索替代工具", "pandas不可用时")]))
