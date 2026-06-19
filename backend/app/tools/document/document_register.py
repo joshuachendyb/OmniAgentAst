@@ -70,10 +70,10 @@ DESCRIPTIONS = {
     "read_docx": """读取Word(.docx/.doc)文档内容。自动提取文本和表格。适用场景:需要读取Word文档内容时使用。""",
     "read_pptx": """读取PPT(.pptx)演示文稿内容。自动提取每页文本和备注。适用场景:需要读取PPT内容时使用。""",
     "read_xlsx": """读取Excel(.xls/.xlsx/.csv)文件。自动检测编码和分隔符,自动识别表头。适用场景:需要读取表格数据时使用。""",
-    "write_docx": """写入Word(.docx)文档。支持3参数: file_name/title/paragraphs。paragraphs支持3格式: str=纯文本, list=[str|dict,...]混合内容(str=段落,dict支持type=heading/h1~h5/paragraph/table), dict={"title":"标题","content":[...]}结构化文档。适用场景:需要生成Word报告、导出文档时使用。""",
-    "write_xlsx": """写入Excel(.xlsx)文件。data参数支持dict(headers+rows)或list自动推断headers。可指定工作表名。适用场景:需要导出数据到Excel表格时使用。""",
-    "write_pdf": """写入PDF(.pdf)文件。支持3参数: file_name/title/paragraphs。paragraphs支持3格式: str=纯文本, list=[str|dict,...]混合内容(str=段落,dict支持type=heading/h1~h5/paragraph/table), dict={"title":"标题","content":[...]}结构化文档。适用场景:需要生成PDF报告、归档文档时使用。""",
-    "write_pptx": """写入PPT(.pptx)演示文稿。支持2参数: file_name/slides。slides列表每项支持: type(0=封面/1=内容/2=两栏), title(标题), subtitle(副标题仅封面), content(str纯文本或list混合内容支持str段落和dict type=paragraph/bullets), tables(独立表格)。适用场景:需要生成PPT演示文稿时使用。""",
+    "write_docx": """写入Word(.docx)文档。适用场景:需要生成Word报告、导出文档时使用。""",
+    "write_xlsx": """写入Excel(.xlsx)文件。适用场景:需要导出数据到Excel表格时使用。""",
+    "write_pdf": """写入PDF(.pdf)文件。适用场景:需要生成PDF报告、归档文档时使用。""",
+    "write_pptx": """写入PPT(.pptx)演示文稿。适用场景:需要生成PPT演示文稿时使用。""",
 
 }
 
