@@ -29,7 +29,7 @@ async def call_llm(agent):
         model=getattr(agent.llm_client, 'model', 'unknown'),
         provider=getattr(agent.llm_client, 'provider', 'unknown'),
         call_type="tools",
-        extra_params={"tool_count": len(openai_tools) if openai_tools else 0},
+        tools=openai_tools,
     )
 
     if not openai_tools:

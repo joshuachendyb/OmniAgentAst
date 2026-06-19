@@ -204,7 +204,8 @@ class PromptLogger:
         model: str = "",
         provider: str = "",
         call_type: str = "tools",
-        extra_params: Optional[Dict[str, Any]] = None
+        extra_params: Optional[Dict[str, Any]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None
     ):
         """
         记录 LLM 调用
@@ -216,6 +217,7 @@ class PromptLogger:
             provider: 提供商
             call_type: 调用类型(text/tools/response_format)
             extra_params: 额外参数
+            tools: OpenAI tools 定义数组(完整 JSON Schema),2026-06-19 小欧新增
         """
         current_log = self._get_current_log()
         if not current_log:
@@ -239,6 +241,33 @@ class PromptLogger:
                 "内容摘要": content[:200] + "..." if len(content) > 200 else content
             })
         
+        # 记录工具定义(完整 JSON Schema) — 小欧 2026-06-19
+        tools_summary = None
+        if tools:
+            tools_summary = []
+            for t in tools:
+                func = t.get("function", t)
+                tool_info = {
+                    "名称": func.get("name", ""),
+                    "描述": func.get("description", ""),
+                }
+                params = func.get("parameters", {})
+                if params:
+                    props = params.get("properties", {})
+                    required = set(params.get("required", []) or [])
+                    param_list = []
+                    for pname, pinfo in props.items():
+                        param_list.append({
+                            "参数名": pname,
+                            "类型": pinfo.get("type", "any"),
+                            "必填": pname in required,
+                            "描述": pinfo.get("description", ""),
+                            "枚举": pinfo.get("enum") if "enum" in pinfo else None,
+                            "默认值": pinfo.get("default") if "default" in pinfo else None,
+                        })
+                    tool_info["参数列表"] = param_list
+                tools_summary.append(tool_info)
+
         entry = {
             "轮次": round_number,
             "调用类型": call_type,
@@ -247,11 +276,16 @@ class PromptLogger:
             "消息统计": message_stats,
             "消息总数": len(messages),
             "消息摘要": message_summaries,
+            "工具数量": len(tools) if tools else 0,
+            "工具定义": tools_summary,
             "时间戳": now_str()
         }
         
         if extra_params:
-            entry["额外参数"] = extra_params
+            # 已经用工具数量和工具定义替代了原来的 tool_count
+            extra_params.pop("tool_count", None)
+            if extra_params:
+                entry["额外参数"] = extra_params
         
         current_log["LLM调用记录"].append(entry)
     
