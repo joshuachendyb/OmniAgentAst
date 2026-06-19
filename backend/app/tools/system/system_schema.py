@@ -36,7 +36,7 @@ from typing import Optional, List, Literal, Dict, Any
 class GetSystemInfoInput(BaseModel):
     info_type: Optional[Literal["basic", "cpu", "memory", "disk", "network", "all"]] = Field(
         default="all",
-        description="要获取的系统信息类型,默认all。basic=OS/主机名/架构等,cpu=核心数/频率/使用率,memory=总量/可用/使用率,disk=各分区空间/使用率,network=IO计数器(bytes_sent/bytes_recv/packets),all=以上全部"
+        description="系统信息类型:basic(基础)/cpu/内存/磁盘/网络/all(全部,默认)"
     )
 
 

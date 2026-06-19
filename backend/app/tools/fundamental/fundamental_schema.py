@@ -29,7 +29,7 @@ class ToolSearchInput(BaseModel):
 class TimeNowInput(BaseModel):
     format: Optional[str] = Field(
         default=None,
-        description="Python strftime格式字符串,如 %%Y-%%m-%%d %%H:%%M:%%S。默认为 %%Y-%%m-%%d %%H:%%M:%%S"
+        description="日期格式,如 %%Y-%%m-%%d %%H:%%M:%%S。默认为 %%Y-%%m-%%d %%H:%%M:%%S"
     )
     timezone: Optional[str] = Field(
         default=None,
@@ -44,22 +44,22 @@ class TimeAddInput(BaseModel):
     )
     start: Optional[Union[int, float, str]] = Field(
         default=None,
-        description="基准时间。支持:int/float=Unix时间戳(秒),str=日期字符串。默认为当前时间"
+        description="基准时间,默认当前时间"
     )
     unit: Literal["days", "hours", "minutes", "seconds", "months"] = Field(
         default="days",
-        description="偏移单位:days(天)、hours(小时)、minutes(分钟)、seconds(秒)、months(月,使用dateutil.relativedelta,失败回退days*30)。默认为days"
+        description="偏移单位:days(天)/hours(小时)/minutes(分钟)/seconds(秒)/months(月)"
     )
 
 
 class TimeDiffInput(BaseModel):
     start: Union[int, float, str] = Field(
         ...,
-        description="开始时间。支持:int/float=Unix时间戳(秒),str=日期字符串。必填参数"
+        description="起始时间"
     )
     end: Optional[Union[int, float, str]] = Field(
         default=None,
-        description="结束时间。支持格式同start。默认为当前时间"
+        description="结束时间,默认当前时间"
     )
 
 
@@ -90,11 +90,11 @@ class QueryCalendarInput(BaseModel):
     )
     date: Optional[Union[int, float, str]] = Field(
         default=None,
-        description="日期值,支持时间戳或日期字符串。name不为空时被忽略"
+        description="日期值"
     )
     check_type: Literal["weekend", "holiday", "workday", "next_workday"] = Field(
         default="workday",
-        description="检查类型:weekend/holiday/workday/next_workday。name不为空时被忽略"
+        description="检查类型:weekend(周末)/holiday(节假日)/workday(工作日)/next_workday(下N个工作日)"
     )
     n: int = Field(
         default=1,
