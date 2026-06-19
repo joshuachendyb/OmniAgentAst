@@ -123,9 +123,10 @@ def execute_shell_command(
         return build_error(ERR_PARAMETER_INVALID, f"工作目录不存在: {cwd}", data={"cwd": cwd})
 
     timeout_sec = timeout / 1000.0
-    env = None
+    env = os.environ.copy()
+    env['PYTHONUTF8'] = '1'
+    env['PYTHONIOENCODING'] = 'utf-8'
     if env_vars:
-        env = os.environ.copy()
         env.update(env_vars)
 
     executable = None if shell_type == "cmd" else (
@@ -204,9 +205,10 @@ def find_command(command: str, all_paths: bool = False) -> dict:
             if available:
                 return build_success(
                     {"available": True, "command": command, "path": cmd_path},
-                    f"命令 '{command}' 可用,路径: {cmd_path}",
+                    f"命令 '{command}' 可用,完整路径: {cmd_path},建议用完整路径执行以避免环境差异",
+                    llm_data=format_output_for_llm(cmd_path, ""),
                     next_actions=build_next_actions([
-                        ("execute_shell_command", "执行该命令", "确认命令可用后需要执行时", {"command": command}),
+                        ("execute_shell_command", "用完整路径执行", "确认命令可用后需要执行时", {"command": cmd_path}),
                     ])
                 )
             else:
@@ -285,7 +287,8 @@ def shell_session(
             return build_error(ERR_SHELL_NOT_FOUND, f"后台Shell会话无进程: {shell_id}", data={"shell_id": shell_id})
         stdout_str = _read_stream_nonblocking(process.stdout, "utf-8")
         stderr_str = _read_stream_nonblocking(process.stderr, "utf-8")
-        is_running = process.poll() is None
+        returncode = process.poll()
+        is_running = returncode is None
         # 【修复 小沈 2026-05-19】进程已退出时自动清理,防止内存泄漏
         if not is_running:
             _background_shells.pop(shell_id, None)
@@ -301,15 +304,26 @@ def shell_session(
         stdout_lines = stdout_str.splitlines()
         stdout_lines = stdout_lines[-max_lines:]
         stdout_str = "\n".join(stdout_lines)
-        return build_success(
-            truncate_data_for_frontend({"shell_id": shell_id, "stdout": stdout_str, "stderr": stderr_str, "is_running": is_running}),
-            "后台命令输出" if is_running else "后台命令已结束",
-            llm_data=format_output_for_llm(stdout_str, stderr_str),
+        resp_data = truncate_data_for_frontend(
+            {"shell_id": shell_id, "stdout": stdout_str, "stderr": stderr_str, "is_running": is_running, "returncode": returncode})
+        llm_data = format_output_for_llm(stdout_str, stderr_str)
+        if is_running:
+            return build_success(resp_data, "后台命令输出", llm_data=llm_data,
+                next_actions=build_next_actions([
+                    ("shell_session", "继续读取输出", "进程仍在运行需要持续监控时", {"shell_id": shell_id, "action": "output"}),
+                    ("shell_session", "终止后台命令", "需要停止后台进程或清理会话时", {"shell_id": shell_id, "action": "terminate"}),
+                ]))
+        if returncode == 0:
+            return build_success(resp_data, "后台命令已结束,退出码0", llm_data=llm_data,
+                next_actions=build_next_actions([
+                    ("execute_shell_command", "启动新的后台命令", "需要执行新的命令时"),
+                ]))
+        return build_error(ERR_SHELL_EXEC, f"后台命令执行失败(退出码{returncode}),请检查命令语法和参数",
+            data=resp_data, llm_data=llm_data,
             next_actions=build_next_actions([
-                ("shell_session", "继续读取输出", "进程仍在运行需要持续监控时", {"shell_id": shell_id, "action": "output"}),
-                ("shell_session", "终止后台命令", "需要停止后台进程或清理会话时", {"shell_id": shell_id, "action": "terminate"}),
-            ])  # 小健 2026-05-19: 无论进程是否运行都提供terminate(清理会话防止内存泄漏)
-        )
+                ("execute_shell_command", "修改命令后重试", "需要修正命令后重新执行时"),
+                ("find_command", "查找命令路径", "需要确认命令是否存在时"),
+            ]))
     elif action == "terminate":
         shell_info = _background_shells.get(shell_id)
         if not shell_info:
