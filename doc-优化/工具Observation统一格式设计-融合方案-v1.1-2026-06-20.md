@@ -508,14 +508,14 @@ build_success(
 ```
 观察: success - http_request
 结果: HTTP GET https://api.example.com，状态码200，响应体15000字符
-详情: {"action":"request","target":"https://api.example.com","result":{"status_code":200,"body":"...","content_type":"application/json"}}
+详情: {"status_code":200,"body":"...","content_type":"application/json"}
 ```
 
 **download_file 成功**：
 ```
 观察: success - download_file
 结果: 下载完成，102400字节，保存到 C:\download\file.zip
-详情: {"action":"download","target":"https://example.com/file.zip","result":{"file_path":"C:\\download\\file.zip","bytes_written":102400}}
+详情: {"file_path":"C:\\download\\file.zip","bytes_written":102400}
 ```
 
 ### 6.5 Shell工具
