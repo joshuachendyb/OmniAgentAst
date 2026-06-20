@@ -524,7 +524,7 @@ build_success(
 ```
 观察: success - execute_shell
 结果: 命令执行成功，退出码0
-详情: {"action":"execute","target":"Get-Process","result":{"exit_code":0,"output":"Handles  NPM(K)...","error_output":""}}
+详情: {"exit_code":0,"output":"Handles  NPM(K)...","error_output":""}
 ```
 
 ### 6.6 系统工具
@@ -533,7 +533,7 @@ build_success(
 ```
 观察: success - get_system_info
 结果: 获取系统信息，CPU 12核/内存 16GB(已用50%)/磁盘 C: 500GB(已用60%)
-详情: {"action":"info","target":"system","result":{"cpu":{"cores":12,"usage":"45%"},"memory":{"total_gb":16,"used_pct":50},"disk":{"C:":{"total_gb":500,"used_pct":60}}}}
+详情: {"cpu":{"cores":12,"usage":"45%"},"memory":{"total_gb":16,"used_pct":50},"disk":{"C:":{"total_gb":500,"used_pct":60}}}
 ```
 
 **event_log 成功**：
