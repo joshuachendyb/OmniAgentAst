@@ -76,7 +76,7 @@
 | `format_file_content_llm` | 格式化文件内容给LLM | content, max_chars | dict |
 | `make_json_safe` | 使JSON安全 | data, max_depth, max_str_len | data |
 | `truncate_data_for_frontend` | 截断数据给前端 | data, max_chars | dict |
-| `build_next_actions` | 构建下一步操作 | actions | list |
+
 
 ---
 
@@ -86,7 +86,7 @@
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
-| `build_success` | 构建成功响应 | data, message, warning, llm_data, next_actions, ... | dict |
+| `build_success` | 构建成功响应 | data, message, warning, llm_data, ... | dict |
 | `build_error` | 构建错误响应 | code, message, data, ... | dict |
 | `build_warning` | 构建警告响应 | code, message, data, ... | dict |
 
