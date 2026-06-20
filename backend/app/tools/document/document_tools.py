@@ -31,10 +31,10 @@ from typing import Dict, Any, List, Optional, Literal, Union, Tuple
 from pathlib import Path
 
 
-from app.utils.next_actions_builder import build_next_actions
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.toolhelper.common_helper import _check_module
 from app.tools.tool_constants import SUBPROCESS_TIMEOUT_LONG
+from app.utils.json_utils import coerce_json
 from app.constants import (
     ERR_DOC_CHART_GENERATE,
     ERR_DOC_CONVERT_FAILED,
@@ -910,10 +910,6 @@ def read_pdf(file_name: str) -> Dict[str, Any]:
     if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
         return check
     result = _read_pdf(file_name, extract_images=True, extract_tables=True)
-    if result.get("code") == "SUCCESS":
-        result["next_actions"] = build_next_actions([
-            ("write_pdf", "修改PDF", "需要编辑时"),
-        ])
     return result
 
 
@@ -937,10 +933,6 @@ def read_docx(file_name: str) -> Dict[str, Any]:
             if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
                 return check
             result = _read_docx(tmp_path, extract_tables=True)
-            if result.get("code") == "SUCCESS":
-                result["next_actions"] = build_next_actions([
-                    ("write_docx", "修改文档", "需要编辑时"),
-                ])
             return result
         except subprocess.CalledProcessError as e:
             return build_error(ERR_DOC_CONVERT_FAILED, f"pandoc转换.doc失败: {e.stderr}",
@@ -955,20 +947,12 @@ def read_docx(file_name: str) -> Dict[str, Any]:
     if check["code"] != "SUCCESS" or not check["data"].get("readable", False):
         return check
     result = _read_docx(file_name, extract_tables=True)
-    if result.get("code") == "SUCCESS":
-        result["next_actions"] = build_next_actions([
-            ("write_docx", "修改文档", "需要编辑时"),
-        ])
     return result
 
 
 def read_pptx(file_name: str) -> Dict[str, Any]:
     """读取PPT文件 — 小沈 2026-06-19"""
     result = _read_pptx(file_name, extract_notes=True)
-    if result.get("code") == "SUCCESS":
-        result["next_actions"] = build_next_actions([
-            ("write_pptx", "修改PPT", "需要编辑时"),
-        ])
     return result
 
 
@@ -987,11 +971,6 @@ def read_xlsx(file_name: str) -> Dict[str, Any]:
             return check
         result = _read_xlsx(file_name, max_rows=10000)
 
-    if result.get("code") == "SUCCESS":
-        result["next_actions"] = build_next_actions([
-            ("write_xlsx", "写入Excel", "需要导出数据时"),
-            ("analyze_data", "分析数据", "需要统计分析时"),
-        ])
     return result
 
 
@@ -1000,13 +979,10 @@ def write_docx(
     title: Optional[str] = None,
     paragraphs: Optional[Union[str, List, Dict]] = None,
 ) -> Dict[str, Any]:
-    """写入Word文档 — 小欧 2026-06-19 改3参数"""
+    """写入Word文档 — 小欧 2026-06-19 改3参数, 小健 2026-06-20 加coerce_json防御"""
+    paragraphs = coerce_json(paragraphs)
     Path(file_name).parent.mkdir(parents=True, exist_ok=True)
     result = _write_docx(file_name, title=title, paragraphs=paragraphs)
-    if result.get("code") == "SUCCESS":
-        result["next_actions"] = build_next_actions([
-            ("read_docx", "验证写入结果", "需要确认内容时"),
-        ])
     return result
 
 
@@ -1015,7 +991,8 @@ def write_xlsx(
     data: Optional[Union[Dict[str, Any], List]] = None,
     sheet_name: str = "Sheet1",
 ) -> Dict[str, Any]:
-    """写入Excel文件 — 小沈 2026-06-16"""
+    """写入Excel文件 — 小沈 2026-06-16, 小健 2026-06-20 加coerce_json防御"""
+    data = coerce_json(data)
     Path(file_name).parent.mkdir(parents=True, exist_ok=True)
     if data is None:
         data = {"headers": [], "rows": []}
@@ -1034,10 +1011,6 @@ def write_xlsx(
         rows = [list(data.values())]
         data = {"headers": headers, "rows": rows}
     result = _write_xlsx(file_name, data=data, sheet_name=sheet_name)
-    if result.get("code") == "SUCCESS":
-        result["next_actions"] = build_next_actions([
-            ("read_xlsx", "验证写入结果", "需要确认内容时"),
-        ])
     return result
 
 
@@ -1046,13 +1019,10 @@ def write_pdf(
     title: Optional[str] = None,
     paragraphs: Optional[Union[str, List, Dict]] = None,
 ) -> Dict[str, Any]:
-    """写入PDF文件 — 小欧 2026-06-19 改3参数"""
+    """写入PDF文件 — 小欧 2026-06-19 改3参数, 小健 2026-06-20 加coerce_json防御"""
+    paragraphs = coerce_json(paragraphs)
     Path(file_name).parent.mkdir(parents=True, exist_ok=True)
     result = _write_pdf(file_name, title=title, paragraphs=paragraphs)
-    if result.get("code") == "SUCCESS":
-        result["next_actions"] = build_next_actions([
-            ("read_pdf", "验证写入结果", "需要确认内容时"),
-        ])
     return result
 
 
@@ -1060,12 +1030,9 @@ def write_pptx(
     file_name: str,
     slides: Optional[List[Dict]] = None,
 ) -> Dict[str, Any]:
-    """写入PPT文件 — 小欧 2026-06-19 改2参数(无title)"""
+    """写入PPT文件 — 小欧 2026-06-19 改2参数(无title), 小健 2026-06-20 加coerce_json防御"""
+    slides = coerce_json(slides)
     Path(file_name).parent.mkdir(parents=True, exist_ok=True)
     result = _write_pptx(file_name, slides=slides)
-    if result.get("code") == "SUCCESS":
-        result["next_actions"] = build_next_actions([
-            ("read_pptx", "验证写入结果", "需要确认内容时"),
-        ])
     return result
 

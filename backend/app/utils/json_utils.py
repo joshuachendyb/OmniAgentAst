@@ -45,6 +45,23 @@ def parse_json(json_str: Optional[str], label: str = "", raise_on_error: bool = 
         return None
 
 
+def coerce_json(value: Any) -> Any:
+    """若值为JSON字符串则解析为dict/list，否则原样返回 — 小健 2026-06-20
+    
+    LLM经常将dict/list参数序列化为JSON字符串传入，此函数自动反序列化。
+    若字符串不是有效JSON，原样返回（可能是文件路径等合法字符串）。
+    """
+    if not isinstance(value, str):
+        return value
+    try:
+        parsed = json.loads(value)
+        if isinstance(parsed, (dict, list)):
+            return parsed
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return value
+
+
 def read_json_file(file_path: str, label: str = "", raise_on_error: bool = False) -> Any:
     """读取JSON文件 — 小沈 2026-06-17 新增公用函数
     
@@ -76,5 +93,6 @@ def read_json_file(file_path: str, label: str = "", raise_on_error: bool = False
 
 __all__ = [
     "parse_json",
+    "coerce_json",
     "read_json_file",
 ]

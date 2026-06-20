@@ -79,8 +79,8 @@ from app.tools.file.file_schema import (
 from app.db.models.operation_enums import OperationType
 from app.utils.logger import logger
 from app.tools.tool_constants import TOOL_TIMEOUTS
+from app.utils.json_utils import coerce_json
 from app.utils.tool_result_formatter import format_file_content_llm, format_output_for_llm, truncate_data_for_frontend, truncate_text, make_json_safe, DEFAULT_MAX_FILE_CHARS  # 小沈-2026-05-15, 2026-05-20增加截断安全, 2026-05-21小健修复make_json_safe缺失
-from app.utils.next_actions_builder import build_next_actions
 
 # 【重要】延迟导入,避免循环导入问题
 # file_tools.py 在 tools 模块加载时被导入,此时 agent 还未初始化完成
@@ -369,10 +369,7 @@ def _build_list_success(entries: List, total: int, path: Path, statistics: Dict,
          "truncated": truncated, "statistics": statistics, "next_page_token": next_token},
         f"列出目录成功: {path} ({total}项)" + (f",已截断显示前{max_display}项" if truncated else ""),
         llm_data=llm,
-        next_actions=build_next_actions([
-            ("search_files", "搜索文件", "需要查找特定文件时"),
-            ("read_text_file", "读取文件", "需要查看文件内容时"),
-        ]))
+    )
 
 
 _ENCODING_PRIORITY = ["utf-8", "gbk", "gb2312", "utf-8-sig"]
@@ -835,10 +832,6 @@ async def _read_text_file(
             _data,
             f"读取文件成功: {file_path} ({_data['line_count']}/{_data['total_lines']}行, {file_size}字节, 编码:{used_encoding})",
             llm_data=_llm,
-            next_actions=build_next_actions([
-                ("edit_text_file", "编辑文件", "需要修改内容时"),
-                ("grep_file_content", "搜索文件内容", "需要查找特定内容时"),
-            ])
         )
 
     except Exception as e:
@@ -1823,10 +1816,6 @@ async def grep_file_content(
                 "预览": make_json_safe(page_results[:10], max_str_len=200),
                 "has_more": has_more,
             },
-            next_actions=build_next_actions([
-                ("read_text_file", "读取匹配行上下文", "需要查看完整内容时"),
-                ("edit_text_file", "编辑匹配内容", "需要修改时"),
-            ]),
         )
     except Exception as e:
         return build_error(ERR_FILE_CONTENT_SEARCH_FAILED, str(e), data={"error": str(e), "pattern": pattern, "search_dir": str(search_dir)})
@@ -1906,10 +1895,6 @@ async def _get_directory_tree(
             {"tree": tree, "root": str(path)},
             f"已获取目录树: {dir_path}",
             llm_data={"目录": str(path), "树形结构根节点": tree.get("name",""), "子项数": len(tree.get("children",[]))},
-            next_actions=build_next_actions([
-                ("search_files", "搜索文件", "需要查找特定文件时"),
-                ("read_text_file", "读取文件", "需要查看文件内容时"),
-            ])
         )
     except Exception as e:
         logger.error(f"get_directory_tree failed: {dir_path}: {e}")
@@ -1966,7 +1951,8 @@ async def compress_files(
     overwrite: bool = False,
     exclude_patterns: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """压缩文件/目录 — 小沈 2026-06-16, 小健 2026-06-20 删compression_level"""
+    """压缩文件/目录 — 小沈 2026-06-16, 小健 2026-06-20 删compression_level; 加coerce_json防御"""
+    exclude_patterns = coerce_json(exclude_patterns)
     compression_level = 6
     return await _compress_files(
         source_path=source,
@@ -2092,7 +2078,6 @@ def _build_format_result(
          "file_path": file_path, "action": action, **suffix},
         f"已{action} {detected_format.upper()}格式文件: {file_path}",
         llm_data=llm_data,
-        next_actions=build_next_actions([("edit_text_file", "编辑格式化文件", "需要修改时")]),
     ), llm_data
 
 
@@ -2154,7 +2139,8 @@ async def write_data_file(
     file_path: str, data: Any,
     format: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """写入结构化配置文件 — 小欧 2026-06-17, 小健 2026-06-20 删encoding/indent"""
+    """写入结构化配置文件 — 小欧 2026-06-17, 小健 2026-06-20 删encoding/indent; 加coerce_json防御"""
+    data = coerce_json(data)
     encoding = "utf-8"
     indent = None
     if not file_path:
@@ -2223,8 +2209,7 @@ def _paginate_search(all_matches: List, path: str, llm_preview: List,
     }, f"搜索完成,共{total}个匹配",
        llm_data={"模式": "", "搜索目录": path, "匹配数": total,
                  "文件预览": [m.get("path","") if isinstance(m,dict) else str(m) for m in llm_preview[:20]],
-                 "has_more": has_more},
-       next_actions=build_next_actions([("read_text_file", "读取找到的文件", "需要查看内容时")]))
+                 "has_more": has_more})
 
 
 

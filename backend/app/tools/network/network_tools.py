@@ -42,7 +42,7 @@ from urllib.parse import urlencode, urlparse, urlunparse
 
 import httpx
 from app.utils.logger import logger
-from app.utils.json_utils import parse_json
+from app.utils.json_utils import parse_json, coerce_json
 
 from app.tools.toolhelper.network_helper import (  # 小健 2026-05-18
     well_known_ports, _html_to_markdown, _decode_bing_redirect_url,
@@ -50,7 +50,6 @@ from app.tools.toolhelper.network_helper import (  # 小健 2026-05-18
 )
 from app.tools.network.http_client_sdk import create_http_client, HTTPClient  # 小沈 2026-05-29
 from app.utils.tool_result_formatter import truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
-from app.utils.next_actions_builder import build_next_actions
 from app.constants import (
     BROWSER_USER_AGENT,
     DEFAULT_MAX_DOC_CHARS,
@@ -161,8 +160,11 @@ async def http_request(
     retry: int = 3,
 ) -> dict:
     """发起HTTP请求 — 小沈 2026-05-19 精简参数(11→8)
-    【2026-06-20 小健】Schema删timeout/proxy/retry，函数签名保留内部默认值
+    【2026-06-20 小健】Schema删timeout/proxy/retry，函数签名保留内部默认值; 加coerce_json防御
     """
+    headers = coerce_json(headers)
+    params = coerce_json(params)
+    json_body = coerce_json(json_body)
     # 参数校验
     if retry < 0 or retry > 10:
         return build_error(ERR_NETWORK_INVALID_PARAM, f"重试次数必须在0-10之间,当前值:{retry}", data={"retry": retry})
@@ -214,7 +216,6 @@ async def http_request(
                             "内容类型": parsed["content_type_short"],
                             "响应体": parsed["llm_body"],
                         },
-                        next_actions=build_next_actions([("http_request", "继续发送请求", "需要发送更多请求时")]),
                     )
             except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
                 last_exception = e
@@ -320,7 +321,6 @@ async def download_file(
             {"file_path": dest_path, "file_size": downloaded, "total_size": total_bytes, "content_type": content_type},
             f"文件下载成功 ({downloaded}/{total_bytes} 字节):{dest_path}",
             llm_data={"路径": dest_path, "大小": downloaded, "类型": content_type},
-            next_actions=build_next_actions([("read_text_file", "读取下载的文件", "需要查看时")]),
         )
     except (PermissionError, OSError) as e:
         return build_error(ERR_NETWORK_WRITE_FILE, f"写入文件失败 {dest_path}: {e}", data={"file_path": dest_path, "error": str(e)})
@@ -368,7 +368,6 @@ def _build_media_result(url: str, mime: str, raw_bytes: bytes, extract_format: s
             "data": b64,
             "filename": url.split("/")[-1].split("?")[0] or "download"
         },
-        next_actions=build_next_actions([("search_web", "搜索更多网页", "需要搜索更多信息时")]),
     )
 
 
@@ -492,7 +491,6 @@ async def fetch_webpage(
                 "URL": url, "格式": extract_format, "状态码": result_data.get("status_code"),
                 "内容预览": _content_for_llm, "截断": truncated
             },
-            next_actions=build_next_actions([("search_web", "搜索更多网页", "需要搜索更多信息时")]),
         )
 
     except httpx.TimeoutException:
@@ -692,7 +690,6 @@ async def search_web(
                 "搜索结果": llm_results if llm_results else "无相关结果",
                 "提示": f"搜索完成，共{len(results)}条结果。可直接使用结果，无需重复搜索。",
             },
-            next_actions=build_next_actions([("fetch_webpage", "打开搜索结果链接", "需要查看某个搜索结果的详细内容时")]),
         )
     
     except Exception as e:
@@ -966,6 +963,4 @@ async def network_diagnose(
     else:
         return build_error(ERR_INVALID_MODE, f"无效的诊断模式: {mode},必须是 ping 或 port", data={"mode": mode})
 
-    if result.get("code") == SUCCESS_CODE:
-        result["next_actions"] = build_next_actions([("network_diagnose", "深入诊断", "需要切换ping/port模式进一步检测时")])
     return result
