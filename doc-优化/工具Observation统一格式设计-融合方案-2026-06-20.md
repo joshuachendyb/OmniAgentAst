@@ -18,6 +18,7 @@
 | v1.2 | 2026-06-20 12:15:00 | 详情行统一改为只输出data.result（成功/警告），error时输出整个data；formatter代码同步更新；3.1表格更新 | 小健 + 北京老陈 |
 | v2.0 | 2026-06-20 16:30:00 | 重大重构：消除llm_data与data的字段重复。llm_data=结构化摘要（action/target/关键数字/summary），data=纯业务数据（只放llm_data没有的大块内容）；data不再需要action/target/result三必填；error同理 | 小健 + 北京老陈 |
 | v3.0 | 2026-06-20 20:24:00 | 明确"llm_data是observation的结构化中间态（非独立通道）"的根本性质，新增3.5统一数据管道，新增9.3.4 build 3函数签名改造 | 小欧 |
+| v4.0 | 2026-06-20 22:00:00 | 全文档审查，修复不一致问题 | 小欧 |
 | v4.0 | 2026-06-20 22:00:00 | 全量修复：exec_code统一为success/error/warning 3值enum；Ch6/7/8示例全部改用build_result格式；metrics措辞统一为"前端和LLM同等消费"；9.3重写为5.9引用 | 小欧 |
 
 ---
@@ -1390,7 +1391,7 @@ result = {
         },
         "target": str,         #   操作目标描述
         "status": {            #   执行状态
-            "exec_code": str,  #     执行码（SUCCESS / ERR_* / WARNING_*）
+            "exec_code": str,  #     "success" / "error" / "warning"
             "message": str,    #     人类可读消息
             "code": str,       #     详细错误码
             "detail": str,     #     详细错误信息
@@ -2336,40 +2337,29 @@ llm_data = {
 建议: 请使用WHERE子句缩小影响范围
 ```
 
-**数据量过大回滚**：
-```
-观察: 影响行数超过安全阈值 - 执行
-⚠ 警告: 操作影响行数超过安全阈值，已自动回滚
-结果: SQL影响50000行，超过安全阈值10000，已自动回滚
-建议: 请使用WHERE子句缩小影响范围
-```
-
 ---
 
 ## 九、实现方案
 
-### 9.1 三阶段改造
+### 9.1 两阶段改造
 
 | 阶段 | 改造内容 | 影响范围 | 依赖 |
 |------|---------|---------|------|
-| **Phase 1** | 修复P0+P1：data传str→dict、data=None→dict、补齐缺失字段、补齐llm_data | ~25个函数 | 无 |
-| **Phase 2** | 统一llm_data为6字段结构（action/status/metrics） + 统一data为纯业务数据 + 重构observation_formatter（用format_data_detail渲染详情） | 71个函数 | Phase 1 |
-| **Phase 3** | 统一error时data格式（加error_detail/params） + 补齐status结构 | ~50个error调用 | Phase 2 |
+| **Phase 1** | Tool注册builder + build_result重构，result统一为data/llm_data/other_data三字段 + observation_formatter重写（format_llm_observation） | ~30个工具文件 + 5个核心文件 | 无 |
+| **Phase 2** | ToolStep瘦身 + Observation step承载全部信息，tool_step只做管道不加工 | 3-4个核心文件 | Phase 1 |
 
-### 9.2 Phase 1修复清单（Top 10优先）
+### 9.2 Phase 1实施清单
 
-| 序号 | 函数 | 当前问题 | 修复方式 |
+| 步骤 | 内容 | 涉及文件 | 5.9章节 |
 |------|------|---------|---------|
-| 1 | generate_chart | data=str | 改为`{"content":...}` |
-| 2 | _delete_file幂等 | data=None | 改为`{}` |
-| 3 | write_docx | data只有file_path | 加content_summary到metrics |
-| 4 | write_pdf | data只有file_path | 加content_summary到metrics |
-| 5 | write_xlsx | 缺llm_data | 补充llm_data |
-| 6 | _read_xlsx/_read_csv | 缺llm_data | 补充llm_data |
-| 7 | clipboard_read/write | text vs content | 统一为content |
-| 8 | analyze_data llm_data | 列名永远为空 | 修复isinstance判断 |
-| 9 | find_command不可用 | 用success表达失败 | 改为warning |
-| 10 | _ping不可达/_port_check关闭 | 用success表达失败 | 改为warning |
+| 1 | 创建tool_response.py：register_builder + _default_builder + build_result | `backend/app/tools/tool_response.py`（新建） | 5.9.2 / 5.9.3 |
+| 2 | 给每个工具添加builder函数 + register_builder() + time.perf_counter() | ~30个工具文件 | 5.9.2.2 / 5.9.7 |
+| 3 | 重写observation_formatter.py → format_llm_observation(data, llm_data) | `backend/app/services/agent/observation_formatter.py` | 5.9.6 |
+| 4 | 更新message_utils.py的build_observation_text桥接层 | `backend/app/services/agent/agent_utils/message_utils.py` | 5.9.6 |
+| 5 | 更新action_handler.py适配新result三字段 | `backend/app/services/agent/core_agent/handlers/action_handler.py` | 5.9.8 |
+| 6 | 更新tool_step.py适配新result结构 | `backend/app/steps/tool_step.py` | 5.9.8 |
+| 7 | 删除旧的extraction函数（build_success/build_error/build_warning） | 各工具文件 | 3.6 |
+| 8 | 完整回归测试 | — | — |
 
 ### 9.3 核心改动（参考5.9/5.10章）
 
@@ -2385,13 +2375,13 @@ llm_data = {
 
 所有工具的data只放纯业务数据（llm_data没有的大块内容），见 **4.2节**。
 
-#### 9.3.4 build 3函数签名改造
+#### 9.3.4 build_result函数签名
 
 改造方案见 **5.9.3**。统一为 `build_result(tool_name, data, other_data, **extra)`，builder_fn由各tool在文件末尾注册。
 
-### 9.4 Phase 3核心改动
+### 9.4 无Phase 3
 
-统一error时data格式，每个build_error调用补齐error_detail/params，同时补齐llm_data的status结构。
+原旧版3阶段方案中的Phase 3（统一error格式）已并入Phase 1 —— builder统一处理success/error/warning三种情况（见5.9.3.2），不再单独作为一个阶段。
 
 ---
 
@@ -2489,6 +2479,6 @@ data = {
 
 ---
 
-**文档更新时间**: 2026-06-20 20:24:00  
-**版本**: v3.0  
+**文档更新时间**: 2026-06-20 22:00:00  
+**版本**: v4.0  
 **编写人**: 小健 + 北京老陈 + 小欧
