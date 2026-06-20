@@ -104,7 +104,9 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
         from app.tools.toolhelper.exec_helper import _validate_code_safety
         warnings = _validate_code_safety(code)
         if warnings:
-            return build_error(ERR_UNSAFE_CODE, f"代码存在安全风险: {', '.join(warnings)}", data={"warnings": warnings})
+            return build_error(ERR_UNSAFE_CODE, f"代码存在安全风险: {', '.join(warnings)}",
+                data={"warnings": warnings},
+                llm_data={"安全检查": "未通过", "风险项": warnings, "语言": "python", "建议": "移除危险操作后重试"})
     try:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
             f.write(code)
@@ -202,7 +204,9 @@ def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str]
     if safety_check:
         err = _js_safety_check(code)
         if err:
-            return build_error(ERR_UNSAFE_CODE, err, data={"language": "javascript"})
+            return build_error(ERR_UNSAFE_CODE, err,
+                data={"language": "javascript"},
+                llm_data={"安全检查": "未通过", "风险描述": err, "语言": "javascript", "建议": "移除危险操作后重试"})
 
     if working_dir is not None and not os.path.isdir(working_dir):
         try:

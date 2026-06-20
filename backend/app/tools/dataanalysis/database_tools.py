@@ -106,7 +106,9 @@ def query_sql(
         sql_upper = sql.strip().upper()
         
         if not sql_upper.startswith(("SELECT", "SHOW", "DESCRIBE", "PRAGMA", "WITH", "EXPLAIN")):
-            return build_error(ERR_READ_ONLY_VIOLATION, f"错误:只允许 SELECT/SHOW/DESCRIBE 等只读操作,当前语句以 {sql.split()[0] if sql.split() else '未知'} 开头")
+            attempted_type = sql.split()[0].upper() if sql.strip() else "未知"
+            return build_error(ERR_READ_ONLY_VIOLATION, f"错误:只允许 SELECT/SHOW/DESCRIBE 等只读操作,当前语句以 {attempted_type} 开头",
+                data={"attempted_type": attempted_type, "建议": "如需写操作请使用execute_sql工具"})
         
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:

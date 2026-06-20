@@ -76,7 +76,7 @@ def _move(x: int, y: int, duration: float = 0) -> Dict[str, Any]:
         pyautogui.moveTo(x, y, duration=duration)
         return build_success({"x": x, "y": y}, f"鼠标移动到: ({x}, {y})")
     except Exception as e:
-        return build_error(ERR_FILE_MOVE_FAILED, f"移动失败: {str(e)}", data={"error": str(e)})
+        return build_error(ERR_DESKTOP_MOUSE_MOVE, f"鼠标移动失败: {str(e)}", data={"error": str(e)})
 
 
 def _scroll(direction: str, amount: int = 3) -> Dict[str, Any]:
@@ -413,11 +413,13 @@ def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, 
         toaster.show_toast(title, message, duration=duration)
         return build_success({"title": title, "message": message, "duration": duration}, "通知发送成功")
     except Exception as e:
-        return build_error(ERR_NO_WIN10TOAST, f"通知发送失败: {e}", data={"error": str(e)})
+        return build_error(ERR_DESKTOP_NOTIFICATION, f"通知发送失败: {e}", data={"error": str(e)})
 from app.constants import (
     ERR_DESKTOP_CLIPBOARD,
     ERR_DESKTOP_MOUSE_CLICK,
+    ERR_DESKTOP_MOUSE_MOVE,
     ERR_DESKTOP_MOUSE_SCROLL,
+    ERR_DESKTOP_NOTIFICATION,
     ERR_FILE_MOVE_FAILED,
     ERR_FOCUS_WINDOW,
     ERR_KEYBOARD_SHORTCUT,

@@ -94,7 +94,8 @@ def _run_shell_background(
     }
     return build_success(
         {"shell_id": shell_id, "is_running": True, "started_at": datetime.now().isoformat()},
-        f"命令已在后台启动,shell_id: {shell_id}")
+        f"命令已在后台启动,shell_id: {shell_id}",
+        llm_data={"shell_id": shell_id, "状态": "已启动", "command": command[:200]})
 
 
 def execute_shell_command(
@@ -198,8 +199,9 @@ def find_command(command: str, all_paths: bool = False) -> dict:
             else:
                 return build_success(
                     {"available": False, "command": command, "path": None},
-                    f"命令 '{command}' 不可用"
-                )
+                    f"命令 '{command}' 不可用",
+                    llm_data={"命令": command, "可用": False, "建议": f"命令 '{command}' 未找到,请确认是否已安装并添加到PATH"})
+
         else:
             if os.name == 'nt':
                 result = subprocess.run(
@@ -218,12 +220,14 @@ def find_command(command: str, all_paths: bool = False) -> dict:
                 paths = [p.strip() for p in result.stdout.strip().split('\n') if p.strip()]
                 return build_success(
                     {"command": command, "paths": paths, "count": len(paths)},
-                    f"找到 {len(paths)} 个路径")
+                    f"找到 {len(paths)} 个路径",
+                    llm_data={"命令": command, "路径数": len(paths), "路径": paths[:10]})
             else:
                 return build_success(
                     {"command": command, "paths": [], "count": 0},
-                    f"命令 '{command}' 不可用"
-                )
+                    f"命令 '{command}' 不可用",
+                    llm_data={"命令": command, "可用": False, "建议": f"命令 '{command}' 未找到,请确认是否已安装并添加到PATH"})
+
     except Exception as e:
         return build_error(ERR_SHELL_FIND_COMMAND, f"查找命令失败: {str(e)}", data={"command": command})
 
