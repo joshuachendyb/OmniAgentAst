@@ -26,7 +26,6 @@ _REQUIRED_FIELDS = ("code", "data", "message")
 _OPTIONAL_FIELDS = {
     "warning": None,
     "llm_data": None,
-    "next_actions": None,
     "retry_count": 0,
     "return_direct": False,
     "attachment": None,
@@ -38,7 +37,6 @@ def build_success(
     message: str = "执行成功",
     warning: Optional[str] = None,
     llm_data: Optional[Dict[str, Any]] = None,
-    next_actions: Optional[List[Dict[str, str]]] = None,
     retry_count: int = 0,
     return_direct: bool = False,
     attachment: Optional[Dict[str, Any]] = None,
@@ -52,7 +50,6 @@ def build_success(
         message: 人类可读的结果描述
         warning: 可选警告信息(成功但有风险时)
         llm_data: 可选给LLM的精简数据(控制上下文占用)
-        next_actions: 可选推荐后续操作列表
         retry_count: 可选重试次数(默认0不写入)
         return_direct: 可选是否直接返回前端(默认False不写入)
         attachment: 可选二进制附件(base64图片/文件等,前端渲染)
@@ -67,7 +64,7 @@ def build_success(
     }
 
     _add_optionals(result, warning=warning, llm_data=llm_data,
-                   next_actions=next_actions, retry_count=retry_count,
+                   retry_count=retry_count,
                    return_direct=return_direct, attachment=attachment)
 
     result.update(extra)
@@ -81,7 +78,6 @@ def build_error(
     data: Any = None,
     warning: Optional[str] = None,
     llm_data: Optional[Dict[str, Any]] = None,
-    next_actions: Optional[List[Dict[str, str]]] = None,
     attachment: Optional[Dict[str, Any]] = None,
     **extra: Any,
 ) -> Dict[str, Any]:
@@ -93,7 +89,6 @@ def build_error(
         data: 可选附加错误数据(如校验详情)
         warning: 可选附加警告
         llm_data: 可选给LLM的错误摘要
-        next_actions: 可选推荐恢复操作
         attachment: 可选二进制附件
 
     Returns:
@@ -106,7 +101,7 @@ def build_error(
     }
 
     _add_optionals(result, warning=warning, llm_data=llm_data,
-                   next_actions=next_actions, attachment=attachment)
+                   attachment=attachment)
 
     result.update(extra)
 
@@ -118,7 +113,6 @@ def build_warning(
     message: str,
     data: Any = None,
     llm_data: Optional[Dict[str, Any]] = None,
-    next_actions: Optional[List[Dict[str, str]]] = None,
     attachment: Optional[Dict[str, Any]] = None,
     **extra: Any,
 ) -> Dict[str, Any]:
@@ -131,7 +125,6 @@ def build_warning(
         message: 警告描述
         data: 部分成功的数据
         llm_data: 可选给LLM的数据
-        next_actions: 可选推荐操作
         attachment: 可选二进制附件
 
     Returns:
@@ -144,7 +137,7 @@ def build_warning(
     }
 
     _add_optionals(result, llm_data=llm_data,
-                   next_actions=next_actions, attachment=attachment)
+                   attachment=attachment)
 
     result.update(extra)
 

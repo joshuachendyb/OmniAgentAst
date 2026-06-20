@@ -29,7 +29,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Literal, Tuple
 from app.utils.logger import logger
 from app.utils.tool_result_formatter import truncate_data_for_frontend, make_json_safe
-from app.utils.next_actions_builder import build_next_actions
 from app.tools.tool_response import build_success, build_error, build_warning
 
 
@@ -107,11 +106,7 @@ def query_sql(
         sql_upper = sql.strip().upper()
         
         if not sql_upper.startswith(("SELECT", "SHOW", "DESCRIBE", "PRAGMA", "WITH", "EXPLAIN")):
-            return build_error(ERR_READ_ONLY_VIOLATION, f"错误:只允许 SELECT/SHOW/DESCRIBE 等只读操作,当前语句以 {sql.split()[0] if sql.split() else '未知'} 开头",
-                next_actions=build_next_actions([
-                    ("execute_sql", "执行写操作", "需要修改数据时"),
-                    ("get_db_schema", "查看表结构", "确认字段名时"),
-                ]))
+            return build_error(ERR_READ_ONLY_VIOLATION, f"错误:只允许 SELECT/SHOW/DESCRIBE 等只读操作,当前语句以 {sql.split()[0] if sql.split() else '未知'} 开头")
         
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
@@ -149,24 +144,14 @@ def query_sql(
                 "列": columns, "行数": len(results),
                 "行预览": make_json_safe(results[:10], max_str_len=150)
             },
-            next_actions=build_next_actions([
-                ("execute_sql", "执行写操作SQL", "需要修改数据时"),
-                ("get_db_schema", "查看表结构", "需要了解其他表时"),
-            ])
         )
             
     except sqlite3.Error as e:
         return build_error(ERR_SQL_EXEC, f"SQL执行错误: {str(e)}",
-            data={"error": str(e)},
-            next_actions=build_next_actions([
-                ("get_db_schema", "查看表结构", "确认字段名是否正确时"),
-            ]))
+            data={"error": str(e)})
     except Exception as e:
         return build_error(ERR_QUERY_FAILED, f"执行失败: {str(e)}",
-            data={"error": str(e)},
-            next_actions=build_next_actions([
-                ("get_db_schema", "查看表结构", "确认表是否存在时"),
-            ]))
+            data={"error": str(e)})
     finally:
         _close_connection(conn, engine)
 
@@ -210,12 +195,7 @@ def _rollback_and_return(conn, error_type: str, error: Exception) -> Dict[str, A
         except Exception:
             pass
     logger.error(f"[execute_sql] {error_type}: {error}")
-    return build_error(error_type, str(error), data={"error": str(error)}, next_actions=_SQL_NEXT_ACTIONS)
-
-
-_SQL_NEXT_ACTIONS = build_next_actions([
-    ("query_sql", "查询 SQL 数据库", "需要重新查询时"),
-])
+    return build_error(error_type, str(error), data={"error": str(error)})
 
 
 def execute_sql(
@@ -239,19 +219,17 @@ def execute_sql(
                 "WARNING_DB_SAFETY",
                 warning_msg,
                 data={"detected": dangerous_list, "suggestion": "检测到危险操作,建议使用 dry_run=true 先验证"},
-                next_actions=_SQL_NEXT_ACTIONS
             )
 
         if dry_run:
             return build_success(
                 {"sql": sql, "dry_run": True, "syntax_valid": True},
                 "预演模式:语法验证通过,实际未执行",
-                next_actions=_SQL_NEXT_ACTIONS
             )
 
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
-            return build_error(ERR_DB_CONNECTION, conn_error, data={"error": conn_error}, next_actions=_SQL_NEXT_ACTIONS)
+            return build_error(ERR_DB_CONNECTION, conn_error, data={"error": conn_error})
 
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
@@ -277,7 +255,6 @@ def execute_sql(
         return build_success(
             {"affected_rows": affected_rows, "sql": sql},
             f"执行成功,影响行数: {affected_rows}",
-            next_actions=_SQL_NEXT_ACTIONS
         )
 
     except sqlite3.Error as e:
@@ -364,8 +341,7 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
             md += "\n"
 
         return build_success({"tables": schema_info, "total": len(schema_info), "markdown": md},
-                              f"获取成功,共 {len(schema_info)} 个表",
-                              next_actions=build_next_actions([("query_sql", "查询表数据", "需要查看数据时")]))
+                              f"获取成功,共 {len(schema_info)} 个表")
 
     except sqlite3.Error as e:
         return build_error(ERR_SQL_EXEC, f"SQLite错误: {e}", data={"error": str(e)})

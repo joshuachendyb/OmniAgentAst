@@ -38,7 +38,6 @@ from datetime import datetime
 import re as _re
 
 from app.utils.tool_result_formatter import format_output_for_llm, truncate_data_for_frontend
-from app.utils.next_actions_builder import build_next_actions
 from app.utils.logger import logger  # 小健-2026-05-19 修复BUG-001: logger未导入
 from app.tools.tool_response import build_success, build_error
 from app.tools.toolhelper.shell_helper import _check_shell_injection, _read_stream_nonblocking
@@ -69,20 +68,12 @@ def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
     if timed_out:
         return build_error(ERR_SHELL_TIMEOUT,
             f"命令执行超时({timeout}毫秒),shell_type={shell_type},可增大timeout参数重试",
-            data=data, llm_data=llm_data,
-            next_actions=build_next_actions([
-                ("execute_shell_command", "增大超时重试", "需要更长时间执行时")]))
+            data=data, llm_data=llm_data)
     if returncode == 0:
         message = "命令执行成功(有警告输出)" if stderr_str.strip() else "命令执行成功"
-        return build_success(data, message, llm_data=llm_data,
-            next_actions=build_next_actions([
-                ("execute_shell_command", "继续执行后续命令", "需要执行更多命令时"),
-                ("find_command", "查找命令路径", "需要确认命令是否存在时")]))
+        return build_success(data, message, llm_data=llm_data)
     return build_error(ERR_SHELL_EXEC, f"命令执行失败(退出码{returncode}),当前shell_type={shell_type}",
-        data=data, llm_data=llm_data,
-        next_actions=build_next_actions([
-            ("execute_shell_command", "修改命令后重试", "修正命令后重新执行时"),
-            ("find_command", "查找命令路径", "需要确认命令是否存在时")]))
+        data=data, llm_data=llm_data)
 
 
 def _run_shell_background(
@@ -103,10 +94,7 @@ def _run_shell_background(
     }
     return build_success(
         {"shell_id": shell_id, "is_running": True, "started_at": datetime.now().isoformat()},
-        f"命令已在后台启动,shell_id: {shell_id}",
-        next_actions=build_next_actions([
-            ("shell_session", "读取后台命令输出", "需要查看命令执行结果时",
-             {"shell_id": shell_id, "action": "output"})]))
+        f"命令已在后台启动,shell_id: {shell_id}")
 
 
 def execute_shell_command(
@@ -206,11 +194,7 @@ def find_command(command: str, all_paths: bool = False) -> dict:
                 return build_success(
                     {"available": True, "command": command, "path": cmd_path},
                     f"命令 '{command}' 可用,完整路径: {cmd_path},建议用完整路径执行以避免环境差异",
-                    llm_data=format_output_for_llm(cmd_path, ""),
-                    next_actions=build_next_actions([
-                        ("execute_shell_command", "用完整路径执行", "确认命令可用后需要执行时", {"command": cmd_path}),
-                    ])
-                )
+                    llm_data=format_output_for_llm(cmd_path, ""))
             else:
                 return build_success(
                     {"available": False, "command": command, "path": None},
@@ -234,11 +218,7 @@ def find_command(command: str, all_paths: bool = False) -> dict:
                 paths = [p.strip() for p in result.stdout.strip().split('\n') if p.strip()]
                 return build_success(
                     {"command": command, "paths": paths, "count": len(paths)},
-                    f"找到 {len(paths)} 个路径",
-                    next_actions=build_next_actions([
-                        ("execute_shell_command", "执行该命令", "确认命令可用后需要执行时", {"command": command}),
-                    ])
-                )
+                    f"找到 {len(paths)} 个路径")
             else:
                 return build_success(
                     {"command": command, "paths": [], "count": 0},
@@ -310,22 +290,11 @@ def shell_session(
         llm_data["is_running"] = is_running
         llm_data["returncode"] = returncode
         if is_running:
-            return build_success(resp_data, "后台命令输出", llm_data=llm_data,
-                next_actions=build_next_actions([
-                    ("shell_session", "继续读取输出", "进程仍在运行需要持续监控时", {"shell_id": shell_id, "action": "output"}),
-                    ("shell_session", "终止后台命令", "需要停止后台进程或清理会话时", {"shell_id": shell_id, "action": "terminate"}),
-                ]))
+            return build_success(resp_data, "后台命令输出", llm_data=llm_data)
         if returncode == 0:
-            return build_success(resp_data, "后台命令已结束,退出码0", llm_data=llm_data,
-                next_actions=build_next_actions([
-                    ("execute_shell_command", "启动新的后台命令", "需要执行新的命令时"),
-                ]))
+            return build_success(resp_data, "后台命令已结束,退出码0", llm_data=llm_data)
         return build_error(ERR_SHELL_EXEC, f"后台命令执行失败(退出码{returncode}),请检查命令语法和参数",
-            data=resp_data, llm_data=llm_data,
-            next_actions=build_next_actions([
-                ("execute_shell_command", "修改命令后重试", "需要修正命令后重新执行时"),
-                ("find_command", "查找命令路径", "需要确认命令是否存在时"),
-            ]))
+            data=resp_data, llm_data=llm_data)
     elif action == "terminate":
         shell_info = _background_shells.get(shell_id)
         if not shell_info:
@@ -333,9 +302,7 @@ def shell_session(
         process = shell_info.get("process")
         if not process:
             _background_shells.pop(shell_id, None)
-            return build_success({"shell_id": shell_id, "terminated": True, "force": force, "returncode": None}, "会话已无进程", next_actions=build_next_actions([
-                ("execute_shell_command", "启动新的后台命令", "需要执行新的命令时"),
-            ]))
+            return build_success({"shell_id": shell_id, "terminated": True, "force": force, "returncode": None}, "会话已无进程")
         terminated = False
         returncode = None
         try:
@@ -357,13 +324,7 @@ def shell_session(
         _background_shells.pop(shell_id, None)
         return build_success(
             {"shell_id": shell_id, "terminated": terminated, "force": force, "returncode": returncode},
-            "已终止后台命令" if terminated else "终止失败",
-            next_actions=build_next_actions([
-                ("execute_shell_command", "启动新的后台命令", "需要执行新的命令时"),
-            ]) if terminated else build_next_actions([
-                ("shell_session", "强制终止", "普通终止失败需要强制终止时", {"shell_id": shell_id, "action": "terminate", "force": True}),
-            ])
-        )
+            "已终止后台命令" if terminated else "终止失败")
     else:
         return build_error(ERR_INVALID_ACTION, f"无效的操作类型: {action},必须是 output 或 terminate", data={"action": action})
 from app.constants import (

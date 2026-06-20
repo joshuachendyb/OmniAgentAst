@@ -17,7 +17,6 @@ from typing import Dict, Any, Optional
 
 from app.utils.logger import logger
 from app.utils.time_utils import get_timestamp_ms
-from app.utils.next_actions_builder import build_next_actions
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import HTTPX_TIMEOUT_DEFAULT
 
@@ -33,7 +32,6 @@ def _error_timer_set(reason: str, data: Optional[Dict[str, Any]] = None) -> Dict
     return build_error(
         ERR_TIMER_SET, reason,
         data=data or {},
-        next_actions=build_next_actions([("timer_set", "重试设置定时器", "需要重新设置时")]),
     )
 
 
@@ -99,15 +97,10 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
     """设置定时器 — 小欧 2026-06-17"""
     try:
         result = await _timer_set(delay=delay, callback=callback)
-        if isinstance(result, dict) and result.get("code") == "SUCCESS":
-            result["next_actions"] = build_next_actions([
-                ("timer_list", "查看定时器列表", "需要确认定时器状态时"),
-            ])
         return result
     except Exception as e:
         return build_error(ERR_TIMER_SET, f"定时器设置失败: {str(e)}",
-            data={"delay": delay, "callback": callback},
-            next_actions=build_next_actions([("timer_set", "重试", "需要重新设置时")]))
+            data={"delay": delay, "callback": callback})
 
 
 async def timer_clear(timer_id: str) -> Dict[str, Any]:
@@ -125,14 +118,10 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
         return build_success(
             {"timer_id": timer_id, "cancelled": True},
             "定时器已取消",
-            next_actions=build_next_actions([
-                ("timer_list", "查看定时器列表", "需要确认状态时"),
-            ]),
         )
     except Exception as e:
         return build_error(ERR_TIMER_CLEAR, f"清除定时器失败: {str(e)}",
-            data={"timer_id": timer_id},
-            next_actions=build_next_actions([("timer_list", "列出定时器", "需要查看现有定时器时")]))
+            data={"timer_id": timer_id})
 
 
 def timer_list() -> Dict[str, Any]:
@@ -151,15 +140,10 @@ def timer_list() -> Dict[str, Any]:
             timers,
             f"共{len(timers)}个定时器",
             llm_data={"count": len(timers), "ids": [t["timer_id"] for t in timers[:5]]},
-            next_actions=build_next_actions([
-                ("timer_set", "设置新定时器", "需要添加定时器时"),
-                ("timer_clear", "清除定时器", "需要取消定时器时"),
-            ]),
         )
     except Exception as e:
         return build_error(ERR_TIMER_LIST, f"获取定时器列表失败: {str(e)}",
-            data={},
-            next_actions=build_next_actions([("timer_set", "重试", "需要重新操作时")]))
+            data={})
 
 
 from app.constants import (

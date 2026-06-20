@@ -27,8 +27,7 @@ Code Execution 工具函数模块 - 代码执行工具
     同时传PYTHONUTF8=1+PYTHONIOENCODING=utf-8环境变量
 3. #6 TimeoutExpired的stdout/stderr可能是bytes → 安全解码函数
 
-【2026-05-22 小健】合并execute_python+execute_javascript→execute_code;
-next_actions 中旧工具名改为 execute_code + language 参数
+【2026-05-22 小健】合并execute_python+execute_javascript→execute_code
 
 Author: 小沈 - 2026-05-02
 """
@@ -43,7 +42,6 @@ from app.tools.shell.shell_schema import (
     ExecuteCodeInput,
 )
 from app.utils.tool_result_formatter import format_output_for_llm, truncate_data_for_frontend  # 小沈-2026-05-15, 小沈-2026-05-20
-from app.utils.next_actions_builder import build_next_actions
 from app.tools.tool_response import build_success, build_error
 from app.utils.logger import setup_logger
 from app.tools.toolhelper.common_helper import _decode_bytes_safe
@@ -137,12 +135,7 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
                         "returncode": result.returncode
                     }),
                     message,
-                    llm_data=_llm,
-                    next_actions=build_next_actions([
-                        ("write_text_file", "将输出结果保存到文件", "需要持久化保存代码输出时"),
-                        ("execute_code", "继续执行后续代码", "需要运行更多Python代码时", {"language": "python"}),
-                    ])
-                )
+                    llm_data=_llm)
             else:
                 message = f"Python代码执行失败(退出码{result.returncode}),请检查代码语法和逻辑"
                 _llm = format_output_for_llm(stdout_str, stderr_str)
@@ -154,12 +147,7 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
                         "stderr": stderr_str,
                         "returncode": result.returncode
                     }),
-                    llm_data=_llm,
-                    next_actions=build_next_actions([
-                        ("execute_code", "修改代码重试", "需要修正代码后重新执行时", {"language": "python"}),
-                        ("tool_search", "搜索可用的代码辅助工具", "需要查找其他工具帮助诊断问题时"),
-                    ])
-                )
+                    llm_data=_llm)
 
         except subprocess.TimeoutExpired as e:
             _partial_stdout = _decode_bytes_safe(e.stdout)
@@ -172,12 +160,7 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
                     "stderr": _partial_stderr,
                     "returncode": -1
                 }),
-                llm_data=format_output_for_llm(_partial_stdout, _partial_stderr),
-                next_actions=build_next_actions([
-                    ("execute_code", "增大超时重试", "需要更长时间执行时", {"language": "python"}),
-                    ("tool_search", "搜索可用的代码辅助工具", "需要查找其他工具帮助诊断问题时"),
-                ])
-            )
+                llm_data=format_output_for_llm(_partial_stdout, _partial_stderr))
         finally:
             try:
                 os.unlink(temp_file)
@@ -257,12 +240,7 @@ def _execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str]
                     "stderr": _partial_stderr,
                     "returncode": -1
                 }),
-                llm_data=format_output_for_llm(_partial_stdout, _partial_stderr),
-                next_actions=build_next_actions([
-                    ("execute_code", "增大超时重试", "需要更长时间执行时", {"language": "javascript"}),
-                    ("tool_search", "搜索可用的代码辅助工具", "需要查找其他工具帮助诊断问题时"),
-                ])
-            )
+                llm_data=format_output_for_llm(_partial_stdout, _partial_stderr))
         finally:
             try:
                 os.unlink(temp_file)
@@ -291,18 +269,10 @@ def _build_js_exec_result(
     if returncode == 0:
         has_warning = bool(out_data["stderr"] and out_data["stderr"].strip())
         message = f"JavaScript代码执行成功{'(有警告输出)' if has_warning else ''}"
-        next_acts = build_next_actions([
-            ("write_text_file", "将输出结果保存到文件", "需要持久化保存代码输出时"),
-            ("execute_code", "继续执行后续代码", "需要运行更多JavaScript代码时", {"language": language}),
-        ])
-        return build_success(out_data, message, llm_data=llm, next_actions=next_acts)
+        return build_success(out_data, message, llm_data=llm)
     else:
         message = f"JavaScript代码执行失败(退出码{returncode}),请检查代码语法"
-        next_acts = build_next_actions([
-            ("execute_code", "修改代码重试", "需要修正代码后重新执行时", {"language": language}),
-            ("tool_search", "搜索可用的代码辅助工具", "需要查找其他工具帮助诊断问题时"),
-        ])
-        return build_error(ERR_EXEC_FAILED, message, data=out_data, llm_data=llm, next_actions=next_acts)
+        return build_error(ERR_EXEC_FAILED, message, data=out_data, llm_data=llm)
 from app.constants import (
     ERR_EXEC_FAILED,
     ERR_EXEC_JS,

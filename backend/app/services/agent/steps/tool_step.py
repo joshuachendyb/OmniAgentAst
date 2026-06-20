@@ -24,7 +24,6 @@ class ToolStep(ReasoningStep):
         code: str = "",
         warning: Optional[str] = None,
         attachment: Any = None,
-        next_actions: Optional[List[Dict[str, str]]] = None,
         timestamp: Optional[int] = None
     ):
         ReasoningStep.__init__(self, step, timestamp)
@@ -42,7 +41,6 @@ class ToolStep(ReasoningStep):
         self._code = code
         self._warning = warning
         self._attachment = attachment
-        self._next_actions = next_actions
 
     def get_content(self) -> str:
         return self._observation or self._summary or self._error_message or ""
@@ -75,8 +73,6 @@ class ToolStep(ReasoningStep):
             obs["error_message"] = self._error_message
         if self._warning:
             obs["warning"] = self._warning
-        if self._next_actions:
-            obs["next_actions"] = self._next_actions
         if self._attachment is not None:
             obs["attachment"] = self._attachment
         extra["observation"] = obs

@@ -266,12 +266,6 @@ class TestToolStepObservation:
         obj = step.to_dict()["observation"]
         assert obj["attachment"] == data
 
-    def test_next_actions_in_observation(self):
-        actions = [{"action": "retry", "tool": "write_file"}]
-        step = ToolStep(step=1, tool_name="t", tool_params={}, step_type="observation", next_actions=actions)
-        obj = step.to_dict()["observation"]
-        assert obj["next_actions"] == actions
-
     def test_get_content_returns_observation(self):
         step = ToolStep(step=1, tool_name="t", tool_params={}, step_type="observation", observation="obs text")
         assert step.get_content() == "obs text"

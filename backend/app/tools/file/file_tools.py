@@ -1603,10 +1603,16 @@ async def _precise_replace_in_file(
                 data["preview"] = True
                 data["diff_info"] = (f"将替换 {replace_result['count']} 处匹配: "
                                     f"'{old_string[:50]}' -> '{new_string[:50]}'")
+            llm_data = {
+                "操作": "dry_run" if dry_run else "replace",
+                "文件": str(path),
+                "替换数": replace_result['count'],
+                "编码": replace_result['used_enc'],
+            }
             return build_success(
                 data,
                 f"已替换 {replace_result['count']} 处匹配",
-
+                llm_data=llm_data,
             )
 
         except ValueError as e:
@@ -2063,15 +2069,16 @@ def _build_format_result(
         except Exception:
             pass
 
-    llm_data = None
+    llm_data = {"格式": detected_format, "文件": file_path, "动作": action}
     if action == "read":
-        llm_data = {"格式": detected_format, "文件": file_path, "动作": "read"}
         if isinstance(result_data, dict):
             llm_data["键"] = list(result_data.keys())[:30]
             llm_data["顶层项数"] = len(result_data)
         elif isinstance(result_data, list):
             llm_data["项数"] = len(result_data)
             llm_data["预览"] = make_json_safe(result_data[:5], max_str_len=200)
+    elif action == "write":
+        llm_data["bytes_written"] = suffix.get("bytes_written", 0)
 
     return build_success(
         {"data": result_data, "format": detected_format,

@@ -33,7 +33,6 @@ import json as json_module
 from app.utils.logger import logger
 from app.utils.time_utils import now_str
 from app.utils.tool_result_formatter import truncate_data_for_frontend, make_json_safe
-from app.utils.next_actions_builder import build_next_actions
 from app.tools.tool_response import build_success, build_error  # 小沈 2026-05-20
 from app.tools.tool_constants import TOOL_TIMEOUTS
 # 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
@@ -231,7 +230,7 @@ def _get_windows_event_log(
             }), f"找到 {len(_events)} 条事件日志", llm_data={
                 "日志源": log_name, "条数": len(_events), "级别": level,
                 "事件预览": make_json_safe(_events[:10], max_str_len=200)
-            }, next_actions=build_next_actions([("get_system_info", "查看系统状态", "需要关联系统信息时")]))
+            })
     
     except subprocess.TimeoutExpired:
         return build_error(ERR_SYSTEM_TIMEOUT, "获取事件日志超时")
@@ -294,7 +293,7 @@ def _get_linux_event_log(
                 "events": events[:max_events],
                 "total": len(events[:max_events]),
                 "level": level,
-            }, f"找到 {len(events[:max_events])} 条事件日志", next_actions=build_next_actions([("get_system_info", "查看系统状态", "需要关联系统信息时")]))
+            }, f"找到 {len(events[:max_events])} 条事件日志")
     
     except subprocess.TimeoutExpired:
         return build_error(ERR_SYSTEM_TIMEOUT, "获取事件日志超时")

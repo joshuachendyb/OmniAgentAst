@@ -173,7 +173,6 @@ async def build_observation(ctx: ObservationContext) -> List:
         code=first_result.get("code", "") if isinstance(first_result, dict) else "",
         warning=first_result.get("warning") if isinstance(first_result, dict) else None,
         attachment=first_result.get("attachment") if isinstance(first_result, dict) else None,
-        next_actions=first_result.get("next_actions") if isinstance(first_result, dict) else None,
         return_direct=first_result.get("return_direct", False) if isinstance(first_result, dict) else False,
     )))
 

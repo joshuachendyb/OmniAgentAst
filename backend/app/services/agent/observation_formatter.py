@@ -104,37 +104,9 @@ def build_execution_result_dict(execution_result: Dict[str, Any]) -> Dict[str, A
         "code": execution_result.get("code", SUCCESS_CODE),
         "warning": execution_result.get("warning"),
         "attachment": execution_result.get("attachment"),
-        "next_actions": execution_result.get("next_actions"),
         "return_direct": execution_result.get("return_direct", False),
         "error_message": execution_result.get("error_message", ""),
     }
-
-
-def _format_next_actions(result: dict, text: str) -> str:
-    """将next_actions格式化为文本追加到observation — 小健 2026-05-22"""
-    next_actions = result.get('next_actions')
-    if not next_actions or not isinstance(next_actions, list):
-        return text
-    na_lines = ["\n推荐下一步操作:"]
-    for i, na in enumerate(next_actions[:5], 1):
-        if isinstance(na, dict):
-            tool = na.get('tool', '')
-            desc = na.get('description', '')
-            when = na.get('when', '')
-            params = na.get('params')
-            line = f"  {i}. {tool}"
-            if desc:
-                line += f" - {desc}"
-            if when:
-                line += f"({when})"
-            if params:
-                line += f" 参数建议: {params}"
-        elif isinstance(na, tuple) and len(na) >= 2:
-            line = f"  {i}. {na[0]} - {na[1]}"
-        else:
-            line = f"  {i}. {na}"
-        na_lines.append(line)
-    return text + "\n".join(na_lines)
 
 
 def _extract_display_data(result: dict) -> Any:
@@ -183,7 +155,7 @@ def _format_result_observation(result: dict, status: str, use_llm_data: bool = T
             if isinstance(data, (dict, list)):
                 data = _prevent_json_oom(data, LLM_SAFE_LIMIT)
             text += f"\n部分数据: {json.dumps(data, ensure_ascii=False)}"
-    return _format_next_actions(result, text)
+    return text
 
 
 def _format_success_observation(result: dict) -> str:
@@ -216,13 +188,11 @@ def _format_error_observation(result: dict, tool_name: str = "", tool_params: Op
             display_data = _prevent_json_oom(display_data, LLM_SAFE_LIMIT)
         text += f"\n错误详情: {json.dumps(display_data, ensure_ascii=False)}"
     text = _append_hint(text, tool_name, tool_params, result)
-    return _format_next_actions(result, text)
+    return text
 
 
 def format_llm_observation(result: dict, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
-    """格式化工具结果为LLM observation文本 — 小沈 2026-05-21
-    更新 2026-05-22 小健:合入next_actions拼接逻辑(从base_react.py搬入)
-    """
+    """格式化工具结果为LLM observation文本 — 小沈 2026-05-21"""
     code = result.get("code")
 
     if code == SUCCESS_CODE:

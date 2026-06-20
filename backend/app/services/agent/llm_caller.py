@@ -140,6 +140,9 @@ async def call_llm_fc_stream(agent, messages: list, openai_tools: list):
         return
 
     if stream_error:
+        if tool_calls_result:
+            logger.warning(f"[FC] LLM流式错误, 丢弃{len(tool_calls_result)}个未完成的tool_calls")
+            tool_calls_result = None
         yield _yield_error_response(f"LLM流式错误: {stream_error}", agent)
         return
 

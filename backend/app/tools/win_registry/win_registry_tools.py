@@ -29,7 +29,6 @@ from app.constants import (ERR_REG_DELETE_FAILED, ERR_REG_INVALID_PARAM, ERR_REG
 
 from app.utils.logger import logger
 
-from app.utils.next_actions_builder import build_next_actions
 from app.tools.tool_response import build_success, build_error
 # 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
 from app.tools.tool_constants import SUBPROCESS_TIMEOUT_DEFAULT
@@ -157,7 +156,7 @@ def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "
             }
 
             logger.info(f"[registry_read] 成功读取: {full_root_key}\\{sub_key}\\{value_name or '(默认)'}")
-            return build_success(result_data, "读取成功", next_actions=build_next_actions([("registry_read", "继续读取其他键值", "需要读取更多注册表信息时")]))
+            return build_success(result_data, "读取成功")
 
     except FileNotFoundError:
         error_msg = f"注册表键或值不存在: {key_path}"

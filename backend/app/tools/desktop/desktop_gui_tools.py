@@ -33,7 +33,6 @@ from app.utils.time_utils import timestamp_for_filename
 
 from app.tools.tool_response import build_success, build_error
 from app.utils.tool_result_formatter import truncate_data_for_frontend, truncate_text  # 小沈 2026-05-20
-from app.utils.next_actions_builder import build_next_actions
 from app.tools.toolhelper.common_helper import _check_module  # 小健 2026-06-19 send_notification需要
 
 
@@ -243,8 +242,7 @@ def screen_record(duration: int, output_path: Optional[str] = None, fps: int = 1
 
             imageio.mimwrite(output_path, frames, fps=fps)
 
-        return build_success({"output_path": output_path, "duration": duration, "fps": fps}, f"录制完成: {output_path}",
-                             next_actions=build_next_actions([]))
+        return build_success({"output_path": output_path, "duration": duration, "fps": fps}, f"录制完成: {output_path}")
     except Exception as e:
         return build_error(ERR_SCREEN_RECORD, f"录制失败: {str(e)}", data={"error": str(e)})
 
@@ -332,8 +330,7 @@ def ocr(image_path: str, language: str = "eng") -> Dict[str, Any]:
         if len(text) > 5000:
             _llm_text += f"...(原文{len(text)}字符)"
         return build_success(truncate_data_for_frontend({"text": text, "language": language, "char_count": len(text)}), f"OCR识别完成: {len(text)}个字符",
-                             llm_data={"字符数": len(text), "语言": language, "文本预览": _llm_text},
-                             next_actions=build_next_actions([("screen_capture", "重新截图", "需要识别其他区域时")]))
+                             llm_data={"字符数": len(text), "语言": language, "文本预览": _llm_text})
     except Exception as e:
         return build_error(ERR_OCR, f"OCR识别失败: {str(e)}", data={"error": str(e)})
 
@@ -414,8 +411,7 @@ def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, 
     try:
         toaster = ToastNotifier()
         toaster.show_toast(title, message, duration=duration)
-        return build_success({"title": title, "message": message, "duration": duration}, "通知发送成功",
-                             next_actions=build_next_actions([]))
+        return build_success({"title": title, "message": message, "duration": duration}, "通知发送成功")
     except Exception as e:
         return build_error(ERR_NO_WIN10TOAST, f"通知发送失败: {e}", data={"error": str(e)})
 from app.constants import (

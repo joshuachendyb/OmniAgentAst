@@ -34,7 +34,6 @@ import platform
 from typing import Any, Dict, List, Optional, Literal
 from app.utils.logger import logger
 from app.utils.tool_result_formatter import truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
-from app.utils.next_actions_builder import build_next_actions
 from app.tools.tool_response import build_success, build_error
 from app.tools.toolhelper.window_helper import check_win32_platform, get_window_rect, get_window_state, find_windows_by_title  # 小沈 2026-05-22
 
@@ -107,8 +106,7 @@ def window_info(
             llm_data={
                 "总数": len(windows),
                 "窗口预览": [{"title": w.get("title","")[:40], "state": w.get("state","")} for w in windows[:20]]
-            },
-            next_actions=build_next_actions([("window_focus", "聚焦窗口", "需要操作特定窗口时")])
+            }
         )
     except Exception as e:
         logger.error(f"window_info list error: {e}")
@@ -161,8 +159,7 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
                 "hwnd": hwnd,
                 "matched_count": len(matched_hwnds),
             },
-            msg,
-            next_actions=build_next_actions([("window_info", "确认窗口状态", "需要验证操作结果时", {"filter_title": title})])
+            msg
         )
 
     except Exception as e:
@@ -175,60 +172,44 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
 def window_focus(window_title: str) -> Dict[str, Any]:
     """聚焦窗口 — 小欧 2026-06-17"""
     from app.tools.desktop.desktop_gui_tools import _focus_window
-    result = _focus_window(window_title)
-    if result.get("code") == "SUCCESS" and "next_actions" not in result:
-        result["next_actions"] = build_next_actions([("window_info", "确认窗口状态", "需要验证操作结果时")])
-    elif result.get("code") != "SUCCESS" and "next_actions" not in result:
-        result["next_actions"] = build_next_actions([("window_info", "查看当前窗口列表", "确认窗口名称是否正确时")])
-    return result
-
-
-def _add_window_next_actions(result: Dict[str, Any]) -> Dict[str, Any]:
-    """统一添加窗口操作next_actions — 小健 2026-06-18 DRY提取"""
-    if "next_actions" in result:
-        return result
-    if result.get("code") == "SUCCESS":
-        result["next_actions"] = build_next_actions([("window_info", "确认窗口状态", "需要验证操作结果时")])
-    else:
-        result["next_actions"] = build_next_actions([("window_info", "查看当前窗口列表", "确认窗口名称是否正确时")])
-    return result
+    return _focus_window(window_title)
 
 
 def window_resize(window_title: str, width: int = 800, height: int = 600) -> Dict[str, Any]:
     """调整窗口大小 — 小欧 2026-06-17"""
     from app.tools.desktop.desktop_gui_tools import _resize_window
     result = _resize_window(window_title, width=width, height=height)
-    return _add_window_next_actions(result)
+    return result
 
 
 def window_maximize(window_title: str) -> Dict[str, Any]:
     """最大化窗口 — 小欧 2026-06-17"""
     result = set_window_state(window_title, "maximize")
-    return _add_window_next_actions(result)
+    return result
 
 
 def window_minimize(window_title: str) -> Dict[str, Any]:
     """最小化窗口 — 小欧 2026-06-17"""
     result = set_window_state(window_title, "minimize")
-    return _add_window_next_actions(result)
+    return result
 
 
 def window_restore(window_title: str) -> Dict[str, Any]:
     """还原窗口 — 小欧 2026-06-17"""
     result = set_window_state(window_title, "restore")
-    return _add_window_next_actions(result)
+    return result
 
 
 def window_topmost(window_title: str) -> Dict[str, Any]:
     """窗口置顶 — 小欧 2026-06-17"""
     result = set_window_state(window_title, "topmost")
-    return _add_window_next_actions(result)
+    return result
 
 
 def window_unpin(window_title: str) -> Dict[str, Any]:
     """取消窗口置顶 — 小欧 2026-06-17"""
     result = set_window_state(window_title, "unpin")
-    return _add_window_next_actions(result)
+    return result
 
 
 # ========== 鼠标控制 — 4个独立函数 ==========
@@ -237,44 +218,26 @@ def mouse_click(x: Optional[int] = None, y: Optional[int] = None, button: str = 
     """鼠标单击 — 小欧 2026-06-17"""
     click_type = "single"
     from app.tools.desktop.desktop_gui_tools import _click
-    result = _click(x=x, y=y, button=button, click_type=click_type)
-    if result.get("code") == "SUCCESS":
-        result["next_actions"] = build_next_actions([("screen_capture", "截图查看效果", "需要确认操作结果时")])
-    elif "next_actions" not in result:
-        result["next_actions"] = build_next_actions([("screen_capture", "查看当前鼠标位置", "需要确认坐标时")])
-    return result
+    return _click(x=x, y=y, button=button, click_type=click_type)
 
 
 def mouse_move(x: int, y: int) -> Dict[str, Any]:
     """移动鼠标到指定位置 — 小欧 2026-06-17"""
     duration = 0
     from app.tools.desktop.desktop_gui_tools import _move
-    result = _move(x=x, y=y, duration=duration)
-    if result.get("code") == "SUCCESS":
-        result["next_actions"] = build_next_actions([("screen_capture", "截图查看效果", "需要确认操作结果时")])
-    elif "next_actions" not in result:
-        result["next_actions"] = build_next_actions([("screen_capture", "查看当前鼠标位置", "需要确认坐标时")])
-    return result
+    return _move(x=x, y=y, duration=duration)
 
 
 def mouse_scroll(direction: str = "down", amount: int = 3) -> Dict[str, Any]:
     """鼠标滚轮滚动 — 小欧 2026-06-17"""
     from app.tools.desktop.desktop_gui_tools import _scroll
-    result = _scroll(direction=direction, amount=amount)
-    if result.get("code") == "SUCCESS":
-        result["next_actions"] = build_next_actions([("screen_capture", "截图查看效果", "需要确认操作结果时")])
-    return result
+    return _scroll(direction=direction, amount=amount)
 
 
 def mouse_position() -> Dict[str, Any]:
     """获取鼠标当前位置 — 小欧 2026-06-17"""
     from app.tools.toolhelper.gui_helper import _get_mouse_position
-    result = _get_mouse_position()
-    if result.get("code") == "SUCCESS":
-        result["next_actions"] = build_next_actions([("screen_capture", "截图查看效果", "需要确认操作结果时")])
-    elif "next_actions" not in result:
-        result["next_actions"] = build_next_actions([("screen_capture", "查看当前鼠标位置", "需要确认坐标时")])
-    return result
+    return _get_mouse_position()
 
 
 def keyboard_control(
@@ -300,8 +263,6 @@ def keyboard_control(
     else:
         return build_error(ERR_INVALID_ACTION, f"无效的键盘操作: {action},支持: type/shortcut/combo", data={"action": action})
 
-    if result.get("code") == "SUCCESS":
-        result["next_actions"] = build_next_actions([("screen_capture", "截图查看效果", "需要确认操作结果时")])
     return result
 
 
@@ -323,27 +284,19 @@ def screen_capture(
         from app.tools.desktop.desktop_gui_tools import _screenshot
         result = _screenshot(output_path=output_path, region=region)
 
-    if result.get("code") == "SUCCESS":
-        result["next_actions"] = build_next_actions([("ocr", "识别截图文字", "需要提取文字时")])
     return result
 
 
 def clipboard_read() -> Dict[str, Any]:
     """读取剪贴板内容 — 小欧 2026-06-17"""
     from app.tools.desktop.desktop_gui_tools import _read_clipboard
-    result = _read_clipboard()
-    if result.get("code") == "SUCCESS":
-        result["next_actions"] = build_next_actions([("clipboard_write", "写入剪贴板", "需要修改剪贴板时")])
-    return result
+    return _read_clipboard()
 
 
 def clipboard_write(content: str) -> Dict[str, Any]:
     """写入内容到剪贴板 — 小欧 2026-06-17"""
     from app.tools.desktop.desktop_gui_tools import _write_clipboard
-    result = _write_clipboard(content=content)
-    if result.get("code") == "SUCCESS":
-        result["next_actions"] = build_next_actions([("clipboard_read", "验证剪贴板", "需要确认操作结果时")])
-    return result
+    return _write_clipboard(content=content)
 from app.constants import (
     ERR_DESKTOP_GET_WINDOW_INFO,
     ERR_INVALID_ACTION,
