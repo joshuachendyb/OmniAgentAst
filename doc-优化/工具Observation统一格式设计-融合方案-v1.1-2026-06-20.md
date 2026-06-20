@@ -485,14 +485,14 @@ build_success(
 ```
 观察: success - write_docx
 结果: 写入 C:\report.docx，3段落/500字
-详情: {"action":"write","target":"C:\\report.docx","result":{"bytes_written":2048,"content_summary":"3段落/500字"}}
+详情: {"bytes_written":2048,"content_summary":"3段落/500字"}
 ```
 
 **write_xlsx 成功**：
 ```
 观察: success - write_xlsx
 结果: 写入 C:\data.xlsx，10行×5列
-详情: {"action":"write","target":"C:\\data.xlsx","result":{"bytes_written":512,"content_summary":"10行×5列"}}
+详情: {"bytes_written":512,"content_summary":"10行×5列"}
 ```
 
 ### 6.4 网络工具
@@ -501,7 +501,7 @@ build_success(
 ```
 观察: success - search_web
 结果: 搜索到8条结果(Parallel引擎)
-详情: {"action":"search","target":"低空星链通信 2026","result":{"items":[...],"total":8,"truncated":false}}
+详情: {"items":[...],"total":8,"truncated":false}
 ```
 
 **http_request 成功**：
