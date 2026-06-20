@@ -51,6 +51,7 @@ def generate_chart(
 ) -> Dict[str, Any]:
     """使用matplotlib生成数据可视化图表 - 小沈 2026-05-02, 修正 2026-05-05
     【2026-06-18 小健】修改output_path逻辑：文件路径→原文件目录，字典→必须指定output_path
+    【2026-06-20 小健】Schema删x_label/y_label，函数签名保留内部默认值
     """
     if not _check_module("matplotlib"):
         return build_error(ERR_NO_MATPLOTLIB, "matplotlib库未安装,请先执行: pip install matplotlib",
@@ -231,7 +232,7 @@ def analyze_data(
     max_rows: Optional[int] = None,
 ) -> Dict[str, Any]:
     """对数据集进行统计分析 - 小沈 2026-05-02, 修正 2026-05-05
-    【新增参数】encoding: 文件编码(默认utf-8); max_rows: 最大读取行数(默认None=全部)
+    【2026-06-20 小健】Schema删operations/max_rows，函数签名保留内部默认值
     """
     if not _check_module("pandas"):
         return build_error(ERR_NO_PANDAS, "pandas库未安装,请先执行: pip install pandas",
@@ -394,6 +395,9 @@ def filter_data(
     sort_by: Optional[str] = None,
     top_n: Optional[int] = None,
 ) -> Dict[str, Any]:
+    """筛选数据 — 小沈 2026-05-25 重构
+    【2026-06-20 小健】Schema删max_rows，函数签名保留内部默认值
+    """
     if not _check_module("pandas"):
         return build_error(ERR_NO_PANDAS, "pandas库未安装,请先执行: pip install pandas",
             next_actions=build_next_actions([("tool_search", "搜索替代工具", "pandas不可用时")]))

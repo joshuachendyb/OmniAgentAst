@@ -112,7 +112,7 @@ def _run_shell_background(
 def execute_shell_command(
     command: str, shell_type: Optional[str] = "powershell",
     timeout: int = 30000, run_in_background: bool = False,
-    cwd: Optional[str] = None, env_vars: Optional[dict] = None,
+    cwd: Optional[str] = None,
 ) -> dict:
     # V1: 参数校验
     if shell_type not in ("powershell", "cmd", None):
@@ -127,8 +127,7 @@ def execute_shell_command(
     env = os.environ.copy()
     env['PYTHONUTF8'] = '1'
     env['PYTHONIOENCODING'] = 'utf-8'
-    if env_vars:
-        env.update(env_vars)
+
 
     executable = None if shell_type == "cmd" else (
         shutil.which("powershell.exe") or shutil.which("pwsh.exe") or "powershell.exe")

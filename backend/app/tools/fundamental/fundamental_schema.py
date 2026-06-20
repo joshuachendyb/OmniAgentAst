@@ -27,14 +27,7 @@ class ToolSearchInput(BaseModel):
 
 
 class TimeNowInput(BaseModel):
-    format: Optional[str] = Field(
-        default=None,
-        description="日期格式,如 %%Y-%%m-%%d %%H:%%M:%%S。默认为 %%Y-%%m-%%d %%H:%%M:%%S"
-    )
-    timezone: Optional[str] = Field(
-        default=None,
-        description="时区,如 Asia/Shanghai、America/New_York。默认为系统时区"
-    )
+    pass
 
 
 class TimeAddInput(BaseModel):
@@ -102,6 +95,26 @@ class QueryCalendarInput(BaseModel):
     )
 
 
+class SendNotificationInput(BaseModel):
+    title: str = Field(
+        description="通知标题,例如:'AI热点新闻'"
+    )
+    message: str = Field(
+        description="通知正文,例如:'已为您搜索到最新AI行业新闻'"
+    )
+    duration: int = Field(
+        default=5,
+        description="通知显示时长(秒),默认5秒"
+    )
+
+
+class GetSystemInfoInput(BaseModel):
+    info_type: Optional[Literal["basic", "cpu", "memory", "disk", "network", "all"]] = Field(
+        default="all",
+        description="系统信息类型:basic(基础)/cpu/内存/磁盘/网络/all(全部,默认)"
+    )
+
+
 
 __all__ = [
     "ToolSearchInput",
@@ -109,4 +122,6 @@ __all__ = [
     "TimeAddInput",
     "TimeDiffInput",
     "QueryCalendarInput",
+    "SendNotificationInput",
+    "GetSystemInfoInput",
 ]

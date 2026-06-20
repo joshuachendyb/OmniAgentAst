@@ -86,8 +86,8 @@ def query_sql(
     limit: int = 50,
     timeout: int = 15000,
 ) -> Dict[str, Any]:
-    """
-    执行只读SQL查询
+    """执行只读SQL查询
+    【2026-06-20 小健】Schema删limit/timeout，函数签名保留内部默认值
 
     Args:
         sql: SQL 查询语句。仅支持 SELECT/SHOW/DESCRIBE 等只读操作
@@ -226,7 +226,9 @@ def execute_sql(
     dry_run: bool = False,
     timeout: int = 30000,
 ) -> Dict[str, Any]:
-    """执行写操作SQL - 小沈 2026-05-25 重构拆分"""
+    """执行写操作SQL - 小沈 2026-05-25 重构拆分
+    【2026-06-20 小健】Schema删timeout，函数签名保留内部默认值
+    """
     conn = None
     engine = None
 
@@ -334,7 +336,9 @@ def _filter_tables(tables: List[str], table_name: Optional[str], filter_pattern:
 
 def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None,
                    db_name=None, table_name=None, filter_pattern=None) -> Dict:
-    """获取数据库表结构 — 小沈 2026-05-25 重构"""
+    """获取数据库表结构 — 小沈 2026-05-25 重构
+    【2026-06-20 小健】Schema删db_name/filter_pattern，函数签名保留内部默认值
+    """
     conn = engine = None
     try:
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path)

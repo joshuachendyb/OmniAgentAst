@@ -68,17 +68,13 @@ from app.tools.network.network_tools import (
     network_diagnose,
 )
 
-from app.tools.system.system_tools import net_connections
-from app.tools.system.system_schema import NetConnectionsInput
-
 # 工具描述
 NETWORK_TOOL_DESCRIPTIONS = {
-    "http_request": """发送HTTP请求到指定URL。支持GET/POST/PUT/DELETE/PATCH等方法,支持自定义请求头、JSON请求体、查询参数、超时设置和重试次数。返回响应的状态码、响应头和响应体(JSON自动解析为对象)。访问国外服务失败时提示可选的国内替代地址。适用场景:需要调用REST API获取数据、提交数据、调用Web服务接口时使用。""",
-    "download_file": """从URL下载文件到本地,支持大文件流式下载。支持自定义请求头(如认证Token)、超时设置。自动创建目标目录。返回文件保存路径、下载字节数、文件总大小、进度百分比和内容类型。适用场景:需要下载网络上的图片、安装包、数据文件等到本地磁盘时使用。""",
-    "fetch_webpage": """获取网页内容并提取正文,支持Markdown/HTML/Text格式输出。当需要从网页中提取特定信息时,可通过prompt参数指定提取指令(由LLM后处理)。支持JavaScript渲染(js_render=True)和超时设置。返回提取的网页内容、格式类型和HTTP状态码。适用场景:需要获取网页文档内容、从网页中提取特定数据、将网页转为Markdown后供LLM阅读时使用。""",
-    "search_web": """使用搜索引擎查询最新信息,默认使用国内可用的Bing中国搜索。支持指定搜索结果数量、限定搜索域名范围。返回搜索结果列表(含标题、URL、摘要)、结果总数和使用的搜索引擎。num_results参数建议:概览类查询用5~8,深度调研类用15~20,默认10。适用场景:需要获取实时信息、新闻动态、技术文档、问题解决方案等最新网络信息时使用。""",
+    "http_request": """发送HTTP请求到指定URL。支持GET/POST/PUT/DELETE/PATCH等方法,支持自定义请求头、JSON请求体、查询参数。返回响应的状态码、响应头和响应体(JSON自动解析为对象)。访问国外服务失败时提示可选的国内替代地址。适用场景:需要调用REST API获取数据、提交数据、调用Web服务接口时使用。""",
+    "download_file": """从URL下载文件到本地,支持大文件流式下载。自动创建目标目录。返回文件保存路径、下载字节数、文件总大小、进度百分比和内容类型。适用场景:需要下载网络上的图片、安装包、数据文件等到本地磁盘时使用。""",
+    "fetch_webpage": """获取网页内容并提取正文,支持Markdown/HTML/Text格式输出。当需要从网页中提取特定信息时,可通过prompt参数指定提取指令(由LLM后处理)。返回提取的网页内容、格式类型和HTTP状态码。适用场景:需要获取网页文档内容、从网页中提取特定数据、将网页转为Markdown后供LLM阅读时使用。""",
+    "search_web": """使用搜索引擎查询最新信息,默认使用国内可用的Bing中国搜索。返回搜索结果列表(含标题、URL、摘要)、结果总数和使用的搜索引擎。适用场景:需要获取实时信息、新闻动态、技术文档、问题解决方案等最新网络信息时使用。""",
     "network_diagnose": """网络连通性诊断工具。mode=ping(默认)ICMP可达性检测(主机级),mode=port TCP端口检测(服务级,port参数必填)。适用场景:需要检测网络连通性、排查网络问题时使用。""",
-    "net_connections": """获取当前系统的网络连接列表。支持按连接类型(TCP/UDP)、连接状态(ESTABLISHED/LISTEN等)和端口号过滤。可获取关联进程信息(进程名和PID)。最多返回200条连接记录。适用场景:需要排查端口占用问题、查看某个端口的连接状态、了解当前网络活动情况时使用。""",
 }
 
 # 工具名到实现函数的映射
@@ -88,7 +84,6 @@ NETWORK_TOOL_IMPLEMENTATIONS = {
     "fetch_webpage": fetch_webpage,
     "search_web": search_web,
     "network_diagnose": network_diagnose,
-    "net_connections": net_connections,
 }
 
 # 工具名到 Pydantic 模型的映射
@@ -98,36 +93,30 @@ NETWORK_TOOL_INPUT_MODELS = {
     "fetch_webpage": FetchWebpageInput,
     "search_web": SearchWebInput,
     "network_diagnose": NetworkDiagnoseInput,
-    "net_connections": NetConnectionsInput,
 }
 
 # 使用示例
 NETWORK_TOOL_EXAMPLES = {
     "http_request": [
-        {"url": "https://api.github.com/repos/python/cpython", "method": "GET", "timeout": 10000},
-        {"url": "https://httpbin.org/post", "method": "POST", "json_body": {"name": "test", "value": 123}, "timeout": 30000},
+        {"url": "https://api.github.com/repos/python/cpython", "method": "GET"},
+        {"url": "https://httpbin.org/post", "method": "POST", "json_body": {"name": "test", "value": 123}},
     ],
     "download_file": [
-        {"url": "https://github.com/python/cpython/archive/refs/heads/main.zip", "destination_path": "D:/Downloads/cpython-main.zip", "timeout": 300000},
+        {"url": "https://github.com/python/cpython/archive/refs/heads/main.zip", "destination_path": "D:/Downloads/cpython-main.zip"},
     ],
     "fetch_webpage": [
         {"url": "https://example.com", "extract_format": "markdown"},
         {"url": "https://docs.python.org/3/library/asyncio.html", "prompt": "提取asyncio的主要功能和使用示例"},
     ],
     "search_web": [
-        {"query": "OpenAI function calling", "num_results": 10},
-        {"query": "React 19 新特性", "allowed_domains": ["github.com", "react.dev"], "num_results": 5},
+        {"query": "OpenAI function calling"},
+        {"query": "React 19 新特性"},
     ],
     "network_diagnose": [
         {"host": "8.8.8.8"},
         {"host": "8.8.8.8", "mode": "port", "port": 53},
-        {"host": "baidu.com", "count": 10},
+        {"host": "baidu.com"},
         {"host": "127.0.0.1", "mode": "port", "port": 8000},
-    ],
-    "net_connections": [
-        {},
-        {"kind": "tcp", "state": "established"},
-        {"filter_port": 8080, "process_info": True},
     ],
 }
 

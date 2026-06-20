@@ -319,11 +319,10 @@ def _time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, 
 # 7个公开函数(精简后)— 小沈 2026-05-18
 # ===========================================================
 
-def time_now(
-    format: Optional[str] = None,
-    timezone: Optional[str] = None,
-) -> Dict[str, Any]:
-    """获取当前系统时间 — 小欧 2026-06-17 只保留"now"操作"""
+def time_now() -> Dict[str, Any]:
+    """获取当前系统时间 — 小欧 2026-06-17 只保留"now"操作; 小健 2026-06-20 删format/timezone参数"""
+    format = None
+    timezone = None
     try:
         result = _get_current_time(timezone=timezone, format=format)
         if result.get("code") == "SUCCESS":

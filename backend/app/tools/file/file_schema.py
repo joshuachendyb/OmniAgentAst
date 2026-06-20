@@ -61,6 +61,7 @@ class ReadTextFileInput(BaseModel):
     )
 
 
+
 # ============================================================
 # F2: write_text_file — 写文本文件
 # ============================================================
@@ -79,14 +80,6 @@ class WriteTextFileInput(BaseModel):
     append: bool = Field(
         default=False,
         description="是否追加写入。True=追加,False=覆盖。对.log文件Agent可自动设为True"
-    )
-    create_parents: bool = Field(
-        default=True,
-        description="是否自动创建父目录,默认为True。若父目录不存在则自动创建"
-    )
-    unescape: bool = Field(
-        default=True,
-        description="是否自动反转义转义字符(如 \\n 转为真实换行、\\\" 转为引号),默认为True"
     )
 
 
@@ -119,14 +112,12 @@ class EditTextFileInput(BaseModel):
         default=False,
         description="是否替换所有匹配项,默认False只替换第一个"
     )
-    dry_run: bool = Field(
-        default=False,
-        description="预览模式,True=只预览不修改,默认False"
-    )
+
     encoding: Optional[str] = Field(
         default=None,
         description="文件编码,默认utf-8"
     )
+
 
 
 # ============================================================
@@ -137,31 +128,17 @@ class ListDirectoryInput(BaseModel):
     dir_path: str = Field(
         description="目录路径(绝对路径,必填)。如 D:/项目代码"
     )
-    format: Literal["list", "tree"] = Field(
-        default="list",
-        description="输出格式:list(扁平列表)或 tree(JSON树结构),默认list"
-    )
     recursive: bool = Field(
         default=False,
-        description="是否递归列出所有子目录,默认False"
+        description="是否递归列出子目录。True=树形结构(含所有层级),False=扁平列表(仅当前层),默认False"
     )
-    max_depth: int = Field(
-        default=10,
-        ge=1,
-        le=50,
-        description="最大递归深度,仅当recursive=True时有效,默认10"
-    )
-    sortBy: Literal["name", "size", "mtime"] = Field(
+    sort_by: Literal["name", "size", "mtime"] = Field(
         default="name",
         description="排序方式:name/size/mtime,默认name"
     )
     include_hidden: bool = Field(
         default=False,
         description="是否显示隐藏文件(以.开头的文件),默认False"
-    )
-    page_token: Optional[str] = Field(
-        default=None,
-        description="分页令牌,用于获取后续页面结果"
     )
 
 
@@ -180,12 +157,6 @@ class SearchFilesInput(BaseModel):
         default=True,
         description="是否递归搜索子目录,默认True"
     )
-    max_depth: int = Field(
-        default=50,
-        ge=1,
-        le=1000,
-        description="最大递归深度,仅当recursive=True时有效,默认50"
-    )
     ignore_case: bool = Field(
         default=True,
         description="是否忽略大小写,默认True"
@@ -193,10 +164,6 @@ class SearchFilesInput(BaseModel):
     type: Optional[Literal["file", "directory"]] = Field(
         default=None,
         description="搜索类型过滤:file=只返回文件,directory=只返回目录,不设则全部返回"
-    )
-    page_token: Optional[str] = Field(
-        default=None,
-        description="分页令牌,用于获取下一页结果"
     )
 
 
@@ -212,34 +179,15 @@ class GrepFileContentInput(BaseModel):
         default=None,
         description="搜索路径(绝对路径),默认当前目录"
     )
-    output_mode: Optional[Literal["content", "files_with_matches", "count"]] = Field(
-        default=None,
-        description="输出模式,默认content。content=显示匹配行内容,files_with_matches=只返回匹配的文件名列表,count=只返回每个文件的匹配数量"
-    )
     glob: Optional[str] = Field(
         default=None,
         description="文件过滤(glob通配符),如 \"*.py\"、\"*.{js,ts}\""
-    )
-    context: Optional[Dict[str, int]] = Field(
-        default=None,
-        description="上下文行数(可选):{\"after\":N}匹配后N行, {\"before\":N}匹配前N行, {\"around\":N}上下各N行。如 {\"around\":3}"
     )
     ignore_case: bool = Field(
         default=True,
         description="是否忽略大小写,默认True"
     )
-    head_limit: Optional[int] = Field(
-        default=None,
-        description="限制返回的最大匹配行数,避免结果过多。不设则返回全部"
-    )
-    multiline: bool = Field(
-        default=False,
-        description="是否启用多行匹配模式,默认False"
-    )
-    page_token: Optional[str] = Field(
-        default=None,
-        description="分页令牌,用于获取下一页结果"
-    )
+
 
 
 # ============================================================
@@ -252,9 +200,7 @@ class CompressFilesInput(BaseModel):
     format: Literal["zip", "tar", "tar.gz", "tar.bz2"] = Field(
         default="zip", description="压缩格式:zip/tar/tar.gz/tar.bz2,默认zip"
     )
-    compression_level: int = Field(
-        default=6, ge=0, le=9, description="压缩级别0-9(0=不压缩,6=平衡,9=最高),默认6"
-    )
+
     password: Optional[str] = Field(default=None, description="ZIP加密密码,设置后创建AES-256加密ZIP,仅ZIP格式支持,可选")
     overwrite: bool = Field(default=False, description="是否覆盖已存在文件,默认False")
     exclude_patterns: Optional[List[str]] = Field(
@@ -294,7 +240,7 @@ class CopyFileInput(BaseModel):
     destination: str = Field(description="目标路径(绝对路径)")
     recursive: bool = Field(default=False, description="复制目录时需True,默认False")
     overwrite: bool = Field(default=False, description="是否覆盖目标文件,默认False")
-    preserve_metadata: bool = Field(default=True, description="是否保留文件元数据(修改时间/访问时间等),默认True")
+
 
 
 # ============================================================
@@ -328,10 +274,7 @@ class ReadDataFileInput(BaseModel):
         default=None,
         description="强制指定格式:json/yaml/toml/ini/xml/properties。不填则根据文件扩展名自动检测"
     )
-    encoding: str = Field(
-        default="utf-8",
-        description="文件编码,默认utf-8"
-    )
+
 
 
 # ============================================================
@@ -349,14 +292,7 @@ class WriteDataFileInput(BaseModel):
         default=None,
         description="强制指定格式:json/yaml/toml。不填则根据文件扩展名自动检测"
     )
-    encoding: str = Field(
-        default="utf-8",
-        description="文件编码,默认utf-8"
-    )
-    indent: Optional[int] = Field(
-        default=None,
-        description="JSON写入时的格式化缩进空格数,默认2"
-    )
+
 
 
 

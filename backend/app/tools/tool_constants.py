@@ -24,11 +24,9 @@ TOOL_TIMEOUTS = {
     "execute_python": 120,
     "execute_javascript": 120,
     "shell_session": 30,
-    "net_connections": 15,
+
     "event_log": 30,
-    "list_processes": 10,
-    "kill_process": 10,
-    "service_control": 60,
+
     "task_control": 30,
     "search_web": 25,
     "http_request": 30,

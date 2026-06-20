@@ -36,10 +36,7 @@ class ExecuteShellCommandInput(BaseModel):
         description="是否在后台运行命令。长期服务(如npm run dev)Agent自动设为true"
     )
     cwd: Optional[str] = Field(
-        default=None, description="工作目录。Agent根据上下文智能设置"
-    )
-    env_vars: Optional[dict] = Field(
-        default=None, description="额外环境变量字典,将与系统环境变量合并。注意PYTHONIOENCODING=utf-8已在服务端自动设置,无需重复传入。如 {\"NODE_ENV\": \"production\", \"MY_VAR\": \"value\"}"
+        default=None, description="命令执行的工作目录(绝对路径)。需要在特定目录下执行命令时设置,如 D:/project。不设置则使用当前目录"
     )
 
 
@@ -96,9 +93,7 @@ class ExecuteCodeInput(BaseModel):
     working_dir: Optional[str] = Field(
         default=None, description="工作目录(可选)。默认为当前工作目录。目录不存在时自动创建"
     )
-    safety_check: bool = Field(
-        default=True, description="执行前是否进行安全检查,默认True。设为False可跳过安全检查"
-    )
+
 
 
 

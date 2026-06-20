@@ -617,7 +617,7 @@ def _apply_replacement(
         else:
             idx = content.find(old_string)
             if idx == -1:
-                raise ValueError(f"文件中未找到匹配文本: {old_string[:50]}")
+                return content, 0
             new_content = content[:idx] + new_string + content[idx + len(old_string):]
             count = 1
     return new_content, count
@@ -956,8 +956,6 @@ async def write_text_file(
     content: str,
     encoding: Optional[str] = None,
     append: bool = False,
-    create_parents: bool = True,
-    unescape: bool = True
 ) -> Dict[str, Any]:
     """写入文本文件
     
@@ -965,6 +963,8 @@ async def write_text_file(
     - 重构拆分:提取 _detect_file_encoding_for_write / _write_file_atomic / _check_write_safety
     - 保持所有分支完整,功能不减少
     """
+    create_parents = True
+    unescape = True
     error, checked_content = _check_write_safety(file_path, content, encoding)
     if error:
         return build_error(ERR_FILE_CONTENT_BLOCKED, error, data={"file_path": file_path, "error": error})
@@ -1007,18 +1007,19 @@ async def write_text_file(
 
 async def list_directory(
     dir_path: str,
-    format: str = "list",
     recursive: bool = False,
-    max_depth: int = 10,
-    page_token: Optional[str] = None,
-    sortBy: str = "name",
+    sort_by: str = "name",
     include_hidden: bool = False,
 ) -> Dict[str, Any]:
     """列出目录内容 — 小沈 2026-05-19, 2026-05-25 小健重构拆分
     P11统一入口:list/tree/statistics三合一
+    【2026-06-20 小健】删max_depth/page_token,sortBy→sort_by,删tree用recursive决定format
     """
-    if format not in ("list", "tree"):
-        return build_error(ERR_PARAM_INVALID, f"format只支持'list'或'tree',当前值: '{format}'", data={"format": format})
+    max_depth = 10
+    page_token = None
+    sortBy = sort_by
+    format = "tree" if recursive else "list"
+
     if max_depth < 1:
         return build_error(ERR_PARAM_INVALID, f"max_depth必须>=1,当前值: {max_depth}", data={"max_depth": max_depth})
     if sortBy not in ("name", "size", "mtime"):
@@ -1206,12 +1207,14 @@ async def search_files(
     pattern: str,
     search_dir: str,
     recursive: bool = True,
-    max_depth: int = 50,
     ignore_case: bool = True,
     type: Optional[Literal["file", "directory"]] = None,
-    page_token: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """搜索文件名 — 小沈 2026-05-19 精简参数(9→7);小健 2026-05-25 重构"""
+    """搜索文件名 — 小沈 2026-05-19 精简参数(9→7);小健 2026-05-25 重构
+    【2026-06-20 小健】删max_depth/page_token
+    """
+    max_depth = 50
+    page_token = None
     is_valid, error_msg = _validate_path(search_dir)
     if not is_valid:
         return build_error(ERR_PATH_INVALID, error_msg, data={"file_path": search_dir})
@@ -1783,20 +1786,17 @@ async def _apply_edits(
 async def grep_file_content(
     pattern: str,
     search_dir: Optional[str] = None,
-    output_mode: Optional[Literal["content", "files_with_matches", "count"]] = None,
     glob: Optional[str] = None,
-    context: Optional[Dict[str, int]] = None,
     ignore_case: bool = True,
-    multiline: bool = False,
-    head_limit: Optional[int] = None,
-    page_token: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """基于正则的内容搜索 — 小沈 2026-05-19, 2026-05-25 小健重构拆分"""
+    """基于正则的内容搜索 — 小沈 2026-05-19, 2026-05-25 小健重构拆分
+    【2026-06-20 小健】删multiline/head_limit/page_token/output_mode/context
+    """
+    multiline = False
+    head_limit = None
+    page_token = None
+    output_mode = "content"
     after_lines = before_lines = context_lines = None
-    if context:
-        after_lines = context.get("after")
-        before_lines = context.get("before")
-        context_lines = context.get("around")
     try:
         search_path = Path(search_dir).resolve() if search_dir else Path.cwd().resolve()
         is_valid, error_msg = _validate_path(str(search_path))
@@ -1822,7 +1822,7 @@ async def grep_file_content(
                 "total_matches": total_matches,
                 "pattern": pattern,
                 "search_dir": str(search_path),
-                "output_mode": output_mode or "content",
+                "output_mode": output_mode,
                 "has_more": has_more,
                 "next_page_token": next_page_token,
             },
@@ -1938,23 +1938,25 @@ async def read_text_file(
     limit: Optional[int] = None,
     encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
+    """读取文本文件"""
     return await _read_text_file(
         file_path=file_path,
         head=head,
         tail=tail,
         offset=offset,
-            limit=limit,
-            encoding=encoding
-        )
+        limit=limit,
+        encoding=encoding
+    )
 
 async def edit_text_file(
     file_path: str,
     old_string: str,
     new_string: str = "",
     replace_all: bool = False,
-    dry_run: bool = False,
     encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
+    """编辑文本文件 — 小健 2026-06-20 删dry_run参数"""
+    dry_run = False
     ignore_case = False
     return await _precise_replace_in_file(
         file_path=file_path,
@@ -1970,12 +1972,12 @@ async def compress_files(
     source: str,
     destination: str,
     format: str = "zip",
-    compression_level: int = 6,
     password: Optional[str] = None,
     overwrite: bool = False,
     exclude_patterns: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """压缩文件/目录 — 小沈 2026-06-16"""
+    """压缩文件/目录 — 小沈 2026-06-16, 小健 2026-06-20 删compression_level"""
+    compression_level = 6
     return await _compress_files(
         source_path=source,
         output_path=destination,
@@ -2023,9 +2025,9 @@ async def copy_file(
     destination: str,
     recursive: bool = False,
     overwrite: bool = False,
-    preserve_metadata: bool = True,
 ) -> Dict[str, Any]:
-    """复制文件/目录 — 小沈 2026-06-16"""
+    """复制文件/目录 — 小沈 2026-06-16, 小健 2026-06-20 删preserve_metadata"""
+    preserve_metadata = True
     if os.path.abspath(source) == os.path.abspath(destination):
         return build_success({"action": "copy", "source": source, "destination": destination}, "源和目标相同(P16幂等)")
     return await _copy_file(
@@ -2135,9 +2137,9 @@ async def _data_format_exec(
 async def read_data_file(
     file_path: str,
     format: Optional[str] = None,
-    encoding: str = "utf-8",
 ) -> Dict[str, Any]:
-    """读取结构化配置文件 — 小欧 2026-06-17"""
+    """读取结构化配置文件 — 小欧 2026-06-17, 小健 2026-06-20 删encoding"""
+    encoding = "utf-8"
     if not file_path:
         return build_error(ERR_PARAM_INVALID, "file_path是必填参数", data={"file_path": file_path})
     is_valid, err = _validate_path(file_path)
@@ -2161,10 +2163,10 @@ async def read_data_file(
 async def write_data_file(
     file_path: str, data: Any,
     format: Optional[str] = None,
-    encoding: str = "utf-8",
-    indent: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """写入结构化配置文件 — 小欧 2026-06-17"""
+    """写入结构化配置文件 — 小欧 2026-06-17, 小健 2026-06-20 删encoding/indent"""
+    encoding = "utf-8"
+    indent = None
     if not file_path:
         return build_error(ERR_PARAM_INVALID, "file_path是必填参数", data={"file_path": file_path})
     if data is None:

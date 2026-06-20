@@ -85,11 +85,11 @@ FILE_TOOL_DESCRIPTIONS = {
 
     "edit_text_file": """替换文本文件中的内容。old_string定位被替换文本,new_string替换为的内容。replace_all替换所有匹配项,dry_run仅预览。适用场景:需要精确修改代码中的某个函数名、变量引用、配置值时使用。""",
 
-    "list_directory": """列出目录内容,支持扁平列表(format="list")和JSON树结构(format="tree")两种输出格式。list格式返回包含文件大小/修改时间的条目列表,tree格式返回嵌套的JSON目录树。始终返回统计信息(文件数/目录数/总大小)。支持递归列出子目录、按名称/大小/修改时间排序、分页读取,以及过滤隐藏文件。适用场景:需要了解项目目录结构、查看文件大小和修改时间、获取文件统计信息时使用。""",
+    "list_directory": """列出目录内容,支持扁平列表(recursive=False)和JSON树结构(recursive=True)两种输出格式。扁平列表返回包含文件大小/修改时间的条目列表,树形结构返回嵌套的JSON目录树。始终返回统计信息(文件数/目录数/总大小)。支持递归列出子目录、按名称/大小/修改时间排序,以及过滤隐藏文件。适用场景:需要了解项目目录结构、查看文件大小和修改时间、获取文件统计信息时使用。""",
 
     "search_files": """递归搜索匹配glob模式的文件/目录。search_dir为必填的搜索起始目录。pattern支持glob通配符(*?**)和中文文件名。可指定搜索类型(文件/目录)、递归深度、大小写敏感。分页返回结果,每页包含匹配列表和总数。适用场景:需要按文件名查找特定文件、统计项目中某类文件数量时使用。""",
 
-    "grep_file_content": """基于ripgrep在文件中搜索文本内容,支持正则表达式和中文搜索。可指定搜索路径、文件过滤(glob通配符,如"*.py")、匹配前后上下文行数、大小写敏感、多行匹配模式、返回条数限制。分页返回结果,包含匹配行内容、匹配文件和总匹配数。适用场景:需要在代码或文档中查找特定函数定义、关键字、TODO标记,并了解其上下文时使用。""",
+    "grep_file_content": """基于ripgrep在文件中搜索文本内容,支持正则表达式和中文搜索。可指定搜索路径、文件过滤(glob通配符,如"*.py")、大小写敏感。默认返回匹配行内容(含文件名和行号),需要更多上下文时使用read_text_file读取完整文件。适用场景:需要在代码或文档中查找特定函数定义、关键字、TODO标记时使用。""",
 
     "compress_files": """压缩文件或目录为归档包。支持zip/tar/tar.gz/tar.bz2格式,可设置压缩级别(0-9)。ZIP格式支持密码加密(password参数)。source支持通配符(如D:/logs/*.log),展开后所有匹配文件打入同一压缩包。适用场景:需要备份文件、打包项目、减小文件体积、创建加密压缩包时使用。""",
 
@@ -136,15 +136,14 @@ FILE_TOOL_EXAMPLES = {
     ],
     "list_directory": [
         {"dir_path": "D:/project"},
-        {"dir_path": "D:/project", "recursive": True, "max_depth": 3},
-        {"dir_path": "D:/project", "format": "tree"},
+        {"dir_path": "D:/project", "recursive": True},
     ],
     "search_files": [
         {"pattern": "**/*.py", "search_dir": "D:/project"},
     ],
     "grep_file_content": [
         {"pattern": "def read_text_file", "search_dir": "D:/backend"},
-        {"pattern": "TODO", "search_dir": "D:/src", "context": {"around": 3}},
+        {"pattern": "TODO", "search_dir": "D:/src"},
     ],
     "compress_files": [
         {"source": "D:/project", "destination": "D:/backup.zip"},

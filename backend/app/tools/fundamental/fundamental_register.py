@@ -45,9 +45,9 @@ from app.tools.fundamental.time_tools import (
     time_diff,
     query_calendar,
 )
-from app.tools.system.system_schema import GetSystemInfoInput
+from app.tools.fundamental.fundamental_schema import SendNotificationInput, GetSystemInfoInput
 from app.tools.system.system_tools import get_system_info
-from app.tools.desktop.desktop_schema import SendNotificationInput
+from app.tools.fundamental.fundamental_schema import SendNotificationInput
 from app.tools.desktop.desktop_gui_tools import send_notification
 
 

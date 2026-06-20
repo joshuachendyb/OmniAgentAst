@@ -160,7 +160,9 @@ async def http_request(
     proxy: Optional[str] = None,
     retry: int = 3,
 ) -> dict:
-    """发起HTTP请求 — 小沈 2026-05-19 精简参数(11→8)"""
+    """发起HTTP请求 — 小沈 2026-05-19 精简参数(11→8)
+    【2026-06-20 小健】Schema删timeout/proxy/retry，函数签名保留内部默认值
+    """
     # 参数校验
     if retry < 0 or retry > 10:
         return build_error(ERR_NETWORK_INVALID_PARAM, f"重试次数必须在0-10之间,当前值:{retry}", data={"retry": retry})
@@ -289,7 +291,9 @@ async def download_file(
     timeout: int = 300000,
     proxy: Optional[str] = None,
 ) -> dict:
-    """从URL下载文件 — 小沈 2026-05-25 重构"""
+    """从URL下载文件 — 小沈 2026-05-25 重构
+    【2026-06-20 小健】Schema删headers/timeout/proxy，函数签名保留内部默认值
+    """
     try:
         url_info = _validate_url(url)
         if not url_info["data"]["valid"]:
@@ -407,10 +411,12 @@ async def fetch_webpage(
     extract_format: str = "markdown",
     js_render: bool = False,
     timeout: int = 30000,
-    max_tokens: int = 8000,
     proxy: Optional[str] = None,
 ) -> dict:
-    """获取网页内容 — 小沈 2026-05-19 精简参数(8→7);小健 2026-05-25 重构 — 小健 2026-05-25"""
+    """获取网页内容 — 小沈 2026-05-19 精简参数(8→7);小健 2026-05-25 重构;小健 2026-06-20 删max_tokens
+    【2026-06-20 小健】Schema删js_render/timeout/proxy，函数签名保留内部默认值
+    """
+    max_tokens = 8000
     timeout_sec = timeout / 1000.0
 
     try:
@@ -620,7 +626,9 @@ async def search_web(
     num_results: int = 10,
     proxy: Optional[str] = None,
 ) -> dict:
-    """搜索网络 — 小沈 2026-05-19 精简参数(7→5)"""
+    """搜索网络 — 小沈 2026-05-19 精简参数(7→5)
+    【2026-06-20 小健】Schema删allowed_domains/blocked_domains/num_results/proxy，函数签名保留内部默认值
+    """
     try:
         if len(query) < 2:
             return build_error(ERR_PARAM_INVALID, "搜索查询至少需要2个字符")
@@ -937,6 +945,7 @@ async def network_diagnose(
 ) -> dict:
     """网络连通性诊断 - 小沈 2026-05-17
     【2026-05-17 小沈】合并 ping + port_check
+    【2026-06-20 小健】Schema删count/timeout，函数签名保留内部默认值
 
     Args:
         host: 目标主机地址(域名或IP)

@@ -72,21 +72,20 @@ def execute_code(
     language: str = "python",
     timeout: int = 30,
     working_dir: Optional[str] = None,
-    safety_check: bool = True,
 ) -> dict:
     """统一代码执行入口 - 小沈 2026-05-22 合并execute_python+execute_javascript
+    【2026-06-20 小健】删除safety_check参数,安全检查始终启用,LLM不应有权关闭
 
     Args:
         code: 要执行的代码字符串
         language: 语言类型,"python"或"javascript",默认"python"
         timeout: 超时秒数(1-300),默认30
         working_dir: 工作目录(可选),不存在时自动创建
-        safety_check: 是否安全检查,默认True
     """
     if language == "python":
-        return _execute_python(code=code, timeout=timeout, working_dir=working_dir, safety_check=safety_check)
+        return _execute_python(code=code, timeout=timeout, working_dir=working_dir, safety_check=True)
     elif language == "javascript":
-        return _execute_javascript(code=code, timeout=timeout, working_dir=working_dir, safety_check=safety_check)
+        return _execute_javascript(code=code, timeout=timeout, working_dir=working_dir, safety_check=True)
     else:
         return build_error(ERR_PARAM_INVALID, f"不支持的语言: {language},可选: python/javascript", data={"language": language})
 
@@ -107,7 +106,7 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
         from app.tools.toolhelper.exec_helper import _validate_code_safety
         warnings = _validate_code_safety(code)
         if warnings:
-            return build_error(ERR_UNSAFE_CODE, f"代码存在安全风险: {', '.join(warnings)},如确认安全可设置 safety_check=False", data={"warnings": warnings})
+            return build_error(ERR_UNSAFE_CODE, f"代码存在安全风险: {', '.join(warnings)}", data={"warnings": warnings})
     try:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
             f.write(code)
@@ -204,7 +203,7 @@ def _js_safety_check(code: str) -> Optional[str]:
     """JS安全检查:返回None表示安全,返回str表示错误消息 - 小健修复 2026-05-25"""
     for pattern, desc in _JS_DANGEROUS_PATTERNS:
         if re_mod.search(pattern, code):
-            return f"安全检查: 检测到危险模式 {desc},如需执行请设置safety_check=False"
+            return f"安全检查: 检测到危险模式 {desc}"
     return None
 
 
