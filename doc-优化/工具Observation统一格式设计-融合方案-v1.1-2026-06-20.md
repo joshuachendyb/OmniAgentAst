@@ -540,7 +540,7 @@ build_success(
 ```
 观察: success - event_log
 结果: 获取事件日志(Application)，10条记录
-详情: {"action":"read","target":"Application","result":{"events":[...],"total":10,"level":"Error"}}
+详情: {"events":[...],"total":10,"level":"Error"}
 ```
 
 ### 6.7 桌面工具
@@ -549,14 +549,14 @@ build_success(
 ```
 观察: success - mouse_click
 结果: 点击屏幕(500,300)，左键单击
-详情: {"action":"click","target":"(500,300)","result":{"x":500,"y":300,"button":"left","click_type":"single"}}
+详情: {"x":500,"y":300,"button":"left","click_type":"single"}
 ```
 
 **screen_capture 成功**：
 ```
 观察: success - screen_capture
 结果: 截图保存到 C:\capture.png，1920×1080
-详情: {"action":"capture","target":"screen","result":{"file_path":"C:\\capture.png","width":1920,"height":1080}}
+详情: {"file_path":"C:\\capture.png","width":1920,"height":1080}
 ```
 
 ### 6.8 注册表工具
@@ -565,14 +565,14 @@ build_success(
 ```
 观察: success - registry_read
 结果: 读取 HKCU\Software\MyApp\LastLogin = "2026-06-20"(REG_SZ)
-详情: {"action":"read","target":"HKCU\\Software\\MyApp","result":{"value_name":"LastLogin","value":"2026-06-20","value_type":"REG_SZ"}}
+详情: {"value_name":"LastLogin","value":"2026-06-20","value_type":"REG_SZ"}
 ```
 
 **registry_write 成功**：
 ```
 观察: success - registry_write
 结果: 写入 HKCU\Software\MyApp\LastLogin = "2026-06-20"(REG_SZ)，旧值="2026-06-19"
-详情: {"action":"write","target":"HKCU\\Software\\MyApp","result":{"value_name":"LastLogin","new_value":"2026-06-20","old_value":"2026-06-19","value_type":"REG_SZ"}}
+详情: {"value_name":"LastLogin","new_value":"2026-06-20","old_value":"2026-06-19","value_type":"REG_SZ"}
 ```
 
 ### 6.9 定时器工具
@@ -581,7 +581,7 @@ build_success(
 ```
 观察: success - timer_set
 结果: 定时器设置成功，30秒后触发
-详情: {"action":"set","target":"timer_001","result":{"delay_seconds":30,"trigger_time":"2026-06-20 10:51:00"}}
+详情: {"delay_seconds":30,"trigger_time":"2026-06-20 10:51:00"}
 ```
 
 ---
@@ -671,7 +671,7 @@ build_error(
 观察: warning [WARNING_DB_SAFETY] - SQL影响行数过大
 ⚠ 警告: 操作影响行数超过安全阈值，已自动回滚
 结果: SQL影响50000行，超过安全阈值10000，已自动回滚
-详情: {"action":"execute","target":"DELETE FROM logs","result":{"affected_rows":50000,"action_taken":"rollback"}}
+详情: {"affected_rows":50000,"action_taken":"rollback"}
 建议: 请使用 WHERE 子句缩小影响范围
 ```
 
