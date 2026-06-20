@@ -2358,14 +2358,118 @@ llm_data = {
 
 | 步骤 | 内容 | 涉及文件 | 5.9章节 |
 |------|------|---------|---------|
+| 0 | **清查**：全量搜索 llm_data 引用，按"定义/构建/消费/传递/注释"分类，逐处标注处理方式（保留/修改/删除），确保无遗漏后再进入步骤1 | 整个 backend/ | — |
 | 1 | 更新tool_response.py：register_builder + _default_builder + build_result | `backend/app/tools/tool_response.py` | 5.9.2 / 5.9.3 |
 | 2 | 给每个工具添加builder函数 + register_builder() + time.perf_counter() | 14个工具文件 + 7个helper文件（共21个） | 5.9.2.2 / 5.9.7 |
-| 3 | 重写observation_formatter.py → format_llm_observation(data, llm_data) | `backend/app/services/agent/observation_formatter.py` | 5.9.6 |
-| 4 | 更新message_utils.py的build_observation_text桥接层 | `backend/app/services/agent/agent_utils/message_utils.py` | 5.9.6 |
-| 5 | 更新action_handler.py适配新result三字段 | `backend/app/services/agent/core_agent/handlers/action_handler.py` | 5.9.8 |
-| 6 | 更新tool_step.py适配新result结构 | `backend/app/steps/tool_step.py` | 5.9.8 |
-| 7 | 删除旧的build_success/build_error/build_warning函数及旧llm_data提取逻辑 | tool_response.py + 各工具文件 | 3.6 |
+| 3 | 重写observation_formatter.py → format_llm_observation(data, llm_data)，清除旧格式化函数 | `backend/app/services/agent/observation_formatter.py` | 5.9.6 |
+| 4 | 更新message_utils.py的build_observation_text桥接层，清除旧的build_execution_result_dict调用 | `backend/app/services/agent/agent_utils/message_utils.py` | 5.9.6 |
+| 5 | 更新action_handler.py适配新result三字段，清除旧格式字段读取 | `backend/app/services/agent/core_agent/handlers/action_handler.py` | 5.9.8 |
+| 6 | 更新tool_step.py适配新result结构，清除旧格式字段 | `backend/app/steps/tool_step.py` | 5.9.8 |
+| 7 | 收尾统一清理：删除tool_response.py中的旧build_success/build_error/build_warning函数及相关常量 | `backend/app/tools/tool_response.py` | 3.6 |
 | 8 | 完整回归测试 | — | — |
+
+#### 9.2.1 分批实施策略
+
+**总工作量**：21个工具文件（14个工具实现 + 7个helper），604处 build_xxx 调用（build_success=162, build_error=440, build_warning=2）需要替换为 build_result。604处不可能一次完成，按模块分8批执行。
+
+**核心原则**：
+1. 先清查再动手 — 步骤0全量摸底后，确保无遗漏再开始改造
+2. 框架优先 — 先把5个核心文件改完，让新管道跑通
+3. 分批推进 — 每批2-3个文件，改完立刻跑测试验证
+4. 验证通过再下一批 — 不累积未验证的修改
+
+#### 9.2.2 步骤0：全量清查旧llm_data代码
+
+**目标**：动手改造前，把整个backend/里所有旧llm_data相关代码全部翻出来，逐处标注处理方式，确保改的时候不遗漏。
+
+**清查方法**：
+
+```
+1. 全局搜索 "llm_data" 字符串（排除 __pycache__）
+2. 逐处记录：文件路径、行号、代码行、上下文
+3. 分类标注：
+   - 【定义】函数参数中作为形参出现
+   - 【构建】在函数体内构建 llm_data dict 并传给 build_success/build_error
+   - 【消费】从 result dict 中读取 llm_data
+   - 【传递】调用其他函数时作为实参传入
+   - 【注释】仅在注释/文档中提及
+4. 逐处标注处理方式：
+   - 保留 → 新格式也需要的功能（如 format_llm_observation 消费 llm_data）
+   - 修改 → 适配新格式（如 action_handler 读取方式）
+   - 删除 → 旧逻辑不再需要（如旧格式化函数、内联构建）
+5. 输出清查清单，确认无遗漏后进入步骤1
+```
+
+**输出物**：一份完整的 `旧llm_data代码清查清单.md`，包含所有引用位置和处理方式。
+
+**清查清单格式参考**（按位置列出每处旧代码及其处理方式）：
+
+| 位置 | 需清除/修改的旧代码 | 处理方式 | 执行时机 |
+|------|-------------------|---------|---------|
+| `observation_formatter.py` | extract_status、build_execution_result_dict、_extract_display_data、_append_data、_format_summary_parts、_format_result_observation等旧格式化函数 | **删除**（重写时替换） | 框架批 |
+| `message_utils.py` | build_observation_text 中的 build_execution_result_dict 调用 | **删除**（改为直接调 format_llm_observation） | 框架批 |
+| `action_handler.py` | result.get("code")、result.get("warning")、result.get("attachment")、result.get("return_direct") | **修改**（改为从 llm_data/other_data 取） | 框架批 |
+| `tool_step.py` | execution_result/execution_status/summary/error_message 等旧格式字段 | **修改**（改为从 llm_data+other_data 投射） | 框架批 |
+| 各工具文件（21个） | `from app.tools.tool_response import build_success, build_error, build_warning` 导入 + 内联 llm_data 构建代码 | **删除**（改为 build_result + builder） | 每批各自 |
+| `tool_response.py` | build_success、build_error、build_warning、_add_optionals、_OPTIONAL_FIELDS、_REQUIRED_FIELDS | **删除**（所有工具改完后） | 收尾 |
+
+#### 9.2.3 框架批（5个核心文件）
+
+**一次性完成，不分批**。框架层改完是整个Phase 1的基座。框架批同时负责清除本层所有旧的llm_data提取和格式化逻辑。
+
+| 文件 | 新增/修改内容 | 同时清除的旧代码 | 验收标准 |
+|------|-------------|-----------------|---------|
+| `backend/app/tools/tool_response.py` | 新增 register_builder + _default_builder + build_result + 新版 is_success/is_error | 旧函数保留（收尾步骤7才删） | 导入不报错，注册+构建正常 |
+| `backend/app/services/agent/observation_formatter.py` | 重写 format_llm_observation(data, llm_data) + 新增 format_data_detail | 清除 extract_status、build_execution_result_dict、_extract_display_data、_append_data、_format_summary_parts、_format_result_observation、_format_success_observation、_format_warning_observation、_format_error_observation、_build_base_text、_append_warning、_append_hint | 新旧格式都能正常格式化 |
+| `backend/app/services/agent/agent_utils/message_utils.py` | 更新 build_observation_text 桥接层：拆包 result → (data, llm_data)，直接调 format_llm_observation | 清除 build_execution_result_dict 调用 | observation 文本生成正常 |
+| `backend/app/services/agent/core_agent/handlers/action_handler.py` | 适配新3字段 result：build_observation 从 llm_data 取 status.exec_code，从 other_data 取 warning/return_direct/attachment | 清除 result.get("code")、result.get("warning")、result.get("attachment")、result.get("return_direct") 等旧字段读取 | action 处理流程正常 |
+| `backend/app/services/agent/steps/tool_step.py` | ToolStep 适配新 result 结构：execution_status 从 llm_data.status.exec_code 取，extra_fields 从 llm_data/other_data 取 | 清除旧格式字段引用：execution_result/execution_status/summary/error_message/action_retry_count/execution_time_ms/code/warning/attachment 改为从 llm_data+other_data 投射 | tool_step 序列化正常 |
+
+**框架批完成后的验证**：
+```
+pytest -x --tb=short -k "test_tool_response or test_observation or test_message or test_action or test_tool_step"
+```
+
+#### 9.2.4 工具分批详表
+
+工具文件共14个实现文件 + 7个 helper 文件，按以下8批执行。
+
+**每批标准步骤**：
+```
+1. 给文件末尾添加 builder 函数（按5.9.2.2模板）
+2. 添加 register_builder() 调用
+3. 每个工具函数加 time.perf_counter() 测量（5.9.7规范）
+4. 替换所有 build_success/build_error/build_warning → build_result，同时：
+   a. 删除 from app.tools.tool_response import build_success, build_error, build_warning 导入
+   b. 删除工具函数内内联构建 llm_data={...} 传给 build_success/build_error 的代码
+   c. 改为 build_result(tool_name, data=..., other_data=...)，llm_data 由 builder 生成
+5. 跑 pytest 验证本批修改
+6. 通过 → 下一批
+```
+
+| 批 | 文件 | build_success | build_error | build_warning | 合计 | 优先级 |
+|:-:|------|:------------:|:----------:|:------------:|:---:|:------:|
+| **第1批** | `file/file_tools.py` + `toolhelper/file_helper.py` | 41 | 149 | 0 | **190** | 最高（最大文件，最常用） |
+| **第2批** | `document/document_tools.py` | 14 | 40 | 0 | **54** | 高 |
+| **第3批** | `system/system_tools.py` + `network/network_tools.py` | 17 | 78 | 0 | **95** | 高 |
+| **第4批** | `desktop/desktop_gui_tools.py` + `desktop/desktop_tools.py` | 20 | 40 | 0 | **60** | 中 |
+| **第5批** | `shell/shell_tools.py` + `shell/code_execution_tools.py` | 14 | 30 | 0 | **44** | 中 |
+| **第6批** | `dataanalysis/dataanalysis_tools.py` + `dataanalysis/database_tools.py` | 8 | 28 | 2 | **38** | 中 |
+| **第7批** | `fundamental/fundamental_tools.py` + `fundamental/time_tools.py` + `timer/timer_tools.py` + `win_registry/win_registry_tools.py` | 17 | 34 | 0 | **51** | 低 |
+| **第8批** | 剩余6个helper：`data_format_helper.py` + `gui_helper.py` + `common_helper.py` + `network_helper.py` + `db_helper.py` + `window_helper.py` | 31 | 41 | 0 | **72** | 低 |
+
+#### 9.2.5 收尾
+
+框架批 + 工具8批全部完成后：
+
+| 步骤 | 内容 | 验收标准 |
+|:----:|------|---------|
+| 1 | 删除 tool_response.py 中的旧 build_success/build_error/build_warning 函数 | 旧函数不再被引用（所有工具已改用 build_result） |
+| 2 | 同时删除 _add_optionals、_OPTIONAL_FIELDS、_REQUIRED_FIELDS | 同上 |
+| 3 | 全局搜索确认无残留的 build_success/build_error/build_warning 调用 | 无匹配 |
+| 4 | 运行完整回归测试：`pytest` | failed=0, error=0 |
+| 5 | 运行前端检查：`npm run check` | 无错误 |
+| 6 | 提交commit + 打patch tag | |
 
 ### 9.3 核心改动（参考5.9/5.10章）
 

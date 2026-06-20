@@ -5,9 +5,16 @@
 本文件属于【工具层】,职责:构建返回dict基础结构(code/data/message + 可选字段)
 以及判断返回状态的查询函数(is_success/is_error)。
 
+【Phase 1 2026-06-20 小欧】新增 builder 注册机制 + build_result 三字段格式:
+  - register_builder(tool_name, fn): 注册 builder
+  - _default_builder(tool_name, data, other_data): 默认 builder（兜底）
+  - build_result(tool_name, data, other_data, **extra): 统一出口
+  - is_success/is_error 新增新格式判断（旧函数保留过渡期）
+
 两层职责边界:
   tool_response.py (构建层) ← 本文件
-    → 提供 build_success / build_error / build_warning / is_success / is_error
+    → 提供 build_success / build_error / build_warning / is_success / is_error (旧)
+    → 提供 register_builder / _default_builder / build_result / is_success / is_error (新)
     → 工具函数、helper函数、Agent编排层 统一使用这些函数
     → 通过 **extra 支持任意扩展字段(error_type/metadata等)
 
@@ -16,7 +23,9 @@
     → 禁止构建结果,只消费和格式化
 """
 from app.constants import SUCCESS_CODE
-from typing import Any, Dict, Optional, List
+from typing import Any, Callable, Dict, Optional, List
+
+# ── 旧格式 ──────────────────────────────────────────────
 
 # 必填字段 — 始终写入
 _REQUIRED_FIELDS = ("code", "data", "message")
@@ -154,15 +163,91 @@ def _add_optionals(result: Dict[str, Any], **kwargs: Any) -> None:
 
 
 def is_success(result: Dict[str, Any]) -> bool:
-    """判断返回是否成功"""
+    """判断返回是否成功（同时支持旧格式和新格式）"""
+    # 新格式：检查 llm_data.status.exec_code
+    llm_data = result.get("llm_data")
+    if isinstance(llm_data, dict):
+        exec_code = llm_data.get("status", {}).get("exec_code", "")
+        if exec_code:
+            return exec_code in ("success", "warning")
+    # 旧格式兜底
     code = result.get("code", "")
-    return code == SUCCESS_CODE or code.startswith("WARNING_")
+    return code == SUCCESS_CODE or (isinstance(code, str) and code.startswith("WARNING_"))
 
 
 def is_error(result: Dict[str, Any]) -> bool:
-    """判断返回是否失败"""
+    """判断返回是否失败（同时支持旧格式和新格式）"""
+    # 新格式：检查 llm_data.status.exec_code
+    llm_data = result.get("llm_data")
+    if isinstance(llm_data, dict):
+        exec_code = llm_data.get("status", {}).get("exec_code", "")
+        if exec_code:
+            return exec_code == "error"
+    # 旧格式兜底
     code = result.get("code", "")
-    return code.startswith("ERR_")
+    return isinstance(code, str) and code.startswith("ERR_")
+
+
+# ── 新格式：builder 注册机制 + build_result ─────────────
+
+_BUILDERS: Dict[str, Callable] = {}
+
+
+def register_builder(tool_name: str, fn: Callable) -> None:
+    """注册工具的 llm_data builder 函数 — 小欧 2026-06-20
+
+    Args:
+        tool_name: 工具名称
+        fn: builder 函数,签名 (tool_name, data, other_data) -> llm_data dict
+    """
+    _BUILDERS[tool_name] = fn
+
+
+def _default_builder(tool_name: str, data: Any = None,
+                     other_data: Optional[Dict] = None) -> Dict[str, Any]:
+    """默认 builder — 兜底逻辑:用 data 的 repr 当 summary — 小欧 2026-06-20
+
+    Args:
+        tool_name: 工具名称
+        data: 业务数据
+        other_data: 控制字段(未使用)
+
+    Returns:
+        最小 llm_data dict
+    """
+    summary = str(data) if data is not None else "执行完成"
+    return {
+        "summary": summary[:200],
+        "action": {"tool": tool_name, "tool_zh": tool_name, "params": {}},
+        "target": "",
+        "status": {"exec_code": "success", "message": "执行成功",
+                    "code": SUCCESS_CODE, "detail": "", "hint": ""},
+    }
+
+
+def build_result(tool_name: str, data: Any = None,
+                 other_data: Optional[Dict] = None,
+                 **extra) -> Dict[str, Any]:
+    """统一构建工具返回结果（新3字段格式）— 小欧 2026-06-20
+
+    Args:
+        tool_name: 工具名称（用于查找 builder）
+        data: 纯业务数据
+        other_data: 控制字段 (warning/retry_count/return_direct/attachment)
+        **extra: 额外字段（合并到顶层）
+
+    Returns:
+        {"data": ..., "llm_data": ..., "other_data": ..., **extra}
+    """
+    builder = _BUILDERS.get(tool_name, _default_builder)
+    llm_data = builder(tool_name, data, other_data)
+    result: Dict[str, Any] = {
+        "data": data,
+        "llm_data": llm_data,
+        "other_data": other_data or {},
+    }
+    result.update(extra)
+    return result
 
 
 
