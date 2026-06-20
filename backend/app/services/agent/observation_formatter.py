@@ -112,28 +112,16 @@ def build_execution_result_dict(execution_result: Dict[str, Any]) -> Dict[str, A
 def _extract_display_data(result: dict) -> Any:
     """提取display_data — 小沈 2026-06-08 | P1修复: or→is not None(空字典误回退) — 小欧 2026-06-11
     【2026-06-20 北京老陈+小健】修复: llm_data不再替代data,而是两者都给LLM
-    原逻辑: 有llm_data就只返回llm_data, data被丢弃 → LLM看不到工具返回的原始数据
-    新逻辑: llm_data作为摘要,data作为原始数据,都返回给LLM
+    返回: (llm_data, data) 元组,下游按需格式化
     """
     llm_data = result.get("llm_data")
     data = result.get("data")
 
-    # 两个都没有 → 警告
     if llm_data is None and data is None:
         from app.utils.logger import logger as _logger
         _logger.warning("[OBS-001] format_llm_observation: llm_data和data均为空")
-        return None
 
-    # 两个都有 → 摘要+原始数据合并
-    if llm_data is not None and data is not None:
-        return {"_summary": llm_data, "_data": data}
-
-    # 只有llm_data → 返回llm_data
-    if llm_data is not None:
-        return llm_data
-
-    # 只有data → 返回data
-    return data
+    return llm_data, data
 
 
 def _build_base_text(result: dict, status: str) -> str:
@@ -148,40 +136,44 @@ def _append_warning(text: str, result: dict) -> str:
     return text
 
 
-def _append_data(text: str, display_data: Any) -> str:
-    """追加data — 小沈 2026-06-08 | 2026-06-20 北京老陈+小健 支持summary+data合并格式"""
-    if not display_data:
+def _format_summary_parts(summary: Any) -> str:
+    """将llm_data摘要格式化为 k=v 一行文本 — 小健 2026-06-20 抽取复用"""
+    if isinstance(summary, dict):
+        parts = []
+        for k, v in summary.items():
+            val = json.dumps(v, ensure_ascii=False) if isinstance(v, (list, dict)) else str(v)
+            parts.append(f"{k}={val}")
+        return " | ".join(parts)
+    return str(summary)
+
+
+def _append_data(text: str, llm_data: Any, data: Any) -> str:
+    """追加data — 小沈 2026-06-08 | 2026-06-20 北京老陈+小健 重构: 接收分离的llm_data+data"""
+    has_llm = llm_data is not None
+    has_data = data is not None and data != {} and data != [] and data != ""
+
+    if not has_llm and not has_data:
         return text
 
-    # 合并格式: llm_data摘要 + data原始数据都给LLM
-    if isinstance(display_data, dict) and "_summary" in display_data:
-        summary = display_data["_summary"]
-        raw_data = display_data["_data"]
-        # 先追加摘要
-        if isinstance(summary, dict):
-            text += f"\n数据摘要: {json.dumps(summary, ensure_ascii=False)}"
-        else:
-            text += f"\n数据摘要: {summary}"
-        # 再追加原始数据
-        if raw_data is not None:
-            if isinstance(raw_data, (dict, list)):
-                raw_data = _prevent_json_oom(raw_data, LLM_SAFE_LIMIT)
-            text += f"\n数据: {json.dumps(raw_data, ensure_ascii=False)}"
-        return text
+    # 有llm_data → 【摘要】行
+    if has_llm:
+        text += f"\n【摘要】 {_format_summary_parts(llm_data)}"
 
-    # 原有逻辑: 直接追加
-    if isinstance(display_data, (dict, list)):
-        display_data = _prevent_json_oom(display_data, LLM_SAFE_LIMIT)
-    return text + f"\n数据: {json.dumps(display_data, ensure_ascii=False)}"
+    # 有data → 【数据】行
+    if has_data:
+        display = _prevent_json_oom(data, LLM_SAFE_LIMIT) if isinstance(data, (dict, list)) else data
+        text += f"\n【数据】 {json.dumps(display, ensure_ascii=False)}"
+
+    return text
 
 
 def _format_result_observation(result: dict, status: str, use_llm_data: bool = True) -> str:
     """统一格式化成功/警告结果 — 小健 2026-06-18 DRY合并"""
     text = _build_base_text(result, status)
     if status == "success":
-        display_data = _extract_display_data(result) if use_llm_data else result.get("data")
+        llm_data, data = _extract_display_data(result) if use_llm_data else (None, result.get("data"))
         text = _append_warning(text, result)
-        text = _append_data(text, display_data)
+        text = _append_data(text, llm_data, data)
     else:
         if result.get("data"):
             data = result["data"]
@@ -213,27 +205,11 @@ def _append_hint(text: str, tool_name: str, tool_params: Optional[dict], result:
 
 def _format_error_observation(result: dict, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
     """格式化错误结果 — 小沈 2026-06-08 重构
-    2026-06-19 小欧 修复: error路径未显示data/llm_data,导致LLM看不到stderr而盲目重试
-    2026-06-20 北京老陈+小健 支持summary+data合并格式"""
+    2026-06-19 小欧 修复: error路径未显示data/llm_data
+    2026-06-20 北京老陈+小健 复用_append_data,消除DRY重复"""
     text = f"Observation: error [{result.get('code', '')}] - {result.get('message', '')}"
-    display_data = _extract_display_data(result)
-    if display_data:
-        # 合并格式: 摘要+原始数据都给LLM
-        if isinstance(display_data, dict) and "_summary" in display_data:
-            summary = display_data["_summary"]
-            raw_data = display_data["_data"]
-            if isinstance(summary, dict):
-                text += f"\n错误摘要: {json.dumps(summary, ensure_ascii=False)}"
-            else:
-                text += f"\n错误摘要: {summary}"
-            if raw_data is not None:
-                if isinstance(raw_data, (dict, list)):
-                    raw_data = _prevent_json_oom(raw_data, LLM_SAFE_LIMIT)
-                text += f"\n错误详情: {json.dumps(raw_data, ensure_ascii=False)}"
-        else:
-            if isinstance(display_data, (dict, list)):
-                display_data = _prevent_json_oom(display_data, LLM_SAFE_LIMIT)
-            text += f"\n错误详情: {json.dumps(display_data, ensure_ascii=False)}"
+    llm_data, data = _extract_display_data(result)
+    text = _append_data(text, llm_data, data)
     text = _append_hint(text, tool_name, tool_params, result)
     return text
 
