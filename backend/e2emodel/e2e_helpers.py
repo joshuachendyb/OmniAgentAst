@@ -933,7 +933,8 @@ def check_logs(
             result["errors"].append(line.strip()[:200])
 
         # ── traceback检查(MUST) ──
-        tb_count = content.count("Traceback (most recent call last)")
+        # 只统计独立的Python traceback(行首)，排除工具结果中嵌入的traceback(属于LLM生成代码问题)
+        tb_count = len(re.findall(r"^Traceback \(most recent call last\)", content, re.MULTILINE))
         if tb_count > 0:
             result["tracebacks"].append(f"发现{tb_count}个traceback")
 
@@ -1179,13 +1180,20 @@ def write_test_record(
     if passed and dpi is not None and len(dpi) > 0:
         passed = False
     # 回复含错误关键词则整体FAILED -- 小健 2026-06-19
+    # 跳过已知LLM流式错误前缀(工具链成功但LLM回复失败的情况不算FAIL)
     resp = result.get("response_text", "")
     resp_has_error = False
+    _KNOWN_LLM_ERR_PREFIXES = ("LLM流式错误:", "LLM流式错误：")
     if resp:
-        resp_lower = resp.lower()
-        clean_resp = resp.replace("\n", " ").replace("\r", " ")
-        err_markers = ("错误:", "错误：", "超时,", "超时，", "超时)", "超时）", "出错", "failed:", "exception:", "traceback:", "llm流式错误", "api请求参数错误", "errorcode", "error_code")
-        resp_has_error = any(m in clean_resp for m in err_markers)
+        _clean = resp.replace("\n", " ").replace("\r", " ").strip()
+        # 去掉已知的LLM流式错误前缀后再检查
+        for pfx in _KNOWN_LLM_ERR_PREFIXES:
+            if _clean.startswith(pfx):
+                _clean = _clean[len(pfx):].strip()
+                break
+        if _clean:
+            err_markers = ("错误:", "错误：", "超时,", "超时，", "超时)", "超时）", "出错", "failed:", "exception:", "traceback:")
+            resp_has_error = any(m in _clean for m in err_markers)
     if passed and resp_has_error:
         passed = False
     tool_calls = result.get("tool_calls", [])

@@ -1,0 +1,50 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.11, pytest-8.4.2, pluggy-1.6.0 -- E:\Appsw\python31311\python.exe
+cachedir: .pytest_cache
+rootdir: G:\OmniAgentAs-desk\backend
+configfile: pytest.ini
+plugins: anyio-4.13.0, asyncio-0.25.3, cov-7.1.0, timeout-2.4.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None
+timeout: 540.0s
+timeout method: thread
+timeout func_only: False
+collecting ... collected 36 items
+
+backend\tests\test_tool_registry.py::TestToolRegistryCRUD::test_register_and_get PASSED [  2%]
+backend\tests\test_tool_registry.py::TestToolRegistryCRUD::test_get_implementation PASSED [  5%]
+backend\tests\test_tool_registry.py::TestToolRegistryCRUD::test_get_nonexistent PASSED [  8%]
+backend\tests\test_tool_registry.py::TestToolRegistryCRUD::test_unregister PASSED [ 11%]
+backend\tests\test_tool_registry.py::TestToolRegistryCRUD::test_unregister_nonexistent PASSED [ 13%]
+backend\tests\test_tool_registry.py::TestToolRegistryCRUD::test_len PASSED [ 16%]
+backend\tests\test_tool_registry.py::TestToolRegistryCategory::test_list_tools_all PASSED [ 19%]
+backend\tests\test_tool_registry.py::TestToolRegistryCategory::test_list_tools_by_category PASSED [ 22%]
+backend\tests\test_tool_registry.py::TestToolRegistryCategory::test_get_categories PASSED [ 25%]
+backend\tests\test_tool_registry.py::TestToolRegistryCategory::test_get_implementations_by_category PASSED [ 27%]
+backend\tests\test_tool_registry.py::TestToolRegistryCategory::test_list_tools_includes_registered PASSED [ 30%]
+backend\tests\test_tool_registry.py::TestToolRegistryEdgeCases::test_duplicate_register_updates PASSED [ 33%]
+backend\tests\test_tool_registry.py::TestToolRegistryEdgeCases::test_expose_to_llm_filter PASSED [ 36%]
+backend\tests\test_tools_core.py::TestBuildSuccess::test_basic PASSED    [ 38%]
+backend\tests\test_tools_core.py::TestBuildSuccess::test_custom_message PASSED [ 41%]
+backend\tests\test_tools_core.py::TestBuildSuccess::test_with_warning PASSED [ 44%]
+backend\tests\test_tools_core.py::TestBuildSuccess::test_with_return_direct PASSED [ 47%]
+backend\tests\test_tools_core.py::TestBuildSuccess::test_extra_fields PASSED [ 50%]
+backend\tests\test_tools_core.py::TestBuildSuccess::test_no_optional_fields_by_default PASSED [ 52%]
+backend\tests\test_tools_core.py::TestBuildError::test_basic PASSED      [ 55%]
+backend\tests\test_tools_core.py::TestBuildError::test_with_data PASSED  [ 58%]
+backend\tests\test_tools_core.py::TestBuildWarning::test_basic PASSED    [ 61%]
+backend\tests\test_tools_core.py::TestIsSuccess::test_success PASSED     [ 63%]
+backend\tests\test_tools_core.py::TestIsSuccess::test_warning_is_success PASSED [ 66%]
+backend\tests\test_tools_core.py::TestIsSuccess::test_error_is_not_success PASSED [ 69%]
+backend\tests\test_tools_core.py::TestIsError::test_error PASSED         [ 72%]
+backend\tests\test_tools_core.py::TestIsError::test_success_is_not_error PASSED [ 75%]
+backend\tests\test_tools_core.py::TestIsError::test_warning_is_not_error PASSED [ 77%]
+backend\tests\test_tools_core.py::TestToolCategory::test_all_values PASSED [ 80%]
+backend\tests\test_tools_core.py::TestToolCategory::test_order PASSED    [ 83%]
+backend\tests\test_tools_core.py::TestToolCategory::test_name_cn PASSED  [ 86%]
+backend\tests\test_tools_core.py::TestToolMetadata::test_create PASSED   [ 88%]
+backend\tests\test_tools_core.py::TestToolMetadata::test_failure_hint_no_fn PASSED [ 91%]
+backend\tests\test_tools_core.py::TestToolMetadata::test_failure_hint_with_fn PASSED [ 94%]
+backend\tests\test_tools_core.py::TestDerivedMappings::test_category_order PASSED [ 97%]
+backend\tests\test_tools_core.py::TestDerivedMappings::test_category_names PASSED [100%]
+
+============================= 36 passed in 0.27s ==============================
