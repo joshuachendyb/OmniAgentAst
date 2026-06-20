@@ -182,7 +182,7 @@ llm_data = {
 | 每个tool | 填写自己的llm_data内容（summary/action/status/metrics等具体值） | 只改自己的工具代码 |
 | observation流程 | 只认llm_data的6字段结构，遍历渲染，不关心具体值 | 永远不变 |
 | 前端 | 按结构渲染（summary做标题，metrics.text做标签，data做详情） | 永远不变 |
-| LLM | 按结构消费（观察行→结果行→详情行） | 永远不变 |
+| LLM | 按三段式文本理解（观察→结果→详情） | 永远不变 |
 
 **结果**：新增/修改任何tool，只改该tool的llm_data填充逻辑，不影响observation formatter、不影响前端渲染、不影响LLM消费流程。
 
@@ -272,6 +272,9 @@ message = "影响行数超过安全阈值" # 警告时必须说清原因
 
 | 场景 | message示例 | 作用 |
 |------|-----------|------|
+| 成功 | "读取成功" | LLM扫一眼就确认结果，无需读summary |
+| 错误 | "文件不存在" | 一句话点明错误原因，LLM立即可决策 |
+| 警告 | "影响行数超过安全阈值" | 明确风险性质，LLM知道要谨慎处理 |
 
 **为什么metrics是自由dict？**
 
@@ -335,7 +338,7 @@ data = {"content": "def hello():...", "lines": 156, "bytes": 2380}
 | target | llm_data | — | 嵌在summary | — | 目标标签 |
 | status.message | llm_data | ✅ "读取成功" | — | — | — |
 | summary | llm_data | — | ✅ | — | 卡片标题 |
-| status.* | llm_data | ✅ exec_code | — | — | 状态指示 |
+| status.* | llm_data | ✅ message(显示) + exec_code(路由) | — | — | 状态指示 |
 | duration_ms | llm_data | — | — | — | 耗时标签 |
 | metrics.* | llm_data | — | 嵌在summary | — | 数字标签 |
 | content/output等 | data | — | — | ✅ | 可折叠详情 |
@@ -476,6 +479,56 @@ format_llm_observation(result)
 | 修改observation文本格式 | 唯一：formatter渲染逻辑 | 工具侧llm_data、前端 |
 | 前端改变展示方式 | 唯一：前端渲染 | 工具侧llm_data、formatter |
 
+### 3.6 实施原则
+
+**原则一：废除现有`llm_data`的旧代码和旧逻辑**
+
+当前代码中散落的`llm_data`填充方式五花八门（有的None、有的partial、有的与data重复），observation_formatter中对`llm_data`的读取逻辑也混杂不清。实施本设计时，**旧的全部废除，全部按新6字段结构重写**，不做向后兼容。
+
+| 废除内容 | 说明 |
+|---------|------|
+| tool函数中旧的`llm_data`填充（None/空dict/partial） | 统一为完整6字段结构 |
+| observation_formatter中旧的`_extract_display_data()`等内容 | 统一为新三段式渲染 |
+| message参数承载关键信息的写法 | 关键信息移入llm_data.status.message |
+
+旧代码一律不保留、不兼容、不过渡。
+
+**原则二：用build 3函数实现新的observation文本——`llm_data`字段承载结构化中间态**
+
+build 3函数（build_success / build_error / build_warning）是整个管道的入口。改造后的签名中，`llm_data`字段承载新设计的6字段结构化中间态：
+
+```
+result = {
+    "data": ...,        # 纯业务大块内容（给前端详情面板）
+    "llm_data": {       # ⬅ 结构化中间态：formatter以此渲染observation文本
+        "summary": str,
+        "action": {"tool": str, "tool_zh": str, "params": dict},
+        "target": str,
+        "status": {"exec_code": str, "message": str, "code": str, "detail": str, "hint": str},
+        "duration_ms": int,       # 可选
+        "metrics": {"key": {"value": ..., "text": str}},  # 可选
+    },
+}
+```
+
+**关于字段名`llm_data`**：当前result dict中的字段名保持为`llm_data`，便于与前端的字段引用兼容。实际代码实现时，Python变量名可改写为`toolsummary`或`toolentry`，以更准确地表达"结构化工具结果摘要"的语义。最终选哪个名字在实现时确定，不影响本设计的结构定义。
+
+**原则三：formatter是机械渲染器，不给observation增信**
+
+LLM只读observation文本（三行），不直接读`result` dict。formatter对`llm_data`只做机械取值拼接，不加工、不新增、不组合。
+
+**消费规则**：
+| 源字段 | 渲染位置 | 角色 |
+|--------|---------|------|
+| `llm_data`全部entry | 观察行 + 结果行 | 机械取值，不加工 |
+| `data` | 详情行 | `format_data_detail`按类型自动渲染，不改内容 |
+
+**关键约束**：
+- LLM看到的observation文本 = `llm_data`全部entry的三段式渲染，不多也不少。
+- formatter不承担业务理解、不新增、不组合、不修改内容。
+- `data`由`format_data_detail`按数据类型（str/list/dict）机械渲染，不改内容。
+- `status.exec_code`仅用于formatter选择成功/错误/警告渲染模板，不给LLM看到原始值。
+
 ---
 
 ## 四、data统一格式规范
@@ -500,6 +553,21 @@ data = {
 | `target` | data和llm_data都有 | 只在llm_data | 零重复 |
 | `result` | data的嵌套层 | 去掉，data本身就是结果 | 减少嵌套，data直接放业务字段 |
 | 关键数字 | data.result和llm_data都有 | 只在llm_data | 零重复 |
+
+**零重复原则**：同一字段只出现一次，llm_data和data不重复任何信息。
+
+```python
+# llm_data（结构化摘要）
+llm_data = {"summary":"读取 C:\\test.py，156行，2380字节，UTF-8编码","action":{...},"target":"C:\\test.py","status":{...},"metrics":{"lines":{"value":156,"text":"156行"},"bytes":{"value":2380,"text":"2380字节"},"encoding":{"value":"utf-8","text":"UTF-8编码"}}}
+
+# data（纯业务数据）
+data = {"content": "def hello():\n    ..."}
+```
+
+**禁止**：
+- llm_data有lines，data又放lines → 重复
+- llm_data有action，data又放action → 重复
+- llm_data有bytes，data又放bytes_written → 同义重复
 
 ### 4.2 各操作类型的data格式
 
@@ -692,23 +760,6 @@ id=2 | name=Bob | email=b@t.com
 
 **新增工具时**：只要遵循data结构规范（4.2节），formatter自动渲染，无需写格式化代码。
 
-### 4.3 data与llm_data的零重复原则
-
-**核心原则：同一字段只出现一次**
-
-```python
-# llm_data（结构化摘要）
-llm_data = {"summary":"读取 C:\\test.py，156行，2380字节，UTF-8编码","action":{"tool":"read_text_file","tool_zh":"读取","params":{"file_path":"C:\\test.py"}},"target":"C:\\test.py","status":{"exec_code":"success","message":"读取成功","code":"","detail":"","hint":""},"metrics":{"lines":{"value":156,"text":"156行"},"bytes":{"value":2380,"text":"2380字节"},"encoding":{"value":"utf-8","text":"UTF-8编码"}}}
-
-# data（纯业务数据）
-data = {"content": "def hello():\n    ..."}
-```
-
-**禁止**：
-- llm_data有lines，data又放lines → 重复
-- llm_data有action，data又放action → 重复
-- llm_data有bytes，data又放bytes_written → 同义重复
-
 ### 4.4 error时的data格式
 
 error时data也只放llm_data没有的信息：
@@ -735,15 +786,19 @@ build_error(ERR_FILE_NOT_FOUND,
 
 ---
 
-## 五、llm_data统一格式规范及组装后给LLM的message样式说明
+## 五、llm_data统一格式规范
 
 ### 5.1 llm_data定位
 
-**llm_data = 结构化摘要（唯一持有action/target/status/metrics）**
+**llm_data = 结构化摘要（唯一持有summary/action/target/status/metrics）**
 
-- LLM通过"结果"行消费summary
-- 前端渲染摘要卡片（summary做标题，action.tool_zh做操作标签，metrics.text做数字标签）
-- data不再重复这些字段
+| 角色 | 消费方式 | 说明 |
+|------|---------|------|
+| **LLM** | 通过"结果"行消费summary | summary包含action/target/metrics的文字描述 |
+| **前端** | 渲染摘要卡片 | summary做标题，tool_zh做操作标签，metrics.text做数字标签 |
+| **formatter** | 机械渲染llm_data全部entry | 三段式observation文本：观察行+结果行+详情行 |
+
+**data不再重复llm_data已有的任何字段**（零重复原则）。
 
 ### 5.2 llm_data完整结构（6顶层字段，冻结）
 
@@ -772,7 +827,38 @@ llm_data = {
 }
 ```
 
-**summary格式规范**：`{操作} {对象}，{关键数字1}，{关键数字2}`
+#### 5.2.1 字段定义
+
+| 顶层字段 | 必填 | 类型 | 说明 |
+|---------|------|------|------|
+| `summary` | ✅ | str | 自然语言摘要，见5.2.2格式规范 |
+| `action` | ✅ | dict | 操作类型，见action子字段表 |
+| `target` | ✅ | str | 操作目标，见5.2.3取值规则 |
+| `status` | ✅ | dict | 执行状态，见status子字段表 |
+| `duration_ms` | ❌ | int | 执行耗时（毫秒） |
+| `metrics` | ❌ | dict | 关键数字，自描述格式 `{"key": {"value": ..., "text": "..."}}` |
+
+**action子字段**（结构冻结，不可增删）：
+
+| 子字段 | 类型 | 说明 |
+|--------|------|------|
+| `tool` | str | function name，如 `"read_text_file"` |
+| `tool_zh` | str | 中文操作类型，如 `"读取"` |
+| `params` | dict | LLM调用参数，如 `{"file_path":"C:\\test.py"}` |
+
+**status子字段**（结构冻结，不可增删）：
+
+| 子字段 | 类型 | success | error | warning |
+|--------|------|---------|-------|---------|
+| `exec_code` | str | `"success"` | `"error"` | `"warning"` |
+| `message` | str | `"读取成功"` | `"文件不存在"` | `"数据量过大已截断"` |
+| `code` | str | `""` | `"ERR_FILE_NOT_FOUND"` | `"WARNING_DATA_TRUNCATED"` |
+| `detail` | str | `""` | `"文件路径不存在"` | `"返回结果超过1000条，已截断"` |
+| `hint` | str | `""` | `"请检查路径是否正确"` | `"建议增加条件缩小范围"` |
+
+#### 5.2.2 summary格式规范
+
+格式：`{操作} {对象}，{关键数字1}，{关键数字2}`
 
 ```python
 "读取 C:\\test.py，156行，2380字节，UTF-8编码"
@@ -782,7 +868,28 @@ llm_data = {
 "删除 C:\\temp.log，已永久删除"
 ```
 
-**status.message编写标准**：`{操作类型}+{结果}`，简短自然，LLM扫一眼就懂
+**规范要求**：
+- 以`{操作类型}`开头（与tool_zh一致）
+- `{对象}`即target值
+- 关键数字用逗号分隔，与metrics.text内容一致
+- 整句自然流畅，LLM扫一眼即知核心信息
+
+#### 5.2.3 target取值规则
+
+| 场景 | target值 | 示例 |
+|------|---------|------|
+| 文件操作 | 文件/目录的绝对路径 | `"C:\\test.py"` |
+| 网络请求 | URL | `"https://api.example.com/users"` |
+| Shell命令 | 命令摘要（前80字符） | `"node build.js --production"` |
+| 系统信息 | 查询类型 | `"cpu"` |
+| 数据库查询 | SQL摘要或表名 | `"SELECT * FROM users"` |
+| 桌面操作 | 操作类型 | `"click"` / `"记事本"` |
+| 事件日志 | 日志源 | `"System"` |
+| 无主体操作 | 空字符串 | `""` |
+
+#### 5.2.4 status.message编写标准
+
+格式：`{操作类型}{结果}`，简短自然，LLM一眼就懂。
 
 ```python
 # 成功
@@ -795,7 +902,100 @@ llm_data = {
 "影响行数超过安全阈值" / "数据量过大已截断"
 ```
 
-### 5.3 metrics自描述规范
+### 5.3 禁止
+
+| 禁止行为 | 错误示例 | 正确做法 | 后果 |
+|---------|---------|---------|------|
+| 把原始大块内容放入llm_data | `llm_data["content"]=文件全文` | 大块内容放data，llm_data只放摘要 | content长达MB级，污染LLM上下文 |
+| llm_data字段用中文key | `llm_data["文件名"]=...` | 必须用英文key | 前端和formatter无法解析 |
+| 违反零重复原则 | llm_data有lines，data也放lines | 同一字段只出现一次 | 数据不一致，LLM困惑 |
+| 关键数字用裸值 | `"lines": 156` | 必须用自描述格式 `{"value":156,"text":"156行"}` | 前端无法渲染数字标签 |
+| 跳过一个必填字段 | 缺少`action`或`status` | 6字段必须完整 | formatter渲染报错 |
+| 自己拼llm_data dict | 各tool自己构造dict | 必须通过build 3函数构建 | 格式不统一，校验缺失 |
+
+### 5.4 各工具类型的llm_data规范参考
+
+以下为各工具类型的关键llm_data字段规范。完整代码示例见第六章。
+
+#### 5.4.1 文件操作
+
+| 工具 | tool_zh | target | 核心metrics | summary示例 |
+|------|---------|--------|------------|------------|
+| read_text_file | 读取 | 文件路径 | lines, bytes, encoding | 读取 C:\test.py，156行，2380字节，UTF-8编码 |
+| write_text_file | 写入 | 文件路径 | bytes_written | 写入 C:\output.txt，50行/1024字节 |
+| write_docx | 写入 | 文件路径 | bytes_written, content_summary | 写入 C:\report.docx，3段落/500字 |
+| write_xlsx | 写入 | 文件路径 | bytes_written, content_summary | 写入 C:\data.xlsx，10行×5列 |
+| list_directory | 列出 | 目录路径 | total, truncated | 列出 C:\project\，156个文件/目录 |
+| copy_file | 复制 | source→destination | bytes | 复制 C:\a.txt → C:\b.txt，1024字节 |
+| delete_file | 删除 | 文件路径 | deleted, mode | 删除 C:\temp.log，已永久删除 |
+| search_files | 搜索 | 搜索目录 | count, matches | 搜索到3个文件: a.py, b.py, c.py |
+| file_media | 读取 | 文件路径 | mime_type, size | 读取 img.png，image/png，100KB |
+
+#### 5.4.2 数据库操作
+
+| 工具 | tool_zh | target | 核心metrics | summary示例 |
+|------|---------|--------|------------|------------|
+| query_sql | 查询 | SQL摘要 | row_count, columns | 查询返回5行，列: id, name, email |
+| execute_sql | 执行 | SQL摘要 | affected_rows | SQL执行成功，影响5行 |
+| get_db_schema | 获取 | "database" | total | 获取到3个表的结构: users, orders, products |
+
+#### 5.4.3 文档操作
+
+| 工具 | tool_zh | target | 核心metrics | summary示例 |
+|------|---------|--------|------------|------------|
+| read_pdf | 读取 | 文件路径 | pages, chars | 读取 C:\report.pdf，5页，12000字符 |
+
+#### 5.4.4 网络/搜索操作
+
+| 工具 | tool_zh | target | 核心metrics | summary示例 |
+|------|---------|--------|------------|------------|
+| search_web | 搜索 | 搜索词 | total, engine | 搜索到8条结果(Parallel引擎) |
+| http_request | 请求 | URL | status_code, content_type, body_len | HTTP GET https://api.example.com，200，15KB |
+
+#### 5.4.5 Shell执行
+
+| 工具 | tool_zh | target | 核心metrics | summary示例 |
+|------|---------|--------|------------|------------|
+| execute_shell | 执行 | 命令摘要 | exit_code | 命令执行完成，退出码0 |
+
+#### 5.4.6 系统操作
+
+| 工具 | tool_zh | target | 核心metrics | summary示例 |
+|------|---------|--------|------------|------------|
+| get_system_info | 获取 | info_type | 各指标平铺 | CPU: 8核/45% |
+| get_event_log | 查询 | 日志源 | count, level | System日志: 15条错误 |
+| list_processes | 列出 | "all" | count | 当前120个进程 |
+| list_services | 列出 | "all" | count | 当前80个服务 |
+| reboot_system | 重启 | "scheduled" | delay | 系统计划60秒后重启 |
+
+#### 5.4.7 桌面操作
+
+| 工具 | tool_zh | target | 核心metrics | summary示例 |
+|------|---------|--------|------------|------------|
+| screenshot | 截图 | 文件路径 | size, width, height | 截图已保存，512KB，1920×1080 |
+| mouse_click | 点击 | "click" | x, y, button | 鼠标点击 (100,200) 左键 |
+| keyboard_type | 输入 | "type" | text | 输入文本 "hello" |
+| window_control | 操作 | 窗口标题 | action, x, y, w, h | 移动窗口"记事本"到 (0,0) |
+
+#### 5.4.8 注册表操作
+
+| 工具 | tool_zh | target | 核心metrics | summary示例 |
+|------|---------|--------|------------|------------|
+| registry_read | 读取 | 注册表路径 | value, type | 读取 HKLM\...\key，REG_SZ |
+| registry_write | 写入 | 注册表路径 | type | 写入 HKLM\...\key，REG_SZ |
+| registry_delete | 删除 | 注册表路径 | — | 删除 HKLM\...\key |
+
+#### 5.4.9 基础工具
+
+| 工具 | tool_zh | target | 核心metrics | summary示例 |
+|------|---------|--------|------------|------------|
+| ask_question | 询问 | "question"/"confirm" | — | 询问用户确认 |
+| finish | 完成 | "success"/"failed" | reason | 任务完成 |
+| think | 思考 | "" | thought | 思考中... |
+| execute_code | 执行 | 语言 | exit_code, stdout, stderr | Python代码执行完成，退出码0 |
+| get_current_time | 获取 | "local"/"utc" | datetime, timezone | 当前时间 2026-06-20 15:30:00(Asia/Shanghai) |
+
+### 5.5 metrics自描述规范
 
 每个值都带`text`文字说明，前端和LLM同等消费，无需外部查表。
 
@@ -821,7 +1021,7 @@ llm_data = {
             "mode": {"value": "permanent", "text": "永久删除"}}
 ```
 
-### 5.4 前端渲染示例
+### 5.6 前端渲染示例
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -839,22 +1039,22 @@ llm_data = {
 └──────────────────────────────────────────────┘
 ```
 
-### 5.5 llm_data全覆盖
+### 5.7 llm_data全覆盖
 
 **所有工具必须有llm_data**（当前8/10有，2/10没有）。这是强制规范。
 
-### 5.6 给LLM的message组装过程及样式
+### 5.8 给LLM的message组装过程及样式
 
-**简要流程**：tool函数 → build_success/error/warning构建result → observation文本 → FC协议消息对 → conversation_history → 发给LLM
+**简要流程**：tool函数 → build 3函数构建result → observation文本 → FC协议消息对 → conversation_history → 发给LLM
 
 ```
 tool函数执行
   ↓
 build_success(data=..., llm_data=...)   # tool_response.py — 构建result dict
-build_error(code=..., data=..., llm_data=...)    # result = {code, data, message, llm_data, ...}
+build_error(code=..., data=..., llm_data=...)    # result = {data, llm_data}
 build_warning(code=..., data=..., llm_data=...)
   ↓
-result(dict)                            # ← llm_data在这里填入
+result = {"data": ..., "llm_data": {...}}  # ← llm_data在这里填入
   ↓
 format_llm_observation(result)          # observation_formatter.py — 从result取llm_data和data，生成observation文本
   ↓
@@ -870,7 +1070,7 @@ prepare_messages_for_llm()              # 合并后发给LLM
 
 | 函数 | 文件 | 职责 |
 |------|------|------|
-| `build_success/error/warning()` | tool_response.py | tool函数调用，构建result dict（含code/data/message/llm_data） |
+| `build_success/error/warning()` | tool_response.py | tool函数调用，构建result dict（含llm_data） |
 | `format_llm_observation()` | observation_formatter.py | result → observation文本（从result取llm_data和data） |
 | `build_observation_text()` | message_utils.py | 桥接，调用format_llm_observation |
 | `MessageBuilder.add_observation()` | message_builder.py | observation文本 → FC协议消息对 |
@@ -881,8 +1081,8 @@ prepare_messages_for_llm()              # 合并后发给LLM
 ```
 build_success(data={"content":"..."}, llm_data={"summary":"...","action":{...},"status":{...},"metrics":{...}})
   ↓
-result = {"code": "success", "data": {"content":"..."}, "message": "执行成功", "llm_data": {"summary":"...","action":{...},"status":{...},"metrics":{...}}}
-  ↓                                    ↑ data在这里          ↑ llm_data在这里
+result = {"data": {"content":"..."}, "llm_data": {"summary":"...","action":{...},"status":{...},"metrics":{...}}}
+  ↓                        ↑ data在这里          ↑ llm_data在这里
 format_llm_observation(result)
   ├─ 从result["llm_data"]取 → 生成"观察"行和"结果"行
   └─ 从result["data"]取     → 生成"详情"行（format_data_detail渲染）
@@ -946,6 +1146,148 @@ def hello():
 | 警告 | `观察: {status.message} - {action.tool_zh}\n⚠ 警告: {status.detail}\n结果: {summary}\n建议: {status.hint}` |
 
 **关键点**：observation文本是tool消息的content，LLM直接阅读这段文本理解工具结果，无需解析JSON。
+
+---
+### 5.9 Phase:1  按照新的LLMdata和data 构建给LLM message的改造工作主要工作项目
+1.去掉 现在代码的LLMdata的 相关代码和逻辑
+2. 实现新的3build3函数 加新的参数 tool data--tool的执行返回的原始数据
+3. 重写build3函数  按照新的LLMdata 数据结构 构建所有知道字段?
+4. `format_llm_observation`函数里面调用#### 4.3.2 格式化函数设计的格式化函数 输出格式化的data给LLM的message
+
+
+### 5.10 phase 2：`format_llm_observation` 签名改为 `(data, llm_data)`
+
+#### 5.10.1 动机
+
+当前 `format_llm_observation(result)` 从 result dict 里用 `result.get("data")` 和 `result.get("llm_data")` 分别提取两个字段。虽然 build 3 函数返回的 result 同时包含 data 和 llm_data，但 formatter 只需要这两个字段——它不关心 result 里的 code/message。
+
+改签名后语义更清晰：`data` 是可选的大块内容，`llm_data` 是必填的结构化摘要，签名直接体现。
+
+#### 5.10.2 改动内容
+
+| 改动 | 当前 | Phase 2 |
+|------|------|---------|
+| **build 3 函数** | `build_success(data=..., llm_data=...)` → result={data, llm_data} | **不动**，保持原样 |
+| **result dict** | `{"data": ..., "llm_data": {...}}` | **不动** |
+| **format_llm_observation 签名** | `format_llm_observation(result)` | `format_llm_observation(data, llm_data)` |
+| **build_observation_text（桥接层）** | 传 exec_result dict 进 formatter | 拆包：`format_llm_observation(result["data"], result["llm_data"])` |
+| **formatter 内部逻辑** | `result.get("data")`, `result.get("llm_data")` | 直接使用参数，逻辑不变 |
+
+#### 5.10.3 数据流
+
+```
+build_success(data=..., llm_data=...)
+  ↓
+result = {"data": ..., "llm_data": {...}}   ← build 3 函数不动，data 仍在 result 里
+  ↓
+build_observation_text(result)
+  ↓ 拆包
+format_llm_observation(result["data"], result["llm_data"])
+  ├─ data     → 详情行（format_data_detail渲染）
+  └─ llm_data → 观察行 + 结果行
+```
+
+#### 5.10.4 受影响文件
+
+| 文件 | 改动 |
+|------|------|
+| `observation_formatter.py` | `format_llm_observation` 签名改 `(data, llm_data)`，内部 `result.get("data")` 改为参数 `data` |
+| `message_utils.py` | `build_observation_text` 拆包传参 |
+| `tool_response.py` | **不改** |
+| 所有 tool 文件（30+个） | **不改** |
+
+#### 5.10.5 注意事项
+
+- `data` 可能为 None → formatter 内部判断 `if data is None: skip detail line`
+- 这只是签名层面的重构，不改变数据流和前端逻辑
+- 改动量小，适合作为 Phase 2 独立上线
+
+---
+
+### 5.11 Phase 3：ToolStep 瘦身 + Observation step 承载全部信息
+
+#### 5.12.1 动机
+
+Phase 2 虽然优化了 formatter 签名，但 ToolStep 和 SSE 通道仍然混杂。ToolStep 的 `execution_result` 同时承载了 llm_data（给前端卡片）和 data（给详情面板），职责不单一。Observation step 只含文本，前端需要的信息分散在两个事件中。
+
+Phase 3 将 ToolStep 和 Observation step 的职责彻底分开：
+
+| 事件 | 职责 | 承载内容 |
+|------|------|---------|
+| **ToolStep** | 告诉前端"工具执行完成" | 仅 `duration_ms` |
+| **Observation step** | 告诉前端"工具结果是什么" | `observation_text` + `llm_data` + `tool_result` |
+
+#### 5.11.2 改动内容
+
+| 维度 | 当前 | Phase 3 |
+|------|------|---------|
+| **build 3 函数** | `result={data, llm_data}` | **不动** |
+| **ToolStep** | `execution_result` 含 data + llm_data + duration_ms | `execution_result = {duration_ms}`，仅完成时间 |
+| **Observation step** | 只含 `observation_text` | 新增 `tool_result` 字段（承载原 data）+ 已有 `llm_data` |
+| **SSE ToolStep 事件** | 发送完整 execution_result | 只发 `{duration_ms}`，code/message/data/llm_data 都不发 |
+| **SSE Observation 事件** | 只发 observation_text | 发 `{observation_text, llm_data, tool_result}` |
+| **前端消费** | `ToolStep.execution_result.data` → 详情面板 | `Observation.tool_result` → 详情面板 |
+| **前端消费** | `ToolStep.execution_result.llm_data` → 卡片 | `Observation.llm_data` → 卡片 |
+
+#### 5.11.3 新数据流
+
+```
+tool 函数执行
+  ↓
+build_success(data=..., llm_data=...)    ← 不动，仍然返回 {data, llm_data}
+  ↓
+result = {"data": ..., "llm_data": {...}}
+  ↓                       ↓
+ToolStep                  build_observation_text(result)
+execution_result            ↓
+  = {duration_ms}       format_llm_observation(data, llm_data)
+  ↓                         ↓
+SSE: 仅完成时间         observation_text
+  ↓                         ↓
+前端: 知道"执行完毕"    Observation SSE 事件
+                          ├─ observation_text
+                          ├─ llm_data        ← 前端渲染卡片
+                          └─ tool_result     ← 前端渲染详情面板（原 data）
+```
+
+#### 5.11.4 受影响文件
+
+| 层 | 文件 | 改动 |
+|----|------|------|
+| **构建层** | `tool_response.py` | **不动** |
+| **格式化层** | `observation_formatter.py` | Phase 2 已改 `(data, llm_data)`，Phase 3 不动 |
+| **桥接层** | `message_utils.py` | Phase 2 已拆包，Phase 3 不动 |
+| **步骤模型** | `ToolStep` | `execution_result` 只存 `duration_ms` |
+| **步骤模型** | Observation step 模型 | 新增 `tool_result` 字段 |
+| **编排层** | `action_handler.py` | 构建 Observation step 时传入 data（作为 tool_result）|
+| **SSE 层** | `run_sse_stream.py` | 调整 SSE 事件构造逻辑 |
+| **前端** | 消费 ToolStep 的代码 | 改为从 Observation 事件取值 |
+| **DB 存储** | `save_execution_steps_to_db` | 适配新结构 |
+
+#### 5.11.5 实施要点
+
+1. **ToolStep 瘦身**：`_execution_result` 只保留 `{"duration_ms": execution_time}`，不再接收完整的 result dict。
+
+2. **Observation step 新增 tool_result**：在 `action_handler.py` 的 `build_observation()` 中，把 result["data"] 作为 `tool_result` 字段传入 Observation step。
+
+3. **SSE 发送调整**：
+   - ToolStep SSE → `{"step_type": "action_tool", "duration_ms": N}`，不发 code/message/data/llm_data
+   - Observation SSE → `{"step_type": "observation", "observation_text": "...", "llm_data": {...}, "tool_result": {...}}`
+
+4. **前端适配**：
+   - ToolStep 事件 → 只用于显示"工具执行中..."状态，不再从中取数据
+   - Observation 事件 → 从中取 `llm_data` 渲染摘要卡片，取 `tool_result` 渲染详情面板
+
+#### 5.11.6 注意事项
+
+| 注意点 | 说明 |
+|--------|------|
+| **前后端同步** | Phase 3 必须前后端同步上线，不能分步部署 |
+| **DB 兼容** | 旧记录中 execution_result 含 data，新记录不含，前端需判断兼容 |
+| **data 为空** | tool_result=None 时，前端跳过详情面板渲染 |
+| **LLM 不受影响** | LLM 始终只读 observation_text，底层事件结构变化不影响它 |
+| **Phase 2 为前提** | Phase 3 依赖 Phase 2 的 formatter 签名改造，必须先上线 Phase 2 |
+
 ---
 
 ## 六、各工具类型完整示例
