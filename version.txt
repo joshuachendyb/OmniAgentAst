@@ -1,3 +1,60 @@
+v0.16.11
+
+更新时间: 2026-06-20 23:51:06
+
+## v0.16.10→v0.16.11 变更汇总 - 小欧-2026-06-20
+
+### feat: 新功能(2项)
+- be2891ec9: 全量补齐21处build_success的llm_data - 小健-2026-06-20
+- f770fe69f: document_tools 加.xls支持、xlrd依赖管理、pandoc错误消息中文化 - 小沈-2026-06-19
+
+### fix: 代码修复(9项)
+- 5820455ad: tool_response.py更新 - 北京老陈-2026-06-20
+- b8c3b9c89: observation不再丢弃data字段,llm_data+data都给LLM - 北京老陈-2026-06-20
+- 1c253faca: 修复LLM observation 10个P1问题 - 小欧-2026-06-20
+- 768604a07: 更新工具响应处理 - 北京老陈-2026-06-20
+- 2de440f80: 新增coerce_json防御-12个工具函数15个参数防止LLM传JSON字符串崩溃 - 小健-2026-06-20
+- 20f29ca7a: document_tools 8项代码质量修复(CSV字段统一/常量导入归位/Schema SRP/裸except/DRY/空检查/llm截断) - 小健-2026-06-20
+- 01f1daabe: document_tools/schema 增强paragraphs/table_data/slides参数的str->list防御 - 小欧-2026-06-19
+- 3f658d29c: filter_data空参数时补充缺失参数名+错误提示 - 小欧-2026-06-19
+- 20709f4e4: Reapply str->list防御(回滚恢复) - 小欧-2026-06-19
+
+### refactor: 代码重构(6项)
+- b905cd7c1: observation格式化消除DRY重复,提取_format_summary_parts复用 - 北京老陈-2026-06-20
+- 4e834c350: 清理5个死代码/风格问题 - 小欧-2026-06-20
+- bc45dc94b: 工具参数审计精简-删除6个工具+精简39个Schema参数+修复3个审查问题 - 小健-2026-06-20
+- 06e6010da: fundamental+system schema参数描述简化 - 小欧-2026-06-20
+- c0a85da4e: document_tools 清理死代码+统一schema描述 - 小欧-2026-06-19
+- cf2ee5828: document_register write工具描述去重(参数细节归schema) - 小沈-2026-06-19
+
+### docs: 文档更新(21项)
+- 3289830d5: 更新工具Observation格式设计文档+新增会话记录 - 北京老陈-2026-06-20
+- 33eb7f27e: 第9章实施方案补充分批计划+清查步骤+tool_response新增builder机制 - 小欧-2026-06-20
+- 225e09ace: 3遍复查修复7处不一致(5.8/2.2/5.9章节) - 北京老陈-2026-06-20
+- a386ddc88: 更新工具Observation统一格式设计文档 - 北京老陈-2026-06-20
+- 6f28c8ff8: 更新工具Observation统一格式设计融合方案v4.0 - 小欧-2026-06-20
+- 7b816eb0c: 工具Observation融合方案 build_result签名去掉* - 小欧-2026-06-20
+- d31c2ebe9: 新增工具结果给LLM数据统一格式设计方案 - 北京老陈-2026-06-20
+- 63d14445b: 5.6节补充build_success/error/warning流程位置 - 北京老陈-2026-06-20
+- defa4dd79: 工具Observation统一格式设计文档v2.0→v2.1 - 北京老陈-2026-06-20
+- b723bc729: 更新工具Observation统一格式设计文档 - 北京老陈-2026-06-20
+- f0b0e5cec: 更新工具Observation统一格式设计文档 - 北京老陈-2026-06-20
+- e9807ffdb: 更新工具Observation统一格式设计文档 - 北京老陈-2026-06-20
+- 4bb769cba: 更新工具Observation统一格式设计综合方案 - 北京老陈-2026-06-20
+- 4bd870080: 更新工具Observation统一格式设计综合方案 - 北京老陈-2026-06-20
+- 477e05600: 更新工具Observation统一格式设计综合方案 - 北京老陈-2026-06-20
+- 5b0ea177c: 更新工具Observation统一格式设计综合方案 - 北京老陈-2026-06-20
+- aec6f9f7e: 新增工具Observation统一格式设计综合方案 - 北京老陈-2026-06-20
+- f9d71a72f: 新增LLM-observation统一格式设计文档 - 北京老陈-2026-06-20
+- 5e8370d6b: E2E测试记录+Excel报告生成脚本 - 小欧-2026-06-20
+- d49c5be43: 更新工具参数审计报告-补充完整79个Schema参数表 - 小欧-2026-06-20
+- aac629be0: 新增工具参数审计报告 - 小欧-2026-06-20
+
+### 合计
+- feat: 2项 | fix: 9项 | refactor: 6项 | docs: 21项 = 共38项
+
+---
+
 v0.16.10
 
 更新时间: 2026-06-19 14:20:28
