@@ -1,8 +1,8 @@
 # 工具 Observation 统一输出格式设计（融合方案）
 
 **创建时间**: 2026-06-20 11:07:25  
-**更新时间**: 2026-06-20 22:45:00  
-**版本**: v4.1  
+**更新时间**: 2026-06-21 00:40:00  
+**版本**: v5.0  
 **编写人**: 小健 + 北京老陈  
 **适用范围**: OmniAgentAs-desk 所有工具给LLM和前端的observation输出格式  
 **状态**: 待审查
@@ -21,6 +21,7 @@
 | v4.0 | 2026-06-20 22:00:00 | 全文档审查，修复不一致问题 | 小欧 |
 | v4.0 | 2026-06-20 22:00:00 | 全量修复：exec_code统一为success/error/warning 3值enum；Ch6/7/8示例全部改用build_result格式；metrics措辞统一为"前端和LLM同等消费"；9.3重写为5.9引用 | 小欧 |
 | v4.1 | 2026-06-20 22:45:00 | build_result新增exec_code/duration_ms/tool_params直接参数；builder接收exec_code不猜；移除data["_call_params"]注入；**extra过滤保留字段；other_data输出通道化；format_data_detail加try-except兜底；第10章新增3条禁止 | 小欧 |
+| v5.0 | 2026-06-21 00:40:00 | **结构简化**：target从llm_data顶层降入action子字段（6顶层→5顶层）；action子字段从3→4（tool/tool_zh/target/params）；Ch1-3全量更新 | 小健 |
 
 ---
 
@@ -97,12 +98,12 @@
 | 层次 | 来源 | 职责 | LLM怎么用 | 前端怎么用 |
 |------|------|------|----------|-----------|
 | **观察** | formatter生成 | 状态+操作名 | 扫一眼知道发生了什么 | 状态指示器 |
-| **结果** | llm_data字段 | 结构化摘要（action/target/status/metrics/summary） | 快速理解结果概况 | 渲染摘要卡片（summary做标题，action/metrics做标签） |
+| **结果** | llm_data字段 | 结构化摘要（action/status/metrics/summary） | 快速理解结果概况 | 渲染摘要卡片（summary做标题，action.tool_zh+action.target做标签） |
 | **详情** | data字段 | 纯业务数据（只放llm_data没有的大块内容） | 需要精确数据时引用 | 可折叠详情面板 |
 
 **核心原则：llm_data和data零重复**
 
-- llm_data = 结构化描述（action/target/status/duration_ms/metrics/summary）
+- llm_data = 结构化描述（action含target/status/duration_ms/metrics/summary）
 - data = 纯业务数据（content/output等大块内容，llm_data不存的）
 - 同一字段只出现一次，改一处即可
 
@@ -118,7 +119,7 @@ llm_data并不独立发给LLM，而是作为**结构化源数据**，由formatte
 
 | 层次 | 角色 | 产出 | 不做什么 |
 |------|------|------|---------|
-| **build层** | 数据生产者 | 结构化数据（summary/action/target/status/metrics） | 不格式化，不渲染 |
+| **build层** | 数据生产者 | 结构化数据（summary/action含target/status/metrics） | 不格式化，不渲染 |
 | **formatter层** | 机械渲染器 | 三段式文本（观察/结果/详情） | 不新增信息，不加工语义 |
 | **LLM层** | 消费者 | 只收到observation文本 | 不接触结构化数据 |
 
@@ -135,18 +136,18 @@ llm_data和observation文本是**一体两面**，不是两套数据。融合方
 
 **新设计**：llm_data管"描述"，data管"内容"，零重复
 
-#### 3.2.1 llm_data结构（结构化摘要，唯一持有action/target/status/metrics）
+#### 3.2.1 llm_data结构（结构化摘要，5顶层字段，唯一持有action含target/status/metrics）
 
 ```python
 llm_data = {
     # === 必填字段 ===
     "summary": str,     # 自然语言摘要（"读取 C:\test.py，156行，2380字节，UTF-8编码"）
-    "action": {         # 操作类型（结构固定，新增工具只扩枚举不改结构）
+    "action": {         # 操作描述（结构固定，新增工具只扩枚举不改结构）
         "tool": str,    # 工具名称，即LLM调用时的function name（"read_text_file"/"write_docx"/"execute_shell_command"/"search_web"/...）
-        "tool_zh": str,    # 中文操作类型（"读取"/"写入"/"删除"/"搜索"/"执行"/"复制"/"列出"/"查询"/"下载"/"点击"/"截图"/"设置"/"获取"/...）
+        "tool_zh": str, # 中文操作类型（"读取"/"写入"/"删除"/"搜索"/"执行"/"复制"/"列出"/"查询"/"下载"/"点击"/"截图"/"设置"/"获取"/...）
+        "target": str,  # 操作目标（路径/URL/查询词/命令，如"C:\test.py"）— 从params中提取的关键参数值，与action天然配对
         "params": dict, # LLM调用时传入的参数（{"file_path":"C:\\test.py","encoding":"utf-8"} / {"command":"Get-Process"} / {"query":"低空星链通信"}/...）
     },
-    "target": str,      # 操作目标（路径/URL/查询词/命令，如"C:\test.py"）
     "status": {         # 执行状态（结构固定，三种场景统一，所有状态信息内聚于此）
         "exec_code": str,   # 执行结果码："success" / "error" / "warning"
         "message": str, # 状态文字说明（code的自然语言版本，LLM直接消费）：成功="读取成功" / 错误="文件不存在" / 警告="影响行数超过安全阈值"
@@ -172,6 +173,8 @@ llm_data = {
 }
 ```
 
+**target为何放入action**：target本质是action.params中"最关键的那个参数值"（文件路径/URL/查询词/命令），与action描述的是同一件事——"谁对什么做了什么"。前端渲染时 `action.tool_zh + action.target` 天然配对（"读取 C:\test.py"），不需要跨顶层字段组合。
+
 **metrics自描述设计**：每个值都带`text`文字说明，前端和LLM同等消费，无需外部查表。
 
 **前端渲染**：遍历metrics，直接用text渲染标签。如`"156行 | 2380字节 | UTF-8编码"`。
@@ -182,9 +185,9 @@ llm_data = {
 
 | 角色 | 职责 | 改动范围 |
 |------|------|---------|
-| 每个tool | 填写自己的llm_data内容（summary/action/status/metrics等具体值） | 只改自己的工具代码 |
-| observation流程 | 只认llm_data的6字段结构，遍历渲染，不关心具体值 | 永远不变 |
-| 前端 | 按结构渲染（summary做标题，metrics.text做标签，data做详情） | 永远不变 |
+| 每个tool | 填写自己的llm_data内容（summary/action含target/status/metrics等具体值） | 只改自己的工具代码 |
+| observation流程 | 只认llm_data的5字段结构，遍历渲染，不关心具体值 | 永远不变 |
+| 前端 | 按结构渲染（summary做标题，action.tool_zh+action.target做标签，metrics.text做数字标签，data做详情） | 永远不变 |
 | LLM | 按三段式文本理解（观察→结果→详情） | 永远不变 |
 
 **结果**：新增/修改任何tool，只改该tool的llm_data填充逻辑，不影响observation formatter、不影响前端渲染、不影响LLM消费流程。
@@ -193,8 +196,8 @@ llm_data = {
 
 | 层级 | 结构 | 扩展方式 | 稳定性 |
 |------|------|---------|--------|
-| llm_data顶层 | summary/action/target/status/duration_ms/metrics | **永不加字段** | 冻结 |
-| action | tool/tool_zh/params | 新增工具只扩枚举值 | 冻结 |
+| llm_data顶层 | summary/action/status/duration_ms/metrics | **永不加字段** | 冻结 |
+| action | tool/tool_zh/target/params | 新增工具只扩枚举值 | 冻结 |
 | status | exec_code/message/code/detail/hint | **永不加字段** | 冻结 |
 | metrics | 自描述dict（value+text） | 新增工具自由加键值对，每个值自带文字说明 | 开放 |
 
@@ -204,7 +207,7 @@ llm_data = {
 
 | 数据 | 是否可裁剪/压缩 | 原因 |
 |------|----------------|------|
-| llm_data | ❌ **禁止裁剪压缩** | summary/message/action/target/status/duration_ms/metrics是LLM决策的核心上下文，裁剪会导致LLM无法理解结果、无法修正错误 |
+| llm_data | ❌ **禁止裁剪压缩** | summary/message/action含target/status/duration_ms/metrics是LLM决策的核心上下文，裁剪会导致LLM无法理解结果、无法修正错误 |
 | data | ✅ 可以裁剪压缩 | data是大块业务内容（文件内容/命令输出等），ReAct循环中token超限时只裁剪data，如截断content、只保留前N行 |
 
 **裁剪策略**：当observation token超限时，只对data做截断（如`_prevent_json_oom`），llm_data原样保留。LLM始终能看到完整的摘要和状态，只是详情可能被截断。
@@ -216,8 +219,9 @@ llm_data = {
 | summary | ✅ 结果摘要 | ✅ 错误摘要 | ✅ 警告摘要 |
 | action | ✅ | ✅ | ✅ |
 | action.tool | "read_text_file" | "read_text_file" | "execute_sql" |
+| action.tool_zh | "读取" | "读取" | "执行" |
+| action.target | "C:\test.py" | "C:\notexist.txt" | "SELECT * FROM users" |
 | action.params | {"file_path":"C:\\test.py"} | {"file_path":"C:\\notexist.txt"} | {"sql":"SELECT..."} |
-| target | ✅ | ✅ | ✅ |
 | status.exec_code | "success" | "error" | "warning" |
 | status.message | "读取成功" | "文件不存在" | "影响行数超过安全阈值" |
 | status.code | "" | "ERR_FILE_NOT_FOUND" | "WARNING_DB_SAFETY" |
@@ -266,10 +270,10 @@ message = "影响行数超过安全阈值" # 警告时必须说清原因
 | 消费方 | 用action.tool还是action.tool_zh | 原因 |
 |--------|-------------------------------|------|
 | formatter观察行 | action.tool_zh | LLM看中文更直观："读取成功"比"read_text_file success"更清晰 |
-| 前端操作标签 | action.tool_zh | 用户看中文 |
+| 前端操作标签 | action.tool_zh + action.target | 天然配对："读取 C:\test.py" |
 | 前端程序逻辑 | action.tool | 程序判断用工具名，精确匹配 |
 | 日志/调试 | action.tool | 英文便于检索 |
-| LLM调用回溯 | action.params | LM看到"我传了什么参数" |
+| LLM调用回溯 | action.params | LLM看到"我传了什么参数" |
 
 **为什么要有message？**
 
@@ -319,7 +323,7 @@ data = {"error_detail": str, "params": dict}  # 错误详情和参数
 
 ```python
 # ✅ 正确：llm_data有lines（在metrics里），data不放lines
-llm_data = {"summary":"读取 C:\\test.py，156行","action":{"tool":"read_text_file","tool_zh":"读取","params":{"file_path":"C:\\test.py"}},"target":"C:\\test.py","status":{"exec_code":"success","message":"读取成功","code":"","detail":"","hint":""},"metrics":{"lines":{"value":156,"text":"156行"},"bytes":{"value":2380,"text":"2380字节"}}}
+llm_data = {"summary":"读取 C:\\test.py，156行","action":{"tool":"read_text_file","tool_zh":"读取","target":"C:\\test.py","params":{"file_path":"C:\\test.py"}},"status":{"exec_code":"success","message":"读取成功","code":"","detail":"","hint":""},"metrics":{"lines":{"value":156,"text":"156行"},"bytes":{"value":2380,"text":"2380字节"}}}
 data = {"content": "def hello():\n    ..."}
 
 # ❌ 错误：data又放lines → 重复
@@ -337,8 +341,8 @@ data = {"content": "def hello():...", "lines": 156, "bytes": 2380}
 |------|--------|--------|--------|--------|---------|
 | action.tool | llm_data | — | — | — | 操作标签（英文，程序用） |
 | action.tool_zh | llm_data | ✅ "读取成功" | — | — | 操作标签（中文，用户看） |
+| action.target | llm_data | — | 嵌在summary | — | 目标标签（"C:\test.py"） |
 | action.params | llm_data | — | — | — | — |
-| target | llm_data | — | 嵌在summary | — | 目标标签 |
 | status.message | llm_data | ✅ "读取成功" | — | — | — |
 | summary | llm_data | — | ✅ | — | 卡片标题 |
 | status.* | llm_data | ✅ message(显示) + exec_code(路由) | — | — | 状态指示 |
@@ -350,8 +354,8 @@ data = {"content": "def hello():...", "lines": 156, "bytes": 2380}
 
 ```
 ┌─────────────────────────────────────────┐
-│ 📄 读取 C:\test.py                      │  ← summary
-│ 读取 | 156行 | 2380字节 | UTF-8          │  ← 从llm_data取action.tool_zh/metrics.text
+│ 📄 读取 C:\test.py，156行，2380字节，UTF-8 │  ← summary
+│ 读取 | C:\test.py | 156行 | 2380字节      │  ← action.tool_zh + action.target + metrics.text
 │ [展开详情 ▼]                             │  ← 可折叠data
 └─────────────────────────────────────────┘
 ```
@@ -369,7 +373,7 @@ data = {"content": "def hello():...", "lines": 156, "bytes": 2380}
 |---|------|---------|--------|
 | 观察 | formatter | status.message + action.tool_zh | — |
 | 结果 | llm_data | summary | 不重复action（观察已有） |
-| 详情 | data | 可读文本（formatter按结构自动格式化） | 不重复action/target/关键数字（观察+结果已有） |
+| 详情 | data | 可读文本（formatter按结构自动格式化） | 不重复action含target/关键数字（观察+结果已有） |
 
 **成功**：
 ```
@@ -424,7 +428,7 @@ def hello():
 2. 第二行：156行，2380字节，UTF-8编码 — 关键信息直接可见
 3. 第三行：需要具体内容时看详情 — 只有纯业务数据
 
-**与旧方案的关键区别**：详情行只输出data（纯业务数据），不再重复action/target/关键数字
+**与旧方案的关键区别**：详情行只输出data（纯业务数据），不再重复action含target/关键数字
 
 ---
 
@@ -456,7 +460,7 @@ format_llm_observation(data, llm_data)  ← 不再接收 result dict
 | 角色 | 所在文件 | 输入 | 输出 | 职责 | 不做什么 |
 |------|---------|------|------|------|---------|
 | tool函数 | 各tools/*.py | 业务参数 | data | 执行业务，返回原始data | 不格式化，不渲染 |
-| builder_fn | 各tools/*.py（文件末尾） | data + exec_code + duration_ms + tool_params | llm_data（6字段结构化摘要） | 从data/exec_code/duration_ms/tool_params构建llm_data | 不改data内容 |
+| builder_fn | 各tools/*.py（文件末尾） | data + exec_code + duration_ms + tool_params | llm_data（5字段结构化摘要） | 从data/exec_code/duration_ms/tool_params构建llm_data | 不改data内容 |
 | build_result() | tool_response.py | tool_name, data, exec_code, duration_ms, tool_params, other_data | 统一result dict（{data, llm_data, other_data}） | 通过tool_name查找builder构建result | 不改llm_data内容 |
 | format_llm_observation() | observation_formatter.py | data, llm_data | 三段式文本 | 机械渲染：llm_data→观察+结果行，data→详情行 | 不新增信息，不加工语义 |
 | LLM | — | observation文本 | 推理决策 | 直接阅读文本 | 不接触结构化数据 |
@@ -489,11 +493,11 @@ format_llm_observation(data, llm_data)  ← 不再接收 result dict
 
 **原则一：废除现有`llm_data`的旧代码和旧逻辑**
 
-当前代码中散落的`llm_data`填充方式五花八门（有的None、有的partial、有的与data重复），observation_formatter中对`llm_data`的读取逻辑也混杂不清。实施本设计时，**旧的全部废除，全部按新6字段结构重写**，不做向后兼容。
+当前代码中散落的`llm_data`填充方式五花八门（有的None、有的partial、有的与data重复），observation_formatter中对`llm_data`的读取逻辑也混杂不清。实施本设计时，**旧的全部废除，全部按新5字段结构重写**，不做向后兼容。
 
 | 废除内容 | 说明 |
 |---------|------|
-| tool函数中旧的`llm_data`填充（None/空dict/partial） | 统一为完整6字段结构 |
+| tool函数中旧的`llm_data`填充（None/空dict/partial） | 统一为完整5字段结构 |
 | observation_formatter中旧的`_extract_display_data()`等内容 | 统一为新三段式渲染 |
 | message参数承载关键信息的写法 | 关键信息移入llm_data.status.message |
 
@@ -501,15 +505,14 @@ format_llm_observation(data, llm_data)  ← 不再接收 result dict
 
 **原则二：用build 3合一的新build_result函数实现新的observation文本——`llm_data`字段承载结构化中间态**
 
-新build_result是整个管道的入口。改造后的签名中，`llm_data`字段承载新设计的6字段结构化中间态：
+新build_result是整个管道的入口。改造后的签名中，`llm_data`字段承载新设计的5字段结构化中间态：
 
 ```
 result = {
     "data": ...,        # 纯业务大块内容（给前端详情面板）
     "llm_data": {       # ⬅ 结构化中间态：formatter以此渲染observation文本
         "summary": str,
-        "action": {"tool": str, "tool_zh": str, "params": dict},
-        "target": str,
+        "action": {"tool": str, "tool_zh": str, "target": str, "params": dict},
         "status": {"exec_code": str, "message": str, "code": str, "detail": str, "hint": str},
         "duration_ms": int,       # 可选
         "metrics": {"key": {"value": ..., "text": str}},  # 可选
