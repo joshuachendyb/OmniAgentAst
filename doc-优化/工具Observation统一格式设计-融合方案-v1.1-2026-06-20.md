@@ -1,8 +1,8 @@
 # 工具 Observation 统一输出格式设计（融合方案）
 
 **创建时间**: 2026-06-20 11:07:25  
-**更新时间**: 2026-06-20 11:30:00  
-**版本**: v1.1  
+**更新时间**: 2026-06-20 12:15:00  
+**版本**: v1.2  
 **编写人**: 小健 + 北京老陈  
 **适用范围**: OmniAgentAs-desk 所有工具给LLM和前端的observation输出格式  
 **状态**: 待审查
@@ -15,6 +15,7 @@
 |------|------|---------|------|
 | v1.0 | 2026-06-20 11:07:25 | 初始融合方案 | 小健 + 北京老陈 |
 | v1.1 | 2026-06-20 11:30:00 | llm_data重新定位：不再是"给LLM的额外数据"，而是LLM和前端共享的摘要层，包含summary+结构化关键信息 | 小健 + 北京老陈 |
+| v1.2 | 2026-06-20 12:15:00 | 详情行统一改为只输出data.result（成功/警告），error时输出整个data；formatter代码同步更新；3.1表格更新 | 小健 + 北京老陈 |
 
 ---
 
@@ -91,7 +92,7 @@
 |------|------|------|----------|-----------|
 | **观察** | formatter生成 | 状态+操作名 | 扫一眼知道发生了什么 | 状态指示器 |
 | **结果** | llm_data字段 | 自然语言摘要+结构化关键信息 | 快速理解结果概况 | 渲染摘要卡片（summary做标题，其余做标签） |
-| **详情** | data字段 | 完整结构化数据 | 需要精确数据时引用 | 可折叠详情面板 |
+| **详情** | data.result字段 | 业务结果数据 | 需要精确数据时引用 | 可折叠详情面板 |
 
 ### 3.2 关键设计：llm_data重新定位
 
@@ -660,7 +661,7 @@ build_error(
 观察: warning [{code}] - {message}
 ⚠ 警告: {warning}
 结果: {llm_data.summary}
-详情: {json.dumps(data)}
+详情: {json.dumps(data.result)}
 建议: {hint}
 ```
 
@@ -714,14 +715,18 @@ def format_llm_observation(result: dict, tool_name: str = "", tool_params: Optio
     message = result.get("message", "")
 
     if code == SUCCESS_CODE:
-        # 成功：观察 + 结果 + 详情
+        # 成功：观察 + 结果 + 详情（只输出data.result）
         action = data.get("action", tool_name) if isinstance(data, dict) else tool_name
         text = f"观察: success - {action}"
         if llm_data and isinstance(llm_data, dict) and llm_data.get("summary"):
             text += f"\n结果: {llm_data['summary']}"
         elif message:
             text += f"\n结果: {message}"
-        if data is not None:
+        if isinstance(data, dict) and "result" in data:
+            detail = data["result"]
+            safe_detail = _prevent_json_oom(detail, LLM_SAFE_LIMIT) if isinstance(detail, (dict, list)) else detail
+            text += f"\n详情: {json.dumps(safe_detail, ensure_ascii=False)}"
+        elif data is not None:
             safe_data = _prevent_json_oom(data, LLM_SAFE_LIMIT) if isinstance(data, (dict, list)) else data
             text += f"\n详情: {json.dumps(safe_data, ensure_ascii=False)}"
         if result.get("warning"):
@@ -729,14 +734,18 @@ def format_llm_observation(result: dict, tool_name: str = "", tool_params: Optio
         return text
 
     elif isinstance(code, str) and code.startswith("WARNING_"):
-        # 警告
+        # 警告：详情只输出data.result
         action = data.get("action", tool_name) if isinstance(data, dict) else tool_name
         text = f"观察: warning [{code}] - {message}"
         if result.get("warning"):
             text += f"\n⚠ 警告: {result['warning']}"
         if llm_data and isinstance(llm_data, dict) and llm_data.get("summary"):
             text += f"\n结果: {llm_data['summary']}"
-        if data is not None:
+        if isinstance(data, dict) and "result" in data:
+            detail = data["result"]
+            safe_detail = _prevent_json_oom(detail, LLM_SAFE_LIMIT) if isinstance(detail, (dict, list)) else detail
+            text += f"\n详情: {json.dumps(safe_detail, ensure_ascii=False)}"
+        elif data is not None:
             safe_data = _prevent_json_oom(data, LLM_SAFE_LIMIT) if isinstance(data, (dict, list)) else data
             text += f"\n详情: {json.dumps(safe_data, ensure_ascii=False)}"
         hint = _get_failure_hint(tool_name, tool_params, result)
@@ -745,7 +754,7 @@ def format_llm_observation(result: dict, tool_name: str = "", tool_params: Optio
         return text
 
     else:
-        # 错误
+        # 错误：详情输出整个data（error时data没有result结构）
         text = f"观察: error [{code}] - {message}"
         if llm_data and isinstance(llm_data, dict) and llm_data.get("summary"):
             text += f"\n结果: {llm_data['summary']}"
@@ -836,6 +845,6 @@ data = {
 
 ---
 
-**文档更新时间**: 2026-06-20 11:30:00  
-**版本**: v1.1  
+**文档更新时间**: 2026-06-20 12:15:00  
+**版本**: v1.2  
 **编写人**: 小健 + 北京老陈
