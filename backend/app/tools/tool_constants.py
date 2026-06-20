@@ -27,7 +27,6 @@ TOOL_TIMEOUTS = {
 
     "event_log": 30,
 
-    "task_control": 30,
     "search_web": 25,
     "http_request": 30,
     "download_file": 60,

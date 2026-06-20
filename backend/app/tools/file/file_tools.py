@@ -1016,14 +1016,10 @@ async def list_directory(
     【2026-06-20 小健】删max_depth/page_token,sortBy→sort_by,删tree用recursive决定format
     """
     max_depth = 10
-    page_token = None
-    sortBy = sort_by
     format = "tree" if recursive else "list"
 
-    if max_depth < 1:
-        return build_error(ERR_PARAM_INVALID, f"max_depth必须>=1,当前值: {max_depth}", data={"max_depth": max_depth})
-    if sortBy not in ("name", "size", "mtime"):
-        return build_error(ERR_PARAM_INVALID, f"sortBy只支持'name'/'size'/'mtime',当前值: '{sortBy}'", data={"sortBy": sortBy})
+    if sort_by not in ("name", "size", "mtime"):
+        return build_error(ERR_PARAM_INVALID, f"sort_by只支持'name'/'size'/'mtime',当前值: '{sort_by}'", data={"sort_by": sort_by})
 
     if format == "tree":
         tree_result = await _get_directory_tree(dir_path=dir_path, max_depth=max_depth)
@@ -1040,11 +1036,6 @@ async def list_directory(
 
     path = Path(dir_path)
     start_offset = 0
-    if page_token:
-        try:
-            start_offset = decode_page_token(page_token)
-        except Exception as e:
-            return build_error(ERR_PARAM_INVALID, f"Invalid page token: {e}", data={"page_token": page_token})
 
     try:
         if not path.exists():
@@ -1057,9 +1048,9 @@ async def list_directory(
             _scan_directory_sync, path, recursive, max_depth, include_hidden, deadline
         )
 
-        if sortBy == "size":
+        if sort_by == "size":
             all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x.get("size") or 0), reverse=True)
-        elif sortBy == "mtime":
+        elif sort_by == "mtime":
             all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x.get("mtime", 0)), reverse=True)
         else:
             all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x["name"].lower()))
@@ -1068,7 +1059,7 @@ async def list_directory(
         MAX_DISPLAY_ENTRIES = 200
         statistics = {
             "total_size": stats["total_size"], "dir_count": stats["dir_count"],
-            "file_count": stats["file_count"], "sort_by": sortBy,
+            "file_count": stats["file_count"], "sort_by": sort_by,
             "file_types": file_types, "size_distribution": size_distribution,
         }
 
@@ -1214,7 +1205,6 @@ async def search_files(
     【2026-06-20 小健】删max_depth/page_token
     """
     max_depth = 50
-    page_token = None
     is_valid, error_msg = _validate_path(search_dir)
     if not is_valid:
         return build_error(ERR_PATH_INVALID, error_msg, data={"file_path": search_dir})
@@ -1227,7 +1217,7 @@ async def search_files(
     deadline = time.monotonic() + TOOL_TIMEOUTS.get("search_files", TOOL_TIMEOUTS["default"]) - 2
     all_matches, llm_preview = [], []
     seen_files = set()
-    start_offset = decode_page_token(page_token) if page_token else 0
+    start_offset = 0
 
     def _search_sync():
         nonlocal seen_files
