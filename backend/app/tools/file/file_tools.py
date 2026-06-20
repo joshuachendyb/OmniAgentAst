@@ -986,9 +986,13 @@ async def write_text_file(
         success = await asyncio.to_thread(_do_write)
         
         if success:
+            bytes_written = len(checked_content.encode(encoding))
             return build_success(
-                {"operation_id": operation_id, "file_path": str(path), "bytes_written": len(checked_content.encode(encoding))},
-                f"写入文件成功: {path} ({len(checked_content.encode(encoding))}字节)"
+                {"operation_id": operation_id, "file_path": str(path), "bytes_written": bytes_written},
+                f"写入文件成功: {path} ({bytes_written}字节)",
+                llm_data={"action": "write_file", "status": "success", "file_path": str(path),
+                          "bytes_written": bytes_written,
+                          "summary": f"已写入{path},共{bytes_written}字节"}
             )
         else:
             return build_error(ERR_FILE_WRITE_FAILED, "写入文件失败,safety拦截", data={"file_path": file_path})
@@ -1754,17 +1758,21 @@ async def _apply_edits(
             operation_func=lambda: _execute_edit_sync(path, edits, dry_run, encoding, edit_result)
         )
         if success:
+            applied = edit_result['applied_edits']
+            total = edit_result['total_edits']
             return build_success(
                 {
-                    "applied_edits": edit_result['applied_edits'],
-                    "total_edits": edit_result['total_edits'],
+                    "applied_edits": applied,
+                    "total_edits": total,
                     "results": edit_result['results'],
                     "preview": edit_result['preview'],
                     "dry_run": edit_result['dry_run'],
                     "encoding": edit_result['used_enc'],
                     "operation_id": operation_id,
                 },
-                f"已应用 {edit_result['applied_edits']}/{edit_result['total_edits']} 处编辑"
+                f"已应用 {applied}/{total} 处编辑",
+                llm_data={"action": "edit_file", "status": "success", "applied": applied, "total": total,
+                          "summary": f"编辑完成,已应用{applied}/{total}处修改"}
             )
         return build_error(ERR_FILE_EDIT_FAILED, "文件编辑失败,safety拦截", data={"file_path": file_path})
     except Exception as e:
@@ -1995,7 +2003,8 @@ async def move_file(
 ) -> Dict[str, Any]:
     """移动文件/目录 — 小沈 2026-06-16"""
     if os.path.abspath(source) == os.path.abspath(destination):
-        return build_success({"action": "move", "source": source, "destination": destination}, "源和目标相同(P16幂等)")
+        return build_success({"action": "move", "source": source, "destination": destination}, "源和目标相同(P16幂等)",
+                             llm_data={"action": "move_file", "status": "no_change", "summary": "源和目标相同,无需移动"})
     return await _move_file(
         source_path=source,
         destination_path=destination,
@@ -2011,7 +2020,8 @@ async def copy_file(
     """复制文件/目录 — 小沈 2026-06-16, 小健 2026-06-20 删preserve_metadata"""
     preserve_metadata = True
     if os.path.abspath(source) == os.path.abspath(destination):
-        return build_success({"action": "copy", "source": source, "destination": destination}, "源和目标相同(P16幂等)")
+        return build_success({"action": "copy", "source": source, "destination": destination}, "源和目标相同(P16幂等)",
+                             llm_data={"action": "copy_file", "status": "no_change", "summary": "源和目标相同,无需复制"})
     return await _copy_file(
         source_path=source,
         destination_path=destination,
@@ -2028,7 +2038,9 @@ async def delete_file(
     """删除文件/目录 — 小沈 2026-06-16"""
     src_path = Path(source)
     if not src_path.exists():
-        return build_success({"action": "delete", "source": source}, "文件已不存在(P16幂等)")
+        return build_success({"action": "delete", "source": source}, "文件已不存在(P16幂等)",
+                             llm_data={"action": "delete_file", "status": "already_deleted",
+                                       "summary": "文件已不存在,无需删除"})
     return await _delete_file(
         file_path=source,
         recursive=recursive,
@@ -2044,7 +2056,9 @@ async def rename_file(
     new_name = Path(destination).name
     dst = src.parent / new_name
     if src.name == new_name:
-        return build_success({"action": "rename", "source": source, "destination": str(dst)}, "新名称相同(P16幂等)")
+        return build_success({"action": "rename", "source": source, "destination": str(dst)}, "新名称相同(P16幂等)",
+                             llm_data={"action": "rename_file", "status": "no_change",
+                                       "summary": "新名称与当前名称相同,无需重命名"})
     return await _move_file(
         source_path=source,
         destination_path=str(dst),

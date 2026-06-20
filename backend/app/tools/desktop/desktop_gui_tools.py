@@ -242,7 +242,10 @@ def screen_record(duration: int, output_path: Optional[str] = None, fps: int = 1
 
             imageio.mimwrite(output_path, frames, fps=fps)
 
-        return build_success({"output_path": output_path, "duration": duration, "fps": fps}, f"录制完成: {output_path}")
+        return build_success({"output_path": output_path, "duration": duration, "fps": fps}, f"录制完成: {output_path}",
+                             llm_data={"action": "screen_record", "status": "success",
+                                       "output_path": output_path, "duration": duration, "fps": fps,
+                                       "summary": f"屏幕录制完成,已保存到{output_path}"})
     except Exception as e:
         return build_error(ERR_SCREEN_RECORD, f"录制失败: {str(e)}", data={"error": str(e)})
 
@@ -411,7 +414,9 @@ def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, 
     try:
         toaster = ToastNotifier()
         toaster.show_toast(title, message, duration=duration)
-        return build_success({"title": title, "message": message, "duration": duration}, "通知发送成功")
+        return build_success({"title": title, "message": message, "duration": duration}, "通知发送成功",
+                             llm_data={"action": "send_notification", "status": "success",
+                                       "title": title, "summary": f"通知已发送:{title}"})
     except Exception as e:
         return build_error(ERR_DESKTOP_NOTIFICATION, f"通知发送失败: {e}", data={"error": str(e)})
 from app.constants import (

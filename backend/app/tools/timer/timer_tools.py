@@ -110,6 +110,8 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
             return build_success(
                 {"timer_id": timer_id, "cancelled": False},
                 f"定时器 {timer_id} 已触发或不存在,无需取消",
+                llm_data={"action": "timer_clear", "status": "not_found", "timer_id": timer_id,
+                          "summary": f"定时器{timer_id}不存在或已触发"}
             )
         handle = _timers.pop(timer_id, None)
         if handle:
@@ -118,6 +120,8 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
         return build_success(
             {"timer_id": timer_id, "cancelled": True},
             "定时器已取消",
+            llm_data={"action": "timer_clear", "status": "cancelled", "timer_id": timer_id,
+                      "summary": f"定时器{timer_id}已取消"}
         )
     except Exception as e:
         return build_error(ERR_TIMER_CLEAR, f"清除定时器失败: {str(e)}",

@@ -306,7 +306,9 @@ def shell_session(
         process = shell_info.get("process")
         if not process:
             _background_shells.pop(shell_id, None)
-            return build_success({"shell_id": shell_id, "terminated": True, "force": force, "returncode": None}, "会话已无进程")
+            return build_success({"shell_id": shell_id, "terminated": True, "force": force, "returncode": None}, "会话已无进程",
+                                 llm_data={"action": "shell_session_terminate", "status": "no_process",
+                                           "shell_id": shell_id, "summary": f"会话{shell_id}已无活跃进程"})
         terminated = False
         returncode = None
         try:
@@ -328,7 +330,10 @@ def shell_session(
         _background_shells.pop(shell_id, None)
         return build_success(
             {"shell_id": shell_id, "terminated": terminated, "force": force, "returncode": returncode},
-            "已终止后台命令" if terminated else "终止失败")
+            "已终止后台命令" if terminated else "终止失败",
+            llm_data={"action": "shell_session_terminate", "status": "terminated" if terminated else "failed",
+                      "shell_id": shell_id, "returncode": returncode,
+                      "summary": f"会话{shell_id}{'已终止' if terminated else '终止失败'}"})
     else:
         return build_error(ERR_INVALID_ACTION, f"无效的操作类型: {action},必须是 output 或 terminate", data={"action": action})
 from app.constants import (

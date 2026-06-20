@@ -227,6 +227,8 @@ def execute_sql(
             return build_success(
                 {"sql": sql, "dry_run": True, "syntax_valid": True},
                 "预演模式:语法验证通过,实际未执行",
+                llm_data={"action": "execute_sql", "status": "dry_run", "sql": sql,
+                          "summary": "SQL语法验证通过,未实际执行。确认无误后用dry_run=false执行"}
             )
 
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
@@ -257,6 +259,8 @@ def execute_sql(
         return build_success(
             {"affected_rows": affected_rows, "sql": sql},
             f"执行成功,影响行数: {affected_rows}",
+            llm_data={"action": "execute_sql", "status": "success", "affected_rows": affected_rows,
+                      "sql_type": "DML", "summary": f"SQL执行成功,影响{affected_rows}行"}
         )
 
     except sqlite3.Error as e:
@@ -343,7 +347,11 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
             md += "\n"
 
         return build_success({"tables": schema_info, "total": len(schema_info), "markdown": md},
-                              f"获取成功,共 {len(schema_info)} 个表")
+                              f"获取成功,共 {len(schema_info)} 个表",
+                              llm_data={"action": "get_db_schema", "total": len(schema_info),
+                                        "table_names": [t["name"] for t in schema_info],
+                                        "summary": f"获取到{len(schema_info)}个表的结构信息"})
+
 
     except sqlite3.Error as e:
         return build_error(ERR_SQL_EXEC, f"SQLite错误: {e}", data={"error": str(e)})

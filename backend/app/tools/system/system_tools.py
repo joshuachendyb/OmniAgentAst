@@ -115,7 +115,9 @@ def get_system_info(info_type: str = "all") -> dict:
                 "packets_recv": net_io.packets_recv,
             }
 
-        return build_success(data, f"成功获取系统信息 ({info_type})")
+        return build_success(data, f"成功获取系统信息 ({info_type})",
+                             llm_data={"action": "get_system_info", "info_type": info_type,
+                                       "summary": f"已获取{info_type}类型的系统信息"})
 
     except Exception as e:
         logger.error(f"[get_system_info] 获取系统信息失败: {e}")

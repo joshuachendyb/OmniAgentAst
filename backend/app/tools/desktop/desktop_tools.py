@@ -159,7 +159,10 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
                 "hwnd": hwnd,
                 "matched_count": len(matched_hwnds),
             },
-            msg
+            msg,
+            llm_data={"action": "set_window_state", "status": "success", "window_title": title,
+                      "matched_count": len(matched_hwnds),
+                      "summary": f"窗口操作{action}完成,匹配{len(matched_hwnds)}个窗口"}
         )
 
     except Exception as e:

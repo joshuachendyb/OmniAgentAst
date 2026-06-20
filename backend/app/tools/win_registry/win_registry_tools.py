@@ -156,7 +156,10 @@ def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "
             }
 
             logger.info(f"[registry_read] 成功读取: {full_root_key}\\{sub_key}\\{value_name or '(默认)'}")
-            return build_success(result_data, "读取成功")
+            return build_success(result_data, "读取成功",
+                                 llm_data={"action": "registry_read", "status": "success",
+                                           "key_path": result_data["key_path"],
+                                           "summary": f"已读取注册表值:{result_data['value_name']}"})
 
     except FileNotFoundError:
         error_msg = f"注册表键或值不存在: {key_path}"
@@ -233,7 +236,9 @@ def registry_write(key_path: str, value_name: str, value: str, value_type: str =
         try:
             with winreg.OpenKey(hkey, sub_key, 0, winreg.KEY_READ):
                 pass
-            return build_success({"key_path": key_path, "dry_run": True}, "键路径有效,可以写入")
+            return build_success({"key_path": key_path, "dry_run": True}, "键路径有效,可以写入",
+                                 llm_data={"action": "registry_write", "status": "dry_run",
+                                           "key_path": key_path, "summary": "注册表键路径验证通过,可以写入"})
         except FileNotFoundError:
             return build_error(ERR_SYS_REG_KEY_NOT_FOUND, f"键路径不存在: {key_path}", data={"key_path": key_path})
         except Exception as e:
@@ -256,7 +261,10 @@ def registry_write(key_path: str, value_name: str, value: str, value_type: str =
 
         logger.info(f"[registry_write] 写入成功: {full_root_key}\\{sub_key}\\{value_name}")
         return build_success({"key_path": f"{full_root_key}\\{sub_key}", "value_name": value_name,
-                              "value": value, "value_type": actual_type}, "写入成功")
+                              "value": value, "value_type": actual_type}, "写入成功",
+                             llm_data={"action": "registry_write", "status": "success",
+                                       "key_path": f"{full_root_key}\\{sub_key}",
+                                       "summary": f"已写入注册表值:{value_name}"})
     except PermissionError:
         logger.error(f"[registry_write] 权限不足: {key_path}")
         return build_error(ERR_REG_PERMISSION_DENIED, f"权限不足: {key_path}", data={"key_path": key_path})
@@ -337,7 +345,10 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
             }
             logger.info(f"[registry_delete] 成功删除子键: {full_root_key}\\{sub_key}")
 
-        return build_success(result_data, "删除成功")
+        return build_success(result_data, "删除成功",
+                             llm_data={"action": "registry_delete", "status": "success",
+                                       "key_path": result_data["key_path"],
+                                       "summary": f"已删除注册表键:{result_data['key_path']}"})
 
     except FileNotFoundError:
         error_msg = f"注册表键或值不存在: {key_path}"
