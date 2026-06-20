@@ -189,8 +189,12 @@ def is_error(result: Dict[str, Any]) -> bool:
 
 
 # ── 新格式：builder 注册机制 + build_result ─────────────
+#  v4.1: exec_code/duration_ms/tool_params 作为直接参数；**extra 过滤保留字段 — 小欧 2026-06-20
 
 _BUILDERS: Dict[str, Callable] = {}
+
+# build_result 顶层保留字段，extra 遇到这些字段会被过滤
+_RESERVED_TOP_KEYS: set = {"data", "llm_data", "other_data"}
 
 
 def register_builder(tool_name: str, fn: Callable) -> None:
@@ -198,34 +202,48 @@ def register_builder(tool_name: str, fn: Callable) -> None:
 
     Args:
         tool_name: 工具名称
-        fn: builder 函数,签名 (tool_name, data, other_data) -> llm_data dict
+        fn: builder 函数,签名 (tool_name, data, exec_code, duration_ms, tool_params) -> llm_data dict
     """
     _BUILDERS[tool_name] = fn
 
 
 def _default_builder(tool_name: str, data: Any = None,
-                     other_data: Optional[Dict] = None) -> Dict[str, Any]:
-    """默认 builder — 兜底逻辑:用 data 的 repr 当 summary — 小欧 2026-06-20
+                     exec_code: str = "success",
+                     duration_ms: int = 0,
+                     tool_params: Optional[Dict] = None) -> Dict[str, Any]:
+    """默认 builder — 兜底逻辑 — 小欧 2026-06-20
 
     Args:
         tool_name: 工具名称
         data: 业务数据
-        other_data: 控制字段(未使用)
+        exec_code: 执行状态码 ("success"/"error"/"warning")
+        duration_ms: 执行耗时（毫秒）
+        tool_params: LLM 调用参数
 
     Returns:
         最小 llm_data dict
     """
-    summary = str(data) if data is not None else "执行完成"
+    summary = str(data)[:200] if data is not None else "执行完成"
     return {
-        "summary": summary[:200],
-        "action": {"tool": tool_name, "tool_zh": tool_name, "params": {}},
+        "summary": summary,
+        "action": {"tool": tool_name, "tool_zh": tool_name, "params": tool_params or {}},
         "target": "",
-        "status": {"exec_code": "success", "message": "执行成功",
-                    "code": SUCCESS_CODE, "detail": "", "hint": ""},
+        "status": {
+            "exec_code": exec_code,
+            "message": "执行成功" if exec_code in ("success", "warning") else "执行失败",
+            "code": SUCCESS_CODE if exec_code in ("success", "warning") else "ERR_UNKNOWN",
+            "detail": "",
+            "hint": "",
+        },
+        "duration_ms": duration_ms,
+        "metrics": {},
     }
 
 
 def build_result(tool_name: str, data: Any = None,
+                 exec_code: str = "success",
+                 duration_ms: int = 0,
+                 tool_params: Optional[Dict] = None,
                  other_data: Optional[Dict] = None,
                  **extra) -> Dict[str, Any]:
     """统一构建工具返回结果（新3字段格式）— 小欧 2026-06-20
@@ -233,21 +251,27 @@ def build_result(tool_name: str, data: Any = None,
     Args:
         tool_name: 工具名称（用于查找 builder）
         data: 纯业务数据
-        other_data: 控制字段 (warning/retry_count/return_direct/attachment)
-        **extra: 额外字段（合并到顶层）
+        exec_code: 执行状态码 ("success"/"error"/"warning")
+        duration_ms: 执行耗时（毫秒）
+        tool_params: LLM 调用参数（直接传入 builder，不走 data）
+        other_data: 控制字段输出通道 (warning/retry_count/return_direct/attachment)
+        **extra: 额外字段（合并到顶层，过滤保留字段 data/llm_data/other_data）
 
     Returns:
         {"data": ..., "llm_data": ..., "other_data": ..., **extra}
     """
     builder = _BUILDERS.get(tool_name, _default_builder)
-    llm_data = builder(tool_name, data, other_data)
+    llm_data = builder(tool_name, data, exec_code, duration_ms, tool_params)
     result: Dict[str, Any] = {
         "data": data,
         "llm_data": llm_data,
         "other_data": other_data or {},
     }
-    result.update(extra)
+    for k, v in extra.items():
+        if k not in _RESERVED_TOP_KEYS:
+            result[k] = v
     return result
+
 
 
 
