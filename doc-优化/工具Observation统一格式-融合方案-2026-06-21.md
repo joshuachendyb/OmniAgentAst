@@ -1,11 +1,11 @@
 # 工具 Observation 统一输出格式设计（融合方案）
 
 **创建时间**: 2026-06-20 11:07:25  
-**更新时间**: 2026-06-21 01:20:00  
-**版本**: v6.0  
+**更新时间**: 2026-06-21 20:10:07  
+**版本**: v6.3  
 **编写人**: 小健 + 北京老陈  
 **适用范围**: OmniAgentAs-desk 所有工具给LLM和前端的observation输出格式  
-**状态**: 待审查
+**状态**: 审查通过
 
 ---
 
@@ -23,6 +23,9 @@
 | v4.1 | 2026-06-20 22:45:00 | build_result新增exec_code/duration_ms/tool_params直接参数；builder接收exec_code不猜；移除data["_call_params"]注入；**extra过滤保留字段；other_data输出通道化；format_data_detail加try-except兜底；第10章新增3条禁止 | 小欧 |
 | v5.0 | 2026-06-21 00:40:00 | **结构简化**：target从llm_data顶层降入action子字段（6顶层→5顶层）；action子字段从3→4（tool/tool_zh/target/params）；Ch1-3全量更新 | 小健 |
 | v6.0 | 2026-06-21 01:20:00 | **构建方式简化**：取消builder注册机制，改为每个tool直接调用builder函数构建llm_data后传给build_success/error/warning；build_result拆回3个函数（函数名即语义，exec_code不再作为参数） | 小健 |
+| v6.1 | 2026-06-21 19:59:40 | **审查修复**：修复5.8节警告模板缺少"详情:"行；修复8.3节警告示例data结构与4.2节定义不一致（遵循零重复原则） | 小健 |
+| v6.2 | 2026-06-21 20:06:24 | **精简第9章**：删除9.3冗余节（纯引用无新内容）和9.4节（信息合并到9.1 Phase 1描述） | 小健 |
+| v6.3 | 2026-06-21 20:10:07 | **重写9.2实施清单**：按"每个tool处理流程"重组（清理旧代码→建builder→改调用）；明确严禁内联赋值；明确严禁用脚本修改必须手动分析 | 小健 |
 
 ---
 
@@ -1170,7 +1173,7 @@ def hello():
 |------|------------|
 | 成功 | `观察: {status.message} - {action.tool_zh}\n结果: {summary}\n详情:\n{format_data_detail(data)}` |
 | 错误 | `观察: {status.message} - {action.tool_zh}\n结果: {summary}\n详情:\n{format_data_detail(data)}\n建议: {status.hint}` |
-| 警告 | `观察: {status.message} - {action.tool_zh}\n⚠ 警告: {status.detail}\n结果: {summary}\n建议: {status.hint}` |
+| 警告 | `观察: {status.message} - {action.tool_zh}\n⚠ 警告: {status.detail}\n结果: {summary}\n详情:\n{format_data_detail(data)}\n建议: {status.hint}` |
 
 **关键点**：observation文本是tool消息的content，LLM直接阅读这段文本理解工具结果，无需解析JSON。
 ---
@@ -2318,8 +2321,8 @@ llm_data = {
 
 **数据量过大回滚**：
 ```python
-# data
-data = {"affected_rows": 50000, "threshold": 10000, "sql": "UPDATE users SET ...", "rolled_back": True}
+# data（关键数字在llm_data.metrics里，data只放额外上下文）
+data = {"sql": "UPDATE users SET ...", "rolled_back": True}
 
 # llm_data（builder 产出）
 llm_data = {
@@ -2344,36 +2347,53 @@ llm_data = {
 
 | 阶段 | 改造内容 | 影响范围 | 依赖 |
 |------|---------|---------|------|
-| **Phase 1** | build 3函数重构 + 工具直接调用builder，result统一为data/llm_data/other_data三字段 + observation_formatter重写（format_llm_observation） | 21个工具文件 + 5个核心文件 | 无 |
+| **Phase 1** | build 3函数重构 + 工具直接调用builder，result统一为data/llm_data/other_data三字段 + observation_formatter重写（format_llm_observation）+ 统一error格式（原Phase 3并入） | 21个工具文件 + 5个核心文件 | 无 |
 | **Phase 2** | ToolStep瘦身 + Observation step承载全部信息，tool_step只做管道不加工 | 3-4个核心文件 | Phase 1 |
 
 ### 9.2 Phase 1实施清单
 
-| 步骤 | 内容 | 涉及文件 | 5.9章节 |
-|------|------|---------|---------|
-| 0 | **清查**：全量搜索 llm_data 引用，按"定义/构建/消费/传递/注释"分类，逐处标注处理方式（保留/修改/删除），确保无遗漏后再进入步骤1 | 整个 backend/ | — |
-| 1 | 更新tool_response.py：新build_success/error/warning签名 + is_success/is_error适配 | `backend/app/tools/tool_response.py` | 3.6 / 5.9.2 |
-| 2 | 给每个工具添加builder函数 + time.perf_counter()，替换build_success/error/warning调用 | 14个工具文件 + 7个helper文件（共21个） | 5.9.3 / 5.9.6 |
-| 3 | 重写observation_formatter.py → format_llm_observation(data, llm_data)，清除旧格式化函数 | `backend/app/services/agent/observation_formatter.py` | 5.9.5 |
-| 4 | 更新message_utils.py的build_observation_text桥接层，清除旧的build_execution_result_dict调用 | `backend/app/services/agent/agent_utils/message_utils.py` | 5.9.5 |
-| 5 | 更新action_handler.py适配新result三字段，清除旧格式字段读取 | `backend/app/services/agent/core_agent/handlers/action_handler.py` | 5.9.7 |
-| 6 | 更新tool_step.py适配新result结构，清除旧格式字段 | `backend/app/steps/tool_step.py` | 5.9.7 |
-| 7 | 收尾统一清理：删除tool_response.py中的旧build_success/build_error/build_warning函数及相关常量 | `backend/app/tools/tool_response.py` | 3.6 |
-| 8 | 完整回归测试 | — | — |
+#### 9.2.1 核心原则
 
-#### 9.2.1 分批实施策略
+**严禁用脚本修改代码，必须手动修改进行深入彻底的分析。**
 
-**总工作量**：21个工具文件（14个工具实现 + 7个helper），604处 build_xxx 调用（build_success=162, build_error=440, build_warning=2）需要改为新签名（data, llm_data, other_data）。604处不可能一次完成，按模块分8批执行。
+每个tool代码文件的改造必须按以下顺序执行，一步不能跳：
 
-**核心原则**：
-1. 先清查再动手 — 步骤0全量摸底后，确保无遗漏再开始改造
-2. 框架优先 — 先把5个核心文件改完，让新管道跑通
-3. 分批推进 — 每批2-3个文件，改完立刻跑测试验证
-4. 验证通过再下一批 — 不累积未验证的修改
+```
+步骤1: 清理旧llm_data代码逻辑（删除内联构建、删除旧参数传递）
+步骤2: 建立新的builder函数（严禁内联赋值llm_data各个参数）
+步骤3: 修改build3函数调用（替换为新签名）
+```
 
-#### 9.2.2 步骤0：全量清查旧llm_data代码
+#### 9.2.2 每个tool的处理流程（3步）
 
-**目标**：动手改造前，把整个backend/里所有旧llm_data相关代码全部翻出来，逐处标注处理方式，确保改的时候不遗漏。
+**步骤1：清理旧llm_data代码**
+
+每个tool文件先清理以下旧代码：
+- 删除函数体内内联构建 `llm_data={...}` 的代码
+- 删除传递给旧签名 `build_success(message=..., code=..., ...)` 的参数
+- 删除旧的 `llm_data` 相关注释和变量
+
+**步骤2：建立新的builder函数**
+
+在tool文件末尾添加 `_build_xxx_llm_data` 函数，**严禁以下行为**：
+- ❌ 在builder函数内用字典直接赋值各字段（如 `"message": "读取成功"`）
+- ❌ 在builder函数内用变量赋值各字段（如 `msg = "读取成功"; "message": msg`）
+- ✅ 必须按5.9.3节模板，用完整5字段结构构建llm_data
+
+**步骤3：修改build3函数调用**
+
+将所有旧签名调用替换为新签名：
+```python
+# 旧
+build_success(data=..., message="执行成功", code=None, llm_data={...})
+
+# 新
+build_success(data=..., llm_data=llm_data)
+```
+
+#### 9.2.3 全量清查（步骤0）
+
+动手改造前，把整个backend/里所有旧llm_data相关代码全部翻出来，逐处标注处理方式。
 
 **清查方法**：
 
@@ -2390,99 +2410,64 @@ llm_data = {
    - 保留 → 新格式也需要的功能（如 format_llm_observation 消费 llm_data）
    - 修改 → 适配新格式（如 action_handler 读取方式）
    - 删除 → 旧逻辑不再需要（如旧格式化函数、内联构建）
-5. 输出清查清单，确认无遗漏后进入步骤1
+5. 输出清查清单，确认无遗漏后再开始改造
 ```
 
 **输出物**：一份完整的 `旧llm_data代码清查清单.md`，包含所有引用位置和处理方式。
 
-**清查清单格式参考**（按位置列出每处旧代码及其处理方式）：
+#### 9.2.4 框架层改造（5个核心文件）
 
-| 位置 | 需清除/修改的旧代码 | 处理方式 | 执行时机 |
-|------|-------------------|---------|---------|
-| `observation_formatter.py` | extract_status、build_execution_result_dict、_extract_display_data、_append_data、_format_summary_parts、_format_result_observation等旧格式化函数 | **删除**（重写时替换） | 框架批 |
-| `message_utils.py` | build_observation_text 中的 build_execution_result_dict 调用 | **删除**（改为直接调 format_llm_observation） | 框架批 |
-| `action_handler.py` | result.get("code")、result.get("warning")、result.get("attachment")、result.get("return_direct") | **修改**（改为从 llm_data/other_data 取） | 框架批 |
-| `tool_step.py` | execution_result/execution_status/summary/error_message 等旧格式字段 | **修改**（改为从 llm_data+other_data 投射） | 框架批 |
-| 各工具文件（21个） | `from app.tools.tool_response import build_success, build_error, build_warning` 导入 + 内联 llm_data 构建代码 | **删除**（改为 builder函数 + 新签名build_success/error/warning） | 每批各自 |
-| `tool_response.py` | build_success、build_error、build_warning、_add_optionals、_OPTIONAL_FIELDS、_REQUIRED_FIELDS | **删除**（所有工具改完后） | 收尾 |
+框架层改造是整个Phase 1的基座，一次性完成。
 
-#### 9.2.3 框架批（5个核心文件）
+| 文件 | 新增/修改内容 | 清除的旧代码 |
+|------|-------------|-------------|
+| `tool_response.py` | 新签名 build_success/error/warning(data, llm_data, other_data, **extra) + 新版 is_success/is_error | 旧签名保留，收尾删除 |
+| `observation_formatter.py` | 重写 format_llm_observation(data, llm_data) + 新增 format_data_detail | 清除所有旧格式化函数 |
+| `message_utils.py` | 更新 build_observation_text：拆包 result → (data, llm_data)，直接调 format_llm_observation | 清除 build_execution_result_dict 调用 |
+| `action_handler.py` | 适配新3字段 result：从 llm_data/other_data 取字段 | 清除 result.get("code/warning/attachment/return_direct") |
+| `tool_step.py` | ToolStep 适配新 result 结构 | 清除旧格式字段引用 |
 
-**一次性完成，不分批**。框架层改完是整个Phase 1的基座。框架批同时负责清除本层所有旧的llm_data提取和格式化逻辑。
-
-| 文件 | 新增/修改内容 | 同时清除的旧代码 | 验收标准 |
-|------|-------------|-----------------|---------|
-| `backend/app/tools/tool_response.py` | 新签名 build_success/error/warning(data, llm_data, other_data, **extra) + 新版 is_success/is_error | 旧函数保留（收尾步骤7才删） | 导入不报错，构建正常 |
-| `backend/app/services/agent/observation_formatter.py` | 重写 format_llm_observation(data, llm_data) + 新增 format_data_detail | 清除 extract_status、build_execution_result_dict、_extract_display_data、_append_data、_format_summary_parts、_format_result_observation、_format_success_observation、_format_warning_observation、_format_error_observation、_build_base_text、_append_warning、_append_hint | 新旧格式都能正常格式化 |
-| `backend/app/services/agent/agent_utils/message_utils.py` | 更新 build_observation_text 桥接层：拆包 result → (data, llm_data)，直接调 format_llm_observation | 清除 build_execution_result_dict 调用 | observation 文本生成正常 |
-| `backend/app/services/agent/core_agent/handlers/action_handler.py` | 适配新3字段 result：build_observation 从 llm_data 取 status.exec_code，从 other_data 取 warning/return_direct/attachment | 清除 result.get("code")、result.get("warning")、result.get("attachment")、result.get("return_direct") 等旧字段读取 | action 处理流程正常 |
-| `backend/app/services/agent/steps/tool_step.py` | ToolStep 适配新 result 结构：execution_status 从 llm_data.status.exec_code 取，extra_fields 从 llm_data/other_data 取 | 清除旧格式字段引用：execution_result/execution_status/summary/error_message/action_retry_count/execution_time_ms/code/warning/attachment 改为从 llm_data+other_data 投射 | tool_step 序列化正常 |
-
-**框架批完成后的验证**：
+**验证**：
 ```
 pytest -x --tb=short -k "test_tool_response or test_observation or test_message or test_action or test_tool_step"
 ```
 
-#### 9.2.4 工具分批详表
+#### 9.2.5 工具层改造（21个文件，分8批）
 
-工具文件共14个实现文件 + 7个 helper 文件，按以下8批执行。
+**总工作量**：21个工具文件（14个工具实现 + 7个helper），604处 build_xxx 调用。
 
-**每批标准步骤**：
+**每批执行流程**（按9.2.2的3步）：
 ```
-1. 给文件末尾添加 builder 函数（按5.9.3模板）
-2. 每个工具函数加 time.perf_counter() 测量（5.9.6规范）
-3. 替换所有旧签名 build_success/error/warning → 新签名，同时：
-   a. 删除工具函数内内联构建 llm_data={...} 传给 build_success/build_error 的代码
-   b. 改为 builder函数构建llm_data → build_success/error/warning(data=..., llm_data=llm_data)
-4. 跑 pytest 验证本批修改
+1. 清理旧llm_data代码（删除内联构建、删除旧参数）
+2. 添加builder函数（按5.9.3模板，严禁内联赋值）
+3. 替换build_success/error/warning调用为新签名
+4. 跑 pytest 验证
 5. 通过 → 下一批
 ```
 
-| 批 | 文件 | build_success | build_error | build_warning | 合计 | 优先级 |
-|:-:|------|:------------:|:----------:|:------------:|:---:|:------:|
-| **第1批** | `file/file_tools.py` + `toolhelper/file_helper.py` | 41 | 149 | 0 | **190** | 最高（最大文件，最常用） |
-| **第2批** | `document/document_tools.py` | 14 | 40 | 0 | **54** | 高 |
-| **第3批** | `system/system_tools.py` + `network/network_tools.py` | 17 | 78 | 0 | **95** | 高 |
-| **第4批** | `desktop/desktop_gui_tools.py` + `desktop/desktop_tools.py` | 20 | 40 | 0 | **60** | 中 |
-| **第5批** | `shell/shell_tools.py` + `shell/code_execution_tools.py` | 14 | 30 | 0 | **44** | 中 |
-| **第6批** | `dataanalysis/dataanalysis_tools.py` + `dataanalysis/database_tools.py` | 8 | 28 | 2 | **38** | 中 |
-| **第7批** | `fundamental/fundamental_tools.py` + `fundamental/time_tools.py` + `timer/timer_tools.py` + `win_registry/win_registry_tools.py` | 17 | 34 | 0 | **51** | 低 |
-| **第8批** | 剩余6个helper：`data_format_helper.py` + `gui_helper.py` + `common_helper.py` + `network_helper.py` + `db_helper.py` + `window_helper.py` | 31 | 41 | 0 | **72** | 低 |
+| 批 | 文件 | 调用数 | 优先级 |
+|:-:|------|:-----:|:------:|
+| **第1批** | `file/file_tools.py` + `toolhelper/file_helper.py` | 190 | 最高 |
+| **第2批** | `document/document_tools.py` | 54 | 高 |
+| **第3批** | `system/system_tools.py` + `network/network_tools.py` | 95 | 高 |
+| **第4批** | `desktop/desktop_gui_tools.py` + `desktop/desktop_tools.py` | 60 | 中 |
+| **第5批** | `shell/shell_tools.py` + `shell/code_execution_tools.py` | 44 | 中 |
+| **第6批** | `dataanalysis/dataanalysis_tools.py` + `dataanalysis/database_tools.py` | 38 | 中 |
+| **第7批** | `fundamental/fundamental_tools.py` + `fundamental/time_tools.py` + `timer/timer_tools.py` + `win_registry/win_registry_tools.py` | 51 | 低 |
+| **第8批** | 剩余6个helper | 72 | 低 |
 
-#### 9.2.5 收尾
+#### 9.2.6 收尾
 
-框架批 + 工具8批全部完成后：
+框架层 + 工具8批全部完成后：
 
 | 步骤 | 内容 | 验收标准 |
 |:----:|------|---------|
-| 1 | 删除 tool_response.py 中的旧 build_success/build_error/build_warning 函数 | 旧函数不再被引用（所有工具已改用新签名） |
+| 1 | 删除 tool_response.py 中的旧 build_success/build_error/build_warning 函数 | 旧函数不再被引用 |
 | 2 | 同时删除 _add_optionals、_OPTIONAL_FIELDS、_REQUIRED_FIELDS | 同上 |
-| 3 | 全局搜索确认无残留的旧签名 build_success/error/warning 调用 | 无匹配 |
+| 3 | 全局搜索确认无残留的旧签名调用 | 无匹配 |
 | 4 | 运行完整回归测试：`pytest` | failed=0, error=0 |
 | 5 | 运行前端检查：`npm run check` | 无错误 |
-| 6 | 提交commit + 打patch tag | |
-
-### 9.3 核心改动（参考5.9/5.10章）
-
-#### 9.3.1 format_llm_observation
-
-签名与实现见 **5.9.5**。此处不再重复。
-
-#### 9.3.2 llm_data格式统一
-
-所有工具的llm_data统一为5字段结构，见 **5.2节**。
-
-#### 9.3.3 data格式统一
-
-所有工具的data只放纯业务数据（llm_data没有的大块内容），见 **4.2节**。
-
-#### 9.3.4 build_success/error/warning函数签名
-
-改造方案见 **3.6节** 和 **5.9.2**。统一为 `build_success/error/warning(data, llm_data, other_data, **extra)`，llm_data由各tool的builder函数构建后传入。
-
-### 9.4 无Phase 3
-
-原旧版3阶段方案中的Phase 3（统一error格式）已并入Phase 1 —— builder统一处理success/error/warning三种情况（见5.9.3），不再单独作为一个阶段。
+| 6 | 提交commit + 打patch tag | — |
 
 ---
 
@@ -2583,6 +2568,6 @@ data = {
 
 ---
 
-**文档更新时间**: 2026-06-21 01:30:00  
-**版本**: v6.0  
+**文档更新时间**: 2026-06-21 20:10:07  
+**版本**: v6.3  
 **编写人**: 小健 + 北京老陈 + 小欧
