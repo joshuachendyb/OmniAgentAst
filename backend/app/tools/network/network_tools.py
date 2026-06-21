@@ -37,6 +37,7 @@ import subprocess
 import socket
 import asyncio
 import base64
+import time as _time_mod
 from typing import Optional, Dict, Any, Literal, List, Tuple
 from urllib.parse import urlencode, urlparse, urlunparse
 
@@ -77,6 +78,135 @@ from app.constants import (
 )
 from app.tools.tool_response import build_success, build_error
 from app.constants import SUCCESS_CODE
+
+
+# ========== builder函数 ==========
+
+def _build_http_request_llm_data(exec_code: str, duration_ms: int, url: str = "", method: str = "GET",
+                                   status_code: int = 0, content_type: str = "", llm_body=None,
+                                   err_code: str = "", detail: str = "") -> dict:
+    """http_request的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"HTTP请求失败: {method} {url}",
+            "action": {"tool": "http_request", "tool_zh": "HTTP请求", "target": url, "params": {"method": method, "url": url}},
+            "status": {"exec_code": "error", "message": "HTTP请求失败", "code": err_code, "detail": detail, "hint": ""},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"请求成功 (HTTP {status_code})",
+        "action": {"tool": "http_request", "tool_zh": "HTTP请求", "target": url, "params": {"method": method, "url": url}},
+        "status": {"exec_code": "success", "message": "HTTP请求成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"status_code": {"value": status_code, "text": f"HTTP {status_code}"}},
+    }
+
+
+def _build_download_file_llm_data(exec_code: str, duration_ms: int, url: str = "", dest_path: str = "",
+                                    file_size: int = 0, total_size: int = 0, content_type: str = "",
+                                    err_code: str = "", detail: str = "") -> dict:
+    """download_file的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"文件下载失败: {url}",
+            "action": {"tool": "download_file", "tool_zh": "文件下载", "target": url, "params": {"url": url}},
+            "status": {"exec_code": "error", "message": "文件下载失败", "code": err_code, "detail": detail, "hint": ""},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"文件下载成功: {dest_path}",
+        "action": {"tool": "download_file", "tool_zh": "文件下载", "target": url, "params": {"url": url, "destination_path": dest_path}},
+        "status": {"exec_code": "success", "message": "文件下载成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"file_size": {"value": file_size, "text": f"{file_size}字节"}},
+    }
+
+
+def _build_fetch_webpage_llm_data(exec_code: str, duration_ms: int, url: str = "", extract_format: str = "markdown",
+                                    status_code: int = 0, truncated: bool = False, content_preview: str = "",
+                                    err_code: str = "", detail: str = "") -> dict:
+    """fetch_webpage的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"获取网页失败: {url}",
+            "action": {"tool": "fetch_webpage", "tool_zh": "获取网页", "target": url, "params": {"url": url, "extract_format": extract_format}},
+            "status": {"exec_code": "error", "message": "获取网页失败", "code": err_code, "detail": detail, "hint": ""},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"成功获取网页内容({extract_format}格式)" + ("(已截断)" if truncated else ""),
+        "action": {"tool": "fetch_webpage", "tool_zh": "获取网页", "target": url, "params": {"url": url, "extract_format": extract_format}},
+        "status": {"exec_code": "success", "message": "获取网页内容成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"status_code": {"value": status_code, "text": f"HTTP {status_code}"}},
+    }
+
+
+def _build_search_web_llm_data(exec_code: str, duration_ms: int, query: str = "", engine_used: str = "",
+                                result_count: int = 0, llm_results=None,
+                                err_code: str = "", detail: str = "") -> dict:
+    """search_web的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"搜索失败: {query}",
+            "action": {"tool": "search_web", "tool_zh": "网络搜索", "target": query, "params": {"query": query}},
+            "status": {"exec_code": "error", "message": "搜索失败", "code": err_code, "detail": detail, "hint": ""},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"找到 {result_count} 条搜索结果({engine_used})",
+        "action": {"tool": "search_web", "tool_zh": "网络搜索", "target": query, "params": {"query": query}},
+        "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"results": {"value": result_count, "text": f"{result_count}条"}},
+    }
+
+
+def _build_ping_llm_data(exec_code: str, duration_ms: int, host: str = "", is_reachable: bool = False,
+                          packets_sent: int = 0, packets_received: int = 0, loss_rate: float = 0.0,
+                          avg_latency=None, min_latency=None, max_latency=None,
+                          err_code: str = "", detail: str = "") -> dict:
+    """ping的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"Ping测试失败: {host}",
+            "action": {"tool": "ping", "tool_zh": "Ping测试", "target": host, "params": {"host": host}},
+            "status": {"exec_code": "error", "message": "Ping测试失败", "code": err_code, "detail": detail, "hint": ""},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    status_text = "可达" if is_reachable else "不可达"
+    metrics = {}
+    if is_reachable:
+        metrics["loss_rate"] = {"value": loss_rate, "text": f"{loss_rate}%"}
+        if avg_latency is not None:
+            metrics["avg_latency"] = {"value": avg_latency, "text": f"{avg_latency}ms"}
+    return {
+        "summary": f"Ping测试{'成功' if is_reachable else '失败'}:{host} {status_text}",
+        "action": {"tool": "ping", "tool_zh": "Ping测试", "target": host, "params": {"host": host}},
+        "status": {"exec_code": "success" if is_reachable else "error", "message": f"Ping {status_text}", "code": "" if is_reachable else ERR_NETWORK_TIMEOUT, "detail": "", "hint": ""},
+        "duration_ms": duration_ms, "metrics": metrics,
+    }
+
+
+def _build_port_check_llm_data(exec_code: str, duration_ms: int, host: str = "", port: int = 0,
+                                is_open: bool = False, service: str = "",
+                                err_code: str = "", detail: str = "") -> dict:
+    """port_check的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"端口检查失败: {host}:{port}",
+            "action": {"tool": "port_check", "tool_zh": "端口检查", "target": f"{host}:{port}", "params": {"host": host, "port": port}},
+            "status": {"exec_code": "error", "message": "端口检查失败", "code": err_code, "detail": detail, "hint": ""},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    status_text = "开放" if is_open else "关闭"
+    return {
+        "summary": f"端口 {port} ({service}) {status_text}: {host}:{port}",
+        "action": {"tool": "port_check", "tool_zh": "端口检查", "target": f"{host}:{port}", "params": {"host": host, "port": port}},
+        "status": {"exec_code": "success", "message": f"端口{status_text}", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms, "metrics": {},
+    }
+
 
 def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
     """解析 HTTP 响应体并构建 llm_data。
@@ -122,31 +252,21 @@ def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
     }
 
 
-def _build_http_error(last_exception: Exception, url: str, retry: int) -> Dict[str, Any]:
-    """构建HTTP请求最终错误响应 — 小沈 2026-05-25
-
-    使用场景:
-    - http_request中最终错误构建
-    - 需要统一处理TimeoutException/HTTPStatusError/RequestError的场景
-
-    使用示例:
-        return _build_http_error(last_exception, url, retry)
-
-    返回数据说明:
-    - 返回Dict,错误响应
-    """
+def _build_http_error(last_exception: Exception, url: str, retry: int, duration_ms: int = 0) -> Dict[str, Any]:
+    """构建HTTP请求最终错误响应 — 小健 2026-06-21 builder改造"""
     if isinstance(last_exception, httpx.TimeoutException):
-        return build_error(ERR_NETWORK_TIMEOUT, f"请求超时:{url}", data={"url": url})
+        llm_data = _build_http_request_llm_data("error", duration_ms, url, err_code=ERR_NETWORK_TIMEOUT, detail="请求超时")
+        return build_error(data={"url": url}, llm_data=llm_data)
     if isinstance(last_exception, httpx.HTTPStatusError):
+        llm_data = _build_http_request_llm_data("error", duration_ms, url, err_code=ERR_NETWORK_HTTP_ERROR,
+                                                  detail=f"HTTP {last_exception.response.status_code}")
         return build_error(
-            ERR_NETWORK_HTTP_ERROR,
-            f"HTTP请求失败(重试{retry}次后):{url}",
             data={
                 "status_code": last_exception.response.status_code,
                 "body": last_exception.response.text if hasattr(last_exception.response, 'text') else None,
-            },
-        )
-    return build_error(ERR_NETWORK_REQUEST_ERROR, f"网络请求失败(重试{retry}次后):{str(last_exception)}", data={"url": url, "error": str(last_exception), "retry": retry})
+            }, llm_data=llm_data)
+    llm_data = _build_http_request_llm_data("error", duration_ms, url, err_code=ERR_NETWORK_REQUEST_ERROR, detail=str(last_exception))
+    return build_error(data={"url": url, "error": str(last_exception), "retry": retry}, llm_data=llm_data)
 
 
 async def http_request(
@@ -159,31 +279,34 @@ async def http_request(
     proxy: Optional[str] = None,
     retry: int = 3,
 ) -> dict:
-    """发起HTTP请求 — 小沈 2026-05-19 精简参数(11→8)
-    【2026-06-20 小健】Schema删timeout/proxy/retry，函数签名保留内部默认值; 加coerce_json防御
-    """
+    """发起HTTP请求 — 小健 2026-06-21 builder改造"""
     headers = coerce_json(headers)
     params = coerce_json(params)
     json_body = coerce_json(json_body)
-    # 参数校验
     if retry < 0 or retry > 10:
-        return build_error(ERR_NETWORK_INVALID_PARAM, f"重试次数必须在0-10之间,当前值:{retry}", data={"retry": retry})
+        llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_NETWORK_INVALID_PARAM, detail=f"重试次数必须在0-10之间,当前值:{retry}")
+        return build_error(data={"retry": retry}, llm_data=llm_data)
     
     timeout_sec = timeout / 1000.0
+    t0 = _time_mod.perf_counter()
     
     try:
         url_info = _validate_url(url)
         if not url_info["data"]["valid"]:
-            return build_error(ERR_INVALID_URL, f"URL格式无效: {url},URL必须包含协议和域名(如 https://api.example.com/data)", data={"url": url})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_INVALID_URL, detail="URL格式无效")
+            return build_error(data={"url": url}, llm_data=llm_data)
 
         net_info = _check_network()
         if not net_info["data"]["connected"]:
-            return build_error(ERR_NETWORK_DOWN, "网络不可用,无法发送请求")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_NETWORK_DOWN, detail="网络不可用")
+            return build_error(data={"error_detail": "网络不可用"}, llm_data=llm_data)
 
-        parsed = urlparse(url)
+        parsed_url = urlparse(url)
         if params:
             query_string = urlencode(params, doseq=True)
-            url = urlunparse(parsed._replace(query=query_string))
+            url = urlunparse(parsed_url._replace(query=query_string))
 
         request_headers = {}
         if headers:
@@ -208,15 +331,11 @@ async def http_request(
                     response.raise_for_status()
 
                     parsed = _parse_response_body(response)
-                    return build_success(
-                        parsed["body"],
-                        f"请求成功 (HTTP {response.status_code})",
-                        llm_data={
-                            "状态码": response.status_code,
-                            "内容类型": parsed["content_type_short"],
-                            "响应体": parsed["llm_body"],
-                        },
-                    )
+                    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                    data = parsed["body"]
+                    llm_data = _build_http_request_llm_data("success", duration_ms, url, method,
+                                                            response.status_code, parsed["content_type_short"])
+                    return build_success(data=data, llm_data=llm_data)
             except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
                 last_exception = e
                 if isinstance(e, httpx.HTTPStatusError) and e.response.status_code not in RETRYABLE_HTTP_STATUS_CODES:
@@ -224,24 +343,25 @@ async def http_request(
                         error_body = e.response.text
                     except Exception:
                         error_body = None
+                    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                    llm_data = _build_http_request_llm_data("error", duration_ms, url, method,
+                                                              err_code=ERR_NETWORK_HTTP_ERROR,
+                                                              detail=f"HTTP {e.response.status_code}")
                     return build_error(
-                        ERR_NETWORK_HTTP_ERROR,
-                        f"HTTP请求失败 (HTTP {e.response.status_code}):{url}",
-                        data={
-                            "status_code": e.response.status_code,
-                            "body": error_body,
-                        },
-                    )
+                        data={"status_code": e.response.status_code, "body": error_body}, llm_data=llm_data)
                 if attempt < retry:
                     await asyncio.sleep(0.5 * (2 ** attempt))
                     continue
                 break
 
-        return _build_http_error(last_exception, url, retry)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        return _build_http_error(last_exception, url, retry, duration_ms)
 
     except Exception as e:
         logger.error(f"[http_request] 未知错误: {e}")
-        return build_error(ERR_NET_UNKNOWN, f"请求异常: {str(e)}", data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_NET_UNKNOWN, detail=str(e))
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
 
 
 NET_ERROR_MAP = [
@@ -251,17 +371,18 @@ NET_ERROR_MAP = [
 ]
 
 
-def _map_network_error(url: str, timeout: int, e: Exception) -> Dict[str, Any]:
-    """将 httpx 异常映射为 build_error — 小健 2026-05-25"""
+def _map_network_error(url: str, timeout: int, e: Exception, duration_ms: int = 0) -> Dict[str, Any]:
+    """将 httpx 异常映射为 build_error — 小健 2026-06-21 builder改造"""
     for exc_type, code, prefix in NET_ERROR_MAP:
         if isinstance(e, exc_type):
             detail = f"{prefix}({timeout/1000}秒):{url}"
             if isinstance(e, httpx.HTTPStatusError):
                 detail = f"{prefix} (HTTP {e.response.status_code}):{url}"
-            return build_error(code, detail, data={"url": url, "error": str(e)})
-    # 兜底:未知错误
+            llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=code, detail=detail)
+            return build_error(data={"url": url, "error": str(e)}, llm_data=llm_data)
     logger.error(f"[download_file] 未知错误: {e}")
-    return build_error(ERR_NET_UNKNOWN, f"下载异常: {str(e)}", data={"error": str(e)})
+    llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_NET_UNKNOWN, detail=str(e))
+    return build_error(data={"error": str(e)}, llm_data=llm_data)
 
 
 async def _stream_download(client: HTTPClient, url: str, dest_path: str,
@@ -292,43 +413,54 @@ async def download_file(
     timeout: int = 300000,
     proxy: Optional[str] = None,
 ) -> dict:
-    """从URL下载文件 — 小沈 2026-05-25 重构
-    【2026-06-20 小健】Schema删headers/timeout/proxy，函数签名保留内部默认值
-    """
+    """从URL下载文件 — 小健 2026-06-21 builder改造"""
+    t0 = _time_mod.perf_counter()
     try:
         url_info = _validate_url(url)
         if not url_info["data"]["valid"]:
-            return build_error(ERR_INVALID_URL, f"URL格式无效: {url}", data={"url": url})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_INVALID_URL, detail="URL格式无效")
+            return build_error(data={"url": url}, llm_data=llm_data)
         net_info = _check_network()
         if not net_info["data"]["connected"]:
-            return build_error(ERR_NETWORK_DOWN, "网络不可用")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_NETWORK_DOWN, detail="网络不可用")
+            return build_error(data={"error_detail": "网络不可用"}, llm_data=llm_data)
 
         dest_path = os.path.abspath(destination_path)
         dest_dir = os.path.dirname(dest_path)
         if not dest_dir:
-            return build_error(ERR_NETWORK_INVALID_PATH, f"无效路径: {destination_path}", data={"path": destination_path})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_NETWORK_INVALID_PATH, detail=f"无效路径: {destination_path}")
+            return build_error(data={"path": destination_path}, llm_data=llm_data)
         try:
             os.makedirs(dest_dir, exist_ok=True)
         except (PermissionError, OSError) as e:
-            return build_error(ERR_NETWORK_CREATE_DIR, f"无法创建目录: {e}", data={"error": str(e)})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_NETWORK_CREATE_DIR, detail=str(e))
+            return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
 
         req_headers = headers or {}
 
         async with create_http_client(timeout_sec=timeout / 1000.0, proxy=proxy) as client:
             downloaded, content_type, total_bytes = await _stream_download(client, url, dest_path, req_headers)
 
-        return build_success(
-            {"file_path": dest_path, "file_size": downloaded, "total_size": total_bytes, "content_type": content_type},
-            f"文件下载成功 ({downloaded}/{total_bytes} 字节):{dest_path}",
-            llm_data={"路径": dest_path, "大小": downloaded, "类型": content_type},
-        )
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"file_path": dest_path, "file_size": downloaded, "total_size": total_bytes, "content_type": content_type}
+        llm_data = _build_download_file_llm_data("success", duration_ms, url, dest_path, downloaded, total_bytes, content_type)
+        return build_success(data=data, llm_data=llm_data)
     except (PermissionError, OSError) as e:
-        return build_error(ERR_NETWORK_WRITE_FILE, f"写入文件失败 {dest_path}: {e}", data={"file_path": dest_path, "error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=ERR_NETWORK_WRITE_FILE, detail=str(e))
+        return build_error(data={"file_path": dest_path, "error_detail": str(e)}, llm_data=llm_data)
     except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
-        return _map_network_error(url, timeout, e)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        return _map_network_error(url, timeout, e, duration_ms)
     except Exception as e:
         logger.error(f"[download_file] 未知错误: {e}")
-        return build_error(ERR_NET_UNKNOWN, f"下载异常: {e}", data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_NET_UNKNOWN, detail=str(e))
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
 
 
 def _extract_html_content(html_content: str, extract_format: str, max_tokens: int) -> Tuple[str, bool]:
@@ -350,35 +482,37 @@ def _extract_html_content(html_content: str, extract_format: str, max_tokens: in
 
 
 def _build_media_result(url: str, mime: str, raw_bytes: bytes, extract_format: str, response_status: int) -> Dict:
-    """构建图片/PDF的base64附件响应 — 小健 2026-05-25"""
+    """构建图片/PDF的base64附件响应 — 小健 2026-06-21 builder改造"""
     b64 = base64.b64encode(raw_bytes).decode("ascii")
-    return build_success(
-        {
-            "url": url,
-            "content": f"[{mime} 文件,大小: {len(raw_bytes)} 字节]",
-            "format": extract_format,
-            "content_type": mime,
-            "status_code": response_status,
-            "truncated": False,
-        },
-        f"成功获取{mime}文件",
-        attachment={
+    data = {
+        "url": url,
+        "content": f"[{mime} 文件,大小: {len(raw_bytes)} 字节]",
+        "format": extract_format,
+        "content_type": mime,
+        "status_code": response_status,
+        "truncated": False,
+    }
+    llm_data = _build_fetch_webpage_llm_data("success", 0, url, extract_format, response_status)
+    other_data = {
+        "attachment": {
             "type": "base64",
             "mime": mime,
             "data": b64,
-            "filename": url.split("/")[-1].split("?")[0] or "download"
-        },
-    )
+            "filename": url.split("/")[-1].split("?")[0] or "download",
+        }
+    }
+    return build_success(data=data, llm_data=llm_data, other_data=other_data)
 
 
 async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout_sec: float,
                                 extract_format: str, max_tokens: int) -> Dict:
-    """Playwright路径封装。消除ImportError+渲染异常+页面操作的重复 — 小健 2026-05-25"""
+    """Playwright路径封装 — 小健 2026-06-21 builder改造"""
     try:
         from playwright.async_api import async_playwright
 
     except ImportError:
-        return build_error(ERR_NETWORK_JS_RENDER, "js_render需要安装Playwright: pip install playwright && playwright install chromium")
+        llm_data = _build_fetch_webpage_llm_data("error", 0, url, extract_format, err_code=ERR_NETWORK_JS_RENDER, detail="js_render需要安装Playwright")
+        return build_error(data={"error_detail": "js_render需要安装Playwright: pip install playwright && playwright install chromium"}, llm_data=llm_data)
     try:
         browser_config = {
             "headless": True,
@@ -401,7 +535,8 @@ async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout_sec: flo
             "status_code": 200,
         }
     except Exception as e:
-        return build_error(ERR_NETWORK_JS_RENDER, f"JS渲染失败: {str(e)}", data={"error": str(e)})
+        llm_data = _build_fetch_webpage_llm_data("error", 0, url, extract_format, err_code=ERR_NETWORK_JS_RENDER, detail=str(e))
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
 
 
 async def fetch_webpage(
@@ -412,20 +547,23 @@ async def fetch_webpage(
     timeout: int = 30000,
     proxy: Optional[str] = None,
 ) -> dict:
-    """获取网页内容 — 小沈 2026-05-19 精简参数(8→7);小健 2026-05-25 重构;小健 2026-06-20 删max_tokens
-    【2026-06-20 小健】Schema删js_render/timeout/proxy，函数签名保留内部默认值
-    """
+    """获取网页内容 — 小健 2026-06-21 builder改造"""
     max_tokens = 8000
     timeout_sec = timeout / 1000.0
+    t0 = _time_mod.perf_counter()
 
     try:
         url_info = _validate_url(url)
         if not url_info["data"]["valid"]:
-            return build_error(ERR_INVALID_URL, f"URL格式无效: {url}", data={"url": url})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_INVALID_URL, detail="URL格式无效")
+            return build_error(data={"url": url}, llm_data=llm_data)
 
         net_info = _check_network()
         if not net_info["data"]["connected"]:
-            return build_error(ERR_NETWORK_DOWN, "网络不可用,无法发送请求")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_DOWN, detail="网络不可用")
+            return build_error(data={"error_detail": "网络不可用"}, llm_data=llm_data)
 
         headers = {
             "User-Agent": BROWSER_USER_AGENT,
@@ -480,28 +618,28 @@ async def fetch_webpage(
             result_data["prompt"] = prompt
             result_data["note"] = "AI提取功能需要LLM后处理"
 
-        _content_for_llm = result_data.get("content", "")
-        if isinstance(_content_for_llm, str) and len(_content_for_llm) > 5000:
-            _content_for_llm = _content_for_llm[:5000] + f"...(原文{len(_content_for_llm)}字符)"
-
-        return build_success(
-            truncate_data_for_frontend(result_data),
-            f"成功获取网页内容({extract_format}格式)" + ("(已截断)" if truncated else ""),
-            llm_data={
-                "URL": url, "格式": extract_format, "状态码": result_data.get("status_code"),
-                "内容预览": _content_for_llm, "截断": truncated
-            },
-        )
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = truncate_data_for_frontend(result_data)
+        llm_data = _build_fetch_webpage_llm_data("success", duration_ms, url, extract_format, status_code, truncated)
+        return build_success(data=data, llm_data=llm_data)
 
     except httpx.TimeoutException:
-        return build_error(ERR_NETWORK_TIMEOUT, f"获取网页超时({timeout_sec:.1f}秒):{url}", data={"url": url, "timeout": timeout_sec})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_TIMEOUT, detail=f"超时({timeout_sec:.1f}秒)")
+        return build_error(data={"url": url, "timeout": timeout_sec}, llm_data=llm_data)
     except httpx.HTTPStatusError as e:
-        return build_error(ERR_NETWORK_HTTP_ERROR, f"获取网页失败 (HTTP {e.response.status_code}):{url}", data={"url": url, "status_code": e.response.status_code})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_HTTP_ERROR, detail=f"HTTP {e.response.status_code}")
+        return build_error(data={"url": url, "status_code": e.response.status_code}, llm_data=llm_data)
     except httpx.RequestError as e:
-        return build_error(ERR_NETWORK_REQUEST_ERROR, f"网络请求失败:{str(e)}", data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_REQUEST_ERROR, detail=str(e))
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[fetch_webpage] 未知错误: {e}")
-        return build_error(ERR_NET_UNKNOWN, f"获取网页异常: {str(e)}", data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NET_UNKNOWN, detail=str(e))
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
 
 
 
@@ -624,12 +762,13 @@ async def search_web(
     num_results: int = 10,
     proxy: Optional[str] = None,
 ) -> dict:
-    """搜索网络 — 小沈 2026-05-19 精简参数(7→5)
-    【2026-06-20 小健】Schema删allowed_domains/blocked_domains/num_results/proxy，函数签名保留内部默认值
-    """
+    """搜索网络 — 小健 2026-06-21 builder改造"""
+    t0 = _time_mod.perf_counter()
     try:
         if len(query) < 2:
-            return build_error(ERR_PARAM_INVALID, "搜索查询至少需要2个字符")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_PARAM_INVALID, detail="搜索查询至少需要2个字符")
+            return build_error(data={"error_detail": "搜索查询至少需要2个字符"}, llm_data=llm_data)
         
     # ===== 第一引擎:Parallel MCP =====
         results = await _search_mcp_engine("parallel", query, num_results, proxy)
@@ -644,7 +783,7 @@ async def search_web(
         # ===== 第三引擎:Bing中国 =====
         if results is None:
             logger.info("[search_web] Exa失败,降级到Bing中国搜索")
-            try:  # 小健 2026-05-19: 包裹try/except, Bing网络错误不应导致整个search_web崩溃
+            try:
                 results = await _search_bing(query, num_results, proxy)
                 engine_used = "Bing"
             except Exception as e:
@@ -662,39 +801,17 @@ async def search_web(
         # 解码所有结果中的ck/a跳转URL
         for r in results:
             r["url"] = _decode_bing_redirect_url(r.get("url", ""))
-            
-        # 整理llm_data展示结果
-        llm_results = []
-        for r in results:
-            raw_url = r.get("url", "")
-            clean_url = _decode_bing_redirect_url(raw_url)
-            llm_results.append({
-                "title": r.get("title", ""),
-                "snippet": r.get("snippet", "")[:300],
-                "url": clean_url,
-                "source": r.get("source", ""),
-            })
 
-        return build_success(
-            {
-                "query": query,
-                "results": results,
-                "total": len(results),
-                "engine": engine_used,
-            },
-            f"找到 {len(results)} 条搜索结果({engine_used})",
-            llm_data={
-                "搜索引擎": engine_used,
-                "查询词": query,
-                "结果数量": len(results),
-                "搜索结果": llm_results if llm_results else "无相关结果",
-                "提示": f"搜索完成，共{len(results)}条结果。可直接使用结果，无需重复搜索。",
-            },
-        )
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"query": query, "results": results, "total": len(results), "engine": engine_used}
+        llm_data = _build_search_web_llm_data("success", duration_ms, query, engine_used, len(results))
+        return build_success(data=data, llm_data=llm_data)
     
     except Exception as e:
         logger.error(f"[search_web] 未知错误: {e}")
-        return build_error(ERR_NET_UNKNOWN, f"搜索异常: {str(e)}", data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_search_web_llm_data("error", duration_ms, query, err_code=ERR_NET_UNKNOWN, detail=str(e))
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
 
 
 async def _search_bing(
@@ -811,54 +928,53 @@ def _parse_ping_output(raw_output: str, system: str) -> dict:
     return result
 
 
-def _build_ping_result(host: str, raw_output: str, parsed: dict) -> dict:
-    """统一构建ping的build_success响应 — 小沈 2026-05-25 重构"""
+def _build_ping_result(host: str, raw_output: str, parsed: dict, duration_ms: int = 0) -> dict:
+    """统一构建ping的build_success响应 — 小健 2026-06-21 builder改造"""
     data = {"host": host, **parsed}
     reachable = parsed["is_reachable"]
-    raw_len = len(raw_output)
-
-    if raw_len <= 5000:
-        llm = {"目标": host, "结果": raw_output.strip()}
-    elif reachable:
-        avg = parsed.get("avg_latency")
-        lat = f"{avg}ms / {parsed['min_latency']}ms / {parsed['max_latency']}ms" if avg else "N/A"
-        llm = {"目标": host, "发包/收包": f"{parsed['packets_sent']}/{parsed['packets_received']}",
-               "丢包率": f"{parsed['loss_rate']}%", "延迟(avg/min/max)": lat, "原始输出(截断)": raw_output[:3000].strip()}
-    else:
-        llm = {"目标": host, "结果预览": raw_output[:3000].strip()}
 
     if not reachable:
         data.update(packets_received=0, packets_lost=parsed["packets_sent"],
                      loss_rate=100.0, min_latency=None, avg_latency=None, max_latency=None)
 
-    msg = f"Ping测试{'成功' if reachable else '失败'}:{host}{' 可达' if reachable else ' 不可达'}"
-    if reachable:
-        avg = parsed.get("avg_latency")
-        msg += f",平均延迟 {avg if avg is not None else 'N/A'} ms"
-    return build_success(data, msg, llm_data=llm)
+    llm_data = _build_ping_llm_data("success" if reachable else "error", duration_ms, host, reachable,
+                                      parsed.get("packets_sent", 0), parsed.get("packets_received", 0),
+                                      parsed.get("loss_rate", 0.0), parsed.get("avg_latency"),
+                                      parsed.get("min_latency"), parsed.get("max_latency"))
+    return build_success(data=data, llm_data=llm_data)
 
 
 async def _ping(host: str, count: int = 4, timeout: int = 5) -> dict:
-    """Ping测试(内部函数) — 小沈 2026-05-25 重构"""
+    """Ping测试(内部函数) — 小健 2026-06-21 builder改造"""
+    t0 = _time_mod.perf_counter()
     try:
         if not host or not host.strip():
-            return build_error(ERR_NETWORK_INVALID_HOST, "目标主机地址不能为空")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_ping_llm_data("error", duration_ms, host, err_code=ERR_NETWORK_INVALID_HOST, detail="目标主机地址不能为空")
+            return build_error(data={"error_detail": "目标主机地址不能为空"}, llm_data=llm_data)
         host = host.strip()
         cmd = _build_ping_cmd(host, count, timeout)
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=count * timeout + 10)
             raw_output = result.stdout
         except subprocess.TimeoutExpired:
-            return build_error(ERR_NETWORK_TIMEOUT, f"Ping超时({count * timeout + 10}秒)", data={"host": host, "timeout": count * timeout + 10})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_ping_llm_data("error", duration_ms, host, err_code=ERR_NETWORK_TIMEOUT, detail=f"Ping超时({count * timeout + 10}秒)")
+            return build_error(data={"host": host, "timeout": count * timeout + 10}, llm_data=llm_data)
         except FileNotFoundError:
-            return build_error(ERR_SHELL_COMMAND_NOT_FOUND, "系统ping命令不可用")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_ping_llm_data("error", duration_ms, host, err_code=ERR_SHELL_COMMAND_NOT_FOUND, detail="系统ping命令不可用")
+            return build_error(data={"error_detail": "系统ping命令不可用"}, llm_data=llm_data)
 
         parsed = _parse_ping_output(raw_output, platform.system().lower())
-        return _build_ping_result(host, raw_output, parsed)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        return _build_ping_result(host, raw_output, parsed, duration_ms)
 
     except Exception as e:
         logger.error(f"[ping] 未知错误: {e}")
-        return build_error(ERR_NET_UNKNOWN, f"Ping测试异常: {e}", data={"host": host, "error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_ping_llm_data("error", duration_ms, host, err_code=ERR_NET_UNKNOWN, detail=str(e))
+        return build_error(data={"host": host, "error_detail": str(e)}, llm_data=llm_data)
 
 
 # 【24.5.4 组件1】统一端口结果 data 构建(消除 5 次 data dict)
@@ -873,34 +989,17 @@ async def _port_check(
     port: int,
     timeout: int = 3,
 ) -> dict:
-    """
-    检查端口是否开放 - 小沈 2026-05-02
-    
-    使用socket连接测试端口是否开放。
-    
-    参数:
-        host: 目标主机地址(域名或IP)
-        port: 端口号(1-65535)
-        timeout: 连接超时时间(秒)
-    
-    返回:
-        {
-            "code": "SUCCESS",
-            "data": {
-                "host": "目标主机",
-                "port": 端口号,
-                "is_open": 是否开放,
-                "service": 服务名称(如果已知),
-            },
-            "message": "描述信息"
-        }
-    """
-    # 【24.5.4 重构后主函数】~50行,统一 E1b 为 build_error
+    """检查端口是否开放 — 小健 2026-06-21 builder改造"""
+    t0 = _time_mod.perf_counter()
     try:
         if not host or not host.strip():
-            return build_error(ERR_NETWORK_INVALID_HOST, "目标主机地址不能为空")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NETWORK_INVALID_HOST, detail="目标主机地址不能为空")
+            return build_error(data={"error_detail": "目标主机地址不能为空"}, llm_data=llm_data)
         if port < 1 or port > 65535:
-            return build_error(ERR_NETWORK_INVALID_PORT, f"端口号无效: {port}", data={"port": port})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NETWORK_INVALID_PORT, detail=f"端口号无效: {port}")
+            return build_error(data={"port": port}, llm_data=llm_data)
         host = host.strip()
         service = well_known_ports.get(port, "Unknown")
 
@@ -911,26 +1010,28 @@ async def _port_check(
         finally:
             sock.close()
 
-        if is_open:
-            return build_success(_build_port_result(host, port, True, service),
-                f"端口 {port} ({service}) 开放: {host}:{port}",
-                llm_data={"主机": host, "端口": port, "开放": True})
-        return build_success(_build_port_result(host, port, False, service),
-            f"端口 {port} 关闭: {host}:{port}",
-            llm_data={"主机": host, "端口": port, "开放": False})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = _build_port_result(host, port, is_open, service)
+        llm_data = _build_port_check_llm_data("success", duration_ms, host, port, is_open, service)
+        return build_success(data=data, llm_data=llm_data)
 
     except socket.gaierror as e:
-        return build_error(ERR_NETWORK_DNS_ERROR, f"DNS解析失败: {host} ({e})",
-            data=_build_port_result(host, port, False))
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NETWORK_DNS_ERROR, detail=f"DNS解析失败: {host}")
+        return build_error(data=_build_port_result(host, port, False), llm_data=llm_data)
     except socket.timeout:
-        return build_error(ERR_NETWORK_TIMEOUT, f"端口 {port} 连接超时: {host}:{port}",
-            data=_build_port_result(host, port, False, service))
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_port_check_llm_data("error", duration_ms, host, port, service=service, err_code=ERR_NETWORK_TIMEOUT, detail=f"端口 {port} 连接超时")
+        return build_error(data=_build_port_result(host, port, False, service), llm_data=llm_data)
     except OSError as e:
-        return build_error(ERR_NETWORK_CONNECTION_ERROR, f"连接失败: {e}",
-            data=_build_port_result(host, port, False))
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NETWORK_CONNECTION_ERROR, detail=str(e))
+        return build_error(data=_build_port_result(host, port, False), llm_data=llm_data)
     except Exception as e:
         logger.error(f"[port_check] 未知错误: {e}")
-        return build_error(ERR_NET_UNKNOWN, f"端口检查异常: {e}", data={"host": host, "port": port, "error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NET_UNKNOWN, detail=str(e))
+        return build_error(data={"host": host, "port": port, "error_detail": str(e)}, llm_data=llm_data)
 
 
 async def network_diagnose(
@@ -940,27 +1041,20 @@ async def network_diagnose(
     count: int = 4,
     timeout: int = 5,
 ) -> dict:
-    """网络连通性诊断 - 小沈 2026-05-17
-    【2026-05-17 小沈】合并 ping + port_check
-    【2026-06-20 小健】Schema删count/timeout，函数签名保留内部默认值
-
-    Args:
-        host: 目标主机地址(域名或IP)
-        mode: 诊断模式。ping=ICMP可达性检测(主机级), port=TCP端口检测(服务级)
-        port: 目标端口号(mode="port"时必填,mode="ping"时忽略)
-        count: ping次数(mode="ping"时生效,默认4次)
-        timeout: 超时秒数,默认5
-
-    Returns:
-        {code, data, message}
-    """
+    """网络连通性诊断 — 小健 2026-06-21 builder改造"""
     if mode == "ping":
         result = await _ping(host=host, count=count, timeout=timeout)
     elif mode == "port":
         if port is None:
-            return build_error(ERR_MISSING_PARAM, "mode='port'时port参数必填")
+            return build_error(data={"error_detail": "mode='port'时port参数必填"}, llm_data={
+                "summary": "网络诊断失败: 缺少port参数", "action": {"tool": "network_diagnose", "tool_zh": "网络诊断", "target": host, "params": {"mode": mode}},
+                "status": {"exec_code": "error", "message": "缺少port参数", "code": ERR_MISSING_PARAM, "detail": "", "hint": ""},
+                "duration_ms": 0, "metrics": {}})
         result = await _port_check(host=host, port=port, timeout=timeout)
     else:
-        return build_error(ERR_INVALID_MODE, f"无效的诊断模式: {mode},必须是 ping 或 port", data={"mode": mode})
+        return build_error(data={"error_detail": f"无效的诊断模式: {mode}", "mode": mode}, llm_data={
+            "summary": f"网络诊断失败: 无效模式 {mode}", "action": {"tool": "network_diagnose", "tool_zh": "网络诊断", "target": host, "params": {"mode": mode}},
+            "status": {"exec_code": "error", "message": "无效的诊断模式", "code": ERR_INVALID_MODE, "detail": "", "hint": ""},
+            "duration_ms": 0, "metrics": {}})
 
     return result

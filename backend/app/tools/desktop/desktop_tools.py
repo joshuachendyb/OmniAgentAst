@@ -289,6 +289,23 @@ def mouse_position() -> Dict[str, Any]:
     return _get_mouse_position()
 
 
+def _build_keyboard_control_llm(exec_code: str, duration_ms: int, action: str, text_or_keys: str) -> dict:
+    """keyboard_control的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"无效的键盘操作: {action}",
+            "action": {"tool": "keyboard_control", "tool_zh": "键盘控制", "target": action, "params": {"action": action}},
+            "status": {"exec_code": "error", "message": f"无效的键盘操作: {action}", "code": ERR_INVALID_ACTION, "detail": "支持: type/shortcut/combo", "hint": "请使用支持的操作类型"},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"键盘操作完成: {action}",
+        "action": {"tool": "keyboard_control", "tool_zh": "键盘控制", "target": action, "params": {"action": action}},
+        "status": {"exec_code": "success", "message": "键盘操作完成", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms, "metrics": {},
+    }
+
+
 def keyboard_control(
     action: Literal["type", "shortcut", "combo"],
     text_or_keys: str,
@@ -310,7 +327,8 @@ def keyboard_control(
         key_list = [k.strip() for k in text_or_keys.split(",")]
         result = _key_combo(keys=key_list)
     else:
-        return build_error(ERR_INVALID_ACTION, f"无效的键盘操作: {action},支持: type/shortcut/combo", data={"action": action})
+        llm_data = _build_keyboard_control_llm("error", 0, action, text_or_keys)
+        return build_error(data={"error_detail": f"无效的键盘操作: {action}", "action": action}, llm_data=llm_data)
 
     return result
 

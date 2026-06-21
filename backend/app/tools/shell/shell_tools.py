@@ -94,6 +94,109 @@ def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
     return build_error(data=data, llm_data=llm_data)
 
 
+def _build_background_shell_llm(command: str, shell_id: str) -> dict:
+    """_run_shell_background的llm_data构建函数 — 小健 2026-06-21"""
+    return {
+        "summary": f"后台命令已启动: {command[:100]}",
+        "action": {"tool": "execute_shell_command", "tool_zh": "执行命令", "target": command[:100], "params": {"command": command[:200]}},
+        "status": {"exec_code": "success", "message": "后台命令已启动", "code": "", "detail": "", "hint": ""},
+        "duration_ms": 0, "metrics": {},
+    }
+
+
+def _build_find_command_llm(exec_code: str, duration_ms: int, command: str,
+                             available: bool = False, path: str = "",
+                             paths: list = None, count: int = 0) -> dict:
+    """find_command的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"查找命令失败: {command}",
+            "action": {"tool": "find_command", "tool_zh": "查找命令", "target": command, "params": {"command": command}},
+            "status": {"exec_code": "error", "message": "查找命令失败", "code": ERR_SHELL_FIND_COMMAND, "detail": "", "hint": ""},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    if paths is not None:
+        return {
+            "summary": f"命令 '{command}' 找到 {count} 个路径",
+            "action": {"tool": "find_command", "tool_zh": "查找命令", "target": command, "params": {"command": command}},
+            "status": {"exec_code": "success", "message": f"找到 {count} 个路径", "code": "", "detail": "", "hint": ""},
+            "duration_ms": duration_ms,
+            "metrics": {"count": {"value": count, "text": f"{count}个"}},
+        }
+    status = "可用" if available else "不可用"
+    hint = "" if available else "请确认是否已安装并添加到PATH"
+    return {
+        "summary": f"命令 '{command}' {status}",
+        "action": {"tool": "find_command", "tool_zh": "查找命令", "target": command, "params": {"command": command}},
+        "status": {"exec_code": "success", "message": f"命令{status}", "code": "", "detail": "", "hint": hint},
+        "duration_ms": duration_ms, "metrics": {},
+    }
+
+
+def _build_shell_session_llm(exec_code: str, duration_ms: int, shell_id: str,
+                              is_running: bool = False, returncode: int = None,
+                              terminated: bool = False, err_code: str = "",
+                              detail: str = "", hint: str = "") -> dict:
+    """shell_session的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"Shell会话错误: {shell_id}",
+            "action": {"tool": "shell_session", "tool_zh": "Shell会话", "target": shell_id, "params": {"shell_id": shell_id}},
+            "status": {"exec_code": "error", "message": detail or "Shell会话错误", "code": err_code or ERR_SHELL_NOT_FOUND, "detail": detail, "hint": hint},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    if terminated:
+        return {
+            "summary": f"会话{shell_id}已终止",
+            "action": {"tool": "shell_session", "tool_zh": "Shell会话", "target": shell_id, "params": {"shell_id": shell_id}},
+            "status": {"exec_code": "success", "message": "会话已终止", "code": "", "detail": "", "hint": ""},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    running_text = "运行中" if is_running else "已结束"
+    return {
+        "summary": f"后台命令输出（{running_text}）",
+        "action": {"tool": "shell_session", "tool_zh": "Shell会话", "target": shell_id, "params": {"shell_id": shell_id}},
+        "status": {"exec_code": "success", "message": "后台命令输出", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms, "metrics": {},
+    }
+
+
+def _build_get_working_directory_llm(exec_code: str, duration_ms: int, path: str = "", detail: str = "") -> dict:
+    """_get_working_directory的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": "获取工作目录失败",
+            "action": {"tool": "_get_working_directory", "tool_zh": "获取目录", "target": "", "params": {}},
+            "status": {"exec_code": "error", "message": "获取工作目录失败", "code": ERR_SHELL_GET_CWD, "detail": detail, "hint": ""},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"当前工作目录: {path}",
+        "action": {"tool": "_get_working_directory", "tool_zh": "获取目录", "target": "", "params": {}},
+        "status": {"exec_code": "success", "message": "获取工作目录成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms, "metrics": {},
+    }
+
+
+def _build_check_path_exists_llm(exec_code: str, duration_ms: int, path: str,
+                                   exists: bool = False, detail: str = "") -> dict:
+    """_check_path_exists的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"检查路径失败: {path}",
+            "action": {"tool": "_check_path_exists", "tool_zh": "检查路径", "target": path, "params": {"path": path}},
+            "status": {"exec_code": "error", "message": "检查路径失败", "code": ERR_SHELL_CHECK_PATH, "detail": detail, "hint": ""},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    status_text = "存在" if exists else "不存在"
+    return {
+        "summary": f"路径{status_text}: {path}",
+        "action": {"tool": "_check_path_exists", "tool_zh": "检查路径", "target": path, "params": {"path": path}},
+        "status": {"exec_code": "success", "message": f"路径{status_text}", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms, "metrics": {},
+    }
+
+
 def _run_shell_background(
     command: str, executable: Optional[str],
     cwd: Optional[str], env: Optional[dict]
@@ -111,13 +214,7 @@ def _run_shell_background(
         "shell_type": "powershell", "cwd": cwd,
     }
     data = {"shell_id": shell_id, "is_running": True, "started_at": datetime.now().isoformat()}
-    llm_data = {
-        "summary": f"后台命令已启动: {command[:100]}",
-        "action": {"tool": "execute_shell_command", "tool_zh": "执行命令", "target": command[:100], "params": {"command": command[:200]}},
-        "status": {"exec_code": "success", "message": "后台命令已启动", "code": "", "detail": "", "hint": ""},
-        "duration_ms": 0,
-        "metrics": {},
-    }
+    llm_data = _build_background_shell_llm(command, shell_id)
     return build_success(data=data, llm_data=llm_data)
 
 
@@ -193,20 +290,10 @@ def execute_shell_command(
 def _get_working_directory() -> dict:
     """获取当前工作目录(内部辅助函数) — 小健 2026-06-21 适配新3字段"""
     try:
-        llm_data = {
-            "summary": f"当前工作目录: {os.getcwd()}",
-            "action": {"tool": "_get_working_directory", "tool_zh": "获取目录", "target": "", "params": {}},
-            "status": {"exec_code": "success", "message": "获取工作目录成功", "code": "", "detail": "", "hint": ""},
-            "duration_ms": 0, "metrics": {},
-        }
+        llm_data = _build_get_working_directory_llm("success", 0, os.getcwd())
         return build_success(data={"path": os.getcwd()}, llm_data=llm_data)
     except Exception as e:
-        llm_data = {
-            "summary": "获取工作目录失败",
-            "action": {"tool": "_get_working_directory", "tool_zh": "获取目录", "target": "", "params": {}},
-            "status": {"exec_code": "error", "message": "获取工作目录失败", "code": ERR_SHELL_GET_CWD, "detail": str(e), "hint": ""},
-            "duration_ms": 0, "metrics": {},
-        }
+        llm_data = _build_get_working_directory_llm("error", 0, detail=str(e))
         return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
 
 
@@ -216,21 +303,10 @@ def _check_path_exists(path: str) -> dict:
         exists = os.path.exists(path)
         is_file = os.path.isfile(path) if exists else False
         is_dir = os.path.isdir(path) if exists else False
-        status_text = "存在" if exists else "不存在"
-        llm_data = {
-            "summary": f"路径{status_text}: {path}",
-            "action": {"tool": "_check_path_exists", "tool_zh": "检查路径", "target": path, "params": {"path": path}},
-            "status": {"exec_code": "success", "message": f"路径{status_text}", "code": "", "detail": "", "hint": ""},
-            "duration_ms": 0, "metrics": {},
-        }
+        llm_data = _build_check_path_exists_llm("success", 0, path, exists)
         return build_success(data={"exists": exists, "is_file": is_file, "is_directory": is_dir, "path": path}, llm_data=llm_data)
     except Exception as e:
-        llm_data = {
-            "summary": f"检查路径失败: {path}",
-            "action": {"tool": "_check_path_exists", "tool_zh": "检查路径", "target": path, "params": {"path": path}},
-            "status": {"exec_code": "error", "message": "检查路径失败", "code": ERR_SHELL_CHECK_PATH, "detail": str(e), "hint": ""},
-            "duration_ms": 0, "metrics": {},
-        }
+        llm_data = _build_check_path_exists_llm("error", 0, path, detail=str(e))
         return build_error(data={"error_detail": str(e), "params": {"path": path}}, llm_data=llm_data)
 
 
@@ -243,14 +319,7 @@ def find_command(command: str, all_paths: bool = False) -> dict:
             available = cmd_path is not None
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             data = {"available": available, "command": command, "path": cmd_path}
-            status = "可用" if available else "不可用"
-            llm_data = {
-                "summary": f"命令 '{command}' {status}",
-                "action": {"tool": "find_command", "tool_zh": "查找命令", "target": command, "params": {"command": command}},
-                "status": {"exec_code": "success", "message": f"命令{status}", "code": "", "detail": "", "hint": ""},
-                "duration_ms": duration_ms,
-                "metrics": {},
-            }
+            llm_data = _build_find_command_llm("success", duration_ms, command, available, cmd_path or "")
             return build_success(data=data, llm_data=llm_data)
         else:
             if os.name == 'nt':
@@ -261,31 +330,14 @@ def find_command(command: str, all_paths: bool = False) -> dict:
             if result.returncode == 0:
                 paths = [p.strip() for p in result.stdout.strip().split('\n') if p.strip()]
                 data = {"command": command, "paths": paths, "count": len(paths)}
-                llm_data = {
-                    "summary": f"命令 '{command}' 找到 {len(paths)} 个路径",
-                    "action": {"tool": "find_command", "tool_zh": "查找命令", "target": command, "params": {"command": command}},
-                    "status": {"exec_code": "success", "message": f"找到 {len(paths)} 个路径", "code": "", "detail": "", "hint": ""},
-                    "duration_ms": duration_ms,
-                    "metrics": {"count": {"value": len(paths), "text": f"{len(paths)}个"}},
-                }
+                llm_data = _build_find_command_llm("success", duration_ms, command, paths=paths, count=len(paths))
             else:
                 data = {"command": command, "paths": [], "count": 0}
-                llm_data = {
-                    "summary": f"命令 '{command}' 不可用",
-                    "action": {"tool": "find_command", "tool_zh": "查找命令", "target": command, "params": {"command": command}},
-                    "status": {"exec_code": "success", "message": "命令不可用", "code": "", "detail": "", "hint": "请确认是否已安装并添加到PATH"},
-                    "duration_ms": duration_ms,
-                    "metrics": {},
-                }
+                llm_data = _build_find_command_llm("success", duration_ms, command, available=False)
             return build_success(data=data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = {
-            "summary": f"查找命令失败: {command}",
-            "action": {"tool": "find_command", "tool_zh": "查找命令", "target": command, "params": {"command": command}},
-            "status": {"exec_code": "error", "message": "查找命令失败", "code": ERR_SHELL_FIND_COMMAND, "detail": str(e), "hint": ""},
-            "duration_ms": duration_ms, "metrics": {},
-        }
+        llm_data = _build_find_command_llm("error", duration_ms, command)
         return build_error(data={"error_detail": str(e), "params": {"command": command}}, llm_data=llm_data)
 
 
@@ -324,22 +376,12 @@ def shell_session(
         shell_info = _background_shells.get(shell_id)
         if not shell_info:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = {
-                "summary": f"会话不存在: {shell_id}",
-                "action": {"tool": "shell_session", "tool_zh": "Shell会话", "target": shell_id, "params": {"shell_id": shell_id}},
-                "status": {"exec_code": "error", "message": "会话不存在", "code": ERR_SHELL_NOT_FOUND, "detail": "", "hint": ""},
-                "duration_ms": duration_ms, "metrics": {},
-            }
+            llm_data = _build_shell_session_llm("error", duration_ms, shell_id, err_code=ERR_SHELL_NOT_FOUND, detail="会话不存在")
             return build_error(data={"error_detail": f"后台Shell会话不存在: {shell_id}", "params": {"shell_id": shell_id}}, llm_data=llm_data)
         process = shell_info.get("process")
         if not process:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = {
-                "summary": f"会话无进程: {shell_id}",
-                "action": {"tool": "shell_session", "tool_zh": "Shell会话", "target": shell_id, "params": {"shell_id": shell_id}},
-                "status": {"exec_code": "error", "message": "会话无进程", "code": ERR_SHELL_NOT_FOUND, "detail": "", "hint": ""},
-                "duration_ms": duration_ms, "metrics": {},
-            }
+            llm_data = _build_shell_session_llm("error", duration_ms, shell_id, err_code=ERR_SHELL_NOT_FOUND, detail="会话无进程")
             return build_error(data={"error_detail": f"后台Shell会话无进程: {shell_id}", "params": {"shell_id": shell_id}}, llm_data=llm_data)
         stdout_str = _read_stream_nonblocking(process.stdout, "utf-8")
         stderr_str = _read_stream_nonblocking(process.stderr, "utf-8")
@@ -361,41 +403,21 @@ def shell_session(
             {"shell_id": shell_id, "stdout": stdout_str, "stderr": stderr_str, "is_running": is_running, "returncode": returncode})
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if is_running or returncode == 0:
-            llm_data = {
-                "summary": f"后台命令输出（{'运行中' if is_running else '已结束'}）",
-                "action": {"tool": "shell_session", "tool_zh": "Shell会话", "target": shell_id, "params": {"shell_id": shell_id}},
-                "status": {"exec_code": "success", "message": "后台命令输出", "code": "", "detail": "", "hint": ""},
-                "duration_ms": duration_ms, "metrics": {},
-            }
+            llm_data = _build_shell_session_llm("success", duration_ms, shell_id, is_running=is_running)
             return build_success(data=resp_data, llm_data=llm_data)
-        llm_data = {
-            "summary": f"后台命令失败(退出码{returncode})",
-            "action": {"tool": "shell_session", "tool_zh": "Shell会话", "target": shell_id, "params": {"shell_id": shell_id}},
-            "status": {"exec_code": "error", "message": f"后台命令失败(退出码{returncode})", "code": ERR_SHELL_EXEC, "detail": stderr_str[:200], "hint": "请检查命令语法"},
-            "duration_ms": duration_ms, "metrics": {},
-        }
+        llm_data = _build_shell_session_llm("error", duration_ms, shell_id, is_running=False, returncode=returncode, err_code=ERR_SHELL_EXEC, detail=stderr_str[:200], hint="请检查命令语法")
         return build_error(data=resp_data, llm_data=llm_data)
     elif action == "terminate":
         shell_info = _background_shells.get(shell_id)
         if not shell_info:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = {
-                "summary": f"会话不存在: {shell_id}",
-                "action": {"tool": "shell_session", "tool_zh": "Shell会话", "target": shell_id, "params": {"shell_id": shell_id}},
-                "status": {"exec_code": "error", "message": "会话不存在", "code": ERR_SHELL_NOT_FOUND, "detail": "", "hint": ""},
-                "duration_ms": duration_ms, "metrics": {},
-            }
+            llm_data = _build_shell_session_llm("error", duration_ms, shell_id, err_code=ERR_SHELL_NOT_FOUND, detail="会话不存在")
             return build_error(data={"error_detail": f"后台Shell会话不存在: {shell_id}", "params": {"shell_id": shell_id}}, llm_data=llm_data)
         process = shell_info.get("process")
         if not process:
             _background_shells.pop(shell_id, None)
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = {
-                "summary": f"会话{shell_id}已无进程",
-                "action": {"tool": "shell_session", "tool_zh": "Shell会话", "target": shell_id, "params": {"shell_id": shell_id}},
-                "status": {"exec_code": "success", "message": "会话已无进程", "code": "", "detail": "", "hint": ""},
-                "duration_ms": duration_ms, "metrics": {},
-            }
+            llm_data = _build_shell_session_llm("success", duration_ms, shell_id, terminated=True)
             return build_success(data={"shell_id": shell_id, "terminated": True, "force": force, "returncode": None}, llm_data=llm_data)
         terminated = False
         returncode = None
@@ -417,20 +439,9 @@ def shell_session(
                 pass
         _background_shells.pop(shell_id, None)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        status_text = "已终止" if terminated else "终止失败"
-        llm_data = {
-            "summary": f"会话{shell_id}{status_text}",
-            "action": {"tool": "shell_session", "tool_zh": "Shell会话", "target": shell_id, "params": {"shell_id": shell_id}},
-            "status": {"exec_code": "success", "message": f"会话{status_text}", "code": "", "detail": "", "hint": ""},
-            "duration_ms": duration_ms, "metrics": {},
-        }
+        llm_data = _build_shell_session_llm("success", duration_ms, shell_id, terminated=terminated)
         return build_success(data={"shell_id": shell_id, "terminated": terminated, "force": force, "returncode": returncode}, llm_data=llm_data)
     else:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = {
-            "summary": f"无效操作: {action}",
-            "action": {"tool": "shell_session", "tool_zh": "Shell会话", "target": shell_id, "params": {"action": action}},
-            "status": {"exec_code": "error", "message": f"无效操作: {action}", "code": ERR_INVALID_ACTION, "detail": "", "hint": "必须是 output 或 terminate"},
-            "duration_ms": duration_ms, "metrics": {},
-        }
+        llm_data = _build_shell_session_llm("error", duration_ms, shell_id, err_code=ERR_INVALID_ACTION, detail=f"无效操作: {action}", hint="必须是 output 或 terminate")
         return build_error(data={"error_detail": f"无效的操作类型: {action}", "params": {"action": action}}, llm_data=llm_data)

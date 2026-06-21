@@ -25,11 +25,21 @@ DATABASE Tools - 数据库工具实现
 import fnmatch
 import re
 import sqlite3
+import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Literal, Tuple
 from app.utils.logger import logger
-from app.utils.tool_result_formatter import truncate_data_for_frontend, make_json_safe
+from app.utils.tool_result_formatter import truncate_data_for_frontend
 from app.tools.tool_response import build_success, build_error, build_warning
+from app.constants import (
+    ERR_DB_CONNECTION,
+    ERR_DOC_DB_TABLE_NOT_FOUND,
+    ERR_EXEC_FAILED,
+    ERR_QUERY_FAILED,
+    ERR_READ_ONLY_VIOLATION,
+    ERR_SCHEMA_FAILED,
+    ERR_SQL_EXEC,
+)
 
 
 
@@ -77,6 +87,25 @@ def _close_connection(conn, engine=None):
         logger.warning(f"关闭数据库连接时出错: {e}")
 
 
+def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns):
+    if exec_code == "error":
+        return {
+            "summary": f"SQL查询失败: {sql[:80]}",
+            "action": {"tool": "query_sql", "tool_zh": "查询", "target": sql[:80], "params": {"sql": sql[:200]}},
+            "status": {"exec_code": "error", "message": "查询失败", "code": ERR_SQL_EXEC, "detail": "SQL执行错误", "hint": "请检查SQL语法"},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    col_text = ", ".join(columns[:5])
+    if len(columns) > 5:
+        col_text += "..."
+    return {
+        "summary": f"查询返回{row_count}行, 列: {col_text}",
+        "action": {"tool": "query_sql", "tool_zh": "查询", "target": sql[:80], "params": {"sql": sql[:200]}},
+        "status": {"exec_code": "success", "message": "查询成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"row_count": {"value": row_count, "text": f"{row_count}行"}, "columns": {"value": columns[:5], "text": f"列: {col_text}"}},
+    }
+
 def query_sql(
     sql: str,
     connection_type: Literal["sqlite", "mysql", "postgresql"] = "sqlite",
@@ -87,6 +116,7 @@ def query_sql(
 ) -> Dict[str, Any]:
     """执行只读SQL查询
     【2026-06-20 小健】Schema删limit/timeout，函数签名保留内部默认值
+    【2026-06-21 小健】builder改造，新3字段result
 
     Args:
         sql: SQL 查询语句。仅支持 SELECT/SHOW/DESCRIBE 等只读操作
@@ -101,18 +131,22 @@ def query_sql(
     """
     conn = None
     engine = None
+    t0 = _time_mod.perf_counter()
     
     try:
         sql_upper = sql.strip().upper()
         
         if not sql_upper.startswith(("SELECT", "SHOW", "DESCRIBE", "PRAGMA", "WITH", "EXPLAIN")):
             attempted_type = sql.split()[0].upper() if sql.strip() else "未知"
-            return build_error(ERR_READ_ONLY_VIOLATION, f"错误:只允许 SELECT/SHOW/DESCRIBE 等只读操作,当前语句以 {attempted_type} 开头",
-                data={"attempted_type": attempted_type, "建议": "如需写操作请使用execute_sql工具"})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [])
+            return build_error(data={"attempted_type": attempted_type, "hint": "如需写操作请使用execute_sql工具"}, llm_data=llm_data)
         
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
-            return build_error(ERR_DB_CONNECTION, conn_error, data={"error": conn_error})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [])
+            return build_error(data={"error": conn_error}, llm_data=llm_data)
 
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
@@ -132,28 +166,25 @@ def query_sql(
         if limit > 0 and len(results) > limit:
             results = results[:limit]
         
-        # output_format 已从Schema移除,固定使用table格式
         table_str = _format_table(columns, results)
-        return build_success(
-            truncate_data_for_frontend({
-                "columns": columns,
-                "rows": results,
-                "total": len(results),
-                "table": table_str
-            }),
-            f"查询成功,返回 {len(results)} 行数据",
-            llm_data={
-                "列": columns, "行数": len(results),
-                "行预览": make_json_safe(results[:10], max_str_len=150)
-            },
-        )
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = truncate_data_for_frontend({
+            "columns": columns,
+            "rows": results,
+            "total": len(results),
+            "table": table_str
+        })
+        llm_data = _build_query_sql_llm_data("success", duration_ms, sql, len(results), columns)
+        return build_success(data=data, llm_data=llm_data)
             
     except sqlite3.Error as e:
-        return build_error(ERR_SQL_EXEC, f"SQL执行错误: {str(e)}",
-            data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [])
+        return build_error(data={"error": str(e)}, llm_data=llm_data)
     except Exception as e:
-        return build_error(ERR_QUERY_FAILED, f"执行失败: {str(e)}",
-            data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [])
+        return build_error(data={"error": str(e)}, llm_data=llm_data)
     finally:
         _close_connection(conn, engine)
 
@@ -185,20 +216,30 @@ def _check_sql_safety(sql: str, dry_run: bool) -> Tuple[bool, Optional[str], Opt
     return False, None, None
 
 
-def _rollback_and_return(conn, error_type: str, error: Exception) -> Dict[str, Any]:
-    """统一回滚连接并返回错误。
 
-    小沈 2026-05-25 重构拆分
-    消除 E1a/E1b 的回滚+错误返回模式重复2次(行279-283 和 290-294)。
-    """
-    if conn:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-    logger.error(f"[execute_sql] {error_type}: {error}")
-    return build_error(error_type, str(error), data={"error": str(error)})
-
+def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows):
+    if exec_code == "error":
+        return {
+            "summary": f"SQL执行失败: {sql[:80]}",
+            "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": {"sql": sql[:200]}},
+            "status": {"exec_code": "error", "message": "执行失败", "code": ERR_SQL_EXEC, "detail": "SQL执行错误", "hint": "请检查SQL语法"},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    if exec_code == "warning":
+        return {
+            "summary": f"SQL执行警告: 影响{affected_rows}行",
+            "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": {"sql": sql[:200]}},
+            "status": {"exec_code": "warning", "message": "影响行数超过安全阈值", "code": "WARNING_DB_SAFETY", "detail": f"影响行数{affected_rows}>10000", "hint": "建议缩小条件范围"},
+            "duration_ms": duration_ms,
+            "metrics": {"affected_rows": {"value": affected_rows, "text": f"{affected_rows}行"}},
+        }
+    return {
+        "summary": f"SQL执行成功, 影响{affected_rows}行",
+        "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql[:80], "params": {"sql": sql[:200]}},
+        "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"affected_rows": {"value": affected_rows, "text": f"影响{affected_rows}行"}},
+    }
 
 def execute_sql(
     sql: str,
@@ -210,30 +251,29 @@ def execute_sql(
 ) -> Dict[str, Any]:
     """执行写操作SQL - 小沈 2026-05-25 重构拆分
     【2026-06-20 小健】Schema删timeout，函数签名保留内部默认值
+    【2026-06-21 小健】builder改造，新3字段result
     """
     conn = None
     engine = None
+    t0 = _time_mod.perf_counter()
 
     try:
         has_danger, warning_msg, dangerous_list = _check_sql_safety(sql, dry_run)
         if has_danger and not dry_run:
-            return build_warning(
-                "WARNING_DB_SAFETY",
-                warning_msg,
-                data={"detected": dangerous_list, "suggestion": "检测到危险操作,建议使用 dry_run=true 先验证"},
-            )
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_execute_sql_llm_data("warning", duration_ms, sql, 0)
+            return build_warning(data={"detected": dangerous_list, "suggestion": "检测到危险操作,建议使用 dry_run=true 先验证"}, llm_data=llm_data)
 
         if dry_run:
-            return build_success(
-                {"sql": sql, "dry_run": True, "syntax_valid": True},
-                "预演模式:语法验证通过,实际未执行",
-                llm_data={"action": "execute_sql", "status": "dry_run", "sql": sql,
-                          "summary": "SQL语法验证通过,未实际执行。确认无误后用dry_run=false执行"}
-            )
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_execute_sql_llm_data("success", duration_ms, sql, 0)
+            return build_success(data={"sql": sql, "dry_run": True, "syntax_valid": True}, llm_data=llm_data)
 
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
-            return build_error(ERR_DB_CONNECTION, conn_error, data={"error": conn_error})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0)
+            return build_error(data={"error": conn_error}, llm_data=llm_data)
 
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
@@ -248,25 +288,36 @@ def execute_sql(
 
             if affected_rows > 10000:
                 conn.rollback()
-                return build_warning(
-                    "WARNING_DB_SAFETY",
-                    f"警告:影响行数 {affected_rows} > 10000,已自动回滚",
-                    data={"affected_rows": affected_rows, "action": "rollback"}
-                )
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_execute_sql_llm_data("warning", duration_ms, sql, affected_rows)
+                return build_warning(data={"affected_rows": affected_rows, "action": "rollback"}, llm_data=llm_data)
 
             conn.commit()
 
-        return build_success(
-            {"affected_rows": affected_rows, "sql": sql},
-            f"执行成功,影响行数: {affected_rows}",
-            llm_data={"action": "execute_sql", "status": "success", "affected_rows": affected_rows,
-                      "sql_type": "DML", "summary": f"SQL执行成功,影响{affected_rows}行"}
-        )
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_execute_sql_llm_data("success", duration_ms, sql, affected_rows)
+        return build_success(data={"affected_rows": affected_rows, "sql": sql}, llm_data=llm_data)
 
     except sqlite3.Error as e:
-        return _rollback_and_return(conn, ERR_SQL_EXEC, e)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        logger.error(f"[execute_sql] ERR_SQL_EXEC: {e}")
+        return build_error(data={"error": str(e)}, llm_data=llm_data)
     except Exception as e:
-        return _rollback_and_return(conn, ERR_EXEC_FAILED, e)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        logger.error(f"[execute_sql] ERR_EXEC_FAILED: {e}")
+        return build_error(data={"error": str(e)}, llm_data=llm_data)
     finally:
         _close_connection(conn, engine)
 
@@ -317,21 +368,46 @@ def _filter_tables(tables: List[str], table_name: Optional[str], filter_pattern:
     return tables[:20]
 
 
+def _build_get_db_schema_llm_data(exec_code, duration_ms, total_tables=0, table_names=None,
+                                    err_code="", detail="", hint=""):
+    """get_db_schema的llm_data构建函数 — 小健 2026-06-21"""
+    table_names = table_names or []
+    if exec_code == "error":
+        return {
+            "summary": f"获取数据库结构失败: {detail}" if detail else "获取数据库结构失败",
+            "action": {"tool": "get_db_schema", "tool_zh": "获取结构", "target": "database", "params": {}},
+            "status": {"exec_code": "error", "message": "获取失败", "code": err_code or ERR_DB_CONNECTION, "detail": detail, "hint": hint},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"获取到{total_tables}个表的结构信息",
+        "action": {"tool": "get_db_schema", "tool_zh": "获取结构", "target": "database", "params": {}},
+        "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"total": {"value": total_tables, "text": f"{total_tables}个表"}, "tables": {"value": table_names, "text": f"表: {', '.join(table_names[:5])}"}},
+    }
+
 def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None,
                    db_name=None, table_name=None, filter_pattern=None) -> Dict:
     """获取数据库表结构 — 小沈 2026-05-25 重构
     【2026-06-20 小健】Schema删db_name/filter_pattern，函数签名保留内部默认值
+    【2026-06-21 小健】builder改造，新3字段result
     """
     conn = engine = None
+    t0 = _time_mod.perf_counter()
     try:
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path)
         if conn is None:
-            return build_error(ERR_DB_CONNECTION, conn_error, data={"error": conn_error})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_DB_CONNECTION, detail=conn_error, hint="请检查连接参数")
+            return build_error(data={"error": conn_error}, llm_data=llm_data)
 
         tables = _get_tables(conn, connection_type, db_name)
         tables = _filter_tables(tables, table_name, filter_pattern)
         if table_name and not tables:
-            return build_error(ERR_DOC_DB_TABLE_NOT_FOUND, f"表不存在: {table_name}", data={"table_name": table_name})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_DOC_DB_TABLE_NOT_FOUND, detail=f"表不存在: {table_name}", hint="请确认表名正确")
+            return build_error(data={"table_name": table_name}, llm_data=llm_data)
 
         schema_info = []
         for t in tables:
@@ -346,17 +422,19 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
                 md += f"|{c['name']}|{c['type']}|{'否' if c.get('nullable') else '是'}|{'是' if c.get('pk') else '否'}|{c.get('default') or '-'}|\n"
             md += "\n"
 
-        return build_success({"tables": schema_info, "total": len(schema_info), "markdown": md},
-                              f"获取成功,共 {len(schema_info)} 个表",
-                              llm_data={"action": "get_db_schema", "total": len(schema_info),
-                                        "table_names": [t["name"] for t in schema_info],
-                                        "summary": f"获取到{len(schema_info)}个表的结构信息"})
-
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        table_names = [t["name"] for t in schema_info]
+        llm_data = _build_get_db_schema_llm_data("success", duration_ms, len(schema_info), table_names)
+        return build_success(data={"tables": schema_info, "total": len(schema_info), "markdown": md}, llm_data=llm_data)
 
     except sqlite3.Error as e:
-        return build_error(ERR_SQL_EXEC, f"SQLite错误: {e}", data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_SQL_EXEC, detail=str(e))
+        return build_error(data={"error": str(e)}, llm_data=llm_data)
     except Exception as e:
-        return build_error(ERR_SCHEMA_FAILED, f"执行失败: {e}", data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_SCHEMA_FAILED, detail=str(e))
+        return build_error(data={"error": str(e)}, llm_data=llm_data)
     finally:
         _close_connection(conn, engine)
 
@@ -381,12 +459,4 @@ def _format_table(columns: List[str], rows: List[Dict]) -> str:
         lines.append(line)
     
     return "\n".join(lines)
-from app.constants import (
-    ERR_DB_CONNECTION,
-    ERR_DOC_DB_TABLE_NOT_FOUND,
-    ERR_EXEC_FAILED,
-    ERR_QUERY_FAILED,
-    ERR_READ_ONLY_VIOLATION,
-    ERR_SCHEMA_FAILED,
-    ERR_SQL_EXEC,
-)
+
