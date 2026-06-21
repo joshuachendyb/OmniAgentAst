@@ -219,8 +219,8 @@ def _log_tool_results(step: int, all_calls: list, results: list, agent):
         
         is_error = isinstance(result, Exception)
         if isinstance(result, dict):
-            code = result.get("code", 0)
-            is_failed = code not in (0, "0", "success", None)
+            exec_code = result.get("llm_data", {}).get("status", {}).get("exec_code", "")
+            is_failed = exec_code == "error"
         else:
             is_failed = is_error
         op_status = OperationStatus.FAILED.value if (is_error or is_failed) else OperationStatus.SUCCESS.value
