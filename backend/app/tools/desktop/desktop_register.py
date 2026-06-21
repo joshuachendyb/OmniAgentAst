@@ -56,7 +56,8 @@ from app.tools.desktop.desktop_schema import (
     ClipboardWriteInput,
 )
 
-from app.tools.desktop.window_info import window_info, set_window_state
+from app.tools.desktop.window_info import window_info
+from app.tools.desktop.set_window_state import set_window_state
 from app.tools.desktop.window_focus import window_focus
 from app.tools.desktop.window_resize import window_resize
 from app.tools.desktop.mouse_click import mouse_click
