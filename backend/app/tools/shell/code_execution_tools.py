@@ -19,7 +19,7 @@ from typing import Optional
 import re as re_mod
 
 from app.tools.shell.shell_schema import ExecuteCodeInput
-from app.utils.tool_result_formatter import format_output_for_llm, truncate_data_for_frontend
+from app.utils.tool_result_formatter import truncate_data_for_frontend
 from app.tools.tool_response import build_success, build_error
 from app.utils.logger import setup_logger
 from app.tools.toolhelper.common_helper import _decode_bytes_safe

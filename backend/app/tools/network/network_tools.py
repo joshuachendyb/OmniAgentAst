@@ -208,6 +208,24 @@ def _build_port_check_llm_data(exec_code: str, duration_ms: int, host: str = "",
     }
 
 
+def _build_network_diagnose_llm_data(exec_code: str, duration_ms: int, host: str = "", mode: str = "ping",
+                                      err_code: str = "", detail: str = "") -> dict:
+    """network_diagnose的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"网络诊断失败: {host}",
+            "action": {"tool": "network_diagnose", "tool_zh": "网络诊断", "target": host, "params": {"mode": mode}},
+            "status": {"exec_code": "error", "message": "网络诊断失败", "code": err_code, "detail": detail, "hint": ""},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"网络诊断成功: {host}",
+        "action": {"tool": "network_diagnose", "tool_zh": "网络诊断", "target": host, "params": {"mode": mode}},
+        "status": {"exec_code": "success", "message": "网络诊断成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms, "metrics": {},
+    }
+
+
 def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
     """解析 HTTP 响应体并构建 llm_data。
     Returns: {"body": 前端数据, "llm_body": LLM 数据, "content_type_short": str}
@@ -1046,15 +1064,11 @@ async def network_diagnose(
         result = await _ping(host=host, count=count, timeout=timeout)
     elif mode == "port":
         if port is None:
-            return build_error(data={"error_detail": "mode='port'时port参数必填"}, llm_data={
-                "summary": "网络诊断失败: 缺少port参数", "action": {"tool": "network_diagnose", "tool_zh": "网络诊断", "target": host, "params": {"mode": mode}},
-                "status": {"exec_code": "error", "message": "缺少port参数", "code": ERR_MISSING_PARAM, "detail": "", "hint": ""},
-                "duration_ms": 0, "metrics": {}})
+            llm_data = _build_network_diagnose_llm_data("error", 0, host, mode, ERR_MISSING_PARAM, "缺少port参数")
+            return build_error(data={"error_detail": "mode='port'时port参数必填"}, llm_data=llm_data)
         result = await _port_check(host=host, port=port, timeout=timeout)
     else:
-        return build_error(data={"error_detail": f"无效的诊断模式: {mode}", "mode": mode}, llm_data={
-            "summary": f"网络诊断失败: 无效模式 {mode}", "action": {"tool": "network_diagnose", "tool_zh": "网络诊断", "target": host, "params": {"mode": mode}},
-            "status": {"exec_code": "error", "message": "无效的诊断模式", "code": ERR_INVALID_MODE, "detail": "", "hint": ""},
-            "duration_ms": 0, "metrics": {}})
+        llm_data = _build_network_diagnose_llm_data("error", 0, host, mode, ERR_INVALID_MODE, f"无效的诊断模式: {mode}")
+        return build_error(data={"error_detail": f"无效的诊断模式: {mode}", "mode": mode}, llm_data=llm_data)
 
     return result

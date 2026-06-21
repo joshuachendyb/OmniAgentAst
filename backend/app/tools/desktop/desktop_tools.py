@@ -283,10 +283,25 @@ def mouse_scroll(direction: str = "down", amount: int = 3) -> Dict[str, Any]:
     return _scroll(direction=direction, amount=amount)
 
 
+def _build_mouse_position_llm_data(exec_code: str, duration_ms: int, x=0, y=0, detail: str = "") -> dict:
+    """mouse_position的llm_data构建函数 — 小健 2026-06-22"""
+    if exec_code == "error":
+        return {"summary": f"获取鼠标位置失败: {detail}", "action": {"tool": "mouse_position", "tool_zh": "获取鼠标位置", "target": "", "params": {}}, "status": {"exec_code": "error", "message": "获取鼠标位置失败", "code": "", "detail": detail, "hint": ""}, "duration_ms": duration_ms, "metrics": {}}
+    return {"summary": f"鼠标位置: ({x},{y})", "action": {"tool": "mouse_position", "tool_zh": "获取鼠标位置", "target": f"({x},{y})", "params": {"x": x, "y": y}}, "status": {"exec_code": "success", "message": "获取鼠标位置成功", "code": "", "detail": "", "hint": ""}, "duration_ms": duration_ms, "metrics": {}}
+
+
 def mouse_position() -> Dict[str, Any]:
-    """获取鼠标当前位置 — 小欧 2026-06-17"""
+    """获取鼠标当前位置 — 小欧 2026-06-17, 小健 2026-06-22 透传重新包装llm_data"""
+    t0 = _time_mod.perf_counter()
     from app.tools.toolhelper.gui_helper import _get_mouse_position
-    return _get_mouse_position()
+    result = _get_mouse_position()
+    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+    if result.get("code") == "SUCCESS":
+        data = result.get("data", {})
+        llm_data = _build_mouse_position_llm_data("success", duration_ms, data.get("x", 0), data.get("y", 0))
+        return build_success(data=data, llm_data=llm_data)
+    llm_data = _build_mouse_position_llm_data("error", duration_ms, detail=result.get("data", {}).get("error", "获取鼠标位置失败"))
+    return build_error(data=result.get("data", {}), llm_data=llm_data)
 
 
 def _build_keyboard_control_llm(exec_code: str, duration_ms: int, action: str, text_or_keys: str) -> dict:
@@ -311,7 +326,7 @@ def keyboard_control(
     text_or_keys: str,
     interval: float = 0,
 ) -> Dict[str, Any]:
-    """统一键盘控制入口 - 小沈 2026-05-17
+    """统一键盘控制入口 - 小沈 2026-05-17, 小健 2026-06-22 透传重新包装llm_data
 
     合并 type_text + shortcut + key_combo
     action: "type"|"shortcut"|"combo"
@@ -330,6 +345,9 @@ def keyboard_control(
         llm_data = _build_keyboard_control_llm("error", 0, action, text_or_keys)
         return build_error(data={"error_detail": f"无效的键盘操作: {action}", "action": action}, llm_data=llm_data)
 
+    if result.get("llm_data"):
+        result["llm_data"]["action"]["tool"] = "keyboard_control"
+        result["llm_data"]["action"]["tool_zh"] = "键盘控制"
     return result
 
 
@@ -338,7 +356,7 @@ def screen_capture(
     region: Optional[Dict[str, int]] = None,
     display: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """统一屏幕截图入口 - 小沈 2026-05-17
+    """统一屏幕截图入口 - 小沈 2026-05-17, 小健 2026-06-22 透传重新包装llm_data
 
     合并 screenshot + snapshot
     优先mss(多显示器),降级pyautogui
@@ -351,6 +369,9 @@ def screen_capture(
         from app.tools.desktop.desktop_gui_tools import _screenshot
         result = _screenshot(output_path=output_path, region=region)
 
+    if result.get("llm_data"):
+        result["llm_data"]["action"]["tool"] = "screen_capture"
+        result["llm_data"]["action"]["tool_zh"] = "屏幕截图"
     return result
 
 

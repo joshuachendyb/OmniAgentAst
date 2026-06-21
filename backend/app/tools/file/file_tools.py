@@ -74,7 +74,7 @@ from app.db.models.operation_enums import OperationType
 from app.utils.logger import logger
 from app.tools.tool_constants import TOOL_TIMEOUTS
 from app.utils.json_utils import coerce_json
-from app.utils.tool_result_formatter import format_file_content_llm, format_output_for_llm, truncate_data_for_frontend, truncate_text, make_json_safe, DEFAULT_MAX_FILE_CHARS
+from app.utils.tool_result_formatter import format_file_content_llm, truncate_data_for_frontend, truncate_text, make_json_safe, DEFAULT_MAX_FILE_CHARS
 from app.tools.toolhelper import data_format_helper as df_tools
 from app.services.safety.file_safety import record_operation, execute_with_safety
 from app.constants import (
@@ -189,6 +189,16 @@ def _build_search_files_llm_data(exec_code, duration_ms, search_dir="", total=0,
     if exec_code == "error":
         return {"summary": f"搜索文件失败: {detail}", "action": {"tool": "search_files", "tool_zh": "搜索文件", "target": search_dir, "params": {}}, "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_SEARCH_FAILED, "detail": detail, "hint": ""}, "duration_ms": duration_ms, "metrics": {}}
     return {"summary": f"搜索完成: {total}个匹配", "action": {"tool": "search_files", "tool_zh": "搜索文件", "target": search_dir, "params": {}}, "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""}, "duration_ms": duration_ms, "metrics": {"total": {"value": total, "text": f"{total}个匹配"}}}
+
+
+def _build_file_checksum_llm_data(exec_code, duration_ms, algorithm="", checksum="", verify_result=None, detail=""):
+    """file_checksum的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {"summary": f"校验和计算失败: {algorithm}", "action": {"tool": "file_checksum", "tool_zh": "文件校验", "target": algorithm, "params": {"algorithm": algorithm}}, "status": {"exec_code": "error", "message": "校验和计算失败", "code": "", "detail": detail, "hint": ""}, "duration_ms": duration_ms, "metrics": {}}
+    summary = f"校验和计算成功: {algorithm}"
+    if verify_result is not None:
+        summary = f"校验和{'匹配' if verify_result else '不匹配'}: {algorithm}"
+    return {"summary": summary, "action": {"tool": "file_checksum", "tool_zh": "文件校验", "target": algorithm, "params": {"algorithm": algorithm}}, "status": {"exec_code": "success", "message": "校验和计算成功", "code": "", "detail": "", "hint": ""}, "duration_ms": duration_ms, "metrics": {}}
 
 
 # ============================================================
@@ -1544,9 +1554,10 @@ async def _file_checksum(
     timeout: int = 30000,
 ) -> Dict[str, Any]:
     """计算文件校验和"""
+    t0 = _time_mod.perf_counter()
     from app.tools.toolhelper.file_helper import file_checksum_impl
 
-    return await file_checksum_impl(
+    result = await file_checksum_impl(
         file_path=file_path,
         algorithm=algorithm,
         verify_hash=verify_hash,
@@ -1558,6 +1569,11 @@ async def _file_checksum(
         execute_with_safety_func=execute_with_safety,
         get_next_sequence_func=lambda: 0,
     )
+    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+    llm_data = _build_file_checksum_llm_data("success", duration_ms, algorithm=algorithm,
+                                              verify_result=result.get("data", {}).get("verify_result"))
+    result["llm_data"] = llm_data
+    return result
 
 
 async def read_media_file(
@@ -2160,10 +2176,11 @@ async def compress_files(
     overwrite: bool = False,
     exclude_patterns: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """压缩文件/目录 — 小沈 2026-06-16, 小健 2026-06-20 删compression_level; 加coerce_json防御"""
+    """压缩文件/目录 — 小沈 2026-06-16, 小健 2026-06-20 删compression_level; 加coerce_json防御; 透传重新包装llm_data"""
+    t0 = _time_mod.perf_counter()
     exclude_patterns = coerce_json(exclude_patterns)
     compression_level = 6
-    return await _compress_files(
+    result = await _compress_files(
         source_path=source,
         output_path=destination,
         format=format,
@@ -2172,6 +2189,12 @@ async def compress_files(
         overwrite=overwrite,
         password=password
     )
+    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+    if result.get("code") == "SUCCESS":
+        llm_data = _build_file_op_llm_data("success", duration_ms, "compress_files", "压缩文件", target=source)
+        return build_success(data=result.get("data", {}), llm_data=llm_data)
+    llm_data = _build_file_op_llm_data("error", duration_ms, "compress_files", "压缩文件", target=source, detail=result.get("data", {}).get("error", "压缩失败"))
+    return build_error(data=result.get("data", {}), llm_data=llm_data)
 
 async def extract_archive(
     source: str,
@@ -2188,9 +2211,10 @@ async def extract_archive(
         preserve_permissions=True
     )
     if "data" not in result:
-        llm_data = _build_file_op_llm_data("error", 0, "extract_archive", "解压文件", target=source, detail=result.get("message", "解压失败"))
+        llm_data = _build_file_op_llm_data("error", 0, "extract_archive", "解压文件", target=source, detail=result.get("data", {}).get("error", "解压失败"))
         return build_error(data={"archive_path": source}, llm_data=llm_data)
-    return result
+    llm_data = _build_file_op_llm_data("success", 0, "extract_archive", "解压文件", target=source)
+    return build_success(data=result.get("data", {}), llm_data=llm_data)
 
 async def move_file(
     source: str,
@@ -2218,13 +2242,18 @@ async def copy_file(
     if os.path.abspath(source) == os.path.abspath(destination):
         llm_data = _build_file_op_llm_data("success", 0, "copy_file", "复制", source, extra_metrics={"status": "no_change"})
         return build_success(data={"action": "copy", "source": source, "destination": destination}, llm_data=llm_data)
-    return await _copy_file(
+    result = await _copy_file(
         source_path=source,
         destination_path=destination,
         recursive=recursive,
         overwrite=overwrite,
         preserve_metadata=preserve_metadata
     )
+    if result.get("code") == "SUCCESS":
+        llm_data = _build_file_op_llm_data("success", 0, "copy_file", "复制文件", target=source)
+        return build_success(data=result.get("data", {}), llm_data=llm_data)
+    llm_data = _build_file_op_llm_data("error", 0, "copy_file", "复制文件", target=source, detail=result.get("data", {}).get("error", "复制失败"))
+    return build_error(data=result.get("data", {}), llm_data=llm_data)
 
 async def delete_file(
     source: str,

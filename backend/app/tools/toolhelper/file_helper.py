@@ -1504,12 +1504,7 @@ def _build_checksum_result(
     file_size: int, elapsed_ms: int,
     verify_hash: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """构建校验和返回结果。
-
-    小沈 2026-05-25 重构拆分
-    YAGNI: 不再输出 hash_algorithm/checksum_upper/checksum_lower 派生字段。
-    消除 verify 3 条路径(msg+data构建)的重复。
-    """
+    """构建校验和返回结果 — 纯业务数据，不涉及llm_data（小健 2026-06-21）"""
     data = {
         "checksum": checksum,
         "algorithm": algorithm,
@@ -1526,9 +1521,7 @@ def _build_checksum_result(
         message = f"{algorithm.upper()} 校验和: {checksum}"
 
     from app.tools.tool_response import build_success
-    return build_success(data, message,
-        llm_data={"校验算法": algorithm, "校验值": checksum, "验证结果": data.get("verify_result")},
-    )
+    return build_success(data, message)
 
 
 def _calculate_checksum_sync(

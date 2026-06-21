@@ -23,7 +23,7 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 import re as _re
 
-from app.utils.tool_result_formatter import format_output_for_llm, truncate_data_for_frontend
+from app.utils.tool_result_formatter import truncate_data_for_frontend
 from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.toolhelper.shell_helper import _check_shell_injection, _read_stream_nonblocking
@@ -79,7 +79,6 @@ def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
     data = truncate_data_for_frontend({
         "stdout": stdout_str, "stderr": stderr_str, "returncode": returncode,
     })
-    llm_data_old = format_output_for_llm(stdout_str, stderr_str)
 
     if timed_out:
         llm_data = _build_shell_llm("error", duration_ms, "", returncode, stdout_str[:200], stderr_str[:200], shell_type)

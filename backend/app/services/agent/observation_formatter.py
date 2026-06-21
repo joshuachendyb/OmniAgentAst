@@ -220,3 +220,4 @@ def _format_key_value(data: dict) -> str:
         else:
             lines.append(f"  {k}: {v}")
     return "\n".join(lines)
+
