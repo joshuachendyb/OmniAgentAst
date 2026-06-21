@@ -34,12 +34,10 @@ from app.tools.system.system_schema import (
     ListTasksInput,
 )
 
-from app.tools.system.system_tools import (
-    event_log,
-    create_task,
-    delete_task,
-    list_tasks,
-)
+from app.tools.system.event_log import event_log
+from app.tools.system.create_task import create_task
+from app.tools.system.delete_task import delete_task
+from app.tools.system.list_tasks import list_tasks
 
 SYSTEM_TOOL_DESCRIPTIONS = {
     "event_log": """获取系统事件日志。Windows使用wevtutil,Linux使用journalctl。支持日志名称(Application/System/Security)、事件级别(critical/error/warning/info)、时间范围(10m/1h/24h/7d)和来源应用名过滤。默认返回System日志,级别error,时间范围1h。适用场景:需要查看系统错误日志、诊断系统问题、审计系统安全事件时使用。""",
