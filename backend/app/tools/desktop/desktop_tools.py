@@ -31,11 +31,21 @@ DESKTOP Tools - 桌面工具实现(窗口管理)
 """
 
 import platform
+import time as _time_mod
 from typing import Any, Dict, List, Optional, Literal
 from app.utils.logger import logger
-from app.utils.tool_result_formatter import truncate_data_for_frontend, make_json_safe  # 小沈 2026-05-20
+from app.utils.tool_result_formatter import truncate_data_for_frontend, make_json_safe
 from app.tools.tool_response import build_success, build_error
-from app.tools.toolhelper.window_helper import check_win32_platform, get_window_rect, get_window_state, find_windows_by_title  # 小沈 2026-05-22
+from app.tools.toolhelper.window_helper import check_win32_platform, get_window_rect, get_window_state, find_windows_by_title
+from app.constants import (
+    ERR_DESKTOP_GET_WINDOW_INFO,
+    ERR_INVALID_ACTION,
+    ERR_MISSING_PARAM,
+    ERR_PARAM_INVALID,
+    ERR_WINDOW_LIST,
+    ERR_WINDOW_NOT_FOUND,
+    ERR_WINDOW_SET_STATE,
+)
 
 
 _HAS_WIN32 = False
@@ -83,14 +93,58 @@ def _enum_windows_callback(hwnd: int, windows: List[Dict]) -> bool:
     return True
 
 
+def _build_window_info_llm(exec_code: str, duration_ms: int, window_count: int, filter_title: str = "") -> dict:
+    """window_info的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"获取窗口列表失败",
+            "action": {"tool": "window_info", "tool_zh": "窗口信息", "target": filter_title or "全部", "params": {"filter_title": filter_title}},
+            "status": {"exec_code": "error", "message": "获取窗口列表失败", "code": ERR_WINDOW_LIST, "detail": "", "hint": ""},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"共找到 {window_count} 个窗口",
+        "action": {"tool": "window_info", "tool_zh": "窗口信息", "target": filter_title or "全部", "params": {"filter_title": filter_title}},
+        "status": {"exec_code": "success", "message": "获取窗口列表成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"windows": {"value": window_count, "text": f"{window_count}个"}},
+    }
+
+
+def _build_set_window_state_llm(exec_code: str, duration_ms: int, action: str, window_title: str = "",
+                                 matched_count: int = 0, err_code: str = "", detail: str = "") -> dict:
+    """set_window_state的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"窗口操作{action}失败: {window_title}",
+            "action": {"tool": "set_window_state", "tool_zh": "窗口状态", "target": window_title, "params": {"action": action}},
+            "status": {"exec_code": "error", "message": f"窗口操作{action}失败", "code": err_code or ERR_WINDOW_SET_STATE, "detail": detail, "hint": ""},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    summary = f"窗口操作{action}完成: {window_title}"
+    metrics = {}
+    if matched_count > 1:
+        summary += f"(匹配{matched_count}个窗口)"
+        metrics["matched"] = {"value": matched_count, "text": f"{matched_count}个"}
+    return {
+        "summary": summary,
+        "action": {"tool": "set_window_state", "tool_zh": "窗口状态", "target": window_title, "params": {"action": action}},
+        "status": {"exec_code": "success", "message": f"窗口操作{action}成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms, "metrics": metrics,
+    }
+
+
 def window_info(
     include_minimized: bool = False,
     filter_title: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """列出所有窗口 — 小欧 2026-06-17 仅保留list功能"""
+    """列出所有窗口 — 小健 2026-06-21 builder改造"""
+    t0 = _time_mod.perf_counter()
     err = check_win32_platform()
     if err:
-        return err
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_window_info_llm("error", duration_ms, 0, filter_title or "")
+        return build_error(data={"error_detail": "桌面工具不可用"}, llm_data=llm_data)
 
     try:
         windows = []
@@ -100,17 +154,15 @@ def window_info(
         if filter_title:
             windows = [w for w in windows if filter_title.lower() in w["title"].lower()]
 
-        return build_success(
-            truncate_data_for_frontend({"windows": windows, "total": len(windows)}),
-            f"共找到 {len(windows)} 个窗口",
-            llm_data={
-                "总数": len(windows),
-                "窗口预览": [{"title": w.get("title","")[:40], "state": w.get("state","")} for w in windows[:20]]
-            }
-        )
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = truncate_data_for_frontend({"windows": windows, "total": len(windows)})
+        llm_data = _build_window_info_llm("success", duration_ms, len(windows), filter_title or "")
+        return build_success(data=data, llm_data=llm_data)
     except Exception as e:
         logger.error(f"window_info list error: {e}")
-        return build_error(ERR_WINDOW_LIST, f"获取窗口列表失败: {str(e)}", data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_window_info_llm("error", duration_ms, 0, filter_title or "")
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
 
 
 _WINDOW_ACTIONS = {
@@ -125,49 +177,43 @@ _WINDOW_ACTIONS = {
 
 
 def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
-    """设置窗口状态 - 小沈 2026-04-29, 修正 2026-05-05
-
-    【2026-05-17 小沈】保留旧实现,供 window_control 内部调用
-    """
+    """设置窗口状态 — 小健 2026-06-21 builder改造"""
+    t0 = _time_mod.perf_counter()
     err = check_win32_platform()
     if err:
-        return err
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_set_window_state_llm("error", duration_ms, action, window_title, err_code=ERR_DESKTOP_GET_WINDOW_INFO)
+        return build_error(data={"error_detail": "桌面工具不可用"}, llm_data=llm_data)
 
     try:
         if action not in _WINDOW_ACTIONS:
-            return build_error(ERR_INVALID_ACTION, f"无效的操作: {action},支持的操作为: {list(_WINDOW_ACTIONS.keys())}", data={"action": action})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_set_window_state_llm("error", duration_ms, action, window_title, err_code=ERR_INVALID_ACTION)
+            return build_error(data={"error_detail": f"无效的操作: {action}", "action": action}, llm_data=llm_data)
 
         matched_hwnds = find_windows_by_title(window_title)
 
         if not matched_hwnds:
-            return build_error(ERR_WINDOW_NOT_FOUND, f"未找到窗口: {window_title}", data={"window_title": window_title})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_set_window_state_llm("error", duration_ms, action, window_title, err_code=ERR_WINDOW_NOT_FOUND)
+            return build_error(data={"error_detail": f"未找到窗口: {window_title}", "window_title": window_title}, llm_data=llm_data)
 
         hwnd = matched_hwnds[0]
         title = _win32gui.GetWindowText(hwnd)
 
         func, args, msg_fmt = _WINDOW_ACTIONS[action]
         func(hwnd, *args)
-        msg = f"{msg_fmt}: {title}"
 
-        if len(matched_hwnds) > 1:
-            msg += f"(共匹配到 {len(matched_hwnds)} 个窗口,操作了第一个)"
-
-        return build_success(
-            {
-                "window_title": title,
-                "action": action,
-                "hwnd": hwnd,
-                "matched_count": len(matched_hwnds),
-            },
-            msg,
-            llm_data={"action": "set_window_state", "status": "success", "window_title": title,
-                      "matched_count": len(matched_hwnds),
-                      "summary": f"窗口操作{action}完成,匹配{len(matched_hwnds)}个窗口"}
-        )
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"window_title": title, "action": action, "hwnd": hwnd, "matched_count": len(matched_hwnds)}
+        llm_data = _build_set_window_state_llm("success", duration_ms, action, title, len(matched_hwnds))
+        return build_success(data=data, llm_data=llm_data)
 
     except Exception as e:
         logger.error(f"set_window_state error: {e}")
-        return build_error(ERR_WINDOW_SET_STATE, f"设置窗口状态失败: {str(e)}", data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_set_window_state_llm("error", duration_ms, action, window_title, detail=str(e))
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
 
 
 # ========== 窗口控制 — 7个独立函数 ==========
@@ -300,12 +346,4 @@ def clipboard_write(content: str) -> Dict[str, Any]:
     """写入内容到剪贴板 — 小欧 2026-06-17"""
     from app.tools.desktop.desktop_gui_tools import _write_clipboard
     return _write_clipboard(content=content)
-from app.constants import (
-    ERR_DESKTOP_GET_WINDOW_INFO,
-    ERR_INVALID_ACTION,
-    ERR_MISSING_PARAM,
-    ERR_PARAM_INVALID,
-    ERR_WINDOW_LIST,
-    ERR_WINDOW_NOT_FOUND,
-    ERR_WINDOW_SET_STATE,
-)
+
