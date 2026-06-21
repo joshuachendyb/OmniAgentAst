@@ -5,16 +5,11 @@
 """
 
 from app.tools.document.document_register import *
-from app.tools.document.document_tools import (
-    read_pdf,
-    read_docx,
-    read_pptx,
-    read_xlsx,
-    write_docx,
-    write_xlsx,
-    write_pdf,
-    write_pptx,
-)
+from app.tools.document.read_pdf import read_pdf
+from app.tools.document.read_docx import read_docx
+from app.tools.document.read_pptx import read_pptx
+from app.tools.document.read_xlsx import read_xlsx
+from app.tools.document.write_docx import write_docx
 from app.tools.dataanalysis.dataanalysis_tools import (
     analyze_data,
     filter_data,

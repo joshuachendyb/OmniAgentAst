@@ -54,16 +54,14 @@ from app.tools.document.document_schema import (
     WritePptxInput,
 )
 
-from app.tools.document.document_tools import (
-    read_pdf,
-    read_docx,
-    read_pptx,
-    read_xlsx,
-    write_docx,
-    write_xlsx,
-    write_pdf,
-    write_pptx,
-)
+from app.tools.document.read_pdf import read_pdf
+from app.tools.document.read_docx import read_docx
+from app.tools.document.read_pptx import read_pptx
+from app.tools.document.read_xlsx import read_xlsx
+from app.tools.document.write_docx import write_docx
+from app.tools.document.write_xlsx import write_xlsx
+from app.tools.document.write_pdf import write_pdf
+from app.tools.document.write_pptx import write_pptx
 
 DESCRIPTIONS = {
     "read_pdf": """读取PDF(.pdf)文件内容。自动提取文本、表格和图片。适用场景:需要读取PDF文档内容时使用。""",
