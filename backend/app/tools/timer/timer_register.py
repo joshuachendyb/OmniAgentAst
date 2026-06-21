@@ -26,11 +26,9 @@ from app.tools.timer.timer_schema import (
     TimerListInput,
 )
 
-from app.tools.timer.timer_tools import (
-    timer_set,
-    timer_clear,
-    timer_list,
-)
+from app.tools.timer.timer_set import timer_set
+from app.tools.timer.timer_clear import timer_clear
+from app.tools.timer.timer_list import timer_list
 
 
 TIMER_TOOL_DESCRIPTIONS = {

@@ -26,11 +26,9 @@ from app.tools.win_registry.win_registry_schema import (
     RegistryDeleteInput,
 )
 
-from app.tools.win_registry.win_registry_tools import (
-    registry_read,
-    registry_write,
-    registry_delete,
-)
+from app.tools.win_registry.registry_read import registry_read
+from app.tools.win_registry.registry_write import registry_write
+from app.tools.win_registry.registry_delete import registry_delete
 
 REGISTRY_TOOL_DESCRIPTIONS = {
     "registry_read": """读取Windows注册表键值。必填参数:key_path(注册表键路径,如Software\\Microsoft\\Windows\\CurrentVersion)。可选参数:value_name(值名称,不填读取默认值)、hive(根键HKCU/HKLM/HKCR/HKU/HKCC,默认HKCU)。适用场景:需要查看注册表配置、读取安装路径、获取系统设置时使用。""",
