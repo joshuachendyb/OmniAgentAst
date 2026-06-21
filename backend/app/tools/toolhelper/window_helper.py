@@ -23,7 +23,6 @@ Author: 小沈 - 2026-05-18
 import platform
 from typing import Any, Dict, List, Optional
 
-from app.constants import ERR_DESKTOP_NOT_WINDOWS, ERR_DESKTOP_NO_PYWIN32
 from app.utils.logger import logger
 from app.tools.tool_response import build_error, build_success
 _HAS_WIN32 = False
@@ -53,9 +52,9 @@ def check_win32_platform() -> Optional[Dict[str, Any]]:
         Dict: 错误信息(平台不可用)
     """
     if platform.system() != "Windows":
-        return build_error(ERR_DESKTOP_NOT_WINDOWS, "此功能仅支持 Windows 系统")
+        return build_error(data={"error": "此功能仅支持Windows系统"})
     if not _HAS_WIN32:
-        return build_error(ERR_DESKTOP_NO_PYWIN32, "pywin32库未安装,请先执行: pip install pywin32")
+        return build_error(data={"error": "pywin32库未安装,请先执行: pip install pywin32"})
     return None
 
 
