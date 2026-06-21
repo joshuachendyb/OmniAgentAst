@@ -39,15 +39,10 @@ from app.tools.shell.shell_schema import (
     ExecuteCodeInput,
 )
 
-from app.tools.shell.shell_tools import (
-    execute_shell_command,
-    find_command,
-    shell_session,
-)
-
-from app.tools.shell.code_execution_tools import (
-    execute_code,
-)
+from app.tools.shell.execute_shell_command import execute_shell_command
+from app.tools.shell.find_command import find_command
+from app.tools.shell.shell_session import shell_session
+from app.tools.shell.execute_code import execute_code
 
 SHELL_TOOL_DESCRIPTIONS = {
     "execute_shell_command": """在指定Shell环境中执行命令。默认使用Windows PowerShell,可选CMD。支持前台模式(实时等待返回结果)和后台模式(run_in_background=True,返回会话ID供shell_session工具后续读取输出)。前台模式返回stdout/stderr/returncode。适用场景:需要执行系统命令、运行脚本、启动程序、后台启动服务(如npm run dev)时使用。
