@@ -163,17 +163,20 @@ async def build_observation(ctx: ObservationContext) -> List:
     merged_obs = "\n\n".join(obs_parts) if len(obs_parts) > 1 else obs_parts[0]
 
     first_result = ctx.results[0] if ctx.results else {}
+    _other = first_result.get("other_data", {}) if isinstance(first_result, dict) else {}
+    _llm_data = first_result.get("llm_data", {}) if isinstance(first_result, dict) else {}
+    _status = _llm_data.get("status", {}) if isinstance(_llm_data, dict) else {}
     events.append(ctx.agent._step_emitter.emit(ToolStep(
         step=ctx.step,
         tool_name=ctx.tool_name,
         tool_params=ctx.tool_params,
         step_type="observation",
         observation=merged_obs,
-        execution_status=first_result.get("code", "") if isinstance(first_result, dict) else "",
-        code=first_result.get("code", "") if isinstance(first_result, dict) else "",
-        warning=first_result.get("warning") if isinstance(first_result, dict) else None,
-        attachment=first_result.get("attachment") if isinstance(first_result, dict) else None,
-        return_direct=first_result.get("return_direct", False) if isinstance(first_result, dict) else False,
+        execution_status=_status.get("exec_code", ""),
+        code=_status.get("code", ""),
+        warning=_other.get("warning"),
+        attachment=_other.get("attachment"),
+        return_direct=_other.get("return_direct", False),
     )))
 
     return events
@@ -256,9 +259,11 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
     for event in await build_observation(ctx):
         yield event
 
-    if results and isinstance(results[0], dict) and results[0].get("return_direct"):
+    if results and isinstance(results[0], dict) and results[0].get("other_data", {}).get("return_direct"):
+        _llm_data = results[0].get("llm_data", {})
+        _status = _llm_data.get("status", {}) if isinstance(_llm_data, dict) else {}
         yield agent._step_emitter.emit(FinalStep(
-            step=step, response=results[0].get("message", ""),
+            step=step, response=_status.get("message", ""),
             thought=parsed.get("thought", ""),
         ))
         agent.status = AgentStatus.COMPLETED

@@ -20,7 +20,7 @@ from app.utils.logger import logger
 from app.utils.error_classifier import UnifiedErrorClassifier
 from app.utils.retry_engine import RetryEngine, BackoffStrategy
 from app.tools.tool_constants import TOOL_TIMEOUTS, TOOL_RETRY_MAX, TOOL_RETRY_BACKOFF, TOOL_RETRYABLE_ERRORS
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_error
 
 from app.constants import (
     ERR_MISSING_PARAM,
@@ -57,17 +57,17 @@ class ToolRetryEngine:
         self, code: str, message: str, retry_count: int,
         *, error_type: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        统一构建重试相关错误响应
-        
-        消除 4 处重复 {code, data, message, retry_count, metadata} 构建。
-        retry_count 统一为"已完成的重试次数"(不含首次尝试)。
-        """
+        """统一构建重试相关错误响应 — 小欧 2026-06-21 适配新3字段result"""
         return build_error(
-            code=code,
-            message=message,
-            retry_count=retry_count,
-            error_message=message,
+            data={"error_detail": message, "params": {}},
+            llm_data={
+                "summary": message[:200],
+                "action": {"tool": "", "tool_zh": "", "target": "", "params": {}},
+                "status": {"exec_code": "error", "message": message[:200], "code": code, "detail": message, "hint": ""},
+                "duration_ms": 0,
+                "metrics": {},
+            },
+            other_data={"retry_count": retry_count},
             error_type=error_type or "unknown",
         )
     
@@ -89,10 +89,15 @@ class ToolRetryEngine:
         tool = self._tools.get(action)
         if tool is None:
             return build_error(
-                code=ERR_TOOL_NOT_FOUND,
-                message=f"Unknown tool: {action}. Available tools: {list(self._tools.keys())}",
-                retry_count=0,
-                error_message=f"工具 '{action}' 未找到",
+                data={"error_detail": f"工具 '{action}' 未找到", "params": {"action": action}},
+                llm_data={
+                    "summary": f"工具 '{action}' 未找到",
+                    "action": {"tool": action, "tool_zh": "", "target": "", "params": {"action": action}},
+                    "status": {"exec_code": "error", "message": f"工具 '{action}' 未找到", "code": ERR_TOOL_NOT_FOUND, "detail": f"可用工具: {list(self._tools.keys())}", "hint": "请检查工具名称是否正确"},
+                    "duration_ms": 0,
+                    "metrics": {},
+                },
+                other_data={"retry_count": 0},
                 error_type="tool_not_found",
             )
         
@@ -146,18 +151,17 @@ class ToolRetryEngine:
     async def _execute_single_attempt(self, tool: Callable, params: Dict[str, Any], timeout: float, 
                                       engine: RetryEngine, max_retries: int, action: str,
                                       retryable_errors: list) -> Optional[Dict[str, Any]]:
-        """执行单次尝试 — 小沈 2026-06-08"""
+        """执行单次尝试 — 小沈 2026-06-08; 小欧 2026-06-21 透传result+retry_count入other_data"""
         try:
             result = await self._execute_tool_once(tool, params, timeout)
-            # 工具自身返回ERR_时原样返回,不包build_success — 小欧 2026-06-18
-            if isinstance(result, dict) and result.get("code", "").startswith("ERR_"):
-                result["retry_count"] = engine.attempt_count
+            if isinstance(result, dict):
+                other = result.get("other_data", {})
+                if not isinstance(other, dict):
+                    other = {}
+                other["retry_count"] = engine.attempt_count
+                result["other_data"] = other
                 return result
-            return build_success(
-                data=result,
-                message="Tool execution succeeded",
-                retry_count=engine.attempt_count,
-            )
+            return result
         except Exception as e:
             error_category = UnifiedErrorClassifier.classify_error(e)
             attempt = engine.record_attempt()

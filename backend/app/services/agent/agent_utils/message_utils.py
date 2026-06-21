@@ -29,21 +29,26 @@ def build_llm_messages(message: str, history: Optional[List[Dict]] = None) -> Li
 
 
 def build_observation_text(execution_result, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
-    """根据工具执行结果构建observation文本 — 小沈 2026-06-09 增强
-    
+    """根据工具执行结果构建observation文本 — 小欧 2026-06-21 适配新3字段result
+
+    从result中拆包data/llm_data，直接调format_llm_observation(data, llm_data)
+
     Args:
-        execution_result: 工具执行结果（dict或其他类型）
-        tool_name: 工具名称
-        tool_params: 工具参数
-    
+        execution_result: 工具执行结果（新格式dict或Exception）
+        tool_name: 工具名称（仅异常时用）
+        tool_params: 工具参数（仅异常时用）
+
     Returns:
         observation文本
     """
-    from app.services.agent.observation_formatter import format_llm_observation, build_execution_result_dict
-    
+    from app.services.agent.observation_formatter import format_llm_observation
+
     if isinstance(execution_result, dict):
-        exec_result = build_execution_result_dict(execution_result)
-        return format_llm_observation(exec_result, tool_name=tool_name, tool_params=tool_params)
+        data = execution_result.get("data")
+        llm_data = execution_result.get("llm_data")
+        if llm_data is not None:
+            return format_llm_observation(data, llm_data)
+        return f"Observation: {str(execution_result)}"
     return f"Observation: {str(execution_result)}"
 
 
