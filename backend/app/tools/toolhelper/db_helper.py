@@ -36,16 +36,16 @@ def check_db_exists(db_path: str) -> Dict[str, Any]:
     """
     path = Path(db_path)
     if not path.exists():
-        return build_success({"exists": False, "db_type": None, "size": 0}, f"数据库文件不存在: {db_path}")
+        return build_success(data={"exists": False, "db_type": None, "size": 0})
 
     size = path.stat().st_size
     try:
         conn = sqlite3.connect(str(path))
         conn.execute("SELECT 1")
         conn.close()
-        return build_success({"exists": True, "db_type": "sqlite", "size": size}, f"数据库存在且可连接: {db_path}")
+        return build_success(data={"exists": True, "db_type": "sqlite", "size": size})
     except Exception as e:
-        return build_success({"exists": True, "db_type": "unknown", "size": size, "error": str(e)}, f"数据库文件存在但无法连接: {str(e)}")
+        return build_success(data={"exists": True, "db_type": "unknown", "size": size, "error": str(e)})
 
 
 __all__ = [

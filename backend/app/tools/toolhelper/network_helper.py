@@ -62,11 +62,11 @@ def _check_network() -> Dict[str, Any]:
             sock.connect((host, port))
             latency = (time.time() - t1) * 1000
             sock.close()
-            return build_success({"connected": True, "host": host, "latency_ms": round(latency, 2)}, f"网络连通,延迟: {latency:.1f}ms")
+            return build_success(data={"connected": True, "host": host, "latency_ms": round(latency, 2)})
         except (socket.timeout, socket.error, OSError):
             continue
 
-    return build_success({"connected": False}, "网络不可用")
+    return build_success(data={"connected": False})
 
 
 def _validate_url(url: str) -> Dict[str, Any]:
@@ -91,16 +91,15 @@ def _validate_url(url: str) -> Dict[str, Any]:
         scheme_ok = parsed.scheme in valid_schemes
 
         return build_success(
-            {
+            data={
                 "valid": is_valid and scheme_ok,
                 "scheme": parsed.scheme,
                 "netloc": parsed.netloc,
                 "path": parsed.path,
             },
-            "URL格式有效" if (is_valid and scheme_ok) else "URL格式无效"
         )
     except Exception as e:
-        return build_success({"valid": False, "error": str(e)}, f"URL验证失败: {str(e)}")
+        return build_success(data={"valid": False, "error": str(e)})
 
 
 __all__ = [

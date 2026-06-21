@@ -1521,7 +1521,7 @@ def _build_checksum_result(
         message = f"{algorithm.upper()} 校验和: {checksum}"
 
     from app.tools.tool_response import build_success
-    return build_success(data, message)
+    return build_success(data=data)
 
 
 def _calculate_checksum_sync(
