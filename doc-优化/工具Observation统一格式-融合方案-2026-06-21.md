@@ -2379,6 +2379,9 @@ llm_data = {
 - ❌ 在builder函数内用字典直接赋值各字段（如 `"message": "读取成功"`）
 - ❌ 在builder函数内用变量赋值各字段（如 `msg = "读取成功"; "message": msg`）
 - ✅ 必须按5.9.3节模板，用完整5字段结构构建llm_data
+严格执行一个tool函数只能有一个builder llmdta函数 不能多也不能少  必须与注册函数完全对应,使用注册函数名称
+--helper代码里面严令禁止出现任何定义的llmdata builder函数
+=严格遵守代码10大规范要求
 
 **步骤3：修改build3函数调用**
 

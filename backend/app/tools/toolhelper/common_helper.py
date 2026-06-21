@@ -108,15 +108,52 @@ def run_windows_command(
         stdout = result.stdout.decode(encoding, errors='ignore') if isinstance(result.stdout, bytes) else result.stdout
         stderr = result.stderr.decode(encoding, errors='ignore') if isinstance(result.stderr, bytes) else result.stderr
         if result.returncode == 0:
-            return build_success(data={"returncode": result.returncode, "stdout": stdout, "stderr": stderr}, message="命令执行成功")
+            return build_success(
+                data={"returncode": result.returncode, "stdout": stdout, "stderr": stderr},
+                llm_data={
+                    "summary": f"命令执行成功，退出码0",
+                    "action": {"tool": "run_windows_command", "tool_zh": "执行", "target": " ".join(cmd)[:80], "params": {"cmd": cmd}},
+                    "status": {"exec_code": "success", "message": "命令执行成功", "code": "", "detail": "", "hint": ""},
+                    "metrics": {"exit_code": {"value": 0, "text": "退出码0"}},
+                },
+            )
         else:
-            return build_error(code="ERR_COMMAND_FAILED", message=f"命令返回非零退出码({result.returncode})", data={"returncode": result.returncode, "stdout": stdout, "stderr": stderr})
+            return build_error(
+                data={"error_detail": f"命令返回非零退出码({result.returncode})", "params": {"cmd": cmd, "returncode": result.returncode}},
+                llm_data={
+                    "summary": f"命令返回非零退出码({result.returncode})",
+                    "action": {"tool": "run_windows_command", "tool_zh": "执行", "target": " ".join(cmd)[:80], "params": {"cmd": cmd}},
+                    "status": {"exec_code": "error", "message": f"命令返回非零退出码({result.returncode})", "code": "ERR_COMMAND_FAILED", "detail": f"命令返回非零退出码({result.returncode})", "hint": "请检查命令参数是否正确"},
+                    "metrics": {"exit_code": {"value": result.returncode, "text": f"退出码{result.returncode}"}},
+                },
+            )
     except subprocess.TimeoutExpired:
-        return build_error(code="ERR_COMMAND_TIMEOUT", message=f"命令执行超时({timeout}秒): {' '.join(cmd)}")
+        return build_error(
+            data={"error_detail": f"命令执行超时({timeout}秒)", "params": {"cmd": cmd, "timeout": timeout}},
+            llm_data={
+                "summary": f"命令执行超时({timeout}秒): {' '.join(cmd)}",
+                "action": {"tool": "run_windows_command", "tool_zh": "执行", "target": " ".join(cmd)[:80], "params": {"cmd": cmd}},
+                "status": {"exec_code": "error", "message": "命令执行超时", "code": "ERR_COMMAND_TIMEOUT", "detail": f"命令执行超时({timeout}秒)", "hint": "请增加超时时间或检查命令"},
+            },
+        )
     except FileNotFoundError as e:
-        return build_error(code="ERR_COMMAND_NOT_FOUND", message=f"命令未找到: {str(e)}")
+        return build_error(
+            data={"error_detail": f"命令未找到: {str(e)}", "params": {"cmd": cmd}},
+            llm_data={
+                "summary": f"命令未找到: {str(e)}",
+                "action": {"tool": "run_windows_command", "tool_zh": "执行", "target": " ".join(cmd)[:80], "params": {"cmd": cmd}},
+                "status": {"exec_code": "error", "message": "命令未找到", "code": "ERR_COMMAND_NOT_FOUND", "detail": f"命令未找到: {str(e)}", "hint": "请检查命令是否存在"},
+            },
+        )
     except Exception as e:
-        return build_error(code="ERR_COMMAND_FAILED", message=f"命令执行失败: {str(e)}")
+        return build_error(
+            data={"error_detail": f"命令执行失败: {str(e)}", "params": {"cmd": cmd}},
+            llm_data={
+                "summary": f"命令执行失败: {str(e)[:200]}",
+                "action": {"tool": "run_windows_command", "tool_zh": "执行", "target": " ".join(cmd)[:80], "params": {"cmd": cmd}},
+                "status": {"exec_code": "error", "message": "命令执行失败", "code": "ERR_COMMAND_FAILED", "detail": f"命令执行失败: {str(e)}", "hint": ""},
+            },
+        )
 
 
 __all__ = [

@@ -127,11 +127,13 @@ async def build_observation(ctx: ObservationContext) -> List:
     events = []
 
     for call, result in zip(ctx.all_calls, ctx.results):
+        _ec = result.get("llm_data", {}).get("status", {}).get("exec_code", "") if isinstance(result, dict) else ""
         action_step = ToolStep(
             step=ctx.step,
             tool_name=call["tool_name"],
             tool_params=call["tool_params"],
             execution_result=result,
+            execution_status=_ec or "error",
         )
         ctx.action_steps.append(action_step)
         events.append(ctx.agent._step_emitter.emit(action_step))

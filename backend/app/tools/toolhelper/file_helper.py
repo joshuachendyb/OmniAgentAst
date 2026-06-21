@@ -1515,13 +1515,21 @@ def _build_checksum_result(
     if verify_hash:
         matched = checksum.lower() == verify_hash.lower()
         data["verify_result"] = matched
-        message = f"校验和{'匹配' if matched else '不匹配'}" \
-                  f"(输入: {verify_hash}, 计算: {checksum})"
+        summary = f"校验和{'匹配' if matched else '不匹配'}(输入: {verify_hash}, 计算: {checksum})"
     else:
-        message = f"{algorithm.upper()} 校验和: {checksum}"
+        summary = f"{algorithm.upper()} 校验和: {checksum}"
 
     from app.tools.tool_response import build_success
-    return build_success(data=data)
+    return build_success(
+        data=data,
+        llm_data={
+            "summary": f"计算 {file_path}，{summary}",
+            "action": {"tool": "calculate_file_hash", "tool_zh": "计算", "target": file_path, "params": {"file_path": file_path, "algorithm": algorithm}},
+            "status": {"exec_code": "success", "message": "计算成功", "code": "", "detail": "", "hint": ""},
+            "duration_ms": elapsed_ms,
+            "metrics": {"algorithm": {"value": algorithm, "text": f"{algorithm.upper()}算法"}, "file_size": {"value": file_size, "text": f"{file_size}字节"}},
+        },
+    )
 
 
 def _calculate_checksum_sync(

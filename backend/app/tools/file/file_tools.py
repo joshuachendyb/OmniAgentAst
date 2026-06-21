@@ -139,13 +139,6 @@ def _build_read_media_file_llm_data(exec_code, duration_ms, file_path="", file_n
     return {"summary": f"读取媒体文件成功: {file_name} ({mime_type})", "action": {"tool": "read_media_file", "tool_zh": "读取媒体", "target": file_path, "params": {}}, "status": {"exec_code": "success", "message": "读取媒体文件成功", "code": "", "detail": "", "hint": ""}, "duration_ms": duration_ms, "metrics": {"file_size": {"value": file_size, "text": f"{file_size}字节"}}}
 
 
-def _build_replace_file_llm_data(exec_code, duration_ms, file_path="", replaced_count=0, detail=""):
-    """replace_file的llm_data构建函数 — 小健 2026-06-21"""
-    if exec_code == "error":
-        return {"summary": f"文件替换失败: {detail}", "action": {"tool": "replace_file", "tool_zh": "替换文件", "target": file_path, "params": {}}, "status": {"exec_code": "error", "message": "替换失败", "code": ERR_FILE_REPLACE_FAILED, "detail": detail, "hint": ""}, "duration_ms": duration_ms, "metrics": {}}
-    return {"summary": f"文件替换成功: {file_path} ({replaced_count}处)", "action": {"tool": "replace_file", "tool_zh": "替换文件", "target": file_path, "params": {}}, "status": {"exec_code": "success", "message": "替换成功", "code": "", "detail": "", "hint": ""}, "duration_ms": duration_ms, "metrics": {"replaced_count": {"value": replaced_count, "text": f"{replaced_count}处"}}}
-
-
 def _build_edit_text_file_llm_data(exec_code, duration_ms, file_path="", applied=0, total=0, detail=""):
     """edit_text_file的llm_data构建函数 — 小健 2026-06-21"""
     if exec_code == "error":
@@ -234,15 +227,6 @@ def _build_search_files_llm_data(exec_code, duration_ms, search_dir="", total=0,
     return {"summary": f"搜索完成: {total}个匹配", "action": {"tool": "search_files", "tool_zh": "搜索文件", "target": search_dir, "params": {}}, "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""}, "duration_ms": duration_ms, "metrics": {"total": {"value": total, "text": f"{total}个匹配"}}}
 
 
-def _build_file_checksum_llm_data(exec_code, duration_ms, algorithm="", checksum="", verify_result=None, detail=""):
-    """file_checksum的llm_data构建函数 — 小健 2026-06-21"""
-    if exec_code == "error":
-        return {"summary": f"校验和计算失败: {algorithm}", "action": {"tool": "file_checksum", "tool_zh": "文件校验", "target": algorithm, "params": {"algorithm": algorithm}}, "status": {"exec_code": "error", "message": "校验和计算失败", "code": "", "detail": detail, "hint": ""}, "duration_ms": duration_ms, "metrics": {}}
-    summary = f"校验和计算成功: {algorithm}"
-    if verify_result is not None:
-        summary = f"校验和{'匹配' if verify_result else '不匹配'}: {algorithm}"
-    return {"summary": summary, "action": {"tool": "file_checksum", "tool_zh": "文件校验", "target": algorithm, "params": {"algorithm": algorithm}}, "status": {"exec_code": "success", "message": "校验和计算成功", "code": "", "detail": "", "hint": ""}, "duration_ms": duration_ms, "metrics": {}}
-
 
 # ============================================================
 # 第一部分:分页配置常量
@@ -309,11 +293,10 @@ def _send2trash_sync(path: Path, recursive: bool = False) -> Tuple[bool, str]:
 
 # 【小沈重构 2026-05-25】25.5节:组件3 - 构建删除结果
 def _build_delete_result(operation_id: str, path: Path, force: bool, method: str) -> dict:
-    """构建删除操作的统一返回结果 - 小沈重构 2026-05-25"""
+    """构建删除操作的统一返回结果 - 小沈重构 2026-05-25, 小欧 2026-06-22 helper不构建llm_data"""
     delete_mode = "永久删除" if force else "放入回收站"
     return build_success(
-        {"operation_id": operation_id, "deleted_path": str(path)},
-        f"文件已{delete_mode}: {path}",
+        data={"operation_id": operation_id, "deleted_path": str(path), "delete_mode": delete_mode, "method": method},
     )
 
 
@@ -512,11 +495,9 @@ def _build_list_success(entries: List, total: int, path: Path, statistics: Dict,
     else:
         display = entries
         next_token = None
-    llm_data = _build_list_directory_llm_data("success", 0, str(path), total, truncated)
     return build_success(
         data={"entries": display, "total": total, "directory": str(path),
          "truncated": truncated, "statistics": statistics, "next_page_token": next_token},
-        llm_data=llm_data,
     )
 
 
@@ -918,86 +899,53 @@ async def _read_text_file(
     limit: Optional[int] = None,
     encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """读取文本文件
-    
-    【小沈重构 2026-05-25】
-    - 重构拆分:提取 _try_read_file_with_encodings / _select_lines
-    - 保持所有分支完整,功能不减少
-    
-    参数组合说明:
-    - 无参数:读取全部内容
-    - head=N:读取前N行
-    - tail=N:读取后N行
-    - offset=N, limit=M:从第N行开始读取M行(分页读取)
+    """读取文本文件 — 小沈重构 2026-05-25, 小欧 2026-06-22 helper不构建llm_data
+    返回纯业务数据,由调用方构建llm_data
     """
-    t0 = _time_mod.perf_counter()
     try:
         is_binary, binary_reason = _is_binary_file(file_path)
         if is_binary:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"{binary_reason}。请使用read_media_file工具读取媒体文件")
-            return build_error(data={"file_path": file_path}, llm_data=llm_data)
+            return build_error(data={"file_path": file_path, "error": f"{binary_reason}。请使用read_media_file工具读取媒体文件"})
 
         for _name, _val in [("head", head), ("tail", tail), ("offset", offset), ("limit", limit)]:
             if _val is not None and _val < 1:
-                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"{_name}必须>=1,当前值: {_val}")
-                return build_error(data={_name: _val}, llm_data=llm_data)
+                return build_error(data={_name: _val, "error": f"{_name}必须>=1,当前值: {_val}"})
 
         if head is not None and tail is not None:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail="head和tail不能同时使用")
-            return build_error(data={"head": head, "tail": tail}, llm_data=llm_data)
+            return build_error(data={"head": head, "tail": tail, "error": "head和tail不能同时使用"})
 
         if (head is not None or tail is not None) and (offset is not None or limit is not None):
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail="head/tail与offset/limit不能同时使用")
-            return build_error(data={"head": head, "tail": tail, "offset": offset, "limit": limit}, llm_data=llm_data)
+            return build_error(data={"head": head, "tail": tail, "offset": offset, "limit": limit, "error": "head/tail与offset/limit不能同时使用"})
 
         is_valid, error_msg = _validate_path(file_path)
         if not is_valid:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_msg)
-            return build_error(data={"file_path": file_path}, llm_data=llm_data)
+            return build_error(data={"file_path": file_path, "error": error_msg})
 
         path = Path(file_path)
         if not path.exists():
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"文件不存在: {file_path}")
-            return build_error(data={"file_path": file_path}, llm_data=llm_data)
+            return build_error(data={"file_path": file_path, "error": f"文件不存在: {file_path}"})
 
         if not path.is_file():
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"路径不是文件: {file_path}")
-            return build_error(data={"file_path": file_path}, llm_data=llm_data)
+            return build_error(data={"file_path": file_path, "error": f"路径不是文件: {file_path}"})
 
         file_size = path.stat().st_size
         if file_size > MAX_READ_SIZE:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"文件过大({file_size}字节),请使用head/tail分段读取")
-            return build_error(data={"file_path": file_path, "file_size": file_size}, llm_data=llm_data)
+            return build_error(data={"file_path": file_path, "file_size": file_size, "error": f"文件过大({file_size}字节),请使用head/tail分段读取"})
 
         content, used_encoding, error = await _try_read_file_with_encodings(path, encoding)
         if error:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error)
-            return build_error(data={"error": error, "file_path": file_path}, llm_data=llm_data)
+            return build_error(data={"error_detail": error, "params": {"file_path": file_path}})
 
         lines = content.splitlines(keepends=True)
         _data = _select_lines(lines, head, tail, offset, limit)
         _data["encoding"] = used_encoding
         _data["file_size"] = file_size
 
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_text_file_llm_data("success", duration_ms, file_path=file_path, line_count=_data["line_count"], total_lines=_data["total_lines"], file_size=file_size)
-
-        return build_success(data=_data, llm_data=llm_data)
+        return build_success(data=_data)
 
     except Exception as e:
         logger.error(f"read_text_file failed: {file_path}: {e}")
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e))
-        return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"file_path": file_path}})
 
 
 def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
@@ -1167,7 +1115,7 @@ async def write_text_file(
         logger.error(f"Failed to write file {file_path}: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e))
-        return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"file_path": file_path}}, llm_data=llm_data)
 
 
 async def list_directory(
@@ -1191,11 +1139,18 @@ async def list_directory(
 
     if format == "tree":
         tree_result = await _get_directory_tree(dir_path=dir_path, max_depth=max_depth)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if tree_result.get("code") == "SUCCESS" and "data" in tree_result:
             tree_data = tree_result["data"]
+            f, d, s = 0, 0, 0
             if isinstance(tree_data, dict) and "tree" in tree_data:
                 f, d, s = _count_tree_stats(tree_data["tree"])
                 tree_data["statistics"] = {"file_count": f, "dir_count": d, "total_size": s}
+            llm_data = _build_list_directory_llm_data("success", duration_ms, dir_path=dir_path, file_count=f, dir_count=d)
+        else:
+            detail = (tree_result.get("data") or {}).get("error", "未知错误")
+            llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=detail)
+        tree_result["llm_data"] = llm_data
         return tree_result
 
     is_valid, error_msg = _validate_path(dir_path)
@@ -1244,13 +1199,18 @@ async def list_directory(
                 f"displayed={MAX_DISPLAY_ENTRIES}"
             )
 
-        return _build_list_success(all_entries, total, path, statistics, start_offset, MAX_DISPLAY_ENTRIES)
+        result = _build_list_success(all_entries, total, path, statistics, start_offset, MAX_DISPLAY_ENTRIES)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        truncated = total > MAX_DISPLAY_ENTRIES
+        llm_data = _build_list_directory_llm_data("success", duration_ms, str(path), total, truncated)
+        result["llm_data"] = llm_data
+        return result
 
     except Exception as e:
         logger.error(f"Failed to list directory {dir_path}: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=str(e))
-        return build_error(data={"error": str(e), "file_path": dir_path}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"dir_path": dir_path}}, llm_data=llm_data)
 
 
 async def _delete_file(
@@ -1258,29 +1218,21 @@ async def _delete_file(
     recursive: bool = False,
     force: bool = False
 ) -> Dict[str, Any]:
-    """删除文件或目录 - 小健 2026-05-03 默认放入回收站,force=True永久删除
-    【小沈重构 2026-05-25】25.5节:骨架~30行,闭包拆分为3个独立函数"""
-
-    t0 = _time_mod.perf_counter()
+    """删除文件或目录 - 小健 2026-05-03, 小欧 2026-06-22 helper不构建llm_data"""
 
     is_valid, error_msg = _validate_path(file_path)
     if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_delete_file_llm_data("error", duration_ms, file_path, detail=error_msg)
-        return build_error(data={"file_path": file_path}, llm_data=llm_data)
+        return build_error(data={"file_path": file_path, "error": error_msg})
 
     path = Path(file_path)
 
     try:
         if not path.exists():
-            llm_data = _build_delete_file_llm_data("success", 0, file_path)
-            return build_success(data=None, llm_data=llm_data)
+            return build_success(data={"file_path": file_path, "status": "not_exists"})
 
         task_id = _current_task_id.get()
         if not task_id:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_delete_file_llm_data("error", duration_ms, file_path, detail="当前没有活跃任务ID")
-            return build_error(data={"file_path": file_path}, llm_data=llm_data)
+            return build_error(data={"file_path": file_path, "error": "当前没有活跃任务ID"})
 
         operation_id = record_operation(
             task_id=task_id,
@@ -1300,18 +1252,14 @@ async def _delete_file(
             operation_func=_delete_sync
         )
 
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if is_ok:
             return _build_delete_result(operation_id, path, force, method)
         else:
-            llm_data = _build_delete_file_llm_data("error", duration_ms, file_path, detail="删除文件失败,safety拦截")
-            return build_error(data={"file_path": file_path}, llm_data=llm_data)
+            return build_error(data={"file_path": file_path, "error": "删除文件失败,safety拦截"})
 
     except Exception as e:
         logger.error(f"Failed to delete {file_path}: {e}")
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_delete_file_llm_data("error", duration_ms, file_path, detail=str(e))
-        return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"file_path": file_path}})
 
 
 async def _move_file(
@@ -1319,34 +1267,25 @@ async def _move_file(
     destination_path: str,
     overwrite: bool = False
 ) -> Dict[str, Any]:
-    """移动或重命名文件 - 小健 2026-05-02 增加overwrite"""
-    t0 = _time_mod.perf_counter()
+    """移动或重命名文件 — 小健 2026-05-02, 小欧 2026-06-22 helper不构建llm_data"""
     is_valid_src, error_msg_src = _validate_path(source_path)
     if not is_valid_src:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("error", duration_ms, source_path, detail=f"源路径{error_msg_src}")
-        return build_error(data={"file_path": source_path}, llm_data=llm_data)
+        return build_error(data={"file_path": source_path, "error": f"源路径{error_msg_src}"})
 
     is_valid_dst, error_msg_dst = _validate_path(destination_path)
     if not is_valid_dst:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("error", duration_ms, destination_path, detail=f"目标路径{error_msg_dst}")
-        return build_error(data={"file_path": destination_path}, llm_data=llm_data)
+        return build_error(data={"file_path": destination_path, "error": f"目标路径{error_msg_dst}"})
 
     src = Path(source_path)
     dst = Path(destination_path)
 
     try:
         if not src.exists():
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_move_file_llm_data("error", duration_ms, source_path, detail=f"源文件不存在: {source_path}")
-            return build_error(data={"file_path": source_path}, llm_data=llm_data)
+            return build_error(data={"file_path": source_path, "error": f"源文件不存在: {source_path}"})
 
         task_id = _current_task_id.get()
         if not task_id:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_move_file_llm_data("error", duration_ms, source_path, detail="当前没有活跃任务ID")
-            return build_error(data={"file_path": source_path}, llm_data=llm_data)
+            return build_error(data={"file_path": source_path, "error": "当前没有活跃任务ID"})
 
         operation_id = record_operation(
             task_id=task_id,
@@ -1374,21 +1313,15 @@ async def _move_file(
             operation_func=_move_sync
         )
 
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if success:
-            llm_data = _build_move_file_llm_data("success", duration_ms, str(src))
             return build_success(
                 data={"operation_id": operation_id, "source": str(src), "destination": str(dst)},
-                llm_data=llm_data,
             )
-        llm_data = _build_move_file_llm_data("error", duration_ms, source_path, detail="移动文件失败")
-        return build_error(data={"source": str(source_path), "destination": str(destination_path)}, llm_data=llm_data)
+        return build_error(data={"source": str(source_path), "destination": str(destination_path), "error": "移动文件失败"})
 
     except Exception as e:
         logger.error(f"Failed to move {source_path} -> {destination_path}: {e}")
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("error", duration_ms, source_path, detail=str(e))
-        return build_error(data={"error": str(e), "source": str(source_path), "destination": str(destination_path)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"source": str(source_path), "destination": str(destination_path)}})
 
 
 async def search_files(
@@ -1461,10 +1394,15 @@ async def search_files(
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"搜索失败: {e}")
-        return build_error(data={"error": str(e), "file_path": search_dir}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"search_dir": search_dir}}, llm_data=llm_data)
 
     all_matches.sort(key=lambda x: x.get("name", ""))
-    return _paginate_search(all_matches, search_dir, llm_preview, DEFAULT_PAGE_SIZE, start_offset)
+    page_result = _paginate_search(all_matches, search_dir, llm_preview, DEFAULT_PAGE_SIZE, start_offset)
+    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+    total = len(all_matches)
+    llm_data = _build_search_files_llm_data("success", duration_ms, search_dir, total)
+    page_result["llm_data"] = llm_data
+    return page_result
 
 
 async def _copy_file(
@@ -1596,8 +1534,7 @@ async def _file_checksum(
     chunk_size: int = 65536,
     timeout: int = 30000,
 ) -> Dict[str, Any]:
-    """计算文件校验和 — 小健 2026-06-22 透传重新包装llm_data"""
-    t0 = _time_mod.perf_counter()
+    """计算文件校验和 — 小健 2026-06-22, 小欧 2026-06-22 helper不构建llm_data"""
     from app.tools.toolhelper.file_helper import file_checksum_impl
 
     result = await file_checksum_impl(
@@ -1612,13 +1549,7 @@ async def _file_checksum(
         execute_with_safety_func=execute_with_safety,
         get_next_sequence_func=lambda: 0,
     )
-    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-    if result.get("code") == "SUCCESS":
-        llm_data = _build_file_checksum_llm_data("success", duration_ms, algorithm=algorithm,
-                                                  verify_result=result.get("data", {}).get("verify_result"))
-        return build_success(data=result.get("data", {}), llm_data=llm_data)
-    llm_data = _build_file_checksum_llm_data("error", duration_ms, algorithm=algorithm, detail=result.get("data", {}).get("error", "校验和计算失败"))
-    return build_error(data=result.get("data", {}), llm_data=llm_data)
+    return result
 
 
 async def read_media_file(
@@ -1683,76 +1614,7 @@ async def read_media_file(
             logger.error(f"read_media_file failed: {file_path}: {e}")
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e))
-            return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
-
-
-async def _read_batch_file(
-    file_paths: List[str],
-) -> Dict[str, Any]:
-    """同时读取多个文本文件 - 小沈 2026-05-01"""
-    t0 = _time_mod.perf_counter()
-    if not file_paths:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_text_file_llm_data("error", duration_ms, detail="文件路径列表为空")
-        return build_error(data={"file_paths": file_paths}, llm_data=llm_data)
-
-    if len(file_paths) > MAX_BATCH_FILE_COUNT:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_text_file_llm_data("error", duration_ms, detail=f"批量读取文件数({len(file_paths)})超过上限{MAX_BATCH_FILE_COUNT},请分批读取")
-        return build_error(data={"count": len(file_paths), "max": MAX_BATCH_FILE_COUNT}, llm_data=llm_data)
-
-    semaphore = asyncio.Semaphore(20)
-
-    async def _read_single(fp: str) -> Dict[str, Any]:
-        async with semaphore:
-            is_binary, binary_reason = _is_binary_file(fp)
-            if is_binary:
-                llm_data = _build_read_text_file_llm_data("error", 0, file_path=fp, detail=f"{binary_reason}。已跳过该文件")
-                return build_error(data={"file_path": fp}, llm_data=llm_data)
-
-            is_valid, error_msg = _validate_path(fp)
-            if not is_valid:
-                llm_data = _build_read_text_file_llm_data("error", 0, file_path=fp, detail=error_msg)
-                return build_error(data={"file_path": fp}, llm_data=llm_data)
-            path = Path(fp)
-            if not path.exists():
-                llm_data = _build_read_text_file_llm_data("error", 0, file_path=fp, detail=f"文件不存在: {fp}")
-                return build_error(data={"file_path": fp}, llm_data=llm_data)
-
-            try:
-                if path.stat().st_size > MAX_READ_SIZE:
-                    llm_data = _build_read_text_file_llm_data("error", 0, file_path=fp, detail=f"文件过大({path.stat().st_size}字节),超过读取上限")
-                    return build_error(data={"file_path": fp}, llm_data=llm_data)
-            except OSError as e:
-                llm_data = _build_read_text_file_llm_data("error", 0, file_path=fp, detail=str(e))
-                return build_error(data={"file_path": fp}, llm_data=llm_data)
-
-            try:
-                for enc in ["utf-8", "gbk", "gb2312", "utf-8-sig"]:
-                    try:
-                        def _read_with(e=enc):
-                            with open(path, 'r', encoding=e, errors='replace') as f:
-                                return f.read()
-                        content = await asyncio.to_thread(_read_with)
-                        if '\ufffd' in content:
-                            continue
-                        return build_success(data={"file_path": fp, "content": content, "encoding": enc, "file_size": path.stat().st_size})
-                    except Exception:
-                        continue
-                llm_data = _build_read_text_file_llm_data("error", 0, file_path=fp, detail=f"无法解码文件: {fp}")
-                return build_error(data={"file_path": fp}, llm_data=llm_data)
-            except Exception as e:
-                llm_data = _build_read_text_file_llm_data("error", 0, file_path=fp, detail=str(e))
-                return build_error(data={"file_path": fp}, llm_data=llm_data)
-
-    results = await asyncio.gather(*[_read_single(fp) for fp in file_paths])
-    success_count = sum(1 for r in results if r.get("code") == "SUCCESS")
-    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-    llm_data = _build_read_text_file_llm_data("success", duration_ms, line_count=success_count, total_lines=len(results))
-    return build_success(
-        data={"results": results, "total": len(results), "success_count": success_count, "failed_count": len(results) - success_count},
-        llm_data=llm_data,
-    )
+            return build_error(data={"error_detail": str(e), "params": {"file_path": file_path}}, llm_data=llm_data)
 
 
 async def _precise_replace_in_file(
@@ -1831,10 +1693,9 @@ async def _precise_replace_in_file(
             return build_success(data=data)
 
         except ValueError as e:
-            return build_error(data={"error": str(e), "file_path": file_path})
+            return build_error(data={"error_detail": str(e), "params": {"file_path": file_path}})
         except Exception as e:
-            return build_error(data={"error": f"替换失败: {e}", "file_path": file_path})
-            return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
+            return build_error(data={"error_detail": f"替换失败: {e}", "params": {"file_path": file_path}})
 
 
 def _read_file_with_encodings_sync(path: Path, preferred: Optional[str] = None) -> Tuple[Optional[str], Optional[str], Optional[str]]:
@@ -1925,7 +1786,7 @@ async def _apply_edits(
     dry_run: bool = False,
     encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """高级编辑文件,支持多处编辑和预览(内部方法) — 小健 2026-05-25 重构拆分
+    """高级编辑文件,支持多处编辑和预览(内部方法) — 小健 2026-05-25 重构拆分, 小欧 2026-06-22 helper不构建llm_data
 
     使用场景:
         内部调用
@@ -1936,36 +1797,25 @@ async def _apply_edits(
     返回数据说明:
         - 返回Dict,包含applied_edits/total_edits/results/preview/dry_run/encoding/operation_id
     """
-    t0 = _time_mod.perf_counter()
     try:
         is_valid, error_msg = _validate_path(file_path)
         if not is_valid:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_msg)
-            return build_error(data={"file_path": file_path}, llm_data=llm_data)
+            return build_error(data={"file_path": file_path, "error": error_msg})
 
         task_id = _current_task_id.get()
         if not task_id:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="当前没有活跃任务ID")
-            return build_error(data={"file_path": file_path}, llm_data=llm_data)
+            return build_error(data={"file_path": file_path, "error": "当前没有活跃任务ID"})
 
         is_binary, binary_reason = _is_binary_file(file_path)
         if is_binary:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"{binary_reason}。请使用对应的专业工具操作二进制文件")
-            return build_error(data={"file_path": file_path}, llm_data=llm_data)
+            return build_error(data={"file_path": file_path, "error": f"{binary_reason}。请使用对应的专业工具操作二进制文件"})
 
         path = Path(file_path)
         if not path.exists():
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"文件不存在: {file_path}")
-            return build_error(data={"file_path": file_path}, llm_data=llm_data)
+            return build_error(data={"file_path": file_path, "error": f"文件不存在: {file_path}"})
 
         if path.stat().st_size > MAX_READ_SIZE:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"文件过大({path.stat().st_size}字节),超过编辑上限{MAX_READ_SIZE//1024//1024}MB")
-            return build_error(data={"file_path": file_path, "file_size": path.stat().st_size}, llm_data=llm_data)
+            return build_error(data={"file_path": file_path, "file_size": path.stat().st_size, "error": f"文件过大({path.stat().st_size}字节),超过编辑上限{MAX_READ_SIZE//1024//1024}MB"})
 
         operation_id = record_operation(
             task_id=task_id,
@@ -1980,11 +1830,9 @@ async def _apply_edits(
             operation_id,
             operation_func=lambda: _execute_edit_sync(path, edits, dry_run, encoding, edit_result)
         )
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if success:
             applied = edit_result['applied_edits']
             total = edit_result['total_edits']
-            llm_data = _build_edit_text_file_llm_data("success", duration_ms, file_path, applied, total)
             return build_success(
                 data={
                     "applied_edits": applied,
@@ -1995,15 +1843,11 @@ async def _apply_edits(
                     "encoding": edit_result['used_enc'],
                     "operation_id": operation_id,
                 },
-                llm_data=llm_data,
             )
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="文件编辑失败,safety拦截")
-        return build_error(data={"file_path": file_path}, llm_data=llm_data)
+        return build_error(data={"file_path": file_path, "error": "文件编辑失败,safety拦截"})
     except Exception as e:
         logger.error(f"edit_text_file failed: {file_path}: {e}")
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e))
-        return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"file_path": file_path}})
 
 
 async def grep_file_content(
@@ -2061,7 +1905,7 @@ async def grep_file_content(
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=str(search_dir) if search_dir else "", detail=str(e))
-        return build_error(data={"error": str(e), "pattern": pattern, "search_dir": str(search_dir)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"pattern": pattern, "search_dir": str(search_dir)}}, llm_data=llm_data)
 
 
 async def get_directory_tree(dir_path: str) -> Dict[str, Any]:
@@ -2069,8 +1913,20 @@ async def get_directory_tree(dir_path: str) -> Dict[str, Any]:
 
         规范:§11.10 浏览器禁止执行write、chmod等shell操作
         通过 path_utils.validate_and_normalize 实现安全路径检查
+        2026-06-22 小健 重构: 自行构建llm_data
         """
-    return await _get_directory_tree(dir_path)
+    t0 = _time_mod.perf_counter()
+    result = await _get_directory_tree(dir_path)
+    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+    if result.get("code") == "SUCCESS" and "data" in result:
+        tree_data = result["data"]
+        tree = tree_data.get("tree", {})
+        llm_data = _build_directory_tree_llm_data("success", duration_ms, dir_path=dir_path, root_name=tree.get("name", ""), child_count=len(tree.get("children", [])))
+    else:
+        detail = (result.get("data") or {}).get("error", "未知错误")
+        llm_data = _build_directory_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=detail)
+    result["llm_data"] = llm_data
+    return result
 
 
 async def _get_directory_tree(
@@ -2078,24 +1934,18 @@ async def _get_directory_tree(
     excludePatterns: Optional[List[str]] = None,
     max_depth: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """获取目录的递归JSON树结构 - 小沈 2026-05-01"""
-    t0 = _time_mod.perf_counter()
+    """获取目录的递归JSON树结构 - 小沈 2026-05-01
+    2026-06-22 小健 重构: 移除llm_data,返回纯业务数据,llm_data由调用工具构建"""
     try:
         is_valid, error_msg = _validate_path(dir_path)
         if not is_valid:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_directory_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=error_msg)
-            return build_error(data={"file_path": dir_path}, llm_data=llm_data)
+            return build_error(data={"file_path": dir_path, "error": error_msg})
 
         path = Path(dir_path)
         if not path.exists():
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_directory_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=f"目录不存在: {dir_path}")
-            return build_error(data={"file_path": dir_path}, llm_data=llm_data)
+            return build_error(data={"file_path": dir_path, "error": f"目录不存在: {dir_path}"})
         if not path.is_dir():
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_directory_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=f"不是目录: {dir_path}")
-            return build_error(data={"file_path": dir_path}, llm_data=llm_data)
+            return build_error(data={"file_path": dir_path, "error": f"不是目录: {dir_path}"})
 
         # 【修复 2026-05-01 小沈】默认max_depth防止无限递归
         effective_max_depth = max_depth if max_depth is not None else 10
@@ -2141,17 +1991,12 @@ async def _get_directory_tree(
 
         tree = await asyncio.to_thread(_build_tree, path)
         tree = tree or {"name": path.name, "type": "directory", "children": []}
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_directory_tree_llm_data("success", duration_ms, dir_path=str(path), root_name=tree.get("name",""), child_count=len(tree.get("children",[])))
         return build_success(
             data={"tree": tree, "root": str(path)},
-            llm_data=llm_data,
         )
     except Exception as e:
         logger.error(f"get_directory_tree failed: {dir_path}: {e}")
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_directory_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=str(e))
-        return build_error(data={"error": str(e), "file_path": dir_path}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"dir_path": dir_path}, "error": str(e)})
 
 
 # ============================================================
@@ -2166,8 +2011,9 @@ async def read_text_file(
     limit: Optional[int] = None,
     encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """读取文本文件"""
-    return await _read_text_file(
+    """读取文本文件 — 小欧 2026-06-22 tool构建llm_data"""
+    t0 = _time_mod.perf_counter()
+    result = await _read_text_file(
         file_path=file_path,
         head=head,
         tail=tail,
@@ -2175,6 +2021,14 @@ async def read_text_file(
         limit=limit,
         encoding=encoding
     )
+    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+    if result.get("code", "").startswith("ERR_"):
+        llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=result.get("message", "读取失败"))
+    else:
+        data = result.get("data", {})
+        llm_data = _build_read_text_file_llm_data("success", duration_ms, file_path=file_path, line_count=data.get("line_count", 0), total_lines=data.get("total_lines", 0), file_size=data.get("file_size", 0))
+    result["llm_data"] = llm_data
+    return result
 
 async def edit_text_file(
     file_path: str,
@@ -2261,15 +2115,22 @@ async def move_file(
     destination: str,
     overwrite: bool = False,
 ) -> Dict[str, Any]:
-    """移动文件/目录 — 小沈 2026-06-16"""
+    """移动文件/目录 — 小沈 2026-06-16, 小欧 2026-06-22 tool构建llm_data"""
+    t0 = _time_mod.perf_counter()
     if os.path.abspath(source) == os.path.abspath(destination):
         llm_data = _build_move_file_llm_data("success", 0, source, extra_metrics={"status": "no_change"})
         return build_success(data={"action": "move", "source": source, "destination": destination}, llm_data=llm_data)
-    return await _move_file(
+    result = await _move_file(
         source_path=source,
         destination_path=destination,
         overwrite=overwrite
     )
+    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+    if result.get("code") == "SUCCESS":
+        llm_data = _build_move_file_llm_data("success", duration_ms, source)
+        return build_success(data=result.get("data", {}), llm_data=llm_data)
+    llm_data = _build_move_file_llm_data("error", duration_ms, source, detail=result.get("message", "移动失败"))
+    return build_error(data=result.get("data", {}), llm_data=llm_data)
 
 async def copy_file(
     source: str,
@@ -2302,16 +2163,23 @@ async def delete_file(
     recursive: bool = False,
     force: bool = False,
 ) -> Dict[str, Any]:
-    """删除文件/目录 — 小沈 2026-06-16"""
+    """删除文件/目录 — 小沈 2026-06-16, 小欧 2026-06-22 tool构建llm_data"""
+    t0 = _time_mod.perf_counter()
     src_path = Path(source)
     if not src_path.exists():
         llm_data = _build_delete_file_llm_data("success", 0, source, extra_metrics={"status": "already_deleted"})
         return build_success(data={"action": "delete", "source": source}, llm_data=llm_data)
-    return await _delete_file(
+    result = await _delete_file(
         file_path=source,
         recursive=recursive,
         force=force
     )
+    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+    if result.get("code") == "SUCCESS":
+        llm_data = _build_delete_file_llm_data("success", duration_ms, source)
+        return build_success(data=result.get("data", {}), llm_data=llm_data)
+    llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=result.get("message", "删除失败"))
+    return build_error(data=result.get("data", {}), llm_data=llm_data)
 
 async def rename_file(
     source: str,
@@ -2387,7 +2255,7 @@ async def _data_format_exec(
         return resp
     except Exception as e:
         logger.error(f"[_data_format_exec] 执行失败: {e}")
-        return build_error(data={"error": str(e), "file_path": file_path})
+        return build_error(data={"error_detail": str(e), "params": {"file_path": file_path}})
 
 
 async def read_data_file(
@@ -2487,17 +2355,17 @@ def _collect_entry_result(relative_path: str, name: str, fpath: Path, all_matche
 
 def _paginate_search(all_matches: List, path: str, llm_preview: List,
                        page_size: int, start_offset: int) -> Dict:
-    """分页+build_success统一构建,生成next_page_token支持游标续页 — 小健 2026-05-25"""
+    """分页+build_success统一构建,生成next_page_token支持游标续页 — 小健 2026-05-25
+    2026-06-22 小健 重构: 移除llm_data,返回纯业务数据,llm_data由search_files工具构建"""
     total = len(all_matches)
     has_more = total > page_size
     page = all_matches[:page_size] if has_more else all_matches
     next_page_token = encode_page_token(start_offset + page_size) if has_more else None
-    llm_data = _build_search_files_llm_data("success", 0, path, total)
     return build_success(data={
         "pattern": "", "search_dir": path, "matches": page, "total": total,
         "page": 1, "total_pages": (total + page_size - 1) // page_size if has_more else 1,
         "page_size": page_size, "next_page_token": next_page_token, "has_more": has_more,
-    }, llm_data=llm_data)
+    })
 
 
 

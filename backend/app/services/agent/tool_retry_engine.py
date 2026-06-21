@@ -102,8 +102,8 @@ class ToolRetryEngine:
             )
         
         params = self._validate_params(action, action_input, tool)
-        # P1-05修复: _validate_params现在返回错误字典而非None,需检查code字段
-        if isinstance(params, dict) and params.get("code") and params.get("code") != "SUCCESS":
+        _ec = params.get("llm_data", {}).get("status", {}).get("exec_code", "") if isinstance(params, dict) else ""
+        if _ec == "error":
             return params
         
         return await self._execute_with_retry(action, params, tool)
