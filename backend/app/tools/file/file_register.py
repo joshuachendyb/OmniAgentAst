@@ -49,12 +49,21 @@ from app.tools.file.file_schema import (
     WriteTextFileInput,
 )
 
-from app.tools.file.file_tools import (
-    read_text_file, write_text_file, read_media_file, edit_text_file,
-    list_directory, search_files, grep_file_content, compress_files,
-    extract_archive, move_file, copy_file, delete_file, rename_file,
-    read_data_file, write_data_file,
-)
+from app.tools.file.read_text_file import read_text_file
+from app.tools.file.write_text_file import write_text_file
+from app.tools.file.read_media_file import read_media_file
+from app.tools.file.edit_text_file import edit_text_file
+from app.tools.file.list_directory import list_directory
+from app.tools.file.search_files import search_files
+from app.tools.file.grep_file_content import grep_file_content
+from app.tools.file.compress_files import compress_files
+from app.tools.file.extract_archive import extract_archive
+from app.tools.file.move_file import move_file
+from app.tools.file.copy_file import copy_file
+from app.tools.file.delete_file import delete_file
+from app.tools.file.rename_file import rename_file
+from app.tools.file.read_data_file import read_data_file
+from app.tools.file.write_data_file import write_data_file
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
@@ -222,8 +231,9 @@ def _register_file_tools():
         "delete_file": delete_file,
         "rename_file": rename_file,
         "read_data_file": read_data_file,
-        "write_data_file": write_data_file,
     }
+    if write_data_file is not None:
+        tool_methods["write_data_file"] = write_data_file
     
     CONFIRMATION_MAP = {
         "delete_file": True,
