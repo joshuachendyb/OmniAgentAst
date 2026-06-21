@@ -27,6 +27,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time as _time_mod
 from typing import Dict, Any, List, Optional, Literal, Union, Tuple
 from pathlib import Path
 
@@ -55,75 +56,188 @@ from app.constants import (
 )
 
 
+def _build_read_pdf_llm_data(exec_code, duration_ms, file_path="", page_count=0, pages_read=0,
+                              text_len=0, table_count=0, image_count=0, detail=""):
+    """read_pdf的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"读取PDF失败: {detail}",
+            "action": {"tool": "read_pdf", "tool_zh": "读取PDF", "target": file_path, "params": {"file_path": file_path}},
+            "status": {"exec_code": "error", "message": "读取PDF失败", "code": ERR_DOC_READ_PDF, "detail": detail, "hint": "请检查文件路径和格式"},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"读取PDF成功: {pages_read}/{page_count}页, {text_len}字符",
+        "action": {"tool": "read_pdf", "tool_zh": "读取PDF", "target": file_path, "params": {"file_path": file_path}},
+        "status": {"exec_code": "success", "message": "读取PDF成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"page_count": {"value": page_count, "text": f"{page_count}页"}, "pages_read": {"value": pages_read, "text": f"读取{pages_read}页"}, "text_len": {"value": text_len, "text": f"{text_len}字符"}},
+    }
+
+
+def _build_read_docx_llm_data(exec_code, duration_ms, file_path="", para_count=0, text_len=0, detail=""):
+    """read_docx的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"读取Word失败: {detail}",
+            "action": {"tool": "read_docx", "tool_zh": "读取Word", "target": file_path, "params": {"file_path": file_path}},
+            "status": {"exec_code": "error", "message": "读取Word失败", "code": ERR_DOC_READ_DOCX, "detail": detail, "hint": "请检查文件路径和格式"},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"读取Word成功: {para_count}段, {text_len}字符",
+        "action": {"tool": "read_docx", "tool_zh": "读取Word", "target": file_path, "params": {"file_path": file_path}},
+        "status": {"exec_code": "success", "message": "读取Word成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"para_count": {"value": para_count, "text": f"{para_count}段"}, "text_len": {"value": text_len, "text": f"{text_len}字符"}},
+    }
+
+
+def _build_read_xlsx_llm_data(exec_code, duration_ms, file_path="", row_count=0, sheet_count=0, detail=""):
+    """read_xlsx的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"读取Excel失败: {detail}",
+            "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "target": file_path, "params": {"file_path": file_path}},
+            "status": {"exec_code": "error", "message": "读取Excel失败", "code": ERR_DOC_READ_XLSX, "detail": detail, "hint": "请检查文件路径和格式"},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"读取Excel成功: {row_count}行, {sheet_count}个工作表",
+        "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "target": file_path, "params": {"file_path": file_path}},
+        "status": {"exec_code": "success", "message": "读取Excel成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"row_count": {"value": row_count, "text": f"{row_count}行"}, "sheet_count": {"value": sheet_count, "text": f"{sheet_count}个表"}},
+    }
+
+
+def _build_read_pptx_llm_data(exec_code, duration_ms, file_path="", slide_count=0, text_len=0, detail=""):
+    """read_pptx的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"读取PPT失败: {detail}",
+            "action": {"tool": "read_pptx", "tool_zh": "读取PPT", "target": file_path, "params": {"file_path": file_path}},
+            "status": {"exec_code": "error", "message": "读取PPT失败", "code": ERR_DOC_READ_PPTX, "detail": detail, "hint": "请检查文件路径和格式"},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"读取PPT成功: {slide_count}页, {text_len}字符",
+        "action": {"tool": "read_pptx", "tool_zh": "读取PPT", "target": file_path, "params": {"file_path": file_path}},
+        "status": {"exec_code": "success", "message": "读取PPT成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"slide_count": {"value": slide_count, "text": f"{slide_count}页"}, "text_len": {"value": text_len, "text": f"{text_len}字符"}},
+    }
+
+
+def _build_write_doc_llm_data(exec_code, duration_ms, tool_name, tool_zh, file_path="", detail=""):
+    """write_doc/xlsx/pdf/pptx的通用llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"写入{tool_zh}失败: {detail}",
+            "action": {"tool": tool_name, "tool_zh": tool_zh, "target": file_path, "params": {"file_path": file_path}},
+            "status": {"exec_code": "error", "message": f"写入{tool_zh}失败", "code": "", "detail": detail, "hint": "请检查路径和权限"},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"写入{tool_zh}成功: {file_path}",
+        "action": {"tool": tool_name, "tool_zh": tool_zh, "target": file_path, "params": {"file_path": file_path}},
+        "status": {"exec_code": "success", "message": f"写入{tool_zh}成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms, "metrics": {},
+    }
+
+
 
 
 
 def _check_pdf_readable(file_path: str) -> Dict[str, Any]:
-    """检查PDF文件是否可读(内部helper) - 小沈 2026-05-18,从env_check_tools.py迁入"""
+    """检查PDF文件是否可读(内部helper) - 小沈 2026-05-18,从env_check_tools.py迁入
+    【2026-06-21 小健】builder改造，新3字段result
+    """
     path = Path(file_path)
     if not path.exists():
-        return build_error(ERR_DOC_READ_PDF, f"文件不存在: {file_path}",
-                data={"file_path": file_path})
+        llm_data = _build_read_pdf_llm_data("error", 0, file_path, detail=f"文件不存在: {file_path}")
+        return build_error(data={"file_path": file_path}, llm_data=llm_data)
     try:
         import pdfplumber
         with pdfplumber.open(path) as pdf:
             page_count = len(pdf.pages)
-        return build_success({"readable": True, "page_count": page_count},
-                f"PDF文件可读,共 {page_count} 页")
+        return build_success(data={"readable": True, "page_count": page_count}, llm_data=_build_read_pdf_llm_data("success", 0, file_path, page_count))
     except ImportError:
-        return build_error(ERR_NO_PDFPLUMBER,
-                "pdfplumber库未安装,请先执行: pip install pdfplumber")
+        llm_data = _build_read_pdf_llm_data("error", 0, file_path, detail="pdfplumber库未安装")
+        return build_error(data={"error": "pdfplumber库未安装"}, llm_data=llm_data)
     except Exception as e:
-        return build_error(ERR_DOC_READ_PDF, f"PDF文件不可读: {str(e)}",
-                data={"error": str(e), "file_path": file_path})
+        llm_data = _build_read_pdf_llm_data("error", 0, file_path, detail=str(e))
+        return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
 
 
 def _check_docx_readable(file_path: str) -> Dict[str, Any]:
-    """检查Word文件是否可读(内部helper) - 小沈 2026-05-18,从env_check_tools.py迁入"""
+    """检查Word文件是否可读(内部helper) - 小沈 2026-05-18,从env_check_tools.py迁入
+    【2026-06-21 小健】builder改造，新3字段result
+    """
     path = Path(file_path)
     if not path.exists():
-        return build_error(ERR_DOC_READ_DOCX, f"文件不存在: {file_path}",
-                data={"file_path": file_path})
+        llm_data = _build_read_docx_llm_data("error", 0, file_path, detail=f"文件不存在: {file_path}")
+        return build_error(data={"file_path": file_path}, llm_data=llm_data)
     try:
         import docx
         doc = docx.Document(path)
         para_count = len(doc.paragraphs)
-        return build_success({"readable": True, "paragraph_count": para_count},
-                f"Word文件可读,共 {para_count} 段")
+        return build_success(data={"readable": True, "paragraph_count": para_count}, llm_data=_build_read_docx_llm_data("success", 0, file_path, para_count))
     except ImportError:
-        return build_error(ERR_NO_DOCX,
-                "python-docx库未安装,请先执行: pip install python-docx")
+        llm_data = _build_read_docx_llm_data("error", 0, file_path, detail="python-docx库未安装")
+        return build_error(data={"error": "python-docx库未安装"}, llm_data=llm_data)
     except Exception as e:
-        return build_error(ERR_DOC_READ_DOCX, f"Word文件不可读: {str(e)}",
-                data={"error": str(e), "file_path": file_path})
+        llm_data = _build_read_docx_llm_data("error", 0, file_path, detail=str(e))
+        return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
 
 
 def _check_xlsx_readable(file_path: str) -> Dict[str, Any]:
-    """检查Excel文件是否可读(内部helper) - 小沈 2026-05-18,从env_check_tools.py迁入"""
+    """检查Excel文件是否可读(内部helper) - 小沈 2026-05-18,从env_check_tools.py迁入
+    【2026-06-21 小健】builder改造，新3字段result
+    """
     path = Path(file_path)
     if not path.exists():
-        return build_error(ERR_DOC_READ_XLSX, f"文件不存在: {file_path}",
-                data={"file_path": file_path})
+        llm_data = _build_read_xlsx_llm_data("error", 0, file_path, detail=f"文件不存在: {file_path}")
+        return build_error(data={"file_path": file_path}, llm_data=llm_data)
     try:
         from openpyxl import load_workbook
         wb = load_workbook(path, read_only=True)
         sheet_names = wb.sheetnames
         wb.close()
-        return build_success({"readable": True, "sheet_names": sheet_names},
-                f"Excel文件可读,共 {len(sheet_names)} 个工作表")
+        return build_success(data={"readable": True, "sheet_names": sheet_names}, llm_data=_build_read_xlsx_llm_data("success", 0, file_path, 0, len(sheet_names)))
     except ImportError:
-        return build_error(ERR_DOC_NO_OPENPYXL,
-                "openpyxl库未安装,请先执行: pip install openpyxl")
+        llm_data = _build_read_xlsx_llm_data("error", 0, file_path, detail="openpyxl库未安装")
+        return build_error(data={"error": "openpyxl库未安装"}, llm_data=llm_data)
     except Exception as e:
-        return build_error(ERR_DOC_READ_XLSX, f"Excel文件不可读: {str(e)}",
-                data={"error": str(e), "file_path": file_path})
+        llm_data = _build_read_xlsx_llm_data("error", 0, file_path, detail=str(e))
+        return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
 
 
 
+
+
+def _build_validate_chart_llm_data(exec_code, errors=None):
+    """_validate_chart_data的llm_data构建函数 — 小健 2026-06-21"""
+    errors = errors or []
+    if exec_code == "error":
+        return {
+            "summary": f"图表数据格式有{len(errors)}个问题",
+            "action": {"tool": "_validate_chart_data", "tool_zh": "验证图表", "target": "", "params": {}},
+            "status": {"exec_code": "error", "message": "验证失败", "code": ERR_DOC_CHART_GENERATE, "detail": "; ".join(errors), "hint": "请检查labels和values字段"},
+            "duration_ms": 0, "metrics": {},
+        }
+    return {
+        "summary": "图表数据格式正确",
+        "action": {"tool": "_validate_chart_data", "tool_zh": "验证图表", "target": "", "params": {}},
+        "status": {"exec_code": "success", "message": "验证通过", "code": "", "detail": "", "hint": ""},
+        "duration_ms": 0, "metrics": {},
+    }
 
 
 def _validate_chart_data(data: Dict[str, Any]) -> Dict[str, Any]:
-    """验证图表数据格式(内部helper) - 小沈 2026-05-18,从env_check_tools.py迁入"""
+    """验证图表数据格式(内部helper) - 小沈 2026-05-18,从env_check_tools.py迁入
+    【2026-06-21 小健】builder改造，新3字段result
+    """
     errors = []
     if not isinstance(data, dict):
         errors.append("data必须是字典类型")
@@ -142,10 +256,9 @@ def _validate_chart_data(data: Dict[str, Any]) -> Dict[str, Any]:
                     errors.append(f"labels和values长度不一致: labels={len(data['labels'])}, values={len(data['values'])}")
     is_valid = len(errors) == 0
     if is_valid:
-        return build_success({"valid": True}, "图表数据格式正确")
+        return build_success(data={"valid": True}, llm_data=_build_validate_chart_llm_data("success"))
     else:
-        return build_error(ERR_DOC_CHART_GENERATE, f"图表数据格式有 {len(errors)} 个问题",
-                data={"valid": False, "errors": errors})
+        return build_error(data={"valid": False, "errors": errors}, llm_data=_build_validate_chart_llm_data("error", errors))
 
 
 
@@ -203,27 +316,21 @@ def _process_page(page, page_num: int,
 
 def _build_pdf_result(fp: str, pages_read: List[int], all_text: List[str],
                       tables_data: List[Dict], images_data: List[Dict],
-                      page_count: int) -> dict:
+                      page_count: int, duration_ms: int) -> dict:
     """构建统一的 PDF 读取返回结果
-
-    小沈 2026-05-25 重构拆分
+    【2026-06-21 小健】builder改造，新3字段result
     """
     full_text = "\n\n".join(all_text)
     result = {"text": full_text, "page_count": page_count, "pages_read": pages_read}
-    _llm = {"文件": fp, "页数": f"{page_count}页(读取{len(pages_read)}页)",
-            "文本长度": f"{len(full_text)}字符", "内容": full_text[:2000]}
-    msg = f"成功读取PDF文件: {fp},共读取 {len(pages_read)} 页"
     if tables_data:
         result["tables"] = tables_data
         result["table_count"] = len(tables_data)
-        _llm["表格数"] = len(tables_data)
-        msg += f",{len(tables_data)} 个表格"
     if images_data:
         result["images"] = images_data
         result["image_count"] = len(images_data)
-        _llm["图片数"] = len(images_data)
-        msg += f",{len(images_data)} 张图片"
-    return build_success(result, msg, llm_data=_llm)
+    llm_data = _build_read_pdf_llm_data("success", duration_ms, fp, page_count, len(pages_read),
+                                          len(full_text), len(tables_data), len(images_data))
+    return build_success(data=result, llm_data=llm_data)
 
 
 def _read_pdf(
@@ -234,18 +341,22 @@ def _read_pdf(
 ) -> Dict[str, Any]:
     """读取PDF文件并提取文本内容(内部函数) - 小健 2026-05-18
     【2026-05-25 小沈重构】拆分:逐页提取 → _process_page,结果构建 → _build_pdf_result
+    【2026-06-21 小健】builder改造，新3字段result
     """
+    t0 = _time_mod.perf_counter()
     if not _check_module("pdfplumber"):
-        return build_error(ERR_NO_PDFPLUMBER,
-                "pdfplumber库未安装,请先执行: pip install pdfplumber")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail="pdfplumber库未安装")
+        return build_error(data={"error": "pdfplumber库未安装"}, llm_data=llm_data)
 
     try:
         import pdfplumber
 
         path = Path(file_path)
         if not path.exists():
-            return build_error(ERR_DOC_READ_PDF, f"文件不存在: {file_path}",
-                    data={"file_path": file_path})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=f"文件不存在: {file_path}")
+            return build_error(data={"file_path": file_path}, llm_data=llm_data)
 
         all_text, pages_read, tables_data, images_data = [], [], [], []
         with pdfplumber.open(path) as pdf:
@@ -261,28 +372,35 @@ def _read_pdf(
                 tables_data.extend(tables)
                 images_data.extend(images)
 
-        return _build_pdf_result(file_path, pages_read, all_text, tables_data, images_data, page_count)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        return _build_pdf_result(file_path, pages_read, all_text, tables_data, images_data, page_count, duration_ms)
     except Exception as e:
-        return build_error(ERR_DOC_READ_PDF, f"读取PDF文件失败: {str(e)}",
-                data={"error": str(e), "file_path": file_path})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=str(e))
+        return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
 
 
 def _read_docx(
     file_path: str,
     extract_tables: bool = False
 ) -> Dict[str, Any]:
-    """读取Word文档并提取文本内容(内部函数) - 小健 2026-05-18"""
+    """读取Word文档并提取文本内容(内部函数) - 小健 2026-05-18
+    【2026-06-21 小健】builder改造，新3字段result
+    """
+    t0 = _time_mod.perf_counter()
     if not _check_module("docx"):
-        return build_error(ERR_NO_DOCX,
-                "python-docx库未安装,请先执行: pip install python-docx")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_docx_llm_data("error", duration_ms, file_path, detail="python-docx库未安装")
+        return build_error(data={"error": "python-docx库未安装"}, llm_data=llm_data)
 
     try:
         import docx
 
         path = Path(file_path)
         if not path.exists():
-            return build_error(ERR_DOC_READ_DOCX, f"文件不存在: {file_path}",
-                    data={"file_path": file_path})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_read_docx_llm_data("error", duration_ms, file_path, detail=f"文件不存在: {file_path}")
+            return build_error(data={"file_path": file_path}, llm_data=llm_data)
 
         doc = docx.Document(path)
         paragraphs = [para.text for para in doc.paragraphs]
@@ -304,17 +422,13 @@ def _read_docx(
             result_data["tables"] = tables_data
             result_data["table_count"] = len(tables_data)
         
-        _llm = {
-            "文件": file_path,
-            "段落数": len(paragraphs),
-            "文本长度": f"{len(text)}字符",
-            "内容": text[:2000],
-        }
-        return build_success(result_data, f"成功读取Word文档: {file_path},共 {len(paragraphs)} 段",
-                llm_data=_llm)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_docx_llm_data("success", duration_ms, file_path, len(paragraphs), len(text))
+        return build_success(data=result_data, llm_data=llm_data)
     except Exception as e:
-        return build_error(ERR_DOC_READ_DOCX, f"读取Word文档失败: {str(e)}",
-                data={"error": str(e), "file_path": file_path})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_docx_llm_data("error", duration_ms, file_path, detail=str(e))
+        return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
 
 
 def _read_xlsx(
@@ -323,18 +437,23 @@ def _read_xlsx(
     max_rows: int = 1000,
     header: bool = True
 ) -> Dict[str, Any]:
-    """读取Excel文件并提取表格数据(内部函数) - 小健 2026-05-18"""
+    """读取Excel文件并提取表格数据(内部函数) - 小健 2026-05-18
+    【2026-06-21 小健】builder改造，新3字段result
+    """
+    t0 = _time_mod.perf_counter()
     if not _check_module("openpyxl"):
-        return build_error(ERR_DOC_NO_OPENPYXL,
-                "openpyxl库未安装,请先执行: pip install openpyxl")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_path, detail="openpyxl库未安装")
+        return build_error(data={"error": "openpyxl库未安装"}, llm_data=llm_data)
 
     try:
         from openpyxl import load_workbook
 
         path = Path(file_path)
         if not path.exists():
-            return build_error(ERR_DOC_READ_XLSX, f"文件不存在: {file_path}",
-                    data={"file_path": file_path})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_path, detail=f"文件不存在: {file_path}")
+            return build_error(data={"file_path": file_path}, llm_data=llm_data)
 
         wb = load_workbook(path, read_only=True, data_only=True)
         sheet_names = wb.sheetnames
@@ -342,8 +461,9 @@ def _read_xlsx(
         if sheet_name:
             if sheet_name not in sheet_names:
                 wb.close()
-                return build_error(ERR_DOC_READ_XLSX, f"工作表不存在: {sheet_name},可用工作表: {sheet_names}",
-                        data={"sheet_name": sheet_name, "available_sheets": sheet_names})
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_path, detail=f"工作表不存在: {sheet_name}")
+                return build_error(data={"sheet_name": sheet_name, "available_sheets": sheet_names}, llm_data=llm_data)
             ws = wb[sheet_name]
         else:
             ws = wb.active
@@ -368,34 +488,36 @@ def _read_xlsx(
                 row_count += 1
 
         wb.close()
-
-        return build_success({
-                "headers": headers,
-                "rows": rows,
-                "row_count": row_count,
-                "sheet_names": sheet_names,
-            }, f"成功读取Excel文件: {file_path},工作表: {ws.title},共 {row_count} 行数据")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_xlsx_llm_data("success", duration_ms, file_path, row_count, len(sheet_names))
+        return build_success(data={"headers": headers, "rows": rows, "row_count": row_count, "sheet_names": sheet_names}, llm_data=llm_data)
     except Exception as e:
-        return build_error(ERR_DOC_READ_XLSX, f"读取Excel文件失败: {str(e)}",
-                data={"error": str(e), "file_path": file_path})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_path, detail=str(e))
+        return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
 
 
 def _read_xls(
     file_path: str,
     max_rows: int = 1000,
 ) -> Dict[str, Any]:
-    """读取旧版Excel(.xls)文件(内部函数) - 小沈 2026-06-19"""
+    """读取旧版Excel(.xls)文件(内部函数) - 小沈 2026-06-19
+    【2026-06-21 小健】builder改造，新3字段result
+    """
+    t0 = _time_mod.perf_counter()
     if not _check_module("xlrd"):
-        return build_error(ERR_DOC_READ_XLSX, "xlrd库未安装,请先执行: pip install xlrd",
-                data={"file_path": file_path})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_path, detail="xlrd库未安装")
+        return build_error(data={"error": "xlrd库未安装", "file_path": file_path}, llm_data=llm_data)
 
     try:
         import xlrd
 
         path = Path(file_path)
         if not path.exists():
-            return build_error(ERR_DOC_READ_XLSX, f"文件不存在: {file_path}",
-                    data={"file_path": file_path})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_path, detail=f"文件不存在: {file_path}")
+            return build_error(data={"file_path": file_path}, llm_data=llm_data)
 
         wb = xlrd.open_workbook_xls(str(path))
         sheet_names = wb.sheet_names()
@@ -410,15 +532,13 @@ def _read_xls(
             else:
                 rows.append(row_data)
 
-        return build_success({
-                "headers": headers,
-                "rows": rows,
-                "row_count": len(rows),
-                "sheet_names": sheet_names,
-            }, f"成功读取Excel文件: {file_path},共 {len(rows)} 行数据")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_xlsx_llm_data("success", duration_ms, file_path, len(rows), len(sheet_names))
+        return build_success(data={"headers": headers, "rows": rows, "row_count": len(rows), "sheet_names": sheet_names}, llm_data=llm_data)
     except Exception as e:
-        return build_error(ERR_DOC_READ_XLSX, f"读取Excel文件失败: {str(e)}",
-                data={"error": str(e), "file_path": file_path})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_path, detail=str(e))
+        return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
 
 
 def _read_csv_stdlib(
@@ -428,12 +548,16 @@ def _read_csv_stdlib(
     has_header: bool = True,
     max_rows: int = 1000
 ) -> Dict[str, Any]:
-    """使用标准库csv读取CSV文件(内部函数)— 小健 2026-05-18"""
+    """使用标准库csv读取CSV文件(内部函数)— 小健 2026-05-18
+    【2026-06-21 小健】builder改造，新3字段result
+    """
+    t0 = _time_mod.perf_counter()
     try:
         path = Path(file_path)
         if not path.exists():
-            return build_error(ERR_DOC_READ_CSV, f"文件不存在: {file_path}",
-                    data={"file_path": file_path})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_path, detail=f"文件不存在: {file_path}")
+            return build_error(data={"file_path": file_path}, llm_data=llm_data)
         
         rows = []
         headers = []
@@ -459,17 +583,17 @@ def _read_csv_stdlib(
             except UnicodeDecodeError:
                 continue
         if not read_ok:
-            return build_error(ERR_DOC_READ_CSV, f"读取CSV文件失败: 编码不匹配(尝试了{encodings_to_try})",
-                    data={"file_path": file_path, "encodings_tried": encodings_to_try})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_path, detail=f"编码不匹配(尝试了{encodings_to_try})")
+            return build_error(data={"file_path": file_path, "encodings_tried": encodings_to_try}, llm_data=llm_data)
         
-        return build_success({
-                "headers": headers,
-                "rows": rows,
-                "row_count": len(rows),
-            }, f"成功读取CSV文件: {file_path},共 {len(rows)} 行数据")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_xlsx_llm_data("success", duration_ms, file_path, len(rows))
+        return build_success(data={"headers": headers, "rows": rows, "row_count": len(rows)}, llm_data=llm_data)
     except Exception as e:
-        return build_error(ERR_DOC_READ_CSV, f"读取CSV文件失败: {str(e)}",
-                data={"error": str(e), "file_path": file_path})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_path, detail=str(e))
+        return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
 
 
 
@@ -479,18 +603,23 @@ def _read_pptx(
     file_path: str,
     extract_notes: bool = False
 ) -> Dict[str, Any]:
-    """读取PPT幻灯片(内部函数) - 小健 2026-05-18"""
+    """读取PPT幻灯片(内部函数) - 小健 2026-05-18
+    【2026-06-21 小健】builder改造，新3字段result
+    """
+    t0 = _time_mod.perf_counter()
     if not _check_module("pptx"):
-        return build_error(ERR_DOC_NO_PPTX,
-                "python-pptx库未安装,请先执行: pip install python-pptx")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail="python-pptx库未安装")
+        return build_error(data={"error": "python-pptx库未安装"}, llm_data=llm_data)
 
     try:
         from pptx import Presentation
 
         path = Path(file_path)
         if not path.exists():
-            return build_error(ERR_DOC_READ_PPTX, f"文件不存在: {file_path}",
-                    data={"file_path": file_path})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail=f"文件不存在: {file_path}")
+            return build_error(data={"file_path": file_path}, llm_data=llm_data)
 
         prs = Presentation(path)
         slides_data = []
@@ -527,20 +656,13 @@ def _read_pptx(
             result_data["notes"] = notes_data
 
         _total_text = sum(len(s.get("text", "")) for s in slides_data)
-        _llm = {
-            "文件": file_path,
-            "幻灯片数": len(prs.slides),
-            "文本总长度": f"{_total_text}字符",
-            "幻灯片内容": [{"页码": s["slide_num"], "文本": s.get("text", "")[:500]} for s in slides_data],
-        }
-        if extract_notes and notes_data:
-            _llm["备注数"] = len(notes_data)
-
-        return build_success(result_data, f"成功读取PPT文件: {file_path},共 {len(prs.slides)} 页",
-                llm_data=_llm)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_pptx_llm_data("success", duration_ms, file_path, len(prs.slides), _total_text)
+        return build_success(data=result_data, llm_data=llm_data)
     except Exception as e:
-        return build_error(ERR_DOC_READ_PPTX, f"读取PPT文件失败: {str(e)}",
-                data={"error": str(e), "file_path": file_path})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail=str(e))
+        return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
 
 
 # ============================================================
@@ -600,10 +722,14 @@ def _write_docx(
     title: str = None,
     paragraphs=None,
 ) -> Dict[str, Any]:
-    """写入Word文档(内部函数) - 小欧 2026-06-19 重构为3参数"""
+    """写入Word文档(内部函数) - 小欧 2026-06-19 重构为3参数
+    【2026-06-21 小健】builder改造，新3字段result
+    """
+    t0 = _time_mod.perf_counter()
     if not _check_module("docx"):
-        return build_error(ERR_NO_DOCX,
-                "python-docx库未安装,请先执行: pip install python-docx")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_doc_llm_data("error", duration_ms, "write_docx", "写入Word", file_path, detail="python-docx库未安装")
+        return build_error(data={"error": "python-docx库未安装"}, llm_data=llm_data)
 
     try:
         from docx import Document
@@ -624,10 +750,13 @@ def _write_docx(
         path.parent.mkdir(parents=True, exist_ok=True)
         doc.save(path)
 
-        return build_success({"file_path": str(path)}, f"成功写入Word文档: {file_path}")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_doc_llm_data("success", duration_ms, "write_docx", "写入Word", str(path))
+        return build_success(data={"file_path": str(path)}, llm_data=llm_data)
     except Exception as e:
-        return build_error(ERR_WRITE_DOCX, f"写入Word文档失败: {str(e)}",
-                data={"error": str(e), "file_path": file_path})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_doc_llm_data("error", duration_ms, "write_docx", "写入Word", file_path, detail=str(e))
+        return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
 
 
 def _write_xlsx(
@@ -635,10 +764,14 @@ def _write_xlsx(
     data: dict,
     sheet_name: str = "Sheet1"
 ) -> Dict[str, Any]:
-    """写入Excel文件(内部函数) - 小健 2026-05-18"""
+    """写入Excel文件(内部函数) - 小健 2026-05-18
+    【2026-06-21 小健】builder改造，新3字段result
+    """
+    t0 = _time_mod.perf_counter()
     if not _check_module("openpyxl"):
-        return build_error(ERR_DOC_NO_OPENPYXL,
-                "openpyxl库未安装,请先执行: pip install openpyxl")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_doc_llm_data("error", duration_ms, "write_xlsx", "写入Excel", file_path, detail="openpyxl库未安装")
+        return build_error(data={"error": "openpyxl库未安装"}, llm_data=llm_data)
 
     try:
         from openpyxl import Workbook
@@ -664,11 +797,13 @@ def _write_xlsx(
         path.parent.mkdir(parents=True, exist_ok=True)
         wb.save(path)
         
-        return build_success({"file_path": str(path), "row_count": len(data.get("rows", []))},
-                f"成功写入Excel文件: {file_path}")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_doc_llm_data("success", duration_ms, "write_xlsx", "写入Excel", str(path))
+        return build_success(data={"file_path": str(path), "row_count": len(data.get("rows", []))}, llm_data=llm_data)
     except Exception as e:
-        return build_error(ERR_WRITE_XLSX, f"写入Excel文件失败: {str(e)}",
-                data={"error": str(e), "file_path": file_path})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_doc_llm_data("error", duration_ms, "write_xlsx", "写入Excel", file_path, detail=str(e))
+        return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
 
 
 def _write_pdf(
@@ -676,10 +811,14 @@ def _write_pdf(
     title: str = None,
     paragraphs=None,
 ) -> Dict[str, Any]:
-    """写入PDF文档(内部函数) — 小欧 2026-06-19 重构嵌套函数"""
+    """写入PDF文档(内部函数) — 小欧 2026-06-19 重构嵌套函数
+    【2026-06-21 小健】builder改造，新3字段result
+    """
+    t0 = _time_mod.perf_counter()
     if not _check_module("reportlab"):
-        return build_error(ERR_NO_REPORTLAB,
-                "reportlab库未安装,请先执行: pip install reportlab")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_doc_llm_data("error", duration_ms, "write_pdf", "写入PDF", file_path, detail="reportlab库未安装")
+        return build_error(data={"error": "reportlab库未安装"}, llm_data=llm_data)
 
     try:
         from reportlab.lib.pagesizes import A4
@@ -690,7 +829,9 @@ def _write_pdf(
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
     except ImportError:
-        return build_error(ERR_NO_REPORTLAB, "reportlab库导入失败")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_doc_llm_data("error", duration_ms, "write_pdf", "写入PDF", file_path, detail="reportlab库导入失败")
+        return build_error(data={"error": "reportlab库导入失败"}, llm_data=llm_data)
 
     def _add_content_item(elements, item, chinese_style, title_style):
         """处理单个PDF内容元素 — 小欧 2026-06-19"""
@@ -779,10 +920,13 @@ def _write_pdf(
 
         doc.build(elements)
 
-        return build_success({"file_path": str(path)}, f"成功写入PDF文档: {file_path}")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_doc_llm_data("success", duration_ms, "write_pdf", "写入PDF", str(path))
+        return build_success(data={"file_path": str(path)}, llm_data=llm_data)
     except Exception as e:
-        return build_error(ERR_WRITE_PDF, f"写入PDF文档失败: {str(e)}",
-                data={"error": str(e), "file_path": file_path})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_doc_llm_data("error", duration_ms, "write_pdf", "写入PDF", file_path, detail=str(e))
+        return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
 
 
 def _select_layout(prs, slide_type):
@@ -882,10 +1026,14 @@ def _write_pptx(
     file_path: str,
     slides: list = None
 ) -> Dict[str, Any]:
-    """写入PPT幻灯片(内部函数) - 小欧 2026-06-19 重构为2参数(无title)"""
+    """写入PPT幻灯片(内部函数) - 小欧 2026-06-19 重构为2参数(无title)
+    【2026-06-21 小健】builder改造，新3字段result
+    """
+    t0 = _time_mod.perf_counter()
     if not _check_module("pptx"):
-        return build_error(ERR_DOC_NO_PPTX,
-                "python-pptx库未安装,请先执行: pip install python-pptx")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_doc_llm_data("error", duration_ms, "write_pptx", "写入PPT", file_path, detail="python-pptx库未安装")
+        return build_error(data={"error": "python-pptx库未安装"}, llm_data=llm_data)
 
     try:
         prs = _build_pptx_presentation(slides)
@@ -893,11 +1041,13 @@ def _write_pptx(
         path.parent.mkdir(parents=True, exist_ok=True)
         prs.save(path)
 
-        return build_success({"file_path": str(path), "slide_count": len(prs.slides)},
-                f"成功写入PPT文件: {file_path},共 {len(prs.slides)} 页")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_doc_llm_data("success", duration_ms, "write_pptx", "写入PPT", str(path))
+        return build_success(data={"file_path": str(path), "slide_count": len(prs.slides)}, llm_data=llm_data)
     except Exception as e:
-        return build_error(ERR_DOC_WRITE_PPTX, f"写入PPT文件失败: {str(e)}",
-                data={"error": str(e), "file_path": file_path})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_doc_llm_data("error", duration_ms, "write_pptx", "写入PPT", file_path, detail=str(e))
+        return build_error(data={"error": str(e), "file_path": file_path}, llm_data=llm_data)
 
 
 # ============================================================
@@ -914,15 +1064,19 @@ def read_pdf(file_name: str) -> Dict[str, Any]:
 
 
 def read_docx(file_name: str) -> Dict[str, Any]:
-    """读取Word文档 — 小沈 2026-06-19 加pandoc转.doc"""
+    """读取Word文档 — 小沈 2026-06-19 加pandoc转.doc
+    【2026-06-21 小健】builder改造，新3字段result
+    """
+    t0 = _time_mod.perf_counter()
     path = Path(file_name)
     suffix = path.suffix.lower()
 
     if suffix == ".doc":
         pandoc = shutil.which("pandoc")
         if not pandoc:
-            return build_error(ERR_DOC_CONVERT_FAILED, "读取.doc文件需要安装pandoc转换工具。请在终端运行: winget install JohnMacFarlane.Pandoc",
-                    data={"file_name": file_name})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_read_docx_llm_data("error", duration_ms, file_name, detail="读取.doc文件需要安装pandoc转换工具")
+            return build_error(data={"file_name": file_name}, llm_data=llm_data)
         tmp = tempfile.NamedTemporaryFile(suffix=".docx", delete=False)
         tmp_path = tmp.name
         tmp.close()
@@ -935,8 +1089,9 @@ def read_docx(file_name: str) -> Dict[str, Any]:
             result = _read_docx(tmp_path, extract_tables=True)
             return result
         except subprocess.CalledProcessError as e:
-            return build_error(ERR_DOC_CONVERT_FAILED, f"pandoc转换.doc失败: {e.stderr}",
-                    data={"stderr": e.stderr, "file_name": file_name})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_read_docx_llm_data("error", duration_ms, file_name, detail=f"pandoc转换.doc失败: {e.stderr}")
+            return build_error(data={"stderr": e.stderr, "file_name": file_name}, llm_data=llm_data)
         finally:
             try:
                 os.unlink(tmp_path)
