@@ -25,400 +25,14 @@ Author: 小沈 - 2026-05-02
 import importlib
 import os
 import tempfile
-import time
+import time as _time_mod
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 from app.utils.time_utils import timestamp_for_filename
 
-
 from app.tools.tool_response import build_success, build_error
-from app.utils.tool_result_formatter import truncate_data_for_frontend, truncate_text  # 小沈 2026-05-20
-from app.tools.toolhelper.common_helper import _check_module  # 小健 2026-06-19 send_notification需要
-
-
-
-
-
-def _check_pyautogui() -> bool:
-    try:
-        importlib.import_module("pyautogui")
-        return True
-    except ImportError:
-        return False
-
-
-# ========== 鼠标操作 ==========
-
-def _click(
-    x: int = None,
-    y: int = None,
-    button: str = "left",
-    click_type: str = "single"
-) -> Dict[str, Any]:
-    """模拟鼠标点击 - 小沈 2026-05-02"""
-    if not _check_pyautogui():
-        return build_error(ERR_NO_PYAUTOGUI, "pyautogui库未安装,请先执行: pip install pyautogui")
-    try:
-        import pyautogui
-        clicks = 2 if click_type == "double" else 1
-        pyautogui.click(x=x, y=y, button=button, clicks=clicks)
-        return build_success({"x": x, "y": y, "button": button, "click_type": click_type}, f"点击完成: ({x}, {y}) {button} {click_type}")
-    except Exception as e:
-        return build_error(ERR_DESKTOP_MOUSE_CLICK, f"点击失败: {str(e)}", data={"error": str(e)})
-
-
-def _move(x: int, y: int, duration: float = 0) -> Dict[str, Any]:
-    """移动鼠标到指定位置 - 小沈 2026-05-02"""
-    if not _check_pyautogui():
-        return build_error(ERR_NO_PYAUTOGUI, "pyautogui库未安装")
-    try:
-        import pyautogui
-        pyautogui.moveTo(x, y, duration=duration)
-        return build_success({"x": x, "y": y}, f"鼠标移动到: ({x}, {y})")
-    except Exception as e:
-        return build_error(ERR_DESKTOP_MOUSE_MOVE, f"鼠标移动失败: {str(e)}", data={"error": str(e)})
-
-
-def _scroll(direction: str, amount: int = 3) -> Dict[str, Any]:
-    """模拟鼠标滚轮滚动 - 小沈 2026-05-02"""
-    if not _check_pyautogui():
-        return build_error(ERR_NO_PYAUTOGUI, "pyautogui库未安装")
-    try:
-        import pyautogui
-        scroll_amount = -amount if direction == "down" else amount
-        pyautogui.scroll(scroll_amount)
-        return build_success({"direction": direction, "amount": amount}, f"滚动完成: {direction} {amount}单位")
-    except Exception as e:
-        return build_error(ERR_DESKTOP_MOUSE_SCROLL, f"滚动失败: {str(e)}", data={"error": str(e)})
-
-
-# ========== 键盘操作 ==========
-
-def _type_text(text: str, interval: float = 0) -> Dict[str, Any]:
-    """模拟键盘输入文本 - 小沈 2026-05-02"""
-    if not _check_pyautogui():
-        return build_error(ERR_NO_PYAUTOGUI, "pyautogui库未安装")
-    try:
-        import pyautogui
-        # ASCII字符使用typewrite(支持间隔),非ASCII使用write
-        if text.isascii():
-            pyautogui.typewrite(text, interval=interval)
-        else:
-            pyautogui.write(text)
-        return build_success({"text_length": len(text)}, f"输入文本完成: {len(text)}个字符")
-    except Exception as e:
-        return build_error(ERR_KEYBOARD_TYPE, f"输入文本失败: {str(e)}", data={"error": str(e)})
-
-
-def _shortcut(keys: str) -> Dict[str, Any]:
-    """执行键盘快捷键组合 - 小沈 2026-05-02"""
-    if not _check_pyautogui():
-        return build_error(ERR_NO_PYAUTOGUI, "pyautogui库未安装")
-    try:
-        import pyautogui
-        key_list = [k.strip() for k in keys.split("+")]
-        pyautogui.hotkey(*key_list)
-        return build_success({"keys": keys}, f"快捷键执行完成: {keys}")
-    except Exception as e:
-        return build_error(ERR_KEYBOARD_SHORTCUT, f"快捷键执行失败: {str(e)}", data={"error": str(e)})
-
-
-def _key_combo(keys: List[str], action: str = "press") -> Dict[str, Any]:
-    """按住多个键后释放 - 小沈 2026-05-02"""
-    if not _check_pyautogui():
-        return build_error(ERR_NO_PYAUTOGUI, "pyautogui库未安装")
-    try:
-        import pyautogui
-        if action == "press":
-            pyautogui.hotkey(*keys)
-        elif action == "hold":
-            for key in keys:
-                pyautogui.keyDown(key)
-        elif action == "release":
-            for key in keys:
-                pyautogui.keyUp(key)
-        return build_success({"keys": keys, "action": action}, f"按键操作完成: {keys} {action}")
-    except Exception as e:
-        return build_error(ERR_KEY_COMBO, f"按键操作失败: {str(e)}", data={"error": str(e)})
-
-
-# ========== 屏幕操作 ==========
-
-def _screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[str, Any]:
-    """截取屏幕截图 - 小沈 2026-05-02"""
-    try:
-        import pyautogui
-    except ImportError:
-        return build_error(ERR_NO_PYAUTOGUI, "pyautogui库未安装")
-    try:
-        if output_path is None:
-            timestamp = timestamp_for_filename()
-            output_path = os.path.join(tempfile.gettempdir(), f"screenshot_{timestamp}.png")
-
-        if region:
-            r = (region.get("x", 0), region.get("y", 0), region.get("width", 800), region.get("height", 600))
-            img = pyautogui.screenshot(region=r)
-        else:
-            img = pyautogui.screenshot()
-
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        img.save(output_path)
-        return build_success({"image_path": output_path}, f"截图保存到: {output_path}")
-    except Exception as e:
-        return build_error(ERR_SCREENSHOT, f"截图失败: {str(e)}", data={"error": str(e)})
-
-
-def _snapshot(display: int = 1) -> Dict[str, Any]:
-    """获取完整桌面状态快照 - 小沈 2026-05-02"""
-    try:
-        import mss
-    except ImportError:
-        try:
-            import pyautogui
-            timestamp = timestamp_for_filename()
-            output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
-            img = pyautogui.screenshot()
-            img.save(output_path)
-            return build_success({"image_path": output_path, "display": display}, f"快照保存到: {output_path}")
-        except ImportError:
-            return build_error(ERR_NO_SCREENSHOT_LIB, "需要安装 mss 或 pyautogui 库")
-    try:
-        timestamp = timestamp_for_filename()
-        output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
-        with mss.mss() as sct:
-            monitors = sct.monitors
-            # display参数:1=主显示器,2=副显示器1,以此类推
-            # monitors索引:0=全屏虚拟,1=显示器1,2=显示器2...
-            # 无效值fallback到1(主显示器)
-            if display < 1 or display >= len(monitors):
-                mon_index = 1
-            else:
-                mon_index = display
-            img = sct.grab(monitors[mon_index])
-            from PIL import Image
-            pil_img = Image.frombytes("RGB", img.size, img.bgra, "raw", "BGRX")
-            pil_img.save(output_path)
-        return build_success({"image_path": output_path, "display": display, "monitors": len(monitors) - 1}, f"快照保存到: {output_path}")
-    except Exception as e:
-        return build_error(ERR_SCREEN_SNAPSHOT, f"快照失败: {str(e)}", data={"error": str(e)})
-
-
-def screen_record(duration: int, output_path: Optional[str] = None, fps: int = 15) -> Dict[str, Any]:
-    """录制屏幕视频 - 小沈 2026-05-02"""
-    try:
-        import mss
-        from PIL import Image
-    except ImportError:
-        return build_error(ERR_NO_RECORD_LIB, "需要安装 mss 和 PIL 库")
-    try:
-        import numpy  # 移到循环前导入 - 小沈 2026-05-04
-    except ImportError:
-        return build_error(ERR_NO_NUMPY, "需要安装 numpy 库")
-    try:
-        import imageio.v2 as imageio
-    except ImportError:
-        try:
-            import imageio
-        except ImportError:
-            return build_error(ERR_NO_IMAGEIO, "需要安装 imageio 库: pip install imageio imageio-ffmpeg")
-    try:
-        if output_path is None:
-            timestamp = timestamp_for_filename()
-            output_path = os.path.join(tempfile.gettempdir(), f"screen_record_{timestamp}.mp4")
-
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-
-        with mss.mss() as sct:
-            monitor = sct.monitors[1]
-            frames = []
-            start_time = time.time()
-            interval = 1.0 / fps
-
-            while time.time() - start_time < duration:
-                img = sct.grab(monitor)
-                pil_img = Image.frombytes("RGB", img.size, img.bgra, "raw", "BGRX")
-                frames.append(numpy.array(pil_img))
-                time.sleep(interval)
-
-            imageio.mimwrite(output_path, frames, fps=fps)
-
-        return build_success({"output_path": output_path, "duration": duration, "fps": fps}, f"录制完成: {output_path}",
-                             llm_data={"action": "screen_record", "status": "success",
-                                       "output_path": output_path, "duration": duration, "fps": fps,
-                                       "summary": f"屏幕录制完成,已保存到{output_path}"})
-    except Exception as e:
-        return build_error(ERR_SCREEN_RECORD, f"录制失败: {str(e)}", data={"error": str(e)})
-
-
-# ========== 窗口操作 ==========
-# 【2026-05-19 小沈】list_windows 已删除(desktop_tools.py 中有权威实现)
-# gui_tools.py 只保留 screen_record / ocr / send_notification
-
-def _focus_window(title: str) -> Dict[str, Any]:
-    """聚焦指定窗口 - 小沈 2026-05-02"""
-    try:
-        import win32gui
-    except ImportError:
-        return build_error(ERR_NO_WIN32GUI, "需要安装 pywin32 库")
-    try:
-        target_hwnd = None
-        def _enum_cb(hwnd, _):
-            nonlocal target_hwnd
-            if win32gui.IsWindowVisible(hwnd):
-                win_title = win32gui.GetWindowText(hwnd)
-                if title.lower() in win_title.lower():
-                    target_hwnd = hwnd
-            return True
-        win32gui.EnumWindows(_enum_cb, None)
-
-        if target_hwnd:
-            win32gui.SetForegroundWindow(target_hwnd)
-            return build_success({"title": title, "hwnd": target_hwnd}, f"窗口已聚焦: {title}")
-        else:
-            return build_error(ERR_WINDOW_NOT_FOUND, f"未找到窗口: {title}", data={"window_title": title})
-    except Exception as e:
-        return build_error(ERR_FOCUS_WINDOW, f"聚焦窗口失败: {str(e)}", data={"error": str(e)})
-
-
-def _resize_window(title: str, width: int = None, height: int = None) -> Dict[str, Any]:
-    """调整窗口大小 - 小沈 2026-05-02"""
-    try:
-        import win32gui
-    except ImportError:
-        return build_error(ERR_NO_WIN32GUI, "需要安装 pywin32 库")
-    try:
-        target_hwnd = None
-        def _enum_cb(hwnd, _):
-            nonlocal target_hwnd
-            if win32gui.IsWindowVisible(hwnd):
-                win_title = win32gui.GetWindowText(hwnd)
-                if title.lower() in win_title.lower():
-                    target_hwnd = hwnd
-            return True
-        win32gui.EnumWindows(_enum_cb, None)
-
-        if not target_hwnd:
-            return build_error(ERR_WINDOW_NOT_FOUND, f"未找到窗口: {title}", data={"window_title": title})
-
-        left, top, right, bottom = win32gui.GetWindowRect(target_hwnd)
-        curr_width = right - left
-        curr_height = bottom - top
-
-        new_width = width if width else curr_width
-        new_height = height if height else curr_height
-
-        win32gui.MoveWindow(target_hwnd, left, top, new_width, new_height, True)
-        return build_success({"title": title, "width": new_width, "height": new_height}, f"窗口大小调整完成: {new_width}x{new_height}")
-    except Exception as e:
-        return build_error(ERR_WINDOW_RESIZE, f"调整窗口大小失败: {str(e)}", data={"error": str(e)})
-
-
-# ========== OCR操作 ==========
-
-def ocr(image_path: str, language: str = "eng") -> Dict[str, Any]:
-    """从图片中识别文字 - 小沈 2026-05-02"""
-    try:
-        import pytesseract
-        from PIL import Image
-    except ImportError:
-        return build_error(ERR_NO_TESSERACT, "需要安装 pytesseract 和 PIL 库: pip install pytesseract Pillow")
-    try:
-        path = Path(image_path)
-        if not path.exists():
-            return build_error(ERR_OCR, f"图片文件不存在: {image_path}", data={"file_path": image_path})
-
-        img = Image.open(image_path)
-        text = pytesseract.image_to_string(img, lang=language)
-        _llm_text = text[:5000]
-        if len(text) > 5000:
-            _llm_text += f"...(原文{len(text)}字符)"
-        return build_success(truncate_data_for_frontend({"text": text, "language": language, "char_count": len(text)}), f"OCR识别完成: {len(text)}个字符",
-                             llm_data={"字符数": len(text), "语言": language, "文本预览": _llm_text})
-    except Exception as e:
-        return build_error(ERR_OCR, f"OCR识别失败: {str(e)}", data={"error": str(e)})
-
-
-# ========== 剪贴板操作(Tool 105-106)==========
-
-def _read_clipboard() -> Dict[str, Any]:
-    """读取剪贴板内容 - 按文档9.6节定义"""
-    try:
-        import pyperclip
-        text = pyperclip.paste()
-        # 【优化 小沈 2026-05-15】截断过长内容+llm_data精简
-        _llm = {"内容": text[:5000]}
-        if len(text) > 5000:
-            _llm["截断"] = f"原文{len(text)}字符"
-        return build_success(truncate_data_for_frontend({"text": text}), "剪贴板读取成功", llm_data=_llm)
-    except ImportError:
-        try:
-            import ctypes
-            CF_TEXT = 1
-            kernel32 = ctypes.windll.kernel32
-            user32 = ctypes.windll.user32
-            user32.OpenClipboard(None)
-            try:
-                data = user32.GetClipboardData(CF_TEXT)
-                text = ctypes.c_char_p(data).value.decode('gbk') if data else ""
-            finally:
-                user32.CloseClipboard()
-            _llm = {"内容": text[:5000]}
-            if len(text) > 5000:
-                _llm["截断"] = f"原文{len(text)}字符"
-            return build_success({"text": text}, "剪贴板读取成功", llm_data=_llm)
-        except Exception as e:
-            return build_error(ERR_DESKTOP_CLIPBOARD, f"读取剪贴板失败: {str(e)}", data={"error": str(e)})
-
-
-def _write_clipboard(content: str) -> Dict[str, Any]:
-    """写入内容到剪贴板 - 按文档9.6节定义"""
-    try:
-        import pyperclip  # 修复:正确库名pyperclip - 小沈 2026-05-04
-        pyperclip.copy(content)
-        return build_success(truncate_data_for_frontend({"content": content}), "剪贴板写入成功")
-    except ImportError:
-        try:
-            import ctypes
-            CF_TEXT = 1
-            GMEM_MOVEABLE = 0x0002
-            kernel32 = ctypes.windll.kernel32
-            user32 = ctypes.windll.user32
-            text_bytes = content.encode('gbk') + b'\0'
-            h_mem = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(text_bytes))
-            if h_mem == 0:
-                return build_error(ERR_DESKTOP_CLIPBOARD, "内存分配失败")
-            p_mem = kernel32.GlobalLock(h_mem)
-            if p_mem:
-                ctypes.memmove(p_mem, text_bytes, len(text_bytes))
-                kernel32.GlobalUnlock(h_mem)
-                user32.OpenClipboard(None)
-                user32.EmptyClipboard()
-                user32.SetClipboardData(CF_TEXT, h_mem)
-                user32.CloseClipboard()
-                return build_success({"content": content}, "剪贴板写入成功")
-            else:
-                kernel32.GlobalFree(h_mem)
-                return build_error(ERR_DESKTOP_CLIPBOARD, "内存锁定失败")
-        except Exception as e:
-            return build_error(ERR_DESKTOP_CLIPBOARD, f"写入剪贴板失败: {str(e)}", data={"error": str(e)})
-
-
-# ========== 通知操作(Tool 107)==========
-
-def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, Any]:
-    """发送系统通知 - 按文档9.7节定义 小欧 2026-06-16"""
-    if not _check_module("win10toast"):
-        return build_error(ERR_NO_WIN10TOAST, "win10toast库未安装,请先执行: pip install win10toast")
-
-    from win10toast import ToastNotifier
-    try:
-        toaster = ToastNotifier()
-        toaster.show_toast(title, message, duration=duration)
-        return build_success({"title": title, "message": message, "duration": duration}, "通知发送成功",
-                             llm_data={"action": "send_notification", "status": "success",
-                                       "title": title, "summary": f"通知已发送:{title}"})
-    except Exception as e:
-        return build_error(ERR_DESKTOP_NOTIFICATION, f"通知发送失败: {e}", data={"error": str(e)})
+from app.utils.tool_result_formatter import truncate_data_for_frontend, truncate_text
+from app.tools.toolhelper.common_helper import _check_module
 from app.constants import (
     ERR_DESKTOP_CLIPBOARD,
     ERR_DESKTOP_MOUSE_CLICK,
@@ -445,3 +59,584 @@ from app.constants import (
     ERR_WINDOW_NOT_FOUND,
     ERR_WINDOW_RESIZE,
 )
+
+
+
+
+
+def _check_pyautogui() -> bool:
+    try:
+        importlib.import_module("pyautogui")
+        return True
+    except ImportError:
+        return False
+
+
+# ========== 鼠标操作 ==========
+
+def _click(
+    x: int = None,
+    y: int = None,
+    button: str = "left",
+    click_type: str = "single"
+) -> Dict[str, Any]:
+    """模拟鼠标点击 — 小健 2026-06-21 builder改造"""
+    if not _check_pyautogui():
+        return build_error(data={"error_detail": "pyautogui库未安装"}, llm_data={
+            "summary": "鼠标点击失败: pyautogui未安装", "action": {"tool": "mouse_click", "tool_zh": "鼠标点击", "target": f"({x},{y})", "params": {"x": x, "y": y, "button": button}},
+            "status": {"exec_code": "error", "message": "pyautogui未安装", "code": ERR_NO_PYAUTOGUI, "detail": "", "hint": "pip install pyautogui"}, "duration_ms": 0, "metrics": {}})
+    t0 = _time_mod.perf_counter()
+    try:
+        import pyautogui
+        clicks = 2 if click_type == "double" else 1
+        pyautogui.click(x=x, y=y, button=button, clicks=clicks)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"x": x, "y": y, "button": button, "click_type": click_type}
+        llm_data = {"summary": f"点击完成: ({x}, {y}) {button} {click_type}",
+                    "action": {"tool": "mouse_click", "tool_zh": "鼠标点击", "target": f"({x},{y})", "params": {"x": x, "y": y, "button": button, "click_type": click_type}},
+                    "status": {"exec_code": "success", "message": "点击完成", "code": "", "detail": "", "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_success(data=data, llm_data=llm_data)
+    except Exception as e:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = {"summary": f"鼠标点击失败: ({x},{y})", "action": {"tool": "mouse_click", "tool_zh": "鼠标点击", "target": f"({x},{y})", "params": {}},
+                    "status": {"exec_code": "error", "message": "点击失败", "code": ERR_DESKTOP_MOUSE_CLICK, "detail": str(e), "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+
+
+def _move(x: int, y: int, duration: float = 0) -> Dict[str, Any]:
+    """移动鼠标到指定位置 — 小健 2026-06-21 builder改造"""
+    if not _check_pyautogui():
+        return build_error(data={"error_detail": "pyautogui库未安装"}, llm_data={
+            "summary": "鼠标移动失败: pyautogui未安装", "action": {"tool": "mouse_move", "tool_zh": "鼠标移动", "target": f"({x},{y})", "params": {"x": x, "y": y}},
+            "status": {"exec_code": "error", "message": "pyautogui未安装", "code": ERR_NO_PYAUTOGUI, "detail": "", "hint": ""}, "duration_ms": 0, "metrics": {}})
+    t0 = _time_mod.perf_counter()
+    try:
+        import pyautogui
+        pyautogui.moveTo(x, y, duration=duration)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"x": x, "y": y}
+        llm_data = {"summary": f"鼠标移动到: ({x}, {y})", "action": {"tool": "mouse_move", "tool_zh": "鼠标移动", "target": f"({x},{y})", "params": {"x": x, "y": y}},
+                    "status": {"exec_code": "success", "message": "鼠标移动完成", "code": "", "detail": "", "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_success(data=data, llm_data=llm_data)
+    except Exception as e:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = {"summary": f"鼠标移动失败: ({x},{y})", "action": {"tool": "mouse_move", "tool_zh": "鼠标移动", "target": f"({x},{y})", "params": {}},
+                    "status": {"exec_code": "error", "message": "鼠标移动失败", "code": ERR_DESKTOP_MOUSE_MOVE, "detail": str(e), "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+
+
+def _scroll(direction: str, amount: int = 3) -> Dict[str, Any]:
+    """模拟鼠标滚轮滚动 — 小健 2026-06-21 builder改造"""
+    if not _check_pyautogui():
+        return build_error(data={"error_detail": "pyautogui库未安装"}, llm_data={
+            "summary": "鼠标滚动失败: pyautogui未安装", "action": {"tool": "mouse_scroll", "tool_zh": "鼠标滚动", "target": "", "params": {"direction": direction, "amount": amount}},
+            "status": {"exec_code": "error", "message": "pyautogui未安装", "code": ERR_NO_PYAUTOGUI, "detail": "", "hint": ""}, "duration_ms": 0, "metrics": {}})
+    t0 = _time_mod.perf_counter()
+    try:
+        import pyautogui
+        scroll_amount = -amount if direction == "down" else amount
+        pyautogui.scroll(scroll_amount)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"direction": direction, "amount": amount}
+        llm_data = {"summary": f"滚动完成: {direction} {amount}单位", "action": {"tool": "mouse_scroll", "tool_zh": "鼠标滚动", "target": "", "params": {"direction": direction, "amount": amount}},
+                    "status": {"exec_code": "success", "message": "滚动完成", "code": "", "detail": "", "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_success(data=data, llm_data=llm_data)
+    except Exception as e:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = {"summary": "鼠标滚动失败", "action": {"tool": "mouse_scroll", "tool_zh": "鼠标滚动", "target": "", "params": {}},
+                    "status": {"exec_code": "error", "message": "滚动失败", "code": ERR_DESKTOP_MOUSE_SCROLL, "detail": str(e), "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+
+
+# ========== 键盘操作 ==========
+
+def _type_text(text: str, interval: float = 0) -> Dict[str, Any]:
+    """模拟键盘输入文本 — 小健 2026-06-21 builder改造"""
+    if not _check_pyautogui():
+        return build_error(data={"error_detail": "pyautogui库未安装"}, llm_data={
+            "summary": "键盘输入失败: pyautogui未安装", "action": {"tool": "keyboard_type", "tool_zh": "键盘输入", "target": "", "params": {"text_length": len(text)}},
+            "status": {"exec_code": "error", "message": "pyautogui未安装", "code": ERR_NO_PYAUTOGUI, "detail": "", "hint": ""}, "duration_ms": 0, "metrics": {}})
+    t0 = _time_mod.perf_counter()
+    try:
+        import pyautogui
+        if text.isascii():
+            pyautogui.typewrite(text, interval=interval)
+        else:
+            pyautogui.write(text)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"text_length": len(text)}
+        llm_data = {"summary": f"输入文本完成: {len(text)}个字符", "action": {"tool": "keyboard_type", "tool_zh": "键盘输入", "target": "", "params": {"text_length": len(text)}},
+                    "status": {"exec_code": "success", "message": "输入文本完成", "code": "", "detail": "", "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {"chars": {"value": len(text), "text": f"{len(text)}个"}}}
+        return build_success(data=data, llm_data=llm_data)
+    except Exception as e:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = {"summary": "键盘输入失败", "action": {"tool": "keyboard_type", "tool_zh": "键盘输入", "target": "", "params": {}},
+                    "status": {"exec_code": "error", "message": "输入文本失败", "code": ERR_KEYBOARD_TYPE, "detail": str(e), "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+
+
+def _shortcut(keys: str) -> Dict[str, Any]:
+    """执行键盘快捷键组合 — 小健 2026-06-21 builder改造"""
+    if not _check_pyautogui():
+        return build_error(data={"error_detail": "pyautogui库未安装"}, llm_data={
+            "summary": "快捷键执行失败: pyautogui未安装", "action": {"tool": "keyboard_shortcut", "tool_zh": "快捷键", "target": keys, "params": {"keys": keys}},
+            "status": {"exec_code": "error", "message": "pyautogui未安装", "code": ERR_NO_PYAUTOGUI, "detail": "", "hint": ""}, "duration_ms": 0, "metrics": {}})
+    t0 = _time_mod.perf_counter()
+    try:
+        import pyautogui
+        key_list = [k.strip() for k in keys.split("+")]
+        pyautogui.hotkey(*key_list)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"keys": keys}
+        llm_data = {"summary": f"快捷键执行完成: {keys}", "action": {"tool": "keyboard_shortcut", "tool_zh": "快捷键", "target": keys, "params": {"keys": keys}},
+                    "status": {"exec_code": "success", "message": "快捷键执行完成", "code": "", "detail": "", "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_success(data=data, llm_data=llm_data)
+    except Exception as e:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = {"summary": f"快捷键执行失败: {keys}", "action": {"tool": "keyboard_shortcut", "tool_zh": "快捷键", "target": keys, "params": {}},
+                    "status": {"exec_code": "error", "message": "快捷键执行失败", "code": ERR_KEYBOARD_SHORTCUT, "detail": str(e), "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+
+
+def _key_combo(keys: List[str], action: str = "press") -> Dict[str, Any]:
+    """按住多个键后释放 — 小健 2026-06-21 builder改造"""
+    if not _check_pyautogui():
+        return build_error(data={"error_detail": "pyautogui库未安装"}, llm_data={
+            "summary": "按键操作失败: pyautogui未安装", "action": {"tool": "keyboard_combo", "tool_zh": "按键组合", "target": str(keys), "params": {"keys": keys, "action": action}},
+            "status": {"exec_code": "error", "message": "pyautogui未安装", "code": ERR_NO_PYAUTOGUI, "detail": "", "hint": ""}, "duration_ms": 0, "metrics": {}})
+    t0 = _time_mod.perf_counter()
+    try:
+        import pyautogui
+        if action == "press":
+            pyautogui.hotkey(*keys)
+        elif action == "hold":
+            for key in keys:
+                pyautogui.keyDown(key)
+        elif action == "release":
+            for key in keys:
+                pyautogui.keyUp(key)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"keys": keys, "action": action}
+        llm_data = {"summary": f"按键操作完成: {keys} {action}", "action": {"tool": "keyboard_combo", "tool_zh": "按键组合", "target": str(keys), "params": {"keys": keys, "action": action}},
+                    "status": {"exec_code": "success", "message": "按键操作完成", "code": "", "detail": "", "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_success(data=data, llm_data=llm_data)
+    except Exception as e:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = {"summary": f"按键操作失败: {keys}", "action": {"tool": "keyboard_combo", "tool_zh": "按键组合", "target": str(keys), "params": {}},
+                    "status": {"exec_code": "error", "message": "按键操作失败", "code": ERR_KEY_COMBO, "detail": str(e), "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+
+
+# ========== 屏幕操作 ==========
+
+def _screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[str, Any]:
+    """截取屏幕截图 — 小健 2026-06-21 builder改造"""
+    try:
+        import pyautogui
+    except ImportError:
+        return build_error(data={"error_detail": "pyautogui库未安装"}, llm_data={
+            "summary": "截图失败: pyautogui未安装", "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "target": "", "params": {}},
+            "status": {"exec_code": "error", "message": "pyautogui未安装", "code": ERR_NO_PYAUTOGUI, "detail": "", "hint": ""}, "duration_ms": 0, "metrics": {}})
+    t0 = _time_mod.perf_counter()
+    try:
+        if output_path is None:
+            timestamp = timestamp_for_filename()
+            output_path = os.path.join(tempfile.gettempdir(), f"screenshot_{timestamp}.png")
+
+        if region:
+            r = (region.get("x", 0), region.get("y", 0), region.get("width", 800), region.get("height", 600))
+            img = pyautogui.screenshot(region=r)
+        else:
+            img = pyautogui.screenshot()
+
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        img.save(output_path)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"image_path": output_path}
+        llm_data = {"summary": f"截图保存到: {output_path}", "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "target": output_path, "params": {"region": region}},
+                    "status": {"exec_code": "success", "message": "截图完成", "code": "", "detail": "", "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_success(data=data, llm_data=llm_data)
+    except Exception as e:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = {"summary": "截图失败", "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "target": "", "params": {}},
+                    "status": {"exec_code": "error", "message": "截图失败", "code": ERR_SCREENSHOT, "detail": str(e), "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+
+
+def _snapshot(display: int = 1) -> Dict[str, Any]:
+    """获取完整桌面状态快照 — 小健 2026-06-21 builder改造"""
+    t0 = _time_mod.perf_counter()
+    try:
+        import mss
+    except ImportError:
+        try:
+            import pyautogui
+            timestamp = timestamp_for_filename()
+            output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
+            img = pyautogui.screenshot()
+            img.save(output_path)
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            data = {"image_path": output_path, "display": display}
+            llm_data = {"summary": f"快照保存到: {output_path}", "action": {"tool": "screen_snapshot", "tool_zh": "屏幕快照", "target": f"显示器{display}", "params": {"display": display}},
+                        "status": {"exec_code": "success", "message": "快照完成(pyautogui降级)", "code": "", "detail": "", "hint": ""},
+                        "duration_ms": duration_ms, "metrics": {}}
+            return build_success(data=data, llm_data=llm_data)
+        except ImportError:
+            return build_error(data={"error_detail": "需要安装 mss 或 pyautogui 库"}, llm_data={
+                "summary": "快照失败: 无截图库", "action": {"tool": "screen_snapshot", "tool_zh": "屏幕快照", "target": "", "params": {"display": display}},
+                "status": {"exec_code": "error", "message": "无截图库", "code": ERR_NO_SCREENSHOT_LIB, "detail": "", "hint": ""}, "duration_ms": 0, "metrics": {}})
+    try:
+        timestamp = timestamp_for_filename()
+        output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
+        with mss.mss() as sct:
+            monitors = sct.monitors
+            if display < 1 or display >= len(monitors):
+                mon_index = 1
+            else:
+                mon_index = display
+            img = sct.grab(monitors[mon_index])
+            from PIL import Image
+            pil_img = Image.frombytes("RGB", img.size, img.bgra, "raw", "BGRX")
+            pil_img.save(output_path)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"image_path": output_path, "display": display, "monitors": len(monitors) - 1}
+        llm_data = {"summary": f"快照保存到: {output_path}", "action": {"tool": "screen_snapshot", "tool_zh": "屏幕快照", "target": f"显示器{display}", "params": {"display": display}},
+                    "status": {"exec_code": "success", "message": "快照完成", "code": "", "detail": "", "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {"monitors": {"value": len(monitors) - 1, "text": f"{len(monitors) - 1}个"}}}
+        return build_success(data=data, llm_data=llm_data)
+    except Exception as e:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = {"summary": "快照失败", "action": {"tool": "screen_snapshot", "tool_zh": "屏幕快照", "target": "", "params": {}},
+                    "status": {"exec_code": "error", "message": "快照失败", "code": ERR_SCREEN_SNAPSHOT, "detail": str(e), "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+
+
+def screen_record(duration: int, output_path: Optional[str] = None, fps: int = 15) -> Dict[str, Any]:
+    """录制屏幕视频 — 小健 2026-06-21 builder改造"""
+    try:
+        import mss
+        from PIL import Image
+    except ImportError:
+        return build_error(data={"error_detail": "需要安装 mss 和 PIL 库"}, llm_data={
+            "summary": "录制失败: 缺少依赖", "action": {"tool": "screen_record", "tool_zh": "屏幕录制", "target": "", "params": {"duration": duration}},
+            "status": {"exec_code": "error", "message": "缺少依赖", "code": ERR_NO_RECORD_LIB, "detail": "", "hint": ""}, "duration_ms": 0, "metrics": {}})
+    try:
+        import numpy
+    except ImportError:
+        return build_error(data={"error_detail": "需要安装 numpy 库"}, llm_data={
+            "summary": "录制失败: 缺少numpy", "action": {"tool": "screen_record", "tool_zh": "屏幕录制", "target": "", "params": {}},
+            "status": {"exec_code": "error", "message": "缺少numpy", "code": ERR_NO_NUMPY, "detail": "", "hint": ""}, "duration_ms": 0, "metrics": {}})
+    try:
+        import imageio.v2 as imageio
+    except ImportError:
+        try:
+            import imageio
+        except ImportError:
+            return build_error(data={"error_detail": "需要安装 imageio 库"}, llm_data={
+                "summary": "录制失败: 缺少imageio", "action": {"tool": "screen_record", "tool_zh": "屏幕录制", "target": "", "params": {}},
+                "status": {"exec_code": "error", "message": "缺少imageio", "code": ERR_NO_IMAGEIO, "detail": "", "hint": ""}, "duration_ms": 0, "metrics": {}})
+    t0 = _time_mod.perf_counter()
+    try:
+        if output_path is None:
+            timestamp = timestamp_for_filename()
+            output_path = os.path.join(tempfile.gettempdir(), f"screen_record_{timestamp}.mp4")
+
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+        with mss.mss() as sct:
+            monitor = sct.monitors[1]
+            frames = []
+            start_time = _time_mod.time()
+            interval = 1.0 / fps
+
+            while _time_mod.time() - start_time < duration:
+                img = sct.grab(monitor)
+                pil_img = Image.frombytes("RGB", img.size, img.bgra, "raw", "BGRX")
+                frames.append(numpy.array(pil_img))
+                _time_mod.sleep(interval)
+
+            imageio.mimwrite(output_path, frames, fps=fps)
+
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"output_path": output_path, "duration": duration, "fps": fps}
+        llm_data = {"summary": f"屏幕录制完成,已保存到{output_path}", "action": {"tool": "screen_record", "tool_zh": "屏幕录制", "target": output_path, "params": {"duration": duration, "fps": fps}},
+                    "status": {"exec_code": "success", "message": "录制完成", "code": "", "detail": "", "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {"duration": {"value": duration, "text": f"{duration}秒"}, "fps": {"value": fps, "text": f"{fps}fps"}}}
+        return build_success(data=data, llm_data=llm_data)
+    except Exception as e:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = {"summary": "屏幕录制失败", "action": {"tool": "screen_record", "tool_zh": "屏幕录制", "target": "", "params": {}},
+                    "status": {"exec_code": "error", "message": "录制失败", "code": ERR_SCREEN_RECORD, "detail": str(e), "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+
+
+# ========== 窗口操作 ==========
+# 【2026-05-19 小沈】list_windows 已删除(desktop_tools.py 中有权威实现)
+# gui_tools.py 只保留 screen_record / ocr / send_notification
+
+def _focus_window(title: str) -> Dict[str, Any]:
+    """聚焦指定窗口 — 小健 2026-06-21 builder改造"""
+    try:
+        import win32gui
+    except ImportError:
+        return build_error(data={"error_detail": "需要安装 pywin32 库"}, llm_data={
+            "summary": "聚焦窗口失败: pywin32未安装", "action": {"tool": "window_focus", "tool_zh": "窗口聚焦", "target": title, "params": {}},
+            "status": {"exec_code": "error", "message": "pywin32未安装", "code": ERR_NO_WIN32GUI, "detail": "", "hint": ""}, "duration_ms": 0, "metrics": {}})
+    t0 = _time_mod.perf_counter()
+    try:
+        target_hwnd = None
+        def _enum_cb(hwnd, _):
+            nonlocal target_hwnd
+            if win32gui.IsWindowVisible(hwnd):
+                win_title = win32gui.GetWindowText(hwnd)
+                if title.lower() in win_title.lower():
+                    target_hwnd = hwnd
+            return True
+        win32gui.EnumWindows(_enum_cb, None)
+
+        if target_hwnd:
+            win32gui.SetForegroundWindow(target_hwnd)
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            data = {"title": title, "hwnd": target_hwnd}
+            llm_data = {"summary": f"窗口已聚焦: {title}", "action": {"tool": "window_focus", "tool_zh": "窗口聚焦", "target": title, "params": {}},
+                        "status": {"exec_code": "success", "message": "窗口聚焦完成", "code": "", "detail": "", "hint": ""},
+                        "duration_ms": duration_ms, "metrics": {}}
+            return build_success(data=data, llm_data=llm_data)
+        else:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = {"summary": f"未找到窗口: {title}", "action": {"tool": "window_focus", "tool_zh": "窗口聚焦", "target": title, "params": {}},
+                        "status": {"exec_code": "error", "message": "窗口未找到", "code": ERR_WINDOW_NOT_FOUND, "detail": "", "hint": ""},
+                        "duration_ms": duration_ms, "metrics": {}}
+            return build_error(data={"error_detail": f"未找到窗口: {title}", "window_title": title}, llm_data=llm_data)
+    except Exception as e:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = {"summary": f"聚焦窗口失败: {title}", "action": {"tool": "window_focus", "tool_zh": "窗口聚焦", "target": title, "params": {}},
+                    "status": {"exec_code": "error", "message": "聚焦窗口失败", "code": ERR_FOCUS_WINDOW, "detail": str(e), "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+
+
+def _resize_window(title: str, width: int = None, height: int = None) -> Dict[str, Any]:
+    """调整窗口大小 — 小健 2026-06-21 builder改造"""
+    try:
+        import win32gui
+    except ImportError:
+        return build_error(data={"error_detail": "需要安装 pywin32 库"}, llm_data={
+            "summary": "调整窗口大小失败: pywin32未安装", "action": {"tool": "window_resize", "tool_zh": "窗口调整", "target": title, "params": {}},
+            "status": {"exec_code": "error", "message": "pywin32未安装", "code": ERR_NO_WIN32GUI, "detail": "", "hint": ""}, "duration_ms": 0, "metrics": {}})
+    t0 = _time_mod.perf_counter()
+    try:
+        target_hwnd = None
+        def _enum_cb(hwnd, _):
+            nonlocal target_hwnd
+            if win32gui.IsWindowVisible(hwnd):
+                win_title = win32gui.GetWindowText(hwnd)
+                if title.lower() in win_title.lower():
+                    target_hwnd = hwnd
+            return True
+        win32gui.EnumWindows(_enum_cb, None)
+
+        if not target_hwnd:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = {"summary": f"未找到窗口: {title}", "action": {"tool": "window_resize", "tool_zh": "窗口调整", "target": title, "params": {}},
+                        "status": {"exec_code": "error", "message": "窗口未找到", "code": ERR_WINDOW_NOT_FOUND, "detail": "", "hint": ""},
+                        "duration_ms": duration_ms, "metrics": {}}
+            return build_error(data={"error_detail": f"未找到窗口: {title}", "window_title": title}, llm_data=llm_data)
+
+        left, top, right, bottom = win32gui.GetWindowRect(target_hwnd)
+        curr_width = right - left
+        curr_height = bottom - top
+
+        new_width = width if width else curr_width
+        new_height = height if height else curr_height
+
+        win32gui.MoveWindow(target_hwnd, left, top, new_width, new_height, True)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"title": title, "width": new_width, "height": new_height}
+        llm_data = {"summary": f"窗口大小调整完成: {new_width}x{new_height}", "action": {"tool": "window_resize", "tool_zh": "窗口调整", "target": title, "params": {"width": new_width, "height": new_height}},
+                    "status": {"exec_code": "success", "message": "窗口大小调整完成", "code": "", "detail": "", "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_success(data=data, llm_data=llm_data)
+    except Exception as e:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = {"summary": f"调整窗口大小失败: {title}", "action": {"tool": "window_resize", "tool_zh": "窗口调整", "target": title, "params": {}},
+                    "status": {"exec_code": "error", "message": "调整窗口大小失败", "code": ERR_WINDOW_RESIZE, "detail": str(e), "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+
+
+# ========== OCR操作 ==========
+
+def ocr(image_path: str, language: str = "eng") -> Dict[str, Any]:
+    """从图片中识别文字 — 小健 2026-06-21 builder改造"""
+    try:
+        import pytesseract
+        from PIL import Image
+    except ImportError:
+        return build_error(data={"error_detail": "需要安装 pytesseract 和 PIL 库"}, llm_data={
+            "summary": "OCR失败: 缺少依赖", "action": {"tool": "ocr", "tool_zh": "OCR识别", "target": image_path, "params": {"language": language}},
+            "status": {"exec_code": "error", "message": "缺少依赖", "code": ERR_NO_TESSERACT, "detail": "", "hint": "pip install pytesseract Pillow"}, "duration_ms": 0, "metrics": {}})
+    t0 = _time_mod.perf_counter()
+    try:
+        path = Path(image_path)
+        if not path.exists():
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = {"summary": f"图片文件不存在: {image_path}", "action": {"tool": "ocr", "tool_zh": "OCR识别", "target": image_path, "params": {}},
+                        "status": {"exec_code": "error", "message": "文件不存在", "code": ERR_OCR, "detail": "", "hint": ""},
+                        "duration_ms": duration_ms, "metrics": {}}
+            return build_error(data={"error_detail": f"图片文件不存在: {image_path}", "file_path": image_path}, llm_data=llm_data)
+
+        img = Image.open(image_path)
+        text = pytesseract.image_to_string(img, lang=language)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = truncate_data_for_frontend({"text": text, "language": language, "char_count": len(text)})
+        llm_data = {"summary": f"OCR识别完成: {len(text)}个字符", "action": {"tool": "ocr", "tool_zh": "OCR识别", "target": image_path, "params": {"language": language}},
+                    "status": {"exec_code": "success", "message": "OCR识别完成", "code": "", "detail": "", "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {"chars": {"value": len(text), "text": f"{len(text)}个"}}}
+        return build_success(data=data, llm_data=llm_data)
+    except Exception as e:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = {"summary": "OCR识别失败", "action": {"tool": "ocr", "tool_zh": "OCR识别", "target": image_path, "params": {}},
+                    "status": {"exec_code": "error", "message": "OCR识别失败", "code": ERR_OCR, "detail": str(e), "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+
+
+# ========== 剪贴板操作(Tool 105-106)==========
+
+def _read_clipboard() -> Dict[str, Any]:
+    """读取剪贴板内容 — 小健 2026-06-21 builder改造"""
+    t0 = _time_mod.perf_counter()
+    try:
+        import pyperclip
+        text = pyperclip.paste()
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = truncate_data_for_frontend({"text": text})
+        llm_data = {"summary": f"剪贴板读取成功: {len(text)}个字符", "action": {"tool": "clipboard_read", "tool_zh": "剪贴板读取", "target": "", "params": {}},
+                    "status": {"exec_code": "success", "message": "剪贴板读取成功", "code": "", "detail": "", "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {"chars": {"value": len(text), "text": f"{len(text)}个"}}}
+        return build_success(data=data, llm_data=llm_data)
+    except ImportError:
+        try:
+            import ctypes
+            CF_TEXT = 1
+            kernel32 = ctypes.windll.kernel32
+            user32 = ctypes.windll.user32
+            user32.OpenClipboard(None)
+            try:
+                data_ptr = user32.GetClipboardData(CF_TEXT)
+                text = ctypes.c_char_p(data_ptr).value.decode('gbk') if data_ptr else ""
+            finally:
+                user32.CloseClipboard()
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            data = {"text": text}
+            llm_data = {"summary": f"剪贴板读取成功(ctypes): {len(text)}个字符", "action": {"tool": "clipboard_read", "tool_zh": "剪贴板读取", "target": "", "params": {}},
+                        "status": {"exec_code": "success", "message": "剪贴板读取成功", "code": "", "detail": "", "hint": ""},
+                        "duration_ms": duration_ms, "metrics": {"chars": {"value": len(text), "text": f"{len(text)}个"}}}
+            return build_success(data=data, llm_data=llm_data)
+        except Exception as e:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = {"summary": "剪贴板读取失败", "action": {"tool": "clipboard_read", "tool_zh": "剪贴板读取", "target": "", "params": {}},
+                        "status": {"exec_code": "error", "message": "剪贴板读取失败", "code": ERR_DESKTOP_CLIPBOARD, "detail": str(e), "hint": ""},
+                        "duration_ms": duration_ms, "metrics": {}}
+            return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+
+
+def _write_clipboard(content: str) -> Dict[str, Any]:
+    """写入内容到剪贴板 — 小健 2026-06-21 builder改造"""
+    t0 = _time_mod.perf_counter()
+    try:
+        import pyperclip
+        pyperclip.copy(content)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = truncate_data_for_frontend({"content": content})
+        llm_data = {"summary": f"剪贴板写入成功: {len(content)}个字符", "action": {"tool": "clipboard_write", "tool_zh": "剪贴板写入", "target": "", "params": {}},
+                    "status": {"exec_code": "success", "message": "剪贴板写入成功", "code": "", "detail": "", "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {"chars": {"value": len(content), "text": f"{len(content)}个"}}}
+        return build_success(data=data, llm_data=llm_data)
+    except ImportError:
+        try:
+            import ctypes
+            CF_TEXT = 1
+            GMEM_MOVEABLE = 0x0002
+            kernel32 = ctypes.windll.kernel32
+            user32 = ctypes.windll.user32
+            text_bytes = content.encode('gbk') + b'\0'
+            h_mem = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(text_bytes))
+            if h_mem == 0:
+                return build_error(data={"error_detail": "内存分配失败"}, llm_data={
+                    "summary": "剪贴板写入失败: 内存分配失败", "action": {"tool": "clipboard_write", "tool_zh": "剪贴板写入", "target": "", "params": {}},
+                    "status": {"exec_code": "error", "message": "内存分配失败", "code": ERR_DESKTOP_CLIPBOARD, "detail": "", "hint": ""},
+                    "duration_ms": int((_time_mod.perf_counter() - t0) * 1000), "metrics": {}})
+            p_mem = kernel32.GlobalLock(h_mem)
+            if p_mem:
+                ctypes.memmove(p_mem, text_bytes, len(text_bytes))
+                kernel32.GlobalUnlock(h_mem)
+                user32.OpenClipboard(None)
+                user32.EmptyClipboard()
+                user32.SetClipboardData(CF_TEXT, h_mem)
+                user32.CloseClipboard()
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                data = {"content": content}
+                llm_data = {"summary": f"剪贴板写入成功(ctypes): {len(content)}个字符", "action": {"tool": "clipboard_write", "tool_zh": "剪贴板写入", "target": "", "params": {}},
+                            "status": {"exec_code": "success", "message": "剪贴板写入成功", "code": "", "detail": "", "hint": ""},
+                            "duration_ms": duration_ms, "metrics": {}}
+                return build_success(data=data, llm_data=llm_data)
+            else:
+                kernel32.GlobalFree(h_mem)
+                return build_error(data={"error_detail": "内存锁定失败"}, llm_data={
+                    "summary": "剪贴板写入失败: 内存锁定失败", "action": {"tool": "clipboard_write", "tool_zh": "剪贴板写入", "target": "", "params": {}},
+                    "status": {"exec_code": "error", "message": "内存锁定失败", "code": ERR_DESKTOP_CLIPBOARD, "detail": "", "hint": ""},
+                    "duration_ms": int((_time_mod.perf_counter() - t0) * 1000), "metrics": {}})
+        except Exception as e:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = {"summary": "剪贴板写入失败", "action": {"tool": "clipboard_write", "tool_zh": "剪贴板写入", "target": "", "params": {}},
+                        "status": {"exec_code": "error", "message": "剪贴板写入失败", "code": ERR_DESKTOP_CLIPBOARD, "detail": str(e), "hint": ""},
+                        "duration_ms": duration_ms, "metrics": {}}
+            return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+
+
+# ========== 通知操作(Tool 107)==========
+
+def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, Any]:
+    """发送系统通知 — 小健 2026-06-21 builder改造"""
+    if not _check_module("win10toast"):
+        return build_error(data={"error_detail": "win10toast库未安装"}, llm_data={
+            "summary": "通知发送失败: win10toast未安装", "action": {"tool": "send_notification", "tool_zh": "系统通知", "target": title, "params": {}},
+            "status": {"exec_code": "error", "message": "win10toast未安装", "code": ERR_NO_WIN10TOAST, "detail": "", "hint": "pip install win10toast"},
+            "duration_ms": 0, "metrics": {}})
+
+    from win10toast import ToastNotifier
+    t0 = _time_mod.perf_counter()
+    try:
+        toaster = ToastNotifier()
+        toaster.show_toast(title, message, duration=duration)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"title": title, "message": message, "duration": duration}
+        llm_data = {"summary": f"通知已发送: {title}", "action": {"tool": "send_notification", "tool_zh": "系统通知", "target": title, "params": {"duration": duration}},
+                    "status": {"exec_code": "success", "message": "通知发送成功", "code": "", "detail": "", "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_success(data=data, llm_data=llm_data)
+    except Exception as e:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = {"summary": f"通知发送失败: {title}", "action": {"tool": "send_notification", "tool_zh": "系统通知", "target": title, "params": {}},
+                    "status": {"exec_code": "error", "message": "通知发送失败", "code": ERR_DESKTOP_NOTIFICATION, "detail": str(e), "hint": ""},
+                    "duration_ms": duration_ms, "metrics": {}}
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+
