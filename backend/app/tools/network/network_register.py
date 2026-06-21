@@ -60,13 +60,11 @@ from app.tools.network.network_schema import (
     NetworkDiagnoseInput,
 )
 
-from app.tools.network.network_tools import (
-    http_request,
-    download_file,
-    fetch_webpage,
-    search_web,
-    network_diagnose,
-)
+from app.tools.network.http_request import http_request
+from app.tools.network.download_file import download_file
+from app.tools.network.fetch_webpage import fetch_webpage
+from app.tools.network.search_web import search_web
+from app.tools.network.network_diagnose import network_diagnose
 
 # 工具描述
 NETWORK_TOOL_DESCRIPTIONS = {
