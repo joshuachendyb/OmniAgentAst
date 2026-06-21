@@ -149,13 +149,19 @@ class ScreenCaptureInput(BaseModel):
     )
 
 
-class ClipboardReadInput(BaseModel):
-    pass
+class ClipboardControlInput(BaseModel):
+    """剪贴板操作
 
-
-class ClipboardWriteInput(BaseModel):
+    【action参数】决定操作类型：
+    - read: 读取剪贴板内容
+    - write: 写入内容到剪贴板
+    """
+    action: Literal["read", "write"] = Field(
+        description="剪贴板操作:read(读取)/write(写入)"
+    )
     content: str = Field(
-        description="要写入剪贴板的内容"
+        default="",
+        description="写入内容(action=write时必填)"
     )
 
 
@@ -170,6 +176,5 @@ __all__ = [
     "MousePositionInput",
     "KeyboardControlInput",
     "ScreenCaptureInput",
-    "ClipboardReadInput",
-    "ClipboardWriteInput",
+    "ClipboardControlInput",
 ]

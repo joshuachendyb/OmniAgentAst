@@ -4,7 +4,7 @@ DESKTOP Register - 桌面工具注册点
 
 【2026-06-22 小健】5个窗口状态tool合并为1个set_window_state，16→12
 
-【工具列表】(12个) → DESKTOP分类:
+【工具列表】(11个) → DESKTOP分类:
 1. window_info - 列出所有窗口 (依赖: pywin32)
 2. window_focus - 聚焦窗口 (依赖: pywin32)
 3. window_resize - 调整窗口大小 (依赖: pywin32)
@@ -15,8 +15,7 @@ DESKTOP Register - 桌面工具注册点
 8. mouse_position - 获取鼠标位置 (依赖: pyautogui)
 9. keyboard_control - 键盘控制 (依赖: pyautogui)
 10. screen_capture - 屏幕截图 (依赖: pyautogui)
-11. clipboard_read - 读取剪贴板 (依赖: pyperclip)
-12. clipboard_write - 写入剪贴板 (依赖: pyperclip)
+11. clipboard_control - 剪贴板操作(read/write) (依赖: pyperclip)
 
 创建时间: 2026-04-29
 更新时间: 2026-06-22 小健
@@ -37,8 +36,7 @@ DESKTOP_TOOL_DEPENDENCIES = {
     "mouse_position": ["pyautogui"],
     "keyboard_control": ["pyautogui"],
     "screen_capture": ["mss", "pyautogui"],
-    "clipboard_read": ["pyperclip"],
-    "clipboard_write": ["pyperclip"],
+    "clipboard_control": ["pyperclip"],
 }
 
 from app.tools.desktop.desktop_schema import (
@@ -52,8 +50,7 @@ from app.tools.desktop.desktop_schema import (
     MousePositionInput,
     KeyboardControlInput,
     ScreenCaptureInput,
-    ClipboardReadInput,
-    ClipboardWriteInput,
+    ClipboardControlInput,
 )
 
 from app.tools.desktop.window_info import window_info
@@ -66,8 +63,7 @@ from app.tools.desktop.mouse_scroll import mouse_scroll
 from app.tools.desktop.mouse_position import mouse_position
 from app.tools.desktop.keyboard_control import keyboard_control
 from app.tools.desktop.screen_capture import screen_capture
-from app.tools.desktop.clipboard_read import clipboard_read
-from app.tools.desktop.clipboard_write import clipboard_write
+from app.tools.desktop.clipboard_control import clipboard_control
 
 
 DESKTOP_TOOL_DESCRIPTIONS = {
@@ -91,9 +87,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
 
     "screen_capture": """截取屏幕截图。支持全屏截图、指定区域截图(region参数,格式为{"x":0,"y":0,"width":800,"height":600})和多显示器截图(display参数)。优先使用mss库(支持多显示器),降级使用pyautogui。不指定输出路径则保存到系统临时目录。返回图片保存路径、宽度和高度。适用场景:需要截取当前屏幕内容用于记录或传递给LLM分析时使用。""",
 
-    "clipboard_read": """读取当前系统剪贴板的文本内容。适用场景:需要获取已复制的内容、获取其他程序复制的数据时使用。""",
-
-    "clipboard_write": """将指定文本内容写入系统剪贴板。content参数为必填的写入内容。适用场景:需要将文本复制到剪贴板供其他程序粘贴时使用。""",
+    "clipboard_control": """剪贴板操作。action决定操作类型:read(读取剪贴板内容)/write(写入内容到剪贴板)。action=write时content参数必填。适用场景:需要读取或写入剪贴板文本时使用。""",
 
 }
 
@@ -108,8 +102,7 @@ DESKTOP_TOOL_INPUT_MODELS = {
     "mouse_position": MousePositionInput,
     "keyboard_control": KeyboardControlInput,
     "screen_capture": ScreenCaptureInput,
-    "clipboard_read": ClipboardReadInput,
-    "clipboard_write": ClipboardWriteInput,
+    "clipboard_control": ClipboardControlInput,
 }
 
 DESKTOP_TOOL_EXAMPLES = {
@@ -157,17 +150,15 @@ DESKTOP_TOOL_EXAMPLES = {
         {"region": {"x": 0, "y": 0, "width": 800, "height": 600}},
         {"display": 2},
     ],
-    "clipboard_read": [
-        {},
-    ],
-    "clipboard_write": [
-        {"content": "Hello World"},
+    "clipboard_control": [
+        {"action": "read"},
+        {"action": "write", "content": "Hello World"},
     ],
 }
 
 
 def _register_desktop_tools():
-    """注册DESKTOP分类工具(12个) — 小健 2026-06-22 5个窗口状态tool合并"""
+    """注册DESKTOP分类工具(11个) — 小健 2026-06-22 合并clipboard"""
     tool_methods = {
         "window_info": window_info,
         "window_focus": window_focus,
@@ -179,8 +170,7 @@ def _register_desktop_tools():
         "mouse_position": mouse_position,
         "keyboard_control": keyboard_control,
         "screen_capture": screen_capture,
-        "clipboard_read": clipboard_read,
-        "clipboard_write": clipboard_write,
+        "clipboard_control": clipboard_control,
     }
 
     for name, method in tool_methods.items():
