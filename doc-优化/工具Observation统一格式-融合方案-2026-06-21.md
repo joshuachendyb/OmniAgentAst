@@ -512,173 +512,9 @@ format_llm_observation(data, llm_data)                         ← 不再接收 
 
 build_success/error/warning保持3个函数（不合一），函数名即语义，无需exec_code参数。
 
-**新签名与旧签名的对比**：
+新签名、实现代码、旧参数去向、is_success/is_error适配、删除旧代码清单、retry_engine适配、与注册方案对比——详见 **5.9.2节**。
 
-```python
-# ── 旧签名（当前代码）──
-def build_success(data=None, message="执行成功", warning=None, llm_data=None,
-                  retry_count=0, return_direct=False, attachment=None, code=None, **extra)
-def build_error(code, message, data=None, warning=None, llm_data=None, attachment=None, **extra)
-def build_warning(code, message, data=None, llm_data=None, attachment=None, **extra)
-
-# ── 新签名（改造后）──
-def build_success(data=None, llm_data=None, other_data=None, **extra)
-def build_error(data=None, llm_data=None, other_data=None, **extra)
-def build_warning(data=None, llm_data=None, other_data=None, **extra)
-```
-
-**删除的参数及去向**：
-
-| 旧参数 | 去向 | 原因 |
-|--------|------|------|
-| message | llm_data.status.message | 信息内聚于status，build函数不再单独持有 |
-| code | llm_data.status.code | 同上 |
-| warning | other_data["warning"] | 控制字段归入other_data输出通道 |
-| retry_count | other_data["retry_count"] | 同上 |
-| return_direct | other_data["return_direct"] | 同上 |
-| attachment | other_data["attachment"] | 同上 |
-
-**新增的参数**：
-
-| 新参数 | 说明 |
-|--------|------|
-| llm_data | 从可选变必填（5字段结构化摘要，builder构建后传入） |
-| other_data | 新增输出通道（承载warning/retry_count/return_direct/attachment） |
-
-**实现代码**：
-
-```python
-_RESERVED_TOP_KEYS: set = {"data", "llm_data", "other_data"}
-
-def build_success(data: Any = None, llm_data: Optional[Dict] = None,
-                  other_data: Optional[Dict] = None, **extra) -> Dict[str, Any]:
-    """构建成功响应 — 纯组装result，不构建llm_data"""
-    result: Dict[str, Any] = {
-        "data": data,
-        "llm_data": llm_data,
-        "other_data": other_data or {},
-    }
-    for k, v in extra.items():
-        if k not in _RESERVED_TOP_KEYS:
-            result[k] = v
-    return result
-
-def build_error(data: Any = None, llm_data: Optional[Dict] = None,
-                other_data: Optional[Dict] = None, **extra) -> Dict[str, Any]:
-    """构建错误响应 — 纯组装result，不构建llm_data"""
-    result: Dict[str, Any] = {
-        "data": data,
-        "llm_data": llm_data,
-        "other_data": other_data or {},
-    }
-    for k, v in extra.items():
-        if k not in _RESERVED_TOP_KEYS:
-            result[k] = v
-    return result
-
-def build_warning(data: Any = None, llm_data: Optional[Dict] = None,
-                  other_data: Optional[Dict] = None, **extra) -> Dict[str, Any]:
-    """构建警告响应 — 纯组装result，不构建llm_data"""
-    result: Dict[str, Any] = {
-        "data": data,
-        "llm_data": llm_data,
-        "other_data": other_data or {},
-    }
-    for k, v in extra.items():
-        if k not in _RESERVED_TOP_KEYS:
-            result[k] = v
-    return result
-```
-
-**is_success/is_error适配**：
-
-```python
-def is_success(result: Dict[str, Any]) -> bool:
-    """判断返回是否成功 — 从llm_data.status.exec_code判断"""
-    exec_code = result.get("llm_data", {}).get("status", {}).get("exec_code", "")
-    return exec_code in ("success", "warning")
-
-def is_error(result: Dict[str, Any]) -> bool:
-    """判断返回是否失败 — 从llm_data.status.exec_code判断"""
-    exec_code = result.get("llm_data", {}).get("status", {}).get("exec_code", "")
-    return exec_code == "error"
-```
-
-**删除的旧代码**：
-
-| 删除项 | 说明 |
-|--------|------|
-| `_REQUIRED_FIELDS` | 旧格式必填字段（code/data/message），新格式不需要 |
-| `_OPTIONAL_FIELDS` | 旧格式可选字段（warning/llm_data/retry_count/return_direct/attachment），新格式不需要 |
-| `_add_optionals()` | 旧格式可选字段写入逻辑，新格式不需要 |
-| `register_builder()` | 注册机制，新方案不使用 |
-| `_default_builder()` | 兜底builder，新方案不使用 |
-| `_BUILDERS` | 注册表字典，新方案不使用 |
-| `build_result()` | 合一函数，拆回3个替代 |
-
-**tool_retry_engine的特殊适配**：
-
-| 位置 | 旧用法 | 新用法 |
-|------|--------|--------|
-| `_build_retry_error` | `build_error(code, message, retry_count=N, error_message=msg, error_type=type)` | `build_error(data=..., llm_data=..., other_data={"retry_count": N}, error_type=type)` |
-| 工具未找到(L91) | `build_error(ERR_TOOL_NOT_FOUND, message, retry_count=0, ...)` | `build_error(data=..., llm_data=..., other_data={"retry_count": 0}, ...)` |
-| ERR_结果注入(L153-154) | `result["retry_count"] = engine.attempt_count` | 从other_data取，不再直接修改result |
-| 成功包装(L156) | `build_success(data=result, message=..., retry_count=N)` | **直接透传工具返回的result**，不再二次包装 |
-
-**为什么拆回3个而不是合一**：
-
-| 维度 | build_result合一 | build_success/error/warning拆3个 |
-|------|-----------------|--------------------------------|
-| 调用方式 | `build_result(data=..., llm_data=..., exec_code="success")` | `build_success(data=..., llm_data=...)` |
-| exec_code | 每次都要传，与llm_data.status.exec_code冗余 | 不用传，函数名已表达 |
-| 可读性 | 看不出是成功还是错误 | 一眼看出语义 |
-| 函数体 | 3个函数体完全相同 | 3个函数体完全相同 |
-
-3个函数体相同，但函数名不同——**函数名即文档**，比参数表达语义更直接（KISS-DIRECT）。
-
-**工具函数典型写法**：
-
-```python
-# file_tools.py
-def _build_read_text_file_llm(exec_code, duration_ms, file_path, line_count, file_size, encoding):
-    """read_text_file的llm_data构建函数 — 工具直接调用"""
-    if exec_code == "error":
-        return {
-            "summary": f"文件 {file_path} 不存在",
-            "action": {"tool": "read_text_file", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
-            "status": {"exec_code": "error", "message": "文件不存在", "code": "ERR_FILE_NOT_FOUND", "detail": f"路径不正确: {file_path}", "hint": "请检查文件路径是否正确"},
-            "duration_ms": duration_ms,
-            "metrics": {},
-        }
-    return {
-        "summary": f"读取 {file_path}，{line_count}行，{file_size}字节，{encoding}编码",
-        "action": {"tool": "read_text_file", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
-        "status": {"exec_code": "success", "message": "读取成功", "code": "", "detail": "", "hint": ""},
-        "duration_ms": duration_ms,
-        "metrics": {"lines": {"value": line_count, "text": f"{line_count}行"}, "bytes": {"value": file_size, "text": f"{file_size}字节"}},
-    }
-
-def read_text_file(file_path):
-    t0 = time.perf_counter()
-    content = do_read(file_path)
-    duration_ms = int((time.perf_counter() - t0) * 1000)
-    exec_code = "success" if content else "error"
-    llm_data = _build_read_text_file_llm(exec_code, duration_ms, file_path, ...)
-    if exec_code == "success":
-        return build_success(data={"content": content}, llm_data=llm_data)
-    else:
-        return build_error(data={"error_detail": "文件不存在"}, llm_data=llm_data)
-```
-
-**与注册方案的对比**：
-
-| 维度 | 注册+查找（旧方案） | 直接调用builder（新方案） |
-|------|---------------------|--------------------------|
-| 调用路径 | tool_name→查表→调builder→build_result | tool直接调builder→build_success/error/warning |
-| 基础设施 | _BUILDERS字典+register_builder+查找逻辑 | 不需要，删掉 |
-| 可读性 | 看工具函数看不到llm_data怎么来的 | 工具函数里直接看到builder调用 |
-| 遗漏风险 | 忘记register→走默认builder→信息丢失 | 忘记调builder→llm_data=None→立即暴露 |
-| build函数 | 1个build_result(exec_code参数冗余) | 3个函数名即语义 |
+builder函数签名、完整示例、工具函数典型写法——详见 **5.9.3节**。
 
 **原则三：formatter是机械渲染器，不给observation增信**
 
@@ -1177,6 +1013,9 @@ target本质是action.params中"最关键的那个参数值"（文件路径/URL/
 | think | 思考 | "" | thought | 思考中... |
 | execute_code | 执行 | 语言 | exit_code, stdout, stderr | Python代码执行完成，退出码0 |
 | get_current_time | 获取 | "local"/"utc" | datetime, timezone | 当前时间 2026-06-20 15:30:00(Asia/Shanghai) |
+| tool_search | 搜索 | 搜索词 | total | 搜索到3个匹配工具 |
+
+**tool_search的data格式**：`data = {"matches": [...]}`（matches是业务数据列表，不是关键数字指标，放data不放metrics。tool_executor从 `result.data.matches` 取值）
 
 ### 5.5 metrics自描述规范
 
@@ -1349,13 +1188,145 @@ Phase 1 是本次改造的核心阶段，目标：
 | 3 | **format_llm_observation 直接收 data + llm_data** | 不再从 result dict 提取，signature 扁平化 |
 | 4 | **清理旧 llm_data 相关代码** | 废弃的提取函数全部删除 |
 
-#### 5.9.2 核心设计：3函数 + 直接调用builder
+#### 5.9.2 build_success/error/warning 3函数重构
 
 **构建方式**：每个tool直接调用builder函数构建llm_data，传给build_success/error/warning。不使用注册机制——工具直接调builder，直线传递，不绕注册表。
 
 build_success/error/warning保持3个函数（不合一），函数名即语义，无需exec_code参数。
 
-**新签名与旧签名的对比**、**删除的参数及去向**、**实现代码**、**is_success/is_error适配**、**删除的旧代码**、**tool_retry_engine的特殊适配**、**为什么拆回3个而不是合一**、**工具函数典型写法**、**与注册方案的对比**——详见 **3.6节**。
+**新签名与旧签名的对比**：
+
+```python
+# ── 旧签名（当前代码）──
+def build_success(data=None, message="执行成功", warning=None, llm_data=None,
+                  retry_count=0, return_direct=False, attachment=None, code=None, **extra)
+def build_error(code, message, data=None, warning=None, llm_data=None, attachment=None, **extra)
+def build_warning(code, message, data=None, llm_data=None, attachment=None, **extra)
+
+# ── 新签名（改造后）──
+def build_success(data=None, llm_data=None, other_data=None, **extra)
+def build_error(data=None, llm_data=None, other_data=None, **extra)
+def build_warning(data=None, llm_data=None, other_data=None, **extra)
+```
+
+**删除的参数及去向**：
+
+| 旧参数 | 去向 | 原因 |
+|--------|------|------|
+| message | llm_data.status.message | 信息内聚于status，build函数不再单独持有 |
+| code | llm_data.status.code | 同上 |
+| warning | other_data["warning"] | 控制字段归入other_data输出通道 |
+| retry_count | other_data["retry_count"] | 同上 |
+| return_direct | other_data["return_direct"] | 同上 |
+| attachment | other_data["attachment"] | 同上 |
+
+**新增的参数**：
+
+| 新参数 | 说明 |
+|--------|------|
+| llm_data | 从可选变必填（5字段结构化摘要，builder构建后传入） |
+| other_data | 新增输出通道（承载warning/retry_count/return_direct/attachment） |
+
+**实现代码**：
+
+```python
+_RESERVED_TOP_KEYS: set = {"data", "llm_data", "other_data"}
+
+def build_success(data: Any = None, llm_data: Optional[Dict] = None,
+                  other_data: Optional[Dict] = None, **extra) -> Dict[str, Any]:
+    """构建成功响应 — 纯组装result，不构建llm_data"""
+    result: Dict[str, Any] = {
+        "data": data,
+        "llm_data": llm_data,
+        "other_data": other_data or {},
+    }
+    for k, v in extra.items():
+        if k not in _RESERVED_TOP_KEYS:
+            result[k] = v
+    return result
+
+def build_error(data: Any = None, llm_data: Optional[Dict] = None,
+                other_data: Optional[Dict] = None, **extra) -> Dict[str, Any]:
+    """构建错误响应 — 纯组装result，不构建llm_data"""
+    result: Dict[str, Any] = {
+        "data": data,
+        "llm_data": llm_data,
+        "other_data": other_data or {},
+    }
+    for k, v in extra.items():
+        if k not in _RESERVED_TOP_KEYS:
+            result[k] = v
+    return result
+
+def build_warning(data: Any = None, llm_data: Optional[Dict] = None,
+                  other_data: Optional[Dict] = None, **extra) -> Dict[str, Any]:
+    """构建警告响应 — 纯组装result，不构建llm_data"""
+    result: Dict[str, Any] = {
+        "data": data,
+        "llm_data": llm_data,
+        "other_data": other_data or {},
+    }
+    for k, v in extra.items():
+        if k not in _RESERVED_TOP_KEYS:
+            result[k] = v
+    return result
+```
+
+**is_success/is_error适配**：
+
+```python
+def is_success(result: Dict[str, Any]) -> bool:
+    """判断返回是否成功 — 从llm_data.status.exec_code判断"""
+    exec_code = result.get("llm_data", {}).get("status", {}).get("exec_code", "")
+    return exec_code in ("success", "warning")
+
+def is_error(result: Dict[str, Any]) -> bool:
+    """判断返回是否失败 — 从llm_data.status.exec_code判断"""
+    exec_code = result.get("llm_data", {}).get("status", {}).get("exec_code", "")
+    return exec_code == "error"
+```
+
+**删除的旧代码**：
+
+| 删除项 | 说明 |
+|--------|------|
+| `_REQUIRED_FIELDS` | 旧格式必填字段（code/data/message），新格式不需要 |
+| `_OPTIONAL_FIELDS` | 旧格式可选字段（warning/llm_data/retry_count/return_direct/attachment），新格式不需要 |
+| `_add_optionals()` | 旧格式可选字段写入逻辑，新格式不需要 |
+| `register_builder()` | 注册机制，新方案不使用 |
+| `_default_builder()` | 兜底builder，新方案不使用 |
+| `_BUILDERS` | 注册表字典，新方案不使用 |
+| `build_result()` | 合一函数，拆回3个替代 |
+
+**tool_retry_engine的特殊适配**：
+
+| 位置 | 旧用法 | 新用法 |
+|------|--------|--------|
+| `_build_retry_error` | `build_error(code, message, retry_count=N, error_message=msg, error_type=type)` | `build_error(data=..., llm_data=..., other_data={"retry_count": N}, error_type=type)` |
+| 工具未找到(L91) | `build_error(ERR_TOOL_NOT_FOUND, message, retry_count=0, ...)` | `build_error(data=..., llm_data=..., other_data={"retry_count": 0}, ...)` |
+| ERR_结果注入(L153-154) | `result["retry_count"] = engine.attempt_count` | 从other_data取，不再直接修改result |
+| 成功包装(L156) | `build_success(data=result, message=..., retry_count=N)` | **直接透传工具返回的result**，不再二次包装 |
+
+**为什么拆回3个而不是合一**：
+
+| 维度 | build_result合一 | build_success/error/warning拆3个 |
+|------|-----------------|--------------------------------|
+| 调用方式 | `build_result(data=..., llm_data=..., exec_code="success")` | `build_success(data=..., llm_data=...)` |
+| exec_code | 每次都要传，与llm_data.status.exec_code冗余 | 不用传，函数名已表达 |
+| 可读性 | 看不出是成功还是错误 | 一眼看出语义 |
+| 函数体 | 3个函数体完全相同 | 3个函数体完全相同 |
+
+3个函数体相同，但函数名不同——**函数名即文档**，比参数表达语义更直接（KISS-DIRECT）。
+
+**与注册方案的对比**：
+
+| 维度 | 注册+查找（旧方案） | 直接调用builder（新方案） |
+|------|---------------------|--------------------------|
+| 调用路径 | tool_name→查表→调builder→build_result | tool直接调builder→build_success/error/warning |
+| 基础设施 | _BUILDERS字典+register_builder+查找逻辑 | 不需要，删掉 |
+| 可读性 | 看工具函数看不到llm_data怎么来的 | 工具函数里直接看到builder调用 |
+| 遗漏风险 | 忘记register→走默认builder→信息丢失 | 忘记调builder→llm_data=None→立即暴露 |
+| build函数 | 1个build_result(exec_code参数冗余) | 3个函数名即语义 |
 
 #### 5.9.3 builder函数设计
 
@@ -1372,7 +1343,7 @@ def _build_xxx_llm_data(exec_code: str, duration_ms: int, ..., 业务参数) -> 
 
 builder不再从data内容猜测exec_code，而是接收调用者显式传入。builder按exec_code分支返回不同的status内容。
 
-**builder示例**：
+**builder完整示例**：
 
 ```python
 def _build_read_text_file_llm(exec_code, duration_ms, file_path, line_count, file_size, encoding):
@@ -1385,6 +1356,14 @@ def _build_read_text_file_llm(exec_code, duration_ms, file_path, line_count, fil
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    if exec_code == "warning":
+        return {
+            "summary": f"文件为空: {file_path}",
+            "action": {"tool": "read_text_file", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
+            "status": {"exec_code": "warning", "message": "文件为空，可能不是预期内容", "code": "WARNING_EMPTY_FILE", "detail": "文件内容为空字符串", "hint": ""},
+            "duration_ms": duration_ms,
+            "metrics": {"lines": {"value": 0, "text": "0行"}, "bytes": {"value": 0, "text": "0字节"}},
+        }
     return {
         "summary": f"读取 {file_path}，{line_count}行，{file_size}字节，{encoding}编码",
         "action": {"tool": "read_text_file", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
@@ -1394,14 +1373,33 @@ def _build_read_text_file_llm(exec_code, duration_ms, file_path, line_count, fil
     }
 ```
 
+**工具函数典型写法**：
+
+```python
+# file_tools.py
+def read_text_file(file_path):
+    t0 = time.perf_counter()
+    content = do_read(file_path)
+    duration_ms = int((time.perf_counter() - t0) * 1000)
+    exec_code = "success" if content else "error"
+    llm_data = _build_read_text_file_llm(exec_code, duration_ms, file_path, ...)
+    if exec_code == "success":
+        return build_success(data={"content": content}, llm_data=llm_data)
+    else:
+        return build_error(data={"error_detail": "文件不存在"}, llm_data=llm_data)
+```
+
+**调用链**：tool函数 → builder函数构建llm_data → build_success/error/warning组装result。直线传递，不绕注册表。
+
 **原则**：
 
 | 原则 | 说明 |
 |------|------|
-| **builder_fn 只读 data，不修改 data** | data 保持 tool 原始返回不变 |
+| **builder接收业务参数，不读data** | builder直接接收执行结果（line_count/file_size等），不从data提取，避免data与metrics重复 |
 | **新增 tool 只需写 builder 函数** | build 3 函数零改动 |
 | **已有 tool 增减字段只改自己的 builder** | 不影响其他 tool |
 | **builder 不猜 exec_code** | exec_code 由调用者显式传入 |
+| **data只放纯业务数据** | data不含摘要数字（line_count/bytes等在builder参数里，放入metrics），保证零重复 |
 
 #### 5.9.4 result 结构定义
 
@@ -1529,6 +1527,18 @@ def _build_read_text_file_llm(exec_code, duration_ms, file_path, line_count, fil
 
 **并行执行下依然准确**：每个工具独立 `time.perf_counter()` 测量，互不干扰。
 
+**重试场景下的duration_ms定义**：
+
+duration_ms = **最后一次工具执行的纯耗时**（不含重试间隔、不含重试次数）。
+
+| 场景 | duration_ms含义 | 说明 |
+|------|----------------|------|
+| 正常执行 | 本次执行耗时 | 唯一一次 |
+| 重试后成功 | 最后一次执行的耗时 | 前几次的耗时丢弃 |
+| 重试后仍失败 | 最后一次执行的耗时 | 同上 |
+
+理由：LLM需要知道"这次操作本身花了多久"，判断是否超时。重试是框架行为，不应混入工具执行耗时。如需总耗时，在other_data中加 `total_duration_ms` 字段。
+
 #### 5.9.7 受影响文件
 
 | 文件 | 改动 |
@@ -1539,7 +1549,8 @@ def _build_read_text_file_llm(exec_code, duration_ms, file_path, line_count, fil
 | `message_utils.py` | build_observation_text 改为直接调 `format_llm_observation(result["data"], result["llm_data"])` |
 | `action_handler.py` | ToolStep "observation" 构建时从 `other_data` 读 return_direct/warning/attachment；ToolStep "action_tool" 的 execution_result 为新 3 字段结构 |
 | `steps/tool_step.py` | to_dict 适配新 result 结构 |
-| `tool_retry_engine.py` | is_success/is_error 判断走新路径（llm_data.status.exec_code）；成功时直接透传工具result，不再二次包装 |
+| `tool_retry_engine.py` | 透传工具result（不再二次包装）；判断exec_code从 `llm_data.status.exec_code` 取（替代 `result.get("code")`）；自身错误改用build_error(data=..., llm_data=...)；retry_count放入other_data |
+| `tool_executor.py` | auto_inject_from_search从 `result.data.matches` 取值（替代旧路径 `result.data.llm_data.matches`） |
 
 #### 5.9.8 不涉及的文件
 
@@ -1647,6 +1658,19 @@ SSE: 仅完成时间         observation_text
 | **data 为空** | tool_result=None 时，前端跳过详情面板渲染 |
 | **LLM 不受影响** | LLM 始终只读 observation_text，底层事件结构变化不影响它 |
 | **Phase 1 为前提** | Phase 2 依赖 Phase 1 的 formatter 签名改造，必须先上线 Phase 1 |
+
+#### 5.10.7 并行场景合并规则
+
+LLM同时调用多个工具时，每个工具各产出一个result，Observation step需要合并。
+
+| 字段 | 合并规则 | 说明 |
+|------|---------|------|
+| `observation_text` | 多个obs_text用 `\n\n` 拼接 | 当前已有此逻辑 |
+| `llm_data` | 取exec_code最严重的那个（error > warning > success） | LLM需要知道最差状态 |
+| `tool_result` | 合并为list：`[{"tool_name": "read_text_file", "data": ...}, ...]` | 前端按tool_name分tab展示 |
+| `other_data.warning` | 收集所有非空warning，拼接 | 不丢失任何警告 |
+| `other_data.attachment` | 收集所有非空attachment，合并为list | 不丢失任何附件 |
+| `other_data.return_direct` | 任一为True则True | 任何一个工具要求直接返回就生效 |
 
 ---
 
