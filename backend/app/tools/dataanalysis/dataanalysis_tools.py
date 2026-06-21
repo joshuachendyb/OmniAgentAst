@@ -24,21 +24,86 @@ Author: 小沈 - 2026-05-02
 import os
 import json
 import tempfile
+import time as _time_mod
 import pandas as pd
 from typing import Dict, Any, List, Union, Optional, Literal, Tuple
 from pathlib import Path
 from app.utils.time_utils import timestamp_for_filename
-from app.utils.tool_result_formatter import truncate_data_for_frontend, make_json_safe
+from app.utils.tool_result_formatter import truncate_data_for_frontend
 from app.tools.tool_response import build_success, build_error
 from app.tools.toolhelper.common_helper import _check_module
 from app.tools.toolhelper.data_helper import _serialize_rows
 from app.utils.logger import setup_logger
 from app.utils.json_utils import coerce_json
+from app.constants import (
+    ERR_DOC_ANALYZE_DATA,
+    ERR_DOC_CHART_GENERATE,
+    ERR_DOC_NO_OPENPYXL,
+    ERR_FILTER_INVALID,
+    ERR_NO_MATPLOTLIB,
+    ERR_NO_PANDAS,
+)
 
 
 
 
 logger = setup_logger(__name__)
+
+
+def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", output_path="", detail=""):
+    """generate_chart的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"生成图表失败: {detail}",
+            "action": {"tool": "generate_chart", "tool_zh": "生成图表", "target": chart_type, "params": {"chart_type": chart_type}},
+            "status": {"exec_code": "error", "message": "生成图表失败", "code": ERR_DOC_CHART_GENERATE, "detail": detail, "hint": "请检查数据和参数"},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"成功生成{chart_type}图表: {output_path}",
+        "action": {"tool": "generate_chart", "tool_zh": "生成图表", "target": chart_type, "params": {"chart_type": chart_type}},
+        "status": {"exec_code": "success", "message": "图表生成成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {},
+    }
+
+
+def _build_analyze_data_llm_data(exec_code, duration_ms, row_count=0, numeric_col_count=0, columns=None, detail=""):
+    """analyze_data的llm_data构建函数 — 小健 2026-06-21"""
+    columns = columns or []
+    if exec_code == "error":
+        return {
+            "summary": f"数据分析失败: {detail}",
+            "action": {"tool": "analyze_data", "tool_zh": "分析数据", "target": "dataset", "params": {}},
+            "status": {"exec_code": "error", "message": "分析失败", "code": ERR_DOC_ANALYZE_DATA, "detail": detail, "hint": "请检查数据格式"},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"分析完成: {row_count}行, {numeric_col_count}个数值列",
+        "action": {"tool": "analyze_data", "tool_zh": "分析数据", "target": "dataset", "params": {}},
+        "status": {"exec_code": "success", "message": "分析成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"row_count": {"value": row_count, "text": f"{row_count}行"}, "numeric_cols": {"value": numeric_col_count, "text": f"{numeric_col_count}列"}},
+    }
+
+
+def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filtered_count=0, columns=None, detail=""):
+    """filter_data的llm_data构建函数 — 小健 2026-06-21"""
+    columns = columns or []
+    if exec_code == "error":
+        return {
+            "summary": f"数据筛选失败: {detail}",
+            "action": {"tool": "filter_data", "tool_zh": "筛选数据", "target": "dataset", "params": {}},
+            "status": {"exec_code": "error", "message": "筛选失败", "code": ERR_FILTER_INVALID, "detail": detail, "hint": "请检查条件和数据"},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"筛选完成: {original_count}行→{filtered_count}行",
+        "action": {"tool": "filter_data", "tool_zh": "筛选数据", "target": "dataset", "params": {}},
+        "status": {"exec_code": "success", "message": "筛选成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"original_count": {"value": original_count, "text": f"{original_count}行"}, "filtered_count": {"value": filtered_count, "text": f"{filtered_count}行"}},
+    }
 
 
 def generate_chart(
@@ -52,10 +117,14 @@ def generate_chart(
     """使用matplotlib生成数据可视化图表 - 小沈 2026-05-02, 修正 2026-05-05
     【2026-06-18 小健】修改output_path逻辑：文件路径→原文件目录，字典→必须指定output_path
     【2026-06-20 小健】Schema删x_label/y_label，函数签名保留内部默认值; 加coerce_json防御
+    【2026-06-21 小健】builder改造，新3字段result
     """
     data = coerce_json(data)
+    t0 = _time_mod.perf_counter()
     if not _check_module("matplotlib"):
-        return build_error(ERR_NO_MATPLOTLIB, "matplotlib库未安装,请先执行: pip install matplotlib")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="matplotlib库未安装")
+        return build_error(data={"error": "matplotlib库未安装,请先执行: pip install matplotlib"}, llm_data=llm_data)
 
     try:
         import matplotlib
@@ -68,8 +137,9 @@ def generate_chart(
         if isinstance(data, str):
             path = Path(data)
             if not path.exists():
-                return build_error(ERR_DOC_CHART_GENERATE, f"文件不存在: {data}",
-                    data={"file_path": data})
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=f"文件不存在: {data}")
+                return build_error(data={"file_path": data}, llm_data=llm_data)
             source_file_dir = str(path.parent)
             
             if data.endswith('.xlsx') or data.endswith('.xls'):
@@ -78,7 +148,9 @@ def generate_chart(
                 df = pd.read_csv(data)
             
             if len(df.columns) < 2:
-                return build_error(ERR_DOC_CHART_GENERATE, "数据至少需要2列(标签列+数值列)")
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="数据至少需要2列(标签列+数值列)")
+                return build_error(data={"error": "数据至少需要2列"}, llm_data=llm_data)
             
             labels = df.iloc[:, 0].tolist()
             values = df.iloc[:, 1].tolist()
@@ -86,7 +158,9 @@ def generate_chart(
         elif isinstance(data, dict):
             chart_data = data
         else:
-            return build_error(ERR_DOC_CHART_GENERATE, "data参数必须是文件路径(str)或图表数据(dict)")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="data参数必须是文件路径(str)或图表数据(dict)")
+            return build_error(data={"error": "data参数必须是文件路径或图表数据"}, llm_data=llm_data)
 
         from app.tools.document.document_tools import _validate_chart_data
         validation = _validate_chart_data(chart_data)
@@ -97,19 +171,22 @@ def generate_chart(
         values = chart_data.get("values", [])
 
         if not labels or not values:
-            return build_error(ERR_DOC_CHART_GENERATE, "数据格式错误,需要包含 labels 和 values 字段")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="数据格式错误,需要包含labels和values字段")
+            return build_error(data={"error": "数据格式错误"}, llm_data=llm_data)
 
         if output_path is None:
             timestamp = timestamp_for_filename()
             if source_file_dir:
                 output_path = os.path.join(source_file_dir, f"chart_{timestamp}.png")
             else:
-                return build_error(ERR_DOC_CHART_GENERATE,
-                    "data为字典时必须指定output_path参数")
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="data为字典时必须指定output_path参数")
+                return build_error(data={"error": "data为字典时必须指定output_path"}, llm_data=llm_data)
 
         fig, ax = plt.subplots(figsize=(10, 6))
 
-        chart_type_lower = chart_type  # 小健 2026-05-19: Schema Literal已保证非空小写
+        chart_type_lower = chart_type
 
         try:
             if chart_type_lower == "pie":
@@ -136,14 +213,13 @@ def generate_chart(
         finally:
             plt.close(fig)
 
-        result = build_success(
-            output_path,
-            f"成功生成{chart_type_lower}图表: {output_path}",
-        )
-        return result
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_generate_chart_llm_data("success", duration_ms, chart_type_lower, output_path)
+        return build_success(data={"output_path": output_path, "chart_type": chart_type_lower}, llm_data=llm_data)
     except Exception as e:
-        return build_error(ERR_DOC_CHART_GENERATE, f"生成图表失败: {str(e)}",
-            data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=str(e))
+        return build_error(data={"error": str(e)}, llm_data=llm_data)
 
 
 def _convert_pd_value(val: Any) -> Any:
@@ -218,10 +294,14 @@ def analyze_data(
 ) -> Dict[str, Any]:
     """对数据集进行统计分析 - 小沈 2026-05-02, 修正 2026-05-05
     【2026-06-20 小健】Schema删operations/max_rows，函数签名保留内部默认值; 加coerce_json防御
+    【2026-06-21 小健】builder改造，新3字段result
     """
     data = coerce_json(data)
+    t0 = _time_mod.perf_counter()
     if not _check_module("pandas"):
-        return build_error(ERR_NO_PANDAS, "pandas库未安装,请先执行: pip install pandas")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="pandas库未安装")
+        return build_error(data={"error": "pandas库未安装,请先执行: pip install pandas"}, llm_data=llm_data)
 
     try:
         all_ops = ["mean", "sum", "count", "min", "max", "std"]
@@ -231,30 +311,33 @@ def analyze_data(
         if isinstance(data, str):
             path = Path(data)
             if not path.exists():
-                return build_error(ERR_DOC_ANALYZE_DATA, f"文件不存在: {data}",
-                    data={"file_path": data})
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=f"文件不存在: {data}")
+                return build_error(data={"file_path": data}, llm_data=llm_data)
             read_kwargs = {}
             if max_rows is not None:
                 read_kwargs["nrows"] = max_rows
-            # 小健 2026-05-19: 识别xlsx后缀
             if data.endswith('.xlsx') or data.endswith('.xls'):
                 if not _check_module("openpyxl"):
-                    return build_error(ERR_DOC_NO_OPENPYXL, "openpyxl库未安装,请先执行: pip install openpyxl")
+                    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                    llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="openpyxl库未安装")
+                    return build_error(data={"error": "openpyxl库未安装"}, llm_data=llm_data)
                 df = pd.read_excel(data, engine="openpyxl", **({k: v for k, v in read_kwargs.items() if k == 'nrows'}))
             else:
                 df = pd.read_csv(data, **read_kwargs)
         elif isinstance(data, list):
             df = pd.DataFrame(data)
         else:
-            return build_error(ERR_DOC_ANALYZE_DATA, "data参数必须是CSV文件路径或数据数组")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="data参数必须是CSV文件路径或数据数组")
+            return build_error(data={"error": "data参数必须是文件路径或数据数组"}, llm_data=llm_data)
 
         total_count = len(df)
         numeric_cols = df.select_dtypes(include="number").columns.tolist()
         if not numeric_cols:
-            return build_success(
-                {"row_count": total_count, "columns": df.columns.tolist(), "statistics": {}},
-                "数据中无数值列,无法进行统计计算",
-            )
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_analyze_data_llm_data("success", duration_ms, total_count, 0, df.columns.tolist())
+            return build_success(data={"row_count": total_count, "columns": df.columns.tolist(), "statistics": {}}, llm_data=llm_data)
 
         result = {"total_count": total_count, "columns": df.columns.tolist()}
 
@@ -268,37 +351,35 @@ def analyze_data(
         result["row_count"] = len(df)
         result.update(_compute_stats(df, numeric_cols, operations, all_ops, group_by=group_by))
 
-        return build_success(
-            truncate_data_for_frontend(result),
-            f"成功分析数据,共 {len(df)} 行,{len(numeric_cols)} 个数值列",
-            llm_data={
-                "总行数": len(df), "数值列数": len(numeric_cols),
-                "列": list(result.get("columns", {}).keys())[:20] if isinstance(result.get("columns"), dict) else [],
-                "统计摘要": make_json_safe(result.get("statistics", {}), max_str_len=200)
-            },
-        )
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_analyze_data_llm_data("success", duration_ms, len(df), len(numeric_cols), df.columns.tolist())
+        return build_success(data=truncate_data_for_frontend(result), llm_data=llm_data)
     except Exception as e:
-        return build_error(ERR_DOC_ANALYZE_DATA, f"数据分析失败: {str(e)}",
-            data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=str(e))
+        return build_error(data={"error": str(e)}, llm_data=llm_data)
 
 
 def _load_data_to_df(data: Union[str, List[Dict[str, Any]]],
                       max_rows: Optional[int] = None) -> dict:
-    """加载数据为 DataFrame,返回 {"df": DataFrame} 或 {"error": dict}。"""
+    """加载数据为 DataFrame,返回 {"df": DataFrame} 或 {"error": dict}。
+    【2026-06-21 小健】builder改造，新3字段result
+    """
     if isinstance(data, str):
         path = Path(data)
         if not path.exists():
-            return {"error": build_error(ERR_FILTER_INVALID, f"文件不存在: {data}",
-                data={"file_path": data})}
+            llm_data = _build_filter_data_llm_data("error", 0, detail=f"文件不存在: {data}")
+            return {"error": build_error(data={"file_path": data}, llm_data=llm_data)}
         if data.endswith('.xlsx'):
             if not _check_module("openpyxl"):
-                return {"error": build_error(ERR_DOC_NO_OPENPYXL,
-                    "openpyxl库未安装,请先执行: pip install openpyxl")}
+                llm_data = _build_filter_data_llm_data("error", 0, detail="openpyxl库未安装")
+                return {"error": build_error(data={"error": "openpyxl库未安装"}, llm_data=llm_data)}
             return {"df": pd.read_excel(data, engine="openpyxl", nrows=max_rows)}
         return {"df": pd.read_csv(data, nrows=max_rows)}
     if isinstance(data, list):
         return {"df": pd.DataFrame(data)}
-    return {"error": build_error(ERR_FILTER_INVALID, "data参数必须是文件路径或数据数组")}
+    llm_data = _build_filter_data_llm_data("error", 0, detail="data参数必须是文件路径或数据数组")
+    return {"error": build_error(data={"error": "data参数必须是文件路径或数据数组"}, llm_data=llm_data)}
 
 
 def _build_condition_mask(df: "pd.DataFrame", conditions: List[Dict[str, Any]]) -> dict:
@@ -317,9 +398,8 @@ def _build_condition_mask(df: "pd.DataFrame", conditions: List[Dict[str, Any]]) 
         value = cond.get("value")
 
         if not column:
-            return {"error": build_error(ERR_FILTER_INVALID,
-                f"条件缺少column字段: {cond}",
-                data={"condition": cond})}
+            llm_data = _build_filter_data_llm_data("error", 0, detail=f"条件缺少column字段: {cond}")
+            return {"error": build_error(data={"condition": cond}, llm_data=llm_data)}
         if column not in df.columns:
             warnings.append(f"列'{column}'不存在,已跳过")
             continue
@@ -356,11 +436,15 @@ def filter_data(
 ) -> Dict[str, Any]:
     """筛选数据 — 小沈 2026-05-25 重构
     【2026-06-20 小健】Schema删max_rows，函数签名保留内部默认值; 加coerce_json防御
+    【2026-06-21 小健】builder改造，新3字段result
     """
     data = coerce_json(data)
     conditions = coerce_json(conditions)
+    t0 = _time_mod.perf_counter()
     if not _check_module("pandas"):
-        return build_error(ERR_NO_PANDAS, "pandas库未安装,请先执行: pip install pandas")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_filter_data_llm_data("error", duration_ms, detail="pandas库未安装")
+        return build_error(data={"error": "pandas库未安装,请先执行: pip install pandas"}, llm_data=llm_data)
 
     try:
         loaded = _load_data_to_df(data, max_rows)
@@ -397,26 +481,11 @@ def filter_data(
         if warnings:
             result_data["warnings"] = warnings
 
-        message = f"筛选完成: {original_count}行 → {len(rows)}行 (条件: {len(conditions)}个)"
-        if warnings:
-            message += f" | 警告: {'; '.join(warnings)}"
-
-        return build_success(truncate_data_for_frontend(result_data), message,
-            llm_data={
-                "筛选前": result_data["original_count"],
-                "筛选后": result_data["filtered_count"],
-                "列": result_data["columns"][:20],
-                "行预览": make_json_safe(result_data["rows"][:5], max_str_len=150),
-            },
-        )
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_filter_data_llm_data("success", duration_ms, original_count, len(rows), columns)
+        return build_success(data=truncate_data_for_frontend(result_data), llm_data=llm_data)
     except Exception as e:
-        return build_error(ERR_FILTER_INVALID, f"数据筛选失败: {str(e)}",
-            data={"error": str(e)})
-from app.constants import (
-    ERR_DOC_ANALYZE_DATA,
-    ERR_DOC_CHART_GENERATE,
-    ERR_DOC_NO_OPENPYXL,
-    ERR_FILTER_INVALID,
-    ERR_NO_MATPLOTLIB,
-    ERR_NO_PANDAS,
-)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_filter_data_llm_data("error", duration_ms, detail=str(e))
+        return build_error(data={"error": str(e)}, llm_data=llm_data)
+
