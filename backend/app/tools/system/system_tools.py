@@ -24,7 +24,7 @@ import socket
 import subprocess
 import re
 import logging
-import time
+import time as _time_mod
 from typing import Optional, Dict, Any, List, Literal, Tuple
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -33,27 +33,57 @@ import json as json_module
 from app.utils.logger import logger
 from app.utils.time_utils import now_str
 from app.utils.tool_result_formatter import truncate_data_for_frontend, make_json_safe
-from app.tools.tool_response import build_success, build_error  # 小沈 2026-05-20
-from app.tools.tool_constants import TOOL_TIMEOUTS
-# 【3.18修复 北京老陈 2026-05-31】超时常量统一到tool_constants.py
-from app.tools.tool_constants import SUBPROCESS_TIMEOUT_DEFAULT
+from app.tools.tool_response import build_success, build_error
+from app.tools.tool_constants import TOOL_TIMEOUTS, SUBPROCESS_TIMEOUT_DEFAULT
+from app.constants import (
+    ERR_DESKTOP_PLATFORM_NOT_SUPPORTED,
+    ERR_PARAMETER_INVALID,
+    ERR_PERMISSION_DENIED,
+    ERR_SERVICE_LIST,
+    ERR_SERVICE_NOT_FOUND,
+    ERR_SERVICE_START,
+    ERR_SERVICE_STOP,
+    ERR_SHELL_COMMAND_NOT_FOUND,
+    ERR_SHELL_TIMEOUT,
+    ERR_SYSTEM_EVENT_LOG,
+    ERR_SYSTEM_INFO,
+    ERR_SYSTEM_NET_CONN,
+    ERR_SYSTEM_PROCESS_KILL,
+    ERR_SYSTEM_PROCESS_LIST,
+    ERR_SYSTEM_TIMEOUT,
+    ERR_TASK_CREATE,
+    ERR_TASK_DELETE,
+    ERR_TASK_EMPTY,
+    ERR_TASK_LIST,
+    ERR_TASK_NOT_FOUND,
+)
 
 
 
+
+
+def _build_system_info_llm(exec_code: str, duration_ms: int, info_type: str) -> dict:
+    """get_system_info的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"获取系统信息失败: {info_type}",
+            "action": {"tool": "get_system_info", "tool_zh": "系统信息", "target": info_type, "params": {"info_type": info_type}},
+            "status": {"exec_code": "error", "message": "获取系统信息失败", "code": ERR_SYSTEM_INFO, "detail": "", "hint": ""},
+            "duration_ms": duration_ms,
+            "metrics": {},
+        }
+    return {
+        "summary": f"已获取{info_type}类型的系统信息",
+        "action": {"tool": "get_system_info", "tool_zh": "系统信息", "target": info_type, "params": {"info_type": info_type}},
+        "status": {"exec_code": "success", "message": "获取系统信息成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {},
+    }
 
 
 def get_system_info(info_type: str = "all") -> dict:
-    """
-    获取系统信息
-
-    支持获取:基本信息、CPU信息、内存信息、磁盘信息、网络信息
-
-    Args:
-        info_type: 信息类型 (basic/cpu/memory/disk/network/all)
-
-    Returns:
-        {code, data, message}
-    """
+    """获取系统信息 — 小健 2026-06-21 builder改造"""
+    t0 = _time_mod.perf_counter()
     try:
         data = {}
 
@@ -115,13 +145,34 @@ def get_system_info(info_type: str = "all") -> dict:
                 "packets_recv": net_io.packets_recv,
             }
 
-        return build_success(data, f"成功获取系统信息 ({info_type})",
-                             llm_data={"action": "get_system_info", "info_type": info_type,
-                                       "summary": f"已获取{info_type}类型的系统信息"})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_system_info_llm("success", duration_ms, info_type)
+        return build_success(data=data, llm_data=llm_data)
 
     except Exception as e:
         logger.error(f"[get_system_info] 获取系统信息失败: {e}")
-        return build_error(ERR_SYSTEM_INFO, f"获取系统信息失败: {str(e)}", data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_system_info_llm("error", duration_ms, info_type)
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+
+
+def _build_event_log_llm(exec_code: str, duration_ms: int, log_name: str, event_count: int, level: str) -> dict:
+    """event_log的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"获取事件日志失败: {log_name}",
+            "action": {"tool": "event_log", "tool_zh": "事件日志", "target": log_name, "params": {"log_name": log_name, "level": level}},
+            "status": {"exec_code": "error", "message": "获取事件日志失败", "code": ERR_SYSTEM_EVENT_LOG, "detail": "", "hint": ""},
+            "duration_ms": duration_ms,
+            "metrics": {},
+        }
+    return {
+        "summary": f"日志源 {log_name}，{event_count} 条{level}级别事件",
+        "action": {"tool": "event_log", "tool_zh": "事件日志", "target": log_name, "params": {"log_name": log_name, "level": level}},
+        "status": {"exec_code": "success", "message": "获取事件日志成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"events": {"value": event_count, "text": f"{event_count}条"}},
+    }
 
 
 def event_log(
@@ -131,11 +182,8 @@ def event_log(
     source: Optional[str] = None,
     time_range: str = "1h",
 ) -> dict:
-    """
-    获取系统事件日志 - 小沈 2026-05-02
-    
-    Windows使用wevtutil命令,Linux使用journalctl。
-    """
+    """获取系统事件日志 — 小健 2026-06-21 builder改造"""
+    t0 = _time_mod.perf_counter()
     try:
         time_map = {
             "10m": timedelta(minutes=10),
@@ -147,13 +195,15 @@ def event_log(
         start_time = datetime.now() - time_delta
         
         if platform.system() == "Windows":
-            return _get_windows_event_log(log_name, max_events, level, source, start_time)
+            return _get_windows_event_log(log_name, max_events, level, source, start_time, t0)
         else:
-            return _get_linux_event_log(log_name, max_events, level, source, start_time)
+            return _get_linux_event_log(log_name, max_events, level, source, start_time, t0)
     
     except Exception as e:
         logger.error(f"[event_log] 获取事件日志失败: {e}")
-        return build_error(ERR_SYSTEM_EVENT_LOG, f"获取事件日志失败: {str(e)}", data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_event_log_llm("error", duration_ms, log_name, 0, level)
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
 
 
 def _get_windows_event_log(
@@ -162,8 +212,9 @@ def _get_windows_event_log(
     level: str,
     source: Optional[str],
     start_time: datetime,
+    t0: float = 0,
 ) -> dict:
-    """Windows事件日志获取"""
+    """Windows事件日志获取 — 小健 2026-06-21 builder改造"""
     try:
         level_map = {
             "critical": "Critical",
@@ -173,7 +224,6 @@ def _get_windows_event_log(
         }
         win_level = level_map.get(level, "Error")
         
-        # 小健 2026-05-19: 构造XPath查询含时间过滤
         start_time_str = start_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
         query_parts = [f"TimeCreated/@SystemTime >= '{start_time_str}'"]
         if level and level != "info":
@@ -193,7 +243,9 @@ def _get_windows_event_log(
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"]))
         
         if result.returncode != 0:
-            return build_error(ERR_SYSTEM_EVENT_LOG, f"获取事件日志失败: {result.stderr}", data={"error": result.stderr})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000) if t0 else 0
+            llm_data = _build_event_log_llm("error", duration_ms, log_name, 0, level)
+            return build_error(data={"error_detail": result.stderr}, llm_data=llm_data)
         
         events = []
         current_event = {}
@@ -224,20 +276,26 @@ def _get_windows_event_log(
             filtered_events.append(evt)
         
         _events = filtered_events[:max_events]
-        return build_success(truncate_data_for_frontend({
-                "log_name": log_name,
-                "events": _events,
-                "total": len(_events),
-                "level": level,
-            }), f"找到 {len(_events)} 条事件日志", llm_data={
-                "日志源": log_name, "条数": len(_events), "级别": level,
-                "事件预览": make_json_safe(_events[:10], max_str_len=200)
-            })
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000) if t0 else 0
+        data = truncate_data_for_frontend({
+            "log_name": log_name,
+            "events": _events,
+            "total": len(_events),
+            "level": level,
+        })
+        llm_data = _build_event_log_llm("success", duration_ms, log_name, len(_events), level)
+        return build_success(data=data, llm_data=llm_data)
     
     except subprocess.TimeoutExpired:
-        return build_error(ERR_SYSTEM_TIMEOUT, "获取事件日志超时")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000) if t0 else 0
+        llm_data = _build_event_log_llm("error", duration_ms, log_name, 0, level)
+        llm_data["status"]["code"] = ERR_SYSTEM_TIMEOUT
+        return build_error(data={"error_detail": "获取事件日志超时"}, llm_data=llm_data)
     except FileNotFoundError:
-        return build_error(ERR_SHELL_COMMAND_NOT_FOUND, "wevtutil命令不存在")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000) if t0 else 0
+        llm_data = _build_event_log_llm("error", duration_ms, log_name, 0, level)
+        llm_data["status"]["code"] = ERR_SHELL_COMMAND_NOT_FOUND
+        return build_error(data={"error_detail": "wevtutil命令不存在"}, llm_data=llm_data)
 
 
 def _get_linux_event_log(
@@ -246,8 +304,9 @@ def _get_linux_event_log(
     level: str,
     source: Optional[str],
     start_time: datetime,
+    t0: float = 0,
 ) -> dict:
-    """Linux事件日志获取(journalctl)"""
+    """Linux事件日志获取 — 小健 2026-06-21 builder改造"""
     try:
         level_map = {
             "critical": "emerg",
@@ -272,7 +331,9 @@ def _get_linux_event_log(
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"]))
         
         if result.returncode != 0:
-            return build_error(ERR_SYSTEM_EVENT_LOG, f"获取事件日志失败: {result.stderr}", data={"error": result.stderr})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000) if t0 else 0
+            llm_data = _build_event_log_llm("error", duration_ms, log_name, 0, level)
+            return build_error(data={"error_detail": result.stderr}, llm_data=llm_data)
         
         events = []
         
@@ -290,17 +351,26 @@ def _get_linux_event_log(
                 except json_module.JSONDecodeError:
                     continue
         
-        return build_success({
-                "log_name": log_name,
-                "events": events[:max_events],
-                "total": len(events[:max_events]),
-                "level": level,
-            }, f"找到 {len(events[:max_events])} 条事件日志")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000) if t0 else 0
+        data = {
+            "log_name": log_name,
+            "events": events[:max_events],
+            "total": len(events[:max_events]),
+            "level": level,
+        }
+        llm_data = _build_event_log_llm("success", duration_ms, log_name, len(events[:max_events]), level)
+        return build_success(data=data, llm_data=llm_data)
     
     except subprocess.TimeoutExpired:
-        return build_error(ERR_SYSTEM_TIMEOUT, "获取事件日志超时")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000) if t0 else 0
+        llm_data = _build_event_log_llm("error", duration_ms, log_name, 0, level)
+        llm_data["status"]["code"] = ERR_SYSTEM_TIMEOUT
+        return build_error(data={"error_detail": "获取事件日志超时"}, llm_data=llm_data)
     except FileNotFoundError:
-        return build_error(ERR_SHELL_COMMAND_NOT_FOUND, "journalctl命令不存在")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000) if t0 else 0
+        llm_data = _build_event_log_llm("error", duration_ms, log_name, 0, level)
+        llm_data["status"]["code"] = ERR_SHELL_COMMAND_NOT_FOUND
+        return build_error(data={"error_detail": "journalctl命令不存在"}, llm_data=llm_data)
 
 
 
@@ -363,19 +433,59 @@ def _filter_tasks(tasks: List[Dict], filter_name: Optional[str],
     return matched[:max_results], len(matched)
 
 
-def _build_task_llm(tasks: List[Dict], total_raw: int,
-                    total_matched: int, max_results: int) -> Dict:
-    """构建 llm_data 摘要(移除 YAGNI 死代码 _llm["截断"])
-
-    小沈 2026-05-25 重构拆分
-    """
+def _build_task_llm(exec_code: str, duration_ms: int, tasks: List[Dict], total_raw: int,
+                    total_matched: int) -> Dict:
+    """构建 list_tasks 的 llm_data — 小健 2026-06-21 新5字段格式"""
+    if exec_code == "error":
+        return {
+            "summary": "获取计划任务列表失败",
+            "action": {"tool": "list_tasks", "tool_zh": "列出任务", "target": "", "params": {}},
+            "status": {"exec_code": "error", "message": "获取计划任务列表失败", "code": ERR_TASK_LIST, "detail": "", "hint": ""},
+            "duration_ms": duration_ms,
+            "metrics": {},
+        }
     return {
-        "任务总数": total_raw,
-        "过滤后": total_matched,
-        "返回数": len(tasks),
-        "任务列表": [{"名称": t.get("name", ""),
-                    "状态": t.get("status_desc", t.get("status", ""))}
-                   for t in tasks],
+        "summary": f"共 {total_raw} 个计划任务，匹配 {total_matched} 个，返回 {len(tasks)} 个",
+        "action": {"tool": "list_tasks", "tool_zh": "列出任务", "target": "", "params": {}},
+        "status": {"exec_code": "success", "message": "获取计划任务列表成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"total": {"value": total_raw, "text": f"{total_raw}个"}, "matched": {"value": total_matched, "text": f"{total_matched}个"}},
+    }
+
+
+def _build_create_task_llm(exec_code: str, duration_ms: int, task_name: str, schedule: str = "",
+                           err_code: str = "", detail: str = "") -> dict:
+    """create_task的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"创建计划任务失败: {task_name}",
+            "action": {"tool": "create_task", "tool_zh": "创建任务", "target": task_name, "params": {"task_name": task_name, "schedule": schedule}},
+            "status": {"exec_code": "error", "message": "创建计划任务失败", "code": err_code or ERR_TASK_CREATE, "detail": detail, "hint": ""},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"计划任务 {task_name} 创建成功",
+        "action": {"tool": "create_task", "tool_zh": "创建任务", "target": task_name, "params": {"task_name": task_name, "schedule": schedule}},
+        "status": {"exec_code": "success", "message": "创建计划任务成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms, "metrics": {},
+    }
+
+
+def _build_delete_task_llm(exec_code: str, duration_ms: int, task_name: str,
+                           err_code: str = "", detail: str = "") -> dict:
+    """delete_task的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"删除计划任务失败: {task_name}",
+            "action": {"tool": "delete_task", "tool_zh": "删除任务", "target": task_name, "params": {"task_name": task_name}},
+            "status": {"exec_code": "error", "message": "删除计划任务失败", "code": err_code or ERR_TASK_DELETE, "detail": detail, "hint": ""},
+            "duration_ms": duration_ms, "metrics": {},
+        }
+    return {
+        "summary": f"计划任务 {task_name} 已删除",
+        "action": {"tool": "delete_task", "tool_zh": "删除任务", "target": task_name, "params": {"task_name": task_name}},
+        "status": {"exec_code": "success", "message": "删除计划任务成功", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms, "metrics": {},
     }
 
 
@@ -384,45 +494,49 @@ def _task_list(
     filter_status: str = "all",
     max_results: int = 100,
 ) -> dict:
-    """
-    列出所有计划任务 - 小健 2026-05-06 参数名对齐Schema
-    【小沈重构 2026-05-25】重构拆分:提取 _run_schtasks_query / _parse_task_entries / _filter_tasks / _build_task_llm
-
-    使用schtasks query命令列出计划任务。
-
-    Args:
-        filter_name: 任务名称过滤(可选)
-        filter_status: 状态过滤(ready/running/disabled/all)
-        max_results: 最大返回数量
-
-    Returns:
-        {code, data, message}
-    """
+    """列出所有计划任务(内部) — 小健 2026-06-21 builder改造"""
+    t0 = _time_mod.perf_counter()
     try:
         if platform.system() != "Windows":
-            return build_error(ERR_DESKTOP_PLATFORM_NOT_SUPPORTED, "task_list 仅支持Windows系统")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_task_llm("error", duration_ms, [], 0, 0)
+            llm_data["status"]["code"] = ERR_DESKTOP_PLATFORM_NOT_SUPPORTED
+            return build_error(data={"error_detail": "task_list 仅支持Windows系统"}, llm_data=llm_data)
 
         stdout = _run_schtasks_query()
         tasks = _parse_task_entries(stdout)
         limited, matched = _filter_tasks(tasks, filter_name, filter_status, max_results)
-        llm = _build_task_llm(limited, len(tasks), matched, max_results)
 
-        return build_success({
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {
             "tasks": limited,
             "total": len(limited),
             "total_matched": len(tasks),
             "platform": "Windows",
-        }, f"找到 {len(tasks)} 个计划任务,返回前 {len(limited)} 个", llm_data=llm)
+        }
+        llm_data = _build_task_llm("success", duration_ms, limited, len(tasks), matched)
+        return build_success(data=data, llm_data=llm_data)
 
     except subprocess.TimeoutExpired:
-        return build_error(ERR_SHELL_TIMEOUT, "获取计划任务列表超时")
-    except ValueError as e:                    # 小沈 2026-05-25: 恢复ERR_TASK_EMPTY专用错误码
-        return build_error(ERR_TASK_EMPTY, str(e), data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_task_llm("error", duration_ms, [], 0, 0)
+        llm_data["status"]["code"] = ERR_SHELL_TIMEOUT
+        return build_error(data={"error_detail": "获取计划任务列表超时"}, llm_data=llm_data)
+    except ValueError as e:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_task_llm("error", duration_ms, [], 0, 0)
+        llm_data["status"]["code"] = ERR_TASK_EMPTY
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
     except FileNotFoundError:
-        return build_error(ERR_SHELL_COMMAND_NOT_FOUND, "schtasks 命令不存在")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_task_llm("error", duration_ms, [], 0, 0)
+        llm_data["status"]["code"] = ERR_SHELL_COMMAND_NOT_FOUND
+        return build_error(data={"error_detail": "schtasks 命令不存在"}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[task_list] 获取计划任务列表失败: {e}")
-        return build_error(ERR_TASK_LIST, f"获取计划任务列表失败: {str(e)}", data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_task_llm("error", duration_ms, [], 0, 0)
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
 
 
 def _build_schtasks_create_cmd(
@@ -486,27 +600,13 @@ def _task_create(
     start_date: Optional[str] = None,
     interval: Optional[int] = None,
 ) -> dict:
-    """
-    创建计划任务 - 小健 2026-05-06 补start_in对齐Schema
-    
-    使用schtasks create命令创建计划任务。
-    
-    Args:
-        task_name: 计划任务名称
-        command: 要执行的命令或程序路径
-        schedule: 计划时间(格式:'HH:MM' 或 'HH:MM /day' 或 'HH:MM /monthly DD')
-        start_time: 起始时间
-        start_date: 起始日期
-        interval: 重复间隔(分钟)
-        description: 任务描述
-        user: 运行任务的用户账户
-    
-    Returns:
-        {code, data, message}
-    """
+    """创建计划任务(内部) — 小健 2026-06-21 builder改造"""
+    t0 = _time_mod.perf_counter()
     try:
         if platform.system() != "Windows":
-            return build_error(ERR_DESKTOP_PLATFORM_NOT_SUPPORTED, "task_create 仅支持Windows系统")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_create_task_llm("error", duration_ms, task_name, schedule, ERR_DESKTOP_PLATFORM_NOT_SUPPORTED)
+            return build_error(data={"error_detail": "task_create 仅支持Windows系统"}, llm_data=llm_data)
 
         cmd = _build_schtasks_create_cmd(
             task_name, command, schedule,
@@ -515,23 +615,29 @@ def _task_create(
         result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
 
         if result.returncode != 0:
-            return build_error(ERR_TASK_CREATE, f"创建计划任务失败: {result.stderr.strip() or result.stdout.strip()}", data={"error": result.stderr.strip() or result.stdout.strip()})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            err_msg = result.stderr.strip() or result.stdout.strip()
+            llm_data = _build_create_task_llm("error", duration_ms, task_name, schedule, ERR_TASK_CREATE, err_msg)
+            return build_error(data={"error_detail": err_msg}, llm_data=llm_data)
 
-        return build_success({
-                "task_name": task_name,
-                "command": command,
-                "schedule": schedule,
-                "description": description,
-                "user": user,
-            }, f"计划任务 {task_name} 创建成功")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"task_name": task_name, "command": command, "schedule": schedule, "description": description, "user": user}
+        llm_data = _build_create_task_llm("success", duration_ms, task_name, schedule)
+        return build_success(data=data, llm_data=llm_data)
 
     except subprocess.TimeoutExpired:
-        return build_error(ERR_SHELL_TIMEOUT, "创建计划任务超时")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_create_task_llm("error", duration_ms, task_name, schedule, ERR_SHELL_TIMEOUT)
+        return build_error(data={"error_detail": "创建计划任务超时"}, llm_data=llm_data)
     except FileNotFoundError:
-        return build_error(ERR_SHELL_COMMAND_NOT_FOUND, "schtasks命令不存在")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_create_task_llm("error", duration_ms, task_name, schedule, ERR_SHELL_COMMAND_NOT_FOUND)
+        return build_error(data={"error_detail": "schtasks命令不存在"}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[task_create] 创建计划任务失败: {e}")
-        return build_error(ERR_TASK_CREATE, f"创建计划任务失败: {str(e)}", data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_create_task_llm("error", duration_ms, task_name, schedule, ERR_TASK_CREATE, str(e))
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
 
 
 def _task_delete(
@@ -539,56 +645,54 @@ def _task_delete(
     force: bool = False,
     folder: Optional[str] = None,
 ) -> dict:
-    """
-    删除计划任务 - 小健 2026-05-06 补force对齐Schema
-    
-    使用schtasks delete命令删除计划任务。
-    
-    Args:
-        task_name: 要删除的计划任务名称
-        folder: 任务所在文件夹
-    
-    Returns:
-        {code, data, message}
-    """
+    """删除计划任务(内部) — 小健 2026-06-21 builder改造"""
+    t0 = _time_mod.perf_counter()
     try:
         if platform.system() != "Windows":
-            return build_error(ERR_DESKTOP_PLATFORM_NOT_SUPPORTED, "task_delete 仅支持Windows系统")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_delete_task_llm("error", duration_ms, task_name, ERR_DESKTOP_PLATFORM_NOT_SUPPORTED)
+            return build_error(data={"error_detail": "task_delete 仅支持Windows系统"}, llm_data=llm_data)
         
-        # 处理完整的任务名(folder + task_name)
         full_task_name = task_name
         if folder:
             full_task_name = f"{folder}\\{task_name}"
         
-        # 先查询确认任务存在
         query_cmd = ["schtasks", "/query", "/tn", full_task_name]
         query_result = subprocess.run(query_cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=SUBPROCESS_TIMEOUT_DEFAULT)
         
         if query_result.returncode != 0:
-            return build_error(ERR_TASK_NOT_FOUND, f"计划任务 {full_task_name} 不存在", data={"name": full_task_name})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_delete_task_llm("error", duration_ms, full_task_name, ERR_TASK_NOT_FOUND)
+            return build_error(data={"error_detail": f"计划任务 {full_task_name} 不存在", "params": {"name": full_task_name}}, llm_data=llm_data)
         
         cmd = ["schtasks", "/delete", "/tn", full_task_name, "/f"]
         
         result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
         
         if result.returncode != 0:
-            return build_error(ERR_TASK_DELETE, f"删除计划任务失败: {result.stderr.strip() or result.stdout.strip()}", data={"error": result.stderr.strip() or result.stdout.strip()})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            err_msg = result.stderr.strip() or result.stdout.strip()
+            llm_data = _build_delete_task_llm("error", duration_ms, full_task_name, ERR_TASK_DELETE, err_msg)
+            return build_error(data={"error_detail": err_msg}, llm_data=llm_data)
         
-        delete_type = f"强制删除({folder})" if folder else "普通删除"
-        
-        return build_success({
-                "task_name": full_task_name,
-                "folder": folder,
-                "delete_type": delete_type,
-            }, f"计划任务 {full_task_name} 已删除")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"task_name": full_task_name, "folder": folder, "delete_type": f"强制删除({folder})" if folder else "普通删除"}
+        llm_data = _build_delete_task_llm("success", duration_ms, full_task_name)
+        return build_success(data=data, llm_data=llm_data)
     
     except subprocess.TimeoutExpired:
-        return build_error(ERR_SHELL_TIMEOUT, "删除计划任务超时")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_delete_task_llm("error", duration_ms, task_name, ERR_SHELL_TIMEOUT)
+        return build_error(data={"error_detail": "删除计划任务超时"}, llm_data=llm_data)
     except FileNotFoundError:
-        return build_error(ERR_SHELL_COMMAND_NOT_FOUND, "schtasks命令不存在")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_delete_task_llm("error", duration_ms, task_name, ERR_SHELL_COMMAND_NOT_FOUND)
+        return build_error(data={"error_detail": "schtasks命令不存在"}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[task_delete] 删除计划任务失败: {e}")
-        return build_error(ERR_TASK_DELETE, f"删除计划任务失败: {str(e)}", data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_delete_task_llm("error", duration_ms, task_name, ERR_TASK_DELETE, str(e))
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
 
 
 
@@ -598,154 +702,135 @@ def create_task(
     schedule: str,
     interval: Optional[int] = None,
 ) -> dict:
-    """
-    创建Windows计划任务 - 小沈 2026-06-16, 小健 2026-06-20 删start_time(与schedule重叠)
-    
-    使用schtasks /create命令创建计划任务。
-    schedule格式:'HH:MM'(每日)、'HH:MM /day N'(每周)、'HH:MM /monthly DD'(每月)
-    
-    Args:
-        task_name: 计划任务名称(必填)
-        command: 要执行的命令或程序路径(必填)
-        schedule: 计划时间(必填)
-        interval: 重复间隔分钟数(可选)
-    
-    Returns:
-        {code, data, message}
-    """
-    start_time = None
+    """创建Windows计划任务 — 小健 2026-06-21 builder改造"""
+    t0 = _time_mod.perf_counter()
     try:
         if platform.system() != "Windows":
-            return build_error(ERR_DESKTOP_PLATFORM_NOT_SUPPORTED, "create_task 仅支持Windows系统")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_create_task_llm("error", duration_ms, task_name, schedule, ERR_DESKTOP_PLATFORM_NOT_SUPPORTED)
+            return build_error(data={"error_detail": "create_task 仅支持Windows系统"}, llm_data=llm_data)
 
         cmd = _build_schtasks_create_cmd(
             task_name, command, schedule,
-            None, None, start_time, None, interval)
+            None, None, None, None, interval)
 
         result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
 
         if result.returncode != 0:
-            return build_error(ERR_TASK_CREATE, f"创建计划任务失败: {result.stderr.strip() or result.stdout.strip()}", data={"error": result.stderr.strip() or result.stdout.strip()})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            err_msg = result.stderr.strip() or result.stdout.strip()
+            llm_data = _build_create_task_llm("error", duration_ms, task_name, schedule, ERR_TASK_CREATE, err_msg)
+            return build_error(data={"error_detail": err_msg}, llm_data=llm_data)
 
-        return build_success({
-                "task_name": task_name,
-                "command": command,
-                "schedule": schedule,
-            }, f"计划任务 {task_name} 创建成功")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"task_name": task_name, "command": command, "schedule": schedule}
+        llm_data = _build_create_task_llm("success", duration_ms, task_name, schedule)
+        return build_success(data=data, llm_data=llm_data)
 
     except subprocess.TimeoutExpired:
-        return build_error(ERR_SHELL_TIMEOUT, "创建计划任务超时")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_create_task_llm("error", duration_ms, task_name, schedule, ERR_SHELL_TIMEOUT)
+        return build_error(data={"error_detail": "创建计划任务超时"}, llm_data=llm_data)
     except FileNotFoundError:
-        return build_error(ERR_SHELL_COMMAND_NOT_FOUND, "schtasks命令不存在")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_create_task_llm("error", duration_ms, task_name, schedule, ERR_SHELL_COMMAND_NOT_FOUND)
+        return build_error(data={"error_detail": "schtasks命令不存在"}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[create_task] 创建计划任务失败: {e}")
-        return build_error(ERR_TASK_CREATE, f"创建计划任务失败: {str(e)}", data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_create_task_llm("error", duration_ms, task_name, schedule, ERR_TASK_CREATE, str(e))
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
 
 
 def delete_task(
     task_name: str,
 ) -> dict:
-    """
-    删除Windows计划任务 - 小沈 2026-06-16
-    
-    使用schtasks /delete命令删除计划任务。
-    
-    Args:
-        task_name: 要删除的计划任务名称(必填)
-    
-    Returns:
-        {code, data, message}
-    """
+    """删除Windows计划任务 — 小健 2026-06-21 builder改造"""
+    t0 = _time_mod.perf_counter()
     try:
         if platform.system() != "Windows":
-            return build_error(ERR_DESKTOP_PLATFORM_NOT_SUPPORTED, "delete_task 仅支持Windows系统")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_delete_task_llm("error", duration_ms, task_name, ERR_DESKTOP_PLATFORM_NOT_SUPPORTED)
+            return build_error(data={"error_detail": "delete_task 仅支持Windows系统"}, llm_data=llm_data)
 
         query_cmd = ["schtasks", "/query", "/tn", task_name]
         query_result = subprocess.run(query_cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=SUBPROCESS_TIMEOUT_DEFAULT)
 
         if query_result.returncode != 0:
-            return build_error(ERR_TASK_NOT_FOUND, f"计划任务 {task_name} 不存在", data={"name": task_name})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_delete_task_llm("error", duration_ms, task_name, ERR_TASK_NOT_FOUND)
+            return build_error(data={"error_detail": f"计划任务 {task_name} 不存在", "params": {"name": task_name}}, llm_data=llm_data)
 
         cmd = ["schtasks", "/delete", "/tn", task_name, "/f"]
 
         result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
 
         if result.returncode != 0:
-            return build_error(ERR_TASK_DELETE, f"删除计划任务失败: {result.stderr.strip() or result.stdout.strip()}", data={"error": result.stderr.strip() or result.stdout.strip()})
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            err_msg = result.stderr.strip() or result.stdout.strip()
+            llm_data = _build_delete_task_llm("error", duration_ms, task_name, ERR_TASK_DELETE, err_msg)
+            return build_error(data={"error_detail": err_msg}, llm_data=llm_data)
 
-        return build_success({
-                "task_name": task_name,
-            }, f"计划任务 {task_name} 已删除")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"task_name": task_name}
+        llm_data = _build_delete_task_llm("success", duration_ms, task_name)
+        return build_success(data=data, llm_data=llm_data)
 
     except subprocess.TimeoutExpired:
-        return build_error(ERR_SHELL_TIMEOUT, "删除计划任务超时")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_delete_task_llm("error", duration_ms, task_name, ERR_SHELL_TIMEOUT)
+        return build_error(data={"error_detail": "删除计划任务超时"}, llm_data=llm_data)
     except FileNotFoundError:
-        return build_error(ERR_SHELL_COMMAND_NOT_FOUND, "schtasks命令不存在")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_delete_task_llm("error", duration_ms, task_name, ERR_SHELL_COMMAND_NOT_FOUND)
+        return build_error(data={"error_detail": "schtasks命令不存在"}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[delete_task] 删除计划任务失败: {e}")
-        return build_error(ERR_TASK_DELETE, f"删除计划任务失败: {str(e)}", data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_delete_task_llm("error", duration_ms, task_name, ERR_TASK_DELETE, str(e))
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
 
 
 def list_tasks(
     task_name: Optional[str] = None,
     state: str = "all",
 ) -> dict:
-    """
-    列出Windows计划任务 - 小沈 2026-06-16
-    
-    使用schtasks query命令列出计划任务。
-    
-    Args:
-        task_name: 按任务名称过滤(模糊匹配,可选)
-        state: 状态过滤(ready/running/disabled/all),默认all
-    
-    Returns:
-        {code, data, message}
-    """
+    """列出Windows计划任务 — 小健 2026-06-21 builder改造"""
+    t0 = _time_mod.perf_counter()
     try:
         if platform.system() != "Windows":
-            return build_error(ERR_DESKTOP_PLATFORM_NOT_SUPPORTED, "list_tasks 仅支持Windows系统")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_task_llm("error", duration_ms, [], 0, 0)
+            llm_data["status"]["code"] = ERR_DESKTOP_PLATFORM_NOT_SUPPORTED
+            return build_error(data={"error_detail": "list_tasks 仅支持Windows系统"}, llm_data=llm_data)
 
         stdout = _run_schtasks_query()
         tasks = _parse_task_entries(stdout)
         limited, matched = _filter_tasks(tasks, task_name, state, 100)
-        llm = _build_task_llm(limited, len(tasks), matched, 100)
 
-        return build_success({
-            "tasks": limited,
-            "total": len(limited),
-            "total_matched": len(tasks),
-            "platform": "Windows",
-        }, f"找到 {len(tasks)} 个计划任务,返回前 {len(limited)} 个", llm_data=llm)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        data = {"tasks": limited, "total": len(limited), "total_matched": len(tasks), "platform": "Windows"}
+        llm_data = _build_task_llm("success", duration_ms, limited, len(tasks), matched)
+        return build_success(data=data, llm_data=llm_data)
 
     except subprocess.TimeoutExpired:
-        return build_error(ERR_SHELL_TIMEOUT, "获取计划任务列表超时")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_task_llm("error", duration_ms, [], 0, 0)
+        llm_data["status"]["code"] = ERR_SHELL_TIMEOUT
+        return build_error(data={"error_detail": "获取计划任务列表超时"}, llm_data=llm_data)
     except ValueError as e:
-        return build_error(ERR_TASK_EMPTY, str(e), data={"error": str(e)})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_task_llm("error", duration_ms, [], 0, 0)
+        llm_data["status"]["code"] = ERR_TASK_EMPTY
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
     except FileNotFoundError:
-        return build_error(ERR_SHELL_COMMAND_NOT_FOUND, "schtasks 命令不存在")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_task_llm("error", duration_ms, [], 0, 0)
+        llm_data["status"]["code"] = ERR_SHELL_COMMAND_NOT_FOUND
+        return build_error(data={"error_detail": "schtasks 命令不存在"}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[list_tasks] 获取计划任务列表失败: {e}")
-        return build_error(ERR_TASK_LIST, f"获取计划任务列表失败: {str(e)}", data={"error": str(e)})
-from app.constants import (
-    ERR_DESKTOP_PLATFORM_NOT_SUPPORTED,
-    ERR_PARAMETER_INVALID,
-    ERR_PERMISSION_DENIED,
-    ERR_SERVICE_LIST,
-    ERR_SERVICE_NOT_FOUND,
-    ERR_SERVICE_START,
-    ERR_SERVICE_STOP,
-    ERR_SHELL_COMMAND_NOT_FOUND,
-    ERR_SHELL_TIMEOUT,
-    ERR_SYSTEM_EVENT_LOG,
-    ERR_SYSTEM_INFO,
-    ERR_SYSTEM_NET_CONN,
-    ERR_SYSTEM_PROCESS_KILL,
-    ERR_SYSTEM_PROCESS_LIST,
-    ERR_SYSTEM_TIMEOUT,
-    ERR_TASK_CREATE,
-    ERR_TASK_DELETE,
-    ERR_TASK_EMPTY,
-    ERR_TASK_LIST,
-    ERR_TASK_NOT_FOUND,
-)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_task_llm("error", duration_ms, [], 0, 0)
+        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+
