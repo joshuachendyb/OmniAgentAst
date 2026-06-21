@@ -1,11 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Meta 工具实现 - tool_search (BM25 全文检索)
-【设计说明 2026-06-17 北京老陈确认】本文件是按工具分类聚合的实现文件，文件大是正常设计。后续审查关注功能逻辑本身的代码10大规范遵守和最优美简洁性，禁止以"文件过大"作为问题提出。
-
-【2026-05-17 小沈】新建
-【2026-06-12 小沈】删除tool_help/pipeline(YAGNI,FC Schema已覆盖),仅保留tool_search
-【2026-06-14 小欧】替换简单关键词评分为 BM25 全文检索，中英混合分词
+tool_search — BM25 全文检索搜索工具
+【2026-06-22 小健】从 fundamental_tools.py 拆分为独立文件
 """
 
 import math
@@ -14,17 +10,13 @@ from collections import Counter
 from typing import Dict, Any, List, Tuple
 
 from app.tools.registry import tool_registry
-from app.utils.tool_result_formatter import (
-    truncate_data_for_frontend,
-)
+from app.utils.tool_result_formatter import truncate_data_for_frontend
 from app.tools.tool_response import build_success, build_error
 from app.constants import ERR_DOC_QUERY_EMPTY
 
 
-# ── 分词 ──────────────────────────────────────────────────────────
-
 def _tokenize(text: str) -> List[str]:
-    """中英混合分词：中文按单字切分，英文按词切分，统一小写"""
+    """中英混合分词：中文按单字切分，英文按词切分，统一小写 — 小沈 2026-06-14"""
     tokens: List[str] = []
     buf: List[str] = []
     for ch in text.lower():
@@ -34,8 +26,6 @@ def _tokenize(text: str) -> List[str]:
                 buf.clear()
             tokens.append(ch)
         elif ch == '_':
-            # 下划线作为分词分隔符，把复合词拆分
-            # 例如 "search_files" → ["search", "files"]
             if buf:
                 tokens.append("".join(buf))
                 buf.clear()
@@ -50,18 +40,11 @@ def _tokenize(text: str) -> List[str]:
     return tokens
 
 
-# ── BM25 核心 ─────────────────────────────────────────────────────
-
 def _build_bm25() -> Tuple[List[List[str]], List[str], float, Counter]:
-    """从工具注册表构建 BM25 语料库
-
-    Returns:
-        (tokenized_docs, tool_names, avgdl, df)
-    """
+    """从工具注册表构建 BM25 语料库 — 小沈 2026-06-14"""
     docs: List[List[str]] = []
     tool_names: List[str] = []
     for name, metadata in tool_registry._tools.items():
-        # name 重复 3 次以提升名称匹配权重
         text = " ".join([name] * 3) + " " + metadata.description
         docs.append(_tokenize(text))
         tool_names.append(name)
@@ -85,7 +68,7 @@ def _bm25_scores(
     k1: float = 1.5,
     b: float = 0.75,
 ) -> List[float]:
-    """计算 BM25 分数（Okapi BM25）"""
+    """计算 BM25 分数（Okapi BM25） — 小沈 2026-06-14"""
     N = len(docs)
     if N == 0:
         return []
@@ -108,11 +91,9 @@ def _bm25_scores(
     return scores
 
 
-# ── 公开工具 ──────────────────────────────────────────────────────
-
-def _build_tool_search_llm(exec_code: str, duration_ms: int, query: str,
-                            total_matched: int, total_tools: int,
-                            matches: list) -> dict:
+def _build_tool_search_llm_data(exec_code: str, duration_ms: int, query: str,
+                                 total_matched: int, total_tools: int,
+                                 matches: list) -> dict:
     """tool_search的llm_data构建函数 — 小健 2026-06-21"""
     if exec_code == "error":
         return {
@@ -132,19 +113,11 @@ def _build_tool_search_llm(exec_code: str, duration_ms: int, query: str,
 
 
 def tool_search(query: str) -> Dict[str, Any]:
-    """
-    按关键词搜索匹配的工具列表（BM25 全文检索）。
-
-    Args:
-        query: 自然语言描述需求
-
-    Returns:
-        匹配的工具列表
-    """
+    """按关键词搜索匹配的工具列表（BM25 全文检索） — 小健 2026-06-22 拆分独立文件"""
     t0 = time.perf_counter()
     if not query.strip():
         duration_ms = int((time.perf_counter() - t0) * 1000)
-        llm_data = _build_tool_search_llm("error", duration_ms, query, 0, 0, [])
+        llm_data = _build_tool_search_llm_data("error", duration_ms, query, 0, 0, [])
         return build_error(data={"error_detail": "搜索关键词不能为空", "params": {"query": query}}, llm_data=llm_data)
 
     all_tools = tool_registry._tools
@@ -156,7 +129,7 @@ def tool_search(query: str) -> Dict[str, Any]:
             "total_matched": 0,
             "total_tools": 0,
         })
-        llm_data = _build_tool_search_llm("success", duration_ms, query, 0, 0, [])
+        llm_data = _build_tool_search_llm_data("success", duration_ms, query, 0, 0, [])
         return build_success(data=data, llm_data=llm_data)
 
     query_tokens = _tokenize(query.strip())
@@ -177,8 +150,8 @@ def tool_search(query: str) -> Dict[str, Any]:
             "query": query, "matches": top,
             "total_matched": len(all_items), "total_tools": len(all_tools),
         })
-        llm_data = _build_tool_search_llm("success", duration_ms, query, len(all_items), len(all_tools),
-                                           [{"name": r["name"], "category": r["category"]} for r in top])
+        llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(all_items), len(all_tools),
+                                                 [{"name": r["name"], "category": r["category"]} for r in top])
         return build_success(data=data, llm_data=llm_data)
 
     docs, tool_names, avgdl, df = _build_bm25()
@@ -206,10 +179,9 @@ def tool_search(query: str) -> Dict[str, Any]:
         "total_matched": len(scored),
         "total_tools": len(all_tools),
     })
-    llm_data = _build_tool_search_llm("success", duration_ms, query, len(scored), len(all_tools),
-                                       [{"name": r["name"], "category": r["category"]} for r in top_results[:10]])
+    llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(scored), len(all_tools),
+                                             [{"name": r["name"], "category": r["category"]} for r in top_results[:10]])
     return build_success(data=data, llm_data=llm_data)
 
 
 __all__ = ["tool_search"]
-

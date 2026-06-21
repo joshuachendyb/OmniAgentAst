@@ -38,17 +38,13 @@ from app.tools.fundamental.fundamental_schema import (
     SendNotificationInput,
     GetSystemInfoInput,
 )
-from app.tools.fundamental.fundamental_tools import (
-    tool_search,
-)
-from app.tools.fundamental.time_tools import (
-    time_now,
-    time_add,
-    time_diff,
-    query_calendar,
-)
-from app.tools.system.system_tools import get_system_info
-from app.tools.desktop.desktop_gui_tools import send_notification
+from app.tools.fundamental.tool_search import tool_search
+from app.tools.fundamental.time_now import time_now
+from app.tools.fundamental.time_add import time_add
+from app.tools.fundamental.time_diff import time_diff
+from app.tools.fundamental.query_calendar import query_calendar
+from app.tools.fundamental.get_system_info import get_system_info
+from app.tools.fundamental.send_notification import send_notification
 
 
 FUNDAMENTAL_TOOL_DESCRIPTIONS = {
