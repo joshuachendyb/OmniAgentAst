@@ -52,33 +52,21 @@ class WindowResizeInput(BaseModel):
     )
 
 
-class WindowMaximizeInput(BaseModel):
+class SetWindowStateInput(BaseModel):
+    """窗口状态操作
+
+    【action参数】决定操作类型：
+    - maximize: 最大化窗口
+    - minimize: 最小化窗口
+    - restore: 还原窗口
+    - topmost: 窗口置顶
+    - unpin: 取消置顶
+    """
     window_title: str = Field(
         description="窗口标题(大小写不敏感的模糊匹配)"
     )
-
-
-class WindowMinimizeInput(BaseModel):
-    window_title: str = Field(
-        description="窗口标题(大小写不敏感的模糊匹配)"
-    )
-
-
-class WindowRestoreInput(BaseModel):
-    window_title: str = Field(
-        description="窗口标题(大小写不敏感的模糊匹配)"
-    )
-
-
-class WindowTopmostInput(BaseModel):
-    window_title: str = Field(
-        description="窗口标题(大小写不敏感的模糊匹配)"
-    )
-
-
-class WindowUnpinInput(BaseModel):
-    window_title: str = Field(
-        description="窗口标题(大小写不敏感的模糊匹配)"
+    action: Literal["maximize", "minimize", "restore", "topmost", "unpin"] = Field(
+        description="窗口操作:maximize(最大化)/minimize(最小化)/restore(还原)/topmost(置顶)/unpin(取消置顶)"
     )
 
 
@@ -175,11 +163,7 @@ __all__ = [
     "WindowInfoInput",
     "WindowFocusInput",
     "WindowResizeInput",
-    "WindowMaximizeInput",
-    "WindowMinimizeInput",
-    "WindowRestoreInput",
-    "WindowTopmostInput",
-    "WindowUnpinInput",
+    "SetWindowStateInput",
     "MouseClickInput",
     "MouseMoveInput",
     "MouseScrollInput",

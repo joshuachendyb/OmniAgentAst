@@ -2,52 +2,35 @@
 """
 DESKTOP Register - 桌面工具注册点
 
-【架构规范】2026-04-29 小沈
-【2026-05-17 小沈】26→10精简:统一注册10个LLM可见工具
-【2026-06-09 小沈】删除边缘工具:screen_record/ocr/send_notification,10→6
-【2026-06-15 小欧】恢复send_notification注册,6→7
-【2026-06-17 小欧】组合工具拆分:window_control→7个,mouse_control→4个,clipboard_control→2个,window_info去info
-【2026-06-18 小健】添加DESKTOP_TOOL_DEPENDENCIES常量管理工具依赖
+【2026-06-22 小健】5个窗口状态tool合并为1个set_window_state，16→12
 
-【工具列表】(16个) → DESKTOP分类:
-1. window_info - 列出所有窗口 (依赖: pygetwindow)
-2. window_focus - 聚焦窗口 (依赖: pygetwindow)
-3. window_resize - 调整窗口大小 (依赖: pygetwindow)
-4. window_maximize - 最大化窗口 (依赖: pygetwindow)
-5. window_minimize - 最小化窗口 (依赖: pygetwindow)
-6. window_restore - 还原窗口 (依赖: pygetwindow)
-7. window_topmost - 窗口置顶 (依赖: pygetwindow)
-8. window_unpin - 取消置顶 (依赖: pygetwindow)
-9. mouse_click - 鼠标单击 (依赖: pyautogui)
-10. mouse_move - 移动鼠标 (依赖: pyautogui)
-11. mouse_scroll - 鼠标滚轮 (依赖: pyautogui)
-12. mouse_position - 获取鼠标位置 (依赖: pyautogui)
-13. keyboard_control - 键盘控制 (依赖: pyautogui)
-14. screen_capture - 屏幕截图 (依赖: pyautogui)
-15. clipboard_read - 读取剪贴板 (依赖: pyperclip)
-16. clipboard_write - 写入剪贴板 (依赖: pyperclip)
-
-【2026-06-18 小健】send_notification移入FUNDAMENTAL分类
+【工具列表】(12个) → DESKTOP分类:
+1. window_info - 列出所有窗口 (依赖: pywin32)
+2. window_focus - 聚焦窗口 (依赖: pywin32)
+3. window_resize - 调整窗口大小 (依赖: pywin32)
+4. set_window_state - 窗口状态操作(maximize/minimize/restore/topmost/unpin) (依赖: pywin32)
+5. mouse_click - 鼠标单击 (依赖: pyautogui)
+6. mouse_move - 移动鼠标 (依赖: pyautogui)
+7. mouse_scroll - 鼠标滚轮 (依赖: pyautogui)
+8. mouse_position - 获取鼠标位置 (依赖: pyautogui)
+9. keyboard_control - 键盘控制 (依赖: pyautogui)
+10. screen_capture - 屏幕截图 (依赖: pyautogui)
+11. clipboard_read - 读取剪贴板 (依赖: pyperclip)
+12. clipboard_write - 写入剪贴板 (依赖: pyperclip)
 
 创建时间: 2026-04-29
-更新时间: 2026-06-18 小健
+更新时间: 2026-06-22 小健
 """
 
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
 
-# 桌面工具依赖配置 — 小健 2026-06-18
-# 注意：pywin32的import名是win32com/win32gui
 DESKTOP_TOOL_DEPENDENCIES = {
     "window_info": [{"import_name": "win32gui", "pip_package": "pywin32"}],
     "window_focus": [{"import_name": "win32gui", "pip_package": "pywin32"}],
     "window_resize": [{"import_name": "win32gui", "pip_package": "pywin32"}],
-    "window_maximize": [{"import_name": "win32gui", "pip_package": "pywin32"}],
-    "window_minimize": [{"import_name": "win32gui", "pip_package": "pywin32"}],
-    "window_restore": [{"import_name": "win32gui", "pip_package": "pywin32"}],
-    "window_topmost": [{"import_name": "win32gui", "pip_package": "pywin32"}],
-    "window_unpin": [{"import_name": "win32gui", "pip_package": "pywin32"}],
+    "set_window_state": [{"import_name": "win32gui", "pip_package": "pywin32"}],
     "mouse_click": ["pyautogui"],
     "mouse_move": ["pyautogui"],
     "mouse_scroll": ["pyautogui"],
@@ -56,18 +39,13 @@ DESKTOP_TOOL_DEPENDENCIES = {
     "screen_capture": ["mss", "pyautogui"],
     "clipboard_read": ["pyperclip"],
     "clipboard_write": ["pyperclip"],
-
 }
 
 from app.tools.desktop.desktop_schema import (
     WindowInfoInput,
     WindowFocusInput,
     WindowResizeInput,
-    WindowMaximizeInput,
-    WindowMinimizeInput,
-    WindowRestoreInput,
-    WindowTopmostInput,
-    WindowUnpinInput,
+    SetWindowStateInput,
     MouseClickInput,
     MouseMoveInput,
     MouseScrollInput,
@@ -78,24 +56,17 @@ from app.tools.desktop.desktop_schema import (
     ClipboardWriteInput,
 )
 
-from app.tools.desktop.desktop_tools import (
-    window_info,
-    window_focus,
-    window_resize,
-    window_maximize,
-    window_minimize,
-    window_restore,
-    window_topmost,
-    window_unpin,
-    mouse_click,
-    mouse_move,
-    mouse_scroll,
-    mouse_position,
-    keyboard_control,
-    screen_capture,
-    clipboard_read,
-    clipboard_write,
-)
+from app.tools.desktop.window_info import window_info, set_window_state
+from app.tools.desktop.window_focus import window_focus
+from app.tools.desktop.window_resize import window_resize
+from app.tools.desktop.mouse_click import mouse_click
+from app.tools.desktop.mouse_move import mouse_move
+from app.tools.desktop.mouse_scroll import mouse_scroll
+from app.tools.desktop.mouse_position import mouse_position
+from app.tools.desktop.keyboard_control import keyboard_control
+from app.tools.desktop.screen_capture import screen_capture
+from app.tools.desktop.clipboard_read import clipboard_read
+from app.tools.desktop.clipboard_write import clipboard_write
 
 
 DESKTOP_TOOL_DESCRIPTIONS = {
@@ -105,15 +76,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
 
     "window_resize": """调整指定窗口的大小。window_title为窗口标题,width/height为目标宽高(像素)。适用场景:需要精确控制窗口尺寸时使用。""",
 
-    "window_maximize": """最大化指定窗口。window_title支持大小写不敏感的模糊匹配。适用场景:需要将窗口全屏显示时使用。""",
-
-    "window_minimize": """最小化指定窗口到任务栏。window_title支持大小写不敏感的模糊匹配。适用场景:需要临时隐藏窗口时使用。""",
-
-    "window_restore": """还原窗口到原始大小(从最大化/最小化状态恢复)。window_title支持大小写不敏感的模糊匹配。适用场景:需要恢复已最大化/最小化的窗口时使用。""",
-
-    "window_topmost": """将指定窗口置顶,使其始终显示在其他窗口之上。window_title支持大小写不敏感的模糊匹配。适用场景:需要让窗口始终可见不被遮挡时使用。""",
-
-    "window_unpin": """取消窗口置顶,恢复正常的Z序。window_title支持大小写不敏感的模糊匹配。适用场景:需要取消窗口置顶状态时使用。""",
+    "set_window_state": """窗口状态操作。action决定操作类型:maximize(最大化)/minimize(最小化)/restore(还原)/topmost(置顶)/unpin(取消置顶)。window_title支持大小写不敏感的模糊匹配。适用场景:需要控制窗口显示状态时使用。""",
 
     "mouse_click": """在指定位置进行鼠标单击。x/y为屏幕坐标(可选,不传则在当前位置点击),button为left/right/middle(默认left)。适用场景:需要模拟点击按钮、选择菜单项时使用。""",
 
@@ -137,11 +100,7 @@ DESKTOP_TOOL_INPUT_MODELS = {
     "window_info": WindowInfoInput,
     "window_focus": WindowFocusInput,
     "window_resize": WindowResizeInput,
-    "window_maximize": WindowMaximizeInput,
-    "window_minimize": WindowMinimizeInput,
-    "window_restore": WindowRestoreInput,
-    "window_topmost": WindowTopmostInput,
-    "window_unpin": WindowUnpinInput,
+    "set_window_state": SetWindowStateInput,
     "mouse_click": MouseClickInput,
     "mouse_move": MouseMoveInput,
     "mouse_scroll": MouseScrollInput,
@@ -150,7 +109,6 @@ DESKTOP_TOOL_INPUT_MODELS = {
     "screen_capture": ScreenCaptureInput,
     "clipboard_read": ClipboardReadInput,
     "clipboard_write": ClipboardWriteInput,
-
 }
 
 DESKTOP_TOOL_EXAMPLES = {
@@ -165,20 +123,12 @@ DESKTOP_TOOL_EXAMPLES = {
     "window_resize": [
         {"window_title": "Chrome", "width": 1920, "height": 1080},
     ],
-    "window_maximize": [
-        {"window_title": "Notepad"},
-    ],
-    "window_minimize": [
-        {"window_title": "Notepad"},
-    ],
-    "window_restore": [
-        {"window_title": "Notepad"},
-    ],
-    "window_topmost": [
-        {"window_title": "Calculator"},
-    ],
-    "window_unpin": [
-        {"window_title": "Calculator"},
+    "set_window_state": [
+        {"window_title": "Notepad", "action": "maximize"},
+        {"window_title": "Notepad", "action": "minimize"},
+        {"window_title": "Notepad", "action": "restore"},
+        {"window_title": "Calculator", "action": "topmost"},
+        {"window_title": "Calculator", "action": "unpin"},
     ],
     "mouse_click": [
         {"x": 500, "y": 300},
@@ -212,22 +162,16 @@ DESKTOP_TOOL_EXAMPLES = {
     "clipboard_write": [
         {"content": "Hello World"},
     ],
-
-
 }
 
 
 def _register_desktop_tools():
-    """注册DESKTOP分类工具(16个) — 小欧 2026-06-17 拆分组合工具"""
+    """注册DESKTOP分类工具(12个) — 小健 2026-06-22 5个窗口状态tool合并"""
     tool_methods = {
         "window_info": window_info,
         "window_focus": window_focus,
         "window_resize": window_resize,
-        "window_maximize": window_maximize,
-        "window_minimize": window_minimize,
-        "window_restore": window_restore,
-        "window_topmost": window_topmost,
-        "window_unpin": window_unpin,
+        "set_window_state": set_window_state,
         "mouse_click": mouse_click,
         "mouse_move": mouse_move,
         "mouse_scroll": mouse_scroll,
@@ -241,7 +185,7 @@ def _register_desktop_tools():
     for name, method in tool_methods.items():
         desc = DESKTOP_TOOL_DESCRIPTIONS.get(name, "")
         input_model = DESKTOP_TOOL_INPUT_MODELS.get(name)
-        examples = DESKTOP_TOOL_EXAMPLES.get(name, [])
+        examples = DESK_TOOL_EXAMPLES.get(name, [])
 
         tool_registry.register(
             name=name,
