@@ -9,6 +9,7 @@ Meta 工具实现 - tool_search (BM25 全文检索)
 """
 
 import math
+import time
 from collections import Counter
 from typing import Dict, Any, List, Tuple
 
@@ -17,6 +18,7 @@ from app.utils.tool_result_formatter import (
     truncate_data_for_frontend,
 )
 from app.tools.tool_response import build_success, build_error
+from app.constants import ERR_DOC_QUERY_EMPTY
 
 
 # ── 分词 ──────────────────────────────────────────────────────────
@@ -108,6 +110,27 @@ def _bm25_scores(
 
 # ── 公开工具 ──────────────────────────────────────────────────────
 
+def _build_tool_search_llm(exec_code: str, duration_ms: int, query: str,
+                            total_matched: int, total_tools: int,
+                            matches: list) -> dict:
+    """tool_search的llm_data构建函数 — 小健 2026-06-21"""
+    if exec_code == "error":
+        return {
+            "summary": f"搜索失败: {query}",
+            "action": {"tool": "tool_search", "tool_zh": "搜索工具", "target": query, "params": {"query": query}},
+            "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_DOC_QUERY_EMPTY, "detail": "搜索关键词不能为空", "hint": "请输入有效的搜索关键词"},
+            "duration_ms": duration_ms,
+            "metrics": {},
+        }
+    return {
+        "summary": f"搜索 '{query}'，匹配 {total_matched} 个工具（共 {total_tools} 个）",
+        "action": {"tool": "tool_search", "tool_zh": "搜索工具", "target": query, "params": {"query": query}},
+        "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
+        "duration_ms": duration_ms,
+        "metrics": {"matched": {"value": total_matched, "text": f"{total_matched}个"}, "total": {"value": total_tools, "text": f"{total_tools}个"}},
+    }
+
+
 def tool_search(query: str) -> Dict[str, Any]:
     """
     按关键词搜索匹配的工具列表（BM25 全文检索）。
@@ -118,24 +141,26 @@ def tool_search(query: str) -> Dict[str, Any]:
     Returns:
         匹配的工具列表
     """
+    t0 = time.perf_counter()
     if not query.strip():
-        return build_error(ERR_DOC_QUERY_EMPTY, "搜索关键词不能为空", data={"query": query})
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        llm_data = _build_tool_search_llm("error", duration_ms, query, 0, 0, [])
+        return build_error(data={"error_detail": "搜索关键词不能为空", "params": {"query": query}}, llm_data=llm_data)
 
     all_tools = tool_registry._tools
     if not all_tools:
+        duration_ms = int((time.perf_counter() - t0) * 1000)
         data = truncate_data_for_frontend({
             "query": query,
             "matches": [],
             "total_matched": 0,
             "total_tools": 0,
         })
-        return build_success(data, "系统暂无可用工具", llm_data={
-            "query": query, "matches": [], "total_matched": 0,
-        })
+        llm_data = _build_tool_search_llm("success", duration_ms, query, 0, 0, [])
+        return build_success(data=data, llm_data=llm_data)
 
     query_tokens = _tokenize(query.strip())
     if not query_tokens:
-        # 查询全是标点之类不可分词的内容 → 显示所有工具
         all_items = [
             {
                 "name": m.name,
@@ -147,23 +172,18 @@ def tool_search(query: str) -> Dict[str, Any]:
         ]
         all_items.sort(key=lambda x: x["name"])
         top = all_items[:10]
+        duration_ms = int((time.perf_counter() - t0) * 1000)
         data = truncate_data_for_frontend({
             "query": query, "matches": top,
             "total_matched": len(all_items), "total_tools": len(all_tools),
         })
-        return build_success(
-            data, f"未解析出有效关键词，列出全部 {len(all_items)} 个工具",
-            llm_data={
-                "query": query,
-                "matches": [{"name": r["name"], "category": r["category"]} for r in top],
-                "total_matched": len(all_items),
-            },
-        )
+        llm_data = _build_tool_search_llm("success", duration_ms, query, len(all_items), len(all_tools),
+                                           [{"name": r["name"], "category": r["category"]} for r in top])
+        return build_success(data=data, llm_data=llm_data)
 
     docs, tool_names, avgdl, df = _build_bm25()
     scores = _bm25_scores(query_tokens, docs, avgdl, df)
 
-    # 组装结果
     scored: List[Dict[str, Any]] = []
     for i, name in enumerate(tool_names):
         metadata = all_tools.get(name)
@@ -179,26 +199,17 @@ def tool_search(query: str) -> Dict[str, Any]:
     scored.sort(key=lambda x: x["score"], reverse=True)
     top_results = [r for r in scored if r["score"] > 0][:10]
 
+    duration_ms = int((time.perf_counter() - t0) * 1000)
     data = truncate_data_for_frontend({
         "query": query,
         "matches": top_results,
         "total_matched": len(scored),
         "total_tools": len(all_tools),
     })
-
-    llm_data = {
-        "query": query,
-        "matches": [{"name": r["name"], "category": r["category"]} for r in top_results[:10]],
-        "total_matched": len(scored),
-    }
-
-    return build_success(
-        data,
-        f"找到 {len(scored)} 个相关工具，返回前 {len(top_results)} 个",
-        llm_data=llm_data,
-    )
+    llm_data = _build_tool_search_llm("success", duration_ms, query, len(scored), len(all_tools),
+                                       [{"name": r["name"], "category": r["category"]} for r in top_results[:10]])
+    return build_success(data=data, llm_data=llm_data)
 
 
 __all__ = ["tool_search"]
 
-from app.constants import ERR_DOC_QUERY_EMPTY
