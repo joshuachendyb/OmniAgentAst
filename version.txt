@@ -1,3 +1,38 @@
+v0.17.1
+
+更新时间: 2026-06-22 20:47:28
+
+## v0.17.0→v0.17.1 变更汇总 - 小欧-2026-06-22
+
+### feat: 新功能(10项)
+- 8608c3957: system_prompts.py 注入【项目根目录】到系统Prompt - 小欧
+- 06b1926ba: field_handlers.py 添加project_root更新处理器 - 小欧
+- 6addce264: get_system_config.py 返回project_root到前端 - 小欧
+- 3b9815f6b: models.py ConfigResponse/ConfigUpdate添加project_root字段 - 小欧
+- 185352313: config.py 添加get_project_root()方法+读取+自动检测 - 小欧
+- faf5db30e: paths.py 添加get_default_project_root()公用函数 - 小欧
+- 445b2c52b: _helpers.py 添加_make_yaml_loader支持OrderedDict解析 - 小欧
+- a2bfea01a: update_session.py 添加空body校验返回400 - 小欧
+- 19580646d: tool_fc_helper.py 添加OrderedDict representer输出干净YAML - 小欧
+- 69f9494c8: 6tools warning分支(grep_file_content/list_directory/search_files/search_web/execute_code/execute_shell_command) - 小欧
+
+### fix: 代码修复(3项)
+- cb02f5fb9: update_config.py 验证写入段改用_make_yaml_loader - 小欧
+- 3154d7cb8: main.py 修复shutdown导入路径shell_tools→execute_shell_command - 小欧
+- 74c0713a7: desktop_register.py 修复DESK_TOOL_EXAMPLES拼写错误 - 小欧
+
+### refactor: 代码重构(1项)
+- cbef59328: lazy_loader.py 分类注册日志降级为debug - 小欧
+
+### docs: 文档更新(2项)
+- e2c696532: 测试数据库隔离原则-禁止操作系统运行数据库 - 小健
+- dcbd1de40: 测试配置隔离原则-禁止修改系统config.yaml - 小健
+
+### 合计
+- feat: 10项 | fix: 3项 | refactor: 1项 | docs: 2项 = 共16项
+
+---
+
 v0.17.0
 
 更新时间: 2026-06-22 19:42:43
