@@ -1,3 +1,93 @@
+v0.17.0
+
+更新时间: 2026-06-22 19:42:43
+
+## v0.16.11→v0.17.0 变更汇总 - 小欧-2026-06-22
+
+### feat: 新功能(14项)
+- ee48408ae: Phase 2 observation模式改造 - 前端适配llm_data/tool_result/other_data - 小欧
+- 51b3ec606: Phase 2 observation模式改造 - 后端ToolStep+action_handler - 小欧
+- d4fb25d0f: 透传helper result重新包装llm_data - 小健
+- c5565a59e: toolhelper 4个文件旧build_error/build_success签名改造完成 - 小健
+- eda94d93d: file_tools 83处旧build_error签名改造完成 - 小健
+- 92f5824ca: document_tools builder改造完成(7个builder) - 小健
+- 24ffc2569: dataanalysis_tools builder改造完成(3个builder) - 小健
+- a4f41def9: network/shell/desktop/database builder改造完成 - 小健
+- 46f964117: desktop_gui_tools builder改造完成 - 小健
+- 7e33c82a3: desktop_tools builder改造完成 - 小健
+- 184b5df1c: system_tools builder改造完成 - 小健
+- ed2eba6f4: Phase1工具文件builder改造(shell/code_execution) - 小健
+- e51b72c68: Phase1工具文件builder改造(fundamental/time/timer/win_registry) - 小健
+- dd603fcab: Phase1框架层-工具Observation统一格式 - 小健
+
+### fix: 代码修复(9项)
+- 08612802e: 防御性编程-增加类型安全检查 - 小欧
+- 5700fefb3: 5项规范核查修复 - metrics key名/summary格式/success message - 小欧
+- c4a0eb484: 11个tool的error message补充具体原因 - 小欧
+- 92f738dc1: 11个tool llm_data builder补全error分支 - 小欧
+- 8f742d9c0: 修复铁规违反问题(铁规2+铁规3) - 小健
+- 78715ea40: 修复9个tool函数的铁规违反问题 - 小健
+- 694568586: 内联_get_file_encoding替代已删除的file_helper依赖 - 小欧
+- 7b1bd2a24: 复核修复5个问题 - 小健
+- 12ae13b7c: desktop_gui_tools 提取独立builder函数 - 小健
+
+### refactor: 代码重构(19项)
+- 6ec4618b2: 清理根目录temp文件及旧E2E测试笔记 - 小欧
+- 6c11d2d7d: SRP拆分ToolStep为ActionStep+ObservationStep - 小健
+- 7d4d614d2: 11个tool的llm_data builder统一summary格式+C4 metrics自描述 - 小欧
+- 0d859088b: 11个tool文件修复铁规1/3+tool_zh+data零重复 - 小欧
+- 658ce2315: 66个tool文件添加3条铁规注释+修复铁规3违规 - 小欧
+- 1bf15ca8f: 修复R8+铁规违规，25个工具文件合规 - 小健
+- a92378852: edit_text_file改为纯dict返回，build3移到主函数 - 小欧
+- ae06bd76e: 删除toolhelper目录，创建tool_fc_helper.py - 小欧
+- 93d2292e3: 合并clipboard_read+clipboard_write为clipboard_control - 小健
+- 5b30b8719: 清理window_info.py重复代码 - 小欧
+- 8da5193cb: 拆分desktop工具为16个独立模块 - 小欧
+- f5f335fff: 拆分timer和win_registry为独立模块 - 小欧
+- 13860d6db: 拆分dataanalysis_tools.py为6个独立模块 - 小欧
+- c154d4fcb: 拆分system_tools.py为4个独立模块 - 小欧
+- 8a46ef6e1: 拆分shell_tools.py为4个独立模块 - 小欧
+- 965841b5e: 拆分fundamental_tools.py为7个独立模块 - 小欧
+- 03ac08337: 拆分network_tools.py为5个独立模块 - 小欧
+- 110d95bfc: 拆分document_tools.py为8个独立模块 - 小欧
+- 4ea683ee5: 拆分file_tools.py为独立工具模块12个文件 - 小欧
+
+### docs: 文档更新(25项)
+- cba8be2fd: P1-01增加项目类型说明 - 小健
+- bd1f73078: P0核心链路扩展为10个混合多类case - 小健
+- 53df3a219: E2E测试case命名统一为E2E-P*-*格式 - 小健
+- ddab580f5: Phase 2设计最终确认(v7.1) - 小健
+- ffe8959b3: 补充other_data字段到数据流图和规则表 - 小健
+- 32c814cde: 删除冗余字段，符合DRY原则(v7.0) - 小健
+- f9aeecc16: 补充5.10.7节DB表other_data字段 - 小健
+- 55b38e548: 新增other_data字段 - 小健
+- bb74a6dc3: 修正注释并补充返回结构说明 - 小健
+- 41317a89b: 明确ToolStep两种模式区别 - 小健
+- 2918bc7db: 修正Phase 2/3设计一致性问题 - 小健
+- 5e263efa9: 工具Observation统一格式-融合方案 Phase 2/3拆分+4处设计错误修复 - 小欧
+- a07ffcb99: 明确不做兼容，旧DB数据直接删除 - 小健
+- 837ffc6e0: 新增DB表字段更新说明 - 小健
+- bb89aeec2: 明确DB存储规则和Action不存data - 小健
+- c0d8472c1: Phase 2设计文档修正和补充 - 小健
+- 8cbc0c535: 工具Observation统一格式文档更新 - 小欧
+- 22d3b55e3: tool_fc_helper.py添加铁规注释 - 小健
+- 2f3795dcf: 25个tool文件添加铁规注释 - 小健
+- 9780512da: 更新AGENTS.md和工具Observation统一格式文档 - 小欧
+- 98340ce2a: 更新工具Observation统一格式设计文档v6.0 - 小健
+- d5bb33605: Observation设计文档v6.0全量更新 - 小健
+- 34fab2f7c: 更新工具Observation统一格式-融合方案 - 小欧
+- 1f97388b8: 更新工具Observation统一格式设计文档 - 小欧
+- 509cdcf34: Observation设计文档v5.0 - 小健
+
+### test: 测试(2项)
+- 8963fcd51: test: 新增file工具模块全面测试(200个测试用例) - 小欧
+- 446cd55a8: Revert "test: 新增file工具模块全面测试" - 小欧
+
+### 合计
+- feat: 14项 | fix: 9项 | refactor: 19项 | docs: 25项 | test: 2项 = 共69项
+
+---
+
 v0.16.11
 
 更新时间: 2026-06-20 23:51:06
