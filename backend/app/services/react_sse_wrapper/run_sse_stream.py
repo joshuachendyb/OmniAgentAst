@@ -108,14 +108,20 @@ async def run_sse_stream(
         # R3-1修复: CancelledError不是Exception子类,需单独捕获 — 小沈 2026-06-09
         # R3-2修复: 在finally保存前创建IncidentStep(interrupted),防止step丢失 — 小沈 2026-06-09
         # R3-3修复: CancelledError路径补FinalStep,保证客户端收到终态事件 — 小沈 2026-06-10
+        # R3-4修复: log_step_yield补全,防止prompt日志遗漏 — 小欧 2026-06-23
         logger.info(f"[SSE] 任务 {task_id} 被取消(CancelledError)")
         from app.services.agent.steps import MetaStep, FinalStep
+        from app.utils.prompt_logger import get_prompt_logger
         interrupted_step = MetaStep(step=next_step(), type="interrupted", message='任务已被中断')
-        current_execution_steps.append(interrupted_step.to_dict())
-        yield format_agent_sse(interrupted_step.to_dict())
+        interrupted_dict = interrupted_step.to_dict()
+        current_execution_steps.append(interrupted_dict)
+        get_prompt_logger().log_step_yield(interrupted_dict, round_number=interrupted_dict.get('step', 0))
+        yield format_agent_sse(interrupted_dict)
         final_step = FinalStep(step=next_step(), response="任务已被中断")
-        current_execution_steps.append(final_step.to_dict())
-        yield format_agent_sse(final_step.to_dict())
+        final_dict = final_step.to_dict()
+        current_execution_steps.append(final_dict)
+        get_prompt_logger().log_step_yield(final_dict, round_number=final_dict.get('step', 0))
+        yield format_agent_sse(final_dict)
         if agent is not None:
             agent.status = AgentStatus.COMPLETED
 

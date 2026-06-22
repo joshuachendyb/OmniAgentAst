@@ -5,6 +5,7 @@ llm_caller — LLM调用逻辑
 从universal_agent拆出 — 小沈 2026-06-17
 """
 
+import asyncio
 import json
 from typing import Any
 
@@ -138,6 +139,14 @@ async def call_llm_fc_stream(agent, messages: list, openai_tools: list):
     except Exception as e:
         yield _yield_error_response(f"LLM调用异常: {e}", agent)
         return
+    except asyncio.CancelledError:
+        content = full_content or full_reasoning or ""
+        logger.warning(f"[FC] LLM流式调用被取消, 已累积内容({len(content)}字符)")
+        get_prompt_logger().log_llm_response(
+            round_number=agent.llm_call_count, response_content=content,
+            raw_response="", response_type="answer", finish_reason="cancelled",
+        )
+        raise
 
     if stream_error:
         if tool_calls_result:
