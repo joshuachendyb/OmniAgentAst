@@ -23,6 +23,7 @@ from app.services.prompts.system_adapter import get_system_prompt as get_system_
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
 from app.services.prompts.project_context import load_project_context
+from app.config import get_config as get_config_instance
 
 
 class PromptBuilder:
@@ -128,6 +129,12 @@ class PromptBuilder:
         )
         return system_info
 
+    def _get_project_root_info(self) -> str:
+        """获取项目根目录信息 — 注入到系统Prompt"""
+        config = get_config_instance()
+        root = config.get_project_root()
+        return f"【项目根目录】{root}"
+
     def _get_project_context(self) -> str:
         """加载项目上下文"""
         ctx = load_project_context()
@@ -140,11 +147,14 @@ class PromptBuilder:
 
         组装顺序:
         ① _get_system_info()        — 系统信息(OS/路径规则)
-        ② _get_project_context()    — 项目上下文
-        ③ get_core_system_prompt()  — 角色+业务规则
-        ④ TOOL_CALL_RULES           — 回答要求+停止条件
+        ② _get_project_root_info()  — 项目根目录
+        ③ _get_project_context()    — 项目上下文(OmniAgent.md)
+        ④ get_core_system_prompt()  — 角色+业务规则
+        ⑤ TOOL_CALL_RULES           — 回答要求+停止条件
         """
         parts = [self._get_system_info()]
+
+        parts.append(self._get_project_root_info())
 
         project_ctx = self._get_project_context()
         if project_ctx:
