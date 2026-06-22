@@ -1615,14 +1615,23 @@ result = {"data": ..., "llm_data": {...}, "other_data": {...}}
 ToolStep                  build_observation_text(result)
 execution_result            ↓
   = {duration_ms}       format_llm_observation(data, llm_data)
+  ← 从llm_data.duration_ms取值    ↓
   ↓                         ↓
 SSE: 仅完成时间         observation_text
   ↓                         ↓
 前端: 知道"执行完毕"    Observation SSE 事件
-                          ├─ observation_text
-                          ├─ llm_data        ← 前端渲染卡片
-                          └─ tool_result     ← 前端渲染详情面板（原 data）
+                          ├─ observation_text  ← 给LLM，不截断（100轮内完整）
+                          ├─ llm_data          ← 给前端，可优化截断
+                          └─ tool_result       ← 给前端渲染详情面板（原 data）
 ```
+
+**数据截断规则**：
+
+| 数据 | 接收方 | 截断规则 | 说明 |
+|------|--------|----------|------|
+| `observation_text` | LLM | **不截断** | 100轮对话内保持完整，确保LLM有完整上下文 |
+| `llm_data` | 前端 | 可优化截断 | 前端只用于展示，metrics过多时只保留前5个 |
+| `tool_result` | 前端 | 可优化截断 | 大文件内容前端可截断显示，完整数据在data中 |
 
 #### 5.10.4 受影响文件
 
@@ -1657,10 +1666,12 @@ SSE: 仅完成时间         observation_text
 | 注意点 | 说明 |
 |--------|------|
 | **前后端同步** | Phase 2 必须前后端同步上线，不能分步部署 |
-| **DB 兼容** | 旧记录中 execution_result 含 data，新记录不含，前端需判断兼容 |
+| **DB 不兼容** | 旧记录中 execution_result 含 data，新记录不含。旧数据不兼容，前端遇到旧格式直接报错提示"请刷新页面" |
 | **data 为空** | tool_result=None 时，前端跳过详情面板渲染 |
 | **LLM 不受影响** | LLM 始终只读 observation_text，底层事件结构变化不影响它 |
 | **Phase 1 为前提** | Phase 2 依赖 Phase 1 的 formatter 签名改造，必须先上线 Phase 1 |
+| **LLM数据不截断** | 给LLM的observation_text不做截断，100轮对话以内保持完整，确保LLM有完整上下文 |
+| **前端数据可优化** | 给前端的llm_data可优化或截断（如metrics过多时只保留前5个），前端只用于展示，不影响LLM |
 
 #### 5.10.7 并行场景合并规则
 
@@ -1669,11 +1680,62 @@ LLM同时调用多个工具时，每个工具各产出一个result，Observation
 | 字段 | 合并规则 | 说明 |
 |------|---------|------|
 | `observation_text` | 多个obs_text用 `\n\n` 拼接 | 当前已有此逻辑 |
-| `llm_data` | 取exec_code最严重的那个（error > warning > success） | LLM需要知道最差状态 |
+| `llm_data` | 按详细规则合并（见下表） | LLM需要知道最差状态+所有摘要 |
 | `tool_result` | 合并为list：`[{"tool_name": "read_text_file", "data": ...}, ...]` | 前端按tool_name分tab展示 |
 | `other_data.warning` | 收集所有非空warning，拼接 | 不丢失任何警告 |
 | `other_data.attachment` | 收集所有非空attachment，合并为list | 不丢失任何附件 |
 | `other_data.return_direct` | 任一为True则True | 任何一个工具要求直接返回就生效 |
+
+**llm_data 详细合并规则**：
+
+| 字段 | 合并规则 | 示例 |
+|------|---------|------|
+| `exec_code` | 取最严重的（error > warning > success） | 2个success+1个error → error |
+| `summary` | 拼接所有summary，用`\n\n`分隔 | "读取文件成功\n\n写入文件成功" |
+| `action` | 取exec_code最严重那个工具的action | error工具的action |
+| `status` | 取exec_code最严重那个工具的status | error工具的status |
+| `metrics` | 合并所有metrics，key加tool_name前缀 | `{"read_file.lines": {...}, "write_file.bytes": {...}}` |
+| `duration_ms` | 取最大值（代表并行执行总耗时） | max([100, 200]) → 200 |
+
+**ToolStep 合并规则**：
+
+| 字段 | 合并规则 | 说明 |
+|------|---------|------|
+| `duration_ms` | 取最大值 | 代表并行执行的总耗时 |
+
+**合并代码示例**：
+
+```python
+def merge_llm_data(all_llm_data: List[Dict]) -> Dict:
+    """并行场景llm_data合并 — 小健 2026-06-22"""
+    if not all_llm_data:
+        return {}
+    if len(all_llm_data) == 1:
+        return all_llm_data[0]
+
+    # 按严重程度排序
+    severity_order = {"error": 3, "warning": 2, "success": 1}
+    sorted_data = sorted(all_llm_data,
+        key=lambda d: severity_order.get(d.get("status", {}).get("exec_code", "success"), 0),
+        reverse=True)
+
+    most_severe = sorted_data[0]
+
+    # 合并metrics（加tool_name前缀）
+    merged_metrics = {}
+    for llm_d in all_llm_data:
+        tool_name = llm_d.get("action", {}).get("tool", "unknown")
+        for k, v in llm_d.get("metrics", {}).items():
+            merged_metrics[f"{tool_name}.{k}"] = v
+
+    return {
+        "summary": "\n\n".join([d.get("summary", "") for d in all_llm_data]),
+        "action": most_severe.get("action", {}),
+        "status": most_severe.get("status", {}),
+        "duration_ms": max([d.get("duration_ms", 0) for d in all_llm_data]),
+        "metrics": merged_metrics,
+    }
+```
 
 ---
 
@@ -2573,6 +2635,11 @@ data = {
 
 ---
 
-**文档更新时间**: 2026-06-21 20:10:07  
-**版本**: v6.3  
-**编写人**: 小健 + 北京老陈 + 小欧
+**文档更新时间**: 2026-06-22 15:30:00  
+**版本**: v6.4  
+**编写人**: 小健 + 北京老陈 + 小欧  
+**更新内容**: 
+- 修正DB兼容描述（禁止backward）
+- 补充并行场景llm_data详细合并规则
+- 补充ToolStep合并规则
+- 新增数据截断规则（LLM不截断，前端可优化）
