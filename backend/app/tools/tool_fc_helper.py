@@ -634,6 +634,11 @@ def write_yaml_ordered(file_path: str, data: Any, encoding: str = "utf-8", inden
                 result[key] = _order(d[key]) if isinstance(d[key], dict) else d[key]
         return result
 
+    def _repr_ordered_dict(dumper, data):
+        """将OrderedDict序列化为普通YAML映射而非!!python/object格式 — 小欧 2026-06-22"""
+        return dumper.represent_dict(data.items())
+
+    yaml.add_representer(OrderedDict, _repr_ordered_dict)
     with open(path, "w", encoding=encoding) as f:
         yaml.dump(_order(data), f, allow_unicode=True, default_flow_style=False, indent=indent)
     return {"file_path": file_path}
