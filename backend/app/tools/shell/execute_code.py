@@ -5,6 +5,8 @@ S4: execute_code — 执行代码片段
 从code_execution_tools.py拆分而来 — 小欧 2026-06-22
 内聚: _execute_python / _execute_javascript / _js_safety_check / _get_utf8_env
 """
+# 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 
 import os
 import re as re_mod

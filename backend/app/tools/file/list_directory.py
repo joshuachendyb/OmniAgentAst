@@ -4,6 +4,8 @@ F5: list_directory — 列出目录内容
 
 从file_tools.py拆分而来 — 小欧 2026-06-22
 """
+# 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 
 import asyncio
 import time as _time_mod

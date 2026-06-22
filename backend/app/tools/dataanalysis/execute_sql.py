@@ -3,6 +3,8 @@
 execute_sql — 执行写操作SQL
 【2026-06-22 小健】从 database_tools.py 拆分为独立文件
 """
+# 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 
 import re
 import sqlite3

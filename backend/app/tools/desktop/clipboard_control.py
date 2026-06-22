@@ -3,6 +3,8 @@
 clipboard_control — 剪贴板操作(read/write)
 【2026-06-22 小健】合并clipboard_read+clipboard_write为统一入口
 """
+# 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 
 import time as _time_mod
 from typing import Dict, Any, Literal

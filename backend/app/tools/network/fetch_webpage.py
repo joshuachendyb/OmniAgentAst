@@ -5,6 +5,8 @@ N3: fetch_webpage — 获取和处理网页内容
 从network_tools.py拆分而来 — 小欧 2026-06-22
 内聚: _extract_html_content / _build_media_result / _fetch_via_playwright 辅助函数
 """
+# 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 
 import base64
 import time as _time_mod

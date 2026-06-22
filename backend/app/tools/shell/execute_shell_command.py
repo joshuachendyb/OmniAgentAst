@@ -5,6 +5,8 @@ S1: execute_shell_command — 执行Shell命令
 从shell_tools.py拆分而来 — 小欧 2026-06-22
 内聚: _background_shells / _run_shell_background / cleanup_background_shells / _build_shell_result
 """
+# 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 
 import os
 import shutil
