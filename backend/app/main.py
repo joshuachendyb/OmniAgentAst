@@ -131,7 +131,7 @@ async def shutdown_event():
     """应用关闭时清理资源 — 小健 2026-06-18 内联透传函数"""
     from app.services.factory import reset
     reset()
-    from app.tools.shell.shell_tools import cleanup_background_shells
+    from app.tools.shell.execute_shell_command import cleanup_background_shells
     count = cleanup_background_shells()
     logger.info(f"已清理 {count} 个后台shell进程")
 
