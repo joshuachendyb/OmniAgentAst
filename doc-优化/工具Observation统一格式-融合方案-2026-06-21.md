@@ -1734,11 +1734,25 @@ content = {
         "metrics": dict,
     },
     "tool_result": Any,        # 新增：工具原始data，完整存入DB
-    "return_direct": bool,     # 保留（llm_data无此字段）
-    "warning": str,            # 保留（llm_data无此字段）
-    "attachment": Any,         # 保留（llm_data无此字段）
+    "other_data": {            # 新增：完整的other_data
+        "warning": str,
+        "attachment": Any,
+        "return_direct": bool,
+        "retry_count": int,
+        # ... 其他控制字段
+    },
+    # 保留旧字段（从other_data取，前端兼容）
+    "return_direct": bool,
+    "warning": str,
+    "attachment": Any,
 }
 ```
+
+**注意**：`return_direct`/`warning`/`attachment`会被保存两次：
+1. 作为顶层字段（前端兼容，从other_data取值）
+2. 在`other_data`中（完整保存）
+
+这是设计意图：既保留旧字段名供前端兼容，又保存完整的`other_data`供后续扩展。
 
 **ToolStep的content字段结构**：
 
@@ -3046,18 +3060,14 @@ data = {
 
 ---
 
-**文档更新时间**: 2026-06-22 17:45:00  
-**版本**: v6.11  
+**文档更新时间**: 2026-06-22 18:00:00  
+**版本**: v6.12  
 **编写人**: 小健 + 北京老陈 + 小欧  
 **更新内容**: 
-- v6.4: 修正DB兼容描述、补充并行合并规则、新增数据截断规则
-- v6.5: 明确DB存储规则（存原始完整数据）、Action不存data、SSE可优化截断
-- v6.6: 新增DB表字段更新说明（execution_steps表）、Observation新增llm_data和tool_result字段
-- v6.7: 明确不做兼容，旧DB数据直接删除
-- v6.8: 修正5.10节与9.3/9.4不一致问题、修正9.3.1代码示例语法错误
-- v6.9: 明确ToolStep两种模式区别、observation模式保存完整llm_data和tool_result
-- v6.10: 修正注释（新增而非替换）、补充返回结构说明
-- v6.11: 新增other_data字段，完整保存build3返回的3个字段（llm_data/tool_result/other_data）
+- v6.4-v6.7: 修正DB兼容描述、补充并行合并规则、明确不做兼容
+- v6.8-v6.10: 修正5.10节与9.3/9.4不一致、修正代码示例
+- v6.11: 新增other_data字段
+- v6.12: 5.10.7节DB表字段补充other_data、说明字段冗余原因
 - v6.8: 补充Phase 2审查缺口：①5.10.4澄清Observation step复用ToolStep（非独立模型）；②5.10.7补充DB迁移步骤；③新增9.3节Phase 2实施清单（5步）
 - v6.9: 修复Phase 2 4个设计错误
 - v7.0: 拆分Phase 2/3：action_tool模式execution_result瘦身+DB存储优化移到Phase 3，Phase 2只改observation模式
