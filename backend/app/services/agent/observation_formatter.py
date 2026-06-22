@@ -11,9 +11,13 @@ format_llm_observation 改为 (data, llm_data) 签名，三段式输出
   _build_base_text/_append_warning/_append_hint/_prevent_json_oom/_get_failure_hint
 
 设计原则:
-- 工具自控:通过llm_data字段控制给LLM的数据量,格式化层不做业务截断
+- 工具返回原始data，不做截断
+- observation_formatter不截断，LLM需要完整数据
 - 安全兜底:format_data_detail加try-except确保不崩
 - 三段式:观察行 + 结果行 + 详情行
+- 【铁规】截断只能在前端yield层，tool和observation_formatter都禁止截断
+
+Author: 小欧 2026-06-21; 小欧 2026-06-22 添加截断铁规
 """
 
 import json
@@ -220,4 +224,3 @@ def _format_key_value(data: dict) -> str:
         else:
             lines.append(f"  {k}: {v}")
     return "\n".join(lines)
-

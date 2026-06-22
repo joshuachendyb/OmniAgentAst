@@ -5,9 +5,10 @@ S1: execute_shell_command — 执行Shell命令
 从shell_tools.py拆分而来 — 小欧 2026-06-22
 内聚: _background_shells / _run_shell_background / cleanup_background_shells / _build_shell_result
 """
-# 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
-
+# 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
+# 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import os
 import shutil
 import subprocess
@@ -19,7 +20,6 @@ from typing import Any, Dict, Optional
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.services.safety.tool_safety_checker import get_tool_safety_checker
-from app.utils.tool_result_formatter import truncate_data_for_frontend
 from app.utils.logger import logger
 from app.tools.tool_constants import SUBPROCESS_TIMEOUT_SHORT
 from app.constants import (
@@ -66,9 +66,9 @@ def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
     """统一构建shell执行结果 — 小欧 2026-06-22
     返回原始字典，不调用build3，不含llm_data — 北京老陈 2026-06-22
     """
-    data = truncate_data_for_frontend({
+    data = {
         "stdout": stdout_str, "stderr": stderr_str, "returncode": returncode,
-    })
+    }
     if timed_out:
         return {"success": False, "error_detail": f"命令执行超时({timeout}毫秒)", "data": data, "duration_ms": duration_ms, "params": {"shell_type": shell_type, "timeout": timeout}, "err_code": ERR_SHELL_TIMEOUT}
     if returncode == 0:

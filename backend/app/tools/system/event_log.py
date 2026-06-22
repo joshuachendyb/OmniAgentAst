@@ -3,9 +3,10 @@
 event_log — 获取系统事件日志
 【2026-06-22 小健】从 system_tools.py 拆分为独立文件
 """
-# 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
-
+# 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
+# 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import json as json_module
 import platform
 import subprocess
@@ -14,7 +15,6 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 
 from app.utils.logger import logger
-from app.utils.tool_result_formatter import truncate_data_for_frontend
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import TOOL_TIMEOUTS
 from app.constants import (
@@ -163,9 +163,8 @@ def event_log(log_name: str = "System", max_events: int = 50, level: str = "erro
         else:
             result.pop("_error_code", None)
             event_count = result.get("total", 0)
-            data = truncate_data_for_frontend(result)
             llm_data = _build_event_log_llm_data("success", duration_ms, log_name, event_count, level)
-            return build_success(data=data, llm_data=llm_data)
+            return build_success(data=result, llm_data=llm_data)
 
     except Exception as e:
         logger.error(f"[event_log] 获取事件日志失败: {e}")

@@ -3,9 +3,10 @@
 screen_capture — 屏幕截图
 【2026-06-22 小健】从 desktop_tools.py/desktop_gui_tools.py 拆分为独立文件
 """
-# 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
-
+# 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
+# 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import os
 import tempfile
 import time as _time_mod
@@ -47,7 +48,6 @@ def _screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[
         import pyautogui
     except ImportError:
         return {"error_detail": "pyautogui库未安装", "params": {"library": "pyautogui"}}
-    t0 = _time_mod.perf_counter()
     try:
         if output_path is None:
             timestamp = timestamp_for_filename()
@@ -61,16 +61,15 @@ def _screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[
 
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         img.save(output_path)
-        return {"image_path": output_path, "region": region, "duration_ms": int((_time_mod.perf_counter() - t0) * 1000)}
+        return {"image_path": output_path, "region": region}
     except Exception as e:
-        return {"error_detail": str(e), "params": {"library": "pyautogui"}, "duration_ms": int((_time_mod.perf_counter() - t0) * 1000)}
+        return {"error_detail": str(e), "params": {"library": "pyautogui"}}
 
 
 def _snapshot(display: int = 1) -> Dict[str, Any]:
     """获取完整桌面状态快照(内聚) — 小健 2026-06-22
     返回原始dict：成功 {"image_path": ..., "display": ..., "monitors": ...}，失败 {"error_detail": ..., "params": {...}}
     """
-    t0 = _time_mod.perf_counter()
     try:
         import mss
     except ImportError:
@@ -80,7 +79,7 @@ def _snapshot(display: int = 1) -> Dict[str, Any]:
             output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
             img = pyautogui.screenshot()
             img.save(output_path)
-            return {"image_path": output_path, "display": display, "monitors": 0, "duration_ms": int((_time_mod.perf_counter() - t0) * 1000)}
+            return {"image_path": output_path, "display": display, "monitors": 0}
         except ImportError:
             return {"error_detail": "需要安装 mss 或 pyautogui 库", "params": {"libraries": ["mss", "pyautogui"]}}
     try:
@@ -96,19 +95,20 @@ def _snapshot(display: int = 1) -> Dict[str, Any]:
             from PIL import Image
             pil_img = Image.frombytes("RGB", img.size, img.bgra, "raw", "BGRX")
             pil_img.save(output_path)
-        return {"image_path": output_path, "display": display, "monitors": len(monitors) - 1, "duration_ms": int((_time_mod.perf_counter() - t0) * 1000)}
+        return {"image_path": output_path, "display": display, "monitors": len(monitors) - 1}
     except Exception as e:
-        return {"error_detail": str(e), "params": {"display": display}, "duration_ms": int((_time_mod.perf_counter() - t0) * 1000)}
+        return {"error_detail": str(e), "params": {"display": display}}
 
 
 def screen_capture(output_path: Optional[str] = None, region: Optional[Dict[str, int]] = None, display: Optional[int] = None) -> Dict[str, Any]:
     """统一屏幕截图入口 — 小健 2026-06-22 拆分独立文件"""
+    t0 = _time_mod.perf_counter()
     if display is not None:
         result = _snapshot(display=display)
     else:
         result = _screenshot(output_path=output_path, region=region)
 
-    duration_ms = result.pop("duration_ms", 0)
+    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
 
     if "error_detail" in result:
         error_detail = result.pop("error_detail")

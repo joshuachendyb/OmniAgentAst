@@ -3,15 +3,15 @@
 query_sql — 执行只读SQL查询
 【2026-06-22 小健】从 database_tools.py 拆分为独立文件
 """
-# 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
-
+# 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
+# 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import sqlite3
 import time as _time_mod
 from typing import Any, Dict, List, Optional, Union, Literal
 
 from app.utils.logger import logger
-from app.utils.tool_result_formatter import truncate_data_for_frontend
 from app.tools.tool_response import build_success, build_error
 from app.constants import ERR_SQL_EXEC
 
@@ -134,7 +134,7 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
 
         table_str = _format_table(columns, results)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = truncate_data_for_frontend({"columns": columns, "rows": results, "total": len(results), "table": table_str})
+        data = {"columns": columns, "rows": results, "total": len(results), "table": table_str}
         llm_data = _build_query_sql_llm_data("success", duration_ms, sql, len(results), columns)
         return build_success(data=data, llm_data=llm_data)
 

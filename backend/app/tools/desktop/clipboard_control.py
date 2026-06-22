@@ -3,13 +3,13 @@
 clipboard_control — 剪贴板操作(read/write)
 【2026-06-22 小健】合并clipboard_read+clipboard_write为统一入口
 """
-# 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
-
+# 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
+# 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import time as _time_mod
 from typing import Dict, Any, Literal
 
-from app.utils.tool_result_formatter import truncate_data_for_frontend
 from app.tools.tool_response import build_success, build_error
 from app.constants import ERR_DESKTOP_CLIPBOARD
 
@@ -96,9 +96,8 @@ def clipboard_control(action: Literal["read", "write"], content: str = "") -> Di
         if "error_detail" in result:
             llm_data = _build_clipboard_control_llm_data("error", duration_ms, "read", detail=result["error_detail"])
             return build_error(data=result, llm_data=llm_data)
-        data = truncate_data_for_frontend(result)
         llm_data = _build_clipboard_control_llm_data("success", duration_ms, "read", len(result.get("text", "")))
-        return build_success(data=data, llm_data=llm_data)
+        return build_success(data=result, llm_data=llm_data)
     elif action == "write":
         if not content:
             llm_data = _build_clipboard_control_llm_data("error", 0, "write", err_code=ERR_DESKTOP_CLIPBOARD, detail="content参数不能为空")
@@ -109,9 +108,8 @@ def clipboard_control(action: Literal["read", "write"], content: str = "") -> Di
         if "error_detail" in result:
             llm_data = _build_clipboard_control_llm_data("error", duration_ms, "write", detail=result["error_detail"])
             return build_error(data=result, llm_data=llm_data)
-        data = truncate_data_for_frontend(result)
         llm_data = _build_clipboard_control_llm_data("success", duration_ms, "write", len(content))
-        return build_success(data=data, llm_data=llm_data)
+        return build_success(data=result, llm_data=llm_data)
     else:
         llm_data = _build_clipboard_control_llm_data("error", 0, action, err_code=ERR_DESKTOP_CLIPBOARD, detail=f"无效的action: {action}")
         return build_error(data={"error_detail": f"无效的action: {action}", "params": {"action": action}}, llm_data=llm_data)

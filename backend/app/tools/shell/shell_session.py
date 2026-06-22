@@ -5,7 +5,10 @@ S3: shell_session — 后台Shell会话管理
 从shell_tools.py拆分而来 — 小欧 2026-06-22
 依赖: execute_shell_command._background_shells
 """
-
+# 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
+# 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
+# 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import re as _re
 import time as _time_mod
 from typing import Any, Dict, Optional
@@ -13,7 +16,6 @@ from typing import Any, Dict, Optional
 from app.tools.tool_response import build_success, build_error
 from app.tools.shell.execute_shell_command import _background_shells
 from app.tools.tool_fc_helper import _read_stream_nonblocking
-from app.utils.tool_result_formatter import truncate_data_for_frontend
 from app.tools.tool_constants import SUBPROCESS_TIMEOUT_SHORT, SUBPROCESS_TIMEOUT_VERY_SHORT
 from app.constants import (
     ERR_INVALID_ACTION,
@@ -91,8 +93,9 @@ def shell_session(
         stdout_lines = stdout_str.splitlines()
         stdout_lines = stdout_lines[-max_lines:]
         stdout_str = "\n".join(stdout_lines)
-        resp_data = truncate_data_for_frontend(
-            {"shell_id": shell_id, "stdout": stdout_str, "stderr": stderr_str, "is_running": is_running, "returncode": returncode})
+        resp_data = {
+            "shell_id": shell_id, "stdout": stdout_str, "stderr": stderr_str, "is_running": is_running, "returncode": returncode
+        }
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if is_running or returncode == 0:
             llm_data = _build_shell_session_llm_data("success", duration_ms, shell_id, is_running=is_running)

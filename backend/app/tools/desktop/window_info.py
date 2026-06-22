@@ -3,13 +3,15 @@
 window_info — 列出所有窗口
 【2026-06-22 小健】从 desktop_tools.py 拆分为独立文件
 """
-
+# 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
+# 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
+# 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import platform
 import time as _time_mod
 from typing import Any, Dict, List, Optional
 
 from app.utils.logger import logger
-from app.utils.tool_result_formatter import truncate_data_for_frontend
 from app.tools.tool_response import build_success, build_error
 from app.constants import ERR_DESKTOP_GET_WINDOW_INFO, ERR_INVALID_ACTION, ERR_WINDOW_LIST, ERR_WINDOW_NOT_FOUND, ERR_WINDOW_SET_STATE
 
@@ -155,7 +157,7 @@ def window_info(include_minimized: bool = False, filter_title: Optional[str] = N
             windows = [w for w in windows if filter_title.lower() in w["title"].lower()]
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = truncate_data_for_frontend({"windows": windows, "total": len(windows)})
+        data = {"windows": windows, "total": len(windows)}
         llm_data = _build_window_info_llm_data("success", duration_ms, len(windows), filter_title or "")
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:

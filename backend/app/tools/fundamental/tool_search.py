@@ -3,14 +3,16 @@
 tool_search — BM25 全文检索搜索工具
 【2026-06-22 小健】从 fundamental_tools.py 拆分为独立文件
 """
-
+# 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
+# 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
+# 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import math
 import time
 from collections import Counter
 from typing import Dict, Any, List, Tuple
 
 from app.tools.registry import tool_registry
-from app.utils.tool_result_formatter import truncate_data_for_frontend
 from app.tools.tool_response import build_success, build_error
 from app.constants import ERR_DOC_QUERY_EMPTY
 
@@ -123,12 +125,12 @@ def tool_search(query: str) -> Dict[str, Any]:
     all_tools = tool_registry._tools
     if not all_tools:
         duration_ms = int((time.perf_counter() - t0) * 1000)
-        data = truncate_data_for_frontend({
+        data = {
             "query": query,
             "matches": [],
             "total_matched": 0,
             "total_tools": 0,
-        })
+        }
         llm_data = _build_tool_search_llm_data("success", duration_ms, query, 0, 0, [])
         return build_success(data=data, llm_data=llm_data)
 
@@ -146,10 +148,10 @@ def tool_search(query: str) -> Dict[str, Any]:
         all_items.sort(key=lambda x: x["name"])
         top = all_items[:10]
         duration_ms = int((time.perf_counter() - t0) * 1000)
-        data = truncate_data_for_frontend({
+        data = {
             "query": query, "matches": top,
             "total_matched": len(all_items), "total_tools": len(all_tools),
-        })
+        }
         llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(all_items), len(all_tools),
                                                  [{"name": r["name"], "category": r["category"]} for r in top])
         return build_success(data=data, llm_data=llm_data)
@@ -173,12 +175,12 @@ def tool_search(query: str) -> Dict[str, Any]:
     top_results = [r for r in scored if r["score"] > 0][:10]
 
     duration_ms = int((time.perf_counter() - t0) * 1000)
-    data = truncate_data_for_frontend({
+    data = {
         "query": query,
         "matches": top_results,
         "total_matched": len(scored),
         "total_tools": len(all_tools),
-    })
+    }
     llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(scored), len(all_tools),
                                              [{"name": r["name"], "category": r["category"]} for r in top_results[:10]])
     return build_success(data=data, llm_data=llm_data)

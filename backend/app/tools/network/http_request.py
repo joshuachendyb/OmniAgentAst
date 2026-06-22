@@ -5,9 +5,10 @@ N1: http_request — 发起HTTP请求
 从network_tools.py拆分而来 — 小欧 2026-06-22
 内聚: _parse_response_body / _build_http_error 辅助函数
 """
-# 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
-
+# 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
+# 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import asyncio
 import json
 import time as _time_mod
@@ -23,7 +24,7 @@ from urllib.parse import urlparse
 from app.tools.tool_response import build_success, build_error
 from app.tools.network.http_client_sdk import create_http_client
 from app.utils.json_utils import coerce_json
-from app.utils.tool_result_formatter import truncate_data_for_frontend, make_json_safe
+from app.utils.tool_result_formatter import make_json_safe
 from app.utils.logger import logger
 from app.constants import (
     ERR_INVALID_URL,
@@ -122,11 +123,11 @@ def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
         llm_body = str(body)[:4000]
 
     return {
-        "body": truncate_data_for_frontend({
+        "body": {
             "status_code": response.status_code,
             "headers": dict(response.headers),
             "body": body,
-        }),
+        },
         "llm_body": llm_body,
         "content_type_short": content_type_short,
     }
