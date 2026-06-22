@@ -1625,13 +1625,27 @@ SSE: 仅完成时间         observation_text
                           └─ tool_result       ← 给前端渲染详情面板（原 data）
 ```
 
+**数据存储与发送规则**：
+
+| 数据 | DB存储 | SSE发送 | 说明 |
+|------|--------|---------|------|
+| `observation_text` | 原始完整 | 原始完整 | 给LLM，不做任何处理 |
+| `llm_data` | **原始完整** | 可优化截断 | DB存原始，SSE可优化 |
+| `tool_result` | **原始完整** | 可优化截断 | DB存原始data，SSE可优化 |
+| ToolStep.data | **不存** | 不发 | action阶段不存tool result data |
+
 **数据截断规则**：
 
 | 数据 | 接收方 | 截断规则 | 说明 |
 |------|--------|----------|------|
 | `observation_text` | LLM | **不截断** | 100轮对话内保持完整，确保LLM有完整上下文 |
-| `llm_data` | 前端 | 可优化截断 | 前端只用于展示，metrics过多时只保留前5个 |
-| `tool_result` | 前端 | 可优化截断 | 大文件内容前端可截断显示，完整数据在data中 |
+| `llm_data` | 前端 | SSE可优化截断 | 前端只用于展示，metrics过多时只保留前5个 |
+| `tool_result` | 前端 | SSE可优化截断 | 大文件内容前端可截断显示 |
+
+**核心原则**：
+- **DB存原始数据**：Observation存入DB的llm_data和tool_result必须是原始完整数据，不做任何处理
+- **SSE可优化**：发送给前端的数据可以优化截断，减少传输量
+- **Action不存data**：ToolStep（action阶段）只存duration_ms，不存tool result data
 
 #### 5.10.4 受影响文件
 
@@ -1640,24 +1654,29 @@ SSE: 仅完成时间         observation_text
 | **构建层** | `tool_response.py` | **不动** |
 | **格式化层** | `observation_formatter.py` | Phase 1 已改 `(data, llm_data)`，Phase 2 不动 |
 | **桥接层** | `message_utils.py` | Phase 1 已拆包，Phase 2 不动 |
-| **步骤模型** | `ToolStep` | `execution_result` 只存 `duration_ms` |
-| **步骤模型** | Observation step 模型 | 新增 `tool_result` 字段 |
+| **步骤模型** | `ToolStep` | `execution_result` 只存 `duration_ms`，**不存data** |
+| **步骤模型** | Observation step 模型 | 新增 `tool_result` 字段，**DB存原始完整数据** |
 | **编排层** | `action_handler.py` | 构建 Observation step 时传入 data（作为 tool_result）|
-| **SSE 层** | `run_sse_stream.py` | 调整 SSE 事件构造逻辑 |
+| **SSE 层** | `run_sse_stream.py` | SSE发送时可优化截断，DB存储必须原始完整 |
 | **前端** | 消费 ToolStep 的代码 | 改为从 Observation 事件取值 |
-| **DB 存储** | `save_execution_steps_to_db` | 适配新结构 |
+| **DB 存储** | `save_execution_steps_to_db` | Observation存原始llm_data和tool_result，ToolStep不存data |
 
 #### 5.10.5 实施要点
 
-1. **ToolStep 瘦身**：`_execution_result` 只保留 `{"duration_ms": execution_time}`，不再接收完整的 result dict。
+1. **ToolStep 瘦身**：`_execution_result` 只保留 `{"duration_ms": execution_time}`，**不存 tool result data**。
 
 2. **Observation step 新增 tool_result**：在 `action_handler.py` 的 `build_observation()` 中，把 result["data"] 作为 `tool_result` 字段传入 Observation step。
 
-3. **SSE 发送调整**：
+3. **DB 存储规则**：
+   - Observation存入DB的 `llm_data` 和 `tool_result` 必须是**原始完整数据**，不做任何处理
+   - ToolStep存入DB的 `execution_result` 只存 `duration_ms`，不存 data
+
+4. **SSE 发送规则**：
    - ToolStep SSE → `{"step_type": "action_tool", "duration_ms": N}`，不发 code/message/data/llm_data
    - Observation SSE → `{"step_type": "observation", "observation_text": "...", "llm_data": {...}, "tool_result": {...}}`
+   - SSE发送时可优化截断（减少传输量），但DB必须存原始完整数据
 
-4. **前端适配**：
+5. **前端适配**：
    - ToolStep 事件 → 只用于显示"工具执行中..."状态，不再从中取数据
    - Observation 事件 → 从中取 `llm_data` 渲染摘要卡片，取 `tool_result` 渲染详情面板
 
@@ -1672,6 +1691,8 @@ SSE: 仅完成时间         observation_text
 | **Phase 1 为前提** | Phase 2 依赖 Phase 1 的 formatter 签名改造，必须先上线 Phase 1 |
 | **LLM数据不截断** | 给LLM的observation_text不做截断，100轮对话以内保持完整，确保LLM有完整上下文 |
 | **前端数据可优化** | 给前端的llm_data可优化或截断（如metrics过多时只保留前5个），前端只用于展示，不影响LLM |
+| **DB存原始数据** | Observation存入DB的llm_data和tool_result必须是原始完整数据，不做任何处理 |
+| **Action不存data** | ToolStep（action阶段）只存duration_ms，不存tool result data |
 
 #### 5.10.7 并行场景合并规则
 
@@ -2635,11 +2656,9 @@ data = {
 
 ---
 
-**文档更新时间**: 2026-06-22 15:30:00  
-**版本**: v6.4  
+**文档更新时间**: 2026-06-22 16:00:00  
+**版本**: v6.5  
 **编写人**: 小健 + 北京老陈 + 小欧  
 **更新内容**: 
-- 修正DB兼容描述（禁止backward）
-- 补充并行场景llm_data详细合并规则
-- 补充ToolStep合并规则
-- 新增数据截断规则（LLM不截断，前端可优化）
+- v6.4: 修正DB兼容描述、补充并行合并规则、新增数据截断规则
+- v6.5: 明确DB存储规则（存原始完整数据）、Action不存data、SSE可优化截断
