@@ -51,3 +51,6 @@ config/
 
 # CodeArts cache
 .codeartsdoer/
+
+# Notes (temporary debug notes)
+
