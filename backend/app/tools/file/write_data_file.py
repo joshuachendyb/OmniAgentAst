@@ -84,8 +84,8 @@ async def write_data_file(
         llm_data = _build_write_data_file_llm_data("error", 0, file_path=file_path, detail=f"{detected.upper()}格式暂不支持写入")
         return build_error(data={"error_detail": f"{detected.upper()}格式暂不支持写入", "params": {"format": detected, "file_path": file_path}}, llm_data=llm_data)
 
-    from app.tools.toolhelper import data_format_helper as df_tools
-    dispatch = df_tools.FORMAT_DISPATCH.get(detected)
+    from app.tools.tool_fc_helper import FORMAT_DISPATCH
+    dispatch = FORMAT_DISPATCH.get(detected)
     if not dispatch:
         llm_data = _build_write_data_file_llm_data("error", 0, file_path=file_path, detail=f"不支持写入{detected}格式")
         return build_error(data={"error_detail": f"不支持写入{detected}格式", "params": {"file_path": file_path}}, llm_data=llm_data)
@@ -100,8 +100,7 @@ async def write_data_file(
             kwargs["indent"] = indent or 2
         elif detected == "yaml" and indent is not None:
             kwargs["indent"] = indent
-        result = await asyncio.to_thread(func, **kwargs)
-        result_data = result.get("data", result) if isinstance(result, dict) else result
+        result_data = await asyncio.to_thread(func, **kwargs)
         try:
             bytes_written = os.path.getsize(file_path)
         except Exception:

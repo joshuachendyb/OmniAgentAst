@@ -7,7 +7,7 @@ send_notification — 发送Windows系统通知
 import time as _time_mod
 from typing import Dict, Any
 
-from app.tools.toolhelper.exec_helper import _check_module_available
+from app.tools.tool_fc_helper import _check_module_available
 from app.tools.tool_response import build_success, build_error
 from app.constants import ERR_DESKTOP_NOTIFICATION, ERR_NO_WIN10TOAST
 

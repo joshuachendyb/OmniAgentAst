@@ -75,8 +75,8 @@ async def read_data_file(
         llm_data = _build_read_data_file_llm_data("error", 0, file_path=file_path, detail=f"无法识别文件格式: {file_path},请通过format参数指定")
         return build_error(data={"error_detail": "无法识别文件格式", "params": {"file_path": file_path}}, llm_data=llm_data)
 
-    from app.tools.toolhelper import data_format_helper as df_tools
-    dispatch = df_tools.FORMAT_DISPATCH.get(detected)
+    from app.tools.tool_fc_helper import FORMAT_DISPATCH
+    dispatch = FORMAT_DISPATCH.get(detected)
     if not dispatch:
         llm_data = _build_read_data_file_llm_data("error", 0, file_path=file_path, detail=f"不支持读取{detected}格式")
         return build_error(data={"error_detail": f"不支持读取{detected}格式", "params": {"file_path": file_path, "format": detected}}, llm_data=llm_data)
@@ -87,8 +87,7 @@ async def read_data_file(
 
     try:
         kwargs = {"file_path": file_path, "encoding": encoding}
-        result = await asyncio.to_thread(func, **kwargs)
-        result_data = result.get("data", result) if isinstance(result, dict) else result
+        result_data = await asyncio.to_thread(func, **kwargs)
         item_count = len(result_data) if isinstance(result_data, (dict, list)) else 0
         llm_data = _build_read_data_file_llm_data("success", 0, file_path=file_path, detected_format=detected, item_count=item_count)
         return build_success(

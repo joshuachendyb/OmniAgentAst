@@ -23,7 +23,7 @@ from app.utils.logger import logger
 def _get_file_encoding(file_path: str) -> Dict[str, Any]:
     """内联编码检测，替代已删除的 file_helper.get_file_encoding — 小欧 2026-06-22"""
     import os
-    from app.tools.toolhelper.data_format_helper import _detect_encoding
+    from app.tools.tool_fc_helper import _detect_encoding
     try:
         file_path = os.path.abspath(file_path)
         if not os.path.exists(file_path):

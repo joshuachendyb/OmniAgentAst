@@ -15,7 +15,7 @@ from app.db import db
 from app.db.models.operation_enums import OperationType, OperationStatus
 from app.utils.logger import logger
 from app.utils.time_utils import timestamp_for_filename
-from app.tools.toolhelper.hash_helper import compute_file_hash
+from app.services.safety.hash_helper import compute_file_hash
 from app.services.safety.file_safety.config import FileSafetyConfig
 
 

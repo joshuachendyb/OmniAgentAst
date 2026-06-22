@@ -14,7 +14,7 @@ import time as _time_mod
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.toolhelper.common_helper import _decode_bytes_safe
+from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.utils.tool_result_formatter import truncate_data_for_frontend
 from app.utils.logger import setup_logger
 from app.constants import (
@@ -97,7 +97,7 @@ def _execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = N
             llm_data = _build_execute_code_llm_data("error", duration_ms, "python", -1, err_code=ERR_SHELL_EXEC_INVALID_DIR, detail=f"工作目录创建失败: {working_dir}")
             return build_error(data={"error_detail": f"工作目录创建失败: {working_dir}", "params": {"working_dir": working_dir}}, llm_data=llm_data)
     if safety_check:
-        from app.tools.toolhelper.exec_helper import _validate_code_safety
+        from app.tools.tool_fc_helper import _validate_code_safety
         warnings = _validate_code_safety(code)
         if warnings:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.toolhelper.common_helper import _decode_bytes_safe
+from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.services.safety.tool_safety_checker import get_tool_safety_checker
 from app.utils.tool_result_formatter import truncate_data_for_frontend
 from app.utils.logger import logger

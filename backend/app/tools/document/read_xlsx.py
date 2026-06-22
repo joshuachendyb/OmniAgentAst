@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.toolhelper.common_helper import _check_module
+from app.tools.tool_fc_helper import _check_module
 from app.constants import ERR_DOC_READ_XLSX
 from app.utils.logger import logger
 

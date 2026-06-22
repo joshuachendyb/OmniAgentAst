@@ -13,7 +13,7 @@ file_safety — 文件操作安全模块 — 小健 2026-06-17 合并14文件为
 小欧 2026-06-18 拆分operation_commands.py为4个模块，遵守SRP
 """
 from app.services.safety.file_safety.config import FileSafetyConfig
-from app.tools.toolhelper.hash_helper import compute_file_hash
+from app.services.safety.hash_helper import compute_file_hash
 from app.db.operation_queries import (
     row_to_operation_record, get_operation, get_session_operations,
     get_operation_task_id, query_file_operations, query_tree_operations,

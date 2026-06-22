@@ -14,7 +14,7 @@ from uuid import uuid4
 from app.db import db
 from app.db.models.operation_enums import OperationType, OperationStatus
 from app.utils.logger import logger
-from app.tools.toolhelper.hash_helper import compute_file_hash
+from app.services.safety.hash_helper import compute_file_hash
 
 
 def collect_file_info(path: Path) -> Dict[str, Any]:
