@@ -125,39 +125,57 @@ def _merge_llm_data(all_llm_data: List[Dict]) -> Dict:
     """并行场景llm_data合并 — 小健 2026-06-22"""
     if not all_llm_data:
         return {}
+    # 过滤非dict条目，防止崩溃 — 小欧 2026-06-22
+    all_llm_data = [d for d in all_llm_data if isinstance(d, dict)]
+    if not all_llm_data:
+        return {}
     if len(all_llm_data) == 1:
         return all_llm_data[0]
 
     severity_order = {"error": 3, "warning": 2, "success": 1}
-    sorted_data = sorted(all_llm_data,
-        key=lambda d: severity_order.get(d.get("status", {}).get("exec_code", "success"), 0),
-        reverse=True)
+
+    def _severity_key(d):
+        status = d.get("status")
+        if not isinstance(status, dict):
+            return 0
+        return severity_order.get(status.get("exec_code", "success"), 0)
+
+    sorted_data = sorted(all_llm_data, key=_severity_key, reverse=True)
 
     most_severe = sorted_data[0]
 
     merged_metrics = {}
     for llm_d in all_llm_data:
-        tool_name = llm_d.get("action", {}).get("tool", "unknown")
-        for k, v in llm_d.get("metrics", {}).items():
+        action = llm_d.get("action") if isinstance(llm_d.get("action"), dict) else {}
+        tool_name = action.get("tool", "unknown")
+        metrics = llm_d.get("metrics") if isinstance(llm_d.get("metrics"), dict) else {}
+        for k, v in metrics.items():
             merged_metrics[f"{tool_name}.{k}"] = v
 
+    def _safe_str(val):
+        return str(val) if not isinstance(val, str) else val
+
     return {
-        "summary": "\n\n".join([d.get("summary", "") for d in all_llm_data]),
-        "action": most_severe.get("action", {}),
-        "status": most_severe.get("status", {}),
+        "summary": "\n\n".join([_safe_str(d.get("summary", "")) for d in all_llm_data]),
+        "action": most_severe.get("action") if isinstance(most_severe.get("action"), dict) else {},
+        "status": most_severe.get("status") if isinstance(most_severe.get("status"), dict) else {},
         "duration_ms": max([d.get("duration_ms", 0) for d in all_llm_data]),
         "metrics": merged_metrics,
     }
 
 
 def _merge_other_data(all_other_data: List[Dict]) -> Dict:
-    """并行场景other_data合并 — 小健 2026-06-22"""
+    """并行场景other_data合并 — 小健 2026-06-22; 小欧 2026-06-22 过滤None条目"""
+    valid = [od for od in all_other_data if od is not None]
+    if not valid:
+        return {}
+
     merged: Dict[str, Any] = {}
     warnings = []
     attachments = []
     return_direct = False
 
-    for od in all_other_data:
+    for od in valid:
         if od.get("warning"):
             warnings.append(od["warning"])
         if od.get("attachment") is not None:
@@ -182,7 +200,7 @@ async def build_observation(ctx: ObservationContext) -> List:
     events = []
 
     for call, result in zip(ctx.all_calls, ctx.results):
-        _ec = result.get("llm_data", {}).get("status", {}).get("exec_code", "") if isinstance(result, dict) else ""
+        _ec = (result.get("llm_data") or {}).get("status", {}).get("exec_code", "") if isinstance(result, dict) else ""
         action_step = ActionStep(
             step=ctx.step,
             tool_name=call["tool_name"],
@@ -283,7 +301,7 @@ def _log_tool_results(step: int, all_calls: list, results: list, agent):
         
         is_error = isinstance(result, Exception)
         if isinstance(result, dict):
-            exec_code = result.get("llm_data", {}).get("status", {}).get("exec_code", "")
+            exec_code = (result.get("llm_data") or {}).get("status", {}).get("exec_code", "")
             is_failed = exec_code == "error"
         else:
             is_failed = is_error
