@@ -176,7 +176,7 @@ def _register_desktop_tools():
     for name, method in tool_methods.items():
         desc = DESKTOP_TOOL_DESCRIPTIONS.get(name, "")
         input_model = DESKTOP_TOOL_INPUT_MODELS.get(name)
-        examples = DESK_TOOL_EXAMPLES.get(name, [])
+        examples = DESKTOP_TOOL_EXAMPLES.get(name, [])
 
         tool_registry.register(
             name=name,
