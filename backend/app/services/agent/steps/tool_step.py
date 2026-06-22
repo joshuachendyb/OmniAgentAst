@@ -24,7 +24,10 @@ class ToolStep(ReasoningStep):
         code: str = "",
         warning: Optional[str] = None,
         attachment: Any = None,
-        timestamp: Optional[int] = None
+        timestamp: Optional[int] = None,
+        llm_data: Optional[Dict[str, Any]] = None,
+        tool_result: Any = None,
+        other_data: Optional[Dict[str, Any]] = None,
     ):
         ReasoningStep.__init__(self, step, timestamp)
         self.TYPE = step_type
@@ -41,6 +44,9 @@ class ToolStep(ReasoningStep):
         self._code = code
         self._warning = warning
         self._attachment = attachment
+        self._llm_data = llm_data or {}
+        self._tool_result = tool_result
+        self._other_data = other_data or {}
 
     def get_content(self) -> str:
         return self._observation or self._summary or self._error_message or ""
@@ -59,23 +65,11 @@ class ToolStep(ReasoningStep):
                 "action_retry_count": self._action_retry_count,
                 "execution_time_ms": self._execution_time_ms,
             }
-        extra: Dict[str, Any] = {}
-        summary_text = self._observation or self._summary or self._error_message or "执行完成"
-        obs: Dict[str, Any] = {
-            "summary": summary_text,
-            "tool_name": self._tool_name or "unknown",
-            "tool_params": self._tool_params or {},
-            "return_direct": self._return_direct or False,
-        }
-        if self._execution_status:
-            obs["execution_status"] = self._execution_status
-        if self._error_message:
-            obs["error_message"] = self._error_message
-        if self._warning:
-            obs["warning"] = self._warning
-        if self._attachment is not None:
-            obs["attachment"] = self._attachment
-        extra["observation"] = obs
-        if self._code:
-            extra["code"] = self._code
-        return extra
+        obs: Dict[str, Any] = {}
+        if self._llm_data:
+            obs["llm_data"] = self._llm_data
+        if self._tool_result is not None:
+            obs["tool_result"] = self._tool_result
+        if self._other_data:
+            obs["other_data"] = self._other_data
+        return {"observation": obs}

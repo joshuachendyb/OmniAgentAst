@@ -121,6 +121,61 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
         return results
 
 
+def _merge_llm_data(all_llm_data: List[Dict]) -> Dict:
+    """并行场景llm_data合并 — 小健 2026-06-22"""
+    if not all_llm_data:
+        return {}
+    if len(all_llm_data) == 1:
+        return all_llm_data[0]
+
+    severity_order = {"error": 3, "warning": 2, "success": 1}
+    sorted_data = sorted(all_llm_data,
+        key=lambda d: severity_order.get(d.get("status", {}).get("exec_code", "success"), 0),
+        reverse=True)
+
+    most_severe = sorted_data[0]
+
+    merged_metrics = {}
+    for llm_d in all_llm_data:
+        tool_name = llm_d.get("action", {}).get("tool", "unknown")
+        for k, v in llm_d.get("metrics", {}).items():
+            merged_metrics[f"{tool_name}.{k}"] = v
+
+    return {
+        "summary": "\n\n".join([d.get("summary", "") for d in all_llm_data]),
+        "action": most_severe.get("action", {}),
+        "status": most_severe.get("status", {}),
+        "duration_ms": max([d.get("duration_ms", 0) for d in all_llm_data]),
+        "metrics": merged_metrics,
+    }
+
+
+def _merge_other_data(all_other_data: List[Dict]) -> Dict:
+    """并行场景other_data合并 — 小健 2026-06-22"""
+    merged: Dict[str, Any] = {}
+    warnings = []
+    attachments = []
+    return_direct = False
+
+    for od in all_other_data:
+        if od.get("warning"):
+            warnings.append(od["warning"])
+        if od.get("attachment") is not None:
+            attachments.append(od["attachment"])
+        if od.get("return_direct"):
+            return_direct = True
+        if "retry_count" not in merged and od.get("retry_count") is not None:
+            merged["retry_count"] = od["retry_count"]
+
+    if warnings:
+        merged["warning"] = "\n\n".join(warnings)
+    if attachments:
+        merged["attachment"] = attachments if len(attachments) > 1 else attachments[0]
+    if return_direct:
+        merged["return_direct"] = True
+    return merged
+
+
 async def build_observation(ctx: ObservationContext) -> List:
     """构建observation — FC-only: 传递fc_context,删除add_assistant — 小沈 2026-06-11
     【修复P2-5】使用ObservationContext封装参数 — 北京老陈 2026-06-13"""
@@ -164,21 +219,32 @@ async def build_observation(ctx: ObservationContext) -> List:
 
     merged_obs = "\n\n".join(obs_parts) if len(obs_parts) > 1 else obs_parts[0]
 
-    first_result = ctx.results[0] if ctx.results else {}
-    _other = first_result.get("other_data", {}) if isinstance(first_result, dict) else {}
-    _llm_data = first_result.get("llm_data", {}) if isinstance(first_result, dict) else {}
-    _status = _llm_data.get("status", {}) if isinstance(_llm_data, dict) else {}
+    _all_llm_data = []
+    _all_tool_results = []
+    _all_other_data = []
+    for r in ctx.results:
+        if isinstance(r, dict):
+            _all_llm_data.append(r.get("llm_data", {}))
+            _all_tool_results.append(r.get("data"))
+            _all_other_data.append(r.get("other_data", {}))
+
+    merged_llm_data = _all_llm_data[0] if _all_llm_data else None
+    if len(_all_llm_data) > 1:
+        merged_llm_data = _merge_llm_data(_all_llm_data)
+
+    merged_other = _all_other_data[0] if _all_other_data else None
+    if len(_all_other_data) > 1:
+        merged_other = _merge_other_data(_all_other_data)
+
     events.append(ctx.agent._step_emitter.emit(ToolStep(
         step=ctx.step,
         tool_name=ctx.tool_name,
         tool_params=ctx.tool_params,
         step_type="observation",
         observation=merged_obs,
-        execution_status=_status.get("exec_code", ""),
-        code=_status.get("code", ""),
-        warning=_other.get("warning"),
-        attachment=_other.get("attachment"),
-        return_direct=_other.get("return_direct", False),
+        llm_data=merged_llm_data,
+        tool_result=_all_tool_results[0] if len(_all_tool_results) == 1 else _all_tool_results,
+        other_data=merged_other,
     )))
 
     return events
