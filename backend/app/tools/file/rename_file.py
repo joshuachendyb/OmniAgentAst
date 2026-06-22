@@ -20,20 +20,21 @@ from app.constants import ERR_FILE_RENAME_FAILED
 
 def _build_rename_file_llm_data(
     exec_code: str, duration_ms: int,
-    source: str = "", detail: str = "",
+    source: str = "", new_name: str = "", detail: str = "",
 ) -> Dict[str, Any]:
     """rename_file的llm_data构建函数 — 小健 2026-06-22"""
     if exec_code == "error":
         return {
             "summary": f"重命名失败: {detail}",
-            "action": {"tool": "rename_file", "tool_zh": "重命名", "target": source, "params": {"source": source}},
+            "action": {"tool": "rename_file", "tool_zh": "重命名", "target": source, "params": {"source": source, "new_name": new_name}},
             "status": {"exec_code": "error", "message": f"重命名失败: {detail}", "code": ERR_FILE_RENAME_FAILED, "detail": detail, "hint": "请检查源路径和新名称"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    _summary = f"重命名 {source} → {new_name}" if new_name else f"重命名 {source}"
     return {
-        "summary": f"重命名 {source}",
-        "action": {"tool": "rename_file", "tool_zh": "重命名", "target": source, "params": {"source": source}},
+        "summary": _summary,
+        "action": {"tool": "rename_file", "tool_zh": "重命名", "target": source, "params": {"source": source, "new_name": new_name}},
         "status": {"exec_code": "success", "message": "重命名成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
@@ -52,19 +53,19 @@ async def rename_file(
 
     if src.name == new_name:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_rename_file_llm_data("success", duration_ms, source)
+        llm_data = _build_rename_file_llm_data("success", duration_ms, source, new_name=new_name)
         return build_success(data={}, llm_data=llm_data)
 
     result = await _move_file_impl(source_path=source, destination_path=str(dst), overwrite=False)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
 
     if result.get("success"):
-        llm_data = _build_rename_file_llm_data("success", duration_ms, source)
+        llm_data = _build_rename_file_llm_data("success", duration_ms, source, new_name=new_name)
         return build_success(
             data={"operation_id": result.get("operation_id")},
             llm_data=llm_data,
         )
     else:
         error_detail = result.get("error_detail", "重命名失败")
-        llm_data = _build_rename_file_llm_data("error", duration_ms, source, detail=error_detail)
+        llm_data = _build_rename_file_llm_data("error", duration_ms, source, new_name=new_name, detail=error_detail)
         return build_error(data={"error_detail": error_detail, "params": result.get("params", {})}, llm_data=llm_data)

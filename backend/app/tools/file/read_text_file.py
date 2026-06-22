@@ -163,8 +163,8 @@ def _build_read_text_file_llm_data(
         "status": {"exec_code": "success", "message": "读取成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
-            "line_count": {"value": line_count, "text": f"{line_count}行"},
-            "file_size": {"value": file_size, "text": f"{file_size}字节"},
+            "lines": {"value": line_count, "text": f"{line_count}行"},
+            "bytes": {"value": file_size, "text": f"{file_size}字节"},
         },
     }
 

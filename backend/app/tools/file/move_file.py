@@ -32,21 +32,22 @@ def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
 
 def _build_move_file_llm_data(
     exec_code: str, duration_ms: int,
-    source: str = "", detail: str = "", extra_metrics: Optional[Dict] = None,
+    source: str = "", destination: str = "", detail: str = "", extra_metrics: Optional[Dict] = None,
 ) -> Dict[str, Any]:
     """move_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
     extra_metrics = extra_metrics or {}
     if exec_code == "error":
         return {
             "summary": f"移动失败: {detail}",
-            "action": {"tool": "move_file", "tool_zh": "移动", "target": source, "params": {"source": source}},
+            "action": {"tool": "move_file", "tool_zh": "移动", "target": source, "params": {"source": source, "destination": destination}},
             "status": {"exec_code": "error", "message": f"移动失败: {detail}", "code": ERR_FILE_MOVE_FAILED, "detail": detail, "hint": "请检查源路径和目标路径"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    _summary = f"移动 {source} → {destination}" if destination else f"移动 {source}"
     return {
-        "summary": f"移动 {source}",
-        "action": {"tool": "move_file", "tool_zh": "移动", "target": source, "params": {"source": source}},
+        "summary": _summary,
+        "action": {"tool": "move_file", "tool_zh": "移动", "target": source, "params": {"source": source, "destination": destination}},
         "status": {"exec_code": "success", "message": "移动成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": extra_metrics,
@@ -113,19 +114,19 @@ async def move_file(
     t0 = _time_mod.perf_counter()
     if os.path.abspath(source) == os.path.abspath(destination):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("success", duration_ms, source, extra_metrics={"status": {"value": "no_change", "text": "路径相同无需移动"}})
+        llm_data = _build_move_file_llm_data("success", duration_ms, source, destination=destination, extra_metrics={"status": {"value": "no_change", "text": "路径相同无需移动"}})
         return build_success(data={}, llm_data=llm_data)
 
     result = await _move_file_impl(source_path=source, destination_path=destination, overwrite=overwrite)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
 
     if result.get("success"):
-        llm_data = _build_move_file_llm_data("success", duration_ms, source)
+        llm_data = _build_move_file_llm_data("success", duration_ms, source, destination=destination)
         return build_success(
             data={"operation_id": result.get("operation_id")},
             llm_data=llm_data,
         )
     else:
         error_detail = result.get("error_detail", "移动文件失败")
-        llm_data = _build_move_file_llm_data("error", duration_ms, source, detail=error_detail)
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=error_detail)
         return build_error(data={"error_detail": error_detail, "params": result.get("params", {})}, llm_data=llm_data)

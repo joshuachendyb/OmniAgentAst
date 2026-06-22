@@ -50,13 +50,12 @@ def _build_execute_shell_command_llm_data(
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    warning = "（有警告输出）" if stderr_preview and stderr_preview.strip() else ""
     return {
         "summary": f"执行 {cmd_short}，退出码{returncode}",
         "action": {"tool": "execute_shell_command", "tool_zh": "执行", "target": cmd_short, "params": {"command": cmd_short}},
-        "status": {"exec_code": "success", "message": f"命令执行成功{warning}", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
-        "metrics": {"returncode": {"value": returncode, "text": f"退出码{returncode}"}},
+        "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
     }
 
 
