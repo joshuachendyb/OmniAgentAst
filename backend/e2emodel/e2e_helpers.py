@@ -923,7 +923,8 @@ def check_logs(
             content = "\n".join(filtered)
 
         # ── ERROR检查(MUST) ──
-        for line in re.findall(r"^.*ERROR.*$", content, re.MULTILINE)[:10]:
+        # 只匹配ERROR级别日志(格式: timestamp - ERROR - ...)，不匹配内容中的ERROR字样
+        for line in re.findall(r"^.* - ERROR - .*$", content, re.MULTILINE)[:10]:
             if "unable to open database file" in line:
                 continue
             if "e2e_test" in line:
