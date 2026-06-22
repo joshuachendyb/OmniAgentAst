@@ -1,8 +1,8 @@
 # 工具 Observation 统一输出格式设计（融合方案）
 
 **创建时间**: 2026-06-20 11:07:25  
-**更新时间**: 2026-06-22 17:12:14  
-**版本**: v7.1  
+**更新时间**: 2026-06-22 17:24:27  
+**版本**: v7.2  
 **编写人**: 小健 + 北京老陈  
 **适用范围**: OmniAgentAs-desk 所有工具给LLM和前端的observation输出格式  
 **状态**: 审查通过
@@ -29,6 +29,7 @@
 | v6.8 | 2026-06-22 15:17:13 | **补充Phase 2审查缺口**：①5.10.4澄清Observation step复用ToolStep（非独立模型）；②5.10.7补充DB迁移步骤；③新增9.3节Phase 2实施清单（5步） | 小欧 |
 | v6.9 | 2026-06-22 16:00:00 | **修复Phase 2 4个设计错误**：F1-5.10.7/9.3.1保持现有逻辑→选择性保留（删6冗余字段保3非冗余）；F2-9.3.2并行_status/_other取错，增加合并other_data逻辑；F3-9.3.1补充__init__实际代码；F4-9.3.3修正SSE目标函数和字段名 | 小欧 |
 | v7.1 | 2026-06-22 17:12:14 | **5轮复核修复12个问题**：A类6处Phase 2/3标签混淆（5.10标题/表头/实施要点/DB说明）；B类3处9.3格式残留（重复行/多余```/残留字典）；C类3处缺other_data（5.10.2 SSE/DB字段/5.10.4描述）| 小欧 |
+| v7.2 | 2026-06-22 17:24:27 | **Phase 2/3分离准确性修复**：D1-5.10.3数据流图标注Phase 3；D2-5.10.3存储规则表标注Phase归属；D3/D4-5.10.6注意事项标注Phase 3；D5-5.10.7 DB表ToolStep列改为Phase 2状态（不变）；Phase 3瘦身目标修正为{code,message,duration_ms}（非仅duration_ms） | 小欧 |
 | v7.0 | 2026-06-22 16:30:00 | **拆分Phase 2/3**：action_tool模式的execution_result瘦身和DB存储优化从Phase 2移除，新增9.4节Phase 3实施清单。Phase 2只改observation模式 | 小欧 |
 
 ---
@@ -1605,7 +1606,7 @@ Phase 2+3 将 ToolStep 和 Observation step 的职责彻底分开：
 | 维度 | 当前 | 最终效果(Phase 2+3) |
 |------|------|---------|
 | **build 3 函数** | `result={data, llm_data, other_data}` | **不动** |
-| **ToolStep** | `execution_result` 含 data + llm_data + duration_ms | `execution_result = {duration_ms}`，仅完成时间 <br>*(Phase 3 实施)* |
+| **ToolStep** | `execution_result` 含 data + llm_data + duration_ms | `execution_result = {code, message, duration_ms}`，删除data/llm_data <br>*(Phase 3 实施)* |
 | **Observation step** | 只含 `observation_text` | 新增 `llm_data` + `tool_result` + `other_data` 字段 <br>*(Phase 2 实施)* |
 | **SSE ToolStep 事件** | 发送完整 execution_result | 只发 `{duration_ms}`，code/message/data/llm_data 都不发 <br>*(Phase 3 实施)* |
 | **SSE Observation 事件** | 只发 observation_text | 发 `{observation_text, llm_data, tool_result, other_data}` <br>*(Phase 2 实施)* |
@@ -1642,8 +1643,7 @@ SSE: 仅完成时间         observation_text
 | `observation_text` | 原始完整 | 原始完整 | 给LLM，不做任何处理 |
 | `llm_data` | **原始完整** | 可优化截断 | DB存原始，SSE可优化 |
 | `tool_result` | **原始完整** | 可优化截断 | DB存原始data，SSE可优化 |
-| `other_data` | **原始完整** | 可优化截断 | DB存原始，含return_direct/warning/attachment等 |
-| ToolStep.data | **不存** | 不发 | action阶段不存tool result data |
+| ToolStep.data | Phase 2不变，Phase 3不存 | Phase 3不发 | Phase 3瘦身：action阶段只存code/message/duration_ms |
 
 **数据截断规则**：
 
@@ -1656,7 +1656,7 @@ SSE: 仅完成时间         observation_text
 **核心原则**：
 - **DB存原始数据**：Observation存入DB的llm_data和tool_result必须是原始完整数据，不做任何处理
 - **SSE可优化**：发送给前端的数据可以优化截断，减少传输量
-- **Action不存data**：ToolStep（action阶段）只存duration_ms，不存tool result data
+- **Action不存data**：Phase 3，ToolStep（action阶段）execution_result瘦身，只存code/message/duration_ms，不存data/llm_data
 
 #### 5.10.4 受影响文件与模型澄清
 
@@ -1675,21 +1675,21 @@ SSE: 仅完成时间         observation_text
 
 #### 5.10.5 实施要点
 
-1. **ToolStep 瘦身**（Phase 3）：`_execution_result` 只保留 `{"duration_ms": execution_time}`，**不存 tool result data**。
+1. **ToolStep 瘦身**（Phase 3）：`_execution_result` 只保留 `{code, message, duration_ms}`，**不存 data/llm_data**。
 
 2. **Observation step 新增字段**（Phase 2）：在 `action_handler.py` 的 `build_observation()` 中，把 result["data"] 作为 `tool_result`、result["llm_data"] 作为 `llm_data`、result["other_data"] 作为 `other_data` 字段传入 Observation step。
 
 3. **DB 存储规则**（Phase 2+3）：
    - Observation存入DB的 `llm_data`、`tool_result`、`other_data` 必须是**原始完整数据**，不做任何处理
-   - ToolStep存入DB的 `execution_result` 只存 `duration_ms`（Phase 3），不存 data
+   - ToolStep存入DB的 `execution_result` Phase 3瘦身为 `{code, message, duration_ms}`，不存 data/llm_data
 
 4. **SSE 发送规则**（Phase 2+3）：
-   - ToolStep SSE（Phase 3）→ `{"step_type": "action_tool", "duration_ms": N}`，不发 code/message/data/llm_data
+   - ToolStep SSE（Phase 3）→ `{step_type: "action_tool", tool_name, execution_result: {code, message, duration_ms}, ...}`，不发 data/llm_data
    - Observation SSE（Phase 2）→ `{"step_type": "observation", "observation_text": "...", "llm_data": {...}, "tool_result": {...}, "other_data": {...}}`
    - SSE发送时可优化截断（减少传输量），但DB必须存原始完整数据
 
 5. **前端适配**（Phase 2+3）：
-   - ToolStep 事件（Phase 3）→ 只用于显示"工具执行中..."状态，不再从中取数据
+   - ToolStep 事件（Phase 3）→ 只用于显示"工具执行中..."状态，从中取execution_result.code/code判断状态，不再取data/llm_data
    - Observation 事件（Phase 2）→ 从中取 `llm_data` 渲染摘要卡片，取 `tool_result` 渲染详情面板，取 `other_data` 获取控制字段
 
 #### 5.10.6 注意事项
@@ -1697,14 +1697,14 @@ SSE: 仅完成时间         observation_text
 | 注意点 | 说明 |
 |--------|------|
 | **前后端同步** | Phase 2 必须前后端同步上线，不能分步部署 |
-| **DB 不兼容** | 旧记录中 execution_result 含 data，新记录不含。旧数据不兼容，前端遇到旧格式直接报错提示"请刷新页面" |
+| **DB 不兼容** | Phase 2：Observation记录JSON结构变化，旧数据删除；Phase 3：action_tool记录execution_result瘦身，前端遇到旧格式直接报错提示"请刷新页面" |
 | **data 为空** | tool_result=None 时，前端跳过详情面板渲染 |
 | **LLM 不受影响** | LLM 始终只读 observation_text，底层事件结构变化不影响它 |
 | **Phase 1 为前提** | Phase 2 依赖 Phase 1 的 formatter 签名改造，必须先上线 Phase 1 |
 | **LLM数据不截断** | 给LLM的observation_text不做截断，100轮对话以内保持完整，确保LLM有完整上下文 |
 | **前端数据可优化** | 给前端的llm_data可优化或截断（如metrics过多时只保留前5个），前端只用于展示，不影响LLM |
 | **DB存原始数据** | Observation存入DB的llm_data和tool_result必须是原始完整数据，不做任何处理 |
-| **Action不存data** | ToolStep（action阶段）只存duration_ms，不存tool result data |
+| **Action不存data** | Phase 3：ToolStep（action阶段）execution_result瘦身，只存code/message/duration_ms，不存data/llm_data |
 
 #### 5.10.7 DB表字段更新
 
@@ -1715,7 +1715,7 @@ Phase 2需要更新Observation step的DB字段，ToolStep字段不变。
 | 字段 | 类型 | ToolStep (action_tool) | Observation step | 说明 |
 |------|------|------------------------|------------------|------|
 | `step_type` | str | "action_tool" | "observation" | 不变 |
-| `content` | JSON | `{duration_ms: int}` | `{observation_text, llm_data, tool_result, other_data}` | **Observation字段结构更新** |
+| `content` | JSON | `{code, message, data, llm_data, duration_ms}`（Phase 2不变） | `{observation_text, llm_data, tool_result, other_data}` | **Observation字段结构更新**；Phase 3 ToolStep瘦身为`{code, message, duration_ms}` |
 | `created_at` | datetime | 自动填充 | 自动填充 | 不变 |
 
 **Observation step的content字段结构**：
@@ -1755,7 +1755,7 @@ content = {
 **ToolStep的content字段结构**：
 
 ```python
-# Phase 1（当前）
+# Phase 1 + Phase 2（不变）
 content = {
     "code": str,
     "message": str,
@@ -1764,9 +1764,11 @@ content = {
     "duration_ms": int,
 }
 
-# Phase 3（瘦身）
+# Phase 3（瘦身：删除data和llm_data，保留code/message/duration_ms）
 content = {
-    "duration_ms": int,  # 只存执行耗时
+    "code": str,
+    "message": str,
+    "duration_ms": int,
 }
 ```
 
@@ -2555,7 +2557,7 @@ llm_data = {
 |------|---------|---------|------|
 | **Phase 1** | build 3函数重构 + 工具直接调用builder，result统一为data/llm_data/other_data三字段 + observation_formatter重写（format_llm_observation）+ 统一error格式（原Phase 3并入） | 21个工具文件 + 5个核心文件 | 无 |
 | **Phase 2** | Observation step承载全部信息（新增llm_data/tool_result/other_data），tool_step observation模式只做管道不加工 | 3-4个核心文件 | Phase 1 |
-| **Phase 3** | ToolStep action_tool模式execution_result瘦身（只存duration_ms）+ DB存储优化 | 2个文件 | Phase 2 |
+| **Phase 3** | ToolStep action_tool模式execution_result瘦身（只存code/message/duration_ms，删除data/llm_data）+ DB存储优化 | 2个文件 | Phase 2 |
 
 ### 9.2 Phase 1实施清单
 
@@ -2932,7 +2934,7 @@ const attachment = other_data?.attachment              // 附件
 
 **前提**：Phase 2全部完成并验证通过。
 
-**范围**：Phase 3专门处理action_tool模式的`execution_result`瘦身和DB存储优化。action_tool模式当前在`_extra_fields()`中把完整`execution_result`（含data+llm_data+duration_ms）透传给前端和DB，Phase 3将其压缩为只存`duration_ms`。
+**范围**：Phase 3专门处理action_tool模式的`execution_result`瘦身和DB存储优化。action_tool模式当前在`_extra_fields()`中把完整`execution_result`（含code+message+data+llm_data+duration_ms）透传给前端和DB，Phase 3将其压缩为只存`{code, message, duration_ms}`。
 
 **受影响文件**：`tool_step.py`（_extra_fields action_tool模式）+ DB迁移脚本。
 
@@ -2958,7 +2960,11 @@ def _extra_fields(self) -> Dict[str, Any]:
             "tool_name": self._tool_name or "",
             "tool_params": self._tool_params or {},
             "execution_status": self._execution_status,
-            "execution_result": {"duration_ms": self._execution_time_ms},  # 只存duration_ms
+            "execution_result": {
+                "code": self._execution_result.get("code", "") if isinstance(self._execution_result, dict) else "",
+                "message": self._execution_result.get("message", "") if isinstance(self._execution_result, dict) else "",
+                "duration_ms": self._execution_time_ms,
+            },  # 只存code/message/duration_ms，删除data/llm_data
             "action_retry_count": self._action_retry_count,
             "execution_time_ms": self._execution_time_ms,
         }
@@ -2968,12 +2974,12 @@ def _extra_fields(self) -> Dict[str, Any]:
 
 #### 9.4.2 步骤2：DB字段清理
 
-**变更**：`execution_steps`表的`execution_result`字段不再存储data/llm_data，只存`{"duration_ms": N}`。
+**变更**：`execution_steps`表的`execution_result`字段不再存储data/llm_data，只存`{code, message, duration_ms}`。
 
 **迁移**：
 ```sql
--- 无需迁移旧数据（前端读取时兼容None）
--- 新写入的记录自动只存 duration_ms
+-- 无需迁移旧数据（前端读取时兼容旧格式）
+-- 新写入的记录自动只存 code/message/duration_ms
 ```
 
 #### 9.4.3 步骤3：收尾
