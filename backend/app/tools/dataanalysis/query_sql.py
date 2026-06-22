@@ -104,13 +104,13 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
             attempted_type = sql.split()[0].upper() if sql.strip() else "未知"
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [])
-            return build_error(data={"error_detail": f"只读查询不支持{attempted_type}操作", "attempted_type": attempted_type, "hint": "如需写操作请使用execute_sql工具"}, llm_data=llm_data)
+            return build_error(data={"error_detail": f"只读查询不支持{attempted_type}操作", "params": {"sql": sql[:200], "attempted_type": attempted_type}, "hint": "如需写操作请使用execute_sql工具"}, llm_data=llm_data)
 
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [])
-            return build_error(data={"error_detail": conn_error}, llm_data=llm_data)
+            return build_error(data={"error_detail": conn_error, "params": {"sql": sql[:200], "connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
 
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
@@ -139,11 +139,11 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
     except sqlite3.Error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [])
-        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"sql": sql[:200]}}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [])
-        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"sql": sql[:200]}}, llm_data=llm_data)
     finally:
         _close_connection(conn, engine)
 

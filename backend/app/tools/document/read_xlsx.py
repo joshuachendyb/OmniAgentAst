@@ -43,16 +43,14 @@ def _build_read_xlsx_llm_data(
 
 
 def _read_xlsx_inner(file_path: str, max_rows: int = 10000) -> Dict[str, Any]:
-    """读取.xlsx文件(内部) — 小欧 2026-06-22"""
-    t0 = _time_mod.perf_counter()
+    """读取.xlsx文件(内部) — 小欧 2026-06-22
+    辅助函数: 仅返回原始dict，不含build3/llm_data — 小欧 2026-06-22"""
     try:
         from openpyxl import load_workbook
 
         path = Path(file_path)
         if not path.exists():
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_path, detail=f"文件不存在: {file_path}")
-            return build_error(data={"error_detail": "文件不存在", "params": {"file_path": file_path}}, llm_data=llm_data)
+            return {"error_detail": "文件不存在", "params": {"file_path": file_path}}
 
         wb = load_workbook(path, read_only=True, data_only=True)
         sheet_names = wb.sheetnames
@@ -73,26 +71,20 @@ def _read_xlsx_inner(file_path: str, max_rows: int = 10000) -> Dict[str, Any]:
                 row_count += 1
 
         wb.close()
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_xlsx_llm_data("success", duration_ms, file_path, row_count, len(sheet_names))
-        return build_success(data={"headers": headers, "rows": rows, "row_count": row_count, "sheet_names": sheet_names}, llm_data=llm_data)
+        return {"headers": headers, "rows": rows, "row_count": row_count, "sheet_names": sheet_names}
     except Exception as e:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_path, detail=str(e))
-        return build_error(data={"error_detail": str(e), "params": {"file_path": file_path}}, llm_data=llm_data)
+        return {"error_detail": str(e), "params": {"file_path": file_path}}
 
 
 def _read_xls_inner(file_path: str, max_rows: int = 10000) -> Dict[str, Any]:
-    """读取.xls文件(内部) — 小欧 2026-06-22"""
-    t0 = _time_mod.perf_counter()
+    """读取.xls文件(内部) — 小欧 2026-06-22
+    辅助函数: 仅返回原始dict，不含build3/llm_data — 小欧 2026-06-22"""
     try:
         import xlrd
 
         path = Path(file_path)
         if not path.exists():
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_path, detail=f"文件不存在: {file_path}")
-            return build_error(data={"error_detail": "文件不存在", "params": {"file_path": file_path}}, llm_data=llm_data)
+            return {"error_detail": "文件不存在", "params": {"file_path": file_path}}
 
         wb = xlrd.open_workbook_xls(str(path))
         sheet_names = wb.sheet_names()
@@ -107,13 +99,9 @@ def _read_xls_inner(file_path: str, max_rows: int = 10000) -> Dict[str, Any]:
             else:
                 rows.append(row_data)
 
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_xlsx_llm_data("success", duration_ms, file_path, len(rows), len(sheet_names))
-        return build_success(data={"headers": headers, "rows": rows, "row_count": len(rows), "sheet_names": sheet_names}, llm_data=llm_data)
+        return {"headers": headers, "rows": rows, "row_count": len(rows), "sheet_names": sheet_names}
     except Exception as e:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_path, detail=str(e))
-        return build_error(data={"error_detail": str(e), "params": {"file_path": file_path}}, llm_data=llm_data)
+        return {"error_detail": str(e), "params": {"file_path": file_path}}
 
 
 def _read_csv_stdlib_inner(
@@ -123,14 +111,12 @@ def _read_csv_stdlib_inner(
     has_header: bool = True,
     max_rows: int = 10000,
 ) -> Dict[str, Any]:
-    """使用标准库csv读取CSV文件(内部) — 小欧 2026-06-22"""
-    t0 = _time_mod.perf_counter()
+    """使用标准库csv读取CSV文件(内部) — 小欧 2026-06-22
+    辅助函数: 仅返回原始dict，不含build3/llm_data — 小欧 2026-06-22"""
     try:
         path = Path(file_path)
         if not path.exists():
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_path, detail=f"文件不存在: {file_path}")
-            return build_error(data={"error_detail": "文件不存在", "params": {"file_path": file_path}}, llm_data=llm_data)
+            return {"error_detail": "文件不存在", "params": {"file_path": file_path}}
 
         rows = []
         headers = []
@@ -156,32 +142,38 @@ def _read_csv_stdlib_inner(
             except UnicodeDecodeError:
                 continue
         if not read_ok:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_path, detail=f"编码不匹配(尝试了{encodings_to_try})")
-            return build_error(data={"error_detail": "编码不匹配", "params": {"file_path": file_path, "encodings_tried": encodings_to_try}}, llm_data=llm_data)
+            return {"error_detail": "编码不匹配", "params": {"file_path": file_path, "encodings_tried": encodings_to_try}}
 
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_xlsx_llm_data("success", duration_ms, file_path, len(rows))
-        return build_success(data={"headers": headers, "rows": rows, "row_count": len(rows)}, llm_data=llm_data)
+        return {"headers": headers, "rows": rows, "row_count": len(rows)}
     except Exception as e:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_path, detail=str(e))
-        return build_error(data={"error_detail": str(e), "params": {"file_path": file_path}}, llm_data=llm_data)
+        return {"error_detail": str(e), "params": {"file_path": file_path}}
 
 
 def read_xlsx(file_name: str) -> Dict[str, Any]:
-    """读取Excel/CSV/XLS文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件"""
+    """读取Excel/CSV/XLS文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件
+    主函数: 负责build3+llm_data调用 — 小欧 2026-06-22"""
     path = Path(file_name)
     suffix = path.suffix.lower()
+    t0 = _time_mod.perf_counter()
 
     if suffix == ".csv":
-        return _read_csv_stdlib_inner(file_name, encoding="utf-8", delimiter=",", has_header=True, max_rows=10000)
+        result = _read_csv_stdlib_inner(file_name, encoding="utf-8", delimiter=",", has_header=True, max_rows=10000)
     elif suffix == ".xls":
-        return _read_xls_inner(file_name, max_rows=10000)
+        result = _read_xls_inner(file_name, max_rows=10000)
     else:
         if not _check_module("openpyxl"):
-            t0 = _time_mod.perf_counter()
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail="openpyxl库未安装")
             return build_error(data={"error_detail": "openpyxl库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
-        return _read_xlsx_inner(file_name, max_rows=10000)
+        result = _read_xlsx_inner(file_name, max_rows=10000)
+
+    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+    if "error_detail" in result:
+        detail = result["error_detail"]
+        llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail=detail)
+        return build_error(data=result, llm_data=llm_data)
+    else:
+        row_count = result.get("row_count", 0)
+        sheet_count = len(result.get("sheet_names", []))
+        llm_data = _build_read_xlsx_llm_data("success", duration_ms, file_name, row_count, sheet_count)
+        return build_success(data=result, llm_data=llm_data)

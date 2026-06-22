@@ -32,14 +32,10 @@ def _build_clipboard_control_llm_data(exec_code: str, duration_ms: int, action: 
 
 def _read_clipboard() -> Dict[str, Any]:
     """读取剪贴板内容(内聚) — 小健 2026-06-22"""
-    t0 = _time_mod.perf_counter()
     try:
         import pyperclip
         text = pyperclip.paste()
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = truncate_data_for_frontend({"text": text})
-        llm_data = _build_clipboard_control_llm_data("success", duration_ms, "read", len(text))
-        return build_success(data=data, llm_data=llm_data)
+        return {"text": text}
     except ImportError:
         try:
             import ctypes
@@ -51,26 +47,17 @@ def _read_clipboard() -> Dict[str, Any]:
                 text = ctypes.c_char_p(data_ptr).value.decode('gbk') if data_ptr else ""
             finally:
                 user32.CloseClipboard()
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            data = {"text": text}
-            llm_data = _build_clipboard_control_llm_data("success", duration_ms, "read", len(text))
-            return build_success(data=data, llm_data=llm_data)
+            return {"text": text}
         except Exception as e:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_clipboard_control_llm_data("error", duration_ms, "read", detail=str(e))
-            return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
+            return {"error_detail": str(e), "params": {"method": "ctypes"}}
 
 
 def _write_clipboard(content: str) -> Dict[str, Any]:
     """写入内容到剪贴板(内聚) — 小健 2026-06-22"""
-    t0 = _time_mod.perf_counter()
     try:
         import pyperclip
         pyperclip.copy(content)
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = truncate_data_for_frontend({"content": content})
-        llm_data = _build_clipboard_control_llm_data("success", duration_ms, "write", len(content))
-        return build_success(data=data, llm_data=llm_data)
+        return {"content": content}
     except ImportError:
         try:
             import ctypes
@@ -81,9 +68,7 @@ def _write_clipboard(content: str) -> Dict[str, Any]:
             text_bytes = content.encode('gbk') + b'\0'
             h_mem = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(text_bytes))
             if h_mem == 0:
-                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_clipboard_control_llm_data("error", duration_ms, "write", err_code=ERR_DESKTOP_CLIPBOARD, detail="内存分配失败")
-                return build_error(data={"error_detail": "内存分配失败", "params": {}}, llm_data=llm_data)
+                return {"error_detail": "内存分配失败", "params": {}}
             p_mem = kernel32.GlobalLock(h_mem)
             if p_mem:
                 ctypes.memmove(p_mem, text_bytes, len(text_bytes))
@@ -92,30 +77,39 @@ def _write_clipboard(content: str) -> Dict[str, Any]:
                 user32.EmptyClipboard()
                 user32.SetClipboardData(CF_TEXT, h_mem)
                 user32.CloseClipboard()
-                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                data = {"content": content}
-                llm_data = _build_clipboard_control_llm_data("success", duration_ms, "write", len(content))
-                return build_success(data=data, llm_data=llm_data)
+                return {"content": content}
             else:
                 kernel32.GlobalFree(h_mem)
-                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_clipboard_control_llm_data("error", duration_ms, "write", err_code=ERR_DESKTOP_CLIPBOARD, detail="内存锁定失败")
-                return build_error(data={"error_detail": "内存锁定失败", "params": {}}, llm_data=llm_data)
+                return {"error_detail": "内存锁定失败", "params": {}}
         except Exception as e:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_clipboard_control_llm_data("error", duration_ms, "write", detail=str(e))
-            return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
+            return {"error_detail": str(e), "params": {"method": "ctypes"}}
 
 
 def clipboard_control(action: Literal["read", "write"], content: str = "") -> Dict[str, Any]:
     """剪贴板操作 — 小健 2026-06-22 合并read/write"""
     if action == "read":
-        return _read_clipboard()
+        t0 = _time_mod.perf_counter()
+        result = _read_clipboard()
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        if "error_detail" in result:
+            llm_data = _build_clipboard_control_llm_data("error", duration_ms, "read", detail=result["error_detail"])
+            return build_error(data=result, llm_data=llm_data)
+        data = truncate_data_for_frontend(result)
+        llm_data = _build_clipboard_control_llm_data("success", duration_ms, "read", len(result.get("text", "")))
+        return build_success(data=data, llm_data=llm_data)
     elif action == "write":
         if not content:
             llm_data = _build_clipboard_control_llm_data("error", 0, "write", err_code=ERR_DESKTOP_CLIPBOARD, detail="content参数不能为空")
             return build_error(data={"error_detail": "content参数不能为空", "params": {}}, llm_data=llm_data)
-        return _write_clipboard(content)
+        t0 = _time_mod.perf_counter()
+        result = _write_clipboard(content)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        if "error_detail" in result:
+            llm_data = _build_clipboard_control_llm_data("error", duration_ms, "write", detail=result["error_detail"])
+            return build_error(data=result, llm_data=llm_data)
+        data = truncate_data_for_frontend(result)
+        llm_data = _build_clipboard_control_llm_data("success", duration_ms, "write", len(content))
+        return build_success(data=data, llm_data=llm_data)
     else:
         llm_data = _build_clipboard_control_llm_data("error", 0, action, err_code=ERR_DESKTOP_CLIPBOARD, detail=f"无效的action: {action}")
         return build_error(data={"error_detail": f"无效的action: {action}", "params": {"action": action}}, llm_data=llm_data)

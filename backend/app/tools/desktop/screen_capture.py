@@ -38,11 +38,13 @@ def _build_screen_capture_llm_data(exec_code: str, duration_ms: int, output_path
 
 
 def _screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[str, Any]:
-    """截取屏幕截图(内聚) — 小健 2026-06-22"""
+    """截取屏幕截图(内聚) — 小健 2026-06-22
+    返回原始dict：成功 {"image_path": ...}，失败 {"error_detail": ..., "params": {...}}
+    """
     try:
         import pyautogui
     except ImportError:
-        return build_error(data={"error_detail": "pyautogui库未安装", "params": {}}, llm_data=_build_screen_capture_llm_data("error", 0, err_code="ERR_NO_PYAUTOGUI"))
+        return {"error_detail": "pyautogui库未安装", "params": {"library": "pyautogui"}}
     t0 = _time_mod.perf_counter()
     try:
         if output_path is None:
@@ -57,18 +59,15 @@ def _screenshot(output_path: str = None, region: Dict[str, int] = None) -> Dict[
 
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         img.save(output_path)
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"image_path": output_path}
-        llm_data = _build_screen_capture_llm_data("success", duration_ms, output_path, region)
-        return build_success(data=data, llm_data=llm_data)
+        return {"image_path": output_path, "region": region, "duration_ms": int((_time_mod.perf_counter() - t0) * 1000)}
     except Exception as e:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_screen_capture_llm_data("error", duration_ms, detail=str(e))
-        return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
+        return {"error_detail": str(e), "params": {"library": "pyautogui"}, "duration_ms": int((_time_mod.perf_counter() - t0) * 1000)}
 
 
 def _snapshot(display: int = 1) -> Dict[str, Any]:
-    """获取完整桌面状态快照(内聚) — 小健 2026-06-22"""
+    """获取完整桌面状态快照(内聚) — 小健 2026-06-22
+    返回原始dict：成功 {"image_path": ..., "display": ..., "monitors": ...}，失败 {"error_detail": ..., "params": {...}}
+    """
     t0 = _time_mod.perf_counter()
     try:
         import mss
@@ -79,12 +78,9 @@ def _snapshot(display: int = 1) -> Dict[str, Any]:
             output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
             img = pyautogui.screenshot()
             img.save(output_path)
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            data = {"image_path": output_path, "display": display}
-            llm_data = _build_screen_capture_llm_data("success", duration_ms, output_path, display=display)
-            return build_success(data=data, llm_data=llm_data)
+            return {"image_path": output_path, "display": display, "monitors": 0, "duration_ms": int((_time_mod.perf_counter() - t0) * 1000)}
         except ImportError:
-            return build_error(data={"error_detail": "需要安装 mss 或 pyautogui 库", "params": {}}, llm_data=_build_screen_capture_llm_data("error", 0, err_code="ERR_NO_SCREENSHOT_LIB"))
+            return {"error_detail": "需要安装 mss 或 pyautogui 库", "params": {"libraries": ["mss", "pyautogui"]}}
     try:
         timestamp = timestamp_for_filename()
         output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
@@ -98,14 +94,9 @@ def _snapshot(display: int = 1) -> Dict[str, Any]:
             from PIL import Image
             pil_img = Image.frombytes("RGB", img.size, img.bgra, "raw", "BGRX")
             pil_img.save(output_path)
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"image_path": output_path, "display": display, "monitors": len(monitors) - 1}
-        llm_data = _build_screen_capture_llm_data("success", duration_ms, output_path, display=display, monitor_count=len(monitors) - 1)
-        return build_success(data=data, llm_data=llm_data)
+        return {"image_path": output_path, "display": display, "monitors": len(monitors) - 1, "duration_ms": int((_time_mod.perf_counter() - t0) * 1000)}
     except Exception as e:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_screen_capture_llm_data("error", duration_ms, detail=str(e))
-        return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
+        return {"error_detail": str(e), "params": {"display": display}, "duration_ms": int((_time_mod.perf_counter() - t0) * 1000)}
 
 
 def screen_capture(output_path: Optional[str] = None, region: Optional[Dict[str, int]] = None, display: Optional[int] = None) -> Dict[str, Any]:
@@ -115,10 +106,24 @@ def screen_capture(output_path: Optional[str] = None, region: Optional[Dict[str,
     else:
         result = _screenshot(output_path=output_path, region=region)
 
-    if result.get("llm_data"):
-        result["llm_data"]["action"]["tool"] = "screen_capture"
-        result["llm_data"]["action"]["tool_zh"] = "屏幕截图"
-    return result
+    duration_ms = result.pop("duration_ms", 0)
+
+    if "error_detail" in result:
+        error_detail = result.pop("error_detail")
+        err_params = result.pop("params", {})
+        if display is not None:
+            err_code = ERR_SCREEN_SNAPSHOT
+        else:
+            err_code = ERR_SCREENSHOT
+        llm_data = _build_screen_capture_llm_data("error", duration_ms, err_code=err_code, detail=error_detail)
+        return build_error(data={"error_detail": error_detail, "params": err_params}, llm_data=llm_data)
+
+    image_path = result.pop("image_path", "")
+    region_val = result.pop("region", None)
+    monitor_count = result.pop("monitors", 0)
+    display_val = result.pop("display", None)
+    llm_data = _build_screen_capture_llm_data("success", duration_ms, image_path, region=region_val, display=display_val, monitor_count=monitor_count)
+    return build_success(data={"image_path": image_path, "display": display_val, "monitors": monitor_count}, llm_data=llm_data)
 
 
 __all__ = ["screen_capture"]

@@ -119,7 +119,7 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
         if conn is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0)
-            return build_error(data={"error_detail": conn_error}, llm_data=llm_data)
+            return build_error(data={"error_detail": conn_error, "params": {"connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
 
         if connection_type in ("mysql", "postgresql"):
             from sqlalchemy import text
@@ -151,7 +151,7 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
             except Exception:
                 pass
         logger.error(f"[execute_sql] ERR_SQL_EXEC: {e}")
-        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"sql": sql[:200]}}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0)
@@ -161,7 +161,7 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
             except Exception:
                 pass
         logger.error(f"[execute_sql] ERR_EXEC_FAILED: {e}")
-        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"sql": sql[:200]}}, llm_data=llm_data)
     finally:
         _close_connection(conn, engine)
 

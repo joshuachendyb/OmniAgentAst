@@ -44,7 +44,7 @@ def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, e
 
 def _get_windows_event_log(log_name: str, max_events: int, level: str,
                            source: Optional[str], start_time: datetime, t0: float) -> dict:
-    """Windows事件日志获取 — 小健 2026-06-22"""
+    """Windows事件日志获取 — 小健 2026-06-22（返回原始dict，不含build3/llm_data）"""
     try:
         level_map = {"critical": "Critical", "error": "Error", "warning": "Warning", "info": "Information"}
         win_level = level_map.get(level, "Error")
@@ -61,9 +61,7 @@ def _get_windows_event_log(log_name: str, max_events: int, level: str,
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"]))
 
         if result.returncode != 0:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000) if t0 else 0
-            llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level)
-            return build_error(data={"error_detail": result.stderr}, llm_data=llm_data)
+            return {"error_detail": result.stderr, "params": {"log_name": log_name}, "_error_code": ERR_SYSTEM_EVENT_LOG}
 
         events = []
         current_event = {}
@@ -90,26 +88,19 @@ def _get_windows_event_log(log_name: str, max_events: int, level: str,
             filtered_events.append(evt)
 
         _events = filtered_events[:max_events]
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000) if t0 else 0
-        data = truncate_data_for_frontend({"log_name": log_name, "events": _events, "total": len(_events), "level": level})
-        llm_data = _build_event_log_llm_data("success", duration_ms, log_name, len(_events), level)
-        return build_success(data=data, llm_data=llm_data)
+        return {"log_name": log_name, "events": _events, "total": len(_events), "level": level}
 
     except subprocess.TimeoutExpired:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000) if t0 else 0
-        llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level)
-        llm_data["status"]["code"] = ERR_SYSTEM_TIMEOUT
-        return build_error(data={"error_detail": "获取事件日志超时"}, llm_data=llm_data)
+        return {"error_detail": "获取事件日志超时", "params": {"log_name": log_name}, "_error_code": ERR_SYSTEM_TIMEOUT}
     except FileNotFoundError:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000) if t0 else 0
-        llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level)
-        llm_data["status"]["code"] = ERR_SHELL_COMMAND_NOT_FOUND
-        return build_error(data={"error_detail": "wevtutil命令不存在"}, llm_data=llm_data)
+        return {"error_detail": "wevtutil命令不存在", "params": {"log_name": log_name}, "_error_code": ERR_SHELL_COMMAND_NOT_FOUND}
+    except Exception as e:
+        return {"error_detail": str(e), "params": {"log_name": log_name}, "_error_code": ERR_SYSTEM_EVENT_LOG}
 
 
 def _get_linux_event_log(log_name: str, max_events: int, level: str,
                          source: Optional[str], start_time: datetime, t0: float) -> dict:
-    """Linux事件日志获取 — 小健 2026-06-22"""
+    """Linux事件日志获取 — 小健 2026-06-22（返回原始dict，不含build3/llm_data）"""
     try:
         level_map = {"critical": "emerg", "error": "err", "warning": "warning", "info": "info"}
         journal_level = level_map.get(level, "err")
@@ -119,9 +110,7 @@ def _get_linux_event_log(log_name: str, max_events: int, level: str,
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"]))
 
         if result.returncode != 0:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000) if t0 else 0
-            llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level)
-            return build_error(data={"error_detail": result.stderr}, llm_data=llm_data)
+            return {"error_detail": result.stderr, "params": {"log_name": log_name}, "_error_code": ERR_SYSTEM_EVENT_LOG}
 
         events = []
         for line in result.stdout.splitlines():
@@ -138,21 +127,14 @@ def _get_linux_event_log(log_name: str, max_events: int, level: str,
                 except json_module.JSONDecodeError:
                     continue
 
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000) if t0 else 0
-        data = {"log_name": log_name, "events": events[:max_events], "total": len(events[:max_events]), "level": level}
-        llm_data = _build_event_log_llm_data("success", duration_ms, log_name, len(events[:max_events]), level)
-        return build_success(data=data, llm_data=llm_data)
+        return {"log_name": log_name, "events": events[:max_events], "total": len(events[:max_events]), "level": level}
 
     except subprocess.TimeoutExpired:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000) if t0 else 0
-        llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level)
-        llm_data["status"]["code"] = ERR_SYSTEM_TIMEOUT
-        return build_error(data={"error_detail": "获取事件日志超时"}, llm_data=llm_data)
+        return {"error_detail": "获取事件日志超时", "params": {"log_name": log_name}, "_error_code": ERR_SYSTEM_TIMEOUT}
     except FileNotFoundError:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000) if t0 else 0
-        llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level)
-        llm_data["status"]["code"] = ERR_SHELL_COMMAND_NOT_FOUND
-        return build_error(data={"error_detail": "journalctl命令不存在"}, llm_data=llm_data)
+        return {"error_detail": "journalctl命令不存在", "params": {"log_name": log_name}, "_error_code": ERR_SHELL_COMMAND_NOT_FOUND}
+    except Exception as e:
+        return {"error_detail": str(e), "params": {"log_name": log_name}, "_error_code": ERR_SYSTEM_EVENT_LOG}
 
 
 def event_log(log_name: str = "System", max_events: int = 50, level: str = "error",
@@ -165,15 +147,29 @@ def event_log(log_name: str = "System", max_events: int = 50, level: str = "erro
         start_time = datetime.now() - time_delta
 
         if platform.system() == "Windows":
-            return _get_windows_event_log(log_name, max_events, level, source, start_time, t0)
+            result = _get_windows_event_log(log_name, max_events, level, source, start_time, t0)
         else:
-            return _get_linux_event_log(log_name, max_events, level, source, start_time, t0)
+            result = _get_linux_event_log(log_name, max_events, level, source, start_time, t0)
+
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+
+        if "error_detail" in result:
+            error_code = result.pop("_error_code", ERR_SYSTEM_EVENT_LOG)
+            llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level)
+            llm_data["status"]["code"] = error_code
+            return build_error(data=result, llm_data=llm_data)
+        else:
+            result.pop("_error_code", None)
+            event_count = result.get("total", 0)
+            data = truncate_data_for_frontend(result)
+            llm_data = _build_event_log_llm_data("success", duration_ms, log_name, event_count, level)
+            return build_success(data=data, llm_data=llm_data)
 
     except Exception as e:
         logger.error(f"[event_log] 获取事件日志失败: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level)
-        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"log_name": log_name}}, llm_data=llm_data)
 
 
 __all__ = ["event_log"]

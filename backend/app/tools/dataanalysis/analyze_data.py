@@ -88,7 +88,7 @@ def analyze_data(data: Union[str, List[Dict[str, Any]]], operations: Optional[Li
     if not _check_module("pandas"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="pandas库未安装")
-        return build_error(data={"error_detail": "pandas库未安装"}, llm_data=llm_data)
+        return build_error(data={"error_detail": "pandas库未安装", "params": {"library": "pandas"}}, llm_data=llm_data)
 
     try:
         all_ops = ["mean", "sum", "count", "min", "max", "std"]
@@ -100,7 +100,7 @@ def analyze_data(data: Union[str, List[Dict[str, Any]]], operations: Optional[Li
             if not path.exists():
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=f"文件不存在: {data}")
-                return build_error(data={"error_detail": f"文件不存在: {data}"}, llm_data=llm_data)
+                return build_error(data={"error_detail": f"文件不存在: {data}", "params": {"file_path": data}}, llm_data=llm_data)
             read_kwargs = {}
             if max_rows is not None:
                 read_kwargs["nrows"] = max_rows
@@ -108,7 +108,7 @@ def analyze_data(data: Union[str, List[Dict[str, Any]]], operations: Optional[Li
                 if not _check_module("openpyxl"):
                     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                     llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="openpyxl库未安装")
-                    return build_error(data={"error_detail": "openpyxl库未安装"}, llm_data=llm_data)
+                    return build_error(data={"error_detail": "openpyxl库未安装", "params": {"library": "openpyxl"}}, llm_data=llm_data)
                 df = pd.read_excel(data, engine="openpyxl", **({k: v for k, v in read_kwargs.items() if k == 'nrows'}))
             else:
                 df = pd.read_csv(data, **read_kwargs)
@@ -117,7 +117,7 @@ def analyze_data(data: Union[str, List[Dict[str, Any]]], operations: Optional[Li
         else:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="data参数必须是文件路径或数据数组")
-            return build_error(data={"error_detail": "data参数必须是文件路径或数据数组"}, llm_data=llm_data)
+            return build_error(data={"error_detail": "data参数必须是文件路径或数据数组", "params": {"data_type": type(data).__name__}}, llm_data=llm_data)
 
         total_count = len(df)
         numeric_cols = df.select_dtypes(include="number").columns.tolist()
@@ -142,7 +142,7 @@ def analyze_data(data: Union[str, List[Dict[str, Any]]], operations: Optional[Li
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=str(e))
-        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"data": str(data)[:200]}}, llm_data=llm_data)
 
 
 __all__ = ["analyze_data"]

@@ -107,7 +107,7 @@ def get_system_info(info_type: str = "all") -> Dict[str, Any]:
         logger.error(f"[get_system_info] 获取系统信息失败: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_get_system_info_llm_data("error", duration_ms, info_type)
-        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"info_type": info_type}}, llm_data=llm_data)
 
 
 __all__ = ["get_system_info"]

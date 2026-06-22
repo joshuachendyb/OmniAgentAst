@@ -58,7 +58,7 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
     if not _check_module("matplotlib"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="matplotlib库未安装")
-        return build_error(data={"error_detail": "matplotlib库未安装"}, llm_data=llm_data)
+        return build_error(data={"error_detail": "matplotlib库未安装", "params": {"library": "matplotlib"}}, llm_data=llm_data)
 
     try:
         import matplotlib
@@ -73,7 +73,7 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
             if not path.exists():
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=f"文件不存在: {data}")
-                return build_error(data={"error_detail": f"文件不存在: {data}"}, llm_data=llm_data)
+                return build_error(data={"error_detail": f"文件不存在: {data}", "params": {"file_path": data}}, llm_data=llm_data)
             source_file_dir = str(path.parent)
 
             if data.endswith('.xlsx') or data.endswith('.xls'):
@@ -84,7 +84,7 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
             if len(df.columns) < 2:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="数据至少需要2列(标签列+数值列)")
-                return build_error(data={"error_detail": "数据至少需要2列"}, llm_data=llm_data)
+                return build_error(data={"error_detail": "数据至少需要2列", "params": {"data": str(data)[:200]}}, llm_data=llm_data)
 
             labels = df.iloc[:, 0].tolist()
             values = df.iloc[:, 1].tolist()
@@ -94,14 +94,14 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
         else:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="data参数必须是文件路径(str)或图表数据(dict)")
-            return build_error(data={"error_detail": "data参数必须是文件路径或图表数据"}, llm_data=llm_data)
+            return build_error(data={"error_detail": "data参数必须是文件路径或图表数据", "params": {"data_type": type(data).__name__}}, llm_data=llm_data)
 
         validation = _validate_chart_data(chart_data)
         if validation["code"] != "SUCCESS" or not validation["data"].get("valid", False):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             err_detail = validation["data"].get("error", "数据格式错误")
             llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=err_detail)
-            return build_error(data={"error_detail": err_detail}, llm_data=llm_data)
+            return build_error(data={"error_detail": err_detail, "params": {"data": str(chart_data)[:200]}}, llm_data=llm_data)
 
         labels = chart_data.get("labels", [])
         values = chart_data.get("values", [])
@@ -109,7 +109,7 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
         if not labels or not values:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="数据格式错误,需要包含labels和values字段")
-            return build_error(data={"error_detail": "数据格式错误"}, llm_data=llm_data)
+            return build_error(data={"error_detail": "数据格式错误", "params": {"data": str(chart_data)[:200]}}, llm_data=llm_data)
 
         if output_path is None:
             timestamp = timestamp_for_filename()
@@ -118,7 +118,7 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
             else:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="data为字典时必须指定output_path参数")
-                return build_error(data={"error_detail": "data为字典时必须指定output_path"}, llm_data=llm_data)
+                return build_error(data={"error_detail": "data为字典时必须指定output_path", "params": {"output_path": output_path}}, llm_data=llm_data)
 
         fig, ax = plt.subplots(figsize=(10, 6))
         chart_type_lower = chart_type
@@ -154,7 +154,7 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=str(e))
-        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"data": str(data)[:200]}}, llm_data=llm_data)
 
 
 __all__ = ["generate_chart"]

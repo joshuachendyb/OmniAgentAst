@@ -61,24 +61,24 @@ def _build_execute_shell_command_llm_data(
 def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
                          timed_out: bool, timeout: int = 30000,
                          shell_type: str = "powershell", duration_ms: int = 0) -> Dict[str, Any]:
-    """统一构建shell执行结果 — 小欧 2026-06-22"""
+    """统一构建shell执行结果 — 小欧 2026-06-22
+    返回原始字典，不调用build3，不含llm_data — 北京老陈 2026-06-22
+    """
     data = truncate_data_for_frontend({
         "stdout": stdout_str, "stderr": stderr_str, "returncode": returncode,
     })
     if timed_out:
-        llm_data = _build_execute_shell_command_llm_data("error", duration_ms, "", returncode, stdout_str[:200], stderr_str[:200], shell_type, ERR_SHELL_TIMEOUT, f"命令执行超时({timeout}毫秒)")
-        llm_data["status"]["hint"] = "可增大timeout参数重试"
-        return build_error(data=data, llm_data=llm_data)
+        return {"success": False, "error_detail": f"命令执行超时({timeout}毫秒)", "data": data, "duration_ms": duration_ms, "params": {"shell_type": shell_type, "timeout": timeout}, "err_code": ERR_SHELL_TIMEOUT}
     if returncode == 0:
-        llm_data = _build_execute_shell_command_llm_data("success", duration_ms, "", returncode, stdout_str[:200], stderr_str[:200], shell_type)
-        return build_success(data=data, llm_data=llm_data)
-    llm_data = _build_execute_shell_command_llm_data("error", duration_ms, "", returncode, stdout_str[:200], stderr_str[:200], shell_type)
-    return build_error(data=data, llm_data=llm_data)
+        return {"success": True, "data": data, "duration_ms": duration_ms, "params": {"shell_type": shell_type}}
+    return {"success": False, "error_detail": f"命令执行失败(退出码{returncode})", "data": data, "duration_ms": duration_ms, "params": {"shell_type": shell_type}}
 
 
 def _run_shell_background(command: str, executable: Optional[str],
                            cwd: Optional[str], env: Optional[dict]) -> Dict[str, Any]:
-    """启动后台shell命令 — 小欧 2026-06-22"""
+    """启动后台shell命令 — 小欧 2026-06-22
+    返回原始字典，不调用build3，不含llm_data — 北京老陈 2026-06-22
+    """
     process = subprocess.Popen(
         command, shell=True,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -91,10 +91,7 @@ def _run_shell_background(command: str, executable: Optional[str],
         "shell_type": "powershell", "cwd": cwd,
     }
     data = {"shell_id": shell_id, "is_running": True, "started_at": datetime.now().isoformat()}
-    llm_data = _build_execute_shell_command_llm_data("success", 0, command[:100], 0, shell_type="powershell")
-    llm_data["summary"] = f"后台命令已启动: {command[:100]}"
-    llm_data["status"]["message"] = "后台命令已启动"
-    return build_success(data=data, llm_data=llm_data)
+    return {"success": True, "data": data, "duration_ms": 0, "params": {"shell_type": "powershell"}, "command": command[:100]}
 
 
 def cleanup_background_shells() -> int:
@@ -125,7 +122,9 @@ def execute_shell_command(
     timeout: int = 30000, run_in_background: bool = False,
     cwd: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """执行Shell命令 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件"""
+    """执行Shell命令 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件
+    包装辅助函数结果，构建build3和llm_data — 北京老陈 2026-06-22
+    """
     t0 = _time_mod.perf_counter()
     if shell_type not in ("powershell", "cmd", None):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -156,7 +155,15 @@ def execute_shell_command(
         return build_error(data={"error_detail": safety_check.get("message", "命令不安全"), "params": {"command": command[:200]}}, llm_data=llm_data)
 
     if run_in_background:
-        return _run_shell_background(command, executable, cwd, env)
+        result = _run_shell_background(command, executable, cwd, env)
+        # 包装后台命令结果
+        duration_ms = result.get("duration_ms", 0)
+        data = result.get("data", {})
+        command_preview = result.get("command", "")
+        llm_data = _build_execute_shell_command_llm_data("success", duration_ms, command_preview, 0, shell_type=shell_type or "powershell")
+        llm_data["summary"] = f"后台命令已启动: {command_preview}"
+        llm_data["status"]["message"] = "后台命令已启动"
+        return build_success(data=data, llm_data=llm_data)
 
     try:
         proc = subprocess.Popen(
@@ -178,7 +185,20 @@ def execute_shell_command(
         returncode = proc.returncode if proc.returncode is not None else -1
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        return _build_shell_result(returncode, stdout_str, stderr_str, timed_out, timeout=timeout, shell_type=shell_type, duration_ms=duration_ms)
+        result = _build_shell_result(returncode, stdout_str, stderr_str, timed_out, timeout=timeout, shell_type=shell_type, duration_ms=duration_ms)
+        # 包装结果
+        duration_ms = result.get("duration_ms", 0)
+        data = result.get("data", {})
+        if result.get("success"):
+            llm_data = _build_execute_shell_command_llm_data("success", duration_ms, command[:100], returncode, stdout_str[:200], stderr_str[:200], shell_type or "powershell")
+            return build_success(data=data, llm_data=llm_data)
+        else:
+            error_detail = result.get("error_detail", "")
+            err_code = result.get("err_code", ERR_SHELL_EXEC)
+            llm_data = _build_execute_shell_command_llm_data("error", duration_ms, command[:100], returncode, stdout_str[:200], stderr_str[:200], shell_type or "powershell", err_code, error_detail)
+            if timed_out:
+                llm_data["status"]["hint"] = "可增大timeout参数重试"
+            return build_error(data=data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_execute_shell_command_llm_data("error", duration_ms, command, -1, "", "", shell_type or "", ERR_SHELL_EXCEPTION, str(e))

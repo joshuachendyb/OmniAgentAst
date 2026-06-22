@@ -90,7 +90,7 @@ def create_task(task_name: str, command: str, schedule: str, interval: Optional[
         if platform.system() != "Windows":
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_DESKTOP_PLATFORM_NOT_SUPPORTED)
-            return build_error(data={"error_detail": "create_task 仅支持Windows系统"}, llm_data=llm_data)
+            return build_error(data={"error_detail": "create_task 仅支持Windows系统", "params": {"platform": platform.system()}}, llm_data=llm_data)
 
         cmd = _build_schtasks_create_cmd(task_name, command, schedule, None, None, None, None, interval)
         result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"]))
@@ -99,7 +99,7 @@ def create_task(task_name: str, command: str, schedule: str, interval: Optional[
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             err_msg = result.stderr.strip() or result.stdout.strip()
             llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_TASK_CREATE, err_msg)
-            return build_error(data={"error_detail": err_msg}, llm_data=llm_data)
+            return build_error(data={"error_detail": err_msg, "params": {"task_name": task_name, "command": command, "schedule": schedule}}, llm_data=llm_data)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"task_name": task_name, "command": command, "schedule": schedule}
@@ -109,16 +109,16 @@ def create_task(task_name: str, command: str, schedule: str, interval: Optional[
     except subprocess.TimeoutExpired:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_SHELL_TIMEOUT)
-        return build_error(data={"error_detail": "创建计划任务超时"}, llm_data=llm_data)
+        return build_error(data={"error_detail": "创建计划任务超时", "params": {"task_name": task_name, "command": command, "schedule": schedule}}, llm_data=llm_data)
     except FileNotFoundError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_SHELL_COMMAND_NOT_FOUND)
-        return build_error(data={"error_detail": "schtasks命令不存在"}, llm_data=llm_data)
+        return build_error(data={"error_detail": "schtasks命令不存在", "params": {"task_name": task_name}}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[create_task] 创建计划任务失败: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_TASK_CREATE, str(e))
-        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"task_name": task_name}}, llm_data=llm_data)
 
 
 __all__ = ["create_task"]

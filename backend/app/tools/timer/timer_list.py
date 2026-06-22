@@ -50,7 +50,7 @@ def timer_list() -> Dict[str, Any]:
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_timer_list_llm_data("error", duration_ms, 0, [])
-        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
 
 
 __all__ = ["timer_list"]

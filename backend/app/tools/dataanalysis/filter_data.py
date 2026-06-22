@@ -38,26 +38,23 @@ def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filter
 
 
 def _load_data_to_df(data: Union[str, List[Dict[str, Any]]], max_rows: Optional[int] = None) -> dict:
-    """加载数据为 DataFrame,返回 {"df": DataFrame} 或 {"error": dict} — 小健 2026-06-22"""
+    """加载数据为 DataFrame — 小健 2026-06-22 拆分独立文件"""
     if isinstance(data, str):
         path = Path(data)
         if not path.exists():
-            llm_data = _build_filter_data_llm_data("error", 0, detail=f"文件不存在: {data}")
-            return {"error": build_error(data={"error_detail": f"文件不存在: {data}"}, llm_data=llm_data)}
+            return {"error_detail": f"文件不存在: {data}", "params": {"file_path": data}}
         if data.endswith('.xlsx'):
             if not _check_module("openpyxl"):
-                llm_data = _build_filter_data_llm_data("error", 0, detail="openpyxl库未安装")
-                return {"error": build_error(data={"error_detail": "openpyxl库未安装"}, llm_data=llm_data)}
+                return {"error_detail": "openpyxl库未安装", "params": {"library": "openpyxl"}}
             return {"df": pd.read_excel(data, engine="openpyxl", nrows=max_rows)}
         return {"df": pd.read_csv(data, nrows=max_rows)}
     if isinstance(data, list):
         return {"df": pd.DataFrame(data)}
-    llm_data = _build_filter_data_llm_data("error", 0, detail="data参数必须是文件路径或数据数组")
-    return {"error": build_error(data={"error_detail": "data参数必须是文件路径或数据数组"}, llm_data=llm_data)}
+    return {"error_detail": "data参数必须是文件路径或数据数组", "params": {"data_type": type(data).__name__}}
 
 
 def _build_condition_mask(df: "pd.DataFrame", conditions: List[Dict[str, Any]]) -> dict:
-    """构建过滤掩码,返回 {"mask": pd.Series, "warnings": List[str]} — 小沈 2026-05-25"""
+    """构建过滤掩码 — 小沈 2026-05-25"""
     operator_map = {"eq": "__eq__", "ne": "__ne__", "gt": "__gt__", "gte": "__ge__", "lt": "__lt__", "lte": "__le__"}
     valid_operators = set(operator_map.keys()) | {"in", "contains", "not_contains"}
     mask = pd.Series([True] * len(df), index=df.index)
@@ -69,8 +66,7 @@ def _build_condition_mask(df: "pd.DataFrame", conditions: List[Dict[str, Any]]) 
         value = cond.get("value")
 
         if not column:
-            llm_data = _build_filter_data_llm_data("error", 0, detail=f"条件缺少column字段: {cond}")
-            return {"error": build_error(data={"error_detail": f"条件缺少column字段: {cond}"}, llm_data=llm_data)}
+            return {"error_detail": f"条件缺少column字段: {cond}", "params": {"conditions": str(conditions)[:200]}}
         if column not in df.columns:
             warnings.append(f"列'{column}'不存在,已跳过")
             continue
@@ -107,18 +103,22 @@ def filter_data(data: Union[str, List[Dict[str, Any]]], conditions: List[Dict[st
     if not _check_module("pandas"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_filter_data_llm_data("error", duration_ms, detail="pandas库未安装")
-        return build_error(data={"error_detail": "pandas库未安装"}, llm_data=llm_data)
+        return build_error(data={"error_detail": "pandas库未安装", "params": {"library": "pandas"}}, llm_data=llm_data)
 
     try:
         loaded = _load_data_to_df(data, max_rows)
-        if "error" in loaded:
-            return loaded["error"]
+        if "error_detail" in loaded:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_filter_data_llm_data("error", duration_ms, detail=loaded["error_detail"])
+            return build_error(data=loaded, llm_data=llm_data)
         df = loaded["df"]
         original_count = len(df)
 
         result = _build_condition_mask(df, conditions)
-        if "error" in result:
-            return result["error"]
+        if "error_detail" in result:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_filter_data_llm_data("error", duration_ms, detail=result["error_detail"])
+            return build_error(data=result, llm_data=llm_data)
         filtered_df = df[result["mask"]]
         warnings = result["warnings"]
 
@@ -150,7 +150,7 @@ def filter_data(data: Union[str, List[Dict[str, Any]]], conditions: List[Dict[st
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_filter_data_llm_data("error", duration_ms, detail=str(e))
-        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"data": str(data)[:200]}}, llm_data=llm_data)
 
 
 __all__ = ["filter_data"]

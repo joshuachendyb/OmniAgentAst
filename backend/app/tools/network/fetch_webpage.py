@@ -45,10 +45,10 @@ def _check_network() -> Dict[str, Any]:
             sock.connect((host, port))
             latency = (time.time() - t1) * 1000
             sock.close()
-            return build_success(data={"connected": True, "host": host, "latency_ms": round(latency, 2)})
+            return {"connected": True, "host": host, "latency_ms": round(latency, 2)}
         except (socket.timeout, socket.error, OSError):
             continue
-    return build_success(data={"connected": False})
+    return {"connected": False}
 
 
 def _validate_url(url: str) -> Dict[str, Any]:
@@ -58,9 +58,9 @@ def _validate_url(url: str) -> Dict[str, Any]:
         is_valid = bool(parsed.scheme) and bool(parsed.netloc)
         valid_schemes = {"http", "https", "ftp", "ftps", "ws", "wss"}
         scheme_ok = parsed.scheme in valid_schemes
-        return build_success(data={"valid": is_valid and scheme_ok, "scheme": parsed.scheme, "netloc": parsed.netloc, "path": parsed.path})
+        return {"valid": is_valid and scheme_ok, "scheme": parsed.scheme, "netloc": parsed.netloc, "path": parsed.path}
     except Exception as e:
-        return build_success(data={"valid": False, "error": str(e)})
+        return {"valid": False, "error": str(e)}
 
 
 def _html_to_markdown(html: str) -> str:
@@ -143,7 +143,6 @@ def _build_media_result(url: str, mime: str, raw_bytes: bytes, extract_format: s
         "status_code": response_status,
         "truncated": False,
     }
-    llm_data = _build_fetch_webpage_llm_data("success", 0, url, extract_format, response_status)
     other_data = {
         "attachment": {
             "type": "base64",
@@ -152,7 +151,7 @@ def _build_media_result(url: str, mime: str, raw_bytes: bytes, extract_format: s
             "filename": url.split("/")[-1].split("?")[0] or "download",
         }
     }
-    return build_success(data=data, llm_data=llm_data, other_data=other_data)
+    return {"data": data, "other_data": other_data}
 
 
 async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout_sec: float,
@@ -161,8 +160,7 @@ async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout_sec: flo
     try:
         from playwright.async_api import async_playwright
     except ImportError:
-        llm_data = _build_fetch_webpage_llm_data("error", 0, url, extract_format, err_code=ERR_NETWORK_JS_RENDER, detail="js_render需要安装Playwright")
-        return build_error(data={"error_detail": "js_render需要安装Playwright: pip install playwright && playwright install chromium", "params": {"url": url}}, llm_data=llm_data)
+        return {"error": True, "error_detail": "js_render需要安装Playwright: pip install playwright && playwright install chromium", "params": {"url": url}, "err_code": ERR_NETWORK_JS_RENDER, "detail": "js_render需要安装Playwright"}
     try:
         browser_config = {
             "headless": True,
@@ -185,8 +183,7 @@ async def _fetch_via_playwright(url: str, proxy: Optional[str], timeout_sec: flo
             "status_code": 200,
         }
     except Exception as e:
-        llm_data = _build_fetch_webpage_llm_data("error", 0, url, extract_format, err_code=ERR_NETWORK_JS_RENDER, detail=str(e))
-        return build_error(data={"error_detail": str(e), "params": {"url": url}}, llm_data=llm_data)
+        return {"error": True, "error_detail": str(e), "params": {"url": url}, "err_code": ERR_NETWORK_JS_RENDER, "detail": str(e)}
 
 
 async def fetch_webpage(
@@ -204,13 +201,13 @@ async def fetch_webpage(
 
     try:
         url_info = _validate_url(url)
-        if not url_info["data"]["valid"]:
+        if not url_info["valid"]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_INVALID_URL, detail="URL格式无效")
             return build_error(data={"error_detail": "URL格式无效", "params": {"url": url}}, llm_data=llm_data)
 
         net_info = _check_network()
-        if not net_info["data"]["connected"]:
+        if not net_info["connected"]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_DOWN, detail="网络不可用")
             return build_error(data={"error_detail": "网络不可用", "params": {"url": url}}, llm_data=llm_data)
@@ -247,7 +244,9 @@ async def fetch_webpage(
                 mime = content_type.split(";")[0].strip().lower() if content_type else ""
                 if mime and (mime.startswith("image/") or mime in ("application/pdf",)):
                     raw_bytes = response.content
-                    return _build_media_result(url, mime, raw_bytes, extract_format, response.status_code)
+                    media_result = _build_media_result(url, mime, raw_bytes, extract_format, response.status_code)
+                    llm_data = _build_fetch_webpage_llm_data("success", 0, url, extract_format, response.status_code)
+                    return build_success(data=media_result["data"], llm_data=llm_data, other_data=media_result["other_data"])
 
                 html_content = response.text
                 content_type = response.headers.get("content-type", "")

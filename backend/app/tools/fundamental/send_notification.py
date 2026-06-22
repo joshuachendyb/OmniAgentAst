@@ -42,7 +42,7 @@ def _build_send_notification_llm_data(exec_code: str, duration_ms: int, title: s
 def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, Any]:
     """发送Windows系统通知 — 小健 2026-06-22 迁入fundamental独立文件"""
     if not _check_module("win10toast"):
-        return build_error(data={"error_detail": "win10toast库未安装"}, llm_data=_build_send_notification_llm_data("error", 0, title, err_code=ERR_NO_WIN10TOAST))
+        return build_error(data={"error_detail": "win10toast库未安装", "params": {"library": "win10toast"}}, llm_data=_build_send_notification_llm_data("error", 0, title, err_code=ERR_NO_WIN10TOAST))
 
     from win10toast import ToastNotifier
     t0 = _time_mod.perf_counter()
@@ -56,7 +56,7 @@ def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, 
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_send_notification_llm_data("error", duration_ms, title, detail=str(e))
-        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"title": title, "message": message[:200]}}, llm_data=llm_data)
 
 
 __all__ = ["send_notification"]

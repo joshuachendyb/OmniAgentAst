@@ -28,22 +28,22 @@ def _build_mouse_position_llm_data(exec_code: str, duration_ms: int, x=0, y=0, d
 
 
 def _get_mouse_position() -> Dict[str, Any]:
-    """获取当前鼠标位置(内聚) — 小健 2026-06-22"""
+    """获取当前鼠标位置(内聚) — 小健 2026-06-22 拆分独立文件"""
     try:
         import ctypes
         point = ctypes.wintypes.POINT()
         ctypes.windll.user32.GetCursorPos(ctypes.byref(point))
-        return build_success(data={"x": point.x, "y": point.y})
+        return {"x": point.x, "y": point.y}
     except Exception:
         pass
     try:
         import pyautogui
         pos = pyautogui.position()
-        return build_success(data={"x": pos[0], "y": pos[1]})
+        return {"x": pos[0], "y": pos[1]}
     except ImportError:
-        return build_error(data={"error_detail": "无依赖库可用(win32api/pyautogui均未安装)", "params": {}})
+        return {"error_detail": "无依赖库可用(win32api/pyautogui均未安装)", "params": {"library": "ctypes/pyautogui"}}
     except Exception as e:
-        return build_error(data={"error_detail": str(e), "params": {}})
+        return {"error_detail": str(e), "params": {"library": "ctypes/pyautogui"}}
 
 
 def mouse_position() -> Dict[str, Any]:
@@ -51,14 +51,12 @@ def mouse_position() -> Dict[str, Any]:
     t0 = _time_mod.perf_counter()
     result = _get_mouse_position()
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-    if result.get("llm_data", {}).get("status", {}).get("exec_code") == "error" or "error_detail" in result.get("data", {}):
-        detail = result.get("data", {}).get("error_detail", "获取鼠标位置失败")
-        llm_data = _build_mouse_position_llm_data("error", duration_ms, detail=detail)
-        return build_error(data=result.get("data", {}), llm_data=llm_data)
-    data = result.get("data", {})
-    x, y = data.get("x", 0), data.get("y", 0)
+    if "error_detail" in result:
+        llm_data = _build_mouse_position_llm_data("error", duration_ms, detail=result["error_detail"])
+        return build_error(data={"error_detail": result["error_detail"], "params": result.get("params", {})}, llm_data=llm_data)
+    x, y = result.get("x", 0), result.get("y", 0)
     llm_data = _build_mouse_position_llm_data("success", duration_ms, x, y)
-    return build_success(data=data, llm_data=llm_data)
+    return build_success(data={"x": x, "y": y}, llm_data=llm_data)
 
 
 __all__ = ["mouse_position"]

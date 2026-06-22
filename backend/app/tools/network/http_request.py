@@ -46,10 +46,10 @@ def _check_network() -> Dict[str, Any]:
             sock.connect((host, port))
             latency = (time.time() - t1) * 1000
             sock.close()
-            return build_success(data={"connected": True, "host": host, "latency_ms": round(latency, 2)})
+            return {"connected": True, "host": host, "latency_ms": round(latency, 2)}
         except (socket.timeout, socket.error, OSError):
             continue
-    return build_success(data={"connected": False})
+    return {"connected": False}
 
 
 def _validate_url(url: str) -> Dict[str, Any]:
@@ -59,9 +59,9 @@ def _validate_url(url: str) -> Dict[str, Any]:
         is_valid = bool(parsed.scheme) and bool(parsed.netloc)
         valid_schemes = {"http", "https", "ftp", "ftps", "ws", "wss"}
         scheme_ok = parsed.scheme in valid_schemes
-        return build_success(data={"valid": is_valid and scheme_ok, "scheme": parsed.scheme, "netloc": parsed.netloc, "path": parsed.path})
+        return {"valid": is_valid and scheme_ok, "scheme": parsed.scheme, "netloc": parsed.netloc, "path": parsed.path}
     except Exception as e:
-        return build_success(data={"valid": False, "error": str(e)})
+        return {"valid": False, "error": str(e)}
 
 
 def _build_http_request_llm_data(
@@ -131,18 +131,12 @@ def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
 
 
 def _build_http_error(last_exception: Exception, url: str, retry: int, duration_ms: int = 0) -> Dict[str, Any]:
-    """构建HTTP请求最终错误响应 — 小欧 2026-06-22"""
+    """构建HTTP请求最终错误信息字典 — 小欧 2026-06-22"""
     if isinstance(last_exception, httpx.TimeoutException):
-        llm_data = _build_http_request_llm_data("error", duration_ms, url, err_code=ERR_NETWORK_TIMEOUT, detail="请求超时")
-        return build_error(data={"error_detail": "请求超时", "params": {"url": url}}, llm_data=llm_data)
+        return {"error_detail": "请求超时", "params": {"url": url}, "err_code": ERR_NETWORK_TIMEOUT, "detail": "请求超时"}
     if isinstance(last_exception, httpx.HTTPStatusError):
-        llm_data = _build_http_request_llm_data("error", duration_ms, url, err_code=ERR_NETWORK_HTTP_ERROR,
-                                                  detail=f"HTTP {last_exception.response.status_code}")
-        return build_error(
-            data={"error_detail": f"HTTP {last_exception.response.status_code}", "params": {"url": url, "status_code": last_exception.response.status_code}},
-            llm_data=llm_data)
-    llm_data = _build_http_request_llm_data("error", duration_ms, url, err_code=ERR_NETWORK_REQUEST_ERROR, detail=str(last_exception))
-    return build_error(data={"error_detail": str(last_exception), "params": {"url": url, "retry": retry}}, llm_data=llm_data)
+        return {"error_detail": f"HTTP {last_exception.response.status_code}", "params": {"url": url, "status_code": last_exception.response.status_code}, "err_code": ERR_NETWORK_HTTP_ERROR, "detail": f"HTTP {last_exception.response.status_code}"}
+    return {"error_detail": str(last_exception), "params": {"url": url, "retry": retry}, "err_code": ERR_NETWORK_REQUEST_ERROR, "detail": str(last_exception)}
 
 
 async def http_request(
@@ -168,13 +162,13 @@ async def http_request(
 
     try:
         url_info = _validate_url(url)
-        if not url_info["data"]["valid"]:
+        if not url_info["valid"]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_INVALID_URL, detail="URL格式无效")
             return build_error(data={"error_detail": "URL格式无效", "params": {"url": url}}, llm_data=llm_data)
 
         net_info = _check_network()
-        if not net_info["data"]["connected"]:
+        if not net_info["connected"]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_NETWORK_DOWN, detail="网络不可用")
             return build_error(data={"error_detail": "网络不可用", "params": {"url": url}}, llm_data=llm_data)
@@ -227,7 +221,9 @@ async def http_request(
                 break
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        return _build_http_error(last_exception, url, retry, duration_ms)
+        error_info = _build_http_error(last_exception, url, retry, duration_ms)
+        llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=error_info["err_code"], detail=error_info["detail"])
+        return build_error(data={"error_detail": error_info["error_detail"], "params": error_info["params"]}, llm_data=llm_data)
 
     except Exception as e:
         logger.error(f"[http_request] 未知错误: {e}")

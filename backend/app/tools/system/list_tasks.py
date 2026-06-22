@@ -93,7 +93,7 @@ def list_tasks(task_name: Optional[str] = None, state: str = "all") -> dict:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0)
             llm_data["status"]["code"] = ERR_DESKTOP_PLATFORM_NOT_SUPPORTED
-            return build_error(data={"error_detail": "list_tasks 仅支持Windows系统"}, llm_data=llm_data)
+            return build_error(data={"error_detail": "list_tasks 仅支持Windows系统", "params": {"platform": platform.system()}}, llm_data=llm_data)
 
         stdout = _run_schtasks_query()
         tasks = _parse_task_entries(stdout)
@@ -108,22 +108,22 @@ def list_tasks(task_name: Optional[str] = None, state: str = "all") -> dict:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0)
         llm_data["status"]["code"] = ERR_SHELL_TIMEOUT
-        return build_error(data={"error_detail": "获取计划任务列表超时"}, llm_data=llm_data)
+        return build_error(data={"error_detail": "获取计划任务列表超时", "params": {"task_name": task_name, "state": state}}, llm_data=llm_data)
     except ValueError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0)
         llm_data["status"]["code"] = ERR_TASK_EMPTY
-        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"task_name": task_name}}, llm_data=llm_data)
     except FileNotFoundError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0)
         llm_data["status"]["code"] = ERR_SHELL_COMMAND_NOT_FOUND
-        return build_error(data={"error_detail": "schtasks 命令不存在"}, llm_data=llm_data)
+        return build_error(data={"error_detail": "schtasks 命令不存在", "params": {"task_name": task_name}}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[list_tasks] 获取计划任务列表失败: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0)
-        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"task_name": task_name}}, llm_data=llm_data)
 
 
 __all__ = ["list_tasks"]

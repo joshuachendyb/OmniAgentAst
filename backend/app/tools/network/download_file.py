@@ -45,10 +45,10 @@ def _check_network() -> Dict[str, Any]:
             sock.connect((host, port))
             latency = (time.time() - t1) * 1000
             sock.close()
-            return build_success(data={"connected": True, "host": host, "latency_ms": round(latency, 2)})
+            return {"connected": True, "host": host, "latency_ms": round(latency, 2)}
         except (socket.timeout, socket.error, OSError):
             continue
-    return build_success(data={"connected": False})
+    return {"connected": False}
 
 
 def _validate_url(url: str) -> Dict[str, Any]:
@@ -58,9 +58,9 @@ def _validate_url(url: str) -> Dict[str, Any]:
         is_valid = bool(parsed.scheme) and bool(parsed.netloc)
         valid_schemes = {"http", "https", "ftp", "ftps", "ws", "wss"}
         scheme_ok = parsed.scheme in valid_schemes
-        return build_success(data={"valid": is_valid and scheme_ok, "scheme": parsed.scheme, "netloc": parsed.netloc, "path": parsed.path})
+        return {"valid": is_valid and scheme_ok, "scheme": parsed.scheme, "netloc": parsed.netloc, "path": parsed.path}
     except Exception as e:
-        return build_success(data={"valid": False, "error": str(e)})
+        return {"valid": False, "error": str(e)}
 
 
 def _build_download_file_llm_data(
@@ -94,17 +94,15 @@ _NET_ERROR_MAP = [
 
 
 def _map_network_error(url: str, timeout: int, e: Exception, duration_ms: int = 0) -> Dict[str, Any]:
-    """将httpx异常映射为build_error — 小欧 2026-06-22"""
+    """将httpx异常映射为错误信息字典 — 小欧 2026-06-22"""
     for exc_type, code, prefix in _NET_ERROR_MAP:
         if isinstance(e, exc_type):
             detail = f"{prefix}({timeout/1000}秒):{url}"
             if isinstance(e, httpx.HTTPStatusError):
                 detail = f"{prefix} (HTTP {e.response.status_code}):{url}"
-            llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=code, detail=detail)
-            return build_error(data={"error_detail": detail, "params": {"url": url}}, llm_data=llm_data)
+            return {"error_detail": detail, "params": {"url": url}, "err_code": code, "detail": detail}
     logger.error(f"[download_file] 未知错误: {e}")
-    llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_NET_UNKNOWN, detail=str(e))
-    return build_error(data={"error_detail": str(e), "params": {"url": url}}, llm_data=llm_data)
+    return {"error_detail": str(e), "params": {"url": url}, "err_code": ERR_NET_UNKNOWN, "detail": str(e)}
 
 
 async def _stream_download(client: HTTPClient, url: str, dest_path: str,
@@ -140,12 +138,12 @@ async def download_file(
     dest_path = ""
     try:
         url_info = _validate_url(url)
-        if not url_info["data"]["valid"]:
+        if not url_info["valid"]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_INVALID_URL, detail="URL格式无效")
             return build_error(data={"error_detail": "URL格式无效", "params": {"url": url}}, llm_data=llm_data)
         net_info = _check_network()
-        if not net_info["data"]["connected"]:
+        if not net_info["connected"]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_NETWORK_DOWN, detail="网络不可用")
             return build_error(data={"error_detail": "网络不可用", "params": {"url": url}}, llm_data=llm_data)
@@ -178,7 +176,9 @@ async def download_file(
         return build_error(data={"error_detail": str(e), "params": {"file_path": dest_path}}, llm_data=llm_data)
     except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        return _map_network_error(url, timeout, e, duration_ms)
+        error_info = _map_network_error(url, timeout, e, duration_ms)
+        llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=error_info["err_code"], detail=error_info["detail"])
+        return build_error(data={"error_detail": error_info["error_detail"], "params": error_info["params"]}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[download_file] 未知错误: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

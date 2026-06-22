@@ -129,23 +129,15 @@ def _count_tree_stats(node: dict) -> Tuple[int, int, int]:
 def _build_list_success(entries: List, total: int, path: Path,
                          statistics: Dict, start_offset: int,
                          max_display: int) -> Dict[str, Any]:
-    """统一构建list模式的成功响应 — 小健 2026-05-25 — 小欧 2026-06-22"""
+    """构建list模式的原始数据 — 小健 2026-05-25 — 小欧 2026-06-22"""
     truncated = total > max_display
     display_entries = entries[start_offset:start_offset + max_display]
-    duration_ms = 0
-    llm_data = _build_list_directory_llm_data(
-        "success", duration_ms, dir_path=str(path),
-        total=total, truncated=truncated,
-    )
-    return build_success(
-        data={
-            "entries": display_entries,
-            "total": total,
-            "statistics": statistics,
-            "truncated": truncated,
-        },
-        llm_data=llm_data,
-    )
+    return {
+        "entries": display_entries,
+        "total": total,
+        "statistics": statistics,
+        "truncated": truncated,
+    }
 
 
 def _build_list_directory_llm_data(
@@ -177,23 +169,17 @@ def _build_list_directory_llm_data(
 async def _get_directory_tree(
     dir_path: str, max_depth: int = 10,
 ) -> Dict[str, Any]:
-    """获取目录树 — 小欧 2026-06-22"""
+    """获取目录树原始数据 — 小欧 2026-06-22"""
     t0 = _time_mod.perf_counter()
     is_valid, error_msg = _validate_path(dir_path)
     if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=error_msg)
-        return build_error(data={"error_detail": error_msg, "params": {"dir_path": dir_path}}, llm_data=llm_data)
+        return {"error_detail": error_msg, "params": {"dir_path": dir_path}}
 
     path = Path(dir_path)
     if not path.exists():
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"目录不存在: {dir_path}")
-        return build_error(data={"error_detail": "目录不存在", "params": {"dir_path": dir_path}}, llm_data=llm_data)
+        return {"error_detail": "目录不存在", "params": {"dir_path": dir_path}}
     if not path.is_dir():
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"不是目录: {dir_path}")
-        return build_error(data={"error_detail": "不是目录", "params": {"dir_path": dir_path}}, llm_data=llm_data)
+        return {"error_detail": "不是目录", "params": {"dir_path": dir_path}}
 
     def _build_tree(current_path: Path, depth: int = 0) -> Optional[Dict[str, Any]]:
         if depth > max_depth:
@@ -222,17 +208,11 @@ async def _get_directory_tree(
         return node
 
     tree = await asyncio.to_thread(_build_tree, path)
-    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
     if tree is None:
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail="构建目录树失败")
-        return build_error(data={"error_detail": "构建目录树失败", "params": {"dir_path": dir_path}}, llm_data=llm_data)
+        return {"error_detail": "构建目录树失败", "params": {"dir_path": dir_path}}
 
     f, d, s = _count_tree_stats(tree)
-    llm_data = _build_list_directory_llm_data("success", duration_ms, dir_path=dir_path, total=f + d)
-    return build_success(
-        data={"tree": tree, "statistics": {"file_count": f, "dir_count": d, "total_size": s}},
-        llm_data=llm_data,
-    )
+    return {"tree": tree, "statistics": {"file_count": f, "dir_count": d, "total_size": s}}
 
 
 async def list_directory(
@@ -253,7 +233,13 @@ async def list_directory(
 
     if format_mode == "tree":
         tree_result = await _get_directory_tree(dir_path=dir_path, max_depth=max_depth)
-        return tree_result
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        if "error_detail" in tree_result:
+            llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=tree_result["error_detail"])
+            return build_error(data=tree_result, llm_data=llm_data)
+        else:
+            llm_data = _build_list_directory_llm_data("success", duration_ms, dir_path=dir_path, total=tree_result["statistics"]["file_count"] + tree_result["statistics"]["dir_count"])
+            return build_success(data=tree_result, llm_data=llm_data)
 
     is_valid, error_msg = _validate_path(dir_path)
     if not is_valid:
@@ -297,7 +283,10 @@ async def list_directory(
         if total > MAX_DISPLAY_ENTRIES:
             logger.warning(f"[list_directory] Large directory truncated: path={path}, total={total}")
 
-        return _build_list_success(all_entries, total, path, statistics, start_offset, MAX_DISPLAY_ENTRIES)
+        list_data = _build_list_success(all_entries, total, path, statistics, start_offset, MAX_DISPLAY_ENTRIES)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_list_directory_llm_data("success", duration_ms, dir_path=dir_path, total=total, truncated=list_data["truncated"])
+        return build_success(data=list_data, llm_data=llm_data)
 
     except Exception as e:
         logger.error(f"Failed to list directory {dir_path}: {e}")

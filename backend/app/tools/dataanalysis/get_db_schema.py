@@ -131,14 +131,14 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
         if conn is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_DB_CONNECTION, detail=conn_error, hint="请检查连接参数")
-            return build_error(data={"error_detail": conn_error}, llm_data=llm_data)
+            return build_error(data={"error_detail": conn_error, "params": {"connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
 
         tables = _get_tables(conn, connection_type, db_name)
         tables = _filter_tables(tables, table_name, filter_pattern)
         if table_name and not tables:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_DOC_DB_TABLE_NOT_FOUND, detail=f"表不存在: {table_name}", hint="请确认表名正确")
-            return build_error(data={"error_detail": f"表不存在: {table_name}"}, llm_data=llm_data)
+            return build_error(data={"error_detail": f"表不存在: {table_name}", "params": {"table_name": table_name}}, llm_data=llm_data)
 
         schema_info = []
         for t in tables:
@@ -161,11 +161,11 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
     except sqlite3.Error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_SQL_EXEC, detail=str(e))
-        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_SCHEMA_FAILED, detail=str(e))
-        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
     finally:
         _close_connection(conn, engine)
 

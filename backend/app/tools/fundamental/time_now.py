@@ -52,7 +52,7 @@ def time_now() -> Dict[str, Any]:
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_time_now_llm_data("error", duration_ms, "", "", "")
-        return build_error(data={"error_detail": str(e)}, llm_data=llm_data)
+        return build_error(data={"error_detail": str(e), "params": {"timezone": timezone}}, llm_data=llm_data)
 
 
 __all__ = ["time_now"]
