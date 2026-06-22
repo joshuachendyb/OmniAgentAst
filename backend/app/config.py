@@ -5,8 +5,24 @@
 
 import os
 import yaml
+from collections import OrderedDict
 from typing import Dict, Any, Optional
 from pathlib import Path
+
+
+def _make_safe_loader() -> type:
+    """创建支持 OrderedDict 标签的 SafeLoader — 小欧 2026-06-22"""
+    class _Loader(yaml.SafeLoader):
+        pass
+    def _construct_ordered_dict(loader, node):
+        args = loader.construct_sequence(node, deep=True)
+        pairs = args[0] if args else []
+        return OrderedDict(pairs)
+    _Loader.add_constructor(
+        'tag:yaml.org,2002:python/object/apply:collections.OrderedDict',
+        _construct_ordered_dict,
+    )
+    return _Loader
 
 class Config:
     """配置管理类"""
@@ -46,7 +62,7 @@ class Config:
         """从文件加载配置"""
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
-                self._config_data = yaml.safe_load(f)
+                self._config_data = yaml.load(f, Loader=_make_safe_loader())
             
             if not self._config_data:
                 raise ValueError("配置文件为空，请检查 config/config.yaml")
@@ -126,6 +142,17 @@ class Config:
     def get_max_context_chars(self, default: int = 500000) -> int:
         """获取max_context_chars配置 — 对话历史字符上限"""
         return self.get('app.max_context_chars', default)
+
+    def get_project_root(self) -> str:
+        """获取项目根目录配置
+        
+        若未配置(空字符串),返回基于代码位置推算的默认值。
+        """
+        root = self.get('app.project_root', '')
+        if root:
+            return root
+        from app.utils.paths import get_default_project_root
+        return get_default_project_root()
 
     def reload(self):
         """重新加载配置 - 强制清空缓存"""
