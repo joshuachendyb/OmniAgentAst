@@ -1694,7 +1694,67 @@ SSE: 仅完成时间         observation_text
 | **DB存原始数据** | Observation存入DB的llm_data和tool_result必须是原始完整数据，不做任何处理 |
 | **Action不存data** | ToolStep（action阶段）只存duration_ms，不存tool result data |
 
-#### 5.10.7 并行场景合并规则
+#### 5.10.7 DB表字段更新
+
+Phase 2需要更新Observation step的DB字段，ToolStep字段不变。
+
+**execution_steps表字段**：
+
+| 字段 | 类型 | ToolStep (action_tool) | Observation step | 说明 |
+|------|------|------------------------|------------------|------|
+| `step_type` | str | "action_tool" | "observation" | 不变 |
+| `content` | JSON | `{duration_ms: int}` | `{observation_text, llm_data, tool_result}` | **Observation字段结构更新** |
+| `created_at` | datetime | 自动填充 | 自动填充 | 不变 |
+
+**Observation step的content字段结构**：
+
+```python
+# Phase 1（当前）
+content = {
+    "observation_text": str,  # LLM观察文本
+}
+
+# Phase 2（新增字段）
+content = {
+    "observation_text": str,   # LLM观察文本，不截断
+    "llm_data": {              # 新增：LLM数据，原始完整存入DB
+        "summary": str,
+        "action": dict,
+        "status": dict,
+        "duration_ms": int,
+        "metrics": dict,
+    },
+    "tool_result": Any,        # 新增：工具原始data，完整存入DB
+}
+```
+
+**ToolStep的content字段结构**：
+
+```python
+# Phase 1（当前）
+content = {
+    "code": str,
+    "message": str,
+    "data": Any,
+    "llm_data": dict,
+    "duration_ms": int,
+}
+
+# Phase 2（瘦身）
+content = {
+    "duration_ms": int,  # 只存执行耗时
+}
+```
+
+**DB迁移说明**：
+
+| 迁移项 | 说明 |
+|--------|------|
+| **不需要迁移** | 新旧数据结构不兼容，Phase 2必须前后端同步上线 |
+| **旧数据处理** | 遇到旧格式数据，前端直接报错提示"请刷新页面" |
+| **新字段默认值** | llm_data和tool_result在旧记录中为null，前端判断后跳过渲染 |
+
+#### 5.10.8 并行场景合并规则
 
 LLM同时调用多个工具时，每个工具各产出一个result，Observation step需要合并。
 
@@ -2656,9 +2716,10 @@ data = {
 
 ---
 
-**文档更新时间**: 2026-06-22 16:00:00  
-**版本**: v6.5  
+**文档更新时间**: 2026-06-22 16:30:00  
+**版本**: v6.6  
 **编写人**: 小健 + 北京老陈 + 小欧  
 **更新内容**: 
 - v6.4: 修正DB兼容描述、补充并行合并规则、新增数据截断规则
 - v6.5: 明确DB存储规则（存原始完整数据）、Action不存data、SSE可优化截断
+- v6.6: 新增DB表字段更新说明（execution_steps表）、Observation新增llm_data和tool_result字段
