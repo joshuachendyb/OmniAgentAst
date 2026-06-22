@@ -153,7 +153,7 @@ def _build_read_text_file_llm_data(
         return {
             "summary": f"读取失败: {detail}",
             "action": {"tool": "read_text_file", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
-            "status": {"exec_code": "error", "message": "读取失败", "code": ERR_FILE_READ_FAILED, "detail": detail, "hint": "请检查文件路径是否正确"},
+            "status": {"exec_code": "error", "message": f"读取失败: {detail}", "code": ERR_FILE_READ_FAILED, "detail": detail, "hint": "请检查文件路径是否正确"},
             "duration_ms": duration_ms,
             "metrics": {},
         }

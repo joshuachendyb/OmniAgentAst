@@ -77,7 +77,7 @@ def _build_delete_file_llm_data(
         return {
             "summary": f"删除失败: {detail}",
             "action": {"tool": "delete_file", "tool_zh": "删除", "target": source, "params": {"source": source}},
-            "status": {"exec_code": "error", "message": "删除失败", "code": ERR_FILE_DELETE_FAILED, "detail": detail, "hint": "请检查文件是否存在"},
+            "status": {"exec_code": "error", "message": f"删除失败: {detail}", "code": ERR_FILE_DELETE_FAILED, "detail": detail, "hint": "请检查文件是否存在"},
             "duration_ms": duration_ms,
             "metrics": {},
         }

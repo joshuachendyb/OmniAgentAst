@@ -40,7 +40,7 @@ def _build_move_file_llm_data(
         return {
             "summary": f"移动失败: {detail}",
             "action": {"tool": "move_file", "tool_zh": "移动", "target": source, "params": {"source": source}},
-            "status": {"exec_code": "error", "message": "移动失败", "code": ERR_FILE_MOVE_FAILED, "detail": detail, "hint": "请检查源路径和目标路径"},
+            "status": {"exec_code": "error", "message": f"移动失败: {detail}", "code": ERR_FILE_MOVE_FAILED, "detail": detail, "hint": "请检查源路径和目标路径"},
             "duration_ms": duration_ms,
             "metrics": {},
         }

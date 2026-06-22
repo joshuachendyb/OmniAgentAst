@@ -46,7 +46,7 @@ def _build_execute_shell_command_llm_data(
         return {
             "summary": f"执行失败: {_detail}",
             "action": {"tool": "execute_shell_command", "tool_zh": "执行", "target": cmd_short, "params": {"command": cmd_short}},
-            "status": {"exec_code": "error", "message": "执行失败", "code": err_code or ERR_SHELL_EXEC, "detail": stderr_preview[:200] if stderr_preview else "", "hint": "请检查命令语法和参数"},
+            "status": {"exec_code": "error", "message": f"执行失败: {stderr_preview[:200] if stderr_preview else ''}", "code": err_code or ERR_SHELL_EXEC, "detail": stderr_preview[:200] if stderr_preview else "", "hint": "请检查命令语法和参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }

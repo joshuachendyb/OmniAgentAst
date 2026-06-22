@@ -27,7 +27,7 @@ def _build_rename_file_llm_data(
         return {
             "summary": f"重命名失败: {detail}",
             "action": {"tool": "rename_file", "tool_zh": "重命名", "target": source, "params": {"source": source}},
-            "status": {"exec_code": "error", "message": "重命名失败", "code": ERR_FILE_RENAME_FAILED, "detail": detail, "hint": "请检查源路径和新名称"},
+            "status": {"exec_code": "error", "message": f"重命名失败: {detail}", "code": ERR_FILE_RENAME_FAILED, "detail": detail, "hint": "请检查源路径和新名称"},
             "duration_ms": duration_ms,
             "metrics": {},
         }

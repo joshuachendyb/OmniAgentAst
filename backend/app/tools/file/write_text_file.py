@@ -117,7 +117,7 @@ def _build_write_text_file_llm_data(
         return {
             "summary": f"写入失败: {detail}",
             "action": {"tool": "write_text_file", "tool_zh": "写入", "target": file_path, "params": {"file_path": file_path}},
-            "status": {"exec_code": "error", "message": "写入失败", "code": ERR_FILE_WRITE_FAILED, "detail": detail, "hint": "请检查路径和写入权限"},
+            "status": {"exec_code": "error", "message": f"写入失败: {detail}", "code": ERR_FILE_WRITE_FAILED, "detail": detail, "hint": "请检查路径和写入权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }

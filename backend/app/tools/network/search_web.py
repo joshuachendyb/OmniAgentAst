@@ -59,7 +59,7 @@ def _build_search_web_llm_data(
         return {
             "summary": f"搜索失败: {detail}",
             "action": {"tool": "search_web", "tool_zh": "搜索", "target": query, "params": {"query": query}},
-            "status": {"exec_code": "error", "message": "搜索失败", "code": err_code, "detail": detail, "hint": "请检查搜索词和网络连接"},
+            "status": {"exec_code": "error", "message": f"搜索失败: {detail}", "code": err_code, "detail": detail, "hint": "请检查搜索词和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
         }

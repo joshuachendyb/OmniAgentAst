@@ -31,7 +31,7 @@ def _build_mouse_click_llm_data(exec_code: str, duration_ms: int, x, y, button: 
         return {
             "summary": f"点击失败: {detail}",
             "action": {"tool": "mouse_click", "tool_zh": "点击", "target": f"({x},{y})", "params": {"x": x, "y": y, "button": button}},
-            "status": {"exec_code": "error", "message": "点击失败", "code": err_code or ERR_DESKTOP_MOUSE_CLICK, "detail": detail, "hint": "请检查坐标是否在屏幕范围内"},
+            "status": {"exec_code": "error", "message": f"点击失败: {detail}", "code": err_code or ERR_DESKTOP_MOUSE_CLICK, "detail": detail, "hint": "请检查坐标是否在屏幕范围内"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {

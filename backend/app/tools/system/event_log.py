@@ -31,7 +31,7 @@ def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, e
         return {
             "summary": f"获取失败: {detail}" if detail else f"获取事件日志失败: {log_name}",
             "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": {"log_name": log_name, "level": level}},
-            "status": {"exec_code": "error", "message": "获取事件日志失败", "code": ERR_SYSTEM_EVENT_LOG, "detail": detail, "hint": "请检查日志名称和级别参数"},
+            "status": {"exec_code": "error", "message": f"获取事件日志失败: {detail}" if detail else f"获取事件日志失败: {log_name}", "code": ERR_SYSTEM_EVENT_LOG, "detail": detail, "hint": "请检查日志名称和级别参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
