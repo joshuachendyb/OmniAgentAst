@@ -6,7 +6,6 @@
 
 Author: 小沈 - 2026-06-14
 """
-import functools
 import os
 import platform
 
@@ -64,7 +63,6 @@ _ALWAYS_RULES = """【路径规则】
 """
 
 
-@functools.lru_cache(maxsize=1)
 def get_system_prompt() -> str:
     """获取系统 Prompt 字符串（带缓存）"""
     system = platform.system()

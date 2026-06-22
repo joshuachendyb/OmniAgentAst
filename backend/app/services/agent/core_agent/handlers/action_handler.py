@@ -294,10 +294,6 @@ def _log_tool_results(step: int, all_calls: list, results: list, agent):
             step_name=f"步骤{step}: 工具执行结果", observation_content=obs_text,
             tool_name=call["tool_name"], tool_params=call["tool_params"], round_number=step,
         )
-        prompt_logger.log_tool_prompt(
-            tool_name=call["tool_name"], prompt_content=obs_text,
-            source=f"handle_action:{call['tool_name']}", round_number=step,
-        )
         
         is_error = isinstance(result, Exception)
         if isinstance(result, dict):
