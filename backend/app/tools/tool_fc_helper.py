@@ -13,6 +13,8 @@ Tool函数公共辅助代码 — 纯逻辑函数集合
   - db_helper.py: check_db_exists
   - content_validation.py: validate_json_content, validate_csv_content, validate_xml_content, validate_html_content, validate_python_content
 """
+# 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
+# build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 
 import csv
 import importlib
