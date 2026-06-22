@@ -101,7 +101,7 @@ def mock_agent():
 def step_factory():
     """快速创建测试用Step对象"""
     from app.services.agent.steps import (
-        MetaStep, ThoughtStep, ToolStep,
+        MetaStep, ThoughtStep, ActionStep, ObservationStep,
         FinalStep, ErrorStep, ChunkStep,
     )
 
@@ -123,13 +123,12 @@ def step_factory():
     def _action(step=1, tool_name="read_file", tool_params=None, **kwargs):
         defaults = dict(step=step, tool_name=tool_name, tool_params=tool_params or {"path": "x"})
         defaults.update(kwargs)
-        return ToolStep(**defaults)
+        return ActionStep(**defaults)
 
-    def _observation(step=1, tool_name="read_file", observation="result", **kwargs):
-        defaults = dict(step=step, tool_name=tool_name, tool_params={},
-                         step_type="observation", observation=observation)
+    def _observation(step=1, llm_data=None, tool_result=None, other_data=None, **kwargs):
+        defaults = dict(step=step, llm_data=llm_data or {}, tool_result=tool_result, other_data=other_data or {})
         defaults.update(kwargs)
-        return ToolStep(**defaults)
+        return ObservationStep(**defaults)
 
     def _final(step=1, response="done", **kwargs):
         defaults = dict(step=step, response=response)

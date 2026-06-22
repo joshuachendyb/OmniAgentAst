@@ -19,7 +19,7 @@ from typing import Dict, List, Any
 
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
-from app.services.agent.steps import ThoughtStep, ToolStep, ErrorStep, MetaStep, FinalStep
+from app.services.agent.steps import ThoughtStep, ActionStep, ObservationStep, ErrorStep, MetaStep, FinalStep
 from app.services.agent.types import AgentStatus
 from app.services.agent.agent_utils.message_utils import build_observation_text
 from app.db.models.operation_enums import OperationStatus
@@ -183,7 +183,7 @@ async def build_observation(ctx: ObservationContext) -> List:
 
     for call, result in zip(ctx.all_calls, ctx.results):
         _ec = result.get("llm_data", {}).get("status", {}).get("exec_code", "") if isinstance(result, dict) else ""
-        action_step = ToolStep(
+        action_step = ActionStep(
             step=ctx.step,
             tool_name=call["tool_name"],
             tool_params=call["tool_params"],
@@ -236,12 +236,8 @@ async def build_observation(ctx: ObservationContext) -> List:
     if len(_all_other_data) > 1:
         merged_other = _merge_other_data(_all_other_data)
 
-    events.append(ctx.agent._step_emitter.emit(ToolStep(
+    events.append(ctx.agent._step_emitter.emit(ObservationStep(
         step=ctx.step,
-        tool_name=ctx.tool_name,
-        tool_params=ctx.tool_params,
-        step_type="observation",
-        observation=merged_obs,
         llm_data=merged_llm_data,
         tool_result=_all_tool_results[0] if len(_all_tool_results) == 1 else _all_tool_results,
         other_data=merged_other,
