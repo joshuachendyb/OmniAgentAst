@@ -85,6 +85,10 @@ class MessageBuilder:
             self.conversation_history.append(message_to_dict(AssistantMessage(content=llm_content, tool_calls=tool_calls)))
         elif tool_call_id and not has_existing_assistant:
             self.conversation_history.append(message_to_dict(AssistantMessage(tool_calls=[])))
+        elif not has_existing_assistant:
+            # BUG修复: 无tool_call_id/无tool_calls时也加assistant消息保证FC配对(如LLM输出截断)
+            llm_content = fc_context.get("llm_content", "") or ""
+            self.conversation_history.append(message_to_dict(AssistantMessage(content=llm_content)))
         self.conversation_history.append(message_to_dict(ToolResultMessage(content=observation_text, tool_call_id=tool_call_id)))
 
     def add_observation(self, observation_text: str, llm_call_count: int, fc_context: Dict) -> None:

@@ -217,7 +217,11 @@ class BaseAIService:
                             try:
                                 params = _normalize_tool_params(_json.loads(tc["arguments"])) if tc["arguments"] else {}
                             except _json.JSONDecodeError:
-                                params = {}
+                                # BUG修复: LLM输出截断导致arguments JSON不完整
+                                # 跳过该工具调用, 防止坏JSON进history导致后续API校验400
+                                # Agent主动检测重试在answer_handler层
+                                logger.warning(f"[request_stream] tool_call '{tc['name']}' 参数JSON解析失败(LLM输出截断), 跳过")
+                                continue
                             tool_calls_list.append({
                                 "tool_name": tc["name"],
                                 "tool_params": params,

@@ -17,12 +17,31 @@ P0-01: 删除step_counter list hack,使用agent.llm_call_count — 小沈 2026-0
 from typing import Any, Dict, Optional, AsyncGenerator
 
 from app.utils.logger import logger
-from app.services.agent.steps import ChunkStep, FinalStep
+from app.services.agent.steps import ChunkStep, FinalStep, ObservationStep
 from app.services.agent.types import AgentStatus
 from app.services.agent.core_agent.initialize_run_state import initialize_run_state
 from app.services.agent.core_agent.handlers import (
     handle_action, handle_answer,
 )
+
+
+def _should_retry_truncated_tool(agent, llm_response: Dict) -> bool:
+    """检测LLM应答是否因输出截断导致工具调用遗漏
+    
+    条件:
+    1. 返回类型是answer
+    2. 内容很短(<100字,典型preamble长度)
+    3. 对话历史中存在带tool_calls的assistant消息(LLM之前处于工具模式)
+    """
+    if llm_response.get("type") != "answer":
+        return False
+    content = llm_response.get("content", "")
+    if not content or len(content) > 100:
+        return False
+    for msg in reversed(agent.message_builder.conversation_history):
+        if msg.get("role") == "assistant" and msg.get("tool_calls"):
+            return True
+    return False
 
 
 def _dispatch_handler(agent, llm_response, chunk_buffer):
@@ -97,6 +116,22 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             thought="",
         ))
         agent.status = AgentStatus.COMPLETED
+        return
+
+    # BUG修复: LLM输出截断导致工具调用遗漏 — 检测preamble文本+注入重试
+    if _should_retry_truncated_tool(agent, llm_response):
+        content = llm_response.get("content", "")
+        logger.warning(f"[run_react_cycle] 检测到LLM输出截断(step={step}, content={content[:50]}), 注入重试observation")
+        obs_text = "[Observation] 工具调用输出不完整，请重新调用该工具并补充完整参数"
+        agent.message_builder.add_observation(
+            obs_text, agent.llm_call_count,
+            {"tool_call_id": "", "tool_calls": [], "llm_content": content},
+        )
+        yield agent._step_emitter.emit(ObservationStep(
+            step=step,
+            llm_data={"summary": "LLM工具调用输出截断", "action": {}, "status": {"exec_code": "error", "message": obs_text}},
+            tool_result={},
+        ))
         return
 
     async for event in _dispatch_handler(agent, llm_response, chunk_buffer):
