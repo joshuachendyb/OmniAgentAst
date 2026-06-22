@@ -1,8 +1,8 @@
 # 工具 Observation 统一输出格式设计（融合方案）
 
 **创建时间**: 2026-06-20 11:07:25  
-**更新时间**: 2026-06-21 20:10:07  
-**版本**: v6.3  
+**更新时间**: 2026-06-22 16:30:00  
+**版本**: v7.0  
 **编写人**: 小健 + 北京老陈  
 **适用范围**: OmniAgentAs-desk 所有工具给LLM和前端的observation输出格式  
 **状态**: 审查通过
@@ -26,6 +26,9 @@
 | v6.1 | 2026-06-21 19:59:40 | **审查修复**：修复5.8节警告模板缺少"详情:"行；修复8.3节警告示例data结构与4.2节定义不一致（遵循零重复原则） | 小健 |
 | v6.2 | 2026-06-21 20:06:24 | **精简第9章**：删除9.3冗余节（纯引用无新内容）和9.4节（信息合并到9.1 Phase 1描述） | 小健 |
 | v6.3 | 2026-06-21 20:10:07 | **重写9.2实施清单**：按"每个tool处理流程"重组（清理旧代码→建builder→改调用）；明确严禁内联赋值；明确严禁用脚本修改必须手动分析 | 小健 |
+| v6.8 | 2026-06-22 15:17:13 | **补充Phase 2审查缺口**：①5.10.4澄清Observation step复用ToolStep（非独立模型）；②5.10.7补充DB迁移步骤；③新增9.3节Phase 2实施清单（5步） | 小欧 |
+| v6.9 | 2026-06-22 16:00:00 | **修复Phase 2 4个设计错误**：F1-5.10.7/9.3.1保持现有逻辑→选择性保留（删6冗余字段保3非冗余）；F2-9.3.2并行_status/_other取错，增加合并other_data逻辑；F3-9.3.1补充__init__实际代码；F4-9.3.3修正SSE目标函数和字段名 | 小欧 |
+| v7.0 | 2026-06-22 16:30:00 | **拆分Phase 2/3**：action_tool模式的execution_result瘦身和DB存储优化从Phase 2移除，新增9.4节Phase 3实施清单。Phase 2只改observation模式 | 小欧 |
 
 ---
 
@@ -1647,18 +1650,19 @@ SSE: 仅完成时间         observation_text
 - **SSE可优化**：发送给前端的数据可以优化截断，减少传输量
 - **Action不存data**：ToolStep（action阶段）只存duration_ms，不存tool result data
 
-#### 5.10.4 受影响文件
+#### 5.10.4 受影响文件与模型澄清
+
+**模型澄清**：当前代码中不存在独立的 `ObservationStep` 类。"Observation step" 是 `ToolStep` 的一个 `step_type="observation"` 模式（通过 `_extra_fields()` 分支处理）。Phase 2 **不新建独立 ObservationStep 类**，而是继续复用 `ToolStep`，在 observation 模式下新增 `llm_data` 和 `tool_result` 字段。
 
 | 层 | 文件 | 改动 |
 |----|------|------|
 | **构建层** | `tool_response.py` | **不动** |
 | **格式化层** | `observation_formatter.py` | Phase 1 已改 `(data, llm_data)`，Phase 2 不动 |
 | **桥接层** | `message_utils.py` | Phase 1 已拆包，Phase 2 不动 |
-| **步骤模型** | `ToolStep` | `execution_result` 只存 `duration_ms`，**不存data** |
-| **步骤模型** | Observation step 模型 | 新增 `tool_result` 字段，**DB存原始完整数据** |
-| **编排层** | `action_handler.py` | 构建 Observation step 时传入 data（作为 tool_result）|
+| **步骤模型** | `tool_step.py` (ToolStep类) | **Phase 2(observation模式)**：`_extra_fields()` 新增 `llm_data` 和 `tool_result` 字段，选择性保留（删6冗余字段保3非冗余）。**Phase 3(action_tool模式)**：`execution_result` 只存 `{"duration_ms": N}`，删除 data/llm_data等字段 |
+| **编排层** | `action_handler.py` | `build_observation()` 中：传入 `llm_data`（从result拆包）和 `tool_result`（result["data"]）|
 | **SSE 层** | `run_sse_stream.py` | SSE发送时可优化截断，DB存储必须原始完整 |
-| **前端** | 消费 ToolStep 的代码 | 改为从 Observation 事件取值 |
+| **前端** | 消费 ToolStep 的代码 | action_tool事件→只取duration_ms显示loading；observation事件→取llm_data渲染卡片、取tool_result渲染详情面板 |
 | **DB 存储** | `save_execution_steps_to_db` | Observation存原始llm_data和tool_result，ToolStep不存data |
 
 #### 5.10.5 实施要点
@@ -1714,7 +1718,7 @@ content = {
     "observation_text": str,  # LLM观察文本
 }
 
-# Phase 2（新增字段）
+# Phase 2（选择性保留+新增）
 content = {
     "observation_text": str,   # LLM观察文本，不截断
     "llm_data": {              # 新增：LLM数据，原始完整存入DB
@@ -1725,6 +1729,9 @@ content = {
         "metrics": dict,
     },
     "tool_result": Any,        # 新增：工具原始data，完整存入DB
+    "return_direct": bool,     # 保留（llm_data无此字段）
+    "warning": str,            # 保留（llm_data无此字段）
+    "attachment": Any,         # 保留（llm_data无此字段）
 }
 ```
 
@@ -1753,6 +1760,18 @@ content = {
 | **不做兼容** | 新旧数据结构不兼容，禁止向后兼容代码 |
 | **旧DB数据删除** | Phase 2上线时，直接删除旧DB中的execution_steps表数据 |
 | **前后端同步上线** | Phase 2必须前后端同步上线，不能分步部署 |
+
+**DB迁移步骤**（Phase 2上线时执行）：
+
+```
+步骤1: 停止后端服务
+步骤2: 备份SQLite数据库文件（~/.omniagent/operations.db）
+步骤3: 执行SQL删除旧数据:
+        DELETE FROM execution_steps;
+步骤4: 部署Phase 2代码（后端+前端同步）
+步骤5: 启动后端服务
+步骤6: 验证新数据格式正确（发一个工具调用，检查DB中Observation step的content字段结构）
+```
 
 #### 5.10.8 并行场景合并规则
 
@@ -2617,6 +2636,276 @@ pytest -x --tb=short -k "test_tool_response or test_observation or test_message 
 | 5 | 运行前端检查：`npm run check` | 无错误 |
 | 6 | 提交commit + 打patch tag | — |
 
+#### 9.3 Phase 2实施清单（仅observation模式，action_tool模式不变）
+
+**前提**：Phase 1全部完成并验证通过。
+
+**范围**：Phase 2只改 **observation模式** 相关代码，action_tool模式的`execution_result`瘦身和DB存储优化拆分到**Phase 3**（9.4节）。
+
+**受影响文件**：3个核心文件（tool_step.py、action_handler.py、run_sse_stream.py）+ 前端消费代码。
+
+**每步必须手动修改，禁止脚本批量修改。**
+
+##### 9.3.1 步骤1：ToolStep新增参数（tool_step.py）
+
+修改 `ToolStep.__init__()` 新增 `llm_data`/`tool_result` 参数（observation模式需要，action_tool模式不需要改__init__）：
+
+```python
+# Phase 2修改前（observation模式 — 当前__init__不含llm_data/tool_result）
+def __init__(
+    self,
+    step: int,
+    tool_name: str,
+    tool_params: Dict[str, Any],
+    *,
+    step_type: str = "action_tool",
+    execution_status: str = "success",
+    summary: str = "",
+    execution_result: Any = None,
+    error_message: str = "",
+    action_retry_count: int = 0,
+    execution_time_ms: int = 0,
+    observation: str = "",
+    return_direct: bool = False,
+    code: str = "",
+    warning: Optional[str] = None,
+    attachment: Any = None,
+    timestamp: Optional[int] = None,
+):
+    ...
+    self._attachment = attachment
+
+# Phase 2修改后（新增llm_data/tool_result参数）
+def __init__(
+    self,
+    step: int,
+    tool_name: str,
+    tool_params: Dict[str, Any],
+    *,
+    step_type: str = "action_tool",
+    execution_status: str = "success",
+    summary: str = "",
+    execution_result: Any = None,
+    error_message: str = "",
+    action_retry_count: int = 0,
+    execution_time_ms: int = 0,
+    observation: str = "",
+    return_direct: bool = False,
+    code: str = "",
+    warning: Optional[str] = None,
+    attachment: Any = None,
+    timestamp: Optional[int] = None,
+    llm_data: Optional[Dict[str, Any]] = None,      # 新增
+    tool_result: Any = None,                        # 新增
+):
+    ReasoningStep.__init__(self, step, timestamp)
+    self.TYPE = step_type
+    ...  # 保持现有赋值不变
+    self._attachment = attachment
+    self._llm_data = llm_data or {}                 # 新增
+    self._tool_result = tool_result                 # 新增
+```
+
+修改observation模式的 `_extra_fields()`，**选择性保留**（删除与llm_data重复的字段，保留llm_data没有的字段），新增 llm_data 和 tool_result：
+
+**删除的旧字段**（已在llm_data中）：summary ↔ llm_data.summary / tool_name ↔ llm_data.action.tool / tool_params ↔ llm_data.action.params / execution_status ↔ llm_data.status.exec_code / error_message ↔ llm_data.status.detail / code(extra层) ↔ llm_data.status.code
+
+**保留的旧字段**（llm_data没有）：return_direct / warning / attachment
+
+```python
+# Phase 2修改后（observation模式 — 替换现有_extra_fields中的observation逻辑）
+def _extra_fields(self) -> Dict[str, Any]:
+    if self.TYPE == "action_tool":
+        ...
+    if self.TYPE == "observation":
+        obs: Dict[str, Any] = {
+            "return_direct": self._return_direct or False,
+        }
+        # 保留llm_data中没有的旧字段
+        if self._warning:
+            obs["warning"] = self._warning
+        if self._attachment is not None:
+            obs["attachment"] = self._attachment
+        # 新增字段
+        if self._llm_data is not None:
+            obs["llm_data"] = self._llm_data
+        if self._tool_result is not None:
+            obs["tool_result"] = self._tool_result
+        extra["observation"] = obs
+```
+
+**验证**：`pytest -x --tb=short -k "test_tool_step"`
+
+##### 9.3.2 步骤2：action_handler适配（action_handler.py）
+
+修改 `build_observation()` 函数：
+
+```python
+# Phase 2修改前
+events.append(ctx.agent._step_emitter.emit(ToolStep(
+    step=ctx.step,
+    tool_name=ctx.tool_name,
+    tool_params=ctx.tool_params,
+    step_type="observation",
+    observation=merged_obs,
+    execution_status=_status.get("exec_code", ""),
+    code=_status.get("code", ""),
+    warning=_other.get("warning"),
+    attachment=_other.get("attachment"),
+    return_direct=_other.get("return_direct", False),
+)))
+
+# Phase 2修改后
+# 1. 从所有results中提取llm_data和tool_result
+_all_llm_data = []
+_all_tool_results = []
+_all_other_data = []
+for r in ctx.results:
+    if isinstance(r, dict):
+        _all_llm_data.append(r.get("llm_data", {}))
+        _all_tool_results.append(r.get("data"))
+        _all_other_data.append(r.get("other_data", {}))
+
+# 2. 合并llm_data（串行用第1个，并行用_merge_llm_data）
+merged_llm_data = _all_llm_data[0]
+if len(_all_llm_data) > 1:
+    merged_llm_data = _merge_llm_data(_all_llm_data)
+
+# 3. 合并other_data（串行用第1个，并行合并warning/attachment/return_direct）
+merged_other = _all_other_data[0]
+if len(_all_other_data) > 1:
+    merged_other = _merge_other_data(_all_other_data)  # 见5.10.8
+
+events.append(ctx.agent._step_emitter.emit(ToolStep(
+    step=ctx.step,
+    tool_name=ctx.tool_name,
+    tool_params=ctx.tool_params,
+    step_type="observation",
+    observation=merged_obs,
+    # 旧字段已删除（execution_status/error_message/code → llm_data.status中）
+    # 保留字段（llm_data中没有）：
+    warning=merged_other.get("warning"),
+    attachment=merged_other.get("attachment"),
+    return_direct=merged_other.get("return_direct", False),
+    # 新增字段：
+    llm_data=merged_llm_data,
+    tool_result=_all_tool_results[0] if len(_all_tool_results) == 1 else _all_tool_results,
+)))
+```
+
+**验证**：`pytest -x --tb=short -k "test_action_handler or test_observation"`
+
+##### 9.3.3 步骤3：SSE层适配（run_sse_stream.py + sse_formatter.py）
+
+SSE字段结构由ToolStep._extra_fields()控制（已在9.3.1和9.3.2中修改），format_agent_sse()是纯透传函数无需改动。SSE事件中observation的字段就是to_dict()返回的全部字段。
+
+**observation事件的SSE格式**：
+```python
+{
+    "type": "observation",          # to_dict()的type字段
+    "step": N,
+    "timestamp": ...,
+    "content": "观察: ...\n结果: ...\n",  # observation_text
+    "observation": {                # _extra_fields()产出
+        "return_direct": False,
+        "warning": ...,
+        "attachment": ...,
+        "llm_data": {...},
+        "tool_result": ...,
+    },
+}
+```
+
+**验证**：启动 dev server，发送工具调用，检查 SSE 事件格式。
+
+##### 9.3.4 步骤4：前端适配
+
+修改前端消费 ToolStep 事件的代码：
+
+```typescript
+// 修改前: 从 ToolStep.execution_result 取 data 和 llm_data
+const data = event.execution_result?.data
+const llm_data = event.execution_result?.llm_data
+
+// 修改后: 从 Observation 事件取值
+// ToolStep事件 → 只显示 loading
+// Observation事件 → 取 llm_data 渲染卡片，取 tool_result 渲染详情
+```
+
+**验证**：`npm run check` + 手动测试工具调用。
+
+##### 9.3.5 步骤5：DB字段更新 + 收尾
+
+执行Observation step的DB字段更新（ToolStep action_tool字段不变，留到Phase 3）：
+
+```
+1. DB字段更新（按5.10.7）：Observation的content字段新增llm_data和tool_result
+   - 旧记录不受影响（JSON字段新增键，旧记录没有则为空）
+   - 无需ALTER TABLE或数据转换
+2. 运行完整回归测试: pytest
+3. 运行前端检查: npm run check
+4. 提交commit + 打patch tag
+```
+
+---
+
+#### 9.4 Phase 3实施清单（action_tool模式瘦身 + DB存储优化）
+
+**前提**：Phase 2全部完成并验证通过。
+
+**范围**：Phase 3专门处理action_tool模式的`execution_result`瘦身和DB存储优化。action_tool模式当前在`_extra_fields()`中把完整`execution_result`（含data+llm_data+duration_ms）透传给前端和DB，Phase 3将其压缩为只存`duration_ms`。
+
+**受影响文件**：`tool_step.py`（_extra_fields action_tool模式）+ DB迁移脚本。
+
+##### 9.4.1 步骤1：action_tool模式_execution_result瘦身
+
+```python
+# Phase 3修改前（action_tool模式）
+def _extra_fields(self) -> Dict[str, Any]:
+    if self.TYPE == "action_tool":
+        return {
+            "tool_name": self._tool_name or "",
+            "tool_params": self._tool_params or {},
+            "execution_status": self._execution_status,
+            "execution_result": self._execution_result,  # 含data+llm_data+duration_ms
+            "action_retry_count": self._action_retry_count,
+            "execution_time_ms": self._execution_time_ms,
+        }
+
+# Phase 3修改后（action_tool模式）
+def _extra_fields(self) -> Dict[str, Any]:
+    if self.TYPE == "action_tool":
+        return {
+            "tool_name": self._tool_name or "",
+            "tool_params": self._tool_params or {},
+            "execution_status": self._execution_status,
+            "execution_result": {"duration_ms": self._execution_time_ms},  # 只存duration_ms
+            "action_retry_count": self._action_retry_count,
+            "execution_time_ms": self._execution_time_ms,
+        }
+```
+
+**验证**：`pytest -x --tb=short -k "test_tool_step"`
+
+##### 9.4.2 步骤2：DB字段清理
+
+**变更**：`execution_steps`表的`execution_result`字段不再存储data/llm_data，只存`{"duration_ms": N}`。
+
+**迁移**：
+```sql
+-- 无需迁移旧数据（前端读取时兼容None）
+-- 新写入的记录自动只存 duration_ms
+```
+
+##### 9.4.3 步骤3：收尾
+
+```
+1. 全局搜索确认无残留的旧字段引用（execution_result.data等用于action_tool模式的代码）
+2. 运行完整回归测试: pytest
+3. 运行前端检查: npm run check
+4. 提交commit + 打patch tag
+```
+
 ---
 
 ## 十、规范速查
@@ -2716,11 +3005,14 @@ data = {
 
 ---
 
-**文档更新时间**: 2026-06-22 16:45:00  
-**版本**: v6.7  
+**文档更新时间**: 2026-06-22 16:30:00  
+**版本**: v7.0  
 **编写人**: 小健 + 北京老陈 + 小欧  
 **更新内容**: 
 - v6.4: 修正DB兼容描述、补充并行合并规则、新增数据截断规则
 - v6.5: 明确DB存储规则（存原始完整数据）、Action不存data、SSE可优化截断
 - v6.6: 新增DB表字段更新说明（execution_steps表）、Observation新增llm_data和tool_result字段
 - v6.7: 明确不做兼容，旧DB数据直接删除
+- v6.8: 补充Phase 2审查缺口：①5.10.4澄清Observation step复用ToolStep（非独立模型）；②5.10.7补充DB迁移步骤；③新增9.3节Phase 2实施清单（5步）
+- v6.9: 修复Phase 2 4个设计错误
+- v7.0: 拆分Phase 2/3：action_tool模式execution_result瘦身+DB存储优化移到Phase 3，Phase 2只改observation模式
