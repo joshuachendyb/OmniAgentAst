@@ -115,14 +115,14 @@ def _build_write_text_file_llm_data(
     """write_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
     if exec_code == "error":
         return {
-            "summary": f"写入文件失败: {detail}",
+            "summary": f"写入失败: {detail}",
             "action": {"tool": "write_text_file", "tool_zh": "写入", "target": file_path, "params": {}},
             "status": {"exec_code": "error", "message": "写入失败", "code": ERR_FILE_WRITE_FAILED, "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"写入文件成功: {file_path} ({bytes_written}字节)",
+        "summary": f"写入 {file_path}，{bytes_written}字节",
         "action": {"tool": "write_text_file", "tool_zh": "写入", "target": file_path, "params": {}},
         "status": {"exec_code": "success", "message": "写入成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

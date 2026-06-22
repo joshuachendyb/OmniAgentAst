@@ -25,18 +25,18 @@ from app.constants import (
 )
 
 
-def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, event_count: int, level: str) -> dict:
+def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, event_count: int, level: str, detail: str = "") -> dict:
     """event_log的llm_data构建函数 — 小健 2026-06-22"""
     if exec_code == "error":
         return {
-            "summary": f"获取事件日志失败: {log_name}",
+            "summary": f"获取失败: {detail}" if detail else f"获取事件日志失败: {log_name}",
             "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": {"log_name": log_name, "level": level}},
             "status": {"exec_code": "error", "message": "获取事件日志失败", "code": ERR_SYSTEM_EVENT_LOG, "detail": "", "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"日志源 {log_name}，{event_count} 条{level}级别事件",
+        "summary": f"获取 {log_name}，{event_count}条事件",
         "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": {"log_name": log_name, "level": level}},
         "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

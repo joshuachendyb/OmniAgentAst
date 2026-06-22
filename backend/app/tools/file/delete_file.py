@@ -81,7 +81,7 @@ def _build_delete_file_llm_data(
             "metrics": {},
         }
     return {
-        "summary": f"删除成功: {source}",
+        "summary": f"删除 {source}",
         "action": {"tool": "delete_file", "tool_zh": "删除", "target": source, "params": {}},
         "status": {"exec_code": "success", "message": "删除成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -137,7 +137,7 @@ async def delete_file(
     src_path = Path(source)
     if not src_path.exists():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics={"status": "already_deleted"})
+        llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics={"status": {"value": "already_deleted", "text": "文件已删除"}})
         return build_success(data={}, llm_data=llm_data)
 
     result = await _delete_file_impl(file_path=source, recursive=recursive, force=force)
@@ -145,13 +145,13 @@ async def delete_file(
 
     if result.get("success"):
         if result.get("already_deleted"):
-            llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics={"status": "already_deleted"})
+            llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics={"status": {"value": "already_deleted", "text": "文件已删除"}})
             return build_success(data={}, llm_data=llm_data)
         delete_mode = "永久删除" if force else "放入回收站"
         extra_m = {"mode": {"value": result.get("mode", ""), "text": delete_mode}}
         llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics=extra_m)
         return build_success(
-            data={"operation_id": result.get("operation_id"), "deleted_path": result.get("deleted_path"), "mode": result.get("mode")},
+            data={"operation_id": result.get("operation_id"), "deleted_path": result.get("deleted_path")},
             llm_data=llm_data,
         )
     else:

@@ -121,17 +121,17 @@ _WINDOW_ACTIONS = {
 }
 
 
-def _build_window_info_llm_data(exec_code: str, duration_ms: int, window_count: int, filter_title: str = "") -> dict:
+def _build_window_info_llm_data(exec_code: str, duration_ms: int, window_count: int, filter_title: str = "", detail: str = "") -> dict:
     """window_info的llm_data构建函数 — 小健 2026-06-22"""
     if exec_code == "error":
         return {
-            "summary": "获取窗口列表失败",
+            "summary": f"获取失败: {detail}" if detail else "获取失败",
             "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": {"filter_title": filter_title}},
             "status": {"exec_code": "error", "message": "获取窗口列表失败", "code": ERR_WINDOW_LIST, "detail": "", "hint": ""},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
-        "summary": f"共找到 {window_count} 个窗口",
+        "summary": f"获取 {filter_title or '全部'}，{window_count}个窗口",
         "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": {"filter_title": filter_title}},
         "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -145,8 +145,9 @@ def window_info(include_minimized: bool = False, filter_title: Optional[str] = N
     err = check_win32_platform()
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "")
-        return build_error(data={"error_detail": err.get("error_detail", "桌面工具不可用"), "params": err.get("params", {})}, llm_data=llm_data)
+        _err_detail = err.get("error_detail", "桌面工具不可用")
+        llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "", detail=_err_detail)
+        return build_error(data={"error_detail": _err_detail, "params": err.get("params", {})}, llm_data=llm_data)
 
     try:
         windows = []
@@ -163,7 +164,7 @@ def window_info(include_minimized: bool = False, filter_title: Optional[str] = N
     except Exception as e:
         logger.error(f"window_info list error: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "")
+        llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "", detail=str(e))
         return build_error(data={"error_detail": str(e), "params": {}}, llm_data=llm_data)
 
 

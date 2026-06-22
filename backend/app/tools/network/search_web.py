@@ -57,18 +57,18 @@ def _build_search_web_llm_data(
     """search_web的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
     if exec_code == "error":
         return {
-            "summary": f"搜索失败: {query}",
+            "summary": f"搜索失败: {detail}",
             "action": {"tool": "search_web", "tool_zh": "搜索", "target": query, "params": {"query": query}},
             "status": {"exec_code": "error", "message": "搜索失败", "code": err_code, "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"找到 {result_count} 条搜索结果({engine_used})",
+        "summary": f"搜索 {query}，{result_count}条结果",
         "action": {"tool": "search_web", "tool_zh": "搜索", "target": query, "params": {"query": query}},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
-        "metrics": {"results": {"value": result_count, "text": f"{result_count}条"}},
+        "metrics": {"results": {"value": result_count, "text": f"{result_count}条"}, "engine": {"value": engine_used, "text": f"{engine_used}引擎"}},
     }
 
 

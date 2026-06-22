@@ -50,7 +50,7 @@ def _build_compress_files_llm_data(
         }
     ratio = 1 - (compressed_size / original_size) if original_size > 0 else 0
     return {
-        "summary": f"压缩成功: {source}，{file_count}个文件，{compressed_size}字节",
+        "summary": f"压缩 {source}，{file_count}个文件，{compressed_size}字节",
         "action": {"tool": "compress_files", "tool_zh": "压缩", "target": source, "params": {}},
         "status": {"exec_code": "success", "message": "压缩成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

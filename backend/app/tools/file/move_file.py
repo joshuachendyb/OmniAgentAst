@@ -44,7 +44,7 @@ def _build_move_file_llm_data(
             "metrics": {},
         }
     return {
-        "summary": f"移动成功: {source}",
+        "summary": f"移动 {source}",
         "action": {"tool": "move_file", "tool_zh": "移动", "target": source, "params": {}},
         "status": {"exec_code": "success", "message": "移动成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -112,7 +112,7 @@ async def move_file(
     t0 = _time_mod.perf_counter()
     if os.path.abspath(source) == os.path.abspath(destination):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("success", duration_ms, source, extra_metrics={"status": "no_change"})
+        llm_data = _build_move_file_llm_data("success", duration_ms, source, extra_metrics={"status": {"value": "no_change", "text": "路径相同无需移动"}})
         return build_success(data={}, llm_data=llm_data)
 
     result = await _move_file_impl(source_path=source, destination_path=destination, overwrite=overwrite)
