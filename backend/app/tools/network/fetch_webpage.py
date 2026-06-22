@@ -11,7 +11,8 @@ N3: fetch_webpage — 获取和处理网页内容
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import base64
 import time as _time_mod
-from typing import Any, Dict, Optional, Tuple
+from html.parser import HTMLParser
+from typing import Any, Dict, List, Optional, Tuple
 
 import re
 import socket
@@ -65,14 +66,129 @@ def _validate_url(url: str) -> Dict[str, Any]:
         return {"valid": False, "error": str(e)}
 
 
+_VOID_ELEMENTS = frozenset({
+    "area", "base", "br", "col", "embed", "hr", "img",
+    "input", "link", "meta", "param", "source", "track", "wbr",
+})
+
+
+class _ContentExtractor(HTMLParser):
+    """用HTMLParser正确提取匹配指定属性的容器内容(处理嵌套标签)—小欧2026-06-23"""
+
+    def __init__(self, tag_matchers: List[tuple]):
+        super().__init__(convert_charrefs=False)
+        self._tag_matchers = tag_matchers
+        self._depth = 0
+        self._started = False
+        self._parts: List[str] = []
+        self._found: Optional[str] = None
+
+    def handle_starttag(self, tag, attrs):
+        if self._started:
+            if tag not in _VOID_ELEMENTS:
+                self._depth += 1
+            self._parts.append(self.get_starttag_text())
+        elif self._found is None:
+            for t, attr_dict in self._tag_matchers:
+                if tag == t and self._match(dict(attrs), attr_dict):
+                    self._started = True
+                    self._depth = 0
+                    self._parts = []
+                    break
+
+    def handle_endtag(self, tag):
+        if self._started:
+            if self._depth == 0 and any(tag == t for t, _ in self._tag_matchers):
+                self._found = "".join(self._parts)
+                self._started = False
+            else:
+                if self._depth > 0:
+                    self._parts.append(f"</{tag}>")
+                if tag not in _VOID_ELEMENTS:
+                    self._depth -= 1
+
+    def handle_startendtag(self, tag, attrs):
+        if self._started:
+            self._parts.append(self.get_starttag_text())
+
+    def handle_data(self, data):
+        if self._started:
+            self._parts.append(data)
+
+    def handle_entityref(self, name):
+        if self._started:
+            self._parts.append(f"&{name};")
+
+    def handle_charref(self, name):
+        if self._started:
+            self._parts.append(f"&#{name};")
+
+    def handle_comment(self, data):
+        pass
+
+    @staticmethod
+    def _match(attrs: Dict[str, str], required: Dict[str, str]) -> bool:
+        for key, val in required.items():
+            actual = attrs.get(key)
+            if actual is None:
+                return False
+            if val is True:
+                continue
+            if hasattr(val, "search"):
+                if not val.search(actual):
+                    return False
+            elif val != actual:
+                return False
+        return True
+
+    def get_content(self) -> Optional[str]:
+        return self._found
+
+
+def _extract_main_content(html: str) -> Optional[str]:
+    """提取页面主要内容区域HTML — 小欧 2026-06-23
+
+    用HTMLParser正确提取正文容器(处理嵌套标签):
+    1. <article> 语义标签
+    2. <main> 语义标签
+    3. <div id="main">
+    4. <div class~=w3-main> (w3schools典型结构)
+    5. <div class/id 含 content/main/article/post/entry
+    找不到则返回None。
+    """
+    id_main = re.compile(r'(?:^|\s)main(?:\s|$)')
+    w3_main = re.compile(r'w3-main')
+    content_like = re.compile(r'(?:content|main|article|post|entry)')
+    tag_matchers = [
+        ("article", {}),
+        ("main", {}),
+        ("div", {"id": "main"}),
+        ("div", {"class": w3_main}),
+        ("div", {"id": id_main}),
+        ("div", {"class": content_like}),
+    ]
+    extractor = _ContentExtractor(tag_matchers)
+    extractor.feed(html)
+    content = extractor.get_content()
+    if content:
+        text_len = len(re.sub(r'<[^>]+>', "", content).strip())
+        if text_len > 50:
+            return content
+    return None
+
+
 def _html_to_markdown(html: str) -> str:
-    """简易HTML转Markdown — 小欧 2026-06-22"""
+    """简易HTML转Markdown — 小欧 2026-06-22, 2026-06-23 改进:优先提取正文区域"""
     text = html
+    main_content = _extract_main_content(html)
+    if main_content:
+        text = main_content
     text = SCRIPT_TAG_PATTERN.sub('', text)
     text = STYLE_TAG_PATTERN.sub('', text)
     text = re.sub(r'<head[^>]*>.*?</head>', '', text, flags=re.DOTALL|re.IGNORECASE)
     text = re.sub(r'<nav[^>]*>.*?</nav>', '', text, flags=re.DOTALL|re.IGNORECASE)
     text = re.sub(r'<footer[^>]*>.*?</footer>', '', text, flags=re.DOTALL|re.IGNORECASE)
+    text = re.sub(r'<aside[^>]*>.*?</aside>', '', text, flags=re.DOTALL|re.IGNORECASE)
     text = re.sub(r'<h1[^>]*>(.*?)</h1>', r'# \1\n', text, flags=re.IGNORECASE)
     text = re.sub(r'<h2[^>]*>(.*?)</h2>', r'## \1\n', text, flags=re.IGNORECASE)
     text = re.sub(r'<h3[^>]*>(.*?)</h3>', r'### \1\n', text, flags=re.IGNORECASE)

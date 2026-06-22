@@ -209,7 +209,7 @@ async def _search_bing(
         if h2_match:
             title = HTML_TAG_PATTERN.sub('', h2_match.group(1)).strip()
         else:
-            a_text_match = re.search(r'<a[^>]+href="[^"]+ "[^>]*>(.*?)</a>', block[:3000], re.DOTALL)
+            a_text_match = re.search(r'<a[^>]+href="[^"]+"[^>]*>(.*?)</a>', block[:3000], re.DOTALL)
             title = HTML_TAG_PATTERN.sub('', a_text_match.group(1)).strip() if a_text_match else ""
 
         snippet = ""
