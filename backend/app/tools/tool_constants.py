@@ -88,6 +88,7 @@ MAX_READ_SIZE = 10 * 1024 * 1024
 MAX_MEDIA_READ_SIZE = 50 * 1024 * 1024
 MAX_BATCH_FILE_COUNT = 100
 MAX_SEARCH_FILE_SIZE = 10 * 1024 * 1024
+MAX_SEARCH_RESULTS = 1000
 
 BINARY_EXTENSIONS = {
     '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.ico', '.tiff', '.tif',

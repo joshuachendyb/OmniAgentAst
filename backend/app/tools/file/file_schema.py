@@ -187,6 +187,22 @@ class GrepFileContentInput(BaseModel):
         default=True,
         description="是否忽略大小写,默认True"
     )
+    head_limit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=100000,
+        description="限制返回结果数量,防止结果过多浪费token。如100表示最多返回100条匹配"
+    )
+    output_mode: Literal["content", "count", "files_with_matches"] = Field(
+        default="content",
+        description="输出模式: content=返回匹配内容(默认), count=只返回匹配数量, files_with_matches=只返回文件名列表(节省token)"
+    )
+    context_lines: int = Field(
+        default=0,
+        ge=0,
+        le=50,
+        description="显示匹配行前后多少行上下文,0=不显示(默认),3=显示前后3行"
+    )
 
 
 

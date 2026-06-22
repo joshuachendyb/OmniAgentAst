@@ -13,10 +13,10 @@ import asyncio
 import re as re_mod
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import TOOL_TIMEOUTS, MAX_SEARCH_FILE_SIZE
+from app.tools.tool_constants import TOOL_TIMEOUTS, MAX_SEARCH_FILE_SIZE, MAX_SEARCH_RESULTS
 from app.constants import ERR_FILE_CONTENT_SEARCH_FAILED
 from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
 from app.utils.logger import logger
@@ -54,7 +54,7 @@ def _build_grep_file_content_llm_data(
     total_files: int = 0, total_matches: int = 0,
     truncated: bool = False, detail: str = "",
 ) -> Dict[str, Any]:
-    """grep_file_content的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    """grep_file_content的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-23 添加结果数量限制提示"""
     if exec_code == "error":
         return {
             "summary": f"内容搜索失败: {detail}",
@@ -65,9 +65,9 @@ def _build_grep_file_content_llm_data(
         }
     if exec_code == "warning":
         return {
-            "summary": f"搜索完成: 匹配{total_matches}行, {total_files}个文件（搜索超时，结果可能不完整）",
+            "summary": f"搜索完成: 匹配{total_matches}行, {total_files}个文件（结果被截断，可能不完整）",
             "action": {"tool": "grep_file_content", "tool_zh": "内容搜索", "target": pattern, "params": {"pattern": pattern}},
-            "status": {"exec_code": "warning", "message": "搜索超时，结果不完整", "code": "", "detail": "搜索时间耗尽，仅返回部分结果", "hint": "可缩小搜索范围或增加超时时间"},
+            "status": {"exec_code": "warning", "message": "结果被截断，可能不完整", "code": "", "detail": "搜索超时或结果数量达到上限，仅返回部分结果", "hint": "可缩小搜索范围、使用head_limit参数或增加超时时间"},
             "duration_ms": duration_ms,
             "metrics": {
                 "total_files": {"value": total_files, "text": f"{total_files}个文件"},
@@ -89,8 +89,10 @@ def _build_grep_file_content_llm_data(
 def _grep_files_sync(
     search_dir: Path, pattern: str, glob_filter: Optional[str],
     ignore_case: bool, deadline: float,
+    head_limit: Optional[int], output_mode: str,
+    context_lines: int,
 ) -> Tuple[List[Dict], int, int, bool]:
-    """同步搜索文件内容 — 小欧 2026-06-22"""
+    """同步搜索文件内容 — 小欧 2026-06-22 — 小健 2026-06-23 新增head_limit/output_mode/context_lines"""
     results = []
     total_matches = 0
     total_files = 0
@@ -98,13 +100,19 @@ def _grep_files_sync(
     try:
         regex = re_mod.compile(pattern, flags)
     except re_mod.error as e:
-        return [], 0, 0
+        return [], 0, 0, False
+
+    effective_limit = head_limit if head_limit else MAX_SEARCH_RESULTS
 
     for root, dirs, files in os.walk(search_dir):
         if time.monotonic() > deadline:
             break
+        if total_matches >= effective_limit:
+            break
         for fname in files:
             if time.monotonic() > deadline:
+                break
+            if total_matches >= effective_limit:
                 break
             fpath = Path(root) / fname
             if glob_filter:
@@ -116,19 +124,34 @@ def _grep_files_sync(
                 continue
             file_matches = []
             for line_no, line in enumerate(lines, 1):
+                if total_matches >= effective_limit:
+                    break
                 m = regex.search(line)
                 if m:
-                    file_matches.append({
+                    if output_mode == "files_with_matches":
+                        results.append({"file": str(fpath)})
+                        total_files += 1
+                        break
+                    match_item = {
                         "file": str(fpath),
                         "line": line_no,
                         "content": line.rstrip('\n\r'),
-                    })
+                    }
+                    if context_lines > 0:
+                        start = max(0, line_no - context_lines - 1)
+                        end = min(len(lines), line_no + context_lines)
+                        context = []
+                        for i in range(start, end):
+                            prefix = ">>>" if i == line_no - 1 else "   "
+                            context.append(f"{prefix}{i+1}: {lines[i].rstrip()}")
+                        match_item["context"] = "\n".join(context)
+                    file_matches.append(match_item)
                     total_matches += 1
             if file_matches:
                 total_files += 1
                 results.extend(file_matches)
 
-    truncated = time.monotonic() > deadline
+    truncated = time.monotonic() > deadline or total_matches >= effective_limit
     return results, total_files, total_matches, truncated
 
 
@@ -140,8 +163,24 @@ async def grep_file_content(
     search_dir: Optional[str] = None,
     glob: Optional[str] = None,
     ignore_case: bool = True,
+    head_limit: Optional[int] = None,
+    output_mode: Literal["content", "count", "files_with_matches"] = "content",
+    context_lines: int = 0,
 ) -> Dict[str, Any]:
-    """搜索文件内容 — 小欧 2026-06-22 独立文件"""
+    """搜索文件内容 — 小欧 2026-06-22 独立文件 — 小健 2026-06-23 新增head_limit/output_mode/context_lines
+    
+    参数说明:
+        pattern: 正则表达式搜索模式
+        search_dir: 搜索目录，默认当前目录
+        glob: 文件名过滤模式（如"*.py"）
+        ignore_case: 是否忽略大小写
+        head_limit: 限制返回结果数量，防止结果过多
+        output_mode: 输出模式
+            - content: 返回匹配内容（默认）
+            - count: 只返回匹配数量
+            - files_with_matches: 只返回文件名列表
+        context_lines: 显示匹配行前后多少行上下文
+    """
     t0 = _time_mod.perf_counter()
     actual_dir = search_dir or "."
     is_valid, error_msg = _validate_path(actual_dir)
@@ -173,13 +212,19 @@ async def grep_file_content(
     try:
         results, total_files, total_matches, truncated = await asyncio.to_thread(
             _grep_files_sync, search_path, pattern, glob, ignore_case, deadline,
+            head_limit, output_mode, context_lines,
         )
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=str(e))
         return build_error(data={"error_detail": str(e), "params": {"search_dir": actual_dir}}, llm_data=llm_data)
 
-    data = {"matches": results, "total_matches": total_matches, "total_files": total_files, "pattern": pattern}
+    if output_mode == "count":
+        data = {"total_matches": total_matches, "total_files": total_files, "pattern": pattern}
+    elif output_mode == "files_with_matches":
+        data = {"files": results, "total_files": total_files, "pattern": pattern}
+    else:
+        data = {"matches": results, "total_matches": total_matches, "total_files": total_files, "pattern": pattern}
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
     exec_code = "warning" if truncated else "success"
     llm_data = _build_grep_file_content_llm_data(

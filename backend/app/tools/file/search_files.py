@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE
+from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE, MAX_SEARCH_RESULTS
 from app.constants import ERR_FILE_SEARCH_FAILED
 from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
 from app.utils.logger import logger
@@ -69,7 +69,7 @@ def _build_search_files_llm_data(
     search_dir: str = "", total: int = 0,
     truncated: bool = False, detail: str = "",
 ) -> Dict[str, Any]:
-    """search_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    """search_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-23 添加结果数量限制提示"""
     if exec_code == "error":
         return {
             "summary": f"搜索文件失败: {detail}",
@@ -80,9 +80,9 @@ def _build_search_files_llm_data(
         }
     if exec_code == "warning":
         return {
-            "summary": f"搜索完成: {total}个匹配（搜索超时，结果可能不完整）",
+            "summary": f"搜索完成: {total}个匹配（结果被截断，可能不完整）",
             "action": {"tool": "search_files", "tool_zh": "搜索文件", "target": search_dir, "params": {}},
-            "status": {"exec_code": "warning", "message": "搜索超时，结果不完整", "code": "", "detail": "搜索时间耗尽，仅返回部分匹配项", "hint": "可缩小搜索范围或使用更精确的匹配模式"},
+            "status": {"exec_code": "warning", "message": "结果被截断，可能不完整", "code": "", "detail": "搜索超时或结果数量达到上限，仅返回部分匹配项", "hint": "可缩小搜索范围或使用更精确的匹配模式"},
             "duration_ms": duration_ms,
             "metrics": {
                 "total": {"value": total, "text": f"{total}个匹配"},
@@ -136,6 +136,9 @@ async def search_files(
             if time.monotonic() > deadline:
                 logger.warning(f"[search_files] 超时自检触发,提前返回{len(all_matches)}个匹配")
                 break
+            if len(all_matches) >= MAX_SEARCH_RESULTS:
+                logger.warning(f"[search_files] 结果数量达到上限{MAX_SEARCH_RESULTS},提前返回")
+                break
             if not recursive:
                 dirs.clear()
             elif max_depth:
@@ -144,6 +147,8 @@ async def search_files(
                     dirs.clear()
             if type != "file":
                 for d in dirs:
+                    if len(all_matches) >= MAX_SEARCH_RESULTS:
+                        break
                     if not _match_fnmatch(d, pattern, ignore_case):
                         continue
                     relative = os.path.relpath(os.path.join(root, d), path)
@@ -153,6 +158,8 @@ async def search_files(
                     _collect_entry_result(relative, d, Path(os.path.join(root, d)), all_matches, llm_preview)
             if type != "directory":
                 for f in files:
+                    if len(all_matches) >= MAX_SEARCH_RESULTS:
+                        break
                     if not _match_fnmatch(f, pattern, ignore_case):
                         continue
                     relative = os.path.relpath(os.path.join(root, f), path)
@@ -172,8 +179,9 @@ async def search_files(
     total = len(all_matches)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
     truncated_by_deadline = time.monotonic() > deadline
-    exec_code = "warning" if truncated_by_deadline else "success"
-    llm_data = _build_search_files_llm_data(exec_code, duration_ms, search_dir=search_dir, total=total, truncated=truncated_by_deadline)
+    truncated_by_limit = total >= MAX_SEARCH_RESULTS
+    exec_code = "warning" if (truncated_by_deadline or truncated_by_limit) else "success"
+    llm_data = _build_search_files_llm_data(exec_code, duration_ms, search_dir=search_dir, total=total, truncated=(truncated_by_deadline or truncated_by_limit))
     if exec_code == "warning":
         return build_warning(
             data={"matches": all_matches, "total": total, "search_dir": search_dir, "pattern": pattern},
