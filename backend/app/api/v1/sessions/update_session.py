@@ -17,7 +17,9 @@ from app.api.v1.sessions.record_title_history import record_title_history
 
 
 async def update_session(session_id: str, update_data: SessionUpdate):
-    """拷贝自 sessions.py 第259-296行"""
+    """拷贝自 sessions.py 第259-296行 — 小欧 2026-06-22 空body返回400"""
+    if update_data.title is None and update_data.version is None and update_data.updated_by is None:
+        raise HTTPException(status_code=400, detail="至少需要提供一个更新字段")
     try:
         with db.get_conn("chat") as conn:
             cursor = conn.cursor()
