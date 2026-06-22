@@ -15,6 +15,7 @@ from typing import Any, Dict
 
 from app.tools.file.move_file import _move_file_impl
 from app.tools.tool_response import build_success, build_error
+from app.constants import ERR_FILE_RENAME_FAILED
 
 
 def _build_rename_file_llm_data(
@@ -25,14 +26,14 @@ def _build_rename_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"重命名失败: {detail}",
-            "action": {"tool": "rename_file", "tool_zh": "重命名", "target": source, "params": {}},
-            "status": {"exec_code": "error", "message": "重命名失败", "code": "", "detail": detail, "hint": ""},
+            "action": {"tool": "rename_file", "tool_zh": "重命名", "target": source, "params": {"source": source}},
+            "status": {"exec_code": "error", "message": "重命名失败", "code": ERR_FILE_RENAME_FAILED, "detail": detail, "hint": "请检查源路径和新名称"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"重命名 {source}",
-        "action": {"tool": "rename_file", "tool_zh": "重命名", "target": source, "params": {}},
+        "action": {"tool": "rename_file", "tool_zh": "重命名", "target": source, "params": {"source": source}},
         "status": {"exec_code": "success", "message": "重命名成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},

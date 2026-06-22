@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
+from app.constants import ERR_FILE_DELETE_FAILED
 from app.services.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
 from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
@@ -75,14 +76,14 @@ def _build_delete_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"删除失败: {detail}",
-            "action": {"tool": "delete_file", "tool_zh": "删除", "target": source, "params": {}},
-            "status": {"exec_code": "error", "message": "删除失败", "code": "", "detail": detail, "hint": ""},
+            "action": {"tool": "delete_file", "tool_zh": "删除", "target": source, "params": {"source": source}},
+            "status": {"exec_code": "error", "message": "删除失败", "code": ERR_FILE_DELETE_FAILED, "detail": detail, "hint": "请检查文件是否存在"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"删除 {source}",
-        "action": {"tool": "delete_file", "tool_zh": "删除", "target": source, "params": {}},
+        "action": {"tool": "delete_file", "tool_zh": "删除", "target": source, "params": {"source": source}},
         "status": {"exec_code": "success", "message": "删除成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": extra_metrics,

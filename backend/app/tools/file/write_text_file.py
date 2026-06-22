@@ -116,14 +116,14 @@ def _build_write_text_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"写入失败: {detail}",
-            "action": {"tool": "write_text_file", "tool_zh": "写入", "target": file_path, "params": {}},
-            "status": {"exec_code": "error", "message": "写入失败", "code": ERR_FILE_WRITE_FAILED, "detail": detail, "hint": ""},
+            "action": {"tool": "write_text_file", "tool_zh": "写入", "target": file_path, "params": {"file_path": file_path}},
+            "status": {"exec_code": "error", "message": "写入失败", "code": ERR_FILE_WRITE_FAILED, "detail": detail, "hint": "请检查路径和写入权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"写入 {file_path}，{bytes_written}字节",
-        "action": {"tool": "write_text_file", "tool_zh": "写入", "target": file_path, "params": {}},
+        "action": {"tool": "write_text_file", "tool_zh": "写入", "target": file_path, "params": {"file_path": file_path}},
         "status": {"exec_code": "success", "message": "写入成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {

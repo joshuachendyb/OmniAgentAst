@@ -127,7 +127,7 @@ def _build_window_info_llm_data(exec_code: str, duration_ms: int, window_count: 
         return {
             "summary": f"获取失败: {detail}" if detail else "获取失败",
             "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": {"filter_title": filter_title}},
-            "status": {"exec_code": "error", "message": "获取窗口列表失败", "code": ERR_WINDOW_LIST, "detail": "", "hint": ""},
+            "status": {"exec_code": "error", "message": "获取窗口列表失败", "code": ERR_WINDOW_LIST, "detail": detail, "hint": "请检查窗口筛选条件"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {

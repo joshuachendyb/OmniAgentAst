@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
+from app.constants import ERR_FILE_COMPRESS_FAILED
 from app.services.context_vars import _current_task_id
 from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
 from app.utils.json_utils import coerce_json
@@ -43,15 +44,15 @@ def _build_compress_files_llm_data(
     if exec_code == "error":
         return {
             "summary": f"压缩失败: {detail}",
-            "action": {"tool": "compress_files", "tool_zh": "压缩", "target": source, "params": {}},
-            "status": {"exec_code": "error", "message": "压缩失败", "code": "", "detail": detail, "hint": ""},
+            "action": {"tool": "compress_files", "tool_zh": "压缩", "target": source, "params": {"source": source}},
+            "status": {"exec_code": "error", "message": "压缩失败", "code": ERR_FILE_COMPRESS_FAILED, "detail": detail, "hint": "请检查源路径是否存在"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     ratio = 1 - (compressed_size / original_size) if original_size > 0 else 0
     return {
         "summary": f"压缩 {source}，{file_count}个文件，{compressed_size}字节",
-        "action": {"tool": "compress_files", "tool_zh": "压缩", "target": source, "params": {}},
+        "action": {"tool": "compress_files", "tool_zh": "压缩", "target": source, "params": {"source": source}},
         "status": {"exec_code": "success", "message": "压缩成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
