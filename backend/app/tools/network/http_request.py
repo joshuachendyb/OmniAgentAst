@@ -109,18 +109,10 @@ def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
     if isinstance(body, (dict, list)):
         body_json_len = len(json.dumps(body, ensure_ascii=False))
 
-    if isinstance(body, str) and len(body) > 5000:
-        if not parse_json(body):
-            body = body[:4000] + f"\n...[截断 {len(body)-4000} 字符]"
-
-    if isinstance(body, (dict, list)) and body_json_len <= 5000:
+    if isinstance(body, (dict, list)):
         llm_body = body
-    elif isinstance(body, str) and len(body) <= 5000:
-        llm_body = body
-    elif isinstance(body, (dict, list)):
-        llm_body = make_json_safe(body, max_depth=4, max_str_len=500)
     else:
-        llm_body = str(body)[:4000]
+        llm_body = str(body)
 
     return {
         "body": {

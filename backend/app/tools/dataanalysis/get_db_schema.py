@@ -91,7 +91,7 @@ def _get_indexes(conn, connection_type: str, table_name: str) -> List[Dict]:
 
 
 def _filter_tables(tables: List[str], table_name: Optional[str], filter_pattern: Optional[str]) -> List[str]:
-    """表名过滤:精确匹配优先,fnmatch降级,20表截断 — 小沈 2026-05-25"""
+    """表名过滤:精确匹配优先,fnmatch降级 — 小沈 2026-05-25 — 小健 2026-06-22 移除截断"""
     if table_name:
         tables = [t for t in tables if t == table_name]
         if not tables:
@@ -99,7 +99,7 @@ def _filter_tables(tables: List[str], table_name: Optional[str], filter_pattern:
     elif filter_pattern:
         pat = filter_pattern.replace("%", "*").replace("_", "?")
         tables = [t for t in tables if fnmatch.fnmatch(t.lower(), pat.lower())]
-    return tables[:20]
+    return tables
 
 
 def _build_get_db_schema_llm_data(exec_code, duration_ms, total_tables=0, table_names=None,

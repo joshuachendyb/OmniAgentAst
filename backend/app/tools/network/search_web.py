@@ -108,12 +108,12 @@ def _parse_exa_results(text: str, num_results: int) -> Optional[List[Dict[str, s
         elif line.startswith("Highlights:") or (current.get("snippet") == "" and line and
               not line.startswith("Published") and not line.startswith("Author")):
             if not current["snippet"]:
-                current["snippet"] = line[:300]
+                current["snippet"] = line
     if current.get("title"):
         results.append(current)
 
     formatted = [
-        {"title": r["title"], "url": r["url"], "snippet": r.get("snippet", "")[:300], "source": "Exa"}
+        {"title": r["title"], "url": r["url"], "snippet": r.get("snippet", ""), "source": "Exa"}
         for r in results[:num_results] if r.get("title") and r.get("url")
     ]
     return formatted or None
@@ -150,7 +150,7 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: O
             for r in parsed.get("results", [])[:num_results]:
                 title, url = r.get("title", ""), r.get("url", "")
                 if title and url:
-                    snippet = (r.get("excerpts", [])[0] or "")[:300]
+                    snippet = r.get("excerpts", [])[0] or ""
                     results.append({"title": title, "url": url, "snippet": snippet, "source": "Parallel"})
             if not results:
                 _search_failed(engine, "无搜索结果")

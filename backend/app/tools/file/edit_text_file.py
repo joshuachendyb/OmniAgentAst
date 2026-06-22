@@ -158,7 +158,7 @@ async def _precise_replace_in_file(
     replace_all: bool = False, ignore_case: bool = False,
     dry_run: bool = False, encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """精确替换文件中的字符串(返回原始dict,不含build3/llm_data) — 小欧 2026-06-22"""
+    """精确替换文件中的字符串(返回原始dict,不含build3/llm_data) — 小欧 2026-06-22 — 小健 2026-06-22 删除helper计时"""
     if not old_string:
         return {"error_detail": "old_string不能为空"}
 
@@ -170,7 +170,6 @@ async def _precise_replace_in_file(
     if is_binary:
         return {"error_detail": reason}
 
-    t0 = _time_mod.perf_counter()
     try:
         is_valid, err = _validate_path(file_path)
         if not is_valid:

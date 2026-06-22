@@ -172,8 +172,7 @@ def _build_list_directory_llm_data(
 async def _get_directory_tree(
     dir_path: str, max_depth: int = 10,
 ) -> Dict[str, Any]:
-    """获取目录树原始数据 — 小欧 2026-06-22"""
-    t0 = _time_mod.perf_counter()
+    """获取目录树原始数据 — 小欧 2026-06-22 — 小健 2026-06-22 删除helper计时"""
     is_valid, error_msg = _validate_path(dir_path)
     if not is_valid:
         return {"error_detail": error_msg, "params": {"dir_path": dir_path}}

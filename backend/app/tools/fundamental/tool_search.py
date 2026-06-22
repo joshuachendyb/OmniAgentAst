@@ -140,20 +140,19 @@ def tool_search(query: str) -> Dict[str, Any]:
             {
                 "name": m.name,
                 "category": m.category.value,
-                "description": m.description[:200],
+                "description": m.description,
                 "score": 0,
             }
             for m in all_tools.values()
         ]
         all_items.sort(key=lambda x: x["name"])
-        top = all_items[:10]
         duration_ms = int((time.perf_counter() - t0) * 1000)
         data = {
-            "query": query, "matches": top,
+            "query": query, "matches": all_items,
             "total_matched": len(all_items), "total_tools": len(all_tools),
         }
         llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(all_items), len(all_tools),
-                                                 [{"name": r["name"], "category": r["category"]} for r in top])
+                                                 [{"name": r["name"], "category": r["category"]} for r in all_items])
         return build_success(data=data, llm_data=llm_data)
 
     docs, tool_names, avgdl, df = _build_bm25()
@@ -167,12 +166,12 @@ def tool_search(query: str) -> Dict[str, Any]:
         scored.append({
             "name": metadata.name,
             "category": metadata.category.value,
-            "description": metadata.description[:200],
+            "description": metadata.description,
             "score": round(scores[i], 4),
         })
 
     scored.sort(key=lambda x: x["score"], reverse=True)
-    top_results = [r for r in scored if r["score"] > 0][:10]
+    top_results = [r for r in scored if r["score"] > 0]
 
     duration_ms = int((time.perf_counter() - t0) * 1000)
     data = {
@@ -182,7 +181,7 @@ def tool_search(query: str) -> Dict[str, Any]:
         "total_tools": len(all_tools),
     }
     llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(scored), len(all_tools),
-                                             [{"name": r["name"], "category": r["category"]} for r in top_results[:10]])
+                                             [{"name": r["name"], "category": r["category"]} for r in top_results])
     return build_success(data=data, llm_data=llm_data)
 
 
