@@ -8,6 +8,7 @@ F10合并: 小欧 - 2026-06-08
 
 import shutil
 import yaml
+from collections import OrderedDict
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -40,6 +41,23 @@ def _write_yaml_with_order(file_path: str, data: dict):
 # 配置路径 / 读写
 # ====================================================================
 
+def _make_yaml_loader() -> type:
+    """创建支持 OrderedDict 标签的 SafeLoader — 小欧 2026-06-22"""
+    class _SafeLoader(yaml.SafeLoader):
+        pass
+
+    def _construct_ordered_dict(loader, node):
+        args = loader.construct_sequence(node, deep=True)
+        pairs = args[0] if args else []
+        return OrderedDict(pairs)
+
+    _SafeLoader.add_constructor(
+        'tag:yaml.org,2002:python/object/apply:collections.OrderedDict',
+        _construct_ordered_dict,
+    )
+    return _SafeLoader
+
+
 def get_config_path() -> Path:
     """获取配置文件路径(缓存式调用)"""
     return Path(_get_config_path())
@@ -50,7 +68,7 @@ def read_yaml_config(config_path: Path) -> dict:
     if not config_path.exists():
         return {}
     with open(config_path, 'r', encoding='utf-8') as f:
-        return yaml.safe_load(f) or {}
+        return yaml.load(f, Loader=_make_yaml_loader()) or {}
 
 
 def write_yaml_config(config_path: str, data: dict) -> None:
