@@ -13,7 +13,7 @@ class ThoughtStep(ReasoningStep):
         step: int,
         content: str,
         tool_name: str = "",
-        tool_params: Dict[str, Any] = None,
+        tool_params: Optional[Dict[str, Any]] = None,
         thought: str = "",
         reasoning: str = "",
         timestamp: Optional[int] = None

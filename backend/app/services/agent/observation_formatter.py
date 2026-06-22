@@ -2,220 +2,225 @@
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
-原名: tool_result_formatter.py (与 utils/tool_result_formatter.py 同名造成混淆)
-重命名: 2026-06-08 小欧 — SRP: 本模块只负责格式化LLM observation，不负责截断/格式化通用逻辑
-
-提供两条输出路径:
-- format_llm_observation(): 给LLM看的observation文本
+【Phase 1 v6.0 重写 — 小欧 2026-06-21】
+format_llm_observation 改为 (data, llm_data) 签名，三段式输出
+新增 format_data_detail 按 data 类型自动渲染可读文本
+删除旧函数: _extract_display_data/_append_data/_format_summary_parts/
+  build_execution_result_dict/extract_status/_format_result_observation/
+  _format_success_observation/_format_warning_observation/_format_error_observation/
+  _build_base_text/_append_warning/_append_hint/_prevent_json_oom/_get_failure_hint
 
 设计原则:
-- 工具自控:通过llm_data字段控制给LLM的数据量,格式化层不做业务截断
-- 安全兜底:仅在data极端大时防json.dumps OOM
+- 工具返回原始data，不做截断
+- observation_formatter不截断，LLM需要完整数据
+- 安全兜底:format_data_detail加try-except确保不崩
+- 三段式:观察行 + 结果行 + 详情行
+- 【铁规】截断只能在前端yield层，tool和observation_formatter都禁止截断
+
+Author: 小欧 2026-06-21; 小欧 2026-06-22 添加截断铁规
 """
 
 import json
-from typing import Any, Dict, Optional
-
-from app.constants import SUCCESS_CODE, LLM_SAFE_LIMIT
+from typing import Any, Dict
 
 
-def _prevent_json_oom(data: Any, limit: int) -> Any:
-    """防JSON序列化OOM:仅防 json.dumps OOM,非业务截断 — 小沈 2026-05-27"""
-    if isinstance(data, dict):
-        if len(data) > limit:
-            keys = list(data.keys())[:limit]
-            return {k: data[k] for k in keys}
-    elif isinstance(data, list):
-        if len(data) > limit:
-            return data[:limit]
-    return data
+def format_data_detail(data: Any) -> str:
+    """按data结构类型自动格式化为可读文本 — 小欧 2026-06-21
 
-
-def _get_failure_hint(tool_name: str, tool_params: Optional[dict] = None, result: Optional[dict] = None) -> str:
-    """工具执行失败时获取替代建议 — 小健 2026-05-24
-
-    优先从tool_registry获取工具自定义提示,
-    无自定义提示时按错误类型返回差异化建议。
-
-    重写 EXC-20: 异常分类 (ImportError/AttributeError/JSON)
-    更新 小沈 2026-06-11: 按result.code分类返回差异化提示
+    内部可能抛异常，兜底 JSON dump 或 str() 确保不崩。
     """
-    # 1. 优先从tool_registry获取自定义提示
+    if not data:
+        return ""
+
     try:
-        from app.services.tools.registry import tool_registry
-        meta = tool_registry.get_tool(tool_name)
-        if meta and hasattr(meta, 'get_failure_hint'):
-            hint = meta.get_failure_hint(tool_params)
-            if hint:
-                return hint
-    except (ImportError, AttributeError, json.JSONDecodeError, TypeError) as e:
-        from app.utils.logger import logger as _logger
-        _logger.debug(f"[_get_failure_hint] 工具提示获取失败: {e}")
+        if not isinstance(data, dict):
+            return str(data)
 
-    # 2. 按错误码返回差异化提示
-    if result:
-        code = result.get("code", "")
-        if isinstance(code, str):
-            hints = {
-                "ERR_FILE_NOT_FOUND": "文件或目录不存在,请检查路径是否正确。",
-                "ERR_PERMISSION_DENIED": "权限不足,请检查文件访问权限。",
-                "ERR_TIMEOUT": "操作超时,请稍后重试或检查网络连接。",
-                "ERR_NETWORK": "网络连接失败,请检查网络状态后重试。",
-                "ERR_INVALID_PARAMS": "参数格式不正确,请检查参数类型和格式。",
-            }
-            for prefix, hint in hints.items():
-                if code.startswith(prefix):
-                    return hint
+        if "content" in data and isinstance(data["content"], dict) and "headers" in data["content"]:
+            return _format_table(data["content"]["headers"], data["content"]["rows"])
 
-    # 3. 兜底通用提示
-    return "请尝试其他可用工具,不要重复调用同一失败操作。"
+        if "content" in data and isinstance(data["content"], str):
+            return data["content"]
+
+        if "entries" in data:
+            return _format_entries(data["entries"])
+
+        if "items" in data:
+            return _format_items(data["items"])
+
+        if "rows" in data:
+            return _format_rows(data["rows"])
+
+        if "tables" in data:
+            return _format_schema(data["tables"])
+
+        if "output" in data:
+            parts = []
+            if data["output"]:
+                parts.append(data["output"])
+            if data.get("error_output"):
+                parts.append(f"[stderr] {data['error_output']}")
+            return "\n".join(parts)
+
+        if "events" in data:
+            return _format_events(data["events"])
+
+        return _format_key_value(data)
+    except Exception:
+        try:
+            return json.dumps(data, ensure_ascii=False, indent=2)
+        except Exception:
+            return str(data)
 
 
-def extract_status(result: dict) -> str:
-    """从工具统一返回格式提取Agent消费的status字段 — 小健 2026-05-21
+def format_llm_observation(data: Any, llm_data: Dict) -> str:
+    """格式化工具结果为LLM observation文本 — 小欧 2026-06-21
 
-    映射规则:
-      SUCCESS        → "success"
-      WARNING_*      → "warning"
-      ERR_* / 其他   → "error"
-      code缺失/None   → "error"
+    llm_data → 观察行 + 结果行（三段式的前两段）
+    data     → 详情行（通过 format_data_detail）
     """
-    code = result.get("code")
-    if code == SUCCESS_CODE:
-        return "warning" if result.get("warning") else "success"
-    elif isinstance(code, str) and code.startswith("WARNING_"):
-        return "warning"
+    status = llm_data.get("status", {})
+    action = llm_data.get("action", {})
+    summary = llm_data.get("summary", "")
+    exec_code = status.get("exec_code", "")
+    message = status.get("message", "")
+    tool_zh = action.get("tool_zh", "")
+
+    if exec_code == "success":
+        text = f"观察: {message} - {tool_zh}"
+    elif exec_code == "warning":
+        text = f"观察: {message} - {tool_zh}\n⚠ 警告: {status.get('detail', '')}"
     else:
-        return "error"
+        text = f"观察: {message} - {tool_zh}"
+
+    if summary:
+        text += f"\n结果: {summary}"
+
+    if data is not None and data != {} and data != [] and data != "":
+        detail = format_data_detail(data)
+        if detail:
+            text += f"\n详情:\n{detail}"
+
+    if exec_code in ("error", "warning"):
+        hint = status.get("hint", "")
+        if hint:
+            text += f"\n建议: {hint}"
+
+    return text
 
 
-def build_execution_result_dict(execution_result: Dict[str, Any]) -> Dict[str, Any]:
-    """从工具返回结果构建统一格式dict — 小健 2026-05-24
-
-    【修复P0-4 2026-06-08 小沈】删除StepFactory引用，直接调用Step构造函数
-    """
-    _status = extract_status(execution_result)
-    return {
-        "status": _status,
-        "summary": execution_result.get("message", ""),
-        "data": execution_result.get("data"),
-        "retry_count": execution_result.get("retry_count", 0),
-        "code": execution_result.get("code", SUCCESS_CODE),
-        "warning": execution_result.get("warning"),
-        "attachment": execution_result.get("attachment"),
-        "next_actions": execution_result.get("next_actions"),
-        "return_direct": execution_result.get("return_direct", False),
-        "error_message": execution_result.get("error_message", ""),
-    }
+def _format_table(headers: list, rows: list) -> str:
+    """格式化表格数据 — 小欧 2026-06-21"""
+    if not headers or not rows:
+        return ""
+    lines = []
+    for row in rows:
+        if isinstance(row, (list, tuple)):
+            parts = [f"{h}={v}" for h, v in zip(headers, row) if v is not None]
+            lines.append(" | ".join(parts))
+        elif isinstance(row, dict):
+            parts = [f"{h}={row.get(h, '')}" for h in headers if row.get(h) is not None]
+            lines.append(" | ".join(parts))
+    return "\n".join(lines)
 
 
-def _format_next_actions(result: dict, text: str) -> str:
-    """将next_actions格式化为文本追加到observation — 小健 2026-05-22"""
-    next_actions = result.get('next_actions')
-    if not next_actions or not isinstance(next_actions, list):
-        return text
-    na_lines = ["\n推荐下一步操作:"]
-    for i, na in enumerate(next_actions[:5], 1):
-        if isinstance(na, dict):
-            tool = na.get('tool', '')
-            desc = na.get('description', '')
-            when = na.get('when', '')
-            params = na.get('params')
-            line = f"  {i}. {tool}"
+def _format_entries(entries: list) -> str:
+    """格式化目录列表 — 小欧 2026-06-21"""
+    if not entries:
+        return ""
+    lines = []
+    for entry in entries:
+        if isinstance(entry, str):
+            suffix = " [目录]" if entry.endswith("/") or entry.endswith("\\") else " [文件]"
+            lines.append(f"  {entry}{suffix}")
+        elif isinstance(entry, dict):
+            name = entry.get("name", "")
+            etype = entry.get("type", "")
+            size = entry.get("size", "")
+            label = "目录" if etype in ("dir", "directory") else "文件"
+            size_str = f", {size}字节" if size else ""
+            lines.append(f"  {name} [{label}{size_str}]")
+    return "\n".join(lines)
+
+
+def _format_items(items: list) -> str:
+    """格式化搜索结果/列表项 — 小欧 2026-06-21"""
+    if not items:
+        return ""
+    lines = []
+    for item in items:
+        if isinstance(item, str):
+            lines.append(f"  {item}")
+        elif isinstance(item, dict):
+            name = item.get("name", item.get("title", item.get("path", "")))
+            desc = item.get("description", item.get("desc", ""))
             if desc:
-                line += f" - {desc}"
-            if when:
-                line += f"({when})"
-            if params:
-                line += f" 参数建议: {params}"
-        elif isinstance(na, tuple) and len(na) >= 2:
-            line = f"  {i}. {na[0]} - {na[1]}"
+                lines.append(f"  {name}: {desc}")
+            else:
+                lines.append(f"  {name}")
+    return "\n".join(lines)
+
+
+def _format_rows(rows: list) -> str:
+    """格式化数据库行 — 小欧 2026-06-21"""
+    if not rows:
+        return ""
+    lines = []
+    for row in rows:
+        if isinstance(row, (list, tuple)):
+            lines.append(" | ".join(str(v) for v in row))
+        elif isinstance(row, dict):
+            parts = [f"{k}={v}" for k, v in row.items() if v is not None]
+            lines.append(" | ".join(parts))
+    return "\n".join(lines)
+
+
+def _format_schema(tables: list) -> str:
+    """格式化Schema信息 — 小欧 2026-06-21"""
+    if not tables:
+        return ""
+    lines = []
+    for table in tables:
+        if isinstance(table, str):
+            lines.append(f"  {table}")
+        elif isinstance(table, dict):
+            name = table.get("name", table.get("table", ""))
+            cols = table.get("columns", [])
+            if cols:
+                col_str = ", ".join(str(c) for c in cols)
+                lines.append(f"  {name}: {col_str}")
+            else:
+                lines.append(f"  {name}")
+    return "\n".join(lines)
+
+
+def _format_events(events: list) -> str:
+    """格式化事件日志 — 小欧 2026-06-21"""
+    if not events:
+        return ""
+    lines = []
+    for event in events:
+        if isinstance(event, str):
+            lines.append(f"  {event}")
+        elif isinstance(event, dict):
+            ts = event.get("timestamp", event.get("time", ""))
+            msg = event.get("message", event.get("event", str(event)))
+            if ts:
+                lines.append(f"  [{ts}] {msg}")
+            else:
+                lines.append(f"  {msg}")
+    return "\n".join(lines)
+
+
+def _format_key_value(data: dict) -> str:
+    """格式化键值对 — 小欧 2026-06-21"""
+    lines = []
+    for k, v in data.items():
+        if isinstance(v, dict):
+            for sk, sv in v.items():
+                lines.append(f"  {k}.{sk}: {sv}")
+        elif isinstance(v, list):
+            lines.append(f"  {k}: {json.dumps(v, ensure_ascii=False)}")
         else:
-            line = f"  {i}. {na}"
-        na_lines.append(line)
-    return text + "\n".join(na_lines)
-
-
-def _extract_display_data(result: dict) -> Any:
-    """提取display_data — 小沈 2026-06-08 | P1修复: or→is not None(空字典误回退) — 小欧 2026-06-11"""
-    llm_data = result.get("llm_data")
-    if llm_data is not None:
-        return llm_data
-    data = result.get("data")
-    if data is None:
-        from app.utils.logger import logger as _logger
-        _logger.warning("[OBS-001] format_llm_observation: llm_data和data均为空")
-    return data
-
-
-def _build_base_text(result: dict, status: str) -> str:
-    """构建基础文本 — 小沈 2026-06-08"""
-    return f"Observation: {status} - {result.get('message', '')}"
-
-
-def _append_warning(text: str, result: dict) -> str:
-    """追加warning — 小沈 2026-06-08"""
-    if result.get("warning"):
-        return text + f"\n⚠ 警告: {result['warning']}"
-    return text
-
-
-def _append_data(text: str, display_data: Any) -> str:
-    """追加data — 小沈 2026-06-08"""
-    if not display_data:
-        return text
-    if isinstance(display_data, (dict, list)):
-        display_data = _prevent_json_oom(display_data, LLM_SAFE_LIMIT)
-    return text + f"\n数据: {json.dumps(display_data, ensure_ascii=False)}"
-
-
-def _format_success_observation(result: dict) -> str:
-    """格式化成功结果 — 小沈 2026-06-08 重构"""
-    display_data = _extract_display_data(result)
-    text = _build_base_text(result, "success")
-    text = _append_warning(text, result)
-    text = _append_data(text, display_data)
-    return _format_next_actions(result, text)
-
-
-def _format_warning_observation(result: dict) -> str:
-    """格式化警告结果 — 小沈 2026-06-08 重构"""
-    text = _build_base_text(result, "warning")
-    if result.get("data"):
-        data = result["data"]
-        if isinstance(data, (dict, list)):
-            data = _prevent_json_oom(data, LLM_SAFE_LIMIT)
-        text += f"\n部分数据: {json.dumps(data, ensure_ascii=False)}"
-    return _format_next_actions(result, text)
-
-
-def _append_hint(text: str, tool_name: str, tool_params: Optional[dict], result: Optional[dict] = None) -> str:
-    """追加hint — 小沈 2026-06-08"""
-    if not tool_name:
-        return text
-    hint = _get_failure_hint(tool_name, tool_params, result)
-    if hint:
-        return text + f"\n{hint}"
-    return text
-
-
-def _format_error_observation(result: dict, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
-    """格式化错误结果 — 小沈 2026-06-08 重构"""
-    text = f"Observation: error [{result.get('code', '')}] - {result.get('message', '')}"
-    text = _append_hint(text, tool_name, tool_params, result)
-    return _format_next_actions(result, text)
-
-
-def format_llm_observation(result: dict, tool_name: str = "", tool_params: Optional[dict] = None) -> str:
-    """格式化工具结果为LLM observation文本 — 小沈 2026-05-21
-    更新 2026-05-22 小健:合入next_actions拼接逻辑(从base_react.py搬入)
-    """
-    code = result.get("code")
-
-    if code == SUCCESS_CODE:
-        return _format_success_observation(result)
-    elif isinstance(code, str) and code.startswith("WARNING_"):
-        return _format_warning_observation(result)
-    else:
-        return _format_error_observation(result, tool_name, tool_params)
-
+            lines.append(f"  {k}: {v}")
+    return "\n".join(lines)

@@ -16,9 +16,7 @@ from .update_provider import update_provider
 from .add_model import add_model
 from .add_provider import add_provider
 from .fix_config import fix_config
-from .get_config_path import get_config_path
-from .open_config_folder import open_config_folder
-from .read_config_file import read_config_file
+from .config_file_routes import get_config_path_endpoint, open_config_folder, read_config_file
 
 # 导出模型
 from .models import (

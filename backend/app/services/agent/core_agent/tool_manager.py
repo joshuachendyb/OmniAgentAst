@@ -5,20 +5,22 @@
 Author: 小沈 - 2026-06-07
 """
 
-from app.services.tools.registry import tool_registry
-from app.services.tools.tool_types import ToolCategory
+from app.tools.registry import tool_registry
+from app.tools.tool_types import ToolCategory
 from app.constants import META_TOOL_NAMES
 from app.utils.logger import logger
 
 
-class ToolManager:
-    """工具加载和管理"""
+class ToolLoader:
+    """工具加载和管理 — 小沈 2026-06-17 改名ToolManager→ToolLoader"""
 
     def __init__(self, agent):
         self.agent = agent
 
     def init_tools(self, initial_categories=None):
-        """初始化工具:仅加载initial_categories指定的分类+meta工具"""
+        """初始化工具:仅注入initial_categories指定的分类+meta工具给LLM
+        注意：所有工具已在启动时注册(register)，这里只是注入(inject)给LLM使用
+        """
         self.agent._tools_dict = {}
 
         # ① 始终加载meta工具
@@ -34,7 +36,7 @@ class ToolManager:
             cat_tools = tool_registry.get_implementations_by_category(cat)
             self.agent._tools_dict.update(cat_tools)
 
-        logger.info(f"[ToolManager] 初始化完成,共{len(self.agent._tools_dict)}个工具")
+        logger.info(f"[ToolLoader] 初始化完成,共{len(self.agent._tools_dict)}个工具")
 
     def get_tools(self) -> dict:
         """获取工具字典"""
@@ -45,4 +47,4 @@ class ToolManager:
         cat_tools = tool_registry.get_implementations_by_category(category)
         if cat_tools:
             self.agent._tools_dict.update(cat_tools)
-            logger.info(f"[ToolManager] 动态加载分类:{category.value}, {len(cat_tools)}个工具")
+            logger.info(f"[ToolLoader] 动态加载分类:{category.value}, {len(cat_tools)}个工具")

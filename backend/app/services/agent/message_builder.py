@@ -32,9 +32,7 @@ from app.services.agent.agent_utils.fc_message_types import (
 class MessageBuilder:
     """Prompt/Message组装的统一入口"""
 
-    # ===== 观测文本构建常量(从base_react.py搬入)=====
-    OBSERVATION_BUDGET_DECAY = OBSERVATION_BUDGET_DECAY
-    OBSERVATION_BUDGET_MIN = OBSERVATION_BUDGET_MIN
+    # ===== 观测文本构建常量(从base_react.py搬入) — 小沈 2026-06-17 删除冗余X=X =====
     OBSERVATION_HEAD_RATIO = 0.6
 
     def __init__(self, max_context_chars: int = MAX_CONTEXT_CHARS):
@@ -175,6 +173,7 @@ class MessageBuilder:
 
         策略: 从最后一条消息往前遍历,遇到tool就找其配对assistant一起保留,
         遇到独立消息直接保留,直到budget用完。剩余的全部丢弃。
+        小欧 2026-06-16: 保留每种工具的首次observation，防止LLM忘记已搜索过。
         """
         tool_to_assistant = {}
         for msg in assistant_msgs:
@@ -185,6 +184,18 @@ class MessageBuilder:
         # 按原始顺序排列 obs+assistant
         original_order = {id(msg): i for i, msg in enumerate(self.conversation_history)}
         all_msgs = sorted(obs_list + assistant_msgs, key=lambda m: original_order.get(id(m), 0))
+
+        # 小欧 2026-06-16: 识别每种工具的首次observation
+        first_tool_obs = {}
+        for msg in obs_list:
+            tool_call_id = msg.get("tool_call_id", "")
+            if tool_call_id:
+                assistant = tool_to_assistant.get(tool_call_id)
+                if assistant:
+                    for tc in assistant.get("tool_calls", []):
+                        tool_name = tc.get("function", {}).get("name", "")
+                        if tool_name and tool_name not in first_tool_obs:
+                            first_tool_obs[tool_name] = msg
 
         kept = []
         used_chars = 0
@@ -197,7 +208,9 @@ class MessageBuilder:
             if msg.get("role") == "tool" and tc_id and tc_id in tool_to_assistant:
                 asst = tool_to_assistant[tc_id]
                 pair_chars = self._total_chars([asst, msg])
-                if used_chars + pair_chars <= budget:
+                # 小欧 2026-06-16: 首次observation强制保留
+                is_first_obs = msg in first_tool_obs.values()
+                if is_first_obs or used_chars + pair_chars <= budget:
                     kept.append(msg)
                     kept.append(asst)
                     used_chars += pair_chars
@@ -232,7 +245,7 @@ class MessageBuilder:
     @staticmethod
     def _get_observation_budget(llm_call_count: int) -> int:
         """计算observation可用预算 — 替代 base_react.py L1378-1382"""
-        budget = MessageBuilder.OBSERVATION_BUDGET_MIN + MessageBuilder.OBSERVATION_BUDGET_DECAY * max(0, 5 - llm_call_count)
+        budget = OBSERVATION_BUDGET_MIN + OBSERVATION_BUDGET_DECAY * max(0, 5 - llm_call_count)
         return min(budget, OBSERVATION_BUDGET_MAX)
 
     @staticmethod

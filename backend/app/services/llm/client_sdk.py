@@ -20,6 +20,7 @@ from app.constants import (
     LLM_MAX_CONNECTIONS,
     LLM_MAX_KEEPALIVE,
 )
+from app.tools.tool_constants import FILE_OPERATION_TOOLS
 
 
 def _build_request_body(
@@ -31,8 +32,10 @@ def _build_request_body(
     tools: Optional[List[Dict]] = None,
     tool_choice: Optional[str] = None,
     stream: bool = False,
+    parallel_tool_calls: Optional[bool] = None,
+    stream_options: Optional[Dict] = None,
 ) -> Dict:
-    """统一构建 LLM 请求体 — FC-only: 无mode参数 — 小沈 2026-06-11"""
+    """统一构建 LLM 请求体 — FC-only: 无mode参数 — 小沈 2026-06-11; 小沈 2026-06-17 新增parallel_tool_calls; 小健 2026-06-17 新增stream_options"""
     body = {"model": model, "messages": messages}
     if max_tokens is not None:
         body["max_tokens"] = max_tokens
@@ -42,10 +45,19 @@ def _build_request_body(
         body["seed"] = seed
     if stream:
         body["stream"] = True
+        if stream_options is not None:
+            body["stream_options"] = stream_options
     if tools:
         body["tools"] = tools
         if tool_choice:
             body["tool_choice"] = tool_choice
+        
+        if parallel_tool_calls is None:
+            tool_names = {t["function"]["name"] for t in tools}
+            parallel_tool_calls = not bool(tool_names & FILE_OPERATION_TOOLS)
+        
+        body["parallel_tool_calls"] = parallel_tool_calls
+    
     return body
 
 
@@ -81,16 +93,24 @@ class LLMClient:
             base_url=self._base_url,
         )
 
+    _DEFAULT_URLS = {
+        "openai": "https://api.openai.com/v1",
+        "deepseek": "https://api.deepseek.com",
+        "qwen": "https://dashscope.aliyuncs.com/compatible-mode",
+        "groq": "https://api.groq.com/openai",
+        "ollama": "http://localhost:11434",
+    }
+
     def _default_base_url(self, provider: str) -> str:
-        """根据 provider 返回默认 API 地址 - 小沈 2026-06-09"""
-        urls = {
-            "openai": "https://api.openai.com/v1",
-            "deepseek": "https://api.deepseek.com",
-            "qwen": "https://dashscope.aliyuncs.com/compatible-mode",
-            "groq": "https://api.groq.com/openai",
-            "ollama": "http://localhost:11434",
-        }
-        return urls.get(provider, "")
+        """根据 provider 返回默认 API 地址 — 小健 2026-06-17 OCP: 优先配置,其次硬编码默认"""
+        try:
+            from app.config import get_config
+            custom_urls = get_config().get("llm", {}).get("provider_urls", {})
+            if provider in custom_urls:
+                return custom_urls[provider]
+        except Exception:
+            pass
+        return self._DEFAULT_URLS.get(provider, "")
 
     async def request(
         self,
@@ -120,12 +140,14 @@ class LLMClient:
         temperature: Optional[float] = None,
         seed: Optional[int] = None,
         cancel_check: Optional[callable] = None,
+        stream_options: Optional[Dict] = None,
     ) -> AsyncGenerator[str, None]:
-        """流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11"""
+        """流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11; 小健 2026-06-17 新增stream_options"""
         body = _build_request_body(
             messages=messages, model=self.model,
             max_tokens=max_tokens, temperature=temperature, seed=seed,
             tools=tools, tool_choice=tool_choice, stream=True,
+            stream_options=stream_options,
         )
         async with self._client.stream("POST", "/chat/completions", json=body) as response:
             response.raise_for_status()

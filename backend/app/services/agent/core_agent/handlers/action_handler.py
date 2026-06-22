@@ -19,11 +19,12 @@ from typing import Dict, List, Any
 
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
-from app.services.agent.steps import ThoughtStep, ToolStep, ErrorStep, MetaStep, FinalStep
+from app.services.agent.steps import ThoughtStep, ActionStep, ObservationStep, ErrorStep, MetaStep, FinalStep
+from app.services.agent.types import AgentStatus
 from app.services.agent.agent_utils.message_utils import build_observation_text
 from app.db.models.operation_enums import OperationStatus
 
-_SENSITIVE_FIELDS = {"password", "token", "api_key", "secret", "authorization", "credential"}
+from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS
 
 
 # 【修复P2-5】封装observation构建上下文 — 北京老陈 2026-06-13
@@ -49,7 +50,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
         blocked/rejected时设agent.status=FAILED并return,调用方检查status即可
         """
         from app.services.safety.tool_safety_checker import get_tool_safety_checker
-        from app.api.v1.chat.confirm_operation import create_confirmation, wait_for_confirmation_result
+        from app.services.task.hitl_confirmation import create_confirmation, wait_for_confirmation_result
         safety_checker = get_tool_safety_checker()
 
         for call in all_calls:
@@ -97,13 +98,14 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
 async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                         tool_name: str, tool_params: Dict) -> List[Any]:
         """工具执行 — 返回results — 小沈 2026-06-09"""
+        from app.services.agent.tool_executor import execute_tool
         start_time = time.time()
         
         if is_parallel:
-            tasks = [agent._execute_tool(c["tool_name"], c["tool_params"]) for c in all_calls]
+            tasks = [execute_tool(agent, c["tool_name"], c["tool_params"]) for c in all_calls]
             results = await asyncio.gather(*tasks, return_exceptions=True)
         else:
-            result = await agent._execute_tool(tool_name, tool_params)
+            result = await execute_tool(agent, tool_name, tool_params)
             results = [result]
         
         elapsed = time.time() - start_time
@@ -119,17 +121,92 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
         return results
 
 
+def _merge_llm_data(all_llm_data: List[Dict]) -> Dict:
+    """并行场景llm_data合并 — 小健 2026-06-22"""
+    if not all_llm_data:
+        return {}
+    # 过滤非dict条目，防止崩溃 — 小欧 2026-06-22
+    all_llm_data = [d for d in all_llm_data if isinstance(d, dict)]
+    if not all_llm_data:
+        return {}
+    if len(all_llm_data) == 1:
+        return all_llm_data[0]
+
+    severity_order = {"error": 3, "warning": 2, "success": 1}
+
+    def _severity_key(d):
+        status = d.get("status")
+        if not isinstance(status, dict):
+            return 0
+        return severity_order.get(status.get("exec_code", "success"), 0)
+
+    sorted_data = sorted(all_llm_data, key=_severity_key, reverse=True)
+
+    most_severe = sorted_data[0]
+
+    merged_metrics = {}
+    for llm_d in all_llm_data:
+        action = llm_d.get("action") if isinstance(llm_d.get("action"), dict) else {}
+        tool_name = action.get("tool", "unknown")
+        metrics = llm_d.get("metrics") if isinstance(llm_d.get("metrics"), dict) else {}
+        for k, v in metrics.items():
+            merged_metrics[f"{tool_name}.{k}"] = v
+
+    def _safe_str(val):
+        return str(val) if not isinstance(val, str) else val
+
+    return {
+        "summary": "\n\n".join([_safe_str(d.get("summary", "")) for d in all_llm_data]),
+        "action": most_severe.get("action") if isinstance(most_severe.get("action"), dict) else {},
+        "status": most_severe.get("status") if isinstance(most_severe.get("status"), dict) else {},
+        "duration_ms": max([d.get("duration_ms", 0) for d in all_llm_data]),
+        "metrics": merged_metrics,
+    }
+
+
+def _merge_other_data(all_other_data: List[Dict]) -> Dict:
+    """并行场景other_data合并 — 小健 2026-06-22; 小欧 2026-06-22 过滤None条目"""
+    valid = [od for od in all_other_data if od is not None]
+    if not valid:
+        return {}
+
+    merged: Dict[str, Any] = {}
+    warnings = []
+    attachments = []
+    return_direct = False
+
+    for od in valid:
+        if od.get("warning"):
+            warnings.append(od["warning"])
+        if od.get("attachment") is not None:
+            attachments.append(od["attachment"])
+        if od.get("return_direct"):
+            return_direct = True
+        if "retry_count" not in merged and od.get("retry_count") is not None:
+            merged["retry_count"] = od["retry_count"]
+
+    if warnings:
+        merged["warning"] = "\n\n".join(warnings)
+    if attachments:
+        merged["attachment"] = attachments if len(attachments) > 1 else attachments[0]
+    if return_direct:
+        merged["return_direct"] = True
+    return merged
+
+
 async def build_observation(ctx: ObservationContext) -> List:
     """构建observation — FC-only: 传递fc_context,删除add_assistant — 小沈 2026-06-11
     【修复P2-5】使用ObservationContext封装参数 — 北京老陈 2026-06-13"""
     events = []
 
     for call, result in zip(ctx.all_calls, ctx.results):
-        action_step = ToolStep(
+        _ec = (result.get("llm_data") or {}).get("status", {}).get("exec_code", "") if isinstance(result, dict) else ""
+        action_step = ActionStep(
             step=ctx.step,
             tool_name=call["tool_name"],
             tool_params=call["tool_params"],
             execution_result=result,
+            execution_status=_ec or "error",
         )
         ctx.action_steps.append(action_step)
         events.append(ctx.agent._step_emitter.emit(action_step))
@@ -160,50 +237,87 @@ async def build_observation(ctx: ObservationContext) -> List:
 
     merged_obs = "\n\n".join(obs_parts) if len(obs_parts) > 1 else obs_parts[0]
 
-    first_result = ctx.results[0] if ctx.results else {}
-    events.append(ctx.agent._step_emitter.emit(ToolStep(
+    _all_llm_data = []
+    _all_tool_results = []
+    _all_other_data = []
+    for r in ctx.results:
+        if isinstance(r, dict):
+            _all_llm_data.append(r.get("llm_data", {}))
+            _all_tool_results.append(r.get("data"))
+            _all_other_data.append(r.get("other_data", {}))
+
+    merged_llm_data = _all_llm_data[0] if _all_llm_data else None
+    if len(_all_llm_data) > 1:
+        merged_llm_data = _merge_llm_data(_all_llm_data)
+
+    merged_other = _all_other_data[0] if _all_other_data else None
+    if len(_all_other_data) > 1:
+        merged_other = _merge_other_data(_all_other_data)
+
+    events.append(ctx.agent._step_emitter.emit(ObservationStep(
         step=ctx.step,
-        tool_name=ctx.tool_name,
-        tool_params=ctx.tool_params,
-        step_type="observation",
-        observation=merged_obs,
-        execution_status=first_result.get("code", "") if isinstance(first_result, dict) else "",
-        code=first_result.get("code", "") if isinstance(first_result, dict) else "",
-        warning=first_result.get("warning") if isinstance(first_result, dict) else None,
-        attachment=first_result.get("attachment") if isinstance(first_result, dict) else None,
-        next_actions=first_result.get("next_actions") if isinstance(first_result, dict) else None,
-        return_direct=first_result.get("return_direct", False) if isinstance(first_result, dict) else False,
+        llm_data=merged_llm_data,
+        tool_result=_all_tool_results[0] if len(_all_tool_results) == 1 else _all_tool_results,
+        other_data=merged_other,
     )))
 
     return events
 
 
-async def handle_action(agent, parsed: Dict, chunk_buffer):
-    """完整action处理流程 — FC-only: 提取fc_context传递 — 小沈 2026-06-11"""
+def _build_call_list(parsed: Dict) -> tuple:
+    """构建工具调用列表 — 小欧 2026-06-18 从handle_action提取"""
     tool_name = parsed["tool_name"]
     tool_params = parsed.get("tool_params", {})
-    step = agent.llm_call_count
-
-    pending_calls = parsed.get("_pending_calls", [])
     fc_context = parsed.get("fc_context", {})
+    pending_calls = parsed.get("_pending_calls", [])
+
     all_calls = [{
-        "tool_name": tool_name,
-        "tool_params": tool_params,
+        "tool_name": tool_name, "tool_params": tool_params,
         "_tool_call_id": fc_context.get("tool_call_id", "") if fc_context else "",
     }]
-    for pc in pending_calls:
-        all_calls.append({
-            "tool_name": pc["tool_name"],
-            "tool_params": pc["tool_params"],
-            "_tool_call_id": pc.get("_tool_call_id", ""),
-        })
-    is_parallel = len(all_calls) > 1
+    all_calls.extend({
+        "tool_name": pc["tool_name"], "tool_params": pc["tool_params"],
+        "_tool_call_id": pc.get("_tool_call_id", ""),
+    } for pc in pending_calls)
+
+    return tool_name, tool_params, fc_context, pending_calls, all_calls, len(all_calls) > 1
+
+
+def _log_tool_results(step: int, all_calls: list, results: list, agent):
+    """记录工具执行结果到prompt logger和task tracker — 小欧 2026-06-18; 小健 2026-06-18 合并两个循环"""
+    prompt_logger = get_prompt_logger()
+    for call, result in zip(all_calls, results):
+        obs_text = str(result) if isinstance(result, Exception) else (
+            result.get("message", str(result)) if isinstance(result, dict) else str(result)
+        )
+        prompt_logger.log_observation(
+            step_name=f"步骤{step}: 工具执行结果", observation_content=obs_text,
+            tool_name=call["tool_name"], tool_params=call["tool_params"], round_number=step,
+        )
+        prompt_logger.log_tool_prompt(
+            tool_name=call["tool_name"], prompt_content=obs_text,
+            source=f"handle_action:{call['tool_name']}", round_number=step,
+        )
+        
+        is_error = isinstance(result, Exception)
+        if isinstance(result, dict):
+            exec_code = (result.get("llm_data") or {}).get("status", {}).get("exec_code", "")
+            is_failed = exec_code == "error"
+        else:
+            is_failed = is_error
+        op_status = OperationStatus.FAILED.value if (is_error or is_failed) else OperationStatus.SUCCESS.value
+        agent.record_operation(call["tool_name"], status=op_status, error=str(result) if (is_error or is_failed) else None)
+
+
+async def handle_action(agent, parsed: Dict, chunk_buffer):
+    """完整action处理流程 — FC-only: 提取fc_context传递 — 小沈 2026-06-11"""
+    tool_name, tool_params, fc_context, pending_calls, all_calls, is_parallel = _build_call_list(parsed)
+    step = agent.llm_call_count
 
     yield agent._step_emitter.emit(ThoughtStep(
         step=step,
         content=parsed.get("thought", ""),
-        tool_name=tool_name,
-        tool_params=tool_params,
+        tool_name=tool_name, tool_params=tool_params,
         thought=parsed.get("thought", ""),
         reasoning=parsed.get("reasoning", ""),
     ))
@@ -216,60 +330,22 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
 
     results = await execute_tools(agent, all_calls, is_parallel, tool_name, tool_params)
 
-    prompt_logger = get_prompt_logger()
-    for call, result in zip(all_calls, results):
-        obs_text = str(result) if isinstance(result, Exception) else (
-            result.get("message", str(result)) if isinstance(result, dict) else str(result)
-        )
-        prompt_logger.log_observation(
-            step_name=f"步骤{step}: 工具执行结果",
-            observation_content=obs_text,
-            tool_name=call["tool_name"],
-            tool_params=call["tool_params"],
-            round_number=step,
-        )
-        prompt_logger.log_tool_prompt(
-            tool_name=call["tool_name"],
-            prompt_content=obs_text,
-            source=f"handle_action:{call['tool_name']}",
-            round_number=step,
-        )
+    _log_tool_results(step, all_calls, results, agent)
 
-    # 记录操作到TaskTracker(调用方传入真实status和error,SRP:不预设成功)
-    for call, result in zip(all_calls, results):
-        is_error = isinstance(result, Exception)
-        if isinstance(result, dict):
-            code = result.get("code", 0)
-            is_failed = code not in (0, "0", "success", None)
-        else:
-            is_failed = is_error
-        op_status = OperationStatus.FAILED.value if (is_error or is_failed) else OperationStatus.SUCCESS.value
-        error_msg = str(result) if (is_error or is_failed) else None
-        agent.record_operation(call["tool_name"], status=op_status, error=error_msg)
-
-    action_steps: List[ToolStep] = []
-    # 【修复P2-5】使用ObservationContext封装参数 — 北京老陈 2026-06-13
     ctx = ObservationContext(
-        agent=agent,
-        all_calls=all_calls,
-        results=results,
-        step=step,
-        tool_name=tool_name,
-        tool_params=tool_params,
-        is_parallel=is_parallel,
-        pending_calls=pending_calls,
-        action_steps=action_steps,
-        fc_context=fc_context,
+        agent=agent, all_calls=all_calls, results=results, step=step,
+        tool_name=tool_name, tool_params=tool_params,
+        is_parallel=is_parallel, pending_calls=pending_calls,
+        action_steps=[], fc_context=fc_context,
     )
-    obs_events = await build_observation(ctx)
-    for event in obs_events:
+    for event in await build_observation(ctx):
         yield event
 
-    if results and isinstance(results[0], dict) and results[0].get("return_direct"):
+    if results and isinstance(results[0], dict) and results[0].get("other_data", {}).get("return_direct"):
+        _llm_data = results[0].get("llm_data", {})
+        _status = _llm_data.get("status", {}) if isinstance(_llm_data, dict) else {}
         yield agent._step_emitter.emit(FinalStep(
-            step=step,
-            response=results[0].get("message", ""),
+            step=step, response=_status.get("message", ""),
             thought=parsed.get("thought", ""),
         ))
         agent.status = AgentStatus.COMPLETED
-        return

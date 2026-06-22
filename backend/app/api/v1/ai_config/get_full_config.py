@@ -1,6 +1,6 @@
 from . import router
 from .models import FullConfigResponse, ProviderInfo
-from ._helpers import handle_config_errors
+from ._helpers import handle_config_errors, is_provider_metadata_field
 from app.services.ai_config_resolver import get_ai_config_resolver
 
 
@@ -12,7 +12,7 @@ async def get_full_config():
     final_provider, final_model = resolver.resolve_provider_model()
     providers = {}
     for provider_name in ai_config.keys():
-        if provider_name == 'provider' or provider_name == 'model':
+        if is_provider_metadata_field(provider_name):
             continue
         provider_data = ai_config.get(provider_name, {})
         if not isinstance(provider_data, dict):

@@ -38,12 +38,13 @@ class ChatResponse:
 
 
 class StreamChunk:
-    """流式响应片段 — FC-only: tool_calls原生传递,不走JSON roundtrip — 小沈 2026-06-12"""
+    """流式响应片段 — FC-only: tool_calls原生传递,不走JSON roundtrip — 小沈 2026-06-12; 小健 2026-06-17 新增usage"""
     def __init__(self, content: str, model: str, is_done: bool = False,
                  stream_error: Optional[str] = None, stream_error_type: Optional[str] = None,
                  reasoning: Optional[str] = None, is_reasoning: bool = False,
                  tool_calls: Optional[List[Dict]] = None,
-                 raw_data: str = ""):
+                 raw_data: str = "",
+                 usage: Optional[Dict] = None):
         self.content = content
         self.model = model
         self.is_done = is_done
@@ -53,6 +54,7 @@ class StreamChunk:
         self.is_reasoning = is_reasoning
         self.tool_calls = tool_calls or []
         self.raw_data = raw_data
+        self.usage = usage
 
 
 __all__ = [

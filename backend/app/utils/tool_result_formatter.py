@@ -26,21 +26,13 @@ from app.constants import (
 )
 from app.utils.logger import setup_logger
 from app.utils.cache import LRUCache, make_cache_key
+from app.utils.text_utils import truncate_text
 
 logger = setup_logger(__name__)
 
 # 全局缓存实例
 _truncate_cache = LRUCache(max_size=1000, log_interval=100)
 
-
-def truncate_text(text: str, max_chars: int, suffix: str = None) -> tuple:
-    """通用文本截断,返回(截断后文本, 是否截断) 小沈-2026-05-15"""
-    if not text:
-        return text, False
-    if len(text) <= max_chars:
-        return text, False
-    tail = suffix or f"\n...[截断 {len(text) - max_chars} 字符]"
-    return text[:max_chars] + tail, True
 
 
 def format_output_for_llm(stdout: str, stderr: str, max_chars: int = DEFAULT_MAX_OUTPUT_CHARS) -> dict:
@@ -212,4 +204,3 @@ def _truncate_data_recursive(data, budget: int) -> dict:
     return data
 
 
-from app.utils.next_actions_builder import build_next_actions  # 2026-06-08 移出到 next_actions_builder.py，保留导入供现有调用方使用

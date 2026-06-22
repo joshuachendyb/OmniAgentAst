@@ -3,6 +3,8 @@ test_output.txt
 *.log
 __pycache__/
 *.pyc
+.pytest_cache/
+.venv/
 *.pyo
 .arts/
 .idea/
@@ -13,7 +15,7 @@ __pycache__/
 # test & reports
 backend/tests/
 backend/pytest-of-chend/
-reports/
+backend/reports/
 
 # logs & temp
 backend/logs/
@@ -21,6 +23,11 @@ backend/pt*.txt
 backend/pt.txt
 backend/json_backup/
 backup/
+backend/_check_db.py
+backend/check_xc10_callchain.py
+backend/temp_calc.py
+backend/thought_steps.txt
+backend/xc10_thoughts.txt
 
 # frontend build
 frontend/dist/

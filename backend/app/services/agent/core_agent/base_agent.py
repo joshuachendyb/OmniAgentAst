@@ -21,7 +21,7 @@ from app.utils.logger import logger
 from app.services.agent.chunk_buffer import ChunkBuffer
 
 from app.services.agent.core_agent.agent_initializer import AgentInitializer
-from app.services.agent.core_agent.tool_manager import ToolManager
+from app.services.agent.core_agent.tool_manager import ToolLoader
 from app.services.agent.core_agent.step_emitter import StepEmitter
 from app.services.agent.tool_retry_engine import ToolRetryEngine
 
@@ -43,8 +43,8 @@ class BaseAgent(ABC):
             max_steps = get_config().get_max_steps()
         AgentInitializer._init_state(self, task_id, max_steps)
         AgentInitializer._init_messages(self)
-        self._tool_manager = ToolManager(self)
-        self._tool_manager.init_tools(initial_categories=initial_categories)
+        self._tool_loader = ToolLoader(self)
+        self._tool_loader.init_tools(initial_categories=initial_categories)
         self._retry_engine = ToolRetryEngine(self._tools_dict)
         AgentInitializer._init_task_tracking(self, enable=True)
         self._step_emitter = StepEmitter(self)

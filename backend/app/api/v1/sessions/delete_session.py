@@ -5,7 +5,7 @@ delete_session — 从 sessions.py 拷出
 拷贝来源: sessions.py 第300-342行
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import HTTPException
 from app.utils.logger import logger
 from app.utils.response_utils import handle_api_errors
 from app.api.v1.messages import display_name_cache

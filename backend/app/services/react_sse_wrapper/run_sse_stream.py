@@ -9,21 +9,18 @@ Author: 小沈 - 2026-05-31
 """
 
 import asyncio
-import sqlite3
-from pathlib import Path
 from typing import List, AsyncGenerator, Any, Callable, Dict
 
 from app.utils.logger import logger
 from app.services.agent.types import AgentStatus
-
-
-_DB_PATH = Path.home() / ".omniagent" / "chat_history.db"
+from app.services.task.task_state_queries import check_cancelled, check_paused
 
 
 def _load_previous_messages(session_id: str) -> List[Dict[str, str]]:
-    """从DB加载会话历史消息(排除当前最新消息,init_history已加) — 北京老陈 2026-06-13"""
+    """从DB加载会话历史消息 — 小健 2026-06-17 委托db层，消除SQLite越界"""
+    from app.db import db
     try:
-        with sqlite3.connect(str(_DB_PATH)) as conn:
+        with db.get_conn("chat") as conn:
             rows = conn.execute(
                 "SELECT role, content FROM chat_messages "
                 "WHERE session_id=? ORDER BY id ASC",
@@ -33,7 +30,6 @@ def _load_previous_messages(session_id: str) -> List[Dict[str, str]]:
         for role, content in rows:
             if role in ("user", "assistant"):
                 messages.append({"role": role, "content": content or ""})
-        # 只返回前 N-1 条(排除最后一条,init_history已加)
         return messages[:-1] if len(messages) > 1 else []
     except Exception:
         return []
@@ -50,7 +46,8 @@ async def run_sse_stream(
 ) -> AsyncGenerator[str, None]:
     """纯SSE流运行器 — 小沈 2026-06-09 支持StreamState"""
     from app.services.agent.universal_agent import UniversalAgent
-    from app.chat_stream import format_agent_sse, save_execution_steps_to_db
+    from app.utils.sse_formatter import format_agent_sse
+    from app.services.react_sse_wrapper.chat_stream import save_execution_steps_to_db
 
     agent = None
     log_tag = "[AgentOp]"
@@ -62,9 +59,12 @@ async def run_sse_stream(
             llm_client=llm_client, task_id=task_id,
         )
         
-        # 【修复 2026-06-09 小沈】设置task_id，支持HTTP阻塞期间的取消检查
-        if hasattr(llm_client, 'set_task_id'):
-            llm_client.set_task_id(task_id)
+        # 【2026-06-17 小沈】注入停止检查回调，消除llm→task反向依赖
+        # 修复: check_cancelled/check_paused是async，不能用lambda的or短路(会跳过check_paused)
+        if hasattr(llm_client, 'set_stop_check'):
+            async def _stop_check():
+                return await check_cancelled(task_id) or await check_paused(task_id)
+            llm_client.set_stop_check(_stop_check)
 
         # 加载会话历史，支持多轮对话 — 北京老陈 2026-06-13
         context = {}
@@ -126,6 +126,13 @@ async def run_sse_stream(
             current_execution_steps=current_execution_steps, session_id=session_id,
         )
         yield error_response
+        # 小健 2026-06-19: error后补发FinalStep,保证客户端收到终态事件
+        from app.services.agent.steps import FinalStep
+        final_step = FinalStep(step=next_step(), response=f"执行异常: {str(e)[:200]}")
+        current_execution_steps.append(final_step.to_dict())
+        yield format_agent_sse(final_step.to_dict())
+        if agent is not None:
+            agent.status = AgentStatus.FAILED
 
     finally:
         # 统一保存入口：正常、异常、取消都走这里
@@ -142,7 +149,7 @@ async def run_sse_stream(
 
 async def _yield_error_sse(error_type, error_label, log_tag, task_id, e, next_step, current_execution_steps, session_id):
     """内联错误SSE生成(避免外部模块依赖) — P2-18 使用ErrorStep替代手工dict"""
-    from app.chat_stream import format_agent_sse
+    from app.utils.sse_formatter import format_agent_sse
     from app.services.agent.steps import ErrorStep
 
     step_num = next_step()

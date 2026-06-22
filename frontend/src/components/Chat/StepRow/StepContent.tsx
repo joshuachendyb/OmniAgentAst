@@ -143,34 +143,28 @@ const StepContent: React.FC<StepContentProps> = ({
             typeof obsStep.observation === 'object';
 
           // 一次性安全解构所有字段
-          const obsData = isObjFormat
-            ? (obsStep.observation as Partial<{
-                summary: string;
-                tool_name: string;
-                tool_params: Record<string, unknown>;
-                return_direct: boolean;
-                warning?: string;
-                error_message?: string;
-                next_actions?: Array<{
-                  tool: string;
-                  description: string;
-                  when?: string;
-                }>;
-              }>)
+          const rawObs = isObjFormat
+            ? (obsStep.observation as Record<string, unknown>)
             : null;
 
+          // Phase 2: 从llm_data/other_data提取字段
+          const llmData = rawObs?.llm_data as Record<string, unknown> | undefined;
+          const otherData = rawObs?.other_data as Record<string, unknown> | undefined;
+
+          // 兼容：优先新格式(llm_data)，回退旧格式
           const summary =
-            obsData?.summary ??
+            (llmData?.summary as string) ??
+            (rawObs?.summary as string) ??
             (typeof obsStep.observation === 'string'
               ? obsStep.observation
               : '');
-          const toolName = obsData?.tool_name ?? step.tool_name ?? '';
-          const toolParams = obsData?.tool_params ?? step.tool_params ?? {};
+          const toolName = (llmData?.action as Record<string, unknown>)?.tool as string ?? (rawObs?.tool_name as string) ?? step.tool_name ?? '';
+          const toolParams = (llmData?.action as Record<string, unknown>)?.params as Record<string, unknown> ?? (rawObs?.tool_params as Record<string, unknown>) ?? step.tool_params ?? {};
           const returnDirect =
-            obsData?.return_direct ?? step.return_direct ?? false;
-          const warning = obsData?.warning;
-          const errorMessage = obsData?.error_message;
-          const nextActions = obsData?.next_actions;
+            (otherData?.return_direct as boolean) ?? (rawObs?.return_direct as boolean) ?? step.return_direct ?? false;
+          const warning = (otherData?.warning as string) ?? (rawObs?.warning as string);
+          const errorMessage = (llmData?.status as Record<string, unknown>)?.message as string ?? (rawObs?.error_message as string);
+          const nextActions = (rawObs?.next_actions as Array<{tool: string; description: string; when?: string}>) ?? undefined;
           const code = obsStep.code;
 
           if (!summary && !toolName) return null;

@@ -19,8 +19,8 @@ from typing import Any, Callable, Dict, Optional
 from app.utils.logger import logger
 from app.utils.error_classifier import UnifiedErrorClassifier
 from app.utils.retry_engine import RetryEngine, BackoffStrategy
-from app.services.tools.tool_constants import TOOL_TIMEOUTS, TOOL_RETRY_MAX, TOOL_RETRY_BACKOFF, TOOL_RETRYABLE_ERRORS
-from app.services.agent.agent_utils.tool_result_factory import create_tool_result, create_error_tool_result
+from app.tools.tool_constants import TOOL_TIMEOUTS, TOOL_RETRY_MAX, TOOL_RETRY_BACKOFF, TOOL_RETRYABLE_ERRORS
+from app.tools.tool_response import build_error
 
 from app.constants import (
     ERR_MISSING_PARAM,
@@ -36,51 +36,39 @@ class ToolRetryEngine:
     def __init__(self, tools: Dict[str, Callable]):
         self._tools = tools
     
-    def _is_async_tool(self, tool: Callable) -> bool:
-        """判断是否异步工具 — 小沈 2026-06-08"""
-        return inspect.iscoroutinefunction(tool)
-    
-    async def _execute_async_tool(self, tool: Callable, params: Dict[str, Any], timeout: float) -> Any:
-        """执行异步工具 — 小沈 2026-06-08"""
-        return await asyncio.wait_for(tool(**params), timeout=timeout)
-    
-    async def _execute_sync_tool(self, tool: Callable, params: Dict[str, Any], timeout: float) -> Any:
-        """执行同步工具 — 小沈 2026-06-08"""
+    async def _execute_tool_once(self, tool: Callable, normalized_input: Dict[str, Any], 
+                                timeout: float) -> Any:
+        """
+        统一单次工具调用 — 小沈 2026-06-08 重构
+        小健 2026-06-18 内联_is_async_tool/_execute_async_tool/_execute_sync_tool
+        
+        修复:纯同步工具通过 to_thread 移出事件循环,wait_for 超时保护生效。
+        """
+        if inspect.iscoroutinefunction(tool):
+            return await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
         result = await asyncio.wait_for(
-            asyncio.to_thread(lambda: tool(**params)), timeout=timeout
+            asyncio.to_thread(lambda: tool(**normalized_input)), timeout=timeout
         )
         if inspect.iscoroutine(result):
             return await asyncio.wait_for(result, timeout=timeout)
         return result
     
-    async def _execute_tool_once(self, tool: Callable, normalized_input: Dict[str, Any], 
-                                timeout: float) -> Any:
-        """
-        统一单次工具调用 — 小沈 2026-06-08 重构
-        
-        修复:纯同步工具通过 to_thread 移出事件循环,wait_for 超时保护生效。
-        """
-        if self._is_async_tool(tool):
-            return await self._execute_async_tool(tool, normalized_input, timeout)
-        return await self._execute_sync_tool(tool, normalized_input, timeout)
-    
     def _build_retry_error(
         self, code: str, message: str, retry_count: int,
         *, error_type: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        统一构建重试相关错误响应
-        
-        消除 4 处重复 {code, data, message, retry_count, metadata} 构建。
-        retry_count 统一为"已完成的重试次数"(不含首次尝试)。
-        """
-        return create_error_tool_result(
-            code=code,
-            data=None,
-            message=message,
-            retry_count=retry_count,
-            error_message=message,
-            error_type=error_type or "unknown"
+        """统一构建重试相关错误响应 — 小欧 2026-06-21 适配新3字段result"""
+        return build_error(
+            data={"error_detail": message, "params": {}},
+            llm_data={
+                "summary": message[:200],
+                "action": {"tool": "", "tool_zh": "", "target": "", "params": {}},
+                "status": {"exec_code": "error", "message": message[:200], "code": code, "detail": message, "hint": ""},
+                "duration_ms": 0,
+                "metrics": {},
+            },
+            other_data={"retry_count": retry_count},
+            error_type=error_type or "unknown",
         )
     
     def _get_retry_config(self, action: str):
@@ -98,68 +86,59 @@ class ToolRetryEngine:
         action_input: Dict[str, Any],
     ) -> Dict[str, Any]:
         """统一工具执行方法 — FC-only: 无finish分支"""
-        tool = self._find_tool(action)
+        tool = self._tools.get(action)
         if tool is None:
-            return create_error_tool_result(
-                code=ERR_TOOL_NOT_FOUND, data=None,
-                message=f"Unknown tool: {action}. Available tools: {list(self._tools.keys())}",
-                retry_count=0, error_message=f"工具 '{action}' 未找到", error_type="tool_not_found"
+            return build_error(
+                data={"error_detail": f"工具 '{action}' 未找到", "params": {"action": action}},
+                llm_data={
+                    "summary": f"工具 '{action}' 未找到",
+                    "action": {"tool": action, "tool_zh": "", "target": "", "params": {"action": action}},
+                    "status": {"exec_code": "error", "message": f"工具 '{action}' 未找到", "code": ERR_TOOL_NOT_FOUND, "detail": f"可用工具: {list(self._tools.keys())}", "hint": "请检查工具名称是否正确"},
+                    "duration_ms": 0,
+                    "metrics": {},
+                },
+                other_data={"retry_count": 0},
+                error_type="tool_not_found",
             )
         
         params = self._validate_params(action, action_input, tool)
-        # P1-05修复: _validate_params现在返回错误字典而非None,需检查code字段
-        if isinstance(params, dict) and params.get("code") and params.get("code") != "SUCCESS":
+        _ec = params.get("llm_data", {}).get("status", {}).get("exec_code", "") if isinstance(params, dict) else ""
+        if _ec == "error":
             return params
         
         return await self._execute_with_retry(action, params, tool)
     
-    def _find_tool(self, action: str) -> Optional[Callable]:
-        return self._tools.get(action)
-    
-    def _are_params_valid(self, action: str, params: Dict[str, Any]) -> bool:
-        """验证参数是否合法 — 小沈 2026-06-08"""
+    def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable):
+        """验证参数（非法参数+必需参数）— P1-05修复: 返回错误字典而非None
+        小健 2026-06-18 合并_are_params_valid和_check_missing_params为一次查询"""
+        params = action_input.copy()
+        
         try:
-            from app.services.tools.registry import tool_registry
+            from app.tools.registry import tool_registry
             metadata = tool_registry.get_tool(action)
             if metadata and metadata.input_schema:
-                valid_params = set(metadata.input_schema.get("properties", {}).keys())
+                input_schema = metadata.input_schema
+                valid_params = set(input_schema.get("properties", {}).keys())
                 invalid_keys = [k for k in params if k not in valid_params]
                 if invalid_keys:
                     logger.warning(f"[参数验证] action={action} 含非法字段: {invalid_keys}")
-                    return False
+                    return self._build_retry_error(
+                        ERR_INVALID_PARAMS,
+                        f"参数验证失败: {action} 含非法参数, keys={list(params.keys())}",
+                        0, error_type="invalid_params",
+                    )
+                
+                required = input_schema.get("required", [])
+                missing = [p for p in required if p not in params]
+                if missing:
+                    return self._build_retry_error(
+                        ERR_MISSING_PARAM,
+                        f"缺少必需参数: {action}, 缺失: {missing}",
+                        0, error_type="missing_param",
+                    )
         except (ImportError, AttributeError) as e:
-            logger.warning(f"[参数监控] action={action}, 获取 schema 失败：{e}", exc_info=True)
-        return True
-    
-    def _check_missing_params(self, tool: Callable, params: Dict[str, Any]) -> bool:
-        """检查缺失参数 — 小沈 2026-06-08"""
-        sig = inspect.signature(tool)
-        required = [
-            p.name for p in sig.parameters.values()
-            if p.default == inspect.Parameter.empty
-            and p.name != 'self'
-            and p.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
-        ]
-        missing = [p for p in required if p not in params]
-        return len(missing) == 0
-    
-    def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable):
-        """验证参数（非法参数+必需参数）— P1-05修复: 返回错误字典而非None"""
-        params = action_input.copy()
-        
-        if not self._are_params_valid(action, params):
-            return self._build_retry_error(
-                ERR_INVALID_PARAMS,
-                f"参数验证失败: {action} 含非法参数, keys={list(params.keys())}",
-                0, error_type="invalid_params",
-            )
-        
-        if not self._check_missing_params(tool, params):
-            return self._build_retry_error(
-                ERR_MISSING_PARAM,
-                f"缺少必需参数: {action}",
-                0, error_type="missing_param",
-            )
+            logger.warning(f"[参数验证] action={action}, 获取schema失败: {e}", exc_info=True)
+
         
         return params
     
@@ -172,14 +151,17 @@ class ToolRetryEngine:
     async def _execute_single_attempt(self, tool: Callable, params: Dict[str, Any], timeout: float, 
                                       engine: RetryEngine, max_retries: int, action: str,
                                       retryable_errors: list) -> Optional[Dict[str, Any]]:
-        """执行单次尝试 — 小沈 2026-06-08"""
+        """执行单次尝试 — 小沈 2026-06-08; 小欧 2026-06-21 透传result+retry_count入other_data"""
         try:
             result = await self._execute_tool_once(tool, params, timeout)
-            return create_tool_result(
-                data=result,
-                message="Tool execution succeeded",
-                retry_count=engine.attempt_count
-            )
+            if isinstance(result, dict):
+                other = result.get("other_data", {})
+                if not isinstance(other, dict):
+                    other = {}
+                other["retry_count"] = engine.attempt_count
+                result["other_data"] = other
+                return result
+            return result
         except Exception as e:
             error_category = UnifiedErrorClassifier.classify_error(e)
             attempt = engine.record_attempt()
@@ -204,15 +186,11 @@ class ToolRetryEngine:
         """带重试执行工具 — P1-06修复: 捕获last_error"""
         max_retries, backoff_factor, retryable_errors, timeout = self._get_retry_config(action)
         
-        def _is_tool_retryable(e: Exception) -> bool:
-            error_category = UnifiedErrorClassifier.classify_error(e)
-            return error_category.is_retryable or error_category.name.lower() in retryable_errors
-        
         engine = RetryEngine(
             max_retries=max_retries,
             backoff_strategy=BackoffStrategy.EXPONENTIAL,
             backoff_factor=backoff_factor,
-            retryable_check=_is_tool_retryable,
+            retryable_check=lambda e: self._should_retry(e, retryable_errors, engine),
         )
         
         last_error: Optional[Exception] = None

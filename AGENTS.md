@@ -5,9 +5,9 @@
 **系统**：本机是Windows系统，必须使用Windows系统命令。杜绝使用Linux命令
 **写文档签名规则**：（1）文档名称 +签名+时间； （2）内容签名： 编写人 或者 更新人 + 签名  （3）编辑型文档， 禁止删除历史版本。
 **代码注释规则**：必须 加署名+日期
-**commit标题的规则**:   commit标题必须加：文件名+ 签名+日期
-
-**升级tag**：1..在version.txt文件头部插入从上一个tag以来的所有commit的变更信息，2.打 tag
+**commit标题的规则**: commit标题格式 `<type>: <description> - <签名>-<日期>`，types: feat/fix/refactor/perf/test/docs
+严令禁止 commit任何测试相关的代码文件
+**打tag**：1..在version.txt文件头部插入从上一个tag以来的所有commit的变更信息，2.打 tag
 
 
 **严禁** 用PowerShell 来操作代码编辑\替换,否则导致代码编码错误
@@ -23,10 +23,24 @@
 |------|------|---------|
 | **SRP** — 单一职责 | 一个类/模块/函数只做一件事 | 改了 A 影响 B |
 | **DRY** — 不重复 | 相同逻辑只写一次，抽取共用 | 改了 A 漏了 B |
-| **KISS** — 保持简单 | 能简单不复杂，不提前引入抽象 | 代码绕来绕去看不懂 |
+| **KISS-DIRECT** — 简单直接 | 设计简单 + 逻辑直线，不提前引入抽象，不七绕八绕 | 代码绕来绕去看不懂、数据流混乱 |
 | **SLAP** — 同一抽象层 | 一个函数不混搭高层编排和底层细节 | 读代码像读天书 |
 | **YAGNI** — 不要过度设计 | 不加用不上的接口/模式/抽象 | 废弃代码越积越多 |
-|禁止backward compatibility|--所有的代码修改,更新 重构 坚决杜绝向后兼容的一起做法|
+| **禁止backward** | 所有代码修改/更新/重构坚决杜绝向后兼容做法 | 新旧混杂、代码混乱 |
+
+**KISS-DIRECT（简单直接原则）详细说明**：
+
+| 要求 | 反例（七绕八绕） | 正例（直线） |
+|------|-----------------|-------------|
+| 设计简单 | 为了"可扩展"引入注册表，实际只有2个entry | if/elif直接分派 |
+| 逻辑直线 | A→B→C→D→E，中间B/C/D只透传 | A→E直接传递 |
+| 调用链直接 | `a().b().c().d().e()` 5层链式调用 | 直接调用核心函数 |
+| 无中间变量 | `x=f(); y=g(x); z=h(y); return z` | `return h(g(f()))` |
+| 无跳来跳去 | A调B，B调C，C回调A | 单向调用，无循环依赖 |
+| 无双重解析 | dict→JSON字符串→parse→dict | 直接用dict |
+| 无透传函数 | `def f(x): return g(x)` 只调一个函数 | 内联，直接调g |
+| 无中间层 | 3层函数每层只调下一层 | 合并为1层 |
+| 无注册表滥用 | 2-entry的OrderedDict注册表 | if/elif直接分派 |
 
 **代码重构/框架设计时，在上述 6 条基础上再遵守以下 4 条**：
 
@@ -36,6 +50,7 @@
 | **LSP** — 里氏替换 | 子类不违反父类约定 | 继承体系 |
 | **ISP** — 接口隔离 | 接口职责单一，不塞入不相关方法 | 多实现/插件系统 |
 | **复用优先** | 有公用则复用，能够公用的则新建并入库 | 新增函数前必须先查FUNCTIONS.md，禁止局部重造轮子 |
+
 ### 违反后果
 上述原则是必须遵守的编码纪律。违反者代码被打回重写，直到符合原则为止。
 
@@ -43,7 +58,7 @@
 
 | 规则 | 说明 |
 |------|------|
-| **先查后建** | 写代码前先查`app/utils/FUNCTIONS.md`清单，有则复用，无则新建 |
+| **先查后建** | 写代码前先查`backend/FUNCTIONS.md`清单，有则复用，无则新建 |
 | **分层存放** | 全局层`app/utils/`、Agent层`agent_utils/`、工具层`toolhelper/` |
 | **禁止重复** | 相同逻辑禁止重复实现，必须使用已有公用函数 |
 | **及时更新** | 新建公用函数后必须添加到FUNCTIONS.md清单 |
@@ -93,22 +108,25 @@ npm run test:e2e     # Playwright
 **Request flow**: `chat_router.py` → CRSS regex scoring → `AgentFactory.create(intent_type)` → Agent subclasses → ReAct loop → SSE
 
 **Agent system** (`backend/app/services/agent/`):
-- `base_react.py` — `BaseAgent(ABC)` (ReAct loop core)
-- `mixins/react_agent_mixin.py` — `ReactAgentMixin` (tool loading, step management)
-- **Agent subclasses**: inherit `ReactAgentMixin, BaseAgent`; each differs in Prompt + Category
-- `agent_factory.py` — intent_type → Agent class mapping
-- `react_output_parser.py` — LLM response parsing chain
-- `parsers/` — **@deprecated**. Use `react_output_parser.py` instead.
-- `strategy_selector.py` — LLM strategy: `text` / `response_format` / `tools`
+- `core_agent/` — `react_cycle.py`(循环调度), `handlers/`(action/answer处理), `initialize_run_state.py`
+- `agent_utils/` — Agent层公共函数(message_utils, fc_message_types)
+- `steps/` — Step类型定义(ThoughtStep, ToolStep, FinalStep等)
+- `types/` — AgentStatus枚举, ObservationContext等
 
 **Tool registry** (`backend/app/services/tools/`):
 - `registry.py` — `ToolRegistry` singleton, `ToolCategory` enum
 - `__init__.py` — `ensure_tools_registered()` loads all tools
-- Categories: `file`, `shell`, `network`, `system`, `desktop`, `document`, `meta`
-- Merged categories: TIME→META, ENVIRONMENT→SYSTEM, DATABASE→DOCUMENT, CODE_EXECUTION→SHELL
+- Categories: `file`, `shell`, `network`, `system`, `desktop`, `document`, `meta`, `win_registry`
 - Each `{category}/` has: `{category}_register.py`, `{category}_tools.py`, `{category}_schema.py` (+ optional extras)
 
-**Safety**: `command_security.py` (at `services/`, not `safety/`) — blacklist-based command safety check
+**LLM client** (`backend/app/services/llm/`):
+- `client_sdk.py` — LLMClient(httpx封装)
+- `core.py` — BaseAIService(基类)
+- `stream_parser.py` — 流式响应解析
+
+**Safety** (`backend/app/services/safety/`):
+- `tool_safety_checker.py` — 工具执行前安全检查
+- `file_safety/` — 文件操作安全(备份/回滚/查询)
 
 **Prompt logging**: `backend/logs/prompt-logs/`
 
@@ -130,24 +148,22 @@ OmniAgentAs-desk/
 │   │   ├── api/v1/             # REST endpoints
 │   │   ├── main.py             # FastAPI entrypoint
 │   │   ├── config.py           # YAML+env config loader
-│   │   ├── models/             # SQLAlchemy + Pydantic
+│   │   ├── db/models/          # SQLAlchemy + Pydantic
 │   │   ├── services/
-│   │   │   ├── agent/          # Agent subclasses, base_react, mixins/, types/
-│   │   │   ├── tools/          # Tool categories
-│   │   │   ├── preprocessing/  # Intent classifier
-│   │   │   ├── intents/        # Intent definitions + CRSS scorer
-│   │   │   ├── safety/         # Safety checks (placeholder)
-│   │   │   └── llm_core.py     # LLM client
-│   │   └── utils/
+│   │   │   ├── agent/          # core_agent/, agent_utils/, steps/, types/
+│   │   │   ├── tools/          # Tool categories (file/shell/network/...)
+│   │   │   ├── llm/            # LLM client (client_sdk.py, core.py, stream_parser.py)
+│   │   │   ├── safety/         # file_safety/, tool_safety_checker.py
+│   │   │   ├── task/           # task_tracker.py, task_control.py
+│   │   │   └── react_sse_wrapper/  # run_sse_stream.py, chat_stream.py
+│   │   └── utils/              # 公共工具函数
 │   ├── tests/                  # pytest
-│   ├── tools/                  # test/debug scripts
 │   └── ~/.omniagent/           # SQLite DBs (chat_history.db, operations.db)
 ├── frontend/
 │   ├── src/
 │   └── package.json
 ├── config/                     # YAML configs
-├── doc-agent2.0/               # Agent 2.0 redesign docs
-├── doc/                        # system design docs
+├── doc/                        # design docs
 ├── notes/                      # debug notes
 ├── version.txt                 # append-only version history
 └── AGENTS.md
@@ -176,21 +192,26 @@ OmniAgentAs-desk/
 |---------|--------|
 | **httpx version lock** | `httpx==0.26.0` + `httpcore==1.0.1` required. Don't upgrade. |
 | **Duplicate `__all__`** | Register files may have 2 `__all__` defs (second overwrites first). |
-| **`parsers/` is deprecated** | All files in `agent/parsers/` marked @deprecated. Use `react_output_parser.py` chain instead. |
 | **Tool impl vs registration** | Functions in `{cat}_tools.py`, registration in `{cat}_register.py`. Don't confuse them. |
 | **`_loaded_categories`** | Per-agent set for tool loading. Initialized to `{current_category, support_tool}`. |
-| **`check_date` renamed to `query_calendar`** | Old name no longer exists. |
 
 ---
+##  编码口诀-严格遵守
+SRP 一件事，DRY 写一次
+KISS-DIRECT 简单直接，SLAP 同层级
+YAGNI 不过度，禁止向后兼容
+OCP 开封闭，LSP 子替父
+ISP 接口窄，复用先查库
+拆分和合并代码-先复制代码后修改
 
 ## Git Workflow
 
 ```bash
-# Commit format: <type>: <description> - <签名>-<日期>
+# Commit format: <type>:<文件名> <description> - <签名>-<日期>
 # types: feat/fix/refactor/perf/test/docs
 
 # Tag (PATCH only without asking):
-# 1. Insert commit summary into version.txt (project root, append at top)
+# 1. Insert 从上一个tag以来的所有commit summary into version.txt (project root, append at top)
 # 2. git tag v{major}.{minor}.{patch+1}
 ```
 

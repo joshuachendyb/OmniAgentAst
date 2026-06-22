@@ -1,3 +1,438 @@
+v0.17.0
+
+更新时间: 2026-06-22 19:42:43
+
+## v0.16.11→v0.17.0 变更汇总 - 小欧-2026-06-22
+
+### feat: 新功能(14项)
+- ee48408ae: Phase 2 observation模式改造 - 前端适配llm_data/tool_result/other_data - 小欧
+- 51b3ec606: Phase 2 observation模式改造 - 后端ToolStep+action_handler - 小欧
+- d4fb25d0f: 透传helper result重新包装llm_data - 小健
+- c5565a59e: toolhelper 4个文件旧build_error/build_success签名改造完成 - 小健
+- eda94d93d: file_tools 83处旧build_error签名改造完成 - 小健
+- 92f5824ca: document_tools builder改造完成(7个builder) - 小健
+- 24ffc2569: dataanalysis_tools builder改造完成(3个builder) - 小健
+- a4f41def9: network/shell/desktop/database builder改造完成 - 小健
+- 46f964117: desktop_gui_tools builder改造完成 - 小健
+- 7e33c82a3: desktop_tools builder改造完成 - 小健
+- 184b5df1c: system_tools builder改造完成 - 小健
+- ed2eba6f4: Phase1工具文件builder改造(shell/code_execution) - 小健
+- e51b72c68: Phase1工具文件builder改造(fundamental/time/timer/win_registry) - 小健
+- dd603fcab: Phase1框架层-工具Observation统一格式 - 小健
+
+### fix: 代码修复(9项)
+- 08612802e: 防御性编程-增加类型安全检查 - 小欧
+- 5700fefb3: 5项规范核查修复 - metrics key名/summary格式/success message - 小欧
+- c4a0eb484: 11个tool的error message补充具体原因 - 小欧
+- 92f738dc1: 11个tool llm_data builder补全error分支 - 小欧
+- 8f742d9c0: 修复铁规违反问题(铁规2+铁规3) - 小健
+- 78715ea40: 修复9个tool函数的铁规违反问题 - 小健
+- 694568586: 内联_get_file_encoding替代已删除的file_helper依赖 - 小欧
+- 7b1bd2a24: 复核修复5个问题 - 小健
+- 12ae13b7c: desktop_gui_tools 提取独立builder函数 - 小健
+
+### refactor: 代码重构(19项)
+- 6ec4618b2: 清理根目录temp文件及旧E2E测试笔记 - 小欧
+- 6c11d2d7d: SRP拆分ToolStep为ActionStep+ObservationStep - 小健
+- 7d4d614d2: 11个tool的llm_data builder统一summary格式+C4 metrics自描述 - 小欧
+- 0d859088b: 11个tool文件修复铁规1/3+tool_zh+data零重复 - 小欧
+- 658ce2315: 66个tool文件添加3条铁规注释+修复铁规3违规 - 小欧
+- 1bf15ca8f: 修复R8+铁规违规，25个工具文件合规 - 小健
+- a92378852: edit_text_file改为纯dict返回，build3移到主函数 - 小欧
+- ae06bd76e: 删除toolhelper目录，创建tool_fc_helper.py - 小欧
+- 93d2292e3: 合并clipboard_read+clipboard_write为clipboard_control - 小健
+- 5b30b8719: 清理window_info.py重复代码 - 小欧
+- 8da5193cb: 拆分desktop工具为16个独立模块 - 小欧
+- f5f335fff: 拆分timer和win_registry为独立模块 - 小欧
+- 13860d6db: 拆分dataanalysis_tools.py为6个独立模块 - 小欧
+- c154d4fcb: 拆分system_tools.py为4个独立模块 - 小欧
+- 8a46ef6e1: 拆分shell_tools.py为4个独立模块 - 小欧
+- 965841b5e: 拆分fundamental_tools.py为7个独立模块 - 小欧
+- 03ac08337: 拆分network_tools.py为5个独立模块 - 小欧
+- 110d95bfc: 拆分document_tools.py为8个独立模块 - 小欧
+- 4ea683ee5: 拆分file_tools.py为独立工具模块12个文件 - 小欧
+
+### docs: 文档更新(25项)
+- cba8be2fd: P1-01增加项目类型说明 - 小健
+- bd1f73078: P0核心链路扩展为10个混合多类case - 小健
+- 53df3a219: E2E测试case命名统一为E2E-P*-*格式 - 小健
+- ddab580f5: Phase 2设计最终确认(v7.1) - 小健
+- ffe8959b3: 补充other_data字段到数据流图和规则表 - 小健
+- 32c814cde: 删除冗余字段，符合DRY原则(v7.0) - 小健
+- f9aeecc16: 补充5.10.7节DB表other_data字段 - 小健
+- 55b38e548: 新增other_data字段 - 小健
+- bb74a6dc3: 修正注释并补充返回结构说明 - 小健
+- 41317a89b: 明确ToolStep两种模式区别 - 小健
+- 2918bc7db: 修正Phase 2/3设计一致性问题 - 小健
+- 5e263efa9: 工具Observation统一格式-融合方案 Phase 2/3拆分+4处设计错误修复 - 小欧
+- a07ffcb99: 明确不做兼容，旧DB数据直接删除 - 小健
+- 837ffc6e0: 新增DB表字段更新说明 - 小健
+- bb89aeec2: 明确DB存储规则和Action不存data - 小健
+- c0d8472c1: Phase 2设计文档修正和补充 - 小健
+- 8cbc0c535: 工具Observation统一格式文档更新 - 小欧
+- 22d3b55e3: tool_fc_helper.py添加铁规注释 - 小健
+- 2f3795dcf: 25个tool文件添加铁规注释 - 小健
+- 9780512da: 更新AGENTS.md和工具Observation统一格式文档 - 小欧
+- 98340ce2a: 更新工具Observation统一格式设计文档v6.0 - 小健
+- d5bb33605: Observation设计文档v6.0全量更新 - 小健
+- 34fab2f7c: 更新工具Observation统一格式-融合方案 - 小欧
+- 1f97388b8: 更新工具Observation统一格式设计文档 - 小欧
+- 509cdcf34: Observation设计文档v5.0 - 小健
+
+### test: 测试(2项)
+- 8963fcd51: test: 新增file工具模块全面测试(200个测试用例) - 小欧
+- 446cd55a8: Revert "test: 新增file工具模块全面测试" - 小欧
+
+### 合计
+- feat: 14项 | fix: 9项 | refactor: 19项 | docs: 25项 | test: 2项 = 共69项
+
+---
+
+v0.16.11
+
+更新时间: 2026-06-20 23:51:06
+
+## v0.16.10→v0.16.11 变更汇总 - 小欧-2026-06-20
+
+### feat: 新功能(2项)
+- be2891ec9: 全量补齐21处build_success的llm_data - 小健-2026-06-20
+- f770fe69f: document_tools 加.xls支持、xlrd依赖管理、pandoc错误消息中文化 - 小沈-2026-06-19
+
+### fix: 代码修复(9项)
+- 5820455ad: tool_response.py更新 - 北京老陈-2026-06-20
+- b8c3b9c89: observation不再丢弃data字段,llm_data+data都给LLM - 北京老陈-2026-06-20
+- 1c253faca: 修复LLM observation 10个P1问题 - 小欧-2026-06-20
+- 768604a07: 更新工具响应处理 - 北京老陈-2026-06-20
+- 2de440f80: 新增coerce_json防御-12个工具函数15个参数防止LLM传JSON字符串崩溃 - 小健-2026-06-20
+- 20f29ca7a: document_tools 8项代码质量修复(CSV字段统一/常量导入归位/Schema SRP/裸except/DRY/空检查/llm截断) - 小健-2026-06-20
+- 01f1daabe: document_tools/schema 增强paragraphs/table_data/slides参数的str->list防御 - 小欧-2026-06-19
+- 3f658d29c: filter_data空参数时补充缺失参数名+错误提示 - 小欧-2026-06-19
+- 20709f4e4: Reapply str->list防御(回滚恢复) - 小欧-2026-06-19
+
+### refactor: 代码重构(6项)
+- b905cd7c1: observation格式化消除DRY重复,提取_format_summary_parts复用 - 北京老陈-2026-06-20
+- 4e834c350: 清理5个死代码/风格问题 - 小欧-2026-06-20
+- bc45dc94b: 工具参数审计精简-删除6个工具+精简39个Schema参数+修复3个审查问题 - 小健-2026-06-20
+- 06e6010da: fundamental+system schema参数描述简化 - 小欧-2026-06-20
+- c0a85da4e: document_tools 清理死代码+统一schema描述 - 小欧-2026-06-19
+- cf2ee5828: document_register write工具描述去重(参数细节归schema) - 小沈-2026-06-19
+
+### docs: 文档更新(21项)
+- 3289830d5: 更新工具Observation格式设计文档+新增会话记录 - 北京老陈-2026-06-20
+- 33eb7f27e: 第9章实施方案补充分批计划+清查步骤+tool_response新增builder机制 - 小欧-2026-06-20
+- 225e09ace: 3遍复查修复7处不一致(5.8/2.2/5.9章节) - 北京老陈-2026-06-20
+- a386ddc88: 更新工具Observation统一格式设计文档 - 北京老陈-2026-06-20
+- 6f28c8ff8: 更新工具Observation统一格式设计融合方案v4.0 - 小欧-2026-06-20
+- 7b816eb0c: 工具Observation融合方案 build_result签名去掉* - 小欧-2026-06-20
+- d31c2ebe9: 新增工具结果给LLM数据统一格式设计方案 - 北京老陈-2026-06-20
+- 63d14445b: 5.6节补充build_success/error/warning流程位置 - 北京老陈-2026-06-20
+- defa4dd79: 工具Observation统一格式设计文档v2.0→v2.1 - 北京老陈-2026-06-20
+- b723bc729: 更新工具Observation统一格式设计文档 - 北京老陈-2026-06-20
+- f0b0e5cec: 更新工具Observation统一格式设计文档 - 北京老陈-2026-06-20
+- e9807ffdb: 更新工具Observation统一格式设计文档 - 北京老陈-2026-06-20
+- 4bb769cba: 更新工具Observation统一格式设计综合方案 - 北京老陈-2026-06-20
+- 4bd870080: 更新工具Observation统一格式设计综合方案 - 北京老陈-2026-06-20
+- 477e05600: 更新工具Observation统一格式设计综合方案 - 北京老陈-2026-06-20
+- 5b0ea177c: 更新工具Observation统一格式设计综合方案 - 北京老陈-2026-06-20
+- aec6f9f7e: 新增工具Observation统一格式设计综合方案 - 北京老陈-2026-06-20
+- f9d71a72f: 新增LLM-observation统一格式设计文档 - 北京老陈-2026-06-20
+- 5e8370d6b: E2E测试记录+Excel报告生成脚本 - 小欧-2026-06-20
+- d49c5be43: 更新工具参数审计报告-补充完整79个Schema参数表 - 小欧-2026-06-20
+- aac629be0: 新增工具参数审计报告 - 小欧-2026-06-20
+
+### 合计
+- feat: 2项 | fix: 9项 | refactor: 6项 | docs: 21项 = 共38项
+
+---
+
+v0.16.10
+
+更新时间: 2026-06-19 14:20:28
+
+## v0.16.9→v0.16.10 变更汇总 - 北京老陈-2026-06-19
+
+### feat: 新功能(3项)
+- 17afd3d96: prompt_logger记录完整工具Schema+llm_caller传递tools数组 - 小欧
+- 5fef592c9: compress_files AES-256加密 + 默认密码aes-256 - 小健
+- c340a98f6: chat_stream+e2e_helpers代码更新+基础测试脚本 - 北京老陈
+
+### fix: 代码修复(6项)
+- 718355ae1: E2E测试问题修复-Shell语法/压缩加密/通配符/SSE终态/验证框架 - 小健
+- 587e70232: prompt_logger记录工具Schema描述(parameters.description),修复遗漏schema docstring - 小欧
+- 2cf1ddb28: shell工具E4/E6代码及LLM信息完善 - 小欧
+- 9ccc8deb5: shell工具3个输出完整性问题 - 小欧
+- 5f07102ee: 补充所有工具build_error的data参数 - 小欧
+- fba9904cc: error observation缺失data/llm_data导致LLM盲目重试 - 小欧
+
+### refactor: 代码重构(9项)
+- 3c96bf424: 抽取_has_wildcard公用以消除压缩模块DRY违反+提取_write_zip_entries消除for循环重复 - 小欧
+- 6a1afcd09: 精简工具实现代码 - 小欧
+- 2c11f9720: file_tools.py content类型自动转JSON+e2e_helpers增强+操作手册P4移入4.4 - chendyg
+- 47ede9273: 系统Prompt结构重整+3处文字修正 - chendyg
+- e235c41df: 系统Prompt工具失败恢复规则+write_text_file/shell描述优化 - chendyg
+- 26aa7e942: file_tools.py _precise_replace_in_file移除self参数+E2E操作手册新增代码错误检查验证项 - chendyg
+- 40bca7b85: write_text_file提取_do_write内部函数简化asyncio.to_thread调用 - chendyg
+- f1804dbb2: 优化工具描述+系统Prompt+修复dataanalysis_schema.__all__ - 小欧
+- e2c29a4d6: E2E测试记录+操作手册更新 - 北京老陈
+
+### docs: 文档更新(2项)
+- 9740c18e2: 整理notes目录，旧测试记录移入doc-测试与审查 - 小欧
+- 33b58fe02: 删除notes下全部E2E测试记录(62个文件) - 北京老陈
+
+### fix: 系统注册(1项)
+- 6b53d20b3: system_register.py 统一注册日志级别为debug - 小欧
+
+---
+
+v0.16.9
+
+更新时间: 2026-06-18 20:30:00
+
+## v0.16.8→v0.16.9 变更汇总 - 小健-2026-06-18
+
+### refactor: 代码重构(2项)
+- 0e61fb59d: file_tools.py移除FileTools类改为函数式设计+file_register.py直接注册函数 - 小健
+- 3ff538ed5: file_tools.py重构优化(参数简化/性能提升)+e2e_helpers.py改进+测试记录更新 - 小健
+
+### feat: 新功能(1项)
+- bf3175768: file_tools.py参数简化+e2e_helpers.py超时保护机制(atexit/signal)+pytest.ini超时配置 - 小健
+
+### fix: 代码修复(3项)
+- d6a66b6af: desktop_register.py修正pywin32依赖(pip包名→import名win32gui) - 小健
+- 138ee5638: document_register.py修正pip包名与import名不一致(python-docx→docx, pywin32→win32com) - 小健
+- 4a7088484: main.py移除db.init()的await(同步调用) - 小健
+
+### docs: 文档更新(1项)
+- 86088a9a8: 手册v2.3重构+核心函数升级+测试记录 - 北京老陈
+
+---
+
+v0.16.8
+
+更新时间: 2026-06-18 16:10:00
+
+## v0.16.7→v0.16.8 变更汇总 - 小欧-2026-06-18
+
+### refactor: 10大原则代码优化(13项)
+- 67c832382: P1-1 operation_commands.py SRP拆分(recorder/executor/rollback/cleanup) - 小欧
+- 0c26f2239: P1-2 database.py SRP拆分(db_initializer/database.py精简为连接管理) - 小欧
+- c54cd40df: P1-4 _build_step_dict重复提取到task_utils.py - 小欧
+- 9cd3835c5: P1-5 provider过滤逻辑重复5次提取is_provider_metadata_field到_helpers.py - 小欧
+- 0898cc29a: P1-6 CRUD模式重复提取load_config/save_config到_helpers.py - 小欧
+- c82064b8e: P2-7/8 sankey/mermaid DRY修复(使用common.save_json_file/save_text_file) - 小欧
+- 8aa1e3ae3: FILE_TOOLS硬编码移到tool_constants.py(FILE_OPERATION_TOOLS) - 小欧
+- 3149a8521: document目录整合+system_tools删除_log_message - 小欧
+- 44b8464fb: KISS-DIRECT透传函数内联(7文件)+审查报告更新 - 小欧
+- 4b271be48: DRY修复+类型安全+基类property统一(5文件)+审查报告更新 - 小欧
+- e4ea3847b: DRY删除tool_categories.json改为从registry获取 - 小欧
+- c3efd5aaf: shell删除两个包装器YAGNI(shell_register/shell_tools) - 小欧
+- 053856f0d: get_system_info/send_notification移至FUNDAMENTAL分类+依赖配置 - 小欧
+- ba68abf69: 工具描述优化-多action工具schema增强+register简化(6个工具) - 小健
+
+### feat: 新功能(2项)
+- 521b2055a: 工具依赖管理系统(registry添加dependencies参数+dependency.py版本支持+各register配置依赖) - 小欧
+- bfc937cc0: generate_chart支持文件路径输入(xlsx/csv)+output_path增强 - 小欧
+
+### fix: 代码修复(8项)
+- 71b6ffd57: database_tools.py删除默认DB路径(security:禁止默认连接应用数据库) - 小沈
+- 23faa0508: dataanalysis_schema.py db_path标注(必填) - 小沈
+- c0557e112: document_schema.py db_path标注(必填) - 小沈
+- 4a75006f3: dataanalysis_register.py修正SQL示例参数(db_path必填,描述更新) - 小沈
+- f5a160fef: desktop_register.py窗口工具依赖pygetwindow→pywin32, screen_capture追加mss - 小健
+- 0dd81ce8e: document_register.py添加pywin32依赖(转换兼容),修正.doc/.xls兼容描述 - 小健
+- 6ffb9e08c: fundamental_register.py简化send_notification依赖格式,get_system_info标注psutil - 小健
+- 3f240c5f2: timer_register.py删除过期注释(httpx版本锁定已在dependency.py统一管理) - 小健
+
+### docs: 文档更新(11项)
+- 927f156e2: 10原则分析报告+ai_config/sessions代码评估报告 - 小欧
+- 8a9bfd511: 10原则审查报告标注已处理项(4.4/5.4/5.5/P0) - 小欧
+- dfcd304f6: 移动系统Tool按分类分析报告到doc-优化目录 - 小欧
+- e1dda3b81: 更新注释(register/inject概念区分+删除tool_executor语法错误) - 小欧
+- 7f6763d3a: 更新系统Tool按分类分析报告+E2E测试记录 - 小欧
+- 599f044b6: 添加Schema Docstring规范+增强QueryCalendarInput/Desktop模式说明 - 小欧
+- 6ba8feccc: 工具FC调用消息组装流程说明更新(通知指令/自动去重/子参数) - 小欧
+- 1892a4fed: 系统Tool按分类分析报告更新至v2.3(工具迁移+删除包装器,80→77) - 小欧
+- baabc2ccf: 全链路E2E集成测试-操作手册P3/P4重排至最低优先级+章节去重 - 小健
+- 97e79e750: TOOL_CHECK_REPORT.md新增Tool描述与参数检查报告(77工具10分类) - 小健
+- 90b19967d: 全链路E2E集成测试-操作手册P1/P2改为多工具真实工作场景(5+4场景覆盖24工具) - 小健
+- a05226bfe: E2E操作手册前置准备增强+P3多工具场景改造(19工具5场景) - 小健
+
+### test: 测试修复(6项)
+- aa69b5769: 修复测试(is_done改为property/database/db_initializer导入/react_cycle call_llm mock) - 小欧
+- e197d914f: e2e_helpers.py添加error_info参数增强失败详情记录(v1.9) - 小健
+- f92f904f4: test_e2e_p0_01修正import路径+error_info异常详情跟踪 - 小健
+- ae71810ce: test_e2e_p0_02修正import路径+error_info异常详情跟踪 - 小健
+- aa3e10175: test_e2e_p0_03修正import路径+error_info异常详情跟踪 - 小健
+- d53466adf: test_e2e_p0_04修正import路径+error_info异常详情跟踪 - 小健
+
+### 合计
+- refactor: 14项 | feat: 2项 | fix: 8项 | docs: 12项 | test: 6项 = 共42项
+
+---
+
+v0.16.7
+
+更新时间: 2026-06-18 08:49:01
+
+## v0.16.6→v0.16.7 变更汇总 - 小欧-2026-06-18
+
+### docs: 后端系统代码10大原则分析报告
+- 2026-06-18 08:52:21: 去掉file_helper.py问题（tool大文件是设计确认模式）
+- 2026-06-18 08:49:01: 完成后端系统269个Python文件的10大原则深度分析
+- 分析范围：根级文件、API层、服务层、工具层、工具函数层、数据库层
+- 整体评分：8.9/10（良好）
+- 核心发现：SRP和DRY原则需加强，主要问题集中在operation_commands.py、database.py等文件
+- 改进建议：按P1/P2/P3优先级逐步优化
+
+### refactor: 10原则分析+KISS-DIRECT透传inline+SRP函数拆分
+
+### refactor: 10原则分析+KISS-DIRECT透传inline+SRP函数拆分
+- a635c4fed: action_handler.py/llm_caller.py SRP拆分(handle_action/call_llm_fc_stream提取子函数) + KISS-DIRECT透传wrapper inline(10处) + 超长函数阈值80→100行
+
+### refactor: 各分类schema合并(每个分类1schema+1register, 删除meta死代码)
+- 3ae4e592c: 各分类schema合并(每个分类1schema+1register, 删除meta死代码)
+
+### refactor: services/tools/→tools/ 目录上移到app层(逻辑合理, 864全量通过)
+- ae65df55b: services/tools/→tools/ 目录上移到app层(逻辑合理, 864全量通过)
+
+v0.16.6
+
+更新时间: 2026-06-18 07:51:38
+
+## v0.16.5→v0.16.6 变更汇总 - 小欧-2026-06-18
+
+### refactor: 工具分类名目录名对齐(11分类, TIMER/WIN_REGISTRY独立)
+- 29d33d9b5: tool_types.py+tool_constants.py+注册文件 目录名分类名一致，DATA→DATAANALYSIS, meta→fundamental, timer独立, win_registry独立
+
+### fix: Schema交叉核验+set_window_state修复+文档清理
+- 50779b17f: desktop/file/shell 全量Schema↔Implementation参数交叉核验匹配+set_window_state next_actions移除已删info动作
+
+### feat: stream_options+parallel_tool_calls+组合工具拆分
+- f86c7aa43: stream_options新增include_usage获取token用量统计
+- 7994ab2b2: 新增parallel_tool_calls+strict模式+工具选择铁律
+- 8119299d9: 组合工具拆分Phase1+2 — 14+6个单工具
+- 05bd10212: 新增read_json_file公用函数
+- 1a1a776fb: 11个组合工具Schema描述+条件必填参数标注【必填】
+
+### refactor: universal_agent拆分为4文件+ToolLoader重命名+模块合并+反向依赖消除
+- 04fd29873: universal_agent拆分为4文件
+- 2f4747eae: ToolManager→ToolLoader重命名
+- 779a14c06: 删除tool_config.py死代码
+- c2f2c27ae: factory/ 11文件合并为6个
+- e242a4aed: 重构tool分类系统
+- d0770e8f0: chat_stream_v2→chat_stream重命名
+- 3c364555e: 内联缓存→TTLCache通用类(DRY)
+- c9b44e783: 消除visualization→safety反向依赖
+- 0e187ac3e: 消除llm→task反向依赖
+- ff5cc1825: task模块MetaStep→dict+读写分离
+- 9a54b0b97: 清理build_next_actions间接导出
+- 793b401d1: ToolMetadata清理5废字段
+- 58d4adac0: lazy_loader简化+file_register/shell__init__导出修复
+- 37397bf2f: initialize_run_state参数名self→agent
+- 981e31ff0: action_handler导入AgentStatus修复
+- d67f98f14: 10大规范5项修正(DRY/KISS/SLAP/YAGNI/OCP)
+- 19f03f86c: 后端目录结构11项规范修正
+- 85d5927f3: llm_core目录合并入llm
+- 2b7a5774d: visualization的db查询下沉到service层
+- f7e1ec897: SSE格式化函数下沉到utils
+- 10292d9af: HITL确认逻辑从API层下沉到service层
+- d81fc1b0a: 打破safety↔tools循环依赖
+- b0c778171: 第2批代码规范修正(7项)
+- fbe4f58f0: 7项代码规范修正
+
+### fix: 多项Bug修复
+- db8e8991e: tool_cache_manager缩进错误+async lambda短路
+- 71dbdb521: desktop_tools导入名+system_register破损导入
+- 82f048c36: 9项代码规范修正(冗余/重复import/异常黑洞等)
+- 94b4bf24e: 移除误提交的测试文件
+
+### docs: 文档整理+报告更新+AGENTS.md统一
+- a6a96c1cf: 合并戒律文档/移动Tool分析文档
+- b9b3bd85e: 整理后端文档
+- 3ce440791: 更新后端代码审查报告问题跟踪
+- 9faa8ad10: 清理doc-6月发展目录中已迁移的文档
+- 8b9078a3a: 重组文档目录结构
+- 21bf9b502: 整理文档-移动消息段大全+API对比+根因分析
+- bda3b6e73: 更新后端代码审查报告
+- bcab6bbef: 更新AGENTS.md架构描述
+- 7fa372b3d: AGENTS.md新增编码口诀+修正标签说明
+- 6155ffc4b: AGENTS.md统一commit格式规则
+- 9629cc8ad: AGENTS.md架构描述更新
+- 1d12da8df: 编码铁规更新(KISS-DIRECT简单直接原则)
+- a81f5078d: commit格式增加文件名字段
+- 831ecfbb6: 后端代码深度分析报告
+- c25eec9b9: 组合工具拆分分析文档v1.4
+- 991bceb90: 清理已迁移的过时文档(5个文件删除)
+
+---
+
+v0.16.5
+
+更新时间: 2026-06-16 20:34:44
+
+## v0.16.4→v0.16.5 变更汇总 - 小沈-2026-06-16
+
+### fix: database.py P1修复+send_notification注册恢复
+- 04074dfc8: database.py 数据库初始化重构+全链路E2E测试手册更新
+- b9c5ac4f7: database.py+prompt_logger.py P1问题修复(异常处理+列名安全+SDK统一)
+- a29db4308: 删除pytest测试临时数据库文件
+- 5d03f4229: desktop_register.py/desktop_schema.py 恢复send_notification工具注册
+
+### refactor: 报告文件目录重构+E2E测试优化
+- ee14f3fde: 后台报告文件移入reports/目录
+- 2d2084132: 报告文件合并到根目录reports/
+- 7ec5adfa6: 清理后台无用目录(json_backup/pycache/venc) + .gitignore补充
+- ee1819fef: E2E测试优化-新增assert_stream_ended()统一流结束验证+清理临时文件
+
+### docs: E2E测试记录+操作手册更新
+- 21e511de5: 删除临时文件+操作手册更新
+- c6f3d8cf0: E2E测试记录+操作手册更新+代码更新
+- 8433627c0: E2E测试记录+报告更新
+
+### feat: 测试记录更新+send_notification自动安装
+- efd1a7fe6: 代码+文档+测试记录+报告更新
+- 5f7516ec1: gui_tools.py send_notification自动安装win10toast依赖
+
+### refactor: send_notification重构+5级安全系统清理
+- 3a6b3f12a: gui_tools.py/dependency.py/FUNCTIONS.md 抽取ensure_dependency公用函数+重构send_notification
+- 5c092c6ab: dependency.py 两级降级安装(普通→--user)+send_notification去用户提示
+- da5d33738: 5级安全系统清理-二元安全+check_fn实现
+
+### fix: XC-10/Sessions/并发ID/网络搜索修复
+- 6544b0f0d: XC-10修复 - 增加observation预算并保留首次observation
+- 68c7c9730: sessions.py create_session_endpoint参数缺Pydantic类型注解导致标题永远走默认值
+- baf88464e: assistant_message_id_allocator+file_schema修复并发ID冲突和rename缺destination参数
+- 8c0975cfe: network_tools.py search_web添加提示字段防止LLM重复搜索
+
+### docs: XC-10/P6测试/操作手册更新
+- 3c9a416fa: XC-10分析文档+测试记录+gitignore更新
+- 059b1225e: 更新操作手册P6/P7/P8测试场景设计
+- 5ae4a2f87: P6测试记录ERR-01~08全部PASSED
+
+### docs: TaskMemory设计方案
+- 7209b0c3e: TaskMemory设计方案-从agent.steps派生通用工作记忆
+- 742cde964: 移动TaskMemory设计方案到doc-6月发展目录
+
+### docs: 三系统tool机制分析(5 commits)
+- 9a28ef979: 新增三系统工具注册架构对比分析
+- f1a9f361e: 三系统tool机制分析文档
+- cf499c3c3: 三系统tool机制分析-3轮复核修正12处错误+可借鉴技术总结
+- da5d33738: 5级安全系统清理-二元安全+check_fn实现
+- f3e4c1f44: 新的tool安全机制及前端对应处理文档
+- 4d033d1a4: 三系统tool机制分析-全篇安全体系更新5级→二元安全
+- bfab7184d: 三系统tool机制分析-修复注册参数计数15→16+删除第11章复核报告
+
+### docs: 组合工具拆分分析(2 commits)
+- c8c3e93bd: 组合工具拆分分析文档-2遍分析
+- ceae4761d: 组合工具拆分分析+会话记录+测试记录(E2E)
+
+### docs: 全网大清理(3 commits)
+- 02e876ff0: 清理无用临时文件(截图/缓存/旧日志/临时脚本)
+- 6c65704e2: 清理无用调试笔记/报告/一次性脚本
+- 750c0b156: 清理无用文档+reports+tool-scripts，合并doc目录
+
+---
+
 v0.16.4
 
 更新时间: 2026-06-14 14:41:23

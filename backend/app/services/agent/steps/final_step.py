@@ -40,14 +40,7 @@ class FinalStep(ReasoningStep):
         return self._thought
 
     @property
-    def model(self) -> Optional[str]:
-        return self._model
 
-    @property
-    def provider(self) -> Optional[str]:
-        return self._provider
-
-    @property
     def is_finished(self) -> bool:
         return self._is_finished
 

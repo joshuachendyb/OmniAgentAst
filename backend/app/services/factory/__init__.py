@@ -14,15 +14,10 @@ factory — 从 factory.py 拆出的职责
 """
 
 from app.services.factory.models import ConfigValidationResult
-from app.services.factory.close_instance import close_instance
-from app.services.factory.close_instance_sync import close_instance_sync
+from app.services.factory.lifecycle import close_instance, close_instance_sync, reset
 from app.utils.paths import get_config_path
-from app.services.factory.make_validation_error import make_validation_error
-from app.services.factory.validate_credentials import validate_credentials
-from app.services.factory.validate_config import validate_config
-from app.services.factory.get_service import get_service
-from app.services.factory.reset import reset
-from app.services.factory.get_service_for_model import get_service_for_model
+from app.services.factory.validation import make_validation_error, validate_credentials, validate_config
+from app.services.factory.service import get_service, get_service_for_model
 from app.services.factory.backup_paths import set_backup_paths, get_backup_paths, clear_backup_paths
 
 __all__ = [

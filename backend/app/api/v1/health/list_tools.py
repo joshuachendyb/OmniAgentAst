@@ -7,7 +7,7 @@ async def list_tools():
     """
     获取所有已注册的工具列表
     """
-    from app.services.tools import tool_registry
+    from app.tools import tool_registry
 
     tools = tool_registry.to_openai_tools()
 

@@ -1,0 +1,136 @@
+# -*- coding: utf-8 -*-
+"""
+chat_stream — API层入口
+
+小健 - 2026-06-07 清理:删除save_step_to_db调用,改用统一save_execution_steps_to_db
+task操作只在本层处理:register → interrupt检查 → pause检查 → stream → cancel检查 → cleanup
+
+统一: 小健 - 2026-05-31
+更新: 小健 - 2026-06-17 重命名chat_stream_v2→chat_stream，删除版本后缀
+"""
+
+import asyncio
+import uuid
+from dataclasses import dataclass
+from fastapi.responses import StreamingResponse, PlainTextResponse
+
+from app.services import get_service
+from app.utils.logger import logger
+from app.services.react_sse_wrapper.chat_stream import create_error_response
+from app.api.v1.chat.models import ChatRequest
+from app.api.v1.chat.step_start import step_start
+from app.utils.counter_utils import create_step_counter
+from app.services.task.task_registry import register_task
+from app.services.task.task_interrupt_check import task_interrupt_check, task_pause_check_and_yield
+from app.services.task.task_cancel_check import task_cancel_check_and_yield
+from app.services.task.task_state_queries import check_cancelled
+from app.services.task.task_cleanup import task_cleanup
+from app.services.react_sse_wrapper.run_sse_stream import run_sse_stream
+from app.services.context_vars import _current_task_id
+from app.utils.prompt_logger import get_prompt_logger
+
+
+@dataclass
+class StreamState:
+    """流式状态 — 【修复P3-5】明确语义 — 北京老陈 2026-06-13"""
+    llm_call_count: int = 0
+    current_content: str = ""
+    step_events: list = None
+
+    def __post_init__(self):
+        if self.step_events is None:
+            self.step_events = []
+
+
+# 无包装函数: 直接调 task_interrupt_check / task_pause_check / step_start / run_sse_stream
+
+
+async def chat_stream(request: ChatRequest):
+    """API层入口 — 小沈 2026-06-08 重构"""
+    if not request.messages:
+        return PlainTextResponse(
+            content=create_error_response(error_type="invalid_request", error_message="消息列表不能为空"),
+            media_type="text/event-stream"
+        )
+
+    user_input = request.messages[-1].content
+    ai_service = get_service()
+    session_id = request.session_id or str(uuid.uuid4())
+
+    async def generate():
+        """生成器 — 小沈 2026-06-08 重构"""
+        task_id = str(uuid.uuid4())
+        _current_task_id.set(task_id)
+        next_step = create_step_counter()
+        execution_steps = []
+        state = StreamState()
+
+        prompt_logger = get_prompt_logger()
+        prompt_logger.start_request(user_input, session_id)
+
+        try:
+            await register_task(task_id, ai_service)
+
+            is_interrupted, interrupt_msg = await task_interrupt_check(task_id)
+            if is_interrupted:
+                yield interrupt_msg
+                await task_cleanup(task_id, 0)
+                return
+
+            async for event in step_start(ai_service, task_id, next_step, user_input, execution_steps, session_id):
+                yield event
+
+            sse_stream = run_sse_stream(
+                llm_client=ai_service, task_id=task_id,
+                last_message=user_input,
+                next_step=next_step,
+                session_id=session_id, current_execution_steps=execution_steps,
+                stream_state=state,
+            )
+            # 小健 2026-06-19: 独立cancel轮询协程,不依赖agent yield事件
+            _cancel_detected = False
+
+            async def _cancel_poller():
+                nonlocal _cancel_detected
+                while not _cancel_detected:
+                    await asyncio.sleep(1)
+                    if await check_cancelled(task_id):
+                        _cancel_detected = True
+                        logger.info(f"[chat_stream] cancel轮询检测到取消,关闭sse_stream")
+                        await sse_stream.aclose()
+                        return
+
+            poller_task = asyncio.create_task(_cancel_poller())
+            try:
+                async for sse_chunk in sse_stream:
+                    if _cancel_detected:
+                        break
+                    # R1-1修复: 每次迭代检查暂停状态 — 小沈 2026-06-09
+                    async for pause_event in task_pause_check_and_yield(task_id, next_step):
+                        yield pause_event
+
+                    cancelled_sse = await task_cancel_check_and_yield(
+                        task_id, next_step, session_id, execution_steps, state.current_content
+                    )
+                    if cancelled_sse:
+                        yield cancelled_sse
+                        break
+                    yield sse_chunk
+            finally:
+                _cancel_detected = True
+                poller_task.cancel()
+                try:
+                    await poller_task
+                except asyncio.CancelledError:
+                    pass
+                # 小健 2026-06-19: 必须关闭生成器,确保finally块执行(保存execution_steps到DB)
+                await sse_stream.aclose()
+
+        except Exception as e:
+            logger.error(f"[chat_stream] Error: {e}", exc_info=True)
+            yield create_error_response(error_type="router_error", error_message=f"路由异常: {str(e)}")
+        finally:
+            await task_cleanup(task_id, state.llm_call_count)
+            prompt_logger.save()
+
+    return StreamingResponse(generate(), media_type="text/event-stream")

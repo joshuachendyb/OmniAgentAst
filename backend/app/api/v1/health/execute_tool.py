@@ -24,7 +24,7 @@ async def execute_tool(request: ToolExecuteRequest):
     用法: POST /api/v1/tool/execute
     Body: {"tool_name": "read_text_file", "params": {"path": "app/main.py"}}
     """
-    from app.services.tools import tool_registry
+    from app.tools import tool_registry
 
     tool_name = request.tool_name
     params = request.params

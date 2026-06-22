@@ -17,6 +17,7 @@
 import hashlib
 import json
 import threading
+import time
 from collections import OrderedDict
 from typing import Any, Dict, Optional
 
@@ -149,6 +150,30 @@ def make_cache_key(data: Any) -> str:
         data_str = json.dumps(data, sort_keys=True, ensure_ascii=False)
         return hashlib.md5(data_str.encode()).hexdigest()
     except Exception as e:
-        # 生成key失败时,使用默认key
         logger.error(f"[LRUCache] make_cache_key异常: {e}")
         return str(id(data))
+
+
+class TTLCache:
+    """单值TTL缓存 — 小沈 2026-06-17 从universal_agent内联缓存提取"""
+
+    def __init__(self, ttl: float = 60.0):
+        self._ttl = ttl
+        self._value: Any = None
+        self._timestamp: float = 0.0
+
+    def get(self) -> Optional[Any]:
+        """返回缓存值(TTL未过期)或None"""
+        if self._value is not None and time.time() - self._timestamp < self._ttl:
+            return self._value
+        return None
+
+    def set(self, value: Any):
+        """更新缓存值和时间戳"""
+        self._value = value
+        self._timestamp = time.time()
+
+    def invalidate(self):
+        """清除缓存"""
+        self._value = None
+        self._timestamp = 0.0

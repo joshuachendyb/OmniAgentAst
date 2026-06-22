@@ -1,0 +1,22 @@
+# -*- coding: utf-8 -*-
+"""
+Tools 模块 - 按功能域组织的工具集
+
+拆分后 __init__.py 极简导出 — 小沈 2026-05-29
+其余符号请从对应子模块直接导入:
+  ToolCategory/ToolMetadata → app.tools.tool_types
+  resolve_category → app.tools.tool_types
+  get_* → app.tools.tool_queries
+  to_openai_tools/generate_param_reminder → app.tools.tool_description
+"""
+
+from app.tools.registry import tool_registry, register_tool, ToolRegistry
+from app.tools.lazy_loader import ensure_tools_registered
+
+
+__all__ = [
+    "tool_registry",
+    "register_tool",
+    "ToolRegistry",
+    "ensure_tools_registered",
+]
