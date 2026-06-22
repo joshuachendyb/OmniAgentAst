@@ -78,4 +78,5 @@ FIELD_HANDLERS: Dict[str, Any] = {
     "language": lambda config_data, update: _set_app_field(config_data, "language", update.language, "语言"),
     "max_steps": _update_max_steps,
     "security": _update_security,
+    "project_root": lambda config_data, update: _set_app_field(config_data, "project_root", update.project_root, "项目根目录"),
 }
