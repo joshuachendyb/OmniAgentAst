@@ -56,7 +56,7 @@ class FetchWebpageInput(BaseModel):
         default=None, description="提取指令。未指定时返回完整页面内容,指定时精准提取"
     )
     extract_format: Literal["markdown", "html", "text"] = Field(
-        default="markdown", description="提取格式:markdown(默认)/html/text"
+        default="markdown", description="提取格式:推荐用markdown(保留结构)/html(原始)/text(纯文本)"
     )
 
 

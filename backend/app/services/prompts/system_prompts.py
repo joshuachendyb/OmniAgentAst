@@ -21,7 +21,6 @@ Author: 小沈 - 2026-06-14
 
 from app.services.prompts.system_adapter import get_system_prompt as get_system_prompt_string
 from app.utils.logger import logger
-from app.utils.prompt_logger import get_prompt_logger
 from app.services.prompts.project_context import load_project_context
 from app.config import get_config as get_config_instance
 
@@ -112,21 +111,9 @@ class PromptBuilder:
  """
 
     def _get_system_info(self) -> str:
-        """获取系统信息"""
+        """获取系统信息 — P0-2修复 2026-06-23 小欧: 删除冗余日志(完整prompt已在initialize_run_state记录)"""
         system_info = get_system_prompt_string()
         logger.debug(f"[PromptBuilder] 系统信息长度: {len(system_info)}")
-
-        prompt_logger = get_prompt_logger()
-        prompt_logger.log_system_prompt(
-            step_name="中间层注入-服务器OS信息",
-            prompt_content=system_info,
-            source="PromptBuilder._get_system_info()",
-            details={
-                "系统信息长度": len(system_info),
-                "包含内容": "服务器OS、路径格式、命令格式"
-            },
-            round_number=1
-        )
         return system_info
 
     def _get_project_root_info(self) -> str:

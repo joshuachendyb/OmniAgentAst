@@ -11,24 +11,28 @@ from typing import Set, Optional
 from app.utils.display_utils import format_param_value
 
 
-def to_openai_tools(registry, categories: Optional[Set[ToolCategory]] = None, strict: bool = True) -> list:
+def to_openai_tools(registry, categories: Optional[Set[ToolCategory]] = None,
+                    tool_names: Optional[Set[str]] = None, strict: bool = True) -> list:
     """
     生成OpenAI API格式的tools定义 - 小沈 2026-05-09
 
     Args:
         registry: ToolRegistry实例
         categories: 工具分类集合,None=全部
+        tool_names: 额外包含的指定工具名集合(即使其分类不在categories中) — P0-3 2026-06-23 小欧
         strict: 是否启用strict模式(强制arguments符合Schema) - 小沈 2026-06-17
 
     Returns:
         [{"type": "function", "function": {...}}, ...]
     """
     tools = []
+    tool_names_set = tool_names or set()
     for name, meta in sorted(registry._tools.items(), key=lambda x: x[0]):
         if not meta.expose_to_llm:
             continue
         if categories is not None and meta.category not in categories:
-            continue
+            if name not in tool_names_set:
+                continue
         func_def = {
             "name": meta.name,
             "description": meta.description,
