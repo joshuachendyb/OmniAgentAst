@@ -48,3 +48,6 @@ config/
 
 # research docs (not project source)
 插件模型-research/
+
+# CodeArts cache
+.codeartsdoer/
