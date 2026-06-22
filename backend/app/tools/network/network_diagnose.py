@@ -151,91 +151,46 @@ def _parse_ping_output(raw_output: str, system: str) -> dict:
 
 
 async def _ping(host: str, count: int = 4, timeout: int = 5) -> Dict[str, Any]:
-    """Ping测试(内部函数) — 小欧 2026-06-22"""
-    t0 = _time_mod.perf_counter()
+    """Ping测试(内部函数) — 只返回raw dict — 小欧 2026-06-22 — 小健 2026-06-22 修复铁规违反"""
+    if not host or not host.strip():
+        return {"success": False, "error_detail": "目标主机地址不能为空", "err_code": ERR_NETWORK_INVALID_HOST, "params": {"host": host}}
+    host = host.strip()
+    cmd = _build_ping_cmd(host, count, timeout)
     try:
-        if not host or not host.strip():
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_ping_llm_data("error", duration_ms, host, err_code=ERR_NETWORK_INVALID_HOST, detail="目标主机地址不能为空")
-            return build_error(data={"error_detail": "目标主机地址不能为空", "params": {"host": host}}, llm_data=llm_data)
-        host = host.strip()
-        cmd = _build_ping_cmd(host, count, timeout)
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=count * timeout + 10)
-            raw_output = result.stdout
-        except subprocess.TimeoutExpired:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_ping_llm_data("error", duration_ms, host, err_code=ERR_NETWORK_TIMEOUT, detail=f"Ping超时({count * timeout + 10}秒)")
-            return build_error(data={"error_detail": f"Ping超时({count * timeout + 10}秒)", "params": {"host": host}}, llm_data=llm_data)
-        except FileNotFoundError:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_ping_llm_data("error", duration_ms, host, err_code=ERR_SHELL_COMMAND_NOT_FOUND, detail="系统ping命令不可用")
-            return build_error(data={"error_detail": "系统ping命令不可用", "params": {"host": host}}, llm_data=llm_data)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=count * timeout + 10)
+        raw_output = result.stdout
+    except subprocess.TimeoutExpired:
+        return {"success": False, "error_detail": f"Ping超时({count * timeout + 10}秒)", "err_code": ERR_NETWORK_TIMEOUT, "params": {"host": host}}
+    except FileNotFoundError:
+        return {"success": False, "error_detail": "系统ping命令不可用", "err_code": ERR_SHELL_COMMAND_NOT_FOUND, "params": {"host": host}}
 
-        parsed = _parse_ping_output(raw_output, platform.system().lower())
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        reachable = parsed["is_reachable"]
-        data = {"host": host, **parsed}
-        if not reachable:
-            data.update(packets_received=0, packets_lost=parsed["packets_sent"],
-                         loss_rate=100.0, min_latency=None, avg_latency=None, max_latency=None)
-        llm_data = _build_ping_llm_data("success" if reachable else "error", duration_ms, host, reachable,
-                                          parsed.get("packets_sent", 0), parsed.get("packets_received", 0),
-                                          parsed.get("loss_rate", 0.0), parsed.get("avg_latency"),
-                                          parsed.get("min_latency"), parsed.get("max_latency"))
-        return build_success(data=data, llm_data=llm_data)
-
-    except Exception as e:
-        logger.error(f"[ping] 未知错误: {e}")
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_ping_llm_data("error", duration_ms, host, err_code=ERR_NET_UNKNOWN, detail=str(e))
-        return build_error(data={"error_detail": str(e), "params": {"host": host}}, llm_data=llm_data)
+    parsed = _parse_ping_output(raw_output, platform.system().lower())
+    reachable = parsed["is_reachable"]
+    data = {"host": host, **parsed}
+    if not reachable:
+        data.update(packets_received=0, packets_lost=parsed["packets_sent"],
+                     loss_rate=100.0, min_latency=None, avg_latency=None, max_latency=None)
+    return {"success": True, "data": data, "is_reachable": reachable, "parsed": parsed}
 
 
 async def _port_check(host: str, port: int, timeout: int = 3) -> Dict[str, Any]:
-    """检查端口是否开放(内部函数) — 小欧 2026-06-22"""
-    t0 = _time_mod.perf_counter()
+    """检查端口是否开放(内部函数) — 只返回raw dict — 小欧 2026-06-22 — 小健 2026-06-22 修复铁规违反"""
+    if not host or not host.strip():
+        return {"success": False, "error_detail": "目标主机地址不能为空", "err_code": ERR_NETWORK_INVALID_HOST, "params": {"host": host, "port": port}}
+    if port < 1 or port > 65535:
+        return {"success": False, "error_detail": f"端口号无效: {port}", "err_code": ERR_NETWORK_INVALID_PORT, "params": {"port": port}}
+    host = host.strip()
+    service = well_known_ports.get(port, "Unknown")
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
     try:
-        if not host or not host.strip():
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NETWORK_INVALID_HOST, detail="目标主机地址不能为空")
-            return build_error(data={"error_detail": "目标主机地址不能为空", "params": {"host": host, "port": port}}, llm_data=llm_data)
-        if port < 1 or port > 65535:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NETWORK_INVALID_PORT, detail=f"端口号无效: {port}")
-            return build_error(data={"error_detail": f"端口号无效: {port}", "params": {"port": port}}, llm_data=llm_data)
-        host = host.strip()
-        service = well_known_ports.get(port, "Unknown")
+        is_open = sock.connect_ex((host, port)) == 0
+    finally:
+        sock.close()
 
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
-        try:
-            is_open = sock.connect_ex((host, port)) == 0
-        finally:
-            sock.close()
-
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"host": host, "port": port, "is_open": is_open, "service": service}
-        llm_data = _build_port_check_llm_data("success", duration_ms, host, port, is_open, service)
-        return build_success(data=data, llm_data=llm_data)
-
-    except socket.gaierror:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NETWORK_DNS_ERROR, detail=f"DNS解析失败: {host}")
-        return build_error(data={"error_detail": f"DNS解析失败: {host}", "params": {"host": host, "port": port}}, llm_data=llm_data)
-    except socket.timeout:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_port_check_llm_data("error", duration_ms, host, port, service=service, err_code=ERR_NETWORK_TIMEOUT, detail=f"端口 {port} 连接超时")
-        return build_error(data={"error_detail": f"端口 {port} 连接超时", "params": {"host": host, "port": port}}, llm_data=llm_data)
-    except OSError as e:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NETWORK_CONNECTION_ERROR, detail=str(e))
-        return build_error(data={"error_detail": str(e), "params": {"host": host, "port": port}}, llm_data=llm_data)
-    except Exception as e:
-        logger.error(f"[port_check] 未知错误: {e}")
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NET_UNKNOWN, detail=str(e))
-        return build_error(data={"error_detail": str(e), "params": {"host": host, "port": port}}, llm_data=llm_data)
+    data = {"host": host, "port": port, "is_open": is_open, "service": service}
+    return {"success": True, "data": data, "is_open": is_open, "service": service}
 
 
 async def network_diagnose(
@@ -245,14 +200,53 @@ async def network_diagnose(
     count: int = 4,
     timeout: int = 5,
 ) -> Dict[str, Any]:
-    """网络连通性诊断 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件"""
+    """网络连通性诊断 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 修复铁规违反"""
+    t0 = _time_mod.perf_counter()
     if mode == "ping":
-        return await _ping(host=host, count=count, timeout=timeout)
+        result = await _ping(host=host, count=count, timeout=timeout)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        if result.get("success"):
+            parsed = result.get("parsed", {})
+            llm_data = _build_ping_llm_data("success", duration_ms, host, result.get("is_reachable", False),
+                                            parsed.get("packets_sent", 0), parsed.get("packets_received", 0),
+                                            parsed.get("loss_rate", 0.0), parsed.get("avg_latency"),
+                                            parsed.get("min_latency"), parsed.get("max_latency"))
+            return build_success(data=result.get("data", {}), llm_data=llm_data)
+        else:
+            llm_data = _build_ping_llm_data("error", duration_ms, host, err_code=result.get("err_code", ERR_NET_UNKNOWN), detail=result.get("error_detail", ""))
+            return build_error(data={"error_detail": result.get("error_detail", ""), "params": result.get("params", {})}, llm_data=llm_data)
     elif mode == "port":
         if port is None:
-            llm_data = _build_network_diagnose_llm_data("error", 0, host, mode, ERR_MISSING_PARAM, "缺少port参数")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_network_diagnose_llm_data("error", duration_ms, host, mode, ERR_MISSING_PARAM, "缺少port参数")
             return build_error(data={"error_detail": "mode='port'时port参数必填", "params": {"host": host, "mode": mode}}, llm_data=llm_data)
-        return await _port_check(host=host, port=port, timeout=timeout)
+        try:
+            result = await _port_check(host=host, port=port, timeout=timeout)
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            if result.get("success"):
+                llm_data = _build_port_check_llm_data("success", duration_ms, host, port, result.get("is_open", False), result.get("service", ""))
+                return build_success(data=result.get("data", {}), llm_data=llm_data)
+            else:
+                llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=result.get("err_code", ERR_NET_UNKNOWN), detail=result.get("error_detail", ""))
+                return build_error(data={"error_detail": result.get("error_detail", ""), "params": result.get("params", {})}, llm_data=llm_data)
+        except socket.gaierror:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NETWORK_DNS_ERROR, detail=f"DNS解析失败: {host}")
+            return build_error(data={"error_detail": f"DNS解析失败: {host}", "params": {"host": host, "port": port}}, llm_data=llm_data)
+        except socket.timeout:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NETWORK_TIMEOUT, detail=f"端口 {port} 连接超时")
+            return build_error(data={"error_detail": f"端口 {port} 连接超时", "params": {"host": host, "port": port}}, llm_data=llm_data)
+        except OSError as e:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NETWORK_CONNECTION_ERROR, detail=str(e))
+            return build_error(data={"error_detail": str(e), "params": {"host": host, "port": port}}, llm_data=llm_data)
+        except Exception as e:
+            logger.error(f"[port_check] 未知错误: {e}")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_port_check_llm_data("error", duration_ms, host, port, err_code=ERR_NET_UNKNOWN, detail=str(e))
+            return build_error(data={"error_detail": str(e), "params": {"host": host, "port": port}}, llm_data=llm_data)
     else:
-        llm_data = _build_network_diagnose_llm_data("error", 0, host, mode, ERR_INVALID_MODE, f"无效的诊断模式: {mode}")
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_network_diagnose_llm_data("error", duration_ms, host, mode, ERR_INVALID_MODE, f"无效的诊断模式: {mode}")
         return build_error(data={"error_detail": f"无效的诊断模式: {mode}", "params": {"host": host, "mode": mode}}, llm_data=llm_data)

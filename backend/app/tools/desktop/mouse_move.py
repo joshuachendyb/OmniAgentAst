@@ -43,11 +43,12 @@ def _build_mouse_move_llm_data(exec_code: str, duration_ms: int, x: int, y: int,
 
 
 def mouse_move(x: int, y: int) -> Dict[str, Any]:
-    """移动鼠标到指定位置 — 小健 2026-06-22 拆分独立文件"""
+    """移动鼠标到指定位置 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-22 修复计时铁规"""
+    t0 = _time_mod.perf_counter()
     duration = 0
     if not _check_pyautogui():
-        return build_error(data={"error_detail": "pyautogui库未安装", "params": {}}, llm_data=_build_mouse_move_llm_data("error", 0, x, y, "ERR_NO_PYAUTOGUI"))
-    t0 = _time_mod.perf_counter()
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        return build_error(data={"error_detail": "pyautogui库未安装", "params": {}}, llm_data=_build_mouse_move_llm_data("error", duration_ms, x, y, "ERR_NO_PYAUTOGUI"))
     try:
         import pyautogui
         pyautogui.moveTo(x, y, duration=duration)

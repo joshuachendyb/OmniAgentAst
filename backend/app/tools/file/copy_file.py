@@ -57,29 +57,32 @@ async def copy_file(
     overwrite: bool = False,
     preserve_metadata: bool = True,
 ) -> Dict[str, Any]:
-    """复制文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件"""
+    """复制文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 修复计时铁规"""
+    t0 = _time_mod.perf_counter()
     is_valid_src, err_src = _validate_path(source)
     if not is_valid_src:
-        llm_data = _build_copy_file_llm_data("error", 0, source, extra_metrics={"detail": f"源路径验证失败: {err_src}"})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": f"源路径验证失败: {err_src}"})
         return build_error(data={"error_detail": f"源路径验证失败: {err_src}", "params": {"source": source}}, llm_data=llm_data)
 
     is_valid_dst, err_dst = _validate_path(destination)
     if not is_valid_dst:
-        llm_data = _build_copy_file_llm_data("error", 0, source, extra_metrics={"detail": f"目标路径验证失败: {err_dst}"})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": f"目标路径验证失败: {err_dst}"})
         return build_error(data={"error_detail": f"目标路径验证失败: {err_dst}", "params": {"destination": destination}}, llm_data=llm_data)
 
     src = Path(source)
     dst = Path(destination)
 
     if not src.exists():
-        llm_data = _build_copy_file_llm_data("error", 0, source, extra_metrics={"detail": f"源路径不存在: {source}"})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": f"源路径不存在: {source}"})
         return build_error(data={"error_detail": f"源路径不存在: {source}", "params": {"source": source}}, llm_data=llm_data)
 
     if dst.exists() and not overwrite:
-        llm_data = _build_copy_file_llm_data("error", 0, source, extra_metrics={"status": "no_change"})
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_copy_file_llm_data("success", duration_ms, source, extra_metrics={"status": "no_change"})
         return build_success(data={"action": "copy", "source": source, "destination": destination}, llm_data=llm_data)
-
-    t0 = _time_mod.perf_counter()
     from app.services.safety.file_safety import record_operation, execute_with_safety
     from app.db.models.operation_enums import OperationType
 

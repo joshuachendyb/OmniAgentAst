@@ -43,11 +43,12 @@ def _build_mouse_click_llm_data(exec_code: str, duration_ms: int, x, y, button: 
 
 
 def mouse_click(x: Optional[int] = None, y: Optional[int] = None, button: str = "left") -> Dict[str, Any]:
-    """鼠标单击 — 小健 2026-06-22 拆分独立文件"""
+    """鼠标单击 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-22 修复计时铁规"""
+    t0 = _time_mod.perf_counter()
     click_type = "single"
     if not _check_pyautogui():
-        return build_error(data={"error_detail": "pyautogui库未安装", "params": {}}, llm_data=_build_mouse_click_llm_data("error", 0, x, y, button, click_type, "ERR_NO_PYAUTOGUI"))
-    t0 = _time_mod.perf_counter()
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        return build_error(data={"error_detail": "pyautogui库未安装", "params": {}}, llm_data=_build_mouse_click_llm_data("error", duration_ms, x, y, button, click_type, "ERR_NO_PYAUTOGUI"))
     try:
         import pyautogui
         clicks = 2 if click_type == "double" else 1
