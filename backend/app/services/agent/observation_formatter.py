@@ -94,7 +94,11 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
         text = f"观察: {message} - {tool_zh}"
 
     if summary:
-        text += f"\n结果: {summary}"
+        action_info = " ".join(
+            f"{k}={json.dumps(v, ensure_ascii=False) if isinstance(v, dict) else v}"
+            for k, v in action.items()
+        )
+        text += f"\n结果: {summary} | {action_info}"
 
     if data is not None and data != {} and data != [] and data != "":
         detail = format_data_detail(data)
