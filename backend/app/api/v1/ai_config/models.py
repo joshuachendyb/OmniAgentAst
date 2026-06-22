@@ -24,6 +24,7 @@ class ConfigUpdate(BaseModel):
     language: Optional[str] = Field("zh-CN", description="语言: zh-CN | en-US")
     security: Optional[SecurityConfig] = Field(None, description="安全配置")
     max_steps: Optional[int] = Field(None, description="Agent最大迭代次数")
+    project_root: Optional[str] = Field(None, description="项目根目录路径,空值则自动检测")
 
 
 class ConfigResponse(BaseModel):
@@ -35,6 +36,7 @@ class ConfigResponse(BaseModel):
     language: str = Field(..., description="当前语言")
     security: Optional[SecurityConfig] = Field(None, description="安全配置")
     max_steps: int = Field(DEFAULT_MAX_STEPS, description="Agent最大迭代次数")
+    project_root: str = Field("", description="项目根目录路径")
 
 
 class ConfigValidateRequest(BaseModel):
