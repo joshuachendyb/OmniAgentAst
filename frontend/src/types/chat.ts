@@ -75,25 +75,34 @@ export interface ActionToolMessage {
 }
 
 /**
- * Observation数据结构（第13章设计方案）
- * observation字段改为JSON对象，包含完整执行信息
+ * Observation数据结构
+ * 【Phase 2 2026-06-22 小欧】observation改为llm_data+tool_result+other_data三字段
  */
 export interface ObservationData {
-  summary: string; // 执行摘要（必填）
-  tool_name: string; // 工具名称（必填）
-  tool_params: Record<string, unknown>; // 工具参数（必填）
-  return_direct: boolean; // 是否直接返回（必填）
-  execution_status?: string; // 执行状态（可选）
-  error_message?: string; // 错误信息（可选）
-  warning?: string; // 警告信息（可选）
+  llm_data?: Record<string, unknown>; // 完整llm_data（含summary/action/status/duration_ms/metrics）
+  tool_result?: unknown; // 完整data（工具返回的业务数据）
+  other_data?: { // 控制字段
+    return_direct?: boolean;
+    warning?: string;
+    attachment?: unknown;
+    retry_count?: number;
+    [key: string]: unknown;
+  };
+  // 兼容旧格式字段（Phase 1遗留，可选）
+  summary?: string;
+  tool_name?: string;
+  tool_params?: Record<string, unknown>;
+  return_direct?: boolean;
+  execution_status?: string;
+  error_message?: string;
+  warning?: string;
   next_actions?: Array<{
-    // 推荐操作（可选）
-    tool: string; // 工具名称
-    description: string; // 操作描述
-    when?: string; // 触发条件
-    params?: Record<string, unknown>; // 建议参数
+    tool: string;
+    description: string;
+    when?: string;
+    params?: Record<string, unknown>;
   }>;
-  attachment?: unknown; // 附件（可选）
+  attachment?: unknown;
 }
 
 /**

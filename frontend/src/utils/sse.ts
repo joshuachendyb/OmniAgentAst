@@ -1502,8 +1502,12 @@ const processSSEData = (
           rawData.observation !== undefined &&
           typeof rawData.observation === 'object'
         ) {
-          // 新格式：observation是JSON对象
+          // 新格式（Phase 2）：observation是JSON对象，含llm_data/tool_result/other_data
           const obsData = rawData.observation as Partial<{
+            llm_data: Record<string, unknown>;
+            tool_result: unknown;
+            other_data: Record<string, unknown>;
+            // 兼容旧格式
             summary: string;
             tool_name: string;
             tool_params: Record<string, unknown>;
@@ -1513,17 +1517,23 @@ const processSSEData = (
             warning?: string;
             next_actions?: unknown[];
           }>;
-          // 字段完整性验证，提供默认值
+
+          // Phase 2: 从llm_data/other_data提取字段
+          const llmData = obsData.llm_data as Record<string, unknown> | undefined;
+          const otherData = obsData.other_data as Record<string, unknown> | undefined;
+
+          // 字段兼容：优先新格式(llm_data)，回退旧格式(summary等)
           step.observation = obsData;
-          step.tool_name = obsData.tool_name ?? '';
-          step.tool_params = obsData.tool_params ?? {};
-          step.return_direct = obsData.return_direct ?? false;
-          step.summary = obsData.summary ?? '';
+          step.tool_name = (llmData?.action as Record<string, unknown>)?.tool as string ?? obsData.tool_name ?? '';
+          step.tool_params = (llmData?.action as Record<string, unknown>)?.params as Record<string, unknown> ?? obsData.tool_params ?? {};
+          step.return_direct = (otherData?.return_direct as boolean) ?? obsData.return_direct ?? false;
+          step.summary = (llmData?.summary as string) ?? obsData.summary ?? '';
           step.execution_status =
+            ((llmData?.status as Record<string, unknown>)?.exec_code as 'success' | 'error' | 'warning') ??
             (obsData.execution_status as 'success' | 'error' | 'warning') ??
             undefined;
-          step.error_message = obsData.error_message;
-          step.content = obsData.summary ?? ''; // content用于显示
+          step.error_message = (llmData?.status as Record<string, unknown>)?.message as string ?? obsData.error_message;
+          step.content = step.summary; // content用于显示
         } else {
           // 旧格式：observation是字符串或null/undefined（向后兼容）
           const obsStr =
