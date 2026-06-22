@@ -37,11 +37,11 @@ if platform.system() == "Windows":
 
 
 def check_win32_platform() -> Optional[Dict[str, Any]]:
-    """检查Windows平台和pywin32依赖是否可用 — 小健 2026-06-22"""
+    """检查Windows平台和pywin32依赖是否可用 — 小健 2026-06-22 — 小健 2026-06-22 重构：只返回raw dict，不含build3"""
     if platform.system() != "Windows":
-        return build_error(data={"error_detail": "此功能仅支持Windows系统", "params": {}})
+        return {"error_detail": "此功能仅支持Windows系统", "params": {}}
     if not _HAS_WIN32:
-        return build_error(data={"error_detail": "pywin32库未安装,请先执行: pip install pywin32", "params": {}})
+        return {"error_detail": "pywin32库未安装,请先执行: pip install pywin32", "params": {}}
     return None
 
 
@@ -126,27 +126,27 @@ def _build_window_info_llm_data(exec_code: str, duration_ms: int, window_count: 
     if exec_code == "error":
         return {
             "summary": "获取窗口列表失败",
-            "action": {"tool": "window_info", "tool_zh": "窗口信息", "target": filter_title or "全部", "params": {"filter_title": filter_title}},
+            "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": {"filter_title": filter_title}},
             "status": {"exec_code": "error", "message": "获取窗口列表失败", "code": ERR_WINDOW_LIST, "detail": "", "hint": ""},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"共找到 {window_count} 个窗口",
-        "action": {"tool": "window_info", "tool_zh": "窗口信息", "target": filter_title or "全部", "params": {"filter_title": filter_title}},
-        "status": {"exec_code": "success", "message": "获取窗口列表成功", "code": "", "detail": "", "hint": ""},
+        "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": {"filter_title": filter_title}},
+        "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"windows": {"value": window_count, "text": f"{window_count}个"}},
     }
 
 
 def window_info(include_minimized: bool = False, filter_title: Optional[str] = None) -> Dict[str, Any]:
-    """列出所有窗口 — 小健 2026-06-22 拆分独立文件"""
+    """列出所有窗口 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-22 重构：主函数负责builder+build3"""
     t0 = _time_mod.perf_counter()
     err = check_win32_platform()
     if err:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_window_info_llm_data("error", duration_ms, 0, filter_title or "")
-        return build_error(data={"error_detail": "桌面工具不可用", "params": {}}, llm_data=llm_data)
+        return build_error(data={"error_detail": err.get("error_detail", "桌面工具不可用"), "params": err.get("params", {})}, llm_data=llm_data)
 
     try:
         windows = []
@@ -157,7 +157,7 @@ def window_info(include_minimized: bool = False, filter_title: Optional[str] = N
             windows = [w for w in windows if filter_title.lower() in w["title"].lower()]
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"windows": windows, "total": len(windows)}
+        data = {"windows": windows}
         llm_data = _build_window_info_llm_data("success", duration_ms, len(windows), filter_title or "")
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:

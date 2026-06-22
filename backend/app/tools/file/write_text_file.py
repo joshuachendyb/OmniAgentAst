@@ -116,15 +116,15 @@ def _build_write_text_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"写入文件失败: {detail}",
-            "action": {"tool": "write_text_file", "tool_zh": "写入文件", "target": file_path, "params": {}},
-            "status": {"exec_code": "error", "message": "写入文件失败", "code": ERR_FILE_WRITE_FAILED, "detail": detail, "hint": ""},
+            "action": {"tool": "write_text_file", "tool_zh": "写入", "target": file_path, "params": {}},
+            "status": {"exec_code": "error", "message": "写入失败", "code": ERR_FILE_WRITE_FAILED, "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"写入文件成功: {file_path} ({bytes_written}字节)",
-        "action": {"tool": "write_text_file", "tool_zh": "写入文件", "target": file_path, "params": {}},
-        "status": {"exec_code": "success", "message": "写入文件成功", "code": "", "detail": "", "hint": ""},
+        "action": {"tool": "write_text_file", "tool_zh": "写入", "target": file_path, "params": {}},
+        "status": {"exec_code": "success", "message": "写入成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "bytes_written": {"value": bytes_written, "text": f"{bytes_written}字节"},
@@ -178,7 +178,7 @@ async def write_text_file(
             bytes_written = len(checked_content.encode(encoding))
             llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written)
             return build_success(
-                data={"operation_id": operation_id, "file_path": str(path), "bytes_written": bytes_written},
+                data={"operation_id": operation_id},
                 llm_data=llm_data,
             )
         else:

@@ -30,13 +30,13 @@ def _build_mouse_click_llm_data(exec_code: str, duration_ms: int, x, y, button: 
     if exec_code == "error":
         return {
             "summary": f"鼠标点击失败: ({x},{y})",
-            "action": {"tool": "mouse_click", "tool_zh": "鼠标点击", "target": f"({x},{y})", "params": {"x": x, "y": y, "button": button}},
+            "action": {"tool": "mouse_click", "tool_zh": "点击", "target": f"({x},{y})", "params": {"x": x, "y": y, "button": button}},
             "status": {"exec_code": "error", "message": "点击失败", "code": err_code or ERR_DESKTOP_MOUSE_CLICK, "detail": detail, "hint": ""},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"点击完成: ({x}, {y}) {button} {click_type}",
-        "action": {"tool": "mouse_click", "tool_zh": "鼠标点击", "target": f"({x},{y})", "params": {"x": x, "y": y, "button": button, "click_type": click_type}},
+        "action": {"tool": "mouse_click", "tool_zh": "点击", "target": f"({x},{y})", "params": {"x": x, "y": y, "button": button, "click_type": click_type}},
         "status": {"exec_code": "success", "message": "点击完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
     }
@@ -53,7 +53,7 @@ def mouse_click(x: Optional[int] = None, y: Optional[int] = None, button: str = 
         clicks = 2 if click_type == "double" else 1
         pyautogui.click(x=x, y=y, button=button, clicks=clicks)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"x": x, "y": y, "button": button, "click_type": click_type}
+        data = {}
         llm_data = _build_mouse_click_llm_data("success", duration_ms, x, y, button, click_type)
         return build_success(data=data, llm_data=llm_data)
     except Exception as e:

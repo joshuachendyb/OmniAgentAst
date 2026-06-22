@@ -30,22 +30,22 @@ def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, e
     if exec_code == "error":
         return {
             "summary": f"获取事件日志失败: {log_name}",
-            "action": {"tool": "event_log", "tool_zh": "事件日志", "target": log_name, "params": {"log_name": log_name, "level": level}},
+            "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": {"log_name": log_name, "level": level}},
             "status": {"exec_code": "error", "message": "获取事件日志失败", "code": ERR_SYSTEM_EVENT_LOG, "detail": "", "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"日志源 {log_name}，{event_count} 条{level}级别事件",
-        "action": {"tool": "event_log", "tool_zh": "事件日志", "target": log_name, "params": {"log_name": log_name, "level": level}},
-        "status": {"exec_code": "success", "message": "获取事件日志成功", "code": "", "detail": "", "hint": ""},
+        "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": {"log_name": log_name, "level": level}},
+        "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"events": {"value": event_count, "text": f"{event_count}条"}},
     }
 
 
 def _get_windows_event_log(log_name: str, max_events: int, level: str,
-                           source: Optional[str], start_time: datetime, t0: float) -> dict:
+                           source: Optional[str], start_time: datetime) -> dict:
     """Windows事件日志获取 — 小健 2026-06-22（返回原始dict，不含build3/llm_data）"""
     try:
         level_map = {"critical": "Critical", "error": "Error", "warning": "Warning", "info": "Information"}
@@ -90,7 +90,7 @@ def _get_windows_event_log(log_name: str, max_events: int, level: str,
             filtered_events.append(evt)
 
         _events = filtered_events[:max_events]
-        return {"log_name": log_name, "events": _events, "total": len(_events), "level": level}
+        return {"events": _events}
 
     except subprocess.TimeoutExpired:
         return {"error_detail": "获取事件日志超时", "params": {"log_name": log_name}, "_error_code": ERR_SYSTEM_TIMEOUT}
@@ -101,7 +101,7 @@ def _get_windows_event_log(log_name: str, max_events: int, level: str,
 
 
 def _get_linux_event_log(log_name: str, max_events: int, level: str,
-                         source: Optional[str], start_time: datetime, t0: float) -> dict:
+                         source: Optional[str], start_time: datetime) -> dict:
     """Linux事件日志获取 — 小健 2026-06-22（返回原始dict，不含build3/llm_data）"""
     try:
         level_map = {"critical": "emerg", "error": "err", "warning": "warning", "info": "info"}
@@ -129,7 +129,7 @@ def _get_linux_event_log(log_name: str, max_events: int, level: str,
                 except json_module.JSONDecodeError:
                     continue
 
-        return {"log_name": log_name, "events": events[:max_events], "total": len(events[:max_events]), "level": level}
+        return {"events": events[:max_events]}
 
     except subprocess.TimeoutExpired:
         return {"error_detail": "获取事件日志超时", "params": {"log_name": log_name}, "_error_code": ERR_SYSTEM_TIMEOUT}
@@ -149,9 +149,9 @@ def event_log(log_name: str = "System", max_events: int = 50, level: str = "erro
         start_time = datetime.now() - time_delta
 
         if platform.system() == "Windows":
-            result = _get_windows_event_log(log_name, max_events, level, source, start_time, t0)
+            result = _get_windows_event_log(log_name, max_events, level, source, start_time)
         else:
-            result = _get_linux_event_log(log_name, max_events, level, source, start_time, t0)
+            result = _get_linux_event_log(log_name, max_events, level, source, start_time)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
 
@@ -162,7 +162,7 @@ def event_log(log_name: str = "System", max_events: int = 50, level: str = "erro
             return build_error(data=result, llm_data=llm_data)
         else:
             result.pop("_error_code", None)
-            event_count = result.get("total", 0)
+            event_count = len(result.get("events", []))
             llm_data = _build_event_log_llm_data("success", duration_ms, log_name, event_count, level)
             return build_success(data=result, llm_data=llm_data)
 

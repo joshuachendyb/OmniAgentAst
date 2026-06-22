@@ -92,25 +92,19 @@ def _build_delete_file_llm_data(
 async def _delete_file_impl(
     file_path: str, recursive: bool = False, force: bool = False,
 ) -> Dict[str, Any]:
-    """删除文件或目录实现 — 小欧 2026-06-22"""
-    t0 = _time_mod.perf_counter()
+    """删除文件或目录实现 — 小欧 2026-06-22 — 小健 2026-06-22 重构：只返回raw dict，不含build3/llm_data"""
     is_valid, error_msg = _validate_path(file_path)
     if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_delete_file_llm_data("error", duration_ms, file_path, detail=error_msg)
-        return build_error(data={"error_detail": error_msg, "params": {"source": file_path}}, llm_data=llm_data)
+        return {"success": False, "error_detail": error_msg, "params": {"source": file_path}}
 
     path = Path(file_path)
     try:
         if not path.exists():
-            llm_data = _build_delete_file_llm_data("success", 0, file_path)
-            return build_success(data={"action": "delete", "source": file_path}, llm_data=llm_data)
+            return {"success": True, "action": "delete", "source": file_path, "already_deleted": True}
 
         task_id = _current_task_id.get()
         if not task_id:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_delete_file_llm_data("error", duration_ms, file_path, detail="当前没有活跃任务ID")
-            return build_error(data={"error_detail": "当前没有活跃任务ID", "params": {"source": file_path}}, llm_data=llm_data)
+            return {"success": False, "error_detail": "当前没有活跃任务ID", "params": {"source": file_path}}
 
         operation_id = record_operation(
             task_id=task_id, operation_type=OperationType.DELETE,
@@ -124,24 +118,13 @@ async def _delete_file_impl(
 
         is_ok, method = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_delete_sync)
 
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if is_ok:
-            delete_mode = "永久删除" if force else "放入回收站"
-            extra_m = {"mode": {"value": method, "text": delete_mode}}
-            llm_data = _build_delete_file_llm_data("success", duration_ms, file_path, extra_metrics=extra_m)
-            return build_success(
-                data={"operation_id": operation_id, "deleted_path": str(path), "mode": method},
-                llm_data=llm_data,
-            )
-        else:
-            llm_data = _build_delete_file_llm_data("error", duration_ms, file_path, detail="删除文件失败,safety拦截")
-            return build_error(data={"error_detail": "删除文件失败,safety拦截", "params": {"source": file_path}}, llm_data=llm_data)
+            return {"success": True, "operation_id": operation_id, "deleted_path": str(path), "mode": method}
+        return {"success": False, "error_detail": "删除文件失败,safety拦截", "params": {"source": file_path}}
 
     except Exception as e:
         logger.error(f"Failed to delete {file_path}: {e}")
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_delete_file_llm_data("error", duration_ms, file_path, detail=str(e))
-        return build_error(data={"error_detail": str(e), "params": {"source": file_path}}, llm_data=llm_data)
+        return {"success": False, "error_detail": str(e), "params": {"source": file_path}}
 
 
 async def delete_file(
@@ -149,9 +132,29 @@ async def delete_file(
     recursive: bool = False,
     force: bool = False,
 ) -> Dict[str, Any]:
-    """删除文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件"""
+    """删除文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：主函数负责计时+builder+build3"""
+    t0 = _time_mod.perf_counter()
     src_path = Path(source)
     if not src_path.exists():
-        llm_data = _build_delete_file_llm_data("success", 0, source, extra_metrics={"status": "already_deleted"})
-        return build_success(data={"action": "delete", "source": source}, llm_data=llm_data)
-    return await _delete_file_impl(file_path=source, recursive=recursive, force=force)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics={"status": "already_deleted"})
+        return build_success(data={}, llm_data=llm_data)
+
+    result = await _delete_file_impl(file_path=source, recursive=recursive, force=force)
+    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+
+    if result.get("success"):
+        if result.get("already_deleted"):
+            llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics={"status": "already_deleted"})
+            return build_success(data={}, llm_data=llm_data)
+        delete_mode = "永久删除" if force else "放入回收站"
+        extra_m = {"mode": {"value": result.get("mode", ""), "text": delete_mode}}
+        llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics=extra_m)
+        return build_success(
+            data={"operation_id": result.get("operation_id"), "deleted_path": result.get("deleted_path"), "mode": result.get("mode")},
+            llm_data=llm_data,
+        )
+    else:
+        error_detail = result.get("error_detail", "删除文件失败")
+        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=error_detail)
+        return build_error(data={"error_detail": error_detail, "params": result.get("params", {})}, llm_data=llm_data)

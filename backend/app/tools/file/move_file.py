@@ -55,34 +55,25 @@ def _build_move_file_llm_data(
 async def _move_file_impl(
     source_path: str, destination_path: str, overwrite: bool = False,
 ) -> Dict[str, Any]:
-    """移动或重命名文件实现 — 小欧 2026-06-22"""
-    t0 = _time_mod.perf_counter()
+    """移动或重命名文件实现 — 小欧 2026-06-22 — 小健 2026-06-22 重构：只返回raw dict，不含build3/llm_data"""
     is_valid_src, error_msg_src = _validate_path(source_path)
     if not is_valid_src:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("error", duration_ms, source_path, detail=f"源路径{error_msg_src}")
-        return build_error(data={"error_detail": f"源路径{error_msg_src}", "params": {"source": source_path}}, llm_data=llm_data)
+        return {"success": False, "error_detail": f"源路径{error_msg_src}", "params": {"source": source_path}}
 
     is_valid_dst, error_msg_dst = _validate_path(destination_path)
     if not is_valid_dst:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("error", duration_ms, destination_path, detail=f"目标路径{error_msg_dst}")
-        return build_error(data={"error_detail": f"目标路径{error_msg_dst}", "params": {"destination": destination_path}}, llm_data=llm_data)
+        return {"success": False, "error_detail": f"目标路径{error_msg_dst}", "params": {"destination": destination_path}}
 
     src = Path(source_path)
     dst = Path(destination_path)
 
     try:
         if not src.exists():
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_move_file_llm_data("error", duration_ms, source_path, detail=f"源文件不存在: {source_path}")
-            return build_error(data={"error_detail": "源文件不存在", "params": {"source": source_path}}, llm_data=llm_data)
+            return {"success": False, "error_detail": "源文件不存在", "params": {"source": source_path}}
 
         task_id = _current_task_id.get()
         if not task_id:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_move_file_llm_data("error", duration_ms, source_path, detail="当前没有活跃任务ID")
-            return build_error(data={"error_detail": "当前没有活跃任务ID", "params": {"source": source_path}}, llm_data=llm_data)
+            return {"success": False, "error_detail": "当前没有活跃任务ID", "params": {"source": source_path}}
 
         operation_id = record_operation(
             task_id=task_id, operation_type=OperationType.MOVE,
@@ -103,21 +94,13 @@ async def _move_file_impl(
 
         success = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_move_sync)
 
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if success:
-            llm_data = _build_move_file_llm_data("success", duration_ms, str(src))
-            return build_success(
-                data={"operation_id": operation_id, "source": str(src), "destination": str(dst)},
-                llm_data=llm_data,
-            )
-        llm_data = _build_move_file_llm_data("error", duration_ms, source_path, detail="移动文件失败")
-        return build_error(data={"error_detail": "移动文件失败", "params": {"source": source_path, "destination": destination_path}}, llm_data=llm_data)
+            return {"success": True, "operation_id": operation_id, "source": str(src), "destination": str(dst)}
+        return {"success": False, "error_detail": "移动文件失败", "params": {"source": source_path, "destination": destination_path}}
 
     except Exception as e:
         logger.error(f"Failed to move {source_path} -> {destination_path}: {e}")
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("error", duration_ms, source_path, detail=str(e))
-        return build_error(data={"error_detail": str(e), "params": {"source": source_path, "destination": destination_path}}, llm_data=llm_data)
+        return {"success": False, "error_detail": str(e), "params": {"source": source_path, "destination": destination_path}}
 
 
 async def move_file(
@@ -125,8 +108,23 @@ async def move_file(
     destination: str,
     overwrite: bool = False,
 ) -> Dict[str, Any]:
-    """移动文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件"""
+    """移动文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：主函数负责计时+builder+build3"""
+    t0 = _time_mod.perf_counter()
     if os.path.abspath(source) == os.path.abspath(destination):
-        llm_data = _build_move_file_llm_data("success", 0, source, extra_metrics={"status": "no_change"})
-        return build_success(data={"action": "move", "source": source, "destination": destination}, llm_data=llm_data)
-    return await _move_file_impl(source_path=source, destination_path=destination, overwrite=overwrite)
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_move_file_llm_data("success", duration_ms, source, extra_metrics={"status": "no_change"})
+        return build_success(data={}, llm_data=llm_data)
+
+    result = await _move_file_impl(source_path=source, destination_path=destination, overwrite=overwrite)
+    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+
+    if result.get("success"):
+        llm_data = _build_move_file_llm_data("success", duration_ms, source)
+        return build_success(
+            data={"operation_id": result.get("operation_id")},
+            llm_data=llm_data,
+        )
+    else:
+        error_detail = result.get("error_detail", "移动文件失败")
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, detail=error_detail)
+        return build_error(data={"error_detail": error_detail, "params": result.get("params", {})}, llm_data=llm_data)

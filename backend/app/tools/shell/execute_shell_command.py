@@ -45,7 +45,7 @@ def _build_execute_shell_command_llm_data(
         _detail = detail or (f"退出码{returncode}" if returncode is not None else "执行异常")
         return {
             "summary": f"命令执行失败: {cmd_short}（{_detail}）",
-            "action": {"tool": "execute_shell_command", "tool_zh": "执行命令", "target": cmd_short, "params": {"command": cmd_short}},
+            "action": {"tool": "execute_shell_command", "tool_zh": "执行", "target": cmd_short, "params": {"command": cmd_short}},
             "status": {"exec_code": "error", "message": f"命令执行失败({_detail})", "code": err_code or ERR_SHELL_EXEC, "detail": stderr_preview[:200] if stderr_preview else "", "hint": "请检查命令语法和参数"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -53,7 +53,7 @@ def _build_execute_shell_command_llm_data(
     warning = "（有警告输出）" if stderr_preview and stderr_preview.strip() else ""
     return {
         "summary": f"命令执行成功{warning}: {cmd_short}",
-        "action": {"tool": "execute_shell_command", "tool_zh": "执行命令", "target": cmd_short, "params": {"command": cmd_short}},
+        "action": {"tool": "execute_shell_command", "tool_zh": "执行", "target": cmd_short, "params": {"command": cmd_short}},
         "status": {"exec_code": "success", "message": f"命令执行成功{warning}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"returncode": {"value": returncode, "text": f"退出码{returncode}"}},
@@ -67,7 +67,7 @@ def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
     返回原始字典，不调用build3，不含llm_data — 北京老陈 2026-06-22
     """
     data = {
-        "stdout": stdout_str, "stderr": stderr_str, "returncode": returncode,
+        "stdout": stdout_str, "stderr": stderr_str,
     }
     if timed_out:
         return {"success": False, "error_detail": f"命令执行超时({timeout}毫秒)", "data": data, "duration_ms": duration_ms, "params": {"shell_type": shell_type, "timeout": timeout}, "err_code": ERR_SHELL_TIMEOUT}

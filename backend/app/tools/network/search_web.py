@@ -58,14 +58,14 @@ def _build_search_web_llm_data(
     if exec_code == "error":
         return {
             "summary": f"搜索失败: {query}",
-            "action": {"tool": "search_web", "tool_zh": "网络搜索", "target": query, "params": {"query": query}},
+            "action": {"tool": "search_web", "tool_zh": "搜索", "target": query, "params": {"query": query}},
             "status": {"exec_code": "error", "message": "搜索失败", "code": err_code, "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"找到 {result_count} 条搜索结果({engine_used})",
-        "action": {"tool": "search_web", "tool_zh": "网络搜索", "target": query, "params": {"query": query}},
+        "action": {"tool": "search_web", "tool_zh": "搜索", "target": query, "params": {"query": query}},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"results": {"value": result_count, "text": f"{result_count}条"}},
@@ -276,7 +276,7 @@ async def search_web(
             r["url"] = _decode_bing_redirect_url(r.get("url", ""))
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"query": query, "results": results, "total": len(results), "engine": engine_used}
+        data = {"results": results}
         llm_data = _build_search_web_llm_data("success", duration_ms, query, engine_used, len(results))
         return build_success(data=data, llm_data=llm_data)
 

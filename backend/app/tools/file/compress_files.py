@@ -36,22 +36,30 @@ def _validate_path(file_path: str):
 def _build_compress_files_llm_data(
     exec_code: str, duration_ms: int,
     source: str = "", detail: str = "",
+    original_size: int = 0, compressed_size: int = 0, file_count: int = 0,
+    fmt: str = "zip",
 ) -> Dict[str, Any]:
-    """compress_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    """compress_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-22 重构：关键指标放入metrics"""
     if exec_code == "error":
         return {
-            "summary": f"压缩文件失败: {detail}",
-            "action": {"tool": "compress_files", "tool_zh": "压缩文件", "target": source, "params": {}},
+            "summary": f"压缩失败: {detail}",
+            "action": {"tool": "compress_files", "tool_zh": "压缩", "target": source, "params": {}},
             "status": {"exec_code": "error", "message": "压缩失败", "code": "", "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    ratio = 1 - (compressed_size / original_size) if original_size > 0 else 0
     return {
-        "summary": f"压缩文件成功: {source}",
-        "action": {"tool": "compress_files", "tool_zh": "压缩文件", "target": source, "params": {}},
+        "summary": f"压缩成功: {source}，{file_count}个文件，{compressed_size}字节",
+        "action": {"tool": "compress_files", "tool_zh": "压缩", "target": source, "params": {}},
         "status": {"exec_code": "success", "message": "压缩成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
-        "metrics": {},
+        "metrics": {
+            "file_count": {"value": file_count, "text": f"{file_count}个文件"},
+            "compressed_size": {"value": compressed_size, "text": f"{compressed_size}字节"},
+            "ratio": {"value": f"{ratio:.1%}", "text": f"压缩率{ratio:.1%}"},
+            "format": {"value": fmt, "text": fmt},
+        },
     }
 
 
@@ -269,8 +277,16 @@ async def compress_files(
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if result:
-            llm_data = _build_compress_files_llm_data("success", duration_ms, source)
-            return build_success(data={"operation_id": operation_id, **result}, llm_data=llm_data)
+            llm_data = _build_compress_files_llm_data(
+                "success", duration_ms, source,
+                original_size=result.get("original_size", 0),
+                compressed_size=result.get("compressed_size", 0),
+                file_count=result.get("file_count", 0),
+                fmt=result.get("format", "zip"),
+            )
+            safe_data = {k: v for k, v in result.items() if k not in ("source_path", "destination_path", "format", "compressed_size", "file_count")}
+            safe_data["operation_id"] = operation_id
+            return build_success(data=safe_data, llm_data=llm_data)
         llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail="压缩失败")
         return build_error(data={"error_detail": "压缩失败", "params": {"source": source}}, llm_data=llm_data)
 

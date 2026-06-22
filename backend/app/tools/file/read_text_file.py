@@ -152,15 +152,15 @@ def _build_read_text_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"读取文件失败: {detail}",
-            "action": {"tool": "read_text_file", "tool_zh": "读取文件", "target": file_path, "params": {}},
-            "status": {"exec_code": "error", "message": "读取文件失败", "code": ERR_FILE_READ_FAILED, "detail": detail, "hint": ""},
+            "action": {"tool": "read_text_file", "tool_zh": "读取", "target": file_path, "params": {}},
+            "status": {"exec_code": "error", "message": "读取失败", "code": ERR_FILE_READ_FAILED, "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"读取文件成功: {file_path} ({line_count}/{total_lines}行)",
-        "action": {"tool": "read_text_file", "tool_zh": "读取文件", "target": file_path, "params": {}},
-        "status": {"exec_code": "success", "message": "读取文件成功", "code": "", "detail": "", "hint": ""},
+        "action": {"tool": "read_text_file", "tool_zh": "读取", "target": file_path, "params": {}},
+        "status": {"exec_code": "success", "message": "读取成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "line_count": {"value": line_count, "text": f"{line_count}行"},
@@ -250,12 +250,13 @@ async def read_text_file(
         lines = content.splitlines(keepends=True)
         _data = _select_lines(lines, head, tail, offset, limit)
         _data["encoding"] = used_encoding
-        _data["file_size"] = file_size
+        _line_count = _data.pop("line_count", 0)
+        _total_lines = _data.pop("total_lines", 0)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_text_file_llm_data(
             "success", duration_ms, file_path=file_path,
-            line_count=_data["line_count"], total_lines=_data["total_lines"], file_size=file_size,
+            line_count=_line_count, total_lines=_total_lines, file_size=file_size,
         )
 
         return build_success(data=_data, llm_data=llm_data)
