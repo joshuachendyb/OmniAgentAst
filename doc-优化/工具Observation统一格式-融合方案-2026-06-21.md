@@ -2731,7 +2731,7 @@ def __init__(
 - `tool_result`：完整的data，不做任何处理
 
 ```python
-# Phase 2修改后（observation模式 — 替换现有_extra_fields中的observation逻辑）
+# Phase 2修改后（observation模式 — 新增llm_data和tool_result字段）
 def _extra_fields(self) -> Dict[str, Any]:
     if self.TYPE == "action_tool":
         ...
@@ -2744,12 +2744,25 @@ def _extra_fields(self) -> Dict[str, Any]:
             obs["warning"] = self._warning
         if self._attachment is not None:
             obs["attachment"] = self._attachment
-        # 新增字段
+        # 新增字段（完整保存）
         if self._llm_data is not None:
             obs["llm_data"] = self._llm_data
         if self._tool_result is not None:
             obs["tool_result"] = self._tool_result
         return obs
+```
+
+**返回结构说明**：
+
+```python
+# observation模式的_extra_fields()返回结构
+{
+    "return_direct": bool,      # 保留旧字段
+    "warning": str,             # 保留旧字段（如有）
+    "attachment": Any,          # 保留旧字段（如有）
+    "llm_data": dict,           # 新增：完整llm_data
+    "tool_result": Any,         # 新增：完整data
+}
 ```
 
 **验证**：`pytest -x --tb=short -k "test_tool_step"`
@@ -3024,8 +3037,8 @@ data = {
 
 ---
 
-**文档更新时间**: 2026-06-22 17:15:00  
-**版本**: v6.9  
+**文档更新时间**: 2026-06-22 17:30:00  
+**版本**: v6.10  
 **编写人**: 小健 + 北京老陈 + 小欧  
 **更新内容**: 
 - v6.4: 修正DB兼容描述、补充并行合并规则、新增数据截断规则
@@ -3034,6 +3047,7 @@ data = {
 - v6.7: 明确不做兼容，旧DB数据直接删除
 - v6.8: 修正5.10节与9.3/9.4不一致问题、修正9.3.1代码示例语法错误
 - v6.9: 明确ToolStep两种模式区别、observation模式保存完整llm_data和tool_result
+- v6.10: 修正注释（新增而非替换）、补充返回结构说明
 - v6.8: 补充Phase 2审查缺口：①5.10.4澄清Observation step复用ToolStep（非独立模型）；②5.10.7补充DB迁移步骤；③新增9.3节Phase 2实施清单（5步）
 - v6.9: 修复Phase 2 4个设计错误
 - v7.0: 拆分Phase 2/3：action_tool模式execution_result瘦身+DB存储优化移到Phase 3，Phase 2只改observation模式
