@@ -154,39 +154,28 @@ async def _precise_replace_in_file(
     replace_all: bool = False, ignore_case: bool = False,
     dry_run: bool = False, encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """精确替换文件中的字符串 — 小欧 2026-06-22"""
+    """精确替换文件中的字符串(返回原始dict,不含build3/llm_data) — 小欧 2026-06-22"""
     if not old_string:
-        llm_data = _build_edit_text_file_llm_data("error", 0, file_path=file_path, detail="old_string不能为空")
-        return build_error(data={"error_detail": "old_string不能为空", "params": {"file_path": file_path}}, llm_data=llm_data)
+        return {"error_detail": "old_string不能为空"}
 
     task_id = _current_task_id.get(None)
     if not task_id:
-        llm_data = _build_edit_text_file_llm_data("error", 0, file_path=file_path, detail="当前没有活跃任务ID")
-        return build_error(data={"error_detail": "当前没有活跃任务ID", "params": {"file_path": file_path}}, llm_data=llm_data)
+        return {"error_detail": "当前没有活跃任务ID"}
 
     is_binary, reason = _is_binary_file(file_path)
     if is_binary:
-        llm_data = _build_edit_text_file_llm_data("error", 0, file_path=file_path, detail=reason)
-        return build_error(data={"error_detail": reason, "params": {"file_path": file_path}}, llm_data=llm_data)
+        return {"error_detail": reason}
 
     t0 = _time_mod.perf_counter()
     try:
         is_valid, err = _validate_path(file_path)
         if not is_valid:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=err)
-            return build_error(data={"error_detail": err, "params": {"file_path": file_path}}, llm_data=llm_data)
+            return {"error_detail": err}
         path = Path(file_path)
         if not path.exists():
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            detail = f"文件不存在: {file_path}"
-            llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=detail)
-            return build_error(data={"error_detail": detail, "params": {"file_path": file_path}}, llm_data=llm_data)
+            return {"error_detail": f"文件不存在: {file_path}"}
         if path.stat().st_size > MAX_READ_SIZE:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            detail = f"文件过大({path.stat().st_size}字节)"
-            llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=detail)
-            return build_error(data={"error_detail": detail, "params": {"file_path": file_path, "file_size": path.stat().st_size}}, llm_data=llm_data)
+            return {"error_detail": f"文件过大({path.stat().st_size}字节)", "file_size": path.stat().st_size}
 
         operation_id = record_operation(
             task_id=task_id, operation_type=OperationType.MODIFY,
@@ -215,25 +204,19 @@ async def _precise_replace_in_file(
             execute_with_safety, operation_id, operation_func=_replace_sync,
         )
 
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         count = replace_result.get('count', 0)
 
         if not success or count == 0:
-            llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="未找到匹配内容")
-            return build_error(
-                data={"error_detail": "未找到匹配内容", "params": {"file_path": file_path, "old_string": old_string[:50]}},
-                llm_data=llm_data,
-            )
+            return {"error_detail": "未找到匹配内容", "old_string": old_string[:50]}
 
-        return build_success(
-            data={"operation_id": operation_id, "file_path": str(path), "applied_edits": count, "total_edits": count},
-        )
+        return {
+            "operation_id": operation_id, "file_path": str(path),
+            "applied_edits": count, "total_edits": count,
+        }
 
     except Exception as e:
         logger.error(f"edit_text_file failed: {file_path}: {e}")
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e))
-        return build_error(data={"error_detail": str(e), "params": {"file_path": file_path}}, llm_data=llm_data)
+        return {"error_detail": str(e)}
 
 
 async def edit_text_file(
@@ -253,13 +236,15 @@ async def edit_text_file(
         dry_run=dry_run, encoding=encoding,
     )
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-    is_err = result.get("data", {}).get("error_detail") is not None
-    if is_err:
-        detail = result["data"]["error_detail"]
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=detail)
-    else:
-        applied = result.get("data", {}).get("applied_edits", 0)
-        total = result.get("data", {}).get("total_edits", 0)
-        llm_data = _build_edit_text_file_llm_data("success", duration_ms, file_path=file_path, applied=applied, total=total)
-    result["llm_data"] = llm_data
-    return result
+    error_detail = result.get("error_detail")
+    if error_detail:
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail)
+        return build_error(
+            data={"error_detail": error_detail, "params": {"file_path": file_path}},
+            llm_data=llm_data,
+        )
+    llm_data = _build_edit_text_file_llm_data(
+        "success", duration_ms, file_path=file_path,
+        applied=result.get("applied_edits", 0), total=result.get("total_edits", 0),
+    )
+    return build_success(data=result, llm_data=llm_data)
