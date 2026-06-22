@@ -2709,6 +2709,7 @@ def __init__(
     timestamp: Optional[int] = None,
     llm_data: Optional[Dict[str, Any]] = None,      # 新增
     tool_result: Any = None,                        # 新增
+    other_data: Optional[Dict[str, Any]] = None,    # 新增
 ):
     ReasoningStep.__init__(self, step, timestamp)
     self.TYPE = step_type
@@ -2716,6 +2717,7 @@ def __init__(
     self._attachment = attachment
     self._llm_data = llm_data or {}                 # 新增
     self._tool_result = tool_result                 # 新增
+    self._other_data = other_data or {}             # 新增
 ```
 
 修改observation模式的 `_extra_fields()`，**选择性保留**（删除与llm_data重复的字段，保留llm_data没有的字段），新增 llm_data 和 tool_result：
@@ -2729,9 +2731,12 @@ def __init__(
 **新增字段**（完整保存）：
 - `llm_data`：完整的llm_data，不做任何处理
 - `tool_result`：完整的data，不做任何处理
+- `other_data`：完整的other_data，不做任何处理（含warning/attachment/return_direct/retry_count等）
+
+**注意**：return_direct/warning/attachment虽然从other_data中取，但为了前端兼容，保留旧字段名。同时保存完整的other_data。
 
 ```python
-# Phase 2修改后（observation模式 — 新增llm_data和tool_result字段）
+# Phase 2修改后（observation模式 — 新增llm_data/tool_result/other_data字段）
 def _extra_fields(self) -> Dict[str, Any]:
     if self.TYPE == "action_tool":
         ...
@@ -2739,7 +2744,7 @@ def _extra_fields(self) -> Dict[str, Any]:
         obs: Dict[str, Any] = {
             "return_direct": self._return_direct or False,
         }
-        # 保留llm_data中没有的旧字段
+        # 保留llm_data中没有的旧字段（从other_data取，前端兼容）
         if self._warning:
             obs["warning"] = self._warning
         if self._attachment is not None:
@@ -2749,6 +2754,8 @@ def _extra_fields(self) -> Dict[str, Any]:
             obs["llm_data"] = self._llm_data
         if self._tool_result is not None:
             obs["tool_result"] = self._tool_result
+        if self._other_data is not None:
+            obs["other_data"] = self._other_data
         return obs
 ```
 
@@ -2757,11 +2764,12 @@ def _extra_fields(self) -> Dict[str, Any]:
 ```python
 # observation模式的_extra_fields()返回结构
 {
-    "return_direct": bool,      # 保留旧字段
-    "warning": str,             # 保留旧字段（如有）
-    "attachment": Any,          # 保留旧字段（如有）
+    "return_direct": bool,      # 保留旧字段（从other_data取）
+    "warning": str,             # 保留旧字段（从other_data取，如有）
+    "attachment": Any,          # 保留旧字段（从other_data取，如有）
     "llm_data": dict,           # 新增：完整llm_data
     "tool_result": Any,         # 新增：完整data
+    "other_data": dict,         # 新增：完整other_data（含warning/attachment/return_direct/retry_count等）
 }
 ```
 
@@ -2814,13 +2822,14 @@ events.append(ctx.agent._step_emitter.emit(ToolStep(
     step_type="observation",
     observation=merged_obs,
     # 旧字段已删除（execution_status/error_message/code → llm_data.status中）
-    # 保留字段（llm_data中没有）：
+    # 保留字段（从other_data取，前端兼容）：
     warning=merged_other.get("warning"),
     attachment=merged_other.get("attachment"),
     return_direct=merged_other.get("return_direct", False),
-    # 新增字段：
+    # 新增字段（完整保存）：
     llm_data=merged_llm_data,
     tool_result=_all_tool_results[0] if len(_all_tool_results) == 1 else _all_tool_results,
+    other_data=merged_other,
 )))
 ```
 
@@ -3037,8 +3046,8 @@ data = {
 
 ---
 
-**文档更新时间**: 2026-06-22 17:30:00  
-**版本**: v6.10  
+**文档更新时间**: 2026-06-22 17:45:00  
+**版本**: v6.11  
 **编写人**: 小健 + 北京老陈 + 小欧  
 **更新内容**: 
 - v6.4: 修正DB兼容描述、补充并行合并规则、新增数据截断规则
@@ -3048,6 +3057,7 @@ data = {
 - v6.8: 修正5.10节与9.3/9.4不一致问题、修正9.3.1代码示例语法错误
 - v6.9: 明确ToolStep两种模式区别、observation模式保存完整llm_data和tool_result
 - v6.10: 修正注释（新增而非替换）、补充返回结构说明
+- v6.11: 新增other_data字段，完整保存build3返回的3个字段（llm_data/tool_result/other_data）
 - v6.8: 补充Phase 2审查缺口：①5.10.4澄清Observation step复用ToolStep（非独立模型）；②5.10.7补充DB迁移步骤；③新增9.3节Phase 2实施清单（5步）
 - v6.9: 修复Phase 2 4个设计错误
 - v7.0: 拆分Phase 2/3：action_tool模式execution_result瘦身+DB存储优化移到Phase 3，Phase 2只改observation模式
