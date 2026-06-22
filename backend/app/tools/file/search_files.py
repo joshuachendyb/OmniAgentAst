@@ -16,7 +16,7 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import TOOL_TIMEOUTS, DEFAULT_PAGE_SIZE
 from app.constants import ERR_FILE_SEARCH_FAILED
 from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
@@ -66,7 +66,8 @@ def _collect_entry_result(relative_path: str, name: str, fpath: Path,
 
 def _build_search_files_llm_data(
     exec_code: str, duration_ms: int,
-    search_dir: str = "", total: int = 0, detail: str = "",
+    search_dir: str = "", total: int = 0,
+    truncated: bool = False, detail: str = "",
 ) -> Dict[str, Any]:
     """search_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
     if exec_code == "error":
@@ -76,6 +77,16 @@ def _build_search_files_llm_data(
             "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_SEARCH_FAILED, "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
+        }
+    if exec_code == "warning":
+        return {
+            "summary": f"搜索完成: {total}个匹配（搜索超时，结果可能不完整）",
+            "action": {"tool": "search_files", "tool_zh": "搜索文件", "target": search_dir, "params": {}},
+            "status": {"exec_code": "warning", "message": "搜索超时，结果不完整", "code": "", "detail": "搜索时间耗尽，仅返回部分匹配项", "hint": "可缩小搜索范围或使用更精确的匹配模式"},
+            "duration_ms": duration_ms,
+            "metrics": {
+                "total": {"value": total, "text": f"{total}个匹配"},
+            },
         }
     return {
         "summary": f"搜索完成: {total}个匹配",
@@ -160,7 +171,14 @@ async def search_files(
     all_matches.sort(key=lambda x: x.get("name", ""))
     total = len(all_matches)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-    llm_data = _build_search_files_llm_data("success", duration_ms, search_dir=search_dir, total=total)
+    truncated_by_deadline = time.monotonic() > deadline
+    exec_code = "warning" if truncated_by_deadline else "success"
+    llm_data = _build_search_files_llm_data(exec_code, duration_ms, search_dir=search_dir, total=total, truncated=truncated_by_deadline)
+    if exec_code == "warning":
+        return build_warning(
+            data={"matches": all_matches, "total": total, "search_dir": search_dir, "pattern": pattern},
+            llm_data=llm_data,
+        )
     return build_success(
         data={"matches": all_matches, "total": total, "search_dir": search_dir, "pattern": pattern},
         llm_data=llm_data,

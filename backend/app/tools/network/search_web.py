@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.network.http_client_sdk import create_http_client
 from app.utils.common_patterns import HTML_TAG_PATTERN
 from app.utils.json_utils import parse_json
@@ -62,6 +62,14 @@ def _build_search_web_llm_data(
             "status": {"exec_code": "error", "message": f"搜索失败: {detail}", "code": err_code, "detail": detail, "hint": "请检查搜索词和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
+        }
+    if exec_code == "warning":
+        return {
+            "summary": f"搜索 {query}，{result_count}条结果（降级到{engine_used}引擎）",
+            "action": {"tool": "search_web", "tool_zh": "搜索", "target": query, "params": {"query": query}},
+            "status": {"exec_code": "warning", "message": "搜索服务降级", "code": "", "detail": f"Parallel引擎不可用，降级到{engine_used}搜索", "hint": ""},
+            "duration_ms": duration_ms,
+            "metrics": {"results": {"value": result_count, "text": f"{result_count}条"}, "engine": {"value": engine_used, "text": f"{engine_used}引擎（降级）"}},
         }
     return {
         "summary": f"搜索 {query}，{result_count}条结果",
@@ -277,7 +285,10 @@ async def search_web(
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"results": results}
-        llm_data = _build_search_web_llm_data("success", duration_ms, query, engine_used, len(results))
+        exec_code = "warning" if engine_used != "Parallel" else "success"
+        llm_data = _build_search_web_llm_data(exec_code, duration_ms, query, engine_used, len(results))
+        if exec_code == "warning":
+            return build_warning(data=data, llm_data=llm_data)
         return build_success(data=data, llm_data=llm_data)
 
     except Exception as e:

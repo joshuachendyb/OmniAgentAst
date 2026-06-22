@@ -16,7 +16,7 @@ import tempfile
 import time as _time_mod
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.utils.logger import setup_logger
 from app.constants import (
@@ -50,11 +50,18 @@ def _build_execute_code_llm_data(
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    warning = "（有警告输出）" if stderr_preview and stderr_preview.strip() else ""
+    if exec_code == "warning":
+        return {
+            "summary": f"{language}代码执行成功（有警告输出）",
+            "action": {"tool": "execute_code", "tool_zh": "执行代码", "target": language, "params": {"language": language}},
+            "status": {"exec_code": "warning", "message": "代码执行成功（有警告输出）", "code": "", "detail": stderr_preview[:200] if stderr_preview else "", "hint": ""},
+            "duration_ms": duration_ms,
+            "metrics": {"returncode": {"value": returncode, "text": f"退出码{returncode}"}},
+        }
     return {
-        "summary": f"{language}代码执行成功{warning}",
+        "summary": f"{language}代码执行成功",
         "action": {"tool": "execute_code", "tool_zh": "执行代码", "target": language, "params": {"language": language}},
-        "status": {"exec_code": "success", "message": f"代码执行成功{warning}", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "代码执行成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"returncode": {"value": returncode, "text": f"退出码{returncode}"}},
     }
@@ -193,8 +200,14 @@ def execute_code(
         output = result.get("output", "")
         error = result.get("error", "")
         returncode = result.get("returncode", 0)
-        llm_data = _build_execute_code_llm_data("success", duration_ms, language, returncode, output[:200], error[:200])
+        if error and error.strip():
+            exec_code = "warning"
+        else:
+            exec_code = "success"
+        llm_data = _build_execute_code_llm_data(exec_code, duration_ms, language, returncode, output[:200], error[:200])
         data = {"stdout": output, "stderr": error, "returncode": returncode}
+        if exec_code == "warning":
+            return build_warning(data=data, llm_data=llm_data)
         return build_success(data=data, llm_data=llm_data)
     else:
         # 失败情况

@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.services.safety.tool_safety_checker import get_tool_safety_checker
 from app.utils.logger import logger
@@ -49,6 +49,14 @@ def _build_execute_shell_command_llm_data(
             "status": {"exec_code": "error", "message": f"执行失败: {stderr_preview[:200] if stderr_preview else ''}", "code": err_code or ERR_SHELL_EXEC, "detail": stderr_preview[:200] if stderr_preview else "", "hint": "请检查命令语法和参数"},
             "duration_ms": duration_ms,
             "metrics": {},
+        }
+    if exec_code == "warning":
+        return {
+            "summary": f"执行 {cmd_short}，退出码{returncode}（有警告输出）",
+            "action": {"tool": "execute_shell_command", "tool_zh": "执行", "target": cmd_short, "params": {"command": cmd_short}},
+            "status": {"exec_code": "warning", "message": "执行成功（有警告输出）", "code": "", "detail": stderr_preview[:200] if stderr_preview else "", "hint": ""},
+            "duration_ms": duration_ms,
+            "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
         }
     return {
         "summary": f"执行 {cmd_short}，退出码{returncode}",
@@ -191,7 +199,13 @@ def execute_shell_command(
         duration_ms = result.get("duration_ms", 0)
         data = result.get("data", {})
         if result.get("success"):
-            llm_data = _build_execute_shell_command_llm_data("success", duration_ms, command[:100], returncode, stdout_str[:200], stderr_str[:200], shell_type or "powershell")
+            if stderr_str and stderr_str.strip():
+                exec_code = "warning"
+            else:
+                exec_code = "success"
+            llm_data = _build_execute_shell_command_llm_data(exec_code, duration_ms, command[:100], returncode, stdout_str[:200], stderr_str[:200], shell_type or "powershell")
+            if exec_code == "warning":
+                return build_warning(data=data, llm_data=llm_data)
             return build_success(data=data, llm_data=llm_data)
         else:
             error_detail = result.get("error_detail", "")

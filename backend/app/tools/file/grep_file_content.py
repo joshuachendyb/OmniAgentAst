@@ -15,7 +15,7 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import TOOL_TIMEOUTS, MAX_SEARCH_FILE_SIZE
 from app.constants import ERR_FILE_CONTENT_SEARCH_FAILED
 from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
@@ -51,7 +51,8 @@ def _read_file_safe(file_path: Path) -> List[str]:
 def _build_grep_file_content_llm_data(
     exec_code: str, duration_ms: int,
     pattern: str = "", search_dir: str = "",
-    total_files: int = 0, total_matches: int = 0, detail: str = "",
+    total_files: int = 0, total_matches: int = 0,
+    truncated: bool = False, detail: str = "",
 ) -> Dict[str, Any]:
     """grep_file_content的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
     if exec_code == "error":
@@ -61,6 +62,17 @@ def _build_grep_file_content_llm_data(
             "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_CONTENT_SEARCH_FAILED, "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
+        }
+    if exec_code == "warning":
+        return {
+            "summary": f"搜索完成: 匹配{total_matches}行, {total_files}个文件（搜索超时，结果可能不完整）",
+            "action": {"tool": "grep_file_content", "tool_zh": "内容搜索", "target": pattern, "params": {"pattern": pattern}},
+            "status": {"exec_code": "warning", "message": "搜索超时，结果不完整", "code": "", "detail": "搜索时间耗尽，仅返回部分结果", "hint": "可缩小搜索范围或增加超时时间"},
+            "duration_ms": duration_ms,
+            "metrics": {
+                "total_files": {"value": total_files, "text": f"{total_files}个文件"},
+                "total_matches": {"value": total_matches, "text": f"{total_matches}行"},
+            },
         }
     return {
         "summary": f"搜索完成: 匹配{total_matches}行, {total_files}个文件",
@@ -77,7 +89,7 @@ def _build_grep_file_content_llm_data(
 def _grep_files_sync(
     search_dir: Path, pattern: str, glob_filter: Optional[str],
     ignore_case: bool, deadline: float,
-) -> Tuple[List[Dict], int, int]:
+) -> Tuple[List[Dict], int, int, bool]:
     """同步搜索文件内容 — 小欧 2026-06-22"""
     results = []
     total_matches = 0
@@ -116,7 +128,8 @@ def _grep_files_sync(
                 total_files += 1
                 results.extend(file_matches)
 
-    return results, total_files, total_matches
+    truncated = time.monotonic() > deadline
+    return results, total_files, total_matches, truncated
 
 
 import os
@@ -158,7 +171,7 @@ async def grep_file_content(
     deadline = time.monotonic() + TOOL_TIMEOUTS.get("grep_file_content", TOOL_TIMEOUTS["default"]) - 2
 
     try:
-        results, total_files, total_matches = await asyncio.to_thread(
+        results, total_files, total_matches, truncated = await asyncio.to_thread(
             _grep_files_sync, search_path, pattern, glob, ignore_case, deadline,
         )
     except Exception as e:
@@ -166,12 +179,13 @@ async def grep_file_content(
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=str(e))
         return build_error(data={"error_detail": str(e), "params": {"search_dir": actual_dir}}, llm_data=llm_data)
 
+    data = {"matches": results, "total_matches": total_matches, "total_files": total_files, "pattern": pattern}
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+    exec_code = "warning" if truncated else "success"
     llm_data = _build_grep_file_content_llm_data(
-        "success", duration_ms, pattern=pattern, search_dir=actual_dir,
-        total_files=total_files, total_matches=total_matches,
+        exec_code, duration_ms, pattern=pattern, search_dir=actual_dir,
+        total_files=total_files, total_matches=total_matches, truncated=truncated,
     )
-    return build_success(
-        data={"matches": results, "total_matches": total_matches, "total_files": total_files, "pattern": pattern},
-        llm_data=llm_data,
-    )
+    if exec_code == "warning":
+        return build_warning(data=data, llm_data=llm_data)
+    return build_success(data=data, llm_data=llm_data)

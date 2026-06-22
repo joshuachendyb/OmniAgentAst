@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, build_warning
 from app.constants import ERR_FILE_LIST_DIR_FAILED
 from app.tools.tool_constants import TOOL_TIMEOUTS
 from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
@@ -158,6 +158,15 @@ def _build_list_directory_llm_data(
             "metrics": {},
         }
     m: Dict[str, Any] = {"total": {"value": total, "text": f"{total}项"}}
+    if exec_code == "warning":
+        m["truncated"] = {"value": True, "text": "已截断"}
+        return {
+            "summary": f"列出目录成功: {dir_path} ({total}项，已截断)",
+            "action": {"tool": "list_directory", "tool_zh": "列出目录", "target": dir_path, "params": {}},
+            "status": {"exec_code": "warning", "message": "目录内容不完整", "code": "", "detail": "结果过多已截断，仅显示前200项", "hint": "请使用更精确的路径或筛选条件"},
+            "duration_ms": duration_ms,
+            "metrics": m,
+        }
     if truncated:
         m["truncated"] = {"value": True, "text": "已截断"}
     return {
@@ -287,7 +296,10 @@ async def list_directory(
 
         list_data = _build_list_success(all_entries, total, path, statistics, start_offset, MAX_DISPLAY_ENTRIES)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("success", duration_ms, dir_path=dir_path, total=total, truncated=list_data["truncated"])
+        exec_code = "warning" if list_data["truncated"] else "success"
+        llm_data = _build_list_directory_llm_data(exec_code, duration_ms, dir_path=dir_path, total=total, truncated=list_data["truncated"])
+        if exec_code == "warning":
+            return build_warning(data=list_data, llm_data=llm_data)
         return build_success(data=list_data, llm_data=llm_data)
 
     except Exception as e:
