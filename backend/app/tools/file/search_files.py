@@ -102,11 +102,10 @@ def _build_search_files_llm_data(
 async def search_files(
     pattern: str,
     search_dir: str,
-    recursive: bool = True,
     ignore_case: bool = True,
     type: Optional[Literal["file", "directory"]] = None,
 ) -> Dict[str, Any]:
-    """搜索文件名 — 小沈 2026-05-19 — 小欧 2026-06-22 独立文件"""
+    """搜索文件名(始终递归搜索子目录) — 小沈 2026-05-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-23 去掉recursive参数"""
     t0 = _time_mod.perf_counter()
     max_depth = 50
     is_valid, error_msg = _validate_path(search_dir)
@@ -139,9 +138,7 @@ async def search_files(
             if len(all_matches) >= MAX_SEARCH_RESULTS:
                 logger.warning(f"[search_files] 结果数量达到上限{MAX_SEARCH_RESULTS},提前返回")
                 break
-            if not recursive:
-                dirs.clear()
-            elif max_depth:
+            if max_depth:
                 depth = root[len(str(path)):].count(os.sep)
                 if depth >= max_depth:
                     dirs.clear()

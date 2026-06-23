@@ -153,10 +153,6 @@ class SearchFilesInput(BaseModel):
     search_dir: str = Field(
         description="搜索的起始目录(绝对路径,必填)。如 D:/项目代码"
     )
-    recursive: bool = Field(
-        default=True,
-        description="是否递归搜索子目录,默认True"
-    )
     ignore_case: bool = Field(
         default=True,
         description="是否忽略大小写,默认True"
