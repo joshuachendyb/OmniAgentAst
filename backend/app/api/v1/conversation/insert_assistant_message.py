@@ -13,7 +13,7 @@ from app.utils.time_utils import get_timestamp_ms
 
 
 def insert_assistant_message(
-    conn: Connection, message_id: int, session_id: str,
+    conn: Connection, ai_message_id: int, session_id: str,
     display_name: Optional[str], update_data,
 ) -> None:
     """拷贝自 conversation.py 第115-131行
@@ -28,6 +28,6 @@ def insert_assistant_message(
         """INSERT INTO chat_messages
            (id, session_id, role, content, timestamp, display_name, reply_to_message_id)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (message_id, session_id, "assistant", initial_content, utc_time, display_name, reply_to),
+        (ai_message_id, session_id, "assistant", initial_content, utc_time, display_name, reply_to),
     )
-    logger.info(f"新消息创建: message_id={message_id}, session_id={session_id}, display_name={display_name}")
+    logger.info(f"新消息创建: ai_message_id={ai_message_id}, session_id={session_id}, display_name={display_name}")

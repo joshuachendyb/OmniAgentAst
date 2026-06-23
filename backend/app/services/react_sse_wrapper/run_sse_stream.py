@@ -145,7 +145,10 @@ async def run_sse_stream(
         if current_execution_steps:
             try:
                 saved_content = stream_state.current_content if stream_state else ""
-                await save_execution_steps_to_db(session_id, current_execution_steps, saved_content)
+                ai_message_id = await save_execution_steps_to_db(session_id, current_execution_steps, saved_content)
+                if ai_message_id:
+                    from app.utils.prompt_logger import get_prompt_logger
+                    get_prompt_logger().update_ai_message_id(str(ai_message_id))
             except Exception as save_err:
                 logger.error(f"[SSE] DB保存失败(steps={len(current_execution_steps)}): {save_err}", exc_info=True)
 

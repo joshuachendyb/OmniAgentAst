@@ -10,7 +10,7 @@ from sqlite3 import Connection
 
 
 def update_message_fields(
-    conn: Connection, message_id: int,
+    conn: Connection, ai_message_id: int,
     update_data, display_name: str,
 ) -> None:
     """拷贝自 conversation.py 第134-156行"""
@@ -24,7 +24,7 @@ def update_message_fields(
         fields.append("content = ?")
         values.append(update_data.content)
     if fields:
-        values.append(message_id)
+        values.append(ai_message_id)
         cursor.execute(
             f'UPDATE chat_messages SET {", ".join(fields)} WHERE id = ?',
             values,

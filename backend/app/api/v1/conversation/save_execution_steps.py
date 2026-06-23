@@ -27,15 +27,15 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
     try:
         with db.get_conn("chat") as conn:
             ensure_session_exists(session_id, conn)
-            message_id, is_new = _allocator.allocate(session_id, conn)
+            ai_message_id, is_new = _allocator.allocate(session_id, conn)
             metadata = extract_metadata_from_steps(update_data.execution_steps)
             display_name = metadata.get("display_name")
             if is_new:
-                insert_assistant_message(conn, message_id, session_id, display_name, update_data)
-            update_message_fields(conn, message_id, update_data, display_name)
+                insert_assistant_message(conn, ai_message_id, session_id, display_name, update_data)
+            update_message_fields(conn, ai_message_id, update_data, display_name)
             update_session_message_count(conn, session_id, is_new)
-        logger.info(f"保存执行步骤成功: session_id={session_id}, message_id={message_id}, is_new={is_new}")
-        return {"success": True, "message_id": message_id, "is_new_message": is_new}
+        logger.info(f"保存执行步骤成功: session_id={session_id}, ai_message_id={ai_message_id}, is_new={is_new}")
+        return {"success": True, "ai_message_id": ai_message_id, "is_new_message": is_new}
     except HTTPException:
         raise
     except Exception as e:

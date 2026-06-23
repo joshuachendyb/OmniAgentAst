@@ -93,16 +93,15 @@ async def save_execution_steps_to_db(
                 reply_to_message_id=user_message_id
             )
         )
-        message_id = result.get("message_id") if isinstance(result, dict) else None
-        if message_id:
-            from app.utils.prompt_logger import get_prompt_logger
-            get_prompt_logger().update_ai_message_id(str(message_id))
+        ai_message_id = result.get("ai_message_id") if isinstance(result, dict) else None
+        return ai_message_id
 
     except Exception as e:
         if "会话不存在" in str(e) or "404" in str(e):
             logger.warning(f"[Save] 会话不存在,跳过本次: session_id={session_id}")
         else:
             logger.error(f"[Save] 保存失败: {e}", exc_info=True)
+        return None
 
 
 # ====================================================================
