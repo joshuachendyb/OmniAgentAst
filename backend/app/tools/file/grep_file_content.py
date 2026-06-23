@@ -105,12 +105,12 @@ def _grep_files_sync(
     effective_limit = head_limit if head_limit else MAX_SEARCH_RESULTS
 
     for root, dirs, files in os.walk(search_dir):
-        if time.monotonic() > deadline:
+        if _time_mod.monotonic() > deadline:
             break
         if total_matches >= effective_limit:
             break
         for fname in files:
-            if time.monotonic() > deadline:
+            if _time_mod.monotonic() > deadline:
                 break
             if total_matches >= effective_limit:
                 break
@@ -151,7 +151,7 @@ def _grep_files_sync(
                 total_files += 1
                 results.extend(file_matches)
 
-    truncated = time.monotonic() > deadline or total_matches >= effective_limit
+    truncated = _time_mod.monotonic() > deadline or total_matches >= effective_limit
     return results, total_files, total_matches, truncated
 
 
@@ -207,7 +207,7 @@ async def grep_file_content(
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"搜索目录不存在: {actual_dir}")
         return build_error(data={"error_detail": "搜索目录不存在", "params": {"search_dir": actual_dir}}, llm_data=llm_data)
 
-    deadline = time.monotonic() + TOOL_TIMEOUTS.get("grep_file_content", TOOL_TIMEOUTS["default"]) - 2
+    deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("grep_file_content", TOOL_TIMEOUTS["default"]) - 2
 
     try:
         results, total_files, total_matches, truncated = await asyncio.to_thread(

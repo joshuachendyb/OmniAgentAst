@@ -124,7 +124,7 @@ async def search_files(
         llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"搜索目录不存在: {search_dir}")
         return build_error(data={"error_detail": "搜索目录不存在", "params": {"search_dir": search_dir}}, llm_data=llm_data)
 
-    deadline = time.monotonic() + TOOL_TIMEOUTS.get("search_files", TOOL_TIMEOUTS["default"]) - 2
+    deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("search_files", TOOL_TIMEOUTS["default"]) - 2
     all_matches: List = []
     llm_preview: List = []
     seen_files: set = set()
@@ -133,7 +133,7 @@ async def search_files(
     def _search_sync():
         nonlocal seen_files
         for root, dirs, files in os.walk(path):
-            if time.monotonic() > deadline:
+            if _time_mod.monotonic() > deadline:
                 logger.warning(f"[search_files] 超时自检触发,提前返回{len(all_matches)}个匹配")
                 break
             if len(all_matches) >= MAX_SEARCH_RESULTS:
@@ -178,7 +178,7 @@ async def search_files(
     all_matches.sort(key=lambda x: x.get("name", ""))
     total = len(all_matches)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-    truncated_by_deadline = time.monotonic() > deadline
+    truncated_by_deadline = _time_mod.monotonic() > deadline
     truncated_by_limit = total >= MAX_SEARCH_RESULTS
     exec_code = "warning" if (truncated_by_deadline or truncated_by_limit) else "success"
     llm_data = _build_search_files_llm_data(exec_code, duration_ms, search_dir=search_dir, total=total, truncated=(truncated_by_deadline or truncated_by_limit))

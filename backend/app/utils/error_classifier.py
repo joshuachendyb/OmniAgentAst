@@ -53,6 +53,7 @@ class ErrorCategory(Enum):
             ErrorCategory.PROTOCOL,
             ErrorCategory.API_RATE_LIMIT,
             ErrorCategory.IDLE_TIMEOUT,
+            ErrorCategory.SERVER,
         }
         return self in retryable_categories
     

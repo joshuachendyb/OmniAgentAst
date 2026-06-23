@@ -62,7 +62,7 @@ def _scan_directory_sync(
         nonlocal _timed_out
         if current_depth > max_depth:
             return
-        if time.monotonic() > deadline:
+        if _time_mod.monotonic() > deadline:
             _timed_out = True
             return
         try:
@@ -271,7 +271,7 @@ async def list_directory(
             llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"不是目录: {dir_path}")
             return build_error(data={"error_detail": "不是目录", "params": {"dir_path": dir_path}}, llm_data=llm_data)
 
-        deadline = time.monotonic() + TOOL_TIMEOUTS.get("list_directory", TOOL_TIMEOUTS["default"]) - 2
+        deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("list_directory", TOOL_TIMEOUTS["default"]) - 2
         all_entries, stats, file_types, size_distribution = await asyncio.to_thread(
             _scan_directory_sync, path, recursive, max_depth, include_hidden, deadline,
         )

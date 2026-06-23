@@ -148,20 +148,29 @@ def _format_entries(entries: list) -> str:
 
 
 def _format_items(items: list) -> str:
-    """格式化搜索结果/列表项 — 小欧 2026-06-21"""
+    """格式化搜索结果/列表项 — 小欧 2026-06-21
+    更新: 2026-06-23 小欧 支持snippet/url/source字段，300字符截断"""
     if not items:
         return ""
+    SNIPPET_MAX = 300
     lines = []
     for item in items:
         if isinstance(item, str):
             lines.append(f"  {item}")
         elif isinstance(item, dict):
             name = item.get("name", item.get("title", item.get("path", "")))
-            desc = item.get("description", item.get("desc", ""))
+            desc = item.get("snippet", item.get("description", item.get("desc", "")))
+            if desc and len(desc) > SNIPPET_MAX:
+                desc = desc[:SNIPPET_MAX] + "..."
+            url = item.get("url", "")
+            source = item.get("source", "")
+            tag = f" [{source}]" if source else ""
             if desc:
-                lines.append(f"  {name}: {desc}")
+                lines.append(f"  {name}: {desc}{tag}")
+            elif url:
+                lines.append(f"  {name}: {url}{tag}")
             else:
-                lines.append(f"  {name}")
+                lines.append(f"  {name}{tag}")
     return "\n".join(lines)
 
 

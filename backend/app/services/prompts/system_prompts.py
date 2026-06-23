@@ -51,6 +51,7 @@ class PromptBuilder:
 - [1]优先使用专业工具.无匹配工具→tool_search搜工具
 - [2]调用tool_search搜索工具,无专用tool→用execute_shell/execute_code实现,禁止直接绕路用execute_code/execute_shell实现
 - 接受工具执行结果,杜绝重复执行,容许更换参数和工具执行
+- [3]搜索失败(0条结果)→更换关键词重新搜索1次,仍失败→用自身知识完成任务,禁止因搜索失败而放弃任务
 
 <tool_search 使用说明>
 - 搜索词→ 用动词+事项（如"读取Word""画柱状图""查数据库表"），无需工具类名
