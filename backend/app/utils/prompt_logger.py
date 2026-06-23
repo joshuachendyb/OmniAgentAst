@@ -126,7 +126,19 @@ class PromptLogger:
             return None
 
 
-    
+    def update_ai_message_id(self, ai_message_id: str):
+        """拿到真实ID后更新文件路径 — 小欧 2026-06-23"""
+        current_log = self._get_current_log()
+        log_file_path = self._get_log_file_path()
+        if not current_log or not log_file_path:
+            return
+        short_id = ai_message_id[-6:] if len(ai_message_id) >= 6 else ai_message_id
+        file_timestamp = log_file_path.stem.split('+')[-1]
+        new_path = log_file_path.parent / f"prompt_{short_id}+{file_timestamp}.json"
+        self._set_log_file_path(new_path)
+        current_log["基本信息"]["AI消息ID"] = ai_message_id
+        current_log["基本信息"]["日志文件"] = str(new_path)
+
     def log_system_prompt(
         self,
         step_name: str,
