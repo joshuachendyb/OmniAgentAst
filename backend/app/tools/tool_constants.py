@@ -207,3 +207,30 @@ TOOL_RETRYABLE_ERRORS = {
 }
 
 SENSITIVE_FIELDS = {"password", "token", "api_key", "secret", "authorization", "credential"}
+
+# ============================================================
+# 11. 系统敏感路径黑名单(从 path_validator 迁移) — 小健 2026-06-23
+# ============================================================
+
+FORBIDDEN_PATHS_EXACT = {
+    "/etc/shadow",
+    "/etc/sudoers",
+}
+
+FORBIDDEN_PATHS_PREFIX = {
+    "/proc",
+    "/sys",
+}
+
+FORBIDDEN_PATHS_WINDOWS_EXACT = {
+    r"C:\Windows\System32\config\SAM",
+    r"C:\Windows\System32\config\SYSTEM",
+    r"C:\Windows\System32\config\SECURITY",
+    r"C:\Windows\System32\config\SOFTWARE",
+    r"C:\Windows\System32\config\DEFAULT",
+}
+
+FORBIDDEN_PATHS_WINDOWS_PREFIX = {
+    r"C:\Windows\System32\config",
+    r"C:\Windows\WinSxS",
+}
