@@ -68,11 +68,11 @@ from app.tools.network.network_diagnose import network_diagnose
 
 # 工具描述
 NETWORK_TOOL_DESCRIPTIONS = {
-    "http_request": """发送HTTP请求到指定URL。支持GET/POST/PUT/DELETE/PATCH等方法,支持自定义请求头、JSON请求体、查询参数。返回响应的状态码、响应头和响应体(JSON自动解析为对象)。访问国外服务失败时提示可选的国内替代地址。适用场景:需要调用REST API获取数据、提交数据、调用Web服务接口时使用。""",
-    "download_file": """从URL下载文件到本地,支持大文件流式下载。自动创建目标目录。返回文件保存路径、下载字节数、文件总大小、进度百分比和内容类型。适用场景:需要下载网络上的图片、安装包、数据文件等到本地磁盘时使用。""",
-    "fetch_webpage": """获取网页内容并提取正文,支持Markdown/HTML/Text格式输出。当需要从网页中提取特定信息时,可通过prompt参数指定提取指令(由LLM后处理)。返回提取的网页内容、格式类型和HTTP状态码。适用场景:需要获取网页文档内容、从网页中提取特定数据、将网页转为Markdown后供LLM阅读时使用。""",
-    "search_web": """使用搜索引擎查询最新信息,默认使用国内可用的Bing中国搜索。返回搜索结果列表(含标题、URL、摘要)、结果总数和使用的搜索引擎。适用场景:需要获取实时信息、新闻动态、技术文档、问题解决方案等最新网络信息时使用。""",
-    "network_diagnose": """网络连通性诊断工具。mode=ping(默认)ICMP可达性检测(主机级),mode=port TCP端口检测(服务级,port参数必填)。适用场景:需要检测网络连通性、排查网络问题时使用。""",
+    "http_request": """发送HTTP请求到指定URL,支持GET/POST/PUT/DELETE等方法。适用场景:需要调用REST API获取数据、提交数据、调用Web服务时使用。""",
+    "download_file": """从URL下载文件到本地磁盘。适用场景:需要下载图片、安装包、数据文件等到本地时使用。""",
+    "fetch_webpage": """获取网页内容并提取正文,支持Markdown/HTML格式输出。适用场景:需要阅读网页文档、从网页提取信息时使用。""",
+    "search_web": """使用搜索引擎查询最新信息。适用场景:需要获取实时新闻、技术文档、问题解决方案时使用。""",
+    "network_diagnose": """检测网络连通性,支持ping和TCP端口检测。适用场景:需要排查网络连接问题时使用。""",
 }
 
 # 工具名到实现函数的映射

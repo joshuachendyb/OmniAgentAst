@@ -85,7 +85,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
 
     "keyboard_control": """键盘控制工具。action=type(输入文本)、shortcut(快捷键如ctrl+c)、combo(组合键如ctrl,shift,esc)。适用场景:需要模拟键盘输入、执行快捷键操作时使用。""",
 
-    "screen_capture": """截取屏幕截图。支持全屏截图、指定区域截图(region参数,格式为{"x":0,"y":0,"width":800,"height":600})和多显示器截图(display参数)。优先使用mss库(支持多显示器),降级使用pyautogui。不指定输出路径则保存到系统临时目录。返回图片保存路径、宽度和高度。适用场景:需要截取当前屏幕内容用于记录或传递给LLM分析时使用。""",
+    "screen_capture": """截取屏幕截图,支持全屏、指定区域和多显示器。适用场景:需要截取屏幕内容用于记录或传递给LLM分析时使用。""",
 
     "clipboard_control": """剪贴板操作。action决定操作类型:read(读取剪贴板内容)/write(写入内容到剪贴板)。action=write时content参数必填。适用场景:需要读取或写入剪贴板文本时使用。""",
 

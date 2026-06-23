@@ -45,13 +45,11 @@ from app.tools.shell.shell_session import shell_session
 from app.tools.shell.execute_code import execute_code
 
 SHELL_TOOL_DESCRIPTIONS = {
-    "execute_shell_command": """在指定Shell环境中执行命令。默认使用Windows PowerShell,可选CMD。支持前台模式(实时等待返回结果)和后台模式(run_in_background=True,返回会话ID供shell_session工具后续读取输出)。前台模式返回stdout/stderr/returncode。适用场景:需要执行系统命令、运行脚本、启动程序、后台启动服务(如npm run dev)时使用。
+    "execute_shell_command": """在Shell环境中执行命令,支持前台等待和后台运行。适用场景:需要运行系统命令、执行脚本、启动程序时使用。""",
 
-【重要】默认PowerShell环境，必须使用PowerShell语法，禁止CMD语法(如if exist、mkdir无-Force、&&链接、del、rmdir等)。创建目录用New-Item -ItemType Directory -Force，条件判断用if(-not(Test-Path))，命令链接用分号;。需要CMD时设置shell_type=cmd""",
-
-    "find_command": """查找系统命令的安装路径,类似于which/where命令。all_paths=False(默认)返回第一个匹配路径,all_paths=True返回全部匹配路径列表。适用场景:需要确认python/git/npm等命令是否已安装、查看命令安装路径、验证开发工具链配置是否正确时使用。""",
-    "execute_code": """执行代码片段并返回结果。支持Python(默认)和JavaScript两种语言。内置安全检查拦截危险操作(如文件删除、网络请求等),比直接Shell命令更安全。返回stdout/stderr/returncode。适用场景:需要快速验证代码逻辑、进行数据处理计算、运行简单脚本片段时使用。""",
-    "shell_session": """后台Shell会话管理工具。shell_id由execute_shell_command(run_in_background=True)返回。action=output(默认)读取最新输出,支持filter正则过滤和max_lines控制行数;action=terminate终止会话时force=True可强制终止。适用场景:需要查看后台命令执行结果、终止长期运行的后台进程时使用。""",
+    "find_command": """查找系统命令的安装路径。适用场景:需要确认命令是否已安装、查看其安装路径时使用。""",
+    "execute_code": """执行代码片段(Python/JavaScript)并返回结果,内置安全防护。适用场景:需要快速验证代码逻辑、进行数据处理时使用。""",
+    "shell_session": """管理后台Shell会话,可查看输出或终止会话。适用场景:需要查看后台命令结果、终止后台进程时使用。""",
 }
 
 SHELL_TOOL_EXAMPLES = {

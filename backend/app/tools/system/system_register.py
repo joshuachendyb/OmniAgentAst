@@ -40,10 +40,10 @@ from app.tools.system.delete_task import delete_task
 from app.tools.system.list_tasks import list_tasks
 
 SYSTEM_TOOL_DESCRIPTIONS = {
-    "event_log": """获取系统事件日志。Windows使用wevtutil,Linux使用journalctl。支持日志名称(Application/System/Security)、事件级别(critical/error/warning/info)、时间范围(10m/1h/24h/7d)和来源应用名过滤。默认返回System日志,级别error,时间范围1h。适用场景:需要查看系统错误日志、诊断系统问题、审计系统安全事件时使用。""",
-    "create_task": """创建Windows计划任务(.bat/.exe等)。必填参数:task_name(任务名)、command(命令或程序路径,如C:\\scripts\\backup.bat)、schedule(计划时间,格式HH:MM每日/HH:MM /day N每周/HH:MM /monthly DD每月)。可选参数:interval(重复间隔分钟数)。适用场景:需要定时执行脚本、定期备份、周期性维护任务时使用。""",
-    "delete_task": """删除Windows计划任务。必填参数:task_name(要删除的计划任务名称)。删除前会先查询确认任务存在。适用场景:需要移除不再需要的计划任务时使用。需谨慎操作。""",
-    "list_tasks": """列出Windows计划任务。可选参数:task_name(按名称模糊过滤)、state(状态过滤,ready/running/disabled/all,默认all)。适用场景:需要查看所有计划任务、按名称查找特定任务、按状态筛选任务时使用。""",
+    "event_log": """获取系统事件日志,可按级别和时间范围过滤。适用场景:需要查看系统错误、诊断问题、审计安全事件时使用。""",
+    "create_task": """创建Windows计划任务,定时执行脚本或程序。适用场景:需要定时备份、周期性维护、自动执行脚本时使用。""",
+    "delete_task": """删除Windows计划任务。适用场景:需要移除不再需要的定时任务时使用。需谨慎操作。""",
+    "list_tasks": """列出Windows计划任务,支持按名称和状态筛选。适用场景:需要查看所有定时任务、查找特定任务时使用。""",
 }
 
 SYSTEM_TOOL_INPUT_MODELS = {
