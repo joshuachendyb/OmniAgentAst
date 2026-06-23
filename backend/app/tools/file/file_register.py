@@ -86,40 +86,35 @@ FILE_TOOL_DEPENDENCIES["compress_files"] = ["pyzipper"]
 # ============================================================
 
 FILE_TOOL_DESCRIPTIONS = {
-    "read_text_file": """读取文本文件。支持分页读取(head/tail/offset/limit)。encoding默认utf-8,读取失败自动尝试gbk。适用场景:需要读取源代码、日志文件、配置文件等纯文本内容时使用。""",
+    "read_text_file": """读取文本文件内容。适用场景:需要查看或分析源代码、日志、配置文件等纯文本时使用。""",
 
-    "write_text_file": """写文本文件：创建新文件或追加内容。自动检测编码，支持中文路径，自动创建父目录。content 参数传入实际文件内容（禁止传入思考/状态描述），append=True 追加到末尾。适用场景:需要创建或修改代码文件、配置文件、日志文件等文本内容时使用。""",
+    "write_text_file": """创建或修改文本文件。适用场景:需要写入代码、配置、日志等内容到文件时使用。""",
 
-    "read_media_file": """读取图片、音频、视频文件,返回Base64编码数据和MIME类型。自动识别媒体类型,支持常见图片(jpg/png/gif/bmp)、音频(mp3/wav/ogg)和视频(mp4/avi/mkv)格式。不支持PDF文件(PDF请使用read_pdf工具)。适用场景:需要获取非文本文件内容并将其传递给LLM进行图像识别、音频分析等任务。""",
+    "read_media_file": """读取图片、音频、视频等非文本文件。不支持PDF文件(请用read_pdf)。适用场景:需要获取媒体文件内容进行图像识别、音频分析等时使用。""",
 
-    "edit_text_file": """替换文本文件中的内容。old_string定位被替换文本,new_string替换为的内容。replace_all替换所有匹配项,dry_run仅预览。适用场景:需要精确修改代码中的某个函数名、变量引用、配置值时使用。""",
+    "edit_text_file": """替换文本文件中的指定内容。适用场景:需要精确修改代码中的函数名、变量、配置值等时使用。""",
 
-    "list_directory": """列出目录内容,支持扁平列表(tree=False)和目录树(tree=True)两种输出格式。扁平列表返回当前层的文件/目录条目(含大小/修改时间),目录树仅返回目录层级(不含文件节点)。始终返回统计信息(文件数/目录数/总大小)。支持按名称/大小/修改时间排序,以及过滤隐藏文件。适用场景:需要了解项目目录结构、查看文件大小和修改时间、获取文件统计信息时使用。""",
+    "list_directory": """列出目录内容,支持扁平列表和目录树两种格式。适用场景:需要查看目录结构、文件大小、文件数量统计时使用。""",
 
-    "search_files": """递归搜索匹配glob模式的文件/目录(始终递归)。search_dir为必填的搜索起始目录。pattern支持glob通配符(*?**)和中文文件名。可指定搜索类型(文件/目录)、大小写敏感。默认最多返回1000个结果,超过时返回warning提示。适用场景:需要按文件名查找特定文件、统计项目中某类文件数量时使用。""",
+    "search_files": """按文件名匹配模式递归搜索文件或目录。适用场景:需要查找特定文件、统计项目中某类文件数量时使用。""",
 
-    "grep_file_content": """在文件中搜索文本内容,支持正则表达式和中文搜索。可指定搜索路径、文件过滤(glob通配符,如"*.py")、大小写敏感。head_limit限制返回结果数量(默认最多1000条,防止结果过多)。output_mode可选content/count/files_with_matches(files_with_matches只返回文件名列表,节省token)。context_lines显示匹配行前后上下文。适用场景:需要在代码或文档中查找特定函数定义、关键字、TODO标记时使用。""",
+    "grep_file_content": """在文件中搜索文本内容,支持正则表达式。适用场景:需要查找代码或文档中的函数定义、关键字、TODO等文本时使用。""",
 
-    "compress_files": """压缩文件或目录为归档包。支持zip/tar/tar.gz/tar.bz2格式,可设置压缩级别(0-9)。ZIP格式支持密码加密(password参数)。source支持通配符(如D:/logs/*.log),展开后所有匹配文件打入同一压缩包。适用场景:需要备份文件、打包项目、减小文件体积、创建加密压缩包时使用。""",
+    "compress_files": """将文件或目录压缩为归档包,可选加密。适用场景:需要备份文件、打包项目、创建加密压缩包时使用。""",
 
-    "extract_archive": """解压归档包到指定目录。支持zip/tar/tar.gz/tar.bz2格式,支持加密解压(ZIP专用)。destination可选,不填则自动创建同名目录。适用场景:需要解压下载的压缩包、恢复备份时使用。
-使用示例: extract_archive(source="D:/backup.zip", destination="D:/output")""",
+    "extract_archive": """解压归档包到指定目录。适用场景:需要解压下载的压缩包、恢复备份时使用。""",
 
-    "move_file": """移动文件或目录。同盘移动为原子操作(瞬间完成),跨盘移动先复制后删除。overwrite=True覆盖已存在目标。适用场景:需要整理文件位置、迁移文件时使用。
-使用示例: move_file(source="D:/a.txt", destination="E:/b.txt")""",
+    "move_file": """移动文件或目录到新位置。适用场景:需要整理文件位置、迁移文件时使用。""",
 
-    "copy_file": """复制文件或目录。复制目录需recursive=True。preserve_metadata=True保留修改时间/访问时间等元数据。overwrite=True覆盖已存在目标。适用场景:需要备份文件、复制模板时使用。
-使用示例: copy_file(source="D:/a.txt", destination="D:/backup/a.txt")""",
+    "copy_file": """复制文件或目录到目标位置。适用场景:需要备份文件、复制模板时使用。""",
 
-    "delete_file": """删除文件或目录。默认放入回收站(可恢复),force=True永久删除(不可恢复)。删除非空目录需recursive=True。文件已不存在时返回成功(幂等)。适用场景:需要清理临时文件、删除过期数据时使用。
-使用示例: delete_file(source="D:/temp.txt")""",
+    "delete_file": """删除文件或目录(默认可恢复)。适用场景:需要清理临时文件、删除过期数据时使用。""",
 
-    "rename_file": """重命名文件或目录。destination只需提供新文件名(不含目录路径),在同一目录下重命名。适用场景:需要修改文件名、规范化命名时使用。
-使用示例: rename_file(source="D:/old.txt", destination="new.txt")""",
+    "rename_file": """重命名文件或目录。适用场景:需要修改文件名、规范化命名时使用。""",
 
-    "read_data_file": """读取结构化配置文件,支持JSON/YAML/TOML/INI/XML/Properties格式。file_path为必填。自动检测格式(通过扩展名),也可通过format参数指定。适用场景:需要读取配置文件内容进行查看或分析时使用。""",
+    "read_data_file": """读取JSON/YAML/TOML等结构化配置文件。适用场景:需要查看或分析配置文件内容时使用。""",
 
-    "write_data_file": """写入结构化配置文件,支持JSON/YAML/TOML格式。file_path和data均为必填。不支持INI/XML/Properties格式写入。自动检测格式(通过扩展名),也可通过format参数指定。适用场景:需要创建或修改配置文件时使用。""",
+    "write_data_file": """写入结构化配置文件(JSON/YAML/TOML)。适用场景:需要创建或修改配置文件时使用。""",
 }
 
 
