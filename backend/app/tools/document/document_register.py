@@ -92,19 +92,19 @@ EXAMPLES = {
         {"file_name": "D:/data/sales.csv"},
     ],
     "write_docx": [
-        {"file_name": "D:/output/report.docx", "title": "\u6d4b\u8bd5\u62a5\u544a", "paragraphs": "\u8fd9\u662f\u6d4b\u8bd5\u5185\u5bb9"},
-        {"file_name": "D:/output/report_structured.docx", "paragraphs": {"title": "\u7ed3\u6784\u5316\u62a5\u544a", "content": [{"type": "h1", "text": "\u7b2c\u4e00\u7ae0"}, {"type": "paragraph", "text": "\u6b63\u6587\u5185\u5bb9"}, {"type": "table", "rows": [["\u52171", "\u52172"], ["a", "b"]]}]}},
+        {"file_name": "D:/output/report.docx", "title": "测试报告", "content": "这是测试内容"},
+        {"file_name": "D:/output/report_structured.docx", "title": "结构化报告", "content": "# 第一章\n\n正文内容\n\n## 第二节\n\n- 列表项1\n- 列表项2"},
     ],
     "write_xlsx": [
-        {"file_name": "D:/output/data.xlsx", "data": {"headers": ["\u59d3\u540d", "\u5e74\u9f84"], "rows": [["\u5f20\u4e09", 25], ["\u674e\u56db", 30]]}},
+        {"file_name": "D:/output/data.xlsx", "data": [{"姓名": "张三", "年龄": 25}, {"姓名": "李四", "年龄": 30}]},
     ],
     "write_pdf": [
-        {"file_name": "D:/output/report.pdf", "title": "\u6d4b\u8bd5\u62a5\u544a", "paragraphs": "\u8fd9\u662f\u62a5\u544a\u5185\u5bb9"},
-        {"file_name": "D:/output/structured_report.pdf", "paragraphs": [{"type": "h1", "text": "\u7b2c\u4e00\u7ae0"}, "\u6b63\u6587\u5185\u5bb9"]},
+        {"file_name": "D:/output/report.pdf", "title": "测试报告", "content": "这是报告内容"},
+        {"file_name": "D:/output/structured_report.pdf", "title": "结构化报告", "content": "# 第一章\n\n正文内容\n\n- 列表项1\n- 列表项2"},
     ],
     "write_pptx": [
-        {"file_name": "D:/output/cover.pptx", "slides": [{"type": "cover", "title": "\u9879\u76ee\u6c47\u62a5", "subtitle": "\u5c0f\u7ec4"}]},
-        {"file_name": "D:/output/slides.pptx", "slides": [{"title": "\u4e1a\u7ee9\u6982\u89c8", "content": ["\u672c\u5b63\u5ea6\u9500\u552e\u989d\u589e\u957f20%", {"type": "bullets", "items": ["\u652f\u51fa\u63a7\u5236", "\u5ba2\u6237\u589e\u957f"]}]}]},
+        {"file_name": "D:/output/cover.pptx", "slides": [{"title": "项目汇报"}]},
+        {"file_name": "D:/output/slides.pptx", "slides": [{"title": "业绩概览", "content": "本季度销售额增长20%"}]},
     ],
 }
 

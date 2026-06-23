@@ -114,11 +114,10 @@ def _add_pdf_content_item(elements, item, chinese_style, title_style):
 def write_pdf(
     file_name: str,
     title: Optional[str] = None,
-    paragraphs: Optional[Union[str, List, Dict]] = None,
+    content: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """写入PDF文件 — 小欧 2026-06-19 — 小欧 2026-06-22 独立文件"""
+    """写入PDF文件 — 小欧 2026-06-19 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化（Markdown格式）"""
     t0 = _time_mod.perf_counter()
-    paragraphs = coerce_json(paragraphs)
 
     if not _check_module("reportlab"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -166,12 +165,34 @@ def write_pdf(
             elements.append(Paragraph(title, title_style))
             elements.append(Spacer(1, 10 * mm))
 
-        if paragraphs is not None:
-            dict_title, items = _resolve_paragraphs(paragraphs)
-            if dict_title and not title:
-                elements.append(Paragraph(dict_title, title_style))
-            for item in items:
-                _add_pdf_content_item(elements, item, chinese_style, title_style)
+        if content:
+            lines = content.split('\n')
+            for line in lines:
+                line = line.rstrip()
+                if not line:
+                    continue
+                if line.startswith('# '):
+                    h1_style = ParagraphStyle('h1', parent=chinese_style, fontSize=18, spaceBefore=12, spaceAfter=6)
+                    elements.append(Paragraph(line[2:], h1_style))
+                    elements.append(Spacer(1, 3 * mm))
+                elif line.startswith('## '):
+                    h2_style = ParagraphStyle('h2', parent=chinese_style, fontSize=16, spaceBefore=10, spaceAfter=5)
+                    elements.append(Paragraph(line[3:], h2_style))
+                    elements.append(Spacer(1, 3 * mm))
+                elif line.startswith('### '):
+                    h3_style = ParagraphStyle('h3', parent=chinese_style, fontSize=14, spaceBefore=8, spaceAfter=4)
+                    elements.append(Paragraph(line[4:], h3_style))
+                    elements.append(Spacer(1, 2 * mm))
+                elif line.startswith('#### '):
+                    h4_style = ParagraphStyle('h4', parent=chinese_style, fontSize=12, spaceBefore=6, spaceAfter=3)
+                    elements.append(Paragraph(line[5:], h4_style))
+                    elements.append(Spacer(1, 2 * mm))
+                elif line.startswith('- ') or line.startswith('* '):
+                    elements.append(Paragraph('• ' + line[2:], chinese_style))
+                    elements.append(Spacer(1, 2 * mm))
+                else:
+                    elements.append(Paragraph(line, chinese_style))
+                    elements.append(Spacer(1, 3 * mm))
 
         if not elements:
             elements.append(Paragraph(" ", chinese_style))

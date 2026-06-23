@@ -55,7 +55,7 @@ class ShellSessionInput(BaseModel):
     
     【action参数】决定操作类型：
     - output: 读取后台命令输出
-    - terminate: 终止后台会话
+    - terminate: 终止后台会话（强制终止）
     
     【使用示例】
     - 读取输出 → shell_session(shell_id="shell_abc123")
@@ -66,16 +66,7 @@ class ShellSessionInput(BaseModel):
     )
     action: Literal["output", "terminate"] = Field(
         default="output",
-        description="操作类型:output=读取输出(默认),terminate=终止会话"
-    )
-    filter: Optional[str] = Field(
-        default=None, description="输出过滤正则表达式(仅action=output时使用)。如 ERROR|FAIL"
-    )
-    max_lines: int = Field(
-        default=1000, ge=1, le=10000, description="最大返回行数(仅action=output时使用)。默认1000,返回尾部最新输出"
-    )
-    force: bool = Field(
-        default=False, description="强制终止(仅action=terminate时使用)。优雅终止失败时Agent自动设true"
+        description="操作类型:output=读取输出(默认),terminate=强制终止会话"
     )
 
 

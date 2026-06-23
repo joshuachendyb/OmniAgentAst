@@ -90,11 +90,10 @@ def _add_docx_content_item(doc, item):
 def write_docx(
     file_name: str,
     title: Optional[str] = None,
-    paragraphs: Optional[Union[str, List, Dict]] = None,
+    content: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """写入Word文档 — 小欧 2026-06-19 — 小欧 2026-06-22 独立文件"""
+    """写入Word文档 — 小欧 2026-06-19 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化（Markdown格式）"""
     t0 = _time_mod.perf_counter()
-    paragraphs = coerce_json(paragraphs)
 
     if not _check_module("docx"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -109,12 +108,28 @@ def write_docx(
         if title:
             doc.add_heading(title, 0)
 
-        if paragraphs is not None:
-            dict_title, items = _resolve_paragraphs(paragraphs)
-            if dict_title and not title:
-                doc.add_heading(dict_title, 0)
-            for item in items:
-                _add_docx_content_item(doc, item)
+        if content:
+            lines = content.split('\n')
+            for line in lines:
+                line = line.rstrip()
+                if not line:
+                    continue
+                if line.startswith('# '):
+                    doc.add_heading(line[2:], 1)
+                elif line.startswith('## '):
+                    doc.add_heading(line[3:], 2)
+                elif line.startswith('### '):
+                    doc.add_heading(line[4:], 3)
+                elif line.startswith('#### '):
+                    doc.add_heading(line[5:], 4)
+                elif line.startswith('##### '):
+                    doc.add_heading(line[6:], 5)
+                elif line.startswith('- ') or line.startswith('* '):
+                    doc.add_paragraph(line[2:], style='List Bullet')
+                elif line.startswith('1. ') or line.startswith('2. ') or line.startswith('3. '):
+                    doc.add_paragraph(line[3:], style='List Number')
+                else:
+                    doc.add_paragraph(line)
 
         path = Path(file_name)
         path.parent.mkdir(parents=True, exist_ok=True)

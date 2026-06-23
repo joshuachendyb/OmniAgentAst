@@ -46,10 +46,10 @@ def _build_write_xlsx_llm_data(
 
 def write_xlsx(
     file_name: str,
-    data: Optional[Union[Dict[str, Any], List]] = None,
+    data: Optional[List[Dict[str, Any]]] = None,
     sheet_name: str = "Sheet1",
 ) -> Dict[str, Any]:
-    """写入Excel文件 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件"""
+    """写入Excel文件 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化"""
     t0 = _time_mod.perf_counter()
     data = coerce_json(data)
 
@@ -63,35 +63,26 @@ def write_xlsx(
         from openpyxl.styles import Font, Alignment
 
         if data is None:
-            data = {"headers": [], "rows": []}
-        elif isinstance(data, list):
-            if len(data) > 0 and isinstance(data[0], list):
-                first_row = data[0]
-                data = {"headers": first_row, "rows": data[1:]}
-            elif len(data) > 0 and isinstance(data[0], dict):
-                headers = list(data[0].keys())
-                rows = [list(row.values()) for row in data]
-                data = {"headers": headers, "rows": rows}
-            else:
-                data = {"headers": [], "rows": data}
-        elif isinstance(data, dict) and "headers" not in data and "rows" not in data:
-            headers = list(data.keys())
-            rows = [list(data.values())]
-            data = {"headers": headers, "rows": rows}
+            data = []
+        
+        headers = []
+        rows = []
+        if len(data) > 0:
+            headers = list(data[0].keys())
+            rows = [list(row.values()) for row in data]
 
         wb = Workbook()
         ws = wb.active
         ws.title = sheet_name
 
-        if "headers" in data and data["headers"]:
-            headers = data["headers"]
+        if headers:
             for col_idx, header in enumerate(headers, 1):
                 cell = ws.cell(row=1, column=col_idx, value=header)
                 cell.font = Font(bold=True)
                 cell.alignment = Alignment(horizontal="center")
 
-        if "rows" in data and data["rows"]:
-            for row_idx, row_data in enumerate(data["rows"], 2):
+        if rows:
+            for row_idx, row_data in enumerate(rows, 2):
                 for col_idx, cell_data in enumerate(row_data, 1):
                     ws.cell(row=row_idx, column=col_idx, value=cell_data)
 
@@ -99,7 +90,7 @@ def write_xlsx(
         path.parent.mkdir(parents=True, exist_ok=True)
         wb.save(path)
 
-        row_count = len(data.get("rows", []))
+        row_count = len(rows)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_xlsx_llm_data("success", duration_ms, str(path), row_count)
         return build_success(data={"file_path": str(path), "row_count": row_count}, llm_data=llm_data)

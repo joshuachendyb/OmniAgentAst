@@ -60,11 +60,8 @@ def _build_shell_session_llm_data(
 def shell_session(
     shell_id: str,
     action: str = "output",
-    filter: Optional[str] = None,
-    max_lines: int = 1000,
-    force: bool = False,
 ) -> Dict[str, Any]:
-    """后台Shell会话管理 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件"""
+    """后台Shell会话管理 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化"""
     t0 = _time_mod.perf_counter()
     if action == "output":
         shell_info = _background_shells.get(shell_id)
@@ -83,16 +80,6 @@ def shell_session(
         is_running = returncode is None
         if not is_running:
             _background_shells.pop(shell_id, None)
-        if filter:
-            try:
-                pattern = _re.compile(filter)
-                stdout_str = "\n".join([l for l in stdout_str.splitlines() if pattern.search(l)])
-                stderr_str = "\n".join([l for l in stderr_str.splitlines() if pattern.search(l)])
-            except Exception:
-                pass
-        stdout_lines = stdout_str.splitlines()
-        stdout_lines = stdout_lines[-max_lines:]
-        stdout_str = "\n".join(stdout_lines)
         resp_data = {
             "shell_id": shell_id, "stdout": stdout_str, "stderr": stderr_str, "is_running": is_running, "returncode": returncode
         }
@@ -113,29 +100,20 @@ def shell_session(
             _background_shells.pop(shell_id, None)
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_shell_session_llm_data("success", duration_ms, shell_id, terminated=True)
-            return build_success(data={"shell_id": shell_id, "terminated": True, "force": force, "returncode": None}, llm_data=llm_data)
+            return build_success(data={"shell_id": shell_id, "terminated": True, "returncode": None}, llm_data=llm_data)
         terminated = False
         returncode = None
         try:
-            if force:
-                process.kill()
-            else:
-                process.terminate()
+            process.kill()
             process.wait(timeout=SUBPROCESS_TIMEOUT_SHORT)
             terminated = True
             returncode = process.returncode
         except Exception:
-            try:
-                process.kill()
-                process.wait(timeout=SUBPROCESS_TIMEOUT_VERY_SHORT)
-                terminated = True
-                returncode = process.returncode
-            except Exception:
-                pass
+            pass
         _background_shells.pop(shell_id, None)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_shell_session_llm_data("success", duration_ms, shell_id, terminated=terminated)
-        return build_success(data={"shell_id": shell_id, "terminated": terminated, "force": force, "returncode": returncode}, llm_data=llm_data)
+        return build_success(data={"shell_id": shell_id, "terminated": terminated, "returncode": returncode}, llm_data=llm_data)
     else:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_shell_session_llm_data("error", duration_ms, shell_id, err_code=ERR_INVALID_ACTION, detail=f"无效操作: {action}", hint="必须是 output 或 terminate")

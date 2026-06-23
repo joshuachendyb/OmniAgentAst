@@ -67,9 +67,7 @@ SHELL_TOOL_EXAMPLES = {
     ],
     "shell_session": [
         {"shell_id": "shell_abc123"},
-        {"shell_id": "shell_abc123", "filter": "ERROR|FAIL"},
-        {"shell_id": "shell_abc123", "action": "terminate"},
-        {"shell_id": "shell_abc123", "action": "terminate", "force": True}
+        {"shell_id": "shell_abc123", "action": "terminate"}
     ],
     "execute_code": [
         {"code": "print('Hello, World!')"},

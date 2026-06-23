@@ -114,23 +114,18 @@ class KeyboardControlInput(BaseModel):
     
     【action参数】决定操作类型：
     - type: 输入文本
-    - shortcut: 执行快捷键
-    - combo: 执行组合键
+    - shortcut: 执行快捷键（支持组合键，如ctrl+shift+esc）
     
     【使用示例】
     - 输入文本 → keyboard_control(action="type", text_or_keys="Hello World")
     - 快捷键 → keyboard_control(action="shortcut", text_or_keys="ctrl+c")
-    - 组合键 → keyboard_control(action="combo", text_or_keys="ctrl,shift,esc")
+    - 组合键 → keyboard_control(action="shortcut", text_or_keys="ctrl+shift+esc")
     """
-    action: Literal["type", "shortcut", "combo"] = Field(
-        description="键盘操作:type(输入文本)、shortcut(快捷键)、combo(组合键)"
+    action: Literal["type", "shortcut"] = Field(
+        description="键盘操作:type(输入文本)、shortcut(快捷键，支持组合键如ctrl+shift+esc)"
     )
     text_or_keys: str = Field(
-        description="输入内容:type时为文本,shortcut时为快捷键如ctrl+c,combo时为逗号分隔的键如ctrl,shift,esc"
-    )
-    interval: float = Field(
-        default=0,
-        description="每个字符间隔(type时使用),单位秒,默认0。注意:仅对ASCII字符有效,非ASCII字符使用write()不支持间隔"
+        description="输入内容:type时为文本,shortcut时为快捷键如ctrl+c或ctrl+shift+esc"
     )
 
 

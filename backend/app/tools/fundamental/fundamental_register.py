@@ -78,9 +78,9 @@ FUNDAMENTAL_TOOL_EXAMPLES = {
         {"start": "2026-05-01", "end": "2026-05-18"},
     ],
     "query_calendar": [
-        {"date": "2026-05-18", "check_type": "weekend"},
         {"name": "端午节", "year": 2026},
         {"name": "中秋节", "year": 2026},
+        {"name": "2026-05-18"}
     ],
     "get_system_info": [
         {"info_type": "all"},

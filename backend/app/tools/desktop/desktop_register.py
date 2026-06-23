@@ -83,7 +83,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
 
     "mouse_position": """获取鼠标当前的屏幕坐标位置。适用场景:需要确认鼠标当前位置、获取坐标用于后续点击/移动时使用。""",
 
-    "keyboard_control": """键盘控制工具。action=type(输入文本)、shortcut(快捷键如ctrl+c)、combo(组合键如ctrl,shift,esc)。适用场景:需要模拟键盘输入、执行快捷键操作时使用。""",
+    "keyboard_control": """键盘控制工具。action=type(输入文本)、shortcut(快捷键，支持组合键如ctrl+shift+esc)。适用场景:需要模拟键盘输入、执行快捷键操作时使用。""",
 
     "screen_capture": """截取屏幕截图,支持全屏、指定区域和多显示器。适用场景:需要截取屏幕内容用于记录或传递给LLM分析时使用。""",
 
@@ -140,10 +140,9 @@ DESKTOP_TOOL_EXAMPLES = {
     ],
     "keyboard_control": [
         {"action": "type", "text_or_keys": "Hello World"},
-        {"action": "type", "text_or_keys": "Hello", "interval": 0.1},
         {"action": "shortcut", "text_or_keys": "ctrl+c"},
         {"action": "shortcut", "text_or_keys": "alt+tab"},
-        {"action": "combo", "text_or_keys": "ctrl,shift,esc"},
+        {"action": "shortcut", "text_or_keys": "ctrl+shift+esc"}
     ],
     "screen_capture": [
         {},

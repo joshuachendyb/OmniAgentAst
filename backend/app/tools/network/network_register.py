@@ -97,7 +97,7 @@ NETWORK_TOOL_INPUT_MODELS = {
 NETWORK_TOOL_EXAMPLES = {
     "http_request": [
         {"url": "https://api.github.com/repos/python/cpython", "method": "GET"},
-        {"url": "https://httpbin.org/post", "method": "POST", "json_body": {"name": "test", "value": 123}},
+        {"url": "https://httpbin.org/post", "method": "POST", "body": {"name": "test", "value": 123}},
     ],
     "download_file": [
         {"url": "https://github.com/python/cpython/archive/refs/heads/main.zip", "destination_path": "D:/Downloads/cpython-main.zip"},

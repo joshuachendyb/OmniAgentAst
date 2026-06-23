@@ -57,41 +57,24 @@ class TimeDiffInput(BaseModel):
 
 
 class QueryCalendarInput(BaseModel):
-    """按节日名称查询日期和假期信息
+    """节日/日期查询工具
     
-    【推荐】name参数查询节日：
+    【name参数】支持两种用法：
+    - 传节日名 → 返回节日日期和信息（如"端午节"、"春节"）
+    - 传日期字符串 → 返回工作日/节假日判断（如"2026-06-23"）
+    
+    【支持的节日】端午节/春节/中秋节/元旦/国庆节/劳动节/清明节/元宵节/七夕节/重阳节/除夕
+    
+    【使用示例】
     - query_calendar(name="端午节", year=2026)
-    - query_calendar(name="春节", year=2026)
-    
-    【替代】check_type参数检查日期：
-    - weekend: 判断周末
-    - holiday: 判断节假日
-    - workday: 判断工作日
-    - next_workday: 计算下N个工作日
-    
-    【支持】端午节/春节/中秋节/元旦/国庆节/劳动节/清明节/元宵节/七夕节/重阳节/除夕
-    
-    【注意】设置name时，date和check_type参数被忽略
+    - query_calendar(name="2026-06-23")
     """
-    name: Optional[str] = Field(
-        default=None,
-        description="节日名称(推荐),如端午节/春节/中秋节/国庆节"
+    name: str = Field(
+        ..., description="节日名称或日期字符串。节日名如'端午节'、'春节'；日期如'2026-06-23'自动判断工作日/节假日"
     )
     year: Optional[int] = Field(
         default=None,
-        description="查询年份(默认当年),仅name参数有效"
-    )
-    date: Optional[Union[int, float, str]] = Field(
-        default=None,
-        description="日期值"
-    )
-    check_type: Literal["weekend", "holiday", "workday", "next_workday"] = Field(
-        default="workday",
-        description="检查类型:weekend(周末)/holiday(节假日)/workday(工作日)/next_workday(下N个工作日)"
-    )
-    n: int = Field(
-        default=1,
-        description="第N个工作日(仅next_workday有效)"
+        description="查询年份(默认当年),仅name为节日名时有效"
     )
 
 

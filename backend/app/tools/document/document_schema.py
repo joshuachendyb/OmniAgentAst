@@ -42,22 +42,22 @@ _PARAGRAPHS_DESC = "正文内容。3种格式: str=纯文本, list=[str|dict,...
 class WriteDocxInput(BaseModel):
     file_name: str = Field(..., description="文件名+路径(.docx)")
     title: Optional[str] = Field(default=None, description="文档标题")
-    paragraphs: Optional[Union[str, List, Dict]] = Field(default=None, description=_PARAGRAPHS_DESC)
+    content: Optional[str] = Field(default=None, description="正文内容(Markdown格式)。支持标题(#/##/###)、段落、列表、表格等Markdown语法")
 
 
 class WriteXlsxInput(BaseModel):
     file_name: str = Field(..., description="文件名+路径(.xlsx)")
-    data: Optional[Union[Dict[str, Any], List]] = Field(default=None, description="写入的数据。支持3格式: dict格式{\"headers\":[\"列1\"],\"rows\":[[\"a\"]]}, list of list格式[[\"列1\",\"列2\"],[\"a\",\"b\"]](首行做headers), list of dict格式[{\"列1\":\"a\"}](key做headers)")
+    data: Optional[List[Dict[str, Any]]] = Field(default=None, description="写入的数据。对象数组格式:[{\"列1\":\"a\",\"列2\":\"b\"},{\"列1\":\"c\",\"列2\":\"d\"}]。key做列名,value做单元格内容")
     sheet_name: str = Field(default="Sheet1", description="工作表名")
 
 
 class WritePdfInput(BaseModel):
     file_name: str = Field(..., description="文件名+路径(.pdf)")
     title: Optional[str] = Field(default=None, description="文档标题")
-    paragraphs: Optional[Union[str, List, Dict]] = Field(default=None, description=_PARAGRAPHS_DESC)
+    content: Optional[str] = Field(default=None, description="正文内容(Markdown格式)。支持标题(#/##/###)、段落、列表、表格等Markdown语法")
 
 
-_SLIDE_DESC = "幻灯片列表。每项Dict支持: type(0=封面/1=内容/2=两栏), title(标题), subtitle(副标题,仅封面), content(str纯文本或list混合内容,支持str段落和dict type=paragraph/bullets), tables(独立表格List[List[List]])"
+_SLIDE_DESC = "幻灯片列表。每项Dict包含:title(标题,必填),content(正文内容,选填)。有title无content=封面页,都有=内容页。content支持纯文本或段落列表"
 class WritePptxInput(BaseModel):
     file_name: str = Field(..., description="文件名+路径(.pptx)")
     slides: Optional[List[Dict]] = Field(default=None, description=_SLIDE_DESC)

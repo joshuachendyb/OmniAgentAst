@@ -88,17 +88,14 @@ def _key_combo(keys: List[str], action: str = "press") -> Dict[str, Any]:
         return {"error_detail": str(e), "params": {"library": "pyautogui"}}
 
 
-def keyboard_control(action: Literal["type", "shortcut", "combo"], text_or_keys: str, interval: float = 0) -> Dict[str, Any]:
-    """统一键盘控制入口 — 小健 2026-06-22 拆分独立文件"""
+def keyboard_control(action: Literal["type", "shortcut"], text_or_keys: str) -> Dict[str, Any]:
+    """统一键盘控制入口 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-24 参数简化"""
     t0 = _time_mod.perf_counter()
     
     if action == "type":
-        result = _type_text(text=text_or_keys, interval=interval)
+        result = _type_text(text=text_or_keys, interval=0)
     elif action == "shortcut":
         result = _shortcut(keys=text_or_keys)
-    elif action == "combo":
-        key_list = [k.strip() for k in text_or_keys.split(",")]
-        result = _key_combo(keys=key_list)
     else:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_keyboard_control_llm_data("error", duration_ms, action, text_or_keys)
@@ -109,7 +106,6 @@ def keyboard_control(action: Literal["type", "shortcut", "combo"], text_or_keys:
         err_code = {
             "type": ERR_KEYBOARD_TYPE,
             "shortcut": ERR_KEYBOARD_SHORTCUT,
-            "combo": ERR_KEY_COMBO,
         }.get(action, ERR_INVALID_ACTION)
         llm_data = _build_keyboard_control_llm_data("error", duration_ms, action, text_or_keys, err_code=err_code, detail=result["error_detail"])
         return build_error(data=result, llm_data=llm_data)

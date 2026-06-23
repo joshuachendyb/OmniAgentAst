@@ -138,16 +138,14 @@ async def http_request(
     url: str,
     method: str = "GET",
     headers: Optional[Dict[str, str]] = None,
-    params: Optional[Dict[str, str]] = None,
-    json_body: Optional[Dict[str, Any]] = None,
+    body: Optional[Dict[str, Any]] = None,
     timeout: int = 30000,
     proxy: Optional[str] = None,
     retry: int = 3,
 ) -> Dict[str, Any]:
-    """发起HTTP请求 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件"""
+    """发起HTTP请求 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化"""
     headers = coerce_json(headers)
-    params = coerce_json(params)
-    json_body = coerce_json(json_body)
+    body = coerce_json(body)
     if retry < 0 or retry > 10:
         llm_data = _build_http_request_llm_data("error", 0, url, method, err_code=ERR_NETWORK_INVALID_PARAM, detail=f"重试次数必须在0-10之间,当前值:{retry}")
         return build_error(data={"error_detail": f"重试次数必须在0-10之间", "params": {"retry": retry}}, llm_data=llm_data)
@@ -168,11 +166,6 @@ async def http_request(
             llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_NETWORK_DOWN, detail="网络不可用")
             return build_error(data={"error_detail": "网络不可用", "params": {"url": url}}, llm_data=llm_data)
 
-        parsed_url = urlparse(url)
-        if params:
-            query_string = urlencode(params, doseq=True)
-            url = urlunparse(parsed_url._replace(query=query_string))
-
         request_headers = {}
         if headers:
             request_headers.update(headers)
@@ -183,9 +176,9 @@ async def http_request(
                 async with create_http_client(timeout_sec=timeout_sec, proxy=proxy) as client:
                     method_upper = method.upper()
                     request_kwargs = {"url": url, "headers": request_headers}
-                    if method_upper in ("POST", "PUT", "PATCH"):
-                        if json_body is not None:
-                            request_kwargs["json"] = json_body
+                    if method_upper in ("POST", "PUT"):
+                        if body is not None:
+                            request_kwargs["json"] = body
 
                     response = await client.request(method_upper, **request_kwargs)
                     response.raise_for_status()

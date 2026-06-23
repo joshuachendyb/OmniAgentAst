@@ -89,10 +89,9 @@ def _build_grep_file_content_llm_data(
 def _grep_files_sync(
     search_dir: Path, pattern: str, glob_filter: Optional[str],
     ignore_case: bool, deadline: float,
-    head_limit: Optional[int], output_mode: str,
-    context_lines: int,
+    output_mode: str,
 ) -> Tuple[List[Dict], int, int, bool]:
-    """同步搜索文件内容 — 小欧 2026-06-22 — 小健 2026-06-23 新增head_limit/output_mode/context_lines"""
+    """同步搜索文件内容 — 小欧 2026-06-22 — 小健 2026-06-24 参数简化"""
     results = []
     total_matches = 0
     total_files = 0
@@ -102,17 +101,15 @@ def _grep_files_sync(
     except re_mod.error as e:
         return [], 0, 0, False
 
-    effective_limit = head_limit if head_limit else MAX_SEARCH_RESULTS
-
     for root, dirs, files in os.walk(search_dir):
         if _time_mod.monotonic() > deadline:
             break
-        if total_matches >= effective_limit:
+        if total_matches >= MAX_SEARCH_RESULTS:
             break
         for fname in files:
             if _time_mod.monotonic() > deadline:
                 break
-            if total_matches >= effective_limit:
+            if total_matches >= MAX_SEARCH_RESULTS:
                 break
             fpath = Path(root) / fname
             if glob_filter:
@@ -124,7 +121,7 @@ def _grep_files_sync(
                 continue
             file_matches = []
             for line_no, line in enumerate(lines, 1):
-                if total_matches >= effective_limit:
+                if total_matches >= MAX_SEARCH_RESULTS:
                     break
                 m = regex.search(line)
                 if m:
@@ -137,21 +134,13 @@ def _grep_files_sync(
                         "line": line_no,
                         "content": line.rstrip('\n\r'),
                     }
-                    if context_lines > 0:
-                        start = max(0, line_no - context_lines - 1)
-                        end = min(len(lines), line_no + context_lines)
-                        context = []
-                        for i in range(start, end):
-                            prefix = ">>>" if i == line_no - 1 else "   "
-                            context.append(f"{prefix}{i+1}: {lines[i].rstrip()}")
-                        match_item["context"] = "\n".join(context)
                     file_matches.append(match_item)
                     total_matches += 1
             if file_matches:
                 total_files += 1
                 results.extend(file_matches)
 
-    truncated = _time_mod.monotonic() > deadline or total_matches >= effective_limit
+    truncated = _time_mod.monotonic() > deadline or total_matches >= MAX_SEARCH_RESULTS
     return results, total_files, total_matches, truncated
 
 
@@ -160,29 +149,25 @@ import os
 
 async def grep_file_content(
     pattern: str,
-    search_dir: Optional[str] = None,
+    search_dir: str,
     glob: Optional[str] = None,
     ignore_case: bool = True,
-    head_limit: Optional[int] = None,
     output_mode: Literal["content", "count", "files_with_matches"] = "content",
-    context_lines: int = 0,
 ) -> Dict[str, Any]:
-    """搜索文件内容 — 小欧 2026-06-22 独立文件 — 小健 2026-06-23 新增head_limit/output_mode/context_lines
+    """搜索文件内容 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化
     
     参数说明:
         pattern: 正则表达式搜索模式
-        search_dir: 搜索目录，默认当前目录
+        search_dir: 搜索目录（必填）
         glob: 文件名过滤模式（如"*.py"）
         ignore_case: 是否忽略大小写
-        head_limit: 限制返回结果数量，防止结果过多
         output_mode: 输出模式
             - content: 返回匹配内容（默认）
             - count: 只返回匹配数量
             - files_with_matches: 只返回文件名列表
-        context_lines: 显示匹配行前后多少行上下文
     """
     t0 = _time_mod.perf_counter()
-    actual_dir = search_dir or "."
+    actual_dir = search_dir
     is_valid, error_msg = _validate_path(actual_dir)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -212,7 +197,7 @@ async def grep_file_content(
     try:
         results, total_files, total_matches, truncated = await asyncio.to_thread(
             _grep_files_sync, search_path, pattern, glob, ignore_case, deadline,
-            head_limit, output_mode, context_lines,
+            output_mode,
         )
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

@@ -25,17 +25,14 @@ class HttpRequestInput(BaseModel):
     url: str = Field(
         ..., description="请求的目标URL,如 https://api.example.com/data"
     )
-    method: Literal["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"] = Field(
-        default="GET", description="HTTP方法,默认GET"
+    method: Literal["GET", "POST", "PUT", "DELETE"] = Field(
+        default="GET", description="HTTP方法,默认GET。支持GET/POST/PUT/DELETE"
     )
     headers: Optional[Dict[str, str]] = Field(
         default=None, description="请求头字典,如 {\"Authorization\": \"Bearer token\", \"Content-Type\": \"application/json\"}"
     )
-    params: Optional[Dict[str, str]] = Field(
-        default=None, description="URL查询参数,如 {\"page\": \"1\", \"limit\": \"20\"}"
-    )
-    json_body: Optional[Dict[str, Any]] = Field(
-        default=None, description="JSON请求体(POST/PUT/PATCH时使用),自动设Content-Type为application/json"
+    body: Optional[Dict[str, Any]] = Field(
+        default=None, description="JSON请求体(POST/PUT时使用),自动设Content-Type为application/json"
     )
 
 
