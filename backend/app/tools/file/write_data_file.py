@@ -40,7 +40,7 @@ def _build_write_data_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"写入数据文件失败: {detail}",
-            "action": {"tool": "write_data_file", "tool_zh": "写入数据", "target": file_path, "params": {}},
+            "action": {"tool": "write_data_file", "tool_zh": "写配置文件", "target": file_path, "params": {}},
             "status": {"exec_code": "error", "message": "写入失败", "code": "", "detail": detail, "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -51,7 +51,7 @@ def _build_write_data_file_llm_data(
         m = {"item_count": {"value": item_count, "text": f"{item_count}项"}}
     return {
         "summary": f"已写入{fmt_text}格式文件: {file_path}",
-        "action": {"tool": "write_data_file", "tool_zh": "写入数据", "target": file_path, "params": {}},
+        "action": {"tool": "write_data_file", "tool_zh": "写配置文件", "target": file_path, "params": {}},
         "status": {"exec_code": "success", "message": "写入成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": m,
