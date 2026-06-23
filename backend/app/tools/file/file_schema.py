@@ -28,21 +28,18 @@ from typing import Optional, List, Dict, Any, Literal, Union
 # ⚠️ Pydantic class docstring 会进入 JSON Schema 的 parameters.description 并发给 LLM
 # 禁止在这里写文档字符串。工具描述写在 file_register.py 的 FILE_TOOL_DESCRIPTIONS 里。
 class ReadTextFileInput(BaseModel):
-    """说明:读取尾巴N行,offset=负数(从尾倒数).offset为负数的时候严禁设置limit的值.
-        读全文:所有参数为空;
-        读取 起止行:  offset=100,limit=20 分页。"""
     file_path: str = Field(
         description="要读取的文件路径(绝对路径)"
     )
     offset: Optional[int] = Field(
         default=None,
-        description="负数=从尾倒数(如-20=末20行);正数=分页(必须配合limit);None=全文"
+        description="读取模式：不传=读全文；负数=从尾倒数(如-20返回末20行,此时limit无效)；正数=分页起始行(必须配合limit)"
     )
     limit: Optional[int] = Field(
         default=None,
         ge=1,
         le=1000000,
-        description="最大读取行数。仅配合offset正数使用(分页)"
+        description="最大读取行数。仅offset为正数时有效(分页模式)"
     )
     encoding: Optional[str] = Field(
         default=None,
@@ -160,9 +157,8 @@ class GrepFileContentInput(BaseModel):
     pattern: str = Field(
         description="正则表达式搜索模式,支持中文内容搜索。如 \"def read_file\" 或 \"class.*Component\""
     )
-    search_dir: Optional[str] = Field(
-        default=None,
-        description="搜索路径(绝对路径),默认当前目录"
+    search_dir: str = Field(
+        description="搜索路径(绝对路径,必填)"
     )
     glob: Optional[str] = Field(
         default=None,
@@ -172,21 +168,9 @@ class GrepFileContentInput(BaseModel):
         default=True,
         description="是否忽略大小写,默认True"
     )
-    head_limit: Optional[int] = Field(
-        default=None,
-        ge=1,
-        le=100000,
-        description="限制返回结果数量,防止结果过多浪费token。如100表示最多返回100条匹配"
-    )
     output_mode: Literal["content", "count", "files_with_matches"] = Field(
         default="content",
         description="输出模式: content=返回匹配内容(默认), count=只返回匹配数量, files_with_matches=只返回文件名列表(节省token)"
-    )
-    context_lines: int = Field(
-        default=0,
-        ge=0,
-        le=50,
-        description="显示匹配行前后多少行上下文,0=不显示(默认),3=显示前后3行"
     )
 
 
@@ -264,10 +248,10 @@ class RenameFileInput(BaseModel):
 
 
 # ============================================================
-# F11a: read_data_file — 读取结构化配置文件
+# F11a: read_config_file — 读取结构化配置文件
 # ============================================================
 
-class ReadDataFileInput(BaseModel):
+class ReadConfigFileInput(BaseModel):
     file_path: str = Field(
         description="文件路径(必须是绝对路径)"
     )
@@ -279,10 +263,10 @@ class ReadDataFileInput(BaseModel):
 
 
 # ============================================================
-# F11b: write_data_file — 写入结构化配置文件
+# F11b: write_config_file — 写入结构化配置文件
 # ============================================================
 
-class WriteDataFileInput(BaseModel):
+class WriteConfigFileInput(BaseModel):
     file_path: str = Field(
         description="文件路径(必须是绝对路径)"
     )
@@ -317,6 +301,6 @@ __all__ = [
     "CopyFileInput",
     "DeleteFileInput",
     "RenameFileInput",
-    "ReadDataFileInput",
-    "WriteDataFileInput",
+    "ReadConfigFileInput",
+    "WriteConfigFileInput",
 ]

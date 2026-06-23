@@ -87,8 +87,8 @@ class PromptBuilder:
 - 改 → 必须用edit_text_file
 
 【数据配置文件】(.json .yaml .yml .toml .ini .xml .properties)
-- 读 → 必须用read_data_file，禁止用read_text_file
-- 写 → 必须用write_data_file(支持JSON/YAML/TOML)，禁止用write_text_file
+- 读 → 必须用read_config_file，禁止用read_text_file
+- 写 → 必须用write_config_file(支持JSON/YAML/TOML)，禁止用write_text_file
 
 【Office文档】(.docx .doc .xlsx .xls .pptx .ppt .pdf)
 - 读Word → 必须用read_docx，禁止用read_text_file

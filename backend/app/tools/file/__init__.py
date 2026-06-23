@@ -20,6 +20,6 @@ __all__ = [
     "CopyFileInput",
     "DeleteFileInput",
     "RenameFileInput",
-    "ReadDataFileInput",
-    "WriteDataFileInput",
+    "ReadConfigFileInput",
+    "WriteConfigFileInput",
 ]
