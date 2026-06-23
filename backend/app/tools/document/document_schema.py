@@ -42,7 +42,7 @@ _PARAGRAPHS_DESC = "正文内容。3种格式: str=纯文本, list=[str|dict,...
 class WriteDocxInput(BaseModel):
     file_name: str = Field(..., description="文件名+路径(.docx)")
     title: Optional[str] = Field(default=None, description="文档标题")
-    content: Optional[str] = Field(default=None, description="正文内容(Markdown格式)。支持标题(#/##/###)、段落、列表、表格等Markdown语法")
+    content: Optional[str] = Field(default=None, description="正文内容(Markdown格式)。支持标题(#/##/###/####/#####)、段落、无序列表(-/*)、有序列表(数字.)")
 
 
 class WriteXlsxInput(BaseModel):
@@ -54,7 +54,7 @@ class WriteXlsxInput(BaseModel):
 class WritePdfInput(BaseModel):
     file_name: str = Field(..., description="文件名+路径(.pdf)")
     title: Optional[str] = Field(default=None, description="文档标题")
-    content: Optional[str] = Field(default=None, description="正文内容(Markdown格式)。支持标题(#/##/###)、段落、列表、表格等Markdown语法")
+    content: Optional[str] = Field(default=None, description="正文内容(Markdown格式)。支持标题(#/##/###/####)、段落、无序列表(-/*)、有序列表(数字.)")
 
 
 _SLIDE_DESC = "幻灯片列表。每项Dict包含:title(标题,必填),content(正文内容,选填)。有title无content=封面页,都有=内容页。content支持纯文本或段落列表"

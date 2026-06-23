@@ -3,21 +3,21 @@
 D7: write_pdf — 写入PDF文档
 
 从document_tools.py拆分而来 — 小欧 2026-06-22
-内聚: _resolve_paragraphs / _add_pdf_content_item 辅助函数
+
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
+import re
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
-from app.constants import ERR_WRITE_PDF, ERR_NO_REPORTLAB
-from app.utils.json_utils import coerce_json
+from app.constants import ERR_WRITE_PDF
 from reportlab.lib.units import mm
 from app.utils.logger import logger
 
@@ -43,72 +43,6 @@ def _build_write_pdf_llm_data(
         "metrics": {},
     }
 
-
-def _resolve_paragraphs(paragraphs):
-    """解析paragraphs参数: 统一输出为 (title_from_dict, content_list) — 小欧 2026-06-19"""
-    title = None
-    items = []
-
-    if isinstance(paragraphs, str):
-        items = [paragraphs]
-    elif isinstance(paragraphs, list):
-        items = paragraphs
-    elif isinstance(paragraphs, dict):
-        title = paragraphs.get("title")
-        content = paragraphs.get("content", [])
-        items = content if isinstance(content, list) else [content]
-
-    return title, items
-
-
-def _add_pdf_content_item(elements, item, chinese_style, title_style):
-    """处理单个PDF内容元素 — 小欧 2026-06-19"""
-    from reportlab.lib.units import mm
-    from reportlab.platypus import Paragraph, Table, TableStyle, Spacer
-    from reportlab.lib import colors
-    from reportlab.lib.styles import ParagraphStyle
-
-    if isinstance(item, str):
-        if item.strip():
-            elements.append(Paragraph(item, chinese_style))
-            elements.append(Spacer(1, 3 * mm))
-    elif isinstance(item, dict):
-        item_type = item.get("type", "paragraph")
-        item_text = item.get("text", "")
-        if item_type in ("h1", "heading"):
-            heading_style = ParagraphStyle('h1', parent=chinese_style,
-                                           fontSize=18, spaceBefore=12, spaceAfter=6)
-            elements.append(Paragraph(item_text, heading_style))
-            elements.append(Spacer(1, 3 * mm))
-        elif item_type in ("h2", "h3", "h4", "h5"):
-            fs = max(18 - int(item_type[1]) * 2, 12)
-            h_style = ParagraphStyle(f'h{item_type[1]}', parent=chinese_style,
-                                     fontSize=fs, spaceBefore=8, spaceAfter=4)
-            elements.append(Paragraph(item_text, h_style))
-            elements.append(Spacer(1, 2 * mm))
-        elif item_type == "paragraph":
-            elements.append(Paragraph(item_text, chinese_style))
-            elements.append(Spacer(1, 3 * mm))
-        elif item_type == "table":
-            rows_data = item.get("rows", [])
-            if rows_data and len(rows_data) > 0:
-                try:
-                    t = Table(rows_data)
-                    t.setStyle(TableStyle([
-                        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                        ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
-                        ('FONTSIZE', (0, 0), (-1, -1), 9),
-                    ]))
-                    elements.append(t)
-                    elements.append(Spacer(1, 5 * mm))
-                except Exception:
-                    pass
-    else:
-        text = str(item)
-        if text.strip():
-            elements.append(Paragraph(text, chinese_style))
-            elements.append(Spacer(1, 3 * mm))
 
 
 def write_pdf(
@@ -189,6 +123,9 @@ def write_pdf(
                     elements.append(Spacer(1, 2 * mm))
                 elif line.startswith('- ') or line.startswith('* '):
                     elements.append(Paragraph('• ' + line[2:], chinese_style))
+                    elements.append(Spacer(1, 2 * mm))
+                elif re.match(r'^\d+\.\s', line):
+                    elements.append(Paragraph(re.sub(r'^\d+\.\s', '', line), chinese_style))
                     elements.append(Spacer(1, 2 * mm))
                 else:
                     elements.append(Paragraph(line, chinese_style))

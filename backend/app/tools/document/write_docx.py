@@ -3,21 +3,21 @@
 D5: write_docx — 写入Word文档
 
 从document_tools.py拆分而来 — 小欧 2026-06-22
-内聚: _resolve_paragraphs / _add_docx_content_item 辅助函数
+
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
+import re
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
-from app.constants import ERR_WRITE_DOCX, ERR_NO_DOCX
-from app.utils.json_utils import coerce_json
+from app.constants import ERR_WRITE_DOCX
 from app.utils.logger import logger
 
 
@@ -42,49 +42,6 @@ def _build_write_docx_llm_data(
         "metrics": {},
     }
 
-
-def _resolve_paragraphs(paragraphs):
-    """解析paragraphs参数: 统一输出为 (title_from_dict, content_list) — 小欧 2026-06-19"""
-    title = None
-    items = []
-
-    if isinstance(paragraphs, str):
-        items = [paragraphs]
-    elif isinstance(paragraphs, list):
-        items = paragraphs
-    elif isinstance(paragraphs, dict):
-        title = paragraphs.get("title")
-        content = paragraphs.get("content", [])
-        items = content if isinstance(content, list) else [content]
-
-    return title, items
-
-
-def _add_docx_content_item(doc, item):
-    """处理单个Word内容元素(list中的str或dict) — 小欧 2026-06-19"""
-    if isinstance(item, str):
-        if item.strip():
-            doc.add_paragraph(item)
-    elif isinstance(item, dict):
-        item_type = item.get("type", "paragraph")
-        item_text = item.get("text", "")
-        if item_type in ("h1", "heading"):
-            doc.add_heading(item_text, item.get("level", 1))
-        elif item_type in ("h2", "h3", "h4", "h5"):
-            doc.add_heading(item_text, level=int(item_type[1]))
-        elif item_type == "paragraph":
-            doc.add_paragraph(item_text)
-        elif item_type == "table":
-            rows_data = item.get("rows", [])
-            if rows_data:
-                t = doc.add_table(rows=len(rows_data), cols=len(rows_data[0]))
-                for ri, rd in enumerate(rows_data):
-                    for ci, cv in enumerate(rd):
-                        t.rows[ri].cells[ci].text = str(cv)
-    else:
-        text = str(item)
-        if text.strip():
-            doc.add_paragraph(text)
 
 
 def write_docx(
@@ -126,8 +83,8 @@ def write_docx(
                     doc.add_heading(line[6:], 5)
                 elif line.startswith('- ') or line.startswith('* '):
                     doc.add_paragraph(line[2:], style='List Bullet')
-                elif line.startswith('1. ') or line.startswith('2. ') or line.startswith('3. '):
-                    doc.add_paragraph(line[3:], style='List Number')
+                elif re.match(r'^\d+\.\s', line):
+                    doc.add_paragraph(re.sub(r'^\d+\.\s', '', line), style='List Number')
                 else:
                     doc.add_paragraph(line)
 
