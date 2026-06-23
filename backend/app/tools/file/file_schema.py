@@ -28,6 +28,9 @@ from typing import Optional, List, Dict, Any, Literal, Union
 # ⚠️ Pydantic class docstring 会进入 JSON Schema 的 parameters.description 并发给 LLM
 # 禁止在这里写文档字符串。工具描述写在 file_register.py 的 FILE_TOOL_DESCRIPTIONS 里。
 class ReadTextFileInput(BaseModel):
+    """说明:读取尾巴N行,offset=负数(从尾倒数).offset为负数的时候严禁设置limit的值.
+        读全文:所有参数为空;
+        读取 起止行:  offset=100,limit=20 分页。"""
     file_path: str = Field(
         description="要读取的文件路径(绝对路径)"
     )

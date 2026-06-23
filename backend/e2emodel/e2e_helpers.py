@@ -1278,6 +1278,8 @@ def write_test_record(
         lines.append("|------|--------|------|")
         for i, tc in enumerate(tool_calls):
             params_str = json.dumps(tc.get("tool_params", {}), ensure_ascii=False)
+            if len(params_str) > 100:
+                params_str = params_str[:100] + "..."
             lines.append(f"| {i+1} | {tc.get('tool_name', '')} | `{params_str}` |")
     else:
         lines.append("(无工具调用)")
@@ -1341,7 +1343,7 @@ def write_test_record(
             lines.append("")
             for i, s in enumerate(action_steps):
                 tn = s.get("tool_name", "?")
-                tp = json.dumps(s.get("tool_params", {}), ensure_ascii=False)[:150]
+                tp = json.dumps(s.get("tool_params", {}), ensure_ascii=False)[:100]
                 obs_raw = s.get("observation") or s.get("execution_result", "")
                 obs_str = _obs_to_text(obs_raw)[:200] if obs_raw else "(空)"
                 lines.append(f"**步骤{s.get('step', '?')}: {tn}**")

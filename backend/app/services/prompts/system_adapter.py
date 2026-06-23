@@ -41,7 +41,8 @@ def _get_environment_info() -> str:
     now = now_str()
     is_git = _check_is_git_repo(root)
     git_status = "是" if is_git else "否"
-    return f"""【环境信息】
+    return f"""
+【环境信息】
 - 项目根目录: {root}
 - Git仓库: {git_status}
 - 当前时间: {now}
@@ -49,17 +50,9 @@ def _get_environment_info() -> str:
 
 
 _ALWAYS_RULES = """【路径规则】
-- 必须使用绝对路径(禁止相对路径如 ./file.txt)
 - 禁止用 ~ 表示家目录
-- ❌ 路径中的中文字符必须原样保留,禁止翻译或转换!用户说"E:\\下载\\科幻小说"就用"E:\\下载\\科幻小说",禁止改成"E:\\download\\sci-fi-novel"
+- ❌ 中文路径禁止翻译或转换!
 
-【Shell环境】
-- 本机为Windows PowerShell环境，必须使用PowerShell语法
-- 禁止CMD语法: if exist、mkdir无-Force、&&链接、del、rmdir等
-- 创建目录: New-Item -ItemType Directory -Force
-- 条件判断: if(-not(Test-Path "路径")) { ... }
-- 命令链接用分号; 不用&&
-- 执行Python代码用execute_code工具，不要用python -c
 """
 
 
@@ -73,7 +66,7 @@ def get_system_prompt() -> str:
 
     return "\n\n".join([
         env_info,
-        f"【当前系统】\n{system}",
-        f"【路径格式】\n- 当前系统: {path_format}",
+        f"【当前系统】{system}",
+        f"【路径格式】{path_format}",
         _ALWAYS_RULES,
     ])
