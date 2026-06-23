@@ -100,7 +100,7 @@ FILE_TOOL_DESCRIPTIONS = {
 
     "grep_file_content": """在文件中搜索文本内容,支持正则表达式。适用场景:需要查找代码或文档中的函数定义、关键字、TODO等文本时使用。""",
 
-    "compress_files": """将文件或目录压缩为归档包,可选加密。适用场景:需要备份文件、打包项目、创建加密压缩包时使用。""",
+    "compress_files": """将单个文件或目录压缩为归档包,可选加密。多文件打包请用通配符(如*.txt)或分多次调用(设overwrite=true)。适用场景:需要备份文件、打包项目、创建加密压缩包时使用。""",
 
     "extract_archive": """解压归档包到指定目录。适用场景:需要解压下载的压缩包、恢复备份时使用。""",
 
@@ -155,6 +155,8 @@ FILE_TOOL_EXAMPLES = {
     "compress_files": [
         {"source": "D:/project", "destination": "D:/backup.zip"},
         {"source": "D:/secret.txt", "destination": "D:/secret_encrypted.zip", "password": "my_password"},
+        {"source": "D:/dir/*.txt", "destination": "D:/all_txt.zip"},
+        {"source": "D:/b.txt", "destination": "D:/archive.zip", "overwrite": True},
     ],
     "extract_archive": [
         {"source": "D:/backup.zip", "destination": "D:/extracted"},

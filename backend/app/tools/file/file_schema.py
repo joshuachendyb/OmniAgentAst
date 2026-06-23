@@ -91,7 +91,7 @@ class EditTextFileInput(BaseModel):
         description="目标文件的绝对路径(仅支持文本文件,二进制文件将被拒绝)"
     )
     old_string: str = Field(
-        description="待替换的旧字符串(必须唯一，若需替换所有匹配项请设 replace_all=True)"
+        description="待替换的旧字符串(必须唯一，若需替换所有匹配项请设 replace_all=True)。建议先用read_text_file读取文件确认内容存在"
     )
     new_string: str = Field(
         default="",
@@ -196,7 +196,7 @@ class GrepFileContentInput(BaseModel):
 # ============================================================
 
 class CompressFilesInput(BaseModel):
-    source: str = Field(description="要压缩的文件/目录路径(必填),支持通配符如*.txt")
+    source: str = Field(description="要压缩的单个文件/目录路径(必填),支持通配符如*.txt。多文件打包请用通配符(如E:\\dir\\*.txt)或分多次调用设置overwrite=true覆盖")
     destination: str = Field(description="输出压缩包路径(必填)")
     format: Literal["zip", "tar", "tar.gz", "tar.bz2"] = Field(
         default="zip", description="压缩格式:zip/tar/tar.gz/tar.bz2,默认zip"

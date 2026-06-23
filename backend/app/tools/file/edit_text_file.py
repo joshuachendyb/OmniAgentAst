@@ -198,6 +198,11 @@ async def _precise_replace_in_file(
             if dry_run:
                 return True
             if count == 0:
+                # 小健 2026-06-24: 找不到时返回文件内容摘要，帮助LLM理解文件实际内容
+                lines = content.split('\n')
+                preview = '\n'.join(lines[:15])
+                replace_result['content_preview'] = preview
+                replace_result['total_lines'] = len(lines)
                 return False
             with open(path, 'w', encoding=used_enc, newline='') as f:
                 f.write(new_content)
@@ -210,7 +215,12 @@ async def _precise_replace_in_file(
         count = replace_result.get('count', 0)
 
         if not success or count == 0:
-            return {"error_detail": "未找到匹配内容", "old_string": old_string[:50]}
+            preview = replace_result.get('content_preview', '')
+            total_lines = replace_result.get('total_lines', 0)
+            return {
+                "error_detail": f"未找到匹配内容: '{old_string[:80]}'。文件共{total_lines}行，前15行:\n{preview}",
+                "old_string": old_string[:50],
+            }
 
         return {
             "operation_id": operation_id, "file_path": str(path),
