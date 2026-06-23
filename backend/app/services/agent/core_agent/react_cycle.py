@@ -32,14 +32,23 @@ def _should_retry_truncated_tool(agent, llm_response: Dict) -> bool:
     1. 返回类型是answer
     2. 内容很短(<100字,典型preamble长度)
     3. 对话历史中存在带tool_calls的assistant消息(LLM之前处于工具模式)
+    4. 该tool_call**未被成功执行**(无对应tool角色响应) — P0-2修复 2026-06-23 小欧
     """
     if llm_response.get("type") != "answer":
         return False
     content = llm_response.get("content", "")
     if not content or len(content) > 100:
         return False
-    for msg in reversed(agent.message_builder.conversation_history):
+    history = agent.message_builder.conversation_history
+    for i in range(len(history) - 1, -1, -1):
+        msg = history[i]
         if msg.get("role") == "assistant" and msg.get("tool_calls"):
+            # 检查该tool_call之后是否有工具执行结果
+            # 有→工具已执行,短答案是正常确认,非截断
+            for j in range(i + 1, len(history)):
+                next_msg = history[j]
+                if next_msg.get("role") in ("tool", "observation"):
+                    return False
             return True
     return False
 

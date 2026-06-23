@@ -768,9 +768,9 @@ def verify_db_prompt_consistency(
         db_ss = db_by_step.get(sn, [])
         log_ss = log_by_step.get(sn, [])
         # type对比
-        # type对比(排除start, prompt日志不含该类型)
-        db_types = sorted([s.get("type", "") for s in db_ss if s.get("type") != "start"])
-        log_types = sorted([s.get("\u6b65\u9aa4\u7c7b\u578b", "") for s in log_ss if s.get("\u6b65\u9aa4\u7c7b\u578b") != "start"])
+        # type对比(排除chunk/start, prompt日志不含该类型)
+        db_types = sorted([s.get("type", "") for s in db_ss if s.get("type") not in ("start", "chunk")])
+        log_types = sorted([s.get("\u6b65\u9aa4\u7c7b\u578b", "") for s in log_ss if s.get("\u6b65\u9aa4\u7c7b\u578b") not in ("start", "chunk")])
         if db_types != log_types:
             issues.append(f"步骤{sn} type不一致: DB={db_types}, Prompt日志={log_types}")
 

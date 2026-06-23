@@ -14,16 +14,15 @@ from app.utils.logger import logger
 def get_openai_tools(agent) -> list:
     """获取已注入分类的OpenAI格式工具定义,含TTL缓存 — 小沈 2026-06-17 改用TTLCache
     注意：这里获取的是已注入(inject)给LLM的工具，不是所有已注册(register)的工具
-    
-    P0-3修复 2026-06-23 小欧: 额外包含通过tool_search注入的特定工具名(非整个分类),避免每轮66个
+
+    P0-4修复 2026-06-23 小欧: revert P0-3改为注入整个tool类,通过_loaded_categories承载
     """
     cached = agent._tool_cache.get()
     if cached is not None:
         return cached
 
     from app.tools.registry import tool_registry
-    injected = getattr(agent, '_injected_tool_names', None) or set()
-    tools = tool_registry.to_openai_tools(categories=agent._loaded_categories, tool_names=injected)
+    tools = tool_registry.to_openai_tools(categories=agent._loaded_categories)
     agent._tool_cache.set(tools)
     return tools
 
