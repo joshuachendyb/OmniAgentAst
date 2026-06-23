@@ -31,29 +31,15 @@ class ReadTextFileInput(BaseModel):
     file_path: str = Field(
         description="要读取的文件路径(绝对路径)"
     )
-    head: Optional[int] = Field(
-        default=None,
-        ge=1,
-        le=1000000,
-        description="读取前N行(仅单文件模式,不能与tail/offset同时使用)"
-    )
-    tail: Optional[int] = Field(
-        default=None,
-        ge=1,
-        le=1000000,
-        description="读取后N行(仅单文件模式,不能与head/offset同时使用)"
-    )
     offset: Optional[int] = Field(
         default=None,
-        ge=1,
-        le=10000000,
-        description="起始行号,1-indexed(仅单文件模式,不能与head/tail同时使用,配合limit分页读取)"
+        description="负数=从尾倒数(如-20=末20行);正数=分页(必须配合limit);None=全文"
     )
     limit: Optional[int] = Field(
         default=None,
         ge=1,
         le=1000000,
-        description="最大读取行数(仅单文件模式,配合offset分页读取)"
+        description="最大读取行数。仅配合offset正数使用(分页)"
     )
     encoding: Optional[str] = Field(
         default=None,

@@ -16,7 +16,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import (
-    READ_FILE_DEFAULT_LIMIT,
     MAX_READ_SIZE,
     BINARY_EXTENSIONS,
 )
@@ -107,29 +106,21 @@ async def _try_read_file_with_encodings(
 
 def _select_lines(
     lines: list,
-    head: Optional[int] = None,
-    tail: Optional[int] = None,
     offset: Optional[int] = None,
     limit: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """根据参数选择行并构建 _data 字典 — 小沈 2026-05-25 — 小欧 2026-06-22"""
+    """根据参数选择行并构建 _data 字典 — 小沈 2026-05-25 — 小欧 2026-06-22
+    offset: 负数=从尾倒数;正数=分页(必须配合limit);None=全文
+    limit: 仅配合offset正数(分页)"""
     total = len(lines)
     params = {}
 
-    if head is not None:
-        selected = lines[:min(head, total)]
-        params["head"] = head
-    elif tail is not None:
-        start = max(0, total - tail)
-        selected = lines[start:]
-        params["tail"] = tail
-    elif offset is not None:
-        start_idx = max(0, offset - 1)
-        effective_limit = limit if limit else READ_FILE_DEFAULT_LIMIT
-        selected = lines[start_idx:start_idx + effective_limit]
+    if offset is not None:
+        start_idx = max(0, offset - 1) if offset > 0 else max(0, total + offset)
+        selected = lines[start_idx:start_idx + limit]
         params.update({
             "offset": offset, "limit": limit,
-            "start_line": offset, "end_line": offset + len(selected) - 1,
+            "start_line": start_idx + 1, "end_line": start_idx + len(selected),
         })
     else:
         selected = lines
@@ -171,13 +162,13 @@ def _build_read_text_file_llm_data(
 
 async def read_text_file(
     file_path: str,
-    head: Optional[int] = None,
-    tail: Optional[int] = None,
     offset: Optional[int] = None,
     limit: Optional[int] = None,
     encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """读取文本文件 — 小沈 2026-05-25 重构拆分 — 小欧 2026-06-22 独立文件"""
+    """读取文本文件 — 小沈 2026-05-25 重构拆分 — 小欧 2026-06-22 独立文件
+    offset: 负数=从尾倒数;正数=分页(必须配合limit);None=全文
+    limit: 仅配合offset正数(分页)"""
     t0 = _time_mod.perf_counter()
     try:
         is_binary, binary_reason = _is_binary_file(file_path)
@@ -189,31 +180,37 @@ async def read_text_file(
             )
             return build_error(data={"error_detail": binary_reason, "params": {"file_path": file_path}}, llm_data=llm_data)
 
-        for _name, _val in [("head", head), ("tail", tail), ("offset", offset), ("limit", limit)]:
-            if _val is not None and _val < 1:
-                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_read_text_file_llm_data(
-                    "error", duration_ms, file_path=file_path,
-                    detail=f"{_name}必须>=1,当前值: {_val}",
-                )
-                return build_error(data={"error_detail": f"{_name}必须>=1", "params": {_name: _val}}, llm_data=llm_data)
-
-        if head is not None and tail is not None:
+        if limit is not None and limit < 1:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_text_file_llm_data(
-                "error", duration_ms, file_path=file_path, detail="head和tail不能同时使用",
+                "error", duration_ms, file_path=file_path,
+                detail=f"limit必须>=1,当前值: {limit}",
             )
-            return build_error(data={"error_detail": "head和tail不能同时使用", "params": {"head": head, "tail": tail}}, llm_data=llm_data)
+            return build_error(data={"error_detail": f"limit必须>=1", "params": {"limit": limit}}, llm_data=llm_data)
 
-        if (head is not None or tail is not None) and (offset is not None or limit is not None):
+        if offset is not None and offset > 0 and limit is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_text_file_llm_data(
-                "error", duration_ms, file_path=file_path, detail="head/tail与offset/limit不能同时使用",
+                "error", duration_ms, file_path=file_path,
+                detail="offset为正数时必须带limit,单独使用请用负数offset(从尾倒数)或不传(全文)",
             )
-            return build_error(
-                data={"error_detail": "head/tail与offset/limit不能同时使用", "params": {"head": head, "tail": tail, "offset": offset, "limit": limit}},
-                llm_data=llm_data,
+            return build_error(data={"error_detail": "offset为正数时必须带limit", "params": {"offset": offset}}, llm_data=llm_data)
+
+        if offset is not None and offset < 0 and limit is not None:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_read_text_file_llm_data(
+                "error", duration_ms, file_path=file_path,
+                detail="offset为负数时不能带limit",
             )
+            return build_error(data={"error_detail": "offset为负数时不能带limit", "params": {"offset": offset, "limit": limit}}, llm_data=llm_data)
+
+        if limit is not None and offset is None:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_read_text_file_llm_data(
+                "error", duration_ms, file_path=file_path,
+                detail="limit必须配合offset使用,单独使用无意义",
+            )
+            return build_error(data={"error_detail": "limit必须配合offset使用", "params": {"limit": limit}}, llm_data=llm_data)
 
         is_valid, error_msg = _validate_path(file_path)
         if not is_valid:
@@ -237,7 +234,7 @@ async def read_text_file(
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_text_file_llm_data(
                 "error", duration_ms, file_path=file_path,
-                detail=f"文件过大({file_size}字节),请使用head/tail分段读取",
+                detail=f"文件过大({file_size}字节),请使用offset+limit分段读取",
             )
             return build_error(data={"error_detail": "文件过大", "params": {"file_path": file_path, "file_size": file_size}}, llm_data=llm_data)
 
@@ -248,7 +245,7 @@ async def read_text_file(
             return build_error(data={"error_detail": error, "params": {"file_path": file_path}}, llm_data=llm_data)
 
         lines = content.splitlines(keepends=True)
-        _data = _select_lines(lines, head, tail, offset, limit)
+        _data = _select_lines(lines, offset, limit)
         _data["encoding"] = used_encoding
         _line_count = _data.pop("line_count", 0)
         _total_lines = _data.pop("total_lines", 0)
