@@ -18,6 +18,7 @@ Tool函数公共辅助代码 — 纯逻辑函数集合
 
 import csv
 import importlib
+import locale
 import io
 import json
 import os
@@ -49,13 +50,13 @@ def _check_module(module_name: str) -> bool:
 
 
 def _decode_bytes_safe(data: Any, encodings: Optional[list] = None) -> str:
-    """安全解码bytes为str - 小沈 2026-06-09"""
+    """安全解码bytes为str - 小沈 2026-06-09  fix:系统编码优先于utf-8防GBK被误读 — 小欧 2026-06-23"""
     if data is None:
         return ""
     if isinstance(data, str):
         return data.replace('\r\n', '\n')
     if isinstance(data, bytes):
-        for enc in (encodings or ['utf-8', 'gbk', 'latin-1']):
+        for enc in (encodings or [locale.getpreferredencoding(), 'utf-8', 'gbk', 'latin-1']):
             try:
                 return data.decode(enc).replace('\r\n', '\n')
             except (UnicodeDecodeError, LookupError):
