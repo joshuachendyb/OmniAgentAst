@@ -12,8 +12,6 @@ Prompt 日志记录器 - 记录 Prompt 组装全过程
 """
 
 import json
-import os
-import uuid
 import threading
 from app.utils.time_utils import now_str, timestamp_for_filename
 from pathlib import Path
@@ -45,61 +43,35 @@ class PromptLogger:
         """设置当前线程的日志数据"""
         self._local.current_log = log_data
     
-    def _get_log_file_path(self) -> Optional[Path]:
-        """获取当前线程的日志文件路径"""
-        return getattr(self._local, 'log_file_path', None)
-    
-    def _set_log_file_path(self, path: Optional[Path]):
-        """设置当前线程的日志文件路径"""
-        self._local.log_file_path = path
-    
     def start_request(
         self,
         user_message: str,
         session_id: str,
-        ai_message_id: Optional[str] = None,
-        task_id: Optional[str] = None,
     ) -> str:
         """
-        开始记录一次请求
+        开始记录一次请求 — AI消息ID由update_ai_message_id()设置
         
         Args:
             user_message: 用户消息内容
             session_id: 会话ID
-            ai_message_id: AI消息ID(可选,后续更新)
-            task_id: 任务ID(可选,用于文件名回退)
         
         Returns:
-            日志文件路径
+            会话ID(用于标识本次请求)
         """
         timestamp = now_str()
-        file_timestamp = timestamp_for_filename()
-        
-        # 文件名用真实的ai_message_id或task_id回退 — 小欧 2026-06-23
-        if ai_message_id:
-            short_id = ai_message_id[-6:] if len(ai_message_id) >= 6 else ai_message_id
-        elif task_id:
-            short_id = task_id[-6:]
-        else:
-            short_id = "no_id"
-        
-        # 生成文件名:prompt_{AI消息ID后6位}+{YYYYMMDD_HHMMSS}.json
-        filename = f"prompt_{short_id}+{file_timestamp}.json"
-        log_file_path = self.log_dir / filename
         
         # 延迟导入: 避免循环导入
         from app.utils.message_id_tracker import get_user_message_id
         user_message_id = get_user_message_id(session_id) or self._user_id_from_db(session_id)
         
-        # 初始化日志数据
+        # 初始化日志数据 — AI消息ID由update_ai_message_id()设置,文件名在save()时生成
         current_log = {
             "基本信息": {
                 "时间戳": timestamp,
                 "会话ID": session_id,
                 "用户消息ID": user_message_id,
-                "AI消息ID": ai_message_id,
+                "AI消息ID": None,
                 "用户消息": user_message,
-                "日志文件": str(log_file_path)
             },
             "Prompt组装过程": [],
             "LLM调用记录": []
@@ -107,10 +79,9 @@ class PromptLogger:
         
         # 保存到线程局部存储
         self._set_current_log(current_log)
-        self._set_log_file_path(log_file_path)
         
-        logger.info(f"[PromptLogger] 开始记录请求: {log_file_path}")
-        return str(log_file_path)
+        logger.info(f"[PromptLogger] 开始记录请求: session_id={session_id}")
+        return session_id
     
     def _user_id_from_db(self, sid: str) -> Optional[int]:
         """P1修复: 改用db.get_conn() SDK+修复裸except"""
@@ -127,17 +98,11 @@ class PromptLogger:
 
 
     def update_ai_message_id(self, ai_message_id: str):
-        """拿到真实ID后更新文件路径 — 小欧 2026-06-23"""
+        """拿到真实ai_message_id后更新日志数据 — 小欧 2026-06-23"""
         current_log = self._get_current_log()
-        log_file_path = self._get_log_file_path()
-        if not current_log or not log_file_path:
+        if not current_log:
             return
-        short_id = ai_message_id[-6:] if len(ai_message_id) >= 6 else ai_message_id
-        file_timestamp = log_file_path.stem.split('+')[-1]
-        new_path = log_file_path.parent / f"prompt_{short_id}+{file_timestamp}.json"
-        self._set_log_file_path(new_path)
         current_log["基本信息"]["AI消息ID"] = ai_message_id
-        current_log["基本信息"]["日志文件"] = str(new_path)
 
     def log_system_prompt(
         self,
@@ -449,13 +414,23 @@ class PromptLogger:
         current_log["Prompt组装过程"].append(entry)
     
     def save(self):
-        """保存日志到文件"""
+        """保存日志到文件 — 文件名用ai_message_id生成 — 小欧 2026-06-23"""
         current_log = self._get_current_log()
-        log_file_path = self._get_log_file_path()
-        
-        if not current_log or not log_file_path:
+        if not current_log:
             logger.warning("[PromptLogger] 保存失败:没有当前日志数据")
             return
+        
+        # 从日志数据中取ai_message_id,生成最终文件名
+        ai_id = current_log["基本信息"].get("AI消息ID")
+        if ai_id:
+            short_id = str(ai_id)[-6:]
+        else:
+            user_id = current_log["基本信息"].get("用户消息ID")
+            short_id = str(user_id)[-6:] if user_id else "no_id"
+        
+        file_timestamp = timestamp_for_filename()
+        filename = f"prompt_{short_id}+{file_timestamp}.json"
+        log_file_path = self.log_dir / filename
         
         try:
             with open(log_file_path, 'w', encoding='utf-8') as f:
