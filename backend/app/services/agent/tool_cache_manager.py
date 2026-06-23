@@ -49,7 +49,7 @@ def _get_original_search_desc() -> str:
 
 
 def patch_search_desc(agent):
-    """动态更新 tool_search 描述: 列出未加载分类的工具信息
+    """动态更新 tool_search 描述: 列出未加载分类
     
     【设计原则】
     - DRY: 直接从 tool_registry 获取工具信息，无重复数据
@@ -58,6 +58,7 @@ def patch_search_desc(agent):
     
     【P0-1修复 2026-06-23 小欧】每次从原始描述重新拼装，杜绝重复追加
     【2026-06-18 小健】删除 tool_categories.json，改为直接从 registry 获取
+    【方案A修复 2026-06-23 小健】移除工具名列表，只列出分类名，避免LLM直接调用未注入工具
     """
     from app.tools.registry import tool_registry
     
@@ -81,20 +82,7 @@ def patch_search_desc(agent):
     lines = []
     
     for cat in sorted(unloaded, key=lambda c: c.order):
-        tools_in_cat = [
-            (name, meta.description[:50])
-            for name, meta in tool_registry._tools.items()
-            if meta.category == cat
-        ]
-        
-        if not tools_in_cat:
-            continue
-        
-        tool_str = ", ".join(f"{name}:{desc}" for name, desc in tools_in_cat[:5])
-        if len(tools_in_cat) > 5:
-            tool_str += "..."
-        
-        lines.append(f"- {cat.name_cn}({cat.value}): {tool_str}")
+        lines.append(f"- {cat.name_cn}({cat.value})")
     
     if lines:
         ts_meta.description = base_desc + "\n\n当前未加载分类:\n" + "\n".join(lines)

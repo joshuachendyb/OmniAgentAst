@@ -93,7 +93,7 @@ class ToolRetryEngine:
                 llm_data={
                     "summary": f"工具 '{action}' 未找到",
                     "action": {"tool": action, "tool_zh": "", "target": "", "params": {"action": action}},
-                    "status": {"exec_code": "error", "message": f"工具 '{action}' 未找到", "code": ERR_TOOL_NOT_FOUND, "detail": f"可用工具: {list(self._tools.keys())}", "hint": "请检查工具名称是否正确"},
+                    "status": {"exec_code": "error", "message": f"工具 '{action}' 未找到", "code": ERR_TOOL_NOT_FOUND, "detail": f"可用工具: {list(self._tools.keys())}", "hint": "该工具未注入。请先调用 tool_search 搜索该工具名称(如'网络 搜索')，系统会自动注入整个工具分类。"},
                     "duration_ms": 0,
                     "metrics": {},
                 },
