@@ -115,20 +115,6 @@ def _scan_directory_sync(
     return entries, stats, ext_counter, size_bins
 
 
-def _count_tree_stats(node: dict) -> Tuple[int, int, int]:
-    """递归统计树形结构的文件数/目录数/总大小 — 小健 2026-05-25 — 小欧 2026-06-22"""
-    files = dirs = total_size = 0
-    if node.get("type") == "file":
-        files = 1
-        total_size = node.get("size", 0)
-    elif node.get("type") == "directory":
-        dirs = 1
-    for child in node.get("children", []):
-        cf, cd, cs = _count_tree_stats(child)
-        files += cf; dirs += cd; total_size += cs
-    return files, dirs, total_size
-
-
 def _build_list_success(entries: List, total: int, path: Path,
                          statistics: Dict, start_offset: int,
                          max_display: int) -> Dict[str, Any]:
@@ -192,6 +178,25 @@ async def _get_directory_tree(
     if not path.is_dir():
         return {"error_detail": "不是目录", "params": {"dir_path": dir_path}}
 
+    # 统计: 独立走文件系统计文件/目录/总大小 (不依赖tree)
+    def _count_tree_fs(root: Path) -> Tuple[int, int, int]:
+        fc = dc = ts = 0
+        try:
+            for entry in os.scandir(root):
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        dc += 1
+                        sub_f, sub_d, sub_s = _count_tree_fs(Path(entry.path))
+                        fc += sub_f; dc += sub_d; ts += sub_s
+                    else:
+                        fc += 1
+                        ts += entry.stat().st_size
+                except (PermissionError, OSError):
+                    pass
+        except (PermissionError, OSError):
+            pass
+        return fc, dc, ts
+
     def _build_tree(current_path: Path, depth: int = 0) -> Optional[Dict[str, Any]]:
         if depth > max_depth:
             return None
@@ -202,40 +207,41 @@ async def _get_directory_tree(
         node: Dict[str, Any] = {
             "name": current_path.name,
             "path": str(current_path.absolute()),
-            "type": "directory" if current_path.is_dir() else "file",
-            "size": st.st_size if not current_path.is_dir() else None,
+            "type": "directory",
+            "size": None,
             "mtime": st.st_mtime,
         }
-        if current_path.is_dir():
-            children = []
-            try:
-                for item in sorted(current_path.iterdir(), key=lambda x: x.name.lower()):
+        # tree模式: 只显示目录节点,不展开文件(避免输出爆炸)
+        children: list = []
+        try:
+            for item in sorted(current_path.iterdir(), key=lambda x: x.name.lower()):
+                if item.is_dir():
                     child = _build_tree(item, depth + 1)
                     if child:
                         children.append(child)
-            except (PermissionError, OSError):
-                pass
-            node["children"] = children
+        except (PermissionError, OSError):
+            pass
+        node["children"] = children
         return node
 
     tree = await asyncio.to_thread(_build_tree, path)
     if tree is None:
         return {"error_detail": "构建目录树失败", "params": {"dir_path": dir_path}}
 
-    f, d, s = _count_tree_stats(tree)
-    return {"tree": tree, "statistics": {"file_count": f, "dir_count": d, "total_size": s}}
+    fc, dc, ts = await asyncio.to_thread(_count_tree_fs, path)
+    return {"tree": tree, "statistics": {"file_count": fc, "dir_count": dc, "total_size": ts}}
 
 
 async def list_directory(
     dir_path: str,
-    recursive: bool = False,
+    tree: bool = False,
     sort_by: str = "name",
     include_hidden: bool = False,
 ) -> Dict[str, Any]:
-    """列出目录内容 — 小沈 2026-05-19 — 小欧 2026-06-22 独立文件"""
+    """列出目录内容 — 小沈 2026-05-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-23 recursive改名为tree"""
     t0 = _time_mod.perf_counter()
     max_depth = 10
-    format_mode = "tree" if recursive else "list"
+    format_mode = "tree" if tree else "list"
 
     if sort_by not in ("name", "size", "mtime"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -273,7 +279,7 @@ async def list_directory(
 
         deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("list_directory", TOOL_TIMEOUTS["default"]) - 2
         all_entries, stats, file_types, size_distribution = await asyncio.to_thread(
-            _scan_directory_sync, path, recursive, max_depth, include_hidden, deadline,
+            _scan_directory_sync, path, False, max_depth, include_hidden, deadline,
         )
 
         if sort_by == "size":

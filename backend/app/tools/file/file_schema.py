@@ -128,9 +128,9 @@ class ListDirectoryInput(BaseModel):
     dir_path: str = Field(
         description="目录路径(绝对路径,必填)。如 D:/项目代码"
     )
-    recursive: bool = Field(
+    tree: bool = Field(
         default=False,
-        description="是否递归列出子目录。True=树形结构(含所有层级),False=扁平列表(仅当前层),默认False"
+        description="是否以目录树形式列出。True=仅显示目录层级(不含文件节点,输出紧凑,统计信息仍含文件数),False=扁平列表(当前层所有文件+目录),默认False"
     )
     sort_by: Literal["name", "size", "mtime"] = Field(
         default="name",
