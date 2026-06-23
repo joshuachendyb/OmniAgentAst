@@ -156,7 +156,22 @@ async def call_llm_fc_stream(agent, messages: list, openai_tools: list):
         return
 
     complete_raw = "\n".join(_raw_chunks)
-    logger.debug(f"[FC] raw_response(raw): {complete_raw}")
+    # 解析响应内容，输出完整文本，不截断 - 2026-06-23 小欧
+    try:
+        import json
+        content_parts = []
+        for line in complete_raw.split("\n"):
+            try:
+                obj = json.loads(line)
+                delta = obj.get("choices", [{}])[0].get("delta", {})
+                if delta.get("content"):
+                    content_parts.append(delta["content"])
+            except:
+                pass
+        full_content_text = "".join(content_parts)
+        logger.debug(f"[FC] 响应内容: {full_content_text}")
+    except Exception:
+        pass
 
     if tool_calls_result:
         yield _build_tool_calls_response(full_content, tool_calls_result, usage_data, agent)

@@ -36,7 +36,7 @@ def setup_logger(name: str) -> logging.Logger:
 
     if is_debug:
         formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(filename)s - [%(lineno)d] - %(message)s'
+            '%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
         )
     else:
         formatter = logging.Formatter(
