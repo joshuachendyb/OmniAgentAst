@@ -125,26 +125,7 @@ class PromptLogger:
         except Exception:
             return None
 
-    def update_ai_message_id(self, ai_message_id: str):
-        """更新AI消息ID，更新存储路径确保save()写入正确文件名 — 小欧 2026-06-23"""
-        current_log = self._get_current_log()
-        log_file_path = self._get_log_file_path()
-        if not current_log or not log_file_path:
-            return
-        current_log["基本信息"]["AI消息ID"] = ai_message_id
-        short_id = ai_message_id[-6:] if len(ai_message_id) >= 6 else ai_message_id
-        new_name = log_file_path.parent / f"prompt_{short_id}+{log_file_path.stem.split('+')[-1]}.json"
-        if new_name == log_file_path:
-            return
-        # 无论文件是否存在，都更新路径，save()会按新路径写入
-        self._set_log_file_path(new_name)
-        current_log["基本信息"]["日志文件"] = str(new_name)
-        # 如果文件已存在（save()已调用过），重命名物理文件
-        if log_file_path.exists():
-            try:
-                log_file_path.rename(new_name)
-            except OSError as e:
-                logger.warning(f"[PromptLogger] 重命名文件失败: {e}")
+
     
     def log_system_prompt(
         self,
