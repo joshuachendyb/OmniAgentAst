@@ -253,11 +253,16 @@ def verify_response_time(result: Dict[str, Any]) -> List[str]:
 
 # ─── Session管理 ─────────────────────────────────────────────
 
-async def create_session() -> Optional[str]:
-    """创建session(POST /sessions) -- 小健 2026-06-14"""
+async def create_session(title: Optional[str] = None) -> Optional[str]:
+    """创建session(POST /sessions) — 小健 2026-06-14  fix: 模拟前端传title+is_valid — 小欧 2026-06-23
+
+    前端行为: api.post("/sessions", {title, is_valid: true})
+    """
+    if not title:
+        title = f"E2ETest {datetime.now().strftime('%H:%M:%S')}"
     url = f"{BASE_URL}{API_PREFIX}/sessions"
     async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.post(url, json={})
+        resp = await client.post(url, json={"title": title, "is_valid": True})
         if resp.status_code == 200:
             return resp.json().get("session_id")
     return None
@@ -288,7 +293,9 @@ async def send_chat(
     -- 小健 2026-06-14
     """
     if not session_id:
-        session_id = await create_session()
+        # 模拟前端: 用用户消息前50字做标题
+        title = user_input.strip()[:50] if user_input.strip() else None
+        session_id = await create_session(title)
         if not session_id:
             raise RuntimeError("创建session失败")
 

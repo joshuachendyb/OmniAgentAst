@@ -66,7 +66,7 @@ async def chat_stream(request: ChatRequest):
         state = StreamState()
 
         prompt_logger = get_prompt_logger()
-        prompt_logger.start_request(user_input, session_id)
+        prompt_logger.start_request(user_input, session_id, task_id=task_id)
 
         try:
             await register_task(task_id, ai_service)

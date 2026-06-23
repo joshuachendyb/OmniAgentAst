@@ -57,7 +57,8 @@ class PromptLogger:
         self,
         user_message: str,
         session_id: str,
-        ai_message_id: Optional[str] = None
+        ai_message_id: Optional[str] = None,
+        task_id: Optional[str] = None,
     ) -> str:
         """
         开始记录一次请求
@@ -66,6 +67,7 @@ class PromptLogger:
             user_message: 用户消息内容
             session_id: 会话ID
             ai_message_id: AI消息ID(可选,后续更新)
+            task_id: 任务ID(可选,用于文件名回退)
         
         Returns:
             日志文件路径
@@ -73,17 +75,21 @@ class PromptLogger:
         timestamp = now_str()
         file_timestamp = timestamp_for_filename()
         
+        # 文件名用真实的ai_message_id或task_id回退 — 小欧 2026-06-23
+        if ai_message_id:
+            short_id = ai_message_id[-6:] if len(ai_message_id) >= 6 else ai_message_id
+        elif task_id:
+            short_id = task_id[-6:]
+        else:
+            short_id = "no_id"
+        
+        # 生成文件名:prompt_{AI消息ID后6位}+{YYYYMMDD_HHMMSS}.json
+        filename = f"prompt_{short_id}+{file_timestamp}.json"
+        log_file_path = self.log_dir / filename
+        
         # 延迟导入: 避免循环导入
         from app.utils.message_id_tracker import get_user_message_id
         user_message_id = get_user_message_id(session_id) or self._user_id_from_db(session_id)
-        # AI消息ID = 用户消息ID + 1
-        ai_msg_id = (user_message_id + 1) if user_message_id is not None else None
-        ai_msg_id_str = str(ai_msg_id) if ai_msg_id is not None else str(uuid.uuid4())[:6]
-        
-        # 生成文件名:prompt_{AI消息ID后6位}+{YYYYMMDD_HHMMSS}.json
-        short_id = ai_msg_id_str[-6:] if len(ai_msg_id_str) >= 6 else ai_msg_id_str
-        filename = f"prompt_{short_id}+{file_timestamp}.json"
-        log_file_path = self.log_dir / filename
         
         # 初始化日志数据
         current_log = {
@@ -91,7 +97,7 @@ class PromptLogger:
                 "时间戳": timestamp,
                 "会话ID": session_id,
                 "用户消息ID": user_message_id,
-                "AI消息ID": ai_msg_id,
+                "AI消息ID": ai_message_id,
                 "用户消息": user_message,
                 "日志文件": str(log_file_path)
             },
@@ -120,10 +126,22 @@ class PromptLogger:
             return None
 
     def update_ai_message_id(self, ai_message_id: str):
-        """更新 AI 消息 ID"""
+        """更新 AI 消息 ID，并用真实ID重命名文件 — 北京老陈 2026-06-14  fix: 重命名文件 — 小欧 2026-06-23"""
         current_log = self._get_current_log()
-        if current_log:
-            current_log["基本信息"]["AI消息ID"] = ai_message_id
+        log_file_path = self._get_log_file_path()
+        if not current_log or not log_file_path:
+            return
+        current_log["基本信息"]["AI消息ID"] = ai_message_id
+        # 用真实AI消息ID重命名文件
+        short_id = ai_message_id[-6:] if len(ai_message_id) >= 6 else ai_message_id
+        new_name = log_file_path.parent / f"prompt_{short_id}+{log_file_path.stem.split('+')[-1]}.json"
+        if new_name != log_file_path and not new_name.exists():
+            try:
+                log_file_path.rename(new_name)
+                self._set_log_file_path(new_name)
+                current_log["基本信息"]["日志文件"] = str(new_name)
+            except OSError:
+                pass
     
     def log_system_prompt(
         self,
@@ -349,6 +367,9 @@ class PromptLogger:
         """记录每一步 yield 给前端的 JSON 数据 — 北京老陈 2026-06-14"""
         current_log = self._get_current_log()
         if not current_log:
+            return
+        # 跳过chunk事件: 单次长回复产生几百个chunk, 对Prompt分析无意义, 徒增文件大小 — 小欧 2026-06-23
+        if step_dict.get("type") == "chunk":
             return
         if "步骤产出" not in current_log:
             current_log["步骤产出"] = []
