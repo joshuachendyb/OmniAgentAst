@@ -609,39 +609,26 @@ def _write_yaml(file_path: str, data: Any, encoding: str = "utf-8", indent: int 
 
 
 def write_yaml_ordered(file_path: str, data: Any, encoding: str = "utf-8", indent: int = 2) -> Dict[str, Any]:
-    """使用OrderedDict写入YAML — 小沈 2026-06-09"""
+    """按传入 dict 的原始 key 顺序写入 YAML（tool专用辅助函数，不做任何重排）— 小沈 2026-06-09"""
     import yaml
     from collections import OrderedDict
     path = Path(file_path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    def _order(d):
+    def _to_ordered(d):
         if not isinstance(d, dict):
             return d
         result = OrderedDict()
-        if 'ai' in d:
-            ai_data = d['ai']
-            ai_ordered = OrderedDict()
-            if 'provider' in ai_data:
-                ai_ordered['provider'] = ai_data['provider']
-            if 'model' in ai_data:
-                ai_ordered['model'] = ai_data['model']
-            for key in sorted(ai_data.keys()):
-                if key not in ('provider', 'model'):
-                    ai_ordered[key] = _order(ai_data[key]) if isinstance(ai_data[key], dict) else ai_data[key]
-            result['ai'] = ai_ordered
-        for key in sorted(d.keys()):
-            if key != 'ai':
-                result[key] = _order(d[key]) if isinstance(d[key], dict) else d[key]
+        for k in d:
+            result[k] = _to_ordered(d[k]) if isinstance(d[k], dict) else d[k]
         return result
 
     def _repr_ordered_dict(dumper, data):
-        """将OrderedDict序列化为普通YAML映射而非!!python/object格式 — 小欧 2026-06-22"""
         return dumper.represent_dict(data.items())
 
     yaml.add_representer(OrderedDict, _repr_ordered_dict)
     with open(path, "w", encoding=encoding) as f:
-        yaml.dump(_order(data), f, allow_unicode=True, default_flow_style=False, indent=indent)
+        yaml.dump(_to_ordered(data), f, allow_unicode=True, default_flow_style=False, indent=indent)
     return {"file_path": file_path}
 
 

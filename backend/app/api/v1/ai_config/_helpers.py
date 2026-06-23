@@ -26,15 +26,40 @@ __all__ = ["handle_config_errors"]
 
 
 # ====================================================================
-# YAML 有序写入
+# YAML 有序写入（配置专用）
 # ====================================================================
 
-def _write_yaml_with_order(file_path: str, data: dict):
-    """使用OrderedDict写入YAML,保持特定顺序 - 小沈 2026-06-09 复用"""
-    from app.tools.tool_fc_helper import write_yaml_ordered
-    result = write_yaml_ordered(file_path, data)
-    if isinstance(result, dict) and "error" in result:
-        raise Exception(result.get("error"))
+def _write_system_yaml(file_path: str, data: dict):
+    """系统配置专用 YAML 写入 — 小欧 2026-06-23
+    - model/provider 排 ai 块最前面
+    - provider 名字保留原始顺序（不字母序重排）
+    """
+    def _order(d):
+        if not isinstance(d, dict):
+            return d
+        result = OrderedDict()
+        if 'ai' in d:
+            ai_data = d['ai']
+            ai_ordered = OrderedDict()
+            if 'provider' in ai_data:
+                ai_ordered['provider'] = ai_data['provider']
+            if 'model' in ai_data:
+                ai_ordered['model'] = ai_data['model']
+            for k in ai_data:
+                if k not in ('provider', 'model'):
+                    ai_ordered[k] = _order(ai_data[k]) if isinstance(ai_data[k], dict) else ai_data[k]
+            result['ai'] = ai_ordered
+        for k in d:
+            if k != 'ai':
+                result[k] = _order(d[k]) if isinstance(d[k], dict) else d[k]
+        return result
+
+    def _repr_ordered_dict(dumper, data):
+        return dumper.represent_dict(data.items())
+
+    yaml.add_representer(OrderedDict, _repr_ordered_dict)
+    with open(file_path, 'w', encoding='utf-8') as f:
+        yaml.dump(_order(data), f, allow_unicode=True, default_flow_style=False, indent=2)
 
 
 # ====================================================================
@@ -73,7 +98,7 @@ def read_yaml_config(config_path: Path) -> dict:
 
 def write_yaml_config(config_path: str, data: dict) -> None:
     """使用有序 Key 写入 YAML 配置文件"""
-    _write_yaml_with_order(config_path, data)
+    _write_system_yaml(config_path, data)
 
 
 def reload_ai_config() -> None:
