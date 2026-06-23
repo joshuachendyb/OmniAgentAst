@@ -112,7 +112,7 @@ FILE_TOOL_DESCRIPTIONS = {
 
     "rename_file": """重命名文件或目录。适用场景:需要修改文件名、规范化命名时使用。""",
 
-    "read_data_file": """读取JSON/YAML/TOML等结构化配置文件。适用场景:需要查看或分析配置文件内容时使用。""",
+    "read_data_file": """读取JSON/YAML/TOML等结构化配置文件。CSV文件需指定format参数。适用场景:需要查看或分析配置文件内容时使用。""",
 
     "write_data_file": """写入结构化配置文件(JSON/YAML/TOML)。适用场景:需要创建或修改配置文件时使用。""",
 }

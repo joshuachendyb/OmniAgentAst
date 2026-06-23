@@ -38,14 +38,14 @@ def _build_compress_files_llm_data(
     exec_code: str, duration_ms: int,
     source: str = "", detail: str = "",
     original_size: int = 0, compressed_size: int = 0, file_count: int = 0,
-    fmt: str = "zip",
+    fmt: str = "zip", hint: str = "",
 ) -> Dict[str, Any]:
-    """compress_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-22 重构：关键指标放入metrics"""
+    """compress_files的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小健 2026-06-22 重构：关键指标放入metrics — 小健 2026-06-24 hint参数化"""
     if exec_code == "error":
         return {
             "summary": f"压缩失败: {detail}",
             "action": {"tool": "compress_files", "tool_zh": "压缩", "target": source, "params": {"source": source}},
-            "status": {"exec_code": "error", "message": f"压缩失败: {detail}", "code": ERR_FILE_COMPRESS_FAILED, "detail": detail, "hint": "请检查源路径是否存在"},
+            "status": {"exec_code": "error", "message": f"压缩失败: {detail}", "code": ERR_FILE_COMPRESS_FAILED, "detail": detail, "hint": hint},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -201,29 +201,29 @@ async def compress_files(
     is_valid_src, err_src = _validate_path(source)
     if not is_valid_src:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"源路径验证失败: {err_src}")
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"源路径验证失败: {err_src}", hint="请检查源路径是否正确")
         return build_error(data={"error_detail": f"源路径验证失败: {err_src}", "params": {"source": source}}, llm_data=llm_data)
 
     is_valid_dst, err_dst = _validate_path(destination)
     if not is_valid_dst:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"目标路径验证失败: {err_dst}")
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"目标路径验证失败: {err_dst}", hint="请检查目标路径是否正确")
         return build_error(data={"error_detail": f"目标路径验证失败: {err_dst}", "params": {"destination": destination}}, llm_data=llm_data)
 
     if not overwrite and os.path.exists(destination):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"目标文件已存在: {destination}")
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"目标文件已存在: {destination}", hint="可设置overwrite=true覆盖")
         return build_error(data={"error_detail": f"目标文件已存在: {destination},可设置overwrite=true覆盖", "params": {"destination": destination}}, llm_data=llm_data)
 
     task_id = _current_task_id.get()
     if not task_id:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail="No active task")
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail="No active task", hint="请先开始一个任务")
         return build_error(data={"error_detail": "No active task", "params": {}}, llm_data=llm_data)
 
     if format not in ("zip", "tar.gz"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"不支持的压缩格式: {format}")
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"不支持的压缩格式: {format}", hint="支持zip/tar/tar.gz/tar.bz2")
         return build_error(data={"error_detail": f"不支持的压缩格式: {format},支持格式: zip, tar.gz", "params": {"format": format}}, llm_data=llm_data)
 
     src = Path(source)
@@ -233,11 +233,11 @@ async def compress_files(
         if _has_wildcard(source):
             if not glob.glob(source):
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"通配符无匹配: {source}")
+                llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"通配符无匹配: {source}", hint="请检查通配符是否正确")
                 return build_error(data={"error_detail": f"通配符无匹配: {source}", "params": {"source": source}}, llm_data=llm_data)
         elif not src.exists():
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"源路径不存在: {source}")
+            llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"源路径不存在: {source}", hint="请检查源路径是否存在")
             return build_error(data={"error_detail": f"源路径不存在: {source}", "params": {"source": source}}, llm_data=llm_data)
 
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -288,10 +288,10 @@ async def compress_files(
             safe_data = {k: v for k, v in result.items() if k not in ("source_path", "destination_path", "format", "compressed_size", "file_count")}
             safe_data["operation_id"] = operation_id
             return build_success(data=safe_data, llm_data=llm_data)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail="压缩失败")
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail="压缩失败", hint="请检查源路径和目标路径是否正确")
         return build_error(data={"error_detail": "压缩失败", "params": {"source": source}}, llm_data=llm_data)
 
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=str(e))
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=str(e), hint="请检查参数是否正确")
         return build_error(data={"error_detail": f"压缩失败: {str(e)}", "params": {"source": source}}, llm_data=llm_data)
