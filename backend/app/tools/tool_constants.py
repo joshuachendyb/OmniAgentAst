@@ -90,15 +90,18 @@ MAX_BATCH_FILE_COUNT = 100
 MAX_SEARCH_FILE_SIZE = 10 * 1024 * 1024
 MAX_SEARCH_RESULTS = 1000
 
-# 二进制文件扩展名
+# 二进制文件扩展名 — 小健 2026-06-24 更新：补充媒体扩展名
 # 用途：read_text_file/write_text_file/edit_text_file等文本工具拒绝二进制文件
 # 说明：包含所有二进制格式（包括系统不支持的.rar/.7z），用于防止文本工具误操作二进制文件
 BINARY_EXTENSIONS = {
-    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.ico', '.tiff', '.tif',
+    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.ico', '.tiff', '.tif', '.svg',
+    '.heic', '.heif',
     '.mp3', '.mp4', '.wav', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.m4a', '.ogg',
+    '.flac', '.aac', '.wma', '.mid', '.midi', '.webm',
     '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.tar.gz', '.tar.bz2',
     '.exe', '.msi', '.dll', '.so', '.dylib',
     '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.pdf',
+    '.odt', '.ods', '.odp', '.rtf',
 }
 
 # ============================================================
