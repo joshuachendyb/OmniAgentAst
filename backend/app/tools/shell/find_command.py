@@ -54,8 +54,12 @@ def _build_find_command_llm_data(
 
 
 def find_command(command: str, all_paths: bool = False) -> Dict[str, Any]:
-    """查找系统命令路径 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件"""
+    """查找系统命令路径 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 修复空值校验"""
     t0 = _time_mod.perf_counter()
+    if not command or not isinstance(command, str) or not command.strip():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_find_command_llm_data("error", duration_ms, str(command), False, "")
+        return build_error(data={"error_detail": "command参数不能为空", "params": {"command": command}}, llm_data=llm_data)
     try:
         if not all_paths:
             cmd_path = shutil.which(command)
