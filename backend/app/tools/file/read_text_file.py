@@ -117,7 +117,10 @@ def _select_lines(
 
     if offset is not None:
         start_idx = max(0, offset - 1) if offset > 0 else max(0, total + offset)
-        selected = lines[start_idx:start_idx + limit]
+        if limit is not None:
+            selected = lines[start_idx:start_idx + limit]
+        else:
+            selected = lines[start_idx:]
         params.update({
             "offset": offset, "limit": limit,
             "start_line": start_idx + 1, "end_line": start_idx + len(selected),
@@ -247,8 +250,8 @@ async def read_text_file(
         lines = content.splitlines(keepends=True)
         _data = _select_lines(lines, offset, limit)
         _data["encoding"] = used_encoding
-        _line_count = _data.pop("line_count", 0)
-        _total_lines = _data.pop("total_lines", 0)
+        _line_count = _data.get("line_count", 0)
+        _total_lines = _data.get("total_lines", 0)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_text_file_llm_data(
