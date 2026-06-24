@@ -155,7 +155,7 @@ def write_docx(
                 i += 1
         
         elif table_data:
-            if table_data and len(table_data) > 0:
+            if table_data and len(table_data) > 0 and len(table_data[0]) > 0:
                 t = doc.add_table(rows=len(table_data), cols=len(table_data[0]))
                 for ri, row_data in enumerate(table_data):
                     for ci, cell_text in enumerate(row_data):
