@@ -20,6 +20,7 @@ import time as _time_mod
 from typing import Any, Dict, List, Literal, Optional
 
 from app.tools.tool_response import build_success, build_error
+from app.tools.network.url_validator import validate_url
 
 from app.utils.logger import logger
 from app.constants import (
@@ -208,6 +209,11 @@ async def network_diagnose(
 ) -> Dict[str, Any]:
     """网络连通性诊断 — 小健 2026-06-21 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 修复铁规违反"""
     t0 = _time_mod.perf_counter()
+    url_info = validate_url(f"http://{host}")
+    if not url_info["valid"]:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_network_diagnose_llm_data("error", duration_ms, host, mode, ERR_NETWORK_INVALID_HOST, f"禁止访问内网地址: {host}")
+        return build_error(data={"error_detail": f"禁止访问内网地址: {host}", "params": {"host": host, "mode": mode}}, llm_data=llm_data)
     if mode == "ping":
         result = await _ping(host=host, count=count, timeout=timeout)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

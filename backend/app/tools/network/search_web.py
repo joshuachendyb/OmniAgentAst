@@ -217,13 +217,21 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: O
     return None
 
 
+_MAX_SEARCH_DEPTH = 3
+
+
 async def _search_bing(
     query: str,
     num_results: int,
     proxy_config: Optional[str] = None,
+    _depth: int = 0,
 ) -> List[dict]:
     """Bing搜索(HTML解析) — 小欧 2026-06-22
-    更新: 2026-06-23 小欧 多域名降级+挑战页检测+长查询拆分"""
+    更新: 2026-06-23 小欧 多域名降级+挑战页检测+长查询拆分
+          2026-06-24 小欧 增加递归深度限制"""
+    if _depth >= _MAX_SEARCH_DEPTH:
+        return []
+
     headers = {"User-Agent": BROWSER_USER_AGENT}
     params = {"q": query, "count": num_results}
 
@@ -327,7 +335,7 @@ async def _search_bing(
         all_results = []
         seen_urls = set()
         for sq in sub_queries:
-            sub_results = await _search_bing(sq, max(3, num_results // len(sub_queries)), proxy_config)
+            sub_results = await _search_bing(sq, max(3, num_results // len(sub_queries)), proxy_config, _depth + 1)
             for r in sub_results:
                 u = r.get("url", "")
                 if u and u not in seen_urls:
