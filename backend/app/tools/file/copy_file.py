@@ -109,6 +109,7 @@ async def copy_file(
             elif src.is_dir():
                 if recursive:
                     if dst.exists():
+                        logger.warning(f"[copy_file] recursive模式: 目标目录已存在,将删除后重建: {dst}")
                         shutil.rmtree(str(dst))
                     if preserve_metadata:
                         shutil.copytree(str(src), str(dst))
