@@ -48,8 +48,11 @@ DOCUMENT_EXTENSIONS = {
 # 配置文件扩展名 — 已删除config工具，配置文件由text工具处理 — 小欧 2026-06-24
 
 # 压缩文件扩展名
+# 用途：compress_files/extract_archive工具的类型检查
+# 说明：仅包含实际支持的格式，用于引导LLM选择正确的工具
+# 小欧 2026-06-24 修正：只保留实际支持的4种格式
 ARCHIVE_EXTENSIONS = {
-    '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.tar.gz', '.tar.bz2',
+    '.zip', '.tar', '.tar.gz', '.tar.bz2',
 }
 
 

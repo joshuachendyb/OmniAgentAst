@@ -180,8 +180,8 @@ class GrepFileContentInput(BaseModel):
 # ============================================================
 
 class CompressFilesInput(BaseModel):
-    source: str = Field(description="要压缩的单个文件/目录路径(必填),支持通配符如*.txt。多文件打包请用通配符(如E:\\dir\\*.txt)或分多次调用设置overwrite=true覆盖")
-    destination: str = Field(description="输出压缩包路径(必填)")
+    source: str = Field(description="要压缩的单个文件/目录路径(绝对路径,必填),支持通配符如*.txt。多文件打包请用通配符(如E:\\dir\\*.txt)或分多次调用设置overwrite=true覆盖")
+    destination: str = Field(description="输出压缩包路径(绝对路径,必填)")
     format: Literal["zip", "tar", "tar.gz", "tar.bz2"] = Field(
         default="zip", description="压缩格式:zip/tar/tar.gz/tar.bz2,默认zip"
     )
@@ -198,9 +198,9 @@ class CompressFilesInput(BaseModel):
 # ============================================================
 
 class ExtractArchiveInput(BaseModel):
-    source: str = Field(description="压缩包路径(必填)")
+    source: str = Field(description="压缩包路径(绝对路径,必填)。支持格式:zip/tar/tar.gz/tar.bz2")
     destination: Optional[str] = Field(
-        default=None, description="解压目标目录(可选,默认自动创建同名目录)"
+        default=None, description="解压目标目录(绝对路径,可选,默认自动创建同名目录)"
     )
     password: Optional[str] = Field(default=None, description="解密密码(仅ZIP格式支持),可选")
     overwrite: bool = Field(default=False, description="是否覆盖已存在文件,默认False")
