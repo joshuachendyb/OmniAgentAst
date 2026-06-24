@@ -41,7 +41,7 @@ def registry_delete(key_path: str, value_name: Optional[str] = None, backup_befo
     """删除Windows注册表键值或子键 — 小健 2026-06-22 拆分独立文件"""
     t0 = _time_mod.perf_counter()
     try:
-        full_root_key, sub_key = _parse_key_path(key_path)
+        full_root_key, sub_key = _parse_key_path(key_path, hive=hive)
         hkey = ROOT_KEY_MAP.get(full_root_key)
 
         if hkey is None:
