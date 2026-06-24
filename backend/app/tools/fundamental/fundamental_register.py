@@ -68,28 +68,46 @@ FUNDAMENTAL_TOOL_EXAMPLES = {
     ],
     "time_now": [
         {},
-        {"format": "%Y年%m月%d日 %H:%M:%S"},
-        {"timezone": "Asia/Shanghai"},
+
     ],
     "time_add": [
+        {"delta": 7},
+        {"delta": 7, "unit": "days"},
+        {"delta": 3, "unit": "hours"},
+        {"delta": 30, "unit": "minutes"},
+        {"delta": 90, "unit": "seconds"},
+        {"delta": 2, "unit": "months"},
+        {"delta": -7, "unit": "days"},
         {"start": "2026-05-18 10:00:00", "delta": 7, "unit": "days"},
     ],
     "time_diff": [
+        {"start": "2026-05-01"},
         {"start": "2026-05-01", "end": "2026-05-18"},
+        {"start": 1717200000, "end": 1717804800},
     ],
     "query_calendar": [
         {"name": "端午节", "year": 2026},
+        {"name": "春节", "year": 2026},
         {"name": "中秋节", "year": 2026},
-        {"name": "2026-05-18"}
+        {"name": "国庆节", "year": 2026},
+        {"name": "元旦", "year": 2026},
+        {"name": "2026-05-18"},
+        {"name": "2026-06-24"},
     ],
     "get_system_info": [
+        {},
         {"info_type": "all"},
+        {"info_type": "basic"},
         {"info_type": "cpu"},
         {"info_type": "memory"},
+        {"info_type": "disk"},
+        {"info_type": "network"},
     ],
     "send_notification": [
-        {"title": "AI热点新闻", "message": "已为您搜索到最新AI行业新闻", "duration": 5},
-        {"title": "任务完成", "message": "全部操作已完成"},
+        {"title": "AI热点新闻", "message": "已为您搜索到最新AI行业新闻"},
+        {"title": "任务完成", "message": "全部操作已完成", "duration": 5},
+        {"title": "系统提醒", "message": "这是一条包含特殊字符<>&\"'的通知消息", "duration": 10},
+        {"title": "长文本测试标题用于验证通知系统的稳定性", "message": "这是一条较长的通知内容，用于测试系统对长文本的处理能力，确保不会出现截断或显示异常", "duration": 8},
     ],
 }
 
