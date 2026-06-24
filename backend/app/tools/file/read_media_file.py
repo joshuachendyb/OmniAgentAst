@@ -102,6 +102,30 @@ async def read_media_file(
             llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail="PDF文件请使用read_document工具读取")
             return build_error(data={"error_detail": "PDF请使用read_document工具", "params": {"file_path": file_path}}, llm_data=llm_data)
 
+        _TEXT_EXTENSIONS = {
+            '.txt', '.md', '.py', '.js', '.ts', '.jsx', '.tsx', '.java', '.go', '.c', '.cpp', '.h',
+            '.rs', '.rb', '.swift', '.kt', '.scala',
+            '.json', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.xml', '.properties',
+            '.csv', '.html', '.htm', '.css', '.scss', '.less', '.sql',
+            '.sh', '.bat', '.ps1', '.cmd', '.log', '.env',
+            '.rtf', '.odt', '.ods', '.odp',
+        }
+        _DOC_EXTENSIONS = {'.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'}
+        if suffix in _DOC_EXTENSIONS:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_read_media_file_llm_data(
+                "error", duration_ms, file_path=file_path,
+                detail=f"文件后缀 '{suffix}' 是文档文件，请使用read_document工具读取",
+            )
+            return build_error(data={"error_detail": f"文档文件请使用read_document", "params": {"file_path": file_path}}, llm_data=llm_data)
+        if suffix in _TEXT_EXTENSIONS:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_read_media_file_llm_data(
+                "error", duration_ms, file_path=file_path,
+                detail=f"文件后缀 '{suffix}' 是文本文件，请使用read_text_file工具读取",
+            )
+            return build_error(data={"error_detail": f"文本文件请使用read_text_file", "params": {"file_path": file_path}}, llm_data=llm_data)
+
         mime_type = _MIME_MAP.get(suffix, "application/octet-stream")
 
         def _read_sync():
