@@ -44,8 +44,7 @@ def _read_file_safe(file_path: Path) -> List[str]:
                 return f.readlines()
         except (UnicodeDecodeError, LookupError):
             continue
-    with file_path.open("r", encoding="utf-8", errors="replace") as f:
-        return f.readlines()
+    return []
 
 
 def _build_grep_file_content_llm_data(
@@ -99,7 +98,7 @@ def _grep_files_sync(
     try:
         regex = re_mod.compile(pattern, flags)
     except re_mod.error as e:
-        return [], 0, 0, False
+        raise ValueError(f"正则表达式无效: {e}") from e
 
     for root, dirs, files in os.walk(search_dir):
         if _time_mod.monotonic() > deadline:
