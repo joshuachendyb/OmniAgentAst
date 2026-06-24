@@ -119,8 +119,12 @@ async def copy_file(
                     dst.mkdir(exist_ok=True)
             return True
 
-        success = await asyncio.to_thread(
-            execute_with_safety, operation_id=operation_id, operation_func=_copy_sync)
+        # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
+        if operation_id:
+            success = await asyncio.to_thread(execute_with_safety, operation_id=operation_id, operation_func=_copy_sync)
+        else:
+            logger.info("Database unavailable, executing copy operation without recording")
+            success = await asyncio.to_thread(_copy_sync)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if success:

@@ -15,15 +15,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import (
-    MAX_READ_SIZE,
-    BINARY_EXTENSIONS,
-)
-from app.constants import (
-    ERR_FILE_READ_FAILED,
-    ERR_FILE_READ_BINARY_FILE,
-)
+from app.tools.tool_constants import MAX_READ_SIZE
+from app.constants import ERR_FILE_READ_FAILED
 from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
+from app.tools.file_type_checker import check_for_text_tool
 from app.utils.logger import logger
 
 
@@ -57,25 +52,6 @@ def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
     """验证文件路径是否合法 — 小沈 2026-06-17 委托path_validator — 小欧 2026-06-22"""
     return _validate_path_impl(file_path, ALLOWED_PATHS)
 
-
-def _is_binary_file(file_path: str) -> Tuple[bool, str]:
-    """检测文件是否为二进制文件 — 小沈 2026-05-02 — 小欧 2026-06-22 — 小欧 2026-06-24 增加内容检测"""
-    path = Path(file_path)
-    suffix = path.suffix.lower()
-    if suffix in BINARY_EXTENSIONS:
-        return True, f"文件后缀 '{suffix}' 属于二进制文件类型，禁止使用text工具操作"
-    if path.exists() and path.is_file():
-        try:
-            with open(path, 'rb') as f:
-                chunk = f.read(8192)
-            if b'\x00' in chunk:
-                return True, f"文件包含空字节(0x00),疑似二进制文件"
-            null_count = chunk.count(b'\xff\xfe') + chunk.count(b'\xfe\xff')
-            if null_count > 0 and len(chunk) < 100:
-                return True, f"文件包含BOM标记但内容过短,疑似二进制文件"
-        except Exception:
-            pass
-    return False, ""
 
 
 async def _try_read_file_with_encodings(
@@ -199,19 +175,18 @@ async def read_text_file(
     limit: Optional[int] = None,
     encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """读取文本文件 — 小沈 2026-05-25 重构拆分 — 小欧 2026-06-22 独立文件
+    """读取文本文件 — 小沈 2026-05-25 重构拆分 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 增加文件类型前置检查
     offset: 负数=从尾倒数;正数=分页(必须配合limit);None=全文
     limit: 仅配合offset正数(分页)"""
     t0 = _time_mod.perf_counter()
     try:
-        is_binary, binary_reason = _is_binary_file(file_path)
-        if is_binary:
+        # 文件类型前置检查 — 小健 2026-06-24
+        is_valid, error_detail, suggested_tool = check_for_text_tool(file_path, check_content=True)
+        if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_text_file_llm_data(
-                "error", duration_ms, file_path=file_path,
-                detail=f"{binary_reason}。请使用read_media_file工具读取媒体文件",
-            )
-            return build_error(data={"error_detail": binary_reason, "params": {"file_path": file_path}}, llm_data=llm_data)
+            hint = f"请使用{suggested_tool}工具" if suggested_tool else ""
+            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"{error_detail}。{hint}")
+            return build_error(data={"error_detail": error_detail, "params": {"file_path": file_path}}, llm_data=llm_data)
 
         if limit is not None and limit < 1:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional, Tuple
 from app.tools.tool_response import build_success, build_error
 from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
 from app.utils.json_utils import coerce_json
+from app.tools.file_type_checker import check_for_config_tool
 from app.utils.logger import logger
 
 
@@ -63,12 +64,21 @@ async def write_config_file(
     data: Any,
     format: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """写入结构化配置文件 — 小欧 2026-06-17 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 修复计时铁规 — 小健 2026-06-24 重命名"""
+    """写入结构化配置文件 — 小欧 2026-06-17 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 增加文件类型前置检查"""
     t0 = _time_mod.perf_counter()
     data = coerce_json(data)
     encoding = "utf-8"
     indent = None
     action = "write"
+    
+    # 文件类型前置检查 — 小健 2026-06-24
+    is_valid, error_detail, suggested_tool = check_for_config_tool(file_path)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        hint = f"请使用{suggested_tool}工具" if suggested_tool else ""
+        llm_data = _build_write_config_file_llm_data("error", duration_ms, file_path=file_path, detail=f"{error_detail}。{hint}")
+        return build_error(data={"error_detail": error_detail, "params": {"file_path": file_path}}, llm_data=llm_data)
+    
     if not file_path:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_config_file_llm_data("error", duration_ms, file_path=file_path, detail="file_path是必填参数")

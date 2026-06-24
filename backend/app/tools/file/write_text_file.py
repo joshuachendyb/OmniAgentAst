@@ -15,12 +15,12 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import MAX_READ_SIZE, BINARY_EXTENSIONS
 from app.constants import ERR_FILE_WRITE_FAILED
 from app.services.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
 from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
 from app.services.safety.file_safety import record_operation, execute_with_safety
+from app.tools.file_type_checker import check_for_text_tool
 from app.utils.logger import logger
 
 
@@ -54,14 +54,6 @@ def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
     """验证文件路径是否合法 — 小欧 2026-06-22"""
     return _validate_path_impl(file_path, ALLOWED_PATHS)
 
-
-def _is_binary_file(file_path: str) -> Tuple[bool, str]:
-    """检测文件是否为二进制文件 — 小欧 2026-06-22"""
-    path = Path(file_path)
-    suffix = path.suffix.lower()
-    if suffix in BINARY_EXTENSIONS:
-        return True, f"文件后缀 '{suffix}' 属于二进制文件类型"
-    return False, ""
 
 
 def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
@@ -115,7 +107,7 @@ def _write_file_atomic(content: str, path: Path, encoding: str,
 def _check_write_safety(file_path: str, content: str,
                          encoding: Optional[str] = None,
                          append: bool = False) -> Tuple[Optional[str], str]:
-    """写入前安全检查 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 增加空字符串、append+encoding、二进制、null字符检查"""
+    """写入前安全检查 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小健 2026-06-24 使用file_type_checker"""
     if not file_path or not file_path.strip():
         return "file_path不能为空", content
     if content is None:
@@ -126,11 +118,13 @@ def _check_write_safety(file_path: str, content: str,
         return "content包含null字符(0x00),文本文件不允许包含null字符", content
     if append and encoding:
         return "append模式下不能指定encoding,请移除encoding参数或设为None", content
-    is_binary, binary_msg = _is_binary_file(file_path)
-    if is_binary:
-        return f"禁止写入二进制文件: {binary_msg}", content
-    is_valid, error_msg = _validate_path(file_path)
+    # 文件类型检查 — 小健 2026-06-24
+    is_valid, error_detail, suggested_tool = check_for_text_tool(file_path, check_content=False, allow_create=True)
     if not is_valid:
+        hint = f"请使用{suggested_tool}工具" if suggested_tool else ""
+        return f"{error_detail}。{hint}", content
+    is_valid_path, error_msg = _validate_path(file_path)
+    if not is_valid_path:
         return error_msg, content
     return None, content
 
@@ -209,9 +203,18 @@ async def write_text_file(
             sequence_number=0,
         )
 
-        def _do_write():
-            return execute_with_safety(operation_id, lambda: _write_file_atomic(checked_content, path, encoding, append, create_parents))
-        write_result = await asyncio.to_thread(_do_write)
+        # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
+        if operation_id:
+            # 数据库可用，使用execute_with_safety
+            def _do_write():
+                return execute_with_safety(operation_id, lambda: _write_file_atomic(checked_content, path, encoding, append, create_parents))
+            write_result = await asyncio.to_thread(_do_write)
+        else:
+            # 数据库不可用，直接执行文件操作
+            logger.info("Database unavailable, executing file operation without recording")
+            def _do_write_direct():
+                return _write_file_atomic(checked_content, path, encoding, append, create_parents)
+            write_result = await asyncio.to_thread(_do_write_direct)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if isinstance(write_result, tuple):

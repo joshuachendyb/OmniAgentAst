@@ -118,7 +118,12 @@ async def _delete_file_impl(
                 return _force_delete_sync(path, recursive), "permanent"
             return _send2trash_sync(path, recursive)
 
-        is_ok, method = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_delete_sync)
+        # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
+        if operation_id:
+            is_ok, method = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_delete_sync)
+        else:
+            logger.info("Database unavailable, executing delete operation without recording")
+            is_ok, method = await asyncio.to_thread(_delete_sync)
 
         if is_ok:
             return {"success": True, "operation_id": operation_id, "deleted_path": str(path), "mode": method}

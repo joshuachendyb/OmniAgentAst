@@ -15,12 +15,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
-from app.tools.tool_constants import MAX_READ_SIZE, BINARY_EXTENSIONS
+from app.tools.tool_constants import MAX_READ_SIZE
 from app.constants import ERR_FILE_EDIT_FAILED, ERR_FILE_REPLACE_FAILED
 from app.services.context_vars import _current_task_id
 from app.db.models.operation_enums import OperationType
 from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
 from app.services.safety.file_safety import record_operation, execute_with_safety
+from app.tools.file_type_checker import check_for_text_tool
 from app.utils.logger import logger
 
 
@@ -54,14 +55,6 @@ def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
     """验证文件路径是否合法 — 小欧 2026-06-22"""
     return _validate_path_impl(file_path, ALLOWED_PATHS)
 
-
-def _is_binary_file(file_path: str) -> Tuple[bool, str]:
-    """检测文件是否为二进制文件 — 小欧 2026-06-22"""
-    path = Path(file_path)
-    suffix = path.suffix.lower()
-    if suffix in BINARY_EXTENSIONS:
-        return True, f"文件后缀 '{suffix}' 属于二进制文件类型"
-    return False, ""
 
 
 async def _try_read_file_with_encodings(
@@ -157,7 +150,7 @@ async def _precise_replace_in_file(
     replace_all: bool = False, ignore_case: bool = False,
     dry_run: bool = False, encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """精确替换文件中的字符串(返回原始dict,不含build3/llm_data) — 小欧 2026-06-22 — 小健 2026-06-22 删除helper计时"""
+    """精确替换文件中的字符串(返回原始dict,不含build3/llm_data) — 小欧 2026-06-22 — 小健 2026-06-24 使用file_type_checker"""
     if not old_string:
         return {"error_detail": "old_string不能为空"}
 
@@ -165,13 +158,15 @@ async def _precise_replace_in_file(
     if not task_id:
         return {"error_detail": "当前没有活跃任务ID"}
 
-    is_binary, reason = _is_binary_file(file_path)
-    if is_binary:
-        return {"error_detail": reason}
+    # 文件类型检查 — 小健 2026-06-24
+    is_valid, error_detail, suggested_tool = check_for_text_tool(file_path, check_content=True)
+    if not is_valid:
+        hint = f"请使用{suggested_tool}工具" if suggested_tool else ""
+        return {"error_detail": f"{error_detail}。{hint}"}
 
     try:
-        is_valid, err = _validate_path(file_path)
-        if not is_valid:
+        is_valid_path, err = _validate_path(file_path)
+        if not is_valid_path:
             return {"error_detail": err}
         path = Path(file_path)
         if not path.exists():
@@ -197,7 +192,6 @@ async def _precise_replace_in_file(
             if dry_run:
                 return True
             if count == 0:
-                # 小健 2026-06-24: 找不到时返回文件内容摘要，帮助LLM理解文件实际内容
                 lines = content.split('\n')
                 preview = '\n'.join(lines[:15])
                 replace_result['content_preview'] = preview
@@ -207,9 +201,12 @@ async def _precise_replace_in_file(
                 f.write(new_content)
             return True
 
-        success = await asyncio.to_thread(
-            execute_with_safety, operation_id, operation_func=_replace_sync,
-        )
+        # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
+        if operation_id:
+            success = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_replace_sync)
+        else:
+            logger.info("Database unavailable, executing edit operation without recording")
+            success = await asyncio.to_thread(_replace_sync)
 
         count = replace_result.get('count', 0)
 

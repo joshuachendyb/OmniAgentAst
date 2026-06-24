@@ -95,7 +95,12 @@ async def _move_file_impl(
             shutil.move(str(src), str(dst))
             return True
 
-        success = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_move_sync)
+        # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
+        if operation_id:
+            success = await asyncio.to_thread(execute_with_safety, operation_id, operation_func=_move_sync)
+        else:
+            logger.info("Database unavailable, executing move operation without recording")
+            success = await asyncio.to_thread(_move_sync)
 
         if success:
             return {"success": True, "operation_id": operation_id, "source": str(src), "destination": str(dst)}

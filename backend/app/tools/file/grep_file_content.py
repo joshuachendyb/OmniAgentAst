@@ -19,6 +19,7 @@ from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import TOOL_TIMEOUTS, MAX_SEARCH_FILE_SIZE, MAX_SEARCH_RESULTS
 from app.constants import ERR_FILE_CONTENT_SEARCH_FAILED
 from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
+from app.tools.file_type_checker import is_binary_file, BINARY_EXTENSIONS
 from app.utils.logger import logger
 
 
@@ -89,11 +90,12 @@ def _grep_files_sync(
     search_dir: Path, pattern: str, glob_filter: Optional[str],
     ignore_case: bool, deadline: float,
     output_mode: str,
-) -> Tuple[List[Dict], int, int, bool]:
-    """同步搜索文件内容 — 小欧 2026-06-22 — 小健 2026-06-24 参数简化"""
+) -> Tuple[List[Dict], int, int, bool, List[str]]:
+    """同步搜索文件内容 — 小欧 2026-06-22 — 小健 2026-06-24 增加二进制文件检测和提示"""
     results = []
     total_matches = 0
     total_files = 0
+    skipped_binary_files = []  # 记录跳过的二进制文件
     flags = re_mod.IGNORECASE if ignore_case else 0
     try:
         regex = re_mod.compile(pattern, flags)
@@ -115,6 +117,13 @@ def _grep_files_sync(
                 import fnmatch as fnm
                 if not fnm.fnmatch(fname, glob_filter):
                     continue
+            
+            # 检查是否为二进制文件 — 小健 2026-06-24
+            suffix = fpath.suffix.lower()
+            if suffix in BINARY_EXTENSIONS or is_binary_file(str(fpath)):
+                skipped_binary_files.append(str(fpath))
+                continue
+            
             lines = _read_file_safe(fpath)
             if not lines:
                 continue
@@ -140,7 +149,7 @@ def _grep_files_sync(
                 results.extend(file_matches)
 
     truncated = _time_mod.monotonic() > deadline or total_matches >= MAX_SEARCH_RESULTS
-    return results, total_files, total_matches, truncated
+    return results, total_files, total_matches, truncated, skipped_binary_files
 
 
 import os
@@ -208,7 +217,7 @@ async def grep_file_content(
     deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("grep_file_content", TOOL_TIMEOUTS["default"]) - 2
 
     try:
-        results, total_files, total_matches, truncated = await asyncio.to_thread(
+        results, total_files, total_matches, truncated, skipped_binary_files = await asyncio.to_thread(
             _grep_files_sync, search_path, pattern, glob, ignore_case, deadline,
             output_mode,
         )
@@ -223,12 +232,30 @@ async def grep_file_content(
         data = {"files": results, "total_files": total_files, "pattern": pattern}
     else:
         data = {"matches": results, "total_matches": total_matches, "total_files": total_files, "pattern": pattern}
+    
+    # 添加跳过的二进制文件信息 — 小健 2026-06-24
+    if skipped_binary_files:
+        data["skipped_binary_files"] = skipped_binary_files[:10]  # 最多返回10个
+        data["skipped_binary_count"] = len(skipped_binary_files)
+    
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-    exec_code = "warning" if truncated else "success"
+    
+    # 如果跳过了二进制文件，添加提示 — 小健 2026-06-24
+    binary_hint = ""
+    if skipped_binary_files:
+        binary_hint = f"（跳过{len(skipped_binary_files)}个二进制文件，如: {Path(skipped_binary_files[0]).name}）"
+    
+    exec_code = "warning" if (truncated or skipped_binary_files) else "success"
     llm_data = _build_grep_file_content_llm_data(
         exec_code, duration_ms, pattern=pattern, search_dir=actual_dir,
         total_files=total_files, total_matches=total_matches, truncated=truncated,
     )
+    
+    # 修改summary添加二进制文件提示 — 小健 2026-06-24
+    if binary_hint:
+        llm_data["summary"] = llm_data["summary"] + binary_hint
+        llm_data["status"]["detail"] = f"跳过了{len(skipped_binary_files)}个二进制文件，这些文件不是文本格式，无法进行内容搜索"
+    
     if exec_code == "warning":
         return build_warning(data=data, llm_data=llm_data)
     return build_success(data=data, llm_data=llm_data)

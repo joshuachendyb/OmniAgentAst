@@ -282,8 +282,12 @@ async def compress_files(
                         pass
                 raise
 
-        result = await asyncio.to_thread(
-            execute_with_safety, operation_id=operation_id, operation_func=_compress_sync)
+        # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
+        if operation_id:
+            result = await asyncio.to_thread(execute_with_safety, operation_id=operation_id, operation_func=_compress_sync)
+        else:
+            logger.info("Database unavailable, executing compress operation without recording")
+            result = await asyncio.to_thread(_compress_sync)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if result:

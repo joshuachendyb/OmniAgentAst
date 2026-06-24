@@ -46,8 +46,8 @@ def record_operation(
     destination_path: Optional[Path] = None,
     sequence_number: int = 0,
     file_size: Optional[int] = None,
-) -> str:
-    """记录文件操作到数据库"""
+) -> Optional[str]:
+    """记录文件操作到数据库（失败时返回None，不阻塞主流程）— 小健 2026-06-24 容错处理"""
     operation_id = f"op-{uuid4().hex}"
     space_impact_bytes = None
     if file_size is not None:
@@ -72,5 +72,5 @@ def record_operation(
         logger.debug(f"Operation recorded: {operation_id} - {operation_type.value}")
         return operation_id
     except Exception as e:
-        logger.error(f"Failed to record operation: {e}")
-        raise
+        logger.warning(f"Failed to record operation: {e}, continue without recording")
+        return None
