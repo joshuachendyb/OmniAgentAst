@@ -94,13 +94,17 @@ EXAMPLES = {
     "write_docx": [
         {"file_name": "D:/output/report.docx", "title": "测试报告", "content": "这是测试内容"},
         {"file_name": "D:/output/report_structured.docx", "title": "结构化报告", "content": "# 第一章\n\n正文内容\n\n## 第二节\n\n- 列表项1\n- 列表项2"},
+        {"file_name": "D:/output/tech_report.docx", "title": "代码审查报告", "content": "# 审查概览\n\n本次审查覆盖3个模块。\n\n## 问题清单\n\n### 严重问题\n\n1. SQL注入风险\n2. 硬编码密钥\n\n### 一般问题\n\n- 缺少错误处理\n- 日志级别不当"},
+        {"file_name": "D:/output/meeting.docx", "title": "会议纪要", "content": "# 会议信息\n\n- 时间：2026-06-24\n- 地点：会议室A\n\n# 议题讨论\n\n## 进度汇报\n\n1. 前端完成80%\n2. 后端API已上线\n\n## 行动项\n\n- 张三：完成前端\n- 李四：性能测试"},
     ],
     "write_xlsx": [
         {"file_name": "D:/output/data.xlsx", "data": [{"姓名": "张三", "年龄": 25}, {"姓名": "李四", "年龄": 30}]},
     ],
     "write_pdf": [
         {"file_name": "D:/output/report.pdf", "title": "测试报告", "content": "这是报告内容"},
-        {"file_name": "D:/output/structured_report.pdf", "title": "结构化报告", "content": "# 第一章\n\n正文内容\n\n- 列表项1\n- 列表项2"},
+        {"file_name": "D:/output/structured_report.pdf", "title": "结构化报告", "content": "# 第一章\n\n正文内容\n\n## 第二节\n\n- 列表项1\n- 列表项2"},
+        {"file_name": "D:/output/tech_report.pdf", "title": "代码审查报告", "content": "# 审查概览\n\n本次审查覆盖3个模块。\n\n## 问题清单\n\n### 严重问题\n\n1. SQL注入风险\n2. 硬编码密钥"},
+        {"file_name": "D:/output/guide.pdf", "title": "使用指南", "content": "# 快速开始\n\n## 安装步骤\n\n1. 下载安装包\n2. 运行安装程序\n3. 配置环境变量\n\n## 注意事项\n\n- 需要管理员权限\n- 建议关闭杀毒软件"},
     ],
     "write_pptx": [
         {"file_name": "D:/output/cover.pptx", "slides": [{"title": "项目汇报"}]},

@@ -41,8 +41,16 @@ _PARAGRAPHS_DESC = "正文内容。3种格式: str=纯文本, list=[str|dict,...
 
 class WriteDocxInput(BaseModel):
     file_name: str = Field(..., description="文件名+路径(.docx)")
-    title: Optional[str] = Field(default=None, description="文档标题")
-    content: Optional[str] = Field(default=None, description="正文内容(Markdown格式)。支持标题(#/##/###/####/#####)、段落、无序列表(-/*)、有序列表(数字.)")
+    title: Optional[str] = Field(default=None, description="文档标题（显示在文档开头）")
+    content: Optional[str] = Field(
+        default=None, 
+        description="""正文内容(Markdown格式字符串)。语法说明：
+- 标题：# 一级标题  ## 二级标题  ### 三级标题  #### 四级标题  ##### 五级标题
+- 段落：直接写文本，空行分隔段落
+- 无序列表：- 列表项  或  * 列表项
+- 有序列表：1. 第一项  2. 第二项  （数字会自动重新编号）
+示例：\"# 报告标题\\n\\n第一段内容\\n\\n## 章节\\n\\n- 要点1\\n- 要点2\\n\\n1. 步骤1\\n2. 步骤2\""""
+    )
 
 
 class WriteXlsxInput(BaseModel):
@@ -53,8 +61,16 @@ class WriteXlsxInput(BaseModel):
 
 class WritePdfInput(BaseModel):
     file_name: str = Field(..., description="文件名+路径(.pdf)")
-    title: Optional[str] = Field(default=None, description="文档标题")
-    content: Optional[str] = Field(default=None, description="正文内容(Markdown格式)。支持标题(#/##/###/####)、段落、无序列表(-/*)、有序列表(数字.)")
+    title: Optional[str] = Field(default=None, description="文档标题（显示在文档开头）")
+    content: Optional[str] = Field(
+        default=None, 
+        description="""正文内容(Markdown格式字符串)。语法说明：
+- 标题：# 一级标题  ## 二级标题  ### 三级标题  #### 四级标题
+- 段落：直接写文本，空行分隔段落
+- 无序列表：- 列表项  或  * 列表项
+- 有序列表：1. 第一项  2. 第二项  （数字会自动重新编号）
+示例：\"# 报告标题\\n\\n第一段内容\\n\\n## 章节\\n\\n- 要点1\\n- 要点2\""""
+    )
 
 
 _SLIDE_DESC = "幻灯片列表。每项Dict包含:title(标题,必填),content(正文内容,选填)。有title无content=封面页,都有=内容页。content支持纯文本或段落列表"
