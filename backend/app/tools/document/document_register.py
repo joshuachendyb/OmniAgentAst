@@ -34,7 +34,6 @@ TOOL_DEPENDENCIES = {
     "read_xlsx": [
         "pandas",
         "openpyxl",
-        "xlrd",
     ],
     "write_docx": [{"import_name": "docx", "pip_package": "python-docx"}],
     "write_xlsx": ["pandas", "openpyxl"],
@@ -65,9 +64,9 @@ from app.tools.document.write_pptx import write_pptx
 
 DESCRIPTIONS = {
     "read_pdf": """读取PDF(.pdf)文件内容。自动提取文本、表格和图片。适用场景:需要读取PDF文档内容时使用。""",
-    "read_docx": """读取Word(.docx/.doc)文档内容。自动提取文本和表格。适用场景:需要读取Word文档内容时使用。""",
+    "read_docx": """读取Word(.docx)文档内容。自动提取文本和表格。适用场景:需要读取Word文档内容时使用。""",
     "read_pptx": """读取PPT(.pptx)演示文稿内容。自动提取每页文本和备注。适用场景:需要读取PPT内容时使用。""",
-    "read_xlsx": """读取Excel(.xls/.xlsx/.csv)文件。自动检测编码和分隔符,自动识别表头。适用场景:需要读取表格数据时使用。""",
+    "read_xlsx": """读取Excel(.xlsx/.csv)文件。自动检测编码和分隔符,自动识别表头。适用场景:需要读取表格数据时使用。""",
     "write_docx": """写入Word(.docx)文档。适用场景:需要生成Word报告、导出文档时使用。""",
     "write_xlsx": """写入Excel(.xlsx)文件。适用场景:需要导出数据到Excel表格时使用。""",
     "write_pdf": """写入PDF(.pdf)文件。适用场景:需要生成PDF报告、归档文档时使用。""",
@@ -81,14 +80,12 @@ EXAMPLES = {
     ],
     "read_docx": [
         {"file_name": "D:/documents/report.docx"},
-        {"file_name": "D:/documents/report.doc"},
     ],
     "read_pptx": [
         {"file_name": "D:/documents/presentation.pptx"},
     ],
     "read_xlsx": [
         {"file_name": "D:/data/sales.xlsx"},
-        {"file_name": "D:/data/sales.xls"},
         {"file_name": "D:/data/sales.csv"},
     ],
     "write_docx": [
