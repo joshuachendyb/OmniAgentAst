@@ -69,17 +69,29 @@ def read_pptx(file_name: str) -> Dict[str, Any]:
 
         for slide_num, slide in enumerate(prs.slides, 1):
             slide_text = []
+            tables_data = []
             for shape in slide.shapes:
-                if shape.has_text_frame:
+                if shape.has_table:
+                    table = shape.table
+                    table_rows = []
+                    for row in table.rows:
+                        row_data = [cell.text.strip() for cell in row.cells]
+                        table_rows.append(row_data)
+                        slide_text.append(" | ".join(row_data))
+                    tables_data.append(table_rows)
+                elif shape.has_text_frame:
                     for para in shape.text_frame.paragraphs:
                         text = para.text.strip()
                         if text:
                             slide_text.append(text)
 
-            slides_data.append({
+            slide_dict = {
                 "slide_num": slide_num,
                 "text": "\n".join(slide_text),
-            })
+            }
+            if tables_data:
+                slide_dict["tables"] = tables_data
+            slides_data.append(slide_dict)
 
             if slide.has_notes_slide:
                 notes = slide.notes_slide.notes_text_frame.text.strip()

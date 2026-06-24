@@ -12,7 +12,7 @@ D4: read_xlsx — 读取Excel/CSV/XLS文档
 import csv
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
@@ -45,9 +45,10 @@ def _build_read_xlsx_llm_data(
     }
 
 
-def _read_xlsx_inner(file_path: str, max_rows: int = 10000) -> Dict[str, Any]:
+def _read_xlsx_inner(file_path: str, max_rows: int = 10000, sheet_name: Optional[str] = None) -> Dict[str, Any]:
     """读取.xlsx文件(内部) — 小欧 2026-06-22
-    辅助函数: 仅返回原始dict，不含build3/llm_data — 小欧 2026-06-22"""
+    辅助函数: 仅返回原始dict，不含build3/llm_data — 小欧 2026-06-22
+    参数: sheet_name - 指定工作表名，None则读取所有工作表 — 小健 2026-06-24"""
     try:
         from openpyxl import load_workbook
 
@@ -57,24 +58,56 @@ def _read_xlsx_inner(file_path: str, max_rows: int = 10000) -> Dict[str, Any]:
 
         wb = load_workbook(path, read_only=True, data_only=True)
         sheet_names = wb.sheetnames
-        ws = wb.active
-
-        rows = []
-        headers = []
-        row_count = 0
-
-        for i, row in enumerate(ws.iter_rows(values_only=True)):
-            if i >= max_rows + 1:
-                break
-            row_data = [None if val is None else val for val in row]
-            if i == 0:
-                headers = [str(h) if h is not None else f"column_{j}" for j, h in enumerate(row_data)]
-            else:
-                rows.append(row_data)
-                row_count += 1
+        
+        if sheet_name:
+            if sheet_name not in sheet_names:
+                wb.close()
+                return {"error_detail": f"工作表不存在: {sheet_name}", "params": {"file_path": file_path, "sheet_name": sheet_name}}
+            target_sheets = [sheet_name]
+        else:
+            target_sheets = sheet_names
+        
+        all_sheets_data = []
+        total_rows = 0
+        
+        for sheet in target_sheets:
+            ws = wb[sheet]
+            rows = []
+            headers = []
+            row_count = 0
+            
+            for i, row in enumerate(ws.iter_rows(values_only=True)):
+                if i >= max_rows + 1:
+                    break
+                row_data = [None if val is None else val for val in row]
+                if i == 0:
+                    headers = [str(h) if h is not None else f"column_{j}" for j, h in enumerate(row_data)]
+                else:
+                    rows.append(row_data)
+                    row_count += 1
+            
+            sheet_data = {
+                "sheet_name": sheet,
+                "headers": headers,
+                "rows": rows,
+                "row_count": row_count,
+            }
+            all_sheets_data.append(sheet_data)
+            total_rows += row_count
 
         wb.close()
-        return {"headers": headers, "rows": rows, "row_count": row_count, "sheet_names": sheet_names}
+        
+        if len(all_sheets_data) == 1:
+            result = all_sheets_data[0]
+            result["sheet_names"] = sheet_names
+            return result
+        else:
+            return {
+                "sheets": all_sheets_data,
+                "sheet_names": sheet_names,
+                "row_count": total_rows,
+                "sheet_count": len(all_sheets_data),
+            }
     except Exception as e:
         return {"error_detail": str(e), "params": {"file_path": file_path}}
 
@@ -152,9 +185,10 @@ def _read_csv_stdlib_inner(
         return {"error_detail": str(e), "params": {"file_path": file_path}}
 
 
-def read_xlsx(file_name: str) -> Dict[str, Any]:
+def read_xlsx(file_name: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
     """读取Excel/CSV/XLS文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件
-    主函数: 负责build3+llm_data调用 — 小欧 2026-06-22"""
+    主函数: 负责build3+llm_data调用 — 小欧 2026-06-22
+    参数: sheet_name - 指定工作表名（仅.xlsx），None则读取所有工作表 — 小健 2026-06-24"""
     path = Path(file_name)
     suffix = path.suffix.lower()
     t0 = _time_mod.perf_counter()
@@ -168,7 +202,7 @@ def read_xlsx(file_name: str) -> Dict[str, Any]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail="openpyxl库未安装")
             return build_error(data={"error_detail": "openpyxl库未安装", "params": {"file_name": file_name}}, llm_data=llm_data)
-        result = _read_xlsx_inner(file_name, max_rows=10000)
+        result = _read_xlsx_inner(file_name, max_rows=10000, sheet_name=sheet_name)
 
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
     if "error_detail" in result:

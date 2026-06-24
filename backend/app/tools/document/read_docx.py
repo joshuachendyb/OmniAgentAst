@@ -92,9 +92,17 @@ def read_docx(file_name: str) -> Dict[str, Any]:
 
         doc = docx.Document(doc_path)
         paragraphs = [para.text for para in doc.paragraphs]
-        text = "\n".join(paragraphs)
+        non_empty_paragraphs = [p for p in paragraphs if p.strip()]
+        text = "\n".join(non_empty_paragraphs)
+        empty_para_count = len(paragraphs) - len(non_empty_paragraphs)
 
-        result_data = {"text": text, "paragraph_count": len(paragraphs)}
+        result_data = {
+            "text": text,
+            "paragraph_count": len(paragraphs),
+            "non_empty_paragraph_count": len(non_empty_paragraphs),
+        }
+        if empty_para_count > 0:
+            result_data["empty_paragraph_count"] = empty_para_count
 
         tables_data = []
         for table in doc.tables:
