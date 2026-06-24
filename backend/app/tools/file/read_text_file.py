@@ -184,8 +184,7 @@ async def read_text_file(
         is_valid, error_detail, suggested_tool = check_for_text_tool(file_path, check_content=True)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            hint = f"请使用{suggested_tool}工具" if suggested_tool else ""
-            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"{error_detail}。{hint}")
+            llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail)
             return build_error(data={"error_detail": error_detail, "params": {"file_path": file_path}}, llm_data=llm_data)
 
         if limit is not None and limit < 1:

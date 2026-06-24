@@ -161,8 +161,7 @@ async def _precise_replace_in_file(
     # 文件类型检查 — 小健 2026-06-24
     is_valid, error_detail, suggested_tool = check_for_text_tool(file_path, check_content=True)
     if not is_valid:
-        hint = f"请使用{suggested_tool}工具" if suggested_tool else ""
-        return {"error_detail": f"{error_detail}。{hint}"}
+        return {"error_detail": error_detail}
 
     try:
         is_valid_path, err = _validate_path(file_path)

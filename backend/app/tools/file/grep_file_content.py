@@ -19,7 +19,7 @@ from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import TOOL_TIMEOUTS, MAX_SEARCH_FILE_SIZE, MAX_SEARCH_RESULTS
 from app.constants import ERR_FILE_CONTENT_SEARCH_FAILED
 from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
-from app.tools.file_type_checker import is_binary_file, BINARY_EXTENSIONS
+from app.tools.file_type_checker import is_binary_file, BINARY_EXTENSIONS, TEXT_EXTENSIONS
 from app.utils.logger import logger
 
 
@@ -118,9 +118,12 @@ def _grep_files_sync(
                 if not fnm.fnmatch(fname, glob_filter):
                     continue
             
-            # 检查是否为二进制文件 — 小健 2026-06-24
+            # 检查是否为二进制文件 — 小健 2026-06-24 — 小欧 2026-06-24 扩展名已知直接跳过，未知才读内容
             suffix = fpath.suffix.lower()
-            if suffix in BINARY_EXTENSIONS or is_binary_file(str(fpath)):
+            if suffix in BINARY_EXTENSIONS:
+                skipped_binary_files.append(str(fpath))
+                continue
+            if suffix and not suffix in TEXT_EXTENSIONS and is_binary_file(str(fpath)):
                 skipped_binary_files.append(str(fpath))
                 continue
             

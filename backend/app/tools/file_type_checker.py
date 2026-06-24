@@ -126,81 +126,97 @@ def check_file_type(
         return False, f"未知的期望类型: {expected_type}", None
 
 
+def _suggest_doc_tool(suffix: str) -> str:
+    """根据文档扩展名返回具体的工具建议 — 小欧 2026-06-24"""
+    doc_tool_map = {
+        '.docx': 'read_docx', '.doc': 'read_docx',
+        '.pptx': 'read_pptx', '.ppt': 'read_pptx',
+        '.xlsx': 'read_xlsx', '.xls': 'read_xlsx',
+        '.pdf': 'read_pdf',
+    }
+    tool = doc_tool_map.get(suffix)
+    if tool:
+        return f"建议使用{tool}工具"
+    return "请根据文件类型选择对应的文档读取工具"
+
+
 def _check_text_file(path: Path, suffix: str, check_content: bool, allow_create: bool = False) -> Tuple[bool, str, Optional[str]]:
-    """检查是否为文本文件"""
+    """检查是否为文本文件 — 小欧 2026-06-24 修正错误信息格式：先说工具选择错误，再给建议"""
     # 检查扩展名
     if suffix in BINARY_EXTENSIONS:
         if suffix in MEDIA_EXTENSIONS:
-            return False, f"文件后缀 '{suffix}' 是媒体文件，请使用read_media_file工具读取", "read_media_file"
+            return False, f"工具选择错误：'{suffix}'是媒体文件，不能用文本工具操作。建议使用read_media_file工具", "read_media_file"
         elif suffix in DOCUMENT_EXTENSIONS:
-            return False, f"文件后缀 '{suffix}' 是文档文件，请使用read_document工具读取", "read_document"
+            doc_tool = _suggest_doc_tool(suffix)
+            return False, f"工具选择错误：'{suffix}'是文档文件，不能用文本工具操作。{doc_tool}", None
         elif suffix in ARCHIVE_EXTENSIONS:
-            return False, f"文件后缀 '{suffix}' 是压缩文件，请使用extract_archive工具解压", "extract_archive"
+            return False, f"工具选择错误：'{suffix}'是压缩文件，不能用文本工具操作。请先用解压工具解压后再读取", None
         else:
-            return False, f"文件后缀 '{suffix}' 是二进制文件，禁止使用文本工具操作", "read_media_file"
+            return False, f"工具选择错误：'{suffix}'是二进制文件，不能用文本工具操作。请确认文件类型后选择合适的工具", None
     
     # 检查内容（如果启用且文件存在）
     if check_content and not allow_create and path.exists():
         is_binary, reason = _detect_binary_content(path)
         if is_binary:
-            return False, f"{reason}，请使用read_media_file工具读取", "read_media_file"
+            return False, f"工具选择错误：{reason}，不能用文本工具操作。建议使用read_media_file工具", "read_media_file"
     
     return True, "", None
 
 
 def _check_media_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[str]]:
-    """检查是否为媒体文件"""
+    """检查是否为媒体文件 — 小欧 2026-06-24 修正错误信息格式"""
     if suffix not in MEDIA_EXTENSIONS:
         if suffix in TEXT_EXTENSIONS:
-            return False, f"文件后缀 '{suffix}' 是文本文件，请使用read_text_file工具读取", "read_text_file"
+            return False, f"工具选择错误：'{suffix}'是文本文件，不能用媒体工具操作。建议使用read_text_file工具", "read_text_file"
         elif suffix in DOCUMENT_EXTENSIONS:
-            return False, f"文件后缀 '{suffix}' 是文档文件，请使用read_document工具读取", "read_document"
+            doc_tool = _suggest_doc_tool(suffix)
+            return False, f"工具选择错误：'{suffix}'是文档文件，不能用媒体工具操作。{doc_tool}", None
         else:
-            return False, f"文件后缀 '{suffix}' 不是支持的媒体格式", None
+            return False, f"工具选择错误：'{suffix}'不是支持的媒体格式。建议使用read_text_file或对应的文档工具", None
     
     return True, "", None
 
 
 def _check_document_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[str]]:
-    """检查是否为文档文件"""
+    """检查是否为文档文件 — 小欧 2026-06-24 修正错误信息格式"""
     if suffix not in DOCUMENT_EXTENSIONS:
         if suffix in TEXT_EXTENSIONS:
-            return False, f"文件后缀 '{suffix}' 是文本文件，请使用read_text_file工具读取", "read_text_file"
+            return False, f"工具选择错误：'{suffix}'是文本文件，不能用文档工具操作。建议使用read_text_file工具", "read_text_file"
         elif suffix in MEDIA_EXTENSIONS:
-            return False, f"文件后缀 '{suffix}' 是媒体文件，请使用read_media_file工具读取", "read_media_file"
+            return False, f"工具选择错误：'{suffix}'是媒体文件，不能用文档工具操作。建议使用read_media_file工具", "read_media_file"
         else:
-            return False, f"文件后缀 '{suffix}' 不是支持的文档格式", None
+            return False, f"工具选择错误：'{suffix}'不是支持的文档格式。支持的格式: {', '.join(DOCUMENT_EXTENSIONS)}", None
     
     return True, "", None
 
 
 def _check_config_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[str]]:
-    """检查是否为配置文件"""
+    """检查是否为配置文件 — 小欧 2026-06-24 修正错误信息格式"""
     if suffix not in CONFIG_EXTENSIONS:
         if suffix in BINARY_EXTENSIONS:
-            return False, f"文件后缀 '{suffix}' 是二进制文件，不支持读取配置", None
+            return False, f"工具选择错误：'{suffix}'是二进制文件，不能用配置工具操作。建议使用read_text_file或read_media_file", None
         else:
-            return False, f"文件后缀 '{suffix}' 不是支持的配置格式，支持的格式: {', '.join(CONFIG_EXTENSIONS)}", None
+            return False, f"工具选择错误：'{suffix}'不是支持的配置格式。支持的格式: {', '.join(CONFIG_EXTENSIONS)}", None
     
     return True, "", None
 
 
 def _check_archive_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[str]]:
-    """检查是否为压缩文件"""
+    """检查是否为压缩文件 — 小欧 2026-06-24 修正错误信息格式"""
     if suffix not in ARCHIVE_EXTENSIONS:
         if suffix in TEXT_EXTENSIONS:
-            return False, f"文件后缀 '{suffix}' 是文本文件，不是压缩文件", None
+            return False, f"工具选择错误：'{suffix}'是文本文件，不是压缩文件。建议使用read_text_file工具", "read_text_file"
         else:
-            return False, f"文件后缀 '{suffix}' 不是支持的压缩格式", None
+            return False, f"工具选择错误：'{suffix}'不是支持的压缩格式。支持的格式: {', '.join(ARCHIVE_EXTENSIONS)}", None
     
     return True, "", None
 
 
 def _check_not_binary(path: Path, suffix: str, check_content: bool, allow_create: bool = False) -> Tuple[bool, str, Optional[str]]:
-    """检查是否非二进制文件"""
+    """检查是否非二进制文件 — 小欧 2026-06-24 修正错误信息格式"""
     # 检查扩展名
     if suffix in BINARY_EXTENSIONS:
-        return False, f"文件后缀 '{suffix}' 是二进制文件类型", None
+        return False, f"工具选择错误：'{suffix}'是二进制文件类型，不能用文本工具操作。请确认文件类型后选择合适的工具", None
     
     # 检查内容（如果启用且文件存在）
     if check_content and not allow_create and path.exists():

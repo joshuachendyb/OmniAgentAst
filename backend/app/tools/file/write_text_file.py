@@ -121,8 +121,7 @@ def _check_write_safety(file_path: str, content: str,
     # 文件类型检查 — 小健 2026-06-24
     is_valid, error_detail, suggested_tool = check_for_text_tool(file_path, check_content=False, allow_create=True)
     if not is_valid:
-        hint = f"请使用{suggested_tool}工具" if suggested_tool else ""
-        return f"{error_detail}。{hint}", content
+        return error_detail, content
     is_valid_path, error_msg = _validate_path(file_path)
     if not is_valid_path:
         return error_msg, content
