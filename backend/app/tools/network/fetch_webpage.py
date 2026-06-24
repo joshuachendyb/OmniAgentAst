@@ -14,15 +14,15 @@ import time as _time_mod
 from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional, Tuple
 
-import re
-import socket
-import time
-from urllib.parse import urlparse
-
 import httpx
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.network.http_client_sdk import create_http_client
+from app.tools.network.connectivity import check_network
+from app.tools.network.url_validator import validate_url
+
+_check_network = check_network
+_validate_url = validate_url
 from app.utils.common_patterns import HTML_TAG_PATTERN, SCRIPT_TAG_PATTERN, STYLE_TAG_PATTERN, MULTI_WHITESPACE_PATTERN
 from app.utils.logger import logger
 from app.constants import (
@@ -35,59 +35,6 @@ from app.constants import (
     ERR_NETWORK_TIMEOUT,
     ERR_NET_UNKNOWN,
 )
-
-
-def _check_network() -> Dict[str, Any]:
-    """检查网络连通性 — 小欧 2026-06-22 — 小欧 2026-06-24 修复socket泄漏"""
-    test_hosts = [("dns.google", 53), ("8.8.8.8", 53), ("1.1.1.1", 53)]
-    for host, port in test_hosts:
-        sock = None
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(3)
-            t1 = time.time()
-            sock.connect((host, port))
-            latency = (time.time() - t1) * 1000
-            return {"connected": True, "host": host, "latency_ms": round(latency, 2)}
-        except (socket.timeout, socket.error, OSError):
-            pass
-        finally:
-            if sock:
-                try:
-                    sock.close()
-                except Exception:
-                    pass
-    return {"connected": False}
-
-
-def _validate_url(url: str) -> Dict[str, Any]:
-    """验证URL格式 — 小欧 2026-06-22 — 小欧 2026-06-24 增加SSRF内网拦截"""
-    try:
-        parsed = urlparse(url)
-        is_valid = bool(parsed.scheme) and bool(parsed.netloc)
-        valid_schemes = {"http", "https", "ftp", "ftps", "ws", "wss"}
-        scheme_ok = parsed.scheme in valid_schemes
-        if not (is_valid and scheme_ok):
-            return {"valid": False, "scheme": parsed.scheme, "netloc": parsed.netloc, "path": parsed.path}
-        hostname = parsed.hostname or ""
-        blocked = ["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]",
-                    "169.254.169.254", "metadata.google.internal"]
-        if hostname.lower() in blocked:
-            return {"valid": False, "error": f"SSRF拦截: 禁止访问内网地址 {hostname}"}
-        if hostname.startswith("10.") or hostname.startswith("192.168.") or hostname.startswith("172."):
-            parts = hostname.split(".")
-            if len(parts) == 4 and parts[0] == "172":
-                try:
-                    second = int(parts[1])
-                    if 16 <= second <= 31:
-                        return {"valid": False, "error": f"SSRF拦截: 禁止访问内网地址 {hostname}"}
-                except ValueError:
-                    pass
-            elif hostname.startswith("10.") or hostname.startswith("192.168."):
-                return {"valid": False, "error": f"SSRF拦截: 禁止访问内网地址 {hostname}"}
-        return {"valid": True, "scheme": parsed.scheme, "netloc": parsed.netloc, "path": parsed.path}
-    except Exception as e:
-        return {"valid": False, "error": str(e)}
 
 
 _VOID_ELEMENTS = frozenset({
@@ -344,13 +291,13 @@ async def fetch_webpage(
     t0 = _time_mod.perf_counter()
 
     try:
-        url_info = _validate_url(url)
+        url_info = validate_url(url)
         if not url_info["valid"]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_INVALID_URL, detail="URL格式无效")
             return build_error(data={"error_detail": "URL格式无效", "params": {"url": url}}, llm_data=llm_data)
 
-        net_info = _check_network()
+        net_info = check_network()
         if not net_info["connected"]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=ERR_NETWORK_DOWN, detail="网络不可用")
@@ -366,7 +313,9 @@ async def fetch_webpage(
         if js_render:
             playwright_result = await _fetch_via_playwright(url, proxy, timeout_sec, extract_format, max_tokens)
             if playwright_result.get("error"):
-                return playwright_result
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_fetch_webpage_llm_data("error", duration_ms, url, extract_format, err_code=playwright_result.get("err_code", ERR_NETWORK_JS_RENDER), detail=playwright_result.get("detail", ""))
+                return build_error(data={"error_detail": playwright_result.get("error_detail", ""), "params": playwright_result.get("params", {})}, llm_data=llm_data)
             html_content = playwright_result["html_content"]
             extracted_content = playwright_result["extracted_content"]
             truncated = playwright_result["truncated"]
@@ -379,7 +328,7 @@ async def fetch_webpage(
                 if response.status_code == 403 and response.headers.get("cf-mitigated") == "challenge":
                     logger.info(f"[fetch_webpage] Cloudflare挑战检测,降级UA重试: {url}")
                     simple_headers = dict(headers)
-                    simple_headers["User-Agent"] = BROWSER_USER_AGENT
+                    simple_headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                     response = await client.get(url, headers=simple_headers)
 
                 response.raise_for_status()

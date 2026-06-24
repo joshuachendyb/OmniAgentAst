@@ -13,15 +13,19 @@ import os
 import time as _time_mod
 from typing import Any, Dict, Optional, Tuple
 
-import socket
-import time
-from urllib.parse import urlparse
-
 import httpx
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.network.http_client_sdk import create_http_client, HTTPClient
+from app.tools.network.connectivity import check_network
+from app.tools.network.url_validator import validate_url
+
+_check_network = check_network
+_validate_url = validate_url
 from app.utils.logger import logger
+
+_DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), ".omniagent", "downloads")
+_MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 from app.constants import (
     ERR_INVALID_URL,
     ERR_NETWORK_CONNECTION_ERROR,
@@ -35,59 +39,6 @@ from app.constants import (
     ERR_NETWORK_WRITE_FILE,
     ERR_NET_UNKNOWN,
 )
-
-
-def _check_network() -> Dict[str, Any]:
-    """检查网络连通性 — 小欧 2026-06-22 — 小欧 2026-06-24 修复socket泄漏"""
-    test_hosts = [("dns.google", 53), ("8.8.8.8", 53), ("1.1.1.1", 53)]
-    for host, port in test_hosts:
-        sock = None
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(3)
-            t1 = time.time()
-            sock.connect((host, port))
-            latency = (time.time() - t1) * 1000
-            return {"connected": True, "host": host, "latency_ms": round(latency, 2)}
-        except (socket.timeout, socket.error, OSError):
-            pass
-        finally:
-            if sock:
-                try:
-                    sock.close()
-                except Exception:
-                    pass
-    return {"connected": False}
-
-
-def _validate_url(url: str) -> Dict[str, Any]:
-    """验证URL格式 — 小欧 2026-06-22 — 小欧 2026-06-24 增加SSRF内网拦截"""
-    try:
-        parsed = urlparse(url)
-        is_valid = bool(parsed.scheme) and bool(parsed.netloc)
-        valid_schemes = {"http", "https", "ftp", "ftps", "ws", "wss"}
-        scheme_ok = parsed.scheme in valid_schemes
-        if not (is_valid and scheme_ok):
-            return {"valid": False, "scheme": parsed.scheme, "netloc": parsed.netloc, "path": parsed.path}
-        hostname = parsed.hostname or ""
-        blocked = ["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]",
-                    "169.254.169.254", "metadata.google.internal"]
-        if hostname.lower() in blocked:
-            return {"valid": False, "error": f"SSRF拦截: 禁止访问内网地址 {hostname}"}
-        if hostname.startswith("10.") or hostname.startswith("192.168.") or hostname.startswith("172."):
-            parts = hostname.split(".")
-            if len(parts) == 4 and parts[0] == "172":
-                try:
-                    second = int(parts[1])
-                    if 16 <= second <= 31:
-                        return {"valid": False, "error": f"SSRF拦截: 禁止访问内网地址 {hostname}"}
-                except ValueError:
-                    pass
-            elif hostname.startswith("10.") or hostname.startswith("192.168."):
-                return {"valid": False, "error": f"SSRF拦截: 禁止访问内网地址 {hostname}"}
-        return {"valid": True, "scheme": parsed.scheme, "netloc": parsed.netloc, "path": parsed.path}
-    except Exception as e:
-        return {"valid": False, "error": str(e)}
 
 
 def _build_download_file_llm_data(
@@ -134,23 +85,32 @@ def _map_network_error(url: str, timeout: int, e: Exception, duration_ms: int = 
 
 async def _stream_download(client: HTTPClient, url: str, dest_path: str,
                            headers: dict, chunk_size: int = 8192) -> Tuple[int, str, int]:
-    """流式下载文件到本地 — 小欧 2026-06-22"""
+    """流式下载文件到本地 — 小欧 2026-06-22 — 小欧 2026-06-24 增加大小限制+清理"""
     async with client.stream("GET", url, headers=headers) as response:
         response.raise_for_status()
         content_type = response.headers.get("content-type", "")
-        total_bytes = int(response.headers.get("content-length", 0))
+        raw_total = response.headers.get("content-length")
+        total_bytes = int(raw_total) if raw_total else 0
+
+        if raw_total and int(raw_total) > _MAX_FILE_SIZE:
+            raise ValueError(f"文件过大: {raw_total}字节, 限制: {_MAX_FILE_SIZE}字节")
 
         downloaded = 0
         try:
             with open(dest_path, "wb") as f:
                 async for chunk in response.aiter_bytes(chunk_size=chunk_size):
-                    f.write(chunk)
                     downloaded += len(chunk)
-        except (PermissionError, OSError):
-            if os.path.exists(dest_path):
-                os.remove(dest_path)
+                    if downloaded > _MAX_FILE_SIZE:
+                        raise ValueError(f"下载超过大小限制({_MAX_FILE_SIZE}字节)")
+                    f.write(chunk)
+        except Exception:
+            try:
+                if os.path.exists(dest_path):
+                    os.remove(dest_path)
+            except Exception:
+                pass
             raise
-        return downloaded, content_type, total_bytes
+        return downloaded, content_type, total_bytes if raw_total else downloaded
 
 
 async def download_file(
@@ -164,23 +124,24 @@ async def download_file(
     t0 = _time_mod.perf_counter()
     dest_path = ""
     try:
-        url_info = _validate_url(url)
+        url_info = validate_url(url)
         if not url_info["valid"]:
+            error_msg = url_info.get("error", "URL格式无效")
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_INVALID_URL, detail="URL格式无效")
-            return build_error(data={"error_detail": "URL格式无效", "params": {"url": url}}, llm_data=llm_data)
-        net_info = _check_network()
+            llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_INVALID_URL, detail=error_msg)
+            return build_error(data={"error_detail": error_msg, "params": {"url": url}}, llm_data=llm_data)
+        net_info = check_network()
         if not net_info["connected"]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_NETWORK_DOWN, detail="网络不可用")
             return build_error(data={"error_detail": "网络不可用", "params": {"url": url}}, llm_data=llm_data)
 
-        dest_path = os.path.abspath(destination_path)
-        dest_dir = os.path.dirname(dest_path)
-        if not dest_dir:
+        dest_path = os.path.abspath(os.path.join(_DOWNLOAD_DIR, destination_path.lstrip("/\\")))
+        if not dest_path.startswith(os.path.abspath(_DOWNLOAD_DIR)):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_NETWORK_INVALID_PATH, detail=f"无效路径: {destination_path}")
-            return build_error(data={"error_detail": f"无效路径: {destination_path}", "params": {"path": destination_path}}, llm_data=llm_data)
+            llm_data = _build_download_file_llm_data("error", duration_ms, url, err_code=ERR_NETWORK_INVALID_PATH, detail="路径遍历不允许")
+            return build_error(data={"error_detail": "路径遍历不允许", "params": {"path": destination_path}}, llm_data=llm_data)
+        dest_dir = os.path.dirname(dest_path)
         try:
             os.makedirs(dest_dir, exist_ok=True)
         except (PermissionError, OSError) as e:
@@ -194,7 +155,7 @@ async def download_file(
             downloaded, content_type, total_bytes = await _stream_download(client, url, dest_path, req_headers)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        data = {"file_path": dest_path, "file_size": downloaded, "total_size": total_bytes, "content_type": content_type}
+        data = {"file_path": dest_path, "file_size": downloaded, "total_size": total_bytes if total_bytes > 0 else None, "content_type": content_type}
         llm_data = _build_download_file_llm_data("success", duration_ms, url, dest_path, downloaded, total_bytes, content_type)
         return build_success(data=data, llm_data=llm_data)
     except (PermissionError, OSError) as e:

@@ -17,13 +17,14 @@ from urllib.parse import urlencode, urlparse, urlunparse
 
 import httpx
 
-import socket
-import time
-from urllib.parse import urlparse
-
 from app.tools.tool_response import build_success, build_error
 from app.tools.network.http_client_sdk import create_http_client
-from app.utils.json_utils import coerce_json
+from app.tools.network.connectivity import check_network
+from app.tools.network.url_validator import validate_url
+from app.utils.json_utils import coerce_json, parse_json
+
+_check_network = check_network
+_validate_url = validate_url
 from app.utils.tool_result_formatter import make_json_safe
 from app.utils.logger import logger
 from app.constants import (
@@ -36,59 +37,6 @@ from app.constants import (
     ERR_NET_UNKNOWN,
     RETRYABLE_HTTP_STATUS_CODES,
 )
-
-
-def _check_network() -> Dict[str, Any]:
-    """检查网络连通性 — 小欧 2026-06-22 — 小欧 2026-06-24 修复socket泄漏"""
-    test_hosts = [("dns.google", 53), ("8.8.8.8", 53), ("1.1.1.1", 53)]
-    for host, port in test_hosts:
-        sock = None
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(3)
-            t1 = time.time()
-            sock.connect((host, port))
-            latency = (time.time() - t1) * 1000
-            return {"connected": True, "host": host, "latency_ms": round(latency, 2)}
-        except (socket.timeout, socket.error, OSError):
-            pass
-        finally:
-            if sock:
-                try:
-                    sock.close()
-                except Exception:
-                    pass
-    return {"connected": False}
-
-
-def _validate_url(url: str) -> Dict[str, Any]:
-    """验证URL格式 — 小欧 2026-06-22 — 小欧 2026-06-24 增加SSRF内网拦截"""
-    try:
-        parsed = urlparse(url)
-        is_valid = bool(parsed.scheme) and bool(parsed.netloc)
-        valid_schemes = {"http", "https", "ftp", "ftps", "ws", "wss"}
-        scheme_ok = parsed.scheme in valid_schemes
-        if not (is_valid and scheme_ok):
-            return {"valid": False, "scheme": parsed.scheme, "netloc": parsed.netloc, "path": parsed.path}
-        hostname = parsed.hostname or ""
-        blocked = ["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]",
-                    "169.254.169.254", "metadata.google.internal"]
-        if hostname.lower() in blocked:
-            return {"valid": False, "error": f"SSRF拦截: 禁止访问内网地址 {hostname}"}
-        if hostname.startswith("10.") or hostname.startswith("192.168.") or hostname.startswith("172."):
-            parts = hostname.split(".")
-            if len(parts) == 4 and parts[0] == "172":
-                try:
-                    second = int(parts[1])
-                    if 16 <= second <= 31:
-                        return {"valid": False, "error": f"SSRF拦截: 禁止访问内网地址 {hostname}"}
-                except ValueError:
-                    pass
-            elif hostname.startswith("10.") or hostname.startswith("192.168."):
-                return {"valid": False, "error": f"SSRF拦截: 禁止访问内网地址 {hostname}"}
-        return {"valid": True, "scheme": parsed.scheme, "netloc": parsed.netloc, "path": parsed.path}
-    except Exception as e:
-        return {"valid": False, "error": str(e)}
 
 
 def _build_http_request_llm_data(
@@ -114,18 +62,22 @@ def _build_http_request_llm_data(
     }
 
 
-def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
-    """解析HTTP响应体 — 小欧 2026-06-22"""
-    from app.utils.json_utils import parse_json
+_MAX_JSON_SIZE = 10 * 1024 * 1024  # 10MB
 
+
+def _parse_response_body(response: httpx.Response) -> Dict[str, Any]:
+    """解析HTTP响应体 — 小欧 2026-06-22 — 小欧 2026-06-24 增加JSON大小限制"""
     content_type = response.headers.get("content-type", "")
     content_type_short = content_type.split(";")[0].strip() if content_type else "unknown"
 
     if "application/json" in content_type:
-        try:
-            body = response.json()
-        except (json.JSONDecodeError, ValueError):
-            body = response.text
+        if len(response.content) > _MAX_JSON_SIZE:
+            body = {"_truncated": True, "_preview": response.text[:_MAX_JSON_SIZE]}
+        else:
+            try:
+                body = response.json()
+            except (json.JSONDecodeError, ValueError):
+                body = response.text
     else:
         body = response.text
 
@@ -178,13 +130,13 @@ async def http_request(
     t0 = _time_mod.perf_counter()
 
     try:
-        url_info = _validate_url(url)
+        url_info = validate_url(url)
         if not url_info["valid"]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_INVALID_URL, detail="URL格式无效")
             return build_error(data={"error_detail": "URL格式无效", "params": {"url": url}}, llm_data=llm_data)
 
-        net_info = _check_network()
+        net_info = check_network()
         if not net_info["connected"]:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_http_request_llm_data("error", duration_ms, url, method, err_code=ERR_NETWORK_DOWN, detail="网络不可用")
@@ -200,9 +152,8 @@ async def http_request(
                 try:
                     method_upper = method.upper()
                     request_kwargs = {"url": url, "headers": request_headers}
-                    if method_upper in ("POST", "PUT"):
-                        if body is not None:
-                            request_kwargs["json"] = body
+                    if body is not None:
+                        request_kwargs["json"] = body
 
                     response = await client.request(method_upper, **request_kwargs)
                     response.raise_for_status()
@@ -228,7 +179,8 @@ async def http_request(
                             data={"error_detail": f"HTTP {e.response.status_code}", "params": {"url": url, "status_code": e.response.status_code, "body": error_body}},
                             llm_data=llm_data)
                     if attempt < retry:
-                        await asyncio.sleep(0.5 * (2 ** attempt))
+                        backoff = min(0.5 * (2 ** attempt), 10.0)
+                        await asyncio.sleep(backoff)
                         continue
                     break
 
