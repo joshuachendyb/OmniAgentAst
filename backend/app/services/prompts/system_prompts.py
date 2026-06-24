@@ -86,7 +86,7 @@ class PromptBuilder:
 - 改 → 必须用edit_text_file
 
 
-【Office文档】(.docx .doc .xlsx .xls .pptx .ppt .pdf)
+【Office文档】(.docx .xlsx .pptx .pdf)
 - 读Word → 必须用read_docx，禁止用read_text_file
 - 读Excel → 必须用read_xlsx，禁止用read_text_file
 - 读PDF → 必须用read_pdf，禁止用read_text_file
@@ -95,8 +95,9 @@ class PromptBuilder:
 - 写Excel → 必须用write_xlsx
 - 写PDF → 必须用write_pdf
 - 写PPT → 必须用write_pptx
+- 不支持格式 → .doc .xls .ppt .odt .ods .odp .rtf 不支持，请提示用户转换为支持格式
 
-【媒体文件】(.png .jpg .jpeg .gif .bmp .mp3 .mp4 .wav .avi .mkv)
+【媒体文件】(.jpg .jpeg .png .gif .bmp .webp .svg .tiff .tif .ico .heic .heif .mp3 .wav .ogg .m4a .flac .aac .wma .mid .midi .mp4 .avi .mov .mkv .webm .wmv)
 - 读 → 必须用read_media_file，禁止用read_text_file
 
 
