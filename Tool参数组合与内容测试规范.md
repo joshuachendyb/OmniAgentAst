@@ -1,5 +1,107 @@
 # Tool参数组合与内容测试规范
 
+---
+
+## 测试架构目录
+
+```
+backend/tests/tools/param_combination/
+├── __init__.py                    # 包初始化
+├── conftest.py                    # pytest fixtures + 测试数据集
+├── test_write_docx.py             # write_docx参数组合测试 (35个case)
+├── test_write_pdf.py              # write_pdf参数组合测试 (24个case)
+├── README.md                      # 测试目录说明文档
+└── ...                            # 其他工具测试文件
+```
+
+**目录说明**：
+- `conftest.py` - 定义共享fixtures（temp_output_dir、测试数据集）
+- `test_xxx.py` - 每个工具一个测试文件
+- `README.md` - 测试目录结构和使用说明
+
+---
+
+## 测试操作流程
+
+### 1. 编写测试前
+
+**步骤**：
+1. 分析工具参数（必填、可选、互斥关系）
+2. 识别所有功能点（标题、列表、表格等）
+3. 收集测试数据：
+   - 从 `xxx_register.py` 的 `EXAMPLES` 提取
+   - 准备真实业务场景数据
+   - 准备边界测试数据
+
+### 2. 编写测试
+
+**步骤**：
+1. 创建测试文件 `test_xxx.py`
+2. 在 `conftest.py` 添加测试数据fixture（可选）
+3. 按规范编写测试类：
+   - TestParamCombinations - 参数组合测试
+   - TestSingleFeatures - 单一功能测试
+   - TestMixedContent - 混合内容测试
+   - TestRealScenarios - 真实场景测试
+   - TestBoundary - 边界测试
+   - TestNegative - 负面测试
+4. 每个测试case必须验证实际结果
+
+### 3. 运行测试
+
+**命令**：
+
+```bash
+# 运行单个工具测试
+pytest tests/tools/param_combination/test_write_docx.py -v
+
+# 运行特定测试类
+pytest tests/tools/param_combination/test_write_docx.py::TestWriteDocxTables -v
+
+# 运行特定测试case
+pytest tests/tools/param_combination/test_write_docx.py::TestWriteDocxTables::test_markdown_table_basic -v
+
+# 运行所有参数组合测试
+pytest tests/tools/param_combination/ -v
+
+# 带详细错误信息
+pytest tests/tools/param_combination/test_write_docx.py -v --tb=short
+
+# 仅显示失败信息
+pytest tests/tools/param_combination/test_write_docx.py -v --tb=line
+```
+
+### 4. 验证测试
+
+**检查项**：
+- [ ] 所有测试通过
+- [ ] 测试覆盖所有功能点
+- [ ] 测试数据来自真实场景
+- [ ] 每个case验证了实际结果（不只是文件创建）
+
+### 5. 完整流程示例
+
+**以write_docx为例**：
+
+```bash
+# 1. 进入backend目录
+cd backend
+
+# 2. 运行测试
+pytest tests/tools/param_combination/test_write_docx.py -v
+
+# 3. 查看结果
+# ============================= 35 passed in 7.16s ==============================
+
+# 4. 如果失败，查看详细错误
+pytest tests/tools/param_combination/test_write_docx.py -v --tb=short
+
+# 5. 调试单个case
+pytest tests/tools/param_combination/test_write_docx.py::TestWriteDocxTables::test_markdown_table_basic -v -s
+```
+
+---
+
 ## 核心原则
 
 **测试必须验证实际结果，不能只检查文件创建！**
