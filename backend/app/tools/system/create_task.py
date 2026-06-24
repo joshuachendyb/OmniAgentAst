@@ -53,8 +53,6 @@ def _build_schtasks_create_cmd(task_name: str, command: str, schedule: str,
         cmd.extend(["/st", start_time])
     else:
         cmd.extend(["/st", time_part])
-    if description:
-        cmd.extend(["/tn", description])
     if user:
         cmd.extend(["/ru", user])
     if start_date:
