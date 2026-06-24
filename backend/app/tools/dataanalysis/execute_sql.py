@@ -114,9 +114,32 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
             return build_warning(data={"detected": dangerous_list, "suggestion": "检测到危险操作,建议使用 dry_run=true 先验证"}, llm_data=llm_data)
 
         if dry_run:
+            conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
+            if conn is None:
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0)
+                return build_error(data={"error_detail": conn_error, "params": {"connection_type": connection_type, "db_path": db_path}}, llm_data=llm_data)
+            syntax_valid = False
+            try:
+                if connection_type in ("mysql", "postgresql"):
+                    from sqlalchemy import text
+                    conn.execute(text(sql))
+                else:
+                    conn.execute(sql)
+                syntax_valid = True
+            except Exception as e:
+                syntax_valid = False
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_execute_sql_llm_data("success", duration_ms, sql, 0)
-            return build_success(data={"sql": sql, "dry_run": True, "syntax_valid": True}, llm_data=llm_data)
+            llm_data = _build_execute_sql_llm_data("success" if syntax_valid else "error", duration_ms, sql, 0)
+            if syntax_valid:
+                return build_success(data={"sql": sql, "dry_run": True, "syntax_valid": True}, llm_data=llm_data)
+            else:
+                return build_error(data={"sql": sql, "dry_run": True, "syntax_valid": False, "error_detail": "SQL语法校验失败"}, llm_data=llm_data)
 
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
