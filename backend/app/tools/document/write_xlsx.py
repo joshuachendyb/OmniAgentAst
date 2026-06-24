@@ -56,16 +56,26 @@ def _set_xlsx_table_style(ws):
 
 
 def _adjust_xlsx_column_width(ws):
-    """调整Excel列宽自适应 — 小健 2026-06-24"""
+    """调整Excel列宽自适应 — 小健 2026-06-24 — 小欧 2026-06-24 修复中文字符宽度"""
     from openpyxl.utils import get_column_letter
+    
+    def _display_width(s):
+        """计算字符串显示宽度，中文字符占2宽度 — 小欧 2026-06-24"""
+        width = 0
+        for ch in str(s):
+            if '\u4e00' <= ch <= '\u9fff' or '\u3000' <= ch <= '\u303f' or '\uff00' <= ch <= '\uffef':
+                width += 2
+            else:
+                width += 1
+        return width
     
     for col_idx in range(1, ws.max_column + 1):
         max_len = 0
         col_letter = get_column_letter(col_idx)
         for row_idx in range(1, ws.max_row + 1):
             cell = ws.cell(row=row_idx, column=col_idx)
-            if cell.value:
-                max_len = max(max_len, len(str(cell.value)))
+            if cell.value is not None:
+                max_len = max(max_len, _display_width(cell.value))
         ws.column_dimensions[col_letter].width = max(max_len + 2, 8)
 
 
