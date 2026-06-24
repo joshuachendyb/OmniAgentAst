@@ -141,15 +141,11 @@ async def write_text_file(
     """写入文本文件 — 小沈 2026-05-25 重构拆分 — 小欧 2026-06-22 独立文件"""
     t0 = _time_mod.perf_counter()
     create_parents = True
-    unescape = True
     error, checked_content = _check_write_safety(file_path, content, encoding)
     if error:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error)
         return build_error(data={"error_detail": error, "params": {"file_path": file_path}}, llm_data=llm_data)
-
-    if unescape:
-        checked_content = checked_content.replace("\\\\", "\\").replace("\\n", "\n").replace("\\\"", "\"")
 
     encoding = encoding or _detect_file_encoding_for_write(file_path, append)
 
