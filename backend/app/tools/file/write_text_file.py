@@ -107,7 +107,12 @@ def _write_file_atomic(content: str, path: Path, encoding: str,
 def _check_write_safety(file_path: str, content: str,
                          encoding: Optional[str] = None,
                          append: bool = False) -> Tuple[Optional[str], str]:
-    """写入前安全检查 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小健 2026-06-24 使用file_type_checker"""
+    """写入前安全检查 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小健 2026-06-24 使用file_type_checker，恢复append+encoding限制
+    
+    append时指定encoding会导致编码混乱：
+    - 原文件GBK + 追加UTF-8 = 混合编码文件（损坏）
+    - 正确做法：append时不指定encoding，自动检测原文件编码
+    """
     if not file_path or not file_path.strip():
         return "file_path不能为空", content
     if content is None:
@@ -117,7 +122,7 @@ def _check_write_safety(file_path: str, content: str,
     if isinstance(content, str) and '\x00' in content:
         return "content包含null字符(0x00),文本文件不允许包含null字符", content
     if append and encoding:
-        return "append模式下不能指定encoding,请移除encoding参数或设为None", content
+        return "append模式不允许指定encoding。追加时会自动检测原文件编码并使用相同编码写入。如需转换编码请先读取全文、转换后覆盖写入。", content
     # 文件类型检查 — 小健 2026-06-24
     is_valid, error_detail, suggested_tool = check_for_text_tool(file_path, check_content=False, allow_create=True)
     if not is_valid:

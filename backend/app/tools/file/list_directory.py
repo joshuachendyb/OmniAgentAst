@@ -203,7 +203,13 @@ async def _get_directory_tree(
 
     def _sort_items(items):
         if sort_by == "size":
-            return sorted(items, key=lambda x: x.name.lower())
+            def _get_size(p):
+                try:
+                    _, _, total_size = _count_tree_fs(p)
+                    return total_size
+                except Exception:
+                    return 0
+            return sorted(items, key=lambda x: (-_get_size(x), x.name.lower()))
         elif sort_by == "mtime":
             def _get_mtime(p):
                 try:

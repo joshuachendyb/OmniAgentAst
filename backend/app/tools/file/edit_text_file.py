@@ -93,11 +93,11 @@ def _apply_replacement(
     content: str, old_string: str, new_string: str,
     ignore_case: bool, replace_all: bool,
 ) -> Tuple[str, int]:
-    """执行替换操作,返回(new_content, count) — 小欧 2026-06-22"""
+    """执行替换操作,返回(new_content, count) — 小欧 2026-06-22 — 小健 2026-06-24 修复硬编码flags=2"""
     count = 0
+    import re as re_mod
     if replace_all:
-        flags = 0 if not ignore_case else 2  # re.IGNORECASE
-        import re as re_mod
+        flags = 0 if not ignore_case else re_mod.IGNORECASE
         pattern = re_mod.escape(old_string)
         if ignore_case:
             count = len(re_mod.findall(pattern, content, flags))
@@ -107,7 +107,6 @@ def _apply_replacement(
             content = content.replace(old_string, new_string)
     else:
         if ignore_case:
-            import re as re_mod
             pattern = re_mod.escape(old_string)
             match = re_mod.search(pattern, content, re_mod.IGNORECASE)
             if match:

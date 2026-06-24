@@ -79,12 +79,28 @@ async def _try_read_file_with_encodings(
                     with open(path, 'r', encoding=e, errors='replace') as f:
                         return f.read()
                 content = await asyncio.to_thread(_read)
+                
+                # 用户指定了编码，直接返回（用户负责）
+                if preferred:
+                    return content, enc, None
+                
+                # 自动检测模式：检查是否有编码错误的标志
+                # �是替换字符，出现说明有无法解码的字节
+                # 但�也是合法Unicode字符，文件可能真的包含它
+                # 判断标准：
+                # 1. �数量 >= 3 且占比 > 3% → 编码错误
+                # 2. 否则 → 接受（可能是合法字符）
                 if '\ufffd' in content:
-                    content = None
-                    continue
+                    replacement_count = content.count('\ufffd')
+                    replacement_ratio = replacement_count / max(len(content), 1)
+                    # �数量较多且占比高，认为是编码错误
+                    if replacement_count >= 3 and replacement_ratio > 0.03:
+                        continue  # 编码不对，尝试下一个
+                
                 return content, enc, None
             except Exception:
                 continue
+            
 
         return None, None, f"无法读取文件: {path},已尝试编码: {encodings_to_try}"
     except Exception as e:
