@@ -128,13 +128,17 @@ def _write_zip(
 
 
 def _write_targz(source: Path, destination: Path, deadline: float) -> Tuple[List[str], bool]:
-    """写入tar.gz压缩包 — 小健 2026-05-25"""
+    """写入tar.gz压缩包 — 小健 2026-05-25 — 小健 2026-06-24 添加deadline检查"""
     compressed_files: List[str] = []
+    timed_out = False
     with tarfile.open(destination, 'w:gz') as tf:
         for file_path, arcname in _compress_entries(source, deadline):
+            if _time_mod.monotonic() > deadline:
+                timed_out = True
+                break
             tf.add(file_path, arcname)
             compressed_files.append(str(file_path))
-    return compressed_files, False
+    return compressed_files, timed_out
 
 
 def _build_compress_result(
@@ -223,7 +227,7 @@ async def compress_files(
 
     if format not in ("zip", "tar.gz"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"不支持的压缩格式: {format}", hint="支持zip/tar/tar.gz/tar.bz2")
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"不支持的压缩格式: {format}", hint="支持zip/tar.gz")
         return build_error(data={"error_detail": f"不支持的压缩格式: {format},支持格式: zip, tar.gz", "params": {"format": format}}, llm_data=llm_data)
 
     src = Path(source)
