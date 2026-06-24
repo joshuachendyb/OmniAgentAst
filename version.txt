@@ -1,20 +1,52 @@
 v0.17.1
 
-更新时间: 2026-06-24 18:50:12
+更新时间: 2026-06-24 22:26:01
 
 ## v0.17.0→v0.17.1 变更汇总 - 小欧-2026-06-24
 
-### refactor: 文件类型分类优化和文档添加(1项)
-- 196d436a9: 文件类型分类优化和文档添加 - 小欧
+### feat: 新功能(17项)
+- e6aac3424: 新增file_type_checker文件类型检查工具 - 小欧
+- 5dcb00dc0: grep_file_content新增head_limit/output_mode/context_lines功能 - 小健
+- 27e53db4c: write_docx支持Markdown表格+table_data参数(互斥设计) - 小健
+- 0dc64f227: observation_formatter.py summary行追加action结构信息 - 小欧
+- cc215d5fb: 增加系统敏感路径黑名单校验 - 小健
+- 786a99f4a: edit_text_file增加空值校验、ignore_case参数 - 小欧
+- 其他11项feat (详见git log)
 
-### fix: 工具前置检查死锁修复(4项)
-- 5e3861e13: 移除read_docx.py中.doc死代码(pandoc转换) - 小欧
-- cf4bcaf3c: 移除read_xlsx.py中.xls死代码(xlrd读取) - 小欧
-- efc589f42: 更新document_register.py描述和示例移除.doc/.xls引用+xlrd依赖 - 小欧
-- f26d02408: 清理file_type_checker.py中_suggest_doc_tool死代码(.doc/.xls/.ppt) - 小欧
+### fix: 代码修复(72项)
+- 59d51dfe9: 修复4个file工具BUG(list_directory/read_text_file/write_text_file/edit_text_file) - 小健
+- 060e06cc0: document读取工具Bug修复(read_pptx表格/read_docx空段落/read_xlsx多工作表) - 小健
+- a43839c32: write工具表格问题修复(write_pptx 10个Bug/write_docx 3个/write_xlsx 4个) - 小健
+- ee4f55f6d: SSRF内网IP拦截(http_request/download_file/fetch_webpage) - 小欧
+- 58e074607: http_request socket泄漏+clipboard ctypes内存泄漏修复 - 小欧
+- abc0b6f7f: write_text_file空字符串拦截+append+encoding禁止+二进制检测 - 小欧
+- 555903ac9: read_text_file增加offset=0校验+offset超范围warning+二进制检测 - 小欧
+- 其他65项fix (详见git log)
+
+### refactor: 代码重构(24项)
+- 8e4bd72d9: 优化系统提示规则组织+工具参数复核+执行纪律 - 小欧
+- eb9621820: 工具参数简化方案实施(11个工具schema+实现+注册文件用例修正) - 小健
+- 580b72f39: search_files去掉无意义的recursive参数,始终递归搜索 - 小欧
+- 58ed1e893: 全部tool register描述精简为一句话功能+适用场景 - 小欧
+- 196d436a9: 文件类型分类优化和文档添加 - 小欧
+- 其他19项refactor (详见git log)
+
+### docs: 文档更新(22项)
+- 05b23f05f: 创建Tool参数组合与内容测试规范文档 - 小健
+- 876cb6f7b: 补充核心原则与要求到测试规范文档头部 - 小健
+- bc45d8c89: 精简测试规范文档,以write_docx为完整示例 - 小健
+- fe216d6cc: E2E测试记录更新 - 小欧
+- 其他18项docs (详见git log)
+
+### perf: 性能优化(1项)
+- f6d1cce4b: P0-1/P0-2/P0-3/P1-1/P2-1 prompt注入修复+工具筛选优化 - 小欧
+
+### chore: 杂项(2项)
+- b9f3debd5: 添加notes/到.gitignore - 小健
+- 0eaa136db: 添加.codeartsdoer/到.gitignore - 小健
 
 ### 合计
-- refactor: 1项 | fix: 4项 = 共5项
+- feat: 17项 | fix: 72项 | refactor: 24项 | docs: 22项 | perf: 1项 | chore: 2项 = 共138项
 
 ---
 

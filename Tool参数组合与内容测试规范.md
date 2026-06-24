@@ -96,6 +96,8 @@ content = "简单内容"  # ❌ 太少，必须不少于100行
 
 ## 二、测试架构目录
 
+**目录结构**：严格按照此目录结构新增本文档的测试文件
+
 ```
 backend/tests/tools/param_combination/
 ├── __init__.py                    # 包初始化
