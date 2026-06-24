@@ -39,8 +39,18 @@ def _build_get_system_info_llm_data(exec_code: str, duration_ms: int, info_type:
 
 
 def get_system_info(info_type: str = "all") -> Dict[str, Any]:
-    """获取系统信息 — 小健 2026-06-22 迁入fundamental独立文件"""
+    """获取系统信息 — 小健 2026-06-22 迁入fundamental独立文件; 小健 2026-06-24 修复无效info_type返回success的bug"""
     t0 = _time_mod.perf_counter()
+    
+    valid_types = ("basic", "cpu", "memory", "disk", "network", "all")
+    if info_type not in valid_types:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_get_system_info_llm_data("error", duration_ms, info_type)
+        return build_error(
+            data={"error_detail": f"无效的info_type: {info_type}", "valid_types": list(valid_types)},
+            llm_data=llm_data
+        )
+    
     try:
         data = {}
 
