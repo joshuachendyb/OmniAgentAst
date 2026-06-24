@@ -209,6 +209,11 @@ def write_pptx(
     t0 = _time_mod.perf_counter()
     slides = coerce_json(slides)
 
+    if not isinstance(slides, list) or not slides:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_pptx_llm_data("error", duration_ms, file_name, detail="slides参数必须是非空列表")
+        return build_error(data={"error_detail": "slides参数必须是非空列表", "params": {"file_name": file_name, "slides_type": type(slides).__name__}}, llm_data=llm_data)
+
     if not _check_module("pptx"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_pptx_llm_data("error", duration_ms, file_name, detail="python-pptx库未安装")
