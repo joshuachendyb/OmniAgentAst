@@ -68,8 +68,10 @@ def write_xlsx(
         headers = []
         rows = []
         if len(data) > 0:
-            headers = list(data[0].keys())
-            rows = [list(row.values()) for row in data]
+            # KISS-DIRECT: 一行收集所有key，避免列不一致数据丢失 — 小健 2026-06-24
+            headers = list(dict.fromkeys(k for row in data for k in row.keys()))
+            # 按表头顺序填充，缺失填None
+            rows = [[row.get(key) for key in headers] for row in data]
 
         wb = Workbook()
         ws = wb.active
