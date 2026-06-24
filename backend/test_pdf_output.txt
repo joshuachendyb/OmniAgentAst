@@ -1,0 +1,71 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.11, pytest-8.4.2, pluggy-1.6.0 -- E:\Appsw\python31311\python.exe
+cachedir: .pytest_cache
+rootdir: G:\OmniAgentAs-desk\backend
+configfile: pytest.ini
+plugins: anyio-4.13.0, asyncio-0.25.3, cov-7.1.0, timeout-2.4.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None
+timeout: 540.0s
+timeout method: thread
+timeout func_only: False
+collecting ... collected 24 items
+
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfBasicParams::test_empty_document PASSED [  4%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfBasicParams::test_title_only PASSED [  8%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfBasicParams::test_content_only PASSED [ 12%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfBasicParams::test_title_and_content PASSED [ 16%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfMarkdownHeadings::test_single_heading_level[1-# -h1] PASSED [ 20%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfMarkdownHeadings::test_single_heading_level[2-## -h2] PASSED [ 25%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfMarkdownHeadings::test_single_heading_level[3-### -h3] PASSED [ 29%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfMarkdownHeadings::test_single_heading_level[4-#### -h4] PASSED [ 33%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfMarkdownHeadings::test_all_heading_levels PASSED [ 37%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfMarkdownLists::test_unordered_list_dash PASSED [ 41%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfMarkdownLists::test_unordered_list_asterisk PASSED [ 45%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfMarkdownLists::test_ordered_list PASSED [ 50%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfMarkdownLists::test_mixed_lists PASSED [ 54%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfRealScenarios::test_tech_report PASSED [ 58%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfRealScenarios::test_meeting_minutes PASSED [ 62%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfRealScenarios::test_from_register_examples FAILED [ 66%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfBoundary::test_special_chars PASSED [ 70%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfBoundary::test_long_content PASSED [ 75%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfBoundary::test_chinese_only PASSED [ 79%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfBoundary::test_empty_lines PASSED [ 83%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfBoundary::test_overwrite_existing FAILED [ 87%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfNegative::test_invalid_path_nonexistent_drive PASSED [ 91%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfLlmData::test_llm_data_success_structure PASSED [ 95%]
+tests/tools/param_combination/test_write_pdf.py::TestWritePdfLlmData::test_llm_data_error_structure PASSED [100%]
+
+================================== FAILURES ===================================
+____________ TestWritePdfRealScenarios.test_from_register_examples ____________
+
+self = <tests.tools.param_combination.test_write_pdf.TestWritePdfRealScenarios object at 0x00000184CB55C640>
+temp_output_dir = WindowsPath('C:/Users/chend/AppData/Local/Temp/tool_test_uxi5newt')
+
+    def test_from_register_examples(self, temp_output_dir):
+        """鍦烘櫙3: register.py涓殑examples"""
+        file_path1 = temp_output_dir / "report.pdf"
+        result1 = write_pdf(str(file_path1), title="娴嬭瘯鎶ュ憡", content="杩欐槸鎶ュ憡鍐呭")
+>       assert result1["code"] == 0
+               ^^^^^^^^^^^^^^^
+E       KeyError: 'code'
+
+tests\tools\param_combination\test_write_pdf.py:185: KeyError
+________________ TestWritePdfBoundary.test_overwrite_existing _________________
+
+self = <tests.tools.param_combination.test_write_pdf.TestWritePdfBoundary object at 0x00000184CB59DEB0>
+temp_output_dir = WindowsPath('C:/Users/chend/AppData/Local/Temp/tool_test_sz104sto')
+
+    def test_overwrite_existing(self, temp_output_dir):
+        """杈圭晫5: 瑕嗙洊宸插瓨鍦ㄦ枃浠?""
+        file_path = temp_output_dir / "overwrite.pdf"
+    
+        result1 = write_pdf(str(file_path), title="绗竴娆?, content="鍐呭1")
+>       assert result1["code"] == 0
+               ^^^^^^^^^^^^^^^
+E       KeyError: 'code'
+
+tests\tools\param_combination\test_write_pdf.py:244: KeyError
+=========================== short test summary info ===========================
+FAILED tests/tools/param_combination/test_write_pdf.py::TestWritePdfRealScenarios::test_from_register_examples
+FAILED tests/tools/param_combination/test_write_pdf.py::TestWritePdfBoundary::test_overwrite_existing
+======================== 2 failed, 22 passed in 2.36s =========================

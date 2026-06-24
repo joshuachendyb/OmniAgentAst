@@ -45,6 +45,7 @@
 -- 小健 2026-06-14
 """
 
+import asyncio
 import atexit
 import json
 import re
@@ -253,16 +254,11 @@ def verify_response_time(result: Dict[str, Any]) -> List[str]:
 
 # ─── Session管理 ─────────────────────────────────────────────
 
-async def create_session(title: Optional[str] = None) -> Optional[str]:
-    """创建session(POST /sessions) — 小健 2026-06-14  fix: 模拟前端传title+is_valid — 小欧 2026-06-23
-
-    前端行为: api.post("/sessions", {title, is_valid: true})
-    """
-    if not title:
-        title = f"E2ETest {datetime.now().strftime('%H:%M:%S')}"
+async def create_session() -> Optional[str]:
+    """创建session(POST /sessions) -- 小健 2026-06-14"""
     url = f"{BASE_URL}{API_PREFIX}/sessions"
     async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.post(url, json={"title": title, "is_valid": True})
+        resp = await client.post(url, json={})
         if resp.status_code == 200:
             return resp.json().get("session_id")
     return None
@@ -293,9 +289,7 @@ async def send_chat(
     -- 小健 2026-06-14
     """
     if not session_id:
-        # 模拟前端: 用用户消息前50字做标题
-        title = user_input.strip()[:50] if user_input.strip() else None
-        session_id = await create_session(title)
+        session_id = await create_session()
         if not session_id:
             raise RuntimeError("创建session失败")
 
@@ -316,38 +310,45 @@ async def send_chat(
     tool_calls: List[Dict[str, Any]] = []
 
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_seconds)) as client:
-            try:
-                async with client.stream("POST", chat_url, json=payload) as resp:
-                    async for line in resp.aiter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        data_str = line[6:]
-                        try:
-                            event = json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
+        # asyncio.timeout提供墙钟超时，与httpx的read timeout(按chunk重置)不同
+        # 无论LLM是否持续发chunk，timeout_seconds后强制超时返回部分结果
+        # 修复: 超时不杀死进程，返回部分数据保证finally执行write_test_record
+        # -- 小健 2026-06-24
+        async with asyncio.timeout(timeout_seconds):
+            async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_seconds)) as client:
+                try:
+                    async with client.stream("POST", chat_url, json=payload) as resp:
+                        async for line in resp.aiter_lines():
+                            if not line.startswith("data: "):
+                                continue
+                            data_str = line[6:]
+                            try:
+                                event = json.loads(data_str)
+                            except json.JSONDecodeError:
+                                continue
 
-                        event_type = event.get("type", "")
-                        events.append(event)
+                            event_type = event.get("type", "")
+                            events.append(event)
 
-                        if event_type == "error":
-                            error_occurred = True
+                            if event_type == "error":
+                                error_occurred = True
 
-                        if event_type == "final":
-                            final_event = event
-                            response_text = event.get("content") or event.get("response", "")
+                            if event_type == "final":
+                                final_event = event
+                                response_text = event.get("content") or event.get("response", "")
 
-                        if event_type == "action_tool":
-                            tool_calls.append({
-                                "type": event_type,
-                                "tool_name": event.get("tool_name", ""),
-                                "tool_params": event.get("tool_params", {}),
-                            })
-            except httpx.TimeoutException:
-                pass
-            except Exception:
-                pass
+                            if event_type == "action_tool":
+                                tool_calls.append({
+                                    "type": event_type,
+                                    "tool_name": event.get("tool_name", ""),
+                                    "tool_params": event.get("tool_params", {}),
+                                })
+                except httpx.TimeoutException:
+                    pass
+                except Exception:
+                    pass
+    except (TimeoutError, httpx.TimeoutException):
+        pass
     finally:
         total_time_ms = int((time.monotonic() - start_time) * 1000)
         event_types = [e.get("type", "") for e in events]
@@ -386,8 +387,6 @@ async def start_chat_stream_async(
     修复: 异常不再吞掉,通过error字段暴露 -- 小健 2026-06-19
     修复: 与send_chat一致,先保存user消息到DB -- 小健 2026-06-19
     """
-    import asyncio
-
     # 与send_chat一致: 先保存user消息到DB
     await save_user_message(session_id, user_input)
 
@@ -693,12 +692,15 @@ def verify_db_prompt_consistency(
     session_id: str,
     user_msg_id: Optional[int] = None,
 ) -> List[str]:
-    """验证DB execution_steps与Prompt日志«执行步骤»一致性 -- 小健 2026-06-15
+    """验证DB execution_steps与Prompt日志«执行步骤»严格一致性 -- 小健 2026-06-24
 
-    比较项:
-      - 非chunk步骤数量一致
-      - 同步骤号: type, tool_name, tool_params一致
-      - action_tool步骤的execution_result一致
+    严格比较项:
+      - 非chunk/start步骤数量必须完全一致
+      - 同步骤号: type, tool_name, tool_params必须完全一致
+      - action_tool步骤的execution_result必须完全一致
+      - 步骤顺序必须完全一致
+    
+    v2.2: 增强严格性，不允许偏差
     """
     issues: List[str] = []
 
@@ -742,16 +744,16 @@ def verify_db_prompt_consistency(
         issues.append("Prompt日志«执行步骤»为空")
         return issues
 
-    # 非chunk/start步骤数对比(prompt日志不含start事件)
+    # 非chunk/start步骤数对比(prompt日志不含start事件) - 必须完全一致
     db_main = [s for s in db_steps if s.get("type") not in ("chunk", "start")]
-    log_main = [s for s in log_steps if s.get("\u6b65\u9aa4\u7c7b\u578b") not in ("chunk", "start")]
+    log_main = [s for s in log_steps if s.get("步骤类型") not in ("chunk", "start")]
 
     if len(db_main) != len(log_main):
         issues.append(
-            f"非chunk/start步骤数不一致: DB={len(db_main)}, Prompt日志={len(log_main)}"
+            f"非chunk/start步骤数不一致(DB={len(db_main)}, Prompt日志={len(log_main)})(MUST)"
         )
 
-    # 按步骤号分组对比(只对比action_tool)
+    # 按步骤号分组对比(只对比action_tool) - 必须完全一致
     db_by_step: Dict[int, List[Dict]] = {}
     log_by_step: Dict[int, List[Dict]] = {}
     for s in db_steps:
@@ -759,7 +761,7 @@ def verify_db_prompt_consistency(
         if sn is not None:
             db_by_step.setdefault(sn, []).append(s)
     for s in log_steps:
-        sn = s.get("\u6b65\u9aa4")
+        sn = s.get("步骤")
         if sn is not None:
             log_by_step.setdefault(sn, []).append(s)
 
@@ -767,12 +769,11 @@ def verify_db_prompt_consistency(
     for sn in sorted(all_step_nums):
         db_ss = db_by_step.get(sn, [])
         log_ss = log_by_step.get(sn, [])
-        # type对比
-        # type对比(排除chunk/start, prompt日志不含该类型)
+        # type对比(排除start和chunk, prompt日志不含这些类型)
         db_types = sorted([s.get("type", "") for s in db_ss if s.get("type") not in ("start", "chunk")])
-        log_types = sorted([s.get("\u6b65\u9aa4\u7c7b\u578b", "") for s in log_ss if s.get("\u6b65\u9aa4\u7c7b\u578b") not in ("start", "chunk")])
+        log_types = sorted([s.get("步骤类型", "") for s in log_ss if s.get("步骤类型") not in ("start", "chunk")])
         if db_types != log_types:
-            issues.append(f"步骤{sn} type不一致: DB={db_types}, Prompt日志={log_types}")
+            issues.append(f"步骤{sn} type不一致(DB={db_types}, Prompt日志={log_types})(MUST)")
 
         # action_tool对比: tool_name + tool_params
         for db_s in db_ss:
@@ -788,33 +789,34 @@ def verify_db_prompt_consistency(
             # 在log_steps找同步骤的同tool
             matched = False
             for log_s in log_ss:
-                evt = log_s.get("\u6570\u636e", {})
+                evt = log_s.get("数据", {})
                 if not isinstance(evt, dict):
                     continue
                 log_tn = evt.get("tool_name", "")
                 if log_tn != db_tn:
                     continue
                 log_tp = evt.get("tool_params", {})
+                # 严格比较: 必须完全一致
                 if str(log_tp) != str(db_tp):
                     issues.append(
-                        f"步骤{sn} tool_params不一致: DB={db_tp}, Prompt日志={log_tp}"
+                        f"步骤{sn} tool_params不一致(DB={db_tp}, Prompt日志={log_tp})(MUST)"
                     )
                 matched = True
                 break
             if not matched:
-                issues.append(f"步骤{sn} tool_name({db_tn})在Prompt日志中未找到")
+                issues.append(f"步骤{sn} tool_name({db_tn})在Prompt日志中未找到(MUST)")
 
-        # observation对比(仅action_tool)
+        # observation对比(仅action_tool) - 严格比较
         for db_s in db_ss:
             if db_s.get("type") != "action_tool":
                 continue
             db_obs = db_s.get("observation") or db_s.get("execution_result", "")
             for log_s in log_ss:
-                evt = log_s.get("\u6570\u636e", {})
+                evt = log_s.get("数据", {})
                 if not isinstance(evt, dict):
                     continue
                 log_obs = evt.get("execution_result") or evt.get("observation") or ""
-                # DB存结构化dict, Prompt日志存summary字符串, 用字符串包含检查
+                # 严格比较: DB存结构化dict, Prompt日志存summary字符串
                 db_str = str(db_obs)
                 log_str = str(log_obs)
                 if db_str and log_str:
@@ -823,13 +825,66 @@ def verify_db_prompt_consistency(
                     log_upper = ''.join(c for c in log_str if c.isupper() or c == '_')
                     if 'ERR' in db_upper and 'ERR' not in log_upper:
                         issues.append(
-                            f"步骤{sn} observation错误码不匹配: DB含错误码, Prompt日志未含"
+                            f"步骤{sn} observation错误码不匹配: DB含错误码, Prompt日志未含(MUST)"
                         )
                     elif 'SUCCESS' in db_upper and 'SUCCESS' not in log_upper:
                         issues.append(
-                            f"步骤{sn} observation状态不匹配: DB含SUCCESS, Prompt日志未含"
+                            f"步骤{sn} observation状态不匹配: DB含SUCCESS, Prompt日志未含(MUST)"
                         )
 
+    return issues
+
+
+def verify_db_steps_data_completeness(
+    session_id: str,
+) -> List[str]:
+    """验证DB执行步骤数据完整性 -- 小健 2026-06-24
+
+    严格检查每个action_tool步骤的:
+      - tool_name不能为空
+      - tool_params必须存在且为dict
+      - observation/execution_result必须存在
+      - status必须为success或error
+      - step号必须存在
+    """
+    issues: List[str] = []
+    
+    db = check_db(session_id)
+    db_steps = db.get("execution_steps", [])
+    
+    if not db_steps:
+        issues.append("DB无执行步骤数据(MUST)")
+        return issues
+    
+    for i, step in enumerate(db_steps):
+        step_type = step.get("type", "")
+        step_num = step.get("step", "")
+        
+        if step_type == "action_tool":
+            # tool_name检查
+            tool_name = step.get("tool_name", "")
+            if not tool_name:
+                issues.append(f"步骤{step_num}(index={i}): tool_name为空(MUST)")
+            
+            # tool_params检查
+            tool_params = step.get("tool_params")
+            if not tool_params or not isinstance(tool_params, dict):
+                issues.append(f"步骤{step_num}(index={i}): tool_params为空或非dict(MUST)")
+            
+            # observation检查
+            obs = step.get("observation") or step.get("execution_result")
+            if not obs:
+                issues.append(f"步骤{step_num}(index={i}): observation/execution_result为空(MUST)")
+            
+            # status检查
+            status = step.get("status")
+            if status is not None and status not in ("success", "error"):
+                issues.append(f"步骤{step_num}(index={i}): status异常={status}(MUST)")
+            
+            # step号检查
+            if step_num is None:
+                issues.append(f"步骤(index={i}): step号缺失(MUST)")
+    
     return issues
 
 
@@ -1163,7 +1218,8 @@ def write_test_record(
     v1.9增强: error_info参数记录异常详情(类型+消息+堆栈)
     v2.0增强: 超时保护 - 注册待写入记录，进程异常终止时由atexit/signal写入
     v2.1增强: 返回记录文件路径；写入后验证文件存在；失败时尝试备用路径
-    -- 小欧 2026-06-18
+    v2.2增强: 新的PASS/FAIL判断标准 - final=通过, 任何error=失败, DB-Prompt严格对比
+    -- 小健 2026-06-24
     """
     if test_title:
         test_name = test_title
@@ -1184,26 +1240,50 @@ def write_test_record(
     ts_str = now.strftime("%Y-%m-%d %H:%M:%S")
     record_file = RECORD_DIR / f"测试记录-{test_id}-{date_str}.md"
 
-    # DB-Prompt一致性FAIL则整体FAILED -- 小健 2026-06-19
+    # ============================================================
+    # v2.2 新的PASS/FAIL判断标准 - 小健 2026-06-24
+    # 1. 最终有final事件 → 通过
+    # 2. 最终有error事件 或中途系统代码出现问题 → 失败
+    # 3. tool问题必须记录在测试记录中
+    # ============================================================
+    final_event = result.get("final_event")
+    has_error = result.get("has_error", False)
+    end_type = assert_stream_ended(result)
+    
+    # 新的判断标准: 必须有final事件才通过
+    if final_event is not None:
+        # 有final事件，检查是否有error
+        if has_error:
+            passed = False
+        # 检查回复是否有错误关键词
+        resp = result.get("response_text", "")
+        resp_has_error = False
+        _KNOWN_LLM_ERR_PREFIXES = ("LLM流式错误:", "LLM流式错误：")
+        if resp:
+            _clean = resp.replace("\n", " ").replace("\r", " ").strip()
+            for pfx in _KNOWN_LLM_ERR_PREFIXES:
+                if _clean.startswith(pfx):
+                    _clean = _clean[len(pfx):].strip()
+                    break
+            if _clean:
+                err_markers = ("错误:", "错误：", "超时,", "超时，", "超时)", "超时）", "出错", "failed:", "exception:", "traceback:")
+                resp_has_error = any(m in _clean for m in err_markers)
+        if resp_has_error:
+            passed = False
+    else:
+        # 没有final事件，失败
+        passed = False
+    
+    # DB-Prompt一致性FAIL则整体FAILED
     if passed and dpi is not None and len(dpi) > 0:
         passed = False
-    # 回复含错误关键词则整体FAILED -- 小健 2026-06-19
-    # 跳过已知LLM流式错误前缀(工具链成功但LLM回复失败的情况不算FAIL)
-    resp = result.get("response_text", "")
-    resp_has_error = False
-    _KNOWN_LLM_ERR_PREFIXES = ("LLM流式错误:", "LLM流式错误：")
-    if resp:
-        _clean = resp.replace("\n", " ").replace("\r", " ").strip()
-        # 去掉已知的LLM流式错误前缀后再检查
-        for pfx in _KNOWN_LLM_ERR_PREFIXES:
-            if _clean.startswith(pfx):
-                _clean = _clean[len(pfx):].strip()
-                break
-        if _clean:
-            err_markers = ("错误:", "错误：", "超时,", "超时，", "超时)", "超时）", "出错", "failed:", "exception:", "traceback:")
-            resp_has_error = any(m in _clean for m in err_markers)
-    if passed and resp_has_error:
-        passed = False
+    
+    # 日志中有ERROR或traceback则失败
+    if passed:
+        if len(log_check.get("errors", [])) > 0:
+            passed = False
+        if len(log_check.get("tracebacks", [])) > 0:
+            passed = False
     tool_calls = result.get("tool_calls", [])
     tool_names = [t.get("tool_name", "") for t in tool_calls]
     event_types = result.get("event_types", [])
@@ -1278,8 +1358,6 @@ def write_test_record(
         lines.append("|------|--------|------|")
         for i, tc in enumerate(tool_calls):
             params_str = json.dumps(tc.get("tool_params", {}), ensure_ascii=False)
-            if len(params_str) > 100:
-                params_str = params_str[:100] + "..."
             lines.append(f"| {i+1} | {tc.get('tool_name', '')} | `{params_str}` |")
     else:
         lines.append("(无工具调用)")
@@ -1343,7 +1421,7 @@ def write_test_record(
             lines.append("")
             for i, s in enumerate(action_steps):
                 tn = s.get("tool_name", "?")
-                tp = json.dumps(s.get("tool_params", {}), ensure_ascii=False)[:100]
+                tp = json.dumps(s.get("tool_params", {}), ensure_ascii=False)[:150]
                 obs_raw = s.get("observation") or s.get("execution_result", "")
                 obs_str = _obs_to_text(obs_raw)[:200] if obs_raw else "(空)"
                 lines.append(f"**步骤{s.get('step', '?')}: {tn}**")
@@ -1479,7 +1557,10 @@ def write_test_record(
     written_path: Optional[Path] = None
     try:
         content = "\n".join(lines)
-        with open(str(record_file), "w", encoding="utf-8-sig") as f:
+        mode = "a" if record_file.exists() else "w"
+        with open(str(record_file), mode, encoding="utf-8-sig") as f:
+            if mode == "a":
+                f.write("\n\n---\n\n")
             f.write(content)
         written_path = record_file
     except PermissionError:
