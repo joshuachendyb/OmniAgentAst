@@ -15,10 +15,16 @@ import tarfile
 import time as _time_mod
 import zipfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
+from app.services.safety.path_validator import ALLOWED_PATHS, validate_path as _validate_path_impl
 from app.utils.logger import logger
+
+
+def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
+    """验证文件路径是否合法 — 小健 2026-06-24"""
+    return _validate_path_impl(file_path, ALLOWED_PATHS)
 
 
 def _build_extract_archive_llm_data(
@@ -132,6 +138,19 @@ async def extract_archive(
     t0 = _time_mod.perf_counter()
 
     try:
+        is_valid, err = _validate_path(source)
+        if not is_valid:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"源路径验证失败: {err}")
+            return build_error(data={"error_detail": f"源路径验证失败: {err}", "params": {"source": source}}, llm_data=llm_data)
+
+        if destination:
+            is_valid_dst, err_dst = _validate_path(destination)
+            if not is_valid_dst:
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"目标路径验证失败: {err_dst}")
+                return build_error(data={"error_detail": f"目标路径验证失败: {err_dst}", "params": {"destination": destination}}, llm_data=llm_data)
+
         if not os.path.exists(source):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"压缩文件不存在: {source}")
