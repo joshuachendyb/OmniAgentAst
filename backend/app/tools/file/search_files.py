@@ -153,6 +153,7 @@ async def search_files(
                     if dup or skip:
                         continue
                     _collect_entry_result(relative, d, Path(os.path.join(root, d)), all_matches, llm_preview)
+                    seen_files.add(relative)
             if type != "directory":
                 for f in files:
                     if len(all_matches) >= MAX_SEARCH_RESULTS:
@@ -164,6 +165,7 @@ async def search_files(
                     if dup or skip:
                         continue
                     _collect_entry_result(relative, f, Path(os.path.join(root, f)), all_matches, llm_preview)
+                    seen_files.add(relative)
 
     try:
         await asyncio.to_thread(_search_sync)
