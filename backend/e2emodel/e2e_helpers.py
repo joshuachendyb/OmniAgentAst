@@ -309,13 +309,17 @@ async def send_chat(
     response_text = ""
     tool_calls: List[Dict[str, Any]] = []
 
+    # 统一墙钟超时(10分钟=600s)，所有测试用例不单独设置超时
+    # 确保超时由send_chat自行处理而非被pytest-timeout杀死 -- 小健 2026-06-24
+    effective_timeout = 600
+
     try:
         # asyncio.timeout提供墙钟超时，与httpx的read timeout(按chunk重置)不同
         # 无论LLM是否持续发chunk，timeout_seconds后强制超时返回部分结果
         # 修复: 超时不杀死进程，返回部分数据保证finally执行write_test_record
         # -- 小健 2026-06-24
-        async with asyncio.timeout(timeout_seconds):
-            async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_seconds)) as client:
+        async with asyncio.timeout(effective_timeout):
+            async with httpx.AsyncClient(timeout=httpx.Timeout(effective_timeout)) as client:
                 try:
                     async with client.stream("POST", chat_url, json=payload) as resp:
                         async for line in resp.aiter_lines():
@@ -1250,14 +1254,16 @@ def write_test_record(
     has_error = result.get("has_error", False)
     end_type = assert_stream_ended(result)
     
+    # 提取回复内容（统一在if/else外初始化）
+    resp = result.get("response_text", "")
+    resp_has_error = False
+    
     # 新的判断标准: 必须有final事件才通过
     if final_event is not None:
         # 有final事件，检查是否有error
         if has_error:
             passed = False
         # 检查回复是否有错误关键词
-        resp = result.get("response_text", "")
-        resp_has_error = False
         _KNOWN_LLM_ERR_PREFIXES = ("LLM流式错误:", "LLM流式错误：")
         if resp:
             _clean = resp.replace("\n", " ").replace("\r", " ").strip()
@@ -1358,7 +1364,8 @@ def write_test_record(
         lines.append("|------|--------|------|")
         for i, tc in enumerate(tool_calls):
             params_str = json.dumps(tc.get("tool_params", {}), ensure_ascii=False)
-            lines.append(f"| {i+1} | {tc.get('tool_name', '')} | `{params_str}` |")
+            params_display = params_str[:100] + "..." if len(params_str) > 100 else params_str
+            lines.append(f"| {i+1} | {tc.get('tool_name', '')} | `{params_display}` |")
     else:
         lines.append("(无工具调用)")
     lines.append("")
@@ -1421,7 +1428,7 @@ def write_test_record(
             lines.append("")
             for i, s in enumerate(action_steps):
                 tn = s.get("tool_name", "?")
-                tp = json.dumps(s.get("tool_params", {}), ensure_ascii=False)[:150]
+                tp = json.dumps(s.get("tool_params", {}), ensure_ascii=False)
                 obs_raw = s.get("observation") or s.get("execution_result", "")
                 obs_str = _obs_to_text(obs_raw)[:200] if obs_raw else "(空)"
                 lines.append(f"**步骤{s.get('step', '?')}: {tn}**")
