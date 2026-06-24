@@ -51,6 +51,8 @@ def _check_network() -> Dict[str, Any]:
             latency = (time.time() - t1) * 1000
             return {"connected": True, "host": host, "latency_ms": round(latency, 2)}
         except (socket.timeout, socket.error, OSError):
+            pass
+        finally:
             if sock:
                 try:
                     sock.close()
@@ -193,9 +195,9 @@ async def http_request(
             request_headers.update(headers)
 
         last_exception = None
-        for attempt in range(retry + 1):
-            try:
-                async with create_http_client(timeout_sec=timeout_sec, proxy=proxy) as client:
+        async with create_http_client(timeout_sec=timeout_sec, proxy=proxy) as client:
+            for attempt in range(retry + 1):
+                try:
                     method_upper = method.upper()
                     request_kwargs = {"url": url, "headers": request_headers}
                     if method_upper in ("POST", "PUT"):
@@ -211,24 +213,24 @@ async def http_request(
                     llm_data = _build_http_request_llm_data("success", duration_ms, url, method,
                                                             response.status_code, parsed["content_type_short"])
                     return build_success(data=data, llm_data=llm_data)
-            except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
-                last_exception = e
-                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code not in RETRYABLE_HTTP_STATUS_CODES:
-                    try:
-                        error_body = e.response.text
-                    except Exception:
-                        error_body = None
-                    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                    llm_data = _build_http_request_llm_data("error", duration_ms, url, method,
-                                                              err_code=ERR_NETWORK_HTTP_ERROR,
-                                                              detail=f"HTTP {e.response.status_code}")
-                    return build_error(
-                        data={"error_detail": f"HTTP {e.response.status_code}", "params": {"url": url, "status_code": e.response.status_code, "body": error_body}},
-                        llm_data=llm_data)
-                if attempt < retry:
-                    await asyncio.sleep(0.5 * (2 ** attempt))
-                    continue
-                break
+                except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
+                    last_exception = e
+                    if isinstance(e, httpx.HTTPStatusError) and e.response.status_code not in RETRYABLE_HTTP_STATUS_CODES:
+                        try:
+                            error_body = e.response.text
+                        except Exception:
+                            error_body = None
+                        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                        llm_data = _build_http_request_llm_data("error", duration_ms, url, method,
+                                                                  err_code=ERR_NETWORK_HTTP_ERROR,
+                                                                  detail=f"HTTP {e.response.status_code}")
+                        return build_error(
+                            data={"error_detail": f"HTTP {e.response.status_code}", "params": {"url": url, "status_code": e.response.status_code, "body": error_body}},
+                            llm_data=llm_data)
+                    if attempt < retry:
+                        await asyncio.sleep(0.5 * (2 ** attempt))
+                        continue
+                    break
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         error_info = _build_http_error(last_exception, url, retry, duration_ms)

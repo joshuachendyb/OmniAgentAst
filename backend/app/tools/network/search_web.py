@@ -183,7 +183,8 @@ async def _search_mcp_engine(engine: str, query: str, num_results: int, proxy: O
             else:
                 data = resp.json()
 
-            result_text = data.get("result", {}).get("content", [{}])[0].get("text", "")
+            content_list = data.get("result", {}).get("content", [])
+            result_text = content_list[0].get("text", "") if content_list else ""
             if not result_text:
                 _search_failed(engine, "返回空数据")
                 return None

@@ -15,42 +15,7 @@ from typing import Any, Dict, List, Optional, Union, Literal, Tuple
 from app.utils.logger import logger
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.constants import ERR_SQL_EXEC
-
-
-def _get_connection(connection_type: str, connection_string: Optional[str], db_path: Optional[str], timeout: int = 30000):
-    """获取数据库连接,返回 (conn, engine_or_none, error_message) — 小健 2026-06-22"""
-    try:
-        if connection_type == "sqlite":
-            if not db_path:
-                return None, None, "SQLite必须提供db_path参数,禁止默认连接应用数据库"
-            return sqlite3.connect(db_path, timeout=timeout / 1000), None, None
-        elif connection_type in ("mysql", "postgresql"):
-            if not connection_string:
-                return None, None, f"错误:{connection_type} 需要提供 connection_string"
-            try:
-                from sqlalchemy import create_engine
-                engine = create_engine(connection_string, connect_args={"timeout": timeout / 1000} if connection_type == "mysql" else {})
-                return engine.connect(), engine, None
-            except ImportError:
-                return None, None, f"错误:{connection_type} 需要安装 sqlalchemy 和对应驱动"
-            except Exception as e:
-                return None, None, f"连接失败: {str(e)}"
-        else:
-            return None, None, f"不支持的数据库类型: {connection_type}"
-    except Exception as e:
-        return None, None, f"获取连接失败: {str(e)}"
-
-
-def _close_connection(conn, engine=None):
-    """关闭数据库连接 — 小健 2026-06-22"""
-    try:
-        if engine:
-            conn.close()
-            engine.dispose()
-        elif conn:
-            conn.close()
-    except Exception as e:
-        logger.warning(f"关闭数据库连接时出错: {e}")
+from app.tools.tool_fc_helper import _get_connection, _close_connection
 
 
 def _check_sql_safety(sql: str, dry_run: bool) -> Tuple[bool, Optional[str], Optional[List[str]]]:

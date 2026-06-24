@@ -97,8 +97,14 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
             event = await _invoke_timer_callback(timer_id, callback)
             _timer_events.append(event)
 
+        def _safe_cb():
+            try:
+                loop.create_task(_timer_cb())
+            except RuntimeError:
+                pass
+
         loop = asyncio.get_running_loop()
-        timer_handle = loop.call_later(delay, lambda: asyncio.create_task(_timer_cb()))
+        timer_handle = loop.call_later(delay, _safe_cb)
         _timers[timer_id] = timer_handle
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

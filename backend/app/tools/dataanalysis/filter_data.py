@@ -40,7 +40,7 @@ def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filter
 
 
 def _load_data_to_df(data: Union[str, List[Dict[str, Any]]], max_rows: Optional[int] = None) -> dict:
-    """加载数据为 DataFrame — 小健 2026-06-22 拆分独立文件"""
+    """加载数据为 DataFrame — 小健 2026-06-22 拆分独立文件 — 小欧 2026-06-24 修复list分支max_rows无效"""
     if isinstance(data, str):
         path = Path(data)
         if not path.exists():
@@ -51,6 +51,8 @@ def _load_data_to_df(data: Union[str, List[Dict[str, Any]]], max_rows: Optional[
             return {"df": pd.read_excel(data, engine="openpyxl", nrows=max_rows)}
         return {"df": pd.read_csv(data, nrows=max_rows)}
     if isinstance(data, list):
+        if max_rows and len(data) > max_rows:
+            data = data[:max_rows]
         return {"df": pd.DataFrame(data)}
     return {"error_detail": "data参数必须是文件路径或数据数组", "params": {"data_type": type(data).__name__}}
 

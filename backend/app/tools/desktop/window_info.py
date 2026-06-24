@@ -110,17 +110,6 @@ def _enum_windows_callback(hwnd: int, windows: List[Dict]) -> bool:
     return True
 
 
-_WINDOW_ACTIONS = {
-    "maximize": (_win32gui.ShowWindow, (_win32con.SW_MAXIMIZE,), "已最大化窗口") if _HAS_WIN32 else None,
-    "minimize": (_win32gui.ShowWindow, (_win32con.SW_MINIMIZE,), "已最小化窗口") if _HAS_WIN32 else None,
-    "restore": (_win32gui.ShowWindow, (_win32con.SW_RESTORE,), "已还原窗口") if _HAS_WIN32 else None,
-    "topmost": (_win32gui.SetWindowPos, (_win32con.HWND_TOPMOST, 0, 0, 0, 0,
-              _win32con.SWP_NOMOVE | _win32con.SWP_NOSIZE), "已置顶窗口") if _HAS_WIN32 else None,
-    "unpin": (_win32gui.SetWindowPos, (_win32con.HWND_NOTOPMOST, 0, 0, 0, 0,
-            _win32con.SWP_NOMOVE | _win32con.SWP_NOSIZE), "已取消置顶窗口") if _HAS_WIN32 else None,
-}
-
-
 def _build_window_info_llm_data(exec_code: str, duration_ms: int, window_count: int, filter_title: str = "", detail: str = "") -> dict:
     """window_info的llm_data构建函数 — 小健 2026-06-22"""
     if exec_code == "error":

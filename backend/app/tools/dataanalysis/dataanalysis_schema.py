@@ -92,22 +92,6 @@ class FilterDataInput(BaseModel):
         default=None,
         description="只返回前N条结果。不填则返回全部"
     )
-    conditions: List[Dict[str, Any]] = Field(
-        ...,
-        description="筛选条件列表。每个条件: {\"column\": \"列名\", \"operator\": \"操作符\", \"value\": 值}。操作符: eq/ne/gt/gte/lt/lte/in/contains/not_contains"
-    )
-    select_columns: Optional[List[str]] = Field(
-        default=None,
-        description="选择返回的列(可选)。如 [\"name\", \"age\"]"
-    )
-    sort_by: Optional[str] = Field(
-        default=None,
-        description="排序的列名,按此列升序排列。不填则不排序"
-    )
-    top_n: Optional[int] = Field(
-        default=None,
-        description="只返回前N条结果。不填则返回全部"
-    )
 
 
 class QuerySqlInput(_DbConnectionMixin):

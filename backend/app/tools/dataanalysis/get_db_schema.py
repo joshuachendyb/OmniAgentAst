@@ -19,42 +19,7 @@ from app.constants import (
     ERR_SCHEMA_FAILED,
     ERR_SQL_EXEC,
 )
-
-
-def _get_connection(connection_type: str, connection_string: Optional[str], db_path: Optional[str], timeout: int = 30000):
-    """获取数据库连接,返回 (conn, engine_or_none, error_message) — 小健 2026-06-22"""
-    try:
-        if connection_type == "sqlite":
-            if not db_path:
-                return None, None, "SQLite必须提供db_path参数,禁止默认连接应用数据库"
-            return sqlite3.connect(db_path, timeout=timeout / 1000), None, None
-        elif connection_type in ("mysql", "postgresql"):
-            if not connection_string:
-                return None, None, f"错误:{connection_type} 需要提供 connection_string"
-            try:
-                from sqlalchemy import create_engine
-                engine = create_engine(connection_string, connect_args={"timeout": timeout / 1000} if connection_type == "mysql" else {})
-                return engine.connect(), engine, None
-            except ImportError:
-                return None, None, f"错误:{connection_type} 需要安装 sqlalchemy 和对应驱动"
-            except Exception as e:
-                return None, None, f"连接失败: {str(e)}"
-        else:
-            return None, None, f"不支持的数据库类型: {connection_type}"
-    except Exception as e:
-        return None, None, f"获取连接失败: {str(e)}"
-
-
-def _close_connection(conn, engine=None):
-    """关闭数据库连接 — 小健 2026-06-22"""
-    try:
-        if engine:
-            conn.close()
-            engine.dispose()
-        elif conn:
-            conn.close()
-    except Exception as e:
-        logger.warning(f"关闭数据库连接时出错: {e}")
+from app.tools.tool_fc_helper import _get_connection, _close_connection
 
 
 def _get_tables(conn, connection_type: str, db_name: Optional[str]) -> List[str]:
@@ -69,22 +34,28 @@ def _get_tables(conn, connection_type: str, db_name: Optional[str]) -> List[str]
 
 
 def _get_columns(conn, connection_type: str, table_name: str) -> List[Dict]:
-    """获取列信息(2路SQL) — 小沈 2026-05-25"""
+    """获取列信息(2路SQL) — 小沈 2026-05-25 — 小欧 2026-06-24 修复SQL注入"""
     if connection_type in ("mysql", "postgresql"):
         from sqlalchemy import text
         result = conn.execute(text("SELECT column_name, data_type, is_nullable, column_key, column_default FROM information_schema.columns WHERE table_name=:t"), {"t": table_name})
         return [{"name": r[0], "type": r[1], "nullable": r[2] == "YES", "pk": r[3] == "PRI", "default": r[4]} for r in result]
+    import re
+    if not re.match(r'^[a-zA-Z0-9_]+$', table_name):
+        return []
     cursor = conn.cursor()
     cursor.execute(f"PRAGMA table_info('{table_name}')")
     return [{"name": r[1], "type": r[2], "nullable": not r[3], "default": r[4], "pk": bool(r[5])} for r in cursor.fetchall()]
 
 
 def _get_indexes(conn, connection_type: str, table_name: str) -> List[Dict]:
-    """获取索引信息(2路SQL) — 小沈 2026-05-25"""
+    """获取索引信息(2路SQL) — 小沈 2026-05-25 — 小欧 2026-06-24 修复SQL注入"""
     if connection_type in ("mysql", "postgresql"):
         from sqlalchemy import text
         result = conn.execute(text("SELECT index_name, non_unique FROM information_schema.statistics WHERE table_name=:t GROUP BY index_name, non_unique"), {"t": table_name})
         return [{"name": r[0], "unique": not bool(r[1])} for r in result]
+    import re
+    if not re.match(r'^[a-zA-Z0-9_]+$', table_name):
+        return []
     cursor = conn.cursor()
     cursor.execute(f"PRAGMA index_list('{table_name}')")
     return [{"name": r[1], "unique": bool(r[2])} for r in cursor.fetchall()]

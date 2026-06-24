@@ -760,6 +760,42 @@ def backup_file(file_path: str, backup_dir: Optional[str] = None, suffix: str = 
     }
 
 
+def _get_connection(connection_type, connection_string=None, db_path=None, timeout=30000):
+    """获取数据库连接,返回 (conn, engine_or_none, error_message) — 小欧 2026-06-24 从dataanalysis提取到公共helper"""
+    try:
+        if connection_type == "sqlite":
+            if not db_path:
+                return None, None, "SQLite必须提供db_path参数,禁止默认连接应用数据库"
+            return sqlite3.connect(db_path, timeout=timeout / 1000), None, None
+        elif connection_type in ("mysql", "postgresql"):
+            if not connection_string:
+                return None, None, f"错误:{connection_type} 需要提供 connection_string"
+            try:
+                from sqlalchemy import create_engine
+                engine = create_engine(connection_string, connect_args={"timeout": timeout / 1000} if connection_type == "mysql" else {})
+                return engine.connect(), engine, None
+            except ImportError:
+                return None, None, f"错误:{connection_type} 需要安装 sqlalchemy 和对应驱动"
+            except Exception as e:
+                return None, None, f"连接失败: {str(e)}"
+        else:
+            return None, None, f"不支持的数据库类型: {connection_type}"
+    except Exception as e:
+        return None, None, f"获取连接失败: {str(e)}"
+
+
+def _close_connection(conn, engine=None):
+    """关闭数据库连接 — 小欧 2026-06-24 从dataanalysis提取到公共helper"""
+    try:
+        if engine:
+            conn.close()
+            engine.dispose()
+        elif conn:
+            conn.close()
+    except Exception:
+        pass
+
+
 __all__ = [
     "_check_module",
     "_decode_bytes_safe",
@@ -805,4 +841,6 @@ __all__ = [
     "LUNAR_HOLIDAYS",
     "LUNAR_HOLIDAY_NAMES",
     "HOLIDAY_ALIASES",
+    "_get_connection",
+    "_close_connection",
 ]

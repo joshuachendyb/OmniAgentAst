@@ -157,9 +157,12 @@ async def _ping(host: str, count: int = 4, timeout: int = 5) -> Dict[str, Any]:
     host = host.strip()
     cmd = _build_ping_cmd(host, count, timeout)
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=count * timeout + 10)
-        raw_output = result.stdout
-    except subprocess.TimeoutExpired:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=count * timeout + 10)
+        raw_output = stdout.decode("utf-8", errors="replace")
+    except asyncio.TimeoutError:
         return {"success": False, "error_detail": f"Ping超时({count * timeout + 10}秒)", "err_code": ERR_NETWORK_TIMEOUT, "params": {"host": host}}
     except FileNotFoundError:
         return {"success": False, "error_detail": "系统ping命令不可用", "err_code": ERR_SHELL_COMMAND_NOT_FOUND, "params": {"host": host}}
@@ -182,12 +185,15 @@ async def _port_check(host: str, port: int, timeout: int = 3) -> Dict[str, Any]:
     host = host.strip()
     service = well_known_ports.get(port, "Unknown")
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(timeout)
-    try:
-        is_open = sock.connect_ex((host, port)) == 0
-    finally:
-        sock.close()
+    def _do_check():
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        try:
+            return sock.connect_ex((host, port)) == 0
+        finally:
+            sock.close()
+
+    is_open = await asyncio.to_thread(_do_check)
 
     data = {"host": host, "port": port, "is_open": is_open, "service": service}
     return {"success": True, "data": data, "is_open": is_open, "service": service}
