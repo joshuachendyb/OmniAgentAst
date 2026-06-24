@@ -79,7 +79,7 @@ class ExecuteCodeInput(BaseModel):
         default="python", description="语言类型: python 或 javascript,默认python"
     )
     timeout: int = Field(
-        default=30, ge=1, le=300, description="超时时间(秒),默认为30秒,最大300秒"
+        default=30000, ge=1, le=300000, description="超时时间(毫秒),默认30000(30秒),最大300000(5分钟)"
     )
     working_dir: Optional[str] = Field(
         default=None, description="工作目录(绝对路径,可选)。默认为当前工作目录。目录不存在时自动创建"
