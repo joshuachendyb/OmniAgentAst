@@ -3,7 +3,7 @@
 F8: compress_files — 压缩文件
 
 从file_tools.py拆分而来 — 小欧 2026-06-22
-内聚: _has_wildcard / _compress_entries / _write_zip_entries / _write_zip / _write_targz
+内聚: _has_wildcard / _compress_entries / _write_zip_entries / _write_zip / _write_tar
       _build_compress_result / _get_total_size_sync / compress_files主函数
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
@@ -127,11 +127,12 @@ def _write_zip(
     return compressed_files, False
 
 
-def _write_targz(source: Path, destination: Path, deadline: float) -> Tuple[List[str], bool]:
-    """写入tar.gz压缩包 — 小健 2026-05-25 — 小健 2026-06-24 添加deadline检查"""
+def _write_tar(source: Path, destination: Path, deadline: float,
+               mode: str = "w:gz") -> Tuple[List[str], bool]:
+    """写入tar压缩包 — 小健 2026-05-25 — 小健 2026-06-24 重命名并支持多种tar格式 (w= uncompressed, w:gz=gzip, w:bz2=bzip2)"""
     compressed_files: List[str] = []
     timed_out = False
-    with tarfile.open(destination, 'w:gz') as tf:
+    with tarfile.open(destination, mode) as tf:
         for file_path, arcname in _compress_entries(source, deadline):
             if _time_mod.monotonic() > deadline:
                 timed_out = True
@@ -225,10 +226,10 @@ async def compress_files(
         llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail="No active task", hint="请先开始一个任务")
         return build_error(data={"error_detail": "No active task", "params": {}}, llm_data=llm_data)
 
-    if format not in ("zip", "tar.gz"):
+    if format not in ("zip", "tar", "tar.gz", "tar.bz2"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"不支持的压缩格式: {format}", hint="支持zip/tar.gz")
-        return build_error(data={"error_detail": f"不支持的压缩格式: {format},支持格式: zip, tar.gz", "params": {"format": format}}, llm_data=llm_data)
+        llm_data = _build_compress_files_llm_data("error", duration_ms, source, detail=f"不支持的压缩格式: {format}", hint="支持zip/tar/tar.gz/tar.bz2")
+        return build_error(data={"error_detail": f"不支持的压缩格式: {format},支持格式: zip, tar, tar.gz, tar.bz2", "params": {"format": format}}, llm_data=llm_data)
 
     src = Path(source)
     dst = Path(destination)
@@ -263,8 +264,12 @@ async def compress_files(
             try:
                 if format == "zip":
                     compressed_files, _ = _write_zip(src, dst, compression_level, password, _cf_deadline)
-                else:
-                    compressed_files, _ = _write_targz(src, dst, _cf_deadline)
+                elif format == "tar":
+                    compressed_files, _ = _write_tar(src, dst, _cf_deadline, "w")
+                elif format == "tar.gz":
+                    compressed_files, _ = _write_tar(src, dst, _cf_deadline, "w:gz")
+                elif format == "tar.bz2":
+                    compressed_files, _ = _write_tar(src, dst, _cf_deadline, "w:bz2")
                 compressed_size = dst.stat().st_size
                 return _build_compress_result(
                     str(src), str(dst), format, compression_level,

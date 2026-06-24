@@ -230,26 +230,13 @@ async def _get_directory_tree(
         }
         children: list = []
         try:
-            items = [item for item in current_path.iterdir()]
+            items = [item for item in current_path.iterdir() if item.is_dir()]
             if not include_hidden:
                 items = [item for item in items if not item.name.startswith('.')]
             for item in _sort_items(items):
-                if item.is_dir():
-                    child = _build_tree(item, depth + 1)
-                    if child:
-                        children.append(child)
-                else:
-                    try:
-                        st = item.stat()
-                        children.append({
-                            "name": item.name,
-                            "path": str(item.absolute()),
-                            "type": "file",
-                            "size": st.st_size,
-                            "mtime": st.st_mtime,
-                        })
-                    except (PermissionError, OSError):
-                        pass
+                child = _build_tree(item, depth + 1)
+                if child:
+                    children.append(child)
         except (PermissionError, OSError):
             pass
         node["children"] = children
