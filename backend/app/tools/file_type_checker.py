@@ -152,11 +152,11 @@ def check_file_type(
 
 
 def _suggest_doc_tool(suffix: str) -> str:
-    """根据文档扩展名返回具体的工具建议 — 小欧 2026-06-24"""
+    """根据文档扩展名返回具体的工具建议 — 小欧 2026-06-24 — 小欧 2026-06-24 清理死代码(.doc/.xls/.ppt)"""
     doc_tool_map = {
-        '.docx': 'read_docx', '.doc': 'read_docx',
-        '.pptx': 'read_pptx', '.ppt': 'read_pptx',
-        '.xlsx': 'read_xlsx', '.xls': 'read_xlsx',
+        '.docx': 'read_docx',
+        '.pptx': 'read_pptx',
+        '.xlsx': 'read_xlsx',
         '.pdf': 'read_pdf',
     }
     tool = doc_tool_map.get(suffix)
