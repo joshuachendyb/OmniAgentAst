@@ -77,7 +77,6 @@ async def _try_read_file_with_encodings(
             if auto and auto.get("data", {}).get("encoding"):
                 encodings_to_try.append(auto["data"]["encoding"])
         encodings_to_try.extend(["utf-8", "gbk", "gb2312", "utf-8-sig"])
-        do_detect = preferred is None
         for enc in encodings_to_try:
             if enc is None:
                 continue
@@ -86,7 +85,7 @@ async def _try_read_file_with_encodings(
                     with open(path, 'r', encoding=e, errors='replace') as f:
                         return f.read()
                 content = await asyncio.to_thread(_read)
-                if do_detect and '\ufffd' in content:
+                if '\ufffd' in content:
                     content = None
                     continue
                 return content, enc, None
