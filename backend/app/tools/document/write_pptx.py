@@ -52,13 +52,11 @@ def _select_layout(prs, slide_type):
 
 
 def _add_pptx_content(slide, content):
-    """处理正文到 content placeholder — 小欧 2026-06-19"""
+    """处理正文到 content placeholder — 小欧 2026-06-19; 小健 2026-06-24 修复跳过idx=1的bug"""
     body = None
     for sh in slide.placeholders:
         idx = sh.placeholder_format.idx
-        if idx == 1:
-            continue
-        if idx >= 2:
+        if idx >= 1:  # idx=1是Content Placeholder，不应跳过
             body = sh.text_frame
             break
     if body is None:
@@ -104,14 +102,24 @@ def _add_pptx_table(slide, table_data):
             tbl.cell(ri, ci).text = str(val)
 
 
+def _normalize_text(value, default=""):
+    """文本标准化 — 小健 2026-06-24"""
+    if isinstance(value, str):
+        return value
+    return str(value) if value is not None else default
+
+
 def _add_pptx_slide(prs, slide_data):
-    """添加一页幻灯片 — 小欧 2026-06-19"""
+    """添加一页幻灯片 — 小欧 2026-06-19; 小健 2026-06-24 增加参数验证"""
+    if not isinstance(slide_data, dict):
+        return  # 跳过无效slide
+    
     slide_type = slide_data.get("type", 1)
-    title = slide_data.get("title", "")
-    subtitle = slide_data.get("subtitle", "")
+    title = _normalize_text(slide_data.get("title", ""))
+    subtitle = _normalize_text(slide_data.get("subtitle", ""))
     content = slide_data.get("content")
     tables = slide_data.get("tables")
-
+    
     layout = _select_layout(prs, slide_type)
     slide = prs.slides.add_slide(layout)
 
@@ -127,9 +135,10 @@ def _add_pptx_slide(prs, slide_data):
     if content:
         _add_pptx_content(slide, content)
 
-    if tables:
+    if tables and isinstance(tables, list):
         for td in tables:
-            _add_pptx_table(slide, td)
+            if isinstance(td, list):
+                _add_pptx_table(slide, td)
 
 
 def _build_pptx_presentation(slides: list):
