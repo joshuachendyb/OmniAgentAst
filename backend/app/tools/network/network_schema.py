@@ -25,14 +25,23 @@ class HttpRequestInput(BaseModel):
     url: str = Field(
         ..., description="请求的目标URL,如 https://api.example.com/data"
     )
-    method: Literal["GET", "POST", "PUT", "DELETE"] = Field(
-        default="GET", description="HTTP方法,默认GET。支持GET/POST/PUT/DELETE"
+    method: Literal["GET", "POST", "PUT", "DELETE", "PATCH"] = Field(
+        default="GET", description="HTTP方法,默认GET。支持GET/POST/PUT/DELETE/PATCH"
     )
     headers: Optional[Dict[str, str]] = Field(
         default=None, description="请求头字典,如 {\"Authorization\": \"Bearer token\", \"Content-Type\": \"application/json\"}"
     )
     body: Optional[Dict[str, Any]] = Field(
-        default=None, description="JSON请求体(POST/PUT时使用),自动设Content-Type为application/json"
+        default=None, description="JSON请求体(POST/PUT/PATCH/DELETE时使用),自动设Content-Type为application/json"
+    )
+    timeout: int = Field(
+        default=30000, ge=1000, le=300000, description="超时时间(毫秒),默认30000,范围1000-300000"
+    )
+    proxy: Optional[str] = Field(
+        default=None, description="代理地址,如 http://127.0.0.1:8080"
+    )
+    retry: int = Field(
+        default=3, ge=0, le=10, description="重试次数,默认3,范围0-10"
     )
 
 
@@ -41,7 +50,16 @@ class DownloadFileInput(BaseModel):
         ..., description="要下载文件的URL,如 https://example.com/file.zip"
     )
     destination_path: str = Field(
-        ..., description="文件保存的完整路径(绝对路径),如 D:/Downloads/file.zip"
+        ..., description="文件保存的相对路径(相对于下载目录),如 file.zip 或 subdir/file.zip"
+    )
+    headers: Optional[Dict[str, str]] = Field(
+        default=None, description="请求头字典,如 {\"Authorization\": \"Bearer token\"}"
+    )
+    timeout: int = Field(
+        default=300000, ge=5000, le=3600000, description="超时时间(毫秒),默认300000,范围5000-3600000"
+    )
+    proxy: Optional[str] = Field(
+        default=None, description="代理地址,如 http://127.0.0.1:8080"
     )
 
 
@@ -55,11 +73,32 @@ class FetchWebpageInput(BaseModel):
     extract_format: Literal["markdown", "html", "text"] = Field(
         default="markdown", description="提取格式:推荐用markdown(保留结构)/html(原始)/text(纯文本)"
     )
+    js_render: bool = Field(
+        default=False, description="是否启用JS渲染(处理动态页面),默认false"
+    )
+    timeout: int = Field(
+        default=30000, ge=1000, le=120000, description="超时时间(毫秒),默认30000,范围1000-120000"
+    )
+    proxy: Optional[str] = Field(
+        default=None, description="代理地址,如 http://127.0.0.1:8080"
+    )
 
 
 class SearchWebInput(BaseModel):
     query: str = Field(
         ..., description="搜索查询字符串,支持中英文"
+    )
+    num_results: int = Field(
+        default=10, ge=1, le=50, description="返回结果数量,默认10,范围1-50"
+    )
+    allowed_domains: Optional[str] = Field(
+        default=None, description="允许搜索的域名列表(逗号分隔),如 'example.com,github.com'"
+    )
+    blocked_domains: Optional[str] = Field(
+        default=None, description="禁止搜索的域名列表(逗号分隔),如 'pornhub.com'"
+    )
+    proxy: Optional[str] = Field(
+        default=None, description="代理地址,如 http://127.0.0.1:8080"
     )
 
 
@@ -85,6 +124,12 @@ class NetworkDiagnoseInput(BaseModel):
         default=None,
         ge=1, le=65535,
         description="目标端口号(mode=port时【必填】,范围1-65535;mode=ping时忽略)"
+    )
+    count: int = Field(
+        default=4, ge=1, le=20, description="ping请求次数,默认4,范围1-20"
+    )
+    timeout: int = Field(
+        default=5, ge=1, le=30, description="超时时间(秒),默认5,范围1-30"
     )
 
 
