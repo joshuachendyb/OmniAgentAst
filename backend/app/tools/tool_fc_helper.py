@@ -676,9 +676,15 @@ def _parse_xml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
 
     def elem_to_dict(elem):
         children = list(elem)
+        attrs = dict(elem.attrib) if elem.attrib else None
         if not children:
-            return elem.text
+            text = (elem.text or "").strip()
+            if attrs:
+                return {"@attrs": attrs, "@text": text}
+            return text
         result = {}
+        if attrs:
+            result["@attrs"] = attrs
         for child in children:
             child_data = elem_to_dict(child)
             if child.tag in result:
