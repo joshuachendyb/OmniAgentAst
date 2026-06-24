@@ -166,8 +166,9 @@ def _build_list_directory_llm_data(
 
 async def _get_directory_tree(
     dir_path: str, max_depth: int = 10,
+    include_hidden: bool = False, sort_by: str = "name",
 ) -> Dict[str, Any]:
-    """获取目录树原始数据 — 小欧 2026-06-22 — 小健 2026-06-22 删除helper计时"""
+    """获取目录树原始数据 — 小欧 2026-06-22 — 小健 2026-06-22 删除helper计时 — 小欧 2026-06-24 修复include_hidden和sort_by"""
     is_valid, error_msg = _validate_path(dir_path)
     if not is_valid:
         return {"error_detail": error_msg, "params": {"dir_path": dir_path}}
@@ -178,17 +179,20 @@ async def _get_directory_tree(
     if not path.is_dir():
         return {"error_detail": "不是目录", "params": {"dir_path": dir_path}}
 
-    # 统计: 独立走文件系统计文件/目录/总大小 (不依赖tree)
     def _count_tree_fs(root: Path) -> Tuple[int, int, int]:
         fc = dc = ts = 0
         try:
             for entry in os.scandir(root):
                 try:
                     if entry.is_dir(follow_symlinks=False):
+                        if not include_hidden and entry.name.startswith('.'):
+                            continue
                         dc += 1
                         sub_f, sub_d, sub_s = _count_tree_fs(Path(entry.path))
                         fc += sub_f; dc += sub_d; ts += sub_s
                     else:
+                        if not include_hidden and entry.name.startswith('.'):
+                            continue
                         fc += 1
                         ts += entry.stat().st_size
                 except (PermissionError, OSError):
@@ -196,6 +200,19 @@ async def _get_directory_tree(
         except (PermissionError, OSError):
             pass
         return fc, dc, ts
+
+    def _sort_items(items):
+        if sort_by == "size":
+            return sorted(items, key=lambda x: x.name.lower())
+        elif sort_by == "mtime":
+            def _get_mtime(p):
+                try:
+                    return p.stat().st_mtime
+                except OSError:
+                    return 0
+            return sorted(items, key=lambda x: (-_get_mtime(x), x.name.lower()))
+        else:
+            return sorted(items, key=lambda x: x.name.lower())
 
     def _build_tree(current_path: Path, depth: int = 0) -> Optional[Dict[str, Any]]:
         if depth > max_depth:
@@ -211,14 +228,15 @@ async def _get_directory_tree(
             "size": None,
             "mtime": st.st_mtime,
         }
-        # tree模式: 只显示目录节点,不展开文件(避免输出爆炸)
         children: list = []
         try:
-            for item in sorted(current_path.iterdir(), key=lambda x: x.name.lower()):
-                if item.is_dir():
-                    child = _build_tree(item, depth + 1)
-                    if child:
-                        children.append(child)
+            items = [item for item in current_path.iterdir() if item.is_dir()]
+            if not include_hidden:
+                items = [item for item in items if not item.name.startswith('.')]
+            for item in _sort_items(items):
+                child = _build_tree(item, depth + 1)
+                if child:
+                    children.append(child)
         except (PermissionError, OSError):
             pass
         node["children"] = children
@@ -249,7 +267,7 @@ async def list_directory(
         return build_error(data={"error_detail": f"sort_by只支持name/size/mtime", "params": {"sort_by": sort_by}}, llm_data=llm_data)
 
     if format_mode == "tree":
-        tree_result = await _get_directory_tree(dir_path=dir_path, max_depth=max_depth)
+        tree_result = await _get_directory_tree(dir_path=dir_path, max_depth=max_depth, include_hidden=include_hidden, sort_by=sort_by)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if "error_detail" in tree_result:
             llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=tree_result["error_detail"])
