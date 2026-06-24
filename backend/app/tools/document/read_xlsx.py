@@ -3,7 +3,7 @@
 D4: read_xlsx — 读取Excel/CSV/XLS文档
 
 从document_tools.py拆分而来 — 小欧 2026-06-22
-内聚: _read_xlsx / _read_xls / _read_csv_stdlib 辅助函数
+内聚: _read_xlsx / _read_csv_stdlib 辅助函数 — 小欧 2026-06-24 移除._read_xls(不支持.xls)
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -113,34 +113,6 @@ def _read_xlsx_inner(file_path: str, max_rows: int = 10000, sheet_name: Optional
         return {"error_detail": str(e), "params": {"file_path": file_path}}
 
 
-def _read_xls_inner(file_path: str, max_rows: int = 10000) -> Dict[str, Any]:
-    """读取.xls文件(内部) — 小欧 2026-06-22
-    辅助函数: 仅返回原始dict，不含build3/llm_data — 小欧 2026-06-22"""
-    try:
-        import xlrd
-
-        path = Path(file_path)
-        if not path.exists():
-            return {"error_detail": "文件不存在", "params": {"file_path": file_path}}
-
-        wb = xlrd.open_workbook_xls(str(path))
-        sheet_names = wb.sheet_names()
-        ws = wb.sheet_by_index(0)
-
-        headers = []
-        rows = []
-        for i in range(min(ws.nrows, max_rows)):
-            row_data = [ws.cell_value(i, j) for j in range(ws.ncols)]
-            if i == 0:
-                headers = [str(h) if h else f"column_{j}" for j, h in enumerate(row_data)]
-            else:
-                rows.append(row_data)
-
-        return {"headers": headers, "rows": rows, "row_count": len(rows), "sheet_names": sheet_names}
-    except Exception as e:
-        return {"error_detail": str(e), "params": {"file_path": file_path}}
-
-
 def _read_csv_stdlib_inner(
     file_path: str,
     encoding: str = "utf-8",
@@ -187,10 +159,10 @@ def _read_csv_stdlib_inner(
 
 
 def read_xlsx(file_name: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
-    """读取Excel/CSV/XLS文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件
+    """读取Excel/CSV(.xlsx/.csv)文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件
     主函数: 负责build3+llm_data调用 — 小欧 2026-06-22
     参数: sheet_name - 指定工作表名（仅.xlsx），None则读取所有工作表 — 小健 2026-06-24
-    小欧 2026-06-24 增加文件类型前置检查（.csv跳过检查）"""
+    小欧 2026-06-24 增加文件类型前置检查（.csv跳过检查） — 小欧 2026-06-24 移除.xls死代码"""
     path = Path(file_name)
     suffix = path.suffix.lower()
     t0 = _time_mod.perf_counter()
@@ -205,8 +177,6 @@ def read_xlsx(file_name: str, sheet_name: Optional[str] = None) -> Dict[str, Any
 
     if suffix == ".csv":
         result = _read_csv_stdlib_inner(file_name, encoding="utf-8", delimiter=",", has_header=True, max_rows=10000)
-    elif suffix == ".xls":
-        result = _read_xls_inner(file_name, max_rows=10000)
     else:
         if not _check_module("openpyxl"):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
