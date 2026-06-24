@@ -7,8 +7,14 @@ v0.17.1
 ### refactor: 文件类型分类优化和文档添加(1项)
 - 196d436a9: 文件类型分类优化和文档添加 - 小欧
 
+### fix: 工具前置检查死锁修复(4项)
+- 5e3861e13: 移除read_docx.py中.doc死代码(pandoc转换) - 小欧
+- cf4bcaf3c: 移除read_xlsx.py中.xls死代码(xlrd读取) - 小欧
+- efc589f42: 更新document_register.py描述和示例移除.doc/.xls引用+xlrd依赖 - 小欧
+- f26d02408: 清理file_type_checker.py中_suggest_doc_tool死代码(.doc/.xls/.ppt) - 小欧
+
 ### 合计
-- refactor: 1项 = 共1项
+- refactor: 1项 | fix: 4项 = 共5项
 
 ---
 
