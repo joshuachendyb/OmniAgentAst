@@ -75,7 +75,7 @@ class ExecuteCodeInput(BaseModel):
     code: str = Field(
         ..., description="要执行的代码(字符串),必填参数"
     )
-    language: str = Field(
+    language: Literal["python", "javascript"] = Field(
         default="python", description="语言类型: python 或 javascript,默认python"
     )
     timeout: int = Field(

@@ -147,6 +147,10 @@ def execute_shell_command(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_execute_shell_command_llm_data("error", duration_ms, command, -1, "", "", shell_type or "", ERR_PARAMETER_INVALID, f"工作目录不存在: {cwd}")
         return build_error(data={"error_detail": f"工作目录不存在: {cwd}", "params": {"cwd": cwd}}, llm_data=llm_data)
+    if timeout < 1 or timeout > 600000:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_execute_shell_command_llm_data("error", duration_ms, command, -1, "", "", shell_type or "", ERR_PARAMETER_INVALID, f"timeout必须在1-600000毫秒之间，当前值: {timeout}")
+        return build_error(data={"error_detail": f"timeout必须在1-600000毫秒之间", "params": {"timeout": timeout}}, llm_data=llm_data)
 
     timeout_sec = timeout / 1000.0
     env = os.environ.copy()
