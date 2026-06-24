@@ -64,7 +64,7 @@ async def read_config_file(
 ) -> Dict[str, Any]:
     """读取结构化配置文件 — 小欧 2026-06-17 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 修复计时铁规 — 小健 2026-06-24 重命名"""
     t0 = _time_mod.perf_counter()
-    encoding = "utf-8"
+    encoding = "utf-8-sig"
     action = "read"
     if not file_path:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
