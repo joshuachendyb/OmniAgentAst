@@ -167,6 +167,15 @@ async def grep_file_content(
     """
     t0 = _time_mod.perf_counter()
     actual_dir = search_dir
+    valid_output_modes = ("content", "count", "files_with_matches")
+    if output_mode not in valid_output_modes:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"output_mode无效: {output_mode},可选值: {valid_output_modes}")
+        return build_error(data={"error_detail": f"output_mode无效: {output_mode},可选值: {valid_output_modes}", "params": {"output_mode": output_mode}}, llm_data=llm_data)
+    if not actual_dir or not actual_dir.strip():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail="search_dir不能为空")
+        return build_error(data={"error_detail": "search_dir不能为空", "params": {"search_dir": actual_dir}}, llm_data=llm_data)
     is_valid, error_msg = _validate_path(actual_dir)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -190,6 +199,11 @@ async def grep_file_content(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"搜索目录不存在: {actual_dir}")
         return build_error(data={"error_detail": "搜索目录不存在", "params": {"search_dir": actual_dir}}, llm_data=llm_data)
+
+    if search_path.is_file():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, search_dir=actual_dir, detail=f"search_dir是一个文件而非目录: {actual_dir}")
+        return build_error(data={"error_detail": f"search_dir是一个文件而非目录: {actual_dir}", "params": {"search_dir": actual_dir}}, llm_data=llm_data)
 
     deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("grep_file_content", TOOL_TIMEOUTS["default"]) - 2
 
