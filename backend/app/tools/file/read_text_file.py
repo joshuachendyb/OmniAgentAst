@@ -92,7 +92,7 @@ async def _try_read_file_with_encodings(
                     with open(path, 'r', encoding=e, errors='replace') as f:
                         return f.read()
                 content = await asyncio.to_thread(_read)
-                if do_detect and '\ufffd' in content:
+                if '\ufffd' in content:
                     content = None
                     continue
                 return content, enc, None
@@ -121,9 +121,11 @@ def _select_lines(
             selected = lines[start_idx:start_idx + limit]
         else:
             selected = lines[start_idx:]
+        n = len(selected)
         params.update({
             "offset": offset, "limit": limit,
-            "start_line": start_idx + 1, "end_line": start_idx + len(selected),
+            "start_line": start_idx + 1 if n > 0 else 0,
+            "end_line": start_idx + n if n > 0 else 0,
         })
     else:
         selected = lines
