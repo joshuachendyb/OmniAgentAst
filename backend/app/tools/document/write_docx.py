@@ -19,6 +19,56 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.constants import ERR_WRITE_DOCX
 from app.utils.logger import logger
+from app.utils.table_helper import parse_markdown_table, calculate_column_widths, get_table_header_style_config
+
+
+def _set_docx_table_style(table):
+    """设置表格边框和表头样式 — 小健 2026-06-24"""
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    from docx.shared import RGBColor, Pt
+    
+    tbl = table._tbl
+    tblPr = tbl.tblPr if tbl.tblPr is not None else OxmlElement('w:tblPr')
+    tblBorders = OxmlElement('w:tblBorders')
+    for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
+        border = OxmlElement(f'w:{border_name}')
+        border.set(qn('w:val'), 'single')
+        border.set(qn('w:sz'), '4')
+        border.set(qn('w:color'), '000000')
+        tblBorders.append(border)
+    tblPr.append(tblBorders)
+    if tbl.tblPr is None:
+        tbl.insert(0, tblPr)
+    
+    header_config = get_table_header_style_config()
+    if len(table.rows) > 0:
+        for cell in table.rows[0].cells:
+            for para in cell.paragraphs:
+                for run in para.runs:
+                    run.font.bold = header_config["bold"]
+                    run.font.size = Pt(header_config["font_size"])
+            tcPr = cell._tc.get_or_add_tcPr()
+            shd = OxmlElement('w:shd')
+            shd.set(qn('w:fill'), header_config["bg_color"])
+            tcPr.append(shd)
+            for para in cell.paragraphs:
+                for run in para.runs:
+                    run.font.color.rgb = RGBColor(255, 255, 255)
+
+
+def _set_docx_column_widths(table, table_data):
+    """设置列宽自适应 — 小健 2026-06-24"""
+    from docx.shared import Inches
+    
+    if not table_data or not table_data[0]:
+        return
+    
+    col_widths = calculate_column_widths(table_data, total_width=6.0)
+    for ci, width in enumerate(col_widths):
+        if ci < len(table.columns):
+            for cell in table.columns[ci].cells:
+                cell.width = Inches(width)
 
 
 def _build_write_docx_llm_data(
@@ -43,24 +93,6 @@ def _build_write_docx_llm_data(
     }
 
 
-
-def _parse_markdown_table(lines: List[str], start_idx: int) -> tuple:
-    """解析Markdown表格，返回(表格数据, 结束索引) — 小健 2026-06-24"""
-    table_rows = []
-    i = start_idx
-    
-    while i < len(lines):
-        line = lines[i].strip()
-        if not line or not line.startswith('|'):
-            break
-        
-        cells = [cell.strip() for cell in line.split('|')[1:-1]]
-        if cells:
-            if not all(c.replace('-', '').replace(':', '') == '' for c in cells):
-                table_rows.append(cells)
-        i += 1
-    
-    return table_rows, i
 
 
 def write_docx(
@@ -109,12 +141,14 @@ def write_docx(
                 elif re.match(r'^\d+\.\s', line):
                     doc.add_paragraph(re.sub(r'^\d+\.\s', '', line), style='List Number')
                 elif line.startswith('|') and '|' in line[1:]:
-                    table_rows, i = _parse_markdown_table(lines, i)
+                    table_rows, i = parse_markdown_table(lines, i)
                     if table_rows:
                         t = doc.add_table(rows=len(table_rows), cols=len(table_rows[0]))
                         for ri, row_data in enumerate(table_rows):
                             for ci, cell_text in enumerate(row_data):
                                 t.rows[ri].cells[ci].text = str(cell_text)
+                        _set_docx_table_style(t)
+                        _set_docx_column_widths(t, table_rows)
                     continue
                 else:
                     doc.add_paragraph(line)
@@ -126,6 +160,8 @@ def write_docx(
                 for ri, row_data in enumerate(table_data):
                     for ci, cell_text in enumerate(row_data):
                         t.rows[ri].cells[ci].text = str(cell_text)
+                _set_docx_table_style(t)
+                _set_docx_column_widths(t, table_data)
 
         path = Path(file_name)
         path.parent.mkdir(parents=True, exist_ok=True)

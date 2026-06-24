@@ -63,7 +63,17 @@ class WriteDocxInput(BaseModel):
 
 class WriteXlsxInput(BaseModel):
     file_name: str = Field(..., description="文件名+路径(.xlsx)")
-    data: Optional[List[Dict[str, Any]]] = Field(default=None, description="写入的数据。对象数组格式:[{\"列1\":\"a\",\"列2\":\"b\"},{\"列1\":\"c\",\"列2\":\"d\"}]。key做列名,value做单元格内容")
+    data: Optional[List[Dict[str, Any]]] = Field(
+        default=None, 
+        description="""写入的数据。对象数组格式:[{"列1":"a","列2":"b"},{"列1":"c","列2":"d"}]
+- key做列名，value做单元格内容
+- 自动合并所有对象的key作为表头（列顺序按首次出现顺序）
+- 不同对象的key可以不同，缺失的列自动填空
+
+示例：
+- [{"姓名":"张三","年龄":25},{"姓名":"李四","年龄":30}] → 表头:姓名,年龄 | 数据:张三,25 | 李四,30
+- [{"A":"1"},{"B":"2"}] → 表头:A,B | 数据:1,空 | 空,2"""
+    )
     sheet_name: str = Field(default="Sheet1", description="工作表名")
 
 
@@ -77,11 +87,34 @@ class WritePdfInput(BaseModel):
 - 段落：直接写文本，空行分隔段落
 - 无序列表：- 列表项  或  * 列表项
 - 有序列表：1. 第一项  2. 第二项  （数字会自动重新编号）
-示例：\"# 报告标题\\n\\n第一段内容\\n\\n## 章节\\n\\n- 要点1\\n- 要点2\""""
+- 表格：| 列1 | 列2 |  （Markdown表格语法，第一行为表头）
+示例：\"# 报告标题\\n\\n第一段内容\\n\\n## 数据表格\\n\\n| 项目 | 数值 |\\n|------|------|\\n| A | 100 |\\n\\n## 章节\\n\\n- 要点1\\n- 要点2\"
+
+与table_data互斥，优先使用content"""
+    )
+    table_data: Optional[List[List[str]]] = Field(
+        default=None,
+        description="""表格数据(二维数组)。格式：[["列1", "列2"], ["A", "B"], ["C", "D"]]
+第一行为表头，后续为数据行。用于纯表格文档，与content互斥。如果content有值，此参数忽略"""
     )
 
 
-_SLIDE_DESC = "幻灯片列表。每项Dict包含:title(标题,必填),content(正文内容,选填)。有title无content=封面页,都有=内容页。content支持纯文本或段落列表"
+_SLIDE_DESC = """幻灯片列表。每项Dict包含：
+- title（必填）：标题
+- subtitle（可选）：副标题（仅封面页type=0或"cover"时显示）
+- type（可选）：布局类型，0/"cover"=封面页，1/"content"=内容页，2/"two"=两栏页，默认1
+- content（可选）：正文内容，支持3种格式：
+  1. 字符串：纯文本
+  2. 列表：["段落1", "段落2"] 或 [{"type":"paragraph","text":"段落"}, {"type":"bullets","items":["要点1","要点2"]}]
+  3. 字典：{"type":"bullets","items":["要点1","要点2"]}
+- tables（可选）：表格列表，每个表格为二维数组 [["列1","列2"],["A","B"]]
+
+示例：
+[
+  {"type":"cover","title":"封面","subtitle":"副标题"},
+  {"title":"目录","content":["一、背景","二、方案","三、总结"]},
+  {"title":"数据","tables":[[["项目","数值"],["A","100"],["B","200"]]]}
+]"""
 class WritePptxInput(BaseModel):
     file_name: str = Field(..., description="文件名+路径(.pptx)")
     slides: Optional[List[Dict]] = Field(default=None, description=_SLIDE_DESC)

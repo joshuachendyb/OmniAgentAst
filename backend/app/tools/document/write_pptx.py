@@ -19,6 +19,7 @@ from app.tools.tool_fc_helper import _check_module
 from app.constants import ERR_DOC_WRITE_PPTX, ERR_DOC_NO_PPTX
 from app.utils.json_utils import coerce_json
 from app.utils.logger import logger
+from app.utils.table_helper import calculate_column_widths, get_table_header_style_config
 
 
 def _build_write_pptx_llm_data(
@@ -89,17 +90,62 @@ def _add_pptx_content(slide, content):
                         p.level = 1
 
 
-def _add_pptx_table(slide, table_data):
-    """添加表格到幻灯片(独立shape) — 小欧 2026-06-19"""
+def _add_pptx_table(slide, table_data, start_top=None):
+    """添加表格到幻灯片(独立shape) — 小欧 2026-06-19; 小健 2026-06-24 修复多表格重叠和超出边界、列宽自适应、表头样式"""
     if not table_data or not table_data[0] or len(table_data[0]) == 0:
-        return
+        return start_top or Inches(2)
+    
+    from pptx.util import Inches, Emu, Pt
+    from pptx.dml.color import RGBColor
+    
     rows, cols = len(table_data), len(table_data[0])
-    from pptx.util import Inches
-    left, top, width, height = Inches(1), Inches(2), Inches(6), Inches(0.4 * rows)
+    left = Inches(1)
+    top = start_top if start_top else Inches(2)
+    width = Inches(6)
+    
+    slide_height = Inches(7.5)
+    max_height = int(slide_height - top - Inches(0.5))
+    row_height = min(int(Inches(0.4)), max_height // rows)
+    height = Emu(row_height * rows)
+    
+    if height > max_height:
+        height = Emu(max_height)
+        row_height = max_height // rows
+    
     tbl = slide.shapes.add_table(rows, cols, left, top, width, height).table
+    
+    col_widths = calculate_column_widths(table_data, total_width=6.0)
+    total_width_emu = int(width)
+    for ci, w in enumerate(col_widths):
+        col_width_emu = int(total_width_emu * w / 6.0)
+        tbl.columns[ci].width = Emu(col_width_emu)
+    
+    header_config = get_table_header_style_config()
     for ri, row in enumerate(table_data):
         for ci, val in enumerate(row):
-            tbl.cell(ri, ci).text = str(val)
+            if ci < cols:
+                cell = tbl.cell(ri, ci)
+                text = str(val)
+                if '\n' in text:
+                    lines = text.split('\n')
+                    cell.text_frame.paragraphs[0].text = lines[0]
+                    for line in lines[1:]:
+                        cell.text_frame.add_paragraph().text = line
+                else:
+                    cell.text = text
+                
+                if ri == 0:
+                    for para in cell.text_frame.paragraphs:
+                        for run in para.runs:
+                            run.font.bold = header_config["bold"]
+                            run.font.size = Pt(header_config["font_size"])
+                    cell.fill.solid()
+                    cell.fill.fore_color.rgb = RGBColor(0, 51, 102)
+                    for para in cell.text_frame.paragraphs:
+                        for run in para.runs:
+                            run.font.color.rgb = RGBColor(255, 255, 255)
+    
+    return Emu(int(top) + int(height) + int(Inches(0.3)))
 
 
 def _normalize_text(value, default=""):
@@ -136,9 +182,11 @@ def _add_pptx_slide(prs, slide_data):
         _add_pptx_content(slide, content)
 
     if tables and isinstance(tables, list):
+        from pptx.util import Inches
+        table_top = Inches(2)  # 初始top位置
         for td in tables:
             if isinstance(td, list):
-                _add_pptx_table(slide, td)
+                table_top = _add_pptx_table(slide, td, table_top)
 
 
 def _build_pptx_presentation(slides: list):

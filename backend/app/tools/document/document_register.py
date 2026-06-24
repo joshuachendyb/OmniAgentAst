@@ -108,6 +108,7 @@ EXAMPLES = {
         {"file_name": "D:/output/structured_report.pdf", "title": "结构化报告", "content": "# 第一章\n\n正文内容\n\n## 第二节\n\n- 列表项1\n- 列表项2"},
         {"file_name": "D:/output/tech_report.pdf", "title": "代码审查报告", "content": "# 审查概览\n\n本次审查覆盖3个模块。\n\n## 问题清单\n\n### 严重问题\n\n1. SQL注入风险\n2. 硬编码密钥"},
         {"file_name": "D:/output/guide.pdf", "title": "使用指南", "content": "# 快速开始\n\n## 安装步骤\n\n1. 下载安装包\n2. 运行安装程序\n3. 配置环境变量\n\n## 注意事项\n\n- 需要管理员权限\n- 建议关闭杀毒软件"},
+        {"file_name": "D:/output/data_table.pdf", "title": "数据表", "table_data": [["姓名", "年龄", "城市"], ["张三", "25", "北京"], ["李四", "30", "上海"]]},
     ],
     "write_pptx": [
         {"file_name": "D:/output/cover.pptx", "slides": [{"title": "项目汇报"}]},

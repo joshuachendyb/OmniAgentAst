@@ -60,6 +60,16 @@
 |--------|------|------|--------|
 | `mark_test_round` | 在app.log注入结构化测试轮次标记 | round_num, total_rounds, description="" | None |
 
+### 1.7 表格辅助（table_helper.py）【v0.17.0新增】
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `parse_markdown_table` | 解析Markdown表格，返回(表格数据, 结束索引) | lines, start_idx | Tuple[List[List[str]], int] |
+| `calculate_column_widths` | 计算列宽比例（按内容长度自适应） | table_data, total_width=1.0 | List[float] |
+| `get_table_header_style_config` | 获取表头样式配置（共享配置） | 无 | Dict[str, Any] |
+| `get_table_border_config` | 获取表格边框配置（共享配置） | 无 | Dict[str, Any] |
+| `normalize_table_data` | 标准化表格数据（所有元素转字符串） | table_data | List[List[str]] |
+
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `api_success` | 统一成功响应 {"success":True, "message":xxx} | message, **extra | dict |

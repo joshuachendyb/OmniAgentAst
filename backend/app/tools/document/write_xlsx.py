@@ -18,6 +18,55 @@ from app.tools.tool_fc_helper import _check_module
 from app.constants import ERR_WRITE_XLSX, ERR_DOC_NO_OPENPYXL
 from app.utils.json_utils import coerce_json
 from app.utils.logger import logger
+from app.utils.table_helper import calculate_column_widths, get_table_header_style_config
+
+
+def _set_xlsx_table_style(ws):
+    """设置Excel表格样式（表头背景色、数据单元格对齐和边框） — 小健 2026-06-24"""
+    from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
+    from openpyxl.utils import get_column_letter
+    
+    header_config = get_table_header_style_config()
+    header_fill = PatternFill(
+        start_color=header_config["bg_color"],
+        end_color=header_config["bg_color"],
+        fill_type="solid"
+    )
+    
+    data_alignment = Alignment(horizontal="left", vertical="center")
+    data_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    for col_idx in range(1, ws.max_column + 1):
+        header_cell = ws.cell(row=1, column=col_idx)
+        header_cell.fill = header_fill
+        header_cell.font = Font(
+            bold=header_config["bold"],
+            color=header_config["text_color"]
+        )
+        
+        for row_idx in range(2, ws.max_row + 1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            cell.alignment = data_alignment
+            cell.border = data_border
+
+
+def _adjust_xlsx_column_width(ws):
+    """调整Excel列宽自适应 — 小健 2026-06-24"""
+    from openpyxl.utils import get_column_letter
+    
+    for col_idx in range(1, ws.max_column + 1):
+        max_len = 0
+        col_letter = get_column_letter(col_idx)
+        for row_idx in range(1, ws.max_row + 1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            if cell.value:
+                max_len = max(max_len, len(str(cell.value)))
+        ws.column_dimensions[col_letter].width = max(max_len + 2, 8)
 
 
 def _build_write_xlsx_llm_data(
@@ -87,6 +136,10 @@ def write_xlsx(
             for row_idx, row_data in enumerate(rows, 2):
                 for col_idx, cell_data in enumerate(row_data, 1):
                     ws.cell(row=row_idx, column=col_idx, value=cell_data)
+        
+        if headers or rows:
+            _set_xlsx_table_style(ws)
+            _adjust_xlsx_column_width(ws)
 
         path = Path(file_name)
         path.parent.mkdir(parents=True, exist_ok=True)

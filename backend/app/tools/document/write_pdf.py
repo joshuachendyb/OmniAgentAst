@@ -13,13 +13,42 @@ D7: write_pdf — 写入PDF文档
 import re
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.constants import ERR_WRITE_PDF
 from reportlab.lib.units import mm
 from app.utils.logger import logger
+from app.utils.table_helper import parse_markdown_table, get_table_header_style_config
+
+
+def _create_pdf_table(table_data, chinese_style):
+    """创建PDF表格 — 小健 2026-06-24"""
+    from reportlab.platypus import Table, TableStyle
+    from reportlab.lib import colors
+    
+    header_config = get_table_header_style_config()
+    bg_color = colors.HexColor('#' + header_config["bg_color"])
+    
+    table = Table(table_data)
+    style_commands = [
+        ('BACKGROUND', (0, 0), (-1, 0), bg_color),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('FONTNAME', (0, 0), (-1, -1), chinese_style.fontName),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('FONTSIZE', (0, 1), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('TOPPADDING', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+        ('TOPPADDING', (0, 1), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+    ]
+    
+    table.setStyle(TableStyle(style_commands))
+    return table
 
 
 def _build_write_pdf_llm_data(
@@ -49,8 +78,9 @@ def write_pdf(
     file_name: str,
     title: Optional[str] = None,
     content: Optional[str] = None,
+    table_data: Optional[List[List[str]]] = None,
 ) -> Dict[str, Any]:
-    """写入PDF文件 — 小欧 2026-06-19 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化（Markdown格式）"""
+    """写入PDF文件 — 小欧 2026-06-19 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化（Markdown格式）+ table_data支持"""
     t0 = _time_mod.perf_counter()
 
     if not _check_module("reportlab"):
@@ -101,9 +131,11 @@ def write_pdf(
 
         if content:
             lines = content.split('\n')
-            for line in lines:
-                line = line.rstrip()
+            i = 0
+            while i < len(lines):
+                line = lines[i].rstrip()
                 if not line:
+                    i += 1
                     continue
                 if line.startswith('# '):
                     h1_style = ParagraphStyle('h1', parent=chinese_style, fontSize=18, spaceBefore=12, spaceAfter=6)
@@ -127,9 +159,22 @@ def write_pdf(
                 elif re.match(r'^\d+\.\s', line):
                     elements.append(Paragraph(re.sub(r'^\d+\.\s', '', line), chinese_style))
                     elements.append(Spacer(1, 2 * mm))
+                elif line.startswith('|') and '|' in line[1:]:
+                    table_rows, i = parse_markdown_table(lines, i)
+                    if table_rows:
+                        pdf_table = _create_pdf_table(table_rows, chinese_style)
+                        elements.append(pdf_table)
+                        elements.append(Spacer(1, 5 * mm))
+                    continue
                 else:
                     elements.append(Paragraph(line, chinese_style))
                     elements.append(Spacer(1, 3 * mm))
+                i += 1
+        
+        elif table_data:
+            if table_data and len(table_data) > 0:
+                pdf_table = _create_pdf_table(table_data, chinese_style)
+                elements.append(pdf_table)
 
         if not elements:
             elements.append(Paragraph(" ", chinese_style))
