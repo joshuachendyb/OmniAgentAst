@@ -44,8 +44,9 @@ def _build_rename_file_llm_data(
 async def rename_file(
     source: str,
     destination: str,
+    overwrite: bool = False,
 ) -> Dict[str, Any]:
-    """重命名文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：独立builder"""
+    """重命名文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：独立builder — 小健 2026-06-24 添加overwrite参数"""
     t0 = _time_mod.perf_counter()
     src = Path(source)
     new_name = Path(destination).name
@@ -56,7 +57,7 @@ async def rename_file(
         llm_data = _build_rename_file_llm_data("success", duration_ms, source, new_name=new_name)
         return build_success(data={}, llm_data=llm_data)
 
-    result = await _move_file_impl(source_path=source, destination_path=str(dst), overwrite=False)
+    result = await _move_file_impl(source_path=source, destination_path=str(dst), overwrite=overwrite)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
 
     if result.get("success"):
