@@ -87,6 +87,7 @@ async def _move_file_impl(
                 if not overwrite:
                     raise FileExistsError(f"目标路径已存在: {dst},请设置overwrite=True")
                 if dst.is_dir():
+                    logger.warning(f"[move_file] overwrite模式: 目标目录已存在,将删除后移动: {dst}")
                     shutil.rmtree(str(dst))
                 else:
                     dst.unlink()
