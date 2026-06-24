@@ -9,17 +9,12 @@ D2: read_docx — 读取Word文档
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
-import os
-import shutil
-import subprocess
-import tempfile
 import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
-from app.tools.tool_constants import SUBPROCESS_TIMEOUT_LONG
 from app.tools.file_type_checker import check_for_document_tool
 from app.constants import ERR_DOC_READ_DOCX
 from app.utils.logger import logger
@@ -51,7 +46,7 @@ def _build_read_docx_llm_data(
 
 
 def read_docx(file_name: str) -> Dict[str, Any]:
-    """读取Word文档 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加文件类型前置检查"""
+    """读取Word(.docx)文档 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加文件类型前置检查 — 小欧 2026-06-24 移除.doc死代码(pandoc转换)"""
     t0 = _time_mod.perf_counter()
     file_path = file_name
 
@@ -61,29 +56,6 @@ def read_docx(file_name: str) -> Dict[str, Any]:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_docx_llm_data("error", duration_ms, file_name, detail=error_detail)
         return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
-
-    path = Path(file_name)
-    suffix = path.suffix.lower()
-
-    if suffix == ".doc":
-        pandoc = shutil.which("pandoc")
-        if not pandoc:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_docx_llm_data("error", duration_ms, file_name, detail="读取.doc文件需要安装pandoc转换工具")
-            return build_error(data={"error_detail": "读取.doc文件需要安装pandoc", "params": {"file_name": file_name}}, llm_data=llm_data)
-        tmp = tempfile.NamedTemporaryFile(suffix=".docx", delete=False)
-        tmp_path = tmp.name
-        tmp.close()
-        try:
-            subprocess.run([pandoc, file_name, "-o", tmp_path], capture_output=True, text=True,
-                         timeout=SUBPROCESS_TIMEOUT_LONG, check=True)
-            file_path = tmp_path
-        except subprocess.CalledProcessError as e:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_docx_llm_data("error", duration_ms, file_name, detail=f"pandoc转换.doc失败: {e.stderr}")
-            return build_error(data={"error_detail": f"pandoc转换失败", "params": {"file_name": file_name}}, llm_data=llm_data)
-        finally:
-            pass
 
     if not _check_module("docx"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -131,9 +103,3 @@ def read_docx(file_name: str) -> Dict[str, Any]:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_docx_llm_data("error", duration_ms, file_name, detail=str(e))
         return build_error(data={"error_detail": str(e), "params": {"file_name": file_name}}, llm_data=llm_data)
-    finally:
-        if suffix == ".doc":
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
