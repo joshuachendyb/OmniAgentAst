@@ -12,6 +12,7 @@ S1: execute_shell_command — 执行Shell命令
 import os
 import shutil
 import subprocess
+import threading
 import time as _time_mod
 import uuid
 from datetime import datetime
@@ -32,6 +33,7 @@ from app.constants import (
 )
 
 _background_shells: Dict[str, Dict[str, Any]] = {}
+_background_shells_lock = threading.Lock()
 
 
 def _build_execute_shell_command_llm_data(
@@ -40,7 +42,7 @@ def _build_execute_shell_command_llm_data(
     err_code: str = "", detail: str = "",
 ) -> Dict[str, Any]:
     """execute_shell_command的llm_data构建函数 — 小欧 2026-06-22"""
-    cmd_short = command[:100] if command else ""
+    cmd_short = (command[:60] + "..." + command[-37:]) if command and len(command) > 100 else (command[:100] if command else "")
     if exec_code == "error":
         _detail = detail or (f"退出码{returncode}" if returncode is not None else "执行异常")
         return {
@@ -75,6 +77,8 @@ def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
     """
     data = {
         "stdout": stdout_str, "stderr": stderr_str,
+        "shell_type": shell_type,
+        "returncode": returncode,
     }
     if timed_out:
         return {"success": False, "error_detail": f"命令执行超时({timeout}毫秒)", "data": data, "duration_ms": duration_ms, "params": {"shell_type": shell_type, "timeout": timeout}, "err_code": ERR_SHELL_TIMEOUT}
@@ -84,8 +88,9 @@ def _build_shell_result(returncode: int, stdout_str: str, stderr_str: str,
 
 
 def _run_shell_background(command: str, executable: Optional[str],
-                           cwd: Optional[str], env: Optional[dict]) -> Dict[str, Any]:
-    """启动后台shell命令 — 小欧 2026-06-22
+                           cwd: Optional[str], env: Optional[dict],
+                           shell_type: str = "powershell") -> Dict[str, Any]:
+    """启动后台shell命令 — 小欧 2026-06-22 — 小欧 2026-06-24 修复硬编码shell_type
     返回原始字典，不调用build3，不含llm_data — 北京老陈 2026-06-22
     """
     process = subprocess.Popen(
@@ -94,13 +99,15 @@ def _run_shell_background(command: str, executable: Optional[str],
         cwd=cwd, env=env, executable=executable,
     )
     shell_id = f"shell_{uuid.uuid4().hex[:8]}"
-    _background_shells[shell_id] = {
-        "process": process, "command": command,
-        "started_at": datetime.now().isoformat(),
-        "shell_type": "powershell", "cwd": cwd,
-    }
+    with _background_shells_lock:
+        _background_shells[shell_id] = {
+            "process": process, "command": command,
+            "started_at": datetime.now().isoformat(),
+            "shell_type": shell_type, "cwd": cwd,
+        }
     data = {"shell_id": shell_id, "is_running": True, "started_at": datetime.now().isoformat()}
-    return {"success": True, "data": data, "duration_ms": 0, "params": {"shell_type": "powershell"}, "command": command[:100]}
+    cmd_short = (command[:60] + "..." + command[-37:]) if command and len(command) > 100 else (command[:100] if command else "")
+    return {"success": True, "data": data, "duration_ms": 0, "params": {"shell_type": shell_type}, "command": cmd_short}
 
 
 def cleanup_background_shells() -> int:
@@ -187,11 +194,12 @@ def execute_shell_command(
             stdout_bytes, stderr_bytes = proc.communicate(timeout=timeout_sec)
         except subprocess.TimeoutExpired:
             timed_out = True
-            proc.kill()
             try:
-                stdout_bytes, stderr_bytes = proc.communicate(timeout=SUBPROCESS_TIMEOUT_SHORT)
-            except subprocess.TimeoutExpired:
-                stdout_bytes, stderr_bytes = b"", b""
+                proc.kill()
+                proc.wait(timeout=5)
+            except Exception:
+                pass
+            stdout_bytes, stderr_bytes = b"", b""
 
         stdout_str = _decode_bytes_safe(stdout_bytes)
         stderr_str = _decode_bytes_safe(stderr_bytes)

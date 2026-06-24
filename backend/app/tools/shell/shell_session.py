@@ -78,11 +78,11 @@ def shell_session(
         stderr_str = _read_stream_nonblocking(process.stderr, "utf-8")
         returncode = process.poll()
         is_running = returncode is None
-        if not is_running:
-            _background_shells.pop(shell_id, None)
         resp_data = {
-            "shell_id": shell_id, "stdout": stdout_str, "stderr": stderr_str, "is_running": is_running, "returncode": returncode
+            "shell_id": shell_id, "stdout": stdout_str, "stderr": stderr_str, "is_running": is_running, "returncode": returncode,
         }
+        if not is_running:
+            resp_data["completed"] = True
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if is_running or returncode == 0:
             llm_data = _build_shell_session_llm_data("success", duration_ms, shell_id, is_running=is_running)
@@ -108,8 +108,14 @@ def shell_session(
             process.wait(timeout=SUBPROCESS_TIMEOUT_SHORT)
             terminated = True
             returncode = process.returncode
-        except Exception:
-            pass
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+                process.wait(timeout=2)
+                terminated = True
+                returncode = process.returncode
+            except Exception:
+                pass
         _background_shells.pop(shell_id, None)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_shell_session_llm_data("success", duration_ms, shell_id, terminated=terminated)

@@ -15,7 +15,7 @@ import subprocess
 import time as _time_mod
 from typing import Any, Dict
 
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, build_warning
 from app.constants import ERR_SHELL_FIND_COMMAND
 
 
@@ -31,6 +31,15 @@ def _build_find_command_llm_data(
             "summary": f"查找命令失败: {command}",
             "action": {"tool": "find_command", "tool_zh": "查找命令", "target": command, "params": {"command": command}},
             "status": {"exec_code": "error", "message": "查找命令失败", "code": err_code or ERR_SHELL_FIND_COMMAND, "detail": detail, "hint": ""},
+            "duration_ms": duration_ms,
+            "metrics": {},
+        }
+    if exec_code == "warning":
+        hint = "" if available else "请确认是否已安装并添加到PATH"
+        return {
+            "summary": f"命令 '{command}' 不可用",
+            "action": {"tool": "find_command", "tool_zh": "查找命令", "target": command, "params": {"command": command}},
+            "status": {"exec_code": "warning", "message": "命令不可用", "code": "", "detail": "", "hint": hint},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -78,10 +87,11 @@ def find_command(command: str, all_paths: bool = False) -> Dict[str, Any]:
                 paths = [p.strip() for p in result.stdout.strip().split('\n') if p.strip()]
                 data = {"command": command, "paths": paths, "count": len(paths)}
                 llm_data = _build_find_command_llm_data("success", duration_ms, command, paths=paths, count=len(paths))
+                return build_success(data=data, llm_data=llm_data)
             else:
                 data = {"command": command, "paths": [], "count": 0}
-                llm_data = _build_find_command_llm_data("success", duration_ms, command, available=False)
-            return build_success(data=data, llm_data=llm_data)
+                llm_data = _build_find_command_llm_data("warning", duration_ms, command, available=False)
+                return build_warning(data=data, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_find_command_llm_data("error", duration_ms, command, detail=str(e))
