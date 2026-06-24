@@ -32,17 +32,22 @@ TEXT_EXTENSIONS = {
     '.makefile', '.cmake', '.gradle', '.maven',
 }
 
-# 媒体文件扩展名
+# 媒体文件扩展名 — 小健 2026-06-24 更新：图片12+音频9+视频6=27种，移除.flv，新增.mid/.midi
 MEDIA_EXTENSIONS = {
-    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.ico', '.tiff', '.tif', '.svg',
-    '.heic', '.heif', '.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac', '.wma',
-    '.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm',
+    # 图片（12种）
+    '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp',
+    '.svg', '.tiff', '.tif', '.ico', '.heic', '.heif',
+    # 音频（9种）
+    '.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac',
+    '.wma', '.mid', '.midi',
+    # 视频（6种）
+    '.mp4', '.avi', '.mov', '.mkv', '.webm', '.wmv',
 }
 
-# 文档文件扩展名
+# 文档文件扩展名 — 小健 2026-06-24 更新：仅保留实际支持的4种格式
+# 不支持的文档格式：.doc .xls .ppt .odt .ods .odp .rtf
 DOCUMENT_EXTENSIONS = {
-    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
-    '.odt', '.ods', '.odp', '.rtf',
+    '.pdf', '.docx', '.xlsx', '.pptx',
 }
 
 # 配置文件扩展名 — 已删除config工具，配置文件由text工具处理 — 小欧 2026-06-24
@@ -53,6 +58,28 @@ DOCUMENT_EXTENSIONS = {
 # 小欧 2026-06-24 修正：只保留实际支持的4种格式
 ARCHIVE_EXTENSIONS = {
     '.zip', '.tar', '.tar.gz', '.tar.bz2',
+}
+
+# 不支持的文件格式 — 小健 2026-06-24 新增
+# 用途：当用户操作这些格式时，给出明确的"不支持"提示和转换建议
+UNSUPPORTED_EXTENSIONS = {
+    # 不支持的文档格式（7种）— 旧版Office + 开源办公格式
+    '.doc', '.xls', '.ppt', '.odt', '.ods', '.odp', '.rtf',
+    # 不支持的压缩格式（2种）
+    '.rar', '.7z',
+}
+
+# 不支持格式的转换建议映射 — 小健 2026-06-24
+UNSUPPORTED_FORMAT_HINTS = {
+    '.doc': '请转换为.docx格式',
+    '.xls': '请转换为.xlsx格式',
+    '.ppt': '请转换为.pptx格式',
+    '.odt': '请转换为.docx格式',
+    '.ods': '请转换为.xlsx格式',
+    '.odp': '请转换为.pptx格式',
+    '.rtf': '请转换为.docx格式',
+    '.rar': '请使用.zip格式压缩',
+    '.7z': '请使用.zip格式压缩',
 }
 
 
@@ -176,25 +203,31 @@ def _check_media_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[str]
 
 
 def _check_document_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[str]]:
-    """检查是否为文档文件 — 小欧 2026-06-24 修正错误信息格式"""
+    """检查是否为文档文件 — 小健 2026-06-24 更新：引用UNSUPPORTED_FORMAT_HINTS"""
+    if suffix in UNSUPPORTED_FORMAT_HINTS:
+        hint = UNSUPPORTED_FORMAT_HINTS[suffix]
+        return False, f"工具选择错误：'{suffix}'是不支持的文档格式。{hint}。支持的格式: {', '.join(sorted(DOCUMENT_EXTENSIONS))}", None
     if suffix not in DOCUMENT_EXTENSIONS:
         if suffix in TEXT_EXTENSIONS:
             return False, f"工具选择错误：'{suffix}'是文本文件，不能用文档工具操作。建议使用read_text_file工具", "read_text_file"
         elif suffix in MEDIA_EXTENSIONS:
             return False, f"工具选择错误：'{suffix}'是媒体文件，不能用文档工具操作。建议使用read_media_file工具", "read_media_file"
         else:
-            return False, f"工具选择错误：'{suffix}'不是支持的文档格式。支持的格式: {', '.join(DOCUMENT_EXTENSIONS)}", None
+            return False, f"工具选择错误：'{suffix}'不是支持的文档格式。支持的格式: {', '.join(sorted(DOCUMENT_EXTENSIONS))}", None
     
     return True, "", None
 
 
 def _check_archive_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[str]]:
-    """检查是否为压缩文件 — 小欧 2026-06-24 修正错误信息格式"""
+    """检查是否为压缩文件 — 小健 2026-06-24 更新：引用UNSUPPORTED_FORMAT_HINTS"""
+    if suffix in UNSUPPORTED_FORMAT_HINTS and suffix in ('.rar', '.7z'):
+        hint = UNSUPPORTED_FORMAT_HINTS[suffix]
+        return False, f"工具选择错误：'{suffix}'是不支持的压缩格式。{hint}。支持的格式: {', '.join(sorted(ARCHIVE_EXTENSIONS))}", None
     if suffix not in ARCHIVE_EXTENSIONS:
         if suffix in TEXT_EXTENSIONS:
             return False, f"工具选择错误：'{suffix}'是文本文件，不是压缩文件。建议使用read_text_file工具", "read_text_file"
         else:
-            return False, f"工具选择错误：'{suffix}'不是支持的压缩格式。支持的格式: {', '.join(ARCHIVE_EXTENSIONS)}", None
+            return False, f"工具选择错误：'{suffix}'不是支持的压缩格式。支持的格式: {', '.join(sorted(ARCHIVE_EXTENSIONS))}", None
     
     return True, "", None
 
@@ -332,4 +365,6 @@ __all__ = [
     "MEDIA_EXTENSIONS",
     "DOCUMENT_EXTENSIONS",
     "ARCHIVE_EXTENSIONS",
+    "UNSUPPORTED_EXTENSIONS",
+    "UNSUPPORTED_FORMAT_HINTS",
 ]
