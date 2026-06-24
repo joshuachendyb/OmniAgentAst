@@ -325,12 +325,9 @@ class PromptLogger:
         current_log["LLM调用记录"].append(entry)
 
     def log_step_yield(self, step_dict: dict, round_number: int = 0):
-        """记录每一步 yield 给前端的 JSON 数据 — 北京老陈 2026-06-14"""
+        """记录每一步 yield 给前端的 JSON 数据 — 北京老陈 2026-06-14 — 小欧 2026-06-24 删除chunk跳过，所有step类型都记录"""
         current_log = self._get_current_log()
         if not current_log:
-            return
-        # 跳过chunk事件: 单次长回复产生几百个chunk, 对Prompt分析无意义, 徒增文件大小 — 小欧 2026-06-23
-        if step_dict.get("type") == "chunk":
             return
         if "步骤产出" not in current_log:
             current_log["步骤产出"] = []
