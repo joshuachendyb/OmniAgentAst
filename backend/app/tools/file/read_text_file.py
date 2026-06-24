@@ -14,7 +14,7 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error
+from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import (
     MAX_READ_SIZE,
     BINARY_EXTENSIONS,
@@ -59,11 +59,22 @@ def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
 
 
 def _is_binary_file(file_path: str) -> Tuple[bool, str]:
-    """检测文件是否为二进制文件 — 小沈 2026-05-02 — 小欧 2026-06-22"""
+    """检测文件是否为二进制文件 — 小沈 2026-05-02 — 小欧 2026-06-22 — 小欧 2026-06-24 增加内容检测"""
     path = Path(file_path)
     suffix = path.suffix.lower()
     if suffix in BINARY_EXTENSIONS:
         return True, f"文件后缀 '{suffix}' 属于二进制文件类型，禁止使用text工具操作"
+    if path.exists() and path.is_file():
+        try:
+            with open(path, 'rb') as f:
+                chunk = f.read(8192)
+            if b'\x00' in chunk:
+                return True, f"文件包含空字节(0x00),疑似二进制文件"
+            null_count = chunk.count(b'\xff\xfe') + chunk.count(b'\xfe\xff')
+            if null_count > 0 and len(chunk) < 100:
+                return True, f"文件包含BOM标记但内容过短,疑似二进制文件"
+        except Exception:
+            pass
     return False, ""
 
 
@@ -109,14 +120,17 @@ def _select_lines(
     offset: Optional[int] = None,
     limit: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """根据参数选择行并构建 _data 字典 — 小沈 2026-05-25 — 小欧 2026-06-22
+    """根据参数选择行并构建 _data 字典 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 offset超范围返回warning
     offset: 负数=从尾倒数;正数=分页(必须配合limit);None=全文
     limit: 仅配合offset正数(分页)"""
     total = len(lines)
     params = {}
+    warning = None
 
     if offset is not None:
         start_idx = max(0, offset - 1) if offset > 0 else max(0, total + offset)
+        if start_idx >= total and total > 0:
+            warning = f"offset={offset}超出文件范围(共{total}行),返回空内容"
         if limit is not None:
             selected = lines[start_idx:start_idx + limit]
         else:
@@ -131,12 +145,15 @@ def _select_lines(
         selected = lines
 
     content = "".join(selected)
-    return {
+    result = {
         "content": content,
         "total_lines": total,
         "line_count": len(selected),
         **params,
     }
+    if warning:
+        result["warning"] = warning
+    return result
 
 
 def _build_read_text_file_llm_data(
@@ -144,7 +161,7 @@ def _build_read_text_file_llm_data(
     file_path: str = "", line_count: int = 0,
     total_lines: int = 0, file_size: int = 0, detail: str = "",
 ) -> Dict[str, Any]:
-    """read_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22"""
+    """read_text_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-06-24 增加warning"""
     if exec_code == "error":
         return {
             "summary": f"读取失败: {detail}",
@@ -152,6 +169,17 @@ def _build_read_text_file_llm_data(
             "status": {"exec_code": "error", "message": f"读取失败: {detail}", "code": ERR_FILE_READ_FAILED, "detail": detail, "hint": "请检查文件路径是否正确"},
             "duration_ms": duration_ms,
             "metrics": {},
+        }
+    if exec_code == "warning":
+        return {
+            "summary": f"读取 {file_path}，{line_count}行，{file_size}字节。注意: {detail}",
+            "action": {"tool": "read_text_file", "tool_zh": "读取", "target": file_path, "params": {"file_path": file_path}},
+            "status": {"exec_code": "warning", "message": f"读取成功但有警告: {detail}", "code": "", "detail": detail, "hint": "请检查offset参数是否超出文件范围"},
+            "duration_ms": duration_ms,
+            "metrics": {
+                "lines": {"value": line_count, "text": f"{line_count}行"},
+                "total_lines": {"value": total_lines, "text": f"{total_lines}行"},
+            },
         }
     return {
         "summary": f"读取 {file_path}，{line_count}行，{file_size}字节",
@@ -193,13 +221,21 @@ async def read_text_file(
             )
             return build_error(data={"error_detail": f"limit必须>=1", "params": {"limit": limit}}, llm_data=llm_data)
 
+        if offset is not None and offset == 0:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_read_text_file_llm_data(
+                "error", duration_ms, file_path=file_path,
+                detail="offset不能为0,行号从1开始;不传offset则读全文",
+            )
+            return build_error(data={"error_detail": "offset不能为0,行号从1开始", "params": {"offset": offset}}, llm_data=llm_data)
+
         if offset is not None and offset > 0 and limit is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_text_file_llm_data(
                 "error", duration_ms, file_path=file_path,
-                detail="offset为正数时必须带limit,单独使用请用负数offset(从尾倒数)或不传(全文)",
+                detail="offset为正数时必须带limit参数指定行数,示例: offset=10,limit=20读取第10-30行;offset=-20读最后20行;不传offset读全文",
             )
-            return build_error(data={"error_detail": "offset为正数时必须带limit", "params": {"offset": offset}}, llm_data=llm_data)
+            return build_error(data={"error_detail": "offset为正数时必须带limit,示例: offset=10,limit=20读第10-30行", "params": {"offset": offset, "limit": limit}}, llm_data=llm_data)
 
         if offset is not None and offset < 0 and limit is not None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -254,8 +290,17 @@ async def read_text_file(
         _data["encoding"] = used_encoding
         _line_count = _data.get("line_count", 0)
         _total_lines = _data.get("total_lines", 0)
+        _warning = _data.pop("warning", None)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+
+        if _warning:
+            llm_data = _build_read_text_file_llm_data(
+                "warning", duration_ms, file_path=file_path,
+                line_count=_line_count, total_lines=_total_lines, file_size=file_size, detail=_warning,
+            )
+            return build_warning(data=_data, llm_data=llm_data)
+
         llm_data = _build_read_text_file_llm_data(
             "success", duration_ms, file_path=file_path,
             line_count=_line_count, total_lines=_total_lines, file_size=file_size,
