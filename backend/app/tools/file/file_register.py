@@ -6,8 +6,9 @@ File Register - 文件工具注册点 v3.0
 【精简时间】2026-05-18 小沈 — 第17章工具精简:26→11
 【拆分时间】2026-06-16 小沈 — 组合工具拆分:archive_tool→2, file_operation→4
 【拆分时间】2026-06-17 小欧 — data_file_format→2: read_config_file, write_config_file
+【删除时间】2026-06-24 小欧 — 删除read_config_file/write_config_file，text工具已覆盖
 
-15个工具清单(F1-F15):
+13个工具清单(F1-F13):
 F1  read_text_file     — 读取文本文件
 F2  write_text_file    — 写文本文件
 F3  read_media_file    — 读媒体文件
@@ -21,8 +22,6 @@ F10 move_file          — 移动文件
 F11 copy_file          — 复制文件
 F12 delete_file        — 删除文件
 F13 rename_file        — 重命名文件
-F14 read_config_file    — 读取结构化配置文件
-F15 write_config_file   — 写入结构化配置文件
 
 
 创建时间: 2026-04-26
@@ -34,8 +33,6 @@ F15 write_config_file   — 写入结构化配置文件
 from app.tools.file.file_schema import (
     CompressFilesInput,
     CopyFileInput,
-    ReadConfigFileInput,
-    WriteConfigFileInput,
     DeleteFileInput,
     EditTextFileInput,
     ExtractArchiveInput,
@@ -62,8 +59,6 @@ from app.tools.file.move_file import move_file
 from app.tools.file.copy_file import copy_file
 from app.tools.file.delete_file import delete_file
 from app.tools.file.rename_file import rename_file
-from app.tools.file.read_config_file import read_config_file
-from app.tools.file.write_config_file import write_config_file
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
 from app.utils.logger import logger
@@ -75,7 +70,6 @@ FILE_TOOL_DEPENDENCIES = {
         "read_text_file", "write_text_file", "read_media_file", "edit_text_file",
         "list_directory", "search_files", "grep_file_content",
         "extract_archive", "move_file", "copy_file", "delete_file", "rename_file",
-        "read_config_file", "write_config_file"
     ]
 }
 FILE_TOOL_DEPENDENCIES["compress_files"] = ["pyzipper"]
@@ -111,10 +105,6 @@ FILE_TOOL_DESCRIPTIONS = {
     "delete_file": """删除文件或目录(默认可恢复)。适用场景:需要清理临时文件、删除过期数据时使用。""",
 
     "rename_file": """重命名文件或目录。适用场景:需要修改文件名、规范化命名时使用。""",
-
-    "read_config_file": """读取JSON/YAML/TOML等结构化配置文件。适用场景:需要查看或分析配置文件内容时使用。""",
-
-    "write_config_file": """写入结构化配置文件(JSON/YAML/TOML)。适用场景:需要创建或修改配置文件时使用。""",
 }
 
 
@@ -173,14 +163,6 @@ FILE_TOOL_EXAMPLES = {
     "rename_file": [
         {"source": "D:/old.txt", "destination": "new.txt"},
     ],
-    "read_config_file": [
-        {"file_path": "D:/config.json"},
-        {"file_path": "D:/config.yaml"},
-    ],
-    "write_config_file": [
-        {"file_path": "D:/config.yaml", "data": {"key": "value"}},
-        {"file_path": "D:/config.json", "data": {"key": "value"}, "indent": 2},
-    ],
 }
 
 
@@ -202,8 +184,6 @@ TOOL_INPUT_MODELS = {
     "copy_file": CopyFileInput,
     "delete_file": DeleteFileInput,
     "rename_file": RenameFileInput,
-    "read_config_file": ReadConfigFileInput,
-    "write_config_file": WriteConfigFileInput,
 }
 
 
@@ -230,10 +210,7 @@ def _register_file_tools():
         "copy_file": copy_file,
         "delete_file": delete_file,
         "rename_file": rename_file,
-        "read_config_file": read_config_file,
     }
-    if write_config_file is not None:
-        tool_methods["write_config_file"] = write_config_file
     
     CONFIRMATION_MAP = {
         "delete_file": True,

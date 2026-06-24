@@ -132,7 +132,7 @@ class KeyboardControlInput(BaseModel):
 class ScreenCaptureInput(BaseModel):
     output_path: Optional[str] = Field(
         default=None,
-        description="输出文件路径(可选)。不传则保存到系统临时目录如<temp>/screenshot_<时间戳>.png"
+        description="输出文件路径(绝对路径,可选)。不传则保存到系统临时目录如<temp>/screenshot_<时间戳>.png"
     )
     region: Optional[Dict[str, int]] = Field(
         default=None,

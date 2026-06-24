@@ -29,7 +29,7 @@ from typing import Optional, List, Dict, Any, Literal, Union
 # 禁止在这里写文档字符串。工具描述写在 file_register.py 的 FILE_TOOL_DESCRIPTIONS 里。
 class ReadTextFileInput(BaseModel):
     file_path: str = Field(
-        description="要读取的文件路径(绝对路径)"
+        description="要读取的文件路径(绝对路径)。支持文本文件:txt/md/py/js/ts/json/yaml/yml/xml/html/css/csv/log等。二进制文件(图片/音频/视频/exe/dll等)将被拒绝,请使用read_media_file工具"
     )
     offset: Optional[int] = Field(
         default=None,
@@ -54,7 +54,7 @@ class ReadTextFileInput(BaseModel):
 
 class WriteTextFileInput(BaseModel):
     file_path: str = Field(
-        description="文件的完整路径(必须是绝对路径,支持中文路径)"
+        description="文件的完整路径(绝对路径,支持中文路径)。用于写入文本文件:txt/md/py/js/ts/json/yaml/yml/xml/html/css/csv/log等"
     )
     content: str = Field(
         description="要写入文件的文本内容(必须是实际内容,禁止传入思考/计划/状态描述)"
@@ -248,42 +248,8 @@ class RenameFileInput(BaseModel):
 
 
 # ============================================================
-# F11a: read_config_file — 读取结构化配置文件
 # ============================================================
-
-class ReadConfigFileInput(BaseModel):
-    file_path: str = Field(
-        description="文件路径(必须是绝对路径)"
-    )
-    format: Optional[Literal["json", "yaml", "toml", "ini", "xml", "properties"]] = Field(
-        default=None,
-        description="强制指定格式:json/yaml/toml/ini/xml/properties。不填则根据文件扩展名自动检测"
-    )
-
-
-
-# ============================================================
-# F11b: write_config_file — 写入结构化配置文件
-# ============================================================
-
-class WriteConfigFileInput(BaseModel):
-    file_path: str = Field(
-        description="文件路径(必须是绝对路径)"
-    )
-    data: Any = Field(
-        description="写入数据。JSON/YAML/TOML格式传dict或list,Properties传dict。INI/XML暂不支持写入"
-    )
-    format: Optional[Literal["json", "yaml", "toml"]] = Field(
-        default=None,
-        description="强制指定格式:json/yaml/toml。不填则根据文件扩展名自动检测"
-    )
-
-
-
-
-# ============================================================
-# ============================================================
-# __all__ — 15个工具的Schema导出
+# __all__ — 13个工具的Schema导出
 # ============================================================
 
 __all__ = [
@@ -301,6 +267,4 @@ __all__ = [
     "CopyFileInput",
     "DeleteFileInput",
     "RenameFileInput",
-    "ReadConfigFileInput",
-    "WriteConfigFileInput",
 ]

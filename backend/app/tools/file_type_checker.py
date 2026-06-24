@@ -45,10 +45,7 @@ DOCUMENT_EXTENSIONS = {
     '.odt', '.ods', '.odp', '.rtf',
 }
 
-# 配置文件扩展名
-CONFIG_EXTENSIONS = {
-    '.json', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.xml', '.properties',
-}
+# 配置文件扩展名 — 已删除config工具，配置文件由text工具处理 — 小欧 2026-06-24
 
 # 压缩文件扩展名
 ARCHIVE_EXTENSIONS = {
@@ -116,8 +113,6 @@ def check_file_type(
         return _check_media_file(path, suffix)
     elif expected_type == "document":
         return _check_document_file(path, suffix)
-    elif expected_type == "config":
-        return _check_config_file(path, suffix)
     elif expected_type == "archive":
         return _check_archive_file(path, suffix)
     elif expected_type == "not_binary":
@@ -186,17 +181,6 @@ def _check_document_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[s
             return False, f"工具选择错误：'{suffix}'是媒体文件，不能用文档工具操作。建议使用read_media_file工具", "read_media_file"
         else:
             return False, f"工具选择错误：'{suffix}'不是支持的文档格式。支持的格式: {', '.join(DOCUMENT_EXTENSIONS)}", None
-    
-    return True, "", None
-
-
-def _check_config_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[str]]:
-    """检查是否为配置文件 — 小欧 2026-06-24 修正错误信息格式"""
-    if suffix not in CONFIG_EXTENSIONS:
-        if suffix in BINARY_EXTENSIONS:
-            return False, f"工具选择错误：'{suffix}'是二进制文件，不能用配置工具操作。建议使用read_text_file或read_media_file", None
-        else:
-            return False, f"工具选择错误：'{suffix}'不是支持的配置格式。支持的格式: {', '.join(CONFIG_EXTENSIONS)}", None
     
     return True, "", None
 
@@ -278,14 +262,6 @@ def check_for_media_tool(file_path: str) -> Tuple[bool, str, Optional[str]]:
     return check_file_type(file_path, "media", check_content=False)
 
 
-def check_for_config_tool(file_path: str, allow_create: bool = False) -> Tuple[bool, str, Optional[str]]:
-    """供read_config_file/write_config_file调用
-    
-    参数：
-        file_path: 文件路径
-        allow_create: 是否允许创建新文件（用于write操作）
-    """
-    return check_file_type(file_path, "config", check_content=False, allow_create=allow_create)
 
 
 def check_for_archive_tool(file_path: str) -> Tuple[bool, str, Optional[str]]:
@@ -320,8 +296,6 @@ def get_file_category(file_path: str) -> Optional[str]:
         return "media"
     elif suffix in DOCUMENT_EXTENSIONS:
         return "document"
-    elif suffix in CONFIG_EXTENSIONS:
-        return "config"
     elif suffix in ARCHIVE_EXTENSIONS:
         return "archive"
     elif suffix in BINARY_EXTENSIONS:
@@ -346,7 +320,6 @@ __all__ = [
     "check_file_type",
     "check_for_text_tool",
     "check_for_media_tool",
-    "check_for_config_tool",
     "check_for_archive_tool",
     "check_for_document_tool",
     "get_file_category",
@@ -355,6 +328,5 @@ __all__ = [
     "TEXT_EXTENSIONS",
     "MEDIA_EXTENSIONS",
     "DOCUMENT_EXTENSIONS",
-    "CONFIG_EXTENSIONS",
     "ARCHIVE_EXTENSIONS",
 ]

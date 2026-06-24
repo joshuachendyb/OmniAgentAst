@@ -41,7 +41,7 @@ class DownloadFileInput(BaseModel):
         ..., description="要下载文件的URL,如 https://example.com/file.zip"
     )
     destination_path: str = Field(
-        ..., description="文件保存的完整路径,如 D:/Downloads/file.zip"
+        ..., description="文件保存的完整路径(绝对路径),如 D:/Downloads/file.zip"
     )
 
 

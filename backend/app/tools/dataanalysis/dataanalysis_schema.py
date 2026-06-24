@@ -51,13 +51,13 @@ class GenerateChartInput(BaseModel):
     )
     output_path: Optional[str] = Field(
         default=None,
-        description="输出图片路径(可选)。不传则自动生成临时路径如<temp>/chart_<时间戳>.png"
+        description="输出图片路径(绝对路径,可选)。不传则自动生成临时路径如<temp>/chart_<时间戳>.png"
     )
 
 
 class AnalyzeDataInput(BaseModel):
     data: str = Field(
-        ..., description="要分析的数据。可以是CSV/XLSX/XLS文件路径或JSON字符串"
+        ..., description="要分析的数据。可以是CSV/XLSX/XLS文件路径(绝对路径)或JSON字符串"
     )
     group_by: Optional[str] = Field(
         default=None,
@@ -75,7 +75,7 @@ class AnalyzeDataInput(BaseModel):
 
 class FilterDataInput(BaseModel):
     data: str = Field(
-        ..., description="要筛选的数据。可以是CSV/Excel文件路径或JSON字符串"
+        ..., description="要筛选的数据。可以是CSV/Excel文件路径(绝对路径)或JSON字符串"
     )
     conditions: List[Dict[str, Any]] = Field(
         ..., description="筛选条件列表。每个条件: {\"column\": \"列名\", \"operator\": \"操作符\", \"value\": 值}。操作符: eq/ne/gt/gte/lt/lte/in/contains/not_contains"
