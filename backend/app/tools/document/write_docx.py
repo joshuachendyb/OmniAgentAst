@@ -13,7 +13,7 @@ D5: write_docx — 写入Word文档
 import re
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
@@ -44,12 +44,32 @@ def _build_write_docx_llm_data(
 
 
 
+def _parse_markdown_table(lines: List[str], start_idx: int) -> tuple:
+    """解析Markdown表格，返回(表格数据, 结束索引) — 小健 2026-06-24"""
+    table_rows = []
+    i = start_idx
+    
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line or not line.startswith('|'):
+            break
+        
+        cells = [cell.strip() for cell in line.split('|')[1:-1]]
+        if cells:
+            if not all(c.replace('-', '').replace(':', '') == '' for c in cells):
+                table_rows.append(cells)
+        i += 1
+    
+    return table_rows, i
+
+
 def write_docx(
     file_name: str,
     title: Optional[str] = None,
     content: Optional[str] = None,
+    table_data: Optional[List[List[str]]] = None,
 ) -> Dict[str, Any]:
-    """写入Word文档 — 小欧 2026-06-19 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化（Markdown格式）"""
+    """写入Word文档 — 小健 2026-06-24 支持Markdown表格+table_data互斥"""
     t0 = _time_mod.perf_counter()
 
     if not _check_module("docx"):
@@ -67,10 +87,13 @@ def write_docx(
 
         if content:
             lines = content.split('\n')
-            for line in lines:
-                line = line.rstrip()
+            i = 0
+            while i < len(lines):
+                line = lines[i].rstrip()
                 if not line:
+                    i += 1
                     continue
+                
                 if line.startswith('# '):
                     doc.add_heading(line[2:], 1)
                 elif line.startswith('## '):
@@ -85,8 +108,24 @@ def write_docx(
                     doc.add_paragraph(line[2:], style='List Bullet')
                 elif re.match(r'^\d+\.\s', line):
                     doc.add_paragraph(re.sub(r'^\d+\.\s', '', line), style='List Number')
+                elif line.startswith('|') and '|' in line[1:]:
+                    table_rows, i = _parse_markdown_table(lines, i)
+                    if table_rows:
+                        t = doc.add_table(rows=len(table_rows), cols=len(table_rows[0]))
+                        for ri, row_data in enumerate(table_rows):
+                            for ci, cell_text in enumerate(row_data):
+                                t.rows[ri].cells[ci].text = str(cell_text)
+                    continue
                 else:
                     doc.add_paragraph(line)
+                i += 1
+        
+        elif table_data:
+            if table_data and len(table_data) > 0:
+                t = doc.add_table(rows=len(table_data), cols=len(table_data[0]))
+                for ri, row_data in enumerate(table_data):
+                    for ci, cell_text in enumerate(row_data):
+                        t.rows[ri].cells[ci].text = str(cell_text)
 
         path = Path(file_name)
         path.parent.mkdir(parents=True, exist_ok=True)

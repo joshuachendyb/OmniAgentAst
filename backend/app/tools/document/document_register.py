@@ -94,8 +94,9 @@ EXAMPLES = {
     "write_docx": [
         {"file_name": "D:/output/report.docx", "title": "测试报告", "content": "这是测试内容"},
         {"file_name": "D:/output/report_structured.docx", "title": "结构化报告", "content": "# 第一章\n\n正文内容\n\n## 第二节\n\n- 列表项1\n- 列表项2"},
+        {"file_name": "D:/output/report_with_table.docx", "title": "数据报告", "content": "# 概述\n\n本次统计结果如下。\n\n## 数据表格\n\n| 项目 | 数值 | 占比 |\n|------|------|------|\n| A | 100 | 40% |\n| B | 150 | 60% |\n\n## 结论\n\n- 数据A占比40%\n- 数据B占比60%"},
         {"file_name": "D:/output/tech_report.docx", "title": "代码审查报告", "content": "# 审查概览\n\n本次审查覆盖3个模块。\n\n## 问题清单\n\n### 严重问题\n\n1. SQL注入风险\n2. 硬编码密钥\n\n### 一般问题\n\n- 缺少错误处理\n- 日志级别不当"},
-        {"file_name": "D:/output/meeting.docx", "title": "会议纪要", "content": "# 会议信息\n\n- 时间：2026-06-24\n- 地点：会议室A\n\n# 议题讨论\n\n## 进度汇报\n\n1. 前端完成80%\n2. 后端API已上线\n\n## 行动项\n\n- 张三：完成前端\n- 李四：性能测试"},
+        {"file_name": "D:/output/data_table.docx", "title": "数据表", "table_data": [["姓名", "年龄", "城市"], ["张三", "25", "北京"], ["李四", "30", "上海"]]},
     ],
     "write_xlsx": [
         {"file_name": "D:/output/data.xlsx", "data": [{"姓名": "张三", "年龄": 25}, {"姓名": "李四", "年龄": 30}]},
