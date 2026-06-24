@@ -71,18 +71,20 @@ def _write_clipboard(content: str) -> Dict[str, Any]:
             h_mem = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(text_bytes))
             if h_mem == 0:
                 return {"error_detail": "内存分配失败", "params": {}}
-            p_mem = kernel32.GlobalLock(h_mem)
-            if p_mem:
-                ctypes.memmove(p_mem, text_bytes, len(text_bytes))
-                kernel32.GlobalUnlock(h_mem)
-                user32.OpenClipboard(None)
-                user32.EmptyClipboard()
-                user32.SetClipboardData(CF_TEXT, h_mem)
-                user32.CloseClipboard()
-                return {"content": content}
-            else:
+            try:
+                p_mem = kernel32.GlobalLock(h_mem)
+                if p_mem:
+                    ctypes.memmove(p_mem, text_bytes, len(text_bytes))
+                    kernel32.GlobalUnlock(h_mem)
+                    user32.OpenClipboard(None)
+                    user32.EmptyClipboard()
+                    user32.SetClipboardData(CF_TEXT, h_mem)
+                    user32.CloseClipboard()
+                    return {"content": content}
+                else:
+                    return {"error_detail": "内存锁定失败", "params": {}}
+            finally:
                 kernel32.GlobalFree(h_mem)
-                return {"error_detail": "内存锁定失败", "params": {}}
         except Exception as e:
             return {"error_detail": str(e), "params": {"method": "ctypes"}}
 
