@@ -236,12 +236,24 @@ async def edit_text_file(
     old_string: str,
     new_string: str = "",
     replace_all: bool = False,
+    ignore_case: bool = False,
     encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """编辑文本文件 — 小健 2026-06-20 删dry_run参数 — 小欧 2026-06-22 独立文件"""
+    """编辑文本文件 — 小健 2026-06-20 删dry_run参数 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加ignore_case参数"""
     t0 = _time_mod.perf_counter()
+    if not file_path or not file_path.strip():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=str(file_path), detail="file_path不能为空")
+        return build_error(data={"error_detail": "file_path不能为空", "params": {"file_path": file_path}}, llm_data=llm_data)
+    if old_string is None:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="old_string不能为None")
+        return build_error(data={"error_detail": "old_string不能为None", "params": {"file_path": file_path}}, llm_data=llm_data)
+    if new_string is None:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="new_string不能为None")
+        return build_error(data={"error_detail": "new_string不能为None", "params": {"file_path": file_path}}, llm_data=llm_data)
     dry_run = False
-    ignore_case = False
     result = await _precise_replace_in_file(
         file_path=file_path, old_string=old_string, new_string=new_string,
         replace_all=replace_all, ignore_case=ignore_case,
