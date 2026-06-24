@@ -100,6 +100,10 @@ def get_db_schema(connection_type="sqlite", connection_string=None, db_path=None
     conn = engine = None
     t0 = _time_mod.perf_counter()
     try:
+        if connection_type == "sqlite" and db_path and not __import__("os").path.exists(db_path):
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_get_db_schema_llm_data("error", duration_ms, err_code=ERR_DB_CONNECTION, detail=f"数据库文件不存在: {db_path}", hint="请检查路径")
+            return build_error(data={"error_detail": f"数据库文件不存在: {db_path}", "params": {"db_path": db_path}}, llm_data=llm_data)
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path)
         if conn is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

@@ -69,8 +69,16 @@ def _has_wildcard(path_str: str) -> bool:
     return any(c in path_str for c in ('*', '?', '[', ']'))
 
 
-def _compress_entries(source: Path, deadline: float) -> Generator[Tuple[Path, str], None, bool]:
+def _compress_entries(source: Path, deadline: float,
+                      exclude_patterns: Optional[List[str]] = None) -> Generator[Tuple[Path, str], None, bool]:
     """通用文件遍历生成器 — 小健 2026-05-25"""
+    import fnmatch
+    def _is_excluded(p: Path) -> bool:
+        if not exclude_patterns:
+            return False
+        name = p.name
+        return any(fnmatch.fnmatch(name, pat) for pat in exclude_patterns)
+
     source_str = str(source)
     if _has_wildcard(source_str):
         matched_paths = glob.glob(source_str)
@@ -78,28 +86,31 @@ def _compress_entries(source: Path, deadline: float) -> Generator[Tuple[Path, st
         for matched in sorted(matched_paths):
             matched_path = Path(matched)
             if matched_path.is_file():
-                yield matched_path, matched_path.name
+                if not _is_excluded(matched_path):
+                    yield matched_path, matched_path.name
             elif matched_path.is_dir():
                 for item in matched_path.rglob("*"):
                     if time.monotonic() > deadline:
                         return True
-                    if item.is_file():
+                    if item.is_file() and not _is_excluded(item):
                         yield item, str(item.relative_to(base_dir))
         return False
     if source.is_file():
-        yield source, source.name
+        if not _is_excluded(source):
+            yield source, source.name
         return False
     for item in source.rglob("*"):
         if time.monotonic() > deadline:
             return True
-        if item.is_file():
+        if item.is_file() and not _is_excluded(item):
             yield item, str(item.relative_to(source.parent))
     return False
 
 
-def _write_zip_entries(zf, source: Path, deadline: float, compressed_files: List[str]) -> None:
+def _write_zip_entries(zf, source: Path, deadline: float, compressed_files: List[str],
+                       exclude_patterns: Optional[List[str]] = None) -> None:
     """写入压缩条目 — 小欧 2026-06-19"""
-    for file_path, arcname in _compress_entries(source, deadline):
+    for file_path, arcname in _compress_entries(source, deadline, exclude_patterns):
         zf.write(file_path, arcname)
         compressed_files.append(str(file_path))
 
@@ -107,6 +118,7 @@ def _write_zip_entries(zf, source: Path, deadline: float, compressed_files: List
 def _write_zip(
     source: Path, destination: Path, compression_level: int,
     password: Optional[str], deadline: float,
+    exclude_patterns: Optional[List[str]] = None,
 ) -> Tuple[List[str], bool]:
     """写入zip压缩包 — 小健 2026-05-25"""
     compressed_files: List[str] = []
@@ -119,21 +131,22 @@ def _write_zip(
         with pyzipper.AESZipFile(destination, 'w', compression=compression, compresslevel=compression_level) as zf:
             zf.setpassword(password.encode('utf-8'))
             zf.setencryption(pyzipper.WZ_AES)
-            _write_zip_entries(zf, source, deadline, compressed_files)
+            _write_zip_entries(zf, source, deadline, compressed_files, exclude_patterns)
     else:
         compression = zipfile.ZIP_STORED if compression_level == 0 else zipfile.ZIP_DEFLATED
         with zipfile.ZipFile(destination, 'w', compression=compression, compresslevel=compression_level) as zf:
-            _write_zip_entries(zf, source, deadline, compressed_files)
+            _write_zip_entries(zf, source, deadline, compressed_files, exclude_patterns)
     return compressed_files, False
 
 
 def _write_tar(source: Path, destination: Path, deadline: float,
-               mode: str = "w:gz") -> Tuple[List[str], bool]:
-    """写入tar压缩包 — 小健 2026-05-25 — 小健 2026-06-24 重命名并支持多种tar格式 (w= uncompressed, w:gz=gzip, w:bz2=bzip2)"""
+               mode: str = "w:gz",
+               exclude_patterns: Optional[List[str]] = None) -> Tuple[List[str], bool]:
+    """写入tar压缩包 — 小健 2026-05-25 — 小健 2026-06-24 重命名并支持多种tar格式"""
     compressed_files: List[str] = []
     timed_out = False
     with tarfile.open(destination, mode) as tf:
-        for file_path, arcname in _compress_entries(source, deadline):
+        for file_path, arcname in _compress_entries(source, deadline, exclude_patterns):
             if _time_mod.monotonic() > deadline:
                 timed_out = True
                 break
@@ -263,13 +276,13 @@ async def compress_files(
         def _compress_sync():
             try:
                 if format == "zip":
-                    compressed_files, _ = _write_zip(src, dst, compression_level, password, _cf_deadline)
+                    compressed_files, _ = _write_zip(src, dst, compression_level, password, _cf_deadline, exclude_patterns)
                 elif format == "tar":
-                    compressed_files, _ = _write_tar(src, dst, _cf_deadline, "w")
+                    compressed_files, _ = _write_tar(src, dst, _cf_deadline, "w", exclude_patterns)
                 elif format == "tar.gz":
-                    compressed_files, _ = _write_tar(src, dst, _cf_deadline, "w:gz")
+                    compressed_files, _ = _write_tar(src, dst, _cf_deadline, "w:gz", exclude_patterns)
                 elif format == "tar.bz2":
-                    compressed_files, _ = _write_tar(src, dst, _cf_deadline, "w:bz2")
+                    compressed_files, _ = _write_tar(src, dst, _cf_deadline, "w:bz2", exclude_patterns)
                 compressed_size = dst.stat().st_size
                 return _build_compress_result(
                     str(src), str(dst), format, compression_level,

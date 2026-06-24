@@ -49,6 +49,7 @@ def _build_schtasks_create_cmd(task_name: str, command: str, schedule: str,
                 sc_type = "monthly"
                 sc_extra = ["/d", day_num]
 
+    cmd.extend(sc_extra)
     if start_time:
         cmd.extend(["/st", start_time])
     else:

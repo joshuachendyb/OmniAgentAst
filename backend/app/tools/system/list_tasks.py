@@ -36,21 +36,26 @@ def _run_schtasks_query() -> str:
 
 
 def _parse_task_entries(stdout: str) -> List[Dict[str, str]]:
-    """解析 schtasks /query /fo list /v 输出为结构化 dict 列表 — 小沈 2026-05-25"""
+    """解析 schtasks /query /fo list /v 输出为结构化 dict 列表 — 小沈 2026-05-25 — 小欧 2026-06-24 修复中英文locale兼容"""
     tasks, current = [], {}
+    task_name_prefixes = ("TaskName:", "任务名:")
+    next_run_prefixes = ("Next Run Time:", "下次运行时间:")
+    status_prefixes = ("Status:", "状态:")
+    cmd_prefixes = ("Task To Run:", "要运行的任务:")
     for line in stdout.splitlines():
         s = line.strip()
-        if s.startswith("TaskName:"):
+        if any(s.startswith(p) for p in task_name_prefixes):
             if current and "name" in current:
                 tasks.append(current)
             current = {"name": s.split(":", 1)[1].strip()}
-        elif s.startswith("Next Run Time:"):
+        elif any(s.startswith(p) for p in next_run_prefixes):
             current["next_run"] = s.split(":", 1)[1].strip()
-        elif s.startswith("Status:"):
+        elif any(s.startswith(p) for p in status_prefixes):
             raw = s.split(":", 1)[1].strip()
-            current["status"] = {"Ready": "ready", "Running": "running", "Disabled": "disabled"}.get(raw, "other")
+            current["status"] = {"Ready": "ready", "Running": "running", "Disabled": "disabled",
+                                 "就绪": "ready", "正在运行": "running", "已禁用": "disabled"}.get(raw, "other")
             current["status_desc"] = raw
-        elif s.startswith("Task To Run:"):
+        elif any(s.startswith(p) for p in cmd_prefixes):
             current["command"] = s.split(":", 1)[1].strip()
     if current and "name" in current:
         tasks.append(current)
