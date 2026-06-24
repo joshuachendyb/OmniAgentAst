@@ -100,6 +100,8 @@ EXAMPLES = {
     ],
     "write_xlsx": [
         {"file_name": "D:/output/data.xlsx", "data": [{"姓名": "张三", "年龄": 25}, {"姓名": "李四", "年龄": 30}]},
+        {"file_name": "D:/output/report.xlsx", "data": [{"产品": "A", "销量": 100}, {"产品": "B", "销量": 200}], "sheet_name": "销售数据"},
+        {"file_name": "D:/output/empty.xlsx"},
     ],
     "write_pdf": [
         {"file_name": "D:/output/report.pdf", "title": "测试报告", "content": "这是报告内容"},
@@ -110,6 +112,8 @@ EXAMPLES = {
     "write_pptx": [
         {"file_name": "D:/output/cover.pptx", "slides": [{"title": "项目汇报"}]},
         {"file_name": "D:/output/slides.pptx", "slides": [{"title": "业绩概览", "content": "本季度销售额增长20%"}]},
+        {"file_name": "D:/output/full.pptx", "slides": [{"title": "封面", "subtitle": "2026年度"}, {"title": "数据", "tables": [[["项目", "数值"], ["A", "100"]]]}]},
+        {"file_name": "D:/output/bullets.pptx", "slides": [{"title": "要点", "content": [{"type": "bullets", "items": ["完成目标", "提升效率"]}]}]},
     ],
 }
 
