@@ -171,7 +171,10 @@ async def write_text_file(
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if success:
-            bytes_written = len(checked_content.encode(encoding))
+            try:
+                bytes_written = len(checked_content.encode(encoding))
+            except (UnicodeEncodeError, LookupError):
+                bytes_written = len(checked_content.encode("utf-8"))
             llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written)
             return build_success(
                 data={"operation_id": operation_id},
