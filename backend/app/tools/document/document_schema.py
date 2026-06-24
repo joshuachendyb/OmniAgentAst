@@ -40,8 +40,6 @@ class ReadXlsxInput(BaseModel):
     )
 
 
-_PARAGRAPHS_DESC = "正文内容。3种格式: str=纯文本, list=[str|dict,...]混合内容, dict={\"title\":\"标题\",\"content\":[...]}. dict元素支持:\ntype=heading/h1~h5(标题),type=paragraph(段落),type=table(表格,需rows字段)"
-
 
 class WriteDocxInput(BaseModel):
     file_name: str = Field(..., description="文件名+路径(.docx)")
