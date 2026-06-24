@@ -39,30 +39,52 @@ from app.constants import (
 
 
 def _check_network() -> Dict[str, Any]:
-    """检查网络连通性 — 小欧 2026-06-22"""
+    """检查网络连通性 — 小欧 2026-06-22 — 小欧 2026-06-24 修复socket泄漏"""
     test_hosts = [("dns.google", 53), ("8.8.8.8", 53), ("1.1.1.1", 53)]
     for host, port in test_hosts:
+        sock = None
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(3)
             t1 = time.time()
             sock.connect((host, port))
             latency = (time.time() - t1) * 1000
-            sock.close()
             return {"connected": True, "host": host, "latency_ms": round(latency, 2)}
         except (socket.timeout, socket.error, OSError):
-            continue
+            if sock:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
     return {"connected": False}
 
 
 def _validate_url(url: str) -> Dict[str, Any]:
-    """验证URL格式 — 小欧 2026-06-22"""
+    """验证URL格式 — 小欧 2026-06-22 — 小欧 2026-06-24 增加SSRF内网拦截"""
     try:
         parsed = urlparse(url)
         is_valid = bool(parsed.scheme) and bool(parsed.netloc)
         valid_schemes = {"http", "https", "ftp", "ftps", "ws", "wss"}
         scheme_ok = parsed.scheme in valid_schemes
-        return {"valid": is_valid and scheme_ok, "scheme": parsed.scheme, "netloc": parsed.netloc, "path": parsed.path}
+        if not (is_valid and scheme_ok):
+            return {"valid": False, "scheme": parsed.scheme, "netloc": parsed.netloc, "path": parsed.path}
+        hostname = parsed.hostname or ""
+        blocked = ["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]",
+                    "169.254.169.254", "metadata.google.internal"]
+        if hostname.lower() in blocked:
+            return {"valid": False, "error": f"SSRF拦截: 禁止访问内网地址 {hostname}"}
+        if hostname.startswith("10.") or hostname.startswith("192.168.") or hostname.startswith("172."):
+            parts = hostname.split(".")
+            if len(parts) == 4 and parts[0] == "172":
+                try:
+                    second = int(parts[1])
+                    if 16 <= second <= 31:
+                        return {"valid": False, "error": f"SSRF拦截: 禁止访问内网地址 {hostname}"}
+                except ValueError:
+                    pass
+            elif hostname.startswith("10.") or hostname.startswith("192.168."):
+                return {"valid": False, "error": f"SSRF拦截: 禁止访问内网地址 {hostname}"}
+        return {"valid": True, "scheme": parsed.scheme, "netloc": parsed.netloc, "path": parsed.path}
     except Exception as e:
         return {"valid": False, "error": str(e)}
 
