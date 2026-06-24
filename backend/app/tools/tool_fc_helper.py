@@ -653,12 +653,12 @@ def _write_toml(file_path: str, data: Dict[str, Any], encoding: str = "utf-8") -
 
 
 def _parse_ini(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
-    """读取INI配置文件，返回纯dict — 小沈 2026-05-04"""
+    """读取INI配置文件，返回纯dict — 小沈 2026-05-04 — 小欧 2026-06-24 修复重复key crash"""
     import configparser
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"文件不存在: {file_path}")
-    config = configparser.ConfigParser()
+    config = configparser.ConfigParser(strict=False)
     config.read(path, encoding=encoding)
     result = {}
     for section in config.sections():
