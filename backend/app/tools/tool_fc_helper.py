@@ -633,13 +633,19 @@ def write_yaml_ordered(file_path: str, data: Any, encoding: str = "utf-8", inden
 
 
 def _parse_toml(file_path: str, encoding: str = "utf-8") -> Any:
-    """读取TOML文件，返回纯数据 — 小沈 2026-05-04"""
-    import tomli
+    """读取TOML文件，返回纯数据 — 小沈 2026-05-04 — 小欧 2026-06-24 优先使用标准库tomllib"""
+    try:
+        import tomllib
+    except ImportError:
+        try:
+            import tomli as tomllib
+        except ImportError:
+            raise ImportError("需要安装tomli库来读取TOML文件: pip install tomli")
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"文件不存在: {file_path}")
     with open(path, "rb") as f:
-        return tomli.load(f)
+        return tomllib.load(f)
 
 
 def _write_toml(file_path: str, data: Dict[str, Any], encoding: str = "utf-8") -> Dict[str, Any]:
