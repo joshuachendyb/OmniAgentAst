@@ -72,10 +72,19 @@ def is_success(result: Dict[str, Any]) -> bool:
     return exec_code in ("success", "warning")
 
 
-def is_error(result: Dict[str, Any]) -> bool:
-    """判断返回是否失败 — 从llm_data.status.exec_code判断 — 小欧 2026-06-21"""
+def is_warning(result: Dict[str, Any]) -> bool:
+    """判断返回是否为warning — 小健 2026-06-25"""
     llm_data = result.get("llm_data")
     if not isinstance(llm_data, dict):
         return False
+    exec_code = llm_data.get("status", {}).get("exec_code", "")
+    return exec_code == "warning"
+
+
+def is_error(result: Dict[str, Any]) -> bool:
+    """判断返回是否失败 — 从llm_data.status.exec_code判断 — 小欧 2026-06-21 — 小欧 2026-06-24 畸形结果视为错误"""
+    llm_data = result.get("llm_data")
+    if not isinstance(llm_data, dict):
+        return True
     exec_code = llm_data.get("status", {}).get("exec_code", "")
     return exec_code == "error"

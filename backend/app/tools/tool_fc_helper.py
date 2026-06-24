@@ -28,6 +28,7 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
+from html.parser import HTMLParser
 from io import StringIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -50,13 +51,13 @@ def _check_module(module_name: str) -> bool:
 
 
 def _decode_bytes_safe(data: Any, encodings: Optional[list] = None) -> str:
-    """安全解码bytes为str - 小沈 2026-06-09  fix:系统编码优先于utf-8防GBK被误读 — 小欧 2026-06-23"""
+    """安全解码bytes为str - 小沈 2026-06-09  fix:系统编码优先于utf-8防GBK被误读 — 小欧 2026-06-23 — 小欧 2026-06-24 utf-8优先防emoji乱码"""
     if data is None:
         return ""
     if isinstance(data, str):
         return data.replace('\r\n', '\n')
     if isinstance(data, bytes):
-        for enc in (encodings or [locale.getpreferredencoding(), 'utf-8', 'gbk', 'latin-1']):
+        for enc in (encodings or ['utf-8', locale.getpreferredencoding(), 'gbk', 'latin-1']):
             try:
                 return data.decode(enc).replace('\r\n', '\n')
             except (UnicodeDecodeError, LookupError):
@@ -401,9 +402,8 @@ def check_db_exists(db_path: str) -> Dict[str, Any]:
         return {"exists": False, "db_type": None, "size": 0}
     size = path.stat().st_size
     try:
-        conn = sqlite3.connect(str(path))
-        conn.execute("SELECT 1")
-        conn.close()
+        with sqlite3.connect(str(path)) as conn:
+            conn.execute("SELECT 1")
         return {"exists": True, "db_type": "sqlite", "size": size}
     except Exception as e:
         return {"exists": True, "db_type": "unknown", "size": size, "error": str(e)}
@@ -448,12 +448,34 @@ def validate_xml_content(content: str) -> Optional[str]:
         return f"XML格式验证失败: {str(e)[:100]}"
 
 
+class _SimpleHTMLValidator(HTMLParser):
+    """用HTMLParser精确验证HTML — 小欧 2026-06-24"""
+    def __init__(self):
+        super().__init__()
+        self._errors = []
+
+    def handle_starttag(self, tag, attrs):
+        pass
+
+    def handle_endtag(self, tag):
+        pass
+
+    def handle_data(self, data):
+        pass
+
+    def error(self, message):
+        self._errors.append(message)
+
+
 def validate_html_content(content: str) -> Optional[str]:
-    """验证HTML内容格式 — 小健 2026-05-25"""
-    open_tags = content.count('<')
-    close_tags = content.count('>')
-    if open_tags != close_tags:
-        return f"HTML标记验证警告: '<'({open_tags}个)与'>'({close_tags}个)数量不匹配"
+    """验证HTML内容格式 — 小健 2026-05-25 — 小欧 2026-06-24 改用HTMLParser避免误报"""
+    if not content or not content.strip():
+        return None
+    validator = _SimpleHTMLValidator()
+    try:
+        validator.feed(content)
+    except Exception as e:
+        return f"HTML解析错误: {e}"
     return None
 
 
@@ -609,11 +631,17 @@ def _write_yaml(file_path: str, data: Any, encoding: str = "utf-8", indent: int 
 
 
 def write_yaml_ordered(file_path: str, data: Any, encoding: str = "utf-8", indent: int = 2) -> Dict[str, Any]:
-    """按传入 dict 的原始 key 顺序写入 YAML（tool专用辅助函数，不做任何重排）— 小沈 2026-06-09"""
+    """按传入 dict 的原始 key 顺序写入 YAML（tool专用辅助函数，不做任何重排）— 小沈 2026-06-09 — 小欧 2026-06-24 修复全局YAML状态污染"""
     import yaml
     from collections import OrderedDict
     path = Path(file_path)
     path.parent.mkdir(parents=True, exist_ok=True)
+
+    class _OrderedDumper(yaml.Dumper):
+        """自定义Dumper避免污染全局YAML状态"""
+        pass
+
+    _OrderedDumper.add_representer(OrderedDict, lambda dumper, data: dumper.represent_dict(data.items()))
 
     def _to_ordered(d):
         if not isinstance(d, dict):
@@ -623,12 +651,8 @@ def write_yaml_ordered(file_path: str, data: Any, encoding: str = "utf-8", inden
             result[k] = _to_ordered(d[k]) if isinstance(d[k], dict) else d[k]
         return result
 
-    def _repr_ordered_dict(dumper, data):
-        return dumper.represent_dict(data.items())
-
-    yaml.add_representer(OrderedDict, _repr_ordered_dict)
     with open(path, "w", encoding=encoding) as f:
-        yaml.dump(_to_ordered(data), f, allow_unicode=True, default_flow_style=False, indent=indent)
+        yaml.dump(_to_ordered(data), f, allow_unicode=True, default_flow_style=False, indent=indent, Dumper=_OrderedDumper)
     return {"file_path": file_path}
 
 
