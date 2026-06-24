@@ -7,6 +7,8 @@ send_notification — 发送Windows系统通知
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+import asyncio
+import concurrent.futures
 import time as _time_mod
 from typing import Dict, Any
 
@@ -52,7 +54,11 @@ def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, 
     from win10toast import ToastNotifier
     try:
         toaster = ToastNotifier()
-        toaster.show_toast(title, message, duration=duration)
+        def _show_toast():
+            toaster.show_toast(title, message, duration=duration, threaded=True)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_show_toast)
+            future.result(timeout=duration + 5)
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"title": title, "message": message, "duration": duration}
         llm_data = _build_send_notification_llm_data("success", duration_ms, title, duration)
