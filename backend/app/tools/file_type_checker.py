@@ -278,14 +278,24 @@ def check_for_media_tool(file_path: str) -> Tuple[bool, str, Optional[str]]:
     return check_file_type(file_path, "media", check_content=False)
 
 
-def check_for_config_tool(file_path: str) -> Tuple[bool, str, Optional[str]]:
-    """供read_config_file/write_config_file调用"""
-    return check_file_type(file_path, "config", check_content=False)
+def check_for_config_tool(file_path: str, allow_create: bool = False) -> Tuple[bool, str, Optional[str]]:
+    """供read_config_file/write_config_file调用
+    
+    参数：
+        file_path: 文件路径
+        allow_create: 是否允许创建新文件（用于write操作）
+    """
+    return check_file_type(file_path, "config", check_content=False, allow_create=allow_create)
 
 
 def check_for_archive_tool(file_path: str) -> Tuple[bool, str, Optional[str]]:
     """供extract_archive调用"""
     return check_file_type(file_path, "archive", check_content=False)
+
+
+def check_for_document_tool(file_path: str, allow_create: bool = False) -> Tuple[bool, str, Optional[str]]:
+    """供read_docx/read_pptx/read_xlsx/read_pdf/write_docx/write_pptx/write_xlsx调用 — 小欧 2026-06-24"""
+    return check_file_type(file_path, "document", check_content=False, allow_create=allow_create)
 
 
 # ============================================================
@@ -338,6 +348,7 @@ __all__ = [
     "check_for_media_tool",
     "check_for_config_tool",
     "check_for_archive_tool",
+    "check_for_document_tool",
     "get_file_category",
     "is_text_file",
     "is_binary_file",

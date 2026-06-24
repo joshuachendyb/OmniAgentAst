@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
+from app.tools.file_type_checker import check_for_document_tool
 from app.constants import ERR_WRITE_DOCX
 from app.utils.logger import logger
 from app.utils.table_helper import parse_markdown_table, calculate_column_widths, get_table_header_style_config
@@ -101,8 +102,15 @@ def write_docx(
     content: Optional[str] = None,
     table_data: Optional[List[List[str]]] = None,
 ) -> Dict[str, Any]:
-    """写入Word文档 — 小健 2026-06-24 支持Markdown表格+table_data互斥"""
+    """写入Word文档 — 小健 2026-06-24 支持Markdown表格+table_data互斥 — 小欧 2026-06-24 增加文件类型前置检查"""
     t0 = _time_mod.perf_counter()
+
+    # 文件类型前置检查（write操作允许创建新文件） — 小欧 2026-06-24
+    is_valid, error_detail, suggested_tool = check_for_document_tool(file_name, allow_create=True)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_docx_llm_data("error", duration_ms, file_name, detail=error_detail)
+        return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
 
     if not _check_module("docx"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

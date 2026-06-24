@@ -20,6 +20,7 @@ from typing import Any, Dict, Optional
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import SUBPROCESS_TIMEOUT_LONG
+from app.tools.file_type_checker import check_for_document_tool
 from app.constants import ERR_DOC_READ_DOCX
 from app.utils.logger import logger
 
@@ -50,9 +51,17 @@ def _build_read_docx_llm_data(
 
 
 def read_docx(file_name: str) -> Dict[str, Any]:
-    """读取Word文档 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件"""
+    """读取Word文档 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加文件类型前置检查"""
     t0 = _time_mod.perf_counter()
     file_path = file_name
+
+    # 文件类型前置检查 — 小欧 2026-06-24
+    is_valid, error_detail, suggested_tool = check_for_document_tool(file_name)
+    if not is_valid:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_docx_llm_data("error", duration_ms, file_name, detail=error_detail)
+        return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
+
     path = Path(file_name)
     suffix = path.suffix.lower()
 

@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
+from app.tools.file_type_checker import check_for_document_tool
 from app.constants import ERR_DOC_READ_XLSX
 from app.utils.logger import logger
 
@@ -188,10 +189,19 @@ def _read_csv_stdlib_inner(
 def read_xlsx(file_name: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
     """读取Excel/CSV/XLS文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件
     主函数: 负责build3+llm_data调用 — 小欧 2026-06-22
-    参数: sheet_name - 指定工作表名（仅.xlsx），None则读取所有工作表 — 小健 2026-06-24"""
+    参数: sheet_name - 指定工作表名（仅.xlsx），None则读取所有工作表 — 小健 2026-06-24
+    小欧 2026-06-24 增加文件类型前置检查（.csv跳过检查）"""
     path = Path(file_name)
     suffix = path.suffix.lower()
     t0 = _time_mod.perf_counter()
+
+    # 文件类型前置检查（.csv由本工具处理，跳过检查） — 小欧 2026-06-24
+    if suffix != ".csv":
+        is_valid, error_detail, suggested_tool = check_for_document_tool(file_name)
+        if not is_valid:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_read_xlsx_llm_data("error", duration_ms, file_name, detail=error_detail)
+            return build_error(data={"error_detail": error_detail, "params": {"file_name": file_name}}, llm_data=llm_data)
 
     if suffix == ".csv":
         result = _read_csv_stdlib_inner(file_name, encoding="utf-8", delimiter=",", has_header=True, max_rows=10000)
