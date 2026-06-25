@@ -91,6 +91,7 @@ async def chat_stream(request: ChatRequest):
             media_type="text/event-stream"
         )
 
+    # 【P1-19修复】content可能为None，加or ""防御；空内容直接拒绝 — chendyg 2026-06-26
     user_input = request.messages[-1].content or ""
     if not user_input.strip():
         return PlainTextResponse(

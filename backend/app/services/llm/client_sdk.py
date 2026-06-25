@@ -161,6 +161,7 @@ class LLMClient:
         """关闭客户端,释放连接池 - 小沈 2026-06-09"""
         await self._client.aclose()
 
+    # 【P1-22修复】添加异步上下文管理器,防止AsyncClient连接池泄漏 — chendyg 2026-06-26
     async def __aenter__(self):
         return self
 

@@ -299,20 +299,31 @@ async def build_observation(ctx: ObservationContext) -> List:
 
 
 def _build_call_list(parsed: Dict) -> tuple:
-    """构建工具调用列表 — 小欧 2026-06-18 从handle_action提取"""
+    """构建工具调用列表 — 小欧 2026-06-18 从handle_action提取
+    chendyg 2026-06-26 P1-10/11修复: 防御tool_name为空和pending_calls缺字段"""
     tool_name = parsed.get("tool_name", "")
     tool_params = parsed.get("tool_params", {})
     fc_context = parsed.get("fc_context", {})
     pending_calls = parsed.get("_pending_calls", [])
 
+    # 【P1-10修复】tool_name为空时直接FAILED — chendyg 2026-06-26
+    if not tool_name:
+        logger.warning(f"[_build_call_list] tool_name为空, parsed={parsed}")
+
     all_calls = [{
         "tool_name": tool_name, "tool_params": tool_params,
         "_tool_call_id": fc_context.get("tool_call_id", "") if fc_context else "",
     }]
-    all_calls.extend({
-        "tool_name": pc.get("tool_name", ""), "tool_params": pc.get("tool_params", {}),
-        "_tool_call_id": pc.get("_tool_call_id", ""),
-    } for pc in pending_calls)
+    # 【P1-11修复】pending_calls条目缺tool_name时跳过 — chendyg 2026-06-26
+    for pc in pending_calls:
+        pc_name = pc.get("tool_name", "")
+        if not pc_name:
+            logger.warning(f"[_build_call_list] pending_call缺tool_name,跳过: {pc}")
+            continue
+        all_calls.append({
+            "tool_name": pc_name, "tool_params": pc.get("tool_params", {}),
+            "_tool_call_id": pc.get("_tool_call_id", ""),
+        })
 
     return tool_name, tool_params, fc_context, pending_calls, all_calls, len(all_calls) > 1
 

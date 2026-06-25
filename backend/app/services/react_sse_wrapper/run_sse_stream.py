@@ -82,6 +82,7 @@ def _load_previous_messages(session_id: str) -> List[Dict[str, Any]]:
                     messages.extend(_parse_observations(msg_id, exec_steps_json))
         return messages
     except Exception as e:
+        # 【P1-14修复】DB异常加日志而非静默吞掉 — chendyg 2026-06-26
         logger.warning(f"[SSE] 加载会话历史失败(session={session_id}): {e}")
         return []
 

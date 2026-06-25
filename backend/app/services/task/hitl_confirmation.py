@@ -77,14 +77,30 @@ async def wait_for_confirmation_result(confirm_id: str, timeout: int = 120) -> D
         {"confirmed": bool, "trust_session": bool}
 
     小沈 2026-06-17 从confirm_operation.py下沉
+    chendyg 2026-06-26 P1-9修复: 等待确认时检查任务取消状态
     """
     entry = _pending_confirmations.get(confirm_id)
     if entry is None:
         return {"confirmed": False, "trust_session": False}
 
     try:
-        return await asyncio.wait_for(entry.future, timeout=timeout)
-    except asyncio.TimeoutError:
+        # 【P1-9修复】等待确认期间检查任务是否已取消 — chendyg 2026-06-26
+        from app.services.task.task_state_queries import check_cancelled
+        task_id = confirm_id.split(":")[0] if ":" in confirm_id else ""
+        check_interval = 2
+        elapsed = 0
+        while elapsed < timeout:
+            wait_time = min(check_interval, timeout - elapsed)
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.shield(entry.future), timeout=wait_time,
+                )
+                return result
+            except asyncio.TimeoutError:
+                elapsed += wait_time
+                if task_id and await check_cancelled(task_id):
+                    logger.info(f"[HITL] 任务已取消,终止确认等待: confirm_id={confirm_id}")
+                    return {"confirmed": False, "trust_session": False}
         logger.warning(f"[HITL] 确认超时: confirm_id={confirm_id}, timeout={timeout}s")
         return {"confirmed": False, "trust_session": False}
     finally:

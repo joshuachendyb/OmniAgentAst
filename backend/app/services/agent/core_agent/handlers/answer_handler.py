@@ -20,6 +20,7 @@ async def handle_answer(agent, parsed: Dict, chunk_buffer):
     if not content:
         from app.utils.logger import logger
         logger.warning(f"[handle_answer] LLM返回空内容(step={step})")
+        # 【P1-17修复】空内容应设FAILED而非COMPLETED — chendyg 2026-06-26
         agent.status = AgentStatus.FAILED
         yield agent._step_emitter.emit(FinalStep(
             step=step, response="", thought="",

@@ -69,6 +69,7 @@ def _is_forbidden_path(file_path: str) -> Tuple[bool, Optional[str]]:
         
         return False, None
     except Exception as e:
+        # 【P1-21修复】异常时拒绝访问而非放行 — chendyg 2026-06-26
         return True, f"路径安全检查异常,拒绝访问: {file_path} ({e})"
 
 
