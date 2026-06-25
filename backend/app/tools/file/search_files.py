@@ -113,6 +113,10 @@ async def search_files(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=error_msg)
         return build_error(data={"error_detail": error_msg, "params": {"search_dir": search_dir}}, llm_data=llm_data)
+    if type is not None and type not in ("file", "directory"):
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"type参数只能为'file'或'directory',当前值: '{type}'")
+        return build_error(data={"error_detail": f"type参数只能为'file'或'directory'", "params": {"type": type}}, llm_data=llm_data)
     if not pattern or not pattern.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail="文件名匹配模式不能为空")
@@ -122,6 +126,10 @@ async def search_files(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"搜索目录不存在: {search_dir}")
         return build_error(data={"error_detail": "搜索目录不存在", "params": {"search_dir": search_dir}}, llm_data=llm_data)
+    if not path.is_dir():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"搜索路径不是目录: {search_dir}")
+        return build_error(data={"error_detail": "搜索路径不是目录", "params": {"search_dir": search_dir}}, llm_data=llm_data)
 
     deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("search_files", TOOL_TIMEOUTS["default"]) - 2
     all_matches: List = []

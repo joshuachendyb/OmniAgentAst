@@ -69,6 +69,9 @@ async def _move_file_impl(
     src = Path(source_path)
     dst = Path(destination_path)
 
+    if src.resolve() == dst.resolve():
+        return {"success": False, "error_detail": f"源路径和目标路径相同: {source_path}", "params": {"source": source_path, "destination": destination_path}}
+
     try:
         if not src.exists():
             return {"success": False, "error_detail": "源文件不存在", "params": {"source": source_path}}
@@ -120,8 +123,8 @@ async def move_file(
     t0 = _time_mod.perf_counter()
     if os.path.abspath(source) == os.path.abspath(destination):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("success", duration_ms, source, destination=destination, extra_metrics={"status": {"value": "no_change", "text": "路径相同无需移动"}})
-        return build_success(data={}, llm_data=llm_data)
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=f"源路径和目标路径相同: {source}")
+        return build_error(data={"error_detail": f"源路径和目标路径相同: {source}", "params": {"source": source, "destination": destination}}, llm_data=llm_data)
 
     result = await _move_file_impl(source_path=source, destination_path=destination, overwrite=overwrite)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

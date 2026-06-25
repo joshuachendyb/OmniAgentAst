@@ -267,6 +267,11 @@ async def list_directory(
     max_depth = 10
     format_mode = "tree" if tree else "list"
 
+    if not dir_path or not dir_path.strip():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail="dir_path不能为空")
+        return build_error(data={"error_detail": "dir_path不能为空", "params": {"dir_path": dir_path}}, llm_data=llm_data)
+
     if sort_by not in ("name", "size", "mtime"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'size'/'mtime',当前值: '{sort_by}'")

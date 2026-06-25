@@ -144,8 +144,8 @@ async def delete_file(
     src_path = Path(source)
     if not src_path.exists():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_delete_file_llm_data("success", duration_ms, source, extra_metrics={"status": {"value": "already_deleted", "text": "文件已删除"}})
-        return build_success(data={}, llm_data=llm_data)
+        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=f"文件不存在: {source}")
+        return build_error(data={"error_detail": f"文件不存在: {source}", "params": {"source": source}}, llm_data=llm_data)
 
     result = await _delete_file_impl(file_path=source, recursive=recursive, force=force)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

@@ -74,6 +74,11 @@ async def copy_file(
     src = Path(source)
     dst = Path(destination)
 
+    if src.resolve() == dst.resolve():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": "源路径和目标路径相同"})
+        return build_error(data={"error_detail": f"源路径和目标路径相同: {source}", "params": {"source": source, "destination": destination}}, llm_data=llm_data)
+
     if not src.exists():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": f"源路径不存在: {source}"})
@@ -81,8 +86,8 @@ async def copy_file(
 
     if dst.exists() and not overwrite:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_copy_file_llm_data("success", duration_ms, source, extra_metrics={"status": "no_change"})
-        return build_success(data={"action": "copy", "source": source, "destination": destination}, llm_data=llm_data)
+        llm_data = _build_copy_file_llm_data("error", duration_ms, source, extra_metrics={"detail": f"目标已存在且overwrite=False: {destination}"})
+        return build_error(data={"error_detail": f"目标已存在,设置overwrite=True覆盖", "params": {"source": source, "destination": destination}}, llm_data=llm_data)
     from app.services.safety.file_safety import record_operation, execute_with_safety
     from app.db.models.operation_enums import OperationType
 
