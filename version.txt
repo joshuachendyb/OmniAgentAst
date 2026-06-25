@@ -1,3 +1,66 @@
+v0.17.2
+
+更新时间: 2026-06-25 19:57:42
+
+## v0.17.1→v0.17.2 变更汇总 - 小欧-2026-06-25
+
+### feat: 新功能(7项)
+- 8cbaa6c01: 提取公共模块 connectivity.py+url_validator.py - 小欧
+- 3d1ed8315: network_schema补充timeout/proxy/retry/js_render/count/blocked_domains等缺失字段 - 小欧
+- 2ee04b15b: 并行tool call multi-call支持 - 小健
+- c47dab779: 增强execute_shell_command对PowerShell 5.1的支持(自动翻译&&和||) - 小健
+- 其他3项feat (详见git log)
+
+### fix: 代码修复(15项)
+- 6c4426dd0: network+system+desktop+timer+dataanalysis 13个bug修复 - 小欧
+- ea662d3ec: execute_code timeout单位Schema错误(秒→毫秒) - 小健
+- 09b4896de: network_diagnose SSRF入口检查+search_web递归深度限制 - 小欧
+- 082cd41b6: 修复Shell系列工具14个Bug - 小欧
+- 5d99e5690: tool_fc_helper YAML/HTMLParser/sqlite3/utf-8修复 - 小欧
+- 4a1877fca: get_db_schema文件存在检查+compress_files排除模式+create_task参数传递 - 小欧
+- f2669015e: 10项参数验证缺失 - 小沈
+- db360307a: fetch_webpage缺import re + search_web NoneType len崩溃 - 小沈
+- 4a3a0e3e4: 修复tool参数描述问题(11个工具) - 小健
+- 8757ee762: 修复dataanalysis_schema参数不一致问题 - 小健
+- 8930ac1fb: 修复win_registry_schema参数不一致问题 - 小健
+- 711c310d1: 修复file分类工具的安全问题和参数描述 - 小健
+- 17b04aece: 修复系统prompts.py SyntaxError+TOOL_CALL_RULES缺失 - 小欧
+- deb33dd45: Prompt-Message全链路 P1+P2+P3共32问题全部修复 - 小欧
+- a0be614b3: 合并未提交变更-消息加载FC协议重构+死代码清理 - 小欧
+
+### refactor: 代码重构(10项)
+- 2590d2b85: http_request/fetch_webpage/download_file 使用公共模块 - 小欧
+- fe47eeb52: 控制台只打WARNING+,print改logger - 小沈
+- 96eb17271: FC+Observation流程日志增强,reg噪声降级 - 小沈
+- fcebc0bf3: print版本号移到startup事件末尾 - 小沈
+- e9fcae901: 启动打印加'当前版本'前缀 - 小沈
+- 699daea0c: operation_executor成功日志降为DEBUG - 小沈
+- 7d63a82e4: 优化system prompt组装顺序 - 小健
+- 8047cbcd7: 简化observation预算系统-砍掉DECAY/MAX/MIN单条截断逻辑 - 小欧
+- 7cbe41500: 重命名first_tool_obs to tool_last_obs - 小欧
+- 69b252c41: 删除forced-keep机制, 纯budget trim - 小欧
+- 1c1b121d5: Batch 1 type safety + SRP extraction - 小欧
+- ac6163327: 删除冗余META_TOOL_NAMES加载+更新AGENTS.md过期信息 - 小欧
+- 099c662ec: llm_caller重命名为llm_stream+文档迁移 - 小欧
+
+### docs: 文档更新(8项)
+- 873913f0e: 更新问题分析文档新增第七章Bug复核结果+47个真实Bug汇总 - 小欧
+- 2b8606eac: 修正execute_shell_command工具描述 - 小健
+- d37ee0b37: 添加tool代码核查报告 - 小健
+- 4673188bd: 添加tool代码核查spec文档 - 小健
+- 58fdc8536: 优化execute_shell_command工具描述 - 小健
+- b10af119b: 全链路E2E集成测试-操作手册更新v2.4-v2.5 - 小欧
+- 9a3eade5f: 清理无用测试目录并更新文档 - 小健
+- 系统关键流程深度分析文档全面重写(v2.0) - 小欧
+
+### perf: 性能优化(1项)
+- 8047cbcd7: 简化observation预算系统-砍掉DECAY/MAX/MIN单条截断逻辑 - 小欧
+
+### 合计
+- feat: 7项 | fix: 15项 | refactor: 13项 | docs: 8项 | perf: 1项 = 共44项
+
+---
+
 v0.17.1
 
 更新时间: 2026-06-24 22:26:01
