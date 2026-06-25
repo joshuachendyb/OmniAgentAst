@@ -92,7 +92,7 @@ def execute_with_safety(operation_id: str, operation_func, *args, **kwargs) -> b
                      info.get("size"), info.get("hash"), info.get("is_directory", False),
                      info.get("extension"), duration_ms, space_impact, executed_at, operation_id),
                 )
-                logger.info(f"Operation executed successfully: {operation_id}")
+                logger.debug(f"Operation executed successfully: {operation_id}")
             else:
                 update_op_failed(cursor, operation_id, "Operation failed")
         return success
