@@ -119,17 +119,11 @@ class PromptBuilder:
         """构建完整的系统Prompt — FC-only版
 
         组装顺序:
-        ① _get_system_info()        — 系统信息(OS/路径规则)
-        ② _get_project_root_info()  — 项目根目录
-        ③ _get_project_context()    — 项目上下文(OmniAgent.md)
-        ④ get_core_system_prompt()  — 角色+业务规则
-        ⑤ TOOL_CALL_RULES           — 回答要求+停止条件
-        """
         ① get_core_system_prompt()  — 角色+业务规则
         ② _get_project_context()    — 项目上下文(OmniAgent.md)
         ③ _get_system_info()        — 系统信息(OS/路径规则)
         ④ _get_project_root_info()  — 项目根目录
-        ⑤ TOOL_CALL_RULES           — 回答要求+停止条件
+        ⑤ TOOL_CALL_RULES           — 文件类型→工具映射
         """
         parts = [self.get_core_system_prompt()]
 
@@ -139,5 +133,6 @@ class PromptBuilder:
 
         parts.append(self._get_system_info())
         parts.append(self._get_project_root_info())
-    "PromptBuilder",
-]
+        parts.append(self.TOOL_CALL_RULES)
+
+        return "\n\n".join(parts)
