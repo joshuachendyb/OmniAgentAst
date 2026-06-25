@@ -124,7 +124,7 @@ async def startup_event():
     from app.tools import ensure_tools_registered
     ensure_tools_registered()
     _start_cleanup_task()
-    print(app_version)
+    print(f"当前版本: {app_version}")
 
 
 @app.on_event("shutdown")
