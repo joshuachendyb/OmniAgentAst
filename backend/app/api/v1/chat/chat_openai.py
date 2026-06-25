@@ -91,7 +91,12 @@ async def chat_stream(request: ChatRequest):
             media_type="text/event-stream"
         )
 
-    user_input = request.messages[-1].content
+    user_input = request.messages[-1].content or ""
+    if not user_input.strip():
+        return PlainTextResponse(
+            content=create_error_response(error_type="invalid_request", error_message="消息内容不能为空"),
+            media_type="text/event-stream"
+        )
     ai_service = get_service()
     session_id = request.session_id or str(uuid.uuid4())
 
