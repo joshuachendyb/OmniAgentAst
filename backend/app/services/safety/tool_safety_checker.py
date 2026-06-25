@@ -109,8 +109,16 @@ class ToolSafetyChecker:
 
         if tool_name in file_tools:
             try:
-                path = params.get("path") or params.get("source_path") or params.get("target_path") or params.get("file_path") or params.get("directory")
-                if path:
+                path = params.get("path")
+                if path is None:
+                    path = params.get("source_path")
+                if path is None:
+                    path = params.get("target_path")
+                if path is None:
+                    path = params.get("file_path")
+                if path is None:
+                    path = params.get("directory")
+                if path is not None:
                     is_valid, msg = validate_path(path)
                     if not is_valid:
                         return SafetyResult(is_safe=False, blocked=True, message=f"路径越权: {msg}")
