@@ -24,4 +24,7 @@ class MetaStep(ReasoningStep):
         return self._message
 
     def _extra_fields(self) -> Dict[str, Any]:
-        return dict(self._kwargs)
+        fields = dict(self._kwargs)
+        if self._message:
+            fields["message"] = self._message
+        return fields
