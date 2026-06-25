@@ -13,6 +13,11 @@ from typing import List, Dict, Optional
 from app.utils.logger import logger
 
 
+class FCFormatError(Exception):
+    """FC格式错误 — LLM返回的tool_calls无法解析 — 小欧 2026-06-25"""
+    pass
+
+
 def _resolve_exception(e: Exception) -> tuple:
     """解析异常→(用户消息, 错误类型) — 委托至UnifiedErrorClassifier统一分类 — 小沈 2026-05-28"""
     from app.utils.error_classifier import UnifiedErrorClassifier
@@ -60,5 +65,6 @@ class StreamChunk:
 __all__ = [
     "ChatResponse",
     "StreamChunk",
+    "FCFormatError",
     "_resolve_exception",
 ]
