@@ -16,3 +16,4 @@ class AgentStatus(Enum):
     EXECUTING = "executing"
     COMPLETED = "completed"
     FAILED = "failed"
+    RETRYABLE_ERROR = "retryable_error"  # 小欧 2026-06-25: 可重试错误（FC格式错误等）
