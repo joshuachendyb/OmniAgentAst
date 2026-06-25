@@ -138,7 +138,6 @@ API_PREFIX = "/api/v1"
 DB_PATH = Path.home() / ".omniagent" / "chat_history.db"
 LOG_DIR = Path(__file__).parent.parent / "logs"
 PROMPT_LOG_DIR = LOG_DIR / "prompt-logs"
-CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "config.yaml"
 
 
 # ─── 后端检查 ────────────────────────────────────────────────
@@ -1081,39 +1080,6 @@ def cleanup(
         for f in test_files:
             if f.exists():
                 f.unlink(missing_ok=True)
-
-
-# ─── 配置管理(security.enabled) ─────────────────────────────
-
-def get_security_enabled() -> Optional[bool]:
-    """读取config.yaml中security.enabled -- 小健 2026-06-14"""
-    try:
-        import yaml
-        if CONFIG_PATH.exists():
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                config = yaml.safe_load(f)
-            return config.get("security", {}).get("enabled")
-    except Exception:
-        pass
-    return None
-
-
-def set_security_enabled(enabled: bool) -> bool:
-    """设置config.yaml中security.enabled -- 小健 2026-06-14"""
-    try:
-        import yaml
-        if CONFIG_PATH.exists():
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                config = yaml.safe_load(f)
-            if "security" not in config:
-                config["security"] = {}
-            config["security"]["enabled"] = enabled
-            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-                yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
-            return True
-    except Exception:
-        pass
-    return False
 
 
 # ─── 测试报告 ────────────────────────────────────────────────

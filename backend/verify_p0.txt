@@ -1,0 +1,25 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.11, pytest-8.4.2, pluggy-1.6.0 -- E:\Appsw\python31311\python.exe
+cachedir: .pytest_cache
+rootdir: G:\OmniAgentAs-desk\backend
+configfile: pytest.ini
+plugins: anyio-4.13.0, asyncio-0.25.3, cov-7.1.0, timeout-2.4.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None
+timeout: 600.0s
+timeout method: thread
+timeout func_only: False
+collecting ... collected 1 item
+
+tests/tools/param_combination/test_read_text_file_deep.py::TestReadTextFileDeepBugs::test_bug_6_empty_file_with_offset FAILED [100%]
+
+================================== FAILURES ===================================
+_________ TestReadTextFileDeepBugs.test_bug_6_empty_file_with_offset __________
+tests\tools\param_combination\test_read_text_file_deep.py:118: in test_bug_6_empty_file_with_offset
+    assert is_error(result) or "warning" in result.get("data", {})
+E   AssertionError: assert (False or 'warning' in {'content': '', 'encoding': 'utf-8', 'end_line': 0, 'limit': 10, ...})
+E    +  where False = is_error({'data': {'content': '', 'encoding': 'utf-8', 'end_line': 0, 'limit': 10, ...}, 'llm_data': {'action': {'params': {'file_path': 'C:\\Users\\chend\\AppData\\Local\\Temp\\pytest-of-chend\\pytest-213\\test_bug_6_empty_file_with_off0\\empty.txt'}, 'target': 'C:\\Users\\chend\\AppData\\Local\\Temp\\pytest-of-chend\\pytest-213\\test_bug_6_empty_file_with_off0\\empty.txt', 'tool': 'read_text_file', 'tool_zh': '璇诲彇'}, 'duration_ms': 757, 'metrics': {'lines': {'text': '0琛?, 'value': 0}, 'total_lines': {'text': '0琛?, 'value': 0}}, 'status': {'code': '', 'detail': '绌烘枃浠舵棤娉曚娇鐢╫ffset鍙傛暟(鏂囦欢鍏?琛?', 'exec_code': 'warning', 'hint': '璇锋鏌ffset鍙傛暟鏄惁瓒呭嚭鏂囦欢鑼冨洿', ...}, ...}, 'other_data': {}})
+E    +  and   {'content': '', 'encoding': 'utf-8', 'end_line': 0, 'limit': 10, ...} = <built-in method get of dict object at 0x000001916BB0ADC0>('data', {})
+E    +    where <built-in method get of dict object at 0x000001916BB0ADC0> = {'data': {'content': '', 'encoding': 'utf-8', 'end_line': 0, 'limit': 10, ...}, 'llm_data': {'action': {'params': {'file_path': 'C:\\Users\\chend\\AppData\\Local\\Temp\\pytest-of-chend\\pytest-213\\test_bug_6_empty_file_with_off0\\empty.txt'}, 'target': 'C:\\Users\\chend\\AppData\\Local\\Temp\\pytest-of-chend\\pytest-213\\test_bug_6_empty_file_with_off0\\empty.txt', 'tool': 'read_text_file', 'tool_zh': '璇诲彇'}, 'duration_ms': 757, 'metrics': {'lines': {'text': '0琛?, 'value': 0}, 'total_lines': {'text': '0琛?, 'value': 0}}, 'status': {'code': '', 'detail': '绌烘枃浠舵棤娉曚娇鐢╫ffset鍙傛暟(鏂囦欢鍏?琛?', 'exec_code': 'warning', 'hint': '璇锋鏌ffset鍙傛暟鏄惁瓒呭嚭鏂囦欢鑼冨洿', ...}, ...}, 'other_data': {}}.get
+=========================== short test summary info ===========================
+FAILED tests/tools/param_combination/test_read_text_file_deep.py::TestReadTextFileDeepBugs::test_bug_6_empty_file_with_offset
+============================== 1 failed in 1.38s ==============================

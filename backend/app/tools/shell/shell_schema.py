@@ -33,7 +33,7 @@ class ExecuteShellCommandInput(BaseModel):
     )
     run_in_background: bool = Field(
         default=False,
-        description="是否在后台运行命令。长期服务(如npm run dev)Agent自动设为true"
+        description="是否在后台运行命令"
     )
     cwd: Optional[str] = Field(
         default=None, description="命令执行的工作目录(绝对路径)。需要在特定目录下执行命令时设置,如 D:/project。不设置则使用当前目录"

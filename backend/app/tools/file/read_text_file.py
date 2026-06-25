@@ -112,7 +112,7 @@ def _select_lines(
     offset: Optional[int] = None,
     limit: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """根据参数选择行并构建 _data 字典 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 offset超范围返回warning
+    """根据参数选择行并构建 _data 字典 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 offset超范围返回warning — 小健 2026-06-25 空文件+offset返回warning
     offset: 负数=从尾倒数;正数=分页(必须配合limit);None=全文
     limit: 仅配合offset正数(分页)"""
     total = len(lines)
@@ -120,19 +120,29 @@ def _select_lines(
     warning = None
 
     if offset is not None:
-        start_idx = max(0, offset - 1) if offset > 0 else max(0, total + offset)
-        if start_idx >= total and total > 0:
-            warning = f"offset={offset}超出文件范围(共{total}行),返回空内容"
-        if limit is not None:
-            selected = lines[start_idx:start_idx + limit]
+        if total == 0:
+            warning = f"空文件无法使用offset参数(文件共0行)"
+            selected = []
+            n = 0
+            params.update({
+                "offset": offset, "limit": limit,
+                "start_line": 0,
+                "end_line": 0,
+            })
         else:
-            selected = lines[start_idx:]
-        n = len(selected)
-        params.update({
-            "offset": offset, "limit": limit,
-            "start_line": start_idx + 1 if n > 0 else 0,
-            "end_line": start_idx + n if n > 0 else 0,
-        })
+            start_idx = max(0, offset - 1) if offset > 0 else max(0, total + offset)
+            if start_idx >= total and total > 0:
+                warning = f"offset={offset}超出文件范围(共{total}行),返回空内容"
+            if limit is not None:
+                selected = lines[start_idx:start_idx + limit]
+            else:
+                selected = lines[start_idx:]
+            n = len(selected)
+            params.update({
+                "offset": offset, "limit": limit,
+                "start_line": start_idx + 1 if n > 0 else 0,
+                "end_line": start_idx + n if n > 0 else 0,
+            })
     else:
         selected = lines
 
@@ -210,6 +220,17 @@ async def read_text_file(
                 detail=f"limit必须>=1,当前值: {limit}",
             )
             return build_error(data={"error_detail": f"limit必须>=1", "params": {"limit": limit}}, llm_data=llm_data)
+
+        if encoding is not None:
+            try:
+                "".encode(encoding)
+            except LookupError:
+                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                llm_data = _build_read_text_file_llm_data(
+                    "error", duration_ms, file_path=file_path,
+                    detail=f"不支持的编码: {encoding}",
+                )
+                return build_error(data={"error_detail": f"不支持的编码: {encoding}", "params": {"encoding": encoding}}, llm_data=llm_data)
 
         if offset is not None and offset == 0:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

@@ -28,21 +28,52 @@ def _validate_path(file_path: str) -> Tuple[bool, Optional[str]]:
     return _validate_path_impl(file_path, ALLOWED_PATHS)
 
 
-_ENCODING_PRIORITY = ["utf-8", "gbk", "gb2312", "utf-8-sig"]
+_ENCODING_PRIORITY = ["utf-8", "gbk", "gb2312", "utf-8-sig", "latin-1", "cp1252", "iso-8859-2", "cp1250"]
 
 
 def _read_file_safe(file_path: Path) -> List[str]:
-    """多编码尝试读取文件行 — 小健 2026-05-25 — 小欧 2026-06-22"""
+    """多编码尝试读取文件行 — 小健 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-25 chardet自动检测"""
     try:
         size = file_path.stat().st_size
         if size > MAX_SEARCH_FILE_SIZE:
             return []
     except OSError:
         return []
+    # chardet自动检测编码
+    detected_enc = None
+    try:
+        import chardet as _chardet
+        raw = file_path.read_bytes()
+        det = _chardet.detect(raw)
+        if det and det.get("encoding") and det.get("confidence", 0) > 0.5:
+            detected_enc = det["encoding"]
+    except Exception:
+        pass
+    # 构建编码列表：chardet结果优先
+    enc_list = []
+    if detected_enc:
+        enc_list.append(detected_enc)
     for enc in _ENCODING_PRIORITY:
+        if enc not in enc_list:
+            enc_list.append(enc)
+    # 尝试精确解码
+    for enc in enc_list:
         try:
             with file_path.open("r", encoding=enc) as f:
                 return f.readlines()
+        except (UnicodeDecodeError, LookupError):
+            continue
+    # 所有编码失败，用replace兜底
+    for enc in enc_list:
+        try:
+            with file_path.open("r", encoding=enc, errors="replace") as f:
+                lines = f.readlines()
+            total_chars = sum(len(line) for line in lines)
+            if total_chars > 0:
+                replace_count = sum(line.count("\ufffd") for line in lines)
+                if replace_count / total_chars > 0.05:
+                    continue
+            return lines
         except (UnicodeDecodeError, LookupError):
             continue
     return []

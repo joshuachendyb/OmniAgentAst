@@ -24,7 +24,6 @@ from e2emodel.e2e_helpers import (
     ensure_backend_ready, send_chat, check_db,
     verify_consistency, verify_steps, verify_db_prompt_consistency, check_logs,
     cleanup, print_report, write_test_record,
-    get_security_enabled, set_security_enabled,
     assert_stream_ended,
 )
 
@@ -42,9 +41,6 @@ async def test_e2e_p0_02_tool_call():
 
     if TEST_FILE.exists():
         TEST_FILE.unlink(missing_ok=True)
-
-    orig_security = get_security_enabled()
-    set_security_enabled(False)
 
     try:
         assert ensure_backend_ready(), "后端未启动(手册6.1)"
@@ -136,8 +132,6 @@ async def test_e2e_p0_02_tool_call():
         if TEST_FILE.exists():
             TEST_FILE.unlink(missing_ok=True)
         write_test_record("E2E-P0-02", "工具调用通路验证", user_input, r, db, ci, si, lc, passed, r.get("total_time_ms", 0)/1000.0 if r else 0, dpi=dpi, error_info=error_info)
-        if orig_security is not None:
-            set_security_enabled(orig_security)
 
 
     if passed:

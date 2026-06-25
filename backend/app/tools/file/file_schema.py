@@ -29,7 +29,7 @@ from typing import Optional, List, Dict, Any, Literal, Union
 # 禁止在这里写文档字符串。工具描述写在 file_register.py 的 FILE_TOOL_DESCRIPTIONS 里。
 class ReadTextFileInput(BaseModel):
     file_path: str = Field(
-        description="要读取的文件路径(绝对路径)。支持文本文件:txt/md/py/js/ts/json/yaml/yml/xml/html/css/csv/log等。二进制文件(图片/音频/视频/exe/dll等)将被拒绝,请使用read_media_file工具"
+        description="要读取的文件路径(绝对路径)。支持文本文件:txt/md/py/js/ts/json/yaml/yml/xml/html/css/csv/log等"
     )
     offset: Optional[int] = Field(
         default=None,
@@ -57,7 +57,7 @@ class WriteTextFileInput(BaseModel):
         description="文件的完整路径(绝对路径,支持中文路径)。用于写入文本文件:txt/md/py/js/ts/json/yaml/yml/xml/html/css/csv/log等"
     )
     content: str = Field(
-        description="要写入文件的文本内容(必须是实际内容,禁止传入思考/计划/状态描述)"
+        description="要写入文件的文本内容"
     )
     encoding: Optional[str] = Field(
         default=None,
@@ -65,7 +65,7 @@ class WriteTextFileInput(BaseModel):
     )
     append: bool = Field(
         default=False,
-        description="是否追加写入。True=追加,False=覆盖。对.log文件Agent可自动设为True"
+        description="是否追加写入。True=追加,False=覆盖"
     )
 
 
@@ -85,20 +85,23 @@ class ReadMediaFileInput(BaseModel):
 
 class EditTextFileInput(BaseModel):
     file_path: str = Field(
-        description="目标文件的绝对路径(仅支持文本文件,二进制文件将被拒绝)"
+        description="目标文件的绝对路径(仅支持文本文件)"
     )
     old_string: str = Field(
-        description="待替换的旧字符串(必须唯一，若需替换所有匹配项请设 replace_all=True)。建议先用read_text_file读取文件确认内容存在"
+        description="待替换的旧字符串。若需替换所有匹配项请设replace_all=True"
     )
     new_string: str = Field(
         default="",
-        description="替换的新字符串。传空字符串 '' 表示删除匹配到的文本"
+        description="替换的新字符串。传空字符串''表示删除匹配到的文本"
     )
     replace_all: bool = Field(
         default=False,
         description="是否替换所有匹配项,默认False只替换第一个"
     )
-
+    ignore_case: bool = Field(
+        default=False,
+        description="是否忽略大小写,默认False"
+    )
     encoding: Optional[str] = Field(
         default=None,
         description="文件编码,默认utf-8"
@@ -180,7 +183,7 @@ class GrepFileContentInput(BaseModel):
 # ============================================================
 
 class CompressFilesInput(BaseModel):
-    source: str = Field(description="要压缩的单个文件/目录路径(绝对路径,必填),支持通配符如*.txt。多文件打包请用通配符(如E:\\dir\\*.txt)或分多次调用设置overwrite=true覆盖")
+    source: str = Field(description="要压缩的文件/目录路径(绝对路径),支持通配符如*.txt")
     destination: str = Field(description="输出压缩包路径(绝对路径,必填)")
     format: Literal["zip", "tar", "tar.gz", "tar.bz2"] = Field(
         default="zip", description="压缩格式:zip/tar/tar.gz/tar.bz2,默认zip"
@@ -225,6 +228,7 @@ class CopyFileInput(BaseModel):
     destination: str = Field(description="目标路径(绝对路径)")
     recursive: bool = Field(default=False, description="复制目录时需True,默认False")
     overwrite: bool = Field(default=False, description="是否覆盖目标文件,默认False")
+    preserve_metadata: bool = Field(default=True, description="是否保留文件元数据(修改时间等),默认True")
 
 
 
