@@ -350,7 +350,6 @@ ERR_META_CALENDAR_NEXT_N_WORKDAY = "ERR_META_CALENDAR_NEXT_N_WORKDAY"
 ERR_META_INVALID_CHECK_TYPE = "ERR_META_INVALID_CHECK_TYPE"
 ERR_META_TIME_CONVERT = "ERR_META_TIME_CONVERT"
 ERR_META_TIME_FORMAT = "ERR_META_TIME_FORMAT"
-ERR_META_TOOL_IMPL_NOT_FOUND = "ERR_META_TOOL_IMPL_NOT_FOUND"
 ERR_MISSING_TOOL = "ERR_MISSING_TOOL"
 ERR_NETWORK_CONNECTION_ERROR = "ERR_NETWORK_CONNECTION_ERROR"
 ERR_NETWORK_CREATE_DIR = "ERR_NETWORK_CREATE_DIR"
@@ -417,16 +416,5 @@ TASK_TIMEOUT = timedelta(hours=1)
 
 # HITL超时(秒) — H-1修复 2026-06-25 小欧
 HITL_TIMEOUT = 120
-
-# ============================================================
-# 11. Agent meta工具
-# ============================================================
-
-META_TOOL_NAMES = [
-    'tool_search',
-    'time_now', 'time_add', 'time_diff', 'query_calendar',
-    'timer',
-]
-
 
 

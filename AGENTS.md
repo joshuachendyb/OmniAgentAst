@@ -105,7 +105,7 @@ npm run test:e2e     # Playwright
 
 ### Backend: `backend/app/main.py` → FastAPI
 
-**Request flow**: `chat_router.py` → CRSS regex scoring → `AgentFactory.create(intent_type)` → Agent subclasses → ReAct loop → SSE
+**Request flow**: `chat_openai.py` → `run_sse_stream.py` → `UniversalAgent` → `run_react_cycle()` → SSE
 
 **Agent system** (`backend/app/services/agent/`):
 - `core_agent/` — `react_cycle.py`(循环调度), `handlers/`(action/answer处理), `initialize_run_state.py`
@@ -113,10 +113,10 @@ npm run test:e2e     # Playwright
 - `steps/` — Step类型定义(ThoughtStep, ToolStep, FinalStep等)
 - `types/` — AgentStatus枚举, ObservationContext等
 
-**Tool registry** (`backend/app/services/tools/`):
+**Tool registry** (`backend/app/tools/`):
 - `registry.py` — `ToolRegistry` singleton, `ToolCategory` enum
 - `__init__.py` — `ensure_tools_registered()` loads all tools
-- Categories: `file`, `shell`, `network`, `system`, `desktop`, `document`, `meta`, `win_registry`
+- Categories: `file`, `shell`, `network`, `system`, `desktop`, `document`, `fundamental`, `dataanalysis`, `timer`, `win_registry`
 - Each `{category}/` has: `{category}_register.py`, `{category}_tools.py`, `{category}_schema.py` (+ optional extras)
 
 **LLM client** (`backend/app/services/llm/`):
@@ -149,12 +149,13 @@ OmniAgentAs-desk/
 │   │   ├── main.py             # FastAPI entrypoint
 │   │   ├── config.py           # YAML+env config loader
 │   │   ├── db/models/          # SQLAlchemy + Pydantic
+│   │   ├── tools/              # Tool registry + categories (file/shell/fundamental/...)
 │   │   ├── services/
 │   │   │   ├── agent/          # core_agent/, agent_utils/, steps/, types/
-│   │   │   ├── tools/          # Tool categories (file/shell/network/...)
+│   │   │   ├── tools/          # (deprecated, moved to app/tools/)
 │   │   │   ├── llm/            # LLM client (client_sdk.py, core.py, stream_parser.py)
 │   │   │   ├── safety/         # file_safety/, tool_safety_checker.py
-│   │   │   ├── task/           # task_tracker.py, task_control.py
+│   │   │   ├── task/           # task_tracker.py, task_pause/cancel/resume.py
 │   │   │   └── react_sse_wrapper/  # run_sse_stream.py, chat_stream.py
 │   │   └── utils/              # 公共工具函数
 │   ├── tests/                  # pytest
@@ -193,7 +194,7 @@ OmniAgentAs-desk/
 | **httpx version lock** | `httpx==0.26.0` + `httpcore==1.0.1` required. Don't upgrade. |
 | **Duplicate `__all__`** | Register files may have 2 `__all__` defs (second overwrites first). |
 | **Tool impl vs registration** | Functions in `{cat}_tools.py`, registration in `{cat}_register.py`. Don't confuse them. |
-| **`_loaded_categories`** | Per-agent set for tool loading. Initialized to `{current_category, support_tool}`. |
+| **`_loaded_categories`** | Per-agent set for tool loading. Initialized to `{FUNDAMENTAL, SHELL, FILE}`. |
 
 ---
 ##  编码口诀-严格遵守
