@@ -10,6 +10,7 @@ S1: execute_shell_command — 执行Shell命令
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -34,6 +35,50 @@ from app.constants import (
 
 _background_shells: Dict[str, Dict[str, Any]] = {}
 _background_shells_lock = threading.Lock()
+
+# PowerShell 5.1不支持 && 和 || 作为命令分隔符(仅PS7+支持)
+# 翻译规则:
+#   cmd1 && cmd2  →  cmd1; if ($?) { cmd2 }       (仅cmd1成功时执行cmd2)
+#   cmd1 || cmd2  →  cmd1; if (-not $?) { cmd2 }  (仅cmd1失败时执行cmd2)
+_RE_POWERSHELL_AND = re.compile(r'&&\s*')
+_RE_POWERSHELL_OR = re.compile(r'\|\|\s*')
+
+
+def _translate_powershell_operators(command: str) -> str:
+    """将 && 和 || 翻译为 PowerShell 5.1 兼容语法 — 小欧 2026-06-25"""
+    if '&&' not in command and '||' not in command:
+        return command
+    # 按优先级：先处理 || 再处理 &&（|| 优先级更低）
+    # 简单链式：cmd1 && cmd2 && cmd3 → 逐段处理
+    result = command
+    # 处理 &&
+    while '&&' in result:
+        result = _RE_POWERSHELL_AND.sub('; if ($?) { ', result, count=1)
+        # 找到对应的闭合 } — 在下一个 && 或 || 或末尾
+        marker = '; if ($?) { '
+        idx = result.rfind(marker)
+        rest = result[idx + len(marker):]
+        # 在rest中找到下一个 && 或 || 的位置
+        next_op = len(rest)
+        for op in ['&&', '||']:
+            pos = rest.find(op)
+            if pos != -1 and pos < next_op:
+                next_op = pos
+        # 在 next_op 位置插入 }
+        result = result[:idx + len(marker) + next_op] + ' }' + result[idx + len(marker) + next_op:]
+    # 处理 ||
+    while '||' in result:
+        result = _RE_POWERSHELL_OR.sub('; if (-not $?) { ', result, count=1)
+        marker = '; if (-not $?) { '
+        idx = result.rfind(marker)
+        rest = result[idx + len(marker):]
+        next_op = len(rest)
+        for op in ['&&', '||']:
+            pos = rest.find(op)
+            if pos != -1 and pos < next_op:
+                next_op = pos
+        result = result[:idx + len(marker) + next_op] + ' }' + result[idx + len(marker) + next_op:]
+    return result
 
 
 def _build_execute_shell_command_llm_data(
@@ -166,6 +211,10 @@ def execute_shell_command(
 
     executable = None if shell_type == "cmd" else (
         shutil.which("powershell.exe") or shutil.which("pwsh.exe") or "powershell.exe")
+
+    # PowerShell 5.1 不支持 && 和 ||，自动翻译为兼容语法 — 小欧 2026-06-25
+    if shell_type == "powershell" and ('&&' in command or '||' in command):
+        command = _translate_powershell_operators(command)
 
     safety_check = get_tool_safety_checker().check_before_execute("execute_shell_command", {"command": command})
     if safety_check.get("blocked", False):
