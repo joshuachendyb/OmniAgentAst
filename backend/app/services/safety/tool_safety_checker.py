@@ -129,7 +129,8 @@ class ToolSafetyChecker:
         if tool_name == _WRITE_RISK_TOOL:
             try:
                 from pathlib import Path as _Path
-                file_path = params.get("file_path", "")
+                # 【#29修复】写入大小保护应优先用path参数（与路径检查一致），file_path兜底 — chendyg 2026-06-26
+                file_path = params.get("path") or params.get("file_path", "")
                 content = params.get("content", "")
                 p = _Path(file_path)
                 old_size = p.stat().st_size if p.exists() and p.is_file() else 0
