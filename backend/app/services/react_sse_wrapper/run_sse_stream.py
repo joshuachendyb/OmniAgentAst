@@ -81,7 +81,8 @@ def _load_previous_messages(session_id: str) -> List[Dict[str, Any]]:
                 if exec_steps_json:
                     messages.extend(_parse_observations(msg_id, exec_steps_json))
         return messages
-    except Exception:
+    except Exception as e:
+        logger.warning(f"[SSE] 加载会话历史失败(session={session_id}): {e}")
         return []
 
 
