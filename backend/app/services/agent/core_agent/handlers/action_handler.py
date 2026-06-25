@@ -207,13 +207,14 @@ async def build_observation(ctx: ObservationContext) -> List:
     events = []
 
     for call, result in zip(ctx.all_calls, ctx.results):
-        _ec = (result.get("llm_data") or {}).get("status", {}).get("exec_code", "") if isinstance(result, dict) else ""
+        _llm_data = result.get("llm_data") if isinstance(result, dict) and isinstance(result.get("llm_data"), dict) else {}
+        _ec = _llm_data.get("status", {}).get("exec_code", "") if _llm_data else ""
         action_step = ActionStep(
             step=ctx.step,
-            tool_name=call["tool_name"],
-            tool_params=call["tool_params"],
+            tool_name=call.get("tool_name", ""),
+            tool_params=call.get("tool_params", {}),
             execution_result=result,
-            execution_status=_ec or "error",
+            execution_status=_ec if _ec else "",
         )
         events.append(ctx.agent._step_emitter.emit(action_step))
 
@@ -323,12 +324,13 @@ def _log_tool_results(step: int, all_calls: list, results: list, agent):
         
         is_error = isinstance(result, Exception)
         if isinstance(result, dict):
-            exec_code = (result.get("llm_data") or {}).get("status", {}).get("exec_code", "")
+            _llm_d = result.get("llm_data") if isinstance(result.get("llm_data"), dict) else {}
+            exec_code = _llm_d.get("status", {}).get("exec_code", "")
             is_failed = exec_code == "error"
         else:
             is_failed = is_error
         op_status = OperationStatus.FAILED.value if (is_error or is_failed) else OperationStatus.SUCCESS.value
-        agent.record_operation(call["tool_name"], status=op_status, error=str(result) if (is_error or is_failed) else None)
+        agent.record_operation(call.get("tool_name", "?"), status=op_status, error=str(result) if (is_error or is_failed) else None)
 
 
 async def handle_action(agent, parsed: Dict, chunk_buffer):
