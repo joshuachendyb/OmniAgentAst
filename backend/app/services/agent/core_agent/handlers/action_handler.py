@@ -54,7 +54,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
         safety_checker = get_tool_safety_checker()
 
         for call in all_calls:
-            safety_result = safety_checker.check_before_execute(call["tool_name"], call["tool_params"])
+            _cn = call.get("tool_name", "?")
+            _cp = call.get("tool_params", {})
+            safety_result = safety_checker.check_before_execute(_cn, _cp)
 
             if safety_result.blocked:
                 yield agent._step_emitter.emit(ErrorStep(
@@ -66,7 +68,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
                 return
 
             if safety_result.requires_confirmation:
-                desensitized_params = {k: v for k, v in call["tool_params"].items()
+                desensitized_params = {k: v for k, v in _cp.items()
                                        if k not in _SENSITIVE_FIELDS}
 
                 confirm_id = await create_confirmation(agent.task_id)
@@ -74,10 +76,10 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
                 yield agent._step_emitter.emit(MetaStep(
                     step=step,
                     type="authorization_required",
-                    message=f"需要用户确认工具执行: {call['tool_name']}",
+                    message=f"需要用户确认工具执行: {_cn}",
                     data={
                         "confirm_id": confirm_id,
-                        "tool_name": call["tool_name"],
+                        "tool_name": _cn,
                         "params": desensitized_params,
                         "safety_level": safety_result.safety_level,
                     },
@@ -89,9 +91,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
                     yield agent._step_emitter.emit(ErrorStep(
                         step=step,
                         error_type="user_rejected",
-                        error_message=f"用户拒绝执行工具: {call['tool_name']}"
+                        error_message=f"用户拒绝执行工具: {_cn}"
                     ))
-                    agent.set_failed(f"用户拒绝执行工具: {call['tool_name']}")
+                    agent.set_failed(f"用户拒绝执行工具: {_cn}")
                     return
 
 
@@ -101,29 +103,34 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
         from app.services.agent.tool_executor import execute_tool
         start_time = time.time()
         
+        def _cn(c):
+            return c.get("tool_name", "") if isinstance(c, dict) else ""
+        def _cp(c):
+            return c.get("tool_params", {}) if isinstance(c, dict) else {}
+        
         if is_parallel:
-            tasks = [execute_tool(agent, c["tool_name"], c["tool_params"]) for c in all_calls]
+            tasks = [execute_tool(agent, _cn(c), _cp(c)) for c in all_calls]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for i, (call, result) in enumerate(zip(all_calls, results)):
                 if isinstance(result, Exception):
-                    logger.warning(f"[action_handler] 工具{call['tool_name']}并行执行失败,重试: {result}")
+                    logger.warning(f"[action_handler] 工具{_cn(call)}并行执行失败,重试: {result}")
                     try:
-                        results[i] = await execute_tool(agent, call["tool_name"], call["tool_params"])
+                        results[i] = await execute_tool(agent, _cn(call), _cp(call))
                     except Exception as e2:
-                        logger.warning(f"[action_handler] 工具{call['tool_name']}重试仍失败: {e2}")
+                        logger.warning(f"[action_handler] 工具{_cn(call)}重试仍失败: {e2}")
         else:
             result = await execute_tool(agent, tool_name, tool_params)
             results = [result]
         
         elapsed = time.time() - start_time
-        tool_names = [c["tool_name"] for c in all_calls]
+        tool_names = [_cn(c) for c in all_calls]
         logger.info(f"[action_handler] 工具执行完成: tools={tool_names}, 耗时={elapsed:.2f}s")
         
         for call, result in zip(all_calls, results):
             if isinstance(result, Exception):
-                logger.info(f"[action_handler] 工具原始结果: tool={call['tool_name']}, params={call['tool_params']}, result=ERROR({result})")
+                logger.info(f"[action_handler] 工具原始结果: tool={_cn(call)}, params={_cp(call)}, result=ERROR({result})")
             else:
-                logger.info(f"[action_handler] 工具原始结果: tool={call['tool_name']}, params={call['tool_params']}, result={result}")
+                logger.info(f"[action_handler] 工具原始结果: tool={_cn(call)}, params={_cp(call)}, result={result}")
 
         return results
 
@@ -293,7 +300,7 @@ async def build_observation(ctx: ObservationContext) -> List:
 
 def _build_call_list(parsed: Dict) -> tuple:
     """构建工具调用列表 — 小欧 2026-06-18 从handle_action提取"""
-    tool_name = parsed["tool_name"]
+    tool_name = parsed.get("tool_name", "")
     tool_params = parsed.get("tool_params", {})
     fc_context = parsed.get("fc_context", {})
     pending_calls = parsed.get("_pending_calls", [])
@@ -303,7 +310,7 @@ def _build_call_list(parsed: Dict) -> tuple:
         "_tool_call_id": fc_context.get("tool_call_id", "") if fc_context else "",
     }]
     all_calls.extend({
-        "tool_name": pc["tool_name"], "tool_params": pc["tool_params"],
+        "tool_name": pc.get("tool_name", ""), "tool_params": pc.get("tool_params", {}),
         "_tool_call_id": pc.get("_tool_call_id", ""),
     } for pc in pending_calls)
 
