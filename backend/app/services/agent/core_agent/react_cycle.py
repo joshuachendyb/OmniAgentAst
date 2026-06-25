@@ -73,6 +73,10 @@ async def _dispatch_handler(agent, llm_response, chunk_buffer):
             yield event
     else:
         logger.warning(f"[dispatch_handler] 未知返回类型: {parsed_type}, 设置为FAILED")
+        # 【#35修复】未知类型响应加入对话历史，防止LLM重复产生相同无效响应 — chendyg 2026-06-26
+        content = llm_response.get("content", "") or llm_response.get("thought", "")
+        if content:
+            agent.message_builder.add_assistant_message(f"[无效响应:{parsed_type}] {content}")
         agent.set_failed(f"LLM返回未知响应类型: {parsed_type}")
         yield agent._step_emitter.emit(FinalStep(
             step=agent.llm_call_count,
