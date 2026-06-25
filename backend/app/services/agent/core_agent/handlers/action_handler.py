@@ -55,16 +55,16 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
         for call in all_calls:
             safety_result = safety_checker.check_before_execute(call["tool_name"], call["tool_params"])
 
-            if safety_result.get("blocked"):
+            if safety_result.blocked:
                 yield agent._step_emitter.emit(ErrorStep(
                     step=step,
                     error_type="blocked",
-                    error_message=safety_result["message"]
+                    error_message=safety_result.message
                 ))
                 agent.status = AgentStatus.FAILED
                 return
 
-            if safety_result.get("requires_confirmation"):
+            if safety_result.requires_confirmation:
                 desensitized_params = {k: v for k, v in call["tool_params"].items()
                                        if k not in _SENSITIVE_FIELDS}
 
@@ -78,7 +78,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
                         "confirm_id": confirm_id,
                         "tool_name": call["tool_name"],
                         "params": desensitized_params,
-                        "safety_level": safety_result["safety_level"],
+                        "safety_level": safety_result.safety_level,
                     },
                 ))
 

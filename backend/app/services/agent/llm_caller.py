@@ -42,7 +42,7 @@ async def call_llm(agent):
 
 
 def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agent):
-    """构建action类型响应并日志 — 小欧 2026-06-18 从call_llm_fc_stream提取"""
+    """构建action类型响应 — 小欧 2026-06-25 抽取_log_llm_response"""
     first = tool_calls_result[0]
     built_tool_calls = []
     for tc in tool_calls_result:
@@ -58,14 +58,9 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
         })
 
     logger.info(f"[FC] LLM原始响应(action): tool={first['tool_name']}, parallel={len(_pending_calls)}")
-    prompt_logger = get_prompt_logger()
     assembled = {"content": full_content, "tool_calls": built_tool_calls}
-    prompt_logger.log_llm_response(
-        round_number=agent.llm_call_count, response_content=json.dumps(assembled, ensure_ascii=False),
-        raw_response=json.dumps(assembled, ensure_ascii=False), response_type="action",
-        finish_reason="tool_calls",
-        extra_info={"tool_name": first["tool_name"], "parallel_calls": len(_pending_calls), "usage": usage_data},
-    )
+    _log_llm_response(agent, json.dumps(assembled, ensure_ascii=False), "action", usage_data,
+                      tool_name=first["tool_name"], parallel_calls=len(_pending_calls))
     return ("response", {
         "type": "action", "thought": full_content,
         "fc_context": {"tool_call_id": first.get("tool_call_id", ""), "tool_calls": built_tool_calls, "llm_content": full_content},
@@ -75,27 +70,31 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
     })
 
 
+def _log_llm_response(agent, assembled_json, response_type, usage_data, finish_reason=None, **extra):
+    """统一LLM响应日志 — 小欧 2026-06-25 SRP提取"""
+    if finish_reason is None:
+        finish_reason = "tool_calls" if response_type == "action" else "stop"
+    get_prompt_logger().log_llm_response(
+        round_number=agent.llm_call_count, response_content=assembled_json,
+        raw_response=assembled_json, response_type=response_type,
+        finish_reason=finish_reason,
+        extra_info={**extra, "usage": usage_data} if usage_data else {**extra},
+    )
+
+
 def _yield_error_response(error_msg: str, agent):
     """统一错误响应构建 — 小健 2026-06-18 DRY提取"""
     logger.error(f"[FC] {error_msg}")
-    get_prompt_logger().log_llm_response(
-        round_number=agent.llm_call_count, response_content=error_msg,
-        raw_response=error_msg, response_type="answer", finish_reason="error",
-    )
+    _log_llm_response(agent, error_msg, "answer", None, finish_reason="error")
     return ("response", {"type": "answer", "content": error_msg})
 
 
 def _build_answer_response(content, usage_data, agent):
-    """构建answer类型响应并日志 — 小欧 2026-06-18 从call_llm_fc_stream提取"""
+    """构建answer类型响应 — 小欧 2026-06-25 抽取_log_llm_response"""
     logger.info(f"[FC] LLM原始响应(answer): {content}")
-    prompt_logger = get_prompt_logger()
     assembled = {"content": content}
-    extra_info = {"usage": usage_data} if usage_data else None
-    prompt_logger.log_llm_response(
-        round_number=agent.llm_call_count, response_content=content,
-        raw_response=json.dumps(assembled, ensure_ascii=False), response_type="answer",
-        finish_reason="stop", extra_info=extra_info,
-    )
+    _log_llm_response(agent, json.dumps(assembled, ensure_ascii=False), "answer", usage_data)
+    return ("response", {"type": "answer", "content": content, "thought": ""})
     return ("response", {"type": "answer", "content": content, "thought": ""})
 
 

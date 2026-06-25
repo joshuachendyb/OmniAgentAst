@@ -217,11 +217,11 @@ def execute_shell_command(
         command = _translate_powershell_operators(command)
 
     safety_check = get_tool_safety_checker().check_before_execute("execute_shell_command", {"command": command})
-    if safety_check.get("blocked", False):
-        logger.warning(f"[Shell安全] 拦截: {safety_check.get('message')}")
+    if safety_check.blocked:
+        logger.warning(f"[Shell安全] 拦截: {safety_check.message}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_execute_shell_command_llm_data("error", duration_ms, command, -1, "", "", shell_type or "", ERR_SHELL_INJECTION, safety_check.get("message", "命令不安全"))
-        return build_error(data={"error_detail": safety_check.get("message", "命令不安全"), "params": {"command": command[:200]}}, llm_data=llm_data)
+        llm_data = _build_execute_shell_command_llm_data("error", duration_ms, command, -1, "", "", shell_type or "", ERR_SHELL_INJECTION, safety_check.message)
+        return build_error(data={"error_detail": safety_check.message, "params": {"command": command[:200]}}, llm_data=llm_data)
 
     if run_in_background:
         result = _run_shell_background(command, executable, cwd, env)

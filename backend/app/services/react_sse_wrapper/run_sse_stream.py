@@ -16,10 +16,50 @@ from app.services.agent.types import AgentStatus
 from app.services.task.task_state_queries import check_cancelled, check_paused
 
 
+def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
+    """从execution_steps JSON提取tool_calls列表 — 小欧 2026-06-25 从_load_previous_messages提取"""
+    import json
+    try:
+        exec_steps = json.loads(exec_steps_json)
+        tool_calls = []
+        for step in exec_steps:
+            if step.get("type") == "action_tool":
+                tool_calls.append({
+                    "id": f"call_{msg_id}_{step.get('step', 0)}",
+                    "type": "function",
+                    "function": {
+                        "name": step.get("tool_name", ""),
+                        "arguments": json.dumps(step.get("tool_params", {}), ensure_ascii=False)
+                    }
+                })
+        return tool_calls
+    except Exception:
+        return []
+
+
+def _parse_observations(msg_id: int, exec_steps_json: str) -> List[Dict]:
+    """从execution_steps JSON提取observation tool消息 — 小欧 2026-06-25 从_load_previous_messages提取"""
+    import json
+    try:
+        exec_steps = json.loads(exec_steps_json)
+        observations = []
+        for step in exec_steps:
+            if step.get("type") == "observation":
+                observation = step.get("observation", "")
+                if observation:
+                    observations.append({
+                        "role": "tool",
+                        "content": observation,
+                        "tool_call_id": f"call_{msg_id}_{step.get('step', 0)}"
+                    })
+        return observations
+    except Exception:
+        return []
+
+
 def _load_previous_messages(session_id: str) -> List[Dict[str, Any]]:
     """从DB加载会话历史消息 — 小健 2026-06-17 委托db层，消除SQLite越界
-    A-1修复 2026-06-25 小欧: 加载tool消息合并到前一条assistant的content中，保留工具历史上下文
-    小健 2026-06-25 修复: 返回完整的FC协议消息格式，保留tool消息独立性"""
+    小欧 2026-06-25: 抽取_parse_tool_calls/_parse_observations消除嵌套try/except"""
     from app.db import db
     try:
         with db.get_conn("chat") as conn:
@@ -33,53 +73,13 @@ def _load_previous_messages(session_id: str) -> List[Dict[str, Any]]:
             if role == "user":
                 messages.append({"role": "user", "content": content or ""})
             elif role == "assistant":
-                # 解析execution_steps，提取tool调用信息
-                tool_calls = []
-                if exec_steps_json:
-                    try:
-                        import json
-                        exec_steps = json.loads(exec_steps_json)
-                        # 从execution_steps中提取tool_calls信息
-                        for step in exec_steps:
-                            if step.get("type") == "action_tool":
-                                tool_call = {
-                                    "id": f"call_{msg_id}_{step.get('step', 0)}",
-                                    "type": "function",
-                                    "function": {
-                                        "name": step.get("tool_name", ""),
-                                        "arguments": json.dumps(step.get("tool_params", {}), ensure_ascii=False)
-                                    }
-                                }
-                                tool_calls.append(tool_call)
-                    except Exception:
-                        pass
-                
+                tool_calls = _parse_tool_calls(msg_id, exec_steps_json) if exec_steps_json else []
                 if tool_calls:
-                    messages.append({
-                        "role": "assistant",
-                        "content": content or "",
-                        "tool_calls": tool_calls
-                    })
+                    messages.append({"role": "assistant", "content": content or "", "tool_calls": tool_calls})
                 else:
                     messages.append({"role": "assistant", "content": content or ""})
-                
-                # 如果有observation步骤，添加对应的tool消息
                 if exec_steps_json:
-                    try:
-                        import json
-                        exec_steps = json.loads(exec_steps_json)
-                        for step in exec_steps:
-                            if step.get("type") == "observation":
-                                observation = step.get("observation", "")
-                                if observation:
-                                    # 为每个observation创建tool消息
-                                    messages.append({
-                                        "role": "tool",
-                                        "content": observation,
-                                        "tool_call_id": f"call_{msg_id}_{step.get('step', 0)}"
-                                    })
-                    except Exception:
-                        pass
+                    messages.extend(_parse_observations(msg_id, exec_steps_json))
         return messages
     except Exception:
         return []
