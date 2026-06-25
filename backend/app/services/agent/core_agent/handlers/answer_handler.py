@@ -22,6 +22,8 @@ async def handle_answer(agent, parsed: Dict, chunk_buffer):
         logger.warning(f"[handle_answer] LLM返回空内容(step={step})")
         # 【P1-17修复】空内容应设FAILED而非COMPLETED — chendyg 2026-06-26
         agent.status = AgentStatus.FAILED
+        # 【Bug3修复】空内容也需保存assistant消息到对话历史，保持FC协议完整性 — chendyg 2026-06-26
+        agent.message_builder.add_assistant_message("")
         yield agent._step_emitter.emit(FinalStep(
             step=step, response="", thought="",
         ))

@@ -17,3 +17,4 @@ class AgentStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     RETRYABLE_ERROR = "retryable_error"  # 小欧 2026-06-25: 可重试错误（FC格式错误等）
+    CANCELLED = "cancelled"  # 【Bug17修复】chendyg 2026-06-26: 任务被取消，区分于COMPLETED

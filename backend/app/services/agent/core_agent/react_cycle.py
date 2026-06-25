@@ -171,7 +171,8 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             response="任务已被中断",
             thought="",
         ))
-        agent.status = AgentStatus.COMPLETED
+        # 【Bug17修复】取消应设CANCELLED而非COMPLETED — chendyg 2026-06-26
+        agent.status = AgentStatus.CANCELLED
         return
 
     # BUG修复: LLM输出截断导致工具调用遗漏 — 检测preamble文本+注入重试
@@ -256,7 +257,7 @@ async def run_react_cycle(
             if agent.status == AgentStatus.RETRYABLE_ERROR:
                 agent.status = AgentStatus.THINKING
                 continue
-            if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
+            if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED, AgentStatus.CANCELLED):
                 break
 
             if chunk_buffer.should_force_stop():

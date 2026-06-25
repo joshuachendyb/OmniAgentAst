@@ -175,7 +175,8 @@ async def run_sse_stream(
         get_prompt_logger().log_step_yield(final_dict, round_number=final_dict.get('step', 0))
         yield format_agent_sse(final_dict)
         if agent is not None:
-            agent.status = AgentStatus.COMPLETED
+            # 【Bug17修复】CancelledError应设CANCELLED而非COMPLETED — chendyg 2026-06-26
+            agent.status = AgentStatus.CANCELLED
 
     except Exception as e:
         error_response = await _yield_error_sse(
