@@ -70,6 +70,7 @@ def patch_search_desc(agent):
     【P0-1修复 2026-06-23 小欧】每次从原始描述重新拼装，杜绝重复追加
     【2026-06-18 小健】删除 tool_categories.json，改为直接从 registry 获取
     【方案A修复 2026-06-23 小健】移除工具名列表，只列出分类名，避免LLM直接调用未注入工具
+    【Bug15修复】chendyg 2026-06-26: override变更后统一失效缓存，消除4处重复invalidate调用
     """
     from app.tools.registry import tool_registry
     
@@ -81,16 +82,19 @@ def patch_search_desc(agent):
     
     if not unloaded:
         agent._tool_search_desc_override = None
+        invalidate_tool_cache(agent)
         return
     
     ts_meta = tool_registry.get_tool("tool_search")
     if not ts_meta:
         agent._tool_search_desc_override = None
+        invalidate_tool_cache(agent)
         return
     
     base_desc = _get_original_search_desc()
     if not base_desc:
         agent._tool_search_desc_override = None
+        invalidate_tool_cache(agent)
         return
     
     lines = []
@@ -102,3 +106,4 @@ def patch_search_desc(agent):
         agent._tool_search_desc_override = base_desc + "\n\n当前未加载分类:\n" + "\n".join(lines)
     else:
         agent._tool_search_desc_override = None
+    invalidate_tool_cache(agent)
