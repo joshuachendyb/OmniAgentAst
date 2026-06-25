@@ -158,7 +158,7 @@ class MessageBuilder:
 
         策略: 从最后一条消息往前遍历,遇到tool就找其配对assistant一起保留,
         遇到独立消息直接保留,直到budget用完。剩余的全部丢弃。
-        小欧 2026-06-25: 保留每种工具的最后一次observation，后续结果更重要。
+        小欧 2026-06-25: 去掉强制保留机制,纯预算裁剪,简单可靠。
         """
         tool_to_assistant = {}
         for msg in assistant_msgs:
@@ -169,18 +169,6 @@ class MessageBuilder:
         # 按原始顺序排列 obs+assistant
         original_order = {id(msg): i for i, msg in enumerate(self.conversation_history)}
         all_msgs = sorted(obs_list + assistant_msgs, key=lambda m: original_order.get(id(m), 0))
-
-        # 识别每种工具的最后一次observation — D-4修复: 后续结果可能更重要
-        tool_last_obs = {}
-        for msg in obs_list:
-            tool_call_id = msg.get("tool_call_id", "")
-            if tool_call_id:
-                assistant = tool_to_assistant.get(tool_call_id)
-                if assistant:
-                    for tc in assistant.get("tool_calls", []):
-                        tool_name = tc.get("function", {}).get("name", "")
-                        if tool_name:
-                            tool_last_obs[tool_name] = msg  # 覆盖为最后一次
 
         kept = []
         used_chars = 0
@@ -193,9 +181,7 @@ class MessageBuilder:
             if msg.get("role") == "tool" and tc_id and tc_id in tool_to_assistant:
                 asst = tool_to_assistant[tc_id]
                 pair_chars = self._total_chars([asst, msg])
-                # 每种工具的最后一次observation强制保留
-                is_last_obs = msg in tool_last_obs.values()
-                if is_last_obs or used_chars + pair_chars <= budget:
+                if used_chars + pair_chars <= budget:
                     kept.append(msg)
                     kept.append(asst)
                     used_chars += pair_chars
