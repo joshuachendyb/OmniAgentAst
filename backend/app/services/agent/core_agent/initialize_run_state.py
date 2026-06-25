@@ -15,7 +15,8 @@ from app.utils.prompt_logger import get_prompt_logger
 
 
 def _inject_conversation_history(agent, context: Optional[Dict[str, Any]]) -> None:
-    """注入会话历史(多轮对话支持) — 北京老陈 2026-06-13; 小沈 2026-06-17 参数名self→agent"""
+    """注入会话历史(多轮对话支持) — 北京老陈 2026-06-13; 小沈 2026-06-17 参数名self→agent
+    小健 2026-06-26: 修复丢失tool消息和带tool_calls的assistant消息的bug(P0-1)，保留FC协议完整性"""
     if not context or not isinstance(context, dict):
         return
     prev = context.get("previous_messages")
@@ -23,8 +24,29 @@ def _inject_conversation_history(agent, context: Optional[Dict[str, Any]]) -> No
         return
     history = agent.message_builder.conversation_history
     for msg in prev:
-        if msg.get("role") in ("user", "assistant") and msg.get("content"):
-            history.append({"role": msg["role"], "content": msg["content"]})
+        role = msg.get("role")
+        # 小健 2026-06-26: 保留tool消息，原代码只保留user/assistant导致FC协议对话不一致
+        if role == "tool":
+            history.append({
+                "role": "tool",
+                "tool_call_id": msg.get("tool_call_id", ""),
+                "content": msg.get("content", ""),
+            })
+        elif role == "assistant":
+            # 小健 2026-06-26: 保留tool_calls字段，原代码只复制content导致带tool_calls的assistant消息丢失
+            tc = msg.get("tool_calls")
+            if tc:
+                history.append({
+                    "role": "assistant",
+                    "tool_calls": tc,
+                    "content": msg.get("content"),
+                })
+            elif msg.get("content"):
+                history.append({"role": "assistant", "content": msg["content"]})
+        elif role == "user" and msg.get("content"):
+            history.append({"role": "user", "content": msg["content"]})
+        elif role == "system" and msg.get("content"):
+            history.append({"role": "system", "content": msg["content"]})
     agent.message_builder.conversation_history = history
     agent.message_builder.trim_history()
 
