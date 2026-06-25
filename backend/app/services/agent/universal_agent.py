@@ -17,6 +17,7 @@ from app.utils.logger import logger
 from app.utils.cache import TTLCache
 
 from app.services.agent.tool_cache_manager import patch_search_desc
+from app.services.llm.llm_constants import TOOL_CACHE_TTL as _TOOL_CACHE_TTL
 
 
 # 初始注入分类 — 小健 2026-06-18
@@ -29,7 +30,7 @@ _INITIAL_CATEGORIES: Set[ToolCategory] = {ToolCategory.FUNDAMENTAL, ToolCategory
 class UniversalAgent(BaseAgent):
     """通用 Agent — 初始仅注入 FUNDAMENTAL+SHELL+FILE 3个分类给LLM，其余分类通过 tool_search 动态注入"""
 
-    TOOL_CACHE_TTL = 300
+    TOOL_CACHE_TTL = _TOOL_CACHE_TTL
 
 
     def __init__(
