@@ -64,10 +64,6 @@ class PromptBuilder:
 - 窗口管理/鼠标点击/截屏/剪贴板/通知/OCR → 调用tool_search搜"桌面 窗口"
 - 服务启停/ → 调用tool_search搜"服务"
 
-
-
-
-
 <安全规则>
 - 危险操作（删除、覆写、改配置）先说明并等待确认
 
@@ -78,8 +74,6 @@ class PromptBuilder:
 """
 
     TOOL_CALL_RULES = """
-<工具规则>
-
 【文本文件】(.txt .py .js .ts .java .go .c .cpp .rs .rb .swift .kt .html .css .scss .less .md .log .cfg .conf .sh .bat .ps1)
 - 读 → 必须用read_text_file
 - 写 → 必须用write_text_file
@@ -131,20 +125,19 @@ class PromptBuilder:
         ④ get_core_system_prompt()  — 角色+业务规则
         ⑤ TOOL_CALL_RULES           — 回答要求+停止条件
         """
-        parts = [self._get_system_info()]
-
-        parts.append(self._get_project_root_info())
+        ① get_core_system_prompt()  — 角色+业务规则
+        ② _get_project_context()    — 项目上下文(OmniAgent.md)
+        ③ _get_system_info()        — 系统信息(OS/路径规则)
+        ④ _get_project_root_info()  — 项目根目录
+        ⑤ TOOL_CALL_RULES           — 回答要求+停止条件
+        """
+        parts = [self.get_core_system_prompt()]
 
         project_ctx = self._get_project_context()
         if project_ctx:
             parts.append(project_ctx)
 
-        parts.append(self.get_core_system_prompt())
-        parts.append(self.TOOL_CALL_RULES)
-
-        return "\n\n".join(parts)
-
-
-__all__ = [
+        parts.append(self._get_system_info())
+        parts.append(self._get_project_root_info())
     "PromptBuilder",
 ]
