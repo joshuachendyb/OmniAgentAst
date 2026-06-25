@@ -305,7 +305,7 @@ def _build_call_list(parsed: Dict) -> tuple:
     """构建工具调用列表 — 小欧 2026-06-18 从handle_action提取
     chendyg 2026-06-26 P1-10/11修复: 防御tool_name为空和pending_calls缺字段"""
     tool_name = parsed.get("tool_name", "")
-    tool_params = parsed.get("tool_params", {})
+    tool_params = parsed.get("tool_params") or {}
     fc_context = parsed.get("fc_context", {})
     pending_calls = parsed.get("_pending_calls", [])
 
@@ -324,7 +324,7 @@ def _build_call_list(parsed: Dict) -> tuple:
             logger.warning(f"[_build_call_list] pending_call缺tool_name,跳过: {pc}")
             continue
         all_calls.append({
-            "tool_name": pc_name, "tool_params": pc.get("tool_params", {}),
+            "tool_name": pc_name, "tool_params": pc.get("tool_params") or {},
             "_tool_call_id": pc.get("_tool_call_id", ""),
         })
 
