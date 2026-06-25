@@ -163,6 +163,8 @@ class ToolRetryEngine:
                 return result
             return result
         except Exception as e:
+            # 【#43修复】保存原始异常供_execute_with_retry使用 — chendyg 2026-06-26
+            self._last_exception = e
             error_category = UnifiedErrorClassifier.classify_error(e)
             attempt = engine.record_attempt()
 
@@ -201,8 +203,11 @@ class ToolRetryEngine:
             )
             if result is not None:
                 return result
-            # P1-06修复: 记录最后一次异常
-            last_error = Exception(f"重试耗尽: {action}, attempts={engine.attempt_count}")
+            # 【#43修复】保留原始异常信息，而非创建新Exception — chendyg 2026-06-26
+            if not hasattr(self, '_last_exception') or self._last_exception is None:
+                last_error = Exception(f"重试耗尽: {action}, attempts={engine.attempt_count}")
+            else:
+                last_error = self._last_exception
         
         return self._build_retry_error(
             ERR_UNKNOWN, str(last_error)[:200] if last_error else "Unknown error",
