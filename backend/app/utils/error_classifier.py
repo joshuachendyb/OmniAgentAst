@@ -131,6 +131,7 @@ HTTPX_EXCEPTION_TO_ERROR_TYPE: Dict[str, ErrorCategory] = {
     "SSLError": ErrorCategory.NETWORK,
     "InvalidURL": ErrorCategory.INVALID_PARAMS,
     "TooManyRedirects": ErrorCategory.NETWORK,
+    "ReadError": ErrorCategory.NETWORK,
 }
 
 # 错误模式匹配条目
