@@ -122,12 +122,24 @@ def _grep_files_sync(
     ignore_case: bool, deadline: float,
     output_mode: str,
 ) -> Tuple[List[Dict], int, int, bool, List[str]]:
-    """同步搜索文件内容 — 小欧 2026-06-22 — 小健 2026-06-24 增加二进制文件检测和提示"""
+    """同步搜索文件内容 — 小欧 2026-06-22 — 小健 2026-06-24 增加二进制文件检测和提示 — 小欧 2026-06-25 增加ReDoS模式检测"""
     results = []
     total_matches = 0
     total_files = 0
     skipped_binary_files = []  # 记录跳过的二进制文件
     flags = re_mod.IGNORECASE if ignore_case else 0
+
+    # ReDoS防护: 检测嵌套量词模式 — 小欧 2026-06-25
+    _REDOS_PATTERNS = [
+        r"\([^)]*[+*][^)]*\)[+*]",   # (a+)+ 或 (a*)* 嵌套量词
+        r"\([^)]*[+*][^)]*\){[0-9,]+}",  # (a+){2,} 量词嵌套
+    ]
+    for redos_p in _REDOS_PATTERNS:
+        if re_mod.search(redos_p, pattern):
+            raise ValueError(f"正则表达式包含嵌套量词,可能触发ReDoS: {pattern}")
+    if len(pattern) > 200:
+        raise ValueError(f"正则表达式过长({len(pattern)}字符),可能存在ReDoS风险")
+
     try:
         regex = re_mod.compile(pattern, flags)
     except re_mod.error as e:
@@ -171,13 +183,15 @@ def _grep_files_sync(
                         results.append({"file": str(fpath)})
                         total_files += 1
                         break
+                    # 计算该行实际匹配次数 — 小欧 2026-06-25 修复total_matches按出现次数计数
+                    line_match_count = len(regex.findall(line))
                     match_item = {
                         "file": str(fpath),
                         "line": line_no,
                         "content": line.rstrip('\n\r'),
                     }
                     file_matches.append(match_item)
-                    total_matches += 1
+                    total_matches += line_match_count
             if file_matches:
                 total_files += 1
                 results.extend(file_matches)

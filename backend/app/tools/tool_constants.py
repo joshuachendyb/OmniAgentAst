@@ -163,11 +163,6 @@ SHORT_CONTENT_LENGTH = 50
 # 8. 工具安全模式(从 shell_helper/exec_helper 迁移)
 # ============================================================
 
-SHELL_INJECTION_PATTERNS = [
-    (r'\$\(', '子shell执行 $()'),
-    (r'`[^`]*`', '命令替换反引号'),
-]
-
 DANGEROUS_PATTERNS = [
     (r"os\.system\s*\(", "系统调用(os.system)"),
     (r"subprocess\.(call|run|Popen|check_output)\s*\(", "子进程调用(subprocess)"),
@@ -183,6 +178,8 @@ DANGEROUS_PATTERNS = [
     (r"requests\.(get|post|put|delete|patch)\s*\(", "HTTP请求(requests)"),
     (r"urllib\.request", "URL请求(urllib)"),
 ]
+
+
 
 # ============================================================
 # 9. 工具日期/哈希辅助(从 date_helper/hash_helper 迁移)

@@ -84,11 +84,26 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None) ->
 
     小沈 2026-06-17 从 FileTools._validate_path 提取为纯函数
     小健 2026-06-23 增加黑名单优先检查
+    小欧 2026-06-25 增加路径穿越(..)拒绝
     """
     is_forbidden, forbidden_msg = _is_forbidden_path(file_path)
     if is_forbidden:
         return False, forbidden_msg
-    
+
+    # 路径穿越拒绝: 包含..的路径直接拒绝 — 小欧 2026-06-25
+    try:
+        # 检查原始路径的每个部分是否包含..
+        path_parts = Path(file_path).parts
+        if ".." in path_parts:
+            return False, f"路径包含..,禁止路径穿越: {file_path}"
+        # 也检查规范化解析后的路径（处理绝对路径中的..）
+        resolved = os.path.realpath(file_path)
+        original_resolved = os.path.realpath(os.path.dirname(file_path))
+        if not resolved.startswith(original_resolved) and file_path != resolved:
+            return False, f"路径穿越检测: {file_path} 解析为 {resolved}"
+    except Exception:
+        pass
+
     paths = allowed_paths or ALLOWED_PATHS
     try:
         real_path = Path(os.path.realpath(os.path.expanduser(file_path)))

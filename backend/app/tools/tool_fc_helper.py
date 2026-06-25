@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 
-from app.tools.tool_constants import DANGEROUS_PATTERNS, QINGMING_DATES, SHELL_INJECTION_PATTERNS, SUBPROCESS_TIMEOUT_SHORT
+from app.tools.tool_constants import DANGEROUS_PATTERNS, QINGMING_DATES, SUBPROCESS_TIMEOUT_SHORT
 from app.utils.common_patterns import UTC_OFFSET_PATTERN
 from app.utils.json_utils import parse_json
 
@@ -354,12 +354,9 @@ def resolve_timezone(tz_str: str):
 # ═══════════════════════════════════════════════════════════════
 
 def _check_shell_injection(command: str) -> Optional[str]:
-    """检查shell命令注入风险,返回错误描述或None - 小健 2026-05-13"""
-    if not command or not command.strip():
-        return None
-    for pattern, desc in SHELL_INJECTION_PATTERNS:
-        if re.search(pattern, command):
-            return f"检测到高风险shell注入模式: {desc}"
+    """检查shell命令注入风险,返回错误描述或None - 小健 2026-05-13
+    注: && 和 || 已在 execute_shell_command 中翻译为 PS5.1 兼容语法，不再拦截 — 小欧 2026-06-25
+    """
     return None
 
 
