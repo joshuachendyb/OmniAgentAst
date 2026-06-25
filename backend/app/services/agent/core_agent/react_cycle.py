@@ -140,6 +140,8 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         if chunk_type == "chunk":
             content = chunk_data.content if hasattr(chunk_data, 'content') else str(chunk_data)
             is_reasoning = getattr(chunk_data, 'is_reasoning', False)
+            # 【P1-13修复】chunk_buffer.append使should_force_stop生效 — chendyg 2026-06-26
+            chunk_buffer.append(content)
             chunk_step = ChunkStep(
                 step=agent.llm_call_count,
                 content=content,
@@ -148,6 +150,8 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             yield agent._step_emitter.emit(chunk_step)
         elif chunk_type == "response":
             llm_response = chunk_data
+            # 【P1-13修复】收到完整响应时重置chunk计数器 — chendyg 2026-06-26
+            chunk_buffer.clear()
 
     step = agent.llm_call_count
 
@@ -187,8 +191,15 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
             return
 
         obs_text = "[Observation] 工具调用输出不完整，请重新调用该工具并补充完整参数"
+        # 【P1-8修复】截断重试需从历史中找到未完成的tool_call_id，不能传空 — chendyg 2026-06-26
+        _retry_tc_id = ""
+        for i in range(len(history) - 1, -1, -1):
+            msg = history[i]
+            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                _retry_tc_id = msg["tool_calls"][-1].get("id", "")
+                break
         agent.message_builder.add_observation(
-            obs_text, {"tool_call_id": "", "tool_calls": [], "llm_content": content},
+            obs_text, {"tool_call_id": _retry_tc_id, "tool_calls": [], "llm_content": content},
         )
         yield agent._step_emitter.emit(ObservationStep(
             step=step,
@@ -218,6 +229,16 @@ async def run_react_cycle(
         max_steps = get_config().get_max_steps()
 
     chunk_buffer = initialize_run_state(agent, task, task_id, context)
+
+    # 【P1-12修复】max_steps<=0时直接FAILED，避免无终态 — chendyg 2026-06-26
+    if max_steps <= 0:
+        logger.warning(f"[run_react_cycle] max_steps={max_steps}, 直接设为FAILED")
+        agent.set_failed(f"max_steps={max_steps}, 无可用步骤")
+        yield agent._step_emitter.emit(FinalStep(
+            step=0, response=f"max_steps={max_steps}, 无可用步骤", thought="",
+        ))
+        _finalize_cycle(agent)
+        return
 
     agent.status = AgentStatus.EXECUTING
     _start_time = asyncio.get_event_loop().time()
