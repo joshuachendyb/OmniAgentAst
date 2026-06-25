@@ -362,9 +362,11 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
     for event in await build_observation(ctx):
         yield event
 
-    if results and isinstance(results[0], dict) and results[0].get("other_data", {}).get("return_direct"):
-        _llm_data = results[0].get("llm_data", {})
-        _status = _llm_data.get("status", {}) if isinstance(_llm_data, dict) else {}
+    # 小健 2026-06-26: 修复P0-3 并行场景return_direct仅检查results[0]的bug，改用merged_other覆盖所有结果
+    merged_other = _merge_other_data([r.get("other_data", {}) for r in results if isinstance(r, dict)]) if results else {}
+    if merged_other.get("return_direct"):
+        merged_llm = _merge_llm_data([r.get("llm_data", {}) for r in results if isinstance(r, dict)]) if results else {}
+        _status = merged_llm.get("status", {}) if isinstance(merged_llm, dict) else {}
         yield agent._step_emitter.emit(FinalStep(
             step=step, response=_status.get("message", ""),
             thought=parsed.get("thought", ""),
