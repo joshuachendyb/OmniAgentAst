@@ -129,8 +129,14 @@ async def run_sse_stream(
             task=last_message, context=context or None,
             task_id=task_id,
         ):
-            # 直接to_dict() — dict则直接用（某些agent实现直接yield dict）
-            event_dict = event if isinstance(event, dict) else event.to_dict()
+            # 【#24修复】event可能非dict非Step，加to_dict防御 — chendyg 2026-06-26
+            if isinstance(event, dict):
+                event_dict = event
+            elif hasattr(event, 'to_dict'):
+                event_dict = event.to_dict()
+            else:
+                logger.warning(f"[SSE] 跳过非Step事件: {type(event)}")
+                continue
             event_type = event_dict.get('type', '')
             from app.utils.prompt_logger import get_prompt_logger
             get_prompt_logger().log_step_yield(event_dict, round_number=event_dict.get('step', 0))
