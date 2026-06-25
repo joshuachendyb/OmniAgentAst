@@ -85,7 +85,11 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None) ->
     小沈 2026-06-17 从 FileTools._validate_path 提取为纯函数
     小健 2026-06-23 增加黑名单优先检查
     小欧 2026-06-25 增加路径穿越(..)拒绝
+    小欧 2026-06-26 拒绝空路径
     """
+    if not file_path or not file_path.strip():
+        return False, "路径为空"
+
     is_forbidden, forbidden_msg = _is_forbidden_path(file_path)
     if is_forbidden:
         return False, forbidden_msg
