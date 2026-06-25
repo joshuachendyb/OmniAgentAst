@@ -142,7 +142,9 @@ class ToolRegistry:
         if name in self._tools:
             return self._update_existing_tool(
                 name, description, category, implementation, 
-                input_schema, examples, version, deps
+                input_schema, examples, version, deps,
+                expose_to_llm, failure_hint_fn,
+                needs_confirmation, action_confirmation, check_fn,
             )
         
         # 职责2：注册新工具
@@ -162,9 +164,14 @@ class ToolRegistry:
         input_schema: Optional[Dict],
         examples: Optional[List[Dict]],
         version: str,
-        dependencies: List[Union[str, Dict[str, Any]]]
+        dependencies: List[Union[str, Dict[str, Any]]],
+        expose_to_llm: bool = True,
+        failure_hint_fn: Optional[Callable] = None,
+        needs_confirmation: bool = False,
+        action_confirmation: Optional[Dict[str, bool]] = None,
+        check_fn: Optional[Callable] = None,
     ) -> Dict[str, Any]:
-        """更新已注册工具"""
+        """更新已注册工具 — chendyg 2026-06-26 P1-25/26修复: 补全所有字段更新和分类索引"""
         _update_tool_metadata(
             self._tools[name],
             description=description,
@@ -172,9 +179,16 @@ class ToolRegistry:
             category=category,
             input_schema=input_schema,
             examples=examples,
-            dependencies=dependencies
+            dependencies=dependencies,
+            expose_to_llm=expose_to_llm,
+            failure_hint_fn=failure_hint_fn,
+            needs_confirmation=needs_confirmation,
+            action_confirmation=action_confirmation,
+            check_fn=check_fn,
         )
         self._implementations[name] = implementation
+        # 【P1-26修复】更新分类索引(类别可能变更) — chendyg 2026-06-26
+        self._update_category_index(category, name)
         return {"status": "success"}
     
     def _register_new_tool(
