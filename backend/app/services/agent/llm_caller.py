@@ -22,6 +22,7 @@ async def call_llm(agent):
 
     messages = agent.message_builder.prepare_messages_for_llm()
     openai_tools = get_openai_tools(agent)
+    logger.info(f"[FC] LLM调用#{agent.llm_call_count}, messages={len(messages)}, tools={len(openai_tools)}, model={getattr(agent.llm_client, 'model', '?')}")
 
     prompt_logger = get_prompt_logger()
     prompt_logger.log_llm_call(
@@ -174,8 +175,11 @@ async def call_llm_fc_stream(agent, messages: list, openai_tools: list):
         pass
 
     if tool_calls_result:
+        _fc_names = [tc.get("tool_name","?") if isinstance(tc,dict) else "?" for tc in tool_calls_result]
+        logger.info(f"[FC] 解析结果: tool_calls({len(tool_calls_result)})={_fc_names}, tokens={usage_data.get('total_tokens','?') if usage_data else '?'}")
         yield _build_tool_calls_response(full_content, tool_calls_result, usage_data, agent)
         return
 
     content = full_content or full_reasoning or ""
+    logger.info(f"[FC] 解析结果: answer, len={len(content)}, tokens={usage_data.get('total_tokens','?') if usage_data else '?'}")
     yield _build_answer_response(content, usage_data, agent)

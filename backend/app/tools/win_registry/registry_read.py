@@ -131,7 +131,7 @@ def registry_read(key_path: str, value_name: Optional[str] = None, hive: str = "
                 "value_type": value_type_name,
             }
 
-            logger.info(f"[registry_read] 成功读取: {full_root_key}\\{sub_key}\\{value_name or '(默认)'}")
+            logger.debug(f"[registry_read] 成功读取: {full_root_key}\\{sub_key}\\{value_name or '(默认)'}")
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_registry_read_llm_data("success", duration_ms, result_data["key_path"], result_data["value_name"], formatted_value, value_type_name)
             return build_success(data=result_data, llm_data=llm_data)

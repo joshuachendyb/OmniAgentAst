@@ -97,7 +97,7 @@ def registry_write(key_path: str, value_name: str, value: str, value_type: str =
         with winreg.CreateKey(hkey, sub_key) as key:
             winreg.SetValueEx(key, value_name, 0, _REG_TYPE_MAP[actual_type], converted)
 
-        logger.info(f"[registry_write] 写入成功: {full_root_key}\\{sub_key}\\{value_name}")
+        logger.debug(f"[registry_write] 写入成功: {full_root_key}\\{sub_key}\\{value_name}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         data = {"key_path": f"{full_root_key}\\{sub_key}", "value_name": value_name, "value": value, "value_type": actual_type}
         llm_data = _build_registry_write_llm_data("success", duration_ms, data["key_path"], value_name, value, actual_type)
