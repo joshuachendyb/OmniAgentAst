@@ -27,8 +27,11 @@ class StepEmitter:
         return step
 
     def exit_with_error(self, step_count: int, error_type: str, error_message: str, recoverable: bool = False) -> 'ReasoningStep':
-        """创建error_step,设置FAILED状态,返回Step对象"""
-        self.agent.set_failed(error_message)
+        """创建error_step,设置状态(可重试设RETRYABLE_ERROR否则FAILED),返回Step对象 — chendyg 2026-06-26 修复recoverable=True仍设FAILED"""
+        if recoverable:
+            self.agent.status = AgentStatus.RETRYABLE_ERROR
+        else:
+            self.agent.set_failed(error_message)
         error_step = ErrorStep(
             step=step_count,
             error_type=error_type,
