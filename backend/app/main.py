@@ -22,7 +22,6 @@ from app.db import db
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 app_version = get_version()
-print(app_version)
 logger.info(f"Backend version: {app_version}")
 
 app = FastAPI(
@@ -125,6 +124,7 @@ async def startup_event():
     from app.tools import ensure_tools_registered
     ensure_tools_registered()
     _start_cleanup_task()
+    print(app_version)
 
 
 @app.on_event("shutdown")
