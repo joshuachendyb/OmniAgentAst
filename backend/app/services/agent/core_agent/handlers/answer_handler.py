@@ -20,10 +20,10 @@ async def handle_answer(agent, parsed: Dict, chunk_buffer):
     if not content:
         from app.utils.logger import logger
         logger.warning(f"[handle_answer] LLM返回空内容(step={step})")
+        agent.status = AgentStatus.FAILED
         yield agent._step_emitter.emit(FinalStep(
             step=step, response="", thought="",
         ))
-        agent.status = AgentStatus.COMPLETED
         return
 
     thought = parsed.get("thought", content)
