@@ -194,6 +194,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         obs_text = "[Observation] 工具调用输出不完整，请重新调用该工具并补充完整参数"
         # 【P1-8修复】截断重试需从历史中找到未完成的tool_call_id，不能传空 — chendyg 2026-06-26
         _retry_tc_id = ""
+        history = agent.message_builder.conversation_history
         for i in range(len(history) - 1, -1, -1):
             msg = history[i]
             if msg.get("role") == "assistant" and msg.get("tool_calls"):
