@@ -37,6 +37,9 @@ class RegistryReadInput(BaseModel):
     hive: Literal["HKCU", "HKLM", "HKCR", "HKU", "HKCC"] = Field(
         default="HKCU", description="注册表根键(可选)。默认HKCU"
     )
+    output_format: Literal["auto", "hex"] = Field(
+        default="auto", description="输出格式。auto=自动格式(默认),hex=二进制值转换为十六进制字符串"
+    )
 
 
 class RegistryWriteInput(BaseModel):
