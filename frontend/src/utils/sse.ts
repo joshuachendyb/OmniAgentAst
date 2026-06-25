@@ -252,7 +252,8 @@ type SSEErrorType =
   | 'unknown'
   | 'empty_response'
   | 'connection_refused'
-  | 'http_500';
+  | 'http_500'
+  | 'fc_format_error'; // 小欧 2026-06-25: FC格式错误（可恢复）
 
 /**
  * 分类错误类型 - 适配errorHandler的分类结果
@@ -260,6 +261,12 @@ type SSEErrorType =
  * 【小强修复 2026-04-11】增加 connection_refused 和 http_500，映射到统一ErrorType
  */
 const classifyError = (error: unknown): SSEErrorType => {
+  // 小欧 2026-06-25: 优先检查SSEError的error_type字段（后端直接指定）
+  if (error && typeof error === 'object' && 'error_type' in error) {
+    const errorType = (error as { error_type: string }).error_type;
+    if (errorType === 'fc_format_error') return 'fc_format_error';
+  }
+
   // 使用errorHandler的分类结果进行映射
   const unifiedType = errorHandlerHandleSSE(error as Error, {
     reconnectAttempts: 0,
@@ -428,6 +435,12 @@ const ERROR_CONFIG_MAP: Record<SSEErrorType, ErrorConfig> = {
     maxRetries: 0,
     retryDelay: 0,
     showMessage: '发生未知错误',
+  },
+  fc_format_error: { // 小欧 2026-06-25: FC格式错误（可恢复，后端会自动降级到Text模式）
+    retryable: false,
+    maxRetries: 0,
+    retryDelay: 0,
+    showMessage: '工具调用格式异常，已自动切换到文本模式',
   },
 };
 
