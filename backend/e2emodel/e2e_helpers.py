@@ -1528,25 +1528,31 @@ def write_test_record(
     lines.append("")
 
     written_path: Optional[Path] = None
-    try:
-        content = "\n".join(lines)
-        mode = "a" if record_file.exists() else "w"
-        with open(str(record_file), mode, encoding="utf-8-sig") as f:
-            if mode == "a":
-                f.write("\n\n---\n\n")
-            f.write(content)
-        written_path = record_file
-    except PermissionError:
-        alt_file = RECORD_DIR / f"测试记录-{test_id}-{date_str}-{int(now.timestamp())}.md"
+    content = "\n".join(lines)
+    mode = "a" if record_file.exists() else "w"
+    for _attempt in range(3):
         try:
-            with open(str(alt_file), "w", encoding="utf-8") as f:
+            with open(str(record_file), mode, encoding="utf-8-sig") as f:
+                if mode == "a":
+                    f.write("\n\n---\n\n")
                 f.write(content)
-            written_path = alt_file
-            print(f"  [WARN] write_test_record: used alt path {alt_file.name}")
-        except Exception as e2:
-            print(f"  [WARN] write_test_record failed: {e2}")
-    except Exception as e:
-        print(f"  [WARN] write_test_record failed: {e}")
+            written_path = record_file
+            break
+        except PermissionError:
+            import time as _time
+            _time.sleep(0.3)
+            if _attempt == 2:
+                alt_file = RECORD_DIR / f"测试记录-{test_id}-{date_str}-{int(now.timestamp())}.md"
+                try:
+                    with open(str(alt_file), "w", encoding="utf-8") as f:
+                        f.write(content)
+                    written_path = alt_file
+                    print(f"  [WARN] write_test_record: used alt path {alt_file.name}")
+                except Exception as e2:
+                    print(f"  [WARN] write_test_record failed: {e2}")
+        except Exception as e:
+            print(f"  [WARN] write_test_record failed: {e}")
+            break
 
     # 验证记录文件是否真正写入成功
     if written_path and written_path.exists():

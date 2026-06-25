@@ -168,8 +168,8 @@ class BaseAIService:
         self._ensure_client()
 
         retry_count = 0
-        from app.services.llm.llm_constants import LLM_MAX_RETRIES, LLM_STREAM_OPTIONS
-        max_retries = LLM_MAX_RETRIES
+        from app.services.llm.llm_constants import LLM_STREAM_MAX_RETRIES, LLM_STREAM_OPTIONS
+        max_retries = LLM_STREAM_MAX_RETRIES
         stream_options = LLM_STREAM_OPTIONS
 
         while retry_count <= max_retries:

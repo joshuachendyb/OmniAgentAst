@@ -9,7 +9,7 @@ LLM层常量集中管理 — 小欧 2026-06-25
 # --- LLM请求参数 ---
 LLM_TEMPERATURE = 0.7
 LLM_TOOL_CHOICE = "auto"
-LLM_MAX_RETRIES = 3
+LLM_STREAM_MAX_RETRIES = 3  # request_stream()应用层重试上限，区别于config.yaml的HTTP层max_retries
 LLM_STREAM_OPTIONS = {"include_usage": True}
 
 # --- FC降级配置 ---
