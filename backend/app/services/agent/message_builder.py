@@ -199,18 +199,29 @@ class MessageBuilder:
         kept = []
         used_chars = 0
         i = len(all_msgs) - 1
+        consumed_ids = set()  # 已作为配对加入 kept 的消息id，不再重复处理 — 小欧 2026-06-26
 
         while i >= 0:
             msg = all_msgs[i]
+            if id(msg) in consumed_ids:
+                i -= 1
+                continue
             tc_id = msg.get("tool_call_id", "")
 
             if msg.get("role") == "tool" and tc_id and tc_id in tool_to_assistant:
                 asst = tool_to_assistant[tc_id]
-                pair_chars = self._total_chars([asst, msg])
-                if used_chars + pair_chars <= budget:
+                asst_already_kept = id(asst) in consumed_ids
+                # 配对: 只加tool（assistant已存在）或加两者 — 小欧 2026-06-26
+                if asst_already_kept:
+                    need_chars = self._total_chars([msg])
+                else:
+                    need_chars = self._total_chars([asst, msg])
+                if used_chars + need_chars <= budget:
                     kept.append(msg)
-                    kept.append(asst)
-                    used_chars += pair_chars
+                    if not asst_already_kept:
+                        kept.append(asst)
+                        consumed_ids.add(id(asst))
+                    used_chars += need_chars
                 i -= 1
                 continue
 
