@@ -95,7 +95,7 @@ def _finalize_cycle(agent):
 async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
     """处理单步循环 — FC-only: llm_response为dict,无需parse_llm_response — 小沈 2026-06-11"""
 
-    from app.services.agent.llm_caller import call_llm
+    from app.services.agent.llm_stream import call_llm
     from app.services.agent.steps import ChunkStep
     llm_response = None
     async for chunk_or_response in call_llm(agent):

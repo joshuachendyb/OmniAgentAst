@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-llm_caller — LLM调用逻辑
+llm_stream — LLM流式调用+响应构建
 
-从universal_agent拆出 — 小沈 2026-06-17
+从llm_caller更名 — 小欧 2026-06-25 名实相符
 """
 
 import asyncio
@@ -37,7 +37,7 @@ async def call_llm(agent):
     if not openai_tools:
         logger.error("[call_llm] 无可用工具")
 
-    async for item in call_llm_fc_stream(agent, messages, openai_tools):
+    async for item in call_llm_stream(agent, messages, openai_tools):
         yield item
 
 
@@ -98,8 +98,8 @@ def _build_answer_response(content, usage_data, agent):
     return ("response", {"type": "answer", "content": content, "thought": ""})
 
 
-async def call_llm_fc_stream(agent, messages: list, openai_tools: list):
-    """FC模式流式调用 — tool_calls原生消费,不经过JSON roundtrip — 小沈 2026-06-12; 小健 2026-06-17 新增usage"""
+async def call_llm_stream(agent, messages: list, openai_tools: list):
+    """FC/Text双模式流式调用 — tool_calls原生消费 — 小沈 2026-06-12; 小健 2026-06-17 新增usage; 小欧 2026-06-25 名实相符"""
     full_content = ""
     full_reasoning = ""
     tool_calls_result = None
