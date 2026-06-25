@@ -142,8 +142,8 @@ class ToolSafetyChecker:
                 return SafetyResult(is_safe=False, blocked=True, message=f"安全检查异常(已阻止): {e}")
 
         shell_tools = set(all_categories.get(ToolCategory.SHELL, []))
-        code_injection_tools = _CODE_INJECTION_RISK_TOOLS & shell_tools
-        if tool_name in code_injection_tools:
+        # 小健 2026-06-26: 修复P0-4 代码注入检查仅对_CODE_INJECTION_RISK_TOOLS交集生效的bug，改为覆盖所有shell工具
+        if tool_name in shell_tools:
             try:
                 from app.tools.tool_constants import DANGEROUS_PATTERNS
                 code = params.get("command") or params.get("code") or ""
