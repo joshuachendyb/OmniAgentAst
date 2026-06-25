@@ -50,9 +50,12 @@ class BaseAIService:
         provider: str = "",
         timeout: int = DEFAULT_LLM_TIMEOUT,
         max_tokens: Optional[int] = None,
-        temperature: float = 0.7,
+        temperature: float = None,
         seed: Optional[int] = None,
     ):
+        from app.services.llm.llm_constants import LLM_TEMPERATURE
+        if temperature is None:
+            temperature = LLM_TEMPERATURE
         self.api_key = api_key
         self.model = model
         self.api_base = api_base
@@ -165,8 +168,9 @@ class BaseAIService:
         self._ensure_client()
 
         retry_count = 0
-        max_retries = 3
-        stream_options = {"include_usage": True}
+        from app.services.llm.llm_constants import LLM_MAX_RETRIES, LLM_STREAM_OPTIONS
+        max_retries = LLM_MAX_RETRIES
+        stream_options = LLM_STREAM_OPTIONS
 
         while retry_count <= max_retries:
             try:
@@ -211,15 +215,14 @@ class BaseAIService:
                 complete_raw = "\n".join(raw_data_buf)
                 if tool_call_accumulator:
                     tool_calls_list = []
+                    failed_parses = []  # 小欧 2026-06-25 收集解析失败的tool_call
                     for idx in sorted(tool_call_accumulator):
                         tc = tool_call_accumulator[idx]
                         if tc["name"]:
                             try:
                                 params = _normalize_tool_params(_json.loads(tc["arguments"])) if tc["arguments"] else {}
                             except _json.JSONDecodeError:
-                                # BUG修复: LLM输出截断导致arguments JSON不完整
-                                # 跳过该工具调用, 防止坏JSON进history导致后续API校验400
-                                # Agent主动检测重试在answer_handler层
+                                failed_parses.append(tc["name"])
                                 logger.warning(f"[request_stream] tool_call '{tc['name']}' 参数JSON解析失败(LLM输出截断), 跳过")
                                 continue
                             tool_calls_list.append({
@@ -235,6 +238,10 @@ class BaseAIService:
                                     }
                                 }]
                             })
+                    # 小欧 2026-06-25: 所有tool_calls都解析失败 → FCFormatError
+                    if tool_call_accumulator and not tool_calls_list:
+                        from app.services.llm.core import FCFormatError
+                        raise FCFormatError(f"所有tool_calls参数解析失败: {failed_parses}")
                     yield StreamChunk(content="", model=self.model, is_done=False,
                                       tool_calls=tool_calls_list, raw_data=complete_raw)
 
