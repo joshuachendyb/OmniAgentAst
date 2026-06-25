@@ -125,22 +125,20 @@ async def chat_stream(request: ChatRequest):
                 session_id=session_id, current_execution_steps=execution_steps,
                 stream_state=state,
             )
-            _cancel_detected = False
+            cancel_event = asyncio.Event()
 
             async def _cancel_poller():
-                nonlocal _cancel_detected
-                while not _cancel_detected:
+                while not cancel_event.is_set():
                     await asyncio.sleep(1)
                     if await check_cancelled(task_id):
-                        _cancel_detected = True
-                        logger.info(f"[chat_stream] cancel轮询检测到取消,关闭sse_stream")
-                        await sse_stream.aclose()
+                        logger.info(f"[chat_stream] cancel轮询检测到取消, 通知主协程")
+                        cancel_event.set()
                         return
 
             poller_task = asyncio.create_task(_cancel_poller())
             try:
                 async for sse_chunk in sse_stream:
-                    if _cancel_detected:
+                    if cancel_event.is_set():
                         break
                     async for pause_event in task_pause_check_and_yield(task_id, next_step):
                         yield pause_event
@@ -153,7 +151,7 @@ async def chat_stream(request: ChatRequest):
                         break
                     yield sse_chunk
             finally:
-                _cancel_detected = True
+                cancel_event.set()
                 poller_task.cancel()
                 try:
                     await poller_task

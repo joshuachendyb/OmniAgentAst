@@ -16,11 +16,11 @@ from typing import Any, Dict, List, Optional, AsyncGenerator, Set, Tuple
 from app.services.agent.types import AgentStatus
 from app.services.agent.steps import ReasoningStep
 
-from app.constants import MAX_CONTEXT_CHARS
+from app.config import get_config
 from app.utils.logger import logger
 from app.services.agent.chunk_buffer import ChunkBuffer
+from app.services.agent.message_builder import MessageBuilder
 
-from app.services.agent.core_agent.agent_initializer import AgentInitializer
 from app.services.agent.core_agent.tool_manager import ToolLoader
 from app.services.agent.core_agent.step_emitter import StepEmitter
 from app.services.agent.tool_retry_engine import ToolRetryEngine
@@ -37,16 +37,44 @@ class BaseAgent(ABC):
         initial_categories=None,
         **kwargs
     ):
-        AgentInitializer._init_llm(self, llm_client, **kwargs)
+        # 原 AgentInitializer._init_llm
+        self.llm_client = llm_client
+        _ALLOWED_KWARGS = {'model', 'provider', 'api_base', 'api_key'}
+        for key, value in kwargs.items():
+            if key in _ALLOWED_KWARGS:
+                setattr(self, key, value)
+
         if max_steps is None:
-            from app.config import get_config
             max_steps = get_config().get_max_steps()
-        AgentInitializer._init_state(self, task_id, max_steps)
-        AgentInitializer._init_messages(self)
+
+        # 原 AgentInitializer._init_state
+        self.task_id = task_id
+        self.max_steps = max_steps
+        self.status = AgentStatus.IDLE
+        self.llm_call_count = 0
+
+        # 原 AgentInitializer._init_messages
+        self.steps: List[ReasoningStep] = []
+        self.message_builder = MessageBuilder(max_context_chars=get_config().get_max_context_chars())
+
         self._tool_loader = ToolLoader(self)
         self._tool_loader.init_tools(initial_categories=initial_categories)
         self._retry_engine = ToolRetryEngine(self._tools_dict)
-        AgentInitializer._init_task_tracking(self, enable=True)
+
+        # 原 AgentInitializer._init_task_tracking
+        self._task_tracker = None
+        self._tracked_task_id = None
+        try:
+            from app.services.task import get_tracker
+            tracker = get_tracker()
+            self._tracked_task_id = tracker.create_task(
+                agent_id=self.__class__.__name__,
+                description="",
+            )
+            self._task_tracker = tracker
+        except Exception as _e:
+            logger.debug(f"[TaskTracker] 创建任务失败: {_e}")
+
         self._step_emitter = StepEmitter(self)
 
     def record_operation(self, operation_type: str, *, status: Optional[str] = None, **kwargs):
@@ -63,6 +91,12 @@ class BaseAgent(ABC):
     def _on_after_loop(self):
         """生命周期Hook: ReAct循环结束后 — 子类可override"""
         pass
+
+    def set_failed(self, reason: str = ""):
+        """统一FAILED状态入口 — 小欧 2026-06-25 Batch2d"""
+        self.status = AgentStatus.FAILED
+        if reason:
+            logger.warning(f"[Agent] FAILED: {reason}")
 
     def _create_cancelled_chunk(self):
         """创建取消chunk — 直接使用stream_parser函数

@@ -21,7 +21,7 @@ def handle_react_error(agent, error, step):
     elif error_type == "network_error":
         return _handle_network_error(agent, error, step)
     else:
-        agent.status = AgentStatus.FAILED
+        agent.set_failed(str(error))
         return ErrorStep(step=step, error_type="unknown_error", error_message=str(error))
 
 

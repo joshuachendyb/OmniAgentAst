@@ -16,6 +16,7 @@ def get_openai_tools(agent) -> list:
     注意：这里获取的是已注入(inject)给LLM的工具，不是所有已注册(register)的工具
 
     P0-4修复 2026-06-23 小欧: revert P0-3改为注入整个tool类,通过_loaded_categories承载
+    Batch2e: 使用agent._tool_search_desc_override副本,不修改全局ts_meta — 小欧 2026-06-25
     """
     cached = agent._tool_cache.get()
     if cached is not None:
@@ -23,6 +24,14 @@ def get_openai_tools(agent) -> list:
 
     from app.tools.registry import tool_registry
     tools = tool_registry.to_openai_tools(categories=agent._loaded_categories)
+
+    override = getattr(agent, '_tool_search_desc_override', None)
+    if override:
+        for t in tools:
+            if t.get("function", {}).get("name") == "tool_search":
+                t["function"]["description"] = override
+                break
+
     agent._tool_cache.set(tools)
     return tools
 
@@ -51,6 +60,8 @@ def _get_original_search_desc() -> str:
 def patch_search_desc(agent):
     """动态更新 tool_search 描述: 列出未加载分类
     
+    改为副本模式，不修改全局 ts_meta — 小欧 2026-06-25 Batch2e
+    
     【设计原则】
     - DRY: 直接从 tool_registry 获取工具信息，无重复数据
     - KISS-DIRECT: 逻辑直线，无中间文件，每次从原始描述重新拼装
@@ -69,14 +80,17 @@ def patch_search_desc(agent):
     ]
     
     if not unloaded:
+        agent._tool_search_desc_override = None
         return
     
     ts_meta = tool_registry.get_tool("tool_search")
     if not ts_meta:
+        agent._tool_search_desc_override = None
         return
     
     base_desc = _get_original_search_desc()
     if not base_desc:
+        agent._tool_search_desc_override = None
         return
     
     lines = []
@@ -85,4 +99,6 @@ def patch_search_desc(agent):
         lines.append(f"- {cat.name_cn}({cat.value})")
     
     if lines:
-        ts_meta.description = base_desc + "\n\n当前未加载分类:\n" + "\n".join(lines)
+        agent._tool_search_desc_override = base_desc + "\n\n当前未加载分类:\n" + "\n".join(lines)
+    else:
+        agent._tool_search_desc_override = None

@@ -14,15 +14,19 @@ FC-only重构: 删除parse_llm_response/TOOL_REMINDER/_has_tool_call, yield dict
 P0-01: 删除step_counter list hack,使用agent.llm_call_count — 小沈 2026-06-13
 """
 
+import asyncio
 from typing import Any, Dict, Optional, AsyncGenerator
 
 from app.utils.logger import logger
-from app.services.agent.steps import ChunkStep, FinalStep, ObservationStep
+from app.config import get_config
+from app.constants import TASK_TIMEOUT
+from app.services.agent.steps import ChunkStep, FinalStep, ObservationStep, ErrorStep
 from app.services.agent.types import AgentStatus
 from app.services.agent.core_agent.initialize_run_state import initialize_run_state
 from app.services.agent.core_agent.handlers import (
     handle_action, handle_answer,
 )
+from app.services.agent.core_agent.error_handler import handle_react_error
 
 _MAX_CONSECUTIVE_TRUNCATIONS = 3
 
@@ -68,9 +72,8 @@ async def _dispatch_handler(agent, llm_response, chunk_buffer):
         async for event in handle_answer(agent, llm_response, chunk_buffer):
             yield event
     else:
-        from app.utils.logger import logger
         logger.warning(f"[dispatch_handler] 未知返回类型: {parsed_type}, 设置为FAILED")
-        agent.status = AgentStatus.FAILED
+        agent.set_failed(f"LLM返回未知响应类型: {parsed_type}")
         yield agent._step_emitter.emit(FinalStep(
             step=agent.llm_call_count,
             response=f"LLM返回未知响应类型: {parsed_type}",
@@ -149,11 +152,11 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
 
     if not llm_response or not isinstance(llm_response, dict):
         logger.error(f"[run_react_cycle] _call_llm返回无效响应: {type(llm_response)}")
+        agent.set_failed("LLM返回空响应")
         yield agent._step_emitter.exit_with_error(
             step_count=step, error_type="empty_response",
             error_message="LLM返回空响应",
         )
-        agent.status = AgentStatus.FAILED
         return
 
     if getattr(getattr(agent, 'llm_client', None), '_cancelled', False):
@@ -174,7 +177,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
 
         if agent._consecutive_truncations >= _MAX_CONSECUTIVE_TRUNCATIONS:
             logger.error(f"[run_react_cycle] LLM连续截断{_MAX_CONSECUTIVE_TRUNCATIONS}次, 停止重试, 设为FAILED")
-            agent.status = AgentStatus.FAILED
+            agent.set_failed(f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断")
             yield agent._step_emitter.emit(FinalStep(
                 step=step,
                 response=f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断",
@@ -208,10 +211,8 @@ async def run_react_cycle(
 ):
     """ReAct循环:调用LLM→解析→分派handler→产出Step — 小沈 2026-06-09 薄调度重构
     N-1修复 2026-06-25 小欧: 总耗时超TASK_TIMEOUT则强制结束
+    Batch2c: 导入移文件顶部 — 小欧 2026-06-25
     """
-    from app.config import get_config
-    from app.constants import TASK_TIMEOUT
-    import asyncio
     if max_steps is None:
         max_steps = get_config().get_max_steps()
 
@@ -224,7 +225,8 @@ async def run_react_cycle(
         while agent.llm_call_count < max_steps:
             if asyncio.get_event_loop().time() - _start_time > TASK_TIMEOUT.total_seconds():
                 logger.warning(f"[run_react_cycle] 总耗时超TASK_TIMEOUT({TASK_TIMEOUT}), 强制结束")
-                agent.status = AgentStatus.COMPLETED
+                agent.set_failed(f"总耗时超TASK_TIMEOUT({TASK_TIMEOUT})")
+                yield agent._step_emitter.emit(ErrorStep(step=agent.llm_call_count, error_type="timeout", error_message=f"ReAct循环执行超时，耗时{asyncio.get_event_loop().time() - _start_time:.1f}秒"))
                 break
             async for event in _process_single_step(agent, chunk_buffer):
                 yield event
@@ -234,12 +236,12 @@ async def run_react_cycle(
 
             if chunk_buffer.should_force_stop():
                 logger.warning(f"[run_react_cycle] chunk累积超时({agent.llm_call_count}步),强制停止")
-                agent.status = AgentStatus.COMPLETED
+                agent.set_failed(f"chunk累积超时({agent.llm_call_count}步)")
+                yield agent._step_emitter.emit(ErrorStep(step=agent.llm_call_count, error_type="chunk_buffer_timeout", error_message="chunk buffer累积超时，强制停止"))
                 break
 
     except Exception as e:
         logger.error(f"[run_react_cycle] 异常: {e}", exc_info=True)
-        from app.services.agent.core_agent.error_handler import handle_react_error
         error_step = handle_react_error(agent, e, agent.llm_call_count)
         yield agent._step_emitter.emit(error_step)
 

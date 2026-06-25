@@ -22,6 +22,7 @@ from app.utils.prompt_logger import get_prompt_logger
 from app.services.agent.steps import ThoughtStep, ActionStep, ObservationStep, ErrorStep, MetaStep, FinalStep
 from app.services.agent.types import AgentStatus
 from app.services.agent.agent_utils.message_utils import build_observation_text
+from app.constants import HITL_TIMEOUT
 from app.db.models.operation_enums import OperationStatus
 
 from app.tools.tool_constants import SENSITIVE_FIELDS as _SENSITIVE_FIELDS
@@ -61,7 +62,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
                     error_type="blocked",
                     error_message=safety_result.message
                 ))
-                agent.status = AgentStatus.FAILED
+                agent.set_failed(f"安全检查blocked: {safety_result.message}")
                 return
 
             if safety_result.requires_confirmation:
@@ -82,7 +83,6 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
                     },
                 ))
 
-                from app.constants import HITL_TIMEOUT
                 auth = await wait_for_confirmation_result(confirm_id, timeout=HITL_TIMEOUT)
 
                 if not auth.get("confirmed"):
@@ -91,7 +91,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
                         error_type="user_rejected",
                         error_message=f"用户拒绝执行工具: {call['tool_name']}"
                     ))
-                    agent.status = AgentStatus.FAILED
+                    agent.set_failed(f"用户拒绝执行工具: {call['tool_name']}")
                     return
 
 
@@ -344,7 +344,6 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
         reasoning=parsed.get("reasoning", ""),
     ))
 
-    from app.services.agent.types import AgentStatus
     async for event in check_safety_and_confirm(agent, all_calls, step):
         yield event
     if agent.status == AgentStatus.FAILED:
