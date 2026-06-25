@@ -59,6 +59,10 @@ class AnalyzeDataInput(BaseModel):
     data: str = Field(
         ..., description="要分析的数据。可以是CSV/XLSX/XLS文件路径(绝对路径)或JSON字符串"
     )
+    operations: Optional[List[str]] = Field(
+        default=None,
+        description="统计操作列表。可选值: mean(均值)/sum(求和)/count(计数)/min(最小值)/max(最大值)/std(标准差)。不填则使用全部统计操作"
+    )
     group_by: Optional[str] = Field(
         default=None,
         description="分组统计的列名。按该列的值对数据进行分组,对每组分别统计。不填则对所有数据整体统计"
@@ -70,6 +74,10 @@ class AnalyzeDataInput(BaseModel):
     top_n: Optional[int] = Field(
         default=None,
         description="只返回前N条结果。不填则返回全部"
+    )
+    max_rows: Optional[int] = Field(
+        default=None,
+        description="最大读取行数。对于大文件,可以限制读取的行数以提高性能"
     )
 
 
@@ -83,6 +91,10 @@ class FilterDataInput(BaseModel):
     select_columns: Optional[List[str]] = Field(
         default=None,
         description="选择返回的列(可选)。如 [\"name\", \"age\"]"
+    )
+    max_rows: Optional[int] = Field(
+        default=None,
+        description="最大读取行数。对于大文件,可以限制读取的行数以提高性能"
     )
     sort_by: Optional[str] = Field(
         default=None,
