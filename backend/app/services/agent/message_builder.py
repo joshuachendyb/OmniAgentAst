@@ -228,6 +228,8 @@ class MessageBuilder:
             msg_chars = self._total_chars([msg])
             if used_chars + msg_chars <= budget:
                 kept.append(msg)
+                if msg.get("role") == "assistant":
+                    consumed_ids.add(id(msg))
                 used_chars += msg_chars
             else:
                 break
