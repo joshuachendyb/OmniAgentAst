@@ -161,6 +161,12 @@ class LLMClient:
         """关闭客户端,释放连接池 - 小沈 2026-06-09"""
         await self._client.aclose()
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
+
 
 def create_llm_client(
     provider: str,
