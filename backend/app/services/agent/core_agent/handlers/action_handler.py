@@ -190,8 +190,9 @@ def _merge_other_data(all_other_data: List[Dict]) -> Dict:
     return_direct = False
 
     for od in valid:
-        if od.get("warning"):
-            warnings.append(od["warning"])
+        w = od.get("warning")
+        if w:
+            warnings.append(str(w) if not isinstance(w, str) else w)
         if od.get("attachment") is not None:
             attachments.append(od["attachment"])
         if od.get("return_direct"):
