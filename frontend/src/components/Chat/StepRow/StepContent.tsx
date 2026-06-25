@@ -132,26 +132,25 @@ const StepContent: React.FC<StepContentProps> = ({
       )}
       {step.type === 'observation' &&
         (() => {
-          // 【改造 2026-05-22 小沈】使用统一渲染组件
-          // 【修复 2026-05-22 小资】一次性安全解构，添加完整性验证
           const obsStep = step;
-
-          // 兼容两种格式，正确处理null（typeof null === 'object'）
           const isObjFormat =
             obsStep.observation !== null &&
             obsStep.observation !== undefined &&
             typeof obsStep.observation === 'object';
-
-          // 一次性安全解构所有字段
           const rawObs = isObjFormat
             ? (obsStep.observation as Record<string, unknown>)
             : null;
 
-          // Phase 2: 从llm_data/other_data提取字段
           const llmData = rawObs?.llm_data as Record<string, unknown> | undefined;
           const otherData = rawObs?.other_data as Record<string, unknown> | undefined;
+          const parallelResults = rawObs?.parallel_results as Array<{
+            tool_name: string;
+            tool_params: Record<string, unknown>;
+            llm_data: Record<string, unknown>;
+            tool_result: unknown;
+            other_data: Record<string, unknown>;
+          }> | undefined;
 
-          // 兼容：优先新格式(llm_data)，回退旧格式
           const summary =
             (llmData?.summary as string) ??
             (rawObs?.summary as string) ??
@@ -167,6 +166,66 @@ const StepContent: React.FC<StepContentProps> = ({
           const nextActions = (rawObs?.next_actions as Array<{tool: string; description: string; when?: string}>) ?? undefined;
           const code = obsStep.code;
 
+          // 并行tool call：每个call单独渲染 — 小健 2026-06-25
+          if (parallelResults && parallelResults.length > 1) {
+            return (
+              <div
+                style={{
+                  ...getStepStyle('observation' as StepType),
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {parallelResults.map((pr, idx) => {
+                  const prLlm = pr.llm_data as Record<string, unknown> | undefined;
+                  const prOther = pr.other_data as Record<string, unknown> | undefined;
+                  const prSummary = (prLlm?.summary as string) ?? '';
+                  const prStatus = (prLlm?.status as Record<string, unknown>)?.exec_code as string ?? '';
+                  const prError = (prLlm?.status as Record<string, unknown>)?.message as string;
+                  const prWarning = prOther?.warning as string;
+                  return (
+                    <div key={idx} style={{ marginBottom: idx < parallelResults.length - 1 ? Spacing.SM : 0 }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: Spacing.SM,
+                          marginBottom: Spacing.XS,
+                        }}
+                      >
+                        <StatusIcon code={prStatus || code} />
+                        <ToolInfo toolName={pr.tool_name} toolParams={pr.tool_params} compact />
+                      </div>
+                      {prError ? (
+                        <div style={{ marginTop: Spacing.XS, color: Colors.ERROR }}>
+                          ❌ {prError}
+                        </div>
+                      ) : (
+                        <div style={{ marginTop: Spacing.XS }}>
+                          <SmartContentRenderer content={prSummary} maxLines={5} />
+                        </div>
+                      )}
+                      <WarningBox warning={prWarning} />
+                    </div>
+                  );
+                })}
+                {returnDirect && (
+                  <span
+                    style={{
+                      fontSize: FontSize.SMALL,
+                      color: Colors.SUCCESS,
+                      fontWeight: FontWeight.MEDIUM,
+                    }}
+                  >
+                    🏁 直接返回
+                  </span>
+                )}
+                <NextActions actions={nextActions} />
+              </div>
+            );
+          }
+
+          // 单tool call：原有渲染逻辑
           if (!summary && !toolName) return null;
 
           return (
@@ -199,7 +258,6 @@ const StepContent: React.FC<StepContentProps> = ({
                   </span>
                 )}
               </div>
-              {/* 优先显示error_message（红色），否则显示summary */}
               {errorMessage ? (
                 <div style={{ marginTop: Spacing.XS, color: Colors.ERROR }}>
                   ❌ {errorMessage}

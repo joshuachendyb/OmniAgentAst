@@ -240,11 +240,23 @@ async def build_observation(ctx: ObservationContext) -> List:
     _all_llm_data = []
     _all_tool_results = []
     _all_other_data = []
-    for r in ctx.results:
-        if isinstance(r, dict):
-            _all_llm_data.append(r.get("llm_data", {}))
-            _all_tool_results.append(r.get("data"))
-            _all_other_data.append(r.get("other_data", {}))
+    _parallel_results = []
+    is_parallel = len(ctx.all_calls) > 1
+    for call, result in zip(ctx.all_calls, ctx.results):
+        if isinstance(result, dict):
+            _all_llm_data.append(result.get("llm_data", {}))
+            _all_tool_results.append(result.get("data"))
+            _all_other_data.append(result.get("other_data", {}))
+        else:
+            _all_tool_results.append(result)
+        if is_parallel:
+            _parallel_results.append({
+                "tool_name": call["tool_name"],
+                "tool_params": call.get("tool_params", {}),
+                "llm_data": result.get("llm_data", {}) if isinstance(result, dict) else {},
+                "tool_result": result.get("data") if isinstance(result, dict) else result,
+                "other_data": result.get("other_data", {}) if isinstance(result, dict) else {},
+            })
 
     merged_llm_data = _all_llm_data[0] if _all_llm_data else None
     if len(_all_llm_data) > 1:
@@ -259,6 +271,7 @@ async def build_observation(ctx: ObservationContext) -> List:
         llm_data=merged_llm_data,
         tool_result=_all_tool_results[0] if len(_all_tool_results) == 1 else _all_tool_results,
         other_data=merged_other,
+        parallel_results=_parallel_results or None,
     )))
 
     return events

@@ -88,6 +88,14 @@ export interface ObservationData {
     retry_count?: number;
     [key: string]: unknown;
   };
+  // 并行tool call时保留每个call的完整数据映射 — 小健 2026-06-25
+  parallel_results?: Array<{
+    tool_name: string;
+    tool_params: Record<string, unknown>;
+    llm_data: Record<string, unknown>;
+    tool_result: unknown;
+    other_data: Record<string, unknown>;
+  }>;
   // 兼容旧格式字段（Phase 1遗留，可选）
   summary?: string;
   tool_name?: string;

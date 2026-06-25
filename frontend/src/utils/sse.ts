@@ -137,6 +137,14 @@ export interface ExecutionStep {
 
   // === type=observation 字段 【新增2026-04-15】===
   return_direct?: boolean; // 是否直接返回
+  // 并行tool call时保留每个call的完整数据映射 — 小健 2026-06-25
+  parallel_results?: Array<{
+    tool_name: string;
+    tool_params: Record<string, unknown>;
+    llm_data: Record<string, unknown>;
+    tool_result: unknown;
+    other_data: Record<string, unknown>;
+  }>;
 
   // === 思考过程与正式内容区分字段（统一使用 is_reasoning snake_case）===
   is_reasoning?: boolean; // 是否为思考过程（true=思考过程，false=正式内容）
@@ -1534,6 +1542,8 @@ const processSSEData = (
             undefined;
           step.error_message = (llmData?.status as Record<string, unknown>)?.message as string ?? obsData.error_message;
           step.content = step.summary; // content用于显示
+          // 并行tool call映射 — 小健 2026-06-25
+          step.parallel_results = (obsData as { parallel_results?: typeof step.parallel_results }).parallel_results;
         } else {
           // 旧格式：observation是字符串或null/undefined（向后兼容）
           const obsStr =
