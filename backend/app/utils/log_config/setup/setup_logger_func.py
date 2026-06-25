@@ -50,7 +50,7 @@ def setup_logger(name: str) -> logging.Logger:
 
         _console_handler = logging.StreamHandler()
         _console_handler.setFormatter(formatter)
-        _console_handler.setLevel(logging.INFO)
+        _console_handler.setLevel(logging.WARNING)
 
         _logging_configured = True
 
@@ -66,7 +66,7 @@ def setup_logger(name: str) -> logging.Logger:
 
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
-        console_handler.setLevel(logging.INFO)
+        console_handler.setLevel(logging.WARNING)
 
         logger.addHandler(file_handler)
         logger.addHandler(console_handler)

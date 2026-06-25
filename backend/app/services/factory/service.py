@@ -55,7 +55,6 @@ def cleanup_old_instance(new_provider: str = "") -> None:
 def log_service_creation(final_provider: str, final_model: str) -> None:
     """记录服务创建日志 — 小沈 2026-06-08; 2026-06-17 去除_前缀+透传层"""
     log_msg = f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}"
-    print(f"[{now_str('%H:%M:%S')}] {log_msg}")
     logger.info(log_msg)
 
 

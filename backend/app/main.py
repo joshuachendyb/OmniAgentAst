@@ -22,7 +22,7 @@ from app.db import db
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 app_version = get_version()
-print(app_version)
+logger.info(f"Backend version: {app_version}")
 
 app = FastAPI(
     title="OmniAgentAst API",
