@@ -37,6 +37,7 @@ def initialize_run_state(
     agent.message_builder.reset_per_run()
     agent.status = AgentStatus.THINKING
     agent.llm_call_count = 0
+    agent._consecutive_truncations = 0
     if task_id:
         agent.task_id = task_id
 

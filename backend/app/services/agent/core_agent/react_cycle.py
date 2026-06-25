@@ -24,6 +24,8 @@ from app.services.agent.core_agent.handlers import (
     handle_action, handle_answer,
 )
 
+_MAX_CONSECUTIVE_TRUNCATIONS = 3
+
 
 def _should_retry_truncated_tool(agent, llm_response: Dict) -> bool:
     """检测LLM应答是否因输出截断导致工具调用遗漏
@@ -54,19 +56,26 @@ def _should_retry_truncated_tool(agent, llm_response: Dict) -> bool:
     return False
 
 
-def _dispatch_handler(agent, llm_response, chunk_buffer):
+async def _dispatch_handler(agent, llm_response, chunk_buffer):
     """按type分派handler — 小健 2026-06-17 if/elif替代2-entry注册表
-    E-4修复 2026-06-25 小欧: 未知类型走error而非沉默handle_answer
+    北京老陈 2026-06-25: 未知类型走FAILED而非handle_answer
     """
     parsed_type = llm_response.get("type", "answer")
     if parsed_type == "action":
-        return handle_action(agent, llm_response, chunk_buffer)
-    if parsed_type == "answer":
-        return handle_answer(agent, llm_response, chunk_buffer)
-    from app.services.agent.steps import FinalStep
-    from app.utils.logger import logger
-    logger.warning(f"[dispatch_handler] 未知返回类型: {parsed_type}, 按answer处理")
-    return handle_answer(agent, llm_response, chunk_buffer)
+        async for event in handle_action(agent, llm_response, chunk_buffer):
+            yield event
+    elif parsed_type == "answer":
+        async for event in handle_answer(agent, llm_response, chunk_buffer):
+            yield event
+    else:
+        from app.utils.logger import logger
+        logger.warning(f"[dispatch_handler] 未知返回类型: {parsed_type}, 设置为FAILED")
+        agent.status = AgentStatus.FAILED
+        yield agent._step_emitter.emit(FinalStep(
+            step=agent.llm_call_count,
+            response=f"LLM返回未知响应类型: {parsed_type}",
+            thought="",
+        ))
 
 
 def _ensure_failed_final_step(agent):
@@ -160,7 +169,19 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
     # BUG修复: LLM输出截断导致工具调用遗漏 — 检测preamble文本+注入重试
     if _should_retry_truncated_tool(agent, llm_response):
         content = llm_response.get("content", "")
-        logger.warning(f"[run_react_cycle] 检测到LLM输出截断(step={step}, content={content[:50]}), 注入重试observation")
+        agent._consecutive_truncations = getattr(agent, '_consecutive_truncations', 0) + 1
+        logger.warning(f"[run_react_cycle] 检测到LLM输出截断(step={step}, 连续第{agent._consecutive_truncations}次, content={content[:50]})")
+
+        if agent._consecutive_truncations >= _MAX_CONSECUTIVE_TRUNCATIONS:
+            logger.error(f"[run_react_cycle] LLM连续截断{_MAX_CONSECUTIVE_TRUNCATIONS}次, 停止重试, 设为FAILED")
+            agent.status = AgentStatus.FAILED
+            yield agent._step_emitter.emit(FinalStep(
+                step=step,
+                response=f"LLM连续{_MAX_CONSECUTIVE_TRUNCATIONS}次输出截断",
+                thought="",
+            ))
+            return
+
         obs_text = "[Observation] 工具调用输出不完整，请重新调用该工具并补充完整参数"
         agent.message_builder.add_observation(
             obs_text, {"tool_call_id": "", "tool_calls": [], "llm_content": content},
@@ -172,6 +193,8 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         ))
         return
 
+    # 正常响应, 重置截断计数器
+    agent._consecutive_truncations = 0
     async for event in _dispatch_handler(agent, llm_response, chunk_buffer):
         yield event
 

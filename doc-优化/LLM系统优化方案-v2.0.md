@@ -61,12 +61,13 @@
 
 ### 3.1 架构简化（P1-紧急）
 
-#### 3.1.1 合并`llm_caller.py`与`react_cycle.py` ✅ 已实施
+#### 3.1.1 合并`llm_caller.py`与`react_cycle.py` 🚧 部分实施（函数名与文档设计不一致）
 
 **实施验证**：
-- `llm_caller.py` 已删除，不存在于代码库
-- `react_cycle.py:96` 注释明确 "call_llm内联，直接调用call_llm_stream"
-- 调用链从3层(`run_react_cycle → call_llm → call_llm_fc_stream`)简化为2层(`_process_single_step → call_llm_with_fallback`)
+- `llm_caller.py` 更名为 `llm_stream.py`（非删除，是改名，功能保持）
+- `call_llm()` 中间层已删除 ✅
+- 调用链从3层简化为2层 ✅
+- **设计差异**：文档设计的 `call_llm_fc_stream()` 函数名实际为 `call_llm_with_fallback()` 和 `call_llm_stream()`
 - 对应文件：`react_cycle.py`、`llm_stream.py`
 
 **问题**：`llm_caller.py`只是简单的包装层，违反KISS-DIRECT原则
@@ -153,14 +154,15 @@ def _classify_and_map_in_one_pass(self):
 
 ### 3.2 错误恢复增强（P1-紧急）
 
-#### 3.2.1 添加FC降级机制 ✅ 已实施
+#### 3.2.1 添加FC降级机制 🚧 部分实施（API与文档设计不一致）
 
 **实施验证**：
-- `call_llm_with_fallback()` 实现FC模式→Text模式降级(`llm_stream.py:148`)
-- `call_llm_stream()` 支持`tools=None`走纯Text模式(`llm_stream.py:75`)
-- `FC_FALLBACK_ENABLED` 开关控制是否启用降级(`llm_stream.py:165`)
-- `FC_MAX_RETRIES` 控制FC重试次数(`llm_stream.py:155`)
-- FCFormatError穿透由外层`call_llm_with_fallback`统一捕获处理
+- FC降级功能已实现，且比文档设计更强（带重试机制） ✅
+- `FC_FALLBACK_ENABLED` / `FC_MAX_RETRIES` 配置开关 ✅
+- **设计差异**：
+  - 文档设计 `call_llm_fc_stream_with_fallback()` → 实际为 `call_llm_with_fallback()`
+  - 文档设计独立的 `call_llm_text_stream()` → 实际复用`call_llm_stream(tools=None)`
+  - 文档设计捕获 `LLMFormatError, ToolCallParseError` → 实际仅捕获 `FCFormatError`
 - 对应文件：`llm_stream.py`
 
 **问题**：FC-only架构在LLM返回格式错误时直接崩溃
@@ -185,13 +187,14 @@ async def call_llm_fc_stream_with_fallback(agent, messages, tools):
 2. 在`call_llm_fc_stream()`外层添加降级包装
 3. 添加降级开关配置
 
-#### 3.2.2 统一错误处理 ✅ 已实施
+#### 3.2.2 统一错误处理 🚧 部分实施（实现方式与文档设计不同）
 
 **实施验证**：
-- `core_agent/error_handler.py` 已创建，提供`handle_react_error()`统一入口
-- 使用if/elif直接分派(`fc_format_error`→可重试, `tool_execution_error`→继续, `network_error`→可重试)
-- 使用`UnifiedErrorClassifier`(`app.utils.error_classifier`)做错误分类
-- 在`react_cycle.py:219`异常捕获处集成使用
+- 统一错误处理入口已创建 ✅
+- 在`react_cycle.py`异常捕获处集成使用 ✅
+- **设计差异**：
+  - 文档设计 `class ErrorHandler`（类+静态方法）→ 实际为模块级函数（`handle_react_error` + 私有辅助函数）
+  - 文档设计的`_handle_tool_error`分支是死代码（`_classify_error`永不返回`tool_execution_error`），已在本次修复中删除
 - 对应文件：`core_agent/error_handler.py`、`react_cycle.py`
 
 **问题**：错误处理分散在多个文件
@@ -286,14 +289,21 @@ class SmartToolCache:
 
 ### 4.1 架构重构：简化消息流转
 
-#### 4.1.1 优化消息系统结构 ✅ 已实施
+#### 4.1.1 优化消息系统结构 🚧 部分实施（类型安全接口已添加）
 
 **实施验证**：
-- `fc_message_types.py` 保留，提供Pydantic类型安全模型
-- `message_builder.py` 使用`message_to_dict()`/`dict_to_message()`做类型转换
-- 保持SRP分离：模型定义(`fc_message_types.py`) ↔ 构建逻辑(`message_builder.py`)
-- 类型安全的添加方法已实现(`add_assistant_message`, `add_observation`等)
-- 对应文件：`fc_message_types.py`、`message_builder.py`
+- `fc_message_types.py` 保留，Pydantic模型提供类型安全 ✅
+- 文件未合并（SRP分离） ✅
+- **新增方法**（2026-06-25 北京老陈）：
+  - `add_system_message(content) → SystemMessage` ✅
+  - `add_user_message(content) → UserMessage` ✅
+  - `add_assistant_tool_call(tool_calls, content) → AssistantMessage` ✅
+  - `add_tool_result(tool_call_id, content) → ToolResultMessage` ✅
+  - `add_assistant_message(content) → AssistantMessage`（原方法，改为返回类型对象） ✅
+- **设计决策**：history存储保持`List[Dict]`（不存Pydantic对象），insert时通过`message_to_dict()`即时转换。原因：
+  - `prepare_messages_for_llm()` 直接返回dict，省去model_dump遍历
+  - Pydantic验证在insert点完成，杜绝无效数据写入history
+- 对应文件：`message_builder.py`、`fc_message_types.py`
 
 **问题分析**：
 1. `fc_message_types.py`：Pydantic模型定义，提供类型安全

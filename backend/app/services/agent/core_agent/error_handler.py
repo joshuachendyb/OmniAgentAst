@@ -18,8 +18,6 @@ def handle_react_error(agent, error, step):
 
     if error_type == "fc_format_error":
         return _handle_fc_format_error(agent, error, step)
-    elif error_type == "tool_execution_error":
-        return _handle_tool_error(agent, error, step)
     elif error_type == "network_error":
         return _handle_network_error(agent, error, step)
     else:
@@ -47,13 +45,6 @@ def _handle_fc_format_error(agent, error, step):
     logger.error(f"[ErrorHandler] FC格式错误: {error}")
     agent.status = AgentStatus.RETRYABLE_ERROR
     return ErrorStep(step=step, error_type="fc_format_error",
-                     error_message=str(error), recoverable=True)
-
-
-def _handle_tool_error(agent, error, step):
-    """工具执行错误 → 继续执行(不设FAILED) — 小欧 2026-06-25"""
-    logger.error(f"[ErrorHandler] 工具错误: {error}")
-    return ErrorStep(step=step, error_type="tool_execution_error",
                      error_message=str(error), recoverable=True)
 
 

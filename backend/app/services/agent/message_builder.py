@@ -17,11 +17,11 @@ MessageBuilder 实例生命周期必须与 Agent 实例强绑定,
 - _trim_to_budget 统一裁剪,按原始顺序重排
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from app.constants import MAX_CONTEXT_CHARS, TEMP_HISTORY_CHAR_LIMIT
 from app.services.agent.agent_utils.fc_message_types import (
-    FcMessage, SystemMessage, UserMessage, AssistantMessage, ToolResultMessage,
+    FcMessage, SystemMessage, UserMessage, AssistantMessage, ToolResultMessage, ToolCall,
     message_to_dict, dict_to_message,
 )
 
@@ -43,6 +43,31 @@ class MessageBuilder:
     # 第一组:conversation_history 写操作(统一入口)
     # =========================================================================
 
+    def add_system_message(self, content: str) -> SystemMessage:
+        """添加system消息 — 北京老陈 2026-06-25"""
+        msg = SystemMessage(content=content)
+        self.conversation_history.append(message_to_dict(msg))
+        return msg
+
+    def add_user_message(self, content: str) -> UserMessage:
+        """添加user消息 — 北京老陈 2026-06-25"""
+        msg = UserMessage(content=content)
+        self.conversation_history.append(message_to_dict(msg))
+        return msg
+
+    def add_assistant_tool_call(self, tool_calls: list,
+                                content: Optional[str] = None) -> AssistantMessage:
+        """添加assistant工具调用消息 — 北京老陈 2026-06-25"""
+        msg = AssistantMessage(content=content, tool_calls=tool_calls)
+        self.conversation_history.append(message_to_dict(msg))
+        return msg
+
+    def add_tool_result(self, tool_call_id: str, content: str) -> ToolResultMessage:
+        """添加工具执行结果消息 — 北京老陈 2026-06-25"""
+        msg = ToolResultMessage(content=content, tool_call_id=tool_call_id)
+        self.conversation_history.append(message_to_dict(msg))
+        return msg
+
     def init_history(self, sys_prompt: str, task_prompt: str) -> None:
         """初始化conversation_history — 替代base_react.py L368-369"""
         if not task_prompt or not task_prompt.strip():
@@ -58,6 +83,7 @@ class MessageBuilder:
 
     def _append_observation(self, observation_text: str, fc_context: Dict) -> None:
         """追加FC协议observation消息 — fc_context必传 — FC-only重构 2026-06-11 小沈
+        北京老陈 2026-06-25: 使用类型安全方法替代原始message_to_dict调用
 
         FC协议要求: assistant(tool_calls)必须在role:tool之前,且每个tool_call_id唯一。
         始终添加assistant消息,确保配对完整。重复tool_call_id跳过assistant以避免重复。
@@ -72,24 +98,24 @@ class MessageBuilder:
         ) if tool_call_id else False
         if tool_calls and not has_existing_assistant:
             llm_content = fc_context.get("llm_content", "") or None
-            self.conversation_history.append(message_to_dict(AssistantMessage(content=llm_content, tool_calls=tool_calls)))
+            self.add_assistant_tool_call(tool_calls, content=llm_content)
         elif tool_call_id and not has_existing_assistant:
-            self.conversation_history.append(message_to_dict(AssistantMessage(tool_calls=[])))
+            self.add_assistant_tool_call([])
         elif not has_existing_assistant:
-            # BUG修复: 无tool_call_id/无tool_calls时也加assistant消息保证FC配对(如LLM输出截断)
             llm_content = fc_context.get("llm_content", "") or ""
-            self.conversation_history.append(message_to_dict(AssistantMessage(content=llm_content)))
-        self.conversation_history.append(message_to_dict(ToolResultMessage(content=observation_text, tool_call_id=tool_call_id)))
+            self.add_assistant_tool_call([], content=llm_content)
+        self.add_tool_result(tool_call_id, observation_text)
 
     def add_observation(self, observation_text: str, fc_context: Dict) -> None:
         self._append_observation(observation_text, fc_context)
         self.trim_history()
 
-    def add_assistant_message(self, content: str) -> None:
-        """追加assistant最终回答到conversation_history — 2026-06-25 小欧 J-1修复: 封装统一入口"""
-        self.conversation_history.append(
-            message_to_dict(AssistantMessage(content=content))
-        )
+    def add_assistant_message(self, content: str) -> AssistantMessage:
+        """追加assistant最终回答到conversation_history — 2026-06-25 小欧 J-1修复: 封装统一入口
+        北京老陈 2026-06-25: 返回类型化AssistantMessage对象"""
+        msg = AssistantMessage(content=content)
+        self.conversation_history.append(message_to_dict(msg))
+        return msg
 
     # =========================================================================
     # 第二组:每轮 LLM 调用的消息组装
