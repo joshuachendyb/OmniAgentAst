@@ -574,3 +574,40 @@ tools:
 **创建时间**: 2026-06-25 21:11:53
 **编写人**: 小欧
 **审核人**: 小健
+
+---
+
+## 六、未实施项评估结论（小欧 2026-06-25 补充）
+
+### 6.1 评估方法
+
+逐项对照代码现状和10大编码原则，判断未实施项是否值得实施。
+
+### 6.2 评估结果
+
+| # | 未实施项 | 文档位置 | 值得实施? | 理由 |
+|---|---------|---------|---------|------|
+| 1 | `SmartToolCache`类 | 3.3.1 | ❌ 不值得 | 当前`get_openai_tools()`函数+TTLCache已够用，包装成类是过度设计（YAGNI）。`_usage_stats`是监控指标，当前无监控需求 |
+| 2 | `SimpleReActCycle`类 | 4.1.2 | ❌ 不值得 | 当前`run_react_cycle()`函数式实现清晰，包装成类增加复杂度无收益。文档设计的`SimpleReActCycle`比现有代码更复杂（加了`PerformanceMonitor`），违反YAGNI |
+| 3 | `AgentStateManager`类 | 4.1.2 | ❌ 不值得 | Batch2的`2d`已规划`set_failed()`统一入口，比`AgentStateManager`类更KISS。6个状态的转换规则用if/elif就够，不需要类 |
+| 4 | `UnifiedErrorHandler`类+策略注册表 | 4.1.2 | ❌ 不值得 | 当前`handle_react_error()`用if/elif直接分派，3个分支。`ERROR_STRATEGIES`注册表只有4个entry，违反KISS-DIRECT"2-entry注册表用if/elif"规则 |
+| 5 | 集成测试（正常/错误/边界/性能） | 4.2 | ⚠️ 部分值得 | FC降级测试已补(6/6通过)。**仍缺**：message_builder裁剪测试、react_cycle正常流程Mock测试。性能测试和压力测试当前不需要 |
+| 6 | 单元测试 | 4.2.2 | ✅ 值得 | `message_builder.trim_history()`、`error_handler.handle_react_error()`、`_should_retry_truncated_tool()`等核心函数缺少单元测试，回归风险高 |
+| 7 | 模块化重构（按功能拆分目录） | 5.1.1 | ❌ 不值得 | 当前`core_agent/`+`agent_utils/`+`handlers/`结构已合理，再拆`messaging/`/`llm/`增加import路径复杂度（YAGNI） |
+| 8 | 接口标准化（`IMessageBuilder`/`ILLMCaller`） | 5.1.2 | ❌ 不值得 | 只有1个实现，接口抽象是为多实现准备的，当前无需求（YAGNI） |
+| 9 | YAML配置文件 | 5.2.1 | ❌ 不值得 | `llm_constants.py`常量文件已集中管理，YAML增加解析开销和配置维护成本 |
+| 10 | 热重载配置 | 5.2.2 | ❌ 不值得 | 单用户桌面应用，不需要热重载，重启即可（YAGNI） |
+
+### 6.3 核心结论
+
+**8项不值得实施**：全部违反YAGNI原则，属于过度设计。当前代码实现比文档设计更简洁、更符合KISS-DIRECT。
+
+**1项值得实施**：核心函数单元测试（`trim_history`、`handle_react_error`、`_should_retry_truncated_tool`），降低回归风险。
+
+**1项部分值得**：集成测试已部分补齐（FC降级6/6通过），Mock测试可按需添加。
+
+### 6.4 建议行动
+
+1. **立即**：为核心函数补充单元测试（`trim_history`、`_should_retry_truncated_tool`）
+2. **不行动**：其余8项未实施项，当前代码已优于文档设计，不需要按文档实施
+3. **文档归档**：本文档第四章（中期重构）和第五章（长期演进）的设计方案标记为"已评估-不实施"
