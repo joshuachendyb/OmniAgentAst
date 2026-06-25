@@ -69,7 +69,7 @@ def _is_forbidden_path(file_path: str) -> Tuple[bool, Optional[str]]:
         
         return False, None
     except Exception as e:
-        return False, None
+        return True, f"路径安全检查异常,拒绝访问: {file_path} ({e})"
 
 
 def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None) -> Tuple[bool, Optional[str]]:
