@@ -45,7 +45,7 @@ from app.tools.shell.shell_session import shell_session
 from app.tools.shell.execute_code import execute_code
 
 SHELL_TOOL_DESCRIPTIONS = {
-    "execute_shell_command": """在Windows环境中执行命令,支持PowerShell和CMD两种shell类型。支持前台等待和后台运行。适用场景:需要运行系统命令、执行脚本、启动程序时使用。""",
+    "execute_shell_command": """在Windows环境中执行命令,支持PowerShell和CMD两种shell类型。推荐使用PowerShell语法,支持前台等待和后台运行。适用场景:需要运行系统命令、执行脚本、启动程序时使用。""",
 
     "find_command": """查找系统命令的安装路径。适用场景:需要确认命令是否已安装、查看其安装路径时使用。""",
     "execute_code": """执行代码片段(Python/JavaScript)并返回结果,内置安全防护。适用场景:需要快速验证代码逻辑、进行数据处理时使用。""",
