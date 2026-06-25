@@ -14,32 +14,6 @@ from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
 
 
-async def call_llm(agent):
-    """调用LLM — 纯FC模式 — FC-only重构 2026-06-11 小沈"""
-    from app.services.agent.tool_cache_manager import get_openai_tools
-    agent.llm_call_count += 1
-    agent.message_builder.trim_history()
-
-    messages = agent.message_builder.prepare_messages_for_llm()
-    openai_tools = get_openai_tools(agent)
-    logger.info(f"[FC] LLM调用#{agent.llm_call_count}, messages={len(messages)}, tools={len(openai_tools)}, model={getattr(agent.llm_client, 'model', '?')}")
-
-    prompt_logger = get_prompt_logger()
-    prompt_logger.log_llm_call(
-        round_number=agent.llm_call_count,
-        messages=messages,
-        model=getattr(agent.llm_client, 'model', 'unknown'),
-        provider=getattr(agent.llm_client, 'provider', 'unknown'),
-        call_type="tools",
-        tools=openai_tools,
-    )
-
-    if not openai_tools:
-        logger.error("[call_llm] 无可用工具")
-
-    async for item in call_llm_stream(agent, messages, openai_tools):
-        yield item
-
 
 def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agent):
     """构建action类型响应 — 小欧 2026-06-25 抽取_log_llm_response"""
@@ -95,20 +69,22 @@ def _build_answer_response(content, usage_data, agent):
     assembled = {"content": content}
     _log_llm_response(agent, json.dumps(assembled, ensure_ascii=False), "answer", usage_data)
     return ("response", {"type": "answer", "content": content, "thought": ""})
-    return ("response", {"type": "answer", "content": content, "thought": ""})
 
 
-async def call_llm_stream(agent, messages: list, openai_tools: list):
-    """FC/Text双模式流式调用 — tool_calls原生消费 — 小沈 2026-06-12; 小健 2026-06-17 新增usage; 小欧 2026-06-25 名实相符"""
+
+async def call_llm_stream(agent, messages: list, openai_tools: list = None):
+    """FC/Text双模式流式调用 — tools=None时走Text模式(降级后备) — 小沈 2026-06-12; 小欧 2026-06-25 tools=None支持"""
+    from app.services.llm.llm_constants import LLM_TOOL_CHOICE
     full_content = ""
     full_reasoning = ""
     tool_calls_result = None
     stream_error = None
     usage_data = None
+    tool_choice = LLM_TOOL_CHOICE if openai_tools else None
 
     try:
         async for chunk in agent.llm_client.request_stream(
-            messages=messages, tools=openai_tools, tool_choice="auto",
+            messages=messages, tools=openai_tools, tool_choice=tool_choice,
         ):
 
             if chunk.stream_error:
@@ -134,6 +110,9 @@ async def call_llm_stream(agent, messages: list, openai_tools: list):
                     usage_data = chunk.usage
                 break
     except Exception as e:
+        from app.services.llm.core import FCFormatError
+        if isinstance(e, FCFormatError):
+            raise  # 小欧 2026-06-25: FCFormatError穿透，由call_llm_with_fallback处理
         if getattr(agent.llm_client, '_cancelled', False):
             logger.info(f"[FC] LLM调用因取消而中断, 跳过异常响应")
             return
@@ -164,3 +143,28 @@ async def call_llm_stream(agent, messages: list, openai_tools: list):
     content = full_content or full_reasoning or ""
     logger.info(f"[FC] 解析结果: answer, len={len(content)}, tokens={usage_data.get('total_tokens','?') if usage_data else '?'}")
     yield _build_answer_response(content, usage_data, agent)
+
+
+async def call_llm_with_fallback(agent, messages, openai_tools):
+    """FC模式失败时条件降级到Text模式 — 小欧 2026-06-25"""
+    from app.services.llm.llm_constants import FC_FALLBACK_ENABLED, FC_MAX_RETRIES
+    from app.services.llm.core import FCFormatError
+
+    last_error = None
+
+    for attempt in range(FC_MAX_RETRIES):
+        try:
+            async for item in call_llm_stream(agent, messages, openai_tools):
+                yield item
+            return
+        except FCFormatError as e:
+            last_error = e
+            logger.warning(f"[FC降级] FC模式第{attempt+1}次失败: {e}")
+            continue
+
+    if FC_FALLBACK_ENABLED:
+        logger.warning(f"[FC降级] FC模式{FC_MAX_RETRIES}次重试均失败，降级到Text模式")
+        async for item in call_llm_stream(agent, messages, openai_tools=None):
+            yield item
+    else:
+        yield _yield_error_response(f"FC模式失败: {last_error}", agent)
