@@ -71,7 +71,7 @@ def _dispatch_handler(agent, llm_response, chunk_buffer):
 
 def _ensure_failed_final_step(agent):
     """FAILED时补发FinalStep — 小健 2026-06-17 从finally提取"""
-    if agent.status != AgentStatus.FAILED:
+    if agent.status not in (AgentStatus.FAILED, AgentStatus.RETRYABLE_ERROR):
         return
     last_err = None
     for s in reversed(agent.steps):
@@ -93,16 +93,38 @@ def _finalize_cycle(agent):
 
 
 async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
-    """处理单步循环 — FC-only: llm_response为dict,无需parse_llm_response — 小沈 2026-06-11"""
+    """处理单步循环 — call_llm内联, 直接调用call_llm_stream — 小欧 2026-06-25"""
 
-    from app.services.agent.llm_stream import call_llm
+    from app.services.agent.llm_stream import call_llm_with_fallback
+    from app.services.agent.tool_cache_manager import get_openai_tools
     from app.services.agent.steps import ChunkStep
+    from app.utils.prompt_logger import get_prompt_logger
+
+    agent.llm_call_count += 1
+    agent.message_builder.trim_history()
+    messages = agent.message_builder.prepare_messages_for_llm()
+    openai_tools = get_openai_tools(agent)
+
+    logger.info(f"[FC] LLM调用#{agent.llm_call_count}, messages={len(messages)}, tools={len(openai_tools)}, model={getattr(agent.llm_client, 'model', '?')}")
+
+    prompt_logger = get_prompt_logger()
+    prompt_logger.log_llm_call(
+        round_number=agent.llm_call_count,
+        messages=messages,
+        model=getattr(agent.llm_client, 'model', 'unknown'),
+        provider=getattr(agent.llm_client, 'provider', 'unknown'),
+        call_type="tools",
+        tools=openai_tools,
+    )
+
+    if not openai_tools:
+        logger.error("[_process_single_step] 无可用工具")
+
     llm_response = None
-    async for chunk_or_response in call_llm(agent):
+    async for chunk_or_response in call_llm_with_fallback(agent, messages, openai_tools):
         chunk_type, chunk_data = chunk_or_response
 
         if chunk_type == "chunk":
-            # 小健 2026-06-19: StreamChunk转ChunkStep,确保emit返回Step对象
             content = chunk_data.content if hasattr(chunk_data, 'content') else str(chunk_data)
             is_reasoning = getattr(chunk_data, 'is_reasoning', False)
             chunk_step = ChunkStep(
@@ -184,7 +206,7 @@ async def run_react_cycle(
             async for event in _process_single_step(agent, chunk_buffer):
                 yield event
 
-            if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
+            if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED, AgentStatus.RETRYABLE_ERROR):
                 break
 
             if chunk_buffer.should_force_stop():
@@ -194,10 +216,9 @@ async def run_react_cycle(
 
     except Exception as e:
         logger.error(f"[run_react_cycle] 异常: {e}", exc_info=True)
-        yield agent._step_emitter.exit_with_error(
-            step_count=agent.llm_call_count, error_type="runtime_error", error_message=str(e),
-        )
-        agent.status = AgentStatus.FAILED
+        from app.services.agent.core_agent.error_handler import handle_react_error
+        error_step = handle_react_error(agent, e, agent.llm_call_count)
+        yield agent._step_emitter.emit(error_step)
 
     finally:
         failed_step = _ensure_failed_final_step(agent)
