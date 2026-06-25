@@ -385,6 +385,8 @@ async def search_web(
                 logger.warning(f"[search_web] Bing搜索也失败: {e}")
                 results = []
 
+        results = results or []
+
         if allowed_domains:
             results = [r for r in results if any(domain in r.get("url", "") for domain in allowed_domains)]
         if blocked_domains:
