@@ -287,7 +287,8 @@ class BaseAIService:
                 if entry:
                     result[idx] = entry
             return result
-        except Exception:
+        except Exception as e:
+            logger.warning(f"[BaseAIService] _extract_tool_calls异常: {e}")
             return {}
 
     def _extract_usage(self, data_str: str) -> Optional[Dict]:
@@ -300,7 +301,8 @@ class BaseAIService:
             if usage and isinstance(usage, dict):
                 return usage
             return None
-        except Exception:
+        except Exception as e:
+            logger.warning(f"[BaseAIService] _extract_usage异常: {e}")
             return None
 
     def _parse_sse_data(self, data_str: str) -> Optional[StreamChunk]:
