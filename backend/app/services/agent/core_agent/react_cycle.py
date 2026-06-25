@@ -253,7 +253,10 @@ async def run_react_cycle(
             async for event in _process_single_step(agent, chunk_buffer):
                 yield event
 
-            if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED, AgentStatus.RETRYABLE_ERROR):
+            if agent.status == AgentStatus.RETRYABLE_ERROR:
+                agent.status = AgentStatus.THINKING
+                continue
+            if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED):
                 break
 
             if chunk_buffer.should_force_stop():
@@ -268,7 +271,8 @@ async def run_react_cycle(
         yield agent._step_emitter.emit(error_step)
 
     finally:
-        failed_step = _ensure_failed_final_step(agent)
-        if failed_step:
-            yield agent._step_emitter.emit(failed_step)
-        _finalize_cycle(agent)
+        if agent.status != AgentStatus.RETRYABLE_ERROR:
+            failed_step = _ensure_failed_final_step(agent)
+            if failed_step:
+                yield agent._step_emitter.emit(failed_step)
+            _finalize_cycle(agent)
