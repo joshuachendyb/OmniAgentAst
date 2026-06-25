@@ -167,6 +167,8 @@ def _merge_llm_data(all_llm_data: List[Dict]) -> Dict:
             merged_metrics[f"{tool_name}.{k}"] = v
 
     def _safe_str(val):
+        if val is None:
+            return ""
         return str(val) if not isinstance(val, str) else val
 
     return {
