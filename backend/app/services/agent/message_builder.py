@@ -19,9 +19,7 @@ MessageBuilder 实例生命周期必须与 Agent 实例强绑定,
 
 from typing import Any, Dict, List
 
-from app.constants import MAX_CONTEXT_CHARS, OBSERVATION_BUDGET_DECAY, OBSERVATION_BUDGET_MAX, OBSERVATION_BUDGET_MIN, TEMP_HISTORY_CHAR_LIMIT
-from app.utils.text_utils import smart_truncate_text
-
+from app.constants import MAX_CONTEXT_CHARS, TEMP_HISTORY_CHAR_LIMIT
 from app.services.agent.agent_utils.fc_message_types import (
     FcMessage, SystemMessage, UserMessage, AssistantMessage, ToolResultMessage,
     message_to_dict, dict_to_message,
@@ -57,17 +55,9 @@ class MessageBuilder:
             message_to_dict(UserMessage(content=task_prompt)),
         ]
 
-    def _prepare_observation_text(self, observation_text: str, llm_call_count: int) -> str:
-        """准备observation文本 — 截断+归一化 — 小沈 2026-06-08
-        D-3修复 2026-06-25 小欧: 截断时追加标记
-        """
-        budget = self._get_observation_budget(llm_call_count)
-        truncated = len(observation_text) > budget
-        if truncated:
-            observation_text = smart_truncate_text(observation_text, budget=budget)
-            observation_text += "\n... (内容过长被截断)"
-        observation_text = self._normalize_observation_prefix(observation_text)
-        return observation_text
+    def _prepare_observation_text(self, observation_text: str) -> str:
+        """归一化observation前缀"""
+        return self._normalize_observation_prefix(observation_text)
 
     def _append_observation(self, observation_text: str, fc_context: Dict) -> None:
         """追加FC协议observation消息 — fc_context必传 — FC-only重构 2026-06-11 小沈
@@ -94,9 +84,7 @@ class MessageBuilder:
             self.conversation_history.append(message_to_dict(AssistantMessage(content=llm_content)))
         self.conversation_history.append(message_to_dict(ToolResultMessage(content=observation_text, tool_call_id=tool_call_id)))
 
-    def add_observation(self, observation_text: str, llm_call_count: int, fc_context: Dict) -> None:
-        """FC-only: fc_context必传 — 重构 2026-06-11 小沈"""
-        observation_text = self._prepare_observation_text(observation_text, llm_call_count)
+    def add_observation(self, observation_text: str, fc_context: Dict) -> None:
         self._append_observation(observation_text, fc_context)
         self.trim_history()
 
@@ -239,14 +227,8 @@ class MessageBuilder:
         return None
 
     # =========================================================================
-    # 第四组:observation 截断辅助
+    # 第四组:observation 辅助
     # =========================================================================
-
-    @staticmethod
-    def _get_observation_budget(llm_call_count: int) -> int:
-        """计算observation可用预算 — 替代 base_react.py L1378-1382"""
-        budget = OBSERVATION_BUDGET_MIN + OBSERVATION_BUDGET_DECAY * max(0, 5 - llm_call_count)
-        return min(budget, OBSERVATION_BUDGET_MAX)
 
     @staticmethod
     def _normalize_observation_prefix(text: str) -> str:

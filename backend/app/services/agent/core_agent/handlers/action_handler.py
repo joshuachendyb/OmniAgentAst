@@ -236,7 +236,7 @@ async def build_observation(ctx: ObservationContext) -> List:
                     per_call_fc["llm_content"] = _fc["llm_content"]
             else:
                 per_call_fc = _fc
-            ctx.agent.message_builder.add_observation(obs_text, ctx.agent.llm_call_count, per_call_fc)
+            ctx.agent.message_builder.add_observation(obs_text, per_call_fc)
         except Exception as e:
             logger.warning(f"[action_handler] _update_message_builder异常: {e}")
 

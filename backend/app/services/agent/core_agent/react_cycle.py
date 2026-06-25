@@ -141,8 +141,7 @@ async def _process_single_step(agent, chunk_buffer) -> AsyncGenerator:
         logger.warning(f"[run_react_cycle] 检测到LLM输出截断(step={step}, content={content[:50]}), 注入重试observation")
         obs_text = "[Observation] 工具调用输出不完整，请重新调用该工具并补充完整参数"
         agent.message_builder.add_observation(
-            obs_text, agent.llm_call_count,
-            {"tool_call_id": "", "tool_calls": [], "llm_content": content},
+            obs_text, {"tool_call_id": "", "tool_calls": [], "llm_content": content},
         )
         yield agent._step_emitter.emit(ObservationStep(
             step=step,
