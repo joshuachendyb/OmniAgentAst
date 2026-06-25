@@ -29,9 +29,6 @@ from app.services.agent.agent_utils.fc_message_types import (
 class MessageBuilder:
     """Prompt/Message组装的统一入口"""
 
-    # ===== 观测文本构建常量(从base_react.py搬入) — 小沈 2026-06-17 删除冗余X=X =====
-    OBSERVATION_HEAD_RATIO = 0.6
-
     def __init__(self, max_context_chars: int = MAX_CONTEXT_CHARS):
         self.conversation_history: List[Dict[str, Any]] = []
         self.temp_history: List[Dict[str, Any]] = []
@@ -183,7 +180,7 @@ class MessageBuilder:
                     for tc in assistant.get("tool_calls", []):
                         tool_name = tc.get("function", {}).get("name", "")
                         if tool_name:
-                            first_tool_obs[tool_name] = msg  # D-4: 保持最后一次而非首次
+                            first_tool_obs[tool_name] = msg  # 保持最后一次而非首次
 
         kept = []
         used_chars = 0

@@ -165,7 +165,7 @@ class PromptLogger:
         entry = {
             "步骤": "任务Prompt生成",
             "类型": "任务Prompt",
-            "来源": source or "file_prompts.py:get_task_prompt()",
+            "来源": source or "unknown",
             "内容": task_content,
             "内容长度": len(task_content),
             "时间戳": now_str()

@@ -33,7 +33,17 @@ def build_observation_text(execution_result, tool_name: str = "", tool_params: O
         llm_data = execution_result.get("llm_data")
         if llm_data is not None:
             return format_llm_observation(data, llm_data)
-        result_str = str(execution_result)
+        # 如果没有llm_data，但data存在，使用format_data_detail格式化
+        if data is not None:
+            from app.services.agent.observation_formatter import format_data_detail
+            detail = format_data_detail(data)
+            return f"Observation: {detail[:500]}" if len(detail) > 500 else f"Observation: {detail}"
+        # 如果既没有llm_data也没有data，使用简洁的JSON表示
+        import json
+        try:
+            result_str = json.dumps(execution_result, ensure_ascii=False, separators=(',', ':'))
+        except:
+            result_str = str(execution_result)
         return f"Observation: {result_str[:500]}" if len(result_str) > 500 else f"Observation: {result_str}"
     result_str = str(execution_result)
     return f"Observation: {result_str[:500]}" if len(result_str) > 500 else f"Observation: {result_str}"
