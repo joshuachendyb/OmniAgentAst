@@ -39,7 +39,6 @@ class ObservationContext:
     tool_params: Dict
     is_parallel: bool
     pending_calls: List
-    action_steps: List
     fc_context: Dict = None
 
 
@@ -83,7 +82,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int):
                     },
                 ))
 
-                auth = await wait_for_confirmation_result(confirm_id, timeout=120)
+                from app.constants import HITL_TIMEOUT
+                auth = await wait_for_confirmation_result(confirm_id, timeout=HITL_TIMEOUT)
 
                 if not auth.get("confirmed"):
                     yield agent._step_emitter.emit(ErrorStep(
@@ -104,6 +104,13 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
         if is_parallel:
             tasks = [execute_tool(agent, c["tool_name"], c["tool_params"]) for c in all_calls]
             results = await asyncio.gather(*tasks, return_exceptions=True)
+            for i, (call, result) in enumerate(zip(all_calls, results)):
+                if isinstance(result, Exception):
+                    logger.warning(f"[action_handler] 工具{call['tool_name']}并行执行失败,重试: {result}")
+                    try:
+                        results[i] = await execute_tool(agent, call["tool_name"], call["tool_params"])
+                    except Exception as e2:
+                        logger.warning(f"[action_handler] 工具{call['tool_name']}重试仍失败: {e2}")
         else:
             result = await execute_tool(agent, tool_name, tool_params)
             results = [result]
@@ -208,7 +215,6 @@ async def build_observation(ctx: ObservationContext) -> List:
             execution_result=result,
             execution_status=_ec or "error",
         )
-        ctx.action_steps.append(action_step)
         events.append(ctx.agent._step_emitter.emit(action_step))
 
     obs_parts = []
@@ -224,6 +230,8 @@ async def build_observation(ctx: ObservationContext) -> List:
             if tc_id and _fc.get("tool_calls"):
                 matching = [tc for tc in _fc["tool_calls"] if tc.get("id") == tc_id]
                 per_call_fc = {"tool_call_id": tc_id, "tool_calls": matching or _fc["tool_calls"]}
+                if not matching:
+                    per_call_fc["tool_call_id"] = tc_id
                 if _fc.get("llm_content"):
                     per_call_fc["llm_content"] = _fc["llm_content"]
             else:
@@ -350,7 +358,7 @@ async def handle_action(agent, parsed: Dict, chunk_buffer):
         agent=agent, all_calls=all_calls, results=results, step=step,
         tool_name=tool_name, tool_params=tool_params,
         is_parallel=is_parallel, pending_calls=pending_calls,
-        action_steps=[], fc_context=fc_context,
+        fc_context=fc_context,
     )
     for event in await build_observation(ctx):
         yield event

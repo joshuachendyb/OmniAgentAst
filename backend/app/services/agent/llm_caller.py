@@ -105,15 +105,12 @@ async def call_llm_fc_stream(agent, messages: list, openai_tools: list):
     full_reasoning = ""
     tool_calls_result = None
     stream_error = None
-    _raw_chunks: list = []
     usage_data = None
 
     try:
         async for chunk in agent.llm_client.request_stream(
             messages=messages, tools=openai_tools, tool_choice="auto",
         ):
-            if chunk.raw_data:
-                _raw_chunks.append(chunk.raw_data)
 
             if chunk.stream_error:
                 stream_error = chunk.stream_error
@@ -138,6 +135,9 @@ async def call_llm_fc_stream(agent, messages: list, openai_tools: list):
                     usage_data = chunk.usage
                 break
     except Exception as e:
+        if getattr(agent.llm_client, '_cancelled', False):
+            logger.info(f"[FC] LLM调用因取消而中断, 跳过异常响应")
+            return
         yield _yield_error_response(f"LLM调用异常: {e}", agent)
         return
     except asyncio.CancelledError:
@@ -155,24 +155,6 @@ async def call_llm_fc_stream(agent, messages: list, openai_tools: list):
             tool_calls_result = None
         yield _yield_error_response(f"LLM流式错误: {stream_error}", agent)
         return
-
-    complete_raw = "\n".join(_raw_chunks)
-    # 解析响应内容，输出完整文本，不截断 - 2026-06-23 小欧
-    try:
-        import json
-        content_parts = []
-        for line in complete_raw.split("\n"):
-            try:
-                obj = json.loads(line)
-                delta = obj.get("choices", [{}])[0].get("delta", {})
-                if delta.get("content"):
-                    content_parts.append(delta["content"])
-            except:
-                pass
-        full_content_text = "".join(content_parts)
-        logger.debug(f"[FC] 响应内容: {full_content_text}")
-    except Exception:
-        pass
 
     if tool_calls_result:
         _fc_names = [tc.get("tool_name","?") if isinstance(tc,dict) else "?" for tc in tool_calls_result]

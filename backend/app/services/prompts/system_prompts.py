@@ -19,6 +19,7 @@ PromptBuilder — 唯一的 Prompt 构建类
 Author: 小沈 - 2026-06-14
 """
 
+import re
 from app.services.prompts.system_adapter import get_system_prompt as get_system_prompt_string
 from app.utils.logger import logger
 from app.services.prompts.project_context import load_project_context
@@ -135,4 +136,13 @@ class PromptBuilder:
         parts.append(self._get_project_root_info())
         parts.append(self.TOOL_CALL_RULES)
 
-        return "\n\n".join(parts)
+        result = "\n\n".join(parts)
+
+        # B-2修复 2026-06-25 小欧: 验证tag闭合
+        unclosed = re.findall(r'<(\w+)>', result)
+        closed = re.findall(r'</(\w+)>', result)
+        for tag in set(unclosed):
+            if tag not in closed and tag not in ('角色', 'br'):
+                logger.warning(f"[PromptBuilder] tag <{tag}> 可能未闭合")
+
+        return result

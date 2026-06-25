@@ -146,7 +146,8 @@ class PromptLogger:
         self,
         task_content: str,
         context: Optional[Dict[str, Any]] = None,
-        round_number: int = 0
+        round_number: int = 0,
+        source: str = "",
     ):
         """
         记录任务 Prompt
@@ -155,6 +156,7 @@ class PromptLogger:
             task_content: 任务 Prompt 内容
             context: 额外上下文
             round_number: LLM调用轮次 【2026-05-15 小健】
+            source: 来源说明
         """
         current_log = self._get_current_log()
         if not current_log:
@@ -163,7 +165,7 @@ class PromptLogger:
         entry = {
             "步骤": "任务Prompt生成",
             "类型": "任务Prompt",
-            "来源": "file_prompts.py:get_task_prompt()",
+            "来源": source or "file_prompts.py:get_task_prompt()",
             "内容": task_content,
             "内容长度": len(task_content),
             "时间戳": now_str()
@@ -429,13 +431,17 @@ class PromptLogger:
         filename = f"prompt_{short_id}+{file_timestamp}.json"
         log_file_path = self.log_dir / filename
         
-        try:
-            with open(log_file_path, 'w', encoding='utf-8') as f:
-                json.dump(current_log, f, ensure_ascii=False, indent=2)
-            
-            logger.info(f"[PromptLogger] 日志已保存: {log_file_path}")
-        except Exception as e:
-            logger.error(f"[PromptLogger] 保存失败: {e}")
+        for retry in range(2):
+            try:
+                with open(log_file_path, 'w', encoding='utf-8') as f:
+                    json.dump(current_log, f, ensure_ascii=False, indent=2)
+                logger.info(f"[PromptLogger] 日志已保存: {log_file_path}")
+                return
+            except Exception as e:
+                if retry == 0:
+                    logger.warning(f"[PromptLogger] 保存失败,重试: {e}")
+                else:
+                    logger.error(f"[PromptLogger] 保存失败: {e}")
     
     def get_current_log(self) -> Optional[Dict[str, Any]]:
         """获取当前日志数据"""

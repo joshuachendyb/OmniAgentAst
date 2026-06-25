@@ -30,14 +30,15 @@ def _should_retry_truncated_tool(agent, llm_response: Dict) -> bool:
     
     条件:
     1. 返回类型是answer
-    2. 内容很短(<100字,典型preamble长度)
+    2. 内容很短(<500字,可能截断)
     3. 对话历史中存在带tool_calls的assistant消息(LLM之前处于工具模式)
     4. 该tool_call**未被成功执行**(无对应tool角色响应) — P0-2修复 2026-06-23 小欧
+    E-3修复 2026-06-25 小欧: 阈值100→500,覆盖更多截断场景
     """
     if llm_response.get("type") != "answer":
         return False
     content = llm_response.get("content", "")
-    if not content or len(content) > 100:
+    if not content or len(content) > 500:
         return False
     history = agent.message_builder.conversation_history
     for i in range(len(history) - 1, -1, -1):
@@ -54,10 +55,17 @@ def _should_retry_truncated_tool(agent, llm_response: Dict) -> bool:
 
 
 def _dispatch_handler(agent, llm_response, chunk_buffer):
-    """按type分派handler — 小健 2026-06-17 if/elif替代2-entry注册表"""
+    """按type分派handler — 小健 2026-06-17 if/elif替代2-entry注册表
+    E-4修复 2026-06-25 小欧: 未知类型走error而非沉默handle_answer
+    """
     parsed_type = llm_response.get("type", "answer")
     if parsed_type == "action":
         return handle_action(agent, llm_response, chunk_buffer)
+    if parsed_type == "answer":
+        return handle_answer(agent, llm_response, chunk_buffer)
+    from app.services.agent.steps import FinalStep
+    from app.utils.logger import logger
+    logger.warning(f"[dispatch_handler] 未知返回类型: {parsed_type}, 按answer处理")
     return handle_answer(agent, llm_response, chunk_buffer)
 
 
@@ -154,17 +162,26 @@ async def run_react_cycle(
     max_steps: Optional[int] = None,
     task_id: Optional[str] = None,
 ):
-    """ReAct循环:调用LLM→解析→分派handler→产出Step — 小沈 2026-06-09 薄调度重构"""
+    """ReAct循环:调用LLM→解析→分派handler→产出Step — 小沈 2026-06-09 薄调度重构
+    N-1修复 2026-06-25 小欧: 总耗时超TASK_TIMEOUT则强制结束
+    """
     from app.config import get_config
+    from app.constants import TASK_TIMEOUT
+    import asyncio
     if max_steps is None:
         max_steps = get_config().get_max_steps()
 
     chunk_buffer = initialize_run_state(agent, task, task_id, context)
 
     agent.status = AgentStatus.EXECUTING
+    _start_time = asyncio.get_event_loop().time()
 
     try:
         while agent.llm_call_count < max_steps:
+            if asyncio.get_event_loop().time() - _start_time > TASK_TIMEOUT.total_seconds():
+                logger.warning(f"[run_react_cycle] 总耗时超TASK_TIMEOUT({TASK_TIMEOUT}), 强制结束")
+                agent.status = AgentStatus.COMPLETED
+                break
             async for event in _process_single_step(agent, chunk_buffer):
                 yield event
 

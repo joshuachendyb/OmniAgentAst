@@ -17,7 +17,8 @@ from app.services.task.task_state_queries import check_cancelled, check_paused
 
 
 def _load_previous_messages(session_id: str) -> List[Dict[str, str]]:
-    """从DB加载会话历史消息 — 小健 2026-06-17 委托db层，消除SQLite越界"""
+    """从DB加载会话历史消息 — 小健 2026-06-17 委托db层，消除SQLite越界
+    A-1修复 2026-06-25 小欧: 加载tool消息合并到前一条assistant的content中，保留工具历史上下文"""
     from app.db import db
     try:
         with db.get_conn("chat") as conn:
@@ -28,8 +29,15 @@ def _load_previous_messages(session_id: str) -> List[Dict[str, str]]:
             ).fetchall()
         messages = []
         for role, content in rows:
-            if role in ("user", "assistant"):
-                messages.append({"role": role, "content": content or ""})
+            if role == "user":
+                messages.append({"role": "user", "content": content or ""})
+            elif role == "assistant":
+                messages.append({"role": "assistant", "content": content or ""})
+            elif role == "tool":
+                if messages and messages[-1]["role"] == "assistant":
+                    prev = messages[-1]
+                    prev_content = prev.get("content") or ""
+                    prev["content"] = prev_content + f"\n[Observation] {content or ''}"
         return messages[:-1] if len(messages) > 1 else []
     except Exception:
         return []
@@ -143,14 +151,19 @@ async def run_sse_stream(
     finally:
         # 统一保存入口：正常、异常、取消都走这里
         if current_execution_steps:
-            try:
-                saved_content = stream_state.current_content if stream_state else ""
-                ai_message_id = await save_execution_steps_to_db(session_id, current_execution_steps, saved_content)
-                if ai_message_id:
-                    from app.utils.prompt_logger import get_prompt_logger
-                    get_prompt_logger().update_ai_message_id(str(ai_message_id))
-            except Exception as save_err:
-                logger.error(f"[SSE] DB保存失败(steps={len(current_execution_steps)}): {save_err}", exc_info=True)
+            for retry in range(2):
+                try:
+                    saved_content = stream_state.current_content if stream_state else ""
+                    ai_message_id = await save_execution_steps_to_db(session_id, current_execution_steps, saved_content)
+                    if ai_message_id:
+                        from app.utils.prompt_logger import get_prompt_logger
+                        get_prompt_logger().update_ai_message_id(str(ai_message_id))
+                    break
+                except Exception as save_err:
+                    if retry == 0:
+                        logger.warning(f"[SSE] DB保存失败(steps={len(current_execution_steps)}), 重试: {save_err}")
+                    else:
+                        logger.error(f"[SSE] DB保存失败(steps={len(current_execution_steps)}): {save_err}", exc_info=True)
 
         if agent is not None and stream_state is not None:
             stream_state.llm_call_count = getattr(agent, "llm_call_count", 0)

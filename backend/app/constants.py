@@ -62,8 +62,8 @@ DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,http://local
 MAX_CONTEXT_CHARS = 150000
 TEMP_HISTORY_CHAR_LIMIT = 50000
 OBSERVATION_BUDGET_DECAY = 10000
-OBSERVATION_BUDGET_MIN = 30000  # 小欧 2026-06-16: +50%，保留更多上下文
-OBSERVATION_BUDGET_MAX = 80000  # 小欧 2026-06-16: +60%，支持复杂任务
+OBSERVATION_BUDGET_MIN = 50000  # 小欧 2026-06-25 D-5/N-2修复: 30000→50000，后期预算不过紧
+OBSERVATION_BUDGET_MAX = 80000
 
 DEFAULT_MAX_OUTPUT_CHARS = 5000
 DEFAULT_MAX_FILE_CHARS = 8000
@@ -417,6 +417,9 @@ MAX_CACHE_SIZE = 1000
 
 from datetime import timedelta
 TASK_TIMEOUT = timedelta(hours=1)
+
+# HITL超时(秒) — H-1修复 2026-06-25 小欧
+HITL_TIMEOUT = 120
 
 # ============================================================
 # 11. Agent meta工具

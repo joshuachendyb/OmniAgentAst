@@ -16,13 +16,9 @@ Author: 小沈 - 2026-05-28
 """
 
 from app.services.agent.agent_utils.message_utils import (
-    build_llm_messages,
     build_observation_text,
-    inject_tools_info,
 )
 
 __all__ = [
-    "build_llm_messages",
     "build_observation_text",
-    "inject_tools_info",
 ]

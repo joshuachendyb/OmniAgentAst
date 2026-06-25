@@ -20,11 +20,10 @@ async def handle_answer(agent, parsed: Dict, chunk_buffer):
     if not content:
         from app.utils.logger import logger
         logger.warning(f"[handle_answer] LLM返回空内容(step={step})")
-        yield agent._step_emitter.exit_with_error(
-            step_count=step, error_type="empty_answer",
-            error_message="LLM返回空内容",
-        )
-        agent.status = AgentStatus.FAILED
+        yield agent._step_emitter.emit(FinalStep(
+            step=step, response="", thought="",
+        ))
+        agent.status = AgentStatus.COMPLETED
         return
 
     thought = parsed.get("thought", content)
@@ -39,5 +38,6 @@ async def handle_answer(agent, parsed: Dict, chunk_buffer):
         step=step, response=content, thought=thought,
     ))
     # 【修复P0-2】保存assistant回复到对话历史 — 北京老陈 2026-06-13
-    agent.message_builder.conversation_history.append({"role": "assistant", "content": content})
+    # 【J-1修复】走MessageBuilder封装入口 — 小欧 2026-06-25
+    agent.message_builder.add_assistant_message(content)
     agent.status = AgentStatus.COMPLETED

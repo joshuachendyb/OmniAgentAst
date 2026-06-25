@@ -52,6 +52,7 @@ def initialize_run_state(
     prompt_logger.log_task_prompt(
         task_content=task,
         context=context if context else None,
+        source=f"{agent.__class__.__name__}.initialize_run_state",
     )
 
     agent._on_before_loop(sys_prompt, task, context)

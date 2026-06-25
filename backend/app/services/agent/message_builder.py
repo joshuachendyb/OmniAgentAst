@@ -5,8 +5,7 @@ MessageBuilder — conversation_history 状态管理器
 将分散在 base_react.py 和 react_agent_mixin.py 中的
 conversation_history操作集中管理。
 
-无状态工具函数(build_llm_messages、inject_tools_info、build_schema_text 等)
-已迁入 message_utils.py,遵循 SRP。
+无状态工具函数已迁入 message_utils.py,遵循 SRP。
 
 【生命周期与会话绑定说明 — 小沈 2026-05-20】:
 MessageBuilder 实例生命周期必须与 Agent 实例强绑定,
@@ -59,10 +58,14 @@ class MessageBuilder:
         ]
 
     def _prepare_observation_text(self, observation_text: str, llm_call_count: int) -> str:
-        """准备observation文本 — 截断+归一化 — 小沈 2026-06-08"""
+        """准备observation文本 — 截断+归一化 — 小沈 2026-06-08
+        D-3修复 2026-06-25 小欧: 截断时追加标记
+        """
         budget = self._get_observation_budget(llm_call_count)
-        if len(observation_text) > budget:
+        truncated = len(observation_text) > budget
+        if truncated:
             observation_text = smart_truncate_text(observation_text, budget=budget)
+            observation_text += "\n... (内容过长被截断)"
         observation_text = self._normalize_observation_prefix(observation_text)
         return observation_text
 
@@ -97,25 +100,15 @@ class MessageBuilder:
         self._append_observation(observation_text, fc_context)
         self.trim_history()
 
+    def add_assistant_message(self, content: str) -> None:
+        """追加assistant最终回答到conversation_history — 2026-06-25 小欧 J-1修复: 封装统一入口"""
+        self.conversation_history.append(
+            message_to_dict(AssistantMessage(content=content))
+        )
+
     # =========================================================================
     # 第二组:每轮 LLM 调用的消息组装
     # =========================================================================
-
-    def export_messages_as_typed(self) -> List[FcMessage]:
-        """导出类型化的 FC 消息列表 — 小沈 2026-06-11"""
-        from app.services.agent.agent_utils.fc_message_types import dict_to_message
-        result = []
-        for msg in self.conversation_history:
-            try:
-                result.append(dict_to_message(msg))
-            except (ValueError, TypeError):
-                result.append(SystemMessage(content=str(msg)))
-        for msg in self.temp_history:
-            try:
-                result.append(dict_to_message(msg))
-            except (ValueError, TypeError):
-                result.append(SystemMessage(content=str(msg)))
-        return result
 
     def prepare_messages_for_llm(self) -> List[Dict[str, Any]]:
         """准备发给LLM的完整消息列表 — 合并原split+merge+assemble
@@ -142,24 +135,25 @@ class MessageBuilder:
     # =========================================================================
 
     def trim_history(self) -> None:
-        """容量感知的对话历史裁剪 — budget包含system_msgs"""
+        """容量感知的对话历史裁剪 — 2026-06-25 小欧 D-1修复: user与system分两组"""
         total = self._total_chars(self.conversation_history)
         if total < self.MAX_CONTEXT_CHARS * 0.8:
             return
         if len(self.conversation_history) <= 2:
             return
 
-        system_msgs, obs_list, assistant_msgs = self._classify_messages()
-        system_chars = self._total_chars(system_msgs)
-        available_budget = max(10000, int(self.MAX_CONTEXT_CHARS * 0.7) - system_chars)
+        system_msgs, user_msgs, obs_list, assistant_msgs = self._classify_messages()
+        always_keep_chars = self._total_chars(system_msgs) + self._total_chars(user_msgs)
+        available_budget = max(10000, int(self.MAX_CONTEXT_CHARS * 0.7) - always_keep_chars)
         trimmed = self._trim_to_budget(obs_list, assistant_msgs, available_budget)
-        rebuilt = self._rebuild_and_validate(system_msgs, trimmed)
+        rebuilt = self._rebuild_and_validate(system_msgs, user_msgs, trimmed)
         if rebuilt is not None:
             self.conversation_history = rebuilt
 
     def _classify_messages(self):
-        """将消息分类为 system / observation / assistant 三组"""
+        """将消息分类为 system / user / observation(tool) / assistant 四组 — 2026-06-25 小欧 D-1修复"""
         system_msgs = []
+        user_msgs = []
         obs_list = []
         assistant_msgs = []
         for msg in self.conversation_history:
@@ -168,9 +162,11 @@ class MessageBuilder:
                 assistant_msgs.append(msg)
             elif self._is_observation_role(msg):
                 obs_list.append(msg)
+            elif role == "user":
+                user_msgs.append(msg)
             else:
                 system_msgs.append(msg)
-        return system_msgs, obs_list, assistant_msgs
+        return system_msgs, user_msgs, obs_list, assistant_msgs
 
     def _trim_to_budget(self, obs_list, assistant_msgs, budget):
         """FC-only: 从最新往最旧扫,按配对收集,简洁高效
@@ -198,8 +194,8 @@ class MessageBuilder:
                 if assistant:
                     for tc in assistant.get("tool_calls", []):
                         tool_name = tc.get("function", {}).get("name", "")
-                        if tool_name and tool_name not in first_tool_obs:
-                            first_tool_obs[tool_name] = msg
+                        if tool_name:
+                            first_tool_obs[tool_name] = msg  # D-4: 保持最后一次而非首次
 
         kept = []
         used_chars = 0
@@ -232,9 +228,9 @@ class MessageBuilder:
         kept.reverse()
         return kept
 
-    def _rebuild_and_validate(self, system_msgs, trimmed_msgs):
-        """重组消息列表并验证FC配对完整性 — FC-only: trimmed已含obs+assistant"""
-        rebuilt = system_msgs + trimmed_msgs
+    def _rebuild_and_validate(self, system_msgs, user_msgs, trimmed_msgs):
+        """重组消息列表并验证FC配对完整性 — 2026-06-25 小欧 D-1修复: user_msgs在system和trimmed之间"""
+        rebuilt = system_msgs + user_msgs + trimmed_msgs
         rebuilt = self._trim_fc_pairs(rebuilt)
         if len(rebuilt) >= 2:
             return rebuilt
