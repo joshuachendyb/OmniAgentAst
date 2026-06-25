@@ -1,3 +1,79 @@
+v0.17.3
+
+更新时间: 2026-06-26 07:33:37
+
+## v0.17.2→v0.17.3 变更汇总 - 小欧-2026-06-26
+
+### feat: 新功能(6项)
+- ba1445e32: Batch2 5项重构实施(幽灵类内联/set_failed收口/patch_search_desc副本/超时FAILED/cancel_poller Event) - 小欧
+- 9270914b1: 新增LLM常量配置文件 - 小欧
+- 424b5b374: 新增ErrorHandler错误处理器 - 小欧
+- 8f6c93aba: 添加FCFormatError异常类 - 小欧
+- 0ae4425f1: LLM流式调用Text模式降级+FC格式错误重试 - 小欧
+- c1d11a4ea: 添加RETRYABLE_ERROR状态 - 小欧
+
+### fix: 代码修复(37项)
+- 6d57d9256: action_handler _build_call_list None tool_params崩溃 - 小欧
+- 601e4dce7: action_handler _safe_str(None)返回'None'污染LLM summary - 小欧
+- 5ca3365e4: SSE circular ref崩溃+_merge_other_data join崩溃 - 小欧
+- 8595abc7e: message_builder _trim_to_budget duplicate when assistant precedes tool - 小欧
+- 22fc0fc3e: tool_retry_engine保留原始异常信息非创建新Exception - chendyg
+- d1b5ba1ef: tool_safety_checker写入保护优先用path参数 - chendyg
+- ad70f82c0: run_sse_stream event to_dict防御非dict非Step - chendyg
+- cd9bb72ff: step_emitter tracker异常debug升级为warning - chendyg
+- 863514a07: react_cycle未知类型响应加入对话历史防重复 - chendyg
+- 0462df57c: initialize_run_state更新tracker任务描述 - chendyg
+- 52cc4b2bb: message_builder _trim_to_budget配对助手消息双重计数 - 小欧
+- 32acb43d6: react_cycle截断重试路径history未定义crash - 小欧
+- 15fa89309: Bug17新增CANCELLED枚举+取消路径设CANCELLED + Bug3空内容保存assistant - chendyg
+- 3baa16a4c: Bug15 patch_search_desc缓存失效 + Bug16 load_category更新_loaded_categories - chendyg
+- 230c713f4: react_cycle RETRYABLE_ERROR顺应重试而非结束循环 - 小欧
+- 035c8a7c9: P1级bug修复(8/9/10/11/14/17/19/21/22) - chendyg
+- d90909f73: registry update_existing_tool缺少字段+分类索引 - 小欧
+- a1f256eba: react_cycle chunk_buffer投词/max_steps检查/截断tc_id - 小欧
+- c6711e3d0: action_handler dict直接访问KeyError风险 - 小欧
+- fe475defb: base_service _extract_tool_calls/_extract_usage异常静默 - 小欧
+- a72cfba34: action_handler exec_code空值被error覆盖 - 小欧
+- 995dc36fa: llm_stream dict直接访问KeyError风险 - 小欧
+- dfc61ac82: run_sse_stream加载历史异常增加日志 - 小欧
+- 6d97db271: client_sdk添加async上下文管理器支持 - 小欧
+- 71163feb3: chat_openai空消息内容拦截 - 小欧
+- 36388fd35: initialize_run_state保留tool/assistant完整消息 - 小欧
+- ec730cc2b: step_emitter exit_with_error尊重recoverable标志 - 小欧
+- ba21dbe5f: react_cycle RETRYABLE_ERROR不补发FinalStep - 小欧
+- 9b0bbfffe: action_handler并行return_direct检查所有结果 - 小欧
+- 4151fd553: answer_handler空内容设FAILED而非COMPLETED - 小欧
+- d36b5d518: tool_safety_checker代码注入检查覆盖所有shell工具 - 小欧
+- 7e67ea3bd: path_validator异常时黑名单绕过改为拒绝 - 小欧
+- 3f5502fc5: error_classifier httpx.ReadError缺失映射 - 小欧
+- ff6c1e5e9: meta_step to_dict缺少message字段 - 小欧
+- ffdf24c8f: tool_safety_checker or链陷阱+空字符串验证缺陷 - 小欧
+- 7c5fffdaf: path_validator空路径安全检查 - 小欧
+- a0a9e1109: 修复SSE前端解析逻辑 - 小欧
+
+### refactor: 代码重构(4项)
+- 214ef1e6d: message_builder+react_cycle+error_handler 类型安全/FAILED/截断 - 北京老陈
+- fe4529c5c: 优化LLM基础服务调用逻辑 - 小欧
+- b3a04c133: React循环调用逻辑优化 - 小欧
+- 7e9f3357b: 简化UniversalAgent调用逻辑 - 小欧
+
+### test: 测试(1项)
+- 4201ba3be: 新增FC降级E2E测试 - 小欧
+
+### docs: 文档更新(7项)
+- 716932911: 更新系统关键流程深度分析 v4.0 - 小欧
+- 36f52b992: 更新LLM系统优化方案/删旧版/标注Batch2实施状态 - 小欧
+- 556748bc1: 新增E2E测试记录P0-01 - 小欧
+- b0bafcc03: 新增旧版LLM系统优化方案存档 - 小欧
+- 0380536ac: 新增LLM系统优化方案v2.0 - 小欧
+- 7dfd75810: 备份旧版LLM系统优化方案 - 小欧
+- 522718163: 更新LLM-Prompt-Message系统优化方案v4.1 - 小欧
+
+### 合计
+- feat: 6项 | fix: 37项 | refactor: 4项 | test: 1项 | docs: 7项 = 共55项
+
+---
+
 v0.17.2
 
 更新时间: 2026-06-25 19:57:42
