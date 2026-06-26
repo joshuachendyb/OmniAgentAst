@@ -37,23 +37,22 @@ class _DbConnectionMixin(BaseModel):
     )
 
 class GenerateChartInput(BaseModel):
-    data: Union[str, Dict[str, Any]] = Field(
+    data: str = Field(
         ...,
-        description="""图表数据。支持两种形式：
+        description="""数据文件路径(绝对路径)。
 
-【形式1: 文件路径(str)】
-- CSV文件: "D:/data/sales.csv"
-- Excel文件: "D:/data/sales.xlsx" 或 "D:/data/sales.xls"
-- 要求: 文件至少2列，第1列作为labels，第2列作为values
-- 注意: 使用文件路径时，output_path可选（默认在同目录生成chart_<时间戳>.png）
+【支持格式】
+- CSV文件: D:/data/sales.csv
+- Excel文件: D:/data/sales.xlsx 或 D:/data/sales.xls
 
-【形式2: 字典数据(dict)】
-- 格式: {"labels": ["A", "B", "C"], "values": [10, 20, 30]}
-- 注意: 使用字典时，output_path必填
+【文件要求】
+- 至少2列数据
+- 第1列作为labels（横轴标签）
+- 第2列作为values（纵轴数值）
 
 【示例】
-- 文件路径: "D:/data/sales.csv"
-- 字典数据: {"labels": ["Q1", "Q2", "Q3"], "values": [100, 150, 120]}"""
+- CSV文件: data="D:/data/sales.csv"
+- Excel文件: data="D:/data/report.xlsx" """
     )
     chart_type: Optional[Literal["bar", "line", "pie", "scatter"]] = Field(
         default="bar",
@@ -67,8 +66,8 @@ class GenerateChartInput(BaseModel):
         default=None,
         description="""输出图片路径(绝对路径,可选)。
 
-- data为文件路径时: 可选，默认在同目录生成chart_<时间戳>.png
-- data为字典数据时: 必填，必须指定输出路径
+- 不传: 默认在数据文件同目录生成 chart_<时间戳>.png
+- 传入: 使用指定路径
 
 示例: D:/output/chart.png"""
     )

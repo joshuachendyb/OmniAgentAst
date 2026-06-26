@@ -51,11 +51,10 @@ def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", output
     }
 
 
-def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", "line", "pie", "scatter"] = "bar",
+def generate_chart(data: str, chart_type: Literal["bar", "line", "pie", "scatter"] = "bar",
                    title: Optional[str] = None, x_label: Optional[str] = None,
                    y_label: Optional[str] = None, output_path: Optional[str] = None) -> Dict[str, Any]:
-    """使用matplotlib生成数据可视化图表 — 小健 2026-06-22 拆分独立文件"""
-    data = coerce_json(data)
+    """使用matplotlib生成数据可视化图表 — 小健 2026-06-22 拆分独立文件 — 小健 2026-06-26 删除dict支持，只支持文件路径"""
     t0 = _time_mod.perf_counter()
     if not _check_module("matplotlib"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -67,36 +66,28 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
-        source_file_dir = None
-        chart_data = None
-
-        if isinstance(data, str):
-            path = Path(data)
-            if not path.exists():
-                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=f"文件不存在: {data}")
-                return build_error(data={"error_detail": f"文件不存在: {data}", "params": {"file_path": data}}, llm_data=llm_data)
-            source_file_dir = str(path.parent)
-
-            if data.endswith('.xlsx') or data.endswith('.xls'):
-                df = pd.read_excel(data, engine="openpyxl")
-            else:
-                df = pd.read_csv(data)
-
-            if len(df.columns) < 2:
-                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="数据至少需要2列(标签列+数值列)")
-                return build_error(data={"error_detail": "数据至少需要2列", "params": {"data": str(data)[:200]}}, llm_data=llm_data)
-
-            labels = df.iloc[:, 0].tolist()
-            values = df.iloc[:, 1].tolist()
-            chart_data = {"labels": labels, "values": values}
-        elif isinstance(data, dict):
-            chart_data = data
-        else:
+        # 小健 2026-06-26: 只支持文件路径，删除dict支持
+        path = Path(data)
+        if not path.exists():
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="data参数必须是文件路径(str)或图表数据(dict)")
-            return build_error(data={"error_detail": "data参数必须是文件路径或图表数据", "params": {"data_type": type(data).__name__}}, llm_data=llm_data)
+            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=f"文件不存在: {data}")
+            return build_error(data={"error_detail": f"文件不存在: {data}", "params": {"file_path": data}}, llm_data=llm_data)
+        
+        source_file_dir = str(path.parent)
+
+        if data.endswith('.xlsx') or data.endswith('.xls'):
+            df = pd.read_excel(data, engine="openpyxl")
+        else:
+            df = pd.read_csv(data)
+
+        if len(df.columns) < 2:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail="数据至少需要2列(标签列+数值列)")
+            return build_error(data={"error_detail": "数据至少需要2列", "params": {"data": str(data)[:200]}}, llm_data=llm_data)
+
+        labels = df.iloc[:, 0].tolist()
+        values = df.iloc[:, 1].tolist()
+        chart_data = {"labels": labels, "values": values}
 
         validation = _validate_chart_data(chart_data)
         if validation["code"] != "SUCCESS" or not validation["data"].get("valid", False):
